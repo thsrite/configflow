@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -15,10 +16,11 @@ import (
 	"configflow/internal/clock"
 	"configflow/internal/faultprobe"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
@@ -102,7 +104,7 @@ func readLastGood(ctx context.Context, profileID, kind, itemID string) (string, 
 			continue // OSError
 		}
 		if !utf8.Valid(data) {
-			return "", false, &pyError{"UnicodeDecodeError", "'utf-8' codec can't decode the last good provider content"}
+			return "", false, &InputError{Field: "last-good UTF-8"}
 		}
 		// read_text: universal newlines.
 		text := strings.ReplaceAll(string(data), "\r\n", "\n")
@@ -135,13 +137,22 @@ func mimetype(header http.Header) string {
 
 // configDigest is sha256(json.dumps(config_data, sort_keys=True,
 // default=str)).hexdigest() (only used as part of the flight key).
-func configDigest(configData any) string {
-	text, err := jsonx.Encode(configData, jsonx.Options{EnsureASCII: true, SortKeys: true})
+func configDigest(configData json.RawMessage) (string, error) {
+	text, err := jsonresp.Canonical(configData)
 	if err != nil {
-		text = []byte(fmt.Sprint(configData))
+		return "", err
 	}
 	sum := sha256.Sum256(text)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// Serve shares response rendering for a typed resolved configuration.
+func Serve(c *httpx.Ctx, kind, itemID, profileID string, config *model.Config, render Render) (*httpx.Response, error) {
+	data, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return serveProviderJSON(c, kind, itemID, profileID, data, render)
 }
 
 // ServeProvider is serve_provider(kind, item_id, profile_id, config_data,
@@ -153,12 +164,16 @@ func configDigest(configData any) string {
 //
 // Call after authentication and existence checks: the fallback must never
 // answer a request that would otherwise be rejected.
-func ServeProvider(c *httpx.Ctx, kind, itemID, profileID string, configData any, render Render) (*httpx.Response, error) {
+func serveProviderJSON(c *httpx.Ctx, kind, itemID, profileID string, configData json.RawMessage, render Render) (*httpx.Response, error) {
 	format, _ := c.Arg("format")
 	fallback := format == ""
 	regex, _ := c.Arg("regex")
 	exclude, _ := c.Arg("exclude_regex")
-	key := flightKey{kind, profileID, itemID, format, regex, exclude, configDigest(configData)}
+	digest, err := configDigest(configData)
+	if err != nil {
+		return nil, err
+	}
+	key := flightKey{kind, profileID, itemID, format, regex, exclude, digest}
 	renderCtx := lifecycle.Detach(c.Context())
 	if err := renderCtx.Err(); err != nil {
 		return nil, err
@@ -217,10 +232,22 @@ func runFlight(ctx context.Context, fallback bool, profileID, kind, itemID strin
 		return nil, ctx.Err()
 	}
 	defer func() { <-pool }()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	faultprobe.Point(ctx, faultprobe.ProviderRender)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	rendered, err := render(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if rendered == nil {
+		return nil, errors.New("provider: render returned no response")
 	}
 	snapshot := snapshotResponse(rendered)
 	if fallback && snapshot.status == 200 && mimetype(snapshot.header) == "text/yaml" {
@@ -246,10 +273,10 @@ func RequestedFilters(c *httpx.Ctx) (*[2]string, error) {
 		return nil, nil
 	}
 	if format, _ := c.Arg("format"); format != "surge" && format != "loon" {
-		return nil, &rules.CandidateValidationError{Message: "来源正则筛选仅支持 Surge/Loon 格式"}
+		return nil, &rules.CandidateValidationError{Message: msgFiltersFormat}
 	}
 	filters := [2]string{c.ArgDefault("regex", ""), c.ArgDefault("exclude_regex", "")}
-	if _, err := rules.FilterCandidates([]any{}, filters[0], filters[1]); err != nil {
+	if _, err := rules.Filter([]string{}, &filters[0], &filters[1], func(name string) string { return name }); err != nil {
 		return nil, err
 	}
 	return &filters, nil

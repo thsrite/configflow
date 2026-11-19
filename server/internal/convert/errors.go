@@ -23,6 +23,20 @@ func (e *DialerReferenceError) Unwrap() error {
 
 func dialerError(message string) error { return &DialerReferenceError{Message: message} }
 
+// DialerFailure classifies a native validation failure for public provider/API
+// boundaries while retaining the underlying error chain and visible diagnostic.
+func DialerFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	var reference *DialerReferenceError
+	var yamlError *ProxyYAMLError
+	if errors.As(err, &reference) || errors.As(err, &yamlError) {
+		return err
+	}
+	return &DialerReferenceError{Message: err.Error(), cause: err}
+}
+
 // EasyTierSettingsError is mihomo_easytier.EasyTierSettingsError (a
 // ValueError).
 type EasyTierSettingsError struct{ Message string }

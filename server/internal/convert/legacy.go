@@ -457,16 +457,7 @@ func RedactEasyTierSettings(value any) any {
 }
 
 // dialerLegacyError preserves only the old caller's validation category.
-func dialerLegacyError(err error) error {
-	if err == nil {
-		return nil
-	}
-	var yamlErr *ProxyYAMLError
-	if errors.As(err, &yamlErr) {
-		return err
-	}
-	return &DialerReferenceError{Message: err.Error(), cause: err}
-}
+func dialerLegacyError(err error) error { return DialerFailure(err) }
 
 // IDValue adapts a native string resource ID for old serialization callers.
 func (r Ref) IDValue() any { return r.ID }

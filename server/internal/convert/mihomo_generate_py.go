@@ -226,37 +226,6 @@ func (s *orderedSet) remove(v any) {
 
 func (s *orderedSet) repr() string { return pySetRepr(s.keys, s.values) }
 
-// appendURLQuery is profile_context.append_url_query(url, params): the
-// existing query pairs (blank values kept) and the params, each name and
-// value percent-encoded (a list value repeats the name). The rest of the URL
-// is kept as written: the URLs are the panel's own (a rule name may hold
-// "%" or Chinese), so nothing else needs parsing. A server domain whose host
-// has an invalid bracketed IPv6 host is refused instead of producing URLs no
-// client can use. Only the authority is inspected: a rule path is not a URL.
-func appendURLQuery(address string, params [][2]any) string {
-	pairs := [][2]string{}
-	for _, pair := range params {
-		key := fstr(pair[0])
-		switch value := pair[1].(type) {
-		case []any:
-			for _, item := range value {
-				pairs = append(pairs, [2]string{key, fstr(item)})
-			}
-		case *jsonx.Object:
-			for _, item := range value.Keys() {
-				pairs = append(pairs, [2]string{key, item})
-			}
-		default:
-			pairs = append(pairs, [2]string{key, fstr(value)})
-		}
-	}
-	result, err := appendProfileQuery(address, pairs)
-	if err != nil {
-		raise(pyError("ValueError", err.Error()))
-	}
-	return result
-}
-
 // pyIntOf is int(v) for the values a profile can hold.
 func pyIntOf(v any) jsonx.Number {
 	switch x := v.(type) {

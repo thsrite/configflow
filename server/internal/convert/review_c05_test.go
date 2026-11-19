@@ -23,7 +23,7 @@ func TestC05ReviewAppendURLQueryBracketedHosts(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := AppendURLQuery(test.input, [][2]any{{"token", "synthetic+a&b"}})
+			got, err := AppendQuery(test.input, [][2]string{{"token", "synthetic+a&b"}})
 			if test.reject {
 				if err == nil || got != "" {
 					t.Fatalf("invalid host emitted URL %q, error %v", got, err)

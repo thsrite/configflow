@@ -40,7 +40,7 @@ func contentLines(content string) ([]string, error) {
 			return nil, err
 		}
 	} else {
-		values = convert.PySplitlines(stripped)
+		values = convert.RuleLines(stripped)
 	}
 	if len(values) > maxRules {
 		return nil, gatewayError(msgTooManyRules)

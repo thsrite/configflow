@@ -7,6 +7,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/provider"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
@@ -14,21 +15,7 @@ import (
 type liveNativeConverter struct{}
 
 func (liveNativeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	proxy, err := substore.NativeConverter().ConvertProxy(ctx, text)
-	if canceled := ctx.Err(); canceled != nil {
-		return nil, canceled
-	}
-	// Single-node conversion is an optional lookup in this environment. The
-	// legacy callback returned no node on conversion failure; keep that caller
-	// policy while the typed client retains errors for its other consumers.
-	if err != nil {
-		return nil, nil
-	}
-	return proxy, nil
+	return convert.OptionalNodeConverter(substore.NativeConverter()).ConvertProxy(lifecycle.Detach(ctx), text)
 }
 
 // NativeEnv connects migrated subscription owners directly. The remaining
@@ -36,6 +23,10 @@ func (liveNativeConverter) ConvertProxy(ctx context.Context, text string) (*yaml
 func NativeEnv() convert.MihomoEnvironment {
 	env := convert.MihomoEnvironmentFromLegacy(Env())
 	env.Converter = liveNativeConverter{}
+	env.Preflight = func(ctx context.Context, config *model.Config, main *yamlx.Node) error {
+		_, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
+		return err
+	}
 	env.LoadSubscriptionCache = func(ctx context.Context, id string) (json.RawMessage, error) {
 		cache, err := substore.LoadCache(ctx, id)
 		if err != nil || cache == nil {

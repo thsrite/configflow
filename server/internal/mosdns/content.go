@@ -107,10 +107,10 @@ func DomainPatternForMosDNS(pattern string) (string, bool) {
 		return "domain:" + pattern[2:], true
 	}
 	if strings.HasPrefix(pattern, ".") && !strings.Contains(pattern, "*") {
-		return `regexp:.+\.` + convert.PyReEscape(pattern[1:]) + "$", true
+		return `regexp:.+\.` + convert.RuleLiteral(pattern[1:]) + "$", true
 	}
 	if strings.HasPrefix(pattern, "*.") && !strings.Contains(pattern[2:], "*") {
-		return `regexp:^[^.]+\.` + convert.PyReEscape(pattern[2:]) + "$", true
+		return `regexp:^[^.]+\.` + convert.RuleLiteral(pattern[2:]) + "$", true
 	}
 	if !strings.Contains(pattern, "*") {
 		return "full:" + pattern, true
@@ -126,7 +126,7 @@ func DomainPatternForMosDNS(pattern string) (string, bool) {
 		if label == "*" {
 			labels[i] = `[^.]+`
 		} else {
-			labels[i] = convert.PyReEscape(label)
+			labels[i] = convert.RuleLiteral(label)
 		}
 	}
 	return "regexp:^" + prefix + strings.Join(labels, `\.`) + "$", true
@@ -156,7 +156,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 	isYAMLFormat := rules.HasYAMLPayload(content)
 	if !isYAMLFormat {
 		sampleCount := 0
-		for _, line := range convert.PySplitlines(content) {
+		for _, line := range convert.RuleLines(content) {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
@@ -234,7 +234,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 		}
 	}
 	if !isYAMLFormat {
-		for _, line := range convert.PySplitlines(content) {
+		for _, line := range convert.RuleLines(content) {
 			ruleLines = append(ruleLines, line)
 		}
 	}

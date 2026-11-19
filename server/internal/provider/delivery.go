@@ -2,1213 +2,993 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
-	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
-	"configflow/internal/pystr"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
-
 	"gopkg.in/yaml.v3"
 )
 
-// CacheUpdate is one staged node-cache update (sub_id, nodes, metadata),
-// written by CommitCacheUpdates only after the whole bundle validated.
-type CacheUpdate struct {
+// CacheWrite is a validated subscription receipt staged until the bundle passes.
+type CacheWrite struct {
 	SubID    string
-	Nodes    []any
-	Metadata *jsonx.Object
+	Nodes    []model.Node
+	Metadata *substore.CacheMetadata
 }
 
-// Rendered is one rendered provider: the dicts prepare_subscription_provider,
-// generate_aggregation_provider and prepare_provider_bundle return.
-type Rendered struct {
-	// Name is the 'name' key; HasName is false where Python's dict has none
-	// ({'content': '', 'cache_updates': []} of a transport fallback).
-	Name    string
-	HasName bool
-	// Content is the provider YAML ('' = unverified URL fallback).
-	Content      string
-	CacheUpdates []CacheUpdate
-	// AggregationID is 'aggregation_id' ("" = absent).
+// Artifact contains prepared provider bytes and their staged side effects.
+type Artifact struct {
+	Name          string
+	HasName       bool
+	Content       string
+	CacheUpdates  []CacheWrite
 	AggregationID string
-	// URL and LocalPath are the bundle's 'url' and 'local_path' (the
-	// definition's url and path); LocalPath nil = absent.
-	URL       string
-	LocalPath any
-	// Extra holds the other keys of the Python dict (e.g. the counts
-	// generate_aggregation_provider returns); may be nil.
-	Extra *jsonx.Object
+	URL           string
+	LocalPath     string
+	Extra         json.RawMessage
 }
 
-func (r *Rendered) clone() *Rendered {
-	c := *r
-	c.CacheUpdates = append([]CacheUpdate(nil), r.CacheUpdates...)
+func (a *Artifact) clone() *Artifact {
+	c := *a
+	c.CacheUpdates = slices.Clone(a.CacheUpdates)
 	return &c
 }
 
-// nameValue is provider.get('name', def).
-func (r *Rendered) nameValue(def any) any {
-	if r.HasName {
-		return r.Name
-	}
-	return def
+// DeliverySnapshot owns one immutable main graph and enabled chain exit index.
+// Graph operations share untouched subtrees; no validation reparses the document.
+type DeliverySnapshot struct {
+	ProfileID  string
+	main       *yamlx.Node
+	chainNames map[string]bool
 }
 
-func (r *Rendered) localPath() any {
-	if r.LocalPath == nil {
-		return ""
-	}
-	return r.LocalPath
-}
-
-// Snapshot is DeliverySnapshot: the main configuration and chain exits of
-// one delivery, captured before any remote fetch.
-type Snapshot struct {
-	ProfileID string
-	// MainJSON is json.dumps(main); every use parses it again (a fresh copy).
-	MainJSON string
-	// ChainNames is the frozenset of enabled chain group names.
-	ChainNames []any
-}
-
-// Capture is DeliverySnapshot.capture(profile_id, main, profile=profile);
-// profile may be nil.
-func Capture(profileID string, main, profile *jsonx.Object) (*Snapshot, error) {
-	var names []any
-	if profile != nil && profile.Len() > 0 {
-		groups, err := pyIter(profile.GetOr("proxy_groups", []any{}))
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range groups {
-			g, ok := item.(*jsonx.Object)
-			if !ok {
-				return nil, attributeError(item, "get")
-			}
-			if !jsonx.Equal(g.Value("type"), "chain") || !jsonx.Truthy(g.GetOr("enabled", true)) {
-				continue
-			}
-			name, present := g.Get("name")
-			if !present {
-				return nil, keyError("name")
-			}
-			if !hashable(name) {
-				return nil, typeError("unhashable type: '" + pyTypeName(name) + "'")
-			}
-			if !containsEqual(names, name) {
-				names = append(names, name)
-			}
-		}
-	}
-	text, err := jsonx.Encode(mainValue(main), jsonx.Options{EnsureASCII: true})
-	if err != nil {
-		return nil, err
-	}
-	return &Snapshot{ProfileID: profileID, MainJSON: string(text), ChainNames: names}, nil
-}
-
-func mainValue(main *jsonx.Object) any {
+// CaptureDelivery freezes a validated graph once before fetching any source.
+func CaptureDelivery(profileID string, main *yamlx.Node, profile *model.Profile) (*DeliverySnapshot, error) {
 	if main == nil {
-		return nil
+		main = yamlx.Null()
 	}
-	return main
-}
-
-// Main is json.loads(self.main_json): a fresh copy of the captured main.
-func (s *Snapshot) Main() (*jsonx.Object, error) {
-	value, err := jsonx.Parse([]byte(s.MainJSON))
+	checked, err := yamlx.Encode(main)
 	if err != nil {
 		return nil, err
 	}
-	main, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, attributeError(value, "get")
+	names := map[string]bool{}
+	if profile != nil {
+		for _, group := range profile.ProxyGroups {
+			if group.Type == "chain" && (group.Enabled == nil || *group.Enabled) {
+				if group.Name == "" || model.IssueUnder(model.Issues(group), "name") {
+					return nil, &InputError{Field: "proxy_groups.name"}
+				}
+				names[group.Name] = true
+			}
+		}
 	}
-	return main, nil
+	return &DeliverySnapshot{ProfileID: profileID, main: checked, chainNames: names}, nil
 }
 
-// HasChains is the has_chains property.
-func (s *Snapshot) HasChains() (bool, error) {
-	if len(s.ChainNames) > 0 {
+// MainNode returns an independent graph for callers that need to edit it.
+func (s *DeliverySnapshot) MainNode() *yamlx.Node { return yamlx.CopyGraph(s.main) }
+func mapping(n *yamlx.Node) bool                  { n = yamlx.Resolve(n); return n != nil && n.Kind == yaml.MappingNode }
+func textValue(n *yamlx.Node) (string, bool) {
+	n = yamlx.Resolve(n)
+	if n == nil || n.Kind != yaml.ScalarNode || n.ShortTag() != "!!str" {
+		return "", false
+	}
+	return n.Value, true
+}
+func memberText(n *yamlx.Node, key string) string {
+	text, _ := textValue(yamlx.Get(n, key))
+	return text
+}
+func nonNull(n *yamlx.Node) bool { n = yamlx.Resolve(n); return n != nil && n.ShortTag() != "!!null" }
+func sequence(n *yamlx.Node) ([]*yamlx.Node, error) {
+	n = yamlx.Resolve(n)
+	if n == nil {
+		return nil, nil
+	}
+	if n.Kind != yaml.SequenceNode {
+		return nil, dialerErr(msgTopologyShape)
+	}
+	return n.Content, nil
+}
+
+// HasChains detects both managed chain exits and emitted dialer references.
+func (s *DeliverySnapshot) HasChains() (bool, error) {
+	if len(s.chainNames) > 0 {
 		return true, nil
 	}
-	main, err := s.Main()
+	if !mapping(s.main) {
+		return false, &InputError{Field: "main"}
+	}
+	proxies, err := sequence(yamlx.Get(s.main, "proxies"))
 	if err != nil {
 		return false, err
 	}
-	proxies, err := pyIter(main.GetOr("proxies", []any{}))
-	if err != nil {
-		return false, err
-	}
-	for _, item := range proxies {
-		p, ok := item.(*jsonx.Object)
-		if !ok {
-			return false, attributeError(item, "get")
+	for _, proxy := range proxies {
+		if !mapping(proxy) {
+			return false, &InputError{Field: "proxies"}
 		}
-		if p.Value("dialer-proxy") != nil {
+		if nonNull(yamlx.Get(proxy, "dialer-proxy")) {
 			return true, nil
 		}
 	}
-	providersValue := main.GetOr("proxy-providers", jsonx.NewObject())
-	providers, ok := providersValue.(*jsonx.Object)
-	if !ok {
-		return false, attributeError(providersValue, "values")
+	definitions := yamlx.Get(s.main, "proxy-providers")
+	if definitions != nil && !mapping(definitions) {
+		return false, &InputError{Field: "proxy-providers"}
 	}
-	for _, item := range providers.Values() {
-		p, ok := item.(*jsonx.Object)
-		if !ok {
-			return false, attributeError(item, "get")
+	for _, definition := range yamlx.Pairs(definitions) {
+		if !mapping(definition) {
+			return false, &InputError{Field: "proxy-providers"}
 		}
-		overrideValue := p.GetOr("override", jsonx.NewObject())
-		override, ok := overrideValue.(*jsonx.Object)
-		if !ok {
-			return false, attributeError(overrideValue, "get")
+		override := yamlx.Get(definition, "override")
+		if override != nil && !mapping(override) {
+			return false, &InputError{Field: "proxy-providers.override"}
 		}
-		if jsonx.Truthy(override.Value("dialer-proxy")) {
-			return true, nil
+		if target := yamlx.Get(override, "dialer-proxy"); nonNull(target) {
+			value, ok := textValue(target)
+			if !ok {
+				return false, dialerErr(msgTopologyShape)
+			}
+			if value != "" {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
 }
 
-// Adapt is snapshot.adapt(sub, proxies, chains=chains).
-func (s *Snapshot) Adapt(ctx context.Context, sub *jsonx.Object, proxies []any, chains bool) ([]any, error) {
-	return AdaptDelivered(ctx, s, sub, proxies, chains)
-}
-
-// ProviderName converts sub['name'] to the provider_name argument of
-// Validate: nil (None) for anything but a string, which can never name a
-// provider definition.
-func ProviderName(name any) *string {
-	if s, ok := name.(string); ok {
-		return &s
-	}
-	return nil
-}
-
-// Validate is snapshot.validate(proxies, force_chains=, provider_name=):
-// provider shapes, cross-artifact chain exit names and the emitted dialer
-// topology with this provider's payload.
-func (s *Snapshot) Validate(proxies any, forceChains bool, providerName *string) error {
-	if err := ValidateProxyShapes(proxies); err != nil {
+// Validate checks shapes, chain exits and the full emitted topology without mutation.
+func (s *DeliverySnapshot) Validate(proxies []*yamlx.Node, force bool, providerName *string) error {
+	if err := ValidateProxyNodes(proxies); err != nil {
 		return err
 	}
-	mainValue, err := jsonx.Parse([]byte(s.MainJSON))
-	if err != nil {
-		return err
-	}
-	main, isObject := mainValue.(*jsonx.Object)
-	list := proxies.([]any)
-	var names []any
-	for _, p := range list {
-		name, _ := providerMember(p, "name")
-		names = append(names, name)
-	}
-	for _, name := range names {
-		if containsEqual(s.ChainNames, name) {
-			return dialerErr("Provider 节点名称与代理链出口冲突")
+	names := make(map[string]bool, len(proxies))
+	for _, proxy := range proxies {
+		name := memberText(proxy, "name")
+		names[name] = true
+		if s.chainNames[name] {
+			return dialerErr(msgChainConflict)
 		}
 	}
-	if !isObject {
-		if providerName != nil {
-			return attributeError(mainValue, "get")
-		}
-		return typeError("'" + pyTypeName(mainValue) + "' object is not a mapping")
+	if !mapping(s.main) {
+		return &InputError{Field: "main"}
 	}
-	definitions, _ := main.GetOr("proxy-providers", jsonx.NewObject()).(*jsonx.Object)
-	if providerName != nil && definitions.Has(*providerName) {
-		sourceValue := definitions.GetOr(*providerName, jsonx.NewObject())
-		payloads := jsonx.NewObject()
-		for name, value := range definitions.All() {
-			if name == *providerName {
-				payloads.Set(name, list)
-				continue
-			}
-			// source.get('url') is only evaluated for the other definitions.
-			source, ok := sourceValue.(*jsonx.Object)
-			if !ok {
-				return attributeError(sourceValue, "get")
-			}
-			if !jsonx.Truthy(source.Value("url")) {
-				continue
-			}
-			definition, ok := value.(*jsonx.Object)
-			if !ok {
-				return attributeError(value, "get")
-			}
-			if jsonx.Equal(definition.Value("url"), source.Value("url")) {
-				payloads.Set(name, list)
-			}
-		}
-		chains, err := s.HasChains()
-		if err != nil {
-			return err
-		}
-		return convert.ValidateEmitted(main, convert.EmitOptions{ForceChains: chains || forceChains, ProviderProxies: payloads})
-	}
-	mainProxies, err := pyIter(main.GetOr("proxies", []any{}))
-	if err != nil {
-		return err
-	}
-	combined := []any{}
-	for _, item := range mainProxies {
-		p, ok := item.(*jsonx.Object)
-		if !ok {
-			return subscriptError(item)
-		}
-		name, present := p.Get("name")
-		if !present {
-			return keyError("name")
-		}
-		if !containsEqual(names, name) {
-			combined = append(combined, p)
-		}
-	}
-	combined = append(combined, list...)
-	emitted := main.Clone()
-	emitted.Set("proxies", combined)
 	chains, err := s.HasChains()
 	if err != nil {
 		return err
 	}
-	return convert.ValidateEmitted(emitted, convert.EmitOptions{ForceChains: chains || forceChains})
-}
-
-// AdaptDelivered is adapt_delivered(snapshot, sub, proxies, chains=): a
-// subscription's own chained nodes as delivered with the snapshot's main
-// configuration. A nil snapshot stands for an object without main_json.
-func AdaptDelivered(ctx context.Context, snapshot *Snapshot, sub *jsonx.Object, proxies []any, chains bool) ([]any, error) {
-	if snapshot == nil || !jsonx.Truthy(sub.Value("id")) {
-		return proxies, nil
-	}
-	name := sub.GetOr("name", "")
-	main, err := snapshot.Main()
-	if err != nil {
-		return nil, err
-	}
-	record, err := dialerRecord(ctx, sub)
-	if err != nil {
-		return nil, err
-	}
-	subscription, ok := name.(string)
-	if !ok {
-		subscription = jsonx.Str(name)
-	}
-	return subs.AdaptSubscriptionProxies(subscription, proxies, main, record, chains), nil
-}
-
-// dialerRecord is subscription_dialers.dialer_record(sub) with its cache
-// and download-cache reads.
-func dialerRecord(ctx context.Context, sub *jsonx.Object) (*jsonx.Object, error) {
-	id, present := sub.Get("id")
-	if !present {
-		return nil, keyError("id")
-	}
-	cache, err := substore.LoadSubscriptionCache(ctx, idText(id))
-	if err != nil {
-		return nil, err
-	}
-	return subs.DialerRecord(sub, cache, func(url string) (string, bool) {
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return "", false
-		}
-		downloaded, err := r.ReadSharedJSON(ctx, refresh.DownloadCachePath(url))
-		if err != nil || downloaded == nil {
-			return "", false
-		}
-		text, ok := downloaded.Value("text").(string)
-		return text, ok
-	})
-}
-
-// SubscriptionDialerRecord reads one subscription's cached airport topology so
-// aggregation renderers can freeze it once for every proxy in the snapshot.
-func SubscriptionDialerRecord(ctx context.Context, sub *jsonx.Object) (*jsonx.Object, error) {
-	return dialerRecord(ctx, sub)
-}
-
-func idText(id any) string {
-	if s, ok := id.(string); ok {
-		return s
-	}
-	return jsonx.Str(id)
-}
-
-// ValidateProxyShapes is validate_proxy_shapes(proxies).
-func ValidateProxyShapes(proxies any) error {
-	list, ok := proxies.([]any)
-	if !ok {
-		return shapeError("Provider proxies 必须是数组", "proxies")
-	}
-	for index, proxy := range list {
-		isDict := providerMapping(proxy)
-		name, hasName := providerMember(proxy, "name")
-		text, isText := name.(string)
-		if !isDict || !isText || pystr.Strip(text) == "" {
-			if isDict && hasName {
-				return shapeError("Provider 代理必须是含非空 name 的对象", "proxies", index, "name")
+	opts := convert.TopologyOptions{ForceChains: chains || force}
+	definitions := yamlx.Get(s.main, "proxy-providers")
+	if providerName != nil && yamlx.Get(definitions, *providerName) != nil {
+		source := yamlx.Get(definitions, *providerName)
+		opts.ProviderProxies = map[string][]*yamlx.Node{*providerName: proxies}
+		address := memberText(source, "url")
+		if address != "" {
+			for name, def := range yamlx.Pairs(definitions) {
+				if memberText(def, "url") == address {
+					opts.ProviderProxies[name] = proxies
+				}
 			}
-			return shapeError("Provider 代理必须是含非空 name 的对象", "proxies", index)
 		}
-		if refs, present := providerMember(proxy, "proxies"); present {
-			refList, ok := refs.([]any)
-			bad := !ok
-			for _, item := range refList {
-				s, ok := item.(string)
-				if !ok || pystr.Strip(s) == "" {
+		return topologyError(convert.ValidateTopology(s.main, opts))
+	}
+	originals, err := sequence(yamlx.Get(s.main, "proxies"))
+	if err != nil {
+		return err
+	}
+	combined := make([]*yamlx.Node, 0, len(originals)+len(proxies))
+	for _, proxy := range originals {
+		name, ok := textValue(yamlx.Get(proxy, "name"))
+		if !mapping(proxy) || !ok {
+			return dialerErr(msgTopologyShape)
+		}
+		if !names[name] {
+			combined = append(combined, proxy)
+		}
+	}
+	combined = append(combined, proxies...)
+	// Only own the root container. ValidateTopology is read-only.
+	root := *yamlx.Resolve(s.main)
+	root.Content = slices.Clone(root.Content)
+	yamlx.Set(&root, "proxies", yamlx.Seq(combined...))
+	return topologyError(convert.ValidateTopology(&root, opts))
+}
+func topologyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if isStrategyReference(err) {
+		return err
+	}
+	result := dialerErr(err.Error())
+	result.cause = err
+	return result
+}
+
+// ValidateProxyNodes checks provider metadata before engine normalization.
+func ValidateProxyNodes(proxies []*yamlx.Node) error {
+	for index, proxy := range proxies {
+		name, ok := textValue(yamlx.Get(proxy, "name"))
+		if !mapping(proxy) || !ok || strings.TrimSpace(name) == "" {
+			if mapping(proxy) && yamlx.Get(proxy, "name") != nil {
+				return shapeError(msgProxyName, proxyField(index, "name"))
+			}
+			return shapeError(msgProxyName, proxyField(index, ""))
+		}
+		if refs := yamlx.Get(proxy, "proxies"); refs != nil {
+			list, err := sequence(refs)
+			bad := err != nil
+			for _, ref := range list {
+				text, ok := textValue(ref)
+				if !ok || strings.TrimSpace(text) == "" {
 					bad = true
 					break
 				}
 			}
 			if bad {
-				return shapeError("Provider proxies 引用必须是字符串数组", "proxies", index, "proxies")
+				return shapeError(msgProxyRefs, proxyField(index, "proxies"))
 			}
 		}
-		if kind, present := providerMember(proxy, "type"); present {
-			if _, ok := kind.(string); !ok {
-				return shapeError("Provider type 必须是字符串", "proxies", index, "type")
+		if kind := yamlx.Get(proxy, "type"); kind != nil {
+			if _, ok := textValue(kind); !ok {
+				return shapeError(msgProxyType, proxyField(index, "type"))
 			}
 		}
 	}
 	return nil
 }
-
-// loadProviderProxies is _load_provider_proxies(text, name=, path=, kind=,
-// source_label=). Content errors carry their source and owner; other load
-// errors (Python: not yaml.YAMLError) are returned unchanged.
-func loadProviderProxies(text string, name, path any, kind, sourceLabel string) ([]any, error) {
+func readProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
 	data, err := yamlx.Parse([]byte(text))
+	wrap := func(err, errorCause error) error {
+		return providerContext(providerSourceError(err, errorCause, text, sourceLabel), name, path, kind)
+	}
 	if err != nil {
-		if cause := yamlCause(err); cause != nil {
-			return nil, providerContext(providerSourceError(err, cause, text, sourceLabel), name, path, kind)
+		return nil, wrap(err, yamlCause(err))
+	}
+	if !mapping(data) {
+		return nil, wrap(dialerErr(msgProviderRoot), nil)
+	}
+	list := yamlx.Get(data, "proxies")
+	if list == nil {
+		return []*yamlx.Node{}, nil
+	}
+	if err := yamlx.ProjectJSONKeys(list, yamlx.StringifyScalarKeys); err != nil {
+		return nil, wrap(err, yamlCause(err))
+	}
+	if _, err := yamlx.ToJSON(list); err != nil {
+		return nil, wrap(err, yamlCause(err))
+	}
+	list = yamlx.Resolve(list)
+	if list.Kind != yaml.SequenceNode {
+		return nil, wrap(shapeError(msgProxyList, FieldPath{{Key: "proxies"}}), nil)
+	}
+	if err := ValidateProxyNodes(list.Content); err != nil {
+		return nil, wrap(err, nil)
+	}
+	return list.Content, nil
+}
+
+// ParseNodes validates source metadata before applying shared engine normalization.
+func ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
+	nodes, err := readProviderNodes(text, name, path, msgSubscription, msgSubscriptionSource)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*yamlx.Node, 0, len(nodes))
+	for _, node := range nodes {
+		checked, err := yamlx.Encode(node)
+		if err != nil {
+			return nil, err
 		}
-		return nil, err
+		owned := checked
+		convert.FixProxyNode(owned)
+		result = append(result, owned)
 	}
-	if data.Kind != yaml.MappingNode {
-		e := dialerErr("Provider 必须是 YAML 对象\n字段：文档根节点")
-		return nil, providerContext(providerSourceError(e, nil, text, sourceLabel), name, path, kind)
-	}
-	proxyNode := yamlx.Get(data, "proxies")
-	if proxyNode == nil {
-		return []any{}, nil
-	}
-	if err := yamlx.ProjectJSONKeys(proxyNode, yamlx.StringifyScalarKeys); err != nil {
-		return nil, providerContext(providerSourceError(err, yamlCause(err), text, sourceLabel), name, path, kind)
-	}
-	encoded, err := yamlx.ToJSON(proxyNode)
-	if err != nil {
-		return nil, providerContext(providerSourceError(err, yamlCause(err), text, sourceLabel), name, path, kind)
-	}
-	proxies, err := jsonx.Parse(encoded)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateProxyShapes(proxies); err != nil {
-		return nil, providerContext(providerSourceError(err, nil, text, sourceLabel), name, path, kind)
-	}
-	return proxies.([]any), nil
+	return result, nil
 }
 
-// ParseProviderProxies is parse_provider_proxies(text, name=, path=):
-// reject malformed metadata before legacy field normalization can mask it,
-// then substore.ParseProxiesFromYAML.
-func ParseProviderProxies(text string, name, path any) ([]any, error) {
-	if _, err := loadProviderProxies(text, orEmpty(name), orEmpty(path), "订阅", "本次订阅返回的内容"); err != nil {
-		return nil, err
-	}
-	return substore.ParseProxiesFromYAML(text)
-}
-
-func orEmpty(v any) any {
-	if v == nil {
-		return ""
-	}
-	return v
-}
-
-// PrepareOptions are the keyword arguments of prepare_subscription_provider.
-type PrepareOptions struct {
-	// Fetch is fetch(sub_id, url); nil = Env.Fetch.
-	Fetch                  refresh.SourceFetch
-	AllowTransportFallback bool
-	// SourcePath is source_path (nil = '').
-	SourcePath any
-	// SourcePrepared means Fetch already resolves the bundle's captured
-	// source under its refresh policy.
-	SourcePrepared bool
-}
-
-// PrepareSubscriptionProvider is prepare_subscription_provider(sub, config,
-// snapshot, ...): prepare without publishing node caches, retaining the
-// subscription's name on failure. The result's CacheUpdates are staged.
-func PrepareSubscriptionProvider(ctx context.Context, sub, config *jsonx.Object, snapshot *Snapshot, opts PrepareOptions) (*Rendered, error) {
-	// PORTING rule 4b: Python finishes the fetch and validation after the
-	// client went away; Runtime shutdown and the fetches' own timeouts bound I/O.
+// DialerRecord freezes a source's cached or downloaded airport topology.
+func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersData, error) {
 	ctx = lifecycle.Detach(ctx)
-	opts.SourcePath = orEmpty(opts.SourcePath)
-	result, err := prepareSubscriptionProvider(ctx, sub, snapshot, opts)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if sub.ID == "" || model.IssueUnder(model.Issues(sub), "id") {
+		return nil, &InputError{Field: "subscription.id"}
+	}
+	cache, err := substore.LoadCache(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	var view *subs.SubscriptionCache
+	if cache != nil {
+		view = &subs.SubscriptionCache{Nodes: cache.Nodes}
+		if cache.Metadata != nil {
+			raw, err := model.Marshal(cache.Metadata)
+			if err != nil {
+				return nil, err
+			}
+			var metadata subs.SourceMetadata
+			if err := json.Unmarshal(raw, &metadata); err != nil {
+				return nil, err
+			}
+			view.Metadata = &metadata
+		}
+	}
+	return subs.SourceDialers(ctx, sub, view, func(ctx context.Context, address string) (string, bool) {
+		r, err := repo.GetRepository(ctx)
+		if err != nil {
+			return "", false
+		}
+		raw, err := r.ReadSharedBytes(ctx, refresh.DownloadCachePath(address))
+		if err != nil {
+			return "", false
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(raw, &body) != nil {
+			return "", false
+		}
+		return body.Text, true
+	})
+}
+
+// AdaptNodes applies airport dialers against this delivery's immutable graph.
+func (s *DeliverySnapshot) AdaptNodes(ctx context.Context, sub model.Subscription, proxies []*yamlx.Node, chains bool) ([]*yamlx.Node, error) {
+	if s == nil || sub.ID == "" {
+		return proxies, nil
+	}
+	record, err := DialerRecord(ctx, sub)
+	if err != nil {
+		return nil, err
+	}
+	return subs.AdaptProxies(sub.Name, proxies, s.main, record, chains)
+}
+
+// SubscriptionOptions controls source reuse and transport fallback.
+type SubscriptionOptions struct {
+	Fetch                  refresh.FetchSourceFn
+	AllowTransportFallback bool
+	SourcePath             string
+	SourcePrepared         bool
+}
+
+// PrepareSubscription stages one provider without publishing its cache.
+func PrepareSubscription(ctx context.Context, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := prepareSubscription(ctx, sub, snapshot, opts)
 	if err != nil && isStrategyReference(err) {
-		return nil, providerContext(err, sub.GetOr("name", ""), opts.SourcePath, "订阅")
+		return nil, providerContext(err, sub.Name, opts.SourcePath, msgSubscription)
 	}
 	return result, err
 }
-
-func requiredKey(o *jsonx.Object, key string) (any, error) {
-	v, present := o.Get(key)
-	if !present {
-		return nil, keyError(key)
+func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
+	if sub.ID == "" || model.IssueUnder(model.Issues(sub), "id") {
+		return nil, &InputError{Field: "subscription.id"}
 	}
-	return v, nil
-}
-
-func prepareSubscriptionProvider(ctx context.Context, sub *jsonx.Object, snapshot *Snapshot, opts PrepareOptions) (*Rendered, error) {
-	env := currentEnv()
+	env := currentDeliveryEnv()
 	fetch := opts.Fetch
 	if fetch == nil {
 		fetch = env.Fetch
 	}
-	var update *CacheUpdate
-	var proxies []any
-	have := false
+	var update *CacheWrite
+	var proxies []*yamlx.Node
 	var transportErr error
-	if jsonx.Truthy(sub.Value("url")) {
+	have := false
+	if sub.URL != "" {
 		err := func() error {
-			var result *substore.SubscriptionResult
+			var result *refresh.SourceResult
 			var err error
 			if opts.SourcePrepared {
-				id, err := requiredKey(sub, "id")
-				if err != nil {
-					return err
-				}
-				result, err = fetch(ctx, idText(id), idText(sub.Value("url")))
-				if err != nil {
-					return err
-				}
-			} else if result, err = refresh.FetchSubscriptionSource(ctx, sub, fetch); err != nil {
-				return err
+				result, err = fetch(ctx, sub.ID, sub.URL)
+			} else {
+				result, err = refresh.FetchSource(ctx, sub, fetch)
 			}
-			raw, err := ParseProviderProxies(result.Text, sub.GetOr("name", ""), opts.SourcePath)
+			if canceled := ctx.Err(); canceled != nil {
+				return canceled
+			}
 			if err != nil {
 				return err
 			}
-			adapted, err := AdaptDelivered(ctx, snapshot, sub, subs.FilterSubscriptionItems(sub, raw), true)
+			if result == nil {
+				return &InputError{Field: "subscription response"}
+			}
+			raw, err := ParseNodes(result.Text, sub.Name, opts.SourcePath)
 			if err != nil {
 				return err
 			}
-			name, err := requiredKey(sub, "name")
+			adapted, err := snapshot.AdaptNodes(ctx, sub, subs.FilterProxies(sub, raw), true)
 			if err != nil {
 				return err
 			}
-			if err := snapshot.Validate(adapted, false, ProviderName(name)); err != nil {
+			if err := snapshot.Validate(adapted, false, &sub.Name); err != nil {
 				return err
 			}
 			if len(raw) > 0 && result.Source != "cache" && result.Source != "prepared_yaml" {
-				nodes, err := substore.ProxiesToNodes(raw)
+				nodes, err := substore.ProxyNodes(raw)
 				if err != nil {
 					return err
 				}
-				id, err := requiredKey(sub, "id")
-				if err != nil {
-					return err
-				}
-				for _, item := range nodes {
-					node := item.(*jsonx.Object)
-					node.Set("subscription_id", id)
-					node.Set("subscription_name", name)
-					if !node.Has("id") {
-						node.Set("id", env.NodeID())
+				for i := range nodes {
+					if err := nodeIdentity(&nodes[i], sub, env.NodeID); err != nil {
+						return err
 					}
 				}
-				metadata, err := refresh.SourceCacheMetadata(sub, result)
+				meta, err := refresh.CacheMetadata(ctx, sub, result)
 				if err != nil {
 					return err
 				}
-				update = &CacheUpdate{SubID: idText(id), Nodes: nodes, Metadata: metadata}
+				var metadata substore.CacheMetadata
+				if meta != nil {
+					data, err := model.Marshal(meta)
+					if err != nil {
+						return err
+					}
+					if err := json.Unmarshal(data, &metadata); err != nil {
+						return err
+					}
+				}
+				update = &CacheWrite{SubID: sub.ID, Nodes: nodes, Metadata: &metadata}
 			}
 			proxies, have = adapted, true
 			return nil
 		}()
 		if err != nil {
-			if isStrategyReference(err) {
+			if isStrategyReference(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil, err
 			}
-			transportErr, proxies, have = err, nil, false
+			transportErr = err
 		}
 	}
 	if !have {
-		id, err := requiredKey(sub, "id")
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		cache, err := substore.LoadCache(ctx, sub.ID)
 		if err != nil {
 			return nil, err
 		}
-		cache, err := substore.LoadSubscriptionCache(ctx, idText(id))
-		if err != nil {
-			return nil, err
+		if cache != nil {
+			for _, issue := range model.Issues(cache) {
+				if issue.Path == "nodes" {
+					return nil, dialerErr(msgNodesList)
+				}
+			}
 		}
-		if cache == nil || cache.Len() == 0 || !jsonx.Truthy(cache.Value("nodes")) {
+		if cache == nil || len(cache.Nodes) == 0 {
 			if opts.AllowTransportFallback {
 				chains, err := snapshot.HasChains()
 				if err != nil {
 					return nil, err
 				}
 				if !chains {
-					return &Rendered{Content: "", CacheUpdates: []CacheUpdate{}}, nil
+					return &Artifact{CacheUpdates: []CacheWrite{}}, nil
 				}
 			}
 			detail := ""
 			if transportErr != nil {
-				detail = "\n原始诊断：" + diag.FailureText(transportErr.Error(), nil, 0)
+				detail = fmt.Sprintf(msgOriginalDiagnostic, diag.FailureText(transportErr.Error(), nil, 0))
 			}
-			return nil, dialerErr("订阅没有可用缓存或远程代理" + detail)
+			return nil, dialerErr(msgNoSource + detail)
 		}
-		nodes := cache.Value("nodes")
-		if err := convert.ValidateShapes(jsonx.Obj("nodes", nodes), false); err != nil {
-			return nil, err
+		if err := convert.ConfigShapes(&model.Config{Nodes: cache.Nodes}, false); err != nil {
+			return nil, topologyError(err)
 		}
-		list, ok := nodes.([]any)
-		if !ok {
-			return nil, typeError("'" + pyTypeName(nodes) + "' object is not iterable")
-		}
-		converted := []any{}
-		for _, item := range subs.FilterSubscriptionItems(sub, list) {
-			node, ok := item.(*jsonx.Object)
-			if !ok {
-				return nil, attributeError(item, "get")
+		proxies = []*yamlx.Node{}
+		for _, node := range subs.FilterNodes(sub, cache.Nodes) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
-			p, err := convert.ConvertNodeToMihomo(ctx, node, env.converter())
+			proxy, err := convert.NodeProxy(ctx, node, env.converter())
 			if err != nil {
 				return nil, err
 			}
-			if p != nil && p.Len() > 0 {
-				converted = append(converted, p)
+			if proxy != nil && len(proxy.Content) > 0 {
+				proxies = append(proxies, proxy)
 			}
 		}
-		if proxies, err = AdaptDelivered(ctx, snapshot, sub, converted, true); err != nil {
+		proxies, err = snapshot.AdaptNodes(ctx, sub, proxies, true)
+		if err != nil {
 			return nil, err
 		}
 	}
-	name, err := requiredKey(sub, "name")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var identity model.Fields
+	identityJSON, err := model.Marshal(sub)
 	if err != nil {
 		return nil, err
 	}
-	if err := snapshot.Validate(proxies, false, ProviderName(name)); err != nil {
+	if err := json.Unmarshal(identityJSON, &identity); err != nil {
 		return nil, err
 	}
-	node, err := yamlbridge.Encode(jsonx.Obj("proxies", proxies))
+	if !identity.Has("name") {
+		return nil, &InputError{Field: "subscription.name"}
+	}
+	if err := snapshot.Validate(proxies, false, &sub.Name); err != nil {
+		return nil, err
+	}
+	data, err := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(proxies...)))
 	if err != nil {
 		return nil, err
 	}
-	data, err := yamlx.Marshal(node)
-	content := string(data)
-	if err != nil {
-		return nil, err
-	}
-	updates := []CacheUpdate{}
+	updates := []CacheWrite{}
 	if update != nil {
 		updates = append(updates, *update)
 	}
-	return &Rendered{Name: idText(name), HasName: true, Content: content, CacheUpdates: updates}, nil
+	return &Artifact{Name: sub.Name, HasName: true, Content: string(data), CacheUpdates: updates}, nil
 }
 
-// ValidateRenderedBundle is validate_rendered_bundle(snapshot, providers):
-// validate all exact provider collections with one monotonic activation;
-// never fetch or render again. It returns whether dialer chains are active.
-func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, error) {
-	collections := make([][]any, len(providers))
+// ValidateArtifacts checks exact prepared content and all provider URL aliases.
+func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool, error) {
+	collections := make([][]*yamlx.Node, len(providers))
 	present := make([]bool, len(providers))
-	for i, p := range providers {
-		if p.Content == "" {
-			continue
-		}
-		proxies, err := loadProviderProxies(p.Content, p.nameValue(""), p.localPath(), "节点来源", "本次准备的文件内容")
-		if err != nil {
-			return false, err
-		}
-		collections[i], present[i] = proxies, true
-	}
 	chains, err := snapshot.HasChains()
 	if err != nil {
 		return false, err
 	}
-	if !chains {
-	outer:
-		for i, proxies := range collections {
-			if !present[i] {
-				continue
-			}
-			for _, p := range proxies {
-				if v, _ := providerMember(p, "dialer-proxy"); v != nil {
-					chains = true
-					break outer
-				}
+	for i, p := range providers {
+		if p.Content == "" {
+			continue
+		}
+		nodes, err := readProviderNodes(p.Content, p.Name, p.LocalPath, msgNodeSource, msgPreparedSource)
+		if err != nil {
+			return false, err
+		}
+		collections[i], present[i] = nodes, true
+		for _, node := range nodes {
+			if nonNull(yamlx.Get(node, "dialer-proxy")) {
+				chains = true
 			}
 		}
 	}
 	if chains {
 		for i, p := range providers {
 			if !present[i] {
-				return false, providerContext(dialerErr("拨号拓扑不能使用未验证的 Provider URL fallback"),
-					p.nameValue(""), p.localPath(), "节点来源")
+				return false, providerContext(dialerErr(msgUnverifiedFallback), p.Name, p.LocalPath, msgNodeSource)
 			}
 		}
 	}
-	if err := snapshot.Validate([]any{}, chains, nil); err != nil {
+	if err := snapshot.Validate(nil, chains, nil); err != nil {
 		return false, err
 	}
-	main, err := snapshot.Main()
-	if err != nil {
-		return false, err
-	}
-	payloads := jsonx.NewObject()
+	payloads := map[string][]*yamlx.Node{}
 	for i, p := range providers {
 		if !present[i] {
 			continue
 		}
-		name := p.nameValue(nil)
-		if err := snapshot.Validate(collections[i], chains, ProviderName(name)); err != nil {
-			if isDialerReference(err) {
-				return false, providerContext(err, name, p.localPath(), "节点来源")
-			}
-			return false, err
+		var name *string
+		if p.HasName {
+			name = &p.Name
 		}
-		if jsonx.Truthy(name) {
-			payloads.Set(jsonx.Str(name), collections[i])
+		if err := snapshot.Validate(collections[i], chains, name); err != nil {
+			return false, providerContext(err, p.Name, p.LocalPath, msgNodeSource)
+		}
+		if p.HasName && p.Name != "" {
+			payloads[p.Name] = collections[i]
 		}
 	}
-	if payloads.Len() > 0 {
-		definitionsValue := main.GetOr("proxy-providers", jsonx.NewObject())
-		definitions, ok := definitionsValue.(*jsonx.Object)
-		if !ok {
-			return false, attributeError(definitionsValue, "items")
-		}
-		type urlPayload struct {
-			url     any
-			proxies any
-		}
-		var byURL []urlPayload
-		for name, proxies := range payloads.All() {
-			value, present := definitions.Get(name)
-			if !present {
-				continue
-			}
-			definition, ok := value.(*jsonx.Object)
-			if !ok {
-				return false, attributeError(value, "get")
-			}
-			url := definition.Value("url")
-			if !jsonx.Truthy(url) {
-				continue
-			}
-			replaced := false
-			for i := range byURL {
-				if jsonx.Equal(byURL[i].url, url) {
-					byURL[i].proxies, replaced = proxies, true
-					break
-				}
-			}
-			if !replaced {
-				byURL = append(byURL, urlPayload{url, proxies})
-			}
-		}
-		for name, value := range definitions.All() {
-			definition, ok := value.(*jsonx.Object)
-			if !ok {
-				return false, attributeError(value, "get")
-			}
-			url := definition.Value("url")
-			for _, entry := range byURL {
-				if jsonx.Equal(entry.url, url) {
-					payloads.Set(name, entry.proxies)
-					break
-				}
+	definitions := yamlx.Get(snapshot.main, "proxy-providers")
+	byURL := map[string][]*yamlx.Node{}
+	// Provider order, including last-wins URL payloads, is deterministic.
+	for _, p := range providers {
+		if nodes, ok := payloads[p.Name]; ok {
+			if address := memberText(yamlx.Get(definitions, p.Name), "url"); address != "" {
+				byURL[address] = nodes
 			}
 		}
 	}
-	if err := convert.ValidateEmitted(main, convert.EmitOptions{ForceChains: chains, ProviderProxies: payloads, RequireProviders: chains}); err != nil {
-		return false, err
+	for name, definition := range yamlx.Pairs(definitions) {
+		if nodes, ok := byURL[memberText(definition, "url")]; ok {
+			payloads[name] = nodes
+		}
+	}
+	if err := convert.ValidateTopology(snapshot.main, convert.TopologyOptions{ForceChains: chains, RequireProviders: chains, ProviderProxies: payloads}); err != nil {
+		return false, topologyError(err)
 	}
 	return chains, nil
 }
 
-// CommitCacheUpdates is commit_cache_updates(updates).
-func CommitCacheUpdates(ctx context.Context, updates []CacheUpdate) error {
-	// Browser cancellation never interrupts the owner; shutdown before the first
-	// write commits nothing; a started batch is whole.
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return err
+// BundleRequest adds an explicitly requested source missing from the current view.
+type BundleRequest struct {
+	Kind         string
+	Subscription *model.Subscription
+	Aggregation  *model.Aggregation
+}
+
+func (r *BundleRequest) identity() (id, name string) {
+	if r.Subscription != nil {
+		return r.Subscription.ID, r.Subscription.Name
 	}
-	ctx = ctxx.Uninterruptible(ctx) // Local batches remain whole across nested owner Detach.
-	for _, u := range updates {
-		if _, err := substore.SaveSubscriptionNodes(ctx, u.SubID, u.Nodes, u.Metadata); err != nil {
-			return err
-		}
+	if r.Aggregation != nil {
+		return r.Aggregation.ID, r.Aggregation.Name
 	}
-	return nil
+	return "", ""
 }
 
-// Requested is the requested=(kind, resource) argument of
-// prepare_provider_bundle: Kind "subscription" or "aggregation".
-type Requested struct {
-	Kind     string
-	Resource *jsonx.Object
+// DeliveryOptions controls bundle preparation; it never commits staged writes.
+type DeliveryOptions struct {
+	Requested                         *BundleRequest
+	RenderAll, AllowTransportFallback bool
+	Prepared                          map[string]*Artifact
+	SubscriptionFetch                 refresh.FetchSourceFn
+	Progress                          func(string, bool)
 }
-
-// BundleOptions are the keyword arguments of prepare_provider_bundle.
-type BundleOptions struct {
-	Requested              *Requested
-	RenderAll              bool
-	AllowTransportFallback bool
-	// Prepared maps provider names to content prepared by the caller
-	// ({'content', 'cache_updates'}).
-	Prepared map[string]*Rendered
-	// SubscriptionFetch replaces the fetch of fetch_subscription_source.
-	SubscriptionFetch refresh.SourceFetch
-	// Progress is progress(message) / progress(message, force=True).
-	Progress func(message string, force bool)
-}
-
-type fetchFlight struct {
+type sourceKey struct{ id, address string }
+type sourceFlight struct {
 	done   chan struct{}
-	result *substore.SubscriptionResult
+	result *refresh.SourceResult
 	err    error
 }
 
-// PrepareProviderBundle is prepare_provider_bundle(config, main, ...):
-// capture once, render each original source once, validate all copies,
-// never commit. config and main are not modified.
-func PrepareProviderBundle(ctx context.Context, config, main *jsonx.Object, opts BundleOptions) ([]*Rendered, error) {
-	// PORTING rule 4b: the shared per-subscription fetches and the bundle
-	// validation run to completion like Python's request thread.
+// PrepareBundle freezes configuration once, fetches each source once and validates
+// every emitted copy before returning staged cache and artifact writes.
+func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, opts DeliveryOptions) ([]*Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
-	env := currentEnv()
-	var requestedName any
-	hasRequested := opts.Requested != nil
-	if hasRequested {
-		resource := opts.Requested.Resource
-		name, err := requiredKey(resource, "name")
-		if err != nil {
-			return nil, err
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if config == nil {
+		return nil, &InputError{Field: "config"}
+	}
+	env := currentDeliveryEnv()
+	requestedID, requestedName := "", ""
+	if opts.Requested != nil {
+		requestedID, requestedName = opts.Requested.identity()
+		if requestedID == "" {
+			return nil, &InputError{Field: "requested.id"}
 		}
-		requestedName = name
-		catalog := "subscription_aggregations"
-		if opts.Requested.Kind == "subscription" {
-			catalog = "subscriptions"
-		}
-		items, err := pyIter(config.GetOr(catalog, []any{}))
-		if err != nil {
-			return nil, err
-		}
-		found := false
-		for _, item := range items {
-			o, ok := item.(*jsonx.Object)
-			if !ok {
-				return nil, subscriptError(item)
-			}
-			id, err := requiredKey(o, "id")
-			if err != nil {
-				return nil, err
-			}
-			// resource['id'] is evaluated per item (any() over a generator).
-			resourceID, err := requiredKey(resource, "id")
-			if err != nil {
-				return nil, err
-			}
-			if jsonx.Equal(id, resourceID) {
-				found = true
-				break
+		owned := *config
+		config = &owned
+		if opts.Requested.Subscription != nil {
+			if !slices.ContainsFunc(config.Subscriptions, func(s model.Subscription) bool { return s.ID == requestedID }) {
+				config.Subscriptions = append(slices.Clone(config.Subscriptions), *opts.Requested.Subscription)
 			}
 		}
-		if !found {
-			config = config.DeepCopy()
-			list, _ := config.SetDefault(catalog, []any{}).([]any)
-			config.Set(catalog, append(list, resource.DeepCopy()))
+		if opts.Requested.Aggregation != nil {
+			if !slices.ContainsFunc(config.Aggregations, func(s model.Aggregation) bool { return s.ID == requestedID }) {
+				config.Aggregations = append(slices.Clone(config.Aggregations), *opts.Requested.Aggregation)
+			}
 		}
 	}
-	prepared := opts.Prepared
-	var mu sync.Mutex
-	fetchResults := map[string]*fetchFlight{}
-	subscriptions, err := pyIter(config.GetOr("subscriptions", []any{}))
+	profileID := config.ProfileID
+	if profileID == "" {
+		var err error
+		profileID, err = repo.GetDefaultProfileID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	snapshot, err := CaptureDelivery(profileID, main, config.Profile)
 	if err != nil {
 		return nil, err
 	}
-	if len(prepared) > 0 {
-		for _, item := range subscriptions {
-			sub, ok := item.(*jsonx.Object)
-			if !ok {
-				return nil, subscriptError(item)
-			}
-			name, err := requiredKey(sub, "name")
-			if err != nil {
-				return nil, err
-			}
-			nameText, ok := name.(string)
-			if !ok || prepared[nameText] == nil {
-				continue
-			}
-			id, err := requiredKey(sub, "id")
-			if err != nil {
-				return nil, err
-			}
+	main = snapshot.main
+	definitions := yamlx.Get(main, "proxy-providers")
+	if definitions != nil && !mapping(definitions) {
+		return nil, &InputError{Field: "proxy-providers"}
+	}
+	if opts.Requested != nil && yamlx.Get(definitions, requestedName) == nil {
+		main = snapshot.MainNode()
+		definitions = yamlx.Get(main, "proxy-providers")
+		if definitions == nil {
+			definitions = yamlx.Map()
+			yamlx.Set(main, "proxy-providers", definitions)
+		}
+		segment, suffix := "aggregations", "provider"
+		if opts.Requested.Subscription != nil {
+			segment, suffix = "subscriptions", "proxies"
+		}
+		yamlx.Set(definitions, requestedName, yamlx.Map(yamlx.Str("url"), yamlx.Str("/"+segment+"/"+requestedID+"/"+suffix), yamlx.Str("path"), yamlx.Str("./providers/"+requestedID+".yaml")))
+		snapshot, err = CaptureDelivery(profileID, main, config.Profile)
+		if err != nil {
+			return nil, err
+		}
+		main = snapshot.main
+		definitions = yamlx.Get(main, "proxy-providers")
+	}
+	subscriptions := make(map[string]model.Subscription, len(config.Subscriptions))
+	for _, sub := range config.Subscriptions {
+		subscriptions[sub.ID] = sub
+	}
+	var mu sync.Mutex
+	flights := map[sourceKey]*sourceFlight{}
+	for _, sub := range config.Subscriptions {
+		if prepared := opts.Prepared[sub.Name]; prepared != nil {
 			done := make(chan struct{})
 			close(done)
-			// The fetches look the key up with the str() of id and url.
-			fetchResults[fetchKey(idText(id), idText(sub.Value("url")))] = &fetchFlight{done: done,
-				result: &substore.SubscriptionResult{Text: prepared[nameText].Content, Source: "prepared_yaml"}}
+			flights[sourceKey{sub.ID, sub.URL}] = &sourceFlight{done: done, result: &refresh.SourceResult{Text: prepared.Content, Source: "prepared_yaml"}}
 		}
 	}
-	fetchSubscription := func(fetch refresh.SourceFetch) refresh.SourceFetch {
-		return func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
-			key := fetchKey(id, url)
+	fetchSource := func(fetch refresh.FetchSourceFn) refresh.FetchSourceFn {
+		return func(ctx context.Context, id, address string) (*refresh.SourceResult, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			key := sourceKey{id, address}
 			mu.Lock()
-			flight, exists := fetchResults[key]
+			flight, exists := flights[key]
 			if !exists {
-				flight = &fetchFlight{done: make(chan struct{})}
-				fetchResults[key] = flight
+				flight = &sourceFlight{done: make(chan struct{})}
+				flights[key] = flight
 			}
 			mu.Unlock()
 			if !exists {
-				flight.result, flight.err = func() (*substore.SubscriptionResult, error) {
-					sub, err := findByID(config.GetOr("subscriptions", []any{}), id)
-					if err != nil {
-						return nil, err
-					}
+				sub, ok := subscriptions[id]
+				if !ok {
+					flight.err = &InputError{Field: "subscription.id"}
+				} else {
 					use := opts.SubscriptionFetch
 					if use == nil {
 						use = fetch
 					}
-					return refresh.FetchSubscriptionSource(ctx, sub, use)
-				}()
+					flight.result, flight.err = refresh.FetchSource(ctx, sub, use)
+				}
+				if err := ctx.Err(); err != nil {
+					flight.result, flight.err = nil, err
+				}
 				close(flight.done)
 			}
-			<-flight.done
-			return flight.result, flight.err
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-flight.done:
+				return flight.result, flight.err
+			}
 		}
 	}
-
-	profileID, err := bundleProfileID(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	snapshot, err := Capture(profileID, main, config)
-	if err != nil {
-		return nil, err
-	}
-	definitionsValue := main.GetOr("proxy-providers", jsonx.NewObject())
-	definitions, ok := definitionsValue.(*jsonx.Object)
-	if !ok {
-		return nil, attributeError(definitionsValue, "items")
-	}
-	if hasRequested {
-		requestedText, isText := requestedName.(string)
-		if !isText || !definitions.Has(requestedText) {
-			main = main.DeepCopy()
-			value := main.SetDefault("proxy-providers", jsonx.NewObject())
-			definitions, ok = value.(*jsonx.Object)
+	type source struct{ url, name, path string }
+	sources := []source{}
+	seen := map[string]bool{}
+	for name, definition := range yamlx.Pairs(definitions) {
+		if !mapping(definition) {
+			return nil, &InputError{Field: "proxy-providers"}
+		}
+		address := ""
+		if n := yamlx.Get(definition, "url"); n != nil {
+			var ok bool
+			address, ok = textValue(n)
 			if !ok {
-				return nil, typeError("'" + pyTypeName(value) + "' object does not support item assignment")
-			}
-			resource := opts.Requested.Resource
-			segment, suffix := "aggregations", "provider"
-			if opts.Requested.Kind == "subscription" {
-				segment, suffix = "subscriptions", "proxies"
-			}
-			id := jsonx.Str(resource.Value("id"))
-			definitions.Set(jsonx.Str(requestedName), jsonx.Obj(
-				"url", "/"+segment+"/"+id+"/"+suffix,
-				"path", "./providers/"+id+".yaml"))
-			if snapshot, err = Capture(profileID, main, config); err != nil {
-				return nil, err
+				return nil, &InputError{Field: "proxy-providers.url"}
 			}
 		}
-	}
-	// sources: url -> first provider name using it.
-	var sourceURLs []string
-	sourceNames := map[string]string{}
-	for name, value := range definitions.All() {
-		definition, ok := value.(*jsonx.Object)
-		if !ok {
-			return nil, attributeError(value, "get")
-		}
-		urlValue := definition.GetOr("url", "")
-		url, ok := urlValue.(string)
-		if !ok {
-			return nil, typeError("provider url must be str, not " + pyTypeName(urlValue))
-		}
-		if _, seen := sourceNames[url]; !seen {
-			sourceNames[url] = name
-			sourceURLs = append(sourceURLs, url)
+		if !seen[address] {
+			seen[address] = true
+			sources = append(sources, source{address, name, memberText(definition, "path")})
 		}
 	}
-	var renderedURLs []string
-	rendered := map[string]*Rendered{}
-	nodes, err := pyIter(config.GetOr("nodes", []any{}))
-	if err != nil {
-		return nil, err
-	}
-	var opaque []any
-	for _, item := range nodes {
-		n, ok := item.(*jsonx.Object)
-		if !ok {
-			return nil, attributeError(item, "get")
-		}
-		ps := n.Value("proxy_string")
-		if !jsonx.Truthy(ps) {
-			continue
-		}
-		text, ok := ps.(string)
-		if !ok {
-			return nil, attributeError(ps, "strip")
-		}
-		parsed, err := convert.InspectStructuredProxyString(text)
-		if err != nil {
-			return nil, err
-		}
-		if parsed == nil {
-			id, err := requiredKey(n, "id")
+	opaque := map[string]bool{}
+	for _, node := range config.Nodes {
+		if node.ProxyString != nil && *node.ProxyString != "" {
+			parsed, err := convert.StructuredProxy(*node.ProxyString)
 			if err != nil {
 				return nil, err
 			}
-			if !containsEqual(opaque, id) {
-				opaque = append(opaque, id)
+			if parsed == nil {
+				opaque[node.ID] = true
 			}
 		}
 	}
-	pathOf := func(name string) any {
-		definition, _ := definitions.Value(name).(*jsonx.Object)
-		return definition.GetOr("path", "")
-	}
-
-	materializeInner := func(url, name string) error {
-		if p, ok := prepared[name]; ok && p != nil {
-			value := p.clone()
-			value.Name, value.HasName = name, true
-			if _, seen := rendered[url]; !seen {
-				renderedURLs = append(renderedURLs, url)
-			}
-			rendered[url] = value
-			return nil
+	rendered := map[string]*Artifact{}
+	renderOrder := []string{}
+	pathOf := func(address string) (string, error) {
+		parts, err := weburl.Parse(address)
+		if err != nil {
+			return "", err
 		}
-		path, err := urlPath(url)
+		return parts.Path, nil
+	}
+	materialize := func(source source) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path, err := pathOf(source.url)
 		if err != nil {
 			return err
 		}
-		var value *Rendered
-		switch {
-		case strings.Contains(path, "/subscriptions/"):
-			id := strings.Split(path[strings.LastIndex(path, "/subscriptions/")+len("/subscriptions/"):], "/")[0]
-			sub, err := findByID(config.GetOr("subscriptions", []any{}), id)
-			if err != nil {
-				return err
-			}
-			value, err = PrepareSubscriptionProvider(ctx, sub, config, snapshot, PrepareOptions{
-				Fetch:                  fetchSubscription(env.SubscriptionFetch),
-				AllowTransportFallback: opts.AllowTransportFallback,
-				SourcePrepared:         true,
-				SourcePath:             pathOf(name),
-			})
-			if err != nil {
-				return err
-			}
-		case strings.Contains(path, "/aggregations/"):
-			id := strings.Split(path[strings.LastIndex(path, "/aggregations/")+len("/aggregations/"):], "/")[0]
-			agg, err := findByID(config.GetOr("subscription_aggregations", []any{}), id)
-			if err != nil {
-				return err
-			}
-			value, err = currentAggregationProvider()(ctx, agg, config, main, fetchSubscription(env.AggregationFetch))
-			if err != nil {
-				return err
-			}
-			value = value.clone()
-			value.AggregationID = id
-		default:
-			return dialerErr("拨号拓扑 Provider 必须使用当前配置空间的订阅或聚合来源")
-		}
-		value.Name, value.HasName = name, true
-		if _, seen := rendered[url]; !seen {
-			renderedURLs = append(renderedURLs, url)
-		}
-		rendered[url] = value
-		return nil
-	}
-	materialize := func(url, name string) error {
-		path, err := urlPath(url)
-		if err != nil {
-			return err
-		}
-		kind := "订阅"
+		kind := msgSubscription
 		if strings.Contains(path, "/aggregations/") {
-			kind = "订阅聚合"
+			kind = msgAggregation
 		}
 		if opts.Progress != nil {
-			opts.Progress("正在准备"+kind+"「"+name+"」", false)
+			opts.Progress(fmt.Sprintf(msgPreparing, kind, source.name), false)
 		}
-		if err := materializeInner(url, name); err != nil {
+		result, err := func() (*Artifact, error) {
+			if prepared := opts.Prepared[source.name]; prepared != nil {
+				return prepared.clone(), nil
+			}
+			switch {
+			case strings.Contains(path, "/subscriptions/"):
+				id := strings.Split(path[strings.LastIndex(path, "/subscriptions/")+len("/subscriptions/"):], "/")[0]
+				sub, ok := subscriptions[id]
+				if !ok {
+					return nil, &InputError{Field: "subscription.id"}
+				}
+				return PrepareSubscription(ctx, sub, snapshot, SubscriptionOptions{Fetch: fetchSource(env.SubscriptionFetch), AllowTransportFallback: opts.AllowTransportFallback, SourcePrepared: true, SourcePath: source.path})
+			case strings.Contains(path, "/aggregations/"):
+				id := strings.Split(path[strings.LastIndex(path, "/aggregations/")+len("/aggregations/"):], "/")[0]
+				for _, agg := range config.Aggregations {
+					if agg.ID == id {
+						result, err := currentAggregationRenderer()(ctx, agg, config, main, snapshot, fetchSource(env.AggregationFetch))
+						if err != nil {
+							return nil, err
+						}
+						if result == nil {
+							return nil, &InputError{Field: "aggregation response"}
+						}
+						result = result.clone()
+						result.AggregationID = id
+						return result, nil
+					}
+				}
+				return nil, &InputError{Field: "aggregation.id"}
+			default:
+				return nil, dialerErr(msgProviderOrigin)
+			}
+		}()
+		if canceled := ctx.Err(); canceled != nil {
+			return canceled
+		}
+		if err != nil {
 			if isStrategyReference(err) {
-				return providerContext(err, name, pathOf(name), kind)
+				return providerContext(err, source.name, source.path, kind)
 			}
 			return err
 		}
+		result.Name, result.HasName = source.name, true
+		rendered[source.url] = result
+		renderOrder = append(renderOrder, source.url)
 		if opts.Progress != nil {
-			opts.Progress(kind+"「"+name+"」已准备", false)
+			opts.Progress(fmt.Sprintf(msgPrepared, kind, source.name), false)
 		}
 		return nil
 	}
-
-	aggregations, err := pyIter(config.GetOr("subscription_aggregations", []any{}))
+	chains, err := snapshot.HasChains()
 	if err != nil {
 		return nil, err
 	}
-	for _, url := range sourceURLs {
-		name := sourceNames[url]
-		path, err := urlPath(url)
+	for _, source := range sources {
+		path, err := pathOf(source.url)
 		if err != nil {
 			return nil, err
 		}
-		var agg *jsonx.Object
-		for _, item := range aggregations {
-			a, ok := item.(*jsonx.Object)
-			if !ok {
-				return nil, subscriptError(item)
-			}
-			id, err := requiredKey(a, "id")
-			if err != nil {
-				return nil, err
-			}
-			if strings.Contains(path, "/aggregations/"+jsonx.Str(id)+"/") {
-				agg = a
-				break
-			}
-		}
-		render := opts.RenderAll
+		render := opts.RenderAll || chains || opts.Requested != nil && source.name == requestedName
 		if !render {
-			chains, err := snapshot.HasChains()
-			if err != nil {
-				return nil, err
-			}
-			render = chains || (hasRequested && jsonx.Equal(name, requestedName))
-		}
-		if !render && agg != nil && agg.Len() > 0 {
-			members, err := pyIter(agg.GetOr("nodes", []any{}))
-			if err != nil {
-				return nil, err
-			}
-			for _, m := range members {
-				if containsEqual(opaque, m) {
-					render = true
+			for _, agg := range config.Aggregations {
+				if strings.Contains(path, "/aggregations/"+agg.ID+"/") {
+					for _, id := range agg.Nodes {
+						if opaque[id] {
+							render = true
+							break
+						}
+					}
 					break
 				}
 			}
 		}
 		if render {
-			if err := materialize(url, name); err != nil {
+			if err := materialize(source); err != nil {
 				return nil, err
 			}
 		}
 	}
-	active, err := snapshot.HasChains()
-	if err != nil {
-		return nil, err
-	}
-	if !active {
-	scan:
-		for _, url := range renderedURLs {
-			value := rendered[url]
-			if value.Content == "" {
+	if !chains {
+		for _, address := range renderOrder {
+			result := rendered[address]
+			if result.Content == "" {
 				continue
 			}
-			name := sourceNames[url]
-			proxies, err := loadProviderProxies(value.Content, name, pathOf(name), "节点来源", "本次准备的文件内容")
+			path := memberText(yamlx.Get(definitions, result.Name), "path")
+			nodes, err := readProviderNodes(result.Content, result.Name, path, msgNodeSource, msgPreparedSource)
 			if err != nil {
 				return nil, err
 			}
-			for _, p := range proxies {
-				if v, _ := providerMember(p, "dialer-proxy"); v != nil {
-					active = true
-					break scan
+			for _, node := range nodes {
+				if nonNull(yamlx.Get(node, "dialer-proxy")) {
+					chains = true
+					break
 				}
+			}
+			if chains {
+				break
 			}
 		}
 	}
-	if active {
-		for _, url := range sourceURLs {
-			if _, done := rendered[url]; !done {
-				if err := materialize(url, sourceNames[url]); err != nil {
+	if chains {
+		for _, source := range sources {
+			if rendered[source.url] == nil {
+				if err := materialize(source); err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
-	bundle := []*Rendered{}
-	for name, value := range definitions.All() {
-		definition := value.(*jsonx.Object)
-		url, _ := definition.Value("url").(string)
-		r, ok := rendered[url]
-		if !ok || !definition.Has("url") {
+	bundle := []*Artifact{}
+	for name, definition := range yamlx.Pairs(definitions) {
+		result := rendered[memberText(definition, "url")]
+		if result == nil || yamlx.Get(definition, "url") == nil {
 			continue
 		}
-		path, present := definition.Get("path")
-		if !present {
-			return nil, keyError("path")
+		path, ok := textValue(yamlx.Get(definition, "path"))
+		if !ok {
+			return nil, &InputError{Field: "proxy-providers.path"}
 		}
-		item := r.clone()
-		item.Name, item.HasName, item.URL, item.LocalPath = name, true, url, path
+		item := result.clone()
+		item.Name, item.HasName, item.URL, item.LocalPath = name, true, memberText(definition, "url"), path
 		bundle = append(bundle, item)
 	}
 	if opts.Progress != nil {
-		opts.Progress("正在校验节点来源与拨号引用关系（"+itoa(len(bundle))+" 个文件）", true)
+		opts.Progress(fmt.Sprintf(msgValidating, len(bundle)), true)
 	}
-	if _, err := ValidateRenderedBundle(snapshot, bundle); err != nil {
+	if _, err := ValidateArtifacts(snapshot, bundle); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return bundle, nil
 }
 
-// CommitProviderBundle is commit_provider_bundle(profile_id, bundle): only
-// call after the complete exact bundle passed validation.
-func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rendered) error {
-	// Browser cancellation never interrupts the owner; shutdown before the first
-	// write commits nothing; a started batch is whole.
+// CommitWrites publishes only while the originating Runtime remains live.
+func CommitWrites(ctx context.Context, updates []CacheWrite) error {
+	ctx = lifecycle.Detach(ctx)
+	for _, update := range updates {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, err := substore.SaveCache(ctx, update.SubID, update.Nodes, update.Metadata); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+// CommitArtifacts deduplicates staged writes and retains shutdown cancellation
+// through each repository leaf lock and atomic file commit.
+func CommitArtifacts(ctx context.Context, profileID string, bundle []*Artifact) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	ctx = ctxx.Uninterruptible(ctx) // Local batches remain whole across nested owner Detach.
-	var order []string
-	updates := map[string]CacheUpdate{}
-	var artifactOrder []string
+	var order, artifactOrder []string
+	updates := map[string]CacheWrite{}
 	artifacts := map[string]string{}
 	for _, item := range bundle {
-		for _, u := range item.CacheUpdates {
-			if _, seen := updates[u.SubID]; !seen {
-				order = append(order, u.SubID)
+		for _, update := range item.CacheUpdates {
+			if _, ok := updates[update.SubID]; !ok {
+				order = append(order, update.SubID)
 			}
-			updates[u.SubID] = u
+			updates[update.SubID] = update
 		}
 		if item.AggregationID != "" {
-			if _, seen := artifacts[item.AggregationID]; !seen {
+			if _, ok := artifacts[item.AggregationID]; !ok {
 				artifactOrder = append(artifactOrder, item.AggregationID)
 			}
 			artifacts[item.AggregationID] = item.Content
 		}
 	}
-	list := make([]CacheUpdate, 0, len(order))
+	list := make([]CacheWrite, 0, len(order))
 	for _, id := range order {
 		list = append(list, updates[id])
 	}
-	if err := CommitCacheUpdates(ctx, list); err != nil {
+	if err := CommitWrites(ctx, list); err != nil {
 		return err
 	}
 	r, err := repo.GetRepository(ctx)
@@ -1223,60 +1003,41 @@ func CommitProviderBundle(ctx context.Context, profileID string, bundle []*Rende
 			return err
 		}
 	}
-	return nil
+	return ctx.Err()
 }
 
-// bundleProfileID is config.get('profile_id') or get_default_profile_id().
-func bundleProfileID(ctx context.Context, config *jsonx.Object) (string, error) {
-	if value := config.Value("profile_id"); jsonx.Truthy(value) {
-		return idText(value), nil
-	}
-	return repo.GetDefaultProfileID(ctx)
-}
-
-func fetchKey(id, url any) string { return jsonx.Repr(id) + "\x00" + jsonx.Repr(url) }
-
-// findByID is next(s for s in items if s['id'] == id) (StopIteration when
-// none matches).
-func findByID(itemsValue any, id string) (*jsonx.Object, error) {
-	items, err := pyIter(itemsValue)
+// nodeIdentity adds receipt metadata with the shared ordered record codec. This
+// preserves the original cache-file framing while native callers use structs.
+func nodeIdentity(node *model.Node, sub model.Subscription, nextID func() string) error {
+	data, err := model.Marshal(node)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	for _, item := range items {
-		o, ok := item.(*jsonx.Object)
-		if !ok {
-			return nil, subscriptError(item)
-		}
-		value, err := requiredKey(o, "id")
+	var fields model.Fields
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for _, pair := range [][2]string{{"subscription_id", sub.ID}, {"subscription_name", sub.Name}} {
+		data, err := model.Marshal(pair[1])
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if jsonx.Equal(value, id) {
-			return o, nil
+		if err := fields.Set(pair[0], data); err != nil {
+			return err
 		}
 	}
-	return nil, &pyError{"StopIteration", ""}
-}
-
-// urlPath is the percent-decoded path of url.
-func urlPath(url string) (string, error) {
-	parts, err := weburl.Parse(url)
+	if node.ID == "" {
+		data, err := model.Marshal(nextID())
+		if err != nil {
+			return err
+		}
+		if err := fields.Set("id", data); err != nil {
+			return err
+		}
+	}
+	data, err = fields.MarshalJSON()
 	if err != nil {
-		return "", &pyError{"ValueError", err.Error()}
+		return err
 	}
-	return parts.Path, nil
-}
-
-func providerMember(value any, key string) (any, bool) {
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil {
-		return nil, false
-	}
-	return object.Get(key)
-}
-
-func providerMapping(value any) bool {
-	object, ok := value.(*jsonx.Object)
-	return ok && object != nil
+	return json.Unmarshal(data, node)
 }

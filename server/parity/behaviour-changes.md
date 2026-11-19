@@ -1,5 +1,19 @@
 # Deliberate behaviour changes
 
+## N8-8d — typed provider delivery and response identity
+
+- Provider快照持有只读Node图；stored group的错型enabled按共享R5读为缺省值，错型group数组
+  读为空列表。缺失或无效的必需名称仍明确拒绝。85条snapshot逐行独立预期执行真实Python拓扑
+  业务，仅注入批准的stored read view与native输入校验；另4条退役内部异常保留拒绝，改用
+  typed InputError／net/url.Error。原archive、业务中文和正常产物／缓存副作用保持原期待。
+- provider flight摘要使用共享jsonresp.Canonical与SHA-256，保留数字token、排序对象键；
+  这是瞬时single-flight key，无持久化身份迁移或离线兜底失效。独立精确JSON字节与负控验证。
+- 修复Go迁移遗留的关机绕过：浏览器断开仍完成已接管工作，但Runtime关机在每个写入点停止
+  后续缓存／聚合artifact／last-good发布，不再用Uninterruptible跨过shutdown。真实Runtime、
+  repo叶锁和两次缓存写之间关机的回归证明已完成前缀保留、后续不写、不补偿。
+- DNS辅助出口改为typed query pairs、规则文件行切分、标准regexp quoting、netip/netipx；
+  仅测试在原HTTP corpus入口投影退休的动态query参数，原输入和期望不动。没有新依赖。
+
 ## N8-8a provider fix review — strict identity discriminators
 
 - `proxies_order.type` and a strategy group's `type` must be JSON strings at

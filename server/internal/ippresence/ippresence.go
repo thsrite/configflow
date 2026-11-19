@@ -87,7 +87,7 @@ func hasIPLines(text string) (bool, error) {
 		return false, err
 	}
 	// An empty part comes back as a "# no ip rules" placeholder comment.
-	for _, line := range convert.PySplitlines(converted) {
+	for _, line := range convert.RuleLines(converted) {
 		if pystr.Strip(line) != "" && !strings.HasPrefix(strings.TrimLeftFunc(line, pystr.IsSpace), "#") {
 			return true, nil
 		}

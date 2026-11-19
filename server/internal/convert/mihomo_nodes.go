@@ -484,3 +484,27 @@ func ValidateProxyGraph(node *yamlx.Node) error {
 	}
 	return nil
 }
+
+type optionalNodeConverter struct{ source NodeConverter }
+
+// OptionalNodeConverter preserves the generation policy for optional remote
+// conversion: unavailable nodes are skipped, but Runtime shutdown always wins.
+func OptionalNodeConverter(source NodeConverter) NodeConverter {
+	return optionalNodeConverter{source: source}
+}
+func (c optionalNodeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if c.source == nil {
+		return nil, nil
+	}
+	node, err := c.source.ConvertProxy(ctx, text)
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
+	if err != nil {
+		return nil, nil
+	}
+	return node, nil
+}

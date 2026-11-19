@@ -370,7 +370,7 @@ func TestReviewN2AppendURLQueryKeepsRuleName(t *testing.T) {
 		"/api/rules/local/国外 规则":                "/api/rules/local/国外 规则?target=mihomo",
 		"https://cf.example/api/x?a=b c&d#frag": "https://cf.example/api/x?a=b%20c&d=&target=mihomo#frag",
 	} {
-		if got := appendURLQuery(in, [][2]any{{"target", "mihomo"}}); got != want {
+		if got, err := AppendQuery(in, [][2]string{{"target", "mihomo"}}); err != nil || got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
 	}

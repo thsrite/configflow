@@ -22,17 +22,20 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 // Locations is what provider_delivery calls in
@@ -73,25 +76,21 @@ func (PassthroughLocations) SourceError(message, _ string, line, _ *int, _ error
 	return message
 }
 
-// AggregationProvider is routes/aggregations.py
-// generate_aggregation_provider(agg, config=config, main_config=main,
-// persist=False, subscription_fetch=fetch, source_prepared=True) (C31).
-// The result needs Content and CacheUpdates; other keys of the Python dict
-// go to Extra.
-type AggregationProvider func(ctx context.Context, agg, config, main *jsonx.Object, fetch refresh.SourceFetch) (*Rendered, error)
+// AggregationRenderer prepares one typed source against a frozen configuration.
+type AggregationRenderer func(context.Context, model.Aggregation, *model.Config, *yamlx.Node, *DeliverySnapshot, refresh.FetchSourceFn) (*Artifact, error)
 
 // ErrAggregationProviderMissing is returned by the default
 // AggregationProvider (fail closed) until C31 registers the real one.
 var ErrAggregationProviderMissing = errors.New("provider: generate_aggregation_provider is not registered (C31)")
 
-func missingAggregationProvider(context.Context, *jsonx.Object, *jsonx.Object, *jsonx.Object, refresh.SourceFetch) (*Rendered, error) {
+func missingAggregationProvider(context.Context, model.Aggregation, *model.Config, *yamlx.Node, *DeliverySnapshot, refresh.FetchSourceFn) (*Artifact, error) {
 	return nil, ErrAggregationProviderMissing
 }
 
 var (
 	hooksMu             sync.RWMutex
 	locations           Locations           = PassthroughLocations{}
-	aggregationProvider AggregationProvider = missingAggregationProvider
+	aggregationProvider AggregationRenderer = missingAggregationProvider
 )
 
 // SetLocations registers A11's deployment_locations; nil restores the
@@ -107,9 +106,9 @@ func SetLocations(l Locations) (restore func()) {
 	return func() { SetLocations(previous) }
 }
 
-// SetAggregationProvider registers C31's generate_aggregation_provider;
+// SetAggregationRenderer registers the aggregation owner;
 // nil restores the fail-closed default. It returns a restore function.
-func SetAggregationProvider(fn AggregationProvider) (restore func()) {
+func SetAggregationRenderer(fn AggregationRenderer) (restore func()) {
 	if fn == nil {
 		fn = missingAggregationProvider
 	}
@@ -117,7 +116,7 @@ func SetAggregationProvider(fn AggregationProvider) (restore func()) {
 	previous := aggregationProvider
 	aggregationProvider = fn
 	hooksMu.Unlock()
-	return func() { SetAggregationProvider(previous) }
+	return func() { SetAggregationRenderer(previous) }
 }
 
 func currentLocations() Locations {
@@ -126,54 +125,71 @@ func currentLocations() Locations {
 	return locations
 }
 
-func currentAggregationProvider() AggregationProvider {
+func currentAggregationRenderer() AggregationRenderer {
 	hooksMu.RLock()
 	defer hooksMu.RUnlock()
 	return aggregationProvider
 }
 
-// Env holds what Python reaches through module globals that tests patch.
-type Env struct {
+// DeliveryEnv supplies typed source and node conversion collaborators.
+type DeliveryEnv struct {
 	// Fetch is sub_store_client.get_subscription_proxies_yaml, the default
 	// fetch of prepare_subscription_provider.
-	Fetch refresh.SourceFetch
+	Fetch refresh.FetchSourceFn
 	// SubscriptionFetch is routes.subscriptions.get_subscription_proxies_yaml
 	// (sub_store_client.get_subscription_proxies_yaml(sub_id, url)).
-	SubscriptionFetch refresh.SourceFetch
+	SubscriptionFetch refresh.FetchSourceFn
 	// AggregationFetch is routes.aggregations.get_subscription_proxies_yaml
 	// (the same function, patched separately in Python tests).
-	AggregationFetch refresh.SourceFetch
+	AggregationFetch refresh.FetchSourceFn
 	// Converter converts proxy strings of cached nodes (Sub-Store).
-	Converter convert.ProxyStringConverter
+	Converter convert.NodeConverter
 	// NodeID is f"node_{uuid.uuid4().hex[:8]}".
 	NodeID func() string
 }
 
-func defaultFetch(ctx context.Context, subID, url string) (*substore.SubscriptionResult, error) {
-	return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, subID, url, "", substore.FetchOptions{})
+func defaultFetch(ctx context.Context, subID, url string) (*refresh.SourceResult, error) {
+	result, err := substore.Default().Client.Fetch(ctx, subID, url, "", substore.FetchOptions{})
+	if err != nil || result == nil {
+		return nil, err
+	}
+	var traffic *refresh.Traffic
+	if result.Traffic != nil {
+		data, err := model.Marshal(result.Traffic)
+		if err != nil {
+			return nil, err
+		}
+		traffic = &refresh.Traffic{}
+		if err := json.Unmarshal(data, traffic); err != nil {
+			return nil, err
+		}
+	}
+	return &refresh.SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}, nil
 }
 
 func randomNodeID() string {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
+		return "node_" + strconv.FormatUint(nodeFallback.Add(1), 16)
 	}
 	return "node_" + hex.EncodeToString(b[:])
 }
 
-// DefaultEnv is the production environment.
-func DefaultEnv() *Env {
-	return &Env{Fetch: defaultFetch, SubscriptionFetch: defaultFetch, AggregationFetch: defaultFetch, NodeID: randomNodeID}
+var nodeFallback atomic.Uint64
+
+// DefaultDeliveryEnv is the production environment.
+func DefaultDeliveryEnv() *DeliveryEnv {
+	return &DeliveryEnv{Fetch: defaultFetch, SubscriptionFetch: defaultFetch, AggregationFetch: defaultFetch, NodeID: randomNodeID}
 }
 
 var (
 	envMu sync.Mutex
-	env   *Env
+	env   *DeliveryEnv
 )
 
-// SetEnv replaces the environment (nil = DefaultEnv) and returns a restore
+// SetDeliveryEnv replaces the environment (nil = DefaultDeliveryEnv) and returns a restore
 // function. Missing fields fall back to the defaults.
-func SetEnv(e *Env) (restore func()) {
+func SetDeliveryEnv(e *DeliveryEnv) (restore func()) {
 	envMu.Lock()
 	previous := env
 	env = e
@@ -185,10 +201,10 @@ func SetEnv(e *Env) (restore func()) {
 	}
 }
 
-func currentEnv() *Env {
+func currentDeliveryEnv() *DeliveryEnv {
 	envMu.Lock()
 	defer envMu.Unlock()
-	e := DefaultEnv()
+	e := DefaultDeliveryEnv()
 	if env != nil {
 		if env.Fetch != nil {
 			e.Fetch = env.Fetch
@@ -207,11 +223,11 @@ func currentEnv() *Env {
 	return e
 }
 
-func (e *Env) converter() convert.ProxyStringConverter {
+func (e *DeliveryEnv) converter() convert.NodeConverter {
 	if e.Converter != nil {
 		return e.Converter
 	}
-	return substore.Converter()
+	return convert.OptionalNodeConverter(substore.NativeConverter())
 }
 
 // SequentialNodeIDs returns a NodeID generator node_00000001, node_00000002,

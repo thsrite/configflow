@@ -264,7 +264,26 @@ func TestC05ReviewProfileHelperReferences(t *testing.T) {
 					}
 					params = append(params, decoded)
 				}
-				got, err := convert.AppendURLQuery(row.URL, params)
+				// The frozen recorder used dynamic urlencode arguments. Project its
+				// archived call shape only in this test; production accepts typed
+				// repeated string pairs and no longer implements Python coercion.
+				var pairs [][2]string
+				for _, pair := range params {
+					key := jsonx.Str(pair[0])
+					switch value := pair[1].(type) {
+					case []any:
+						for _, item := range value {
+							pairs = append(pairs, [2]string{key, jsonx.Str(item)})
+						}
+					case *jsonx.Object:
+						for _, name := range value.Keys() {
+							pairs = append(pairs, [2]string{key, name})
+						}
+					default:
+						pairs = append(pairs, [2]string{key, jsonx.Str(value)})
+					}
+				}
+				got, err := convert.AppendQuery(row.URL, pairs)
 				if row.Error != "" {
 					if err == nil {
 						t.Fatalf("accepted URL; want %s", row.Error)

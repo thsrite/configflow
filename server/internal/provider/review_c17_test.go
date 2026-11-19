@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -75,7 +76,12 @@ func TestReviewValidateSubscriptTexts(t *testing.T) {
 			t.Fatal(err)
 		}
 		err = snap.Validate(jsonx.DeepCopy(proxies), false, c.name)
-		if err == nil || errClass(err) != c.class || err.Error() != c.text {
+		var input *InputError
+		field := "proxies"
+		if i == 0 {
+			field = "proxy-providers"
+		}
+		if !errors.As(err, &input) || input.Field != field {
 			t.Errorf("case %d: %v (%s)", i, err, errClass(err))
 		}
 	}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"configflow/internal/model"
+	"configflow/internal/provider"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 )
@@ -35,11 +37,12 @@ type subscription struct {
 type node struct {
 	resource
 	SubscriptionID string
+	typed          *model.Node
 }
 type sourceResult struct {
 	proxies []Proxy
 	nodes   []node
-	updates []cacheUpdate
+	updates []provider.CacheWrite
 	err     error
 }
 
@@ -51,7 +54,7 @@ type Result struct {
 	SubscriptionNodeCounts map[string]int `json:"subscription_node_counts"`
 	TotalCount             int            `json:"total_count"`
 	Proxies                []Proxy        `json:"-"`
-	updates                []cacheUpdate
+	updates                []provider.CacheWrite
 }
 
 // Options selects dry rendering or atomic publication. Supplied Main and Fetch
@@ -71,13 +74,23 @@ func WithFormat(ctx context.Context, format string) context.Context {
 	return context.WithValue(ctx, formatKey{}, format)
 }
 
-func render(ctx context.Context, agg aggregation, d *delivery, opts Options) (*Result, error) {
+type renderer interface {
+	catalogs() ([]subscription, []node)
+	fetchSource(context.Context, subscription, Options) sourceResult
+	captureRecords(context.Context, map[string]bool) error
+	convertNode(context.Context, node) (Proxy, error)
+	adapt(string, Proxy, bool) (Proxy, error)
+	validate([]Proxy, string, string) error
+}
+
+func render(ctx context.Context, agg aggregation, d renderer, opts Options) (*Result, error) {
 	result := &Result{Name: agg.Name, SubscriptionNodeCounts: map[string]int{}, Proxies: []Proxy{}}
+	subscriptions, nodes := d.catalogs()
 	var selected []subscription
 	selectedIDs := map[string]bool{}
 	for _, id := range agg.Subscriptions {
 		selectedIDs[id] = true
-		for _, sub := range d.subscriptions {
+		for _, sub := range subscriptions {
 			if sub.ID == id && sub.Enabled {
 				selected = append(selected, sub)
 				break
@@ -136,7 +149,7 @@ func render(ctx context.Context, agg aggregation, d *delivery, opts Options) (*R
 	for _, id := range agg.Nodes {
 		manualIDs[id] = true
 	}
-	for _, n := range d.nodes {
+	for _, n := range nodes {
 		if manualIDs[n.ID] && n.Enabled && !existingNames[n.Name] {
 			allNodes = append(allNodes, n)
 			existingNames[n.Name] = true

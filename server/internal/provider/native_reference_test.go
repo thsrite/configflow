@@ -1,0 +1,81 @@
+package provider
+
+import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"testing"
+
+	"configflow/internal/jsonx"
+)
+
+func nativeDeliveryReferences(t *testing.T, rows []*jsonx.Object) map[int]*jsonx.Object {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/n88d_native_reference.json.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	raw, err = io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		ArchiveSHA  string `json:"archive_sha256"`
+		RecorderSHA string `json:"recorder_sha256"`
+		PythonSHA   string `json:"python_owner_sha256"`
+		Rows        map[string]struct {
+			Input, Original, Expected json.RawMessage
+			Reason                    string
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := os.ReadFile("testdata/corpus.json.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(archive)) != manifest.ArchiveSHA {
+		t.Fatal("original provider archive changed")
+	}
+	for path, expected := range map[string]string{"testdata/n88d_reference.py": manifest.RecorderSHA, "../../../backend/utils/provider_delivery.py": manifest.PythonSHA} {
+		data, err := os.ReadFile(path)
+		if err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != expected {
+			t.Fatal("reference source changed", path, err)
+		}
+	}
+	if len(manifest.Rows) != 89 {
+		t.Fatal("native reference matrix changed")
+	}
+	result := map[int]*jsonx.Object{}
+	for key, ref := range manifest.Rows {
+		index, err := strconv.Atoi(key)
+		if err != nil || index < 0 || index >= len(rows) || ref.Reason == "" {
+			t.Fatal("invalid native row", key)
+		}
+		input, err := jsonx.Parse(ref.Input)
+		if err != nil || !jsonx.Equal(input, rows[index].Value("input")) {
+			t.Fatal("native row input changed", key)
+		}
+		original, err := jsonx.Parse(ref.Original)
+		if err != nil || !jsonx.Equal(original, expectedOf(rows[index])) {
+			t.Fatal("native row original changed", key)
+		}
+		expected, err := jsonx.Parse(ref.Expected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result[index] = expected.(*jsonx.Object)
+	}
+	return result
+}

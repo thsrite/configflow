@@ -245,5 +245,5 @@ func (c *Config) tokenURL(url string) (string, error) {
 	if c.configToken == "" {
 		return url, nil
 	}
-	return convert.AppendURLQuery(url, [][2]any{{"token", c.configToken}})
+	return convert.AppendQuery(url, [][2]string{{"token", c.configToken}})
 }

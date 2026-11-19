@@ -92,10 +92,6 @@ func (e *fakeErr) PythonClass() string { return e.class }
 
 // errClass is type(exc).__name__.
 func errClass(err error) string {
-	var own *Error
-	if errors.As(err, &own) {
-		return own.Class
-	}
 	var dialer *convert.DialerReferenceError
 	if errors.As(err, &dialer) {
 		return "DialerReferenceError"
@@ -215,6 +211,9 @@ func TestCorpus(t *testing.T) {
 	rows := loadCorpus(t)
 	repository := corpusRepositoryFactory(t)
 	nativeSnapshots := nativeSnapshotExpectations(t, rows)
+	for index, expected := range nativeDeliveryReferences(t, rows) {
+		nativeSnapshots[index] = expected
+	}
 	counts := map[string]int{}
 	failures := 0
 	for i, row := range rows {

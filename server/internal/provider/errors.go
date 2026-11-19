@@ -7,8 +7,6 @@ import (
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/convert"
-	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
@@ -16,71 +14,50 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Python classes of the reference errors this package raises or re-wraps.
-const (
-	classStrategy = "StrategyReferenceError"
-	classDialer   = "DialerReferenceError"
-	classListener = "ListenerReferenceError"
-)
-
-// Error is a StrategyReferenceError (or its subclass DialerReferenceError /
-// ListenerReferenceError, see Class) raised by this package: a re-wrapped
-// exception carrying the provider contexts already added (Python's
-// _provider_contexts) and, for shape errors, the offending field
-// (Python's provider_field). errors.As finds the matching
-// *convert.DialerReferenceError, *subs.ListenerReferenceError and
-// *rules.StrategyReferenceError.
-type Error struct {
-	Class   string
-	Message string
-
-	contexts []contextKey
-	field    []any
-	cause    error
+// FieldStep identifies a mapping key or a sequence index in provider input.
+type FieldStep struct {
+	Key     string
+	Index   int
+	Indexed bool
 }
 
+// FieldPath locates a rejected value for source diagnostics.
+type FieldPath []FieldStep
+
+// Error attaches provider ownership and a source path to a typed reference
+// failure. Unwrap retains both its domain classification and original cause.
+type Error struct {
+	Message   string
+	contexts  []contextKey
+	field     FieldPath
+	reference error
+	cause     error
+}
+
+// Error returns the user-facing diagnostic.
 func (e *Error) Error() string { return e.Message }
 
-// PythonClass is the Python exception class name.
-func (e *Error) PythonClass() string { return e.Class }
+// Unwrap exposes the typed domain failure and its original native cause.
+func (e *Error) Unwrap() error { return errors.Join(e.reference, e.cause) }
 
-// Unwrap exposes the reference class and the original validation failure.
-func (e *Error) Unwrap() error {
-	var reference error
-	switch e.Class {
-	case classDialer:
-		reference = &convert.DialerReferenceError{Message: e.Message}
-	case classListener:
-		reference = &subs.ListenerReferenceError{Message: e.Message}
-	default:
-		reference = &rules.StrategyReferenceError{Message: e.Message}
-	}
-	return errors.Join(reference, e.cause)
-}
-
-// Field is the provider_field of a shape error (nil otherwise): strings
-// for keys, ints for list indices.
-func (e *Error) Field() []any { return e.field }
+// Field returns an independent path to the rejected provider value.
+func (e *Error) Field() FieldPath { return append(FieldPath(nil), e.field...) }
 
 type contextKey struct{ kind, name, path string }
 
-func dialerErr(message string) *Error { return &Error{Class: classDialer, Message: message} }
-
-// referenceClass is type(exc).__name__ for a StrategyReferenceError.
-func referenceClass(err error) string {
-	var own *Error
-	if errors.As(err, &own) {
-		return own.Class
-	}
+func dialerErr(message string) *Error {
+	return &Error{Message: message, reference: &convert.DialerReferenceError{Message: message}}
+}
+func referenceError(err error, message string) error {
 	var dialer *convert.DialerReferenceError
 	if errors.As(err, &dialer) {
-		return classDialer
+		return &convert.DialerReferenceError{Message: message}
 	}
 	var listener *subs.ListenerReferenceError
 	if errors.As(err, &listener) {
-		return classListener
+		return &subs.ListenerReferenceError{Message: message}
 	}
-	return classStrategy
+	return &rules.StrategyReferenceError{Message: message}
 }
 
 func isStrategyReference(err error) bool {
@@ -101,51 +78,44 @@ func contextsOf(err error) []contextKey {
 	return nil
 }
 
-// pyStrIfTruthy is str(value) for a truthy value, else the empty string.
-func pyStrIfTruthy(value any) string {
-	if !jsonx.Truthy(value) {
-		return ""
-	}
-	return jsonx.Str(value)
-}
-
-// providerContext is _provider_context(exc, name=, path=, kind=): keep
-// validation exceptions outside the transport-fallback boundary, adding the
-// owning provider once.
-func providerContext(err error, name, path any, kind string) error {
-	class := referenceClass(err)
+// providerContext attaches an owning provider once, preserving its typed cause.
+func providerContext(err error, name, path, kind string) error {
 	contexts := contextsOf(err)
-	key := contextKey{kind, jsonx.Repr(name), jsonx.Repr(path)}
-	seen := false
-	for _, c := range contexts {
-		if c == key {
-			seen = true
-			break
+	key := contextKey{kind, name, path}
+	for _, context := range contexts {
+		if context == key {
+			return err
 		}
 	}
-	if !(jsonx.Truthy(name) || jsonx.Truthy(path)) || seen {
-		return &Error{Class: class, Message: err.Error(), contexts: contexts, cause: err}
+	if name == "" && path == "" {
+		return &Error{reference: referenceError(err, err.Error()), Message: err.Error(), contexts: contexts, cause: err}
 	}
-	message := currentLocations().PreparationContext(err.Error(), pyStrIfTruthy(name), pyStrIfTruthy(path), kind)
-	next := append(append([]contextKey{}, contexts...), key)
-	return &Error{Class: class, Message: message, contexts: next, cause: err}
+	message := currentLocations().PreparationContext(err.Error(), name, path, kind)
+	return &Error{reference: referenceError(err, message), Message: message, contexts: append(append([]contextKey{}, contexts...), key), cause: err}
 }
 
-// shapeError is _shape_error(message, *field).
-func shapeError(message string, field ...any) *Error {
+func proxyField(index int, member string) FieldPath {
+	path := FieldPath{{Key: "proxies"}, {Index: index, Indexed: true}}
+	if member != "" {
+		path = append(path, FieldStep{Key: member})
+	}
+	return path
+}
+func shapeError(message string, field FieldPath) *Error {
 	var label strings.Builder
-	for index, item := range field {
-		switch v := item.(type) {
-		case int:
-			label.WriteString("[" + strconv.Itoa(v) + "]")
-		case string:
+	for index, step := range field {
+		if step.Indexed {
+			label.WriteString("[" + strconv.Itoa(step.Index) + "]")
+		} else {
 			if index > 0 {
-				label.WriteString(".")
+				label.WriteByte('.')
 			}
-			label.WriteString(v)
+			label.WriteString(step.Key)
 		}
 	}
-	return &Error{Class: classDialer, Message: message + "\n字段：" + label.String(), field: field}
+	result := dialerErr(message + msgField + label.String())
+	result.field = field
+	return result
 }
 
 // yamlCause selects facade failures for the native A11 diagnostic hook.
@@ -158,7 +128,7 @@ func yamlCause(err error) error {
 
 // nodeAt is the field lookup of _provider_source_error: the start mark of
 // the node a provider_field points at, following shared merge/alias policies.
-func nodeAt(text string, field []any) (*yamlx.Node, bool) {
+func nodeAtPath(text string, field FieldPath) (*yamlx.Node, bool) {
 	node, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return nil, false
@@ -168,17 +138,14 @@ func nodeAt(text string, field []any) (*yamlx.Node, bool) {
 		if node == nil {
 			break
 		}
-		switch key := item.(type) {
-		case string:
-			node = yamlx.Get(node, key)
-		case int:
-			if node.Kind != yaml.SequenceNode || key < 0 || key >= len(node.Content) {
+		if item.Indexed {
+			if node.Kind != yaml.SequenceNode || item.Index < 0 || item.Index >= len(node.Content) {
 				node = nil
 			} else {
-				node = node.Content[key]
+				node = node.Content[item.Index]
 			}
-		default:
-			node = nil
+		} else {
+			node = yamlx.Get(node, item.Key)
 		}
 	}
 	node = yamlx.Resolve(node)
@@ -187,9 +154,6 @@ func nodeAt(text string, field []any) (*yamlx.Node, bool) {
 	}
 	return node, true
 }
-
-func isString(v any) bool { _, ok := v.(string); return ok }
-func isInt(v any) bool    { _, ok := v.(int); return ok }
 
 // providerSourceError is _provider_source_error(exc, text, source_label):
 // resolve a known field only on failure; never guess a node's line number.
@@ -201,13 +165,13 @@ func providerSourceError(err, yamlErr error, text, sourceLabel string) error {
 		l, c := syntax.Line, max(1, syntax.Column)
 		line, column = &l, &c
 	}
-	var field []any
+	var field FieldPath
 	var own *Error
 	if errors.As(err, &own) {
 		field = own.field
 	}
 	if len(field) > 0 {
-		if found, ok := nodeAt(text, field); ok {
+		if found, ok := nodeAtPath(text, field); ok {
 			line, column = nil, nil
 			if found != nil {
 				l, c := found.Line, found.Column
@@ -226,30 +190,15 @@ func providerSourceError(err, yamlErr error, text, sourceLabel string) error {
 	return result
 }
 
-// pyError is an exception Python raises on a value the code does not check.
-type pyError struct {
-	class   string
-	message string
+// InputError identifies malformed internal input without emulating language exceptions.
+// It deliberately remains outside reference errors and their transport fallback policy.
+type InputError struct {
+	Field string
+	Cause error
 }
 
-func (e *pyError) Error() string       { return e.message }
-func (e *pyError) PythonClass() string { return e.class }
+// Error describes the invalid field without revealing its stored value.
+func (e *InputError) Error() string { return "provider: invalid " + e.Field }
 
-func keyError(key string) error { return &pyError{"KeyError", jsonx.Repr(key)} }
-
-func attributeError(v any, attribute string) error {
-	return &pyError{"AttributeError", "'" + httpx.PyTypeName(v) + "' object has no attribute '" + attribute + "'"}
-}
-
-func typeError(message string) error { return &pyError{"TypeError", message} }
-
-// subscriptError is CPython 3.11's TypeError for v['key'] on a non-dict.
-func subscriptError(v any) error {
-	switch v.(type) {
-	case string:
-		return typeError("string indices must be integers, not 'str'")
-	case []any:
-		return typeError("list indices must be integers or slices, not str")
-	}
-	return typeError("'" + pyTypeName(v) + "' object is not subscriptable")
-}
+// Unwrap retains the native decode or validation failure.
+func (e *InputError) Unwrap() error { return e.Cause }
