@@ -16,7 +16,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/provider"
-	"configflow/internal/substore"
+	"configflow/internal/refresh"
 )
 
 func TestReviewCatalogCancellation(t *testing.T) {
@@ -98,7 +98,7 @@ func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 			}
 			started, observed, abort := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			t.Cleanup(func() { close(abort) })
-			t.Cleanup(provider.SetEnv(&provider.Env{AggregationFetch: func(ctx context.Context, _, _ string) (*substore.SubscriptionResult, error) {
+			t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{AggregationFetch: func(ctx context.Context, _, _ string) (*refresh.SourceResult, error) {
 				close(started)
 				select {
 				case <-ctx.Done():

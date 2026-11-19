@@ -8,6 +8,7 @@ package refresh_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 	"configflow/internal/yamlx"
 )
 
@@ -78,10 +80,12 @@ func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	t.Cleanup(refresh.SetEnv(&refresh.Env{Clock: substore.SystemClock, RandomHex: func() string { return "abcdef01" },
-		FetchSubscription: func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
-			return &substore.SubscriptionResult{Text: text, Source: "direct_yaml"}, nil
-		}}))
+	env := refresh.DefaultRefreshEnv()
+	env.RandomHex = func() string { return "abcdef01" }
+	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
+		return &refresh.SourceResult{Text: text, Source: "direct_yaml"}, nil
+	}
+	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", "subscription:s"))).WantStatus(202).
 		WantJSON(jsonx.Obj("success", true, "message", "已开始运行，结果会显示在列表中"))
 	deadline := time.Now().Add(10 * time.Second)
@@ -105,10 +109,11 @@ func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 // test_scheduled_tasks.py::test_interval_edit_validates_and_rule_source_edits_keep_it (route part)
 func TestIntervalEditValidatesOnTheRealRows(t *testing.T) {
 	srv := server(t)
-	t.Cleanup(refresh.SetEnv(&refresh.Env{Clock: substore.SystemClock,
-		FetchSubscription: func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
-			return nil, errors.New("no request")
-		}}))
+	env := refresh.DefaultRefreshEnv()
+	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
+		return nil, errors.New("no request")
+	}
+	t.Cleanup(refresh.SetRefreshEnv(env))
 	put := func(body *jsonx.Object) *httpxtest.Result {
 		return srv.Put("/api/tasks/interval", httpxtest.JSON(body))
 	}
@@ -130,11 +135,11 @@ func TestIntervalEditValidatesOnTheRealRows(t *testing.T) {
 // rule source that never ran.
 func TestRowShape(t *testing.T) {
 	srv := server(t)
-	subs, err := refresh.SubscriptionRows(srv.Context(), jsonx.NewObject())
+	subs, err := subscriptionRows(srv.Context(), jsonx.NewObject())
 	if err != nil {
 		t.Fatal(err)
 	}
-	rules, err := refresh.RuleRows(srv.Context(), jsonx.NewObject())
+	rules, err := ruleRows(srv.Context(), jsonx.NewObject())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,4 +171,60 @@ func TestRowShape(t *testing.T) {
 	if sub.Value("next_run_at") == nil || rule.Value("detail") != "rules.test" || rule.Value("link") != "/rule-library" {
 		t.Fatal(jsonx.Repr(sub), jsonx.Repr(rule))
 	}
+}
+
+func subscriptionRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var statuses taskstatus.Snapshot
+	if err := json.Unmarshal(raw, &statuses); err != nil {
+		return nil, err
+	}
+	rows, err := refresh.SubscriptionTasks(ctx, statuses)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*jsonx.Object, len(rows))
+	for i, row := range rows {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parsed.(*jsonx.Object)
+	}
+	return out, nil
+}
+
+func ruleRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var statuses taskstatus.Snapshot
+	if err := json.Unmarshal(raw, &statuses); err != nil {
+		return nil, err
+	}
+	rows, err := refresh.RuleTasks(ctx, statuses)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*jsonx.Object, len(rows))
+	for i, row := range rows {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parsed.(*jsonx.Object)
+	}
+	return out, nil
 }

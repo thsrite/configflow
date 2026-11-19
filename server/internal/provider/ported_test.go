@@ -10,11 +10,14 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
+	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -30,7 +33,7 @@ func repoContext(t *testing.T) (context.Context, *repo.Repository) {
 	}
 	t.Cleanup(SetLocations(fakeLocations{}))
 	t.Cleanup(SetEnv(&Env{NodeID: SequentialNodeIDs(), Converter: nilConverter{}}))
-	t.Cleanup(refresh.SetEnv(&refresh.Env{Clock: fixedClock{corpusNow}, Converter: nilConverter{}}))
+	t.Cleanup(setRefreshFixture(fixedClock{corpusNow}, nilConverter{}))
 	return repo.WithRepository(context.Background(), r), r
 }
 
@@ -145,7 +148,7 @@ func TestClosedQuotedSecretDoesNotHideFollowingNonsecretField(t *testing.T) {
 func TestValidProviderOutputAndSuccessPathParsingUnchanged(t *testing.T) {
 	repoContext(t)
 	for _, text := range []string{"{}", "proxies: []", "proxies: [{name: Good, type: http, server: example.test, port: 80}]"} {
-		want, err := substore.ParseProxiesFromYAML(text)
+		want, err := fixtureParseProxiesFromYAML(text)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +310,7 @@ func policyCache(t *testing.T, ctx context.Context) *jsonx.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := substore.SaveSubscriptionNodes(ctx, "s", nodes, jsonx.Obj("url", policyURL))
+	cache, err := fixtureSaveSubscriptionNodes(ctx, "s", nodes, jsonx.Obj("url", policyURL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,4 +399,66 @@ func TestDefaultHooksFailClosedAndPassThrough(t *testing.T) {
 	if !errors.Is(err, ErrAggregationProviderMissing) {
 		t.Fatalf("err %v", err)
 	}
+}
+
+func setRefreshFixture(clock substore.Clock, converter convert.ProxyStringConverter) func() {
+	env := refresh.DefaultRefreshEnv()
+	env.Clock = clock
+	env.Sources.Converter = legacyConverter{converter}
+	return refresh.SetRefreshEnv(env)
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
+}
+
+func fixtureParseProxiesFromYAML(text string) ([]any, error) {
+	nodes, err := substore.ParseProxyNodes(text)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(nodes))
+	for _, node := range nodes {
+		data, err := yamlx.ToJSON(node)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, parsed)
+	}
+	return out, nil
 }

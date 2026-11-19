@@ -9,23 +9,24 @@ import (
 	"strings"
 	"testing"
 
+	_ "modernc.org/sqlite"
+
 	"configflow/internal/api/nodes"
 	"configflow/internal/api/subscriptions"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
-	_ "modernc.org/sqlite"
 )
 
 func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 	calls := 0
-	env := refresh.DefaultEnv()
-	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+	env := refresh.DefaultRefreshEnv()
+	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		calls++
 		return nil, errors.New("synthetic source must not be called")
 	}
-	t.Cleanup(refresh.SetEnv(env))
+	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register, subscriptions.Register)})
 	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil)
 	if err != nil {
@@ -79,11 +80,11 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 }
 
 func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
-	env := refresh.DefaultEnv()
-	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+	env := refresh.DefaultRefreshEnv()
+	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		return nil, errors.New("synthetic source failure")
 	}
-	t.Cleanup(refresh.SetEnv(env))
+	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
 	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil)
 	if err != nil {
@@ -100,11 +101,11 @@ func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 }
 
 func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
-	env := refresh.DefaultEnv()
-	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
-		return &substore.SubscriptionResult{Text: "proxies: [{name: Synthetic, type: socks5, server: 192.0.2.1, port: 1080}]", Source: "direct_yaml"}, nil
+	env := refresh.DefaultRefreshEnv()
+	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
+		return &refresh.SourceResult{Text: "proxies: [{name: Synthetic, type: socks5, server: 192.0.2.1, port: 1080}]", Source: "direct_yaml"}, nil
 	}
-	t.Cleanup(refresh.SetEnv(env))
+	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
 	if _, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil); err != nil {
 		t.Fatal(err)

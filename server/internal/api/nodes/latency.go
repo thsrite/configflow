@@ -2,12 +2,12 @@
 package nodes
 
 import (
+	"encoding/json"
 	"errors"
 
 	"configflow/internal/auth"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -20,7 +20,7 @@ func Register(r *httpx.Router) {
 }
 
 func failure(code int, message string) *httpx.Response {
-	return httpx.JSONStatus(code, jsonx.Obj("success", false, "message", message))
+	return httpx.Message(code, false, message)
 }
 
 func isValueError(err error) bool {
@@ -31,18 +31,25 @@ func isValueError(err error) bool {
 	return repo.IsValueError(err)
 }
 
-func stringList(value any) ([]string, bool) {
-	list, ok := value.([]any)
-	if !ok {
+const (
+	msgLatencyObject = "请求必须是 JSON 对象"
+	msgLatencyNames  = "names 必须是字符串数组"
+	msgLatencyKeys   = "keys 必须是字符串数组"
+	msgLatencyBoth   = "names 与 keys 不能同时指定"
+	msgLatencyDNS    = "请提供测速 DNS 设置"
+	msgCheckDNS      = "请提供待检测的 DNS 设置"
+)
+
+func stringList(value json.RawMessage) ([]string, bool) {
+	var raw []json.RawMessage
+	if json.Unmarshal(value, &raw) != nil || raw == nil {
 		return nil, false
 	}
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		text, ok := item.(string)
-		if !ok {
+	out := make([]string, len(raw))
+	for i, value := range raw {
+		if string(value) == "null" || json.Unmarshal(value, &out[i]) != nil {
 			return nil, false
 		}
-		out = append(out, text)
 	}
 	return out, true
 }
@@ -51,31 +58,39 @@ func stringList(value any) ([]string, bool) {
 func nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	if c.Request.Method == "GET" {
-		return httpx.JSON(jsonx.Obj("success", true, "results", health.LoadResults(ctx))), nil
+		return nativeJSON(200, struct {
+			Success bool `json:"success"`
+			Results any  `json:"results"`
+		}{true, health.LoadLatencyResults(ctx)}), nil
 	}
-	payload := c.JSONSilent()
-	if payload == nil {
-		payload = jsonx.NewObject()
+	object, err := readObject(c, true)
+	if err != nil {
+		return nil, err
 	}
-	object, ok := payload.(*jsonx.Object)
-	if !ok {
-		return failure(400, "请求必须是 JSON 对象"), nil
+	if object == nil {
+		// Missing, malformed and null bodies select every candidate, as before.
+		var raw json.RawMessage
+		if c.BindSilent(&raw) && string(raw) != "null" {
+			return failure(400, msgLatencyObject), nil
+		}
+		object = record{}
 	}
+	var ok bool
 	var names, keys []string
-	if value := object.Value("names"); value != nil {
+	if value := object["names"]; len(value) > 0 && string(value) != "null" {
 		if names, ok = stringList(value); !ok {
-			return failure(400, "names 必须是字符串数组"), nil
+			return failure(400, msgLatencyNames), nil
 		}
 	}
-	if value := object.Value("keys"); value != nil {
+	if value := object["keys"]; len(value) > 0 && string(value) != "null" {
 		if keys, ok = stringList(value); !ok {
-			return failure(400, "keys 必须是字符串数组"), nil
+			return failure(400, msgLatencyKeys), nil
 		}
 	}
 	if names != nil && keys != nil {
-		return failure(400, "names 与 keys 不能同时指定"), nil
+		return failure(400, msgLatencyBoth), nil
 	}
-	outcome, err := health.RunTests(ctx, names, keys)
+	outcome, err := health.RunLatencyTests(ctx, names, keys)
 	if err != nil {
 		var busy *health.ProbeBusy
 		var unavailable *health.ProbeUnavailable
@@ -89,39 +104,46 @@ func nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	body := jsonx.Obj("success", true)
-	body.Update(outcome)
-	return httpx.JSON(body), nil
+	return nativeJSON(200, struct {
+		Success bool `json:"success"`
+		health.TestOutcome
+	}{true, outcome}), nil
 }
 
 // nodeLatencySettings is GET/POST /api/nodes/latency/settings.
 func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	result, err := func() (*jsonx.Object, error) {
+	result, err := func() (health.DNSSettingsView, error) {
 		if c.Request.Method == "GET" {
-			return health.DescribeSettings(ctx, nil)
+			return health.DescribeDNSSettingsJSON(ctx, nil)
 		}
-		payload, ok := c.JSONSilent().(*jsonx.Object)
-		if !ok || payload == nil {
-			return nil, &health.ValueError{Message: "请提供测速 DNS 设置"}
+		payload, err := readObject(c, true)
+		if err != nil {
+			return health.DNSSettingsView{}, err
 		}
-		var value any
-		if payload.Has("dns") {
-			value = payload.Value("dns")
-		} else if payload.Has("dns_servers") {
-			servers, err := health.NormalizeDNSServers(payload.Value("dns_servers"), false)
+		if payload == nil {
+			return health.DNSSettingsView{}, &health.ValueError{Message: msgLatencyDNS}
+		}
+		var value json.RawMessage
+		if raw, present := payload["dns"]; present {
+			value = raw
+		} else if raw, present := payload["dns_servers"]; present {
+			servers, err := health.NormalizeDNSServersJSON(raw, false)
 			if err != nil {
-				return nil, err
+				return health.DNSSettingsView{}, err
 			}
 			mode := "system"
 			if len(servers) > 0 {
 				mode = "custom"
 			}
-			value = jsonx.Obj("mode", mode, "servers", servers)
+			value, err = json.Marshal(health.DNSConfig{Mode: mode, Servers: servers, Bootstrap: []string{}})
+			if err != nil {
+				return health.DNSSettingsView{}, err
+			}
 		} else {
-			return nil, &health.ValueError{Message: "请提供测速 DNS 设置"}
+			return health.DNSSettingsView{}, &health.ValueError{Message: msgLatencyDNS}
 		}
-		return health.SaveConfig(ctx, value)
+		return health.SaveDNSConfigJSON(ctx, value)
 	}()
 	if err != nil {
 		if isValueError(err) {
@@ -129,18 +151,22 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	body := jsonx.Obj("success", true)
-	body.Update(result)
-	return httpx.JSON(body), nil
+	return nativeJSON(200, struct {
+		Success bool `json:"success"`
+		health.DNSSettingsView
+	}{true, result}), nil
 }
 
 // nodeDNSCheck is POST /api/nodes/latency/dns/check.
 func nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
-	payload, ok := c.JSONSilent().(*jsonx.Object)
-	if !ok || payload == nil || !payload.Has("dns") {
-		return failure(400, "请提供待检测的 DNS 设置"), nil
+	payload, err := readObject(c, true)
+	if err != nil {
+		return nil, err
 	}
-	result, err := health.CheckSettings(c.Context(), payload.Value("dns"))
+	if _, present := payload["dns"]; !present {
+		return failure(400, msgCheckDNS), nil
+	}
+	result, err := health.CheckDNSSettingsJSON(c.Context(), payload["dns"])
 	if err != nil {
 		var unavailable *health.ProbeUnavailable
 		switch {
@@ -151,5 +177,5 @@ func nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	return httpx.JSON(result), nil
+	return nativeJSON(200, result), nil
 }

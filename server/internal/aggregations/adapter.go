@@ -1,73 +1,78 @@
 package aggregations
 
-// This is the boundary to the repository and existing provider collaborators.
-// Collection/rendering code uses native types and does not access legacy values.
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
-	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
 
 // Fetch provides one subscription body without publishing a provider artifact.
+// Retained only for the offline W7 generator caller; production HTTP/provider
+// rendering receives typed source owners directly.
 type Fetch = refresh.SourceFetch
 
-type delivery struct {
-	config, main *jsonx.Object
-	profileID    string
-}
-
-func legacyObject(raw json.RawMessage) (*jsonx.Object, error) {
-	value, err := jsonx.Parse(raw)
-	if err != nil {
+// Generate decodes the native JSON entry point retained for export consumers.
+// Resource and profile records keep unknown stored members through model codecs.
+func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, options Options) (*Result, error) {
+	var agg model.Aggregation
+	if err := json.Unmarshal(rawAggregation, &agg); err != nil {
 		return nil, err
 	}
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil {
-		return nil, errors.New("aggregation document must be an object")
+	var profile model.Profile
+	if err := json.Unmarshal(rawConfig, &profile); err != nil {
+		return nil, err
 	}
-	return object, nil
-}
-func native(value any, target any) error {
-	raw, err := jsonx.Compact(value)
-	if err != nil {
-		return err
+	// Decode the captured flat API document using each model owner's codec.
+	var shared model.Shared
+	if err := json.Unmarshal(rawConfig, &shared); err != nil {
+		return nil, err
 	}
-	return jsondecode.Unmarshal(raw, target)
-}
-func projection(value *jsonx.Object) (resource, error) {
-	raw, err := jsonx.Compact(value)
-	return resource{ID: value.GetString("id"), Name: value.GetString("name"), Enabled: jsonx.Truthy(value.GetOr("enabled", true)), raw: raw}, err
-}
-func selectedIDs(object *jsonx.Object, key string) ([]string, error) {
-	value, present := object.Get(key)
-	if !present || value == nil && key == "nodes" {
-		return []string{}, nil
+	var system model.System
+	if err := json.Unmarshal(rawConfig, &system); err != nil {
+		return nil, err
 	}
-	if value == nil {
-		return nil, fmt.Errorf("aggregation %s must be an array", key)
+	var identity struct {
+		ProfileID string `json:"profile_id"`
 	}
-	var ids []string
-	if err := native(value, &ids); err != nil {
-		return nil, fmt.Errorf("decode aggregation %s: %w", key, err)
+	if err := jsondecode.Unmarshal(rawConfig, &identity); err != nil {
+		return nil, err
 	}
-	return ids, nil
+	config := &model.Config{Profile: &profile, ProfileID: identity.ProfileID, SystemConfig: system.SystemConfig, Backup: system.Backup, Subscriptions: shared.Subscriptions, Nodes: shared.Nodes, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary}
+	if !options.Persist {
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(rawAggregation, &request); err != nil {
+			return nil, err
+		}
+		var name string
+		if value := request["name"]; len(value) == 0 || string(value) == "null" || json.Unmarshal(value, &name) != nil {
+			return nil, errors.New("aggregation name must be a string")
+		}
+		if value, present := request["subscriptions"]; present && string(value) == "null" {
+			return nil, errors.New("aggregation subscriptions must be an array")
+		}
+		if value, present := request["regex_filter"]; present {
+			var filter string
+			if string(value) == "null" || json.Unmarshal(value, &filter) != nil {
+				return nil, errors.New("aggregation regex must be a string")
+			}
+		}
+	}
+	return GenerateConfig(ctx, agg, config, options)
 }
 
-// Generate validates a frozen main before fetching sources. Persist publishes
-// through the shared all-or-nothing provider bundle; dry renders never commit.
-func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, options Options) (*Result, error) {
+// GenerateConfig validates a frozen main before fetching sources. Persist uses
+// the shared all-or-nothing provider bundle; dry renders never commit.
+func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options Options) (*Result, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -77,18 +82,14 @@ func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, op
 	} else {
 		options.Format, _ = ctx.Value(formatKey{}).(string)
 	}
-	agg, err := legacyObject(rawAggregation)
-	if err != nil {
-		return nil, err
+	if config == nil || config.Profile == nil {
+		return nil, errors.New("aggregation config must include a profile")
 	}
-	config, err := legacyObject(rawConfig)
-	if err != nil {
-		return nil, err
+	if err := convert.ConfigDialers(config); err != nil {
+		return nil, convert.DialerFailure(err)
 	}
-	if err := convert.ValidateDialers(config); err != nil {
-		return nil, err
-	}
-	profileID := config.GetString("profile_id")
+	profileID := config.ProfileID
+	var err error
 	if options.Persist {
 		profileID, err = repo.ResolveProfileID(ctx, profileID)
 	} else if profileID == "" {
@@ -97,86 +98,55 @@ func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, op
 	if err != nil {
 		return nil, err
 	}
-	ctx = convert.EnsureNodeConversions(ctx)
-	var main *jsonx.Object
+	ctx = convert.EnsureConversions(ctx)
+	var main *yamlx.Node
 	if len(options.Main) > 0 && string(options.Main) != "null" {
-		main, err = legacyObject(options.Main)
+		main, err = yamlx.FromJSON(options.Main)
 	} else {
-		main, err = convert.GenerateMihomoDocument(ctx, config, convert.GenerateOptions{SkipProviderPreflight: true})
+		main, err = convert.MihomoDocument(ctx, config, convert.MihomoOptions{SkipProviderPreflight: true})
 	}
 	if err != nil {
 		return nil, err
 	}
-	d := &delivery{config: config, main: main, profileID: profileID}
 	if options.Persist {
-		return d.publish(ctx, agg, options)
+		return publish(ctx, agg, config, main, profileID, options)
 	}
-	if _, ok := agg.Value("name").(string); !ok {
+	if model.IssueUnder(model.Issues(&agg), "name") {
 		return nil, errors.New("aggregation name must be a string")
 	}
-	base, err := projection(agg)
-	if err != nil {
-		return nil, err
+	a := aggregation{resource: typedResource(agg.ID, agg.Name, agg.Enabled), Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
+	for _, issue := range model.Issues(&agg) {
+		if issue.Path == "subscriptions" {
+			return nil, errors.New("aggregation subscriptions must be an array")
+		}
+		if issue.Path == "nodes" {
+			return nil, errors.New("aggregation nodes must be an array")
+		}
 	}
-	a := aggregation{resource: base}
-	a.Subscriptions, err = selectedIDs(agg, "subscriptions")
-	if err != nil {
-		return nil, err
-	}
-	a.Nodes, err = selectedIDs(agg, "nodes")
-	if err != nil {
-		return nil, err
-	}
-	if agg.Has("regex_filter") {
-		a.Regex, err = jsonx.Compact(agg.Value("regex_filter"))
+	if agg.RegexFilter != nil {
+		a.Regex, err = json.Marshal(*agg.RegexFilter)
 		if err != nil {
 			return nil, err
 		}
 	}
-	var profile model.Profile
-	if err := native(jsonx.Obj("proxy_groups", config.GetList("proxy_groups")), &profile); err != nil {
-		return nil, err
-	}
-	typed := &model.Config{ProfileID: profileID, Profile: &profile}
-	if err := native(config.GetList("subscriptions"), &typed.Subscriptions); err != nil {
-		return nil, err
-	}
-	if err := native(config.GetList("nodes"), &typed.Nodes); err != nil {
-		return nil, err
-	}
-	if err := native(config.GetList("subscription_aggregations"), &typed.Aggregations); err != nil {
-		return nil, err
-	}
-	mainJSON, err := jsonx.Compact(main)
+	snapshot, err := provider.CaptureDelivery(profileID, main, config.Profile)
 	if err != nil {
 		return nil, err
 	}
-	graph, err := yamlx.FromJSON(mainJSON)
-	if err != nil {
-		return nil, err
-	}
-	snapshot, err := provider.CaptureDelivery(profileID, graph, &profile)
-	if err != nil {
-		return nil, err
-	}
-	return render(ctx, a, newTypedDelivery(typed, graph, snapshot), options)
+	return render(ctx, a, newTypedDelivery(config, main, snapshot), options)
 }
 
-func defaultFetch(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
-	return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, id, url, "", substore.FetchOptions{})
-}
-
-func (d *delivery) publish(ctx context.Context, agg *jsonx.Object, options Options) (*Result, error) {
-	bundle, err := provider.PrepareProviderBundle(ctx, d.config, d.main, provider.BundleOptions{Requested: &provider.Requested{Kind: "aggregation", Resource: agg}, SubscriptionFetch: options.Fetch})
+func publish(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, profileID string, options Options) (*Result, error) {
+	bundle, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "aggregation", Aggregation: &agg}, SubscriptionFetch: sourceFetch(options.Fetch)})
 	if err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var found *provider.Rendered
+	var found *provider.Artifact
 	for _, item := range bundle {
-		if item.Name == agg.GetString("name") {
+		if item.Name == agg.Name {
 			found = item
 			break
 		}
@@ -184,31 +154,35 @@ func (d *delivery) publish(ctx context.Context, agg *jsonx.Object, options Optio
 	if found == nil {
 		return nil, errors.New("aggregation absent from validated provider bundle")
 	}
-	if err := provider.CommitProviderBundle(ctx, d.profileID, bundle); err != nil {
+	if err := provider.CommitArtifacts(ctx, profileID, bundle); err != nil {
 		return nil, err
 	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	path, err := r.ProfilePath(d.profileID, "providers/"+agg.GetString("id")+".yaml")
+	path, err := r.ProfilePath(profileID, "providers/"+agg.ID+".yaml")
 	if err != nil {
 		return nil, err
 	}
 	result := &Result{Name: found.Name, Content: found.Content, FilePath: &path, SubscriptionNodeCounts: map[string]int{}}
-	if found.Extra != nil {
-		if err := native(found.Extra, result); err != nil {
+	if len(found.Extra) > 0 {
+		if err := json.Unmarshal(found.Extra, result); err != nil {
 			return nil, err
 		}
-		result.FilePath = &path
-		result.Content = found.Content
+		result.FilePath, result.Content = &path, found.Content
 	}
-	values, err := provider.ParseProviderProxies(found.Content, found.Name, path)
+	values, err := provider.ParseNodes(found.Content, found.Name, path)
 	if err != nil {
 		return nil, err
 	}
-	if err := native(values, &result.Proxies); err != nil {
-		return nil, err
+	result.Proxies = make([]Proxy, 0, len(values))
+	for _, value := range values {
+		proxy, err := graphProxy(value)
+		if err != nil {
+			return nil, err
+		}
+		result.Proxies = append(result.Proxies, proxy)
 	}
 	result.TotalCount = len(result.Proxies)
 	return result, nil
@@ -217,28 +191,34 @@ func (d *delivery) publish(ctx context.Context, agg *jsonx.Object, options Optio
 // Wire registers aggregation rendering for conversions and provider bundles.
 func Wire() { provider.SetAggregationRenderer(RenderProvider) }
 
-// LoadCatalog reads the shared catalog and captures the baseline for SaveCatalog.
+// LoadCatalog reads an owned shared snapshot for SaveCatalog.
 func LoadCatalog(ctx context.Context) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	// W1 supplies the final typed Scope baseline boundary. Preserve the exact
+	// snapshot-save semantics until that dependency is merged.
 	document, err := repo.GetSharedConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return jsonx.Compact(document)
+	return json.Marshal(document)
 }
 
-// SaveCatalog commits a catalog edit using its request-scoped baseline.
+// SaveCatalog commits an edit against its request-scoped repository baseline.
 func SaveCatalog(ctx context.Context, raw json.RawMessage) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	document, err := legacyObject(raw)
+	value, err := jsonx.Parse(raw)
 	if err != nil {
 		return err
+	}
+	document, ok := value.(*jsonx.Object)
+	if !ok {
+		return errors.New("aggregation catalog must be an object")
 	}
 	return repo.SaveSharedConfig(ctx, document, nil)
 }
@@ -249,13 +229,42 @@ func AppendCatalog(ctx context.Context, raw json.RawMessage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	item, err := legacyObject(raw)
+	var item model.Aggregation
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscription_aggregations", append(shared.GetList("subscription_aggregations"), item))
-		return nil, nil
+	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
+		shared.Aggregations = append(shared.Aggregations, item)
+		return ctx.Err()
 	})
-	return err
+}
+
+// sourceFetch is the remaining W7 callback facade; the default path never
+// round-trips traffic through legacy subscription results.
+func sourceFetch(fetch Fetch) refresh.FetchSourceFn {
+	if fetch == nil {
+		return nil
+	}
+	return func(ctx context.Context, id, address string) (*refresh.SourceResult, error) {
+		fetched, err := fetch(ctx, id, address)
+		if err != nil || fetched == nil {
+			return nil, err
+		}
+		var traffic *refresh.Traffic
+		if fetched.Traffic != nil {
+			data, err := json.Marshal(fetched.Traffic)
+			if err != nil {
+				return nil, err
+			}
+			traffic = &refresh.Traffic{}
+			if err := json.Unmarshal(data, traffic); err != nil {
+				return nil, err
+			}
+		}
+		return &refresh.SourceResult{Text: fetched.Text, Source: fetched.Source, FetchedAt: fetched.FetchedAt, Traffic: traffic}, nil
+	}
 }

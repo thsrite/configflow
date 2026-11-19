@@ -1,13 +1,16 @@
 package difftest
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
-	"configflow/internal/substore"
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/substore"
 )
 
 func must(t *testing.T, err error) {
@@ -32,7 +35,7 @@ func seed(t *testing.T, used bool, pattern string) func(context.Context, *repo.R
 			})
 			must(t, err)
 		}
-		_, err = substore.SaveSubscriptionNodes(ctx, "s", []any{node("cached")}, nil)
+		_, err = fixtureSaveSubscriptionNodes(ctx, "s", []any{node("cached")}, nil)
 		must(t, err)
 	}
 }
@@ -271,4 +274,39 @@ func TestCorruptNodeCacheCannotProducePartialProvider(t *testing.T) {
 	// provider. Go rejects the malformed node cache; both dry runs must keep all
 	// state untouched. The named oracle exception asserts exact Go rejection.
 	w.call("GENERATE", "a", input, true)
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

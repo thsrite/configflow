@@ -3,6 +3,7 @@ package subscriptions
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/logx"
+	"configflow/internal/refresh"
 )
 
 func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
@@ -63,5 +65,37 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 	}
 	if logs.Len() != 0 {
 		t.Fatal("strict path both logged and returned its error")
+	}
+}
+
+func TestStagedIdentityComesFromNodeOwnerNotProtocolParameters(t *testing.T) {
+	source := object{}
+	source.set("id", "s")
+	source.set("name", "Synthetic")
+	proxy := object{}
+	for key, value := range map[string]any{"id": "upstream-protocol-id", "name": "Remote", "type": "http", "server": "example.com", "port": 80} {
+		proxy.set(key, value)
+	}
+	update, err := stageNodes(source, []object{proxy}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(update.updates) != 1 || len(update.updates[0].Nodes) != 1 {
+		t.Fatalf("missing staged node: %+v", update)
+	}
+	node := update.updates[0].Nodes[0]
+	if !strings.HasPrefix(node.ID, "node_") || node.SubscriptionID != "s" || node.SubscriptionName != "Synthetic" {
+		t.Fatalf("wrong owned identity: %+v", node)
+	}
+	raw, err := json.Marshal(node.Params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var params map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &params); err != nil {
+		t.Fatal(err)
+	}
+	if string(params["id"]) != `"upstream-protocol-id"` {
+		t.Fatalf("protocol parameter was lost: %s", raw)
 	}
 }

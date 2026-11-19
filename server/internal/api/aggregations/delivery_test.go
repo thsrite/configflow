@@ -19,7 +19,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/provider"
-	"configflow/internal/substore"
+	"configflow/internal/refresh"
 )
 
 func startDeliveryRuntime(t *testing.T, ctx context.Context) {
@@ -62,7 +62,7 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	started, secondStarted, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var once, releaseOnce sync.Once
 	var calls atomic.Int32
-	fetch := func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
+	fetch := func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
 		if calls.Add(1) == 2 {
 			close(secondStarted)
 		}
@@ -71,9 +71,9 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return &substore.SubscriptionResult{Text: "proxies: [{name: Remote, type: http, server: good.test, port: 80}]", Source: "rendered_yaml"}, nil
+		return &refresh.SourceResult{Text: "proxies: [{name: Remote, type: http, server: good.test, port: 80}]", Source: "rendered_yaml"}, nil
 	}
-	t.Cleanup(provider.SetEnv(&provider.Env{AggregationFetch: fetch}))
+	t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{AggregationFetch: fetch}))
 	t.Cleanup(provider.SetResponseSeconds(0))
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
 	login := srv.Login()

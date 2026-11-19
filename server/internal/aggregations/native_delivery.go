@@ -178,28 +178,11 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 	}
 	return sourceResult{nodes: projected, proxies: nativeProxies, updates: updates}
 }
-func (d *typedDelivery) fetch(old Fetch) refresh.FetchSourceFn {
-	if old == nil {
-		old = defaultFetch
+func (d *typedDelivery) fetch(fetch Fetch) refresh.FetchSourceFn {
+	if fetch == nil {
+		return provider.DefaultDeliveryEnv().Fetch
 	}
-	return func(ctx context.Context, id, address string) (*refresh.SourceResult, error) {
-		fetched, err := old(ctx, id, address)
-		if err != nil || fetched == nil {
-			return nil, err
-		}
-		var traffic *refresh.Traffic
-		if fetched.Traffic != nil {
-			data, err := json.Marshal(fetched.Traffic)
-			if err != nil {
-				return nil, err
-			}
-			traffic = &refresh.Traffic{}
-			if err := json.Unmarshal(data, traffic); err != nil {
-				return nil, err
-			}
-		}
-		return &refresh.SourceResult{Text: fetched.Text, Source: fetched.Source, FetchedAt: fetched.FetchedAt, Traffic: traffic}, nil
-	}
+	return sourceFetch(fetch)
 }
 func (d *typedDelivery) captureRecords(ctx context.Context, selected map[string]bool) error {
 	d.records = map[string]*subs.DialersData{}

@@ -51,7 +51,7 @@ func TestServiceProcess(t *testing.T) {
 		_, _ = fmt.Fprintln(file, event)
 	}
 	var outbound atomic.Int64
-	restore := refresh.SetEnv(schedulerObserver(func() { outbound.Add(1); trace("outbound") }))
+	restore := refresh.SetRefreshEnv(schedulerObserver(func() { outbound.Add(1); trace("outbound") }))
 	defer restore()
 	defer func() {
 		if n := outbound.Load(); n != 0 {
@@ -539,9 +539,9 @@ func TestMainRejectsDataDirectoryAliases(t *testing.T) {
 
 // The only remote scheduler eligible in the 30s ownership window is refresh.
 // Record and refuse all of its I/O boundaries, without changing its real clock.
-func schedulerObserver(record func()) *refresh.Env {
-	env := refresh.DefaultEnv()
-	env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
+func schedulerObserver(record func()) *refresh.RefreshEnv {
+	env := refresh.DefaultRefreshEnv()
+	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		record()
 		return nil, errors.New("scheduled subscription request blocked by test observer")
 	}
@@ -567,7 +567,7 @@ func (b blockedUserinfoRequests) Do(context.Context, *substore.Request) (*substo
 func TestSchedulerObserverDetectsEveryDownloadBoundary(t *testing.T) {
 	count := 0
 	env := schedulerObserver(func() { count++ })
-	_, subErr := env.FetchSubscription(context.Background(), "edge", "http://example.com/disabled", substore.FetchOptions{})
+	_, subErr := env.Sources.Fetch(context.Background(), "edge", "http://example.com/disabled", substore.FetchOptions{})
 	_, ruleErr := env.RuleClient.Transport.Do(context.Background(), rulefetch.TransportRequest{URL: "http://example.com/disabled"})
 	_, infoErr := env.HTTP.Do(context.Background(), &substore.Request{URL: "http://example.com/disabled"})
 	if count != 3 || subErr == nil || ruleErr == nil || infoErr == nil {

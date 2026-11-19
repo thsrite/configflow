@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -104,53 +105,17 @@ func TestHealthCoreHasNoLegacyOrUntypedDependency(t *testing.T) {
 	}
 }
 
-func TestHealthLegacyWrappersDelegateToTypedCore(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "legacy.go", nil, 0)
+func TestHealthNativeOwnersHaveNoLegacyDependency(t *testing.T) {
+	if _, err := os.Stat("legacy.go"); !os.IsNotExist(err) {
+		t.Fatalf("legacy health facade remains: %v", err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), "owners.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedTargets := map[string]string{
-		"FindProbeBinary":     "FindBinary",
-		"NormalizeDNSServers": "NormalizeDNSServersJSON",
-		"NormalizeConfig":     "NormalizeDNSConfigJSON",
-		"LoadConfig":          "LoadDNSConfig",
-		"EffectiveSettings":   "EffectiveDNSSettingsJSON",
-		"DescribeSettings":    "DescribeDNSSettingsJSON",
-		"SaveConfig":          "SaveDNSConfigJSON",
-		"CheckSettings":       "CheckDNSSettingsJSON",
-		"DNSSettings":         "ResolveDNSSettings",
-		"Settings":            "ResolveSettings",
-		"LoadResults":         "LoadLatencyResults",
-		"RunTests":            "RunLatencyTests",
-	}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok {
-			continue
-		}
-		target, tracked := expectedTargets[fn.Name.Name]
-		if !tracked {
-			continue
-		}
-		called := false
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			if _, ok := n.(*ast.ForStmt); ok {
-				t.Errorf("legacy %s contains a for loop", fn.Name.Name)
-			}
-			if _, ok := n.(*ast.RangeStmt); ok {
-				t.Errorf("legacy %s contains a range loop", fn.Name.Name)
-			}
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			if callee, ok := call.Fun.(*ast.Ident); ok && callee.Name == target {
-				called = true
-			}
-			return true
-		})
-		if !called {
-			t.Errorf("legacy %s does not call typed target %s", fn.Name.Name, target)
+	for _, imp := range file.Imports {
+		if strings.Contains(imp.Path.Value, "jsonx") || strings.Contains(imp.Path.Value, "pystr") {
+			t.Errorf("native owner imports %s", imp.Path.Value)
 		}
 	}
 }

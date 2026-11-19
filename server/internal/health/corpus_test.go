@@ -198,7 +198,7 @@ func TestReferenceCorpus(t *testing.T) {
 			callErr = check.ValidateHealth(arg(0), true)
 		case "initialize_provider_health":
 			source := jsonx.DeepCopy(arg(0)).(*jsonx.Object)
-			check.InitializeProviderHealth(source)
+			initializeProviderHealth(source)
 			out = source
 		case "initialize_group_health":
 			group := jsonx.DeepCopy(arg(0)).(*jsonx.Object)

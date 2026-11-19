@@ -15,6 +15,7 @@ package difftest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 	"configflow/internal/health"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/substore"
@@ -81,7 +83,7 @@ func seed(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = substore.SaveSubscriptionNodes(ctx, "s1", []any{
+	_, err = fixtureSaveSubscriptionNodes(ctx, "s1", []any{
 		jsonx.Obj("name", "HK 01", "type", "ss", "server", "hk.invalid", "port", jsonx.Int(443),
 			"params", jsonx.Obj("cipher", "aes-128-gcm", "password", "p")),
 		jsonx.Obj("name", "广告", "type", "ss", "server", "ad.invalid", "port", jsonx.Int(443)),
@@ -159,7 +161,7 @@ func startGo(t *testing.T, dataDir string) string {
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
 	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
-	t.Cleanup(health.SetEnv(health.DefaultEnv()))
+	// The default native ProbeEnv is installed by the package owner.
 	app := server.NewApp()
 	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
@@ -462,4 +464,39 @@ func TestWorkerJSONComparisonRejectsChangedValues(t *testing.T) {
 			t.Fatalf("changed worker payload accepted: %s", changed)
 		}
 	}
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

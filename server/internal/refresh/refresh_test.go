@@ -8,8 +8,10 @@ package refresh
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -17,17 +19,21 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/convert"
 	"configflow/internal/instance"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
+	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -208,7 +214,7 @@ func (f *fixture) sub() *jsonx.Object {
 // cacheSource is test_subscription_refresh_policy.cache_source: stored
 // nodes of url whose updated_at is age seconds ago.
 func (f *fixture) cacheSource(age time.Duration, url string) *jsonx.Object {
-	proxies, err := substore.ParseProxiesFromYAML(proxiesYAML(f.t))
+	proxies, err := fixtureParseProxiesFromYAML(proxiesYAML(f.t))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -216,7 +222,7 @@ func (f *fixture) cacheSource(age time.Duration, url string) *jsonx.Object {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	value, err := substore.SaveSubscriptionNodes(f.ctx, "s", nodes, jsonx.Obj("url", url))
+	value, err := fixtureSaveSubscriptionNodes(f.ctx, "s", nodes, jsonx.Obj("url", url))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -852,4 +858,450 @@ func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 	if err != nil || string(content) != "+.valid.example\n" || stale == nil || !strings.Contains(stale.Error(), "DOMAIN,bad.example") {
 		t.Fatal(content, stale, err)
 	}
+}
+
+// Env holds the I/O of the module: the clock (wall time for receipts and
+// due times, monotonic time for durations, sleeps of the scheduler loop),
+// the subscription download (sub_store_client.get_subscription_proxies_yaml),
+// the rule download client, the HTTP client of fetch_userinfo, node ids and
+// the Sub-Store node converter. Tests install fakes with SetEnv.
+type Env struct {
+	Clock substore.Clock
+	// FetchSubscription is get_subscription_proxies_yaml(sub_id, url, **opts).
+	FetchSubscription func(ctx context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error)
+	// RuleClient downloads rule sources (nil: rulefetch.DefaultClient).
+	RuleClient *rulefetch.Client
+	// HTTP is the requests client of fetch_userinfo.
+	HTTP substore.HTTPClient
+	// RandomHex is uuid.uuid4().hex[:8] (generated node ids).
+	RandomHex func() string
+	// Converter is sub_store_client.convert_proxy_string (nil: the
+	// process-wide Sub-Store client at the time of the call).
+	Converter convert.ProxyStringConverter
+}
+
+// DefaultEnv is the production environment on the process-wide Sub-Store
+// service.
+func DefaultEnv() *Env {
+	return &Env{
+		Clock: substore.SystemClock,
+		FetchSubscription: func(ctx context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error) {
+			return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, subID, url, "", opts)
+		},
+		HTTP:      substore.RequestsClient{},
+		RandomHex: func() string { return substore.Default().Env.RandomHex() },
+	}
+}
+
+var (
+	envMu sync.Mutex
+	env   *Env
+)
+
+func currentTestEnv() *Env {
+	envMu.Lock()
+	defer envMu.Unlock()
+	if env == nil {
+		env = DefaultEnv()
+	}
+	return env
+}
+
+func (e *Env) converter() convert.ProxyStringConverter {
+	if e.Converter != nil {
+		return e.Converter
+	}
+	return substore.Converter()
+}
+
+func (e *Env) ruleClient() *rulefetch.Client {
+	if e.RuleClient != nil {
+		return e.RuleClient
+	}
+	return rulefetch.DefaultClient
+}
+
+// SetEnv replaces the environment (tests) and returns a function restoring
+// the previous one.
+func SetEnv(e *Env) (restore func()) {
+	restoreNative := SetRefreshEnv(refreshEnvForTest(e))
+	envMu.Lock()
+	previous := env
+	env = e
+	envMu.Unlock()
+	return func() {
+		restoreNative()
+		envMu.Lock()
+		env = previous
+		envMu.Unlock()
+	}
+}
+
+type nodeConverter struct{ old convert.ProxyStringConverter }
+
+func (c nodeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if c.old == nil {
+		return nil, nil
+	}
+	value := c.old.ConvertProxyString(ctx, text)
+	if value == nil {
+		return nil, nil
+	}
+	return yamlbridge.Encode(value)
+}
+func refreshEnvForTest(e *Env) *RefreshEnv {
+	if e == nil {
+		return DefaultRefreshEnv()
+	}
+	native := DefaultRefreshEnv()
+	native.Clock, native.HTTP, native.RandomHex = e.Clock, e.HTTP, e.RandomHex
+	native.RuleClient = e.ruleClient()
+	native.Sources.Fetch = func(ctx context.Context, id, url string, options substore.FetchOptions) (*SourceResult, error) {
+		if e.FetchSubscription == nil {
+			return nil, errors.New("subscription fetch owner unavailable")
+		}
+		result, err := e.FetchSubscription(ctx, id, url, options)
+		return typedResult(result), errorFromLegacy(err)
+	}
+	native.Sources.Converter = nodeConverter{e.converter()}
+	return native
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// ParseUserinfo adapts the existing quota parser to the legacy API.
+func ParseUserinfo(header string) (*jsonx.Object, error) {
+	value, err := parseTraffic(header)
+	if value == nil {
+		return nil, err
+	}
+	return legacyObject(value), err
+}
+
+// FetchUserinfo validates the legacy URL shape before native quota fetching.
+func FetchUserinfo(ctx context.Context, value any) (*jsonx.Object, error) {
+	url, ok := value.(string)
+	if !ok {
+		return nil, nil
+	}
+	traffic, err := FetchTraffic(ctx, url)
+	if traffic == nil {
+		return nil, err
+	}
+	return legacyObject(traffic), err
+}
+
+// LoadHealth adapts raw snapshot members without interpreting unowned entries.
+func LoadHealth(ctx context.Context) (*jsonx.Object, error) {
+	data, err := ReadHealth(detached(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return legacyObject(data), nil
+}
+
+// RecordFetch adapts one outcome to the native health writer.
+func RecordFetch(ctx context.Context, id string, value FetchRecord) (*jsonx.Object, error) {
+	var count model.Int
+	_ = decodeLegacy(value.Count, &count)
+	var traffic *Traffic
+	if value.Traffic != nil {
+		traffic = &Traffic{}
+		_ = decodeLegacy(value.Traffic, traffic)
+	}
+	result, err := RecordHealth(ctx, id, FetchEventInput{OK: value.OK, Count: count, FromCache: value.FromCache, Traffic: traffic})
+	if err != nil {
+		return nil, err
+	}
+	return legacyObject(result), nil
+}
+
+// SourceCacheMetadata adapts one source/result record to the native metadata owner.
+func SourceCacheMetadata(sub *jsonx.Object, result *substore.SubscriptionResult) (*jsonx.Object, error) {
+	metadata, err := CacheMetadata(context.Background(), sourceRecord(sub), typedResult(result))
+	if err != nil {
+		return nil, err
+	}
+	return legacyObject(metadata), nil
+}
+
+// RememberSourceDownload adapts the source transport receipt write.
+func RememberSourceDownload(ctx context.Context, sub *jsonx.Object, result *substore.SubscriptionResult) (*substore.SubscriptionResult, error) {
+	value, err := RememberDownload(ctx, sourceRecord(sub), typedResult(result))
+	return oldResult(value), err
+}
+
+// DownloadSubscriptionNodes adapts nodes and receipts for existing source callers.
+func DownloadSubscriptionNodes(ctx context.Context, sub *jsonx.Object) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
+	nodes, result, cache, err := DownloadNodes(ctx, sourceRecord(sub))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return legacyNodes(nodes), oldResult(result), legacyObject(cache), nil
+}
+
+// FetchSubscriptionSource adapts an unported fetch callback to the native flow.
+func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch SourceFetch) (*substore.SubscriptionResult, error) {
+	var native FetchSourceFn
+	if fetch != nil {
+		native = func(ctx context.Context, id, url string) (*SourceResult, error) {
+			result, err := fetch(ctx, id, url)
+			return typedResult(result), errorFromLegacy(err)
+		}
+	}
+	result, err := FetchSource(ctx, sourceRecord(sub), native)
+	return oldResult(result), err
+}
+
+func newResult(text, source string, traffic *jsonx.Object, at string) *substore.SubscriptionResult {
+	var quota *Traffic
+	if traffic != nil {
+		quota = &Traffic{}
+		_ = decodeLegacy(traffic, quota)
+	}
+	return oldResult(makeResult(text, source, quota, at))
+}
+
+func fetchedAtValue(result *substore.SubscriptionResult) any {
+	if result.FetchedAt == "" {
+		return nil
+	}
+	return result.FetchedAt
+}
+
+func isFresh(timestamp any, interval int64) bool {
+	text, _ := timestamp.(string)
+	return fresh(text, interval)
+}
+
+func typedResult(result *substore.SubscriptionResult) *SourceResult {
+	if result == nil {
+		return nil
+	}
+	var traffic *Traffic
+	if result.Traffic != nil {
+		traffic = &Traffic{}
+		_ = decodeLegacy(result.Traffic, traffic)
+	}
+	return &SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}
+}
+
+func oldResult(result *SourceResult) *substore.SubscriptionResult {
+	if result == nil {
+		return nil
+	}
+	var traffic *jsonx.Object
+	if result.Traffic != nil {
+		traffic = legacyObject(result.Traffic)
+	}
+	return &substore.SubscriptionResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}
+}
+
+func sourceRecord(value *jsonx.Object) model.Subscription {
+	var result model.Subscription
+	_ = decodeLegacy(value, &result)
+	return result
+}
+
+func legacyNodes(nodes []model.Node) []any {
+	data, _ := model.Marshal(nodes)
+	value, _ := jsonx.Parse(data)
+	result, _ := value.([]any)
+	return result
+}
+
+// FetchRecord is the old boundary for a fetch outcome. Native owners use FetchEventInput.
+type FetchRecord struct {
+	OK        bool
+	Count     any
+	FromCache bool
+	Traffic   *jsonx.Object
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// SubscriptionKey adapts an existing task ID to its native string identity.
+func SubscriptionKey(id any) string { return SourceTaskKey(legacyID(id)) }
+
+// NextRunAt adapts the legacy scalar and receipt boundary to NextDue.
+func NextRunAt(entry any, interval jsonx.Number, baseline any, now *time.Time) (*time.Time, error) {
+	receipt := &taskstatus.Receipt{}
+	_ = decodeLegacy(entry, receipt)
+	text, _ := baseline.(string)
+	seconds, ok := interval.Int64()
+	if !ok {
+		// Overflowing intervals still have the same scheduling short circuits:
+		// no previous run is due now, and failed sources cap positive intervals.
+		_, hasLast := parseStamp(textOr(receipt.LastRunAt, ""))
+		if !hasLast {
+			_, hasLast = parseStamp(text)
+		}
+		if !hasLast {
+			return NextDue(receipt, 1, optionalText(text), now)
+		}
+		value, integer := interval.BigInt()
+		if !integer || value.Sign() < 0 || textOr(receipt.LastStatus, "") != "failed" {
+			return nil, ErrScheduleTime
+		}
+		seconds = math.MaxInt64
+	}
+	return NextDue(receipt, model.Int(seconds), optionalText(text), now)
+}
+
+// SubscriptionCacheTime adapts the native nullable cache timestamp.
+func SubscriptionCacheTime(ctx context.Context, sub *jsonx.Object) (any, error) {
+	at, err := SourceCacheAt(ctx, sourceRecord(sub))
+	if at == nil {
+		return nil, err
+	}
+	return *at, err
+}
+
+// RuleCacheTime adapts the native nullable file timestamp.
+func RuleCacheTime(ctx context.Context, rule *jsonx.Object) (any, error) {
+	at, err := RuleCacheAt(ctx, libraryRecord(rule))
+	if at == nil {
+		return nil, err
+	}
+	return *at, err
+}
+
+// IsLibrarySource adapts a legacy rule declaration.
+func IsLibrarySource(ctx context.Context, rule *jsonx.Object) (bool, error) {
+	return StoredRule(ctx, libraryRecord(rule))
+}
+
+// RefreshSubscription adapts baseline task/source callers.
+func RefreshSubscription(ctx context.Context, sub *jsonx.Object, trigger string) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
+	nodes, result, cache, err := RefreshSource(ctx, sourceRecord(sub), trigger)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return legacyNodes(nodes), oldResult(result), legacyObject(cache), nil
+}
+
+// FindResource adapts a native current resource snapshot.
+func FindResource(ctx context.Context, kind, id string) (*jsonx.Object, error) {
+	resource, err := LookupResource(ctx, kind, id)
+	if err != nil {
+		return nil, err
+	}
+	if resource.Subscription != nil {
+		return legacyObject(resource.Subscription), nil
+	}
+	return legacyObject(resource.Rule), nil
+}
+
+// RunNow adapts the manual task entry point.
+func RunNow(ctx context.Context, kind, id string) (string, error) {
+	return RunResourceNow(ctx, kind, id)
+}
+
+func parseTime(value any) (time.Time, bool) { text, _ := value.(string); return parseStamp(text) }
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// SubscriptionInterval projects only the stored interval for unported callers.
+func SubscriptionInterval(value *jsonx.Object) jsonx.Number {
+	var source model.Subscription
+	_ = decodeLegacy(value, &source)
+	return jsonx.Int(int64(SourceInterval(source)))
+}
+
+// RuleInterval projects only the stored update interval for unported callers.
+func RuleInterval(value *jsonx.Object) jsonx.Number {
+	var source model.RuleLibraryItem
+	_ = decodeLegacy(value, &source)
+	return jsonx.Int(int64(RemoteInterval(source)))
+}
+
+func snapshot(value *jsonx.Object) taskstatus.Snapshot {
+	var result taskstatus.Snapshot
+	_ = decodeLegacy(value, &result)
+	return result
+}
+func rowObjects(rows []*tasks.Task, err error) ([]*jsonx.Object, error) {
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*jsonx.Object, len(rows))
+	for i, row := range rows {
+		result[i] = legacyObject(row)
+	}
+	return result, nil
+}
+
+// SubscriptionRows adapts task rows for unported tests/callers.
+func SubscriptionRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+	return rowObjects(SubscriptionTasks(ctx, snapshot(statuses)))
+}
+
+// RuleRows adapts task rows for unported tests/callers.
+func RuleRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+	return rowObjects(RuleTasks(ctx, snapshot(statuses)))
+}
+func historyOf(value any) (*jsonx.Object, error) {
+	var receipt taskstatus.Receipt
+	_ = decodeLegacy(value, &receipt)
+	result, err := tasks.ProjectHistory(&receipt)
+	if err != nil {
+		return nil, err
+	}
+	return legacyObject(result), nil
+}
+func host(value any) string { text, _ := value.(string); return sourceHost(text) }
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
+}
+
+func fixtureParseProxiesFromYAML(text string) ([]any, error) {
+	nodes, err := substore.ParseProxyNodes(text)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(nodes))
+	for _, node := range nodes {
+		data, err := yamlx.ToJSON(node)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, parsed)
+	}
+	return out, nil
 }

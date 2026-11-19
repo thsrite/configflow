@@ -16,6 +16,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/provider"
 )
 
@@ -50,7 +51,7 @@ func TestSlowProviderParity(t *testing.T) {
 				defer unblock()
 				srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 					r.GET(path, "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
-						return provider.ServeProvider(c, "aggregation", "a", "alpha", jsonx.Obj("fixture", t.Name()), func(context.Context) (*httpx.Response, error) {
+						return provider.Serve(c, "aggregation", "a", "alpha", &model.Config{Profile: &model.Profile{ID: t.Name()}}, func(context.Context) (*httpx.Response, error) {
 							close(started)
 							<-release
 							return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte(freshContent)), nil

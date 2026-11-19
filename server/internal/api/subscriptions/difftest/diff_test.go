@@ -174,11 +174,11 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 			if err != nil {
 				return nil, err
 			}
-			subs, err := refresh.SubscriptionRows(ctx, status)
+			subs, err := subscriptionRows(ctx, status)
 			if err != nil {
 				return nil, err
 			}
-			rules, err := refresh.RuleRows(ctx, status)
+			rules, err := ruleRows(ctx, status)
 			return append(subs, rules...), err
 		},
 	})
@@ -232,12 +232,12 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	env.RandomHex = func() string { return "00000001" }
 	service := substore.NewService(env)
 	t.Cleanup(substore.SetDefault(service))
-	re := refresh.DefaultEnv()
+	re := refresh.DefaultRefreshEnv()
 	re.Clock = fixedClock{}
 	re.HTTP = env.HTTP
 	re.RandomHex = env.RandomHex
-	t.Cleanup(refresh.SetEnv(re))
-	t.Cleanup(provider.SetEnv(&provider.Env{NodeID: func() string { return "node_00000001" }}))
+	t.Cleanup(refresh.SetRefreshEnv(re))
+	t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{NodeID: func() string { return "node_00000001" }}))
 	token, err := auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), secret)
 	if err != nil {
 		t.Fatal(err)
@@ -505,4 +505,60 @@ func firstDifference(a, b any, path string) string {
 		return fmt.Sprintf("%s Python=%v Go=%v", path, a, b)
 	}
 	return path
+}
+
+func subscriptionRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var statuses taskstatus.Snapshot
+	if err := json.Unmarshal(raw, &statuses); err != nil {
+		return nil, err
+	}
+	rows, err := refresh.SubscriptionTasks(ctx, statuses)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*jsonx.Object, len(rows))
+	for i, row := range rows {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parsed.(*jsonx.Object)
+	}
+	return out, nil
+}
+
+func ruleRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var statuses taskstatus.Snapshot
+	if err := json.Unmarshal(raw, &statuses); err != nil {
+		return nil, err
+	}
+	rows, err := refresh.RuleTasks(ctx, statuses)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*jsonx.Object, len(rows))
+	for i, row := range rows {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parsed.(*jsonx.Object)
+	}
+	return out, nil
 }

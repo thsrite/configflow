@@ -7,6 +7,7 @@ package substore
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,10 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/subs"
+	"configflow/internal/yamlx"
 )
 
 var cacheNode = jsonx.Obj("id", "n", "name", "HK", "type", "ss", "server", "192.0.2.1", "port", jsonx.Int(443),
@@ -226,7 +229,7 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 		"hosts:\n  jp-node.example.net: jp-entry.example.org\n  google.com: 203.0.113.66\n"
 	store := func(text string) {
 		t.Helper()
-		metadata := jsonx.Obj("subscription_name", "机场", "hosts", subs.ExtractSubscriptionHosts(text))
+		metadata := jsonx.Obj("subscription_name", "机场", "hosts", fixtureHosts(text))
 		proxies := must[[]any](t)(ParseProxiesFromYAML(text))
 		nodes := must[[]any](t)(ProxiesToNodes(proxies))
 		must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "air", nodes, metadata))
@@ -269,4 +272,156 @@ func TestNodeCountChangeIsLogged(t *testing.T) {
 	if !strings.Contains(logs.text(), "订阅 Keep?X 节点数变化：1 → 2") {
 		t.Fatalf("log:\n%s", logs.text())
 	}
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// SaveSubscriptionNodes transcodes the old cache boundary once per batch.
+func SaveSubscriptionNodes(ctx context.Context, id string, nodes any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	record, err := decodeLegacy[*Cache](jsonx.Obj("subscription_id", id, "updated_at", "", "count", jsonx.Int(0), "nodes", nodes, "metadata", metadata))
+	if err != nil {
+		return nil, err
+	}
+	var raw struct {
+		Nodes []json.RawMessage `json:"nodes"`
+	}
+	data, err := json.Marshal(jsonx.Obj("nodes", nodes))
+	if err != nil {
+		return nil, err
+	}
+	if jsondecode.Unmarshal(data, &raw) == nil {
+		count := model.Int(len(raw.Nodes))
+		record.Count = &count
+	}
+	result, err := saveCache(ctx, id, record)
+	if err != nil {
+		return nil, err
+	}
+	return encodeLegacy(result)
+}
+
+// ParseProxiesFromYAML transcodes the complete native proxy batch once.
+func ParseProxiesFromYAML(text string) ([]any, error) {
+	values, err := ParseProxyNodes(text)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(values))
+	for _, v := range values {
+		data, err := yamlx.ToJSON(v)
+		if err != nil {
+			return nil, err
+		}
+		item, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// ParseUserinfo adapts native subscription traffic for unported callers.
+func ParseUserinfo(text string) (*jsonx.Object, error) {
+	value, err := ReadUserinfo(text)
+	if err != nil || value == nil {
+		return nil, err
+	}
+	return encodeLegacy(value)
+}
+
+// ParseVersion adapts old dynamic input to the native version parser.
+func ParseVersion(value any) []*big.Int {
+	text, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	return VersionParts(text)
+}
+
+// IsNewer adapts old dynamic version inputs.
+func IsNewer(candidate, current any) bool {
+	a, ok := candidate.(string)
+	if !ok {
+		return false
+	}
+	b, _ := current.(string)
+	return VersionNewer(a, b)
+}
+
+// FetchLatestRelease transcodes the selected release at the legacy response boundary.
+func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jsonx.Object, string) {
+	value, message := d.Latest(ctx, force)
+	if value == nil {
+		return nil, message
+	}
+	result, err := encodeLegacy(value)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return result, message
+}
+
+// GetUpdateState transcodes the native observation for old HTTP owners.
+func (d *Dependencies) GetUpdateState() *jsonx.Object {
+	state := d.UpdateSnapshot()
+	value, err := encodeLegacy(state)
+	if err == nil && value != nil {
+		value.Set("finished_at", jsonx.Float(state.FinishedAt))
+	}
+	return value
+}
+
+// GetSubStoreStatus transcodes one complete native snapshot.
+func (d *Dependencies) GetSubStoreStatus(ctx context.Context, force bool) (*jsonx.Object, error) {
+	value, err := d.Snapshot(ctx, force)
+	if err != nil {
+		return nil, err
+	}
+	return legacyDependencyStatus(value)
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// read/write remain only for old test fixtures; native owners use state records.
+func (r *Runtime) read() any {
+	value, err := r.loadState()
+	if err != nil {
+		return nil
+	}
+	result, _ := encodeLegacy(value)
+	return result
+}
+
+func (r *Runtime) write(pairs ...any) error {
+	value := jsonx.Obj(pairs...)
+	patch, err := decodeLegacy[runtimePatch](value)
+	if err != nil {
+		return err
+	}
+	return r.writeState(context.Background(), patch)
+}
+
+// JSON transcodes a native HTTP JSON payload for unported consumers.
+func (r *Response) JSON() (any, error) {
+	data, err := r.JSONData()
+	if err != nil {
+		return nil, err
+	}
+	return jsonx.Parse(data)
+}
+
+func fixtureHosts(text string) *jsonx.Object {
+	data, _ := json.Marshal(subs.ExtractHosts(text))
+	value, _ := jsonx.Parse(data)
+	object, _ := value.(*jsonx.Object)
+	return object
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// Status transcodes the lifecycle snapshot for unported response consumers.
+func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, error) {
+	value, err := r.Snapshot(ctx, running)
+	if err != nil {
+		return nil, err
+	}
+	return encodeLegacy(value)
 }

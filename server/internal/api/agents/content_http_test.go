@@ -21,6 +21,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/substore"
 )
 
@@ -212,7 +213,7 @@ func TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation(t *testing.
 		fmt.Fprintf(&lines, "DOMAIN,fresh-%03d.example.test\n", i)
 	}
 	f.candidate.Store(contentBundle(t, "mode: global\nsecret: external-user-secret\n", lines.String()))
-	_, err := substore.SaveSubscriptionNodes(f.s.Context(), "synthetic-feed", []any{}, jsonx.Obj("hosts", jsonx.Obj("entries", jsonx.Obj("host.example.test", "192.0.2.4"))))
+	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), "synthetic-feed", []any{}, jsonx.Obj("hosts", jsonx.Obj("entries", jsonx.Obj("host.example.test", "192.0.2.4"))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,4 +306,39 @@ func TestContentHTTPMissingReceiptUsesDigests(t *testing.T) {
 	if r.Object().GetString("status") != "changed" || r.Object().GetString("content") != "digests" || r.Object().GetString("content_reason") != "bundle_missing" {
 		t.Fatal(string(r.Body))
 	}
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

@@ -456,7 +456,7 @@ func scenarioRow(t *testing.T, kind string, in, row *jsonx.Object, r *repo.Repos
 	defer SetEnv(&Env{Fetch: s.fetcher("default"), SubscriptionFetch: s.fetcher("subscriptions"),
 		AggregationFetch: s.fetcher("aggregations"), NodeID: SequentialNodeIDs(),
 		Converter: nilConverter{}})()
-	defer refresh.SetEnv(&refresh.Env{Clock: fixedClock{corpusNow}, Converter: nilConverter{}})()
+	defer setRefreshFixture(fixedClock{corpusNow}, nilConverter{})()
 	defer SetAggregationProvider(s.fakeAggregation)()
 
 	var got *jsonx.Object

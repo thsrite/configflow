@@ -2,19 +2,20 @@ package subscriptions_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"configflow/internal/auth"
-	"configflow/internal/logx"
-
 	"configflow/internal/api/subscriptions"
+	"configflow/internal/auth"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/substore"
 )
 
@@ -42,7 +43,7 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = substore.SaveSubscriptionNodes(ctx, "s", []any{jsonx.Obj("id", "cached", "name", "Remote", "type", "http", "server", "example.com", "port", 80)}, nil)
+	_, err = fixtureSaveSubscriptionNodes(ctx, "s", []any{jsonx.Obj("id", "cached", "name", "Remote", "type", "http", "server", "example.com", "port", 80)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,4 +118,39 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 			t.Fatal("provider log exposed token")
 		}
 	}
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

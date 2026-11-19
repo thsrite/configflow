@@ -167,7 +167,8 @@ func startPython(t *testing.T, dataDir string, env []string) string {
 	}
 	root, _ := filepath.Abs("../../../..")
 	port := freePort(t)
-	cmd := exec.Command(python, "-m", "backend.app")
+	script := "import runpy\nimport backend.utils.scheduled_refresh as scheduled\nscheduled.start_loop = lambda: None\nrunpy.run_module('backend.app', run_name='__main__')"
+	cmd := exec.Command(python, "-c", script)
 	cmd.Dir = root
 	cmd.Env = append(append(os.Environ(), env...), "DATA_DIR="+dataDir, "LOG_FILE="+filepath.Join(dataDir, "app.log"),
 		"CONFIGFLOW_BACKEND_HOST=127.0.0.1", "CONFIGFLOW_BACKEND_PORT="+strconv.Itoa(port),

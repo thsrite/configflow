@@ -23,7 +23,10 @@ import (
 	"time"
 
 	"configflow/internal/convert"
+	"configflow/internal/httpx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -481,7 +484,7 @@ func TestRecordedPythonTests(t *testing.T) {
 			if now := row.GetList("now"); len(now) > 0 {
 				clock.now, _ = time.Parse(time.RFC3339Nano, now[0].(string))
 			}
-			restoreRefresh := refresh.SetEnv(&refresh.Env{Clock: clock, Converter: w})
+			restoreRefresh := setRefreshFixture(clock, w)
 			restoreAgg := SetAggregationProvider(w.aggregation)
 			got = w.run(fn, args, m)
 			restoreAgg()
@@ -629,4 +632,255 @@ func dropTestDoubleCacheUpdates(want, got *jsonx.Object) {
 			g.Delete("cache_updates")
 		}
 	}
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// ProviderName selects a textual provider name at the legacy boundary.
+func ProviderName(value any) *string {
+	name, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	return &name
+}
+
+// SubscriptionDialerRecord transcodes one cached source topology.
+func SubscriptionDialerRecord(ctx context.Context, sub *jsonx.Object) (*jsonx.Object, error) {
+	var source model.Subscription
+	if err := decodeLegacy(sub, &source); err != nil {
+		return nil, err
+	}
+	record, err := DialerRecord(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	return legacyObject(record)
+}
+
+// ValidateProxyShapes delegates legacy metadata validation to ValidateProxyNodes.
+func ValidateProxyShapes(value any) error {
+	nodes, err := nodesFromLegacy(value)
+	if err != nil {
+		return err
+	}
+	return ValidateProxyNodes(nodes)
+}
+
+// ValidateRenderedBundle adapts legacy artifacts to ValidateArtifacts.
+func ValidateRenderedBundle(snapshot *Snapshot, providers []*Rendered) (bool, error) {
+	delivery, err := snapshot.native()
+	if err != nil {
+		return false, err
+	}
+	list := make([]*Artifact, 0, len(providers))
+	for _, item := range providers {
+		value, err := nativeArtifact(item)
+		if err != nil {
+			return false, err
+		}
+		list = append(list, value)
+	}
+	return ValidateArtifacts(delivery, list)
+}
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+// Main returns an owned legacy projection of the frozen graph.
+func (s *Snapshot) Main() (*jsonx.Object, error) {
+	delivery, err := s.native()
+	if err != nil {
+		return nil, err
+	}
+	data, err := yamlx.ToJSON(delivery.main)
+	if err != nil {
+		return nil, err
+	}
+	value, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	object, ok := value.(*jsonx.Object)
+	if !ok {
+		return nil, &InputError{Field: "main"}
+	}
+	return object, nil
+}
+
+// HasChains delegates to the immutable native snapshot.
+func (s *Snapshot) HasChains() (bool, error) {
+	delivery, err := s.native()
+	if err != nil {
+		return false, err
+	}
+	return delivery.HasChains()
+}
+
+// Validate transcodes only the supplied payload before native validation.
+func (s *Snapshot) Validate(value any, force bool, name *string) error {
+	nodes, err := nodesFromLegacy(value)
+	if err != nil {
+		return err
+	}
+	delivery, err := s.native()
+	if err != nil {
+		return err
+	}
+	return delivery.Validate(nodes, force, name)
+}
+
+// Adapt delegates legacy subscription delivery to AdaptDelivered.
+func (s *Snapshot) Adapt(ctx context.Context, sub *jsonx.Object, proxies []any, chains bool) ([]any, error) {
+	return AdaptDelivered(ctx, s, sub, proxies, chains)
+}
+
+// AdaptDelivered transcodes a legacy payload around the native dialer owner.
+func AdaptDelivered(ctx context.Context, snapshot *Snapshot, sub *jsonx.Object, proxies []any, chains bool) ([]any, error) {
+	if snapshot == nil {
+		return proxies, nil
+	}
+	var source model.Subscription
+	if err := decodeLegacy(sub, &source); err != nil {
+		return nil, err
+	}
+	delivery, err := snapshot.native()
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := nodesFromLegacy(proxies)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err = delivery.AdaptNodes(ctx, source, nodes, chains)
+	if err != nil {
+		return nil, err
+	}
+	return legacyNodes(nodes)
+}
+
+func loadProviderProxies(text string, name, path any, kind, label string) ([]any, error) {
+	n, p := legacyLabel(name), legacyLabel(path)
+	nodes, err := readProviderNodes(text, n, p, kind, label)
+	if err != nil {
+		return nil, err
+	}
+	return legacyNodes(nodes)
+}
+
+// DefaultEnv returns codecs for the production typed delivery environment.
+func DefaultEnv() *Env {
+	native := DefaultDeliveryEnv()
+	return &Env{Fetch: legacyFetch(native.Fetch), SubscriptionFetch: legacyFetch(native.SubscriptionFetch), AggregationFetch: legacyFetch(native.AggregationFetch), NodeID: native.NodeID}
+}
+
+// SetEnv installs legacy collaborator codecs and returns their restoration.
+func SetEnv(env *Env) func() {
+	if env == nil {
+		return SetDeliveryEnv(nil)
+	}
+	typed := &DeliveryEnv{Fetch: nativeFetch(env.Fetch), SubscriptionFetch: nativeFetch(env.SubscriptionFetch), AggregationFetch: nativeFetch(env.AggregationFetch), NodeID: env.NodeID}
+	if env.Converter != nil {
+		typed.Converter = legacyConverter{env.Converter}
+	}
+	return SetDeliveryEnv(typed)
+}
+
+// SetAggregationProvider installs an archived callback codec around typed rendering.
+func SetAggregationProvider(fn AggregationProvider) func() {
+	if fn == nil {
+		return SetAggregationRenderer(nil)
+	}
+	return SetAggregationRenderer(func(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *DeliverySnapshot, fetch refresh.FetchSourceFn) (*Artifact, error) {
+		configValue, err := legacyObject(config)
+		if err != nil {
+			return nil, err
+		}
+		mainValue, err := legacyObjectFromGraph(main)
+		if err != nil {
+			return nil, err
+		}
+		a, err := legacyObject(agg)
+		if err != nil {
+			return nil, err
+		}
+		rendered, err := fn(ctx, a, configValue, mainValue, legacyFetch(fetch))
+		if err != nil {
+			return nil, err
+		}
+		return nativeArtifact(rendered)
+	})
+}
+
+// ServeProvider adapts legacy JSON identity data to the native response owner.
+func ServeProvider(c *httpx.Ctx, kind, id, profileID string, configData any, render Render) (*httpx.Response, error) {
+	data, err := jsonresp.Encode(configData)
+	if err != nil {
+		return nil, err
+	}
+	return serveProviderJSON(c, kind, id, profileID, data, render)
+}
+
+// findByID remains a codec for archived callback fixtures only.
+func findByID(value any, id string) (*jsonx.Object, error) {
+	list, ok := value.([]any)
+	if !ok {
+		return nil, &InputError{Field: "resources"}
+	}
+	for _, item := range list {
+		object, ok := item.(*jsonx.Object)
+		if !ok {
+			return nil, &InputError{Field: "resource"}
+		}
+		if object.GetString("id") == id {
+			return object, nil
+		}
+	}
+	return nil, &InputError{Field: "resource.id"}
+}
+
+// nodeAt translates archived mixed field paths at the compatibility boundary.
+func nodeAt(text string, field []any) (*yamlx.Node, bool) {
+	path := make(FieldPath, 0, len(field))
+	for _, value := range field {
+		switch step := value.(type) {
+		case string:
+			path = append(path, FieldStep{Key: step})
+		case int:
+			path = append(path, FieldStep{Index: step, Indexed: true})
+		default:
+			return nil, false
+		}
+	}
+	return nodeAtPath(text, path)
+}
+
+// Env retains legacy test/integration hooks; use DeliveryEnv for typed wiring.
+type Env struct {
+	Fetch, SubscriptionFetch, AggregationFetch refresh.SourceFetch
+	Converter                                  convert.ProxyStringConverter
+	NodeID                                     func() string
+}
+
+// AggregationProvider is a temporary callback codec for unmigrated callers.
+type AggregationProvider func(context.Context, *jsonx.Object, *jsonx.Object, *jsonx.Object, refresh.SourceFetch) (*Rendered, error)
+
+// Archived JSON fixtures adapt only at this test boundary to the native owners.
+func (c legacyConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	value := c.source.ConvertProxyString(ctx, text)
+	if value == nil {
+		return nil, nil
+	}
+	return legacyGraph(value)
+}
+
+type legacyConverter struct{ source convert.ProxyStringConverter }
+
+func legacyObjectFromGraph(graph *yamlx.Node) (*jsonx.Object, error) {
+	raw, err := yamlx.ToJSON(graph)
+	if err != nil {
+		return nil, err
+	}
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return value.(*jsonx.Object), nil
 }

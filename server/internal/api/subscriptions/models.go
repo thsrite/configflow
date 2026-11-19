@@ -2,13 +2,14 @@
 package subscriptions
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"configflow/internal/httpx"
 )
+
+const msgFilterType = "节点筛选正则必须是字符串"
 
 // object is an extensible persisted resource. Raw values survive read/modify/write.
 type object map[string]json.RawMessage
@@ -31,15 +32,12 @@ func response(status int, value any) *httpx.Response {
 	return httpx.RawJSON(status, data)
 }
 func readBody(c *httpx.Ctx) (object, error) {
-	if _, err := c.JSON(); err != nil {
-		return nil, err
-	}
-	data, err := c.Data()
-	if err != nil {
+	var raw json.RawMessage
+	if err := c.Bind(&raw); err != nil {
 		return nil, err
 	}
 	var value object
-	if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &value); err != nil {
+	if err := json.Unmarshal(raw, &value); err != nil {
 		return nil, nil
 	}
 	return value, nil

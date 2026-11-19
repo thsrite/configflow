@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
+	"configflow/internal/yamlx"
 )
 
 // TestChainProviderCaptureGroups compares the complete provider lowering output
@@ -108,10 +110,20 @@ json.dump(out, sys.stdout)
 			})
 			main := jsonx.Obj("proxy-providers", jsonx.Obj("Source", jsonx.Obj("type", "http", "url", "https://example.com/nodes")),
 				"proxy-groups", []any{jsonx.Obj("name", "Chain", "type", "select", "use", []any{"Source"}, "filter", tc.Pattern+"`z")})
-			if err := subs.LowerChainProviders(runtime, main); err != nil {
+			rawConfig, _ := json.Marshal(runtime)
+			var profile model.Profile
+			var shared model.Shared
+			_ = json.Unmarshal(rawConfig, &profile)
+			_ = json.Unmarshal(rawConfig, &shared)
+			rawMain, _ := json.Marshal(main)
+			graph, err := yamlx.FromJSON(rawMain)
+			if err != nil {
 				t.Fatal(err)
 			}
-			actual, err := jsonx.Compact(main)
+			if err := subs.ChainProviders(&model.Config{Profile: &profile, Nodes: shared.Nodes}, graph); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := yamlx.ToJSON(graph)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -128,7 +140,7 @@ json.dump(out, sys.stdout)
 			// Read the group number from each emitted target, rather than
 			// reconstructing it from Groups(). Apply every bucket in order.
 			renamed := tc.Name
-			for _, item := range main.GetObject("proxy-providers").GetObject("Chain_Source").GetObject("override").GetList("proxy-name") {
+			for _, item := range parseGraph(t, graph).GetObject("proxy-providers").GetObject("Chain_Source").GetObject("override").GetList("proxy-name") {
 				rule := item.(*jsonx.Object)
 				re, err := rules.CompilePyRegex(rule.GetString("pattern"), false)
 				if err != nil {
@@ -160,4 +172,17 @@ json.dump(out, sys.stdout)
 			}
 		})
 	}
+}
+
+func parseGraph(t *testing.T, graph *yamlx.Node) *jsonx.Object {
+	t.Helper()
+	raw, err := yamlx.ToJSON(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value.(*jsonx.Object)
 }

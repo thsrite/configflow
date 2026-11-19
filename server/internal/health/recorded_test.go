@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,9 +24,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"configflow/internal/convert"
 	"configflow/internal/health/check"
+	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/yamlx"
 )
 
 func loadRecordedRows(t *testing.T, name string) []*jsonx.Object {
@@ -272,7 +278,7 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typed
 				value = group
 			case "initialize_provider_health":
 				source := obj("source")
-				check.InitializeProviderHealth(source)
+				initializeProviderHealth(source)
 				value = source
 			case "provider_health_check":
 				value, err = check.ProviderHealthCheck(obj("source"))
@@ -446,4 +452,414 @@ func n2Accepted(got, want *jsonx.Object, args *jsonx.Object) bool {
 	}
 	encoded, _ := jsonx.Compact(args)
 	return strings.Contains(string(encoded), "İ") || strings.Contains(string(encoded), `\u0130`)
+}
+
+// legacyProbeConverter only transcodes the neighbouring Sub-Store callback.
+// Node parsing, branch selection and fixing remain in the native health owner.
+type legacyProbeConverter struct{ converter convert.ProxyStringConverter }
+
+func (c legacyProbeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	if c.converter == nil {
+		return nil, nil
+	}
+	proxy := c.converter.ConvertProxyString(ctx, text)
+	if proxy == nil {
+		return nil, nil
+	}
+	raw, err := jsonx.Compact(proxy)
+	if err != nil {
+		return nil, err
+	}
+	return yamlx.FromJSON(raw)
+}
+
+// Env is the legacy environment configuration retained for api/nodes tests.
+// Removed when api/nodes migrates to ProbeEnv.
+type Env struct {
+	LookupEnv   func(string) (string, bool)
+	Environ     func() []string
+	Runner      Runner
+	Now         func() time.Time
+	ProbeBinary func() (string, error)
+	Converter   convert.ProxyStringConverter
+}
+
+// DefaultEnv returns the default legacy Env.
+func DefaultEnv() *Env {
+	return &Env{
+		LookupEnv: os.LookupEnv,
+		Environ:   os.Environ,
+		Runner:    ExecRunner{},
+		Now:       time.Now,
+	}
+}
+
+var currentLegacyEnv = DefaultEnv()
+
+type dynamicLegacyRunner struct{ env *Env }
+
+func (d dynamicLegacyRunner) Run(ctx context.Context, cmd Command) (Result, error) {
+	if d.env != nil && d.env.Runner != nil {
+		return d.env.Runner.Run(ctx, cmd)
+	}
+	return ExecRunner{}.Run(ctx, cmd)
+}
+
+func probeEnvFromLegacy(env *Env) *ProbeEnv {
+	if env == nil {
+		env = DefaultEnv()
+	}
+	p := &ProbeEnv{
+		LookupEnv: func(key string) (string, bool) {
+			if env.LookupEnv != nil {
+				return env.LookupEnv(key)
+			}
+			return "", false
+		},
+		Environ: func() []string {
+			if env.Environ != nil {
+				return env.Environ()
+			}
+			return nil
+		},
+		Runner: dynamicLegacyRunner{env: env},
+		Now: func() time.Time {
+			if env.Now != nil {
+				return env.Now()
+			}
+			return time.Now()
+		},
+		Collaborators: defaultCollaborators(func() convert.NodeConverter { return legacyProbeConverter{env.Converter} }),
+	}
+	p.ProbeBinary = func() (string, error) {
+		if env.ProbeBinary != nil {
+			return env.ProbeBinary()
+		}
+		return FindBinary(p)
+	}
+	return p
+}
+
+// SetEnv installs env as the active environment and returns a restore callback.
+// Removed when api/nodes migrates to SetProbeEnv.
+func SetEnv(env *Env) (restore func()) {
+	prevLegacy := currentLegacyEnv
+	currentLegacyEnv = env
+	restoreProbe := SetProbeEnv(probeEnvFromLegacy(env))
+	return func() {
+		currentLegacyEnv = prevLegacy
+		restoreProbe()
+	}
+}
+
+// CurrentEnv returns the currently installed legacy Env.
+// Removed when api/nodes migrates off legacy Env.
+func CurrentEnv() *Env { return currentLegacyEnv }
+
+// FindProbeBinary locates the worker binary using a legacy Env.
+// Removed when api/nodes migrates to FindBinary.
+func FindProbeBinary(e *Env) (string, error) {
+	p := probeEnvFromLegacy(e)
+	p.ProbeBinary = nil
+	return FindBinary(p)
+}
+
+func toRawJSON(value any) (json.RawMessage, error) {
+	if value == nil {
+		return nil, nil
+	}
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(raw), nil
+}
+
+func encodeToLegacyValue(value any) (any, error) {
+	raw, err := jsonresp.Encode(value)
+	if err != nil {
+		return nil, err
+	}
+	return jsonx.Parse(raw)
+}
+
+func encodeToLegacyObject(value any) (*jsonx.Object, error) {
+	parsed, err := encodeToLegacyValue(value)
+	if err != nil {
+		return nil, err
+	}
+	obj, ok := parsed.(*jsonx.Object)
+	if !ok {
+		return nil, fmt.Errorf("expected JSON object, got %T", parsed)
+	}
+	return obj, nil
+}
+
+func encodeToLegacySlice(value any) ([]any, error) {
+	parsed, err := encodeToLegacyValue(value)
+	if err != nil {
+		return nil, err
+	}
+	list, ok := parsed.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected JSON array, got %T", parsed)
+	}
+	return list, nil
+}
+
+// NormalizeDNSServers adapts legacy jsonx values to NormalizeDNSServersJSON.
+// Removed when api/nodes migrates off jsonx.
+func NormalizeDNSServers(value any, bootstrap bool) ([]any, error) {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		message := DNSError
+		if bootstrap {
+			message = BootstrapError
+		}
+		return nil, valueError(message)
+	}
+	servers, err := NormalizeDNSServersJSON(raw, bootstrap)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacySlice(servers)
+}
+
+// NormalizeConfig adapts legacy jsonx values to NormalizeDNSConfigJSON.
+// Removed when api/nodes migrates off jsonx.
+func NormalizeConfig(value any) (*jsonx.Object, error) {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, valueError(msgSelectDNSMode)
+	}
+	cfg, err := NormalizeDNSConfigJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(cfg)
+}
+
+// LoadConfig adapts LoadDNSConfig to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
+	cfg, err := LoadDNSConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(cfg)
+}
+
+// EffectiveSettings adapts EffectiveDNSSettingsJSON to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func EffectiveSettings(ctx context.Context, value any) (*jsonx.Object, error) {
+	raw, err := toRawJSON(value)
+	if err != nil {
+		return nil, err
+	}
+	effective, err := EffectiveDNSSettingsJSON(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(effective)
+}
+
+// DescribeSettings adapts DescribeDNSSettingsJSON to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func DescribeSettings(ctx context.Context, value any) (*jsonx.Object, error) {
+	raw, err := toRawJSON(value)
+	if err != nil {
+		return nil, err
+	}
+	view, err := DescribeDNSSettingsJSON(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(view)
+}
+
+// SaveConfig adapts SaveDNSConfigJSON to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func SaveConfig(ctx context.Context, value any) (*jsonx.Object, error) {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return nil, valueError(msgSelectDNSMode)
+	}
+	view, err := SaveDNSConfigJSON(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(view)
+}
+
+// CheckSettings adapts CheckDNSSettingsJSON to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func CheckSettings(ctx context.Context, value any) (*jsonx.Object, error) {
+	raw, err := toRawJSON(value)
+	if err != nil {
+		return nil, err
+	}
+	result, err := CheckDNSSettingsJSON(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(result)
+}
+
+// DNSSettings adapts ResolveDNSSettings to a legacy slice.
+// Removed when api/nodes migrates off jsonx.
+func DNSSettings(ctx context.Context) (any, error) {
+	servers, err := ResolveDNSSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacySlice(servers)
+}
+
+// Settings adapts ResolveSettings to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func Settings(ctx context.Context) (*jsonx.Object, error) {
+	settings, err := ResolveSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(settings)
+}
+
+// CollectCandidates adapts CollectCandidateNodes to legacy *jsonx.Object maps.
+// Removed when api/nodes migrates off jsonx.
+func CollectCandidates(ctx context.Context) ([]string, map[string]*jsonx.Object, error) {
+	list, err := CollectCandidateNodes(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys := make([]string, len(list))
+	nodes := make(map[string]*jsonx.Object, len(list))
+	for i, c := range list {
+		keys[i] = c.Key
+		parsed, err := jsonx.Parse(c.Raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		obj, ok := parsed.(*jsonx.Object)
+		if !ok {
+			return nil, nil, fmt.Errorf("candidate %s did not decode to object", c.Key)
+		}
+		nodes[c.Key] = obj
+	}
+	return keys, nodes, nil
+}
+
+// LoadResults adapts LoadLatencyResults to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func LoadResults(ctx context.Context) *jsonx.Object {
+	obj, err := encodeToLegacyObject(LoadLatencyResults(ctx))
+	if err != nil {
+		return jsonx.NewObject()
+	}
+	return obj
+}
+
+// RunTests adapts RunLatencyTests to a legacy *jsonx.Object.
+// Removed when api/nodes migrates off jsonx.
+func RunTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
+	outcome, err := RunLatencyTests(ctx, names, keys)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(outcome)
+}
+
+// Internal legacy shims used only by replay harnesses in package health.
+
+func ipv4Server(value any, message string) (string, error) {
+	text, ok := value.(string)
+	if !ok {
+		return "", valueError(message)
+	}
+	return ipv4ServerString(text, message)
+}
+
+func server(value any) (string, error) {
+	text, ok := value.(string)
+	if !ok {
+		return "", valueError(DNSError)
+	}
+	return serverString(text)
+}
+
+func proxyOf(ctx context.Context, node *jsonx.Object, converter convert.ProxyStringConverter) *jsonx.Object {
+	if node == nil {
+		return nil
+	}
+	raw, err := jsonx.Compact(node)
+	if err != nil {
+		return nil
+	}
+	fields, ok := defaultCollaborators(func() convert.NodeConverter { return legacyProbeConverter{converter} }).ConvertNode(ctx, raw)
+	if !ok {
+		return nil
+	}
+	obj, err := encodeToLegacyObject(fields)
+	if err != nil {
+		return nil
+	}
+	return obj
+}
+
+func needsSubStore(node *jsonx.Object) bool {
+	if node == nil {
+		return false
+	}
+	raw, ok := node.Value("proxy_string").(string)
+	if !ok || raw == "" {
+		return false
+	}
+	return defaultCollaborators(nil).NeedsRemoteConversion(raw)
+}
+
+func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Object) (*jsonx.Object, error) {
+	typedProxies := make([]model.Fields, len(proxies))
+	for i, p := range proxies {
+		raw, err := jsonx.Compact(p)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &typedProxies[i]); err != nil {
+			return nil, err
+		}
+	}
+	var typedOptions ProbeSettings
+	if options != nil {
+		raw, err := jsonx.Compact(options)
+		if err != nil {
+			return nil, err
+		}
+		if err := jsondecode.Unmarshal(raw, &typedOptions); err != nil {
+			return nil, err
+		}
+	}
+	results, err := runProbeFields(ctx, typedProxies, typedOptions)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(results)
+}
+
+func initializeProviderHealth(source *jsonx.Object) {
+	raw, _ := json.Marshal(source)
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil {
+		return
+	}
+	if check.InitProviderHealth(&fields) != nil {
+		return
+	}
+	next, err := encodeToLegacyObject(fields)
+	if err != nil {
+		return
+	}
+	for _, key := range source.Keys() {
+		source.Delete(key)
+	}
+	source.Update(next)
 }

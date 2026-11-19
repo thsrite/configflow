@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-
 	"os"
-
 	"strings"
 	"syscall"
 
@@ -26,8 +24,8 @@ type PyError struct {
 	Message string
 }
 
-func (e *PyError) Error() string       { return e.Message }
-func (e *PyError) PythonClass() string { return e.Class }
+func (e *PyError) Error() string      { return e.Message }
+func (e *PyError) ErrorClass() string { return e.Class }
 
 func pyErr(class, format string, args ...any) *PyError {
 	return &PyError{Class: class, Message: fmt.Sprintf(format, args...)}
@@ -128,6 +126,10 @@ func pythonClass(err error) string {
 		return "EasyTierSettingsError"
 	case *rules.StrategyReferenceError:
 		return "StrategyReferenceError"
+	case *rulefetch.FetchError:
+		return e.Class
+	case *rulefetch.RuleFetchError:
+		return "RuleFetchError"
 	case *rulefetch.RemoteRuleValidationError:
 		return "RemoteRuleValidationError"
 	case *repo.Error:
@@ -144,8 +146,8 @@ func pythonClass(err error) string {
 			}
 		}
 		return "StoreError"
-	case interface{ PythonClass() string }:
-		return e.PythonClass()
+	case interface{ ErrorClass() string }:
+		return e.ErrorClass()
 	}
 	if isOSError(err) {
 		return osErrorClass(err)

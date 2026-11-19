@@ -1,7 +1,6 @@
 package nodes
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +10,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/repo"
 )
 
@@ -46,20 +46,28 @@ func nativeJSON(status int, value any) *httpx.Response {
 	return httpx.RawJSON(status, data)
 }
 func readObject(c *httpx.Ctx, silent bool) (record, error) {
-	if !silent {
-		if _, err := c.JSON(); err != nil {
-			return nil, err
+	var raw json.RawMessage
+	if silent {
+		// Keep the route's forgiving syntax behavior, but Bind still prevents
+		// non-finite tokens from reaching any mutation or probe owner.
+		if !c.BindSilent(&raw) {
+			if !c.IsJSON() {
+				return nil, nil
+			}
+			data, err := c.Data()
+			if err != nil {
+				return nil, err
+			}
+			if _, nonfinite := jsonresp.NormalizeNonFinite(data); nonfinite {
+				return nil, httpx.BadRequest("")
+			}
+			return nil, nil
 		}
-	}
-	if !c.IsJSON() {
-		return nil, nil
-	}
-	data, err := c.Data()
-	if err != nil {
+	} else if err := c.Bind(&raw); err != nil {
 		return nil, err
 	}
 	var object record
-	if json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &object) != nil {
+	if json.Unmarshal(raw, &object) != nil {
 		return nil, nil
 	}
 	return object, nil

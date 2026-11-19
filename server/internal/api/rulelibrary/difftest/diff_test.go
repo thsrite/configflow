@@ -79,15 +79,15 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		if err != nil {
 			return nil, err
 		}
-		return refresh.RuleRows(ctx, status)
+		return ruleRows(ctx, status)
 	}})
 	t.Cleanup(notifications.ResetSources)
 	oldClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = oldClock })
-	env := refresh.DefaultEnv()
+	env := refresh.DefaultRefreshEnv()
 	env.Clock = fixedClock{}
-	t.Cleanup(refresh.SetEnv(env))
+	t.Cleanup(refresh.SetRefreshEnv(env))
 	if seed != nil {
 		seed(w.srv.Context(), w.srv.Repo)
 	}
@@ -676,4 +676,32 @@ func (w *world) normalizeString(value string) string {
 		return value
 	}
 	return strings.NewReplacer(pairs...).Replace(value)
+}
+
+func ruleRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var statuses taskstatus.Snapshot
+	if err := json.Unmarshal(raw, &statuses); err != nil {
+		return nil, err
+	}
+	rows, err := refresh.RuleTasks(ctx, statuses)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*jsonx.Object, len(rows))
+	for i, row := range rows {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = parsed.(*jsonx.Object)
+	}
+	return out, nil
 }

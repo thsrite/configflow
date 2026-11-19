@@ -1,12 +1,12 @@
 package check
 
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"errors"
 	"fmt"
 	"time"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -103,26 +103,6 @@ func InitializeGroupHealth(group *jsonx.Object) {
 		return
 	}
 	replaceObjectInPlace(group, next)
-}
-
-// InitializeProviderHealth mutates source in place via InitProviderHealth.
-// Removed when api/subscriptions and api/aggregations migrate off jsonx.
-func InitializeProviderHealth(source *jsonx.Object) {
-	if source == nil {
-		return
-	}
-	var rawObj rawJSONObject
-	if err := decodeLegacy(source, &rawObj); err != nil {
-		return
-	}
-	if err := InitProviderHealth(&rawObj.Fields); err != nil {
-		return
-	}
-	next, err := encodeLegacyObject(rawObj)
-	if err != nil {
-		return
-	}
-	replaceObjectInPlace(source, next)
 }
 
 // ValidateHealth validates legacy jsonx values via ValidateHealthJSON.

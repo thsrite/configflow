@@ -10,16 +10,13 @@ legacy-file internal/auth/legacy.go:<file>
 legacy-file internal/convert/legacy.go:<file>
 legacy-file internal/convert/mihomoenv/legacy.go:<file>
 legacy-file internal/health/check/legacy.go:<file>
-legacy-file internal/health/legacy.go:<file>
 legacy-file internal/installer/options_legacy.go:<file>
 legacy-file internal/mosdns/legacy.go:<file>
 legacy-file internal/notifications/legacy.go:<file>
 legacy-file internal/oxidns/legacy.go:<file>
 legacy-file internal/provider/legacy.go:<file>
-legacy-file internal/refresh/env_legacy.go:<file>
 legacy-file internal/refresh/interval_legacy.go:<file>
 legacy-file internal/refresh/owners_legacy.go:<file>
-legacy-file internal/refresh/rows_legacy.go:<file>
 legacy-file internal/refresh/scheduled_legacy.go:<file>
 legacy-file internal/repo/legacy.go:<file>
 legacy-file internal/routersplit/legacy.go:<file>
@@ -40,7 +37,6 @@ legacy-file internal/taskstatus/legacy.go:<file>
 legacy-file internal/weblistener/legacy.go:<file>
 retired-directory internal/jsonx:<directory>
 retired-directory internal/pystr:<directory>
-retired-import cmd/configflow/manifest_proddiff_test.go:configflow/internal/jsonx
 retired-import cmd/configflow/service_test.go:configflow/internal/jsonx
 retired-import internal/agents/a01_reference_test.go:configflow/internal/jsonx
 retired-import internal/agents/a02_reference_test.go:configflow/internal/jsonx
@@ -226,7 +222,6 @@ retired-import internal/api/agents/traffic_errors_internal_test.go:configflow/in
 retired-import internal/api/agents/traffic_test.go:configflow/internal/jsonx
 retired-import internal/api/agents/upgrades_legacy_test.go:configflow/internal/jsonx
 retired-import internal/api/agents/upgrades_test.go:configflow/internal/jsonx
-retired-import internal/api/aggregations/adapter.go:configflow/internal/jsonx
 retired-import internal/api/aggregations/delivery_test.go:configflow/internal/jsonx
 retired-import internal/api/aggregations/difftest/cases_test.go:configflow/internal/jsonx
 retired-import internal/api/aggregations/difftest/diff_test.go:configflow/internal/jsonx
@@ -258,7 +253,6 @@ retired-import internal/api/logs/permission_test.go:configflow/internal/jsonx
 retired-import internal/api/logs/review_test.go:configflow/internal/jsonx
 retired-import internal/api/nodes/adapter.go:configflow/internal/jsonx
 retired-import internal/api/nodes/crud_test.go:configflow/internal/jsonx
-retired-import internal/api/nodes/latency.go:configflow/internal/jsonx
 retired-import internal/api/nodes/latency_test.go:configflow/internal/jsonx
 retired-import internal/api/nodes/review_test.go:configflow/internal/jsonx
 retired-import internal/api/notifications/notifications_test.go:configflow/internal/jsonx
@@ -318,7 +312,6 @@ retired-import internal/api/settings/settings.go:configflow/internal/jsonx
 retired-import internal/api/settings/settings_test.go:configflow/internal/jsonx
 retired-import internal/api/settings/unicode_test.go:configflow/internal/jsonx
 retired-import internal/api/stats/stats_test.go:configflow/internal/jsonx
-retired-import internal/api/subscriptions/adapter.go:configflow/internal/jsonx
 retired-import internal/api/subscriptions/difftest/cases_test.go:configflow/internal/jsonx
 retired-import internal/api/subscriptions/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/subscriptions/input_shape_test.go:configflow/internal/jsonx
@@ -440,7 +433,6 @@ retired-import internal/health/check/typed_test.go:configflow/internal/jsonx
 retired-import internal/health/corpus_test.go:configflow/internal/jsonx
 retired-import internal/health/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/health/latency_internal_test.go:configflow/internal/jsonx
-retired-import internal/health/legacy.go:configflow/internal/jsonx
 retired-import internal/health/ownership_test.go:configflow/internal/jsonx
 retired-import internal/health/recorded_test.go:configflow/internal/jsonx
 retired-import internal/health/replay_classify_test.go:configflow/internal/jsonx
@@ -556,7 +548,6 @@ retired-import internal/redact/review_a13_test.go:configflow/internal/jsonx
 retired-import internal/refresh/corpus_test.go:configflow/internal/jsonx
 retired-import internal/refresh/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/refresh/health_test.go:configflow/internal/jsonx
-retired-import internal/refresh/interval_legacy.go:configflow/internal/jsonx
 retired-import internal/refresh/legacy_errors_test.go:configflow/internal/jsonx
 retired-import internal/refresh/lifecycle_test.go:configflow/internal/jsonx
 retired-import internal/refresh/native_reader_test.go:configflow/internal/jsonx
@@ -566,7 +557,6 @@ retired-import internal/refresh/recorded_test.go:configflow/internal/jsonx
 retired-import internal/refresh/refresh_test.go:configflow/internal/jsonx
 retired-import internal/refresh/review_c15_test.go:configflow/internal/jsonx
 retired-import internal/refresh/routes_test.go:configflow/internal/jsonx
-retired-import internal/refresh/rows_legacy.go:configflow/internal/jsonx
 retired-import internal/refresh/scheduled_legacy.go:configflow/internal/jsonx
 retired-import internal/refresh/writer_test.go:configflow/internal/jsonx
 retired-import internal/repo/agent_default_test.go:configflow/internal/jsonx
@@ -712,7 +702,6 @@ retired-import internal/subs/dns_corpus_test.go:configflow/internal/jsonx
 retired-import internal/subs/filter_hosts_corpus_test.go:configflow/internal/jsonx
 retired-import internal/subs/legacy.go:configflow/internal/jsonx
 retired-import internal/subs/legacy_helpers_test.go:configflow/internal/jsonx
-retired-import internal/subs/legacy_references.go:configflow/internal/jsonx
 retired-import internal/subs/listeners_corpus_test.go:configflow/internal/jsonx
 retired-import internal/subs/listeners_test.go:configflow/internal/jsonx
 retired-import internal/subs/native_chain_test.go:configflow/internal/jsonx
@@ -803,8 +792,6 @@ retired-symbol internal/httpx/pyconv.go:PyTypeName
 retired-symbol internal/ippresence/ippresence.go:PyError
 retired-symbol internal/ippresence/ippresence.go:PyErrorClass
 retired-symbol internal/ippresence/ippresence.go:PythonClass
-retired-symbol internal/refresh/interval_legacy.go:PythonClass
-retired-symbol internal/refresh/scheduled_legacy.go:PythonClass
 retired-symbol internal/rulefetch/fetch.go:PythonClass
 retired-symbol internal/rulefetch/pyerrors.go:PythonClass
 retired-symbol internal/rulefetch/transport.go:PythonClass

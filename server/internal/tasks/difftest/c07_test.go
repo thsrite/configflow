@@ -56,8 +56,8 @@ func newWorld(t *testing.T) *world {
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
 	}
-	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, refresh.SubscriptionRows))
-	t.Cleanup(tasks.SetRows(tasks.SlotRuleSources, refresh.RuleRows))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, refresh.SubscriptionTasks))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, refresh.RuleTasks))
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, metrics.BuildRows))
 	t.Cleanup(tasks.SetIntervalEditor(tasks.MetricsTaskKey, func(ctx context.Context, value *int64) error {
 		if value == nil {

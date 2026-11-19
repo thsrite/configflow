@@ -11,6 +11,7 @@ import (
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/substore"
 )
 
@@ -41,7 +42,7 @@ func fixture(t *testing.T) *httpxtest.Server {
 	for _, name := range []string{"HK 01", "HK 02", "JP 01", "广告", "US hidden", "HK 01"} {
 		nodes = append(nodes, jsonx.Obj("name", name, "type", "ss"))
 	}
-	if _, err = substore.SaveSubscriptionNodes(s.Context(), "feed", nodes, nil); err != nil {
+	if _, err = fixtureSaveSubscriptionNodes(s.Context(), "feed", nodes, nil); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -175,4 +176,39 @@ func TestListenerRelinkingPreservesUserComments(t *testing.T) {
 			t.Fatalf("listener editing lost comments: %q", content)
 		}
 	}
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

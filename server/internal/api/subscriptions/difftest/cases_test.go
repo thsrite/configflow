@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
@@ -49,7 +50,7 @@ func seedGraph(t *testing.T, chain string, second bool, cached bool) func(contex
 		})
 		must(t, err)
 		if cached {
-			_, err := substore.SaveSubscriptionNodes(ctx, "s", []any{node("old")}, nil)
+			_, err := fixtureSaveSubscriptionNodes(ctx, "s", []any{node("old")}, nil)
 			must(t, err)
 		}
 	}
@@ -265,7 +266,11 @@ func TestCachePreviewNeverRefreshes(t *testing.T) {
 				if state == "different-url" {
 					metadata.Set("url", "https://feed.example/previous")
 				}
-				_, err = substore.SaveSubscriptionNodes(ctx, "s", list, metadata)
+				if state == "non-list" {
+					_, err = r.WriteSharedJSON(ctx, "subscribes/s.json", jsonx.Obj("subscription_id", "s", "updated_at", "2026-01-01T00:00:00+00:00", "count", 0, "nodes", list, "metadata", metadata))
+				} else {
+					_, err = fixtureSaveSubscriptionNodes(ctx, "s", list, metadata)
+				}
 				must(t, err)
 			}
 			w := newWorld(t, setup, nil)
@@ -450,7 +455,7 @@ func TestAdversarialProviderURLs(t *testing.T) {
 // C31 is deliberately absent: an activated graph requiring an aggregation
 // must reject the complete delivery before any cache or served artifact changes.
 func TestMissingAggregationDependencyFailsClosed(t *testing.T) {
-	defer provider.SetAggregationProvider(nil)()
+	defer provider.SetAggregationRenderer(nil)()
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "managed", false, true)(ctx, r)
 		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
@@ -512,7 +517,7 @@ func TestEveryGlobalRouteRequiresJWT(t *testing.T) {
 func TestFetchWithNullCacheNodes(t *testing.T) {
 	w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "none", false, false)(ctx, r)
-		_, err := substore.SaveSubscriptionNodes(ctx, "s", nil, nil)
+		_, err := fixtureSaveSubscriptionNodes(ctx, "s", nil, nil)
 		must(t, err)
 	}, nil)
 	w.control.Offline = true
@@ -536,4 +541,39 @@ func TestUTF8BOMRequestBodies(t *testing.T) {
 	if !reflect.DeepEqual(before, normalize(snapshot(t, w.srv))) {
 		t.Fatal("BOM null fetch changed storage")
 	}
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

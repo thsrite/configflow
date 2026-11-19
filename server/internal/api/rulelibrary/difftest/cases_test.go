@@ -2,9 +2,11 @@ package difftest
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 )
@@ -37,7 +39,7 @@ func seed(t *testing.T) func(context.Context, *repo.Repository) {
 		for _, name := range []string{"HK 01", "HK 02", "JP 01", "广告", "US hidden", "HK 01"} {
 			nodes = append(nodes, jsonx.Obj("name", name, "type", "ss"))
 		}
-		if _, err = substore.SaveSubscriptionNodes(ctx, "feed", nodes, nil); err != nil {
+		if _, err = fixtureSaveSubscriptionNodes(ctx, "feed", nodes, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -92,4 +94,39 @@ func TestRuleLibraryReadCreateHTTPParity(t *testing.T) {
 	w.call("GET", "/api/rule-library/proxy-domains", "", true)
 	w.call("POST", "/api/rule-library/reorder", `{"rules":[{"id":"manual","content":"display-only"}]}`, true)
 	w.call("POST", "/api/rule-library/reorder", `{"ids":["missing"]}`, true)
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

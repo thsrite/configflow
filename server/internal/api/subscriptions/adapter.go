@@ -1,9 +1,7 @@
 package subscriptions
 
-// All calls to packages that still expose jsonx documents are confined here.
+// Typed resource owners and provider delivery are wired here.
 import (
-	"configflow/internal/jsondecode"
-	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +11,10 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
@@ -26,140 +26,175 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func legacy(value any) (any, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Parse(data)
-}
-func legacyObject(value object) (*jsonx.Object, error) {
-	v, err := legacy(value)
-	if err != nil {
-		return nil, err
-	}
-	o, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("expected resource object")
-	}
-	return o, nil
-}
 func native(value any, target any) error {
-	data, err := jsonx.Compact(value)
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 	return jsondecode.Unmarshal(data, target)
 }
-func nativeObject(value *jsonx.Object) (object, error) {
-	var out object
-	err := native(value, &out)
-	return out, err
-}
-func nativeObjects(value []any) ([]object, error) {
+func objects(value any) ([]object, error) {
 	out := []object{}
 	err := native(value, &out)
 	return out, err
 }
+func subscription(value object) (model.Subscription, error) {
+	var out model.Subscription
+	err := native(value, &out)
+	return out, err
+}
+func proxyNodes(value []object) ([]*yamlx.Node, error) {
+	if value == nil {
+		value = []object{}
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	graph, err := yamlx.FromJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	return graph.Content, nil
+}
+func proxyObjects(value []*yamlx.Node) ([]object, error) {
+	out := make([]object, 0, len(value))
+	for _, node := range value {
+		data, err := yamlx.ToJSON(node)
+		if err != nil {
+			return nil, err
+		}
+		var item object
+		if err := json.Unmarshal(data, &item); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
 func listShared(ctx context.Context) ([]object, []object, error) {
-	shared, err := repo.GetSharedConfig(ctx)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	subs, err := nativeObjects(shared.GetList("subscriptions"))
+	shared, err := r.Shared(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	nodes, err := nativeObjects(shared.GetList("nodes"))
-	return subs, nodes, err
+	subscriptions, err := objects(shared.Subscriptions)
+	if err != nil {
+		return nil, nil, err
+	}
+	nodes, err := objects(shared.Nodes)
+	return subscriptions, nodes, err
 }
 func editSubscriptions(ctx context.Context, mutate func([]object) ([]object, error)) error {
 	ctx = lifecycle.Detach(ctx)
-	_, err := repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		list, err := nativeObjects(shared.GetList("subscriptions"))
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
+		list, err := objects(shared.Subscriptions)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		list, err = mutate(list)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		v, err := legacy(list)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		before, err := json.Marshal(shared.Subscriptions)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		// Retain the original ordered storage representation for semantic no-ops.
-		// Re-encoding a native map must not turn a repeated PUT into a new revision.
-		if jsonx.Equal(shared.Value("subscriptions"), v) {
-			return nil, nil
+		after, err := json.Marshal(list)
+		if err != nil {
+			return err
 		}
-		shared.Set("subscriptions", v)
-		return nil, nil
+		merged, changed, err := repo.MergeJSON(before, before, after)
+		if err != nil || !changed {
+			return err
+		}
+		return json.Unmarshal(merged, &shared.Subscriptions)
 	})
-	return err
 }
 func appendImported(ctx context.Context, nodes []object) (int, error) {
 	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return 0, err
+	}
 	added := 0
-	_, err := repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		existing := shared.GetList("nodes")
+	err = r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
 		names := map[string]bool{}
-		for _, item := range existing {
-			names[item.(*jsonx.Object).GetString("name")] = true
+		for _, node := range shared.Nodes {
+			names[node.Name] = true
 		}
 		for _, node := range nodes {
 			if names[node.text("name")] {
 				continue
 			}
-			o, err := legacyObject(node)
-			if err != nil {
-				return nil, err
+			var typed model.Node
+			if err := native(node, &typed); err != nil {
+				return err
 			}
-			existing = append(existing, o)
+			shared.Nodes = append(shared.Nodes, typed)
 			names[node.text("name")] = true
 			added++
 		}
-		shared.Set("nodes", existing)
-		return nil, nil
+		return ctx.Err()
 	})
 	return added, err
 }
 func validateOptions(sub object) error {
-	o, err := legacyObject(sub)
-	if err != nil {
+	if raw := sub["regex_filter"]; len(raw) > 0 && string(raw) != "null" {
+		var text string
+		if json.Unmarshal(raw, &text) != nil {
+			return errors.New(msgFilterType)
+		}
+		if message := subs.ValidateFilter(text); message != "" {
+			return errors.New(message)
+		}
+	}
+	if raw, ok := sub["interval"]; ok {
+		_, err := refresh.ParseInterval(raw, "")
 		return err
 	}
-	if message := subs.ValidateRegexFilter(o.Value("regex_filter")); message != "" {
-		return errors.New(message)
-	}
-	if o.Has("interval") {
-		_, err = refresh.ValidateRefreshInterval(o.Value("interval"), "")
-	}
-	return err
+	return nil
 }
 func initialize(sub object) error {
-	o, err := legacyObject(sub)
-	if err != nil {
+	var fields model.Fields
+	if err := native(sub, &fields); err != nil {
 		return err
 	}
-	check.InitializeProviderHealth(o)
-	return native(o, &sub)
+	if err := check.InitProviderHealth(&fields); err != nil {
+		return err
+	}
+	return native(fields, &sub)
 }
 func filter(sub object, nodes []object) ([]object, error) {
-	// Optional cache nodes decode to a nil slice. Keep an empty JSON array
-	// when crossing the storage adapter so the legacy API receives a list.
-	if nodes == nil {
-		nodes = []object{}
-	}
-	o, err := legacyObject(sub)
+	source, err := subscription(sub)
 	if err != nil {
 		return nil, err
 	}
-	v, err := legacy(nodes)
+	graphs, err := proxyNodes(nodes)
 	if err != nil {
 		return nil, err
 	}
-	return nativeObjects(subs.FilterSubscriptionItems(o, v.([]any)))
+	return proxyObjects(subs.FilterProxies(source, graphs))
 }
 func loadCache(ctx context.Context, id string) (*cache, error) {
 	return readCache(ctx, id, false)
@@ -171,22 +206,33 @@ func loadCacheSummary(ctx context.Context, id string) (*cache, error) {
 	return readCache(ctx, id, true)
 }
 func readCache(ctx context.Context, id string, summary bool) (*cache, error) {
-	v, err := substore.LoadSubscriptionCache(ctx, id)
+	v, err := substore.LoadCache(ctx, id)
 	if err != nil || v == nil {
 		return nil, err
 	}
-	if summary {
-		if _, ok := v.Value("nodes").([]any); !ok {
-			v = v.DeepCopy()
-			v.Delete("nodes")
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	// Summary routes tolerate a malformed legacy node collection, while a
+	// publication still rejects it before conversion or cache writes.
+	if summary && model.IssueUnder(model.Issues(v), "nodes") {
+		var fields object
+		if err := json.Unmarshal(data, &fields); err != nil {
+			return nil, err
+		}
+		delete(fields, "nodes")
+		data, err = json.Marshal(fields)
+		if err != nil {
+			return nil, err
 		}
 	}
 	var out cache
-	err = native(v, &out)
+	err = json.Unmarshal(data, &out)
 	return &out, err
 }
 func loadHealth(ctx context.Context) (map[string]healthEntry, error) {
-	v, err := refresh.LoadHealth(ctx)
+	v, err := refresh.ReadHealth(lifecycle.Detach(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -209,11 +255,11 @@ func forgetTask(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SubscriptionKey(id))
+	return notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
 }
 func forgetSubscription(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(ctx)
-	if err := refresh.Forget(ctx, id); err != nil {
+	if err := refresh.ForgetHealth(ctx, id); err != nil {
 		return err
 	}
 	if err := forgetTask(ctx, id); err != nil {
@@ -223,16 +269,15 @@ func forgetSubscription(ctx context.Context, id string) error {
 	return err
 }
 func refreshSubscription(ctx context.Context, sub object) ([]object, *cache, error) {
-	ctx = lifecycle.Detach(ctx)
-	o, err := legacyObject(sub)
+	source, err := subscription(sub)
 	if err != nil {
 		return nil, nil, err
 	}
-	nodes, _, payload, err := refresh.RefreshSubscription(ctx, o, "manual")
+	nodes, _, payload, err := refresh.RefreshSource(ctx, source, "manual")
 	if err != nil {
 		return nil, nil, err
 	}
-	list, err := nativeObjects(nodes)
+	list, err := objects(nodes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -241,23 +286,15 @@ func refreshSubscription(ctx context.Context, sub object) ([]object, *cache, err
 	return list, &c, err
 }
 func reorder(current []object, body object) ([]object, []string, error) {
-	if _, err := rules.OrderIDs(body, "subscriptions"); err != nil {
+	ids, err := rules.OrderIDs(body, "subscriptions")
+	if err != nil {
 		return nil, nil, httpx.BadRequest(err.Error())
 	}
-	v, err := legacy(current)
-	if err != nil {
-		return nil, nil, err
-	}
-	b, err := legacyObject(body)
-	if err != nil {
-		return nil, nil, err
-	}
-	out, missing := rules.ResolveNewOrder(v.([]any), b, "subscriptions")
-	list, err := nativeObjects(out)
-	return list, missing, err
+	out, missing := rules.Reorder(current, ids, position(body), func(item object) string { return item.text("id") })
+	return out, missing, nil
 }
 func authorize(c *httpx.Ctx) (*httpx.Response, error) {
-	v, err := auth.ValidateTokenOrJWT(c, nil)
+	v, err := auth.ValidateSystemTokenOrJWT(c, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -270,130 +307,143 @@ func failureDetail(err error) string { return "request_failed (" + weburl.SafeEr
 func referenceError(err error) bool  { var e *rules.StrategyReferenceError; return errors.As(err, &e) }
 
 type delivery struct {
-	config    *jsonx.Object
-	main      *jsonx.Object
-	snapshot  *provider.Snapshot
+	config    *model.Config
+	main      *yamlx.Node
+	snapshot  *provider.DeliverySnapshot
 	profileID string
 }
-type staged struct{ updates []provider.CacheUpdate }
+type staged struct{ updates []provider.CacheWrite }
 
 func resource(ctx context.Context, id *string) (*delivery, []object, error) {
-	config, err := repo.GetResourceConfig(ctx, "subscriptions", id, "")
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	list, err := nativeObjects(config.GetList("subscriptions"))
+	profileID, err := repo.ResolveProfileID(ctx, "")
 	if err != nil {
 		return nil, nil, err
 	}
-	return &delivery{config: config, profileID: config.GetString("profile_id")}, list, nil
+	roots := repo.ResourceRoots{"subscriptions": nil}
+	if id != nil {
+		roots["subscriptions"] = []string{*id}
+	}
+	config, err := r.Config(ctx, profileID, roots)
+	if err != nil {
+		return nil, nil, err
+	}
+	list, err := objects(config.Subscriptions)
+	return &delivery{config: config, profileID: profileID}, list, err
 }
 func (d *delivery) capture(ctx context.Context) error {
-	main, err := convert.GenerateMihomoDocument(ctx, d.config, convert.GenerateOptions{SkipProviderPreflight: true})
+	main, err := convert.MihomoDocument(ctx, d.config, convert.MihomoOptions{SkipProviderPreflight: true})
 	if err != nil {
 		return err
 	}
 	d.main = main
-	d.snapshot, err = provider.Capture(d.profileID, main, d.config)
+	d.snapshot, err = provider.CaptureDelivery(d.profileID, main, d.config.Profile)
 	return err
 }
 func (d *delivery) hasChains() (bool, error) { return d.snapshot.HasChains() }
 func (d *delivery) validate(proxies []object, name *string) error {
-	v, err := legacy(proxies)
+	nodes, err := proxyNodes(proxies)
 	if err != nil {
 		return err
 	}
-	return d.snapshot.Validate(v, false, name)
+	return d.snapshot.Validate(nodes, false, name)
 }
 func (d *delivery) adapt(ctx context.Context, sub object, proxies []object, chains bool) ([]object, error) {
-	o, err := legacyObject(sub)
+	source, err := subscription(sub)
 	if err != nil {
 		return nil, err
 	}
-	v, err := legacy(proxies)
+	nodes, err := proxyNodes(proxies)
 	if err != nil {
 		return nil, err
 	}
-	out, err := d.snapshot.Adapt(ctx, o, v.([]any), chains)
+	out, err := d.snapshot.AdaptNodes(ctx, source, nodes, chains)
 	if err != nil {
 		return nil, err
 	}
-	return nativeObjects(out)
+	return proxyObjects(out)
 }
-func fetchRaw(ctx context.Context, sub object) ([]object, *substore.SubscriptionResult, error) {
-	ctx = lifecycle.Detach(ctx)
-	o, err := legacyObject(sub)
+func fetchRaw(ctx context.Context, sub object) ([]object, *refresh.SourceResult, error) {
+	source, err := subscription(sub)
 	if err != nil {
 		return nil, nil, err
 	}
-	result, err := refresh.FetchSubscriptionSource(ctx, o, func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
-		return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, id, url, "", substore.FetchOptions{})
-	})
+	result, err := refresh.FetchSource(ctx, source, provider.DefaultDeliveryEnv().Fetch)
 	if err != nil {
 		return nil, nil, err
 	}
-	proxies, err := provider.ParseProviderProxies(result.Text, sub.text("name"), "")
+	proxies, err := provider.ParseNodes(result.Text, sub.text("name"), "")
 	if err != nil {
 		return nil, nil, err
 	}
-	list, err := nativeObjects(proxies)
+	list, err := proxyObjects(proxies)
 	return list, result, err
 }
-func stageNodes(sub object, proxies []object, result *substore.SubscriptionResult, withIdentity bool) (staged, error) {
+func stageNodes(sub object, proxies []object, result *refresh.SourceResult, withIdentity bool) (staged, error) {
 	if len(proxies) == 0 || result.Source == "cache" {
 		return staged{}, nil
 	}
-	o, err := legacyObject(sub)
+	source, err := subscription(sub)
 	if err != nil {
 		return staged{}, err
 	}
-	v, err := legacy(proxies)
+	graphs, err := proxyNodes(proxies)
 	if err != nil {
 		return staged{}, err
 	}
-	nodes, err := substore.ProxiesToNodes(v.([]any))
+	nodes, err := substore.ProxyNodes(graphs)
 	if err != nil {
 		return staged{}, err
 	}
 	if withIdentity {
-		for _, item := range nodes {
-			n := item.(*jsonx.Object)
-			n.Set("subscription_id", sub.text("id"))
-			n.Set("subscription_name", sub.text("name"))
-			if !n.Has("id") {
-				n.Set("id", "node_"+substore.Default().Env.RandomHex())
+		for i := range nodes {
+			nodes[i].SubscriptionID = source.ID
+			nodes[i].SubscriptionName = source.Name
+			if nodes[i].ID == "" {
+				nodes[i].ID = "node_" + substore.Default().Env.RandomHex()
 			}
 		}
 	}
-	metadata, err := refresh.SourceCacheMetadata(o, result)
+	metadata, err := refresh.CacheMetadata(context.Background(), source, result)
 	if err != nil {
 		return staged{}, err
 	}
-	return staged{[]provider.CacheUpdate{{SubID: sub.text("id"), Nodes: nodes, Metadata: metadata}}}, nil
+	var receipt substore.CacheMetadata
+	if err := native(metadata, &receipt); err != nil {
+		return staged{}, err
+	}
+	return staged{[]provider.CacheWrite{{SubID: source.ID, Nodes: nodes, Metadata: &receipt}}}, nil
 }
 func commitStaged(ctx context.Context, updates []staged) error {
-	var all []provider.CacheUpdate
+	var all []provider.CacheWrite
 	for _, update := range updates {
 		all = append(all, update.updates...)
 	}
-	return provider.CommitCacheUpdates(ctx, all)
+	return provider.CommitWrites(ctx, all)
 }
 func cachedProxies(ctx context.Context, sub object, nodes []object, strict bool) ([]object, error) {
-	v, err := legacy(nodes)
+	var typed []model.Node
+	if err := native(nodes, &typed); err != nil {
+		return nil, err
+	}
+	if err := convert.ConfigShapes(&model.Config{Nodes: typed}, false); err != nil {
+		return nil, convert.DialerFailure(err)
+	}
+	source, err := subscription(sub)
 	if err != nil {
 		return nil, err
 	}
-	if err := convert.ValidateShapes(jsonx.Obj("nodes", v), false); err != nil {
-		return nil, err
-	}
-	o, err := legacyObject(sub)
-	if err != nil {
-		return nil, err
-	}
-	out := []any{}
+	out := []*yamlx.Node{}
 	skipped := 0
-	for index, item := range subs.FilterSubscriptionItems(o, v.([]any)) {
-		p, err := convert.ConvertNodeToMihomo(ctx, item.(*jsonx.Object), substore.Converter())
+	for index, item := range subs.FilterNodes(source, typed) {
+		p, err := convert.NodeProxy(ctx, item, convert.OptionalNodeConverter(substore.NativeConverter()))
 		if err != nil {
 			if strict && referenceError(err) {
 				return nil, err
@@ -421,76 +471,74 @@ func cachedProxies(ctx context.Context, sub object, nodes []object, strict bool)
 	if skipped > 0 {
 		logx.Get("backend.routes.subscriptions").Warningf(msgProxyYAMLSkipSummary, skipped)
 	}
-	return nativeObjects(out)
+	return proxyObjects(out)
 }
 func alternative(format string, proxies []object) (string, error) {
-	v, err := legacy(proxies)
+	nodes, err := proxyNodes(proxies)
 	if err != nil {
 		return "", err
 	}
-	if format == "surge" {
-		return convert.ConvertProxiesToSurgeText(v.([]any), substore.ProxiesToNodes)
-	}
-	return convert.ConvertProxiesToLoonText(v.([]any), substore.ProxiesToNodes)
+	return convert.ClientProxyText(nodes, substore.ProxyNodes, format)
 }
 func requestedFilters(c *httpx.Ctx) (*[2]string, error) { return provider.RequestedFilters(c) }
 func filterResponse(proxies []object, filters *[2]string) ([]object, error) {
 	if filters == nil {
 		return proxies, nil
 	}
-	v, err := legacy(proxies)
-	if err != nil {
-		return nil, err
-	}
-	out, err := rules.FilterCandidates(v.([]any), filters[0], filters[1])
-	if err != nil {
-		return nil, err
-	}
-	return nativeObjects(out)
+	return rules.Filter(proxies, &filters[0], &filters[1], func(item object) string { return item.text("name") })
 }
 func (d *delivery) validateBundle(ctx context.Context, sub object, prepared map[string][]object, combined []object) error {
-	opts := provider.BundleOptions{Prepared: map[string]*provider.Rendered{}}
+	opts := provider.DeliveryOptions{Prepared: map[string]*provider.Artifact{}}
 	if sub != nil {
-		o, err := legacyObject(sub)
+		o, err := subscription(sub)
 		if err != nil {
 			return err
 		}
-		opts.Requested = &provider.Requested{Kind: "subscription", Resource: o}
+		opts.Requested = &provider.BundleRequest{Kind: "subscription", Subscription: &o}
 	}
 	for name, proxies := range prepared {
 		content, err := yamlContent(proxies)
 		if err != nil {
 			return err
 		}
-		opts.Prepared[name] = &provider.Rendered{Content: content, CacheUpdates: []provider.CacheUpdate{}}
+		opts.Prepared[name] = &provider.Artifact{Content: content, CacheUpdates: []provider.CacheWrite{}}
 	}
-	main := d.main.DeepCopy()
+	main := yamlx.CopyGraph(d.main)
 	if combined != nil {
 		names := map[string]bool{}
 		for _, p := range combined {
 			names[p.text("name")] = true
 		}
-		all := []any{}
-		for _, p := range main.GetList("proxies") {
-			if !names[p.(*jsonx.Object).GetString("name")] {
-				all = append(all, p)
+		all := []*yamlx.Node{}
+		current := yamlx.Get(main, "proxies")
+		if current != nil {
+			for _, p := range current.Content {
+				data, err := yamlx.ToJSON(yamlx.Get(p, "name"))
+				if err != nil {
+					return err
+				}
+				var name string
+				_ = json.Unmarshal(data, &name)
+				if !names[name] {
+					all = append(all, p)
+				}
 			}
 		}
-		v, err := legacy(combined)
+		graphs, err := proxyNodes(combined)
 		if err != nil {
 			return err
 		}
-		main.Set("proxies", append(all, v.([]any)...))
+		yamlx.Set(main, "proxies", &yamlx.Node{Kind: 2, Tag: "!!seq", Content: append(all, graphs...)})
 	}
-	_, err := provider.PrepareProviderBundle(ctx, d.config, main, opts)
+	_, err := provider.PrepareBundle(ctx, d.config, main, opts)
 	return err
 }
 func (d *delivery) chainedContent(ctx context.Context, sub object, format string) (string, error) {
-	o, err := legacyObject(sub)
+	o, err := subscription(sub)
 	if err != nil {
 		return "", err
 	}
-	bundle, err := provider.PrepareProviderBundle(ctx, d.config, d.main, provider.BundleOptions{Requested: &provider.Requested{Kind: "subscription", Resource: o}})
+	bundle, err := provider.PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &o}})
 	if err != nil {
 		return "", err
 	}
@@ -513,22 +561,22 @@ func (d *delivery) chainedContent(ctx context.Context, sub object, format string
 	if !found {
 		return "", errors.New("provider missing from bundle")
 	}
-	if err := provider.CommitProviderBundle(ctx, d.profileID, bundle); err != nil {
+	if err := provider.CommitArtifacts(ctx, d.profileID, bundle); err != nil {
 		return "", err
 	}
 	return content, nil
 }
 func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*httpx.Response, error) {
-	return provider.ServeProvider(c, "subscription", id, d.profileID, d.config, render)
+	return provider.Serve(c, "subscription", id, d.profileID, d.config, render)
 }
 func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
 	ctx = lifecycle.Detach(ctx)
-	_, err := refresh.RecordFetch(ctx, id, refresh.FetchRecord{OK: ok, FromCache: fromCache, Count: jsonx.Int(int64(count))})
+	_, err := refresh.RecordHealth(ctx, id, refresh.FetchEventInput{OK: ok, FromCache: fromCache, Count: model.Int(count)})
 	return err
 }
 
 func materializeContext(ctx context.Context) context.Context {
-	return convert.WithNodeConversions(ctx, convert.NewConversionResults(), true)
+	return convert.WithConversions(ctx, convert.NewConversions(), true)
 }
 
 func logProviderFailure(ctx context.Context, err error) {
@@ -536,4 +584,11 @@ func logProviderFailure(ctx context.Context, err error) {
 		return
 	}
 	logx.Get("backend.routes.subscriptions").Error(msgProviderFailed + ": " + weburl.SafeErrorDetails(err))
+}
+
+func position(body object) string {
+	if _, present := body["position"]; !present {
+		return "top"
+	}
+	return body.text("position")
 }

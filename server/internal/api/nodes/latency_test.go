@@ -2,6 +2,7 @@ package nodes_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,8 +14,10 @@ import (
 	"configflow/internal/health"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 // Ports of backend/test_node_latency.py and backend/test_node_dns.py. The
@@ -93,7 +96,7 @@ type fixture struct {
 	srv    *httpxtest.Server
 	runner *runner
 	conv   *converter
-	env    *health.Env
+	env    *health.ProbeEnv
 	vars   map[string]string
 }
 
@@ -105,15 +108,19 @@ func nodeA_() *jsonx.Object {
 func setup(t *testing.T) *fixture {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
 	f := &fixture{t: t, srv: srv, runner: &runner{fn: probeBy(constant(10))}, conv: &converter{}, vars: map[string]string{}}
-	f.env = &health.Env{
+	f.env = &health.ProbeEnv{
 		LookupEnv:   func(key string) (string, bool) { v, ok := f.vars[key]; return v, ok },
 		Environ:     func() []string { return nil },
 		Runner:      f.runner,
 		Now:         time.Now,
 		ProbeBinary: func() (string, error) { return "/test/probe", nil },
-		Converter:   f.conv,
 	}
-	t.Cleanup(health.SetEnv(f.env))
+	f.env.Collaborators = health.CurrentProbeEnv().Collaborators
+	f.env.Collaborators.ConvertNode = func(ctx context.Context, raw json.RawMessage) (model.Fields, bool) {
+		return health.ConvertNodeForProbe(ctx, raw, f.conv)
+	}
+
+	t.Cleanup(health.SetProbeEnv(f.env))
 	f.saveShared("nodes", []any{nodeA_()})
 	return f
 }
@@ -135,7 +142,7 @@ func (f *fixture) saveShared(pairs ...any) {
 
 func (f *fixture) cache(subID string, nodeList ...any) {
 	f.t.Helper()
-	if _, err := substore.SaveSubscriptionNodes(f.ctx(), subID, nodeList, nil); err != nil {
+	if _, err := fixtureSaveSubscriptionNodes(f.ctx(), subID, nodeList, nil); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -144,7 +151,7 @@ func (f *fixture) post(body any) *httpxtest.Result {
 	return f.srv.Post("/api/nodes/latency", httpxtest.JSON(body))
 }
 
-func (f *fixture) stored() *jsonx.Object { return health.LoadResults(f.ctx()) }
+func (f *fixture) stored() *jsonx.Object { return loadResults(f.ctx()) }
 
 func (f *fixture) writeLatency(v any) {
 	if _, err := f.srv.Repo.WriteSharedJSON(context.Background(), health.LatencyFile, v); err != nil {
@@ -161,14 +168,14 @@ func keys(list ...string) any  { return jsonx.Obj("keys", jsonx.ListOf(list)) }
 func TestPreviousProbeResultsAreHiddenAndNotMixed(t *testing.T) {
 	for _, method := range []any{nil, "proxy_http_v1"} {
 		f := setup(t)
-		settings, _ := health.Settings(f.ctx())
+		settings, _ := healthSettings(f.ctx())
 		f.writeLatency(jsonx.Obj(nodeA, jsonx.Obj("latency", nil, "history", []any{jsonx.Int(1), nil}, "method", method,
 			"url", settings.Value("url"), "unified_delay", true)))
 		if f.stored().Len() != 0 {
 			t.Fatal("old method visible")
 		}
 		f.runner.fn = probeBy(constant(150))
-		out, err := health.RunTests(f.ctx(), []string{"A", "A"}, nil)
+		out, err := runTests(f.ctx(), []string{"A", "A"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,7 +184,7 @@ func TestPreviousProbeResultsAreHiddenAndNotMixed(t *testing.T) {
 			t.Fatalf("%v", encode(a))
 		}
 		f.vars["CONFIGFLOW_NODE_TEST_URL"] = "https://test.example/generate_204"
-		out, _ = health.RunTests(f.ctx(), []string{"A"}, nil)
+		out, _ = runTests(f.ctx(), []string{"A"}, nil)
 		if encode(out.GetObject("results").GetObject("A").Value("history")) != "[150]" {
 			t.Fatal("history mixed across URLs")
 		}
@@ -205,7 +212,7 @@ func TestWorkerGetsStdinJSONAndNoCredentialsInCommand(t *testing.T) {
 		return stdout(jsonx.Obj("version", jsonx.Int(4), "results", []any{
 			jsonx.Obj("name", nodeA, "latency", jsonx.Int(99), "first_latency", jsonx.Int(250))})), nil
 	}
-	out, err := health.RunTests(f.ctx(), []string{"A"}, nil)
+	out, err := runTests(f.ctx(), []string{"A"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +235,7 @@ func TestSubscriptionCacheKeepsProtocolOptionsAndDistinctSources(t *testing.T) {
 	f.cache("sub", jsonx.Obj("name", "A", "type", "http", "server", "other.invalid", "port", jsonx.Int(443)),
 		jsonx.Obj("name", "cached", "type", "trojan", "server", "proxy.invalid", "port", jsonx.Int(443),
 			"params", jsonx.Obj("password", "cached-secret", "sni", "tls.invalid")))
-	_, candidates, err := health.CollectCandidates(f.ctx())
+	_, candidates, err := collectCandidates(f.ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +248,7 @@ func TestSubscriptionCacheKeepsProtocolOptionsAndDistinctSources(t *testing.T) {
 		seen = payload.(*jsonx.Object).GetList("nodes")[0].(*jsonx.Object)
 		return probeBy(constant(1))(command)
 	}
-	if _, err := health.RunTests(f.ctx(), nil, []string{`["subscription","sub","cached"]`}); err != nil {
+	if _, err := runTests(f.ctx(), nil, []string{`["subscription","sub","cached"]`}); err != nil {
 		t.Fatal(err)
 	}
 	if seen.GetString("password") != "cached-secret" || seen.GetString("sni") != "tls.invalid" {
@@ -255,7 +262,7 @@ func TestInvalidWorkerOutputDoesNotReplaceHistory(t *testing.T) {
 		`{"version": 4, "results": [{"name": "[\"node\",\"a\"]", "latency": null}]}`} {
 		f := setup(t)
 		f.runner.fn = func(health.Command) (health.Result, error) { return health.Result{Stdout: []byte(output)}, nil }
-		_, err := health.RunTests(f.ctx(), []string{"A"}, nil)
+		_, err := runTests(f.ctx(), []string{"A"}, nil)
 		if _, ok := err.(*health.ProbeUnavailable); !ok {
 			t.Fatalf("%s: %v", output, err)
 		}
@@ -414,7 +421,7 @@ func TestTwentyJSONAndYAMLNodesNeedNoRemoteConversion(t *testing.T) {
 func TestParseFailureIsAResultNotMissing(t *testing.T) {
 	f := setup(t)
 	f.saveShared("nodes", []any{jsonx.Obj("id", "a", "name", "A", "proxy_string", "ss://unconvertible")})
-	out, err := health.RunTests(f.ctx(), []string{"A", "deleted"}, nil)
+	out, err := runTests(f.ctx(), []string{"A", "deleted"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +549,7 @@ func TestSourceKeyEncodingAndDefaultRequestIncludeAllCandidates(t *testing.T) {
 func TestMissingWorkerIsExplicitAndNeverFallsBackToTCP(t *testing.T) {
 	f := setup(t)
 	f.vars["CONFIGFLOW_NODE_PROBE_BIN"] = filepath.Join(t.TempDir(), "missing")
-	_, err := health.FindProbeBinary(f.env)
+	_, err := health.FindBinary(f.env)
 	if err == nil || !strings.Contains(err.Error(), "未安装") {
 		t.Fatal(err)
 	}
@@ -550,11 +557,11 @@ func TestMissingWorkerIsExplicitAndNeverFallsBackToTCP(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "probe")
 	os.WriteFile(path, []byte("#!/bin/sh\n"), 0o644)
 	f.vars["CONFIGFLOW_NODE_PROBE_BIN"] = path
-	if _, err := health.FindProbeBinary(f.env); err == nil {
+	if _, err := health.FindBinary(f.env); err == nil {
 		t.Fatal("non-executable accepted")
 	}
 	os.Chmod(path, 0o755)
-	if found, err := health.FindProbeBinary(f.env); err != nil || found != path {
+	if found, err := health.FindBinary(f.env); err != nil || found != path {
 		t.Fatal(found, err)
 	}
 }
@@ -563,7 +570,7 @@ func TestInvalidURLIsRejected(t *testing.T) {
 	for _, url := range []string{"file:///etc/passwd", "https://user:secret@example.com", "not-a-url"} {
 		f := setup(t)
 		f.vars["CONFIGFLOW_NODE_TEST_URL"] = url
-		if _, err := health.Settings(f.ctx()); err == nil {
+		if _, err := healthSettings(f.ctx()); err == nil {
 			t.Fatal(url)
 		}
 	}
@@ -679,7 +686,7 @@ func TestLegacyMigrationIsReadOnlyAndDoesNotAdoptManualListener(t *testing.T) {
 	f := setup(t)
 	setSystem(t, f.srv.Repo, "node_test_dns", []any{"192.168.0.2:15353"})
 	before := systemWithoutRevision(t, f.srv.Repo)
-	config, err := health.LoadConfig(f.ctx())
+	config, err := loadConfig(f.ctx())
 	if err != nil || encode(config) != `{"mode":"custom","servers":["192.168.0.2:15353"],"bootstrap":[]}` {
 		t.Fatal(encode(config), err)
 	}
@@ -693,7 +700,7 @@ func TestCanonicalDNSAddresses(t *testing.T) {
 		"https://DNS.EXAMPLE": "https://dns.example/dns-query", "https://192.0.2.1:443/dns-query": "https://192.0.2.1/dns-query",
 		"tls://DNS.EXAMPLE:853": "tls://dns.example", "tls://192.0.2.1:8853": "tls://192.0.2.1:8853", "192.0.2.53:053": "192.0.2.53",
 	} {
-		got, err := health.NormalizeDNSServers([]any{raw, raw}, false)
+		got, err := normalizeServers([]any{raw, raw}, false)
 		if err != nil || encode(got) != encode([]any{want}) {
 			t.Errorf("%s: %v %v", raw, got, err)
 		}
@@ -707,7 +714,7 @@ func TestInvalidUpstreamsAreRejectedWithoutEchoingSecrets(t *testing.T) {
 		"https://dns.example/dns\x7f", "https://dns.example\\evil", "tls://dns.example/", "http://192.0.2.53",
 		"udp://192.0.2.53", "https://[::1]/dns-query", "https://0.0.0.0/dns-query", "https://224.0.0.1/dns-query",
 		"tls://bad_host", "tls://dns.example..", "192.0.2.53:0", "192.0.2.53:65536", "192.0.2.53:", "dns.example"} {
-		_, err := health.NormalizeDNSServers([]any{raw}, false)
+		_, err := normalizeServers([]any{raw}, false)
 		if err == nil || strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "secret") {
 			t.Errorf("%q: %v", raw, err)
 		}
@@ -717,11 +724,11 @@ func TestInvalidUpstreamsAreRejectedWithoutEchoingSecrets(t *testing.T) {
 func TestCustomEncryptedHostnameRequiresExplicitLiteralBootstrap(t *testing.T) {
 	for _, value := range []any{jsonx.Obj("mode", "custom", "servers", []any{"tls://dns.example"}),
 		jsonx.Obj("mode", "custom", "servers", []any{"tls://dns.example"}, "bootstrap", []any{"tls://dns.example"})} {
-		if _, err := health.NormalizeConfig(value); err == nil || !strings.Contains(err.Error(), "引导") {
+		if _, err := normalizeConfig(value); err == nil || !strings.Contains(err.Error(), "引导") {
 			t.Fatal(err)
 		}
 	}
-	config, err := health.NormalizeConfig(jsonx.Obj("mode", "custom", "servers", []any{"tls://192.0.2.1"}))
+	config, err := normalizeConfig(jsonx.Obj("mode", "custom", "servers", []any{"tls://192.0.2.1"}))
 	if err != nil || encode(config.Value("bootstrap")) != "[]" {
 		t.Fatal(err)
 	}
@@ -746,14 +753,14 @@ func TestCustomSaveIsGlobalAndDoesNotPublishOrChangeProfile(t *testing.T) {
 			t.Fatal("profile changed: " + key)
 		}
 	}
-	loaded, _ := health.LoadConfig(f.ctx())
-	settings, _ := health.Settings(f.ctx())
+	loaded, _ := loadConfig(f.ctx())
+	settings, _ := healthSettings(f.ctx())
 	if !jsonx.Equal(loaded, body.Value("dns")) || encode(settings.Value("dns_bootstrap")) != `["192.0.2.53"]` {
 		t.Fatal("reload")
 	}
 	system := f.srv.Post("/api/nodes/latency/settings", httpxtest.JSON(jsonx.Obj("dns", jsonx.Obj("mode", "system",
 		"servers", []any{"invalid"}, "bootstrap", []any{"invalid"}, "managed", jsonx.Obj("agent_id", "old"))))).WantStatus(200)
-	loaded, _ = health.LoadConfig(f.ctx())
+	loaded, _ = loadConfig(f.ctx())
 	if encode(system.Object().Value("dns_servers")) != "[]" || encode(loaded) != `{"mode":"system","servers":[],"bootstrap":[]}` {
 		t.Fatal(system.Text())
 	}
@@ -765,8 +772,8 @@ func TestRemovedManagedModeKeepsQueryingItsListenerAsCustomDNS(t *testing.T) {
 		"managed", jsonx.Obj("agent_id", "dns", "endpoint_id", "e")), "node_test_dns", []any{"192.0.2.2:15353"})
 	before := systemWithoutRevision(t, f.srv.Repo)
 	expected := `{"mode":"custom","servers":["192.0.2.2:15353"],"bootstrap":[]}`
-	loaded, _ := health.LoadConfig(f.ctx())
-	effective, _ := health.EffectiveSettings(f.ctx(), nil)
+	loaded, _ := loadConfig(f.ctx())
+	effective, _ := effectiveSettings(f.ctx(), nil)
 	if encode(loaded) != expected || encode(effective) != `{"dns_servers":["192.0.2.2:15353"],"dns_bootstrap":[]}` {
 		t.Fatal(encode(loaded))
 	}
@@ -787,7 +794,7 @@ func TestRemovedManagedModeWithoutARecordedAddressFallsBackToSystemDNS(t *testin
 	f := setup(t)
 	setSystem(t, f.srv.Repo, "node_test_dns_config", jsonx.Obj("mode", "managed", "servers", []any{}, "bootstrap", []any{},
 		"managed", jsonx.Obj("agent_id", "missing", "endpoint_id", "gone")))
-	loaded, err := health.LoadConfig(f.ctx())
+	loaded, err := loadConfig(f.ctx())
 	if err != nil || encode(loaded) != `{"mode":"system","servers":[],"bootstrap":[]}` {
 		t.Fatal(encode(loaded), err)
 	}
@@ -884,19 +891,134 @@ func TestChangingOnlyBootstrapResetsLatencyHistory(t *testing.T) {
 	f.saveShared("nodes", []any{jsonx.Obj("id", "a", "name", "A", "type", "http", "server", "proxy.invalid", "port", jsonx.Int(8080))})
 	f.runner.fn = probeBy(constant(12))
 	value := jsonx.Obj("mode", "custom", "servers", []any{"tls://dns.example"}, "bootstrap", []any{"192.0.2.53"})
-	if _, err := health.SaveConfig(f.ctx(), value); err != nil {
+	if _, err := saveConfig(f.ctx(), value); err != nil {
 		t.Fatal(err)
 	}
-	health.RunTests(f.ctx(), []string{"A"}, nil)
-	out, _ := health.RunTests(f.ctx(), []string{"A"}, nil)
+	runTests(f.ctx(), []string{"A"}, nil)
+	out, _ := runTests(f.ctx(), []string{"A"}, nil)
 	if encode(out.GetObject("results").GetObject("A").Value("history")) != "[12,12]" {
 		t.Fatal(encode(out))
 	}
 	value.Set("bootstrap", []any{"192.0.2.54"})
-	health.SaveConfig(f.ctx(), value)
-	out, _ = health.RunTests(f.ctx(), []string{"A"}, nil)
+	saveConfig(f.ctx(), value)
+	out, _ = runTests(f.ctx(), []string{"A"}, nil)
 	a := out.GetObject("results").GetObject("A")
 	if encode(a.Value("history")) != "[12]" || encode(a.Value("dns_bootstrap")) != `["192.0.2.54"]` {
 		t.Fatal(encode(a))
 	}
+}
+
+func (c *converter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	proxy := c.ConvertProxyString(ctx, text)
+	if proxy == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(proxy)
+	if err != nil {
+		return nil, err
+	}
+	return yamlx.FromJSON(raw)
+}
+func testObject(value any, err error) (*jsonx.Object, error) {
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
+}
+func loadResults(ctx context.Context) *jsonx.Object {
+	out, _ := testObject(health.LoadLatencyResults(ctx), nil)
+	return out
+}
+func runTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
+	return testObject(health.RunLatencyTests(ctx, names, keys))
+}
+func healthSettings(ctx context.Context) (*jsonx.Object, error) {
+	return testObject(health.ResolveSettings(ctx))
+}
+func loadConfig(ctx context.Context) (*jsonx.Object, error) {
+	return testObject(health.LoadDNSConfig(ctx))
+}
+func normalizeConfig(value any) (*jsonx.Object, error) {
+	raw, _ := json.Marshal(value)
+	return testObject(health.NormalizeDNSConfigJSON(raw))
+}
+func effectiveSettings(ctx context.Context, value any) (*jsonx.Object, error) {
+	raw, _ := json.Marshal(value)
+	return testObject(health.EffectiveDNSSettingsJSON(ctx, raw))
+}
+func saveConfig(ctx context.Context, value any) (*jsonx.Object, error) {
+	raw, _ := json.Marshal(value)
+	return testObject(health.SaveDNSConfigJSON(ctx, raw))
+}
+func normalizeServers(value any, bootstrap bool) ([]any, error) {
+	raw, _ := json.Marshal(value)
+	servers, err := health.NormalizeDNSServersJSON(raw, bootstrap)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, len(servers))
+	for i, server := range servers {
+		out[i] = server
+	}
+	return out, nil
+}
+func collectCandidates(ctx context.Context) ([]string, map[string]*jsonx.Object, error) {
+	list, err := health.CollectCandidateNodes(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys := make([]string, len(list))
+	out := map[string]*jsonx.Object{}
+	for i, item := range list {
+		keys[i] = item.Key
+		parsed, err := jsonx.Parse(item.Raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		out[item.Key] = parsed.(*jsonx.Object)
+	}
+	return keys, out, nil
+}
+
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []model.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return nil, err
+	}
+	var receipt *substore.CacheMetadata
+	if metadata != nil {
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		receipt = &substore.CacheMetadata{}
+		if err := json.Unmarshal(raw, receipt); err != nil {
+			return nil, err
+		}
+	}
+	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return parsed.(*jsonx.Object), nil
 }

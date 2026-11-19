@@ -1,0 +1,153 @@
+package refresh
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/rulefetch"
+	"configflow/internal/subs"
+	"configflow/internal/substore"
+)
+
+func readSharedData(ctx context.Context, path string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.ReadSharedBytes(ctx, path)
+}
+func writeSharedData(ctx context.Context, path string, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, data, "", "  "); err != nil {
+		return err
+	}
+	_, err = r.WriteSharedText(ctx, path, append(formatted.Bytes(), '\n'))
+	return err
+}
+func parseTraffic(header string) (*Traffic, error) {
+	value, err := substore.ReadUserinfo(header)
+	if err != nil || value == nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var result Traffic
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// DefaultRefreshEnv wires production source owners without legacy JSON documents.
+func DefaultRefreshEnv() *RefreshEnv {
+	return &RefreshEnv{Clock: substore.SystemClock, RuleClient: rulefetch.DefaultClient, HTTP: substore.RequestsClient{}, RandomHex: func() string { return substore.Default().Env.RandomHex() }, Sources: SourceOwners{
+		Fetch: func(ctx context.Context, id, url string, options substore.FetchOptions) (*SourceResult, error) {
+			result, err := substore.Default().Client.Fetch(ctx, id, url, "", options)
+			if err != nil || result == nil {
+				return nil, err
+			}
+			var traffic *Traffic
+			if result.Traffic != nil {
+				data, err := json.Marshal(result.Traffic)
+				if err != nil {
+					return nil, err
+				}
+				traffic = &Traffic{}
+				if err := json.Unmarshal(data, traffic); err != nil {
+					return nil, err
+				}
+			}
+			return &SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}, nil
+		},
+		ParseNodes: func(ctx context.Context, text string) ([]model.Node, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			proxies, err := substore.ParseProxyNodes(text)
+			if err != nil {
+				return nil, err
+			}
+			return substore.ProxyNodes(proxies)
+		},
+		Metadata: func(ctx context.Context, text string) (json.RawMessage, json.RawMessage, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, nil, err
+			}
+			var hosts, dialers json.RawMessage
+			if value := subs.ExtractHosts(text); value != nil {
+				var err error
+				hosts, err = json.Marshal(value)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+			value, err := subs.ExtractDialers(text)
+			if err != nil {
+				return nil, nil, err
+			}
+			if value != nil {
+				dialers, err = json.Marshal(value)
+			}
+			return hosts, dialers, err
+		},
+		SaveNodes: func(ctx context.Context, id string, nodes []model.Node, metadata *SourceMetadata) (*NodeCache, error) {
+			var receipt *substore.CacheMetadata
+			if metadata != nil {
+				raw, err := json.Marshal(metadata)
+				if err != nil {
+					return nil, err
+				}
+				receipt = &substore.CacheMetadata{}
+				if err := json.Unmarshal(raw, receipt); err != nil {
+					return nil, err
+				}
+			}
+			cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+			return sourceCache(cache, err)
+		},
+		LoadNodes: func(ctx context.Context, id string) (*NodeCache, error) {
+			return sourceCache(substore.LoadCache(ctx, id))
+		},
+		FilterNodes: subs.FilterNodes,
+		Converter:   substore.NativeConverter(),
+	}}
+}
+func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {
+	if err != nil || cache == nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	var out NodeCache
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// detached keeps the admitted Runtime generation while completing request work.
+func detached(ctx context.Context) context.Context { return lifecycle.Detach(ctx) }
+
+func currentEnv() *RefreshEnv                          { return DefaultRefreshEnv() }
+func refreshEnvFromLegacy(env *RefreshEnv) *RefreshEnv { return env }

@@ -1,19 +1,21 @@
 package nodes
 
-// This file is the only bridge to the repository's legacy document model.
+// Typed repository mutations and the reviewed deletion planner are wired here.
 import (
-	"configflow/internal/jsondecode"
-	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
 	"fmt"
 
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 func decodeStored(value any, target any) error {
@@ -42,73 +44,80 @@ func storedObject(value any) (*jsonx.Object, error) {
 	return o, nil
 }
 func sharedNodes(ctx context.Context) ([]record, error) {
-	shared, err := repo.GetSharedConfig(ctx)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	shared, err := r.Shared(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var result []record
-	err = decodeStored(shared.Value("nodes"), &result)
+	raw, err := json.Marshal(shared.Nodes)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(raw, &result)
 	return result, err
 }
 func mutateNodes(ctx context.Context, mutate func([]record) ([]record, error)) error {
 	ctx = lifecycle.Detach(ctx)
-	_, err := repo.UpdateSharedConfigTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal(shared.Nodes)
+		if err != nil {
+			return err
+		}
 		var nodes []record
-		if err := decodeStored(shared.Value("nodes"), &nodes); err != nil {
-			return nil, err
+		if err := json.Unmarshal(raw, &nodes); err != nil {
+			return err
 		}
-		nodes, err := mutate(nodes)
+		nodes, err = mutate(nodes)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		v, err := stored(nodes)
+		raw, err = json.Marshal(nodes)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		shared.Set("nodes", v)
-		return nil, nil
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, &shared.Nodes)
 	})
-	return err
 }
 func reorderNodesStored(ctx context.Context, body record) ([]string, []string, error) {
-	ctx = lifecycle.Detach(ctx)
-	if _, err := rules.OrderIDs(body, "nodes"); err != nil {
+	ids, err := rules.OrderIDs(body, "nodes")
+	if err != nil {
 		return nil, nil, httpx.BadRequest(err.Error())
 	}
 	var order, missing []string
-	err := mutateNodes(ctx, func(nodes []record) ([]record, error) {
-		v, err := stored(nodes)
-		if err != nil {
-			return nil, err
-		}
-		b, err := storedObject(body)
-		if err != nil {
-			return nil, err
-		}
-		list, absent := rules.ResolveNewOrder(v.([]any), b, "nodes")
+	err = mutateNodes(ctx, func(nodes []record) ([]record, error) {
+		list, absent := rules.Reorder(nodes, ids, position(body), func(node record) string { return node.text("id") })
 		missing = absent
 		if len(missing) > 0 {
 			return nil, &missingOrderError{missing}
 		}
-		var result []record
-		if err := decodeStored(list, &result); err != nil {
-			return nil, err
-		}
-		order = make([]string, len(result))
-		for i, item := range result {
+		order = make([]string, len(list))
+		for i, item := range list {
 			order[i] = item.text("id")
 		}
-		return result, nil
+		return list, nil
 	})
 	return order, missing, err
 }
 func parseLine(ctx context.Context, line string) json.RawMessage {
-	ctx = lifecycle.Detach(ctx)
-	proxy := substore.Default().Client.ConvertProxyString(ctx, line)
-	if proxy == nil {
+	proxy, err := substore.Default().Client.ConvertProxy(ctx, line)
+	if err != nil || proxy == nil {
 		return nil
 	}
-	data, _ := jsonx.Compact(proxy)
+	data, _ := yamlx.ToJSON(proxy)
 	return data
 }
 func reviewedDeletion(ctx context.Context, body record, preview bool) (*httpx.Response, error) {
@@ -182,4 +191,11 @@ func Wire() {
 		d, err := storedObject(candidate)
 		return p, d, err
 	}})
+}
+
+func position(body record) string {
+	if _, present := body["position"]; !present {
+		return "top"
+	}
+	return body.text("position")
 }

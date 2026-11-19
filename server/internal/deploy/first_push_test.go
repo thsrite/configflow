@@ -1,12 +1,6 @@
 package deploy
 
 import (
-	"configflow/internal/agents/agentfake"
-	"configflow/internal/aggregations"
-	"configflow/internal/convert/mihomoenv"
-	"configflow/internal/jsonx"
-	"configflow/internal/provider"
-	"configflow/internal/substore"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +12,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"configflow/internal/agents/agentfake"
+	"configflow/internal/aggregations"
+	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/jsonx"
+	"configflow/internal/provider"
+	"configflow/internal/substore"
 )
 
 func TestFirstPushCachesAndStableContents(t *testing.T) {
@@ -76,7 +77,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			}
 			restoreService := substore.SetDefault(substore.NewService(env))
 			defer restoreService()
-			restore := provider.SetEnv(nil)
+			restore := provider.SetDeliveryEnv(nil)
 			defer restore()
 			cfg := f.source.config().DeepCopy()
 			cfg.Set("subscriptions", []any{jsonx.Obj("id", "selected-sub", "name", "Feed", "url", srv.URL+"/selected", "enabled", true)})
