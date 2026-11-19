@@ -170,3 +170,89 @@ func TestNativeTrafficShutdownWhileWaitingForOwnerLock(t *testing.T) {
 		t.Fatal("shutdown lock waiter appended")
 	}
 }
+
+func TestNativeSQLWritesRejectCorruptCountersWithoutCoercion(t *testing.T) {
+	for _, scenario := range []string{"upsert", "compact_usage", "compact_targets"} {
+		t.Run(scenario, func(t *testing.T) {
+			h := NewTrafficHistory(t.TempDir())
+			at := float64(1700000000)
+			bucket := int64(1699999200)
+			span := int64(Hour)
+			table := "traffic_usage"
+			if scenario != "upsert" {
+				bucket -= 10 * Day
+			}
+			if scenario == "compact_targets" {
+				table = "traffic_targets"
+			}
+			c, err := h.connect()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.close()
+			statement := "INSERT INTO " + table + " VALUES(?,?,?,?,?,?,?,?)"
+			args := []any{"a", bucket, span, "source", "DIRECT", "bad", int64(2), int64(1)}
+			if table == "traffic_targets" {
+				statement = "INSERT INTO " + table + " VALUES(?,?,?,?,?,?,?,?,?)"
+				args = []any{"a", bucket, span, "source", "example.com", "DIRECT", "bad", int64(2), int64(1)}
+			}
+			if _, err = c.exec(statement, args...); err != nil {
+				t.Fatal(err)
+			}
+			pendingBucket := bucket
+			if scenario != "upsert" {
+				pendingBucket = 1699999200
+			}
+			if err = h.AddTraffic(t.Context(), "a", &CleanedTraffic{Usage: []UsageRow{{Bucket: pendingBucket, Source: "source", Chain: "DIRECT", Up: 1}}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = h.FlushContext(t.Context(), 90, &at); err == nil {
+				t.Fatal("corrupt counter was silently coerced")
+			}
+			if h.PendingCount() != 1 {
+				t.Fatal("failed write lost pending report")
+			}
+			var value any
+			if err = c.conn.QueryRowContext(t.Context(), "SELECT up FROM "+table+" WHERE agent_id='a'").Scan(&value); err != nil || value != "bad" {
+				t.Fatal("corrupt row changed", value, err)
+			}
+		})
+	}
+}
+
+func TestNativeSQLCompactionOverflowRollsBackAndClearRecovers(t *testing.T) {
+	h := NewTrafficHistory(t.TempDir())
+	at := float64(1700000000)
+	oldDay := int64(at)/Day*Day - 10*Day
+	c, err := h.connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	for _, bucket := range []int64{oldDay, oldDay + Hour} {
+		if _, err = c.exec("INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", "broken", bucket, int64(Hour), "source", "DIRECT", 1e308, int64(0), int64(1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = h.AddTraffic(t.Context(), "healthy", &CleanedTraffic{Usage: []UsageRow{{Bucket: 1699999200, Source: "source", Chain: "DIRECT", Up: 4}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.FlushContext(t.Context(), 90, &at); err == nil {
+		t.Fatal("REAL SUM overflow silently committed")
+	}
+	var count int
+	if err = c.conn.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM traffic_usage WHERE agent_id='broken' AND up=1e308").Scan(&count); err != nil || count != 2 || h.PendingCount() != 1 {
+		t.Fatal("rollback changed counters", count, h.PendingCount(), err)
+	}
+	// The existing per-Agent traffic-history reset uses this deletion owner.
+	if err = h.DeleteContext(t.Context(), "broken"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.FlushContext(t.Context(), 90, &at); err != nil {
+		t.Fatal("clear did not recover", err)
+	}
+	query, err := h.QueryTraffic(t.Context(), "healthy", "24h", "source", &at)
+	if err != nil || string(query.Total.Up) != "4" {
+		t.Fatal(query, err)
+	}
+}

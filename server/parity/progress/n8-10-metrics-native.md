@@ -71,3 +71,11 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test 
 5. traffic/agent-traffic.json：仅 JSON 对象字段顺序不同，解析后值相同。
 
 协调者确定：等待 batch-13（upgrades + api/agents）先合入 `go`，随后本分支 rebase 到新 `go`；由本分支切 `api/agents/traffic.go` 到上述 native 接口并删对应无生产调用 adapter，给前四项加精确 SHA/fixture 绑定比较器，第五项改结构比较。**这一步尚未开始，不能把 owner 完成称作整个补充任务完成。**
+
+### SQLite 损坏值写入防护增量
+
+收尾检查发现 SQLite 的动态列类型会在 `SUM` / `up + excluded.up` 中把人工写入的 TEXT 静默当零；仅把 query DTO 换 native 不能阻止后续 compaction 覆盖坏记录。因此同一 owner 增加原 SQL 扫描内的类型/有限性聚合证据，以及 conflict-update WHERE 防护 + affected-row 校验；无新表、无额外全库扫描，正常 INTEGER→REAL 溢出累计仍兼容。非有限 REAL 不能再次绑定写入。坏值/REAL SUM 溢出回滚原事务、恢复 pending，不改已有行；现有 per-Agent clear 后健康 Agent 的 pending 能再次保存。
+
+新增真实 SQLite 回归覆盖 usage/targets compaction、同主键坏计数器 upsert、REAL SUM 溢出及 clear 恢复。`.32 rt -- bash -lc 'cd server && gofmt -w internal/agents/metrics/*.go && go test -count=1 -race ./internal/agents/metrics && go vet ./...'` 最后 PASS metrics 24.118s，vet 无输出（含原 A04/A05 reference）。人工数据行为差异已登记 ledger。
+
+owner 提交：`cc28d45b9`、`2e18d081b`，以及本段对应的 SQL 防护提交；API 集成仍按 batch-13 后的顺序待办。

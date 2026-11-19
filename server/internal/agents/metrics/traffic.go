@@ -118,12 +118,12 @@ const counters = "SET up = up + excluded.up, down = down + excluded.down, conns 
 
 func usageUpsert(span int64) string {
 	return "INSERT INTO traffic_usage VALUES (?, ?, " + strconv.FormatInt(span, 10) + ", ?, ?, ?, ?, ?) " +
-		"ON CONFLICT (agent_id, bucket, span, source, chain) DO UPDATE " + counters
+		"ON CONFLICT (agent_id, bucket, span, source, chain) DO UPDATE " + counters + counterUpdateSQL("traffic_usage")
 }
 
 func targetUpsert(span int64) string {
 	return "INSERT INTO traffic_targets VALUES (?, ?, " + strconv.FormatInt(span, 10) + ", ?, ?, ?, ?, ?, ?) " +
-		"ON CONFLICT (agent_id, bucket, span, source, target, chain) DO UPDATE " + counters
+		"ON CONFLICT (agent_id, bucket, span, source, target, chain) DO UPDATE " + counters + counterUpdateSQL("traffic_targets")
 }
 
 // legacyChain is _LEGACY_CHAIN: 1.8.51-go tables had only group and exit
@@ -455,6 +455,9 @@ func (n counter) cmp(v counter) int {
 // bound as a REAL.
 func (n counter) sqlValue() (any, error) {
 	if n.isFloat {
+		if math.IsNaN(n.f) || math.IsInf(n.f, 0) {
+			return nil, &OverflowError{Message: "non-finite traffic counter"}
+		}
 		return n.f, nil
 	}
 	if n.big != nil {
@@ -962,7 +965,7 @@ func (h *TrafficHistory) save(ctx context.Context, usage map[usageKey]*triple, t
 			if err != nil {
 				return result, err
 			}
-			if _, err := c.execContext(ctx, statement, key.agent, key.bucket, key.source, key.chain, up, down, conns); err != nil {
+			if err := c.upsertContext(ctx, statement, key.agent, key.bucket, key.source, key.chain, up, down, conns); err != nil {
 				return result, err
 			}
 		}
@@ -972,7 +975,7 @@ func (h *TrafficHistory) save(ctx context.Context, usage map[usageKey]*triple, t
 			if err != nil {
 				return result, err
 			}
-			if _, err := c.execContext(ctx, statement, key.agent, key.bucket, key.source, key.target, key.chain, up, down, conns); err != nil {
+			if err := c.upsertContext(ctx, statement, key.agent, key.bucket, key.source, key.target, key.chain, up, down, conns); err != nil {
 				return result, err
 			}
 		}
@@ -1017,14 +1020,10 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 	var compacted int64
 	usageBefore := int64(floorDiv(now, Day)*Day - UsageHourlyDays*Day)
 	var usageRows [][]any
-	err := c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, chain, SUM(up), SUM(down), SUM(conns) "+
+	err := c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, chain, SUM(up), SUM(down), SUM(conns), MIN("+numericCountersSQL("")+") "+
 		"FROM traffic_usage WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4", []any{usageBefore}, func(rows *sql.Rows) error {
 		row := make([]any, 7)
-		pointers := make([]any, 7)
-		for i := range row {
-			pointers[i] = &row[i]
-		}
-		if err := rows.Scan(pointers...); err != nil {
+		if err := validateGroupedCounters(rows, row); err != nil {
 			return err
 		}
 		usageRows = append(usageRows, row)
@@ -1041,21 +1040,17 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 		compacted += n
 		statement := usageUpsert(Day)
 		for _, row := range usageRows {
-			if _, err := c.execContext(ctx, statement, row...); err != nil {
+			if err := c.upsertContext(ctx, statement, row...); err != nil {
 				return 0, err
 			}
 		}
 	}
 	targetsBefore := int64(floorDiv(now, Day)*Day - TargetHourlyDays*Day)
 	var targetRows [][]any
-	err = c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, target, chain, SUM(up), SUM(down), SUM(conns) "+
+	err = c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, target, chain, SUM(up), SUM(down), SUM(conns), MIN("+numericCountersSQL("")+") "+
 		"FROM traffic_targets WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4, 5", []any{targetsBefore}, func(rows *sql.Rows) error {
 		row := make([]any, 8)
-		pointers := make([]any, 8)
-		for i := range row {
-			pointers[i] = &row[i]
-		}
-		if err := rows.Scan(pointers...); err != nil {
+		if err := validateGroupedCounters(rows, row); err != nil {
 			return err
 		}
 		targetRows = append(targetRows, row)
@@ -1072,7 +1067,7 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 		compacted += n
 		statement := targetUpsert(Day)
 		for _, row := range targetRows {
-			if _, err := c.execContext(ctx, statement, row...); err != nil {
+			if err := c.upsertContext(ctx, statement, row...); err != nil {
 				return 0, err
 			}
 		}
@@ -1193,7 +1188,7 @@ func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, erro
 		if err != nil {
 			return 0, err
 		}
-		if _, err := c.execContext(ctx, statement, agentID, day, key.source, OtherTarget, key.chain, up, down, conns); err != nil {
+		if err := c.upsertContext(ctx, statement, agentID, day, key.source, OtherTarget, key.chain, up, down, conns); err != nil {
 			return 0, err
 		}
 	}
