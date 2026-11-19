@@ -494,7 +494,9 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) Pr
 	case "ss":
 		var kept []string
 		for _, line := range lines {
-			if strings.TrimSpace(line) != "" {
+			// Only ASCII blanks are empty ss records; any other white space must
+			// parse as a listener row or the port state stays unknown.
+			if strings.Trim(line, " \t") != "" {
 				kept = append(kept, line)
 			}
 		}

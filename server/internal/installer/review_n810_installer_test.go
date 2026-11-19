@@ -159,3 +159,29 @@ func TestReviewN810NativeDockerRunQuotesPortText(t *testing.T) {
 		}
 	}
 }
+
+// TestReviewN810SSUnicodeBlankLineIsUnknown follows the coordinator's L1
+// ruling: a line of non-ASCII white space is not an empty ss record, so it
+// can never prove that port 53 is free.
+func TestReviewN810SSUnicodeBlankLineIsUnknown(t *testing.T) {
+	for _, payload := range []string{" \n", "　\n", "\u0085\n", "\v\n", "\f\n"} {
+		output := preflightBlock(preflightEvidence(evidenceField{"udp53", 0, payload}, evidenceField{"tcp53", 0, payload}))
+		report, err := EvaluatePreflight(output, "host")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, check := range report.Checks {
+			if (check.ID == "udp53" || check.ID == "tcp53") && check.Status != "unknown" {
+				t.Fatalf("payload %q: %s=%s, overall %s", payload, check.ID, check.Status, report.Status)
+			}
+		}
+		if report.Status != "unknown" {
+			t.Fatalf("payload %q: overall %s", payload, report.Status)
+		}
+	}
+	// Positive control: ASCII blank lines are still empty evidence.
+	output := preflightBlock(preflightEvidence(evidenceField{"udp53", 0, " \t\n\n"}, evidenceField{"tcp53", 0, "\n"}))
+	if report, err := EvaluatePreflight(output, "host"); err != nil || report.Status != "pass" {
+		t.Fatalf("ASCII blank ss lines: %+v, %v", report, err)
+	}
+}

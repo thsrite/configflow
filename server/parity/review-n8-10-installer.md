@@ -7,7 +7,7 @@
 
 ## 结论
 
-high 0，medium 1（已修），low 5（1 已修、1 需裁定、3 记录）。修复随本分支叠批后，installer 可以 verified。
+high 0，medium 1（已修），low 5（3 已修、2 记录）。L1 已按协调者裁定修复。修复随本分支叠批后，installer 可以 verified。
 
 ## 发现
 
@@ -15,10 +15,10 @@ high 0，medium 1（已修），low 5（1 已修、1 需裁定、3 记录）。�
 |---|---|---|---|
 | R1 | medium | 已修 | **根目录别名 `//` 能绕过 guide 路径规则（裁定 6 的同类路径）。** `guidePath` 用原文 `text == "/"` 拒绝根目录，而 `canonicalInstallPath("//")` 按 POSIX 保留双斜线，结果 `//` 被当成规范路径。所有经 `guidePath` 的输入都受影响：脚本和安装包模式的 `data_dir`（数据写到 `/agent`、`/oxidns`、`/ha`）、`ha_host_id_path`、迁移的 `ha_data_dir`/`backup_dir`/bind 挂载源。安装包的身份文件重叠检查用 `dataCheck+"/"+part`，`dataCheck` 为 `/` 时变成 `//agent`，永远不匹配，所以 `data_dir="//"` 加 `ha_host_id_path="//agent/host-id"` 也能生成。精简/直接 Compose 碰巧被系统目录检查挡住，其他模式没有。作者的别名修复只覆盖了系统目录检查和重叠比较，漏了这条根目录规则。修复：`guidePath` 改为 `path.Clean(text) == "/"`，`//` 与 `/` 一样返回该路径既有的中文 400，并且发生在凭据、目录或输出之前。回归 `TestReviewN810RootAliasIsNotAnInstallPath` 覆盖 6 类（script/bundle/compact 数据目录、身份文件、迁移备份目录、迁移挂载），另有正控：`//srv/native` 仍然有效。修复前 6 个子测试全部失败（script/bundle/身份文件三项直接生成成功），修复后通过。作者测试 `TestN810LinuxPathAliasesCannotBypassInstallerGuards` 的 `//` 子项原先期望系统目录提示，现在先命中路径规则，所以只改了这一项的期望消息（这是本 pass 新增的测试，不是冻结语料；其余别名期望不变）。installer 全包 race（含全部 Python 语料和 pyref）通过，说明没有任何原 Python 行依赖 `//` 被接受。behaviour-changes 危险目录一节已补登记。 |
 | R2 | low | 已修 | **原生 `RenderDockerRun` 把端口字符串直接拼进 shell。** S pass 把 `DockerInstallOptions` 的端口改成“机器字符串”，并作为 upgrades 接续用的导出 API；`-p <port>:<port>` 和 `-e AGENT_*_PORT=<port>` 都没有转义（HA 路径另有 `checkHAPort` 校验，不受影响）。生产 HTTP 路径经 `options_legacy` 把端口转成整数文本，目前不可利用；但直接调用原生 API 时传入 `8080;touch …` 会生成可执行的注入。修复：这 6 处改用已有的 `shellWord(…, true)`。整数、负数和 `True`/`False` 都在允许字符集内，字节完全不变（installer 全包语料、api/agents Docker 测试、difftest 均通过）。回归 `TestReviewN810NativeDockerRunQuotesPortText`：恶意文本必须是单个引号词，整数端口字节不变。修复前失败（输出含裸 `;touch`），修复后通过。Compose YAML 由 YAML writer 负责转义，不受影响。 |
-| L1 | low | 需裁定 | **ss 端口证据中只含非 ASCII 空白的行被当成空行丢弃，preflight 判为空闲/通过。** `preflightPortCheck` 的 ss 分支用 `strings.TrimSpace(line) != ""` 过滤空行，NBSP、U+3000、U+0085、`\v` 组成的行都会被丢掉。如果全部是这种行，就判定“未发现监听”，结果 pass（复核时用临时探针确认 udp53=pass，整体也是 pass）。Python 的 `line.strip()` 行为相同，真实 `ss` 也不会输出这种行，所以只影响人工改写的粘贴文本。但裁定 3 要求“不符合 → unknown，unknown 绝不能判为空闲”，裁定 9 又要求机器文本空白按 native（Unicode）处理，两条在这里冲突。建议：空行只认 ASCII 空白（`strings.Trim(line, " \t") == ""`），其余行必须解析成 5 列，否则 unknown。可能需要为 preflight 语料补绑定行，所以没有直接改，请协调者裁定。 |
+| L1 | low | 已裁定并修复 | **ss 端口证据中只含非 ASCII 空白的行被当成空行丢弃，preflight 判为空闲/通过。** `preflightPortCheck` 的 ss 分支用 `strings.TrimSpace(line) != ""` 过滤空行，NBSP、U+3000、U+0085、`\v` 组成的行都会被丢掉。如果全部是这种行，就判定“未发现监听”，结果 pass（复核时用临时探针确认 udp53=pass，整体也是 pass）。Python 的 `line.strip()` 行为相同，真实 `ss` 也不会输出这种行，所以只影响人工改写的粘贴文本。但裁定 3 要求“不符合 → unknown，unknown 绝不能判为空闲”，裁定 9 又要求机器文本空白按 native（Unicode）处理，两条在这里冲突。建议：空行只认 ASCII 空白（`strings.Trim(line, " \t") == ""`），其余行必须解析成 5 列，否则 unknown。可能需要为 preflight 语料补绑定行，所以先提交协调者裁定。**裁定：裁定 3 优先。** 已修：ss 分支只把 ASCII 空格/制表符组成的行视为空行，其余行必须解析为 5 列，否则 unknown。回归 `TestReviewN810SSUnicodeBlankLineIsUnknown` 覆盖 NBSP/U+3000/U+0085/`\v`/`\f`（udp53、tcp53 和汇总都必须是 unknown），另有 ASCII 空行仍然 pass 的正控。修复前 NBSP 用例失败（`udp53=pass, overall pass`），修复后通过。installer 全包语料没有受影响的行，所以不需要新增绑定；behaviour-changes 已登记。 |
 | L2 | low | 记录 | **生产 renderer 仍留有只供测试 codec 使用的兼容分支。** `GuideOptions.addressNode/addressDisplay/imageRaw`、`GuideRequest.imageRaw` 及其在 `guideComposeNative`、`generateCompactNative`、`planHash`、`imageNode` 中的分支，只有 `guide_legacy_test.go` 会赋值（用于回放 Python 的 numeric IPv4 和非字符串 image）。这些字段未导出，生产路径到不了，所以没有安全影响；但作者报告里“纯 renderer 的人工 numeric IPv4 兼容现在只在测试 codec”并不完全准确，生产代码里仍有对应分支。同类：`options_legacy.go` 的 `compatIntegerText` 对 bool 返回 `True`/`False`（Python `str(bool)`），`api/agents/installer.go` 把 `installer.PyStrip` 换成了共享的 `pystr.Strip`。这些都已登记为 N8-11 删除项，建议删 options codec 时一起清掉。另外 `decodeIPv4Value` 在生产中仍接受 `vip` 和 `ha_gateway` 的 numeric/bool 形式（与 Python 一致，输出前都经 IPv4 校验并转回文本，不属于身份字段，不在裁定 7 范围内）。 |
 | L3 | low | 记录 | **原生 Gateway/AIO API 把端口 0 当成“使用默认值”。** `RenderGatewayInstall` 用 `o.MihomoAgentPort != 0` 判断是否覆盖默认端口，直接调用原生 API 时显式传 0 会静默得到 8080/8082，而不是 `Invalid Agent port`。生产路径经 `compatPort` 把 0 转成 `portError` 并向下传递，仍然拒绝。只影响以后的原生调用方（upgrades），记录供接续时注意。 |
-| L4 | low | 记录 | **behaviour-changes 重复登记。** “protocol IPv4 and non-JSON stored expiry”和“string IPv4 identities and finite session JSON”两节内容基本相同（numeric agent_ip 400、NaN expires）。不影响行为，建议合并时去重。 |
+| L4 | low | 已修 | **behaviour-changes 重复登记。** “protocol IPv4 and non-JSON stored expiry”和“string IPv4 identities and finite session JSON”两节内容基本相同（numeric agent_ip 400、NaN expires）。不影响行为。按协调者要求已删除前一节；后一节内容完整，保留。 |
 
 另外两点只作说明，不算发现：(a) 安装会话文件同时保存明文 token 和 token_hash（0600）。这是 Python 设计：有效期内重复生成命令要返回同一凭据；enroll 只比较 hash（`subtle.ConstantTimeCompare`）。(b) 安装命令 snapshot 以明文 22 字符 token 作为主键，有效期内可以重复读取，与 Python 一致，不是一次性凭据。
 
@@ -52,6 +52,8 @@ rt 命令（均为 `RT_HOST=sunbroke@192.168.0.64`，在 `server/` 下执行）�
 6. 修复后：`go test -race -p 4 -count=1 -run "Docker|Install|N810|L1" ./internal/api/agents` → `ok 44.405s`；`CONFIGFLOW_DIFF=1 go test -p 4 -count=1 -run "InstallerDifferential|DockerHADifferential|L1CompactColon|N810" ./internal/api/agents/difftest` → `ok 16.366s`。
 7. `go test -run ReviewN810 -v ./internal/installer` → 三个复核测试都 PASS。
 
-## 需协调者裁定
+## 协调者裁定
 
-- L1：ss 中只含 Unicode 空白的行，是否按裁定 3 改成 unknown（建议改，可能需要补 preflight 绑定行），还是按裁定 9 和 Python 维持现状。
+- L1：采用复核建议，裁定 3 优先：unknown 绝不能放行。已在本分支修复（见 L1）。
+
+L1 修复的验证（.64）：修复前（临时还原 docker_ha_preflight.go，已恢复）`go test -run ReviewN810SSUnicode ./internal/installer` → FAIL；修复后 `go test -p 4 -count=1 ./internal/installer` → `ok 152.307s`；`go test -race -p 4 -count=1 -run "Preflight|ReviewN810|N810|DockerHA|Corpus|Reference|Golden" ./internal/installer` → `ok 106.716s`；gofmt 无输出，vet 通过。

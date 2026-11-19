@@ -2181,6 +2181,10 @@ timeout 复用 taskstatus.Count，保留 ASCII 有符号/下划线十进制，�
 不模拟 CPython 4300 位限制。timeout 超出 int64 或 time.Duration 秒数承载范围
 （±9223372036）明确拒绝，绝不回绕。Go Agent 端口为 1..65535，HA 保留 1024..65535。
 脚本尾空白使用 strings.TrimRightFunc(unicode.IsSpace)；1c–1f 不再模拟 Python 空白。
+HR 复核 L1（协调者裁定，裁定 3 优先）：ss 端口证据中只有 ASCII 空格/制表符组成的行
+算空行；含 NBSP、U+3000、U+0085、\v、\f 等其他空白且无法解析为监听行的行判 unknown，
+不能再被当作空行而判定 53 端口空闲/pass（Python `line.strip()` 曾丢弃这些行）。
+现有 preflight 语料无受影响行，无新增绑定。
 机器采集记录只按固定模板的 LF/CRLF 分行，base64 使用 encoding/base64 的标准语法；
 非规范 padding 与其他行分隔不再复刻 binascii/str.splitlines。固定采集模板只输出
 标准 base64 和 LF；人工旧行保留并以完整 archive/row SHA 绑定新 report/拒绝。
@@ -2208,16 +2212,6 @@ HR 复核补充（R1）：所有 guide 路径（数据目录、身份文件、HA
 写到根目录下，安装包的身份文件重叠检查也随之失效。现在按 path.Clean 后是否为 `/`
 判断，`//` 与 `/` 一样返回该路径的既有中文 400；精简/直接 Compose 中 `//` 因此先
 命中路径规则，而不是系统目录提示。`//srv/native` 等合法双斜线路径不变。
-
-### N8-10 installer — protocol IPv4 and non-JSON stored expiry
-
-HTTP guide 在创建凭据前拒绝 numeric/bool agent_ip，返回现有 IPv4 中文 400，且无目录
-或 Agent 写入。Python 接受整数 IPv4 并存 numeric host；前端只发字符串，整数 IP 不是
-支持的安装身份。四种安装方法的旧 int-ip 请求、Python 200 与 Go 400 精确绑定。
-纯 renderer 的人工数字 IPv4 只留在 legacy codec，N8-11 删除。
-
-损坏已存会话的 expires=NaN 不再由 Python json.loads 放行；标准 JSON 解码 fail closed，
-enroll401/issue409、无写入，原 NaN 输入/输出行保留并 SHA 绑定，不增加 NaN parser。
 
 ### N8-10 installer — string IPv4 identities and finite session JSON
 
