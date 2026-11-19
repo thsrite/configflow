@@ -1,7 +1,8 @@
 # N8-10 upgrades S pass
 
-状态：主体实现与定向验证完成；收口提交与 installer HR tip 变基中，未宣称 verified。
-分支 go-n8-10-upgrades；起点 installer@6d84df68c，按协调通知接 f8df41fb1。
+状态：实现、installer HR tip 变基与定向验证完成，待 fresh HR / batch gate，未宣称 verified。
+分支 go-n8-10-upgrades；已 rebase 到 installer HR@f8df41fb1。
+变基后主体提交 fb71df930、66958fcf8、6d14205fa；最后收口见本报告所在提交。
 未 push、未跑完整门禁；fresh HR / batch gate 由协调者安排。
 
 ## 完成边界与接口
@@ -19,7 +20,8 @@
   仍归 api/agents 下一轮 S pass，未宣称整个 API 包已 native。
 - core 公共 API（协调者批准）：Hooks.AddressFollowTyped / AddressConfirmedTyped 接
   *model.Agent。HTTP heartbeat 已有 typed snapshot直接进入hook；typed优先、旧hook不双触发，
-  没有新增 registry 查询或 jsonx 往返。旧 hook 留给 N8-11 删除。
+  没有新增 registry 查询或 jsonx 往返。偏好展示继续使用 shared JSONHasContent 的既有
+  optional语义，不把它当身份或守卫；新回归保留既有非bool偏好。旧 hook 留给 N8-11 删除。
 - upgrades 没有 installer renderer 调用，不拼安装 shell，也不传 renderer 默认端口0。
   installer guide/enroll/native renderer 接口由其既有 API owner 使用，本轮不另造适配层。
   rebase 接纳 HR 的 shellWord/根目录别名/ss unknown 修复，不改其公共接口。
@@ -37,7 +39,7 @@ queued acceptance不覆盖已观察到的更晚阶段；过期仍未知时继续
    CorruptStateError/500、中文字段说明、不写、不自动清。单Agent string由原404、pair-list
    由原200改500，int原500保持；GET /api/agents 列表仍200，健康条目保留。
    文档 doc/manual/agents.md 给出具体SQLite字段、代际/commit_id事务、备份与后果；
-   清除坏成员后重新升级成功有回归。本轮不新增恢复HTTP/UI或无调用方Repair API。
+   清除坏成员后重新升级成功有回归；oxidns_ha.enabled 错型同样拒绝地址修改，修复后可编辑。本轮不新增恢复HTTP/UI或无调用方Repair API。
 2. protocol-2 必须同一 worker 的 update_id + agent_id + status全部匹配，错agent_id即使
    另一条 upgrade-info 正确也不写成功/不解锁（Python原来能误判成功）。
 3. 非空 upgrade-info 缺失/空/非字符串 architecture，在reservation前现有中文409拒绝；
@@ -67,7 +69,7 @@ no-write fingerprint与请求trace都检查，未豁免未绑定字段。新文�
   test_agent_address_follow.py → address/tracked_address/API address_test + proxy差分；
   test_agent_artifacts.py → artifacts_test + Runtime摘要取消测试。Windows专属分支沿原说明不移植。
 
-全部检查经 rt 在 .32/.64，未在Mac跑测试。变基后的最终命令/结果在末节补齐。
+全部检查经 rt 在 .32/.64，未在Mac跑测试。变基后的最终命令/结果见末节。
 
 - .32 完整 upgrades `go test -race -p 4 -count=1 -timeout=20m ./internal/agents/upgrades`：
   PASS60.267s；后续 context/artifact/恢复/身份等相关race：upgrades10.496s、API28.853s PASS。
@@ -84,3 +86,32 @@ no-write fingerprint与请求trace都检查，未豁免未绑定字段。新文�
   原阈值PASS5.769s。public empty/2MiB 6808/6774 B、153alloc；native7197/7240 B、160/162alloc。
 - 全仓gofmt -l静默、go vet -p 4 ./...静默；tools/pyref TestAuditRepository PASS0.820s，
   最后增量复跑PASS0.733s。go.mod/go.sum/Dockerfile/依赖/分配阈值均未改。
+
+
+## f8df41fb1 变基后的最终验证
+
+以下命令从任务 worktree 执行；Go 1.27.4，没有运行 gate.sh / 全仓go test。
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && test -z "$(gofmt -l .)" && GOMAXPROCS=4 go vet -p 4 ./... && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m ./internal/agents/upgrades && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "Upgrade|Address|HeartbeatReportedHost|N810TypedHeartbeat|PublicAgent" ./internal/api/agents && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=10m ./internal/server && GOMAXPROCS=4 go test -count=1 -run "^TestAuditRepository$" ./tools/pyref'
+```
+
+Exit0：gofmt/vet静默；upgrades53.704s、API145.066s、server13.852s、pyref0.641s全PASS。
+core Hooks 本身变基前已通过 agents Corpus/Reference/Golden/Heartbeat/Hook race214.450s，
+installer HR 基底未改core；没有重复跑整套core。最后两条新增回归单独验证如下。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 CONFIGFLOW_DIFF=1 go test -p 4 -count=1 -timeout=15m -run "Upgrades.*DifferentialAgainstFlask|N810UpgradesHTTPPolicy" ./internal/api/agents/difftest'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=10m -run "N810TypedAddressSnapshot|N810TypedHeartbeat|N810CorruptUpgrade" ./internal/api/agents'
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=10m -run "N810DamagedHAFlag|N810Corrupt|N810PythonBug|N810ProtocolEvidence" ./internal/agents/upgrades && GOMAXPROCS=4 go vet -p 4 ./... && test -z "$(gofmt -l .)"'
+```
+
+Exit0：真实Python HTTP/代理差分22.888s；typed hook/偏好/坏记录列表race19.362s；
+坏HA子守卫/修复、身份和bug对照race11.685s；末轮全仓vet/gofmt静默。
+额外独立生成器复现（.32，虚拟环境Python，每个generator独立进程）三份新fixture逐字节
+SHA完全相同：n810_native.json、n810_boundary_python.json、n810_upgrades_http_native.json。
+原A15两份archive和go.mod/go.sum/Dockerfile相对f8df41fb1均无diff，工作区最终提交前无临时文件。
+
+集成注意：本包生产legacy facade已清；api/agents下一步直接使用上列typed接口，不重建
+jsonx codec；core老地址hook只在typed不存在时兜底，N8-11再删。面板损坏状态恢复UI仍为
+协调者登记的后续项。没有余下产品实现阻塞；fresh HR及协调者batch门禁仍待执行。

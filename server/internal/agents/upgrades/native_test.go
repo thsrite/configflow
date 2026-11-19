@@ -339,3 +339,34 @@ func TestN810ArtifactShutdownDoesNotPublishDigest(t *testing.T) {
 		t.Fatal("artifact retry did not recover", result.Len(), err)
 	}
 }
+
+func TestN810DamagedHAFlagCannotUnlockAddressChange(t *testing.T) {
+	e := newUpgradeEnv(t)
+	e.update("oxidns_ha", jsonx.Obj("enabled", 1))
+	a := nativeAgent(t, e)
+	t.Cleanup(SetAskForTest(func(*model.Agent, string, string, []byte) (int, model.Fields) {
+		t.Fatal("damaged HA guard contacted device")
+		return 0, model.Fields{}
+	}))
+	before, err := e.repo.Store().Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = ChangeModel(e.ctx, e.m, a, "192.0.2.11")
+	var corrupt *CorruptStateError
+	if !errors.As(err, &corrupt) || corrupt.Field != "oxidns_ha.enabled" {
+		t.Fatal("R5 HA flag unlocked edit", err)
+	}
+	after, err := e.repo.Store().Fingerprint()
+	if err != nil || before != after {
+		t.Fatal("damaged HA guard was overwritten", err)
+	}
+	if err := e.m.EditAgents(e.ctx, "", func(_ context.Context, rows *[]model.Agent) error { return (*rows)[0].Clear("oxidns_ha") }); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(SetAskForTest(func(*model.Agent, string, string, []byte) (int, model.Fields) { return 200, model.Fields{} }))
+	result, status, err := ChangeModel(e.ctx, e.m, nativeAgent(t, e), "192.0.2.11")
+	if err != nil || status != 200 || !result.Success {
+		t.Fatal("explicit HA repair did not restore address edit", result, status, err)
+	}
+}

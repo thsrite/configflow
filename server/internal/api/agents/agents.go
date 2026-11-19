@@ -490,6 +490,21 @@ func mihomoFlag(agent *jsonx.Object, field string) bool {
 	return jsonx.Truthy(agent.Value(field)) && agent.Value("service_type") == "mihomo"
 }
 
+// heartbeatFeature retains the existing optional feature flag semantics while
+// the address hook consumes the already-read typed Agent snapshot. These are
+// display/protocol preferences, never credential or ownership evidence.
+func heartbeatFeature(agent *model.Agent, field string) bool {
+	if agent == nil || agent.ServiceType != "mihomo" {
+		return false
+	}
+	raw, present, err := agent.MemberJSON(field)
+	if err != nil || !present {
+		return false
+	}
+	enabled, err := model.JSONHasContent(raw)
+	return err == nil && enabled
+}
+
 func agentHeartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	response, err := heartbeat(c)
 	if err != nil {
@@ -532,8 +547,8 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	if !ok {
 		return failure(404, "Agent not found"), nil
 	}
-	reply := jsonx.Obj("success", true, "domain_discovery_enabled", agent.ServiceType == "mihomo" && agent.DomainDiscoveryEnabled != nil && *agent.DomainDiscoveryEnabled,
-		"traffic_history_enabled", agent.ServiceType == "mihomo" && agent.TrafficHistoryEnabled != nil && *agent.TrafficHistoryEnabled, "reads_host", true)
+	reply := jsonx.Obj("success", true, "domain_discovery_enabled", heartbeatFeature(agent, "domain_discovery_enabled"),
+		"traffic_history_enabled", heartbeatFeature(agent, "traffic_history_enabled"), "reads_host", true)
 	if host, _ := reported.(string); host != "" {
 		hooks := agents.CurrentHooks()
 		var legacy *jsonx.Object

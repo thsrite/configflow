@@ -197,8 +197,14 @@ func memberHA(a *model.Agent) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if raw, present := fields.Get("enabled"); present && string(raw) == "true" {
-		return true, nil
+	if raw, present := fields.Get("enabled"); present {
+		switch string(bytes.TrimSpace(raw)) {
+		case "true":
+			return true, nil
+		case "false", "null":
+		default:
+			return false, &CorruptStateError{Field: "oxidns_ha.enabled"}
+		}
 	}
 	return activeHA(a)
 }

@@ -111,3 +111,23 @@ func TestN810CorruptUpgradeDoesNotBreakAgentList(t *testing.T) {
 		})
 	}
 }
+
+func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
+	h := newHeartbeat(t)
+	manager, err := agents.Get(h.s.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.EditAgents(h.s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
+		if err := (*rows)[0].SetJSON("domain_discovery_enabled", []byte(`"enabled"`)); err != nil {
+			return err
+		}
+		return (*rows)[0].SetJSON("traffic_history_enabled", []byte(`1`))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result := h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj())).WantStatus(200).Object()
+	if result.Value("domain_discovery_enabled") != true || result.Value("traffic_history_enabled") != true {
+		t.Fatal("typed snapshot changed existing heartbeat preferences", result)
+	}
+}
