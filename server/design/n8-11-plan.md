@@ -427,3 +427,14 @@ W3 的 api/nodes 删除子步、W4 的 rulelibrary 新建子步放在各自包�
 4. **批次与复核负担**：波 1 有两个 HR 包（W1、W2），波 2 有一个（W6），都要 fresh Opus 复核。是否接受波 2 在 W1、W2
    **复核通过**后才开工（更稳），还是在它们**实现交回**后就开工、复核意见再由波 2 吸收（更快但可能返工）？
    **建议前者**。
+
+### 3.3 裁定（协调者，2026-11-20）
+
+1. **同意** test-only `internal/testjson`（有序构造、Parse、结构 Equal/Diff；无 Repr/Python 编码/Truthy），门禁限制只能被
+   `_test.go` 与测试工具导入。
+2. **本轮一起删**：monitor 的 `pyip`/`pydigit_table`/`pydecimal_table`、`pyDecimalValue` 和 convert 的非 ASCII 带宽数字处理
+   归入 W2（monitor）/W7（convert），不另立 N10。依据：batch-11 已有裁定"机器文本/数字用原生 ASCII 规则（无 CPython 表）"，
+   且硬规则禁止 Python 仿真；Agent 是我们自己的 Go 二进制，只发 ASCII 数字。非 ASCII 数字按对应字段的现有错误类处理
+   （400/跳过，与同字段其他非法值一致），登记 behaviour-changes。
+3. **保留**日志标签字符串（`exception_type=RuleFetchError` 等），只改 Go 方法名为 `ErrorClass()`。
+4. **波 2 等 W1、W2 复核通过（含修复合入 go）后开工**。W3/W4 不依赖 W1/W2 的部分可先合。
