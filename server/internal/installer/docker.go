@@ -357,16 +357,16 @@ func RenderDockerRun(o DockerInstallOptions) (string, error) {
 	if o.NetworkMode == "bridge" {
 		var ports []string
 		if o.EnableMihomo {
-			ports = append(ports, "-p "+mihomoPort+":"+mihomoPort, "-p 7890:7890", "-p 9090:9090", "-p 53:53/udp")
+			ports = append(ports, "-p "+shellWord(mihomoPort+":"+mihomoPort, true), "-p 7890:7890", "-p 9090:9090", "-p 53:53/udp")
 		}
 		if o.EnableMosdns {
-			ports = append(ports, "-p "+mosdnsPort+":"+mosdnsPort)
+			ports = append(ports, "-p "+shellWord(mosdnsPort+":"+mosdnsPort, true))
 			if !o.EnableMihomo {
 				ports = append(ports, "-p 53:53/udp")
 			}
 		}
 		if o.EnableOxidns {
-			ports = append(ports, "-p "+oxidnsPort+":"+oxidnsPort, "-p 53:53/tcp")
+			ports = append(ports, "-p "+shellWord(oxidnsPort+":"+oxidnsPort, true), "-p 53:53/tcp")
 			found := false
 			for _, p := range ports {
 				if p == "-p 53:53/udp" {
@@ -409,13 +409,13 @@ func RenderDockerRun(o DockerInstallOptions) (string, error) {
 		cmd += "\n  -e AGENT_IP=" + shellWord(o.AgentIP, true) + " \\"
 	}
 	if o.EnableMihomo {
-		cmd += "\n  -e AGENT_MIHOMO_NAME=" + o.AgentName + "-mihomo \\\n  -e AGENT_MIHOMO_PORT=" + mihomoPort + " \\"
+		cmd += "\n  -e AGENT_MIHOMO_NAME=" + o.AgentName + "-mihomo \\\n  -e " + shellWord("AGENT_MIHOMO_PORT="+mihomoPort, true) + " \\"
 	}
 	if o.EnableMosdns {
-		cmd += "\n  -e AGENT_MOSDNS_NAME=" + o.AgentName + "-mosdns \\\n  -e AGENT_MOSDNS_PORT=" + mosdnsPort + " \\"
+		cmd += "\n  -e AGENT_MOSDNS_NAME=" + o.AgentName + "-mosdns \\\n  -e " + shellWord("AGENT_MOSDNS_PORT="+mosdnsPort, true) + " \\"
 	}
 	if o.EnableOxidns {
-		cmd += "\n  -e ENABLE_OXIDNS=\"true\" -e AGENT_OXIDNS_NAME=" + o.AgentName + "-oxidns -e AGENT_OXIDNS_PORT=" + oxidnsPort + " \\"
+		cmd += "\n  -e ENABLE_OXIDNS=\"true\" -e AGENT_OXIDNS_NAME=" + o.AgentName + "-oxidns -e " + shellWord("AGENT_OXIDNS_PORT="+oxidnsPort, true) + " \\"
 	}
 	cmd += "\n  " + volumesArgs
 	cmd += "\n  thsrite/config-flow-agent:latest\n"

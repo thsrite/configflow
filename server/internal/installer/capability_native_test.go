@@ -330,7 +330,12 @@ func TestN810LinuxPathAliasesCannotBypassInstallerGuards(t *testing.T) {
 				if result != nil || err == nil {
 					t.Fatal("dangerous alias generated an installer")
 				}
-				if strings.HasPrefix(directory, "//") && err.Error() != composeDataDirMessage {
+				if directory == "//" {
+					// Review N8-10 R1: the root alias is refused by the path rule itself.
+					if err.Error() != "持久数据根目录须为规范的绝对路径，不能包含逗号、冒号或换行" {
+						t.Fatalf("wrong root alias refusal: %v", err)
+					}
+				} else if strings.HasPrefix(directory, "//") && err.Error() != composeDataDirMessage {
 					t.Fatalf("wrong alias refusal: %v", err)
 				}
 			})

@@ -53,7 +53,9 @@ func guidePath(text string, label string, allowColon bool) (string, error) {
 	if allowColon {
 		bad = ",\x00\r\n"
 	}
-	if !strings.HasPrefix(text, "/") || text == "/" || canonicalInstallPath(text) != text || strings.ContainsAny(text, bad) {
+	// "//" is the published double-slash spelling of the root itself; compare
+	// the cleaned path so it cannot bypass the root refusal.
+	if !strings.HasPrefix(text, "/") || path.Clean(text) == "/" || canonicalInstallPath(text) != text || strings.ContainsAny(text, bad) {
 		if allowColon {
 			return "", valueError(label + "须为规范的绝对路径，不能包含逗号或换行")
 		}

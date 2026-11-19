@@ -2203,6 +2203,12 @@ Python bug 修正：拒绝危险目录前用 path.Clean 归一化，仅用于比
 拒绝使用已有中文提示，发生在生成与持久化之前。合法请求保留原始路径和既有 D2
 owner/hash，`//srv/native` 的合法安装身份没有重发。回归只用合成路径。
 
+HR 复核补充（R1）：所有 guide 路径（数据目录、身份文件、HA 目录、备份目录、bind
+挂载源）原先只用原文 `== "/"` 拒绝根目录，`//` 能绕过，脚本/安装包模式会把数据
+写到根目录下，安装包的身份文件重叠检查也随之失效。现在按 path.Clean 后是否为 `/`
+判断，`//` 与 `/` 一样返回该路径的既有中文 400；精简/直接 Compose 中 `//` 因此先
+命中路径规则，而不是系统目录提示。`//srv/native` 等合法双斜线路径不变。
+
 ### N8-10 installer — protocol IPv4 and non-JSON stored expiry
 
 HTTP guide 在创建凭据前拒绝 numeric/bool agent_ip，返回现有 IPv4 中文 400，且无目录
