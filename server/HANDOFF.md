@@ -56,6 +56,14 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-20: batch-13 MERGED, go = cf5ec02e7** (upgrades + api/agents + Opus HR review 7cf88da4: high 0,
+medium 0, low 8 — R1 stored status null stays null, R2 missing service_type = mihomo on traffic routes, R3 RunServiceOperation
+Runtime shutdown/disconnect test, R4 binary-download 500 text logged in behaviour-changes; L1 old address-follow /
+installation-register hooks have no production caller → N8-11). Done by hand (single branch, no conflicts, no integrator):
+preflight .32 PASS, compare .32 PASS (synthetic live 23/23), core FULL .64 PASS (race + 17 fuzz). metrics-native (dfd5f2d2)
+told to rebase, switch traffic.go to native APIs (keep R2), rebind the 5 Flask difftest rows, drop dead legacy adapters →
+then Opus HR review (data path) + own batch gate. Then N8-11.
+
 **Update 2026-11-19 late night (coordinator = this new session; 02a6c1ea + dfd5f2d2 re-routed and `paseo agent detach`ed):**
 - api/agents handed back: go-n8-10-api-agents@f8b387f7f (on go 5c5998e86; upgrades line 23d5d46c6..52dd0b884, api/agents
   29d0a6115..f8b387f7f). Fresh Opus HR review 7cf88da4 running on branch go-opus-review-n8-10-api-agents (scope: the 3
