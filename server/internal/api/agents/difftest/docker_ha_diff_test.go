@@ -20,6 +20,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -213,6 +214,10 @@ func withPairs(o *jsonx.Object, pairs ...any) *jsonx.Object {
 
 func compareHA(t *testing.T, name string, py, gor response, same, failed *int, mask ...string) {
 	t.Helper()
+	if approvedSessionHTTPBoundary(t, name, py, gor) {
+		*same++
+		return
+	}
 	pyNorm, gorNorm := py, gor
 	if name == "generate refused [server_url http://[bad]" {
 		p, pe := jsonx.Parse(py.body)
@@ -342,15 +347,36 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 		if len(values) == 2 {
 			pv, gv = values[0], values[1]
 		}
-		return send(t, py.base, r, py.token, pv), send(t, gs.base, r, gs.token, gv)
+
+		before := installationFiles(t, goDir)
+		p, g := send(t, py.base, r, py.token, pv), send(t, gs.base, r, gs.token, gv)
+		if _, ok := numericGuideBoundary(r); ok {
+			if !reflect.DeepEqual(before, installationFiles(t, goDir)) {
+				t.Fatal("numeric guide wrote native installation files")
+			}
+		}
+		return p, g
 	}
 	check := func(r request, mask ...string) (response, response) {
 		p, g := both(r)
+		if checkNumericGuideBoundary(t, r, p, g, py) {
+			same++
+			return p, g
+		}
 		compareHA(t, r.name, p, g, &same, &failed, mask...)
 		return p, g
 	}
 
 	for _, r := range haReadOnlyRequests() {
+		if r.name == "check compose digits" {
+			p, g := both(r)
+			if p.status != 400 || !strings.Contains(string(p.body), "Exceeds the limit (4300 digits)") {
+				t.Fatal("old machine version digit limit changed")
+			}
+			expected, _ := both(guideReq("native compose digit reference", jsonx.Obj("action", "check", "output", haBlock(nil), "network_mode", "host")))
+			compareHA(t, "native unlimited Compose component", expected, g, &same, &failed)
+			continue
+		}
 		check(r)
 	}
 	// Deliberate fix of a Python validation bug (A09 decision): a server_url
@@ -415,7 +441,12 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	for _, body := range composeBodies() {
 		name := "generate " + body.GetString("install_method") + " " + body.GetString("agent_name")
 		for attempt := 0; attempt < 2; attempt++ { // the second request re-issues the same capability
-			p, g := both(guideReq(name, body))
+			r := guideReq(name, body)
+			p, g := both(r)
+			if checkNumericGuideBoundary(t, r, p, g, py) {
+				same++
+				continue
+			}
 			if diffs := append(compareComposeAnswer("python", body, p), compareComposeAnswer("go", body, g)...); len(diffs) > 0 {
 				failed++
 				t.Errorf("DIFF %s:\n  %s", name, strings.Join(diffs, "\n  "))
@@ -651,6 +682,26 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 			}
 		}
 	}
+
+	// Python alone registers the known hand-5 NaN session. Verify that one
+	// admitted identity, then compare every remaining record normally.
+	var filtered []any
+	skipped := 0
+	for _, item := range pyAgents.([]any) {
+		o := item.(*jsonx.Object)
+		if o.GetString("name") == "hand-5-oxidns" {
+			if !o.Has("docker_ha_installation_id") {
+				t.Fatal("old NaN Agent lost its marker")
+			}
+			skipped++
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if skipped != 1 {
+		t.Fatalf("expected one Python NaN enrollment, got %d", skipped)
+	}
+	pyAgents = filtered
 	if !jsonx.Equal(pyAgents, goAgents) {
 		failed++
 		t.Errorf("stored agents differ:\npython %s\ngo     %s", jsonx.Repr(pyAgents), jsonx.Repr(goAgents))

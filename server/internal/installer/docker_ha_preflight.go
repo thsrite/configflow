@@ -759,8 +759,7 @@ func EvaluatePreflight(output, mode string) (*PreflightReport, error) {
 	modernCompose := false
 	if composeItem.code == 0 {
 		if parts, ok := isVersionText(strings.TrimSpace(composeItem.text), true); ok {
-			// tuple(map(int, match.groups())) >= (2, 30, 0); int() keeps its
-			// digit limit (a ValueError the route answers with 400).
+			// Compare machine version components without an interpreter digit limit.
 			var numbers [3]int64
 			for i, part := range parts {
 				n, ok := new(big.Int).SetString(part, 10)

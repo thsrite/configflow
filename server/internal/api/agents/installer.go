@@ -1,12 +1,13 @@
 package agents
 
 import (
-"unicode"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"configflow/internal/agents"
@@ -17,6 +18,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/pystr"
 	"configflow/internal/repo"
+	"configflow/internal/taskstatus"
 	"configflow/internal/utilx"
 )
 
@@ -131,11 +133,16 @@ func paramDefault(p installParams, name, def string) string {
 }
 
 // paramInt is params.get(name, def, type=int): int() of the value, the
-// default when int() raises ValueError (including the digit limit).
+// default for invalid ASCII query text; native integers have no interpreter digit limit.
 func paramInt(p installParams, name string, def int64) *big.Int {
 	if value, ok := p.get(name); ok {
-		if n, err := installer.PyInt(value); err == nil {
-			return n
+		if strings.TrimSpace(value) != "" {
+			raw, err := json.Marshal(value)
+			if err == nil {
+				if n, err := taskstatus.Count(raw); err == nil {
+					return n
+				}
+			}
 		}
 	}
 	return big.NewInt(def)
@@ -278,7 +285,7 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		}
 	}
 
-	logger.Infof("生成安装脚本请求 - 名称: %s, 类型: %s, 端口: %s, Agent类型: %s", agentName, serviceType, installer.PyStr(agentPort), agentType)
+	logger.Infof("生成安装脚本请求 - 名称: %s, 类型: %s, 端口: %s, Agent类型: %s", agentName, serviceType, fmt.Sprint(agentPort), agentType)
 
 	serverURL := pystr.Strip(paramDefault(params, "server_url", ""))
 	if serverURL == "" {
@@ -290,11 +297,17 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		}
 	}
 
- if serviceType!="aio"{
-  names:=[]string{"deployment_health_timeout"}
-  if !installCore{names=append(names,"port")}
-  for _,name:=range names{if err:=rejectNonASCIIMachineNumber(params,name);err!=nil{return "",err}}
- }
+	if serviceType != "aio" {
+		names := []string{"deployment_health_timeout"}
+		if !installCore {
+			names = append(names, "port")
+		}
+		for _, name := range names {
+			if err := rejectNonASCIIMachineNumber(params, name); err != nil {
+				return "", err
+			}
+		}
+	}
 	var script string
 	var err error
 	if serviceType == "aio" {
@@ -534,9 +547,16 @@ func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (str
 
 func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerOptions) (string, error)) (installer.DockerOptions, *httpx.Response) {
 	options := dockerOptions(c)
- for _,field:=range []struct{name string;enabled bool}{{"mihomo_port",options.EnableMihomo},{"mosdns_port",options.EnableMosdns},{"oxidns_port",options.EnableOxidns}}{
-  if field.enabled{if err:=rejectNonASCIIMachineNumber(queryParams{c},field.name);err!=nil{return options,dockerResponse("",err,"")}}
- }
+	for _, field := range []struct {
+		name    string
+		enabled bool
+	}{{"mihomo_port", options.EnableMihomo}, {"mosdns_port", options.EnableMosdns}, {"oxidns_port", options.EnableOxidns}} {
+		if field.enabled {
+			if err := rejectNonASCIIMachineNumber(queryParams{c}, field.name); err != nil {
+				return options, dockerResponse("", err, "")
+			}
+		}
+	}
 	// Validate every requested representation before minting any credential.
 	for _, render := range renderers {
 		if _, err := render(options); err != nil {
@@ -555,7 +575,7 @@ func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerO
 			if !service.enabled {
 				continue
 			}
-			port, _ := strconv.Atoi(installer.PyStr(service.port))
+			port, _ := strconv.Atoi(fmt.Sprint(service.port))
 			identities = append(identities, model.AgentRegistrationSession{Name: options.AgentName + "-" + service.name, Host: strings.TrimSpace(options.AgentIP), Port: model.Int(port), ServiceType: service.name, DeploymentMethod: "docker"})
 		}
 		tokens, failed := issueRegistration(c, identities)
@@ -598,8 +618,10 @@ func issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession
 
 // rejectNonASCIIMachineNumber keeps an invalid machine number from silently
 // becoming the query converter's default before it reaches the typed renderer.
-func rejectNonASCIIMachineNumber(params installParams,name string)error{
- text,present:=params.get(name)
- if present&&strings.ContainsFunc(text,func(r rune)bool{return r>127&&unicode.IsDigit(r)}){return &installer.ValidationError{Message:"Invalid installer integer"}}
- return nil
+func rejectNonASCIIMachineNumber(params installParams, name string) error {
+	text, present := params.get(name)
+	if present && strings.ContainsFunc(text, func(r rune) bool { return r > 127 && unicode.IsDigit(r) }) {
+		return &installer.ValidationError{Message: "Invalid installer integer"}
+	}
+	return nil
 }

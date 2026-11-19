@@ -2199,3 +2199,25 @@ Python bug 修正：拒绝危险目录前用 path.Clean 归一化，仅用于比
 身份文件与数据目录、迁移目录之间的重叠检查同样归一化，防止双斜线别名绕过。
 拒绝使用已有中文提示，发生在生成与持久化之前。合法请求保留原始路径和既有 D2
 owner/hash，`//srv/native` 的合法安装身份没有重发。回归只用合成路径。
+
+### N8-10 installer — protocol IPv4 and non-JSON stored expiry
+
+HTTP guide 在创建凭据前拒绝 numeric/bool agent_ip，返回现有 IPv4 中文 400，且无目录
+或 Agent 写入。Python 接受整数 IPv4 并存 numeric host；前端只发字符串，整数 IP 不是
+支持的安装身份。四种安装方法的旧 int-ip 请求、Python 200 与 Go 400 精确绑定。
+纯 renderer 的人工数字 IPv4 只留在 legacy codec，N8-11 删除。
+
+损坏已存会话的 expires=NaN 不再由 Python json.loads 放行；标准 JSON 解码 fail closed，
+enroll401/issue409、无写入，原 NaN 输入/输出行保留并 SHA 绑定，不增加 NaN parser。
+
+### N8-10 installer — string IPv4 identities and finite session JSON
+
+协调者批准：HTTP guide 的 agent_ip 只接收 JSON string；Python 曾接受整数 IPv4 并
+保存 numeric host，Go 在创建凭据前用现有 IPv4 中文提示拒绝 400，无目录或 Agent
+写入。前端只发送字符串，整数形式不是受支持输入。四种安装方法保留旧请求与原 200
+断言，并与新 400 精确对应；旧纯 renderer 的人工 numeric 兼容限于 legacy codec，
+N8-11 删除。
+
+损坏已存会话的 expires=NaN 不再由 Python json.loads 放行或使凭据永不过期；原生
+标准 JSON fail closed：enroll 401 / issue 409、无写入。原 NaN 行和 Python 输出
+完整保留在 SHA 绑定参考中，不保留非标准 JSON parser。

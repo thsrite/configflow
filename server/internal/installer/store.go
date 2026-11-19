@@ -84,6 +84,15 @@ func (c *storeConn) close() {
 	c.db.Close()
 }
 
+// commit checks the originating Runtime immediately before the SQLite commit.
+func (c *storeConn) commit(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := c.conn.ExecContext(ctx, "COMMIT")
+	return err
+}
+
 // open is _database(): private directory and file, the table (with the
 // generator column), BEGIN IMMEDIATE and the removal of expired links.
 func (s *Store) open(ctx context.Context) (*storeConn, error) {
@@ -95,6 +104,9 @@ func (s *Store) open(ctx context.Context) (*storeConn, error) {
 	// Path.mkdir(mode=0o700, parents=True, exist_ok=True): missing parents get
 	// the default mode, only the directory itself 0700.
 	if err := os.MkdirAll(filepath.Dir(dir), 0o777); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err := os.Mkdir(dir, 0o700); err != nil {
@@ -117,6 +129,9 @@ func (s *Store) open(ctx context.Context) (*storeConn, error) {
 		return nil, err
 	}
 	file.Close()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		return nil, err
 	}
@@ -233,7 +248,7 @@ func (s *Store) SaveInstallScript(ctx context.Context, script string, expiresAt 
 		c.conn.ExecContext(ctx, "ROLLBACK")
 		return "", 0, err
 	}
-	if _, err := c.conn.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := c.commit(ctx); err != nil {
 		return "", 0, err
 	}
 	return token, expires, nil
@@ -266,14 +281,14 @@ func (s *Store) LoadInstallScript(ctx context.Context, token string) (string, bo
 	var generator sql.NullString
 	err = c.conn.QueryRowContext(ctx, "SELECT script, generator FROM snapshots WHERE token = ?", token).Scan(&script, &generator)
 	if errors.Is(err, sql.ErrNoRows) {
-		_, err = c.conn.ExecContext(ctx, "COMMIT")
+		err = c.commit(ctx)
 		return "", false, err
 	}
 	if err != nil {
 		c.conn.ExecContext(ctx, "ROLLBACK")
 		return "", false, err
 	}
-	if _, err := c.conn.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := c.commit(ctx); err != nil {
 		return "", false, err
 	}
 	if generator.Valid && generator.String == s.fingerprint() {

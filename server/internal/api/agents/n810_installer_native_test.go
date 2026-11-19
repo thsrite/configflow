@@ -52,3 +52,21 @@ func TestN810InstallerNonASCIIQueryNumberNeverDefaultsOrIssues(t *testing.T) {
 		t.Fatal("invalid query wrote an install snapshot")
 	}
 }
+
+func TestN810InstallerNumericIdentityNeverIssues(t *testing.T) {
+	srv, manager, admin := authenticatedApp(t)
+	for _, method := range []string{"script", "compose", "compose_direct", "compose_compact"} {
+		for _, address := range []any{3232236039, true, false} {
+			body := dockerHABody()
+			body.Set("agent_ip", address)
+			body.Set("install_method", method)
+			srv.Post("/api/agents/docker-oxidns-ha-guide", httpxtest.JSON(body), admin).WantStatus(400)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(srv.Repo.DataDir(), "docker-ha-installations")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("numeric identity wrote capability")
+	}
+	if len(allAgents(t, srv, manager)) != 0 {
+		t.Fatal("numeric identity created Agent")
+	}
+}

@@ -131,7 +131,9 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 		return []string{side + " expected: " + parseErr.Error()}
 	}
 	expected = parsedExpected.(*jsonx.Object)
-	if jsonx.Equal(expected, answer) {
+	left, leftErr := installerJSONValues(expected)
+	right, rightErr := installerJSONValues(answer)
+	if leftErr == nil && rightErr == nil && jsonx.Equal(left, right) {
 		return nil
 	}
 	var diffs []string

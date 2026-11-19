@@ -9,10 +9,8 @@ import (
 // Port of backend/agents/install_script.py: the Docker Compose file and the
 // Docker run installer of the Docker Agent.
 
-// DockerInstallOptions are the arguments of generate_docker_agent_compose /
-// generate_docker_agent_run. Ports hold Python ints (int, int64, *big.Int);
-// DefaultDockerOptions fills the Python defaults.
-// DockerInstallOptions contains the validated native renderer input.
+// DockerInstallOptions contains the native Docker renderer input.
+// Port strings preserve the selected machine values in generated commands.
 type DockerInstallOptions struct {
 	RegistrationTokens map[string]string
 	ServerURL          string
@@ -33,7 +31,7 @@ type DockerInstallOptions struct {
 	HAHostIDPath       string
 }
 
-// DefaultDockerOptions returns the Python defaults.
+// DefaultDockerOptions returns the standard Docker settings.
 func DefaultDockerOptions(serverURL string) DockerInstallOptions {
 	return DockerInstallOptions{
 		ServerURL: serverURL, AgentName: "agent", DataDir: "./agent_data", NetworkMode: "host",

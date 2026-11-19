@@ -47,11 +47,47 @@ func GenerateGuide(value any, enrollment *Enrollment) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := GenerateGuideJSON(raw, nativeCapability(enrollment))
+	request, err := legacyGuideRequest(raw)
+	if err != nil {
+		return nil, err
+	}
+	result, err := renderGuide(request, nativeCapability(enrollment))
 	if err != nil {
 		return nil, err
 	}
 	return legacyResponse(result)
+}
+
+// legacyGuideRequest keeps artificial numeric IPv4 renderer cases out of the
+// protocol decoder. Delete this codec with the remaining N8-11 consumers.
+func legacyGuideRequest(raw json.RawMessage) (GuideRequest, error) {
+	var fields model.Fields
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return GuideRequest{}, valueError(msgGuideObject)
+	}
+	original, hasIP := fields.Get("agent_ip")
+	_, textIP := fieldText(fields, "agent_ip")
+	address, node, display, _ := decodeIPv4Value(original)
+	if hasIP && !textIP {
+		if err := setSessionField(&fields, "agent_ip", address); err != nil {
+			return GuideRequest{}, err
+		}
+		normalized, err := json.Marshal(fields)
+		if err != nil {
+			return GuideRequest{}, err
+		}
+		request, err := DecodeGuideRequest(normalized)
+		if err != nil {
+			return request, err
+		}
+		if err := request.Options.identity.Set("agent_ip", original); err != nil {
+			return request, err
+		}
+		request.Options.addressNode = node
+		request.Options.addressDisplay = display
+		return request, nil
+	}
+	return DecodeGuideRequest(raw)
 }
 
 // IdentityCommand renders the bounded host-identity creation step.

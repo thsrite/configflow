@@ -11,6 +11,7 @@ func TestInstallationIdentityJSONGolden(t *testing.T) {
 	}{
 		{"spaced", `{"z":1,"a":"设备😀\u007f","list":[1.0,1e2,1e-7,1e16,0.0001]}`, `{"a": "\u8bbe\u5907\ud83d\ude00\u007f", "list": [1.0, 100.0, 1e-07, 1e+16, 0.0001], "z": 1}`, false},
 		{"compact", `{"b":["a",true,null],"a":{"s":"中文"}}`, `{"a":{"s":"\u4e2d\u6587"},"b":["a",true,null]}`, true},
+		{"zero", `{"n":-0,"f":-0.0}`, `{"f":-0.0,"n":0}`, true},
 		{"large integer", `{"n":123456789012345678901234567890}`, `{"n":123456789012345678901234567890}`, true},
 	}
 	for _, test := range tests {

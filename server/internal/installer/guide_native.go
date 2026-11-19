@@ -219,11 +219,8 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	} {
 		*field.target, _ = textOr(fields, field.key, field.fallback)
 	}
-	addressRaw, _ := p.identity.Get("agent_ip")
-	if address, node, display, ok := decodeIPv4Value(addressRaw); ok {
-		p.AgentIP = address
-		p.addressNode = node
-		p.addressDisplay = display
+	if _, ok := fieldText(fields, "agent_ip"); !ok {
+		return request, valueError(msgFixedIPv4)
 	}
 	gatewayRaw, _ := p.identity.Get("ha_gateway")
 	if emptyInspectionName(gatewayRaw) {

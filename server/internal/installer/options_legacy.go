@@ -1,9 +1,7 @@
 package installer
 
 import (
-	"fmt"
 	"math/big"
-	"strconv"
 )
 
 // GoAgentOptions is the compatibility input for AgentInstallOptions.
@@ -343,29 +341,4 @@ func compatDecimalPort(value any) bool {
 		return n != nil && n.Sign() >= 0
 	}
 	return false
-}
-
-// PyInt is the compatibility integer binder; new callers use typed options.
-func PyInt(value any) (*big.Int, error) { return compatInteger(value, 0) }
-
-// PyStr is the compatibility numeric query serializer.
-func PyStr(value any) string {
-	switch n := value.(type) {
-	case string:
-		return n
-	case int:
-		return strconv.Itoa(n)
-	case int64:
-		return strconv.FormatInt(n, 10)
-	case *big.Int:
-		if n != nil {
-			return n.String()
-		}
-	case bool:
-		if n {
-			return "True"
-		}
-		return "False"
-	}
-	return fmt.Sprint(value)
 }

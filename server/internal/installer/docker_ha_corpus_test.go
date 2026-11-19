@@ -110,6 +110,12 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				t.Errorf("case %s (%s %.300s): "+format, append([]any{id, record.GetString("kind"), jsonx.Repr(input)}, args...)...)
 			}
 		}
+		if present, problem := n810PathRefusal(record, err); problem != nil {
+			t.Fatal(problem)
+		} else if present {
+			counts["approved native path overlap"]++
+			continue
+		}
 		if expected, present, problem := n810PreflightExpected(record); problem != nil {
 			t.Fatal(problem)
 		} else if present {

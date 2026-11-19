@@ -124,6 +124,12 @@ func compareInstaller(py, gor response, mask []string) []string {
 				obj.Set("script", baseline)
 			}
 		}
+		if errA == nil {
+			a, errA = installerJSONValues(a)
+		}
+		if errB == nil {
+			b, errB = installerJSONValues(b)
+		}
 		if errA != nil || errB != nil || !jsonx.Equal(maskJSON(a, mask), maskJSON(b, mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %.400s go %.400s", py.body, gor.body))
 		}
@@ -140,7 +146,9 @@ func compareInstaller(py, gor response, mask []string) []string {
 				return []string{err.Error()}
 			}
 		}
-		if string(py.body) != body {
+		left, leftErr := installerJSONText(string(py.body))
+		right, rightErr := installerJSONText(body)
+		if leftErr != nil || rightErr != nil || left != right {
 			diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) %s", len(py.body), len(gor.body), firstLineDiff(string(py.body), body)))
 		}
 	}
@@ -446,6 +454,11 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 			}
 			continue
 		}
+		if approvedInstallerIntegerRefusal(r, py, gor) {
+			same++
+			t.Logf("EXPECTED native integer boundary: %s", r.name)
+			continue
+		}
 		check(r.name, py, gor)
 	}
 	scripts := map[string][2]string{}
@@ -481,7 +494,9 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 	for name, tokens := range scripts {
 		a, b := pyRows[tokens[0]], goRows[tokens[1]]
 		baseline, err := installertest.PythonBaseline(b.script)
-		if err != nil || a.script != baseline || !a.generator.Valid || !b.generator.Valid ||
+		left, leftErr := installerJSONText(a.script)
+		right, rightErr := installerJSONText(baseline)
+		if err != nil || leftErr != nil || rightErr != nil || left != right || !a.generator.Valid || !b.generator.Valid ||
 			a.generator.String != installertest.LegacyGeneratorFingerprint || b.generator.String != installer.GeneratorFingerprint {
 			t.Errorf("stored row %s: python generator %v go %v, approved script equal %v (%v)", name, a.generator, b.generator, a.script == baseline, err)
 		}

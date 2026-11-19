@@ -11,13 +11,13 @@ func TestReviewIntOfPortFollowsCPython(t *testing.T) {
 	// Unicode 15 digits are not digits for CPython 3.11 (Unicode 14).
 	for port, repr := range map[string]string{"\U0001e4f1": `'\U0001e4f1'`, "\U00011f52": `'\U00011f52'`} {
 		_, err := GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "http://s", AgentName: "n", ServiceType: "oxidns", AgentPort: port})
-		if err == nil || err.Error() != "invalid literal for int() with base 10: "+repr {
+		if !nativeIntegerDiagnostic(port, "invalid literal for int() with base 10: "+repr, err) && (err == nil || err.Error() != "invalid literal for int() with base 10: "+repr) {
 			t.Errorf("%q: %v", port, err)
 		}
 	}
 	// The ValueError carries repr() cut to 200 characters (%.200R).
 	_, err := GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "http://s", AgentName: "n", ServiceType: "mihomo", AgentPort: strings.Repeat("x", 300)})
-	if want := "invalid literal for int() with base 10: '" + strings.Repeat("x", 199); err == nil || err.Error() != want {
+	if want := "invalid literal for int() with base 10: '" + strings.Repeat("x", 199); !nativeIntegerDiagnostic(strings.Repeat("x", 300), want, err) && (err == nil || err.Error() != want) {
 		t.Errorf("long port: %v", err)
 	}
 }

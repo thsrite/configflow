@@ -399,6 +399,10 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 				}
 			}
 		}
+		if len(diffs) > 0 && approvedInstallerIntegerRefusal(r, py, gor) {
+			diffs = nil
+			counts["EXPECTED native integer "+kind]++
+		}
 		if len(diffs) > 0 {
 			failed++
 			if failed <= 30 {

@@ -247,3 +247,25 @@ func TestN810PreflightMachineCountersFailClosed(t *testing.T) {
 		})
 	}
 }
+
+var n810PathReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_path_native.json.gz", 1) })
+
+func n810PathRefusal(row *jsonx.Object, err error) (bool, error) {
+	refs, problem := n810PathReferences()
+	if problem != nil {
+		return false, problem
+	}
+	raw, problem := jsonx.Sorted(row)
+	if problem != nil {
+		return false, problem
+	}
+	expected, present := refs[referenceSHA(raw)]
+	if !present {
+		return false, nil
+	}
+	var validation *ValidationError
+	if !errors.As(err, &validation) || validation.Message != expected.(*jsonx.Object).GetString("message") {
+		return true, fmt.Errorf("native path refusal differs: %v", err)
+	}
+	return true, nil
+}

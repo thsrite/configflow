@@ -104,6 +104,9 @@ func identityJSON(raw json.RawMessage, compact bool) ([]byte, error) {
 					text += ".0"
 				}
 			}
+			if text == "-0" {
+				text = "0"
+			}
 			out.WriteString(text)
 		default:
 			data, err := json.Marshal(x)

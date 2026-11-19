@@ -445,3 +445,17 @@ func TestN810CapabilityRenewalPreservesUnknownJSON(t *testing.T) {
 		t.Fatal("renewal changed opaque JSON or rounded its integer")
 	}
 }
+
+func TestN810PortIdentityNeverRounds(t *testing.T) {
+	for _, test := range []struct {
+		raw   string
+		equal bool
+	}{
+		{"8082", true}, {"8082.0", true}, {"8.082e3", true},
+		{`"8082"`, false}, {"true", false}, {"8082.000000000000000001", false},
+	} {
+		if numericPortEqual([]byte(test.raw), "8082") != test.equal {
+			t.Fatalf("wrong identity proof for %s", test.raw)
+		}
+	}
+}

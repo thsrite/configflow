@@ -183,6 +183,9 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 	if err := os.MkdirAll(dataDir, 0777); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.Mkdir(root, 0700); err != nil {
 		if info, statErr := os.Stat(root); statErr != nil || !info.IsDir() {
 			return nil, err
@@ -451,7 +454,7 @@ func numericPortEqual(raw json.RawMessage, want json.Number) bool {
 	if json.Unmarshal(raw, &number) != nil {
 		return false
 	}
-	got, err := strconv.ParseFloat(number.String(), 64)
-	expected, wantErr := want.Float64()
-	return err == nil && wantErr == nil && got == expected
+	got, valid := new(big.Rat).SetString(number.String())
+	expected, wantValid := new(big.Rat).SetString(want.String())
+	return valid && wantValid && got.Cmp(expected) == 0
 }
