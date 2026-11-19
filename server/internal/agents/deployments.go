@@ -8,6 +8,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -73,114 +74,19 @@ func (m *Manager) defaultPreparationRunning(agentID, deploymentID string) (bool,
 // BeginDeployment is begin_deployment(agent_id, deployment_id): persist a
 // profile-bound task before preparing or sending its artifacts.
 func (m *Manager) BeginDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if !deploymentIDPattern.MatchString(deploymentID) {
-		return nil, &ValueError{Message: "Invalid deployment ID"}
-	}
-	var started *jsonx.Object
-	key := [2]string{agentID, deploymentID}
-	var lease *preparationLease
-	keep := false
-	defer func() {
-		if !keep && lease != nil {
-			m.releasePreparation(key, lease)
-		}
-	}()
-	value, err := m.UpdateAgents(ctx, "", func(ctx context.Context, agents *[]any) (any, error) {
-		agent, _ := findAgent(*agents, agentID)
-		if agent == nil {
-			return jsonx.Obj("success", false, "message", "Agent not found", "http_status", jsonx.Int(404)), nil
-		}
-		if conflict := haConflict(agent, deploymentID); conflict != nil {
-			return conflict, nil
-		}
-		follow, _ := agent.Value("dns_follow_state").(*jsonx.Object)
-		if status := follow.Value("status"); (status == "preparing" || status == "publishing") && !jsonx.Equal(follow.Value("target_deployment_id"), deploymentID) {
-			return jsonx.Obj("success", false, "message", "DNS 联动发布正在执行，请等待结果后再发布 OxiDNS", "http_status", jsonx.Int(409)), nil
-		}
-		for _, item := range *agents {
-			other, _ := item.(*jsonx.Object)
-			source, _ := other.Value("dns_follow").(*jsonx.Object)
-			state, _ := other.Value("dns_follow_state").(*jsonx.Object)
-			if jsonx.Equal(source.Value("source_agent_id"), agentID) && (state.Value("status") == "preparing" || state.Value("status") == "publishing") {
-				return jsonx.Obj("success", false, "message", "绑定的 OxiDNS 正在同步，请等待结果后再发布 Mihomo", "http_status", jsonx.Int(409)), nil
-			}
-		}
-		if upgradeBusy(agent) {
-			return jsonx.Obj("success", false, "message", "Agent update is in progress", "http_status", jsonx.Int(409)), nil
-		}
-		deployments, ok := agent.Value("deployments").(*jsonx.Object)
-		if !ok || deployments == nil {
-			deployments = jsonx.NewObject()
-			agent.Set("deployments", deployments)
-		}
-		if existing, ok := deployments.Value(deploymentID).(*jsonx.Object); ok {
-			result := existing.Clone()
-			result.Set("existing", true)
-			return result, nil
-		}
-		for _, item := range deployments.Values() {
-			task, _ := item.(*jsonx.Object)
-			if !deploymentTerminal.has(task.Value("status")) {
-				return jsonx.Obj("success", false, "message", "Agent already has an unfinished deployment",
-					"deployment_id", task.Value("deployment_id"), "status", task.Value("status"), "http_status", jsonx.Int(409)), nil
-			}
-		}
-		profile, err := m.profileOf(ctx, agent)
-		if err != nil {
-			return nil, err
-		}
-		record := jsonx.Obj("success", true, "deployment_id", deploymentID, "status", "preparing", "profile_id", profile,
-			"service_type", agent.GetOr("service_type", "mihomo"), "created_at", nowISO())
-		record.Set("events", AppendEvent([]any{}, "preparing", nil, "", nil))
-		_, release, acquired := preparationLocks.TryLock(ctx, [3]string{m.repository.DataDir(), agentID, deploymentID})
-		if !acquired {
-			return jsonx.Obj("success", false, "message", "Deployment preparation already running", "http_status", jsonx.Int(409)), nil
-		}
-		lease = &preparationLease{release: release}
-		m.deploymentMu.Lock()
-		m.preparations[key] = lease
-		m.deploymentMu.Unlock()
-
-		// Earlier tasks can no longer become the latest one, the only task whose
-		// per-file digests are read. Keep their fingerprint; drop the digests.
-		for _, item := range deployments.Values() {
-			previous, _ := item.(*jsonx.Object)
-			if prepared, ok := previous.Value("prepared_content").(*jsonx.Object); ok && prepared != nil {
-				prepared.Delete("files")
-			}
-		}
-		deployments.Set(deploymentID, record)
-		agent.Set("latest_deployment", record.Clone())
-		started = agent
-		// Bound history, retaining failed records as well as the active task.
-		keys := deployments.Keys()
-		for i := 0; i < len(keys)-30; i++ {
-			deployments.Delete(keys[i])
-		}
-		return record.Clone(), nil
-	})
+	result, err := m.ReserveDeployment(ctx, agentID, deploymentID)
 	if err != nil {
 		return nil, err
 	}
-	result := value.(*jsonx.Object)
-	if jsonx.Truthy(result.Value("success")) && !jsonx.Truthy(result.Value("existing")) {
-		if lease != nil {
-			m.deploymentMu.Lock()
-			if m.preparations[key] == lease {
-				lease.stop = context.AfterFunc(ctx, func() { m.releasePreparation(key, lease) })
-			}
-			m.deploymentMu.Unlock()
-			keep = true
-		}
-		if started != nil {
-			logger.Infof("开始向 Agent %s 发布配置（任务 %s）", agentLabel(started), prefix(deploymentID, 12))
-		}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+	var record Record
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func prefix(s string, n int) string {

@@ -160,3 +160,43 @@ Exit 0：agents 40.962s，model 3.466s，redact 1.140s，dnsha 2.072s。
 diagnostics.ResponseFailure、messages/version/time、runtime legacy importer/private codec、
 HA 其余 public projection、presence，以及各子包残留 adapter。只有 typed timeline 与 DNS
 report 业务本轮完成，不能据此宣称全部 diagnostics / agents core 已 S。
+
+## typed reservation 块
+
+- timeline / exact proof 块提交 a7ab3c909。
+- BeginDeployment 仅 legacy JSON codec；ReserveDeployment 用 model.Agent/Deployment transaction。
+  HA children、DNS follow child/source IDs 读取原始字符串；HA summary 仅复制公开字段，
+  不编码 captured source。校验与 busy 检查顺序、物理 preparation lease、shutdown/disconnect、
+  commit-failure/panic cleanup、30 条历史保留、旧 prepared.files 裁剪均保留。
+- 返回 task 和 latest/history 各自拥有数据，客户端改返回的 Events 不能改 repository cache。
+  shared Map.EntryValid 区分原始 object（包括 {}）与错误 top-level token 的零投影；
+  Map.MemberJSON 保留原始 string/number token，仅编码被选 entry，不编码其他 entries。
+- API 主差分发现首次写 switch 时 native struct 顺序让 updated_at 跑到 traffic_history_since
+  前面；已改实现按原序 SetJSON（since → enabled → updated_at / domain → updated_at），
+  旧期望未改。主差分最终所有请求、落库和 history 文件均 PASS。
+
+### 定向验证
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/model/map.go internal/model/agentha.go internal/agents/deployment_reservation.go internal/agents/deployments.go internal/agents/messages.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/model; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "Preparation|PreparedOwnership|BeginDeployment|FailedRollbackIsBlocking|OldPrepared|BoundHistory|ProfileGuard|DeploymentHA" ./internal/agents ./internal/deploy ./internal/agents/dnsha ./internal/agents/dnsfollow'
+
+Exit 0：agents 64.067s、deploy 2.561s、dnsfollow 60.321s；dnsha 无匹配测试。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/model/map_members_test.go internal/agents/deployment_reservation_test.go; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "TypedReservation|MapMembers|DeploymentHistory|Preparation|ProfileGuard" ./internal/agents ./internal/model'
+
+Exit 0：agents 31.421s、model 1.011s。包含返回 journal ownership、HA child=7 拒绝 / "7" 正控、
+map scalar/empty-object/null/R5 nested field/explicit repair 的固定原始输入期望。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'set -e; cd server; gofmt -w internal/agents/mutations.go; GOMAXPROCS=4 go test -p 4 -count=1 -timeout=20m -run "^TestDifferentialAgainstFlask$" ./internal/api/agents/difftest'
+
+Exit 0：API agents difftest 9.435s。此前两次只 stored key order 不同，修复实现后通过。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/model/map_members_test.go; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzDeploymentMapMemberReads$" -fuzztime=60s -parallel=2 ./internal/model'
+
+Exit 0：1,976,452 executions，PASS 60.103s；getter 原始 token 和 owned bytes、读不改变 map。
+
+### 下一块的比较策略（协调者已裁定）
+
+原 a01 record_statuses 的 list/dict 错误行曾强制 CPython exception bytes。后续删除该仿真时，
+原 corpus/输入输出/SHA 不动；只对精确逐行绑定的这些错误行比较 Python error class、Go
+拒绝、事务不写。设备坏回包按项目约定结构化 502 + 中文原因（不是裸 500），补真实 HTTP
+设备请求原字节及回包回归，并登记 behaviour-changes。同类情况按此标准处理，无需再次问。

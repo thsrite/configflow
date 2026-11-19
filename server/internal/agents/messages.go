@@ -230,3 +230,14 @@ const (
 	msgPreparationOwnershipChanged = "Deployment ownership changed during preparation"
 	msgInvalidValidationReceipt    = "Invalid deployment validation receipt"
 )
+
+const (
+	msgInvalidDeploymentID       = "Invalid deployment ID"
+	msgAgentNotFound             = "Agent not found"
+	msgDeploymentDNSFollowTarget = "DNS 联动发布正在执行，请等待结果后再发布 OxiDNS"
+	msgDeploymentDNSFollowSource = "绑定的 OxiDNS 正在同步，请等待结果后再发布 Mihomo"
+	msgDeploymentUpgradeBusy     = "Agent update is in progress"
+	msgDeploymentUnfinished      = "Agent already has an unfinished deployment"
+	msgDeploymentPreparationBusy = "Deployment preparation already running"
+	msgDeploymentStarted         = "开始向 Agent %s 发布配置（任务 %s）"
+)

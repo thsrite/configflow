@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"iter"
 	"reflect"
@@ -197,3 +198,43 @@ func (m Map[V]) walkValues(visit func(reflect.Value) error) error {
 }
 
 func (m Map[V]) storedValueType() reflect.Type { return reflect.TypeFor[V]() }
+
+// EntryValid reports whether a present map value has a valid top-level shape.
+// Nested R5 fields still require original-member evidence. An unchanged invalid
+// token remains invalid even when its typed fallback is zero; replacing it with
+// a nonzero value follows MarshalJSON's repair rules.
+func (m Map[V]) EntryValid(name string) bool {
+	if m.state != nil {
+		for _, entry := range m.state.entries {
+			if entry.name == name {
+				return !entry.invalid || !isZero(reflect.ValueOf(entry.value))
+			}
+		}
+	}
+	return false
+}
+
+// MemberJSON returns one owned effective value without encoding other entries.
+// Compatibility text/number projections retain their original token types.
+func (m Map[V]) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if m.state != nil {
+		for _, entry := range m.state.entries {
+			if entry.name != name {
+				continue
+			}
+			encoded, err := Marshal(entry.value)
+			if err != nil {
+				return nil, false, err
+			}
+			if entry.original && (entry.invalid && isZero(reflect.ValueOf(entry.value)) || !entry.invalid && bytes.Equal(encoded, entry.baseline)) {
+				for _, original := range m.state.source.members {
+					if original.name == name {
+						return bytes.Clone(original.value), true, nil
+					}
+				}
+			}
+			return encoded, true, nil
+		}
+	}
+	return nil, false, nil
+}

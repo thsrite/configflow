@@ -286,3 +286,13 @@ func (r HAPayload) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.ra
 func (r *HASettings) MemberJSON(name string) (json.RawMessage, bool, error) {
 	return recordMemberJSON(r, &r.raw, name)
 }
+
+// MemberJSON returns one publication member without encoding captured payloads.
+func (r *HAJournal) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}
+
+// SetJSON replaces one public HA summary member through the shared codec.
+func (r *HAPublicationSummary) SetJSON(name string, value json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, name, value)
+}

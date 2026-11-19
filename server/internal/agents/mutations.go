@@ -216,16 +216,35 @@ func (m *Manager) setAgentSwitch(ctx context.Context, id string, enabled, traffi
 			}
 			return &ValueError{Message: msgDomainDiscoveryMihomo}
 		}
+		flag, err := json.Marshal(enabled)
+		if err != nil {
+			return err
+		}
 		if traffic {
 			if enabled && (a.TrafficHistoryEnabled == nil || !*a.TrafficHistoryEnabled) {
-				a.TrafficHistorySince = new(utcNowISO())
+				since, err := json.Marshal(utcNowISO())
+				if err != nil {
+					return err
+				}
+				if err := a.SetJSON("traffic_history_since", since); err != nil {
+					return err
+				}
 			}
-			a.TrafficHistoryEnabled = new(enabled)
+			if err := a.SetJSON("traffic_history_enabled", flag); err != nil {
+				return err
+			}
 		} else {
-			a.DomainDiscoveryEnabled = new(enabled)
+			if err := a.SetJSON("domain_discovery_enabled", flag); err != nil {
+				return err
+			}
 		}
-		a.UpdatedAt = new(nowISO())
-		var err error
+		updated, err := json.Marshal(nowISO())
+		if err != nil {
+			return err
+		}
+		if err := a.SetJSON("updated_at", updated); err != nil {
+			return err
+		}
 		result, err = copyAgent(a, true)
 		return err
 	})
