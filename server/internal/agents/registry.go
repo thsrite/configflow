@@ -365,3 +365,39 @@ func (m *Manager) ResolveAgentProfile(ctx context.Context, a *model.Agent) (stri
 	}
 	return m.agentProfileID(ctx, a)
 }
+
+// saveReportedModels atomically persists import patches on original string IDs.
+func (m *Manager) saveReportedModels(ctx context.Context, changes map[string]model.Fields) (map[string]bool, error) {
+	saved := map[string]bool{}
+	err := m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		for i := range *records {
+			a := &(*records)[i]
+			patch, found := changes[a.ID]
+			if !found || !agentIDProven(a) {
+				continue
+			}
+			for key, raw := range patch.All() {
+				if err := a.SetJSON(key, raw); err != nil {
+					return err
+				}
+			}
+			saved[a.ID] = true
+		}
+		if len(saved) == 0 {
+			return errNothingToSave
+		}
+		return nil
+	})
+	if errors.Is(err, errNothingToSave) {
+		return saved, nil
+	}
+	if err != nil {
+		return map[string]bool{}, err
+	}
+	return saved, nil
+}
+
+// AgentMatchesID verifies a registry identity from its original string token.
+func AgentMatchesID(record *model.Agent,id string)bool{
+ return record!=nil && record.ID==id && agentIDProven(record)
+}

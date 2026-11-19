@@ -294,13 +294,13 @@ type legacyRow struct {
 	agentID       string
 	heartbeatAt   float64
 	lastHeartbeat string
-	fields        *jsonx.Object
+	fields        *model.Agent
 }
 
 // legacyRows is _legacy_rows(path): the decodable rows of the #369 table,
 // nothing (and a warning) when the database cannot be read.
-func legacyRows(path string) map[string]legacyRow {
-	rows, err := readLegacyRows(path)
+func legacyRows(ctx context.Context, path string) map[string]legacyRow {
+	rows, err := readLegacyRowsContext(ctx, path)
 	if err != nil {
 		runtimeLogger.Warningf("旧版 Agent 心跳状态库无法读取，已忽略：%s", err)
 		return map[string]legacyRow{}
@@ -315,7 +315,7 @@ func legacyRows(path string) map[string]legacyRow {
 // readLegacyRows reads the rows in Python's dict order (a repeated agent_id
 // keeps its first position and its last value). The error's text is
 // str(sqlite3.Error).
-func readLegacyRows(path string) ([]legacyRow, error) {
+func readLegacyRowsContext(ctx context.Context, path string) ([]legacyRow, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -326,7 +326,7 @@ func readLegacyRows(path string) ([]legacyRow, error) {
 		return nil, sqliteFailure(err)
 	}
 	defer db.Close()
-	rows, err := db.Query("SELECT agent_id, heartbeat_at, last_heartbeat, fields FROM agent_runtime")
+	rows, err := db.QueryContext(ctx, "SELECT agent_id, heartbeat_at, last_heartbeat, fields FROM agent_runtime")
 	if err != nil {
 		return nil, sqliteFailure(err)
 	}
@@ -385,7 +385,7 @@ func readLegacyRows(path string) ([]legacyRow, error) {
 
 // legacyFields is json.loads(raw) of the fields column, ok=false where
 // Python raises TypeError/ValueError or the value is not an object.
-func legacyFields(raw any) (*jsonx.Object, bool) {
+func legacyFields(raw any) (*model.Agent, bool) {
 	var text string
 	switch value := raw.(type) {
 	case string:
@@ -399,12 +399,23 @@ func legacyFields(raw any) (*jsonx.Object, bool) {
 	default:
 		return nil, false
 	}
-	parsed, err := jsonx.ParseString(text)
+	// The retired SQLite column allowed duplicate keys. Standard map decoding
+	// retains their last values once during migration; the live Agent protocol
+	// keeps its strict duplicate-free Fields boundary. Only runtime/version data
+	// is consumed from this historical envelope, never ownership evidence.
+	var members map[string]json.RawMessage
+	if json.Unmarshal([]byte(text), &members) != nil || members == nil {
+		return nil, false
+	}
+	data, err := json.Marshal(members)
 	if err != nil {
 		return nil, false
 	}
-	fields, ok := parsed.(*jsonx.Object)
-	return fields, ok && fields != nil
+	var fields model.Agent
+	if json.Unmarshal(data, &fields) != nil {
+		return nil, false
+	}
+	return &fields, true
 }
 
 // DecodeJSONBytes is decodeJSONBytes for other packages.
@@ -572,8 +583,8 @@ func removeLegacyFiles(ctx context.Context, paths []string) error {
 // version that only reached that database is handed to persist. Nothing is
 // applied unless the file could be removed; a failed version write is left to
 // the Agent's next heartbeat.
-func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, state *RuntimeState,
-	persist func(ctx context.Context, changes map[string]*jsonx.Object) (map[string]bool, error)) error {
+func importLegacyDatabase(ctx context.Context, repository *repo.Repository, state *RuntimeState,
+	persist func(context.Context, map[string]model.Fields) (map[string]bool, error)) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -599,7 +610,7 @@ func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	}
 	rows := map[string]legacyRow{}
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-		rows = legacyRows(path)
+		rows = legacyRows(ctx, path)
 	}
 	// Listed after reading, which may leave a journal behind.
 	if err := removeLegacyFiles(ctx, legacyFiles(path)); err != nil {
@@ -609,49 +620,56 @@ func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 		runtimeLogger.Warningf("旧版 %s 无法删除，未导入其中的 Agent 心跳状态", LegacyDatabase)
 		return nil
 	}
-	system, err := repository.GetSystem(ctx)
-	if err != nil {
-		return err
-	}
-	agents := map[string]*jsonx.Object{}
-	for _, item := range system.GetList("agents") {
-		// Legacy rows have string ids; an Agent without one never matches.
-		if agent, ok := item.(*jsonx.Object); ok {
-			if id, ok := agent.Value("id").(string); ok {
-				agents[id] = agent
+	agents := map[string]model.Agent{}
+	if err := repository.ViewAgents(ctx, func(records []model.Agent) error {
+		for i := range records {
+			a := &records[i]
+			if agentIDProven(a) {
+				agents[a.ID] = *a
 			}
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	current := map[string]legacyRow{}
 	var ids []string
 	for id, row := range rows {
-		if agent, ok := agents[id]; ok && row.heartbeatAt > timestampOf(agent.Value("last_heartbeat")) {
+		if a, ok := agents[id]; ok && row.heartbeatAt > timestampOf(a.LastHeartbeat) {
 			current[id] = row
 			ids = append(ids, id)
 		}
 	}
 	sort.Strings(ids)
-	versions := map[string]*jsonx.Object{}
+	versions := map[string]model.Fields{}
 	for _, id := range ids {
 		row := current[id]
-		if version, ok := row.fields.Value("version").(string); ok && !jsonx.Equal(version, agents[id].Value("version")) {
-			versions[id] = jsonx.Obj("version", version)
+		raw, present, err := row.fields.MemberJSON("version")
+		if _, ok := storedText(raw, present, err); ok {
+			a := agents[id]
+			old, exists, e := a.MemberJSON("version")
+			if e != nil {
+				return e
+			}
+			if !sameStoredJSON(old, exists, raw) {
+				var patch model.Fields
+				if err := patch.Set("version", raw); err != nil {
+					return err
+				}
+				versions[id] = patch
+			}
 		}
 	}
 	for _, id := range ids {
 		row := current[id]
-		fields, err := agentModel(row.fields)
-		if err != nil {
-			continue
-		}
-		if err := state.seedModel(ctx, id, row.heartbeatAt, row.lastHeartbeat, fields); err != nil {
+		if err := state.seedModel(ctx, id, row.heartbeatAt, row.lastHeartbeat, row.fields); err != nil {
 			return err
 		}
 	}
 	if len(versions) > 0 {
 		if _, err := persist(ctx, versions); err != nil {
 			runtimeLogger.Warningf("旧版 Agent 心跳状态里的版本号写入配置失败，将在 Agent 下次心跳时写入：%s", err)
-			versions = map[string]*jsonx.Object{}
+			versions = map[string]model.Fields{}
 		}
 	}
 	runtimeLogger.Infof("Agent 心跳状态改为只保存在内存：已从旧版 %s 恢复 %d 个 Agent 的状态（%d 个版本号写入配置），并删除该文件",

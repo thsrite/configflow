@@ -485,3 +485,21 @@ Exit 0：agents 1.185s；上述源文件远端 gofmt 完成。live oracle 已在
 
 Exit 0：351,732 executions，PASS 61.010s；验证反对称、自反、suffix 不变（混合数字/文本
 业务比较本身不保证传递性，未制造这项断言）。
+
+## 旧心跳库导入转 typed registry（部分完成）
+
+New 直接调用 native importer，使用 ViewAgents 的原始字符串 ID 和当前 live 版本判断；
+legacy.fields 解为 model.Agent，版本 patch 用 model.Fields，saveReportedModels 在单一
+EditAgents 事务写入且验证原始 ID。旧 ImportLegacyDatabase / saveReportedFields 只做
+callback/JSON codec，兼容后续包和冻结测试。SQL query 绑定 shutdown context。
+
+旧 runtime.sqlite3 的历史 fields column 允许 duplicate key。首轮严格 Fields 迁移遗漏
+冻结 dupkeys 行；没有改期望，改用标准 map[string]RawMessage 在一次性存储迁移中保留
+最后值，再进共享 model。它只承载 runtime/version，不承载身份所有权；实时协议仍用
+严格 Fields。原始 shapes 行（含 UTF16/32 BLOB、重复 ID、duplicate keys）全部保留。
+原生 decoder/driver 诊断替换仍待下一块，当前不声称 runtime 的全部仿真已移除。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ReferenceLegacyRows|LegacyDatabase|LegacyRuntime|LegacyVersion|RuntimeTimestamp|TypedRuntime|RuntimeShutdown|DeletedAgentIsNot|HeartbeatFresh" ./internal/agents'
+
+Exit 0：agents 5.587s。前一轮 Legacy|Runtime|SaveReported|Heartbeat|Registration（116.052s）
+只失败在上述 dupkeys 行；修复后原行重新通过。远端 gofmt、agents vet 已执行。

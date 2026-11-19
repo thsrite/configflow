@@ -269,7 +269,7 @@ func New(ctx context.Context, repository *repo.Repository) (*Manager, error) {
 		monotonic:    func() float64 { return time.Since(processStart).Seconds() },
 	}
 	m.preparationRunning = m.defaultPreparationRunning
-	if err := ImportLegacyDatabase(ctx, repository, m.runtime, m.saveReportedFields); err != nil {
+	if err := importLegacyDatabase(ctx, repository, m.runtime, m.saveReportedModels); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -370,28 +370,19 @@ func (m *Manager) Agents(ctx context.Context, history bool) ([]*jsonx.Object, er
 // value}} in one transaction; returns the IDs written (nothing when none of
 // the Agents exists any more).
 func (m *Manager) saveReportedFields(ctx context.Context, changes map[string]*jsonx.Object) (map[string]bool, error) {
-	saved := map[string]bool{}
-	_, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
-		for _, item := range *agents {
-			agent, _ := item.(*jsonx.Object)
-			id, _ := agent.Value("id").(string)
-			if change, ok := changes[id]; ok {
-				agent.Update(change)
-				saved[id] = true
-			}
+	changesTyped := make(map[string]model.Fields, len(changes))
+	for id, record := range changes {
+		raw, err := json.Marshal(record)
+		if err != nil {
+			return nil, err
 		}
-		if len(saved) == 0 {
-			return nil, errNothingToSave
+		var fields model.Fields
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, err
 		}
-		return nil, nil
-	})
-	if errors.Is(err, errNothingToSave) {
-		return saved, nil
+		changesTyped[id] = fields
 	}
-	if err != nil {
-		return map[string]bool{}, err
-	}
-	return saved, nil
+	return m.saveReportedModels(ctx, changesTyped)
 }
 
 // UpdateAgents is _update_agents(updater, profile_id): the updater edits the

@@ -240,7 +240,7 @@ func TestReferenceLegacyRows(t *testing.T) {
 		rows, err := readLegacyRows(path)
 		var got []any
 		for _, row := range rows {
-			got = append(got, []any{row.agentID, pyFloatRepr(row.heartbeatAt), row.lastHeartbeat, row.fields})
+			got = append(got, []any{row.agentID, pyFloatRepr(row.heartbeatAt), row.lastHeartbeat, must[*jsonx.Object](t)(agentObject(row.fields))})
 		}
 		if got == nil {
 			got = []any{}

@@ -8,6 +8,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 // RuntimeEntry is the old runtime diagnostic envelope.
@@ -148,4 +149,24 @@ func decodeHeartbeatObject(raw []byte) (*jsonx.Object, error) {
 	}
 	result, _ := value.(*jsonx.Object)
 	return result, nil
+}
+
+// ImportLegacyDatabase adapts the old persistence callback to the native importer.
+func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, state *RuntimeState,
+	persist func(context.Context, map[string]*jsonx.Object) (map[string]bool, error)) error {
+	return importLegacyDatabase(ctx, repository, state, func(tx context.Context, changes map[string]model.Fields) (map[string]bool, error) {
+		legacy := make(map[string]*jsonx.Object, len(changes))
+		for id, fields := range changes {
+			raw, err := json.Marshal(fields)
+			if err != nil {
+				return nil, err
+			}
+			var record jsonx.Object
+			if err := json.Unmarshal(raw, &record); err != nil {
+				return nil, err
+			}
+			legacy[id] = &record
+		}
+		return persist(tx, legacy)
+	})
 }
