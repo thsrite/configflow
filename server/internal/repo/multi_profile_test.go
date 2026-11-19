@@ -306,7 +306,7 @@ func mpSystemConfig(t *testing.T, repository *Repository) *jsonx.Object {
 
 func mpPersistedSystemConfig(t *testing.T, repository *Repository) *jsonx.Object {
 	t.Helper()
-	return must(decodeEntry(must(repository.Store().Load())(t)))(t).Document.GetObject("system").GetObject("system_config")
+	return must(must(decodeEntry(must(repository.Store().Load())(t)))(t).legacyDocument())(t).GetObject("system").GetObject("system_config")
 }
 
 func mpNoTemporaries(t *testing.T, repository *Repository) {

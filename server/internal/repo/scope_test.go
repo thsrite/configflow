@@ -54,7 +54,8 @@ func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 		"rule_configs": [{"id": "rule", "itemType": "ruleset", "library_rule_id": "r"}]}`), nil)
 	noError(t, err)
 	entry := must(r.readEntry(bg, false))(t)
-	before := entry.Document.DeepCopy()
+	source := must(entry.legacyDocument())(t)
+	before := source.DeepCopy()
 	config := must(GetConfig(ctx, "default"))(t)
 	config.GetList("proxy_groups")[0].(*jsonx.Object).Set("name", "Changed")
 	config.GetList("rule_configs")[0].(*jsonx.Object).GetObject("library_enabled").Set("custom", []any{"Changed"})
@@ -65,10 +66,10 @@ func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 	noError(t, SaveConfig(ctx, config, "default"))
 	noError(t, SaveSharedConfig(ctx, shared, nil))
 	noError(t, SaveSystemConfig(ctx, system, nil))
-	if must(r.readEntry(bg, false))(t).Document == entry.Document {
+	if must(must(r.readEntry(bg, false))(t).legacyDocument())(t) == source {
 		t.Fatal("the committed generation was not replaced")
 	}
-	wantEqual(t, entry.Document, before)
+	wantEqual(t, source, before)
 	wantEqual(t, must(r.GetProfile(bg, "default"))(t).GetList("proxy_groups")[0].(*jsonx.Object).Value("name"), "Changed")
 	wantEqual(t, must(r.GetShared(bg))(t).GetList("nodes")[0].(*jsonx.Object).Value("name"), "Changed")
 }

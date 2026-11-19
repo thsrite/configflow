@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"configflow/internal/convert"
 	"configflow/internal/devicenotes"
+	"configflow/internal/health/check"
 	"configflow/internal/model"
 	"configflow/internal/routerdoc"
 )
@@ -788,4 +791,87 @@ var (
 // (including the information separators U+001C–U+001F) from names and ids.
 func trimText(text string) string {
 	return strings.TrimFunc(text, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
+}
+
+func validateResourceArray(raw json.RawMessage, name string) error {
+	var values []json.RawMessage
+	if jsonKind(raw) != '[' || json.Unmarshal(raw, &values) != nil {
+		return validationError(fmt.Sprintf(msgResourceArray, name))
+	}
+	for _, raw := range values {
+		if jsonKind(raw) != '{' {
+			return validationError(msgResourceObject)
+		}
+	}
+	return nil
+}
+
+// convertFailure maps the converter's input errors to validation errors.
+func convertFailure(err error) error {
+	var reference *convert.DialerReferenceError
+	var yamlFailure *convert.ProxyYAMLError
+	switch {
+	case errors.As(err, &reference):
+		return &Error{Kind: ErrValidation, Message: reference.Message, Cause: err}
+	case errors.As(err, &yamlFailure):
+		return &Error{Kind: ErrValidation, Message: err.Error(), Cause: err}
+	}
+	return err
+}
+
+// checkHealth is health_check.validate_health of a stored value: a
+// ValueError is a validation error.
+func checkHealth(raw json.RawMessage, provider bool) error {
+	err := check.ValidateHealthJSON(raw, provider)
+	var invalid *check.ValueError
+	if errors.As(err, &invalid) {
+		return validationError(invalid.Message)
+	}
+	return err
+}
+
+// checkNodeShapes is dialer_references.validate_shapes of the shared nodes.
+func checkNodeShapes(raw json.RawMessage) error {
+	if err := validateResourceArray(raw, "nodes"); err != nil {
+		return err
+	}
+	var shared model.Shared
+	if err := shared.SetJSON("nodes", raw); err != nil {
+		return err
+	}
+	return dialerValidation(convert.DialerFailure(convert.ConfigShapes(&model.Config{Nodes: shared.Nodes}, true)))
+}
+
+// checkProfileShapes is dialer_references.validate_shapes of a profile.
+func checkProfileShapes(profile *model.Profile) error {
+	if raw, present, err := recordMemberJSON(profile, "proxy_groups"); err != nil {
+		return err
+	} else if present {
+		if err := validateResourceArray(raw, "proxy_groups"); err != nil {
+			return err
+		}
+	}
+	return dialerValidation(convert.DialerFailure(convert.ConfigShapes(&model.Config{Profile: profile}, true)))
+}
+
+// checkDialers is dialer_references.validate_dialers of a resolved profile:
+// a broken reference is ErrInUse.
+func checkDialers(config *model.Config) error {
+	err := convert.ConfigDialers(config)
+	if err == nil {
+		return nil
+	}
+	var yamlFailure *convert.ProxyYAMLError
+	if errors.As(err, &yamlFailure) {
+		return err
+	}
+	return &Error{Kind: ErrInUse, Message: err.Error(), Usages: []any{}, Cause: err}
+}
+
+func dialerValidation(err error) error {
+	var reference *convert.DialerReferenceError
+	if errors.As(err, &reference) {
+		return &Error{Kind: ErrValidation, Message: reference.Message, Cause: err}
+	}
+	return err
 }

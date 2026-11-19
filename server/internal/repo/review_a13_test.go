@@ -18,7 +18,7 @@ func TestReviewAgentInspectionPrecedesLightCopy(t *testing.T) {
 		return system, nil
 	}))(t)
 	entry := must(r.readEntry(bg, false))(t)
-	original := entry.Document.GetObject("system").GetList("agents")[0].(*jsonx.Object)
+	original := must(entry.legacyDocument())(t).GetObject("system").GetList("agents")[0].(*jsonx.Object)
 	var key string
 	light := must(r.GetAgentsInspect(bg, false, func(raw *jsonx.Object) {
 		if raw != original {

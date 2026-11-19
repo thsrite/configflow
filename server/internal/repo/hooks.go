@@ -15,6 +15,9 @@ import (
 // A nil field has the default written at the field. Defaults that could
 // leak data or skip a required plan fail instead of doing nothing.
 type Hooks struct {
+	// RecordHooks supplies native collaborators, preferred over old registrations.
+	RecordHooks
+
 	// JobLock is routers/rule_sync_store.job_lock(profile_id, router_id,
 	// router): a non-blocking attempt to take the publication lock of the
 	// device behind a router record. acquired=false rejects the commit
@@ -73,6 +76,27 @@ var (
 func RegisterHooks(h Hooks) {
 	hooksMu.Lock()
 	defer hooksMu.Unlock()
+	if h.JobLockRecord != nil {
+		hooks.JobLockRecord = h.JobLockRecord
+	}
+	if h.ConfigurationCommittedRecords != nil {
+		hooks.ConfigurationCommittedRecords = h.ConfigurationCommittedRecords
+	}
+	if h.PlanNodeDeletionRecords != nil {
+		hooks.PlanNodeDeletionRecords = h.PlanNodeDeletionRecords
+	}
+	if h.SanitizeExternalDocument != nil {
+		hooks.SanitizeExternalDocument = h.SanitizeExternalDocument
+	}
+	if h.RedactOxidnsJSON != nil {
+		hooks.RedactOxidnsJSON = h.RedactOxidnsJSON
+	}
+	if h.RedactRoutersJSON != nil {
+		hooks.RedactRoutersJSON = h.RedactRoutersJSON
+	}
+	if h.RedactEasytierJSON != nil {
+		hooks.RedactEasytierJSON = h.RedactEasytierJSON
+	}
 	if h.JobLock != nil {
 		hooks.JobLock = h.JobLock
 	}

@@ -2,10 +2,10 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/store"
 )
@@ -27,17 +27,6 @@ import (
 // first (PORTING 4b, ctxx.Detach), so a disconnected client cannot abort a
 // commit half-way; shutdown cancellation is kept.
 
-// transaction is the state of one open write transaction.
-type transaction struct {
-	// base is the committed generation the transaction started from.
-	base storedEntry
-	// document is the typed working copy, owned by the transaction.
-	document *model.Document
-	// legacy is the *jsonx.Object working copy while a legacy updater runs
-	// (legacy.go); it is authoritative until converted back into document.
-	legacy *jsonx.Object
-}
-
 type txKey struct{ repository *Repository }
 
 func (r *Repository) transactionOf(ctx context.Context) *transaction {
@@ -54,7 +43,7 @@ const nestedWriteMessage = "不能在配置事务中再次开启写事务"
 type writeOptions struct {
 	lockedRouters map[routerKey]bool
 	policyRouter  *routerKey
-	meta          *jsonx.Object
+	meta          map[string]json.RawMessage
 	batch         *bool // marked immediately before an approved filesystem + DB batch
 }
 
@@ -123,31 +112,6 @@ func (r *Repository) transact(ctx context.Context, options writeOptions, fn func
 	return nil
 }
 
-// configurationCommitted runs the ConfigurationCommitted hook (WebDAV auto
-// backup) when the committed backup settings enable it. The commit has
-// happened: a failure here is logged, never returned.
-func (r *Repository) configurationCommitted(base storedEntry, proposed *model.Document) {
-	committed := currentHooks().ConfigurationCommitted
-	if committed == nil || proposed == nil {
-		return
-	}
-	backup, err := viewOf(&proposed.System.Backup)
-	if err == nil {
-		if raw, _ := backup.get("auto_backup"); !jsonTruthy(raw) {
-			return
-		}
-	}
-	var current *jsonx.Object
-	if err == nil {
-		current, err = legacyModelDocument(proposed)
-	}
-	if err != nil {
-		logger.Errorf(msgCommittedHookSkipped, err)
-		return
-	}
-	committed(r, base.Document, current)
-}
-
 // transactLocked is _write_locked: one write transaction; the caller holds
 // .config.lock.
 func (r *Repository) transactLocked(ctx context.Context, options writeOptions, fn func(ctx context.Context, tx *transaction) error) error {
@@ -206,4 +170,33 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 		r.commitCount.Add(1)
 	}
 	return nil
+}
+
+// transaction is the state of one open write transaction.
+type transaction struct {
+	// base is the committed generation the transaction started from.
+	base storedEntry
+	// document is the typed working copy, owned by the transaction.
+	document *model.Document
+	// legacy is the *jsonx.Object working copy while a legacy updater runs
+	// (legacy.go); it is authoritative until converted back into document.
+	legacy *legacyState
+}
+
+// configurationCommitted dispatches the post-commit observer on native,
+// immutable snapshots. Compatibility conversion is confined to recordHooks.
+func (r *Repository) configurationCommitted(base storedEntry, proposed *model.Document) {
+	committed := recordHooks().ConfigurationCommittedRecords
+	if committed == nil || proposed == nil {
+		return
+	}
+	backup, err := viewOf(&proposed.System.Backup)
+	if err != nil {
+		logger.Errorf(msgCommittedHookSkipped, err)
+		return
+	}
+	if raw, _ := backup.get("auto_backup"); !jsonTruthy(raw) {
+		return
+	}
+	committed(r, base.Model, proposed)
 }

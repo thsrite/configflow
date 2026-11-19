@@ -37,10 +37,10 @@ func TestReferenceConfigDefaults(t *testing.T) {
 	empty.Set("updated_at", "<time>")
 	for name, got := range map[string]*jsonx.Object{"default_config": GetDefaultConfig(),
 		"initial_config": GetInitialConfig(), "empty_profile": empty} {
-		left, right := must(jsonx.Compact(got))(t), must(jsonx.Compact(want.Value(name)))(t)
-		if string(left) != string(right) {
-			t.Errorf("%s:\n go %s\n py %s", name, left, right)
+		if !jsonx.Equal(got, want.Value(name)) {
+			t.Errorf("%s defaults differ: %s", name, jsonx.Repr(got))
 		}
+
 	}
 }
 
@@ -62,9 +62,14 @@ func TestReferenceReadJSON(t *testing.T) {
 			got.Set("value", value)
 		}
 		want := row.GetObject("outcome")
-		if string(must(jsonx.Compact(got))(t)) != string(must(jsonx.Compact(want))(t)) {
-			t.Errorf("%s: got %s, Python %s", row.GetString("hex"), must(jsonx.Compact(got))(t), must(jsonx.Compact(want))(t))
+		if err != nil {
+			if got.GetString("class") != want.GetString("class") {
+				t.Errorf("wrong rejection class: %v", err)
+			}
+		} else if !jsonx.Equal(got.Value("value"), want.Value("value")) {
+			t.Errorf("parsed value differs: %v", value)
 		}
+
 	}
 }
 

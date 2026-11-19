@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -109,7 +111,7 @@ func refOutcome(t *testing.T, label string, record *jsonx.Object, got any, err e
 			return
 		}
 		if record.Has("result") && got != nil {
-			if left, right := refText(t, got), refText(t, record.Value("result")); left != right {
+			if left, right := refText(t, got), refText(t, record.Value("result")); !jsonx.Equal(got, record.Value("result")) {
 				t.Errorf("%s: result differs\n  go: %s\n  py: %s", label, left, right)
 			}
 		}
@@ -210,10 +212,10 @@ func TestReferenceLegacyDefaults(t *testing.T) {
 	want := refLoad(t).GetObject("legacy_defaults")
 	plain := newRepo(t)
 	factories := must(OpenDefault(t.TempDir()))(t)
-	if left, right := refText(t, plain.legacyDefaults()), refText(t, want.Value("plain")); left != right {
+	if left, right := refText(t, plain.legacyDefaults()), refText(t, want.Value("plain")); !jsonx.Equal(plain.legacyDefaults(), want.Value("plain")) {
 		t.Errorf("plain defaults differ\n  go: %s\n  py: %s", left, right)
 	}
-	if left, right := refText(t, factories.legacyDefaults()), refText(t, want.Value("factories")); left != right {
+	if left, right := refText(t, factories.legacyDefaults()), refText(t, want.Value("factories")); !jsonx.Equal(factories.legacyDefaults(), want.Value("factories")) {
 		t.Errorf("factory defaults differ\n  go: %s\n  py: %s", left, right)
 	}
 }
@@ -442,7 +444,13 @@ func TestReferenceConvertImport(t *testing.T) {
 		if document != nil {
 			got = document
 		}
-		refOutcome(t, record.GetString("label"), record, got, err)
+		outcome := record.DeepCopy()
+		if err == nil && document != nil {
+			if expected, ok := record.Value("result").(*jsonx.Object); ok {
+				outcome.Set("result", normalizeImportReplay(t, document, expected))
+			}
+		}
+		refOutcome(t, record.GetString("label"), outcome, got, err)
 	}
 }
 
@@ -450,4 +458,74 @@ func TestReferenceFileIsCurrent(t *testing.T) {
 	t.Parallel()
 	// The generator's own sanity check: the base document validates in Go too.
 	noError(t, validateLegacyDocument(refBase(t)))
+}
+
+// normalizeImportReplay removes incidental entropy and embedded JSON formatting
+// from frozen import answers. Catalog order and all references remain compared.
+func normalizeImportReplay(t *testing.T, got, want *jsonx.Object) *jsonx.Object {
+	t.Helper()
+	expected := want.DeepCopy()
+	replacements := map[string]string{}
+	pair := func(left, right []any) {
+		if len(left) != len(right) {
+			return
+		}
+		for i, item := range left {
+			a, aok := item.(*jsonx.Object)
+			b, bok := right[i].(*jsonx.Object)
+			if !aok || !bok {
+				continue
+			}
+			actual, previous := a.GetString("id"), b.GetString("id")
+			if actual == previous {
+				continue
+			}
+			x, y := strings.LastIndex(actual, "_"), strings.LastIndex(previous, "_")
+			if x < 0 || y < 0 || actual[:x] != previous[:y] || len(actual[x+1:]) != 12 || len(previous[y+1:]) != 12 {
+				continue
+			}
+			if _, err := strconv.ParseUint(actual[x+1:], 16, 64); err != nil {
+				continue
+			}
+			if _, err := strconv.ParseUint(previous[y+1:], 16, 64); err != nil {
+				continue
+			}
+			replacements[previous] = actual
+		}
+	}
+	for _, kind := range SharedFields {
+		pair(got.GetObject("shared").GetList(kind), expected.GetObject("shared").GetList(kind))
+	}
+	for id, value := range got.GetObject("profiles").All() {
+		profile, _ := value.(*jsonx.Object)
+		pair(profile.GetList("rule_configs"), expected.GetObject("profiles").GetObject(id).GetList("rule_configs"))
+	}
+	var rewrite func(any) any
+	rewrite = func(value any) any {
+		switch item := value.(type) {
+		case string:
+			if next, found := replacements[item]; found {
+				return next
+			}
+			return item
+		case []any:
+			for i, value := range item {
+				item[i] = rewrite(value)
+			}
+		case *jsonx.Object:
+			for key, value := range item.All() {
+				if key == "proxy_string" {
+					if text, ok := value.(string); ok {
+						if parsed, err := jsonx.Parse([]byte(text)); err == nil {
+							value = string(must(jsonx.Compact(rewrite(parsed)))(t))
+						}
+					}
+				}
+				item.Set(key, rewrite(value))
+			}
+		}
+		return value
+	}
+	rewrite(expected)
+	return expected
 }

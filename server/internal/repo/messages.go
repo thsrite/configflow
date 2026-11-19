@@ -42,3 +42,64 @@ const (
 	msgRouterIDImmutable     = "不能修改路由器 ID"
 	msgRouterSettingsChanged = "路由器设置已变化，请刷新后重试"
 )
+
+const (
+	msgInvalidUTF8         = "configuration is not valid UTF-8"
+	msgImportObject        = "导入内容必须是 JSON 对象"
+	msgExportHooksMissing  = "脱敏导出尚未接入（脱敏 hooks 未注册），已拒绝导出"
+	msgDeletionHookMissing = "节点删除功能尚未接入（PlanNodeDeletion 未注册）"
+	msgDeletionConfirm     = "请先查看并确认删除影响"
+	msgDeletionChanged     = "节点或引用关系已变化，请重新查看删除影响并确认"
+	msgMetadataObject      = "Profile metadata must be an object"
+	msgProfileNameEmpty    = "配置名称不能为空"
+	msgMetadataFields      = "只能修改配置名称和说明"
+	msgMetadataStrings     = "配置名称和说明必须是字符串，名称不能为空"
+	msgProfileChanged      = "配置已更新，请刷新后重试"
+)
+
+const (
+	msgResourceArray  = "%s 必须是数组"
+	msgResourceObject = "资源必须是 JSON 对象"
+)
+
+const (
+	msgLegacyBackupSections       = "旧多配置备份必须包含 system 索引和全部 profiles 配置内容"
+	msgLegacyIndexVersion         = "不支持的旧配置索引版本；请保留原数据，不要重置"
+	msgLegacyIndexLabel           = "旧配置索引"
+	msgLegacyIndexDefault         = "旧配置索引缺少默认配置"
+	msgLegacyIndexContents        = "旧多配置备份的索引与配置内容不一致"
+	msgImportFormats              = "仅支持原版单配置、schema 2 完整多配置备份或当前格式；未修改原数据"
+	msgLegacyProfileObject        = "旧配置内容必须是对象"
+	msgLegacyIntermediateFields   = "旧配置包含不支持的中间格式字段；未修改原数据"
+	msgSystemSettingsObject       = "系统设置必须是对象"
+	defaultProfileName            = "默认配置"
+	msgRawDialerName              = "原始 dialer-proxy 必须是非空名称"
+	msgProfileImportReferences    = "独立配置导入只接受引用，不接受共享资源副本"
+	msgProfileImportFormat        = "独立配置导入仅支持当前格式"
+	msgImportUnknownFieldPrefix   = "导入结果包含未知字段："
+	msgSharedChanged              = "共享资源已更新，请刷新后重试"
+	msgSystemChanged              = "系统设置已更新，请刷新后重试"
+	msgRuleLibraryExists          = "规则库 ID 已存在，请刷新后重试"
+	msgRuleCacheExists            = "规则缓存已存在，请使用新的规则 ID"
+	msgRuleLibraryUncertain       = "规则保存结果待确认，请刷新列表核对，勿重复导入"
+	msgDeletionBlockedPrefix      = "无法删除："
+	msgMigrationPathSymlink       = "旧配置路径不能是符号链接"
+	msgMigrationPathOutside       = "旧配置路径不在数据目录内"
+	msgRouterConnectionChanged    = "路由器连接已变化，无法保存发布回读记录"
+	msgDefaultProfileOnly         = "只有一个配置空间时不能删除默认配置"
+	msgDefaultReplacementRequired = "删除默认配置时需要指定新的默认配置空间"
+	msgDefaultReplacementPrefix   = "新的默认配置空间不存在："
+	msgProfileInUsePrefix         = "配置「"
+	msgProfileAgentsInUseSuffix   = "」仍被以下 Agent 使用："
+	msgLegacyMissingResource      = "旧配置 %s 引用的本地资源不存在：%s/%s"
+	msgLegacyNodeSubscription     = "旧配置 %s 的节点引用的订阅不存在"
+	msgLegacyDialerTarget         = "旧配置 %s 的原始拨号目标不存在或名称不唯一：%s"
+	msgResourceObjects            = "%s 必须是资源对象数组"
+	msgResourceIDRequired         = "%s 中每一项必须有 ID"
+)
+
+const msgUnknownResourceType = "未知资源类型"
+
+const msgProfileFieldsObject = "Profile fields and baseline must be objects"
+
+const msgProfileComposition = "资源由策略组直接引用，拨号组合请使用代理链类型"

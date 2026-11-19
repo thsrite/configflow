@@ -1,53 +1,10 @@
 package repo
 
 import (
-	"configflow/internal/jsonx"
+	"encoding/json"
+
+	"configflow/internal/model"
 )
-
-// DeepMerge is config_repository._deep_merge: a deep copy of base with
-// override's keys laid over it, objects merged recursively.
-func DeepMerge(base, override *jsonx.Object) *jsonx.Object {
-	result := base.DeepCopy()
-	if result == nil {
-		result = jsonx.NewObject()
-	}
-	for key, value := range override.All() {
-		current, _ := jsonx.AsObject(result.Value(key))
-		incoming, isObject := jsonx.AsObject(value)
-		if current != nil && isObject {
-			result.Set(key, DeepMerge(current, incoming))
-		} else {
-			result.Set(key, jsonx.DeepCopy(value))
-		}
-	}
-	return result
-}
-
-// configDeepMerge is common/config.py::_deep_merge: base's key order, then
-// override's new keys; values are shared, not copied.
-func configDeepMerge(base, override *jsonx.Object) *jsonx.Object {
-	result := jsonx.NewObject()
-	for key, value := range base.All() {
-		other, ok := override.Get(key)
-		if !ok {
-			result.Set(key, value)
-			continue
-		}
-		left, leftObject := jsonx.AsObject(value)
-		right, rightObject := jsonx.AsObject(other)
-		if leftObject && rightObject {
-			result.Set(key, configDeepMerge(left, right))
-		} else {
-			result.Set(key, other)
-		}
-	}
-	for key, value := range override.All() {
-		if !result.Has(key) {
-			result.Set(key, value)
-		}
-	}
-	return result
-}
 
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
@@ -59,4 +16,30 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// mergeObjectsJSON overlays object members recursively, retaining opaque member
+// bytes and the base order. Arrays and scalars are replaced as complete values.
+func mergeObjectsJSON(base, override json.RawMessage) (json.RawMessage, error) {
+	var left, right model.Fields
+	if err := left.UnmarshalJSON(base); err != nil {
+		return nil, err
+	}
+	if err := right.UnmarshalJSON(override); err != nil {
+		return nil, err
+	}
+	for key, incoming := range right.All() {
+		current, present := left.Get(key)
+		if present && jsonKind(current) == '{' && jsonKind(incoming) == '{' {
+			var err error
+			incoming, err = mergeObjectsJSON(current, incoming)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := left.Set(key, incoming); err != nil {
+			return nil, err
+		}
+	}
+	return left.MarshalJSON()
 }

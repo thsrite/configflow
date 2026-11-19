@@ -10,13 +10,14 @@ package repo
 // GetConfig reads the repository every time and saves have no merge baseline.
 
 import (
-	"configflow/internal/ctxx"
 	"context"
 	"os"
 	"strings"
 	"sync"
 
+	"configflow/internal/ctxx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // DataDir is the DATA_DIR resolution of common/config.py: $DATA_DIR, else
@@ -147,11 +148,12 @@ type baseline struct {
 // when data was read, and the profile ids already validated for the request.
 // It is safe for concurrent use.
 type Scope struct {
-	mu         sync.Mutex
-	repository *Repository
-	cache      map[string]*jsonx.Object
-	baselines  map[string]baseline
-	request    *RequestInfo
+	mu              sync.Mutex
+	repository      *Repository
+	cache           map[string]*jsonx.Object
+	baselines       map[string]baseline
+	recordBaselines map[string]model.Fields
+	request         *RequestInfo
 	// resolved profile ids, valid for (repository, commit count)
 	resolved        map[resolvedKey]string
 	resolvedCommits int64
@@ -189,6 +191,7 @@ func ResetConfigContext(ctx context.Context) {
 	if scope := ScopeOf(ctx); scope != nil {
 		scope.mu.Lock()
 		scope.cache, scope.baselines, scope.resolved = nil, nil, nil
+		scope.recordBaselines = nil
 		scope.mu.Unlock()
 	}
 }
@@ -199,6 +202,7 @@ func (s *Scope) bind(repository *Repository) {
 	if s.repository != repository {
 		s.repository = repository
 		s.cache, s.baselines, s.resolved = nil, nil, nil
+		s.recordBaselines = nil
 	}
 }
 

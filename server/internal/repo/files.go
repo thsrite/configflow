@@ -3,18 +3,15 @@ package repo
 import (
 	"bytes"
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
 )
 
 var profileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
@@ -26,43 +23,6 @@ func ValidateProfileID(profileID string) error {
 		return validationError("Invalid profile id")
 	}
 	return nil
-}
-
-// pyOSError is str(OSError) for a failed file operation on path.
-func pyOSError(err error, path string) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		text := errno.Error()
-		if text != "" {
-			text = strings.ToUpper(text[:1]) + text[1:]
-		}
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), text, jsonx.Repr(path))
-	}
-	return err.Error()
-}
-
-// readJSON is ProfileRepository._read_json: the JSON object in a file.
-func readJSON(path string) (*jsonx.Object, error) {
-	name := filepath.Base(path)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, repositoryError("Cannot read configuration " + name + ": " + pyOSError(err, path))
-	}
-	if message := pystr.UTF8DecodeError(data); message != "" {
-		return nil, repositoryError("Cannot read configuration " + name + ": " + message)
-	}
-	// Text mode with universal newlines: "\r\n" and "\r" are read as "\n"
-	// (only error positions can tell).
-	text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
-	value, err := jsonx.Parse([]byte(text))
-	if err != nil {
-		return nil, repositoryError("Cannot read configuration " + name + ": " + err.Error())
-	}
-	object, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, validationError("JSON object expected in " + name)
-	}
-	return object, nil
 }
 
 func fsyncDir(directory string) error {
@@ -167,7 +127,7 @@ func writeAtomicUsing(ctx context.Context, path string, content []byte,
 
 // fileJSON is json.dumps(data, ensure_ascii=False, indent=2) + "\n".
 func fileJSON(data any) ([]byte, error) {
-	text, err := jsonx.Indent2(data)
+	text, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -233,19 +193,6 @@ func (r *Repository) SharedRulesDir() (string, error) { return r.SharedPath("rul
 
 // SharedCacheDir is shared_cache_dir().
 func (r *Repository) SharedCacheDir() (string, error) { return r.CacheDir("") }
-
-// ReadSharedJSON reads shared JSON under its bounded in-process leaf lock.
-func (r *Repository) ReadSharedJSON(ctx context.Context, relativePath string) (result *jsonx.Object, err error) {
-	path, err := r.SharedPath(relativePath)
-	if err != nil {
-		return nil, err
-	}
-	err = withFile(ctx, path, func() error {
-		result, err = readJSON(path)
-		return err
-	})
-	return result, err
-}
 
 // WriteSharedJSON is write_shared_json; it returns the file's path.
 func (r *Repository) WriteSharedJSON(ctx context.Context, relativePath string, data any) (string, error) {
@@ -381,7 +328,7 @@ func (r *Repository) profileOperationLockPath(profileID string) (string, error) 
 func (r *Repository) writeProfileFile(ctx context.Context, profileID, path string, write func() error) error {
 	ctx = ctxx.Detach(ctx)
 	return r.withProfileOperation(ctx, profileID, func(held context.Context) error {
-		if _, err := r.ProfileMetadata(held, profileID); err != nil {
+		if _, err := r.Profile(held, profileID); err != nil {
 			return err
 		}
 		return withFile(held, path, write)
@@ -417,15 +364,6 @@ func (r *Repository) WriteProfileJSON(ctx context.Context, profileID, relativePa
 		return "", err
 	}
 	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSONContext(ctx, path, data) })
-}
-
-// ReadProfileJSON is read_profile_json (no lock).
-func (r *Repository) ReadProfileJSON(profileID, relativePath string) (*jsonx.Object, error) {
-	path, err := r.ProfilePath(profileID, relativePath)
-	if err != nil {
-		return nil, err
-	}
-	return readJSON(path)
 }
 
 // WriteProfileText is write_profile_text.

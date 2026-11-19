@@ -2,8 +2,9 @@ package repo
 
 import (
 	_ "embed"
+	"encoding/json"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // configTemplate is a copy of backend/config_template.json, the first-start
@@ -12,145 +13,6 @@ import (
 //
 //go:embed config_template.json
 var configTemplate []byte
-
-func list(items ...any) []any {
-	result := make([]any, len(items))
-	for index, item := range items {
-		if number, ok := item.(int); ok {
-			item = jsonx.Int(number)
-		}
-		result[index] = item
-	}
-	return result
-}
-
-// GetDefaultOxidnsSettings is oxidns_settings.get_default_oxidns_settings.
-func GetDefaultOxidnsSettings() *jsonx.Object {
-	o := jsonx.Obj
-	return o(
-		"config_mode", "template", "native_config", "", "additional_files", list(),
-		"direct_rulesets", list(), "proxy_rulesets", list(), "direct_rules", list(), "proxy_rules", list(),
-		"local_dns", "", "remote_dns", "", "fallback_dns", "",
-		"default_forward", "forward_remote", "custom_hosts", "", "custom_config", "",
-		"custom_matches", list(), "custom_match_position", "tail", "device_policies", list(),
-		"worker_threads", 2, "listen", "0.0.0.0:53", "tcp_enabled", true,
-		"prefer_ipv4", true, "block_qtypes", list(65, 255), "metrics_enabled", true,
-		"aggregate_rules", true, "local_concurrent", 2, "remote_concurrent", 1,
-		"fallback_concurrent", 2, "fallback_threshold", 500, "always_standby", false,
-		"remote_ttl", 1, "cache_enabled", true, "cache_size", 10240,
-		"cache_lazy_ttl", 3600, "cache_dump_enabled", false,
-		"cache_dump_file", "./state/cache.dump", "cache_dump_interval", 300,
-		"probe_cache_enabled", true, "probe_cache_size", 2048,
-		"api", o("enabled", true, "listen", "127.0.0.1:9199", "username", "",
-			"password", "", "webui_root", "", "ssl", o()),
-		"log", o("level", "info", "file", "", "rotation", "daily", "max_files", 7),
-		"query_recorder", o("enabled", false, "args", o(
-			"path", "./state/queries.db", "queue_size", 8192, "batch_size", 256,
-			"flush_interval_ms", 200, "memory_tail", 1024, "retention_days", 7,
-			"cleanup_interval_hours", 1, "reader_concurrency", 2)),
-		"ip_selector", o("enabled", false, "args", o(
-			"selection_mode", "background", "probe_methods", list("tcp:443", "tcp:80"),
-			"probe_stagger", 200, "probe_timeout", 600, "max_wait", 1000, "top_n", 0,
-			"dnssec_policy", "reorder_only", "max_parallel_probes", 64,
-			"cache", o("enabled", true, "size", 4096, "ttl", 3600, "failure_ttl", 60))),
-		"dynamic_domain_set", o("enabled", false, "route", "direct", "learn", false,
-			"args", o("path", "./state/learned-domains.txt", "bootstrap_rules", list(),
-				"queue_size", 1024, "batch_size", 256, "flush_interval_ms", 200),
-			"learn_args", o("phase", "after", "questions", "first", "qtypes", list("A", "AAAA"),
-				"success_only", true, "answer_required", true, "rule_kind", "full",
-				"async", true, "error_mode", "continue", "timeout", "1s")),
-		"adguard", o("enabled", false, "content", "", "urls", list(), "mode", "nxdomain"),
-		"ros_address_list", o("enabled", false, "args", o(
-			"address", "", "username", "", "password", "", "async", true,
-			"address_list4", "oxidns", "address_list6", "oxidns",
-			"min_ttl", 60, "max_ttl", 3600, "queue_capacity", 16384,
-			"comment_prefix", "configflow", "cleanup_on_shutdown", true)),
-		"ros_route", o("enabled", false, "args", o(
-			"address", "", "username", "", "password", "", "async", true,
-			"routing_table", "", "gateway4", "", "gateway6", "", "distance", 100,
-			"min_ttl", 60, "max_ttl", 3600, "queue_capacity", 16384,
-			"comment_prefix", "configflow", "cleanup_on_shutdown", true)),
-		"rule_update", o("enabled", false, "args", o(
-			"schedule", "30 3 * * *", "timezone", "Asia/Shanghai", "timeout", "60s",
-			"outbound", "", "socks5", "")),
-		"rule_actions", o(), "rule_dns_follow", list(), "rule_dns_parked", o(),
-	)
-}
-
-func defaultMosdnsSettings() *jsonx.Object {
-	return jsonx.Obj(
-		"direct_rulesets", list(),
-		"proxy_rulesets", list(),
-		"direct_rules", list(),
-		"proxy_rules", list(),
-		"local_dns", "",
-		"remote_dns", "",
-		"fallback_dns", "",
-		"default_forward", "forward_remote",
-		"custom_hosts", "",
-		"custom_config", "",
-		"custom_matches", list(),
-		"custom_match_position", "tail",
-		"cache_enabled", true,
-		"cache_size", 10240,
-		"cache_lazy_ttl", 21600,
-		"cache_dump_enabled", true,
-		"cache_dump_file", "./cache.dump",
-		"cache_dump_interval", 300,
-	)
-}
-
-// defaultProfileConfig is config_repository._default_profile_config.
-func defaultProfileConfig() *jsonx.Object {
-	return jsonx.Obj(
-		"subscriptions", list(),
-		"nodes", list(),
-		"subscription_aggregations", list(),
-		"rule_configs", list(),
-		"rule_library", list(),
-		"proxy_groups", list(),
-		"mihomo", jsonx.Obj("custom_config", ""),
-		"oxidns", GetDefaultOxidnsSettings(),
-		"mosdns", defaultMosdnsSettings(),
-		"surge", jsonx.Obj("custom_config", "", "smart_groups", list()),
-		"loon", jsonx.Obj("custom_config", ""),
-		"routers", jsonx.Obj("items", list()),
-	)
-}
-
-// GetDefaultConfig is common/config.py::get_default_config, the
-// default_config_factory of the application's repository.
-func GetDefaultConfig() *jsonx.Object {
-	return jsonx.Obj(
-		"subscriptions", list(),
-		"nodes", list(),
-		"rule_configs", list(),
-		"proxy_groups", list(),
-		"rule_library", list(),
-		"system_config", jsonx.Obj(
-			"server_domain", "",
-			"github_proxy_domain", "",
-			"rule_fetch_proxy", "",
-		),
-		"subscription_aggregations", list(),
-		"mihomo", jsonx.Obj("custom_config", ""),
-		"oxidns", GetDefaultOxidnsSettings(),
-		"mosdns", defaultMosdnsSettings(),
-	)
-}
-
-// GetInitialConfig is common/config.py::_get_initial_config: the defaults
-// with the first-start template merged over them. An unreadable template is
-// ignored, as in Python.
-func GetInitialConfig() *jsonx.Object {
-	config := GetDefaultConfig()
-	if value, err := jsonx.Parse(configTemplate); err == nil {
-		if template, ok := value.(*jsonx.Object); ok {
-			config = configDeepMerge(config, template)
-		}
-	}
-	return config
-}
 
 // Field groups (module constants of config_repository.py).
 var (
@@ -179,4 +41,168 @@ func IsProfileField(key string) bool {
 
 func isBuiltinPolicy(value any) bool {
 	return value == "DIRECT" || value == "REJECT"
+}
+
+//go:embed oxidns_defaults.json
+var oxidnsDefaults []byte
+
+// DefaultOxidnsSettings returns the built-in schema-free OxiDNS settings.
+func DefaultOxidnsSettings() model.Dynamic {
+	var settings model.Dynamic
+	// The embedded constant is verified by TestConfigTemplateMatchesBackend and defaults tests.
+	_ = settings.UnmarshalJSON(oxidnsDefaults)
+	return settings
+}
+
+// defaultConfigJSON contains the stored defaults without resolved view metadata.
+func defaultConfigJSON() json.RawMessage {
+	raw := []byte(`{"subscriptions":[],"nodes":[],"rule_configs":[],"proxy_groups":[],"rule_library":[],"system_config":{"server_domain":"","github_proxy_domain":"","rule_fetch_proxy":""},"subscription_aggregations":[],"mihomo":{"custom_config":""},"mosdns":{"direct_rulesets":[],"proxy_rulesets":[],"direct_rules":[],"proxy_rules":[],"local_dns":"","remote_dns":"","fallback_dns":"","default_forward":"forward_remote","custom_hosts":"","custom_config":"","custom_matches":[],"custom_match_position":"tail","cache_enabled":true,"cache_size":10240,"cache_lazy_ttl":21600,"cache_dump_enabled":true,"cache_dump_file":"./cache.dump","cache_dump_interval":300}}`)
+	var fields model.Fields
+	_ = fields.UnmarshalJSON(raw)
+	_ = fields.Set("oxidns", oxidnsDefaults)
+	result, _ := fields.MarshalJSON()
+	return result
+}
+
+// DefaultConfig returns caller-owned built-in settings and empty resource catalogs.
+func DefaultConfig() *model.Config {
+	config, _ := model.DecodeConfig(defaultConfigJSON())
+	return config
+}
+
+// InitialConfig returns built-in settings overlaid with the first-start template.
+func InitialConfig() *model.Config {
+	base := defaultConfigJSON()
+	merged, _ := mergeObjectsJSON(base, configTemplate)
+	config, _ := model.DecodeConfig(merged)
+	return config
+}
+
+func defaultProfileRecord() (*model.Profile, error) {
+	config := DefaultConfig()
+	raw, err := model.Marshal(config.Profile)
+	if err != nil {
+		return nil, err
+	}
+	var fields model.Fields
+	if err := fields.UnmarshalJSON(raw); err != nil {
+		return nil, err
+	}
+	for key, value := range map[string]json.RawMessage{"surge": []byte(`{"custom_config":"","smart_groups":[]}`), "loon": []byte(`{"custom_config":""}`), "routers": []byte(`{"items":[]}`)} {
+		if err := fields.Set(key, value); err != nil {
+			return nil, err
+		}
+	}
+	data, err := fields.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var profile model.Profile
+	err = json.Unmarshal(data, &profile)
+	return &profile, err
+}
+
+func (r *Repository) profileDefaultsJSON() (json.RawMessage, error) {
+	profile, err := defaultProfileRecord()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := model.Marshal(profile)
+	if err != nil {
+		return nil, err
+	}
+	var fields model.Fields
+	if err := fields.UnmarshalJSON(raw); err != nil {
+		return nil, err
+	}
+	for _, key := range SharedFields {
+		if err := fields.Set(key, []byte(`[]`)); err != nil {
+			return nil, err
+		}
+	}
+	base, err := fields.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var override json.RawMessage
+	if r.options.DefaultSettings != nil {
+		override, err = configSettingsJSON(r.options.DefaultSettings())
+	} else {
+		override, err = legacyDefaultSettings(r.options)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return mergeObjectsJSON(base, override)
+}
+func (r *Repository) initialSettingsJSON() (json.RawMessage, error) {
+	if r.options.InitialSettings != nil {
+		return configSettingsJSON(r.options.InitialSettings())
+	}
+	if raw, present, err := legacyInitialSettings(r.options); present || err != nil {
+		return raw, err
+	}
+	return r.profileDefaultsJSON()
+}
+func (r *Repository) emptyProfileRecord(id, name, description string) (*model.Profile, error) {
+	raw, err := r.profileDefaultsJSON()
+	if err != nil {
+		return nil, err
+	}
+	var defaults model.Fields
+	if err := defaults.UnmarshalJSON(raw); err != nil {
+		return nil, err
+	}
+	var fields model.Fields
+	for _, key := range ProfileFields {
+		value, present := defaults.Get(key)
+		if !present {
+			value = []byte(`[]`)
+			if profileObjectFields[key] {
+				value = []byte(`{}`)
+			}
+		}
+		if err := fields.Set(key, value); err != nil {
+			return nil, err
+		}
+	}
+	profileRaw, err := fields.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var profile model.Profile
+	if err := json.Unmarshal(profileRaw, &profile); err != nil {
+		return nil, err
+	}
+	profile.ID, profile.Name, profile.Description = id, name, description
+	profile.CreatedAt, profile.UpdatedAt = nowISO(), nowISO()
+	descriptionRaw, _ := json.Marshal(description)
+	if err := profile.SetJSON("description", descriptionRaw); err != nil {
+		return nil, err
+	}
+	if err := profile.SetJSON("_revision", []byte(`0`)); err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+// configSettingsJSON emits settings rather than a resolved reader's envelope.
+// profile_id is a view selector; an empty backup has the same import default.
+func configSettingsJSON(config *model.Config) (json.RawMessage, error) {
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	var fields model.Fields
+	if err := fields.UnmarshalJSON(raw); err != nil {
+		return nil, err
+	}
+	fields.Delete("profile_id")
+	if backup, present := fields.Get("backup"); present {
+		var settings model.Fields
+		if jsonKind(backup) == '{' && settings.UnmarshalJSON(backup) == nil && settings.Len() == 0 {
+			fields.Delete("backup")
+		}
+	}
+	return fields.MarshalJSON()
 }

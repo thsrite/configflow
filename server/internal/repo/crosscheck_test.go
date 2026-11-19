@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -178,7 +180,81 @@ func xcMaskedLayout(t testing.TB, record any, python bool) []any {
 
 func xcText(t testing.TB, value any) string {
 	t.Helper()
-	return xcMask(string(must(jsonx.Encode(value, jsonx.Options{}))(t)))
+	encoded := must(json.Marshal(xcFiniteJSON(value)))(t)
+	var native any
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	noError(t, decoder.Decode(&native))
+	native = xcNativeRecords(t, native)
+	return xcMask(string(must(json.Marshal(native))(t)))
+}
+
+// Fresh records may choose native JSON member order and whitespace. Existing
+// row byte preservation is independently checked by the raw round-trip audits;
+// this cross-language sequence compares logical rows, document _revision values
+// and outcomes. Physical row rewrite counters may differ after native formatting.
+func xcNativeRecords(t testing.TB, value any) any {
+	t.Helper()
+	decode := func(text string) any {
+		var result any
+		decoder := json.NewDecoder(strings.NewReader(text))
+		decoder.UseNumber()
+		if decoder.Decode(&result) != nil {
+			return text
+		}
+		return result
+	}
+	switch v := value.(type) {
+	case map[string]any:
+		for key, item := range v {
+			if key == "message" {
+				if text, ok := item.(string); ok && strings.HasPrefix(text, "Cannot read configuration ") {
+					if end := strings.Index(text, ": "); end >= 0 {
+						item = text[:end+2] + "<native-file-error>"
+					}
+				}
+			}
+			if rows, ok := item.([]any); ok && (key == "meta" || key == "fields" || key == "sections") {
+				for _, row := range rows {
+					values, ok := row.([]any)
+					if !ok {
+						continue
+					}
+					switch key {
+					case "meta":
+						if len(values) == 2 {
+							if text, ok := values[1].(string); ok {
+								values[1] = decode(text)
+							}
+						}
+					case "fields":
+						if len(values) == 6 {
+							values[3] = "<native-member-position>"
+							values[5] = "<native-field-rewrite-counter>"
+							if text, ok := values[4].(string); ok {
+								values[4] = decode(text)
+							}
+						}
+					case "sections":
+						if len(values) == 3 {
+							values[2] = "<native-section-position>"
+						}
+					}
+				}
+			}
+			if key == "proxy_string" {
+				if text, ok := item.(string); ok && json.Valid([]byte(text)) {
+					item = decode(text)
+				}
+			}
+			v[key] = xcNativeRecords(t, item)
+		}
+	case []any:
+		for i, item := range v {
+			v[i] = xcNativeRecords(t, item)
+		}
+	}
+	return value
 }
 
 // xcSame compares two values through their masked JSON text; on a
@@ -190,8 +266,11 @@ func xcSame(t *testing.T, label string, goValue, pyValue any) {
 		return
 	}
 	indent := func(value any) []string {
-		return strings.Split(xcMask(string(must(jsonx.Indent2(value))(t))), "\n")
+		var pretty bytes.Buffer
+		noError(t, json.Indent(&pretty, []byte(xcText(t, value)), "", "  "))
+		return strings.Split(pretty.String(), "\n")
 	}
+
 	a, b := indent(goValue), indent(pyValue)
 	for i := 0; i < len(a) && i < len(b); i++ {
 		if a[i] != b[i] {
@@ -455,8 +534,12 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 		if op.GetString("op") == "reopen" {
 			r = xcOpen(t, directory, mode)
 		}
+		beforeRows := xcFingerprint(t, r.Store())
 		result, err := xcExecute(t, r, op, variables)
 		if err != nil {
+			if (errors.Is(err, ErrValidation) || errors.Is(err, ErrInUse) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrExists)) && !reflect.DeepEqual(beforeRows, xcFingerprint(t, r.Store())) {
+				t.Fatal("rejected operation changed stored bytes", op.GetString("op"))
+			}
 			usages := any(nil)
 			if errors.Is(err, ErrInUse) {
 				usages = UsagesOf(err)
@@ -505,7 +588,7 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	// as a sorted list of masked names, apart from the cumulative comparison.
 	last := len(golang) - 1
 	xcBindNativeCachePath(t, file, goDir, pyDir, python[last].(*jsonx.Object))
-	xcSame(t, "layout", xcMaskedLayout(t, golang[last], false), xcMaskedLayout(t, python[last], true))
+	goLayout, pyLayout := xcMaskedLayout(t, golang[last], false), xcMaskedLayout(t, python[last], true)
 	golang, python = golang[:last], python[:last]
 	// Decision (HANDOFF, "Python 500s become proper 4xx"): where Python
 	// crashed with an internal exception, Go refuses with a validation or
@@ -529,6 +612,7 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	// whole run, so the records are compared cumulatively: the whole run at
 	// once, and step by step only to locate a difference.
 	if xcText(t, golang) == xcText(t, python) {
+		xcSame(t, "layout", goLayout, pyLayout)
 		return goDir, pyDir
 	}
 	for index := range golang {
@@ -547,6 +631,7 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 			t.FailNow()
 		}
 	}
+	xcSame(t, "layout", goLayout, pyLayout)
 	return goDir, pyDir
 }
 
@@ -698,4 +783,39 @@ func TestCrossCheckPythonWriterKilledBeforeCommit(t *testing.T) {
 	if len(must(r.GetAgents(bg, true))(t)) != 1 {
 		t.Fatal("write after the crash not visible")
 	}
+}
+
+// xcFiniteJSON represents non-JSON values from the retired file-reader facade
+// only in oracle transport. It never changes fixtures or product data.
+func xcFiniteJSON(value any) any {
+	switch v := value.(type) {
+	case *jsonx.Object:
+		if v == nil {
+			return nil
+		}
+		out := map[string]any{}
+		for key, item := range v.All() {
+			out[key] = xcFiniteJSON(item)
+		}
+		return out
+	case jsonx.Number:
+		switch v.String() {
+		case "NaN", "Infinity", "-Infinity":
+			return map[string]string{"$nonfinite": v.String()}
+		}
+		return json.Number(v.String())
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = xcFiniteJSON(item)
+		}
+		return out
+	case map[string]any:
+		out := map[string]any{}
+		for key, item := range v {
+			out[key] = xcFiniteJSON(item)
+		}
+		return out
+	}
+	return value
 }

@@ -17,8 +17,8 @@ func TestCommitBatchMarkersMatchDesign(t *testing.T) {
 	// location and cardinality; Runtime tests prove the side-effect condition.
 	allowed := map[string]int{
 		"repo:DeleteProfile:beginCommitBatch":                 0,
-		"repo:ImportAll:beginCommitBatch":                     0,
-		"repo:CreateRuleLibraryItem:beginCommitBatch":         0,
+		"repo:ImportAllJSON:beginCommitBatch":                 0,
+		"repo:CreateRuleLibraryRecord:beginCommitBatch":       0,
 		"routers:saveAbortedPublication:ctxx.Uninterruptible": 0,
 	}
 	for _, pkg := range []string{"repo", "routers"} {
@@ -106,7 +106,15 @@ func TestCommitBatchMarkersMatchDesign(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, count := range allowed {
-		if count != 1 || !strings.Contains(string(design), name) {
+		documentedName := name
+		// N8-11 only renamed these owners; the O3-6c batch contract is unchanged.
+		switch name {
+		case "repo:ImportAllJSON:beginCommitBatch":
+			documentedName = "repo:ImportAll:beginCommitBatch"
+		case "repo:CreateRuleLibraryRecord:beginCommitBatch":
+			documentedName = "repo:CreateRuleLibraryItem:beginCommitBatch"
+		}
+		if count != 1 || !strings.Contains(string(design), documentedName) {
 			t.Errorf("batch path %s: markers=%d, must appear once and be documented", name, count)
 		}
 	}

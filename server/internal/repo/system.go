@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"configflow/internal/ctxx"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -9,32 +8,10 @@ import (
 	"encoding/json"
 	"slices"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/ctxx"
 	"configflow/internal/model"
 	"configflow/internal/store"
 )
-
-// Updater edits a deep copy of a section inside a write transaction. It may
-// change current in place and return nil, or return a replacement object.
-// ctx belongs to the transaction: repository reads made with it see the
-// working copy, writes made with it fail with ErrInUse. A non-nil error
-// aborts the transaction and is returned by the transaction method unchanged.
-type Updater func(ctx context.Context, current *jsonx.Object) (replacement *jsonx.Object, err error)
-
-// applyUpdater is _apply_updater.
-func applyUpdater(ctx context.Context, current *jsonx.Object, updater Updater) (*jsonx.Object, error) {
-	if updater == nil {
-		return nil, validationError("Updater must be callable")
-	}
-	replacement, err := updater(ctx, current)
-	if err != nil {
-		return nil, err
-	}
-	if replacement != nil {
-		return replacement.DeepCopy(), nil
-	}
-	return current, nil
-}
 
 // randomHex is uuid.uuid4().hex[:length]. It is a variable so tests can
 // make the generated ids deterministic (Python: a patched uuid.uuid4).
@@ -135,35 +112,6 @@ type sanitizationTokens struct {
 	agents    TokenSet
 }
 
-// SanitizationTokensOf is _sanitization_tokens_of(system): the rule proxy
-// tokens (current and retired) and the Agent tokens of a system section. It
-// only reads.
-func SanitizationTokensOf(system *jsonx.Object) (ruleProxy, agents TokenSet) {
-	ruleProxy, agents = TokenSet{}, TokenSet{}
-	if settings, ok := jsonx.AsObject(system.GetOr("system_config", jsonx.NewObject())); ok {
-		if token, ok := settings.Value("rule_proxy_token").(string); ok && token != "" {
-			ruleProxy[token] = struct{}{}
-		}
-		if retired, ok := jsonx.AsList(settings.GetOr("retired_rule_proxy_tokens", []any{})); ok {
-			for _, value := range retired {
-				if token, ok := value.(string); ok && token != "" {
-					ruleProxy[token] = struct{}{}
-				}
-			}
-		}
-	}
-	if items, ok := jsonx.AsList(system.GetOr("agents", []any{})); ok {
-		for _, item := range items {
-			if agent, ok := jsonx.AsObject(item); ok {
-				if token, ok := agent.Value("token").(string); ok && token != "" {
-					agents[token] = struct{}{}
-				}
-			}
-		}
-	}
-	return ruleProxy, agents
-}
-
 // sanitizationTokensNow is _sanitization_tokens: the tokens of the current
 // generation, remembered by store head. Inside a transaction the working
 // copy is read and nothing is cached.
@@ -210,9 +158,9 @@ func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 			target[*value] = struct{}{}
 		}
 	}
-	raw, present, err := system.SystemConfig.MemberJSON("rule_proxy_token")
+	raw, present, err := recordMemberJSON(system.SystemConfig, "rule_proxy_token")
 	add(ruleProxy, raw, present, err)
-	if raw, present, err := system.SystemConfig.MemberJSON("retired_rule_proxy_tokens"); err == nil && present {
+	if raw, present, err := recordMemberJSON(system.SystemConfig, "retired_rule_proxy_tokens"); err == nil && present {
 		var values []json.RawMessage
 		if json.Unmarshal(raw, &values) == nil {
 			for _, raw := range values {
@@ -221,7 +169,7 @@ func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 		}
 	}
 	for i := range system.Agents {
-		raw, present, err := system.Agents[i].MemberJSON("token")
+		raw, present, err := recordMemberJSON(&system.Agents[i], "token")
 		add(agents, raw, present, err)
 	}
 	return ruleProxy, agents
@@ -240,138 +188,6 @@ func (r *Repository) RuleProxyTokensForSanitization(ctx context.Context) (TokenS
 func (r *Repository) AgentTokensForSanitization(ctx context.Context) (TokenSet, error) {
 	_, agents, err := r.sanitizationTokensNow(ctx)
 	return agents, err
-}
-
-// GetSystem is get_system(): a copy of the system section (system_config,
-// backup, agents, _revision).
-func (r *Repository) GetSystem(ctx context.Context) (result *jsonx.Object, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		result = document.GetObject("system").DeepCopy()
-		return nil
-	})
-	return result, err
-}
-
-type agentHistoryNotRead struct{}
-
-// AgentHistoryNotRead stands in for the AgentHistoryFields of an Agent
-// record read with GetAgents(ctx, false) (Python: AGENT_HISTORY_NOT_READ).
-// It is not a jsonx value: the encoders refuse it. Unlike Python, the typed
-// jsonx getters cannot refuse it and return zero values, so code that may
-// receive such records must read history fields through AgentHistory.
-var AgentHistoryNotRead any = &agentHistoryNotRead{}
-
-// AgentHistoryNotReadMessage is the RuntimeError of the Python sentinel.
-const AgentHistoryNotReadMessage = "Agent 记录是不带发布历史读取的，需要历史的代码必须用 history=True 读取"
-
-// AgentHistory returns a history field (one of AgentHistoryFields) of an
-// Agent record, or an error when the record was read without its history.
-func AgentHistory(agent *jsonx.Object, field string) (any, error) {
-	value := agent.Value(field)
-	if value == AgentHistoryNotRead {
-		return nil, helperError("RuntimeError", AgentHistoryNotReadMessage)
-	}
-	return value, nil
-}
-
-// GetAgents is get_agents(history=...): copies of the Agent records. With
-// history=false the AgentHistoryFields, which outweigh the rest of a record
-// many times over, are not copied and hold AgentHistoryNotRead.
-func (r *Repository) GetAgents(ctx context.Context, history bool) (result []any, err error) {
-	return r.GetAgentsInspect(ctx, history, nil)
-}
-
-// GetAgentsInspect calls inspect on each raw record in the same read view,
-// before omitting history or copying. inspect must neither mutate nor retain
-// the record. This keeps credential snapshots aligned with light reads without
-// copying their history. N8-5 must preserve this inspection capability.
-func (r *Repository) GetAgentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) (result []any, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		agents := document.GetObject("system").GetList("agents")
-		if inspect != nil {
-			for _, item := range agents {
-				agent, _ := jsonx.AsObject(item)
-				inspect(agent)
-			}
-		}
-		if history {
-			result, _ = jsonx.DeepCopy(agents).([]any)
-			if result == nil {
-				result = []any{}
-			}
-			return nil
-		}
-		result = make([]any, 0, len(agents))
-		for _, item := range agents {
-			agent, _ := jsonx.AsObject(item)
-			record := jsonx.NewObject()
-			for key, value := range agent.All() {
-				if key != "deployments" && key != "ipv6_verifications" {
-					record.Set(key, jsonx.DeepCopy(value))
-				}
-			}
-			for _, field := range AgentHistoryFields {
-				record.Set(field, AgentHistoryNotRead)
-			}
-			result = append(result, record)
-		}
-		return nil
-	})
-	return result, err
-}
-
-// GetSystemSettings is get_system_settings(): system_config alone.
-func (r *Repository) GetSystemSettings(ctx context.Context) (result *jsonx.Object, err error) {
-	err = r.view(ctx, func(document *jsonx.Object) error {
-		result = document.GetObject("system").GetObject("system_config").DeepCopy()
-		return nil
-	})
-	return result, err
-}
-
-// GetSystemWithSource is get_system_with_source(): a copy of the system
-// section and the committed section it was read from (nil inside a
-// transaction). The source is shared and must never be modified.
-func (r *Repository) GetSystemWithSource(ctx context.Context) (result, source *jsonx.Object, err error) {
-	document, committed, err := r.committedSource(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	system := document.GetObject("system")
-	if committed {
-		source = system
-	}
-	return system.DeepCopy(), source, nil
-}
-
-// UpdateSystemTransaction is update_system_transaction: updater edits a
-// copy of the system section; system_config, backup and agents are taken
-// from its result and the revision advances by one. It returns a copy of
-// the committed section.
-func (r *Repository) UpdateSystemTransaction(ctx context.Context, updater Updater) (result *jsonx.Object, err error) {
-	ctx = ctxx.Detach(ctx)
-	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
-		system, err := applySystemIn(document, func(system *model.System) error {
-			view, err := legacyObject(system)
-			if err != nil {
-				return err
-			}
-			original := view.DeepCopy()
-			updated, err := applyUpdater(ctx, view, updater)
-			if err != nil {
-				return err
-			}
-			return setChanged(systemSections, original, updated, system.SetJSON)
-		})
-		if err == nil {
-			result, err = legacyObject(system)
-		}
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // UpdateSystem runs fn on a copy of the system section (settings, backup and
@@ -403,47 +219,14 @@ func applySystemIn(document *model.Document, fn func(s *model.System) error) (*m
 	return &document.System, nil
 }
 
-// revisionConflict is the optimistic check of the save_* methods: without a
-// baseline a snapshot that carries a _revision must still be current.
-func revisionConflict(snapshot, current, baseline *jsonx.Object) bool {
-	if baseline != nil {
-		return false
-	}
-	revision, ok := snapshot.Get("_revision")
-	return ok && !jsonx.Equal(revision, current.Value("_revision"))
+// SanitizationTokens returns persisted rule proxy and Agent secrets without mutating system.
+func SanitizationTokens(system model.System) (ruleProxy, agents TokenSet) {
+	return sanitizationTokensModel(&system)
 }
 
-// SaveSystem is save_system(snapshot, baseline): with a baseline the
-// caller's changes are merged three-way into the current section; without
-// one objects are deep-merged and other values replaced.
-func (r *Repository) SaveSystem(ctx context.Context, snapshot, baseline *jsonx.Object) (*jsonx.Object, error) {
-	ctx = ctxx.Detach(ctx)
-	if snapshot == nil {
-		return nil, validationError("System data must be an object")
-	}
-	return r.UpdateSystemTransaction(ctx, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		if revisionConflict(snapshot, current, baseline) {
-			return nil, inUse("系统设置已更新，请刷新后重试")
-		}
-		for _, key := range systemSections {
-			value, ok := snapshot.Get(key)
-			if !ok {
-				continue
-			}
-			currentObject, isCurrentObject := jsonx.AsObject(current.Value(key))
-			valueObject, isValueObject := jsonx.AsObject(value)
-			if base, ok := baseline.Get(key); ok {
-				merged, err := threeWayMerge(current.Value(key), base, value)
-				if err != nil {
-					return nil, err
-				}
-				current.Set(key, merged)
-			} else if isCurrentObject && isValueObject {
-				current.Set(key, DeepMerge(currentObject, valueObject))
-			} else {
-				current.Set(key, jsonx.DeepCopy(value))
-			}
-		}
-		return nil, nil
-	})
+// AgentHistoryJSON returns an owned history member of a full typed Agent record.
+func AgentHistoryJSON(agent model.Agent, field string) (json.RawMessage, error) {
+
+	raw, _, err := recordMemberJSON(agent, field)
+	return raw, err
 }

@@ -2328,3 +2328,11 @@ N8-10 batch-13 后 API 收束：`traffic.go` 已改用 native `DecodeTrafficRepo
 traffic/<agent>.json 已存在但不是合法 JSON（含空文件、截断、非标准 NaN/Infinity），或顶层不是对象（含 null/list/string/number/bool）时，Go 与 present wrong-type days 一样 fail closed：上报返回同一 500 错误响应，内部同一 TypeError，中文限流告警仍为「流量统计写入失败，请检查上报或统计桶；重复告警已限频。」；不覆盖、不自动清理原文件。Python/旧 Go 会把不可读内容当空文件并覆盖，这是协调者明确接受的新差异。文件真正不存在仍可写入；读取列表/metadata 与 days 损坏一样返回空记录/无 metadata，不因该 Agent 令整页失败，且不改原文件。整文件已不可解析，保留天数不能恢复；恢复使用现有 domain-discovery/clear 重置，已测真实 HTTP reset 后上报成功，无新入口。
 
 R3 确认沿用 HR 已补登的 HTTP 最短浮点文本，≥1e6 用指数形式，JSON 数值相等；本轮不改数值序列化。
+
+## N8-11 W1 — repository native JSON boundaries
+
+- 导入/导出、默认配置、档案元数据与规则库创建改用共享 model codec 和 encoding/json。新建/实际改写的 JSON 对象可采用 Go 的成员顺序、空白和转义；SQLite 新建字段的 position、字段被重新编码后的内部 rewrite counter 可随之变化。文档/档案/共享的业务 revision、数组顺序、字段和值保持原语义。未变化的既存行与未知成员仍保留原始字节，含大整数、指数小数和 Unicode escape；raw_crosscheck.py 双向 audit/rewrite 和导入导出负控单独验证，不以结构比较替代这些字节约束。
+- schema-2 导入为 profile-local 原始拨号链重建的 proxy_string 采用 native JSON 文本，对其解析后的结构、拨号目标和名称冲突处理仍严格比较。ID 只在真正缺失/冲突时生成，不再为了 Python setdefault 的 eager 参数计算丢弃随机值；冻结回放只归一化生成 ID 的随机后缀，并同时比较所有引用和目录顺序，没有修改原语料或期望文件。
+- 文件读取保留原拒绝类别和配置文件名，OS/UTF-8 内部错误后缀使用 Go 原生诊断；写 JSON 文件使用 encoding/json 缩进。中文业务错误、HTTP 状态和正常文件内容含义不变；不仿 Python 异常文本。旧 file-reader 的非标准 NaN 兼容仅留在 legacy.go，W9 删除旧入口时收束，native API 不扩展 JSON 语法。
+
+W1 边界核对另外确认一项**既有差异，未在本包修改**：全局 import/reset 的设备归属冲突，Python 409 只返回 success/message，Go 409 还带 usages。在 P0 `212aeac09` 的独立基底也能复现，交 W5 的 api/config/global.go owner 修正；新增测试精确断言该附加成员后再比较其余响应及无写入状态，不能将这项当作 W1 新获准的 API 差异。见 progress/n8-11-w1.md。

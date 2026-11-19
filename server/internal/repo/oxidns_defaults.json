@@ -1,0 +1,170 @@
+{
+  "config_mode": "template",
+  "native_config": "",
+  "additional_files": [],
+  "direct_rulesets": [],
+  "proxy_rulesets": [],
+  "direct_rules": [],
+  "proxy_rules": [],
+  "local_dns": "",
+  "remote_dns": "",
+  "fallback_dns": "",
+  "default_forward": "forward_remote",
+  "custom_hosts": "",
+  "custom_config": "",
+  "custom_matches": [],
+  "custom_match_position": "tail",
+  "device_policies": [],
+  "worker_threads": 2,
+  "listen": "0.0.0.0:53",
+  "tcp_enabled": true,
+  "prefer_ipv4": true,
+  "block_qtypes": [
+    65,
+    255
+  ],
+  "metrics_enabled": true,
+  "aggregate_rules": true,
+  "local_concurrent": 2,
+  "remote_concurrent": 1,
+  "fallback_concurrent": 2,
+  "fallback_threshold": 500,
+  "always_standby": false,
+  "remote_ttl": 1,
+  "cache_enabled": true,
+  "cache_size": 10240,
+  "cache_lazy_ttl": 3600,
+  "cache_dump_enabled": false,
+  "cache_dump_file": "./state/cache.dump",
+  "cache_dump_interval": 300,
+  "probe_cache_enabled": true,
+  "probe_cache_size": 2048,
+  "api": {
+    "enabled": true,
+    "listen": "127.0.0.1:9199",
+    "username": "",
+    "password": "",
+    "webui_root": "",
+    "ssl": {}
+  },
+  "log": {
+    "level": "info",
+    "file": "",
+    "rotation": "daily",
+    "max_files": 7
+  },
+  "query_recorder": {
+    "enabled": false,
+    "args": {
+      "path": "./state/queries.db",
+      "queue_size": 8192,
+      "batch_size": 256,
+      "flush_interval_ms": 200,
+      "memory_tail": 1024,
+      "retention_days": 7,
+      "cleanup_interval_hours": 1,
+      "reader_concurrency": 2
+    }
+  },
+  "ip_selector": {
+    "enabled": false,
+    "args": {
+      "selection_mode": "background",
+      "probe_methods": [
+        "tcp:443",
+        "tcp:80"
+      ],
+      "probe_stagger": 200,
+      "probe_timeout": 600,
+      "max_wait": 1000,
+      "top_n": 0,
+      "dnssec_policy": "reorder_only",
+      "max_parallel_probes": 64,
+      "cache": {
+        "enabled": true,
+        "size": 4096,
+        "ttl": 3600,
+        "failure_ttl": 60
+      }
+    }
+  },
+  "dynamic_domain_set": {
+    "enabled": false,
+    "route": "direct",
+    "learn": false,
+    "args": {
+      "path": "./state/learned-domains.txt",
+      "bootstrap_rules": [],
+      "queue_size": 1024,
+      "batch_size": 256,
+      "flush_interval_ms": 200
+    },
+    "learn_args": {
+      "phase": "after",
+      "questions": "first",
+      "qtypes": [
+        "A",
+        "AAAA"
+      ],
+      "success_only": true,
+      "answer_required": true,
+      "rule_kind": "full",
+      "async": true,
+      "error_mode": "continue",
+      "timeout": "1s"
+    }
+  },
+  "adguard": {
+    "enabled": false,
+    "content": "",
+    "urls": [],
+    "mode": "nxdomain"
+  },
+  "ros_address_list": {
+    "enabled": false,
+    "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "address_list4": "oxidns",
+      "address_list6": "oxidns",
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+    }
+  },
+  "ros_route": {
+    "enabled": false,
+    "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "routing_table": "",
+      "gateway4": "",
+      "gateway6": "",
+      "distance": 100,
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+    }
+  },
+  "rule_update": {
+    "enabled": false,
+    "args": {
+      "schedule": "30 3 * * *",
+      "timezone": "Asia/Shanghai",
+      "timeout": "60s",
+      "outbound": "",
+      "socks5": ""
+    }
+  },
+  "rule_actions": {},
+  "rule_dns_follow": [],
+  "rule_dns_parked": {}
+}

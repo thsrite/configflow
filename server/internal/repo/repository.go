@@ -19,6 +19,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/store"
 )
 
@@ -52,6 +54,11 @@ var DerivedDirs = []string{"providers", "rules", "generated"}
 
 // Options are the constructor arguments of ProfileRepository.
 type Options struct {
+	// DefaultSettings supplies caller-owned typed defaults for new profiles and imports.
+	DefaultSettings func() *model.Config
+	// InitialSettings supplies the first-start/reset configuration.
+	InitialSettings func() *model.Config
+
 	// DefaultConfig is default_config_factory: defaults merged over the
 	// built-in profile defaults for new profiles and old-format imports.
 	DefaultConfig func() *jsonx.Object
@@ -182,7 +189,7 @@ func expandUser(path string) (string, error) {
 // OpenDefault opens the application's repository, as common/config.py's
 // get_repository() does: GetDefaultConfig and GetInitialConfig as factories.
 func OpenDefault(dataDir string) (*Repository, error) {
-	return Open(dataDir, Options{DefaultConfig: GetDefaultConfig, InitialConfig: GetInitialConfig})
+	return Open(dataDir, Options{DefaultSettings: DefaultConfig, InitialSettings: InitialConfig})
 }
 
 // DataDir returns the resolved data directory.
@@ -220,44 +227,6 @@ func leftPad(text string, width int) string {
 		text = "0" + text
 	}
 	return text
-}
-
-// legacyDefaults is _legacy_defaults().
-func (r *Repository) legacyDefaults() *jsonx.Object {
-	override := jsonx.NewObject()
-	if r.options.DefaultConfig != nil {
-		override = r.options.DefaultConfig()
-	}
-	return DeepMerge(defaultProfileConfig(), override)
-}
-
-func (r *Repository) initialConfig() *jsonx.Object {
-	if r.options.InitialConfig != nil {
-		return r.options.InitialConfig()
-	}
-	return r.legacyDefaults()
-}
-
-// emptyProfile is _empty_profile.
-func (r *Repository) emptyProfile(profileID string, name any, description any) *jsonx.Object {
-	defaults := r.legacyDefaults()
-	result := jsonx.NewObject()
-	for _, key := range ProfileFields {
-		if value, ok := defaults.Get(key); ok {
-			result.Set(key, jsonx.DeepCopy(value))
-		} else if profileObjectFields[key] {
-			result.Set(key, jsonx.NewObject())
-		} else {
-			result.Set(key, []any{})
-		}
-	}
-	result.Set("id", profileID)
-	result.Set("name", name)
-	result.Set("description", description)
-	result.Set("_revision", jsonx.Int(0))
-	result.Set("created_at", nowISO())
-	result.Set("updated_at", nowISO())
-	return result
 }
 
 func lexists(path string) bool {
@@ -379,26 +348,14 @@ func (r *Repository) openLocked(ctx context.Context) error {
 	return nil
 }
 
-func revisionsOf(document *jsonx.Object) *jsonx.Object {
-	profiles := jsonx.NewObject()
-	for key, value := range document.GetObject("profiles").All() {
-		profile, _ := jsonx.AsObject(value)
-		profiles.Set(key, profile.GetOr("_revision", jsonx.Int(0)))
-	}
-	return jsonx.Obj(
-		"system", document.GetObject("system").GetOr("_revision", jsonx.Int(0)),
-		"shared", document.GetObject("shared").GetOr("_revision", jsonx.Int(0)),
-		"profiles", profiles)
-}
-
 // createFreshLocked is _migrate_to_store_locked for a data directory without
 // any earlier configuration: the database is built from the initial config.
 func (r *Repository) createFreshLocked() error {
-	document, err := r.convertImport(r.initialConfig(), nil)
+	raw, err := r.initialSettingsJSON()
 	if err != nil {
 		return err
 	}
-	typed, err := modelFromLegacy(document, nil)
+	typed, err := r.convertImportJSON(raw, nil)
 	if err != nil {
 		return err
 	}
@@ -419,10 +376,13 @@ func (r *Repository) createFreshLocked() error {
 		}
 	}
 	now := nowISO()
-	meta := jsonx.Obj(
-		"migration", jsonx.Obj("source", "defaults", "at", now, "snapshot", nil),
-		"legacy_config", jsonx.Obj("sha256", nil, "size", nil, "revisions", revisionsOf(document),
-			"content", nil, "status", "migrated", "at", now, "data_source", false))
+	revisions := map[string]any{"system": typed.System.Revision, "shared": typed.Shared.Revision, "profiles": map[string]model.Int{}}
+	for _, profile := range typed.Profiles {
+		revisions["profiles"].(map[string]model.Int)[profile.Key()] = profile.Revision
+	}
+	migration, _ := json.Marshal(map[string]any{"source": "defaults", "at": now, "snapshot": nil})
+	legacy, _ := json.Marshal(map[string]any{"sha256": nil, "size": nil, "revisions": revisions, "content": nil, "status": "migrated", "at": now, "data_source": false})
+	meta := map[string]json.RawMessage{"migration": migration, "legacy_config": legacy}
 	entry, err := r.createStore(typed, meta)
 	if err != nil {
 		return err

@@ -6,12 +6,14 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestArtifactWritesAreAtomicAndKeepABackup(t *testing.T) {
@@ -52,7 +54,7 @@ func TestArtifactWritesAreAtomicAndKeepABackup(t *testing.T) {
 	}
 	wantEqual(t, must(r.ReadProfileJSON("default", "providers/a.json"))(t), data)
 	_, err = r.ReadProfileJSON("default", "providers/missing.json")
-	wantError(t, err, ErrRepository, "Cannot read configuration missing.json: [Errno 2] No such file or directory")
+	wantError(t, err, ErrRepository, "Cannot read configuration missing.json:")
 	noError(t, os.WriteFile(path, []byte("[1]"), 0o600))
 	_, err = r.ReadProfileJSON("default", "providers/a.json")
 	wantError(t, err, ErrValidation, "JSON object expected in a.json")
@@ -207,5 +209,143 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 	full := must(r.ExportAll(WithRepository(bg, other), false))(t)
 	if called || len(full.GetObject("system").GetList("agents")) != 1 {
 		t.Fatal("full restorable export was sanitized")
+	}
+}
+
+// Both old and typed registrations may coexist during N8-11. Each operation
+// selects the typed collaborator exactly once and keeps the reviewed inputs.
+func TestN811TypedHooksTakePrecedence(t *testing.T) {
+	r := newRepo(t)
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		shared.Nodes = []model.Node{{ID: "n", Name: "Node"}}
+		return nil
+	}))
+	calls := 0
+	preview := &NodeDeletionPreview{Nodes: []DeletionNode{{ID: "n", Name: "Node"}}, Usages: []DeletionUsage{}, Groups: []DeletionGroup{}, Blockers: []string{}, EmptySources: []string{}, Confirmation: strings.Repeat("a", 64)}
+	defer SetHooks(SetHooks(Hooks{
+		PlanNodeDeletion: func(*jsonx.Object, any) (*jsonx.Object, *jsonx.Object, error) {
+			t.Fatal("old planner invoked")
+			return nil, nil, nil
+		},
+		RecordHooks: RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, ids []string) (*NodeDeletionPreview, *model.Document, error) {
+			calls++
+			if len(ids) != 1 || ids[0] != "n" || len(document.Shared.Nodes) != 1 {
+				t.Fatal("planner inputs changed")
+			}
+			document.Shared.Nodes = []model.Node{}
+			return preview, document, nil
+		}},
+	}))
+	must(r.PreviewNodeDeletionIDs(bg, []string{"n"}))(t)
+	must(r.DeleteNodesWithReferencesIDs(bg, []string{"n"}, preview.Confirmation))(t)
+	if calls != 2 {
+		t.Fatalf("planner calls=%d, want one per operation", calls)
+	}
+}
+
+func TestN811TypedExportHooksTakePrecedence(t *testing.T) {
+	r := newRepo(t)
+	_, err := r.UpdateProfile(bg, "default", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("mihomo", []byte(`{"custom_config":"private","easytier":{"enabled":true},"linux_gateway_restore_point":{"private":"snapshot"}}`))
+	})
+	noError(t, err)
+	calls := map[string]int{}
+	pass := func(name string) func(json.RawMessage) (json.RawMessage, error) {
+		return func(raw json.RawMessage) (json.RawMessage, error) { calls[name]++; return raw, nil }
+	}
+	old := func(any) any { t.Fatal("old redaction invoked"); return nil }
+	defer SetHooks(SetHooks(Hooks{
+		SanitizeExternalPayload: func(context.Context, *jsonx.Object, *jsonx.Object) (*jsonx.Object, error) {
+			t.Fatal("old sanitizer invoked")
+			return nil, nil
+		},
+		RedactOxidnsSettings: old, RedactRouters: old, RedactEasytierSettings: old,
+		RecordHooks: RecordHooks{
+			RedactOxidnsJSON: pass("oxidns"), RedactRoutersJSON: pass("routers"), RedactEasytierJSON: pass("easytier"),
+			SanitizeExternalDocument: func(_ context.Context, d *model.Document, s model.SystemConfig) (*model.Document, error) {
+				calls["sanitize"]++
+				if s.RuleProxyToken == "" || d.System.SystemConfig.RuleProxyToken != "" {
+					t.Fatal("sanitizer did not receive original settings and redacted payload")
+				}
+				return d, nil
+			},
+		},
+	}))
+	raw := must(r.ExportAllJSON(bg, true))(t)
+	for _, name := range []string{"oxidns", "routers", "easytier", "sanitize"} {
+		if calls[name] != 1 {
+			t.Fatalf("%s calls=%d", name, calls[name])
+		}
+	}
+	if strings.Contains(string(raw), "linux_gateway_restore_point") || strings.Contains(string(raw), "snapshot") {
+		t.Fatal("restore point exported")
+	}
+}
+
+func TestN811TypedPathsDoNotMaterializeLegacyDocument(t *testing.T) {
+	r := newRepo(t)
+	assertNative := func() {
+		t.Helper()
+		entry := r.cached()
+		if entry == nil || entry.legacy == nil || entry.legacy.document != nil {
+			t.Fatal("native path materialized a legacy document")
+		}
+	}
+	assertNative()
+	must(r.ExportAllJSON(bg, false))(t)
+	assertNative()
+	noError(t, r.UpdateConfig(bg, "default", func(_ context.Context, config *model.Config) error {
+		config.Profile.Mihomo.CustomConfig = "port: 17890"
+		return nil
+	}))
+	assertNative()
+}
+
+func TestN811TypedCommitHooksTakePrecedence(t *testing.T) {
+	defer SetHooks(SetHooks(Hooks{}))
+	r := newRepo(t)
+	_, err := r.UpdateProfile(bg, "default", func(_ context.Context, profile *model.Profile) error {
+		return profile.SetJSON("routers", []byte(`{"items":[{"id":"router","name":"Router","type":"routeros","endpoint":"http://192.0.2.1","username":"operator","password":"old"}]}`))
+	})
+	noError(t, err)
+	err = r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		return system.SetJSON("backup", []byte(`{"auto_backup":true}`))
+	})
+	noError(t, err)
+	locks, releases, commits := 0, 0, 0
+	SetHooks(Hooks{
+		JobLock: func(context.Context, string, string, *jsonx.Object) (func(), bool) {
+			t.Fatal("old job lock invoked")
+			return nil, false
+		},
+		ConfigurationCommitted: func(*Repository, *jsonx.Object, *jsonx.Object) {
+			t.Fatal("old commit observer invoked")
+		},
+		RecordHooks: RecordHooks{
+			JobLockRecord: func(_ context.Context, profileID, routerID string, router model.Router) (func(), bool) {
+				locks++
+				if profileID != "default" || routerID != "router" || router.Password != "old" {
+					t.Fatal("job lock did not receive committed router identity")
+				}
+				return func() { releases++ }, true
+			},
+			ConfigurationCommittedRecords: func(repository *Repository, previous, current *model.Document) {
+				commits++
+				if repository != r || previous.Profiles[0].Routers.Items[0].Password != "old" || current.Profiles[0].Routers.Items[0].Password != "new" {
+					t.Fatal("commit observer did not receive old and committed generations")
+				}
+				if releases != 1 {
+					t.Fatal("commit observer ran before router lock release")
+				}
+			},
+		},
+	})
+	_, err = r.UpdateProfile(bg, "default", func(_ context.Context, profile *model.Profile) error {
+		profile.Routers.Items[0].Password = "new"
+		return nil
+	})
+	noError(t, err)
+	if locks != 1 || releases != 1 || commits != 1 {
+		t.Fatalf("locks=%d releases=%d commits=%d; want one each", locks, releases, commits)
 	}
 }

@@ -154,7 +154,7 @@ func (r *Repository) routerGuard(ctx context.Context, previous *model.Document, 
 			releases[index]()
 		}
 	}
-	jobLock := currentHooks().JobLock
+	jobLock := recordHooks().JobLockRecord
 	connections := map[[2]string]bool{}
 	for _, key := range changed {
 		if lockedRouters[key] {
@@ -179,7 +179,8 @@ func (r *Repository) routerGuard(ctx context.Context, previous *model.Document, 
 			release()
 			return nil, err
 		}
-		object, err := legacyRaw(encoded)
+		var object model.Router
+		err = json.Unmarshal(encoded, &object)
 		if err != nil {
 			release()
 			return nil, err

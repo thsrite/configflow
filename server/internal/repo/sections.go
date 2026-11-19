@@ -275,8 +275,8 @@ func applySharedIn(document *model.Document, fn func(s *model.Shared) error) (*m
 
 // resourceUsage is _resource_usage: the aggregations, nodes and profiles
 // that reference a shared resource, as usage records.
-func resourceUsage(document *model.Document, kind, resourceID string) ([]any, error) {
-	usages := []any{}
+func resourceUsages(document *model.Document, kind, resourceID string) ([]Usage, error) {
+	usages := []Usage{}
 	shared := &document.Shared
 	if kind == kindSubscriptions || kind == kindNodes {
 		for _, aggregation := range shared.Aggregations {
@@ -285,15 +285,14 @@ func resourceUsage(document *model.Document, kind, resourceID string) ([]any, er
 				members = aggregation.Nodes
 			}
 			if slices.Contains(members, resourceID) {
-				usages = append(usages, jsonx.Obj("kind", "aggregation", "id", aggregation.ID,
-					"name", displayName(aggregation.Name, aggregation.ID)))
+				usages = append(usages, Usage{Kind: "aggregation", ID: aggregation.ID, Name: displayName(aggregation.Name, aggregation.ID)})
 			}
 		}
 	}
 	if kind == kindSubscriptions {
 		for _, node := range shared.Nodes {
 			if node.SubscriptionID == resourceID {
-				usages = append(usages, jsonx.Obj("kind", "node", "id", node.ID, "name", displayName(node.Name, node.ID)))
+				usages = append(usages, Usage{Kind: "node", ID: node.ID, Name: displayName(node.Name, node.ID)})
 			}
 		}
 	}
@@ -312,14 +311,13 @@ func resourceUsage(document *model.Document, kind, resourceID string) ([]any, er
 			referenced = set.has(resourceID)
 		}
 		if referenced {
-			usages = append(usages, profileUsage(profile))
+			usages = append(usages, profileUsageRecord(profile))
 		}
 	}
 	return usages, nil
 }
 
-// profileUsage is the usage record of a profile.
-func profileUsage(profile *model.Profile) *jsonx.Object {
-	return jsonx.Obj("kind", "profile", "id", profile.ID, "name", profile.Name,
-		"profile_id", profile.ID, "profile_name", profile.Name)
+func profileUsageRecord(profile *model.Profile) Usage {
+	id, name := profile.ID, profile.Name
+	return Usage{Kind: "profile", ID: id, Name: name, ProfileID: &id, ProfileName: &name}
 }
