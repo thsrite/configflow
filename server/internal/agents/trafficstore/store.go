@@ -10,7 +10,7 @@
 // are package level here.
 //
 // Domain discovery (C37) reads this package (Get, Load, LoadStatus,
-// SplitRouteKey); it must therefore not import internal/discovery.
+// ParseRouteKey); it must therefore not import internal/discovery.
 package trafficstore
 
 import (
@@ -305,6 +305,16 @@ func within(f model.Fields, allowed map[string]bool) bool {
 
 // DecodeReport validates exact Agent JSON keys and drops individual malformed items.
 func DecodeReport(raw json.RawMessage) (*Report, error) {
+	// Agent objects use the JSON decoder's last complete member value. Stored
+	// documents still use the strict Fields codec; do not relax file validation.
+	var value map[string]any
+	if jsondecode.Decode(raw, &value) != nil || value == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
 	var f model.Fields
 	if jsondecode.Unmarshal(raw, &f) != nil || len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '{' || !within(f, reportFields) {
 		return nil, nil
@@ -894,35 +904,3 @@ func (s *NativeStore) DeleteContext(ctx context.Context, id string) error {
 
 // CtimeNs returns the cache change-time signature for tests.
 func CtimeNs(info os.FileInfo) int64 { return signatureOf(info).CtimeNs }
-
-func decodeCleanedReport(raw json.RawMessage) (*Report, error) {
-	var f model.Fields
-	if err := jsondecode.Unmarshal(raw, &f); err != nil {
-		return nil, err
-	}
-	if !f.Has("schema") {
-		if err := f.Set("schema", json.RawMessage("1")); err != nil {
-			return nil, err
-		}
-	}
-	dropped := member(f, "dropped")
-	if len(dropped) == 0 {
-		dropped = []byte("0")
-	}
-	n, ok := new(big.Int).SetString(string(dropped), 10)
-	if !ok || n.Sign() < 0 {
-		return nil, &TypeError{Message: "invalid cleaned dropped counter"}
-	}
-	if err := f.Set("dropped", json.RawMessage("0")); err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(f)
-	if err != nil {
-		return nil, err
-	}
-	report, err := DecodeReport(raw)
-	if report != nil {
-		report.Dropped = n
-	}
-	return report, err
-}

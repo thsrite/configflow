@@ -329,7 +329,7 @@ var trafficTimestamp = regexp.MustCompile(`"(at|first_seen|last_seen)":"[^"]*"`)
 // compareTraffic compares, after the graceful stop, the traffic history
 // database (schema, journal mode, rows) and the traffic store files
 // (timestamps masked).
-func compareTraffic(t *testing.T, pyDir, goDir string) int {
+func compareTraffic(t *testing.T, seedDir, pyDir, goDir string) int {
 	failed := 0
 	dump := func(dir string) string {
 		path := filepath.Join(dir, "metrics", "traffic_history.sqlite3")
@@ -394,7 +394,20 @@ func compareTraffic(t *testing.T, pyDir, goDir string) int {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if pyFiles[name] != goFiles[name] {
+		if name == "agent-edit.json" {
+			if diffs := compareEditedTrafficFile(t, seedDir, pyFiles[name], goFiles[name]); len(diffs) > 0 {
+				failed++
+				t.Errorf("DIFF traffic/%s: %s", name, strings.Join(diffs, "; "))
+			} else {
+				t.Log("same traffic/agent-edit.json → bound native refusal preserves seed bytes")
+			}
+			continue
+		}
+		same := pyFiles[name] == goFiles[name]
+		if name == "agent-traffic.json" {
+			same = samePolicyJSON([]byte(pyFiles[name]), []byte(goFiles[name]))
+		}
+		if !same {
 			failed++
 			t.Errorf("DIFF traffic/%s:\n  python %s\n  go     %s", name, pyFiles[name], goFiles[name])
 		} else {

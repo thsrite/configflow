@@ -58,8 +58,13 @@ func newWorld(t *testing.T) *world {
 	}
 	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, refresh.SubscriptionRows))
 	t.Cleanup(tasks.SetRows(tasks.SlotRuleSources, refresh.RuleRows))
-	t.Cleanup(tasks.SetRows(tasks.SlotMetrics, metrics.Rows))
-	t.Cleanup(tasks.SetIntervalSetter(tasks.MetricsTaskKey, metrics.SetInterval))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, metrics.BuildRows))
+	t.Cleanup(tasks.SetIntervalEditor(tasks.MetricsTaskKey, func(ctx context.Context, value *int64) error {
+		if value == nil {
+			return metrics.SetFlushInterval(ctx, 0)
+		}
+		return metrics.SetFlushInterval(ctx, *value)
+	}))
 	for _, category := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources} {
 		t.Cleanup(tasks.SetRunner(category, func(context.Context, string, string) error { return nil }))
 	}

@@ -57,11 +57,6 @@ func (h *History) AddMetrics(agentID string, systemMetrics any) (bool, error) {
 	return h.AddSample(context.Background(), agentID, data)
 }
 
-// AttributeError is Python's AttributeError (its text is str(error)).
-type AttributeError struct{ Message string }
-
-func (e *AttributeError) Error() string { return e.Message }
-
 // GetMetrics transcodes native samples for remaining dynamic callers.
 func (h *History) GetMetrics(id string, hours *big.Int) ([]any, error) {
 	samples, err := h.Samples(id, hours)

@@ -108,7 +108,7 @@ func getAgentMetricsHistory(c *httpx.Ctx) (*httpx.Response, error) {
 		return response, nil
 	}
 	hours := argBigInt(c, "hours", 24)
-	history, err := metrics.ForManager(manager).GetMetrics(c.Param("agent_id"), hours)
+	history, err := metrics.ForManager(manager).Samples(c.Param("agent_id"), hours)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
@@ -123,7 +123,7 @@ func getAgentMetricsSummary(c *httpx.Ctx) (*httpx.Response, error) {
 		return response, nil
 	}
 	hours := argBigInt(c, "hours", 1)
-	summary, err := metrics.ForManager(manager).GetMetricsSummary(c.Param("agent_id"), hours)
+	summary, err := metrics.ForManager(manager).Summarize(c.Param("agent_id"), hours)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}

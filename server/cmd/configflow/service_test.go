@@ -78,7 +78,7 @@ func TestServiceProcess(t *testing.T) {
 			lifecycle.RegisterStartup(lifecycle.Startup{Name: "test-observe-startup", Run: func(ctx context.Context) error {
 				// All production startup work, including history loading, is done.
 				trace("startup")
-				_, err := metrics.For(dir).AddMetrics("edge", jsonx.Obj("cpu", jsonx.Obj("usage_percent", 1)))
+				_, err := metrics.For(dir).AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":1}}`))
 				return err
 			}})
 			lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-first", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
@@ -130,7 +130,7 @@ func TestServiceProcess(t *testing.T) {
 						t.Error("publish cancelled before drain completed")
 						return
 					}
-					_, err := metrics.For(dir).AddMetrics("edge", jsonx.Obj("cpu", jsonx.Obj("usage_percent", 2)))
+					_, err := metrics.For(dir).AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":2}}`))
 					if err != nil {
 						t.Error(err)
 					}

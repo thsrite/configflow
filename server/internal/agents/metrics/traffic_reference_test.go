@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"testing"
 
-	"configflow/internal/agents/trafficstore"
 	"configflow/internal/jsonx"
 )
 
@@ -97,16 +96,17 @@ func TestTrafficReferenceStoreReports(t *testing.T) {
 	ref := loadTrafficReference(t)
 	for name, value := range ref.GetObject("store_reports").All() {
 		c := value.(*jsonx.Object)
-		cleaned, err := trafficstore.CleanReport(c.Value("input"))
-		var got any = cleaned
+		cleaned, err := nativeStoreReport(c.Value("input"))
+		got, _ := legacyObject(cleaned)
+		var result any = got
 		if cleaned == nil {
-			got = nil
+			result = nil
 		}
 		if err != nil {
-			got = jsonx.Obj("error", "TypeError: "+err.Error())
+			result = jsonx.Obj("error", "TypeError: "+err.Error())
 		}
-		if !jsonx.Equal(got, c.Value("output")) {
-			t.Errorf("%s: go %s python %s", name, jsonx.Repr(got), jsonx.Repr(c.Value("output")))
+		if !jsonx.Equal(result, c.Value("output")) {
+			t.Errorf("%s: go %s python %s", name, jsonx.Repr(result), jsonx.Repr(c.Value("output")))
 		}
 	}
 }

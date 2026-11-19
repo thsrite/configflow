@@ -64,36 +64,6 @@ func Get(ctx context.Context) (*Store, error) {
 	return New(native.files.DataDir), nil
 }
 
-// CleanReport transcodes dynamic input to the native exact-key decoder.
-func CleanReport(value any) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	r, err := DecodeReport(raw)
-	if err != nil || r == nil {
-		return nil, err
-	}
-	return toObject(r)
-}
-
-// AddReport transcodes a cleaned report and native status response.
-func (s *Store) AddReport(id string, report *jsonx.Object, at *time.Time) (*jsonx.Object, error) {
-	raw, err := json.Marshal(report)
-	if err != nil {
-		return nil, err
-	}
-	r, err := decodeCleanedReport(raw)
-	if err != nil {
-		return nil, err
-	}
-	status, err := s.Add(context.Background(), id, r, at)
-	if err != nil {
-		return nil, err
-	}
-	return toObject(status)
-}
-
 // Load returns a compatibility copy of the native document.
 func (s *Store) Load(id string, at *time.Time) *jsonx.Object {
 	out, _ := toObject(s.LoadDocument(id, at))
@@ -114,27 +84,6 @@ func (s *Store) LoadStatus(id string) any {
 func (s *Store) StatusOf(id string) *jsonx.Object {
 	out, _ := s.LoadStatus(id).(*jsonx.Object)
 	return out
-}
-
-// SplitRouteKey adapts the typed route decoder.
-func SplitRouteKey(key string) (*jsonx.Object, bool) {
-	r, ok := ParseRouteKey(key)
-	if !ok {
-		return nil, false
-	}
-	out, _ := toObject(r)
-	return out, true
-}
-
-// CachedStatus returns an independent compatibility cache snapshot.
-func CachedStatus(path string) *jsonx.Object {
-	mu.Lock()
-	defer mu.Unlock()
-	if e, ok := statusIndex[path]; ok {
-		out, _ := toObject(e.Value.(*cacheEntry).status)
-		return out
-	}
-	return nil
 }
 
 // Delete delegates removal and keeps the former error wrapper.

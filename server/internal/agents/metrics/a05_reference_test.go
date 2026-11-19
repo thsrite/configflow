@@ -9,6 +9,7 @@ package metrics
 // the host check of the traffic store and ROLLBACK without a transaction.
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -313,11 +314,12 @@ func TestA05ReferenceHandEditedStoreFiles(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(c.GetString("file")), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		cleaned, err := trafficstore.CleanReport(c.Value("report"))
+		cleaned, err := nativeStoreReport(c.Value("report"))
 		if err != nil || cleaned == nil {
 			t.Fatalf("%s: clean %v", name, err)
 		}
-		status, err := trafficstore.New(dir).AddReport("a", cleaned, &at)
+		nativeStatus, err := trafficstore.NewNative(dir).Add(context.Background(), "a", cleaned, &at)
+		status, _ := legacyObject(nativeStatus)
 		var got any = status
 		if err != nil {
 			got = jsonx.Obj("error", storeErrorName(err), "message", err.Error())
@@ -359,9 +361,10 @@ func TestA05ReferenceStoreCapWithFloatWeights(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(ref.GetString("file")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cleaned, _ := trafficstore.CleanReport(jsonx.Obj("schema", 1, "status", "unreachable"))
+	cleaned, _ := nativeStoreReport(jsonx.Obj("schema", 1, "status", "unreachable"))
 	at := time.Date(2026, 11, 15, 8, 0, 0, 0, time.Local)
-	status, err := trafficstore.New(dir).AddReport("a", cleaned, &at)
+	nativeStatus, err := trafficstore.NewNative(dir).Add(context.Background(), "a", cleaned, &at)
+	status, _ := legacyObject(nativeStatus)
 	if err != nil || !jsonx.Equal(status, ref.Value("result")) {
 		t.Fatalf("go %v %v, python %s", jsonx.Repr(status), err, jsonx.Repr(ref.Value("result")))
 	}
@@ -375,11 +378,11 @@ func TestA05ReferenceStoreHosts(t *testing.T) {
 	ref := loadA05Reference(t)
 	for host, want := range ref.GetObject("store_hosts").All() {
 		report := jsonx.Obj("schema", 1, "status", "running", "items", []any{jsonx.Obj("host", host, "outlet", "direct", "policy", "p")})
-		cleaned, err := trafficstore.CleanReport(report)
+		cleaned, err := nativeStoreReport(report)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := len(cleaned.GetList("items")) == 1; got != want.(bool) {
+		if got := len(cleaned.Items) == 1; got != want.(bool) {
 			t.Errorf("host %q accepted = %v, Python %v", host, got, want)
 		}
 	}

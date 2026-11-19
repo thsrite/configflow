@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,7 @@ func newTrafficEnv(t *testing.T, login bool) trafficEnv {
 	reset := func() {
 		metrics.Reset()
 		metrics.ResetTraffic()
-		metrics.SetTrafficFlush(nil)
+		metrics.SetNativeTrafficFlush(nil)
 		trafficstore.ResetCache()
 		agents.ResetRuntime()
 		agents.ResetHooks()
@@ -138,8 +139,8 @@ func TestSwitchReportsAndHeartbeat(t *testing.T) {
 
 	// 关闭并删除数据
 	s.Put(url, httpxtest.JSON(jsonx.Obj("enabled", false, "clear", true))).WantStatus(200)
-	result, err := metrics.TrafficForManager(e.manager).Query("gw", "24h", "source", nil)
-	if err != nil || len(result.GetList("rows")) != 0 {
+	result, err := metrics.TrafficForManager(e.manager).QueryTraffic(s.Context(), "gw", "24h", "source", nil)
+	if err != nil || len(result.Rows) != 0 {
 		t.Fatal("not cleared", err)
 	}
 	s.Post(url, body, agentAuth(trafficToken)).WantStatus(409)
@@ -185,7 +186,13 @@ func TestTrafficHistoryRoutesAnswerUnknownAndBadPayloads(t *testing.T) {
 		s.Put("/api/agents/missing/traffic-history", httpxtest.JSON(payload)).WantStatus(400).
 			WantJSON(jsonx.Obj("success", false, "message", "enabled 必须是布尔值"))
 	}
-	metrics.TrafficForManager(e.manager).AddReport("gw", metrics.CleanTrafficReport(historyReport(5), nil))
+	raw, err := json.Marshal(historyReport(5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := metrics.TrafficForManager(e.manager).AddTraffic(s.Context(), "gw", metrics.DecodeTrafficReport(raw, nil)); err != nil {
+		t.Fatal(err)
+	}
 	s.Delete("/api/agents/gw/traffic-history").WantStatus(200).WantJSON(jsonx.Obj("success", true))
 	if metrics.TrafficForManager(e.manager).PendingCount() != 0 {
 		t.Fatal("not cleared")

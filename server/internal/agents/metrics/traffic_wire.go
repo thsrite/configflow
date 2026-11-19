@@ -72,7 +72,7 @@ func retentionDaysJSON(raw json.RawMessage) (int64, error) {
 // deleteTrafficStore is get_traffic_store().delete(agent_id), run by the
 // DELETE /api/agents/<id> route after the Agent is gone.
 func deleteTrafficStore(ctx context.Context, agentID string) error {
-	store, err := trafficstore.Get(ctx)
+	store, err := trafficstore.GetNative(ctx)
 	if err != nil {
 		return err
 	}

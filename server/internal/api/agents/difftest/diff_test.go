@@ -739,6 +739,9 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 			continue
 		}
 		diffs := compare(r, py, gor)
+		if nativeDiffs, handled := compareMetricsHTTP(t, seedDir, r, py, gor); handled {
+			diffs = nativeDiffs
+		}
 		if nativeDiffs, handled := n810CompareAPI(t, r, py, gor, nil, nil); handled {
 			diffs = nativeDiffs
 		}
@@ -778,7 +781,7 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 	stopPython()
 	stopGo()
 	failed += compareAfterStop(t, pyDir, goDir, pyValues, goValues)
-	failed += compareTraffic(t, pyDir, goDir)
+	failed += compareTraffic(t, seedDir, pyDir, goDir)
 	t.Logf("%d requests + stored records + DATA_DIR files + files after stop, %d differences", len(requests()), failed)
 }
 

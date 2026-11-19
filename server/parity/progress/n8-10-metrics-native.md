@@ -1,8 +1,8 @@
 # N8-10 metrics / trafficstore native 服务
 
-任务分支 `go-n8-10-metrics-native`，起点 `5c5998e86`。不改 api/agents、公共 core API、依赖或持久格式；不 push、不跑完整门禁。
+任务分支 `go-n8-10-metrics-native`，起点 `5c5998e86`，batch-13 后变基到 `go c8208b60f`（包含 `cf5ec02e7`）。按协调者补充授权切换 api/agents；未改公共 core API、依赖或持久格式；不 push、不跑完整门禁。
 
-## 实现边界（进行中）
+## 实现边界
 
 - metrics 报告精确键解码、typed query DTO、native 计数器（int64 → big.Int；兼容 SQLite REAL）、typed 保留天数写入。
 - A04 原始 JSONL 样本、typed summary/stats/trend、任务运行/rows/settings；生产 `pyvalue.go` 删除，旧签名迁到仅 codec/delegate adapter。
@@ -19,7 +19,7 @@ A05 present wrong-type days 整文件拒写；坏 hosts 桶只拒绝该 Agent �
 
 ## 初步验证
 
-仅测试服务器 .64：`go test ./internal/agents/metrics ./internal/agents/trafficstore -count=1` 通过（4.583s / 0.221s）。最终定向 race/vet/reference/difftest/audit/fuzz 尚待执行。
+仅测试服务器 .64：`go test ./internal/agents/metrics ./internal/agents/trafficstore -count=1` 通过（4.583s / 0.221s）。后续定向检查见以下记录。
 
 ## API 切换接口
 
@@ -70,7 +70,7 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test 
 4. traffic/agent-edit.json：拒写保留原文件，Python 修改文件。
 5. traffic/agent-traffic.json：仅 JSON 对象字段顺序不同，解析后值相同。
 
-协调者确定：等待 batch-13（upgrades + api/agents）先合入 `go`，随后本分支 rebase 到新 `go`；由本分支切 `api/agents/traffic.go` 到上述 native 接口并删对应无生产调用 adapter，给前四项加精确 SHA/fixture 绑定比较器，第五项改结构比较。**这一步尚未开始，不能把 owner 完成称作整个补充任务完成。**
+协调者确定：等待 batch-13（upgrades + api/agents）先合入 `go`，随后本分支 rebase 到新 `go`；由本分支切 `api/agents/traffic.go` 到上述 native 接口并删对应无生产调用 adapter，给前四项加精确 SHA/fixture 绑定比较器，第五项改结构比较。该步骤现已完成，详见下节；原 owner 提交变基后为 `e5333b76e`、`6bc803ebd`、`df2ab27a4`。
 
 ### SQLite 损坏值写入防护增量
 
@@ -78,4 +78,37 @@ RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test 
 
 新增真实 SQLite 回归覆盖 usage/targets compaction、同主键坏计数器 upsert、REAL SUM 溢出及 clear 恢复。`.32 rt -- bash -lc 'cd server && gofmt -w internal/agents/metrics/*.go && go test -count=1 -race ./internal/agents/metrics && go vet ./...'` 最后 PASS metrics 24.118s，vet 无输出（含原 A04/A05 reference）。人工数据行为差异已登记 ledger。
 
-owner 提交：`cc28d45b9`、`2e18d081b`，以及本段对应的 SQL 防护提交；API 集成仍按 batch-13 后的顺序待办。
+owner 提交：`cc28d45b9`、`2e18d081b`，以及本段对应的 SQL 防护提交；API 集成已在 batch-13 后完成。
+
+## batch-13 后 native HTTP 集成（2026-11-19）
+
+- `git rebase go` 完成，基底 `c8208b60f` 含 `cf5ec02e7`，行为变更文档保留双方条目。
+- `traffic.go` 全部读取精确 JSON/native DTO：上述 report/write/query/retention 接口已接入，带 ctx 的 Add/AddTraffic 避免旧 bg facade 绕过 shutdown。HTTP state 用 typed envelope 嵌入 TrafficQuery；不改缺失 service_type 默认，null/错型仍拒绝。`metrics.go` 的 history/summary 同步接到 Samples/Summarize。
+- 集成发现原成功语料含重复 port 字段。此前 jsonx 解码先取最后成员；现在 DecodeReport 用 jsondecode 的 native JSON last-complete-member 规则先规范 Agent 对象（json.Number 保留数值文本），再进入 Fields。存量文件依然严格，不放宽坏文件策略。新真实 Add 回归覆盖重复 schema/port/fail-kind。
+- 无生产调用的 metrics `history/stats/flush/traffic_legacy.go` 全部移为 `_test.go`，生产 metrics 不再导入 jsonx/jsonresp/pyvalue；旧 AddMetrics hook 仅 json.Marshal→AddSample 委托。对应 API、cmd/configflow 和 tasks/difftest 测试改用 native 接口，原断言不变。trafficstore 无生产调用的 CleanReport/AddReport/SplitRouteKey/CachedStatus 及 decodeCleanedReport 迁到测试文件；A05 跨包 corpus harness 改用 native decoder/Add + 测试 codec，比对原期望。
+- 四行 `testdata/n810_metrics_http_native.jsonl` 每行 original 原文 SHA256 绑定完整请求、旧 fixture 源码和 Python 结果；live oddMetrics/edited file seed 另做精确验证。HTTP native body/status/header 严格检查；文件拒写逐字节保留（只归一两处动态日期）。变更请求、原行 SHA、无关 native 错误、数组/计数器变化有负控。第五个 agent-traffic.json 仅按 JSON 结构比较，旧语料和 pyref entries 未变。
+
+### N8-11 留存 facade 清单
+
+trafficstore `legacy.go` 的 Store/New/Get/Load/LoadStatus/StatusOf/Delete（及 OSError）仍有调用方：
+
+- `internal/discovery/legacy.go`：Load/LoadStatus。
+- `internal/configgen/generate.go`、`internal/deploy/adapter.go`、`tools/proddiff/generator/main.go`：StatusOf→subs 的旧 core-version helper。
+- `internal/api/agents/client_tools_adapter.go`：仅 DeleteContext，复用嵌入 owner；可在 N8-11 直接换 GetNative。
+
+这些仅转码/委托；NativeStore 不依赖这些 facade，生产上报不走其测试 WriteJSON hook。无 legacy metrics 生产 adapter 留存。
+
+### 新集成定向验证
+
+`.32`：`go test -count=1 ./internal/api/agents/difftest -run "^TestN810MetricsHTTPPolicyBinding$"` PASS 0.014s；`CONFIGFLOW_DIFF=1 go test -count=1 -v ./internal/api/agents/difftest -run "^TestDifferentialAgainstFlask$"` 最后输出：
+
+```text
+same traffic_history.sqlite3 (23 lines)
+same traffic/agent-edit.json → bound native refusal preserves seed bytes
+same traffic/agent-traffic.json (985 bytes)
+234 requests + stored records + DATA_DIR files + files after stop, 0 differences
+--- PASS: TestDifferentialAgainstFlask (8.92s)
+ok configflow/internal/api/agents/difftest 8.932s
+```
+
+协调者已复核原整包 agents race 默认 10m 超时来自包本身耗时（基底 771s、本分支 729s），非本改动回归。本轮整包 race 使用 `-timeout=30m`，结果待以下追加。

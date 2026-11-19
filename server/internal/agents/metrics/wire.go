@@ -61,7 +61,11 @@ func historyStartup() lifecycle.Startup {
 }
 
 func addMetrics(m *agents.Manager, agentID string, metrics any) error {
-	_, err := ForManager(m).AddMetrics(agentID, metrics)
+	raw, err := json.Marshal(metrics)
+	if err != nil {
+		return err
+	}
+	_, err = ForManager(m).AddSample(context.Background(), agentID, raw)
 	return err
 }
 

@@ -7,9 +7,9 @@ package agents
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
-	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
@@ -17,7 +17,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -51,14 +51,14 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if agent == nil {
 		return failure(401, "Unauthorized"), nil
 	}
-	report, errorResponse := readLegacyTrafficBody(c, trafficstore.ReportMaxContentLength, "Invalid traffic report")
+	report, errorResponse := readTrafficBody(c, trafficstore.ReportMaxContentLength, "Invalid traffic report")
 	if errorResponse != nil {
 		return errorResponse, nil
 	}
 	if !heartbeatFeature(agent, "domain_discovery_enabled") {
-		return httpx.JSONStatus(409, jsonx.Obj("success", false, "enabled", false, "message", "Domain discovery disabled")), nil
+		return httpx.JSONStatus(409, map[string]any{"success": false, "enabled": false, "message": "Domain discovery disabled"}), nil
 	}
-	cleaned, err := trafficstore.CleanReport(report)
+	cleaned, err := trafficstore.DecodeReport(report)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +69,11 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := trafficstore.Get(ctx)
+	store, err := trafficstore.GetNative(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := store.AddReport(agentID, cleaned, nil); err != nil {
+	if _, err := store.Add(ctx, agentID, cleaned, nil); err != nil {
 		return nil, err
 	}
 
@@ -81,7 +81,7 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "enabled", true, "rule_providers", revisions)), nil
+	return httpx.JSON(map[string]any{"success": true, "enabled": true, "rule_providers": revisions}), nil
 }
 
 // agentTrafficHistoryReport is agent_traffic_history_report: an Agent
@@ -100,54 +100,63 @@ func agentTrafficHistoryReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if agent == nil {
 		return failure(401, "Unauthorized"), nil
 	}
-	report, errorResponse := readLegacyTrafficBody(c, metrics.TrafficReportMaxContentLength, "Invalid traffic history report")
+	report, errorResponse := readTrafficBody(c, metrics.TrafficReportMaxContentLength, "Invalid traffic history report")
 	if errorResponse != nil {
 		return errorResponse, nil
 	}
 	if !heartbeatFeature(agent, "traffic_history_enabled") {
-		return httpx.JSONStatus(409, jsonx.Obj("success", false, "enabled", false, "message", "Traffic history disabled")), nil
+		return httpx.JSONStatus(409, map[string]any{"success": false, "enabled": false, "message": "Traffic history disabled"}), nil
 	}
-	cleaned := metrics.CleanTrafficReport(report, nil)
+	cleaned := metrics.DecodeTrafficReport(report, nil)
 	if cleaned == nil {
 		return failure(400, "Invalid traffic history report"), nil
 	}
-	metrics.TrafficForManager(manager).AddReport(agentID, cleaned)
-	return httpx.JSON(jsonx.Obj("success", true)), nil
+	if err := metrics.TrafficForManager(manager).AddTraffic(ctx, agentID, cleaned); err != nil {
+		return nil, err
+	}
+	return httpx.JSON(map[string]any{"success": true}), nil
+}
+
+// trafficState combines settings with the optional native query result.
+type trafficState struct {
+	Enabled          bool            `json:"enabled"`
+	Since            json.RawMessage `json:"since"`
+	Supported        bool            `json:"supported"`
+	MinVersion       string          `json:"min_version"`
+	FullChain        bool            `json:"full_chain"`
+	FullChainVersion string          `json:"full_chain_version"`
+	RetentionDays    int64           `json:"retention_days"`
+	RetentionChoices []int64         `json:"retention_choices"`
+	*metrics.TrafficQuery
 }
 
 // trafficHistoryState is _traffic_history_state(agent).
-func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *model.Agent) (*jsonx.Object, error) {
+func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *model.Agent) (*trafficState, error) {
 	enabled := heartbeatFeature(agent, "traffic_history_enabled")
-	var since any
+	since := json.RawMessage("null")
 	if enabled {
-		raw, _, _ := agent.MemberJSON("traffic_history_since")
-		if len(raw) > 0 {
-			since, _ = jsonx.Parse(raw)
+		raw, present, err := agent.MemberJSON("traffic_history_since")
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			since = raw
 		}
 	}
-	system, err := manager.Repository().GetSystem(c.Context())
+	system, err := manager.Repository().System(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	retention, err := metrics.RetentionDays(system)
+	retention, err := metrics.TrafficRetention(system)
 	if err != nil {
 		return nil, err
 	}
-	choices := make([]any, len(metrics.RetentionChoices))
-	for i, choice := range metrics.RetentionChoices {
-		choices[i] = choice
-	}
-	version := agent.Version
-	return jsonx.Obj(
-		"enabled", enabled,
-		"since", since,
-		"supported", metrics.AgentSupported(version, metrics.MinTrafficAgentVersion),
-		"min_version", metrics.MinTrafficAgentVersion,
-		"full_chain", metrics.AgentSupported(version, metrics.FullChainAgentVersion),
-		"full_chain_version", metrics.FullChainAgentVersion,
-		"retention_days", retention,
-		"retention_choices", choices,
-	), nil
+	return &trafficState{Enabled: enabled, Since: since,
+		Supported:        metrics.SupportedTrafficVersion(agent.Version, metrics.MinTrafficAgentVersion),
+		MinVersion:       metrics.MinTrafficAgentVersion,
+		FullChain:        metrics.SupportedTrafficVersion(agent.Version, metrics.FullChainAgentVersion),
+		FullChainVersion: metrics.FullChainAgentVersion,
+		RetentionDays:    retention, RetentionChoices: metrics.RetentionChoices}, nil
 }
 
 // mihomoAgentOrError is _mihomo_agent_or_error(agent_id).
@@ -200,26 +209,27 @@ func getAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := metrics.TrafficForManager(manager).Query(c.Param("agent_id"), rangeKey, by, nil)
+	result, err := metrics.TrafficForManager(manager).QueryTraffic(c.Context(), c.Param("agent_id"), rangeKey, by, nil)
 	if err != nil {
 		return nil, err
 	}
-	data.Update(result)
-	return httpx.JSON(jsonx.Obj("success", true, "data", data)), nil
+	data.TrafficQuery = result
+	return httpx.JSON(map[string]any{"success": true, "data": data}), nil
 }
 
 // setAgentTrafficHistory is set_agent_traffic_history: switch the traffic
 // history; switching off with clear: true also deletes what was recorded.
 func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
-	payload, _ := c.JSONSilent().(*jsonx.Object)
-	if payload == nil {
+	raw, _ := io.ReadAll(c.Stream())
+	payload, decodeErr := jsondecode.Select(raw, "enabled", "clear")
+	if !c.IsJSON() || decodeErr != nil {
 		return failure(400, "enabled 必须是布尔值"), nil
 	}
-	enabled, ok := payload.Value("enabled").(bool)
-	clear, clearOK := payload.GetOr("clear", false).(bool)
-	if !ok || !clearOK {
+	enabledRaw, clearRaw := bytes.TrimSpace(payload["enabled"]), bytes.TrimSpace(payload["clear"])
+	if !bytes.Equal(enabledRaw, []byte("true")) && !bytes.Equal(enabledRaw, []byte("false")) || len(clearRaw) > 0 && !bytes.Equal(clearRaw, []byte("true")) && !bytes.Equal(clearRaw, []byte("false")) {
 		return failure(400, "enabled 必须是布尔值"), nil
 	}
+	enabled, clear := bytes.Equal(enabledRaw, []byte("true")), bytes.Equal(clearRaw, []byte("true"))
 	manager, err := agents.Get(c.Context())
 	if err != nil {
 		return nil, err
@@ -246,7 +256,7 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", state)), nil
+	return httpx.JSON(map[string]any{"success": true, "data": state}), nil
 }
 
 // setTrafficHistoryError is the except chain of set_agent_traffic_history:
@@ -282,21 +292,23 @@ func clearAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := metrics.TrafficForManager(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true)), nil
+	return httpx.JSON(map[string]any{"success": true}), nil
 }
 
 // setTrafficHistoryRetention is set_traffic_history_retention: the
 // retention shared by every Agent.
 func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
-	var days any
-	if payload, ok := c.JSONSilent().(*jsonx.Object); ok && payload != nil {
-		days = payload.Value("days")
+	var days int64
+	raw, _ := io.ReadAll(c.Stream())
+	payload, decodeErr := jsondecode.Select(raw, "days")
+	if !c.IsJSON() || decodeErr != nil || jsondecode.Unmarshal(payload["days"], &days) != nil {
+		days = 0
 	}
 	manager, err := agents.Get(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	stored, err := metrics.SetRetentionDays(c.Context(), manager, days)
+	stored, err := metrics.SetTrafficRetention(c.Context(), manager, days)
 	if err != nil {
 		var valueError *metrics.ValueError
 		if errors.As(err, &valueError) {
@@ -309,7 +321,7 @@ func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj("retention_days", stored))), nil
+	return httpx.JSON(map[string]any{"success": true, "data": map[string]any{"retention_days": stored}}), nil
 }
 
 // getAgentTrafficStats is get_agent_traffic_stats (period, default total).
@@ -320,11 +332,11 @@ func getAgentTrafficStats(c *httpx.Ctx) (*httpx.Response, error) {
 		return response, nil
 	}
 	period := c.ArgDefault("period", "total")
-	stats, err := metrics.ForManager(manager).GetTrafficStats(c.Param("agent_id"), period)
+	stats, err := metrics.ForManager(manager).TrafficStatistics(c.Param("agent_id"), period)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj("agent_id", c.Param("agent_id"), "stats", stats))), nil
+	return httpx.JSON(map[string]any{"success": true, "data": map[string]any{"agent_id": c.Param("agent_id"), "stats": stats}}), nil
 }
 
 // getAgentTrafficTrend is get_agent_traffic_trend (hours default 24,
@@ -337,17 +349,17 @@ func getAgentTrafficTrend(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	hours := argBigInt(c, "hours", 24)
 	interval := argBigInt(c, "interval", 5)
-	trend, err := metrics.ForManager(manager).GetTrafficTrend(c.Param("agent_id"), hours, interval)
+	trend, err := metrics.ForManager(manager).TrafficTrend(c.Param("agent_id"), hours, interval)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj(
-		"agent_id", c.Param("agent_id"), "trend", trend, "hours", jsonx.BigInt(hours),
-		"interval_minutes", jsonx.BigInt(interval), "data_points", len(trend)))), nil
+	return httpx.JSON(map[string]any{"success": true, "data": map[string]any{
+		"agent_id": c.Param("agent_id"), "trend": trend, "hours": hours,
+		"interval_minutes": interval, "data_points": len(trend)}}), nil
 }
 
-// readLegacyTrafficBody is retained for the pending A05 native engine task.
-func readLegacyTrafficBody(c *httpx.Ctx, maxLength int64, invalidMessage string) (any, *httpx.Response) {
+// readTrafficBody bounds the body and preserves exact Agent JSON for the owner decoder.
+func readTrafficBody(c *httpx.Ctx, maxLength int64, invalidMessage string) (json.RawMessage, *httpx.Response) {
 	if length, ok := c.ContentLength(); ok && length > maxLength {
 		return nil, failure(413, "Request body too large")
 	}
@@ -361,16 +373,8 @@ func readLegacyTrafficBody(c *httpx.Ctx, maxLength int64, invalidMessage string)
 	if !c.IsJSON() {
 		return nil, failure(400, invalidMessage)
 	}
-	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	value, err := c.JSONForceError()
-	if err != nil {
-		// json.loads raises a plain ValueError (not JSONDecodeError) for an
-		// int literal beyond sys.get_int_max_str_digits(): not caught here,
-		// the route answers it as a 500.
-		if strings.HasPrefix(err.Error(), "Exceeds the limit (") {
-			return nil, failure(500, err.Error())
-		}
+	if !json.Valid(raw) {
 		return nil, failure(400, invalidMessage)
 	}
-	return value, nil
+	return raw, nil
 }

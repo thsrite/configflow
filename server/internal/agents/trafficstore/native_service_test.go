@@ -175,3 +175,15 @@ func TestNativeReadKeepsPartialLegacyBuckets(t *testing.T) {
 		t.Fatal("missing optional counters erased valid observations", day)
 	}
 }
+
+func TestNativeReportRepeatedMembersKeepLastValue(t *testing.T) {
+	raw := json.RawMessage(`{"schema":9,"schema":1,"status":"running","items":[{"host":"a.example.com","port":443,"port":80,"outlet":"direct","policy":"p","rule":"Match","fail_kinds":{"timeout":9,"timeout":2}}]}`)
+	report, err := DecodeReport(raw)
+	if err != nil || report == nil || len(report.Items) != 1 || report.Items[0].Port != 80 || report.Items[0].FailKinds["timeout"].Int64() != 2 {
+		t.Fatalf("report: %+v, %v", report, err)
+	}
+	store := NewNative(t.TempDir())
+	if _, err := store.Add(context.Background(), "a", report, nil); err != nil {
+		t.Fatal(err)
+	}
+}
