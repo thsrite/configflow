@@ -1,9 +1,9 @@
 module configflow
 
-go 1.26.0
+go 1.27.0
 
-// Minimum release toolchain: GO-2026-6859 (net/http MaxBytesReader crash, used by the Edge) is fixed in 1.26.11.
-toolchain go1.26.11
+// Release toolchain pinned for the server and its Docker image.
+toolchain go1.27.4
 
 require (
 	github.com/dlclark/regexp2 v1.12.0
@@ -20,7 +20,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/text v0.43.0
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
