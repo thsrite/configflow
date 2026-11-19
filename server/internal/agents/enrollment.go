@@ -288,16 +288,18 @@ func setRegistrationMembers(a, input *model.Agent, id, token, profile string, re
 	if err := a.SetJSON("updated_at", updated); err != nil {
 		return err
 	}
-	// Rebuild the public registry order while preserving every original managed
-	// member and extension. No nested history or R5 token is reconstructed from
-	// its typed zero value.
+	// Rebuild the record from register_agent's fixed member list. Members
+	// outside it (Docker HA enrollment marker, runtime metrics, unknown
+	// extensions) are dropped as in Python: a retained enrollment marker would
+	// let that installation credential replay this Agent's token after the
+	// device itself registered. No nested history or R5 token is reconstructed
+	// from its typed zero value.
 	for _, field := range []struct{ name, fallback string }{
 		{"deployments", `{}`}, {"latest_deployment", `null`}, {"latest_upgrade", `null`}, {"domain_discovery_enabled", `false`},
 		{"traffic_history_enabled", ``}, {"traffic_history_since", ``}, {"config_revision", ``}, {"pushed_at", ``}, {"applied_content", ``},
 		{"dns_follow", ``}, {"dns_follow_state", ``}, {"dns_follow_job", ``}, {"rule_sync", ``},
 		{"oxidns_ha", ``}, {"oxidns_ha_state", ``}, {"oxidns_ha_publication", ``}, {"ipv6_verification_settings", ``}, {"ipv6_verifications", ``},
-		{"gateway_installation_id", ``}, {"docker_ha_installation_id", ``}, {"node_test_dns_endpoints", ``},
-		{"service_status", ``}, {"system_metrics", ``}, {"cpu", ``}, {"memory", ``}, {"disk", ``}, {"network", ``},
+		{"gateway_installation_id", ``},
 	} {
 		raw, present, err := original.MemberJSON(field.name)
 		if err != nil {
@@ -306,12 +308,21 @@ func setRegistrationMembers(a, input *model.Agent, id, token, profile string, re
 		if !present {
 			raw = json.RawMessage(field.fallback)
 		}
+		if field.name == "gateway_installation_id" && len(raw) > 0 {
+			// Python keeps the trusted installation marker only when truthy.
+			keep, err := model.JSONHasContent(raw)
+			if err != nil {
+				return err
+			}
+			if !keep {
+				continue
+			}
+		}
 		if len(raw) > 0 {
 			if err := a.SetJSON(field.name, raw); err != nil {
 				return err
 			}
 		}
 	}
-	a.Fields = original.Fields
 	return nil
 }

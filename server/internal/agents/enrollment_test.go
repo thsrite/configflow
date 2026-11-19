@@ -99,8 +99,13 @@ func TestTypedEnrollmentKeepsUnchangedStoredTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Python's register_agent drops unknown members; see
+	// TestReviewN810ReregistrationKeepsOnlyPythonMembers.
+	if _, present, err := a.MemberJSON("future"); err != nil || present {
+		t.Fatal("re-registration kept an unknown member", err)
+	}
 	for _, tt := range []struct{ key, expected string }{
-		{"future", `{"number":2.00}`}, {"config_version", `7`}, {"traffic_history_enabled", `"false"`}, {"deployments", `{"old":{"status":"succeeded","future":3e0}}`},
+		{"config_version", `7`}, {"traffic_history_enabled", `"false"`}, {"deployments", `{"old":{"status":"succeeded","future":3e0}}`},
 	} {
 		raw, present, err := a.MemberJSON(tt.key)
 		if err != nil || !present || !bytes.Equal(raw, []byte(tt.expected)) {
