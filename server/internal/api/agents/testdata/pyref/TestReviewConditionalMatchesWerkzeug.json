@@ -591,7 +591,7 @@
       "backend/utils/webdav_backup.py": "6e2b1af0f771ce62fb0e8dd30cdeb78d423e3af4a4c19ceee38ea726d4ac19da",
       "backend/utils/website_identity.py": "076e83356d86317e7c023c821dd634e1ceec4147ced766f7599779287e2d69bf",
       "backend/version.py": "53955c3452330caed40735495038819a872584ef64ddd655d5a930ca46baeca7",
-      "server/go.mod": "fd68624524cc6ca0b8e77b308e9885f121645c107a2ac6619deeeb4609a4feed",
+      "server/go.mod": "d3868a67f6395711756587d1a8124eb741db35bd07012216b65e830fab5412c1",
       "server/go.sum": "bdb21d60d4cbfe73226d5b181e849f26b9bd1f63b493c961e86fb7fd65c6cca3",
       "server/internal/api/agents/a10_review_internal_test.go": "30fa87cb7649b81a612364b242d7af7155e36247db8e432bc67299c6baf64989",
       "server/internal/api/agents/testdata/review_a10_conditional.py": "64ee016fe807dc069cd3a37e45184a0a46f5b537934d2a0ed95f7b016a041b90",

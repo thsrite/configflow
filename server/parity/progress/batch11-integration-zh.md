@@ -56,3 +56,13 @@ routers 的 withSyncEnvironment 和 selectedSyncSources 改用 Select，再解�
 - 真实负控仅临时在 Select 入口 bytes.Clone 整个 root，未改断言；0/1MiB 888/1,058,491 B、9/10 allocs，明确因 Select copied unselected payload 失败；trap 恢复后 targeted race 的 Select/Review 全通过 3.400s，相关 vet 静默。
 
 本修复按要求单独提交，交协调者安排 be408111 快速独立复核。其间继续补指纹与重新预检，复核认可后才进 compare。
+
+## Select 独立复核与最终参考
+
+协调者确认 be408111 已独立复核 `487095608`，认可、无阻断。唯一记录：逐字段解码可能改变内部 UnmarshalTypeError 的字段路径/顺序；类别和拒绝行为不变，协调者接受。此结论已放行复核条件，仍需最终预检干净后再启动 compare。
+
+补齐全部18份 pyref（含两个嵌套 .json）真实 record/check，18,491条完整 version/entries/input/venv 全不变，仅来源元数据变化。
+record/check 末行：MosDNS59.696s/54.131s、OxiDNS49.390s/47.198s、routersplit5.970s/5.381s、api/agents0.461s/0.403s、installer3.258s/3.362s，全部退出0。
+Select 最终产品树再跑 govulncheck ./...：退出0，No vulnerabilities found.，日志 `~/.cache/batch11-govulncheck-final.log`。
+
+再次完整预检中；通过后启动 compare 时告知协调者准确 tip，从启动到 compare 结束冻结 batch-11 提交，方便 .64 并行 core。
