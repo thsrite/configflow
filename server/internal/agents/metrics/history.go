@@ -45,6 +45,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/taskstatus"
 )
@@ -679,18 +680,41 @@ func (h *History) PendingCount() int {
 // DeleteAgentHistory is delete_agent_history(agent_id): drop the Agent's
 // history from memory and disk; false when a file could not be removed.
 func (h *History) DeleteAgentHistory(agentID string) bool {
+	ok, _ := h.DeleteAgentHistoryContext(context.Background(), agentID)
+	return ok
+}
+
+// DeleteAgentHistoryContext checks the work lifetime under the history flush lock.
+func (h *History) DeleteAgentHistoryContext(ctx context.Context, agentID string) (bool, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	h.flushMu.Lock()
 	defer h.flushMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	h.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		h.mu.Unlock()
+		return false, err
+	}
 	delete(h.points, agentID)
 	delete(h.pending, agentID)
 	delete(h.fileLines, agentID)
 	delete(h.legacy, agentID)
 	delete(h.rewrite, agentID)
 	h.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	first := h.remove(h.agentFile(agentID), true)
+	if err := ctx.Err(); err != nil {
+		return first != failed, err
+	}
 	second := h.remove(h.legacyFile(agentID), true)
-	return first != failed && second != failed
+	return first != failed && second != failed, nil
 }
 
 // RetainAgents is retain_agents(agent_ids): delete the history of every

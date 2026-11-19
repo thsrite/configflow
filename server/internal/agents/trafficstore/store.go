@@ -30,6 +30,7 @@ import (
 
 	"configflow/internal/jsonstore"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
@@ -884,13 +885,31 @@ func (s *Store) Load(agentID string, at *time.Time) *jsonx.Object {
 // (a missing file is fine; other failures are returned as Python's OSError
 // text).
 func (s *Store) Delete(agentID string) error {
+	err := s.DeleteContext(context.Background(), agentID)
+	if err != nil {
+		var errno syscall.Errno
+		if errors.As(err, &errno) {
+			return &OSError{Errno: errno, Path: s.Path(agentID)}
+		}
+	}
+	return err
+}
+
+// DeleteContext removes one file only while its recorded work lifetime is live.
+func (s *Store) DeleteContext(ctx context.Context, agentID string) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	mu.Lock()
 	defer mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	cachePop(s.absPath(agentID))
 	path := s.Path(agentID)
-	// os.remove is unlink: never removes a directory.
 	if err := syscall.Unlink(path); err != nil && !errors.Is(err, syscall.ENOENT) {
-		return &OSError{Errno: err.(syscall.Errno), Path: path}
+		return &os.PathError{Op: "remove", Path: path, Err: err}
 	}
 	return nil
 }

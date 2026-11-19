@@ -70,7 +70,18 @@ func addMetricsJSON(ctx context.Context, m *agents.Manager, agentID string, samp
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	dataDir := m.Repository().DataDir()
+	history, err := historyContext(ctx, m.Repository().DataDir())
+	if err != nil {
+		return err
+	}
+	_, err = history.AddSample(ctx, agentID, sample)
+	return err
+}
+func historyContext(ctx context.Context, dataDir string) (*History, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	historiesMu.Lock()
 	history := histories[dataDir]
 	if history == nil {
@@ -78,21 +89,30 @@ func addMetricsJSON(ctx context.Context, m *agents.Manager, agentID string, samp
 		history, err = newHistoryContext(ctx, filepath.Join(dataDir, "metrics"), MaxPointsPerAgent)
 		if err != nil {
 			historiesMu.Unlock()
-			return err
+			return nil, err
 		}
 		if err := ctx.Err(); err != nil {
 			historiesMu.Unlock()
-			return err
+			return nil, err
 		}
 		histories[dataDir] = history
 	}
 	historiesMu.Unlock()
-	_, err := history.AddSample(ctx, agentID, sample)
-	return err
+	return history, nil
 }
 
 func deleteHistory(m *agents.Manager, agentID string) {
 	ForManager(m).DeleteAgentHistory(agentID)
+}
+
+func deleteHistoryContext(ctx context.Context, m *agents.Manager, id string) error {
+	ctx = lifecycle.Detach(ctx)
+	history, err := historyContext(ctx, m.Repository().DataDir())
+	if err != nil {
+		return err
+	}
+	_, err = history.DeleteAgentHistoryContext(ctx, id)
+	return err
 }
 
 // Wire is A04's entry in internal/server wirePackages: the registry hooks
@@ -100,7 +120,7 @@ func deleteHistory(m *agents.Manager, agentID string) {
 // the task-list row with "run now" and the interval edit, the flush loop,
 // and the two phased saves at shutdown.
 func Wire() {
-	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, AddMetricsJSON: addMetricsJSON, DeleteMetricsHistory: deleteHistory})
+	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, AddMetricsJSON: addMetricsJSON, DeleteMetricsHistory: deleteHistory, DeleteMetricsHistoryContext: deleteHistoryContext})
 	RegisterStartup()
 	tasks.SetRows(tasks.SlotMetrics, Rows)
 	tasks.SetRunner(TaskKey, runNow)

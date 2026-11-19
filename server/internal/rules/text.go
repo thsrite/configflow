@@ -165,3 +165,13 @@ func matchedRunes(a, b []rune) int {
 	}
 	return size + matchedRunes(a[:ai], b[:bi]) + matchedRunes(a[ai+size:], b[bi+size:])
 }
+
+// CanonicalIPAddress validates an IP literal and returns its netip form.
+// A scoped IPv6 literal carries one nonempty zone; networks are not addresses.
+func CanonicalIPAddress(text string) (string, bool) {
+	address, ok := parseAddr(text)
+	if !ok {
+		return "", false
+	}
+	return address.String(), true
+}

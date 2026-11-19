@@ -46,6 +46,7 @@ func TestA05ReferenceTargetKeys(t *testing.T) {
 func TestA05ReferenceLowerEveryCodePoint(t *testing.T) {
 	t.Parallel()
 	ref := loadA05Reference(t)
+	native := loadNativeCaseReference(t)
 	want := map[rune]string{}
 	for key, value := range ref.GetObject("lower_map").All() {
 		cp, err := strconv.ParseInt(key, 16, 32)
@@ -62,8 +63,8 @@ func TestA05ReferenceLowerEveryCodePoint(t *testing.T) {
 		if !ok {
 			expected = string(cp)
 		}
-		if got := pyLower(string(cp)); got != expected {
-			t.Errorf("U+%04X.lower() = %q, Python %q", cp, got, expected)
+		if err := native.checkLower(cp, pyLower(string(cp)), expected); err != nil {
+			t.Error(err)
 		}
 	}
 }
@@ -79,6 +80,7 @@ func sameJSON(a, b any) bool {
 func TestA05ReferenceFinalSigmaContext(t *testing.T) {
 	t.Parallel()
 	ref := loadA05Reference(t).GetObject("sigma_context")
+	native := loadNativeCaseReference(t)
 	inRanges := func(name string) map[rune]bool {
 		out := map[rune]bool{}
 		for _, entry := range ref.GetList(name) {
@@ -98,12 +100,9 @@ func TestA05ReferenceFinalSigmaContext(t *testing.T) {
 		}
 		c := string(cp)
 		after := []rune(pyLower("A\u03a3" + c))
-		if got := after[1] == 0x3c3; got != casedNotIgnorable[cp] {
-			t.Errorf("('AΣ' + U+%04X).lower(): σ = %v, Python %v", cp, got, casedNotIgnorable[cp])
-		}
 		before := []rune(pyLower("A" + c + "\u03a3"))
-		if got := before[len(before)-1] == 0x3c2; got != ignorableOrCased[cp] {
-			t.Errorf("('A' + U+%04X + 'Σ').lower(): ς = %v, Python %v", cp, got, ignorableOrCased[cp])
+		if err := native.checkSigma(cp, after[1] == 0x3c3, before[len(before)-1] == 0x3c2, casedNotIgnorable[cp], ignorableOrCased[cp]); err != nil {
+			t.Error(err)
 		}
 	}
 }
