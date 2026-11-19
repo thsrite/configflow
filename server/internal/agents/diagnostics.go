@@ -5,7 +5,6 @@ package agents
 
 import (
 	"encoding/json"
-	"strings"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/jsonx"
@@ -79,34 +78,12 @@ func DNSReportFields(payload *jsonx.Object, secrets []any) *jsonx.Object {
 // ResponseFailure is response_failure(response, fallback=..., secrets=...):
 // keeps a legacy client's explanation even when its HTTP status is non-200.
 func ResponseFailure(response *Response, fallback string, secrets []any) *jsonx.Object {
-	payload, err := response.JSON()
-	result := jsonx.Obj("success", false)
-	object, isObject := payload.(*jsonx.Object)
-	if err == nil && isObject {
-		for _, key := range []string{"message", "error", "error_details", "rollback_error", "rollback_error_details", "failed_stage"} {
-			if text, ok := object.Value(key).(string); ok {
-				result.Set(key, FailureText(text, secrets, 0))
-			}
+	result, err := ResponseFailureModel(response, fallback, legacySecrets(secrets))
+	if err == nil {
+		if object, encodeErr := deploymentObject(result); encodeErr == nil {
+			return object
 		}
 	}
-	if !jsonx.Truthy(result.Value("message")) {
-		message := result.Value("error")
-		if !jsonx.Truthy(message) {
-			message = fallback
-		}
-		result.Set("message", message)
-	}
-	// Plain text is useful for older clients; HTML proxy error pages are not diagnostics.
-	if !(err == nil && isObject) {
-		contentType, _, _ := strings.Cut(response.contentType(), ";")
-		if contentType == "text/plain" {
-			if detail := FailureText(response.Text(), secrets, 0); detail != "" {
-				result.Set("error_details", detail)
-			}
-		}
-	}
-	if response.StatusCode >= 400 {
-		result.Set("http_status", jsonx.Int(response.StatusCode))
-	}
-	return result
+	// The old boundary cannot return an encoding error; keep its fallback bounded.
+	return jsonx.Obj("success", false, "message", redact.DiagnosticText(fallback, legacySecrets(secrets), 0))
 }

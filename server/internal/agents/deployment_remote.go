@@ -65,15 +65,21 @@ func (m *Manager) DeploymentRequestModel(ctx context.Context, a *model.Agent, me
 			return nil, err
 		}
 		var result model.Deployment
-		var object map[string]json.RawMessage
+		var object model.Fields
 		data := response.jsonData()
 		if !json.Valid(data) {
+			if response.StatusCode == 200 {
+				return nil, ErrInvalidAgentReply
+			}
 			failure, e := deploymentFailure("Agent returned HTTP "+strconv.Itoa(response.StatusCode), 0)
 			if e != nil {
 				return nil, e
 			}
 			result = *failure
-		} else if json.Unmarshal(data, &object) != nil || object == nil || json.Unmarshal(data, &result) != nil {
+		} else if json.Unmarshal(data, &object) != nil || json.Unmarshal(data, &result) != nil {
+			if response.StatusCode == 200 {
+				return nil, ErrInvalidAgentReply
+			}
 			failure, e := deploymentFailure("Invalid Agent response", 0)
 			if e != nil {
 				return nil, e

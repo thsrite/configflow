@@ -30,7 +30,7 @@ type RegistrationInput struct {
 // unknown/case-alias keys as protocol fields. Profile bindings require text.
 func DecodeRegistrationInput(data json.RawMessage) (RegistrationInput, error) {
 	input := RegistrationInput{claim: decodeRegistrationClaim(data)}
-	var members map[string]json.RawMessage
+	var members model.Fields
 	if err := json.Unmarshal(data, &members); err != nil {
 		return input, err
 	}
@@ -38,7 +38,7 @@ func DecodeRegistrationInput(data json.RawMessage) (RegistrationInput, error) {
 		{"name", `"Unnamed Agent"`}, {"host", `""`}, {"port", `8080`},
 		{"service_type", `"mihomo"`}, {"profile_id", `null`}, {"deployment_method", ``}, {"version", `"1.0.0"`},
 	} {
-		raw, present := members[field.name]
+		raw, present := members.Get(field.name)
 		if !present {
 			raw = json.RawMessage(field.fallback)
 		}

@@ -1,10 +1,11 @@
 # N8-10 agents core-2
 
-状态：部分完成（进行中）。分支 go-n8-10-core-2，基于已交回的 core-1 tip
-7a3f1da4ebd606389c0142cf6f9134bc970fe0b5。core-1 报告见 n8-10-core.md；
-其 HR 复核结论 verified、无 high；复核报告见 review-n8-10-core.md。
-已 cherry-pick ec7c71865 / e871b2fe3 为 c2bd2fd6b / 3dd984086，保留原始
-stored identity string 证明和 heartbeat version/config_version 原始 JSON 比较修复。
+状态：部分完成（进行中）。分支 go-n8-10-core-2 已 rebase 到 go@12150a402。
+原始拆分基点为 core-1 tip 7a3f1da4ebd606389c0142cf6f9134bc970fe0b5；core-1 的 HR
+verified、无 high，报告见 n8-10-core.md / review-n8-10-core.md。ec7c71865 / e871b2fe3
+已由 batch-10 纳入基底，rebase 未重复应用；3380a1c28 的窄 RawMessage runtime 与
+12150a402 的精确心跳键名修复完整保留。下文较早的提交 ID 是 rebase 前历史，现行提交链
+以本分支 git log 为准。
 
 ## 当前顺序
 
@@ -397,3 +398,64 @@ literal backslash-u、空 containers、null、nonfinite 拒绝均有固定 byte 
 
 已收到协调者 batch-10 合入 go@12150a402 通知。下一步先 rebase，保留窄 RawMessage
 runtime 及精确 heartbeat keys，再审核其他外部 JSON decoder 的大小写／重复键边界。
+
+## batch-10 rebase、精确 JSON 入口审计、failure DTO 和共享路径
+
+- 已叠在 go@12150a402，heartbeatEntry 继续仅保存七个 owned RawMessage。
+  registry 热读接 ViewAgents，未恢复完整 model.Agent runtime。MemberJSON 的 scalar
+  native encoder 和 sameStoredJSON 快速返回保留；两个 baseline HR commit 已在 go 中，
+  rebase 跳过其重复 patch。合并时补回旧 core-2 manager patch 覆盖掉的 fmt import。
+- 注册 claim 不再使用“精确筛选后解匿名结构体”；直接 Fields.Get 已知键，再用标准库
+  解到 string / shared model.Int 等标量。注册／编辑／deployment patch 外部 DTO 统一
+  model.Fields（精确 key、拒绝真实重复键，包括 escaped 同名和嵌套重复）。Session proof
+  通过 shared MemberJSON 读取原始文本；未改变 quoted port 仅通过 shape helper、实际 admission
+  仍拒绝的既有独立期望。O9-H2 hash-only / 403 / 原子消费不变。
+- 其余 core 新写的 json.Unmarshal 到 model.Agent/Deployment/DNSCheck 等都调用共享
+  DecodeRecord（精确 key、重复检测），不是 Go tag 的默认 struct decoder。内部 owned copy
+  和 native redactor 回包转 DTO 亦保持该 codec。测试 oracle struct、JSON encoding、标量／
+  RawMessage／Fields 不是 Agent 外部 tag decoder。现存 dnsha 的 server-owned payload 文件
+  decoder 和其他遗留 adapter 仍纳入下一块审计；本报告不据此宣称整个 core 已 S 完成。
+- 成功的部署 HTTP 回包如果不是有效唯一-key object（含 duplicate status、嵌套 duplicate、
+  非 JSON、null），返回 INVALID_RESPONSE 中文 502，不把坏回包降为 pending。原状态
+  list/object 的两个独立用例期望未改；扩展到六条真实 loopback HTTP 回归，都比较实际
+  method/URI/header/空 body 原字节、脱敏和 DB fingerprint 不变。HTTP error response 的
+  既有不可用／pending 处理保留。behaviour-changes 同步。
+- ResponseFailureModel 使用严格字段与 native diagnostics；旧 ResponseFailure 仅 codec。
+  frozen Responses / legacy reason / text-vs-HTML 全部原期望通过。新增 case alias、数值诊断、
+  duplicate message 和 token 原文 fixture，非 string 不通过 R5 投影制造诊断。
+- 删除 runtime 私有 posixpath walker，复用 repo.ResolveDataDir 作为同一物理目录的 key。
+  冻结 Pathlib 语料期望不改；测试旧 helper 名仅在 _test.go 做别名。Repository 不支持的
+  symlink loop 在直接诊断 RuntimeFor 调用时只取稳定 absolute fallback；不复制另一套路径算法。
+
+### rebase 后证据
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/model ./internal/repo; GOMAXPROCS=4 go test -p 4 -count=1 -timeout=15m -run "Batch10.*Alloc|ReviewB10" -v ./internal/agents'
+
+Exit 0：agents 6.338s。原 threshold 不改：public 6,801/6,773 B/op，154 allocs；native
+7,196/7,176 B/op，161 allocs（empty / 2MiB）；所有 B10 exact keys 与 byte projection 通过。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "NativeProtocol|RegistrationClaim|RegistrationSession|RegistrationAuthorization|RegistrationProof|RegistrationToken|TypedRegistration|RegistrationProfile|N810Registration|NativeDeployment|TypedDeployment" ./internal/agents ./internal/api/agents'
+
+Exit 0：agents 34.993s、api/agents 7.112s；targeted go vet 通过。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "NativeProtocol|N810MalformedDeployment|TypedDeploymentBusyRetry|PostRetriesOnlyExactBusy|BusyRetriesBounded" ./internal/agents ./internal/api/agents'
+
+Exit 0：agents 9.561s、api/agents 6.044s；targeted go vet 通过。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzTypedDeploymentPatchOwnership$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0：630,531 executions，PASS 60.110s。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzRegistrationClaimExactFields$" -fuzztime=60s -parallel=2 ./internal/agents && GOMAXPROCS=4 go test -p 4 -count=1 -timeout=15m -run "^TestBatch10HeartbeatAllocationCeilings$" -v ./internal/agents'
+
+Exit 0：251,574 executions，PASS 61.019s；ceilings PASS 5.660s（public 6,801/6,772 B/op，
+154 allocs；native 7,194/7,176 B/op，161 allocs）。一次前置 fuzz 同步撞上 helper 移动窗口，
+少同步测试别名而 build failed；补齐完整快照后按同命令重跑，不是删除或放松测试。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ReferencePathResolve|EveryManagerForADataDirectory|DanglingRuntime" ./internal/agents'
+
+Exit 0：agents 3.863s。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ReferenceResponses|TypedResponseFailure|LegacyErrors|PlainTextLegacy|ResponseFailure" ./internal/agents'
+
+Exit 0：agents 13.535s，targeted go vet 与上述修改的远端 gofmt 通过。

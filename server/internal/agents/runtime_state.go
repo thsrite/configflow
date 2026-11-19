@@ -254,87 +254,23 @@ func (s *RuntimeState) Delete(agentID string) {
 	s.deleted[agentID] = s.deletions
 }
 
-func pyResolve(path string) string {
-	resolved, _ := joinRealPath("", path, map[string]*string{})
-	if !filepath.IsAbs(resolved) {
-		if wd, err := os.Getwd(); err == nil {
-			resolved = filepath.Join(wd, resolved)
-		}
+// runtimeDirectory uses the repository's shared physical-directory identity.
+// Repositories refuse symlink loops; a direct diagnostic caller that supplies
+// an unusable path still receives a stable absolute fallback key.
+func runtimeDirectory(path string) string {
+	if resolved, err := repo.ResolveDataDir(path); err == nil {
+		return resolved
 	}
-	return filepath.Clean(resolved)
-}
-
-// joinRealPath is posixpath._joinrealpath(path, rest, strict=False, seen).
-func joinRealPath(path, rest string, seen map[string]*string) (string, bool) {
-	join := func(a, b string) string {
-		if strings.HasPrefix(b, "/") || a == "" {
-			return b
-		}
-		if strings.HasSuffix(a, "/") {
-			return a + b
-		}
-		return a + "/" + b
+	if absolute, err := filepath.Abs(path); err == nil {
+		return absolute
 	}
-	if strings.HasPrefix(rest, "/") {
-		rest, path = rest[1:], "/"
-	}
-	for rest != "" {
-		var name string
-		name, rest, _ = strings.Cut(rest, "/")
-		if name == "" || name == "." {
-			continue
-		}
-		if name == ".." {
-			if path != "" {
-				// path, name = posixpath.split(path)
-				i := strings.LastIndex(path, "/") + 1
-				head, tail := path[:i], path[i:]
-				if head != "" && strings.Trim(head, "/") != "" {
-					head = strings.TrimRight(head, "/")
-				}
-				path = head
-				if tail == ".." {
-					path = join(join(path, ".."), "..")
-				}
-			} else {
-				path = ".."
-			}
-			continue
-		}
-		newPath := join(path, name)
-		info, err := os.Lstat(newPath)
-		if err != nil || info.Mode()&os.ModeSymlink == 0 {
-			path = newPath
-			continue
-		}
-		if known, ok := seen[newPath]; ok {
-			if known != nil {
-				path = *known
-				continue
-			}
-			return join(newPath, rest), false
-		}
-		seen[newPath] = nil
-		target, err := os.Readlink(newPath)
-		if err != nil {
-			path = newPath
-			continue
-		}
-		var ok bool
-		path, ok = joinRealPath(path, target, seen)
-		if !ok {
-			return join(path, rest), false
-		}
-		resolved := path
-		seen[newPath] = &resolved
-	}
-	return path, true
+	return filepath.Clean(path)
 }
 
 // RuntimeFor is for_data_dir(data_dir): the process-wide state of a data
 // directory.
 func RuntimeFor(dataDir string) *RuntimeState {
-	key := pyResolve(dataDir)
+	key := runtimeDirectory(dataDir)
 	statesMu.Lock()
 	defer statesMu.Unlock()
 	state, ok := states[key]
@@ -643,7 +579,7 @@ func ImportLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 		return err
 	}
 	path := filepath.Join(repository.DataDir(), LegacyDatabase)
-	key := pyResolve(path)
+	key := runtimeDirectory(path)
 	statesMu.Lock()
 	if legacyChecked[key] {
 		statesMu.Unlock()

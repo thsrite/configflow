@@ -1,60 +1,45 @@
 package agents
 
 import (
-	"configflow/internal/model"
 	"encoding/json"
+
+	"configflow/internal/model"
 )
 
 func decodeRegistrationClaim(raw json.RawMessage) registrationClaim {
 	claim := registrationClaim{ServiceType: "mihomo", Port: 8080}
-	var wire struct {
-		Name             *string    `json:"name"`
-		Host             *string    `json:"host"`
-		ServiceType      *string    `json:"service_type"`
-		DeploymentMethod *string    `json:"deployment_method"`
-		ProfileID        *string    `json:"profile_id"`
-		Port             *model.Int `json:"port"`
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil || members == nil {
+	var members model.Fields
+	if json.Unmarshal(raw, &members) != nil {
 		claim.invalid = true
 		return claim
 	}
-	// encoding/json matches struct tags case-insensitively. Project exact keys
-	// first, retaining the registry protocol's case-sensitive field names.
-	selected := make(map[string]json.RawMessage)
-	for _, key := range []string{"name", "host", "service_type", "deployment_method", "profile_id", "port"} {
-		if value, present := members[key]; present {
-			selected[key] = value
-		}
-	}
-	payload, err := json.Marshal(selected)
-	if err != nil || json.Unmarshal(payload, &wire) != nil {
-		claim.invalid = true
-	}
 	for _, field := range []struct {
-		key         string
-		value       *string
-		destination *string
+		name   string
+		target *string
 	}{
-		{"name", wire.Name, &claim.Name}, {"host", wire.Host, &claim.Host}, {"service_type", wire.ServiceType, &claim.ServiceType},
-		{"deployment_method", wire.DeploymentMethod, &claim.DeploymentMethod}, {"profile_id", wire.ProfileID, &claim.ProfileID},
+		{"name", &claim.Name}, {"host", &claim.Host}, {"service_type", &claim.ServiceType},
+		{"deployment_method", &claim.DeploymentMethod}, {"profile_id", &claim.ProfileID},
 	} {
-		if field.value != nil {
-			*field.destination = *field.value
-		} else if raw, present := members[field.key]; present {
-			if field.key != "profile_id" || !storedAbsent(raw, true, nil) {
+		value, present := members.Get(field.name)
+		if !present {
+			continue
+		}
+		var text *string
+		if json.Unmarshal(value, &text) != nil || text == nil {
+			if field.name != "profile_id" || !storedAbsent(value, present, nil) {
 				claim.invalid = true
 			}
+			continue
 		}
+		*field.target = *text
 	}
-	if wire.Port != nil {
-		claim.Port = *wire.Port
-	}
-	if raw, present := members["port"]; present {
+	if raw, present := members.Get("port"); present {
 		var number *float64
-		if json.Unmarshal(raw, &number) != nil || number == nil {
+		var port *model.Int
+		if json.Unmarshal(raw, &number) != nil || number == nil || json.Unmarshal(raw, &port) != nil || port == nil {
 			claim.invalid = true
+		} else {
+			claim.Port = *port
 		}
 	}
 	return claim

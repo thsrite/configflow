@@ -139,42 +139,32 @@ func (m *Manager) matchesRegistrationClaim(ctx context.Context, system *model.Sy
 // admissionSessionIdentity validates original stored proof token types. Shared
 // text coercion must not turn numeric identity members into a capability.
 func admissionSessionIdentity(session model.AgentRegistrationSession) bool {
-	raw, err := json.Marshal(session)
-	if err != nil {
-		return false
-	}
-	var identity struct {
-		Hash             *string    `json:"hash"`
-		Name             *string    `json:"name"`
-		Host             *string    `json:"host"`
-		ServiceType      *string    `json:"service_type"`
-		DeploymentMethod *string    `json:"deployment_method"`
-		ProfileID        *string    `json:"profile_id"`
-		Port             *model.Int `json:"port"`
-		Expires          *model.Int `json:"expires"`
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil {
-		return false
-	}
-	selected := make(map[string]json.RawMessage)
-	for _, key := range []string{"hash", "name", "host", "service_type", "deployment_method", "profile_id", "port", "expires"} {
-		if value, present := members[key]; present {
-			selected[key] = value
+	for _, key := range []string{"hash", "name", "host", "service_type", "deployment_method", "profile_id"} {
+		raw, present, err := session.MemberJSON(key)
+		if err != nil {
+			return false
+		}
+		if !present {
+			if key == "hash" {
+				return false
+			}
+			continue
+		}
+		var text *string
+		if json.Unmarshal(raw, &text) != nil || text == nil {
+			return false
+		}
+		if key == "hash" && (*text == "" || *text != session.Hash) {
+			return false
 		}
 	}
-	payload, err := json.Marshal(selected)
-	if err != nil || json.Unmarshal(payload, &identity) != nil || identity.Hash == nil || *identity.Hash != session.Hash || *identity.Hash == "" || identity.Port == nil || identity.Expires == nil {
-		return false
-	}
-	for _, member := range []struct {
-		name  string
-		value *string
-	}{
-		{"name", identity.Name}, {"host", identity.Host}, {"service_type", identity.ServiceType},
-		{"deployment_method", identity.DeploymentMethod}, {"profile_id", identity.ProfileID},
-	} {
-		if _, present := members[member.name]; present && member.value == nil {
+	for _, key := range []string{"port", "expires"} {
+		raw, present, err := session.MemberJSON(key)
+		if err != nil || !present {
+			return false
+		}
+		var value *model.Int
+		if json.Unmarshal(raw, &value) != nil || value == nil {
 			return false
 		}
 	}
@@ -184,20 +174,16 @@ func admissionSessionIdentity(session model.AgentRegistrationSession) bool {
 // registrationSessionPortMatches requires a JSON number at the stored proof
 // boundary. model.Int's compatibility string decode is not ownership evidence.
 func registrationSessionPortMatches(session model.AgentRegistrationSession, port model.Int) bool {
-	raw, err := json.Marshal(session)
-	if err != nil {
-		return false
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil {
+	raw, present, err := session.MemberJSON("port")
+	if err != nil || !present {
 		return false
 	}
 	var number *float64
-	if json.Unmarshal(members["port"], &number) != nil || number == nil {
+	if json.Unmarshal(raw, &number) != nil || number == nil {
 		return false
 	}
 	var stored model.Int
-	return json.Unmarshal(members["port"], &stored) == nil && stored == port
+	return json.Unmarshal(raw, &stored) == nil && stored == port
 }
 
 // admitRegistrationClaim changes only the caller's system working copy. Its

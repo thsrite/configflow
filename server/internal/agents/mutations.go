@@ -20,13 +20,13 @@ type AgentEdits struct {
 
 // DecodeAgentEdits selects exact protocol keys and ignores all other fields.
 func DecodeAgentEdits(data json.RawMessage) (AgentEdits, error) {
-	var members map[string]json.RawMessage
+	var members model.Fields
 	var edits AgentEdits
 	if err := json.Unmarshal(data, &members); err != nil {
 		return edits, err
 	}
 	for _, name := range editableFields {
-		if value, present := members[name]; present {
+		if value, present := members.Get(name); present {
 			if err := edits.record.SetJSON(name, value); err != nil {
 				return AgentEdits{}, err
 			}

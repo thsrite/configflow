@@ -3,7 +3,6 @@ package agents
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -31,8 +30,18 @@ func (c n810ObservedHTTPClient) Do(ctx context.Context, request core.Request) (*
 }
 
 func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
-	for _, status := range []string{`[]`, `{"phase":"ready"}`} {
-		t.Run(status, func(t *testing.T) {
+	for _, tt := range []struct {
+		name, body string
+		failure    *core.DeviceResponseError
+	}{
+		{"status array", `{"success":true,"status":[],"message":"synthetic-publish-token"}`, core.ErrInvalidDeploymentStatus},
+		{"status object", `{"success":true,"status":{"phase":"ready"},"message":"synthetic-publish-token"}`, core.ErrInvalidDeploymentStatus},
+		{"duplicate status", `{"success":true,"status":"checking","status":"succeeded","message":"synthetic-publish-token"}`, core.ErrInvalidAgentReply},
+		{"duplicate nested", `{"success":true,"status":"checking","future":{"x":1,"x":2}}`, core.ErrInvalidAgentReply},
+		{"not JSON", `not JSON`, core.ErrInvalidAgentReply},
+		{"null", `null`, core.ErrInvalidAgentReply},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			s, admin, _ := newDeployHTTP(t)
 			seen := make(chan struct {
 				method, path, authorization string
@@ -48,7 +57,7 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 					body                        []byte
 				}{r.Method, r.URL.RequestURI(), r.Header.Get("Authorization"), body}
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = fmt.Fprintf(w, `{"success":true,"status":%s,"message":"synthetic-publish-token"}`, status)
+				_, _ = io.WriteString(w, tt.body)
 			}))
 			defer device.Close()
 			u, _ := url.Parse(device.URL)
@@ -92,7 +101,7 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 				t.Fatal("API used a different device client")
 			}
 			result.WantStatus(http.StatusBadGateway)
-			result.WantJSON(jsonx.Obj("success", false, "code", "INVALID_RESPONSE", "message", core.ErrInvalidDeploymentStatus.Message))
+			result.WantJSON(jsonx.Obj("success", false, "code", "INVALID_RESPONSE", "message", tt.failure.Message))
 			if strings.Contains(result.Text(), "synthetic-publish-token") {
 				t.Fatal("device diagnostic leaked credential")
 			}

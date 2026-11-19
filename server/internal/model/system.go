@@ -103,3 +103,8 @@ func (r Backup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) 
 func (r *SystemConfig) MemberJSON(name string) (json.RawMessage, bool, error) {
 	return recordMemberJSON(r, &r.raw, name)
 }
+
+// MemberJSON returns one original registration-session proof member.
+func (r *AgentRegistrationSession) MemberJSON(member string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, member)
+}

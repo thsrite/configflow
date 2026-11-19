@@ -40,13 +40,13 @@ type DeploymentUpdate struct {
 // DecodeDeploymentUpdate selects exact remote protocol keys through the shared
 // model codec. Original status tokens remain available for structural checks.
 func DecodeDeploymentUpdate(data json.RawMessage) (DeploymentUpdate, error) {
-	var members map[string]json.RawMessage
+	var members model.Fields
 	result := DeploymentUpdate{present: make(map[string]bool)}
 	if err := json.Unmarshal(data, &members); err != nil {
 		return result, err
 	}
 	for _, key := range append(append([]string(nil), deploymentUpdateFields...), "updated_at", "dns_checks", "dns_checked_at") {
-		if raw, present := members[key]; present {
+		if raw, present := members.Get(key); present {
 			if err := result.record.SetJSON(key, raw); err != nil {
 				return DeploymentUpdate{}, err
 			}

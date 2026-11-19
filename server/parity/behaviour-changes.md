@@ -2022,3 +2022,8 @@ SHA 和各自 compact row SHA 精确绑定，分别核验 Python 错误类别、
 不能放开成员单独回滚。原先并发删除 Agent 之后触发的 CPython NoneType 内部异常，
 现在使用原生 endpoint refusal；原 nil 调用及 Python TypeError 原文另以完整单行 SHA
 绑定，继续验证拒绝、非 transport error 和事务不写入。
+
+成功的部署 HTTP 回包在非 object、非 JSON 或带重复 member 时同样返回上述结构化 502，
+不再静默变为 pending；未知大小写别名不认作已知协议字段。注册／编辑／deployment patch
+的原生 RawMessage 入口拒绝真实重复键（含 escaped 同名与嵌套重复）；旧 API facade 自身的
+JSON materialization 属其后续 S 步骤，本块没有改写其 parser 或扩张准入。

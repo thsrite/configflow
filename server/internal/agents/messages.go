@@ -287,3 +287,5 @@ const (
 )
 
 const msgInvalidDevicePayload = "Out of range float values are not JSON compliant"
+
+const msgAgentReplyShape = "Agent 返回的数据格式不正确，请检查 Agent 版本和日志。"
