@@ -85,7 +85,7 @@ owner 提交：`cc28d45b9`、`2e18d081b`，以及本段对应的 SQL 防护提�
 - `git rebase go` 完成，基底 `c8208b60f` 含 `cf5ec02e7`，行为变更文档保留双方条目。
 - `traffic.go` 全部读取精确 JSON/native DTO：上述 report/write/query/retention 接口已接入，带 ctx 的 Add/AddTraffic 避免旧 bg facade 绕过 shutdown。HTTP state 用 typed envelope 嵌入 TrafficQuery；不改缺失 service_type 默认，null/错型仍拒绝。`metrics.go` 的 history/summary 同步接到 Samples/Summarize。
 - 集成发现原成功语料含重复 port 字段。此前 jsonx 解码先取最后成员；现在 DecodeReport 用 jsondecode 的 native JSON last-complete-member 规则先规范 Agent 对象（json.Number 保留数值文本），再进入 Fields。存量文件依然严格，不放宽坏文件策略。新真实 Add 回归覆盖重复 schema/port/fail-kind。
-- 无生产调用的 metrics `history/stats/flush/traffic_legacy.go` 全部移为 `_test.go`，生产 metrics 不再导入 jsonx/jsonresp/pyvalue；旧 AddMetrics hook 仅 json.Marshal→AddSample 委托。对应 API、cmd/configflow 和 tasks/difftest 测试改用 native 接口，原断言不变。trafficstore 无生产调用的 CleanReport/AddReport/SplitRouteKey/CachedStatus 及 decodeCleanedReport 迁到测试文件；A05 跨包 corpus harness 改用 native decoder/Add + 测试 codec，比对原期望。
+- 无生产调用的 metrics `history/stats/flush/traffic_legacy.go` 全部移为 `_test.go`，生产 metrics 不再导入 jsonx/pyvalue（jsonresp 仅保留 JSONL/旧文件兼容 codec）；旧 AddMetrics hook 仅 json.Marshal→AddSample 委托。对应 API、cmd/configflow 和 tasks/difftest 测试改用 native 接口，原断言不变。trafficstore 无生产调用的 CleanReport/AddReport/SplitRouteKey/CachedStatus 及 decodeCleanedReport 迁到测试文件；A05 跨包 corpus harness 改用 native decoder/Add + 测试 codec，比对原期望。
 - 四行 `testdata/n810_metrics_http_native.jsonl` 每行 original 原文 SHA256 绑定完整请求、旧 fixture 源码和 Python 结果；live oddMetrics/edited file seed 另做精确验证。HTTP native body/status/header 严格检查；文件拒写逐字节保留（只归一两处动态日期）。变更请求、原行 SHA、无关 native 错误、数组/计数器变化有负控。第五个 agent-traffic.json 仅按 JSON 结构比较，旧语料和 pyref entries 未变。
 
 ### N8-11 留存 facade 清单
@@ -149,3 +149,31 @@ ok configflow/internal/tasks/difftest 1.017s
 ```
 
 最后局部查询防护在最终代码上追加 metrics race/vet/HTTP 主差分（见上），最后主差分 PASS 8.724s、234 requests / 0 differences。未跑完整门禁，未改依赖、持久格式、旧 corpus、Python reference 或 pyref registry。
+
+## HR 后 L2 协调裁定（2026-11-19）
+
+已 `git merge --ff-only go-opus-review-n8-10-metrics-native` 快进至 `b08232d3b`；保留 HR 新增 retention Runtime 回归和 R2/R3 ledger。L4 文档也更正：生产 metrics 无 jsonx/pyvalue，但保留 jsonresp 的 JSONL/旧格式 codec。
+
+L2 实现：NativeStore 的私有 readJSON 改为原始文件 bytes+error；只有 os.ErrNotExist 被视为新文件。已有空文件、截断/非标准 JSON、UTF-8 损坏或非 object 顶层拒写，使用与坏 days 完全相同的 TypeError；HTTP 上报为同一标准 500 envelope（现有 message 为 HTTP internal-error 文本），中文 warning 同为 msgCorruptStore 并按 file/day 限频。未把 raw 内容/路径带入告警。原文件不覆盖；metadata cache 清除；读列表/metadata 与坏 days 一样为空、HTTP 200。legacy 读取 facade 也拒绝非标准 JSON/无效 UTF-8，不再由 jsonresp 将 NaN 静默转 null。
+
+真实文件/HTTP 回归：覆盖 days baseline、截断、空白/空文件、null/list/string/number/bool、非标准 NaN；写入前预热 metadata，连续两次拒写但 warning 只增加一次，断言原文件字节不动、读取不写文件。真实 GET /api/domain-discovery/agents 与 /domains?agent_id=gw 的响应逐一比对坏 days baseline；既有 POST /api/agents/gw/domain-discovery/clear 后再次上报 200。缺失文件仍可写入作为健康负控。不可解析的整个文件无法靠 retention 解析恢复，reset 已覆盖；只坏个别日期时的既有 retention 恢复仍保留。
+
+A05 原 store_edits/not-dict-file 旧 Python 会覆盖，Go 现拒绝；原 fixture 未改，向 n810_store_native.json 追加第 6 行原文 SHA 绑定（7a5c3780c76e17117c397e03c23f1df609835dc0b829ac08511cfcf55d929ea9）。首次参考检查指出该批准差异，追加绑定后原 A04/A05 检查通过。
+
+变异负控仅在 .32 副本：把 read 的坏 JSON guard 临时改为 return emptyDocument(), nil，新 TestNativeStoreInvalidFileMatchesCorruptDaysAndResetRecovers 按预期失败（must match corrupt days error: <nil>，退出 1）；finally 还原文件，再跑退出 0 / PASS 0.014s。未把变异带回本机或提交。
+
+R3 按协调者接受，不改有限浮点序列化；behaviour-changes 已确认登记 HTTP ≥1e6 的指数文本与 Python 定点文本数值相等。doc/manual/domain-discovery.md 同步整文件坏数据只能 reset 的恢复说明，无新入口。
+
+定向验证（仅 rt .32/.64，无完整门禁；超时参数统一 30m）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go test -count=1 -race -timeout=30m ./internal/agents/trafficstore && go test -count=1 -race -timeout=30m ./internal/api/agents -run "ReviewN810|Report|Traffic"'
+# PASS trafficstore 2.166s；api/agents 56.928s。
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && go vet ./... && go test -count=1 -race -timeout=30m ./internal/agents/trafficstore ./internal/discovery ./internal/api/domaindiscovery && go test -count=1 -race -timeout=30m ./internal/api/agents -run "^TestReviewN810CorruptDiscoveryFileHTTPRefusalAndReset$|^TestReviewN810TrafficRetentionShutdownAndDisconnect$" && CONFIGFLOW_DIFF=1 go test -count=1 -timeout=30m ./internal/api/agents/difftest -run "TestN810MetricsHTTPPolicyBinding|TestDifferentialAgainstFlask" && go test -count=1 -timeout=30m ./internal/agents/metrics -run "Corpus|Reference|Golden" && go test -count=1 ./tools/pyref -run "^TestAuditRepository$"'
+# PASS trafficstore 2.271s / discovery 18.685s / api/domaindiscovery 8.827s
+# PASS api/agents 2.894s / API difftest 8.664s / metrics Reference 1.529s / pyref 0.818s；vet 无输出。
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && gofmt -w internal/agents/trafficstore/legacy.go internal/api/agents/traffic_test.go && go test -count=1 -race -timeout=30m ./internal/agents/trafficstore && go test -count=1 -race -timeout=30m ./internal/api/agents -run "^TestReviewN810CorruptDiscoveryFileHTTPRefusalAndReset$" && go vet ./... && CONFIGFLOW_DIFF=1 go test -count=1 -timeout=30m ./internal/discovery/difftest'
+# 最后增加非法 UTF-8 的 facade/HTTP 负例：PASS trafficstore 2.156s / api/agents 2.314s / discovery difftest 8.999s；vet 无输出。
+```
+
+另 .64 改动 owner 的直接读取方：discovery race 14.094s / api/domaindiscovery race 6.779s / configgen race 2.656s，discovery difftest 7.277s。所有最终命令退出 0，gofmt-l 无输出。变异负控唯一预期退出 1，上述正向恢复验证退出 0。本轮 HR L2 已完成，未 push。

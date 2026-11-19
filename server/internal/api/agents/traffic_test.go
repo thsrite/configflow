@@ -22,6 +22,7 @@ import (
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/trafficstore"
 	apiagents "configflow/internal/api/agents"
+	"configflow/internal/api/domaindiscovery"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/rules"
@@ -442,5 +443,49 @@ func TestTrafficStatsAndTrendRoutes(t *testing.T) {
 	trend := s.Get("/api/agents/gw/traffic/trend?hours=abc&interval=10", e.admin...).WantStatus(200).Object().GetObject("data")
 	if !jsonx.Equal(trend, jsonx.Obj("agent_id", "gw", "trend", []any{}, "hours", 24, "interval_minutes", 10, "data_points", 0)) {
 		t.Fatal(jsonx.Repr(trend))
+	}
+}
+
+func TestReviewN810CorruptDiscoveryFileHTTPRefusalAndReset(t *testing.T) {
+	e := newTrafficEnv(t, false)
+	e.setDiscovery(t, true)
+	s := e.s
+	domaindiscovery.Register(s.App.Router)
+	path := filepath.Join(s.DataDir, "traffic", "gw.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var baseline any
+	readBaseline := map[string]any{}
+	for _, content := range []string{`{"days":[]}`, "{", "", "[]", "null", `"old"`, "42", `{"status":{"value":"running"},"days":{},"broken":NaN}`, "{\"status\":{\"value\":\"running\"},\"days\":{},\"broken\":\"\xff\"}"} {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		answer := s.Post("/api/agents/gw/traffic-report", httpxtest.JSON(discoveryReport()), agentAuth(trafficToken)).WantStatus(500).Object()
+		if baseline == nil {
+			baseline = answer
+		} else if !jsonx.Equal(baseline, answer) {
+			t.Fatalf("error differs from days corruption: %s", jsonx.Repr(answer))
+		}
+		for _, route := range []string{"/api/domain-discovery/agents", "/api/domain-discovery/domains?agent_id=gw"} {
+			value := s.Get(route).WantStatus(200).Object()
+			if previous, exists := readBaseline[route]; exists {
+				if !jsonx.Equal(previous, value) {
+					t.Fatalf("read %s differs from corrupt days: %s", route, jsonx.Repr(value))
+				}
+			} else {
+				readBaseline[route] = value
+			}
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil || string(raw) != content {
+			t.Fatalf("HTTP refusal changed original: %q %v", raw, err)
+		}
+		s.Post("/api/agents/gw/domain-discovery/clear").WantStatus(200)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("reset kept corrupt file", err)
+		}
+		// Negative control: existing reset leaves a missing file, which must accept reports.
+		s.Post("/api/agents/gw/traffic-report", httpxtest.JSON(discoveryReport()), agentAuth(trafficToken)).WantStatus(200)
 	}
 }

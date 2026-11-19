@@ -23,5 +23,6 @@
     "name": "status-version-int",
     "source": "{\"file\": \"{\\\"status\\\": {\\\"mihomo_version\\\": 7}, \\\"days\\\": {}}\", \"report\": {\"schema\": 1, \"status\": \"unreachable\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": 7, \"value\": \"unreachable\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"unreachable\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":7},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":{}}}}\"}",
     "sha256": "563f38cf7db72db46c1d113956a67351d663801f92092b5d2050654b1e299442"
-  }
+  },
+  {"name": "not-dict-file", "source": "{\"file\": \"[1, 2]\", \"report\": {\"schema\": 1, \"status\": \"unreachable\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": \"\", \"value\": \"unreachable\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"unreachable\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":\\\"\\\"},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":{}}}}\"}", "sha256": "7a5c3780c76e17117c397e03c23f1df609835dc0b829ac08511cfcf55d929ea9"}
 ]

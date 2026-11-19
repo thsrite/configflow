@@ -1,6 +1,7 @@
 package trafficstore
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonstore"
 	"configflow/internal/jsonx"
 	"context"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // Store adapts legacy dynamic callers to NativeStore.
@@ -32,15 +34,25 @@ func toObject(value any) (*jsonx.Object, error) {
 // New returns the compatibility facade. Native callers use NewNative.
 func New(dir string) *Store {
 	s := &Store{NativeStore: NewNative(dir)}
-	s.ReadJSON = func(id string) *jsonx.Object { var out *jsonx.Object; s.files.Read(id, &out); return out }
-	s.WriteJSON = func(id string, out *jsonx.Object) (*jsonstore.Signature, error) { return s.files.Write(id, out, true) }
-	s.readJSON = func(id string) json.RawMessage {
-		out := s.ReadJSON(id)
-		if out == nil {
+	nativeRead := s.readJSON
+	s.ReadJSON = func(id string) *jsonx.Object {
+		raw, err := nativeRead(id)
+		if err != nil || raw == nil || !utf8.Valid(raw) {
 			return nil
 		}
-		raw, _ := json.Marshal(out)
-		return raw
+		var out *jsonx.Object
+		if jsondecode.Unmarshal(raw, &out) != nil {
+			return nil
+		}
+		return out
+	}
+	s.WriteJSON = func(id string, out *jsonx.Object) (*jsonstore.Signature, error) { return s.files.Write(id, out, true) }
+	s.readJSON = func(id string) (json.RawMessage, error) {
+		out := s.ReadJSON(id)
+		if out == nil {
+			return nativeRead(id)
+		}
+		return json.Marshal(out)
 	}
 	s.writeJSON = func(ctx context.Context, id string, raw json.RawMessage) (*jsonstore.Signature, error) {
 		if err := ctx.Err(); err != nil {

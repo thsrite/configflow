@@ -2321,3 +2321,10 @@ N8-10 batch-13 后 API 收束：`traffic.go` 已改用 native `DecodeTrafficRepo
 人工 SQLite 极值补充：有限 REAL 聚合可溢出为 Inf，或使用于排序的 up+down 成为 NaN。查询继续沿用非有限结果→JSON null 的 native 策略，节流告警；NaN 总值排在数值总值后，再按原 key 排序，不传给 big.Float 触发 panic。查询不写文件/数据库。Agent 单项计数限制使这些极值只能由人工数据构造；无旧期望修改。
 
 （HR 复核补登，review-n8-10-metrics-native R2/R3）`GET /api/agents/<id>/traffic/stats` 跳过坏样本后，`data_points` 只计可用样本（Python 的 total/hours_24 只读首尾样本，中间损坏样本也计入）；summary 的 `data_points` 仍是原始点数。HTTP 中非整数浮点（summary avg、stats avg_speed、trend speed、traffic-history REAL 计数器）用 Go 最短 `'g'` 文本：|x| ≥ 1e6 时为指数形式（如 `1.2345675e+06`，Python 为 `1234567.5`），数值相同；整数和存储字段不受影响。
+
+
+### N8-10 HR L2 协调裁定：整个 traffic 文件损坏拒写
+
+traffic/<agent>.json 已存在但不是合法 JSON（含空文件、截断、非标准 NaN/Infinity），或顶层不是对象（含 null/list/string/number/bool）时，Go 与 present wrong-type days 一样 fail closed：上报返回同一 500 错误响应，内部同一 TypeError，中文限流告警仍为「流量统计写入失败，请检查上报或统计桶；重复告警已限频。」；不覆盖、不自动清理原文件。Python/旧 Go 会把不可读内容当空文件并覆盖，这是协调者明确接受的新差异。文件真正不存在仍可写入；读取列表/metadata 与 days 损坏一样返回空记录/无 metadata，不因该 Agent 令整页失败，且不改原文件。整文件已不可解析，保留天数不能恢复；恢复使用现有 domain-discovery/clear 重置，已测真实 HTTP reset 后上报成功，无新入口。
+
+R3 确认沿用 HR 已补登的 HTTP 最短浮点文本，≥1e6 用指数形式，JSON 数值相等；本轮不改数值序列化。

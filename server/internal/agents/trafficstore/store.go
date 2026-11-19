@@ -16,6 +16,7 @@ package trafficstore
 import (
 	"container/list"
 	"context"
+	"errors"
 
 	"math/big"
 	"os"
@@ -454,14 +455,27 @@ func ParseRouteKey(key string) (Route, bool) {
 // NativeStore owns native JSON persistence and a shared bounded status cache.
 type NativeStore struct {
 	files     *jsonstore.Store
-	readJSON  func(string) json.RawMessage
+	readJSON  func(string) (json.RawMessage, error)
 	writeJSON func(context.Context, string, json.RawMessage) (*jsonstore.Signature, error)
 }
 
 // NewNative opens the domain-discovery store without legacy JSON conversions.
 func NewNative(dataDir string) *NativeStore {
 	s := &NativeStore{files: jsonstore.New(dataDir)}
-	s.readJSON = func(id string) json.RawMessage { var raw json.RawMessage; s.files.Read(id, &raw); return raw }
+	s.readJSON = func(id string) (json.RawMessage, error) {
+		raw, err := os.ReadFile(s.Path(id))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		// A missing file is nil; an existing empty file is corrupt, not missing.
+		if len(raw) == 0 {
+			return json.RawMessage{}, nil
+		}
+		return raw, nil
+	}
 	s.writeJSON = func(ctx context.Context, id string, raw json.RawMessage) (*jsonstore.Signature, error) {
 		return s.files.WriteContext(ctx, id, raw, true)
 	}
@@ -513,15 +527,20 @@ func emptyDocument() Document {
 func (s *NativeStore) read(id string) (Document, error) {
 	path := s.absPath(id)
 	signature := statusSignature(path)
-	raw := s.readJSON(id)
-	if len(raw) == 0 {
+	raw, err := s.readJSON(id)
+	if err != nil {
+		cachePop(path)
+		return Document{}, err
+	}
+	if raw == nil {
 		cachePop(path)
 		return emptyDocument(), nil
 	}
+	raw = bytes.TrimSpace(raw)
 	var f model.Fields
-	if err := jsondecode.Unmarshal(raw, &f); err != nil {
+	if len(raw) == 0 || raw[0] != '{' || jsondecode.Unmarshal(raw, &f) != nil {
 		cachePop(path)
-		return Document{}, err
+		return Document{}, &TypeError{Message: "invalid traffic days"}
 	}
 	days := member(f, "days")
 	var d model.Fields

@@ -187,3 +187,59 @@ func TestNativeReportRepeatedMembersKeepLastValue(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNativeStoreInvalidFileMatchesCorruptDaysAndResetRecovers(t *testing.T) {
+	for _, content := range []string{`{"days":[]}`, "{", "", " \n ", "[]", "null", `"old"`, "false", "42", `{"days":{},"broken":NaN}`} {
+		t.Run(content, func(t *testing.T) {
+			s := NewNative(t.TempDir())
+			at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+			// Warm metadata first: a later corrupt replacement must evict it.
+			if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(s.Path("a"), []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			corruptionWarnings.Lock()
+			before := len(corruptionWarnings.last)
+			corruptionWarnings.Unlock()
+			for i := 0; i < 2; i++ {
+				_, err := s.Add(t.Context(), "a", nativeReport(t), &at)
+				var shape *TypeError
+				if !errors.As(err, &shape) || shape.Message != "invalid traffic days" {
+					t.Fatalf("must match corrupt days error: %v", err)
+				}
+				raw, err := os.ReadFile(s.Path("a"))
+				if err != nil || string(raw) != content {
+					t.Fatalf("refusal changed original: %q %v", raw, err)
+				}
+			}
+			corruptionWarnings.Lock()
+			warnings := len(corruptionWarnings.last) - before
+			corruptionWarnings.Unlock()
+			if warnings != 1 {
+				t.Fatalf("repeated refusal warning count=%d", warnings)
+			}
+			if s.StatusJSON("a") != nil || len(s.LoadDocument("a", &at).Days()) != 0 {
+				t.Fatal("bad root differs from bad days read behavior")
+			}
+			raw, err := os.ReadFile(s.Path("a"))
+			if err != nil || string(raw) != content {
+				t.Fatal("read rewrote original", err)
+			}
+			// Negative control: the same store can write an actually missing file.
+			if _, err := s.Add(t.Context(), "healthy", nativeReport(t), &at); err != nil {
+				t.Fatal("missing file blocked", err)
+			}
+			if err := s.DeleteContext(t.Context(), "a"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err != nil {
+				t.Fatal("reset did not recover", err)
+			}
+			if len(s.LoadDocument("a", &at).Days()) != 1 {
+				t.Fatal("post-reset report missing")
+			}
+		})
+	}
+}

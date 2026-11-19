@@ -393,31 +393,28 @@ func TestReportMergesExternalHistoryAndKeepsVersionAndRetention(t *testing.T) {
 	}
 }
 
-func TestReportRecoversInvalidHistoryWithoutCachingOldStatus(t *testing.T) {
+func TestReportRefusesInvalidHistoryWithoutCachingOldStatus(t *testing.T) {
 	for _, content := range []string{"{", "[]", `{"status":{"value":"running"},"days":[]}`} {
-		isolated(t)
-		store := trafficstore.New(t.TempDir())
-		if _, err := store.AddReport("a", report("running"), nil); err != nil {
-			t.Fatal(err)
-		}
-		os.WriteFile(store.Path("a"), []byte(content), 0o644)
-		// N8-10: a present wrong-type days member is fail closed, unlike missing/unparseable files.
-		if content == `{"status":{"value":"running"},"days":[]}` {
+		t.Run(content, func(t *testing.T) {
+			isolated(t)
+			store := trafficstore.New(t.TempDir())
+			if _, err := store.AddReport("a", report("running"), nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(store.Path("a"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := store.AddReport("a", report("unreachable"), nil); err == nil {
-				t.Fatal("corrupt days written")
+				t.Fatal("corrupt file written")
 			}
-			raw, _ := os.ReadFile(store.Path("a"))
-			if string(raw) != content {
-				t.Fatal("refused file changed")
+			raw, err := os.ReadFile(store.Path("a"))
+			if err != nil || string(raw) != content {
+				t.Fatal("refused file changed", err)
 			}
-			continue
-		}
-		if _, err := store.AddReport("a", report("unreachable"), nil); err != nil {
-			t.Fatal(err)
-		}
-		if statusValue(t, store, "a") != "unreachable" || store.Load("a", nil).GetObject("days").Len() != 1 {
-			t.Fatalf("%q not recovered", content)
-		}
+			if store.LoadStatus("a") != nil || len(trafficstore.CachedPaths()) != 0 {
+				t.Fatal("old status cached")
+			}
+		})
 	}
 }
 
