@@ -12,6 +12,8 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/redact"
+	"configflow/internal/yamlx"
 )
 
 var logger = logx.Get("backend.agents.oxidns_ha_publish")
@@ -152,37 +154,41 @@ func (s *Service) update(ctx context.Context, fn func([]*agent) error) error {
 	})
 }
 func (s *Service) source(ctx context.Context, a *agent, snapshot bool) (*deploy.Source, *deploy.Revision, error) {
-	id := a.ProfileID
-	var e error
-	if id == "" {
-		id, e = s.m.Repository().DefaultProfileID(ctx)
-		if e != nil {
-			return nil, nil, e
-		}
+	id, err := s.m.ResolveAgentProfile(ctx, a.Agent)
+	if err != nil {
+		return nil, nil, err
+	}
+	var config *model.Config
+	var revision int64
+	if snapshot {
+		config, revision, err = s.m.Repository().PublishConfig(ctx, id, false)
+	} else {
+		config, err = s.m.Repository().Config(ctx, id, nil)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, nil, err
 	}
 	if snapshot {
-		r, rev, e := s.m.Repository().GetPublishSnapshot(ctx, id, false)
-		if e != nil {
-			return nil, nil, e
-		}
-		return deploy.NewSource(r, &rev), &deploy.Revision{Value: rev}, nil
+		source, err := deploy.SourceFromJSON(raw, &revision)
+		return source, &deploy.Revision{Value: revision}, err
 	}
-	r, e := s.m.Repository().GetCompatConfig(ctx, id, nil)
-	if e != nil {
-		return nil, nil, e
-	}
-	return deploy.NewSource(r, nil), nil, nil
+	source, err := deploy.SourceFromJSON(raw, nil)
+	return source, nil, err
 }
 func (s *Service) safe(ctx context.Context, text string) string {
-	rows, e := s.m.GetAllAgents(ctx, false)
-	if e != nil {
+	tokens, err := s.m.Repository().AgentTokensForSanitization(ctx)
+	if err != nil {
 		return msgUnexpected
 	}
-	tokens := make([]string, 0, len(rows))
-	for _, a := range rows {
-		tokens = append(tokens, a.GetString("token"))
+	values := make([]string, 0, len(tokens))
+	for token := range tokens {
+		values = append(values, token)
 	}
-	return agents.FailureText(text, jsonx.ListOf(tokens), 0)
+	return redact.DiagnosticText(text, redact.NewSecrets(values), 0)
 }
 
 // FailureMessage sanitizes user errors against every registry credential.
@@ -194,27 +200,22 @@ func (s *Service) FailureMessage(ctx context.Context, e error) string {
 }
 func rawObject(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 func equal(a, b any) bool {
-	va, ea := jsonx.Parse(rawObject(a))
-	vb, eb := jsonx.Parse(rawObject(b))
-	return ea == nil && eb == nil && jsonx.Equal(va, vb)
+	left, err := yamlx.FromJSON(rawObject(a))
+	if err != nil {
+		return false
+	}
+	right, err := yamlx.FromJSON(rawObject(b))
+	return err == nil && yamlx.Equal(left, right)
 }
 func summary(j *model.HAJournal) *model.HAPublicationSummary {
 	if j == nil || j.ID == "" {
 		return nil
 	}
-	b := journalBytes(j)
-	var fields map[string]json.RawMessage
-	_ = json.Unmarshal(b, &fields)
-	for k := range fields {
-		switch k {
-		case "id", "status", "phase", "message", "owner_agent_id", "owner_deployment_id", "active_agent_id", "members", "updated_at", "warnings", "routers":
-		default:
-			delete(fields, k)
-		}
+	result, err := agents.HASummaryModel(j)
+	if err != nil {
+		return nil
 	}
-	var out model.HAPublicationSummary
-	_ = json.Unmarshal(rawObject(fields), &out)
-	return &out
+	return result
 }
 func resultModel(r *agents.Result) (model.Deployment, error) {
 	var d model.Deployment
@@ -225,34 +226,40 @@ func resultModel(r *agents.Result) (model.Deployment, error) {
 	return d, e
 }
 func (s *Service) poll(ctx context.Context, id, did string) (model.Deployment, error) {
-	r, e := s.m.GetDeploymentDirect(ctx, id, did)
-	if e != nil {
-		return model.Deployment{}, e
+	result, err := s.m.ReadDeploymentModel(ctx, id, did)
+	if err != nil {
+		return model.Deployment{}, err
 	}
-	return resultModel(r)
+	return *result, nil
 }
 func (s *Service) activateChild(ctx context.Context, id, did string) (model.Deployment, error) {
-	if e := ctx.Err(); e != nil {
-		return model.Deployment{}, e
+	result, err := s.m.ActivateCandidateModel(ctx, id, did)
+	if err != nil {
+		return model.Deployment{}, err
 	}
-	r, e := s.m.ActivateDeploymentDirect(ctx, id, did)
-	if e != nil {
-		return model.Deployment{}, e
-	}
-	return resultModel(r)
+	return *result, nil
 }
 func (s *Service) beginChildren(ctx context.Context, j *model.HAJournal) error {
-	for id, did := range j.Children.All() {
+	for _, id := range j.Children.Keys() {
+		raw, present, err := j.Children.MemberJSON(id)
+		var child *string
+		if err != nil || !present || json.Unmarshal(raw, &child) != nil || child == nil || *child == "" {
+			return refuse(msgJournalChanged)
+		}
+		did := *child
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		r, e := s.m.BeginDeployment(ctx, id, did)
+		r, e := s.m.ReserveDeployment(ctx, id, did)
 		if e != nil {
 			return e
 		}
 		s.m.FinishDeploymentPreparation(id, did)
-		if !r.GetBool("success") {
-			m := r.GetString("message")
+		if !r.Success {
+			m := ""
+			if r.Message != nil {
+				m = *r.Message
+			}
 			if m == "" {
 				m = msgReserve
 			}
@@ -262,18 +269,31 @@ func (s *Service) beginChildren(ctx context.Context, j *model.HAJournal) error {
 	return nil
 }
 func (s *Service) retire(ctx context.Context, id, did, message string, only bool) error {
-	if e := ctx.Err(); e != nil {
-		return e
+	raw, err := json.Marshal(struct {
+		Success bool   `json:"success"`
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}{false, "failed", message})
+	if err != nil {
+		return err
 	}
-	_, e := s.m.RecordDeployment(ctx, id, did, jsonx.Obj("success", false, "status", "failed", "message", message), agents.RecordOptions{OnlyUnsubmitted: only})
-	return e
+	patch, err := agents.DecodeDeploymentUpdate(raw)
+	if err != nil {
+		return err
+	}
+	_, err = s.m.RecordDeploymentModel(ctx, id, did, patch, agents.RecordOptions{OnlyUnsubmitted: only})
+	return err
 }
 func aggregate(d *model.Deployment, p *model.HAPublicationSummary) *agents.Result {
-	r, _ := jsonx.Parse(rawObject(d))
-	pub, _ := jsonx.Parse(rawObject(p))
-	rr, _ := r.(*jsonx.Object)
-	pp, _ := pub.(*jsonx.Object)
-	return agents.HAAggregate(rr, pp)
+	result, err := agents.HAAggregateModel(d, p)
+	if err != nil {
+		return rejection(msgUnexpected)
+	}
+	var out agents.Result
+	if json.Unmarshal(rawObject(result), &out) != nil {
+		return rejection(msgUnexpected)
+	}
+	return &out
 }
 func conflict(a *agent) *agents.Result {
 	if !active(a) {
@@ -290,49 +310,46 @@ func (s *Service) capabilities(ctx context.Context, a *agent) (json.RawMessage, 
 		return nil, e
 	}
 	timeout := agents.Seconds(5)
-	r, e := s.m.DeploymentRequest(ctx, a.target.Record, "GET", "capabilities", nil, nil, &timeout)
+	r, e := s.m.DeploymentRequestModel(ctx, a.Agent, "GET", "capabilities", nil, nil, &timeout)
 	if e != nil {
 		return nil, e
 	}
 	return json.Marshal(r)
 }
 func (s *Service) routersUsing(ctx context.Context, ids []string) ([]model.HARouter, error) {
-	out := []model.HARouter{}
-	ps, e := s.m.Repository().ListProfiles(ctx)
-	if e != nil {
-		return nil, e
-	}
-	for _, v := range ps {
-		p, ok := v.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		profile := p.GetString("id")
-		r, e := s.m.Repository().GetProfile(ctx, profile)
-		if e != nil {
-			return nil, e
-		}
-		var profileView model.Profile
-		if e = json.Unmarshal(rawObject(r), &profileView); e != nil {
-			return nil, e
-		}
-		for _, item := range profileView.Routers.Items {
-			match := false
-			for _, id := range ids {
-				if item.DNSAgentID == id {
-					match = true
+	result := []model.HARouter{}
+	err := s.m.Repository().View(ctx, func(document *model.Document) error {
+		for i := range document.Profiles {
+			profile := document.Profiles[i]
+			for _, router := range profile.Routers.Items {
+				raw, present, err := router.MemberJSON("dns_agent_id")
+				if err != nil {
+					return err
 				}
-			}
-			if match {
-				name := item.Name
+				var id *string
+				if !present || json.Unmarshal(raw, &id) != nil || id == nil {
+					continue
+				}
+				match := false
+				for _, target := range ids {
+					if *id == target {
+						match = true
+						break
+					}
+				}
+				if !match {
+					continue
+				}
+				name := router.Name
 				if name == "" {
-					name = item.ID
+					name = router.ID
 				}
-				out = append(out, model.HARouter{ID: item.ID, Name: name, ProfileID: profile})
+				result = append(result, model.HARouter{ID: router.ID, Name: name, ProfileID: profile.Key()})
 			}
 		}
-	}
-	return out, nil
+		return nil
+	})
+	return result, err
 }
 
 // Wire installs all cross-module hooks, with manager dispatch at the boundary.

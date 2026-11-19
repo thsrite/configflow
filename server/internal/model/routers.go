@@ -143,3 +143,8 @@ func (r *RouterRelease) Clear(member string) error { return ClearMember(r, &r.ra
 
 // MarshalJSON preserves unknown and unchanged RouterRelease members.
 func (r RouterRelease) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns one original router member without encoding its siblings.
+func (r *Router) MemberJSON(member string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, member)
+}

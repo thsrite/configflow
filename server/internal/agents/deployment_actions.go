@@ -271,9 +271,9 @@ func (m *Manager) ReadDeploymentModel(ctx context.Context, agentID, id string) (
 	return m.recordDeploymentReply(ctx, agentID, id, result, RecordOptions{SkipUnchanged: true})
 }
 
-// ActivateDeploymentModel activates a ready candidate only after binding and
+// ActivateCandidateModel activates a ready candidate only after binding and
 // server validation evidence have been checked against the original identities.
-func (m *Manager) ActivateDeploymentModel(ctx context.Context, agentID, id string) (*model.Deployment, error) {
+func (m *Manager) ActivateCandidateModel(ctx context.Context, agentID, id string) (*model.Deployment, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err

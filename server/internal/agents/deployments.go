@@ -13,7 +13,6 @@ import (
 	"regexp"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 )
 
@@ -162,35 +161,18 @@ func (m *Manager) DeploymentRequest(ctx context.Context, agent *jsonx.Object, me
 	return deploymentObject(result)
 }
 
-func taskOf(agent *jsonx.Object, deploymentID string) *jsonx.Object {
-	deployments, _ := agent.Value("deployments").(*jsonx.Object)
-	state, _ := deployments.Value(deploymentID).(*jsonx.Object)
-	return state
-}
-
 // GetDeployment is get_deployment (oxidns_ha_publish.deployment, #29).
-func (m *Manager) GetDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
+func (m *Manager) GetDeployment(ctx context.Context, agentID, id string) (*jsonx.Object, error) {
+	result, err := m.GetDeploymentModel(ctx, agentID, id)
+	if err != nil {
 		return nil, err
 	}
-	if hook := currentHooks().HADeployment; hook != nil {
-		return hook(ctx, m, agentID, deploymentID)
-	}
-	return defaultHADeployment(ctx, m, agentID, deploymentID)
+	return deploymentObject(result)
 }
 
 // GetDeploymentDirect is _get_deployment (for #29).
-func (m *Manager) GetDeploymentDirect(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return m.getDeployment(ctx, agentID, deploymentID)
-}
-
-func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	result, err := m.ReadDeploymentModel(ctx, agentID, deploymentID)
+func (m *Manager) GetDeploymentDirect(ctx context.Context, agentID, id string) (*jsonx.Object, error) {
+	result, err := m.ReadDeploymentModel(ctx, agentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -198,28 +180,17 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 }
 
 // ActivateDeployment is activate_deployment (oxidns_ha_publish.activate, #29).
-func (m *Manager) ActivateDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
+func (m *Manager) ActivateDeployment(ctx context.Context, agentID, id string) (*jsonx.Object, error) {
+	result, err := m.ActivateDeploymentModel(ctx, agentID, id)
+	if err != nil {
 		return nil, err
 	}
-	if hook := currentHooks().HAActivate; hook != nil {
-		return hook(ctx, m, agentID, deploymentID)
-	}
-	return defaultHAActivate(ctx, m, agentID, deploymentID)
+	return deploymentObject(result)
 }
 
 // ActivateDeploymentDirect is _activate_deployment (for #29).
-func (m *Manager) ActivateDeploymentDirect(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return m.activateDeployment(ctx, agentID, deploymentID)
-}
-
-func (m *Manager) activateDeployment(ctx context.Context, agentID, deploymentID string) (*jsonx.Object, error) {
-	result, err := m.ActivateDeploymentModel(ctx, agentID, deploymentID)
+func (m *Manager) ActivateDeploymentDirect(ctx context.Context, agentID, id string) (*jsonx.Object, error) {
+	result, err := m.ActivateCandidateModel(ctx, agentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -246,9 +217,3 @@ func (m *Manager) RecoverDeployment(ctx context.Context, agentID, deploymentID s
 	}
 	return deploymentObject(result)
 }
-
-// restoreRollbackFailed is _restore_rollback_failed: a rejected recovery
-// request changed nothing on the Agent.
-
-// cancelManualRollback is _cancel_manual_rollback: a definite preflight
-// rejection preserves the successful publication.

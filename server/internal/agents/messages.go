@@ -280,3 +280,8 @@ const (
 	msgRollbackRejected        = "Rollback was rejected by Agent"
 	msgRollbackNotRun          = "回滚请求被拒绝，回滚未执行，原配置继续运行"
 )
+
+const (
+	msgPresenceOnline  = "Agent %s 已恢复在线"
+	msgPresenceOffline = "Agent %s 已离线：超过 2 分钟没有心跳（最后心跳 %s）"
+)

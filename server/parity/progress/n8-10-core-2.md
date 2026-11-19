@@ -1,6 +1,6 @@
 # N8-10 agents core-2
 
-状态：进行中。分支 go-n8-10-core-2，基于已交回的 core-1 tip
+状态：部分完成（进行中）。分支 go-n8-10-core-2，基于已交回的 core-1 tip
 7a3f1da4ebd606389c0142cf6f9134bc970fe0b5。core-1 报告见 n8-10-core.md；
 其 HR 复核结论 verified、无 high；复核报告见 review-n8-10-core.md。
 已 cherry-pick ec7c71865 / e871b2fe3 为 c2bd2fd6b / 3dd984086，保留原始
@@ -324,3 +324,59 @@ Exit 0：agents API difftest 9.068s。发布比较完整 DB、private files、�
     RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/deployment_lifecycle_test.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/model ./internal/deploy; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "^TestTypedRollbackDisconnectAndShutdownCommitBoundary$" ./internal/agents'
 
 Exit 0：agents 10.278s。
+
+## HA public projection / adapter 与 presence 块
+
+状态仍部分完成。部署动作前块提交 56e4bdcd1。
+
+- HASummaryModel / HAAggregateModel 只取公开成员，保持原始字段类型和独立所有权；默认
+  pair 任务/激活接线也直接用 model 和原始 child ID。HAPair 旧入口改为 typed pair codec；
+  Core 的旧 unhashable helper 已删除。GetDeploymentModel 是含 HA owner dispatch 的
+  typed 公开读；ActivateDeploymentModel 是含 HA guard 的公开激活，子任务显式使用
+  ActivateCandidateModel（原 typed direct 激活改名）。旧 API 签名不变。
+- dnsha adapter 的 poll/activate/reserve/retire/capabilities 使用 typed core；profile source
+  使用 typed repo Config/PublishConfig，一份 source 通过已有 SourceFromJSON codec 交给
+  deploy 的兼容捕获边界；不改部署文件格式。summary 不再先编码含 captured config 的整份
+  journal。事务 proof 比较改用共享 yamlx.Equal，保持 JSON 类型区分，不私造 Python equality。
+  routersUsing 从一次 repo snapshot 读取，dns_agent_id 只接受原始字符串，不认 R5 或别名。
+  子任务预留也核验原始 child string，非法形状不写事务；source 的 profile 交 core 原始
+  binding resolver，不能用 ProfileID 投影选配置。
+- model.Pending 进入声明字段后，dnsha 原先从 Fields.Get 读 pending 会漏掉 true；已做最小
+  接线修正并增加 true/false/null/quoted true/number 五条独立原始 JSON 控制。其余 HA 状态机
+  语义不变。monitor/upgrades/installer 本块未修改。
+- presence 的唯一状态 owner 接受 PresenceObservation DTO，只保留脱敏后的 log metadata，
+  跟踪和 restart 语义保留。旧观察入口仅选四个展示字段转 DTO；历史非字符串 metadata
+  使用原生 JSON 展示，后经 internal/redact，保留 label 并消除嵌套凭据，不复制完整 Agent
+  或配置、不再把 any/私有 Python repr 留在 transition state。旧普通名称日志字节不变。
+
+### 定向证据
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/agents/dnsha; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "PendingJournal|Pair|HA|Candidate|Publication|Activation" ./internal/agents ./internal/agents/dnsha'
+
+Exit 0：agents 65.756s、dnsha 167.870s。包含所有权、候选、HA runtime、独立 summary
+copy 和分配上限；负载背景有另一份协调者 full gate，本分支只跑上述定向包。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -e CONFIGFLOW_DIFF=1 -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "^TestValidationAgainstPython$" ./internal/agents/dnsha; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "^TestTypedHASummaryAllocationIgnoresCapturedSource$" -v ./internal/agents'
+
+Exit 0：dnsha 2.037s、agents 3.683s。summary empty 21,513 B/op / 137 allocs；两份各
+2MiB captured sources 时 21,679 B/op / 137 allocs。公开字段名单以外的 source 不被编码。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "Presence|ARestartDoesNotLog" ./internal/agents ./internal/agents/rulesync'
+
+Exit 0：agents 7.078s、rulesync 2.901s。包含未改的 rich metadata / nested credential 回归。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/agents/dnsha ./internal/agents/rulesync ./internal/model; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "RouterBindingsUseOriginal|PendingJournal" ./internal/agents/dnsha'
+
+Exit 0：dnsha 1.874s；router 原始数字/字符串/别名/null 逐条绑定、read fingerprint 不变。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/agents/dnsha; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ChildReservationsReject|PendingJournal|RouterBindingsUseOriginal" ./internal/agents/dnsha'
+
+Exit 0：dnsha 3.166s，原始 child "7" 正控，7/null 拒绝且不预留、不写入。
+
+### 当前剩余边界
+
+未完成项主要为 remote/client/response codec 与 ResponseFailure、runtime legacy importer、
+private time/version/messages helpers、ipv6 / rulesync / metrics / traffic 剩余 adapter，及最终
+跨包 corpus/reference/golden、agents subtree race、agents difftest、source metadata 刷新。
+batch-10 尚未合入本机 go；收到的轻量 heartbeat runtime 修复仍待集成后 rebase，不改回
+完整 model.Agent runtime entry。core-2 不能宣称全部 agents core S 完成。

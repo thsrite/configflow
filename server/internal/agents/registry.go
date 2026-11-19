@@ -356,3 +356,12 @@ func AgentEnabledModel(record *model.Agent) bool {
 	_, present, err := record.MemberJSON("enabled")
 	return err == nil && !present
 }
+
+// ResolveAgentProfile resolves an optional original string binding. Stored
+// scalar projections cannot select configuration or establish task ownership.
+func (m *Manager) ResolveAgentProfile(ctx context.Context, a *model.Agent) (string, error) {
+	if a == nil {
+		return "", repo.NewValidationError("Invalid profile id")
+	}
+	return m.agentProfileID(ctx, a)
+}

@@ -12,7 +12,7 @@ import (
 	"configflow/internal/model"
 )
 
-func pending(d model.Deployment) bool { r, _ := d.Fields.Get("pending"); return string(r) == "true" }
+func pending(d model.Deployment) bool { return d.Pending != nil && *d.Pending }
 func message(d model.Deployment, fallback string) string {
 	if d.Message != nil && *d.Message != "" {
 		return *d.Message

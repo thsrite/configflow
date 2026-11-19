@@ -102,3 +102,123 @@ func haProfilesMatch(left, right *model.Agent) bool {
 	b, bOK := read(right)
 	return aOK && bOK && (a == nil && b == nil || a != nil && b != nil && *a == *b)
 }
+
+// HASummaryModel selects only public journal members, without visiting captured
+// configurations, receipts or private children. Every selected value is owned.
+func HASummaryModel(job *model.HAJournal) (*model.HAPublicationSummary, error) {
+	var result model.HAPublicationSummary
+	if job == nil {
+		return &result, nil
+	}
+	for _, key := range []string{"id", "status", "phase", "message", "owner_agent_id", "owner_deployment_id", "active_agent_id", "members", "updated_at", "warnings", "routers"} {
+		raw, present, err := job.MemberJSON(key)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			if err := result.SetJSON(key, raw); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &result, nil
+}
+
+// HAAggregateModel projects authoritative pair status over one owned task.
+// The caller and source summary retain independent nested values.
+func HAAggregateModel(task *model.Deployment, public *model.HAPublicationSummary) (*model.Deployment, error) {
+	if task == nil {
+		task = new(model.Deployment)
+	}
+	if public == nil {
+		public = new(model.HAPublicationSummary)
+	}
+	result, err := copyDeployment(task)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := model.Marshal(public)
+	if err != nil {
+		return nil, err
+	}
+	edit := editDeployment(result).raw("ha_publication", raw)
+	status := ""
+	for _, key := range []string{"status", "message"} {
+		raw, present, err := public.MemberJSON(key)
+		if err != nil {
+			return nil, err
+		}
+		if !present {
+			raw = json.RawMessage(`null`)
+		}
+		edit.raw(key, raw)
+		if key == "status" {
+			status, _ = storedText(raw, present, nil)
+		}
+	}
+	return edit.flag("success", status != "failed" && status != "rollback_failed").remove("http_status", "pending").result()
+}
+
+func haOperationConflict(a *model.Agent) (*model.Deployment, error) {
+	if !HAActiveModel(a) {
+		return nil, nil
+	}
+	result, err := deploymentFailure(msgHAConflict, 409)
+	if err != nil {
+		return nil, err
+	}
+	result.HAPublication, err = HASummaryModel(a.OxiDNSHAPublication)
+	return result, err
+}
+func ownsHAChild(a *model.Agent, id string) bool {
+	if a == nil || a.OxiDNSHAPublication == nil {
+		return false
+	}
+	child, valid := storedText(a.OxiDNSHAPublication.Children.MemberJSON(a.ID))
+	return valid && child == id
+}
+
+func (m *Manager) defaultHADeploymentModel(ctx context.Context, agentID, id string) (*model.Deployment, error) {
+	a, err := m.ReadAgent(ctx, agentID, true)
+	if err != nil {
+		return nil, err
+	}
+	if ownsHAChild(a, id) {
+		job := a.OxiDNSHAPublication
+		switch job.Status {
+		case "succeeded", "failed", "ready":
+			record := deploymentOf(a, id)
+			if record == nil {
+				record = &model.Deployment{DeploymentID: id}
+			}
+			summary, err := HASummaryModel(job)
+			if err != nil {
+				return nil, err
+			}
+			return HAAggregateModel(record, summary)
+		default:
+			return nil, ErrHAOwnerMissing
+		}
+	}
+	record, err := m.ReadDeploymentModel(ctx, agentID, id)
+	if err != nil {
+		return nil, err
+	}
+	if record.HAPublication != nil && record.HAPublication.HasMembers() {
+		return HAAggregateModel(record, record.HAPublication)
+	}
+	return record, nil
+}
+func (m *Manager) defaultHAActivateModel(ctx context.Context, agentID, id string) (*model.Deployment, error) {
+	a, err := m.ReadAgent(ctx, agentID, true)
+	if err != nil {
+		return nil, err
+	}
+	if ownsHAChild(a, id) {
+		return nil, ErrHAOwnerMissing
+	}
+	if rejection, err := haOperationConflict(a); rejection != nil || err != nil {
+		return rejection, err
+	}
+	return m.ActivateCandidateModel(ctx, agentID, id)
+}

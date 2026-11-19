@@ -45,19 +45,10 @@ func haDeploymentConflict(a *model.Agent, id string) (*model.Deployment, error) 
 	if err != nil {
 		return nil, err
 	}
-	var summary model.HAPublicationSummary
-	for _, key := range []string{"id", "status", "phase", "message", "owner_agent_id", "owner_deployment_id", "active_agent_id", "members", "updated_at", "warnings", "routers"} {
-		raw, present, err := job.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if present {
-			if err := summary.SetJSON(key, raw); err != nil {
-				return nil, err
-			}
-		}
+	result.HAPublication, err = HASummaryModel(job)
+	if err != nil {
+		return nil, err
 	}
-	result.HAPublication = &summary
 	return result, nil
 }
 

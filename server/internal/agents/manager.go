@@ -60,17 +60,6 @@ func (s pyStatuses) has(value any) bool {
 	return ok && s[text]
 }
 
-// unhashable is the TypeError of `value in some_dict` for a list or dict.
-func unhashable(value any) error {
-	switch value.(type) {
-	case []any:
-		return errors.New("unhashable type: 'list'")
-	case *jsonx.Object:
-		return errors.New("unhashable type: 'dict'")
-	}
-	return nil
-}
-
 var deploymentTerminal = pyStatuses{"succeeded": true, "failed": true, "rolled_back": true}
 
 // deploymentResults is _DEPLOYMENT_RESULTS.

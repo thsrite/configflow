@@ -301,3 +301,8 @@ func (r *HAPublicationSummary) SetJSON(name string, value json.RawMessage) error
 func (r *HAPublicationSummary) HasMembers() bool {
 	return r != nil && recordHasMembers(r, &r.raw)
 }
+
+// MemberJSON returns one original summary member without encoding its siblings.
+func (r *HAPublicationSummary) MemberJSON(member string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, member)
+}
