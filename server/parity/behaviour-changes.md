@@ -2251,3 +2251,9 @@ N8-11 删除。
   Start 按缺失处理（previous_version 为空串）继续升级，不再报“操作记录损坏（version）”；
   Python 以 None 继续。数字、数组等其他非字符串仍按损坏拒绝。回归
   `TestReviewN810NullAgentVersionStillStartsUpgrade`。
+- HR 复核 L1（协调者裁定 b）：心跳上报新地址而 HA 字段损坏（`oxidns_ha` / `oxidns_ha.enabled` /
+  `oxidns_ha_publication.status` 错型）时，不跟随新地址、不写任何字段、不接触设备，按 Agent+损坏字段
+  每 10 分钟记一条 warning（经 redact）；心跳照常 200，功能开关等回包不受影响。地址对话框 GET/PUT
+  仍 500 带中文损坏说明。相对 Python：`{"enabled":1}` 等 Python 会继续跟随（非 True 视为非成员），
+  truthy 非 dict 的 `oxidns_ha` Python 心跳 500；Go 两类都改为“不跟随 + 告警”。回归
+  `TestReviewN810CorruptHAFollowKeepsHeartbeat`、`TestReviewN810CorruptFollowWarningInterval`。

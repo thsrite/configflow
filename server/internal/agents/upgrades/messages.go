@@ -24,6 +24,7 @@ const (
 const (
 	msgFollowHA             = "Agent %s 上报地址由 %s 变为 %s；它是 DNS 高可用成员，记录未修改"
 	msgHAUnchanged          = "是 DNS 高可用成员，记录未修改"
+	msgFollowCorrupt        = "Agent %s 上报地址 %s，但%s；未跟随新地址，记录未修改"
 	msgFollowDuplicate      = "Agent %s 上报地址 %s 与另一条同名记录相同，记录未修改"
 	msgFollowUnreachable    = "Agent %s 上报地址由 %s 变为 %s，但面板用它的凭据连不上新地址，记录未修改"
 	msgUnreachableUnchanged = "面板连不上新地址，记录未修改"

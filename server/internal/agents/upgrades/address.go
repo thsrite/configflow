@@ -19,6 +19,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
 
@@ -45,16 +46,40 @@ var (
 	startThread = func(ctx context.Context, name string, fn func(context.Context)) error {
 		return lifecycle.SpawnerFrom(ctx).Spawn(ctx, name, fn)
 	}
+	corruptWarned   = map[corruptKey]time.Time{}
 	reachesOverride func(*model.Agent, string) bool
 	askOverride     func(*model.Agent, string, string, []byte) (int, model.Fields)
 )
 
-// ResetAddressState forgets retry throttles and pending-notice memory.
+// CorruptWarnInterval limits the heartbeat warning for one Agent's damaged HA field.
+const CorruptWarnInterval = 10 * time.Minute
+
+type corruptKey struct{ id, field string }
+
+// ResetAddressState forgets retry throttles, warning throttles and pending-notice memory.
 func ResetAddressState() {
 	addressMu.Lock()
 	defer addressMu.Unlock()
 	attempts = map[string]attempt{}
 	reported = map[string]bool{}
+	corruptWarned = map[corruptKey]time.Time{}
+}
+
+// warnCorruptFollow logs a refused follow at most once per Agent and damaged
+// field within CorruptWarnInterval. The heartbeat itself must still succeed:
+// it carries feature flags and confirmed_host back to the Agent.
+func warnCorruptFollow(a *model.Agent, id, host string, corrupt *CorruptStateError, at time.Time) {
+	key := corruptKey{id, corrupt.Field}
+	addressMu.Lock()
+	last, seen := corruptWarned[key]
+	if seen && at.Sub(last) < CorruptWarnInterval && at.Sub(last) >= 0 {
+		addressMu.Unlock()
+		return
+	}
+	corruptWarned[key] = at
+	addressMu.Unlock()
+	text := fmt.Sprintf(msgFollowCorrupt, logx.LogText(agentLabel(a), 120), host, corrupt.Error())
+	addressLog.Warning(redact.DiagnosticText(text, agentSecrets(a), 1024))
 }
 
 // Usable returns a reachable LAN IPv4 candidate, excluding local-only and Docker bridge addresses.
@@ -94,11 +119,17 @@ func FollowModel(ctx context.Context, m *agents.Manager, a *model.Agent, reporte
 		}
 		return nil
 	}
+	at := lifecycle.ClockFrom(ctx).Now()
 	member, err := memberHA(a)
 	if err != nil {
+		var corrupt *CorruptStateError
+		if errors.As(err, &corrupt) {
+			// Fail closed for the address only; never fail the heartbeat.
+			warnCorruptFollow(a, id, host, corrupt, at)
+			return nil
+		}
 		return err
 	}
-	at := lifecycle.ClockFrom(ctx).Now()
 	addressMu.Lock()
 	if err := ctx.Err(); err != nil {
 		addressMu.Unlock()
