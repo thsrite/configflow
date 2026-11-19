@@ -201,10 +201,16 @@ type StatusError interface {
 	HTTPStatus() int
 }
 
-// ClassError is an error that names its error class (the requests-style
-// class names the fetch packages report); SafeErrorDetails prints it instead
-// of the Go type.
+// ClassError names a stable error class for logging. SafeErrorDetails prints
+// this label instead of the Go type, without including the error message.
 type ClassError interface {
+	error
+	ErrorClass() string
+}
+
+// pythonClassError is a migration fallback for callers not yet using ClassError.
+// Remove it once the remaining callers have adopted ErrorClass.
+type pythonClassError interface {
 	error
 	PythonClass() string
 }
@@ -215,7 +221,12 @@ func SafeErrorDetails(err error) string {
 	typeName := fmt.Sprintf("%T", err)
 	var classed ClassError
 	if errors.As(err, &classed) {
-		typeName = classed.PythonClass()
+		typeName = classed.ErrorClass()
+	} else {
+		var legacy pythonClassError
+		if errors.As(err, &legacy) {
+			typeName = legacy.PythonClass()
+		}
 	}
 	name := exceptionNameChars.ReplaceAllString(typeName, "")
 	if len(name) > 80 {
