@@ -1,10 +1,12 @@
 package agents
 
 import (
-	"configflow/internal/lifecycle"
-	"configflow/internal/model"
+	"bytes"
 	"context"
 	"encoding/json"
+
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 // RememberPreparedContent stores server-owned evidence after checking task ownership.
@@ -47,7 +49,12 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 		if !ok {
 			return &ValueError{Message: "Deployment ownership changed during preparation"}
 		}
-		profile := a.ProfileID
+		// Stored identities are ownership evidence: an originally numeric or
+		// null member must not match through its model text projection.
+		profile, profileOK := storedText(a.MemberJSON("profile_id"))
+		if !profileOK && !storedAbsent(a.MemberJSON("profile_id")) {
+			return &ValueError{Message: "Deployment ownership changed during preparation"}
+		}
 		if profile == "" {
 			var err error
 			profile, err = m.defaultProfileID(tx)
@@ -55,7 +62,9 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 				return err
 			}
 		}
-		if state.ProfileID != proof.ProfileID || profile != proof.ProfileID || a.ServiceType != proof.ServiceType || state.Submitted != nil && *state.Submitted || state.Status != "preparing" {
+		stateProfile, stateOK := storedText(deploymentProfileJSON(&state))
+		service, serviceOK := storedText(a.MemberJSON("service_type"))
+		if !stateOK || !serviceOK || stateProfile != proof.ProfileID || profile != proof.ProfileID || service != proof.ServiceType || state.Submitted != nil && *state.Submitted || state.Status != "preparing" {
 			return &ValueError{Message: "Deployment ownership changed during preparation"}
 		}
 		if err := tx.Err(); err != nil {
@@ -68,4 +77,35 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 		a.Deployments.Set(deploymentID, state)
 		return tx.Err()
 	})
+}
+
+// storedText accepts only an original JSON string member.
+func storedText(raw json.RawMessage, present bool, err error) (string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
+		return "", false
+	}
+	var text string
+	return text, json.Unmarshal(raw, &text) == nil
+}
+
+// storedAbsent reports a missing or explicit null member.
+func storedAbsent(raw json.RawMessage, present bool, err error) bool {
+	return err == nil && (!present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")))
+}
+
+// deploymentProfileJSON returns the original stored profile_id of one journal
+// entry. Only this preparing entry is encoded, never the deployment history.
+func deploymentProfileJSON(state *model.Deployment) (json.RawMessage, bool, error) {
+	data, err := model.Marshal(state)
+	if err != nil {
+		return nil, false, err
+	}
+	var members struct {
+		ProfileID json.RawMessage `json:"profile_id"`
+	}
+	if err := json.Unmarshal(data, &members); err != nil {
+		return nil, false, err
+	}
+	return members.ProfileID, members.ProfileID != nil, nil
 }

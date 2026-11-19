@@ -141,6 +141,14 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 	}
 	mark := m.runtime.Mark()
 	var source *model.Agent
+	// Reported values are compared with the stored JSON, like Python's
+	// heartbeat[key] != agent.get(key): a numeric, null or missing stored
+	// member differs from reported text even when its projection matches.
+	type storedMember struct {
+		raw     json.RawMessage
+		present bool
+	}
+	stored := map[string]storedMember{}
 	err := m.repository.View(ctx, func(document *model.Document) error {
 		record := registryAgent(document.System.Agents, id)
 		if record == nil {
@@ -152,6 +160,13 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 		}
 		fields.ID, fields.Name, fields.LastHeartbeat = record.ID, record.Name, record.LastHeartbeat
 		fields.ConfigVersion = record.ConfigVersion
+		for _, key := range []string{"version", "config_version"} {
+			raw, present, err := record.MemberJSON(key)
+			if err != nil {
+				return err
+			}
+			stored[key] = storedMember{raw, present}
+		}
 		source = &fields
 		return nil
 	})
@@ -179,15 +194,13 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 		return false, nil
 	}
 	changes := make(map[string]json.RawMessage, 2)
-	for _, field := range []struct{ key, current, reported string }{
-		{"version", source.Version, payload.Version}, {"config_version", source.ConfigVersion, payload.ConfigVersion},
-	} {
-		data, present, err := payload.MemberJSON(field.key)
+	for _, key := range []string{"version", "config_version"} {
+		data, present, err := payload.MemberJSON(key)
 		if err != nil {
 			return false, err
 		}
-		if present && field.current != field.reported {
-			changes[field.key] = data
+		if present && !sameStoredJSON(stored[key].raw, stored[key].present, data) {
+			changes[key] = data
 		}
 	}
 	if len(changes) > 0 {
@@ -222,6 +235,20 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 		}
 	}
 	return true, nil
+}
+
+// sameStoredJSON compares a reported member with the original stored member.
+// Strings compare by value; other JSON compares by its exact token.
+func sameStoredJSON(stored json.RawMessage, present bool, reported json.RawMessage) bool {
+	if !present {
+		return bytes.Equal(bytes.TrimSpace(reported), []byte("null"))
+	}
+	left, leftOK := storedText(stored, true, nil)
+	right, rightOK := storedText(reported, true, nil)
+	if leftOK || rightOK {
+		return leftOK && rightOK && left == right
+	}
+	return bytes.Equal(bytes.TrimSpace(stored), bytes.TrimSpace(reported))
 }
 
 // agentIDProven is an identity check, not stored scalar coercion. R5/text
