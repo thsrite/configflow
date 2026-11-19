@@ -201,7 +201,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -431,7 +432,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -661,7 +663,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -891,7 +894,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -1486,7 +1490,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -1794,7 +1799,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2039,7 +2045,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2277,7 +2284,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "DefaultSettings",
@@ -2498,7 +2506,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -2805,7 +2814,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3112,7 +3122,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3419,7 +3430,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3726,7 +3738,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4033,7 +4046,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4340,7 +4354,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4647,7 +4662,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4954,7 +4970,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/jsondecode.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",

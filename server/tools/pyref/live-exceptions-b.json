@@ -428,5 +428,15 @@
     "guard": "CONFIGFLOW_DIFF=1 at the owning test before constructing the Python command",
     "kind": "differential",
     "reason": "Keep the reviewed A18/A23 explicit live boundary reference. Ordinary tests retain their native assertions and do not start Python."
+  },
+  {
+    "id": "B-034",
+    "file": "server/internal/agents/time_native_test.go",
+    "function": "TestLocalWallZoneTransitionsAgainstPython",
+    "callee": "exec.CommandContext",
+    "count": 1,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live Python zone oracle; t.Context() owns the subprocess",
+    "kind": "differential",
+    "reason": "core-2 的真实 Python zoneinfo 边界对照；逐行绑定七组固定 zone/wall 输入，普通测试在显式 guard 跳过，不允许生产创建 Python 进程。"
   }
 ]
