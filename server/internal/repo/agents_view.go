@@ -164,3 +164,49 @@ func (r *Repository) agentIssuesReported(head store.Head, path string) bool {
 	defer r.agentsCacheMu.Unlock()
 	return r.agentsIssueHeadSet && r.agentsIssueHead == head
 }
+
+type agentDefaultSnapshot struct {
+	head store.Head
+	id   string
+}
+
+// AgentDefaultProfileID shares one validated default binding per generation.
+// Cold reads retain the repository's full structural validation; Agent loops
+// never reload an oversized document for each optional binding. Transaction
+// proposals and pinned read snapshots keep their own default.
+func (r *Repository) AgentDefaultProfileID(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if document, working, err := r.workingModel(ctx); working || err != nil {
+		if err != nil {
+			return "", err
+		}
+		return defaultProfileIn(document), nil
+	}
+	if snapshot := r.lockedSnapshot(ctx); snapshot != nil {
+		return defaultProfileIn(snapshot.entry.Model), nil
+	}
+	var head store.Head
+	if err := r.store.Reading(func(c *store.Conn) error { var err error; head, err = c.Head(); return err }); err != nil {
+		return "", r.agentReadFailure(ctx, err)
+	}
+	r.agentDefaultMu.Lock()
+	defer r.agentDefaultMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if cached := r.agentDefault; cached != nil && cached.head == head {
+		return cached.id, nil
+	}
+	entry, err := r.readEntry(ctx, false)
+	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	id := defaultProfileIn(entry.Model)
+	r.agentDefault = &agentDefaultSnapshot{head: entry.Head, id: id}
+	return id, nil
+}

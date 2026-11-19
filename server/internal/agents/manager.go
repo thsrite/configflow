@@ -249,7 +249,7 @@ func (m *Manager) httpClient() Client {
 }
 
 func (m *Manager) defaultProfileID(ctx context.Context) (string, error) {
-	return m.repository.DefaultProfileID(ctx)
+	return m.repository.AgentDefaultProfileID(ctx)
 }
 
 // agents is _agents(history=...): the records with the heartbeat state laid

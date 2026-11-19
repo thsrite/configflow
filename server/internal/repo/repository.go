@@ -95,6 +95,8 @@ type Repository struct {
 	// The registry row has its own one-generation immutable cache. It is
 	// shared by hot Agent readers even when unrelated profiles exceed the
 	// full-document cache budget. Reader callbacks never run under these locks.
+	agentDefaultMu     sync.Mutex
+	agentDefault       *agentDefaultSnapshot
 	agentsCacheMu      sync.Mutex
 	agentsLoadMu       sync.Mutex
 	agentsCache        *agentSnapshot
