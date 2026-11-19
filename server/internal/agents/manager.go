@@ -939,17 +939,39 @@ func (m *Manager) DeleteAgent(ctx context.Context, agentID string) (bool, error)
 // configuration only when they change. false when the Agent is unknown (or
 // was deleted meanwhile).
 func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
-	var payload heartbeatPayload
-	if heartbeat != nil {
-		raw, err := json.Marshal(heartbeat)
-		if err != nil {
-			return false, err
-		}
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			return false, err
-		}
+	payload, err := heartbeatFromObject(heartbeat)
+	if err != nil {
+		return false, err
 	}
 	return m.observeHeartbeat(ctx, agentID, payload, nil)
+}
+
+// heartbeatFromObject reads the reported members by their exact names (Python
+// heartbeat.get(key)); encoding/json struct decoding would fold case. Each
+// value is encoded on its own, giving the bytes the whole-object encoding has.
+func heartbeatFromObject(heartbeat *jsonx.Object) (heartbeatPayload, error) {
+	var payload heartbeatPayload
+	if heartbeat == nil {
+		return payload, nil
+	}
+	for _, item := range []struct {
+		name   string
+		target *json.RawMessage
+	}{
+		{"version", &payload.Version}, {"config_version", &payload.ConfigVersion},
+		{"service_status", &payload.ServiceStatus}, {"system_metrics", &payload.SystemMetrics},
+	} {
+		value, present := heartbeat.Get(item.name)
+		if !present {
+			continue
+		}
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return payload, fmt.Errorf("encode heartbeat %s: %w", item.name, err)
+		}
+		*item.target = raw
+	}
+	return payload, nil
 }
 
 // testFailUpdate makes UpdateAgents fail (tests; Python patched

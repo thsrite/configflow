@@ -180,18 +180,19 @@ func (s *RuntimeState) recordModel(ctx context.Context, agent, payload *model.Ag
 }
 
 func (s *RuntimeState) recordFields(ctx context.Context, agent heartbeatSource, payload heartbeatPayload, mark int64) (bool, error) {
-	// Decode a sample once, before the runtime lock. RawMessage owns each
-	// component and retains explicit nulls, invalid types and number spelling.
-	var components struct {
-		CPU     json.RawMessage `json:"cpu"`
-		Memory  json.RawMessage `json:"memory"`
-		Disk    json.RawMessage `json:"disk"`
-		Network json.RawMessage `json:"network"`
-	}
-	if len(payload.SystemMetrics) > 0 {
-		// Non-object samples remain visible as reported but have no components.
-		if err := json.Unmarshal(payload.SystemMetrics, &components); err != nil {
-			components.CPU, components.Memory, components.Disk, components.Network = nil, nil, nil, nil
+	// Decode a sample once, before the runtime lock. Components are matched by
+	// exact name (Fields, not a case-folding struct) and owned by this call;
+	// explicit nulls, invalid types and number spelling are retained.
+	// Non-object samples remain visible as reported but have no components.
+	var components [4]json.RawMessage
+	if sample := bytes.TrimSpace(payload.SystemMetrics); len(sample) > 0 && sample[0] == '{' {
+		var metrics model.Fields
+		if err := json.Unmarshal(sample, &metrics); err == nil {
+			for i, name := range metricFields {
+				if raw, ok := metrics.Get(name); ok {
+					components[i] = raw
+				}
+			}
 		}
 	}
 	now := nowTimestamp()
@@ -215,7 +216,7 @@ func (s *RuntimeState) recordFields(ctx context.Context, agent heartbeatSource, 
 	}
 	if payload.SystemMetrics != nil {
 		fields[2] = payload.SystemMetrics
-		for i, raw := range []json.RawMessage{components.CPU, components.Memory, components.Disk, components.Network} {
+		for i, raw := range components {
 			if raw != nil {
 				fields[i+3] = raw
 			}

@@ -146,3 +146,23 @@ func TestMemberJSONScalarFastPathRetainsEvidence(t *testing.T) {
 		})
 	}
 }
+
+// FuzzMemberJSONScalarMatchesMarshal compares the scalar fast path with the
+// general model encoder byte for byte: escapes, HTML characters, U+2028,
+// invalid UTF-8 and nil pointers must all encode identically.
+func FuzzMemberJSONScalarMatchesMarshal(f *testing.F) {
+	for _, seed := range []string{"", "1.0.0", "a<>&\"\\中", "  ", "\x00\x1f\x7f", "\xff\xfe", "\U0001F600", "1e0"} {
+		f.Add(seed, true)
+	}
+	f.Fuzz(func(t *testing.T, text string, flag bool) {
+		var nilText *string
+		var nilFlag *bool
+		for _, value := range []any{text, &text, nilText, flag, &flag, nilFlag} {
+			got, gotErr := memberJSONValue(value)
+			want, wantErr := Marshal(value)
+			if (gotErr != nil) != (wantErr != nil) || string(got) != string(want) {
+				t.Fatalf("%T %q: fast %q/%v, Marshal %q/%v", value, text, got, gotErr, want, wantErr)
+			}
+		}
+	})
+}

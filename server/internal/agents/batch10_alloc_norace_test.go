@@ -3,9 +3,10 @@
 package agents
 
 import (
- "testing"
- "configflow/internal/jsonx"
- "configflow/internal/model"
+	"testing"
+
+	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // Quantitative thresholds use the same non-race build as the allocation
