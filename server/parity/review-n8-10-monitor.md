@@ -8,14 +8,14 @@
 ## 结论
 
 high 0，medium 1（已修），low 2（记录）。修复随本分支叠批后，monitor 可以 verified。
-需要协调者裁定 1 项（L1，见文末）。
+协调者裁定 1 项已给出（L1，见文末）。
 
 ## 发现
 
 | # | 级别 | 状态 | 内容 |
 |---|---|---|---|
 | M1 | medium | 已修 | **判断“检查点已被取代”时，损坏的 status 仍被当成丢弃检查点的依据（违反裁定 2）。** `statePublication` 计算 `superseded` 时用 `originalText` 读取 pending 部署的 `status` 和 `latest_deployment.status`。非字符串会投影成 `""`，于是只要 `latest_deployment.deployment_id` 指向另一次部署，就判定为已取代并返回 nil，AdvanceState 随后清掉 pending，或开启新周期并写入统计文件。作者只在**未被取代**的分支（AdvanceState 中）校验 status 类型，所以作者的 `status` 回归（latest 仍指向 pending 部署）覆盖不到这条路径。Python 在这里会因 `[...] in (...)` 为 False 而丢弃检查点，这正是裁定 2 要求收紧的“零值当丢弃证明”。修复：新增 `storedStatus`，null 或缺失按缺失处理，其他非字符串返回 `errStatusDamaged`（StateError → DASHBOARD_STATE_ERROR/500）。pending 部署的 status 总是校验；latest.status 只在确实被参考时校验（latest 指向别的部署，且 pending 状态为 succeeded/rolled_back），避免无关的 latest 记录损坏也阻塞面板。为不改变 a06 中 8 条原有绑定行（采样早于 checkpoint 时 Python 先抛 PublicationPending），AdvanceState 先做时间判断，再报告 status 损坏。回归测试 `TestReviewN810SupersededCheckDoesNotTrustDamagedStatus`（task-status / latest-status 两个子测试）检查 500、检查点文件字节不变，以及统计重置可以恢复。修复前两个子测试都失败（`got <nil>, want DASHBOARD_STATE_ERROR 500`），修复后通过。behaviour-changes 的 pending 一节已补登记。 |
-| L1 | low | 待裁定 | **status 为 JSON null 按缺失处理。** 作者在 AdvanceState 中把 null 视同缺失：没有状态，在 reason 为空时清除 pending。M1 修复沿用了这个约定。Python 中 None 和缺失是同一路径，所以这不算 R5 投影；但裁定原文是“status 非 string → StateError”，严格来说 null 也属于非 string。正常部署记录总会写入字符串 status，null 只会出现在损坏数据里。是否把 null 也改成 StateError，请协调者裁定（改动只需在 `storedStatus` 和 AdvanceState 的 null 分支去掉对 null 的特殊处理，并补一条 a06 绑定）。 |
+| L1 | low | 已裁定（维持） | **status 为 JSON null 按缺失处理。** 作者在 AdvanceState 中把 null 视同缺失：没有状态，在 reason 为空时清除 pending。M1 修复沿用了这个约定。Python 中 None 和缺失是同一路径，所以这不算 R5 投影；但裁定原文是“status 非 string → StateError”，严格来说 null 也属于非 string。正常部署记录总会写入字符串 status，null 只会出现在损坏数据里。是否把 null 也改成 StateError，请协调者裁定（改动只需在 `storedStatus` 和 AdvanceState 的 null 分支去掉对 null 的特殊处理，并补一条 a06 绑定）。 |
 | L2 | low | 记录 | **legacy 适配基本是机械转码，但有两处小逻辑。** (a) `publication_hooks_legacy.go` 的 `Complete` 遇到容器值会返回 `msgPublicationDamaged`，而生产注册的 `completeHook`（`wire.go`）把非字符串直接当成 `""`，结果是“非终态，不写”，同样 fail closed。`Complete` 只给测试或旧调用方用，两者都不会写入，所以没有安全影响。(b) `cache_legacy.go` 的 `ValidRequestTags` 对嵌套容器返回英文 error，这是 ae00b71f1 已有的 API 层合同（`api/agents/panel.go:153`），本轮只是原样搬迁。其余 7 个文件只做 jsonx ↔ typed 转换和签名转发，没有业务分支。延后清单与报告一致：9 个文件共 1004 行；生产主体（非 `_legacy`、非测试）没有 jsonx 引用，也没有 `json.Unmarshal`。 |
 
 ## 逐项核对
@@ -40,6 +40,6 @@ rt 命令（均为 `RT_HOST=sunbroke@192.168.0.64`，在 `server/` 下执行）�
 5. 改用 `errors.Is` 后：gofmt 无输出、vet 通过；`go test -race -run "ReviewN810|Publication|Pending|Checkpoint|Damaged|A06Reference|A06Review|State" ./internal/agents/monitor` → `ok 13.133s`。
 6. HA 守卫负控（临时改动，已还原）：`go test -run "TestReviewRuleUpdateHAActiveFollowsPython|TestMonitorDamagedPublication" ./internal/agents/monitor ./internal/agents/dnsha` → 两个包都 `FAIL`。
 
-## 需要协调者裁定
+## 协调者裁定
 
-- L1：pending 部署（或被参考的 latest）的 `status` 为 JSON null 时，是继续按缺失处理（现状，与 Python 的 None 一致），还是按裁定 2 的字面意思当作非 string，返回 StateError？
+- L1：维持现状。status 为 JSON null 时按缺失处理，与 Python 的 None/缺失一致，也与裁定 1「present、非 null、非 object」的口径一致；裁定 2 的「非 string」理解为「present 且非 null 的非 string」。
