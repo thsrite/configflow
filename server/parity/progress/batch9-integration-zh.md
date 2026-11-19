@@ -74,3 +74,32 @@ OxiDNS全部边界0差异；routersplit5.720s通过。MosDNS57.873s/OxiDNS49.111
 check MosDNS55.108s/OxiDNS47.457s/routersplit5.179s。18份、18491项的全部非metadata
 payload SHA 完全相同，没有修改输入、输出或条数；只更新12份实际源码指纹。
 最终产品无额外改动，继续最终preflight和完整compare。
+
+## 首轮完整 preflight（9c51cbbfd）发现及修正
+
+两种 tag vet 通过，full nonrace 完成，FAIL 范围如下；其余包通过，未进入 compare：
+1. convert 旧单测和一条冻结 replay 仍期待 alpha-abc 通过。按 subs 已批准守卫更新单测；
+   新独立 Python 参考先验证录制行1144原始输出，再仅注入同一版本守卫；完整 mutation 与
+   原记录相同，只存 archive/row 摘要和错误。原 archive 不改。
+2. byte gate 20行失败。只读基底与整合树实际生成逐行对照，仅两种指数 scalar 拼写：
+   15处 number 1e+20→原输入1.0e+20，5处 text 1000.0→原输入1e3。
+   原 native JSON 桥规范化拼写，新 native callbacks 保留原 YAML 词法。两者在实际
+   yamlx 消费者中均为同一 float tag/数值。Python1.1 对1e3的字符串解析属于既有N7差异，
+   独立 native corpus oracle 继续检查完整生成结果。新参考逐一绑定20条原行SHA、
+   原 byte manifest SHA 和旧输出 SHA，执行真实 Python 完整生成确认原输出。仅反向改
+   一个精确 scalar 的词法，yamlx.Equal 检查类型/数值相等，其余每个字节仍受旧 SHA约束；
+   不重录原 manifest，不放宽整份 YAML 格式。
+3. refresh 两条回放的完整错误文字和 cache/DB/health/task 文件全相同，只缺 native
+   SubscriptionFetchError 的测试类型映射；仅给 replay adapter 增加 errors.As。
+4. draft 在 Generate 更早观察到 ctx 取消后，将错误包装为中文 validation，丢失
+   errors.Is(Canceled)。保留业务中文路径，单独透传 owner ctx 取消及错误链中的
+   Canceled/DeadlineExceeded。原真实 Runtime 回归仍严格检查 DB/文件状态不变。
+5. subs/substore 14处 runtime Clone 触发 facade gate。改用物理图 CopyGraph，不扩展
+   alias、不截成 null；保留所有原 root/独立子树 Encode/ToJSON 预算检查，无架构豁免。
+
+第一组定向：新 Python 参考20条完整生成与原输出一致；convert（旧断言/byte/全部recorded）
+31.071s、yamlx facade0.596s、draft0.195s、refresh完整3150回放38.459s、subs alias0.038s、
+substore alias0.015s，全部 PASS。完整包补验：subs26.879s、substore24.163s、
+convert corpus16.919s、draft0.134s、discovery owner0.481s、yamlx facade0.527s，全部 PASS。
+临时 byte-dump 仅保存于服务器私有缓存；临时 Go 诊断测试已从本地移除，不提交。
+跨包 live check 仍在运行；产品 CopyGraph 修改后的三个最终基准与 preflight/compare 待完成。

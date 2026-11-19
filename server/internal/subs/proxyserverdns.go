@@ -637,17 +637,17 @@ func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) 
 	if len(chosen) == 0 {
 		return report, nil
 	}
-	// Validate before Clone: Clone deliberately returns null for invalid graphs.
+	// Validate before ownership copying so downstream decoding fails explicitly.
 	if _, err := yamlx.Encode(dns); err != nil {
 		return nil, err
 	}
-	// Validate each isolated subtree before alias expansion. The containing DNS
+	// Validate each isolated consumption subtree. The containing DNS
 	// graph can pass its ratio budget while a selected child exceeds its own.
 	validatedPolicy, err := yamlx.Encode(written)
 	if err != nil {
 		return nil, err
 	}
-	policy := yamlx.Clone(validatedPolicy)
+	policy := yamlx.CopyGraph(validatedPolicy)
 	for _, item := range chosen {
 		if item.Source == "configflow" {
 			yamlx.Set(policy, item.Domain, yamlx.Str(address))
@@ -655,7 +655,7 @@ func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) 
 	}
 	policyChanged := !yamlx.Equal(policy, written)
 	if policyChanged || len(additions) > 0 {
-		owned := yamlx.Clone(dns)
+		owned := yamlx.CopyGraph(dns)
 		if policyChanged {
 			yamlx.Set(owned, PolicyKey, policy)
 		}
@@ -664,7 +664,7 @@ func ApplyDNS(main, merged *yamlx.Node, coreVersion string) (*DNSReport, error) 
 			if err != nil {
 				return nil, err
 			}
-			yamlx.Set(owned, "fake-ip-filter", yamlx.Clone(validatedFilter))
+			yamlx.Set(owned, "fake-ip-filter", yamlx.CopyGraph(validatedFilter))
 		}
 		yamlx.Set(main, "dns", owned)
 		yamlx.MaterializeAliases(main)

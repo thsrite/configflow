@@ -231,12 +231,12 @@ func AdaptProxies(subscription string, proxies []*yamlx.Node, main *yamlx.Node, 
 		case !chains:
 			dropped = append(dropped, proxyName(proxy))
 		case names[GroupName(subscription, target)]:
-			// The individual record is validated before Clone, never the whole config.
+			// Validate only the individual record before ownership copying.
 			validated, err := yamlx.Encode(proxy)
 			if err != nil {
 				return nil, err
 			}
-			owned := yamlx.Clone(validated)
+			owned := yamlx.CopyGraph(validated)
 			yamlx.Set(owned, "dialer-proxy", yamlx.Str(GroupName(subscription, target)))
 			adapted = append(adapted, owned)
 		case names[target]:

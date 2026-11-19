@@ -42,7 +42,7 @@ func ParseList(content string) []ParsedProxy {
 					if _, err := yamlx.ToJSON(item); err != nil {
 						continue
 					}
-					if parsed, err := parsedObject(yamlx.Clone(item)); err == nil {
+					if parsed, err := parsedObject(yamlx.CopyGraph(item)); err == nil {
 						result = append(result, parsed)
 					}
 				}
@@ -108,7 +108,7 @@ func subscriptionGraph(source string) (*yamlx.Node, error) {
 	if err := yamlx.ProjectJSONKeys(graph, yamlx.RejectNonStringKeys); err != nil {
 		return nil, err
 	}
-	// Validate the entire selected graph before any alias-expanding clone.
+	// Validate the entire selected graph before copying owned nodes.
 	if _, err := yamlx.ToJSON(graph); err != nil {
 		return nil, err
 	}

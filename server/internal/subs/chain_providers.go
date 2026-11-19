@@ -81,7 +81,7 @@ func ownedProviders(main *yamlx.Node) (*yamlx.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return yamlx.Clone(validated), nil
+	return yamlx.CopyGraph(validated), nil
 }
 
 // ChainProviders clones source providers for lowered chain exits and filters
@@ -245,7 +245,7 @@ func ChainProviders(config *model.Config, main *yamlx.Node) (failure error) {
 			if err != nil {
 				return err
 			}
-			provider := yamlx.Clone(validated)
+			provider := yamlx.CopyGraph(validated)
 			yamlx.Set(provider, "path", yamlx.Str(fmt.Sprintf("./providers/%s_provider_%d.yaml", source.ID, index)))
 			dialerName, err := ops.Resolve(config, model.Node{DialerRef: dialer})
 			if err != nil {

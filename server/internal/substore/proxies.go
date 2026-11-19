@@ -62,7 +62,7 @@ func ParseProxyNodes(text string) ([]*yamlx.Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		node := yamlx.Clone(validated)
+		node := yamlx.CopyGraph(validated)
 		convert.FixProxyNode(node)
 		out = append(out, node)
 	}
@@ -92,7 +92,7 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 		if yamlx.Get(proxy, "name") == nil {
 			source.Name = "Unnamed"
 		}
-		params := yamlx.Clone(proxy)
+		params := yamlx.CopyGraph(proxy)
 		for _, key := range []string{"name", "type", "server", "port"} {
 			yamlx.Delete(params, key)
 		}

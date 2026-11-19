@@ -117,7 +117,7 @@ func ownedSequence(main *yamlx.Node, field string) (*yamlx.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return yamlx.Clone(validated), nil
+	return yamlx.CopyGraph(validated), nil
 }
 func mentionsDialer(node model.Node) bool {
 	if node.ProxyString != nil && strings.Contains(*node.ProxyString, "dialer-proxy") {
@@ -348,7 +348,7 @@ func AddGroups(ctx context.Context, main *yamlx.Node, config *model.Config, inpu
 					if err != nil {
 						return nil, err
 					}
-					proxy := yamlx.Clone(validated)
+					proxy := yamlx.CopyGraph(validated)
 					yamlx.Set(proxy, "name", yamlx.Str(copyName))
 					if nested, ok := dnsText(yamlx.Get(proxy, "dialer-proxy")); ok && airport[nested] {
 						next, err := resolve(nested, append(append([]string(nil), path...), target))

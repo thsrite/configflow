@@ -359,7 +359,7 @@ func MergeHosts(main *yamlx.Node, config *model.Config, userKeys, mosdnsKeys []s
 			return nil, nil, err
 		}
 		if resolved := yamlx.Resolve(old); resolved != nil && resolved.Kind == yaml.MappingNode {
-			hosts = yamlx.Clone(old)
+			hosts = yamlx.CopyGraph(old)
 		}
 	}
 	report := &HostReport{Subscriptions: []HostSubscription{}, Items: []HostItem{}}

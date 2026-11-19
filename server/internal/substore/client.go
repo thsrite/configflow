@@ -558,7 +558,7 @@ func (c *Client) ConvertTarget(ctx context.Context, text, target string) (*yamlx
 		if ok {
 			c.conversions.moveToEnd(key)
 			c.convMu.Unlock()
-			return yamlx.Clone(kept), nil
+			return yamlx.CopyGraph(kept), nil
 		}
 		c.convMu.Unlock()
 	}
@@ -581,7 +581,7 @@ func (c *Client) ConvertTarget(ctx context.Context, text, target string) (*yamlx
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		c.conversions.set(key, yamlx.Clone(proxy))
+		c.conversions.set(key, yamlx.CopyGraph(proxy))
 		c.conversions.moveToEnd(key)
 		for c.conversions.len() > c.conversionLimit {
 			c.conversions.delete(c.conversions.keys()[0])
