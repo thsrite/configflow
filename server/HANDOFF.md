@@ -56,6 +56,24 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 (handoff to a fresh session; read this first) <<<
 
+**Update 2026-11-19 late (coordinator 2f0cdf04): batch-12 MERGED, go = 42a9269d3** — N8-10 monitor (+ Opus HR:
+M1 superseding damaged status → StateError; null status = missing) and installer (+ Opus HR: `//` root alias refused,
+RenderDockerRun port via shellWord, ss non-ASCII blank lines → unknown). Preflight + compare .32 PASS, core FULL .64
+PASS on 6714a866f. Integrator b6fa1f80 (Codex) was stopped by OpenAI's content filter (context full of
+path/shell-injection review material) after stacking; coordinator finished the gate by hand. Use a FRESH Codex for
+the next integration with a neutral brief.
+**batch-13 candidates:** go-opus-review-n8-10-upgrades@82adf451c (upgrades 1051ddfc5 on installer-review f8df41fb1
++ HR: null Agent version = missing; corrupt HA fields → FollowModel skips + throttled warning, heartbeat stays 200,
+address dialog 500) and go-n8-10-api-agents (02a6c1ea, IN FLIGHT; stacked on upgrades; must rebase onto go now
+that monitor is in). Both need rebasing onto go (installer commits now have new hashes). api/agents rulings: core
+typed hooks InstallationProfileTyped/InstallationRegisterTyped/HAServiceOperationTyped + Manager.RunServiceOperation
+(single trigger, HA lease reused); registration version whitelist checked inside RegisterIdentity AFTER auth/proof
+(anon → 403 regardless), before consume (400, proof kept); If-Modified-Since via net/http.ParseTime (invalid →
+ignored); traffic.go keeps legacy metrics/trafficstore adapters → NEW TASK "N8-10 supplement: metrics/trafficstore
+native services (A05 engine)" before N8-11. UI follow-up: recovery entry for corrupt dashboard checkpoint and
+latest_upgrade (currently offline fix / re-register, documented). N8-11 also: delete old core hooks, typed hook
+unregistration (upgrades review L2), test-only numeric IP/image compat in installer.
+
 **Update 2026-11-19 ~18:30 (coordinator 2f0cdf04): batch-11 MERGED, go = a25020826.** Contents: json-case sweep
 (go-review-json-case), N8-10 core-2 + Opus HR review (high 0, M1 re-registration kept non-Python members incl.
 docker_ha_installation_id → fixed; node_test_dns_endpoints dropped like Python — field dead since upstream #569),
