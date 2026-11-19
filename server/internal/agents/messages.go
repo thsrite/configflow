@@ -241,3 +241,9 @@ const (
 	msgDeploymentPreparationBusy = "Deployment preparation already running"
 	msgDeploymentStarted         = "开始向 Agent %s 发布配置（任务 %s）"
 )
+
+const (
+	msgDeploymentStatusShape = "Agent 返回的发布状态格式不正确，请检查 Agent 版本和日志。"
+	msgDeploymentNotFound    = "Deployment not found"
+	msgDeploymentOutcome     = "Agent %s %s（任务 %s）%s"
+)

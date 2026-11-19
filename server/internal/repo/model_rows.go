@@ -193,6 +193,8 @@ func (r *Repository) reportModelIssues(entry storedEntry) {
 	r.modelIssueHead = entry.Head
 	r.cacheMu.Unlock()
 	for _, issue := range entry.Issues {
-		logger.Warningf(msgModelFieldIssue, issue.Path, issue.Kind)
+		if !r.agentIssuesReported(entry.Head, issue.Path) {
+			logger.Warningf(msgModelFieldIssue, issue.Path, issue.Kind)
+		}
 	}
 }

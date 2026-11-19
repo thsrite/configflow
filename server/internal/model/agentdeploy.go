@@ -384,3 +384,8 @@ func (r *DeploymentDNSCheck) MemberJSON(name string) (json.RawMessage, bool, err
 func (r *PreparedContent) MemberJSON(name string) (json.RawMessage, bool, error) {
 	return recordMemberJSON(r, &r.raw, name)
 }
+
+// SetJSON replaces one applied baseline member through the shared codec.
+func (r *AppliedContent) SetJSON(name string, value json.RawMessage) error {
+	return SetMemberJSON(r, &r.raw, name, value)
+}

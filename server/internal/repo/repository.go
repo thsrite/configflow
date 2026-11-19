@@ -91,6 +91,16 @@ type Repository struct {
 	// viewGuard, when set, is called if a View callback modified the
 	// shared snapshot (tests set it to fail).
 	viewGuard func()
+
+	// The registry row has its own one-generation immutable cache. It is
+	// shared by hot Agent readers even when unrelated profiles exceed the
+	// full-document cache budget. Reader callbacks never run under these locks.
+	agentsCacheMu      sync.Mutex
+	agentsLoadMu       sync.Mutex
+	agentsCache        *agentSnapshot
+	agentsIssueHead    store.Head
+	agentsIssueHeadSet bool
+	agentLoads         atomic.Int64
 }
 
 // Open is ProfileRepository(data_dir, default_config_factory,

@@ -292,3 +292,26 @@ func (c *Conn) Load() (Entry, error) {
 	}
 	return Entry{Head: head, Document: doc, Size: size}, nil
 }
+
+// Field returns one owned stored JSON value from this read snapshot. It checks
+// the selected row's text and JSON; Load validates the complete row envelope.
+func (c *Conn) Field(scope, owner, name string) (json.RawMessage, bool, error) {
+	var value json.RawMessage
+	present := false
+	err := c.query("SELECT value FROM fields WHERE scope = ? AND owner = ? AND field = ?", []any{scope, owner, name}, func(row *sql.Rows) error {
+		var text string
+		if err := row.Scan(&text); err != nil {
+			return err
+		}
+		key := scope + "/" + owner + "/" + name
+		if err := checkRowText("fields", key, []string{"value"}, text); err != nil {
+			return err
+		}
+		if err := checkRowJSON("fields", key, text); err != nil {
+			return err
+		}
+		value, present = json.RawMessage(text), true
+		return nil
+	})
+	return value, present, err
+}

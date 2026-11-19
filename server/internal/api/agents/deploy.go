@@ -59,6 +59,9 @@ func getAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 
 func deployResponse(r deploy.Response) (*httpx.Response, error) {
 	if r.Err != nil {
+		if response, handled := deviceResponseFailure(r.Err); handled {
+			return response, nil
+		}
 		return nil, r.Err
 	}
 	out := httpx.JSONStatus(r.Status, r.Body)
@@ -109,6 +112,9 @@ func deploymentAction(action string) httpx.HandlerFunc {
 			result, e = m.RecoverDeployment(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		}
 		if e != nil {
+			if response, handled := deviceResponseFailure(e); handled {
+				return response, nil
+			}
 			return nil, e
 		}
 		if action == "poll" {

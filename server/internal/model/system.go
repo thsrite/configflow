@@ -98,3 +98,8 @@ func (r *Backup) Clear(member string) error { return ClearMember(r, &r.raw, memb
 
 // MarshalJSON preserves unknown and unchanged Backup members.
 func (r Backup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns an original effective settings member by its exact key.
+func (r *SystemConfig) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}

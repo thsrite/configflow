@@ -19,8 +19,6 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
-	"configflow/internal/logx"
-	"configflow/internal/notifications"
 )
 
 var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}\z`)
@@ -107,214 +105,35 @@ type RecordOptions struct {
 	SkipUnchanged bool
 }
 
-var receiptTerminal = pyStatuses{"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
-
-type finishedDeployment struct {
-	label string
-	state *jsonx.Object
-}
-
-// recordUpdater is the record() closure of record_deployment.
-func (m *Manager) recordUpdater(agentID, deploymentID string, updates *jsonx.Object, options RecordOptions, finished *[]finishedDeployment) func(ctx context.Context, agents *[]any) (any, error) {
-	return func(ctx context.Context, agents *[]any) (any, error) {
-		agent, _ := findAgent(*agents, agentID)
-		if agent == nil {
-			return jsonx.Obj("success", false, "message", "Agent not found"), nil
-		}
-		deployments, _ := agent.Value("deployments").(*jsonx.Object)
-		state, _ := deployments.Value(deploymentID).(*jsonx.Object)
-		if state == nil {
-			return jsonx.Obj("success", false, "message", "Deployment not found", "http_status", jsonx.Int(404)), nil
-		}
-		status := state.Value("status")
-		if options.OnlyUnsubmitted && jsonx.Truthy(state.Value("submitted")) {
-			return state.Clone(), nil
-		}
-		if options.UploadReceipt && !receiptTerminal.has(updates.Value("status")) &&
-			status != "preparing" && status != "uploading" && status != "receiving" {
-			// A POST acceptance snapshot can arrive after a GET has already
-			// observed validation/startup. It is not a fresh worker status.
-			return state.Clone(), nil
-		}
-		if options.ActivationReceipt && !receiptTerminal.has(updates.Value("status")) && status != "ready" && status != "unknown" {
-			return state.Clone(), nil
-		}
-		if jsonx.Truthy(state.Value("manual_rollback")) && !jsonx.Truthy(updates.Value("manual_rollback")) {
-			// An overlapping publication poll cannot undo a reserved rollback.
-			return state.Clone(), nil
-		}
-		if deploymentTerminal.has(status) && !jsonx.Equal(updates.GetOr("status", status), status) {
-			// Never regress a confirmed transaction.
-			return state.Clone(), nil
-		}
-		reportedAt, hasReported := "", false
-		if _, isString := updates.Value("updated_at").(string); isString {
-			reportedAt, hasReported = EventTime(updates.Value("updated_at"))
-		}
-		if hasReported {
-			if previous, ok := state.Value("agent_updated_at").(string); ok && previous != "" && reportedAt < previous {
-				return state.Clone(), nil
-			}
-		}
-		before := status
-		if newStatus := updates.Value("status"); jsonx.Truthy(newStatus) && newStatus != "unknown" && !jsonx.Truthy(updates.Value("http_status")) {
-			if status == "unknown" {
-				// Transport diagnostics describe an unconfirmed outcome.
-				for _, field := range []string{"error_details", "rollback_error_details"} {
-					if !updates.Has(field) {
-						state.Delete(field)
-					}
-				}
-			}
-			state.Delete("http_status")
-			if !updates.Has("message") {
-				state.Delete("message")
-			}
-		}
-		for _, pair := range [][2]string{{"error", "error_details"}, {"rollback_error", "rollback_error_details"}} {
-			if value, ok := updates.Get(pair[0]); ok && !jsonx.Equal(value, state.Value(pair[0])) && !updates.Has(pair[1]) {
-				state.Delete(pair[1])
-			}
-		}
-		// Never let an upstream response replace task ownership or identity.
-		for _, key := range []string{"status", "message", "error", "error_details", "failed_stage", "rollback_error", "rollback_error_details", "config_version",
-			"config_revision", "success", "sha256", "submitted", "previous_running", "health",
-			"http_status", "manual_rollback", "source_sha256"} {
-			value, ok := updates.Get(key)
-			if !ok {
-				continue
-			}
-			switch key {
-			case "message", "error", "error_details", "rollback_error", "rollback_error_details":
-				state.Set(key, FailureText(value, tokenSecrets(agent), 0))
-			default:
-				state.Set(key, value)
-			}
-		}
-		state.Update(DNSReportFields(updates, tokenSecrets(agent)))
-		if s := updates.Value("status"); s == "ready" || s == "succeeded" {
-			for _, field := range []string{"error", "error_details", "failed_stage", "rollback_error", "rollback_error_details"} {
-				if !updates.Has(field) {
-					state.Delete(field)
-				}
-			}
-		}
-		if updates.Value("status") == "rolled_back" && !jsonx.Truthy(updates.Value("rollback_error")) {
-			state.Delete("rollback_error")
-			state.Delete("rollback_error_details")
-		}
-		state.Set("updated_at", nowISO())
-		if hasReported {
-			state.Set("agent_updated_at", reportedAt)
-		}
-		message := state.Value("message")
-		if !jsonx.Truthy(message) {
-			message = state.Value("error")
-		}
-		state.Set("events", AppendEvent(state.Value("events"), jsonx.Str(state.Value("status")), message, "", tokenSecrets(agent)))
-		latest, _ := agent.Value("latest_deployment").(*jsonx.Object)
-		isLatest := jsonx.Equal(latest.Value("deployment_id"), deploymentID)
-		bound := false
-		if state.Value("status") == "succeeded" && isLatest {
-			// default_profile_id() is read only when Python's `and` gets there.
-			profile, err := m.profileOf(ctx, agent)
-			if err != nil {
-				return nil, err
-			}
-			bound = jsonx.Equal(state.Value("profile_id"), profile)
-		}
-		if bound && jsonx.Equal(state.GetOr("service_type", agent.Value("service_type")), agent.Value("service_type")) {
-			agent.Set("config_version", state.GetOr("config_version", agent.GetOr("config_version", "0")))
-			// Revisions are diagnostic; only server-prepared complete contents
-			// may establish a baseline after confirmed activation.
-			agent.Set("pushed_at", utcNowZ())
-			if revision := state.Value("config_revision"); revision != nil {
-				agent.Set("config_revision", revision)
-			}
-			if prepared := state.Value("prepared_content"); jsonx.Truthy(prepared) {
-				applied, _ := jsonx.DeepCopy(prepared).(*jsonx.Object)
-				if applied == nil {
-					applied = jsonx.NewObject()
-				}
-				applied.Set("config_version", agent.Value("config_version"))
-				applied.Set("deployment_id", deploymentID)
-				agent.Set("applied_content", applied)
-			} else {
-				agent.Delete("applied_content")
-			}
-		}
-		if jsonx.Truthy(state.Value("manual_rollback")) && state.Value("status") == "rolled_back" && isLatest {
-			agent.Set("config_version", truthyOr(state.Value("config_version"), "0"))
-			// The restored pre-publication files may predate ConfigFlow.
-			for _, field := range []string{"applied_content", "config_revision", "pushed_at"} {
-				agent.Delete(field)
-			}
-		}
-		if isLatest {
-			agent.Set("latest_deployment", state.Clone())
-		}
-		if newStatus, _ := state.Value("status").(string); !jsonx.Equal(state.Value("status"), before) {
-			// `status in _DEPLOYMENT_RESULTS` raises for a list or dict an Agent
-			// answered: the transaction is abandoned and nothing is stored.
-			if err := unhashable(state.Value("status")); err != nil {
-				return nil, err
-			}
-			if _, known := deploymentResults[newStatus]; known {
-				*finished = append(*finished, finishedDeployment{agentLabel(agent), state.Clone()})
-			}
-		}
-		return state.Clone(), nil
-	}
-}
-
-// RecordDeployment is record_deployment(agent_id, deployment_id, updates,
-// ...): only a confirmed successful activation changes the displayed version.
+// RecordDeployment translates a legacy remote patch to the native journal owner.
 func (m *Manager) RecordDeployment(ctx context.Context, agentID, deploymentID string, updates *jsonx.Object, options RecordOptions) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var finished []finishedDeployment
-	record := m.recordUpdater(agentID, deploymentID, updates, options, &finished)
-	if options.SkipUnchanged {
-		unchanged := m.unchangedDeployment(ctx, record, agentID, deploymentID)
-		finished = nil
-		if unchanged != nil {
-			if unchanged.Value("service_type") == "oxidns" {
-				if err := m.publicationComplete(ctx, agentID, deploymentID, unchanged.Value("status")); err != nil {
-					return nil, err
-				}
-			}
-			return unchanged, nil
+	selected := jsonx.NewObject()
+	for _, key := range append(append([]string(nil), deploymentUpdateFields...), "updated_at", "dns_checks", "dns_checked_at") {
+		if value, present := updates.Get(key); present {
+			selected.Set(key, value)
 		}
 	}
-	value, err := m.UpdateAgents(ctx, "", record)
+	raw, err := json.Marshal(selected)
 	if err != nil {
 		return nil, err
 	}
-	result := value.(*jsonx.Object)
-	current, err := m.GetAgentByID(ctx, agentID, true)
+	patch, err := DecodeDeploymentUpdate(raw)
 	if err != nil {
 		return nil, err
 	}
-	notifications.Safely(func() error { return notifications.RecordAgent(ctx, current, m.repository) })
-	if len(finished) > 0 {
-		last := finished[len(finished)-1]
-		status := last.state.GetString("status")
-		outcome := deploymentResults[status]
-		detail := truthyOr(last.state.Value("error"), truthyOr(last.state.Value("rollback_error"), truthyOr(last.state.Value("message"), "")))
-		suffix := ""
-		if jsonx.Truthy(detail) && status != "succeeded" {
-			suffix = "：" + logx.LogText(detail, 300)
-		}
-		logger.Log(outcome.level, "Agent "+last.label+" "+outcome.text+"（任务 "+prefix(deploymentID, 12)+"）"+suffix)
+	result, err := m.RecordDeploymentModel(ctx, agentID, deploymentID, patch, options)
+	if err != nil {
+		return nil, err
 	}
-	if result.Value("service_type") == "oxidns" {
-		if err := m.publicationComplete(ctx, agentID, deploymentID, result.Value("status")); err != nil {
-			return nil, err
-		}
+	raw, err = json.Marshal(result)
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+	var record Record
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func (m *Manager) publicationComplete(ctx context.Context, agentID, deploymentID string, status any) error {
@@ -323,44 +142,6 @@ func (m *Manager) publicationComplete(ctx context.Context, agentID, deploymentID
 	}
 	if hook := currentHooks().PublicationComplete; hook != nil {
 		return hook(ctx, m, agentID, deploymentID, status)
-	}
-	return nil
-}
-
-// unchangedDeployment is _unchanged_deployment: the stored task when the
-// record would change nothing but its updated_at (decided on a read snapshot).
-func (m *Manager) unchangedDeployment(ctx context.Context, record func(ctx context.Context, agents *[]any) (any, error), agentID, deploymentID string) *jsonx.Object {
-	system, err := m.repository.GetSystem(ctx)
-	if err != nil {
-		return nil
-	}
-	agents := system.GetList("agents")
-	agent, _ := findAgent(agents, agentID)
-	deployments, _ := agent.Value("deployments").(*jsonx.Object)
-	if _, ok := deployments.Value(deploymentID).(*jsonx.Object); !ok {
-		return nil
-	}
-	stored := agent.DeepCopy()
-	if _, err := record(ctx, &agents); err != nil {
-		return nil // Let the real transaction report it.
-	}
-	storedDeployments := stored.GetObject("deployments")
-	newDeployments, _ := agent.Value("deployments").(*jsonx.Object)
-	pairs := [][2]any{{storedDeployments.Value(deploymentID), newDeployments.Value(deploymentID)},
-		{stored.Value("latest_deployment"), agent.Value("latest_deployment")}}
-	for _, pair := range pairs {
-		old, okOld := pair[0].(*jsonx.Object)
-		updated, okNew := pair[1].(*jsonx.Object)
-		if okOld && okNew && old != nil && updated != nil {
-			if value, ok := old.Get("updated_at"); ok {
-				updated.Set("updated_at", value)
-			} else {
-				updated.Delete("updated_at")
-			}
-		}
-	}
-	if jsonx.Equal(agent, stored) {
-		return storedDeployments.GetObject(deploymentID).Clone()
 	}
 	return nil
 }
@@ -579,7 +360,16 @@ func (m *Manager) getDeployment(ctx context.Context, agentID, deploymentID strin
 		return m.RecordDeployment(ctx, agentID, deploymentID, jsonx.Obj("success", false, "status", "failed",
 			"message", "Agent has no record of the uploaded deployment"), RecordOptions{})
 	}
-	if _, isString := result.Value("status").(string); jsonx.Truthy(result.Value("http_status")) || !isString {
+	if jsonx.Truthy(result.Value("http_status")) {
+		return pending(), nil
+	}
+	if _, isString := result.Value("status").(string); !isString {
+		if value, present := result.Get("status"); present {
+			raw, err := json.Marshal(value)
+			if err != nil || nonscalarStatus(raw) {
+				return nil, ErrInvalidDeploymentStatus
+			}
+		}
 		return pending(), nil
 	}
 	return m.RecordDeployment(ctx, agentID, deploymentID, result, RecordOptions{SkipUnchanged: true})

@@ -89,7 +89,13 @@ func applyDNSReport(state *model.Deployment, report DNSReport) error {
 		}
 	}
 	if report.CheckedAt != nil {
-		state.DNSCheckedAt = new(*report.CheckedAt)
+		raw, err := json.Marshal(*report.CheckedAt)
+		if err != nil {
+			return err
+		}
+		if err := state.SetJSON("dns_checked_at", raw); err != nil {
+			return err
+		}
 	}
 	return nil
 }

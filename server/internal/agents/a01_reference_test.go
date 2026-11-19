@@ -251,7 +251,7 @@ func posInf() float64 { var zero float64; return 1 / zero }
 // a TypeError (nothing stored), every scalar is stored as Python stores it.
 func TestReferenceRecordDeploymentStatuses(t *testing.T) {
 	e := newEnv(t)
-	for _, item := range loadA01Reference(t).GetList("record_statuses") {
+	for index, item := range loadA01Reference(t).GetList("record_statuses") {
 		c := item.(*jsonx.Object)
 		stored := c.GetString("stored")
 		e.editSystem(func(system *jsonx.Object) {
@@ -262,11 +262,17 @@ func TestReferenceRecordDeploymentStatuses(t *testing.T) {
 		})
 		options := RecordOptions{ActivationReceipt: c.GetObject("options").Has("activation_receipt"),
 			UploadReceipt: c.GetObject("options").Has("upload_receipt")}
+		before, readErr := e.repo.Store().Fingerprint()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
 		result, err := e.m.RecordDeployment(e.ctx, "a", "d", jsonx.Obj("status", jsonx.DeepCopy(c.Value("status")), "message", "m"), options)
 		name := compact(t, c)
-		if wantErr, ok := c.Get("error"); ok {
-			if err == nil || "TypeError: "+err.Error() != wantErr {
-				t.Errorf("%s: %v %v", name, result, err)
+		if c.Has("error") {
+			verifyNativeRecordStatusRow(t, index, c, err)
+			after, readErr := e.repo.Store().Fingerprint()
+			if readErr != nil || after != before {
+				t.Fatalf("error row %d wrote transaction: %v", index, readErr)
 			}
 		} else if err != nil || !jsonx.Equal(result.Value("status"), c.Value("result_status")) {
 			t.Errorf("%s: %v %v", name, result, err)

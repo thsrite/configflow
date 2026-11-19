@@ -169,23 +169,62 @@ func SanitizationTokensOf(system *jsonx.Object) (ruleProxy, agents TokenSet) {
 // copy is read and nothing is cached.
 func (r *Repository) sanitizationTokensNow(ctx context.Context) (TokenSet, TokenSet, error) {
 	if r.InTransaction(ctx) {
-		document, err := r.working(ctx)
+		document, _, err := r.workingModel(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		ruleProxy, agents := SanitizationTokensOf(document.GetObject("system"))
+		ruleProxy, agents := sanitizationTokensModel(&document.System)
 		return ruleProxy, agents, nil
+	}
+	if snapshot := r.lockedSnapshot(ctx); snapshot != nil {
+		ruleProxy, agents := sanitizationTokensModel(&snapshot.entry.Model.System)
+		return ruleProxy, agents, nil
+	}
+	var head store.Head
+	if err := r.store.Reading(func(connection *store.Conn) error { var err error; head, err = connection.Head(); return err }); err != nil {
+		if _, failure := r.readEntry(ctx, false); failure != nil {
+			return nil, nil, failure
+		}
+		return nil, nil, err
+	}
+	if cached := r.tokensCache.Load(); cached != nil && cached.head == head {
+		return cached.ruleProxy, cached.agents, nil
 	}
 	entry, err := r.readEntry(ctx, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	if cached := r.tokensCache.Load(); cached != nil && cached.head == entry.Head {
-		return cached.ruleProxy, cached.agents, nil
-	}
-	ruleProxy, agents := SanitizationTokensOf(entry.Document.GetObject("system"))
+	ruleProxy, agents := sanitizationTokensModel(&entry.Model.System)
 	r.tokensCache.Store(&sanitizationTokens{head: entry.Head, ruleProxy: ruleProxy, agents: agents})
 	return ruleProxy, agents, nil
+}
+
+func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
+	ruleProxy, agents := TokenSet{}, TokenSet{}
+	add := func(target TokenSet, raw json.RawMessage, present bool, err error) {
+		if err != nil || !present {
+			return
+		}
+		var value *string
+		if json.Unmarshal(raw, &value) == nil && value != nil && *value != "" {
+			target[*value] = struct{}{}
+		}
+	}
+	raw, present, err := system.SystemConfig.MemberJSON("rule_proxy_token")
+	add(ruleProxy, raw, present, err)
+	if raw, present, err := system.SystemConfig.MemberJSON("retired_rule_proxy_tokens"); err == nil && present {
+		var values []json.RawMessage
+		if json.Unmarshal(raw, &values) == nil {
+			for _, raw := range values {
+				add(ruleProxy, raw, true, nil)
+			}
+		}
+	}
+	for i := range system.Agents {
+		raw, present, err := system.Agents[i].MemberJSON("token")
+		add(agents, raw, present, err)
+	}
+	return ruleProxy, agents
 }
 
 // RuleProxyTokensForSanitization is rule_proxy_tokens_for_sanitization: the
@@ -341,7 +380,7 @@ func (r *Repository) UpdateSystemTransaction(ctx context.Context, updater Update
 func (r *Repository) UpdateSystem(ctx context.Context, fn func(ctx context.Context, s *model.System) error) error {
 	ctx = ctxx.Detach(ctx)
 	return r.Update(ctx, func(ctx context.Context, document *model.Document) error {
-		_, err := applySystemIn(document, func(s *model.System) error { return fn(ctx, s) })
+		_, err := applySystemIn(document, func(s *model.System) error { return r.editSystemView(ctx, s, fn) })
 		return err
 	})
 }

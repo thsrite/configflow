@@ -29,10 +29,13 @@ func (r *Repository) workingModel(ctx context.Context) (document *model.Document
 		return nil, false, nil
 	}
 	if tx.legacy == nil {
-		return tx.document, true, nil
+		return r.systemInView(ctx, tx.document), true, nil
 	}
 	document, err = modelFromLegacy(tx.legacy, tx.base.Entry.Document)
-	return document, true, err
+	if err != nil {
+		return nil, true, err
+	}
+	return r.systemInView(ctx, document), true, nil
 }
 
 // working returns the legacy view of the working document of the write
@@ -46,7 +49,7 @@ func (r *Repository) working(ctx context.Context) (*jsonx.Object, error) {
 	if tx.legacy != nil {
 		return tx.legacy, nil
 	}
-	return legacyModelDocument(tx.document)
+	return legacyModelDocument(r.systemInView(ctx, tx.document))
 }
 
 // modelFromLegacy converts a legacy document into the typed one. Rows whose

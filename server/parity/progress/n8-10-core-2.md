@@ -200,3 +200,76 @@ Exit 0：1,976,452 executions，PASS 60.103s；getter 原始 token 和 owned byt
 原 corpus/输入输出/SHA 不动；只对精确逐行绑定的这些错误行比较 Python error class、Go
 拒绝、事务不写。设备坏回包按项目约定结构化 502 + 中文原因（不是裸 500），补真实 HTTP
 设备请求原字节及回包回归，并登记 behaviour-changes。同类情况按此标准处理，无需再次问。
+
+## typed deployment record 与 scoped Agent reads
+
+状态：部分完成。RecordDeployment 现在仅选 exact protocol keys 并交给
+DeploymentUpdate / RecordDeploymentModel；业务更新直接操作 model.Deployment/Agent。
+不接受设备覆盖 id/profile/service/receipt/prepared proof。完成确认的 stored deployment_id、
+profile_id、service_type 继续核验原始字符串，不能用 R5 数字投影证明所有权；独立原始
+数字/字符串四条正反控制及所有既有状态、历史、late receipt、rollback 检查保留。
+
+- stale/terminal/upload/activation receipt 的判定顺序、submitted/manual rollback 的原始
+  boolean、事件、诊断脱敏、DNS report、applied content、配置确认和通知维持原有语义。
+  诊断统一 internal/redact；shutdown 用 lifecycle.Detach，txn 提交前仍检查取消。
+- 删除原 Record 私有动态 updater 和 CPython unhashable status 仿真。按协调者裁定，
+  八条 list/dict 错误行保留原 corpus、原输入输出及 SHA；完整 archive + 每行独立 SHA
+  绑定后比较 Python TypeError 类、Go 拒绝、事务 fingerprint 不变。其余行保持原精确期望。
+  HTTP 上游此类错误结构化 502 + 中文原因，behaviour-changes 已登记。
+- API/agents 仅最小错误映射接线（deploy.go、device_response.go）。两条真实 loopback HTTP
+  回归核验实际 method/URI/header/body 原字节、502 JSON、凭据不泄露和 DB 不写入。
+- no-op 预览只拥有目标 Agent 元数据和一份 journal，不复制无关 Agent/profile/HA source。
+  原失败分配 fixture 保留：每个无关来源 2MiB，整库超过 8MiB 文档缓存上限时原路径
+  达 783,466,344 B/op / 178,457 allocs。修复后 empty 1,055,498 B/op / 9,232 allocs，
+  large 1,056,414 B/op / 9,228 allocs；固定成本仍较高，已不随无关配置增长。
+- 为消除此真实热点，repo.ViewAgents 提供只读 typed Agent 行 generation cache；先复用
+  full cache，否则在 SQLite 同一个 read snapshot 读取原始 agents 行。Store.Conn.Field
+  只用 bound SQL、检查原始 UTF-8/JSON，不经 JSON1 投影。仅保留一代 Agent 行，包括超出
+  文档缓存上限的行，避免大 registry 在每次心跳重解码。冷载入合并，callback 不持锁；
+  transaction/WithReadSnapshot 不发布临时数据；R5 警告不重复报告。
+- UpdateSystem 的拟议 section 通过 callback scoped ctx 供嵌套 native/legacy readonly
+  reader 观察，回调结束就失效，abort 不泄露；没有改变 nested writer/commit 规则。
+  凭据缓存先读轻量 Head 再命中，不先解码整库；事务内只读取本 txn 的原始 string tokens。
+- 以上是 repository durable snapshot，未改变 runtime entry。已收到 batch-10 的轻量
+  runtime 修复通知；等 batch-10 合入 go 后 rebase，并以其七个 owned RawMessage 为准，
+  不恢复完整 model.Agent 的 runtime 表示，最终再次核验心跳分配。
+
+### 本块已通过的定向证据
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/model; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "DeploymentHistory|OlderAgentStatus|Confirmed|TransportDetails|SupersededHistory|ManualRollback|LateTransport|Preparation" ./internal/agents'
+
+Exit 0：agents 94.331s。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "ReferenceRecordDeploymentStatuses" ./internal/agents'
+
+Exit 0：agents 61.407s，包含全部原 status rows 和八条逐行 no-write 证明。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "N810MalformedDeployment" ./internal/api/agents'
+
+Exit 0：api/agents 2.657s。此前真实 HTTP 回归暴露旧 poll 路径把 array/object 静默 pending；
+修复 poll guard 实现后通过，原新回归期望未改。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/repo ./internal/store && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "TypedRecordPreviewAllocation" -v ./internal/agents'
+
+Exit 0：agents 93.707s，分配数值见上。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/repo ./internal/store; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "AgentView|RedactionTokens|RotatedTokens|Working|Snapshot" ./internal/repo; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzTypedDeploymentPatchOwnership$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0：repo 8.153s；fuzz 757,165 executions，PASS 60.308s。
+
+当前仍未迁完：deployment read/poll/activation/rollback/recovery、remote/client/response codec、
+ResponseFailure、runtime legacy importer/time/version/presence、HA public projections，以及
+子包其余 adapter。core-2 暂不宣称完成；完整 agents subtree race / cross Corpus|Reference|Golden /
+API difftest 与 metadata sources 检查在最终剩余业务块后做。
+
+后续定向复跑（同 .64，Exit 0）：
+
+    GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run 'AgentView|RedactionTokens|RotatedTokens|TokensWrittenByAnother' ./internal/repo
+    GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run 'N810MalformedDeployment|TypedDeploymentCompletion|TypedRegistry|TypedHeartbeat' ./internal/agents ./internal/api/agents
+
+repo 3.529s、agents 30.418s、api/agents 2.231s。
+最终 gofmt（上述修改的 agents/api/model/repo/store 文件）与 targeted go vet 通过；
+`FieldReadsOwned|AgentView|RedactionTokens|RotatedTokens|TokensWrittenByAnother` race：
+repo 3.558s、store 1.092s。包含 oversized registry 本身超过 cache budget 的重复读取、
+凭据热缓存不解码整库、原始字段类型、cancellation、nested native/legacy txn read、
+abort、外部提交与 pinned snapshot、不允许修改共享回调值等独立验证。

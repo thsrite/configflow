@@ -2002,3 +2002,17 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 逐行绑定原始 JSON 的独立 HTTP 回归：`TestN810RegistrationProfileOptionalMachineValues`
 （8 个拒绝形状，null/空串/default 三个成功）；另验证 null profile 的真实一次性 proof
 仍与 Agent 注册原子消费。原差分、corpus 和已提交的旧期望不改。
+
+### N8-10 core-2 — malformed deployment status replies
+
+按协调者裁定，Agent 部署回包的 `status` 为 array/object 时，Go 原生状态机拒绝该
+上游格式错误，HTTP 返回结构化 502（`code: INVALID_RESPONSE`，中文原因
+“Agent 返回的发布状态格式不正确，请检查 Agent 版本和日志。”）；不再暴露 CPython 内部
+TypeError 文本或裸 500，也不把该形状静默投影为 pending。拒绝不写数据库、不改变
+revision、prepared content 或配置确认记录。已有 terminal/stale receipt 的忽略顺序保留。
+
+原 `a01_reference.json` 原文及 SHA 完全保留。只有八条已有 TypeError 行用完整 archive
+SHA 和各自 compact row SHA 精确绑定，分别核验 Python 错误类别、Go 拒绝、事务不写入；
+其余正常行和标量行继续原期望比较。真实 HTTP 两条回归分别发送 list/object status，
+比较设备实际收到的 method、request URI、Bearer header 和空 body 原字节，断言结构化
+502、脱敏与数据库 fingerprint 不变。

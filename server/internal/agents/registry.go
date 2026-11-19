@@ -22,10 +22,10 @@ import (
 // before the history projection and must neither mutate nor retain it.
 func (m *Manager) ReadAgents(ctx context.Context, history bool, inspect func(*model.Agent)) ([]model.Agent, error) {
 	var result []model.Agent
-	err := m.repository.View(ctx, func(document *model.Document) error {
-		result = make([]model.Agent, 0, len(document.System.Agents))
-		for i := range document.System.Agents {
-			original := &document.System.Agents[i]
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		result = make([]model.Agent, 0, len(records))
+		for i := range records {
+			original := &records[i]
 			if inspect != nil {
 				inspect(original)
 			}
@@ -47,8 +47,8 @@ func (m *Manager) ReadAgents(ctx context.Context, history bool, inspect func(*mo
 // It copies only the selected Agent, even when the registry is large.
 func (m *Manager) ReadAgent(ctx context.Context, id string, history bool) (*model.Agent, error) {
 	var result *model.Agent
-	err := m.repository.View(ctx, func(document *model.Document) error {
-		record := registryAgent(document.System.Agents, id)
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		record := registryAgent(records, id)
 		if record != nil {
 			var err error
 			result, err = copyAgent(record, history)
@@ -66,9 +66,9 @@ func (m *Manager) ReadAgent(ctx context.Context, id string, history bool) (*mode
 // Agents or their histories. The returned Agent owns its live projection.
 func (m *Manager) ReadAgentByToken(ctx context.Context, token string) (*model.Agent, error) {
 	var result *model.Agent
-	err := m.repository.View(ctx, func(document *model.Document) error {
-		for i := range document.System.Agents {
-			a := &document.System.Agents[i]
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		for i := range records {
+			a := &records[i]
 			if a.Token != token {
 				continue
 			}
@@ -184,8 +184,8 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 		present bool
 	}
 	stored := map[string]storedMember{}
-	err := m.repository.View(ctx, func(document *model.Document) error {
-		record := registryAgent(document.System.Agents, id)
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		record := registryAgent(records, id)
 		if record == nil {
 			return nil
 		}
@@ -317,8 +317,8 @@ func (m *Manager) logMetricsFailure(ctx context.Context, id, name string, failur
 	// Credential traversal is error-only. The steady heartbeat path never walks
 	// histories or the configuration to prepare a log it will not emit.
 	var secrets redact.Secrets
-	err := m.repository.View(ctx, func(document *model.Document) error {
-		if record := registryAgent(document.System.Agents, id); record != nil {
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		if record := registryAgent(records, id); record != nil {
 			raw, err := model.Marshal(record)
 			if err != nil {
 				return err
