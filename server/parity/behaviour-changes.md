@@ -2003,6 +2003,20 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 （8 个拒绝形状，null/空串/default 三个成功）；另验证 null profile 的真实一次性 proof
 仍与 Agent 注册原子消费。原差分、corpus 和已提交的旧期望不改。
 
+### N8-10 core-2 — explicit profile repairs a malformed stored binding
+
+Agent 已存的 `profile_id` 为错误类型（R5，非 string/null）时，Python 和迁移前的 Go 在
+计算当前 profile 时报错。现在只要没有进行中的发布或升级，带显式 profile 的请求就可以
+直接写入新的合法绑定：
+
+- 管理编辑入口（EditAgents）；
+- 注册入口：已有 Agent 携带正确 token 重注册且请求给出 `profile_id` 时同样适用
+  （HR 复核 L2 补登记）。
+
+有进行中的发布或升级时仍以“Agent has an unfinished deployment or upgrade; recover it before
+changing profile”拒绝；未给出 profile 的重注册仍报告原 validation 错误，不会把 R5 投影当作
+当前绑定。
+
 ### N8-10 core-2 — malformed deployment status replies
 
 按协调者裁定，Agent 部署回包的 `status` 为 array/object 时，Go 原生状态机拒绝该

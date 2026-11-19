@@ -6,8 +6,8 @@
 
 ## 结论
 
-high 0，medium 1（已修），low 2（记录）。core-2 可以 verified，修复随本分支叠批。
-需要协调者裁定 1 项（见文末）。
+high 0，medium 1（已修），low 2（记录；L2 已补登记 behaviour-changes）。core-2 可以 verified，修复随本分支叠批。
+协调者裁定 1 项已给出（见文末）。
 
 ## 发现
 
@@ -15,7 +15,7 @@ high 0，medium 1（已修），low 2（记录）。core-2 可以 verified，修
 |---|---|---|---|
 | M1 | medium | 已修 | **重注册保留了 Python 会丢弃的成员（未登记的行为变化，并延长了凭据能力）。** `setRegistrationMembers` 刷新已有 Agent 时，除了 Python `register_agent` 固定列表里的成员，还保留了 `docker_ha_installation_id`、`node_test_dns_endpoints`、`service_status`/`system_metrics`/`cpu`/`memory`/`disk`/`network`、值为假的 `gateway_installation_id`，并用 `a.Fields = original.Fields` 保留了全部未知成员。Python 和迁移前的 Go 都按固定列表重建记录，这些成员都会丢弃，而 behaviour-changes 里没有登记这项变化。安全影响：Docker HA 安装（`installer/docker_ha_enrollment.go:460`）按 `docker_ha_installation_id` 找到“自己的” Agent 后会返回它的 token。在 Python 里，设备第一次 /register 之后这个标记就没了，同一个安装凭据再重放会得到 409；core-2 下，在会话过期前它可以一直取回这台已注册 Agent 的 token。修复：刷新时只写 Python 列表里的成员；`gateway_installation_id` 只在有内容时保留（Python 的 truthy 规则，用共享的 `model.JSONHasContent`）；不再复制未知成员。回归测试 `TestReviewN810ReregistrationKeepsOnlyPythonMembers` 修复前失败（5 个成员被保留，`re-registration kept docker_ha_installation_id="enrollment-session"` 等），修复后通过。作者新增测试 `TestTypedEnrollmentKeepsUnchangedStoredTokens` 原先断言未知成员 `future` 会保留，这条期望本身就是未登记的变化，已改为断言丢弃；其余三项保留期望（config_version 数字原文、traffic_history_enabled 错误类型原文、deployments 嵌套原文）没有改。 |
 | L1 | low | 记录 | 安装重放（`ReplayInstallation`）的身份逐项比较，现在用的是 `RegistrationInput` 里**补过默认值**的成员（name→"Unnamed Agent"、port→8080、service_type→"mihomo"、host→"" 、profile_id→null）。迁移前的 Go 比较的是请求原始值，缺失就是 nil。因此，如果请求省略了 port，而存储的 port 是 8080，原来返回 409，现在会通过并回显 token。这一层是 Go 独有的纵深检查：网关 `register.go` 在调用前已经用 `match(r, existing, …)` 按会话核对过身份，受支持的入口也总会注入完整字段，所以实际不可达。建议后续在 `RegistrationInput` 中保留请求成员是否出现，比较时用原始成员。 |
-| L2 | low | 记录 | 带 token 的重注册如果显式提供了 profile，而 Agent 现存的 profile 绑定已损坏（R5 错误类型）：Python 和迁移前的 Go 在计算当前 profile 时会报错；现在只要没有进行中的发布或升级就会继续，并写入新的 profile。这和作者为管理编辑登记的“显式编辑可修复 R5 profile”一致，需要 token 证明，有进行中任务时仍然拒绝。可以接受，但 behaviour-changes 里只登记了编辑入口，建议补一句注册入口。 |
+| L2 | low | 记录 | 带 token 的重注册如果显式提供了 profile，而 Agent 现存的 profile 绑定已损坏（R5 错误类型）：Python 和迁移前的 Go 在计算当前 profile 时会报错；现在只要没有进行中的发布或升级就会继续，并写入新的 profile。这和作者为管理编辑登记的“显式编辑可修复 R5 profile”一致，需要 token 证明，有进行中任务时仍然拒绝。可以接受。已按协调者要求在 behaviour-changes 新增「explicit profile repairs a malformed stored binding」，同时登记编辑入口和注册入口。 |
 
 ## 逐项核对
 
@@ -51,13 +51,13 @@ high 0，medium 1（已修），low 2（记录）。core-2 可以 verified，修
    - 10 个修改过的既有测试，都是改走“完整存档 SHA + 单行 SHA 封闭绑定”的原生比较，或者加强断言。抽查 `verifyNativeRemoteReference`：只对 9 条按名字列出的行生效，同时核验原始 body/status、Python 类别和文本、事务无写入，其他行仍按原期望比较，不会空过。
 6. **部分完成清单**：报告开头的“仍动态或延后”清单与代码一致。`deployments.go`、`manager.go`、`remote.go` 等仍引用 jsonx，但只是 Record facade 和 codec（例如 `RecordDeployment` 转给 `RecordDeploymentModel`）。monitor、upgrades、installer、api/agents binder、A05 SQL engine 都明确列为延后。没有发现把未迁移部分写成已完成。
 
-## 需要协调者裁定
+## 协调者裁定
 
-- **`node_test_dns_endpoints` 在重注册时是否保留。** M1 修复后它会被丢弃，与 Python 和迁移前的 Go 一致。但它是节点测速 DNS 端点的清理簿记（`node_test_dns_cleanup.py`），丢掉后，已下发到设备的临时端点可能失去清理依据，这像是 Python 的 bug。可选：(a) 维持与 Python 一致（当前状态）；(b) 作为 Python bug 修复，在刷新时保留它，并登记 behaviour-changes。Docker HA 标记和未知成员不建议保留（见 M1）。
+- **`node_test_dns_endpoints` 在重注册时丢弃**（裁定 (a)，维持现状，与 Python 和迁移前的 Go 一致）。理由：上游 #569（d1d174c38）已移除节点测速「OxiDNS 托管」，8a7581413 在升级时自动清理旧托管入口，Python 现行代码已不读写这个字段，不属于需要修复的 Python bug。M1 修复保持不变。
 
 ## 提交与测试
 
-提交：本分支 `go(agents): drop non-Python members on Agent re-registration`（M1 修复和回归测试，以及本报告）。
+提交：本分支 `go(agents): drop non-Python members on Agent re-registration`（M1 修复和回归测试，以及本报告）；随后的文档提交补 L2 登记和协调者裁定，没有代码变化，未再跑测试。
 
 rt 命令（均为 `RT_HOST=sunbroke@192.168.0.64`，在 `server/` 下执行）：
 
