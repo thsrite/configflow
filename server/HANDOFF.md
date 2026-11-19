@@ -54,7 +54,52 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
-## >>> CURRENT STATE — 2026-11-19 (handoff to a fresh session; read this first) <<<
+## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
+
+**Why:** Claude account quota ran out; the maintainer is switching accounts. Everything below is current.
+**go = 5c5998e86** (pushed). batch-11 (core-2, json-case, Go 1.27.4) and batch-12 (monitor + installer) merged today.
+Details of both + all rulings: the two "Update 2026-11-19" paragraphs further down in this section's predecessor.
+
+**In flight (all Paseo; send each one MCP prompt with notifyOnFinish:true so completions reach YOU):**
+- 02a6c1ea (Codex) — N8-10 api/agents, branch go-n8-10-api-agents, worktree ~/.paseo/worktrees/302rx1dg/go-n8-10-api-agents.
+  Rebased onto go 5c5998e86 and CONTAINS the reviewed upgrades line (go-opus-review-n8-10-upgrades@82adf451c, HR
+  done: high 0). Was running full HTTP difftest + race when handed over. Rulings given (all to be in its report +
+  behaviour-changes): typed core hooks InstallationProfileTyped/InstallationRegisterTyped (raw-JSON owner boundary,
+  named params, no swap), HAServiceOperationTyped + Manager.RunServiceOperation (HA lease reused, single trigger);
+  registration version whitelist inside RegisterIdentity after auth/proof (anon 403 regardless; invalid → 400, proof
+  kept; null/missing → 1.0.0); If-Modified-Since via net/http.ParseTime (invalid ignored), Range 416 unchanged;
+  cache flush tags [{}] → 400; traffic-report + client-notes/rule-apply/policies resolve the Agent profile binding via
+  ResolveAgentProfile first (bad binding → 400 no write; lists skip bad entry + throttled warning, 200);
+  traffic.go metrics/trafficstore calls stay legacy (owned by the metrics-native task). It may self-handle
+  "read-only accessor / typed hook, same semantics, single trigger" increments and native-rule corpus-only diffs.
+  **When it hands back:** dispatch a fresh Opus HR review of the api/agents commits only (upgrades already reviewed),
+  then batch-13 = that branch (upgrades + api/agents + review fixes) with a FRESH Codex integrator (neutral brief,
+  no security detail — b6fa1f80 got blocked by OpenAI's content filter; do not reuse it).
+- dfd5f2d2 (Codex) — N8-10 supplement: metrics + trafficstore native services (A05 engine), branch
+  go-n8-10-metrics-native from go 5c5998e86. Rulings: A04 summary/stats/trend skip bad items (200) + throttled
+  warning; A05 trafficstore rejects writes only for the corrupt Agent/day bucket (whole-file only if days is not an
+  object), original file untouched, recovery via existing reset/retention shown by test (ask before any new entry);
+  native write APIs take ctx with Detach/entry/after-lock/pre-commit checks (jsonstore.WriteContext), lifecycle
+  Runtime regressions. **After batch-13 merges:** tell it to rebase onto go and, in the same branch, switch
+  api/agents/traffic.go to its native APIs and rebind the 5 TestDifferentialAgainstFlask rows (4 SHA-bound native
+  comparers + agent-traffic.json structural compare). Then Opus HR review (data path) + its own gate.
+- Idle/finished, keep worktrees (never delete an agent's cwd): 8019dda1, be408111, df5151e2, 1cc7e926, 7e69d031,
+  86f6b6ec, ec52dd6b, 4a68384a, 71279df2, b6fa1f80 (blocked).
+
+**Gate recipe used today (coordinator does it by hand when needed):** preflight on .32
+`ssh sunbroke@192.168.0.32 'bash /tmp/preflight.sh program__configflow-go-batch-N -p 6'` after `RT_HOST=... rt sync`
+from the batch worktree; compare on .32 via ~/.cache/batchN-compare-run/driver.sh (copy batch12's, sed the number;
+setsid nohup); core on .64: `ssh .64 "cd ~/rt/program__configflow-go-batch-N && setsid nohup bash -lc
+'GATE_FULL=1 GATE_ONLY=core GATE_SLOTS=2 server/scripts/gate.sh -p 6 <fuzz targets>' > /tmp/bN-core.log 2>&1 &"`
+(fuzz targets = cf-gate's list for packages changed vs origin/go; run that loop under bash, zsh globs fail).
+Then ff-merge into ~/program/configflow-go (branch go), push origin go, `git worktree remove` the batch worktree.
+
+**After N8-10:** N8-11 (delete jsonx/pystr/legacy + old core hooks + typed-hook unregistration (upgrades review L2)
++ test-only numeric IP/image compat in installer + grep gate), then O9 round 2, O10, O13, O15, O17, O12 (13 items
+need the maintainer), labs L2–L6, O14. UI follow-up: recovery entry for corrupt dashboard checkpoint/latest_upgrade.
+Maintainer decisions today: toolchain Go 1.27.4; keep batches separate (batch-12 / batch-13 / N8-11), no merging.
+
+## (history) CURRENT STATE — 2026-11-19 (handoff to a fresh session) <<<
 
 **Update 2026-11-19 late (coordinator 2f0cdf04): batch-12 MERGED, go = 42a9269d3** — N8-10 monitor (+ Opus HR:
 M1 superseding damaged status → StateError; null status = missing) and installer (+ Opus HR: `//` root alias refused,
