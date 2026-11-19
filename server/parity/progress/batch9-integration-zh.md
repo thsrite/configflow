@@ -109,3 +109,21 @@ ShutdownBeforeRepositoryCommit 回归从红变绿，DB/文件状态原断言不�
 
 旧测试接线修正单独提交：不可解析版本的单测/精确1144回放、20条数值词法参考、
 refresh native 错误类型映射。原 archive、原 byte manifest、原 cache/DB/文件期待均未改。
+
+## 修正后最终复测（a84687ba7）
+
+跨包第一次补验命令漏设 PYREF_MODE=check，触发 reuse 指纹拒绝，不计 live 通过。
+显式 check 后，MosDNS52.953s所有功能0差异，仅5份 Clone→CopyGraph 源metadata需刷新；
+OxiDNS45.283s、routersplit4.864s live通过。继续record/check与18份payload核对。
+
+最终三组同条件分配，全部不高于上一批：
+- Mihomo128：45,882,408–45,906,280 B/op，410321–410339 allocs/op。
+- OxiDNS unused0：42,803,109–42,832,981 B/op，470837–470858；unused2MiB：42,815,821–42,845,592 B/op，470867–470908。
+- routers1：56,717–57,010 B/op，707–708；+1MiB：56,845–57,298 B/op，706–709。
+- routers16：901,842–908,704 B/op，10784–10799；+1MiB：891,394–935,986 B/op，10774–10804。
+- routers64：3,595,570–3,635,904 B/op，43090–43136；+1MiB：3,595,522–3,607,296 B/op，43069–43191。
+
+a84687ba7 的最终 metadata record/check 完成：record MosDNS59.460s/OxiDNS50.793s/
+routersplit5.056s；check MosDNS58.305s/OxiDNS50.077s/routersplit5.928s。
+再次验证18份18491项全部非metadata payload SHA与批次开始时相同，仅5份MosDNS元数据变更。
+当前产品及测试修正已完整提交，开始最后preflight与完整compare，不再计此前失败轮次为通过。
