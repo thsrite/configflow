@@ -505,3 +505,30 @@ func TestTypedHAEnablePresenceAndAllocationBound(t *testing.T) {
 		t.Fatal("HA guard walks captured payload")
 	}
 }
+
+// BenchmarkTypedHAGuardsUnrelatedPayload measures both allocation bytes and
+// counts without including fixture decoding in the publication guard cost.
+func BenchmarkTypedHAGuardsUnrelatedPayload(b *testing.B) {
+	for _, size := range []struct {
+		name string
+		n    int
+	}{{"empty", 0}, {"2MiB", 2 << 20}} {
+		b.Run(size.name, func(b *testing.B) {
+			intent := &model.HAEnable{}
+			if err := intent.Fields.Set("captured_source", []byte(`"`+strings.Repeat("x", size.n)+`"`)); err != nil {
+				b.Fatal(err)
+			}
+			record := &model.Agent{OxiDNSHAPublication: &model.HAJournal{Status: "ready", Enable: intent}}
+			if !HAActiveModel(record) || !HAEnablingModel(record) {
+				b.Fatal("lost active intent")
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if !HAActiveModel(record) || !HAEnablingModel(record) {
+					b.Fatal("lost active intent")
+				}
+			}
+		})
+	}
+}

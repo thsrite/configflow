@@ -86,7 +86,7 @@ func (s *RuntimeState) Entries() map[string]RuntimeEntry {
 	defer s.mu.Unlock()
 	result := make(map[string]RuntimeEntry, len(s.entries))
 	for id, entry := range s.entries {
-		fields, err := agentObject(&entry.Fields)
+		fields, err := entry.Fields.object()
 		if err == nil {
 			result[id] = RuntimeEntry{entry.HeartbeatAt, entry.LastHeartbeat, fields}
 		}
@@ -100,8 +100,12 @@ func (s *RuntimeState) SetEntry(id string, entry RuntimeEntry) {
 	if err != nil {
 		return
 	}
+	projection, err := runtimeProjection(fields)
+	if err != nil {
+		return
+	}
 	s.mu.Lock()
-	s.entries[id] = heartbeatEntry{entry.HeartbeatAt, entry.LastHeartbeat, *fields}
+	s.entries[id] = heartbeatEntry{entry.HeartbeatAt, entry.LastHeartbeat, projection}
 	s.mu.Unlock()
 }
 
@@ -121,4 +125,27 @@ func (m *Manager) addReportedMetrics(ctx context.Context, id string, raw json.Ra
 		return add(m, id, value)
 	}
 	return nil
+}
+
+func (fields runtimeFields) object() (*jsonx.Object, error) {
+	result := jsonx.NewObject()
+	for i, key := range RuntimeFields {
+		if fields[i] != nil {
+			value, err := jsonx.Parse(fields[i])
+			if err != nil {
+				return nil, err
+			}
+			result.Set(key, value)
+		}
+	}
+	return result, nil
+}
+
+func decodeHeartbeatObject(raw []byte) (*jsonx.Object, error) {
+	value, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	result, _ := value.(*jsonx.Object)
+	return result, nil
 }

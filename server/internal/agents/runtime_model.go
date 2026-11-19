@@ -13,9 +13,9 @@ func (s *RuntimeState) overlayModels(records []model.Agent) []model.Agent {
 		if !ok {
 			continue
 		}
-		for _, key := range RuntimeFields {
-			raw, present, err := entry.Fields.MemberJSON(key)
-			if err == nil && present {
+		for i, key := range RuntimeFields {
+			raw := entry.Fields[i]
+			if raw != nil {
 				_ = record.SetJSON(key, raw)
 			}
 		}

@@ -103,3 +103,46 @@ func FuzzMemberJSONEvidence(f *testing.F) {
 		}
 	})
 }
+
+func TestMemberJSONScalarFastPathRetainsEvidence(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"enabled":null,"version":null}`, `{"enabled":false,"version":"a<>&\\\"中"}`, `{"enabled":0,"version":7}`, `{"enabled":"false","version":true}`} {
+		t.Run(raw, func(t *testing.T) {
+			var record Agent
+			if err := json.Unmarshal([]byte(raw), &record); err != nil {
+				t.Fatal(err)
+			}
+			check := func() {
+				t.Helper()
+				encoded, err := record.MarshalJSON()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var expected map[string]json.RawMessage
+				if err := json.Unmarshal(encoded, &expected); err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range []string{"version", "enabled"} {
+					got, present, err := record.MemberJSON(name)
+					want, exists := expected[name]
+					if err != nil || present != exists || string(got) != string(want) {
+						t.Fatalf("%s=%s/%v want %s/%v err=%v", name, got, present, want, exists, err)
+					}
+				}
+			}
+			check()
+			record.Version = "edited<>&\u4e2d"
+			record.Enabled = new(true)
+			check()
+			record.Version = ""
+			record.Enabled = nil
+			check()
+			if err := record.Clear("version"); err != nil {
+				t.Fatal(err)
+			}
+			if err := record.Clear("enabled"); err != nil {
+				t.Fatal(err)
+			}
+			check()
+		})
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -136,11 +137,20 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if payload == nil {
-		payload = &model.Agent{}
+	reported, err := reportedHeartbeat(payload)
+	if err != nil {
+		return false, err
+	}
+	return m.observeHeartbeat(ctx, id, reported, payload)
+}
+
+func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heartbeatPayload, testPayload *model.Agent) (bool, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return false, err
 	}
 	mark := m.runtime.Mark()
-	var source *model.Agent
+	var source *heartbeatSource
 	// Reported values are compared with the stored JSON, like Python's
 	// heartbeat[key] != agent.get(key): a numeric, null or missing stored
 	// member differs from reported text even when its projection matches.
@@ -158,8 +168,6 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 		if err != nil {
 			return err
 		}
-		fields.ID, fields.Name, fields.LastHeartbeat = record.ID, record.Name, record.LastHeartbeat
-		fields.ConfigVersion = record.ConfigVersion
 		for _, key := range []string{"version", "config_version"} {
 			raw, present, err := record.MemberJSON(key)
 			if err != nil {
@@ -167,7 +175,7 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 			}
 			stored[key] = storedMember{raw, present}
 		}
-		source = &fields
+		source = &heartbeatSource{record.ID, record.Name, record.LastHeartbeat, fields}
 		return nil
 	})
 	if err != nil || source == nil {
@@ -175,17 +183,31 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 	}
 	var recorded bool
 	if testRecordHeartbeat != nil {
-		record, err := agentObject(source)
+		record, err := source.fields.object()
+		if err == nil {
+			record.Set("id", source.id)
+			record.Set("name", source.name)
+			record.Set("last_heartbeat", source.lastHeartbeat)
+		}
 		if err != nil {
 			return false, err
 		}
-		fields, err := agentObject(payload)
+		var fields *jsonx.Object
+		if testPayload != nil {
+			fields, err = agentObject(testPayload)
+		} else {
+			raw, encodeErr := json.Marshal(payload)
+			if encodeErr != nil {
+				return false, encodeErr
+			}
+			fields, err = decodeHeartbeatObject(raw)
+		}
 		if err != nil {
 			return false, err
 		}
 		recorded = testRecordHeartbeat(m, record, fields, mark)
 	} else {
-		recorded, err = m.runtime.recordModel(ctx, source, payload, mark)
+		recorded, err = m.runtime.recordFields(ctx, *source, payload, mark)
 		if err != nil {
 			return false, err
 		}
@@ -194,13 +216,12 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 		return false, nil
 	}
 	changes := make(map[string]json.RawMessage, 2)
-	for _, key := range []string{"version", "config_version"} {
-		data, present, err := payload.MemberJSON(key)
-		if err != nil {
-			return false, err
-		}
-		if present && !sameStoredJSON(stored[key].raw, stored[key].present, data) {
-			changes[key] = data
+	for _, item := range []struct {
+		key string
+		raw json.RawMessage
+	}{{"version", payload.Version}, {"config_version", payload.ConfigVersion}} {
+		if item.raw != nil && !sameStoredJSON(stored[item.key].raw, stored[item.key].present, item.raw) {
+			changes[item.key] = item.raw
 		}
 	}
 	if len(changes) > 0 {
@@ -225,13 +246,9 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 			return false, nil
 		}
 	}
-	if raw, present, err := payload.MemberJSON("system_metrics"); err != nil {
-		return false, err
-	} else if present {
-		// This callback is the remaining metrics consumer boundary. No registry or
-		// profile is decoded; metrics owns validation/storage of its single sample.
-		if err := m.addReportedMetrics(ctx, id, raw); err != nil {
-			m.logMetricsFailure(ctx, id, source.Name, err)
+	if payload.SystemMetrics != nil {
+		if err := m.addReportedMetrics(ctx, id, payload.SystemMetrics); err != nil {
+			m.logMetricsFailure(ctx, id, source.name, err)
 		}
 	}
 	return true, nil
@@ -242,6 +259,11 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 func sameStoredJSON(stored json.RawMessage, present bool, reported json.RawMessage) bool {
 	if !present {
 		return bytes.Equal(bytes.TrimSpace(reported), []byte("null"))
+	}
+	// Exact tokens are equal without allocating decoded string copies. Escaped
+	// spellings still fall through to the value comparison below.
+	if bytes.Equal(bytes.TrimSpace(stored), bytes.TrimSpace(reported)) {
+		return true
 	}
 	left, leftOK := storedText(stored, true, nil)
 	right, rightOK := storedText(reported, true, nil)

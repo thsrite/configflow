@@ -939,14 +939,17 @@ func (m *Manager) DeleteAgent(ctx context.Context, agentID string) (bool, error)
 // configuration only when they change. false when the Agent is unknown (or
 // was deleted meanwhile).
 func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
-	if heartbeat == nil {
-		return m.ObserveHeartbeat(ctx, agentID, nil)
+	var payload heartbeatPayload
+	if heartbeat != nil {
+		raw, err := json.Marshal(heartbeat)
+		if err != nil {
+			return false, err
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return false, err
+		}
 	}
-	fields, err := agentModel(heartbeat)
-	if err != nil {
-		return false, err
-	}
-	return m.ObserveHeartbeat(ctx, agentID, fields)
+	return m.observeHeartbeat(ctx, agentID, payload, nil)
 }
 
 // testFailUpdate makes UpdateAgents fail (tests; Python patched

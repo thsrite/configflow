@@ -64,7 +64,7 @@ func (r Raw) MemberJSON(name string, current any) (json.RawMessage, bool, error)
 		if original.cleared && isZero(value) {
 			return nil, false, nil
 		}
-		encoded, err := Marshal(current)
+		encoded, err := memberJSONValue(current)
 		if err != nil {
 			return nil, false, err
 		}
@@ -80,6 +80,18 @@ func (r Raw) MemberJSON(name string, current any) (json.RawMessage, bool, error)
 	if isZero(value) {
 		return nil, false, nil
 	}
-	encoded, err := Marshal(current)
+	encoded, err := memberJSONValue(current)
 	return encoded, err == nil, err
+}
+
+// Plain text and boolean members are valid JSON by construction. They do not
+// need the recursive graph validation used by containers and custom codecs.
+// Keep the same encoder as Marshal, including HTML/UTF-8 escaping.
+func memberJSONValue(value any) ([]byte, error) {
+	switch value.(type) {
+	case string, *string, bool, *bool:
+		return scalarJSON(value)
+	default:
+		return Marshal(value)
+	}
 }

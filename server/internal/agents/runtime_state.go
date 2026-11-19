@@ -85,7 +85,7 @@ func timestampOf(value any) float64 {
 type heartbeatEntry struct {
 	HeartbeatAt   float64
 	LastHeartbeat string
-	Fields        model.Agent
+	Fields        runtimeFields
 }
 
 // RuntimeState owns live heartbeats for a data directory.
@@ -106,17 +106,55 @@ func (s *RuntimeState) newerModel(agent *model.Agent) (heartbeatEntry, bool) {
 	return entry, ok && entry.HeartbeatAt > timestampOf(agent.LastHeartbeat)
 }
 
-func runtimeProjection(source *model.Agent) (model.Agent, error) {
-	var result model.Agent
-	for _, key := range RuntimeFields {
-		data, present, err := source.MemberJSON(key)
+// runtimeFields owns only the seven JSON values exposed by live overlays.
+// Published slices are immutable; replacing one value cannot mutate an older
+// entry or retain a whole stored Agent, deployment history or profile.
+type runtimeFields [7]json.RawMessage
+
+func runtimeProjection(source *model.Agent) (runtimeFields, error) {
+	var result runtimeFields
+	for i, key := range RuntimeFields {
+		raw, present, err := source.MemberJSON(key)
 		if err != nil {
 			return result, err
 		}
 		if present {
-			if err := result.SetJSON(key, data); err != nil {
-				return result, err
-			}
+			result[i] = raw
+		}
+	}
+	return result, nil
+}
+
+type heartbeatSource struct {
+	id, name, lastHeartbeat string
+	fields                  runtimeFields
+}
+
+type heartbeatPayload struct {
+	Version       json.RawMessage `json:"version,omitempty"`
+	ConfigVersion json.RawMessage `json:"config_version,omitempty"`
+	ServiceStatus json.RawMessage `json:"service_status,omitempty"`
+	SystemMetrics json.RawMessage `json:"system_metrics,omitempty"`
+}
+
+func reportedHeartbeat(payload *model.Agent) (heartbeatPayload, error) {
+	var result heartbeatPayload
+	if payload == nil {
+		return result, nil
+	}
+	for _, item := range []struct {
+		name   string
+		target *json.RawMessage
+	}{
+		{"version", &result.Version}, {"config_version", &result.ConfigVersion},
+		{"service_status", &result.ServiceStatus}, {"system_metrics", &result.SystemMetrics},
+	} {
+		raw, present, err := payload.MemberJSON(item.name)
+		if err != nil {
+			return result, err
+		}
+		if present {
+			*item.target = raw
 		}
 	}
 	return result, nil
@@ -130,52 +168,63 @@ func (s *RuntimeState) Mark() int64 {
 }
 
 func (s *RuntimeState) recordModel(ctx context.Context, agent, payload *model.Agent, mark int64) (bool, error) {
+	fields, err := runtimeProjection(agent)
+	if err != nil {
+		return false, err
+	}
+	reported, err := reportedHeartbeat(payload)
+	if err != nil {
+		return false, err
+	}
+	return s.recordFields(ctx, heartbeatSource{agent.ID, agent.Name, agent.LastHeartbeat, fields}, reported, mark)
+}
+
+func (s *RuntimeState) recordFields(ctx context.Context, agent heartbeatSource, payload heartbeatPayload, mark int64) (bool, error) {
+	// Decode a sample once, before the runtime lock. RawMessage owns each
+	// component and retains explicit nulls, invalid types and number spelling.
+	var components struct {
+		CPU     json.RawMessage `json:"cpu"`
+		Memory  json.RawMessage `json:"memory"`
+		Disk    json.RawMessage `json:"disk"`
+		Network json.RawMessage `json:"network"`
+	}
+	if len(payload.SystemMetrics) > 0 {
+		// Non-object samples remain visible as reported but have no components.
+		if err := json.Unmarshal(payload.SystemMetrics, &components); err != nil {
+			components.CPU, components.Memory, components.Disk, components.Network = nil, nil, nil, nil
+		}
+	}
 	now := nowTimestamp()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if s.deleted[agent.ID] > mark {
+	if s.deleted[agent.id] > mark {
 		return false, nil
 	}
-	source := agent
-	if previous, ok := s.newerModel(agent); ok {
-		source = &previous.Fields
+	fields := agent.fields
+	if previous, ok := s.entries[agent.id]; ok && previous.HeartbeatAt > timestampOf(agent.lastHeartbeat) {
+		fields = previous.Fields
 	}
-	fields, err := runtimeProjection(source)
-	if err != nil {
-		return false, err
+	if payload.Version != nil {
+		fields[0] = payload.Version
 	}
-	for _, key := range []string{"version", "service_status", "system_metrics"} {
-		data, present, err := payload.MemberJSON(key)
-		if err != nil {
-			return false, err
-		}
-		if !present {
-			continue
-		}
-		if err := fields.SetJSON(key, data); err != nil {
-			return false, err
-		}
-		if key == "system_metrics" && payload.SystemMetrics != nil {
-			var metrics model.Fields
-			if err := json.Unmarshal(data, &metrics); err != nil {
-				return false, err
-			}
-			for _, component := range metricFields {
-				if raw, exists := metrics.Get(component); exists {
-					if err := fields.SetJSON(component, raw); err != nil {
-						return false, err
-					}
-				}
+	if payload.ServiceStatus != nil {
+		fields[1] = payload.ServiceStatus
+	}
+	if payload.SystemMetrics != nil {
+		fields[2] = payload.SystemMetrics
+		for i, raw := range []json.RawMessage{components.CPU, components.Memory, components.Disk, components.Network} {
+			if raw != nil {
+				fields[i+3] = raw
 			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	s.entries[agent.ID] = heartbeatEntry{HeartbeatAt: now, LastHeartbeat: isoformat(fromTimestamp(now), false), Fields: fields}
+	s.entries[agent.id] = heartbeatEntry{HeartbeatAt: now, LastHeartbeat: isoformat(fromTimestamp(now), false), Fields: fields}
 	return true, nil
 }
 
