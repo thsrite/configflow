@@ -1,20 +1,19 @@
 package metrics
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"context"
 	"encoding/json"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
-	"configflow/internal/jsonx"
 )
 
 // flushTraffic is the traffic-history half of metrics_flush.run():
 // retain_agents(agent_ids) and flush(retention_days(system))['rows'].
-func flushTraffic(ctx context.Context, m *agents.Manager, agentIDs []string, system *jsonx.Object) (int64, error) {
+func flushTraffic(ctx context.Context, m *agents.Manager, agentIDs []string, system *model.System) (int64, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -23,11 +22,7 @@ func flushTraffic(ctx context.Context, m *agents.Manager, agentIDs []string, sys
 	if _, err := history.RetainAgentsContext(ctx, agentIDs); err != nil {
 		return 0, err
 	}
-	raw, err := json.Marshal(system.Value("system_config"))
-	if err != nil {
-		return 0, err
-	}
-	retention, err := retentionDaysJSON(raw)
+	retention, err := TrafficRetention(system)
 	if err != nil {
 		return 0, err
 	}
@@ -55,15 +50,15 @@ func retentionDaysJSON(raw json.RawMessage) (int64, error) {
 		return DefaultRetention, nil
 	}
 	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
-		return 0, repo.NewValidationError(msgTrafficSettingsShape)
+	if jsondecode.Unmarshal(raw, &fields) != nil {
+		return 0, &AttributeError{Message: msgTrafficSettingsShape}
 	}
 	value, present := fields.Get(RetentionSetting)
 	if !present {
 		return DefaultRetention, nil
 	}
 	var days int64
-	if json.Unmarshal(value, &days) != nil {
+	if jsondecode.Unmarshal(value, &days) != nil {
 		return DefaultRetention, nil
 	}
 	for _, choice := range RetentionChoices {
@@ -92,7 +87,7 @@ func deleteTrafficStore(ctx context.Context, agentID string) error {
 func WireTraffic() {
 	agents.RegisterHooks(agents.Hooks{DeleteTrafficHistory: deleteTrafficHistory, DeleteTrafficHistoryContext: deleteTrafficHistoryContext})
 	agents.OnAgentDeleted("traffic_store", deleteTrafficStore)
-	SetTrafficFlush(flushTraffic)
+	SetNativeTrafficFlush(flushTraffic)
 }
 
 // TrafficFlushSet reports whether the traffic history save is installed

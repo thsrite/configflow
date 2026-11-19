@@ -269,7 +269,7 @@ func TestFailedAppendKeepsPointsAndRewritesNextTime(t *testing.T) {
 	add(t, h, c, 2, "a1", 30*time.Second)
 	previous := appendLines
 	t.Cleanup(func() { appendLines = previous })
-	appendLines = func(path string, lines []string) error {
+	appendLines = func(ctx context.Context, path string, lines []string) error {
 		handle, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
 		if err != nil {
 			return err

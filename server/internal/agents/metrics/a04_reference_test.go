@@ -193,6 +193,12 @@ func TestReferenceMetricsSummary(t *testing.T) {
 		item := raw.(*jsonx.Object)
 		t.Run(item.GetString("name"), func(t *testing.T) {
 			summary, err := referenceHistory(t, item).GetMetricsSummary("a", bigArg(t, item, "hours"))
+			if expected, changed := nativeMetricExpected(t, "summary", item); changed {
+				if err != nil || !jsonx.Equal(summary, expected) {
+					t.Fatalf("native summary: %v %v, want %v", summary, err, expected)
+				}
+				return
+			}
 			if expected, changed := nativeSummaryExpected(item); changed {
 				if err != nil || !jsonx.Equal(summary, expected) {
 					t.Fatalf("native missing-sample summary: %v %v, want %v", summary, err, expected)
@@ -211,6 +217,12 @@ func TestReferenceTrafficStats(t *testing.T) {
 		item := raw.(*jsonx.Object)
 		t.Run(item.GetString("name"), func(t *testing.T) {
 			stats, err := referenceHistory(t, item).GetTrafficStats("a", item.GetString("period"))
+			if expected, changed := nativeMetricExpected(t, "traffic_stats", item); changed {
+				if err != nil || !jsonx.Equal(stats, expected) {
+					t.Fatalf("native stats: %v %v, want %v", stats, err, expected)
+				}
+				return
+			}
 			if expected, changed := nativeTrafficExpected(item); changed {
 				if err != nil || !jsonx.Equal(stats, expected) {
 					t.Fatalf("native missing-counter stats: %v %v, want %v", stats, err, expected)
@@ -229,6 +241,12 @@ func TestReferenceTrafficTrend(t *testing.T) {
 		item := raw.(*jsonx.Object)
 		t.Run(item.GetString("name"), func(t *testing.T) {
 			trend, err := referenceHistory(t, item).GetTrafficTrend("a", bigArg(t, item, "hours"), bigArg(t, item, "interval"))
+			if expected, changed := nativeMetricExpected(t, "trend", item); changed {
+				if err != nil || !jsonx.Equal(trend, expected) {
+					t.Fatalf("native trend: %v %v, want %v", trend, err, expected)
+				}
+				return
+			}
 			if expected, changed := nativeTrendExpected(item); changed {
 				if err != nil || !jsonx.Equal(trend, expected) {
 					t.Fatalf("native missing-counter trend: %v %v, want %v", trend, err, expected)

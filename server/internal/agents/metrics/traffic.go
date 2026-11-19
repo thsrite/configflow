@@ -45,10 +45,11 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/discovery"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/rules"
+	"encoding/json"
 
 	"modernc.org/sqlite"
 )
@@ -144,80 +145,10 @@ var legacyMigrations = []struct{ table, statement string }{
 
 // ---------- settings ----------
 
-// RetentionDays is retention_days(system): the stored choice, or the
-// default when it is missing or not one of the choices (bool is not int).
-// A system_config that is truthy but not a dict raised AttributeError.
-func RetentionDays(system *jsonx.Object) (int64, error) {
-	config := system.Value("system_config")
-	if !jsonx.Truthy(config) {
-		return DefaultRetention, nil
-	}
-	object, ok := config.(*jsonx.Object)
-	if !ok {
-		return 0, &AttributeError{Message: "'" + PyTypeName(config) + "' object has no attribute 'get'"}
-	}
-	value, present := object.Get(RetentionSetting)
-	if !present {
-		return DefaultRetention, nil
-	}
-	if days, ok := retentionChoice(value); ok {
-		return days, nil
-	}
-	return DefaultRetention, nil
-}
-
-func retentionChoice(value any) (int64, bool) {
-	number, ok := value.(jsonx.Number)
-	if !ok {
-		return 0, false
-	}
-	days, ok := number.Int64()
-	if !ok {
-		return 0, false
-	}
-	for _, choice := range RetentionChoices {
-		if days == choice {
-			return days, true
-		}
-	}
-	return 0, false
-}
-
-// RetentionValueError is the ValueError of set_retention_days.
-var RetentionValueError = &ValueError{Message: "保留时长只能是 30、90、180 或 365 天"}
-
-// ValueError is Python's ValueError.
-type ValueError struct{ Message string }
-
-func (e *ValueError) Error() string { return e.Message }
-
-// SetRetentionDays is set_retention_days(days): store the choice in
-// system_config (system.setdefault('system_config', {}).update(...)).
-func SetRetentionDays(ctx context.Context, m *agents.Manager, value any) (int64, error) {
-	days, ok := retentionChoice(value)
-	if !ok {
-		return 0, RetentionValueError
-	}
-	_, err := m.Repository().UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		config := system.SetDefault("system_config", jsonx.NewObject())
-		object, ok := config.(*jsonx.Object)
-		if !ok || object == nil {
-			return nil, &AttributeError{Message: "'" + PyTypeName(config) + "' object has no attribute 'update'"}
-		}
-		object.Set(RetentionSetting, days)
-		return nil, nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return days, nil
-}
-
-// AgentSupported is agent_supported(version, minimum): a "-go" version at
+// SupportedTrafficVersion reports whether version is a "-go" version at
 // least minimum.
-func AgentSupported(version any, minimum string) bool {
-	text, ok := version.(string)
-	return ok && strings.HasSuffix(text, "-go") && agents.CompareVersions(text, minimum) >= 0
+func SupportedTrafficVersion(text, minimum string) bool {
+	return strings.HasSuffix(text, "-go") && agents.CompareVersions(text, minimum) >= 0
 }
 
 // ChainLayers is chain_layers(chain).
@@ -250,6 +181,7 @@ type UsageRow struct {
 	Up, Down, Conns int64
 }
 
+// TargetRow is one cleaned device, target and chain increment.
 type TargetRow struct {
 	Bucket                int64
 	Source, Target, Chain string
@@ -263,12 +195,8 @@ type CleanedTraffic struct {
 }
 
 // trafficCount is _count(value): an int (not bool) in [0, 2**62).
-func trafficCount(value any) (int64, bool) {
-	number, ok := value.(jsonx.Number)
-	if !ok {
-		return 0, false
-	}
-	n, ok := number.BigInt()
+func trafficCount(value json.RawMessage) (int64, bool) {
+	n, ok := integerJSON(value)
 	if !ok || n.Sign() < 0 || n.Cmp(twoTo62) >= 0 {
 		return 0, false
 	}
@@ -276,8 +204,9 @@ func trafficCount(value any) (int64, bool) {
 }
 
 // text is _text(item, field, limit).
-func text(item *jsonx.Object, field string, limit int) (string, bool) {
-	value, ok := item.Value(field).(string)
+func text(item trafficFields, field string, limit int) (string, bool) {
+	var value string
+	ok := jsondecode.Unmarshal(item[field], &value) == nil && string(item[field]) != "null"
 	if !ok || utf8.RuneCountInString(value) > limit {
 		return "", false
 	}
@@ -285,16 +214,17 @@ func text(item *jsonx.Object, field string, limit int) (string, bool) {
 }
 
 // chainOf is _chain(item, schema, with_group).
-func chainOf(item *jsonx.Object, schema2 bool, withGroup bool) (string, bool) {
+func chainOf(item trafficFields, schema2 bool, withGroup bool) (string, bool) {
 	if schema2 {
-		layers, ok := item.Value("chain").([]any)
+		var layers []string
+		ok := jsondecode.Unmarshal(item["chain"], &layers) == nil && layers != nil
 		if !ok || len(layers) > ChainMaxLayers {
 			return "", false
 		}
 		names := make([]string, len(layers))
 		for i, layer := range layers {
-			name, ok := layer.(string)
-			if !ok || name == "" || utf8.RuneCountInString(name) > maxText["outbound"] || strings.Contains(name, ChainSeparator) {
+			name := layer
+			if name == "" || utf8.RuneCountInString(name) > maxText["outbound"] || strings.Contains(name, ChainSeparator) {
 				return "", false
 			}
 			names[i] = name
@@ -323,29 +253,29 @@ func chainOf(item *jsonx.Object, schema2 bool, withGroup bool) (string, bool) {
 	return strings.Join(layers, ChainSeparator), true
 }
 
-// CleanTrafficReport is clean_report(report, now): the validated rows, or
+// DecodeTrafficReport decodes Agent JSON with exact member names: the validated rows, or
 // nil when the format is wrong. Hours must be whole hours, not older than
 // 2 days and not later than the next hour; stale hours are dropped (not a
 // format error). now nil = time.time().
-func CleanTrafficReport(report any, at *float64) *CleanedTraffic {
-	object, ok := report.(*jsonx.Object)
-	if !ok || object == nil {
+func DecodeTrafficReport(report json.RawMessage, at *float64) *CleanedTraffic {
+	var object trafficFields
+	if jsondecode.Unmarshal(report, &object) != nil || object == nil {
 		return nil
 	}
-	schemaValue := object.Value("schema")
-	known := false
-	for _, schema := range TrafficReportSchemas {
-		if jsonx.Equal(schemaValue, jsonx.Int(schema)) {
-			known = true
-		}
-	}
-	if !known {
+	var schema float64
+	rawSchema := object["schema"]
+	// The released protocol accepts true and integral floating schema versions.
+	if string(rawSchema) == "true" {
+		schema = 1
+	} else if jsondecode.Unmarshal(rawSchema, &schema) != nil {
 		return nil
 	}
-	schema2 := jsonx.Equal(schemaValue, jsonx.Int(2))
-	usage, ok1 := object.Value("usage").([]any)
-	domains, ok2 := object.Value("domains").([]any)
-	if !ok1 || !ok2 || len(usage)+len(domains) > TrafficReportMaxItems {
+	if schema != 1 && schema != 2 {
+		return nil
+	}
+	schema2 := schema == 2
+	var usage, domains []trafficFields
+	if jsondecode.Unmarshal(object["usage"], &usage) != nil || usage == nil || jsondecode.Unmarshal(object["domains"], &domains) != nil || domains == nil || len(usage)+len(domains) > TrafficReportMaxItems {
 		return nil
 	}
 	current := trafficNow()
@@ -354,10 +284,10 @@ func CleanTrafficReport(report any, at *float64) *CleanedTraffic {
 	}
 	oldest, newest := current-2*Day, current+Hour
 
-	countersOf := func(item *jsonx.Object) ([3]int64, bool) {
+	countersOf := func(item trafficFields) ([3]int64, bool) {
 		var values [3]int64
 		for i, field := range []string{"up", "down", "conns"} {
-			value, ok := trafficCount(item.Value(field))
+			value, ok := trafficCount(item[field])
 			if !ok {
 				return values, false
 			}
@@ -365,12 +295,8 @@ func CleanTrafficReport(report any, at *float64) *CleanedTraffic {
 		}
 		return values, true
 	}
-	hour := func(item *jsonx.Object) (int64, bool, bool) {
-		number, ok := item.Value("hour").(jsonx.Number)
-		if !ok {
-			return 0, false, false
-		}
-		value, ok := number.BigInt()
+	hour := func(item trafficFields) (int64, bool, bool) {
+		value, ok := integerJSON(item["hour"])
 		if !ok || new(big.Int).Mod(value, big.NewInt(Hour)).Sign() != 0 {
 			return 0, false, false
 		}
@@ -384,8 +310,8 @@ func CleanTrafficReport(report any, at *float64) *CleanedTraffic {
 
 	result := &CleanedTraffic{Usage: []UsageRow{}, Targets: []TargetRow{}}
 	for _, entry := range usage {
-		item, ok := entry.(*jsonx.Object)
-		if !ok || item == nil {
+		item := entry
+		if item == nil {
 			return nil
 		}
 		bucket, okHour, fresh := hour(item)
@@ -404,8 +330,8 @@ func CleanTrafficReport(report any, at *float64) *CleanedTraffic {
 		result.Usage = append(result.Usage, UsageRow{bucket, source, chain, values[0], values[1], values[2]})
 	}
 	for _, entry := range domains {
-		item, ok := entry.(*jsonx.Object)
-		if !ok || item == nil {
+		item := entry
+		if item == nil {
 			return nil
 		}
 		bucket, okHour, fresh := hour(item)
@@ -435,14 +361,12 @@ func SetTrafficNow(fn func() float64) func() {
 	return func() { trafficNow = previous }
 }
 
-// ---------- counters with Python int semantics ----------
+// ---------- exact counters and SQLite numeric storage ----------
 
-// pyInt is a Python counter value. Counters are ints (int64 until an
-// addition overflows, then a big.Int), but SQLite turns `up + excluded.up`
-// beyond int64 into a REAL, which Python then reads back as a float: from
-// there on Python arithmetic mixes int and float (int + float is a float,
-// comparisons are exact) and the JSON shows the float's repr.
-type pyInt struct {
+// counter accumulates exact pending integers, promoting to big.Int on overflow.
+// Existing SQLite upserts may promote an INTEGER sum to REAL; keeping that
+// distinction preserves those files without truncating their numeric values.
+type counter struct {
 	small   int64
 	big     *big.Int
 	isFloat bool
@@ -451,12 +375,12 @@ type pyInt struct {
 
 // add is n += v. A big value is never changed in place (copies of a
 // triple share it).
-func (n *pyInt) add(v pyInt) {
+func (n *counter) add(v counter) {
 	if n.isFloat || v.isFloat {
 		// int + float: float(int) + float. float(int) is out of range only
 		// for ints beyond 1e308, which counters below 2**62 per report never
 		// reach.
-		*n = pyInt{isFloat: true, f: n.float() + v.float()}
+		*n = counter{isFloat: true, f: n.float() + v.float()}
 		return
 	}
 	if n.big == nil && v.big == nil {
@@ -472,7 +396,7 @@ func (n *pyInt) add(v pyInt) {
 }
 
 // float is float(n) (correctly rounded).
-func (n pyInt) float() float64 {
+func (n counter) float() float64 {
 	if n.isFloat {
 		return n.f
 	}
@@ -484,25 +408,25 @@ func (n pyInt) float() float64 {
 	return f
 }
 
-func (n pyInt) toBig() *big.Int {
+func (n counter) toBig() *big.Int {
 	if n.big != nil {
 		return new(big.Int).Set(n.big)
 	}
 	return big.NewInt(n.small)
 }
 
-func (n pyInt) json() jsonx.Number {
+func (n counter) json() json.RawMessage {
 	if n.isFloat {
-		return jsonx.Float(n.f)
+		return finiteJSON(n.f)
 	}
 	if n.big != nil {
-		return jsonx.BigInt(n.big)
+		return json.RawMessage(n.big.String())
 	}
-	return jsonx.Int(n.small)
+	return json.RawMessage(strconv.FormatInt(n.small, 10))
 }
 
 // exact is the value as an exact big.Float (int or float).
-func (n pyInt) exact() *big.Float {
+func (n counter) exact() *big.Float {
 	if n.isFloat {
 		return new(big.Float).SetFloat64(n.f)
 	}
@@ -510,7 +434,7 @@ func (n pyInt) exact() *big.Float {
 }
 
 // cmp compares exactly, as Python compares int and float.
-func (n pyInt) cmp(v pyInt) int {
+func (n counter) cmp(v counter) int {
 	if n.isFloat || v.isFloat {
 		return n.exact().Cmp(v.exact())
 	}
@@ -529,7 +453,7 @@ func (n pyInt) cmp(v pyInt) int {
 // sqlValue is the value bound to a statement; a Python int beyond int64
 // raised OverflowError when converted to an SQLite INTEGER, a float is
 // bound as a REAL.
-func (n pyInt) sqlValue() (any, error) {
+func (n counter) sqlValue() (any, error) {
 	if n.isFloat {
 		return n.f, nil
 	}
@@ -542,15 +466,18 @@ func (n pyInt) sqlValue() (any, error) {
 	return n.small, nil
 }
 
-// pyIntFromSQL is the Python value sqlite3 returns for a counter column:
+// counterFromSQL is the Python value sqlite3 returns for a counter column:
 // INTEGER → int, REAL → float. Anything else (only a hand-edited file) made
 // the Python arithmetic fail with TypeError.
-func pyIntFromSQL(value any) (pyInt, error) {
+func counterFromSQL(value any) (counter, error) {
 	switch v := value.(type) {
 	case int64:
-		return pyInt{small: v}, nil
+		return counter{small: v}, nil
 	case float64:
-		return pyInt{isFloat: true, f: v}, nil
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return counter{}, &TypeError{Message: "non-finite traffic counter"}
+		}
+		return counter{isFloat: true, f: v}, nil
 	}
 	name := "NoneType"
 	switch value.(type) {
@@ -559,13 +486,13 @@ func pyIntFromSQL(value any) (pyInt, error) {
 	case []byte:
 		name = "bytes"
 	}
-	return pyInt{}, &TypeError{Message: "unsupported operand type(s) for +: 'int' and '" + name + "'"}
+	return counter{}, &TypeError{Message: "unsupported operand type(s) for +: 'int' and '" + name + "'"}
 }
 
 func tripleFromSQL(up, down, conns any) (triple, error) {
 	var t triple
 	for i, value := range []any{up, down, conns} {
-		v, err := pyIntFromSQL(value)
+		v, err := counterFromSQL(value)
 		if err != nil {
 			return t, err
 		}
@@ -574,7 +501,7 @@ func tripleFromSQL(up, down, conns any) (triple, error) {
 	return t, nil
 }
 
-type triple [3]pyInt
+type triple [3]counter
 
 func tripleOf(up, down, conns int64) triple {
 	return triple{{small: up}, {small: down}, {small: conns}}
@@ -606,8 +533,9 @@ type targetKey2 struct {
 // TrafficHistory is TrafficHistory: the increments waiting to be saved plus
 // the SQLite file; every method is safe for concurrent use.
 type TrafficHistory struct {
-	DataDir string
-	Path    string
+	warnings warningLimiter
+	DataDir  string
+	Path     string
 
 	mu      sync.Mutex
 	usage   map[usageKey]*triple
@@ -669,15 +597,27 @@ func (h *TrafficHistory) SetBrokenConnect(err error) func() {
 }
 
 // AddReport is add_report(agent_id, cleaned).
-func (h *TrafficHistory) AddReport(agentID string, cleaned *CleanedTraffic) {
+// AddTraffic admits validated increments only while their owner is live.
+func (h *TrafficHistory) AddTraffic(ctx context.Context, agentID string, cleaned *CleanedTraffic) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if cleaned == nil {
+		return errors.New("missing traffic report")
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for _, row := range cleaned.Usage {
 		addTriple(h.usage, usageKey{agentID, row.Bucket, row.Source, row.Chain}, tripleOf(row.Up, row.Down, row.Conns))
 	}
 	for _, row := range cleaned.Targets {
 		addTriple(h.targets, targetKey2{agentID, row.Bucket, row.Source, row.Target, row.Chain}, tripleOf(row.Up, row.Down, row.Conns))
 	}
+	return nil
 }
 
 func addTriple[K comparable](table map[K]*triple, key K, values triple) {
@@ -837,7 +777,7 @@ func (e *OSError) Error() string {
 	if text != "" {
 		text = strings.ToUpper(text[:1]) + text[1:]
 	}
-	return "[Errno " + strconv.Itoa(int(e.Errno)) + "] " + text + ": " + jsonx.Repr(e.Path)
+	return "[Errno " + strconv.Itoa(int(e.Errno)) + "] " + text + ": " + "'" + strings.ReplaceAll(e.Path, "'", "\\'") + "'"
 }
 
 func (e *OSError) Unwrap() error { return e.Errno }
@@ -945,22 +885,8 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// pyFloorDiv is float floor division (float.__floordiv__).
-func pyFloorDiv(vx, wx float64) float64 {
-	mod := math.Mod(vx, wx)
-	div := (vx - mod) / wx
-	if mod != 0 && (wx < 0) != (mod < 0) {
-		div -= 1.0
-	}
-	if div == 0 {
-		return math.Copysign(0, vx/wx)
-	}
-	floor := math.Floor(div)
-	if div-floor > 0.5 {
-		floor += 1.0
-	}
-	return floor
-}
+// floorDiv is float floor division (float.__floordiv__).
+func floorDiv(value, divisor float64) float64 { return math.Floor(value / divisor) }
 
 // floorDivInt is int // int.
 func floorDivInt(a, b int64) int64 {
@@ -974,11 +900,6 @@ func floorDivInt(a, b int64) int64 {
 // TrafficFlushResult is flush()'s {'rows', 'compacted', 'pruned'}.
 type TrafficFlushResult struct {
 	Rows, Compacted, Pruned int64
-}
-
-// Object is the dict flush() returns.
-func (r TrafficFlushResult) Object() *jsonx.Object {
-	return jsonx.Obj("rows", r.Rows, "compacted", r.Compacted, "pruned", r.Pruned)
 }
 
 // Flush is flush(retention, now): save the increments, fold old hours into
@@ -1094,7 +1015,7 @@ func sqlTriple(values *triple) (any, any, any, error) {
 // "other".
 func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 	var compacted int64
-	usageBefore := int64(pyFloorDiv(now, Day)*Day - UsageHourlyDays*Day)
+	usageBefore := int64(floorDiv(now, Day)*Day - UsageHourlyDays*Day)
 	var usageRows [][]any
 	err := c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, chain, SUM(up), SUM(down), SUM(conns) "+
 		"FROM traffic_usage WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4", []any{usageBefore}, func(rows *sql.Rows) error {
@@ -1125,7 +1046,7 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 			}
 		}
 	}
-	targetsBefore := int64(pyFloorDiv(now, Day)*Day - TargetHourlyDays*Day)
+	targetsBefore := int64(floorDiv(now, Day)*Day - TargetHourlyDays*Day)
 	var targetRows [][]any
 	err = c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, target, chain, SUM(up), SUM(down), SUM(conns) "+
 		"FROM traffic_targets WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4, 5", []any{targetsBefore}, func(rows *sql.Rows) error {
@@ -1213,7 +1134,7 @@ func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, erro
 		return 0, err
 	}
 	type pair struct{ source, target string }
-	totals := map[pair]*pyInt{}
+	totals := map[pair]*counter{}
 	var order []pair
 	for _, row := range rows {
 		if row.target == OtherTarget {
@@ -1221,7 +1142,7 @@ func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, erro
 		}
 		key := pair{row.source, row.target}
 		if totals[key] == nil {
-			totals[key] = &pyInt{}
+			totals[key] = &counter{}
 			order = append(order, key)
 		}
 		totals[key].add(row.v[0])
@@ -1424,7 +1345,7 @@ type targetRecord struct {
 
 // rowsInRange is _rows(agent_id, start, with_targets): the rows of the
 // range; a daily row counts when it overlaps the range.
-func (h *TrafficHistory) rowsInRange(agentID string, start float64, withTargets bool) ([]usageRecord, []targetRecord, error) {
+func (h *TrafficHistory) rowsInRange(ctx context.Context, agentID string, start float64, withTargets bool) ([]usageRecord, []targetRecord, error) {
 	var usage []usageRecord
 	var targets []targetRecord
 	h.mu.Lock()
@@ -1444,21 +1365,23 @@ func (h *TrafficHistory) rowsInRange(agentID string, start float64, withTargets 
 	if !fileExists(h.Path) {
 		return usage, targets, nil
 	}
-	c, err := h.connect()
+	c, err := h.connectContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer c.close()
-	err = c.query("SELECT bucket, span, source, chain, up, down, conns FROM traffic_usage "+
+	err = c.queryContext(ctx, "SELECT bucket, span, source, chain, up, down, conns FROM traffic_usage "+
 		"WHERE agent_id = ? AND bucket + span > ?", []any{agentID, int64(start)}, func(rows *sql.Rows) error {
 		var r usageRecord
 		var up, down, conns any
 		if err := rows.Scan(&r.bucket, &r.span, &r.source, &r.chain, &up, &down, &conns); err != nil {
-			return err
+			h.warnCorrupt(agentID, "traffic_usage")
+			return nil
 		}
 		v, err := tripleFromSQL(up, down, conns)
 		if err != nil {
-			return err
+			h.warnCorrupt(agentID, "traffic_usage.counter")
+			return nil
 		}
 		r.v = v
 		usage = append(usage, r)
@@ -1468,16 +1391,18 @@ func (h *TrafficHistory) rowsInRange(agentID string, start float64, withTargets 
 		return nil, nil, err
 	}
 	if withTargets {
-		err = c.query("SELECT bucket, span, source, target, chain, up, down, conns FROM traffic_targets "+
+		err = c.queryContext(ctx, "SELECT bucket, span, source, target, chain, up, down, conns FROM traffic_targets "+
 			"WHERE agent_id = ? AND bucket + span > ?", []any{agentID, int64(start)}, func(rows *sql.Rows) error {
 			var r targetRecord
 			var up, down, conns any
 			if err := rows.Scan(&r.bucket, &r.span, &r.source, &r.target, &r.chain, &up, &down, &conns); err != nil {
-				return err
+				h.warnCorrupt(agentID, "traffic_targets")
+				return nil
 			}
 			v, err := tripleFromSQL(up, down, conns)
 			if err != nil {
-				return err
+				h.warnCorrupt(agentID, "traffic_targets.counter")
+				return nil
 			}
 			r.v = v
 			targets = append(targets, r)
@@ -1509,11 +1434,11 @@ func (a *aggregate) add(key string, values triple) {
 
 // rowsOf is _rows(table, limit): sorted by traffic (up + down) descending,
 // then key.
-func rowsOf(a *aggregate, limit int) []any {
+func rowsOf(a *aggregate, limit int) []TrafficRow {
 	type entry struct {
 		key   string
 		v     *triple
-		total pyInt
+		total counter
 	}
 	entries := make([]entry, 0, len(a.values))
 	for _, key := range a.order {
@@ -1531,9 +1456,9 @@ func rowsOf(a *aggregate, limit int) []any {
 	if len(entries) > limit {
 		entries = entries[:limit]
 	}
-	out := make([]any, len(entries))
+	out := make([]TrafficRow, len(entries))
 	for i, e := range entries {
-		out[i] = jsonx.Obj("key", e.key, "up", e.v[0].json(), "down", e.v[1].json(), "conns", e.v[2].json())
+		out[i] = TrafficRow{Key: e.key, TrafficTotals: trafficTotals(*e.v)}
 	}
 	return out
 }
@@ -1565,13 +1490,29 @@ func leftPad(s string, width int) string {
 	return s
 }
 
-// Query is query(agent_id, range_key, by, now): the rows of the range
+// QueryTraffic returns typed aggregates for one Agent: the rows of the range
 // grouped by `by` (with their parts), totals, totals per exit node and the
 // trend. Parts: by device, target or policy group they are split by chain;
 // by chain or exit node they are split by device. Unattributed traffic has
 // the empty key and no parts. The trend is hourly for 24 h and 7 d, daily
 // for 30 d. rangeKey must be a key of Ranges. at nil = time.time().
-func (h *TrafficHistory) Query(agentID, rangeKey, by string, at *float64) (*jsonx.Object, error) {
+func (h *TrafficHistory) QueryTraffic(ctx context.Context, agentID, rangeKey, by string, at *float64) (*TrafficQuery, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, ok := Ranges[rangeKey]; !ok {
+		return nil, errors.New("invalid traffic range")
+	}
+	validBy := false
+	for _, choice := range Aggregates {
+		if by == choice {
+			validBy = true
+			break
+		}
+	}
+	if !validBy {
+		return nil, errors.New("invalid traffic aggregate")
+	}
 	current := trafficNow()
 	if at != nil {
 		current = *at
@@ -1581,13 +1522,13 @@ func (h *TrafficHistory) Query(agentID, rangeKey, by string, at *float64) (*json
 	if rangeKey == "30d" {
 		step = Day
 	}
-	usageRows, targetRows, err := h.rowsInRange(agentID, start, by == "destination")
+	usageRows, targetRows, err := h.rowsInRange(ctx, agentID, start, by == "destination")
 	if err != nil {
 		return nil, err
 	}
 	var totals triple
 	outbounds := newAggregate()
-	trend := map[int64]*[2]pyInt{}
+	trend := map[int64]*[2]counter{}
 	grouped := newAggregate()
 	parts := map[string]*aggregate{}
 	add := func(key string, part *string, values triple) {
@@ -1605,7 +1546,7 @@ func (h *TrafficHistory) Query(agentID, rangeKey, by string, at *float64) (*json
 		at := floorDivInt(row.bucket, step) * step
 		point := trend[at]
 		if point == nil {
-			point = &[2]pyInt{}
+			point = &[2]counter{}
 			trend[at] = point
 		}
 		point[0].add(values[0])
@@ -1642,34 +1583,28 @@ func (h *TrafficHistory) Query(agentID, rangeKey, by string, at *float64) (*json
 	}
 
 	rows := rowsOf(grouped, QueryRowLimit)
-	for _, item := range rows {
-		row := item.(*jsonx.Object)
-		rowParts := parts[row.GetString("key")]
+	for i := range rows {
+		row := &rows[i]
+		rowParts := parts[row.Key]
 		if rowParts == nil {
 			rowParts = newAggregate()
 		}
-		row.Set("parts", rowsOf(rowParts, QueryPartLimit))
-		row.Set("part_count", len(rowParts.values))
+		row.Parts = rowsOf(rowParts, QueryPartLimit)
+		count := len(rowParts.values)
+		row.PartCount = &count
 	}
-	first := int64(pyFloorDiv(start, float64(step)) * float64(step))
-	points := []any{}
+	first := int64(floorDiv(start, float64(step)) * float64(step))
+	points := []TrafficPoint{}
 	for at := first; at < int64(current)+1; at += step {
-		up, down := jsonx.Int(0), jsonx.Int(0)
+		up, down := json.RawMessage("0"), json.RawMessage("0")
 		if point := trend[at]; point != nil {
 			up, down = point[0].json(), point[1].json()
 		}
-		points = append(points, jsonx.Obj("at", isoUTC(float64(at)), "up", up, "down", down))
+		points = append(points, TrafficPoint{At: isoUTC(float64(at)), Up: up, Down: down})
 	}
 	omitted := len(grouped.values) - QueryRowLimit
 	if omitted < 0 {
 		omitted = 0
 	}
-	return jsonx.Obj(
-		"range", rangeKey, "by", by, "step", step, "chain_separator", ChainSeparator,
-		"start", isoUTC(start),
-		"rows", rows, "omitted", omitted,
-		"total", jsonx.Obj("up", totals[0].json(), "down", totals[1].json(), "conns", totals[2].json()),
-		"outbounds", rowsOf(outbounds, len(outbounds.values)),
-		"trend", points,
-	), nil
+	return &TrafficQuery{Range: rangeKey, By: by, Step: step, ChainSeparator: ChainSeparator, Start: isoUTC(start), Rows: rows, Omitted: omitted, Total: trafficTotals(totals), Outbounds: rowsOf(outbounds, len(outbounds.values)), Trend: points}, nil
 }

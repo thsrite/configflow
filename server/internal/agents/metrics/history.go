@@ -44,7 +44,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/taskstatus"
@@ -131,6 +130,7 @@ type point struct {
 // History is MetricsHistory: the monitoring history of the Agents of one
 // data directory.
 type History struct {
+	warnings warningLimiter
 	// DataDir is the directory of the files (DATA_DIR/metrics, or the
 	// temporary fallback when it cannot be created).
 	DataDir   string
@@ -286,8 +286,8 @@ func parseNaiveISO(value string) (t time.Time, aware bool, ok bool) {
 	return parsed, false, true
 }
 
-// pyIsSpace is str.isspace() for one character.
-func pyIsSpace(r rune) bool {
+// blankSpace is str.isspace() for one character.
+func blankSpace(r rune) bool {
 	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }
 
@@ -322,7 +322,7 @@ func parseLines(lines []string, limit time.Time) ([]point, int) {
 	seen := map[string]bool{}
 	count := 0
 	for _, raw := range lines {
-		if strings.TrimFunc(raw, pyIsSpace) == "" {
+		if strings.TrimFunc(raw, blankSpace) == "" {
 			continue
 		}
 		count++
@@ -380,34 +380,7 @@ func (h *History) readFileState(agentID string, limit time.Time) ([]point, int, 
 // legacyFormatError is a ValueError (json or UTF-8) of _read_legacy.
 type legacyFormatError struct{ error }
 
-// PyTypeName is type(value).__name__ of a JSON value.
-func PyTypeName(value any) string { return pyTypeName(value) }
-
-func pyTypeName(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case jsonx.Number:
-		if v.IsInt() {
-			return "int"
-		}
-		return "float"
-	case []any:
-		return "list"
-	case *jsonx.Object:
-		if v == nil {
-			return "NoneType"
-		}
-		return "dict"
-	}
-	return fmt.Sprintf("%T", value)
-}
-
-// TypeError is Python's TypeError (its text is str(error)).
+// TypeError reports an invalid metrics value.
 type TypeError struct{ Message string }
 
 func (e *TypeError) Error() string { return e.Message }
@@ -451,11 +424,10 @@ func (h *History) readLegacy(agentID string, limit time.Time) ([]point, error) {
 }
 
 // LoadResult is the counts load() returns.
-type LoadResult struct{ Loaded, Migrated, Removed int }
-
-// Object is the dict Python returns.
-func (r LoadResult) Object() *jsonx.Object {
-	return jsonx.Obj("loaded", r.Loaded, "migrated", r.Migrated, "removed", r.Removed)
+type LoadResult struct {
+	Loaded   int `json:"loaded"`
+	Migrated int `json:"migrated"`
+	Removed  int `json:"removed"`
 }
 
 // Load is load(agent_ids): read back the history of existing Agents at
@@ -468,7 +440,16 @@ func (r LoadResult) Object() *jsonx.Object {
 //
 // The error is the TypeError Python's load() raised for an old file whose
 // "metrics" is not iterable (load_history logs it and gives up).
-func (h *History) Load(agentIDs []string) (LoadResult, error) {
+func (h *History) Load(ids []string) (LoadResult, error) {
+	return h.LoadContext(context.Background(), ids)
+}
+
+// LoadContext loads and migrates saved files only while its owner is live.
+func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResult, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return LoadResult{}, err
+	}
 	wanted := map[string]bool{}
 	for _, id := range agentIDs {
 		wanted[id] = true
@@ -487,7 +468,7 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 		path := h.DataDir + "/" + name
 		if strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp") {
 			// 整理文件时中断留下的临时文件
-			h.remove(path, false)
+			h.removeContext(ctx, path, false)
 			continue
 		}
 		for _, suffix := range []string{FileSuffix, LegacySuffix} {
@@ -519,7 +500,7 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 				present bool
 				suffix  string
 			}{{k.file, FileSuffix}, {k.legacy, LegacySuffix}} {
-				if item.present && h.remove(h.DataDir+"/"+agentID+item.suffix, false) == removed {
+				if item.present && h.removeContext(ctx, h.DataDir+"/"+agentID+item.suffix, false) == removed {
 					result.Removed++
 				}
 			}
@@ -536,7 +517,7 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 			}
 			if k.legacy {
 				// 新文件由旧文件改写而来，旧文件是迁移中断留下的
-				h.remove(h.legacyFile(agentID), false)
+				h.removeContext(ctx, h.legacyFile(agentID), false)
 			}
 		} else {
 			points, err = h.readLegacy(agentID, limit)
@@ -552,7 +533,7 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 					reason = DescribeOSError(err)
 				}
 				historyLogger.Warningf("读取 Agent %s 的旧版监控历史失败，已忽略：%s", agentID, reason)
-				h.remove(h.legacyFile(agentID), false)
+				h.removeContext(ctx, h.legacyFile(agentID), false)
 				continue
 			}
 			migrate = append(migrate, agentID)
@@ -584,7 +565,7 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 	}
 	var errs []agentError
 	if len(migrate) > 0 {
-		errs = h.flushAgents(migrate).errors
+		errs = h.flushAgentsContext(ctx, migrate).errors
 	}
 	h.flushMu.Unlock()
 	result.Migrated = len(migrate) - len(errs)
@@ -599,31 +580,10 @@ func (h *History) Load(agentIDs []string) (LoadResult, error) {
 
 // ---- 心跳与查询 -------------------------------------------------------------
 
-// AddMetrics is add_metrics(agent_id, system_metrics): append one point to
-// memory (the flush task writes it to the file). The error is the
-// AttributeError Python raised when system_metrics is not a dict.
-func (h *History) AddMetrics(agentID string, systemMetrics any) (bool, error) {
-	metrics, ok := systemMetrics.(*jsonx.Object)
-	if !ok || metrics == nil {
-		return false, &AttributeError{fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(systemMetrics))}
-	}
-	data, err := jsonresp.Encode(metrics)
-	if err != nil {
-		historyLogger.Warningf("Agent %s 的监控数据无法保存：%s", agentID, err)
-		return false, nil
-	}
-	return h.AddSample(context.Background(), agentID, data)
-}
-
-// AttributeError is Python's AttributeError (its text is str(error)).
-type AttributeError struct{ Message string }
-
-func (e *AttributeError) Error() string { return e.Message }
-
 // GetMetrics is get_metrics(agent_id, hours): the points of the last hours
 // hours (nil: every point kept), each a fresh parse of its line. The error
 // is Python's OverflowError for an hours value timedelta cannot hold.
-func (h *History) GetMetrics(agentID string, hours *big.Int) ([]any, error) {
+func (h *History) Samples(agentID string, hours *big.Int) ([]json.RawMessage, error) {
 	h.mu.Lock()
 	points := h.prune(agentID)
 	var lines []string
@@ -644,26 +604,11 @@ func (h *History) GetMetrics(agentID string, hours *big.Int) ([]any, error) {
 		}
 	}
 	h.mu.Unlock()
-	out := make([]any, 0, len(lines))
+	out := make([]json.RawMessage, 0, len(lines))
 	for _, line := range lines {
-		var value *jsonx.Object
-		err := json.Unmarshal([]byte(line), &value)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, value)
+		out = append(out, json.RawMessage(line))
 	}
 	return out, nil
-}
-
-// GetLatestMetrics is get_latest_metrics(agent_id): the newest point, nil
-// when there is none.
-func (h *History) GetLatestMetrics(agentID string) any {
-	metrics, _ := h.GetMetrics(agentID, nil)
-	if len(metrics) > 0 {
-		return metrics[len(metrics)-1]
-	}
-	return nil
 }
 
 // PendingCount is pending_count(): the points in memory not written yet.
@@ -720,7 +665,17 @@ func (h *History) DeleteAgentHistoryContext(ctx context.Context, agentID string)
 // RetainAgents is retain_agents(agent_ids): delete the history of every
 // Agent not in agentIDs (import, WebDAV restore and reset replace the Agent
 // list without deleting Agents); returns the number of Agents dropped.
-func (h *History) RetainAgents(agentIDs []string) int {
+func (h *History) RetainAgents(ids []string) int {
+	count, _ := h.RetainMetricsAgents(context.Background(), ids)
+	return count
+}
+
+// RetainMetricsAgents removes stale files with shutdown cancellation.
+func (h *History) RetainMetricsAgents(ctx context.Context, agentIDs []string) (int, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	wanted := map[string]bool{}
 	for _, id := range agentIDs {
 		wanted[id] = true
@@ -736,9 +691,11 @@ func (h *History) RetainAgents(agentIDs []string) int {
 	}
 	h.mu.Unlock()
 	for _, id := range sortedKeys(stale) {
-		h.DeleteAgentHistory(id)
+		if _, err := h.DeleteAgentHistoryContext(ctx, id); err != nil {
+			return 0, err
+		}
 	}
-	return len(stale)
+	return len(stale), nil
 }
 
 func keysOf[V any](m map[string]V) map[string]bool {
@@ -804,7 +761,10 @@ func joinLines(lines []string) []byte {
 }
 
 // appendLines is _append (tests replace it).
-var appendLines = func(path string, lines []string) error {
+var appendLines = func(ctx context.Context, path string, lines []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	handle, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return err
@@ -825,10 +785,16 @@ var appendLines = func(path string, lines []string) error {
 			prefix = []byte{'\n'}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if prefix != nil {
 		if _, err := handle.Write(prefix); err != nil {
 			return err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if _, err := handle.Write(joinLines(lines)); err != nil {
 		return err
@@ -842,6 +808,12 @@ var replaceFile = os.Rename
 // replace is _replace: write the lines to a temporary file in the data
 // directory and atomically replace the file; no lines removes the file.
 func (h *History) replace(agentID, path string, lines []string) error {
+	return h.replaceContext(context.Background(), agentID, path, lines)
+}
+func (h *History) replaceContext(ctx context.Context, agentID, path string, lines []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if len(lines) == 0 {
 		h.remove(path, false)
 		return nil
@@ -856,6 +828,9 @@ func (h *History) replace(agentID, path string, lines []string) error {
 			os.Remove(temporary)
 		}
 	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := handle.Write(joinLines(lines)); err != nil {
 		handle.Close()
 		return err
@@ -865,6 +840,9 @@ func (h *History) replace(agentID, path string, lines []string) error {
 		return err
 	}
 	if err := handle.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return replaceFile(temporary, path)
@@ -887,6 +865,9 @@ type flushJob struct {
 // flushAgents is _flush_agents: write the given Agents; the caller holds
 // flushMu.
 func (h *History) flushAgents(agentIDs []string) flushResult {
+	return h.flushAgentsContext(context.Background(), agentIDs)
+}
+func (h *History) flushAgentsContext(ctx context.Context, agentIDs []string) flushResult {
 	var jobs []flushJob
 	h.mu.Lock()
 	for _, agentID := range agentIDs {
@@ -919,10 +900,12 @@ func (h *History) flushAgents(agentIDs []string) flushResult {
 	for _, job := range jobs {
 		path := h.agentFile(job.agentID)
 		var err error
-		if job.compact {
-			err = h.replace(job.agentID, path, job.lines)
-		} else {
-			err = appendLines(path, job.lines)
+		if err = ctx.Err(); err == nil {
+			if job.compact {
+				err = h.replaceContext(ctx, job.agentID, path, job.lines)
+			} else {
+				err = appendLines(ctx, path, job.lines)
+			}
 		}
 		if err != nil {
 			h.mu.Lock()
@@ -951,7 +934,7 @@ func (h *History) flushAgents(agentIDs []string) flushResult {
 		legacy, hadLegacy := h.legacy[job.agentID]
 		delete(h.legacy, job.agentID)
 		h.mu.Unlock()
-		if hadLegacy && legacy != "" {
+		if hadLegacy && legacy != "" && ctx.Err() == nil {
 			h.remove(legacy, true)
 		}
 		if job.pending > 0 {
@@ -966,17 +949,23 @@ func (h *History) flushAgents(agentIDs []string) flushResult {
 }
 
 // FlushResult is the counts flush() returns.
-type FlushResult struct{ Agents, Appended, Compacted int }
-
-// Object is the dict Python returns.
-func (r FlushResult) Object() *jsonx.Object {
-	return jsonx.Obj("agents", r.Agents, "appended", r.Appended, "compacted", r.Compacted)
+type FlushResult struct {
+	Agents    int `json:"agents"`
+	Appended  int `json:"appended"`
+	Compacted int `json:"compacted"`
 }
 
 // Flush is flush(): append the new points to the files; a file clearly
 // larger than the points in memory is atomically compacted. A *FlushError
 // means some Agents failed; their points stay in memory for the next save.
-func (h *History) Flush() (FlushResult, error) {
+func (h *History) Flush() (FlushResult, error) { return h.FlushContext(context.Background()) }
+
+// FlushContext preserves pending samples when shutdown has cancelled the owner.
+func (h *History) FlushContext(ctx context.Context) (FlushResult, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return FlushResult{}, err
+	}
 	h.flushMu.Lock()
 	h.mu.Lock()
 	ids := map[string]bool{}
@@ -986,9 +975,12 @@ func (h *History) Flush() (FlushResult, error) {
 		}
 	}
 	h.mu.Unlock()
-	result := h.flushAgents(sortedKeys(ids))
+	result := h.flushAgentsContext(ctx, sortedKeys(ids))
 	h.flushMu.Unlock()
 	counts := FlushResult{result.agents, result.appended, result.compacted}
+	if err := ctx.Err(); err != nil {
+		return counts, err
+	}
 	if len(result.errors) > 0 {
 		reasons := map[string]bool{}
 		for _, item := range result.errors {
@@ -998,4 +990,11 @@ func (h *History) Flush() (FlushResult, error) {
 			len(result.errors), strings.Join(sortedKeys(reasons), "；"), h.DataDir)}
 	}
 	return counts, nil
+}
+
+func (h *History) removeContext(ctx context.Context, path string, report bool) removal {
+	if ctx.Err() != nil {
+		return failed
+	}
+	return h.remove(path, report)
 }

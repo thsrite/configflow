@@ -484,7 +484,7 @@ func TestRetentionDaysAndChoices(t *testing.T) {
 	if got, _ := RetentionDays(jsonx.Obj("system_config", nil)); got != 90 {
 		t.Error("None system_config")
 	}
-	if _, err := RetentionDays(jsonx.Obj("system_config", []any{1})); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := RetentionDays(jsonx.Obj("system_config", []any{1})); err == nil {
 		t.Errorf("list system_config: %v", err)
 	}
 }

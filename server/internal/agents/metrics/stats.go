@@ -1,352 +1,366 @@
 package metrics
 
-// get_metrics_summary, get_traffic_stats and get_traffic_trend of
-// metrics_history.py. The traffic functions are used by the traffic routes
-// (A05).
-
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"math/big"
+	"strconv"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 )
 
-var zeroStats = func() *jsonx.Object { return jsonx.Obj("avg", 0, "max", 0, "min", 0) }
-
-// calcStats is calc_stats(values).
-func calcStats(values []any) (*jsonx.Object, error) {
-	if len(values) == 0 {
-		return zeroStats(), nil
-	}
-	valid := make([]any, 0, len(values))
-	for _, value := range values {
-		if value != nil {
-			if n, ok := value.(jsonx.Number); ok && (math.IsInf(n.Float64(), 0) || math.IsNaN(n.Float64())) {
-				continue
-			}
-			valid = append(valid, value)
-		}
-	}
-	if len(valid) == 0 {
-		return jsonx.Obj("avg", nil, "max", nil, "min", nil), nil
-	}
-	values = valid
-	avg, err := pyMean(values)
-	if err != nil {
-		return nil, err
-	}
-	high, err := pyMax(values)
-	if err != nil {
-		return nil, err
-	}
-	low, err := pyMin(values)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Obj("avg", avg, "max", high, "min", low), nil
+// Statistic is the finite average, maximum and minimum of available samples.
+type Statistic struct {
+	Avg json.RawMessage `json:"avg"`
+	Max json.RawMessage `json:"max"`
+	Min json.RawMessage `json:"min"`
 }
 
-// GetMetricsSummary is get_metrics_summary(agent_id, hours): average,
-// maximum and minimum of the last hours hours; an empty object without
-// points. Errors are Python's (OverflowError for hours, TypeError for
-// values that are not numbers).
-func (h *History) GetMetricsSummary(agentID string, hours *big.Int) (*jsonx.Object, error) {
-	metrics, err := h.GetMetrics(agentID, hours)
+// Summary contains the five monitored series for a requested window.
+type Summary struct {
+	CPU            Statistic `json:"cpu"`
+	Memory         Statistic `json:"memory"`
+	Disk           Statistic `json:"disk"`
+	NetworkSent    Statistic `json:"network_sent"`
+	NetworkRecv    Statistic `json:"network_recv"`
+	DataPoints     int       `json:"data_points"`
+	TimeRangeHours *big.Int  `json:"time_range_hours"`
+}
+
+// MarshalJSON keeps the established empty-object response when no point exists.
+func (s Summary) MarshalJSON() ([]byte, error) {
+	if s.DataPoints == 0 {
+		return []byte(`{}`), nil
+	}
+	type summary Summary
+	return json.Marshal(summary(s))
+}
+
+type sampleNumber struct {
+	integer *big.Int
+	real    float64
+	raw     json.RawMessage
+}
+
+func parseSampleNumber(raw json.RawMessage) (sampleNumber, bool) {
+	n := sampleNumber{raw: raw}
+	if string(raw) == "true" {
+		n.integer = big.NewInt(1)
+		return n, true
+	}
+	if string(raw) == "false" {
+		n.integer = new(big.Int)
+		return n, true
+	}
+	if v, ok := integerJSON(raw); ok {
+		f, _ := new(big.Float).SetInt(v).Float64()
+		if math.IsInf(f, 0) {
+			return n, false
+		}
+		n.integer = v
+		return n, true
+	}
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) || raw[0] == '"' {
+		return n, false
+	}
+	var value json.Number
+	if jsondecode.Unmarshal(raw, &value) != nil {
+		return n, false
+	}
+	f, err := value.Float64()
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return n, false
+	}
+	n.real = f
+	return n, true
+}
+func (n sampleNumber) rat() *big.Rat {
+	if n.integer != nil {
+		return new(big.Rat).SetInt(n.integer)
+	}
+	return new(big.Rat).SetFloat64(n.real)
+}
+func (n sampleNumber) float() float64 {
+	if n.integer == nil {
+		return n.real
+	}
+	f, _ := new(big.Float).SetInt(n.integer).Float64()
+	return f
+}
+func finiteJSON(f float64) json.RawMessage {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return json.RawMessage("null")
+	}
+	text := strconv.FormatFloat(f, 'g', -1, 64)
+	if !bytes.ContainsAny([]byte(text), ".eE") {
+		text += ".0"
+	}
+	return json.RawMessage(text)
+}
+func statistic(values []sampleNumber, seen bool) Statistic {
+	if len(values) == 0 {
+		v := json.RawMessage("0")
+		if seen {
+			v = []byte("null")
+		}
+		return Statistic{v, v, v}
+	}
+	total := new(big.Int)
+	sum := float64(0)
+	floating := false
+	low, high := values[0], values[0]
+	for _, value := range values {
+		if value.rat().Cmp(low.rat()) < 0 {
+			low = value
+		}
+		if value.rat().Cmp(high.rat()) > 0 {
+			high = value
+		}
+		if !floating && value.integer != nil {
+			total.Add(total, value.integer)
+		} else {
+			if !floating {
+				sum, _ = new(big.Float).SetInt(total).Float64()
+				floating = true
+			}
+			sum += value.float()
+		}
+	}
+	if !floating {
+		sum, _ = new(big.Rat).SetFrac(total, big.NewInt(int64(len(values)))).Float64()
+	} else {
+		sum /= float64(len(values))
+	}
+	return Statistic{finiteJSON(sum), high.raw, low.raw}
+}
+func sampleFields(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	var fields map[string]json.RawMessage
+	if jsondecode.Unmarshal(raw, &fields) != nil || fields == nil {
+		return nil, false
+	}
+	return fields, true
+}
+
+// Summarize computes native statistics, isolating malformed stored components.
+func (h *History) Summarize(id string, hours *big.Int) (*Summary, error) {
+	samples, err := h.Samples(id, hours)
 	if err != nil {
 		return nil, err
 	}
-	if len(metrics) == 0 {
-		return jsonx.NewObject(), nil
-	}
-	var cpuValues, memoryValues, diskValues, sentValues, recvValues []any
-	collect := func(section any, key string, into *[]any) error {
-		found, err := pyContains(section, key)
-		if err != nil || !found {
-			return err
+	summary := &Summary{TimeRangeHours: hours, DataPoints: len(samples)}
+	var values [5][]sampleNumber
+	var seen [5]bool
+	for _, raw := range samples {
+		fields, ok := sampleFields(raw)
+		if !ok {
+			h.warnCorrupt(id, "sample")
+			continue
 		}
-		value, err := pyIndex(section, key)
-		if err != nil {
-			return err
-		}
-		*into = append(*into, value)
-		return nil
-	}
-	for _, item := range metrics {
-		metric := item.(*jsonx.Object)
-		section := func(key string) any {
-			value, _ := pyGet(metric, key, jsonx.NewObject())
-			return value
-		}
-		cpu, memory, disk, network := section("cpu"), section("memory"), section("disk"), section("network")
-		for _, step := range []struct {
-			section any
-			key     string
-			into    *[]any
-		}{{cpu, "usage_percent", &cpuValues}, {memory, "used_percent", &memoryValues}, {disk, "used_percent", &diskValues},
-			{network, "speed_sent", &sentValues}, {network, "speed_recv", &recvValues}} {
-			if err := collect(step.section, step.key, step.into); err != nil {
-				return nil, err
+		for i, field := range []struct{ section, key string }{{"cpu", "usage_percent"}, {"memory", "used_percent"}, {"disk", "used_percent"}, {"network", "speed_sent"}, {"network", "speed_recv"}} {
+			section, ok := sampleFields(fields[field.section])
+			if !ok {
+				if raw, present := fields[field.section]; present && string(raw) != "null" {
+					h.warnCorrupt(id, field.section)
+				}
+				continue
+			}
+			if raw, present := section[field.key]; present {
+				seen[i] = true
+				if value, ok := parseSampleNumber(raw); ok {
+					values[i] = append(values[i], value)
+				} else if string(raw) != "null" {
+					h.warnCorrupt(id, field.section+"."+field.key)
+				}
 			}
 		}
 	}
-	summary := jsonx.NewObject()
-	for _, step := range []struct {
-		key    string
-		values []any
-	}{{"cpu", cpuValues}, {"memory", memoryValues}, {"disk", diskValues}, {"network_sent", sentValues}, {"network_recv", recvValues}} {
-		stats, err := calcStats(step.values)
-		if err != nil {
-			return nil, err
-		}
-		summary.Set(step.key, stats)
-	}
-	summary.Set("data_points", len(metrics))
-	summary.Set("time_range_hours", jsonx.BigInt(hours))
+	summary.CPU = statistic(values[0], seen[0])
+	summary.Memory = statistic(values[1], seen[1])
+	summary.Disk = statistic(values[2], seen[2])
+	summary.NetworkSent = statistic(values[3], seen[3])
+	summary.NetworkRecv = statistic(values[4], seen[4])
 	return summary, nil
 }
 
-func emptyTrafficStats(period string) *jsonx.Object {
-	return jsonx.Obj("bytes_sent", 0, "bytes_recv", 0, "bytes_sent_delta", 0, "bytes_recv_delta", 0,
-		"avg_speed_sent", 0, "avg_speed_recv", 0, "period", period, "start_time", nil, "end_time", nil)
+// TrafficStats is the cumulative traffic and reset-aware delta of a metrics window.
+type TrafficStats struct {
+	BytesSent      json.RawMessage `json:"bytes_sent"`
+	BytesRecv      json.RawMessage `json:"bytes_recv"`
+	BytesSentDelta json.RawMessage `json:"bytes_sent_delta"`
+	BytesRecvDelta json.RawMessage `json:"bytes_recv_delta"`
+	AvgSpeedSent   json.RawMessage `json:"avg_speed_sent"`
+	AvgSpeedRecv   json.RawMessage `json:"avg_speed_recv"`
+	Period         string          `json:"period"`
+	StartTime      *string         `json:"start_time"`
+	EndTime        *string         `json:"end_time"`
+	DataPoints     *int            `json:"data_points,omitempty"`
 }
 
-// pointTime is datetime.fromisoformat(metric['timestamp']) of a point in
-// memory (always a valid naive timestamp).
-func pointTime(metric *jsonx.Object) time.Time {
-	t, _, _ := parseNaiveISO(metric.GetString("timestamp"))
-	return t
+// TrafficTrendPoint is a sample and optional reset-aware delta since the previous sample.
+type TrafficTrendPoint struct {
+	Timestamp string          `json:"timestamp"`
+	BytesSent json.RawMessage `json:"bytes_sent"`
+	BytesRecv json.RawMessage `json:"bytes_recv"`
+	SentDelta json.RawMessage `json:"sent_delta,omitempty"`
+	RecvDelta json.RawMessage `json:"recv_delta,omitempty"`
+	SpeedSent json.RawMessage `json:"speed_sent"`
+	SpeedRecv json.RawMessage `json:"speed_recv"`
 }
 
-// secondsBetween is (later - earlier).total_seconds() of two naive
-// datetimes: the exact difference in microseconds divided by 10**6, correctly
-// rounded. time.Duration cannot be used: it saturates after 292 years (a
-// point dated 9999 in a saved file).
+type trafficSample struct {
+	at                   time.Time
+	sent, recv           sampleNumber
+	speedSent, speedRecv json.RawMessage
+}
+
+func (h *History) trafficSamples(id string, samples []json.RawMessage) []trafficSample {
+	result := make([]trafficSample, 0, len(samples))
+	for _, raw := range samples {
+		fields, ok := sampleFields(raw)
+		if !ok {
+			continue
+		}
+		var stamp string
+		if jsondecode.Unmarshal(fields["timestamp"], &stamp) != nil {
+			continue
+		}
+		at, aware, ok := parseNaiveISO(stamp)
+		if !ok || aware {
+			continue
+		}
+		network, present := fields["network"]
+		var values map[string]json.RawMessage
+		if present {
+			values, ok = sampleFields(network)
+			if !ok {
+				if string(network) != "null" {
+					h.warnCorrupt(id, "network")
+				}
+				continue
+			}
+		}
+		counter := func(key string) (sampleNumber, bool) {
+			raw, exists := values[key]
+			if !exists {
+				raw = []byte("0")
+			}
+			return parseSampleNumber(raw)
+		}
+		sent, ok := counter("bytes_sent")
+		if !ok {
+			h.warnCorrupt(id, "network.bytes_sent")
+			continue
+		}
+		recv, ok := counter("bytes_recv")
+		if !ok {
+			h.warnCorrupt(id, "network.bytes_recv")
+			continue
+		}
+		speed := func(key string) json.RawMessage {
+			raw, exists := values[key]
+			if !exists {
+				return json.RawMessage("0")
+			}
+			if value, ok := parseSampleNumber(raw); ok {
+				return value.raw
+			}
+			return json.RawMessage("null")
+		}
+		result = append(result, trafficSample{at, sent, recv, speed("speed_sent"), speed("speed_recv")})
+	}
+	return result
+}
+
+// secondsBetween avoids time.Duration saturation for old persisted timestamps.
 func secondsBetween(later, earlier time.Time) float64 {
 	micros := (later.Unix()-earlier.Unix())*1_000_000 + int64(later.Nanosecond()/1000-earlier.Nanosecond()/1000)
-	if micros < 1<<53 && micros > -(1<<53) {
-		return float64(micros) / 1e6
+	f, _ := new(big.Rat).SetFrac(big.NewInt(micros), big.NewInt(1_000_000)).Float64()
+	return f
+}
+func delta(after, before sampleNumber) sampleNumber {
+	if after.rat().Cmp(before.rat()) < 0 {
+		return after
 	}
-	seconds, _ := new(big.Rat).SetFrac(big.NewInt(micros), big.NewInt(1_000_000)).Float64()
-	return seconds
+	if after.integer != nil && before.integer != nil {
+		n := new(big.Int).Sub(after.integer, before.integer)
+		return sampleNumber{integer: n, raw: json.RawMessage(n.String())}
+	}
+	f := after.float() - before.float()
+	return sampleNumber{real: f, raw: finiteJSON(f)}
+}
+func speedDelta(delta sampleNumber, duration float64) json.RawMessage {
+	if duration <= 0 {
+		return json.RawMessage("0")
+	}
+	return finiteJSON(delta.float() / duration)
 }
 
-// GetTrafficStats is get_traffic_stats(agent_id, period): cumulative
-// traffic, deltas and average speeds of the period ("today", "week",
-// "hours_24", anything else = "total") within the last 24 hours.
-func (h *History) GetTrafficStats(agentID, period string) (*jsonx.Object, error) {
-	metrics, err := h.GetMetrics(agentID, big.NewInt(24))
+// TrafficStatistics returns native traffic totals; corrupt stored points are skipped.
+func (h *History) TrafficStatistics(id, period string) (*TrafficStats, error) {
+	raw, err := h.Samples(id, big.NewInt(24))
 	if err != nil {
 		return nil, err
 	}
-	if len(metrics) == 0 {
-		return emptyTrafficStats(period), nil
-	}
+	samples := h.trafficSamples(id, raw)
 	current := naiveNow()
-	var filtered []*jsonx.Object
-	switch period {
-	case "today", "week":
-		start := time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
-		if period == "week" {
-			start = start.AddDate(0, 0, -((int(current.Weekday()) + 6) % 7))
-		}
-		for _, item := range metrics {
-			metric := item.(*jsonx.Object)
-			if !pointTime(metric).Before(start) {
-				filtered = append(filtered, metric)
+	start := time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
+	if period == "week" {
+		start = start.AddDate(0, 0, -((int(current.Weekday()) + 6) % 7))
+	}
+	if period == "today" || period == "week" {
+		kept := samples[:0]
+		for _, sample := range samples {
+			if !sample.at.Before(start) {
+				kept = append(kept, sample)
 			}
 		}
-	default:
-		for _, item := range metrics {
-			filtered = append(filtered, item.(*jsonx.Object))
-		}
+		samples = kept
 	}
-	kept := filtered[:0]
-	for _, metric := range filtered {
-		if !missingTrafficCounter(metric) {
-			kept = append(kept, metric)
-		}
+	zero := json.RawMessage("0")
+	out := &TrafficStats{BytesSent: zero, BytesRecv: zero, BytesSentDelta: zero, BytesRecvDelta: zero, AvgSpeedSent: zero, AvgSpeedRecv: zero, Period: period}
+	if len(samples) == 0 {
+		return out, nil
 	}
-	filtered = kept
-	if len(filtered) == 0 {
-		return emptyTrafficStats(period), nil
-	}
-	latest, first := filtered[len(filtered)-1], filtered[0]
-	values := [4]any{}
-	for i, step := range []struct {
-		metric *jsonx.Object
-		key    string
-	}{{latest, "bytes_sent"}, {latest, "bytes_recv"}, {first, "bytes_sent"}, {first, "bytes_recv"}} {
-		network, _ := pyGet(step.metric, "network", jsonx.NewObject())
-		value, err := pyGet(network, step.key, jsonx.Int(0))
-		if err != nil {
-			return nil, err
-		}
-		values[i] = value
-	}
-	currentSent, currentRecv, startSent, startRecv := values[0], values[1], values[2], values[3]
-	sentDelta, err := pySub(currentSent, startSent)
+	first, last := samples[0], samples[len(samples)-1]
+	sent, recv := delta(last.sent, first.sent), delta(last.recv, first.recv)
+	duration := secondsBetween(last.at, first.at)
+	startText, endText, count := isoformat(first.at), isoformat(last.at), len(samples)
+	out.BytesSent = last.sent.raw
+	out.BytesRecv = last.recv.raw
+	out.BytesSentDelta = sent.raw
+	out.BytesRecvDelta = recv.raw
+	out.AvgSpeedSent = speedDelta(sent, duration)
+	out.AvgSpeedRecv = speedDelta(recv, duration)
+	out.StartTime = &startText
+	out.EndTime = &endText
+	out.DataPoints = &count
+	return out, nil
+}
+
+// TrafficTrend returns interval deltas plus the final raw network sample.
+func (h *History) TrafficTrend(id string, hours, intervalMinutes *big.Int) ([]TrafficTrendPoint, error) {
+	raw, err := h.Samples(id, hours)
 	if err != nil {
 		return nil, err
 	}
-	recvDelta, err := pySub(currentRecv, startRecv)
-	if err != nil {
-		return nil, err
+	samples := h.trafficSamples(id, raw)
+	out := []TrafficTrendPoint{}
+	if len(samples) == 0 {
+		return out, nil
 	}
-	// 如果差值为负，说明发生了重置，使用当前值作为增量
-	if negative, err := pyLess(sentDelta, jsonx.Int(0)); err != nil {
-		return nil, err
-	} else if negative {
-		sentDelta = currentSent
-	}
-	if negative, err := pyLess(recvDelta, jsonx.Int(0)); err != nil {
-		return nil, err
-	} else if negative {
-		recvDelta = currentRecv
-	}
-	startTime, endTime := pointTime(first), pointTime(latest)
-	duration := secondsBetween(endTime, startTime)
-	var avgSent, avgRecv any = jsonx.Int(0), jsonx.Int(0)
-	if duration > 0 {
-		if avgSent, err = pyTrueDivFloat(sentDelta, duration); err != nil {
-			return nil, err
+	interval, _ := new(big.Float).SetInt(new(big.Int).Mul(intervalMinutes, big.NewInt(60))).Float64()
+	previous, groupStart := samples[0], samples[0].at
+	for _, sample := range samples[1:] {
+		if secondsBetween(sample.at, groupStart) >= interval {
+			sent, recv := delta(sample.sent, previous.sent), delta(sample.recv, previous.recv)
+			duration := secondsBetween(sample.at, previous.at)
+			out = append(out, TrafficTrendPoint{isoformat(sample.at), sample.sent.raw, sample.recv.raw, sent.raw, recv.raw, speedDelta(sent, duration), speedDelta(recv, duration)})
+			groupStart = sample.at
 		}
-		if avgRecv, err = pyTrueDivFloat(recvDelta, duration); err != nil {
-			return nil, err
-		}
+		previous = sample
 	}
-	return jsonx.Obj("bytes_sent", currentSent, "bytes_recv", currentRecv, "bytes_sent_delta", sentDelta,
-		"bytes_recv_delta", recvDelta, "avg_speed_sent", avgSent, "avg_speed_recv", avgRecv, "period", period,
-		"start_time", isoformat(startTime), "end_time", isoformat(endTime), "data_points", len(filtered)), nil
-}
-
-// GetTrafficTrend is get_traffic_trend(agent_id, hours, interval_minutes):
-// one point per interval with the traffic delta and average speed since
-// the previous point, then the last point.
-func (h *History) GetTrafficTrend(agentID string, hours, intervalMinutes *big.Int) ([]any, error) {
-	metrics, err := h.GetMetrics(agentID, hours)
-	if err != nil {
-		return nil, err
-	}
-	trend := []any{}
-	if len(metrics) == 0 {
-		return trend, nil
-	}
-	intervalSeconds := jsonx.BigInt(new(big.Int).Mul(intervalMinutes, big.NewInt(60)))
-	var prevMetric *jsonx.Object
-	var prevTime, groupStartTime time.Time
-	get := func(section any, key string) (any, error) { return pyGet(section, key, jsonx.Int(0)) }
-	for _, item := range metrics {
-		metric := item.(*jsonx.Object)
-		if missingTrafficCounter(metric) {
-			continue
-		}
-		timestamp := pointTime(metric)
-		network, _ := pyGet(metric, "network", jsonx.NewObject())
-		if prevMetric == nil {
-			prevMetric, prevTime, groupStartTime = metric, timestamp, timestamp
-			continue
-		}
-		timeDiff := secondsBetween(timestamp, groupStartTime)
-		due, err := pyGreaterEqual(jsonx.Float(timeDiff), intervalSeconds)
-		if err != nil {
-			return nil, err
-		}
-		if due {
-			prevNetwork, _ := pyGet(prevMetric, "network", jsonx.NewObject())
-			delta := func(key string) (any, error) {
-				after, err := get(network, key)
-				if err != nil {
-					return nil, err
-				}
-				before, err := get(prevNetwork, key)
-				if err != nil {
-					return nil, err
-				}
-				return pySub(after, before)
-			}
-			sentDelta, err := delta("bytes_sent")
-			if err != nil {
-				return nil, err
-			}
-			recvDelta, err := delta("bytes_recv")
-			if err != nil {
-				return nil, err
-			}
-			// 处理计数器重置
-			for _, step := range []struct {
-				value *any
-				key   string
-			}{{&sentDelta, "bytes_sent"}, {&recvDelta, "bytes_recv"}} {
-				negative, err := pyLess(*step.value, jsonx.Int(0))
-				if err != nil {
-					return nil, err
-				}
-				if negative {
-					if *step.value, err = get(network, step.key); err != nil {
-						return nil, err
-					}
-				}
-			}
-			duration := secondsBetween(timestamp, prevTime)
-			var speedSent, speedRecv any = jsonx.Int(0), jsonx.Int(0)
-			if duration > 0 {
-				if speedSent, err = pyTrueDivFloat(sentDelta, duration); err != nil {
-					return nil, err
-				}
-				if speedRecv, err = pyTrueDivFloat(recvDelta, duration); err != nil {
-					return nil, err
-				}
-			}
-			bytesSent, err := get(network, "bytes_sent")
-			if err != nil {
-				return nil, err
-			}
-			bytesRecv, err := get(network, "bytes_recv")
-			if err != nil {
-				return nil, err
-			}
-			trend = append(trend, jsonx.Obj("timestamp", isoformat(timestamp), "bytes_sent", bytesSent,
-				"bytes_recv", bytesRecv, "sent_delta", sentDelta, "recv_delta", recvDelta,
-				"speed_sent", speedSent, "speed_recv", speedRecv))
-			groupStartTime = timestamp
-		}
-		prevMetric, prevTime = metric, timestamp
-	}
-	if prevMetric == nil {
-		return trend, nil
-	}
-	network, _ := pyGet(prevMetric, "network", jsonx.NewObject())
-	last := jsonx.Obj("timestamp", isoformat(prevTime))
-	for _, key := range []string{"bytes_sent", "bytes_recv", "speed_sent", "speed_recv"} {
-		value, err := get(network, key)
-		if err != nil {
-			return nil, err
-		}
-		last.Set(key, value)
-	}
-	return append(trend, last), nil
-}
-
-// missingTrafficCounter distinguishes an explicit null counter from an absent
-// field, whose established default remains zero. Raw history is never changed.
-func missingTrafficCounter(metric *jsonx.Object) bool {
-	network, ok := metric.Value("network").(*jsonx.Object)
-	if !ok {
-		return false
-	}
-	for _, key := range []string{"bytes_sent", "bytes_recv"} {
-		if value, present := network.Get(key); present && missingCounterValue(value) {
-			return true
-		}
-	}
-	return false
-}
-
-func missingCounterValue(value any) bool {
-	if value == nil {
-		return true
-	}
-	number, ok := value.(jsonx.Number)
-	return ok && (math.IsInf(number.Float64(), 0) || math.IsNaN(number.Float64()))
+	out = append(out, TrafficTrendPoint{Timestamp: isoformat(previous.at), BytesSent: previous.sent.raw, BytesRecv: previous.recv.raw, SpeedSent: previous.speedSent, SpeedRecv: previous.speedRecv})
+	return out, nil
 }

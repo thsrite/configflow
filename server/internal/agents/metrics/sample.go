@@ -1,12 +1,13 @@
 package metrics
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
-	"configflow/internal/model"
 )
 
 // AddSample appends one native JSON metrics sample. Raw component members keep
@@ -17,9 +18,9 @@ func (h *History) AddSample(ctx context.Context, id string, sample json.RawMessa
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	var components model.Fields
-	if err := json.Unmarshal(sample, &components); err != nil {
-		return false, fmt.Errorf("decode metrics sample: %w", err)
+	components, err := jsondecode.Select(sample, "cpu", "memory", "disk", "network")
+	if err != nil || len(bytes.TrimSpace(sample)) == 0 || bytes.TrimSpace(sample)[0] != '{' {
+		return false, fmt.Errorf("decode metrics sample: object required")
 	}
 	at := naiveNow()
 	value := struct {
@@ -30,7 +31,7 @@ func (h *History) AddSample(ctx context.Context, id string, sample json.RawMessa
 		Network   json.RawMessage `json:"network"`
 	}{Timestamp: isoformat(at)}
 	get := func(name string) json.RawMessage {
-		if raw, ok := components.Get(name); ok {
+		if raw, ok := components[name]; ok {
 			return raw
 		}
 		return json.RawMessage(`{}`)

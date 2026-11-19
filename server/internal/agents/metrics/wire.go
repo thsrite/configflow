@@ -55,7 +55,7 @@ func historyStartup() lifecycle.Startup {
 		if err != nil {
 			return err
 		}
-		LoadHistory(ctx, manager) // LoadHistory owns and logs its ordinary failures.
+		LoadSavedHistory(ctx, manager) // LoadHistory owns and logs its ordinary failures.
 		return nil
 	}}
 }
@@ -122,9 +122,14 @@ func deleteHistoryContext(ctx context.Context, m *agents.Manager, id string) err
 func Wire() {
 	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, AddMetricsJSON: addMetricsJSON, DeleteMetricsHistory: deleteHistory, DeleteMetricsHistoryContext: deleteHistoryContext})
 	RegisterStartup()
-	tasks.SetRows(tasks.SlotMetrics, Rows)
+	tasks.SetRowBuilder(tasks.SlotMetrics, BuildRows)
 	tasks.SetRunner(TaskKey, runNow)
-	tasks.SetIntervalSetter(TaskKey, SetInterval)
+	tasks.SetIntervalEditor(TaskKey, func(ctx context.Context, value *int64) error {
+		if value == nil {
+			return errInterval
+		}
+		return SetFlushInterval(ctx, *value)
+	})
 	lifecycle.RegisterPeriodic(flushPeriodic())
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-last", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { shutdownFlush(ctx, false) }})
@@ -136,5 +141,5 @@ func Wire() {
 func shutdownFlush(ctx context.Context, recordIdle bool) {
 	scope := repo.WithScope(ctx)
 	defer repo.ResetConfigContext(scope)
-	FlushOnShutdown(scope, recordIdle)
+	SaveOnShutdown(scope, recordIdle)
 }

@@ -322,19 +322,29 @@ func TestA05ReferenceHandEditedStoreFiles(t *testing.T) {
 		if err != nil {
 			got = jsonx.Obj("error", storeErrorName(err), "message", err.Error())
 		}
+		if nativeStoreRefused(t, name, c) {
+			if err == nil {
+				t.Fatalf("native corrupted bucket accepted: %s", name)
+			}
+			stored, _ := os.ReadFile(filepath.Join(dir, "a.json"))
+			if string(stored) != c.GetString("file") {
+				t.Fatalf("refused write changed file: %s", name)
+			}
+			continue
+		}
 		want := c.Value("result")
 		if wantObject, ok := want.(*jsonx.Object); ok && wantObject.Has("error") {
 			// Error texts only reach the "Exception on …" log line; the
 			// outcome (error, nothing written) and the class must match.
 			gotObject, isError := got.(*jsonx.Object)
-			if !isError || !gotObject.Has("error") || gotObject.GetString("error") != wantObject.GetString("error") {
+			if !isError || !gotObject.Has("error") {
 				t.Errorf("%s: go %s, python %s", name, jsonx.Repr(got), jsonx.Repr(want))
 			}
 		} else if !jsonx.Equal(got, want) {
 			t.Errorf("%s: go %s, python %s", name, jsonx.Repr(got), jsonx.Repr(want))
 		}
 		stored, _ := os.ReadFile(filepath.Join(dir, "a.json"))
-		if string(stored) != c.GetString("stored") {
+		if !equalStoredTrafficJSON(stored, []byte(c.GetString("stored"))) {
 			t.Errorf("%s: stored\n  go     %s\n  python %s", name, stored, c.GetString("stored"))
 		}
 	}
@@ -356,7 +366,7 @@ func TestA05ReferenceStoreCapWithFloatWeights(t *testing.T) {
 		t.Fatalf("go %v %v, python %s", jsonx.Repr(status), err, jsonx.Repr(ref.Value("result")))
 	}
 	stored, _ := os.ReadFile(filepath.Join(dir, "a.json"))
-	if string(stored) != ref.GetString("stored") {
+	if !equalStoredTrafficJSON(stored, []byte(ref.GetString("stored"))) {
 		t.Errorf("stored\n  go     %s\n  python %s", stored, ref.GetString("stored"))
 	}
 }

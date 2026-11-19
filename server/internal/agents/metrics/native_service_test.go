@@ -1,0 +1,141 @@
+package metrics
+
+import (
+	"configflow/internal/jsondecode"
+	"configflow/internal/lifecycle"
+	"context"
+	"encoding/json"
+	"errors"
+	"math/big"
+	"os"
+	"testing"
+)
+
+func TestNativeTrafficReportExactKeysAndBounds(t *testing.T) {
+	at := float64(1700000000)
+	valid := `{"schema":2,"usage":[{"hour":1699999200,"source":"192.0.2.1","chain":["G","DIRECT"],"up":4611686018427387903,"down":2,"conns":3}],"domains":[]}`
+	tests := []struct {
+		name, raw string
+		valid     bool
+	}{
+		{"valid", valid, true}, {"wrong case", `{"Schema":2,"usage":[],"domains":[]}`, false}, {"duplicate last", `{"schema":2,"schema":9,"usage":[],"domains":[]}`, false},
+		{"null", `null`, false}, {"not object", `[]`, false}, {"malformed", `{`, false}, {"counter overflow", `{"schema":2,"usage":[{"hour":1699999200,"source":"s","chain":[],"up":4611686018427387904,"down":0,"conns":0}],"domains":[]}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DecodeTrafficReport([]byte(tt.raw), &at)
+			if (got != nil) != tt.valid {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+func TestNativeServicesShutdownAndDisconnect(t *testing.T) {
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	runtime.Start(t.Context())
+	defer runtime.Shutdown(context.Background())
+	request, cancel := context.WithCancel(runtime.BindRequest(context.Background()))
+	cancel()
+	history := NewTrafficHistory(t.TempDir())
+	report := &CleanedTraffic{Usage: []UsageRow{{Bucket: 1699999200, Source: "192.0.2.1", Up: 1}}}
+	if err := history.AddTraffic(request, "a", report); err != nil {
+		t.Fatal(err)
+	}
+	at := float64(1700000000)
+	if _, err := history.FlushContext(request, 90, &at); err != nil {
+		t.Fatal(err)
+	}
+	metrics := NewHistory(t.TempDir(), 4000)
+	if _, err := metrics.AddSample(request, "a", []byte(`{"cpu":{"usage_percent":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+	bound := runtime.BindRequest(context.Background())
+	runtime.Shutdown(context.Background())
+	if err := history.AddTraffic(bound, "a", report); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := history.FlushContext(bound, 90, &at); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := metrics.FlushContext(bound); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if metrics.PendingCount() != 1 {
+		t.Fatal("shutdown discarded pending metrics")
+	}
+	if _, err := os.Stat(metrics.agentFile("a")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+}
+func TestNativeSummaryIsolatesCorruptionAndThrottlesWarnings(t *testing.T) {
+	h := NewHistory(t.TempDir(), 4000)
+	sample := json.RawMessage(`{"cpu":{"usage_percent":12},"disk":[],"network":{"bytes_sent":"bad"}}`)
+	for i := 0; i < 3; i++ {
+		if _, err := h.AddSample(t.Context(), "a", sample); err != nil {
+			t.Fatal(err)
+		}
+		summary, err := h.Summarize("a", big.NewInt(1))
+		if err != nil || string(summary.CPU.Avg) != "12.0" {
+			t.Fatal(summary, err)
+		}
+		stats, err := h.TrafficStatistics("a", "total")
+		if err != nil || stats.DataPoints != nil {
+			t.Fatal(stats, err)
+		}
+	}
+	if len(h.warnings.last) != 2 {
+		t.Fatal("warning keys", h.warnings.last)
+	}
+	if h.warnings.allow("a", "disk") {
+		t.Fatal("same-field warning not throttled")
+	}
+	if !h.warnings.allow("b", "disk") {
+		t.Fatal("different object suppressed")
+	}
+}
+func TestNativeQuerySkipsDamagedSQLiteCounter(t *testing.T) {
+	h := NewTrafficHistory(t.TempDir())
+	at := float64(1700000000)
+	c, err := h.connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	for _, args := range [][]any{{"a", int64(1699999200), int64(Hour), "good", "DIRECT", int64(4), int64(2), int64(1)}, {"a", int64(1699999200), int64(Hour), "broken", "DIRECT", "broken", int64(2), int64(1)}} {
+		if _, err = c.exec("INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query, err := h.QueryTraffic(t.Context(), "a", "24h", "source", &at)
+	if err != nil || string(query.Total.Up) != "4" || len(query.Rows) != 1 {
+		t.Fatal(query, err)
+	}
+}
+func FuzzNativeTrafficReport(f *testing.F) {
+	f.Add([]byte(`{"schema":2,"usage":[],"domains":[]}`))
+	f.Add([]byte(`null`))
+	f.Add([]byte(`{"Schema":2}`))
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		at := float64(1700000000)
+		r := DecodeTrafficReport(raw, &at)
+		if r == nil {
+			return
+		}
+		for _, row := range r.Usage {
+			if row.Bucket%Hour != 0 || row.Up < 0 || row.Down < 0 || row.Conns < 0 {
+				t.Fatal(row)
+			}
+		}
+		if len(r.Usage)+len(r.Targets) > TrafficReportMaxItems {
+			t.Fatal("report limit")
+		}
+		encoded, err := json.Marshal(r)
+		if err != nil || !json.Valid(encoded) {
+			t.Fatal(err)
+		}
+		var out CleanedTraffic
+		if jsondecode.Unmarshal(encoded, &out) != nil {
+			t.Fatal("DTO round trip")
+		}
+	})
+}

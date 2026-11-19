@@ -274,7 +274,7 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 
 	previous := appendLines
 	t.Cleanup(func() { appendLines = previous })
-	appendLines = func(path string, _ []string) error {
+	appendLines = func(ctx context.Context, path string, _ []string) error {
 		return &os.PathError{Op: "open", Path: path, Err: syscall.EROFS}
 	}
 	heartbeat(t, ctx, m, sample(2))
@@ -436,9 +436,9 @@ func TestShutdownSaveDuringARunningSaveDoesNotDeadlock(t *testing.T) {
 	previous := appendLines
 	t.Cleanup(func() { appendLines = previous })
 	var once sync.Once
-	appendLines = func(path string, lines []string) error {
+	appendLines = func(ctx context.Context, path string, lines []string) error {
 		once.Do(func() { close(entered); <-release })
-		return previous(path, lines)
+		return previous(ctx, path, lines)
 	}
 	done := make(chan struct{}, 2)
 	go func() { Run(ctx, "schedule", true); done <- struct{}{} }()
@@ -517,7 +517,7 @@ func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
 	previous, previousReplace := appendLines, replaceFile
 	t.Cleanup(func() { appendLines, replaceFile = previous, previousReplace })
 	full := &os.PathError{Op: "write", Path: "x", Err: syscall.ENOSPC}
-	appendLines = func(string, []string) error { return full }
+	appendLines = func(context.Context, string, []string) error { return full }
 	// the second save rewrites the file (the failed append is not trusted)
 	replaceFile = func(string, string) error { return full }
 	shutdownFlush(ctx, true)

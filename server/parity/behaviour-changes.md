@@ -2305,3 +2305,11 @@ N8-11 删除。
 - （HR 复核补登）Agent 二进制下载在文件缺失、是目录或无权限时仍是500、字段不变，但 message
   从 Python 的 `[Errno N] …: '<path>'` 改为 Go 原生 OS 错误文本（如 `stat <path>: no such file
   or directory`）；difftest `nativeFileDiagnostic` 按错误类别归一比较。
+
+## N8-10 metrics / trafficstore native 服务（2026-11-19）
+
+协调者明确接受的存量损坏处理：A04 summary/traffic stats/trend 逐字段/点忽略坏组件和坏数值，返回可用的 HTTP 200（此前部分人工坏文件触发 Python 500）；`data_points` 的原始点数语义保留。每个对象/字段 5 分钟至多一条 redact 告警，限流表最多 4096 项。原始 JSONL 不改写。已获准的非有限/float64 转换溢出缺失值策略继续沿用。
+
+A05 domain-discovery traffic 文件的 present wrong-type `days`、当日 `hosts`、被访问的 host/route/counter、metadata 错型均拒写，原文件不动；因此旧 Python 对 `days:[]`、无 items 的 `hosts:[]/"abc"`、坏 status 被新版本字段绕过以及数字 mihomo_version 的成功写入现在为 HTTP 500。只影响当前 Agent/日期的上报，其他日期和 Agent 可以继续；不发起重试、不改变周期或心跳。写拒绝同一文件/日期 5 分钟至多一条 redact 告警。读取列表隔离坏桶/host/route。恢复使用既有 `POST /api/agents/<id>/domain-discovery/clear`，或由其他日期的成功上报执行七天过期清理；没有新增 HTTP 入口。
+
+参考绑定：`metrics/testdata/n810_metrics_native.json`（23 项）和 `n810_store_native.json`（5 项）保存原 fixture 原文及逐行 SHA256；旧 A04/A05 corpus、Python oracle 与 pyref entries 保持不变。存储 JSON 的空白、对象字段顺序和等值浮点格式按既有 native 序列化许可做结构比较；持久字段和 SQLite schema 未变。

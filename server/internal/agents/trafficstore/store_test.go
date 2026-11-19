@@ -401,6 +401,17 @@ func TestReportRecoversInvalidHistoryWithoutCachingOldStatus(t *testing.T) {
 			t.Fatal(err)
 		}
 		os.WriteFile(store.Path("a"), []byte(content), 0o644)
+		// N8-10: a present wrong-type days member is fail closed, unlike missing/unparseable files.
+		if content == `{"status":{"value":"running"},"days":[]}` {
+			if _, err := store.AddReport("a", report("unreachable"), nil); err == nil {
+				t.Fatal("corrupt days written")
+			}
+			raw, _ := os.ReadFile(store.Path("a"))
+			if string(raw) != content {
+				t.Fatal("refused file changed")
+			}
+			continue
+		}
 		if _, err := store.AddReport("a", report("unreachable"), nil); err != nil {
 			t.Fatal(err)
 		}

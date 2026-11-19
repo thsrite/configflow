@@ -1,0 +1,27 @@
+[
+  {
+    "name": "days-not-dict",
+    "source": "{\"file\": \"{\\\"status\\\": {\\\"value\\\": \\\"x\\\"}, \\\"days\\\": []}\", \"report\": {\"schema\": 1, \"status\": \"unreachable\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": \"\", \"value\": \"unreachable\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"unreachable\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":\\\"\\\"},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":{}}}}\"}",
+    "sha256": "37994c4082593c32c83376b0f0e5e4ccb1e655ddc20224a9ec759b919f5dc557"
+  },
+  {
+    "name": "hosts-list-no-items",
+    "source": "{\"file\": \"{\\\"status\\\": null, \\\"days\\\": {\\\"2026-11-15\\\": {\\\"ip_only_conns\\\": 0, \\\"dropped\\\": 0, \\\"hosts\\\": []}}}\", \"report\": {\"schema\": 1, \"status\": \"unreachable\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": \"\", \"value\": \"unreachable\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"unreachable\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":\\\"\\\"},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":[]}}}\"}",
+    "sha256": "6ac4c0f9e30e101e2af188b3557a0c4f3231e98a1feea1a6132dd877158cff5a"
+  },
+  {
+    "name": "hosts-str-no-items",
+    "source": "{\"file\": \"{\\\"status\\\": null, \\\"days\\\": {\\\"2026-11-15\\\": {\\\"ip_only_conns\\\": 0, \\\"dropped\\\": 0, \\\"hosts\\\": \\\"abc\\\"}}}\", \"report\": {\"schema\": 1, \"status\": \"unreachable\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": \"\", \"value\": \"unreachable\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"unreachable\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":\\\"\\\"},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":\\\"abc\\\"}}}\"}",
+    "sha256": "efede347a022463c552524f2da2d68666f1f7a3dc1be8cbbb31ff44054a0fff8"
+  },
+  {
+    "name": "status-list-version",
+    "source": "{\"file\": \"{\\\"status\\\": [\\\"x\\\"], \\\"days\\\": {}}\", \"report\": {\"items\": [{\"conns\": 1, \"down\": 6, \"fail_kinds\": {\"dns\": 1}, \"fails\": 1, \"host\": \"a.example.com\", \"outlet\": \"proxy\", \"policy\": \"P\", \"port\": 443, \"rule\": \"MATCH\", \"up\": 5}], \"mihomo_version\": \"v1\", \"schema\": 1, \"status\": \"running\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": \"v1\", \"value\": \"running\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"running\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":\\\"v1\\\"},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":{\\\"a.example.com\\\":{\\\"first_seen\\\":\\\"2026-11-15T12:30:45\\\",\\\"last_seen\\\":\\\"2026-11-15T12:30:45\\\",\\\"by_route\\\":{\\\"MATCH\\\\t\\\\tproxy\\\\tP\\\":{\\\"conns\\\":1,\\\"fails\\\":1,\\\"fail_kinds\\\":{\\\"dns\\\":1},\\\"zero_dl\\\":0,\\\"up\\\":5,\\\"down\\\":6}},\\\"ports\\\":{\\\"443\\\":2}}}}}}\"}",
+    "sha256": "cc685851095568df1086289c959df90ecd589afaede4b647e885247ab846e003"
+  },
+  {
+    "name": "status-version-int",
+    "source": "{\"file\": \"{\\\"status\\\": {\\\"mihomo_version\\\": 7}, \\\"days\\\": {}}\", \"report\": {\"schema\": 1, \"status\": \"unreachable\"}, \"result\": {\"at\": \"2026-11-15T12:30:45\", \"mihomo_version\": 7, \"value\": \"unreachable\"}, \"stored\": \"{\\\"status\\\":{\\\"value\\\":\\\"unreachable\\\",\\\"at\\\":\\\"2026-11-15T12:30:45\\\",\\\"mihomo_version\\\":7},\\\"days\\\":{\\\"2026-11-15\\\":{\\\"ip_only_conns\\\":0,\\\"dropped\\\":0,\\\"hosts\\\":{}}}}\"}",
+    "sha256": "563f38cf7db72db46c1d113956a67351d663801f92092b5d2050654b1e299442"
+  }
+]
