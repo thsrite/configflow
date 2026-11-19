@@ -56,6 +56,23 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-20 (N8-11 wave 1):** P0 (aa803cd5, go-n8-11-p0@212aeac09) batch-15 gate FAILED: it changed
+weburl/logsafe.go which is a source of many pyref archives (mosdns/oxidns…) → "Python 参考已变化" in preflight + core race.
+P0 told to refresh source metadata only (entries unchanged). Wave 1 all based on P0 212aeac09:
+- W1 repo (fd582f3f) handed back eff5f6e78+4009d59be → fresh Opus HR review 6fc95e12 (branch go-opus-review-n8-11-w1).
+  W1 added UpdateConfig/UpdateSharedConfigs (W4 needs), SharedConfig/SaveSharedRecord/ResourceUsage (W3 needs).
+  Pre-existing bug → W5: global import/reset 409 carries extra `usages` (Python: success/message only).
+- W2 agents (162a561d) handed back 5d10d974e; now doing authorised minimal fix in oxidns/adapter.go: explicit
+  null/0/'' enabled must disable (3 rulesync TestProjectionAgainstPython rows fail on go itself — gate coverage gap to
+  investigate). Then fresh Opus HR review.
+- W3 resources (38c8b940) partial fd526f6a7; W4 rules (6296c861) partial a80130222/f2486e236. Both finish their last
+  sub-steps after W1 is merged; then non-HR independent review (+ Opus spot check provider/token for W3).
+- Cross-owner edits authorised (listed as "越界授权修改" in each report for wave-2 rebases): W2 deploy receipts/
+  publish hooks + oxidns/adapter.go; W3 aggregations/native_delivery.go, refresh/env.go; W4 gateway/adapter.go + new
+  gateway RuleSourceReader file, api/rules/content.go. Any agent may mechanically migrate tests broken by its own
+  signature changes. Rulings: W4 HTML via x/net/html with exact native-difference manifest; W4 Chinese messages keep
+  ['id'] quoting via []string-only helper, non-string values as JSON text; scoped request reads keep snapshot semantics.
+
 **Update 2026-11-20 (later): batch-14 MERGED (metrics/trafficstore native + Opus HR ccaeca36: 0 high/0 medium; L2
 ruling: whole agent-traffic.json unparsable → fail-closed like corrupt days, reset recovers), then N8-11 plan
 (server/design/n8-11-plan.md + rulings 3.3) → go = ae18239d4. Gate: preflight/compare .32 PASS, core FULL .64 PASS.
