@@ -75,3 +75,23 @@ Select 最终产品树再跑 govulncheck ./...：退出0，No vulnerabilities fo
 
 接下来在 `.32` 用 `nohup setsid bash ~/.cache/batch11-compare-run/driver.sh` 启动 GATE_ONLY=compare，结果写 `~/.cache/batch11-compare-run/driver.log` 和原子 exit 文件。该任务不依赖 rt 或观察SSH连接，启动时告知协调者准确tip，compare期间冻结提交。
 完整core由协调者在 .64 并行运行；本 agent 不运行完整core。
+
+## 交回结果
+
+compare 已结束后才补本节文档，期间未加提交。固定 compare/core 通知 tip 为 `0bf663323d38d362beec11b4a48e12e0e9986b27`；与最终交回 tip 的差异仅此 Markdown，产品/测试内容逐树核对不变。
+任务以 setsid/nohup 独立运行，PID 1366266，09:44:40–09:57:33 UTC，退出码0；未挂 rt。日志组 gate.Yr9WfI，持久驱动日志 `~/.cache/batch11-compare-run/driver.log`、原子状态 `exit`。
+
+最终行：
+
+    PREFLIGHT PASS
+    baseline: new=0 stale=0
+    SYNTHETIC LIVE PASS: 23 required entries ran and passed; 0 skips; repo Python subtest and WebDAV Python exec verified
+    GATE STAGE PASS: compare
+    No vulnerabilities found.
+
+proddiff 205 routes / 2831 cases，全部self-check PASS，coverage_regressions=0。24个difftest包全部PASS（api/agents302.654s）。
+未改任何proddiff baseline、时间归一化、原始录制archive或byte manifest；18份pyref只改来源元数据，完整18491条答案不变。
+
+叠入：JSON-case 2提交 7941ae6f1..f3ff11296；core-2 22提交 f3ff11296..fc762ceee，源分支refs未移动，无重复或跳过提交。
+自写提交：5e74656ef（工具链），dd5041faa（来源和guarded oracle审计），487095608（Select修复，be408111认可），25c8c380d（全18份参考核验），0bf663323（预检/冻结记录），最后仅此结果文档。
+无未结集成问题；core由协调者在 .64 负责，本 agent 未运行完整core/race，未push。
