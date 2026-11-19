@@ -66,3 +66,12 @@ record/check 末行：MosDNS59.696s/54.131s、OxiDNS49.390s/47.198s、routerspli
 Select 最终产品树再跑 govulncheck ./...：退出0，No vulnerabilities found.，日志 `~/.cache/batch11-govulncheck-final.log`。
 
 再次完整预检中；通过后启动 compare 时告知协调者准确 tip，从启动到 compare 结束冻结 batch-11 提交，方便 .64 并行 core。
+
+## 最终预检与提交冻结
+
+最终产品/测试树 `25c8c380d`。第二次完整 preflight（.32、GOMAXPROCS=6、-p6）退出0，最终输出 PREFLIGHT PASS；含两套tag vet与完整非race套件。
+命令：先 RT_HOST=<test-host> rt sync，再 ssh <test-host> 'bash /tmp/preflight.sh program__configflow-go-batch-11 -p 6'。
+完整日志 `~/.cache/batch11-preflight-final{,-tests}.log`。修复初次失败后未改旧阈值、baseline、原始答案或依赖版本。
+
+接下来在 `.32` 用 `nohup setsid bash ~/.cache/batch11-compare-run/driver.sh` 启动 GATE_ONLY=compare，结果写 `~/.cache/batch11-compare-run/driver.log` 和原子 exit 文件。该任务不依赖 rt 或观察SSH连接，启动时告知协调者准确tip，compare期间冻结提交。
+完整core由协调者在 .64 并行运行；本 agent 不运行完整core。
