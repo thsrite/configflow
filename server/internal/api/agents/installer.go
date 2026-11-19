@@ -14,9 +14,8 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/installer"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
-	"configflow/internal/pystr"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 	"configflow/internal/utilx"
@@ -149,23 +148,23 @@ func paramInt(p installParams, name string, def int64) *big.Int {
 }
 
 // installCommandParams is _install_command_params(payload).
-func installCommandParams(payload any) (mapParams, error) {
+func installCommandParams(payload json.RawMessage) (mapParams, error) {
 	invalid := &installer.ValueError{Message: "安装参数无效，请重新生成命令。"}
-	object, ok := payload.(*jsonx.Object)
-	if !ok {
+	var object map[string]json.RawMessage
+	if err := jsondecode.Unmarshal(payload, &object); err != nil || object == nil {
 		return nil, invalid
 	}
-	for key := range object.All() {
+	for key := range object {
 		if !installCommandFields[key] {
 			return nil, invalid
 		}
 	}
 	params := mapParams{}
-	for key, value := range object.All() {
+	for key, raw := range object {
 		switch {
 		case installCommandBooleans[key]:
-			b, ok := value.(bool)
-			if !ok {
+			var b bool
+			if string(raw) == "null" || jsondecode.Unmarshal(raw, &b) != nil {
 				return nil, &installer.ValueError{Message: key + " 必须为 true 或 false"}
 			}
 			params[key] = "false"
@@ -173,8 +172,8 @@ func installCommandParams(payload any) (mapParams, error) {
 				params[key] = "true"
 			}
 		case installCommandNumbers[key]:
-			n, ok := value.(jsonx.Number)
-			if !ok || !n.IsInt() {
+			var n json.Number
+			if len(raw) == 0 || raw[0] == '"' || jsondecode.Unmarshal(raw, &n) != nil || strings.ContainsAny(string(n), ".eE") {
 				return nil, &installer.ValueError{Message: key + " 必须是 1 到 65535 之间的整数"}
 			}
 			v, ok := new(big.Int).SetString(string(n), 10)
@@ -183,8 +182,8 @@ func installCommandParams(payload any) (mapParams, error) {
 			}
 			params[key] = v.String()
 		default:
-			text, ok := value.(string)
-			if !ok || utf8.RuneCountInString(text) > 4096 || strings.ContainsRune(text, 0) {
+			var text string
+			if len(raw) == 0 || raw[0] != '"' || jsondecode.Unmarshal(raw, &text) != nil || utf8.RuneCountInString(text) > 4096 || strings.ContainsRune(text, 0) {
 				return nil, &installer.ValueError{Message: key + " 参数无效"}
 			}
 			params[key] = text
@@ -199,9 +198,6 @@ func installCommandParams(payload any) (mapParams, error) {
 	}
 	return params, nil
 }
-
-// pyLowerText is str.lower() (CPython 3.11 full case mapping).
-func pyLowerText(text string) string { return pystr.Lower(text) }
 
 func valueErrorResponse(err error) *httpx.Response {
 	return failure(400, err.Error())
@@ -240,12 +236,12 @@ func pyOptional(params installParams, name, value string) string {
 func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	agentName := paramDefault(params, "name", "My-Agent")
 	serviceType := paramDefault(params, "type", "mihomo")
-	var agentPort any = paramInt(params, "port", 8080)
-	agentIP := pystr.Strip(paramDefault(params, "agent_ip", ""))
+	agentPort := paramInt(params, "port", 8080)
+	agentIP := strings.TrimSpace(paramDefault(params, "agent_ip", ""))
 	configPath := paramDefault(params, "config_path", "/etc/"+serviceType+"/config.yaml")
 	restartCommand := paramDefault(params, "restart_command", "systemctl restart "+serviceType)
 
-	agentType := pystr.Strip(pyLowerText(paramDefault(params, "agent_type", "go")))
+	agentType := strings.TrimSpace(strings.ToLower(paramDefault(params, "agent_type", "go")))
 	if err := requireGoAgent(agentType); err != nil {
 		return "", err
 	}
@@ -268,7 +264,11 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		}
 		// Strict validation instead of Flask's integer converter silently
 		// replacing an invalid explicit value with the default.
-		agentPort = paramDefault(params, "port", "8080")
+		text := paramDefault(params, "port", "8080")
+		if !asciiDecimal(text) {
+			return "", &installer.ValidationError{Message: "Invalid Agent port"}
+		}
+		agentPort = paramInt(params, "port", 8080)
 	}
 	forwardingValue, forwardingSet := params.get("ipv4_forwarding")
 	if forwardingSet && forwardingValue != "true" && forwardingValue != "false" {
@@ -287,7 +287,7 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 
 	logger.Infof("生成安装脚本请求 - 名称: %s, 类型: %s, 端口: %s, Agent类型: %s", agentName, serviceType, fmt.Sprint(agentPort), agentType)
 
-	serverURL := pystr.Strip(paramDefault(params, "server_url", ""))
+	serverURL := strings.TrimSpace(paramDefault(params, "server_url", ""))
 	if serverURL == "" {
 		serverURL = strings.TrimRight(latin1(c.URLRoot()), "/")
 		proto, _ := c.Header("X-Forwarded-Proto")
@@ -311,29 +311,39 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	var script string
 	var err error
 	if serviceType == "aio" {
-		o := installer.NewAIOOptions(serverURL, agentName)
+		o := installer.DefaultAIOOptions(serverURL, agentName)
 		o.AgentIP = agentIP
 		o.RegistrationTokens = map[string]string{"mihomo": paramDefault(params, "registration_token_mihomo", ""), "oxidns": paramDefault(params, "registration_token_oxidns", "")}
 		o.RegistrationKey = paramDefault(params, "registration_key", "")
 		o.BinaryDownloadURL = serverURL + "/api/agents/download"
-		o.MihomoAgentPort = paramDefault(params, "mihomo_agent_port", "8080")
-		o.OxidnsAgentPort = paramDefault(params, "oxidns_agent_port", "8082")
+		o.MihomoAgentPort, err = installPort(params, "mihomo_agent_port", 8080, true)
+		if err != nil {
+			return "", err
+		}
+		o.OxidnsAgentPort, err = installPort(params, "oxidns_agent_port", 8082, true)
+		if err != nil {
+			return "", err
+		}
 		o.InstallCore = installCore
-		o.MihomoConfigPath = pystr.Strip(paramDefault(params, "mihomo_config_path", "/etc/mihomo/config.yaml"))
-		o.MihomoServiceUnit = pystr.Strip(paramDefault(params, "mihomo_service_unit", "mihomo"))
-		o.MihomoServiceBinary = pystr.Strip(paramDefault(params, "mihomo_service_binary", "mihomo"))
-		o.OxidnsConfigPath = pystr.Strip(paramDefault(params, "oxidns_config_path", "/etc/oxidns/config.yaml"))
-		o.OxidnsServiceUnit = pystr.Strip(paramDefault(params, "oxidns_service_unit", "oxidns"))
-		o.OxidnsServiceBinary = pystr.Strip(paramDefault(params, "oxidns_service_binary", "oxidns"))
-		script, err = installer.GenerateGoAIOInstallScript(o)
+		o.MihomoConfigPath = strings.TrimSpace(paramDefault(params, "mihomo_config_path", "/etc/mihomo/config.yaml"))
+		o.MihomoServiceUnit = strings.TrimSpace(paramDefault(params, "mihomo_service_unit", "mihomo"))
+		o.MihomoServiceBinary = strings.TrimSpace(paramDefault(params, "mihomo_service_binary", "mihomo"))
+		o.OxidnsConfigPath = strings.TrimSpace(paramDefault(params, "oxidns_config_path", "/etc/oxidns/config.yaml"))
+		o.OxidnsServiceUnit = strings.TrimSpace(paramDefault(params, "oxidns_service_unit", "oxidns"))
+		o.OxidnsServiceBinary = strings.TrimSpace(paramDefault(params, "oxidns_service_binary", "oxidns"))
+		script, err = installer.RenderAIOInstall(o)
 	} else {
-		strip := func(name string) string { return pystr.Strip(paramDefault(params, name, "")) }
+		strip := func(name string) string { return strings.TrimSpace(paramDefault(params, name, "")) }
 		forwarding := installer.ForwardingOff
 		if serviceType == "mihomo" {
 			forwarding = manageForwarding
 		}
-		script, err = installer.GenerateGoAgentInstallScript(installer.GoAgentOptions{
-			ServerURL: serverURL, AgentName: agentName, ServiceType: serviceType, AgentPort: agentPort,
+		port, portErr := boundedInstallPort(agentPort)
+		if portErr != nil {
+			return "", portErr
+		}
+		script, err = installer.RenderAgentInstall(installer.AgentInstallOptions{
+			ServerURL: serverURL, AgentName: agentName, ServiceType: serviceType, AgentPort: port,
 			AgentIP: agentIP, ConfigPath: configPath, RestartCommand: restartCommand,
 			BinaryDownloadURL: serverURL + "/api/agents/download",
 			ServiceManager:    strip("service_manager"), ServiceUnit: strip("service_unit"), ServiceBinary: strip("service_binary"),
@@ -384,17 +394,12 @@ func saveInstallCommand(c *httpx.Ctx, script string) *httpx.Response {
 		logger.Exception("保存安装命令失败", err)
 		return failure(500, "无法保存安装命令，请检查数据目录后重试。")
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "script", script,
-		"download_path", "/api/agents/i/"+token, "expires_at", expiresAt)).NoStore()
+	return httpx.JSON(map[string]any{"success": true, "script": script, "download_path": "/api/agents/i/" + token, "expires_at": expiresAt}).NoStore()
 }
 
-// readBody is _read_json_body; a json.loads ValueError it does not catch
-// (the int digit limit) is the route's uncaught exception.
-func readBody(c *httpx.Ctx, maxLength int64, invalid string) (any, *httpx.Response, error) {
-	payload, failed := ReadJSONBody(c, maxLength, invalid)
-	if failed != nil && failed.Status == 500 {
-		return nil, nil, fmt.Errorf("json.loads: %s", "Exceeds the limit for integer string conversion")
-	}
+// readBody reads a bounded JSON request through the native HTTP binder.
+func readBody(c *httpx.Ctx, maxLength int64, invalid string) (json.RawMessage, *httpx.Response, error) {
+	payload, failed := readBoundJSON(c, maxLength, invalid)
 	return payload, failed, nil
 }
 
@@ -433,12 +438,10 @@ func createCoreInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil || failed != nil {
 		return failed, err
 	}
-	object, ok := payload.(*jsonx.Object)
+	var object map[string]json.RawMessage
 	target := ""
-	if ok && object.Len() == 1 {
-		if value, isString := object.Value("target").(string); isString {
-			target = value
-		}
+	if jsondecode.Unmarshal(payload, &object) == nil && len(object) == 1 {
+		_ = jsondecode.Unmarshal(object["target"], &target)
 	}
 	if target != "both" && target != "mihomo" && target != "oxidns" {
 		return failure(400, "请选择 both、mihomo 或 oxidns 核心。"), nil
@@ -471,9 +474,9 @@ func downloadInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // dockerOptions reads the query of the Docker Agent routes.
-func dockerOptions(c *httpx.Ctx) installer.DockerOptions {
+func dockerOptions(c *httpx.Ctx) installer.DockerInstallOptions {
 	q := queryParams{c}
-	return installer.DockerOptions{
+	return installer.DockerInstallOptions{
 		ServerURL:    paramDefault(q, "server_url", ""),
 		AgentName:    paramDefault(q, "agent_name", "agent"),
 		AgentIP:      paramDefault(q, "agent_ip", ""),
@@ -481,15 +484,15 @@ func dockerOptions(c *httpx.Ctx) installer.DockerOptions {
 		NetworkMode:  paramDefault(q, "network_mode", "host"),
 		EnableMihomo: utilx.StrToBool(paramDefault(q, "enable_mihomo", "true")),
 		EnableMosdns: utilx.StrToBool(paramDefault(q, "enable_mosdns", "false")),
-		MihomoPort:   paramInt(q, "mihomo_port", 8080),
-		MosdnsPort:   paramInt(q, "mosdns_port", 8081),
+		MihomoPort:   paramInt(q, "mihomo_port", 8080).String(),
+		MosdnsPort:   paramInt(q, "mosdns_port", 8081).String(),
 		EnableOxidns: utilx.StrToBool(paramDefault(q, "enable_oxidns", "false")),
-		OxidnsPort:   paramInt(q, "oxidns_port", 8082),
+		OxidnsPort:   paramInt(q, "oxidns_port", 8082).String(),
 		EnableDNSHA:  utilx.StrToBool(paramDefault(q, "enable_dns_ha", "false")),
-		HAParent:     pystr.Strip(paramDefault(q, "ha_parent", "")),
-		HASubnet:     pystr.Strip(paramDefault(q, "ha_subnet", "")),
-		HAGateway:    pystr.Strip(paramDefault(q, "ha_gateway", "")),
-		HAHostIDPath: pystr.Strip(paramDefault(q, "ha_host_id_path", "/etc/machine-id")),
+		HAParent:     strings.TrimSpace(paramDefault(q, "ha_parent", "")),
+		HASubnet:     strings.TrimSpace(paramDefault(q, "ha_subnet", "")),
+		HAGateway:    strings.TrimSpace(paramDefault(q, "ha_gateway", "")),
+		HAHostIDPath: strings.TrimSpace(paramDefault(q, "ha_host_id_path", "/etc/machine-id")),
 	}
 }
 
@@ -513,26 +516,26 @@ type dockerInstallCommands struct {
 
 func getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
 	if format, _ := c.Arg("format"); format == "both" {
-		options, failed := prepareDockerAgentOptions(c, installer.GenerateDockerAgentCompose, installer.GenerateDockerAgentRun)
+		options, failed := prepareDockerAgentOptions(c, installer.RenderDockerCompose, installer.RenderDockerRun)
 		if failed != nil {
 			return failed, nil
 		}
-		compose, err := installer.GenerateDockerAgentCompose(options)
+		compose, err := installer.RenderDockerCompose(options)
 		if err != nil {
 			return dockerResponse("", err, ""), nil
 		}
-		run, err := installer.GenerateDockerAgentRun(options)
+		run, err := installer.RenderDockerRun(options)
 		if err != nil {
 			return dockerResponse("", err, ""), nil
 		}
 		return httpx.JSON(dockerInstallCommands{Compose: compose, Run: run}).NoStore(), nil
 	}
-	return dockerAgentResponse(c, installer.GenerateDockerAgentCompose, "text/yaml; charset=utf-8")
+	return dockerAgentResponse(c, installer.RenderDockerCompose, "text/yaml; charset=utf-8")
 }
 func getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
-	return dockerAgentResponse(c, installer.GenerateDockerAgentRun, "text/plain; charset=utf-8")
+	return dockerAgentResponse(c, installer.RenderDockerRun, "text/plain; charset=utf-8")
 }
-func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (string, error), contentType string) (*httpx.Response, error) {
+func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerInstallOptions) (string, error), contentType string) (*httpx.Response, error) {
 	options, failed := prepareDockerAgentOptions(c, render)
 	if failed != nil {
 		return failed, nil
@@ -545,7 +548,7 @@ func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerOptions) (str
 	return response, nil
 }
 
-func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerOptions) (string, error)) (installer.DockerOptions, *httpx.Response) {
+func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerInstallOptions) (string, error)) (installer.DockerInstallOptions, *httpx.Response) {
 	options := dockerOptions(c)
 	for _, field := range []struct {
 		name    string
@@ -568,7 +571,7 @@ func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerO
 		for _, service := range []struct {
 			name    string
 			enabled bool
-			port    any
+			port    string
 		}{
 			{"mihomo", options.EnableMihomo, options.MihomoPort}, {"mosdns", options.EnableMosdns, options.MosdnsPort}, {"oxidns", options.EnableOxidns, options.OxidnsPort},
 		} {
@@ -590,7 +593,7 @@ func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerO
 func shellRegistrationIdentities(params installParams) []model.AgentRegistrationSession {
 	service := paramDefault(params, "type", "mihomo")
 	name := paramDefault(params, "name", "My-Agent")
-	host := pystr.Strip(paramDefault(params, "agent_ip", ""))
+	host := strings.TrimSpace(paramDefault(params, "agent_ip", ""))
 	if service == "aio" {
 		return []model.AgentRegistrationSession{
 			{Name: name + "-mihomo", Host: host, Port: registrationPort(params, "mihomo_agent_port", 8080), ServiceType: "mihomo", DeploymentMethod: "shell"},
@@ -624,4 +627,29 @@ func rejectNonASCIIMachineNumber(params installParams, name string) error {
 		return &installer.ValidationError{Message: "Invalid installer integer"}
 	}
 	return nil
+}
+
+// asciiDecimal recognizes the machine port grammar before any integer conversion.
+func asciiDecimal(text string) bool {
+	if text == "" {
+		return false
+	}
+	for _, c := range []byte(text) {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+func boundedInstallPort(n *big.Int) (int, error) {
+	if n == nil || !n.IsInt64() || n.Sign() <= 0 || n.Cmp(big.NewInt(65535)) > 0 {
+		return 0, &installer.ValidationError{Message: "Invalid Agent port"}
+	}
+	return int(n.Int64()), nil
+}
+func installPort(params installParams, name string, fallback int64, strict bool) (int, error) {
+	if text, present := params.get(name); present && strict && !asciiDecimal(text) {
+		return 0, &installer.ValidationError{Message: "Invalid Agent port"}
+	}
+	return boundedInstallPort(paramInt(params, name, fallback))
 }

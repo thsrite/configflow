@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 
@@ -9,7 +10,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/installer"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/repo"
 )
 
@@ -29,7 +30,7 @@ const (
 )
 
 // dockerHABody is _body(allow_check).
-func dockerHABody(c *httpx.Ctx, allowCheck bool) (*jsonx.Object, error) {
+func dockerHABody(c *httpx.Ctx, allowCheck bool) (json.RawMessage, error) {
 	limit := 16384
 	if allowCheck {
 		limit = 128 * 1024
@@ -42,21 +43,24 @@ func dockerHABody(c *httpx.Ctx, allowCheck bool) (*jsonx.Object, error) {
 		return nil, &installer.EnrollmentError{Message: dockerHABodyTooLarge, Status: 413}
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	value, err := c.JSONForceError()
+	var object map[string]json.RawMessage
+	err := bindForce(c, &object)
 	if err != nil {
 		if len(raw) > 16384 {
 			return nil, &installer.EnrollmentError{Message: dockerHABodyTooLarge, Status: 413}
 		}
 		return nil, &installer.ValueError{Message: dockerHANeedsObject}
 	}
-	object, isObject := value.(*jsonx.Object)
-	if len(raw) > 16384 && (!allowCheck || !isObject || object.GetOr("action", nil) != "check") {
+	isObject := object != nil
+	var action string
+	_ = jsondecode.Unmarshal(object["action"], &action)
+	if len(raw) > 16384 && (!allowCheck || !isObject || action != "check") {
 		return nil, &installer.EnrollmentError{Message: dockerHABodyTooLarge, Status: 413}
 	}
 	if !isObject {
 		return nil, &installer.ValueError{Message: dockerHANeedsObject}
 	}
-	return object, nil
+	return json.Marshal(object)
 }
 
 // isPythonValueError reports whether `except ValueError` catches err.
@@ -74,9 +78,9 @@ func dockerHARespond(callback func() (any, error)) (*httpx.Response, error) {
 		var enrollment *installer.EnrollmentError
 		switch {
 		case errors.As(err, &enrollment):
-			result, status = jsonx.Obj("success", false, "message", enrollment.Message), enrollment.Status
+			result, status = map[string]any{"success": false, "message": enrollment.Message}, enrollment.Status
 		case isPythonValueError(err):
-			result, status = jsonx.Obj("success", false, "message", err.Error()), 400
+			result, status = map[string]any{"success": false, "message": err.Error()}, 400
 		default:
 			return nil, err
 		}
@@ -90,15 +94,20 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		raw, err := jsonx.Default(body)
-		if err != nil {
+		raw := body
+		var options struct {
+			Action string `json:"action"`
+			Mode   string `json:"mode"`
+		}
+		options.Action, options.Mode = "generate", "new"
+		if err := jsondecode.Unmarshal(raw, &options); err != nil {
 			return nil, err
 		}
 		result, err := installer.GenerateGuideJSON(raw, nil)
 		if err != nil {
 			return nil, err
 		}
-		if body.GetOr("action", "generate") == "generate" && body.GetOr("mode", "new") == "new" {
+		if options.Action == "generate" && options.Mode == "new" {
 			ctx := c.Context()
 			var profileID string
 			if header, present := c.Header("X-ConfigFlow-Profile"); present {
@@ -133,7 +142,11 @@ func dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		if body.Len() != 0 {
+		var all map[string]json.RawMessage
+		if err := jsondecode.Unmarshal(body, &all); err != nil {
+			return nil, err
+		}
+		if len(all) != 0 {
 			return nil, &installer.ValueError{Message: dockerHAEnrollmentNoBody}
 		}
 		ctx := c.Context()
