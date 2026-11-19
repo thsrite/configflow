@@ -145,14 +145,15 @@ type PreviewPublic struct {
 // Previews owns one data directory's artifacts and eviction under a single L4
 // leaf-store mutex. Clock drives expiration in tests and production.
 type Previews struct {
-	dataDir string
-	clock   lifecycle.Clock
-	mu      sync.Mutex
+	dataDir   string
+	clock     lifecycle.Clock
+	writeFile func(context.Context, string, []byte) error
+	mu        sync.Mutex
 }
 
 // NewPreviews creates the single preview owner; nil clock uses system time.
 func NewPreviews(dataDir string, clock lifecycle.Clock) *Previews {
-	return &Previews{dataDir: dataDir, clock: clock}
+	return &Previews{dataDir: dataDir, clock: clock, writeFile: atomicWrite}
 }
 func (p *Previews) now() time.Time {
 	if p.clock != nil {
@@ -267,11 +268,11 @@ func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) 
 		}
 	}()
 	if archive != nil {
-		if err = atomicWrite(ctx, filepath.Join(folder, "bundle.tar.gz"), archive); err != nil {
+		if err = p.writeFile(ctx, filepath.Join(folder, "bundle.tar.gz"), archive); err != nil {
 			return nil, err
 		}
 	}
-	if err = atomicWrite(ctx, filepath.Join(folder, "record.json"), metadata); err != nil {
+	if err = p.writeFile(ctx, filepath.Join(folder, "record.json"), metadata); err != nil {
 		return nil, err
 	}
 	completed = true

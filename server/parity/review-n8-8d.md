@@ -131,3 +131,68 @@ Python 参考命令为 `PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/
 mihomoenv.Wire 初始化，补上与同文件其他测试相同的生产接线。两者不是产品发现，未改期望。
 
 无新依赖、无新 fuzz target、无操作入口变更；未重复作者 fuzz。提交号由最终交回消息给出。
+
+## Opus HR 补修复核
+
+复核者 fresh Opus（未参与本部分代码），对象 `go-review-n8-8d@c127f642e` 中
+`Previews.Save`／`Receipts.Capture` 去掉 Uninterruptible 的两项补修。已读 AGENT-BRIEF、
+WORKFLOW 第四常设项、o3-concurrency、a14-publish。执行均在 `.32`，`GOMAXPROCS=4`、`-p 4`。
+
+结论：**0 high、0 medium、2 low（1 项已补测试，1 项接受并记录）；补修本身正确。**
+
+逐项结论：
+1. **每个提交点前检查 ctx**：Save 在锁内准入、每次淘汰 RemoveAll 前、建新目录前检查；
+   bundle.tar.gz／record.json 由 atomicWrite 在建临时文件前和 rename 前各检查一次。
+   Capture 在锁内准入、archive／receipt.json 两次 atomicWrite、每次修剪删除前检查。
+   两个 owner 入口都先 `lifecycle.Detach`，`Publish`／`PublishDirect` 外层还有 `RunDetached`，
+   请求断开不会取消；真实 Runtime 正控证明断开后两个文件均写完。
+2. **半状态**：preview 在 record.json 写入前被关机时，defer 删除整个新目录；进程崩溃留下的
+   无 record.json 目录被 Load 判为不可用，按 mtime 计入额度并最终被淘汰。receipt 中
+   archive 先写、receipt.json 后写，receipt.json 是登记点：同一 deployment 再次捕获
+   （AdvanceContent 形态）时关机，旧 receipt.json 逐字节不变，它引用的旧 archive 未被修剪；
+   修剪只在 receipt.json 写入之后。发布链中 Capture 被关机打断时 publishDirect 在上传前
+   返回 ctx 错误，部署停在 preparing，与关机打断其它准备阶段（资源检查、OxiDNS 校验）相同，
+   由既有启动恢复处理；设备未被写入，A14 链没有出现“已上传未登记”的半截。
+3. **锁顺序**：未变。Capture 仍在取 L4 receipt 锁之前完成 repo 读取（retainedReceipts），
+   锁内只做文件操作；Save 只持有 p.mu（L4）。没有新增锁或在 L4 内访问 repo。
+
+### Low L1 — 原 preview 回归没有覆盖两个文件替换点（已补）
+
+`TestReviewN88dPreviewShutdownBeforePublication` 在第二次时钟读取（淘汰判定）处关机，
+命中的是锁内准入后的 ctx 检查，没有走到 bundle.tar.gz／record.json 两个提交点，也没有
+验证中途关机后的目录清理（负控 NC3 去掉清理时它仍通过）。为 Previews 增加与 Receipts
+相同的 `writeFile` 观察点（生产为 atomicWrite），新增
+`TestReviewN88dOpusPreviewShutdownAtEachReplacement`：真实 Runtime 在每次替换前关机，
+要求返回 Canceled、目录列表与之前完全相同、旧 preview 仍可 Load；断开时两文件按顺序写完且新
+preview 可 Load。另增 `TestReviewN88dOpusRecaptureShutdownKeepsReferencedArchive` 覆盖上面第 2 点。
+
+### Low L2 — 淘汰后关机会丢掉被淘汰的旧 preview（接受）
+
+去掉 Uninterruptible 后，配额满或过期时先删旧 preview，若随即关机，新 preview 不写，旧的
+已删。被删的只会是过期或超出配额、本次保存本来就要淘汰的项；持有它的用户得到既有的
+“预览不可用”提示后重新预览即可，不产生不一致状态。改成“先写后删”会让磁盘额度临时超限，
+不值得，保持现状。
+
+### 负控
+
+在服务器副本中逐项变异后只跑 `^TestReviewN88d`，随后恢复：
+
+| 变异 | 失败的测试 |
+|---|---|
+| NC1 Save 锁内恢复 `context.WithoutCancel` | Opus preview 新测试、原 preview 回归 |
+| NC2 Capture 锁内恢复 `context.WithoutCancel` | Opus recapture 新测试、原 receipt 回归 |
+| NC3 去掉 preview 失败目录清理 | 仅 Opus preview 新测试 |
+| NC4 receipt.json 先于 archive 写入 | Opus recapture 新测试、原 receipt 回归 |
+
+命令（前缀 `RT_HOST=sunbroke@192.168.0.32 rt -e GOMAXPROCS=4 -- bash -lc 'cd server && …'`）：
+
+```sh
+gofmt -l internal/deploy && go vet ./internal/deploy/
+go test -race -p 4 -count=1 -timeout=4m ./internal/deploy -run '^TestReviewN88d|^TestManualArtifactShutdownBeforePreviewCommit$|^TestShutdownRejectsEveryPublishCommit$|^TestPythonPrivateStoresLoad$|^TestReceipt|^TestPreview'
+go vet -p 4 ./...
+go test -race -p 4 -count=1 -timeout=4m ./internal/lifecycle -run '^TestConcurrencyFacadeBoundary$'
+go test -race -p 4 -count=1 -timeout=4m ./internal/deploy -run '^TestManualArtifact|^TestReviewN88d'
+```
+
+尾行：gofmt／vet 无输出；deploy 正控 `ok … 25.939s`，NC1–NC4 均 `exit=1`，恢复后
+`ok … 25.971s`；lifecycle `ok … 2.566s`；deploy `ok … 18.517s`。负控脚本未提交。
