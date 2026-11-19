@@ -407,11 +407,15 @@ func TestPanelDifferentialAgainstFlask(t *testing.T) {
 		fake.setPhase(r.phase)
 		py := send(t, pyBase, r.request, pyToken, nil)
 		pyCalls := fake.take()
+		n810RecordAPI(t, r.request, py, pyCalls, nil)
 		gor := send(t, goBase, r.request, goToken, nil)
 		goCalls := fake.take()
 		diffs := compare(r.request, py, gor)
 		if strings.Join(pyCalls, "\n") != strings.Join(goCalls, "\n") {
 			diffs = append(diffs, fmt.Sprintf("agent requests\n    python %q\n    go     %q", pyCalls, goCalls))
+		}
+		if nativeDiffs, handled := n810CompareAPI(t, r.request, py, gor, pyCalls, goCalls); handled {
+			diffs = nativeDiffs
 		}
 		if len(diffs) > 0 {
 			failed++

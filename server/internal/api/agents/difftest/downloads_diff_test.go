@@ -78,6 +78,9 @@ func compareDownload(py, gor response) []string {
 	var diffs []string
 	pv, perr := jsonx.Parse(py.body)
 	gv, gerr := jsonx.Parse(gor.body)
+	if nativeP, nativeG, ok := nativeFileDiagnostic(py, gor); ok {
+		pv, gv = nativeP, nativeG
+	}
 	jsonType := strings.HasPrefix(py.header.Get("Content-Type"), "application/json")
 	jsonBody := jsonType && perr == nil && gerr == nil
 	jsonHead := jsonType && len(py.body) == 0 && len(gor.body) == 0
@@ -164,6 +167,10 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 				etag = py.header.Get("ETag")
 			}
 			diffs := compareDownload(py, gor)
+			if variant, ok := n810DownloadVariant(r, py); ok {
+				reference := sendDownload(t, pyBase, variant)
+				diffs = n810DownloadHTTP(t, r, py, gor, reference)
+			}
 			if gor.status == 416 && gor.header.Get("Content-Range") != "bytes */"+strconv.Itoa(len(binary)) {
 				diffs = append(diffs, "L1 D7 wrong binary size in Content-Range")
 			}

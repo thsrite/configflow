@@ -170,7 +170,7 @@ func TestRegistrationLogsOnlyBoundedControlFreeWhitelistedFields(t *testing.T) {
 	p := payload("name", "safe-agent-"+strings.Repeat("x", 256)+prefix, "service_type", "mihomo\r\n"+raw,
 		"version", "1.2.3 "+control, "raw", raw, "prefix", jsonx.Obj("value", prefix),
 		"nested", jsonx.Obj("authorization", jsonx.Obj("token", nested)))
-	result := s.Post("/api/agents/register", httpxtest.JSON(p)).WantStatus(200)
+	result := s.Post("/api/agents/register", httpxtest.JSON(p)).WantStatus(nativeLogVersionStatus(t, p, 200))
 	data, _ := os.ReadFile(logFile)
 	text := string(data)
 	for _, secret := range []string{raw, prefix, nested, control} {
@@ -192,7 +192,7 @@ func TestManualAgentCreateDoesNotReturnToken(t *testing.T) {
 	}
 	s.Post("/api/agents", httpxtest.JSON(jsonx.Obj("name", "manual", "host", "10.0.0.9"))).WantStatus(500).
 		WantJSON(jsonx.Obj("success", false, "message", "Unauthorized"))
-	s.Post("/api/agents", httpxtest.JSON([]any{1})).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "'list' object has no attribute 'get'"))
+	s.Post("/api/agents", httpxtest.JSON([]any{1})).WantStatus(500).WantJSON(nativeRegistryShape(t, []any{1}, "'list' object has no attribute 'get'"))
 }
 
 type heartbeatEnv struct {
@@ -391,7 +391,7 @@ func TestAgentItemUpdateAndDelete(t *testing.T) {
 	}
 	h.s.Put("/api/agents/missing", httpxtest.JSON(jsonx.NewObject())).WantStatus(404).WantJSON(jsonx.Obj("success", false, "message", "Agent not found"))
 	h.s.Put("/api/agents/"+h.id, httpxtest.JSON(jsonx.Obj("profile_id", "bad id"))).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "Invalid profile id"))
-	h.s.Put("/api/agents/"+h.id, httpxtest.JSON(nil)).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "argument of type 'NoneType' is not iterable"))
+	h.s.Put("/api/agents/"+h.id, httpxtest.JSON(nil)).WantStatus(500).WantJSON(nativeRegistryShape(t, nil, "argument of type 'NoneType' is not iterable"))
 	var cleared []string
 	agents.OnAgentDeleted("test", func(_ context.Context, id string) error { cleared = append(cleared, id); return nil })
 	h.s.Delete("/api/agents/" + h.id).WantStatus(200).WantJSON(jsonx.Obj("success", true))
@@ -470,7 +470,7 @@ func TestAgentItemUpdateWithNonObjectBodies(t *testing.T) {
 		{true, "argument of type 'bool' is not iterable"},
 		{nil, "argument of type 'NoneType' is not iterable"},
 	} {
-		h.s.Put("/api/agents/"+h.id, httpxtest.JSON(c.body)).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", c.want))
+		h.s.Put("/api/agents/"+h.id, httpxtest.JSON(c.body)).WantStatus(500).WantJSON(nativeRegistryShape(t, c.body, c.want))
 	}
 }
 

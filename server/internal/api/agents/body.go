@@ -14,7 +14,11 @@ func readBoundJSON(c *httpx.Ctx, limit int64, invalid string) (json.RawMessage, 
 	if length, ok := c.ContentLength(); ok && length > limit {
 		return nil, failure(413, "Request body too large")
 	}
-	raw, err := io.ReadAll(io.LimitReader(c.Stream(), limit+1))
+	var raw []byte
+	var err error
+	if stream := c.Stream(); stream != nil {
+		raw, err = io.ReadAll(io.LimitReader(stream, limit+1))
+	}
 	if int64(len(raw)) > limit {
 		return nil, failure(413, "Request body too large")
 	}

@@ -610,6 +610,13 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 		time.Sleep(r.wait)
 		pyCalls := fake.take()
 		captureUpgradePython(t, r, py, pyCalls, pyDir)
+		var apiReference *n810APIResult
+		if variant, ok := n810Variant(r.request); ok {
+			reference := send(t, pyBase, variant, pyToken, nil)
+			referenceCalls := fake.take()
+			apiReference = func() *n810APIResult { value := n810Result(t, r.request, reference, referenceCalls); return &value }()
+		}
+		n810RecordAPI(t, r.request, py, pyCalls, apiReference)
 		gor := send(t, goBase, r.request, goToken, nil)
 		time.Sleep(r.wait)
 		goCalls := fake.take()
@@ -627,6 +634,9 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 			}
 		} else if strings.Join(pyCalls, "\n") != strings.Join(goCalls, "\n") {
 			diffs = append(diffs, fmt.Sprintf("agent requests\n    python %q\n    go     %q", pyCalls, goCalls))
+		}
+		if nativeDiffs, handled := n810CompareAPI(t, r.request, py, gor, pyCalls, goCalls); handled {
+			diffs = nativeDiffs
 		}
 		if len(diffs) > 0 {
 			failed++

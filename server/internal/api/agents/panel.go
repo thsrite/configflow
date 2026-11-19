@@ -7,6 +7,7 @@ package agents
 // credentials, plugin tags and download URLs never come from the request.
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 
@@ -14,7 +15,7 @@ import (
 	"configflow/internal/agents/monitor"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 )
 
 func registerPanel(r *httpx.Router) {
@@ -27,17 +28,17 @@ func registerPanel(r *httpx.Router) {
 }
 
 // mihomoPanel is mihomo_panel: the resource/method whitelist lives in
-// monitor.PanelCall.
+// monitor.CallPanel.
 func mihomoPanel(c *httpx.Ctx) (*httpx.Response, error) {
 	method := c.Request.Method
-	var body any
+	var body json.RawMessage
 	if method == "PUT" || method == "PATCH" {
-		body = c.JSONSilent()
+		c.BindSilent(&body)
 	}
-	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
+	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
 		// The core update check fetches version.txt with request_rule, which
 		// reads flask.request.host_url.
-		return monitor.PanelCall(monitor.WithHostURL(c.Context(), c.HostURL()), m, c.Param("agent_id"), c.Param("resource"),
+		return monitor.CallPanel(monitor.WithHostURL(c.Context(), c.HostURL()), m, c.Param("agent_id"), c.Param("resource"),
 			method, c.Args(), body, "")
 	})
 }
@@ -51,15 +52,14 @@ func readBounded(c *httpx.Ctx, limit int64) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(stream, limit))
 }
 
-// loadsBody is json.loads(raw) for the route bodies (ValueError,
-// UnicodeError and RecursionError → ok false).
-func loadsBody(raw []byte) (any, bool) {
+// loadsBody decodes native JSON bytes without imposing an interpreter digit cap.
+func loadsBody(raw []byte) (json.RawMessage, bool) {
 	text, ok := agents.DecodeJSONBytes(raw)
 	if !ok {
 		return nil, false
 	}
-	value, err := jsonx.ParseString(text)
-	if err != nil || monitor.ExceedsDigitLimit(value) {
+	var value json.RawMessage
+	if jsondecode.Unmarshal([]byte(text), &value) != nil {
 		return nil, false
 	}
 	return value, true
@@ -67,15 +67,14 @@ func loadsBody(raw []byte) (any, bool) {
 
 // monitorAnswer is the JSON answer of a MonitorError: {success, code,
 // message} with its status (and `flushed` of a partial cache flush).
-func monitorAnswer(err error) (*jsonx.Object, int, bool) {
-	var flushErr *monitor.FlushError
+func monitorAnswer(err error) (any, int, bool) {
+	var flushErr *monitor.CacheOperationError
 	if errors.As(err, &flushErr) {
-		return jsonx.Obj("success", false, "code", flushErr.Err.Code, "message", flushErr.Err.Message,
-			"flushed", flushErr.Flushed), flushErr.Err.Status, true
+		return map[string]any{"success": false, "code": flushErr.Err.Code, "message": flushErr.Err.Message, "flushed": flushErr.Flushed}, flushErr.Err.Status, true
 	}
 	var monitorErr *monitor.Error
 	if errors.As(err, &monitorErr) {
-		return jsonx.Obj("success", false, "code", monitorErr.Code, "message", monitorErr.Message), monitorErr.Status, true
+		return map[string]any{"success": false, "code": monitorErr.Code, "message": monitorErr.Message}, monitorErr.Status, true
 	}
 	return nil, 0, false
 }
@@ -83,8 +82,8 @@ func monitorAnswer(err error) (*jsonx.Object, int, bool) {
 // updateOxidnsRules is update_oxidns_rules: only the operation itself is
 // exposed (an empty JSON object body at most).
 func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
-	data, status, err := func() (*jsonx.Object, int, error) {
-		invalid := func() (*jsonx.Object, int, error) { return nil, 0, monitor.RuleUpdateFail("INVALID_REQUEST", 400) }
+	data, status, err := func() (any, int, error) {
+		invalid := func() (any, int, error) { return nil, 0, monitor.RuleUpdateFail("INVALID_REQUEST", 400) }
 		if length, _ := c.ContentLength(); c.HasArgs() || length > 1024 {
 			return invalid()
 		}
@@ -97,8 +96,8 @@ func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		if len(raw) > 0 {
 			value, ok := loadsBody(raw)
-			object, isDict := value.(*jsonx.Object)
-			if !c.IsJSON() || !ok || !isDict || object == nil || object.Len() != 0 {
+			var object map[string]json.RawMessage
+			if !c.IsJSON() || !ok || jsondecode.Unmarshal(value, &object) != nil || object == nil || len(object) != 0 {
 				return invalid()
 			}
 		}
@@ -106,7 +105,7 @@ func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, 0, err
 		}
-		return monitor.RuleUpdateCall(c.Context(), monitor.FromAgents(manager), c.Param("agent_id"), c.Request.Method, nil)
+		return monitor.CallRuleUpdate(c.Context(), monitor.TypedFromAgents(manager), c.Param("agent_id"), c.Request.Method, nil)
 	}()
 	if err != nil {
 		answer, errStatus, ok := monitorAnswer(err)
@@ -123,8 +122,8 @@ func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
 // configuration.
 func oxidnsCache(c *httpx.Ctx) (*httpx.Response, error) {
 	const limit = 16 * 1024
-	data, err := func() (*jsonx.Object, error) {
-		invalid := func() (*jsonx.Object, error) { return nil, monitor.CacheFail("INVALID_REQUEST", 400) }
+	data, err := func() (any, error) {
+		invalid := func() (any, error) { return nil, monitor.CacheFail("INVALID_REQUEST", 400) }
 		if length, _ := c.ContentLength(); c.HasArgs() || length > limit {
 			return invalid()
 		}
@@ -132,38 +131,30 @@ func oxidnsCache(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		var tags any
+		var tags []string
 		if c.Request.Method == "GET" {
 			if len(raw) > 0 {
 				return invalid()
 			}
 		} else {
-			var body any
+			var body json.RawMessage
 			if c.IsJSON() && len(raw) <= limit {
 				body, _ = loadsBody(raw)
 			}
-			object, ok := body.(*jsonx.Object)
-			if !ok || object == nil || object.Len() != 1 {
+			var object map[string]json.RawMessage
+			if jsondecode.Unmarshal(body, &object) != nil || object == nil || len(object) != 1 {
 				return invalid()
 			}
-			value, present := object.Get("tags")
-			if !present {
+			raw, present := object["tags"]
+			if !present || jsondecode.Unmarshal(raw, &tags) != nil {
 				return invalid()
 			}
-			valid, err := monitor.ValidRequestTags(value)
-			if err != nil {
-				return nil, err
-			}
-			if !valid {
-				return invalid()
-			}
-			tags = value
 		}
 		manager, err := agents.Get(c.Context())
 		if err != nil {
 			return nil, err
 		}
-		return monitor.CacheCall(c.Context(), monitor.FromAgents(manager), c.Param("agent_id"), c.Request.Method, tags)
+		return monitor.CallCache(c.Context(), monitor.TypedFromAgents(manager), c.Param("agent_id"), c.Request.Method, tags)
 	}()
 	status := 200
 	if err != nil {

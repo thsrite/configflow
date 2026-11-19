@@ -713,6 +713,12 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 			r.admin = true
 		}
 		py := send(t, pyBase, r, pyToken, pyValues)
+		var nativeReference *n810APIResult
+		if variant, ok := n810Variant(r); ok {
+			reference := send(t, pyBase, variant, pyToken, pyValues)
+			nativeReference = func() *n810APIResult { value := n810Result(t, r, reference, nil); return &value }()
+		}
+		n810RecordAPI(t, r, py, nil, nativeReference)
 		gor := send(t, goBase, r, goToken, goValues)
 		for name, path := range r.capture {
 			for _, side := range []struct {
@@ -732,7 +738,11 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 			}
 			continue
 		}
-		if diffs := compare(r, py, gor); len(diffs) > 0 {
+		diffs := compare(r, py, gor)
+		if nativeDiffs, handled := n810CompareAPI(t, r, py, gor, nil, nil); handled {
+			diffs = nativeDiffs
+		}
+		if len(diffs) > 0 {
 			failed++
 			t.Errorf("DIFF %s %s %s:\n  %s", r.name, r.method, r.path, strings.Join(diffs, "\n  "))
 		} else {
@@ -740,6 +750,7 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 		}
 	}
 	pyAgents, goAgents := finalAgents(t, pyDir), finalAgents(t, goDir)
+	n810AdjustStored(t, pyAgents, goAgents)
 	if !jsonx.Equal(pyAgents, goAgents) {
 		failed++
 		pyText, _ := jsonx.Sorted(pyAgents)

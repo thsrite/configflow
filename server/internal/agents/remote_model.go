@@ -475,3 +475,9 @@ func AgentLogsPath(lines, logPath, source string) string {
 	}
 	return path
 }
+
+// RemotePayloadError preserves the endpoint guard when a caller cannot encode
+// a device payload. It performs no device request or state mutation.
+func (m *Manager) RemotePayloadError(ctx context.Context, id string, payloadErr error) error {
+	return m.remotePayloadError(ctx, id, payloadErr)
+}

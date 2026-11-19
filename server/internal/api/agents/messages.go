@@ -25,3 +25,7 @@ const msgRuleSyncRequest = "规则同步设置无效"
 const msgRuleSyncNotFound = "未找到这台 Agent"
 const msgInstallationSize = "安装请求内容过大。"
 const msgInstallationJSON = "安装请求需要 JSON 对象。"
+
+const msgResetRequest = "重置请求格式无效。"
+
+const msgPolicyCorruptPeer = "跳过配置空间绑定损坏的设备："

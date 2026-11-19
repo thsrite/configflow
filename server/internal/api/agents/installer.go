@@ -150,17 +150,17 @@ func paramInt(p installParams, name string, def int64) *big.Int {
 // installCommandParams is _install_command_params(payload).
 func installCommandParams(payload json.RawMessage) (mapParams, error) {
 	invalid := &installer.ValueError{Message: "安装参数无效，请重新生成命令。"}
-	var object map[string]json.RawMessage
-	if err := jsondecode.Unmarshal(payload, &object); err != nil || object == nil {
+	var object model.Fields
+	if err := jsondecode.Unmarshal(payload, &object); err != nil {
 		return nil, invalid
 	}
-	for key := range object {
+	for key := range object.All() {
 		if !installCommandFields[key] {
 			return nil, invalid
 		}
 	}
 	params := mapParams{}
-	for key, raw := range object {
+	for key, raw := range object.All() {
 		switch {
 		case installCommandBooleans[key]:
 			var b bool
@@ -265,10 +265,15 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		// Strict validation instead of Flask's integer converter silently
 		// replacing an invalid explicit value with the default.
 		text := paramDefault(params, "port", "8080")
+		raw, _ := json.Marshal(text)
+		parsed, parseErr := taskstatus.Count(raw)
+		if parseErr != nil || strings.TrimSpace(text) == "" {
+			return "", &installer.ValidationError{Message: "Invalid installer integer"}
+		}
 		if !asciiDecimal(text) {
 			return "", &installer.ValidationError{Message: "Invalid Agent port"}
 		}
-		agentPort = paramInt(params, "port", 8080)
+		agentPort = parsed
 	}
 	forwardingValue, forwardingSet := params.get("ipv4_forwarding")
 	if forwardingSet && forwardingValue != "true" && forwardingValue != "false" {

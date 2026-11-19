@@ -1,0 +1,134 @@
+[
+  {
+    "original": {
+      "body": [
+        1
+      ],
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "'list' object has no attribute 'get'"
+        }
+      }
+    },
+    "sha256": "5cd329c1a2e3c3c88d4b8fab961dca99490686be44be3c4ad7b968a80cb301ab",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": null,
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "argument of type 'NoneType' is not iterable"
+        }
+      }
+    },
+    "sha256": "574a7c134fc9ce19386ff245ad567290546411b811134da687a66113099d11f9",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": "plain",
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "'str' object has no attribute 'get'"
+        }
+      }
+    },
+    "sha256": "56af08c20897ff781cefbe0f410cb4d6fb41e38730deb65ce3906469e9c21725",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": "xprofile_idx",
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "string indices must be integers, not 'str'"
+        }
+      }
+    },
+    "sha256": "8f6d026edcb8517eee5d3a8af4aaac0c6a18c16ee3f4712eb924308d35a62c27",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": [
+        "other"
+      ],
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "'list' object has no attribute 'get'"
+        }
+      }
+    },
+    "sha256": "0c22121f4ee0d3e7f94ae6c08773dd3479644ff7334ff498a6a1f3b303f54d2d",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": [
+        "profile_id"
+      ],
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "list indices must be integers or slices, not str"
+        }
+      }
+    },
+    "sha256": "99893580b7c261f8db6f75d3a7f4547166d35a873dd915d9c8e83dd2cb929f63",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": 5,
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "argument of type 'int' is not iterable"
+        }
+      }
+    },
+    "sha256": "a0eb07a09c74df45931ecf4104eb97d5fd47d146f2e3c2479a971fe40375bad4",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": 1.5,
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "argument of type 'float' is not iterable"
+        }
+      }
+    },
+    "sha256": "74bda55f56cbe47e32bb7333f72164f5cda0455625848c8f93592dac369df922",
+    "native_message": "model: incompatible JSON type"
+  },
+  {
+    "original": {
+      "body": true,
+      "python": {
+        "status": 500,
+        "body": {
+          "success": false,
+          "message": "argument of type 'bool' is not iterable"
+        }
+      }
+    },
+    "sha256": "8a084c490b0be94fd51a18f48ed9f218d8b328df65c73c2bd73e4b9709d2015c",
+    "native_message": "model: incompatible JSON type"
+  }
+]

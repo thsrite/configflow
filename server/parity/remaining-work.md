@@ -174,7 +174,7 @@ GET `/api/stats/overview`、POST `/api/notifications/read`；九条 TSV 当前�
 | monitor | 未开始 S pass | agents/monitor11个文件import jsonx，仍PythonClass | M；agents core、native localhttp/cache，typed状态/缓存/指标 |
 | upgrades | 未开始 S pass | agents/upgrades6个文件import jsonx、1个pystr | M；agents core/installer/receipt协议；保持protocol-1和恢复语义 |
 | installer | S pass 已实现，待 fresh HR | progress/n8-10-installer.md；typed renderer/command/capability、core-2 EditAgents；生产 jsonx/pystr/PythonClass 为零，旧 JSON codec 仅测试 | M；保留 shell/L1；API binder、gateway/upgrades 旧输入消费方仍需后续迁移 |
-| api/agents | 未开始主迁移，已有局部native DTO | api/agents10个文件import jsonx、4个pystr，content/client/public adapters | M；前四步、deploy、N8-9/8d、A24；切换c.Bind/typed服务并保留各场景HTTP状态/HEAD |
+| api/agents | 主体 native 收口，待独立复核；A05 明确保留 | progress/n8-10-api-agents.md；registry/installer/monitor/public/content/client typed，只有traffic.go仍import jsonx，无pystr/PythonClass | M；A05 metrics-native补充先于N8-11；deploy/gateway/setup/configexport等邻居调用清单见报告，不能据此删facade |
 
 五步均要求Opus HR review；同时处理 deploy、gateway/setup、configexport、其他 api/* 等仍调用
 legacy facade 的邻居，或明确分配补充consumer任务，不能仅清掉表中五包便宣布 N8-11 达标。

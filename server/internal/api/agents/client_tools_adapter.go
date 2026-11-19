@@ -1,11 +1,12 @@
 package agents
 
-// Legacy registry/repository/rules boundaries are isolated here. Client tools
-// use typed requests and delegate validation to shared config owners.
+// Client tools use typed registry/config models and shared rule validators.
 import (
 	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
+	"errors"
+	"time"
 
 	registry "configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
@@ -40,7 +41,14 @@ func clientAgent(ctx context.Context, id string, history bool) (*clientDevice, e
 	if err != nil || record == nil {
 		return nil, err
 	}
-	return &clientDevice{record.ID, record.Name, record.ProfileID, record.ServiceType, record}, nil
+	profile, err := manager.ResolveAgentProfile(ctx, record)
+	if err != nil {
+		if errors.Is(err, repo.ErrValidation) {
+			return nil, &clientBindingError{err}
+		}
+		return nil, err
+	}
+	return &clientDevice{record.ID, record.Name, profile, record.ServiceType, record}, nil
 }
 func clientBody(c *httpx.Ctx) map[string]json.RawMessage {
 	var fields map[string]json.RawMessage
@@ -282,10 +290,7 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 		}
 		profile := ""
 		if latest != nil {
-			profile, err = effectiveClientProfile(tx, latest.ProfileID)
-			if err != nil {
-				return err
-			}
+			profile = latest.ProfileID
 		}
 		if latest == nil || latest.ServiceType != "oxidns" || profile != edit.ProfileID {
 			return repo.NewInUse(msgPolicyConflict, nil)
@@ -376,8 +381,12 @@ func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (a
 		if record.ServiceType != "oxidns" {
 			continue
 		}
-		bound, err := effectiveClientProfile(ctx, record.ProfileID)
+		bound, err := manager.ResolveAgentProfile(ctx, &record)
 		if err != nil {
+			if errors.Is(err, repo.ErrValidation) {
+				warnClientPeer(&record, time.Now())
+				continue
+			}
 			return nil, err
 		}
 		if bound == id {
@@ -429,21 +438,21 @@ func clearClientDiscovery(ctx context.Context, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err = traffic.Delete(id); err != nil {
+	if err = traffic.DeleteContext(ctx, id); err != nil {
 		return false, err
 	}
 	probes, err := health.GetProbeStore(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err = probes.Delete(id); err != nil {
+	if err = probes.DeleteContext(ctx, id); err != nil {
 		return false, err
 	}
 	regions, err := health.GetRegionStore(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err = regions.Delete(id); err != nil {
+	if err = regions.DeleteContext(ctx, id); err != nil {
 		return false, err
 	}
 	return true, nil

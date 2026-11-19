@@ -7,6 +7,7 @@ package agents
 // stay separate from deployment and lifecycle actions.
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 
@@ -14,7 +15,6 @@ import (
 	"configflow/internal/agents/monitor"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 )
 
 func registerOxidns(r *httpx.Router) {
@@ -28,18 +28,18 @@ func registerOxidns(r *httpx.Router) {
 // MonitorErrorResponse is the MonitorError answer of the monitoring routes:
 // {success: false, code, message} with the error's status, not stored.
 func MonitorErrorResponse(err *monitor.Error) *httpx.Response {
-	return httpx.JSONStatus(err.Status, jsonx.Obj("success", false, "code", err.Code, "message", err.Message)).NoStore()
+	return httpx.JSONStatus(err.Status, map[string]any{"success": false, "code": err.Code, "message": err.Message}).NoStore()
 }
 
 // oxidnsMonitorResponse is _oxidns_monitor_response: the operation's
 // result, or the MonitorError, both with Cache-Control: no-store; any other
 // error is a 500.
-func oxidnsMonitorResponse(c *httpx.Ctx, operation func(monitor.Manager) (*jsonx.Object, error)) (*httpx.Response, error) {
+func oxidnsMonitorResponse(c *httpx.Ctx, operation func(monitor.Registry) (any, error)) (*httpx.Response, error) {
 	manager, err := agents.Get(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	result, err := operation(monitor.FromAgents(manager))
+	result, err := operation(monitor.TypedFromAgents(manager))
 	if err != nil {
 		var monitorErr *monitor.Error
 		if errors.As(err, &monitorErr) {
@@ -51,8 +51,8 @@ func oxidnsMonitorResponse(c *httpx.Ctx, operation func(monitor.Manager) (*jsonx
 }
 
 func getOxidnsOverview(c *httpx.Ctx) (*httpx.Response, error) {
-	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
-		return monitor.Overview(c.Context(), m, c.Param("agent_id"), c.Args())
+	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
+		return monitor.ReadOverview(c.Context(), m, c.Param("agent_id"), c.Args())
 	})
 }
 
@@ -60,7 +60,7 @@ func getOxidnsOverview(c *httpx.Ctx) (*httpx.Response, error) {
 // body (chunked requests too), then reset_dashboard.
 func resetOxidnsDashboard(c *httpx.Ctx) (*httpx.Response, error) {
 	invalidRequest := func() (*httpx.Response, error) {
-		return httpx.JSONStatus(400, jsonx.Obj("success", false, "code", "INVALID_QUERY", "message", "重置请求格式无效。")).NoStore(), nil
+		return httpx.JSONStatus(400, map[string]any{"success": false, "code": "INVALID_QUERY", "message": msgResetRequest}).NoStore(), nil
 	}
 	if length, known := c.ContentLength(); c.HasArgs() || known && length > 2048 {
 		return invalidRequest()
@@ -75,37 +75,33 @@ func resetOxidnsDashboard(c *httpx.Ctx) (*httpx.Response, error) {
 	if len(raw) > 2048 || len(raw) > 0 && !c.IsJSON() {
 		return invalidRequest()
 	}
-	var body any = jsonx.NewObject()
+	body := json.RawMessage(`{}`)
 	if len(raw) > 0 {
-		text, ok := agents.DecodeJSONBytes(raw)
+		var ok bool
+		body, ok = loadsBody(raw)
 		if !ok {
 			return invalidRequest()
 		}
-		value, err := jsonx.ParseString(text)
-		if err != nil || monitor.ExceedsDigitLimit(value) {
-			return invalidRequest()
-		}
-		body = value
 	}
-	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
-		return monitor.ResetDashboard(c.Context(), m, c.Param("agent_id"), body)
+	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
+		return monitor.ResetStatistics(c.Context(), m, c.Param("agent_id"), body)
 	})
 }
 
 func getOxidnsClients(c *httpx.Ctx) (*httpx.Response, error) {
-	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
-		return monitor.Clients(c.Context(), m, c.Param("agent_id"), c.Args())
+	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
+		return monitor.ReadClients(c.Context(), m, c.Param("agent_id"), c.Args())
 	})
 }
 
 func getOxidnsQueries(c *httpx.Ctx) (*httpx.Response, error) {
-	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
-		return monitor.Queries(c.Context(), m, c.Param("agent_id"), c.Args())
+	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
+		return monitor.ReadQueries(c.Context(), m, c.Param("agent_id"), c.Args())
 	})
 }
 
 func getOxidnsQuery(c *httpx.Ctx) (*httpx.Response, error) {
-	return oxidnsMonitorResponse(c, func(m monitor.Manager) (*jsonx.Object, error) {
-		return monitor.Query(c.Context(), m, c.Param("agent_id"), c.Param("record_id"), c.Args())
+	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
+		return monitor.ReadQuery(c.Context(), m, c.Param("agent_id"), c.Param("record_id"), c.Args())
 	})
 }

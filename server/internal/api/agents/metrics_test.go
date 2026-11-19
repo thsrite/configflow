@@ -83,8 +83,16 @@ func TestMetricsRoutesServeTheLatestHistoryAndSummary(t *testing.T) {
 	}
 	for query, hours := range map[string]any{"?hours=abc": 24, "?hours=%206%20": 6, "?hours=%D9%A3": 3, "?hours=1_0": 10,
 		"?hours=0": 0, "?hours=-1": -1, "?hours=" + strings.Repeat("9", 4301): 24} {
-		hours = nativeMetricsQueryHours(t, query, hours)
-		got := s.Get("/api/agents/agent_1/metrics/history"+query, admin).WantStatus(200).Object().GetObject("data")
+		nativeHours, status := nativeMetricsQueryHours(t, query, hours)
+		response := s.Get("/api/agents/agent_1/metrics/history"+query, admin).WantStatus(status)
+		if status == 500 {
+			if response.Object().Value("success") != false {
+				t.Fatal("overflow query succeeded")
+			}
+			continue
+		}
+		hours = nativeHours
+		got := response.Object().GetObject("data")
 		if !jsonx.Equal(got.Value("hours"), hours) {
 			t.Errorf("%s: hours %v", query, got.Value("hours"))
 		}
@@ -129,32 +137,39 @@ func TestMetricsRoutesAnswerOverflowAs500(t *testing.T) {
 	s.Get("/api/agents/agent_1/metrics/history?hours=17736000", admin).WantStatus(200)
 }
 
-func nativeMetricsQueryHours(t *testing.T, query string, old any) any {
+func nativeMetricsQueryHours(t *testing.T, query string, old any) (any, int) {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_metrics_query_policy.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rule struct {
+	var rules []struct {
 		Original map[string]any `json:"original"`
 		SHA      string         `json:"sha256"`
-		Native   int            `json:"native_hours"`
+		Native   *int           `json:"native_hours"`
+		Status   int            `json:"native_status"`
 	}
-	if err = json.Unmarshal(raw, &rule); err != nil {
+	if err = json.Unmarshal(raw, &rules); err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(rule.Original)
-	if err != nil {
-		t.Fatal(err)
+	for _, rule := range rules {
+		encoded, err := json.Marshal(rule.Original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fmt.Sprintf("%x", sha256.Sum256(encoded)) != rule.SHA {
+			t.Fatal("original query row changed")
+		}
+		if query != rule.Original["query"] {
+			continue
+		}
+		if old != int(rule.Original["python_hours"].(float64)) {
+			t.Fatal("original query expectation changed")
+		}
+		if rule.Native == nil {
+			return nil, rule.Status
+		}
+		return *rule.Native, rule.Status
 	}
-	if fmt.Sprintf("%x", sha256.Sum256(encoded)) != rule.SHA {
-		t.Fatal("original query row changed")
-	}
-	if query != rule.Original["query"] {
-		return old
-	}
-	if old != int(rule.Original["python_hours"].(float64)) {
-		t.Fatal("original query expectation changed")
-	}
-	return rule.Native
+	return old, 200
 }

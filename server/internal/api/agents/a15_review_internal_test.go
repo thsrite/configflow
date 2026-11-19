@@ -23,7 +23,7 @@ func TestA15ReviewArgIntLikeWerkzeug(t *testing.T) {
 	}
 	for _, item := range value.(*jsonx.Object).GetList("lines") {
 		row := item.(*jsonx.Object)
-		if got := pyArgInt(row.GetString("value"), 100).String(); got != row.GetString("lines") {
+		if got := pyArgInt(row.GetString("value"), 100).String(); got != nativeQueryUnit(t, row) {
 			t.Errorf("int(%s) → %s, Python %s", jsonx.Repr(row.GetString("value")), got, row.GetString("lines"))
 		}
 	}

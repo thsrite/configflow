@@ -65,6 +65,10 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if cleaned == nil {
 		return failure(400, "Invalid traffic report"), nil
 	}
+	profileID, err := manager.ResolveAgentProfile(ctx, agent)
+	if err != nil {
+		return nil, err
+	}
 	store, err := trafficstore.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -72,12 +76,7 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if _, err := store.AddReport(agentID, cleaned, nil); err != nil {
 		return nil, err
 	}
-	profileID := ""
-	if agent.ProfileID != "" {
-		profileID = agent.ProfileID
-	} else if profileID, err = repo.GetDefaultProfileID(ctx); err != nil {
-		return nil, err
-	}
+
 	revisions, err := discovery.ProviderRevisions(ctx, profileID)
 	if err != nil {
 		return nil, err
@@ -233,7 +232,7 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(404, "Agent not found"), nil
 	}
 	if !enabled && clear {
-		if err := metrics.TrafficForManager(manager).Delete(c.Param("agent_id")); err != nil {
+		if err := metrics.TrafficForManager(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
 			return nil, err
 		}
 	}
@@ -274,7 +273,7 @@ func clearAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if _, response, err := mihomoAgentOrError(c, manager); response != nil || err != nil {
 		return response, err
 	}
-	if err := metrics.TrafficForManager(manager).Delete(c.Param("agent_id")); err != nil {
+	if err := metrics.TrafficForManager(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(jsonx.Obj("success", true)), nil

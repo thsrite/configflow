@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"io"
@@ -123,7 +124,7 @@ func gatewayForwarding(c *httpx.Ctx) (*httpx.Response, error) {
 		return gatewayFailure("INVALID_REQUEST", 400, msgGatewayAgentID)
 	}
 	var id string
-	if json.Unmarshal(body["agent_id"], &id) != nil || string(body["agent_id"]) == "null" {
+	if jsondecode.Unmarshal(body["agent_id"], &id) != nil || string(body["agent_id"]) == "null" {
 		return gatewayFailure("INVALID_REQUEST", 400, msgGatewayAgentID)
 	}
 	for _, link := range linked {

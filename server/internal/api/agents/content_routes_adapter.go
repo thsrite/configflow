@@ -209,7 +209,7 @@ func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	var body map[string]json.RawMessage
-	if err = json.Unmarshal(raw, &body); err != nil {
+	if err = jsondecode.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
 	service := record.ServiceType

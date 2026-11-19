@@ -286,7 +286,7 @@ func getLoggingConfig(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) 
 func setLoggingConfig(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	data, err := requestData(c)
 	if err != nil {
-		return nil, err
+		return nil, m.RemotePayloadError(c.Context(), c.Param("agent_id"), err)
 	}
 	enabled := requestMember(data, "enabled", json.RawMessage("true"))
 	header, body, err := deviceJSON(map[string]json.RawMessage{"enabled": enabled})

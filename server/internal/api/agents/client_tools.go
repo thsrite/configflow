@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,12 +20,12 @@ import (
 )
 
 func registerClientTools(r *httpx.Router) {
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/client-notes", "agents.client_notes", auth.Require(clientNotes))
-	r.GET("/api/agents/<agent_id>/mihomo/rule-targets", "agents.rule_targets", auth.Require(clientRuleTargets))
-	r.POST("/api/agents/<agent_id>/mihomo/rule-targets/apply", "agents.connection_rule", auth.Require(clientConnectionRule))
-	r.PUT("/api/agents/<agent_id>/domain-discovery", "agents.set_agent_domain_discovery", auth.Require(clientDiscoveryToggle))
-	r.POST("/api/agents/<agent_id>/domain-discovery/clear", "agents.clear_agent_domain_discovery", auth.Require(clientDiscoveryClear))
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/oxidns/device-policies", "agents.oxidns_device_policies", auth.Require(clientPolicies))
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/client-notes", "agents.client_notes", auth.Require(clientBindingHandler(clientNotes)))
+	r.GET("/api/agents/<agent_id>/mihomo/rule-targets", "agents.rule_targets", auth.Require(clientBindingHandler(clientRuleTargets)))
+	r.POST("/api/agents/<agent_id>/mihomo/rule-targets/apply", "agents.connection_rule", auth.Require(clientBindingHandler(clientConnectionRule)))
+	r.PUT("/api/agents/<agent_id>/domain-discovery", "agents.set_agent_domain_discovery", auth.Require(clientBindingHandler(clientDiscoveryToggle)))
+	r.POST("/api/agents/<agent_id>/domain-discovery/clear", "agents.clear_agent_domain_discovery", auth.Require(clientBindingHandler(clientDiscoveryClear)))
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/oxidns/device-policies", "agents.oxidns_device_policies", auth.Require(clientBindingHandler(clientPolicies)))
 }
 
 // clientTools owns bound-profile edits and discovery cleanup. Its write entry
@@ -60,7 +61,7 @@ func boundClientProfile(ctx context.Context, id string, mihomoOnly bool) (string
 	if agent == nil || (agent.ServiceType != "mihomo" && (mihomoOnly || agent.ServiceType != "oxidns")) {
 		return "", repo.NewValidationError(msgClientDevice)
 	}
-	return effectiveClientProfile(ctx, agent.ProfileID)
+	return agent.ProfileID, nil
 }
 func checkClientBinding(ctx context.Context, id, profile string, mihomoOnly bool) error {
 	current, err := boundClientProfile(ctx, id, mihomoOnly)
@@ -72,17 +73,11 @@ func checkClientBinding(ctx context.Context, id, profile string, mihomoOnly bool
 	}
 	return nil
 }
-func effectiveClientProfile(ctx context.Context, profile string) (string, error) {
-	if profile != "" {
-		return profile, nil
-	}
-	return repo.GetDefaultProfileID(ctx)
-}
 func clientValidation(message string) error { return repo.NewValidationError(message) }
-func rawText(raw json.RawMessage) string    { var s string; _ = json.Unmarshal(raw, &s); return s }
+func rawText(raw json.RawMessage) string    { var s string; _ = jsondecode.Unmarshal(raw, &s); return s }
 func stringField(raw json.RawMessage) (string, bool) {
 	var s *string
-	if json.Unmarshal(raw, &s) != nil || s == nil {
+	if jsondecode.Unmarshal(raw, &s) != nil || s == nil {
 		return "", false
 	}
 	return *s, true
@@ -336,10 +331,7 @@ func clientPolicies(c *httpx.Ctx) (*httpx.Response, error) {
 	if agent.ServiceType != "oxidns" {
 		return policyError(400, msgPolicyService), nil
 	}
-	profile, err := effectiveClientProfile(c.Context(), agent.ProfileID)
-	if err != nil {
-		return nil, err
-	}
+	profile := agent.ProfileID
 	if c.Method() == "PUT" {
 		f := bodyFields(c, []string{"profile_id", "revision", "notes_revision", "policies", "base_url"}, false)
 		base := ""

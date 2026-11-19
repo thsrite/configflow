@@ -202,8 +202,18 @@ func TestCacheRouteRejectsInjectedOrInvalidPayloads(t *testing.T) {
 		}
 		s.Get("/api/agents/dns/oxidns/cache", httpxtest.Body([]byte("{}"), "application/json"), admin).WantStatus(400)
 	}
-	// set() of a tag list holding a dict raises (500), as in Python.
-	s.Post("/api/agents/dns/oxidns/cache/flush", httpxtest.Body([]byte(`{"tags":[{}]}`), "application/json"), admin).WantStatus(500)
+	// Retain the original Python500 evidence; the approved native DTO refuses400.
+	before, err := s.Repo.Store().Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejected := s.Post("/api/agents/dns/oxidns/cache/flush", httpxtest.Body([]byte(`{"tags":[{}]}`), "application/json"), admin).WantStatus(nativeCacheTagStatus(t, `{"tags":[{}]}`, 500))
+	if rejected.Header.Get("Cache-Control") != "no-store" || rejected.Object().GetString("code") != "INVALID_REQUEST" {
+		t.Fatal("cache refusal envelope changed")
+	}
+	if after, err := s.Repo.Store().Fingerprint(); err != nil || before != after {
+		t.Fatal("invalid cache tags wrote state", err)
+	}
 	if len(fake.calls()) != 0 {
 		t.Fatal("unexpected Agent request", fake.calls())
 	}

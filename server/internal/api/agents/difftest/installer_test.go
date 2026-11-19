@@ -149,7 +149,7 @@ func compareInstaller(py, gor response, mask []string) []string {
 		left, leftErr := installerJSONText(string(py.body))
 		right, rightErr := installerJSONText(body)
 		if leftErr != nil || rightErr != nil || left != right {
-			diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) %s", len(py.body), len(gor.body), firstLineDiff(string(py.body), body)))
+			diffs = append(diffs, fmt.Sprintf("body (%d vs %d bytes) %s", len(py.body), len(gor.body), firstLineDiff(left, right)))
 		}
 	}
 	return diffs
@@ -464,6 +464,25 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 	scripts := map[string][2]string{}
 	for _, r := range commandRequests() {
 		py, gor := both(r)
+		input := n810InstallerInput(r)
+		var nativeReference *n810APIResult
+		if variant, ok := n810Variant(input); ok {
+			alternate := r
+			alternate.body = variant.body
+			reference := sendInstaller(t, pyBase, alternate, pyToken)
+			value := n810Result(t, input, reference, nil)
+			nativeReference = &value
+		}
+		n810RecordAPI(t, input, py, nil, nativeReference)
+		if diffs, handled := n810CompareAPI(t, input, py, gor, nil, nil); handled {
+			if len(diffs) > 0 {
+				failed++
+				t.Errorf("bound native installer policy: %v", diffs)
+			} else {
+				same++
+			}
+			continue
+		}
 		check(r.name, py, gor, "download_path", "expires_at")
 		if !r.download || py.status != 200 || gor.status != 200 {
 			continue

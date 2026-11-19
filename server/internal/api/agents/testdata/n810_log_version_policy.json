@@ -1,0 +1,23 @@
+{
+  "original": {
+    "request": {
+      "name": "safe-agent-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxprefix-secret-4a6c",
+      "host": "10.0.0.8",
+      "port": 8080,
+      "service_type": "mihomo\r\nraw-secret-8d2f",
+      "version": "1.2.3 unicode-control-secret-3c7a",
+      "raw": "raw-secret-8d2f",
+      "prefix": {
+        "value": "prefix-secret-4a6c"
+      },
+      "nested": {
+        "authorization": {
+          "token": "nested-secret-1b9e"
+        }
+      }
+    },
+    "python_status": 200
+  },
+  "sha256": "be7fea51f6216e2921f59db2e85fa1d90e38eb968691bbaf486a1f4a1e3bd63b",
+  "native_status": 400
+}

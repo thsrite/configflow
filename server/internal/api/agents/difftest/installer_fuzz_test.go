@@ -322,6 +322,14 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 	copyDir(t, seedDir, goDir)
 	pyBase, stopPython := startPython(t, pyDir)
 	defer stopPython()
+	nativeDir := filepath.Join(base, "native-python")
+	copyDir(t, seedDir, nativeDir)
+	nativeBase, stopNative := startPythonArgs(t, nativeDir, "server/internal/api/agents/difftest/testdata/n810_installer_app.py")
+	defer stopNative()
+	nativeToken := login(t, nativeBase)
+	nativeDownloads := map[string]string{}
+	bindOriginal := n810InstallerBinding(t)
+
 	// The real issuance owner expires prior capabilities in its normal write.
 	// Advance only this request runtime, leaving JWT/link clocks and production
 	// background-loop timers alone. No extra repository cleanup transaction.
@@ -403,6 +411,24 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 			diffs = nil
 			counts["EXPECTED native integer "+kind]++
 		}
+		if len(diffs) > 0 && (kind == "install-script" || kind == "install-command") {
+			nativeRequest := r
+			if path, changed := nativeQueryVariant(r.path); changed {
+				nativeRequest.path = path
+			}
+			expected := sendInstaller(t, nativeBase, nativeRequest, nativeToken)
+			if next := compareInstaller(expected, gor, mask); len(next) == 0 {
+				bindOriginal(r, py, mask)
+				diffs = nil
+				counts["EXPECTED native HTTP binding "+kind]++
+			} else {
+				diffs = append(diffs, "native policy reference: "+strings.Join(next, "; "))
+			}
+			if expected.status == 200 && kind == "install-command" {
+				value, _ := jsonx.Parse(expected.body)
+				nativeDownloads[r.body] = value.(*jsonx.Object).GetString("download_path")
+			}
+		}
 		if len(diffs) > 0 {
 			failed++
 			if failed <= 30 {
@@ -458,6 +484,9 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 			goAnswer, _ := jsonx.Parse(gor.body)
 			pyDown := sendInstaller(t, pyBase, installerRequest{method: "GET", path: pyAnswer.(*jsonx.Object).GetString("download_path")}, "")
 			goDown := sendInstaller(t, goBase, installerRequest{method: "GET", path: goAnswer.(*jsonx.Object).GetString("download_path")}, "")
+			if reference, ok := nativeDownloads[r.body]; ok {
+				pyDown = sendInstaller(t, nativeBase, installerRequest{method: "GET", path: reference}, "")
+			}
 			if diffs := compareInstaller(pyDown, goDown, nil); len(diffs) > 0 {
 				failed++
 				t.Errorf("DIFF download of %q:\n  %s", r.body, strings.Join(diffs, "\n  "))

@@ -2274,3 +2274,31 @@ N8-11 删除。
   Unicode数字、私有空白、下划线或带前导零的IPv4数字解析。
 - 人工非对象请求和损坏对象的内部英文异常改为原生 JSON 诊断，保留各入口的HTTP类；
   中文业务提示和redact凭据脱敏不变。坏单对象守卫拒绝写入；列表不因坏版本一条整页失败。
+
+- 协调者批准：cache flush 的 `tags` 含非字符串（原人工输入 `[{}]`）时，
+  原 Python set() 的 TypeError/500 改为400 `INVALID_REQUEST`，`Cache-Control: no-store`，
+  不请求 Agent、不写入。完整原 HTTP 输入、500结果、设备调用序列逐行 SHA 绑定，
+  错键名与其他输入不命中新规则。
+- 查询整数只接收原生 ASCII 十进制规则；Unicode 数字使用各入口默认值，不模拟
+  CPython 的4300位整数上限。旧人工超长整数正常进入现有范围/owner校验；尚未迁移的
+  A05 engine 溢出仍500，不静默截断。完整旧HTTP行与独立 Flask 对照请求绑定；
+  不改原请求表。人工 panel 回包的标准 JSON `1e400` 作为不透明原始数字保留，
+  不经过 IEEE754 变成 Infinity/null；真正 NaN 仍按既有规则变 null。
+- traffic-report 在任何文件写入前通过现有 `ResolveAgentProfile` 检查存储绑定；
+  present、非null、非string 的 profile_id 以既有 owner 校验错误400拒绝，无数据库/
+  traffic文件写入，列表仍200。`trafficstore.AddReport`/metrics AddReport 无ctx的旧缺口
+  留给协调者已另排的 metrics-native owner任务，本轮不增加第二份引擎。
+
+- 协调者批准：client-notes、rule apply、device-policies 以及其事务重读使用现有
+  ResolveAgentProfile 验证原始绑定，不再将非string投影为空串后落到默认配置空间。
+  损坏绑定400/NoStore，无DB/设备/文件写；policies peers 中坏绑定逐条跳过，
+  每Agent十分钟至多一条脱敏warning，健康同空间设备和列表保持200。API内其余
+  ProfileID写入位置扫描已完成：均来自已验证clientDevice/编辑参数，content/deploy
+  入口沿loadContentSource的既有ResolveAgentProfile守卫。
+
+- 安装 HTTP 适配器同样采用 strings.TrimSpace 的 Go whitespace，C0 1c–1f 不再仿真
+  Python strip；c.Bind 后对象成员采用稳定原生顺序，因此同时含多个错型字段的人工
+  请求可能先报告另一个字段（仍400且不签发凭据）。272条完整旧HTTP行逐行SHA绑定，
+  第二个独立Flask服务注入明确原生规则后比较完整脚本/错误，不修改旧随机矩阵。
+  discovery clear 和 traffic-history 删除改调已有 DeleteContext，保留 shutdown lifetime；
+  无新 owner/状态机，正常响应和断线完成行为保持。

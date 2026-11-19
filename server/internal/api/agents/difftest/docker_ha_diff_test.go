@@ -359,6 +359,22 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	}
 	check := func(r request, mask ...string) (response, response) {
 		p, g := both(r)
+		var nativeReference *n810APIResult
+		if variant, ok := n810Variant(r); ok {
+			reference := send(t, py.base, variant, py.token, nil)
+			value := n810Result(t, r, reference, nil)
+			nativeReference = &value
+		}
+		n810RecordAPI(t, r, p, nil, nativeReference)
+		if diffs, handled := n810CompareAPI(t, r, p, g, nil, nil); handled {
+			if len(diffs) > 0 {
+				failed++
+				t.Errorf("bound native HA policy %s: %v", r.name, diffs)
+			} else {
+				same++
+			}
+			return p, g
+		}
 		if checkNumericGuideBoundary(t, r, p, g, py) {
 			same++
 			return p, g
