@@ -4,7 +4,6 @@ package rulesync
 // projection use typed native JSON, immutable deploy.Source and yamlx nodes.
 import (
 	"configflow/internal/agents/monitor"
-	"configflow/internal/jsondecode"
 	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -21,6 +20,7 @@ import (
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/yamlx"
 )
 
 func decodeAgent(record *agents.Record) (*model.Agent, error) {
@@ -68,11 +68,7 @@ func agentView(record *agents.Record) *jsonx.Object {
 }
 
 func publishSource(ctx context.Context, m *agents.Manager, profileID string) (*deploy.Source, error) {
-	raw, revision, err := m.Repository().GetPublishSnapshot(ctx, profileID, false)
-	if err != nil {
-		return nil, err
-	}
-	return deploy.NewSource(raw, &revision), nil
+	return repositorySource(ctx, m.Repository(), profileID)
 }
 
 func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Settings, state *model.RuleSyncState) error {
@@ -82,7 +78,7 @@ func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Se
 	return m.EditAgents(ctx, "", func(tx context.Context, list *[]model.Agent) error {
 		for i := range *list {
 			record := &(*list)[i]
-			if record.ID != id {
+			if !agents.AgentMatchesID(record, id) {
 				continue
 			}
 			if settings != nil && agents.HAEnablingModel(record) {
@@ -157,40 +153,65 @@ func compareLeader(a, b *agents.Record) int {
 	return strings.Compare(a.GetString("id"), b.GetString("id"))
 }
 func configurePair(ctx context.Context, m *agents.Manager, members []*agents.Record, s Settings) error {
-	_, err := m.UpdateAgents(ctx, "", func(tx context.Context, entries *[]any) (any, error) {
-		if e := tx.Err(); e != nil {
-			return nil, e
+	expected := make([]*model.Agent, 0, len(members))
+	for _, member := range members {
+		a, err := decodeAgent(member)
+		if err != nil {
+			return err
 		}
-		byID := map[string]*jsonx.Object{}
-		for _, entry := range *entries {
-			if r, ok := entry.(*jsonx.Object); ok {
-				byID[r.GetString("id")] = r
+		if !agents.AgentMatchesID(a, a.ID) {
+			return refuse(msgPairChanged)
+		}
+		expected = append(expected, a)
+	}
+	if len(expected) != 2 || !agents.HAPairMatchesModel(expected[0], expected[1]) {
+		return refuse(msgPairChanged)
+	}
+	return m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		selected := make([]*model.Agent, 0, len(expected))
+		for _, member := range expected {
+			var current *model.Agent
+			for i := range *records {
+				if agents.AgentMatchesID(&(*records)[i], member.ID) {
+					current = &(*records)[i]
+					break
+				}
 			}
-		}
-		for _, member := range members {
-			current := byID[member.GetString("id")]
-			if current == nil || !jsonx.Equal(current.Value("oxidns_ha"), member.Value("oxidns_ha")) {
-				return nil, refuse(msgPairChanged)
+			if current == nil {
+				return refuse(msgPairChanged)
 			}
-		}
-		for _, member := range members {
-			if pairEnabling(byID[member.GetString("id")]) {
-				return nil, refuse(msgPairEnabling)
+			left, err := yamlx.FromJSON(rawJSON(current.OxiDNSHA))
+			if err != nil {
+				return err
 			}
-		}
-		for _, member := range members {
-			current := byID[member.GetString("id")]
-			sync := current.GetObject("rule_sync")
-			if sync == nil {
-				sync = jsonx.NewObject()
+			right, err := yamlx.FromJSON(rawJSON(member.OxiDNSHA))
+			if err != nil {
+				return err
 			}
-			sync.Set("settings", jsonx.Obj("library", s.Library, "rules", s.Rules))
-			current.Set("rule_sync", sync)
+			if !yamlx.Equal(left, right) {
+				return refuse(msgPairChanged)
+			}
+			if agents.HAEnablingModel(current) {
+				return refuse(msgPairEnabling)
+			}
+			selected = append(selected, current)
 		}
-		return nil, tx.Err()
+		if !agents.HAPairMatchesModel(selected[0], selected[1]) {
+			return refuse(msgPairChanged)
+		}
+		for _, current := range selected {
+			sync := model.AgentRuleSync{}
+			if current.RuleSync != nil {
+				sync = *current.RuleSync
+			}
+			sync.Settings = model.RuleSyncSettings{Library: &s.Library, Rules: &s.Rules}
+			current.RuleSync = &sync
+		}
+		return tx.Err()
 	})
-	return err
 }
+func rawJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
+
 func safeText(ctx context.Context, m *agents.Manager, record *agents.Record, text string) string {
 	system, err := m.Repository().GetSystemSettings(ctx)
 	if err != nil {
@@ -281,13 +302,19 @@ func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths
 	if err != nil {
 		return nativeTask{}, err
 	}
-	var view struct {
-		Task nativeTask `json:"task"`
-	}
-	if err = jsondecode.Unmarshal(raw, &view); err != nil {
+	var fields model.Fields
+	if err = json.Unmarshal(raw, &fields); err != nil {
 		return nativeTask{}, err
 	}
-	return view.Task, nil
+	task, present := fields.Get("task")
+	if !present {
+		return nativeTask{}, nil
+	}
+	var result nativeTask
+	if err = json.Unmarshal(task, &result); err != nil {
+		return nativeTask{}, err
+	}
+	return result, nil
 }
 func refreshProvider(ctx context.Context, m *agents.Manager, id, name string) error {
 	_, err := monitor.PanelCall(ctx, monitor.FromAgents(m), id, "providers/rule", "PUT", [][2]string{{"name", name}}, nil, "")
@@ -305,89 +332,110 @@ func failUnsubmitted(ctx context.Context, m *agents.Manager, id, deploymentID st
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	_, e := m.RecordDeployment(ctx, id, deploymentID, jsonx.Obj("success", false, "status", "failed", "message", msgCandidateFailed), agents.RecordOptions{OnlyUnsubmitted: true})
-	return e
+	data, err := json.Marshal(struct {
+		Success bool   `json:"success"`
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}{false, "failed", msgCandidateFailed})
+	if err != nil {
+		return err
+	}
+	patch, err := agents.DecodeDeploymentUpdate(data)
+	if err != nil {
+		return err
+	}
+	_, err = m.RecordDeploymentModel(ctx, id, deploymentID, patch, agents.RecordOptions{OnlyUnsubmitted: true})
+	return err
 }
 func pollDeployment(ctx context.Context, m *agents.Manager, id, deploymentID string) (*model.Deployment, error) {
-	r, e := m.GetDeployment(ctx, id, deploymentID)
-	if e != nil {
-		return nil, e
-	}
-	raw, e := json.Marshal(r)
-	if e != nil {
-		return nil, e
-	}
-	var out model.Deployment
-	e = json.Unmarshal(raw, &out)
-	return &out, e
+	return m.GetDeploymentModel(ctx, id, deploymentID)
 }
 
 func isOxi(record *agents.Record) bool { return record.GetString("service_type") == "oxidns" }
 func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([]*agents.Record, error) {
-	records, e := r.GetAgents(ctx, false)
-	if e != nil {
-		return nil, e
+	defaultID, err := r.DefaultProfileID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	settings, e := r.GetSystemSettings(ctx)
-	if e != nil {
-		return nil, e
+	if profileID == "" {
+		profileID = defaultID
 	}
-	defaultID, e := r.DefaultProfileID(ctx)
-	if e != nil {
-		return nil, e
-	}
-	settings.Set("default_profile_id", defaultID)
-	light := make([]any, 0, len(records))
-	for _, entry := range records {
-		if record, ok := entry.(*jsonx.Object); ok {
-			light = append(light, agentView(record))
+	out := []*agents.Record{}
+	err = r.ViewAgents(ctx, func(records []model.Agent) error {
+		for i := range records {
+			a := &records[i]
+			if !agents.AgentMatchesID(a, a.ID) || !agents.AgentEnabledModel(a) {
+				continue
+			}
+			raw, present, err := a.MemberJSON("profile_id")
+			if err != nil {
+				return err
+			}
+			var binding *string
+			if present && json.Unmarshal(raw, &binding) != nil {
+				continue
+			}
+			id := defaultID
+			if binding != nil && *binding != "" {
+				id = *binding
+			}
+			if id != profileID {
+				continue
+			}
+			view := *a
+			for _, field := range repo.AgentHistoryFields {
+				if err := view.Clear(field); err != nil {
+					return err
+				}
+			}
+			data, err := model.Marshal(view)
+			if err != nil {
+				return err
+			}
+			var record agents.Record
+			if err := json.Unmarshal(data, &record); err != nil {
+				return err
+			}
+			out = append(out, &record)
 		}
-	}
-	raw, e := json.Marshal(jsonx.Obj("agents", light, "profile_id", profileID, "system_config", settings))
-	if e != nil {
-		return nil, e
-	}
-	source, e := oxidns.ProfileFromJSON(raw)
-	if e != nil {
-		return nil, e
-	}
-	selected := oxidns.ProfileAgents(source)
-	out := make([]*agents.Record, 0, len(selected))
-	for _, node := range selected {
-		value, err := jsonx.Parse(oxidns.ToJSON(node))
-		if err != nil {
-			return nil, err
-		}
-		record, ok := value.(*jsonx.Object)
-		if !ok {
-			return nil, refuse(msgSnapshotVerify)
-		}
-		out = append(out, record)
-	}
-	return out, nil
+		return nil
+	})
+	return out, err
 }
 func workerAgent(ctx context.Context, m *agents.Manager, id string) (*agents.Record, error) {
-	record, e := m.GetAgentByID(ctx, id, false)
-	if e != nil || record == nil {
-		return record, e
+	a, err := m.ReadAgent(ctx, id, false)
+	if err != nil || a == nil {
+		return nil, err
 	}
-	record.Set("status", agents.OnlineStatus(record, nil))
-	record.Set("enabled", jsonx.Truthy(record.GetOr("enabled", true)))
-	if record.GetString("profile_id") == "" {
-		profile, e := m.Repository().DefaultProfileID(ctx)
-		if e != nil {
-			return nil, e
-		}
-		record.Set("profile_id", profile)
+	profile, err := m.ResolveAgentProfile(ctx, a)
+	if err != nil {
+		return nil, err
 	}
-	return record, nil
+	if !agents.FreshHeartbeat(a.LastHeartbeat, nil) {
+		a.Status = "offline"
+	}
+	a.Enabled = ptr(agents.AgentEnabledModel(a))
+	a.ProfileID = profile
+	data, err := model.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+	var record agents.Record
+	if err := json.Unmarshal(data, &record); err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 func repositorySource(ctx context.Context, r *repo.Repository, profileID string) (*deploy.Source, error) {
-	raw, revision, e := r.GetPublishSnapshot(ctx, profileID, false)
-	if e != nil {
-		return nil, e
+	config, revision, err := r.PublishConfig(ctx, profileID, false)
+	if err != nil {
+		return nil, err
 	}
-	return deploy.NewSource(raw, &revision), nil
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return deploy.SourceFromJSON(raw, &revision)
 }
 
 func snapshotVersion(record *agents.Record) string {
@@ -441,7 +489,7 @@ func observePresence(ctx context.Context, m *agents.Manager, records []*agents.R
 }
 
 func safeDisplay(text string, secrets redact.Secrets) string {
-	safe := agents.FailureText(text, jsonx.ListOf([]string(secrets)), 2000)
+	safe := redact.DiagnosticText(text, secrets, 2000)
 	if redact.ContainsEncodedSecret(safe, secrets) {
 		return redact.Redacted
 	}
@@ -450,4 +498,25 @@ func safeDisplay(text string, secrets redact.Secrets) string {
 
 func pairEnabling(record *agents.Record) bool {
 	return agents.HAActive(record) && jsonx.Truthy(record.GetObject(agents.HAField).Value("enable"))
+}
+
+// UnmarshalJSON accepts exact protocol names without struct tag folding.
+func (task *nativeTask) UnmarshalJSON(raw []byte) error {
+	var fields model.Fields
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	var next nativeTask
+	for _, field := range []struct {
+		name   string
+		target *string
+	}{{"id", &next.ID}, {"status", &next.Status}, {"message", &next.Message}} {
+		if value, present := fields.Get(field.name); present {
+			if err := json.Unmarshal(value, field.target); err != nil {
+				return err
+			}
+		}
+	}
+	*task = next
+	return nil
 }

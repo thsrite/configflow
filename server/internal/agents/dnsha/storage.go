@@ -113,7 +113,7 @@ func (s *Service) readPayload(ctx context.Context, j *model.HAJournal) (*payload
 	if e = json.Unmarshal(data, &p); e != nil {
 		return nil, nil, e
 	}
-	if j.ID == "" || p.ID == "" || p.ID != j.ID {
+	if journalID(j) == "" || p.ID == "" || p.ID != journalID(j) {
 		return nil, nil, refuse(msgPayloadID)
 	}
 	if p.Bundle == nil {
@@ -134,7 +134,7 @@ func (s *Service) readPayload(ctx context.Context, j *model.HAJournal) (*payload
 	return &p, b, nil
 }
 func (s *Service) save(ctx context.Context, j *model.HAJournal) error {
-	if j.ID == "" || j.Children.Len() != 2 {
+	if !validJournalChildren(j) {
 		return refuse(msgJournalChanged)
 	}
 	j.UpdatedAt = model.Int(s.now().Unix())
@@ -164,8 +164,8 @@ func (s *Service) save(ctx context.Context, j *model.HAJournal) error {
 		members := []model.HAMember{}
 		for _, id := range order {
 			a := selected(list, id)
-			did, ok := j.Children.Get(id)
-			if !ok || did == "" || a == nil || a.OxiDNSHAPublication == nil || a.OxiDNSHAPublication.ID != j.ID {
+			did, ok := journalChildID(j, id)
+			if !ok || did == "" || a == nil || a.OxiDNSHAPublication == nil || journalID(a.OxiDNSHAPublication) != journalID(j) {
 				return refuse(msgJournalChanged)
 			}
 			st, ok := a.Deployments.Get(did)
@@ -227,7 +227,7 @@ func (s *Service) reserve(ctx context.Context, members []*agent, owner, did stri
 	e = s.update(ctx, func(list []*agent) error {
 		for _, a := range members {
 			cur := selected(list, a.ID)
-			if cur == nil || !equal(cur.identity, a.identity) || !equal(cur.haRaw, a.haRaw) {
+			if cur == nil || !sameHAIdentity(&cur.identity, &a.identity) || !equal(cur.haRaw, a.haRaw) {
 				return refuse(msgIdentityChanged)
 			}
 			if active(cur) {
@@ -262,13 +262,13 @@ func (s *Service) members(ctx context.Context, j *model.HAJournal) ([]*agent, er
 		return nil, e
 	}
 	out := []*agent{}
-	if j.Children.Len() != 2 {
+	if !validJournalChildren(j) {
 		return nil, refuse(msgInFlightIdentity)
 	}
 	for id, did := range j.Children.All() {
 		a := selected(list, id)
 		identity, ok := j.Identities.Get(id)
-		if a == nil || !ok || did == "" || !equal(a.identity, identity) {
+		if a == nil || !ok || did == "" || !sameHAIdentity(&a.identity, &identity) {
 			return nil, refuse(msgInFlightIdentity)
 		}
 		out = append(out, a)

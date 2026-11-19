@@ -2,6 +2,7 @@ package dnsha
 
 // The legacy registry/repository bridge is confined to this file.
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -82,6 +83,9 @@ func (s *Service) all(ctx context.Context) ([]*agent, error) {
 	}
 	out := make([]*agent, 0, len(records))
 	for i := range records {
+		if !agents.AgentMatchesID(&records[i], records[i].ID) {
+			continue
+		}
 		if !agents.FreshHeartbeat(records[i].LastHeartbeat, nil) {
 			records[i].Status = "offline"
 		}
@@ -398,6 +402,117 @@ func rulesResult(id, status, phase string, j *model.HAJournal) *agents.Result {
 }
 
 func truthyJSON(raw json.RawMessage) bool {
-	v, e := jsonx.Parse(raw)
-	return e == nil && jsonx.Truthy(v)
+	present, err := model.JSONHasContent(raw)
+	return err == nil && present
+}
+
+// journalChildID requires the original token rather than Map's R5 text projection.
+func journalChildID(j *model.HAJournal, id string) (string, bool) {
+	if j == nil {
+		return "", false
+	}
+	raw, present, err := j.Children.MemberJSON(id)
+	var text *string
+	if err != nil || !present || json.Unmarshal(raw, &text) != nil || text == nil || *text == "" {
+		return "", false
+	}
+	return *text, true
+}
+func journalID(j *model.HAJournal) string {
+	if j == nil {
+		return ""
+	}
+	raw, present, err := j.MemberJSON("id")
+	var id *string
+	if err != nil || !present || json.Unmarshal(raw, &id) != nil || id == nil {
+		return ""
+	}
+	return *id
+}
+func journalText(j *model.HAJournal, name string) (string, bool) {
+	if j == nil {
+		return "", false
+	}
+	raw, present, err := j.MemberJSON(name)
+	var text *string
+	if err != nil || !present || json.Unmarshal(raw, &text) != nil || text == nil || *text == "" {
+		return "", false
+	}
+	return *text, true
+}
+func validJournalChildren(j *model.HAJournal) bool {
+	if j == nil || journalID(j) == "" || j.Children.Len() != 2 {
+		return false
+	}
+	for id := range j.Children.All() {
+		if _, valid := journalChildID(j, id); !valid {
+			return false
+		}
+	}
+	owner, ownerOK := journalText(j, "owner_agent_id")
+	deployment, deploymentOK := journalText(j, "owner_deployment_id")
+	child, childOK := journalChildID(j, owner)
+	if !ownerOK || !deploymentOK || !childOK || deployment != child {
+		return false
+	}
+	if j.Enable != nil {
+		raw, present, err := j.Enable.MemberJSON("peer_id")
+		var peer *string
+		if err != nil || !present || json.Unmarshal(raw, &peer) != nil || peer == nil || *peer == owner {
+			return false
+		}
+		if _, valid := journalChildID(j, *peer); !valid {
+			return false
+		}
+	}
+	return true
+}
+func validHAIdentity(identity *model.HAIdentity) bool {
+	if identity == nil {
+		return false
+	}
+	for _, name := range []string{"host", "service_type", "profile_id"} {
+		raw, present, err := identity.MemberJSON(name)
+		if err != nil {
+			return false
+		}
+		var text *string
+		if present && json.Unmarshal(raw, &text) != nil {
+			return false
+		}
+		if name != "profile_id" && (text == nil || *text == "") {
+			return false
+		}
+	}
+	return true
+}
+
+// sameHAIdentity keeps original token types except equivalent integral numeric
+// port notation (8082 / 8082.0). Quoted numbers and booleans never gain that proof.
+func sameHAIdentity(left, right *model.HAIdentity) bool {
+	if !validHAIdentity(left) || !validHAIdentity(right) {
+		return false
+	}
+	lraw, lp, le := left.MemberJSON("port")
+	rraw, rp, re := right.MemberJSON("port")
+	numeric := func(raw json.RawMessage, present bool, err error) (model.Int, bool) {
+		raw = bytes.TrimSpace(raw)
+		if err != nil || !present || len(raw) == 0 || (raw[0] != '-' && (raw[0] < '0' || raw[0] > '9')) {
+			return 0, false
+		}
+		var number model.Int
+		err = json.Unmarshal(raw, &number)
+		return number, err == nil
+	}
+	l, lOK := numeric(lraw, lp, le)
+	r, rOK := numeric(rraw, rp, re)
+	if !lOK || !rOK || l != r {
+		return equal(left, right)
+	}
+	a, b := *left, *right
+	if a.Clear("port") != nil || b.Clear("port") != nil {
+		return false
+	}
+	a.Port, b.Port = l, r
+	return equal(&a, &b)
 }

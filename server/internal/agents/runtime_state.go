@@ -237,12 +237,21 @@ func (s *RuntimeState) seedModel(ctx context.Context, agentID string, heartbeatA
 }
 
 // Delete forgets an Agent and blocks heartbeats looked up before it.
-func (s *RuntimeState) Delete(agentID string) {
+func (s *RuntimeState) Delete(agentID string) { _ = s.deleteContext(context.Background(), agentID) }
+
+func (s *RuntimeState) deleteContext(ctx context.Context, agentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	delete(s.entries, agentID)
 	s.deletions++
 	s.deleted[agentID] = s.deletions
+	return nil
 }
 
 // runtimeDirectory uses the repository's shared physical-directory identity.

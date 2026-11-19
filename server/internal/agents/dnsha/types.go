@@ -109,7 +109,7 @@ func name(a *agent) string {
 }
 func haEnabled(a *agent) bool { return a != nil && a.OxiDNSHA != nil && yes(a.OxiDNSHA.Enabled) }
 func paired(a, b *agent) bool {
-	return haEnabled(a) && haEnabled(b) && a.OxiDNSHA.GroupID != "" && a.OxiDNSHA.GroupID == b.OxiDNSHA.GroupID && a.OxiDNSHA.PeerID == b.ID && b.OxiDNSHA.PeerID == a.ID
+	return a != nil && b != nil && agents.HAPairMatchesModel(a.Agent, b.Agent)
 }
 func yes(p *bool) bool  { return p != nil && *p }
 func ptr[T any](v T) *T { return &v }
@@ -126,7 +126,7 @@ func active(a *agent) bool {
 }
 func selected(list []*agent, id string) *agent {
 	for _, a := range list {
-		if a.ID == id {
+		if agents.AgentMatchesID(a.Agent, id) {
 			return a
 		}
 	}

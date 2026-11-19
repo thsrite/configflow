@@ -8,17 +8,23 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/model"
 )
 
 type object map[string]json.RawMessage
 
 func parseObject(b []byte) object {
-	var o object
-	if json.Unmarshal(b, &o) != nil || o == nil {
+	var fields model.Fields
+	if json.Unmarshal(b, &fields) != nil {
 		return object{}
 	}
-	return o
+	out := object{}
+	for key, raw := range fields.All() {
+		out[key] = raw
+	}
+	return out
 }
+
 func (o object) text(k string) string  { var s string; _ = json.Unmarshal(o[k], &s); return s }
 func (o object) isTrue(k string) bool  { return string(o[k]) == "true" }
 func (o object) isFalse(k string) bool { return string(o[k]) == "false" }
@@ -68,7 +74,7 @@ func (s *Service) call(ctx context.Context, a *agent, method, path string, body 
 	if body != nil {
 		h.Set("Content-Type", "application/json")
 	}
-	r, e := s.m.Call(ctx, a.target.Record, method, "/api/oxidns-ha"+path, h, body, agents.Pair(5, seconds))
+	r, e := s.m.CallAgent(ctx, a.Agent, method, "/api/oxidns-ha"+path, h, body, agents.Pair(5, seconds))
 	if e != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -82,6 +88,10 @@ func (s *Service) call(ctx context.Context, a *agent, method, path string, body 
 	if r.StatusCode == 404 {
 		message = fmt.Sprintf(msgUpgrade, name(a))
 	} else {
+		var fields model.Fields
+		if err := json.Unmarshal(r.Body, &fields); err != nil && r.StatusCode == 200 {
+			return nil, agents.ErrInvalidAgentReply
+		}
 		o := parseObject(r.Body)
 		if r.StatusCode == 200 && !o.isFalse("success") {
 			return o, nil

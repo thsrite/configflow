@@ -398,6 +398,6 @@ func (m *Manager) saveReportedModels(ctx context.Context, changes map[string]mod
 }
 
 // AgentMatchesID verifies a registry identity from its original string token.
-func AgentMatchesID(record *model.Agent,id string)bool{
- return record!=nil && record.ID==id && agentIDProven(record)
+func AgentMatchesID(record *model.Agent, id string) bool {
+	return record != nil && record.ID == id && agentIDProven(record)
 }

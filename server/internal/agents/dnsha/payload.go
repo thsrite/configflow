@@ -1,7 +1,7 @@
 package dnsha
 
 import (
-	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"encoding/json"
 )
 
@@ -10,20 +10,32 @@ var payloadFields = []string{"id", "source_snapshot", "resource_config", "config
 // UnmarshalJSON retains fields from a newer publisher while reading the owned
 // envelope strictly. Bad owned metadata must stop preparation before a core write.
 func (p *payload) UnmarshalJSON(data []byte) error {
-	type plain payload
-	var next plain
-	if err := jsondecode.Unmarshal(data, &next); err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
+	var fields model.Fields
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	for _, key := range payloadFields {
-		delete(fields, key)
+	var next payload
+	for _, item := range []struct {
+		name   string
+		target any
+	}{
+		{"id", &next.ID}, {"source_snapshot", &next.Source}, {"resource_config", &next.Resource},
+		{"config_revision", &next.Revision}, {"base_url", &next.BaseURL}, {"baseline_deployment_id", &next.BaselineID}, {"bundle", &next.Bundle},
+	} {
+		raw, present := fields.Get(item.name)
+		if !present {
+			continue
+		}
+		if err := json.Unmarshal(raw, item.target); err != nil {
+			return err
+		}
+		fields.Delete(item.name)
 	}
-	next.extra = fields
-	*p = payload(next)
+	next.extra = map[string]json.RawMessage{}
+	for key, raw := range fields.All() {
+		next.extra[key] = raw
+	}
+	*p = next
 	return nil
 }
 
@@ -45,4 +57,26 @@ func (p payload) MarshalJSON() ([]byte, error) {
 		}
 	}
 	return json.Marshal(fields)
+}
+
+func (b *bundleMeta) UnmarshalJSON(data []byte) error {
+	var fields model.Fields
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var next bundleMeta
+	for _, item := range []struct {
+		name   string
+		target any
+	}{
+		{"manifest", &next.Manifest}, {"sha256", &next.SHA256}, {"config_version", &next.ConfigVersion}, {"comparison_config", &next.Comparison},
+	} {
+		if raw, present := fields.Get(item.name); present {
+			if err := json.Unmarshal(raw, item.target); err != nil {
+				return err
+			}
+		}
+	}
+	*b = next
+	return nil
 }

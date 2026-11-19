@@ -5,7 +5,7 @@ package deploy
 import (
 	"configflow/internal/agents"
 	"configflow/internal/convert"
-	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"encoding/json"
 )
@@ -199,34 +199,58 @@ type Capabilities struct {
 // UnmarshalJSON refuses null or missing file metadata rather than turning it
 // into a valid zero-length rule. Zero-length files must carry an explicit size.
 func (f *File) UnmarshalJSON(data []byte) error {
-	type plain File
-	var raw struct {
-		Path   *string `json:"path"`
-		Size   *int64  `json:"size"`
-		SHA256 *string `json:"sha256"`
-		Role   *Role   `json:"role"`
-	}
-	if err := jsondecode.Unmarshal(data, &raw); err != nil {
+	var fields model.Fields
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	if raw.Path == nil || raw.Size == nil || raw.SHA256 == nil || raw.Role == nil {
-		return preparation("Invalid deployment manifest file metadata")
-	}
-	return jsondecode.Unmarshal(data, (*plain)(f))
-}
-
-// UnmarshalJSON requires actual booleans for supplied protocol flags, like the
-// real Agent. Null may not silently disable a no-restart/final-config contract.
-func (m *Manifest) UnmarshalJSON(data []byte) error {
-	var flags map[string]json.RawMessage
-	if err := json.Unmarshal(data, &flags); err != nil {
-		return err
-	}
-	for _, key := range []string{"reload_only", "final_config"} {
-		if flag, ok := flags[key]; ok && string(flag) != "true" && string(flag) != "false" {
-			return preparation(key + " must be a boolean")
+	var next File
+	for _, item := range []struct {
+		name     string
+		target   any
+		required bool
+	}{
+		{"path", &next.Path, true}, {"size", &next.Size, true}, {"sha256", &next.SHA256, true}, {"role", &next.Role, true}, {"name", &next.Name, false},
+	} {
+		raw, present := fields.Get(item.name)
+		if item.required && (!present || string(raw) == "null") {
+			return preparation("Invalid deployment manifest file metadata")
+		}
+		if present {
+			if err := json.Unmarshal(raw, item.target); err != nil {
+				return err
+			}
 		}
 	}
-	type plain Manifest
-	return jsondecode.Unmarshal(data, (*plain)(m))
+	*f = next
+	return nil
+}
+
+// UnmarshalJSON reads exact protocol member names and refuses null or nonboolean flags.
+func (m *Manifest) UnmarshalJSON(data []byte) error {
+	var fields model.Fields
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var next Manifest
+	for _, item := range []struct {
+		name   string
+		target any
+	}{
+		{"protocol_version", &next.ProtocolVersion}, {"deployment_id", &next.DeploymentID}, {"agent_id", &next.AgentID},
+		{"profile_id", &next.ProfileID}, {"service_type", &next.ServiceType}, {"config_path", &next.ConfigPath}, {"files", &next.Files},
+		{"reload_only", &next.ReloadOnly}, {"final_config", &next.FinalConfig},
+	} {
+		raw, present := fields.Get(item.name)
+		if !present {
+			continue
+		}
+		if (item.name == "reload_only" || item.name == "final_config") && string(raw) != "true" && string(raw) != "false" {
+			return preparation(item.name + " must be a boolean")
+		}
+		if err := json.Unmarshal(raw, item.target); err != nil {
+			return err
+		}
+	}
+	*m = next
+	return nil
 }

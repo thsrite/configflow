@@ -254,7 +254,7 @@ func (s *Service) configureKeepalived(ctx context.Context, id string, intent *mo
 	e = s.update(held, func(list []*agent) error {
 		for _, old := range members {
 			cur := selected(list, old.ID)
-			if cur == nil || !equal(cur.identity, old.identity) {
+			if cur == nil || !sameHAIdentity(&cur.identity, &old.identity) {
 				return refuse(msgEnableChanged)
 			}
 			if haEnabled(cur) && (cur.OxiDNSHA.GroupID != group || n.previous == nil) {

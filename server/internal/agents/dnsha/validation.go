@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
@@ -52,7 +53,7 @@ func normalize(body json.RawMessage, a, b *agent, list []*agent) (normalized, er
 			return out, refuse(fmt.Sprintf(msgDisabled, name(m)))
 		}
 	}
-	if !equal(parseObject(rawObject(a.identity))["profile_id"], parseObject(rawObject(b.identity))["profile_id"]) {
+	if !agents.HAProfilesMatchModel(a.Agent, b.Agent) {
 		return out, refuse(msgProfile)
 	}
 	ha, ok := unicast(a.Host)

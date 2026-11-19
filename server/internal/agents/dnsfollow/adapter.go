@@ -18,7 +18,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
@@ -45,15 +44,16 @@ func (s *Service) modelAgent(ctx context.Context, a *model.Agent) (*agent, error
 	if a == nil {
 		return nil, nil
 	}
-	target, err := deploy.NewTypedTarget(a)
+	profile, err := s.m.ResolveAgentProfile(ctx, a)
 	if err != nil {
 		return nil, err
 	}
-	if a.ProfileID == "" {
-		a.ProfileID, err = s.m.Repository().DefaultProfileID(ctx)
-		if err != nil {
-			return nil, err
-		}
+	return modelAgentWithProfile(a, profile)
+}
+func modelAgentWithProfile(a *model.Agent, profile string) (*agent, error) {
+	target, err := deploy.NewTypedTarget(a)
+	if err != nil {
+		return nil, err
 	}
 	binding, _, err := a.MemberJSON("dns_follow")
 	if err != nil {
@@ -69,7 +69,8 @@ func (s *Service) modelAgent(ctx context.Context, a *model.Agent) (*agent, error
 	if state == nil {
 		state = json.RawMessage("null")
 	}
-	target.ProfileID = a.ProfileID
+	a.ProfileID = profile
+	target.ProfileID = profile
 	return &agent{Agent: a, target: target, bindingRaw: binding, stateRaw: state, isEnabled: agents.AgentEnabledModel(a)}, nil
 }
 func (s *Service) all(ctx context.Context) ([]*agent, error) {
@@ -77,13 +78,20 @@ func (s *Service) all(ctx context.Context) ([]*agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	profiles, err := s.m.ResolveAgentProfiles(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*agent, 0, len(rows))
 	for i := range rows {
+		if !agents.AgentMatchesID(&rows[i], rows[i].ID) {
+			continue
+		}
 		// Listing historically derives offline; individual reads keep stored status.
 		if !agents.FreshHeartbeat(rows[i].LastHeartbeat, nil) {
 			rows[i].Status = "offline"
 		}
-		a, err := s.modelAgent(ctx, &rows[i])
+		a, err := modelAgentWithProfile(&rows[i], profiles[i])
 		if err != nil {
 			return nil, err
 		}
@@ -116,10 +124,14 @@ func (s *Service) update(ctx context.Context, fn func(context.Context, []*agent)
 		return err
 	}
 	return s.m.EditAgents(ctx, "", func(tx context.Context, rows *[]model.Agent) error {
+		profiles, err := s.m.ResolveAgentProfiles(tx, *rows)
+		if err != nil {
+			return err
+		}
 		list := make([]*agent, 0, len(*rows))
 		for i := range *rows {
 			copy := (*rows)[i]
-			a, err := s.modelAgent(tx, &copy)
+			a, err := modelAgentWithProfile(&copy, profiles[i])
 			if err != nil {
 				return err
 			}
@@ -147,55 +159,81 @@ func (s *Service) update(ctx context.Context, fn func(context.Context, []*agent)
 }
 
 func (s *Service) config(ctx context.Context, a *agent) (*deploy.Source, error) {
-	raw, err := repo.GetConfig(ctx, a.ProfileID)
+	config, err := s.m.Repository().Config(ctx, a.target.ProfileID, nil)
 	if err != nil {
 		return nil, err
 	}
-	return deploy.NewSource(raw, nil), nil
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return deploy.SourceFromJSON(raw, nil)
 }
 func (s *Service) snapshot(ctx context.Context, profile string) (*deploy.Source, *deploy.Revision, error) {
-	raw, revision, e := s.m.Repository().GetPublishSnapshot(ctx, profile, false)
-	if e != nil {
-		return nil, nil, e
+	config, revision, err := s.m.Repository().PublishConfig(ctx, profile, false)
+	if err != nil {
+		return nil, nil, err
 	}
-	return deploy.NewSource(raw, &revision), &deploy.Revision{Value: revision}, nil
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	source, err := deploy.SourceFromJSON(raw, &revision)
+	return source, &deploy.Revision{Value: revision}, err
 }
+
 func activeHA(a *agent) bool { return a != nil && agents.HAActiveModel(a.Agent) }
 func haEnabled(a *agent) bool {
 	return a != nil && agents.HAEnabledModel(a.Agent)
 }
 func (s *Service) poll(ctx context.Context, a *agent, id string) (model.Deployment, error) {
-	raw, e := s.m.GetDeployment(ctx, a.ID, id)
-	var d model.Deployment
-	if e == nil {
-		b, err := json.Marshal(raw)
-		if err != nil {
-			return d, err
-		}
-		e = json.Unmarshal(b, &d)
+	record, err := s.m.GetDeploymentModel(ctx, a.ID, id)
+	if err != nil {
+		return model.Deployment{}, err
 	}
-	return d, e
+	if record == nil {
+		return model.Deployment{}, agents.ErrInvalidAgentReply
+	}
+	return *record, nil
 }
 func (s *Service) reserve(ctx context.Context, a *agent, id string) error {
-	raw, e := s.m.BeginDeployment(ctx, a.ID, id)
-	if e != nil {
-		return e
+	record, err := s.m.ReserveDeployment(ctx, a.ID, id)
+	if err != nil {
+		return err
 	}
-	if raw == nil || !raw.GetBool("success") || raw.GetBool("existing") {
-		msg := msgReserved
-		if raw != nil && raw.GetString("message") != "" {
-			msg = raw.GetString("message")
+	if record == nil || !record.Success || deploymentExisting(record) {
+		message := msgReserved
+		if record != nil && record.Message != nil && *record.Message != "" {
+			message = *record.Message
 		}
-		return refusal(msg)
+		return refusal(message)
 	}
 	return nil
 }
-func (s *Service) failPreparation(ctx context.Context, a *agent, id, message string) error {
-	if e := ctx.Err(); e != nil {
-		return e
+func deploymentExisting(record *model.Deployment) bool {
+	if record == nil {
+		return false
 	}
-	_, e := s.m.RecordDeployment(ctx, a.ID, id, jsonx.Obj("status", "failed", "success", false, "message", msgPrepareFailed, "error_details", message), agents.RecordOptions{OnlyUnsubmitted: true})
-	return e
+	raw, present, err := record.MemberJSON("existing")
+	var flag bool
+	return err == nil && present && json.Unmarshal(raw, &flag) == nil && flag
+}
+func (s *Service) failPreparation(ctx context.Context, a *agent, id, message string) error {
+	patch, err := json.Marshal(struct {
+		Status  string `json:"status"`
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Details string `json:"error_details"`
+	}{"failed", false, msgPrepareFailed, message})
+	if err != nil {
+		return err
+	}
+	update, err := agents.DecodeDeploymentUpdate(patch)
+	if err != nil {
+		return err
+	}
+	_, err = s.m.RecordDeploymentModel(ctx, a.ID, id, update, agents.RecordOptions{OnlyUnsubmitted: true})
+	return err
 }
 
 type deviceReply struct {
@@ -217,18 +255,18 @@ type deviceReply struct {
 // treated as absent instead of failing the whole reply, so a malformed
 // listener answer still gets its specific refusal (R04-F1).
 func (r *deviceReply) UnmarshalJSON(data []byte) error {
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(data, &members); err != nil {
+	var fields model.Fields
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return fmt.Errorf("decode Agent DNS reply: %w", err)
 	}
-	str := func(key string) string {
-		var s string
-		_ = json.Unmarshal(members[key], &s)
-		return s
+	members := map[string]json.RawMessage{}
+	for key, raw := range fields.All() {
+		members[key] = raw
 	}
-	truthy := func(key string) bool {
-		v, err := jsonx.Parse(members[key])
-		return err == nil && jsonx.Truthy(v)
+	str := func(key string) string { var text string; _ = json.Unmarshal(members[key], &text); return text }
+	hasContent := func(key string) bool {
+		present, err := model.JSONHasContent(members[key])
+		return err == nil && present
 	}
 	var status int
 	_ = json.Unmarshal(members["http_status"], &status) // 404 only when integral
@@ -236,7 +274,7 @@ func (r *deviceReply) UnmarshalJSON(data []byte) error {
 	_ = json.Unmarshal(members["enabled"], &enabled)
 	var host string
 	hostIsText := json.Unmarshal(members["host"], &host) == nil && string(members["host"]) != "null"
-	*r = deviceReply{Success: truthy("success"), Failed: truthy("http_status"), HTTPStatus: status, Message: str("message"),
+	*r = deviceReply{Success: hasContent("success"), Failed: hasContent("http_status"), HTTPStatus: status, Message: str("message"),
 		AgentID: str("agent_id"), DeploymentID: str("deployment_id"), Enabled: enabled, Host: host, HostIsText: hostIsText, Port: members["port"],
 		PeerAgentID: str("peer_agent_id"), ServiceType: str("service_type")}
 	return nil
@@ -310,66 +348,57 @@ func (s *Service) tokens(list []*agent) []any {
 	return out
 }
 func (s *Service) safe(message string, list []*agent) string {
-	return agents.FailureText(message, s.tokens(list), 0)
+	return redact.DiagnosticText(message, s.secrets(list), 0)
 }
 
 // FailureMessage uses all current Agent credentials, including private proof
 // values, before exposing a refusal through an HTTP or task response.
 func (s *Service) FailureMessage(ctx context.Context, err error) string {
-	rows, e := s.m.GetAllAgents(ctx, true)
-	if e != nil {
+	secrets := redact.Secrets{}
+	lookupErr := s.m.Repository().ViewAgents(ctx, func(rows []model.Agent) error {
+		for i := range rows {
+			raw, err := model.Marshal(rows[i])
+			if err != nil {
+				return err
+			}
+			secrets = redact.CollectCredentials(json.RawMessage(raw), secrets)
+		}
+		return nil
+	})
+	if lookupErr != nil {
 		return msgUnexpected
 	}
-	secrets := redact.Secrets{}
-	for _, r := range rows {
-		secrets = redact.CollectCredentials(r, secrets)
-		secrets = append(secrets, r.GetString("token"))
-	}
-	values := make([]any, len(secrets))
-	for i, v := range secrets {
-		values[i] = v
-	}
-	return agents.FailureText(err.Error(), values, 0)
+	return redact.DiagnosticText(errText(err), secrets, 0)
 }
-func (s *Service) publicOptions(v OptionsView, list []*agent) (OptionsView, error) {
-	b, e := json.Marshal(v)
-	if e != nil {
-		return v, e
+func errText(err error) string {
+	if err == nil {
+		return ""
 	}
-	raw, e := jsonx.Parse(b)
-	if e != nil {
-		return v, e
-	}
+	return err.Error()
+}
+func (s *Service) secrets(list []*agent) redact.Secrets {
 	secrets := redact.Secrets{}
 	for _, a := range list {
-		secrets = redact.CollectCredentials(a.target.Record, secrets)
-		secrets = append(secrets, a.Token)
+		raw, err := json.Marshal(a.Agent)
+		if err == nil {
+			secrets = redact.CollectCredentials(json.RawMessage(raw), secrets)
+		}
+		secrets = redact.NewSecrets(secrets, []string{a.Token})
 	}
-	b, e = json.Marshal(redact.SanitizeCredentials(raw.(*jsonx.Object), secrets))
-	if e != nil {
-		return v, e
+	return secrets
+}
+func (s *Service) publicOptions(v OptionsView, list []*agent) (OptionsView, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return v, err
 	}
-	e = jsondecode.Unmarshal(b, &v)
-	return v, e
+	err = jsondecode.Unmarshal(redact.SanitizeCredentials(json.RawMessage(raw), s.secrets(list)), &v)
+	return v, err
 }
 func (s *Service) appendEvents(events []model.OperationEvent, status, message, at string, list []*agent) ([]model.OperationEvent, error) {
-	b, e := json.Marshal(events)
-	if e != nil {
-		return nil, e
-	}
-	raw, e := jsonx.Parse(b)
-	if e != nil {
-		return nil, e
-	}
-	next := agents.AppendEvent(raw, status, message, at, s.tokens(list))
-	b, e = json.Marshal(next)
-	if e != nil {
-		return nil, e
-	}
-	var out []model.OperationEvent
-	e = json.Unmarshal(b, &out)
-	return out, e
+	return agents.AppendOperationEvent(events, status, message, at, s.secrets(list)), nil
 }
+
 func (s *Service) recordOutcome(ctx context.Context, id, status, message string) error {
 	if e := ctx.Err(); e != nil {
 		return e

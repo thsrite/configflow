@@ -60,6 +60,9 @@ func (s *Service) containerBoundary(ctx context.Context, members []*agent) error
 	return nil
 }
 func (s *Service) fail(ctx context.Context, j *model.HAJournal, msg, status string) error {
+	if !validJournalChildren(j) {
+		return refuse(msgJournalChanged)
+	}
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -191,7 +194,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 		return refuse(msgJournalChanged)
 	}
 	for index, id := range j.Order {
-		did, ok := j.Children.Get(id)
+		did, ok := journalChildID(j, id)
 		a := selected(members, id)
 		if !ok || a == nil {
 			return refuse(msgInFlightIdentity)
@@ -206,7 +209,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 		}
 		if index == 1 && yes(j.Activate) {
 			first := j.Order[0]
-			fdid, _ := j.Children.Get(first)
+			fdid, _ := journalChildID(j, first)
 			d, e := s.poll(ctx, first, fdid)
 			if e != nil {
 				return e
@@ -386,6 +389,9 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 	return s.save(ctx, j)
 }
 func (s *Service) recovery(ctx context.Context, j *model.HAJournal) error {
+	if !validJournalChildren(j) {
+		return refuse(msgJournalChanged)
+	}
 	resolved := true
 	for id, did := range j.Children.All() {
 		a, e := s.get(ctx, id)

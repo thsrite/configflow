@@ -102,6 +102,17 @@ func (m *Manager) EditAgent(ctx context.Context, id string, edits AgentEdits) (b
 // agentProfileID uses the default only for an absent, null or empty binding.
 // An R5 projection cannot authorize moving a deployment owned by another type.
 func (m *Manager) agentProfileID(ctx context.Context, a *model.Agent) (string, error) {
+	profile, err := agentProfileBinding(a)
+	if err != nil {
+		return "", err
+	}
+	if profile == "" {
+		return m.defaultProfileID(ctx)
+	}
+	return profile, nil
+}
+
+func agentProfileBinding(a *model.Agent) (string, error) {
 	raw, present, err := a.MemberJSON("profile_id")
 	if err != nil {
 		return "", err
@@ -110,10 +121,33 @@ func (m *Manager) agentProfileID(ctx context.Context, a *model.Agent) (string, e
 	if !valid && !storedAbsent(raw, present, nil) {
 		return "", repo.NewValidationError("Invalid profile id")
 	}
-	if profile == "" {
-		return m.defaultProfileID(ctx)
-	}
 	return profile, nil
+}
+
+// ResolveAgentProfiles resolves optional bindings with one default lookup for
+// the entire registry snapshot. It never reloads the document per Agent.
+func (m *Manager) ResolveAgentProfiles(ctx context.Context, rows []model.Agent) ([]string, error) {
+	result := make([]string, len(rows))
+	var fallback string
+	loaded := false
+	for i := range rows {
+		profile, err := agentProfileBinding(&rows[i])
+		if err != nil {
+			return nil, err
+		}
+		if profile == "" {
+			if !loaded {
+				fallback, err = m.defaultProfileID(ctx)
+				if err != nil {
+					return nil, err
+				}
+				loaded = true
+			}
+			profile = fallback
+		}
+		result[i] = profile
+	}
+	return result, ctx.Err()
 }
 
 // sameAgentMember compares protocol scalars with their stored type evidence.
@@ -297,15 +331,23 @@ func (m *Manager) DeleteAgent(ctx context.Context, id string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return true, nil
 	}
-	m.runtime.Delete(id)
+	if err := m.runtime.deleteContext(ctx, id); err != nil {
+		return true, nil
+	}
 	h := currentHooks()
-	if h.DeleteMetricsHistory != nil {
+	if h.DeleteMetricsHistoryContext != nil {
+		_ = h.DeleteMetricsHistoryContext(ctx, m, id) // The history owner logs ordinary file failures.
+	} else if h.DeleteMetricsHistory != nil {
 		h.DeleteMetricsHistory(m, id)
 	}
-	if h.DeleteTrafficHistory != nil {
-		if err := h.DeleteTrafficHistory(m, id); err != nil {
-			logger.Warningf(msgTrafficHistoryDeleteFailure, registryDiagnostic(deleted, id, 120), registryDiagnostic(deleted, err.Error(), DetailLimit))
-		}
+	var cleanupErr error
+	if h.DeleteTrafficHistoryContext != nil {
+		cleanupErr = h.DeleteTrafficHistoryContext(ctx, m, id)
+	} else if h.DeleteTrafficHistory != nil {
+		cleanupErr = h.DeleteTrafficHistory(m, id)
+	}
+	if cleanupErr != nil && ctx.Err() == nil {
+		logger.Warningf(msgTrafficHistoryDeleteFailure, registryDiagnostic(deleted, id, 120), registryDiagnostic(deleted, cleanupErr.Error(), DetailLimit))
 	}
 	return true, nil
 }

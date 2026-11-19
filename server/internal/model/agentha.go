@@ -306,3 +306,13 @@ func (r *HAPublicationSummary) HasMembers() bool {
 func (r *HAPublicationSummary) MemberJSON(member string) (json.RawMessage, bool, error) {
 	return recordMemberJSON(r, &r.raw, member)
 }
+
+// MemberJSON reads one original HA identity field without scalar projection.
+func (r *HAIdentity) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}
+
+// MemberJSON reads one original HA enable field without scalar projection.
+func (r *HAEnable) MemberJSON(name string) (json.RawMessage, bool, error) {
+	return recordMemberJSON(r, &r.raw, name)
+}

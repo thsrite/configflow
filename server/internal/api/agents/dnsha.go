@@ -62,6 +62,9 @@ func dnsHABinding(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.JSONStatus(409, body), nil
 	}
 	if e != nil {
+		if failure, ok := deviceResponseFailure(e); ok {
+			return failure, nil
+		}
 		return nil, e
 	}
 	return httpx.JSONStatus(code, result), nil

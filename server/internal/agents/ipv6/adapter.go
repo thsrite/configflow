@@ -17,6 +17,7 @@ import (
 	"configflow/internal/deploy"
 	healthcheck "configflow/internal/health/check"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/yamlbridge"
@@ -45,15 +46,32 @@ func native(o *jsonx.Object) Document {
 	return object(b)
 }
 func (s *Service) snapshot(ctx context.Context, profile string) (Document, int64, error) {
-	o, r, e := s.Manager.Repository().GetPublishSnapshot(ctx, profile, true)
-	return native(o), r, e
+	config, revision, err := s.Manager.Repository().PublishConfig(ctx, profile, true)
+	if err != nil {
+		return nil, 0, err
+	}
+	data, err := model.Marshal(config)
+	return object(data), revision, err
+}
+func agentDocument(a *model.Agent) (Document, error) {
+	if a == nil {
+		return nil, nil
+	}
+	data, err := model.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+	return object(data), nil
 }
 func (s *Service) agent(ctx context.Context, id, profile string) (Document, error) {
-	a, e := s.Manager.GetAgentByID(ctx, id, true)
-	if e != nil {
-		return nil, e
+	a, err := s.Manager.ReadAgent(ctx, id, true)
+	if err != nil {
+		return nil, err
 	}
-	d := native(a)
+	d, err := agentDocument(a)
+	if err != nil {
+		return nil, err
+	}
 	if d == nil {
 		return nil, failure("AGENT_NOT_FOUND", 404, msgMissing)
 	}
@@ -72,15 +90,15 @@ func (s *Service) lookup(ctx context.Context, id string) Document {
 	if id == "" {
 		return nil
 	}
-	a, e := s.Manager.GetAgentByID(ctx, id, true)
-	if e != nil {
+	a, err := s.Manager.ReadAgent(ctx, id, true)
+	if err != nil {
 		return nil
 	}
-	return native(a)
+	d, _ := agentDocument(a)
+	return d
 }
 func online(a Document) bool {
-	o, e := legacy(a)
-	return e == nil && agents.OnlineStatus(o, nil) != "offline"
+	return agents.FreshHeartbeat(text(a["last_heartbeat"]), nil) && text(a["status"]) != "offline"
 }
 func origin(a Document) (string, error) {
 	o, e := legacy(a)
@@ -89,6 +107,7 @@ func origin(a Document) (string, error) {
 	}
 	return monitor.AgentOrigin(o)
 }
+
 func (s *Service) publication(ctx context.Context, a, config Document, revision int64, wait bool) string {
 	applied := object(a["applied_content"])
 	if text(applied["deployment_id"]) == "" || len(a["config_revision"]) == 0 || string(a["config_revision"]) == "null" {
@@ -166,7 +185,14 @@ func (s *Service) request(ctx context.Context, a Document, operation string, pay
 	if !json.Valid(response.Body) {
 		return nil, failure("INVALID_RESPONSE", 502, msgResponseJSON)
 	}
-	data := object(response.Body)
+	var fields model.Fields
+	if json.Unmarshal(response.Body, &fields) != nil {
+		return nil, failure("INVALID_RESPONSE", 502, msgResponseShape)
+	}
+	data := Document{}
+	for key, value := range fields.All() {
+		data[key] = value
+	}
 	if data == nil {
 		return nil, failure("INVALID_RESPONSE", 502, msgResponseShape)
 	}
@@ -189,59 +215,57 @@ func (s *Service) request(ctx context.Context, a Document, operation string, pay
 }
 
 func (s *Service) all(ctx context.Context) ([]Document, error) {
-	rows, e := s.Manager.GetAllAgents(ctx, true)
-	if e != nil {
-		return nil, e
+	records, err := s.Manager.ReadAgents(ctx, true, nil)
+	if err != nil {
+		return nil, err
 	}
-	out := []Document{}
-	for _, a := range rows {
-		if a != nil {
-			out = append(out, native(a))
+	out := make([]Document, 0, len(records))
+	for i := range records {
+		if !agents.FreshHeartbeat(records[i].LastHeartbeat, nil) {
+			records[i].Status = "offline"
 		}
+		d, err := agentDocument(&records[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
 	}
 	return out, nil
 }
 func (s *Service) update(ctx context.Context, id string, fn func(context.Context, Document, []Document) error) error {
-	if e := ctx.Err(); e != nil {
-		return e
-	}
-	_, e := s.Manager.UpdateAgents(ctx, "", func(ctx context.Context, rows *[]any) (any, error) {
-		if e := ctx.Err(); e != nil {
-			return nil, e
-		}
-		all := []Document{}
+	return s.Manager.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		all := make([]Document, 0, len(*records))
 		index := -1
-		for i, v := range *rows {
-			if a, ok := v.(*jsonx.Object); ok {
-				d := native(a)
-				all = append(all, d)
-				if text(d["id"]) == id {
-					index = i
-				}
+		for i := range *records {
+			a := &(*records)[i]
+			d, err := agentDocument(a)
+			if err != nil {
+				return err
+			}
+			all = append(all, d)
+			if agents.AgentMatchesID(a, id) {
+				index = i
 			}
 		}
 		var current Document
 		if index >= 0 {
-			current = native((*rows)[index].(*jsonx.Object))
+			current = all[index]
 		}
-		if e := fn(ctx, current, all); e != nil {
-			return nil, e
+		if err := fn(tx, current, all); err != nil {
+			return err
 		}
 		if index < 0 {
-			return nil, nil
+			return nil
 		}
-		next, e := legacy(current)
-		if e != nil {
-			return nil, e
+		var next model.Agent
+		if err := json.Unmarshal(raw(current), &next); err != nil {
+			return err
 		}
-		if e = ctx.Err(); e != nil {
-			return nil, e
-		}
-		(*rows)[index] = next
-		return nil, nil
+		(*records)[index] = next
+		return tx.Err()
 	})
-	return e
 }
+
 func validURL(value string) error { return healthcheck.ValidateHealth(jsonx.Obj("url", value), false) }
 func defaultURL() string          { return healthcheck.GroupDefaults().GetString("url") }
 func (s *Service) capabilities(ctx context.Context, a Document) Document {

@@ -39,9 +39,13 @@ type Hooks struct {
 	AddMetricsJSON func(ctx context.Context, m *Manager, agentID string, sample json.RawMessage) error
 	// DeleteMetricsHistory is metrics_history.delete_agent_history (#21).
 	DeleteMetricsHistory func(m *Manager, agentID string)
+	// DeleteMetricsHistoryContext is the native shutdown-aware history cleanup.
+	DeleteMetricsHistoryContext func(context.Context, *Manager, string) error
 	// DeleteTrafficHistory is traffic_history.delete (#21); an error is
 	// logged as a warning.
 	DeleteTrafficHistory func(m *Manager, agentID string) error
+	// DeleteTrafficHistoryContext keeps the work lifetime through auxiliary storage.
+	DeleteTrafficHistoryContext func(context.Context, *Manager, string) error
 
 	// PublicationComplete and PublicationCheckpoint are
 	// oxidns_publication_stats.complete / checkpoint (#21). Default: nothing.
@@ -101,9 +105,17 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.DeleteMetricsHistory != nil {
 		hooks.DeleteMetricsHistory = h.DeleteMetricsHistory
+		hooks.DeleteMetricsHistoryContext = nil
 	}
 	if h.DeleteTrafficHistory != nil {
 		hooks.DeleteTrafficHistory = h.DeleteTrafficHistory
+		hooks.DeleteTrafficHistoryContext = nil
+	}
+	if h.DeleteMetricsHistoryContext != nil {
+		hooks.DeleteMetricsHistoryContext = h.DeleteMetricsHistoryContext
+	}
+	if h.DeleteTrafficHistoryContext != nil {
+		hooks.DeleteTrafficHistoryContext = h.DeleteTrafficHistoryContext
 	}
 	if h.PublicationComplete != nil {
 		hooks.PublicationComplete = h.PublicationComplete

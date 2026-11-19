@@ -222,3 +222,18 @@ func (m *Manager) defaultHAActivateModel(ctx context.Context, agentID, id string
 	}
 	return m.ActivateCandidateModel(ctx, agentID, id)
 }
+
+// HAProfilesMatchModel compares optional original string bindings for a pair.
+func HAProfilesMatchModel(left, right *model.Agent) bool {
+	return left != nil && right != nil && haProfilesMatch(left, right)
+}
+
+// HAPairMatchesModel verifies reciprocal original string pair identities.
+func HAPairMatchesModel(left, right *model.Agent) bool {
+	if left == nil || right == nil || !AgentMatchesID(left, left.ID) || !AgentMatchesID(right, right.ID) || !HAEnabledModel(left) || !HAEnabledModel(right) {
+		return false
+	}
+	group, peer, ok := haPairIdentity(left)
+	otherGroup, otherPeer, otherOK := haPairIdentity(right)
+	return ok && otherOK && peer == right.ID && otherPeer == left.ID && group == otherGroup && haProfilesMatch(left, right)
+}

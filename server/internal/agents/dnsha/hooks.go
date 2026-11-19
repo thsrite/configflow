@@ -68,7 +68,7 @@ func (s *Service) Publish(ctx context.Context, id string, b *deploy.Bundle, o de
 		previous := a.OxiDNSHAPublication
 		did := b.Manifest().DeploymentID
 		if previous != nil {
-			if old, _ := previous.Children.Get(id); old == did {
+			if old, _ := journalChildID(previous, id); old == did {
 				_, original, e := s.readPayload(ctx, previous)
 				if e != nil {
 					return e
@@ -187,7 +187,7 @@ func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool
 	}
 	child := ""
 	if j != nil {
-		child, _ = j.Children.Get(id)
+		child, _ = journalChildID(j, id)
 	}
 	if child == "" || child != did {
 		r, e := s.m.GetDeploymentDirect(ctx, id, did)
@@ -238,7 +238,7 @@ func (s *Service) Activate(ctx context.Context, id, did string) (out *agents.Res
 		}
 		child := ""
 		if j != nil {
-			child, _ = j.Children.Get(id)
+			child, _ = journalChildID(j, id)
 		}
 		if child == "" || child != did {
 			if r := conflict(a); r != nil {
