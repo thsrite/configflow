@@ -72,6 +72,14 @@ func TestReviewPollReference(t *testing.T) {
 			}
 			e.update(fields...)
 			state, err := Poll(e.ctx, e.m, e.ident)
+			policy := nativeReference(t, "poll", c.GetString("name"), c)
+			if policy != nil {
+				verifyNativeCorruptReference(t, policy, err)
+				if !jsonx.Equal(withoutVolatile(e.agent().Value("latest_upgrade")), withoutVolatile(c.Value("record"))) {
+					t.Fatal("damaged record was written")
+				}
+				return
+			}
 			if want := c.Value("error"); want != nil {
 				if err == nil {
 					t.Fatalf("poll = %s, Python %s", jsonx.Repr(state), want)
@@ -110,6 +118,10 @@ func TestReviewStartReadsPreviousRecordInsideReservation(t *testing.T) {
 			}
 			e.update(append([]any{"token", "t", "latest_upgrade", "abc"}, extra...)...)
 			_, err := Start(e.ctx, e.m, e.ident)
+			if policy := nativeReference(t, "start", name, jsonx.Obj("name", name, "python_error", starts.GetString(name))); policy != nil {
+				verifyNativeCorruptReference(t, policy, err)
+				return
+			}
 			if err == nil || pyErrorText(err) != starts.GetString(name) {
 				t.Fatalf("start error %v, Python %s", err, starts.GetString(name))
 			}
@@ -183,6 +195,9 @@ func TestReviewLatin1Tokens(t *testing.T) {
 				}
 				expected := want.GetObject(call)
 				got := <-seen
+				if verifyNativeCredentialReference(t, name, token, want, got, err) {
+					continue
+				}
 				if wantAuth, _ := expected.Value("authorization").(string); got != wantAuth {
 					t.Errorf("%s: Authorization %q, Python %q", call, got, wantAuth)
 				}

@@ -50,7 +50,7 @@ func newUpgradeEnv(t *testing.T) *upgradeEnv {
 		}
 		return out, nil
 	}))
-	t.Cleanup(func() { requestHook = nil })
+	t.Cleanup(func() { requestHook = nil; requestOverride = nil })
 	return &upgradeEnv{t: t, ctx: ctx, repo: r, m: m, ident: agent.GetString("id")}
 }
 

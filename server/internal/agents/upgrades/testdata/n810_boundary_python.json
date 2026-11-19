@@ -1,0 +1,437 @@
+[
+  {
+    "original": {
+      "name": "wrong worker identity with correct executable proof",
+      "operation": "poll",
+      "agent": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0",
+        "latest_upgrade": {
+          "update_id": "job",
+          "agent_id": "a1",
+          "status": "checking",
+          "protocol": 2,
+          "started_at": 1800000000.0,
+          "previous_version": "1.0",
+          "target_version": "1.8.61-go"
+        }
+      },
+      "info": {
+        "agent_id": "a1",
+        "version": "1.8.61-go",
+        "migration_ready": true
+      },
+      "worker": {
+        "update_id": "job",
+        "agent_id": "other",
+        "status": "succeeded"
+      },
+      "artifacts": {
+        "linux-amd64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-arm64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-armv7": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        }
+      },
+      "now": 1800000000.0,
+      "python": {
+        "result": {
+          "update_id": "job",
+          "agent_id": "a1",
+          "status": "succeeded",
+          "protocol": 2,
+          "started_at": 1800000000.0,
+          "previous_version": "1.0",
+          "target_version": "1.8.61-go",
+          "error": "",
+          "events": [
+            {
+              "at": "2027-01-15T08:00:00.000000Z",
+              "status": "succeeded"
+            }
+          ],
+          "updated_at": 1800000000.0
+        }
+      },
+      "stored": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0",
+        "latest_upgrade": {
+          "update_id": "job",
+          "agent_id": "a1",
+          "status": "succeeded",
+          "protocol": 2,
+          "started_at": 1800000000.0,
+          "previous_version": "1.0",
+          "target_version": "1.8.61-go",
+          "error": "",
+          "events": [
+            {
+              "at": "2027-01-15T08:00:00.000000Z",
+              "status": "succeeded"
+            }
+          ],
+          "updated_at": 1800000000.0
+        }
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/update",
+          "json": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/upgrade-info",
+          "json": null
+        }
+      ]
+    },
+    "row_sha256": "a38222c8b9c8c5ae0cd83946e3906ce245db9614dbbba7695595c34aaaa8207b",
+    "native": "pending"
+  },
+  {
+    "original": {
+      "name": "architecture missing",
+      "operation": "start",
+      "agent": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0"
+      },
+      "info": {
+        "agent_id": "a1",
+        "deployment_method": "shell"
+      },
+      "worker": null,
+      "artifacts": {
+        "linux-amd64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-arm64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-armv7": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        }
+      },
+      "now": 1800000000.0,
+      "python": {
+        "error_class": "KeyError",
+        "error": "None"
+      },
+      "stored": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0",
+        "latest_upgrade": {
+          "update_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "target_version": "1.8.61-go",
+          "previous_version": "1.0",
+          "status": "queued",
+          "agent_id": "a1",
+          "started_at": 1800000000.0,
+          "updated_at": 1800000000.0,
+          "protocol": 2,
+          "artifacts": {
+            "linux-amd64": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            },
+            "linux-arm64": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            },
+            "linux-armv7": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            }
+          },
+          "message": "正在提交 Agent 1.8.61-go 更新请求",
+          "events": [
+            {
+              "at": "2027-01-15T08:00:00.000000Z",
+              "status": "queued",
+              "message": "正在提交 Agent 1.8.61-go 更新请求"
+            }
+          ]
+        }
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/upgrade-info",
+          "json": null
+        }
+      ]
+    },
+    "row_sha256": "40810312a351a435f41e12658eeb1714c3fbb6f9b69fb60af7accb2808191d73",
+    "native": "refuse-before-reserve"
+  },
+  {
+    "original": {
+      "name": "architecture empty",
+      "operation": "start",
+      "agent": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0"
+      },
+      "info": {
+        "agent_id": "a1",
+        "deployment_method": "shell",
+        "architecture": ""
+      },
+      "worker": null,
+      "artifacts": {
+        "linux-amd64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-arm64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-armv7": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        }
+      },
+      "now": 1800000000.0,
+      "python": {
+        "error_class": "KeyError",
+        "error": "''"
+      },
+      "stored": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0",
+        "latest_upgrade": {
+          "update_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "target_version": "1.8.61-go",
+          "previous_version": "1.0",
+          "status": "queued",
+          "agent_id": "a1",
+          "started_at": 1800000000.0,
+          "updated_at": 1800000000.0,
+          "protocol": 2,
+          "artifacts": {
+            "linux-amd64": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            },
+            "linux-arm64": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            },
+            "linux-armv7": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            }
+          },
+          "message": "正在提交 Agent 1.8.61-go 更新请求",
+          "events": [
+            {
+              "at": "2027-01-15T08:00:00.000000Z",
+              "status": "queued",
+              "message": "正在提交 Agent 1.8.61-go 更新请求"
+            }
+          ]
+        }
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/upgrade-info",
+          "json": null
+        }
+      ]
+    },
+    "row_sha256": "7abe009faf978bf1266436e3a469cef196292424198bfbbcb5dbd308fd1cee85",
+    "native": "refuse-before-reserve"
+  },
+  {
+    "original": {
+      "name": "architecture number",
+      "operation": "start",
+      "agent": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0"
+      },
+      "info": {
+        "agent_id": "a1",
+        "deployment_method": "shell",
+        "architecture": 7
+      },
+      "worker": null,
+      "artifacts": {
+        "linux-amd64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-arm64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-armv7": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        }
+      },
+      "now": 1800000000.0,
+      "python": {
+        "error_class": "ValueError",
+        "error": "更新文件未准备就绪，请先更新 ConfigFlow 主服务镜像"
+      },
+      "stored": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0"
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/upgrade-info",
+          "json": null
+        }
+      ]
+    },
+    "row_sha256": "7a413a9de249fa0327df2e506ac2b7b3795983b5e1a6d6b0ac6fa80882a0df4e",
+    "native": "refuse-before-reserve"
+  },
+  {
+    "original": {
+      "name": "architecture array",
+      "operation": "start",
+      "agent": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0"
+      },
+      "info": {
+        "agent_id": "a1",
+        "deployment_method": "shell",
+        "architecture": []
+      },
+      "worker": null,
+      "artifacts": {
+        "linux-amd64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-arm64": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        },
+        "linux-armv7": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "size": 100
+        }
+      },
+      "now": 1800000000.0,
+      "python": {
+        "error_class": "TypeError",
+        "error": "unhashable type: 'list'"
+      },
+      "stored": {
+        "id": "a1",
+        "name": "synthetic",
+        "host": "192.0.2.1",
+        "port": 8080,
+        "token": "synthetic-token",
+        "deployment_method": "shell",
+        "version": "1.0",
+        "latest_upgrade": {
+          "update_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "target_version": "1.8.61-go",
+          "previous_version": "1.0",
+          "status": "queued",
+          "agent_id": "a1",
+          "started_at": 1800000000.0,
+          "updated_at": 1800000000.0,
+          "protocol": 2,
+          "artifacts": {
+            "linux-amd64": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            },
+            "linux-arm64": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            },
+            "linux-armv7": {
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 100
+            }
+          },
+          "message": "正在提交 Agent 1.8.61-go 更新请求",
+          "events": [
+            {
+              "at": "2027-01-15T08:00:00.000000Z",
+              "status": "queued",
+              "message": "正在提交 Agent 1.8.61-go 更新请求"
+            }
+          ]
+        }
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/upgrade-info",
+          "json": null
+        }
+      ]
+    },
+    "row_sha256": "e48a976ed912527835c6234637ade134a28d9be858daaafd03bb11859953cf72",
+    "native": "refuse-before-reserve"
+  }
+]

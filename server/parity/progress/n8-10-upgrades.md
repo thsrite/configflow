@@ -23,3 +23,17 @@ Corpus|Reference|Golden/pyref audit；最终报告及rebase。所有检查经 rt
 已执行：rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -p 4 -run "^$"
 ./internal/agents/upgrades ./internal/api/agents'：.32 PASS 0.004s/0.012s（编译）。
 完整定向包测试仍在执行；尚未标记通过。不存在半迁移的第二套产品状态机。
+
+实现提交：773af91d3。补充实现/验证中：
+- 已批准两处 Python bug：worker final必须同一回包的id/update/status；空/缺失/错型arch
+  在reservation前409、不遗留queued。5条真实Python独立对照已冻结，每行SHA绑定。
+- 已确认单Agent坏string旧404、pair-list旧200统一改明确CorruptStateError500；int500保持。
+  协调者再次明确批准，列表页须继续200并保留健康条目（已补测试，待验证）。
+- 原A15 archive SHA未改；38条native字段/凭据拒绝逐行绑定，负控不让修改输入使用豁免。
+  非字符串error的人工dict repr转native JSON诊断已批准；实际HTTP原始8条记录（含正常
+  update对照）来自真实Python，不读取Go响应。7条完整native HTTP结果与两棵完整存储
+  子树由Python policy独立推导，保留原130-request表和原core-2十条策略。
+- .32包级race完整 PASS60.267s（其后仅新增更早守卫验证、GETbootstrap校验、API明确损坏
+  诊断及额外Runtime/列表回归；最终增量仍在验证）。HTTP差分初次发现混合地址数组的
+  typed []string会丢全部条目，已改逐项原始string过滤；重新差分执行中。
+- 文档已补具体SQLite离线修复字段/事务/代际及后果；没有新增产品恢复API或UI。

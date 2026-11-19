@@ -81,6 +81,9 @@ func Usable(text string) string {
 // FollowModel verifies a reported host in an originating-runtime background job.
 func FollowModel(ctx context.Context, m *agents.Manager, a *model.Agent, reportedHost string) error {
 	ctx = lifecycle.Detach(ctx)
+	if a == nil {
+		return agents.ErrAgentEndpoint
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -132,6 +135,9 @@ func FollowModel(ctx context.Context, m *agents.Manager, a *model.Agent, reporte
 
 // ConfirmedModel returns a usable host only when the original stored host agrees.
 func ConfirmedModel(a *model.Agent, reportedHost string) string {
+	if a == nil {
+		return ""
+	}
 	host := Usable(reportedHost)
 	old, ok := originalString(a.MemberJSON("host"))
 	if ok && host != "" && host == old {
@@ -370,6 +376,9 @@ type AddressDescription struct {
 
 // DescribeModel reads device address capabilities without modifying the record.
 func DescribeModel(ctx context.Context, m *agents.Manager, a *model.Agent) (*AddressDescription, error) {
+	if a == nil {
+		return nil, agents.ErrAgentEndpoint
+	}
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -401,10 +410,11 @@ func DescribeModel(ctx context.Context, m *agents.Manager, a *model.Agent) (*Add
 	result.Mode, result.Message = addressMode(a, status, info)
 	result.Reachable = true
 	if raw, ok := info.Get("addresses"); ok && result.Mode == "agent" {
-		var listed []string
+		var listed []json.RawMessage
 		if jsondecode.Unmarshal(raw, &listed) == nil {
-			for _, address := range listed {
-				if Usable(address) != "" {
+			for _, rawAddress := range listed {
+address,valid:=originalString(rawAddress,true,nil)
+				if valid && Usable(address) != "" {
 					result.Addresses = append(result.Addresses, address)
 				}
 			}
@@ -429,6 +439,9 @@ func refusalModel(message string) *AddressResult { return &AddressResult{Message
 
 // ChangeModel verifies a host, updates writable device settings, then edits the registry.
 func ChangeModel(ctx context.Context, m *agents.Manager, a *model.Agent, value string) (*AddressResult, int, error) {
+	if a == nil {
+		return nil, 0, agents.ErrAgentEndpoint
+	}
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, 0, err

@@ -4,6 +4,7 @@ package upgrades
 
 import (
 	"context"
+"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -67,6 +68,29 @@ func readState(a *model.Agent) (*model.AgentUpgrade, error) {
 		return nil, &CorruptStateError{Field: "latest_upgrade"}
 	}
 	state := *a.LatestUpgrade
+	for _, key := range []string{"update_id", "agent_id", "target_version", "previous_version", "agent_updated_at"} {
+		raw, present, e := state.MemberJSON(key)
+		if e != nil {
+			return nil, e
+		}
+		if present && string(raw) != "null" {
+			if _, ok := originalString(raw, true, nil); !ok {
+				return nil, &CorruptStateError{Field: "latest_upgrade." + key}
+			}
+		}
+	}
+	for _, key := range []string{"started_at", "recovery_reported_at"} {
+		if _, _, err := stateNumber(&state, key, false); err != nil {
+			return nil, err
+		}
+	}
+	if raw, present, e := state.MemberJSON("protocol"); e != nil {
+		return nil, e
+	} else if present && string(raw) != "null" {
+		if _, err := stateProtocol(&state); err != nil {
+			return nil, err
+		}
+	}
 	if _, ok := originalString(state.MemberJSON("status")); !ok {
 		return nil, &CorruptStateError{Field: "latest_upgrade.status"}
 	}
@@ -84,7 +108,8 @@ func stateNumber(state *model.AgentUpgrade, key string, required bool) (float64,
 	if err != nil {
 		return 0, false, err
 	}
-	if !present || string(raw) == "null" {
+	raw=bytes.TrimSpace(raw)
+if !present || string(raw) == "null" {
 		if required {
 			return 0, false, &CorruptStateError{Field: "latest_upgrade." + key}
 		}
@@ -279,13 +304,22 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 			return nil, valueError(msgCannotConnect)
 		}
 		data := responseData(response)
-		var fields model.Fields
-		if jsondecode.Unmarshal(data, &fields) != nil {
-			return nil, agents.ErrInvalidAgentReply
+		if !json.Valid(data) {
+			return nil, valueError(msgCannotConnect)
 		}
-		hasInfo = fields.Len() > 0
-		if hasInfo && decodeProtocol(data, &info) != nil {
-			return nil, agents.ErrInvalidAgentReply
+		nonempty, err := model.JSONHasContent(data)
+		if err != nil {
+			return nil, valueError(msgCannotConnect)
+		}
+		hasInfo = nonempty
+		if hasInfo {
+			var fields model.Fields
+			if jsondecode.Unmarshal(data, &fields) != nil {
+				return nil, agents.ErrInvalidAgentReply
+			}
+			info.AgentID, _ = fieldString(fields, "agent_id")
+			info.DeploymentMethod, _ = fieldString(fields, "deployment_method")
+			info.Architecture, _ = fieldString(fields, "architecture")
 		}
 	}
 	if hasInfo && (info.AgentID != agentID || info.DeploymentMethod != "shell") {
@@ -317,9 +351,9 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 	if !validVersion(target) || present && previous != "" && !validVersion(previous) {
 		return nil, agents.ErrInvalidAgentReply
 	}
-	if raw, exists, e := a.MemberJSON("version"); e != nil {
+	if _, exists, e := a.MemberJSON("version"); e != nil {
 		return nil, e
-	} else if exists && !present && string(raw) != "null" {
+	} else if exists && !present {
 		return nil, &CorruptStateError{Field: "version"}
 	}
 	id, err := updateIDSource()
@@ -479,7 +513,15 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 		return nil, err
 	}
 	version, versionOK := originalString(a.MemberJSON("version"))
-	if present && recovery != 0 && versionOK && version == previous && heartbeatAfterModel(a, recovery) {
+	afterRecovery := false
+	if present && recovery != 0 && versionOK && version == previous {
+		var e error
+		afterRecovery, e = heartbeatAfterModel(a, recovery)
+		if e != nil {
+			return nil, e
+		}
+	}
+	if afterRecovery {
 		saved, e := saveModel(ctx, m, agentID, id, upgradePatch{Status: "rolled_back"}, false)
 		if e == nil || !IsValueError(e) {
 			return saved, e
@@ -495,7 +537,15 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 	}
 	deadline := started + 600
 	if now() > deadline {
-		if versionOK && version == previous && heartbeatAfterModel(a, deadline) {
+		afterDeadline := false
+		if versionOK && version == previous {
+			var e error
+			afterDeadline, e = heartbeatAfterModel(a, deadline)
+			if e != nil {
+				return nil, e
+			}
+		}
+		if afterDeadline {
 			return saveModel(ctx, m, agentID, id, upgradePatch{Status: "failed", Error: new(fmt.Sprintf(msgUpgradeIneffective, previous))}, false)
 		}
 		if state.Status != "unknown" {
@@ -522,7 +572,9 @@ func pollAgentModel(ctx context.Context, m *agents.Manager, a *model.Agent, agen
 			return caught(err)
 		}
 		if response.StatusCode == 200 {
-			if err := decodeProtocol(responseData(response), &observation); err != nil {
+			var err error
+			observation, err = decodeWorker(responseData(response))
+			if err != nil {
 				return caught(err)
 			}
 			if observation.UpdateID == state.UpdateID && observation.AgentID == agentID && Stages[observation.Status] {
@@ -542,8 +594,8 @@ func pollAgentModel(ctx context.Context, m *agents.Manager, a *model.Agent, agen
 		return caught(err)
 	}
 	if response.StatusCode == 200 {
-		var info Info
-		if err := decodeProtocol(responseData(response), &info); err != nil {
+		info, err := decodeInfo(responseData(response))
+		if err != nil {
 			return caught(err)
 		}
 		if info.AgentID == agentID && validVersion(info.Version) && info.Version == state.TargetVersion && info.MigrationReady && (protocol == 1 || worker != nil && worker.Status == "succeeded") {
@@ -620,3 +672,7 @@ func ReportLegacyJSON(ctx context.Context, m *agents.Manager, agentID string, da
 	}
 	return saveModel(ctx, m, agentID, id, upgradePatch{Status: "rolling_back", RecoveryReportedAt: new(now()), Error: &text}, false)
 }
+
+// StoredState validates the original persisted journal without contacting the
+// Agent. The protocol-1 bootstrap uses this to read its own pending plan.
+func StoredState(a *model.Agent)(*model.AgentUpgrade,error){if a==nil{return nil,nil};return readState(a)}

@@ -23,7 +23,7 @@ import (
 )
 
 func registerUpgrades(r *httpx.Router) {
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/address", "agents.agent_address", auth.Require(agentAddress))
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/address", "agents.agent_address", auth.Require(upgradeStateErrors(agentAddress)))
 	r.POST("/api/agents/<agent_id>/restart", "agents.restart_agent", auth.Require(operation(restartAgent)))
 	r.GET("/api/agents/<agent_id>/status", "agents.get_agent_status", auth.Require(getAgentStatus))
 	r.GET("/api/agents/<agent_id>/logs", "agents.get_agent_logs", auth.Require(operation(getAgentLogs)))
@@ -33,11 +33,19 @@ func registerUpgrades(r *httpx.Router) {
 	r.GET("/api/agents/<agent_id>/config/logging", "agents.get_logging_config", auth.Require(operation(getLoggingConfig)))
 	r.POST("/api/agents/<agent_id>/config/logging", "agents.set_logging_config", auth.Require(operation(setLoggingConfig)))
 	r.POST("/api/agents/<agent_id>/uninstall", "agents.uninstall_agent", auth.Require(operation(uninstallAgent)))
-	r.POST("/api/agents/<agent_id>/update", "agents.update_agent_version", auth.Require(updateAgentVersion))
-	r.GET("/api/agents/<agent_id>/upgrade", "agents.get_agent_upgrade", getAgentUpgrade)
-	r.POST("/api/agents/<agent_id>/upgrade/report", "agents.report_agent_upgrade", reportAgentUpgrade)
+	r.POST("/api/agents/<agent_id>/update", "agents.update_agent_version", auth.Require(upgradeStateErrors(updateAgentVersion)))
+	r.GET("/api/agents/<agent_id>/upgrade", "agents.get_agent_upgrade", upgradeStateErrors(getAgentUpgrade))
+	r.POST("/api/agents/<agent_id>/upgrade/report", "agents.report_agent_upgrade", upgradeStateErrors(reportAgentUpgrade))
 	r.GET("/api/agents/latest-version", "agents.get_latest_agent_version", auth.Require(getLatestAgentVersion))
 }
+
+// upgradeStateErrors surfaces damaged stored evidence without changing its 500 class.
+func upgradeStateErrors(handler httpx.HandlerFunc)httpx.HandlerFunc{return func(c *httpx.Ctx)(*httpx.Response,error){
+ response,err:=handler(c)
+ var corrupt *upgrades.CorruptStateError
+ if errors.As(err,&corrupt){return failure(500,corrupt.Error()),nil}
+ return response,err
+}}
 
 // operation is the `try: ... except Exception as e: return jsonify({'success':
 // False, 'message': str(e)}), 500` wrapper of the operation routes.
@@ -339,6 +347,7 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	if agentTokenMatches(c, agent) {
 		// Legacy bootstrap reads its own pending plan; no recursive Agent call.
+if _,err:=upgrades.StoredState(agent);err!=nil{return nil,err}
 		state, present, err := agent.MemberJSON("latest_upgrade")
 		if err != nil {
 			return nil, err
@@ -346,7 +355,7 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 		if !present || string(state) == "null" {
 			state = json.RawMessage(`{}`)
 		}
-		return httpx.JSON(state), nil
+		return httpx.JSON(json.RawMessage(state)), nil
 	}
 	return auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		state, err := upgrades.PollModel(ctx, manager, agentID)

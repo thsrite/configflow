@@ -558,6 +558,7 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
 	}
+if path:=os.Getenv("N810_RECORD_UPGRADES_PYTHON");path!=""{if err:=os.Remove(path);err!=nil && !os.IsNotExist(err){t.Fatal(err)}}
 	lan := lanAddress(t)
 	fake, port, closed := startFakeOps(t, lan)
 	t.Setenv("AGENTS_STATIC_DIR", artifactsDir(t))
@@ -585,17 +586,21 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	failed := 0
 	requests := upgradesRequests(lan)
 	policies := 0
+ nativePolicies:=0
 	for _, r := range requests {
 		policy := n810OperationPolicy(t, r)
+ nativePolicy:=loadUpgradePolicy(t,r)
 		var before store.Fingerprint
 		if policy != nil {
 			policies++
 			before = n810OperationFingerprint(t, goDir)
 		}
+if nativePolicy!=nil {nativePolicies++;if nativePolicy.GetObject("native").GetBool("no_write"){before=n810OperationFingerprint(t,goDir)}}
 		fake.setPhase(r.phase)
 		py := send(t, pyBase, r.request, pyToken, nil)
 		time.Sleep(r.wait)
 		pyCalls := fake.take()
+captureUpgradePython(t,r,py,pyCalls,pyDir)
 		gor := send(t, goBase, r.request, goToken, nil)
 		time.Sleep(r.wait)
 		goCalls := fake.take()
@@ -606,7 +611,10 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 				diffs = append(diffs, "refused operation wrote transaction")
 			}
 		}
-		if strings.Join(pyCalls, "\n") != strings.Join(goCalls, "\n") {
+		if nativePolicy!=nil{
+diffs=compareUpgradePolicy(t,r,nativePolicy,py,gor,pyCalls,goCalls)
+if nativePolicy.GetObject("native").GetBool("no_write") && n810OperationFingerprint(t,goDir)!=before {diffs=append(diffs,"native refusal wrote database")}
+}else if strings.Join(pyCalls, "\n") != strings.Join(goCalls, "\n") {
 			diffs = append(diffs, fmt.Sprintf("agent requests\n    python %q\n    go     %q", pyCalls, goCalls))
 		}
 		if len(diffs) > 0 {
@@ -619,7 +627,9 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	if policies != 10 {
 		t.Fatalf("bound HTTP rows not executed: %d", policies)
 	}
-	pyAgents, goAgents := upgradeAgents(t, pyDir), upgradeAgents(t, goDir)
+	if os.Getenv("N810_RECORD_UPGRADES_PYTHON")=="" && nativePolicies!=7 {t.Fatal("not all native HTTP rows executed",nativePolicies)}
+pyAgents, goAgents := upgradeAgents(t, pyDir), upgradeAgents(t, goDir)
+adjustUpgradeStoredPolicy(t,pyAgents,goAgents)
 	if !jsonx.Equal(pyAgents, goAgents) {
 		failed++
 		pyText, _ := jsonx.Sorted(pyAgents)

@@ -1,0 +1,703 @@
+{
+  "archive_sha256": "8b8e839a2673df5020697f909de8e2e85d5ae84d17d071b3f81797237e1b6688",
+  "normal_control": {
+    "original": {
+      "input": {
+        "name": "update",
+        "method": "POST",
+        "path": "/api/agents/op-1/update",
+        "body": "",
+        "content_type": "",
+        "admin": true,
+        "headers": {},
+        "mask": [
+          "update_id",
+          "started_at",
+          "updated_at",
+          "recovery_reported_at",
+          "events.*.at"
+        ],
+        "phase": "",
+        "wait": 0
+      },
+      "python_status": 202,
+      "python_type": "application/json",
+      "python_body": {
+        "agent_id": "op-1",
+        "artifacts": {
+          "linux-amd64": {
+            "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+            "size": 115
+          },
+          "linux-arm64": {
+            "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+            "size": 115
+          },
+          "linux-armv7": {
+            "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+            "size": 115
+          }
+        },
+        "events": [
+          {
+            "at": "<masked>",
+            "message": "正在提交 Agent 1.8.61-go 更新请求（linux-amd64）",
+            "status": "queued"
+          },
+          {
+            "at": "<masked>",
+            "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理",
+            "status": "queued"
+          }
+        ],
+        "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理",
+        "previous_version": "1.1.0-go",
+        "protocol": 2,
+        "started_at": "<masked>",
+        "status": "queued",
+        "target_version": "1.8.61-go",
+        "update_id": "<masked>",
+        "updated_at": "<masked>"
+      },
+      "python_calls": [
+        "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-1\" type=\"\" body=\"\"",
+        "loopback POST /api/update ? auth=\"Bearer tok-op-1\" type=\"application/json\" body=\"{\\\"version\\\": \\\"1.8.61-go\\\", \\\"update_id\\\": \\\"<id>\\\", \\\"sha256\\\": \\\"<id><id>\\\", \\\"size\\\": 115}\""
+      ],
+      "stored_upgrade": {
+        "update_id": "<masked>",
+        "target_version": "1.8.61-go",
+        "previous_version": "1.1.0-go",
+        "status": "queued",
+        "agent_id": "op-1",
+        "started_at": "<masked>",
+        "updated_at": "<masked>",
+        "protocol": 2,
+        "artifacts": {
+          "linux-amd64": {
+            "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+            "size": 115
+          },
+          "linux-arm64": {
+            "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+            "size": 115
+          },
+          "linux-armv7": {
+            "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+            "size": 115
+          }
+        },
+        "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理",
+        "events": [
+          {
+            "at": "<masked>",
+            "status": "queued",
+            "message": "正在提交 Agent 1.8.61-go 更新请求（linux-amd64）"
+          },
+          {
+            "at": "<masked>",
+            "status": "queued",
+            "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理"
+          }
+        ]
+      }
+    },
+    "row_sha256": "2dd4c13c16bb0593dad88a5ce8bc74c888c1758fe325b08d89801e7b0ada8f92"
+  },
+  "rows": [
+    {
+      "original": {
+        "input": {
+          "name": "report",
+          "method": "POST",
+          "path": "/api/agents/op-upgrading/upgrade/report",
+          "body": "{\"update_id\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"status\": \"rolling_back\", \"error\": {\"detail\": \"systemctl operation failed\", \"token\": \"tok-op-upgrading\"}}",
+          "content_type": "application/json",
+          "admin": false,
+          "headers": {
+            "Authorization": "Bearer tok-op-upgrading"
+          },
+          "mask": [
+            "update_id",
+            "started_at",
+            "updated_at",
+            "recovery_reported_at",
+            "events.*.at"
+          ],
+          "phase": "",
+          "wait": 0
+        },
+        "python_status": 200,
+        "python_type": "application/json",
+        "python_body": {
+          "agent_id": "op-upgrading",
+          "error": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+          "events": [
+            {
+              "at": "<masked>",
+              "message": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+              "status": "rolling_back"
+            }
+          ],
+          "previous_version": "1.1.0-go",
+          "protocol": 1,
+          "recovery_reported_at": "<masked>",
+          "started_at": "<masked>",
+          "status": "rolling_back",
+          "target_version": "1.8.61-go",
+          "update_id": "<masked>",
+          "updated_at": "<masked>"
+        },
+        "python_calls": [],
+        "stored_upgrade": {
+          "update_id": "<masked>",
+          "agent_id": "op-upgrading",
+          "protocol": 1,
+          "target_version": "1.8.61-go",
+          "previous_version": "1.1.0-go",
+          "status": "rolling_back",
+          "started_at": "<masked>",
+          "updated_at": "<masked>",
+          "recovery_reported_at": "<masked>",
+          "error": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+          "events": [
+            {
+              "at": "<masked>",
+              "status": "rolling_back",
+              "message": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}"
+            }
+          ]
+        }
+      },
+      "row_sha256": "db34531ac29178f0324b936c4776f1101250ce0fb7cdaf90055e1fc9f79421f2",
+      "native": {
+        "status": 200,
+        "type": "application/json",
+        "body": {
+          "agent_id": "op-upgrading",
+          "error": "{\"detail\":\"systemctl operation failed\",\"token\":[REDACTED]}",
+          "events": [
+            {
+              "at": "<masked>",
+              "message": "{\"detail\":\"systemctl operation failed\",\"token\":[REDACTED]}",
+              "status": "rolling_back"
+            }
+          ],
+          "previous_version": "1.1.0-go",
+          "protocol": 1,
+          "recovery_reported_at": "<masked>",
+          "started_at": "<masked>",
+          "status": "rolling_back",
+          "target_version": "1.8.61-go",
+          "update_id": "<masked>",
+          "updated_at": "<masked>"
+        },
+        "calls": [],
+        "no_write": false
+      }
+    },
+    {
+      "original": {
+        "input": {
+          "name": "upgrade poll rolling back",
+          "method": "GET",
+          "path": "/api/agents/op-upgrading/upgrade",
+          "body": "",
+          "content_type": "",
+          "admin": true,
+          "headers": {},
+          "mask": [
+            "update_id",
+            "started_at",
+            "updated_at",
+            "recovery_reported_at",
+            "events.*.at"
+          ],
+          "phase": "legacy",
+          "wait": 0
+        },
+        "python_status": 200,
+        "python_type": "application/json",
+        "python_body": {
+          "agent_id": "op-upgrading",
+          "error": "Agent 更新遇到异常，请查看 Agent 日志。\n原始错误：{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+          "events": [
+            {
+              "at": "<masked>",
+              "message": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+              "status": "rolling_back"
+            }
+          ],
+          "previous_version": "1.1.0-go",
+          "protocol": 1,
+          "recovery_reported_at": "<masked>",
+          "started_at": "<masked>",
+          "status": "rolling_back",
+          "target_version": "1.8.61-go",
+          "update_id": "<masked>",
+          "updated_at": "<masked>"
+        },
+        "python_calls": [
+          "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-upgrading\" type=\"\" body=\"\""
+        ],
+        "stored_upgrade": {
+          "update_id": "<masked>",
+          "agent_id": "op-upgrading",
+          "protocol": 1,
+          "target_version": "1.8.61-go",
+          "previous_version": "1.1.0-go",
+          "status": "rolling_back",
+          "started_at": "<masked>",
+          "updated_at": "<masked>",
+          "recovery_reported_at": "<masked>",
+          "error": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+          "events": [
+            {
+              "at": "<masked>",
+              "status": "rolling_back",
+              "message": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}"
+            }
+          ]
+        }
+      },
+      "row_sha256": "9cdf8a4e1a23f90e6eea18fa2cc3a78b8ea92cebda7d352e189d3e42119aa1b9",
+      "native": {
+        "status": 200,
+        "type": "application/json",
+        "body": {
+          "agent_id": "op-upgrading",
+          "error": "Agent 更新遇到异常，请查看 Agent 日志。\n原始错误：{\"detail\":\"systemctl operation failed\",\"token\":[REDACTED]}",
+          "events": [
+            {
+              "at": "<masked>",
+              "message": "{\"detail\":\"systemctl operation failed\",\"token\":[REDACTED]}",
+              "status": "rolling_back"
+            }
+          ],
+          "previous_version": "1.1.0-go",
+          "protocol": 1,
+          "recovery_reported_at": "<masked>",
+          "started_at": "<masked>",
+          "status": "rolling_back",
+          "target_version": "1.8.61-go",
+          "update_id": "<masked>",
+          "updated_at": "<masked>"
+        },
+        "calls": [
+          "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-upgrading\" type=\"\" body=\"\""
+        ],
+        "no_write": false
+      }
+    },
+    {
+      "original": {
+        "input": {
+          "name": "review upgrade string record",
+          "method": "GET",
+          "path": "/api/agents/op-badrec/upgrade",
+          "body": "",
+          "content_type": "",
+          "admin": true,
+          "headers": {},
+          "mask": [],
+          "phase": "",
+          "wait": 0
+        },
+        "python_status": 404,
+        "python_type": "application/json",
+        "python_body": {
+          "message": "Agent 更新遇到异常，请查看 Agent 日志。\n原始错误：dictionary update sequence element #0 has length 1; 2 is required",
+          "success": false
+        },
+        "python_calls": [],
+        "stored_upgrade": "abc"
+      },
+      "row_sha256": "ff3e2bd978be493a4b87298fb1d0ef3f92f2289ffdb3dfffaddae2d40fbeff5a",
+      "native": {
+        "status": 500,
+        "type": "application/json",
+        "body": {
+          "message": "Agent 操作记录损坏（latest_upgrade），请修复存储记录后重试",
+          "success": false
+        },
+        "calls": [],
+        "no_write": true
+      }
+    },
+    {
+      "original": {
+        "input": {
+          "name": "review upgrade pairs record",
+          "method": "GET",
+          "path": "/api/agents/op-pairs/upgrade",
+          "body": "",
+          "content_type": "",
+          "admin": true,
+          "headers": {},
+          "mask": [],
+          "phase": "",
+          "wait": 0
+        },
+        "python_status": 200,
+        "python_type": "application/json",
+        "python_body": {
+          "o": "k",
+          "status": "succeeded",
+          "target_version": "9.9.9-go"
+        },
+        "python_calls": [],
+        "stored_upgrade": [
+          [
+            "status",
+            "succeeded"
+          ],
+          [
+            "target_version",
+            "9.9.9-go"
+          ],
+          "ok"
+        ]
+      },
+      "row_sha256": "64c4c41cff4190e47c7e0b727328d3a40d9bbaf8b4270a355fdaca2207f5eabe",
+      "native": {
+        "status": 500,
+        "type": "application/json",
+        "body": {
+          "message": "Agent 操作记录损坏（latest_upgrade），请修复存储记录后重试",
+          "success": false
+        },
+        "calls": [],
+        "no_write": true
+      }
+    },
+    {
+      "original": {
+        "input": {
+          "name": "review upgrade int record",
+          "method": "GET",
+          "path": "/api/agents/op-intrec/upgrade",
+          "body": "",
+          "content_type": "",
+          "admin": true,
+          "headers": {},
+          "mask": [],
+          "phase": "",
+          "wait": 0
+        },
+        "python_status": 500,
+        "python_type": "text/html; charset=utf-8",
+        "python_body": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>\n",
+        "python_calls": [],
+        "stored_upgrade": 5
+      },
+      "row_sha256": "8481e2d83b146b0b38463d4fa7f569aea6435af73936688396bae17096de35fe",
+      "native": {
+        "status": 500,
+        "type": "application/json",
+        "body": {
+          "message": "Agent 操作记录损坏（latest_upgrade），请修复存储记录后重试",
+          "success": false
+        },
+        "calls": [],
+        "no_write": true
+      }
+    },
+    {
+      "original": {
+        "input": {
+          "name": "review update info without architecture",
+          "method": "POST",
+          "path": "/api/agents/op-noarch/update",
+          "body": "",
+          "content_type": "",
+          "admin": true,
+          "headers": {},
+          "mask": [
+            "update_id",
+            "started_at",
+            "updated_at",
+            "recovery_reported_at",
+            "events.*.at"
+          ],
+          "phase": "noarch",
+          "wait": 0
+        },
+        "python_status": 500,
+        "python_type": "text/html; charset=utf-8",
+        "python_body": "<!doctype html>\n<html lang=en>\n<title>500 Internal Server Error</title>\n<h1>Internal Server Error</h1>\n<p>The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application.</p>\n",
+        "python_calls": [
+          "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-noarch\" type=\"\" body=\"\""
+        ],
+        "stored_upgrade": {
+          "update_id": "<masked>",
+          "target_version": "1.8.61-go",
+          "previous_version": "1.1.0-go",
+          "status": "queued",
+          "agent_id": "op-noarch",
+          "started_at": "<masked>",
+          "updated_at": "<masked>",
+          "protocol": 2,
+          "artifacts": {
+            "linux-amd64": {
+              "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+              "size": 115
+            },
+            "linux-arm64": {
+              "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+              "size": 115
+            },
+            "linux-armv7": {
+              "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+              "size": 115
+            }
+          },
+          "message": "正在提交 Agent 1.8.61-go 更新请求",
+          "events": [
+            {
+              "at": "<masked>",
+              "status": "queued",
+              "message": "正在提交 Agent 1.8.61-go 更新请求"
+            }
+          ]
+        }
+      },
+      "row_sha256": "a15589d58adb534bd85f1543356ebc7519b1f8758636d083040d469727f78319",
+      "native": {
+        "status": 409,
+        "type": "application/json",
+        "body": {
+          "message": "更新文件未准备就绪，请先更新 ConfigFlow 主服务镜像",
+          "success": false
+        },
+        "calls": [
+          "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-noarch\" type=\"\" body=\"\""
+        ],
+        "no_write": true
+      }
+    },
+    {
+      "original": {
+        "input": {
+          "name": "review update again after stuck reservation",
+          "method": "POST",
+          "path": "/api/agents/op-noarch/update",
+          "body": "",
+          "content_type": "",
+          "admin": true,
+          "headers": {},
+          "mask": [
+            "update_id",
+            "started_at",
+            "updated_at",
+            "recovery_reported_at",
+            "events.*.at"
+          ],
+          "phase": "",
+          "wait": 0
+        },
+        "python_status": 409,
+        "python_type": "application/json",
+        "python_body": {
+          "message": "已有更新正在执行或等待恢复，请先查询结果",
+          "success": false
+        },
+        "python_calls": [
+          "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-noarch\" type=\"\" body=\"\""
+        ],
+        "stored_upgrade": {
+          "update_id": "<masked>",
+          "target_version": "1.8.61-go",
+          "previous_version": "1.1.0-go",
+          "status": "queued",
+          "agent_id": "op-noarch",
+          "started_at": "<masked>",
+          "updated_at": "<masked>",
+          "protocol": 2,
+          "artifacts": {
+            "linux-amd64": {
+              "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+              "size": 115
+            },
+            "linux-arm64": {
+              "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+              "size": 115
+            },
+            "linux-armv7": {
+              "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+              "size": 115
+            }
+          },
+          "message": "正在提交 Agent 1.8.61-go 更新请求",
+          "events": [
+            {
+              "at": "<masked>",
+              "status": "queued",
+              "message": "正在提交 Agent 1.8.61-go 更新请求"
+            }
+          ]
+        }
+      },
+      "row_sha256": "a2fed9c59248ea87728405d5e0f762c63960a6df12be86094979a530993d0170",
+      "native": {
+        "status": 202,
+        "type": "application/json",
+        "body": {
+          "agent_id": "op-noarch",
+          "artifacts": {
+            "linux-amd64": {
+              "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+              "size": 115
+            },
+            "linux-arm64": {
+              "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+              "size": 115
+            },
+            "linux-armv7": {
+              "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+              "size": 115
+            }
+          },
+          "events": [
+            {
+              "at": "<masked>",
+              "message": "正在提交 Agent 1.8.61-go 更新请求（linux-amd64）",
+              "status": "queued"
+            },
+            {
+              "at": "<masked>",
+              "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理",
+              "status": "queued"
+            }
+          ],
+          "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理",
+          "previous_version": "1.1.0-go",
+          "protocol": 2,
+          "started_at": "<masked>",
+          "status": "queued",
+          "target_version": "1.8.61-go",
+          "update_id": "<masked>",
+          "updated_at": "<masked>"
+        },
+        "calls": [
+          "loopback GET /api/upgrade-info ? auth=\"Bearer tok-op-noarch\" type=\"\" body=\"\"",
+          "loopback POST /api/update ? auth=\"Bearer tok-op-noarch\" type=\"application/json\" body=\"{\\\"version\\\": \\\"1.8.61-go\\\", \\\"update_id\\\": \\\"<id>\\\", \\\"sha256\\\": \\\"<id><id>\\\", \\\"size\\\": 115}\""
+        ],
+        "no_write": false
+      }
+    }
+  ],
+  "stored": [
+    {
+      "agent": "op-upgrading",
+      "python": {
+        "update_id": "<masked>",
+        "agent_id": "op-upgrading",
+        "protocol": 1,
+        "target_version": "1.8.61-go",
+        "previous_version": "1.1.0-go",
+        "status": "rolling_back",
+        "started_at": "<masked>",
+        "updated_at": "<masked>",
+        "recovery_reported_at": "<masked>",
+        "error": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}",
+        "events": [
+          {
+            "at": "<masked>",
+            "status": "rolling_back",
+            "message": "{'detail': 'systemctl operation failed', 'token': [REDACTED]}"
+          }
+        ]
+      },
+      "native": {
+        "update_id": "<masked>",
+        "agent_id": "op-upgrading",
+        "protocol": 1,
+        "target_version": "1.8.61-go",
+        "previous_version": "1.1.0-go",
+        "status": "rolling_back",
+        "started_at": "<masked>",
+        "updated_at": "<masked>",
+        "recovery_reported_at": "<masked>",
+        "error": "{\"detail\":\"systemctl operation failed\",\"token\":[REDACTED]}",
+        "events": [
+          {
+            "at": "<masked>",
+            "status": "rolling_back",
+            "message": "{\"detail\":\"systemctl operation failed\",\"token\":[REDACTED]}"
+          }
+        ]
+      }
+    },
+    {
+      "agent": "op-noarch",
+      "python": {
+        "update_id": "<masked>",
+        "target_version": "1.8.61-go",
+        "previous_version": "1.1.0-go",
+        "status": "queued",
+        "agent_id": "op-noarch",
+        "started_at": "<masked>",
+        "updated_at": "<masked>",
+        "protocol": 2,
+        "artifacts": {
+          "linux-amd64": {
+            "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+            "size": 115
+          },
+          "linux-arm64": {
+            "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+            "size": 115
+          },
+          "linux-armv7": {
+            "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+            "size": 115
+          }
+        },
+        "message": "正在提交 Agent 1.8.61-go 更新请求",
+        "events": [
+          {
+            "at": "<masked>",
+            "status": "queued",
+            "message": "正在提交 Agent 1.8.61-go 更新请求"
+          }
+        ]
+      },
+      "native": {
+        "update_id": "<masked>",
+        "target_version": "1.8.61-go",
+        "previous_version": "1.1.0-go",
+        "status": "queued",
+        "agent_id": "op-noarch",
+        "started_at": "<masked>",
+        "updated_at": "<masked>",
+        "protocol": 2,
+        "artifacts": {
+          "linux-amd64": {
+            "sha256": "659132288878da29a5677f06bd435c9a4be5611dae2d6e0e126b7dcab15615b3",
+            "size": 115
+          },
+          "linux-arm64": {
+            "sha256": "1d92b6a8149b2e6a0bd9cf196bda34912080b536e21bcdbdd61419f9a2dd3978",
+            "size": 115
+          },
+          "linux-armv7": {
+            "sha256": "033a55b70f4326adb5708a766856852912c69c045bc9e543c66133b9d7bf0b9a",
+            "size": 115
+          }
+        },
+        "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理",
+        "events": [
+          {
+            "at": "<masked>",
+            "status": "queued",
+            "message": "正在提交 Agent 1.8.61-go 更新请求（linux-amd64）"
+          },
+          {
+            "at": "<masked>",
+            "status": "queued",
+            "message": "Agent 1.8.61-go 更新请求已送达，等待设备处理"
+          }
+        ]
+      }
+    }
+  ]
+}

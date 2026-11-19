@@ -17,7 +17,8 @@ import (
 )
 
 func originalString(raw []byte, present bool, err error) (string, bool) {
-	if err != nil || !present || len(raw) == 0 || bytes.TrimSpace(raw)[0] != '"' {
+	raw=bytes.TrimSpace(raw)
+if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
 		return "", false
 	}
 	var text string
@@ -149,14 +150,22 @@ func agentSecrets(a *model.Agent) redact.Secrets {
 	token, _ := originalString(a.MemberJSON("token"))
 	return redact.NewSecrets([]string{token})
 }
-func heartbeatAfterModel(a *model.Agent, moment float64) bool {
-	text, ok := originalString(a.MemberJSON("last_heartbeat"))
+func heartbeatAfterModel(a *model.Agent, moment float64) (bool, error) {
+	raw, present, err := a.MemberJSON("last_heartbeat")
+	if err != nil {
+		return false, err
+	}
+	if !present {
+		return false, nil
+	}
+	text, ok := originalString(raw, true, nil)
 	if !ok {
-		return false
+		return false, &CorruptStateError{Field: "last_heartbeat"}
 	}
 	ts, valid := agents.ISOTimestamp(text)
-	return valid && ts > moment
+	return valid && ts > moment, nil
 }
+
 func agentLabel(a *model.Agent) string {
 	name, _ := originalString(a.MemberJSON("name"))
 	if name == "" {
@@ -203,4 +212,58 @@ func displayVersion(text string) string {
 func hasContent(raw json.RawMessage) bool {
 	content, err := model.JSONHasContent(raw)
 	return err == nil && content
+}
+
+func decodeWorker(data []byte) (Worker, error) {
+	var fields model.Fields
+	var out Worker
+	if jsondecode.Unmarshal(data, &fields) != nil {
+		return out, agents.ErrInvalidAgentReply
+	}
+	var ok bool
+	out.UpdateID, ok = fieldString(fields, "update_id")
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.AgentID, ok = fieldString(fields, "agent_id")
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.Status, ok = fieldString(fields, "status")
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.Error, _ = fields.Get("error")
+	if message, valid := fieldString(fields, "message"); valid {
+		out.Message = &message
+	}
+	if timestamp, valid := fieldString(fields, "updated_at"); valid {
+		out.UpdatedAt = &timestamp
+	}
+	if raw, exists := fields.Get("events"); exists {
+		_ = jsondecode.Unmarshal(raw, &out.Events)
+	}
+	return out, nil
+}
+func decodeInfo(data []byte) (Info, error) {
+	var out Info
+	var evidence model.Fields
+	if jsondecode.Unmarshal(data, &evidence) != nil {
+		return out, agents.ErrInvalidAgentReply
+	}
+	fields, err := jsondecode.Select(data, "agent_id", "version", "migration_ready")
+	if err != nil {
+		return out, agents.ErrInvalidAgentReply
+	}
+	var ok bool
+	out.AgentID, ok = originalString(fields["agent_id"], fields["agent_id"] != nil, nil)
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.Version, ok = originalString(fields["version"], fields["version"] != nil, nil)
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.MigrationReady = string(fields["migration_ready"]) == "true"
+	return out, nil
 }
