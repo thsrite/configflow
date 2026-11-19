@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"configflow/internal/convert"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
@@ -13,7 +14,21 @@ import (
 type liveNativeConverter struct{}
 
 func (liveNativeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
-	return substore.NativeConverter().ConvertProxy(ctx, text)
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	proxy, err := substore.NativeConverter().ConvertProxy(ctx, text)
+	if canceled := ctx.Err(); canceled != nil {
+		return nil, canceled
+	}
+	// Single-node conversion is an optional lookup in this environment. The
+	// legacy callback returned no node on conversion failure; keep that caller
+	// policy while the typed client retains errors for its other consumers.
+	if err != nil {
+		return nil, nil
+	}
+	return proxy, nil
 }
 
 // NativeEnv connects migrated subscription owners directly. The remaining

@@ -127,3 +127,36 @@ a84687ba7 的最终 metadata record/check 完成：record MosDNS59.460s/OxiDNS50
 routersplit5.056s；check MosDNS58.305s/OxiDNS50.077s/routersplit5.928s。
 再次验证18份18491项全部非metadata payload SHA与批次开始时相同，仅5份MosDNS元数据变更。
 当前产品及测试修正已完整提交，开始最后preflight与完整compare，不再计此前失败轮次为通过。
+
+## 路由器记录投影补充基准
+
+除逐规则 source pipeline 外，单独测作者的 BenchmarkRouterProjection（1/16/64台router）。
+旧基底无 routerProfiles helper，临时 test-only adapter 原样使用旧 ruleSyncRows 的投影顺序：
+ListProfiles → pendingProfile 解码 → GetProfile → routersOf(mustPolicyJSON(config))；不含后续task构建。
+相同 projectionRepository fixture、相同 BenchmarkRouterProjection 循环；未修改旧产品实现。
+最终树直接运行已有原始 benchmark。均固定主测试服务器、GOMAXPROCS=4、benchtime=3x、count=3。
+
+| Router数 | 基底0 padding B/op | 最终0 padding B/op | 基底1MiB padding B/op | 最终1MiB padding B/op |
+| --- | --- | --- | --- | --- |
+| 1 | 314072–317538 | 20840–21320 | 26583960–26587821 | 20840–21320 |
+| 16 | 663549–668922 | 252256–252736 | 26898008–26901570 | 252368–254370 |
+| 64 | 1712410–1714613 | 997856–1002736 | 31346320–31352797 | 993141–993869 |
+
+最终 allocs/op：1台263–264（两种padding相同）；16台2457–2458/2457–2461；
+64台9478–9490/9468–9469。全部低于基底，未发生无关配置按router重复复制。
+命令：`go test -p 4 -run "^$" -bench "^BenchmarkRouterProjection$" -benchmem -benchtime=3x -count=3 ./internal/routers`。
+基底4.864s、最终4.691s，均PASS。准备baseline helper时一次读取了不存在的相对路径，
+随后第一次bench无匹配不计结果；修正为明确源路径后才得到上述实际6组×3轮测量。
+
+## 第二轮预检与首次 compare
+
+最终预检 af8366c97 返回 PREFLIGHT PASS。完整compare进入proddiff，observer自检PASS，
+但proddiff new=97/stale=4、Surge/Loon生成覆盖回退，尚未进入difftest/synthetic。
+没有增加baseline。诊断只在服务器私有目录，报告不复制快照字段值。
+
+根因1：生产 NativeEnv 的单节点转换器新接口会返回Sub-Store转换失败，旧接口返回nil节点。
+Surge/Loon预检只是可选的节点探测，普通转换不可用不应中断整份生成。修正生产composition
+adapter：先Detach保留Runtime，普通转换失败仍无节点；来源owner取消仍返回ctx错误。
+保留typed Client的错误契约，其他消费者不变。loopback HTTP503新回归在修复前两个引擎
+真实失败，修复后正常生成，原shutdown/cache回归也通过。不会把转换URL/凭据带进响应。
+root作用域只修NativeEnv适配，不给任意生成错误加忽略规则。
