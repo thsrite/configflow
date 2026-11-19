@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"math"
 	"time"
 )
 
@@ -16,4 +17,12 @@ func pyTimeFromNanos(nanos int64) float64                { return epochSecondsFr
 
 func readLegacyRows(path string) ([]legacyRow, error) {
 	return readLegacyRowsContext(context.Background(), path)
+}
+
+func timestampOf(value any) float64 {
+	text, ok := value.(string)
+	if !ok {
+		return math.Inf(-1)
+	}
+	return heartbeatTimestamp(text)
 }

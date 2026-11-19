@@ -503,3 +503,74 @@ callback/JSON codec，兼容后续包和冻结测试。SQL query 绑定 shutdown
 
 Exit 0：agents 5.587s。前一轮 Legacy|Runtime|SaveReported|Heartbeat|Registration（116.052s）
 只失败在上述 dupkeys 行；修复后原行重新通过。远端 gofmt、agents vet 已执行。
+
+## 原生 Unicode transport 和旧库错误（进行中）
+
+删除 pydecode.go 手写 UTF8 maximal-subpart、UTF16 surrogate、UTF32 decoder 和 Python codec
+alias 表，改 x/text 的 Unicode / IANA codec；MIME 参数用标准 mime.ParseMediaType。
+旧 UTF8/16/32 JSON BLOB 继续接受，解码工作由库负责，完整性只检查 code-unit 长度、UTF8
+合法性和 UTF32 范围。25 条原 Responses、LegacyRows、native failure DTO 期望不变通过。
+
+删去 sqliteFailure、textDecodeError、pyOSError；driver 保留原生错误链，坏 SQLite TEXT
+只返回 ErrLegacyTextEncoding 与 column 名，不把数据库原文写日志。七条旧错误行通过
+真实 Python sqlite3 的 OperationalError / DatabaseError 类别生成独立 metadata；a02
+整档 SHA 和各完整原行 SHA 绑定，比较 native 拒绝与 all-or-nothing 无部分行。另用真实
+repository Head 验证导入错误不调用 persist、不改变事务或 runtime，并仍删除旧库。
+删除警告的两条原始日志 SHA 也绑定，改核验原 errno21、两次 native 警告与目录未删除。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "ReferenceResponses|ReferenceLegacyRows|PlainTextLegacy|TypedResponseFailure|LegacyErrors|Decode|Runtime" ./internal/agents'
+
+Exit 0：agents 30.325s，远端 gofmt / agents vet 通过；响应值与字节期望全部沿用原档。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'PYTHONPATH=. ~/cf-test/.venv/bin/python server/internal/agents/testdata/gen_n810_runtime_native.py'
+
+Exit 0：七条真实 Python SQLite error-class oracle，未生成或覆盖任何原 a02 输出。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=10m -run "NativeLegacyReadErrors|ReferenceLegacyRows|ReferenceLegacyFileRemoval|ReferenceResponses|ProfileFilteringKeepsLiteralDefault" ./internal/agents ./internal/agents/rulesync'
+
+agents Exit 0：8.425s。新增 importer fixture 必须在安装旧库后 ResetRuntime 模拟重启，
+因为 newEnv 的 New 已做过一次性检查；最初 fixture 未模拟重启导致旧库按设计不再扫描，
+不是取消 once-only 规则。此前失败原因已修正。该联合命令 rulesync 的空 profile 过滤
+失败在下一项修复；原 native error 行、事务 no-write 与删除语义通过。
+
+## DNS follow / IPv6 / rule-sync adapter 和 HA proof（进行中）
+
+DNS follow Config/PublishConfig、poll/reserve/failed patch 走 typed repo/core；secret/error
+路径使用 AgentTokensForSanitization 和 internal/redact；Options 不再往返 jsonx，events
+直接调用 AppendOperationEvent。IPv6 的 snapshot/read/list/EditAgents 改 typed repo/model，
+编辑目标 ID 用新共享 AgentMatchesID 原始 string 证明。保留 freshness/status 和未知字段。
+
+Rule-sync 的源读取、profile filtering、worker lookup、pair settings edit、poll/failed patch
+改 typed repo/core，pair 编辑在同一事务验证双方原始 ID、reciprocal HA identities、profile
+和原配置快照，然后同时写 settings。空 profile 仍使用当前 default，literal default 不
+跟随默认切换；首次遗漏此规则，保持原测试期望修正后通过。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=10m -run "ProfileFilteringKeepsLiteralDefault|Configure|Settings|Presence" ./internal/agents/rulesync'
+
+Exit 0：rulesync 11.201s。此前整包 109.895s 只失败原空 profile 行；其余未出现差异。
+
+HA payload / bundle metadata、deploy Manifest/File 使用 Fields 精确键，不再 default struct
+case folding，重复 key 拒绝。deploy 修改是嵌套 ownership 元数据所需的最小共享接线。
+child ID 与 journal ID 均读原始 string token；原 numeric projection 无法组成合法 journal。
+pair/profile checks 复用 core 的原始身份判断，adapter 的 selected 也验证原始 Agent ID。
+Agent HA 读取走 CallAgent 和严格 Fields；成功的 malformed JSON / duplicate 回包拒绝，
+HTTP 层只补 DeviceResponseError → structured 502 接线。新 ownership 原文 fixture 待最终跑。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "Payload|Manifest|Bundle|Reference|Corpus|Golden|Typed" ./internal/agents/dnsha ./internal/deploy'
+
+Exit 0：dnsha 14.673s、deploy 4.624s；后续含 HA proof 的联合检查 dnsha 16.163s、deploy
+4.727s 通过（agents 在当时未修正的新 importer fixture 上失败，已另修并重新验证）。
+
+DNS follow / IPv6 整包 race 已在 .32 执行（20m timeout），待收尾。为查慢因在 .64 跑过
+60s 的短诊断，超时栈显示正常 model.Marshal/commitStore 的 Runnable，非互相等待；
+该短命令不算验证通过，也没有用其时间限制或修改期望裁剪原套件。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzNativeUnicodeTransport$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0：130,415 executions，PASS 61.010s。UTF8-BOM、UTF16 LE/BE、UTF32 LE/BE 均验证
+JSON 编码前后原字节保持；不会把独立 HTTP 请求比对改为结构相等。heartbeatTimestamp
+现在只收 string，旧 any 形状只在冻结测试的 timestampOf codec 中保留。
+
+.32 的 DNS follow 整包 race 20m 到时未完成，最后仍在 commitStore/model.Marshal，
+不能记为通过；同条命令 IPv6 PASS 24.208s。后续需要给 DNS follow 足够时间完成，
+并核实 profile Source 的重复序列化成本；未调整测试期望或缩减该包的测试集合。

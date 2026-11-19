@@ -2038,3 +2038,15 @@ JSON materialization 属其后续 S 步骤，本块没有改写其 parser 或扩
 改变比较方向；原档案、输入输出及 SHA 不变。gen_n810_version_native.py 的独立字面期望
 通过档案 SHA 和每条完整原行 SHA 绑定，其他行继续使用原 Python want。空分量仍走
 文本比较，不被共享 counter 的空值语义当作 0。
+
+### N8-10 core-2 — native legacy-state diagnostics
+
+旧心跳库读取、坏 UTF-8 TEXT 和 unlink 失败的诊断不再重放 CPython sqlite3/OSError
+English 文本。SQLite driver 错误保留原生链；无效 TEXT 仅报告列名，不回显存储原文。
+原始 a02 档案与日志原文不变，七条读取失败行及两条删除警告逐行 SHA 绑定，核验原
+Python 类别/errno、Go 拒绝、无部分行、事务不写入和目录不被删除。一次性扫描、主文件
+必须成功删除才导入、仅更新较新 heartbeat、失败版本写入等原规则保留。
+
+原生 MIME/IANA 文本 codec 取代私有 Python alias 与 Unicode decoder；受支持 Agent 的
+UTF-8 JSON/text 及旧 UTF-16/32 BLOB 原始语料保持不变。额外 IANA charset 由原生注册表
+处理，MIME 大小写按标准解析，不再局限手写的旧 codec 列表。

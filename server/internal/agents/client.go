@@ -62,7 +62,7 @@ type Request struct {
 	// is prepared, a value with CR or LF is requests' InvalidHeader (a
 	// *TransportError), then each value is encoded as latin-1 (U+0080–U+00FF
 	// as single bytes); a character above U+00FF is a UnicodeEncodeError
-	// (*CallError, not a RequestException) and nothing is sent.
+	// (ErrHeaderEncoding) and nothing is sent.
 	Latin1Headers bool
 }
 
@@ -88,44 +88,12 @@ func (r *Response) JSON() (any, error) {
 // jsonData owns the decoded JSON transport bytes. Protocol DTOs use the
 // standard JSON decoder; only the old public JSON adapter uses jsonx.
 func (r *Response) jsonData() []byte {
-	if _, ok := r.encoding(); !ok && len(r.Body) > 3 {
-		if codec := guessJSONUTF(r.Body); codec != "" {
-			if text, ok := pyDecode(r.Body, codec, true); ok {
-				return []byte(text)
-			}
+	if _, declared := r.encoding(); !declared && len(r.Body) > 3 {
+		if decoded, valid := DecodeJSONBytes(r.Body); valid {
+			return []byte(decoded)
 		}
 	}
 	return []byte(r.Text())
-}
-
-// Text is response.text: the body decoded with the charset of the headers
-// (ISO-8859-1 for a text type without one, utf-8 for application/json),
-// invalid bytes replaced. An unknown codec decodes as UTF-8, as requests
-// falls back to on LookupError. Without any charset requests guesses with
-// charset_normalizer; here a BOM or the NUL pattern of UTF-16/32 decides,
-// otherwise UTF-8 (apparentCodec).
-//
-// Not reproduced: codecs other than the UTF-8, Latin-1, ASCII, UTF-16 and
-// UTF-32 families (e.g. charset=gbk) decode as UTF-8 here; Python decodes
-// them with that codec. Unobservable with ConfigFlow Agents (A01 review):
-// the Go Agent answers application/json without charset (routes/utils.go
-// sendJSON) or text/plain; charset=utf-8 (http.Error), and the Mihomo and
-// OxiDNS answers it relays are UTF-8. Only a foreign server at an Agent's
-// address could declare another charset, and then only the text of a
-// failure diagnostic differs. The standard library has no such codecs.
-func (r *Response) Text() string {
-	if len(r.Body) == 0 {
-		return ""
-	}
-	codec := apparentCodec(r.Body)
-	if name, ok := r.encoding(); ok {
-		codec = "utf-8"
-		if known := pyCodec(name); known != "" {
-			codec = known
-		}
-	}
-	text, _ := pyDecode(r.Body, codec, false)
-	return text
 }
 
 // Client sends requests to Agents. Errors are transport failures (the
@@ -238,7 +206,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 			encoded := make([]string, len(values))
 			for i, value := range values {
 				if strings.ContainsAny(value, "\r\n") {
-					return nil, &TransportError{Err: errors.New("Invalid leading whitespace, reserved character(s), or return character(s) in header value: " + jsonx.Repr(value))}
+					return nil, &TransportError{Err: errors.New(msgAgentHeaderInvalid)}
 				}
 				text, err := EncodeHeaderLatin1(value)
 				if err != nil {

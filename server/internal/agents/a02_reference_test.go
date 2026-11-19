@@ -219,7 +219,7 @@ func TestReferenceTimestampsAndLocalTimes(t *testing.T) {
 }
 
 func TestReferenceLegacyRows(t *testing.T) {
-	for _, c := range referenceCases(t, "legacy_rows") {
+	for index, c := range referenceCases(t, "legacy_rows") {
 		path := filepath.Join(t.TempDir(), LegacyDatabase)
 		if raw, ok := c.Value("raw").(string); ok {
 			if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
@@ -248,6 +248,15 @@ func TestReferenceLegacyRows(t *testing.T) {
 		logs := []any{}
 		if err != nil {
 			logs = append(logs, "旧版 Agent 心跳状态库无法读取，已忽略："+err.Error())
+		}
+		if err != nil {
+			verifyNativeRuntimeErrorRow(t, index, c, err)
+			// Only bound interpreter/driver error bytes are retired; original rows
+			// continue to compare exactly, including the all-or-nothing empty result.
+			if compact(t, got) != compact(t, c.Value("rows")) {
+				t.Fatalf("native read returned partial rows: %s", compact(t, got))
+			}
+			continue
 		}
 		if compact(t, got) != compact(t, c.Value("rows")) || compact(t, logs) != compact(t, c.Value("logs")) {
 			t.Errorf("%s:\n got %s %s\nwant %s %s", c.GetString("name"), compact(t, got), compact(t, logs),
@@ -293,13 +302,7 @@ func TestReferenceLegacyFileRemovalLogsPythonOSErrors(t *testing.T) {
 	}
 	logs := captureMessages(t, "backend.agents.runtime_state")
 	removeFiles([]string{filepath.Join(dir, "runtime.sqlite3"), wal, shm})
-	var want []string
-	for _, item := range loadReference(t).GetList("remove_logs") {
-		want = append(want, strings.ReplaceAll(item.(string), "<DIR>", dir))
-	}
-	if got := logs(); strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("logs\n got %q\nwant %q", got, want)
-	}
+	verifyNativeRemovalReference(t, loadReference(t).GetList("remove_logs"), logs(), dir)
 	// An empty directory is not removed (Path.unlink never calls rmdir).
 	if _, err := os.Stat(shm); err != nil {
 		t.Fatal("empty directory removed")

@@ -18,7 +18,6 @@ import (
 	"configflow/internal/model"
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,18 +25,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"syscall"
-	"unicode"
-	"unicode/utf16"
 	"unicode/utf8"
 
-	"modernc.org/sqlite"
+	_ "modernc.org/sqlite"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -61,11 +56,7 @@ var (
 
 // timestampOf is _timestamp(value): the POSIX time of an ISO text, -Inf
 // for anything unparsable or ahead of the clock.
-func timestampOf(value any) float64 {
-	text, ok := value.(string)
-	if !ok {
-		return math.Inf(-1)
-	}
+func heartbeatTimestamp(text string) float64 {
 	// ISOTimestamp: also the ValueError of a naive time whose resolution
 	// needs a local time outside the years 1–9999 (A15 review).
 	ts, ok := ISOTimestamp(text)
@@ -103,7 +94,7 @@ func NewRuntimeState() *RuntimeState {
 
 func (s *RuntimeState) newerModel(agent *model.Agent) (heartbeatEntry, bool) {
 	entry, ok := s.entries[agent.ID]
-	return entry, ok && entry.HeartbeatAt > timestampOf(agent.LastHeartbeat)
+	return entry, ok && entry.HeartbeatAt > heartbeatTimestamp(agent.LastHeartbeat)
 }
 
 // runtimeFields owns only the seven JSON values exposed by live overlays.
@@ -205,7 +196,7 @@ func (s *RuntimeState) recordFields(ctx context.Context, agent heartbeatSource, 
 		return false, nil
 	}
 	fields := agent.fields
-	if previous, ok := s.entries[agent.id]; ok && previous.HeartbeatAt > timestampOf(agent.lastHeartbeat) {
+	if previous, ok := s.entries[agent.id]; ok && previous.HeartbeatAt > heartbeatTimestamp(agent.lastHeartbeat) {
 		fields = previous.Fields
 	}
 	if payload.Version != nil {
@@ -323,12 +314,12 @@ func readLegacyRowsContext(ctx context.Context, path string) ([]legacyRow, error
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String() + "?_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
-		return nil, sqliteFailure(err)
+		return nil, fmt.Errorf("读取旧版 Agent 心跳状态库: %w", err)
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, "SELECT agent_id, heartbeat_at, last_heartbeat, fields FROM agent_runtime")
 	if err != nil {
-		return nil, sqliteFailure(err)
+		return nil, fmt.Errorf("读取旧版 Agent 心跳状态库: %w", err)
 	}
 	defer rows.Close()
 	// fetchall(): every row is converted before any is used, so one TEXT value
@@ -338,17 +329,17 @@ func readLegacyRowsContext(ctx context.Context, path string) ([]legacyRow, error
 	for rows.Next() {
 		var row [4]any
 		if err := rows.Scan(&row[0], &row[1], &row[2], &row[3]); err != nil {
-			return nil, sqliteFailure(err)
+			return nil, fmt.Errorf("读取旧版 Agent 心跳状态库: %w", err)
 		}
 		for i, value := range row {
 			if text, ok := value.(string); ok && !utf8.ValidString(text) {
-				return nil, &textDecodeError{column: columns[i], text: text}
+				return nil, fmt.Errorf("%w: %s", ErrLegacyTextEncoding, columns[i])
 			}
 		}
 		raw = append(raw, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, sqliteFailure(err)
+		return nil, fmt.Errorf("读取旧版 Agent 心跳状态库: %w", err)
 	}
 	var result []legacyRow
 	index := map[string]int{}
@@ -391,7 +382,7 @@ func legacyFields(raw any) (*model.Agent, bool) {
 	case string:
 		text = value
 	case []byte:
-		decoded, ok := decodeJSONBytes(value)
+		decoded, ok := DecodeJSONBytes(value)
 		if !ok {
 			return nil, false
 		}
@@ -418,109 +409,8 @@ func legacyFields(raw any) (*model.Agent, bool) {
 	return &fields, true
 }
 
-// DecodeJSONBytes is decodeJSONBytes for other packages.
-func DecodeJSONBytes(b []byte) (string, bool) { return decodeJSONBytes(b) }
-
-// decodeJSONBytes is the bytes branch of json.loads:
-// s.decode(json.detect_encoding(s), 'surrogatepass'). ok=false is a
-// UnicodeDecodeError. Lone surrogates become U+FFFD (they have no UTF-8
-// form; the same holds for every jsonx string).
-func decodeJSONBytes(b []byte) (string, bool) {
-	switch {
-	case bytes.HasPrefix(b, []byte{0, 0, 0xFE, 0xFF}):
-		return decodeUTF32(b[4:], binary.BigEndian)
-	case bytes.HasPrefix(b, []byte{0xFF, 0xFE, 0, 0}):
-		return decodeUTF32(b[4:], binary.LittleEndian)
-	case bytes.HasPrefix(b, []byte{0xFE, 0xFF}):
-		return decodeUTF16(b[2:], binary.BigEndian)
-	case bytes.HasPrefix(b, []byte{0xFF, 0xFE}):
-		return decodeUTF16(b[2:], binary.LittleEndian)
-	case bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}):
-		b = b[3:]
-	case len(b) >= 4:
-		if b[0] == 0 {
-			if b[1] != 0 {
-				return decodeUTF16(b, binary.BigEndian)
-			}
-			return decodeUTF32(b, binary.BigEndian)
-		}
-		if b[1] == 0 {
-			if b[2] != 0 || b[3] != 0 {
-				return decodeUTF16(b, binary.LittleEndian)
-			}
-			return decodeUTF32(b, binary.LittleEndian)
-		}
-	case len(b) == 2:
-		if b[0] == 0 {
-			return decodeUTF16(b, binary.BigEndian)
-		}
-		if b[1] == 0 {
-			return decodeUTF16(b, binary.LittleEndian)
-		}
-	}
-	if !utf8.Valid(b) {
-		return "", false
-	}
-	return string(b), true
-}
-
-func decodeUTF16(b []byte, order binary.ByteOrder) (string, bool) {
-	if len(b)%2 != 0 {
-		return "", false
-	}
-	units := make([]uint16, len(b)/2)
-	for i := range units {
-		units[i] = order.Uint16(b[2*i:])
-	}
-	return string(utf16.Decode(units)), true
-}
-
-func decodeUTF32(b []byte, order binary.ByteOrder) (string, bool) {
-	if len(b)%4 != 0 {
-		return "", false
-	}
-	var out strings.Builder
-	for i := 0; i < len(b); i += 4 {
-		r := order.Uint32(b[i:])
-		if r > unicode.MaxRune {
-			return "", false
-		}
-		out.WriteRune(rune(r))
-	}
-	return out.String(), true
-}
-
-// textDecodeError is the sqlite3.OperationalError Python's sqlite3 module
-// raises when a TEXT value is not valid UTF-8.
-type textDecodeError struct {
-	column string
-	text   string
-}
-
-func (e *textDecodeError) Error() string {
-	var b strings.Builder
-	for _, r := range e.text {
-		b.WriteRune(r)
-	}
-	return "Could not decode to UTF-8 column '" + e.column + "' with text '" + b.String() + "'"
-}
-
-var sqliteCodeSuffix = regexp.MustCompile(` \(\d+\)$`)
-
-// sqliteFailure gives a driver error the text of str(sqlite3.Error)
-// (sqlite3_errmsg): the driver writes "errstr: errmsg (code)".
-func sqliteFailure(err error) error {
-	var target *sqlite.Error
-	if !errors.As(err, &target) {
-		return err
-	}
-	message := strings.TrimSuffix(target.Error(), " (SQLITE_BUSY)")
-	message = sqliteCodeSuffix.ReplaceAllString(message, "")
-	if _, detail, found := strings.Cut(message, ": "); found {
-		message = detail
-	}
-	return errors.New(message)
-}
+// ErrLegacyTextEncoding rejects non-UTF-8 SQLite TEXT without logging its data.
+var ErrLegacyTextEncoding = errors.New(msgLegacyTextEncoding)
 
 func legacyFiles(path string) []string {
 	files := []string{path, path + "-journal", path + "-wal", path + "-shm"}
@@ -539,23 +429,9 @@ func escapeGlob(path string) string {
 func removeFiles(paths []string) {
 	for _, path := range paths {
 		if err := syscall.Unlink(path); err != nil && !errors.Is(err, syscall.ENOENT) {
-			runtimeLogger.Warningf("旧版 Agent 心跳状态文件 %s 删除失败：%s", filepath.Base(path), pyOSError(err, path))
+			runtimeLogger.Warningf("旧版 Agent 心跳状态文件 %s 删除失败：%s", filepath.Base(path), fmt.Errorf("unlink %q: %w", path, err))
 		}
 	}
-}
-
-// pyOSError is str(OSError) of a failed call on path:
-// "[Errno 21] Is a directory: '/data/runtime.sqlite3-wal'".
-func pyOSError(err error, path string) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		text := errno.Error()
-		if text != "" {
-			text = strings.ToUpper(text[:1]) + text[1:]
-		}
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), text, jsonx.Repr(path))
-	}
-	return err.Error()
 }
 
 // exists is Path.exists(): follows symlinks, so a dangling link is missing.
@@ -635,7 +511,7 @@ func importLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	current := map[string]legacyRow{}
 	var ids []string
 	for id, row := range rows {
-		if a, ok := agents[id]; ok && row.heartbeatAt > timestampOf(a.LastHeartbeat) {
+		if a, ok := agents[id]; ok && row.heartbeatAt > heartbeatTimestamp(a.LastHeartbeat) {
 			current[id] = row
 			ids = append(ids, id)
 		}

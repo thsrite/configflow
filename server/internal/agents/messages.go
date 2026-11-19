@@ -289,3 +289,18 @@ const (
 const msgInvalidDevicePayload = "Out of range float values are not JSON compliant"
 
 const msgAgentReplyShape = "Agent 返回的数据格式不正确，请检查 Agent 版本和日志。"
+
+const msgLegacyTextEncoding = "旧版 Agent 心跳状态库包含无效 UTF-8 文本"
+
+const (
+	msgLoggingConfigShape      = "Agent 日志配置格式不正确，请修复配置后重试。"
+	msgRegionIngress           = "Agent 上的 Mihomo 还没有检测入口，请为该 Agent 开启域名发现后部署一次配置"
+	msgLegacyBindingChanged    = "草稿已保存，但设备绑定已改变，请重新选择设备后发布。"
+	msgAgentDNSHAUnsupported   = "Agent %s 不支持 DNS 高可用，请升级"
+	msgAgentFeatureUnsupported = "Agent %s 不支持%s，请升级"
+)
+
+const (
+	msgAgentHeaderEncoding = "Agent 请求头包含无法发送的字符，请检查设备凭据。"
+	msgAgentHeaderInvalid  = "Agent 请求头包含换行符，请检查设备凭据。"
+)

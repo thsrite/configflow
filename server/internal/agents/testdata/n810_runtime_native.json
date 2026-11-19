@@ -1,0 +1,40 @@
+{
+  "corpus_sha256": "82281a960707379c8ce0ddc54da84992c81e3820968e55998bf3d7772747368a",
+  "rows": [
+    {
+      "index": 2,
+      "sha256": "f96d89c8182221303c6cc93c988fb7c73fa3e45d0aa920a737aa9141e6024f71",
+      "python_class": "OperationalError"
+    },
+    {
+      "index": 3,
+      "sha256": "dcd64987886363498b6b9fb941ef49b7528d26ef49df4f5a57e0c2536892b020",
+      "python_class": "OperationalError"
+    },
+    {
+      "index": 4,
+      "sha256": "9b8a4c6317773c8ee4986a6248176fc0019816d0ac99c4f2ca0ac224a5f4af66",
+      "python_class": "OperationalError"
+    },
+    {
+      "index": 5,
+      "sha256": "574dec533f0ab7a0afa052b3243f06b0a4397d54a04b81de48494aa412a2ad89",
+      "python_class": "OperationalError"
+    },
+    {
+      "index": 6,
+      "sha256": "5a1b9c7d971640ba3045ee86d08b63cbb8c067cabaa48fecd3058dc3af3727e8",
+      "python_class": "OperationalError"
+    },
+    {
+      "index": 7,
+      "sha256": "03e2f3ca6e31dfea15180e2110b3c0cc9b1b13dcb12363e7f7b9c9c7faa1464b",
+      "python_class": "DatabaseError"
+    },
+    {
+      "index": 8,
+      "sha256": "ad02235b5240ffe9e9c56cb009a83826c8c4479c01e58953b4d8d19c560a68f8",
+      "python_class": "OperationalError"
+    }
+  ]
+}
