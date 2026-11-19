@@ -1,13 +1,8 @@
-// Package monitor is the read-only OxiDNS monitoring through an
-// authenticated, registered Agent: the port of backend/agents/oxidns_monitor.py
-// (A06), oxidns_metrics.py (metrics.go), oxidns_dashboard_state.py
-// (state.go) and the pure part of oxidns_publication_stats.py
-// (publication.go). The ranking history store it reads is A07's
-// (history.go, SetRankingHistory).
-//
-// Every request to an Agent goes through the agents.Client of the manager
-// (tests use a fake Agent); the URL is built from the validated origin of
-// the registered Agent (AgentOrigin), never from request input.
+// Package monitor owns typed Agent monitoring, DNS cache/rule controls,
+// Mihomo panel operations and durable dashboard/ranking statistics.
+// Device requests use the registered Agent's authenticated agents.Client;
+// endpoint credentials and service identity come from original stored members.
+// Deployment and HA coordination remain with their respective owners.
 package monitor
 
 import (
