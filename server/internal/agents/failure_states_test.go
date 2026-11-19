@@ -22,12 +22,12 @@ func recordTask(e *env, status string) string {
 	return id
 }
 
-func legacyCall(e *env, method string) *jsonx.Object {
+func legacyCall(e *env, method string) (*jsonx.Object, error) {
 	e.t.Helper()
 	if method == "push" {
-		return must[*jsonx.Object](e.t)(e.m.PushLegacyConfig(e.ctx, e.id(), "[General]", PushConfig{}))
+		return e.m.PushLegacyConfig(e.ctx, e.id(), "[General]", PushConfig{})
 	}
-	return must[*jsonx.Object](e.t)(e.m.RestartAgentService(e.ctx, e.id()))
+	return e.m.RestartAgentService(e.ctx, e.id())
 }
 
 func TestLegacySuccessHTTPRequiresAJSONObject(t *testing.T) {
@@ -37,7 +37,14 @@ func TestLegacySuccessHTTPRequiresAJSONObject(t *testing.T) {
 			e.editSystem(func(system *jsonx.Object) { e.firstAgent(system).Set("service_type", "surge") })
 			before := e.get(e.id())
 			e.fake.set(always(payload, 200))
-			result := legacyCall(e, method)
+			head := remoteReferenceHead(t, e)
+			result, callErr := legacyCall(e, method)
+			if verifyNativeLegacyReply(t, e, method, string(rawLegacyReply(payload)), jsonx.Obj("success", false, "message", "Invalid Agent response"), callErr, head) {
+				continue
+			}
+			if callErr != nil {
+				t.Fatal(callErr)
+			}
 			if !jsonx.Equal(result, jsonx.Obj("success", false, "message", "Invalid Agent response")) {
 				t.Fatalf("%s %v: %v", method, payload, result)
 			}
@@ -58,7 +65,14 @@ func TestLegacyInvalidJSONKeepsSafePlainTextExplanation(t *testing.T) {
 			return &Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}},
 				Body: []byte("upstream service unavailable\npassword=do-not-display")}, nil
 		})
-		result := legacyCall(e, method)
+		head := remoteReferenceHead(t, e)
+		result, callErr := legacyCall(e, method)
+		if verifyNativeLegacyReply(t, e, method, "upstream service unavailable\npassword=do-not-display", nil, callErr, head) {
+			continue
+		}
+		if callErr != nil {
+			t.Fatal(callErr)
+		}
 		details := result.GetString("error_details")
 		if result.Value("success") != false || !strings.Contains(details, "upstream service unavailable") || strings.Contains(details, "do-not-display") {
 			t.Fatalf("%s: %v", method, result)

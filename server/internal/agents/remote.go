@@ -15,6 +15,7 @@ import (
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"golang.org/x/text/encoding/charmap"
 )
@@ -134,6 +135,7 @@ func (m *Manager) RestartAgentService(ctx context.Context, id string) (*jsonx.Ob
 	}, false)
 }
 func (m *Manager) serviceOperation(ctx context.Context, id string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error) {
+	ctx = lifecycle.Detach(ctx)
 	if hook := currentHooks().HAServiceOperation; hook != nil {
 		return hook(ctx, m, id, operation, uninstall)
 	}
@@ -294,7 +296,19 @@ func (m *Manager) RegionTargets(ctx context.Context, agent *jsonx.Object) (any, 
 	if err != nil {
 		return nil, err
 	}
-	return truthyOr(result.Value("targets"), []any{}), nil
+	value := result.Value("targets")
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	present, err := model.JSONHasContent(raw)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return []any{}, nil
+	}
+	return value, nil
 }
 
 // RegionCheck is region_check(agent, payload).

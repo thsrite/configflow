@@ -1,0 +1,152 @@
+[
+  {
+    "original": {
+      "name": "restart agent not json",
+      "method": "POST",
+      "path": "/api/agents/op-1/restart",
+      "phase": "notjson",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"error_details\": \"not json\", \"message\": \"Invalid Agent response\", \"success\": false}"
+    },
+    "sha256": "43cf9ca8c94217a1bac7cbba220cdca1bf1372ee0ee60f5d7e64d05eef3d12a3",
+    "native_kind": "reply"
+  },
+  {
+    "original": {
+      "name": "logs not json",
+      "method": "GET",
+      "path": "/api/agents/op-1/logs",
+      "phase": "notjson",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"Connection error: Expecting value: line 1 column 1 (char 0)\", \"success\": false}"
+    },
+    "sha256": "8268008f4958203c9f7edbbef13ed2031e0a13bdd94a5c203cdbe5de8b2b2722",
+    "native_kind": "reply"
+  },
+  {
+    "original": {
+      "name": "logging config NaN",
+      "method": "POST",
+      "path": "/api/agents/op-2/config/logging",
+      "phase": "",
+      "body": "{\"enabled\": NaN}",
+      "content_type": "application/json",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"Connection error: Out of range float values are not JSON compliant\", \"success\": false}"
+    },
+    "sha256": "7081fdc0061295d0fe6443e1368d6812e9e0cd9bb7a10b574a97839903cf98ee",
+    "native_kind": "payload"
+  },
+  {
+    "original": {
+      "name": "review restart cjk token",
+      "method": "POST",
+      "path": "/api/agents/op-cjk/restart",
+      "phase": "",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)\", \"success\": false}"
+    },
+    "sha256": "2a2f5cfef681778be17d4c38a116a40fb592e619f563410ceddfefd3def2cfef",
+    "native_kind": "header"
+  },
+  {
+    "original": {
+      "name": "review logs cjk token",
+      "method": "GET",
+      "path": "/api/agents/op-cjk/logs",
+      "phase": "",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)\", \"success\": false}"
+    },
+    "sha256": "0a72c6185ebb35120922cd428a71a55fc3d9b4b26dbfd60d22ee834e70a3c71a",
+    "native_kind": "header"
+  },
+  {
+    "original": {
+      "name": "review log clear cjk token",
+      "method": "POST",
+      "path": "/api/agents/op-cjk/logs/clear",
+      "phase": "",
+      "body": "{\"log_path\": \"/x\"}",
+      "content_type": "application/json",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)\", \"success\": false}"
+    },
+    "sha256": "a0eee52973858ded126fae29426ae298e7e34c1881b4e979d88c60389902cc33",
+    "native_kind": "header"
+  },
+  {
+    "original": {
+      "name": "review uninstall cjk token",
+      "method": "POST",
+      "path": "/api/agents/op-cjk/uninstall",
+      "phase": "",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)\", \"success\": false}"
+    },
+    "sha256": "a354badea0bc2736c50f988fe841154f24078784d40e2e19e83d7a2c57f645f8",
+    "native_kind": "header"
+  },
+  {
+    "original": {
+      "name": "review restart without host",
+      "method": "POST",
+      "path": "/api/agents/op-nohost/restart",
+      "phase": "",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'host'\", \"success\": false}"
+    },
+    "sha256": "e665c2d83109dbdef396a3d1b01416ee5edcd233581d05bf29c56632a169807f",
+    "native_kind": "endpoint"
+  },
+  {
+    "original": {
+      "name": "review logs without host",
+      "method": "GET",
+      "path": "/api/agents/op-nohost/logs",
+      "phase": "",
+      "body": "",
+      "content_type": "",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'host'\", \"success\": false}"
+    },
+    "sha256": "26d1f858d23ba679fdad762160c5df5bbd97525ab1b9ab090163828052dbebe7",
+    "native_kind": "endpoint"
+  },
+  {
+    "original": {
+      "name": "review logging NaN without host",
+      "method": "POST",
+      "path": "/api/agents/op-nohost/config/logging",
+      "phase": "",
+      "body": "{\"enabled\": NaN}",
+      "content_type": "application/json",
+      "admin": true,
+      "python_status": 500,
+      "python_body": "{\"message\": \"'host'\", \"success\": false}"
+    },
+    "sha256": "a68d33bb3bae614bef50986c711c1b0a9d2f4ec0cdd6efd6aaaa8c27b159cb18",
+    "native_kind": "endpoint"
+  }
+]

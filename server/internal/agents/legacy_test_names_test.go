@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"configflow/internal/jsonx"
 	"context"
 	"math"
 	"time"
@@ -25,4 +26,13 @@ func timestampOf(value any) float64 {
 		return math.Inf(-1)
 	}
 	return heartbeatTimestamp(text)
+}
+
+func findAgent(agents []any, agentID any) (*jsonx.Object, int) {
+	for i, item := range agents {
+		if agent, ok := item.(*jsonx.Object); ok && jsonx.Equal(agent.Value("id"), agentID) {
+			return agent, i
+		}
+	}
+	return nil, -1
 }

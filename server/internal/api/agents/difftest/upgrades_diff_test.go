@@ -41,6 +41,7 @@ import (
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 )
 
 // fakeOpsAgent answers the Agent API used by the A15 routes. Update ids are
@@ -583,7 +584,14 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
 	failed := 0
 	requests := upgradesRequests(lan)
+	policies := 0
 	for _, r := range requests {
+		policy := n810OperationPolicy(t, r)
+		var before store.Fingerprint
+		if policy != nil {
+			policies++
+			before = n810OperationFingerprint(t, goDir)
+		}
 		fake.setPhase(r.phase)
 		py := send(t, pyBase, r.request, pyToken, nil)
 		time.Sleep(r.wait)
@@ -592,6 +600,12 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 		time.Sleep(r.wait)
 		goCalls := fake.take()
 		diffs := compare(r.request, py, gor)
+		if policy != nil {
+			diffs = compareN810Operation(t, policy, py, gor)
+			if after := n810OperationFingerprint(t, goDir); after != before {
+				diffs = append(diffs, "refused operation wrote transaction")
+			}
+		}
 		if strings.Join(pyCalls, "\n") != strings.Join(goCalls, "\n") {
 			diffs = append(diffs, fmt.Sprintf("agent requests\n    python %q\n    go     %q", pyCalls, goCalls))
 		}
@@ -601,6 +615,9 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 		} else {
 			t.Logf("same %-36s %s %s → %d (%d agent requests)", r.name, r.method, r.path, py.status, len(pyCalls))
 		}
+	}
+	if policies != 10 {
+		t.Fatalf("bound HTTP rows not executed: %d", policies)
 	}
 	pyAgents, goAgents := upgradeAgents(t, pyDir), upgradeAgents(t, goDir)
 	if !jsonx.Equal(pyAgents, goAgents) {

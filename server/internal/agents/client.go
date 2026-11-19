@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"golang.org/x/net/idna"
 )
 
 // Timeout is requests' (connect, read) timeout pair. Read applies to every
@@ -199,7 +200,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		return nil, &TransportError{Err: err}
 	}
 	if label := invalidIDNALabel(req.URL.Hostname()); label != "" {
-		return nil, &TransportError{Err: errors.New("Failed to parse: Name '" + label + "' is not a valid IDNA label")}
+		return nil, &TransportError{Err: errors.New(msgAgentHostInvalid)}
 	}
 	for key, values := range request.Header {
 		if request.Latin1Headers {
@@ -328,20 +329,15 @@ func glibcScopeOK(host string) bool {
 	return err == nil && n <= math.MaxUint32
 }
 
-// invalidIDNALabel returns the first non-ASCII label of host that urllib3's
-// strict IDNA 2008 encoding (idna.encode(name.lower(), strict=True,
-// std3_rules=True)) refuses because it holds a compatibility character
-// (full-width and half-width forms, Roman numerals, enclosed alphanumerics,
-// no-break and ideographic spaces), which Go's UTS #46 lookup would instead
-// map to ASCII ("１２７.0.0.1" → "127.0.0.1"). Other IDNA 2008 rules are not
-// checked (no golang.org/x/text): such hosts fail name resolution anyway.
+// invalidIDNALabel checks non-ASCII names with native IDNA registration rules.
+// ASCII names retain the existing endpoint contract, including local labels.
 func invalidIDNALabel(host string) string {
 	for _, label := range strings.Split(host, ".") {
-		for _, r := range label {
-			if r >= 0xff01 && r <= 0xffef || r >= 0x2160 && r <= 0x2188 || r >= 0x2460 && r <= 0x24ff ||
-				r == 0xa0 || r == 0x3000 {
-				return label
-			}
+		if strings.IndexFunc(label, func(r rune) bool { return r > 127 }) < 0 {
+			continue
+		}
+		if _, err := idna.Registration.ToASCII(strings.ToLower(label)); err != nil {
+			return label
 		}
 	}
 	return ""

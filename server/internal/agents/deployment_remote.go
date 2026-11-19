@@ -28,7 +28,7 @@ func (m *Manager) CallAgent(ctx context.Context, a *model.Agent, method, path st
 	}
 	host, hostOK := storedText(a.MemberJSON("host"))
 	token, tokenOK := storedText(a.MemberJSON("token"))
-	_, portPresent, portErr := a.MemberJSON("port")
+	portRaw, portPresent, portErr := a.MemberJSON("port")
 	if !hostOK || !tokenOK || !portPresent || portErr != nil {
 		return nil, ErrAgentEndpoint
 	}
@@ -37,7 +37,11 @@ func (m *Manager) CallAgent(ctx context.Context, a *model.Agent, method, path st
 	for key, values := range header {
 		h[http.CanonicalHeaderKey(key)] = append([]string(nil), values...)
 	}
-	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: "http://" + host + ":" + strconv.FormatInt(int64(a.Port), 10) + path, Header: h, Body: body, Timeout: timeout, Latin1Headers: true})
+	port := strings.TrimSpace(string(portRaw))
+	if text, valid := storedText(portRaw, portPresent, nil); valid {
+		port = text
+	}
+	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: "http://" + host + ":" + port + path, Header: h, Body: body, Timeout: timeout, Latin1Headers: true})
 	if err != nil {
 		if !IsTransportError(err) && !errors.Is(err, ErrHeaderEncoding) {
 			err = &TransportError{Err: err}

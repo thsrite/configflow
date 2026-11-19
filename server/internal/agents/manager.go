@@ -43,24 +43,12 @@ type PermissionError struct{}
 
 func (e *PermissionError) Error() string { return "Unauthorized" }
 
-// ValueError is a Python ValueError raised by the registry (str(e) is Message).
+// ValueError retains the validation error name for deferred facade consumers.
 type ValueError struct{ Message string }
 
 func (e *ValueError) Error() string { return e.Message }
 
 var errNothingToSave = errors.New("nothing to save")
-
-// pyStatuses is a tuple of status strings tested with Python's `in`: a value
-// of any other type (a list or dict an Agent answered included) is simply not
-// a member, it never panics like an `any`-keyed map lookup would.
-type pyStatuses map[string]bool
-
-func (s pyStatuses) has(value any) bool {
-	text, ok := value.(string)
-	return ok && s[text]
-}
-
-var deploymentTerminal = pyStatuses{"succeeded": true, "failed": true, "rolled_back": true}
 
 // deploymentResults is _DEPLOYMENT_RESULTS.
 var deploymentResults = map[string]struct {
@@ -75,9 +63,13 @@ var deploymentResults = map[string]struct {
 
 // agentLabel is _agent_label(agent).
 func agentLabel(agent *jsonx.Object) string {
-	name := agent.Value("name")
-	if !jsonx.Truthy(name) {
-		name = agent.Value("id")
+	a, err := agentModel(agent)
+	if err != nil || a == nil {
+		return ""
+	}
+	name := a.Name
+	if name == "" {
+		name = a.ID
 	}
 	return logx.LogText(name, 120)
 }
@@ -168,72 +160,29 @@ func IsUsable(agent *jsonx.Object, now *time.Time) bool {
 
 // upgradeBusy is _upgrade_busy(agent).
 func upgradeBusy(agent *jsonx.Object) bool {
-	upgrade := agent.Value("latest_upgrade")
-	if !jsonx.Truthy(upgrade) {
-		return false
-	}
-	object, _ := upgrade.(*jsonx.Object)
-	return !deploymentTerminal.has(object.Value("status"))
+	a, err := agentModel(agent)
+	return err != nil || upgradeBusyModel(a)
 }
-
-// haEnabled is _oxidns_ha_enabled(agent).
-func haEnabled(agent *jsonx.Object) bool {
-	ha, _ := agent.Value("oxidns_ha").(*jsonx.Object)
-	return ha.Value("enabled") == true
-}
-
-// haBusy is _oxidns_ha_busy(agent).
-func haBusy(agent *jsonx.Object) bool { return haActive(agent) }
 
 // dnsFollowBusy is _dns_follow_busy(agents, agent_id).
-func dnsFollowBusy(agents []any, agentID any) bool {
-	for _, item := range agents {
-		agent, _ := item.(*jsonx.Object)
-		state, _ := agent.Value("dns_follow_state").(*jsonx.Object)
-		status := state.Value("status")
-		if status != "preparing" && status != "publishing" {
+func dnsFollowBusy(records []any, agentID any) bool {
+	id, valid := agentID.(string)
+	if !valid {
+		return false
+	}
+	rows := make([]model.Agent, 0, len(records))
+	for _, item := range records {
+		record, valid := item.(*jsonx.Object)
+		if !valid {
 			continue
 		}
-		follow, _ := agent.Value("dns_follow").(*jsonx.Object)
-		if jsonx.Equal(agent.Value("id"), agentID) || jsonx.Equal(follow.Value("source_agent_id"), agentID) {
-			return true
+		a, err := agentModel(record)
+		if err != nil || a == nil {
+			continue
 		}
+		rows = append(rows, *a)
 	}
-	return false
-}
-
-// unfinishedDeployment reports a deployment whose status is not terminal.
-func unfinishedDeployment(agent *jsonx.Object) bool {
-	deployments, _ := agent.Value("deployments").(*jsonx.Object)
-	for _, task := range deployments.Values() {
-		object, _ := task.(*jsonx.Object)
-		if !deploymentTerminal.has(object.Value("status")) {
-			return true
-		}
-	}
-	return false
-}
-
-// truthyOr is `value or fallback`.
-func truthyOr(value, fallback any) any {
-	if jsonx.Truthy(value) {
-		return value
-	}
-	return fallback
-}
-
-func objectAt(agents []any, i int) *jsonx.Object {
-	object, _ := agents[i].(*jsonx.Object)
-	return object
-}
-
-func findAgent(agents []any, agentID any) (*jsonx.Object, int) {
-	for i, item := range agents {
-		if agent, ok := item.(*jsonx.Object); ok && jsonx.Equal(agent.Value("id"), agentID) {
-			return agent, i
-		}
-	}
-	return nil, -1
+	return dnsFollowBusyModel(rows, id)
 }
 
 // Manager is AgentManager: the registry of one repository.
@@ -301,18 +250,6 @@ func (m *Manager) httpClient() Client {
 
 func (m *Manager) defaultProfileID(ctx context.Context) (string, error) {
 	return m.repository.DefaultProfileID(ctx)
-}
-
-// profileOf is (agent.get('profile_id') or default_profile_id()).
-func (m *Manager) profileOf(ctx context.Context, agent *jsonx.Object) (any, error) {
-	if value := agent.Value("profile_id"); jsonx.Truthy(value) {
-		return value, nil
-	}
-	id, err := m.defaultProfileID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return id, nil
 }
 
 // agents is _agents(history=...): the records with the heartbeat state laid

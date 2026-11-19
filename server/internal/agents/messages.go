@@ -411,3 +411,5 @@ const (
 	msgAgentHeaderEncoding = "Agent 请求头包含无法发送的字符，请检查设备凭据。"
 	msgAgentHeaderInvalid  = "Agent 请求头包含换行符，请检查设备凭据。"
 )
+
+const msgAgentHostInvalid = "Agent 主机名不是有效的国际化域名"
