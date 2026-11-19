@@ -2302,3 +2302,6 @@ N8-11 删除。
   第二个独立Flask服务注入明确原生规则后比较完整脚本/错误，不修改旧随机矩阵。
   discovery clear 和 traffic-history 删除改调已有 DeleteContext，保留 shutdown lifetime；
   无新 owner/状态机，正常响应和断线完成行为保持。
+- （HR 复核补登）Agent 二进制下载在文件缺失、是目录或无权限时仍是500、字段不变，但 message
+  从 Python 的 `[Errno N] …: '<path>'` 改为 Go 原生 OS 错误文本（如 `stat <path>: no such file
+  or directory`）；difftest `nativeFileDiagnostic` 按错误类别归一比较。

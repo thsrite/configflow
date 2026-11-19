@@ -185,11 +185,16 @@ func getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	if agent == nil {
 		return failure(404, "Agent not found"), nil
 	}
-	status := rawAgentMember(agent, "status")
-	if string(status) == "null" {
-		status = json.RawMessage(`"unknown"`)
+	// agent.get('status', 'unknown'): only a missing member defaults; a stored
+	// null stays null.
+	status, present, err := agent.MemberJSON("status")
+	if err != nil {
+		return nil, err
 	}
-	return httpx.JSON(map[string]any{"success": true, "status": status}), nil
+	if !present {
+		status = []byte(`"unknown"`)
+	}
+	return httpx.JSON(map[string]any{"success": true, "status": json.RawMessage(status)}), nil
 }
 
 func getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
