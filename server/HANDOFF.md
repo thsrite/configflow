@@ -56,6 +56,17 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 (handoff to a fresh session; read this first) <<<
 
+**Update 2026-11-19 ~16:40 (coordinator 2f0cdf04, Opus 5.5):** core-2 handed back as `go-n8-10-core-2@a75dd4a1d`
+(based on go@d9515f7fe, 20 commits, report progress/n8-10-core-2.md, status "partial" with explicit deferred list).
+Rulings today: traffic domain lowercasing = x/text cases.Lower, Unicode 17 only, test hard-asserts 17.0.0 (55
+lowercase + 307 final-sigma rows bound to official UCD); **toolchain → Go 1.27.4** (maintainer: servers already
+ran 1.27.4 via GOTOOLCHAIN=auto, release image was the untested 1.26.11) — batch-11 gets one integrator commit:
+server/go.mod `go 1.27.0` + `toolchain go1.27.4`, x/text v0.43.0 marked direct, docker/Dockerfile 3× golang:1.27.4;
+Agent module (backend/agents/go-agent, Dockerfile.agent) unchanged; rerun govulncheck (not installed on servers yet).
+In flight: df5151e2 Opus HR review (go-opus-review-n8-10-core-2), 1cc7e926 Codex monitor (go-n8-10-monitor),
+7e69d031 Codex installer (go-n8-10-installer) — both stacked on a75dd4a1d, rebase after review fixes; upgrades after
+installer, api/agents last. Planned: batch-11 = json-case + core-2(+review) + toolchain; batch-12 monitor+installer.
+
 **Why this handoff:** the previous coordinator session (94c212e6, Opus) got safety-routed down to Opus 4.8
 because its context accumulated security material (an O9 security review + a user question about LAN packet
 capture). A FRESH session avoids that context and should stay on Opus 5.5. Start here.
