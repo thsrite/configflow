@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -162,7 +163,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 			changes = append(changes, pdChange(d, "hook", "PATCH", pdClients, client, Row{"script": pdHook}))
 		}
 		var old IPv6PDManifest
-		_ = json.Unmarshal(previous, &old)
+		_ = jsondecode.Unmarshal(previous, &old)
 		before := []string{}
 		for _, entry := range old.Resources {
 			before = append(before, entry.Role)
@@ -255,7 +256,7 @@ func pdWithdrawPlan(d *RouterOS, p *IPv6PDGuardPlan, live pdLive, owned map[stri
 		}
 	}
 	var old IPv6PDManifest
-	_ = json.Unmarshal(previous, &old)
+	_ = jsondecode.Unmarshal(previous, &old)
 	if old.Spec != nil {
 		p.LAN, p.Pool, p.Client = old.Spec.LAN, old.Spec.Pool, old.Spec.ClientInterface
 	}

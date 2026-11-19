@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -113,7 +114,7 @@ func parseSnapshot(ctx context.Context, data []byte, expected deploy.Manifest, e
 				return nil, refuse(msgSnapshotVerify)
 			}
 			var v snapshotManifest
-			if json.Unmarshal(raw, &v) != nil {
+			if jsondecode.Unmarshal(raw, &v) != nil {
 				return nil, refuse(msgSnapshotVerify)
 			}
 			manifest = &v
@@ -152,7 +153,7 @@ func parseSnapshot(ctx context.Context, data []byte, expected deploy.Manifest, e
 		return nil, refuse(msgSnapshotChanged)
 	}
 	var entries []snapshotFile
-	if json.Unmarshal(manifest.Files, &entries) != nil || entries == nil || len(entries) != len(files) {
+	if jsondecode.Unmarshal(manifest.Files, &entries) != nil || entries == nil || len(entries) != len(files) {
 		return nil, refuse(msgManifestIncomplete)
 	}
 	checked := make(map[string]bool, len(files))

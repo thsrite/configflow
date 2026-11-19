@@ -4,6 +4,7 @@
 package configgen
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -221,7 +222,7 @@ func materialize(ctx context.Context, config *jsonx.Object, native *model.Config
 			return Download{}, err
 		}
 		var downloads []mosdns.Download
-		if err = json.Unmarshal(raw, &downloads); err != nil {
+		if err = jsondecode.Unmarshal(raw, &downloads); err != nil {
 			return Download{}, err
 		}
 		files, err := oxidns.CustomFiles(profile)

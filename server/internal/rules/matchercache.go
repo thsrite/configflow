@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/jsondecode"
 	"container/list"
 	"context"
 	"crypto/sha256"
@@ -570,7 +571,7 @@ func (c *Cache) LocalMatcher(input MatcherInput, profileID string) *Cached {
 	// Clone only consumed records, never nodes/subscriptions or a full Config.
 	snapshot := MatcherInput{}
 	data, _ := json.Marshal(input)
-	_ = json.Unmarshal(data, &snapshot)
+	_ = jsondecode.Unmarshal(data, &snapshot)
 	signature, stamps, paths := c.signature(snapshot, rulesDir)
 	slot := cacheSlot{rulesDir, profileID}
 	now := c.now()

@@ -2,7 +2,7 @@ package oxidns
 
 import (
 	"configflow/internal/devicenotes"
-	"encoding/json"
+	"configflow/internal/jsondecode"
 	"maps"
 	"slices"
 )
@@ -141,7 +141,7 @@ func SavePolicyRows(p *Profile, settings, rows *Node, baseURL string) (*Node, er
 		return nil, fail(err.Error())
 	}
 	var after []devicenotes.Policy
-	if err := json.Unmarshal(ToJSON(prepared), &after); err != nil {
+	if err := jsondecode.Unmarshal(ToJSON(prepared), &after); err != nil {
 		return nil, err
 	}
 	if devicenotes.SameRoutes(before, after) {

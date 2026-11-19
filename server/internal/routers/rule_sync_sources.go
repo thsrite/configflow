@@ -3,6 +3,7 @@ package routers
 // Rule-source I/O uses the shared typed owner APIs. A source environment is
 // decoded once per operation and reused by all selected rules.
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 	"context"
@@ -29,7 +30,7 @@ func withSyncEnvironment(ctx context.Context, raw json.RawMessage) (context.Cont
 		System  json.RawMessage         `json:"system_config"`
 		Library []model.RuleLibraryItem `json:"rule_library"`
 	}
-	if err := json.Unmarshal(raw, &input); err != nil {
+	if err := jsondecode.Unmarshal(raw, &input); err != nil {
 		return nil, err
 	}
 	cfg := &rulefetch.SourceConfig{Library: input.Library}

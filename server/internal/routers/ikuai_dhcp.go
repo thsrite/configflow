@@ -9,6 +9,7 @@ package routers
 // and every write is read back whole.
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -323,7 +324,7 @@ func (d *Ikuai) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
 		return nil, err
 	}
 	var scope ikuaiDHCPScope
-	scopeOK := len(op.Scope) > 0 && json.Unmarshal(op.Scope, &scope) == nil && strings.HasPrefix(strings.TrimSpace(string(op.Scope)), "{")
+	scopeOK := len(op.Scope) > 0 && jsondecode.Unmarshal(op.Scope, &scope) == nil && strings.HasPrefix(strings.TrimSpace(string(op.Scope)), "{")
 	text := func(v any) string { s, _ := v.(string); return s }
 	if !scopeOK || text(scope.ID) == "" || text(scope.Network) == "" || text(scope.Gateway) == "" {
 		return nil, routerError(messageIkuaiDHCPScope)

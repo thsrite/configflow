@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,7 +115,7 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 	}
 	var spec *IPv6RouteSpec
 	if fake {
-		if len(entries) > 1 || json.Unmarshal(fields["spec"], &spec) != nil || spec == nil || !ipv6ValidSpec(spec) {
+		if len(entries) > 1 || jsondecode.Unmarshal(fields["spec"], &spec) != nil || spec == nil || !ipv6ValidSpec(spec) {
 			return nil, routerError(invalid)
 		}
 	} else {
@@ -310,7 +311,7 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 		if hasStoredState(previous) {
 			plan.Status = "pending"
 			var manifest IPv6FakeIPManifest
-			_ = json.Unmarshal(previous, &manifest)
+			_ = jsondecode.Unmarshal(previous, &manifest)
 			if manifest.Spec != nil {
 				plan.Items = []IPv6RouteItem{{IPv6RouteSpec: *manifest.Spec, Status: "pending", Detail: messageIPv6FakeWithdraw}}
 			}
@@ -581,7 +582,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 		keep = append(keep, e.ID)
 	}
 	var prev IPv6RoutesManifest
-	_ = json.Unmarshal(previous, &prev)
+	_ = jsondecode.Unmarshal(previous, &prev)
 	manifestGateway := gateway
 	if manifestGateway == "" {
 		manifestGateway = prev.Gateway

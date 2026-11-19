@@ -3,6 +3,7 @@ package agents
 // Legacy registry/repository/rules boundaries are isolated here. Client tools
 // use typed requests and delegate validation to shared config owners.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -91,7 +92,7 @@ func clientDiscoverySettings(config *jsonx.Object) (discovery.Settings, error) {
 	}
 	raw, err := json.Marshal(config)
 	if err == nil {
-		err = json.Unmarshal(raw, &payload)
+		err = jsondecode.Unmarshal(raw, &payload)
 	}
 	return payload.Settings, err
 }

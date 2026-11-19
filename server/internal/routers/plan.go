@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -63,7 +64,7 @@ func makeReturnOps(status *ReturnStatus, spec *ReturnSpec) []Op {
 	}
 	parts := []string{fmt.Sprintf(messageReturnApply, spec.Mark, spec.Table, spec.RouterIP, spec.Priority), returnScope(spec)}
 	var old ReturnSpec
-	_ = json.Unmarshal(previous, &old)
+	_ = jsondecode.Unmarshal(previous, &old)
 	if spec.SafetyVersion == 2 {
 		if effectful(previous) && old.SafetyVersion != 2 {
 			parts = append(parts, messageReturnUpgradeScope)
@@ -104,7 +105,7 @@ func cleanupReturnOps(status *ReturnStatus, warnings *[]string) []Op {
 		return ops
 	}
 	var spec ReturnSpec
-	if json.Unmarshal(c.Spec, &spec) != nil {
+	if jsondecode.Unmarshal(c.Spec, &spec) != nil {
 		*warnings = append(*warnings, fmt.Sprintf(messageReturnCleanupUnsafe, messageReturnIncomplete))
 		return ops
 	}
@@ -207,7 +208,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		*warnings = append(*warnings, rosPolicy.Warnings...)
 		var previous ROSPolicyManifest
 		if desired.ROSPolicy != nil {
-			_ = json.Unmarshal(desired.ROSPolicy.Previous, &previous)
+			_ = jsondecode.Unmarshal(desired.ROSPolicy.Previous, &previous)
 		}
 		old := []string{}
 		if previous.Spec != nil {
@@ -380,7 +381,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			}
 			if status.Managed != nil {
 				var old ReturnSpec
-				_ = json.Unmarshal(status.Managed.Spec, &old)
+				_ = jsondecode.Unmarshal(status.Managed.Spec, &old)
 				for _, n := range Networks(returnDest(&old)) {
 					for _, skip := range Networks(skipped) {
 						if n.Overlaps(skip) {

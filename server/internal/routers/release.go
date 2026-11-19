@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,7 +70,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			err = VerifyIPv6DNS(ctx, ros, checks.IPv6DNS)
 		case StageIPv6PDGuard:
 			var c IPv6PDGuardCheck
-			if json.Unmarshal(checks.IPv6PDGuard, &c) != nil {
+			if jsondecode.Unmarshal(checks.IPv6PDGuard, &c) != nil {
 				return nil, routerError(messageOperationFormat)
 			}
 			err = VerifyIPv6PDGuard(ctx, ros, &c)
@@ -114,7 +115,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			return nil, routerError(messageReturnNoTable)
 		}
 		var actual ReturnSpec
-		if json.Unmarshal(live.Managed.Spec, &actual) != nil {
+		if jsondecode.Unmarshal(live.Managed.Spec, &actual) != nil {
 			return nil, routerError(messageReturnSpecMismatch)
 		}
 		if !sameStrings(returnDest(&actual), returnDest(want)) {
@@ -219,7 +220,7 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 		Previous      json.RawMessage `json:"previous"`
 		RestoreLegacy bool            `json:"restore_legacy"`
 	}
-	if err := json.Unmarshal(raw, &op); err != nil {
+	if err := jsondecode.Unmarshal(raw, &op); err != nil {
 		return nil, err
 	}
 	if op.Kind != "return_routing_apply" && op.Kind != "return_routing_remove" {
@@ -247,7 +248,7 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 		var extra struct {
 			AdoptLegacy bool `json:"adopt_legacy"`
 		}
-		if json.Unmarshal(op.Spec, &s) != nil || json.Unmarshal(op.Spec, &extra) != nil || (s.SafetyVersion != 1 && s.SafetyVersion != 2) || extra.AdoptLegacy {
+		if jsondecode.Unmarshal(op.Spec, &s) != nil || jsondecode.Unmarshal(op.Spec, &extra) != nil || (s.SafetyVersion != 1 && s.SafetyVersion != 2) || extra.AdoptLegacy {
 			return nil, routerError(messageReturnHandshake)
 		}
 		if err = checkReturnAllocation(status, &s); err != nil {
@@ -289,7 +290,7 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 			}
 			if op.Kind == "return_routing_apply" && live.Managed != nil && live.Managed.TablePresent {
 				var s ReturnSpec
-				if json.Unmarshal(op.Spec, &s) == nil && sameReturnSpec(live.Managed.Spec, &s) && returnSpecProof(live.Managed.Spec, op.Spec) {
+				if jsondecode.Unmarshal(op.Spec, &s) == nil && sameReturnSpec(live.Managed.Spec, &s) && returnSpecProof(live.Managed.Spec, op.Spec) {
 					return undo, nil
 				}
 			}
@@ -591,7 +592,7 @@ func emptyStageReadback(stage Stage, c *Checks) (string, string, bool) {
 		var v struct {
 			Enabled bool `json:"enabled"`
 		}
-		_ = json.Unmarshal(c.IPv6PDGuard, &v)
+		_ = jsondecode.Unmarshal(c.IPv6PDGuard, &v)
 		verify = v.Enabled
 	case StageRoutes:
 		verify = c.ROSPolicy != nil
@@ -628,8 +629,8 @@ func returnPreviousHolds(live *ReturnStatus, previous json.RawMessage) bool {
 	var have, want struct {
 		ProxyDst []string `json:"proxy_dst"`
 	}
-	return returnSpecProof(current, previous) && json.Unmarshal(current, &have) == nil &&
-		json.Unmarshal(previous, &want) == nil && sameStrings(have.ProxyDst, want.ProxyDst)
+	return returnSpecProof(current, previous) && jsondecode.Unmarshal(current, &have) == nil &&
+		jsondecode.Unmarshal(previous, &want) == nil && sameStrings(have.ProxyDst, want.ProxyDst)
 }
 
 func returnSpecProof(live, expected json.RawMessage) bool {

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,7 +67,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 		Oxidns json.RawMessage `json:"oxidns"`
 		Groups json.RawMessage `json:"proxy_groups"`
 	}
-	if err = json.Unmarshal(config, &doc); err != nil {
+	if err = jsondecode.Unmarshal(config, &doc); err != nil {
 		return "", err
 	}
 	fake, err := FakeIPNetwork(doc.Mihomo.CustomConfig)
@@ -98,7 +99,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 				PeerID  string          `json:"peer_id"`
 			} `json:"oxidns_ha"`
 		}
-		_ = json.Unmarshal(mustPolicyJSON(dns), &view)
+		_ = jsondecode.Unmarshal(mustPolicyJSON(dns), &view)
 		if view.HA.Enabled {
 			var peer *GatewayAgent
 			if s.Agents != nil {

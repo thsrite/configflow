@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -460,7 +461,7 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 		return out, nil
 	}
 	var m IPv6PDManifest
-	if json.Unmarshal(raw, &m) != nil || m.Version != 1 || m.Resources == nil {
+	if jsondecode.Unmarshal(raw, &m) != nil || m.Version != 1 || m.Resources == nil {
 		return nil, routerError(messagePDManifest)
 	}
 	if m.Spec == nil || !pdName(m.Spec.LAN) || !pdName(m.Spec.Pool) || !rosIDPattern.MatchString(m.Spec.Client) || m.Spec.Hold != pdHold {
@@ -473,7 +474,7 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 			Config json.RawMessage `json:"config"`
 		} `json:"resources"`
 	}
-	if json.Unmarshal(raw, &fields) != nil {
+	if jsondecode.Unmarshal(raw, &fields) != nil {
 		return nil, routerError(messagePDManifest)
 	}
 	seen := map[string]bool{}

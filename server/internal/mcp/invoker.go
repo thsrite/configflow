@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -150,7 +151,7 @@ func newInvocation(ctx context.Context, app *httpx.App, raw json.RawMessage) (*i
 			return nil, bad(msgProfileType)
 		}
 	}
-	if json.Unmarshal(raw, &i.args) != nil || json.Unmarshal(raw, &i.original) != nil {
+	if jsondecode.Unmarshal(raw, &i.args) != nil || jsondecode.Unmarshal(raw, &i.original) != nil {
 		return nil, bad(msgType)
 	}
 	r, err := repo.GetRepository(ctx)

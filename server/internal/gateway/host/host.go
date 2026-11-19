@@ -3,6 +3,7 @@
 package host
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -250,7 +251,7 @@ func ParseSpec(raw json.RawMessage) (Spec, error) {
 			return s, fail("INVALID_REQUEST", 400, msgSpecText)
 		}
 	}
-	_ = json.Unmarshal(raw, &s)
+	_ = jsondecode.Unmarshal(raw, &s)
 	if !devicePattern.MatchString(s.Interface) || s.Interface == "lo" {
 		return s, fail("INVALID_REQUEST", 400, msgInterface)
 	}

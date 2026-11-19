@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -159,7 +160,7 @@ func pdStoreManifest(previous json.RawMessage, spec *IPv6PDSpec, resources []IPv
 func (d *RouterOS) recoverPD(ctx context.Context, previous json.RawMessage, remap map[[2]string]string, created map[string]IPv6PDResource, spec *IPv6PDSpec) error {
 	raw := pdRemapped(previous, remap)
 	var m IPv6PDManifest
-	_ = json.Unmarshal(raw, &m)
+	_ = jsondecode.Unmarshal(raw, &m)
 	if len(created) > 0 {
 		if m.Version == 0 {
 			m = IPv6PDManifest{Version: 1, Spec: spec, Resources: []IPv6PDResource{}}
@@ -335,7 +336,7 @@ func (d *RouterOS) RestoreIPv6PDGuard(ctx context.Context, op IPv6PDGuardUndo) e
 			return ctx.Err()
 		}
 		var current IPv6PDManifest
-		_ = json.Unmarshal(d.ipv6PDGuardManifest, &current)
+		_ = jsondecode.Unmarshal(d.ipv6PDGuardManifest, &current)
 		retained := map[string]IPv6PDResource{}
 		for _, r := range current.Resources {
 			if r.Config != nil && !completed[[3]string{"DELETE", r.Path, r.ID}] && !completed[[3]string{"PATCH", r.Path, r.ID}] {
@@ -417,7 +418,7 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 func init() {
 	RegisterRouterOSHandler("ipv6_dns_update", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6DNSUpdate
-		if json.Unmarshal(raw, &op) != nil {
+		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		undo, e := d.ApplyIPv6DNS(ctx, op)
@@ -428,7 +429,7 @@ func init() {
 	})
 	RegisterRouterOSHandler("ipv6_pd_guard_sync", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6PDGuardSync
-		if json.Unmarshal(raw, &op) != nil {
+		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		undo, e := d.ApplyIPv6PDGuard(ctx, op)
@@ -439,7 +440,7 @@ func init() {
 	})
 	RegisterRouterOSHandler("ipv6_pd_guard_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6PDGuardUndo
-		if json.Unmarshal(raw, &op) != nil {
+		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		if e := d.RestoreIPv6PDGuard(ctx, op); e != nil {

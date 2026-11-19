@@ -1,6 +1,7 @@
 package health
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -493,7 +494,7 @@ func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Objec
 		if err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal(raw, &typedOptions); err != nil {
+		if err := jsondecode.Unmarshal(raw, &typedOptions); err != nil {
 			return nil, err
 		}
 	}

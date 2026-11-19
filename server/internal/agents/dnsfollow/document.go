@@ -2,6 +2,7 @@ package dnsfollow
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -82,7 +83,7 @@ func boundEntry(doc *yamlx.Node, b *model.DNSFollowBinding) (*yamlx.Node, error)
 		Tag   *string `json:"upstream_tag"`
 		Index *int64  `json:"upstream_index"`
 	}
-	if err != nil || json.Unmarshal(raw, &selected) != nil || selected.Tag == nil || selected.Index == nil || *selected.Index < 0 {
+	if err != nil || jsondecode.Unmarshal(raw, &selected) != nil || selected.Tag == nil || selected.Index == nil || *selected.Index < 0 {
 		return nil, refusal(msgRemoved)
 	}
 	for _, e := range entries(doc) {
@@ -157,7 +158,7 @@ func pinnedRule(src *deploy.Source, settings *yamlx.Node, address string) int {
 	var rows []struct {
 		ID string `json:"id"`
 	}
-	_ = json.Unmarshal(src.Member("rule_configs"), &rows)
+	_ = jsondecode.Unmarshal(src.Member("rule_configs"), &rows)
 	for i, row := range rows {
 		if ids[row.ID] {
 			return i + 1

@@ -1,6 +1,7 @@
 package pushdiff
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"encoding/json"
 )
@@ -80,7 +81,7 @@ func (r RawDiff) MarshalJSON() ([]byte, error) {
 func (l *ListDiff) UnmarshalJSON(data []byte) error {
 	type plain ListDiff
 	var value plain
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := jsondecode.Unmarshal(data, &value); err != nil {
 		return err
 	}
 	var fields map[string]json.RawMessage

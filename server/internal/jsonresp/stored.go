@@ -2,7 +2,7 @@ package jsonresp
 
 import (
 	"bytes"
-	"encoding/json"
+	"configflow/internal/jsondecode"
 	"fmt"
 	"unicode/utf8"
 )
@@ -15,7 +15,7 @@ func DecodeStored(data []byte, dst any) error {
 		return fmt.Errorf("decode stored JSON: invalid UTF-8")
 	}
 	data, _ = NormalizeNonFinite(data)
-	if err := json.Unmarshal(data, dst); err != nil {
+	if err := jsondecode.Unmarshal(data, dst); err != nil {
 		return fmt.Errorf("decode stored JSON: %w", err)
 	}
 	return nil

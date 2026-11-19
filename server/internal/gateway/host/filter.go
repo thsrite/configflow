@@ -1,6 +1,7 @@
 package host
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"regexp"
 	"slices"
@@ -138,7 +139,7 @@ func validForwardFilter(raw json.RawMessage) bool {
 			Source string `json:"source"`
 		} `json:"remedies"`
 	}
-	return json.Unmarshal(raw, &labels) == nil
+	return jsondecode.Unmarshal(raw, &labels) == nil
 }
 
 // SanitizeForwardFilter drops unknown fields, command syntax and unusable reports.

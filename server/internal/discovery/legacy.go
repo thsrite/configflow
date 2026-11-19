@@ -3,6 +3,7 @@ package discovery
 // This file is the boundary to the pre-N8 repository, matcher and health APIs.
 // Business logic uses native structs; these conversions disappear with N8.
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"context"
 	"encoding/json"
@@ -21,7 +22,7 @@ func decode(v any, out any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal([]byte(b), out)
+	return jsondecode.Unmarshal([]byte(b), out)
 }
 func legacy(v any) (any, error) {
 	b, err := json.Marshal(v)

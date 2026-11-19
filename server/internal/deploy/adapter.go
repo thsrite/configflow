@@ -4,6 +4,7 @@ package deploy
 // values, yamlx nodes, opaque records or raw JSON.
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -262,7 +263,7 @@ func receiptAgentRaw(agent *agents.Record) receiptAgentView {
 	var view receiptAgentView
 	raw, err := encodeJSON(agent)
 	if err == nil {
-		_ = json.Unmarshal(raw, &view)
+		_ = jsondecode.Unmarshal(raw, &view)
 	}
 	return view
 }
@@ -850,7 +851,7 @@ type taskView struct {
 func resultView(r *agents.Result) taskView {
 	var v taskView
 	b, _ := encodeJSON(r)
-	_ = json.Unmarshal(b, &v)
+	_ = jsondecode.Unmarshal(b, &v)
 	return v
 }
 func taskViewOf(t Target, id string) (taskView, bool) {

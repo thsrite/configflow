@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -226,7 +227,7 @@ func (s *Service) verificationSettings(ctx context.Context, id, profile string, 
 			return nil, failure("INVALID_REQUEST", 400, msgSettingsBody)
 		}
 		var saved Settings
-		if json.Unmarshal(body, &saved) != nil || string(values["client_agent_id"]) == "null" || string(values["test_url"]) == "null" {
+		if jsondecode.Unmarshal(body, &saved) != nil || string(values["client_agent_id"]) == "null" || string(values["test_url"]) == "null" {
 			return nil, failure("INVALID_REQUEST", 400, msgSettingsBody)
 		}
 		saved.ClientAgentID = strings.TrimSpace(saved.ClientAgentID)

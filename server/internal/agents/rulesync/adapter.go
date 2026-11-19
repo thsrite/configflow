@@ -4,6 +4,7 @@ package rulesync
 // projection use typed native JSON, immutable deploy.Source and yamlx nodes.
 import (
 	"configflow/internal/agents/monitor"
+	"configflow/internal/jsondecode"
 	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -283,7 +284,7 @@ func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths
 	var view struct {
 		Task nativeTask `json:"task"`
 	}
-	if err = json.Unmarshal(raw, &view); err != nil {
+	if err = jsondecode.Unmarshal(raw, &view); err != nil {
 		return nativeTask{}, err
 	}
 	return view.Task, nil

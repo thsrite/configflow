@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -24,7 +25,7 @@ type NATListUndo struct {
 func init() {
 	RegisterRouterOSHandler("nat_list_sync", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op NATListSync
-		if json.Unmarshal(raw, &op) != nil {
+		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		undo, err := d.ApplyNATLists(ctx, op)
@@ -35,7 +36,7 @@ func init() {
 	})
 	RegisterRouterOSHandler("nat_list_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op NATListUndo
-		if json.Unmarshal(raw, &op) != nil {
+		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		if err := d.RestoreNATLists(ctx, op); err != nil {
@@ -430,10 +431,10 @@ func (d *RouterOS) runNATSteps(ctx context.Context, steps []NATStep, ids ROSIDs,
 				for _, s := range run {
 					raw := s.Undo
 					var head OpHead
-					_ = json.Unmarshal(raw, &head)
+					_ = jsondecode.Unmarshal(raw, &head)
 					if head.Kind == "nat_list_restore" {
 						var undo NATListUndo
-						if json.Unmarshal(raw, &undo) != nil {
+						if jsondecode.Unmarshal(raw, &undo) != nil {
 							*failures = append(*failures, messageOperationFormat)
 							break
 						}

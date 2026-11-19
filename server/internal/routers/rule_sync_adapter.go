@@ -3,6 +3,7 @@ package routers
 // Rule sync downloads and snapshot orchestration use the typed rule owner.
 // Device writes remain in the sync service and guarded stores.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,7 +45,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	var source struct {
 		URL string `json:"url"`
 	}
-	if err := json.Unmarshal(raw, &source); err != nil {
+	if err := jsondecode.Unmarshal(raw, &source); err != nil {
 		return "", err
 	}
 	environment := ctx.Value(syncEnvironmentKey{}).(*syncEnvironment)

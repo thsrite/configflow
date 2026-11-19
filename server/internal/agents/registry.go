@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -312,7 +313,7 @@ func (m *Manager) logMetricsFailure(ctx context.Context, id, name string, failur
 		raw, encodeErr := json.Marshal(view)
 		if encodeErr != nil {
 			view.Name, view.Error = redact.Redacted, redact.Redacted
-		} else if err := json.Unmarshal(redact.SanitizeCredentials(json.RawMessage(raw), secrets), &view); err != nil {
+		} else if err := jsondecode.Unmarshal(redact.SanitizeCredentials(json.RawMessage(raw), secrets), &view); err != nil {
 			view.Name, view.Error = redact.Redacted, redact.Redacted
 		}
 	}

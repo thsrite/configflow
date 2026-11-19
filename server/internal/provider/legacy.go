@@ -3,8 +3,8 @@ package provider
 // Compatibility codecs for callers awaiting their own typed migration. Business
 // logic lives in delivery.go; this file never emulates Python scalar behavior.
 import (
+	"configflow/internal/jsondecode"
 	"context"
-	"encoding/json"
 	"sync"
 
 	"configflow/internal/convert"
@@ -22,7 +22,7 @@ func decodeLegacy(value any, target any) error {
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(data, target); err != nil {
+	if err := jsondecode.Unmarshal(data, target); err != nil {
 		return &InputError{Field: "record", Cause: err}
 	}
 	return nil

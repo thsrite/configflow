@@ -6,6 +6,7 @@ package repo
 // jsonx.Parse and jsonx.Compact → the model codec. Deleted in N8-11.
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -379,7 +380,7 @@ func decodeLegacyRecord(object *jsonx.Object, record any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, record)
+	return jsondecode.Unmarshal(data, record)
 }
 
 // validateLegacyDocument is write validation of a document built as jsonx

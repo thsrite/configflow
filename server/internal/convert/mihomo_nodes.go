@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"configflow/internal/jsondecode"
 	"container/list"
 	"context"
 	"encoding/json"
@@ -432,7 +433,7 @@ func NodeProxy(ctx context.Context, node model.Node, converter NodeConverter) (*
 	var metadata struct {
 		Type json.RawMessage `json:"type"`
 	}
-	if err := json.Unmarshal(data, &metadata); err != nil {
+	if err := jsondecode.Unmarshal(data, &metadata); err != nil {
 		return nil, err
 	}
 	if metadata.Type != nil {

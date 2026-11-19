@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"encoding/json"
 	"strings"
@@ -413,7 +414,7 @@ type Match struct {
 func (v *Match) UnmarshalJSON(b []byte) error {
 	type plain Match
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*v = Match(p)

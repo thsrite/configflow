@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -253,7 +254,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 		var raw struct {
 			Spec json.RawMessage `json:"spec"`
 		}
-		_ = json.Unmarshal(request.Previous, &raw)
+		_ = jsondecode.Unmarshal(request.Previous, &raw)
 		current = jsonValuesEqual(raw.Spec, mustPolicyJSON(spec)) && len(owned) == len(previous.Resources)
 	}
 	unchanged := previous == nil

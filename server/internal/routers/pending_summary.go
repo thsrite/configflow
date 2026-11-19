@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -123,10 +124,10 @@ func Summarize(report *Report, plan *Plan) PendingSummary {
 func SummarizeJSON(report, plan json.RawMessage) (PendingSummary, error) {
 	var r pendingReport
 	var p pendingPlan
-	if err := json.Unmarshal(report, &r); err != nil {
+	if err := jsondecode.Unmarshal(report, &r); err != nil {
 		return PendingSummary{}, err
 	}
-	if err := json.Unmarshal(plan, &p); err != nil {
+	if err := jsondecode.Unmarshal(plan, &p); err != nil {
 		return PendingSummary{}, err
 	}
 	return summarizePending(r, p), nil

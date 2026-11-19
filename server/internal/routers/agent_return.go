@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -43,7 +44,7 @@ func (s ManagerAgentSource) Agent(ctx context.Context, id string) (*GatewayAgent
 	if err = json.Unmarshal(b, &view); err != nil {
 		return nil, err
 	}
-	if err = json.Unmarshal(b, &dns); err != nil {
+	if err = jsondecode.Unmarshal(b, &dns); err != nil {
 		return nil, err
 	}
 	return &GatewayAgent{&view, record, &dns}, nil

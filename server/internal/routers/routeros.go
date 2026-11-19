@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -829,7 +830,7 @@ type rosManifest struct {
 
 func ownedHairpinIDs(raw json.RawMessage, rules []Row) map[string]bool {
 	var manifest rosManifest
-	if json.Unmarshal(raw, &manifest) != nil {
+	if jsondecode.Unmarshal(raw, &manifest) != nil {
 		return nil
 	}
 	ids := map[string]bool{}
@@ -997,7 +998,7 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 	var head struct {
 		Kind string `json:"kind"`
 	}
-	if err := json.Unmarshal(raw, &head); err != nil {
+	if err := jsondecode.Unmarshal(raw, &head); err != nil {
 		return nil, routerError(messageOperationFormat)
 	}
 	switch head.Kind {
@@ -1010,7 +1011,7 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 		return nil, ErrNotPorted
 	}
 	var op rosOperation
-	if err := json.Unmarshal(raw, &op); err != nil {
+	if err := jsondecode.Unmarshal(raw, &op); err != nil {
 		return nil, routerError(messageOperationFormat)
 	}
 	var result any

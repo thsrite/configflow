@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -80,7 +81,7 @@ func haPairIdentity(record *model.Agent) (group, peer string, valid bool) {
 		GroupID string `json:"group_id"`
 		PeerID  string `json:"peer_id"`
 	}
-	if err != nil || !present || json.Unmarshal(raw, &identity) != nil {
+	if err != nil || !present || jsondecode.Unmarshal(raw, &identity) != nil {
 		return "", "", false
 	}
 	return identity.GroupID, identity.PeerID, identity.GroupID != "" && identity.PeerID != ""

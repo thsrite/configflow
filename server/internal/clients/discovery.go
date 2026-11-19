@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -232,7 +233,7 @@ func (s *DiscoveryService) Discover(ctx context.Context, config json.RawMessage,
 			return
 		}
 		secrets := redact.CollectCredentials(config, nil)
-		err = json.Unmarshal(redact.SanitizeCredentials(json.RawMessage(data), secrets), &result)
+		err = jsondecode.Unmarshal(redact.SanitizeCredentials(json.RawMessage(data), secrets), &result)
 	}()
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {

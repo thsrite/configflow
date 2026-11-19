@@ -4,6 +4,7 @@ package clients
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -83,7 +84,7 @@ func ListDevices(config json.RawMessage) (DeviceList, error) {
 		return DeviceList{}, err
 	}
 	devices := []Device{}
-	if err = json.Unmarshal(oxidns.ToJSON(view.Policies), &devices); err != nil {
+	if err = jsondecode.Unmarshal(oxidns.ToJSON(view.Policies), &devices); err != nil {
 		return DeviceList{}, err
 	}
 	names, err := oxidns.ReadNotes(p)
@@ -94,7 +95,7 @@ func ListDevices(config json.RawMessage) (DeviceList, error) {
 		Notes json.RawMessage `json:"device_notes"`
 		Fixed json.RawMessage `json:"client_fixed_ips"`
 	}
-	if err = json.Unmarshal(config, &doc); err != nil {
+	if err = jsondecode.Unmarshal(config, &doc); err != nil {
 		return DeviceList{}, err
 	}
 	listed := map[string]bool{}
@@ -190,7 +191,7 @@ func UpdateDevice(ctx context.Context, config json.RawMessage, c Change, baseURL
 		var settings struct {
 			Policies json.RawMessage `json:"device_policies"`
 		}
-		_ = json.Unmarshal(doc["oxidns"], &settings)
+		_ = jsondecode.Unmarshal(doc["oxidns"], &settings)
 		if len(settings.Policies) == 0 {
 			settings.Policies = json.RawMessage(`[]`)
 		}
@@ -232,7 +233,7 @@ func UpdateDevice(ctx context.Context, config json.RawMessage, c Change, baseURL
 	var policy struct {
 		Policies json.RawMessage `json:"device_policies"`
 	}
-	_ = json.Unmarshal(doc["oxidns"], &policy)
+	_ = jsondecode.Unmarshal(doc["oxidns"], &policy)
 	if len(policy.Policies) == 0 {
 		policy.Policies = json.RawMessage(`[]`)
 	}

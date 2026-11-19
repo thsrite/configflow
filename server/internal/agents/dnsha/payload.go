@@ -1,6 +1,9 @@
 package dnsha
 
-import "encoding/json"
+import (
+	"configflow/internal/jsondecode"
+	"encoding/json"
+)
 
 var payloadFields = []string{"id", "source_snapshot", "resource_config", "config_revision", "base_url", "baseline_deployment_id", "bundle"}
 
@@ -9,7 +12,7 @@ var payloadFields = []string{"id", "source_snapshot", "resource_config", "config
 func (p *payload) UnmarshalJSON(data []byte) error {
 	type plain payload
 	var next plain
-	if err := json.Unmarshal(data, &next); err != nil {
+	if err := jsondecode.Unmarshal(data, &next); err != nil {
 		return err
 	}
 	var fields map[string]json.RawMessage

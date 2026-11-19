@@ -4,6 +4,7 @@ package mosdns
 // Generation, selection and parsing use the typed implementations exclusively.
 import (
 	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
 	"configflow/internal/refresh"
 	"configflow/internal/rulefetch"
 	"context"
@@ -303,7 +304,7 @@ func viaJSON(value any, target any) error {
 		*snap = snapshotOf(native)
 		return nil
 	}
-	return json.Unmarshal(data, target)
+	return jsondecode.Unmarshal(data, target)
 }
 
 // BuildMosDNSZip transcodes the old captured snapshot into the typed ZIP owner.

@@ -2,6 +2,7 @@ package subscriptions
 
 // All calls to packages that still expose jsonx documents are confined here.
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -48,7 +49,7 @@ func native(value any, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, target)
+	return jsondecode.Unmarshal(data, target)
 }
 func nativeObject(value *jsonx.Object) (object, error) {
 	var out object

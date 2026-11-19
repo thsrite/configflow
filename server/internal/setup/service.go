@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -222,7 +223,7 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 	if err != nil {
 		return out, err
 	}
-	err = json.Unmarshal(public, &out)
+	err = jsondecode.Unmarshal(public, &out)
 	return out, err
 }
 
@@ -276,7 +277,7 @@ func publicError(err error, record *Record) error {
 	if redactErr != nil {
 		return fmt.Errorf("sanitize setup error: %w", redactErr)
 	}
-	if decodeErr := json.Unmarshal(raw, &public); decodeErr != nil {
+	if decodeErr := jsondecode.Unmarshal(raw, &public); decodeErr != nil {
 		return fmt.Errorf("decode sanitized setup error: %w", decodeErr)
 	}
 	if public.Message == message {

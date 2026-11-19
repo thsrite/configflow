@@ -3,8 +3,8 @@
 package agents
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -57,15 +57,17 @@ func contentChecking(response *httpx.Response) bool {
 	if response.Status != 200 || !response.IsJSON() {
 		return false
 	}
-	type state struct{ Status string }
+	type state struct {
+		Status string `json:"status"`
+	}
 	type item struct {
-		Status      string
-		ContentSync state `json:"content_sync"`
+		Status      string `json:"status"`
+		ContentSync state  `json:"content_sync"`
 	}
 	body := response.Body()
 	if len(body) > 0 && body[0] == '[' {
 		var list []item
-		if json.Unmarshal(body, &list) == nil {
+		if jsondecode.Unmarshal(body, &list) == nil {
 			for _, row := range list {
 				if row.ContentSync.Status == "checking" {
 					return true
@@ -75,7 +77,7 @@ func contentChecking(response *httpx.Response) bool {
 		return false
 	}
 	var row item
-	return json.Unmarshal(body, &row) == nil && (row.Status == "checking" || row.ContentSync.Status == "checking")
+	return jsondecode.Unmarshal(body, &row) == nil && (row.Status == "checking" || row.ContentSync.Status == "checking")
 }
 
 func observeContent(ctx context.Context, response *httpx.Response, limit time.Duration, read func() (*httpx.Response, error)) (*httpx.Response, error) {

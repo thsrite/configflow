@@ -3,6 +3,7 @@ package aggregations
 // This is the boundary to the repository and existing provider collaborators.
 // Collection/rendering code uses native types and does not access legacy values.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,7 +44,7 @@ func native(value any, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(raw, target)
+	return jsondecode.Unmarshal(raw, target)
 }
 func projection(value *jsonx.Object) (resource, error) {
 	raw, err := jsonx.Compact(value)

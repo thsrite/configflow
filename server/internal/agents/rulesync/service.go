@@ -1,6 +1,7 @@
 package rulesync
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -149,7 +150,7 @@ func (s *Service) Configure(ctx context.Context, id string, body json.RawMessage
 			}
 		}
 		var settings Settings
-		if e := json.Unmarshal(body, &settings); e != nil {
+		if e := jsondecode.Unmarshal(body, &settings); e != nil {
 			return refuse(msgSettings)
 		}
 		record, e := s.m.GetAgentByID(ctx, id, false)

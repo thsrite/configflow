@@ -3,6 +3,7 @@ package convert
 // TODO(N8-8c/d, N8-9, N8-10): delete these transcoding entry points as callers
 // adopt the typed APIs. Business decisions belong to the typed implementation.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,7 +28,7 @@ func decodeLegacy[T any](value any) (T, error) {
 	if err != nil {
 		return result, err
 	}
-	err = json.Unmarshal(data, &result)
+	err = jsondecode.Unmarshal(data, &result)
 	return result, err
 }
 

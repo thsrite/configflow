@@ -5,6 +5,7 @@ package deploy
 import (
 	"configflow/internal/agents"
 	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
 	"configflow/internal/oxidns"
 	"encoding/json"
 )
@@ -205,13 +206,13 @@ func (f *File) UnmarshalJSON(data []byte) error {
 		SHA256 *string `json:"sha256"`
 		Role   *Role   `json:"role"`
 	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := jsondecode.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	if raw.Path == nil || raw.Size == nil || raw.SHA256 == nil || raw.Role == nil {
 		return preparation("Invalid deployment manifest file metadata")
 	}
-	return json.Unmarshal(data, (*plain)(f))
+	return jsondecode.Unmarshal(data, (*plain)(f))
 }
 
 // UnmarshalJSON requires actual booleans for supplied protocol flags, like the
@@ -227,5 +228,5 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		}
 	}
 	type plain Manifest
-	return json.Unmarshal(data, (*plain)(m))
+	return jsondecode.Unmarshal(data, (*plain)(m))
 }

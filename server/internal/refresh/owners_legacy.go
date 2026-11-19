@@ -5,6 +5,7 @@ package refresh
 // their cache declarations, node parsing, filters, hosts or dialer schemas.
 import (
 	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -22,7 +23,7 @@ func decodeLegacy(value, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, target)
+	return jsondecode.Unmarshal(data, target)
 }
 func legacyObject(value any) *jsonx.Object {
 	data, err := json.Marshal(value)

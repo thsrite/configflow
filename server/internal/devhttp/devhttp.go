@@ -18,6 +18,7 @@ package devhttp
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -129,15 +130,7 @@ func (r *Response) JSON(v any) error { return DecodeJSON(r.Body, v) }
 
 // DecodeJSON decodes exactly one JSON value, keeping numbers as json.Number.
 func DecodeJSON(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return errors.New("devhttp: data after the JSON value")
-	}
-	return nil
+	return jsondecode.Decode(data, v)
 }
 
 // EncodeJSON is the request body for v: compact JSON with every non-ASCII

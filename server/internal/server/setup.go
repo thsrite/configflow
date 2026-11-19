@@ -1,6 +1,7 @@
 package server
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"strings"
@@ -79,7 +80,7 @@ func wireSetupInstallation() {
 			var response struct {
 				Session json.RawMessage `json:"session"`
 			}
-			if e = json.Unmarshal(b, &response); e != nil {
+			if e = jsondecode.Unmarshal(b, &response); e != nil {
 				return nil, e
 			}
 			return installationState(response.Session)
@@ -118,7 +119,7 @@ func installationState(view json.RawMessage) (*setup.InstallationState, error) {
 		TargetChanged bool                       `json:"target_changed"`
 		Agents        map[string]json.RawMessage `json:"agents"`
 	}
-	if err := json.Unmarshal(view, &v); err != nil {
+	if err := jsondecode.Unmarshal(view, &v); err != nil {
 		return nil, err
 	}
 	if v.ID == "" {

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+
+	"configflow/internal/jsondecode"
 )
 
-// Bind decodes one JSON request into dst using encoding/json. It shares JSON's
+// Bind decodes one JSON request into dst with exact struct member names. It shares JSON's
 // media-type, byte-encoding and body-cache handling. Invalid JSON or an
 // incompatible DTO returns 400; a non-JSON Content-Type returns 415. Unknown
 // fields are ignored unless the DTO explicitly validates them. Duplicate object
@@ -84,9 +86,7 @@ func (c *Ctx) bind(dst any) error {
 	// Decode into a fresh destination: encoding/json may partially update a DTO
 	// before returning a type error, which must not leak through silent binding.
 	next := reflect.New(target.Elem().Type())
-	typed := json.NewDecoder(&b)
-	typed.UseNumber()
-	if err = typed.Decode(next.Interface()); err != nil {
+	if err = jsondecode.Decode(b.Bytes(), next.Interface()); err != nil {
 		return err
 	}
 	target.Elem().Set(next.Elem())

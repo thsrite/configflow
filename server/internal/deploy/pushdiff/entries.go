@@ -3,7 +3,7 @@ package pushdiff
 import (
 	"bytes"
 	"compress/zlib"
-	"encoding/json"
+	"configflow/internal/jsondecode"
 	"io"
 	"strings"
 
@@ -105,7 +105,7 @@ func (f *FileEntries) Page(change string, offset, limit int, q Query, find func(
 			break
 		}
 		var entry Entry
-		if json.Unmarshal(raw, &entry) != nil {
+		if jsondecode.Unmarshal(raw, &entry) != nil {
 			break
 		}
 		page.Entries = append(page.Entries, entry)

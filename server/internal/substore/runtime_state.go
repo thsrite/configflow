@@ -2,6 +2,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
 	"context"
@@ -82,7 +83,7 @@ func (r *Runtime) loadState() (*runtimeState, error) {
 	var members struct {
 		LastUsed json.RawMessage `json:"last_used"`
 	}
-	if json.Unmarshal(raw, &members) == nil && bytes.Equal(bytes.TrimSpace(members.LastUsed), []byte("null")) {
+	if jsondecode.Unmarshal(raw, &members) == nil && bytes.Equal(bytes.TrimSpace(members.LastUsed), []byte("null")) {
 		state.invalidLastUsed = true
 	}
 	return &state, nil

@@ -43,8 +43,9 @@
 //	httpx.Number           exact literal/form; explicit IsIntegerLiteral/IsBool validation
 //	Number.Text()          raw string contents; integer string syntax stays with N3
 //
-// Binding ignores unknown fields by default. DTOs requiring exact-case names or
-// extra-member rejection provide UnmarshalJSON with a map[string]json.RawMessage.
+// Binding matches struct names exactly and ignores unknown fields by default.
+// DTOs requiring extra-member rejection provide UnmarshalJSON with a
+// map[string]json.RawMessage. Custom codecs decode ordinary DTOs via jsondecode.
 // Number/RawMessage fields preserve business validation of wrong forms rather
 // than turning every wrong field type into a generic decoder error. The native
 // binders reject non-finite JSON; legacy JSON helpers migrate per consumer.

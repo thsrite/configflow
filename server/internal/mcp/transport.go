@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -188,7 +189,7 @@ func handle(c *httpx.Ctx) (*httpx.Response, error) {
 }
 func dispatch(c *httpx.Ctx, raw json.RawMessage) (response *rpcResponse) {
 	var m message
-	if json.Unmarshal(raw, &m) != nil {
+	if jsondecode.Unmarshal(raw, &m) != nil {
 		return nil
 	}
 	if m.ID == nil {
@@ -218,7 +219,7 @@ func dispatch(c *httpx.Ctx, raw json.RawMessage) (response *rpcResponse) {
 		var p struct {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
-		_ = json.Unmarshal(m.Params, &p)
+		_ = jsondecode.Unmarshal(m.Params, &p)
 		v := p.ProtocolVersion
 		if v != "2025-06-18" && v != "2025-03-26" && v != "2024-11-05" {
 			v = "2025-06-18"
@@ -268,7 +269,7 @@ type invalidParams struct{ message string }
 func (e *invalidParams) Error() string { return e.message }
 func execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
 	var p callParams
-	if !unset(params) && json.Unmarshal(params, &p) != nil {
+	if !unset(params) && jsondecode.Unmarshal(params, &p) != nil {
 		return nil, errors.New(msgType)
 	}
 	var name string

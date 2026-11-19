@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -63,7 +64,7 @@ type ReturnStatus struct {
 func (s *ReturnStatus) UnmarshalJSON(b []byte) error {
 	type plain ReturnStatus
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*s = ReturnStatus(p)
@@ -140,7 +141,7 @@ func ReturnAllocationOf(s *ReturnStatus) *ReturnAllocation {
 		}
 	}
 	var a ReturnAllocation
-	if json.Unmarshal(b, &a) != nil || a.Version != 1 || a.Table < 1 || a.Table > 252 || a.Priority < 1 || a.Priority > 32765 || !returnMarkPattern.MatchString(a.Mark) {
+	if jsondecode.Unmarshal(b, &a) != nil || a.Version != 1 || a.Table < 1 || a.Table > 252 || a.Priority < 1 || a.Priority > 32765 || !returnMarkPattern.MatchString(a.Mark) {
 		return nil
 	}
 	n, err := strconv.ParseUint(a.Mark[2:], 16, 32)
@@ -224,7 +225,7 @@ func returnScope(spec *ReturnSpec) string {
 }
 func sameReturnSpec(raw json.RawMessage, want *ReturnSpec) bool {
 	var actual ReturnSpec
-	if json.Unmarshal(raw, &actual) != nil {
+	if jsondecode.Unmarshal(raw, &actual) != nil {
 		return false
 	}
 	return actual.RouterIP == want.RouterIP && actual.Table == want.Table && actual.Priority == want.Priority && actual.Mark == want.Mark && actual.SafetyVersion == want.SafetyVersion && sameStrings(returnDest(&actual), returnDest(want))
@@ -257,10 +258,11 @@ func checkReturnAllocation(status *ReturnStatus, spec *ReturnSpec) error {
 }
 func returnRuleMatches(raw json.RawMessage, want *ReturnSpec) bool {
 	var r struct {
-		Priority, Table json.RawMessage
-		Mark            string
+		Priority json.RawMessage `json:"priority"`
+		Table    json.RawMessage `json:"table"`
+		Mark     string          `json:"mark"`
 	}
-	if json.Unmarshal(raw, &r) != nil {
+	if jsondecode.Unmarshal(raw, &r) != nil {
 		return false
 	}
 	number := func(v json.RawMessage) (uint64, error) {
@@ -307,7 +309,7 @@ func returnRuleMatches(raw json.RawMessage, want *ReturnSpec) bool {
 func (m *ReturnManaged) UnmarshalJSON(b []byte) error {
 	type plain ReturnManaged
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*m = ReturnManaged(p)

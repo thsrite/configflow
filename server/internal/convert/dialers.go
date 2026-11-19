@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -459,7 +460,7 @@ func (s *dialerScope) validateChains() error {
 			Entry json.RawMessage `json:"entry"`
 			Exit  json.RawMessage `json:"exit"`
 		}
-		if err := json.Unmarshal(data, &wire); err != nil {
+		if err := jsondecode.Unmarshal(data, &wire); err != nil {
 			return err
 		}
 		if len(wire.Entry) == 0 || len(wire.Exit) == 0 {

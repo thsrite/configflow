@@ -1,8 +1,8 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"strings"
@@ -119,7 +119,7 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 		known[fixedIKIDText(row["id"])] = true
 	}
 	var scope fixedIKScope
-	if err = json.Unmarshal(op.Scope, &scope); err != nil {
+	if err = jsondecode.Unmarshal(op.Scope, &scope); err != nil {
 		return nil, err
 	}
 	nonce, err := fixedNonce()

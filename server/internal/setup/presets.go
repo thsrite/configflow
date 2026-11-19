@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -60,7 +61,7 @@ func loadCatalog() (*catalog, error) {
 		return nil, err
 	}
 	c := &catalog{}
-	if err := json.Unmarshal(raw, &c.Template); err != nil {
+	if err := jsondecode.Unmarshal(raw, &c.Template); err != nil {
 		return nil, fmt.Errorf("read setup template: %w", err)
 	}
 	routes := map[string]string{}

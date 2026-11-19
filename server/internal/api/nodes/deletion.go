@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -133,7 +134,7 @@ func planDeletion(document record, nodeIDs []string, profileNodes map[string][]s
 						Type string `json:"type"`
 						ID   string `json:"id"`
 					}
-					_ = json.Unmarshal(raw, &ref)
+					_ = jsondecode.Unmarshal(raw, &ref)
 					if ref.Type == "node" && ids[ref.ID] {
 						preview.Blockers = append(preview.Blockers, fmt.Sprintf(msgChainBlocker, label))
 						break

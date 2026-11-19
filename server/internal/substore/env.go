@@ -2,6 +2,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"crypto/rand"
@@ -277,14 +278,14 @@ func (e *Env) FetchRunningVersion(ctx context.Context, baseURL string, timeout f
 		Data    json.RawMessage `json:"data"`
 		Version model.String    `json:"version"`
 	}
-	if json.Unmarshal(data, &envelope) != nil {
+	if jsondecode.Unmarshal(data, &envelope) != nil {
 		return ""
 	}
 	if len(envelope.Data) != 0 {
 		var payload struct {
 			Version model.String `json:"version"`
 		}
-		if json.Unmarshal(envelope.Data, &payload) != nil {
+		if jsondecode.Unmarshal(envelope.Data, &payload) != nil {
 			return ""
 		}
 		return string(payload.Version)

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -195,20 +196,20 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 		Rules   []json.RawMessage `json:"rule_configs"`
 		Library []json.RawMessage `json:"rule_library"`
 	}
-	if err := json.Unmarshal(config, &doc); err != nil {
+	if err := jsondecode.Unmarshal(config, &doc); err != nil {
 		return nil, err
 	}
 	rules, library := map[string]RuleSet{}, map[string]LibraryRule{}
 	for _, raw := range doc.Rules {
 		var v RuleSet
-		if json.Unmarshal(raw, &v) == nil && v.ItemType == "ruleset" {
+		if jsondecode.Unmarshal(raw, &v) == nil && v.ItemType == "ruleset" {
 			v.Raw = raw
 			rules[v.ID] = v
 		}
 	}
 	for _, raw := range doc.Library {
 		var v LibraryRule
-		if json.Unmarshal(raw, &v) == nil {
+		if jsondecode.Unmarshal(raw, &v) == nil {
 			v.Raw = raw
 			library[v.ID] = v
 		}
@@ -241,7 +242,7 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 			return nil, routerError(fmt.Sprintf(messageSyncSourceIssue, issue))
 		}
 		v := syncSource{Item: item, Library: source}
-		if err := json.Unmarshal(source.Raw, &v.Source); err != nil {
+		if err := jsondecode.Unmarshal(source.Raw, &v.Source); err != nil {
 			return nil, err
 		}
 		if v.Source.SourceType == "" {
@@ -250,7 +251,7 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 		var b struct {
 			Behavior string `json:"behavior"`
 		}
-		_ = json.Unmarshal(item.Raw, &b)
+		_ = jsondecode.Unmarshal(item.Raw, &b)
 		v.Behavior = orText(v.Source.Behavior, orText(b.Behavior, "domain"))
 		result = append(result, v)
 	}

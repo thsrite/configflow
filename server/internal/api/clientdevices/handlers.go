@@ -3,6 +3,7 @@
 package clientdevices
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -301,7 +302,7 @@ func setupGuard(ctx context.Context, db *repo.Repository, id string) error {
 			Completed bool `json:"completed"`
 			Abandoned bool `json:"abandoned"`
 		}
-		if err = json.Unmarshal(session.Raw, &flags); err != nil {
+		if err = jsondecode.Unmarshal(session.Raw, &flags); err != nil {
 			return err
 		}
 		if !flags.Completed && !flags.Abandoned {

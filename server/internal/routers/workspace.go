@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 
 	"configflow/internal/oxidns"
@@ -128,7 +129,7 @@ func ReadWorkspace(config json.RawMessage, r *Router, profile, name, defaultProf
 			ItemType string `json:"itemType"`
 		} `json:"rule_configs"`
 	}
-	if err = json.Unmarshal(config, &doc); err != nil {
+	if err = jsondecode.Unmarshal(config, &doc); err != nil {
 		return Workspace{}, err
 	}
 	for _, rule := range doc.Rules {

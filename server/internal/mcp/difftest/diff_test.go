@@ -157,6 +157,14 @@ func TestRealFlaskHTTP(t *testing.T) {
 		{Method: "POST", Path: "/mcp", Body: `{}`, Headers: map[string]string{"Authorization": "Bearer synthetic-internal"}},
 		{Method: "POST", Path: "/mcp?token=synthetic-retired", Body: `{}`, Headers: headers},
 	}
+	// Case aliases must not become protocol members. Compare with the real
+	// Python transport, including notification detection and mixed-case input.
+	cases = append(cases,
+		request{Method: "POST", Path: "/mcp", Body: `{"jsonrpc":"2.0","id":9,"METHOD":"ping"}`, Headers: headers},
+		request{Method: "POST", Path: "/mcp", Body: `{"jsonrpc":"2.0","ID":9,"method":"ping"}`, Headers: headers},
+		request{Method: "POST", Path: "/mcp", Body: `{"JSONRPC":"2.0","id":9,"method":"ping"}`, Headers: headers},
+		request{Method: "POST", Path: "/mcp", Body: `{"jsonrpc":"2.0","id":9,"method":"ping","METHOD":"missing"}`, Headers: headers},
+	)
 	for _, path := range []string{"/mcp", "/mcp/"} {
 		for _, method := range []string{"GET", "DELETE"} {
 			cases = append(cases, request{Method: method, Path: path})

@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"math"
@@ -91,14 +92,14 @@ func fieldOrder(raw json.RawMessage) []string {
 func (t *traffic) UnmarshalJSON(b []byte) error {
 	type plain traffic
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*t = traffic(p)
 	var raw struct {
 		Days json.RawMessage `json:"days"`
 	}
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if err := jsondecode.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	t.dayOrder = fieldOrder(raw.Days)
@@ -109,14 +110,14 @@ func (t *traffic) UnmarshalJSON(b []byte) error {
 func (t *trafficDay) UnmarshalJSON(b []byte) error {
 	type plain trafficDay
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*t = trafficDay(p)
 	var raw struct {
 		Hosts json.RawMessage `json:"hosts"`
 	}
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if err := jsondecode.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	t.hostOrder = fieldOrder(raw.Hosts)
@@ -127,7 +128,7 @@ func (t *trafficDay) UnmarshalJSON(b []byte) error {
 func (t *trafficHost) UnmarshalJSON(b []byte) error {
 	type plain trafficHost
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*t = trafficHost(p)
@@ -135,7 +136,7 @@ func (t *trafficHost) UnmarshalJSON(b []byte) error {
 		Ports  json.RawMessage `json:"ports"`
 		Routes json.RawMessage `json:"by_route"`
 	}
-	if err := json.Unmarshal(b, &raw); err != nil {
+	if err := jsondecode.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	t.portOrder = fieldOrder(raw.Ports)
@@ -236,7 +237,7 @@ type WebsitePage struct {
 func (v *WebsitePage) UnmarshalJSON(b []byte) error {
 	type plain WebsitePage
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*v = WebsitePage(p)

@@ -3,6 +3,7 @@
 package routersplit
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -87,7 +88,7 @@ func ReadMarkerProfile(p *model.Profile) (string, *Marker) {
 	}
 	var fields map[string]json.RawMessage
 	var marker Marker
-	if json.Unmarshal(raw, &fields) != nil || len(fields) != 4 || json.Unmarshal(raw, &marker) != nil || marker.Version != "1" || string(fields["version"]) != "1" || marker.Takeover != "full_tun" || marker.Origin != "setup" || marker.RouteRuleSetIDs == nil || len(marker.RouteRuleSetIDs) > 1024 {
+	if jsondecode.Unmarshal(raw, &fields) != nil || len(fields) != 4 || jsondecode.Unmarshal(raw, &marker) != nil || marker.Version != "1" || string(fields["version"]) != "1" || marker.Takeover != "full_tun" || marker.Origin != "setup" || marker.RouteRuleSetIDs == nil || len(marker.RouteRuleSetIDs) > 1024 {
 		return StateInvalid, nil
 	}
 	for _, key := range []string{"version", "takeover", "route_rule_set_ids", "origin"} {

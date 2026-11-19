@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"reflect"
 )
@@ -55,10 +56,10 @@ func configuredAgents(agents []json.RawMessage) (map[string]map[string]json.RawM
 }
 func configurationChanged(previous, current []byte) (bool, error) {
 	var before, after commitDocument
-	if err := json.Unmarshal(previous, &before); err != nil {
+	if err := jsondecode.Unmarshal(previous, &before); err != nil {
 		return false, err
 	}
-	if err := json.Unmarshal(current, &after); err != nil {
+	if err := jsondecode.Unmarshal(current, &after); err != nil {
 		return false, err
 	}
 	if !equalJSON(before.Profiles, after.Profiles) || !equalJSON(before.Shared, after.Shared) || !equalJSON(before.System.Config, after.System.Config) || !equalJSON(before.System.Backup, after.System.Backup) {

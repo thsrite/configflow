@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -312,7 +313,7 @@ func (d *RouterOS) writeIPv6Routes(ctx context.Context, raw []json.RawMessage, p
 			return err
 		}
 		var first rosOperation
-		if json.Unmarshal(raw[index], &first) != nil {
+		if jsondecode.Unmarshal(raw[index], &first) != nil {
 			return routerError(messageOperationFormat)
 		}
 		batch := d.routeBatches(raw, index, first.Kind)
@@ -330,7 +331,7 @@ func (d *RouterOS) writeIPv6Routes(ctx context.Context, raw []json.RawMessage, p
 		}
 		for _, i := range left {
 			var op rosOperation
-			_ = json.Unmarshal(raw[i], &op)
+			_ = jsondecode.Unmarshal(raw[i], &op)
 			change := ROSChange{Method: "PUT", Path: rosIPv6Routes, Values: routeAddValues(op)}
 			if op.Kind == "route_delete" {
 				row, err := d.row(ctx, rosIPv6Routes, op.ID)
@@ -575,7 +576,7 @@ func VerifyIPv6FakeIP(ctx context.Context, d *RouterOS, check *IPv6FakeIPCheck) 
 		}
 	} else {
 		var manifest IPv6FakeIPManifest
-		_ = json.Unmarshal(d.ipv6FakeIPManifest, &manifest)
+		_ = jsondecode.Unmarshal(d.ipv6FakeIPManifest, &manifest)
 		if len(owned) != 1 || rows[0].id() != owned[0].ID || manifest.Spec == nil || *manifest.Spec != *check.Spec {
 			return routerError(messageIPv6FakeVerifyManifest)
 		}
@@ -597,7 +598,7 @@ func VerifyIPv6Routes(ctx context.Context, d *RouterOS, check *IPv6RoutesCheck) 
 		return err
 	}
 	var manifest IPv6RoutesManifest
-	_ = json.Unmarshal(d.ipv6RoutesManifest, &manifest)
+	_ = jsondecode.Unmarshal(d.ipv6RoutesManifest, &manifest)
 	if len(owned) != len(manifest.Resources) {
 		return routerError(messageIPv6RoutesVerifyMissing)
 	}

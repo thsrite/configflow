@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -94,7 +95,7 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 	}
 	var checked checkedInstallation
 	if len(record.Installation) > 0 {
-		if err := json.Unmarshal(record.Installation, &checked); err != nil {
+		if err := jsondecode.Unmarshal(record.Installation, &checked); err != nil {
 			return nil, ErrCorruptRecord
 		}
 	}
@@ -235,7 +236,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 		return failure(msgMakeDefault, 400)
 	}
 	var shown routeInstruction
-	if len(record.RouteInstructions) > 0 && json.Unmarshal(record.RouteInstructions, &shown) != nil {
+	if len(record.RouteInstructions) > 0 && jsondecode.Unmarshal(record.RouteInstructions, &shown) != nil {
 		return ErrCorruptRecord
 	}
 	config, err := s.checkInstallation(ctx, record)
@@ -254,7 +255,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 		switch mode {
 		case "manual":
 			var current routeInstruction
-			if json.Unmarshal(record.RouteInstructions, &current) != nil {
+			if jsondecode.Unmarshal(record.RouteInstructions, &current) != nil {
 				return ErrCorruptRecord
 			}
 			if len(current.Missing) > 0 {
@@ -279,7 +280,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 				return err
 			}
 			var pair checkedInstallation
-			if json.Unmarshal(record.Installation, &pair) != nil {
+			if jsondecode.Unmarshal(record.Installation, &pair) != nil {
 				return ErrCorruptRecord
 			}
 			if router == nil || router.ProxyGatewayAgentID != pair.Mihomo.ID || router.DNSAgentID != pair.OxiDNS.ID {
@@ -332,7 +333,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 		return err
 	}
 	var checked checkedInstallation
-	if json.Unmarshal(record.Installation, &checked) != nil {
+	if jsondecode.Unmarshal(record.Installation, &checked) != nil {
 		return ErrCorruptRecord
 	}
 	if checked.Fingerprint != fingerprint {
@@ -361,7 +362,7 @@ func findRouter(config json.RawMessage, id string) (*routers.Router, error) {
 			Items []routers.Router `json:"items"`
 		} `json:"routers"`
 	}
-	if err := json.Unmarshal(config, &profile); err != nil {
+	if err := jsondecode.Unmarshal(config, &profile); err != nil {
 		return nil, err
 	}
 	for i := range profile.Routers.Items {

@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 
@@ -385,7 +386,7 @@ func copyValue[T any](value T) (T, error) {
 	if err != nil {
 		return result, err
 	}
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := jsondecode.Unmarshal(data, &result); err != nil {
 		return result, fmt.Errorf("copy model value: %w", err)
 	}
 	return result, nil

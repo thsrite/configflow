@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -339,7 +340,7 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 		var body struct {
 			Text string `json:"text"`
 		}
-		if json.Unmarshal(raw, &body) != nil {
+		if jsondecode.Unmarshal(raw, &body) != nil {
 			return "", false
 		}
 		return body.Text, true

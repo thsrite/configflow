@@ -2,10 +2,10 @@ package deploy
 
 import (
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -157,7 +157,7 @@ func (r *Receipts) Load(ctx context.Context, agent *agents.Record, withBundle bo
 		return nil, nil
 	}
 	var record Receipt
-	if json.Unmarshal(data, &record) != nil {
+	if jsondecode.Unmarshal(data, &record) != nil {
 		return nil, nil
 	}
 	m := record.Manifest

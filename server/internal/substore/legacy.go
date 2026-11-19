@@ -3,6 +3,7 @@ package substore
 // Compatibility boundaries only. Native owners never call these adapters.
 import (
 	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -16,7 +17,7 @@ func decodeLegacy[T any](value any) (T, error) {
 	var result T
 	data, err := json.Marshal(value)
 	if err == nil {
-		err = json.Unmarshal(data, &result)
+		err = jsondecode.Unmarshal(data, &result)
 	}
 	return result, err
 }
@@ -46,7 +47,7 @@ func SaveSubscriptionNodes(ctx context.Context, id string, nodes any, metadata *
 	if err != nil {
 		return nil, err
 	}
-	if json.Unmarshal(data, &raw) == nil {
+	if jsondecode.Unmarshal(data, &raw) == nil {
 		count := model.Int(len(raw.Nodes))
 		record.Count = &count
 	}

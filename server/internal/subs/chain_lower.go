@@ -1,6 +1,7 @@
 package subs
 
 import (
+	"configflow/internal/jsondecode"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -181,7 +182,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 				Name    json.RawMessage `json:"name"`
 				Enabled json.RawMessage `json:"enabled"`
 			}
-			if err := json.Unmarshal(identityJSON, &identity); err != nil {
+			if err := jsondecode.Unmarshal(identityJSON, &identity); err != nil {
 				return nil, err
 			}
 			*group = *original

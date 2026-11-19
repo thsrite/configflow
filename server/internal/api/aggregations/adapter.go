@@ -2,6 +2,7 @@ package aggregations
 
 // This file isolates legacy repository, auth and converter document types.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,7 +33,7 @@ func stored(value any, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(raw, target)
+	return jsondecode.Unmarshal(raw, target)
 }
 func legacy(value any) (*jsonx.Object, error) {
 	raw, err := json.Marshal(value)

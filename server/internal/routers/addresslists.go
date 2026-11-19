@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/md5"
 	"encoding/json"
@@ -257,7 +258,7 @@ func (d *RouterOS) InvalidateAddressReads() { clear(d.addressReads) }
 func (d *RouterOS) knownAddresses() map[string][]Row {
 	known := map[string][]Row{}
 	var manifest rosManifest
-	_ = json.Unmarshal(d.policyManifest, &manifest)
+	_ = jsondecode.Unmarshal(d.policyManifest, &manifest)
 	for _, item := range manifest.Resources {
 		if item.Path == rosAddresses && item.Config.text("list") != "" {
 			row := cloneRow(item.Config)

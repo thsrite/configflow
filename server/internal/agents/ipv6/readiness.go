@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -59,7 +60,7 @@ func (s *Service) last(id, profile string) *lastCheck {
 		return nil
 	}
 	var r lastCheck
-	if json.Unmarshal(b, &r) != nil || r.AgentID != id || r.ProfileID != profile || r.Result == nil || r.Key == "" {
+	if jsondecode.Unmarshal(b, &r) != nil || r.AgentID != id || r.ProfileID != profile || r.Result == nil || r.Key == "" {
 		return nil
 	}
 	return &r
@@ -323,7 +324,7 @@ func (s *Service) Probe(ctx context.Context, id, profile string) (out *ProbeResu
 			return
 		}
 		var safe ProbeResult
-		if e = json.Unmarshal(b, &safe); e != nil {
+		if e = jsondecode.Unmarshal(b, &safe); e != nil {
 			out = nil
 			resultError = e
 			return

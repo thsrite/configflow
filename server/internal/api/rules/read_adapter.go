@@ -3,6 +3,7 @@ package rules
 // Repository and legacy rule-engine adaptation stays at this boundary. The scan
 // keeps only small projections; hydrated source content is never JSON-copied.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -240,7 +241,7 @@ func localLogName(ctx context.Context, config *jsonx.Object, name string) string
 	var public struct {
 		Name string `json:"name"`
 	}
-	if json.Unmarshal(redact.SanitizeCredentials(jsonx.Obj("name", name), secrets), &public) != nil {
+	if jsondecode.Unmarshal(redact.SanitizeCredentials(jsonx.Obj("name", name), secrets), &public) != nil {
 		return redact.Redacted
 	}
 	return logx.LogText(public.Name, 120)

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"cmp"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -194,7 +195,7 @@ func directOnlyGroups(groups []json.RawMessage) map[string]bool {
 // proxy gateway ("" when unlinked) and the router's static-route rule sets.
 func ComputeDesired(ctx context.Context, profile json.RawMessage, gateway string, ruleSets []string, loader ContentLoader) (*Desired, error) {
 	var doc desiredProfile
-	if err := json.Unmarshal(profile, &doc); err != nil {
+	if err := jsondecode.Unmarshal(profile, &doc); err != nil {
 		return nil, err
 	}
 	fakeIP, err := FakeIPNetwork(doc.Mihomo.CustomConfig)
@@ -218,14 +219,14 @@ func ComputeDesired(ctx context.Context, profile json.RawMessage, gateway string
 	library := map[string]*LibraryRule{}
 	for _, raw := range doc.RuleLibrary {
 		rule := &LibraryRule{Raw: raw}
-		if json.Unmarshal(raw, rule) == nil {
+		if jsondecode.Unmarshal(raw, rule) == nil {
 			library[rule.ID] = rule
 		}
 	}
 	rulesets := map[string]*RuleSet{}
 	for _, raw := range doc.RuleConfigs {
 		item := &RuleSet{Raw: raw}
-		if json.Unmarshal(raw, item) == nil && item.ItemType == "ruleset" {
+		if jsondecode.Unmarshal(raw, item) == nil && item.ItemType == "ruleset" {
 			rulesets[item.ID] = item
 		}
 	}

@@ -1,8 +1,8 @@
 package repo
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"configflow/internal/model"
@@ -95,7 +95,7 @@ func copyRecord[T any](value *T) (*T, error) {
 		return nil, err
 	}
 	result := new(T)
-	if err := json.Unmarshal(data, result); err != nil {
+	if err := jsondecode.Unmarshal(data, result); err != nil {
 		return nil, fmt.Errorf("copy model record: %w", err)
 	}
 	return result, nil

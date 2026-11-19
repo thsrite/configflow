@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 
@@ -43,7 +44,7 @@ func ProjectHistory(entry *taskstatus.Receipt) (*HistoryData, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = json.Unmarshal(data, &result); err != nil {
+	if err = jsondecode.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidHistory, err)
 	}
 	run, err := taskstatus.Count(entry.RunCount)
@@ -96,7 +97,7 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("%s", msgRowShape)
 	}
 	result := taskWire{Enabled: true}
-	if err := json.Unmarshal(data, &result); err != nil {
+	if err := jsondecode.Unmarshal(data, &result); err != nil {
 		return err
 	}
 	var fields map[string]json.RawMessage

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,7 @@ var listPaths = map[string]string{
 
 func knownTool(name string) bool {
 	var defs []Definition
-	if json.Unmarshal(catalog, &defs) != nil {
+	if jsondecode.Unmarshal(catalog, &defs) != nil {
 		return false
 	}
 	for _, d := range defs {

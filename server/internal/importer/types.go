@@ -3,6 +3,7 @@
 package importer
 
 import (
+	"configflow/internal/jsondecode"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -78,7 +79,7 @@ type Node struct {
 func (n *Node) UnmarshalJSON(data []byte) error {
 	type value Node
 	var out value
-	if err := json.Unmarshal(data, &out); err != nil {
+	if err := jsondecode.Unmarshal(data, &out); err != nil {
 		return err
 	}
 	*n = Node(out)

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -320,7 +321,7 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 	var confirmation struct {
 		Fingerprint string `json:"fingerprint"`
 	}
-	_ = json.Unmarshal(body, &confirmation)
+	_ = jsondecode.Unmarshal(body, &confirmation)
 	if confirmation.Fingerprint == "" || confirmation.Fingerprint != plan.Fingerprint {
 		return plan, nil, rosError(KindConflict, messageRoutePreviewStale)
 	}

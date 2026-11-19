@@ -3,6 +3,7 @@
 package webdav
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,7 +47,7 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 		Daily    json.RawMessage `json:"keep_daily"`
 	}
 	var fields textFields
-	if err := json.Unmarshal(data, &fields); err != nil {
+	if err := jsondecode.Unmarshal(data, &fields); err != nil {
 		return err
 	}
 	*s = Settings{URL: fields.URL, Username: fields.Username, Password: fields.Password, Path: DefaultPath, Auto: fields.Auto, KeepLatest: RetentionValue(fields.Latest, DefaultKeepLatest, MaxKeepLatest), KeepDaily: RetentionValue(fields.Daily, DefaultKeepDaily, MaxKeepDaily)}

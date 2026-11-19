@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -58,7 +59,7 @@ func ParseApplyItems(raw json.RawMessage) ([]ApplyEntry, error) {
 			return nil, invalid(msgItem)
 		}
 		e := ApplyEntry{RuleType: "DOMAIN-SUFFIX"}
-		if json.Unmarshal(item, &e) != nil {
+		if jsondecode.Unmarshal(item, &e) != nil {
 			return nil, invalid(msgItem)
 		}
 		e.Value = CleanDomain(e.Value)

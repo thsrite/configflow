@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"crypto/sha256"
 	"encoding/hex"
@@ -142,7 +143,7 @@ func ContentView(t Target) (ContentState, error) {
 		ConfigRevision json.RawMessage `json:"config_revision"`
 		Applied        json.RawMessage `json:"applied_content"`
 	}
-	if err = json.Unmarshal(raw, &record); err != nil {
+	if err = jsondecode.Unmarshal(raw, &record); err != nil {
 		return result, err
 	}
 	version := string(record.ConfigVersion)
@@ -150,7 +151,7 @@ func ContentView(t Target) (ContentState, error) {
 	_ = json.Unmarshal(record.ConfigVersion, &result.ConfigVersion)
 	result.HasBaseline = !emptyJSON(record.Applied)
 	if result.HasBaseline {
-		result.ValidBaseline = json.Unmarshal(record.Applied, &result.Applied) == nil && len(record.Applied) > 0 && record.Applied[0] == '{'
+		result.ValidBaseline = jsondecode.Unmarshal(record.Applied, &result.Applied) == nil && len(record.Applied) > 0 && record.Applied[0] == '{'
 	}
 	return result, nil
 }

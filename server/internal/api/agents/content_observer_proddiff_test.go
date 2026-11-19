@@ -86,3 +86,25 @@ func TestProddiffContentTimeout(t *testing.T) {
 		t.Fatal("harness timeout marker was lost")
 	}
 }
+
+// TestAuditProddiffObservationExactNames keeps status extensions from changing
+// the tagged test observer's wait decision.
+func TestAuditProddiffObservationExactNames(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		checking  bool
+	}{
+		{"exact", `{"status":"checking"}`, true},
+		{"case-only", `{"Status":"checking"}`, false},
+		{"mixed", `{"status":"complete","STATUS":"checking"}`, false},
+		{"nested", `[{"content_sync":{"STATUS":"checking"}}]`, false},
+		{"exact-nested", `[{"content_sync":{"status":"checking"}}]`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httpx.Bytes(200, "application/json", []byte(tc.raw))
+			if got := contentChecking(response); got != tc.checking {
+				t.Fatalf("checking=%v want %v", got, tc.checking)
+			}
+		})
+	}
+}

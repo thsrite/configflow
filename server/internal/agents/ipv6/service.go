@@ -2,6 +2,7 @@ package ipv6
 
 import (
 	"configflow/internal/deploy"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -127,7 +128,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 			return
 		}
 		var safe Report
-		if e = json.Unmarshal(b, &safe); e != nil {
+		if e = jsondecode.Unmarshal(b, &safe); e != nil {
 			result = nil
 			resultError = e
 			return
@@ -243,7 +244,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 		}
 		d := routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
 		var h routers.IPv6Host
-		_ = json.Unmarshal(raw(host), &h)
+		_ = jsondecode.Unmarshal(raw(host), &h)
 		dns := s.lookup(ctx, r.DNSAgentID)
 		result, err := routers.InspectIPv6Readiness(ctx, d, r, &agent, h, routers.IPv6ReadinessConfiguration{PolicyConfiguration: routers.PolicyConfiguration{FakeIPv6Enabled: settings.FakeIPv6Enabled, FakeIPv6Range: text(settings.FakeIPv6Range)}, IPv6: yes(settings.IPv6), FakeIPv6Route: &settings.FakeIPv6Route, TUNEnabled: settings.TUNEnabled}, text(dns["host"]), policy)
 		d.Close()
@@ -325,7 +326,7 @@ func (s *Service) Host(ctx context.Context, agent *model.Agent) (routers.IPv6Hos
 		return routers.IPv6Host{}, e
 	}
 	var host routers.IPv6Host
-	if json.Unmarshal(b, &host) != nil {
+	if jsondecode.Unmarshal(b, &host) != nil {
 		return host, failure("INVALID_RESPONSE", 502, msgResponseShape)
 	}
 	return host, nil

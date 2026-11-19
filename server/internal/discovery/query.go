@@ -1,6 +1,9 @@
 package discovery
 
-import "encoding/json"
+import (
+	"configflow/internal/jsondecode"
+	"encoding/json"
+)
 
 // QueryRuleset describes one ruleset in a supplied profile snapshot. Callers
 // holding a transaction can supply freshly read data without using request
@@ -10,7 +13,7 @@ func QueryRuleset(profile json.RawMessage, rulesetID string) (*RulesetInfo, erro
 		Library []libraryItem `json:"rule_library"`
 		Rules   []ruleConfig  `json:"rule_configs"`
 	}
-	if err := json.Unmarshal(profile, &snapshot); err != nil {
+	if err := jsondecode.Unmarshal(profile, &snapshot); err != nil {
 		return nil, err
 	}
 	return info(config{Library: snapshot.Library, Rules: snapshot.Rules}, &rulesetID), nil

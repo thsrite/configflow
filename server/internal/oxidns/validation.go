@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/jsondecode"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -84,7 +85,7 @@ func (s *Schema) prepare() error {
 		s.closed = true
 	case strings.HasPrefix(a, "{"):
 		s.additional = &Schema{}
-		if err := json.Unmarshal(s.Additional, s.additional); err != nil {
+		if err := jsondecode.Unmarshal(s.Additional, s.additional); err != nil {
 			return err
 		}
 	}
@@ -120,7 +121,7 @@ var catalog struct {
 func schemaFile(name string, out any) {
 	data, err := schemaFS.ReadFile("schemas/" + name)
 	if err == nil {
-		err = json.Unmarshal(data, out)
+		err = jsondecode.Unmarshal(data, out)
 	}
 	if err != nil {
 		panic("oxidns: schema " + name + ": " + err.Error())

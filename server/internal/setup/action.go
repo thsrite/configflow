@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -108,7 +109,7 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 		return err
 	}
 	var pair checkedInstallation
-	if err := json.Unmarshal(record.Installation, &pair); err != nil {
+	if err := jsondecode.Unmarshal(record.Installation, &pair); err != nil {
 		return err
 	}
 	router.ProxyGatewayAgentID, router.DNSAgentID = pair.Mihomo.ID, pair.OxiDNS.ID
@@ -133,7 +134,7 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 		if err != nil {
 			return nil, err
 		}
-		if err = json.Unmarshal(raw, &profile); err != nil {
+		if err = jsondecode.Unmarshal(raw, &profile); err != nil {
 			return nil, err
 		}
 		proposed, err := json.Marshal(router)
@@ -145,7 +146,7 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 			var identity struct {
 				ID string `json:"id"`
 			}
-			if err = json.Unmarshal(raw, &identity); err != nil {
+			if err = jsondecode.Unmarshal(raw, &identity); err != nil {
 				return nil, err
 			}
 			if identity.ID == router.ID {

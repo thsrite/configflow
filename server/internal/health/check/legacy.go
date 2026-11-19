@@ -1,8 +1,8 @@
 package check
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -27,7 +27,7 @@ func decodeLegacy[T any](value any, dst *T) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(raw, dst)
+	return jsondecode.Unmarshal(raw, dst)
 }
 
 func encodeLegacyValue(value any) (any, error) {

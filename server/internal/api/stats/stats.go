@@ -3,6 +3,7 @@ package stats
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -118,7 +119,7 @@ func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string
 	var lastAt *time.Time
 	if len(samples) > 0 {
 		var last sample
-		if err := json.Unmarshal(samples[len(samples)-1], &last); err != nil || string(samples[len(samples)-1]) == "null" {
+		if err := jsondecode.Unmarshal(samples[len(samples)-1], &last); err != nil || string(samples[len(samples)-1]) == "null" {
 			return nil, fmt.Errorf("%s", msgSample)
 		}
 		if stamp, ok := taskstatus.ParseTimestamp(last.At); ok {
@@ -162,7 +163,7 @@ func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string
 	}
 	for _, raw := range series {
 		var row sample
-		if err := json.Unmarshal(raw, &row); err != nil || string(raw) == "null" {
+		if err := jsondecode.Unmarshal(raw, &row); err != nil || string(raw) == "null" {
 			return nil, fmt.Errorf("%s", msgSample)
 		}
 		values := []json.RawMessage{row.Subscriptions, row.Nodes, row.ProxyGroups, row.Rules}

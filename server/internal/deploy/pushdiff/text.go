@@ -1,6 +1,7 @@
 package pushdiff
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -158,7 +159,7 @@ func (t *Text) UnmarshalJSON(b []byte) error {
 			var piece struct {
 				Secret *string `json:"secret"`
 			}
-			if err := json.Unmarshal(p, &piece); err != nil {
+			if err := jsondecode.Unmarshal(p, &piece); err != nil {
 				return err
 			}
 			if piece.Secret == nil {

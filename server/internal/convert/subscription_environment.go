@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
 	"configflow/internal/subs"
@@ -76,7 +77,7 @@ func bindSubscriptionEnvironment(env *MihomoEnvironment) {
 			return err
 		}
 		var report subs.HostReport
-		if err := json.Unmarshal(data, &report); err != nil {
+		if err := jsondecode.Unmarshal(data, &report); err != nil {
 			return err
 		}
 		return subs.LogHostReport(profileID, &report)

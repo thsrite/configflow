@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
@@ -20,7 +21,7 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 		ProfileID   string `json:"profile_id"`
 		ServiceType string `json:"service_type"`
 	}
-	if err := json.Unmarshal(prepared, &identity); err != nil {
+	if err := jsondecode.Unmarshal(prepared, &identity); err != nil {
 		return err
 	}
 	var proof model.PreparedContent
@@ -104,7 +105,7 @@ func deploymentProfileJSON(state *model.Deployment) (json.RawMessage, bool, erro
 	var members struct {
 		ProfileID json.RawMessage `json:"profile_id"`
 	}
-	if err := json.Unmarshal(data, &members); err != nil {
+	if err := jsondecode.Unmarshal(data, &members); err != nil {
 		return nil, false, err
 	}
 	return members.ProfileID, members.ProfileID != nil, nil

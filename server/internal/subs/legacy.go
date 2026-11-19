@@ -2,6 +2,7 @@ package subs
 
 // Legacy entry points transcode the old API; native owners never call them.
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
@@ -15,7 +16,7 @@ func decodeLegacy[T any](value any) (T, error) {
 	var result T
 	data, err := json.Marshal(value)
 	if err == nil {
-		err = json.Unmarshal(data, &result)
+		err = jsondecode.Unmarshal(data, &result)
 	}
 	return result, err
 }

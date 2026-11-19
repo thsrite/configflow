@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -180,7 +181,7 @@ func fixedBindings(config json.RawMessage) map[string]*routers.FixedIPBinding {
 	var doc struct {
 		Bindings map[string]*routers.FixedIPBinding `json:"client_fixed_ips"`
 	}
-	_ = json.Unmarshal(config, &doc)
+	_ = jsondecode.Unmarshal(config, &doc)
 	if doc.Bindings == nil {
 		doc.Bindings = map[string]*routers.FixedIPBinding{}
 	}
@@ -405,7 +406,7 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 		return fixedError(routers.KindConflict, messageFixedTokenInvalid)
 	}
 	var approved fixedIPApproval
-	if json.Unmarshal(raw, &approved) != nil || len(approved.Intent.Devices) < 1 || len(approved.Intent.Devices) > 64 || len(approved.Operations) != len(approved.Intent.Devices) || (approved.Intent.Operation != "add" && approved.Intent.Operation != "delete") {
+	if jsondecode.Unmarshal(raw, &approved) != nil || len(approved.Intent.Devices) < 1 || len(approved.Intent.Devices) > 64 || len(approved.Operations) != len(approved.Intent.Devices) || (approved.Intent.Operation != "add" && approved.Intent.Operation != "delete") {
 		return fixedError(routers.KindConflict, messageFixedTokenInvalid)
 	}
 	if approved.ProfileID != profile {

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"slices"
 )
@@ -118,7 +119,7 @@ func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 		return nil, nil
 	}
 	var m *DNSGuardManifest
-	if json.Unmarshal(raw, &m) != nil {
+	if jsondecode.Unmarshal(raw, &m) != nil {
 		return nil, routerError(messageGuardManifest)
 	}
 	if m == nil {

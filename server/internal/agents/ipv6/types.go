@@ -4,6 +4,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 
 	"configflow/internal/routers"
@@ -109,7 +110,7 @@ func (r RouterReport) MarshalJSON() ([]byte, error) {
 // the manual model's public shape.
 func (r *RouterReport) UnmarshalJSON(b []byte) error {
 	var result routers.IPv6Readiness
-	if e := json.Unmarshal(b, &result); e != nil {
+	if e := jsondecode.Unmarshal(b, &result); e != nil {
 		return e
 	}
 	r.IPv6Readiness = &result

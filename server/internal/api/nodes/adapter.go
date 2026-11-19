@@ -2,6 +2,7 @@ package nodes
 
 // This file is the only bridge to the repository's legacy document model.
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -20,7 +21,7 @@ func decodeStored(value any, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, target)
+	return jsondecode.Unmarshal(data, target)
 }
 func stored(value any) (any, error) {
 	data, err := json.Marshal(value)

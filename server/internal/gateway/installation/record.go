@@ -5,6 +5,7 @@ package installation
 
 import (
 	"configflow/internal/gateway/host"
+	"configflow/internal/jsondecode"
 	"encoding/json"
 )
 
@@ -54,7 +55,7 @@ type Record struct {
 func (r *Record) UnmarshalJSON(data []byte) error {
 	type plain Record
 	var next plain
-	if err := json.Unmarshal(data, &next); err != nil {
+	if err := jsondecode.Unmarshal(data, &next); err != nil {
 		return err
 	}
 	fields := object(data)
@@ -107,7 +108,7 @@ type task struct {
 	Existing     bool   `json:"existing"`
 }
 
-func taskOf(raw json.RawMessage) task { var v task; _ = json.Unmarshal(raw, &v); return v }
+func taskOf(raw json.RawMessage) task { var v task; _ = jsondecode.Unmarshal(raw, &v); return v }
 func terminal(status string) bool {
 	return status == "failed" || status == "rolled_back" || status == "rollback_failed"
 }

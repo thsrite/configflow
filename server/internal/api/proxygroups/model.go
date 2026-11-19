@@ -3,6 +3,7 @@
 package proxygroups
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 
@@ -37,7 +38,7 @@ func value[T any](o object, key string) (T, error) {
 	if !ok {
 		return result, errors.New("missing request field")
 	}
-	err := json.Unmarshal(raw, &result)
+	err := jsondecode.Unmarshal(raw, &result)
 	return result, err
 }
 func set[T any](o *object, key string, v T) error {

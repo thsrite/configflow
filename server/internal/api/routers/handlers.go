@@ -3,6 +3,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -318,7 +319,7 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	var confirmation struct {
 		Fingerprint string `json:"fingerprint"`
 	}
-	_ = json.Unmarshal(body(c), &confirmation)
+	_ = jsondecode.Unmarshal(body(c), &confirmation)
 	m, err := manager(c)
 	if err != nil {
 		return nil, err

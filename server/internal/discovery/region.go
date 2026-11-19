@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -40,7 +41,7 @@ type PageRequest struct {
 func (v *PageRequest) UnmarshalJSON(b []byte) error {
 	type plain PageRequest
 	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*v = PageRequest(p)
@@ -67,7 +68,7 @@ type RegionResult struct {
 func (v *RegionResult) UnmarshalJSON(b []byte) error {
 	type plain RegionResult
 	p := plain{Markers: map[string]json.RawMessage{}}
-	if err := json.Unmarshal(b, &p); err != nil {
+	if err := jsondecode.Unmarshal(b, &p); err != nil {
 		return err
 	}
 	*v = RegionResult(p)
@@ -335,7 +336,7 @@ func checkedAt(raw json.RawMessage) string {
 	var v struct {
 		At string `json:"checked_at"`
 	}
-	_ = json.Unmarshal(raw, &v)
+	_ = jsondecode.Unmarshal(raw, &v)
 	return v.At
 }
 

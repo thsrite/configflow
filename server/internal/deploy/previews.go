@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -306,7 +307,7 @@ func (p *Previews) load(id, agentID string) (*Preview, error) {
 		return failure()
 	}
 	var pv Preview
-	if json.Unmarshal(raw, &pv) != nil || pv.ID != id || pv.AgentID == "" || pv.AgentID != agentID || pv.ExpiresAt <= p.now().Unix() || pv.ProfileID == "" || pv.DeploymentID == "" {
+	if jsondecode.Unmarshal(raw, &pv) != nil || pv.ID != id || pv.AgentID == "" || pv.AgentID != agentID || pv.ExpiresAt <= p.now().Unix() || pv.ProfileID == "" || pv.DeploymentID == "" {
 		return failure()
 	}
 	if meta := pv.BundleMeta; meta != nil {

@@ -1,6 +1,7 @@
 package onboarding
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -165,7 +166,7 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 			if err != nil {
 				return nil, err
 			}
-			if err = json.Unmarshal(data, &report); err != nil {
+			if err = jsondecode.Unmarshal(data, &report); err != nil {
 				return nil, err
 			}
 			return nil, &Blocked{report}

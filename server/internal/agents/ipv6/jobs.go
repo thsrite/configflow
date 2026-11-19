@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -286,7 +287,7 @@ func (s *Service) execute(ctx context.Context, a, config Document, saved Setting
 		return
 	}
 	seeds = redact.CollectCredentials(raw(a), seeds)
-	_ = json.Unmarshal(diagnosticProjection(raw(checks), seeds), &checks)
+	_ = jsondecode.Unmarshal(diagnosticProjection(raw(checks), seeds), &checks)
 	_ = s.update(ctx, text(a["id"]), func(ctx context.Context, current Document, all []Document) error {
 		if current == nil {
 			return nil

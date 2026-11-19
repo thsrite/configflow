@@ -2,6 +2,7 @@ package notifications
 
 // TODO(N8-9): remove these transcoders and hook adapters as owners migrate.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,7 +20,7 @@ func decodeLegacy[T any](value any) (*T, error) {
 		return nil, err
 	}
 	result := new(T)
-	if err = json.Unmarshal(data, result); err != nil {
+	if err = jsondecode.Unmarshal(data, result); err != nil {
 		return nil, err
 	}
 	return result, nil

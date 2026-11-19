@@ -3,6 +3,7 @@ package routersplit
 // Only unmigrated Agent/setup/gateway APIs cross this codec. Business decisions
 // use model.Profile, Context and YAML nodes; no Python dynamic operations live here.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -196,7 +197,7 @@ func GatewayWasUsed(config, agent, source any) (bool, error) {
 		InstallationID *string `json:"gateway_installation_id"`
 	}
 	b, _ := json.Marshal(agent)
-	_ = json.Unmarshal(b, &a)
+	_ = jsondecode.Unmarshal(b, &a)
 	return a.InstallationID != nil && *a.InstallationID != "", nil
 }
 

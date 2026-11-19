@@ -2,6 +2,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -336,7 +337,7 @@ func LoadCache(ctx context.Context, id string) (*Cache, error) {
 			Nodes json.RawMessage `json:"nodes"`
 			Count json.RawMessage `json:"count"`
 		}
-		if json.Unmarshal(data, &envelope) == nil && envelope.Count == nil && len(envelope.Nodes) > 0 && envelope.Nodes[0] == '[' {
+		if jsondecode.Unmarshal(data, &envelope) == nil && envelope.Count == nil && len(envelope.Nodes) > 0 && envelope.Nodes[0] == '[' {
 			var nodes []json.RawMessage
 			if json.Unmarshal(envelope.Nodes, &nodes) == nil {
 				count := model.Int(len(nodes))

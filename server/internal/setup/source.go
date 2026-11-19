@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"net/url"
@@ -218,7 +219,7 @@ func (s *Service) SaveRouterDraft(ctx context.Context, id string, raw json.RawMe
 			DNS   string `json:"dns_agent_id"`
 			Auto  bool   `json:"auto_rule_sync"`
 		}
-		if json.Unmarshal(value, &settings) == nil && (settings.Proxy != "" || settings.DNS != "" || settings.Auto) {
+		if jsondecode.Unmarshal(value, &settings) == nil && (settings.Proxy != "" || settings.DNS != "" || settings.Auto) {
 			return failure(msgRouterDraftBinding, 400)
 		}
 		var previous *routers.Router

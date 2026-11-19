@@ -3,6 +3,7 @@ package rules
 // This boundary is temporary while convert, discovery and API records still
 // use jsonx. Only the two consumed collections are decoded; never Config.
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rulesetfmt"
@@ -35,7 +36,7 @@ func decodeRecord(source, target any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, target)
+	return jsondecode.Unmarshal(data, target)
 }
 
 // RuleCacheFilename adapts existing API/cache callers to CacheFilename.

@@ -2,6 +2,7 @@ package subs
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,7 +58,7 @@ func SourceDialers(ctx context.Context, sub model.Subscription, cache *Subscript
 		var presence struct {
 			Dialers json.RawMessage `json:"dialers"`
 		}
-		if err := json.Unmarshal(data, &presence); err != nil {
+		if err := jsondecode.Unmarshal(data, &presence); err != nil {
 			return nil, err
 		}
 		if presence.Dialers != nil {

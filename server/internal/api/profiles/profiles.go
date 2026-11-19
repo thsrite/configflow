@@ -4,6 +4,7 @@
 package profiles
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -265,7 +266,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		var resources importer.Shared
-		if err = json.Unmarshal(raw, &resources); err != nil {
+		if err = jsondecode.Unmarshal(raw, &resources); err != nil {
 			return nil, err
 		}
 		result, err := importer.Build(plan, resources, importer.BuildOptions{DefaultSubscriptionIDs: ids})

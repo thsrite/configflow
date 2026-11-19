@@ -2,6 +2,7 @@ package subs
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -319,7 +320,7 @@ func parseVMessNode(uri string) (*model.Node, error) {
 		return nil, errShareLink
 	}
 	var wire vmessWire
-	if err := json.Unmarshal(payload, &wire); err != nil {
+	if err := jsondecode.Unmarshal(payload, &wire); err != nil {
 		return nil, err
 	}
 	if len(wire.Port) == 0 {

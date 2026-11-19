@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -247,7 +248,7 @@ func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*F
 		return nil, routerError(messageFixedNameControl)
 	}
 	var scope fixedROSScope
-	_ = json.Unmarshal(state.Scope, &scope)
+	_ = jsondecode.Unmarshal(state.Scope, &scope)
 	op := &FixedIPOperation{Kind: "add", IP: ip, MAC: mac, Name: fixedPointer(name), Comment: fixedIPPrefix + name, Server: fixedPointer(scope.Server), Scope: state.Scope, ID: fixedPointer(""), Summary: fmt.Sprintf(messageFixedROSAddSummary, scope.Server, ip, mac)}
 	if state.Lease != nil {
 		op.Kind = "make_static"
@@ -447,7 +448,7 @@ func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*Fixe
 		return nil, routerError(messageFixedNameLong)
 	}
 	var scope fixedIKScope
-	_ = json.Unmarshal(state.Scope, &scope)
+	_ = jsondecode.Unmarshal(state.Scope, &scope)
 	return &FixedIPOperation{Kind: "add", IP: ip, MAC: mac, Name: fixedPointer(name), Scope: state.Scope, Comment: fixedIPPrefix + name, Summary: fmt.Sprintf(messageFixedIKAddSummary, scope.Interface, ip, mac)}, nil
 }
 

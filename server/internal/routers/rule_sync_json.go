@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"maps"
 	"strings"
@@ -35,7 +36,7 @@ func syncMergeJSON(known []byte, extra map[string]json.RawMessage) ([]byte, erro
 func (r *RuleSyncReceipt) UnmarshalJSON(raw []byte) error {
 	type plain RuleSyncReceipt
 	var value plain
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := jsondecode.Unmarshal(raw, &value); err != nil {
 		return err
 	}
 	extra, err := syncExtra(raw, "status message checked_at synced_at updated_at baseline rules added removed log _rule_order")
@@ -72,7 +73,7 @@ func (r RuleSyncReceipt) MarshalJSON() ([]byte, error) {
 func (b *RuleSyncBaseline) UnmarshalJSON(raw []byte) error {
 	type plain RuleSyncBaseline
 	var value plain
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := jsondecode.Unmarshal(raw, &value); err != nil {
 		return err
 	}
 	extra, err := syncExtra(raw, "control rules desired static_resources policy nat_list")
@@ -98,7 +99,7 @@ func (b RuleSyncBaseline) MarshalJSON() ([]byte, error) {
 func (r *RuleSyncRecord) UnmarshalJSON(raw []byte) error {
 	type plain RuleSyncRecord
 	var value plain
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := jsondecode.Unmarshal(raw, &value); err != nil {
 		return err
 	}
 	extra, err := syncExtra(raw, "version ipv4 ipv6 ip6_count ip_count domain_count ignored_count invalid_count name source_type library_id")

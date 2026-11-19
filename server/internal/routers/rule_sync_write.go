@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -225,7 +226,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	var next *ROSPolicyManifest
 	if manifest != nil {
 		var v ROSPolicyManifest
-		_ = json.Unmarshal(previous, &v)
+		_ = jsondecode.Unmarshal(previous, &v)
 		next = &v
 	}
 	if check := plan.Checks.ROSPolicy; check != nil && manifest != nil {

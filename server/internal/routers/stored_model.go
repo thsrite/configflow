@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"context"
@@ -174,7 +175,7 @@ func (r *Router) ValidateForDevice() error {
 		var switches struct {
 			Enabled bool `json:"enabled"`
 		}
-		_ = json.Unmarshal(fields[guard.setting], &switches)
+		_ = jsondecode.Unmarshal(fields[guard.setting], &switches)
 		if switches.Enabled || hasStoredState(r.Extra[guard.state]) {
 			return invalid(messageStoredGuardInvalid)
 		}

@@ -2,6 +2,7 @@ package dnsfollow
 
 // This file alone adapts the legacy repository/registry/event/task APIs.
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -348,7 +349,7 @@ func (s *Service) publicOptions(v OptionsView, list []*agent) (OptionsView, erro
 	if e != nil {
 		return v, e
 	}
-	e = json.Unmarshal(b, &v)
+	e = jsondecode.Unmarshal(b, &v)
 	return v, e
 }
 func (s *Service) appendEvents(events []model.OperationEvent, status, message, at string, list []*agent) ([]model.OperationEvent, error) {

@@ -1,6 +1,7 @@
 package subs
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 	"encoding/json"
@@ -85,7 +86,7 @@ func NewHostIndex(cache *SubscriptionCache) (*HostIndex, error) {
 	var wire struct {
 		Entries json.RawMessage `json:"entries"`
 	}
-	if err := json.Unmarshal(data, &wire); err != nil {
+	if err := jsondecode.Unmarshal(data, &wire); err != nil {
 		return nil, err
 	}
 	if len(wire.Entries) == 0 || wire.Entries[0] != '{' {

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -65,7 +66,7 @@ func (d *RouterOS) ApplyMany(ctx context.Context, ops []json.RawMessage, record 
 			return err
 		}
 		var first rosOperation
-		if err := json.Unmarshal(ops[index], &first); err != nil {
+		if err := jsondecode.Unmarshal(ops[index], &first); err != nil {
 			return routerError(messageOperationFormat)
 		}
 		batch := []int{index}
@@ -104,7 +105,7 @@ func (d *RouterOS) routeBatches(ops []json.RawMessage, index int, kind string) [
 	size := 0
 	for i := index; i < len(ops); i++ {
 		var op rosOperation
-		if json.Unmarshal(ops[i], &op) != nil || op.Kind != kind || len(batch) == d.routeBatch || op.CIDR == "" {
+		if jsondecode.Unmarshal(ops[i], &op) != nil || op.Kind != kind || len(batch) == d.routeBatch || op.CIDR == "" {
 			break
 		}
 		key := op.CIDR
@@ -132,7 +133,7 @@ func (d *RouterOS) routeBatches(ops []json.RawMessage, index int, kind string) [
 
 func (d *RouterOS) BatchRestorable(raw json.RawMessage) bool {
 	var undo ROSUndo
-	if json.Unmarshal(raw, &undo) != nil || undo.Kind != "ros_restore" || len(undo.Changes) != 1 {
+	if jsondecode.Unmarshal(raw, &undo) != nil || undo.Kind != "ros_restore" || len(undo.Changes) != 1 {
 		return false
 	}
 	change := undo.Changes[0]
@@ -167,7 +168,7 @@ func (d *RouterOS) RestoreMany(ctx context.Context, undos []json.RawMessage, sto
 			changes := make([]ROSChange, len(group))
 			for i, raw := range group {
 				var undo ROSUndo
-				_ = json.Unmarshal(raw, &undo)
+				_ = jsondecode.Unmarshal(raw, &undo)
 				changes[i] = undo.Changes[0]
 			}
 			if method == "DELETE" {
@@ -199,7 +200,7 @@ func (d *RouterOS) batchUndo(raw json.RawMessage) (method, path string, ok bool)
 		return "", "", false
 	}
 	var undo ROSUndo
-	_ = json.Unmarshal(raw, &undo)
+	_ = jsondecode.Unmarshal(raw, &undo)
 	return undo.Changes[0].Method, undo.Changes[0].Path, true
 }
 
@@ -532,7 +533,7 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 	ops := make([]rosOperation, len(batch))
 	values := make([]Row, len(batch))
 	for i, index := range batch {
-		if err := json.Unmarshal(rawOps[index], &ops[i]); err != nil {
+		if err := jsondecode.Unmarshal(rawOps[index], &ops[i]); err != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		values[i] = routeAddValues(ops[i])
@@ -644,7 +645,7 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 	ops := make([]rosOperation, len(batch))
 	cidrs := make([]string, len(batch))
 	for i, index := range batch {
-		if err := json.Unmarshal(rawOps[index], &ops[i]); err != nil {
+		if err := jsondecode.Unmarshal(rawOps[index], &ops[i]); err != nil {
 			return nil, routerError(messageOperationFormat)
 		}
 		cidrs[i] = ops[i].CIDR

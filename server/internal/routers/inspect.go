@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -265,7 +266,7 @@ func inspectionDNS(ctx context.Context, source AgentSource, id string) (DNSSetti
 		if e != nil {
 			return DNSSettings{}, e
 		}
-		if e = json.Unmarshal(b, &dns); e != nil {
+		if e = jsondecode.Unmarshal(b, &dns); e != nil {
 			return DNSSettings{}, e
 		}
 	}
@@ -286,7 +287,7 @@ func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessa
 	var cfg struct {
 		ProfileID string `json:"profile_id"`
 	}
-	_ = json.Unmarshal(config, &cfg)
+	_ = jsondecode.Unmarshal(config, &cfg)
 	if cfg.ProfileID != "" {
 		profileID = cfg.ProfileID
 	}
@@ -374,7 +375,7 @@ func routersOf(config json.RawMessage) []*Router {
 		Items json.RawMessage `json:"items"`
 	}
 	var items []json.RawMessage
-	if json.Unmarshal(config, &cfg) != nil || json.Unmarshal(cfg.Routers, &routers) != nil || json.Unmarshal(routers.Items, &items) != nil {
+	if jsondecode.Unmarshal(config, &cfg) != nil || jsondecode.Unmarshal(cfg.Routers, &routers) != nil || jsondecode.Unmarshal(routers.Items, &items) != nil {
 		return nil
 	}
 	out := make([]*Router, 0, len(items))
