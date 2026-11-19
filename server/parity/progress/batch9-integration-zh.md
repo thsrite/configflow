@@ -48,3 +48,29 @@ product/helper分类或进程豁免。审计0.853s通过。已保存18份现有 
 refresh4.488s、httpx0.215s、routers1.311s，均通过；包含64MiB各解压层、独立子树alias预算、
 F1 Context/取消提交、refresh空cause中文、两个digest和只读cache peek回归。
 另用准确名称单独补 TestDiscoveryJSONStoreOwnerLifetime，避免正则无匹配被误计为通过。
+
+## 最终产品分配（8f906a8b8，之后仅参考metadata/文档）
+
+与基底相同主机、GOMAXPROCS=4、benchtime=3x、count=3：
+- Mihomo128：45,837,090–45,873,045 B/op，410335–410337 allocs/op，明显下降。
+- OxiDNS unused0：42,828,408–42,853,690 B/op，470875–470878；unused2MiB：42,821,896–42,850,034 B/op，470843–470867。
+  B/op处于基底原波动范围，allocs无增加，原生DNS消费代码未发生改变。
+- routers1：56,653–57,085 B/op，706–708；+1MiB：57,005–57,240 B/op，706–708。
+- routers16：904,480–907,160 B/op，10793–10811；+1MiB：890,680–896,525 B/op，10780–10804。
+- routers64：3,615,677–3,635,600 B/op，43120–43142；+1MiB：3,582,672–3,628,442 B/op，43076–43214。
+  所有规模均下降，1MiB无关字段不再放大逐规则分配。
+
+基准命令均 `go test -p 4 -run "^$" -bench <如下正则> -benchmem -benchtime=3x -count=3 <包>`：
+`^BenchmarkMihomoGenerationProfile/128$` / internal/convert；
+`^BenchmarkOxiDNSMetadataChain$` / internal/oxidns；
+`^BenchmarkBatch9SyncSources$` / internal/routers。
+准确名称的 discovery owner 回归通过，0.898s。
+
+真实Python首次check：MosDNS所有功能对照0差异（47072 corpus行和5436 recorded调用），
+OxiDNS全部边界0差异；routersplit5.720s通过。MosDNS57.873s/OxiDNS49.111s仅因12份
+源码metadata变化失败，各条entries数量相同。随后显式record+check，且核对18份全部非metadata摘要。
+
+显式record与再次check均通过：record MosDNS58.183s/OxiDNS50.413s/routersplit5.241s；
+check MosDNS55.108s/OxiDNS47.457s/routersplit5.179s。18份、18491项的全部非metadata
+payload SHA 完全相同，没有修改输入、输出或条数；只更新12份实际源码指纹。
+最终产品无额外改动，继续最终preflight和完整compare。
