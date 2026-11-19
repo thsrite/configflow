@@ -132,7 +132,7 @@ func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 func TestReviewCoreUpdateFetchCarriesTheHostURL(t *testing.T) {
 	latest := installLatest(t)
 	var hostURL string
-	requestRule = func(_ context.Context, u string, r rulefetch.Request) (*rulefetch.Response, error) {
+	requestRule = func(_ context.Context, u string, r rulefetch.DownloadRequest) (*rulefetch.Response, error) {
 		latest.mu.Lock()
 		hostURL = r.HostURL
 		latest.calls = append(latest.calls, ruleCall{u, r})
@@ -183,6 +183,12 @@ func TestReviewRuleUpdateHAActiveFollowsPython(t *testing.T) {
 		client.set(errors.New("no network"))
 		_, _, err = RuleUpdateCall(ctx, m, "dns", "POST", nil)
 		label := string(c[0])
+		if nativeHARefusal(t, raw, err) {
+			if client.count() != 0 {
+				t.Fatal("damaged HA journal reached device")
+			}
+			continue
+		}
 		if want["exception"] == "RuntimeError" { // reached the Agent request
 			if client.count() != 1 {
 				t.Errorf("%s: %v, want the Agent request", label, err)

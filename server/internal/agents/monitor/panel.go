@@ -10,11 +10,12 @@ package monitor
 // to the fields the panel shows.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -22,7 +23,10 @@ import (
 	"sync"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/weburl"
@@ -116,32 +120,31 @@ func panelFail(code string, status int, message string) *Error {
 	return &Error{Code: code, Status: status, Message: message}
 }
 
-// panelAgent is _agent(manager, agent_id, min_version, feature).
-func panelAgent(ctx context.Context, m Manager, agentID, minVersion, feature string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, false)
+func readPanelAgent(ctx context.Context, m Registry, id, minimum, feature string) (*model.Agent, error) {
+	a, err := m.ReadAgent(ctx, id, false)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil || agent.Len() == 0 {
-		return nil, panelFail("AGENT_NOT_FOUND", 404, "未找到这台 Agent。")
+	if a == nil {
+		return nil, panelFail("AGENT_NOT_FOUND", 404, msgAgentMissing)
 	}
-	service, present := agent.Get("service_type")
-	if !present {
-		service = "mihomo"
+	service, present, err := a.MemberJSON("service_type")
+	if err != nil {
+		return nil, err
 	}
-	if !pyEqualStr(service, "mihomo") {
-		return nil, panelFail("WRONG_SERVICE", 400, "Mihomo 面板仅适用于 Mihomo Agent。")
+	if present && originalText(service, present, nil) != "mihomo" {
+		return nil, panelFail("WRONG_SERVICE", 400, msgPanelWrongService)
 	}
-	if !versionAtLeast(agent, minVersion) {
+	if !modelVersionAtLeast(a, minimum) {
 		if feature == "" {
-			feature = "这个内核操作"
-			if minVersion == PanelMinAgentVersion {
-				feature = "Mihomo 面板"
+			feature = msgCoreOperation
+			if minimum == PanelMinAgentVersion {
+				feature = msgMihomoPanel
 			}
 		}
-		return nil, panelFail("UPGRADE_REQUIRED", 409, "请将此 Agent 升级到 "+minVersion+" 或更新版本后使用"+feature+"。")
+		return nil, panelFail("UPGRADE_REQUIRED", 409, fmt.Sprintf(msgPanelUpgrade, minimum, feature))
 	}
-	return agent, nil
+	return a, nil
 }
 
 func argGet(args [][2]string, key, def string) string {
@@ -307,134 +310,137 @@ func lookupArg(args [][2]string, key string) (string, bool) {
 	return "", false
 }
 
-// hasExactKey is set(body) == {key}.
-func hasExactKey(body any, key string) (*jsonx.Object, bool) {
-	o, ok := body.(*jsonx.Object)
-	if !ok || o == nil || o.Len() != 1 {
-		return nil, false
-	}
-	_, present := o.Get(key)
-	return o, present
-}
-
-// panelBody is _body(resource, method, body); nil is None (no body).
-func panelBody(resource, method string, body any) (*jsonx.Object, error) {
-	if (method != "PUT" && method != "PATCH") || resource == "configs/reload" {
+func panelPayload(resource, method string, body json.RawMessage) (json.RawMessage, error) {
+	if method != "PUT" && method != "PATCH" || resource == "configs/reload" {
 		return nil, nil
 	}
+	key, message := "", ""
 	switch resource {
 	case "proxy":
-		// Switching a selector group: {"name": "<member>"}
-		o, ok := hasExactKey(body, "name")
-		name, isStr := o.Value("name").(string)
-		if !ok || !isStr || name == "" || runeLen(name) > PanelMaxNameLength {
-			return nil, panelFail("INVALID_REQUEST", 400, "请选择要切换的节点。")
-		}
-		return jsonx.Obj("name", name), nil
+		key, message = "name", msgSelectNode
 	case "configs":
-		// Only the outbound mode is editable here.
-		o, ok := hasExactKey(body, "mode")
-		mode, isStr := o.Value("mode").(string)
-		if !ok || !isStr || !contains(panelModes, mode) {
-			return nil, panelFail("INVALID_REQUEST", 400, "代理模式只能是 rule、global 或 direct。")
-		}
-		return jsonx.Obj("mode", mode), nil
+		key, message = "mode", msgPanelMode
+	default:
+		return []byte("{}"), nil
 	}
-	return jsonx.NewObject(), nil
+	var fields model.Fields
+	if json.Unmarshal(body, &fields) != nil || fields.Len() != 1 || !fields.Has(key) {
+		return nil, panelFail("INVALID_REQUEST", 400, message)
+	}
+	value := fieldText(fields, key)
+	if key == "name" && (value == "" || runeLen(value) > PanelMaxNameLength) || key == "mode" && !contains(panelModes, value) {
+		return nil, panelFail("INVALID_REQUEST", 400, message)
+	}
+	return jsonresp.EncodeDevice(fields)
 }
 
-// slimProxy is _slim_proxy: the panel's fields of a node or group, with
-// only the newest delay result per test URL.
-func slimProxy(proxy any) any {
-	o, ok := proxy.(*jsonx.Object)
-	if !ok || o == nil {
-		return proxy
+func slimProxyJSON(raw json.RawMessage) json.RawMessage {
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw
 	}
-	slim := jsonx.NewObject()
+	var result model.Fields
 	for _, key := range panelProxyFields {
-		if value, present := o.Get(key); present {
-			slim.Set(key, value)
+		if value, present := fields.Get(key); present {
+			_ = result.Set(key, value)
 		}
 	}
-	if history, ok := o.Value("history").([]any); ok {
-		slim.Set("history", lastOne(history))
-	}
-	if extra, ok := o.Value("extra").(*jsonx.Object); ok && extra != nil {
-		out := jsonx.NewObject()
-		for url, value := range extra.All() {
-			entry, ok := value.(*jsonx.Object)
-			if !ok || entry == nil {
-				continue
-			}
-			item := jsonx.NewObject()
-			if alive, present := entry.Get("alive"); present {
-				item.Set("alive", alive)
-			}
-			if history, ok := entry.Value("history").([]any); ok {
-				item.Set("history", lastOne(history))
-			} else {
-				item.Set("history", []any{})
-			}
-			out.Set(url, item)
+	if raw, present := fields.Get("history"); present {
+		var history []json.RawMessage
+		if json.Unmarshal(raw, &history) == nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			_ = result.Set("history", lastHistory(history))
 		}
-		slim.Set("extra", out)
 	}
-	return slim
+	if raw, present := fields.Get("extra"); present {
+		var extra model.Fields
+		if json.Unmarshal(raw, &extra) == nil {
+			var out model.Fields
+			for name, raw := range extra.All() {
+				var entry model.Fields
+				if json.Unmarshal(raw, &entry) != nil {
+					continue
+				}
+				var item model.Fields
+				if value, present := entry.Get("alive"); present {
+					_ = item.Set("alive", value)
+				}
+				historyRaw, _ := entry.Get("history")
+				var history []json.RawMessage
+				_ = json.Unmarshal(historyRaw, &history)
+				_ = item.Set("history", lastHistory(history))
+				encoded, _ := json.Marshal(item)
+				_ = out.Set(name, encoded)
+			}
+			encoded, _ := json.Marshal(out)
+			_ = result.Set("extra", encoded)
+		}
+	}
+	encoded, _ := json.Marshal(result)
+	return encoded
 }
-
-// lastOne is list[-1:].
-func lastOne(list []any) []any {
-	if len(list) == 0 {
-		return []any{}
+func lastHistory(history []json.RawMessage) json.RawMessage {
+	if len(history) == 0 {
+		return []byte("[]")
 	}
-	return []any{list[len(list)-1]}
+	encoded, _ := json.Marshal(history[len(history)-1:])
+	return encoded
 }
-
-// slim is _slim(resource, data): drop what the panel never shows from the
-// node listings before they reach the browser.
-func slim(resource string, data any) any {
-	o, ok := data.(*jsonx.Object)
-	if !ok || o == nil {
-		return data
+func slimPanel(resource string, raw json.RawMessage) json.RawMessage {
+	key := ""
+	switch resource {
+	case "proxies":
+		key = "proxies"
+	case "providers/proxies":
+		key = "providers"
+	default:
+		return raw
 	}
-	if proxies, ok := o.Value("proxies").(*jsonx.Object); resource == "proxies" && ok && proxies != nil {
-		slimmed := jsonx.NewObject()
-		for name, proxy := range proxies.All() {
-			slimmed.Set(name, slimProxy(proxy))
-		}
-		result := o.Clone()
-		result.Set("proxies", slimmed)
-		return result
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw
 	}
-	if providers, ok := o.Value("providers").(*jsonx.Object); resource == "providers/proxies" && ok && providers != nil {
-		out := jsonx.NewObject()
-		for name, value := range providers.All() {
-			if provider, ok := value.(*jsonx.Object); ok && provider != nil {
-				if list, ok := provider.Value("proxies").([]any); ok {
-					// A group's Compatible provider holds config nodes and groups
-					// that /proxies already lists in full; the panel needs only
-					// its names.
-					compatible := pyEqualStr(provider.Value("vehicleType"), "Compatible")
-					proxies := make([]any, len(list))
-					for i, proxy := range list {
-						if p, isDict := proxy.(*jsonx.Object); compatible && isDict && p != nil {
-							proxies[i] = jsonx.Obj("name", p.Value("name"))
+	values, _ := fields.Get(key)
+	var entries model.Fields
+	if json.Unmarshal(values, &entries) != nil {
+		return raw
+	}
+	var output model.Fields
+	for name, value := range entries.All() {
+		if resource == "proxies" {
+			value = slimProxyJSON(value)
+		} else {
+			var provider model.Fields
+			if json.Unmarshal(value, &provider) == nil {
+				rawList, _ := provider.Get("proxies")
+				var list []json.RawMessage
+				if json.Unmarshal(rawList, &list) == nil && !bytes.Equal(bytes.TrimSpace(rawList), []byte("null")) {
+					compatible := fieldText(provider, "vehicleType") == "Compatible"
+					for i, item := range list {
+						var proxy model.Fields
+						if compatible && json.Unmarshal(item, &proxy) == nil {
+							name, present := proxy.Get("name")
+							if !present {
+								name = []byte("null")
+							}
+							list[i], _ = json.Marshal(struct {
+								Name json.RawMessage `json:"name"`
+							}{name})
 						} else {
-							proxies[i] = slimProxy(proxy)
+							list[i] = slimProxyJSON(item)
 						}
 					}
-					copied := provider.Clone()
-					copied.Set("proxies", proxies)
-					value = copied
+					encoded, _ := json.Marshal(list)
+					_ = provider.Set("proxies", encoded)
+					value, _ = json.Marshal(provider)
 				}
 			}
-			out.Set(name, value)
 		}
-		result := o.Clone()
-		result.Set("providers", out)
-		return result
+		_ = output.Set(name, value)
 	}
-	return data
+	encoded, _ := json.Marshal(output)
+	_ = fields.Set(key, encoded)
+	encoded, _ = json.Marshal(fields)
+	return encoded
 }
 
 // Core update check (Mihomo's own updater reads one of these files and
@@ -456,7 +462,7 @@ type coreCached struct {
 	finishedAt float64
 	latest     string
 	err        string
-	settings   *jsonx.Object
+	settings   *model.SystemConfig
 }
 
 var (
@@ -481,20 +487,18 @@ func coreCachedOf(channel string) *coreCached {
 
 // downloadSettings is _download_settings: only the download proxy and
 // mirror settings, not the whole system section with the Agents.
-var downloadSettings = func(ctx context.Context) (*jsonx.Object, error) {
+var downloadSettings = func(ctx context.Context) (*model.SystemConfig, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := repository.GetSystemSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := jsonx.NewObject()
-	for _, key := range []string{"rule_fetch_proxy", "github_proxy_domain", "server_domain"} {
-		result.Set(key, settings.GetOr(key, ""))
-	}
-	return result, nil
+	var settings model.SystemConfig
+	err = repository.View(ctx, func(document *model.Document) error {
+		source := &document.System.SystemConfig
+		settings.RuleFetchProxy, settings.GitHubProxyDomain, settings.ServerDomain = source.RuleFetchProxy, source.GitHubProxyDomain, source.ServerDomain
+		return nil
+	})
+	return &settings, err
 }
 
 type hostURLKey struct{}
@@ -513,13 +517,13 @@ func hostURLOf(ctx context.Context) string {
 }
 
 // requestRule is backend.utils.rule_fetch.request_rule (a variable for tests).
-var requestRule = rulefetch.RequestRule
+var requestRule = rulefetch.Download
 
 // latestCoreVersion is _latest_core_version: the channel's version.txt read
 // with the rule download proxy and GitHub mirror (a variable for tests).
-var latestCoreVersion = func(ctx context.Context, channel string, settings *jsonx.Object) (string, error) {
-	config := jsonx.Obj("system_config", settings.Clone())
-	response, err := requestRule(ctx, CoreVersionURLs[channel], rulefetch.Request{Config: config,
+var latestCoreVersion = func(ctx context.Context, channel string, settings *model.SystemConfig) (string, error) {
+	config := &rulefetch.SourceConfig{Settings: *settings}
+	response, err := requestRule(ctx, CoreVersionURLs[channel], rulefetch.DownloadRequest{Config: config,
 		ConnectTimeout: 5e9, ReadTimeout: 10e9, Stream: true, MaxBytes: coreVersionMaxBodyBytes, HostURL: hostURLOf(ctx)})
 	if err != nil {
 		return "", err
@@ -554,9 +558,6 @@ func checkFailure(err error) string {
 	}
 	if rulefetch.IsRequestException(err) {
 		return "无法连接 GitHub"
-	}
-	if class := rulefetch.PythonClass(err); class != "ValueError" {
-		return class
 	}
 	return "version.txt 内容不是版本号"
 }
@@ -624,8 +625,8 @@ func newerRelease(current, latest string) (bool, error) {
 }
 
 // usable is _usable(cached, current, now, settings).
-func usable(cached *coreCached, current string, now float64, settings *jsonx.Object) (bool, error) {
-	if !jsonx.Equal(cached.settings, settings) {
+func usable(cached *coreCached, current string, now float64, settings *model.SystemConfig) (bool, error) {
+	if !sameDownloadSettings(cached.settings, settings) {
 		return false, nil
 	}
 	if cached.err != "" {
@@ -671,7 +672,7 @@ func cachedLatest(ctx context.Context, channel, current string, force bool) (str
 	defer lock.Unlock()
 	cached = coreCachedOf(channel)
 	// Fetched by another request after this one started: reuse it.
-	if cached != nil && jsonx.Equal(cached.settings, settings) {
+	if cached != nil && sameDownloadSettings(cached.settings, settings) {
 		reuse := cached.finishedAt >= requested
 		if !reuse && !force {
 			var err error
@@ -696,62 +697,89 @@ func cachedLatest(ctx context.Context, channel, current string, force bool) (str
 	return latest, failure, nil
 }
 
-// CheckCoreUpdate is check_core_update(manager, agent_id, force): compare
-// the running core with the version its own updater would install.
-func CheckCoreUpdate(ctx context.Context, m Manager, agentID string, force bool) (*jsonx.Object, error) {
-	result, err := PanelCall(ctx, m, agentID, "version", "GET", nil, nil, PanelResourceMinVersion["upgrade"])
+func sameDownloadSettings(a, b *model.SystemConfig) bool {
+	return a != nil && b != nil && a.RuleFetchProxy == b.RuleFetchProxy && a.GitHubProxyDomain == b.GitHubProxyDomain && a.ServerDomain == b.ServerDomain
+}
+
+// PanelResult carries the whitelisted core response as opaque, validated JSON.
+type PanelResult struct {
+	Success bool            `json:"success"`
+	Data    json.RawMessage `json:"data"`
+}
+
+// CoreUpdate is the bounded, credential-free result of a version check.
+type CoreUpdate struct {
+	Current    string `json:"current"`
+	Channel    string `json:"channel"`
+	Latest     string `json:"latest"`
+	HasUpdate  bool   `json:"has_update"`
+	Error      string `json:"error"`
+	ReleaseURL string `json:"release_url,omitempty"`
+}
+
+// CoreUpdateCheck compares the running version with its core update channel.
+func CoreUpdateCheck(ctx context.Context, m Registry, id string, force bool) (*PanelResult, error) {
+	result, err := CallPanel(ctx, m, id, "version", "GET", nil, nil, PanelResourceMinVersion["upgrade"])
 	if err != nil {
 		return nil, err
 	}
-	var current any
-	if data, ok := result.Value("data").(*jsonx.Object); ok && data != nil {
-		current = data.Value("version")
+	var fields model.Fields
+	if json.Unmarshal(result.Data, &fields) != nil {
+		return nil, panelFail("INVALID_RESPONSE", 0, "")
 	}
-	currentText, ok := current.(string)
-	if !ok || currentText == "" {
+	current := fieldText(fields, "version")
+	// Machine versions are ASCII, including alpha revisions. A Unicode lookalike
+	// cannot authorize an upgrade or suppress one through numeric coercion.
+	if current == "" || strings.ContainsFunc(current, func(r rune) bool { return r > 127 }) {
 		return nil, panelFail("INVALID_RESPONSE", 0, "")
 	}
 	channel := "release"
-	if strings.HasPrefix(currentText, "alpha") {
+	if strings.HasPrefix(current, "alpha") {
 		channel = "alpha"
 	}
-	latest, failure, err := cachedLatest(ctx, channel, currentText, force)
+	latest, failure, err := cachedLatest(ctx, channel, current, force)
 	if err != nil {
 		return nil, err
 	}
-	hasUpdate := latest != "" && latest != currentText
-	if hasUpdate {
-		newer, err := newerRelease(currentText, latest)
+	update := latest != "" && latest != current
+	if update {
+		newer, err := newerRelease(current, latest)
 		if err != nil {
 			return nil, err
 		}
-		hasUpdate = !newer
+		update = !newer
 	}
-	data := jsonx.Obj("current", currentText, "channel", channel, "latest", latest,
-		"has_update", hasUpdate, "error", failure)
+	data := CoreUpdate{Current: current, Channel: channel, Latest: latest, HasUpdate: update, Error: failure}
 	if latest != "" {
-		data.Set("release_url", strings.ReplaceAll(coreReleasePages[channel], "{version}", weburl.Quote(latest)))
+		data.ReleaseURL = strings.ReplaceAll(coreReleasePages[channel], "{version}", weburl.Quote(latest))
 	}
-	return jsonx.Obj("success", true, "data", data), nil
+	raw, err := json.Marshal(data)
+	return &PanelResult{Success: true, Data: raw}, err
 }
 
-// PanelCall is call(manager, agent_id, resource, method, args, body,
-// min_version): one whitelisted panel request through the Agent. body nil
-// is None; minVersion "" is the resource's own minimum.
-func PanelCall(ctx context.Context, m Manager, agentID, resource, method string, args [][2]string, body any, minVersion string) (*jsonx.Object, error) {
+// CallPanel validates a whitelisted panel operation and sends only its rebuilt
+// query/body to the registered Agent. GET/DELETE requests carry no JSON body.
+func CallPanel(ctx context.Context, m Registry, id, resource, method string, args [][2]string, body json.RawMessage, minimum string) (*PanelResult, error) {
 	if resource == "core/update" && method == "GET" {
-		return CheckCoreUpdate(ctx, m, agentID, argGet(args, "force", "") == "1")
+		return CoreUpdateCheck(ctx, m, id, argGet(args, "force", "") == "1")
 	}
-	template, ok := PanelRoutes[panelRoute{resource, method}]
-	if !ok {
-		return nil, panelFail("NOT_ALLOWED", 404, "面板不支持这个操作。")
+	template, allowed := PanelRoutes[panelRoute{resource, method}]
+	if !allowed {
+		return nil, panelFail("NOT_ALLOWED", 404, msgPanelNotAllowed)
 	}
-	if minVersion == "" {
-		if minVersion, ok = PanelResourceMinVersion[resource]; !ok {
-			minVersion = PanelMinAgentVersion
+	if method != "GET" {
+		ctx = lifecycle.Detach(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if minimum == "" {
+		minimum = PanelResourceMinVersion[resource]
+		if minimum == "" {
+			minimum = PanelMinAgentVersion
 		}
 	}
-	agent, err := panelAgent(ctx, m, agentID, minVersion, panelResourceFeature[resource])
+	a, err := readPanelAgent(ctx, m, id, minimum, panelResourceFeature[resource])
 	if err != nil {
 		return nil, err
 	}
@@ -769,15 +797,14 @@ func PanelCall(ctx context.Context, m Manager, agentID, resource, method string,
 	if err != nil {
 		return nil, err
 	}
-	payload, err := panelBody(resource, method, body)
+	payload, err := panelPayload(resource, method, body)
 	if err != nil {
 		return nil, err
 	}
-	origin, err := AgentOrigin(agent)
+	origin, err := Origin(a)
 	if err != nil {
 		return nil, err
 	}
-	url := origin + "/api/mihomo/" + path
 	timeout, ok := panelResourceTimeout[resource]
 	if !ok {
 		timeout = 20
@@ -785,33 +812,32 @@ func PanelCall(ctx context.Context, m Manager, agentID, resource, method string,
 			timeout = 40
 		}
 	}
-	token, ok := agent.Value("token").(string)
-	if !ok {
-		return nil, panelFail("AGENT_UNREACHABLE", 0, "") // KeyError / TypeError
+	token, valid := originalString(a.MemberJSON("token"))
+	if !valid {
+		return nil, panelFail("AGENT_UNREACHABLE", 0, "")
 	}
-	encodedToken, ok := latin1(token)
-	if !ok {
-		return nil, panelFail("AGENT_UNREACHABLE", 0, "") // UnicodeEncodeError
-	}
-	if len(params) > 0 {
-		url += "?" + params.encode()
-	}
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+encodedToken)
-	header.Set("Accept", "application/json")
-	var data []byte
-	if payload != nil {
-		header.Set("Content-Type", "application/json")
-		if data, err = jsonx.Default(payload); err != nil {
-			return nil, err
-		}
-	}
-	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: url, Header: header, Body: data,
-		Timeout: agents.Pair(3, timeout), NoProxy: true, NoRedirects: true, MaxBody: PanelMaxResponseBytes})
+	header, err := monitorHeaders(token)
 	if err != nil {
 		return nil, panelFail("AGENT_UNREACHABLE", 0, "")
 	}
-	if len(response.Body) > PanelMaxResponseBytes {
+	url := origin + "/api/mihomo/" + path
+	if len(params) > 0 {
+		url += "?" + params.encode()
+	}
+	if payload != nil {
+		header.Set("Content-Type", "application/json")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: url, Header: header, Body: payload, Timeout: agents.Pair(3, timeout), NoProxy: true, NoRedirects: true, MaxBody: PanelMaxResponseBytes})
+	if err != nil {
+		return nil, panelFail("AGENT_UNREACHABLE", 0, "")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if response == nil || len(response.Body) > PanelMaxResponseBytes {
 		return nil, panelFail("INVALID_RESPONSE", 0, "")
 	}
 	if response.BodyError != nil {
@@ -821,46 +847,44 @@ func PanelCall(ctx context.Context, m Manager, agentID, resource, method string,
 	if status == 401 || status == 403 {
 		return nil, panelFail("AGENT_AUTH_FAILED", 0, "")
 	}
-	var value any
-	if len(strings.Trim(string(response.Body), " \t\n\r\v\f")) > 0 {
-		parsed, ok := loadsBytes(response.Body)
-		if !ok {
+	value := json.RawMessage("null")
+	if len(bytes.TrimSpace(response.Body)) > 0 {
+		text, valid := agents.DecodeJSONBytes(response.Body)
+		var parsed model.Dynamic
+		if !valid || json.Unmarshal([]byte(text), &parsed) != nil {
 			if status == 404 {
-				return nil, panelFail("UPGRADE_REQUIRED", 409, "请将此 Agent 升级到 "+PanelMinAgentVersion+" 或更新版本后使用 Mihomo 面板。")
+				return nil, panelFail("UPGRADE_REQUIRED", 409, msgPanelEndpointUpgrade)
 			}
 			if status < 400 {
 				return nil, panelFail("INVALID_RESPONSE", 0, "")
 			}
 		} else {
-			value = parsed
+			value = []byte(text)
 		}
 	}
 	if status >= 400 {
-		answer, isDict := value.(*jsonx.Object)
-		if isDict && answer != nil && answer.Value("success") == false {
-			code := answer.Value("code")
-			if unhashable(code) {
-				return nil, typeErrorUnhashable(code)
+		var fields model.Fields
+		isObject := json.Unmarshal(value, &fields) == nil
+		success, present, valid := answerBool(fields, "success")
+		if isObject && present && valid && !success {
+			rawCode, _ := fields.Get("code")
+			if len(rawCode) > 0 && (rawCode[0] == '[' || rawCode[0] == '{') {
+				return nil, errors.New(msgPanelErrorShape)
 			}
-			if text, ok := code.(string); ok {
-				if _, known := PanelMessages[text]; known {
-					errStatus := 502
-					if text == "CONTROLLER_UNAVAILABLE" {
-						errStatus = 409
-					}
-					return nil, panelFail(text, errStatus, "")
+			code := fieldText(fields, "code")
+			if _, known := PanelMessages[code]; known {
+				status := 502
+				if code == "CONTROLLER_UNAVAILABLE" {
+					status = 409
 				}
+				return nil, panelFail(code, status, "")
 			}
 		}
-		// Mihomo's own errors (delay timeout, unknown proxy …) are short
-		// and safe to show.
-		var message string
-		if isDict && answer != nil {
-			message, _ = answer.Value("message").(string)
-		}
+		message := fieldText(fields, "message")
 		if message == "" {
-			message = "Mihomo 返回 HTTP " + strconv.Itoa(status)
+			message = fmt.Sprintf(msgPanelHTTP, status)
 		}
+		message = redact.DiagnosticText(message, redact.Secrets{token}, 0)
 		errStatus := 502
 		switch {
 		case status == 408 || status == 504:
@@ -871,13 +895,7 @@ func PanelCall(ctx context.Context, m Manager, agentID, resource, method string,
 		return nil, panelFail("CORE_ERROR", errStatus, pySlice(message, 300))
 	}
 	if method == "GET" {
-		value = slim(resource, value)
+		value = slimPanel(resource, value)
 	}
-	return jsonx.Obj("success", true, "data", value), nil
-}
-
-// typeErrorUnhashable is the TypeError of a list or dict in a set or dict
-// membership test (Python answers 500).
-func typeErrorUnhashable(value any) error {
-	return errors.New("TypeError: unhashable type: " + pyTypeName(value))
+	return &PanelResult{Success: true, Data: value}, nil
 }

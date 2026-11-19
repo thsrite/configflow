@@ -13,45 +13,19 @@ import (
 	"strings"
 	"unicode"
 
-	"configflow/internal/jsonx"
+	"encoding/json"
+	"strconv"
 )
 
 // errOverflow is Python's OverflowError (int too large to convert to float,
 // or a true division result too large for a float).
-var errOverflow = errors.New("OverflowError")
+var errOverflow = errors.New("metric number is outside float64 range")
 
 // num is a Python int (exact) or float.
 type num struct {
 	isFloat bool
 	i       *big.Int
 	f       float64
-}
-
-// asNum is a jsonx.Number as a num; ok false for anything else (bool too:
-// callers check bool where Python does).
-func asNum(value any) (num, bool) {
-	n, ok := value.(jsonx.Number)
-	if !ok {
-		return num{}, false
-	}
-	if n.IsInt() {
-		i, ok := n.BigInt()
-		if !ok {
-			return num{}, false
-		}
-		return num{i: i}, true
-	}
-	return num{isFloat: true, f: n.Float64()}, true
-}
-
-func intNum(i int64) num { return num{i: big.NewInt(i)} }
-
-// value is the num as a jsonx value.
-func (n num) value() any {
-	if n.isFloat {
-		return jsonx.Float(n.f)
-	}
-	return jsonx.BigInt(new(big.Int).Set(n.i))
 }
 
 // toFloat is float(n): PyLong_AsDouble for an int.
@@ -180,39 +154,6 @@ func (n num) trueDiv(m num) (float64, error) {
 	return a / b, nil
 }
 
-// pyNumberEqual is a == b for two JSON values: numbers by value (1 == 1.0),
-// None == None, anything else by jsonx.Equal.
-func pyNumberEqual(a, b any) bool {
-	x, okA := asNum(a)
-	y, okB := asNum(b)
-	if okA && okB {
-		return x.equal(y)
-	}
-	return jsonx.Equal(a, b)
-}
-
-// isPyInt is type(v) is int.
-func isPyInt(v any) bool {
-	n, ok := v.(jsonx.Number)
-	return ok && n.IsInt()
-}
-
-// pyIntIn is type(v) is int and lo <= v <= hi.
-func pyIntIn(v any, lo, hi int64) bool {
-	n, ok := v.(jsonx.Number)
-	if !ok || !n.IsInt() {
-		return false
-	}
-	i, ok := n.BigInt()
-	return ok && i.Cmp(big.NewInt(lo)) >= 0 && i.Cmp(big.NewInt(hi)) <= 0
-}
-
-// pyInt64 is the value of an int already checked with pyIntIn.
-func pyInt64(v any) int64 {
-	i, _ := v.(jsonx.Number).Int64()
-	return i
-}
-
 // pyDecimalValue is the decimal value of a str.isdecimal() character of
 // CPython 3.11 (Unicode 14), -1 for any other character.
 func pyDecimalValue(r rune) int {
@@ -276,4 +217,94 @@ func pySlice(s string, limit int) string {
 		n++
 	}
 	return s
+}
+
+// MetricNumber retains exact integral counters and finite floating samples.
+// A nil pointer denotes an unknown observation, distinct from zero.
+type MetricNumber struct{ num }
+
+func (n MetricNumber) MarshalJSON() ([]byte, error) {
+	if n.isFloat {
+		if math.IsNaN(n.f) || math.IsInf(n.f, 0) {
+			return nil, errOverflow
+		}
+		text := strconv.FormatFloat(n.f, 'g', -1, 64)
+		if !strings.ContainsAny(text, ".eE") {
+			text += ".0"
+		}
+		return []byte(text), nil
+	}
+	if n.i == nil {
+		return []byte("null"), nil
+	}
+	return []byte(n.i.String()), nil
+}
+func (n *MetricNumber) UnmarshalJSON(raw []byte) error {
+	if len(raw) == 0 || raw[0] != '-' && (raw[0] < '0' || raw[0] > '9') {
+		return errors.New("metric value must be a JSON number")
+	}
+	var value json.Number
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	text := value.String()
+	if !strings.ContainsAny(text, ".eE") {
+		i, ok := new(big.Int).SetString(text, 10)
+		if !ok {
+			return errors.New("invalid metric integer")
+		}
+		n.num = num{i: i}
+		return nil
+	}
+	f, err := strconv.ParseFloat(text, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return errOverflow
+	}
+	n.num = num{isFloat: true, f: f}
+	return nil
+}
+func intNum(i int64) num              { return num{i: big.NewInt(i)} }
+func metricInt(i int64) *MetricNumber { return &MetricNumber{num: intNum(i)} }
+func metricEqual(a, b *MetricNumber) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.num.equal(b.num)
+}
+func metricSum(values ...*MetricNumber) *MetricNumber {
+	if len(values) == 0 {
+		return nil
+	}
+	total := intNum(0)
+	for _, value := range values {
+		if value == nil {
+			return nil
+		}
+		var err error
+		total, err = total.add(value.num)
+		if err != nil {
+			return nil
+		}
+	}
+	finite, err := total.isFinite()
+	if err != nil || !finite {
+		return nil
+	}
+	return &MetricNumber{num: total}
+}
+func metricRatio(n, d *MetricNumber, percentage bool) *MetricNumber {
+	if n == nil || d == nil || d.num.equal(intNum(0)) || percentage && d.num.less(n.num) {
+		return nil
+	}
+	value, err := n.num.trueDiv(d.num)
+	if err != nil {
+		return nil
+	}
+	if percentage {
+		value *= 100
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil
+	}
+	return &MetricNumber{num: num{isFloat: true, f: value}}
 }

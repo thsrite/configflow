@@ -275,6 +275,12 @@ func TestReferenceAgentAnswers(t *testing.T) {
 		} else {
 			result = jsonx.Obj("data", data)
 		}
+		if want, bound := nativeStateExpectation(t, "responses", c); bound {
+			if got := dumpSorted(t, result); got != want {
+				t.Errorf("native response: got %s want %s", got, want)
+			}
+			continue
+		}
 		if got := dumpSorted(t, result); got != c.GetString("result") {
 			t.Errorf("%d %q:\n got  %s\n want %s", status, body, got, c.GetString("result"))
 		}
@@ -333,6 +339,12 @@ func TestReferenceAdvanceAndTotals(t *testing.T) {
 				name = name[:i]
 			}
 			result = jsonx.Obj("error", name)
+		}
+		if want, bound := nativeStateExpectation(t, "advance", c); bound {
+			if got := dumpSorted(t, result); got != want {
+				t.Errorf("native state refusal: got %s want %s", got, want)
+			}
+			continue
 		}
 		if got := dumpSorted(t, result); got != c.GetString("result") {
 			failures++

@@ -9,6 +9,7 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
@@ -426,7 +428,7 @@ func TestOtherRepliesPassThroughUnchanged(t *testing.T) {
 
 type ruleCall struct {
 	url     string
-	request rulefetch.Request
+	request rulefetch.DownloadRequest
 }
 
 // latestFake replaces request_rule and get_repository().get_system_settings.
@@ -446,7 +448,7 @@ func (f *latestFake) count() int {
 func installLatest(t *testing.T) *latestFake {
 	f := &latestFake{settings: jsonx.Obj("rule_fetch_proxy", "", "github_proxy_domain", "", "backup", jsonx.Obj("large", "not needed"))}
 	previousRule, previousSettings, previousClock := requestRule, downloadSettings, monotonic
-	requestRule = func(_ context.Context, u string, r rulefetch.Request) (*rulefetch.Response, error) {
+	requestRule = func(_ context.Context, u string, r rulefetch.DownloadRequest) (*rulefetch.Response, error) {
 		f.mu.Lock()
 		f.calls = append(f.calls, ruleCall{u, r})
 		reply := f.replies[0]
@@ -457,14 +459,14 @@ func installLatest(t *testing.T) *latestFake {
 		}
 		return &rulefetch.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(reply.(string)))}, nil
 	}
-	downloadSettings = func(context.Context) (*jsonx.Object, error) {
+	downloadSettings = func(context.Context) (*model.SystemConfig, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		result := jsonx.NewObject()
 		for _, key := range []string{"rule_fetch_proxy", "github_proxy_domain", "server_domain"} {
 			result.Set(key, f.settings.GetOr(key, ""))
 		}
-		return result, nil
+		return testDownloadSettings(t, result), nil
 	}
 	ResetCoreLatest()
 	t.Cleanup(func() {
@@ -503,11 +505,8 @@ func TestCoreUpdateCheckFollowsTheCoresOwnChannelAndComparison(t *testing.T) {
 		if r.url != CoreVersionURLs[tc.channel] || !r.request.Stream || r.request.MaxBytes != 256 {
 			t.Fatal(r)
 		}
-		if keys := r.request.Config.Keys(); len(keys) != 1 || keys[0] != "system_config" {
-			t.Fatal(keys)
-		}
-		if _, ok := r.request.Config.GetObject("system_config").Get("backup"); ok {
-			t.Fatal(r.request.Config)
+		if r.request.Config == nil || len(r.request.Config.Library) != 0 || len(r.request.Config.Rules) != 0 || r.request.Config.Settings.Fields.Has("backup") {
+			t.Fatal("unrelated settings leaked", r.request.Config)
 		}
 		if r.request.ConnectTimeout != 5*time.Second || r.request.ReadTimeout != 10*time.Second {
 			t.Fatal(r.request)
@@ -657,7 +656,7 @@ func TestCoreUpdateCheckFetchesGithubOnceForConcurrentRequests(t *testing.T) {
 	var fetches []string
 	previous := latestCoreVersion
 	t.Cleanup(func() { latestCoreVersion = previous })
-	latestCoreVersion = func(_ context.Context, channel string, _ *jsonx.Object) (string, error) {
+	latestCoreVersion = func(_ context.Context, channel string, _ *model.SystemConfig) (string, error) {
 		mu.Lock()
 		fetches = append(fetches, channel)
 		mu.Unlock()
@@ -708,7 +707,7 @@ func TestAnExpiredCacheAnswersAtOnceWhileAnotherRequestRefreshes(t *testing.T) {
 	monotonic = func() float64 { return CoreCheckTTL + 10 }
 	previous := latestCoreVersion
 	t.Cleanup(func() { latestCoreVersion = previous })
-	latestCoreVersion = func(context.Context, string, *jsonx.Object) (string, error) {
+	latestCoreVersion = func(context.Context, string, *model.SystemConfig) (string, error) {
 		t.Fatal("must not fetch")
 		return "", nil
 	}
@@ -727,7 +726,7 @@ func TestFailureCacheCountsFromWhenTheFetchEnded(t *testing.T) {
 	clock := fakeClock(t, 1000)
 	previous := latestCoreVersion
 	t.Cleanup(func() { latestCoreVersion = previous })
-	latestCoreVersion = func(context.Context, string, *jsonx.Object) (string, error) {
+	latestCoreVersion = func(context.Context, string, *model.SystemConfig) (string, error) {
 		*clock += 30
 		return "", &rulefetch.FetchError{Class: "ConnectTimeout"}
 	}
@@ -758,7 +757,7 @@ func TestChangingTheDownloadProxyRetriesACachedFailureAtOnce(t *testing.T) {
 	if data.Value("error") != "" || data.Value("has_update") != true || latest.count() != 2 {
 		t.Fatal(data)
 	}
-	if latest.calls[1].request.Config.GetObject("system_config").Value("rule_fetch_proxy") != "http://127.0.0.1:7890" {
+	if latest.calls[1].request.Config.Settings.RuleFetchProxy != "http://127.0.0.1:7890" {
 		t.Fatal(latest.calls[1].request.Config)
 	}
 }
@@ -882,4 +881,17 @@ func TestPanelAnswersThatAreNotJSONOrTooLarge(t *testing.T) {
 	if e := wantMonitorError(t, err, "NOT_ALLOWED", 404); e.Message != "面板不支持这个操作。" {
 		t.Fatal(e)
 	}
+}
+
+func testDownloadSettings(t *testing.T, o *jsonx.Object) *model.SystemConfig {
+	t.Helper()
+	raw, err := jsonx.Compact(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings model.SystemConfig
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	return &settings
 }

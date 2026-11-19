@@ -1,245 +1,193 @@
 package monitor
 
-// checkpoint and complete of backend/agents/oxidns_publication_stats.py
-// (A07): event-driven dashboard checkpoints, stored only on the ConfigFlow
-// server. No polling thread and no Agent changes: capture immediately
-// before submitting an activation, then reconcile its confirmed result or
-// the next overview GET. Registered as the agents hooks
-// PublicationCheckpoint / PublicationComplete by Wire.
-
 import (
 	"context"
 	"errors"
-	"regexp"
 
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 var publicationLogger = logx.Get("backend.agents.oxidns_publication_stats")
+var expectedRevisionRE = hex64
 
-var expectedRevisionRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// publicationHandled reports the exceptions checkpoint/complete catch and
-// log (MonitorError, DashboardStateError, DashboardStateConflict,
-// PublicationPending); anything else propagates.
 func publicationHandled(err error) bool {
-	var monitorErr *Error
-	var stateErr *StateError
-	return errors.As(err, &monitorErr) || errors.As(err, &stateErr) || errors.Is(err, ErrStateConflict) ||
-		errors.Is(err, ErrPublicationPending)
+	var monitor *Error
+	var state *StateError
+	return errors.As(err, &monitor) || errors.As(err, &state) || errors.Is(err, ErrStateConflict) || errors.Is(err, ErrPublicationPending)
 }
 
-// deploymentStatus is (agent.get('deployments') or {}).get(ident, {}).get('status').
-func deploymentStatus(agent *jsonx.Object, ident string) (any, error) {
-	deployments, err := orDict(agent.Value("deployments"))
-	if err != nil {
-		return nil, err
-	}
-	entry, present := deployments.Get(ident)
-	if !present {
-		return nil, nil
-	}
-	task, ok := entry.(*jsonx.Object)
-	if !ok || task == nil {
-		return nil, attributeError(entry)
-	}
-	return task.Value("status"), nil
-}
-
-// Checkpoint is checkpoint(manager, agent_id, deployment_id,
-// expected_revision): a best-effort snapshot before an activation;
-// monitoring failure never blocks publication.
-func Checkpoint(ctx context.Context, m Manager, agentID, deploymentID string, expectedRevision any) error {
+// CheckpointStatistics captures a best-effort boundary before activation.
+// Monitoring failure never blocks publication; shutdown cancellation still propagates.
+func CheckpointStatistics(ctx context.Context, m Registry, id, deploymentID, expectedRevision string) error {
 	ctx = lifecycle.Detach(ctx)
-	agent, err := m.GetAgentByID(ctx, agentID, true)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	a, err := m.ReadAgent(ctx, id, true)
 	if err != nil {
 		return err
 	}
-	if agent == nil || agent.Len() == 0 || !pyEqualStr(agent.Value("service_type"), "oxidns") {
+	if a == nil || originalText(a.MemberJSON("service_type")) != "oxidns" {
 		return nil
 	}
-	err = checkpoint(ctx, m, agentID, deploymentID, expectedRevision)
+	err = checkpointStatistics(ctx, m, id, deploymentID, expectedRevision)
 	if err != nil && publicationHandled(err) {
-		// Never include upstream exceptions: they can contain credentials.
-		publicationLogger.Warning("OxiDNS 发布前统计快照不可用，本次发布的统计可能重新开始")
+		publicationLogger.Warning(msgCheckpointUnavailable)
 		return nil
 	}
 	return err
 }
-
-func checkpoint(ctx context.Context, m Manager, agentID, deploymentID string, expectedRevision any) error {
-	// The checkpoint is matched against this device's publication records.
-	agent, err := agentFor(ctx, m, agentID, MinDashboardAgentVersion, true)
+func checkpointStatistics(ctx context.Context, m Registry, id, deploymentID, expectedRevision string) error {
+	a, err := readDNSAgent(ctx, m, id, MinDashboardAgentVersion, true)
 	if err != nil {
 		return err
 	}
-	if !strMatches(expectedRevision, expectedRevisionRE) {
+	if !expectedRevisionRE.MatchString(expectedRevision) {
 		return nil
 	}
 	store := NewStateStore(m.DataDir())
-	previous, err := store.Read(ctx, agentID)
+	previous, err := store.ReadState(ctx, id)
 	if err != nil {
 		return err
 	}
-	// No dashboard period has been started for this device, so there is
-	// nothing to preserve. Do not enable monitoring as a side effect of push.
 	if previous == nil {
 		return nil
 	}
-	if pending, _ := previous.Value("pending").(*jsonx.Object); pending != nil && pending.Len() > 0 &&
-		pyEqualStr(pending.Value("deployment_id"), deploymentID) {
-		status, err := deploymentStatus(agent, deploymentID)
+	if previous.Pending != nil && previous.Pending.DeploymentID == deploymentID {
+		status, err := storedDeploymentStatus(a, deploymentID)
 		if err != nil {
 			return err
 		}
-		if !pyEqualStr(status, "ready") {
+		if status != "ready" {
 			return nil
 		}
 	}
-	snap, err := overviewSnapshot(ctx, m, agent, true)
+	snapshot, err := readOverviewSnapshot(ctx, m, a, true)
 	if err != nil {
 		return err
 	}
-	digest, err := target(agent)
+	digest, err := TargetIdentity(a)
 	if err != nil {
 		return err
 	}
-	if err := verifyTarget(ctx, m, agentID, digest); err != nil {
+	if err := verifyNativeTarget(ctx, m, id, digest); err != nil {
 		return err
 	}
-	snapshot := snap.data
-	state, err := Advance(previous, snapshot, snap.core, snap.observations, digest, agent, false)
+	state, err := AdvanceState(previous, &snapshot.Identity, &snapshot.Core, snapshot.Observations, digest, a, false)
 	if err != nil {
 		return err
 	}
-	if collectedLess(snapshot.Value("collected_at_ms"), state.Value("started_at_ms")) {
+	if snapshot.Identity.CollectedAtMS < state.StartedAtMS {
 		return ErrPublicationPending
 	}
-	if pending, _ := state.Value("pending").(*jsonx.Object); pending != nil && pending.Len() > 0 &&
-		!pyEqualStr(pending.Value("deployment_id"), deploymentID) {
+	if state.Pending != nil && state.Pending.DeploymentID != deploymentID {
 		return ErrPublicationPending
 	}
-	adjusted, partial, err := Totals(state, snap.observations)
+	totals, partial, err := StateTotals(state, snapshot.Observations)
 	if err != nil {
 		return err
 	}
-	pending := jsonx.Obj("deployment_id", deploymentID, "expected_revision", expectedRevision,
-		"collected_at_ms", snapshot.Value("collected_at_ms"), "totals", adjusted, "partial", partial)
-	task, err := publicationTask(agent, pending)
+	pending := &PendingPublication{DeploymentID: deploymentID, ExpectedRevision: expectedRevision, CollectedAtMS: snapshot.Identity.CollectedAtMS, Totals: totals, Partial: partial}
+	task, err := statePublication(a, pending)
 	if err != nil {
 		return err
 	}
-	if task.Len() == 0 {
+	if task == nil {
 		return nil
 	}
-	next := state.Clone()
-	next.Set("schema", 2)
-	next.Set("generation", tokenHex())
-	next.Set("pending", pending)
-	if _, ok := state.Get("carried"); !ok {
-		next.Set("carried", jsonx.Obj("servers", []any{}, "caches", []any{}, "upstreams", []any{}))
+	next := *state
+	next.Schema = 2
+	next.Generation = tokenHex()
+	next.Pending = pending
+	if next.Carried == nil {
+		next.Carried = observationsOf([3][]metricSeries{})
 	}
-	if _, ok := state.Get("carried_partial"); !ok {
-		next.Set("carried_partial", false)
-	}
-	if _, ok := state.Get("publication_count"); !ok {
-		next.Set("publication_count", 0)
-	}
-	verify := func(held context.Context) error { return verifyPublication(held, m, agentID, digest, pending) }
-
-	expected, _ := previous.Value("generation").(string)
-	err = compareState(ctx, m, store, agentID, expected, next, verify)
-	return err
+	return compareDashboardState(ctx, m, store, id, previous.Generation, &next, func(held context.Context) error { return verifyNativePublication(held, m, id, digest, pending) })
 }
-
-// Complete is complete(manager, agent_id, deployment_id, status):
-// reconcile once a transaction settles; retries are idempotent after the
-// compare-and-set.
-func Complete(ctx context.Context, m Manager, agentID, deploymentID string, status any) error {
-	ctx = lifecycle.Detach(ctx)
-	if unhashable(status) {
-		return typeErrorUnhashable(status)
+func storedDeploymentStatus(a *model.Agent, id string) (string, error) {
+	if err := storedObject(a.MemberJSON("deployments")); err != nil {
+		return "", err
 	}
-	if text, ok := status.(string); !ok || !terminal[text] {
-		return nil
+	task, known := a.Deployments.Get(id)
+	if !known {
+		return "", nil
 	}
-	agent, err := m.GetAgentByID(ctx, agentID, true)
-	if err != nil {
-		return err
+	if !a.Deployments.EntryValid(id) {
+		return "", &StateError{msgPublicationDamaged}
 	}
-	if agent == nil || agent.Len() == 0 || !pyEqualStr(agent.Value("service_type"), "oxidns") {
-		return nil
-	}
-	err = complete(ctx, m, agent, agentID, deploymentID)
-	if err != nil && publicationHandled(err) {
-		publicationLogger.Warning("OxiDNS 发布后统计暂未接续，将在下次查看时重试")
-		return nil
-	}
-	return err
+	return originalText(task.MemberJSON("status")), nil
 }
-
-func complete(ctx context.Context, m Manager, agent *jsonx.Object, agentID, deploymentID string) error {
-	store := NewStateStore(m.DataDir())
-	previous, err := store.Read(ctx, agentID)
+func verifyNativePublication(ctx context.Context, m Registry, id, digest string, pending *PendingPublication) error {
+	if err := verifyNativeTarget(ctx, m, id, digest); err != nil {
+		return err
+	}
+	a, err := m.ReadAgent(ctx, id, true)
 	if err != nil {
 		return err
 	}
-	var pending *jsonx.Object
-	if previous != nil {
-		pending, _ = previous.Value("pending").(*jsonx.Object)
-	}
-	if pending == nil || pending.Len() == 0 || !pyEqualStr(pending.Value("deployment_id"), deploymentID) {
-		return nil
-	}
-	snap, err := overviewSnapshot(ctx, m, agent, true)
+	task, err := statePublication(a, pending)
 	if err != nil {
 		return err
 	}
-	digest, err := target(agent)
-	if err != nil {
-		return err
+	if task == nil {
+		return ErrStateConflict
 	}
-	state, err := Advance(previous, snap.data, snap.core, snap.observations, digest, agent, false)
-	if err != nil {
-		return err
-	}
-	var replacement *jsonx.Object
-	if !jsonx.Equal(state, previous) {
-		replacement = state
-	}
-	expected, _ := previous.Value("generation").(string)
-	err = compareState(ctx, m, store, agentID, expected, replacement, func(held context.Context) error {
-		return verifyTarget(held, m, agentID, digest)
-	})
-	return err
-}
-
-// The agents hooks (registered by Wire).
-func checkpointHook(ctx context.Context, m *agents.Manager, agentID, deploymentID string, configSHA256 any) error {
-	return Checkpoint(ctx, FromAgents(m), agentID, deploymentID, configSHA256)
-}
-
-func completeHook(ctx context.Context, m *agents.Manager, agentID, deploymentID string, status any) error {
-	return Complete(ctx, FromAgents(m), agentID, deploymentID, status)
-}
-
-func verifyPublication(ctx context.Context, m Manager, agentID, digest string, pending *jsonx.Object) error {
-	if err := verifyTarget(ctx, m, agentID, digest); err != nil {
-		return err
-	}
-	current, err := m.GetAgentByID(ctx, agentID, true)
-	if err != nil {
-		return err
-	}
-	task, err := publicationTask(current, pending)
-	if err != nil {
-		return err
-	}
-	if status := task.Value("status"); !pyEqualStr(status, "uploading") && !pyEqualStr(status, "ready") {
+	status := originalText(task.MemberJSON("status"))
+	if status != "uploading" && status != "ready" {
 		return ErrStateConflict
 	}
 	return nil
+}
+
+// CompleteStatistics reconciles a confirmed terminal publication with its checkpoint.
+func CompleteStatistics(ctx context.Context, m Registry, id, deploymentID, status string) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !terminal[status] {
+		return nil
+	}
+	a, err := m.ReadAgent(ctx, id, true)
+	if err != nil {
+		return err
+	}
+	if a == nil || originalText(a.MemberJSON("service_type")) != "oxidns" {
+		return nil
+	}
+	err = completeStatistics(ctx, m, a, id, deploymentID)
+	if err != nil && publicationHandled(err) {
+		publicationLogger.Warning(msgCompletionUnavailable)
+		return nil
+	}
+	return err
+}
+func completeStatistics(ctx context.Context, m Registry, a *model.Agent, id, deploymentID string) error {
+	store := NewStateStore(m.DataDir())
+	previous, err := store.ReadState(ctx, id)
+	if err != nil {
+		return err
+	}
+	if previous == nil || previous.Pending == nil || previous.Pending.DeploymentID != deploymentID {
+		return nil
+	}
+	snapshot, err := readOverviewSnapshot(ctx, m, a, true)
+	if err != nil {
+		return err
+	}
+	digest, err := TargetIdentity(a)
+	if err != nil {
+		return err
+	}
+	state, err := AdvanceState(previous, &snapshot.Identity, &snapshot.Core, snapshot.Observations, digest, a, false)
+	if err != nil {
+		return err
+	}
+	var replacement *DashboardState
+	if state != previous {
+		replacement = state
+	}
+	return compareDashboardState(ctx, m, store, id, previous.Generation, replacement, func(held context.Context) error { return verifyNativeTarget(held, m, id, digest) })
 }

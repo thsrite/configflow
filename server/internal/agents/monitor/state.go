@@ -5,20 +5,21 @@ package monitor
 // never query records.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -56,160 +57,230 @@ func (e *StateError) Error() string { return e.Message }
 // this network snapshot.
 var ErrStateConflict = errors.New("DashboardStateConflict")
 
-// finite is _finite: None, or a non-negative finite int/float (not bool).
-func finite(value any) bool {
-	if value == nil {
-		return true
-	}
-	n, ok := asNum(value)
-	if !ok || n.isNaN() || n.less(intNum(0)) {
-		return false
-	}
-	f, err := n.isFinite()
-	return err == nil && f
-}
-
 var (
 	hex32        = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	hex64        = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	deploymentRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 )
 
-func hasExactKeys(o *jsonx.Object, keys ...string) bool {
-	if o.Len() != len(keys) {
+const maxInteger = 1<<53 - 1
+
+// DashboardState is a durable DNS statistics boundary; schema 2 adds publication carry-over.
+type DashboardState struct {
+	Schema           int64
+	Generation       string
+	StartedAtMS      int64
+	Reason           string
+	Target           string
+	InstanceID       string
+	SourceRevision   string
+	RuntimeRevision  string
+	Baseline         *Observations
+	Carried          *Observations
+	CarriedPartial   bool
+	PublicationCount int64
+	Pending          *PendingPublication
+}
+
+// PendingPublication pins a checkpoint to one deployment and target revision.
+type PendingPublication struct {
+	DeploymentID     string        `json:"deployment_id"`
+	ExpectedRevision string        `json:"expected_revision"`
+	CollectedAtMS    int64         `json:"collected_at_ms"`
+	Totals           *Observations `json:"totals"`
+	Partial          bool          `json:"partial"`
+}
+type stateBase struct {
+	Schema          int64         `json:"schema"`
+	Generation      string        `json:"generation"`
+	StartedAtMS     int64         `json:"started_at_ms"`
+	Reason          string        `json:"reason"`
+	Target          string        `json:"target"`
+	InstanceID      string        `json:"instance_id"`
+	SourceRevision  string        `json:"source_revision"`
+	RuntimeRevision string        `json:"runtime_revision"`
+	Baseline        *Observations `json:"baseline"`
+}
+
+// MarshalJSON writes precisely the members of this schema version.
+func (s DashboardState) MarshalJSON() ([]byte, error) {
+	base := stateBase{s.Schema, s.Generation, s.StartedAtMS, s.Reason, s.Target, s.InstanceID, s.SourceRevision, s.RuntimeRevision, s.Baseline}
+	if s.Schema != 2 {
+		return json.Marshal(base)
+	}
+	return json.Marshal(struct {
+		stateBase
+		Carried          *Observations       `json:"carried"`
+		CarriedPartial   bool                `json:"carried_partial"`
+		PublicationCount int64               `json:"publication_count"`
+		Pending          *PendingPublication `json:"pending"`
+	}{base, s.Carried, s.CarriedPartial, s.PublicationCount, s.Pending})
+}
+func exactFields(fields model.Fields, keys ...string) bool {
+	if fields.Len() != len(keys) {
 		return false
 	}
 	for _, key := range keys {
-		if !o.Has(key) {
+		if !fields.Has(key) {
 			return false
 		}
 	}
 	return true
 }
-
-func strMatches(value any, re *regexp.Regexp) bool {
-	s, ok := value.(string)
-	return ok && re.MatchString(s)
+func stateInvalid() error { return &StateError{"Invalid DNS statistics state"} }
+func stateMember(fields model.Fields, key string, target any) error {
+	raw, present := fields.Get(key)
+	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return stateInvalid()
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return stateInvalid()
+	}
+	return nil
 }
 
-const maxInteger = 1<<53 - 1
-
-// ValidateState is validate_state.
-func ValidateState(value any) bool {
-	state, ok := value.(*jsonx.Object)
-	if !ok || state == nil {
-		return false
+// DecodeState validates exact keys, numeric token types and observation series
+// before returning a typed boundary. Invalid state never resets counters silently.
+func DecodeState(raw []byte) (*DashboardState, error) {
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil, stateInvalid()
 	}
-	keys := []string{"schema", "generation", "started_at_ms", "reason", "target", "instance_id",
-		"source_revision", "runtime_revision", "baseline"}
-	if pyNumberEqual(state.Value("schema"), jsonx.Int(2)) {
+	state := new(DashboardState)
+	if stateMember(fields, "schema", &state.Schema) != nil || state.Schema != 1 && state.Schema != 2 {
+		return nil, stateInvalid()
+	}
+	keys := []string{"schema", "generation", "started_at_ms", "reason", "target", "instance_id", "source_revision", "runtime_revision", "baseline"}
+	if state.Schema == 2 {
 		keys = append(keys, "carried", "carried_partial", "publication_count", "pending")
 	}
-	if !hasExactKeys(state, keys...) {
-		return false
+	if !exactFields(fields, keys...) {
+		return nil, stateInvalid()
 	}
-	if !pyIntIn(state.Value("schema"), 1, 2) {
-		return false
+	for _, field := range []struct {
+		name   string
+		target any
+	}{
+		{"generation", &state.Generation}, {"started_at_ms", &state.StartedAtMS}, {"reason", &state.Reason}, {"target", &state.Target},
+		{"instance_id", &state.InstanceID}, {"source_revision", &state.SourceRevision}, {"runtime_revision", &state.RuntimeRevision},
+	} {
+		if stateMember(fields, field.name, field.target) != nil {
+			return nil, stateInvalid()
+		}
 	}
-	if !strMatches(state.Value("generation"), hex32) || !strMatches(state.Value("target"), hex64) ||
-		!strMatches(state.Value("source_revision"), hex64) || !strMatches(state.Value("runtime_revision"), hex64) {
-		return false
+	if !hex32.MatchString(state.Generation) || !hex64.MatchString(state.Target) || !hex64.MatchString(state.SourceRevision) || !hex64.MatchString(state.RuntimeRevision) || !reasons[state.Reason] || state.StartedAtMS < 0 || state.StartedAtMS > maxInteger || runeLen(state.InstanceID) == 0 || runeLen(state.InstanceID) > 128 {
+		return nil, stateInvalid()
 	}
-	reason, _ := state.Value("reason").(string)
-	instance, isStr := state.Value("instance_id").(string)
-	if !pyIntIn(state.Value("started_at_ms"), 0, maxInteger) || !reasons[reason] || !isStr ||
-		runeLen(instance) == 0 || runeLen(instance) > 128 {
-		return false
+	baseline, _ := fields.Get("baseline")
+	var err error
+	state.Baseline, err = decodeObservations(baseline)
+	if err != nil {
+		return nil, stateInvalid()
 	}
-	if !ValidateObservations(state.Value("baseline")) {
-		return false
+	if state.Schema == 1 {
+		return state, nil
 	}
-	if pyInt64(state.Value("schema")) == 1 {
-		return true
+	if stateMember(fields, "carried_partial", &state.CarriedPartial) != nil || stateMember(fields, "publication_count", &state.PublicationCount) != nil || state.PublicationCount < 0 || state.PublicationCount > maxInteger {
+		return nil, stateInvalid()
 	}
-	if _, ok := state.Value("carried_partial").(bool); !ok || !ValidateObservations(state.Value("carried")) ||
-		!pyIntIn(state.Value("publication_count"), 0, maxInteger) {
-		return false
+	carried, _ := fields.Get("carried")
+	state.Carried, err = decodeObservations(carried)
+	if err != nil {
+		return nil, stateInvalid()
 	}
-	pendingValue := state.Value("pending")
-	if pendingValue == nil {
-		return true
+	pending, _ := fields.Get("pending")
+	if bytes.Equal(bytes.TrimSpace(pending), []byte("null")) {
+		return state, nil
 	}
-	pending, ok := pendingValue.(*jsonx.Object)
-	if !ok || !hasExactKeys(pending, "deployment_id", "expected_revision", "collected_at_ms", "totals", "partial") {
-		return false
+	var checkpoint model.Fields
+	if json.Unmarshal(pending, &checkpoint) != nil || !exactFields(checkpoint, "deployment_id", "expected_revision", "collected_at_ms", "totals", "partial") {
+		return nil, stateInvalid()
 	}
-	if !strMatches(pending.Value("deployment_id"), deploymentRE) || !strMatches(pending.Value("expected_revision"), hex64) {
-		return false
+	p := new(PendingPublication)
+	for _, field := range []struct {
+		name   string
+		target any
+	}{{"deployment_id", &p.DeploymentID}, {"expected_revision", &p.ExpectedRevision}, {"collected_at_ms", &p.CollectedAtMS}, {"partial", &p.Partial}} {
+		if stateMember(checkpoint, field.name, field.target) != nil {
+			return nil, stateInvalid()
+		}
 	}
-	if !bigIntBetween(pending.Value("collected_at_ms"), state.Value("started_at_ms"), 253402300799999) {
-		return false
+	if !deploymentRE.MatchString(p.DeploymentID) || !hex64.MatchString(p.ExpectedRevision) || p.CollectedAtMS < state.StartedAtMS || p.CollectedAtMS > 253402300799999 {
+		return nil, stateInvalid()
 	}
-	_, isBool := pending.Value("partial").(bool)
-	return isBool && ValidateObservations(pending.Value("totals"))
+	totals, _ := checkpoint.Get("totals")
+	p.Totals, err = decodeObservations(totals)
+	if err != nil {
+		return nil, stateInvalid()
+	}
+	state.Pending = p
+	return state, nil
 }
 
-// bigIntBetween is type(v) is int and lo <= v <= hi (lo an int).
-func bigIntBetween(v, lo any, hi int64) bool {
-	n, ok := v.(jsonx.Number)
-	if !ok || !n.IsInt() {
-		return false
-	}
-	i, ok := n.BigInt()
-	l, ok2 := lo.(jsonx.Number).BigInt()
-	return ok && ok2 && i.Cmp(l) >= 0 && i.Cmp(big.NewInt(hi)) <= 0
-}
-
-// ValidateObservations is validate_observations.
-func ValidateObservations(value any) bool {
-	baseline, ok := value.(*jsonx.Object)
-	if !ok || baseline == nil || !hasExactKeys(baseline, "servers", "caches", "upstreams") {
-		return false
+func decodeObservations(raw []byte) (*Observations, error) {
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil || !exactFields(fields, "servers", "caches", "upstreams") {
+		return nil, stateInvalid()
 	}
 	total := 0
-	for _, f := range stateFields {
-		rows, ok := baseline.Value(f.family).([]any)
-		if !ok {
-			return false
+	for _, family := range stateFields {
+		raw, _ := fields.Get(family.family)
+		var rows []json.RawMessage
+		if json.Unmarshal(raw, &rows) != nil || rows == nil {
+			return nil, stateInvalid()
 		}
 		total += len(rows)
 		if total > MaxRows {
-			return false
+			return nil, stateInvalid()
 		}
-		seen := map[string]bool{}
-		for _, item := range rows {
-			row, ok := item.(*jsonx.Object)
-			if !ok || row == nil {
-				return false
+		seen := map[groupKey]bool{}
+		for _, raw := range rows {
+			var row model.Fields
+			if json.Unmarshal(raw, &row) != nil {
+				return nil, stateInvalid()
 			}
-			for _, key := range row.Keys() {
-				isLabel := false
-				for _, label := range f.labels {
-					isLabel = isLabel || key == label
-				}
-				if !isLabel && !f.numbers[key] {
-					return false
+			for key := range row.All() {
+				if !contains(family.labels, key) && !family.numbers[key] {
+					return nil, stateInvalid()
 				}
 			}
-			for _, key := range f.labels {
-				s, ok := row.Value(key).(string)
-				if !ok || runeLen(s) == 0 || runeLen(s) > 16_384 {
-					return false
+			var identity groupKey
+			for i, key := range family.labels {
+				text := fieldText(row, key)
+				if runeLen(text) == 0 || runeLen(text) > 16384 {
+					return nil, stateInvalid()
+				}
+				if i == 0 {
+					identity.a = text
+				} else {
+					identity.b = text
 				}
 			}
-			id := identity(row, f.labels)
-			if seen[id] {
-				return false
+			if seen[identity] {
+				return nil, stateInvalid()
 			}
-			for key := range f.numbers {
-				if !finite(row.Value(key)) {
-					return false
+			seen[identity] = true
+			for key := range family.numbers {
+				raw, present := row.Get(key)
+				if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+					continue
+				}
+				var n MetricNumber
+				if json.Unmarshal(raw, &n) != nil || n.num.less(intNum(0)) {
+					return nil, stateInvalid()
+				}
+				finite, err := n.isFinite()
+				if err != nil || !finite {
+					return nil, stateInvalid()
 				}
 			}
-			seen[id] = true
 		}
 	}
-	return true
+	var observations Observations
+	if json.Unmarshal(raw, &observations) != nil {
+		return nil, stateInvalid()
+	}
+	return &observations, nil
 }
 
 // StateStore is DashboardStateStore.
@@ -245,6 +316,9 @@ func (s *StateStore) locked(ctx context.Context, path string, body func() error)
 		return err
 	}
 	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.Directory, 0o700); err != nil {
 		return &StateError{"Cannot access DNS statistics state"}
 	}
@@ -257,7 +331,7 @@ func (s *StateStore) locked(ctx context.Context, path string, body func() error)
 }
 
 // read is _read: nil when the file does not exist.
-func (s *StateStore) read(path string) (*jsonx.Object, error) {
+func (s *StateStore) readState(path string) (*DashboardState, error) {
 	handle, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -278,41 +352,41 @@ func (s *StateStore) read(path string) (*jsonx.Object, error) {
 	if !ok {
 		return nil, damaged
 	}
-	value, err := jsonx.ParseString(text)
-	if err != nil || exceedsDigitLimit(value) || !ValidateState(value) {
+	state, err := DecodeState([]byte(text))
+	if err != nil {
 		return nil, damaged
 	}
-	return value.(*jsonx.Object), nil
+	return state, nil
 }
 
-// Read is DashboardStateStore.read(agent_id).
-func (s *StateStore) Read(ctx context.Context, agentID string) (*jsonx.Object, error) {
+// ReadState returns a validated, caller-owned dashboard boundary.
+func (s *StateStore) ReadState(ctx context.Context, agentID string) (*DashboardState, error) {
 	path := s.Path(agentID)
-	var result *jsonx.Object
+	var result *DashboardState
 	err := s.locked(ctx, path, func() error {
 		var err error
-		result, err = s.read(path)
+		result, err = s.readState(path)
 		return err
 	})
 	return result, err
 }
 
-// CompareAndSet is compare_and_set: the generation is checked under the
+// CompareState is the typed generation compare-and-set: the generation is checked under the
 // same leaf lock as the atomic replacement. Owners verify configuration under
 // a repository read snapshot before entering this lock. A nil replacement only
 // checks that a read is still current. expected ""
 // is None.
-func (s *StateStore) CompareAndSet(ctx context.Context, agentID, expected string, replacement *jsonx.Object) (*jsonx.Object, error) {
+func (s *StateStore) CompareState(ctx context.Context, agentID, expected string, replacement *DashboardState) (*DashboardState, error) {
 	path := s.Path(agentID)
-	var result *jsonx.Object
+	var result *DashboardState
 	err := s.locked(ctx, path, func() error {
-		current, err := s.read(path)
+		current, err := s.readState(path)
 		if err != nil {
 			return err
 		}
 		generation := ""
 		if current != nil {
-			generation, _ = current.Value("generation").(string)
+			generation = current.Generation
 		}
 		if generation != expected {
 			return ErrStateConflict
@@ -321,17 +395,20 @@ func (s *StateStore) CompareAndSet(ctx context.Context, agentID, expected string
 			result = current
 			return nil
 		}
-		if !ValidateState(replacement) {
-			return &StateError{"Invalid DNS statistics state"}
-		}
-		encoded, err := jsonx.Compact(replacement)
+		encoded, err := json.Marshal(replacement)
 		if err != nil {
 			return err
+		}
+		if _, err := DecodeState(encoded); err != nil {
+			return &StateError{"Invalid DNS statistics state"}
 		}
 		if len(encoded) > MaxStateBytes {
 			return &StateError{"DNS statistics state exceeds size limit"}
 		}
-		if err := writeAtomic(s.Directory, path, encoded); err != nil {
+		if err := writeStateAtomic(ctx, s.Directory, path, encoded); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return &StateError{"Cannot save DNS statistics state"}
 		}
 		result = replacement
@@ -345,7 +422,10 @@ var replaceFile = os.Rename
 
 // writeAtomic is the mkstemp / fsync / os.replace / directory fsync of
 // compare_and_set; the temporary file is removed when anything fails.
-func writeAtomic(directory, path string, data []byte) error {
+func writeStateAtomic(ctx context.Context, directory, path string, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	handle, err := os.CreateTemp(directory, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
@@ -367,6 +447,9 @@ func writeAtomic(directory, path string, data []byte) error {
 	if err := handle.Close(); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := replaceFile(temporary, path); err != nil {
 		return err
 	}
@@ -377,35 +460,4 @@ func writeAtomic(directory, path string, data []byte) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
-}
-
-// ExceedsDigitLimit is exceedsDigitLimit for the routes.
-func ExceedsDigitLimit(value any) bool { return exceedsDigitLimit(value) }
-
-// exceedsDigitLimit reports an int literal longer than 4300 digits, which
-// json.loads refuses with ValueError.
-func exceedsDigitLimit(value any) bool {
-	switch v := value.(type) {
-	case jsonx.Number:
-		if v.IsInt() {
-			text := v.String()
-			if len(text) > 0 && text[0] == '-' {
-				text = text[1:]
-			}
-			return len(text) > maxStrDigits
-		}
-	case []any:
-		for _, item := range v {
-			if exceedsDigitLimit(item) {
-				return true
-			}
-		}
-	case *jsonx.Object:
-		for _, item := range v.Values() {
-			if exceedsDigitLimit(item) {
-				return true
-			}
-		}
-	}
-	return false
 }

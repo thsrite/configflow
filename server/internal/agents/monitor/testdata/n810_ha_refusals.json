@@ -1,0 +1,75 @@
+{
+  "archive_sha256": "d22ad589cc81bef272848e4f441918b4e0bc1c10a93c3fda5b7a05f1163cbb85",
+  "rows": [
+    {
+      "row": [
+        "x",
+        {
+          "exception": "AttributeError"
+        }
+      ],
+      "sha256": "a8984d89b564f5d3f0e4e489723f7ecbe6548d73d2afffe8487dff5a6813903e",
+      "native_error": "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
+    },
+    {
+      "row": [
+        [
+          "x"
+        ],
+        {
+          "exception": "AttributeError"
+        }
+      ],
+      "sha256": "19fdcdd28cd86063f98f1f5180c18c37fb4fc044a4789592c8b2a50ad65bd3cb",
+      "native_error": "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
+    },
+    {
+      "row": [
+        {
+          "status": [
+            "a"
+          ]
+        },
+        {
+          "exception": "TypeError"
+        }
+      ],
+      "sha256": "2492b7a1a26a3e3f703d648d664c5ebdd11845df4ca0f2c11b887b65f19fa9d0",
+      "native_error": "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
+    },
+    {
+      "row": [
+        {
+          "status": {
+            "a": 1
+          }
+        },
+        {
+          "exception": "TypeError"
+        }
+      ],
+      "sha256": "d270635858d96b71d300e88f76f9f4a1f5b76c2a8962a43f027ea2b2c7577b85",
+      "native_error": "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
+    },
+    {
+      "row": [
+        "",
+        {
+          "exception": "RuntimeError"
+        }
+      ],
+      "sha256": "37def10874fbde84b215e9108eee27a632d46b8e3b856a295e25c540f96069dc",
+      "native_error": "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
+    },
+    {
+      "row": [
+        0,
+        {
+          "exception": "RuntimeError"
+        }
+      ],
+      "sha256": "ca06c55a140bef6567b3b7fb1794a8eece53c5e9758e588cb202ffd8a17ef2d2",
+      "native_error": "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
+    }
+  ]
+}

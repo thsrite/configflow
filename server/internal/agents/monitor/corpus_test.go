@@ -2,6 +2,8 @@ package monitor
 
 import (
 	"compress/gzip"
+	"configflow/internal/model"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -78,4 +80,66 @@ func referenceFields(t *testing.T, path string, fields ...string) *jsonx.Object 
 		out.Set(key, jsonx.DeepCopy(value))
 	}
 	return out
+}
+
+func pick(values *jsonx.Object, fields ...string) *jsonx.Object {
+	out := jsonx.NewObject()
+	for _, field := range fields {
+		out.Set(field, values.Value(field))
+	}
+	return out
+}
+
+// NewCounts builds Counts from key, count pairs.
+func NewCounts(pairs ...any) *Counts {
+	c := &Counts{Values: map[string]int64{}}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		c.Add(pairs[i].(string), int64(pairs[i+1].(int)))
+	}
+	return c
+}
+
+// publicUpstreams preserves the shape-free historical helper fixture in tests.
+// Production projection is PublicUpstream over the typed MetricSummary; the
+// legacy null/number synthetic labels cannot arise from validated metrics.
+// Identity and display checks still call the native production primitives.
+func publicUpstreams(rows, labels []any) ([]any, error) {
+	addresses := map[string]string{}
+	for _, raw := range labels {
+		label := raw.(*jsonx.Object)
+		key, _ := jsonx.Compact([]any{label.Value("plugin_tag"), label.Value("upstream")})
+		addresses[string(key)] = label.GetString("address")
+	}
+	out := make([]any, 0, len(rows))
+	for _, raw := range rows {
+		row := raw.(*jsonx.Object)
+		encoded, err := jsonx.Compact(row)
+		if err != nil {
+			return nil, err
+		}
+		var fields model.Fields
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			return nil, err
+		}
+		parts := make([]json.RawMessage, 0, 2)
+		for _, name := range []string{"tag", "upstream"} {
+			value, present := fields.Get(name)
+			if !present {
+				value = []byte("null")
+			}
+			parts = append(parts, value)
+		}
+		digest, err := digestIdentity(parts)
+		if err != nil {
+			return nil, err
+		}
+		key, _ := jsonx.Compact([]any{row.Value("tag"), row.Value("upstream")})
+		result := row.Clone()
+		result.Set("id", digest)
+		result.Set("tag", displayAddress(fieldText(fields, "tag")))
+		result.Set("upstream", displayAddress(fieldText(fields, "upstream")))
+		result.Set("address", displayAddress(addresses[string(key)]))
+		out = append(out, result)
+	}
+	return out, nil
 }

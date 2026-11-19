@@ -2106,3 +2106,30 @@ HTTP 检查实际 method/path/Authorization/Content-Type/body 字节，并验证
   行（method/body/status/result 全文 SHA）独立冻结，原测试的失败对象与脱敏 details
   断言原文保留，比较层逐条检查旧 Python 结果、Go 拒绝和事务无写入；真实 HTTP restart
   另核对 method/path/header/body 原字节、502 和全库 fingerprint。
+
+### N8-10 monitor — malformed HA publication guards
+
+协调者 2026-11-19 批准：已存 `oxidns_ha_publication` 若 present、非 null、非 object，
+规则更新 POST 一律拒绝，不发设备请求、不写入。原 Python 对空串、0 当作没有任务的路径
+收紧；沿当前无同类中文 409 的约定保持 native 500，明确提示“OxiDNS HA 发布记录损坏，
+请先停用或修复主备配置。”非对象非空值、object.status 为容器仍拒绝，删除 CPython
+异常文本仿真。a07_review 原档案和期望不变，六条完整原行/source SHA 绑定 native 拒绝；
+现有 HA 停用清除损坏字段后规则更新恢复的回归覆盖空串、0、string、array。
+
+Mihomo Agent 回包使用标准 JSON；原 a07/135 含 NaN 的非标准 JSON 成功回包现在拒绝为
+INVALID_RESPONSE/502。原档案/该行/设备请求原字节均完整 SHA 绑定，其他原始行不放宽。
+
+### N8-10 monitor — pending publication checkpoints and native JSON
+
+协调者批准：pending dashboard checkpoint 对应的 deployments/latest_deployment/entry 为
+非对象，或原始 status 为非字符串时，保持检查点、拒绝统计边界写入，并通过既有
+DASHBOARD_STATE_ERROR/500 显示；不以 R5 零值或 Python falsy 值作为丢弃 checkpoint 的
+证明。a06 原 archive/88 条原始行不变，完整 row SHA 精确绑定 native refusal。用户可以
+使用已有的“重置统计”操作明确开始新周期；回归验证四类坏记录不会写入，手动重置后
+面板与后续统计恢复正常。早于 checkpoint 的采样仍遵循原先 PublicationPending 顺序。
+
+状态文件中的真实重复 member（包括 escaped 同名）现在明确按损坏文件拒绝，避免不同
+消费者选中不同统计起点；a06_review 的三条重复字段成功行完整保留并单独 SHA 绑定。
+Agent 回包采用标准 JSON 和严格 boolean 协议标志；a06 的两条 queries NaN 回包、四条
+responses 非标准 JSON/重复 member/数字 boolean 行绑定明确 INVALID_RESPONSE/502。
+原档案及正常/其他错误行的期待不改，未知普通 JSON 字段仍按原合同过滤或保留。

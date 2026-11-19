@@ -8,13 +8,16 @@ package monitor
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"regexp"
-	"strings"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"encoding/json"
+	"errors"
+	"slices"
+
+	"configflow/internal/jsonresp"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 // Limits of oxidns_cache.py.
@@ -64,258 +67,168 @@ func CacheFail(code string, status int) *Error {
 	return &Error{Code: code, Status: status, Message: message}
 }
 
-// FlushError is a MonitorError of a failed flush with its `flushed`
-// attribute: the caches a partial flush already cleared.
-type FlushError struct {
+// CacheResult contains the public cache list or completed flush.
+type CacheResult struct {
+	flushing bool
+	Success  bool     `json:"success"`
+	Caches   []string `json:"caches,omitempty"`
+	Flushed  []string `json:"flushed,omitempty"`
+}
+
+// CacheOperationError includes only validated tags from a partial operation.
+type CacheOperationError struct {
 	Err     *Error
-	Flushed []any
+	Flushed []string
 }
 
-func (e *FlushError) Error() string { return e.Err.Message }
-func (e *FlushError) Unwrap() error { return e.Err }
-
-// cacheAgent is oxidns_cache._agent (with the publication history, as
-// get_agent_by_id's default).
-func cacheAgent(ctx context.Context, m Manager, agentID string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, true)
-	if err != nil {
-		return nil, err
-	}
-	if agent == nil || agent.Len() == 0 {
-		return nil, CacheFail("AGENT_NOT_FOUND", 404)
-	}
-	if !pyEqualStr(agent.Value("service_type"), "oxidns") {
-		return nil, CacheFail("WRONG_SERVICE", 400)
-	}
-	if !versionAtLeast(agent, CacheMinAgentVersion) {
-		return nil, CacheFail("UPGRADE_REQUIRED", 409)
-	}
-	return agent, nil
-}
+func (e *CacheOperationError) Error() string { return e.Err.Message }
+func (e *CacheOperationError) Unwrap() error { return e.Err }
 
 func validCacheTag(value any) bool {
 	tag, ok := value.(string)
 	return ok && tag != "" && len(tag) <= cacheTagMaxLength && cacheTagRE.MatchString(tag)
 }
 
-// cacheTags is _tags(value): a validated tag list of an Agent answer.
-func cacheTags(value any) ([]any, error) {
-	list, ok := value.([]any)
-	if !ok || len(list) > CacheMaxTags {
-		return nil, CacheFail("INVALID_RESPONSE", 0)
+func validTags(tags []string, nonempty bool) bool {
+	if tags == nil || len(tags) > CacheMaxTags || nonempty && len(tags) == 0 {
+		return false
 	}
-	seen := map[string]bool{}
-	for _, tag := range list {
-		if !validCacheTag(tag) {
-			return nil, CacheFail("INVALID_RESPONSE", 0)
+	seen := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		if !validCacheTag(tag) || seen[tag] {
+			return false
 		}
-		seen[tag.(string)] = true
+		seen[tag] = true
 	}
-	if len(seen) != len(list) {
-		return nil, CacheFail("INVALID_RESPONSE", 0)
-	}
-	return list, nil
+	return true
 }
 
-// ValidRequestTags is valid_request_tags(value). The error is the
-// TypeError of set() on a list holding a list or dict (Python answers 500).
-func ValidRequestTags(value any) (bool, error) {
-	list, ok := value.([]any)
-	if !ok || len(list) == 0 || len(list) > CacheMaxTags {
-		return false, nil
+func answerTags(fields model.Fields, name string) ([]string, error) {
+	raw, _ := fields.Get(name)
+	var tags []string
+	if json.Unmarshal(raw, &tags) != nil || !validTags(tags, false) {
+		return nil, CacheFail("INVALID_RESPONSE", 0)
 	}
-	for _, tag := range list {
-		if unhashable(tag) {
-			return false, typeErrorUnhashable(tag)
-		}
-	}
-	distinct := 0
-	for i, tag := range list {
-		duplicate := false
-		for _, earlier := range list[:i] {
-			if jsonx.Equal(earlier, tag) {
-				duplicate = true
-				break
-			}
-		}
-		if !duplicate {
-			distinct++
-		}
-	}
-	if distinct != len(list) {
-		return false, nil
-	}
-	for _, tag := range list {
-		if !validCacheTag(tag) {
-			return false, nil
-		}
-	}
-	return true, nil
+	return tags, nil
 }
 
-// CacheCall is oxidns_cache.call(manager, agent_id, method, tags): GET
-// lists the Agent's cache plugins; POST flushes the given tags (tags nil
-// is None).
-func CacheCall(ctx context.Context, m Manager, agentID, method string, tags any) (*jsonx.Object, error) {
-	valid := (method == "GET" && tags == nil) || (method == "POST" && tags != nil)
-	if valid && tags != nil {
-		ok, err := ValidRequestTags(tags)
+// CallCache lists or flushes validated cache tags through one registered Agent.
+// A nil tag slice denotes GET; POST requires at least one unique safe tag.
+func CallCache(ctx context.Context, m Registry, agentID, method string, tags []string) (*CacheResult, error) {
+	if method != "GET" && method != "POST" || method == "GET" && tags != nil || method == "POST" && !validTags(tags, true) {
+		return nil, CacheFail("INVALID_REQUEST", 400)
+	}
+	if method == "POST" {
+		ctx = lifecycle.Detach(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	agent, err := m.ReadAgent(ctx, agentID, true)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, CacheFail("AGENT_NOT_FOUND", 404)
+	}
+	if originalText(agent.MemberJSON("service_type")) != "oxidns" {
+		return nil, CacheFail("WRONG_SERVICE", 400)
+	}
+	if !modelVersionAtLeast(agent, CacheMinAgentVersion) {
+		return nil, CacheFail("UPGRADE_REQUIRED", 409)
+	}
+	token, valid := originalString(agent.MemberJSON("token"))
+	if !valid {
+		return nil, agents.ErrAgentEndpoint
+	}
+	origin, err := Origin(agent)
+	if err != nil {
+		return nil, err
+	}
+	header, err := monitorHeaders(token)
+	if err != nil {
+		return nil, CacheFail("AGENT_UNREACHABLE", 0)
+	}
+	path := "/api/oxidns/cache"
+	var body []byte
+	if method == "POST" {
+		path += "/flush"
+		header.Set("Content-Type", "application/json")
+		body, err = jsonresp.EncodeDevice(struct {
+			Tags []string `json:"tags"`
+		}{tags})
 		if err != nil {
 			return nil, err
 		}
-		valid = ok
 	}
-	if !valid {
-		return nil, CacheFail("INVALID_REQUEST", 400)
-	}
-	agent, err := cacheAgent(ctx, m, agentID)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	path := "/api/oxidns/cache"
-	if method == "POST" {
-		path = "/api/oxidns/cache/flush"
-	}
-	// The headers are built before the try block: a missing or non-str
-	// token is a KeyError / TypeError (500), not AGENT_UNREACHABLE.
-	token, err := tokenText(agent)
-	if err != nil {
-		return nil, err
-	}
-	// Inside the try block: _agent_origin is evaluated (its MonitorError,
-	// with the monitor's message, re-raised) before the token is encoded
-	// on sending (UnicodeEncodeError → this module's AGENT_UNREACHABLE).
-	origin, err := AgentOrigin(agent)
-	if err != nil {
-		return nil, err
-	}
-	encodedToken, ok := latin1(token)
-	if !ok {
-		return nil, CacheFail("AGENT_UNREACHABLE", 0)
-	}
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+encodedToken)
-	header.Set("Accept", "application/json")
-	var body []byte
-	if method == "POST" {
-		header.Set("Content-Type", "application/json")
-		if body, err = jsonx.Default(jsonx.Obj("tags", tags)); err != nil {
-			return nil, err
-		}
 	}
 	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: origin + path, Header: header, Body: body,
 		Timeout: agents.Pair(3, cacheRequestTimeoutSec), NoProxy: true, NoRedirects: true, MaxBody: CacheMaxResponseBytes})
 	if err != nil {
 		return nil, CacheFail("AGENT_UNREACHABLE", 0)
 	}
-	status := response.StatusCode
-	data, err := agentAnswer(response, CacheMaxResponseBytes, CacheFail)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	answer, err := protocolAnswer(response, CacheMaxResponseBytes, CacheFail)
 	if err != nil {
 		return nil, err
 	}
-	answer, ok := data.(*jsonx.Object)
-	if !ok || answer == nil {
+	status := response.StatusCode
+	success, present, valid := answerBool(answer, "success")
+	if present && !valid {
 		return nil, CacheFail("INVALID_RESPONSE", 0)
 	}
-	if status >= 400 || answer.Value("success") == false {
-		code := answer.Value("code")
-		text, isStr := code.(string)
-		_, known := CacheMessages[text]
-		known = known && isStr
-		if status == 404 {
-			if unhashable(code) {
-				return nil, typeErrorUnhashable(code)
-			}
-			if !known {
+	if status >= 400 || present && !success {
+		rawCode, _ := answer.Get("code")
+		if status == 404 && len(rawCode) > 0 && (rawCode[0] == '[' || rawCode[0] == '{') {
+			return nil, errors.New("cache error code must be a string")
+		}
+		code := fieldText(answer, "code")
+		if _, known := CacheMessages[code]; !known {
+			if status == 404 {
 				return nil, CacheFail("UPGRADE_REQUIRED", 409)
 			}
-		}
-		if !known {
-			text = "CACHE_FLUSH_FAILED"
+			code = "CACHE_FLUSH_FAILED"
 		}
 		errStatus := 502
 		switch status {
 		case 400, 409, 503, 504:
 			errStatus = status
 		}
-		// A partial flush already changed the core; report what completed.
-		flushedValue, present := answer.Get("flushed")
-		if !present {
-			flushedValue = []any{}
+		flushed, _ := answerTags(answer, "flushed")
+		if flushed == nil {
+			flushed = []string{}
 		}
-		flushed, ferr := cacheTags(flushedValue)
-		if ferr != nil {
-			flushed = []any{}
-		}
-		return nil, &FlushError{Err: CacheFail(text, errStatus), Flushed: flushed}
+		return nil, &CacheOperationError{Err: CacheFail(code, errStatus), Flushed: flushed}
 	}
-	if status != 200 || answer.Value("success") != true {
+	if status != 200 || !present || !success {
 		return nil, CacheFail("INVALID_RESPONSE", 0)
 	}
+	result := &CacheResult{Success: true, flushing: method == "POST"}
 	if method == "GET" {
-		caches, err := cacheTags(answer.Value("caches"))
-		if err != nil {
-			return nil, err
+		result.Caches, err = answerTags(answer, "caches")
+	} else {
+		result.Flushed, err = answerTags(answer, "flushed")
+		if err == nil && !slices.Equal(result.Flushed, tags) {
+			err = CacheFail("INVALID_RESPONSE", 0)
 		}
-		return jsonx.Obj("success", true, "caches", caches), nil
 	}
-	flushed, err := cacheTags(answer.Value("flushed"))
-	if err != nil {
-		return nil, err
-	}
-	if !jsonx.Equal(flushed, tags) {
-		return nil, CacheFail("INVALID_RESPONSE", 0)
-	}
-	return jsonx.Obj("success", true, "flushed", flushed), nil
+	return result, err
 }
 
-// agentAnswer is the shared read of oxidns_cache / oxidns_rule_update:
-// 401/403 → AGENT_AUTH_FAILED, 3xx → INVALID_RESPONSE, more than limit
-// bytes → INVALID_RESPONSE, a read failure → AGENT_UNREACHABLE, then
-// json.loads of the body (UPGRADE_REQUIRED 409 for a 404 that is not JSON,
-// INVALID_RESPONSE otherwise).
-func agentAnswer(response *agents.Response, limit int, fail func(string, int) *Error) (any, error) {
-	status := response.StatusCode
-	if status == 401 || status == 403 {
-		return nil, fail("AGENT_AUTH_FAILED", 0)
+// MarshalJSON retains an explicit empty list for a successful list/flush.
+func (r CacheResult) MarshalJSON() ([]byte, error) {
+	if r.flushing {
+		return json.Marshal(struct {
+			Success bool     `json:"success"`
+			Flushed []string `json:"flushed"`
+		}{r.Success, r.Flushed})
 	}
-	if status >= 300 && status < 400 {
-		return nil, fail("INVALID_RESPONSE", 0)
-	}
-	if len(response.Body) > limit {
-		return nil, fail("INVALID_RESPONSE", 0)
-	}
-	if response.BodyError != nil {
-		return nil, fail("AGENT_UNREACHABLE", 0)
-	}
-	value, ok := loadsBytes(response.Body)
-	if !ok {
-		if status == 404 {
-			return nil, fail("UPGRADE_REQUIRED", 409)
-		}
-		return nil, fail("INVALID_RESPONSE", 0)
-	}
-	return value, nil
-}
-
-// tokenText is 'Bearer ' + agent['token'] outside a try block: KeyError
-// when absent, TypeError when not a str.
-func tokenText(agent *jsonx.Object) (string, error) {
-	value, present := agent.Get("token")
-	if !present {
-		return "", errors.New("KeyError: 'token'")
-	}
-	token, ok := value.(string)
-	if !ok {
-		return "", errors.New("TypeError: can only concatenate str (not " + pyTypeNameOf(value) + ") to str")
-	}
-	return token, nil
-}
-
-// pyTypeNameOf is type(value).__name__ in quotes, including None.
-func pyTypeNameOf(value any) string {
-	if value == nil {
-		return "\"NoneType\""
-	}
-	return strings.ReplaceAll(pyTypeName(value), "'", "\"")
+	return json.Marshal(struct {
+		Success bool     `json:"success"`
+		Caches  []string `json:"caches"`
+	}{r.Success, r.Caches})
 }

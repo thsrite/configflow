@@ -1,244 +1,186 @@
 package monitor
 
-// The pure part of backend/agents/oxidns_publication_stats.py that the
-// overview needs (advance, totals, _task, _new_state, PublicationPending).
-// checkpoint and complete (publication hooks) belong to A07 and are added to
-// this package there.
-
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"fmt"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
-// terminal is TERMINAL.
 var terminal = map[string]bool{"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
 
-// ErrPublicationPending is PublicationPending: do not discard a checkpoint
-// while the activation outcome is unknown.
+// ErrPublicationPending keeps an unresolved publication checkpoint intact.
 var ErrPublicationPending = errors.New("PublicationPending")
 
-// tokenHex is secrets.token_hex(16) (a variable for tests).
-var tokenHex = func() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
+var tokenHex = func() string { b := make([]byte, 16); _, _ = rand.Read(b); return hex.EncodeToString(b) }
+
+// SnapshotIdentity pins a metrics/rankings snapshot to one runtime/configuration.
+type SnapshotIdentity struct {
+	CollectedAtMS   int64  `json:"collected_at_ms"`
+	SourceRevision  string `json:"source_revision"`
+	RuntimeRevision string `json:"runtime_revision"`
+}
+
+// CoreStatus contains only the core fields exposed in the monitoring dashboard.
+type CoreStatus struct {
+	Version    string        `json:"version"`
+	Status     string        `json:"status"`
+	UptimeMS   *MetricNumber `json:"uptime_ms"`
+	InstanceID string        `json:"instance_id"`
+}
+
+func newDashboardState(snapshot *SnapshotIdentity, core *CoreStatus, observations *Observations, target, reason string) *DashboardState {
+	return &DashboardState{Schema: 1, Generation: tokenHex(), StartedAtMS: snapshot.CollectedAtMS, Reason: reason, Target: target,
+		InstanceID: core.InstanceID, SourceRevision: snapshot.SourceRevision, RuntimeRevision: snapshot.RuntimeRevision, Baseline: observations}
+}
+
+func storedObject(raw json.RawMessage, present bool, err error) error {
+	if err != nil {
+		return err
 	}
-	return hex.EncodeToString(b)
-}
-
-// attributeError is the AttributeError of value.get(...) on a truthy value
-// that is not a dict (Python answers 500).
-func attributeError(value any) error {
-	return fmt.Errorf("AttributeError: %s object has no attribute 'get'", pyTypeName(value))
-}
-
-func pyTypeName(value any) string {
-	switch v := value.(type) {
-	case string:
-		return "'str'"
-	case bool:
-		return "'bool'"
-	case []any:
-		return "'list'"
-	case jsonx.Number:
-		if v.IsInt() {
-			return "'int'"
-		}
-		return "'float'"
+	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil
 	}
-	return "'object'"
-}
-
-// orDict is `value or {}` followed by .get: a falsy value is an empty dict,
-// a truthy non-dict an AttributeError.
-func orDict(value any) (*jsonx.Object, error) {
-	if !jsonx.Truthy(value) {
-		return jsonx.NewObject(), nil
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil {
+		return &StateError{msgPublicationDamaged}
 	}
-	o, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, attributeError(value)
+	return nil
+}
+func statePublication(agent *model.Agent, pending *PendingPublication) (*model.Deployment, error) {
+	if agent == nil {
+		return nil, nil
 	}
-	return o, nil
-}
-
-// newState is _new_state.
-func newState(snapshot, core, observations *jsonx.Object, target, reason string) *jsonx.Object {
-	return jsonx.Obj("schema", 1, "generation", tokenHex(),
-		"started_at_ms", snapshot.Value("collected_at_ms"), "reason", reason, "target", target,
-		"instance_id", core.Value("instance_id"), "source_revision", snapshot.Value("source_revision"),
-		"runtime_revision", snapshot.Value("runtime_revision"), "baseline", observations)
-}
-
-func pyEqualStr(value any, s string) bool {
-	v, ok := value.(string)
-	return ok && v == s
-}
-
-// publicationTask is _task: the deployment record of the pending
-// checkpoint, or an empty dict when it was superseded or belongs elsewhere.
-func publicationTask(agent *jsonx.Object, pending *jsonx.Object) (*jsonx.Object, error) {
-	var agentValue any
-	if agent != nil {
-		agentValue = agent
+	if err := storedObject(agent.MemberJSON("deployments")); err != nil {
+		return nil, err
 	}
-	a, err := orDict(agentValue)
+	task, exists := agent.Deployments.Get(pending.DeploymentID)
+	if exists && !agent.Deployments.EntryValid(pending.DeploymentID) {
+		return nil, &StateError{msgPublicationDamaged}
+	}
+	if err := storedObject(agent.MemberJSON("latest_deployment")); err != nil {
+		return nil, err
+	}
+	latest := agent.LatestDeployment
+	if !exists || latest == nil {
+		return nil, nil
+	}
+	profile, present := originalString(agent.MemberJSON("profile_id"))
+	raw, stored, err := agent.MemberJSON("profile_id")
 	if err != nil {
 		return nil, err
 	}
-	ident := pending.Value("deployment_id")
-	deployments, err := orDict(a.Value("deployments"))
-	if err != nil {
-		return nil, err
-	}
-	var entry any
-	if id, ok := ident.(string); ok {
-		entry = deployments.Value(id)
-	}
-	task, err := orDict(entry)
-	if err != nil {
-		return nil, err
-	}
-	latest, err := orDict(a.Value("latest_deployment"))
-	if err != nil {
-		return nil, err
-	}
-	in := func(value any, options ...string) bool {
-		for _, option := range options {
-			if pyEqualStr(value, option) {
-				return true
-			}
-		}
-		return false
-	}
-	superseded := !jsonx.Equal(latest.Value("deployment_id"), ident) && !(in(task.Value("status"), "succeeded", "rolled_back") &&
-		in(latest.Value("status"), "preparing", "uploading", "ready"))
-	profile := a.Value("profile_id")
-	if !jsonx.Truthy(profile) {
+	if !stored || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || present && profile == "" {
 		profile = "default"
+	} else if !present {
+		return nil, nil
 	}
-	if superseded || !pyEqualStr(task.Value("service_type"), "oxidns") || !jsonx.Equal(task.Value("profile_id"), profile) {
-		return jsonx.NewObject(), nil
+	latestID := originalText(latest.MemberJSON("deployment_id"))
+	status := originalText(task.MemberJSON("status"))
+	latestStatus := originalText(latest.MemberJSON("status"))
+	superseded := latestID != pending.DeploymentID && !((status == "succeeded" || status == "rolled_back") && (latestStatus == "preparing" || latestStatus == "uploading" || latestStatus == "ready"))
+	if superseded || originalText(task.MemberJSON("service_type")) != "oxidns" || originalText(task.MemberJSON("profile_id")) != profile {
+		return nil, nil
 	}
-	return task, nil
+	return &task, nil
 }
 
-// unhashable reports a list or dict (TypeError in a set membership test).
-func unhashable(value any) bool {
-	switch value.(type) {
-	case []any, *jsonx.Object:
-		return true
-	}
-	return false
-}
-
-func collectedLess(a, b any) bool {
-	x, okA := asNum(a)
-	y, okB := asNum(b)
-	return okA && okB && x.less(y)
-}
-
-// Advance is advance: the pure transition of the dashboard state; the
-// caller commits it with the generation compare-and-set. previous nil is
-// None. The result is previous itself when nothing changes.
-func Advance(previous, snapshot, core, observations *jsonx.Object, target string, agent *jsonx.Object, manual bool) (*jsonx.Object, error) {
+// AdvanceState computes one immutable statistics-boundary transition. Its
+// caller holds the repository snapshot through the state-file generation CAS.
+func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *CoreStatus, observations *Observations, target string, agent *model.Agent, manual bool) (*DashboardState, error) {
 	reason := ""
 	switch {
 	case manual:
 		reason = "manual"
 	case previous == nil:
 		reason = "initial"
-	case !pyEqualStr(previous.Value("target"), target):
+	case previous.Target != target:
 		reason = "target_changed"
-	case !jsonx.Equal(previous.Value("instance_id"), core.Value("instance_id")):
+	case previous.InstanceID != core.InstanceID:
 		reason = "core_changed"
-	case !jsonx.Equal(previous.Value("source_revision"), snapshot.Value("source_revision")):
+	case previous.SourceRevision != snapshot.SourceRevision:
 		reason = "configuration_changed"
-	case !jsonx.Equal(previous.Value("runtime_revision"), snapshot.Value("runtime_revision")):
+	case previous.RuntimeRevision != snapshot.RuntimeRevision:
 		reason = "core_changed"
-	case MetricsCountersRestarted(observations, previous.GetObject("baseline")):
+	case CountersRestarted(observations, previous.Baseline):
 		reason = "counters_changed"
 	}
-	var pending *jsonx.Object
-	if previous != nil {
-		pending, _ = previous.Value("pending").(*jsonx.Object)
-	}
-	if pending != nil && pending.Len() > 0 && !manual && pyEqualStr(previous.Value("target"), target) {
-		task, err := publicationTask(agent, pending)
+	if previous != nil && previous.Pending != nil && !manual && previous.Target == target {
+		pending := previous.Pending
+		task, err := statePublication(agent, pending)
 		if err != nil {
 			return nil, err
 		}
-		status := task.Value("status")
-		if collectedLess(snapshot.Value("collected_at_ms"), pending.Value("collected_at_ms")) {
+		if snapshot.CollectedAtMS < pending.CollectedAtMS {
 			return nil, ErrPublicationPending
 		}
-		if jsonx.Truthy(status) {
-			if unhashable(status) {
-				return nil, fmt.Errorf("TypeError: unhashable type: %s", pyTypeName(status))
+		status := ""
+		if task != nil {
+			raw, present, err := task.MemberJSON("status")
+			if err != nil {
+				return nil, err
 			}
-			if s, ok := status.(string); !ok || !terminal[s] {
-				if reason != "" {
-					return nil, ErrPublicationPending
+			if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				var valid bool
+				status, valid = originalString(raw, present, nil)
+				if !valid {
+					return nil, &StateError{msgPublicationDamaged}
 				}
-				return previous, nil
 			}
 		}
-		var expected any
-		switch {
-		case pyEqualStr(status, "succeeded"):
-			expected = pending.Value("expected_revision")
-		case pyEqualStr(status, "rolled_back"):
-			expected = previous.Value("source_revision")
+		if status != "" && !terminal[status] {
+			if reason != "" {
+				return nil, ErrPublicationPending
+			}
+			return previous, nil
 		}
-		if reason != "" && expected != nil && jsonx.Equal(expected, snapshot.Value("source_revision")) &&
-			!jsonx.Truthy(task.Value("manual_rollback")) {
-			// Counts observed since the new runtime started belong to the
-			// same dashboard period.
-			count, _ := asNum(previous.Value("publication_count"))
-			next, _ := count.add(intNum(1))
-			state := previous.Clone()
-			state.Set("generation", tokenHex())
-			state.Set("reason", "publication")
-			state.Set("instance_id", core.Value("instance_id"))
-			state.Set("source_revision", snapshot.Value("source_revision"))
-			state.Set("runtime_revision", snapshot.Value("runtime_revision"))
-			state.Set("baseline", ZeroBaseline(observations))
-			state.Set("carried", pending.Value("totals"))
-			state.Set("carried_partial", pending.Value("partial"))
-			state.Set("pending", nil)
-			state.Set("publication_count", next.value())
-			return state, nil
+		expected := ""
+		switch status {
+		case "succeeded":
+			expected = pending.ExpectedRevision
+		case "rolled_back":
+			expected = previous.SourceRevision
+		}
+		manualRollback := task != nil && task.ManualRollback != nil && *task.ManualRollback
+		if reason != "" && expected != "" && expected == snapshot.SourceRevision && !manualRollback {
+			state := *previous
+			state.Generation = tokenHex()
+			state.Reason = "publication"
+			state.InstanceID = core.InstanceID
+			state.SourceRevision = snapshot.SourceRevision
+			state.RuntimeRevision = snapshot.RuntimeRevision
+			state.Baseline = ZeroObservations(observations)
+			state.Carried = pending.Totals
+			state.CarriedPartial = pending.Partial
+			state.Pending = nil
+			state.PublicationCount++
+			return &state, nil
 		}
 		if reason == "" {
-			// Rejection before mutation, or a publication which did not
-			// reload: keep the original baseline.
-			state := previous.Clone()
-			state.Set("generation", tokenHex())
-			state.Set("pending", nil)
-			return state, nil
+			state := *previous
+			state.Generation = tokenHex()
+			state.Pending = nil
+			return &state, nil
 		}
 	}
 	if reason != "" {
-		return newState(snapshot, core, observations, target, reason), nil
+		return newDashboardState(snapshot, core, observations, target, reason), nil
 	}
 	return previous, nil
 }
 
-// Totals is totals: the adjusted observations of a state and whether they
-// are partial.
-func Totals(state, observations *jsonx.Object) (*jsonx.Object, bool, error) {
-	adjusted, partial, err := ApplyMetricsBaseline(observations, state.GetObject("baseline"))
+// StateTotals computes the counters in one dashboard period.
+func StateTotals(state *DashboardState, observations *Observations) (*Observations, bool, error) {
+	adjusted, partial, err := ApplyBaseline(observations, state.Baseline)
 	if err != nil {
 		return nil, false, err
 	}
-	if pyNumberEqual(state.Value("schema"), jsonx.Int(2)) {
-		adjusted = AddObservations(adjusted, state.GetObject("carried"))
-		carried, _ := state.Value("carried_partial").(bool)
-		partial = partial || carried
+	if state.Schema == 2 {
+		adjusted = CarryObservations(adjusted, state.Carried)
+		partial = partial || state.CarriedPartial
 	}
 	return adjusted, partial, nil
 }

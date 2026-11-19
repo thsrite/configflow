@@ -8,13 +8,11 @@ package monitor
 // stored) and fails otherwise, so existing history is never hidden silently.
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"sync"
-
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 )
 
 // Constants of oxidns_ranking_history.py used here.
@@ -29,15 +27,6 @@ const (
 
 // HistoryRanges is RANGES (seconds per range key).
 var HistoryRanges = map[string]int64{"24h": HistoryDay, "7d": 7 * HistoryDay, "30d": 30 * HistoryDay}
-
-// HistorySupported is supported(agent).
-func HistorySupported(agent *jsonx.Object) bool {
-	version, _ := agent.Value("version").(string)
-	if version == "" {
-		version = "0"
-	}
-	return agents.CompareVersions(version, HistoryAgentVersion) >= 0
-}
 
 // HistoryRow is one {'key', 'count'} of a stored ranking.
 type HistoryRow struct {
@@ -115,4 +104,27 @@ func getHistory(dataDir string) RankingHistory {
 	historyMu.RLock()
 	defer historyMu.RUnlock()
 	return historyFactory(dataDir)
+}
+
+func queryHistory(ctx context.Context, history RankingHistory, id, recorder string, since, until int64) (*HistoryAnswer, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if native, ok := history.(interface {
+		QueryContext(context.Context, string, string, int64, int64) (*HistoryAnswer, error)
+	}); ok {
+		return native.QueryContext(ctx, id, recorder, since, until)
+	}
+	return history.Query(id, recorder, since, until)
+}
+func hasHistory(ctx context.Context, history RankingHistory, id, recorder string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if native, ok := history.(interface {
+		HasAnyContext(context.Context, string, string) (bool, error)
+	}); ok {
+		return native.HasAnyContext(ctx, id, recorder)
+	}
+	return history.HasAny(id, recorder)
 }

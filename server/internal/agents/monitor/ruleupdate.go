@@ -8,14 +8,16 @@ package monitor
 // each file against the deployed download list themselves.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
-	"net/http"
 	"regexp"
-	"sync"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 // Versions and limits of oxidns_rule_update.py.
@@ -68,244 +70,194 @@ func RuleUpdateFail(code string, status int) *Error {
 	return &Error{Code: code, Status: status, Message: message}
 }
 
-// HABusyError is the ValueError of oxidns_ha_publish.rules: the route
-// answers SERVICE_BUSY 409 with its text.
-type HABusyError struct{ Message string }
+var taskIDRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,96}$`)
+var taskStates = []string{"idle", "running", "succeeded", "failed"}
+var taskPhases = []string{"idle", "downloading", "reloading", "done"}
 
-func (e *HABusyError) Error() string { return e.Message }
-
-// ErrHARulesNotPorted is the default pair rule update until A18 (DNS HA)
-// registers oxidns_ha_publish.rules with SetHARules.
-var ErrHARulesNotPorted = errors.New("oxidns_ha_publish.rules is not ported yet (A18)")
-
-// HARulesFunc is oxidns_ha_publish.rules(manager, agent_id, method): the
-// task answer and its HTTP status; a *HABusyError for its ValueErrors.
-type HARulesFunc func(ctx context.Context, m Manager, agentID, method string) (*jsonx.Object, int, error)
-
-var (
-	haRulesMu sync.RWMutex
-	haRules   HARulesFunc = func(context.Context, Manager, string, string) (*jsonx.Object, int, error) {
-		return nil, 0, ErrHARulesNotPorted
-	}
-)
-
-// SetHARules installs oxidns_ha_publish.rules (A18) and returns a function
-// restoring the previous one.
-func SetHARules(fn HARulesFunc) (restore func()) {
-	haRulesMu.Lock()
-	previous := haRules
-	haRules = fn
-	haRulesMu.Unlock()
-	return func() {
-		haRulesMu.Lock()
-		haRules = previous
-		haRulesMu.Unlock()
-	}
+// RuleTask is the bounded progress DTO returned by an OxiDNS Agent.
+type RuleTask struct {
+	ID            string `json:"id"`
+	Status        string `json:"status"`
+	Phase         string `json:"phase"`
+	Downloaded    int64  `json:"downloaded"`
+	DownloadTotal int64  `json:"download_total"`
+	Reloaded      int64  `json:"reloaded"`
+	ReloadTotal   int64  `json:"reload_total"`
+	Code          string `json:"code,omitempty"`
+	Message       string `json:"message,omitempty"`
 }
 
-func currentHARules() HARulesFunc {
-	haRulesMu.RLock()
-	defer haRulesMu.RUnlock()
-	return haRules
+// RuleUpdateResult carries either a direct task or the HA owner's opaque result.
+type RuleUpdateResult struct {
+	Success bool            `json:"success"`
+	Task    *RuleTask       `json:"task"`
+	Pair    json.RawMessage `json:"-"`
 }
 
-var haTerminal = map[string]bool{"succeeded": true, "failed": true, "rollback_failed": true}
-
-// haActive is oxidns_ha_publish.active(agent) with Python's exceptions: a
-// truthy non-dict publication record is the AttributeError of .get and an
-// unhashable status the TypeError of the set membership test (both 500).
-func haActive(agent *jsonx.Object) (bool, error) {
-	job, err := orDict(agent.Value(agents.HAField))
-	if err != nil || job.Len() == 0 {
-		return false, err
-	}
-	status := job.Value("status")
-	if unhashable(status) {
-		return false, typeErrorUnhashable(status)
-	}
-	text, ok := status.(string)
-	return !ok || !haTerminal[text], nil
-}
-
-// ruleUpdateAgent is oxidns_rule_update._agent.
-func ruleUpdateAgent(ctx context.Context, m Manager, agentID string) (*jsonx.Object, error) {
-	agent, err := m.GetAgentByID(ctx, agentID, false)
-	if err != nil {
-		return nil, err
-	}
-	if agent == nil || agent.Len() == 0 {
-		return nil, RuleUpdateFail("AGENT_NOT_FOUND", 404)
-	}
-	if !pyEqualStr(agent.Value("service_type"), "oxidns") {
-		return nil, RuleUpdateFail("WRONG_SERVICE", 400)
-	}
-	if !versionAtLeast(agent, RuleUpdateMinAgentVersion) {
-		return nil, RuleUpdateFail("UPGRADE_REQUIRED", 409)
-	}
-	return agent, nil
-}
-
-// SupportsPaths is supports_paths(agent): whether the Agent can refresh
-// selected files instead of every download.
-func SupportsPaths(agent *jsonx.Object) bool {
-	return versionAtLeast(agent, RuleUpdatePathsMinAgentVersion)
-}
-
-var (
-	taskStates = []string{"idle", "running", "succeeded", "failed"}
-	taskPhases = []string{"idle", "downloading", "reloading", "done"}
-	taskIDRE   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,96}$`)
-)
-
-func strIn(value any, options []string) bool {
-	s, ok := value.(string)
-	return ok && contains(options, s)
-}
-
-// ruleUpdateTask is _task(value): the validated task of an Agent answer.
-func ruleUpdateTask(value any) (*jsonx.Object, error) {
+func decodeRuleTask(raw json.RawMessage) (*RuleTask, error) {
 	invalid := RuleUpdateFail("INVALID_RESPONSE", 0)
-	task, ok := value.(*jsonx.Object)
-	if !ok || task == nil {
+	var fields model.Fields
+	if json.Unmarshal(raw, &fields) != nil {
 		return nil, invalid
 	}
-	state, phase, id := task.Value("status"), task.Value("phase"), task.Value("id")
-	if !strIn(state, taskStates) || !strIn(phase, taskPhases) {
+	task := &RuleTask{ID: fieldText(fields, "id"), Status: fieldText(fields, "status"), Phase: fieldText(fields, "phase")}
+	if !contains(taskStates, task.Status) || !contains(taskPhases, task.Phase) {
 		return nil, invalid
 	}
-	idText, ok := id.(string)
-	if !ok || (state == "idle" && idText != "") || (state != "idle" && !taskIDRE.MatchString(idText)) {
+	id, present := fields.Get("id")
+	if _, valid := originalString(id, present, nil); !valid || task.Status == "idle" && task.ID != "" || task.Status != "idle" && !taskIDRE.MatchString(task.ID) {
 		return nil, invalid
 	}
-	result := jsonx.Obj("id", idText, "status", state, "phase", phase)
-	counts := map[string]int64{}
-	for _, key := range []string{"downloaded", "download_total", "reloaded", "reload_total"} {
-		count := task.Value(key)
-		if !pyIntIn(count, 0, 1_000_000) {
+	for _, field := range []struct {
+		name  string
+		value *int64
+	}{
+		{"downloaded", &task.Downloaded}, {"download_total", &task.DownloadTotal}, {"reloaded", &task.Reloaded}, {"reload_total", &task.ReloadTotal},
+	} {
+		raw, _ := fields.Get(field.name)
+		var n *int64
+		if json.Unmarshal(raw, &n) != nil || n == nil || *n < 0 || *n > 1_000_000 {
 			return nil, invalid
 		}
-		counts[key] = pyInt64(count)
-		result.Set(key, counts[key])
+		*field.value = *n
 	}
-	if counts["downloaded"] > counts["download_total"] || counts["reloaded"] > counts["reload_total"] {
+	if task.Downloaded > task.DownloadTotal || task.Reloaded > task.ReloadTotal || task.Status == "succeeded" && (task.Phase != "done" || task.Downloaded != task.DownloadTotal || task.Reloaded != task.ReloadTotal) {
 		return nil, invalid
 	}
-	if state == "succeeded" && (phase != "done" || counts["downloaded"] != counts["download_total"] ||
-		counts["reloaded"] != counts["reload_total"]) {
-		return nil, invalid
-	}
-	if state == "failed" {
-		code, ok := task.Value("code").(string)
-		if _, known := RuleUpdateMessages[code]; !ok || !known {
-			code = "RULE_UPDATE_FAILED"
+	if task.Status == "failed" {
+		task.Code = fieldText(fields, "code")
+		if _, known := RuleUpdateMessages[task.Code]; !known {
+			task.Code = "RULE_UPDATE_FAILED"
 		}
-		result.Set("code", code)
-		result.Set("message", RuleUpdateMessages[code])
+		task.Message = RuleUpdateMessages[task.Code]
 	}
-	return result, nil
+	return task, nil
 }
 
-// RuleUpdateCall is oxidns_rule_update.call(manager, agent_id, method,
-// paths): start (POST) or read (GET) the Agent's rule update; paths nil is
-// None. Returns the answer and its HTTP status.
-func RuleUpdateCall(ctx context.Context, m Manager, agentID, method string, paths any) (*jsonx.Object, int, error) {
-	invalidRequest := func() (*jsonx.Object, int, error) { return nil, 0, RuleUpdateFail("INVALID_REQUEST", 400) }
-	if method != "GET" && method != "POST" {
-		return invalidRequest()
+// CallRuleUpdate starts or reads a rule update with typed request and reply DTOs.
+func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []string) (*RuleUpdateResult, int, error) {
+	if method != "GET" && method != "POST" || paths != nil && (method != "POST" || len(paths) == 0 || len(paths) > RuleUpdateMaxPaths) {
+		return nil, 0, RuleUpdateFail("INVALID_REQUEST", 400)
 	}
-	if paths != nil {
-		list, ok := paths.([]any)
-		if method != "POST" || !ok || len(list) == 0 || len(list) > RuleUpdateMaxPaths {
-			return invalidRequest()
-		}
-		for _, path := range list {
-			if text, ok := path.(string); !ok || text == "" {
-				return invalidRequest()
-			}
+	for _, path := range paths {
+		if path == "" {
+			return nil, 0, RuleUpdateFail("INVALID_REQUEST", 400)
 		}
 	}
-	agent, err := ruleUpdateAgent(ctx, m, agentID)
-	if err != nil {
-		return nil, 0, err
-	}
-	ha, err := orDict(agent.Value("oxidns_ha"))
-	if err != nil {
-		return nil, 0, err
-	}
-	paired := ha.Value("enabled") == true
-	active := false
 	if method == "POST" {
-		if active, err = haActive(agent); err != nil {
-			return nil, 0, err
-		}
+		ctx = lifecycle.Detach(ctx)
 	}
-	if active {
-		job, err := orDict(agent.Value(agents.HAField))
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	agent, err := m.ReadAgent(ctx, id, false)
+	if err != nil {
+		return nil, 0, err
+	}
+	if agent == nil {
+		return nil, 0, RuleUpdateFail("AGENT_NOT_FOUND", 404)
+	}
+	if originalText(agent.MemberJSON("service_type")) != "oxidns" {
+		return nil, 0, RuleUpdateFail("WRONG_SERVICE", 400)
+	}
+	if !modelVersionAtLeast(agent, RuleUpdateMinAgentVersion) {
+		return nil, 0, RuleUpdateFail("UPGRADE_REQUIRED", 409)
+	}
+	raw, present, err := agent.MemberJSON("oxidns_ha")
+	var ha model.Fields
+	if err != nil {
+		return nil, 0, err
+	}
+	// A malformed stored HA config is neither an unpaired device nor authority
+	// to send an unguarded write. Keep it an explicit native validation refusal.
+	if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) && json.Unmarshal(raw, &ha) != nil {
+		return nil, 0, errors.New(msgHAConfigDamaged)
+	}
+	if method == "POST" {
+		journal, present, err := agent.MemberJSON(agents.HAField)
 		if err != nil {
 			return nil, 0, err
 		}
-		if !(paired && pyEqualStr(job.Value("kind"), "rules")) {
-			return nil, 0, NewError("SERVICE_BUSY", 409, "DNS 主备正在同步，请等待两台发布完成后更新规则")
+		if present && !bytes.Equal(bytes.TrimSpace(journal), []byte("null")) {
+			var fields model.Fields
+			if json.Unmarshal(journal, &fields) != nil {
+				return nil, 0, errors.New(msgHAPublicationDamaged)
+			}
+			status, _ := fields.Get("status")
+			if len(status) > 0 && (status[0] == '[' || status[0] == '{') {
+				return nil, 0, errors.New(msgHAPublicationDamaged)
+			}
 		}
 	}
+	paired := agents.HAEnabledModel(agent)
+	if method == "POST" && agents.HAActiveModel(agent) && !(paired && agent.OxiDNSHAPublication != nil && originalText(agent.OxiDNSHAPublication.MemberJSON("kind")) == "rules") {
+		return nil, 0, NewError("SERVICE_BUSY", 409, msgHARulesBusy)
+	}
 	if paired {
-		data, status, err := currentHARules()(ctx, m, agentID, method)
+		raw, status, err := pairRules(ctx, m, id, method)
 		var busy *HABusyError
 		if errors.As(err, &busy) {
 			return nil, 0, NewError("SERVICE_BUSY", 409, busy.Message)
 		}
-		return data, status, err
-	}
-	if paths != nil && !SupportsPaths(agent) {
-		return nil, 0, RuleUpdateFail("UPGRADE_REQUIRED", 409)
-	}
-	payload := []byte("{}")
-	if paths != nil {
-		if payload, err = jsonx.Default(jsonx.Obj("paths", paths)); err != nil {
+		if err != nil {
 			return nil, 0, err
 		}
+		return &RuleUpdateResult{Success: true, Pair: raw}, status, nil
 	}
-	origin, err := AgentOrigin(agent)
+	if paths != nil && !modelVersionAtLeast(agent, RuleUpdatePathsMinAgentVersion) {
+		return nil, 0, RuleUpdateFail("UPGRADE_REQUIRED", 409)
+	}
+	origin, err := Origin(agent)
 	if err != nil {
 		return nil, 0, err
 	}
-	token, ok := agent.Value("token").(string)
-	if !ok {
-		return nil, 0, RuleUpdateFail("AGENT_UNREACHABLE", 0) // KeyError / TypeError
-	}
-	encodedToken, ok := latin1(token)
-	if !ok {
+	token, valid := originalString(agent.MemberJSON("token"))
+	if !valid {
 		return nil, 0, RuleUpdateFail("AGENT_UNREACHABLE", 0)
 	}
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+encodedToken)
-	header.Set("Accept", "application/json")
+	header, err := monitorHeaders(token)
+	if err != nil {
+		return nil, 0, RuleUpdateFail("AGENT_UNREACHABLE", 0)
+	}
 	var body []byte
 	if method == "POST" {
 		header.Set("Content-Type", "application/json")
-		body = payload
+		body = []byte("{}")
+		if paths != nil {
+			body, err = jsonresp.EncodeDevice(struct {
+				Paths []string `json:"paths"`
+			}{paths})
+			if err != nil {
+				return nil, 0, err
+			}
+		}
 	}
-	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: origin + "/api/oxidns/rules/update",
-		Header: header, Body: body, Timeout: agents.Pair(3, 15), NoProxy: true, NoRedirects: true,
-		MaxBody: RuleUpdateMaxResponseBytes})
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: origin + "/api/oxidns/rules/update", Header: header, Body: body,
+		Timeout: agents.Pair(3, 15), NoProxy: true, NoRedirects: true, MaxBody: RuleUpdateMaxResponseBytes})
 	if err != nil {
 		return nil, 0, RuleUpdateFail("AGENT_UNREACHABLE", 0)
 	}
-	status := response.StatusCode
-	data, err := agentAnswer(response, RuleUpdateMaxResponseBytes, RuleUpdateFail)
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	answer, err := protocolAnswer(response, RuleUpdateMaxResponseBytes, RuleUpdateFail)
 	if err != nil {
 		return nil, 0, err
 	}
+	status := response.StatusCode
 	if status == 404 {
 		return nil, 0, RuleUpdateFail("UPGRADE_REQUIRED", 409)
 	}
-	answer, ok := data.(*jsonx.Object)
-	if !ok || answer == nil {
+	success, present, valid := answerBool(answer, "success")
+	if present && !valid {
 		return nil, 0, RuleUpdateFail("INVALID_RESPONSE", 0)
 	}
-	if status >= 400 || answer.Value("success") == false {
-		code, isStr := answer.Value("code").(string)
-		if _, known := RuleUpdateMessages[code]; !isStr || !known {
+	if status >= 400 || present && !success {
+		code := fieldText(answer, "code")
+		if _, known := RuleUpdateMessages[code]; !known {
 			code = "RULE_UPDATE_FAILED"
 		}
 		errStatus := 502
@@ -315,12 +267,24 @@ func RuleUpdateCall(ctx context.Context, m Manager, agentID, method string, path
 		}
 		return nil, 0, RuleUpdateFail(code, errStatus)
 	}
-	if (status != 200 && status != 202) || answer.Value("success") != true {
+	if status != 200 && status != 202 || !present || !success {
 		return nil, 0, RuleUpdateFail("INVALID_RESPONSE", 0)
 	}
-	task, err := ruleUpdateTask(answer.Value("task"))
+	raw, _ = answer.Get("task")
+	task, err := decodeRuleTask(raw)
 	if err != nil {
 		return nil, 0, err
 	}
-	return jsonx.Obj("success", true, "task", task), status, nil
+	return &RuleUpdateResult{Success: true, Task: task}, status, nil
+}
+
+// MarshalJSON preserves the HA owner's DTO or writes the direct Agent task.
+func (r RuleUpdateResult) MarshalJSON() ([]byte, error) {
+	if r.Pair != nil {
+		return append([]byte(nil), r.Pair...), nil
+	}
+	return json.Marshal(struct {
+		Success bool      `json:"success"`
+		Task    *RuleTask `json:"task"`
+	}{r.Success, r.Task})
 }

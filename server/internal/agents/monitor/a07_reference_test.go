@@ -135,6 +135,12 @@ func compareCall(t *testing.T, label string, c *jsonx.Object, result any, err er
 		return
 	}
 	got := outcomeOf(result, err)
+	if nativePanelRefusal(t, c, got) {
+		if g, w := sortedDump(t, seenOf(client)), normalizeSeen(t, c.GetString("seen")); g != w {
+			t.Fatalf("native refusal request changed: %s vs %s", g, w)
+		}
+		return
+	}
 	want, perr := jsonx.ParseString(c.GetString("outcome"))
 	if perr != nil {
 		t.Fatal(perr)

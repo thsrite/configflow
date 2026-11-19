@@ -254,6 +254,12 @@ func TestReviewClientsQueriesAndQuery(t *testing.T) {
 		seen := answering(t, c.GetString("data"))
 		m := &fakeManager{agents: map[string]*jsonx.Object{"oxi": reviewAgent(c.GetString("version"))}, dataDir: t.TempDir()}
 		result, err := Queries(ctx, m, "oxi", pairs(c.Value("args")))
+		if want, bound := nativeStateExpectation(t, "queries", c); bound {
+			if got := answerResult(t, result, err, seen); got != want {
+				t.Errorf("native JSON refusal: got %s want %s", got, want)
+			}
+			continue
+		}
 		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
 			f.add("queries %s %s:\n got  %s\n want %s", jsonx.Repr(c.Value("args")), c.GetString("data"), got, c.GetString("result"))
 		}
@@ -350,6 +356,12 @@ func TestReviewStateFiles(t *testing.T) {
 			result = errorResult(err)
 		default:
 			result = jsonx.Obj("state", state)
+		}
+		if want, bound := nativeStateExpectation(t, "state_files", c); bound {
+			if got := dumpSorted(t, result); got != want {
+				t.Errorf("native duplicate state: got %s want %s", got, want)
+			}
+			continue
 		}
 		if got := dumpSorted(t, result); got != c.GetString("result") {
 			shown := raw
