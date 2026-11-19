@@ -2128,6 +2128,10 @@ DASHBOARD_STATE_ERROR/500 显示；不以 R5 零值或 Python falsy 值作为丢
 证明。a06 原 archive/88 条原始行不变，完整 row SHA 精确绑定 native refusal。用户可以
 使用已有的“重置统计”操作明确开始新周期；回归验证四类坏记录不会写入，手动重置后
 面板与后续统计恢复正常。早于 checkpoint 的采样仍遵循原先 PublicationPending 顺序。
+复核补充（review-n8-10-monitor M1）：判断检查点是否被新部署取代时，pending 部署的
+status、以及被参考的 latest_deployment.status 若为非字符串，同样按损坏返回
+DASHBOARD_STATE_ERROR，不再以 Python 的“不在列表中”视为已取代而丢弃检查点；null 与缺失
+等同；时间早于 checkpoint 的采样仍先返回 PublicationPending。
 
 状态文件中的真实重复 member（包括 escaped 同名）现在明确按损坏文件拒绝，避免不同
 消费者选中不同统计起点；a06_review 的三条重复字段成功行完整保留并单独 SHA 绑定。

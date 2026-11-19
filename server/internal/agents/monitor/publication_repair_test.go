@@ -82,3 +82,33 @@ func TestPendingCheckpointDoesNotTrustProjectedStoredProofs(t *testing.T) {
 		})
 	}
 }
+
+// A damaged status of the pending deployment or of a newer latest record must
+// not decide that the checkpoint was superseded (review N8-10 monitor M1).
+func TestReviewN810SupersededCheckDoesNotTrustDamagedStatus(t *testing.T) {
+	for _, kind := range []string{"task-status", "latest-status"} {
+		t.Run(kind, func(t *testing.T) {
+			e := newPubEnv(t)
+			e.checkpoint(t, "publish-one", revB)
+			saved := readFile(t, e.store.Path("one"))
+			task(e.m, "publish-two", "preparing", revC)
+			a := e.m.agent("one")
+			one := a.GetObject("deployments").GetObject("publish-one")
+			switch kind {
+			case "task-status":
+				one.Set("status", []any{"succeeded"})
+			case "latest-status":
+				one.Set("status", "succeeded")
+				a.GetObject("latest_deployment").Set("status", jsonx.Obj("value", "preparing"))
+			}
+			_, err := Overview(ctx, e.m, "one", nil)
+			wantMonitorError(t, err, "DASHBOARD_STATE_ERROR", 500)
+			if !bytes.Equal(saved, readFile(t, e.store.Path("one"))) {
+				t.Fatal("damaged status discarded the pending checkpoint")
+			}
+			if _, err := ResetDashboard(ctx, e.m, "one", jsonx.Obj()); err != nil {
+				t.Fatal("explicit statistics reset could not recover", err)
+			}
+		})
+	}
+}

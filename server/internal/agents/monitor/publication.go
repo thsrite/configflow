@@ -51,6 +51,26 @@ func storedObject(raw json.RawMessage, present bool, err error) error {
 	}
 	return nil
 }
+
+// errStatusDamaged is returned by statePublication for a non-string status.
+// AdvanceState reports it only after the PublicationPending ordering check.
+var errStatusDamaged = &StateError{msgPublicationDamaged}
+
+// storedStatus reads an optional original status string; null is absent.
+func storedStatus(raw json.RawMessage, present bool, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", nil
+	}
+	status, valid := originalString(raw, present, nil)
+	if !valid {
+		return "", errStatusDamaged
+	}
+	return status, nil
+}
+
 func statePublication(agent *model.Agent, pending *PendingPublication) (*model.Deployment, error) {
 	if agent == nil {
 		return nil, nil
@@ -94,8 +114,18 @@ func statePublication(agent *model.Agent, pending *PendingPublication) (*model.D
 		}
 	}
 	latestID := originalText(latest.MemberJSON("deployment_id"))
-	status := originalText(task.MemberJSON("status"))
-	latestStatus := originalText(latest.MemberJSON("status"))
+	// A damaged status cannot decide that the checkpoint was superseded: its
+	// zero projection would discard the pending period without proof.
+	status, err := storedStatus(task.MemberJSON("status"))
+	if err != nil {
+		return nil, err
+	}
+	latestStatus := ""
+	if latestID != pending.DeploymentID && (status == "succeeded" || status == "rolled_back") {
+		if latestStatus, err = storedStatus(latest.MemberJSON("status")); err != nil {
+			return nil, err
+		}
+	}
 	superseded := latestID != pending.DeploymentID && !((status == "succeeded" || status == "rolled_back") && (latestStatus == "preparing" || latestStatus == "uploading" || latestStatus == "ready"))
 	if superseded || originalText(task.MemberJSON("service_type")) != "oxidns" || originalText(task.MemberJSON("profile_id")) != profile {
 		return nil, nil
@@ -126,11 +156,14 @@ func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *Co
 	if previous != nil && previous.Pending != nil && !manual && previous.Target == target {
 		pending := previous.Pending
 		task, err := statePublication(agent, pending)
-		if err != nil {
+		if err != nil && !errors.Is(err, errStatusDamaged) {
 			return nil, err
 		}
 		if snapshot.CollectedAtMS < pending.CollectedAtMS {
 			return nil, ErrPublicationPending
+		}
+		if err != nil {
+			return nil, err
 		}
 		status := ""
 		if task != nil {
