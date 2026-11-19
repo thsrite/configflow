@@ -82,6 +82,12 @@ func hydrateFixture(t *testing.T, r *repo.Repository) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{ID: "fixture-agent", Name: "Fixture Agent", ProfileID: "default", Token: "synthetic-agent-token"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
 		profile.RuleConfigs = []model.RuleConfig{{ID: "rule", ItemType: "ruleset", LibraryRuleID: "source"}}
 		return profile.Mihomo.Fields.Set("future", []byte(`{ "large": 90071992547409931234567890 }`))
@@ -108,7 +114,7 @@ func TestN811ResolvedConfigWrites(t *testing.T) {
 			opaque, _ := before.Mihomo.Fields.Get("future")
 			check := func(config *model.Config) {
 				t.Helper()
-				if len(config.RuleLibrary) != 1 || config.Profile.RuleConfigs[0].Name != "Source" || config.Profile.RuleConfigs[0].Content == nil || config.SystemConfig.RuleProxyToken == "" {
+				if len(config.RuleLibrary) != 1 || config.Profile.RuleConfigs[0].Name != "Source" || config.Profile.RuleConfigs[0].Content == nil || config.SystemConfig.RuleProxyToken == "" || !config.HasAgents || len(config.Agents) != 1 || config.Agents[0].ID != "fixture-agent" || config.Agents[0].ProfileID != "default" {
 					t.Fatal("resolved view was not hydrated")
 				}
 			}
