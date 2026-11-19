@@ -62,6 +62,30 @@ func (m *Manager) ReadAgent(ctx context.Context, id string, history bool) (*mode
 	return &m.runtime.overlayModels([]model.Agent{*result})[0], nil
 }
 
+// ReadAgentByToken selects one original string token without encoding unrelated
+// Agents or their histories. The returned Agent owns its live projection.
+func (m *Manager) ReadAgentByToken(ctx context.Context, token string) (*model.Agent, error) {
+	var result *model.Agent
+	err := m.repository.View(ctx, func(document *model.Document) error {
+		for i := range document.System.Agents {
+			a := &document.System.Agents[i]
+			if a.Token != token {
+				continue
+			}
+			if original, valid := storedText(a.MemberJSON("token")); valid && original == token {
+				var err error
+				result, err = copyAgent(a, true)
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil || result == nil {
+		return nil, err
+	}
+	return &m.runtime.overlayModels([]model.Agent{*result})[0], nil
+}
+
 func copyAgent(source *model.Agent, history bool) (*model.Agent, error) {
 	// Raw/Fields are copy-on-write. Clear affects this local value, never source.
 	selected := *source

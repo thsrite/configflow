@@ -140,6 +140,8 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	var permission *agents.PermissionError
 	var installation *agents.InstallationError
 	switch {
+	case errors.Is(err, agents.ErrRegistrationProfileType):
+		return failure(400, err.Error()), nil
 	case errors.Is(err, agents.ErrRegistrationAuthorization):
 		registrationRejected(c.Context(), data, RegistrationLocked)
 		return failure(403, RegistrationLocked), nil

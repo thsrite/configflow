@@ -192,3 +192,30 @@ const (
 )
 
 const msgMetricsHistoryFailure = "Agent %s 的监控历史保存失败：%s"
+
+const (
+	msgTrafficHistoryMihomo   = "流量记录只支持 mihomo Agent"
+	msgAgentEditingUpgrade    = "Agent update is in progress; wait for confirmation before editing it"
+	msgAgentEditingDNSFollow  = "DNS 联动发布正在执行，请等待结果后再修改 Agent"
+	msgAgentEditingDeployment = "Agent has an unfinished deployment; finish or recover it before changing profile"
+)
+
+const (
+	msgAgentDeletingUpgrade        = "Agent 正在更新或等待恢复"
+	msgAgentDeletingDNSFollow      = "DNS 联动发布正在执行，请等待结果后再删除 Agent"
+	msgAgentDeleted                = "已删除 Agent %s"
+	msgTrafficHistoryDeleteFailure = "删除 Agent %s 的流量记录失败：%s"
+)
+
+const (
+	msgInstallationProfileChanged = "Installation Agent profile changed; prepare a new installation"
+	msgRegistrationDeploymentBusy = "Agent has an unfinished deployment or upgrade; recover it before changing profile"
+	msgRegistrationDNSFollowBusy  = "DNS 联动发布正在执行，请等待结果后再改变 Agent 注册信息"
+)
+
+const (
+	msgRebindOtherProfile = "请选择其他配置空间"
+	msgRebindReviewedIDs  = "请提供已确认的 Agent ID 列表"
+	msgRebindChanged      = "Agent 绑定已变化，请刷新列表后重新确认"
+	msgRebindBusy         = "以下 Agent 正在发布、更新或等待恢复，请完成后再改绑："
+)

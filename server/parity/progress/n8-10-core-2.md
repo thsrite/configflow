@@ -41,7 +41,8 @@ R5/D2 新期望必须携带 exact raw 输入；设备请求比较真实 body/hea
   Name/PORT/Profile_ID 等未知别名不覆盖 name/port/profile_id。新增 exact-input table 和
   fuzz：未知 case alias 不改变 claim，且 request 输入不变。
 
-这只是 core-2 第一块；manager 主体、deployments/remote/diagnostics 等仍待迁移。
+准入第一块提交 a6fab3b42；注册／编辑／改绑／删除主体已进一步迁移（见下文）。
+deployments/remote/diagnostics 等仍待迁移，整体仍是部分完成。
 没有修改旧 corpus/baseline/期望；没有新依赖、没有 push、没有复核 agent。
 
 ## 定向证据（.64）
@@ -64,3 +65,52 @@ Exit 0，gofmt/vet 静默；fuzz 320,785 executions，PASS 61.012s。
     RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/registry_native_test.go; GOMAXPROCS=4 go test -race -p 4 -count=1 -run "Prepared.*Stored|Heartbeat.*Stored|Malformed.*Disable|TypedHAEnablePresenceAndAllocationBound|N810" ./internal/agents ./internal/agents/dnsha'
 
 Exit 0：agents 18.756s，dnsha 2.511s。
+
+## typed registry / enrollment 块
+
+- typed AgentEdits/EditAgent，管理开关 Model 入口、原始 token 单记录查询、DeleteAgent，
+  原 Record 入口仅做 DTO codec。busy guards 读取原始 member，port 数字不同表示等值，
+  bool/int 不互认；显式管理编辑可修复无进行中任务的 R5 profile，进行中任务则拒绝。
+- 注册主体迁到 RegistrationInput / Options / Result，原子性由同一个 editRegistry 事务拥有。
+  普通 token 重注册不回显 token；安装重放核验原始 marker 和全部 identity；unknown 和
+  managed member 原始 JSON 保留，注册前端字段仍按原有稳定顺序写入。
+- typed RebindProfiles 只允许精确 reviewed original string IDs，不让 R5 字符串投影认领
+  绑定；profile metadata 从 cached View 取小型 DTO，未复制配置。结果仍不含凭据。
+- 协调者已批准有条件收紧 malformed profile request。已静态核实当前及仓库保留历史
+  Go Agent RegisterRequest 不含 profile_id，shell/AIO/Docker/HA 的受支持入口不发送
+  false/0；网关/HA 会话注入前均验证 string。证据及 exact HTTP 独立样例已登记
+  behaviour-changes。唯一 api/agents 接线是该 typed type-refusal 的 400 映射与测试。
+- 注册第一轮仅旧字段顺序回归失败，已修复实现的字段顺序，旧期望未改；第二轮 root
+  注册 43.803s、API O9 181.065s 均 PASS。更完整回归的唯一失败是新增测试误用 SetJSON 写 unknown member，已改为
+  Fields.Set；其固定期望不变。该测试随后 PASS；API O9+N810 全部 PASS 131.248s。
+  新增 R5 rebind 负例由原始 SQLite row 导入，避免被正常 write validator 提前拒绝。
+
+
+## 本块补充验证（.64）
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/api/agents; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "TypedAgent|TypedToken|AgentMutations|RegistrationKeeps|ProfileGuard|InvalidRebind|RebindIs|OneBusy|ChangedBinding|ManagerDistinguishes|ManagerRejects|DomainDiscovery|TrafficHistory" ./internal/agents'
+
+Exit 0，agents 141.541s（注册主体迁移前的 native edits/delete/switch/token 块）。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "Registration|Register|AgentMutations|ProfileGuard|^TestO9" ./internal/agents ./internal/api/agents'
+
+Exit 0，agents 43.803s，API 181.065s（注册主体迁移及 stable order 修复后）。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/enrollment_test.go internal/agents/enrollment_fuzz_test.go internal/api/agents/n810_proof_test.go; GOMAXPROCS=4 go vet -p 4 ./internal/agents ./internal/api/agents; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "TypedEnrollmentKeeps|N810Stored" ./internal/agents ./internal/api/agents; GOMAXPROCS=4 go test -count=1 -run "^$" -fuzz "^FuzzRegistrationInputOwnershipBoundary$" -fuzztime=60s -parallel=2 ./internal/agents'
+
+Exit 0，agents 3.253s，API 6.520s；fuzz 804,516 executions，PASS 60.013s。
+该 HTTP 回归直接篡改 stored proof 的 name=7 / port="8080"，逐行验证 403、未消费、无 Agent；
+恢复正确原始类型后同一 proof 得到 200 并原子消费。既有 session shape 解码测试的期望不改。
+
+## 接着做
+
+1. deployments、remote/client、diagnostics/events/messages/version/time 的 typed 主体。
+2. ipv6 / rulesync / metrics / traffic adapters 的其余 scalar/dynamic 入口。
+3. 结束时再统一做 agents 子树 race、跨包 Corpus|Reference|Golden、agents difftest；model
+   source hash 改动引起的 pyref metadata 要按 Python check → metadata record → check 审计，
+   不能改 entry 的 input/output，不能更新旧期望来迁就实现。此处还未声称完整 S 或 verified。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'set -e; cd server; gofmt -w internal/agents/enrollment_control_test.go; GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "TypedEnrollmentExact|TypedRebindRequires|RegistrationCapabilitiesAndAtomicEnrollment|WronglyTypedAgentMembers|AutoHostPin" ./internal/agents ./internal/gateway/installation'
+
+Exit 0，agents 11.530s，gateway/installation 4.887s；包括 exact installation replay 正控、
+原始 SQLite R5 ID/profile 负例及原网关 atomic enrollment / text port / integral float 回归。

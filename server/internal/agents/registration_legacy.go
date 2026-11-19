@@ -5,81 +5,54 @@ package agents
 import (
 	"context"
 	"encoding/json"
-
-	"configflow/internal/model"
 )
 
 func legacyRegistrationClaim(data *Record) registrationClaim {
-	claim := registrationClaim{ServiceType: "mihomo", Port: 8080}
 	raw, err := json.Marshal(data)
 	if err != nil {
-		claim.invalid = true
-		return claim
+		return registrationClaim{invalid: true}
 	}
-	var wire struct {
-		Name             *string    `json:"name"`
-		Host             *string    `json:"host"`
-		ServiceType      *string    `json:"service_type"`
-		DeploymentMethod *string    `json:"deployment_method"`
-		ProfileID        *string    `json:"profile_id"`
-		Port             *model.Int `json:"port"`
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil || members == nil {
-		claim.invalid = true
-		return claim
-	}
-	// encoding/json matches struct tags case-insensitively. Project exact keys
-	// first, retaining the registry protocol's case-sensitive field names.
-	selected := make(map[string]json.RawMessage)
-	for _, key := range []string{"name", "host", "service_type", "deployment_method", "profile_id", "port"} {
-		if value, present := members[key]; present {
-			selected[key] = value
-		}
-	}
-	payload, err := json.Marshal(selected)
-	if err != nil || json.Unmarshal(payload, &wire) != nil {
-		claim.invalid = true
-	}
-	for _, field := range []struct {
-		key         string
-		value       *string
-		destination *string
-	}{
-		{"name", wire.Name, &claim.Name}, {"host", wire.Host, &claim.Host}, {"service_type", wire.ServiceType, &claim.ServiceType},
-		{"deployment_method", wire.DeploymentMethod, &claim.DeploymentMethod}, {"profile_id", wire.ProfileID, &claim.ProfileID},
-	} {
-		if field.value != nil {
-			*field.destination = *field.value
-		} else if _, present := members[field.key]; present {
-			claim.invalid = true
-		}
-	}
-	if wire.Port != nil {
-		claim.Port = *wire.Port
-	}
-	if raw, present := members["port"]; present {
-		var number *float64
-		if json.Unmarshal(raw, &number) != nil || number == nil {
-			claim.invalid = true
-		}
-	}
-	return claim
+	return decodeRegistrationClaim(raw)
+}
+
+// RegisterAgent translates a legacy registration record into the native DTO.
+func (m *Manager) RegisterAgent(ctx context.Context, data *Record, existingToken, installationID any) (*Result, error) {
+	token, _ := existingToken.(string)
+	installation, _ := installationID.(string)
+	return m.registerLegacyIdentity(ctx, data, RegistrationOptions{ExistingToken: token, InstallationID: installation})
+}
+
+// RegisterInstallationAgent permits only the trusted exact-identity replay.
+func (m *Manager) RegisterInstallationAgent(ctx context.Context, data *Record, existingToken, installationID string) (*Result, error) {
+	return m.registerLegacyIdentity(ctx, data, RegistrationOptions{ExistingToken: existingToken, InstallationID: installationID, ReplayInstallation: true})
 }
 
 // RegisterAuthorizedAgent enforces first-registration policy inside the registry transaction.
 func (m *Manager) RegisterAuthorizedAgent(ctx context.Context, data *Record, existingToken any, admission RegistrationAuthorization) (*Result, error) {
-	return m.registerAgent(ctx, data, existingToken, nil, false, &admission)
+	token, _ := existingToken.(string)
+	return m.registerLegacyIdentity(ctx, data, RegistrationOptions{ExistingToken: token, Authorization: &admission})
 }
 
-func (m *Manager) proofMatches(ctx context.Context, system *model.System, data *Record, admission *RegistrationAuthorization) bool {
-	return m.matchesRegistrationClaim(ctx, system, legacyRegistrationClaim(data), *admission)
-}
-
-func (m *Manager) admitRegistration(ctx context.Context, system *model.System, data *Record, admission *RegistrationAuthorization) error {
-	profile, err := m.admitRegistrationClaim(ctx, system, legacyRegistrationClaim(data), *admission)
-	if err == nil && profile != "" {
-		data.Set("profile_id", profile)
+func (m *Manager) registerLegacyIdentity(ctx context.Context, data *Record, options RegistrationOptions) (*Result, error) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
 	}
-	return err
+	input, err := DecodeRegistrationInput(raw)
+	if err != nil {
+		return nil, err
+	}
+	result, err := m.RegisterIdentity(ctx, input, options)
+	if err != nil {
+		return nil, err
+	}
+	raw, err = json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	var response Result
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
 }

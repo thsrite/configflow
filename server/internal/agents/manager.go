@@ -7,15 +7,10 @@ package agents
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"math"
-	"strings"
+"fmt"
 	"sync"
 	"time"
 
@@ -478,215 +473,9 @@ func validateProfileID(value any) error {
 	return repo.ValidateProfileID(text)
 }
 
-func tokenHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func tokenURLSafe(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
 func objOr(value any) *jsonx.Object {
 	object, _ := value.(*jsonx.Object)
 	return object
-}
-
-// RegisterAgent is register_agent(agent_data, existing_token,
-// installation_id): an Agent with the same name and host is updated only
-// with its current token (keeping ID and token); otherwise a new record is
-// created and its token returned once. existingToken and installationID are
-// nil when absent.
-func (m *Manager) RegisterAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any) (*jsonx.Object, error) {
-	return m.registerAgent(ctx, data, existingToken, installationID, false, nil)
-}
-
-// RegisterInstallationAgent permits credential replay only for the exact trusted
-// capability marker and unchanged installation identity, checked inside L3.
-func (m *Manager) RegisterInstallationAgent(ctx context.Context, data *Record, existingToken, installationID string) (*Result, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return m.registerAgent(ctx, data, existingToken, installationID, true, nil)
-}
-
-func (m *Manager) registerAgent(ctx context.Context, data *jsonx.Object, existingToken, installationID any, replay bool, admission *RegistrationAuthorization) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	name := data.GetOr("name", "Unnamed Agent")
-	host := data.GetOr("host", "")
-	requested := data.Value("profile_id")
-	profileArg := ""
-	if jsonx.Truthy(requested) {
-		if err := validateProfileID(requested); err != nil {
-			return nil, err
-		}
-		profileArg = requested.(string)
-	}
-	serviceType := data.GetOr("service_type", "mihomo")
-	port := data.GetOr("port", jsonx.Int(8080))
-	result, err := m.updateRegistry(ctx, profileArg, func(ctx context.Context, agents *[]any, system *model.System) (any, error) {
-		list := *agents
-		existingIndex := -1
-		for i, item := range list {
-			agent, _ := item.(*jsonx.Object)
-			if jsonx.Equal(agent.Value("name"), name) && jsonx.Equal(agent.Value("host"), host) {
-				existingIndex = i
-				break
-			}
-		}
-		if existingIndex >= 0 {
-			existing := objectAt(list, existingIndex)
-			owned := replay && installationID != "" && jsonx.Equal(existing.Value("gateway_installation_id"), installationID)
-			if owned {
-				for _, key := range []string{"name", "host", "port", "service_type", "deployment_method", "profile_id"} {
-					if !jsonx.Equal(existing.Value(key), data.Value(key)) {
-						return nil, &DeploymentConflict{Message: installationIdentityChanged}
-					}
-				}
-				existingToken = existing.Value("token")
-			}
-			if !ConstantTimeASCIIEqual(existingToken, existing.Value("token")) {
-				// Without any first-registration proof the caller must get the same
-				// refusal as for an unknown identity, or the public route becomes an
-				// oracle for which name/host pairs are registered.
-				if admission != nil && !admission.AllowNew && !m.proofMatches(ctx, system, data, admission) {
-					return nil, ErrRegistrationAuthorization
-				}
-				return nil, &PermissionError{}
-			}
-			// An authenticated re-registration must not be blocked by stale bootstrap
-			// data, but an accompanying still-valid one-use proof is spent on success.
-			if admission != nil && admission.Credential != "" {
-				optional := *admission
-				optional.AllowNew = true
-				if err := m.admitRegistration(ctx, system, data.DeepCopy(), &optional); err != nil {
-					return nil, err
-				}
-			}
-			if jsonx.Truthy(installationID) && jsonx.Equal(existing.Value("gateway_installation_id"), installationID) &&
-				!jsonx.Equal(requested, existing.Value("profile_id")) {
-				return nil, &DeploymentConflict{Message: "Installation Agent profile changed; prepare a new installation"}
-			}
-			if jsonx.Truthy(requested) {
-				current, err := m.profileOf(ctx, existing)
-				if err != nil {
-					return nil, err
-				}
-				if !jsonx.Equal(requested, current) && (upgradeBusy(existing) || unfinishedDeployment(existing)) {
-					return nil, &DeploymentConflict{Message: "Agent has an unfinished deployment or upgrade; recover it before changing profile"}
-				}
-			}
-			changes := !jsonx.Equal(serviceType, existing.Value("service_type")) ||
-				(jsonx.Truthy(requested) && !jsonx.Equal(requested, existing.Value("profile_id"))) ||
-				!jsonx.Equal(port, existing.Value("port"))
-			if dnsFollowBusy(list, existing.Value("id")) && changes {
-				return nil, &DeploymentConflict{Message: "DNS 联动发布正在执行，请等待结果后再改变 Agent 注册信息"}
-			}
-			if (haEnabled(existing) || haBusy(existing)) && changes {
-				return nil, &DeploymentConflict{Message: OxidnsHALocked}
-			}
-			agentID := existing.Value("id")
-			profile := requested
-			if !jsonx.Truthy(profile) {
-				var err error
-				if profile, err = m.profileOf(ctx, existing); err != nil {
-					return nil, err
-				}
-			}
-			updated := jsonx.Obj(
-				"id", agentID,
-				"name", name,
-				"host", host,
-				"port", port,
-				"token", existing.Value("token"),
-				"service_type", serviceType,
-				"profile_id", profile,
-				"deployment_method", data.GetOr("deployment_method", existing.GetOr("deployment_method", "unknown")),
-				"status", "online",
-				"last_heartbeat", nowISO(),
-				"version", data.GetOr("version", "1.0.0"),
-				"config_version", existing.GetOr("config_version", "0"),
-				"enabled", true,
-				"created_at", existing.GetOr("created_at", nowISO()),
-				"updated_at", nowISO(),
-				"deployments", existing.GetOr("deployments", jsonx.NewObject()),
-				"latest_deployment", existing.Value("latest_deployment"),
-				"latest_upgrade", existing.Value("latest_upgrade"),
-				// 管理端设置的开关，重新注册不能把它清掉
-				"domain_discovery_enabled", existing.GetOr("domain_discovery_enabled", false),
-			)
-			for _, field := range []string{"traffic_history_enabled", "traffic_history_since"} {
-				if value, ok := existing.Get(field); ok {
-					updated.Set(field, value)
-				}
-			}
-			for _, field := range []string{"config_revision", "pushed_at", "applied_content", "dns_follow", "dns_follow_state", "dns_follow_job", "rule_sync",
-				"oxidns_ha", "oxidns_ha_state", "oxidns_ha_publication", "ipv6_verification_settings", "ipv6_verifications"} {
-				if value, ok := existing.Get(field); ok {
-					updated.Set(field, jsonx.DeepCopy(value))
-				}
-			}
-			if jsonx.Truthy(existing.Value("gateway_installation_id")) {
-				updated.Set("gateway_installation_id", existing.Value("gateway_installation_id"))
-			}
-			list[existingIndex] = updated
-			answer := jsonx.Obj("id", agentID, "status", "online", "is_new", false)
-			if owned {
-				answer.Set("token", existing.Value("token"))
-			}
-			return answer, nil
-		}
-
-		if admission != nil {
-			if err := m.admitRegistration(ctx, system, data, admission); err != nil {
-				return nil, err
-			}
-			requested = data.Value("profile_id")
-		}
-		agentID := fmt.Sprintf("agent_%d_%s", int64(math.Floor(pyTimestamp(clock())*1000)), tokenHex(3))
-		token := tokenURLSafe(24)
-		profile := requested
-		if !jsonx.Truthy(profile) {
-			id, err := m.defaultProfileID(ctx)
-			if err != nil {
-				return nil, err
-			}
-			profile = id
-		}
-		agent := jsonx.Obj(
-			"id", agentID,
-			"name", name,
-			"host", host,
-			"port", port,
-			"token", token,
-			"service_type", serviceType,
-			"profile_id", profile,
-			"deployment_method", data.GetOr("deployment_method", "unknown"),
-			"status", "online",
-			"last_heartbeat", nowISO(),
-			"version", data.GetOr("version", "1.0.0"),
-			"config_version", "0",
-			"enabled", true,
-			"created_at", nowISO(),
-		)
-		if jsonx.Truthy(installationID) {
-			// Trusted caller metadata, never read from registration JSON.
-			agent.Set("gateway_installation_id", installationID)
-		}
-		*agents = append(list, agent)
-		return jsonx.Obj("id", agentID, "status", "online", "is_new", true, "token", token), nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.(*jsonx.Object), nil
 }
 
 // GetAllAgents is get_all_agents(history=...): every Agent with its status
@@ -728,16 +517,11 @@ func (m *Manager) GetAgentByID(ctx context.Context, agentID string, history bool
 
 // GetAgentByToken is get_agent_by_token(token).
 func (m *Manager) GetAgentByToken(ctx context.Context, token string) (*jsonx.Object, error) {
-	agents, err := m.agents(ctx, true)
-	if err != nil {
+	record, err := m.ReadAgentByToken(ctx, token)
+	if err != nil || record == nil {
 		return nil, err
 	}
-	for _, agent := range agents {
-		if agent.Value("token") == token {
-			return agent, nil
-		}
-	}
-	return nil, nil
+	return agentObject(record)
 }
 
 var editableFields = []string{"name", "host", "port", "enabled", "service_type", "profile_id"}
@@ -746,60 +530,15 @@ var guardedFields = []string{"host", "port", "enabled", "service_type", "profile
 // UpdateAgent is update_agent(agent_id, updates): the editable fields only;
 // false when the Agent does not exist.
 func (m *Manager) UpdateAgent(ctx context.Context, agentID string, updates *jsonx.Object) (bool, error) {
-	if value, ok := updates.Get("profile_id"); ok {
-		if err := validateProfileID(value); err != nil {
-			return false, err
-		}
-	}
-	changed := func(agent *jsonx.Object) bool {
-		for _, key := range guardedFields {
-			if value, ok := updates.Get(key); ok && !jsonx.Equal(value, agent.Value(key)) {
-				return true
-			}
-		}
-		return false
-	}
-	profileArg, _ := updates.Value("profile_id").(string)
-	result, err := m.UpdateAgents(ctx, profileArg, func(ctx context.Context, agents *[]any) (any, error) {
-		for _, item := range *agents {
-			agent, _ := item.(*jsonx.Object)
-			if !jsonx.Equal(agent.Value("id"), agentID) {
-				continue
-			}
-			if upgradeBusy(agent) {
-				return nil, &DeploymentConflict{Message: "Agent update is in progress; wait for confirmation before editing it"}
-			}
-			if dnsFollowBusy(*agents, agentID) && changed(agent) {
-				return nil, &DeploymentConflict{Message: "DNS 联动发布正在执行，请等待结果后再修改 Agent"}
-			}
-			if (haEnabled(agent) || haBusy(agent)) && changed(agent) {
-				return nil, &DeploymentConflict{Message: OxidnsHALocked}
-			}
-			if value, ok := updates.Get("profile_id"); ok {
-				current, err := m.profileOf(ctx, agent)
-				if err != nil {
-					return nil, err
-				}
-				// Runs under the same repository transaction lock used by
-				// BeginDeployment, so a concurrent preparation cannot race.
-				if !jsonx.Equal(value, current) && unfinishedDeployment(agent) {
-					return nil, &DeploymentConflict{Message: "Agent has an unfinished deployment; finish or recover it before changing profile"}
-				}
-			}
-			for _, field := range editableFields {
-				if value, ok := updates.Get(field); ok {
-					agent.Set(field, value)
-				}
-			}
-			agent.Set("updated_at", nowISO())
-			return true, nil
-		}
-		return false, nil
-	})
+	data, err := json.Marshal(updates)
 	if err != nil {
 		return false, err
 	}
-	return result.(bool), nil
+	edits, err := DecodeAgentEdits(data)
+	if err != nil {
+		return false, err
+	}
+	return m.EditAgent(ctx, agentID, edits)
 }
 
 // RebindProfileAgents is rebind_profile_agents(source, target,
@@ -814,124 +553,33 @@ func (m *Manager) RebindProfileAgents(ctx context.Context, sourceProfileID, targ
 	}
 	source, target := sourceProfileID.(string), targetProfileID.(string)
 	if source == target {
-		return nil, repo.NewValidationError("请选择其他配置空间")
+		return nil, repo.NewValidationError(msgRebindOtherProfile)
 	}
-	expected, ok := expectedAgentIDs.([]any)
-	valid := ok && len(expected) > 0
-	expectedSet := map[string]bool{}
-	for _, item := range expected {
-		text, isString := item.(string)
-		if !isString || text == "" || expectedSet[text] {
-			valid = false
-			break
-		}
-		expectedSet[text] = true
-	}
+	items, valid := expectedAgentIDs.([]any)
 	if !valid {
-		return nil, repo.NewValidationError("请提供已确认的 Agent ID 列表")
+		return nil, repo.NewValidationError(msgRebindReviewedIDs)
 	}
-	result, err := m.UpdateAgents(ctx, "", func(ctx context.Context, agents *[]any) (any, error) {
-		sourceMeta, err := m.repository.ProfileMetadata(ctx, source)
-		if err != nil {
-			return nil, err
+	ids := make([]string, len(items))
+	for i, item := range items {
+		id, valid := item.(string)
+		if !valid {
+			return nil, repo.NewValidationError(msgRebindReviewedIDs)
 		}
-		targetMeta, err := m.repository.ProfileMetadata(ctx, target)
-		if err != nil {
-			return nil, err
-		}
-		defaultID, err := m.defaultProfileID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		var bound []*jsonx.Object
-		boundIDs := map[string]bool{}
-		for _, item := range *agents {
-			agent, _ := item.(*jsonx.Object)
-			if jsonx.Equal(truthyOr(agent.Value("profile_id"), defaultID), source) {
-				bound = append(bound, agent)
-				boundIDs[jsonx.Str(agent.Value("id"))] = true
-			}
-		}
-		same := len(boundIDs) == len(expectedSet)
-		for id := range boundIDs {
-			same = same && expectedSet[id]
-		}
-		if !same {
-			return nil, repo.NewInUse("Agent 绑定已变化，请刷新列表后重新确认", nil)
-		}
-		var blocked []string
-		for _, agent := range bound {
-			if upgradeBusy(agent) || haBusy(agent) || unfinishedDeployment(agent) {
-				blocked = append(blocked, jsonx.Str(truthyOr(agent.Value("name"), agent.Value("id"))))
-			}
-		}
-		if len(blocked) > 0 {
-			return nil, &DeploymentConflict{Message: "以下 Agent 正在发布、更新或等待恢复，请完成后再改绑：" + strings.Join(blocked, "、")}
-		}
-		summaries := make([]any, 0, len(bound))
-		for _, agent := range bound {
-			summaries = append(summaries, repo.AgentBindingSummary(agent))
-		}
-		result := jsonx.Obj("from_profile", sourceMeta, "to_profile", targetMeta, "agents", summaries)
-		for _, agent := range bound {
-			agent.Set("profile_id", target)
-			agent.Set("updated_at", nowISO())
-		}
-		return result, nil
-	})
+		ids[i] = id
+	}
+	result, err := m.RebindProfiles(ctx, source, target, ids)
 	if err != nil {
 		return nil, err
 	}
-	return result.(*jsonx.Object), nil
-}
-
-// DeleteAgent is delete_agent(agent_id): false when unknown. The heartbeat
-// state, metrics and traffic history (#21 hooks) are forgotten as well.
-func (m *Manager) DeleteAgent(ctx context.Context, agentID string) (bool, error) {
-	var deleted *jsonx.Object
-	result, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
-		agent, _ := findAgent(*agents, agentID)
-		if agent != nil && upgradeBusy(agent) {
-			return nil, &DeploymentConflict{Message: "Agent 正在更新或等待恢复"}
-		}
-		if dnsFollowBusy(*agents, agentID) {
-			return nil, &DeploymentConflict{Message: "DNS 联动发布正在执行，请等待结果后再删除 Agent"}
-		}
-		if haEnabled(agent) || haBusy(agent) {
-			return nil, &DeploymentConflict{Message: OxidnsHALocked}
-		}
-		kept := make([]any, 0, len(*agents))
-		for _, item := range *agents {
-			if object, _ := item.(*jsonx.Object); !jsonx.Equal(object.Value("id"), agentID) {
-				kept = append(kept, item)
-			}
-		}
-		removed := len(kept) < len(*agents)
-		*agents = kept
-		if removed {
-			deleted = agent
-		}
-		return removed, nil
-	})
+	raw, err := json.Marshal(result)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if deleted != nil {
-		logger.Infof("已删除 Agent %s", agentLabel(deleted))
-		m.runtime.Delete(agentID)
-		h := currentHooks()
-		// 删除失败时文件会在下次启动时清理
-		if h.DeleteMetricsHistory != nil {
-			h.DeleteMetricsHistory(m, agentID)
-		}
-		if h.DeleteTrafficHistory != nil {
-			if err := h.DeleteTrafficHistory(m, agentID); err != nil {
-				// 下次保存时按 Agent 列表清理
-				logger.Warningf("删除 Agent %s 的流量记录失败：%s", agentID, err)
-			}
-		}
+	var response Result
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, err
 	}
-	return result.(bool), nil
+	return &response, nil
 }
 
 // UpdateHeartbeat is update_heartbeat(agent_id, heartbeat_data): the state is
@@ -983,48 +631,18 @@ var testRecordHeartbeat func(m *Manager, agent, payload *jsonx.Object, mark int6
 // SetDomainDiscovery is set_domain_discovery(agent_id, enabled): only mihomo
 // Agents can enable it. Returns the updated live record, nil when unknown.
 func (m *Manager) SetDomainDiscovery(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
+	record, err := m.SetDomainDiscoveryModel(ctx, agentID, enabled)
+	if err != nil || record == nil {
 		return nil, err
 	}
-	result, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
-		agent, _ := findAgent(*agents, agentID)
-		if agent == nil {
-			return nil, nil
-		}
-		if enabled && agent.Value("service_type") != "mihomo" {
-			return nil, &ValueError{Message: msgDomainDiscoveryMihomo}
-		}
-		agent.Set("domain_discovery_enabled", enabled)
-		agent.Set("updated_at", nowISO())
-		return agent.Clone(), nil
-	})
-	if err != nil || result == nil {
-		return nil, err
-	}
-	return m.runtime.Overlay([]*jsonx.Object{result.(*jsonx.Object).DeepCopy()})[0], nil
+	return agentObject(record)
 }
 
-// SetTrafficHistory is set_traffic_history(agent_id, enabled): only mihomo
-// Agents; enabling records the start time. nil when unknown.
+// SetTrafficHistory changes the management switch through the native registry.
 func (m *Manager) SetTrafficHistory(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
-	result, err := m.UpdateAgents(ctx, "", func(_ context.Context, agents *[]any) (any, error) {
-		agent, _ := findAgent(*agents, agentID)
-		if agent == nil {
-			return nil, nil
-		}
-		if enabled && agent.Value("service_type") != "mihomo" {
-			return nil, &ValueError{Message: "流量记录只支持 mihomo Agent"}
-		}
-		if enabled && !jsonx.Truthy(agent.Value("traffic_history_enabled")) {
-			agent.Set("traffic_history_since", utcNowISO())
-		}
-		agent.Set("traffic_history_enabled", enabled)
-		agent.Set("updated_at", nowISO())
-		return agent.Clone(), nil
-	})
-	if err != nil || result == nil {
+	record, err := m.SetTrafficHistoryModel(ctx, agentID, enabled)
+	if err != nil || record == nil {
 		return nil, err
 	}
-	return m.runtime.Overlay([]*jsonx.Object{result.(*jsonx.Object).DeepCopy()})[0], nil
+	return agentObject(record)
 }

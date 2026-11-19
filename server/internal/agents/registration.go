@@ -181,6 +181,25 @@ func admissionSessionIdentity(session model.AgentRegistrationSession) bool {
 	return true
 }
 
+// registrationSessionPortMatches requires a JSON number at the stored proof
+// boundary. model.Int's compatibility string decode is not ownership evidence.
+func registrationSessionPortMatches(session model.AgentRegistrationSession, port model.Int) bool {
+	raw, err := json.Marshal(session)
+	if err != nil {
+		return false
+	}
+	var members map[string]json.RawMessage
+	if json.Unmarshal(raw, &members) != nil {
+		return false
+	}
+	var number *float64
+	if json.Unmarshal(members["port"], &number) != nil || number == nil {
+		return false
+	}
+	var stored model.Int
+	return json.Unmarshal(members["port"], &stored) == nil && stored == port
+}
+
 // admitRegistrationClaim changes only the caller's system working copy. Its
 // success and the Agent insert/update commit together in the owning transaction.
 func (m *Manager) admitRegistrationClaim(ctx context.Context, system *model.System, claim registrationClaim, admission RegistrationAuthorization) (string, error) {
@@ -198,7 +217,7 @@ func (m *Manager) admitRegistrationClaim(ctx context.Context, system *model.Syst
 		if subtle.ConstantTimeCompare([]byte(digest), []byte(session.Hash)) != 1 {
 			continue
 		}
-		if admission.Credential == "" || claim.invalid || !admissionSessionIdentity(session) || session.Name != claim.Name ||
+		if admission.Credential == "" || claim.invalid || !admissionSessionIdentity(session) || !registrationSessionPortMatches(session, claim.Port) || session.Name != claim.Name ||
 			session.ServiceType != claim.ServiceType || session.DeploymentMethod != claim.DeploymentMethod || session.Port != claim.Port ||
 			session.Host != "" && session.Host != host || claim.ProfileID != "" && claim.ProfileID != session.ProfileID {
 			if admission.AllowNew {

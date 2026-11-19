@@ -195,6 +195,9 @@ func (r *AgentUpgrade) Clear(member string) error { return ClearMember(r, &r.raw
 // MarshalJSON preserves unknown and unchanged AgentUpgrade members.
 func (r AgentUpgrade) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
+// HasMembers reports effective upgrade journal presence without encoding artifacts.
+func (r *AgentUpgrade) HasMembers() bool { return r != nil && recordHasMembers(r, &r.raw) }
+
 // UpgradeArtifact identifies an upgrade artifact without accessing its file.
 type UpgradeArtifact struct {
 	SHA256 string `json:"sha256"`

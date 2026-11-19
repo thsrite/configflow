@@ -1976,3 +1976,29 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 - 会话 completed=1 不再被 Python truthiness 当成 true；仅 bool true 表示完成。旧 hook 单测仍使用同一数字输入，独立 fixture 同时固定真实 Python 旧答案和 R5 投影后的完整答案。没有把输入改成 true 来躲过差异。
 - RouterOS/iKuai 回包属于外部输入：既有 Row.text/flag/number 的厂商字符串/数值兼容保留，设备请求编码、顺序、超时及 raw body/header 断言不改；日志/错误凭据继续用 internal/redact。导出脱敏沿既有出口合同。
 - 本组没有新增 D2 设备身份/缓存签名变更；通知继续使用 N8-7 已切换的 native RouterDigest，规则同步控制摘要沿 R14 已批准 canonicalReleaseJSON。YAML 的原 N7 oracle 与列出的差异类别不变。
+### N8-10 core-2 — registration profile optional DTO
+
+按协调者 2026-11-19 的裁定，机器注册请求的 `profile_id` 仅接受字符串、null 或不传；
+空串仍表示默认配置。非字符串的 boolean、number、array、object 返回 400
+`{"success":false,"message":"Invalid profile id"}`，不插入 Agent、不消费一次性 proof。
+旧实现把 false、0、[]、{} 静默当作默认配置，其余非字符串通常落入 500；这些无效形状
+现在统一拒绝。存储的原始 R5 字段仍保留，不能把其字符串投影当所有权证明。
+
+受支持调用方核实（没有发现要兼容的 false/0 发包方）：
+
+- `backend/agents/go-agent/client.go:28` 的 `RegisterRequest` 及 `RegisterAgent` 的构造
+  没有 `profile_id` 成员；`Config` 也没有该字段。`git log --all -G 'ProfileID|profile_id'
+  -- backend/agents/go-agent/client.go` 无记录，仓库保留的历史版本没有该请求字段。
+- shell 单服务/AIO：`backend/agents/go_install_script.py`、`backend/agents/scripts/install-go*.sh`、
+  Go 端 `internal/installer/goagent.go` / `aio.go` 及对应 scripts 不写 profile 配置；
+  O9-H2 只向已有配置添加 string `registration_token` / `registration_key`。
+- Docker 单服务/AIO/HA compose 和 `docker/docker-agent-entrypoint-service.sh` 生成 Go Agent
+  Config，再由上述固定结构体发包；没有 profile env/JSON 注入口。`internal/installer/docker.go`
+  的 O9-H2 环境项也是 string credential。compose/入口脚本历史中没有 profile 注入记录。
+- 网关独立安装会话由 `gateway_installation.py` 验证 profile 字符串后注入；Go 端同样由
+  安装会话提供已验证 profile。Docker HA enrollment 的 Python / Go issue、注册入口均先
+  ValidateProfileID，Go `IssueEnrollment` 的 profile 参数本身是 string；不会发 false/0。
+
+逐行绑定原始 JSON 的独立 HTTP 回归：`TestN810RegistrationProfileOptionalMachineValues`
+（8 个拒绝形状，null/空串/default 三个成功）；另验证 null profile 的真实一次性 proof
+仍与 Agent 注册原子消费。原差分、corpus 和已提交的旧期望不改。
