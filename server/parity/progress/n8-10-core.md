@@ -1,6 +1,7 @@
 # N8-10 agents core-1
 
-状态：**部分完成**，待协调者安排 fresh Opus HR 复核。不是完整 N8-10 S pass。
+状态：core-1 **verified**（fresh Opus HR 复核，见 parity/review-n8-10-core.md；high 0，2 条修复已提交在 go-opus-review-n8-10-core）。
+N8-10 整体仍为“部分完成”，剩余归 core-2。不是完整 N8-10 S pass。
 协调者已批准拆分：本分支交 core-1；随后从本 tip 建 go-n8-10-core-2 继续剩余核心。
 分支 go-n8-10-core，基于 go@690e97995，已变基到 go@08d8e6ff1。
 新增基线只有 HANDOFF / O12 ledger 文档，产品字节与验证树一致。
