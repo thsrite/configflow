@@ -580,3 +580,27 @@ func TestO9RegistrationCapacityEvictsOldestCommand(t *testing.T) {
 	registration.Set("registration_token", latest)
 	s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(200)
 }
+
+func TestO9RegistrationProofRejectsBooleanPort(t *testing.T) {
+	s := o9Server(t)
+	manager, err := core.Get(s.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, err := manager.CreateRegistrationCredentials(s.Context(), []model.AgentRegistrationSession{{Name: "new-device", Host: "192.0.2.30", Port: 1, ServiceType: "mihomo", DeploymentMethod: "shell"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := o9Body()
+	body.Set("registration_token", issued["mihomo"])
+	body.Set("port", true)
+	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
+	if len(mustO9System(t, s).RegistrationSessions) != 1 {
+		t.Fatal("invalid JSON type consumed proof")
+	}
+	body.Set("port", 1)
+	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
+	if len(mustO9System(t, s).RegistrationSessions) != 0 {
+		t.Fatal("exact numeric identity did not consume proof")
+	}
+}
