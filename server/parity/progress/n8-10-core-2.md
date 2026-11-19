@@ -1,6 +1,21 @@
 # N8-10 agents core-2
 
-状态：部分完成（进行中）。分支 go-n8-10-core-2 已 rebase 到 go@12150a402。
+状态：部分完成（core-2 本次边界实现和定向验证已完成，待协调者安排 fresh Opus HR）。
+
+本次已完成边界：注册/编辑/改绑/删除的 typed transaction 与 O9-H2 准入；部署保留/回包/
+激活/回滚/恢复；direct remote/diagnostics/events/messages/version/time/runtime import；
+DNS follow/HA/IPv6/rulesync adapter；metrics/traffic adapter 的 ctx、脱敏、统计 IP/域名
+库复用。live heartbeat 继续使用 batch-10 的七个 owned RawMessage，原分配阈值不改。
+
+仍动态或延后的明确清单：monitor；upgrades/address/artifact；installer；api/agents 的
+请求/响应 binder、installer/content/client-tools/deploy-proxy；A05 完整 SQL/counter/query
+engine、metrics task rows/持久文件兼容入口；tasks/health/deploy 未迁 consumer 的 Record
+回调。因此保留 core 的机械 facade codec 与旧 public 错误类型名，不能把 jsonx import 数量
+当成所有步骤已完成。gateway/installation 的 guard codec 也保留到其 consumer S pass。
+oxidns/legacy.go 的生产 Agent 侧仍有 api/agents/client_tools_adapter.go；tools/proddiff
+也保留旧 codec 调用，本次不能删除。
+
+分支 go-n8-10-core-2 初始 rebase 到 go@12150a402。
 原始拆分基点为 core-1 tip 7a3f1da4ebd606389c0142cf6f9134bc970fe0b5；core-1 的 HR
 verified、无 high，报告见 n8-10-core.md / review-n8-10-core.md。ec7c71865 / e871b2fe3
 已由 batch-10 纳入基底，rebase 未重复应用；3380a1c28 的窄 RawMessage runtime 与
@@ -620,3 +635,166 @@ Exit 0：agents 10.875s、upgrades 18.137s、dnsfollow 115.557s、dnsha 1.040s�
 Exit 0：agents 10.310s、api/agents 4.239s、dnsha 1.050s、model 1.034s。真实 HTTP 六条坏
 logging reply 比较原始 POST/path/Bearer/Content-Type/`{"enabled": true}` bytes 和全库
 fingerprint；同时覆盖 disconnect、shutdown-in-reply 和旧 generation 再次发起拒绝。
+
+## adapters / shutdown / Unicode 收尾
+
+dnsfollow、ipv6、rulesync 从 ReadAgent(s)/EditAgents、PublishConfig 和 typed deploy
+source 读取和提交；不再以 legacy full-config callback 持有核心状态。任务展示和未迁移
+monitor、health、deploy hook 的 Record 仅为边界转码。rulesync 的 oxidns consumer 已使用
+NewTypedProfile；oxidns/legacy.go 仍由后续 api/agents/client_tools_adapter.go 调用，不能删除。
+DNS follow 的 optional profile binding 批量解析默认值，一轮只查一次 default，不按每个
+Agent 解码配置；明确 profile 字符串不触及 default 文档读取。
+
+HA owner/journal/child/profile/service/host 原始 JSON 字符串逐项核对；数组、bool、数值
+的 R5 投影不能变成身份。原 numeric port 8082 / 8082.0 / exponent 等价继续保留，使用
+共享 model.Int 比较实际 JSON number；quoted port/bool/fraction 不冒充 numeric proof。
+payload、bundle manifest、rulesync task 使用 exact-key Fields，拒绝重复键，不走标准
+结构体的大小写折叠。未知 envelope 字段仍保留。外部 JSON 自查：model record 自定义
+codec 以精确字段读取；新增 plain task 入口已改为 exact-key 自定义 decoder。
+
+metrics/traffic 写链传 ctx 到 SQLite connection/query/BEGIN/COMMIT，删除辅助文件也
+检查 work lifetime；Detach 只忽略浏览器断线，Runtime shutdown 仍停止未完成写入。
+SQLite 回滚使用 5s bounded cleanup，不存 context。新增真实 SQLite 锁等待回归，取消
+后 errors.Is(context.Canceled)、无部分 row、pending 增量恢复，随后重试只持久化一次。
+metrics/trafficstore 取消删除回归保留原文件。旧 helper wrapper 只服务延后入口，未把整个
+A05 SQL/counter/query engine 冒称为已完成 S pass。
+
+DNS follow 首轮整包 race 抓到 typed struct 直接传 redact visitor 后未收集凭据，修复为
+owned RawMessage snapshot 进入 internal/redact；FailureMessage 同样收集全部私有凭据，
+不只 token registry。原 OutcomeRedactsCredentialsAndPreservesUnknownFields 与
+PreparationFailureRecordHidesOtherAgentCredentials 均原样通过；没有放宽测试。
+
+Unicode 按协调者最终裁定只保留 UCD17：n810_unicode17_native.json，SHA
+9407e75fcbec0ab213813acb038bb8176834e861181e4358ef642ec26676f268；原 A05 SHA
+0e2e8016db1a1976c3af5f4d0c9c3d1dae3e7befe6bf190985df44235a17cca7 不变。55 lower +
+307 sigma 行精确绑定旧原文、独立官方 UCD raw evidence/hash，负控逐条证明旧值与伪造
+原值不能通过；未绑定的所有码点仍比较原 A05。生产直接 cases.Lower，不带兼容表。
+之前已在 .64 GOTOOLCHAIN=go1.26.11 验证 Unicode15 分支 PASS3.896s，随后依最终裁定
+删除该 fixture/分支；当前硬断言版本17，工具链升级归 batch-11 集成者，不改依赖版本。
+
+定向收尾证据（所有命令经 rt，未跑完整门禁）：
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go vet -p 4 ./... && GOMAXPROCS=4 go test -race -p 4 -count=1 -run "ResolveAgentProfiles|OutcomeRedactsCredentials|PreparationFailureRecordHides|NativeLoggingDisconnect|DirectAgentCalls|AgentJSONAndDNSHA|WorkCancellation|DeleteContextPreserves" ./internal/agents ./internal/agents/dnsfollow ./internal/agents/metrics ./internal/agents/trafficstore && GOMAXPROCS=4 go test -count=1 -run "^TestBatch10HeartbeatAllocationCeilings$" ./internal/agents && GOMAXPROCS=4 go test -run "^$" -bench "^BenchmarkResolveAgentProfiles$" -benchmem -benchtime=1s ./internal/agents && GOMAXPROCS=4 go test -run "^$" -fuzz "^FuzzNativeTrafficDomainCase$" -fuzztime=60s ./internal/agents/metrics'
+
+Exit0：vet；agents9.145s、dnsfollow48.781s、metrics1.142s、trafficstore1.020s；原 batch10
+心跳阈值 PASS6.077s；100 Agent 显式 binding 批量解析 empty 29,061B/601alloc、2MiB
+29,001B/601alloc，不按无关配置增长；traffic fuzz 497,510 exec /61.014s PASS。
+
+首次全 agents/core race：agents712.485s 失败，定位为 CallAgent 使用 a.Port 投影改变
+float/slash URL，以及 legacy 两条坏回包仍要求旧失败对象。端口已改为原始 JSON number
+或原始 string 文本构造 native URL，保留原 A01 wire 期望；没有改 corpus。legacy 十条
+HTTP200 非对象/plain-text 原文由真实 Python 独立记录，fixture SHA
+ ae7cec5313879b171fc86d5cb966cef1a654a29ccd99250f9e86047ee05bfc81，原断言文本不动，
+仅这些 exact method/body/status/result 行验证 native ErrInvalidAgentReply + no-write。
+原 API 操作 wrapper 已映射中文 INVALID_RESPONSE/502；新增 restart 真实 HTTP 核对
+空 body、POST/path/Bearer 和持久化 fingerprint。其余全包首次结果：dnsha376.707s、
+ipv6 19.318s、rulesync138.949s、metrics12.633s、trafficstore1.203s PASS。
+
+runtime 删除增加与 heartbeat 相同的锁内 ctx 检查；锁等待期间关机，不移除 runtime entry
+或推进 deletion tombstone。metrics memory 删除同样在 flushMu 与 mu 后检查，逐文件
+unlink 前检查。ipv6 设备回包用 model.Fields 拒绝重复顶层/嵌套键，避免 map 最后值覆盖。
+
+跨包真实 Python check → record metadata 已通过：mosdns52.038s、oxidns45.786s；本机
+仅轻量比较 gzip JSON，12份18,444 exact entries、input SHA 均完全不变。sources.json
+补入编译依赖 model/content、jsonresp/device，源码指纹按实际依赖更新，无 Go 造期望。
+
+## 最终风险类与验证增量
+
+- Python 仿真：删除 private time/Unicode Nd/4300位数字阈值、Unicode14 case 表、traffic
+  IP parser、urllib3 码点表、核心异常 class/text renderer。标准库/x/text/taskstatus/rules
+  负责协议；保留 facade 名称不等于保留第二套核心业务实现。完整 A05 engine 的旧 SQL/
+  counters/query 是明确后续边界，未掩饰成 adapter 已全清。
+- R5/身份：stored id/profile/service/HA journal child/owner 必须 original string；端口
+  身份只比较原始 numeric token 的 integral value，协议发送保留原始 number/string 文本。
+  大小写别名不覆盖精确键名，重复键拒绝；独立 raw 输入与预期逐行绑定。
+- O9-H2：注册凭据生成/消费同事务，只持久 hash，one-use；错误403及回滚后不可复活
+  保留。register optional profile 的机器来源审计与400裁定见前文/behaviour-changes。
+- 关机与并发：Detach 保留 shutdown owner；写前、锁内、SQLite commit、逐文件写检查。
+  取消SQLite写不丢 pending；runtime删除不跨shutdown推进 tombstone；prepared、租约、
+  overlay 与 batch10 owned RawMessage 表示不变。未添加广泛 uninterruptible 窗口。
+- 脱敏：统一 internal/redact，所有 private credential 从 RawMessage 进入共享visitor；
+  新 direct/HA/HTTP拒绝不回显token。正常心跳不收集全Agent历史或全配置凭据。
+- 协议/独立期望：真实 loopback HTTP 核对 method/path/query/header/body原字节；原
+  corpus/input/output/SHA不改。UCD、真实 Python SQLite/remote/HTTP输出是独立来源，
+  不是Go实现反向生成答案；bound负控保证没有跳过比较。持久化指纹拒绝写入检查保留。
+- 分配：batch10 窄runtime/阈值保留；每Agent配置解码改为 registry cached view 或批量
+  optional profile default lookup，100Agent2MiB unrelated profile benchmark不增长。
+
+A15 原 differential 十条错误呈现行，在 .32 的真实 Python HTTP 重跑上冻结完整原文与
+逐行SHA：n810_operation_error_rows.json（SHA
+37564c69e6be56757e22ff114af1d2e470871efbb657233acea9dfb14f0f31cd）。两条 notjson→中文
+502；四条 Latin-1→原生 header拒绝；三条缺host→原生 endpoint拒绝；一条NaN请求→
+原生失败类别，均不写入，设备请求比较仍执行。原 requests表与 Python 响应原文不改。
+closed row whitelist、输入伪造负控和运行时10行执行计数同时检查，未匹配行严格原对照。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 CONFIGFLOW_DIFF=1 go test -p 2 -count=1 -timeout=15m -run "TestUpgradesDifferentialAgainstFlask|TestN810HTTPPolicyRowsCannotBeSkipped" ./internal/api/agents/difftest'
+
+Exit0：18.569s。此前全 agents difftest 的其他 groups 均通过（api总264.104s，只有上述
+十条呈现差异；dnsha25.142s、dnsfollow33.037s PASS），十条对照修订后单独重跑通过。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "LegacyDNSGuard|AdapterRejectsDuplicate|RuntimeDeleteQueued|NativeTaskReads|NativeUnicodePolicy|ReferenceAgentURLs|LegacySuccessHTTPRequires|LegacyInvalidJSONKeeps|N810MalformedRestart" ./internal/agents ./internal/agents/ipv6 ./internal/agents/metrics ./internal/agents/rulesync ./internal/api/agents ./internal/gateway/installation'
+
+Exit0：agents87.907s、ipv6 1.462s、metrics1.051s、rulesync1.041s、api/agents2.175s、
+gateway/installation1.042s（仅编译）。gateway deferred guard桥转到原始字符串证明，
+额外 raw id/source_agent_id 负控覆盖。删去 manager 的私有pyStatuses/无调用旧helpers，
+仅 frozen tests 的findAgent helper留在_test.go，不给生产引入第二套实现。
+
+批次依赖：最终只支持 cases.UnicodeVersion=17.0.0；batch-11集成者另提交 go1.27.0 /
+Go1.27.4与发行镜像升级，并将既有x/text v0.43.0标direct。本分支go.mod/Dockerfile不动。
+不得在旧1.26工具链上绕过版本断言来静默更换域名统计键。
+
+末轮跨包验证：
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go vet -p 4 ./... && test -z "$(gofmt -l internal/agents internal/api/agents internal/deploy internal/model internal/rules)" && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m -run "Corpus|Reference|Golden|NativeUnicodePolicy|NativeTaskReads|AdapterRejectsDuplicate|LegacyDNSGuard|RuntimeDeleteQueued|WorkCancellation|N810Malformed" ./internal/agents ./internal/agents/rulesync ./internal/agents/metrics ./internal/agents/dnsha ./internal/agents/ipv6 ./internal/api/agents ./internal/model ./internal/repo ./internal/deploy ./internal/jsonresp ./internal/rules ./internal/gateway/installation && GOMAXPROCS=4 go test -v -count=1 -run "^TestBatch10HeartbeatAllocationCeilings$" ./internal/agents'
+
+Exit0：vet/gofmt静默；agents133.841s、rulesync1.041s、metrics7.716s、dnsha2.583s、ipv6
+1.502s、api/agents11.048s、repo19.653s、deploy3.360s、rules25.613s；model/jsonresp/gateway
+编译通过。心跳原阈值 PASS6.299s：public empty/2MiB 6,818/6,783B，153alloc；native
+7,218/7,182B，160alloc；没有用放宽门槛迁就新增代码。
+
+同 selector 的 mosdns/oxidns 真实 Python metadata刷新后check回放已通过52.268/45.869s；
+其后首次gofmt检查发现稍后新增bridge未格式化，已远端gofmt且以上末轮检查静默通过。
+
+最终 agents 全子包 race（定向域范围，并非完整门禁）：
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=6 go test -race -p 6 -count=1 -timeout=60m ./internal/agents/...'
+
+Exit0：agents799.806s、agentfake1.040s、dnsfollow941.147s、dnsha472.408s、ipv6 23.158s、
+metrics14.516s、monitor260.182s、rulesync135.135s、trafficstore1.216s、upgrades46.468s；
+其下 difftest 默认跳过 live 项（真实 Python 另跑），无race。开始此运行后只补了机械 facade
+对原生 guard 的接线及 HTTP 对照行；其 targeted race、A01 raw wire、真实 A15 HTTP 和
+upgrades 全包race46.147s另通过。没有重复跑全仓门禁。
+
+最后的默认配置审计发现 rulesync 等逐Agent optional binding 仍可触发超大文档的重复
+DefaultProfileID 读取。最终用 repo.AgentDefaultProfileID 的每generation coalesced标量
+缓存解决，manager入口统一接入；事务proposal/pinned snapshot不发布到全局缓存。
+冷读取仍经过既有 readEntry 的全库结构校验/R5诊断，一代最多读取一次，不能用只取
+system_config 行来绕过 default profile existence 等校验。未新增私有 JSON scalar parser。
+
+新增独立raw/want包含 absent/null/string/numeric/default root坏型，使用store原始导入
+fixture（正常writer本来拒绝坏类型/不存在的默认profile，不能拿writer制造非法存储）；
+合法profile预先建好。另8个并发冷读、default切换后一代再读，要求每代恰好一次full-load。
+16MiB unrelated配置超过全库缓存预算，100个optional Agent真实热路径分配为7,017B /
+115alloc，empty为7,031B /115alloc；原+32KiB/+100alloc回归阈值原样通过。心跳也再跑：
+public6,804/6,774B153alloc，native7,197/7,175B160alloc，原阈值通过。
+
+    RT_HOST=sunbroke@192.168.0.64 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "AgentDefaultProfileUsesScopedRowView|ResolveAgentProfilesUsesOriginalBindings" ./internal/repo ./internal/agents && GOMAXPROCS=4 go test -v -count=1 -run "OptionalAgentProfiles|Batch10HeartbeatAllocationCeilings" ./internal/agents && GOMAXPROCS=4 go vet -p 4 ./... && test -z "$(gofmt -l internal/agents internal/api/agents internal/deploy internal/model internal/rules internal/repo)"'
+
+Exit0：repo2.225s、agents2.544s；分配回归与心跳阈值9.948s；vet/gofmt静默。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=20m ./internal/agents/upgrades && GOMAXPROCS=4 CONFIGFLOW_DIFF=1 go test -p 4 -count=1 -timeout=30m ./internal/api/agents/difftest'
+
+Exit0：upgrades46.147s、全API agents difftest262.904s；device request与存储/文件终态
+严格比较，前述十条错误类别只有精确绑定比较，无额外差异。
+
+    RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && GOMAXPROCS=4 go test -race -p 4 -count=1 -timeout=15m -run "AgentDefaultProfile|ResolveAgentProfiles|OptionalAgentProfiles|Registration|Register|AgentMutations|ProfileGuard|LegacyDNSGuard" ./internal/repo ./internal/agents ./internal/agents/rulesync ./internal/agents/dnsha && GOMAXPROCS=4 go run ./tools/pyref -scopes server/internal/mosdns,server/internal/oxidns && GOMAXPROCS=4 go vet -p 4 ./... && test -z "$(gofmt -l internal/agents internal/api/agents internal/deploy internal/model internal/rules internal/repo)"'
+
+Exit0：repo3.794s（含每代8并发冷读只加载一次）、agents127.771s（含16MiB分配、注册/
+编辑/原始绑定证明），rulesync1.039s、dnsha1.050s编译；pyref audit无未登记oracle或
+source遗漏，vet/gofmt静默。此前全agents子包race及全API difftest结果保留；默认值收尾
+只增加有代际校验的读取memo，事务/固定snapshot分支仍直接读取其已有model。
+
+交回：分支 go-n8-10-core-2；最后rebase到本地go@d9515f7fe（相对12150a402仅协调
+handoff文档提交，无代码变化）。现行提交id以git log为准，所有提交保留指定Co-Authored-By。
+状态仍为“部分完成”，等待协调者另派fresh Opus HR。未push、未开PR、未访问生产，未跑
+完整门禁。明确的工具链依赖与后续动态边界见报告开头和“批次依赖”。

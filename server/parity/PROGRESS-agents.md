@@ -2130,3 +2130,10 @@ Questions for the coordinator/maintainer:
   exact validation output: [progress/n8-7.md](progress/n8-7.md).
 
 **A18 Opus HR review (2026-11-18, branch `go-opus-review-a18`):** [review-a18.md](review-a18.md). High **0** (fallback threshold not reached); medium 1 fixed (M1: during a first enable `deploy.Publish` returned A14's `ErrPairPublisherMissing` 500 instead of Python's 409 HA conflict; `467178838`, test `TestPublishDuringFirstEnableAnswersPythonConflict`). Open decision O-1 (inherited from Python): a member lost for good during a VIP handoff wedges the pair journal in `unknown` (no disable/publish). D-A18-1 retry is unbounded but bounded by the other lock holders (no livelock). Full proddiff compare: no A18 rows return; 21 unrelated new rows (load-induced subscription log consequences, `router_rule_sync` task slot). Status: `verified`; L3 items 1–13 in `lab/L3.md` pending.
+
+**N8-10 core（2026-11-19）：部分完成。** core-1 已由 fresh Opus HR verified（无 high），
+并随 batch-10 纳入窄 RawMessage runtime 和 exact-key heartbeat；core-2 的 typed
+admission/mutations/deployment/remote/diagnostic owners 与 adapter 收尾见
+[progress/n8-10-core-2.md](progress/n8-10-core-2.md)。保留 O9-H2 原子 hash-only 403、原始
+身份 token、live overlay、第四常设项及原心跳分配阈值。尚需 fresh HR；monitor/upgrades/
+installer/api 与未迁 consumer facade、完整 A05 engine 的余量明确列于报告，未宣布五步全成。

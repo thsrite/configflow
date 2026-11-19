@@ -170,7 +170,7 @@ GET `/api/stats/overview`、POST `/api/notifications/read`；九条 TSV 当前�
 
 | 步骤 | 状态 | 文件证据 | 依赖 / 下一步 / 规模 |
 | --- | --- | --- | --- |
-| agents core | 未开始主迁移，已有typed记录/部分native子包 | agents17个文件import jsonx；dnsfollow/dnsha/ipv6/rulesync/metrics/traffic还有adapter | M；repo model API、N8-9 health/discovery、A14/18/22/23稳定；保留live heartbeat overlay、凭据/部署证明 |
+| agents core | 部分完成：core-1 verified，core-2 待 fresh HR | progress/n8-10-core.md、progress/n8-10-core-2.md；typed registry/admission/deployment/remote owners 与六组 adapter；旧 consumer facade 保留 | M；core-2 定向验证后交回；monitor/upgrades/installer/api、完整 A05 engine 与邻居 consumer 仍按后续步骤迁移，未宣布 N8-10 全成 |
 | monitor | 未开始 S pass | agents/monitor11个文件import jsonx，仍PythonClass | M；agents core、native localhttp/cache，typed状态/缓存/指标 |
 | upgrades | 未开始 S pass | agents/upgrades6个文件import jsonx、1个pystr | M；agents core/installer/receipt协议；保持protocol-1和恢复语义 |
 | installer | 未开始 S pass（YAML writer和L1修复已完成） | installer10个文件import jsonx、6个pystr，yaml_adapter.go | M；agents/core、typed settings、N8-8生成出口；迁移renderer/command/capability，不误删shell业务 |
@@ -341,7 +341,7 @@ N8-11的结束条件是实际依赖和仿真层清零、round-trip/HTTP/生成�
 | A01 redirect reqproxy.ForRedirect | PROGRESS-config:2422仍写应替换；agents/client.go仅NoRedirects分支，普通重定向未见对应hook | N8-10/O9确认行为与规则，S；不是把已关闭loopback问题重开 |
 | C12 recursive-alias fallback/private urlsplit、EasyTier URL尾换行 | 8a原生StructuredProxy/EasyTier与N7 writer替换旧实现；仍保留的仿真由8d/9/10/11清理 | O17静态扫旧helper；S，非重做已批准边界 |
 | C03旧测试flock race | N8-5/O3已改事务/锁测试；历史单次race不当作今天产品失败 | 合并门禁若再现才修；不凭旧日志报告新失败 |
-| A05 traffic_compat私有IP/大小写helper | 该adapter尚在，PROGRESS-agents:498标TODO | 纳N8-10 core/metrics，S；不复制新的Python语义层 |
+| A05 traffic_compat私有IP/大小写helper | core-2 已删除；rules/netip 与 x/text cases.Lower Unicode17 | 官方 UCD17 精确绑定原 A05 55/307 行、负控；待 core-2 fresh HR |
 | A08/A09 URL尾换行、httpx Range、L1 D1/D3–D8 | 61f82de3、3adcdfbea及L1 installer复核已修；原L1报告“全待分派”是历史 | 只保留上表实机补验与D2/D9 |
 | C35 importer bounds、C14 URL/reader强化 | review-c35后续已完成；安全强化交O9复查 | 无重复产品任务；O9范围不漏 |
 | C37 CFG-06重复调用复用binding建议 | 单次重复target已修；跨调用分配新库仍按Python，复用只是Future decision | 切换后可选S设计+M实现；依赖定义重命名/删除/手改有效性 |

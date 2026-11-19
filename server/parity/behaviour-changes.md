@@ -2074,3 +2074,21 @@ ErrHeaderEncoding 拒绝。CR/LF 诊断不回显 header 凭据。原 Latin-1 字
 日志设置等写操作保留请求值但脱离浏览器断线，仍跟随 Runtime shutdown；真实日志配置
 HTTP 检查实际 method/path/Authorization/Content-Type/body 字节，并验证 502 脱敏和
 全库 fingerprint 不变。断线可完成、回包时关机不得提交、旧 generation 不得发新请求。
+
+## N8-10 core-2 — traffic machine domains and native IDNA validation
+
+- 流量统计域名以 x/text cases.Lower（Unicode 17）小写，保留 final-sigma；删除私有
+  Unicode14 表。相比原 A05 的 Python14：55 条 lowercase、307 条 final-sigma 行变化，
+  实际域名大多为 ASCII/punycode，只有涉及这些码点的统计键变化。原 A05 输入、输出、
+  archive SHA 完全保留；官方 UCD17 独立 fixture 逐行绑定，包含每条旧值反例和伪造绑定
+  反例，测试硬断言 cases.UnicodeVersion == 17.0.0。工具链/发行镜像由 batch-11 独立
+  升级，本分支不改 go.mod/Dockerfile。没有生产兼容表或新模块。
+- Agent HTTP 非 ASCII hostname 用 x/net/idna.Registration 验证，删除私有 urllib3 码点
+  范围拒绝表及英文解释器错误文本；无效 IDNA 返回不带 hostname/凭据的中文原因。
+  ASCII 本地标签的既有地址契约保留。IP 统计键复用 rules/netip，不维护私有 IP parser。
+
+- Legacy push/restart 的 HTTP200 非对象 JSON、坏 JSON/plain-text 回包也归入统一的
+  中文 INVALID_RESPONSE/502，不再以旧英文失败对象走内部500。十条真实 Python reply
+  行（method/body/status/result 全文 SHA）独立冻结，原测试的失败对象与脱敏 details
+  断言原文保留，比较层逐条检查旧 Python 结果、Go 拒绝和事务无写入；真实 HTTP restart
+  另核对 method/path/header/body 原字节、502 和全库 fingerprint。

@@ -1,5 +1,7 @@
 # N8-10 agents core-1
 
+后续 core-2 边界、余量与定向验证见 [n8-10-core-2.md](n8-10-core-2.md)。本报告的 core-1 verified 不表示 N8-10 五步全部完成；整体状态仍为“部分完成”。
+
 状态：core-1 **verified**（fresh Opus HR 复核，见 parity/review-n8-10-core.md；high 0，2 条修复已提交在 go-opus-review-n8-10-core）。
 N8-10 整体仍为“部分完成”，剩余归 core-2。不是完整 N8-10 S pass。
 协调者已批准拆分：本分支交 core-1；随后从本 tip 建 go-n8-10-core-2 继续剩余核心。
