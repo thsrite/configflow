@@ -43,5 +43,13 @@ O10 后续保留两项：MemberJSON 标量编码、typed View 固定读取成本
 
 ## 下一步
 
-完成候选定向 race、真实 Python 来源指纹刷新并单独提交给 fresh Opus；最终树跑四组分配、预检和完整 compare。
+候选已单独提交 `3380a1c28` 并交 fresh Opus；定向检查完成，接下来最终树预检和完整 compare。
 所有检查固定测试服务器，经 rt 运行；不跑完整 core。
+
+## 最终树来源与集成检查
+
+- 最后真实 Python record：MosDNS 69.950s / OxiDNS 60.189s；check：69.648s / 60.721s，全部退出 0。
+- 与基底完整核对 13 份 transcript 共 18,491 条 entries/version/input/venv SHA 不变；只刷新当前 Go 来源 SHA，无 corpus、byte manifest 或 baseline 改写。
+- 一个来源刷新 SSH 会话失去远端进程但本机连接未退出，终止该会话（exit 255，不计通过）后重开连接，以上完整 record/check 为有效运行。
+- 最终 gofmt 全 internal/tools/cmd 静默；agents/model 定向 vet 静默；还原负控后 allocation 正控 6.037s；tagged C37 Agent IP SIGKILL 与编辑交错回归 2.296s，均 PASS。
+- 四组最终分配日志测试服务器 `~/.cache/batch10-final-bench.log`；基底 `~/.cache/batch10-baseline-bench.log`。固定 GOMAXPROCS=4、benchtime=3x、count=3。Mihomo 45.83–45.89 MB/op；OxiDNS 42.80–42.89 MB/op，与基底字节区间重叠（次数从约 470.9k 到 471.6k，约 +0.16%，如实保留）；routers 1/16/64 的 projection 约 20.8k/252k/993k B，不随 1 MiB 无关配置放大；心跳 public 8,304–8,821 B/177–180，native 7,434–7,792 B/162–163，HA guard 0 B/0。
