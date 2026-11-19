@@ -1,10 +1,10 @@
 # N8-10 monitor S pass
 
-状态：实现完成，batch-11 新基底定向检查收尾中；未标记 verified，待独立复核及协调者 batch gate。
+状态：实现及 batch-11 新基底定向检查完成；未标记 verified，待独立复核及协调者 batch gate。
 分支 `go-n8-10-monitor`，先接纳 core-2 HR tip `70cea1eb6`，后按协调通知
 rebase 到 batch-11 `origin/go@ae00b71f1`（Go 1.27.4、json-case/jsondecode.Select）。
 迁移主提交现为 `2a2f65a62`、边界/测试提交 `065da003b`，包注释 `600ef8553`；
-后续提交以本报告所在分支历史为准。无 push。
+接纳 jsondecode 与轻量记录修复为 `fcb0d7124`；最终验证记录见本报告所在提交。无 push。
 
 ## 完成边界
 
@@ -72,7 +72,9 @@ test-only adapter 中保留；生产状态仍严格 DecodeState，生产上游�
 core-2 基底完整 monitor race PASS 447.797s，修复组 PASS 25.375s。
 以下为 batch-11 新基底检查；不是全仓门禁。新基底 monitor 第一轮所列筛选 race PASS
 80.521s；轻量记录修复后同组加 LegacyScalar 回归 PASS 82.428s。
-新基底 gofmt -l 全仓无输出、go vet ./... 静默通过；调用方 race 结果待填写。
+新基底 gofmt -l 全仓无输出、go vet ./... 静默通过；七个直接调用方完整 race 全 PASS：
+API 680.396s、dnsha 559.718s、rulesync 204.413s、ipv6 29.668s、gateway/host 11.392s、
+gateway/installation 104.887s、server 25.287s。两台均使用 Go 1.27.4。
 
 ### 最终产品/调用方检查
 
