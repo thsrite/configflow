@@ -103,3 +103,6 @@ substore alias0.015s，全部 PASS。完整包补验：subs26.879s、substore24.
 convert corpus16.919s、draft0.134s、discovery owner0.481s、yamlx facade0.527s，全部 PASS。
 临时 byte-dump 仅保存于服务器私有缓存；临时 Go 诊断测试已从本地移除，不提交。
 跨包 live check 仍在运行；产品 CopyGraph 修改后的三个最终基准与 preflight/compare 待完成。
+
+CopyGraph 集成已单独提交。draft 的取消错误链修正另作一个提交；已有真实 Runtime
+ShutdownBeforeRepositoryCommit 回归从红变绿，DB/文件状态原断言不变。

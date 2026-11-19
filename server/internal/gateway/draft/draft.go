@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -230,6 +231,12 @@ func preview(ctx context.Context, config, candidate document, revision int64, re
 	}
 	after, err := generate(ctx, candidate, baseURL)
 	if err != nil {
+		if cause := ctx.Err(); cause != nil {
+			return p, cause
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return p, err
+		}
 		return p, invalid(fmt.Sprintf(msgGenerate, failureText(err, seeds)))
 	}
 	before, beforeErr := generate(ctx, config, baseURL)
