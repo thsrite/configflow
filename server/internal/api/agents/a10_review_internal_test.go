@@ -65,6 +65,7 @@ func (c reviewConditionalCase) result() string {
 
 // Fixed references (werkzeug.http.parse_date under CPython 3.11.17).
 func TestReviewParseDateFollowsEmailUtils(t *testing.T) {
+	policy := nativeDownloadPolicy(t)
 	for _, c := range []struct{ value, want string }{
 		{"Sun, 01 Nov 2026 12:30:15 GMT", "ok:1793536215"},
 		{"01 Nov 2026 12:30:15 +0000", "ok:1793536215"},     // no weekday: http.ParseTime refuses
@@ -86,7 +87,7 @@ func TestReviewParseDateFollowsEmailUtils(t *testing.T) {
 		{"01 Nov 2026 12:30:15 +9999999999999999999999", "raise:OverflowError:Python int too large to convert to C int"},
 		{"01 Nov 2026 12:30:15 +99999999", "none"},
 	} {
-		if got := reviewDateResult(c.value); got != c.want {
+		if got := reviewDateResult(c.value); got != policy("date", c.value, c.want) {
 			t.Errorf("parse_date(%q): go %q, python %q", c.value, got, c.want)
 		}
 	}
@@ -94,6 +95,7 @@ func TestReviewParseDateFollowsEmailUtils(t *testing.T) {
 
 // Fixed references (Response.make_conditional, Werkzeug 3.1.8).
 func TestReviewConditionalFollowsWerkzeug(t *testing.T) {
+	policy := nativeDownloadPolicy(t)
 	base := reviewConditionalCase{Method: "GET", Size: 70000, ETag: reviewETag, LastModified: reviewLastModified}
 	with := func(headers ...string) reviewConditionalCase {
 		c := base
@@ -121,13 +123,14 @@ func TestReviewConditionalFollowsWerkzeug(t *testing.T) {
 		{"if-range without range parses if-modified-since", with("If-Range", "x", "If-Modified-Since", "01 Nov 99999999999 12:30:15 GMT"), "raise:OverflowError:signed integer is greater than maximum"},
 		{"etag list with latin-1 space", with("Range", "bytes=80000-", "If-Range", "x", "If-None-Match", "\"a\" , "+reviewETag), ""},
 	} {
-		if got := c.c.result(); got != c.want {
+		if got := c.c.result(); got != policy("request", c.c, c.want) {
 			t.Errorf("%s: go %q, python %q", c.name, got, c.want)
 		}
 	}
 }
 
 func TestReviewConditionalMatchesWerkzeug(t *testing.T) {
+	policy := nativeDownloadPolicy(t)
 	t.Parallel()
 	n := 3000
 	if v, err := strconv.Atoi(os.Getenv("A10_CONDITIONAL_FUZZ")); err == nil {
@@ -244,7 +247,7 @@ func TestReviewConditionalMatchesWerkzeug(t *testing.T) {
 	}
 	differ, raised := 0, 0
 	for i, value := range dates {
-		if got := reviewDateResult(value); got != want.Dates[i] {
+		if got := reviewDateResult(value); got != policy("date", value, want.Dates[i]) {
 			differ++
 			if differ <= 20 {
 				t.Errorf("parse_date(%q): go %q, python %q", value, got, want.Dates[i])
@@ -255,7 +258,7 @@ func TestReviewConditionalMatchesWerkzeug(t *testing.T) {
 		if want.Requests[i] != "" {
 			raised++
 		}
-		if got := c.result(); got != want.Requests[i] {
+		if got := c.result(); got != policy("request", c, want.Requests[i]) {
 			differ++
 			if differ <= 40 {
 				t.Errorf("request %+v: go %q, python %q", c, got, want.Requests[i])

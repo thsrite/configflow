@@ -424,3 +424,54 @@ func (m *Manager) remotePayloadError(ctx context.Context, id string, payloadErr 
 	}
 	return payloadErr
 }
+
+// RunServiceOperation fences one native direct operation with the HA owner.
+// The callback runs once under its lease and retains shutdown cancellation.
+func (m *Manager) RunServiceOperation(ctx context.Context, id string, operation DirectOperation, header http.Header, body []byte) (json.RawMessage, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	run := func() (json.RawMessage, error) { return m.RunDirectOperation(ctx, id, operation, header, body) }
+	uninstall := operation == UninstallService
+	if hook := currentHooks().HAServiceOperationTyped; hook != nil {
+		return hook(ctx, m, id, run, uninstall)
+	}
+	if hook := currentHooks().HAServiceOperation; hook != nil {
+		result, err := hook(ctx, m, id, func() (*Record, error) { return remoteLegacyObject(run()) }, uninstall)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
+	}
+	a, err := m.ReadAgent(ctx, id, true)
+	if err != nil {
+		return nil, err
+	}
+	if rejection, err := haOperationConflict(a); rejection != nil || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return model.Marshal(rejection)
+	}
+	if uninstall && HAEnabledModel(a) {
+		rejection, err := deploymentFailure(msgHAUninstall, 409)
+		if err != nil {
+			return nil, err
+		}
+		return model.Marshal(rejection)
+	}
+	return run()
+}
+
+// AgentLogsPath encodes the established Agent log-selection query.
+func AgentLogsPath(lines, logPath, source string) string {
+	path := "/api/logs?lines=" + lines
+	if source != "" {
+		return path + "&source=" + quote(source)
+	}
+	if logPath != "" {
+		return path + "&log_path=" + quote(logPath)
+	}
+	return path
+}

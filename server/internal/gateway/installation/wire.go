@@ -9,41 +9,29 @@ import (
 )
 
 // Wire supplies the registry's capability-scoped installation hooks. Only this
-// adapter sees the legacy callback argument types; no global key is returned.
+// owner validates native JSON and returns no global registration key.
 func Wire() {
 	agents.RegisterHooks(agents.Hooks{
-		InstallationProfile: func(ctx context.Context, data *agents.Record, id, token any, fallback string) (any, error) {
+
+		InstallationProfileTyped: func(ctx context.Context, data json.RawMessage, id, token, fallback string) (string, json.RawMessage, error) {
 			r, err := repo.GetRepository(ctx)
 			if err != nil {
-				return nil, err
+				return "", nil, err
 			}
 			s := Service{Repository: r}
-			dataRaw, err := json.Marshal(data)
+			profile, updated, err := s.RegistrationProfile(ctx, id, token, data, fallback)
 			if err != nil {
-				return nil, err
+				return "", nil, hookError(ctx, &s, err)
 			}
-			profile, updated, err := s.RegistrationProfile(ctx, asString(id), asString(token), dataRaw, fallback)
-			if err != nil {
-				return nil, hookError(ctx, &s, err)
-			}
-			next, err := toLegacy(updated)
-			if err != nil {
-				return nil, err
-			}
-			data.Update(next)
-			return profile, nil
+			return profile, updated, nil
 		},
-		InstallationRegister: func(ctx context.Context, m *agents.Manager, id, token any, data *agents.Record, existing any) (*agents.Result, error) {
+		InstallationRegisterTyped: func(ctx context.Context, m *agents.Manager, id, token string, data json.RawMessage, existing string) (json.RawMessage, error) {
 			s := Service{Repository: m.Repository(), Manager: m}
-			b, err := json.Marshal(data)
-			if err != nil {
-				return nil, err
-			}
-			result, err := s.Register(ctx, asString(id), asString(token), b, asString(existing))
+			result, err := s.Register(ctx, id, token, data, existing)
 			if err != nil {
 				return nil, hookError(ctx, &s, err)
 			}
-			return toLegacy(result)
+			return result, nil
 		},
 	})
 }

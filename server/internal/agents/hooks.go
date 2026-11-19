@@ -73,8 +73,12 @@ type Hooks struct {
 	// publication (conflict checks included, without the pair lock file);
 	// an active pair publication fails closed with ErrHAOwnerMissing.
 	HAServiceOperation func(ctx context.Context, m *Manager, agentID string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error)
-	HADeployment       func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
-	HAActivate         func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
+	// HAServiceOperationTyped fences native restart/uninstall operations with the
+	// same HA lease. A typed hook takes precedence over the legacy hook.
+	HAServiceOperationTyped func(ctx context.Context, m *Manager, agentID string, operation func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error)
+
+	HADeployment func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
+	HAActivate   func(ctx context.Context, m *Manager, agentID, deploymentID string) (*jsonx.Object, error)
 
 	// InstallationProfile and InstallationRegister are
 	// gateway_installation.registration_profile / register (#30), used by
@@ -82,6 +86,13 @@ type Hooks struct {
 	// for the user-facing refusals. Default: an InstallationError (501).
 	InstallationProfile  func(ctx context.Context, data *jsonx.Object, installationID, installationToken any, fallbackHost string) (any, error)
 	InstallationRegister func(ctx context.Context, m *Manager, installationID, installationToken any, data *jsonx.Object, existingToken any) (*jsonx.Object, error)
+	// InstallationProfileTyped validates native request bytes and returns the bound
+	// profile and updated bytes. Argument order: data, installation ID, token, peer host.
+	// A typed hook takes precedence over its legacy hook for the same event.
+	InstallationProfileTyped func(ctx context.Context, data json.RawMessage, installationID, installationToken, fallbackHost string) (profileID string, updated json.RawMessage, err error)
+	// InstallationRegisterTyped commits native request bytes through the installation
+	// owner. Argument order after manager: installation ID, token, data, existing token.
+	InstallationRegisterTyped func(ctx context.Context, m *Manager, installationID, installationToken string, data json.RawMessage, existingToken string) (json.RawMessage, error)
 }
 
 // ErrNotPorted is returned where the registry would call a later package
@@ -142,6 +153,9 @@ func RegisterHooks(h Hooks) {
 	if h.ReceiptMatches != nil {
 		hooks.ReceiptMatches = h.ReceiptMatches
 	}
+	if h.HAServiceOperationTyped != nil {
+		hooks.HAServiceOperationTyped = h.HAServiceOperationTyped
+	}
 	if h.HAServiceOperation != nil {
 		hooks.HAServiceOperation = h.HAServiceOperation
 	}
@@ -150,6 +164,12 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.HAActivate != nil {
 		hooks.HAActivate = h.HAActivate
+	}
+	if h.InstallationProfileTyped != nil {
+		hooks.InstallationProfileTyped = h.InstallationProfileTyped
+	}
+	if h.InstallationRegisterTyped != nil {
+		hooks.InstallationRegisterTyped = h.InstallationRegisterTyped
 	}
 	if h.InstallationProfile != nil {
 		hooks.InstallationProfile = h.InstallationProfile

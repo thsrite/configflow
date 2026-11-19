@@ -12,6 +12,7 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -275,14 +276,18 @@ func clientDiscoveryToggle(c *httpx.Ctx) (*httpx.Response, error) {
 	if record == nil {
 		return httpx.Message(404, false, "Agent not found"), nil
 	}
+	public, err := publicAgentModel(record)
+	if err != nil {
+		return nil, err
+	}
 	return httpx.JSON(struct {
-		Success bool             `json:"success"`
-		Data    *registry.Record `json:"data"`
-	}{true, publicAgent(record)}), nil
+		Success bool                       `json:"success"`
+		Data    map[string]json.RawMessage `json:"data"`
+	}{true, public}), nil
 }
 
 // SetDiscovery updates the switch and returns the live runtime overlay.
-func (clientTools) SetDiscovery(ctx context.Context, id string, enabled bool) (*registry.Record, error) {
+func (clientTools) SetDiscovery(ctx context.Context, id string, enabled bool) (*model.Agent, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -291,7 +296,7 @@ func (clientTools) SetDiscovery(ctx context.Context, id string, enabled bool) (*
 	if err != nil {
 		return nil, err
 	}
-	return manager.SetDomainDiscovery(ctx, id, enabled)
+	return manager.SetDomainDiscoveryModel(ctx, id, enabled)
 }
 func clientDiscoveryClear(c *httpx.Ctx) (*httpx.Response, error) {
 	found, err := (clientTools{}).ClearDiscovery(c.Context(), c.Param("agent_id"))

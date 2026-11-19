@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -274,13 +275,19 @@ func TestContentHTTPUnavailableProfileLegacyAndPreparation(t *testing.T) {
 	}
 	// Repository transactions reject broken bindings. Exercise a stale read at
 	// the route adapter boundary, as Python's test does with a stale Manager.
-	stale, err := f.manager.GetAgentByID(f.s.Context(), "content-agent", true)
+	stale, err := f.manager.ReadAgent(f.s.Context(), "content-agent", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale.Set("profile_id", "missing-profile")
+	if err := stale.SetJSON("profile_id", json.RawMessage(`"missing-profile"`)); err != nil {
+		t.Fatal(err)
+	}
 	public, err := publicWithContent(f.s.Context(), f.manager, stale, nil, true)
-	if err != nil || public.Value("content_sync") != (contentsync.Result{Status: "unknown", Reason: "profile_unavailable"}) {
+	var sync contentsync.Result
+	if decodeErr := json.Unmarshal(public["content_sync"], &sync); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if err != nil || sync != (contentsync.Result{Status: "unknown", Reason: "profile_unavailable"}) {
 		t.Fatalf("stale profile: %v %v", public, err)
 	}
 	f.get("/api/agents?history=0").WantStatus(200)

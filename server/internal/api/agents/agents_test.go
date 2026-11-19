@@ -7,6 +7,7 @@ package agents_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 func newServer(t *testing.T) *httpxtest.Server {
@@ -356,11 +358,11 @@ func TestHeartbeatReportedHostUsesAddressFollowHooks(t *testing.T) {
 		WantJSON(jsonx.Obj("success", true, "domain_discovery_enabled", false, "traffic_history_enabled", false, "reads_host", true))
 	var followed string
 	agents.RegisterHooks(agents.Hooks{
-		AddressFollow: func(_ context.Context, _ *agents.Manager, _ *jsonx.Object, host string) error {
+		AddressFollowTyped: func(_ context.Context, _ *agents.Manager, _ *model.Agent, host string) error {
 			followed = host
 			return nil
 		},
-		AddressConfirmed: func(_ *jsonx.Object, host string) string { return host },
+		AddressConfirmedTyped: func(_ *model.Agent, host string) string { return host },
 	})
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("host", "192.0.2.50"))).WantStatus(200).
 		WantJSON(jsonx.Obj("success", true, "domain_discovery_enabled", false, "traffic_history_enabled", false, "reads_host", true, "confirmed_host", "192.0.2.50"))
@@ -531,7 +533,7 @@ func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
 			expected = jsonx.Obj("name", "kawi \U00011F00", "host", "kawi \U00011F00", "port", "kawi \U00011F00", "service_type", "kawi \U00011F00", "version", "kawi \U00011F00")
 			changed++
 		}
-		if got := apiagents.RegistrationLogFields(c.GetObject("input")); !jsonx.Equal(got, expected) {
+		if got := nativeRegistrationLogFields(t, c.GetObject("input")); !jsonx.Equal(got, expected) {
 			t.Errorf("%d: %v → %v, want %v", i, c.GetObject("input").Value("name"), got, expected)
 		}
 	}
@@ -581,8 +583,25 @@ func TestRegistrationLogFieldsRejectUnicode15FormatControls(t *testing.T) {
 	for r := rune(0x13439); r <= 0x1343F; r++ {
 		text := "safe" + string(r) + "forged"
 		input := jsonx.Obj("name", text, "host", text, "port", text, "service_type", text, "version", text, "token", "synthetic-secret")
-		if got := apiagents.RegistrationLogFields(input); !jsonx.Equal(got, expected) {
+		if got := nativeRegistrationLogFields(t, input); !jsonx.Equal(got, expected) {
 			t.Fatalf("%U: %v", r, got)
 		}
 	}
+}
+
+func nativeRegistrationLogFields(t *testing.T, input *jsonx.Object) *jsonx.Object {
+	t.Helper()
+	raw, err := jsonx.Compact(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(apiagents.RegistrationLogFields(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := jsonx.Parse(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result.(*jsonx.Object)
 }

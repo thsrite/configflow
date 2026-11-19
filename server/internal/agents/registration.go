@@ -132,7 +132,7 @@ func (m *Manager) matchesRegistrationClaim(ctx context.Context, system *model.Sy
 	}
 	probe := &model.System{RegistrationSessions: append([]model.AgentRegistrationSession(nil), system.RegistrationSessions...)}
 	admission.AllowNew = false
-	_, err := m.admitRegistrationClaim(ctx, probe, claim, admission)
+	_, err := m.admitRegistrationClaim(ctx, probe, claim, admission, nil)
 	return err == nil
 }
 
@@ -188,7 +188,13 @@ func registrationSessionPortMatches(session model.AgentRegistrationSession, port
 
 // admitRegistrationClaim changes only the caller's system working copy. Its
 // success and the Agent insert/update commit together in the owning transaction.
-func (m *Manager) admitRegistrationClaim(ctx context.Context, system *model.System, claim registrationClaim, admission RegistrationAuthorization) (string, error) {
+func (m *Manager) admitRegistrationClaim(ctx context.Context, system *model.System, claim registrationClaim, admission RegistrationAuthorization, validate func() error) (string, error) {
+	authorized := func() (string, error) {
+		if validate != nil {
+			return "", validate()
+		}
+		return "", nil
+	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -207,24 +213,29 @@ func (m *Manager) admitRegistrationClaim(ctx context.Context, system *model.Syst
 			session.ServiceType != claim.ServiceType || session.DeploymentMethod != claim.DeploymentMethod || session.Port != claim.Port ||
 			session.Host != "" && session.Host != host || claim.ProfileID != "" && claim.ProfileID != session.ProfileID {
 			if admission.AllowNew {
-				return "", nil
+				return authorized()
 			}
 			return "", ErrRegistrationAuthorization
 		}
 		if err := m.registrationProfileExists(ctx, session.ProfileID); err != nil {
 			if admission.AllowNew {
-				return "", nil
+				return authorized()
 			}
 			return "", err
 		}
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		if validate != nil {
+			if err := validate(); err != nil {
+				return "", err
+			}
+		}
 		system.RegistrationSessions = append(system.RegistrationSessions[:i], system.RegistrationSessions[i+1:]...)
 		return session.ProfileID, nil
 	}
 	if admission.AllowNew {
-		return "", nil
+		return authorized()
 	}
 	return "", ErrRegistrationAuthorization
 }

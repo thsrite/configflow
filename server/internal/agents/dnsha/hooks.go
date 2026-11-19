@@ -300,25 +300,47 @@ func (s *Service) Activate(ctx context.Context, id, did string) (out *agents.Res
 }
 
 // ServiceOperation fences restart/update/uninstall against a pair reservation.
-func (s *Service) ServiceOperation(ctx context.Context, id string, op func() (*agents.Result, error), uninstall bool) (out *agents.Result, err error) {
+func (s *Service) ServiceOperation(ctx context.Context, id string, op func() (*agents.Result, error), uninstall bool) (*agents.Result, error) {
+	raw, err := s.ServiceOperationJSON(ctx, id, func() (json.RawMessage, error) {
+		value, err := op()
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(value)
+	}, uninstall)
+	if err != nil {
+		return nil, err
+	}
+	var result agents.Result
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ServiceOperationJSON owns the HA lease for a native service operation.
+func (s *Service) ServiceOperationJSON(ctx context.Context, id string, op func() (json.RawMessage, error), uninstall bool) (out json.RawMessage, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-service-operation", func(ctx context.Context) error {
 		held, release, ok := s.lease(ctx, []string{id})
 		if !ok {
-			out = rejection(msgOperationBusy)
-			return nil
+			var encodeErr error
+			out, encodeErr = json.Marshal(map[string]any{"success": false, "http_status": 409, "message": msgOperationBusy})
+			return encodeErr
 		}
 		defer release()
 		a, e := s.get(held, id)
 		if e != nil {
 			return e
 		}
-		if r := conflict(a); r != nil {
-			out = r
-			return nil
+		if active(a) {
+			var encodeErr error
+			out, encodeErr = json.Marshal(map[string]any{"success": false, "http_status": 409, "message": msgConflict, "ha_publication": summary(a.OxiDNSHAPublication)})
+			return encodeErr
 		}
 		if uninstall && haEnabled(a) {
-			out = rejection(msgUninstall)
-			return nil
+			var encodeErr error
+			out, encodeErr = json.Marshal(map[string]any{"success": false, "http_status": 409, "message": msgUninstall})
+			return encodeErr
 		}
 		if e = held.Err(); e != nil {
 			return e

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -17,6 +18,28 @@ import (
 // ErrRegistrationProfileType rejects nontext machine-generated profile bindings.
 // It also matches repo.ErrValidation; the HTTP boundary reports this class as 400.
 var ErrRegistrationProfileType = &repo.Error{Kind: repo.ErrValidation, Message: "Invalid profile id"}
+
+// ErrRegistrationVersion rejects an invalid machine version after authorization.
+var ErrRegistrationVersion = &repo.Error{Kind: repo.ErrValidation, Message: "Invalid Agent version"}
+var machineVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
+
+// ValidMachineVersion accepts the shared ASCII Agent version grammar.
+func ValidMachineVersion(text string) bool { return machineVersionPattern.MatchString(text) }
+
+func normalizeRegistrationVersion(record *model.Agent) error {
+	raw, present, err := record.MemberJSON("version")
+	if err != nil {
+		return err
+	}
+	if !present || string(raw) == "null" {
+		return record.SetJSON("version", json.RawMessage(`"1.0.0"`))
+	}
+	text, valid := storedText(raw, present, nil)
+	if !valid || !ValidMachineVersion(text) {
+		return ErrRegistrationVersion
+	}
+	return nil
+}
 
 // RegistrationInput is an exact-key request DTO. Only the registry's public
 // identity and reported version fields can enter a newly registered record.
@@ -110,12 +133,17 @@ func (m *Manager) RegisterIdentity(ctx context.Context, input RegistrationInput,
 		}
 		profile := input.profile
 		if admission := options.Authorization; admission != nil {
-			bound, err := m.admitRegistrationClaim(tx, system, input.claim, *admission)
+			bound, err := m.admitRegistrationClaim(tx, system, input.claim, *admission, func() error { return normalizeRegistrationVersion(&input.record) })
 			if err != nil {
 				return err
 			}
 			if bound != "" {
 				profile = bound
+			}
+		}
+		if options.Authorization == nil {
+			if err := normalizeRegistrationVersion(&input.record); err != nil {
+				return err
 			}
 		}
 		if profile == "" {
@@ -176,7 +204,12 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 	if admission := options.Authorization; admission != nil && admission.Credential != "" {
 		optional := *admission
 		optional.AllowNew = true
-		if _, err := m.admitRegistrationClaim(ctx, system, input.claim, optional); err != nil {
+		if _, err := m.admitRegistrationClaim(ctx, system, input.claim, optional, func() error { return normalizeRegistrationVersion(&input.record) }); err != nil {
+			return err
+		}
+	}
+	if admission := options.Authorization; admission == nil || admission.Credential == "" {
+		if err := normalizeRegistrationVersion(&input.record); err != nil {
 			return err
 		}
 	}

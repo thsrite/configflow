@@ -1,0 +1,8 @@
+{
+  "original": {
+    "query": "?hours=%D9%A3",
+    "python_hours": 3
+  },
+  "sha256": "92e3f5b22fdce09ddc27c02bb43da014424a466b1066ee7a675c10070541783e",
+  "native_hours": 24
+}

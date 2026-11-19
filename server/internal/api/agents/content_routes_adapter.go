@@ -1,12 +1,13 @@
 package agents
 
-// This file adapts legacy Agent records at the HTTP boundary; comparison,
+// This file captures typed Agent records at the HTTP boundary; comparison,
 // paging and scheduling use the typed deploy/contentsync interfaces.
 import (
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	core "configflow/internal/agents"
 	"configflow/internal/agents/upgrades"
@@ -24,8 +25,11 @@ type contentSnapshot struct {
 	err    error
 }
 
-func loadContentSource(ctx context.Context, m *core.Manager, record *core.Record, cache map[string]contentSnapshot) (*deploy.Source, error) {
-	profile := record.GetString("profile_id")
+func loadContentSource(ctx context.Context, m *core.Manager, record *model.Agent, cache map[string]contentSnapshot) (*deploy.Source, error) {
+	profile, err := m.ResolveAgentProfile(ctx, record)
+	if err != nil {
+		return nil, err
+	}
 	if profile == "" {
 		var err error
 		profile, err = m.Repository().DefaultProfileID(ctx)
@@ -36,40 +40,52 @@ func loadContentSource(ctx context.Context, m *core.Manager, record *core.Record
 	if saved, ok := cache[profile]; ok {
 		return saved.source, saved.err
 	}
-	config, err := m.Repository().GetCompatConfig(ctx, profile, nil)
+	config, err := m.Repository().Config(ctx, profile, nil)
 	var source *deploy.Source
 	if err == nil {
-		source = deploy.NewSource(config, nil)
+		raw, marshalErr := model.Marshal(config)
+		if marshalErr != nil {
+			err = marshalErr
+		} else {
+			source, err = deploy.SourceFromJSON(raw, nil)
+		}
 	}
 	if cache != nil {
 		cache[profile] = contentSnapshot{source, err}
 	}
 	return source, err
 }
-func contentOrigin(record *core.Record) string {
-	return record.GetObject("applied_content").GetString("base_url")
+func contentOrigin(record *model.Agent) string {
+	if record.AppliedContent == nil {
+		return ""
+	}
+	return record.AppliedContent.BaseURL
 }
-func publicWithContent(ctx context.Context, m *core.Manager, record *core.Record, cache map[string]contentSnapshot, history bool) (*core.Record, error) {
-	secrets := redact.CollectCredentials(record, nil)
-	view := record
+func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent, cache map[string]contentSnapshot, history bool) (map[string]json.RawMessage, error) {
+	public, err := publicAgentModel(record)
+	if err != nil {
+		return nil, err
+	}
 	if !history {
-		view = record.Clone()
 		for _, field := range repo.AgentHistoryFields {
-			view.Set(field, repo.AgentHistoryNotRead)
+			delete(public, field)
 		}
 	}
-	public := publicAgentWithCredentials(view, secrets)
 	source, err := loadContentSource(ctx, m, record, cache)
 	if err != nil {
 		var repositoryError *repo.Error
 		if !errors.As(err, &repositoryError) {
 			return nil, err
 		}
-		public.Set("content_sync", contentsync.Result{Status: "unknown", Reason: "profile_unavailable"})
+		public["content_sync"], _ = json.Marshal(contentsync.Result{Status: "unknown", Reason: "profile_unavailable"})
 		return public, nil
 	}
-	public.Set("content_sync", contentChecks.checker(m).Status(ctx, deploy.NewTarget(record), source, contentOrigin(record)))
-	return public, nil
+	target, err := deploy.NewTypedTarget(record)
+	if err != nil {
+		return nil, err
+	}
+	public["content_sync"], err = json.Marshal(contentChecks.checker(m).Status(ctx, target, source, contentOrigin(record)))
+	return public, err
 }
 func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
@@ -79,25 +95,46 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	summary := c.ArgDefault("summary", "") == "1"
 	var secrets []redact.Secrets
-	var inspect func(*core.Record)
+	var inspect func(*model.Agent)
+	var inspectErr error
 	if summary {
-		inspect = func(raw *core.Record) { secrets = append(secrets, redact.CollectCredentials(raw, nil)) }
+		inspect = func(record *model.Agent) {
+			raw, err := model.Marshal(record)
+			if err != nil {
+				inspectErr = err
+			}
+			secrets = append(secrets, redact.CollectCredentials(json.RawMessage(raw), nil))
+		}
 	}
-	records, err := m.GetAllAgentsInspect(ctx, !summary, inspect)
+	records, err := m.ReadAgents(ctx, !summary, inspect)
+	if inspectErr != nil {
+		return nil, inspectErr
+	}
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*core.Record, 0, len(records))
+	result := make([]map[string]json.RawMessage, 0, len(records))
+	for i := range records {
+		if !core.FreshHeartbeat(records[i].LastHeartbeat, nil) {
+			if err := records[i].SetJSON("status", json.RawMessage(`"offline"`)); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if summary {
 		for i, record := range records {
-			result = append(result, publicAgentWithCredentials(record, secrets[i]))
+			public, err := publicAgentWithCredentialsModel(&record, secrets[i])
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, public)
 		}
 		return httpx.JSON(result), nil
 	}
 	history := c.ArgDefault("history", "") != "0"
 	snapshots := map[string]contentSnapshot{}
 	for _, record := range records {
-		public, err := publicWithContent(ctx, m, record, snapshots, history)
+		public, err := publicWithContent(ctx, m, &record, snapshots, history)
 		if err != nil {
 			return nil, err
 		}
@@ -109,21 +146,19 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	ready := artifacts.Len() > 0
 	for _, record := range result {
-		version, present := record.Get("version")
-		if !present {
-			version = "0.0.0"
-		}
-		text, valid := version.(string)
-		if !valid {
-			return nil, fmt.Errorf("invalid Agent version")
-		}
-		record.Set("has_update", core.HasUpdate(text))
-		record.Set("upgrade_available", ready && record.GetString("deployment_method") == "shell")
+		text := "0.0.0"
+		raw, present := record["version"]
+		valid := !present || len(raw) > 0 && raw[0] == '"' && jsondecode.Unmarshal(raw, &text) == nil
+		record["has_update"], _ = json.Marshal(valid && core.HasUpdate(text))
+		var method string
+		_ = jsondecode.Unmarshal(record["deployment_method"], &method)
+		record["upgrade_available"], _ = json.Marshal(ready && method == "shell")
 	}
+
 	return httpx.JSON(result), nil
 }
 func getContentAgent(c *httpx.Ctx, m *core.Manager) (*httpx.Response, error) {
-	record, err := m.GetAgentByID(c.Context(), c.Param("agent_id"), true)
+	record, err := m.ReadAgent(c.Context(), c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +182,7 @@ func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	record, err := m.GetAgentByID(ctx, c.Param("agent_id"), true)
+	record, err := m.ReadAgent(ctx, c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +198,11 @@ func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		answer = contentsync.Answer{Result: contentsync.Result{Status: "unknown", Reason: "profile_unavailable"}}
 	} else {
-		answer = contentChecks.checker(m).PushDiff(ctx, deploy.NewTarget(record), source, contentOrigin(record))
+		target, targetErr := deploy.NewTypedTarget(record)
+		if targetErr != nil {
+			return nil, targetErr
+		}
+		answer = contentChecks.checker(m).PushDiff(ctx, target, source, contentOrigin(record))
 	}
 	raw, err := json.Marshal(answer)
 	if err != nil {
@@ -173,16 +212,20 @@ func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
-	service := record.GetString("service_type")
-	if _, ok := record.Get("service_type"); !ok {
+	service := record.ServiceType
+	if _, ok, _ := record.MemberJSON("service_type"); !ok {
 		service = "mihomo"
 	}
 	body["service_type"], _ = json.Marshal(service)
-	if deploy.HasAppliedContent(deploy.NewTarget(record)) {
+	target, targetErr := deploy.NewTypedTarget(record)
+	if targetErr != nil {
+		return nil, targetErr
+	}
+	if deploy.HasAppliedContent(target) {
 		baseline := struct {
 			PushedAt any `json:"pushed_at"`
 			Revision any `json:"config_revision"`
-		}{record.Value("pushed_at"), record.Value("config_revision")}
+		}{rawAgentMember(record, "pushed_at"), rawAgentMember(record, "config_revision")}
 		body["baseline"], err = json.Marshal(baseline)
 		if err != nil {
 			return nil, err
@@ -204,7 +247,7 @@ func agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	record, err := m.GetAgentByID(ctx, c.Param("agent_id"), true)
+	record, err := m.ReadAgent(ctx, c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +266,11 @@ func agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	page, err := contentChecks.checker(m).Entries(ctx, deploy.NewTarget(record), source, contentOrigin(record), q)
+	target, targetErr := deploy.NewTypedTarget(record)
+	if targetErr != nil {
+		return nil, targetErr
+	}
+	page, err := contentChecks.checker(m).Entries(ctx, target, source, contentOrigin(record), q)
 	if errors.Is(err, contentsync.ErrNoEntries) {
 		return httpx.Message(404, false, messageContentEntriesMissing), nil
 	}
@@ -231,4 +278,12 @@ func agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	return httpx.JSON(pushdiff.WithoutStored(page, q.Find)).NoStore(), nil
+}
+
+func rawAgentMember(record *model.Agent, key string) json.RawMessage {
+	raw, present, err := record.MemberJSON(key)
+	if err != nil || !present {
+		return json.RawMessage("null")
+	}
+	return raw
 }

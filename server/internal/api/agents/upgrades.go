@@ -10,16 +10,17 @@ package agents
 import (
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/model"
 	"configflow/internal/redact"
+	"fmt"
+	"net/http"
 )
 
 func registerUpgrades(r *httpx.Router) {
@@ -70,43 +71,63 @@ func operation(handler func(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, e
 	}
 }
 
-// pyRouteError is a Python exception raised inside an operation route; its
-// text is str(e).
-type pyRouteError struct{ message string }
-
-func (e *pyRouteError) Error() string { return e.message }
-
-func pyTypeError(message string) error { return &pyRouteError{message} }
-
-// resultResponse is `jsonify(result), 200 if result.get('success') else 500`.
-func resultResponse(result any) (*httpx.Response, error) {
-	object, ok := result.(*jsonx.Object)
-	if !ok || object == nil {
-		return nil, pyTypeError(httpx.NoAttributeGet(result))
+// resultResponse retains the remote envelope and its existing success status.
+func resultResponse(result json.RawMessage) (*httpx.Response, error) {
+	fields, err := jsondecode.Select(result, "success")
+	if err != nil {
+		return nil, fmt.Errorf("invalid Agent operation response: %w", err)
 	}
 	status := 500
-	if jsonx.Truthy(object.Value("success")) {
+	if success, err := model.JSONHasContent(fields["success"]); err == nil && success {
 		status = 200
 	}
 	return httpx.JSONStatus(status, result), nil
 }
-
-// requestData is `request.get_json() or {}` followed by data.get(...): the
-// JSON errors (415/400) and the AttributeError of a truthy non-dict become
-// the route's 500 message.
-func requestData(c *httpx.Ctx) (*jsonx.Object, error) {
-	value, err := c.JSON()
+func requestData(c *httpx.Ctx) (model.Fields, error) {
+	var raw json.RawMessage
+	var fields model.Fields
+	if err := c.Bind(&raw); err != nil {
+		return fields, err
+	}
+	nonempty, err := model.JSONHasContent(raw)
 	if err != nil {
-		return nil, pyTypeError(err.Error())
+		return fields, err
 	}
-	if !jsonx.Truthy(value) {
-		return jsonx.NewObject(), nil
+	if !nonempty {
+		return fields, nil
 	}
-	object, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, pyTypeError(httpx.NoAttributeGet(value))
+	err = jsondecode.Unmarshal(raw, &fields)
+	return fields, err
+}
+func requestMember(fields model.Fields, name string, fallback json.RawMessage) json.RawMessage {
+	if raw, present := fields.Get(name); present {
+		return raw
 	}
-	return object, nil
+	return fallback
+}
+func hasJSONContent(raw json.RawMessage) bool {
+	present, err := model.JSONHasContent(raw)
+	return err == nil && present
+}
+func deviceJSON(payload any) (http.Header, []byte, error) {
+	body, err := jsonresp.EncodeDevice(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	return http.Header{"Content-Type": {"application/json"}}, body, nil
+}
+func callOperation(c *httpx.Ctx, m *agents.Manager, method, path string, payload any, sources bool) (json.RawMessage, error) {
+	var header http.Header
+	var body []byte
+	var err error
+	if payload != nil {
+		header, body, err = deviceJSON(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, _, err := m.RemoteCall(c.Context(), c.Param("agent_id"), agents.RemoteRequest{Method: method, Path: path, Timeout: agents.Seconds(5), Header: header, Body: body, LegacyLogSources: sources})
+	return result, err
 }
 
 func agentAddress(c *httpx.Ctx) (*httpx.Response, error) {
@@ -144,7 +165,7 @@ func agentAddress(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func restartAgent(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
-	result, err := m.RestartAgentService(c.Context(), c.Param("agent_id"))
+	result, err := m.RunServiceOperation(c.Context(), c.Param("agent_id"), agents.RestartService, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -157,35 +178,18 @@ func getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	agent, err := manager.GetAgentByID(ctx, c.Param("agent_id"), true)
+	agent, err := manager.ReadAgent(ctx, c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil || agent.Len() == 0 {
+	if agent == nil {
 		return failure(404, "Agent not found"), nil
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "status", agent.GetOr("status", "unknown"))), nil
-}
-
-// contains is `key in result` for any JSON value.
-func contains(result any, key string) (bool, error) {
-	switch v := result.(type) {
-	case *jsonx.Object:
-		if v == nil {
-			break
-		}
-		return v.Has(key), nil
-	case []any:
-		for _, item := range v {
-			if jsonx.Equal(item, key) {
-				return true, nil
-			}
-		}
-		return false, nil
-	case string:
-		return strings.Contains(v, key), nil
+	status := rawAgentMember(agent, "status")
+	if string(status) == "null" {
+		status = json.RawMessage(`"unknown"`)
 	}
-	return false, pyTypeError("argument of type '" + httpx.PyTypeName(result) + "' is not iterable")
+	return httpx.JSON(map[string]any{"success": true, "status": status}), nil
 }
 
 func getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
@@ -193,38 +197,41 @@ func getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	lines := argBigInt(c, "lines", 100)
 	logPath := c.ArgDefault("log_path", "")
 	source := c.ArgDefault("source", "")
-	result, err := m.GetAgentLogs(ctx, c.Param("agent_id"), jsonx.BigInt(lines), logPath, source)
+	result, err := callOperation(c, m, http.MethodGet, agents.AgentLogsPath(lines.String(), logPath, source), nil, false)
 	if err != nil {
 		return nil, err
 	}
+	var fields map[string]json.RawMessage
+	if err := jsondecode.Unmarshal(result, &fields); err != nil || fields == nil {
+		return nil, fmt.Errorf("invalid Agent log response")
+	}
 	for _, key := range []string{"logs", "error_logs"} {
-		found, err := contains(result, key)
+		raw, present := fields[key]
+		if !present || len(raw) == 0 || raw[0] != '"' {
+			continue
+		}
+		var text string
+		if jsondecode.Unmarshal(raw, &text) != nil || text == "" {
+			continue
+		}
+		redacted, err := redact.RedactSecretsInText(ctx, text)
 		if err != nil {
 			return nil, err
 		}
-		if !found {
-			continue
+		fields[key], err = json.Marshal(redacted)
+		if err != nil {
+			return nil, err
 		}
-		object, ok := result.(*jsonx.Object)
-		if !ok {
-			if _, isList := result.([]any); isList {
-				return nil, pyTypeError("list indices must be integers or slices, not str")
-			}
-			return nil, pyTypeError("string indices must be integers, not 'str'")
-		}
-		if text, ok := object.Value(key).(string); ok && text != "" {
-			redacted, err := redact.RedactSecretsInText(ctx, text)
-			if err != nil {
-				return nil, err
-			}
-			object.Set(key, redacted)
-		}
+	}
+	result, err = json.Marshal(fields)
+	if err != nil {
+		return nil, err
 	}
 	return resultResponse(result)
 }
 
 func getAgentLogSources(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
-	result, err := m.GetAgentLogSources(c.Context(), c.Param("agent_id"))
+	result, err := callOperation(c, m, http.MethodGet, "/api/logs/sources", nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -236,12 +243,16 @@ func clearAgentLog(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	logPath := data.GetOr("log_path", "")
-	source := data.GetOr("source", "")
-	if !jsonx.Truthy(logPath) && !jsonx.Truthy(source) {
+	logPath := requestMember(data, "log_path", json.RawMessage(`""`))
+	source := requestMember(data, "source", json.RawMessage(`""`))
+	if !hasJSONContent(logPath) && !hasJSONContent(source) {
 		return failure(400, "日志路径不能为空"), nil
 	}
-	result, err := m.ClearAgentLog(c.Context(), c.Param("agent_id"), logPath, source)
+	payload := map[string]json.RawMessage{"log_path": logPath}
+	if hasJSONContent(source) {
+		payload = map[string]json.RawMessage{"source": source}
+	}
+	result, err := callOperation(c, m, http.MethodPost, "/api/logs/clear", payload, false)
 	if err != nil {
 		return nil, err
 	}
@@ -253,11 +264,11 @@ func validateLogPath(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	logPath := data.GetOr("path", "")
-	if !jsonx.Truthy(logPath) {
+	logPath := requestMember(data, "path", json.RawMessage(`""`))
+	if !hasJSONContent(logPath) {
 		return failure(400, "日志路径不能为空"), nil
 	}
-	result, err := m.ValidateAgentLogPath(c.Context(), c.Param("agent_id"), logPath)
+	result, err := callOperation(c, m, http.MethodPost, "/api/logs/validate", map[string]json.RawMessage{"path": logPath}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +276,7 @@ func validateLogPath(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 }
 
 func getLoggingConfig(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
-	result, err := m.GetLoggingConfig(c.Context(), c.Param("agent_id"))
+	result, err := callOperation(c, m, http.MethodGet, "/api/config/logging", nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +288,12 @@ func setLoggingConfig(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) 
 	if err != nil {
 		return nil, err
 	}
-	result, err := m.SetLoggingConfig(c.Context(), c.Param("agent_id"), data.GetOr("enabled", true))
+	enabled := requestMember(data, "enabled", json.RawMessage("true"))
+	header, body, err := deviceJSON(map[string]json.RawMessage{"enabled": enabled})
+	if err != nil {
+		return nil, err
+	}
+	result, err := m.SetLoggingModel(c.Context(), c.Param("agent_id"), enabled, header, body)
 	if err != nil {
 		return nil, err
 	}
@@ -287,11 +303,15 @@ func setLoggingConfig(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) 
 func uninstallAgent(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	ctx := c.Context()
 	agentID := c.Param("agent_id")
-	result, err := m.UninstallAgent(ctx, agentID)
+	result, err := m.RunServiceOperation(ctx, agentID, agents.UninstallService, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	if jsonx.Truthy(result.Value("success")) {
+	fields, decodeErr := jsondecode.Select(result, "success")
+	if decodeErr != nil {
+		return nil, decodeErr
+	}
+	if string(fields["success"]) == "true" {
 		// 卸载成功后从数据库删除
 		if _, err := m.DeleteAgent(ctx, agentID); err != nil {
 			return nil, err
@@ -394,10 +414,10 @@ func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	if !agentTokenMatches(c, agent) {
-		return httpx.JSONStatus(401, jsonx.Obj("success", false)), nil
+		return httpx.JSONStatus(401, map[string]bool{"success": false}), nil
 	}
 	if length, ok := c.ContentLength(); !ok || length > ReportBodyLimit {
-		return httpx.JSONStatus(413, jsonx.Obj("success", false)), nil
+		return httpx.JSONStatus(413, map[string]bool{"success": false}), nil
 	}
 	var payload json.RawMessage
 	if err := c.Bind(&payload); err != nil {
@@ -414,5 +434,5 @@ func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func getLatestAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
-	return httpx.JSON(jsonx.Obj("success", true, "version", agents.GetLatestVersion())), nil
+	return httpx.JSON(map[string]any{"success": true, "version": agents.GetLatestVersion()}), nil
 }

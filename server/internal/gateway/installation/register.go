@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -135,18 +136,20 @@ func (s *Service) Register(ctx context.Context, id, token string, data json.RawM
 		}
 		o := object(data)
 		o["profile_id"] = raw(r.ProfileID)
-		legacy, err := toLegacy(raw(o))
+
+		input, err := agents.DecodeRegistrationInput(raw(o))
 		if err != nil {
 			return err
 		}
-		answer, err := s.Manager.RegisterInstallationAgent(ctx, legacy, existingToken, id)
+		answer, err := s.Manager.RegisterIdentity(ctx, input, agents.RegistrationOptions{ExistingToken: existingToken, InstallationID: id, ReplayInstallation: true})
 		if err != nil {
 			return err
 		}
-		result, err = encodeResult(answer)
+		result, err = json.Marshal(answer)
 		if err != nil {
 			return err
 		}
+
 		r.Registered[a.ServiceType] = text(object(result)["id"])
 		return s.write(ctx, r)
 	})

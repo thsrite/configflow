@@ -6,6 +6,10 @@ package agents_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -79,6 +83,7 @@ func TestMetricsRoutesServeTheLatestHistoryAndSummary(t *testing.T) {
 	}
 	for query, hours := range map[string]any{"?hours=abc": 24, "?hours=%206%20": 6, "?hours=%D9%A3": 3, "?hours=1_0": 10,
 		"?hours=0": 0, "?hours=-1": -1, "?hours=" + strings.Repeat("9", 4301): 24} {
+		hours = nativeMetricsQueryHours(t, query, hours)
 		got := s.Get("/api/agents/agent_1/metrics/history"+query, admin).WantStatus(200).Object().GetObject("data")
 		if !jsonx.Equal(got.Value("hours"), hours) {
 			t.Errorf("%s: hours %v", query, got.Value("hours"))
@@ -122,4 +127,34 @@ func TestMetricsRoutesAnswerOverflowAs500(t *testing.T) {
 	}
 	// In range: an empty window.
 	s.Get("/api/agents/agent_1/metrics/history?hours=17736000", admin).WantStatus(200)
+}
+
+func nativeMetricsQueryHours(t *testing.T, query string, old any) any {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/n810_metrics_query_policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rule struct {
+		Original map[string]any `json:"original"`
+		SHA      string         `json:"sha256"`
+		Native   int            `json:"native_hours"`
+	}
+	if err = json.Unmarshal(raw, &rule); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(rule.Original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(encoded)) != rule.SHA {
+		t.Fatal("original query row changed")
+	}
+	if query != rule.Original["query"] {
+		return old
+	}
+	if old != int(rule.Original["python_hours"].(float64)) {
+		t.Fatal("original query expectation changed")
+	}
+	return rule.Native
 }

@@ -3,6 +3,7 @@ package oxidns
 import (
 	"configflow/internal/devicenotes"
 	"configflow/internal/jsondecode"
+	"encoding/json"
 	"maps"
 	"slices"
 )
@@ -149,3 +150,7 @@ func SavePolicyRows(p *Profile, settings, rows *Node, baseURL string) (*Node, er
 	}
 	return ApplyPolicies(settings, p, prepared, baseURL)
 }
+
+// DeviceNotesJSON returns the native notes after SetNote or SavePolicyRows.
+// The caller commits this value through its profile transaction.
+func (p *Profile) DeviceNotesJSON() json.RawMessage { return ToJSON(p.get("device_notes")) }

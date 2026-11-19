@@ -369,8 +369,8 @@ func installHooks() {
 		HAActivate: func(ctx context.Context, m *agents.Manager, id, did string) (*agents.Result, error) {
 			return ForManager(m).Activate(ctx, id, did)
 		},
-		HAServiceOperation: func(ctx context.Context, m *agents.Manager, id string, op func() (*agents.Result, error), uninstall bool) (*agents.Result, error) {
-			return ForManager(m).ServiceOperation(ctx, id, op, uninstall)
+		HAServiceOperationTyped: func(ctx context.Context, m *agents.Manager, id string, op func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error) {
+			return ForManager(m).ServiceOperationJSON(ctx, id, op, uninstall)
 		},
 	})
 	monitor.SetHARules(func(ctx context.Context, m monitor.Manager, id, method string) (*agents.Result, int, error) {

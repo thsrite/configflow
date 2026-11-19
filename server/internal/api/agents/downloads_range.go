@@ -15,8 +15,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-
-	"configflow/internal/pystr"
 )
 
 // werkzeugRangeNotSatisfiable is str(RequestedRangeNotSatisfiable()).
@@ -44,9 +42,9 @@ func parseRangeHeader(value string) (string, []werkzeugRange, bool) {
 		return "", nil, false
 	}
 	units, spec, _ := strings.Cut(value, "=")
-	units = pystr.Lower(pystr.Strip(units))
+	units = strings.ToLower(strings.TrimSpace(units))
 	plainInt := func(text string) (*big.Int, bool) {
-		text = pystr.Strip(text)
+		text = strings.TrimSpace(text)
 		if !werkzeugPlainInt.MatchString(text) {
 			return nil, false
 		}
@@ -57,7 +55,7 @@ func parseRangeHeader(value string) (string, []werkzeugRange, bool) {
 	lastEnd := big.NewInt(0)
 	minusOne := big.NewInt(-1)
 	for _, item := range strings.Split(spec, ",") {
-		item = pystr.Strip(item)
+		item = strings.TrimSpace(item)
 		if !strings.Contains(item, "-") {
 			return "", nil, false
 		}
@@ -78,7 +76,7 @@ func parseRangeHeader(value string) (string, []werkzeugRange, bool) {
 		if !ok || begin.Cmp(lastEnd) < 0 || lastEnd.Sign() < 0 {
 			return "", nil, false
 		}
-		endText = pystr.Strip(endText)
+		endText = strings.TrimSpace(endText)
 		if endText == "" {
 			ranges = append(ranges, werkzeugRange{begin, nil})
 			lastEnd = minusOne
@@ -117,7 +115,7 @@ func rangeSatisfiable(units string, ranges []werkzeugRange, length int64) bool {
 
 // unquoteETag is werkzeug.http.unquote_etag (tag only).
 func unquoteETag(value string) string {
-	value = pystr.Strip(value)
+	value = strings.TrimSpace(value)
 	if strings.HasPrefix(value, "W/") || strings.HasPrefix(value, "w/") {
 		value = value[2:]
 	}

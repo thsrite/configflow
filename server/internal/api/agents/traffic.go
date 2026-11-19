@@ -6,7 +6,10 @@ package agents
 // monitoring history).
 
 import (
+	"bytes"
 	"errors"
+	"io"
+	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
@@ -15,6 +18,7 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -47,11 +51,11 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if agent == nil {
 		return failure(401, "Unauthorized"), nil
 	}
-	report, errorResponse := ReadJSONBody(c, trafficstore.ReportMaxContentLength, "Invalid traffic report")
+	report, errorResponse := readLegacyTrafficBody(c, trafficstore.ReportMaxContentLength, "Invalid traffic report")
 	if errorResponse != nil {
 		return errorResponse, nil
 	}
-	if !mihomoFlag(agent, "domain_discovery_enabled") {
+	if !heartbeatFeature(agent, "domain_discovery_enabled") {
 		return httpx.JSONStatus(409, jsonx.Obj("success", false, "enabled", false, "message", "Domain discovery disabled")), nil
 	}
 	cleaned, err := trafficstore.CleanReport(report)
@@ -69,8 +73,8 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	profileID := ""
-	if value := agent.Value("profile_id"); jsonx.Truthy(value) {
-		profileID = jsonx.Str(value)
+	if agent.ProfileID != "" {
+		profileID = agent.ProfileID
 	} else if profileID, err = repo.GetDefaultProfileID(ctx); err != nil {
 		return nil, err
 	}
@@ -97,11 +101,11 @@ func agentTrafficHistoryReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if agent == nil {
 		return failure(401, "Unauthorized"), nil
 	}
-	report, errorResponse := ReadJSONBody(c, metrics.TrafficReportMaxContentLength, "Invalid traffic history report")
+	report, errorResponse := readLegacyTrafficBody(c, metrics.TrafficReportMaxContentLength, "Invalid traffic history report")
 	if errorResponse != nil {
 		return errorResponse, nil
 	}
-	if !mihomoFlag(agent, "traffic_history_enabled") {
+	if !heartbeatFeature(agent, "traffic_history_enabled") {
 		return httpx.JSONStatus(409, jsonx.Obj("success", false, "enabled", false, "message", "Traffic history disabled")), nil
 	}
 	cleaned := metrics.CleanTrafficReport(report, nil)
@@ -113,11 +117,14 @@ func agentTrafficHistoryReport(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // trafficHistoryState is _traffic_history_state(agent).
-func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *jsonx.Object) (*jsonx.Object, error) {
-	enabled := mihomoFlag(agent, "traffic_history_enabled")
+func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *model.Agent) (*jsonx.Object, error) {
+	enabled := heartbeatFeature(agent, "traffic_history_enabled")
 	var since any
 	if enabled {
-		since = agent.Value("traffic_history_since")
+		raw, _, _ := agent.MemberJSON("traffic_history_since")
+		if len(raw) > 0 {
+			since, _ = jsonx.Parse(raw)
+		}
 	}
 	system, err := manager.Repository().GetSystem(c.Context())
 	if err != nil {
@@ -131,7 +138,7 @@ func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *jsonx.Obj
 	for i, choice := range metrics.RetentionChoices {
 		choices[i] = choice
 	}
-	version := agent.Value("version")
+	version := agent.Version
 	return jsonx.Obj(
 		"enabled", enabled,
 		"since", since,
@@ -145,15 +152,15 @@ func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *jsonx.Obj
 }
 
 // mihomoAgentOrError is _mihomo_agent_or_error(agent_id).
-func mihomoAgentOrError(c *httpx.Ctx, manager *agents.Manager) (*jsonx.Object, *httpx.Response, error) {
-	agent, err := manager.GetAgentByID(c.Context(), c.Param("agent_id"), true)
+func mihomoAgentOrError(c *httpx.Ctx, manager *agents.Manager) (*model.Agent, *httpx.Response, error) {
+	agent, err := manager.ReadAgent(c.Context(), c.Param("agent_id"), true)
 	if err != nil {
 		return nil, nil, err
 	}
 	if agent == nil {
 		return nil, failure(404, "Agent not found"), nil
 	}
-	if !jsonx.Equal(agent.GetOr("service_type", "mihomo"), "mihomo") {
+	if agent.ServiceType != "mihomo" {
 		return nil, failure(400, "流量记录只支持 mihomo Agent"), nil
 	}
 	return agent, nil, nil
@@ -215,7 +222,7 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if _, response, err := mihomoAgentOrError(c, manager); response != nil || err != nil {
 		return response, err
 	}
-	agent, err := manager.SetTrafficHistory(c.Context(), c.Param("agent_id"), enabled)
+	agent, err := manager.SetTrafficHistoryModel(c.Context(), c.Param("agent_id"), enabled)
 	if err != nil {
 		if response := setTrafficHistoryError(err); response != nil {
 			return response, nil
@@ -332,4 +339,33 @@ func getAgentTrafficTrend(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj(
 		"agent_id", c.Param("agent_id"), "trend", trend, "hours", jsonx.BigInt(hours),
 		"interval_minutes", jsonx.BigInt(interval), "data_points", len(trend)))), nil
+}
+
+// readLegacyTrafficBody is retained for the pending A05 native engine task.
+func readLegacyTrafficBody(c *httpx.Ctx, maxLength int64, invalidMessage string) (any, *httpx.Response) {
+	if length, ok := c.ContentLength(); ok && length > maxLength {
+		return nil, failure(413, "Request body too large")
+	}
+	var raw []byte
+	if stream := c.Stream(); stream != nil {
+		raw, _ = io.ReadAll(io.LimitReader(stream, maxLength+1))
+	}
+	if int64(len(raw)) > maxLength {
+		return nil, failure(413, "Request body too large")
+	}
+	if !c.IsJSON() {
+		return nil, failure(400, invalidMessage)
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	value, err := c.JSONForceError()
+	if err != nil {
+		// json.loads raises a plain ValueError (not JSONDecodeError) for an
+		// int literal beyond sys.get_int_max_str_digits(): not caught here,
+		// the route answers it as a 500.
+		if strings.HasPrefix(err.Error(), "Exceeds the limit (") {
+			return nil, failure(500, err.Error())
+		}
+		return nil, failure(400, invalidMessage)
+	}
+	return value, nil
 }

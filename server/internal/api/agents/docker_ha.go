@@ -100,8 +100,15 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 			Mode   string `json:"mode"`
 		}
 		options.Action, options.Mode = "generate", "new"
-		if err := jsondecode.Unmarshal(raw, &options); err != nil {
+		selected, err := jsondecode.Select(raw, "action", "mode")
+		if err != nil {
 			return nil, err
+		}
+		if value, present := selected["action"]; present {
+			_ = jsondecode.Unmarshal(value, &options.Action)
+		}
+		if value, present := selected["mode"]; present {
+			_ = jsondecode.Unmarshal(value, &options.Mode)
 		}
 		result, err := installer.GenerateGuideJSON(raw, nil)
 		if err != nil {

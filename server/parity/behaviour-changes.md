@@ -2257,3 +2257,20 @@ N8-11 删除。
   仍 500 带中文损坏说明。相对 Python：`{"enabled":1}` 等 Python 会继续跟随（非 True 视为非成员），
   truthy 非 dict 的 `oxidns_ha` Python 心跳 500；Go 两类都改为“不跟随 + 告警”。回归
   `TestReviewN810CorruptHAFollowKeepsHeartbeat`、`TestReviewN810CorruptFollowWarningInterval`。
+
+### N8-10 api/agents — native HTTP bindings and machine numbers
+
+- 协调者批准：下载条件日期改为 `net/http.ParseTime` 的三种 HTTP 日期；无效日期
+  （包括旧 CPython 超长整数异常）不作条件证据，通常返回200。标准条件下载、HEAD
+  与既有无效/不可满足 Range 的416规则保留。396条完整原日期/条件请求与旧结果 SHA
+  绑定到独立 Python policy；原 pyref entries/input/venv 哈希不变，只更新 source metadata。
+- 人工心跳语料的超出 float 范围/CPython 4300位整数异常，改为协议数值范围校验400，
+  不模拟解释器异常、不静默溢出。四条真实 Python HTTP 原输入、旧500完整结果逐行
+  SHA绑定到新400；拒绝后无数据库写入。心跳机器版本采用64字节ASCII白名单。
+- 协调者批准：注册和手动创建共用 core RegisterIdentity 的原始版本校验。
+  先授权，再版本校验，最后消费一次性proof/写入；匿名无proof仍403，合法proof+
+  非字符串/非白名单/超长版本400且proof不消费。缺失/null使用默认1.0.0。
+- 注册 Docker 地址识别使用原生 netip，机器地址只认 ASCII，不保留 CPython 的
+  Unicode数字、私有空白、下划线或带前导零的IPv4数字解析。
+- 人工非对象请求和损坏对象的内部英文异常改为原生 JSON 诊断，保留各入口的HTTP类；
+  中文业务提示和redact凭据脱敏不变。坏单对象守卫拒绝写入；列表不因坏版本一条整页失败。

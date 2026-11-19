@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -28,7 +29,15 @@ func TestSetTrafficHistoryErrorsFollowPythonExceptOrder(t *testing.T) {
 			t.Errorf("%s: no response, want 400 %s", c.name, jsonx.Repr(c.want))
 			continue
 		}
-		body, _ := response.Value()
+		value, _ := response.Value()
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := jsonx.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if response.Status != 400 || !jsonx.Equal(body, c.want) {
 			t.Errorf("%s: %d %s, want 400 %s", c.name, response.Status, jsonx.Repr(body), jsonx.Repr(c.want))
 		}

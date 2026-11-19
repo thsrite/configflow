@@ -1,46 +1,116 @@
 package agents
 
 import (
+	"encoding/json"
+
 	"configflow/internal/agents"
-	"configflow/internal/deploy"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 )
 
-// publicAgent adapts the legacy registry record to the public API. Keep this
-// boundary shared by list/detail and client tools so private history cannot
-// escape through an alternate endpoint. The source record is never modified.
-func publicAgent(record *agents.Record) *agents.Record {
-	// Child projections may erase the fields that identify a credential while
-	// sibling diagnostics still refer to it. Retain that knowledge first.
-	secrets := redact.CollectCredentials(record, redact.NewSecrets([]string{record.GetString("token")}))
-	return publicAgentWithCredentials(record, secrets)
+// publicAgentModel projects caller-owned native records through one redaction
+// boundary. Credentials are captured before private task trees are removed.
+func publicAgentModel(record *model.Agent) (map[string]json.RawMessage, error) {
+	return publicAgentWithCredentialsModel(record, nil)
 }
 
-// publicAgentWithCredentials is the single projector, also used when a light
-// read captured its independent credential snapshot before dropping history.
-func publicAgentWithCredentials(record *agents.Record, secrets redact.Secrets) *agents.Record {
-	public := record.Clone()
-	for key, value := range record.All() {
-		if key == "token" || key == "applied_content" || key == "dns_follow_job" || value == repo.AgentHistoryNotRead {
-			public.Delete(key)
+func publicAgentWithCredentialsModel(record *model.Agent, secrets redact.Secrets) (map[string]json.RawMessage, error) {
+	raw, err := model.Marshal(record)
+	if err != nil {
+		return nil, err
+	}
+	secrets = redact.CollectCredentials(json.RawMessage(raw), secrets)
+	var public map[string]json.RawMessage
+	if err = jsondecode.Unmarshal(raw, &public); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"token", "applied_content", "dns_follow_job"} {
+		delete(public, key)
+	}
+	if record.OxiDNSHAPublication != nil && record.OxiDNSHAPublication.HasMembers() {
+		summary, err := agents.HASummaryModel(record.OxiDNSHAPublication)
+		if err != nil {
+			return nil, err
+		}
+		public["oxidns_ha_publication"], err = model.Marshal(summary)
+		if err != nil {
+			return nil, err
 		}
 	}
-	if job := public.GetObject("oxidns_ha_publication"); job != nil && job.Len() > 0 {
-		public.Set("oxidns_ha_publication", agents.HASummary(job))
-	}
-	if records := public.GetObject("deployments"); records != nil {
-		cleaned := records.Clone()
-		for key := range records.All() {
-			cleaned.Set(key, deploy.PublicDeployment(records.GetObject(key)))
+	if raw, present := public["deployments"]; present && len(raw) > 0 && raw[0] == '{' {
+		var deployments map[string]json.RawMessage
+		if err = jsondecode.Unmarshal(raw, &deployments); err != nil {
+			return nil, err
 		}
-		public.Set("deployments", cleaned)
+		for id, raw := range deployments {
+			if len(raw) == 0 || raw[0] != '{' {
+				deployments[id] = json.RawMessage("null")
+				continue
+			}
+			var task model.Deployment
+			if err = jsondecode.Unmarshal(raw, &task); err != nil {
+				return nil, err
+			}
+			deployments[id], err = publicDeploymentModel(&task)
+			if err != nil {
+				return nil, err
+			}
+		}
+		public["deployments"], err = json.Marshal(deployments)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if record := public.GetObject("latest_deployment"); record != nil {
-		public.Set("latest_deployment", deploy.PublicDeployment(record))
+	if record.LatestDeployment != nil {
+		public["latest_deployment"], err = publicDeploymentModel(record.LatestDeployment)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if record := public.GetObject("latest_upgrade"); record != nil {
-		public.Set("latest_upgrade", agents.PublicUpgradeState(record))
+	if record.LatestUpgrade != nil {
+		state, err := agents.PublicUpgradeStateModel(record.LatestUpgrade)
+		if err != nil {
+			return nil, err
+		}
+		public["latest_upgrade"], err = model.Marshal(state)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return agents.SanitizePublicMetadata(public, secrets)
+	// SanitizeCredentials owns all secret discovery and text redaction. The HTTP
+	// writer may perform its independent stored-secret pass afterwards.
+	publicRaw, err := json.Marshal(public)
+	if err != nil {
+		return nil, err
+	}
+	sanitized := redact.SanitizeCredentials(json.RawMessage(publicRaw), secrets)
+	if err = jsondecode.Unmarshal(sanitized, &public); err != nil {
+		return nil, err
+	}
+	return public, nil
+}
+
+func publicDeploymentModel(record *model.Deployment) (json.RawMessage, error) {
+	if record == nil {
+		return json.RawMessage("null"), nil
+	}
+	out := *record
+	if out.HAPublication != nil && out.HAPublication.HasMembers() {
+		aggregated, err := agents.HAAggregateModel(&out, out.HAPublication)
+		if err != nil {
+			return nil, err
+		}
+		out = *aggregated
+	}
+	for _, key := range []string{"prepared_content", "oxidns_validation_receipt"} {
+		if err := out.Clear(key); err != nil {
+			return nil, err
+		}
+	}
+	localized, err := agents.PublicDeploymentMessagesModel(&out)
+	if err != nil {
+		return nil, err
+	}
+	return model.Marshal(localized)
 }

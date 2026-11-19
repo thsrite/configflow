@@ -20,6 +20,7 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
@@ -535,7 +536,7 @@ func TestClientNoteAndPolicyCancelledOwners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := oxidns.NewProfile(p)
+	profile := nativeClientDNSProfile(t, p)
 	revision := oxidns.Revision(profile.Settings())
 	notes, err := oxidns.PolicyNamesRevision(profile)
 	if err != nil {
@@ -589,7 +590,7 @@ func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			profile := oxidns.NewProfile(config)
+			profile := nativeClientDNSProfile(t, config)
 			notes, err := oxidns.PolicyNamesRevision(profile)
 			if err != nil {
 				t.Fatal(err)
@@ -646,10 +647,19 @@ func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.GetString("version") != "2.0.0-live" || record.GetString("service_status") != "running" || record.GetObject("system_metrics").GetObject("cpu").GetInt("usage_percent") != 12 {
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := jsonx.Parse(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := parsed.(*jsonx.Object)
+	if legacy.GetString("version") != "2.0.0-live" || legacy.GetString("service_status") != "running" || legacy.GetObject("system_metrics").GetObject("cpu").GetInt("usage_percent") != 12 {
 		t.Fatal("lost runtime overlay")
 	}
-	public := publicAgent(record)
+	public := publicAgent(legacy)
 	if public.Has("token") {
 		t.Fatal("credential escaped")
 	}
@@ -664,7 +674,7 @@ func TestClientToolsConcurrentEditors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			profile := oxidns.NewProfile(p)
+			profile := nativeClientDNSProfile(t, p)
 			revision := oxidns.Revision(profile.Settings())
 			notes, err := oxidns.PolicyNamesRevision(profile)
 			if err != nil {
@@ -706,9 +716,18 @@ func TestClientToolsConcurrentEditors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if oxidns.Revision(oxidns.NewProfile(saved).Settings()) != revision {
+			if oxidns.Revision(nativeClientDNSProfile(t, saved).Settings()) != revision {
 				t.Fatal("name-only concurrent save changed settings")
 			}
 		})
 	}
+}
+
+func nativeClientDNSProfile(t *testing.T, config *model.Config) *oxidns.Profile {
+	t.Helper()
+	p, err := oxidns.NewTypedProfile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

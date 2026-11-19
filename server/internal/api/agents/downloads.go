@@ -5,7 +5,6 @@ package agents
 // installers. Public (no panel login; listed in the auth gate).
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"syscall"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/resource"
 )
 
@@ -59,17 +57,7 @@ func pyJoin(a, b string) string {
 }
 
 // pyOSErrorText is str(OSError) for a failed file operation on path.
-func pyOSErrorText(err error, path string) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		text := errno.Error()
-		if text != "" {
-			text = strings.ToUpper(text[:1]) + text[1:]
-		}
-		return "[Errno " + strconv.Itoa(int(errno)) + "] " + text + ": " + jsonx.Repr(path)
-	}
-	return err.Error()
-}
+func pyOSErrorText(err error, path string) string { return err.Error() }
 
 func downloadAgentBinary(c *httpx.Ctx) (*httpx.Response, error) {
 	filename := c.Param("filename")

@@ -136,6 +136,16 @@ func (m *Manager) RestartAgentService(ctx context.Context, id string) (*jsonx.Ob
 }
 func (m *Manager) serviceOperation(ctx context.Context, id string, operation func() (*jsonx.Object, error), uninstall bool) (*jsonx.Object, error) {
 	ctx = lifecycle.Detach(ctx)
+	if hook := currentHooks().HAServiceOperationTyped; hook != nil {
+		raw, err := hook(ctx, m, id, func() (json.RawMessage, error) {
+			result, err := operation()
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(result)
+		}, uninstall)
+		return remoteLegacyObject(raw, err)
+	}
 	if hook := currentHooks().HAServiceOperation; hook != nil {
 		return hook(ctx, m, id, operation, uninstall)
 	}

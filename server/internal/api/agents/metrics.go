@@ -6,13 +6,17 @@ package agents
 
 import (
 	"math/big"
+	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
-	"configflow/internal/pystr"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/taskstatus"
+	"encoding/json"
+	"errors"
 )
 
 func registerMetrics(r *httpx.Router) {
@@ -21,10 +25,8 @@ func registerMetrics(r *httpx.Router) {
 	r.GET("/api/agents/<agent_id>/metrics/summary", "agents.get_agent_metrics_summary", auth.Require(getAgentMetricsSummary))
 }
 
-// argBigInt is request.args.get(name, type=int, default=def) with ints of
-// any size: Werkzeug's int(value), CPython 3.11's int() of a str (its
-// Unicode 14 digits and white space, underscores, the 4300 digit limit),
-// the default for its ValueError.
+// argBigInt reads the shared native decimal counter grammar, preserving large
+// ASCII integers and using the route default for invalid query text.
 func argBigInt(c *httpx.Ctx, name string, def int64) *big.Int {
 	text, ok := c.Arg(name)
 	if !ok {
@@ -33,9 +35,16 @@ func argBigInt(c *httpx.Ctx, name string, def int64) *big.Int {
 	return pyArgInt(text, def)
 }
 
-// pyArgInt is `int(text)`, def on ValueError.
+// pyArgInt retains the query converter name for the existing callers.
 func pyArgInt(text string, def int64) *big.Int {
-	value, err := pystr.Int(text, 10)
+	if strings.TrimSpace(text) == "" {
+		return big.NewInt(def)
+	}
+	raw, err := json.Marshal(text)
+	if err != nil {
+		return big.NewInt(def)
+	}
+	value, err := taskstatus.Count(raw)
 	if err != nil {
 		return big.NewInt(def)
 	}
@@ -44,12 +53,12 @@ func pyArgInt(text string, def int64) *big.Int {
 
 // agentForMetrics is the common start of the three routes: the manager and
 // the Agent; a response when the Agent is unknown or the lookup failed.
-func agentForMetrics(c *httpx.Ctx, logPrefix string) (*agents.Manager, *jsonx.Object, *httpx.Response) {
+func agentForMetrics(c *httpx.Ctx, logPrefix string) (*agents.Manager, *model.Agent, *httpx.Response) {
 	ctx := c.Context()
 	manager, err := agents.Get(ctx)
-	var agent *jsonx.Object
+	var agent *model.Agent
 	if err == nil {
-		agent, err = manager.GetAgentByID(ctx, c.Param("agent_id"), true)
+		agent, err = manager.ReadAgent(ctx, c.Param("agent_id"), true)
 	}
 	if err != nil {
 		return nil, nil, metricsFailure(logPrefix, err)
@@ -73,20 +82,22 @@ func getAgentMetrics(c *httpx.Ctx) (*httpx.Response, error) {
 	if response != nil {
 		return response, nil
 	}
-	value, present := agent.Get("system_metrics")
+	value, present, err := agent.MemberJSON("system_metrics")
+	if err != nil {
+		return metricsFailure(prefix, err), nil
+	}
 	if !present {
-		value = jsonx.NewObject()
+		value = json.RawMessage(`{}`)
 	}
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil {
-		return metricsFailure(prefix, &metrics.AttributeError{Message: "'" + metrics.PyTypeName(value) + "' object has no attribute 'get'"}), nil
+	fields, err := jsondecode.Select(value, "collected_at")
+	if err != nil {
+		return metricsFailure(prefix, errors.New("system_metrics must be an object")), nil
 	}
-	collected, present := object.Get("collected_at")
-	if !present {
-		collected = nil
+	collected := fields["collected_at"]
+	if len(collected) == 0 {
+		collected = json.RawMessage("null")
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj(
-		"agent_id", c.Param("agent_id"), "metrics", value, "collected_at", collected))), nil
+	return httpx.JSON(map[string]any{"success": true, "data": map[string]any{"agent_id": c.Param("agent_id"), "metrics": json.RawMessage(value), "collected_at": collected}}), nil
 }
 
 // getAgentMetricsHistory is get_agent_metrics_history (hours, default 24).
@@ -101,8 +112,7 @@ func getAgentMetricsHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj(
-		"agent_id", c.Param("agent_id"), "history", history, "hours", jsonx.BigInt(hours), "data_points", len(history)))), nil
+	return httpx.JSON(map[string]any{"success": true, "data": map[string]any{"agent_id": c.Param("agent_id"), "history": history, "hours": hours, "data_points": len(history)}}), nil
 }
 
 // getAgentMetricsSummary is get_agent_metrics_summary (hours, default 1).
@@ -117,6 +127,5 @@ func getAgentMetricsSummary(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
-	return httpx.JSON(jsonx.Obj("success", true, "data", jsonx.Obj(
-		"agent_id", c.Param("agent_id"), "summary", summary, "hours", jsonx.BigInt(hours)))), nil
+	return httpx.JSON(map[string]any{"success": true, "data": map[string]any{"agent_id": c.Param("agent_id"), "summary": summary, "hours": hours}}), nil
 }

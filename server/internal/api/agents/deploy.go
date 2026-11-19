@@ -32,18 +32,22 @@ func getAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	a, err := m.GetAgentByToken(c.Context(), token)
+	a, err := m.ReadAgentByToken(c.Context(), token)
 	if err != nil {
 		return nil, err
 	}
-	if a == nil || a.GetString("id") != c.Param("agent_id") {
+	if a == nil || a.ID != c.Param("agent_id") {
 		return failure(401, "Invalid token"), nil
 	}
 	source, err := loadContentSource(c.Context(), m, a, nil)
 	if err != nil {
 		return failure(409, "Agent profile unavailable: "+err.Error()), nil
 	}
-	result, err := deploy.GenerateAgentConfig(c.Context(), source, deploy.NewTarget(a), strings.TrimRight(c.URLRoot(), "/"))
+	target, err := deploy.NewTypedTarget(a)
+	if err != nil {
+		return nil, err
+	}
+	result, err := deploy.GenerateAgentConfig(c.Context(), source, target, strings.TrimRight(c.URLRoot(), "/"))
 	if err != nil {
 		var strategy *rules.StrategyReferenceError
 		if errors.As(err, &strategy) {
@@ -75,9 +79,9 @@ func pushAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	if e != nil {
 		return nil, e
 	}
-	body, e := json.Marshal(c.JSONSilent())
-	if e != nil {
-		return nil, e
+	var body json.RawMessage
+	if !c.BindSilent(&body) {
+		body = json.RawMessage("null")
 	}
 	proto, _ := c.Header("X-Forwarded-Proto")
 	host, _ := c.Header("X-Forwarded-Host")
@@ -88,9 +92,9 @@ func generateAgentFinal(c *httpx.Ctx) (*httpx.Response, error) {
 	if e != nil {
 		return nil, e
 	}
-	body, e := json.Marshal(c.JSONSilent())
-	if e != nil {
-		return nil, e
+	var body json.RawMessage
+	if !c.BindSilent(&body) {
+		body = json.RawMessage("null")
 	}
 	return deployResponse(deploy.GenerateFinal(c.Context(), m, c.Param("agent_id"), deploy.GenerateRequest{Body: body, HostURL: c.HostURL()}))
 }
