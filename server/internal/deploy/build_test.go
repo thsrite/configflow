@@ -89,7 +89,7 @@ func TestPythonBuild(t *testing.T) {
 				in.ProviderDownloads = append(in.ProviderDownloads, ProviderFile{Name: p.Name, LocalPath: p.Local, Content: []byte(p.Content)})
 			}
 			for _, d := range row.Downloads {
-				in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
+				in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
 			}
 			for _, f := range row.Custom {
 				in.CustomFiles = append(in.CustomFiles, CustomFile{Path: f.Path, Name: f.Name, Content: []byte(f.Content), Native: f.Native})
@@ -194,7 +194,7 @@ func TestBuildSharedSourcesAndProgress(t *testing.T) {
 				u += fmt.Sprint(i)
 			}
 			main.Content[1].Content = append(main.Content[1].Content, yamlx.Map(yamlx.Str("tag"), yamlx.Str(fmt.Sprint(i)), yamlx.Str("type"), yamlx.Str("domain_set"), yamlx.Str("args"), yamlx.Map(yamlx.Str("files"), yamlx.Seq(yamlx.Str(p)))))
-			in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: fmt.Sprint(i), URL: u, LocalPath: p, Behavior: "classical", Format: "text"})
+			in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: fmt.Sprint(i), URL: u, LocalPath: p, Behavior: "classical", Format: "text"})
 		}
 		content, _ := yamlx.Marshal(main)
 		in.ConfigContent = string(content)

@@ -179,7 +179,7 @@ func TestReviewBuildDownloadsAndJSONSources(t *testing.T) {
 		t.Run(row.Name, func(t *testing.T) {
 			in := BuildInput{Target: Target{ID: "agent-example", ServiceType: row.Service, ProfileID: "alpha"}, Source: testSource(t, source), ConfigContent: row.Main, DeploymentID: "a11-review", BaseURL: "https://panel.example"}
 			for _, d := range row.Downloads {
-				in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
+				in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
 			}
 			b, err := Build(testContext(t), in)
 			if row.Error != "" {

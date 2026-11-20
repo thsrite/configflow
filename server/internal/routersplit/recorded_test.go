@@ -2,20 +2,25 @@ package routersplit
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
-	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"testing"
 
 	"configflow/internal/gateway/gwbase"
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
+	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
 	"configflow/internal/testgolden"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
+	"gopkg.in/yaml.v3"
 )
 
 // Replay of every router_split call the Python suite made
@@ -23,16 +28,223 @@ import (
 // answers (profile_sessions, get_profile_agent_bindings, get_profile) are
 // served from the record in call order; Go must ask for the same ones.
 
-// RecordedRow is one recorded call (shared with internal/ippresence's
-// replay through LoadRecorded in export_test.go).
+type recField struct {
+	Key   string
+	Value any
+}
+
+// recObj is an ordered JSON object decoded with encoding/json UseNumber for
+// exact replay of recorded Python inputs and pyref golden keys.
+type recObj struct {
+	fields []recField
+	index  map[string]int
+}
+
+func newRecObj(pairs ...any) *recObj {
+	o := &recObj{index: map[string]int{}}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		o.set(pairs[i].(string), pairs[i+1])
+	}
+	return o
+}
+
+func (o *recObj) set(key string, value any) {
+	if o.index == nil {
+		o.index = map[string]int{}
+	}
+	if i, ok := o.index[key]; ok {
+		o.fields[i].Value = value
+		return
+	}
+	o.index[key] = len(o.fields)
+	o.fields = append(o.fields, recField{Key: key, Value: value})
+}
+
+func (o *recObj) get(key string) (any, bool) {
+	if o == nil {
+		return nil, false
+	}
+	i, ok := o.index[key]
+	if !ok {
+		return nil, false
+	}
+	return o.fields[i].Value, true
+}
+
+func (o *recObj) value(key string) any {
+	v, _ := o.get(key)
+	return v
+}
+
+func (o *recObj) str(key string) string {
+	s, _ := o.value(key).(string)
+	return s
+}
+
+func (o *recObj) obj(key string) *recObj {
+	v, _ := o.value(key).(*recObj)
+	return v
+}
+
+func (o *recObj) list(key string) []any {
+	v, _ := o.value(key).([]any)
+	return v
+}
+
+func (o *recObj) intVal(key string) int {
+	n, ok := o.value(key).(json.Number)
+	if !ok {
+		return 0
+	}
+	i, _ := n.Int64()
+	return int(i)
+}
+
+func (o *recObj) clone() *recObj {
+	if o == nil {
+		return nil
+	}
+	out := newRecObj()
+	for _, f := range o.fields {
+		out.set(f.Key, cloneRec(f.Value))
+	}
+	return out
+}
+
+func cloneRec(v any) any {
+	switch x := v.(type) {
+	case *recObj:
+		return x.clone()
+	case []any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = cloneRec(item)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func (o *recObj) MarshalJSON() ([]byte, error) {
+	if o == nil {
+		return []byte("null"), nil
+	}
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, f := range o.fields {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		k, err := jsonresp.EncodeUTF8(f.Key)
+		if err != nil {
+			return nil, err
+		}
+		v, err := encodeCompactBytes(f.Value)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(k)
+		b.WriteByte(':')
+		b.Write(v)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+func encodeCompactBytes(v any) ([]byte, error) {
+	switch x := v.(type) {
+	case *recObj:
+		return x.MarshalJSON()
+	case []any:
+		if x == nil {
+			return []byte("null"), nil
+		}
+		var b bytes.Buffer
+		b.WriteByte('[')
+		for i, item := range x {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			raw, err := encodeCompactBytes(item)
+			if err != nil {
+				return nil, err
+			}
+			b.Write(raw)
+		}
+		b.WriteByte(']')
+		return b.Bytes(), nil
+	default:
+		return jsonresp.EncodeUTF8(v)
+	}
+}
+
+func parseRec(data []byte) (any, error) {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	v, err := readRecValue(d)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return nil, fmt.Errorf("trailing token")
+	}
+	return v, nil
+}
+
+func readRecValue(d *json.Decoder) (any, error) {
+	tok, err := d.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return tok, nil
+	}
+	switch delim {
+	case '{':
+		o := newRecObj()
+		for d.More() {
+			k, err := d.Token()
+			if err != nil {
+				return nil, err
+			}
+			v, err := readRecValue(d)
+			if err != nil {
+				return nil, err
+			}
+			o.set(k.(string), v)
+		}
+		if _, err := d.Token(); err != nil {
+			return nil, err
+		}
+		return o, nil
+	case '[':
+		out := []any{}
+		for d.More() {
+			v, err := readRecValue(d)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, v)
+		}
+		if _, err := d.Token(); err != nil {
+			return nil, err
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("unexpected delimiter %v", delim)
+	}
+}
+
 type recordedRow struct {
 	Test     string
 	Fn       string
-	Args     *jsonx.Object
+	Args     *recObj
 	Out      any
-	Err      *jsonx.Object
+	Err      *recObj
 	Env      []any
-	Raw      *jsonx.Object
+	Raw      *recObj
 	InputSHA string
 	Line     int
 }
@@ -57,13 +269,13 @@ func loadRecorded(t testing.TB, path string) []recordedRow {
 		if len(line) == 0 {
 			continue
 		}
-		value, err := jsonx.Parse(line)
+		value, err := parseRec(line)
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := decodeRecorded(value).(*jsonx.Object)
-		row := recordedRow{Test: entry.GetString("test"), Fn: entry.GetString("fn"), Args: entry.GetObject("args"),
-			Out: entry.Value("out"), Err: entry.GetObject("err"), Env: entry.GetList("env"), Raw: entry}
+		entry := decodeRecorded(value).(*recObj)
+		row := recordedRow{Test: entry.str("test"), Fn: entry.str("fn"), Args: entry.obj("args"),
+			Out: entry.value("out"), Err: entry.obj("err"), Env: entry.list("env"), Raw: entry}
 		row.InputSHA = n89Hash(line)
 		row.Line = index
 		index++
@@ -81,18 +293,18 @@ type repoMarker struct{}
 // lists, the repository argument into repoMarker.
 func decodeRecorded(v any) any {
 	switch value := v.(type) {
-	case *jsonx.Object:
-		if value.Len() == 1 {
-			if items, ok := value.Get("__tuple__"); ok {
+	case *recObj:
+		if len(value.fields) == 1 {
+			if items, ok := value.get("__tuple__"); ok {
 				return decodeRecorded(items)
 			}
-			if _, ok := value.Get("__repo__"); ok {
+			if _, ok := value.get("__repo__"); ok {
 				return repoMarker{}
 			}
 		}
-		out := jsonx.NewObject()
-		for k, item := range value.All() {
-			out.Set(k, decodeRecorded(item))
+		out := newRecObj()
+		for _, f := range value.fields {
+			out.set(f.Key, decodeRecorded(f.Value))
 		}
 		return out
 	case []any:
@@ -107,11 +319,11 @@ func decodeRecorded(v any) any {
 
 type replayError struct{ class, message string }
 
-func (e *replayError) Error() string       { return e.message }
-func (e *replayError) PythonClass() string { return e.class }
+func (e *replayError) Error() string      { return e.message }
+func (e *replayError) ErrorClass() string { return e.class }
 
 func encode(v any) string {
-	b, err := jsonx.Compact(v)
+	b, err := encodeCompactBytes(v)
 	if err != nil {
 		return fmt.Sprintf("<%v: %#v>", err, v)
 	}
@@ -119,32 +331,32 @@ func encode(v any) string {
 }
 
 // compareError checks a Go error against the recorded exception.
-func compareError(want *jsonx.Object, got error) string {
+func compareError(want *recObj, got error) string {
 	if got == nil {
 		return "Python raised " + encode(want) + ", Go returned no error"
 	}
 	class := "?"
+	var py interface{ PythonClass() string }
 	var native interface{ ErrorClass() string }
-	var classed interface{ PythonClass() string }
-	if errors.As(got, &classed) {
-		class = classed.PythonClass()
+	if errors.As(got, &py) {
+		class = py.PythonClass()
 	} else if errors.As(got, &native) {
 		class = native.ErrorClass()
 	}
 	var problems []string
-	if class != want.GetString("class") {
-		problems = append(problems, fmt.Sprintf("class python %s go %s", want.GetString("class"), class))
+	if class != want.str("class") {
+		problems = append(problems, fmt.Sprintf("class python %s go %s", want.str("class"), class))
 	}
-	if got.Error() != want.GetString("msg") {
-		problems = append(problems, fmt.Sprintf("message python %q go %q", want.GetString("msg"), got.Error()))
+	if got.Error() != want.str("msg") {
+		problems = append(problems, fmt.Sprintf("message python %q go %q", want.str("msg"), got.Error()))
 	}
 	var gateway *gwbase.LinuxGatewayError
-	if errors.As(got, &gateway) != (want.Value("gateway") == true) {
+	if errors.As(got, &gateway) != (want.value("gateway") == true) {
 		problems = append(problems, "isinstance LinuxGatewayError differs")
 	}
-	if code, ok := want.Get("code"); ok {
+	if code, ok := want.get("code"); ok {
 		var split *RouterSplitError
-		if !errors.As(got, &split) || split.Code != code || !jsonx.Equal(jsonx.Int(int64(split.Status)), want.Value("status")) {
+		if !errors.As(got, &split) || split.Code != code || !testjson.Equal(split.Status, want.value("status")) {
 			problems = append(problems, "RouterSplitError code/status differ")
 		}
 	}
@@ -163,48 +375,16 @@ func (r *replayEnv) take(fn, profileID string) (any, error) {
 		r.problems = append(r.problems, fmt.Sprintf("Go called %s(%q), Python made no further collaborator call", fn, profileID))
 		return nil, &replayError{"ReplayError", "unexpected call"}
 	}
-	entry := r.calls[r.next].(*jsonx.Object)
+	entry := r.calls[r.next].(*recObj)
 	r.next++
-	if entry.GetString("fn") != fn || !jsonx.Equal(entry.GetList("args"), []any{profileID}) {
+	if entry.str("fn") != fn || !testjson.Equal(entry.list("args"), []any{profileID}) {
 		r.problems = append(r.problems, fmt.Sprintf("collaborator call %d: python %s%s go %s(%q)", r.next,
-			entry.GetString("fn"), encode(entry.GetList("args")), fn, profileID))
+			entry.str("fn"), encode(entry.list("args")), fn, profileID))
 	}
-	if err := entry.GetObject("err"); err != nil {
-		return nil, &replayError{err.GetString("class"), err.GetString("msg")}
+	if err := entry.obj("err"); err != nil {
+		return nil, &replayError{err.str("class"), err.str("msg")}
 	}
-	return entry.Value("out"), nil
-}
-
-func (r *replayEnv) install() (restore func()) {
-	savedBindings, savedProfile, savedSessions := agentBindings, getProfile, sessionsOf
-	agentBindings = func(_ context.Context, _ *repo.Repository, profileID string) (*jsonx.Object, error) {
-		out, err := r.take("get_profile_agent_bindings", profileID)
-		if err != nil {
-			return nil, err
-		}
-		o, _ := out.(*jsonx.Object)
-		return o, nil
-	}
-	getProfile = func(_ context.Context, _ *repo.Repository, profileID string) (*jsonx.Object, error) {
-		out, err := r.take("get_profile", profileID)
-		if err != nil {
-			return nil, err
-		}
-		o, _ := out.(*jsonx.Object)
-		return o, nil
-	}
-	sessionsOf = func(_ context.Context, _ *repo.Repository, profileID string) ([]*jsonx.Object, error) {
-		out, err := r.take("profile_sessions", profileID)
-		if err != nil {
-			return nil, err
-		}
-		var sessions []*jsonx.Object
-		for _, item := range out.([]any) {
-			sessions = append(sessions, item.(*jsonx.Object))
-		}
-		return sessions, nil
-	}
-	return func() { agentBindings, getProfile, sessionsOf = savedBindings, savedProfile, savedSessions }
+	return entry.value("out"), nil
 }
 
 type notExpressible string
@@ -221,65 +401,265 @@ func profileArg(v any) (string, error) {
 	return "", notExpressible("profile_id is not a string")
 }
 
-func boolOut(v bool, err error) (any, error) { return v, err }
+func recToProfile(v any) *model.Profile {
+	b, err := encodeCompactBytes(v)
+	p := &model.Profile{}
+	if err == nil {
+		_ = json.Unmarshal(b, p)
+	}
+	return p
+}
 
-// runRow calls the Go function of a recorded row.
-func runRow(row recordedRow) (any, error) {
+func recToContext(v any) *Context {
+	b, err := encodeCompactBytes(v)
+	c := &Context{}
+	if err == nil {
+		_ = json.Unmarshal(b, c)
+	}
+	return c
+}
+
+func recToNode(v any) (*yamlx.Node, error) {
+	b, err := encodeCompactBytes(v)
+	if err != nil {
+		return nil, err
+	}
+	return yamlx.FromJSON(b)
+}
+
+func recFromStruct(v any) any {
+	b, _ := jsonresp.EncodeUTF8(v)
+	out, _ := parseRec(b)
+	return out
+}
+
+func recStrings(v []string) []any {
+	out := make([]any, len(v))
+	for i, s := range v {
+		out[i] = s
+	}
+	return out
+}
+
+func (r *replayEnv) readSessions(profileID string) (*Context, error) {
+	out, err := r.take("profile_sessions", profileID)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := encodeCompactBytes(out)
+	if err != nil {
+		return nil, err
+	}
+	var sessions []Session
+	if err = json.Unmarshal(raw, &sessions); err != nil {
+		return nil, err
+	}
+	return SessionContext(sessions)
+}
+
+func (r *replayEnv) legacyContext(profileID string) (*recObj, error) {
+	bindings, err := r.take("get_profile_agent_bindings", profileID)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := encodeCompactBytes(bindings)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(encoded, &fields); err != nil {
+		return nil, identityError(messageBindingsInvalid)
+	}
+	var agents []map[string]json.RawMessage
+	if raw, ok := fields["agents"]; !ok || json.Unmarshal(raw, &agents) != nil || agents == nil {
+		return nil, identityError(messageBindingsInvalid)
+	}
+	for _, a := range agents {
+		if a == nil {
+			return nil, identityError(messageBindingsInvalid)
+		}
+		var service string
+		_ = json.Unmarshal(a["service_type"], &service)
+		if service == "mihomo" {
+			var identity *string
+			if json.Unmarshal(a["id"], &identity) != nil || identity == nil || *identity == "" {
+				return nil, identityError(messageBindingsInvalid)
+			}
+		}
+	}
+	out, err := r.readSessions(profileID)
+	if err != nil {
+		return nil, err
+	}
+	var view struct {
+		Agents []model.Agent `json:"agents"`
+		Raw    model.Raw
+	}
+	if err = model.DecodeRecord(encoded, &view, &view.Raw); err != nil {
+		return nil, err
+	}
+	for _, a := range view.Agents {
+		if a.ServiceType == "mihomo" && a.ID != "" {
+			out.MihomoAgentIDs = append(out.MihomoAgentIDs, a.ID)
+		}
+	}
+	res := recFromStruct(struct {
+		SessionGoal       *string       `json:"session_goal"`
+		SessionID         *model.String `json:"session_id"`
+		SessionCompleted  bool          `json:"session_completed"`
+		HasGatewaySession bool          `json:"has_gateway_session"`
+		MihomoAgentIDs    []string      `json:"mihomo_agent_ids"`
+	}{out.SessionGoal, out.SessionID, out.SessionCompleted, out.HasGatewaySession, out.MihomoAgentIDs})
+	o, _ := res.(*recObj)
+	return o, nil
+}
+
+// runRow calls the typed Go function corresponding to a recorded Python row.
+func runRow(row recordedRow, env *replayEnv) (any, error) {
 	a := row.Args
-	ctx := context.Background()
 	switch row.Fn {
 	case "read_marker":
-		state, marker := ReadMarker(a.Value("config"))
+		p := recToProfile(a.value("config"))
+		state, marker := ReadMarkerProfile(p)
 		if marker == nil {
 			return []any{state, nil}, nil
 		}
-		return []any{state, marker}, nil
+		raw, _ := p.Mihomo.Fields.Get(MarkerKey)
+		parsed, _ := parseRec(raw)
+		out := parsed.(*recObj)
+		out.set("route_rule_set_ids", recStrings(marker.RouteRuleSetIDs))
+		return []any{state, out}, nil
 	case "is_full_tun":
-		return IsFullTun(a.Value("config")), nil
+		state, _ := ReadMarkerProfile(recToProfile(a.value("config")))
+		return state == StateValid, nil
 	case "route_rule_set_ids":
-		return RouteRuleSetIDs(a.Value("config")), nil
+		return recStrings(ProfileRuleIDs(recToProfile(a.value("config")))), nil
 	case "tun_filters":
-		return jsonx.ListOf(TunFilters(a.Value("tun"))), nil
+		n, err := recToNode(a.value("tun"))
+		if err != nil {
+			return []any{}, nil
+		}
+		return recStrings(TunFilterPaths(n)), nil
 	case "full_tun_document":
-		return FullTunDocument(a.Value("document"))
+		n, err := recToNode(a.value("document"))
+		if err != nil || n == nil || n.Kind != yaml.MappingNode {
+			return nil, gatewayError(messageDocumentObject)
+		}
+		out, err := FullTunNode(n)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := yamlx.ToJSON(out)
+		if err != nil {
+			return nil, err
+		}
+		return parseRec(raw)
 	case "full_tun_base_yaml":
-		return FullTunBaseYAML(a.Value("text"))
+		text, ok := a.value("text").(string)
+		if !ok {
+			return nil, gatewayError(messageBaseText)
+		}
+		return FullTunYAML(text)
 	case "is_full_tun_document":
-		return IsFullTunDocument(a.Value("doc")), nil
+		n, err := recToNode(a.value("doc"))
+		return err == nil && FullTunShape(n), nil
 	case "check_generation":
-		return nil, CheckGeneration(a.Value("config"))
+		return nil, CheckProfile(recToProfile(a.value("config")))
 	case "require_full_tun_generated":
-		return nil, RequireFullTunGenerated(a.Value("main"))
+		n, _ := recToNode(a.value("main"))
+		return nil, RequireDocument(n)
 	case "legacy_context":
-		profileID, err := profileArg(a.Value("profile_id"))
+		profileID, err := profileArg(a.value("profile_id"))
 		if err != nil {
 			return nil, err
 		}
-		return LegacyContext(ctx, nil, profileID)
+		return env.legacyContext(profileID)
 	case "needs_context":
-		return boolOut(NeedsContext(a.Value("config")))
+		p := recToProfile(a.value("config"))
+		s, _ := ReadMarkerProfile(p)
+		return s == StateAbsent && GatewayEnabled(p), nil
 	case "base_is_full_tun":
-		return boolOut(BaseIsFullTun(a.Value("config")))
+		return BaseFullTun(recToProfile(a.value("config"))), nil
 	case "legacy_source":
-		return LegacySource(a.Value("config"), a.Value("context"))
+		s, err := LegacyProfileSource(recToProfile(a.value("config")), recToContext(a.value("context")))
+		if err != nil {
+			return nil, err
+		}
+		if s == "" {
+			return nil, nil
+		}
+		return s, nil
 	case "publish_legacy_source":
-		profileID, err := profileArg(a.Value("profile_id"))
+		profileID, err := profileArg(a.value("profile_id"))
 		if err != nil {
 			return nil, err
 		}
-		return PublishLegacySource(ctx, nil, profileID, a.Value("config"), a.Value("agent_id"))
+		p := recToProfile(a.value("config"))
+		s, _ := ReadMarkerProfile(p)
+		if s != StateAbsent || profileID == "" {
+			return nil, nil
+		}
+		c, err := env.readSessions(profileID)
+		if err != nil {
+			return nil, err
+		}
+		agentID, ok := a.value("agent_id").(string)
+		if !ok || agentID == "" {
+			return nil, identityError(messageTopologyIdentity)
+		}
+		c.MihomoAgentIDs = []string{agentID}
+		source, err := LegacyProfileSource(p, c)
+		if err != nil {
+			return nil, err
+		}
+		if source == "" {
+			return nil, nil
+		}
+		return source, nil
 	case "legacy_gateway_agent_ids":
-		return LegacyGatewayAgentIDs(a.Value("config"), a.Value("context"))
+		ids, err := LegacyAgentIDs(recToProfile(a.value("config")), recToContext(a.value("context")))
+		return recStrings(ids), err
 	case "gateway_was_used":
-		return boolOut(GatewayWasUsed(a.Value("config"), a.Value("agent"), a.Value("source")))
+		source, _ := a.value("source").(string)
+		var agent model.Agent
+		raw, _ := encodeCompactBytes(a.value("agent"))
+		_ = jsondecode.Unmarshal(raw, &agent)
+		return WasGatewayUsed(recToProfile(a.value("config")), &agent, source)
 	case "mode_from_context":
-		return ModeFromContext(a.Value("config"), a.Value("context"))
-	case "router_split_state":
-		profileID, err := profileArg(a.Value("profile_id"))
+		s, err := ProfileState(recToProfile(a.value("config")), recToContext(a.value("context")))
 		if err != nil {
 			return nil, err
 		}
-		return RouterSplitState(ctx, nil, profileID, a.Value("config"), a.Value("context"))
+		if s.Mode == nil {
+			return nil, nil
+		}
+		return *s.Mode, nil
+	case "router_split_state":
+		profileID, err := profileArg(a.value("profile_id"))
+		if err != nil {
+			return nil, err
+		}
+		cfgVal := a.value("config")
+		if cfgVal == nil {
+			v, err := env.take("get_profile", profileID)
+			if err != nil {
+				return nil, err
+			}
+			cfgVal = v
+		}
+		ctxVal := a.value("context")
+		if ctxVal == nil {
+			v, err := env.legacyContext(profileID)
+			if err != nil {
+				return nil, err
+			}
+			ctxVal = v
+		}
+		state, err := ProfileState(recToProfile(cfgVal), recToContext(ctxVal))
+		if err != nil {
+			return nil, err
+		}
+		return recFromStruct(state), nil
 	}
 	return nil, notExpressible("unknown function " + row.Fn)
 }
@@ -307,9 +687,7 @@ func replay(t *testing.T, path string) {
 		tests[row.Test] = true
 		files[strings.SplitN(row.Test, "::", 2)[0]] = true
 		env := &replayEnv{calls: row.Env}
-		restore := env.install()
-		out, err := runRow(row)
-		restore()
+		out, err := runRow(row, env)
 		var ne notExpressible
 		if errors.As(err, &ne) {
 			notExpr[row.Fn]++

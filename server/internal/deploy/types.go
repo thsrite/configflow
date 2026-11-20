@@ -176,7 +176,7 @@ type BuildInput struct {
 	Source                *Source
 	ConfigContent         string
 	ProviderDownloads     []ProviderFile
-	RulesetDownloads      []convert.Download
+	RulesetDownloads      []convert.ResourceDownload
 	CustomFiles           []CustomFile
 	PinnedFiles           []PinnedFile
 	BaseURL, DeploymentID string

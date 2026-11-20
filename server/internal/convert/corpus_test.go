@@ -657,9 +657,6 @@ func goClass(err error) string {
 	case errors.As(err, &e):
 		return "EasyTierSettingsError"
 	}
-	if c := PyErrorClass(err); c != "" {
-		return c
-	}
 	return "error"
 }
 

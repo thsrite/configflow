@@ -1,6 +1,7 @@
 package routersplit
 
 import (
+	"configflow/internal/gateway/gwbase"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
@@ -9,6 +10,13 @@ import (
 	"gopkg.in/yaml.v3"
 	"sync"
 )
+
+// HookMissingError means the setup-session provider was not registered.
+type HookMissingError struct{ Hook, Provider string }
+
+func (e *HookMissingError) Error() string {
+	return "common.router_split: " + e.Hook + " is not available (provided by " + e.Provider + ")"
+}
 
 // SessionReader reads setup-owned session records before a profile transaction.
 type SessionReader func(context.Context, *repo.Repository, string) ([]Session, error)
@@ -93,4 +101,37 @@ func ProfileRuleIDs(profile *model.Profile) []string {
 		return []string{}
 	}
 	return append([]string{}, marker.RouteRuleSetIDs...)
+}
+
+// PublishSource reads session evidence for an unmarked publishing profile.
+func PublishSource(ctx context.Context, r *repo.Repository, id string, profile *model.Profile, agentID string) (string, error) {
+	state, _ := ReadMarkerProfile(profile)
+	if state != StateAbsent || id == "" {
+		return "", nil
+	}
+	c, err := readSessions(ctx, r, id)
+	if err != nil {
+		return "", err
+	}
+	if agentID == "" {
+		return "", identityError(messageTopologyIdentity)
+	}
+	c.MihomoAgentIDs = []string{agentID}
+	return LegacyProfileSource(profile, c)
+}
+
+// WasGatewayUsed recognizes setup purpose and the retained installation proof.
+func WasGatewayUsed(profile *model.Profile, agent *model.Agent, source string) (bool, error) {
+	if source == "setup" || (profile != nil && profile.Mihomo.Fields.Has(gwbase.RestoreKey)) {
+		return true, nil
+	}
+	if agent == nil {
+		return false, nil
+	}
+	raw, ok, err := agent.MemberJSON("gateway_installation_id")
+	if err != nil || !ok {
+		return false, nil
+	}
+	var proof string
+	return json.Unmarshal(raw, &proof) == nil && proof != "", nil
 }

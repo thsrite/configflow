@@ -133,8 +133,6 @@ func pythonClass(err error) string {
 		return "ValueError"
 	}
 	switch e := err.(type) {
-	case *convert.PyError:
-		return e.Class
 	case *convert.DialerReferenceError:
 		return "DialerReferenceError"
 	case *convert.EasyTierSettingsError:

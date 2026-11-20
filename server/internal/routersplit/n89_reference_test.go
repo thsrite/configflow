@@ -1,12 +1,13 @@
 package routersplit
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/testgolden"
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
 	"testing"
+
+	"configflow/internal/testgolden"
+	"configflow/internal/testjson"
 )
 
 type n89Expected struct {
@@ -15,9 +16,9 @@ type n89Expected struct {
 	InputSHA256 string `json:"input_sha256"`
 	Fn          string `json:"fn"`
 	Answer      struct {
-		Out   any           `json:"out"`
-		Err   *jsonx.Object `json:"err"`
-		Calls int           `json:"calls"`
+		Out   any     `json:"out"`
+		Err   *recObj `json:"err"`
+		Calls int     `json:"calls"`
 	} `json:"answer"`
 }
 
@@ -27,23 +28,21 @@ func n89Expectations(t *testing.T, path string) map[int]n89Expected {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Decode via jsonx so numbers and ordered objects compare to the original
-	// replay without float conversion. The sidecar is produced only by Python.
-	value, err := jsonx.Parse(raw)
+	value, err := parseRec(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := map[int]n89Expected{}
 	for _, v := range value.([]any) {
-		row := v.(*jsonx.Object)
-		if row.GetString("file") != filepath.Base(path) {
+		row := v.(*recObj)
+		if row.str("file") != filepath.Base(path) {
 			continue
 		}
-		a := row.GetObject("answer")
-		e := n89Expected{File: row.GetString("file"), Line: int(row.GetInt("line")), InputSHA256: row.GetString("input_sha256"), Fn: row.GetString("fn")}
-		e.Answer.Out = decodeRecorded(a.Value("out"))
-		e.Answer.Err = a.GetObject("err")
-		e.Answer.Calls = int(a.GetInt("calls"))
+		a := row.obj("answer")
+		e := n89Expected{File: row.str("file"), Line: row.intVal("line"), InputSHA256: row.str("input_sha256"), Fn: row.str("fn")}
+		e.Answer.Out = decodeRecorded(a.value("out"))
+		e.Answer.Err = a.obj("err")
+		e.Answer.Calls = a.intVal("calls")
 		if _, duplicate := out[e.Line]; duplicate {
 			t.Fatal("duplicate independent row")
 		}
@@ -69,7 +68,7 @@ func n89Check(t *testing.T, e n89Expected, row recordedRow, out any, err error, 
 	if row.Fn == "full_tun_base_yaml" && sameYAML(out, e.Answer.Out) {
 		return
 	}
-	if !jsonx.Equal(out, e.Answer.Out) {
+	if !testjson.Equal(e.Answer.Out, out, testjson.CompareOptions{DistinguishNumberLiterals: true}) {
 		t.Errorf("independent %s row %d: got %s want %s", e.Fn, e.Line, encode(out), encode(e.Answer.Out))
 	}
 }

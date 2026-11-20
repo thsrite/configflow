@@ -19,7 +19,6 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
@@ -47,21 +46,6 @@ type Source struct {
 	modelConfig *model.Config
 }
 
-// NewSource captures a legacy profile and its optional revision.
-func NewSource(config *jsonx.Object, revision *int64) *Source {
-	if config == nil {
-		source := &Source{}
-		if revision != nil {
-			value := *revision
-			source.revision = &value
-		}
-		return source
-	}
-	raw, _ := model.Marshal(config)
-	source, _ := SourceFromJSON(raw, revision)
-	return source
-}
-
 // ProfileID returns the snapshot's resolved profile identifier.
 func (s *Source) ProfileID() string {
 	if s == nil {
@@ -73,18 +57,6 @@ func (s *Source) ProfileID() string {
 }
 func (s *Source) gateway() *gateway.Config {
 	return gateway.NewConfig(s.config())
-}
-
-// NewTarget captures the Agent fields needed by the publishing chain.
-func NewTarget(record *jsonx.Object) Target {
-	if record == nil {
-		return Target{}
-	}
-	raw, _ := model.Marshal(record)
-	var agent model.Agent
-	_ = json.Unmarshal(raw, &agent)
-	target, _ := NewTypedTarget(&agent)
-	return target
 }
 
 func (s *Source) config() *model.Config {
@@ -180,16 +152,8 @@ func (Locations) SourceError(message, text string, line, column *int, cause erro
 	return sourceDiagnostic(message, text, Position{Line: line, Column: column}, cause, sourceLabel, diagnostic).Error()
 }
 
-func downloadRef(d convert.Download) (RuleRef, string, error) {
-	u, ok := d.URL.(string)
-	if !ok {
-		return RuleRef{}, "", preparation("Required rule has no source URL")
-	}
-	p, ok := d.LocalPath.(string)
-	if !ok {
-		return RuleRef{}, "", preparation("Invalid deployment file path")
-	}
-	return RuleRef{Name: d.Name, URL: u, Behavior: d.Behavior, Format: d.Format}, p, nil
+func downloadRef(d convert.ResourceDownload) (RuleRef, string, error) {
+	return RuleRef{Name: d.Name, URL: d.URL, Behavior: d.Behavior, Format: d.Format}, d.LocalPath, nil
 }
 
 // Wire installs deployment preparation diagnostics. A14 adds publication hooks.
@@ -606,7 +570,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 		return nil, preparation("Missing profile snapshot")
 	}
 	cfg := s.config()
-	p := &Prepared{Providers: []*provider.Artifact{}, ProviderDownloads: []ProviderFile{}, CustomFiles: []CustomFile{}, RulesetDownloads: []convert.Download{}}
+	p := &Prepared{Providers: []*provider.Artifact{}, ProviderDownloads: []ProviderFile{}, CustomFiles: []CustomFile{}, RulesetDownloads: []convert.ResourceDownload{}}
 	service := t.ServiceType
 	if service == "" {
 		service = "mihomo"
@@ -758,7 +722,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				for i := 0; i < len(providers.Content); i += 2 {
 					n := providers.Content[i+1]
 					if nodeText(yamlx.Get(n, "type")) == "http" && nodeText(yamlx.Get(n, "url")) != "" {
-						p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: providers.Content[i].Value, URL: nodeText(yamlx.Get(n, "url")), LocalPath: nodeText(yamlx.Get(n, "path")), Behavior: nodeText(yamlx.Get(n, "behavior")), Format: nodeText(yamlx.Get(n, "format"))})
+						p.RulesetDownloads = append(p.RulesetDownloads, convert.ResourceDownload{Name: providers.Content[i].Value, URL: nodeText(yamlx.Get(n, "url")), LocalPath: nodeText(yamlx.Get(n, "path")), Behavior: nodeText(yamlx.Get(n, "behavior")), Format: nodeText(yamlx.Get(n, "format"))})
 					}
 				}
 			}
@@ -767,9 +731,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			if e != nil {
 				return nil, e
 			}
-			for _, d := range ds {
-				p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
-			}
+			p.RulesetDownloads = append(p.RulesetDownloads, ds...)
 		}
 		if report.SubscriptionHosts != nil {
 			p.SubscriptionHosts, _ = yamlx.ToJSON(report.SubscriptionHosts)
@@ -792,7 +754,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			return nil, e
 		}
 		for _, v := range ds {
-			p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: v.Behavior})
+			p.RulesetDownloads = append(p.RulesetDownloads, convert.ResourceDownload{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: v.Behavior})
 		}
 		fs, e := mosdns.CustomFiles(cfg)
 		if e != nil {
@@ -823,7 +785,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			return nil, e
 		}
 		for _, v := range ds {
-			p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: scalar(v.Behavior)})
+			p.RulesetDownloads = append(p.RulesetDownloads, convert.ResourceDownload{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: scalar(v.Behavior)})
 		}
 		fs, e := oxidns.CustomFiles(profile)
 		if e != nil {

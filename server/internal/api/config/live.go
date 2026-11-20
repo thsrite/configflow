@@ -35,20 +35,19 @@ func registerLive(r *httpx.Router) {
 	r.GET("/api/config/<profile_id>/loon/<filename>", "config.get_profile_loon_named_config", func(c *httpx.Ctx) (*httpx.Response, error) { return live(c, configgen.Loon) })
 }
 func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
-	config, err := repo.GetConfig(c.Context(), c.ProfileID)
+	repository, err := repo.GetRepository(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	var system model.System
-	rawSystem, err := json.Marshal(struct {
-		SystemConfig any `json:"system_config"`
-	}{config.Value("system_config")})
+	profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
 	if err != nil {
 		return nil, err
 	}
-	if err = json.Unmarshal(rawSystem, &system); err != nil {
+	config, err := repository.Config(c.Context(), profileID, nil)
+	if err != nil {
 		return nil, err
 	}
+	system := model.System{SystemConfig: config.SystemConfig, Backup: config.Backup}
 	result, err := auth.ValidateSystemTokenOrJWT(c, &system)
 	if err != nil {
 		return nil, err
@@ -73,7 +72,7 @@ func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
 
 		}
 	}
-	out, err := configgen.Render(c.Context(), config, engine, base)
+	out, err := configgen.RenderConfig(c.Context(), config, engine, base)
 	if err != nil {
 		var reference *rules.StrategyReferenceError
 		if errors.As(err, &reference) {
@@ -89,7 +88,11 @@ func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
 	}
 	disposition := "inline"
 	if engine == configgen.Loon {
-		name := loonName(config.GetString("name"), config.GetString("profile_id")) + ".lcf"
+		profileName := ""
+		if config.Profile != nil {
+			profileName = config.Profile.Name
+		}
+		name := loonName(profileName, config.ProfileID) + ".lcf"
 		disposition = "inline; filename*=UTF-8''" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20")
 	}
 	return httpx.Text(200, out.Content).WithHeader("Content-Disposition", disposition), nil

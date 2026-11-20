@@ -21,7 +21,7 @@ func exportApp(t *testing.T) *httpxtest.Server {
 	t.Cleanup(func() { repo.SetHooks(previous) })
 	configexport.Wire()
 	routers.Wire()
-	repo.RegisterHooks(repo.Hooks{RedactEasytierSettings: convert.RedactEasyTierSettings})
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactEasytierJSON: convert.RedactEasyTierJSON}})
 	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
 }
 

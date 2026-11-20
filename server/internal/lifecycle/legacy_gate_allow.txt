@@ -6,10 +6,8 @@ legacy-file internal/agents/registration_legacy.go:<file>
 legacy-file internal/agents/runtime_legacy.go:<file>
 legacy-file internal/agents/trafficstore/legacy.go:<file>
 legacy-file internal/auth/legacy.go:<file>
-legacy-file internal/convert/legacy.go:<file>
 legacy-file internal/mosdns/legacy.go:<file>
 legacy-file internal/repo/legacy.go:<file>
-legacy-file internal/routersplit/legacy.go:<file>
 retired-directory internal/jsonx:<directory>
 retired-directory internal/pystr:<directory>
 retired-import internal/agents/client.go:configflow/internal/jsonx
@@ -34,10 +32,6 @@ retired-import internal/agents/trafficstore/legacy.go:configflow/internal/jsonx
 retired-import internal/agents/upgrade_support.go:configflow/internal/jsonx
 retired-import internal/agents/version.go:configflow/internal/jsonx
 retired-import internal/auth/legacy.go:configflow/internal/jsonx
-retired-import internal/configgen/adapter.go:configflow/internal/jsonx
-retired-import internal/convert/legacy.go:configflow/internal/jsonx
-retired-import internal/convert/rule_format_codec_test.go:configflow/internal/jsonx
-retired-import internal/deploy/adapter.go:configflow/internal/jsonx
 retired-import internal/httpx/ctx.go:configflow/internal/jsonx
 retired-import internal/httpx/errors.go:configflow/internal/jsonx
 retired-import internal/httpx/httpxtest/httpxtest.go:configflow/internal/jsonx
@@ -78,10 +72,6 @@ retired-import internal/repo/scope_test.go:configflow/internal/jsonx
 retired-import internal/repo/sections.go:configflow/internal/jsonx
 retired-import internal/repo/sections_roundtrip_test.go:configflow/internal/jsonx
 retired-import internal/repo/store_rows_test.go:configflow/internal/jsonx
-retired-import internal/routersplit/legacy.go:configflow/internal/jsonx
-retired-import internal/routersplit/n73_reference_test.go:configflow/internal/jsonx
-retired-import internal/routersplit/n89_reference_test.go:configflow/internal/jsonx
-retired-import internal/routersplit/recorded_test.go:configflow/internal/jsonx
 retired-import internal/yamlbridge/encode.go:configflow/internal/jsonx
 retired-import internal/yamlbridge/encode_test.go:configflow/internal/jsonx
 retired-import internal/yamlbridge/value.go:configflow/internal/jsonx
@@ -89,10 +79,6 @@ retired-import internal/yamlbridge/value_test.go:configflow/internal/jsonx
 retired-import internal/yamlx/yamlxtest/artifact.go:configflow/internal/jsonx
 retired-import internal/yamlx/yamlxtest/fixtures.go:configflow/internal/jsonx
 retired-import internal/yamlx/yamlxtest/readers.go:configflow/internal/jsonx
-retired-import tools/proddiff/baseline/main.go:configflow/internal/jsonx
-retired-import tools/proddiff/generator/bundle.go:configflow/internal/jsonx
-retired-symbol internal/convert/errors.go:PyError
-retired-symbol internal/convert/errors.go:PyErrorClass
 retired-symbol internal/httpx/ctx.go:PyParseInt
 retired-symbol internal/httpx/pyconv.go:PyParseInt
 retired-symbol internal/httpx/pyconv.go:PyTypeName

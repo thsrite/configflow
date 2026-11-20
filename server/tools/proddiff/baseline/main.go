@@ -13,11 +13,12 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
+	"configflow/internal/yamlx"
 )
 
 type plan struct {
@@ -88,23 +89,31 @@ func run() (resultErr error) {
 		return err
 	}
 	defer manager.Close()
-	system, err := repository.GetSystem(ctx)
+	system, err := repository.System(ctx)
 	if err != nil {
 		return err
 	}
-	records := system.GetList("agents")
+	records := system.Agents
 	receipts := deploy.NewReceipts(data)
 	plans := []plan{}
-	for _, value := range records {
-		record, ok := value.(*jsonx.Object)
-		if !ok {
+	for i := range records {
+		record := &records[i]
+		applied := record.AppliedContent
+		if applied == nil {
 			continue
 		}
-		applied := record.GetObject("applied_content")
-		if applied.Len() == 0 {
+		appliedRaw, _, err := record.MemberJSON("applied_content")
+		if err != nil {
+			return err
+		}
+		var appliedFields map[string]json.RawMessage
+		if err := json.Unmarshal(appliedRaw, &appliedFields); err != nil || len(appliedFields) == 0 {
 			continue
 		}
-		target := deploy.NewTarget(record)
+		target, err := deploy.NewTypedTarget(record)
+		if err != nil {
+			return err
+		}
 		receipt, err := receipts.LoadAgent(ctx, target.Record, true)
 		if err != nil {
 			return err
@@ -112,11 +121,19 @@ func run() (resultErr error) {
 		if receipt == nil {
 			return errors.New("historical applied baseline has no readable receipt")
 		}
-		cfg, err := repository.GetCompatConfig(ctx, applied.GetString("profile_id"), nil)
+		cfg, err := repository.Config(ctx, applied.ProfileID, nil)
 		if err != nil {
 			return err
 		}
-		candidate, err := deploy.PrepareContentBundle(ctx, manager, target, deploy.NewSource(cfg, nil), receipt.BaseURL, "format-proof")
+		cfgRaw, err := model.Marshal(cfg)
+		if err != nil {
+			return err
+		}
+		source, err := deploy.SourceFromJSON(cfgRaw, nil)
+		if err != nil {
+			return err
+		}
+		candidate, err := deploy.PrepareContentBundle(ctx, manager, target, source, receipt.BaseURL, "format-proof")
 		if err != nil {
 			return fmt.Errorf("prepare native YAML for baseline proof: %w", err)
 		}
@@ -143,7 +160,7 @@ func run() (resultErr error) {
 		if proofErr != nil {
 			return proofErr
 		}
-		if evidence.OldFingerprint != applied.GetString("fingerprint") {
+		if evidence.OldFingerprint != applied.Fingerprint {
 			return errors.New("applied fingerprint does not attest old archive")
 		}
 		oldDigests, err := deploy.Digests(deploy.ComparisonManifest(receipt.Manifest, receipt.ComparisonConfig))
@@ -154,11 +171,13 @@ func run() (resultErr error) {
 		if err != nil {
 			return err
 		}
-		oldFields, err := jsonx.Parse(oldRaw)
+		oldNode, err := yamlx.FromJSON(oldRaw)
 		if err != nil {
 			return err
 		}
-		if !jsonx.Equal(oldFields, applied.Value("files")) {
+		appliedFilesRaw := appliedFields["files"]
+		appliedFilesNode, err := yamlx.FromJSON(appliedFilesRaw)
+		if err != nil || !yamlx.Equal(oldNode, appliedFilesNode) {
 			return errors.New("applied file digests do not attest old archive")
 		}
 		if !evidence.MainBytesChanged {
@@ -171,7 +190,7 @@ func run() (resultErr error) {
 		if err = privateWrite(filepath.Join(folder, "after.tar.gz"), after); err != nil {
 			return err
 		}
-		agentFolder := filepath.Join(data, ".agent-rule-sync", key, hash([]byte(applied.GetString("deployment_id"))))
+		agentFolder := filepath.Join(data, ".agent-rule-sync", key, hash([]byte(applied.DeploymentID)))
 		original, err := os.ReadFile(filepath.Join(agentFolder, "receipt.json"))
 		if err != nil {
 			return err
@@ -204,22 +223,24 @@ func run() (resultErr error) {
 		}
 		// Keep reported device identity/revisions untouched. Only the private file
 		// representation and its dependent byte fingerprints are migrated.
-		applied.Set("fingerprint", evidence.NewFingerprint)
+		applied.Fingerprint = evidence.NewFingerprint
 		digests, err := deploy.Digests(deploy.ComparisonManifest(next.Manifest(), next.Comparison()))
 		if err != nil {
 			return err
 		}
-		raw, err := json.Marshal(digests)
-		if err != nil {
-			return err
+		fileMap := model.Map[string]{}
+		for path, sha := range digests {
+			fileMap.Set(path, sha)
 		}
-		files, err := jsonx.Parse(raw)
-		if err != nil {
-			return err
-		}
-		applied.Set("files", files)
-		if applied.Has("deployed_config_sha256") {
-			applied.Set("deployed_config_sha256", next.Comparison().SHA256)
+		applied.Files = &fileMap
+		if _, has := appliedFields["deployed_config_sha256"]; has {
+			shaRaw, err := json.Marshal(next.Comparison().SHA256)
+			if err != nil {
+				return err
+			}
+			if err := applied.SetJSON("deployed_config_sha256", shaRaw); err != nil {
+				return err
+			}
 		}
 		plans = append(plans, plan{agentFolder, after, metadata, hash(after)})
 	}

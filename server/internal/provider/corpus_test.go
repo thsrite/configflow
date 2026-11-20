@@ -110,9 +110,6 @@ func errClass(err error) string {
 	if errors.As(err, &classed) {
 		return classed.PythonClass()
 	}
-	if c := convert.PyErrorClass(err); c != "" {
-		return c
-	}
 	return fmt.Sprintf("%T", err)
 }
 

@@ -21,7 +21,7 @@ func TestN73OpaqueValuesKeepTheRouterPlan(t *testing.T) {
 	} {
 		plans := make([]any, 2)
 		for i, suffix := range pair {
-			base, err := routersplit.FullTunBaseYAML(suffix)
+			base, err := routersplit.FullTunYAML(suffix)
 			if err != nil {
 				t.Fatal(err)
 			}

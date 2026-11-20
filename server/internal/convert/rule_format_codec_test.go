@@ -1,17 +1,16 @@
 package convert_test
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rulesetfmt"
 )
 
-func TestRulesetFormatNarrowCodecPreservesR5(t *testing.T) {
+func TestRuleFormatPreservesR5(t *testing.T) {
 	for _, test := range []struct {
 		name, rule, library, want string
 		err                       error
@@ -30,43 +29,18 @@ func TestRulesetFormatNarrowCodecPreservesR5(t *testing.T) {
 		{"first ID match", `{"library_rule_id":"r"}`, `[{"id":"r","format":"text"},{"id":"r","format":"mrs"},{"id":[]}]`, "text", nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			value, err := jsonx.ParseString(test.rule)
-			if err != nil {
+			var rule model.RuleConfig
+			if err := json.Unmarshal([]byte(test.rule), &rule); err != nil {
 				t.Fatal(err)
 			}
-			parsed, err := jsonx.ParseString(`{"rule_library":` + test.library + `}`)
-			if err != nil {
+			var shared model.Shared
+			if err := json.Unmarshal([]byte(`{"rule_library":`+test.library+`}`), &shared); err != nil {
 				t.Fatal(err)
 			}
-			config := parsed.(*jsonx.Object)
-			// These values cannot be encoded as JSON and do not participate in
-			// format inference. They must never be traversed by this codec.
-			config.Set("agents", func() {})
-			config.Set("oxidns", make(chan int))
-			got, err := convert.RulesetFormat(value.(*jsonx.Object), config, "")
+			config := &model.Config{RuleLibrary: shared.RuleLibrary}
+			got, err := convert.RuleFormat(rule, config, "")
 			if got != test.want || (test.err == nil && err != nil) || (test.err != nil && !errors.Is(err, test.err)) {
 				t.Fatalf("got %q / %v; want %q / %v", got, err, test.want, test.err)
-			}
-		})
-	}
-}
-
-// BenchmarkRulesetFormatUnrelatedConfig measures whether unrelated Agent
-// histories are traversed. Input allocation is outside the measured operation;
-// the 0/1/16 MiB variants have identical format declarations.
-func BenchmarkRulesetFormatUnrelatedConfig(b *testing.B) {
-	for _, size := range []int{0, 1 << 20, 16 << 20} {
-		b.Run(fmt.Sprint(size), func(b *testing.B) {
-			rule := jsonx.Obj("library_rule_id", "r")
-			config := jsonx.Obj("rule_library", []any{jsonx.Obj("id", "r", "format", "yaml")},
-				"agents", []any{jsonx.Obj("unrelated_history", strings.Repeat("x", size))})
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				format, err := convert.RulesetFormat(rule, config, "")
-				if err != nil || format != "yaml" {
-					b.Fatalf("format=%q: %v", format, err)
-				}
 			}
 		})
 	}

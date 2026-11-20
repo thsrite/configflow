@@ -29,7 +29,10 @@ func TestN811MissingGenerationCollaboratorFailsClosed(t *testing.T) {
 
 func TestOptionalSnapshotsAndTargetsRemainSafe(t *testing.T) {
 	revision := int64(7)
-	empty := NewSource(nil, &revision)
+	empty, err := SourceFromJSON([]byte(`{}`), &revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if empty.revision == nil || *empty.revision != revision || empty.serverDomain("https://panel.example.com") != "https://panel.example.com" {
 		t.Fatal("empty source lost optional revision/default")
 	}

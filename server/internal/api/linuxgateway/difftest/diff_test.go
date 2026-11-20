@@ -772,7 +772,7 @@ func TestA20SplitHTTPGuards(t *testing.T) {
 			base := profile.Mihomo.CustomConfig
 			switch mode {
 			case "full_tun":
-				text, err := routersplit.FullTunBaseYAML(base)
+				text, err := routersplit.FullTunYAML(base)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -782,7 +782,7 @@ func TestA20SplitHTTPGuards(t *testing.T) {
 			case "invalid":
 				mihomo["router_split"] = map[string]any{"version": 2}
 			case "legacy_full_tun":
-				text, err := routersplit.FullTunBaseYAML(base)
+				text, err := routersplit.FullTunYAML(base)
 				if err != nil {
 					t.Fatal(err)
 				}

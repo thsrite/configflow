@@ -17,7 +17,7 @@ func TestN73BaseYAMLGraphs(t *testing.T) {
 		fmt.Fprintf(&chain, "a%d: &a%d [*a%d, *a%d]\n", i, i, i-1, i-1)
 	}
 	for _, source := range []string{chain.String(), "a: &a [*a]\n"} {
-		if _, err := FullTunBaseYAML(source); err == nil {
+		if _, err := FullTunYAML(source); err == nil {
 			t.Fatal("unsafe graph generated")
 		}
 		profile := &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: source}}
@@ -29,7 +29,7 @@ func TestN73BaseYAMLGraphs(t *testing.T) {
 
 func TestN73DisplacedTunAnchorsKeepTheirValues(t *testing.T) {
 	for _, source := range []string{"tun: &n null\nkeep: *n\n", "tun: {dns-hijack: &h [udp://any:53]}\nkeep: *h\n"} {
-		out, err := FullTunBaseYAML(source)
+		out, err := FullTunYAML(source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func FuzzRouterSplitYAML(f *testing.F) {
 	f.Add("tun: {enable: true}")
 	f.Add("tun: &t {include-interface: *t}")
 	f.Fuzz(func(t *testing.T, text string) {
-		out, err := FullTunBaseYAML(text)
+		out, err := FullTunYAML(text)
 		if err == nil && !sameYAML(out, out) {
 			t.Fatal("invalid generated YAML")
 		}
@@ -67,7 +67,7 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 			started := time.Now()
 			source := "extra: " + nested
-			out, err := FullTunBaseYAML(source)
+			out, err := FullTunYAML(source)
 			if depth <= 10000 {
 				if err != nil {
 					t.Fatal(err)

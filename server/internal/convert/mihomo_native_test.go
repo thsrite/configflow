@@ -258,8 +258,4 @@ func TestNativeMihomoClientsShareRegistration(t *testing.T) {
 	if err != nil || yamlx.Get(result, "name").Value != "test" || converter.calls != 1 {
 		t.Fatal("client did not use typed registration")
 	}
-	var missing *HookMissingError
-	if result, err := (legacyNodeConverter{}).ConvertProxy(context.Background(), "http://example.com"); result != nil || !errors.As(err, &missing) {
-		t.Fatal("missing converter silently skipped", err)
-	}
 }

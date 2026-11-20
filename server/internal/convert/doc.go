@@ -9,9 +9,7 @@
 //   - dialers.go, dialers_api.go: backend/utils/dialer_references.py
 //   - easytier.go: backend/common/mihomo_easytier.py
 //
-// Configuration values are jsonx values. Python's intentional exceptions
-// are *DialerReferenceError and *EasyTierSettingsError; the exceptions
-// Python raises by accident on malformed input are *PyError.
-//
-// Sub-Store conversion (C13) is injected through ProxyStringConverter.
+// Configuration values are typed model records and yamlx nodes. Intentional
+// validation errors are *DialerReferenceError, *EasyTierSettingsError and
+// *ProxyYAMLError. Sub-Store conversion is injected through NodeConverter.
 package convert

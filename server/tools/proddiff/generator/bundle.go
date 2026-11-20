@@ -10,7 +10,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
@@ -19,19 +18,8 @@ import (
 	"configflow/internal/yamlx"
 )
 
-// deployTarget and deploySource bridge typed records into deploy's constructors
-// until W6 replaces deploy.NewTarget / deploy.NewSource with typed entries.
 func deployTarget(agent model.Agent) (deploy.Target, error) {
-	raw, err := model.Marshal(agent)
-	if err != nil {
-		return deploy.Target{}, err
-	}
-	parsed, err := jsonx.Parse(raw)
-	if err != nil {
-		return deploy.Target{}, err
-	}
-	obj, _ := parsed.(*jsonx.Object)
-	return deploy.NewTarget(obj), nil
+	return deploy.NewTypedTarget(&agent)
 }
 
 func deploySource(config *model.Config) (*deploy.Source, error) {
@@ -39,12 +27,7 @@ func deploySource(config *model.Config) (*deploy.Source, error) {
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	obj, _ := parsed.(*jsonx.Object)
-	return deploy.NewSource(obj, nil), nil
+	return deploy.SourceFromJSON(raw, nil)
 }
 
 // deploymentBundle compares the public Build API on a captured production
@@ -98,7 +81,7 @@ func deploymentBundle(ctx context.Context, repository *repo.Repository, config *
 			return "", err
 		}
 		for _, d := range downloads {
-			in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior})
+			in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior})
 		}
 		files, err := mosdns.CustomFiles(config)
 		if err != nil {
@@ -125,7 +108,7 @@ func deploymentBundle(ctx context.Context, repository *repo.Repository, config *
 			if d.Behavior != nil {
 				behavior = d.Behavior.Value
 			}
-			in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: behavior})
+			in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: behavior})
 		}
 		files, err := oxidns.CustomFiles(profile)
 		if err != nil {

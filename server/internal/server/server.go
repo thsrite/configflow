@@ -179,7 +179,7 @@ func wireCore() {
 	notifications.SetInputs(notifications.Inputs{Rows: tasks.Available, MissingTasks: tasks.Missing})
 	repo.RegisterHooks(repo.Hooks{DefaultServerDomain: defaultServerDomain})
 	// Desensitized export of EasyTier settings (repo cannot import convert).
-	repo.RegisterHooks(repo.Hooks{RedactEasytierSettings: convert.RedactEasyTierSettings})
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactEasytierJSON: convert.RedactEasyTierJSON}})
 }
 
 // defaultServerDomain is what load_config stores outside a container:

@@ -194,9 +194,6 @@ func pythonClass(err error) string {
 	case errors.As(err, &hook):
 		return "HookMissingError"
 	}
-	if class := convert.PyErrorClass(err); class != "" {
-		return class
-	}
 	return fmt.Sprintf("Go:%T", err)
 }
 

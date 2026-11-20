@@ -3,8 +3,8 @@ package routersplit
 import (
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/testgolden"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 
@@ -21,12 +21,12 @@ func newNativeOracle(t *testing.T) *nativeOracle {
 func rowYAML(row recordedRow) (string, bool) {
 	switch row.Fn {
 	case "full_tun_base_yaml":
-		value, ok := row.Args.Value("text").(string)
+		value, ok := row.Args.value("text").(string)
 		return value, ok
 	case "base_is_full_tun", "check_generation", "mode_from_context", "router_split_state":
-		config, _ := row.Args.Value("config").(*jsonx.Object)
-		mihomo, _ := config.Value("mihomo").(*jsonx.Object)
-		value, ok := mihomo.Value("custom_config").(string)
+		config, _ := row.Args.value("config").(*recObj)
+		mihomo, _ := config.value("mihomo").(*recObj)
+		value, ok := mihomo.value("custom_config").(string)
 		return value, ok
 	}
 	return "", false
@@ -50,35 +50,35 @@ func (o *nativeOracle) compare(t *testing.T, row recordedRow, output any, actual
 	if parseErr != nil {
 		normalized = "["
 	} // Python's existing invalid-document path.
-	args := row.Args.DeepCopy()
+	args := row.Args.clone()
 	if row.Fn == "full_tun_base_yaml" {
-		args.Set("text", normalized)
+		args.set("text", normalized)
 	} else {
-		args.GetObject("config").GetObject("mihomo").Set("custom_config", normalized)
+		args.obj("config").obj("mihomo").set("custom_config", normalized)
 	}
-	data, err := jsonx.Compact(jsonx.Obj("fn", row.Fn, "args", args))
+	data, err := encodeCompactBytes(newRecObj("fn", row.Fn, "args", args))
 	if err != nil {
 		t.Fatal(err)
 	}
 	answerBytes := o.lines.Call(t, data, nil)
-	value, err := jsonx.Parse(answerBytes)
+	value, err := parseRec(answerBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer := value.(*jsonx.Object)
-	if expected := answer.GetObject("err"); expected != nil {
+	answer := value.(*recObj)
+	if expected := answer.obj("err"); expected != nil {
 		return class, compareError(expected, actualErr) == ""
 	}
 	if actualErr != nil {
 		return class, false
 	}
-	expected := answer.Value("out")
+	expected := answer.value("out")
 	if row.Fn == "full_tun_base_yaml" {
 		got, gok := output.(string)
 		want, wok := expected.(string)
 		return class, gok && wok && yamlxtest.SemanticEqual(got, want)
 	}
-	return class, jsonx.Equal(expected, output)
+	return class, testjson.Equal(expected, output, testjson.CompareOptions{DistinguishNumberLiterals: true})
 }
 
 // nativeFullTunInvariant covers native non-string-key maps where Python folds

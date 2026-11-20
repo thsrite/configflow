@@ -103,11 +103,19 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 		t.Fatal(err)
 	}
 	if baseline {
-		cfg, err := f.s.Repo.GetCompatConfig(f.s.Context(), "default", nil)
+		cfg, err := f.s.Repo.Config(f.s.Context(), "default", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err = deploy.NewReceipts(f.s.DataDir).Capture(f.s.Context(), "content-agent", old, deploy.NewSource(cfg, nil), "https://original.example.test/prefix", nil); err != nil {
+		raw, err := model.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source, err := deploy.SourceFromJSON(raw, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = deploy.NewReceipts(f.s.DataDir).Capture(f.s.Context(), "content-agent", old, source, "https://original.example.test/prefix", nil); err != nil {
 			t.Fatal(err)
 		}
 	}

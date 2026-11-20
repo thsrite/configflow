@@ -72,11 +72,10 @@ func TestLoonFilenamePercentEncoding(t *testing.T) {
 }
 
 // TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation rotates the
-// stored token after an earlier repo.GetConfig in the same request. The live
-// route authenticates and renders from that request-scoped compat view, so the
-// pre-rotation token still wins. The Linux gateway provider makes one typed
-// read inside the handler for both its credential check and its render, so it
-// sees the rotated token; it never mixes the two generations.
+// stored token after an earlier typed repository read in the same request.
+// Both the live route and the Linux gateway provider make one typed read inside
+// the handler for both credential check and render, so both observe the rotated
+// token and never mix the two generations.
 func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) {
 	mihomoenv.Wire()
 	tests := []struct {
@@ -85,7 +84,7 @@ func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) 
 		expectedStatus     int
 		snapshot, rejected string
 	}{
-		{"live config", "/api/config/loon", 200, "token-before-rotation", "token-after-rotation"},
+		{"live config", "/api/config/loon", 200, "token-after-rotation", "token-before-rotation"},
 		{"linux gateway provider", "/api/custom-config/linux-gateway/rules/missing", 200, "token-after-rotation", "token-before-rotation"},
 	}
 	for _, tt := range tests {
@@ -107,7 +106,11 @@ func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) 
 								if rotated {
 									return nil, nil
 								}
-								if _, err := repo.GetConfig(c.Context(), c.ProfileID); err != nil {
+								profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+								if err != nil {
+									return nil, err
+								}
+								if _, err := s.Repo.Config(c.Context(), profileID, nil); err != nil {
 									return nil, err
 								}
 								rotated = true

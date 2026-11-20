@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/convert"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/testgolden"
@@ -60,9 +59,6 @@ func errClass(err error) string {
 	var u *UnsupportedYAMLError
 	if errors.As(err, &u) {
 		return "Unsupported"
-	}
-	if class := convert.PyErrorClass(err); class != "" {
-		return class
 	}
 	return fmt.Sprintf("%T", err)
 }

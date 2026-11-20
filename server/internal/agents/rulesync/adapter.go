@@ -72,7 +72,7 @@ func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Se
 	})
 }
 
-func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseURL string) (content string, downloads []convert.Download, err error) {
+func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseURL string) (content string, downloads []convert.ResourceDownload, err error) {
 	err = source.ViewConfig(func(config *model.Config) error {
 		if target.ServiceType == "mihomo" {
 			var e error
@@ -91,9 +91,9 @@ func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.S
 		if e != nil {
 			return e
 		}
-		downloads = make([]convert.Download, 0, len(entries))
+		downloads = make([]convert.ResourceDownload, 0, len(entries))
 		for _, entry := range entries {
-			downloads = append(downloads, convert.Download{URL: entry.URL, LocalPath: entry.LocalPath})
+			downloads = append(downloads, convert.ResourceDownload{URL: entry.URL, LocalPath: entry.LocalPath})
 		}
 		return nil
 	})

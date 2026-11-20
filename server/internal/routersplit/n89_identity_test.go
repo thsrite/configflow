@@ -68,8 +68,9 @@ func TestN89InstallationProofRequiresStoredText(t *testing.T) {
 		want bool
 	}{{`0`, false}, {`1`, false}, {`true`, false}, {`[]`, false}, {`{}`, false}, {`""`, false}, {`"0"`, true}, {`"synthetic-proof"`, true}} {
 		t.Run(tc.raw, func(t *testing.T) {
-			agent := json.RawMessage(`{"gateway_installation_id":` + tc.raw + `}`)
-			got, err := GatewayWasUsed(map[string]any{}, agent, nil)
+			var agent model.Agent
+			_ = json.Unmarshal([]byte(`{"gateway_installation_id":`+tc.raw+`}`), &agent)
+			got, err := WasGatewayUsed(&model.Profile{}, &agent, "")
 			if err != nil || got != tc.want {
 				t.Fatalf("proof %s: %v %v", tc.raw, got, err)
 			}

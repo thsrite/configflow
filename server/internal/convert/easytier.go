@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
@@ -589,4 +590,22 @@ func RedactEasyTier(settings *model.EasyTierSettings) (*model.EasyTierSettings, 
 	var result model.EasyTierSettings
 	err = json.Unmarshal(data, &result)
 	return &result, err
+}
+
+// RedactEasyTierJSON redacts secret fields in raw EasyTier settings JSON for
+// human exports, leaving non-object or malformed payloads unchanged.
+func RedactEasyTierJSON(raw json.RawMessage) (json.RawMessage, error) {
+	var settings *model.EasyTierSettings
+	if err := jsondecode.Unmarshal(raw, &settings); err != nil || settings == nil {
+		return raw, nil
+	}
+	redacted, err := RedactEasyTier(settings)
+	if err != nil {
+		return raw, nil
+	}
+	encoded, err := model.Marshal(redacted)
+	if err != nil {
+		return raw, nil
+	}
+	return encoded, nil
 }

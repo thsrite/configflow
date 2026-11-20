@@ -23,7 +23,7 @@ type Prepared struct {
 	Providers                              []*provider.Artifact
 	SubscriptionHosts, SubscriptionDialers json.RawMessage
 	ProviderDownloads                      []ProviderFile
-	RulesetDownloads                       []convert.Download
+	RulesetDownloads                       []convert.ResourceDownload
 	CustomFiles                            []CustomFile
 }
 
