@@ -163,7 +163,7 @@ func (s *FixedIPService) guard(ctx context.Context, profile string) error {
 	return s.GuardSetup(ctx, s.Repo, profile)
 }
 func fixedConfig(ctx context.Context, r *repo.Repository, profile string) (json.RawMessage, error) {
-	doc, err := r.GetCompatConfig(ctx, profile, repo.ResourceRoots{})
+	doc, err := r.Config(ctx, profile, repo.ResourceRoots{})
 	if err != nil {
 		return nil, err
 	}

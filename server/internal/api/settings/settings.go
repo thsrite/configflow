@@ -251,8 +251,8 @@ func enabledInput(raw json.RawMessage) bool {
 	}
 	var number json.Number
 	if len(raw) > 0 && raw[0] != '"' && json.Unmarshal(raw, &number) == nil {
-		value, err := number.Float64()
-		return err == nil && value != 0
+		value, _ := number.Float64()
+		return value != 0
 	}
 	return true
 }
@@ -303,20 +303,35 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	backup := config.Backup
 	if c.Method() == "GET" || c.Method() == "HEAD" {
-		latest, daily := retentionSettings(&backup)
+		raw, err := json.Marshal(backup)
+		if err != nil {
+			return nil, err
+		}
+		var stored map[string]json.RawMessage
+		if err = json.Unmarshal(raw, &stored); err != nil {
+			return nil, err
+		}
+		var address string
+		_ = json.Unmarshal(stored["webdav_url"], &address)
+		username := json.RawMessage(`""`)
+		if value, present := stored["webdav_username"]; present {
+			username = value
+		}
+		path := json.RawMessage(`"/config-flow-backup/"`)
+		if value, present := stored["webdav_path"]; present {
+			path = value
+		}
+		automatic := json.RawMessage(`false`)
+		if value, present := stored["auto_backup"]; present {
+			automatic = value
+		}
 		password := ""
-		if backup.WebDAVPassword != "" {
+		if enabledInput(stored["webdav_password"]) {
 			password = "******"
 		}
-		path := "/config-flow-backup/"
-		if backup.WebDAVPath != nil {
-			path = *backup.WebDAVPath
-		}
-		auto := false
-		if backup.AutoBackup != nil {
-			auto = *backup.AutoBackup
-		}
-		return httpx.JSON(map[string]any{"webdav_url": backupEditorURL(backup.WebDAVURL), "webdav_username": backup.WebDAVUsername, "webdav_password": password, "webdav_path": path, "auto_backup": auto, "keep_latest": latest, "keep_daily": daily}), nil
+		latest := webdav.RetentionValue(stored["keep_latest"], webdav.DefaultKeepLatest, webdav.MaxKeepLatest)
+		daily := webdav.RetentionValue(stored["keep_daily"], webdav.DefaultKeepDaily, webdav.MaxKeepDaily)
+		return httpx.JSON(map[string]any{"webdav_url": backupEditorURL(address), "webdav_username": username, "webdav_password": password, "webdav_path": path, "auto_backup": automatic, "keep_latest": latest, "keep_daily": daily}), nil
 	}
 	data, bad := backupRequestData(c)
 	if bad != nil {
@@ -349,11 +364,10 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = json.Unmarshal(raw, &backup); err != nil {
 		return nil, err
 	}
-	path := ""
-	if backup.WebDAVPath != nil {
-		path = *backup.WebDAVPath
-	}
-	if err = (webdav.Settings{URL: backup.WebDAVURL, Path: path}).ValidatePaths(); err != nil {
+	var address, path string
+	_ = json.Unmarshal(fields["webdav_url"], &address)
+	_ = json.Unmarshal(fields["webdav_path"], &path)
+	if err = (webdav.Settings{URL: address, Path: path}).ValidatePaths(); err != nil {
 		return failure(400, err.Error()), nil
 	}
 	config.Backup = backup
@@ -365,7 +379,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 		summary = msgUnchanged
 	}
 	state := msgBackupDisabled
-	if backup.AutoBackup != nil && *backup.AutoBackup {
+	if enabledInput(fields["auto_backup"]) {
 		state = msgBackupEnabled
 	}
 	appLogger.Info(msgBackupSaved + "：" + summary + "；" + msgBackupAutomatic + state)

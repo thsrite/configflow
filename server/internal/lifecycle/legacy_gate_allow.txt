@@ -732,8 +732,6 @@ retired-import tools/proddiff/baseline/worker_test.go:configflow/internal/jsonx
 retired-import tools/proddiff/generator/bundle.go:configflow/internal/jsonx
 retired-import tools/proddiff/generator/main.go:configflow/internal/jsonx
 retired-import tools/yamldiagnosticoracle/main.go:configflow/internal/jsonx
-retired-symbol internal/auth/auth.go:PyParseInt
-retired-symbol internal/auth/auth.go:PyTypeName
 retired-symbol internal/convert/errors.go:pyError
 retired-symbol internal/convert/errors.go:PyError
 retired-symbol internal/convert/errors.go:PyErrorClass

@@ -15,7 +15,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"os"
 	"regexp"
 	"strings"
@@ -337,7 +336,3 @@ func Gate(c *httpx.Ctx) (*httpx.Response, error) {
 // Install adds the gate before profile resolution so unauthenticated requests
 // cannot distinguish missing profiles from existing ones (O9-L6).
 func Install(app *httpx.App) { app.InsertBeforeRequest(0, Gate) }
-
-// pyParseInt and pyTypeName forward to httpx's Python conversions.
-func pyParseInt(s string) (*big.Int, bool) { return httpx.PyParseInt(s) }
-func pyTypeName(v any) string              { return httpx.PyTypeName(v) }

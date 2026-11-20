@@ -2387,3 +2387,5 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 - settings 的文本裁剪改用 Go `strings.TrimSpace`，不再模拟 Python 额外认作空白的 U+001C–U+001F；普通空格、Unicode 空白和前端输入不受影响，属于既有 native 字符分类裁定。
 - settings 的错型文本仍返回原 500，内部诊断改为 `setting must be a string`，不再构造 Python AttributeError 文本；中文消息和所有状态/持久化结果不变。差分仅对这项明确的非中文内部文本分别断言双方完整 envelope，不放宽其他错误。
 - 全局 import/reset 的设备归属 409 现只返回 success/message，与 Flask 相同；repo.Error 的完整 usages 保留给其他消费者。这是修正 W1 记录的既有差异，没有新增 API 差异。
+- `internal/auth` 去掉对 `httpx.PyParseInt`/`httpx.PyTypeName` 的转发：JWT 数值声明的字符串形式（`exp`/`iat`/`nbf`）按原生 ASCII 十进制解析（`strings.TrimSpace` + `big.Int.SetString(..., 10)`），拒绝非 ASCII 数字；非字符串/非数值类型声明仍返回 `*ClaimTypeError`（500），诊断消息改为原生 `numeric JWT claim must be an integer or numeric string`，不再拼接 Python `int()` TypeError 文本。
+- `GET /api/backup/config` 保留已存储非字符串字段（`webdav_username`/`webdav_path`/`auto_backup`/`keep_latest`/`keep_daily`）与密码真值的原始 JSON 呈现，避免 R5 标量投影改写类型；`webdav_url` 维持既有 `backupEditorURL` 脱敏/校验策略（非字符串或无效 URI 返回 `""`），`TestN811W5StoredBackupTypes` 显式固定该既有差异。

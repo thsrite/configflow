@@ -208,14 +208,21 @@ func claimInt(raw json.RawMessage) (*big.Int, error) {
 		n, _ := new(big.Float).SetFloat64(math.Trunc(f)).Int(nil)
 		return n, nil
 	case string:
-		n, ok := pyParseInt(v)
+		n, ok := parseClaimInt(v)
 		if !ok {
 			return nil, errClaimValue
 		}
 		return n, nil
 	}
-	return nil, &ClaimTypeError{Message: "int() argument must be a string, a bytes-like object or a real number, not '" +
-		pyTypeName(value) + "'"}
+	return nil, &ClaimTypeError{Message: "numeric JWT claim must be an integer or numeric string"}
+}
+
+func parseClaimInt(s string) (*big.Int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, false
+	}
+	return new(big.Int).SetString(s, 10)
 }
 
 func compareFloat(n *big.Int, f float64) int {

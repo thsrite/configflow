@@ -59,7 +59,12 @@ func profile(c *httpx.Ctx, db *repo.Repository, m *agents.Manager, byAgent bool)
 		if agent == nil || agent.ServiceType != "oxidns" {
 			return "", httpx.Message(404, false, messageAgentMissing).NoStore(), nil
 		}
-		id = agent.ProfileID
+		raw, _, readErr := agent.MemberJSON("profile_id")
+		if readErr != nil {
+			return "", nil, readErr
+		}
+		id = ""
+		_ = json.Unmarshal(raw, &id)
 		if id == "" {
 			id, err = db.DefaultProfileID(c.Context())
 			if err != nil {
@@ -147,10 +152,6 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 	if err != nil {
 		return cfg, nil, err
 	}
-	profile, err := db.Profile(ctx, id)
-	if err != nil {
-		return cfg, nil, err
-	}
 	def, err := db.DefaultProfileID(ctx)
 	if err != nil {
 		return cfg, nil, err
@@ -194,6 +195,10 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 		rows = append(rows, data)
 	}
 	p, err := oxidns.ProfileFromJSON(cfg)
+	if err != nil {
+		return cfg, nil, err
+	}
+	profile, err := db.ProfileMetadataRecord(ctx, id)
 	if err != nil {
 		return cfg, nil, err
 	}
@@ -340,12 +345,23 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	hosts := []string{}
 	for _, agent := range all {
-		bound := agent.ProfileID
+		raw, _, readErr := agent.MemberJSON("profile_id")
+		if readErr != nil {
+			return nil, readErr
+		}
+		var bound string
+		_ = json.Unmarshal(raw, &bound)
 		if bound == "" {
 			bound = def
 		}
 		if bound == id {
-			hosts = append(hosts, agent.Host)
+			raw, _, readErr = agent.MemberJSON("host")
+			if readErr != nil {
+				return nil, readErr
+			}
+			var host string
+			_ = json.Unmarshal(raw, &host)
+			hosts = append(hosts, host)
 		}
 	}
 	service := clients.NewDiscoveryService()
@@ -355,7 +371,13 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil || agent == nil {
 			return ""
 		}
-		return agent.Host
+		raw, _, readErr := agent.MemberJSON("host")
+		if readErr != nil {
+			return ""
+		}
+		var host string
+		_ = json.Unmarshal(raw, &host)
+		return host
 	}
 	value, err := service.Discover(c.Context(), cfg, clients.DiscoveryOptions{AgentHosts: hosts, ProfileID: id, Refresh: c.ArgDefault("refresh", "") == "1", Cache: h.cache})
 	if err != nil {

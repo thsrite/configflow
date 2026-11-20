@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"configflow/internal/agents"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -59,20 +60,44 @@ func workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, s
 	}
 	out := []core.WorkspaceAgent{}
 	for _, a := range raw {
-		profile := a.ProfileID
-		if profile == "" {
-			profile = defaultProfile
+		row := core.WorkspaceAgent{ID: a.ID}
+		if !agents.AgentMatchesID(&a, row.ID) {
+			row.ID = ""
 		}
-		name := a.Name
-		if name == "" {
-			name = a.ID
+		row.Name, _ = agents.AgentName(&a)
+		// Display/connection strings require original string tokens, not R5 numeric projections.
+		value, _, err := a.MemberJSON("profile_id")
+		if err != nil {
+			return nil, "", err
 		}
-		out = append(out, core.WorkspaceAgent{ID: a.ID, Name: name, Host: a.Host, Status: a.Status, ServiceType: a.ServiceType, ProfileID: profile})
+		_ = json.Unmarshal(value, &row.ProfileID)
+		value, _, err = a.MemberJSON("host")
+		if err != nil {
+			return nil, "", err
+		}
+		_ = json.Unmarshal(value, &row.Host)
+		value, _, err = a.MemberJSON("status")
+		if err != nil {
+			return nil, "", err
+		}
+		_ = json.Unmarshal(value, &row.Status)
+		value, _, err = a.MemberJSON("service_type")
+		if err != nil {
+			return nil, "", err
+		}
+		_ = json.Unmarshal(value, &row.ServiceType)
+		if row.ProfileID == "" {
+			row.ProfileID = defaultProfile
+		}
+		if row.Name == "" {
+			row.Name = row.ID
+		}
+		out = append(out, row)
 	}
 	return out, defaultProfile, nil
 }
 func profileName(ctx context.Context, db *repo.Repository, id string) (string, error) {
-	p, err := db.Profile(ctx, id)
+	p, err := db.ProfileMetadataRecord(ctx, id)
 	if err != nil {
 		return "", err
 	}

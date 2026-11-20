@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"configflow/internal/httpx"
-	"configflow/internal/model"
 	"configflow/internal/webdav"
 )
 
@@ -17,15 +16,25 @@ func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *
 	if err != nil {
 		return webdav.Settings{}, nil, err
 	}
+	savedRaw, err := json.Marshal(saved.Backup)
+	if err != nil {
+		return webdav.Settings{}, nil, err
+	}
+	var stored map[string]json.RawMessage
+	if err = json.Unmarshal(savedRaw, &stored); err != nil {
+		return webdav.Settings{}, nil, err
+	}
 	if string(data.WebDAVPassword) == `"******"` {
-		data.WebDAVPassword, _ = json.Marshal(saved.Backup.WebDAVPassword)
+		var password string
+		_ = json.Unmarshal(stored["webdav_password"], &password)
+		data.WebDAVPassword, _ = json.Marshal(password)
 	}
 	if inheritRetention {
 		if len(data.KeepLatest) == 0 {
-			data.KeepLatest, _ = json.Marshal(saved.Backup.KeepLatest)
+			data.KeepLatest = stored["keep_latest"]
 		}
 		if len(data.KeepDaily) == 0 {
-			data.KeepDaily, _ = json.Marshal(saved.Backup.KeepDaily)
+			data.KeepDaily = stored["keep_daily"]
 		}
 	}
 	raw, err := json.Marshal(data)
@@ -35,10 +44,4 @@ func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *
 	var settings webdav.Settings
 	err = json.Unmarshal(raw, &settings)
 	return settings, nil, err
-}
-func retentionSettings(settings *model.Backup) (any, any) {
-	raw, _ := json.Marshal(settings)
-	var fields map[string]json.RawMessage
-	_ = json.Unmarshal(raw, &fields)
-	return webdav.RetentionValue(fields["keep_latest"], webdav.DefaultKeepLatest, webdav.MaxKeepLatest), webdav.RetentionValue(fields["keep_daily"], webdav.DefaultKeepDaily, webdav.MaxKeepDaily)
 }

@@ -277,7 +277,11 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (jso
 				return nil, reject(err.Error())
 			}
 			if node.Kind == yaml.MappingNode {
-				previous, err := savedMihomoBase(config.Profile.Mihomo.CustomConfig)
+				previousText := ""
+				if original, present := settings.Get("custom_config"); present {
+					_ = json.Unmarshal(original, &previousText)
+				}
+				previous, err := savedMihomoBase(previousText)
 				if err != nil {
 					return nil, reject(err.Error())
 				}
@@ -398,7 +402,8 @@ func agentContext(ctx context.Context, id string) (map[int]string, []string, err
 			continue
 		}
 		for _, a := range system.Agents {
-			if a.ID == id {
+			var agentID string
+			if rawID, _, err := a.MemberJSON("id"); err == nil && json.Unmarshal(rawID, &agentID) == nil && agentID == id {
 				records = append(records, a)
 			}
 		}

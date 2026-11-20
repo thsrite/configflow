@@ -102,6 +102,7 @@ func (o *oracle) send(t *testing.T, r request) answer {
 		t.Fatal(err)
 	}
 	if !o.scanner.Scan() {
+		_ = o.cmd.Wait()
 		t.Fatalf("oracle ended: %v %s", o.scanner.Err(), o.output.String())
 	}
 	var a answer
@@ -121,7 +122,7 @@ type world struct {
 	t     *testing.T
 }
 
-func newWorld(t *testing.T) *world {
+func newWorld(t *testing.T, seeds ...func(*httpxtest.Server)) *world {
 	t.Helper()
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
@@ -161,6 +162,9 @@ func newWorld(t *testing.T) *world {
 	// Preserve unrelated binary/JSON/YAML files as well as all database members.
 	if err := os.WriteFile(filepath.Join(srv.DataDir, "unrelated.bin"), []byte{0, 1, 255}, 0600); err != nil {
 		t.Fatal(err)
+	}
+	for _, seed := range seeds {
+		seed(srv)
 	}
 	pyDir := t.TempDir()
 	if out, err := exec.Command("cp", "-a", srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {

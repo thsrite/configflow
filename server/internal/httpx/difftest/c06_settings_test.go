@@ -17,6 +17,7 @@ import (
 type settingsCase struct {
 	Name, Method, Path, Body, ContentType, Seed string
 	Difference                                  string
+	storedBackup                                json.RawMessage
 }
 type settingsResult struct {
 	Status        int
@@ -227,6 +228,18 @@ func runSettingsBoundary(t *testing.T, cases []settingsCase) {
 		s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(settings.Register)})
 		worlds = append(worlds, s)
 		cases[i].Seed = s.DataDir
+		if len(cases[i].storedBackup) > 0 {
+			system, err := s.Repo.System(s.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = system.SetJSON("backup", cases[i].storedBackup); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.Repo.SaveSystemRecord(s.Context(), system, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	output := c06Python(t, `
 import contextlib, io, json, pathlib, shutil, sqlite3, sys, tempfile
@@ -308,6 +321,28 @@ json.dump(finite_json(answers), sys.stdout, ensure_ascii=False, allow_nan=False)
 					t.Fatal("Python HEAD no longer reproduced write bug")
 				}
 				return
+			}
+			if tc.Difference == "stored-backup-url-type" {
+				var actual, expected, stored map[string]json.RawMessage
+				if err := json.Unmarshal(response.Body, &actual); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(want.Body, &expected); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(tc.storedBackup, &stored); err != nil {
+					t.Fatal(err)
+				}
+				if string(actual["webdav_url"]) != `""` || string(expected["webdav_url"]) != string(stored["webdav_url"]) {
+					t.Fatalf("preexisting non-string URI policy changed: Go=%s Python=%s", response.Body, want.Body)
+				}
+				expected["webdav_url"] = json.RawMessage(`""`)
+				var err error
+				want.Body, err = json.Marshal(expected)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tc.Difference = ""
 			}
 			if tc.Difference == "native-nonfinite" {
 				pythonStatus := 400
@@ -437,4 +472,20 @@ func c06ExpectedDifference(r request, py, got response) []string {
 		return []string{"C06 native binding error envelope changed"}
 	}
 	return nil
+}
+
+func TestN811W5StoredBackupTypes(t *testing.T) {
+	cases := []settingsCase{}
+	for _, seed := range []string{
+		`{"webdav_url":17,"webdav_username":17,"webdav_password":17,"webdav_path":17,"auto_backup":17,"keep_latest":1.0,"keep_daily":"3","opaque":{"value":9007199254740993}}`,
+		`{"webdav_url":null,"webdav_username":null,"webdav_password":null,"webdav_path":null,"auto_backup":null}`,
+		`{"WEBDAV_USERNAME":"not-a-canonical-key","Auto_Backup":true,"webdav_password":[]}`,
+	} {
+		difference := ""
+		if strings.Contains(seed, `"webdav_url":`) {
+			difference = "stored-backup-url-type"
+		}
+		cases = append(cases, settingsCase{Name: seed, Method: "GET", Path: "/api/backup/config", Difference: difference, storedBackup: json.RawMessage(seed)})
+	}
+	runSettingsBoundary(t, cases)
 }
