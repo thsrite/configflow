@@ -287,7 +287,6 @@ retired-import internal/api/rules/difftest/edge_test.go:configflow/internal/json
 retired-import internal/api/rules/difftest/offline_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/difftest/review_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/offline_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/read_adapter.go:configflow/internal/jsonx
 retired-import internal/api/rules/read_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/review_source_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/review_test.go:configflow/internal/jsonx

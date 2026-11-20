@@ -59,7 +59,7 @@ func TestReviewSourceTimeoutAndMirror(t *testing.T) {
 				}
 				return reviewResponse(req, 200, "+.mirror.example.com\n"), nil
 			})}}
-			content, err := service.readSource(ctx, fetchConfig(testSourceConfig(t, config)), testSourceRule(t, item), testSourceLibrary(t, library), sourceOptions{})
+			content, err := service.sourceContent(ctx, fetchConfig(testSourceConfig(t, config)), testSourceRule(t, item), testSourceLibrary(t, library), sourceOptions{})
 			if invalid {
 				var validation *rulefetch.RemoteRuleValidationError
 				if !errors.As(err, &validation) || len(requests) != 1 {
@@ -116,7 +116,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 				if getErr != nil {
 					t.Fatal(getErr)
 				}
-				_, err = service.readSource(lifecycle.Detach(ctx), fetchConfig(testSourceConfig(t, config)), testSourceRule(t, jsonx.Obj("url", "https://mirror.example.com/source")), testSourceLibrary(t, source), sourceOptions{})
+				_, err = service.sourceContent(lifecycle.Detach(ctx), fetchConfig(testSourceConfig(t, config)), testSourceRule(t, jsonx.Obj("url", "https://mirror.example.com/source")), testSourceLibrary(t, source), sourceOptions{})
 			}
 			if !errors.Is(err, context.Canceled) || calls != 1 {
 				t.Fatalf("shutdown err=%v requests=%d", err, calls)

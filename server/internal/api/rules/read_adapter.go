@@ -1,7 +1,7 @@
 package rules
 
 // Rule readers consume captured model snapshots. The scan keeps small projections;
-// the remaining Scope/captured-record bridges are isolated at the end of this file.
+// the remaining Scope bridge is isolated at the end of this file.
 import (
 	"context"
 	"encoding/json"
@@ -15,7 +15,6 @@ import (
 
 	"configflow/internal/gateway"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -37,7 +36,7 @@ type sourceOptions struct {
 	boundDeadline  bool
 }
 
-func (s *Service) readSource(ctx context.Context, config *rulefetch.SourceConfig, item model.RuleConfig, library *model.RuleLibraryItem, options sourceOptions) (string, error) {
+func (s *Service) sourceContent(ctx context.Context, config *rulefetch.SourceConfig, item model.RuleConfig, library *model.RuleLibraryItem, options sourceOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -93,7 +92,7 @@ func (s *Service) readSource(ctx context.Context, config *rulefetch.SourceConfig
 			return "", err
 		}
 		mirror.Format = &format
-		return s.readSource(ctx, config, mirror, nil, options)
+		return s.sourceContent(ctx, config, mirror, nil, options)
 	}
 	return "", nil
 }
@@ -263,7 +262,7 @@ func (s *Service) match(ctx context.Context, id, query, host string) (record, er
 	}
 	var invalidSource error
 	matcher := shared.NewMatcher(config.Profile.RuleConfigs, config.RuleLibrary, func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error) {
-		content, err := s.readSource(ctx, fetchConfig(config), *item, library, sourceOptions{host: host})
+		content, err := s.sourceContent(ctx, fetchConfig(config), *item, library, sourceOptions{host: host})
 		// C14 accepts these source line boundaries and normalizes them for client
 		// delivery. Feed the same records to C09's CR/LF text index, keeping the
 		// common ASCII path allocation-free and leaving the raw cache untouched.
@@ -326,7 +325,7 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 	}
 	return rows, func(index int) (string, error) {
 		item := items[index]
-		return s.readSource(ctx, fetchConfig(config), item, library[item.LibraryRuleID], sourceOptions{host: host})
+		return s.sourceContent(ctx, fetchConfig(config), item, library[item.LibraryRuleID], sourceOptions{host: host})
 	}, nil
 }
 
@@ -358,7 +357,7 @@ func Wire() {
 				return "", err
 			}
 		}
-		return s.readSource(lifecycle.Detach(ctx), fetchConfig(config), row, lib, sourceOptions{offline: true})
+		return s.sourceContent(lifecycle.Detach(ctx), fetchConfig(config), row, lib, sourceOptions{offline: true})
 	}
 	gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		ctx = lifecycle.Detach(ctx)
@@ -371,7 +370,7 @@ func Wire() {
 			}
 			config = fetchConfig(profile)
 		}
-		return s.readSource(ctx, config, item, library, sourceOptions{})
+		return s.sourceContent(ctx, config, item, library, sourceOptions{})
 	})
 }
 
@@ -397,51 +396,6 @@ func sourceField(value *string, fallback string) string {
 		return fallback
 	}
 	return *value
-}
-
-func sourceObject(raw json.RawMessage) (*jsonx.Object, error) {
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, fmt.Errorf("decode rule source snapshot: %w", err)
-	}
-	object, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("rule source snapshot must be an object")
-	}
-	return object, nil
-}
-
-// sourceContent remains only for ReadRulesetContent's captured legacy facade.
-// Its caller migration is pending ownership confirmation from the coordinator.
-func (s *Service) sourceContent(ctx context.Context, config, item, library *jsonx.Object, options sourceOptions) (string, error) {
-	raw, err := json.Marshal(config)
-	if err != nil {
-		return "", err
-	}
-	profile, err := model.DecodeConfig(raw)
-	if err != nil {
-		return "", err
-	}
-	raw, err = json.Marshal(item)
-	if err != nil {
-		return "", err
-	}
-	var rule model.RuleConfig
-	if err := json.Unmarshal(raw, &rule); err != nil {
-		return "", err
-	}
-	var declaration *model.RuleLibraryItem
-	if library != nil {
-		raw, err = json.Marshal(library)
-		if err != nil {
-			return "", err
-		}
-		declaration = &model.RuleLibraryItem{}
-		if err := json.Unmarshal(raw, declaration); err != nil {
-			return "", err
-		}
-	}
-	return s.readSource(ctx, fetchConfig(profile), rule, declaration, options)
 }
 
 // scopedLocalConfig retains the admitted request's existing Scope snapshot until

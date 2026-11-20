@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
@@ -28,24 +29,22 @@ func ReadRulesetContent(ctx context.Context, config, item, library json.RawMessa
 	if options.ConnectTimeout < 0 || options.ReadTimeout < 0 {
 		return "", errors.New("rule content timeouts must not be negative")
 	}
-	profile, err := sourceObject(config)
+	profile, err := model.DecodeConfig(config)
 	if err != nil {
 		return "", err
 	}
-	row, err := sourceObject(item)
-	if err != nil {
+	var row model.RuleConfig
+	if err := json.Unmarshal(item, &row); err != nil {
 		return "", err
 	}
-	lib := row
+	var lib *model.RuleLibraryItem
 	if len(library) != 0 && string(library) != "null" {
-		lib, err = sourceObject(library)
-		if err != nil {
+		lib = &model.RuleLibraryItem{}
+		if err := json.Unmarshal(library, lib); err != nil {
 			return "", err
 		}
-	} else {
-		lib = nil
 	}
 	s := &Service{client: rulefetch.DefaultClient}
-	return s.sourceContent(ctx, profile, row, lib, sourceOptions{offline: !options.AllowNetwork,
+	return s.sourceContent(ctx, fetchConfig(profile), row, lib, sourceOptions{offline: !options.AllowNetwork,
 		connectTimeout: options.ConnectTimeout, readTimeout: options.ReadTimeout, boundDeadline: true})
 }

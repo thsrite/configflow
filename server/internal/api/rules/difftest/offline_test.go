@@ -32,7 +32,7 @@ func TestRouterOfflineMissingCacheMatchesPython(t *testing.T) {
 	w := newWorld(t, setup)
 	previous := routers.RulesetContent
 	t.Cleanup(func() { routers.RulesetContent = previous })
-	t.Cleanup(gateway.SetRulesetContent(nil))
+	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	apirules.Wire()
 	reply := w.call("DESIRED", "other", `{"gateway":"192.0.2.1","rule_ids":["selected"]}`, false)
 	warnings := reply.Body.(map[string]any)["blocking_warnings"].([]any)

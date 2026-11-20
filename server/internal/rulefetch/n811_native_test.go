@@ -3,7 +3,6 @@ package rulefetch
 import (
 	"context"
 	"errors"
-	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -18,6 +17,7 @@ func TestN811HTMLAndCharset(t *testing.T) {
 		{"style", `<style>.x {content:"<meta content='hidden'>"}</style><meta content="visible">`, "visible"},
 		{"last-meta", `<meta content="first"><META content="last">`, "last"},
 		{"duplicate-attribute", `<meta content="first" content="last">`, "first"},
+		{"malformed-attributes", `<meta content="x"content="y">`, "x"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := metaContent(tc.input); got != tc.want {
@@ -36,9 +36,13 @@ func TestN811HTMLAndCharset(t *testing.T) {
 	if metaContent(`<meta content="A &amp; B">`) == "A &amp; B" || response.Charset() == "" {
 		t.Fatal("native decoding path was bypassed")
 	}
-	for _, value := range []string{"&#1;", "&#x;", "&#x10ffff;"} {
-		if got := pyUnescape(value); got != html.UnescapeString(value) {
-			t.Fatalf("entity %q: %q", value, got)
+	for _, tc := range []struct{ input, want string }{
+		{"&#1;", "\x01"},
+		{"&#x;", "\ufffd"},
+		{"&#x10ffff;", "\U0010ffff"},
+	} {
+		if got := pyUnescape(tc.input); got != tc.want {
+			t.Fatalf("entity %q: got %q want %q", tc.input, got, tc.want)
 		}
 	}
 }

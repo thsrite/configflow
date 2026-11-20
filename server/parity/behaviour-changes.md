@@ -2357,12 +2357,18 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 
 ## N8-11 W4 — 原生 HTML 与规则输入提示（第一阶段）
 
-- 网站识别的实体解码、meta 分词改为标准库 `html.UnescapeString` 和 `golang.org/x/net/html`。
-  正常实体、注释、script/style 内容与末个 meta 的规则保持；控制码实体、无效 `&#x;`、重复属性和
-  畸形 markup 遵循原生库。例如 `&#1;` 保留 U+0001，`&#x;` 成为 U+FFFD，同一 meta 的重复
-  content 属性取原生分词器保留的首值。冻结的 C14 语料/pyref 不改；
-  `rulefetch/testdata/n811_native_html_differences.json` 精确锁定 2161 条已知差异的输入键与输出摘要
-  （unescape 1061、meta_content 653、clean_text 441，另含 page_identity 的 6 条派生 metadata 差异），输出变化不会被宽泛分类吞掉。
+- 控制码实体：网站识别实体解码改为标准库 `html.UnescapeString`，如 `&#1;` 保留 U+0001，
+  不再按 CPython 的实体过滤表删除。
+- 非法数字实体：无效 `&#x;` 遵循标准库成为 U+FFFD，不再保留原始实体文本。
+- 重复属性：meta 分词改用 `golang.org/x/net/html`，同一 meta 的重复 content 属性取原生分词器
+  保留的首值；仍读取源文档中最后一个 meta。正常实体、注释与 script/style 内容的规则保持。
+- 畸形 markup：不完整属性分隔等输入按原生 HTML 分词器解释，例如 `<meta content="x"content="y">`
+  的 content 为 `x`，不再模拟 HTMLParser 的容错扫描。
+
+冻结的 C14 语料/pyref 不改；`rulefetch/testdata/n811_native_html_differences.json` 精确锁定 2161 条
+已知差异的输入键与输出摘要（unescape 1061、meta_content 653、clean_text 441，另含 page_identity
+的 6 条派生 metadata 差异），仅 exact match 分类；输出变化不会被宽泛分类吞掉。
+
 - 固定中文重排提示仍用单引号字符串列表；单引号、反斜杠与换行显式转义。该函数只接受 `[]string`，
   不提供通用 Python repr。非法规则类型/DNS 选择中的非字符串值用 JSON 文本表示
   （null、true、数字、对象），HTTP 状态和中文模板不变；缺失 ID 混合列表使用完整 JSON 文本。

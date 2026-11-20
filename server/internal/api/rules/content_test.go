@@ -81,3 +81,50 @@ func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 		}
 	})
 }
+
+// TestPublicRulesetContentCapturedRecords covers the captured-record decoder boundary.
+func TestPublicRulesetContentCapturedRecords(t *testing.T) {
+	app := fixture(t)
+	validConfig := json.RawMessage(`{}`)
+	validItem := json.RawMessage(`{"id":"captured-source","name":"Captured","source_type":"content","behavior":"domain","format":"text","content":"+.item.example\n"}`)
+	validLibrary := json.RawMessage(`{"id":"captured-library","name":"Captured library","source_type":"content","behavior":"domain","format":"text","content":"+.library.example\n"}`)
+	transport := &refusingTransport{}
+	previous := rulefetch.DefaultClient
+	rulefetch.DefaultClient = &rulefetch.Client{Transport: transport}
+	t.Cleanup(func() { rulefetch.DefaultClient = previous })
+	for _, tc := range []struct {
+		name                  string
+		config, item, library json.RawMessage
+		want                  string
+		invalid               bool
+	}{
+		{name: "item", config: validConfig, item: validItem, want: "+.item.example\n"},
+		{name: "null-library", config: validConfig, item: validItem, library: json.RawMessage(`null`), want: "+.item.example\n"},
+		{name: "library-precedence", config: validConfig, item: validItem, library: validLibrary, want: "+.library.example\n"},
+		{name: "malformed-config", config: json.RawMessage(`{`), item: validItem, invalid: true},
+		{name: "non-object-config", config: json.RawMessage(`null`), item: validItem, invalid: true},
+		{name: "malformed-item", config: validConfig, item: json.RawMessage(`{`), invalid: true},
+		{name: "non-object-item", config: validConfig, item: json.RawMessage(`[]`), invalid: true},
+		{name: "malformed-library", config: validConfig, item: validItem, library: json.RawMessage(`{`), invalid: true},
+		{name: "non-object-library", config: validConfig, item: validItem, library: json.RawMessage(`42`), invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ReadRulesetContent(app.Context(), tc.config, tc.item, tc.library, ContentOptions{AllowNetwork: true})
+			if tc.invalid {
+				if err == nil {
+					t.Fatalf("invalid captured record accepted: %q", got)
+				}
+			} else if err != nil || got != tc.want {
+				t.Fatalf("got %q err=%v, want %q", got, err, tc.want)
+			}
+		})
+	}
+	stopped, cancel := context.WithCancel(app.Context())
+	cancel()
+	if _, err := ReadRulesetContent(stopped, json.RawMessage(`{`), validItem, nil, ContentOptions{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost before decoding: %v", err)
+	}
+	if transport.calls.Load() != 0 {
+		t.Fatalf("captured inline/invalid records caused %d requests", transport.calls.Load())
+	}
+}

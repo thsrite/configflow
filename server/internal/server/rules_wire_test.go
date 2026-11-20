@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewAppWiresRuleContentForGatewayProviders(t *testing.T) {
-	t.Cleanup(gateway.SetRulesetContent(nil))
+	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	NewApp()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
