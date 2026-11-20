@@ -182,7 +182,7 @@ func (d *typedDelivery) fetch(fetch Fetch) refresh.FetchSourceFn {
 	if fetch == nil {
 		return provider.DefaultDeliveryEnv().Fetch
 	}
-	return sourceFetch(fetch)
+	return fetch
 }
 func (d *typedDelivery) captureRecords(ctx context.Context, selected map[string]bool) error {
 	d.records = map[string]*subs.DialersData{}

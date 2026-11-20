@@ -10,7 +10,7 @@ import (
 	"configflow/internal/aggregations"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
-	"configflow/internal/substore"
+	"configflow/internal/refresh"
 )
 
 func TestReviewGeneratorKeepsShutdownCancellation(t *testing.T) {
@@ -24,7 +24,7 @@ func TestReviewGeneratorKeepsShutdownCancellation(t *testing.T) {
 			json.RawMessage(`{"id":"a","name":"Aggregate","subscriptions":["s"]}`),
 			json.RawMessage(`{"profile_id":"default","subscriptions":[{"id":"s","name":"Feed","url":"http://127.0.0.1:9/feed"}]}`),
 			aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), SourcePrepared: true,
-				Fetch: func(ctx context.Context, _, _ string) (*substore.SubscriptionResult, error) {
+				Fetch: func(ctx context.Context, _, _ string) (*refresh.SourceResult, error) {
 					close(entered)
 					select {
 					case <-ctx.Done():

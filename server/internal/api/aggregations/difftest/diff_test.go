@@ -561,11 +561,11 @@ func (w *world) generate(body string) *httpxtest.Result {
 	if err := json.Unmarshal([]byte(body), &args); err != nil {
 		t.Fatal(err)
 	}
-	out, err := generation.Generate(w.srv.Context(), args.Aggregation, args.Config, generation.Options{Main: args.Main, SourcePrepared: args.Prepared, Fetch: func(_ context.Context, id, url string) (*substore.SubscriptionResult, error) {
+	out, err := generation.Generate(w.srv.Context(), args.Aggregation, args.Config, generation.Options{Main: args.Main, SourcePrepared: args.Prepared, Fetch: func(_ context.Context, id, url string) (*refresh.SourceResult, error) {
 		if w.control.Offline {
 			return nil, fmt.Errorf("synthetic offline")
 		}
-		return &substore.SubscriptionResult{Text: w.control.Sources[id], Source: "rendered_yaml", FetchedAt: "2026-01-01T00:00:00+00:00"}, nil
+		return &refresh.SourceResult{Text: w.control.Sources[id], Source: "rendered_yaml", FetchedAt: "2026-01-01T00:00:00+00:00"}, nil
 	}})
 	status := 200
 	var result any

@@ -1,11 +1,16 @@
 package yamlxtest
 
 import (
+	"iter"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
+
+type iterableObject interface {
+	All() iter.Seq2[string, any]
+}
 
 // Check classifies every occurrence in a caller's real test inputs. It logs
 // counts only; an unclassified row fails with its index, without source secrets.
@@ -52,8 +57,24 @@ func TextFields(value any, names ...string) []string {
 	var visit func(any)
 	visit = func(value any) {
 		switch value := value.(type) {
-		case *jsonx.Object:
+		case iterableObject:
+			if isNilValue(value) {
+				return
+			}
 			for key, item := range value.All() {
+				if wanted[key] {
+					if text, ok := item.(string); ok {
+						result = append(result, text)
+					}
+				}
+				visit(item)
+			}
+		case *testjson.Object:
+			if m, ok := asObjectMap(value); ok {
+				visit(m)
+			}
+		case map[string]any:
+			for key, item := range value {
 				if wanted[key] {
 					if text, ok := item.(string); ok {
 						result = append(result, text)

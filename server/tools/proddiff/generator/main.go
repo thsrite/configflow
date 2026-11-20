@@ -13,17 +13,19 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/aggregations"
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 const baseURL = "http://127.0.0.1:5001"
@@ -60,25 +62,35 @@ type download struct {
 
 var errOffline = errors.New("offline")
 
-func offlineFetch(context.Context, string, string) (*substore.SubscriptionResult, error) {
+func offlineFetch(context.Context, string, string) (*refresh.SourceResult, error) {
 	return nil, errOffline
 }
 
-func oxidnsProfile(config *jsonx.Object) (*oxidns.Profile, error) {
-	data, err := jsonx.Compact(config)
-	if err != nil {
-		return nil, err
-	}
-	return oxidns.ProfileFromJSON(data)
-}
-
-func objectByID(items []any, id string) (*jsonx.Object, error) {
-	for _, item := range items {
-		if obj, ok := item.(*jsonx.Object); ok && obj.GetString("id") == id {
-			return obj, nil
+func findAgent(agents []model.Agent, id string) (model.Agent, error) {
+	for _, agent := range agents {
+		if agent.ID == id {
+			return agent, nil
 		}
 	}
-	return nil, errors.New("generator selector is absent")
+	return model.Agent{}, errors.New("generator selector is absent")
+}
+
+func findSubscription(items []model.Subscription, id string) (model.Subscription, error) {
+	for _, item := range items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return model.Subscription{}, errors.New("generator selector is absent")
+}
+
+func findAggregation(items []model.Aggregation, id string) (model.Aggregation, error) {
+	for _, item := range items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return model.Aggregation{}, errors.New("generator selector is absent")
 }
 
 func encode(value any, err error) (string, error) {
@@ -89,30 +101,20 @@ func encode(value any, err error) (string, error) {
 	return string(content), err
 }
 
-// encodeLegacy serializes the opaque legacy objects returned by public APIs.
-// Typed adapter records elsewhere use encoding/json directly.
-func encodeLegacy(value []any, err error) (string, error) {
+func providerContent(ctx context.Context, config *model.Config, j job) (string, error) {
+	sub, err := findSubscription(config.Subscriptions, j.SubID)
 	if err != nil {
 		return "", err
 	}
-	content, err := jsonx.Compact(value)
-	return string(content), err
-}
-
-func providerContent(ctx context.Context, config *jsonx.Object, j job) (string, error) {
-	sub, err := objectByID(config.GetList("subscriptions"), j.SubID)
+	main, err := convert.MihomoDocument(ctx, config, convert.MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true})
 	if err != nil {
 		return "", err
 	}
-	main, err := convert.GenerateMihomoDocument(ctx, config, convert.GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+	snapshot, err := provider.CaptureDelivery(j.ProfileID, main, config.Profile)
 	if err != nil {
 		return "", err
 	}
-	snapshot, err := provider.Capture(j.ProfileID, main, config)
-	if err != nil {
-		return "", err
-	}
-	rendered, err := provider.PrepareSubscriptionProvider(ctx, sub, config, snapshot, provider.PrepareOptions{Fetch: offlineFetch, SourcePrepared: true})
+	rendered, err := provider.PrepareSubscription(ctx, sub, snapshot, provider.SubscriptionOptions{Fetch: offlineFetch, SourcePrepared: true})
 	if err != nil {
 		return "", err
 	}
@@ -126,92 +128,96 @@ func providerContent(ctx context.Context, config *jsonx.Object, j job) (string, 
 	if err := yamlx.ProjectJSONKeys(node, yamlx.RejectNonStringKeys); err != nil {
 		return "", err
 	}
-	parsed, err := yamlbridge.Value(node)
-	if err != nil {
-		return "", err
-	}
-	obj, ok := parsed.(*jsonx.Object)
-	if !ok {
+	if node == nil || node.Kind != yaml.MappingNode {
 		return "", errors.New("provider output is not a mapping")
 	}
-	if j.Kind == "subscription-surge" {
-		return convert.ConvertProxiesToSurgeText(obj.GetList("proxies"), substore.ProxiesToNodes)
+	var proxies []*yamlx.Node
+	if seq := yamlx.Resolve(yamlx.Get(node, "proxies")); seq != nil && seq.Kind == yaml.SequenceNode {
+		proxies = seq.Content
 	}
-	return convert.ConvertProxiesToLoonText(obj.GetList("proxies"), substore.ProxiesToNodes)
+	format := "loon"
+	if j.Kind == "subscription-surge" {
+		format = "surge"
+	}
+	return convert.ClientProxyText(proxies, substore.ProxyNodes, format)
 }
 
-func generate(ctx context.Context, j job) (string, error) {
-	config, err := repo.GetConfig(ctx, j.ProfileID)
+func generate(ctx context.Context, repository *repo.Repository, j job) (string, error) {
+	config, err := repository.Config(ctx, j.ProfileID, nil)
 	if err != nil {
 		return "", fmt.Errorf("load generator profile: %w", err)
 	}
-	opts := convert.GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true}
+	opts := convert.MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true}
 	if j.AgentID != "" {
-		system, err := repo.GetSystemConfig(ctx)
+		system, err := repository.System(ctx)
 		if err != nil {
 			return "", err
 		}
-		agent, err := objectByID(system.GetList("agents"), j.AgentID)
+		agent, err := findAgent(system.Agents, j.AgentID)
 		if err != nil {
 			return "", err
 		}
 		opts.ForAgent = true
-		opts.RegionProbe = agent.GetBool("domain_discovery_enabled")
-		traffic, err := trafficstore.Get(ctx)
+		opts.RegionProbe = agent.DomainDiscoveryEnabled != nil && *agent.DomainDiscoveryEnabled
+		traffic, err := trafficstore.GetNative(ctx)
 		if err != nil {
 			return "", err
 		}
-		opts.MihomoCoreVersion = subs.ReportedCoreVersion(agent, traffic.StatusOf)
+		if rawAgent, err := model.Marshal(agent); err == nil {
+			var core subs.CoreAgent
+			if json.Unmarshal(rawAgent, &core) == nil {
+				if ver := subs.AgentCoreVersion(core, func(id string) subs.CoreStatus {
+					st, _ := subs.DecodeCoreStatus(traffic.StatusJSON(id))
+					return st
+				}); ver != "" {
+					if rawVer, err := json.Marshal(ver); err == nil {
+						opts.CoreVersion = rawVer
+					}
+				}
+			}
+		}
 	}
 	switch j.Kind {
 	case "agent-deployment-bundle":
-		return deploymentBundle(ctx, config, j, opts)
+		return deploymentBundle(ctx, repository, config, j, opts)
 	case "aggregation-provider":
-		agg, err := objectByID(config.GetList("subscription_aggregations"), j.AggID)
+		agg, err := findAggregation(config.Aggregations, j.AggID)
 		if err != nil {
 			return "", err
 		}
-		main, err := convert.GenerateMihomoDocument(ctx, config, convert.GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+		main, err := convert.MihomoDocument(ctx, config, convert.MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true})
 		if err != nil {
 			return "", err
 		}
-		a, err := jsonx.Compact(agg)
+		mainJSON, err := yamlx.ToJSON(main)
 		if err != nil {
 			return "", err
 		}
-		c, err := jsonx.Compact(config)
-		if err != nil {
-			return "", err
-		}
-		m, err := jsonx.Compact(main)
-		if err != nil {
-			return "", err
-		}
-		generated, err := aggregations.Generate(ctx, a, c, aggregations.Options{Main: m, Fetch: offlineFetch, SourcePrepared: true})
+		generated, err := aggregations.GenerateConfig(ctx, agg, config, aggregations.Options{Main: mainJSON, Fetch: offlineFetch, SourcePrepared: true})
 		if err != nil {
 			return "", err
 		}
 		return generated.Content, nil
 	case "mihomo", "agent-mihomo":
-		return convert.GenerateMihomoConfig(ctx, config, opts)
+		return convert.MihomoConfig(ctx, config, opts)
 	case "surge", "agent-surge":
-		return convert.GenerateSurgeConfig(ctx, config, baseURL)
+		return convert.SurgeConfig(ctx, config, baseURL)
 	case "loon":
-		return convert.GenerateLoonConfig(ctx, config, baseURL)
+		return convert.LoonConfig(ctx, config, baseURL)
 	case "mosdns", "agent-mosdns":
-		return mosdns.GenerateMosDNSConfig(config, baseURL)
+		return mosdns.Generate(config, baseURL)
 	case "oxidns", "agent-oxidns":
-		profile, err := oxidnsProfile(config)
+		profile, err := oxidns.NewTypedProfile(config)
 		if err != nil {
 			return "", err
 		}
 		return oxidns.Generate(profile, baseURL)
 	case "mosdns-files":
-		return encodeLegacy(mosdns.GetMosDNSCustomFiles(config))
+		return encode(mosdns.CustomFiles(config))
 	case "mosdns-downloads":
-		return encodeLegacy(mosdns.GetMosDNSRulesetDownloads(config, baseURL))
+		return encode(mosdns.Downloads(config, baseURL))
 	case "oxidns-files":
-		profile, err := oxidnsProfile(config)
+		profile, err := oxidns.NewTypedProfile(config)
 		if err != nil {
 			return "", err
 		}
@@ -225,7 +231,7 @@ func generate(ctx context.Context, j job) (string, error) {
 		}
 		return encode(output, nil)
 	case "oxidns-downloads":
-		profile, err := oxidnsProfile(config)
+		profile, err := oxidns.NewTypedProfile(config)
 		if err != nil {
 			return "", err
 		}
@@ -243,11 +249,11 @@ func generate(ctx context.Context, j job) (string, error) {
 		}
 		return encode(output, nil)
 	case "mihomo-providers", "mihomo-rules":
-		var files []convert.Download
+		var files []convert.ResourceDownload
 		if j.Kind == "mihomo-providers" {
-			files, err = convert.GetMihomoProviderDownloads(ctx, config, baseURL, nil)
+			files, err = convert.MihomoProviderDownloads(ctx, config, baseURL, nil)
 		} else {
-			files, err = convert.GetMihomoRulesetDownloads(ctx, config, baseURL)
+			files, err = convert.MihomoRulesetDownloads(ctx, config, baseURL)
 		}
 		if err != nil {
 			return "", err
@@ -291,7 +297,7 @@ func run() error {
 	encoder := json.NewEncoder(output)
 	for _, j := range jobs {
 		ctx, cancel := context.WithTimeout(repo.WithScope(context.Background()), 90*time.Second)
-		content, err := generate(ctx, j)
+		content, err := generate(ctx, repository, j)
 		repo.ResetConfigContext(ctx)
 		cancel()
 		r := result{Index: j.Index, Status: "ok", Content: content}

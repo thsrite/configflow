@@ -118,6 +118,9 @@ func rowRuleList(rules []model.RuleConfig) ([]any, error) {
 				continue
 			}
 			if value == nil {
+				if isUnifiedSwitch(key) {
+					continue
+				}
 				object.Delete(key)
 			} else {
 				object.Set(key, value)

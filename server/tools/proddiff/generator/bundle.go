@@ -1,92 +1,114 @@
 package main
 
 import (
-	"configflow/internal/convert"
-	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
-	"configflow/internal/mosdns"
-	"configflow/internal/oxidns"
-	"configflow/internal/provider"
-	"configflow/internal/repo"
-	"configflow/internal/yamlbridge"
-	"configflow/internal/yamlx"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+
+	"configflow/internal/convert"
+	"configflow/internal/deploy"
+	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/mosdns"
+	"configflow/internal/oxidns"
+	"configflow/internal/provider"
+	"configflow/internal/repo"
+	"configflow/internal/yamlx"
 )
+
+// deployTarget and deploySource bridge typed records into deploy's constructors
+// until W6 replaces deploy.NewTarget / deploy.NewSource with typed entries.
+func deployTarget(agent model.Agent) (deploy.Target, error) {
+	raw, err := model.Marshal(agent)
+	if err != nil {
+		return deploy.Target{}, err
+	}
+	parsed, err := jsonx.Parse(raw)
+	if err != nil {
+		return deploy.Target{}, err
+	}
+	obj, _ := parsed.(*jsonx.Object)
+	return deploy.NewTarget(obj), nil
+}
+
+func deploySource(config *model.Config) (*deploy.Source, error) {
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonx.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	obj, _ := parsed.(*jsonx.Object)
+	return deploy.NewSource(obj, nil), nil
+}
 
 // deploymentBundle compares the public Build API on a captured production
 // snapshot. Final-device adaptation requires A14 and the L2 guest tests.
-func deploymentBundle(ctx context.Context, config *jsonx.Object, j job, opts convert.GenerateOptions) (string, error) {
-	system, err := repo.GetSystemConfig(ctx)
+func deploymentBundle(ctx context.Context, repository *repo.Repository, config *model.Config, j job, opts convert.MihomoOptions) (string, error) {
+	system, err := repository.System(ctx)
 	if err != nil {
 		return "", err
 	}
-	agent, err := objectByID(system.GetList("agents"), j.AgentID)
+	agent, err := findAgent(system.Agents, j.AgentID)
 	if err != nil {
 		return "", err
 	}
-	in := deploy.BuildInput{Target: deploy.NewTarget(agent), Source: deploy.NewSource(config, nil), BaseURL: baseURL, DeploymentID: "proddiff-bundle", LocalDNSWatchdog: true}
-	service := agent.GetString("service_type")
-	switch service {
+	target, err := deployTarget(agent)
+	if err != nil {
+		return "", err
+	}
+	source, err := deploySource(config)
+	if err != nil {
+		return "", err
+	}
+	in := deploy.BuildInput{Target: target, Source: source, BaseURL: baseURL, DeploymentID: "proddiff-bundle", LocalDNSWatchdog: true}
+	switch agent.ServiceType {
 	case "mihomo":
-		main, err := convert.GenerateMihomoDocument(ctx, config, opts)
+		main, err := convert.MihomoDocument(ctx, config, opts)
 		if err != nil {
 			return "", err
 		}
-		node, err := yamlbridge.Encode(main)
+		data, err := yamlx.Marshal(main)
 		if err != nil {
 			return "", err
 		}
-		data, err := yamlx.Marshal(node)
-		content := string(data)
-		if err != nil {
-			return "", err
-		}
-		in.ConfigContent = content
-		prepared, err := provider.PrepareProviderBundle(ctx, config, main, provider.BundleOptions{RenderAll: true, SubscriptionFetch: offlineFetch})
+		in.ConfigContent = string(data)
+		prepared, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{RenderAll: true, SubscriptionFetch: offlineFetch})
 		if err != nil {
 			return "", err
 		}
 		for _, p := range prepared {
-			local, ok := p.LocalPath.(string)
-			if !ok {
+			if p.LocalPath == "" {
 				return "", errors.New("provider has no bundled path")
 			}
-			in.ProviderDownloads = append(in.ProviderDownloads, deploy.ProviderFile{Name: p.Name, URL: p.URL, LocalPath: local, Content: []byte(p.Content)})
+			in.ProviderDownloads = append(in.ProviderDownloads, deploy.ProviderFile{Name: p.Name, URL: p.URL, LocalPath: p.LocalPath, Content: []byte(p.Content)})
 		}
 	case "mosdns":
-		in.ConfigContent, err = mosdns.GenerateMosDNSConfig(config, baseURL)
+		in.ConfigContent, err = mosdns.Generate(config, baseURL)
 		if err != nil {
 			return "", err
 		}
-		downloads, err := mosdns.GetMosDNSRulesetDownloads(config, baseURL)
+		downloads, err := mosdns.Downloads(config, baseURL)
 		if err != nil {
 			return "", err
 		}
-		if err = decodeBundleDownloads(downloads, &in); err != nil {
-			return "", err
+		for _, d := range downloads {
+			in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior})
 		}
-		files, err := mosdns.GetMosDNSCustomFiles(config)
+		files, err := mosdns.CustomFiles(config)
 		if err != nil {
 			return "", err
 		}
-		raw, err := json.Marshal(files)
-		if err != nil {
-			return "", err
-		}
-		var custom []struct{ Path, Content string }
-		if err = json.Unmarshal(raw, &custom); err != nil {
-			return "", err
-		}
-		for _, f := range custom {
+		for _, f := range files {
 			in.CustomFiles = append(in.CustomFiles, deploy.CustomFile{Path: f.Path, Content: []byte(f.Content)})
 		}
 	case "oxidns":
-		profile, err := oxidnsProfile(config)
+		profile, err := oxidns.NewTypedProfile(config)
 		if err != nil {
 			return "", err
 		}
@@ -121,23 +143,7 @@ func deploymentBundle(ctx context.Context, config *jsonx.Object, j job, opts con
 	}
 	return bundleView(bundle)
 }
-func decodeBundleDownloads(downloads []any, in *deploy.BuildInput) error {
-	raw, err := json.Marshal(downloads)
-	if err != nil {
-		return err
-	}
-	var list []struct {
-		Name, URL, Behavior, Format string
-		LocalPath                   string `json:"local_path"`
-	}
-	if err = json.Unmarshal(raw, &list); err != nil {
-		return err
-	}
-	for _, d := range list {
-		in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
-	}
-	return nil
-}
+
 func bundleView(b *deploy.Bundle) (string, error) {
 	m := b.Manifest()
 	files, err := b.Files()

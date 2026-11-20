@@ -16,9 +16,7 @@ import (
 )
 
 // Fetch provides one subscription body without publishing a provider artifact.
-// Retained only for the offline W7 generator caller; production HTTP/provider
-// rendering receives typed source owners directly.
-type Fetch = refresh.SourceFetch
+type Fetch = refresh.FetchSourceFn
 
 // Generate decodes the native JSON entry point retained for export consumers.
 // Resource and profile records keep unknown stored members through model codecs.
@@ -136,7 +134,7 @@ func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Co
 }
 
 func publish(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, profileID string, options Options) (*Result, error) {
-	bundle, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "aggregation", Aggregation: &agg}, SubscriptionFetch: sourceFetch(options.Fetch)})
+	bundle, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "aggregation", Aggregation: &agg}, SubscriptionFetch: options.Fetch})
 	if err != nil {
 		return nil, err
 	}
@@ -234,30 +232,4 @@ func AppendCatalog(ctx context.Context, raw json.RawMessage) error {
 		shared.Aggregations = append(shared.Aggregations, item)
 		return ctx.Err()
 	})
-}
-
-// sourceFetch is the remaining W7 callback facade; the default path never
-// round-trips traffic through legacy subscription results.
-func sourceFetch(fetch Fetch) refresh.FetchSourceFn {
-	if fetch == nil {
-		return nil
-	}
-	return func(ctx context.Context, id, address string) (*refresh.SourceResult, error) {
-		fetched, err := fetch(ctx, id, address)
-		if err != nil || fetched == nil {
-			return nil, err
-		}
-		var traffic *refresh.Traffic
-		if fetched.Traffic != nil {
-			data, err := json.Marshal(fetched.Traffic)
-			if err != nil {
-				return nil, err
-			}
-			traffic = &refresh.Traffic{}
-			if err := json.Unmarshal(data, traffic); err != nil {
-				return nil, err
-			}
-		}
-		return &refresh.SourceResult{Text: fetched.Text, Source: fetched.Source, FetchedAt: fetched.FetchedAt, Traffic: traffic}, nil
-	}
 }

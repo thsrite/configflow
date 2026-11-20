@@ -34,6 +34,11 @@ func projectR5Record(original *jsonx.Object, native reflect.Value) *jsonx.Object
 		}
 		value := native.Field(i)
 		if value.Kind() == reflect.Pointer && value.IsNil() {
+			// Task B evaluates stored JSON boolean switches directly from raw JSON,
+			// matching Python truthiness instead of falling back to defaults.
+			if isUnifiedSwitch(key) && value.Type().Elem().Kind() == reflect.Bool {
+				continue
+			}
 			out.Delete(key)
 			continue
 		}
@@ -268,6 +273,14 @@ func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got 
 	}
 	return jsonx.Equal(got, want)
 }
+func isUnifiedSwitch(key string) bool {
+	switch key {
+	case "enabled", "library_enabled", "log_enabled", "api_enabled", "cache_enabled", "cache_dump_enabled":
+		return true
+	}
+	return false
+}
+
 func TestR5ReferenceProjectionStaysNarrow(t *testing.T) {
 	args := []any{jsonx.Obj("mosdns", jsonx.Obj("cache_size", true, "cache_enabled", "false"), "future", jsonx.Obj("keep", 7))}
 	projected, changed := r5Arguments("generate", args)
@@ -278,8 +291,11 @@ func TestR5ReferenceProjectionStaysNarrow(t *testing.T) {
 	if !jsonx.Equal(config.Value("future"), args[0].(*jsonx.Object).Value("future")) {
 		t.Fatal("unowned field changed")
 	}
-	if config.GetObject("mosdns").Has("cache_size") || config.GetObject("mosdns").Has("cache_enabled") {
-		t.Fatal("invalid optional value reached reference")
+	if config.GetObject("mosdns").Has("cache_size") {
+		t.Fatal("invalid optional integer value reached reference")
+	}
+	if got, ok := config.GetObject("mosdns").Get("cache_enabled"); !ok || got != "false" {
+		t.Fatalf("unified boolean switch should be preserved for reference, got (%v, %v)", got, ok)
 	}
 	normal := []any{jsonx.Obj("mosdns", jsonx.Obj("cache_size", jsonx.Int(128)))}
 	if _, changed = r5Arguments("generate", normal); changed {

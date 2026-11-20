@@ -8,36 +8,51 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/provider"
 )
 
-func readFile(path string, compressed bool) (any, string, error) {
+type diagnosticInput struct {
+	Text string `json:"text"`
+	Name any    `json:"name,omitempty"`
+	Path any    `json:"path,omitempty"`
+}
+
+func readJSON(path string, compressed bool, target any) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 	sum := sha256.Sum256(data)
 	if compressed {
 		z, err := gzip.NewReader(bytes.NewReader(data))
 		if err != nil {
-			return nil, "", err
+			return "", err
 		}
 		data, err = io.ReadAll(z)
 		_ = z.Close()
 		if err != nil {
-			return nil, "", err
+			return "", err
 		}
 	}
-	value, err := jsonx.Parse(data)
-	return value, hex.EncodeToString(sum[:]), err
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(target); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func labelOf(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 func run() error {
@@ -48,37 +63,54 @@ func run() error {
 	if *base == "" {
 		return fmt.Errorf("a frozen baseline commit is required")
 	}
-	value, corpusSHA, err := readFile(*corpus, true)
+	var rows []struct {
+		Kind  string          `json:"kind"`
+		Input json.RawMessage `json:"input"`
+	}
+	corpusSHA, err := readJSON(*corpus, true, &rows)
 	if err != nil {
 		return err
 	}
-	boundary, controlsSHA, err := readFile(*controls, false)
+	var boundary map[string]json.RawMessage
+	controlsSHA, err := readJSON(*controls, false, &boundary)
 	if err != nil {
 		return err
 	}
-	inputs := jsonx.Obj()
-	for index, item := range value.([]any) {
-		row := item.(*jsonx.Object)
-		if row.GetString("kind") == "parse" {
-			inputs.Set(fmt.Sprintf("corpus/%d", index), row.GetObject("input"))
+	inputs := map[string]json.RawMessage{}
+	for index, row := range rows {
+		if row.Kind == "parse" {
+			inputs[fmt.Sprintf("corpus/%d", index)] = row.Input
 		}
 	}
-	for name, input := range boundary.(*jsonx.Object).All() {
-		inputs.Set("control/"+name, input)
+	for name, input := range boundary {
+		inputs["control/"+name] = input
 	}
 	restore := provider.SetLocations(deploy.Locations{})
 	defer restore()
-	cases := jsonx.Obj()
-	for name, value := range inputs.All() {
-		input := value.(*jsonx.Object)
-		_, err := provider.ParseProviderProxies(input.GetString("text"), input.Value("name"), input.Value("path"))
+	type caseRecord struct {
+		Input    json.RawMessage `json:"input"`
+		Message  string          `json:"message"`
+		Rejected bool            `json:"rejected"`
+	}
+	cases := make(map[string]caseRecord, len(inputs))
+	for name, raw := range inputs {
+		var input diagnosticInput
+		if err := json.Unmarshal(raw, &input); err != nil {
+			return err
+		}
+		_, err := provider.ParseNodes(input.Text, labelOf(input.Name), labelOf(input.Path))
 		message := ""
 		if err != nil {
 			message = err.Error()
 		}
-		cases.Set(name, jsonx.Obj("input", input, "rejected", err != nil, "message", message))
+		cases[name] = caseRecord{Input: raw, Rejected: err != nil, Message: message}
 	}
-	data, err := jsonx.Sorted(jsonx.Obj("base", *base, "corpus_sha256", corpusSHA, "controls_sha256", controlsSHA, "cases", cases))
+	data, err := json.Marshal(struct {
+		Base        string                `json:"base"`
+		Cases       map[string]caseRecord `json:"cases"`
+		ControlsSHA string                `json:"controls_sha256"`
+		CorpusSHA   string                `json:"corpus_sha256"`
+	}{*base, cases, controlsSHA, corpusSHA})
 	if err != nil {
 		return err
 	}

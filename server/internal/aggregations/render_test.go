@@ -15,6 +15,7 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/refresh"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
@@ -33,7 +34,7 @@ func TestBoundedCollectionDetachesCancellationAndDoesNotMutate(t *testing.T) {
 	ctx, cancel := context.WithCancel(srv.Context())
 	cancel()
 	var active, maximum, calls atomic.Int32
-	result, err := aggregations.Generate(ctx, agg, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), SourcePrepared: true, Fetch: func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
+	result, err := aggregations.Generate(ctx, agg, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), SourcePrepared: true, Fetch: func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -47,7 +48,7 @@ func TestBoundedCollectionDetachesCancellationAndDoesNotMutate(t *testing.T) {
 		}
 		// Different completion orders must not reorder configured subscription ids.
 		time.Sleep(time.Duration(len(id)+1) * time.Millisecond)
-		return &substore.SubscriptionResult{Text: fmt.Sprintf("proxies: [{name: Node%s, type: http, server: example.test, port: 80}]", id), Source: "prepared_yaml"}, nil
+		return &refresh.SourceResult{Text: fmt.Sprintf("proxies: [{name: Node%s, type: http, server: example.test, port: 80}]", id), Source: "prepared_yaml"}, nil
 	}})
 	if err != nil {
 		t.Fatal(err)

@@ -2,8 +2,7 @@ package yamlxtest
 
 import (
 	"encoding/json"
-
-	"configflow/internal/jsonx"
+	"sort"
 )
 
 // ValueNode records a physical JSON value without expanding shared containers.
@@ -32,8 +31,10 @@ func ValueGraph(value any) []ValueNode {
 	visit = func(value any) int {
 		var identity any
 		switch v := value.(type) {
-		case *jsonx.Object:
-			identity = v
+		case iterableObject:
+			if !isNilValue(v) {
+				identity = v
+			}
 		case []any:
 			if len(v) > 0 {
 				identity = listID{&v[0], len(v)}
@@ -48,14 +49,26 @@ func ValueGraph(value any) []ValueNode {
 			seen[identity] = id
 		}
 		n := ValueNode{Kind: "scalar", Value: value}
-		if number, ok := value.(jsonx.Number); ok {
-			n.Value = json.Number(number)
+		if text, ok := numberText(value); ok {
+			n.Value = json.Number(text)
 		}
 		switch v := value.(type) {
-		case *jsonx.Object:
+		case iterableObject:
+			if !isNilValue(v) {
+				n = ValueNode{Kind: "mapping"}
+				for key, child := range v.All() {
+					n.Pairs = append(n.Pairs, ValuePair{key, visit(child)})
+				}
+			}
+		case map[string]any:
 			n = ValueNode{Kind: "mapping"}
-			for key, child := range v.All() {
-				n.Pairs = append(n.Pairs, ValuePair{key, visit(child)})
+			keys := make([]string, 0, len(v))
+			for key := range v {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				n.Pairs = append(n.Pairs, ValuePair{key, visit(v[key])})
 			}
 		case []any:
 			n = ValueNode{Kind: "sequence"}
