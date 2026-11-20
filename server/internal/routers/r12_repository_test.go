@@ -6,35 +6,22 @@ import (
 	"errors"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/repo"
 )
 
-func r12Record(t *testing.T, v any) *agents.Record {
-	t.Helper()
-	b, e := json.Marshal(v)
-	if e != nil {
-		t.Fatal(e)
-	}
-	var record agents.Record
-	if e = json.Unmarshal(b, &record); e != nil {
-		t.Fatal(e)
-	}
-	return &record
-}
 func TestR12ReturnCleanupUsesExplicitProfilePair(t *testing.T) {
 	defaultRouter := r10Router()
 	defaultRouter.Name = "synthetic default owner"
 	defaultRouter.ManageReturnRouting = true
 	defaultRouter.ProxyGatewayAgentID = "gateway"
 	db := r12Repository(t, defaultRouter, "{}")
-	if _, e := db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "other", "name": "Synthetic other"}), ""); e != nil {
+	if _, e := db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "other", Name: "Synthetic other"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	other := r10Router()
 	other.Name = "synthetic other owner"
 	other.ProxyGatewayAgentID = "gateway"
-	if _, _, e := db.SaveProfile(t.Context(), "other", r12Record(t, map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	a := r12Gateway()
@@ -89,13 +76,12 @@ func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 }
 
 func TestR12LegacyRouterPublicationPreservesAbsentDefaults(t *testing.T) {
-	var initial agents.Record
 	raw := []byte(`{"mihomo":{"custom_config":"{}"},"routers":{"items":[{"id":"synthetic","type":"routeros","endpoint":"http://192.0.2.1","username":"synthetic-user","password":"synthetic-password"}]}}`)
-	if e := json.Unmarshal(raw, &initial); e != nil {
+	db, e := repo.Open(t.TempDir(), repo.Options{})
+	if e != nil {
 		t.Fatal(e)
 	}
-	db, e := repo.Open(t.TempDir(), repo.Options{InitialConfig: func() *agents.Record { return &initial }})
-	if e != nil {
+	if _, _, e = db.SaveProfileFieldsJSON(t.Context(), "default", raw, nil); e != nil {
 		t.Fatal(e)
 	}
 	_, r, before := r12Config(t, db)

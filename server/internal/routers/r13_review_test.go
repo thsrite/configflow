@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"configflow/internal/notifications"
+	"configflow/internal/repo"
 )
 
 // TestR13ReviewMalformedRouterIsolated: Python reads routers_of(config) as raw
@@ -33,10 +34,10 @@ func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 				t.Fatal(e)
 			}
 			bad["id"], bad["name"], bad["rule_sync_interval"], bad["proxy_gateway_agent_id"] = "bad", "synthetic malformed", "sixty", agent
-			if _, e := l.db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "legacy", "name": "Synthetic legacy"}), ""); e != nil {
+			if _, e := l.db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "legacy", Name: "Synthetic legacy"}, ""); e != nil {
 				t.Fatal(e)
 			}
-			if _, _, e := l.db.SaveProfile(t.Context(), "legacy", r12Record(t, map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
+			if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "legacy", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
 				t.Fatal("repository rejects the malformed record:", e)
 			}
 			out, e := AgentRouters(t.Context(), l.request(t))
@@ -90,12 +91,12 @@ func TestR13ReviewNoticeMatchesReminder(t *testing.T) {
 // identity, never a match against routers that have no proxy gateway.
 func TestR13ReviewEmptyAgentMatchesNothing(t *testing.T) {
 	l := r13Fixture(t)
-	if _, e := l.db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "plain", "name": "Synthetic plain"}), ""); e != nil {
+	if _, e := l.db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "plain", Name: "Synthetic plain"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	plain := *l.router
 	plain.ProxyGatewayAgentID = ""
-	if _, _, e := l.db.SaveProfile(t.Context(), "plain", r12Record(t, map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&plain}}}), nil); e != nil {
+	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "plain", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&plain}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	req := l.request(t)

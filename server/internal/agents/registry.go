@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -166,10 +165,10 @@ func (m *Manager) ObserveHeartbeat(ctx context.Context, id string, payload *mode
 	if err != nil {
 		return false, err
 	}
-	return m.observeHeartbeat(ctx, id, reported, payload)
+	return m.observeHeartbeat(ctx, id, reported)
 }
 
-func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heartbeatPayload, testPayload *model.Agent) (bool, error) {
+func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heartbeatPayload) (bool, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -208,34 +207,12 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 	}
 	var recorded bool
 	if testRecordHeartbeat != nil {
-		record, err := source.fields.object()
-		if err == nil {
-			record.Set("id", source.id)
-			record.Set("name", source.name)
-			record.Set("last_heartbeat", source.lastHeartbeat)
-		}
-		if err != nil {
-			return false, err
-		}
-		var fields *jsonx.Object
-		if testPayload != nil {
-			fields, err = agentObject(testPayload)
-		} else {
-			raw, encodeErr := json.Marshal(payload)
-			if encodeErr != nil {
-				return false, encodeErr
-			}
-			fields, err = decodeHeartbeatObject(raw)
-		}
-		if err != nil {
-			return false, err
-		}
-		recorded = testRecordHeartbeat(m, record, fields, mark)
+		recorded, err = testRecordHeartbeat(ctx, m, *source, payload, mark)
 	} else {
 		recorded, err = m.runtime.recordFields(ctx, *source, payload, mark)
-		if err != nil {
-			return false, err
-		}
+	}
+	if err != nil {
+		return false, err
 	}
 	if !recorded {
 		return false, nil
@@ -428,6 +405,16 @@ func (m *Manager) AgentSnapshots(ctx context.Context, history bool) ([]*model.Ag
 		out[i] = &rows[i]
 	}
 	return out, nil
+}
+
+func (m *Manager) addReportedMetrics(ctx context.Context, id string, raw json.RawMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if hook := currentHooks().AddMetricsJSON; hook != nil {
+		return hook(ctx, m, id, raw)
+	}
+	return nil
 }
 
 // AgentPair returns owned reciprocal HA members for pointer-based consumers.

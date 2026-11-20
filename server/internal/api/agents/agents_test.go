@@ -319,7 +319,14 @@ func TestHeartbeatAcceptsWhitelistedSystemMetrics(t *testing.T) {
 		"collected_at": "2026-08-31T00:00:00Z",
 	}
 	var seen any
-	agents.RegisterHooks(agents.Hooks{AddMetrics: func(_ *agents.Manager, _ string, m any) error { seen = m; return nil }})
+	agents.RegisterHooks(agents.Hooks{AddMetricsJSON: func(_ context.Context, _ *agents.Manager, _ string, raw json.RawMessage) error {
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		seen = v
+		return nil
+	}})
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"system_metrics": metrics})).WantStatus(200)
 	if !testjson.Equal(h.agent(t)["system_metrics"], metrics) || !testjson.Equal(seen, metrics) {
 		t.Fatal("metrics")
@@ -365,7 +372,7 @@ func TestAgentItemUpdateAndDelete(t *testing.T) {
 	if _, err := h.s.Repo.CreateProfileRecord(h.s.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.BeginDeployment(h.s.Context(), h.id, "binding-request"); err != nil {
+	if _, err := manager.ReserveDeployment(h.s.Context(), h.id, "binding-request"); err != nil {
 		t.Fatal(err)
 	}
 	result := parseBodyMap(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(map[string]any{"profile_id": "other"})).WantStatus(409))

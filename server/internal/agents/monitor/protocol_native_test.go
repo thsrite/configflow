@@ -9,10 +9,8 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 )
 
 type nativeRegistry struct {
@@ -217,23 +215,20 @@ func TestNativePanelRejectsNonJSONUnicodeWhitespace(t *testing.T) {
 	}
 }
 
-func TestLegacyScalarReadsDoNotSerializeUnreadHistory(t *testing.T) {
-	a := jsonx.Obj("host", "127.0.0.1", "port", 8082, "version", "1.8.60-go")
-	for _, key := range repo.AgentHistoryFields {
-		a.Set(key, repo.AgentHistoryNotRead)
+func TestNativeOriginRejectsProjectedHostIdentity(t *testing.T) {
+	var a model.Agent
+	if err := json.Unmarshal([]byte(`{"host":"127.0.0.1","port":8082,"version":"1.8.60-go"}`), &a); err != nil {
+		t.Fatal(err)
 	}
-	if origin, err := AgentOrigin(a); err != nil || origin != "http://127.0.0.1:8082" {
-		t.Fatalf("light endpoint: %s %v", origin, err)
+	if origin, err := Origin(&a); err != nil || origin != "http://127.0.0.1:8082" {
+		t.Fatalf("origin: %s %v", origin, err)
 	}
-	a.Set("host", jsonx.Int(7))
-	a.Set("Host", "example.com")
-	if _, err := AgentOrigin(a); err == nil {
-		t.Fatal("light-read codec accepted projected host identity")
+	var bad model.Agent
+	if err := json.Unmarshal([]byte(`{"host":7,"Host":"example.com","port":8082}`), &bad); err != nil {
+		t.Fatal(err)
 	}
-	for _, key := range repo.AgentHistoryFields {
-		if a.Value(key) != repo.AgentHistoryNotRead {
-			t.Fatal("light read mutated history marker")
-		}
+	if _, err := Origin(&bad); err == nil {
+		t.Fatal("Origin accepted projected host identity")
 	}
 }
 

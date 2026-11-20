@@ -49,13 +49,13 @@ func r13Fixture(t *testing.T) *r13Lab {
 	r.VerifyTLS = false
 	r.ProxyGatewayAgentID = "gateway"
 	db := r12Repository(t, r, "{}")
-	if _, e := db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "other", "name": "Synthetic other"}), ""); e != nil {
+	if _, e := db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "other", Name: "Synthetic other"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	second := *r
 	second.Name = "synthetic branch"
 	second.Endpoint = two.URL
-	if _, _, e := db.SaveProfile(t.Context(), "other", r12Record(t, map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&second}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&second}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	gateway := r12Gateway()
@@ -141,7 +141,7 @@ func TestR13AgentRoutersScopeCacheAndNotifications(t *testing.T) {
 }
 func dbDraft(db *repo.Repository, t *testing.T) (json.RawMessage, int64, error) {
 	t.Helper()
-	v, n, e := db.SaveProfile(t.Context(), "default", r12Record(t, map[string]any{"mihomo": map[string]string{"custom_config": "# synthetic draft\n{}"}}), nil)
+	v, n, e := db.SaveProfileFieldsJSON(t.Context(), "default", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "# synthetic draft\n{}"}}), nil)
 	if e != nil {
 		return nil, 0, e
 	}
@@ -165,10 +165,10 @@ func TestR13Fanout25SecondsAndEightWorkers(t *testing.T) {
 	}
 	// New records in a new profile need no mutation of an existing connection
 	// (the pre-O3-6b fail-closed JobLock behaviour remains intact).
-	if _, e := l.db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "many"}), ""); e != nil {
+	if _, e := l.db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "many"}, ""); e != nil {
 		t.Fatal(e)
 	}
-	if _, _, e := l.db.SaveProfile(t.Context(), "many", r12Record(t, map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": routers}}), nil); e != nil {
+	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "many", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": routers}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	rt := r13Runtime(t)

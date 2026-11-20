@@ -28,8 +28,8 @@ func TestDeployOwnersFinishDisconnectedRequests(t *testing.T) {
 		t.Fatal(pushed)
 	}
 	key = body["deployment_id"].(string)
-	state, e := m.GetDeployment(ctx, "publish-agent", key)
-	if e != nil || state.GetString("status") != "ready" {
+	state, e := m.GetDeploymentModel(ctx, "publish-agent", key)
+	if e != nil || state.Status != "ready" {
 		t.Fatal(state, e)
 	}
 }

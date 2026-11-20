@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"configflow/internal/jsonx"
 	"golang.org/x/net/idna"
 )
 
@@ -77,17 +76,8 @@ type Response struct {
 	BodyError error
 }
 
-// JSON is response.json() as requests 2.31 does it: without a charset from
-// the headers, a body longer than 3 bytes is decoded with the guessed UTF
-// codec (a UTF-8 BOM is skipped there); otherwise Text() is parsed, so an
-// application/json body keeps its BOM (and fails) and invalid bytes become
-// U+FFFD. The error text is json.loads' message.
-func (r *Response) JSON() (any, error) {
-	return jsonx.Parse(r.jsonData())
-}
-
 // jsonData owns the decoded JSON transport bytes. Protocol DTOs use the
-// standard JSON decoder; only the old public JSON adapter uses jsonx.
+// standard JSON decoder.
 func (r *Response) jsonData() []byte {
 	if _, declared := r.encoding(); !declared && len(r.Body) > 3 {
 		if decoded, valid := DecodeJSONBytes(r.Body); valid {

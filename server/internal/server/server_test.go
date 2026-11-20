@@ -76,10 +76,10 @@ func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
 		t.Errorf("DELETE /api/agents/<id> store hooks %q, want %q first", got, want)
 	}
 	hooks := agents.CurrentHooks()
-	if hooks.DeleteMetricsHistory == nil {
+	if hooks.DeleteMetricsHistoryContext == nil {
 		t.Error("delete_agent: metrics_history.delete_agent_history (A04) not registered")
 	}
-	if hooks.DeleteTrafficHistory == nil {
+	if hooks.DeleteTrafficHistoryContext == nil {
 		t.Error("delete_agent: traffic_history.delete (A05) not registered")
 	}
 }
@@ -94,7 +94,7 @@ func TestNewAppWiresTheTrafficStores(t *testing.T) {
 	if names := agents.AgentDeletedHookNames(); len(names) == 0 || names[0] != "traffic_store" {
 		t.Errorf("DELETE /api/agents/<id> store hooks %q, want traffic_store first", names)
 	}
-	if agents.CurrentHooks().DeleteTrafficHistory == nil {
+	if agents.CurrentHooks().DeleteTrafficHistoryContext == nil {
 		t.Error("delete_agent: traffic_history.delete (A05) not registered")
 	}
 	if !metrics.TrafficFlushSet() {
@@ -109,7 +109,7 @@ func TestNewAppWiresTheMetricsHistory(t *testing.T) {
 	t.Cleanup(agents.ResetHooks)
 	NewApp()
 	hooks := agents.CurrentHooks()
-	if hooks.AddMetrics == nil || hooks.DeleteMetricsHistory == nil {
+	if hooks.AddMetricsJSON == nil || hooks.DeleteMetricsHistoryContext == nil {
 		t.Fatal("metrics_history hooks not registered")
 	}
 	for _, slot := range tasks.Missing() {

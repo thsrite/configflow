@@ -80,7 +80,7 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 			attempts := make(chan n810HTTPAttempt, 2)
 			m.SetClient(n810ObservedHTTPClient{attempts})
 			const id = "malformed-status"
-			if _, err := m.BeginDeployment(s.Context(), "publish-agent", id); err != nil {
+			if _, err := m.ReserveDeployment(s.Context(), "publish-agent", id); err != nil {
 				t.Fatal(err)
 			}
 			defer m.FinishDeploymentPreparation("publish-agent", id)

@@ -5,29 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
-
-func updateHeartbeatLegacy(m *Manager, ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
-	payload, err := heartbeatFromObject(heartbeat)
-	if err != nil {
-		return false, err
-	}
-	return m.observeHeartbeat(ctx, agentID, payload, nil)
-}
-
-func recordHeartbeatLegacy(s *RuntimeState, agent, payload *jsonx.Object, mark int64) bool {
-	record, err := agentModel(agent)
-	if err != nil {
-		return false
-	}
-	fields, err := agentModel(payload)
-	if err != nil {
-		return false
-	}
-	ok, err := s.recordModel(context.Background(), record, fields, mark)
-	return err == nil && ok
-}
 
 // Heartbeat members are matched by their exact JSON name, like Python's
 // heartbeat.get("version"). encoding/json struct decoding folds case, so a
@@ -35,39 +14,41 @@ func recordHeartbeatLegacy(s *RuntimeState, agent, payload *jsonx.Object, mark i
 func TestReviewB10HeartbeatMembersMatchExactNames(t *testing.T) {
 	tests := []struct {
 		name    string
-		payload *jsonx.Object
+		payload string
 		want    map[string]string // member -> expected overlaid JSON ("" = absent)
 	}{
 		{
 			name:    "folded version",
-			payload: jsonx.Obj("Version", "9.9.9", "CONFIG_VERSION", "9"),
+			payload: `{"Version":"9.9.9","CONFIG_VERSION":"9"}`,
 			want:    map[string]string{"version": `"1.0.0"`},
 		},
 		{
 			name:    "exact wins over folded duplicate",
-			payload: jsonx.Obj("version", "2.0.0", "VERSION", "9.9.9"),
+			payload: `{"version":"2.0.0","VERSION":"9.9.9"}`,
 			want:    map[string]string{"version": `"2.0.0"`},
 		},
 		{
-			name: "folded metric component",
-			payload: jsonx.Obj("system_metrics", jsonx.Obj(
-				"CPU", jsonx.Obj("usage_percent", 1), "memory", false, "Disk", nil)),
+			name:    "folded metric component",
+			payload: `{"system_metrics":{"CPU":{"usage_percent":1},"memory":false,"Disk":null}}`,
 			want: map[string]string{
 				"system_metrics": `{"CPU":{"usage_percent":1},"memory":false,"Disk":null}`,
 				"cpu":            "", "memory": `false`, "disk": "",
 			},
 		},
 		{
-			name: "exact component wins over folded duplicate",
-			payload: jsonx.Obj("system_metrics", jsonx.Obj(
-				"cpu", jsonx.Obj("usage_percent", 2), "Cpu", jsonx.Obj("usage_percent", 9))),
-			want: map[string]string{"cpu": `{"usage_percent":2}`},
+			name:    "exact component wins over folded duplicate",
+			payload: `{"system_metrics":{"cpu":{"usage_percent":2},"Cpu":{"usage_percent":9}}}`,
+			want:    map[string]string{"cpu": `{"usage_percent":2}`},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e, id := setupRuntime(t)
-			if !must[bool](t)(updateHeartbeatLegacy(e.m, e.ctx, id, tt.payload)) {
+			var agent model.Agent
+			if err := json.Unmarshal([]byte(tt.payload), &agent); err != nil {
+				t.Fatal(err)
+			}
+			if !must[bool](t)(e.m.ObserveHeartbeat(e.ctx, id, &agent)) {
 				t.Fatal("heartbeat not recorded")
 			}
 			current, err := e.m.ReadAgent(e.ctx, id, false)
@@ -93,48 +74,56 @@ func TestReviewB10HeartbeatMembersMatchExactNames(t *testing.T) {
 	}
 }
 
-// The public entry point reports the same bytes the pre-batch-10 path did
-// (marshal the object, decode an Agent, read MemberJSON), for every scalar
-// shape an Agent may send, including escapes and number spellings.
+// The public entry point preserves exact JSON bytes through model.Agent +
+// MemberJSON for every scalar shape an Agent may send, including escapes and
+// number spellings.
 func TestReviewB10PublicHeartbeatBytesMatchModelPath(t *testing.T) {
-	values := []any{
-		"1.0.0", "a<>&\"\\ 中\U0001F600", "", nil, true, false,
-		json.Number("7"), json.Number("1e0"), json.Number("-0.50"), 7, 1.5,
-		jsonx.Obj("cpu", jsonx.Obj("usage_percent", json.Number("1.0")), "x", "<"),
-		[]any{"a", json.Number("2"), nil},
+	values := []string{
+		`"1.0.0"`, `"a<>&\"\\\u2028中😀"`, `""`, `null`, `true`, `false`,
+		`7`, `1e0`, `-0.50`, `1.5`,
+		`{"cpu":{"usage_percent":1.0},"x":"<"}`,
+		`["a",2,null]`,
 	}
 	for _, value := range values {
 		for _, key := range []string{"version", "config_version", "service_status", "system_metrics"} {
-			object := jsonx.Obj(key, value, "token", "example-value")
-			got, err := heartbeatFromObject(object)
+			var agent model.Agent
+			raw := `{"` + key + `":` + value + `,"token":"example-value"}`
+			if err := json.Unmarshal([]byte(raw), &agent); err != nil {
+				t.Fatal(err)
+			}
+			got, err := reportedHeartbeat(&agent)
 			if err != nil {
 				t.Fatal(err)
 			}
-			old, err := agentModel(object)
-			if err != nil {
-				t.Fatal(err)
+			member, present, err := agent.MemberJSON(key)
+			if err != nil || !present {
+				t.Fatalf("%s=%s: member err=%v present=%v", key, value, err, present)
 			}
-			want, err := reportedHeartbeat(old)
-			if err != nil {
-				t.Fatal(err)
+			var field json.RawMessage
+			switch key {
+			case "version":
+				field = got.Version
+			case "config_version":
+				field = got.ConfigVersion
+			case "service_status":
+				field = got.ServiceStatus
+			case "system_metrics":
+				field = got.SystemMetrics
 			}
-			if string(got.Version) != string(want.Version) || string(got.ConfigVersion) != string(want.ConfigVersion) ||
-				string(got.ServiceStatus) != string(want.ServiceStatus) || string(got.SystemMetrics) != string(want.SystemMetrics) {
-				t.Fatalf("%s=%#v: got %+v want %+v", key, value, got, want)
+			if string(field) != string(member) {
+				t.Fatalf("%s=%s: got %s want %s", key, value, field, member)
 			}
 		}
 	}
 }
 
-// Legacy testRecordHeartbeat hook tests (W9: hook signature in manager.go uses *jsonx.Object).
-
 func TestAHeartbeatRacingADeleteLeavesNothingBehind(t *testing.T) {
 	e, id := setupRuntime(t)
-	testRecordHeartbeat = func(m *Manager, agent, payload *jsonx.Object, mark int64) bool {
+	testRecordHeartbeat = func(ctx context.Context, m *Manager, source heartbeatSource, payload heartbeatPayload, mark int64) (bool, error) {
 		if !must[bool](t)(m.DeleteAgent(e.ctx, id)) {
 			t.Fatal("delete")
 		}
-		return recordHeartbeatLegacy(m.runtime, agent, payload, mark)
+		return m.runtime.recordFields(ctx, source, payload, mark)
 	}
 	t.Cleanup(func() { testRecordHeartbeat = nil })
 	revision := e.revision()
@@ -148,11 +137,12 @@ func TestAHeartbeatRacingADeleteLeavesNothingBehind(t *testing.T) {
 
 func TestADeleteAfterTheHeartbeatIsRecordedSkipsTheVersionWrite(t *testing.T) {
 	e, id := setupRuntime(t)
-	testRecordHeartbeat = func(m *Manager, agent, payload *jsonx.Object, mark int64) bool {
-		if !recordHeartbeatLegacy(m.runtime, agent, payload, mark) || !must[bool](t)(m.DeleteAgent(e.ctx, id)) {
-			t.Fatal("setup")
+	testRecordHeartbeat = func(ctx context.Context, m *Manager, source heartbeatSource, payload heartbeatPayload, mark int64) (bool, error) {
+		ok, err := m.runtime.recordFields(ctx, source, payload, mark)
+		if err != nil || !ok || !must[bool](t)(m.DeleteAgent(e.ctx, id)) {
+			t.Fatal("setup", ok, err)
 		}
-		return true
+		return true, nil
 	}
 	t.Cleanup(func() { testRecordHeartbeat = nil })
 	revision := e.revision()

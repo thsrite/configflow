@@ -60,15 +60,6 @@ func historyStartup() lifecycle.Startup {
 	}}
 }
 
-func addMetrics(m *agents.Manager, agentID string, metrics any) error {
-	raw, err := json.Marshal(metrics)
-	if err != nil {
-		return err
-	}
-	_, err = ForManager(m).AddSample(context.Background(), agentID, raw)
-	return err
-}
-
 func addMetricsJSON(ctx context.Context, m *agents.Manager, agentID string, sample json.RawMessage) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
@@ -105,10 +96,6 @@ func historyContext(ctx context.Context, dataDir string) (*History, error) {
 	return history, nil
 }
 
-func deleteHistory(m *agents.Manager, agentID string) {
-	ForManager(m).DeleteAgentHistory(agentID)
-}
-
 func deleteHistoryContext(ctx context.Context, m *agents.Manager, id string) error {
 	ctx = lifecycle.Detach(ctx)
 	history, err := historyContext(ctx, m.Repository().DataDir())
@@ -124,7 +111,7 @@ func deleteHistoryContext(ctx context.Context, m *agents.Manager, id string) err
 // the task-list row with "run now" and the interval edit, the flush loop,
 // and the two phased saves at shutdown.
 func Wire() {
-	agents.RegisterHooks(agents.Hooks{AddMetrics: addMetrics, AddMetricsJSON: addMetricsJSON, DeleteMetricsHistory: deleteHistory, DeleteMetricsHistoryContext: deleteHistoryContext})
+	agents.RegisterHooks(agents.Hooks{AddMetricsJSON: addMetricsJSON, DeleteMetricsHistoryContext: deleteHistoryContext})
 	RegisterStartup()
 	tasks.SetRowBuilder(tasks.SlotMetrics, BuildRows)
 	tasks.SetRunner(TaskKey, runNow)

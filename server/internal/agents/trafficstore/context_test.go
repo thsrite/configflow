@@ -11,7 +11,7 @@ import (
 )
 
 func TestDeleteContextPreservesFileAfterShutdown(t *testing.T) {
-	s := New(t.TempDir())
+	s := NewNative(t.TempDir())
 	path := s.Path("machine")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)

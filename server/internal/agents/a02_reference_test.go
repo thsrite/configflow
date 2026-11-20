@@ -472,7 +472,7 @@ func TestReferenceResponses(t *testing.T) {
 		if got := response.Text(); got != c.Text {
 			t.Errorf("case %d (%v) text = %q, want %q", i, c.ContentType, got, c.Text)
 		}
-		value, err := response.JSON()
+		value, err := testjson.Parse(response.jsonData())
 		var jsonWant map[string]json.RawMessage
 		if uErr := json.Unmarshal(c.JSON, &jsonWant); uErr != nil {
 			t.Fatal(uErr)

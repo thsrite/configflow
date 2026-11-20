@@ -2,24 +2,31 @@ package agents
 
 import (
 	"bytes"
-	"configflow/internal/model"
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"configflow/internal/model"
 )
 
-func TestNativeOperationReservationsMatchFacade(t *testing.T) {
-	for _, raw := range []string{`{"id":"target","latest_upgrade":{"status":"downloading"},"dns_follow_state":{"status":"preparing"}}`, `{"id":"target","latest_upgrade":{"status":"succeeded"},"dns_follow_state":{"status":"idle"}}`} {
-		old := nativeTestLegacyObject(t, raw)
+func TestNativeOperationReservations(t *testing.T) {
+	for _, tc := range []struct {
+		raw     string
+		upgrade bool
+		follow  bool
+	}{
+		{`{"id":"target","latest_upgrade":{"status":"downloading"},"dns_follow_state":{"status":"preparing"}}`, true, true},
+		{`{"id":"target","latest_upgrade":{"status":"succeeded"},"dns_follow_state":{"status":"idle"}}`, false, false},
+	} {
 		var a model.Agent
-		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+		if err := json.Unmarshal([]byte(tc.raw), &a); err != nil {
 			t.Fatal(err)
 		}
-		if UpgradeInProgress(&a) != UpgradeBusy(old) {
-			t.Fatal("upgrade reservation changed")
+		if UpgradeInProgress(&a) != tc.upgrade {
+			t.Fatalf("upgrade reservation %s: got %v want %v", tc.raw, UpgradeInProgress(&a), tc.upgrade)
 		}
-		if DNSFollowInProgress([]model.Agent{a}, "target") != DNSFollowBusy([]any{old}, "target") {
-			t.Fatal("follow reservation changed")
+		if DNSFollowInProgress([]model.Agent{a}, "target") != tc.follow {
+			t.Fatalf("follow reservation %s: got %v want %v", tc.raw, DNSFollowInProgress([]model.Agent{a}, "target"), tc.follow)
 		}
 	}
 }
@@ -52,19 +59,7 @@ func TestDeploymentModelKeepsRawRequestAndReceiptBytes(t *testing.T) {
 		}
 		return &Response{StatusCode: 200, Body: reply}, nil
 	})
-	agentObj, err := agentObject(e.agent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := e.m.DeploymentRequest(e.ctx, agentObj, http.MethodGet, "deployments/native-receipt", nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	native, err := e.m.DeploymentRequestModel(e.ctx, e.agent, http.MethodGet, "deployments/native-receipt", nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldBytes, err := json.Marshal(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +67,7 @@ func TestDeploymentModelKeepsRawRequestAndReceiptBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(oldBytes, newBytes) || !bytes.Equal(newBytes, reply) {
-		t.Fatalf("receipt wire bytes changed: %s / %s", oldBytes, newBytes)
+	if !bytes.Equal(newBytes, reply) {
+		t.Fatalf("receipt wire bytes changed: %s", newBytes)
 	}
 }

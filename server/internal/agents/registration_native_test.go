@@ -22,11 +22,7 @@ func TestRegistrationClaimUsesProtocolTypes(t *testing.T) {
 		{`{"name":7,"port":8080}`, false, 8080},
 		{`{"name":null,"port":8080}`, false, 8080},
 	} {
-		var record Record
-		if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
-			t.Fatal(err)
-		}
-		claim := legacyRegistrationClaim(&record)
+		claim := decodeRegistrationClaim([]byte(tt.raw))
 		if !claim.invalid != tt.valid || tt.valid && claim.Port != tt.port {
 			t.Fatalf("input=%s valid=%v port=%v", tt.raw, !claim.invalid, claim.Port)
 		}
@@ -58,11 +54,7 @@ func TestRegistrationSessionR5ValuesAreNotProofs(t *testing.T) {
 }
 
 func TestRegistrationClaimIgnoresCaseAliases(t *testing.T) {
-	var record Record
-	if err := json.Unmarshal([]byte(`{"name":"device","Name":"forged","port":8080,"PORT":true,"Service_Type":"other"}`), &record); err != nil {
-		t.Fatal(err)
-	}
-	claim := legacyRegistrationClaim(&record)
+	claim := decodeRegistrationClaim([]byte(`{"name":"device","Name":"forged","port":8080,"PORT":true,"Service_Type":"other"}`))
 	if claim.invalid || claim.Name != "device" || claim.Port != 8080 || claim.ServiceType != "mihomo" {
 		t.Fatalf("case alias changed protocol identity: %+v", claim)
 	}

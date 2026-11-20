@@ -1,36 +1,10 @@
 # N8-11 migration ratchet: category server-relative-file:symbol.
 # Only remove entries as callers migrate; stale entries fail the gate.
-legacy-file internal/agents/monitor/monitor_legacy.go:<file>
-legacy-file internal/agents/public_metadata_legacy.go:<file>
-legacy-file internal/agents/registration_legacy.go:<file>
-legacy-file internal/agents/runtime_legacy.go:<file>
-legacy-file internal/agents/trafficstore/legacy.go:<file>
 legacy-file internal/auth/legacy.go:<file>
 legacy-file internal/mosdns/legacy.go:<file>
 legacy-file internal/repo/legacy.go:<file>
 retired-directory internal/jsonx:<directory>
 retired-directory internal/pystr:<directory>
-retired-import internal/agents/client.go:configflow/internal/jsonx
-retired-import internal/agents/deployment_hook_bridge.go:configflow/internal/jsonx
-retired-import internal/agents/deployments.go:configflow/internal/jsonx
-retired-import internal/agents/diagnostics.go:configflow/internal/jsonx
-retired-import internal/agents/ha.go:configflow/internal/jsonx
-retired-import internal/agents/legacy_guard_bridge_test.go:configflow/internal/jsonx
-retired-import internal/agents/manager.go:configflow/internal/jsonx
-retired-import internal/agents/messages.go:configflow/internal/jsonx
-retired-import internal/agents/monitor/monitor_legacy.go:configflow/internal/jsonx
-retired-import internal/agents/monitor/protocol_native_test.go:configflow/internal/jsonx
-retired-import internal/agents/public_metadata_legacy.go:configflow/internal/jsonx
-retired-import internal/agents/public_metadata_legacy_test.go:configflow/internal/jsonx
-retired-import internal/agents/record.go:configflow/internal/jsonx
-retired-import internal/agents/registry.go:configflow/internal/jsonx
-retired-import internal/agents/remote.go:configflow/internal/jsonx
-retired-import internal/agents/review_a13_test.go:configflow/internal/jsonx
-retired-import internal/agents/review_b10_heartbeat_test.go:configflow/internal/jsonx
-retired-import internal/agents/runtime_legacy.go:configflow/internal/jsonx
-retired-import internal/agents/trafficstore/legacy.go:configflow/internal/jsonx
-retired-import internal/agents/upgrade_support.go:configflow/internal/jsonx
-retired-import internal/agents/version.go:configflow/internal/jsonx
 retired-import internal/auth/legacy.go:configflow/internal/jsonx
 retired-import internal/httpx/ctx.go:configflow/internal/jsonx
 retired-import internal/httpx/errors.go:configflow/internal/jsonx

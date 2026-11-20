@@ -30,20 +30,11 @@ type Hooks struct {
 	// selected rules. Nil means unavailable; callers omit the best-effort field
 	// after a committed save instead of rolling it back.
 	PinnedWithheld func(ctx context.Context, profileID string, ruleIDs []string) (bool, error)
-	// AddMetrics is metrics_history.add_metrics (#21), called for every
-	// heartbeat that carries system_metrics; an error is logged as a warning.
-	// Default: nothing is kept.
-	AddMetrics func(m *Manager, agentID string, metrics any) error
 	// AddMetricsJSON is the context-aware native sample boundary. Installed
 	// owners check Runtime shutdown again at the in-memory append point.
 	AddMetricsJSON func(ctx context.Context, m *Manager, agentID string, sample json.RawMessage) error
-	// DeleteMetricsHistory is metrics_history.delete_agent_history (#21).
-	DeleteMetricsHistory func(m *Manager, agentID string)
 	// DeleteMetricsHistoryContext is the native shutdown-aware history cleanup.
 	DeleteMetricsHistoryContext func(context.Context, *Manager, string) error
-	// DeleteTrafficHistory is traffic_history.delete (#21); an error is
-	// logged as a warning.
-	DeleteTrafficHistory func(m *Manager, agentID string) error
 	// DeleteTrafficHistoryContext keeps the work lifetime through auxiliary storage.
 	DeleteTrafficHistoryContext func(context.Context, *Manager, string) error
 
@@ -105,20 +96,8 @@ func RegisterHooks(h Hooks) {
 	if h.PinnedWithheld != nil {
 		hooks.PinnedWithheld = h.PinnedWithheld
 	}
-	if h.AddMetrics != nil {
-		hooks.AddMetrics = h.AddMetrics
-		hooks.AddMetricsJSON = nil
-	}
 	if h.AddMetricsJSON != nil {
 		hooks.AddMetricsJSON = h.AddMetricsJSON
-	}
-	if h.DeleteMetricsHistory != nil {
-		hooks.DeleteMetricsHistory = h.DeleteMetricsHistory
-		hooks.DeleteMetricsHistoryContext = nil
-	}
-	if h.DeleteTrafficHistory != nil {
-		hooks.DeleteTrafficHistory = h.DeleteTrafficHistory
-		hooks.DeleteTrafficHistoryContext = nil
 	}
 	if h.DeleteMetricsHistoryContext != nil {
 		hooks.DeleteMetricsHistoryContext = h.DeleteMetricsHistoryContext
@@ -197,8 +176,8 @@ type namedDelete struct {
 //	domain_probe   get_probe_store().delete     C16 (domain probe)
 //	region_check   get_region_store().delete    C16 (region check)
 //
-// The manager-level deletes of delete_agent are Hooks.DeleteMetricsHistory
-// (A04) and Hooks.DeleteTrafficHistory (A05).
+// The manager-level deletes of delete_agent are Hooks.DeleteMetricsHistoryContext
+// (A04) and Hooks.DeleteTrafficHistoryContext (A05).
 var AgentDeletedStores = []string{"traffic_store", "domain_probe", "region_check"}
 
 // OnAgentDeleted adds a store the DELETE /api/agents/<id> route clears after

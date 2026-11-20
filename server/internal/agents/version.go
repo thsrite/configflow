@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/taskstatus"
 )
 
@@ -16,26 +15,12 @@ type ChangelogEntry struct {
 	Features []string
 }
 
-// Object is the entry as Python stores it: {"date": ..., "features": [...]}.
-func (e ChangelogEntry) Object() *jsonx.Object {
-	return jsonx.Obj("date", e.Date, "features", jsonx.ListOf(e.Features))
-}
-
 // Changelog is VERSION_CHANGELOG: every entry, newest first (the dict's
 // declaration order).
 func Changelog() []ChangelogEntry {
 	out := make([]ChangelogEntry, len(versionChangelog))
 	copy(out, versionChangelog)
 	return out
-}
-
-// ChangelogObject is VERSION_CHANGELOG as an ordered object.
-func ChangelogObject() *jsonx.Object {
-	result := jsonx.NewObject()
-	for _, entry := range versionChangelog {
-		result.Set(entry.Version, entry.Object())
-	}
-	return result
 }
 
 // VersionChangelog is VERSION_CHANGELOG.get(version).

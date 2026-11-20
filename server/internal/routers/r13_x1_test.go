@@ -3,6 +3,8 @@ package routers
 import (
 	"encoding/json"
 	"testing"
+
+	"configflow/internal/repo"
 )
 
 // X1 (R13 review, coordinator 2026-11-18): Router decoding follows the R5
@@ -67,7 +69,7 @@ func TestX1PublishWithMalformedNeighbour(t *testing.T) {
 		t.Fatal(e)
 	}
 	neighbour["id"], neighbour["name"], neighbour["rule_sync_interval"], neighbour["proxy_gateway_agent_id"] = "neighbour", "synthetic neighbour", "sixty", ""
-	if _, _, e = db.SaveProfile(t.Context(), "default", r12Record(t, map[string]any{"routers": map[string]any{"items": []any{json.RawMessage(good), neighbour}}}), nil); e != nil {
+	if _, _, e = db.SaveProfileFieldsJSON(t.Context(), "default", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []any{json.RawMessage(good), neighbour}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	outcome := Publish(t.Context(), req)
@@ -83,20 +85,20 @@ func TestX1ReturnCleanupWithMalformedProfile(t *testing.T) {
 	owner.ManageReturnRouting = true
 	owner.ProxyGatewayAgentID = "gateway"
 	db := r12Repository(t, owner, "{}")
-	if _, e := db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "other", "name": "Synthetic other"}), ""); e != nil {
+	if _, e := db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "other", Name: "Synthetic other"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	other := r10Router()
 	other.Name = "synthetic other owner"
 	other.ProxyGatewayAgentID = "gateway"
-	if _, _, e := db.SaveProfile(t.Context(), "other", r12Record(t, map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := db.CreateProfile(t.Context(), r12Record(t, map[string]string{"id": "legacy", "name": "Synthetic legacy"}), ""); e != nil {
+	if _, e := db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "legacy", Name: "Synthetic legacy"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	bad := map[string]any{"id": "bad", "name": "synthetic legacy owner", "type": "routeros", "endpoint": "http://192.0.2.9", "manage_return_routing": true, "proxy_gateway_agent_id": "gateway", "rule_sync_interval": "sixty"}
-	if _, _, e := db.SaveProfile(t.Context(), "legacy", r12Record(t, map[string]any{"routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "legacy", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	a := r12Gateway()

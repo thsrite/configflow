@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
@@ -31,19 +30,18 @@ func (s r12Source) ReturnAgent(*GatewayAgent) ReturnAgent { return s.client }
 func r12Repository(t *testing.T, r *Router, yaml string) *repo.Repository {
 	t.Helper()
 	raw := mustPolicyJSON(map[string]any{"mihomo": map[string]any{"custom_config": yaml}, "routers": map[string]any{"items": []*Router{r}}})
-	var initial agents.Record
-	if err := json.Unmarshal(raw, &initial); err != nil {
+	db, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := repo.Open(t.TempDir(), repo.Options{InitialConfig: func() *agents.Record { return &initial }})
-	if err != nil {
+	if _, _, err = db.SaveProfileFieldsJSON(t.Context(), "default", raw, nil); err != nil {
 		t.Fatal(err)
 	}
 	return db
 }
 func r12Config(t *testing.T, db *repo.Repository) (json.RawMessage, *Router, model.Profile) {
 	t.Helper()
-	cfg, e := db.GetCompatConfig(t.Context(), "default", repo.ResourceRoots{})
+	cfg, e := db.Config(t.Context(), "default", repo.ResourceRoots{})
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -747,18 +748,17 @@ func TestSplitRouteKey(t *testing.T) {
 	}
 }
 
-// Delete never removes a directory (os.remove is unlink) and reports the
-// failure with Python's OSError text.
+// DeleteContext never removes a directory (os.Remove is unlink) and reports EISDIR.
 func TestDeleteRefusesDirectoryWithPythonText(t *testing.T) {
 	isolated(t)
 	dir := t.TempDir()
-	store := New(dir)
+	store := NewNative(dir)
 	os.MkdirAll(store.Path("a"), 0o755)
-	err := store.Delete("a")
-	if err == nil || err.Error() != "[Errno 21] Is a directory: '"+store.Path("a")+"'" {
+	err := store.DeleteContext(context.Background(), "a")
+	if !errors.Is(err, syscall.EISDIR) {
 		t.Fatalf("err %v", err)
 	}
-	if store.Delete("missing") != nil {
+	if store.DeleteContext(context.Background(), "missing") != nil {
 		t.Fatal("missing file is fine")
 	}
 }

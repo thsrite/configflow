@@ -337,14 +337,10 @@ func (m *Manager) DeleteAgent(ctx context.Context, id string) (bool, error) {
 	h := currentHooks()
 	if h.DeleteMetricsHistoryContext != nil {
 		_ = h.DeleteMetricsHistoryContext(ctx, m, id) // The history owner logs ordinary file failures.
-	} else if h.DeleteMetricsHistory != nil {
-		h.DeleteMetricsHistory(m, id)
 	}
 	var cleanupErr error
 	if h.DeleteTrafficHistoryContext != nil {
 		cleanupErr = h.DeleteTrafficHistoryContext(ctx, m, id)
-	} else if h.DeleteTrafficHistory != nil {
-		cleanupErr = h.DeleteTrafficHistory(m, id)
 	}
 	if cleanupErr != nil && ctx.Err() == nil {
 		logger.Warningf(msgTrafficHistoryDeleteFailure, registryDiagnostic(deleted, id, 120), registryDiagnostic(deleted, cleanupErr.Error(), DetailLimit))

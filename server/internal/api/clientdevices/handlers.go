@@ -155,47 +155,47 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 	if err != nil {
 		return cfg, nil, err
 	}
-	all, err := m.GetAllAgents(ctx, true)
+	all, err := m.ListAgents(ctx, true)
 	if err != nil {
 		return cfg, nil, err
 	}
 	rows := []json.RawMessage{}
-	for _, agent := range all {
-		bound := agent.GetString("profile_id")
+	for i := range all {
+		agent := &all[i]
+		bound := agent.ProfileID
 		if bound == "" {
 			bound = def
 		}
-		if agent.GetString("service_type") != "oxidns" || bound != id {
+		if agent.ServiceType != "oxidns" || bound != id {
 			continue
 		}
-		name := agent.GetString("name")
+		name := agent.Name
 		if name == "" {
-			name = agent.GetString("id")
+			name = agent.ID
 		}
-		status := agent.GetString("status")
+		status := agent.Status
 		if status == "" {
 			status = "offline"
 		}
 		var deployment *model.Deployment
-		if raw := agent.GetObject("latest_deployment"); raw != nil {
-			data, err := json.Marshal(raw)
-			if err != nil {
-				return nil, nil, err
-			}
-			var task model.Deployment
-			if err = json.Unmarshal(data, &task); err != nil {
-				return nil, nil, err
-			}
-			deployment = deploy.PublicDeployment(&task)
+		if agent.LatestDeployment != nil {
+			deployment = deploy.PublicDeployment(agent.LatestDeployment)
+		}
+		ha, ok, err := agent.MemberJSON("oxidns_ha")
+		if err != nil {
+			return cfg, nil, err
+		}
+		if !ok || len(ha) == 0 {
+			ha = json.RawMessage("null")
 		}
 		data, err := json.Marshal(struct {
 			ID         string            `json:"id"`
 			Name       string            `json:"name"`
 			Host       string            `json:"host"`
 			Status     string            `json:"status"`
-			HA         any               `json:"oxidns_ha"`
+			HA         json.RawMessage   `json:"oxidns_ha"`
 			Deployment *model.Deployment `json:"deployment"`
-		}{agent.GetString("id"), name, agent.GetString("host"), status, agent.Value("oxidns_ha"), deployment})
+		}{agent.ID, name, agent.Host, status, ha, deployment})
 		if err != nil {
 			return cfg, nil, err
 		}

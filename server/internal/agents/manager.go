@@ -8,16 +8,12 @@ package agents
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
-	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -43,7 +39,7 @@ type PermissionError struct{}
 
 func (e *PermissionError) Error() string { return "Unauthorized" }
 
-// ValueError retains the validation error name for deferred facade consumers.
+// ValueError retains the validation error name for registry validation errors.
 type ValueError struct{ Message string }
 
 func (e *ValueError) Error() string { return e.Message }
@@ -59,19 +55,6 @@ var deploymentResults = map[string]struct {
 	"failed":          {logx.Warning, "配置发布失败"},
 	"rolled_back":     {logx.Warning, "配置发布未生效，已回滚到原配置"},
 	"rollback_failed": {logx.Error, "配置发布失败，且回滚失败"},
-}
-
-// agentLabel is _agent_label(agent).
-func agentLabel(agent *jsonx.Object) string {
-	a, err := agentModel(agent)
-	if err != nil || a == nil {
-		return ""
-	}
-	name := a.Name
-	if name == "" {
-		name = a.ID
-	}
-	return logx.LogText(name, 120)
 }
 
 // ConstantTimeASCIIEqual is _constant_time_ascii_equal (manager.py and
@@ -93,20 +76,6 @@ func isASCII(s string) bool {
 		}
 	}
 	return true
-}
-
-// HeartbeatFresh is heartbeat_fresh(agent, now): the last heartbeat is at
-// most two minutes old. now nil is the current time; a given now is Python's
-// naive datetime (its wall clock in the local zone), the only kind callers
-// pass. Unparsable or missing heartbeats are stale.
-//
-// As in Python, a naive heartbeat minus a naive now is the difference of the
-// two wall clocks (a DST change in between is not seen), an aware heartbeat
-// is compared with the current instant, and an aware heartbeat against a
-// given (naive) now is a TypeError, i.e. stale. Both sides have microsecond
-// precision, like datetime.
-func HeartbeatFresh(agent *jsonx.Object, now *time.Time) bool {
-	return FreshHeartbeat(agent.GetString("last_heartbeat"), now)
 }
 
 // FreshHeartbeat applies the registry freshness rule to a typed timestamp.
@@ -139,51 +108,6 @@ func wallMicros(t time.Time) int64 {
 }
 
 func unixMicros(t time.Time) int64 { return t.Unix()*1_000_000 + int64(t.Nanosecond()/1000) }
-
-// OnlineStatus is online_status(agent, now): the stored status, or
-// "offline" once the heartbeat is stale.
-func OnlineStatus(agent *jsonx.Object, now *time.Time) any {
-	if HeartbeatFresh(agent, now) {
-		return agent.Value("status")
-	}
-	return "offline"
-}
-
-// IsOnline is is_online(agent, now).
-func IsOnline(agent *jsonx.Object, now *time.Time) bool { return OnlineStatus(agent, now) == "online" }
-
-// IsUsable is is_usable(agent, now): online by the freshness rule and not
-// disabled.
-func IsUsable(agent *jsonx.Object, now *time.Time) bool {
-	return agent.Value("enabled") != false && IsOnline(agent, now)
-}
-
-// upgradeBusy is _upgrade_busy(agent).
-func upgradeBusy(agent *jsonx.Object) bool {
-	a, err := agentModel(agent)
-	return err != nil || upgradeBusyModel(a)
-}
-
-// dnsFollowBusy is _dns_follow_busy(agents, agent_id).
-func dnsFollowBusy(records []any, agentID any) bool {
-	id, valid := agentID.(string)
-	if !valid {
-		return false
-	}
-	rows := make([]model.Agent, 0, len(records))
-	for _, item := range records {
-		record, valid := item.(*jsonx.Object)
-		if !valid {
-			continue
-		}
-		a, err := agentModel(record)
-		if err != nil || a == nil {
-			continue
-		}
-		rows = append(rows, *a)
-	}
-	return dnsFollowBusyModel(rows, id)
-}
 
 // Manager is AgentManager: the registry of one repository.
 type Manager struct {
@@ -252,254 +176,11 @@ func (m *Manager) defaultProfileID(ctx context.Context) (string, error) {
 	return m.repository.AgentDefaultProfileID(ctx)
 }
 
-// agents is _agents(history=...): the records with the heartbeat state laid
-// over them.
-func (m *Manager) agents(ctx context.Context, history bool) ([]*jsonx.Object, error) {
-	return m.agentsInspect(ctx, history, nil)
-}
-
-func (m *Manager) agentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
-	var inspectErr error
-	var inspectModel func(*model.Agent)
-	if inspect != nil {
-		inspectModel = func(record *model.Agent) {
-			if inspectErr != nil {
-				return
-			}
-			raw, err := agentObject(record)
-			if err != nil {
-				inspectErr = err
-				return
-			}
-			inspect(raw)
-		}
-	}
-	records, err := m.ReadAgents(ctx, history, inspectModel)
-	if err != nil {
-		return nil, err
-	}
-	if inspectErr != nil {
-		return nil, inspectErr
-	}
-	result := make([]*jsonx.Object, 0, len(records))
-	for i := range records {
-		raw, err := agentObject(&records[i])
-		if err != nil {
-			return nil, err
-		}
-		if !history {
-			for _, key := range repo.AgentHistoryFields {
-				raw.Set(key, repo.AgentHistoryNotRead)
-			}
-		}
-		result = append(result, raw)
-	}
-	return result, nil
-}
-
-// Agents is _agents(history=...): every record with its heartbeat state,
-// keeping the stored status.
-func (m *Manager) Agents(ctx context.Context, history bool) ([]*jsonx.Object, error) {
-	return m.agents(ctx, history)
-}
-
-// saveReportedFields is _save_reported_fields: write {agent_id: {field:
-// value}} in one transaction; returns the IDs written (nothing when none of
-// the Agents exists any more).
-func (m *Manager) saveReportedFields(ctx context.Context, changes map[string]*jsonx.Object) (map[string]bool, error) {
-	changesTyped := make(map[string]model.Fields, len(changes))
-	for id, record := range changes {
-		raw, err := json.Marshal(record)
-		if err != nil {
-			return nil, err
-		}
-		var fields model.Fields
-		if err := json.Unmarshal(raw, &fields); err != nil {
-			return nil, err
-		}
-		changesTyped[id] = fields
-	}
-	return m.saveReportedModels(ctx, changesTyped)
-}
-
-// UpdateAgents is _update_agents(updater, profile_id): the updater edits the
-// Agent list of the system section inside one repository transaction (append
-// or replace through the pointer). profileID, when given, must still exist
-// at commit. ProfileInUse becomes *DeploymentConflict.
-func (m *Manager) UpdateAgents(ctx context.Context, profileID string, updater func(ctx context.Context, agents *[]any) (any, error)) (any, error) {
-	return m.updateRegistry(ctx, profileID, func(ctx context.Context, list *[]any, _ *model.System) (any, error) { return updater(ctx, list) })
-}
-
-func (m *Manager) updateRegistry(ctx context.Context, profileID string, updater func(context.Context, *[]any, *model.System) (any, error)) (any, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if testFailUpdate != nil {
-		if err := testFailUpdate(); err != nil {
-			return nil, err
-		}
-	}
-	var result any
-	err := m.repository.UpdateSystem(ctx, func(ctx context.Context, system *model.System) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if profileID != "" {
-			if _, err := m.repository.ProfileMetadata(ctx, profileID); err != nil {
-				return err
-			}
-		}
-		raw, err := json.Marshal(system.Agents)
-		if err != nil {
-			return err
-		}
-		value, err := jsonx.Parse(raw)
-		if err != nil {
-			return err
-		}
-		list, _ := value.([]any)
-		result, err = updater(ctx, &list, system)
-		if err != nil {
-			return err
-		}
-		raw, err = jsonx.Compact(list)
-		if err != nil {
-			return err
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		return system.SetJSON("agents", raw)
-	})
-	if err != nil {
-		if errors.Is(err, repo.ErrInUse) {
-			return nil, &DeploymentConflict{Message: err.Error()}
-		}
-		return nil, err
-	}
-	return result, nil
-}
-
-// validateProfileID is ProfileRepository.validate_profile_id for any value.
-func validateProfileID(value any) error {
-	text, ok := value.(string)
-	if !ok {
-		return repo.NewValidationError("Invalid profile id")
-	}
-	return repo.ValidateProfileID(text)
-}
-
-func objOr(value any) *jsonx.Object {
-	object, _ := value.(*jsonx.Object)
-	return object
-}
-
-// GetAllAgents is get_all_agents(history=...): every Agent with its status
-// derived by the freshness rule (offline after two minutes without a
-// heartbeat). history=false leaves the publication history unread.
-func (m *Manager) GetAllAgents(ctx context.Context, history bool) ([]*jsonx.Object, error) {
-	records, err := m.agents(ctx, history)
-	if err != nil {
-		return nil, err
-	}
-	for _, record := range records {
-		record.Set("status", OnlineStatus(record, nil))
-	}
-	return records, nil
-}
-
-// GetAgentByID adapts an individual native snapshot for remaining W5/W6 callers.
-func (m *Manager) GetAgentByID(ctx context.Context, agentID string, history bool) (*jsonx.Object, error) {
-	record, err := m.ReadAgent(ctx, agentID, history)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	raw, err := agentObject(record)
-	if err == nil && !history {
-		for _, key := range repo.AgentHistoryFields {
-			raw.Set(key, repo.AgentHistoryNotRead)
-		}
-	}
-	return raw, err
-}
-
 var editableFields = []string{"name", "host", "port", "enabled", "service_type", "profile_id"}
 var guardedFields = []string{"host", "port", "enabled", "service_type", "profile_id"}
 
-// RebindProfileAgents adapts the remaining profile consumer to RebindProfiles.
-func (m *Manager) RebindProfileAgents(ctx context.Context, sourceProfileID, targetProfileID, expectedAgentIDs any) (*jsonx.Object, error) {
-	if err := validateProfileID(sourceProfileID); err != nil {
-		return nil, err
-	}
-	if err := validateProfileID(targetProfileID); err != nil {
-		return nil, err
-	}
-	source, target := sourceProfileID.(string), targetProfileID.(string)
-	if source == target {
-		return nil, repo.NewValidationError(msgRebindOtherProfile)
-	}
-	items, valid := expectedAgentIDs.([]any)
-	if !valid {
-		return nil, repo.NewValidationError(msgRebindReviewedIDs)
-	}
-	ids := make([]string, len(items))
-	for i, item := range items {
-		id, valid := item.(string)
-		if !valid {
-			return nil, repo.NewValidationError(msgRebindReviewedIDs)
-		}
-		ids[i] = id
-	}
-	result, err := m.RebindProfiles(ctx, source, target, ids)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-	var response Result
-	if err := json.Unmarshal(raw, &response); err != nil {
-		return nil, err
-	}
-	return &response, nil
-}
-
-// UpdateHeartbeat is update_heartbeat(agent_id, heartbeat_data): the state is
-// kept in memory only; version and config_version are written to the
-// configuration only when they change. false when the Agent is unknown (or
-// was deleted meanwhile).
-func heartbeatFromObject(heartbeat *jsonx.Object) (heartbeatPayload, error) {
-	var payload heartbeatPayload
-	if heartbeat == nil {
-		return payload, nil
-	}
-	for _, item := range []struct {
-		name   string
-		target *json.RawMessage
-	}{
-		{"version", &payload.Version}, {"config_version", &payload.ConfigVersion},
-		{"service_status", &payload.ServiceStatus}, {"system_metrics", &payload.SystemMetrics},
-	} {
-		value, present := heartbeat.Get(item.name)
-		if !present {
-			continue
-		}
-		raw, err := json.Marshal(value)
-		if err != nil {
-			return payload, fmt.Errorf("encode heartbeat %s: %w", item.name, err)
-		}
-		*item.target = raw
-	}
-	return payload, nil
-}
-
-// testFailUpdate makes UpdateAgents fail (tests; Python patched
+// testFailUpdate makes editRegistry fail (tests; Python patched
 // repository.update_system_transaction).
 var testFailUpdate func() error
 
-var testRecordHeartbeat func(m *Manager, agent, payload *jsonx.Object, mark int64) bool
-
-// SetDomainDiscovery is set_domain_discovery(agent_id, enabled): only mihomo
-// Agents can enable it. Returns the updated live record, nil when unknown.
+var testRecordHeartbeat func(ctx context.Context, m *Manager, source heartbeatSource, payload heartbeatPayload, mark int64) (bool, error)

@@ -647,9 +647,11 @@ func TestEditDuringRefreshIsNotAcknowledged(t *testing.T) {
 func TestWorkerUsesDerivedOfflineStatus(t *testing.T) {
 	f := newWorkerFixture(t, "mihomo")
 	f.edit(t, "new.example.com")
-	entry := f.s.m.Runtime().Entries()["device"]
-	entry.LastHeartbeat = time.Now().Add(-5 * time.Minute).Format("2006-01-02T15:04:05.000000")
-	f.s.m.Runtime().SetEntry("device", entry)
+	f.s.m.Runtime().Delete("device")
+	stale := time.Now().Add(-5 * time.Minute).Format("2006-01-02T15:04:05.000000")
+	if e := f.s.m.Runtime().RestoreHeartbeat(f.ctx, "device", float64(time.Now().Unix()), stale, &model.Agent{}); e != nil {
+		t.Fatal(e)
+	}
 	stored, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)

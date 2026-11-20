@@ -33,10 +33,6 @@ func flushTraffic(ctx context.Context, m *agents.Manager, agentIDs []string, sys
 	return result.Rows, nil
 }
 
-func deleteTrafficHistory(m *agents.Manager, agentID string) error {
-	return TrafficForManager(m).Delete(agentID)
-}
-
 func deleteTrafficHistoryContext(ctx context.Context, m *agents.Manager, id string) error {
 	return TrafficForManager(m).DeleteContext(ctx, id)
 }
@@ -85,7 +81,7 @@ func deleteTrafficStore(ctx context.Context, agentID string) error {
 // history save inside 「监控历史保存」 (metrics_flush.run, which also runs at
 // shutdown). The traffic history has no loop or task row of its own.
 func WireTraffic() {
-	agents.RegisterHooks(agents.Hooks{DeleteTrafficHistory: deleteTrafficHistory, DeleteTrafficHistoryContext: deleteTrafficHistoryContext})
+	agents.RegisterHooks(agents.Hooks{DeleteTrafficHistoryContext: deleteTrafficHistoryContext})
 	agents.OnAgentDeleted("traffic_store", deleteTrafficStore)
 	SetNativeTrafficFlush(flushTraffic)
 }

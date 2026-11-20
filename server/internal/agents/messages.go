@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"configflow/internal/agents/diag"
-	"configflow/internal/jsonx"
 )
 
 // MessageUncheckedCandidate refuses activating an OxiDNS candidate without a
@@ -74,28 +73,6 @@ func ExplainDeployment(text string) string {
 		return explanation + "\n原始错误：" + text
 	}
 	return text
-}
-
-// PublicDeploymentMessages is public_deployment_messages(record): a shallow
-// copy with the display texts explained and the events cleaned.
-func PublicDeploymentMessages(record *jsonx.Object) *jsonx.Object {
-	raw, err := json.Marshal(record)
-	if err != nil {
-		return record.Clone()
-	}
-	var input model.Deployment
-	if json.Unmarshal(raw, &input) != nil {
-		return record.Clone()
-	}
-	result, err := PublicDeploymentMessagesModel(&input)
-	if err != nil {
-		return record.Clone()
-	}
-	out, err := deploymentObject(result)
-	if err != nil {
-		return record.Clone()
-	}
-	return out
 }
 
 // upgradeExplanation is _upgrade_explanation(message).
@@ -162,32 +139,6 @@ func ExplainUpgradeFailure(text string) string {
 }
 
 var upgradeFailureStatuses = map[string]bool{"failed": true, "rolled_back": true, "rollback_failed": true}
-
-// PublicUpgradeState is public_upgrade_state(state): a localized response
-// copy; the durable journal is never rewritten.
-func PublicUpgradeState(state *jsonx.Object) *jsonx.Object {
-	raw, err := json.Marshal(state)
-	if err != nil {
-		return state.Clone()
-	}
-	var input model.AgentUpgrade
-	if json.Unmarshal(raw, &input) != nil {
-		return state.Clone()
-	}
-	result, err := PublicUpgradeStateModel(&input)
-	if err != nil {
-		return state.Clone()
-	}
-	raw, err = json.Marshal(result)
-	if err != nil {
-		return state.Clone()
-	}
-	var out jsonx.Object
-	if json.Unmarshal(raw, &out) != nil {
-		return state.Clone()
-	}
-	return &out
-}
 
 // PublicDeploymentMessagesModel returns an owned localized task; storage and
 // unknown members are preserved, and event validation has one native owner.

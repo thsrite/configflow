@@ -91,7 +91,7 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 		{"push-entry", func() error { _, e := Push(ctx, f.m, "publish-agent", PushInput{Bundle: b}); return e }},
 		{"push-http-owner", func() error { return PushConfig(ctx, f.m, "publish-agent", PushRequest{Body: []byte(`{}`)}).Err }},
 		{"generate-owner", func() error { return GenerateFinal(ctx, f.m, "publish-agent", GenerateRequest{Body: []byte(`{}`)}).Err }},
-		{"reserve", func() error { _, e := f.m.BeginDeployment(ctx, "publish-agent", "closed"); return e }},
+		{"reserve", func() error { _, e := f.m.ReserveDeployment(ctx, "publish-agent", "closed"); return e }},
 		{"record", func() error {
 			_, e := recordUpdate(ctx, f.m, "publish-agent", "closed", Update{Status: ptr("uploading"), Submitted: ptr(true)}, agents.RecordOptions{})
 			return e
@@ -130,7 +130,7 @@ func TestShutdownAtSQLiteCommitKeepsWholeDocument(t *testing.T) {
 	ctx := lifecycle.BindRequest(f.ctx)
 	before := durableSnapshot(t, f)
 	f.m.Repository().Store().BeforeCommit = func() error { lifecycle.Stop(8 * time.Second); return nil }
-	_, err := f.m.BeginDeployment(ctx, "publish-agent", "at-commit")
+	_, err := f.m.ReserveDeployment(ctx, "publish-agent", "at-commit")
 	defer f.m.FinishDeploymentPreparation("publish-agent", "at-commit")
 	f.m.Repository().Store().BeforeCommit = nil
 	if !errors.Is(err, context.Canceled) {
@@ -141,7 +141,7 @@ func TestShutdownAtSQLiteCommitKeepsWholeDocument(t *testing.T) {
 	}
 	lifecycle.Start(f.ctx)
 	defer lifecycle.Stop(8 * time.Second)
-	if _, err = f.m.BeginDeployment(lifecycle.BindRequest(f.ctx), "publish-agent", "at-commit"); err != nil {
+	if _, err = f.m.ReserveDeployment(lifecycle.BindRequest(f.ctx), "publish-agent", "at-commit"); err != nil {
 		t.Fatal("cancelled reservation leaked", err)
 	}
 	f.m.FinishDeploymentPreparation("publish-agent", "at-commit")
