@@ -4,12 +4,9 @@ package nodes
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
-	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -18,31 +15,6 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func decodeStored(value any, target any) error {
-	data, err := jsonx.Compact(value)
-	if err != nil {
-		return err
-	}
-	return jsondecode.Unmarshal(data, target)
-}
-func stored(value any) (any, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Parse(data)
-}
-func storedObject(value any) (*jsonx.Object, error) {
-	v, err := stored(value)
-	if err != nil {
-		return nil, err
-	}
-	o, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, fmt.Errorf("expected object")
-	}
-	return o, nil
-}
 func sharedNodes(ctx context.Context) ([]record, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -120,27 +92,23 @@ func parseLine(ctx context.Context, line string) json.RawMessage {
 	data, _ := yamlx.ToJSON(proxy)
 	return data
 }
-func reviewedDeletion(ctx context.Context, body record, preview bool) (*httpx.Response, error) {
+func reviewedDeletion(ctx context.Context, ids []string, confirmation string, preview bool) (*httpx.Response, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ids, err := stored(body["ids"])
-	if err != nil {
-		return nil, err
-	}
 	if preview {
-		result, err := repository.PreviewNodeDeletion(ctx, ids)
+		result, err := repository.PreviewNodeDeletionIDs(ctx, ids)
 		return httpx.JSON(result), err
 	}
-	result, err := repository.DeleteNodesWithReferences(ctx, ids, body.text("confirmation"))
+	result, err := repository.DeleteNodesWithReferencesIDs(ctx, ids, confirmation)
 	if err != nil {
 		return nil, err
 	}
 	repo.ResetConfigContext(ctx)
 	idsOut := []string{}
-	for _, item := range result.GetList("nodes") {
-		idsOut = append(idsOut, item.(*jsonx.Object).GetString("id"))
+	for _, item := range result.Nodes {
+		idsOut = append(idsOut, item.ID)
 	}
 	return nativeJSON(200, struct {
 		Success bool     `json:"success"`
@@ -150,47 +118,56 @@ func reviewedDeletion(ctx context.Context, body record, preview bool) (*httpx.Re
 
 // Wire installs the node deletion planner. It does no I/O inside repo's lock.
 func Wire() {
-	repo.RegisterHooks(repo.Hooks{PlanNodeDeletion: func(document *jsonx.Object, ids any) (*jsonx.Object, *jsonx.Object, error) {
-		var doc record
-		if err := decodeStored(document, &doc); err != nil {
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, ids []string) (*repo.NodeDeletionPreview, *model.Document, error) {
+		data, err := model.Marshal(document)
+		if err != nil {
 			return nil, nil, err
 		}
-		var nodeIDs []string
-		if err := decodeStored(ids, &nodeIDs); err != nil {
-			return nil, nil, repo.NewValidationError(msgSelectNodes)
+		var doc record
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return nil, nil, err
 		}
 		usages := map[string][]string{}
-		profiles := doc.object("profiles")
-		r := new(repo.Repository)
-		for profileID := range profiles {
-			view, err := r.CompatConfigFrom(document, profileID)
+		for _, profile := range document.Profiles {
+			view, err := repo.ConfigFrom(document, profile.Key(), nil)
 			if err != nil {
 				return nil, nil, err
 			}
-			for _, node := range view.GetList("nodes") {
-				usages[profileID] = append(usages[profileID], node.(*jsonx.Object).GetString("id"))
+			for _, node := range view.Nodes {
+				usages[profile.Key()] = append(usages[profile.Key()], node.ID)
 			}
 		}
 		dialers := map[string]string{}
-		for _, value := range document.GetObject("shared").GetList("nodes") {
-			n := value.(*jsonx.Object)
-			target, err := convert.RawDialer(n)
+		for _, node := range document.Shared.Nodes {
+			target, err := convert.NodeDialer(node)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, convert.DialerFailure(err)
 			}
-			dialers[n.GetString("id")], _ = target.(string)
+			target = yamlx.Resolve(target)
+			if target != nil && target.ShortTag() == "!!str" {
+				dialers[node.ID] = target.Value
+			}
 		}
-		plan, candidate, err := planDeletion(doc, nodeIDs, usages, dialers)
+		plan, candidate, err := planDeletion(doc, ids, usages, dialers)
 		if err != nil {
 			return nil, nil, err
 		}
-		p, err := storedObject(plan)
+		data, err = json.Marshal(plan)
 		if err != nil {
 			return nil, nil, err
 		}
-		d, err := storedObject(candidate)
-		return p, d, err
-	}})
+		var preview repo.NodeDeletionPreview
+		if err := json.Unmarshal(data, &preview); err != nil {
+			return nil, nil, err
+		}
+		data, err = json.Marshal(candidate)
+		if err != nil {
+			return nil, nil, err
+		}
+		docOut, _, err := model.DecodeDocument(data)
+		return &preview, docOut, err
+	}}})
+
 }
 
 func position(body record) string {

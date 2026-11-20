@@ -246,7 +246,7 @@ func usage(ctx context.Context, id string) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := r.GetResourceUsage(ctx, "subscriptions", id)
+	v, err := r.ResourceUsage(ctx, "subscriptions", id)
 	return httpx.JSON(v), err
 }
 func forgetTask(ctx context.Context, id string) error {

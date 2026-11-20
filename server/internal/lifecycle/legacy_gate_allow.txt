@@ -161,7 +161,6 @@ retired-import internal/agents/upgrades/upgrades_test.go:configflow/internal/jso
 retired-import internal/agents/upgrade_support.go:configflow/internal/jsonx
 retired-import internal/agents/version.go:configflow/internal/jsonx
 retired-import internal/agents/version_native_test.go:configflow/internal/jsonx
-retired-import internal/aggregations/adapter.go:configflow/internal/jsonx
 retired-import internal/aggregations/render_test.go:configflow/internal/jsonx
 retired-import internal/api/agents/a03_review_test.go:configflow/internal/jsonx
 retired-import internal/api/agents/a15_review_internal_test.go:configflow/internal/jsonx
@@ -251,7 +250,6 @@ retired-import internal/api/linuxgateway/difftest/diff_test.go:configflow/intern
 retired-import internal/api/logs/logs_test.go:configflow/internal/jsonx
 retired-import internal/api/logs/permission_test.go:configflow/internal/jsonx
 retired-import internal/api/logs/review_test.go:configflow/internal/jsonx
-retired-import internal/api/nodes/adapter.go:configflow/internal/jsonx
 retired-import internal/api/nodes/crud_test.go:configflow/internal/jsonx
 retired-import internal/api/nodes/latency_test.go:configflow/internal/jsonx
 retired-import internal/api/nodes/review_test.go:configflow/internal/jsonx

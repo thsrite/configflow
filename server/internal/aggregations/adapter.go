@@ -7,7 +7,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/provider"
@@ -197,9 +196,7 @@ func LoadCatalog(ctx context.Context) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// W1 supplies the final typed Scope baseline boundary. Preserve the exact
-	// snapshot-save semantics until that dependency is merged.
-	document, err := repo.GetSharedConfig(ctx)
+	document, err := repo.SharedConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -212,15 +209,11 @@ func SaveCatalog(ctx context.Context, raw json.RawMessage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
+	var document model.Shared
+	if err := json.Unmarshal(raw, &document); err != nil {
 		return err
 	}
-	document, ok := value.(*jsonx.Object)
-	if !ok {
-		return errors.New("aggregation catalog must be an object")
-	}
-	return repo.SaveSharedConfig(ctx, document, nil)
+	return repo.SaveSharedRecord(ctx, &document, nil)
 }
 
 // AppendCatalog adds an aggregation in one shared repository transaction.

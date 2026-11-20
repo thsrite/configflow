@@ -250,7 +250,13 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if body == nil {
 		return httpx.Message(400, false, msgNodeObject), nil
 	}
-	response, err := reviewedDeletion(c.Context(), body, strings.HasSuffix(c.Path(), "/delete-preview"))
+	// The typed repository accepts already validated IDs; retain the request
+	// shape guard that previously lived in its legacy facade.
+	var ids []string
+	if !strings.HasPrefix(strings.TrimSpace(string(body["ids"])), "[") || json.Unmarshal(body["ids"], &ids) != nil {
+		return httpx.Message(400, false, msgSelectNodes), nil
+	}
+	response, err := reviewedDeletion(c.Context(), ids, body.text("confirmation"), strings.HasSuffix(c.Path(), "/delete-preview"))
 	if errors.Is(err, repo.ErrNodeDeletionChanged) {
 		return nativeJSON(409, struct {
 			Success bool   `json:"success"`

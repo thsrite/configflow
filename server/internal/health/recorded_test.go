@@ -315,27 +315,27 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typed
 			case "region_label":
 				value, err = evalRegionLabel(arg("code"))
 			case "service_requests":
-				value = check.ServiceRequests()
+				value = fixtureCheckServiceRequests()
 			case "evaluate_services":
-				value, err = check.EvaluateServices(arg("results").([]any))
+				value, err = fixtureCheckEvaluateServices(arg("results").([]any))
 			case "exit_info":
-				value, err = check.ExitInfo(arg("results").([]any))
+				value, err = fixtureCheckExitInfo(arg("results").([]any))
 			case "public_services":
-				value = check.PublicServices()
+				value = fixtureCheckPublicServices()
 			case "domain_request":
-				value = check.DomainRequest(str("request_id"), str("url"))
+				value = fixtureCheckDomainRequest(str("request_id"), str("url"))
 			case "classify_domain_result":
-				value, err = check.ClassifyDomainResult(arg("result"), str("original_url"))
+				value, err = fixtureCheckClassifyDomainResult(arg("result"), str("original_url"))
 			case "summarize_domain":
-				value, err = check.SummarizeDomain(obj("per_target"))
+				value, err = fixtureCheckSummarizeDomain(obj("per_target"))
 			case "pick_targets":
-				value, err = check.PickTargets(arg("targets").([]any), arg("preferred_group"))
+				value, err = fixtureCheckPickTargets(arg("targets").([]any), arg("preferred_group"))
 			case "probe_url":
 				value, err = evalProbeURL(str("host"), arg("port"))
 			case "path_healthy":
 				value, err = evalPathHealthy(arg("stats"))
 			case "judge":
-				value, err = check.Judge(arg("direct"), arg("proxy"), check.JudgeOptions{
+				value, err = fixtureCheckJudge(arg("direct"), arg("proxy"), check.JudgeOptions{
 					PassiveFailing: jsonx.Truthy(arg("passive_failing")),
 					DirectHealthy:  jsonx.Truthy(arg("direct_healthy")),
 					ProxyHealthy:   jsonx.Truthy(arg("proxy_healthy")),
@@ -345,7 +345,7 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typed
 			case "RegionStore.update", "RegionStore.load", "ProbeStore.save", "ProbeStore.load":
 				storeDir := filepath.Join(dir, "store")
 				agent := str("agent_id")
-				region, probe := check.NewRegionStore(storeDir), check.NewProbeStore(storeDir)
+				region, probe := fixtureNewRegionStore(storeDir), fixtureNewProbeStore(storeDir)
 				if before, ok := row.Value("before").(string); ok {
 					_ = os.MkdirAll(storeDir, 0o755)
 					_ = os.WriteFile(region.Path(agent), []byte(before), 0o644)
@@ -397,7 +397,7 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typed
 			want.Set("ok", row.Value("ok"))
 		}
 		if strings.HasPrefix(fn, "RegionStore.") || strings.HasPrefix(fn, "ProbeStore.") {
-			data, readErr := os.ReadFile(check.NewRegionStore(filepath.Join(dir, "store")).Path(str("agent_id")))
+			data, readErr := os.ReadFile(fixtureNewRegionStore(filepath.Join(dir, "store")).Path(str("agent_id")))
 			var after any
 			if readErr == nil {
 				after = string(data)
@@ -862,4 +862,225 @@ func initializeProviderHealth(source *jsonx.Object) {
 		source.Delete(key)
 	}
 	source.Update(next)
+}
+
+// Archived discovery fixture adapters use typed health/check owners.
+type fixtureProbeStore struct{ *check.ProbeStore }
+type fixtureRegionStore struct{ *check.RegionStore }
+
+func fixtureNewProbeStore(dir string) *fixtureProbeStore {
+	return &fixtureProbeStore{check.NewProbeStore(dir)}
+}
+func fixtureNewRegionStore(dir string) *fixtureRegionStore {
+	return &fixtureRegionStore{check.NewRegionStore(dir)}
+}
+func fixtureCheckDecode[T any](value any, target *T) error {
+	raw, err := jsonx.Compact(value)
+	if err != nil {
+		return err
+	}
+	return jsondecode.Unmarshal(raw, target)
+}
+
+// ControlTargets returns check.DefaultControlTargets as a legacy *jsonx.Object.
+// Removed in N8-11 when discovery/bridge.go calls check.DefaultControlTargets directly.
+func fixtureCheckControlTargets() *jsonx.Object {
+	obj, _ := encodeToLegacyObject(check.DefaultControlTargets())
+	return obj
+}
+
+// Judge adapts legacy jsonx path statistics to check.JudgePath.
+// Removed in N8-11 when discovery/bridge.go calls check.JudgePath directly.
+func fixtureCheckJudge(direct, proxy any, options check.JudgeOptions) (*jsonx.Object, error) {
+	var d, p *check.PathStats
+	if direct != nil {
+		var parsed check.PathStats
+		if err := fixtureCheckDecode(direct, &parsed); err != nil {
+			return nil, err
+		}
+		d = &parsed
+	}
+	if proxy != nil {
+		var parsed check.PathStats
+		if err := fixtureCheckDecode(proxy, &parsed); err != nil {
+			return nil, err
+		}
+		p = &parsed
+	}
+	return encodeToLegacyObject(check.JudgePath(d, p, options))
+}
+
+// Save adapts legacy jsonx probe results to fixtureProbeStore.SaveEntries.
+// Removed in N8-11 when discovery/bridge.go calls SaveEntries directly.
+func (s *fixtureProbeStore) Save(agentID string, results *jsonx.Object, now time.Time) error {
+	return s.SaveContext(context.Background(), agentID, results, now)
+}
+
+// SaveContext adapts legacy probe entries while preserving the owner's lifetime.
+func (s *fixtureProbeStore) SaveContext(ctx context.Context, agentID string, results *jsonx.Object, now time.Time) error {
+	if results == nil {
+		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
+	}
+	var entries model.Map[check.TimedRecord]
+	if err := fixtureCheckDecode(results, &entries); err != nil {
+		return err
+	}
+	return s.SaveEntriesContext(ctx, agentID, entries, now)
+}
+
+// Load adapts fixtureProbeStore.LoadEntries to a legacy *jsonx.Object.
+// Removed in N8-11 when discovery/bridge.go calls LoadEntries directly.
+func (s *fixtureProbeStore) Load(agentID string, now time.Time) (*jsonx.Object, error) {
+	return encodeToLegacyObject(s.LoadEntries(agentID, now))
+}
+
+// LatestProbes adapts check.LatestProbeEntries to a legacy *jsonx.Object.
+// Removed in N8-11 when discovery/bridge.go calls check.LatestProbeEntries directly.
+func fixtureCheckLatestProbes(agentIDs []string, store *fixtureProbeStore) (*jsonx.Object, error) {
+	entries, err := check.LatestProbeEntries(agentIDs, store.ProbeStore)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(entries)
+}
+
+// ExitRequest returns check.DefaultExitRequest as a legacy *jsonx.Object.
+// Removed in N8-11 when discovery/bridge.go calls check.DefaultExitRequest directly.
+func fixtureCheckExitRequest() *jsonx.Object {
+	obj, _ := encodeToLegacyObject(check.DefaultExitRequest())
+	return obj
+}
+
+// ServiceRequests returns check.BuildServiceRequests as a legacy []any.
+// Removed in N8-11 when discovery/bridge.go calls check.BuildServiceRequests directly.
+func fixtureCheckServiceRequests() []any {
+	list, _ := encodeToLegacySlice(check.BuildServiceRequests())
+	return list
+}
+
+// DomainRequest returns check.BuildDomainRequest as a legacy *jsonx.Object.
+// Removed in N8-11 when discovery/bridge.go calls check.BuildDomainRequest directly.
+func fixtureCheckDomainRequest(requestID, url string) *jsonx.Object {
+	obj, _ := encodeToLegacyObject(check.BuildDomainRequest(requestID, url))
+	return obj
+}
+
+// PublicServices returns check.PublicServiceList as a legacy []any.
+// Removed in N8-11 when discovery/bridge.go calls check.PublicServiceList directly.
+func fixtureCheckPublicServices() []any {
+	list, _ := encodeToLegacySlice(check.PublicServiceList())
+	return list
+}
+
+// PickTargets adapts legacy jsonx targets to check.ChooseTargets.
+// Removed in N8-11 when discovery/bridge.go calls check.ChooseTargets directly.
+func fixtureCheckPickTargets(targets []any, preferredGroup any) ([]any, error) {
+	var typedTargets []check.AvailableTarget
+	if err := fixtureCheckDecode(targets, &typedTargets); err != nil {
+		return nil, err
+	}
+	var preferred check.Text
+	if preferredGroup != nil {
+		if err := fixtureCheckDecode(preferredGroup, &preferred); err != nil {
+			return nil, err
+		}
+	}
+	return encodeToLegacySlice(check.ChooseTargets(typedTargets, string(preferred)))
+}
+
+// ExitInfo adapts legacy jsonx results to check.SummarizeExit.
+// Removed in N8-11 when discovery/bridge.go calls check.SummarizeExit directly.
+func fixtureCheckExitInfo(results []any) (*jsonx.Object, error) {
+	var typedResults []check.RegionResult
+	if err := fixtureCheckDecode(results, &typedResults); err != nil {
+		return nil, err
+	}
+	summary, err := check.SummarizeExit(typedResults)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(summary)
+}
+
+// EvaluateServices adapts legacy jsonx results to check.EvaluateServiceList.
+// Removed in N8-11 when discovery/bridge.go calls check.EvaluateServiceList directly.
+func fixtureCheckEvaluateServices(results []any) (*jsonx.Object, error) {
+	var typedResults []check.RegionResult
+	if err := fixtureCheckDecode(results, &typedResults); err != nil {
+		return nil, err
+	}
+	verdicts, err := check.EvaluateServiceList(typedResults)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(verdicts)
+}
+
+// ClassifyDomainResult adapts a legacy jsonx result to check.ClassifyDomain.
+// Removed in N8-11 when discovery/bridge.go calls check.ClassifyDomain directly.
+func fixtureCheckClassifyDomainResult(result any, originalURL string) (*jsonx.Object, error) {
+	var typedResult *check.RegionResult
+	if result != nil {
+		var parsed check.RegionResult
+		if err := fixtureCheckDecode(result, &parsed); err != nil {
+			return nil, err
+		}
+		typedResult = &parsed
+	}
+	classified, err := check.ClassifyDomain(typedResult, originalURL)
+	if err != nil {
+		return nil, err
+	}
+	return encodeToLegacyObject(classified)
+}
+
+// SummarizeDomain adapts legacy jsonx per-target states to check.SummarizeTargets.
+// Removed in N8-11 when discovery/bridge.go calls check.SummarizeTargets directly.
+func fixtureCheckSummarizeDomain(perTarget *jsonx.Object) (*jsonx.Object, error) {
+	var typedTargets model.Map[check.TargetState]
+	if perTarget != nil {
+		if err := fixtureCheckDecode(perTarget, &typedTargets); err != nil {
+			return nil, err
+		}
+	}
+	return encodeToLegacyObject(check.SummarizeTargets(typedTargets))
+}
+
+// Load adapts fixtureRegionStore.LoadData to a legacy *jsonx.Object.
+// Removed in N8-11 when discovery/bridge.go calls LoadData directly.
+func (s *fixtureRegionStore) Load(agentID string) *jsonx.Object {
+	obj, _ := encodeToLegacyObject(s.LoadData(agentID))
+	return obj
+}
+
+// Update adapts a legacy *jsonx.Object mutator to fixtureRegionStore.UpdateData.
+// Removed in N8-11 when discovery/bridge.go calls UpdateData directly.
+func (s *fixtureRegionStore) Update(agentID string, mutate func(*jsonx.Object) error, now time.Time) error {
+	return s.UpdateContext(context.Background(), agentID, mutate, now)
+}
+
+// UpdateContext adapts a legacy region mutator while preserving the owner's lifetime.
+func (s *fixtureRegionStore) UpdateContext(ctx context.Context, agentID string, mutate func(*jsonx.Object) error, now time.Time) error {
+	return s.UpdateDataContext(ctx, agentID, func(data *check.RegionData) error {
+		obj, err := encodeToLegacyObject(data)
+		if err != nil {
+			return err
+		}
+		if err := mutate(obj); err != nil {
+			return err
+		}
+		var rawCheck model.Fields
+		if err := fixtureCheckDecode(obj, &rawCheck); err != nil {
+			return err
+		}
+		if !rawCheck.Has("domains") || !rawCheck.Has("websites") {
+			return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
+		}
+		var next check.RegionData
+		if err := fixtureCheckDecode(obj, &next); err != nil {
+			return err
+		}
+		*data = next
+		return nil
+	}, now)
 }

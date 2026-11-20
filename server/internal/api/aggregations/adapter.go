@@ -140,7 +140,7 @@ func resourceUsage(ctx context.Context, id string) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := r.GetResourceUsage(ctx, "subscription_aggregations", id)
+	v, err := r.ResourceUsage(ctx, "subscription_aggregations", id)
 	return httpx.JSON(v), err
 }
 func authorize(c *httpx.Ctx) (*httpx.Response, error) {

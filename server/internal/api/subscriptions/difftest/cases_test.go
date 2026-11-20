@@ -114,13 +114,16 @@ func TestFetchPreviewAndImport(t *testing.T) {
 	}
 }
 func TestReviewedDeletion(t *testing.T) {
-	for _, blocker := range []string{"none", "chain", "dialer", "rule"} {
+	for _, blocker := range []string{"none", "chain", "dialer", "dialer-alias", "rule"} {
 		t.Run(blocker, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				catalog := []any{node("remove"), node("keep")}
 				catalog[0].(*jsonx.Object).Set("password", "synthetic-preview-secret")
 				if blocker == "dialer" {
 					catalog[1].(*jsonx.Object).Set("params", jsonx.Obj("dialer-proxy", "remove"))
+				}
+				if blocker == "dialer-alias" {
+					catalog[1].(*jsonx.Object).Set("proxy_string", "name: keep\ntype: http\nserver: example.com\nport: 80\nshared_target: &target remove\ndialer-proxy: *target\n")
 				}
 				_, err := r.SaveShared(ctx, jsonx.Obj("nodes", catalog, "subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg", "nodes", []any{"remove", "keep"}, "subscriptions", []any{})}), nil)
 				must(t, err)

@@ -181,7 +181,7 @@ func TestReferenceCorpus(t *testing.T) {
 	native := nativeExpectations(t, "testdata/corpus.json")
 	rows := parsed.(*jsonx.Object).GetList("rows")
 	storeDir := t.TempDir()
-	probeStore, regionStore := check.NewProbeStore(storeDir), check.NewRegionStore(storeDir)
+	probeStore, regionStore := fixtureNewProbeStore(storeDir), fixtureNewRegionStore(storeDir)
 	storeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.Local)
 	for i, item := range rows {
 		row := item.(*jsonx.Object)
@@ -252,21 +252,21 @@ func TestReferenceCorpus(t *testing.T) {
 		case "evaluate_openai", "evaluate_claude", "evaluate_netflix", "evaluate_youtube":
 			out, callErr = evalSingleService(fn[len("evaluate_"):], arg(0))
 		case "evaluate_services":
-			out, callErr = check.EvaluateServices(arg(0).([]any))
+			out, callErr = fixtureCheckEvaluateServices(arg(0).([]any))
 		case "exit_info":
-			out, callErr = check.ExitInfo(arg(0).([]any))
+			out, callErr = fixtureCheckExitInfo(arg(0).([]any))
 		case "service_requests":
-			out = check.ServiceRequests()
+			out = fixtureCheckServiceRequests()
 		case "public_services":
-			out = check.PublicServices()
+			out = fixtureCheckPublicServices()
 		case "domain_request":
-			out = check.DomainRequest("domain-1", "https://a.test/")
+			out = fixtureCheckDomainRequest("domain-1", "https://a.test/")
 		case "classify_domain_result":
-			out, callErr = check.ClassifyDomainResult(arg(0), arg(1).(string))
+			out, callErr = fixtureCheckClassifyDomainResult(arg(0), arg(1).(string))
 		case "summarize_domain":
-			out, callErr = check.SummarizeDomain(arg(0).(*jsonx.Object))
+			out, callErr = fixtureCheckSummarizeDomain(arg(0).(*jsonx.Object))
 		case "pick_targets":
-			out, callErr = check.PickTargets(arg(0).([]any), arg(1))
+			out, callErr = fixtureCheckPickTargets(arg(0).([]any), arg(1))
 		case "judge":
 			options := check.DefaultJudgeOptions()
 			kwargs := row.GetObject("kwargs")
@@ -279,7 +279,7 @@ func TestReferenceCorpus(t *testing.T) {
 			if v, ok := kwargs.Get("proxy_healthy"); ok {
 				options.ProxyHealthy = v.(bool)
 			}
-			out, callErr = check.Judge(arg(0), arg(1), options)
+			out, callErr = fixtureCheckJudge(arg(0), arg(1), options)
 		case "probe_url":
 			out, callErr = evalProbeURL(arg(0).(string), arg(1))
 		case "domain_suggestion":
