@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 )
 
@@ -38,13 +37,13 @@ func TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued(t *testing.T) {
 	livePolls := 0
 	e.fake.set(func(req Request) (*Response, error) {
 		if req.Method == "GET" {
-			return reply(jsonx.Obj("success", true, "status", "succeeded"), 200), nil
+			return reply(map[string]any{"success": true, "status": "succeeded"}, 200), nil
 		}
 		if livePolls == 0 {
 			// A poll while this process still owns the submission waits.
 			livePolls++
 			polled := e.poll(id)
-			if !polled.GetBool("pending") || polled.Value("message") != "Rollback submission awaiting Agent confirmation" {
+			if !deploymentFlagTrue(polled, "pending") || derefStr(polled.Message) != "Rollback submission awaiting Agent confirmation" {
 				t.Errorf("live owner poll %v", polled)
 			}
 		}
@@ -53,35 +52,35 @@ func TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued(t *testing.T) {
 		lifecycle.Stop(8 * time.Second)
 		return nil, &TransportError{Err: context.Canceled}
 	})
-	if _, err := e.m.RollbackDeployment(ctx, e.id(), id); !errors.Is(err, context.Canceled) {
+	if _, err := e.m.RollbackDeploymentModel(ctx, e.id(), id); !errors.Is(err, context.Canceled) {
 		t.Fatal("shutdown result", err)
 	}
-	reserved := e.get(e.id()).GetObject("deployments").GetObject(id)
-	if reserved.Value("status") != "rolling_back" || !reserved.GetBool("manual_rollback") {
+	reserved, _ := e.get(e.id()).Deployments.Get(id)
+	if reserved.Status != "rolling_back" || !deploymentFlagTrue(&reserved, "manual_rollback") {
 		t.Fatal("reservation not durable", reserved)
 	}
 	posts := 0
 	e.fake.set(func(req Request) (*Response, error) {
 		if req.Method == "GET" {
-			return reply(jsonx.Obj("success", true, "status", "succeeded"), 200), nil
+			return reply(map[string]any{"success": true, "status": "succeeded"}, 200), nil
 		}
 		posts++
 		if !strings.HasSuffix(req.URL, "/deployments/"+id+"/rollback") {
 			t.Errorf("url %s", req.URL)
 		}
-		return reply(jsonx.Obj("success", true, "status", "rolled_back", "manual_rollback", true, "config_version", "old"), 200), nil
+		return reply(map[string]any{"success": true, "status": "rolled_back", "manual_rollback": true, "config_version": "old"}, 200), nil
 	})
 	lifecycle.Start(context.Background())
 	restarted := newManager(t, e.repo)
 	restarted.SetClient(e.fake)
-	result, err := restarted.GetDeployment(lifecycle.BindRequest(e.ctx), e.id(), id)
+	result, err := restarted.GetDeploymentModel(lifecycle.BindRequest(e.ctx), e.id(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if posts != 1 || result.Value("status") != "rolled_back" || !result.GetBool("manual_rollback") {
+	if posts != 1 || result.Status != "rolled_back" || !deploymentFlagTrue(result, "manual_rollback") {
 		t.Fatalf("posts %d result %v", posts, result)
 	}
-	if !e.begin("after-rollback").GetBool("success") {
+	if !deploymentFlagTrue(e.begin("after-rollback"), "success") {
 		t.Fatal("Agent stayed blocked")
 	}
 	e.finish("after-rollback")

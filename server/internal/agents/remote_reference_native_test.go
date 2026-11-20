@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -43,22 +42,26 @@ func verifyNativeRemoteReference(t *testing.T, e *env, name, body string, status
 		if readErr != nil || fmt.Sprintf("%x", sha256.Sum256(archive)) != reference.Archive {
 			t.Fatal("original remote Python archive changed", readErr)
 		}
-		value, parseErr := jsonx.Parse(archive)
-		if parseErr != nil {
+		var rows map[string]json.RawMessage
+		if parseErr := json.Unmarshal(archive, &rows); parseErr != nil {
 			t.Fatal(parseErr)
 		}
-		original := value.(*jsonx.Object).GetObject(name)
-		raw, encodeErr := jsonx.Compact(original)
-		if encodeErr != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != row.SHA || row.Body != body || row.Status != status {
+		origRaw := rows[name]
+		raw := compactRawJSON(t, origRaw)
+		if fmt.Sprintf("%x", sha256.Sum256(raw)) != row.SHA || row.Body != body || row.Status != status {
 			t.Fatalf("original remote input/output row changed: %s", name)
 		}
-		if text, present := original.Value("error").(string); present {
+		var original map[string]any
+		if parseErr := json.Unmarshal(origRaw, &original); parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if text, present := original["error"].(string); present {
 			class, message, _ := strings.Cut(text, ": ")
 			if class != row.Class || message != want {
 				t.Fatalf("original exception class/text changed: %s", name)
 			}
-		} else if !jsonx.Equal(original.Value("result"), want) {
-			t.Fatalf("original Python result changed: %s", name)
+		} else if diff := diffJSONValues(t, want, original["result"]); diff != "" {
+			t.Fatalf("original Python result changed: %s: %s", name, diff)
 		}
 		if strings.HasPrefix(name, "logging_existing_") {
 			if row.Class != "TypeError" || !repo.IsValueError(err) {
@@ -94,33 +97,44 @@ func verifyNativeCallPreparation(t *testing.T, e *env, name, want string, err er
 	if fmt.Sprintf("%x", sha256.Sum256(data)) != "d18aedee323d96e6fccd37e39e118a7a7f8ee60a8167751495c2d1e7df061996" {
 		t.Fatal("original preparation rows changed")
 	}
-	value, parseErr := jsonx.Parse(data)
-	if parseErr != nil {
+	var entries []struct {
+		Row    json.RawMessage `json:"row"`
+		SHA256 string          `json:"sha256"`
+	}
+	if parseErr := json.Unmarshal(data, &entries); parseErr != nil {
 		t.Fatal(parseErr)
 	}
-	for _, item := range value.([]any) {
-		entry := item.(*jsonx.Object)
-		row := entry.GetObject("row")
-		if row.GetString("name") != name {
+	for _, entry := range entries {
+		var row struct {
+			Name          string   `json:"name"`
+			PythonMessage string   `json:"python_message"`
+			PythonClass   string   `json:"python_class"`
+			Missing       []string `json:"missing"`
+			Token         string   `json:"token"`
+		}
+		if parseErr := json.Unmarshal(entry.Row, &row); parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if row.Name != name {
 			continue
 		}
-		raw, encodeErr := jsonx.Compact(row)
-		if encodeErr != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != entry.GetString("sha256") || row.GetString("python_message") != want {
+		raw := compactRawJSON(t, entry.Row)
+		if fmt.Sprintf("%x", sha256.Sum256(raw)) != entry.SHA256 || row.PythonMessage != want {
 			t.Fatal("original preparation row input/output changed", name)
 		}
 		missing := map[string]bool{}
-		for _, field := range row.GetList("missing") {
-			missing[field.(string)] = true
+		for _, field := range row.Missing {
+			missing[field] = true
 		}
 		stored := e.stored(e.id())
 		for _, field := range []string{"host", "port", "token"} {
-			if stored.Has(field) == missing[field] {
+			if memberPresent(stored, field) == missing[field] {
 				t.Fatalf("original preparation input changed: %s %s", name, field)
 			}
 		}
-		switch row.GetString("python_class") {
+		switch row.PythonClass {
 		case "UnicodeEncodeError":
-			if stored.GetString("token") != row.GetString("token") || !errors.Is(err, ErrHeaderEncoding) {
+			if stored.Token != row.Token || !errors.Is(err, ErrHeaderEncoding) {
 				t.Fatal("header preparation did not reject", name, err)
 			}
 		case "KeyError":

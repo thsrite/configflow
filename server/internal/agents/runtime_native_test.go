@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"modernc.org/sqlite"
 )
 
-func verifyNativeRuntimeErrorRow(t *testing.T, index int, row *jsonx.Object, err error) {
+func verifyNativeRuntimeErrorRow(t *testing.T, index int, rowRaw json.RawMessage, err error) {
 	t.Helper()
 	data, readErr := os.ReadFile("testdata/n810_runtime_native.json")
 	if readErr != nil {
@@ -41,8 +41,8 @@ func verifyNativeRuntimeErrorRow(t *testing.T, index int, row *jsonx.Object, err
 		if r.Index != index {
 			continue
 		}
-		raw, e := jsonx.Compact(row)
-		if e != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != r.SHA {
+		raw := compactRawJSON(t, rowRaw)
+		if fmt.Sprintf("%x", sha256.Sum256(raw)) != r.SHA {
 			t.Fatalf("original SQLite row %d changed", index)
 		}
 		var driver *sqlite.Error
@@ -67,12 +67,9 @@ func verifyNativeRuntimeErrorRow(t *testing.T, index int, row *jsonx.Object, err
 	t.Fatal("native rejected an unbound original SQLite row", index, err)
 }
 
-func verifyNativeRemovalReference(t *testing.T, original []any, actual []string, dir string) {
+func verifyNativeRemovalReference(t *testing.T, originalRaw json.RawMessage, original []string, actual []string, dir string) {
 	t.Helper()
-	raw, e := jsonx.Compact(original)
-	if e != nil {
-		t.Fatal(e)
-	}
+	raw := compactRawJSON(t, originalRaw)
 	// The two original warning lines contain the original errno and basename.
 	if fmt.Sprintf("%x", sha256.Sum256(raw)) != "c373c50cedc68819edd30ec946aa400cf4484f9630a9e491abd53c32e0cea074" {
 		t.Fatal("original unlink log rows changed")
@@ -81,8 +78,8 @@ func verifyNativeRemovalReference(t *testing.T, original []any, actual []string,
 		t.Fatalf("unlink warnings=%q", actual)
 	}
 	for index, base := range []string{"runtime.sqlite3-wal", "runtime.sqlite3-shm"} {
-		old, ok := original[index].(string)
-		if !ok || !strings.Contains(old, "[Errno 21]") || !strings.Contains(old, base) {
+		old := original[index]
+		if !strings.Contains(old, "[Errno 21]") || !strings.Contains(old, base) {
 			t.Fatal("original Python unlink error class changed")
 		}
 		if !strings.Contains(actual[index], "删除失败") || !strings.Contains(actual[index], dir+"/"+base) {
@@ -96,15 +93,24 @@ func verifyNativeRemovalReference(t *testing.T, original []any, actual []string,
 }
 
 func TestNativeLegacyReadErrorsDoNotPersist(t *testing.T) {
-	for index, row := range referenceCases(t, "legacy_rows") {
-		if len(row.GetList("logs")) == 0 {
+	for index, rowRaw := range referenceRawCases(t, "legacy_rows") {
+		var row struct {
+			Name string   `json:"name"`
+			Raw  *string  `json:"raw"`
+			SQL  []string `json:"sql"`
+			Logs []string `json:"logs"`
+		}
+		if err := json.Unmarshal(rowRaw, &row); err != nil {
+			t.Fatal(err)
+		}
+		if len(row.Logs) == 0 {
 			continue
 		}
-		t.Run(row.GetString("name"), func(t *testing.T) {
+		t.Run(row.Name, func(t *testing.T) {
 			e := newEnv(t)
 			path := filepath.Join(e.dir, LegacyDatabase)
-			if raw, ok := row.Value("raw").(string); ok {
-				if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+			if row.Raw != nil {
+				if err := os.WriteFile(path, []byte(*row.Raw), 0600); err != nil {
 					t.Fatal(err)
 				}
 			} else {
@@ -112,8 +118,8 @@ func TestNativeLegacyReadErrorsDoNotPersist(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				for _, statement := range row.GetList("sql") {
-					if _, err := db.Exec(statement.(string)); err != nil {
+				for _, statement := range row.SQL {
+					if _, err := db.Exec(statement); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -122,7 +128,7 @@ func TestNativeLegacyReadErrorsDoNotPersist(t *testing.T) {
 				}
 			}
 			_, readErr := readLegacyRowsContext(e.ctx, path)
-			verifyNativeRuntimeErrorRow(t, index, row, readErr)
+			verifyNativeRuntimeErrorRow(t, index, rowRaw, readErr)
 			before, err := e.repo.Head(e.ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -131,14 +137,14 @@ func TestNativeLegacyReadErrorsDoNotPersist(t *testing.T) {
 			// performed the once-only check before this fixture created that file.
 			ResetRuntime()
 			state := NewRuntimeState()
-			if err := ImportLegacyDatabase(e.ctx, e.repo, state, func(context.Context, map[string]*jsonx.Object) (map[string]bool, error) {
+			if err := importLegacyDatabase(e.ctx, e.repo, state, func(context.Context, map[string]model.Fields) (map[string]bool, error) {
 				t.Fatal("invalid old rows attempted a config write")
 				return nil, nil
 			}); err != nil {
 				t.Fatal(err)
 			}
 			after, err := e.repo.Head(e.ctx)
-			if err != nil || before != after || len(state.Entries()) != 0 {
+			if err != nil || before != after || runtimeEntriesCount(state) != 0 {
 				t.Fatalf("invalid rows changed transaction/state: before=%v after=%v err=%v", before, after, err)
 			}
 			if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {

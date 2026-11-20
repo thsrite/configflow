@@ -7,6 +7,7 @@ package agents
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -18,20 +19,52 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
-func loadA01Reference(t *testing.T) *jsonx.Object {
+type a01Reference struct {
+	URLs           []a01URLCase            `json:"urls"`
+	JSONBodies     map[string]a01JSONBody  `json:"json_bodies"`
+	RecordStatuses []json.RawMessage       `json:"record_statuses"`
+	HeartbeatFresh []a01HeartbeatFreshCase `json:"heartbeat_fresh"`
+}
+
+type a01URLCase struct {
+	Host    string         `json:"host"`
+	Port    string         `json:"port"`
+	Outcome string         `json:"outcome"`
+	Request *a01URLRequest `json:"request"`
+}
+
+type a01URLRequest struct {
+	Method        string `json:"method"`
+	Path          string `json:"path"`
+	Authorization string `json:"authorization"`
+}
+
+type a01JSONBody struct {
+	Message     *string `json:"message"`
+	Body        string  `json:"body"`
+	ContentType string  `json:"content_type"`
+}
+
+type a01HeartbeatFreshCase struct {
+	Now       string `json:"now"`
+	Heartbeat string `json:"heartbeat"`
+	Fresh     bool   `json:"fresh"`
+}
+
+func loadA01Reference(t *testing.T) a01Reference {
 	t.Helper()
 	data, err := os.ReadFile("testdata/a01_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var ref a01Reference
+	if err := json.Unmarshal(data, &ref); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return ref
 }
 
 type seenRequest struct{ method, path, host, authorization, body, contentType string }
@@ -98,11 +131,11 @@ func refPort(kind string, port int) any {
 	full := strings.NewReplacer("0", "０", "1", "１", "2", "２", "3", "３", "4", "４", "5", "５", "6", "６", "7", "７", "8", "８", "9", "９")
 	switch kind {
 	case "int":
-		return jsonx.Int(port)
+		return port
 	case "str":
 		return p
 	case "float":
-		return jsonx.Float(float64(port))
+		return json.Number(p + ".0")
 	case "space_before":
 		return " " + p
 	case "space_after":
@@ -122,7 +155,7 @@ func refPort(kind string, port int) any {
 	case "empty":
 		return ""
 	case "big":
-		return jsonx.Int(port + 65536)
+		return port + 65536
 	case "underscore":
 		return p[:2] + "_" + p[2:]
 	}
@@ -140,9 +173,8 @@ func TestReferenceAgentURLs(t *testing.T) {
 	defer restore()
 	noDNS(t)
 	port, seen, clear := loopbackAgent(t)
-	for _, item := range loadA01Reference(t).GetList("urls") {
-		c := item.(*jsonx.Object)
-		host, kind := c.GetString("host"), c.GetString("port")
+	for _, c := range loadA01Reference(t).URLs {
+		host, kind := c.Host, c.Port
 		name := strconv.Quote(host) + "/" + kind
 		if host == "::1" || host == "[::1]" {
 			if _, err := net.Listen("tcp6", "[::1]:0"); err != nil {
@@ -150,18 +182,23 @@ func TestReferenceAgentURLs(t *testing.T) {
 				continue
 			}
 		}
-		e.editSystem(func(system *jsonx.Object) { system.Set("agents", []any{}) })
-		id := e.register(jsonx.Obj("name", "u", "host", host, "port", refPort(kind, port)), nil).GetString("id")
+		e.editSystem(func(system *model.System) { system.Agents = []model.Agent{} })
+		id := e.register(map[string]any{"name": "u", "host": host, "port": refPort(kind, port)}, "").ID
 		agent := e.get(id)
 		clear()
-		value, err := e.m.GetAgentStatus(e.ctx, id)
+		rawResp, _, err := e.m.RemoteCall(e.ctx, id, RemoteRequest{Method: "GET", Path: "/api/status", Timeout: Seconds(5)})
 		outcome := "ok"
 		if err != nil {
 			outcome = "exception"
-		} else if object, ok := value.(*jsonx.Object); ok && strings.HasPrefix(object.GetString("message"), "Connection error: ") {
-			outcome = "connection_error"
+		} else {
+			var obj struct {
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(rawResp, &obj) == nil && strings.HasPrefix(obj.Message, "Connection error: ") {
+				outcome = "connection_error"
+			}
 		}
-		if want := c.GetString("outcome"); outcome != want {
+		if outcome != c.Outcome {
 			if host == "127.1" || host == "0x7f.0.0.1" || host == "2130706433" {
 				// Accepted N2 difference: requests/glibc treats legacy inet_aton
 				// forms as IPv4; the Go client leaves them to the system resolver.
@@ -173,10 +210,10 @@ func TestReferenceAgentURLs(t *testing.T) {
 				// ("%31%32%37.0.0.1") that requests decoded.
 				continue
 			}
-			t.Errorf("%s: outcome %s (%v %v), Python %s", name, outcome, value, err, want)
+			t.Errorf("%s: outcome %s (%s %v), Python %s", name, outcome, rawResp, err, c.Outcome)
 			continue
 		}
-		want := c.GetObject("request")
+		want := c.Request
 		got := seen()
 		if (want == nil) != (len(got) == 0) {
 			t.Errorf("%s: requests seen %v, Python %v", name, got, want)
@@ -185,12 +222,12 @@ func TestReferenceAgentURLs(t *testing.T) {
 		if want == nil {
 			continue
 		}
-		auth := want.GetString("authorization")
+		auth := want.Authorization
 		if strings.HasPrefix(auth, "Bearer ") {
-			auth = "Bearer " + agent.GetString("token")
+			auth = "Bearer " + agent.Token
 		}
-		if got[0].method != want.GetString("method") || got[0].path != want.GetString("path") || got[0].authorization != auth {
-			t.Errorf("%s: %+v, Python %s", name, got[0], compact(t, want))
+		if got[0].method != want.Method || got[0].path != want.Path || got[0].authorization != auth {
+			t.Errorf("%s: %+v, Python %+v", name, got[0], want)
 		}
 	}
 }
@@ -201,26 +238,25 @@ func TestReferenceJSONBodiesRefuseNaN(t *testing.T) {
 	e := newEnv(t)
 	e.m.SetClient(HTTPClient{})
 	port, seen, clear := loopbackAgent(t)
-	id := e.register(jsonx.Obj("name", "j", "host", "127.0.0.1", "port", port), nil).GetString("id")
+	id := e.register(map[string]any{"name": "j", "host": "127.0.0.1", "port": port}, "").ID
 	agent := e.get(id)
-	payloads := map[string]any{
-		"nan": jsonx.Obj("x", must[jsonx.Number](t)(jsonx.ParseNumber("NaN"))),
-		"inf": []any{jsonx.Float(posInf())},
-		"ok":  jsonx.Obj("x", jsonx.Float(1.5), "y", "中"),
+	payloads := map[string]json.RawMessage{
+		"nan": json.RawMessage(`{"x": NaN}`),
+		"inf": json.RawMessage(`[Infinity]`),
+		"ok":  json.RawMessage(`{"x": 1.5, "y": "中"}`),
 	}
-	for name, item := range loadA01Reference(t).GetObject("json_bodies").All() {
-		want := item.(*jsonx.Object)
+	for name, want := range loadA01Reference(t).JSONBodies {
 		clear()
-		result, err := e.m.ProbeDomains(e.ctx, agent, payloads[name], 0)
-		if message, ok := want.Get("message"); ok {
-			if !IsTransportError(err) || err.Error() != message || len(seen()) != 0 {
-				t.Errorf("%s: %v %v (sent %d), Python RequestException %v", name, result, err, len(seen()), message)
+		result, err := e.m.ProbeDomainsModel(e.ctx, agent, payloads[name], Timeout{})
+		if want.Message != nil {
+			if !IsTransportError(err) || err.Error() != *want.Message || len(seen()) != 0 {
+				t.Errorf("%s: %v %v (sent %d), Python RequestException %q", name, result, err, len(seen()), *want.Message)
 			}
 			continue
 		}
 		got := seen()
-		if err != nil || len(got) != 1 || got[0].body != want.GetString("body") || got[0].contentType != want.GetString("content_type") {
-			t.Errorf("%s: %v %v %+v, Python %s", name, result, err, got, compact(t, want))
+		if err != nil || len(got) != 1 || got[0].body != want.Body || got[0].contentType != want.ContentType {
+			t.Errorf("%s: %v %v %+v, Python %+v", name, result, err, got, want)
 		}
 	}
 }
@@ -244,42 +280,69 @@ func TestURLCredentialsUseUTF8BasicAuth(t *testing.T) {
 	}
 }
 
-func posInf() float64 { var zero float64; return 1 / zero }
-
 // TestReferenceRecordDeploymentStatuses: record_deployment with any status
 // value an Agent can answer; a list or dict status that changes the task is
 // a TypeError (nothing stored), every scalar is stored as Python stores it.
 func TestReferenceRecordDeploymentStatuses(t *testing.T) {
 	e := newEnv(t)
-	for index, item := range loadA01Reference(t).GetList("record_statuses") {
-		c := item.(*jsonx.Object)
-		stored := c.GetString("stored")
-		e.editSystem(func(system *jsonx.Object) {
-			system.Set("agents", []any{jsonx.Obj("id", "a", "name", "a", "token", "tok", "host", "127.0.0.1", "port", 9,
-				"service_type", "mihomo", "profile_id", "default",
-				"deployments", jsonx.Obj("d", jsonx.Obj("deployment_id", "d", "status", stored, "profile_id", "default", "service_type", "mihomo")),
-				"latest_deployment", jsonx.Obj("deployment_id", "d", "status", stored))})
+	for index, rowRaw := range loadA01Reference(t).RecordStatuses {
+		var c struct {
+			Stored       string          `json:"stored"`
+			Status       json.RawMessage `json:"status"`
+			Options      map[string]any  `json:"options"`
+			Error        *string         `json:"error"`
+			ResultStatus json.RawMessage `json:"result_status"`
+			SavedStatus  json.RawMessage `json:"saved_status"`
+		}
+		if err := json.Unmarshal(rowRaw, &c); err != nil {
+			t.Fatal(err)
+		}
+		e.editSystem(func(system *model.System) {
+			var a model.Agent
+			rawAgent := mustJSON(t, map[string]any{
+				"id": "a", "name": "a", "token": "tok", "host": "127.0.0.1", "port": 9,
+				"service_type": "mihomo", "profile_id": "default",
+				"deployments":       map[string]any{"d": map[string]any{"deployment_id": "d", "status": c.Stored, "profile_id": "default", "service_type": "mihomo"}},
+				"latest_deployment": map[string]any{"deployment_id": "d", "status": c.Stored},
+			})
+			if err := json.Unmarshal(rawAgent, &a); err != nil {
+				t.Fatal(err)
+			}
+			system.Agents = []model.Agent{a}
 		})
-		options := RecordOptions{ActivationReceipt: c.GetObject("options").Has("activation_receipt"),
-			UploadReceipt: c.GetObject("options").Has("upload_receipt")}
+		_, actReceipt := c.Options["activation_receipt"]
+		_, upReceipt := c.Options["upload_receipt"]
+		options := RecordOptions{ActivationReceipt: actReceipt, UploadReceipt: upReceipt}
 		before, readErr := e.repo.Store().Fingerprint()
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		result, err := e.m.RecordDeployment(e.ctx, "a", "d", jsonx.Obj("status", jsonx.DeepCopy(c.Value("status")), "message", "m"), options)
-		name := compact(t, c)
-		if c.Has("error") {
-			verifyNativeRecordStatusRow(t, index, c, err)
+		patchRaw := mustJSON(t, map[string]any{"status": c.Status, "message": "m"})
+		patch, err := DecodeDeploymentUpdate(patchRaw)
+		var result *model.Deployment
+		if err == nil {
+			result, err = e.m.RecordDeploymentModel(e.ctx, "a", "d", patch, options)
+		}
+		if c.Error != nil {
+			verifyNativeRecordStatusRow(t, index, rowRaw, *c.Error, err)
 			after, readErr := e.repo.Store().Fingerprint()
 			if readErr != nil || after != before {
 				t.Fatalf("error row %d wrote transaction: %v", index, readErr)
 			}
-		} else if err != nil || !jsonx.Equal(result.Value("status"), c.Value("result_status")) {
-			t.Errorf("%s: %v %v", name, result, err)
+		} else {
+			if err != nil {
+				t.Errorf("row %d: %v", index, err)
+			} else {
+				gotStatus, _, _ := result.MemberJSON("status")
+				if diff := diffJSONValues(t, c.ResultStatus, gotStatus); diff != "" {
+					t.Errorf("row %d result_status: %s", index, diff)
+				}
+			}
 		}
-		saved := e.stored("a").GetObject("deployments").GetObject("d").Value("status")
-		if !jsonx.Equal(saved, c.Value("saved_status")) {
-			t.Errorf("%s: saved %v", name, saved)
+		savedDep, _ := e.stored("a").Deployments.Get("d")
+		savedStatus, _, _ := savedDep.MemberJSON("status")
+		if diff := diffJSONValues(t, c.SavedStatus, savedStatus); diff != "" {
+			t.Errorf("row %d saved_status: %s", index, diff)
 		}
 	}
 }
@@ -288,15 +351,14 @@ func TestReferenceRecordDeploymentStatuses(t *testing.T) {
 // wall-clock differences (America/New_York DST), aware against naive stale.
 func TestReferenceHeartbeatFreshness(t *testing.T) {
 	withZone(t, "America/New_York", func() {
-		for _, item := range loadA01Reference(t).GetList("heartbeat_fresh") {
-			c := item.(*jsonx.Object)
-			wall, ok := fromISOWall(c.GetString("now"))
+		for _, c := range loadA01Reference(t).HeartbeatFresh {
+			wall, ok := fromISOWall(c.Now)
 			if !ok {
 				t.Fatal(c)
 			}
-			got := HeartbeatFresh(jsonx.Obj("last_heartbeat", c.GetString("heartbeat")), &wall)
-			if got != c.GetBool("fresh") {
-				t.Errorf("%s: %v", compact(t, c), got)
+			got := FreshHeartbeat(c.Heartbeat, &wall)
+			if got != c.Fresh {
+				t.Errorf("%+v: %v", c, got)
 			}
 		}
 	})
@@ -322,15 +384,15 @@ func TestHeartbeatFreshNowNilUsesWallClockAndMicroseconds(t *testing.T) {
 		defer func() { clock = previous }()
 		// 2026-03-08 03:00:30 EDT is 90 s after 01:59:00 EST but 3690 s on the wall.
 		clock = func() time.Time { return time.Date(2026, 3, 8, 7, 0, 30, 0, time.UTC) }
-		if HeartbeatFresh(jsonx.Obj("last_heartbeat", "2026-03-08T01:59:00"), nil) {
+		if FreshHeartbeat("2026-03-08T01:59:00", nil) {
 			t.Fatal("naive heartbeat across spring-forward must be stale (wall clock)")
 		}
-		if !HeartbeatFresh(jsonx.Obj("last_heartbeat", "2026-03-08T06:59:00+00:00"), nil) {
+		if !FreshHeartbeat("2026-03-08T06:59:00+00:00", nil) {
 			t.Fatal("aware heartbeat 90 s ago must be fresh")
 		}
 		// 120.0000009 s later: datetime.now() has no nanoseconds, so still fresh.
 		clock = func() time.Time { return time.Date(2026, 3, 8, 12, 2, 0, 900, time.UTC) }
-		if !HeartbeatFresh(jsonx.Obj("last_heartbeat", "2026-03-08T12:00:00+00:00"), nil) {
+		if !FreshHeartbeat("2026-03-08T12:00:00+00:00", nil) {
 			t.Fatal("nanoseconds must be truncated")
 		}
 	})
@@ -344,7 +406,7 @@ func TestAgentDeletedDuringRollbackIsAnErrorNotAnUnknownOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = e.m.DeploymentRequest(context.Background(), nil, "POST", "deployments/x/rollback", nil, nil, nil)
+	_, err = e.m.DeploymentRequestModel(context.Background(), nil, "POST", "deployments/x/rollback", nil, nil, nil)
 	verifyDeletedAgentRequestReference(t, err)
 	if after, readErr := e.repo.Store().Fingerprint(); readErr != nil || after != before {
 		t.Fatal("deleted Agent request wrote transaction", readErr)

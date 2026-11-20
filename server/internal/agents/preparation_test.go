@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 )
 
 func preparationIdle(t *testing.T, m *Manager, agent, id string) {
@@ -58,8 +58,8 @@ func TestPreparationHeldIsSharedAndPreservesLegacyLock(t *testing.T) {
 	}
 	request, cancel := context.WithCancel(e.ctx)
 	cancel()
-	result, err := e.m.BeginDeployment(request, e.id(), id)
-	if err != nil || !result.GetBool("success") {
+	result, err := e.m.ReserveDeployment(request, e.id(), id)
+	if err != nil || !deploymentFlagTrue(result, "success") {
 		t.Fatal(result, err)
 	}
 	t.Cleanup(func() { e.finish(id) })
@@ -79,7 +79,7 @@ func TestPreparationHeldIsSharedAndPreservesLegacyLock(t *testing.T) {
 	}
 	e.finish(id)
 	preparationIdle(t, other, e.id(), id)
-	if got := must[*jsonx.Object](t)(other.GetDeployment(e.ctx, e.id(), id)).GetString("status"); got != "failed" {
+	if got := must[*model.Deployment](t)(other.GetDeploymentModel(e.ctx, e.id(), id)).Status; got != "failed" {
 		t.Fatal("idle preparation was not recovered", got)
 	}
 	id = "new-lease"
@@ -98,7 +98,7 @@ func TestPreparationLeaseReleasedOnCommitFailurePanicAndShutdown(t *testing.T) {
 	for _, mode := range []string{"failure", "panic", "shutdown"} {
 		t.Run(mode, func(t *testing.T) {
 			e := newEnv(t)
-			beforeState := e.system().DeepCopy()
+			beforeState := e.system()
 			beforeDB, readErr := e.repo.Store().Fingerprint()
 			if readErr != nil {
 				t.Fatal(readErr)
@@ -122,7 +122,7 @@ func TestPreparationLeaseReleasedOnCommitFailurePanicAndShutdown(t *testing.T) {
 			}
 			var err error
 			var recovered any
-			func() { defer func() { recovered = recover() }(); _, err = e.m.BeginDeployment(ctx, e.id(), mode) }()
+			func() { defer func() { recovered = recover() }(); _, err = e.m.ReserveDeployment(ctx, e.id(), mode) }()
 			e.repo.Store().BeforeCommit = nil
 			if mode == "failure" && err == nil {
 				t.Fatal("missing failure")
@@ -136,11 +136,11 @@ func TestPreparationLeaseReleasedOnCommitFailurePanicAndShutdown(t *testing.T) {
 				}
 				afterState := e.system()
 				afterDB, readErr := e.repo.Store().Fingerprint()
-				if readErr != nil || afterDB != beforeDB || afterState.GetInt("_revision") != beforeState.GetInt("_revision") || !jsonx.Equal(afterState, beforeState) {
+				if readErr != nil || afterDB != beforeDB || afterState.Revision != beforeState.Revision || diffJSONValues(t, beforeState, afterState) != "" {
 					t.Fatal("shutdown changed database, revision or deployment state", readErr)
 				}
-				agent, _ := findAgent(afterState.GetList("agents"), e.id())
-				if agent.GetObject("deployments").Value(mode) != nil {
+				agent := e.stored(e.id())
+				if _, ok := agent.Deployments.Get(mode); ok {
 					t.Fatal("shutdown persisted the canceled preparation")
 				}
 			}
@@ -157,15 +157,15 @@ func TestPreparationBusyPreservesValidationOrderAndForeignLease(t *testing.T) {
 		t.Fatal("cannot hold preparation key")
 	}
 	defer release()
-	got, err := e.m.BeginDeployment(e.ctx, e.id(), "busy")
-	if err != nil || got.GetInt("http_status") != 409 || got.GetString("message") != "Deployment preparation already running" {
+	got, err := e.m.ReserveDeployment(e.ctx, e.id(), "busy")
+	if err != nil || got.HTTPStatus == nil || *got.HTTPStatus != 409 || derefStr(got.Message) != "Deployment preparation already running" {
 		t.Fatal(got, err)
 	}
 	if !preparationLocks.Held(key) {
 		t.Fatal("busy attempt released foreign lease")
 	}
-	got, err = e.m.BeginDeployment(e.ctx, "missing", "busy")
-	if err != nil || got.GetInt("http_status") != 404 {
+	got, err = e.m.ReserveDeployment(e.ctx, "missing", "busy")
+	if err != nil || got.HTTPStatus == nil || *got.HTTPStatus != 404 {
 		t.Fatal("validation must precede admission", got, err)
 	}
 	if lockx.Violations() != 0 {
@@ -196,14 +196,15 @@ func TestPreparationRequestDisconnectDuringCommitStillSucceeds(t *testing.T) {
 		return nil
 	}
 	defer func() { e.repo.Store().BeforeCommit = nil }()
-	result, err := e.m.BeginDeployment(request, e.id(), id)
+	result, err := e.m.ReserveDeployment(request, e.id(), id)
 	e.repo.Store().BeforeCommit = nil
-	if !committing || !errors.Is(request.Err(), context.Canceled) || lifecycle.Detach(request).Err() != nil || err != nil || !result.GetBool("success") {
+	if !committing || !errors.Is(request.Err(), context.Canceled) || lifecycle.Detach(request).Err() != nil || err != nil || !deploymentFlagTrue(result, "success") {
 		t.Fatal("request disconnect prevented preparation commit", result, err)
 	}
 	afterDB, err := e.repo.Store().Fingerprint()
 	agent := e.stored(e.id())
-	if err != nil || beforeDB == afterDB || e.revision() <= beforeRevision || agent.GetObject("deployments").GetObject(id).GetString("status") != "preparing" || agent.GetObject("latest_deployment").GetString("deployment_id") != id {
+	dep, _ := agent.Deployments.Get(id)
+	if err != nil || beforeDB == afterDB || e.revision() <= beforeRevision || dep.Status != "preparing" || agent.LatestDeployment == nil || agent.LatestDeployment.DeploymentID != id {
 		t.Fatal("disconnected preparation state or revision was not committed", err)
 	}
 	if held, err := e.m.defaultPreparationRunning(e.id(), id); err != nil || !held {

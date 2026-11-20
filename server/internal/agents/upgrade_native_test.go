@@ -47,24 +47,20 @@ func TestDeploymentModelKeepsRawRequestAndReceiptBytes(t *testing.T) {
 	e := newEnv(t)
 	reply := []byte(`{"success":true,"status":"ready","deployment_id":"native-receipt","future":{"counter":9223372036854775808}}`)
 	e.fake.set(func(request Request) (*Response, error) {
-		if request.Method != "GET" || len(request.Body) != 0 || request.Header.Get("Content-Type") != "" || request.Header.Get("Authorization") != "Bearer "+e.agent.GetString("token") {
+		if request.Method != "GET" || len(request.Body) != 0 || request.Header.Get("Content-Type") != "" || request.Header.Get("Authorization") != "Bearer "+e.agent.Token {
 			t.Fatal("request bytes/headers changed")
 		}
 		return &Response{StatusCode: 200, Body: reply}, nil
 	})
-	raw, err := json.Marshal(e.agent)
+	agentObj, err := agentObject(e.agent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var a model.Agent
-	if err = json.Unmarshal(raw, &a); err != nil {
-		t.Fatal(err)
-	}
-	legacy, err := e.m.DeploymentRequest(e.ctx, e.agent, http.MethodGet, "deployments/native-receipt", nil, nil, nil)
+	legacy, err := e.m.DeploymentRequest(e.ctx, agentObj, http.MethodGet, "deployments/native-receipt", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	native, err := e.m.DeploymentRequestModel(e.ctx, &a, http.MethodGet, "deployments/native-receipt", nil, nil, nil)
+	native, err := e.m.DeploymentRequestModel(e.ctx, e.agent, http.MethodGet, "deployments/native-receipt", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

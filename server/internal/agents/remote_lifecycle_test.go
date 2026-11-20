@@ -42,7 +42,7 @@ func TestNativeLoggingDisconnectAndShutdownCommitBoundary(t *testing.T) {
 					t.Fatalf("shutdown admitted another device request: calls=%d err=%v", calls, err)
 				}
 			} else {
-				if err != nil || before == after || e.stored(e.id()).GetObject("logging_config").Value("enabled") != true {
+				if err != nil || before == after || e.stored(e.id()).LoggingConfig == nil || string(e.stored(e.id()).LoggingConfig.Enabled) != "true" {
 					t.Fatal("disconnect canceled durable setting", err)
 				}
 			}

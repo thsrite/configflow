@@ -6,7 +6,6 @@ import (
 	"time"
 
 	sharedclock "configflow/internal/clock"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 )
@@ -29,9 +28,9 @@ func TestDeploymentBusyRetryUsesRuntimeClock(t *testing.T) {
 	e.fake.set(func(Request) (*Response, error) {
 		calls++
 		if calls == 1 {
-			return reply(jsonx.Obj("success", false, "message", busyMessage), 409), nil
+			return reply(map[string]any{"success": false, "message": busyMessage}, 409), nil
 		}
-		return reply(jsonx.Obj("success", true), 202), nil
+		return reply(map[string]any{"success": true}, 202), nil
 	})
 	fake := lifecycletest.NewClock(time.Unix(0, 0))
 	delays := make(chan time.Duration, 4)
@@ -40,7 +39,7 @@ func TestDeploymentBusyRetryUsesRuntimeClock(t *testing.T) {
 	defer rt.Shutdown(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := e.m.DeploymentRequest(rt.BindRequest(e.ctx), e.agent, "POST", "deployments", nil, nil, nil)
+		_, err := e.m.DeploymentRequestModel(rt.BindRequest(e.ctx), e.agent, "POST", "deployments", nil, nil, nil)
 		done <- err
 	}()
 	// This is the production busy delay, not an overridden sleep/timeout.

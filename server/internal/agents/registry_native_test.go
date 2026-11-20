@@ -2,8 +2,6 @@ package agents
 
 import (
 	"bytes"
-	"configflow/internal/jsonx"
-	"configflow/internal/logx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +11,7 @@ import (
 	"testing"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -79,7 +78,7 @@ func TestTypedHeartbeatRuntimeShutdownAndDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := e.m.Runtime().Entries()[id]
+	entry, _ := runtimeEntryCopy(e.m.Runtime(), id)
 	if ok, err := e.m.ObserveHeartbeat(bound, id, &model.Agent{Version: "3.0.0"}); ok || !errors.Is(err, context.Canceled) {
 		t.Fatal("shutdown accepted heartbeat", ok, err)
 	}
@@ -87,7 +86,8 @@ func TestTypedHeartbeatRuntimeShutdownAndDisconnect(t *testing.T) {
 		t.Fatal("shutdown accepted edit", err)
 	}
 	after, err := e.repo.Head(e.ctx)
-	if err != nil || after != head || e.m.Runtime().Entries()[id].HeartbeatAt != entry.HeartbeatAt {
+	afterEntry, _ := runtimeEntryCopy(e.m.Runtime(), id)
+	if err != nil || after != head || afterEntry.HeartbeatAt != entry.HeartbeatAt {
 		t.Fatal("shutdown wrote registry/runtime", err)
 	}
 }
@@ -391,7 +391,7 @@ func TestTypedRuntimeLegacyImportHonorsSourceGeneration(t *testing.T) {
 	e, id := setupRuntime(t)
 	e.ageRegistration(5)
 	path := filepath.Join(e.dir, LegacyDatabase)
-	legacyDatabase(t, path, [][4]any{legacyRowOf(id, clock(), jsonx.Obj("version", "2.0.0"))})
+	legacyDatabase(t, path, [][4]any{legacyRowOf(id, clock(), map[string]any{"version": "2.0.0"})})
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -402,14 +402,14 @@ func TestTypedRuntimeLegacyImportHonorsSourceGeneration(t *testing.T) {
 	rt.Shutdown(context.Background())
 	ResetRuntime()
 	state := NewRuntimeState()
-	if err := ImportLegacyDatabase(stopped, e.repo, state, e.m.saveReportedFields); !errors.Is(err, context.Canceled) {
+	if err := importLegacyDatabase(stopped, e.repo, state, e.m.saveReportedModels); !errors.Is(err, context.Canceled) {
 		t.Fatal("shutdown imported legacy runtime", err)
 	}
 	if _, err := New(stopped, e.repo); !errors.Is(err, context.Canceled) {
 		t.Fatal("shutdown created manager", err)
 	}
 	after, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(before, after) || len(state.Entries()) != 0 {
+	if err != nil || !bytes.Equal(before, after) || runtimeEntriesCount(state) != 0 {
 		t.Fatal("shutdown changed legacy runtime", err)
 	}
 	active := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
@@ -417,10 +417,10 @@ func TestTypedRuntimeLegacyImportHonorsSourceGeneration(t *testing.T) {
 	defer active.Shutdown(context.Background())
 	request, disconnect := context.WithCancel(active.BindRequest(e.ctx))
 	disconnect()
-	if err := ImportLegacyDatabase(request, e.repo, state, e.m.saveReportedFields); err != nil {
+	if err := importLegacyDatabase(request, e.repo, state, e.m.saveReportedModels); err != nil {
 		t.Fatal("disconnect stopped import", err)
 	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) || len(state.Entries()) != 1 {
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) || runtimeEntriesCount(state) != 1 {
 		t.Fatal("legacy import did not finish", err)
 	}
 }

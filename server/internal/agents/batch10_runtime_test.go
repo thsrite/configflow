@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -22,9 +21,12 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 	if err := payload.SetJSON("system_metrics", []byte(`{"cpu":{"usage_percent":99}}`)); err != nil {
 		t.Fatal(err)
 	}
-	copy := e.m.Runtime().Entries()[id].Fields
-	copy.GetObject("system_metrics").GetObject("cpu").Set("usage_percent", 99)
-	copy.Set("memory", "changed")
+	copied, ok := runtimeEntryCopy(e.m.Runtime(), id)
+	if !ok {
+		t.Fatal("missing runtime entry")
+	}
+	copied.Fields[3] = json.RawMessage(`{"cpu":{"usage_percent":99}}`)
+	copied.Fields[5] = json.RawMessage(`"changed"`)
 	if ok, err := e.m.ObserveHeartbeat(e.ctx, id, nil); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -41,11 +43,15 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 			t.Fatalf("%s=%s present=%v err=%v; want %s", tt.name, raw, present, err, tt.want)
 		}
 	}
-	if _, ok := e.m.Runtime().Entries()[id].Fields.Get("token"); ok {
-		t.Fatal("credential retained in runtime snapshot")
+	if current.Token == "example-value" {
+		t.Fatal("credential overwritten by runtime snapshot")
 	}
 	// Null is a reported value, and does not erase the previous CPU component.
-	if ok, err := e.m.UpdateHeartbeat(e.ctx, id, jsonx.Obj("system_metrics", nil)); err != nil || !ok {
+	nullPayload := &model.Agent{}
+	if err := nullPayload.SetJSON("system_metrics", []byte(`null`)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := e.m.ObserveHeartbeat(e.ctx, id, nullPayload); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
 	current, err = e.m.ReadAgent(e.ctx, id, false)

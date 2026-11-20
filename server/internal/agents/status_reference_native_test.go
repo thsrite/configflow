@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // These are the eight original Python TypeError rows, not a type-wide bypass.
@@ -27,7 +25,7 @@ var statusTypeErrorRows = map[int]string{
 	29: "ed83e69b6c2b7d71c8d829a9a41379f78c0d79f4af41262c40fa82be08ff91bc",
 }
 
-func verifyNativeRecordStatusRow(t *testing.T, index int, row *jsonx.Object, got error) {
+func verifyNativeRecordStatusRow(t *testing.T, index int, rowRaw json.RawMessage, rowErr string, got error) {
 	t.Helper()
 	archive, err := os.ReadFile("testdata/a01_reference.json")
 	if err != nil {
@@ -40,13 +38,13 @@ func verifyNativeRecordStatusRow(t *testing.T, index int, row *jsonx.Object, got
 	if !present {
 		t.Fatalf("unreviewed Python error row %d", index)
 	}
-	raw, err := jsonx.Compact(row)
-	if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != want {
-		t.Fatalf("original Python row %d changed: %s err=%v", index, raw, err)
+	raw := compactRawJSON(t, rowRaw)
+	if fmt.Sprintf("%x", sha256.Sum256(raw)) != want {
+		t.Fatalf("original Python row %d changed: %s", index, raw)
 	}
-	class, _, found := strings.Cut(row.GetString("error"), ": ")
+	class, _, found := strings.Cut(rowErr, ": ")
 	if !found || class != "TypeError" {
-		t.Fatalf("original Python error class changed: %s", row.GetString("error"))
+		t.Fatalf("original Python error class changed: %s", rowErr)
 	}
 	if !errors.Is(got, ErrInvalidDeploymentStatus) {
 		t.Fatalf("row=%d native did not reject upstream shape: %v", index, got)

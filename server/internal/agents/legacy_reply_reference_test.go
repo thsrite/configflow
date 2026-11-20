@@ -9,15 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/store"
 )
 
-func rawLegacyReply(payload any) []byte { raw, _ := jsonx.Compact(payload); return raw }
+func rawLegacyReply(payload any) []byte { raw, _ := jsonresp.EncodeUTF8(payload); return raw }
 
 // verifyNativeLegacyReply binds the original false-result expectations to real
 // Python replies. Only these exact malformed success-HTTP rows use native 502.
-func verifyNativeLegacyReply(t *testing.T, e *env, method, body string, want *jsonx.Object, got error, before store.Head) bool {
+func verifyNativeLegacyReply(t *testing.T, e *env, method, body string, want map[string]any, got error, before store.Head) bool {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_legacy_reply.json")
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != "ae7cec5313879b171fc86d5cb966cef1a654a29ccd99250f9e86047ee05bfc81" {
@@ -31,28 +31,35 @@ func verifyNativeLegacyReply(t *testing.T, e *env, method, body string, want *js
 		t.Fatal("legacy reply scope changed")
 	}
 	for _, row := range rows {
-		original, err := jsonx.Parse(row.Original)
-		if err != nil {
-			t.Fatal(err)
-		}
-		obj := original.(*jsonx.Object)
-		compact, err := jsonx.Compact(obj)
-		if err != nil || fmt.Sprintf("%x", sha256.Sum256(compact)) != row.SHA {
+		compact := compactRawJSON(t, row.Original)
+		if fmt.Sprintf("%x", sha256.Sum256(compact)) != row.SHA {
 			t.Fatal("original legacy row changed")
 		}
-		if obj.GetString("method") != method || obj.GetString("body") != body {
+		var obj struct {
+			Method       string         `json:"method"`
+			Body         string         `json:"body"`
+			Status       int            `json:"status"`
+			PythonResult map[string]any `json:"python_result"`
+		}
+		if err := json.Unmarshal(row.Original, &obj); err != nil {
+			t.Fatal(err)
+		}
+		if obj.Method != method || obj.Body != body {
 			continue
 		}
-		if obj.GetInt("status") != 200 {
+		if obj.Status != 200 {
 			t.Fatal("original status changed")
 		}
-		result := obj.GetObject("python_result")
+		result := obj.PythonResult
 		if want != nil {
-			if !jsonx.Equal(result, want) {
-				t.Fatal("original false-result expectation changed")
+			if diff := diffJSONValues(t, want, result); diff != "" {
+				t.Fatalf("original false-result expectation changed: %s", diff)
 			}
-		} else if result.Value("success") != false || !strings.Contains(result.GetString("error_details"), "upstream service unavailable") || strings.Contains(result.GetString("error_details"), "do-not-display") {
-			t.Fatal("original safe plain-text expectation changed")
+		} else {
+			details, _ := result["error_details"].(string)
+			if result["success"] != false || !strings.Contains(details, "upstream service unavailable") || strings.Contains(details, "do-not-display") {
+				t.Fatal("original safe plain-text expectation changed")
+			}
 		}
 		if !errors.Is(got, ErrInvalidAgentReply) {
 			t.Fatalf("native command did not refuse malformed reply: %v", got)

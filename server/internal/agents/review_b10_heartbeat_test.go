@@ -1,11 +1,33 @@
 package agents
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"configflow/internal/jsonx"
 )
+
+func updateHeartbeatLegacy(m *Manager, ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
+	payload, err := heartbeatFromObject(heartbeat)
+	if err != nil {
+		return false, err
+	}
+	return m.observeHeartbeat(ctx, agentID, payload, nil)
+}
+
+func recordHeartbeatLegacy(s *RuntimeState, agent, payload *jsonx.Object, mark int64) bool {
+	record, err := agentModel(agent)
+	if err != nil {
+		return false
+	}
+	fields, err := agentModel(payload)
+	if err != nil {
+		return false
+	}
+	ok, err := s.recordModel(context.Background(), record, fields, mark)
+	return err == nil && ok
+}
 
 // Heartbeat members are matched by their exact JSON name, like Python's
 // heartbeat.get("version"). encoding/json struct decoding folds case, so a
@@ -45,7 +67,7 @@ func TestReviewB10HeartbeatMembersMatchExactNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e, id := setupRuntime(t)
-			if !e.beat(id, tt.payload) {
+			if !must[bool](t)(updateHeartbeatLegacy(e.m, e.ctx, id, tt.payload)) {
 				t.Fatal("heartbeat not recorded")
 			}
 			current, err := e.m.ReadAgent(e.ctx, id, false)
@@ -101,5 +123,43 @@ func TestReviewB10PublicHeartbeatBytesMatchModelPath(t *testing.T) {
 				t.Fatalf("%s=%#v: got %+v want %+v", key, value, got, want)
 			}
 		}
+	}
+}
+
+// Legacy testRecordHeartbeat hook tests (W9: hook signature in manager.go uses *jsonx.Object).
+
+func TestAHeartbeatRacingADeleteLeavesNothingBehind(t *testing.T) {
+	e, id := setupRuntime(t)
+	testRecordHeartbeat = func(m *Manager, agent, payload *jsonx.Object, mark int64) bool {
+		if !must[bool](t)(m.DeleteAgent(e.ctx, id)) {
+			t.Fatal("delete")
+		}
+		return recordHeartbeatLegacy(m.runtime, agent, payload, mark)
+	}
+	t.Cleanup(func() { testRecordHeartbeat = nil })
+	revision := e.revision()
+	if e.beat(id, map[string]any{"version": "2.0.0", "system_metrics": testMetricsMap()}) {
+		t.Fatal("accepted")
+	}
+	if runtimeEntriesCount(e.m.Runtime()) != 0 || e.revision() != revision+1 {
+		t.Fatal("left something")
+	}
+}
+
+func TestADeleteAfterTheHeartbeatIsRecordedSkipsTheVersionWrite(t *testing.T) {
+	e, id := setupRuntime(t)
+	testRecordHeartbeat = func(m *Manager, agent, payload *jsonx.Object, mark int64) bool {
+		if !recordHeartbeatLegacy(m.runtime, agent, payload, mark) || !must[bool](t)(m.DeleteAgent(e.ctx, id)) {
+			t.Fatal("setup")
+		}
+		return true
+	}
+	t.Cleanup(func() { testRecordHeartbeat = nil })
+	revision := e.revision()
+	if e.beat(id, map[string]any{"version": "2.0.0", "config_version": "cfg-2"}) {
+		t.Fatal("accepted")
+	}
+	if runtimeEntriesCount(e.m.Runtime()) != 0 || e.revision() != revision+1 || len(e.system().Agents) != 0 {
+		t.Fatal("wrote")
 	}
 }

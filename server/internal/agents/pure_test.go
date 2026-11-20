@@ -6,54 +6,65 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/redact"
 )
 
 func TestEventHistoryIsBoundedAndAdjacentUnchangedProgressDoesNotDuplicate(t *testing.T) {
 	t.Parallel()
-	var events any = []any{}
+	var events []model.OperationEvent
 	start := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
 	for index := 0; index < 120; index++ {
 		at := isoformat(start.Add(time.Duration(index)*time.Second), true)
-		message := "规则文件 " + itoa(index) + "/120"
-		events = AppendEvent(events, "preparing", message, at, nil)
-		events = AppendEvent(events, "preparing", message, at, nil)
+		message := "规则文件 " + strconv.Itoa(index) + "/120"
+		events = AppendOperationEvent(events, "preparing", message, at, nil)
+		events = AppendOperationEvent(events, "preparing", message, at, nil)
 	}
-	list := events.([]any)
-	if len(list) != 80 || list[0].(*jsonx.Object).Value("message") != "规则文件 40/120" || list[79].(*jsonx.Object).Value("message") != "规则文件 119/120" {
-		t.Fatalf("events %d", len(list))
+	if len(events) != 80 || events[0].Message == nil || *events[0].Message != "规则文件 40/120" ||
+		events[79].Message == nil || *events[79].Message != "规则文件 119/120" {
+		t.Fatalf("events %d", len(events))
 	}
 }
 
-func itoa(n int) string { return jsonx.Int(n).String() }
-
 func TestExternalEventsRejectInvalidShapesTimesAndStatusAndStripSecrets(t *testing.T) {
 	t.Parallel()
-	events := CleanEvents([]any{
-		nil, jsonx.NewObject(), jsonx.Obj("at", "not-time", "status", "checking"),
-		jsonx.Obj("at", "0001-01-01T00:00:00+14:00", "status", "checking"),
-		jsonx.Obj("at", "9999-12-31T23:59:59-14:00", "status", "checking"),
-		jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "alien"),
-		jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "checking",
-			"message", "下载 https://user:password@example.test/secret-path?token=hidden AgentToken",
-			"token", "extra-secret", "config", "private"),
-	}, []any{"AgentToken"}, map[string]bool{"checking": true})
+	rawInputs := []string{
+		`null`,
+		`{}`,
+		`{"at":"not-time","status":"checking"}`,
+		`{"at":"0001-01-01T00:00:00+14:00","status":"checking"}`,
+		`{"at":"9999-12-31T23:59:59-14:00","status":"checking"}`,
+		`{"at":"2026-10-18T00:00:00Z","status":"alien"}`,
+		`{"at":"2026-10-18T00:00:00Z","status":"checking","message":"下载 https://user:password@example.test/secret-path?token=hidden AgentToken","token":"extra-secret","config":"private"}`,
+	}
+	inputs := make([]model.OperationEvent, len(rawInputs))
+	for i, raw := range rawInputs {
+		_ = json.Unmarshal([]byte(raw), &inputs[i])
+	}
+	events := CleanOperationEvents(inputs, redact.Secrets{"AgentToken"}, map[string]bool{"checking": true})
 	if len(events) != 1 {
 		t.Fatalf("events %v", events)
 	}
-	event := events[0].(*jsonx.Object)
-	if strings.Join(event.Keys(), ",") != "at,status,message" || event.Value("at") != "2026-10-18T00:00:00.000000Z" {
-		t.Fatalf("event %v", event)
+	event := events[0]
+	raw := mustJSON(t, event)
+	var keys map[string]any
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		t.Fatal(err)
 	}
-	text := jsonx.Repr(events)
+	if len(keys) != 3 || event.At != "2026-10-18T00:00:00.000000Z" || event.Status != "checking" || event.Message == nil {
+		t.Fatalf("event %s", raw)
+	}
+	text := string(mustJSON(t, events))
 	for _, secret := range []string{"password", "secret-path", "hidden", "AgentToken", "extra-secret", "private"} {
 		if strings.Contains(text, secret) {
 			t.Fatalf("%s leaked: %s", secret, text)
@@ -63,43 +74,55 @@ func TestExternalEventsRejectInvalidShapesTimesAndStatusAndStripSecrets(t *testi
 
 func TestRepeatedWorkerJournalMergesWithoutReplayingStages(t *testing.T) {
 	t.Parallel()
-	events := AppendEvent([]any{}, "queued", nil, "2026-10-18T00:00:00Z", nil)
-	incoming := []any{jsonx.Obj("at", "2026-10-18T00:00:01Z", "status", "queued"),
-		jsonx.Obj("at", "2026-10-18T00:00:02Z", "status", "downloading", "message", "下载 Agent v1"),
-		jsonx.Obj("at", "2026-10-18T00:00:03Z", "status", "verifying", "message", "检查候选版本")}
-	merged := MergeEvents(events, incoming, nil, nil)
+	events := AppendOperationEvent(nil, "queued", "", "2026-10-18T00:00:00Z", nil)
+	incoming := []model.OperationEvent{
+		{At: "2026-10-18T00:00:01Z", Status: "queued"},
+		{At: "2026-10-18T00:00:02Z", Status: "downloading", Message: new("下载 Agent v1")},
+		{At: "2026-10-18T00:00:03Z", Status: "verifying", Message: new("检查候选版本")},
+	}
+	merged := MergeOperationEvents(events, incoming, nil, nil)
 	var statuses []string
 	for _, item := range merged {
-		statuses = append(statuses, item.(*jsonx.Object).GetString("status"))
+		statuses = append(statuses, item.Status)
 	}
-	if strings.Join(statuses, ",") != "queued,downloading,verifying" || !jsonx.Equal(MergeEvents(merged, incoming, nil, nil), merged) {
+	if strings.Join(statuses, ",") != "queued,downloading,verifying" || diffJSONValues(t, merged, MergeOperationEvents(merged, incoming, nil, nil)) != "" {
 		t.Fatalf("merged %v", merged)
 	}
 }
 
 func TestEventTimesSortWholeSecondsBeforeFractionalSeconds(t *testing.T) {
 	t.Parallel()
-	whole, _ := EventTime("2026-10-18T00:00:00Z")
-	fraction, _ := EventTime("2026-10-18T00:00:00.1Z")
-	next, _ := EventTime("2026-10-18T00:00:01Z")
+	whole, _ := NormalizeEventTime("2026-10-18T00:00:00Z")
+	fraction, _ := NormalizeEventTime("2026-10-18T00:00:00.1Z")
+	next, _ := NormalizeEventTime("2026-10-18T00:00:01Z")
 	if !(whole < fraction && fraction < next) {
 		t.Fatal(whole, fraction, next)
 	}
-	if _, ok := EventTime("2026-10-18T00:00:00"); ok {
+	if _, ok := NormalizeEventTime("2026-10-18T00:00:00"); ok {
 		t.Fatal("naive accepted")
 	}
 }
 
 func TestPublicHistoryLocalizesErrorsWithoutMutatingSavedEvents(t *testing.T) {
 	t.Parallel()
-	raw := jsonx.Obj("events", []any{jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "failed", "message", "Agent download size or SHA-256 mismatch")})
-	public := PublicUpgradeState(raw)
-	if !strings.Contains(public.GetList("events")[0].(*jsonx.Object).GetString("message"), "校验失败") ||
-		raw.GetList("events")[0].(*jsonx.Object).Value("message") != "Agent download size or SHA-256 mismatch" {
+	raw := &model.AgentUpgrade{
+		Events: []model.OperationEvent{{At: "2026-10-18T00:00:00Z", Status: "failed", Message: new("Agent download size or SHA-256 mismatch")}},
+	}
+	public, err := PublicUpgradeStateModel(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(public.Events) != 1 || public.Events[0].Message == nil || !strings.Contains(*public.Events[0].Message, "校验失败") ||
+		*raw.Events[0].Message != "Agent download size or SHA-256 mismatch" {
 		t.Fatal("upgrade")
 	}
-	deployment := PublicDeploymentMessages(jsonx.Obj("events", []any{jsonx.Obj("at", EventTimeNow(), "status", "failed", "message", "service start failed")}))
-	if !strings.Contains(deployment.GetList("events")[0].(*jsonx.Object).GetString("message"), "服务启动失败") {
+	dep, err := PublicDeploymentMessagesModel(&model.Deployment{
+		Events: []model.OperationEvent{{At: EventTimeNow(), Status: "failed", Message: new("service start failed")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dep.Events) != 1 || dep.Events[0].Message == nil || !strings.Contains(*dep.Events[0].Message, "服务启动失败") {
 		t.Fatal("deployment")
 	}
 }
@@ -119,9 +142,9 @@ func TestKnownFailuresKeepTheExactOriginal(t *testing.T) {
 		{"Agent returned HTTP 503", "HTTP 状态码"},
 		{"Rule Claude: Invalid rule YAML payload", "规则集准备失败"},
 	} {
-		display := DeploymentMessage(c[0]).(string)
+		display := ExplainDeployment(c[0])
 		parts := strings.SplitN(display, "\n原始错误：", 2)
-		if !strings.Contains(display, c[1]) || len(parts) != 2 || parts[1] != c[0] || DeploymentMessage(display) != display {
+		if !strings.Contains(display, c[1]) || len(parts) != 2 || parts[1] != c[0] || ExplainDeployment(display) != display {
 			t.Fatalf("%q -> %q", c[0], display)
 		}
 	}
@@ -136,7 +159,7 @@ func TestUnknownCoreAndSourceErrorsAreNotTranslated(t *testing.T) {
 		"Query Refused (REFUSED)",
 		"配置已保存，等待发布",
 	} {
-		if DeploymentMessage(raw) != raw {
+		if ExplainDeployment(raw) != raw {
 			t.Fatalf("%q translated", raw)
 		}
 	}
@@ -167,9 +190,9 @@ func TestUpgradeFailuresHaveActionableChineseMessages(t *testing.T) {
 		{"new unexpected worker failure", "Agent 更新遇到异常"},
 		{"   ", "Agent 更新遇到异常"},
 	} {
-		message := UpgradeErrorMessage(c[0])
+		message := ExplainUpgradeFailure(c[0])
 		if !strings.Contains(message, c[1]) || (strings.TrimSpace(c[0]) != "" && !strings.HasSuffix(message, "原始错误："+c[0])) ||
-			UpgradeErrorMessage(message) != message {
+			ExplainUpgradeFailure(message) != message {
 			t.Fatalf("%q -> %q", c[0], message)
 		}
 	}
@@ -177,7 +200,7 @@ func TestUpgradeFailuresHaveActionableChineseMessages(t *testing.T) {
 
 func TestFailedUpdateAndFailedRollbackBothRemainVisible(t *testing.T) {
 	raw := "candidate version or executable validation failed; rollback: Agent backup hash mismatch"
-	message := UpgradeErrorMessage(raw)
+	message := ExplainUpgradeFailure(raw)
 	for _, want := range []string{"新版 Agent 无法运行或版本不符", "恢复旧版本失败", "备份文件校验失败"} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("%q missing %q", message, want)
@@ -186,31 +209,54 @@ func TestFailedUpdateAndFailedRollbackBothRemainVisible(t *testing.T) {
 	if strings.Contains(message, "已回滚") || !strings.HasSuffix(message, "原始错误："+raw) || strings.Count(message, "原始错误：") != 1 {
 		t.Fatal(message)
 	}
-	nested := UpgradeErrorMessage("migration failed; configuration rollback failed: open /opt/agent/config.json: permission denied")
+	nested := ExplainUpgradeFailure("migration failed; configuration rollback failed: open /opt/agent/config.json: permission denied")
 	if !strings.Contains(nested, "配置迁移失败，恢复原配置也失败") || !strings.Contains(nested, "权限不足") {
 		t.Fatal(nested)
 	}
 }
 
 func TestResponseCopyPreservesProtocolFieldsAndOriginalError(t *testing.T) {
-	state := jsonx.Obj("update_id", "job", "status", "rollback_failed", "protocol", 2, "target_version", "1.8.16-go",
-		"previous_version", "1.8.15-go", "error", "Agent backup hash mismatch", "updated_at", 123,
-		"artifacts", jsonx.Obj("linux-amd64", jsonx.Obj("size", 100, "sha256", strings.Repeat("a", 64))))
-	original := state.DeepCopy()
-	public := PublicUpgradeState(state)
-	if !jsonx.Equal(state, original) || public.Value("error") == state.Value("error") || !strings.HasSuffix(public.GetString("error"), "原始错误：Agent backup hash mismatch") {
+	var state model.AgentUpgrade
+	input := mustJSON(t, map[string]any{
+		"update_id": "job", "status": "rollback_failed", "protocol": 2, "target_version": "1.8.16-go",
+		"previous_version": "1.8.15-go", "error": "Agent backup hash mismatch", "updated_at": 123,
+		"artifacts": map[string]any{"linux-amd64": map[string]any{"size": 100, "sha256": strings.Repeat("a", 64)}},
+	})
+	if err := json.Unmarshal(input, &state); err != nil {
+		t.Fatal(err)
+	}
+	originalBytes := mustJSON(t, state)
+	public, err := PublicUpgradeStateModel(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diffJSONValues(t, parseJSONVal(t, originalBytes), state) != "" ||
+		derefStr(public.Error) == derefStr(state.Error) || !strings.HasSuffix(derefStr(public.Error), "原始错误：Agent backup hash mismatch") {
 		t.Fatal(public)
 	}
-	a, b := public.Clone(), original.Clone()
-	a.Delete("error")
-	b.Delete("error")
-	if !jsonx.Equal(a, b) || !jsonx.Equal(PublicUpgradeState(public), public) {
+	var aMap, bMap map[string]any
+	_ = json.Unmarshal(mustJSON(t, public), &aMap)
+	_ = json.Unmarshal(originalBytes, &bMap)
+	delete(aMap, "error")
+	delete(bMap, "error")
+	again, err := PublicUpgradeStateModel(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diffJSONValues(t, bMap, aMap) != "" || diffJSONValues(t, public, again) != "" {
 		t.Fatal("protocol fields changed")
 	}
-	for _, kept := range []*jsonx.Object{jsonx.NewObject(), jsonx.Obj("status", "succeeded", "error", ""),
-		jsonx.Obj("status", "checking", "error", "请求结果待确认，正在查询 Agent")} {
-		if !jsonx.Equal(PublicUpgradeState(kept), kept) {
-			t.Fatal(kept)
+	for _, keptRaw := range []string{`{}`, `{"status":"succeeded","error":""}`, `{"status":"checking","error":"请求结果待确认，正在查询 Agent"}`} {
+		var kept model.AgentUpgrade
+		if err := json.Unmarshal([]byte(keptRaw), &kept); err != nil {
+			t.Fatal(err)
+		}
+		got, err := PublicUpgradeStateModel(&kept)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := diffJSONValues(t, kept, got); diff != "" {
+			t.Fatalf("%s: %s", keptRaw, diff)
 		}
 	}
 }
@@ -236,8 +282,12 @@ func TestLatestAgentVersionHasChangelogEntry(t *testing.T) {
 			t.Fatal("empty feature")
 		}
 	}
-	if ChangelogObject().Len() != len(Changelog()) {
-		t.Fatal("duplicate versions")
+	seen := map[string]bool{}
+	for _, item := range Changelog() {
+		if seen[item.Version] {
+			t.Fatalf("duplicate version %s", item.Version)
+		}
+		seen[item.Version] = true
 	}
 }
 
@@ -269,7 +319,7 @@ func TestCompareVersions(t *testing.T) {
 // test_agent_failure_details.py (pure parts)
 
 func TestRedactionKeepsRuleNamesAndFileLocations(t *testing.T) {
-	text := FailureText("\x1b[31mconfig.yaml:42: missing rule MyProxy\x1b[0m\n"+
+	text := redact.DiagnosticText("\x1b[31mconfig.yaml:42: missing rule MyProxy\x1b[0m\n"+
 		"fetch https://name:pass@rules.test/list?token=hidden&format=yaml\n"+
 		"{\"password\": \"a secret\", \"api_key\": \"hide-this\"}\nAuthorization: Bearer xyz", nil, 0)
 	if !strings.Contains(text, "config.yaml:42: missing rule MyProxy") || !strings.Contains(text, "rules.test/list") || !strings.Contains(text, "format=yaml") {
@@ -292,13 +342,13 @@ func TestMultilineAndEscapedCredentialsAreHidden(t *testing.T) {
 		"password: \"private-first\n  private-second\"\n",
 		"-----BEGIN PRIVATE KEY-----\nprivate-first\nprivate-second\n-----END PRIVATE KEY-----\n",
 	} {
-		detail := FailureText("config.yaml:42: invalid credential\n"+credential+"next failure: upstream unavailable", nil, 0)
+		detail := redact.DiagnosticText("config.yaml:42: invalid credential\n"+credential+"next failure: upstream unavailable", nil, 0)
 		if strings.Contains(detail, "private-first") || strings.Contains(detail, "private-second") ||
 			!strings.Contains(detail, "config.yaml:42") || !strings.Contains(detail, "next failure: upstream unavailable") {
 			t.Fatalf("%q -> %q", credential, detail)
 		}
 	}
-	detail := FailureText("  password: |\n    private-first\n  error: bad proxy name\n", nil, 0)
+	detail := redact.DiagnosticText("  password: |\n    private-first\n  error: bad proxy name\n", nil, 0)
 	if strings.Contains(detail, "private-first") || !strings.Contains(detail, "error: bad proxy name") {
 		t.Fatal(detail)
 	}
@@ -307,7 +357,10 @@ func TestMultilineAndEscapedCredentialsAreHidden(t *testing.T) {
 // test_idle_rounds.py
 
 func commitProfile(t *testing.T, e *env, value string) {
-	if _, _, err := e.repo.UpdateProfileFields(e.ctx, "default", jsonx.Obj("description", value), nil); err != nil {
+	if _, err := e.repo.UpdateProfile(e.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Description = value
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 }

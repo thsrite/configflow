@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 const backendAgents = "../../../backend/agents/"
@@ -36,12 +36,27 @@ func TestVersionTableMatchesPython(t *testing.T) {
 	}
 	// The dict literal is JSON apart from trailing commas.
 	text := regexp.MustCompile(`,(\s*[\]}])`).ReplaceAllString(block[1], "$1")
-	python, err := jsonx.ParseString(text)
+	python, err := testjson.Parse([]byte(text))
 	if err != nil {
 		t.Fatalf("VERSION_CHANGELOG is not JSON-like: %v", err)
 	}
-	if got, want := compact(t, ChangelogObject()), compact(t, python); got != want {
-		t.Fatal("version_changelog.go differs from backend/agents/version.py; regenerate it")
+	fields := make([]testjson.Field, 0, len(Changelog()))
+	for _, entry := range Changelog() {
+		features := make([]any, len(entry.Features))
+		for i, f := range entry.Features {
+			features[i] = f
+		}
+		fields = append(fields, testjson.Field{
+			Key: entry.Version,
+			Value: testjson.Obj(
+				testjson.Field{Key: "date", Value: entry.Date},
+				testjson.Field{Key: "features", Value: features},
+			),
+		})
+	}
+	goVal := testjson.Obj(fields...)
+	if diff := testjson.Diff(python, goVal); diff != "" {
+		t.Fatalf("version_changelog.go differs from backend/agents/version.py; regenerate it: %s", diff)
 	}
 }
 

@@ -3,7 +3,6 @@ package agents
 import (
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -12,23 +11,25 @@ import (
 func TestReviewN810PreparedOwnershipRejectsCoercedStoredIdentity(t *testing.T) {
 	tests := []struct {
 		name    string
-		corrupt func(agent *jsonx.Object, deploymentID string)
+		corrupt func(agent *model.Agent, deploymentID string)
 		accept  bool
 	}{
-		{"text control", func(*jsonx.Object, string) {}, true},
-		{"numeric deployment profile", func(a *jsonx.Object, id string) {
-			a.GetObject("deployments").GetObject(id).Set("profile_id", jsonx.Int(7))
+		{"text control", func(*model.Agent, string) {}, true},
+		{"numeric deployment profile", func(a *model.Agent, id string) {
+			d, _ := a.Deployments.Get(id)
+			_ = d.SetJSON("profile_id", []byte(`7`))
+			a.Deployments.Set(id, d)
 		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := newEnv(t)
 			e.createProfile("7")
-			e.editSystem(func(system *jsonx.Object) { e.firstAgent(system).Set("profile_id", "7") })
+			e.editSystem(func(system *model.System) { e.firstAgent(system).ProfileID = "7" })
 			id := "coerced-proof"
 			e.begin(id)
 			defer e.finish(id)
-			e.editSystem(func(system *jsonx.Object) { tt.corrupt(e.firstAgent(system), id) })
+			e.editSystem(func(system *model.System) { tt.corrupt(e.firstAgent(system), id) })
 			before, err := e.repo.Head(e.ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -52,10 +53,10 @@ func TestReviewN810PreparedOwnershipRejectsCoercedStoredIdentity(t *testing.T) {
 // or presence, so stored numeric/missing values are replaced by reported text.
 func TestReviewN810HeartbeatPersistsReportedTextOverCoercedStoredValue(t *testing.T) {
 	e, id := setupRuntime(t)
-	e.editSystem(func(system *jsonx.Object) {
+	e.editSystem(func(system *model.System) {
 		a := e.firstAgent(system)
-		a.Set("version", jsonx.Int(2))
-		a.Delete("config_version")
+		_ = a.SetJSON("version", []byte(`2`))
+		_ = a.Clear("config_version")
 	})
 	if ok, err := e.m.ObserveHeartbeat(e.ctx, id, &model.Agent{Version: "2", ConfigVersion: ""}); err != nil || !ok {
 		t.Fatal(ok, err)
@@ -70,10 +71,12 @@ func TestReviewN810HeartbeatPersistsReportedTextOverCoercedStoredValue(t *testin
 		t.Fatal(ok, err)
 	}
 	stored := e.stored(id)
-	if v, ok := stored.Value("version").(string); !ok || v != "2" {
-		t.Fatalf("numeric stored version kept: %#v", stored.Value("version"))
+	if v, ok := storedText(stored.MemberJSON("version")); !ok || v != "2" {
+		raw, _, _ := stored.MemberJSON("version")
+		t.Fatalf("numeric stored version kept: %s", raw)
 	}
-	if v, ok := stored.Get("config_version"); !ok || v != "" {
-		t.Fatalf("missing config_version not persisted: %#v %v", v, ok)
+	if v, ok := storedText(stored.MemberJSON("config_version")); !ok || v != "" {
+		raw, present, _ := stored.MemberJSON("config_version")
+		t.Fatalf("missing config_version not persisted: %s %v", raw, present)
 	}
 }

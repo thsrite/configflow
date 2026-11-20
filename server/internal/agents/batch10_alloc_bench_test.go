@@ -6,13 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
-// BenchmarkBatch10Heartbeat measures the unchanged public owner entry point on
-// both sides of the native registry swap, with an actual warmed repository.
+// BenchmarkBatch10Heartbeat measures the typed heartbeat owner with an actual
+// warmed repository.
 func BenchmarkBatch10Heartbeat(b *testing.B) {
 	for _, size := range []struct {
 		name string
@@ -40,14 +39,14 @@ func BenchmarkBatch10Heartbeat(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			payload := jsonx.Obj("version", "1.0.0", "config_version", "0")
-			if ok, err := m.UpdateHeartbeat(ctx, "device", payload); err != nil || !ok {
+			payload := &model.Agent{Version: "1.0.0", ConfigVersion: "0"}
+			if ok, err := m.ObserveHeartbeat(ctx, "device", payload); err != nil || !ok {
 				b.Fatal(ok, err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				if ok, err := m.UpdateHeartbeat(ctx, "device", payload); err != nil || !ok {
+				if ok, err := m.ObserveHeartbeat(ctx, "device", payload); err != nil || !ok {
 					b.Fatal(ok, err)
 				}
 			}

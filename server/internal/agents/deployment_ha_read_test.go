@@ -1,9 +1,10 @@
 package agents
 
 import (
-	"configflow/internal/jsonx"
 	"errors"
 	"testing"
+
+	"configflow/internal/model"
 )
 
 func TestHistoricalHAPairReadDoesNotReconcile(t *testing.T) {
@@ -11,24 +12,32 @@ func TestHistoricalHAPairReadDoesNotReconcile(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			e := newEnv(t)
 			e.begin("history")
-			e.record("history", jsonx.Obj("status", "succeeded", "submitted", true))
+			e.record("history", map[string]any{"status": "succeeded", "submitted": true})
 			e.finish("history")
-			e.editSystem(func(system *jsonx.Object) {
-				e.firstAgent(system).Set(HAField, jsonx.Obj("id", "pair", "status", status, "message", "synthetic pair status", "children", jsonx.Obj(e.id(), "history")))
+			e.editSystem(func(system *model.System) {
+				raw := mustJSON(t, map[string]any{
+					"id": "pair", "status": status, "message": "synthetic pair status",
+					"children": map[string]any{e.id(): "history"},
+				})
+				if err := e.firstAgent(system).SetJSON(HAField, raw); err != nil {
+					t.Fatal(err)
+				}
 			})
-			before := e.system().DeepCopy()
-			got, err := e.m.GetDeployment(e.ctx, e.id(), "history")
+			before := e.system()
+			got, err := e.m.GetDeploymentModel(e.ctx, e.id(), "history")
 			if status == "applying" || status == "rollback_failed" {
 				if !errors.Is(err, ErrHAOwnerMissing) {
 					t.Fatal(got, err)
 				}
 			} else {
-				if err != nil || got.GetString("status") != status || got.GetString("message") != "synthetic pair status" || got.GetBool("success") != (status != "failed") || got.Has("pending") || got.Has("http_status") {
+				if err != nil || got.Status != status || derefStr(got.Message) != "synthetic pair status" ||
+					deploymentFlagTrue(got, "success") != (status != "failed") ||
+					memberPresent(got, "pending") || memberPresent(got, "http_status") {
 					t.Fatal(got, err)
 				}
 			}
-			if !jsonx.Equal(before, e.system()) || len(e.fake.urls()) != 0 {
-				t.Fatal("read reconciled or wrote state")
+			if diff := diffJSONValues(t, before, e.system()); diff != "" || len(e.fake.urls()) != 0 {
+				t.Fatalf("read reconciled or wrote state: %s", diff)
 			}
 		})
 	}

@@ -1,9 +1,20 @@
 package agents
 
 import (
-	"configflow/internal/jsonx"
+	"encoding/json"
 	"testing"
+
+	"configflow/internal/jsonx"
 )
+
+func nativeTestLegacyObject(t *testing.T, raw string) *jsonx.Object {
+	t.Helper()
+	var out jsonx.Object
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatal(err)
+	}
+	return &out
+}
 
 func TestLegacyDNSGuardUsesOriginalIdentity(t *testing.T) {
 	for _, tc := range []struct {

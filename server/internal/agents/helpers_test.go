@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,8 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // fakeAgent is the Client of the tests: handle answers every request.
@@ -48,7 +51,7 @@ func (f *fakeAgent) urls() []string {
 
 // reply is the test's response(payload, status).
 func reply(payload any, status int) *Response {
-	body, err := jsonx.Default(payload)
+	body, err := jsonresp.EncodeUTF8(payload)
 	if err != nil {
 		panic(err)
 	}
@@ -72,7 +75,7 @@ type env struct {
 	ctx   context.Context
 	repo  *repo.Repository
 	m     *Manager
-	agent *jsonx.Object
+	agent *model.Agent
 	fake  *fakeAgent
 	dir   string
 }
@@ -108,71 +111,84 @@ func newEnv(t *testing.T) *env {
 	m.SetClient(fake)
 	m.sleep = func(time.Duration) {}
 	e := &env{t: t, ctx: context.Background(), repo: r, m: m, fake: fake, dir: dir}
-	registered := e.register(jsonx.Obj("name", "test", "host", "agent.test", "port", 8080, "service_type", "mihomo"), nil)
-	e.agent = e.get(registered.GetString("id"))
+	registered := e.register(map[string]any{"name": "test", "host": "agent.test", "port": 8080, "service_type": "mihomo"}, "")
+	e.agent = e.get(registered.ID)
 	return e
 }
 
-func (e *env) register(data *jsonx.Object, token any) *jsonx.Object {
+func (e *env) register(data map[string]any, token string) RegistrationResult {
 	e.t.Helper()
-	result, err := e.m.RegisterAgent(e.ctx, data.DeepCopy(), token, nil)
+	raw, err := json.Marshal(data)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	input, err := DecodeRegistrationInput(raw)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	result, err := e.m.RegisterIdentity(e.ctx, input, RegistrationOptions{ExistingToken: token})
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	return result
 }
 
-func (e *env) get(id string) *jsonx.Object {
+func (e *env) get(id string) *model.Agent {
 	e.t.Helper()
-	agent, err := e.m.GetAgentByID(e.ctx, id, true)
+	agent, err := e.m.ReadAgent(e.ctx, id, true)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	return agent
 }
 
-func (e *env) id() string { return e.agent.GetString("id") }
+func (e *env) id() string { return e.agent.ID }
 
-func (e *env) system() *jsonx.Object {
+func (e *env) system() *model.System {
 	e.t.Helper()
-	system, err := e.repo.GetSystem(e.ctx)
+	system, err := e.repo.System(e.ctx)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	return system
 }
 
-func (e *env) stored(id string) *jsonx.Object {
-	agent, _ := findAgent(e.system().GetList("agents"), id)
-	return agent
+func (e *env) stored(id string) *model.Agent {
+	sys := e.system()
+	for i := range sys.Agents {
+		if text, ok := storedText(sys.Agents[i].MemberJSON("id")); ok && text == id {
+			return &sys.Agents[i]
+		}
+	}
+	return nil
 }
 
-func (e *env) revision() int64 { return e.system().GetInt("_revision") }
+func (e *env) revision() int64 { return int64(e.system().Revision) }
 
-// editSystem is repository.update_system_transaction(fn).
-func (e *env) editSystem(fn func(system *jsonx.Object)) {
+// editSystem updates the system section atomically.
+func (e *env) editSystem(fn func(system *model.System)) {
 	e.t.Helper()
-	_, err := e.repo.UpdateSystemTransaction(e.ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err := e.repo.UpdateSystem(e.ctx, func(_ context.Context, system *model.System) error {
 		fn(system)
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		e.t.Fatal(err)
 	}
 }
 
-func (e *env) firstAgent(system *jsonx.Object) *jsonx.Object {
-	return system.GetList("agents")[0].(*jsonx.Object)
+func (e *env) firstAgent(system *model.System) *model.Agent {
+	return &system.Agents[0]
 }
 
 func (e *env) createProfile(id string) {
 	e.t.Helper()
-	if _, err := e.repo.CreateProfile(e.ctx, jsonx.Obj("id", id, "name", id), ""); err != nil {
+	if _, err := e.repo.CreateProfileRecord(e.ctx, repo.ProfileCreation{ID: id, Name: id}, ""); err != nil {
 		e.t.Fatal(err)
 	}
 }
 
-func must[T any](t *testing.T) func(T, error) T {
+func must[T any](t testing.TB) func(T, error) T {
 	return func(value T, err error) T {
 		t.Helper()
 		if err != nil {
@@ -182,79 +198,183 @@ func must[T any](t *testing.T) func(T, error) T {
 	}
 }
 
-func (m *Manager) GetAllAgentsInspect(ctx context.Context, history bool, inspect func(*jsonx.Object)) ([]*jsonx.Object, error) {
-	agents, err := m.agentsInspect(ctx, history, inspect)
-	if err != nil {
-		return nil, err
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
 	}
-	for _, agent := range agents {
-		agent.Set("status", OnlineStatus(agent, nil))
-	}
-	return agents, nil
+	return *s
 }
 
-// GetAgentByID is get_agent_by_id(agent_id, history=...): the record with
-// its stored status (never derived offline), nil when unknown.
-
-func (m *Manager) GetAgentByToken(ctx context.Context, token string) (*jsonx.Object, error) {
-	record, err := m.ReadAgentByToken(ctx, token)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	return agentObject(record)
-}
-
-func (m *Manager) UpdateAgent(ctx context.Context, agentID string, updates *jsonx.Object) (bool, error) {
-	data, err := json.Marshal(updates)
-	if err != nil {
-		return false, err
-	}
-	edits, err := DecodeAgentEdits(data)
-	if err != nil {
-		return false, err
-	}
-	return m.EditAgent(ctx, agentID, edits)
-}
-
-// RebindProfileAgents is rebind_profile_agents(source, target,
-// expected_agent_ids): move exactly the reviewed bindings together, under
-// the deployment transaction lock.
-
-func (m *Manager) UpdateHeartbeat(ctx context.Context, agentID string, heartbeat *jsonx.Object) (bool, error) {
-	payload, err := heartbeatFromObject(heartbeat)
-	if err != nil {
-		return false, err
-	}
-	return m.observeHeartbeat(ctx, agentID, payload, nil)
-}
-
-// heartbeatFromObject reads the reported members by their exact names (Python
-// heartbeat.get(key)); encoding/json struct decoding would fold case. Each
-// value is encoded on its own, giving the bytes the whole-object encoding has.
-
-func (m *Manager) SetDomainDiscovery(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
-	record, err := m.SetDomainDiscoveryModel(ctx, agentID, enabled)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	return agentObject(record)
-}
-
-// SetTrafficHistory changes the management switch through the native registry.
-
-func (m *Manager) SetTrafficHistory(ctx context.Context, agentID string, enabled bool) (*jsonx.Object, error) {
-	record, err := m.SetTrafficHistoryModel(ctx, agentID, enabled)
-	if err != nil || record == nil {
-		return nil, err
-	}
-	return agentObject(record)
-}
-
-func nativeTestLegacyObject(t *testing.T, raw string) *jsonx.Object {
+func mustJSON(t testing.TB, v any) []byte {
 	t.Helper()
-	var out jsonx.Object
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+	raw, err := jsonresp.EncodeUTF8(v)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return &out
+	return raw
+}
+
+func parseJSONVal(t testing.TB, raw []byte) any {
+	t.Helper()
+	val, err := testjson.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return val
+}
+
+func diffJSONValues(t testing.TB, want, got any) string {
+	t.Helper()
+	wVal := parseJSONVal(t, mustJSON(t, want))
+	gVal := parseJSONVal(t, mustJSON(t, got))
+	return testjson.Diff(wVal, gVal)
+}
+
+func compactRawJSON(t testing.TB, raw json.RawMessage) []byte {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var buf bytes.Buffer
+	writeCompactToken(t, dec, &buf)
+	return buf.Bytes()
+}
+
+func writeCompactToken(t testing.TB, dec *json.Decoder, buf *bytes.Buffer) {
+	t.Helper()
+	tok, err := dec.Token()
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch v := tok.(type) {
+	case json.Delim:
+		switch v {
+		case '{':
+			buf.WriteByte('{')
+			first := true
+			for dec.More() {
+				if !first {
+					buf.WriteByte(',')
+				}
+				first = false
+				key, err := dec.Token()
+				if err != nil {
+					t.Fatal(err)
+				}
+				buf.Write(mustJSON(t, key))
+				buf.WriteByte(':')
+				writeCompactToken(t, dec, buf)
+			}
+			if _, err := dec.Token(); err != nil {
+				t.Fatal(err)
+			}
+			buf.WriteByte('}')
+		case '[':
+			buf.WriteByte('[')
+			first := true
+			for dec.More() {
+				if !first {
+					buf.WriteByte(',')
+				}
+				first = false
+				writeCompactToken(t, dec, buf)
+			}
+			if _, err := dec.Token(); err != nil {
+				t.Fatal(err)
+			}
+			buf.WriteByte(']')
+		default:
+			t.Fatalf("unexpected delim %v", v)
+		}
+	case json.Number:
+		buf.WriteString(v.String())
+	default:
+		buf.Write(mustJSON(t, v))
+	}
+}
+
+func orderedJSONKeys(t testing.TB, raw []byte) []string {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		t.Fatalf("expected JSON object: %v %v", tok, err)
+	}
+	var keys []string
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, k.(string))
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return keys
+}
+
+func cloneRuntimeFields(f runtimeFields) runtimeFields {
+	var out runtimeFields
+	for i := range f {
+		out[i] = bytes.Clone(f[i])
+	}
+	return out
+}
+
+func memberPresent(a interface {
+	MemberJSON(string) (json.RawMessage, bool, error)
+}, name string) bool {
+	_, present, err := a.MemberJSON(name)
+	return err == nil && present
+}
+
+func memberVal(t testing.TB, a interface {
+	MemberJSON(string) (json.RawMessage, bool, error)
+}, name string) (any, bool) {
+	t.Helper()
+	raw, present, err := a.MemberJSON(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !present {
+		return nil, false
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		t.Fatal(err)
+	}
+	return v, true
+}
+
+func runtimeEntriesCount(s *RuntimeState) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries)
+}
+
+func runtimeEntryCopy(s *RuntimeState, id string) (heartbeatEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.entries[id]
+	if !ok {
+		return heartbeatEntry{}, false
+	}
+	return heartbeatEntry{
+		HeartbeatAt:   entry.HeartbeatAt,
+		LastHeartbeat: entry.LastHeartbeat,
+		Fields:        cloneRuntimeFields(entry.Fields),
+	}, true
+}
+
+func setRuntimeEntry(s *RuntimeState, id string, entry heartbeatEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entries[id] = heartbeatEntry{
+		HeartbeatAt:   entry.HeartbeatAt,
+		LastHeartbeat: entry.LastHeartbeat,
+		Fields:        cloneRuntimeFields(entry.Fields),
+	}
 }

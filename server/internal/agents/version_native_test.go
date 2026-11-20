@@ -7,14 +7,12 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // nativeVersionReferenceWant changes only the nine explicitly approved machine
 // version rows. It binds each independent expectation to the original archive,
 // complete row and recorded Python result; every other comparison is unchanged.
-func nativeVersionReferenceWant(t *testing.T, index int, row *jsonx.Object) int {
+func nativeVersionReferenceWant(t *testing.T, index int, rowRaw json.RawMessage, want int) int {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n810_version_native.json")
 	if err != nil {
@@ -40,7 +38,6 @@ func nativeVersionReferenceWant(t *testing.T, index int, row *jsonx.Object) int 
 		t.Fatal("original Python version archive changed", err)
 	}
 	seen := map[int]bool{}
-	want := intOf(row.Value("want"))
 	for _, r := range reference.Rows {
 		if seen[r.Index] || r.Native != 1 {
 			t.Fatal("invalid independent version row", r.Index)
@@ -49,9 +46,9 @@ func nativeVersionReferenceWant(t *testing.T, index int, row *jsonx.Object) int 
 		if r.Index != index {
 			continue
 		}
-		raw, err := jsonx.Compact(row)
-		if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != r.SHA || want != r.Python {
-			t.Fatalf("original version row %d changed: %v", index, err)
+		raw := compactRawJSON(t, rowRaw)
+		if fmt.Sprintf("%x", sha256.Sum256(raw)) != r.SHA || want != r.Python {
+			t.Fatalf("original version row %d changed", index)
 		}
 		want = r.Native
 	}

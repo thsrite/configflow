@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -89,27 +89,27 @@ func TestSeededAgentRepositoriesAreIndependent(t *testing.T) {
 	first := openRepo(t, seededAgentDirectory(t))
 	second := openRepo(t, seededAgentDirectory(t))
 	ctx := context.Background()
-	before, err := second.GetSystem(ctx)
+	before, err := second.System(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("server_domain", "https://changed.example")
-		return nil, nil
+	if err := first.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ServerDomain = "https://changed.example"
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := first.GetSystem(ctx)
-	if err != nil || changed.GetObject("system_config").GetString("server_domain") != "https://changed.example" {
+	changed, err := first.System(ctx)
+	if err != nil || changed.SystemConfig.ServerDomain != "https://changed.example" {
 		t.Fatal("fixture mutation did not persist", err)
 	}
 	// Reopen to check the private on-disk copy rather than a retained read cache.
 	second = openRepo(t, second.DataDir())
-	after, err := second.GetSystem(ctx)
+	after, err := second.System(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
-		t.Fatal("initial fixture state leaked between repositories")
+	if diff := diffJSONValues(t, before, after); diff != "" {
+		t.Fatalf("initial fixture state leaked between repositories: %s", diff)
 	}
 }
