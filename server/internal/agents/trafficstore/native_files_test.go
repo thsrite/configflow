@@ -8,18 +8,24 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 func TestTrafficFilesInteroperateWithPython(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	root, _ := filepath.Abs("../../../..")
-	store := New(t.TempDir())
-	value := jsonx.Obj("status", jsonx.Obj("status", "running", "window_end", "synthetic"), "days", jsonx.NewObject(), "future", nil)
-	if _, err := store.WriteJSON("go", value); err != nil {
+	native := NewNative(t.TempDir())
+	value := testjson.Obj(
+		testjson.Field{Key: "status", Value: testjson.Obj(
+			testjson.Field{Key: "status", Value: "running"},
+			testjson.Field{Key: "window_end", Value: "synthetic"},
+		)},
+		testjson.Field{Key: "days", Value: testjson.Obj()},
+		testjson.Field{Key: "future", Value: nil},
+	)
+	if _, err := native.files.Write("go", value, true); err != nil {
 		t.Fatal(err)
 	}
-	native := NewNative(store.files.DataDir)
 	at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
 	if _, err := native.files.Write("native", json.RawMessage(`{"status":null,"days":{},"future":{"n":2.00}}`), true); err != nil {
 		t.Fatal(err)
@@ -31,14 +37,19 @@ func TestTrafficFilesInteroperateWithPython(t *testing.T) {
 s=TrafficStore(sys.argv[1]);p=s._read('go');assert p['status']['status']=='running';assert p['future'] is None;s._write_json('python',p)
 assert s.load_status('python')['status']=='running'
 n=s._read('native');assert n['future']=={'n':2};assert n['days']['2026-11-19']['hosts']['a.example.com']['by_route']['MATCH\t\tdirect\tP']['conns']==2;s._write_json('native-python',n)
-print('traffic files read and written by Python')`, store.files.DataDir)
+print('traffic files read and written by Python')`, native.files.DataDir)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+root)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
-	if got := store.ReadJSON("python"); !jsonx.Equal(got, value) {
-		t.Fatalf("%v", got)
+	raw, err := os.ReadFile(native.Path("python"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := testjson.Parse(raw)
+	if err != nil || !testjson.Equal(value, got) {
+		t.Fatalf("python round trip mismatch: %v %s", err, raw)
 	}
 	original, err := json.Marshal(native.LoadDocument("native", &at))
 	if err != nil {
@@ -48,35 +59,9 @@ print('traffic files read and written by Python')`, store.files.DataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, e1 := jsonx.Parse(original)
-	right, e2 := jsonx.Parse(roundtrip)
-	if e1 != nil || e2 != nil || !jsonx.Equal(left, right) {
+	left, e1 := testjson.Parse(original)
+	right, e2 := testjson.Parse(roundtrip)
+	if e1 != nil || e2 != nil || !testjson.Equal(left, right) {
 		t.Fatal("native file changed in Python round trip")
 	}
-}
-
-func toObject(value any) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var out *jsonx.Object
-	err = json.Unmarshal(raw, &out)
-	return out, err
-}
-
-// Load returns a compatibility copy of the native document.
-func (s *Store) Load(id string, at *time.Time) *jsonx.Object {
-	out, _ := toObject(s.LoadDocument(id, at))
-	return out
-}
-
-// LoadStatus returns a compatibility copy of native metadata.
-func (s *Store) LoadStatus(id string) any {
-	raw := s.StatusJSON(id)
-	if len(raw) == 0 {
-		return nil
-	}
-	value, _ := jsonx.Parse(raw)
-	return value
 }

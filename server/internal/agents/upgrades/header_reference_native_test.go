@@ -1,15 +1,26 @@
 package upgrades
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 )
+
+func compactUnescapedJSON(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
 
 // Header error texts stay in their original archive. Only these four complete
 // input/output rows use native refusal/classification rather than CPython bytes.
@@ -25,8 +36,12 @@ func verifyNativeHeaderReference(t *testing.T, value string, want any, encoded s
 	if readErr != nil || fmt.Sprintf("%x", sha256.Sum256(archive)) != "c3f3dfe2ea56a8940328d95dd8d2e8058c00c3539a7b7309b6eb99e2b458fb4c" {
 		t.Fatal("original upgrade archive changed", readErr)
 	}
-	row := jsonx.Obj("value", value, "python_class", "UnicodeEncodeError", "python_message", want)
-	raw, encodeErr := jsonx.Compact(row)
+	row := struct {
+		Value         string `json:"value"`
+		PythonClass   string `json:"python_class"`
+		PythonMessage any    `json:"python_message"`
+	}{value, "UnicodeEncodeError", want}
+	raw, encodeErr := compactUnescapedJSON(row)
 	if encodeErr != nil || hashes[value] == "" || fmt.Sprintf("%x", sha256.Sum256(raw)) != hashes[value] {
 		t.Fatal("unbound original header row", value)
 	}

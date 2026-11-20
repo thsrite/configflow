@@ -6,17 +6,19 @@ package upgrades
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 type recorded struct {
@@ -57,22 +59,31 @@ func plainManager(t *testing.T) *agents.Manager {
 	return m
 }
 
+func mustPort(t *testing.T, port string) int {
+	t.Helper()
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func TestTheNewAddressIsProbedWithTheAgentsTokenOnAnEndpointTheGoAgentHas(t *testing.T) {
 	m := plainManager(t)
 	status := 200
 	host, port, calls := fakeAgent(t, &status, `{}`)
-	record := jsonx.Obj("port", jsonx.Number(port), "token", "agent-token")
-	if ok, err := reaches(context.Background(), m, record, host); !ok || err != nil {
+	record := agentModelForTest(t, map[string]any{"port": mustPort(t, port), "token": "agent-token"})
+	if ok, err := reachesModel(context.Background(), m, record, host); !ok || err != nil {
 		t.Fatalf("%v %v", ok, err)
 	}
 	if len(*calls) != 1 || (*calls)[0] != (recorded{"GET", "/api/capabilities", "Bearer agent-token", "", ""}) || VerifyTimeout != 4 {
 		t.Fatalf("calls %v", *calls)
 	}
 	status = 401 // another Agent, or one that lost its identity
-	if ok, _ := reaches(context.Background(), m, record, host); ok {
+	if ok, _ := reachesModel(context.Background(), m, record, host); ok {
 		t.Fatal("401 reached")
 	}
-	if ok, _ := reaches(context.Background(), m, jsonx.Obj("port", 1, "token", "agent-token"), "127.0.0.1"); ok {
+	if ok, _ := reachesModel(context.Background(), m, agentModelForTest(t, map[string]any{"port": 1, "token": "agent-token"}), "127.0.0.1"); ok {
 		t.Fatal("closed port reached")
 	}
 }
@@ -81,21 +92,22 @@ func TestAddressEndpointRequestsCarryTheAgentsToken(t *testing.T) {
 	m := plainManager(t)
 	status := 200
 	host, port, calls := fakeAgent(t, &status, `{"writable": true}`)
-	record := jsonx.Obj("port", jsonx.Number(port), "token", "agent-token")
-	code, data, err := ask(context.Background(), m, record, host, "POST", jsonx.Obj("host", "192.0.2.11"))
-	if err != nil || code != 200 || !jsonx.Equal(data, jsonx.Obj("writable", true)) {
+	record := agentModelForTest(t, map[string]any{"port": mustPort(t, port), "token": "agent-token"})
+	payload, _ := json.Marshal(map[string]any{"host": "192.0.2.11"})
+	code, data, err := askModel(context.Background(), m, record, host, "POST", payload)
+	if err != nil || code != 200 || !testjson.Equal(map[string]any{"writable": true}, data) {
 		t.Fatalf("%d %v %v", code, data, err)
 	}
-	if (*calls)[0] != (recorded{"POST", "/api/agent-address", "Bearer agent-token", "application/json", `{"host": "192.0.2.11"}`}) {
+	if (*calls)[0] != (recorded{"POST", "/api/agent-address", "Bearer agent-token", "application/json", `{"host":"192.0.2.11"}`}) {
 		t.Fatalf("calls %v", *calls)
 	}
-	code, data, _ = ask(context.Background(), m, jsonx.Obj("port", 1, "token", "agent-token"), "127.0.0.1", "GET", nil)
+	code, data, _ = askModel(context.Background(), m, agentModelForTest(t, map[string]any{"port": 1, "token": "agent-token"}), "127.0.0.1", "GET", nil)
 	if code != 0 || data.Len() != 0 {
 		t.Fatalf("%d %v", code, data)
 	}
 	// A GET sends no body; a non-object answer is {}.
 	host2, port2, calls2 := fakeAgent(t, &status, `[1]`)
-	code, data, _ = ask(context.Background(), m, jsonx.Obj("port", jsonx.Number(port2), "token", "t"), host2, "GET", nil)
+	code, data, _ = askModel(context.Background(), m, agentModelForTest(t, map[string]any{"port": mustPort(t, port2), "token": "t"}), host2, "GET", nil)
 	if code != 200 || data.Len() != 0 || (*calls2)[0] != (recorded{"GET", "/api/agent-address", "Bearer t", "", ""}) {
 		t.Fatalf("%d %v %v", code, data, *calls2)
 	}

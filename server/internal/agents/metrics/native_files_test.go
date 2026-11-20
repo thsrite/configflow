@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 func TestNativeFilesRetainPointsAndSkipMissingSamples(t *testing.T) {
@@ -27,25 +27,28 @@ func TestNativeFilesRetainPointsAndSkipMissingSamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := get(t, h, "a", 24)
-	if len(got) != 1 || got[0].(*jsonx.Object).GetObject("cpu").Value("usage_percent") != nil {
+	if len(got) != 1 {
 		t.Fatalf("lost raw point: %v", got)
 	}
-	summary, err := h.GetMetricsSummary("a", big.NewInt(1))
-	if err != nil || summary.GetObject("cpu").Value("avg") != nil {
-		t.Fatalf("all-null sample: %v %v", summary, err)
+	if val, ok := testjson.Path(got[0], "cpu", "usage_percent"); !ok || val != nil {
+		t.Fatalf("lost raw point: %s", got[0])
 	}
-	traffic, err := h.GetTrafficStats("a", "total")
-	if err != nil || !jsonx.Equal(traffic, emptyTrafficStats("total")) {
-		t.Fatalf("%v %v", traffic, err)
+	summary, err := h.Summarize("a", big.NewInt(1))
+	if err != nil || string(summary.CPU.Avg) != "null" {
+		t.Fatalf("all-null sample: %+v %v", summary, err)
 	}
-	trend, err := h.GetTrafficTrend("a", big.NewInt(24), big.NewInt(5))
+	traffic, err := h.TrafficStatistics("a", "total")
+	if err != nil || !testjson.Equal(emptyTrafficStats("total"), traffic) {
+		t.Fatalf("%+v %v", traffic, err)
+	}
+	trend, err := h.TrafficTrend("a", big.NewInt(24), big.NewInt(5))
 	if err != nil || len(trend) != 0 {
-		t.Fatalf("%v %v", trend, err)
+		t.Fatalf("%+v %v", trend, err)
 	}
 	add(t, h, c, 1, "a", time.Second)
-	summary, err = h.GetMetricsSummary("a", big.NewInt(1))
-	if err != nil || summary.GetObject("cpu").GetInt("avg") != 0 {
-		t.Fatalf("valid sample not retained: %v %v", summary, err)
+	summary, err = h.Summarize("a", big.NewInt(1))
+	if err != nil || !testjson.Equal(0, summary.CPU.Avg) {
+		t.Fatalf("valid sample not retained: %+v %v", summary, err)
 	}
 	// A forced rewrite repairs stored literals without dropping the point.
 	h.rewrite["a"] = true
@@ -113,9 +116,12 @@ print('Python loaded and saved 1 null-bearing point; summary/traffic TypeError')
 		if _, err := round.Load([]string{"a"}); err != nil {
 			t.Fatal(err)
 		}
-		points, err := round.GetMetrics("a", nil)
-		if err != nil || len(points) != 1 || points[0].(*jsonx.Object).GetObject("cpu").Value("usage_percent") != nil {
+		points, err := round.Samples("a", nil)
+		if err != nil || len(points) != 1 {
 			t.Fatalf("Python→Go: %v %v", points, err)
+		}
+		if val, ok := testjson.Path(points[0], "cpu", "usage_percent"); !ok || val != nil {
+			t.Fatalf("Python→Go: %s", points[0])
 		}
 	}
 }
@@ -139,7 +145,13 @@ func TestMemoryCacheDoesNotApplyStoredJSONRepair(t *testing.T) {
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
 	at := naiveNow()
 	h.points["a"] = []point{{at, `{"timestamp":"` + isoformat(at) + `","cpu":{"usage_percent":NaN}}`}}
-	if _, err := h.GetMetrics("a", nil); err == nil {
+	samples, err := h.Samples("a", nil)
+	if err == nil {
+		for _, raw := range samples {
+			if _, parseErr := testjson.Parse(raw); parseErr != nil {
+				return
+			}
+		}
 		t.Fatal("invalid native cache line was silently repaired")
 	}
 }

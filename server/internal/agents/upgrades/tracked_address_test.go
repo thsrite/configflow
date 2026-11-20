@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 )
@@ -39,7 +38,7 @@ func TestAddressFollowUsesProductionThrottleOnClock(t *testing.T) {
 	runner.Start(context.Background())
 	defer runner.Shutdown(context.Background())
 	m := plainManager(t)
-	agent := jsonx.Obj("id", "missing-agent", "host", "192.0.2.1")
+	agent := agentModelForTest(t, map[string]any{"id": "missing-agent", "host": "192.0.2.1"})
 	previous := startThread
 	var count atomic.Int32
 	startThread = func(ctx context.Context, name string, fn func(context.Context)) error {
@@ -50,7 +49,7 @@ func TestAddressFollowUsesProductionThrottleOnClock(t *testing.T) {
 	call := func() {
 		t.Helper()
 		done := make(chan error, 1)
-		if err := runner.Spawn(context.Background(), "follow-caller", func(ctx context.Context) { done <- Follow(ctx, m, agent, "192.0.2.2") }); err != nil {
+		if err := runner.Spawn(context.Background(), "follow-caller", func(ctx context.Context) { done <- FollowModel(ctx, m, agent, "192.0.2.2") }); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -81,11 +80,11 @@ func TestAddressRefusedSpawnRollsBackThrottle(t *testing.T) {
 	ResetAddressState()
 	t.Cleanup(ResetAddressState)
 	m := plainManager(t)
-	agent := jsonx.Obj("id", "missing-agent", "host", "192.0.2.1")
+	agent := agentModelForTest(t, map[string]any{"id": "missing-agent", "host": "192.0.2.1"})
 	previous := startThread
 	startThread = func(context.Context, string, func(context.Context)) error { return lifecycle.ErrStopping }
 	defer func() { startThread = previous }()
-	if err := Follow(context.Background(), m, agent, "192.0.2.2"); !errors.Is(err, lifecycle.ErrStopping) {
+	if err := FollowModel(context.Background(), m, agent, "192.0.2.2"); !errors.Is(err, lifecycle.ErrStopping) {
 		t.Fatal(err)
 	}
 	addressMu.Lock()
@@ -116,7 +115,7 @@ func TestAddressJobCancellationReachesProductionIO(t *testing.T) {
 		close(finished)
 		return nil, ctx.Err()
 	}))
-	if err := Follow(e.ctx, e.m, e.agent(), "192.0.2.2"); err != nil {
+	if err := FollowModel(e.ctx, e.m, e.agent(), "192.0.2.2"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -130,7 +129,7 @@ func TestAddressJobCancellationReachesProductionIO(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("I/O lost shutdown context")
 	}
-	if e.agent().GetString("host") != "localhost" {
+	if e.agent().Host != "localhost" {
 		t.Fatal("cancelled check updated host")
 	}
 	addressMu.Lock()

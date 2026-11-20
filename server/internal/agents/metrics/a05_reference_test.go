@@ -11,33 +11,66 @@ package metrics
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"configflow/internal/agents/trafficstore"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
-func loadA05Reference(t *testing.T) *jsonx.Object {
+type a05Reference struct {
+	Now          float64                    `json:"now"`
+	TargetKeys   map[string]string          `json:"target_keys"`
+	LowerMap     map[string]string          `json:"lower_map"`
+	SigmaContext map[string][][2]int64      `json:"sigma_context"`
+	Overflow     map[string]json.RawMessage `json:"overflow"`
+	Boundaries   map[string]json.RawMessage `json:"boundaries"`
+	StoreEdits   map[string]json.RawMessage `json:"store_edits"`
+	StoreCap     struct {
+		File   string          `json:"file"`
+		Result json.RawMessage `json:"result"`
+		Stored string          `json:"stored"`
+	} `json:"store_cap"`
+	StoreHosts map[string]bool `json:"store_hosts"`
+	Rollback   struct {
+		Message string `json:"message"`
+	} `json:"rollback_without_transaction"`
+}
+
+func loadA05Reference(t *testing.T) a05Reference {
 	t.Helper()
 	data, err := os.ReadFile("testdata/a05_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var ref a05Reference
+	if err := json.Unmarshal(data, &ref); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return ref
+}
+
+func floatJSON(f float64) json.RawMessage {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return json.RawMessage("null")
+	}
+	s := strconv.FormatFloat(f, 'g', -1, 64)
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	return json.RawMessage(s)
 }
 
 func TestA05ReferenceTargetKeys(t *testing.T) {
 	t.Parallel()
 	ref := loadA05Reference(t)
-	for input, want := range ref.GetObject("target_keys").All() {
+	for input, want := range ref.TargetKeys {
 		if got := targetKey(input); got != want {
 			t.Errorf("_target_key(%q) = %q, Python %q", input, got, want)
 		}
@@ -49,12 +82,12 @@ func TestA05ReferenceLowerEveryCodePoint(t *testing.T) {
 	ref := loadA05Reference(t)
 	native := loadNativeCaseReference(t)
 	want := map[rune]string{}
-	for key, value := range ref.GetObject("lower_map").All() {
+	for key, value := range ref.LowerMap {
 		cp, err := strconv.ParseInt(key, 16, 32)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want[rune(cp)] = value.(string)
+		want[rune(cp)] = value
 	}
 	for cp := rune(0); cp < 0x110000; cp++ {
 		if cp >= 0xd800 && cp <= 0xdfff {
@@ -70,25 +103,19 @@ func TestA05ReferenceLowerEveryCodePoint(t *testing.T) {
 	}
 }
 
-// sameJSON compares the sorted JSON texts: ints and floats must match in
-// type too (1.0 is not 1).
+// sameJSON compares structure while keeping integer vs decimal literal types distinct (1.0 is not 1).
 func sameJSON(a, b any) bool {
-	x, errX := jsonx.Sorted(a)
-	y, errY := jsonx.Sorted(b)
-	return errX == nil && errY == nil && string(x) == string(y)
+	return testjson.Equal(a, b, testjson.CompareOptions{DistinguishNumberLiterals: true})
 }
 
 func TestA05ReferenceFinalSigmaContext(t *testing.T) {
 	t.Parallel()
-	ref := loadA05Reference(t).GetObject("sigma_context")
+	ref := loadA05Reference(t).SigmaContext
 	native := loadNativeCaseReference(t)
 	inRanges := func(name string) map[rune]bool {
 		out := map[rune]bool{}
-		for _, entry := range ref.GetList(name) {
-			pair := entry.([]any)
-			lo, _ := pair[0].(jsonx.Number).Int64()
-			hi, _ := pair[1].(jsonx.Number).Int64()
-			for cp := lo; cp <= hi; cp++ {
+		for _, pair := range ref[name] {
+			for cp := pair[0]; cp <= pair[1]; cp++ {
 				out[rune(cp)] = true
 			}
 		}
@@ -140,9 +167,9 @@ func dumpTable(t *testing.T, path, name string) []any {
 		for i, v := range values {
 			switch x := v.(type) {
 			case int64:
-				row[i] = jsonx.Int(x)
+				row[i] = x
 			case float64:
-				row[i] = jsonx.Float(x)
+				row[i] = floatJSON(x)
 			case []byte:
 				row[i] = string(x)
 			default:
@@ -154,20 +181,23 @@ func dumpTable(t *testing.T, path, name string) []any {
 	return out
 }
 
-func tablesOf(t *testing.T, path string) *jsonx.Object {
-	return jsonx.Obj("traffic_usage", dumpTable(t, path, "traffic_usage"), "traffic_targets", dumpTable(t, path, "traffic_targets"))
+func tablesOf(t *testing.T, path string) map[string]any {
+	return map[string]any{
+		"traffic_usage":   dumpTable(t, path, "traffic_usage"),
+		"traffic_targets": dumpTable(t, path, "traffic_targets"),
+	}
 }
 
 func a05FlushResult(result TrafficFlushResult, err error) any {
 	if err != nil {
-		return jsonx.Obj("error", pyErrorName(err), "message", err.Error())
+		return map[string]any{"error": pyErrorName(err), "message": err.Error()}
 	}
-	return result.Object()
+	return map[string]any{"rows": result.Rows, "compacted": result.Compacted, "pruned": result.Pruned}
 }
 
-func a05QueryResult(result *jsonx.Object, err error) any {
+func a05QueryResult(result *TrafficQuery, err error) any {
 	if err != nil {
-		return jsonx.Obj("error", pyErrorName(err), "message", err.Error())
+		return map[string]any{"error": pyErrorName(err), "message": err.Error()}
 	}
 	return result
 }
@@ -183,14 +213,15 @@ func pyErrorName(err error) string {
 }
 
 func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
-	ref := loadA05Reference(t).GetObject("overflow")
-	now := loadA05Reference(t).GetFloat("now")
+	full := loadA05Reference(t)
+	ref := full.Overflow
+	now := full.Now
 	this := int64(now) / Hour * Hour
 	big := int64(1)<<62 - 1
 	check := func(name string, got any) {
 		t.Helper()
-		if !sameJSON(got, ref.Value(name)) {
-			t.Errorf("%s:\n  go     %s\n  python %s", name, jsonx.Repr(got), jsonx.Repr(ref.Value(name)))
+		if !sameJSON(ref[name], got) {
+			t.Errorf("%s: %s", name, testjson.Diff(ref[name], got, testjson.CompareOptions{DistinguishNumberLiterals: true}))
 		}
 	}
 	at := func(offset float64) *float64 { v := now + offset; return &v }
@@ -201,31 +232,31 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 	usage := []UsageRow{{this, "s", "G\x1fN", big, 1, 1}, {this - Hour, "s2", "H", 5, 6, 7}}
 	targets := []TargetRow{{this, "s", "example.com", "G\x1fN", big, 1, 1}, {this, "s", "example.org", "G\x1fN", 3, 3, 1},
 		{this, "s2", "example.com", "H", 2, 2, 1}}
-	h.AddReport("a", &CleanedTraffic{Usage: usage, Targets: targets})
-	h.AddReport("a", &CleanedTraffic{Usage: usage[:1], Targets: targets[:1]})
+	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage, Targets: targets})
+	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage[:1], Targets: targets[:1]})
 	check("flush1", a05FlushResult(h.Flush(DefaultRetention, at(0))))
-	h.AddReport("a", &CleanedTraffic{Usage: usage[:1], Targets: targets[:1]})
+	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage[:1], Targets: targets[:1]})
 	check("flush2", a05FlushResult(h.Flush(DefaultRetention, at(0))))
 	check("tables2", tablesOf(t, path))
-	h.AddReport("a", &CleanedTraffic{
+	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{
 		Usage:   []UsageRow{{this, "s", "G\x1fN", 10, 0, 0}, {this, "s", "X", big, big, 0}},
 		Targets: []TargetRow{{this, "s", "example.com", "G\x1fN", 10, 0, 0}},
 	})
 	for _, by := range Aggregates {
-		check("query/"+by, a05QueryResult(h.Query("a", "24h", by, at(0))))
+		check("query/"+by, a05QueryResult(h.QueryTraffic(context.Background(), "a", "24h", by, at(0))))
 	}
 	check("flush3", a05FlushResult(h.Flush(DefaultRetention, at(3*Day))))
 	check("tables3", tablesOf(t, path))
-	check("query/30d/destination", a05QueryResult(h.Query("a", "30d", "destination", at(3*Day))))
+	check("query/30d/destination", a05QueryResult(h.QueryTraffic(context.Background(), "a", "30d", "destination", at(3*Day))))
 	check("flush4", a05FlushResult(h.Flush(DefaultRetention, at(9*Day))))
 	check("tables4", tablesOf(t, path))
-	check("query/30d/source", a05QueryResult(h.Query("a", "30d", "source", at(9*Day))))
+	check("query/30d/source", a05QueryResult(h.QueryTraffic(context.Background(), "a", "30d", "source", at(9*Day))))
 
 	dir = t.TempDir()
 	h = NewTrafficHistory(dir)
 	rows := []UsageRow{{this, "s", "G", big, 0, 0}, {this - Hour, "s", "G", big, 0, 0}}
 	for i := 0; i < 3; i++ {
-		h.AddReport("a", &CleanedTraffic{Usage: rows})
+		_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: rows})
 	}
 	check("pending-overflow", a05FlushResult(h.Flush(DefaultRetention, at(0))))
 	check("pending-after", h.PendingCount())
@@ -233,7 +264,7 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 	h.usage = map[usageKey]*triple{}
 	h.mu.Unlock()
 	for i := 0; i < 2; i++ {
-		h.AddReport("a", &CleanedTraffic{Usage: rows})
+		_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: rows})
 	}
 	check("flush-max", a05FlushResult(h.Flush(DefaultRetention, at(0))))
 	check("sum-overflow", a05FlushResult(h.Flush(DefaultRetention, at(9*Day))))
@@ -241,11 +272,12 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 }
 
 func TestA05ReferenceBoundaries(t *testing.T) {
-	ref := loadA05Reference(t).GetObject("boundaries")
+	full := loadA05Reference(t)
+	ref := full.Boundaries
 	check := func(name string, got any) {
 		t.Helper()
-		if !jsonx.Equal(got, ref.Value(name)) {
-			t.Errorf("%s:\n  go     %s\n  python %s", name, jsonx.Repr(got), jsonx.Repr(ref.Value(name)))
+		if diff := testjson.Diff(ref[name], got); diff != "" {
+			t.Errorf("%s: %s", name, diff)
 		}
 	}
 	now := 1_793_491_200 + 0.75
@@ -260,24 +292,28 @@ func TestA05ReferenceBoundaries(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, TrafficFilename)
 	h := NewTrafficHistory(dir)
-	h.AddReport("a", &CleanedTraffic{Usage: usage, Targets: targets})
+	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage, Targets: targets})
 	check("flush", a05FlushResult(h.Flush(30, &now)))
 	check("tables", tablesOf(t, path))
 	for rangeKey := range Ranges {
 		for _, when := range []float64{now, float64(day0), float64(day0) - 0.5} {
 			w := when
-			check("query/"+rangeKey+"/"+pyFloatRepr(w), a05QueryResult(h.Query("a", rangeKey, "destination", &w)))
+			check("query/"+rangeKey+"/"+pyFloatKey(w), a05QueryResult(h.QueryTraffic(context.Background(), "a", rangeKey, "destination", &w)))
 		}
 	}
 	later := now + Day
 	check("flush-later", a05FlushResult(h.Flush(30, &later)))
 	check("tables-later", tablesOf(t, path))
 
-	this := int64(loadA05Reference(t).GetFloat("now")) / Hour * Hour
-	item := func(hour int64) any {
-		return jsonx.Obj("hour", hour, "source", "s", "chain", []any{"G"}, "up", 1, "down", 1, "conns", 1)
+	this := int64(full.Now) / Hour * Hour
+	item := func(hour int64) map[string]any {
+		return map[string]any{"hour": hour, "source": "s", "chain": []any{"G"}, "up": 1, "down": 1, "conns": 1}
 	}
-	report := jsonx.Obj("schema", 2, "usage", []any{item(this - 2*Day), item(this - 2*Day - Hour), item(this + Hour), item(this + 2*Hour)}, "domains", []any{})
+	report := map[string]any{
+		"schema":  2,
+		"usage":   []any{item(this - 2*Day), item(this - 2*Day - Hour), item(this + Hour), item(this + 2*Hour)},
+		"domains": []any{},
+	}
 	rowsOf := func(c *CleanedTraffic) any {
 		out := []any{}
 		for _, r := range c.Usage {
@@ -285,13 +321,20 @@ func TestA05ReferenceBoundaries(t *testing.T) {
 		}
 		return out
 	}
+	rawReport := mustMarshal(t, report)
 	whole := float64(this)
-	check("clean-integral-now", rowsOf(CleanTrafficReport(report, &whole)))
+	check("clean-integral-now", rowsOf(DecodeTrafficReport(rawReport, &whole)))
 	minus := whole - 1e-6
-	check("clean-integral-now-minus", rowsOf(CleanTrafficReport(report, &minus)))
+	check("clean-integral-now-minus", rowsOf(DecodeTrafficReport(rawReport, &minus)))
 }
 
-func pyFloatRepr(f float64) string { return jsonx.Float(f).String() }
+func pyFloatKey(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return s
+}
 
 func storeErrorName(err error) string {
 	switch err.(type) {
@@ -308,88 +351,95 @@ func storeErrorName(err error) string {
 func TestA05ReferenceHandEditedStoreFiles(t *testing.T) {
 	ref := loadA05Reference(t)
 	at := time.Date(2026, 11, 15, 12, 30, 45, 999999000, time.Local)
-	for name, value := range ref.GetObject("store_edits").All() {
-		c := value.(*jsonx.Object)
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(c.GetString("file")), 0o644); err != nil {
+	for name, rawCase := range ref.StoreEdits {
+		var c struct {
+			File   string          `json:"file"`
+			Report json.RawMessage `json:"report"`
+			Result json.RawMessage `json:"result"`
+			Stored string          `json:"stored"`
+		}
+		if err := json.Unmarshal(rawCase, &c); err != nil {
 			t.Fatal(err)
 		}
-		cleaned, err := nativeStoreReport(c.Value("report"))
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(c.File), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cleaned, err := trafficstore.DecodeReport(c.Report)
 		if err != nil || cleaned == nil {
 			t.Fatalf("%s: clean %v", name, err)
 		}
 		nativeStatus, err := trafficstore.NewNative(dir).Add(context.Background(), "a", cleaned, &at)
-		status, _ := legacyObject(nativeStatus)
-		var got any = status
+		var got any = nativeStatus
 		if err != nil {
-			got = jsonx.Obj("error", storeErrorName(err), "message", err.Error())
+			got = map[string]any{"error": storeErrorName(err), "message": err.Error()}
 		}
-		if nativeStoreRefused(t, name, c) {
+		if nativeStoreRefused(t, name, rawCase) {
 			if err == nil {
 				t.Fatalf("native corrupted bucket accepted: %s", name)
 			}
 			stored, _ := os.ReadFile(filepath.Join(dir, "a.json"))
-			if string(stored) != c.GetString("file") {
+			if string(stored) != c.File {
 				t.Fatalf("refused write changed file: %s", name)
 			}
 			continue
 		}
-		want := c.Value("result")
-		if wantObject, ok := want.(*jsonx.Object); ok && wantObject.Has("error") {
+		if _, wantHasErr := testjson.Path(c.Result, "error"); wantHasErr {
 			// Error texts only reach the "Exception on …" log line; the
 			// outcome (error, nothing written) and the class must match.
-			gotObject, isError := got.(*jsonx.Object)
-			if !isError || !gotObject.Has("error") {
-				t.Errorf("%s: go %s, python %s", name, jsonx.Repr(got), jsonx.Repr(want))
+			if _, gotHasErr := testjson.Path(got, "error"); !gotHasErr {
+				t.Errorf("%s: go %v, python %s", name, got, c.Result)
 			}
-		} else if !jsonx.Equal(got, want) {
-			t.Errorf("%s: go %s, python %s", name, jsonx.Repr(got), jsonx.Repr(want))
+		} else if diff := testjson.Diff(c.Result, got); diff != "" {
+			t.Errorf("%s: %s", name, diff)
 		}
 		stored, _ := os.ReadFile(filepath.Join(dir, "a.json"))
-		if !equalStoredTrafficJSON(stored, []byte(c.GetString("stored"))) {
-			t.Errorf("%s: stored\n  go     %s\n  python %s", name, stored, c.GetString("stored"))
+		if !equalStoredTrafficJSON(stored, []byte(c.Stored)) {
+			t.Errorf("%s: stored\n  go     %s\n  python %s", name, stored, c.Stored)
 		}
 	}
 }
 
 func TestA05ReferenceStoreCapWithFloatWeights(t *testing.T) {
-	ref := loadA05Reference(t).GetObject("store_cap")
+	ref := loadA05Reference(t).StoreCap
 	old := trafficstore.MaxHostsPerDay
 	trafficstore.MaxHostsPerDay = 3
 	defer func() { trafficstore.MaxHostsPerDay = old }()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(ref.GetString("file")), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "a.json"), []byte(ref.File), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cleaned, _ := nativeStoreReport(jsonx.Obj("schema", 1, "status", "unreachable"))
+	cleaned, _ := trafficstore.DecodeReport(json.RawMessage(`{"schema":1,"status":"unreachable"}`))
 	at := time.Date(2026, 11, 15, 8, 0, 0, 0, time.Local)
 	nativeStatus, err := trafficstore.NewNative(dir).Add(context.Background(), "a", cleaned, &at)
-	status, _ := legacyObject(nativeStatus)
-	if err != nil || !jsonx.Equal(status, ref.Value("result")) {
-		t.Fatalf("go %v %v, python %s", jsonx.Repr(status), err, jsonx.Repr(ref.Value("result")))
+	if err != nil || !testjson.Equal(ref.Result, nativeStatus) {
+		t.Fatalf("go %+v %v, python %s", nativeStatus, err, ref.Result)
 	}
 	stored, _ := os.ReadFile(filepath.Join(dir, "a.json"))
-	if !equalStoredTrafficJSON(stored, []byte(ref.GetString("stored"))) {
-		t.Errorf("stored\n  go     %s\n  python %s", stored, ref.GetString("stored"))
+	if !equalStoredTrafficJSON(stored, []byte(ref.Stored)) {
+		t.Errorf("stored\n  go     %s\n  python %s", stored, ref.Stored)
 	}
 }
 
 func TestA05ReferenceStoreHosts(t *testing.T) {
 	ref := loadA05Reference(t)
-	for host, want := range ref.GetObject("store_hosts").All() {
-		report := jsonx.Obj("schema", 1, "status", "running", "items", []any{jsonx.Obj("host", host, "outlet", "direct", "policy", "p")})
+	for host, want := range ref.StoreHosts {
+		report := map[string]any{
+			"schema": 1, "status": "running",
+			"items": []any{map[string]any{"host": host, "outlet": "direct", "policy": "p"}},
+		}
 		cleaned, err := nativeStoreReport(report)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := len(cleaned.Items) == 1; got != want.(bool) {
+		if got := len(cleaned.Items) == 1; got != want {
 			t.Errorf("host %q accepted = %v, Python %v", host, got, want)
 		}
 	}
 }
 
 func TestA05ReferenceRollbackWithoutTransaction(t *testing.T) {
-	ref := loadA05Reference(t).GetObject("rollback_without_transaction")
+	ref := loadA05Reference(t).Rollback
 	h := NewTrafficHistory(t.TempDir())
 	c, err := h.connect()
 	if err != nil {
@@ -397,8 +447,8 @@ func TestA05ReferenceRollbackWithoutTransaction(t *testing.T) {
 	}
 	defer c.close()
 	// _delete_agents / _migrate_legacy: an unconditional ROLLBACK raises.
-	if err := c.rollbackAlways(nil); err == nil || err.Error() != ref.GetString("message") {
-		t.Errorf("unconditional ROLLBACK = %v, Python %s", err, ref.GetString("message"))
+	if err := c.rollbackAlways(nil); err == nil || err.Error() != ref.Message {
+		t.Errorf("unconditional ROLLBACK = %v, Python %s", err, ref.Message)
 	}
 	// flush: `if connection.in_transaction` — SQLite rolled back by itself.
 	c.inTransaction = true

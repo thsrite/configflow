@@ -7,31 +7,76 @@ package metrics
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
-	"encoding/json"
-	"reflect"
-	"strings"
+	"configflow/internal/testjson"
 )
 
-func loadA04Reference(t *testing.T) *jsonx.Object {
+type a04Reference struct {
+	Cutoff       string            `json:"cutoff"`
+	ReadFile     []a04ReadFileCase `json:"read_file"`
+	Legacy       []a04LegacyCase   `json:"legacy"`
+	Summary      []json.RawMessage `json:"summary"`
+	TrafficStats []json.RawMessage `json:"traffic_stats"`
+	Trend        []json.RawMessage `json:"trend"`
+}
+
+type a04ReadFileCase struct {
+	Name   string     `json:"name"`
+	Data   string     `json:"data"`
+	Count  int        `json:"count"`
+	Points [][]string `json:"points"`
+}
+
+type a04LegacyCase struct {
+	Name   string     `json:"name"`
+	Data   string     `json:"data"`
+	Error  *string    `json:"error"`
+	Detail string     `json:"detail"`
+	Points [][]string `json:"points"`
+}
+
+type a04MetricCase struct {
+	Name     string      `json:"name"`
+	Now      string      `json:"now"`
+	Points   []string    `json:"points"`
+	Hours    json.Number `json:"hours"`
+	Interval json.Number `json:"interval"`
+	Period   string      `json:"period"`
+	Result   string      `json:"result"`
+}
+
+func loadA04Reference(t *testing.T) a04Reference {
 	t.Helper()
 	data, err := os.ReadFile("testdata/a04_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var ref a04Reference
+	if err := json.Unmarshal(data, &ref); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return ref
+}
+
+func decodeMetricCase(t *testing.T, raw json.RawMessage) a04MetricCase {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	var item a04MetricCase
+	if err := dec.Decode(&item); err != nil {
+		t.Fatal(err)
+	}
+	return item
 }
 
 func naiveOf(t *testing.T, text string) time.Time {
@@ -43,10 +88,10 @@ func naiveOf(t *testing.T, text string) time.Time {
 	return at
 }
 
-func pointsText(points []point) []any {
-	out := []any{}
+func pointsText(points []point) [][]string {
+	out := [][]string{}
 	for _, p := range points {
-		out = append(out, []any{isoformat(p.at), p.line})
+		out = append(out, []string{isoformat(p.at), p.line})
 	}
 	return out
 }
@@ -66,21 +111,28 @@ func pyErrorText(err error) string {
 	return fmt.Sprintf("%T: %v", err, err)
 }
 
-func referenceResult(t *testing.T, value any, err error) string {
+func compareReferenceResult(t *testing.T, value any, err error, want string) {
 	t.Helper()
 	if err != nil {
-		return pyErrorText(err)
+		if got := pyErrorText(err); got != want {
+			t.Errorf("\n got  %s\n want %s", got, want)
+		}
+		return
 	}
-	data, err := jsonx.Encode(value, jsonx.Options{EnsureASCII: true, SortKeys: true, Compact: true})
-	if err != nil {
-		t.Fatal(err)
+	wantParsed, parseErr := testjson.Parse([]byte(want))
+	if parseErr != nil {
+		t.Errorf("expected error %q, got value %+v", want, value)
+		return
 	}
-	return string(data)
+	if diff := testjson.Diff(wantParsed, value, testjson.CompareOptions{DistinguishNumberLiterals: true}); diff != "" {
+		gotBytes, _ := json.Marshal(value)
+		t.Errorf("%s\n got  %s\n want %s", diff, gotBytes, want)
+	}
 }
 
-func caseData(t *testing.T, item *jsonx.Object) []byte {
+func decodeBase64(t *testing.T, encoded string) []byte {
 	t.Helper()
-	data, err := base64.StdEncoding.DecodeString(item.GetString("data"))
+	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,59 +141,55 @@ func caseData(t *testing.T, item *jsonx.Object) []byte {
 
 func TestReferenceReadSavedLines(t *testing.T) {
 	ref := loadA04Reference(t)
-	limit := naiveOf(t, ref.GetString("cutoff"))
+	limit := naiveOf(t, ref.Cutoff)
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
-	for _, raw := range ref.GetList("read_file") {
-		item := raw.(*jsonx.Object)
-		if err := os.WriteFile(h.agentFile("a"), caseData(t, item), 0o600); err != nil {
+	for _, item := range ref.ReadFile {
+		if err := os.WriteFile(h.agentFile("a"), decodeBase64(t, item.Data), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		points, count, err := h.readFile("a", limit)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if count != int(item.GetInt("count")) {
-			t.Errorf("%s: count %d, Python %d", item.GetString("name"), count, item.GetInt("count"))
+		if count != item.Count {
+			t.Errorf("%s: count %d, Python %d", item.Name, count, item.Count)
 		}
-		if item.GetString("name") == "numbers" {
+		if item.Name == "numbers" {
 			assertNativeNumberLines(t, points)
 			continue
 		}
-		if !equalPointRecords(t, points, item.GetList("points")) {
-			got, _ := jsonx.Encode(pointsText(points), jsonx.Options{EnsureASCII: true})
-			want, _ := jsonx.Encode(item.Value("points"), jsonx.Options{EnsureASCII: true})
-			t.Errorf("%s:\n got  %s\n want %s", item.GetString("name"), got, want)
+		if !equalPointRecords(t, points, item.Points) {
+			got, _ := json.Marshal(pointsText(points))
+			want, _ := json.Marshal(item.Points)
+			t.Errorf("%s:\n got  %s\n want %s", item.Name, got, want)
 		}
 	}
 }
 
 func TestReferenceReadOldJSONFiles(t *testing.T) {
 	ref := loadA04Reference(t)
-	limit := naiveOf(t, ref.GetString("cutoff"))
+	limit := naiveOf(t, ref.Cutoff)
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
-	for _, raw := range ref.GetList("legacy") {
-		item := raw.(*jsonx.Object)
-		name := item.GetString("name")
-		if err := os.WriteFile(h.legacyFile("a"), caseData(t, item), 0o600); err != nil {
+	for _, item := range ref.Legacy {
+		if err := os.WriteFile(h.legacyFile("a"), decodeBase64(t, item.Data), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		points, err := h.readLegacy("a", limit)
-		want, failed := item.Get("error")
 		switch {
-		case !failed:
+		case item.Error == nil:
 			if err != nil {
-				t.Errorf("%s: %v, Python read it", name, err)
-			} else if !equalPointRecords(t, points, item.GetList("points")) {
-				t.Errorf("%s: points %v, Python %v", name, pointsText(points), item.Value("points"))
+				t.Errorf("%s: %v, Python read it", item.Name, err)
+			} else if !equalPointRecords(t, points, item.Points) {
+				t.Errorf("%s: points %v, Python %v", item.Name, pointsText(points), item.Points)
 			}
-		case want == "format":
+		case *item.Error == "format":
 			var format legacyFormatError
 			if !errors.As(err, &format) {
-				t.Errorf("%s: %v, Python ValueError (%s)", name, err, item.GetString("detail"))
+				t.Errorf("%s: %v, Python ValueError (%s)", item.Name, err, item.Detail)
 			}
 		default:
 			if err == nil {
-				t.Errorf("%s: %v, Python %v", name, err, want)
+				t.Errorf("%s: %v, Python %v", item.Name, err, *item.Error)
 			}
 		}
 	}
@@ -149,9 +197,9 @@ func TestReferenceReadOldJSONFiles(t *testing.T) {
 
 // referenceHistory holds the case's points (timestamp parsed from each
 // line) with datetime.now() fixed at the case's now.
-func referenceHistory(t *testing.T, item *jsonx.Object) *History {
+func referenceHistory(t *testing.T, item a04MetricCase) *History {
 	t.Helper()
-	current := naiveOf(t, item.GetString("now"))
+	current := naiveOf(t, item.Now)
 	previous := now
 	now = func() time.Time {
 		return time.Date(current.Year(), current.Month(), current.Day(), current.Hour(), current.Minute(),
@@ -160,11 +208,10 @@ func referenceHistory(t *testing.T, item *jsonx.Object) *History {
 	t.Cleanup(func() { now = previous })
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
 	var points []point
-	for _, raw := range item.GetList("points") {
-		line := raw.(string)
+	for _, line := range item.Points {
 		// Build the fixture's cache through the approved persisted-data decoder.
-		// GetMetrics itself is strict: native cache lines must already be valid JSON.
-		var value *jsonx.Object
+		// Samples itself is strict: native cache lines must already be valid JSON.
+		var value map[string]json.RawMessage
 		if err := jsonresp.DecodeStored([]byte(line), &value); err != nil {
 			t.Fatal(err)
 		}
@@ -172,103 +219,98 @@ func referenceHistory(t *testing.T, item *jsonx.Object) *History {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points = append(points, point{naiveOf(t, value.GetString("timestamp")), string(encoded)})
+		var ts string
+		_ = json.Unmarshal(value["timestamp"], &ts)
+		points = append(points, point{naiveOf(t, ts), string(encoded)})
 	}
 	h.points["a"] = points
 	return h
 }
 
-func bigArg(t *testing.T, item *jsonx.Object, key string) *big.Int {
+func bigNumber(t *testing.T, n json.Number) *big.Int {
 	t.Helper()
-	number, _ := item.GetNumber(key)
-	value, ok := number.BigInt()
+	value, ok := new(big.Int).SetString(string(n), 10)
 	if !ok {
-		t.Fatalf("%s is not an int", key)
+		t.Fatalf("%q is not an int", n)
 	}
 	return value
 }
 
 func TestReferenceMetricsSummary(t *testing.T) {
-	for _, raw := range loadA04Reference(t).GetList("summary") {
-		item := raw.(*jsonx.Object)
-		t.Run(item.GetString("name"), func(t *testing.T) {
-			summary, err := referenceHistory(t, item).GetMetricsSummary("a", bigArg(t, item, "hours"))
-			if expected, changed := nativeMetricExpected(t, "summary", item); changed {
-				if err != nil || !jsonx.Equal(summary, expected) {
-					t.Fatalf("native summary: %v %v, want %v", summary, err, expected)
+	for _, raw := range loadA04Reference(t).Summary {
+		item := decodeMetricCase(t, raw)
+		t.Run(item.Name, func(t *testing.T) {
+			summary, err := referenceHistory(t, item).Summarize("a", bigNumber(t, item.Hours))
+			if expected, changed := nativeMetricExpected(t, "summary", item.Name, raw); changed {
+				if err != nil || !testjson.Equal(expected, summary) {
+					t.Fatalf("native summary: %+v %v, want %v", summary, err, expected)
 				}
 				return
 			}
 			if expected, changed := nativeSummaryExpected(item); changed {
-				if err != nil || !jsonx.Equal(summary, expected) {
-					t.Fatalf("native missing-sample summary: %v %v, want %v", summary, err, expected)
+				if err != nil || !testjson.Equal(expected, summary) {
+					t.Fatalf("native missing-sample summary: %+v %v, want %v", summary, err, expected)
 				}
 				return
 			}
-			if got, want := referenceResult(t, summary, err), item.GetString("result"); got != want {
-				t.Errorf("\n got  %s\n want %s", got, want)
-			}
+			compareReferenceResult(t, summary, err, item.Result)
 		})
 	}
 }
 
 func TestReferenceTrafficStats(t *testing.T) {
-	for _, raw := range loadA04Reference(t).GetList("traffic_stats") {
-		item := raw.(*jsonx.Object)
-		t.Run(item.GetString("name"), func(t *testing.T) {
-			stats, err := referenceHistory(t, item).GetTrafficStats("a", item.GetString("period"))
-			if expected, changed := nativeMetricExpected(t, "traffic_stats", item); changed {
-				if err != nil || !jsonx.Equal(stats, expected) {
-					t.Fatalf("native stats: %v %v, want %v", stats, err, expected)
+	for _, raw := range loadA04Reference(t).TrafficStats {
+		item := decodeMetricCase(t, raw)
+		t.Run(item.Name, func(t *testing.T) {
+			stats, err := referenceHistory(t, item).TrafficStatistics("a", item.Period)
+			if expected, changed := nativeMetricExpected(t, "traffic_stats", item.Name, raw); changed {
+				if err != nil || !testjson.Equal(expected, stats) {
+					t.Fatalf("native stats: %+v %v, want %v", stats, err, expected)
 				}
 				return
 			}
 			if expected, changed := nativeTrafficExpected(item); changed {
-				if err != nil || !jsonx.Equal(stats, expected) {
-					t.Fatalf("native missing-counter stats: %v %v, want %v", stats, err, expected)
+				if err != nil || !testjson.Equal(expected, stats) {
+					t.Fatalf("native missing-counter stats: %+v %v, want %v", stats, err, expected)
 				}
 				return
 			}
-			if got, want := referenceResult(t, stats, err), item.GetString("result"); got != want {
-				t.Errorf("\n got  %s\n want %s", got, want)
-			}
+			compareReferenceResult(t, stats, err, item.Result)
 		})
 	}
 }
 
 func TestReferenceTrafficTrend(t *testing.T) {
-	for _, raw := range loadA04Reference(t).GetList("trend") {
-		item := raw.(*jsonx.Object)
-		t.Run(item.GetString("name"), func(t *testing.T) {
-			trend, err := referenceHistory(t, item).GetTrafficTrend("a", bigArg(t, item, "hours"), bigArg(t, item, "interval"))
-			if expected, changed := nativeMetricExpected(t, "trend", item); changed {
-				if err != nil || !jsonx.Equal(trend, expected) {
-					t.Fatalf("native trend: %v %v, want %v", trend, err, expected)
+	for _, raw := range loadA04Reference(t).Trend {
+		item := decodeMetricCase(t, raw)
+		t.Run(item.Name, func(t *testing.T) {
+			trend, err := referenceHistory(t, item).TrafficTrend("a", bigNumber(t, item.Hours), bigNumber(t, item.Interval))
+			if expected, changed := nativeMetricExpected(t, "trend", item.Name, raw); changed {
+				if err != nil || !testjson.Equal(expected, trend) {
+					t.Fatalf("native trend: %+v %v, want %v", trend, err, expected)
 				}
 				return
 			}
 			if expected, changed := nativeTrendExpected(item); changed {
-				if err != nil || !jsonx.Equal(trend, expected) {
-					t.Fatalf("native missing-counter trend: %v %v, want %v", trend, err, expected)
+				if err != nil || !testjson.Equal(expected, trend) {
+					t.Fatalf("native missing-counter trend: %+v %v, want %v", trend, err, expected)
 				}
 				return
 			}
-			if got, want := referenceResult(t, trend, err), item.GetString("result"); got != want {
-				t.Errorf("\n got  %s\n want %s", got, want)
-			}
+			compareReferenceResult(t, trend, err, item.Result)
 		})
 	}
 }
 
 // Only serialization changes and the approved non-finite repair are applied to
 // old file goldens. Business records, timestamps, cardinality and values match.
-func equalPointRecords(t *testing.T, points []point, want []any) bool {
+func equalPointRecords(t *testing.T, points []point, want [][]string) bool {
 	t.Helper()
 	if len(points) != len(want) {
 		return false
 	}
 	for i, p := range points {
-		row := want[i].([]any)
+		row := want[i]
 		if isoformat(p.at) != row[0] {
 			return false
 		}
@@ -276,7 +318,7 @@ func equalPointRecords(t *testing.T, points []point, want []any) bool {
 		if err := jsonresp.DecodeStored([]byte(p.line), &gotValue); err != nil {
 			t.Fatal(err)
 		}
-		if err := jsonresp.DecodeStored([]byte(row[1].(string)), &wantValue); err != nil {
+		if err := jsonresp.DecodeStored([]byte(row[1]), &wantValue); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(gotValue, wantValue) {
@@ -311,46 +353,50 @@ func assertNativeNumberLines(t *testing.T, points []point) {
 
 // Approved arithmetic changes are an explicit per-fixture table. Old Python
 // goldens remain immutable; all other rows still compare their complete result.
-func nativeSummaryExpected(item *jsonx.Object) (*jsonx.Object, bool) {
+func nativeSummaryExpected(item a04MetricCase) (map[string]any, bool) {
 	values := map[string][3]any{
 		"none value": {nil, nil, nil}, "huge int mean overflow": {nil, nil, nil},
 		"huge int then float": {1.5, 1.5, 1.5}, "float then huge int": {1.5, 1.5, 1.5},
 		"infinity and big int": {nil, nil, nil}, "infinities": {nil, nil, nil},
 		"nan first": {1.5, 2, 1}, "nan middle": {1.5, 2, 1},
 	}
-	value, ok := values[item.GetString("name")]
+	value, ok := values[item.Name]
 	if !ok {
 		return nil, false
 	}
-	expected := jsonx.Obj("cpu", zeroStats(), "memory", zeroStats(), "disk", zeroStats(), "network_sent", zeroStats(), "network_recv", zeroStats(), "data_points", len(item.GetList("points")), "time_range_hours", item.Value("hours"))
+	expected := map[string]any{
+		"cpu": zeroStats(), "memory": zeroStats(), "disk": zeroStats(),
+		"network_sent": zeroStats(), "network_recv": zeroStats(),
+		"data_points": len(item.Points), "time_range_hours": item.Hours,
+	}
 	key := "cpu"
-	if item.GetString("name") == "none value" {
+	if item.Name == "none value" {
 		key = "memory"
 	}
-	expected.Set(key, jsonx.Obj("avg", value[0], "max", value[1], "min", value[2]))
+	expected[key] = map[string]any{"avg": value[0], "max": value[1], "min": value[2]}
 	return expected, true
 }
 
-func nativeTrafficExpected(item *jsonx.Object) (*jsonx.Object, bool) {
-	switch item.GetString("name") {
+func nativeTrafficExpected(item a04MetricCase) (map[string]any, bool) {
+	switch item.Name {
 	case "none values", "nan", "infinity", "huge equal ints":
-		return emptyTrafficStats(item.GetString("period")), true
+		return emptyTrafficStats(item.Period), true
 	case "huge ints":
-		result := emptyTrafficStats(item.GetString("period"))
-		result.Set("start_time", "2026-11-15T11:01:00")
-		result.Set("end_time", "2026-11-15T11:01:00")
-		result.Set("data_points", 1)
+		result := emptyTrafficStats(item.Period)
+		result["start_time"] = "2026-11-15T11:01:00"
+		result["end_time"] = "2026-11-15T11:01:00"
+		result["data_points"] = 1
 		return result, true
 	}
 	return nil, false
 }
 
-func nativeTrendExpected(item *jsonx.Object) ([]any, bool) {
-	switch item.GetString("name") {
+func nativeTrendExpected(item a04MetricCase) ([]any, bool) {
+	switch item.Name {
 	case "huge":
-		return []any{jsonx.Obj("timestamp", "2026-11-15T11:00:00", "bytes_sent", 0, "bytes_recv", 0, "speed_sent", 0, "speed_recv", 0)}, true
+		return []any{map[string]any{"timestamp": "2026-11-15T11:00:00", "bytes_sent": 0, "bytes_recv": 0, "speed_sent": 0, "speed_recv": 0}}, true
 	case "nan":
-		return []any{jsonx.Obj("timestamp", "2026-11-15T11:00:00", "bytes_sent", 1, "bytes_recv", 1, "speed_sent", 0, "speed_recv", 0)}, true
+		return []any{map[string]any{"timestamp": "2026-11-15T11:00:00", "bytes_sent": 1, "bytes_recv": 1, "speed_sent": 0, "speed_recv": 0}}, true
 	}
 	return nil, false
 }

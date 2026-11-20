@@ -4,9 +4,9 @@ package upgrades
 // acceptance/health distinction and failure concurrency.
 
 import (
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,8 +14,9 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 type upgradeEnv struct {
@@ -40,37 +41,47 @@ func newUpgradeEnv(t *testing.T) *upgradeEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, err := m.RegisterAgent(ctx, jsonx.Obj("name", "upgrade", "host", "localhost", "port", 1234,
-		"service_type", "mihomo", "deployment_method", "shell", "version", "1.1.0-go"), nil, nil)
+	input, err := agents.DecodeRegistrationInput(json.RawMessage(`{"name":"upgrade","host":"localhost","port":1234,"service_type":"mihomo","deployment_method":"shell","version":"1.1.0-go"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(setLegacyArtifactsForTest(func() (*jsonx.Object, error) {
-		out := jsonx.NewObject()
+	reg, err := m.RegisterIdentity(ctx, input, agents.RegistrationOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(SetArtifactsForTest(func(context.Context) (model.Map[model.UpgradeArtifact], error) {
+		var out model.Map[model.UpgradeArtifact]
 		for _, arch := range Arches {
-			out.Set(arch, jsonx.Obj("sha256", strings.Repeat("a", 64), "size", 100))
+			out.Set(arch, model.UpgradeArtifact{SHA256: strings.Repeat("a", 64), Size: 100})
 		}
 		return out, nil
 	}))
-	t.Cleanup(func() { requestHook = nil; requestOverride = nil })
-	return &upgradeEnv{t: t, ctx: ctx, repo: r, m: m, ident: agent.GetString("id")}
+	t.Cleanup(func() { requestOverride = nil })
+	return &upgradeEnv{t: t, ctx: ctx, repo: r, m: m, ident: reg.ID}
 }
 
-// update is manager._update_agents(lambda agents: agents[0].update(**fields)).
-func (e *upgradeEnv) update(pairs ...any) {
+func (e *upgradeEnv) updateMap(fields map[string]any) {
 	e.t.Helper()
-	_, err := e.m.UpdateAgents(e.ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		(*list)[0].(*jsonx.Object).Update(jsonx.Obj(pairs...))
-		return nil, nil
+	err := e.m.EditAgents(e.ctx, "", func(_ context.Context, list *[]model.Agent) error {
+		for k, v := range fields {
+			raw, err := json.Marshal(v)
+			if err != nil {
+				return err
+			}
+			if err := (*list)[0].SetJSON(k, raw); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		e.t.Fatal(err)
 	}
 }
 
-func (e *upgradeEnv) agent() *jsonx.Object {
+func (e *upgradeEnv) agent() *model.Agent {
 	e.t.Helper()
-	agent, err := e.m.GetAgentByID(e.ctx, e.ident, true)
+	agent, err := e.m.ReadAgent(e.ctx, e.ident, true)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -88,21 +99,43 @@ func (e *upgradeEnv) restarted() *agents.Manager {
 
 func (e *upgradeEnv) heartbeat(version string) {
 	e.t.Helper()
-	if ok, err := e.m.ObserveHeartbeat(e.ctx, e.ident, agentModelForTest(e.t, jsonx.Obj("version", version))); !ok || err != nil {
+	if ok, err := e.m.ObserveHeartbeat(e.ctx, e.ident, agentModelForTest(e.t, map[string]any{"version": version})); !ok || err != nil {
 		e.t.Fatalf("heartbeat %v %v", ok, err)
 	}
 }
 
-func (e *upgradeEnv) poll(m *agents.Manager) *jsonx.Object {
+func (e *upgradeEnv) poll(m *agents.Manager) *model.AgentUpgrade {
 	e.t.Helper()
 	if m == nil {
 		m = e.m
 	}
-	state, err := Poll(e.ctx, m, e.ident)
+	state, err := PollModel(e.ctx, m, e.ident)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	return state
+}
+
+func ErrorClass(err error) string {
+	var corrupt *CorruptStateError
+	if errors.As(err, &corrupt) {
+		return "CorruptStateError"
+	}
+	if errors.Is(err, agents.ErrHeaderEncoding) {
+		return "UnicodeEncodeError"
+	}
+	if errors.Is(err, agents.ErrAgentEndpoint) {
+		return "EndpointError"
+	}
+	if errors.Is(err, ErrInvalidReport) || IsValueError(err) {
+		return "ValueError"
+	}
+	return ""
+}
+
+func AgentResponse(payload any, status int) *agents.Response {
+	body, _ := json.Marshal(payload)
+	return &agents.Response{StatusCode: status, Header: map[string][]string{"Content-Type": {"application/json"}}, Body: body}
 }
 
 func respond(payload any, status int) *agents.Response { return AgentResponse(payload, status) }
@@ -114,88 +147,94 @@ func wantValueError(t *testing.T, err error, fragment string) {
 	}
 }
 
-func upgradeState(pairs ...any) *jsonx.Object {
-	state := jsonx.Obj("update_id", "job", "target_version", agents.GetLatestVersion(), "previous_version", "1.1.0-go")
-	state.Update(jsonx.Obj(pairs...))
+func upgradeState(overrides map[string]any) map[string]any {
+	state := map[string]any{
+		"update_id": "job", "target_version": agents.GetLatestVersion(), "previous_version": "1.1.0-go",
+	}
+	for k, v := range overrides {
+		state[k] = v
+	}
 	return state
 }
 
-func statuses(events any) string {
+func statuses(events []model.OperationEvent) string {
 	var out []string
-	for _, event := range events.([]any) {
-		out = append(out, event.(*jsonx.Object).GetString("status"))
+	for _, event := range events {
+		out = append(out, event.Status)
 	}
 	return strings.Join(out, ",")
 }
 
+func strPtr(s string) *string { return &s }
+
 func TestAcceptanceIsNotSuccessAndReservesAcrossRestart(t *testing.T) {
 	e := newUpgradeEnv(t)
-	info := jsonx.Obj("agent_id", e.ident, "deployment_method", "shell", "architecture", "linux-amd64", "version", "1.1.0-go")
-	requestHook = func(_ *jsonx.Object, _, path string, _ *jsonx.Object) (*agents.Response, error) {
+	info := map[string]any{"agent_id": e.ident, "deployment_method": "shell", "architecture": "linux-amd64", "version": "1.1.0-go"}
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, _, path string, _ []byte) (*agents.Response, error) {
 		if strings.HasSuffix(path, "info") {
 			return respond(info, 200), nil
 		}
-		return respond(jsonx.NewObject(), 200), nil
-	}
-	state, err := Start(e.ctx, e.m, e.ident)
+		return respond(map[string]any{}, 200), nil
+	}))
+	state, err := StartModel(e.ctx, e.m, e.ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Value("status") != "queued" { // Acceptance is not an observed worker stage.
-		t.Fatalf("status %v", state.Value("status"))
+	if state.Status != "queued" { // Acceptance is not an observed worker stage.
+		t.Fatalf("status %v", state.Status)
 	}
 	restarted := e.restarted()
-	_, err = Start(e.ctx, restarted, e.ident)
+	_, err = StartModel(e.ctx, restarted, e.ident)
 	wantValueError(t, err, "已有更新")
-	agent, _ := restarted.GetAgentByID(e.ctx, e.ident, true)
-	if agent.GetObject("latest_upgrade").Value("update_id") != state.Value("update_id") {
+	agent, _ := restarted.ReadAgent(e.ctx, e.ident, true)
+	if agent.LatestUpgrade == nil || agent.LatestUpgrade.UpdateID != state.UpdateID {
 		t.Fatal("reservation lost")
 	}
 }
 
 func TestWorkerSuccessStillRequiresVersionIdentityAndMigration(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", upgradeState("status", "checking", "protocol", 2, "started_at", jsonx.Float(now())))
-	info := jsonx.Obj("agent_id", e.ident, "version", agents.GetLatestVersion(), "migration_ready", false)
-	requestHook = func(_ *jsonx.Object, _, path string, _ *jsonx.Object) (*agents.Response, error) {
+	e.updateMap(map[string]any{"latest_upgrade": upgradeState(map[string]any{"status": "checking", "protocol": 2, "started_at": now()})})
+	info := map[string]any{"agent_id": e.ident, "version": agents.GetLatestVersion(), "migration_ready": false}
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, _, path string, _ []byte) (*agents.Response, error) {
 		if strings.HasSuffix(path, "info") {
 			return respond(info, 200), nil
 		}
-		return respond(jsonx.Obj("update_id", "job", "agent_id", e.ident, "status", "succeeded"), 200), nil
-	}
-	if got := e.poll(nil).Value("status"); got != "checking" {
+		return respond(map[string]any{"update_id": "job", "agent_id": e.ident, "status": "succeeded"}, 200), nil
+	}))
+	if got := e.poll(nil).Status; got != "checking" {
 		t.Fatalf("got %v", got)
 	}
-	info.Set("migration_ready", true)
-	info.Set("agent_id", "wrong-agent")
-	if got := e.poll(nil).Value("status"); got != "checking" {
+	info["migration_ready"] = true
+	info["agent_id"] = "wrong-agent"
+	if got := e.poll(nil).Status; got != "checking" {
 		t.Fatalf("got %v", got)
 	}
-	info.Set("agent_id", e.ident)
-	if got := e.poll(nil).Value("status"); got != "succeeded" {
+	info["agent_id"] = e.ident
+	if got := e.poll(nil).Status; got != "succeeded" {
 		t.Fatalf("got %v", got)
 	}
 }
 
 func TestLegacyRollbackRequiresFreshAuthenticatedHeartbeat(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", upgradeState("status", "downloading", "protocol", 1, "started_at", jsonx.Float(now())))
-	requestHook = func(_ *jsonx.Object, _, path string, _ *jsonx.Object) (*agents.Response, error) {
+	e.updateMap(map[string]any{"latest_upgrade": upgradeState(map[string]any{"status": "downloading", "protocol": 1, "started_at": now()})})
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, _, path string, _ []byte) (*agents.Response, error) {
 		if path == "/api/update" {
 			t.Fatal("legacy GET endpoint is unsupported")
 		}
-		return respond(jsonx.NewObject(), 404), nil
+		return respond(map[string]any{}, 404), nil
+	}))
+	reported, err := ReportLegacyJSON(e.ctx, e.m, e.ident, json.RawMessage(`{"update_id":"job","status":"rolling_back"}`))
+	if err != nil || reported.Status != "rolling_back" {
+		t.Fatalf("%+v %v", reported, err)
 	}
-	reported, err := ReportLegacy(e.ctx, e.m, e.ident, jsonx.Obj("update_id", "job", "status", "rolling_back"))
-	if err != nil || reported.Value("status") != "rolling_back" {
-		t.Fatalf("%v %v", reported, err)
-	}
-	if got := e.poll(nil).Value("status"); got != "rolling_back" {
+	if got := e.poll(nil).Status; got != "rolling_back" {
 		t.Fatalf("got %v", got)
 	}
 	time.Sleep(2 * time.Millisecond)
 	e.heartbeat("1.1.0-go")
-	if got := e.poll(nil).Value("status"); got != "rolled_back" {
+	if got := e.poll(nil).Status; got != "rolled_back" {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -213,163 +252,176 @@ func naiveISO(ts float64) string {
 func TestUnknownTimeoutBlocksRetryAndDoesNotClaimRollback(t *testing.T) {
 	e := newUpgradeEnv(t)
 	started := now() - 601
-	e.update("latest_upgrade", upgradeState("status", "checking", "protocol", 2, "started_at", jsonx.Float(started)),
-		"last_heartbeat", naiveISO(started))
-	requestHook = func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
-		return respond(jsonx.NewObject(), 404), nil
-	}
-	if got := e.poll(nil).Value("status"); got != "unknown" {
+	e.updateMap(map[string]any{
+		"latest_upgrade": upgradeState(map[string]any{"status": "checking", "protocol": 2, "started_at": started}),
+		"last_heartbeat": naiveISO(started),
+	})
+	t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
+		return respond(map[string]any{}, 404), nil
+	}))
+	if got := e.poll(nil).Status; got != "unknown" {
 		t.Fatalf("got %v", got)
 	}
-	_, err := Start(e.ctx, e.m, e.ident)
+	_, err := StartModel(e.ctx, e.m, e.ident)
 	wantValueError(t, err, "已有更新")
 }
 
 func TestOldVersionHeartbeatAfterTimeoutFailsAndAllowsRetry(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", upgradeState("status", "unknown", "protocol", 2, "started_at", jsonx.Float(now()-601)))
+	e.updateMap(map[string]any{"latest_upgrade": upgradeState(map[string]any{"status": "unknown", "protocol": 2, "started_at": now() - 601})})
 	e.heartbeat("1.1.0-go")
-	info := jsonx.Obj("agent_id", e.ident, "deployment_method", "shell", "architecture", "linux-amd64", "version", "1.1.0-go")
-	requestHook = func(_ *jsonx.Object, method, path string, _ *jsonx.Object) (*agents.Response, error) {
+	info := map[string]any{"agent_id": e.ident, "deployment_method": "shell", "architecture": "linux-amd64", "version": "1.1.0-go"}
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, method, path string, _ []byte) (*agents.Response, error) {
 		if strings.HasSuffix(path, "info") {
 			return respond(info, 200), nil
 		}
 		if method == "GET" && path == "/api/update" {
-			return respond(jsonx.NewObject(), 404), nil
+			return respond(map[string]any{}, 404), nil
 		}
-		return respond(jsonx.NewObject(), 200), nil
-	}
+		return respond(map[string]any{}, 200), nil
+	}))
 	result := e.poll(nil)
-	if result.Value("status") != "failed" || !strings.Contains(result.GetString("error"), "1.1.0-go") {
-		t.Fatalf("result %v", result)
+	if result.Status != "failed" || result.Error == nil || !strings.Contains(*result.Error, "1.1.0-go") {
+		t.Fatalf("result %+v", result)
 	}
-	state, err := Start(e.ctx, e.m, e.ident)
-	if err != nil || state.Value("status") != "queued" {
-		t.Fatalf("%v %v", state, err)
+	state, err := StartModel(e.ctx, e.m, e.ident)
+	if err != nil || state.Status != "queued" {
+		t.Fatalf("%+v %v", state, err)
 	}
 }
 
 func TestDockerIsNotSentBinaryUpdate(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("deployment_method", "docker")
-	requestHook = func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
+	e.updateMap(map[string]any{"deployment_method": "docker"})
+	t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
 		t.Fatal("contacted Docker binary updater")
 		return nil, nil
-	}
-	_, err := Start(e.ctx, e.m, e.ident)
+	}))
+	_, err := StartModel(e.ctx, e.m, e.ident)
 	wantValueError(t, err, "Docker")
 }
 
 func TestFailedRollbackCanConfirmLaterRecovery(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", upgradeState("status", "rollback_failed", "protocol", 2, "started_at", jsonx.Float(now())))
-	requestHook = func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
-		return respond(jsonx.Obj("update_id", "job", "agent_id", e.ident, "status", "rolled_back"), 200), nil
-	}
-	if got := e.poll(nil).Value("status"); got != "rolled_back" {
+	e.updateMap(map[string]any{"latest_upgrade": upgradeState(map[string]any{"status": "rollback_failed", "protocol": 2, "started_at": now()})})
+	t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
+		return respond(map[string]any{"update_id": "job", "agent_id": e.ident, "status": "rolled_back"}, 200), nil
+	}))
+	if got := e.poll(nil).Status; got != "rolled_back" {
 		t.Fatalf("got %v", got)
 	}
 }
 
 func TestWorkerEventsSurviveRestartAndRepeatedPollsWithoutDuplicates(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", upgradeState("status", "queued", "protocol", 2, "started_at", jsonx.Float(now())))
-	payload := jsonx.Obj("update_id", "job", "agent_id", e.ident, "status", "verifying",
-		"message", "检查 Agent 候选程序与版本", "updated_at", "2026-10-18T00:00:02Z",
-		"events", []any{jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "queued"),
-			jsonx.Obj("at", "2026-10-18T00:00:01Z", "status", "downloading", "message", "下载 configflow-agent-linux-amd64"),
-			jsonx.Obj("at", "2026-10-18T00:00:02Z", "status", "verifying", "message", "检查 Agent 候选程序与版本")})
-	requestHook = func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
-		return respond(payload, 200), nil
+	e.updateMap(map[string]any{"latest_upgrade": upgradeState(map[string]any{"status": "queued", "protocol": 2, "started_at": now()})})
+	payload := map[string]any{
+		"update_id": "job", "agent_id": e.ident, "status": "verifying",
+		"message": "检查 Agent 候选程序与版本", "updated_at": "2026-10-18T00:00:02Z",
+		"events": []any{
+			map[string]any{"at": "2026-10-18T00:00:00Z", "status": "queued"},
+			map[string]any{"at": "2026-10-18T00:00:01Z", "status": "downloading", "message": "下载 configflow-agent-linux-amd64"},
+			map[string]any{"at": "2026-10-18T00:00:02Z", "status": "verifying", "message": "检查 Agent 候选程序与版本"},
+		},
 	}
+	t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
+		return respond(payload, 200), nil
+	}))
 	first := e.poll(nil)
 	second := e.poll(e.restarted())
-	if !jsonx.Equal(first.Value("events"), second.Value("events")) {
-		t.Fatalf("events differ:\n%s\n%s", jsonx.Repr(first.Value("events")), jsonx.Repr(second.Value("events")))
+	if diff := testjson.Diff(first.Events, second.Events); diff != "" {
+		t.Fatalf("events differ: %s", diff)
 	}
-	if got := statuses(first.Value("events")); got != "queued,downloading,verifying" {
+	if got := statuses(first.Events); got != "queued,downloading,verifying" {
 		t.Fatalf("got %s", got)
 	}
-	if second.Value("message") != payload.Value("message") {
-		t.Fatalf("message %v", second.Value("message"))
+	if second.Message == nil || *second.Message != payload["message"] {
+		t.Fatalf("message %v", second.Message)
 	}
 }
 
 func TestUnconfirmedWorkerSuccessDoesNotExposeSuccessEvent(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", upgradeState("status", "checking", "protocol", 2, "started_at", jsonx.Float(now())))
-	worker := jsonx.Obj("update_id", "job", "agent_id", e.ident, "status", "succeeded", "updated_at", "2026-10-18T00:00:01Z",
-		"events", []any{jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "checking"),
-			jsonx.Obj("at", "2026-10-18T00:00:01Z", "status", "succeeded")})
-	info := jsonx.Obj("agent_id", e.ident, "version", agents.GetLatestVersion(), "migration_ready", false)
-	requestHook = func(_ *jsonx.Object, _, path string, _ *jsonx.Object) (*agents.Response, error) {
+	e.updateMap(map[string]any{"latest_upgrade": upgradeState(map[string]any{"status": "checking", "protocol": 2, "started_at": now()})})
+	worker := map[string]any{
+		"update_id": "job", "agent_id": e.ident, "status": "succeeded", "updated_at": "2026-10-18T00:00:01Z",
+		"events": []any{
+			map[string]any{"at": "2026-10-18T00:00:00Z", "status": "checking"},
+			map[string]any{"at": "2026-10-18T00:00:01Z", "status": "succeeded"},
+		},
+	}
+	info := map[string]any{"agent_id": e.ident, "version": agents.GetLatestVersion(), "migration_ready": false}
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, _, path string, _ []byte) (*agents.Response, error) {
 		if strings.HasSuffix(path, "info") {
 			return respond(info, 200), nil
 		}
 		return respond(worker, 200), nil
-	}
+	}))
 	result := e.poll(nil)
-	if result.Value("status") != "checking" || strings.Contains(statuses(result.Value("events")), "succeeded") {
-		t.Fatalf("result %s", jsonx.Repr(result))
+	if result.Status != "checking" || strings.Contains(statuses(result.Events), "succeeded") {
+		t.Fatalf("result %+v", result)
 	}
-	info.Set("migration_ready", true)
-	events := e.poll(nil).GetList("events")
-	if events[len(events)-1].(*jsonx.Object).Value("status") != "succeeded" {
-		t.Fatalf("events %s", jsonx.Repr(events))
+	info["migration_ready"] = true
+	events := e.poll(nil).Events
+	if events[len(events)-1].Status != "succeeded" {
+		t.Fatalf("events %+v", events)
 	}
 }
 
 func TestLateStartAcceptanceKeepsStageAlreadyObservedByPoll(t *testing.T) {
 	e := newUpgradeEnv(t)
-	info := jsonx.Obj("agent_id", e.ident, "deployment_method", "shell", "architecture", "linux-amd64")
-	requestHook = func(_ *jsonx.Object, _, path string, payload *jsonx.Object) (*agents.Response, error) {
+	info := map[string]any{"agent_id": e.ident, "deployment_method": "shell", "architecture": "linux-amd64"}
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, _, path string, body []byte) (*agents.Response, error) {
 		if strings.HasSuffix(path, "info") {
 			return respond(info, 200), nil
 		}
-		if _, err := save(e.ctx, e.m, e.ident, payload.Value("update_id"), jsonx.Obj("status", "migrating", "message", "正在迁移 Agent 配置"), false); err != nil {
+		var payload struct {
+			UpdateID string `json:"update_id"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		if _, err := saveModel(e.ctx, e.m, e.ident, payload.UpdateID, upgradePatch{Status: "migrating", Message: strPtr("正在迁移 Agent 配置")}, false); err != nil {
 			t.Fatal(err)
 		}
-		return respond(jsonx.NewObject(), 200), nil
-	}
-	result, err := Start(e.ctx, e.m, e.ident)
+		return respond(map[string]any{}, 200), nil
+	}))
+	result, err := StartModel(e.ctx, e.m, e.ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	events := result.GetList("events")
-	if result.Value("status") != "migrating" || events[len(events)-1].(*jsonx.Object).Value("status") != "migrating" {
-		t.Fatalf("result %s", jsonx.Repr(result))
+	if result.Status != "migrating" || len(result.Events) == 0 || result.Events[len(result.Events)-1].Status != "migrating" {
+		t.Fatalf("result %+v", result)
 	}
 }
 
 func TestChangedUpgradeDuringPreflightPreventsASecondSubmission(t *testing.T) {
 	e := newUpgradeEnv(t)
-	requestHook = func(_ *jsonx.Object, method, path string, _ *jsonx.Object) (*agents.Response, error) {
+	t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, method, path string, _ []byte) (*agents.Response, error) {
 		if method != "GET" || !strings.HasSuffix(path, "info") {
 			t.Fatal("late request must not submit a second update")
 		}
-		e.update("latest_upgrade", jsonx.Obj("update_id", "other-completed", "status", "succeeded"))
-		return respond(jsonx.Obj("agent_id", e.ident, "deployment_method", "shell", "architecture", "linux-amd64"), 200), nil
-	}
-	_, err := Start(e.ctx, e.m, e.ident)
+		e.updateMap(map[string]any{"latest_upgrade": map[string]any{"update_id": "other-completed", "status": "succeeded"}})
+		return respond(map[string]any{"agent_id": e.ident, "deployment_method": "shell", "architecture": "linux-amd64"}, 200), nil
+	}))
+	_, err := StartModel(e.ctx, e.m, e.ident)
 	wantValueError(t, err, "更新任务已改变")
-	if got := e.agent().GetObject("latest_upgrade").Value("update_id"); got != "other-completed" {
-		t.Fatalf("got %v", got)
+	if a := e.agent(); a.LatestUpgrade == nil || a.LatestUpgrade.UpdateID != "other-completed" {
+		t.Fatalf("got %+v", a.LatestUpgrade)
 	}
 }
 
 func TestStaleWorkerResponseDoesNotUndoNewerStateAndOldWorkerHasObservedEvents(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("latest_upgrade", jsonx.Obj("update_id", "job", "status", "queued", "protocol", 2, "started_at", jsonx.Float(now())))
-	current, err := save(e.ctx, e.m, e.ident, "job", jsonx.Obj("status", "checking", "agent_updated_at", "2026-10-18T00:00:00.1Z"), false)
+	e.updateMap(map[string]any{"latest_upgrade": map[string]any{"update_id": "job", "status": "queued", "protocol": 2, "started_at": now()}})
+	current, err := saveModel(e.ctx, e.m, e.ident, "job", upgradePatch{Status: "checking", AgentUpdatedAt: strPtr("2026-10-18T00:00:00.1Z")}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale, err := save(e.ctx, e.m, e.ident, "job", jsonx.Obj("status", "downloading", "agent_updated_at", "2026-10-18T00:00:00Z"), false)
+	stale, err := saveModel(e.ctx, e.m, e.ident, "job", upgradePatch{Status: "downloading", AgentUpdatedAt: strPtr("2026-10-18T00:00:00Z")}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stale.Value("status") != "checking" || !jsonx.Equal(stale.Value("events"), current.Value("events")) || statuses(current.Value("events")) != "checking" {
-		t.Fatalf("stale %s current %s", jsonx.Repr(stale), jsonx.Repr(current))
+	if stale.Status != "checking" || !testjson.Equal(current.Events, stale.Events) || statuses(current.Events) != "checking" {
+		t.Fatalf("stale %+v current %+v", stale, current)
 	}
 }
 

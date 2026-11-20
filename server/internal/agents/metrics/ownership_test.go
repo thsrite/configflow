@@ -22,7 +22,7 @@ func TestSaveOperationWaitKeepsShutdownCancellation(t *testing.T) {
 	bound := ctxx.WithParent(request, job)
 	disconnect()
 	done := make(chan error, 1)
-	go func() { _, err := Run(bound, "manual", false); done <- err }()
+	go func() { _, err := FlushNow(bound, "manual", false); done <- err }()
 	select {
 	case err := <-done:
 		t.Fatal("request disconnect aborted save operation", err)

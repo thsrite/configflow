@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -36,7 +35,7 @@ func TestReviewN810NullAgentVersionStillStartsUpgrade(t *testing.T) {
 				if method == "GET" {
 					return AgentResponse(nil, 404), nil
 				}
-				return AgentResponse(jsonx.Obj(), 202), nil
+				return AgentResponse(map[string]any{}, 202), nil
 			}))
 			state, err := StartModel(e.ctx, e.m, e.ident)
 			var corrupt *CorruptStateError

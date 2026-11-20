@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/taskstatus"
@@ -20,6 +19,26 @@ func awaitFlush(t *testing.T, condition func() bool) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func readReceipt(t *testing.T, dataDir string) *taskstatus.Receipt {
+	t.Helper()
+	snap, err := taskstatus.New(dataDir).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snap.Entry(TaskKey)
+}
+
+func receiptCount(raw []byte) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	n, err := taskstatus.Count(raw)
+	if err != nil || n == nil || !n.IsInt64() {
+		return -1
+	}
+	return n.Int64()
 }
 
 func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
@@ -54,7 +73,7 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 		}
 	}
 	runner.Start(ctx)
-	if got := NextRunAt(jsonx.NewObject(), 1800); got == nil || !got.Equal(clock.Now().Add(1800*time.Second)) {
+	if got := NextFlushAt(nil, 1800); got == nil || !got.Equal(clock.Now().Add(1800*time.Second)) {
 		t.Fatal("no activation baseline", got)
 	}
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
@@ -66,8 +85,8 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 	}
 	clock.Advance(time.Second)
 	receive()
-	if entry, err := taskstatus.New(r.DataDir()).Get(TaskKey); err != nil || entry.GetInt("run_count") != 0 {
-		t.Fatal("saved before due", entry, err)
+	if entry := readReceipt(t, r.DataDir()); receiptCount(entry.RunCount) != 0 {
+		t.Fatal("saved before due", entry)
 	}
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
 	clock.Advance(29 * time.Second)
@@ -82,18 +101,18 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 	clock.Advance(570 * time.Second)
 	receive()
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
-	if err := SetInterval(ctx, jsonx.Int(300)); err != nil {
+	if err := SetFlushInterval(ctx, 300); err != nil {
 		t.Fatal(err)
 	}
 	receive() // Signal wakes without advancing the clock; the new interval is reread.
-	entry, err := taskstatus.New(r.DataDir()).Get(TaskKey)
-	if err != nil || entry.Value("last_trigger") != "schedule" || entry.GetInt("run_count") != 1 {
-		t.Fatal("wake did not save", entry, err)
+	entry := readReceipt(t, r.DataDir())
+	if entry.LastTrigger == nil || *entry.LastTrigger != "schedule" || receiptCount(entry.RunCount) != 1 {
+		t.Fatal("wake did not save", entry)
 	}
 	runner.Shutdown(ctx) // leaves a wake notification from the first save
-	entry, err = taskstatus.New(r.DataDir()).Get(TaskKey)
-	if err != nil || entry.Value("last_trigger") != "shutdown" || entry.GetInt("run_count") != 2 {
-		t.Fatal("shutdown used the wrong repository", entry, err)
+	entry = readReceipt(t, r.DataDir())
+	if entry.LastTrigger == nil || *entry.LastTrigger != "shutdown" || receiptCount(entry.RunCount) != 2 {
+		t.Fatal("shutdown used the wrong repository", entry)
 	}
 	if !isStopping() {
 		t.Fatal("shutdown did not stop owner")
@@ -103,7 +122,7 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 	if isStopping() {
 		t.Fatal("restart did not reset stopping")
 	}
-	if got := NextRunAt(jsonx.NewObject(), 300); got == nil || !got.Equal(clock.Now().Add(300*time.Second)) {
+	if got := NextFlushAt(nil, 300); got == nil || !got.Equal(clock.Now().Add(300*time.Second)) {
 		t.Fatal("restart retained old baseline", got)
 	}
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
@@ -133,11 +152,11 @@ func TestManualFlushDoesNotInitializeSchedule(t *testing.T) {
 	if err := runner.RunRound(ctx, "metrics-history-flush"); err != nil {
 		t.Fatal(err)
 	}
-	if clock.Pending() != 0 || NextRunAt(jsonx.NewObject(), 300) != nil {
+	if clock.Pending() != 0 || NextFlushAt(nil, 300) != nil {
 		t.Fatal("manual mode invented activation")
 	}
-	rows, err := Rows(ctx, jsonx.NewObject())
-	if err != nil || rows[0].Value("next_run_at") != nil {
+	rows, err := BuildRows(ctx, taskstatus.Snapshot{})
+	if err != nil || len(rows) == 0 || rows[0].NextRunAt != nil {
 		t.Fatal("manual row invented next_run_at", rows, err)
 	}
 }

@@ -14,7 +14,7 @@ import (
 func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 	h := NewTrafficHistory(t.TempDir())
 	now := float64(1700000000)
-	h.AddReport("machine", &CleanedTraffic{Usage: []UsageRow{{Bucket: 1699999200, Source: "192.0.2.5", Chain: "DIRECT", Up: 3}}})
+	_ = h.AddTraffic(context.Background(), "machine", &CleanedTraffic{Usage: []UsageRow{{Bucket: 1699999200, Source: "192.0.2.5", Chain: "DIRECT", Up: 3}}})
 	parent, cancel := context.WithCancel(context.Background())
 	ctx := ctxx.WithParent(context.Background(), parent)
 	cancel()

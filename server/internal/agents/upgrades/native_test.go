@@ -17,7 +17,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
@@ -30,6 +29,7 @@ func nativeAgent(t *testing.T, e *upgradeEnv) *model.Agent {
 	}
 	return a
 }
+
 func TestN810PythonBugBoundary(t *testing.T) {
 	data, err := os.ReadFile("testdata/n810_boundary_python.json")
 	if err != nil {
@@ -44,36 +44,52 @@ func TestN810PythonBugBoundary(t *testing.T) {
 		t.Fatal("incomplete Python boundary archive")
 	}
 	for _, row := range rows {
-		original, err := jsonx.Parse(row.Original)
-		if err != nil {
+		raw, err := compactRawJSON(row.Original)
+		if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != row.SHA {
+			t.Fatal("original Python row binding changed", err)
+		}
+		var c struct {
+			Name   string                     `json:"name"`
+			Now    float64                    `json:"now"`
+			Agent  map[string]json.RawMessage `json:"agent"`
+			Info   map[string]any             `json:"info"`
+			Worker json.RawMessage            `json:"worker"`
+			Python struct {
+				Result     map[string]any `json:"result"`
+				ErrorClass string         `json:"error_class"`
+			} `json:"python"`
+			Stored map[string]json.RawMessage `json:"stored"`
+		}
+		if err := json.Unmarshal(row.Original, &c); err != nil {
 			t.Fatal(err)
 		}
-		raw, _ := jsonx.Compact(original)
-		if fmt.Sprintf("%x", sha256.Sum256(raw)) != row.SHA {
-			t.Fatal("original Python row binding changed")
-		}
-		c := original.(*jsonx.Object)
-		t.Run(c.GetString("name"), func(t *testing.T) {
+		t.Run(c.Name, func(t *testing.T) {
 			e := newUpgradeEnv(t)
 			previousNow := now
-			now = func() float64 { return c.GetFloat("now") }
+			now = func() float64 { return c.Now }
 			defer func() { now = previousNow }()
 			// Bind only the fixture ID; all proof and body values come from the recorded Python input.
-			agent := c.GetObject("agent").DeepCopy()
-			agent.Set("id", e.ident)
-			if state := agent.GetObject("latest_upgrade"); state != nil {
-				state.Set("agent_id", e.ident)
-			}
-			pairs := []any{}
-			for key, value := range agent.All() {
-				if key != "id" {
-					pairs = append(pairs, key, value)
+			fields := map[string]any{}
+			for key, value := range c.Agent {
+				if key == "id" {
+					continue
 				}
+				if key == "latest_upgrade" {
+					var state map[string]any
+					if json.Unmarshal(value, &state) == nil && state != nil {
+						state["agent_id"] = e.ident
+						fields[key] = state
+						continue
+					}
+				}
+				fields[key] = value
 			}
-			e.update(pairs...)
-			info := c.GetObject("info").DeepCopy()
-			info.Set("agent_id", e.ident)
-			worker := c.GetObject("worker")
+			e.updateMap(fields)
+			info := map[string]any{}
+			for k, v := range c.Info {
+				info[k] = v
+			}
+			info["agent_id"] = e.ident
 			t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, method, path string, _ []byte) (*agents.Response, error) {
 				if strings.HasSuffix(path, "info") {
 					return AgentResponse(info, 200), nil
@@ -81,14 +97,14 @@ func TestN810PythonBugBoundary(t *testing.T) {
 				if method == "POST" {
 					t.Fatal("invalid architecture submitted")
 				}
-				return AgentResponse(worker, 200), nil
+				return AgentResponse(c.Worker, 200), nil
 			}))
 			before, err := e.repo.Store().Fingerprint()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if row.Native == "pending" {
-				if c.GetObject("python").GetObject("result").GetString("status") != "succeeded" {
+				if c.Python.Result["status"] != "succeeded" {
 					t.Fatal("Python bug positive control missing")
 				}
 				state, err := PollModel(e.ctx, e.m, e.ident)
@@ -96,12 +112,18 @@ func TestN810PythonBugBoundary(t *testing.T) {
 					t.Fatal("wrong worker released task", state, err)
 				}
 			} else {
-				if c.GetString("name") == "architecture number" {
-					if c.GetObject("stored").Has("latest_upgrade") || c.GetObject("python").GetString("error_class") != "ValueError" {
+				if c.Name == "architecture number" {
+					if _, has := c.Stored["latest_upgrade"]; has || c.Python.ErrorClass != "ValueError" {
 						t.Fatal("Python numeric architecture refusal control missing")
 					}
-				} else if c.GetObject("stored").GetObject("latest_upgrade").GetString("status") != "queued" || c.GetObject("python").GetString("error_class") == "" {
-					t.Fatal("Python reservation/error control missing")
+				} else {
+					var storedUpgrade struct {
+						Status string `json:"status"`
+					}
+					_ = json.Unmarshal(c.Stored["latest_upgrade"], &storedUpgrade)
+					if storedUpgrade.Status != "queued" || c.Python.ErrorClass == "" {
+						t.Fatal("Python reservation/error control missing")
+					}
 				}
 				_, err := StartModel(e.ctx, e.m, e.ident)
 				if !IsValueError(err) || err.Error() != msgArtifactsNotReady {
@@ -115,6 +137,7 @@ func TestN810PythonBugBoundary(t *testing.T) {
 		})
 	}
 }
+
 func TestN810CorruptGuardsRefuseWithoutWriteAndRecover(t *testing.T) {
 	tests := []struct {
 		field string
@@ -126,11 +149,7 @@ func TestN810CorruptGuardsRefuseWithoutWriteAndRecover(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.field+test.raw, func(t *testing.T) {
 			e := newUpgradeEnv(t)
-			value, err := jsonx.Parse([]byte(test.raw))
-			if err != nil {
-				t.Fatal(err)
-			}
-			e.update(test.field, value)
+			e.updateMap(map[string]any{test.field: json.RawMessage(test.raw)})
 			t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
 				return AgentResponse(nil, 404), nil
 			}))
@@ -155,7 +174,7 @@ func TestN810CorruptGuardsRefuseWithoutWriteAndRecover(t *testing.T) {
 				if method == "GET" {
 					return AgentResponse(nil, 404), nil
 				}
-				return AgentResponse(jsonx.Obj(), 202), nil
+				return AgentResponse(map[string]any{}, 202), nil
 			}))
 			state, err := StartModel(e.ctx, e.m, e.ident)
 			if err != nil || state.Status != "queued" {
@@ -164,6 +183,7 @@ func TestN810CorruptGuardsRefuseWithoutWriteAndRecover(t *testing.T) {
 		})
 	}
 }
+
 func TestN810NativeShutdownAndDisconnect(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(fmt.Sprint(shutdown), func(t *testing.T) {
@@ -183,7 +203,7 @@ func TestN810NativeShutdownAndDisconnect(t *testing.T) {
 				if method == "GET" {
 					return AgentResponse(nil, 404), nil
 				}
-				return AgentResponse(jsonx.Obj(), 202), nil
+				return AgentResponse(map[string]any{}, 202), nil
 			}))
 			before, _ := e.repo.Store().Fingerprint()
 			state, err := StartModel(request, e.m, e.ident)
@@ -205,6 +225,7 @@ func TestN810NativeShutdownAndDisconnect(t *testing.T) {
 		})
 	}
 }
+
 func TestN810NativeWireBytesAndOriginalIdentity(t *testing.T) {
 	e := newUpgradeEnv(t)
 	var got []recorded
@@ -216,7 +237,7 @@ func TestN810NativeWireBytesAndOriginalIdentity(t *testing.T) {
 	}))
 	defer srv.Close()
 	host, port, _ := strings.Cut(strings.TrimPrefix(srv.URL, "http://"), ":")
-	a := legacyAgent(jsonx.Obj("host", host, "port", jsonx.Number(port), "token", "synthetic-token"))
+	a := agentModelForTest(t, map[string]any{"host": host, "port": mustPort(t, port), "token": "synthetic-token"})
 	if _, err := requestModel(e.ctx, e.m, a, "GET", "/api/upgrade-info", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -242,6 +263,7 @@ func TestN810NativeWireBytesAndOriginalIdentity(t *testing.T) {
 		t.Fatal("invalid credential sent request")
 	}
 }
+
 func TestN810ProtocolEvidence(t *testing.T) {
 	tests := []string{`null`, `[]`, `{"agent_id":"a","agent_id":"b"}`, `{"agent_id":"a","future":{"x":1,"x":2}}`, `{"Agent_ID":"a","version":"1.0","migration_ready":true}`}
 	for _, raw := range tests {
@@ -264,6 +286,7 @@ func TestN810ProtocolEvidence(t *testing.T) {
 		t.Fatal("non-boolean readiness proof accepted")
 	}
 }
+
 func FuzzUpgradeNativeProtocol(f *testing.F) {
 	for _, raw := range []string{`{}`, `null`, `[]`, `{"update_id":"job","agent_id":"a","status":"succeeded"}`, `{"agent_id":"a","version":"1.0","migration_ready":true}`, `{"update_id":"a","update_id":"b"}`} {
 		f.Add([]byte(raw))
@@ -306,7 +329,7 @@ func TestN810ShutdownAfterAcceptanceDoesNotWriteObservation(t *testing.T) {
 		}
 		reservedHead = fmt.Sprint(fp)
 		runner.Shutdown(context.Background())
-		return AgentResponse(jsonx.Obj(), 202), nil
+		return AgentResponse(map[string]any{}, 202), nil
 	}))
 	state, err := StartModel(bound, e.m, e.ident)
 	if state != nil || !errors.Is(err, context.Canceled) {
@@ -342,7 +365,7 @@ func TestN810ArtifactShutdownDoesNotPublishDigest(t *testing.T) {
 
 func TestN810DamagedHAFlagCannotUnlockAddressChange(t *testing.T) {
 	e := newUpgradeEnv(t)
-	e.update("oxidns_ha", jsonx.Obj("enabled", 1))
+	e.updateMap(map[string]any{"oxidns_ha": map[string]any{"enabled": 1}})
 	a := nativeAgent(t, e)
 	t.Cleanup(SetAskForTest(func(*model.Agent, string, string, []byte) (int, model.Fields) {
 		t.Fatal("damaged HA guard contacted device")

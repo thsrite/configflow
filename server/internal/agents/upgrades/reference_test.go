@@ -1,10 +1,9 @@
 package upgrades
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // TestReferenceUsable checks Usable against address_follow.usable on the
@@ -14,19 +13,26 @@ func TestReferenceUsable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var ref struct {
+		Usable []struct {
+			Input  any     `json:"input"`
+			Output *string `json:"output"`
+		} `json:"usable"`
+	}
+	if err := json.Unmarshal(data, &ref); err != nil {
 		t.Fatal(err)
 	}
-	cases := value.(*jsonx.Object).GetList("usable")
-	if len(cases) < 40 {
-		t.Fatalf("%d cases", len(cases))
+	if len(ref.Usable) < 40 {
+		t.Fatalf("%d cases", len(ref.Usable))
 	}
-	for _, item := range cases {
-		c := item.(*jsonx.Object)
-		want, _ := c.Value("output").(string)
-		if got := Usable(c.GetString("input")); got != want {
-			t.Errorf("usable(%s) = %q, Python %q", jsonx.Repr(c.Value("input")), got, want)
+	for _, c := range ref.Usable {
+		input, _ := c.Input.(string)
+		want := ""
+		if c.Output != nil {
+			want = *c.Output
+		}
+		if got := Usable(input); got != want {
+			t.Errorf("usable(%#v) = %q, Python %q", c.Input, got, want)
 		}
 	}
 }

@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"bytes"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,7 +15,7 @@ type metricsNativeExpectation struct {
 	Expected                    json.RawMessage
 }
 
-func nativeMetricExpected(t *testing.T, group string, item *jsonx.Object) (any, bool) {
+func nativeMetricExpected(t *testing.T, group, name string, item json.RawMessage) (any, bool) {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_metrics_native.json")
 	if err != nil {
@@ -30,18 +30,18 @@ func nativeMetricExpected(t *testing.T, group string, item *jsonx.Object) (any, 
 		t.Fatal(err)
 	}
 	for _, row := range rows {
-		if row.Group != group || row.Name != item.GetString("name") {
+		if row.Group != group || row.Name != name {
 			continue
 		}
 		sum := sha256.Sum256([]byte(row.Source))
 		if hex.EncodeToString(sum[:]) != row.SHA256 || !bytes.Contains(original, []byte(row.Source)) {
 			t.Fatal("native expectation detached from source", row.Name)
 		}
-		source, err := jsonx.Parse([]byte(row.Source))
-		if err != nil || !jsonx.Equal(source, item) {
+		source, err := testjson.Parse([]byte(row.Source))
+		if err != nil || !testjson.Equal(source, item) {
 			t.Fatal("native fixture identity changed", row.Name)
 		}
-		value, err := jsonx.Parse(row.Expected)
+		value, err := testjson.Parse(row.Expected)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,6 +49,7 @@ func nativeMetricExpected(t *testing.T, group string, item *jsonx.Object) (any, 
 	}
 	return nil, false
 }
+
 func TestNativeMetricExpectationNegativeControl(t *testing.T) {
 	raw, err := os.ReadFile("testdata/n810_metrics_native.json")
 	if err != nil {
@@ -71,11 +72,12 @@ func TestNativeMetricExpectationNegativeControl(t *testing.T) {
 }
 
 func equalStoredTrafficJSON(a, b []byte) bool {
-	left, e1 := jsonx.Parse(a)
-	right, e2 := jsonx.Parse(b)
-	return e1 == nil && e2 == nil && jsonx.Equal(left, right)
+	left, e1 := testjson.Parse(a)
+	right, e2 := testjson.Parse(b)
+	return e1 == nil && e2 == nil && testjson.Equal(left, right)
 }
-func nativeStoreRefused(t *testing.T, name string, item *jsonx.Object) bool {
+
+func nativeStoreRefused(t *testing.T, name string, item json.RawMessage) bool {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_store_native.json")
 	if err != nil {
@@ -97,8 +99,8 @@ func nativeStoreRefused(t *testing.T, name string, item *jsonx.Object) bool {
 		if hex.EncodeToString(sum[:]) != row.SHA256 || !bytes.Contains(original, []byte(row.Source)) {
 			t.Fatal("store native expectation detached", name)
 		}
-		source, err := jsonx.Parse([]byte(row.Source))
-		if err != nil || !jsonx.Equal(source, item) {
+		source, err := testjson.Parse([]byte(row.Source))
+		if err != nil || !testjson.Equal(source, item) {
 			t.Fatal("store fixture changed", name)
 		}
 		return true

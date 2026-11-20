@@ -8,24 +8,45 @@ package metrics
 // (two flushes, every range and aggregate, daily compaction and pruning).
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/agents/trafficstore"
+	"configflow/internal/testjson"
 )
 
-func loadTrafficReference(t *testing.T) *jsonx.Object {
+type trafficReference struct {
+	Now            float64           `json:"now"`
+	TargetKeys     map[string]string `json:"target_keys"`
+	HistoryReports map[string]struct {
+		Input  json.RawMessage `json:"input"`
+		Output json.RawMessage `json:"output"`
+	} `json:"history_reports"`
+	HistorySizes map[string]json.RawMessage `json:"history_sizes"`
+	StoreReports map[string]struct {
+		Input  json.RawMessage `json:"input"`
+		Output json.RawMessage `json:"output"`
+	} `json:"store_reports"`
+	ISO             map[string]string          `json:"iso"`
+	FloorDiv        map[string]json.RawMessage `json:"floor_div"`
+	Scenario        [][]json.RawMessage        `json:"scenario"`
+	ScenarioResults map[string]json.RawMessage `json:"scenario_results"`
+}
+
+func loadTrafficReference(t *testing.T) trafficReference {
 	t.Helper()
 	data, err := os.ReadFile("testdata/traffic_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var ref trafficReference
+	if err := json.Unmarshal(data, &ref); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return ref
 }
 
 func cleanedJSON(c *CleanedTraffic) any {
@@ -40,12 +61,12 @@ func cleanedJSON(c *CleanedTraffic) any {
 	for _, r := range c.Targets {
 		targets = append(targets, []any{r.Bucket, r.Source, r.Target, r.Chain, r.Up, r.Down, r.Conns})
 	}
-	return jsonx.Obj("usage", usage, "targets", targets)
+	return map[string]any{"usage": usage, "targets": targets}
 }
 
 func TestTrafficReferenceTargetKeys(t *testing.T) {
 	ref := loadTrafficReference(t)
-	for input, want := range ref.GetObject("target_keys").All() {
+	for input, want := range ref.TargetKeys {
 		if got := targetKey(input); got != want {
 			t.Errorf("_target_key(%q) = %q, Python %q", input, got, want)
 		}
@@ -54,66 +75,63 @@ func TestTrafficReferenceTargetKeys(t *testing.T) {
 
 func TestTrafficReferenceHistoryReports(t *testing.T) {
 	ref := loadTrafficReference(t)
-	now := ref.GetFloat("now")
-	for name, value := range ref.GetObject("history_reports").All() {
-		c := value.(*jsonx.Object)
-		got := cleanedJSON(CleanTrafficReport(c.Value("input"), &now))
-		if !jsonx.Equal(got, c.Value("output")) {
-			t.Errorf("%s: go %s python %s", name, jsonx.Repr(got), jsonx.Repr(c.Value("output")))
+	now := ref.Now
+	for name, c := range ref.HistoryReports {
+		got := cleanedJSON(DecodeTrafficReport(c.Input, &now))
+		if diff := testjson.Diff(c.Output, got); diff != "" {
+			t.Errorf("%s: %s", name, diff)
 		}
 	}
 	thisHour := int64(now) / Hour * Hour
-	item := func(withDomain bool, hour int64) *jsonx.Object {
-		o := jsonx.Obj("hour", hour, "source", "10.0.0.2", "chain", []any{"G", "N"}, "up", 1, "down", 2, "conns", 1)
+	item := func(withDomain bool, hour int64) map[string]any {
+		o := map[string]any{"hour": hour, "source": "10.0.0.2", "chain": []any{"G", "N"}, "up": 1, "down": 2, "conns": 1}
 		if withDomain {
-			o.Set("domain", "www.example.com")
+			o["domain"] = "www.example.com"
 		}
 		return o
 	}
-	repeat := func(n int, o *jsonx.Object) []any {
+	repeat := func(n int, o map[string]any) []any {
 		out := make([]any, n)
 		for i := range out {
 			out[i] = o
 		}
 		return out
 	}
-	sizes := ref.GetObject("history_sizes")
-	for name, report := range map[string]*jsonx.Object{
-		"too-many":    jsonx.Obj("schema", 2, "usage", repeat(10001, item(false, thisHour)), "domains", repeat(10000, item(true, thisHour))),
-		"exactly-max": jsonx.Obj("schema", 2, "usage", repeat(10000, item(false, 0)), "domains", repeat(10000, item(true, 0))),
+	sizes := ref.HistorySizes
+	for name, report := range map[string]map[string]any{
+		"too-many":    {"schema": 2, "usage": repeat(10001, item(false, thisHour)), "domains": repeat(10000, item(true, thisHour))},
+		"exactly-max": {"schema": 2, "usage": repeat(10000, item(false, 0)), "domains": repeat(10000, item(true, 0))},
 	} {
 		var got any
-		if c := CleanTrafficReport(report, &now); c != nil {
+		if c := DecodeTrafficReport(mustMarshal(t, report), &now); c != nil {
 			got = []any{len(c.Usage), len(c.Targets)}
 		}
-		if !jsonx.Equal(got, sizes.Value(name)) {
-			t.Errorf("%s: go %v python %v", name, got, sizes.Value(name))
+		if diff := testjson.Diff(sizes[name], got); diff != "" {
+			t.Errorf("%s: %s", name, diff)
 		}
 	}
 }
 
 func TestTrafficReferenceStoreReports(t *testing.T) {
 	ref := loadTrafficReference(t)
-	for name, value := range ref.GetObject("store_reports").All() {
-		c := value.(*jsonx.Object)
-		cleaned, err := nativeStoreReport(c.Value("input"))
-		got, _ := legacyObject(cleaned)
-		var result any = got
+	for name, c := range ref.StoreReports {
+		cleaned, err := trafficstore.DecodeReport(c.Input)
+		var result any = cleaned
 		if cleaned == nil {
 			result = nil
 		}
 		if err != nil {
-			result = jsonx.Obj("error", "TypeError: "+err.Error())
+			result = map[string]any{"error": "TypeError: " + err.Error()}
 		}
-		if !jsonx.Equal(result, c.Value("output")) {
-			t.Errorf("%s: go %s python %s", name, jsonx.Repr(result), jsonx.Repr(c.Value("output")))
+		if diff := testjson.Diff(c.Output, result); diff != "" {
+			t.Errorf("%s: %s", name, diff)
 		}
 	}
 }
 
 func TestTrafficReferenceTimeHelpers(t *testing.T) {
 	ref := loadTrafficReference(t)
-	for text, want := range ref.GetObject("iso").All() {
+	for text, want := range ref.ISO {
 		value, err := strconv.ParseFloat(text, 64)
 		if err != nil {
 			t.Fatal(err)
@@ -122,31 +140,42 @@ func TestTrafficReferenceTimeHelpers(t *testing.T) {
 			t.Errorf("fromtimestamp(%s) = %s, Python %s", text, got, want)
 		}
 	}
-	for text, want := range ref.GetObject("floor_div").All() {
+	for text, want := range ref.FloorDiv {
 		value, _ := strconv.ParseFloat(text, 64)
-		got := []any{jsonx.Float(pyFloorDiv(value, Day)), jsonx.Float(pyFloorDiv(value, Hour))}
-		if !jsonx.Equal(got, want) {
-			t.Errorf("%s // day, hour = %v, Python %v", text, got, want)
+		got := []any{floatJSON(pyFloorDiv(value, Day)), floatJSON(pyFloorDiv(value, Hour))}
+		if diff := testjson.Diff(want, got); diff != "" {
+			t.Errorf("%s // day, hour: %s", text, diff)
 		}
 	}
 }
 
 func TestTrafficReferenceQueryScenario(t *testing.T) {
 	ref := loadTrafficReference(t)
-	now := ref.GetFloat("now") + 3*86400
+	now := ref.Now + 3*86400
 	var usageRows []UsageRow
 	var targetRows []TargetRow
-	for _, entry := range ref.GetList("scenario") {
-		row := entry.([]any)
-		n := func(i int) int64 { v, _ := row[i].(jsonx.Number).Int64(); return v }
-		s := func(i int) string { return row[i].(string) }
+	for _, row := range ref.Scenario {
+		n := func(i int) int64 {
+			var v int64
+			if err := json.Unmarshal(row[i], &v); err != nil {
+				t.Fatal(err)
+			}
+			return v
+		}
+		s := func(i int) string {
+			var v string
+			if err := json.Unmarshal(row[i], &v); err != nil {
+				t.Fatal(err)
+			}
+			return v
+		}
 		if s(0) == "usage" {
 			usageRows = append(usageRows, UsageRow{n(1), s(2), s(3), n(4), n(5), n(6)})
 		} else {
 			targetRows = append(targetRows, TargetRow{n(1), s(2), s(3), s(4), n(5), n(6), n(7)})
 		}
 	}
-	results := ref.GetObject("scenario_results")
+	results := ref.ScenarioResults
 	h := NewTrafficHistory(t.TempDir())
 	var firstUsage []UsageRow
 	for i, row := range usageRows {
@@ -154,12 +183,12 @@ func TestTrafficReferenceQueryScenario(t *testing.T) {
 			firstUsage = append(firstUsage, row)
 		}
 	}
-	h.AddReport("a1", &CleanedTraffic{Usage: firstUsage, Targets: targetRows[:3]})
-	h.AddReport("a2", &CleanedTraffic{Usage: usageRows[:1]})
+	_ = h.AddTraffic(context.Background(), "a1", &CleanedTraffic{Usage: firstUsage, Targets: targetRows[:3]})
+	_ = h.AddTraffic(context.Background(), "a2", &CleanedTraffic{Usage: usageRows[:1]})
 	check := func(name string, got any) {
 		t.Helper()
-		if !jsonx.Equal(got, results.Value(name)) {
-			t.Errorf("%s:\n  go     %s\n  python %s", name, jsonx.Repr(got), jsonx.Repr(results.Value(name)))
+		if diff := testjson.Diff(results[name], got); diff != "" {
+			t.Errorf("%s: %s", name, diff)
 		}
 	}
 	flush := func(name string) {
@@ -167,13 +196,13 @@ func TestTrafficReferenceQueryScenario(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		check(name, result.Object())
+		check(name, map[string]any{"rows": result.Rows, "compacted": result.Compacted, "pruned": result.Pruned})
 	}
 	flush("flush1")
-	h.AddReport("a1", &CleanedTraffic{Usage: usageRows[5:], Targets: targetRows[3:]})
+	_ = h.AddTraffic(context.Background(), "a1", &CleanedTraffic{Usage: usageRows[5:], Targets: targetRows[3:]})
 	for rangeKey := range Ranges {
 		for _, by := range Aggregates {
-			result, err := h.Query("a1", rangeKey, by, &now)
+			result, err := h.QueryTraffic(context.Background(), "a1", rangeKey, by, &now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -181,9 +210,9 @@ func TestTrafficReferenceQueryScenario(t *testing.T) {
 		}
 	}
 	flush("flush2")
-	result, _ := h.Query("a1", "30d", "destination", &now)
+	result, _ := h.QueryTraffic(context.Background(), "a1", "30d", "destination", &now)
 	check("after/30d/destination", result)
 	later := now + 0.5
-	result, _ = h.Query("a1", "7d", "source", &later)
+	result, _ = h.QueryTraffic(context.Background(), "a1", "7d", "source", &later)
 	check("after/7d/source", result)
 }

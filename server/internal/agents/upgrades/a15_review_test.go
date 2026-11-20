@@ -5,7 +5,9 @@ package upgrades
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -15,20 +17,32 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
-func reviewReference(t *testing.T) *jsonx.Object {
+type a15ReviewReference struct {
+	Now    float64           `json:"now"`
+	Poll   []json.RawMessage `json:"poll"`
+	Starts map[string]string `json:"starts"`
+	Paths  map[string]struct {
+		Error string `json:"error"`
+	} `json:"paths"`
+	EncodeErrors map[string]string          `json:"encode_errors"`
+	Headers      map[string]json.RawMessage `json:"headers"`
+}
+
+func loadReviewReference(t *testing.T) a15ReviewReference {
 	t.Helper()
 	data, err := os.ReadFile("testdata/a15_review.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var ref a15ReviewReference
+	if err := json.Unmarshal(data, &ref); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return ref
 }
 
 // pyErrorText is "Class: message" of an error as the reference records it.
@@ -37,14 +51,34 @@ func pyErrorText(err error) string {
 }
 
 func withoutVolatile(value any) any {
-	object, ok := value.(*jsonx.Object)
-	if !ok {
+	if value == nil {
+		return nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
 		return value
 	}
-	out := object.Clone()
-	out.Delete("updated_at")
-	out.Delete("events")
-	return out
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
+		var generic any
+		_ = json.Unmarshal(raw, &generic)
+		return generic
+	}
+	delete(m, "updated_at")
+	delete(m, "events")
+	return m
+}
+
+func agentLatestUpgradeRaw(t *testing.T, a *model.Agent) json.RawMessage {
+	t.Helper()
+	raw, present, err := a.MemberJSON("latest_upgrade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !present {
+		return json.RawMessage("null")
+	}
+	return raw
 }
 
 // TestReviewPollReference runs poll on the reference records (malformed
@@ -53,50 +87,62 @@ func withoutVolatile(value any) any {
 // heartbeats in year 1, aware, None) with the Agent unreachable, at the
 // reference's clock.
 func TestReviewPollReference(t *testing.T) {
-	reference := reviewReference(t)
-	clock := reference.GetFloat("now")
+	reference := loadReviewReference(t)
+	clock := reference.Now
 	previous := now
 	now = func() float64 { return clock + 1 }
 	t.Cleanup(func() { now = previous })
-	for _, item := range reference.GetList("poll") {
-		c := item.(*jsonx.Object)
-		t.Run(c.GetString("name"), func(t *testing.T) {
+	for _, itemRaw := range reference.Poll {
+		var c struct {
+			Name   string                     `json:"name"`
+			Record json.RawMessage            `json:"record"`
+			Agent  map[string]json.RawMessage `json:"agent"`
+			Error  *string                    `json:"error"`
+			Result json.RawMessage            `json:"result"`
+			Stored json.RawMessage            `json:"stored"`
+		}
+		if err := json.Unmarshal(itemRaw, &c); err != nil {
+			t.Fatal(err)
+		}
+		t.Run(c.Name, func(t *testing.T) {
 			e := newUpgradeEnv(t)
-			requestHook = func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
+			t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
 				return nil, &agents.TransportError{Err: errors.New("refused")}
+			}))
+			fields := map[string]any{
+				"name": "n", "host": "127.0.0.1", "port": 1, "token": "t", "version": "1.0",
+				"last_heartbeat": "2026-11-16T00:00:00", "latest_upgrade": c.Record,
 			}
-			fields := []any{"name", "n", "host", "127.0.0.1", "port", 1, "token", "t", "version", "1.0",
-				"last_heartbeat", "2026-11-16T00:00:00", "latest_upgrade", c.Value("record")}
-			for key, value := range c.GetObject("agent").All() {
-				fields = append(fields, key, value)
+			for key, value := range c.Agent {
+				fields[key] = value
 			}
-			e.update(fields...)
-			state, err := Poll(e.ctx, e.m, e.ident)
-			policy := nativeReference(t, "poll", c.GetString("name"), c)
+			e.updateMap(fields)
+			state, err := PollModel(e.ctx, e.m, e.ident)
+			policy := nativeReference(t, "poll", c.Name, itemRaw)
 			if policy != nil {
 				verifyNativeCorruptReference(t, policy, err)
-				if !jsonx.Equal(withoutVolatile(e.agent().Value("latest_upgrade")), withoutVolatile(c.Value("record"))) {
+				if !testjson.Equal(withoutVolatile(c.Record), withoutVolatile(agentLatestUpgradeRaw(t, e.agent()))) {
 					t.Fatal("damaged record was written")
 				}
 				return
 			}
-			if want := c.Value("error"); want != nil {
+			if c.Error != nil {
 				if err == nil {
-					t.Fatalf("poll = %s, Python %s", jsonx.Repr(state), want)
+					t.Fatalf("poll = %+v, Python %s", state, *c.Error)
 				}
-				if got := pyErrorText(err); got != want {
-					t.Fatalf("poll error %q, Python %q", got, want)
+				if got := pyErrorText(err); got != *c.Error {
+					t.Fatalf("poll error %q, Python %q", got, *c.Error)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("poll error %v, Python %s", err, jsonx.Repr(c.Value("result")))
+					t.Fatalf("poll error %v, Python %s", err, c.Result)
 				}
-				if got := withoutVolatile(state); !jsonx.Equal(got, c.Value("result")) {
-					t.Fatalf("poll = %s\nPython  %s", jsonx.Repr(got), jsonx.Repr(c.Value("result")))
+				if diff := testjson.Diff(c.Result, withoutVolatile(state)); diff != "" {
+					t.Fatalf("poll diff: %s", diff)
 				}
 			}
-			if stored := withoutVolatile(e.agent().Value("latest_upgrade")); !jsonx.Equal(stored, c.Value("stored")) {
-				t.Fatalf("stored %s\nPython %s", jsonx.Repr(stored), jsonx.Repr(c.Value("stored")))
+			if diff := testjson.Diff(c.Stored, withoutVolatile(agentLatestUpgradeRaw(t, e.agent()))); diff != "" {
+				t.Fatalf("stored diff: %s", diff)
 			}
 		})
 	}
@@ -106,24 +152,32 @@ func TestReviewPollReference(t *testing.T) {
 // stored latest_upgrade of its snapshot inside reserve(), after the DNS HA
 // check, so a busy pair is reported even when the record is malformed.
 func TestReviewStartReadsPreviousRecordInsideReservation(t *testing.T) {
-	starts := reviewReference(t).GetObject("starts")
-	for name, extra := range map[string][]any{
-		"malformed previous, HA active": {agents.HAField, jsonx.Obj("status", "running")},
-		"malformed previous":            {agents.HAField, nil},
+	starts := loadReviewReference(t).Starts
+	for name, extra := range map[string]map[string]any{
+		"malformed previous, HA active": {agents.HAField: map[string]any{"status": "running"}},
+		"malformed previous":            {agents.HAField: nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := newUpgradeEnv(t)
-			requestHook = func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error) {
-				return respond(jsonx.Obj(), 404), nil
+			t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
+				return respond(map[string]any{}, 404), nil
+			}))
+			fields := map[string]any{"token": "t", "latest_upgrade": "abc"}
+			for k, v := range extra {
+				fields[k] = v
 			}
-			e.update(append([]any{"token", "t", "latest_upgrade", "abc"}, extra...)...)
-			_, err := Start(e.ctx, e.m, e.ident)
-			if policy := nativeReference(t, "start", name, jsonx.Obj("name", name, "python_error", starts.GetString(name))); policy != nil {
+			e.updateMap(fields)
+			_, err := StartModel(e.ctx, e.m, e.ident)
+			raw, _ := compactUnescapedJSON(struct {
+				Name        string `json:"name"`
+				PythonError string `json:"python_error"`
+			}{name, starts[name]})
+			if policy := nativeReference(t, "start", name, raw); policy != nil {
 				verifyNativeCorruptReference(t, policy, err)
 				return
 			}
-			if err == nil || pyErrorText(err) != starts.GetString(name) {
-				t.Fatalf("start error %v, Python %s", err, starts.GetString(name))
+			if err == nil || pyErrorText(err) != starts[name] {
+				t.Fatalf("start error %v, Python %s", err, starts[name])
 			}
 		})
 	}
@@ -136,7 +190,7 @@ func TestReviewArtifactStatErrorsAreRaised(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
-	reference := reviewReference(t).GetObject("paths")
+	reference := loadReviewReference(t).Paths
 	root := t.TempDir()
 	noexec := filepath.Join(root, "noexec")
 	if err := os.Mkdir(noexec, 0o700); err != nil {
@@ -152,14 +206,14 @@ func TestReviewArtifactStatErrorsAreRaised(t *testing.T) {
 		"below a directory without search permission": filepath.Join(noexec, "sub"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := reference.GetObject(name).GetString("error"); got != "PermissionError" {
+			if got := reference[name].Error; got != "PermissionError" {
 				t.Fatalf("reference %q", got)
 			}
 			ResetArtifactCache()
 			t.Setenv("AGENTS_STATIC_DIR", configured)
-			result, err := Artifacts()
+			result, err := ArtifactsModel(context.Background())
 			if !errors.Is(err, os.ErrPermission) {
-				t.Fatalf("artifacts() = %v, %v; Python PermissionError", result, err)
+				t.Fatalf("artifacts() = %+v, %v; Python PermissionError", result, err)
 			}
 		})
 	}
@@ -169,39 +223,55 @@ func TestReviewArtifactStatErrorsAreRaised(t *testing.T) {
 // latin-1 bytes; a token latin-1 cannot encode is a UnicodeEncodeError: start
 // cannot connect, _reaches/_ask raise (a logged failure, a 500).
 func TestReviewLatin1Tokens(t *testing.T) {
-	reference := reviewReference(t)
-	for value, want := range reference.GetObject("encode_errors").All() {
+	reference := loadReviewReference(t)
+	for value, want := range reference.EncodeErrors {
 		encoded, err := agents.EncodeHeaderLatin1(value)
 		verifyNativeHeaderReference(t, value, want, encoded, err)
 	}
-	headers := reference.GetObject("headers")
-	for name, token := range map[string]any{"latin1": "tök", "cjk": "密钥", "nel": "tok\u0085",
-		"none": nil, "int": jsonx.Int(7), "newline": "a\nb"} {
+	headers := reference.Headers
+	for name, token := range map[string]any{
+		"latin1": "tök", "cjk": "密钥", "nel": "tok\u0085",
+		"none": nil, "int": 7, "newline": "a\nb",
+	} {
 		t.Run(name, func(t *testing.T) {
-			want := headers.GetObject(name)
+			wantRaw := headers[name]
+			var wantCalls map[string]struct {
+				Authorization *string `json:"authorization"`
+				Error         *string `json:"error"`
+			}
+			if err := json.Unmarshal(wantRaw, &wantCalls); err != nil {
+				t.Fatal(err)
+			}
 			for _, call := range []string{"request", "reaches", "ask"} {
 				e := newUpgradeEnv(t)
 				// Fixture initialization must not consume the listener's deadline.
 				port, seen := captureAuthorization(t)
-				agent := jsonx.Obj("id", "a1", "host", "127.0.0.1", "port", port, "token", token)
+				agent := agentModelForTest(t, map[string]any{"id": "a1", "host": "127.0.0.1", "port": port, "token": token})
 				var err error
 				switch call {
 				case "request":
-					_, err = request(e.ctx, e.m, agent, "GET", "/api/upgrade-info", nil)
+					_, err = requestModel(e.ctx, e.m, agent, "GET", "/api/upgrade-info", nil)
 				case "reaches":
-					_, err = reaches(e.ctx, e.m, agent, "127.0.0.1")
+					_, err = reachesModel(e.ctx, e.m, agent, "127.0.0.1")
 				case "ask":
-					_, _, err = ask(e.ctx, e.m, agent, "127.0.0.1", "GET", nil)
+					_, _, err = askModel(e.ctx, e.m, agent, "127.0.0.1", "GET", nil)
 				}
-				expected := want.GetObject(call)
+				expected := wantCalls[call]
 				got := <-seen
-				if verifyNativeCredentialReference(t, name, token, want, got, err) {
+				if verifyNativeCredentialReference(t, name, token, wantRaw, got, err) {
 					continue
 				}
-				if wantAuth, _ := expected.Value("authorization").(string); got != wantAuth {
+				wantAuth := ""
+				if expected.Authorization != nil {
+					wantAuth = *expected.Authorization
+				}
+				if got != wantAuth {
 					t.Errorf("%s: Authorization %q, Python %q", call, got, wantAuth)
 				}
-				pyClass, _ := expected.Value("error").(string)
+				pyClass := ""
+				if expected.Error != nil {
+					pyClass = *expected.Error
+				}
 				switch pyClass {
 				case "UnicodeEncodeError", "TypeError":
 					if err == nil || ErrorClass(err) != pyClass {

@@ -1,14 +1,15 @@
 package upgrades
 
 import (
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"testing"
+
+	"configflow/internal/agents"
 )
 
 type nativeReferenceRow struct {
@@ -19,7 +20,15 @@ type nativeReferenceRow struct {
 	Field    string          `json:"native_field"`
 }
 
-func nativeReference(t *testing.T, group, key string, original *jsonx.Object) *nativeReferenceRow {
+func compactRawJSON(raw json.RawMessage) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func nativeReference(t *testing.T, group, key string, original json.RawMessage) *nativeReferenceRow {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_native.json")
 	if err != nil {
@@ -40,15 +49,11 @@ func nativeReference(t *testing.T, group, key string, original *jsonx.Object) *n
 		if row.Group != group || row.Key != key {
 			continue
 		}
-		stored, err := jsonx.Parse(row.Original)
-		if err != nil {
-			t.Fatal(err)
-		}
-		encoded, err := jsonx.Compact(stored)
+		encoded, err := compactRawJSON(row.Original)
 		if err != nil || fmt.Sprintf("%x", sha256.Sum256(encoded)) != row.SHA {
 			t.Fatal("unbound stored row", group, key)
 		}
-		actual, err := jsonx.Compact(original)
+		actual, err := compactRawJSON(original)
 		if err != nil || fmt.Sprintf("%x", sha256.Sum256(actual)) != row.SHA {
 			return nil
 		}
@@ -56,6 +61,7 @@ func nativeReference(t *testing.T, group, key string, original *jsonx.Object) *n
 	}
 	return nil
 }
+
 func verifyNativeCorruptReference(t *testing.T, row *nativeReferenceRow, err error) {
 	t.Helper()
 	var corrupt *CorruptStateError
@@ -63,20 +69,48 @@ func verifyNativeCorruptReference(t *testing.T, row *nativeReferenceRow, err err
 		t.Fatalf("native refusal %v; want damaged %s", err, row.Field)
 	}
 }
+
 func TestN810ReferenceBindingNegativeControl(t *testing.T) {
-	row := reviewReference(t).GetList("poll")[0].(*jsonx.Object)
-	if nativeReference(t, "poll", row.GetString("name"), row) == nil {
+	ref := loadReviewReference(t)
+	rowRaw := ref.Poll[0]
+	var meta struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rowRaw, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if nativeReference(t, "poll", meta.Name, rowRaw) == nil {
 		t.Fatal("positive control did not bind")
 	}
-	altered := row.DeepCopy()
-	altered.Set("record", jsonx.Obj("status", "succeeded"))
-	if nativeReference(t, "poll", row.GetString("name"), altered) != nil {
+	var altered map[string]any
+	if err := json.Unmarshal(rowRaw, &altered); err != nil {
+		t.Fatal(err)
+	}
+	altered["record"] = map[string]any{"status": "succeeded"}
+	alteredRaw, err := compactUnescapedJSON(altered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nativeReference(t, "poll", meta.Name, alteredRaw) != nil {
 		t.Fatal("changed input still selected native policy")
 	}
 }
-func verifyNativeCredentialReference(t *testing.T, name string, token any, want *jsonx.Object, got string, err error) bool {
+
+func verifyNativeCredentialReference(t *testing.T, name string, token any, want json.RawMessage, got string, err error) bool {
 	t.Helper()
-	row := nativeReference(t, "header", name, jsonx.Obj("name", name, "token", token, "python", want))
+	compactedWant, compactErr := compactRawJSON(want)
+	if compactErr != nil {
+		t.Fatal(compactErr)
+	}
+	raw, encodeErr := compactUnescapedJSON(struct {
+		Name   string          `json:"name"`
+		Token  any             `json:"token"`
+		Python json.RawMessage `json:"python"`
+	}{name, token, compactedWant})
+	if encodeErr != nil {
+		t.Fatal(encodeErr)
+	}
+	row := nativeReference(t, "header", name, raw)
 	if row == nil {
 		return false
 	}

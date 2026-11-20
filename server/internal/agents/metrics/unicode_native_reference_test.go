@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"golang.org/x/text/cases"
 )
 
@@ -67,52 +67,60 @@ func loadNativeCaseReference(t *testing.T) nativeCaseReference {
 		t.Fatal("original A05 archive changed", err)
 	}
 	result := nativeCaseReference{lower: map[rune]nativeCaseRow{}, sigma: map[rune]nativeCaseRow{}}
-	bound := func(original json.RawMessage, hash string) *jsonx.Object {
+	verifyHash := func(original json.RawMessage, hash string) {
 		t.Helper()
-		value, err := jsonx.Parse(original)
-		if err != nil {
-			t.Fatal(err)
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, original); err != nil || fmt.Sprintf("%x", sha256.Sum256(compact.Bytes())) != hash {
+			t.Fatal("original Unicode row binding changed", err)
 		}
-		row := value.(*jsonx.Object)
-		raw, err := jsonx.Compact(row)
-		if err != nil || fmt.Sprintf("%x", sha256.Sum256(raw)) != hash {
-			t.Fatal("original Unicode row binding changed")
-		}
-		return row
 	}
-	codepoint := func(row *jsonx.Object) rune {
+	parseCodepoint := func(hexCP string) rune {
 		t.Helper()
-		cp, err := strconv.ParseInt(row.GetString("codepoint"), 16, 32)
+		cp, err := strconv.ParseInt(hexCP, 16, 32)
 		if err != nil || !utf8.ValidRune(rune(cp)) {
 			t.Fatal("invalid bound codepoint", err)
 		}
 		return rune(cp)
 	}
 	for _, entry := range reference.Lower {
-		row := bound(entry.Original, entry.SHA)
-		cp := codepoint(row)
-		if entry.Evidence == "" || row.GetString("lower") == entry.Native.Lower {
+		verifyHash(entry.Original, entry.SHA)
+		var row struct {
+			Codepoint string `json:"codepoint"`
+			Lower     string `json:"lower"`
+		}
+		if err := json.Unmarshal(entry.Original, &row); err != nil {
+			t.Fatal(err)
+		}
+		cp := parseCodepoint(row.Codepoint)
+		if entry.Evidence == "" || row.Lower == entry.Native.Lower {
 			t.Fatal("empty official lower exception", cp)
 		}
 		if _, duplicate := result.lower[cp]; duplicate {
 			t.Fatal("duplicate lower row", cp)
 		}
-		result.lower[cp] = nativeCaseRow{oldLower: row.GetString("lower"), newLower: entry.Native.Lower}
+		result.lower[cp] = nativeCaseRow{oldLower: row.Lower, newLower: entry.Native.Lower}
 	}
 	for _, entry := range reference.Sigma {
-		row := bound(entry.Original, entry.SHA)
-		cp := codepoint(row)
+		verifyHash(entry.Original, entry.SHA)
+		var row struct {
+			Codepoint string `json:"codepoint"`
+			After     bool   `json:"after"`
+			Before    bool   `json:"before"`
+		}
+		if err := json.Unmarshal(entry.Original, &row); err != nil {
+			t.Fatal(err)
+		}
+		cp := parseCodepoint(row.Codepoint)
 		if len(entry.Evidence) == 0 {
 			t.Fatal("missing official sigma evidence", cp)
 		}
-		oldAfter, oldBefore := row.GetBool("after"), row.GetBool("before")
-		if oldAfter == entry.Native.After && oldBefore == entry.Native.Before {
+		if row.After == entry.Native.After && row.Before == entry.Native.Before {
 			t.Fatal("empty sigma exception", cp)
 		}
 		if _, duplicate := result.sigma[cp]; duplicate {
 			t.Fatal("duplicate sigma row", cp)
 		}
-		result.sigma[cp] = nativeCaseRow{oldAfter: oldAfter, oldBefore: oldBefore, newAfter: entry.Native.After, newBefore: entry.Native.Before}
+		result.sigma[cp] = nativeCaseRow{oldAfter: row.After, oldBefore: row.Before, newAfter: entry.Native.After, newBefore: entry.Native.Before}
 	}
 	return result
 }

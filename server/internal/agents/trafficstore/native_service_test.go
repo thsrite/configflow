@@ -1,14 +1,49 @@
 package trafficstore
 
 import (
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"os"
 	"testing"
 	"time"
 )
+
+func decodeCleanedReport(raw json.RawMessage) (*Report, error) {
+	var f model.Fields
+	if err := jsondecode.Unmarshal(raw, &f); err != nil {
+		return nil, err
+	}
+	if !f.Has("schema") {
+		if err := f.Set("schema", json.RawMessage("1")); err != nil {
+			return nil, err
+		}
+	}
+	dropped := member(f, "dropped")
+	if len(dropped) == 0 {
+		dropped = []byte("0")
+	}
+	n, ok := new(big.Int).SetString(string(dropped), 10)
+	if !ok || n.Sign() < 0 {
+		return nil, &TypeError{Message: "invalid cleaned dropped counter"}
+	}
+	if err := f.Set("dropped", json.RawMessage("0")); err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	report, err := DecodeReport(raw)
+	if report != nil {
+		report.Dropped = n
+	}
+	return report, err
+}
 
 func nativeReport(t *testing.T) *Report {
 	t.Helper()

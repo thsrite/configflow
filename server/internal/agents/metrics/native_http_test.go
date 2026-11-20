@@ -30,15 +30,15 @@ func TestNativeHugeMetricHTTPResponsesRemainValid(t *testing.T) {
 		}
 		srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 			r.GET("/metrics/summary", "test.summary", func(c *httpx.Ctx) (*httpx.Response, error) {
-				v, e := history.GetMetricsSummary(id, big.NewInt(1))
+				v, e := history.Summarize(id, big.NewInt(1))
 				return httpx.JSON(v), e
 			})
 			r.GET("/metrics/traffic", "test.traffic", func(c *httpx.Ctx) (*httpx.Response, error) {
-				v, e := history.GetTrafficStats(id, "total")
+				v, e := history.TrafficStatistics(id, "total")
 				return httpx.JSON(v), e
 			})
 			r.GET("/metrics/trend", "test.trend", func(c *httpx.Ctx) (*httpx.Response, error) {
-				v, e := history.GetTrafficTrend(id, big.NewInt(24), big.NewInt(5))
+				v, e := history.TrafficTrend(id, big.NewInt(24), big.NewInt(5))
 				return httpx.JSON(v), e
 			})
 		})})

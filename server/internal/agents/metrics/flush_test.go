@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,11 +17,12 @@ import (
 	"configflow/internal/agents"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 func bigOf(i int64) *big.Int { return big.NewInt(i) }
@@ -56,16 +56,18 @@ func fresh(t *testing.T) {
 
 func seedAgent(t *testing.T, ctx context.Context, r *repo.Repository, heartbeat bool) {
 	t.Helper()
-	agent := jsonx.Obj("id", "agent_1", "name", "Edge", "service_type", "mihomo", "profile_id", "default",
-		"token", "agent-token-0123456789abcdef", "host", "h", "port", 8080)
-	if heartbeat {
-		agent.Set("last_heartbeat", isoformat(naiveNow()))
+	agentMap := map[string]any{
+		"id": "agent_1", "name": "Edge", "service_type": "mihomo", "profile_id": "default",
+		"token": "agent-token-0123456789abcdef", "host": "h", "port": 8080,
 	}
-	_, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{agent})
-		return nil, nil
-	})
-	if err != nil {
+	if heartbeat {
+		agentMap["last_heartbeat"] = isoformat(naiveNow())
+	}
+	agent := agentModelForTest(t, agentMap)
+	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{*agent}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -89,9 +91,9 @@ func agentManager(t *testing.T) (*agents.Manager, *repo.Repository, context.Cont
 	return m, r, ctx
 }
 
-func heartbeat(t *testing.T, ctx context.Context, m *agents.Manager, metrics *jsonx.Object) {
+func heartbeat(t *testing.T, ctx context.Context, m *agents.Manager, metrics map[string]any) {
 	t.Helper()
-	ok, err := m.ObserveHeartbeat(ctx, "agent_1", agentModelForTest(t, jsonx.Obj("system_metrics", metrics)))
+	ok, err := m.ObserveHeartbeat(ctx, "agent_1", agentModelForTest(t, map[string]any{"system_metrics": metrics}))
 	if !ok || err != nil {
 		t.Fatalf("heartbeat %v %v", ok, err)
 	}
@@ -177,7 +179,7 @@ func TestServiceStartupLoadsAndMigratesSavedHistory(t *testing.T) {
 	metricsDir := filepath.Join(r.DataDir(), "metrics")
 	os.MkdirAll(metricsDir, 0o755)
 	recent := pointAt(naiveNow().Add(-time.Minute), 4)
-	text, _ := jsonx.Default(jsonx.Obj("metrics", []any{recent}))
+	text, _ := json.Marshal(map[string]any{"metrics": []any{recent}})
 	os.WriteFile(filepath.Join(metricsDir, "agent_1_metrics.json"), text, 0o644)
 	m, err := agents.Init(ctx)
 	if err != nil {
@@ -194,7 +196,7 @@ func TestServiceStartupLoadsAndMigratesSavedHistory(t *testing.T) {
 	if len(get(t, ForManager(m), "agent_1", nil)) != 1 {
 		t.Fatal("loaded twice")
 	}
-	if got := LoadHistory(ctx, m); got == nil || got.GetInt("loaded") != 1 || got.GetInt("migrated") != 0 {
+	if got := LoadSavedHistory(ctx, m); got == nil || got.Loaded != 1 || got.Migrated != 0 {
 		t.Fatal(got)
 	}
 }
@@ -204,9 +206,9 @@ func TestServiceStartupLoadsAndMigratesSavedHistory(t *testing.T) {
 func tasksApp(t *testing.T) (*httpxtest.Server, *agents.Manager) {
 	t.Helper()
 	fresh(t)
-	none := func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }
+	none := func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
-		t.Cleanup(tasks.SetRows(slot, none))
+		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
 	seedAgent(t, srv.Context(), srv.Repo, false)
@@ -226,11 +228,17 @@ func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
 	}
 }
 
-func taskRow(t *testing.T, srv *httpxtest.Server) *jsonx.Object {
+func taskRow(t *testing.T, srv *httpxtest.Server) map[string]any {
 	t.Helper()
-	body := srv.Get("/api/tasks").WantStatus(200).Object()
-	for _, item := range body.GetList("tasks") {
-		if row := item.(*jsonx.Object); row.GetString("key") == TaskKey {
+	res := srv.Get("/api/tasks").WantStatus(200)
+	var body struct {
+		Tasks []map[string]any `json:"tasks"`
+	}
+	if err := json.Unmarshal(res.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range body.Tasks {
+		if row["key"] == TaskKey {
 			return row
 		}
 	}
@@ -252,22 +260,29 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 	srv, m := tasksApp(t)
 	ctx := srv.Context()
 	row := taskRow(t, srv)
-	wantEqual(t, "row", jsonx.Obj("category", row.Value("category"), "name", row.Value("name"),
-		"interval_seconds", row.Value("interval_seconds"), "editable", row.Value("editable"), "can_run", row.Value("can_run"),
-		"enabled", row.Value("enabled")), jsonx.Obj("category", "metrics_history", "name", "监控历史保存",
-		"interval_seconds", 1800, "editable", true, "can_run", true, "enabled", true))
-	for key, want := range map[string]any{"last_run_at": nil, "next_run_at": nil, "link": "/agents", "profile_id": nil,
-		"detail": "Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录"} {
-		if v, present := row.Get(key); !present || !jsonx.Equal(v, want) {
+	wantEqual(t, "row", map[string]any{
+		"category": row["category"], "name": row["name"],
+		"interval_seconds": row["interval_seconds"], "editable": row["editable"], "can_run": row["can_run"],
+		"enabled": row["enabled"],
+	}, map[string]any{
+		"category": "metrics_history", "name": "监控历史保存",
+		"interval_seconds": 1800, "editable": true, "can_run": true, "enabled": true,
+	})
+	for key, want := range map[string]any{
+		"last_run_at": nil, "next_run_at": nil, "link": "/agents", "profile_id": nil,
+		"detail": "Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录",
+	} {
+		v, present := row[key]
+		if !present || !testjson.Equal(want, v) {
 			t.Fatalf("%s = %v", key, v)
 		}
 	}
 
 	heartbeat(t, ctx, m, sample(1))
-	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", TaskKey))).WantStatus(202)
+	srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": TaskKey})).WantStatus(202)
 	waitBackground(t)
 	row = taskRow(t, srv)
-	if row.Value("last_status") != "success" || row.Value("last_trigger") != "manual" || row.GetInt("run_count") != 1 {
+	if row["last_status"] != "success" || row["last_trigger"] != "manual" || !testjson.Equal(1, row["run_count"]) {
 		t.Fatal(row)
 	}
 	if len(readLines(t, filepath.Join(ForManager(m).DataDir, "agent_1_metrics.jsonl"))) != 1 {
@@ -280,13 +295,13 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 		return &os.PathError{Op: "open", Path: path, Err: syscall.EROFS}
 	}
 	heartbeat(t, ctx, m, sample(2))
-	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", TaskKey))).WantStatus(202)
+	srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": TaskKey})).WantStatus(202)
 	waitBackground(t)
 	row = taskRow(t, srv)
-	if row.Value("last_status") != "failed" || row.GetInt("failure_count") != 1 {
+	if row["last_status"] != "failed" || !testjson.Equal(1, row["failure_count"]) {
 		t.Fatal(row)
 	}
-	if text := row.GetString("last_error"); !strings.Contains(text, "文件系统只读") || !strings.Contains(text, "下次保存时重试") {
+	if text, _ := row["last_error"].(string); !strings.Contains(text, "文件系统只读") || !strings.Contains(text, "下次保存时重试") {
 		t.Fatal(text)
 	}
 	if ForManager(m).PendingCount() != 1 {
@@ -297,45 +312,44 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 	srv, _ := tasksApp(t)
 	ctx := srv.Context()
-	for _, value := range []any{jsonx.Int(120), jsonx.Int(900), "600", true, nil, jsonx.Int(0)} {
-		body := srv.Put("/api/tasks/interval", httpxtest.JSON(jsonx.Obj("key", TaskKey, "interval_seconds", value))).
-			WantStatus(400).Object()
-		if body.GetString("message") != "保存间隔只能是 5、10、30 或 60 分钟" {
-			t.Fatal(body)
+	for _, value := range []any{120, 900, "600", true, nil, 0} {
+		res := srv.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": TaskKey, "interval_seconds": value})).WantStatus(400)
+		msg, _ := testjson.Path(json.RawMessage(res.Body), "message")
+		if msg != "保存间隔只能是 5、10、30 或 60 分钟" {
+			t.Fatalf("%s", res.Body)
 		}
 	}
-	system, _ := srv.Repo.GetSystem(ctx)
-	if system.GetObject("system_config").Has(Setting) {
+	system, _ := srv.Repo.System(ctx)
+	if _, ok, _ := system.SystemConfig.MemberJSON(Setting); ok {
 		t.Fatal("stored")
 	}
 
 	started := time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)
 	SetStartedAt(&started)
-	if got := taskRow(t, srv).Value("next_run_at"); got != "2026-10-24T00:30:00Z" {
+	if got := taskRow(t, srv)["next_run_at"]; got != "2026-10-24T00:30:00Z" {
 		t.Fatal(got)
 	}
 	if ran, _ := RunDue(ctx, started.Add(10*time.Minute)); ran {
 		t.Fatal("ran early")
 	}
-	body := srv.Put("/api/tasks/interval", httpxtest.JSON(jsonx.Obj("key", TaskKey, "interval_seconds", 300))).WantStatus(200).Object()
-	if jsonx.Path(body, "task", "interval_seconds") != jsonx.Int(300) {
-		t.Fatal(body)
+	res := srv.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": TaskKey, "interval_seconds": 300})).WantStatus(200)
+	if got, _ := testjson.Path(json.RawMessage(res.Body), "task", "interval_seconds"); !testjson.Equal(300, got) {
+		t.Fatalf("%s", res.Body)
 	}
-	system, _ = srv.Repo.GetSystem(ctx)
-	if system.GetObject("system_config").Value(Setting) != jsonx.Int(300) {
-		t.Fatal(system)
+	system, _ = srv.Repo.System(ctx)
+	if raw, ok, _ := system.SystemConfig.MemberJSON(Setting); !ok || !testjson.Equal(300, raw) {
+		t.Fatalf("%s", raw)
 	}
 	if ran, err := RunDue(ctx, started.Add(10*time.Minute)); !ran || err != nil {
 		t.Fatal(ran, err)
 	}
-	entry, _ := taskstatus.New(srv.DataDir).Get(TaskKey)
-	if entry.Value("last_trigger") != "schedule" {
+	entry := readReceipt(t, srv.DataDir)
+	if entry.LastTrigger == nil || *entry.LastTrigger != "schedule" {
 		t.Fatal(entry)
 	}
 	// An unexpected stored value falls back to the default instead of breaking the loop.
-	srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set(Setting, 7)
-		return nil, nil
+	_ = srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		return system.SystemConfig.SetJSON(Setting, json.RawMessage(`7`))
 	})
 	if got, _ := currentIntervalSeconds(ctx); got != 1800 {
 		t.Fatal(got)
@@ -357,8 +371,8 @@ func TestFailedStatusRecordDoesNotRerunEveryTick(t *testing.T) {
 	if ran, err := RunDue(ctx, current); !ran || err != nil {
 		t.Fatal(ran, err)
 	}
-	entry, _ := taskstatus.New(srv.DataDir).Get(TaskKey)
-	if entry.Has("last_run_at") {
+	entry := readReceipt(t, srv.DataDir)
+	if entry.LastRunAt != nil {
 		t.Fatal(entry)
 	}
 	// The next tick waits a full interval from this attempt, not from startup.
@@ -375,7 +389,7 @@ func TestHistoryOfAgentsRemovedByImportIsDroppedOnTheNextSave(t *testing.T) {
 	ctx := srv.Context()
 	h := ForManager(m)
 	heartbeat(t, ctx, m, sample(1))
-	if _, err := Run(ctx, "manual", true); err != nil {
+	if _, err := FlushNow(ctx, "manual", true); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(h.DataDir, "agent_1_metrics.jsonl")
@@ -383,11 +397,11 @@ func TestHistoryOfAgentsRemovedByImportIsDroppedOnTheNextSave(t *testing.T) {
 		t.Fatal("not saved")
 	}
 	// Backup restore / reset replace the Agent list without deleting Agents.
-	srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{})
-		return nil, nil
+	_ = srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{}
+		return nil
 	})
-	if _, err := Run(ctx, "manual", true); err != nil {
+	if _, err := FlushNow(ctx, "manual", true); err != nil {
 		t.Fatal(err)
 	}
 	if exists(path) || len(get(t, h, "agent_1", nil)) != 0 || h.PendingCount() != 0 {
@@ -403,23 +417,23 @@ func TestShutdownSavesAndRecordsTheRun(t *testing.T) {
 	srv, m := tasksApp(t)
 	ctx := srv.Context()
 	heartbeat(t, ctx, m, sample(1))
-	if result := FlushOnShutdown(ctx, true); result == nil || result.GetInt("appended") != 1 {
+	if result := SaveOnShutdown(ctx, true); result == nil || result.Appended != 1 {
 		t.Fatal(result)
 	}
 	if ForManager(m).PendingCount() != 0 {
 		t.Fatal("pending")
 	}
-	entry, _ := taskstatus.New(srv.DataDir).Get(TaskKey)
-	if entry.Value("last_trigger") != "shutdown" || entry.Value("last_status") != "success" {
+	entry := readReceipt(t, srv.DataDir)
+	if entry.LastTrigger == nil || *entry.LastTrigger != "shutdown" || entry.LastStatus == nil || *entry.LastStatus != "success" {
 		t.Fatal(entry)
 	}
 	// record_idle=False records nothing without new data; True always does.
-	FlushOnShutdown(ctx, false)
-	if again, _ := taskstatus.New(srv.DataDir).Get(TaskKey); again.GetInt("run_count") != 1 {
+	SaveOnShutdown(ctx, false)
+	if again := readReceipt(t, srv.DataDir); receiptCount(again.RunCount) != 1 {
 		t.Fatal(again)
 	}
-	FlushOnShutdown(ctx, true)
-	if again, _ := taskstatus.New(srv.DataDir).Get(TaskKey); again.GetInt("run_count") != 2 {
+	SaveOnShutdown(ctx, true)
+	if again := readReceipt(t, srv.DataDir); receiptCount(again.RunCount) != 2 {
 		t.Fatal(again)
 	}
 }
@@ -443,9 +457,9 @@ func TestShutdownSaveDuringARunningSaveDoesNotDeadlock(t *testing.T) {
 		return previous(ctx, path, lines)
 	}
 	done := make(chan struct{}, 2)
-	go func() { Run(ctx, "schedule", true); done <- struct{}{} }()
+	go func() { FlushNow(ctx, "schedule", true); done <- struct{}{} }()
 	<-entered
-	go func() { FlushOnShutdown(ctx, false); done <- struct{}{} }()
+	go func() { SaveOnShutdown(ctx, false); done <- struct{}{} }()
 	heartbeat(t, ctx, m, sample(3))
 	close(release)
 	for i := 0; i < 2; i++ {
@@ -480,7 +494,7 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 	metricsDir := filepath.Join(dataDir, "metrics")
 	os.MkdirAll(metricsDir, 0o755)
 	oldPoint := pointAt(naiveNow().Add(-time.Minute), 3)
-	text, _ := jsonx.Default(jsonx.Obj("agent_id", "agent_1", "metrics", []any{oldPoint}))
+	text, _ := json.Marshal(map[string]any{"agent_id": "agent_1", "metrics": []any{oldPoint}})
 	os.WriteFile(filepath.Join(metricsDir, "agent_1_metrics.json"), text, 0o644)
 	os.WriteFile(filepath.Join(metricsDir, "deleted_metrics.jsonl"), []byte(dumps(t, oldPoint)+"\n"), 0o644)
 
@@ -492,7 +506,7 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 		t.Fatal(lifecycle.Names())
 	}
 	lifecycle.Start(ctx)
-	heartbeat(t, ctx, m, jsonx.Obj("cpu", jsonx.Obj("usage_percent", 7)))
+	heartbeat(t, ctx, m, map[string]any{"cpu": map[string]any{"usage_percent": 7}})
 	lifecycle.Stop(10 * time.Second)
 
 	if got := strings.Join(names(t, metricsDir), ","); got != "agent_1_metrics.jsonl" {
@@ -500,11 +514,12 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 	}
 	var saved []any
 	for _, line := range parsedLines(t, filepath.Join(metricsDir, "agent_1_metrics.jsonl")) {
-		saved = append(saved, line.(*jsonx.Object).Value("cpu"))
+		cpu, _ := testjson.Path(line, "cpu")
+		saved = append(saved, cpu)
 	}
-	wantEqual(t, "saved", saved, []any{jsonx.Obj("usage_percent", 3), jsonx.Obj("usage_percent", 7)})
-	entry, _ := taskstatus.New(dataDir).Get(TaskKey)
-	if entry.Value("last_status") != "success" || entry.Value("last_trigger") != "shutdown" || entry.GetInt("run_count") != 1 {
+	wantEqual(t, "saved", saved, []any{map[string]any{"usage_percent": 3}, map[string]any{"usage_percent": 7}})
+	entry := readReceipt(t, dataDir)
+	if entry.LastStatus == nil || *entry.LastStatus != "success" || entry.LastTrigger == nil || *entry.LastTrigger != "shutdown" || receiptCount(entry.RunCount) != 1 {
 		t.Fatal(entry)
 	}
 }
@@ -524,9 +539,9 @@ func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
 	replaceFile = func(string, string) error { return full }
 	shutdownFlush(ctx, true)
 	shutdownFlush(ctx, false)
-	entry, _ := taskstatus.New(srv.DataDir).Get(TaskKey)
-	if entry.Value("last_status") != "failed" || entry.Value("last_trigger") != "shutdown" ||
-		entry.GetInt("run_count") != 2 || entry.GetInt("failure_count") != 2 || entry.GetInt("consecutive_failures") != 2 {
+	entry := readReceipt(t, srv.DataDir)
+	if entry.LastStatus == nil || *entry.LastStatus != "failed" || entry.LastTrigger == nil || *entry.LastTrigger != "shutdown" ||
+		receiptCount(entry.RunCount) != 2 || receiptCount(entry.FailureCount) != 2 || receiptCount(entry.ConsecutiveFailures) != 2 {
 		t.Fatal(entry)
 	}
 	if ForManager(m).PendingCount() != 1 {
@@ -535,8 +550,8 @@ func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
 	appendLines, replaceFile = previous, previousReplace
 	shutdownFlush(ctx, true)
 	shutdownFlush(ctx, false)
-	entry, _ = taskstatus.New(srv.DataDir).Get(TaskKey)
-	if entry.Value("last_status") != "success" || entry.GetInt("run_count") != 3 || entry.GetInt("consecutive_failures") != 0 {
+	entry = readReceipt(t, srv.DataDir)
+	if entry.LastStatus == nil || *entry.LastStatus != "success" || receiptCount(entry.RunCount) != 3 || receiptCount(entry.ConsecutiveFailures) != 0 {
 		t.Fatal(entry)
 	}
 }

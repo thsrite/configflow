@@ -7,6 +7,7 @@ package upgrades
 // ported: the Go server does not run on Windows (os.name == 'nt' branch).
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -19,7 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 func artifactDir(t *testing.T) string {
@@ -44,21 +46,24 @@ func put(t *testing.T, dir string, content []byte, arch string) string {
 	return path
 }
 
-func artifactInfo(content []byte) *jsonx.Object {
+func artifactInfo(content []byte) map[string]any {
 	sum := sha256.Sum256(content)
-	return jsonx.Obj("sha256", hex.EncodeToString(sum[:]), "size", len(content))
+	return map[string]any{"sha256": hex.EncodeToString(sum[:]), "size": len(content)}
 }
 
-func mustArtifacts(t *testing.T) *jsonx.Object {
+func mustArtifacts(t *testing.T) model.Map[model.UpgradeArtifact] {
 	t.Helper()
-	result, err := Artifacts()
+	result, err := ArtifactsModel(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return result
 }
 
-func firstArch(t *testing.T) any { return mustArtifacts(t).Value(Arches[0]) }
+func firstArch(t *testing.T) model.UpgradeArtifact {
+	v, _ := mustArtifacts(t).Get(Arches[0])
+	return v
+}
 
 // interceptReads counts the opens of path and calls callback after every
 // read of it (Python's ReadProxy).
@@ -97,16 +102,16 @@ func utime(t *testing.T, path string, atime, mtime int64) {
 
 func TestStreamingMatchesAllArchesAndPreservesOrder(t *testing.T) {
 	dir := artifactDir(t)
-	want := jsonx.NewObject()
+	want := map[string]any{}
 	for _, arch := range Arches {
 		content := append([]byte("\x7fELF"), []byte(strings.Repeat(arch, 5000))...)
 		put(t, dir, content, arch)
-		want.Set(arch, artifactInfo(content))
+		want[arch] = artifactInfo(content)
 	}
 	artifactReadBytes = 3
 	got := mustArtifacts(t)
-	if !jsonx.Equal(got, want) || strings.Join(mustArtifacts(t).Keys(), ",") != strings.Join(Arches, ",") {
-		t.Fatalf("got %s", jsonx.Repr(got))
+	if !testjson.Equal(want, got) || strings.Join(mustArtifacts(t).Keys(), ",") != strings.Join(Arches, ",") {
+		t.Fatalf("got %+v", got)
 	}
 }
 
@@ -123,12 +128,12 @@ func TestElfAndInclusiveSizeLimit(t *testing.T) {
 		dir := artifactDir(t)
 		maxArtifactBytes = 16
 		put(t, dir, []byte(c.content), Arches[0])
-		want := jsonx.NewObject()
+		want := map[string]any{}
 		if c.accepted {
-			want.Set(Arches[0], artifactInfo([]byte(c.content)))
+			want[Arches[0]] = artifactInfo([]byte(c.content))
 		}
-		if got := mustArtifacts(t); !jsonx.Equal(got, want) {
-			t.Fatalf("%q: got %s", c.content, jsonx.Repr(got))
+		if got := mustArtifacts(t); !testjson.Equal(want, got) {
+			t.Fatalf("%q: got %+v", c.content, got)
 		}
 	}
 }
@@ -137,7 +142,7 @@ func TestMissingAndNonregularArtifactsAreSkipped(t *testing.T) {
 	dir := artifactDir(t)
 	os.Mkdir(filepath.Join(dir, "configflow-agent-"+Arches[1]), 0o755)
 	if got := mustArtifacts(t); got.Len() != 0 {
-		t.Fatalf("got %s", jsonx.Repr(got))
+		t.Fatalf("got %+v", got)
 	}
 }
 
@@ -147,13 +152,15 @@ func TestCacheAvoidsRereadAndReturnsIndependentDicts(t *testing.T) {
 	path := put(t, dir, content, Arches[0])
 	opened := interceptReads(path, nil)
 	first := mustArtifacts(t)
-	first.GetObject(Arches[0]).Set("sha256", "corrupt")
-	first.Set("new", jsonx.NewObject())
+	item, _ := first.Get(Arches[0])
+	item.SHA256 = "corrupt"
+	first.Set(Arches[0], item)
+	first.Set("new", model.UpgradeArtifact{})
 	second := mustArtifacts(t)
-	if !jsonx.Equal(second, jsonx.Obj(Arches[0], artifactInfo(content))) || *opened != 1 {
-		t.Fatalf("second %s opened %d", jsonx.Repr(second), *opened)
+	if !testjson.Equal(map[string]any{Arches[0]: artifactInfo(content)}, second) || *opened != 1 {
+		t.Fatalf("second %+v opened %d", second, *opened)
 	}
-	if first == second || first.GetObject(Arches[0]) == second.GetObject(Arches[0]) {
+	if second.Len() != 1 {
 		t.Fatal("shared objects")
 	}
 }
@@ -163,7 +170,7 @@ func TestInPlaceEditWithSameSizeAndMtimeInvalidatesCache(t *testing.T) {
 	path := put(t, dir, []byte("\x7fELFold"), Arches[0])
 	atime, mtime, ctime := statNS(t, path)
 	opened := interceptReads(path, nil)
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFold"))) {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFold")), firstArch(t)) {
 		t.Fatal("old")
 	}
 	os.WriteFile(path, []byte("\x7fELFnew"), 0o644)
@@ -179,7 +186,7 @@ func TestInPlaceEditWithSameSizeAndMtimeInvalidatesCache(t *testing.T) {
 	if _, m, c := statNS(t, path); c == ctime || m != mtime {
 		t.Fatal("ctime did not change")
 	}
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFnew"))) || *opened != 2 {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFnew")), firstArch(t)) || *opened != 2 {
 		t.Fatalf("opened %d", *opened)
 	}
 }
@@ -194,7 +201,7 @@ func TestReplacementWithSameSizeAndMtimeInvalidatesCache(t *testing.T) {
 	os.WriteFile(replacement, []byte("\x7fELFnew"), 0o644)
 	utime(t, replacement, atime, mtime)
 	os.Rename(replacement, path)
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFnew"))) || *opened != 2 {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFnew")), firstArch(t)) || *opened != 2 {
 		t.Fatalf("opened %d", *opened)
 	}
 }
@@ -206,10 +213,10 @@ func TestDeletionDiscardsCachedSummaryAndRecreationIsRead(t *testing.T) {
 	mustArtifacts(t)
 	os.Remove(path)
 	if got := mustArtifacts(t); got.Len() != 0 || cacheLen() != 0 {
-		t.Fatalf("got %s cache %d", jsonx.Repr(got), cacheLen())
+		t.Fatalf("got %+v cache %d", got, cacheLen())
 	}
 	os.WriteFile(path, []byte("\x7fELFnew"), 0o644)
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFnew"))) || *opened != 2 {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFnew")), firstArch(t)) || *opened != 2 {
 		t.Fatalf("opened %d", *opened)
 	}
 }
@@ -217,18 +224,18 @@ func TestDeletionDiscardsCachedSummaryAndRecreationIsRead(t *testing.T) {
 func TestDirectorySwitchDoesNotReuseSameName(t *testing.T) {
 	dir := artifactDir(t)
 	put(t, dir, []byte("\x7fELFold"), Arches[0])
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFold"))) {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFold")), firstArch(t)) {
 		t.Fatal("old")
 	}
 	other := filepath.Join(dir, "other")
 	os.Mkdir(other, 0o755)
 	put(t, other, []byte("\x7fELFnew"), Arches[0])
 	t.Setenv("AGENTS_STATIC_DIR", other)
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFnew"))) || cacheLen() != 2 {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFnew")), firstArch(t)) || cacheLen() != 2 {
 		t.Fatalf("cache %d", cacheLen())
 	}
 	t.Setenv("AGENTS_STATIC_DIR", dir)
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFold"))) {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFold")), firstArch(t)) {
 		t.Fatal("old again")
 	}
 }
@@ -261,10 +268,10 @@ func TestReplacementWhileReadingRetriesBeforePublishing(t *testing.T) {
 		}
 		return nil
 	})
-	if !jsonx.Equal(firstArch(t), artifactInfo(newContent)) || *opened != 2 {
+	if !testjson.Equal(artifactInfo(newContent), firstArch(t)) || *opened != 2 {
 		t.Fatalf("opened %d", *opened)
 	}
-	if !jsonx.Equal(firstArch(t), artifactInfo(newContent)) || *opened != 2 {
+	if !testjson.Equal(artifactInfo(newContent), firstArch(t)) || *opened != 2 {
 		t.Fatalf("opened %d", *opened)
 	}
 }
@@ -283,7 +290,7 @@ func TestReplacementBetweenStatAndOpenRetries(t *testing.T) {
 			opened++
 		}
 	}
-	if !jsonx.Equal(firstArch(t), artifactInfo([]byte("\x7fELFnew"))) || opened != 2 {
+	if !testjson.Equal(artifactInfo([]byte("\x7fELFnew")), firstArch(t)) || opened != 2 {
 		t.Fatalf("opened %d", opened)
 	}
 }
@@ -300,7 +307,7 @@ func TestDeletionWhileReadingIsNotPublishedOrCached(t *testing.T) {
 		return nil
 	})
 	if got := mustArtifacts(t); got.Len() != 0 || cacheLen() != 0 {
-		t.Fatalf("got %s cache %d", jsonx.Repr(got), cacheLen())
+		t.Fatalf("got %+v cache %d", got, cacheLen())
 	}
 }
 
@@ -314,7 +321,7 @@ func TestRepeatedFileChangesFailWithoutCaching(t *testing.T) {
 		}
 		return nil
 	})
-	_, err := Artifacts()
+	_, err := ArtifactsModel(context.Background())
 	if !errors.Is(err, ErrArtifactChanged) || !strings.Contains(err.Error(), "changed while being read") || *opened != 2 || cacheLen() != 0 {
 		t.Fatalf("err %v opened %d cache %d", err, *opened, cacheLen())
 	}
@@ -325,7 +332,7 @@ func TestReadErrorsPropagateAndAreNotCached(t *testing.T) {
 		dir := artifactDir(t)
 		path := put(t, dir, []byte("\x7fELFbroken"), Arches[0])
 		interceptReads(path, func(int, int) error { return failure })
-		if _, err := Artifacts(); !errors.Is(err, failure) || cacheLen() != 0 {
+		if _, err := ArtifactsModel(context.Background()); !errors.Is(err, failure) || cacheLen() != 0 {
 			t.Fatalf("err %v cache %d", err, cacheLen())
 		}
 	}
@@ -343,7 +350,7 @@ func TestInvalidOversizeFileDoesNotHideLateReadErrors(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := Artifacts(); !errors.Is(err, late) {
+	if _, err := ArtifactsModel(context.Background()); !errors.Is(err, late) {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -370,13 +377,13 @@ func TestConcurrentRequestsShareOneCompleteDigest(t *testing.T) {
 			t.Error("not released")
 		}
 	}
-	results := make([]*jsonx.Object, 8)
+	results := make([]model.Map[model.UpgradeArtifact], 8)
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i], _ = Artifacts()
+			results[i], _ = ArtifactsModel(context.Background())
 		}(i)
 	}
 	select {
@@ -390,12 +397,15 @@ func TestConcurrentRequestsShareOneCompleteDigest(t *testing.T) {
 		t.Fatalf("reads %d", reads)
 	}
 	for _, result := range results {
-		if !jsonx.Equal(result, jsonx.Obj(Arches[0], artifactInfo(content))) {
-			t.Fatalf("result %s", jsonx.Repr(result))
+		if !testjson.Equal(map[string]any{Arches[0]: artifactInfo(content)}, result) {
+			t.Fatalf("result %+v", result)
 		}
 	}
-	results[0].GetObject(Arches[0]).Set("size", -1)
-	if !jsonx.Equal(results[1].GetObject(Arches[0]).Value("size"), len(content)) {
+	item, _ := results[0].Get(Arches[0])
+	item.Size = -1
+	results[0].Set(Arches[0], item)
+	secondItem, _ := results[1].Get(Arches[0])
+	if !testjson.Equal(len(content), secondItem.Size) {
 		t.Fatal("shared result")
 	}
 }

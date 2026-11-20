@@ -5,8 +5,11 @@ package metrics
 // graceful shutdown).
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +19,7 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 var start = time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
@@ -35,32 +38,44 @@ func useClock(t *testing.T) *testClock {
 	return c
 }
 
-func sample(i int) *jsonx.Object {
-	return jsonx.Obj("cpu", jsonx.Obj("usage_percent", i), "memory", jsonx.Obj("used_percent", 40+i),
-		"disk", jsonx.Obj("used_percent", 50),
-		"network", jsonx.Obj("bytes_sent", 1000*i, "bytes_recv", 2000*i, "speed_sent", i, "speed_recv", 2*i),
-		"collected_at", "ignored")
+func sample(i int) map[string]any {
+	return map[string]any{
+		"cpu":          map[string]any{"usage_percent": i},
+		"memory":       map[string]any{"used_percent": 40 + i},
+		"disk":         map[string]any{"used_percent": 50},
+		"network":      map[string]any{"bytes_sent": 1000 * i, "bytes_recv": 2000 * i, "speed_sent": i, "speed_recv": 2 * i},
+		"collected_at": "ignored",
+	}
+}
+
+func mustMarshal(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func add(t *testing.T, h *History, c *testClock, count int, agent string, step time.Duration) {
 	t.Helper()
 	for i := 0; i < count; i++ {
 		c.advance(step)
-		if ok, err := h.AddMetrics(agent, sample(i)); !ok || err != nil {
+		if ok, err := h.AddSample(context.Background(), agent, mustMarshal(t, sample(i))); !ok || err != nil {
 			t.Fatalf("add_metrics %v %v", ok, err)
 		}
 	}
 }
 
-func get(t *testing.T, h *History, agent string, hours any) []any {
+func get(t *testing.T, h *History, agent string, hours any) []json.RawMessage {
 	t.Helper()
-	var points []any
+	var points []json.RawMessage
 	var err error
 	switch v := hours.(type) {
 	case nil:
-		points, err = h.GetMetrics(agent, nil)
+		points, err = h.Samples(agent, nil)
 	case int:
-		points, err = h.GetMetrics(agent, bigOf(int64(v)))
+		points, err = h.Samples(agent, bigOf(int64(v)))
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -68,12 +83,35 @@ func get(t *testing.T, h *History, agent string, hours any) []any {
 	return points
 }
 
-func cpus(points []any) []string {
+func cpus(points []json.RawMessage) []string {
 	var out []string
 	for _, p := range points {
-		out = append(out, jsonx.Str(jsonx.Path(p, "cpu", "usage_percent")))
+		v, _ := testjson.Path(p, "cpu", "usage_percent")
+		out = append(out, fmt.Sprint(v))
 	}
 	return out
+}
+
+func jsonObjectKeys(t *testing.T, raw []byte) []string {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		t.Fatalf("expected object: %s (%v)", raw, err)
+	}
+	var keys []string
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, k.(string))
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return keys
 }
 
 func readLines(t *testing.T, path string) []string {
@@ -98,7 +136,7 @@ func parsedLines(t *testing.T, path string) []any {
 	t.Helper()
 	var out []any
 	for _, line := range readLines(t, path) {
-		value, err := jsonx.ParseString(line)
+		value, err := testjson.Parse([]byte(line))
 		if err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
@@ -123,10 +161,8 @@ func names(t *testing.T, dir string) []string {
 
 func wantEqual(t *testing.T, label string, got, want any) {
 	t.Helper()
-	if !jsonx.Equal(got, want) {
-		gotText, _ := jsonx.Compact(got)
-		wantText, _ := jsonx.Compact(want)
-		t.Fatalf("%s:\n got  %s\n want %s", label, gotText, wantText)
+	if diff := testjson.Diff(want, got); diff != "" {
+		t.Fatalf("%s: %s", label, diff)
 	}
 }
 
@@ -153,7 +189,7 @@ func TestMemoryKeeps24HoursAndCapsPointsPerAgent(t *testing.T) {
 	if h.PendingCount() != 5 {
 		t.Fatal(h.PendingCount())
 	}
-	if got := strings.Join(kept[0].(*jsonx.Object).Keys(), ","); got != "timestamp,cpu,memory,disk,network" {
+	if got := strings.Join(jsonObjectKeys(t, kept[0]), ","); got != "timestamp,cpu,memory,disk,network" {
 		t.Fatal(got)
 	}
 	if got := names(t, dir); len(got) != 0 { // heartbeats never touch the disk
@@ -294,14 +330,19 @@ func TestFailedAppendKeepsPointsAndRewritesNextTime(t *testing.T) {
 	}
 }
 
-func pointAt(at time.Time, cpu any) *jsonx.Object {
-	return jsonx.Obj("timestamp", isoformat(at), "cpu", jsonx.Obj("usage_percent", cpu),
-		"memory", jsonx.NewObject(), "disk", jsonx.NewObject(), "network", jsonx.NewObject())
+func pointAt(at time.Time, cpu any) map[string]any {
+	return map[string]any{
+		"timestamp": isoformat(at),
+		"cpu":       map[string]any{"usage_percent": cpu},
+		"memory":    map[string]any{},
+		"disk":      map[string]any{},
+		"network":   map[string]any{},
+	}
 }
 
 func dumps(t *testing.T, v any) string {
 	t.Helper()
-	data, err := jsonx.Default(v)
+	data, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +354,7 @@ func TestLoadingSkipsATruncatedLastLineAndOldPoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a1_metrics.jsonl")
 	old := pointAt(start.Add(-30*time.Hour), nil)
-	old.Set("cpu", jsonx.NewObject())
+	old["cpu"] = map[string]any{}
 	var good []any
 	lines := []string{dumps(t, old)}
 	for m := 6; m >= 1; m-- {
@@ -349,15 +390,27 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 	dir := t.TempDir()
 	var recent []any
 	for _, m := range []int{3, 2, 1} {
-		recent = append(recent, jsonx.Obj("timestamp", isoformat(start.Add(-time.Duration(m)*time.Minute)),
-			"cpu", jsonx.Obj("usage_percent", 1.5, "cores", 4), "memory", jsonx.Obj("used_percent", 33.3),
-			"disk", jsonx.NewObject(), "network", jsonx.Obj("bytes_sent", 10, "speed_sent", 0.5)))
+		recent = append(recent, map[string]any{
+			"timestamp": isoformat(start.Add(-time.Duration(m) * time.Minute)),
+			"cpu":       map[string]any{"usage_percent": 1.5, "cores": 4},
+			"memory":    map[string]any{"used_percent": 33.3},
+			"disk":      map[string]any{},
+			"network":   map[string]any{"bytes_sent": 10, "speed_sent": 0.5},
+		})
 	}
-	expired := recent[0].(*jsonx.Object).DeepCopy()
-	expired.Set("timestamp", isoformat(start.Add(-25*time.Hour)))
+	expired := map[string]any{
+		"timestamp": isoformat(start.Add(-25 * time.Hour)),
+		"cpu":       map[string]any{"usage_percent": 1.5, "cores": 4},
+		"memory":    map[string]any{"used_percent": 33.3},
+		"disk":      map[string]any{},
+		"network":   map[string]any{"bytes_sent": 10, "speed_sent": 0.5},
+	}
 	for _, agent := range []string{"a1", "gone"} {
-		text, _ := jsonx.Indent2(jsonx.Obj("agent_id", agent, "updated_at", isoformat(start),
-			"metrics", append([]any{expired}, recent...)))
+		text, _ := json.MarshalIndent(map[string]any{
+			"agent_id":   agent,
+			"updated_at": isoformat(start),
+			"metrics":    append([]any{expired}, recent...),
+		}, "", "  ")
 		os.WriteFile(filepath.Join(dir, agent+"_metrics.json"), text, 0o644)
 	}
 	os.WriteFile(filepath.Join(dir, "gone_metrics.jsonl"), []byte(dumps(t, recent[0])+"\n"), 0o644)
@@ -371,16 +424,14 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 		t.Fatal(got)
 	}
 	// Same points, same shape as the old file served before.
-	if !jsonx.Equal(get(t, h, "a1", 24), recent) {
-		t.Fatal(dumps(t, get(t, h, "a1", 24)))
-	}
+	wantEqual(t, "migrated", get(t, h, "a1", 24), recent)
 	wantEqual(t, "file", parsedLines(t, filepath.Join(dir, "a1_metrics.jsonl")), recent)
 	if h.PendingCount() != 0 {
 		t.Fatal(h.PendingCount())
 	}
 
 	// A migration interrupted after the new file was written keeps the new file.
-	text, _ := jsonx.Default(jsonx.Obj("metrics", []any{expired}))
+	text, _ := json.Marshal(map[string]any{"metrics": []any{expired}})
 	os.WriteFile(filepath.Join(dir, "a1_metrics.json"), text, 0o644)
 	again := NewHistory(dir, MaxPointsPerAgent)
 	if result, err := again.Load([]string{"a1"}); err != nil || result != (LoadResult{1, 0, 0}) {
@@ -398,38 +449,39 @@ func TestAPIShapesMatchThePointsKeptInMemory(t *testing.T) {
 	add(t, h, c, 12, "a1", 30*time.Second)
 	points := get(t, h, "a1", 24)
 	c.advance(time.Second)
-	summary, err := h.GetMetricsSummary("a1", bigOf(1))
+	summary, err := h.Summarize("a1", bigOf(1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.GetInt("data_points") != 12 {
+	if summary.DataPoints != 12 {
 		t.Fatal(summary)
 	}
-	wantEqual(t, "cpu", summary.Value("cpu"), jsonx.Obj("avg", 5.5, "max", 11, "min", 0))
-	stats, err := h.GetTrafficStats("a1", "hours_24")
+	wantEqual(t, "cpu", summary.CPU, map[string]any{"avg": 5.5, "max": 11, "min": 0})
+	stats, err := h.TrafficStatistics("a1", "hours_24")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.GetInt("bytes_sent") != 11000 || stats.GetInt("bytes_sent_delta") != 11000 || stats.GetInt("data_points") != 12 {
+	if !testjson.Equal(11000, stats.BytesSent) || !testjson.Equal(11000, stats.BytesSentDelta) || stats.DataPoints == nil || *stats.DataPoints != 12 {
 		t.Fatal(stats)
 	}
-	if stats.Value("start_time") != points[0].(*jsonx.Object).Value("timestamp") ||
-		stats.Value("end_time") != points[len(points)-1].(*jsonx.Object).Value("timestamp") {
+	firstTS, _ := testjson.Path(points[0], "timestamp")
+	lastTS, _ := testjson.Path(points[len(points)-1], "timestamp")
+	if stats.StartTime == nil || *stats.StartTime != firstTS || stats.EndTime == nil || *stats.EndTime != lastTS {
 		t.Fatal(stats)
 	}
-	trend, err := h.GetTrafficTrend("a1", bigOf(24), bigOf(5))
+	trend, err := h.TrafficTrend("a1", bigOf(24), bigOf(5))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trend[len(trend)-1].(*jsonx.Object).Value("timestamp") != points[len(points)-1].(*jsonx.Object).Value("timestamp") {
+	if trend[len(trend)-1].Timestamp != lastTS {
 		t.Fatal(trend)
 	}
 	// Each history point is exactly what a JSON round trip of the heartbeat gives.
-	want := jsonx.NewObject()
+	want := map[string]any{"timestamp": firstTS}
+	s0 := sample(0)
 	for _, key := range []string{"cpu", "memory", "disk", "network"} {
-		want.Set(key, sample(0).Value(key))
+		want[key] = s0[key]
 	}
-	want.Set("timestamp", points[0].(*jsonx.Object).Value("timestamp"))
 	wantEqual(t, "point", points[0], want)
 }
 
@@ -438,15 +490,15 @@ func TestPointsAreKeptAsCompactLinesAndReadBackAsFreshDicts(t *testing.T) {
 	// has no Go equivalent; points are kept as their JSON lines here too.
 	c := useClock(t)
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
-	base := jsonx.Obj("cpu", jsonx.Obj("usage_percent", 12.5, "core_count", 4),
-		"memory", jsonx.Obj("total", 8123456789, "used", 4123456789, "available", 4000000000, "used_percent", 50.7),
-		"disk", jsonx.Obj("total", 256123456789, "used", 100123456789, "free", 156000000000, "used_percent", 39.1),
-		"network", jsonx.Obj("bytes_sent", 123456789012, "bytes_recv", 987654321098, "speed_sent", 12345, "speed_recv", 54321))
 	for i := 0; i < 2000; i++ {
 		c.advance(30 * time.Second)
-		item := base.DeepCopy()
-		item.GetObject("network").Set("bytes_sent", i)
-		h.AddMetrics("a1", item)
+		item := map[string]any{
+			"cpu":     map[string]any{"usage_percent": 12.5, "core_count": 4},
+			"memory":  map[string]any{"total": 8123456789, "used": 4123456789, "available": 4000000000, "used_percent": 50.7},
+			"disk":    map[string]any{"total": 256123456789, "used": 100123456789, "free": 156000000000, "used_percent": 39.1},
+			"network": map[string]any{"bytes_sent": i, "bytes_recv": 987654321098, "speed_sent": 12345, "speed_recv": 54321},
+		}
+		_, _ = h.AddSample(context.Background(), "a1", mustMarshal(t, item))
 	}
 	h.mu.Lock()
 	line := h.points["a1"][0].line
@@ -454,31 +506,37 @@ func TestPointsAreKeptAsCompactLinesAndReadBackAsFreshDicts(t *testing.T) {
 	if !strings.HasPrefix(line, `{"timestamp":"`) || strings.Contains(line, ": ") {
 		t.Fatal(line)
 	}
-	first := get(t, h, "a1", nil)[0].(*jsonx.Object)
-	first.GetObject("cpu").Set("usage_percent", 99)
-	if got := jsonx.Str(jsonx.Path(get(t, h, "a1", nil)[0], "cpu", "usage_percent")); got != "12.5" {
+	first := get(t, h, "a1", nil)[0]
+	first[0] = 'X'
+	if got, _ := testjson.Path(get(t, h, "a1", nil)[0], "cpu", "usage_percent"); fmt.Sprint(got) != "12.5" {
 		t.Fatal(got)
 	}
 }
 
-// add_metrics of a value that is not a dict raises AttributeError (the
-// manager logs it as 监控历史保存失败).
+// AddSample rejects non-object payloads and defaults missing sections to {}.
 func TestAddMetricsOfANonObjectFailsLikePython(t *testing.T) {
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
-	for value, want := range map[string]any{"list": []any{}, "str": "x", "int": jsonx.Int(1), "float": jsonx.Float(1.5),
-		"bool": true, "NoneType": nil} {
-		ok, err := h.AddMetrics("a1", want)
-		if ok || err == nil || err.Error() != "'"+value+"' object has no attribute 'get'" {
-			t.Errorf("%s: %v %v", value, ok, err)
+	for name, raw := range map[string]string{
+		"list": `[]`, "str": `"x"`, "int": `1`, "float": `1.5`, "bool": `true`, "NoneType": `null`,
+	} {
+		ok, err := h.AddSample(context.Background(), "a1", json.RawMessage(raw))
+		if ok || err == nil {
+			t.Errorf("%s: %v %v", name, ok, err)
 		}
 	}
 	// Missing sections default to {}; present ones are kept whatever they are.
-	h.AddMetrics("a1", jsonx.Obj("cpu", nil, "memory", "x"))
-	wantEqual(t, "point", get(t, h, "a1", nil)[0].(*jsonx.Object).Value("memory"), "x")
-	if v, _ := get(t, h, "a1", nil)[0].(*jsonx.Object).Get("cpu"); v != nil {
-		t.Fatal(v)
+	if ok, err := h.AddSample(context.Background(), "a1", json.RawMessage(`{"cpu":null,"memory":"x"}`)); !ok || err != nil {
+		t.Fatal(ok, err)
 	}
-	wantEqual(t, "disk", get(t, h, "a1", nil)[0].(*jsonx.Object).Value("disk"), jsonx.NewObject())
+	got := get(t, h, "a1", nil)[0]
+	if v, _ := testjson.Path(got, "memory"); v != "x" {
+		t.Fatalf("memory=%v", v)
+	}
+	if v, ok := testjson.Path(got, "cpu"); !ok || v != nil {
+		t.Fatalf("cpu=%v ok=%v", v, ok)
+	}
+	disk, _ := testjson.Path(got, "disk")
+	wantEqual(t, "disk", disk, map[string]any{})
 }
 
 // DescribeOSError gives Python's describe_os_error texts.
