@@ -127,8 +127,8 @@ func TestProfileOwnerRuntimeShutdownAndDisconnect(t *testing.T) {
 			} else {
 				cancel()
 			}
-			_, err := mutate(ctx, func(ctx context.Context, r *repo.Repository) (*jsonx.Object, error) {
-				return r.CreateProfile(ctx, jsonx.Obj("id", "new", "name", "New"), "")
+			_, err := mutate(ctx, func(ctx context.Context, r *repo.Repository) (any, error) {
+				return r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "new", Name: "New"}, "")
 			})
 			if shutdown {
 				if err == nil || state(t, s) != before {

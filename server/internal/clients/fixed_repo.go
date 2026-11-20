@@ -4,28 +4,29 @@ import (
 	"context"
 	"encoding/json"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
-// updateFixedProfile is the legacy C03 transaction boundary. The business
+// updateFixedProfile is the C03 transaction boundary. The business
 // callback receives native JSON and the repository's held context, preserving
 // unknown profile fields and cancellation at the actual commit point.
 func updateFixedProfile(ctx context.Context, db *repo.Repository, profile string, update func(context.Context, json.RawMessage) (json.RawMessage, error)) error {
-	_, _, err := db.UpdateProfileTransaction(ctx, profile, func(work context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	_, err := db.UpdateProfile(ctx, profile, func(work context.Context, current *model.Profile) error {
 		raw, err := json.Marshal(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		next, err := update(work, raw)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		var result jsonx.Object
+		var result model.Profile
 		if err = json.Unmarshal(next, &result); err != nil {
-			return nil, err
+			return err
 		}
-		return &result, work.Err()
+		*current = result
+		return work.Err()
 	})
 	return err
 }

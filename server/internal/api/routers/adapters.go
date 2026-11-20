@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -20,22 +20,28 @@ func recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *core.Router, report *cor
 	if ctx.Err() != nil {
 		return
 	}
-	object := func(value any) *jsonx.Object {
-		if value == nil {
-			return nil
-		}
-		raw, err := json.Marshal(value)
-		if err != nil || string(raw) == "null" {
-			return nil
-		}
-		var out jsonx.Object
-		if json.Unmarshal(raw, &out) != nil {
-			return nil
-		}
-		return &out
-	}
 	notifications.Safely(func() error {
-		return notifications.RecordRouter(ctx, c.ProfileID, object(cfg), object(r), object(report), object(plan), "")
+		raw, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		var router model.Router
+		if err = json.Unmarshal(raw, &router); err != nil {
+			return err
+		}
+		raw, err = json.Marshal(report)
+		if err != nil {
+			return err
+		}
+		var nativeReport *notifications.RouterReport
+		if err = json.Unmarshal(raw, &nativeReport); err != nil {
+			return err
+		}
+		raw, err = json.Marshal(plan)
+		if err != nil {
+			return err
+		}
+		return notifications.SaveRouter(ctx, c.ProfileID, cfg, &router, nativeReport, raw, "")
 	})
 }
 func workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, string, error) {
@@ -47,30 +53,30 @@ func workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, s
 	if err != nil {
 		return nil, "", err
 	}
-	raw, err := m.GetAllAgents(c.Context(), true)
+	raw, err := m.ListAgents(c.Context(), true)
 	if err != nil {
 		return nil, "", err
 	}
 	out := []core.WorkspaceAgent{}
 	for _, a := range raw {
-		profile := a.GetString("profile_id")
+		profile := a.ProfileID
 		if profile == "" {
 			profile = defaultProfile
 		}
-		name := a.GetString("name")
+		name := a.Name
 		if name == "" {
-			name = a.GetString("id")
+			name = a.ID
 		}
-		out = append(out, core.WorkspaceAgent{ID: a.GetString("id"), Name: name, Host: a.GetString("host"), Status: a.GetString("status"), ServiceType: a.GetString("service_type"), ProfileID: profile})
+		out = append(out, core.WorkspaceAgent{ID: a.ID, Name: name, Host: a.Host, Status: a.Status, ServiceType: a.ServiceType, ProfileID: profile})
 	}
 	return out, defaultProfile, nil
 }
 func profileName(ctx context.Context, db *repo.Repository, id string) (string, error) {
-	p, err := db.GetProfile(ctx, id)
+	p, err := db.Profile(ctx, id)
 	if err != nil {
 		return "", err
 	}
-	name := p.GetString("name")
+	name := p.Name
 	if name == "" {
 		name = id
 	}
@@ -92,16 +98,12 @@ func allProfileSecrets(ctx context.Context, db *repo.Repository) (redact.Secrets
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := db.ListProfiles(ctx)
+	profiles, err := db.ListProfileRecords(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, raw := range profiles {
-		profile, ok := raw.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		cfg, err := db.GetCompatConfig(ctx, profile.GetString("id"), repo.ResourceRoots{})
+	for _, profile := range profiles {
+		cfg, err := db.Config(ctx, profile.ID, repo.ResourceRoots{})
 		if err != nil {
 			return nil, err
 		}

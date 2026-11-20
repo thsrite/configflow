@@ -4,8 +4,7 @@ import (
 	"encoding/json"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
+	"configflow/internal/model"
 	"configflow/internal/webdav"
 )
 
@@ -14,25 +13,22 @@ func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *
 	if bad != nil {
 		return webdav.Settings{}, bad, nil
 	}
-	data = data.DeepCopy()
-	saved, err := repo.GetSystemConfig(c.Context())
+	saved, err := loadSettings(c.Context())
 	if err != nil {
 		return webdav.Settings{}, nil, err
 	}
-	backup := saved.GetObject("backup")
-	if data.GetString("webdav_password") == "******" {
-		data.Set("webdav_password", backup.GetString("webdav_password"))
+	if string(data.WebDAVPassword) == `"******"` {
+		data.WebDAVPassword, _ = json.Marshal(saved.Backup.WebDAVPassword)
 	}
 	if inheritRetention {
-		for _, key := range retentionKeys {
-			if !data.Has(key) {
-				if value, present := backup.Get(key); present {
-					data.Set(key, value)
-				}
-			}
+		if len(data.KeepLatest) == 0 {
+			data.KeepLatest, _ = json.Marshal(saved.Backup.KeepLatest)
+		}
+		if len(data.KeepDaily) == 0 {
+			data.KeepDaily, _ = json.Marshal(saved.Backup.KeepDaily)
 		}
 	}
-	raw, err := jsonx.Compact(data)
+	raw, err := json.Marshal(data)
 	if err != nil {
 		return webdav.Settings{}, nil, err
 	}
@@ -40,9 +36,9 @@ func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *
 	err = json.Unmarshal(raw, &settings)
 	return settings, nil, err
 }
-
-func retentionSettings(settings *jsonx.Object) (any, any) {
-	latest, _ := jsonx.Compact(settings.Value("keep_latest"))
-	daily, _ := jsonx.Compact(settings.Value("keep_daily"))
-	return webdav.RetentionValue(latest, webdav.DefaultKeepLatest, webdav.MaxKeepLatest), webdav.RetentionValue(daily, webdav.DefaultKeepDaily, webdav.MaxKeepDaily)
+func retentionSettings(settings *model.Backup) (any, any) {
+	raw, _ := json.Marshal(settings)
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &fields)
+	return webdav.RetentionValue(fields["keep_latest"], webdav.DefaultKeepLatest, webdav.MaxKeepLatest), webdav.RetentionValue(fields["keep_daily"], webdav.DefaultKeepDaily, webdav.MaxKeepDaily)
 }

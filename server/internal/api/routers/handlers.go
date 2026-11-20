@@ -3,7 +3,6 @@
 package routers
 
 import (
-	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/gateway/host"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/oxidns"
@@ -50,7 +50,7 @@ func service(c *httpx.Ctx) (*core.ManagementService, error) {
 	return &core.ManagementService{Repo: db}, err
 }
 func manager(c *httpx.Ctx) (*agents.Manager, error) { return agents.Get(c.Context()) }
-func body(c *httpx.Ctx) json.RawMessage             { raw, _ := json.Marshal(c.JSONSilent()); return raw }
+func body(c *httpx.Ctx) json.RawMessage             { var raw json.RawMessage; _ = c.BindSilent(&raw); return raw }
 func fields(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	var out map[string]json.RawMessage
 	if json.Unmarshal(raw, &out) != nil || out == nil {
@@ -319,7 +319,19 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	var confirmation struct {
 		Fingerprint string `json:"fingerprint"`
 	}
-	_ = jsondecode.Unmarshal(body(c), &confirmation)
+	raw := body(c)
+	if c.IsJSON() {
+		data, readErr := c.Data()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if len(strings.TrimSpace(string(data))) > 0 {
+			if err = c.Bind(&raw); err != nil {
+				return nil, err
+			}
+		}
+	}
+	_ = jsondecode.Unmarshal(raw, &confirmation)
 	m, err := manager(c)
 	if err != nil {
 		return nil, err

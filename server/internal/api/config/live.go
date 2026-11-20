@@ -38,7 +38,7 @@ func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := auth.ValidateTokenOrJWT(c, config)
+	result, err := auth.ValidateSystemTokenOrJWT(c, nil)
 	if err != nil {
 		return nil, err
 	}

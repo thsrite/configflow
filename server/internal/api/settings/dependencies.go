@@ -1,10 +1,10 @@
 package settings
 
 import (
-	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
-	"configflow/internal/substore"
 	"encoding/json"
+
+	"configflow/internal/httpx"
+	"configflow/internal/substore"
 )
 
 // listThirdPartyDependencies is GET /api/settings/dependencies: version,
@@ -16,7 +16,7 @@ func listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("dependencies", dependencies)), nil
+	return httpx.JSON(map[string]any{"dependencies": dependencies}), nil
 }
 
 // updateSubStoreDependency is POST /api/settings/dependencies/sub-store/update:
@@ -26,10 +26,10 @@ func updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
 	ok, message := substore.Default().Dependencies.StartSubStoreUpdate(c.Context())
 	if ok {
 		appLogger.Info("Sub-Store 在线更新：" + message)
-		return httpx.JSONStatus(202, jsonx.Obj("success", true, "message", message)), nil
+		return httpx.JSONStatus(202, map[string]any{"success": true, "message": message}), nil
 	}
 	appLogger.Warning("Sub-Store 在线更新：" + message)
-	return httpx.JSONStatus(409, jsonx.Obj("success", false, "message", message)), nil
+	return httpx.JSONStatus(409, map[string]any{"success": false, "message": message}), nil
 }
 
 // setSubStoreMode is POST /api/settings/dependencies/sub-store/mode.
@@ -54,5 +54,5 @@ func setSubStoreMode(c *httpx.Ctx) (*httpx.Response, error) {
 		label = "常驻运行"
 	}
 	appLogger.Info("Sub-Store 运行模式已切换为" + label)
-	return httpx.JSON(jsonx.Obj("success", true, "mode", mode)), nil
+	return httpx.JSON(map[string]any{"success": true, "mode": mode}), nil
 }

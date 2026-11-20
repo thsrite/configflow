@@ -417,6 +417,14 @@ func compare(r request, py, gor response) []string {
 	case migrated:
 		// Step B #3/O12: the exact JSON error envelope was verified above.
 	case perr == nil && gerr == nil:
+		if r.name == "server domain number" && py.status == 500 && gor.status == 500 {
+			expected := jsonx.Obj("success", false, "message", "setting must be a string")
+			original := jsonx.Obj("success", false, "message", "'int' object has no attribute 'strip'")
+			if !jsonx.Equal(pv, original) || !jsonx.Equal(gv, expected) {
+				diffs = append(diffs, "unexpected native setting type error envelope")
+			}
+			break
+		}
 		if !yamlxtest.EqualJSON(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}

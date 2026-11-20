@@ -161,20 +161,7 @@ func TestN811GlobalFlaskBoundaries(t *testing.T) {
 					if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
 						t.Fatal(err)
 					}
-					if conflict && response.Code == 409 {
-						// Proven unchanged on P0 212aeac09. Route-local omission belongs to W5;
-						// preserve an exact assertion of both boundaries until that owner fixes it.
-						reply, ok := actual.(map[string]any)
-						if !ok {
-							t.Fatal("conflict response must be an object")
-						}
-						wantedUsages := []any{map[string]any{"kind": "router", "id": "router", "name": "Synthetic", "profile_id": "default", "profile_name": "默认配置"}}
-						if !reflect.DeepEqual(reply["usages"], wantedUsages) {
-							t.Fatalf("preexisting conflict usages changed: %v", reply)
-						}
-						delete(reply, "usages")
-						t.Log("preexisting_global_conflict_usages: pending W5 route fix; same on P0")
-					}
+
 					if !reflect.DeepEqual(normalizeGlobalAnswer(actual, ""), normalizeGlobalAnswer(expected.Body, "")) {
 						t.Fatalf("%s response differs: Go=%v Flask=%v", path, actual, expected.Body)
 					}

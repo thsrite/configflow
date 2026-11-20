@@ -10,33 +10,27 @@ import (
 	"strconv"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
+
 	"gopkg.in/yaml.v3"
 )
 
 // Sanitize returns an external-safe configuration without mutating its source.
-func Sanitize(ctx context.Context, config *jsonx.Object) (*jsonx.Object, error) {
-	return sanitize(ctx, config, config.GetObject("system_config"))
-}
-
-func sanitize(ctx context.Context, payload, settings *jsonx.Object) (*jsonx.Object, error) {
-	result, err := redact.SanitizeExternalPayload(ctx, payload, settings)
+func Sanitize(ctx context.Context, config json.RawMessage) (json.RawMessage, error) {
+	var envelope struct {
+		SystemConfig json.RawMessage `json:"system_config"`
+	}
+	if err := json.Unmarshal(config, &envelope); err != nil {
+		return nil, err
+	}
+	result, err := redact.SanitizeExternalPayload(ctx, config, envelope.SystemConfig)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("encode sanitized configuration: %w", err)
-	}
-	var out jsonx.Object
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("read sanitized configuration: %w", err)
-	}
-	return &out, nil
+	return json.Marshal(result)
 }
 
 // RedactOxiDNS removes opaque native text and upstream credentials while
@@ -109,30 +103,42 @@ func redactNode(n *yamlx.Node, depth int) *yamlx.Node {
 	return n
 }
 
-// Wire installs the export hooks. Only this adapter uses legacy repo values;
-// the arbitrary OxiDNS subtree is represented by model.Dynamic internally.
+// Wire installs native export sanitization collaborators.
 func Wire() {
-	repo.RegisterHooks(repo.Hooks{SanitizeExternalPayload: sanitize, RedactOxidnsSettings: func(settings any) any {
-		data, err := json.Marshal(settings)
-		if err != nil {
-			return redact.Redacted
-		}
-		var input model.Dynamic
-		if err = input.UnmarshalJSON(data); err != nil {
-			return redact.Redacted
-		}
-		out, err := RedactOxiDNS(input)
-		if err != nil {
-			return redact.Redacted
-		}
-		data, err = json.Marshal(out)
-		if err != nil {
-			return redact.Redacted
-		}
-		value, err := jsonx.Parse(data)
-		if err != nil {
-			return redact.Redacted
-		}
-		return value
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
+		SanitizeExternalDocument: func(ctx context.Context, document *model.Document, settings model.SystemConfig) (*model.Document, error) {
+			raw, err := json.Marshal(document)
+			if err != nil {
+				return nil, err
+			}
+			original, err := json.Marshal(settings)
+			if err != nil {
+				return nil, err
+			}
+			result, err := redact.SanitizeExternalPayload(ctx, json.RawMessage(raw), json.RawMessage(original))
+			if err != nil {
+				return nil, err
+			}
+			raw, err = json.Marshal(result)
+			if err != nil {
+				return nil, fmt.Errorf("encode sanitized configuration: %w", err)
+			}
+			var out model.Document
+			if err = json.Unmarshal(raw, &out); err != nil {
+				return nil, err
+			}
+			return &out, nil
+		},
+		RedactOxidnsJSON: func(raw json.RawMessage) (json.RawMessage, error) {
+			var input model.Dynamic
+			if err := json.Unmarshal(raw, &input); err != nil {
+				return nil, err
+			}
+			out, err := RedactOxiDNS(input)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(out)
+		},
 	}})
 }

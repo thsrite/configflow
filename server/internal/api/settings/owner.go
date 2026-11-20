@@ -2,9 +2,10 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/webdav"
 )
@@ -12,12 +13,47 @@ import (
 // saveSettings owns the C06 settings commit. The HTTP layer passes its request
 // lifetime unchanged; only the owner drops disconnect cancellation. The repo
 // retains the request scope/baseline and performs the existing three-way merge.
-func saveSettings(ctx context.Context, config *jsonx.Object) error {
+type settingsEdit struct {
+	*model.System
+	baseline *model.System
+}
+
+func loadSettings(ctx context.Context) (*settingsEdit, error) {
+	ctx = lifecycle.Detach(ctx)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	system, err := r.System(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Record provenance is immutable. Settings edits replace members; they never
+	// mutate Agent slices or pointer values shared with this baseline.
+	base := *system
+	return &settingsEdit{system, &base}, nil
+}
+func settingValue(config *settingsEdit, key string, fallback json.RawMessage) json.RawMessage {
+	raw, present, err := config.SystemConfig.MemberJSON(key)
+	if err != nil || !present {
+		return fallback
+	}
+	return raw
+}
+func saveSettings(ctx context.Context, config *settingsEdit) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return repo.SaveSystemConfig(ctx, config, nil)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.SaveSystemRecord(ctx, config.System, config.baseline)
+	if err == nil {
+		repo.ResetConfigContext(ctx)
+	}
+	return err
 }
 
 // testBackupConnection can create remote directories, so it is a write owner

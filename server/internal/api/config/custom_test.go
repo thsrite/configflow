@@ -238,7 +238,7 @@ func TestSavedMihomoBaseFallsBackOnlyForSyntax(t *testing.T) {
 		{"budget", chain, yamlx.ErrAliasBudget},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := savedMihomoBase(jsonx.Obj("custom_config", test.text))
+			_, err := savedMihomoBase(test.text)
 			if test.want == nil {
 				if err != nil {
 					t.Fatal(err)

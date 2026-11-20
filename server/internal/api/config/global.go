@@ -5,11 +5,11 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 )
@@ -25,7 +25,7 @@ func Register(r *httpx.Router) {
 		}
 		query, _ := c.Arg("desensitize")
 		desensitize := strings.EqualFold(query, "true")
-		data, err := repository.ExportAll(c.Context(), desensitize)
+		data, err := repository.ExportAllJSON(c.Context(), desensitize)
 		if err != nil {
 			return nil, err
 		}
@@ -44,12 +44,11 @@ func Register(r *httpx.Router) {
 		if err := c.Bind(&raw); err != nil {
 			return nil, err
 		}
-		var data *jsonx.Object
-		if err := json.Unmarshal(raw, &data); err != nil || data == nil {
+		if len(raw) == 0 || raw[0] != '{' {
 			return httpx.Message(400, false, msgObject), nil
 		}
-		if err := writeGlobal(c.Context(), data, false); err != nil {
-			return nil, err
+		if err := writeGlobal(c.Context(), raw, false); err != nil {
+			return globalFailure(err)
 		}
 		return httpx.JSON(struct {
 			Success bool `json:"success"`
@@ -57,13 +56,13 @@ func Register(r *httpx.Router) {
 	}))
 	r.POST("/api/config/reset", "config.reset_config", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if err := writeGlobal(c.Context(), nil, true); err != nil {
-			return nil, err
+			return globalFailure(err)
 		}
 		return httpx.Message(200, true, msgReset), nil
 	}))
 }
 
-func writeGlobal(ctx context.Context, data *jsonx.Object, reset bool) error {
+func writeGlobal(ctx context.Context, data json.RawMessage, reset bool) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -76,12 +75,19 @@ func writeGlobal(ctx context.Context, data *jsonx.Object, reset bool) error {
 		return err
 	}
 	if reset {
-		_, err = repository.ResetAll(ctx)
+		_, err = repository.ResetAllJSON(ctx)
 	} else {
-		_, err = repository.ImportAll(ctx, data)
+		_, err = repository.ImportAllJSON(ctx, data)
 	}
 	if err == nil {
 		repo.ResetConfigContext(ctx)
 	}
 	return err
+}
+
+func globalFailure(err error) (*httpx.Response, error) {
+	if errors.Is(err, repo.ErrInUse) {
+		return httpx.Message(409, false, err.Error()), nil
+	}
+	return nil, err
 }

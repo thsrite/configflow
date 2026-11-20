@@ -8,7 +8,6 @@ import (
 
 	"configflow/internal/configexport"
 	"configflow/internal/convert"
-
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
@@ -43,8 +42,16 @@ func TestFullAndShareableBackupHTTP(t *testing.T) {
 	if full.Header.Get("Content-Disposition") != "attachment; filename=config.json" {
 		t.Fatal(full.Header)
 	}
+	description := "contains synthetic-rule-token"
+	_, err = s.Repo.UpdateProfileMetadataRecord(s.Context(), "default", repo.ProfileMetadataUpdate{Description: &description})
+	if err != nil {
+		t.Fatal(err)
+	}
 	share := s.Get("/api/config/export?desensitize=true")
 	share.WantStatus(200)
+	if !bytes.Contains(share.Body, []byte("[REDACTED]")) {
+		t.Fatal("desensitize bypassed external payload policy")
+	}
 	if bytes.Contains(share.Body, []byte("synthetic-rule-token")) || bytes.Contains(share.Body, []byte("synthetic-config-token")) {
 		t.Fatal("shareable backup leaked credentials")
 	}
@@ -85,7 +92,11 @@ func TestGlobalOwnersRuntimeShutdownAndDisconnect(t *testing.T) {
 					data = before.DeepCopy()
 					data.GetObject("profiles").GetObject("extra").Set("name", "Changed")
 				}
-				err = writeGlobal(ctx, data, reset)
+				encoded, encodeErr := json.Marshal(data)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				err = writeGlobal(ctx, encoded, reset)
 				after, readErr := s.Repo.ExportAll(s.Context(), false)
 				if readErr != nil {
 					t.Fatal(readErr)

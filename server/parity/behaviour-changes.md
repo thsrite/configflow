@@ -2335,7 +2335,7 @@ R3 确认沿用 HR 已补登的 HTTP 最短浮点文本，≥1e6 用指数形式
 - schema-2 导入为 profile-local 原始拨号链重建的 proxy_string 采用 native JSON 文本，对其解析后的结构、拨号目标和名称冲突处理仍严格比较。ID 只在真正缺失/冲突时生成，不再为了 Python setdefault 的 eager 参数计算丢弃随机值；冻结回放只归一化生成 ID 的随机后缀，并同时比较所有引用和目录顺序，没有修改原语料或期望文件。
 - 文件读取保留原拒绝类别和配置文件名，OS/UTF-8 内部错误后缀使用 Go 原生诊断；写 JSON 文件使用 encoding/json 缩进。中文业务错误、HTTP 状态和正常文件内容含义不变；不仿 Python 异常文本。旧 file-reader 的非标准 NaN 兼容仅留在 legacy.go，W9 删除旧入口时收束，native API 不扩展 JSON 语法。
 
-W1 边界核对另外确认一项**既有差异，未在本包修改**：全局 import/reset 的设备归属冲突，Python 409 只返回 success/message，Go 409 还带 usages。在 P0 `212aeac09` 的独立基底也能复现，交 W5 的 api/config/global.go owner 修正；新增测试精确断言该附加成员后再比较其余响应及无写入状态，不能将这项当作 W1 新获准的 API 差异。见 progress/n8-11-w1.md。
+W1 边界核对另外确认一项**既有差异，未在本包修改**：全局 import/reset 的设备归属冲突，Python 409 只返回 success/message，Go 409 还带 usages。在 P0 `212aeac09` 的独立基底也能复现，W5 已在 api/config/global.go 去掉该附加成员；边界测试现与 Flask 完整错误体严格相等，同时比较拒绝后的无写入状态。这不是获准保留的 API 差异。见 progress/n8-11-w5.md。
 
 - （W1 HR 复核 L4，协调者登记）typed 保存入口比较 `_revision` 改为按存储字面量比较：请求里手写成 `3.0` 的 revision 不再等于存储的 `3`，返回 409（冲突）。前端只发送整数 revision，正常使用无影响。
 
@@ -2378,3 +2378,12 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   Content-Encoding 使用原生 strings，响应 charset 声明用 mime.ParseMediaType；规则缓存仍保留源字节。
 - 请求改用 Bind/BindSilent。严格绑定拒绝非有限数并返回 400；既有 silent/caught 入口继续走原来的
   malformed-body 错误边界（如 match-test 无可用对象返回 500）。没有另造请求 JSON 解析器。
+
+## N8-11 W5 — 配置 HTTP 原生边界
+
+- 协调者 2026-11-20 裁定：新建、克隆、导入客户端配置的 `description` 只接受字符串；省略或 null 仍为空说明。数字、布尔值、数组和对象返回 400「配置名称和说明必须是字符串，名称不能为空」。Python 原来把非字符串转换成 Python 文本后存储；Go 不仿真该文本。三个入口分别用真实 Flask 差分固定 Python 201 / Go 400，确认 Go 无写入；正常文本和 metadata PUT 仍严格对齐。
+- 同日裁定：profiles 的 create/PUT/clone 在 JSON Content-Type 下收到非法 JSON 或 NaN/Infinity，统一用 `httpx.Bind` 的原生 400；保留有效 null/false/0/空数组的原空值替代。新差分固定各入口原状态和 Go 完整错误体、拒绝后存储不变。不接纳非标准 JSON 数字。
+- 路由器发布确认的非标准 NaN/Infinity 也在读取确认 JSON 时由 Bind 拒绝为 400，避免把无效 JSON 当作空 fingerprint 进入业务分支；缺失确认体和合法但无 fingerprint 的输入仍沿原业务分支。真实 Flask 差分固定 Python 500 / Go 400、两侧存储不变。
+- settings 的文本裁剪改用 Go `strings.TrimSpace`，不再模拟 Python 额外认作空白的 U+001C–U+001F；普通空格、Unicode 空白和前端输入不受影响，属于既有 native 字符分类裁定。
+- settings 的错型文本仍返回原 500，内部诊断改为 `setting must be a string`，不再构造 Python AttributeError 文本；中文消息和所有状态/持久化结果不变。差分仅对这项明确的非中文内部文本分别断言双方完整 envelope，不放宽其他错误。
+- 全局 import/reset 的设备归属 409 现只返回 success/message，与 Flask 相同；repo.Error 的完整 usages 保留给其他消费者。这是修正 W1 记录的既有差异，没有新增 API 差异。

@@ -1,20 +1,20 @@
 package routers
 
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/diag"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
 // GatewayAgent carries a native Agent view and its opaque A01 transport handle.
 type GatewayAgent struct {
 	*model.Agent
-	Record *agents.Record `json:"-"`
-	DNS    *DNSAgent      `json:"-"`
+	Record *model.Agent `json:"-"`
+	DNS    *DNSAgent    `json:"-"`
 }
 
 // AgentSource supplies Agent records and their owned return-routing client.
@@ -31,7 +31,7 @@ func (s ManagerAgentSource) Agent(ctx context.Context, id string) (*GatewayAgent
 	if id == "" {
 		return nil, nil
 	}
-	record, err := s.Manager.GetAgentByID(ctx, id, false)
+	record, err := s.Manager.ReadAgent(ctx, id, false)
 	if err != nil || record == nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (a *managerReturnAgent) Status(ctx context.Context) (*ReturnStatus, error) 
 	if a.agent == nil || a.agent.Record == nil {
 		return nil, routerError(messageNoReturnAgent)
 	}
-	result, err := a.manager.ReturnRoutingStatus(ctx, a.agent.Record)
+	result, err := a.manager.ReturnRoutingStatusModel(ctx, a.agent.Record)
 	if err != nil {
 		return nil, a.safeError(err)
 	}
@@ -85,18 +85,14 @@ func (a *managerReturnAgent) Apply(ctx context.Context, spec json.RawMessage) er
 	if a.agent == nil || a.agent.Record == nil {
 		return routerError(messageNoReturnAgent)
 	}
-	var payload agents.Record
-	if err := json.Unmarshal(spec, &payload); err != nil {
-		return err
-	}
-	_, err := a.manager.ReturnRoutingApply(ctx, a.agent.Record, &payload)
+	_, err := a.manager.ReturnRoutingApplyModel(ctx, a.agent.Record, spec)
 	return a.safeError(err)
 }
 func (a *managerReturnAgent) Remove(ctx context.Context, restore bool) error {
 	if a.agent == nil || a.agent.Record == nil {
 		return routerError(messageNoReturnAgent)
 	}
-	_, err := a.manager.ReturnRoutingRemove(ctx, a.agent.Record, restore)
+	_, err := a.manager.ReturnRoutingRemoveModel(ctx, a.agent.Record, restore)
 	return a.safeError(err)
 }
 

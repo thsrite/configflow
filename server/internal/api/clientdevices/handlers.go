@@ -3,7 +3,6 @@
 package clientdevices
 
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,8 +14,10 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/devicenotes"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -35,7 +36,7 @@ func Register(r *httpx.Router) {
 	r.POST("/api/client-devices/fixed-ip/apply", "client_devices.apply_fixed_ip", auth.Require(h.apply))
 }
 func config(ctx context.Context, db *repo.Repository, profile string) (json.RawMessage, error) {
-	value, err := db.GetCompatConfig(ctx, profile, repo.ResourceRoots{})
+	value, err := db.Config(lifecycle.Detach(ctx), profile, repo.ResourceRoots{})
 	if err != nil {
 		return nil, err
 	}
@@ -51,14 +52,14 @@ func manager(c *httpx.Ctx) (*repo.Repository, *agents.Manager, error) {
 }
 func profile(c *httpx.Ctx, db *repo.Repository, m *agents.Manager, byAgent bool) (string, *httpx.Response, error) {
 	if id, exists := c.Arg("agent"); exists && byAgent {
-		agent, err := m.GetAgentByID(c.Context(), id, false)
+		agent, err := m.ReadAgent(lifecycle.Detach(c.Context()), id, false)
 		if err != nil {
 			return "", nil, err
 		}
-		if agent == nil || agent.GetString("service_type") != "oxidns" {
+		if agent == nil || agent.ServiceType != "oxidns" {
 			return "", httpx.Message(404, false, messageAgentMissing).NoStore(), nil
 		}
-		id = agent.GetString("profile_id")
+		id = agent.ProfileID
 		if id == "" {
 			id, err = db.DefaultProfileID(c.Context())
 			if err != nil {
@@ -69,7 +70,7 @@ func profile(c *httpx.Ctx, db *repo.Repository, m *agents.Manager, byAgent bool)
 	}
 	return c.ProfileID, nil, nil
 }
-func body(c *httpx.Ctx) json.RawMessage { raw, _ := json.Marshal(c.JSONSilent()); return raw }
+func body(c *httpx.Ctx) json.RawMessage { var raw json.RawMessage; _ = c.BindSilent(&raw); return raw }
 func exact(raw json.RawMessage, keys ...string) (map[string]json.RawMessage, bool) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || len(fields) != len(keys) {
@@ -137,6 +138,7 @@ func failure(ctx context.Context, cfg json.RawMessage, err error) (*httpx.Respon
 	}{false, err.Error()}, status)
 }
 func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id string) (json.RawMessage, any, error) {
+	ctx = lifecycle.Detach(ctx)
 	cfg, err := config(ctx, db, id)
 	if err != nil {
 		return nil, nil, err
@@ -145,7 +147,7 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 	if err != nil {
 		return cfg, nil, err
 	}
-	profile, err := db.GetProfile(ctx, id)
+	profile, err := db.Profile(ctx, id)
 	if err != nil {
 		return cfg, nil, err
 	}
@@ -195,7 +197,7 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 	if err != nil {
 		return cfg, nil, err
 	}
-	name := profile.GetString("name")
+	name := profile.Name
 	if name == "" {
 		name = id
 	}
@@ -240,20 +242,21 @@ func (h *handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 		if err = work.Err(); err != nil {
 			return nil, err
 		}
-		_, _, err = db.UpdateProfileTransaction(work, id, func(ctx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		_, err = db.UpdateProfile(work, id, func(ctx context.Context, current *model.Profile) error {
 			raw, err := json.Marshal(current)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			replacement, err := clients.UpdateDevice(ctx, raw, change, baseURL)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			var next jsonx.Object
+			var next model.Profile
 			if err = json.Unmarshal(replacement, &next); err != nil {
-				return nil, err
+				return err
 			}
-			return &next, ctx.Err()
+			*current = next
+			return ctx.Err()
 		})
 		if err != nil {
 			return failure(work, cfg, err)
@@ -331,28 +334,28 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	all, err := m.GetAllAgents(c.Context(), false)
+	all, err := m.ReadAgents(lifecycle.Detach(c.Context()), false, nil)
 	if err != nil {
 		return nil, err
 	}
 	hosts := []string{}
 	for _, agent := range all {
-		bound := agent.GetString("profile_id")
+		bound := agent.ProfileID
 		if bound == "" {
 			bound = def
 		}
 		if bound == id {
-			hosts = append(hosts, agent.GetString("host"))
+			hosts = append(hosts, agent.Host)
 		}
 	}
 	service := clients.NewDiscoveryService()
 	service.Enrich = clients.EnrichFixedIP
 	service.GatewayHost = func(ctx context.Context, id string) string {
-		agent, err := m.GetAgentByID(ctx, id, false)
+		agent, err := m.ReadAgent(lifecycle.Detach(ctx), id, false)
 		if err != nil || agent == nil {
 			return ""
 		}
-		return agent.GetString("host")
+		return agent.Host
 	}
 	value, err := service.Discover(c.Context(), cfg, clients.DiscoveryOptions{AgentHosts: hosts, ProfileID: id, Refresh: c.ArgDefault("refresh", "") == "1", Cache: h.cache})
 	if err != nil {

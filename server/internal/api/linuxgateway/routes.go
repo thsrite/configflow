@@ -81,7 +81,7 @@ func provider(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	validation, err := auth.ValidateTokenOrJWT(c, config)
+	validation, err := auth.ValidateSystemTokenOrJWT(c, nil)
 	if err != nil {
 		return nil, err
 	}

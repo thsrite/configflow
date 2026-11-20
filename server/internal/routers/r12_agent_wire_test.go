@@ -42,7 +42,7 @@ func TestR12A01ReturnAgentRawWireAndRedaction(t *testing.T) {
 		t.Fatal(e)
 	}
 	raw := mustPolicyJSON(map[string]any{"id": "gateway", "name": "synthetic-api", "host": host, "port": n, "token": "synthetic-token", "service_type": "mihomo", "profile_id": "default", "status": "online"})
-	var record agents.Record
+	var record model.Agent
 	var view model.Agent
 	if e = json.Unmarshal(raw, &record); e != nil {
 		t.Fatal(e)

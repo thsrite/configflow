@@ -3,9 +3,6 @@ package settings
 import (
 	"encoding/json"
 	"errors"
-
-	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 )
 
 // settingsRequest retains field presence and wire types for the existing
@@ -47,31 +44,4 @@ func (r *settingsRequest) UnmarshalJSON(data []byte) error {
 		AutoBackup: fields["auto_backup"], KeepLatest: fields["keep_latest"], KeepDaily: fields["keep_daily"],
 	}
 	return nil
-}
-
-// legacyObject is the temporary adapter for the repo/settings validators that
-// still consume jsonx. N8-5 replaces this boundary, not the HTTP binding policy.
-func (r settingsRequest) legacyObject() (*jsonx.Object, error) {
-	data, err := json.Marshal(r)
-	if err != nil {
-		return nil, err
-	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	object := value.(*jsonx.Object)
-	return object, nil
-}
-
-func silentRequestObject(c *httpx.Ctx) *jsonx.Object {
-	var request settingsRequest
-	if !c.BindSilent(&request) {
-		return nil
-	}
-	object, err := request.legacyObject()
-	if err != nil {
-		return nil
-	}
-	return object
 }

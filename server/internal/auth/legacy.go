@@ -8,6 +8,7 @@ import (
 	"configflow/internal/model"
 )
 
+// TODO(N8-11/W9): delete after the remaining resource consumers migrate.
 // ValidateTokenOrJWT is the transitional document facade. New callers use
 // ValidateSystemTokenOrJWT with the same captured system snapshot.
 func ValidateTokenOrJWT(c *httpx.Ctx, config *jsonx.Object) (ValidateResult, error) {

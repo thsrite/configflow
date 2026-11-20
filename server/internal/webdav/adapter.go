@@ -1,7 +1,6 @@
 package webdav
 
-// This file adapts the repository's legacy documents; the transport, worker and
-// retention logic use only Go-native types.
+// Repository snapshots and commit observers share the native document model.
 import (
 	"context"
 	"encoding/json"
@@ -9,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
@@ -51,7 +50,7 @@ func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	var settings Settings
-	backup, err := jsonx.Compact(document.GetObject("system").Value("backup"))
+	backup, err := json.Marshal(document.System.Backup)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -62,16 +61,20 @@ func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *jsonx.Object, error) {
-	document, err := r.ExportAll(lifecycle.Detach(ctx), false)
+func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *model.Document, error) {
+	document, err := r.ExportAllJSON(lifecycle.Detach(ctx), false)
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
-	data, err := jsonx.Indent2(document)
+	var native model.Document
+	if err := json.Unmarshal(document, &native); err != nil {
+		return Snapshot{}, nil, err
+	}
+	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return Snapshot{}, nil, err
 	}
-	return Snapshot{Document: data, DataDir: r.DataDir(), repository: r}, document, nil
+	return Snapshot{Document: data, DataDir: r.DataDir(), repository: r}, &native, nil
 }
 
 // Capture exports the complete configuration for a manual backup. The caller
@@ -142,19 +145,19 @@ func workerStartup(worker *Worker, spawner lockx.Spawner, register func(lifecycl
 }
 
 func registerHook(worker *Worker) {
-	repo.RegisterHooks(repo.Hooks{ConfigurationCommitted: func(r *repo.Repository, previous, current *jsonx.Object) {
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: func(r *repo.Repository, previous, current *model.Document) {
 		// A failed scheduling/serialization step must never change commit success.
 		defer func() {
 			if recover() != nil {
 				logger.Warning(msgScheduleFailed)
 			}
 		}()
-		before, err := jsonx.Compact(previous)
+		before, err := json.Marshal(previous)
 		if err != nil {
 			logger.Warning(msgScheduleFailed)
 			return
 		}
-		after, err := jsonx.Compact(current)
+		after, err := json.Marshal(current)
 		if err != nil {
 			logger.Warning(msgScheduleFailed)
 			return
@@ -167,7 +170,7 @@ func registerHook(worker *Worker) {
 		if changed {
 			worker.Schedule(repositorySource{r})
 		}
-	}})
+	}}})
 }
 
 // WaitIdle waits for automatic backups and their receipt/notification callbacks.

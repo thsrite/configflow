@@ -9,6 +9,8 @@
 package settings
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -16,7 +18,6 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -57,60 +58,43 @@ func failure(status int, message string) *httpx.Response {
 }
 
 func handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
-	manager := webListener.Load()
-	result, err := func() (*httpx.Response, error) {
-		// HEAD shares GET semantics and never enters the write branch.
+	m := webListener.Load()
+	out, err := func() (*httpx.Response, error) {
 		if c.Method() == "GET" || c.Method() == "HEAD" {
-			status, err := manager.Status(c.Context())
-			if err != nil {
-				return nil, err
-			}
-			return httpx.JSON(status), nil
+			status, err := m.InformationFor(c.Context())
+			return httpx.JSON(status), err
 		}
-		data := silentRequestObject(c)
-		if data == nil {
-			return failure(400, "请提供 Web 监听端口"), nil
+		var data settingsRequest
+		if !c.BindSilent(&data) || len(data.Port) == 0 {
+			return failure(400, msgWebPortRequired), nil
 		}
-		port, ok := data.Get("port")
-		if !ok {
-			return failure(400, "请提供 Web 监听端口"), nil
+		var port int
+		if json.Unmarshal(data.Port, &port) != nil || string(data.Port) == "null" {
+			return failure(400, msgWebPortInvalid), nil
 		}
-		status, err := manager.Update(c.Context(), port)
+		status, err := m.ChangePort(c.Context(), port)
 		if err != nil {
 			return nil, err
 		}
-		payload := jsonx.Obj("success", true)
-		payload.Update(status)
-		return httpx.JSON(payload), nil
+		return httpx.JSON(struct {
+			Success bool `json:"success"`
+			*weblistener.Information
+		}{true, status}), nil
 	}()
-	var listenerErr *weblistener.Error
-	if errors.As(err, &listenerErr) {
-		return failure(listenerErr.Status, listenerErr.Message), nil
+	var e *weblistener.Error
+	if errors.As(err, &e) {
+		return failure(e.Status, e.Message), nil
 	}
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
 		appLogger.Exception("Failed to access deployment Web listener configuration", err)
-		return failure(503, "无法访问 Web 监听配置，请检查容器数据目录权限"), nil
+		return failure(503, msgWebPortAccess), nil
 	}
-	return result, err
+	return out, err
 }
 
-// systemSettings is config_data.get('system_config', {}).
-func systemSettings(config *jsonx.Object) *jsonx.Object {
-	settings, _ := config.GetOr("system_config", jsonx.NewObject()).(*jsonx.Object)
-	return settings
-}
-
-// ensureSystemSettings is `if 'system_config' not in config_data:
-// config_data['system_config'] = {}` (and setdefault).
-func ensureSystemSettings(config *jsonx.Object) *jsonx.Object {
-	value := config.SetDefault("system_config", jsonx.NewObject())
-	settings, _ := value.(*jsonx.Object)
-	return settings
-}
-
-// pyExceptionName is type(error).__name__ for a save failure.
-func pyExceptionName(err error) string {
+// exceptionName preserves the existing save-failure log labels.
+func exceptionName(err error) string {
 	switch {
 	case errors.Is(err, repo.ErrValidation):
 		return "ProfileValidationError"
@@ -127,332 +111,288 @@ func pyExceptionName(err error) string {
 }
 
 func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := repo.GetSystemConfig(c.Context())
+	config, err := loadSettings(c.Context())
 	if err != nil {
 		return nil, err
 	}
 	if c.Method() == "GET" || c.Method() == "HEAD" {
-		return httpx.JSON(jsonx.Obj("rule_fetch_proxy", systemSettings(config).GetOr("rule_fetch_proxy", ""))), nil
+		return httpx.JSON(map[string]any{"rule_fetch_proxy": settingValue(config, "rule_fetch_proxy", json.RawMessage(`""`))}), nil
 	}
-	data := silentRequestObject(c)
-	if data == nil {
-		return failure(400, "请提供规则下载代理，留空可清除设置"), nil
+	var data settingsRequest
+	if !c.BindSilent(&data) || len(data.RuleFetchProxy) == 0 {
+		return failure(400, msgProxyRequired), nil
 	}
-	value, ok := data.Get("rule_fetch_proxy")
+	var text string
+	if string(data.RuleFetchProxy) == "null" || json.Unmarshal(data.RuleFetchProxy, &text) != nil {
+		return failure(400, msgProxyInvalid), nil
+	}
+	proxy, ok := normalizeRuleFetchProxy(text)
 	if !ok {
-		return failure(400, "请提供规则下载代理，留空可清除设置"), nil
+		return failure(400, msgProxyInvalid), nil
 	}
-	proxy, ok := normalizeRuleFetchProxy(value)
-	if !ok {
-		return failure(400, "规则下载代理须为有效的 HTTP/HTTPS 代理地址，或留空使用现有网络"), nil
+	raw, _ := json.Marshal(proxy)
+	if err = config.SystemConfig.SetJSON("rule_fetch_proxy", raw); err != nil {
+		return nil, err
 	}
-	ensureSystemSettings(config).Set("rule_fetch_proxy", proxy)
 	if err := saveSettings(c.Context(), config); err != nil {
-		appLogger.Error("Failed to update rule download proxy: exception_type=" + pyExceptionName(err))
-		return failure(500, "保存规则下载代理失败"), nil
+		appLogger.Error("Failed to update rule download proxy: exception_type=" + exceptionName(err))
+		return failure(500, msgProxySave), nil
 	}
 	state := "cleared"
 	if proxy != "" {
 		state = "enabled"
 	}
 	appLogger.Info("Rule download proxy " + state)
-	return httpx.JSON(jsonx.Obj("success", true, "rule_fetch_proxy", proxy)), nil
+	return httpx.JSON(map[string]any{"success": true, "rule_fetch_proxy": proxy}), nil
 }
-
-// pyStrip is str.strip() on a value that must be a str (AttributeError
-// text otherwise).
-func pyStrip(v any) (string, error) {
-	text, ok := v.(string)
-	if !ok {
-		return "", errors.New("'" + httpx.PyTypeName(v) + "' object has no attribute 'strip'")
+func requestSettings(c *httpx.Ctx) (settingsRequest, error) {
+	var data settingsRequest
+	err := c.Bind(&data)
+	return data, err
+}
+func inputText(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
 	}
-	return strings.TrimFunc(text, pyIsSpace), nil
-}
-
-// requestJSONObject bridges the native request DTO to the legacy repository API.
-func requestJSONObject(c *httpx.Ctx) (*jsonx.Object, error) {
-	var request settingsRequest
-	if err := c.Bind(&request); err != nil {
-		return nil, err
+	var text string
+	if string(raw) == "null" || json.Unmarshal(raw, &text) != nil {
+		return "", errors.New("setting must be a string")
 	}
-	return request.legacyObject()
+	return strings.TrimSpace(text), nil
 }
-
 func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "POST" && invalidUnicode(c) {
 		return failure(400, msgInvalidUnicode), nil
 	}
-	config, err := repo.GetSystemConfig(c.Context())
+	config, err := loadSettings(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	switch c.Method() {
-	case "GET", "HEAD":
-		return httpx.JSON(jsonx.Obj("server_domain", systemSettings(config).GetOr("server_domain", ""))), nil
-	case "POST":
-		response, err := func() (*httpx.Response, error) {
-			data, err := requestJSONObject(c)
-			if err != nil {
-				return nil, err
-			}
-			newDomain, err := pyStrip(data.GetOr("new_domain", ""))
-			if err != nil {
-				return nil, err
-			}
-			if newDomain == "" {
-				return failure(400, "New domain is required"), nil
-			}
-			ensureSystemSettings(config).Set("server_domain", newDomain)
-			appLogger.Info("Updated server domain")
-			if err := saveSettings(c.Context(), config); err != nil {
-				return nil, err
-			}
-			return httpx.JSON(jsonx.Obj("success", true, "server_domain", newDomain)), nil
-		}()
-		if err != nil {
-			var binding *httpx.HTTPError
-			if errors.As(err, &binding) {
-				return nil, err
-			}
-			appLogger.Error("Failed to update server domain: " + err.Error())
-			return failure(500, err.Error()), nil
-		}
-		return response, nil
+	if c.Method() == "GET" || c.Method() == "HEAD" {
+		return httpx.JSON(map[string]any{"server_domain": settingValue(config, "server_domain", json.RawMessage(`""`))}), nil
 	}
-	return nil, nil
+	data, err := requestSettings(c)
+	if err != nil {
+		return nil, err
+	}
+	domain, err := inputText(data.NewDomain)
+	if err != nil {
+		return failure(500, err.Error()), nil
+	}
+	if domain == "" {
+		return failure(400, "New domain is required"), nil
+	}
+	raw, _ := json.Marshal(domain)
+	if err = config.SystemConfig.SetJSON("server_domain", raw); err != nil {
+		return nil, err
+	}
+	if err = saveSettings(c.Context(), config); err != nil {
+		return failure(500, err.Error()), nil
+	}
+	appLogger.Info("Updated server domain")
+	return httpx.JSON(map[string]any{"success": true, "server_domain": domain}), nil
 }
-
 func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "POST" && invalidUnicode(c) {
 		return failure(400, msgInvalidUnicode), nil
 	}
-	config, err := repo.GetSystemConfig(c.Context())
+	config, err := loadSettings(c.Context())
 	if err != nil {
 		return nil, err
 	}
 	switch c.Method() {
 	case "GET", "HEAD":
-		return httpx.JSON(jsonx.Obj("config_token", systemSettings(config).GetOr("config_token", ""))), nil
-	case "POST":
-		response, err := func() (*httpx.Response, error) {
-			data, err := requestJSONObject(c)
-			if err != nil {
-				return nil, err
-			}
-			newToken, err := pyStrip(data.GetOr("token", ""))
-			if err != nil {
-				return nil, err
-			}
-			if jsonx.Truthy(data.GetOr("generate", false)) {
-				newToken = utilx.GenerateRandomToken(32)
-			}
-			if newToken == "" {
-				return failure(400, "Token is required or set generate=true"), nil
-			}
-			internal, err := redact.ContainsInternalRuleProxyToken(c.Context(), newToken)
-			if err != nil {
-				return nil, err
-			}
-			if internal {
-				return failure(400, "Config token must not contain an internal rule proxy token"), nil
-			}
-			ensureSystemSettings(config).Set("config_token", newToken)
-			appLogger.Info("Updated config token")
-			if err := saveSettings(c.Context(), config); err != nil {
-				return nil, err
-			}
-			return httpx.JSON(jsonx.Obj("success", true, "config_token", newToken)), nil
-		}()
-		if err != nil {
-			var binding *httpx.HTTPError
-			if errors.As(err, &binding) {
-				return nil, err
-			}
-			appLogger.Error("Failed to update config token: " + err.Error())
-			return failure(500, err.Error()), nil
-		}
-		return response, nil
+		return httpx.JSON(map[string]any{"config_token": settingValue(config, "config_token", json.RawMessage(`""`))}), nil
 	case "DELETE":
-		ensureSystemSettings(config).Set("config_token", "")
-		if err := saveSettings(c.Context(), config); err != nil {
-			appLogger.Error("Failed to delete config token: " + err.Error())
+		if err = config.SystemConfig.SetJSON("config_token", json.RawMessage(`""`)); err != nil {
+			return nil, err
+		}
+		if err = saveSettings(c.Context(), config); err != nil {
 			return failure(500, err.Error()), nil
 		}
 		appLogger.Info("Deleted config token")
-		return httpx.JSON(jsonx.Obj("success", true)), nil
+		return httpx.JSON(map[string]bool{"success": true}), nil
 	}
-	return nil, nil
+	data, err := requestSettings(c)
+	if err != nil {
+		return nil, err
+	}
+	token, err := inputText(data.Token)
+	if err != nil {
+		return failure(500, err.Error()), nil
+	}
+	if enabledInput(data.Generate) {
+		token = utilx.GenerateRandomToken(32)
+	}
+	if token == "" {
+		return failure(400, "Token is required or set generate=true"), nil
+	}
+	internal, err := redact.ContainsInternalRuleProxyToken(c.Context(), token)
+	if err != nil {
+		return nil, err
+	}
+	if internal {
+		return failure(400, "Config token must not contain an internal rule proxy token"), nil
+	}
+	raw, _ := json.Marshal(token)
+	if err = config.SystemConfig.SetJSON("config_token", raw); err != nil {
+		return nil, err
+	}
+	if err = saveSettings(c.Context(), config); err != nil {
+		return failure(500, err.Error()), nil
+	}
+	appLogger.Info("Updated config token")
+	return httpx.JSON(map[string]any{"success": true, "config_token": token}), nil
 }
-
-func getVersion(c *httpx.Ctx) (*httpx.Response, error) {
-	return httpx.JSON(version.Info()), nil
-}
-
-var backupTextFields = []string{"webdav_url", "webdav_username", "webdav_password", "webdav_path"}
-var backupFields = append(append([]string{}, backupTextFields...), "auto_backup", "keep_latest", "keep_daily")
-
-// backupRequestData is _backup_request_data: the validated body, or the 400
-// response.
-func backupRequestData(c *httpx.Ctx) (*jsonx.Object, *httpx.Response) {
-	var request settingsRequest
-	var data *jsonx.Object
-	if c.BindSilent(&request) {
-		data, _ = request.legacyObject()
-	}
-	message := ""
-	switch {
-	case data == nil || !request.nonempty:
-		message = "请求体必须是非空 JSON 对象，请使用 Content-Type: application/json"
-	case !hasAny(data, backupFields):
-		message = "请提供 WebDAV 备份配置字段"
-	case anyNotString(data, backupTextFields):
-		message = "WebDAV 地址、用户名、密码和路径必须是字符串"
-	case hasKeyNotBool(data, "auto_backup"):
-		message = "auto_backup 必须是布尔值"
-	case badRetention(data):
-		message = "保留份数须为 0–1000 的整数，每日保留天数须为 0–3650 的整数"
-	}
-	if message != "" {
-		return nil, failure(400, message)
-	}
-	return data, nil
-}
-
-func hasAny(data *jsonx.Object, keys []string) bool {
-	for _, key := range keys {
-		if _, ok := data.Get(key); ok {
-			return true
-		}
-	}
-	return false
-}
-
-func anyNotString(data *jsonx.Object, keys []string) bool {
-	for _, key := range keys {
-		if value, ok := data.Get(key); ok {
-			if _, isString := value.(string); !isString {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func hasKeyNotBool(data *jsonx.Object, key string) bool {
-	value, ok := data.Get(key)
-	if !ok {
+func enabledInput(raw json.RawMessage) bool {
+	switch string(raw) {
+	case "", "null", "false", `""`, "[]", "{}":
 		return false
 	}
-	_, isBool := value.(bool)
-	return !isBool
+	var number json.Number
+	if len(raw) > 0 && raw[0] != '"' && json.Unmarshal(raw, &number) == nil {
+		value, err := number.Float64()
+		return err == nil && value != 0
+	}
+	return true
 }
-
-func badRetention(data *jsonx.Object) bool {
-	for _, key := range retentionKeys {
-		value, ok := data.Get(key)
-		if !ok {
+func getVersion(c *httpx.Ctx) (*httpx.Response, error) { return httpx.JSON(version.Info()), nil }
+func backupRequestData(c *httpx.Ctx) (*settingsRequest, *httpx.Response) {
+	var data settingsRequest
+	if !c.BindSilent(&data) || !data.nonempty {
+		return nil, failure(400, msgBackupObject)
+	}
+	fields := []json.RawMessage{data.WebDAVURL, data.WebDAVUsername, data.WebDAVPassword, data.WebDAVPath, data.AutoBackup, data.KeepLatest, data.KeepDaily}
+	present := false
+	for _, raw := range fields {
+		present = present || len(raw) > 0
+	}
+	if !present {
+		return nil, failure(400, msgBackupFields)
+	}
+	for _, raw := range fields[:4] {
+		if len(raw) > 0 {
+			var text string
+			if string(raw) == "null" || json.Unmarshal(raw, &text) != nil {
+				return nil, failure(400, msgBackupStrings)
+			}
+		}
+	}
+	if len(data.AutoBackup) > 0 && string(data.AutoBackup) != "true" && string(data.AutoBackup) != "false" {
+		return nil, failure(400, msgBackupBool)
+	}
+	for i, raw := range []json.RawMessage{data.KeepLatest, data.KeepDaily} {
+		if len(raw) == 0 {
 			continue
 		}
-		n, isNumber := value.(jsonx.Number)
-		v, fits := n.Int64()
-		if !isNumber || !fits || v < 0 || v > retentionLimits[key] {
-			return true
+		var n httpx.Number
+		if json.Unmarshal(raw, &n) != nil || !n.IsIntegerLiteral() {
+			return nil, failure(400, msgBackupRetention)
+		}
+		v, err := n.Int64()
+		if err != nil || v < 0 || v > retentionLimits[retentionKeys[i]] {
+			return nil, failure(400, msgBackupRetention)
 		}
 	}
-	return false
+	return &data, nil
 }
-
 func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
-	config, err := repo.GetSystemConfig(ctx)
+	config, err := loadSettings(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	switch c.Method() {
-	case "GET", "HEAD":
-		backup, _ := config.GetOr("backup", jsonx.NewObject()).(*jsonx.Object)
-		keepLatest, keepDaily := retentionSettings(backup)
+	backup := config.Backup
+	if c.Method() == "GET" || c.Method() == "HEAD" {
+		latest, daily := retentionSettings(&backup)
 		password := ""
-		if jsonx.Truthy(backup.Value("webdav_password")) {
+		if backup.WebDAVPassword != "" {
 			password = "******"
 		}
-		return httpx.JSON(jsonx.Obj(
-			"webdav_url", backupEditorURL(backup.GetString("webdav_url")),
-			"webdav_username", backup.GetOr("webdav_username", ""),
-			"webdav_password", password,
-			"webdav_path", backup.GetOr("webdav_path", "/config-flow-backup/"),
-			"auto_backup", backup.GetOr("auto_backup", false),
-			"keep_latest", keepLatest,
-			"keep_daily", keepDaily,
-		)), nil
-	case "POST":
-		data, bad := backupRequestData(c)
-		if bad != nil {
-			return bad, nil
+		path := "/config-flow-backup/"
+		if backup.WebDAVPath != nil {
+			path = *backup.WebDAVPath
 		}
-		backup, _ := config.SetDefault("backup", jsonx.NewObject()).(*jsonx.Object)
-		var changed []string
-		for _, key := range backupFields {
-			value, ok := data.Get(key)
-			if !ok || (key == "webdav_password" && (value == "******" || value == "")) {
-				continue
-			}
-			if previous, _ := backup.Get(key); !jsonx.Equal(previous, value) {
-				changed = append(changed, key)
-			}
-			backup.Set(key, value)
+		auto := false
+		if backup.AutoBackup != nil {
+			auto = *backup.AutoBackup
 		}
-		if err := (webdav.Settings{URL: backup.GetString("webdav_url"), Path: backup.GetString("webdav_path")}).ValidatePaths(); err != nil {
-			return failure(400, err.Error()), nil
-		}
-		if err := saveSettings(ctx, config); err != nil {
-			return nil, err
-		}
-		summary := strings.Join(changed, "、")
-		if summary == "" {
-			summary = "无变化"
-		}
-		state := "已关闭"
-		if jsonx.Truthy(backup.Value("auto_backup")) {
-			state = "已开启"
-		}
-		appLogger.Info("WebDAV 备份配置已保存：" + summary + "；自动备份" + state)
-		return httpx.Message(200, true, "备份配置已保存"), nil
+		return httpx.JSON(map[string]any{"webdav_url": backupEditorURL(backup.WebDAVURL), "webdav_username": backup.WebDAVUsername, "webdav_password": password, "webdav_path": path, "auto_backup": auto, "keep_latest": latest, "keep_daily": daily}), nil
 	}
-	return nil, nil
-}
-
-func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := repo.GetSystemConfig(c.Context())
+	data, bad := backupRequestData(c)
+	if bad != nil {
+		return bad, nil
+	}
+	before, err := json.Marshal(backup)
 	if err != nil {
 		return nil, err
 	}
-	switch c.Method() {
-	case "GET", "HEAD":
-		return httpx.JSON(jsonx.Obj("enabled", systemSettings(config).GetOr("subscription_aggregation_enabled", false))), nil
-	case "POST":
-		response, err := func() (*httpx.Response, error) {
-			data, err := requestJSONObject(c)
-			if err != nil {
-				return nil, err
-			}
-			enabled := data.GetOr("enabled", false)
-			ensureSystemSettings(config).Set("subscription_aggregation_enabled", enabled)
-			appLogger.Info("Updated subscription aggregation")
-			if err := saveSettings(c.Context(), config); err != nil {
-				return nil, err
-			}
-			return httpx.JSON(jsonx.Obj("success", true, "enabled", enabled)), nil
-		}()
-		if err != nil {
-			var binding *httpx.HTTPError
-			if errors.As(err, &binding) {
-				return nil, err
-			}
-			appLogger.Error("Failed to update subscription aggregation: " + err.Error())
-			return failure(500, err.Error()), nil
-		}
-		return response, nil
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(before, &fields); err != nil {
+		return nil, err
 	}
-	return nil, nil
+	updates := map[string]json.RawMessage{"webdav_url": data.WebDAVURL, "webdav_username": data.WebDAVUsername, "webdav_password": data.WebDAVPassword, "webdav_path": data.WebDAVPath, "auto_backup": data.AutoBackup, "keep_latest": data.KeepLatest, "keep_daily": data.KeepDaily}
+	changed := []string{}
+	for _, key := range []string{"webdav_url", "webdav_username", "webdav_password", "webdav_path", "auto_backup", "keep_latest", "keep_daily"} {
+		raw := updates[key]
+		if len(raw) == 0 || (key == "webdav_password" && (bytes.Equal(raw, []byte(`"******"`)) || bytes.Equal(raw, []byte(`""`)))) {
+			continue
+		}
+		if !bytes.Equal(fields[key], raw) {
+			changed = append(changed, key)
+		}
+		fields[key] = raw
+	}
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(raw, &backup); err != nil {
+		return nil, err
+	}
+	path := ""
+	if backup.WebDAVPath != nil {
+		path = *backup.WebDAVPath
+	}
+	if err = (webdav.Settings{URL: backup.WebDAVURL, Path: path}).ValidatePaths(); err != nil {
+		return failure(400, err.Error()), nil
+	}
+	config.Backup = backup
+	if err = saveSettings(c.Context(), config); err != nil {
+		return nil, err
+	}
+	summary := strings.Join(changed, "、")
+	if summary == "" {
+		summary = msgUnchanged
+	}
+	state := msgBackupDisabled
+	if backup.AutoBackup != nil && *backup.AutoBackup {
+		state = msgBackupEnabled
+	}
+	appLogger.Info(msgBackupSaved + "：" + summary + "；" + msgBackupAutomatic + state)
+	return httpx.Message(200, true, msgBackupSaved), nil
+}
+func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
+	config, err := loadSettings(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	if c.Method() == "GET" || c.Method() == "HEAD" {
+		return httpx.JSON(map[string]any{"enabled": settingValue(config, "subscription_aggregation_enabled", json.RawMessage(`false`))}), nil
+	}
+	data, err := requestSettings(c)
+	if err != nil {
+		return nil, err
+	}
+	raw := data.Enabled
+	if len(raw) == 0 {
+		raw = json.RawMessage(`false`)
+	}
+	if err = config.SystemConfig.SetJSON("subscription_aggregation_enabled", raw); err != nil {
+		return nil, err
+	}
+	if err = saveSettings(c.Context(), config); err != nil {
+		return failure(500, err.Error()), nil
+	}
+	appLogger.Info("Updated subscription aggregation")
+	return httpx.JSON(map[string]any{"success": true, "enabled": raw}), nil
 }

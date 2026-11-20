@@ -4,11 +4,11 @@
 package auth
 
 import (
+	"fmt"
+
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
-	"fmt"
 )
 
 var logger = logx.Get("backend.routes.auth")
@@ -21,7 +21,7 @@ func Register(r *httpx.Router) {
 }
 
 func authStatus(c *httpx.Ctx) (*httpx.Response, error) {
-	return httpx.JSON(jsonx.Obj("authEnabled", auth.IsAuthEnabled())), nil
+	return httpx.JSON(map[string]bool{"authEnabled": auth.IsAuthEnabled()}), nil
 }
 
 func login(c *httpx.Ctx) (*httpx.Response, error) {
@@ -44,8 +44,7 @@ func login(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return fail(err.Error())
 		}
-		return httpx.JSON(jsonx.Obj("success", true, "token", token, "username", name,
-			"expiresIn", auth.ExpirationHours*3600)), nil
+		return httpx.JSON(map[string]any{"success": true, "token": token, "username": name, "expiresIn": auth.ExpirationHours * 3600}), nil
 	}
 	logger.Warning("登录失败：用户名或密码错误，用户 " + logx.LogText(username, 120) + "，来源 " + logx.ClientIP(c.Request))
 	return httpx.Message(401, false, msgInvalidCredentials), nil

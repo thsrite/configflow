@@ -189,7 +189,7 @@ func TestConfigTokenLifecycle(t *testing.T) {
 	srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("token", "  "))).WantStatus(400).
 		WantJSON(jsonx.Obj("success", false, "message", "Token is required or set generate=true"))
 	srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("token", 5))).WantStatus(500).
-		WantJSON(jsonx.Obj("success", false, "message", "'int' object has no attribute 'strip'"))
+		WantJSON(jsonx.Obj("success", false, "message", "setting must be a string"))
 	srv.Delete("/api/config-token").WantStatus(200).WantJSON(jsonx.Obj("success", true))
 	srv.Get("/api/config-token").WantJSON(jsonx.Obj("config_token", ""))
 }
