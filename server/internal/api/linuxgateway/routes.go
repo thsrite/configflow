@@ -78,7 +78,17 @@ func editor(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(json.RawMessage(data)).NoStore(), nil
 }
 func provider(c *httpx.Ctx) (*httpx.Response, error) {
-	native, err := repo.Config(c.Context(), c.Param("profile_id"))
+	// One committed typed read serves both the credential check and the
+	// rendered provider, so a token rotation can never split them.
+	profileID, err := repo.ResolveProfileID(c.Context(), c.Param("profile_id"))
+	if err != nil {
+		return nil, err
+	}
+	repository, err := repo.GetRepository(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	native, err := repository.Config(c.Context(), profileID, nil)
 	if err != nil {
 		return nil, err
 	}

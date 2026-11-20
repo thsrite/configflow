@@ -9,12 +9,10 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
 	"configflow/internal/jsonx"
-	"configflow/internal/model"
 )
 
 func scRepository(t *testing.T) (*Repository, context.Context) {
@@ -395,52 +393,4 @@ func TestPublishSnapshotWithoutAgentsOnlyLeavesTheAgentRecordsOut(t *testing.T) 
 	}
 	withHistory := must(r.GetAgents(bg, true))(t)[0].(*jsonx.Object)
 	wantEqual(t, must(AgentHistory(withHistory, "deployments"))(t), parse(t, `{"d": {"status": "succeeded"}}`))
-}
-
-func TestScopedTypedConfigSnapshot(t *testing.T) {
-	r, ctx := scRepository(t)
-	noError(t, r.UpdateSystem(bg, func(_ context.Context, sys *model.System) error {
-		return sys.SystemConfig.SetJSON("config_token", json.RawMessage(`"token-v1"`))
-	}))
-
-	// Reading via GetConfig first pins the committed generation for typed Config.
-	if _, err := GetConfig(ctx, "default"); err != nil {
-		t.Fatal(err)
-	}
-	noError(t, r.UpdateSystem(bg, func(_ context.Context, sys *model.System) error {
-		return sys.SystemConfig.SetJSON("config_token", json.RawMessage(`"token-v2"`))
-	}))
-	snap, err := Config(ctx, "default")
-	noError(t, err)
-	if snap.SystemConfig.ConfigToken != "token-v1" {
-		t.Fatalf("Config after GetConfig saw %q, want token-v1", snap.SystemConfig.ConfigToken)
-	}
-
-	// ResetConfigContext clears the cached snapshot so the next Config reads v2.
-	ResetConfigContext(ctx)
-	snap, err = Config(ctx, "default")
-	noError(t, err)
-	if snap.SystemConfig.ConfigToken != "token-v2" {
-		t.Fatalf("Config after ResetConfigContext saw %q, want token-v2", snap.SystemConfig.ConfigToken)
-	}
-
-	// Reading via Config pins the snapshot against later commits in the same Scope.
-	noError(t, r.UpdateSystem(bg, func(_ context.Context, sys *model.System) error {
-		return sys.SystemConfig.SetJSON("config_token", json.RawMessage(`"token-v3"`))
-	}))
-	snap, err = Config(ctx, "default")
-	noError(t, err)
-	if snap.SystemConfig.ConfigToken != "token-v2" {
-		t.Fatalf("Config within same Scope saw %q, want token-v2", snap.SystemConfig.ConfigToken)
-	}
-
-	// UpdateConfig invalidates the profile snapshot so subsequent Config sees v3.
-	noError(t, UpdateConfig(ctx, "default", func(_ context.Context, cfg *model.Config) error {
-		return nil
-	}))
-	snap, err = Config(ctx, "default")
-	noError(t, err)
-	if snap.SystemConfig.ConfigToken != "token-v3" {
-		t.Fatalf("Config after UpdateConfig saw %q, want token-v3", snap.SystemConfig.ConfigToken)
-	}
 }

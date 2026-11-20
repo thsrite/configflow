@@ -66,15 +66,22 @@ func TestLoonFilenamePercentEncoding(t *testing.T) {
 	}
 }
 
+// TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation rotates the
+// stored token after an earlier repo.GetConfig in the same request. The live
+// route authenticates and renders from that request-scoped compat view, so the
+// pre-rotation token still wins. The Linux gateway provider makes one typed
+// read inside the handler for both its credential check and its render, so it
+// sees the rotated token; it never mixes the two generations.
 func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) {
 	mihomoenv.Wire()
 	tests := []struct {
-		name           string
-		path           string
-		expectedStatus int
+		name               string
+		path               string
+		expectedStatus     int
+		snapshot, rejected string
 	}{
-		{"live config", "/api/config/loon", 200},
-		{"linux gateway provider", "/api/custom-config/linux-gateway/rules/missing", 200},
+		{"live config", "/api/config/loon", 200, "token-before-rotation", "token-after-rotation"},
+		{"linux gateway provider", "/api/custom-config/linux-gateway/rules/missing", 200, "token-after-rotation", "token-before-rotation"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,8 +89,8 @@ func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) 
 				label, query string
 				wantStatus   int
 			}{
-				{"snapshot token succeeds", "token-before-rotation", tt.expectedStatus},
-				{"rotated db token rejected for stale snapshot", "token-after-rotation", 401},
+				{"request snapshot token succeeds", tt.snapshot, tt.expectedStatus},
+				{"token from the other generation rejected", tt.rejected, 401},
 			} {
 				t.Run(candidate.label, func(t *testing.T) {
 					var s *httpxtest.Server
