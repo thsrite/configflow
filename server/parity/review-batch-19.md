@@ -10,10 +10,10 @@
 
 | 严重级别 | 发现数 | 已修复 | 说明 |
 |---|---:|---:|---|
-| High | 0 | 0 | 未发现大面积删测试、放宽 difftest 比较器或绕过门禁的问题 |
+| High | 1 | 1 | F5（live compare 门禁复核）：`store/legacy_test.go` 的 `marshalCompact` 改用 `encoding/json`，导致无条件转义 `U+2028`/`U+2029` 且将 `nil []any` 编为 `null`，致使真实 Python 交叉验证 `TestCrossCheckPython` 与 `TestCrossCheckPythonOddDocuments` 失败 |
 | Medium | 3 | 3 | F1：`monitor/cache_test.go` 上限边界被重复元素掩盖；F2：`monitor/a07_reference_test.go` 语料适配器短路生产 `CallCache` 校验；F3：`provider/recorded_test.go` 丢失对 `cfg` 入参不可变性的断言 |
 | Low | 1 | 1 | F4：`monitor/a06_reference_test.go` 与 `a07_reference_test.go` 中 4301 位整数豁免未绑定原期望与命中次数 |
-| **合计** | **4** | **4** | 全部已在本分支直接修复并验证通过 |
+| **合计** | **5** | **5** | 全部已在本分支直接修复并验证通过 |
 
 ---
 
@@ -55,6 +55,14 @@
 - **位置**：`server/internal/agents/monitor/a06_reference_test.go`（`TestReferenceAgentAnswers`）、`server/internal/agents/monitor/a07_reference_test.go`（`compareCall` / `TestReferencePanelCalls`）
 - **问题**：两处对 CPython 4300 位限制退场后的 4301 位整数响应加了按响应体匹配的豁免分支（经核实原测试调用的旧 `request()` 包装内含 `jsonx.Parse` 触发 4300 位报错，生产 `monitorRequest`/`CallPanel` 本身保留该合法 RFC 8259 整数，符合 N8-11 §3.3 规则）。但两处分支未校验原语料期望确为 `INVALID_RESPONSE`（502），也未校验整个语料精确命中 1 次；若未来条件写错或语料变动可能静默失效或误吞其他错误。
 - **修复**：在两处豁免分支中校验原语料期望确为 `error == "INVALID_RESPONSE"` 且 `status == 502`，并新增 `matched4301` 计数，在循环结束后断言 `matched4301 == 1`。
+
+### [High] F5：`store/legacy_test.go` 的 `marshalCompact` 改用 `encoding/json` 导致真实 Python 交叉验证失败
+
+- **位置**：`server/internal/store/legacy_test.go`（`marshalCompact` / `(*testDoc).MarshalJSON`）
+- **问题**：batch-19 门禁 synthetic live 阶段（启用 `CONFIGFLOW_PY` 与 `CONFIGFLOW_REPO` 跑真实 Python）失败于 `internal/store` 的 `TestCrossCheckPython` 与 `TestCrossCheckPythonOddDocuments`。对照基线 `go`（`57bbbcff0`）实测：基线两个测试均通过（0.59s / 0.61s），生产代码 `server/internal/store/*.go` 仅直接存储与透传原始 `json.RawMessage` 字节且本分支未改动任何生产文件，**确认为 w8c 测试侧回归**：
+  1. Go 标准库 `encoding/json.NewEncoder` 即便设置 `SetEscapeHTML(false)` 仍无条件将 `U+2028` / `U+2029` 转义为 `\u2028` / `\u2029`（并把 `\b`/`\f` 编为 `\u0008`/`\u000c`），而迁移前的 `jsonx.Compact` 与 Python `json.dumps(..., ensure_ascii=False, separators=(",", ":"))` 均原样输出 `U+2028`/`U+2029`。`legacy_test.go` 的 `marshalCompact` 同时被 `legacyEncode`（构造写入 `store.Create`/`store.Commit` 的字段原始 JSON 字节）与 `compact`（比较读出文档与表行）使用，导致含 `U+2028`/`U+2029` 的 `shared.k` 写入多出 10 字节（generation size 45 vs 35）、`fields` 与 `document` 字节级不匹配。
+  2. `encoding/json` 将 `nil []any` 编码为 `null`，而 `jsonx.Compact` 编码为 `[]`。`crosscheck_test.go` 的 `goDump` 在表为空时返回 `var result []any`（nil 切片），导致 `TestCrossCheckPythonOddDocuments` sequence 0 steps 0–3 报 `fields differs: go null / py []`。
+- **修复**：在 `server/internal/store/legacy_test.go` 中将 `marshalCompact` 改为直接实现 RFC 8259 UTF-8 紧凑编码器（`writeCompactJSON` + `writeCompactString`），与 Python `json.dumps(..., ensure_ascii=False, separators=(",", ":"))` 及原 `jsonx.Compact` 语义一致：不转义 `U+2028`/`U+2029`/`<`/`>`/`&`，按标准转义控制字符（`\b`/`\f`/`\n`/`\r`/`\t`/`\u00xx`），将 `[]any`（含 `nil` 切片）与 `[]string` 编码为 `[]`，保留 `*testDoc` 键顺序、`json.Number` 字面量与 `json.RawMessage` 原始字节，拒绝非有限浮点数。`crosscheck_test.go` 未作任何修改，所有字节级比较断言维持原有严格度。
 
 ---
 
@@ -160,3 +168,44 @@ RT_HOST=sunbroke@192.168.0.64 rt sync && ssh sunbroke@192.168.0.64 'bash /tmp/pr
 PREFLIGHT PASS
 ```
 汇总：`138` 个含测试包全部 `ok`（0 `FAIL`，12 个无测试包）；其中修复涉及包 `internal/agents/monitor`（15.446s）、`internal/provider`（15.620s）、`internal/lifecycle`（0.717s）均全绿。
+
+### 4.3 F5 真实 Python 交叉验证（synthetic live 环境变量，`192.168.0.64`，`-race`）
+
+对照基线 `go`（`57bbbcff0`，临时 worktree 跑完已清理）：
+```text
+=== RUN   TestCrossCheckPython
+--- PASS: TestCrossCheckPython (0.59s)
+=== RUN   TestCrossCheckPythonOddDocuments
+--- PASS: TestCrossCheckPythonOddDocuments (0.61s)
+PASS
+ok  	configflow/internal/store	2.056s
+```
+
+修复后本分支（`gofmt -l internal/store/legacy_test.go` 无输出，带 `CONFIGFLOW_PY`、`CONFIGFLOW_REPO`、`CONFIGFLOW_DIFF_PYTHON`、`CONFIGFLOW_YAML_PYTHON`、`CONFIGFLOW_DIFF=1`、`PYTHONDONTWRITEBYTECODE=1`）：
+```text
+GOFMT_CLEAN
+=== RUN   TestCrossCheckPython
+--- PASS: TestCrossCheckPython (0.66s)
+=== RUN   TestCrossCheckPythonOddDocuments
+--- PASS: TestCrossCheckPythonOddDocuments (0.70s)
+PASS
+ok  	configflow/internal/store	2.370s
+ok  	configflow/internal/store	17.672s
+ok  	configflow/internal/lifecycle	0.357s
+```
+
+### 4.4 F5 修复后完整预检（空闲机 `192.168.0.64`，`-p 6`）
+
+命令：
+```bash
+RT_HOST=sunbroke@192.168.0.64 rt sync && ssh sunbroke@192.168.0.64 'bash /tmp/preflight.sh .paseo__worktrees__302rx1dg__go-review-batch-19 -p 6'
+```
+
+输出：
+```text
+~/rt/.paseo__worktrees__302rx1dg__go-review-batch-19
+== vet
+== full non-race tests (-p 6)
+PREFLIGHT PASS
+```
+汇总：`138` 个含测试包全部 `ok`（0 `FAIL`，12 个无测试包）；其中 `internal/store`（0.940s）、`internal/lifecycle`（0.728s）均全绿。

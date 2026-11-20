@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type testDoc struct {
@@ -184,39 +187,148 @@ func deepCopyValue(v any) any {
 }
 
 func (d *testDoc) MarshalJSON() ([]byte, error) {
-	if d == nil {
-		return []byte("null"), nil
-	}
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	for i, k := range d.keys {
-		if i > 0 {
-			buf.WriteByte(',')
-		}
-		kb, err := marshalCompact(k)
-		if err != nil {
-			return nil, err
-		}
-		vb, err := marshalCompact(d.values[k])
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(kb)
-		buf.WriteByte(':')
-		buf.Write(vb)
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
+	return marshalCompact(d)
 }
 
 func marshalCompact(v any) ([]byte, error) {
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	if err := writeCompactJSON(&buf, v); err != nil {
 		return nil, err
 	}
-	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+	return buf.Bytes(), nil
+}
+
+// writeCompactString encodes s as an RFC 8259 UTF-8 JSON string without
+// escaping HTML characters or U+2028/U+2029, matching Python's
+// json.dumps(..., ensure_ascii=False, separators=(",", ":")).
+func writeCompactString(buf *bytes.Buffer, s string) {
+	const hexDigits = "0123456789abcdef"
+	buf.WriteByte('"')
+	start := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if c >= 0x20 && c != '"' && c != '\\' {
+				i++
+				continue
+			}
+			buf.WriteString(s[start:i])
+			switch c {
+			case '"', '\\':
+				buf.WriteByte('\\')
+				buf.WriteByte(c)
+			case '\b':
+				buf.WriteString(`\b`)
+			case '\f':
+				buf.WriteString(`\f`)
+			case '\n':
+				buf.WriteString(`\n`)
+			case '\r':
+				buf.WriteString(`\r`)
+			case '\t':
+				buf.WriteString(`\t`)
+			default:
+				buf.WriteString(`\u00`)
+				buf.WriteByte(hexDigits[c>>4])
+				buf.WriteByte(hexDigits[c&0xf])
+			}
+			i++
+			start = i
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+	}
+	buf.WriteString(s[start:])
+	buf.WriteByte('"')
+}
+
+func writeCompactJSON(buf *bytes.Buffer, v any) error {
+	switch x := v.(type) {
+	case nil:
+		buf.WriteString("null")
+	case bool:
+		if x {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	case string:
+		writeCompactString(buf, x)
+	case json.Number:
+		buf.WriteString(string(x))
+	case json.RawMessage:
+		buf.Write(x)
+	case int:
+		buf.WriteString(strconv.Itoa(x))
+	case int64:
+		buf.WriteString(strconv.FormatInt(x, 10))
+	case uint64:
+		buf.WriteString(strconv.FormatUint(x, 10))
+	case float64:
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return fmt.Errorf("non-finite float: %v", x)
+		}
+		if x == 0 && math.Signbit(x) {
+			buf.WriteString("-0.0")
+			return nil
+		}
+		s := strconv.FormatFloat(x, 'g', -1, 64)
+		if !strings.ContainsAny(s, ".eE") {
+			s += ".0"
+		}
+		buf.WriteString(s)
+	case []any:
+		buf.WriteByte('[')
+		for i, item := range x {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			if err := writeCompactJSON(buf, item); err != nil {
+				return err
+			}
+		}
+		buf.WriteByte(']')
+	case []string:
+		buf.WriteByte('[')
+		for i, item := range x {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			writeCompactString(buf, item)
+		}
+		buf.WriteByte(']')
+	case *testDoc:
+		if x == nil {
+			buf.WriteString("null")
+			return nil
+		}
+		buf.WriteByte('{')
+		for i, k := range x.keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			writeCompactString(buf, k)
+			buf.WriteByte(':')
+			if err := writeCompactJSON(buf, x.values[k]); err != nil {
+				return err
+			}
+		}
+		buf.WriteByte('}')
+	default:
+		var raw bytes.Buffer
+		enc := json.NewEncoder(&raw)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(v); err != nil {
+			return err
+		}
+		parsed, err := parseOrderedJSON(bytes.TrimSuffix(raw.Bytes(), []byte("\n")))
+		if err != nil {
+			return err
+		}
+		return writeCompactJSON(buf, parsed)
+	}
+	return nil
 }
 
 func marshalIndent2(v any) ([]byte, error) {
