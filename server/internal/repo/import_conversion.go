@@ -217,7 +217,14 @@ func (r *Repository) convertImportJSON(raw json.RawMessage, resourceRemaps Resou
 		return nil, err
 	}
 	document.System = system
-	document.Shared = model.Shared{Subscriptions: []model.Subscription{}, Nodes: []model.Node{}, Aggregations: []model.Aggregation{}, RuleLibrary: []model.RuleLibraryItem{}}
+	// Establish each stored member before appending the revision. Assigning the
+	// lists only as typed fields would leave them outside the record's stored
+	// order, so SetJSON("_revision", ...) would put the revision first.
+	for _, key := range SharedFields {
+		if err := document.Shared.SetJSON(key, json.RawMessage(`[]`)); err != nil {
+			return nil, err
+		}
+	}
 	if err := document.Shared.SetJSON("_revision", []byte(`0`)); err != nil {
 		return nil, err
 	}

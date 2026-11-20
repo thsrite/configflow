@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 
@@ -46,11 +47,19 @@ func isBuiltinPolicy(value any) bool {
 //go:embed oxidns_defaults.json
 var oxidnsDefaults []byte
 
+// defaultOxidnsJSON strips formatting from the built-in source before it
+// becomes stored data. Existing user documents retain their original bytes.
+func defaultOxidnsJSON() json.RawMessage {
+	var data bytes.Buffer
+	_ = json.Compact(&data, oxidnsDefaults)
+	return data.Bytes()
+}
+
 // DefaultOxidnsSettings returns the built-in schema-free OxiDNS settings.
 func DefaultOxidnsSettings() model.Dynamic {
 	var settings model.Dynamic
 	// The embedded constant is verified by TestConfigTemplateMatchesBackend and defaults tests.
-	_ = settings.UnmarshalJSON(oxidnsDefaults)
+	_ = settings.UnmarshalJSON(defaultOxidnsJSON())
 	return settings
 }
 
@@ -59,7 +68,7 @@ func defaultConfigJSON() json.RawMessage {
 	raw := []byte(`{"subscriptions":[],"nodes":[],"rule_configs":[],"proxy_groups":[],"rule_library":[],"system_config":{"server_domain":"","github_proxy_domain":"","rule_fetch_proxy":""},"subscription_aggregations":[],"mihomo":{"custom_config":""},"mosdns":{"direct_rulesets":[],"proxy_rulesets":[],"direct_rules":[],"proxy_rules":[],"local_dns":"","remote_dns":"","fallback_dns":"","default_forward":"forward_remote","custom_hosts":"","custom_config":"","custom_matches":[],"custom_match_position":"tail","cache_enabled":true,"cache_size":10240,"cache_lazy_ttl":21600,"cache_dump_enabled":true,"cache_dump_file":"./cache.dump","cache_dump_interval":300}}`)
 	var fields model.Fields
 	_ = fields.UnmarshalJSON(raw)
-	_ = fields.Set("oxidns", oxidnsDefaults)
+	_ = fields.Set("oxidns", defaultOxidnsJSON())
 	result, _ := fields.MarshalJSON()
 	return result
 }
