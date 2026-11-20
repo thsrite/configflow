@@ -1,6 +1,0 @@
-# N8-11 migration ratchet: category server-relative-file:symbol.
-# Only remove entries as callers migrate; stale entries fail the gate.
-retired-directory internal/jsonx:<directory>
-retired-directory internal/pystr:<directory>
-retired-import internal/pystr/pystr.go:configflow/internal/jsonx
-retired-import internal/pystr/pystr_test.go:configflow/internal/jsonx

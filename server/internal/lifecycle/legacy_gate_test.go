@@ -1,12 +1,9 @@
 package lifecycle_test
 
 import (
-	"bufio"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,8 +14,7 @@ import (
 )
 
 // Each key is a check category plus an exact server-relative file:symbol.
-// Removing the last occurrence makes its allowance stale; do not add allowances
-// for new work. Directory/file checks use <directory>/<file> as their symbol.
+// Directory/file checks use <directory>/<file> as their symbol.
 type legacySite struct {
 	kind, key string
 }
@@ -136,76 +132,29 @@ func scanLegacyTree(root string) (map[legacySite]bool, error) {
 	return found, err
 }
 
-func readLegacyAllow(r io.Reader) (map[legacySite]bool, error) {
-	allowed := map[legacySite]bool{}
-	scanner := bufio.NewScanner(r)
-	line := 0
-	for scanner.Scan() {
-		line++
-		text := strings.TrimSpace(scanner.Text())
-		if text == "" || strings.HasPrefix(text, "#") {
-			continue
-		}
-		parts := strings.Fields(text)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("allowlist line %d: want category file:symbol", line)
-		}
-		site := legacySite{parts[0], parts[1]}
-		switch site.kind {
-		case "retired-import", "testjson-import", "retired-symbol", "legacy-file", "retired-directory":
-		default:
-			return nil, fmt.Errorf("allowlist line %d: unknown check %q", line, site.kind)
-		}
-		if !strings.Contains(site.key, ":") || strings.ContainsAny(site.key, "*?\\") {
-			return nil, fmt.Errorf("allowlist line %d: want exact file:symbol", line)
-		}
-		if allowed[site] {
-			return nil, fmt.Errorf("allowlist line %d: duplicate %s", line, site)
-		}
-		allowed[site] = true
-	}
-	return allowed, scanner.Err()
-}
-
-func legacyFailures(found, allowed map[legacySite]bool) []string {
+func legacyFailures(found map[legacySite]bool) []string {
 	var failures []string
 	for site := range found {
-		if !allowed[site] {
-			failures = append(failures, "new legacy violation: "+site.String())
-		}
-	}
-	for site := range allowed {
-		if !found[site] {
-			failures = append(failures, "stale legacy allowance; delete this line: "+site.String())
-		}
+		failures = append(failures, "legacy violation: "+site.String())
 	}
 	sort.Strings(failures)
 	return failures
 }
 
+// TestLegacyFacadeBoundary enforces the hardened N8-11 legacy boundary: zero
+// violations are tolerated across all five checks, and no allowlist file may exist.
 func TestLegacyFacadeBoundary(t *testing.T) {
+	if _, err := os.Stat("legacy_gate_allow.txt"); !os.IsNotExist(err) {
+		t.Fatalf("legacy allowlist file must not exist after N8-11 hardening (err=%v)", err)
+	}
 	found, err := scanLegacyTree(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := os.Open("legacy_gate_allow.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	allowed, err := readLegacyAllow(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, failure := range legacyFailures(found, allowed) {
+	for _, failure := range legacyFailures(found) {
 		t.Error(failure)
 	}
-	counts := map[string]int{}
-	for site := range allowed {
-		counts[site.kind]++
-	}
-	t.Logf("legacy allowances: retired-import=%d retired-directory=%d retired-symbol=%d legacy-file=%d testjson-import=%d total=%d",
-		counts["retired-import"], counts["retired-directory"], counts["retired-symbol"], counts["legacy-file"], counts["testjson-import"], len(allowed))
+	t.Logf("legacy gate hardened: %d violations (retired-import=0 retired-directory=0 retired-symbol=0 legacy-file=0 testjson-import=0)", len(found))
 }
 
 func TestLegacyGateNegativeControls(t *testing.T) {
@@ -221,16 +170,19 @@ func TestLegacyGateNegativeControls(t *testing.T) {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "internal/pyyaml"), 0755); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{"internal/jsonx", "internal/pystr", "internal/pyyaml"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	found, err := scanLegacyTree(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	failures := legacyFailures(found, nil)
+	failures := legacyFailures(found)
+	joined := strings.Join(failures, "\n")
 	for _, kind := range []string{"retired-import", "testjson-import", "retired-symbol", "legacy-file", "retired-directory"} {
-		if !strings.Contains(strings.Join(failures, "\n"), "new legacy violation: "+kind+" ") {
+		if !strings.Contains(joined, "legacy violation: "+kind+" ") {
 			t.Errorf("negative control missed %s: %v", kind, failures)
 		}
 	}
@@ -239,20 +191,12 @@ func TestLegacyGateNegativeControls(t *testing.T) {
 			t.Errorf("negative control missed symbol %s", symbol)
 		}
 	}
-	if failures := legacyFailures(found, found); len(failures) != 0 {
-		t.Fatalf("exact allowances rejected: %v", failures)
+	for _, dir := range []string{"internal/jsonx", "internal/pystr", "internal/pyyaml"} {
+		if !found[legacySite{"retired-directory", dir + ":<directory>"}] {
+			t.Errorf("negative control missed retired directory %s", dir)
+		}
 	}
-	stale := legacySite{"retired-symbol", "internal/example/deleted.go:PythonClass"}
-	allowed := map[legacySite]bool{}
-	for site := range found {
-		allowed[site] = true
-	}
-	allowed[stale] = true
-	failures = legacyFailures(found, allowed)
-	if len(failures) != 1 || failures[0] != "stale legacy allowance; delete this line: "+stale.String() {
-		t.Fatalf("stale allowance escaped audit: %v", failures)
-	}
-	t.Logf("synthetic source rejected (%d exact sites); stale allowance rejected", len(found))
+	t.Logf("synthetic source rejected (%d exact sites across all 5 categories)", len(found))
 }
 
 func TestLegacyGateTestOnlyConsumers(t *testing.T) {
@@ -295,16 +239,5 @@ func TestLegacyGateTestOnlyConsumers(t *testing.T) {
 	sites, err = legacySites("internal/example/value.go", []byte(`package example; var callback = other.PythonClass; const text = "must()"`))
 	if err != nil || len(sites) != 1 || sites[0].key != "internal/example/value.go:PythonClass" {
 		t.Fatalf("function reference escaped: %v, %v", sites, err)
-	}
-}
-
-func TestLegacyAllowFormat(t *testing.T) {
-	for _, input := range []string{
-		"retired-symbol internal/example/value.go:must\nretired-symbol internal/example/value.go:must",
-		"unknown internal/example/value.go:must", "retired-symbol internal/*:must", "retired-symbol missing-colon",
-	} {
-		if _, err := readLegacyAllow(strings.NewReader(input)); err == nil {
-			t.Errorf("invalid allowance accepted: %q", input)
-		}
 	}
 }

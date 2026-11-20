@@ -52,7 +52,6 @@ configflow/internal/instance
 configflow/internal/ippresence
 configflow/internal/jsonresp
 configflow/internal/jsonstore
-configflow/internal/jsonx
 configflow/internal/lifecycle
 configflow/internal/lifecycle/lifecycletest
 configflow/internal/localhttp
@@ -66,7 +65,6 @@ configflow/internal/notifications
 configflow/internal/oxidns
 configflow/internal/provider
 configflow/internal/provider/difftest
-configflow/internal/pystr
 configflow/internal/redact
 configflow/internal/refresh
 configflow/internal/refresh/difftest
