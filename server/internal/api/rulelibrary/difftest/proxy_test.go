@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -41,9 +40,9 @@ func TestManualCacheUsesGlobalForwardProxy(t *testing.T) {
 	defer proxy.Close()
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seed(t)(ctx, r)
-		_, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.GetObject("system_config").Set("rule_fetch_proxy", proxy.URL)
-			return nil, nil
+		err := r.UpdateSystem(ctx, func(_ context.Context, p *model.System) error {
+			p.SystemConfig.RuleFetchProxy = proxy.URL
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -76,7 +75,7 @@ func TestUnavailableRefreshKeepsRawCacheAndPreferences(t *testing.T) {
 	// The notice, raw file bytes and every other stored field still compare exactly.
 	stamp := fixedClock{}.Now()
 	for _, root := range []string{w.srv.DataDir, w.pyDir} {
-		name := rules.CacheFilename(testjson.Decode[model.RuleConfig](t, jsonx.Obj("id", "retained", "source_type", "url", "url", origin.URL+"/source", "behavior", "domain", "format", "text")))
+		name := rules.CacheFilename(testjson.Decode[model.RuleConfig](t, map[string]any{"id": "retained", "source_type": "url", "url": origin.URL + "/source", "behavior": "domain", "format": "text"}))
 		if root == w.pyDir {
 			matched := false
 			for python, native := range created.CachePaths {

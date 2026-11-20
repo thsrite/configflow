@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
@@ -14,22 +13,24 @@ import (
 func seed(t *testing.T) func(context.Context, *repo.Repository) {
 	t.Helper()
 	return func(ctx context.Context, r *repo.Repository) {
-		if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+		if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 			t.Fatal(err)
 		}
-		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("subscriptions", []any{jsonx.Obj("id", "feed", "name", "Feed", "url", "https://source.example/feed", "regex_filter", "HK|JP|广告")})
-			p.Set("nodes", []any{jsonx.Obj("id", "node", "name", "HK manual", "type", "http", "server", "example.com", "port", 80)})
-			p.Set("subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Aggregation", "subscriptions", []any{"feed"}, "nodes", []any{"node"})})
-			return nil, nil
+		err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+			if err := p.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"Feed","url":"https://source.example/feed","regex_filter":"HK|JP|广告"}]`)); err != nil {
+				return err
+			}
+			if err := p.SetJSON("nodes", json.RawMessage(`[{"id":"node","name":"HK manual","type":"http","server":"example.com","port":80}]`)); err != nil {
+				return err
+			}
+			return p.SetJSON("subscription_aggregations", json.RawMessage(`[{"id":"agg","name":"Aggregation","subscriptions":["feed"],"nodes":["node"]}]`))
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, id := range []string{"default", "other"} {
-			_, _, err = r.UpdateProfileTransaction(ctx, id, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				p.Set("proxy_groups", []any{jsonx.Obj("id", "group", "name", "Group", "type", "select", "subscriptions", []any{"feed"}, "regex", "HK", "future", jsonx.Obj("keep", true))})
-				return nil, nil
+			_, err = r.UpdateProfile(ctx, id, func(_ context.Context, p *model.Profile) error {
+				return p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"group","name":"Group","type":"select","subscriptions":["feed"],"regex":"HK","future":{"keep":true}}]`))
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -37,9 +38,9 @@ func seed(t *testing.T) func(context.Context, *repo.Repository) {
 		}
 		nodes := []any{}
 		for _, name := range []string{"HK 01", "HK 02", "JP 01", "广告", "US hidden", "HK 01"} {
-			nodes = append(nodes, jsonx.Obj("name", name, "type", "ss"))
+			nodes = append(nodes, map[string]any{"name": name, "type": "ss"})
 		}
-		if _, err = fixtureSaveSubscriptionNodes(ctx, "feed", nodes, nil); err != nil {
+		if err = fixtureSaveSubscriptionNodes(ctx, "feed", nodes, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -96,37 +97,26 @@ func TestRuleLibraryReadCreateHTTPParity(t *testing.T) {
 	w.call("POST", "/api/rule-library/reorder", `{"ids":["missing"]}`, true)
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var nodes []model.Node
 	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
+		return err
 	}
 	var receipt *substore.CacheMetadata
 	if metadata != nil {
 		raw, err := json.Marshal(metadata)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		receipt = &substore.CacheMetadata{}
 		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
+	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	return err
 }

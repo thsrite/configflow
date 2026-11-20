@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 )
@@ -18,75 +18,86 @@ func dnsSeed(t *testing.T, native, locked bool) func(context.Context, *repo.Repo
 	t.Helper()
 	return func(ctx context.Context, r *repo.Repository) {
 		seed(t)(ctx, r)
-		if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.GetObject("system_config").Set("server_domain", "http://localhost")
-			p.GetObject("system_config").Set("rule_proxy_token", "c33-proxy-token-0123456789abcdef")
-			return nil, nil
+		if err := r.UpdateSystem(ctx, func(_ context.Context, p *model.System) error {
+			p.SystemConfig.ServerDomain = "http://localhost"
+			p.SystemConfig.RuleProxyToken = "c33-proxy-token-0123456789abcdef"
+			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("rule_library", []any{jsonx.Obj("id", "library", "name", "Domains", "source_type", "content", "content", "DOMAIN,service.example.com", "behavior", "classical", "enabled", true)})
-			p.Set("nodes", append(p.GetList("nodes"), jsonx.Obj("id", "unused", "name", "Unused node", "type", "http", "server", "proxy.example.com", "port", 8080)))
-			return nil, nil
+		err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+			if err := p.SetJSON("rule_library", json.RawMessage(`[{"id":"library","name":"Domains","source_type":"content","content":"DOMAIN,service.example.com","behavior":"classical","enabled":true}]`)); err != nil {
+				return err
+			}
+			rawNodes, err := json.Marshal(p.Nodes)
+			if err != nil {
+				return err
+			}
+			var nodes []any
+			if err := json.Unmarshal(rawNodes, &nodes); err != nil {
+				return err
+			}
+			nodes = append(nodes, map[string]any{"id": "unused", "name": "Unused node", "type": "http", "server": "proxy.example.com", "port": 8080})
+			merged, err := json.Marshal(nodes)
+			if err != nil {
+				return err
+			}
+			return p.SetJSON("nodes", merged)
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", []any{jsonx.Obj("id", "source", "name", "Source", "type", "select", "manual_nodes", []any{"DIRECT", "node"}, "proxies_order", []any{jsonx.Obj("type", "node", "id", "DIRECT"), jsonx.Obj("type", "node", "id", "node")}), jsonx.Obj("id", "proxy", "name", "Proxy", "type", "select", "manual_nodes", []any{"node"}), jsonx.Obj("id", "following", "name", "Following", "type", "select", "follow_group", "source"), jsonx.Obj("id", "nested", "name", "Nested", "type", "select", "include_groups", []any{"following"})})
-			p.Set("rule_configs", []any{jsonx.Obj("id", "followed", "itemType", "rule", "rule_type", "DOMAIN", "value", "followed.example.com", "policy", "Following", "enabled", true), jsonx.Obj("id", "nested", "itemType", "ruleset", "library_rule_id", "library", "policy", "Nested", "enabled", true), jsonx.Obj("id", "fixed", "itemType", "rule", "rule_type", "DOMAIN", "value", "fixed.example.com", "policy", "Following", "enabled", true), jsonx.Obj("id", "blocked", "itemType", "rule", "rule_type", "DOMAIN", "value", "blocked.example.com", "policy", "REJECT", "enabled", true)})
-			p.Set("oxidns", jsonx.Obj("direct_rules", []any{"followed", "fixed"}, "direct_rulesets", []any{"nested"}, "rule_dns_follow", []any{"followed", "nested"}, "rule_actions", jsonx.Obj("blocked", jsonx.Obj("action", "blackhole"))))
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+			if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"source","name":"Source","type":"select","manual_nodes":["DIRECT","node"],"proxies_order":[{"type":"node","id":"DIRECT"},{"type":"node","id":"node"}]},{"id":"proxy","name":"Proxy","type":"select","manual_nodes":["node"]},{"id":"following","name":"Following","type":"select","follow_group":"source"},{"id":"nested","name":"Nested","type":"select","include_groups":["following"]}]`)); err != nil {
+				return err
+			}
+			if err := p.SetJSON("rule_configs", json.RawMessage(`[{"id":"followed","itemType":"rule","rule_type":"DOMAIN","value":"followed.example.com","policy":"Following","enabled":true},{"id":"nested","itemType":"ruleset","library_rule_id":"library","policy":"Nested","enabled":true},{"id":"fixed","itemType":"rule","rule_type":"DOMAIN","value":"fixed.example.com","policy":"Following","enabled":true},{"id":"blocked","itemType":"rule","rule_type":"DOMAIN","value":"blocked.example.com","policy":"REJECT","enabled":true}]`)); err != nil {
+				return err
+			}
+			return p.SetJSON("oxidns", json.RawMessage(`{"direct_rules":["followed","fixed"],"direct_rulesets":["nested"],"rule_dns_follow":["followed","nested"],"rule_actions":{"blocked":{"action":"blackhole"}}}`))
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if native {
-			_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				config, err := r.GetCompatConfig(ctx, "other", repo.ResourceRoots{})
+			_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+				config, err := r.Config(ctx, "other", repo.ResourceRoots{})
 				if err != nil {
-					return nil, err
+					return err
 				}
-				rawConfig, err := jsonx.Compact(config)
+				rawConfig, err := json.Marshal(config)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				view, err := oxidns.ProfileFromJSON(rawConfig)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				settings, err := oxidns.PrepareEditor(view.Settings(), view, "http://localhost")
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if locked {
-					parsed, err := jsonx.Parse(oxidns.ToJSON(settings))
-					if err != nil {
-						return nil, err
+					var raw map[string]any
+					if err := json.Unmarshal(oxidns.ToJSON(settings), &raw); err != nil {
+						return err
 					}
-					raw := parsed.(*jsonx.Object)
-					text := raw.GetString("native_config")
+					text, _ := raw["native_config"].(string)
 					changed := strings.NewReplacer("mode: 'null'", "mode: nxdomain", `mode: "null"`, "mode: nxdomain").Replace(text)
 					if changed == text {
 						t.Fatal("locked fixture did not modify native routing")
 					}
-					raw.Set("native_config", changed)
+					raw["native_config"] = changed
 					data, err := json.Marshal(raw)
 					if err != nil {
-						return nil, err
+						return err
 					}
 					settings, err = oxidns.FromJSON(data)
 					if err != nil {
-						return nil, err
+						return err
 					}
 				}
-				encoded, err := jsonx.Parse(oxidns.ToJSON(settings))
-				if err != nil {
-					return nil, err
-				}
-				p.Set("oxidns", encoded)
-				return nil, nil
+				return p.SetJSON("oxidns", oxidns.ToJSON(settings))
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -123,11 +134,21 @@ func TestLibraryNativeParkingHTTPParity(t *testing.T) {
 	for _, suffix := range []string{"/first", "/second"} {
 		address := origin.URL + suffix
 		w.call("PUT", "/api/rule-library/library", body(map[string]any{"name": "Remote form", "source_type": "url", "behavior": "domain", "format": "text", "url": address, "enabled": true}), true)
-		profile, err := w.srv.Repo.GetProfile(w.srv.Context(), "other")
+		profile, err := w.srv.Repo.Profile(w.srv.Context(), "other")
 		if err != nil {
 			t.Fatal(err)
 		}
-		draft := profile.GetObject("oxidns").GetString("native_config")
+		rawOxi, err := json.Marshal(profile.OxiDNS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var oxi struct {
+			NativeConfig string `json:"native_config"`
+		}
+		if err := json.Unmarshal(rawOxi, &oxi); err != nil {
+			t.Fatal(err)
+		}
+		draft := oxi.NativeConfig
 		if !strings.Contains(draft, address) && !strings.Contains(draft, url.QueryEscape(address)) {
 			t.Fatal("native source rewrite was not observable")
 		}
@@ -137,9 +158,9 @@ func TestLibraryNativeParkingHTTPParity(t *testing.T) {
 func TestGroupListenerRelinkingHTTPParity(t *testing.T) {
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seed(t)(ctx, r)
-		_, _, err := r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.GetObject("mihomo").Set("custom_config", "# user heading\nlisteners:\n  - name: local\n    type: mixed\n    port: 7890\n    proxy: Group # keep comment\n")
-			return nil, nil
+		_, err := r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+			p.Mihomo.CustomConfig = "# user heading\nlisteners:\n  - name: local\n    type: mixed\n    port: 7890\n    proxy: Group # keep comment\n"
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)

@@ -15,9 +15,9 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/provider"
+	"configflow/internal/repo"
 )
 
 const oldContent = "proxies: [{name: OldOne}, {name: OldTwo}]\n"
@@ -58,7 +58,7 @@ func TestSlowProviderParity(t *testing.T) {
 						})
 					})
 				})})
-				if _, err := srv.Repo.CreateProfile(srv.Context(), jsonx.Obj("id", "alpha", "name", "Alpha"), ""); err != nil {
+				if _, err := srv.Repo.CreateProfileRecord(srv.Context(), repo.ProfileCreation{ID: "alpha", Name: "Alpha"}, ""); err != nil {
 					t.Fatal(err)
 				}
 				if _, err := srv.Repo.WriteProfileText(srv.Context(), "alpha", "providers/a.yaml", []byte(oldContent)); err != nil {

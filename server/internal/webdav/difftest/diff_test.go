@@ -26,10 +26,11 @@ import (
 	"configflow/internal/api/settings"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 	"configflow/internal/webdav"
 )
 
@@ -214,7 +215,7 @@ type world struct {
 }
 
 func newWorld(t *testing.T) *world { return newWorldSaved(t, nil) }
-func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
+func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	t.Helper()
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
@@ -222,13 +223,20 @@ func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
 	pd, gd := newDAV(t), newDAV(t)
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: jwtSecret, Register: httpxtest.Routes(settings.Register)})
 	ctx := srv.Context()
-	_, err := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("backup", jsonx.Obj("webdav_url", "<DAV>", "webdav_username", "fixture-user", "webdav_password", "fixture-password", "webdav_path", "/backups/", "auto_backup", false))
-		if retention != nil {
-			s.GetObject("backup").Update(retention)
+	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		backup := map[string]any{"webdav_url": "<DAV>", "webdav_username": "fixture-user", "webdav_password": "fixture-password", "webdav_path": "/backups/", "auto_backup": false}
+		for k, v := range retention {
+			backup[k] = v
 		}
-		s.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
-		return nil, nil
+		raw, err := json.Marshal(backup)
+		if err != nil {
+			return err
+		}
+		if err := s.SetJSON("backup", raw); err != nil {
+			return err
+		}
+		s.SystemConfig.ServerDomain = "http://127.0.0.1:5001"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -238,9 +246,9 @@ func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
 		t.Fatalf("copy %v %s", err, out)
 	}
 	// Each process has its own endpoint but the same credentials/catalog.
-	_, err = srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetObject("backup").Set("webdav_url", gd.server.URL)
-		return nil, nil
+	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Backup.WebDAVURL = gd.server.URL
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -250,9 +258,9 @@ func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = pr.UpdateSystemTransaction(repo.WithRepository(context.Background(), pr), func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetObject("backup").Set("webdav_url", pd.server.URL)
-		return nil, nil
+	err = pr.UpdateSystem(repo.WithRepository(context.Background(), pr), func(_ context.Context, s *model.System) error {
+		s.Backup.WebDAVURL = pd.server.URL
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -262,13 +270,13 @@ func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
 	t.Cleanup(webdav.SetDefault(service))
 	webdav.Wire()
 	for _, slot := range tasks.Missing() {
-		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }))
+		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return []*tasks.Task{}, nil }))
 	}
-	t.Cleanup(notifications.SetSources(notifications.Sources{Agents: func(context.Context) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }, ListTasks: tasks.ListTasks}))
+	t.Cleanup(notifications.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil }, Rows: tasks.List}))
 	previousClock := notifications.Clock
 	notifications.Clock = func() time.Time { return fixed }
 	t.Cleanup(func() { notifications.Clock = previousClock })
-	token, err := auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), jwtSecret)
+	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, jwtSecret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,11 +292,7 @@ func newWorldSaved(t *testing.T, retention *jsonx.Object) *world {
 }
 func storeState(t *testing.T, srv *httpxtest.Server) any {
 	t.Helper()
-	doc, err := srv.Repo.ExportAll(srv.Context(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := jsonx.Compact(doc)
+	data, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

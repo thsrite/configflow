@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -31,11 +32,12 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 const (
@@ -59,9 +61,9 @@ func seed(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ServerDomain = "http://127.0.0.1:5001"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,11 +152,23 @@ func login(t *testing.T, base string) string {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
 		t.Fatalf("login: %s", data)
 	}
-	return "Bearer " + value.(*jsonx.Object).GetString("token")
+	return "Bearer " + body.Token
+}
+
+func decodeJSONValue(data []byte) (any, error) {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	var value any
+	if err := d.Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 type request struct {
@@ -243,8 +257,8 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 		if r.observe != nil {
 			r.observe(t, "go")
 		}
-		pv, perr := jsonx.Parse(pb)
-		gv, gerr := jsonx.Parse(gb)
+		pv, perr := decodeJSONValue(pb)
+		gv, gerr := decodeJSONValue(gb)
 		expected := pv
 		if r.currentVersions != ([2]string{}) {
 			if ps != 200 || gs != 200 || perr != nil || gerr != nil {
@@ -253,16 +267,16 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 			// Only the named version leaf differs. Assert both actual values
 			// before constructing the complete expected Go response.
 			for side, body := range []any{pv, gv} {
-				root, ok := body.(*jsonx.Object)
+				root, ok := body.(map[string]any)
 				if !ok {
 					t.Fatal("dependency response is not an object")
 				}
-				dependencies := root.GetList("dependencies")
-				if len(dependencies) != 1 {
+				dependencies, ok := root["dependencies"].([]any)
+				if !ok || len(dependencies) != 1 {
 					t.Fatal("dependency list changed")
 				}
-				dependency, ok := dependencies[0].(*jsonx.Object)
-				if !ok || dependency.GetString("current_version") != r.currentVersions[side] {
+				dependency, ok := dependencies[0].(map[string]any)
+				if !ok || dependency["current_version"] != r.currentVersions[side] {
 					t.Fatalf("%s: side %d unexpected current_version", r.name, side)
 				}
 			}
@@ -270,11 +284,13 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 				t.Fatal("native dependency content type changed")
 			}
 			t.Logf("native %s: current_version Python=%s Go=%s; remaining response strict", r.name, r.currentVersions[0], r.currentVersions[1])
-			expected = jsonx.DeepCopy(pv)
-			expected.(*jsonx.Object).GetList("dependencies")[0].(*jsonx.Object).Set("current_version", r.currentVersions[1])
+			var cloned any
+			cloned, _ = decodeJSONValue(pb)
+			cloned.(map[string]any)["dependencies"].([]any)[0].(map[string]any)["current_version"] = r.currentVersions[1]
+			expected = cloned
 		}
 		migrated := httpxtest.MigratedAPIError(r.method, ps, gs, ph, gh, pb, gb)
-		same := migrated || ps == gs && ((perr == nil && gerr == nil && jsonx.Equal(expected, gv)) || bytes.Equal(pb, gb))
+		same := migrated || ps == gs && ((perr == nil && gerr == nil && testjson.Equal(expected, gv)) || bytes.Equal(pb, gb))
 		if r.contains != "" && (!strings.Contains(string(pb), r.contains) || !strings.Contains(string(gb), r.contains)) {
 			failed++
 			t.Errorf("%s: body lacks %q:\n  python %s\n  go     %s", r.name, r.contains, pb, gb)
@@ -287,26 +303,30 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 		}
 	}
 	// The data written: sub_store_mode in the stored system settings.
-	for _, dir := range []string{pyDir, goDir} {
+	readMode := func(dir string) json.RawMessage {
 		r, err := repo.Open(dir, repo.Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		settings, err := r.GetSystemSettings(context.Background())
+		system, err := r.System(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("%s: sub_store_mode=%s", filepath.Base(dir), jsonx.Repr(settings.Value("sub_store_mode")))
-	}
-	pyRepo, _ := repo.Open(pyDir, repo.Options{})
-	goRepo, _ := repo.Open(goDir, repo.Options{})
-	ps, _ := pyRepo.GetSystemSettings(context.Background())
-	gs, _ := goRepo.GetSystemSettings(context.Background())
-	for _, key := range []string{"sub_store_mode"} {
-		if !jsonx.Equal(ps.Value(key), gs.Value(key)) {
-			failed++
-			t.Errorf("stored %s python %s go %s", key, jsonx.Repr(ps.Value(key)), jsonx.Repr(gs.Value(key)))
+		raw, ok, err := system.SystemConfig.MemberJSON("sub_store_mode")
+		if err != nil {
+			t.Fatal(err)
 		}
+		if !ok {
+			return json.RawMessage("null")
+		}
+		return raw
+	}
+	pm, gm := readMode(pyDir), readMode(goDir)
+	t.Logf("%s: sub_store_mode=%s", filepath.Base(pyDir), pm)
+	t.Logf("%s: sub_store_mode=%s", filepath.Base(goDir), gm)
+	if !testjson.Equal(pm, gm) {
+		failed++
+		t.Errorf("stored sub_store_mode python %s go %s", pm, gm)
 	}
 	t.Logf("%d requests, %d differences", len(requests), failed)
 }
@@ -482,16 +502,16 @@ print(json.dumps({'status':r.status_code,'type':r.headers['Content-Type'],'body'
 	if len(pyTrace) != 1 || pyTrace[0] != expectedTrace || len(goTrace) != 1 || goTrace[0] != expectedTrace {
 		t.Fatalf("explicit proxy traces: python=%q Go=%q", pyTrace, goTrace)
 	}
-	py, err := jsonx.Parse(output)
+	py, err := testjson.Parse(output)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := jsonx.Parse(response.Body)
+	body, err := testjson.Parse(response.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual := jsonx.Obj("status", response.StatusCode, "type", response.Header.Get("Content-Type"), "body", body)
-	if !jsonx.Equal(py, actual) {
+	actual := map[string]any{"status": response.StatusCode, "type": response.Header.Get("Content-Type"), "body": body}
+	if !testjson.Equal(py, actual) {
 		t.Fatalf("explicit proxy response differs: python=%s Go=%s", output, response.Body)
 	}
 	t.Log("explicit non-loopback proxy: status, content type, complete JSON and authenticated request trace match")

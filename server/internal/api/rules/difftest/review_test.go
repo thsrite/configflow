@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -23,12 +23,11 @@ func TestReviewBatchNullValues(t *testing.T) {
 func TestReviewAuthenticationAndProviderTokens(t *testing.T) {
 	w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
 		seed(t)(ctx, r)
-		_, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			system := p.GetObject("system_config")
-			system.Set("config_token", "synthetic-config-token")
-			system.Set("rule_proxy_token", "synthetic-rule-proxy-token")
-			system.Set("retired_rule_proxy_tokens", []any{"synthetic-retired-token"})
-			return nil, nil
+		err := r.UpdateSystem(ctx, func(_ context.Context, p *model.System) error {
+			p.SystemConfig.ConfigToken = "synthetic-config-token"
+			p.SystemConfig.RuleProxyToken = "synthetic-rule-proxy-token"
+			p.SystemConfig.RetiredRuleProxyTokens = []string{"synthetic-retired-token"}
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)

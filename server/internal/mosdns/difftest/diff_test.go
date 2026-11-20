@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"configflow/internal/auth"
-	"configflow/internal/jsonx"
 	"configflow/internal/localhttp"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/substore"
@@ -78,42 +78,64 @@ func seed(t *testing.T, dir, base string) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("server_domain", domain)
-		system.GetObject("system_config").Set("config_token", cfgToken)
-		system.GetObject("system_config").Set("retired_rule_proxy_tokens", []any{retired})
-		return nil, nil
+	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ServerDomain = domain
+		system.SystemConfig.ConfigToken = cfgToken
+		system.SystemConfig.RetiredRuleProxyTokens = []string{retired}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	library := []any{
-		jsonx.Obj("id", "inline", "name", "Inline", "source_type", "content", "content", "+.inline.test\nDOMAIN,exact.inline.test", "behavior", "classical", "format", "text"),
-		jsonx.Obj("id", "remote", "name", "Remote", "source_type", "url", "url", base+"/list.txt", "behavior", "domain", "format", "text"),
-		jsonx.Obj("id", "classical", "name", "Classical", "source_type", "url", "url", base+"/classical.txt", "behavior", "classical", "format", "text"),
-		jsonx.Obj("id", "bad", "name", "Bad", "source_type", "url", "url", base+"/bad.txt", "behavior", "domain", "format", "text"),
-		jsonx.Obj("id", "binary", "name", "Binary", "source_type", "url", "url", base+"/list.mrs", "behavior", "domain", "format", "mrs"),
-		jsonx.Obj("id", "inline-off", "name", "InlineOff", "source_type", "content", "content", "+.off.test", "behavior", "domain", "format", "text"),
+		map[string]any{"id": "inline", "name": "Inline", "source_type": "content", "content": "+.inline.test\nDOMAIN,exact.inline.test", "behavior": "classical", "format": "text"},
+		map[string]any{"id": "remote", "name": "Remote", "source_type": "url", "url": base + "/list.txt", "behavior": "domain", "format": "text"},
+		map[string]any{"id": "classical", "name": "Classical", "source_type": "url", "url": base + "/classical.txt", "behavior": "classical", "format": "text"},
+		map[string]any{"id": "bad", "name": "Bad", "source_type": "url", "url": base + "/bad.txt", "behavior": "domain", "format": "text"},
+		map[string]any{"id": "binary", "name": "Binary", "source_type": "url", "url": base + "/list.mrs", "behavior": "domain", "format": "mrs"},
+		map[string]any{"id": "inline-off", "name": "InlineOff", "source_type": "content", "content": "+.off.test", "behavior": "domain", "format": "text"},
 	}
-	if _, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", append(shared.GetList("rule_library"), library...))
-		return nil, nil
+	if err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal(shared.RuleLibrary)
+		if err != nil {
+			return err
+		}
+		var items []any
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return err
+		}
+		items = append(items, library...)
+		merged, err := json.Marshal(items)
+		if err != nil {
+			return err
+		}
+		return shared.SetJSON("rule_library", merged)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		configs := profile.GetList("rule_configs")
+	if _, err := r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
+		raw, err := json.Marshal(profile.RuleConfigs)
+		if err != nil {
+			return err
+		}
+		var configs []any
+		if err := json.Unmarshal(raw, &configs); err != nil {
+			return err
+		}
 		for _, id := range []string{"inline", "remote", "classical", "bad", "binary"} {
-			configs = append(configs, jsonx.Obj("id", "sel-"+id, "itemType", "ruleset", "library_rule_id", id,
-				"policy", "DIRECT", "enabled", true))
+			configs = append(configs, map[string]any{"id": "sel-" + id, "itemType": "ruleset", "library_rule_id": id,
+				"policy": "DIRECT", "enabled": true})
 		}
 		// Hand-edited values: enabled null (Python: not selected) and a
 		// numeric library_rule_id on another rule.
-		configs = append(configs, jsonx.Obj("id", "sel-inline-off", "itemType", "ruleset", "library_rule_id", "inline-off",
-			"policy", "DIRECT", "enabled", nil),
-			jsonx.Obj("id", "odd", "itemType", "rule", "rule_type", "DOMAIN", "value", "odd.test", "policy", "DIRECT",
-				"library_rule_id", jsonx.Int(7), "enabled", "yes"))
-		profile.Set("rule_configs", configs)
-		return nil, nil
+		configs = append(configs, map[string]any{"id": "sel-inline-off", "itemType": "ruleset", "library_rule_id": "inline-off",
+			"policy": "DIRECT", "enabled": nil},
+			map[string]any{"id": "odd", "itemType": "rule", "rule_type": "DOMAIN", "value": "odd.test", "policy": "DIRECT",
+				"library_rule_id": 7, "enabled": "yes"})
+		merged, err := json.Marshal(configs)
+		if err != nil {
+			return err
+		}
+		return profile.SetJSON("rule_configs", merged)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -281,11 +303,11 @@ func written(t *testing.T, dir string) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile, err := r.GetProfile(context.Background(), "default")
+	profile, err := r.Profile(context.Background(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := jsonx.Compact(profile.Value("mosdns"))
+	data, _ := json.Marshal(profile.MosDNS)
 	var settings any
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber() // integers of any size compare exactly
@@ -312,11 +334,11 @@ func ruleToken(t *testing.T, dir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	system, err := r.GetSystem(context.Background())
+	system, err := r.System(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return system.GetObject("system_config").GetString("rule_proxy_token")
+	return system.SystemConfig.RuleProxyToken
 }
 
 func TestDifferentialMosDNSRoutes(t *testing.T) {

@@ -2,11 +2,12 @@ package difftest
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 )
@@ -14,16 +15,27 @@ import (
 func TestRouterOfflineMissingCacheMatchesPython(t *testing.T) {
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seed(t)(ctx, r)
-		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("rule_library", append(p.GetList("rule_library"), jsonx.Obj("id", "offline", "name", "Offline", "source_type", "url", "url", "http://127.0.0.1:1/forbidden", "behavior", "ipcidr", "format", "text")))
-			return nil, nil
+		err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+			raw, err := json.Marshal(p.RuleLibrary)
+			if err != nil {
+				return err
+			}
+			var items []any
+			if err := json.Unmarshal(raw, &items); err != nil {
+				return err
+			}
+			items = append(items, map[string]any{"id": "offline", "name": "Offline", "source_type": "url", "url": "http://127.0.0.1:1/forbidden", "behavior": "ipcidr", "format": "text"})
+			merged, err := json.Marshal(items)
+			if err != nil {
+				return err
+			}
+			return p.SetJSON("rule_library", merged)
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("rule_configs", []any{jsonx.Obj("id", "selected", "itemType", "ruleset", "library_rule_id", "offline", "policy", "PROXY", "enabled", true)})
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+			return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"selected","itemType":"ruleset","library_rule_id":"offline","policy":"PROXY","enabled":true}]`))
 		})
 		if err != nil {
 			t.Fatal(err)

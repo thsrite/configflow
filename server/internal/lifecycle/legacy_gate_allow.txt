@@ -53,24 +53,18 @@ retired-import internal/agents/upgrade_support.go:configflow/internal/jsonx
 retired-import internal/agents/version.go:configflow/internal/jsonx
 retired-import internal/aggregations/render_test.go:configflow/internal/jsonx
 retired-import internal/api/aggregations/delivery_test.go:configflow/internal/jsonx
-retired-import internal/api/aggregations/difftest/cases_test.go:configflow/internal/jsonx
-retired-import internal/api/aggregations/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/aggregations/review_test.go:configflow/internal/jsonx
 retired-import internal/api/auth/login_test.go:configflow/internal/jsonx
 retired-import internal/api/clientdevices/handlers_test.go:configflow/internal/jsonx
 retired-import internal/api/config/custom_test.go:configflow/internal/jsonx
-retired-import internal/api/config/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/config/global_test.go:configflow/internal/jsonx
 retired-import internal/api/config/live_test.go:configflow/internal/jsonx
 retired-import internal/api/domaindiscovery/identity_test.go:configflow/internal/jsonx
 retired-import internal/api/domaindiscovery/init_targets_test.go:configflow/internal/jsonx
 retired-import internal/api/domaindiscovery/legacy_settings_test.go:configflow/internal/jsonx
 retired-import internal/api/domaindiscovery/routes_test.go:configflow/internal/jsonx
-retired-import internal/api/gatewayonboarding/difftest/diff_test.go:configflow/internal/jsonx
-retired-import internal/api/gatewayonboarding/difftest/fixture_test.go:configflow/internal/jsonx
 retired-import internal/api/gatewayonboarding/routes_test.go:configflow/internal/jsonx
 retired-import internal/api/ipv6/routes_test.go:configflow/internal/jsonx
-retired-import internal/api/linuxgateway/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/logs/logs_test.go:configflow/internal/jsonx
 retired-import internal/api/logs/permission_test.go:configflow/internal/jsonx
 retired-import internal/api/logs/review_test.go:configflow/internal/jsonx
@@ -79,7 +73,6 @@ retired-import internal/api/nodes/latency_test.go:configflow/internal/jsonx
 retired-import internal/api/nodes/review_test.go:configflow/internal/jsonx
 retired-import internal/api/notifications/notifications_test.go:configflow/internal/jsonx
 retired-import internal/api/notifications/readiness_test.go:configflow/internal/jsonx
-retired-import internal/api/oxidns/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/profiles/profiles_test.go:configflow/internal/jsonx
 retired-import internal/api/profiles/review_test.go:configflow/internal/jsonx
 retired-import internal/api/proxygroups/service_test.go:configflow/internal/jsonx
@@ -89,11 +82,6 @@ retired-import internal/api/routers/publish_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/repository_guard_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/review_r15_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/safety_test.go:configflow/internal/jsonx
-retired-import internal/api/rulelibrary/difftest/cases_test.go:configflow/internal/jsonx
-retired-import internal/api/rulelibrary/difftest/diff_test.go:configflow/internal/jsonx
-retired-import internal/api/rulelibrary/difftest/dns_test.go:configflow/internal/jsonx
-retired-import internal/api/rulelibrary/difftest/proxy_test.go:configflow/internal/jsonx
-retired-import internal/api/rulelibrary/difftest/review_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/fault_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/mutate_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/review_cache_test.go:configflow/internal/jsonx
@@ -102,12 +90,6 @@ retired-import internal/api/rulelibrary/shutdown_forget_test.go:configflow/inter
 retired-import internal/api/rules/boundary_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/compose_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/delivery_warning_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/difftest/cases_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/difftest/diff_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/difftest/dns_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/difftest/edge_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/difftest/offline_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/difftest/review_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/offline_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/read_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/review_source_test.go:configflow/internal/jsonx
@@ -122,8 +104,6 @@ retired-import internal/api/settings/runtime_test.go:configflow/internal/jsonx
 retired-import internal/api/settings/settings_test.go:configflow/internal/jsonx
 retired-import internal/api/settings/unicode_test.go:configflow/internal/jsonx
 retired-import internal/api/stats/stats_test.go:configflow/internal/jsonx
-retired-import internal/api/subscriptions/difftest/cases_test.go:configflow/internal/jsonx
-retired-import internal/api/subscriptions/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/subscriptions/input_shape_test.go:configflow/internal/jsonx
 retired-import internal/api/subscriptions/revision_test.go:configflow/internal/jsonx
 retired-import internal/api/subscriptions/security_test.go:configflow/internal/jsonx
@@ -179,7 +159,6 @@ retired-import internal/deploy/adapter.go:configflow/internal/jsonx
 retired-import internal/health/check/legacy.go:configflow/internal/jsonx
 retired-import internal/health/check/typed_test.go:configflow/internal/jsonx
 retired-import internal/health/corpus_test.go:configflow/internal/jsonx
-retired-import internal/health/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/health/latency_internal_test.go:configflow/internal/jsonx
 retired-import internal/health/ownership_test.go:configflow/internal/jsonx
 retired-import internal/health/recorded_test.go:configflow/internal/jsonx
@@ -187,10 +166,6 @@ retired-import internal/health/replay_classify_test.go:configflow/internal/jsonx
 retired-import internal/health/review_c16_test.go:configflow/internal/jsonx
 retired-import internal/httpx/bind_test.go:configflow/internal/jsonx
 retired-import internal/httpx/ctx.go:configflow/internal/jsonx
-retired-import internal/httpx/difftest/bind_cases_test.go:configflow/internal/jsonx
-retired-import internal/httpx/difftest/c06_oracles_test.go:configflow/internal/jsonx
-retired-import internal/httpx/difftest/diff_test.go:configflow/internal/jsonx
-retired-import internal/httpx/difftest/n8_7_jwt_test.go:configflow/internal/jsonx
 retired-import internal/httpx/edge_test.go:configflow/internal/jsonx
 retired-import internal/httpx/errors.go:configflow/internal/jsonx
 retired-import internal/httpx/httpx_test.go:configflow/internal/jsonx
@@ -211,7 +186,6 @@ retired-import internal/mosdns/archive_cache_reference_test.go:configflow/intern
 retired-import internal/mosdns/archive_test.go:configflow/internal/jsonx
 retired-import internal/mosdns/cfg09_runtime_test.go:configflow/internal/jsonx
 retired-import internal/mosdns/cfg09_test.go:configflow/internal/jsonx
-retired-import internal/mosdns/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/mosdns/legacy.go:configflow/internal/jsonx
 retired-import internal/mosdns/n73_gate_test.go:configflow/internal/jsonx
 retired-import internal/mosdns/n73_reference_test.go:configflow/internal/jsonx
@@ -230,7 +204,6 @@ retired-import internal/oxidns/review_c27_transactions_test.go:configflow/intern
 retired-import internal/oxidns/runtime_writes_test.go:configflow/internal/jsonx
 retired-import internal/oxidns/settings_store_test.go:configflow/internal/jsonx
 retired-import internal/provider/corpus_test.go:configflow/internal/jsonx
-retired-import internal/provider/difftest/slow_test.go:configflow/internal/jsonx
 retired-import internal/provider/fixture_speed_test.go:configflow/internal/jsonx
 retired-import internal/provider/legacy.go:configflow/internal/jsonx
 retired-import internal/provider/n73_diagnostic_test.go:configflow/internal/jsonx
@@ -250,7 +223,6 @@ retired-import internal/pystr/pystr_test.go:configflow/internal/jsonx
 retired-import internal/redact/credentials_test.go:configflow/internal/jsonx
 retired-import internal/redact/review_a13_test.go:configflow/internal/jsonx
 retired-import internal/refresh/corpus_test.go:configflow/internal/jsonx
-retired-import internal/refresh/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/refresh/health_test.go:configflow/internal/jsonx
 retired-import internal/refresh/legacy_errors_test.go:configflow/internal/jsonx
 retired-import internal/refresh/lifecycle_test.go:configflow/internal/jsonx
@@ -361,8 +333,6 @@ retired-import internal/subs/compat_drift_test.go:configflow/internal/jsonx
 retired-import internal/subs/compat_golden_test.go:configflow/internal/jsonx
 retired-import internal/subs/corpus_test.go:configflow/internal/jsonx
 retired-import internal/subs/dialers_corpus_test.go:configflow/internal/jsonx
-retired-import internal/subs/difftest/chains_test.go:configflow/internal/jsonx
-retired-import internal/subs/difftest/edit_test.go:configflow/internal/jsonx
 retired-import internal/subs/dns_corpus_test.go:configflow/internal/jsonx
 retired-import internal/subs/filter_hosts_corpus_test.go:configflow/internal/jsonx
 retired-import internal/subs/legacy.go:configflow/internal/jsonx
@@ -384,7 +354,6 @@ retired-import internal/substore/client_test.go:configflow/internal/jsonx
 retired-import internal/substore/conversion_test.go:configflow/internal/jsonx
 retired-import internal/substore/corpus_test.go:configflow/internal/jsonx
 retired-import internal/substore/dependencies_test.go:configflow/internal/jsonx
-retired-import internal/substore/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/substore/fake_test.go:configflow/internal/jsonx
 retired-import internal/substore/inprocess_test.go:configflow/internal/jsonx
 retired-import internal/substore/legacy.go:configflow/internal/jsonx
@@ -397,8 +366,6 @@ retired-import internal/substore/runtime_test.go:configflow/internal/jsonx
 retired-import internal/subs/yaml_reader_test.go:configflow/internal/jsonx
 retired-import internal/tasks/legacy.go:configflow/internal/jsonx
 retired-import internal/taskstatus/legacy.go:configflow/internal/jsonx
-retired-import internal/webdav/difftest/cases_test.go:configflow/internal/jsonx
-retired-import internal/webdav/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/webdav/lifecycle_test.go:configflow/internal/jsonx
 retired-import internal/webdav/review_c35_test.go:configflow/internal/jsonx
 retired-import internal/webdav/taskbridge_test.go:configflow/internal/jsonx

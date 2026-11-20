@@ -7,8 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx/yamlxtest"
+	"configflow/internal/testjson"
 )
 
 type bindingExpectation struct {
@@ -61,9 +60,9 @@ func bindingDifference(r request, py, gor response) (response, []string) {
 		if side.got.status != side.status {
 			diffs = append(diffs, fmt.Sprintf("binding %s status %d want %d", side.name, side.got.status, side.status))
 		}
-		actual, aErr := jsonx.Parse(side.got.body)
-		expected, eErr := jsonx.ParseString(side.body)
-		if aErr != nil || eErr != nil || !yamlxtest.EqualJSON(actual, expected) {
+		actual, aErr := testjson.Parse(side.got.body)
+		expected, eErr := testjson.Parse([]byte(side.body))
+		if aErr != nil || eErr != nil || !testjson.Equal(actual, expected) {
 			diffs = append(diffs, fmt.Sprintf("binding %s body %s want %s", side.name, side.got.body, side.body))
 		}
 	}

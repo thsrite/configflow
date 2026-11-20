@@ -28,7 +28,6 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
@@ -37,6 +36,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	shared "configflow/internal/rules"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
@@ -76,14 +76,14 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		}
 	})
 	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apirules.Register, rulelibrary.Register, proxygroups.Register)})
-	notifications.SetSources(notifications.Sources{Agents: func(context.Context) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil }, ListTasks: func(ctx context.Context) ([]*jsonx.Object, error) {
-		status, err := taskstatus.New(w.srv.DataDir).Load()
+	notifications.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil }, Rows: func(ctx context.Context) ([]*tasks.Task, error) {
+		status, err := taskstatus.New(w.srv.DataDir).Read()
 		if err != nil {
 			return nil, err
 		}
-		return ruleRows(ctx, status)
+		return refresh.RuleTasks(ctx, status)
 	}})
-	t.Cleanup(notifications.ResetSources)
+	t.Cleanup(notifications.ResetInputs)
 	oldClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = oldClock })
@@ -131,7 +131,7 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 			t.Log(w.stderr.String())
 		}
 	})
-	token, err := auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), secret)
+	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func jsonValue(t *testing.T, v any) any {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	doc, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,15 +342,7 @@ func (w *world) pairIDs(a, b any) {
 				w.ids[y] = replacement
 				if aa["source_type"] == "url" {
 					for _, row := range []map[string]any{aa, bb} {
-						raw, err := json.Marshal(row)
-						if err != nil {
-							w.t.Fatal(err)
-						}
-						value, err := jsonx.Parse(raw)
-						if err != nil {
-							w.t.Fatal(err)
-						}
-						w.ids["shared/rules/"+shared.CacheFilename(testjson.Decode[model.RuleConfig](w.t, value.(*jsonx.Object)))] = replacement + ".list"
+						w.ids["shared/rules/"+shared.CacheFilename(testjson.Decode[model.RuleConfig](w.t, row))] = replacement + ".list"
 					}
 				}
 
@@ -445,7 +437,7 @@ func (w *world) callHeaders(method, path, body, goBody string, headers map[strin
 		if err := json.Unmarshal([]byte(body), &request); err != nil {
 			t.Fatal(err)
 		}
-		config, err := repo.GetConfig(w.srv.Context(), path)
+		config, err := w.srv.Repo.Config(w.srv.Context(), path, repo.ResourceRoots{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -678,32 +670,4 @@ func (w *world) normalizeString(value string) string {
 		return value
 	}
 	return strings.NewReplacer(pairs...).Replace(value)
-}
-
-func ruleRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var statuses taskstatus.Snapshot
-	if err := json.Unmarshal(raw, &statuses); err != nil {
-		return nil, err
-	}
-	rows, err := refresh.RuleTasks(ctx, statuses)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*jsonx.Object, len(rows))
-	for i, row := range rows {
-		data, err := json.Marshal(row)
-		if err != nil {
-			return nil, err
-		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = parsed.(*jsonx.Object)
-	}
-	return out, nil
 }

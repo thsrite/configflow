@@ -27,7 +27,8 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/yamlx"
 )
@@ -129,33 +130,32 @@ func newWorld(t *testing.T, seeds ...func(*httpxtest.Server)) *world {
 	}
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(api.Register, apigenerate.Register, apiprofiles.Register), Setup: func(_ *httpx.App) { server.NewApp() }})
 	ctx := srv.Context()
-	if _, err := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetObject("system_config").Set("config_token", "c34-config-secret")
-		s.GetObject("system_config").Set("rule_proxy_token", "c34-rule-secret")
-		return nil, nil
+	if err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.SystemConfig.ConfigToken = "c34-config-secret"
+		s.SystemConfig.RuleProxyToken = "c34-rule-secret"
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", []any{jsonx.Obj("id", "library", "name", "Synthetic", "source_type", "content", "content", "DOMAIN-SUFFIX,example.com", "behavior", "domain", "format", "text")})
-		return nil, nil
+	if err := srv.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("rule_library", json.RawMessage(`[{"id":"library","name":"Synthetic","source_type":"content","content":"DOMAIN-SUFFIX,example.com","behavior":"domain","format":"text"}]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_configs", []any{jsonx.Obj("id", "rs", "itemType", "ruleset", "library_rule_id", "library", "policy", "DIRECT", "enabled", true)})
-		p.Set("oxidns", jsonx.Obj("local_dns", "192.0.2.53", "remote_dns", "192.0.2.54", "fallback_dns", "192.0.2.55", "unrelated", jsonx.Obj("empty", []any{}, "null", nil)))
-		return nil, nil
+	if _, err := srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		if err := p.SetJSON("rule_configs", json.RawMessage(`[{"id":"rs","itemType":"ruleset","library_rule_id":"library","policy":"DIRECT","enabled":true}]`)); err != nil {
+			return err
+		}
+		return p.SetJSON("oxidns", json.RawMessage(`{"local_dns":"192.0.2.53","remote_dns":"192.0.2.54","fallback_dns":"192.0.2.55","unrelated":{"empty":[],"null":null}}`))
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.Repo.CloneProfile(ctx, "default", jsonx.Obj("id", "office", "name", "Office")); err != nil {
+	if _, err := srv.Repo.CloneProfileRecord(ctx, "default", repo.ProfileCreation{ID: "office", Name: "Office"}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "synthetic-agent", "name", "Synthetic Agent", "host", "192.0.2.2", "port", jsonx.Int(8080), "service_type", "mihomo", "profile_id", "office", "token", "synthetic-agent-credential")})
-		return nil, nil
+	if err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", json.RawMessage(`[{"id":"synthetic-agent","name":"Synthetic Agent","host":"192.0.2.2","port":8080,"service_type":"mihomo","profile_id":"office","token":"synthetic-agent-credential"}]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func newWorld(t *testing.T, seeds ...func(*httpxtest.Server)) *world {
 	if out, err := exec.Command("cp", "-a", srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 		t.Fatalf("copy: %v %s", err, out)
 	}
-	token, err := auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), secret)
+	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func native(t *testing.T, v any) any {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	doc, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

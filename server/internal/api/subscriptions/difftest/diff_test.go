@@ -24,12 +24,13 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/yamlx"
 )
@@ -149,8 +150,8 @@ type world struct {
 	t       *testing.T
 }
 
-func node(id string) *jsonx.Object {
-	return jsonx.Obj("id", id, "name", id, "type", "http", "server", "example.com", "port", 80, "enabled", true)
+func node(id string) map[string]any {
+	return map[string]any{"id": id, "name": id, "type": "http", "server": "example.com", "port": 80, "enabled": true}
 }
 func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sources map[string]string) *world {
 	t.Helper()
@@ -167,29 +168,28 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	ctx := srv.Context()
 	// The isolated app projects only the task families seeded by this fixture.
 	// Other modules have no resources in this synthetic repository.
-	notifications.SetSources(notifications.Sources{
-		Agents: func(context.Context) ([]*jsonx.Object, error) { return []*jsonx.Object{}, nil },
-		ListTasks: func(ctx context.Context) ([]*jsonx.Object, error) {
-			status, err := taskstatus.New(srv.DataDir).Load()
+	notifications.SetInputs(notifications.Inputs{
+		Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil },
+		Rows: func(ctx context.Context) ([]*tasks.Task, error) {
+			status, err := taskstatus.New(srv.DataDir).Read()
 			if err != nil {
 				return nil, err
 			}
-			subs, err := subscriptionRows(ctx, status)
+			subs, err := refresh.SubscriptionTasks(ctx, status)
 			if err != nil {
 				return nil, err
 			}
-			rules, err := ruleRows(ctx, status)
+			rules, err := refresh.RuleTasks(ctx, status)
 			return append(subs, rules...), err
 		},
 	})
-	t.Cleanup(notifications.ResetSources)
-	_, err := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		settings := s.GetObject("system_config")
-		settings.Set("config_token", "c30-pull")
-		settings.Set("rule_proxy_token", "c30-internal")
-		settings.Set("retired_rule_proxy_tokens", []any{"c30-retired"})
-		settings.Set("server_domain", "http://127.0.0.1:5001")
-		return nil, nil
+	t.Cleanup(notifications.ResetInputs)
+	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.SystemConfig.ConfigToken = "c30-pull"
+		s.SystemConfig.RuleProxyToken = "c30-internal"
+		s.SystemConfig.RetiredRuleProxyTokens = []string{"c30-retired"}
+		s.SystemConfig.ServerDomain = "http://127.0.0.1:5001"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -209,11 +209,11 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 			return
 		}
 		mutated = true
-		_, _, err := srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			g := p.GetList("proxy_groups")[0].(*jsonx.Object)
-			g.Set("name", "Changed")
-			g.Set("manual_nodes", []any{"exit"})
-			return nil, nil
+		_, err := srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+			p.ProxyGroups[0].Name = "Changed"
+			manual := []string{"exit"}
+			p.ProxyGroups[0].ManualNodes = &manual
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -238,14 +238,14 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	re.RandomHex = env.RandomHex
 	t.Cleanup(refresh.SetRefreshEnv(re))
 	t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{NodeID: func() string { return "node_00000001" }}))
-	token, err := auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), secret)
+	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &world{srv, startOracle(t, pyDir), c, "Bearer " + token, t}
 }
 func native(v any) any {
-	data, err := jsonx.Compact(v)
+	data, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
 	}
@@ -257,7 +257,7 @@ func native(v any) any {
 }
 func snapshot(t *testing.T, srv *httpxtest.Server) any {
 	t.Helper()
-	doc, err := srv.Repo.ExportAll(srv.Context(), false)
+	doc, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,60 +505,4 @@ func firstDifference(a, b any, path string) string {
 		return fmt.Sprintf("%s Python=%v Go=%v", path, a, b)
 	}
 	return path
-}
-
-func subscriptionRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var statuses taskstatus.Snapshot
-	if err := json.Unmarshal(raw, &statuses); err != nil {
-		return nil, err
-	}
-	rows, err := refresh.SubscriptionTasks(ctx, statuses)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*jsonx.Object, len(rows))
-	for i, row := range rows {
-		data, err := json.Marshal(row)
-		if err != nil {
-			return nil, err
-		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = parsed.(*jsonx.Object)
-	}
-	return out, nil
-}
-
-func ruleRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var statuses taskstatus.Snapshot
-	if err := json.Unmarshal(raw, &statuses); err != nil {
-		return nil, err
-	}
-	rows, err := refresh.RuleTasks(ctx, statuses)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*jsonx.Object, len(rows))
-	for i, row := range rows {
-		data, err := json.Marshal(row)
-		if err != nil {
-			return nil, err
-		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = parsed.(*jsonx.Object)
-	}
-	return out, nil
 }

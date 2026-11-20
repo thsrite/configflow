@@ -17,7 +17,7 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
@@ -132,47 +132,51 @@ func goRelinkOutcome(t *testing.T, tc editCase) editOutcome {
 	t.Helper()
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.POST("/static/n7-2/relink", "test.n7_relink", func(c *httpx.Ctx) (*httpx.Response, error) {
-			payload := c.JSONObject()
-			if payload == nil {
-				return httpx.JSONStatus(400, jsonx.Obj("success", false, "error", "synthetic object body required")), nil
+			var payload struct {
+				New       *string `json:"new"`
+				FailAfter bool    `json:"fail_after"`
 			}
-			var newName *string
-			if text, ok := payload.Value("new").(string); ok {
-				newName = &text
+			if err := c.Bind(&payload); err != nil {
+				return httpx.JSONStatus(400, map[string]any{"success": false, "error": "synthetic object body required"}), nil
 			}
-			failAfter := payload.Value("fail_after") == true
+			newName := payload.New
+			failAfter := payload.FailAfter
 			var changed []string
 			repository, err := repo.GetRepository(c.Context())
 			if err != nil {
 				return nil, err
 			}
-			_, _, err = repository.UpdateProfileTransaction(context.WithoutCancel(c.Context()), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				group := p.GetList("proxy_groups")[0].(*jsonx.Object)
+			_, err = repository.UpdateProfile(context.WithoutCancel(c.Context()), "default", func(_ context.Context, p *model.Profile) error {
 				name := "Disabled"
 				if newName != nil {
 					name = *newName
 				}
-				group.Set("name", name)
+				p.ProxyGroups[0].Name = name
 				var err error
-				changed, err = subs.RelinkGroupListeners(p, "Pinned", newName)
+				changed, err = subs.RelinkListeners(p, "Pinned", newName)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if failAfter {
-					return nil, errors.New("synthetic rollback")
+					return errors.New("synthetic rollback")
 				}
-				return nil, nil
+				return nil
 			})
 			if err != nil {
-				return httpx.JSONStatus(400, jsonx.Obj("success", false, "error", err.Error())), nil
+				return httpx.JSONStatus(400, map[string]any{"success": false, "error": err.Error()}), nil
 			}
-			return httpx.JSON(jsonx.Obj("success", true, "changed", jsonx.ListOf(changed))), nil
+			if changed == nil {
+				changed = []string{}
+			}
+			return httpx.JSON(map[string]any{"success": true, "changed": changed}), nil
 		})
 	})})
-	_, _, err := srv.Repo.UpdateProfileTransaction(srv.Context(), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Pinned", "type", "select", "manual_nodes", []any{"DIRECT"}, "future", "keep")})
-		p.Set("mihomo", jsonx.Obj("custom_config", tc.Source))
-		return nil, nil
+	_, err := srv.Repo.UpdateProfile(srv.Context(), "default", func(_ context.Context, p *model.Profile) error {
+		if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"g","name":"Pinned","type":"select","manual_nodes":["DIRECT"],"future":"keep"}]`)); err != nil {
+			return err
+		}
+		p.Mihomo.CustomConfig = tc.Source
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -185,16 +189,23 @@ func goRelinkOutcome(t *testing.T, tc editCase) editOutcome {
 	if tc.New != nil {
 		newValue = *tc.New
 	}
-	response := srv.Post("/static/n7-2/relink", httpxtest.JSON(jsonx.Obj("new", newValue, "fail_after", tc.FailAfter)))
+	response := srv.Post("/static/n7-2/relink", httpxtest.JSON(map[string]any{"new": newValue, "fail_after": tc.FailAfter}))
 	after, err := srv.Repo.Store().Fingerprint()
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, err := srv.Repo.GetProfile(context.Background(), "default")
+	saved, err := srv.Repo.Profile(context.Background(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := jsonx.Compact(jsonx.Obj("status", response.Status, "body", response.JSON(), "source", saved.GetObject("mihomo").Value("custom_config"), "groups", saved.Value("proxy_groups"), "committed", before != after))
+	var body any
+	if err := json.Unmarshal(response.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]any{"status": response.Status, "body": body, "source": saved.Mihomo.CustomConfig, "groups": saved.ProxyGroups, "committed": before != after})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out editOutcome
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatal(err)

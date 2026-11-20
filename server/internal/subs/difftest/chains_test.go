@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
@@ -105,11 +104,16 @@ json.dump(out, sys.stdout)
 			if compiled.Groups() != expected[i].Groups {
 				t.Fatalf("groups=%d Python=%d", compiled.Groups(), expected[i].Groups)
 			}
-			runtime := jsonx.Obj("nodes", []any{jsonx.Obj("id", "entry", "name", "Entry")}, "proxy_groups", []any{
-				jsonx.Obj("id", "chain", "name", "Chain", "_chain_dialer", jsonx.Obj("type", "node", "id", "entry")),
-			})
-			main := jsonx.Obj("proxy-providers", jsonx.Obj("Source", jsonx.Obj("type", "http", "url", "https://example.com/nodes")),
-				"proxy-groups", []any{jsonx.Obj("name", "Chain", "type", "select", "use", []any{"Source"}, "filter", tc.Pattern+"`z")})
+			runtime := map[string]any{
+				"nodes": []any{map[string]any{"id": "entry", "name": "Entry"}},
+				"proxy_groups": []any{
+					map[string]any{"id": "chain", "name": "Chain", "_chain_dialer": map[string]any{"type": "node", "id": "entry"}},
+				},
+			}
+			main := map[string]any{
+				"proxy-providers": map[string]any{"Source": map[string]any{"type": "http", "url": "https://example.com/nodes"}},
+				"proxy-groups":    []any{map[string]any{"name": "Chain", "type": "select", "use": []any{"Source"}, "filter": tc.Pattern + "`z"}},
+			}
 			rawConfig, _ := json.Marshal(runtime)
 			var profile model.Profile
 			var shared model.Shared
@@ -140,14 +144,13 @@ json.dump(out, sys.stdout)
 			// Read the group number from each emitted target, rather than
 			// reconstructing it from Groups(). Apply every bucket in order.
 			renamed := tc.Name
-			for _, item := range parseGraph(t, graph).GetObject("proxy-providers").GetObject("Chain_Source").GetObject("override").GetList("proxy-name") {
-				rule := item.(*jsonx.Object)
-				re, err := rules.CompilePyRegex(rule.GetString("pattern"), false)
+			for _, rule := range parseProxyNameRules(t, graph) {
+				re, err := rules.CompilePyRegex(rule.Pattern, false)
 				if err != nil {
 					t.Fatal(err)
 				}
 				renamed, err = re.Sub(renamed, func(m *rules.Match) (string, error) {
-					return reference.ReplaceAllStringFunc(rule.GetString("target"), func(ref string) string {
+					return reference.ReplaceAllStringFunc(rule.Target, func(ref string) string {
 						n, err := strconv.Atoi(ref[1:])
 						if err != nil {
 							t.Fatal(err)
@@ -174,15 +177,26 @@ json.dump(out, sys.stdout)
 	}
 }
 
-func parseGraph(t *testing.T, graph *yamlx.Node) *jsonx.Object {
+type proxyNameRule struct {
+	Pattern string `json:"pattern"`
+	Target  string `json:"target"`
+}
+
+func parseProxyNameRules(t *testing.T, graph *yamlx.Node) []proxyNameRule {
 	t.Helper()
 	raw, err := yamlx.ToJSON(graph)
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
+	var doc struct {
+		Providers map[string]struct {
+			Override struct {
+				ProxyName []proxyNameRule `json:"proxy-name"`
+			} `json:"override"`
+		} `json:"proxy-providers"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return doc.Providers["Chain_Source"].Override.ProxyName
 }

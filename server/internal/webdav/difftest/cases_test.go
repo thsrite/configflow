@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 const connection = `{"webdav_url":"<DAV>","webdav_username":"fixture-user","webdav_password":"******","webdav_path":"one/two"}`
@@ -89,7 +87,7 @@ func TestAutomaticChangesCoalesceAndPendingDisableCancels(t *testing.T) {
 	}
 }
 func TestImportedRetentionFallbackMatchesFlask(t *testing.T) {
-	w := newWorldSaved(t, jsonx.Obj("keep_latest", "5", "keep_daily", -3))
+	w := newWorldSaved(t, map[string]any{"keep_latest": "5", "keep_daily": -3})
 	for _, d := range []*dav{w.pythonDAV, w.goDAV} {
 		for i := range 31 {
 			d.files[fmt.Sprintf("/one/two/config_backup_20200101_%06d_000000.json", i)] = []byte(`{}`)
@@ -127,7 +125,7 @@ func TestApprovedEditorSecurityCorrections(t *testing.T) {
 }
 
 func TestManualRequestOverridesMalformedSavedConnection(t *testing.T) {
-	w := newWorldSaved(t, jsonx.Obj("webdav_username", 42, "webdav_path", 17))
+	w := newWorldSaved(t, map[string]any{"webdav_username": 42, "webdav_path": 17})
 	body := `{"webdav_url":"<DAV>","webdav_username":"fixture-user","webdav_password":"fixture-password","webdav_path":"one/two"}`
 	w.call("POST", "/api/backup/now", body, true, false)
 }

@@ -19,6 +19,7 @@ package difftest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net"
@@ -35,12 +36,14 @@ import (
 
 	"configflow/internal/agents/metrics"
 	"configflow/internal/auth"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 const (
@@ -97,36 +100,63 @@ func seed(t *testing.T, dir, base string) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ServerDomain = "http://127.0.0.1:5001"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		// Keep the default catalogue (referenced by the default profile).
-		shared.Set("subscriptions", append(shared.GetList("subscriptions"),
-			jsonx.Obj("id", "s-ok", "name", "Feed", "url", base+"/sub", "enabled", true, "interval", jsonx.Int(86400),
-				"exclude_regex", "广告"),
-			jsonx.Obj("id", "s-empty", "name", "Empty", "url", base+"/empty", "enabled", true),
-			jsonx.Obj("id", "s-blocked", "name", "Blocked", "url", base+"/blocked", "enabled", true, "interval", jsonx.Int(3600)),
-			jsonx.Obj("id", "s-off", "name", "Off", "url", base+"/sub?off", "enabled", false),
-			jsonx.Obj("id", "s-nourl", "name", "No URL", "url", ""),
+		rawSubs, err := json.Marshal(shared.Subscriptions)
+		if err != nil {
+			return err
+		}
+		var subs []any
+		if err := json.Unmarshal(rawSubs, &subs); err != nil {
+			return err
+		}
+		subs = append(subs,
+			map[string]any{"id": "s-ok", "name": "Feed", "url": base + "/sub", "enabled": true, "interval": 86400,
+				"exclude_regex": "广告"},
+			map[string]any{"id": "s-empty", "name": "Empty", "url": base + "/empty", "enabled": true},
+			map[string]any{"id": "s-blocked", "name": "Blocked", "url": base + "/blocked", "enabled": true, "interval": 3600},
+			map[string]any{"id": "s-off", "name": "Off", "url": base + "/sub?off", "enabled": false},
+			map[string]any{"id": "s-nourl", "name": "No URL", "url": ""},
 			// Review C15: fixed receipts far in the future (never due),
 			// with failure counts beyond int64; next_run_at compared unmasked.
-			jsonx.Obj("id", "s-future", "name", "Future", "url", base+"/sub?future", "enabled", true, "interval", jsonx.Int(86400)),
-		))
-		shared.Set("rule_library", append(shared.GetList("rule_library"),
-			jsonx.Obj("id", "r-ok", "name", "Good", "source_type", "url", "url", base+"/list.txt", "behavior", "domain", "format", "text"),
-			jsonx.Obj("id", "r-bad", "name", "Bad", "source_type", "url", "url", base+"/bad.txt", "behavior", "domain", "format", "text"),
-			jsonx.Obj("id", "r-down", "name", "Down", "source_type", "url", "url", base+"/down.txt", "behavior", "domain",
-				"format", "text", "update_interval", jsonx.Int(3600)),
-			jsonx.Obj("id", "r-future", "name", "Future", "source_type", "url", "url", base+"/list.txt?future", "behavior", "domain",
-				"format", "text", "update_interval", jsonx.Int(3600)),
-			jsonx.Obj("id", "r-content", "name", "Inline", "source_type", "content", "content", "+.a.test", "behavior", "domain", "format", "text"),
-		))
-		return nil, nil
+			map[string]any{"id": "s-future", "name": "Future", "url": base + "/sub?future", "enabled": true, "interval": 86400},
+		)
+		mergedSubs, err := json.Marshal(subs)
+		if err != nil {
+			return err
+		}
+		if err := shared.SetJSON("subscriptions", mergedSubs); err != nil {
+			return err
+		}
+		rawLib, err := json.Marshal(shared.RuleLibrary)
+		if err != nil {
+			return err
+		}
+		var lib []any
+		if err := json.Unmarshal(rawLib, &lib); err != nil {
+			return err
+		}
+		lib = append(lib,
+			map[string]any{"id": "r-ok", "name": "Good", "source_type": "url", "url": base + "/list.txt", "behavior": "domain", "format": "text"},
+			map[string]any{"id": "r-bad", "name": "Bad", "source_type": "url", "url": base + "/bad.txt", "behavior": "domain", "format": "text"},
+			map[string]any{"id": "r-down", "name": "Down", "source_type": "url", "url": base + "/down.txt", "behavior": "domain",
+				"format": "text", "update_interval": 3600},
+			map[string]any{"id": "r-future", "name": "Future", "source_type": "url", "url": base + "/list.txt?future", "behavior": "domain",
+				"format": "text", "update_interval": 3600},
+			map[string]any{"id": "r-content", "name": "Inline", "source_type": "content", "content": "+.a.test", "behavior": "domain", "format": "text"},
+		)
+		mergedLib, err := json.Marshal(lib)
+		if err != nil {
+			return err
+		}
+		return shared.SetJSON("rule_library", mergedLib)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -134,22 +164,20 @@ func seed(t *testing.T, dir, base string) {
 	// Nothing is due during the run: Flask's scheduler starts 30 s after
 	// the app and must not refresh behind the requests' back.
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	statuses := jsonx.NewObject()
+	statuses := map[string]any{}
 	for _, key := range []string{"subscription:s-ok", "subscription:s-empty", "subscription:s-blocked",
 		"rule_source:r-ok", "rule_source:r-bad", "rule_source:r-down"} {
-		statuses.Set(key, jsonx.Obj("last_run_at", now, "last_status", "success", "run_count", jsonx.Int(1)))
+		statuses[key] = map[string]any{"last_run_at": now, "last_status": "success", "run_count": 1}
 	}
 	// (String counts are left out: taskstatus.Record reads them as 0 where
 	// task_status.record int()s them — a C02 finding, see PROGRESS C15.)
-	statuses.Set("subscription:s-blocked", jsonx.Obj("last_run_at", "2026-10-31T08:00:00+08:00", "last_status", "failed",
-		"consecutive_failures", jsonx.Int(2), "run_count", jsonx.Int(4), "failure_count", jsonx.Int(2)))
-	huge, _ := jsonx.ParseNumber("-18446744073709551611")
-	statuses.Set("subscription:s-future", jsonx.Obj("last_run_at", "2099-01-01T00:00:00+05:30", "last_status", "failed",
-		"consecutive_failures", huge, "run_count", jsonx.Int(3), "failure_count", jsonx.Int(3)))
-	big, _ := jsonx.ParseNumber("18446744073709551617")
-	statuses.Set("rule_source:r-future", jsonx.Obj("last_run_at", "2099-01-01T00:00:00-03:00", "last_status", "failed",
-		"consecutive_failures", big, "run_count", jsonx.Int(1), "failure_count", jsonx.Int(1)))
-	data, _ := jsonx.Compact(statuses)
+	statuses["subscription:s-blocked"] = map[string]any{"last_run_at": "2026-10-31T08:00:00+08:00", "last_status": "failed",
+		"consecutive_failures": 2, "run_count": 4, "failure_count": 2}
+	statuses["subscription:s-future"] = map[string]any{"last_run_at": "2099-01-01T00:00:00+05:30", "last_status": "failed",
+		"consecutive_failures": json.Number("-18446744073709551611"), "run_count": 3, "failure_count": 3}
+	statuses["rule_source:r-future"] = map[string]any{"last_run_at": "2099-01-01T00:00:00-03:00", "last_status": "failed",
+		"consecutive_failures": json.Number("18446744073709551617"), "run_count": 1, "failure_count": 1}
+	data, _ := json.Marshal(statuses)
 	os.WriteFile(filepath.Join(dir, "task-status.json"), data, 0o644)
 }
 
@@ -202,7 +230,7 @@ func startPython(t *testing.T, dataDir string, env []string) string {
 	return ""
 }
 
-func none(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }
+func none(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 
 func startGo(t *testing.T, dataDir string) string {
 	t.Setenv("DATA_DIR", dataDir)
@@ -221,7 +249,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { repo.SetRepository(nil) })
 	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
-		t.Cleanup(tasks.SetRows(slot, none))
+		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
 	app := server.NewApp()
 	// Flask's metrics flush loop started with the app (its row shows the
@@ -240,6 +268,16 @@ func startGo(t *testing.T, dataDir string) string {
 	return srv.URL
 }
 
+func decodeJSONValue(data []byte) (any, error) {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	var value any
+	if err := d.Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
 func login(t *testing.T, base string) string {
 	resp, err := http.Post(base+"/api/auth/login", "application/json",
 		strings.NewReader(`{"username": "`+username+`", "password": "`+password+`"}`))
@@ -248,11 +286,13 @@ func login(t *testing.T, base string) string {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
 		t.Fatalf("login: %s", data)
 	}
-	return "Bearer " + value.(*jsonx.Object).GetString("token")
+	return "Bearer " + body.Token
 }
 
 type request struct {
@@ -276,7 +316,7 @@ func send(t *testing.T, base, token string, r request) (int, any, []byte) {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, _ := jsonx.Parse(data)
+	value, _ := decodeJSONValue(data)
 	return resp.StatusCode, value, data
 }
 
@@ -286,10 +326,12 @@ func wait(t *testing.T, base, token, key string) {
 	for time.Now().Before(deadline) {
 		_, value, _ := send(t, base, token, request{name: "wait", method: "GET", path: "/api/tasks"})
 		running := true
-		if object, ok := value.(*jsonx.Object); ok {
-			for _, row := range object.GetList("tasks") {
-				if row.(*jsonx.Object).Value("key") == key {
-					running = row.(*jsonx.Object).Value("running") == true
+		if object, ok := value.(map[string]any); ok {
+			if list, ok := object["tasks"].([]any); ok {
+				for _, row := range list {
+					if m, ok := row.(map[string]any); ok && m["key"] == key {
+						running = m["running"] == true
+					}
 				}
 			}
 		}
@@ -309,16 +351,16 @@ var timeKeys = map[string]bool{"last_run_at": true, "last_finished_at": true, "l
 
 func mask(value any, parent string) any {
 	switch v := value.(type) {
-	case *jsonx.Object:
-		out := jsonx.NewObject()
-		for key, item := range v.All() {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
 			switch {
 			case timeKeys[key] && item != nil:
-				out.Set(key, "<set>")
+				out[key] = "<set>"
 			case key == "id" && parent == "nodes":
-				out.Set(key, "<node id>")
+				out[key] = "<node id>"
 			default:
-				out.Set(key, mask(item, key))
+				out[key] = mask(item, key)
 			}
 		}
 		return out
@@ -337,7 +379,7 @@ func readJSON(t *testing.T, path string) any {
 	if err != nil {
 		return "<missing>"
 	}
-	value, err := jsonx.Parse(data)
+	value, err := decodeJSONValue(data)
 	if err != nil {
 		return "<invalid> " + string(data)
 	}
@@ -378,12 +420,12 @@ func files(t *testing.T, dir string, cacheNames map[string]string) map[string]an
 	if err != nil {
 		t.Fatal(err)
 	}
-	shared, err := r.GetShared(context.Background())
+	shared, err := r.Shared(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	out["shared.subscriptions"] = shared.Value("subscriptions")
-	out["shared.rule_library"] = shared.Value("rule_library")
+	out["shared.subscriptions"] = shared.Subscriptions
+	out["shared.rule_library"] = shared.RuleLibrary
 	return out
 }
 
@@ -460,28 +502,13 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 		if r.wait != "" && gs == 202 {
 			wait(t, goBase, goToken, r.wait)
 		}
-		same := ps == gs && ((pv != nil && gv != nil && jsonx.Equal(mask(pv, ""), mask(gv, ""))) || bytes.Equal(pb, gb))
+		same := ps == gs && ((pv != nil && gv != nil && testjson.Equal(mask(pv, ""), mask(gv, ""))) || bytes.Equal(pb, gb))
 		if !same {
 			failed++
-			pm, _ := jsonx.Compact(mask(pv, ""))
-			gm, _ := jsonx.Compact(mask(gv, ""))
-			pt, _ := mask(pv, "").(*jsonx.Object)
-			gt, _ := mask(gv, "").(*jsonx.Object)
-			if pt != nil && gt != nil && pt.Has("tasks") && len(pt.GetList("tasks")) == len(gt.GetList("tasks")) {
-				pm, gm = nil, nil
-				for i, row := range pt.GetList("tasks") {
-					other := gt.GetList("tasks")[i]
-					if !jsonx.Equal(row, other) {
-						for key, value := range row.(*jsonx.Object).All() {
-							if !jsonx.Equal(value, other.(*jsonx.Object).Value(key)) {
-								pm = append(pm, []byte(" "+row.(*jsonx.Object).GetString("key")+"."+key+"="+jsonx.Repr(value))...)
-								gm = append(gm, []byte(" "+row.(*jsonx.Object).GetString("key")+"."+key+"="+jsonx.Repr(other.(*jsonx.Object).Value(key)))...)
-							}
-						}
-					}
-				}
-			}
-			t.Errorf("DIFF %s %s %s:\n  python %d %s\n  go     %d %s", r.name, r.method, r.path, ps, pm, gs, gm)
+			pm, _ := json.Marshal(mask(pv, ""))
+			gm, _ := json.Marshal(mask(gv, ""))
+			diff := testjson.Diff(mask(pv, ""), mask(gv, ""))
+			t.Errorf("DIFF %s %s %s (%s):\n  python %d %s\n  go     %d %s", r.name, r.method, r.path, diff, ps, pm, gs, gm)
 		} else {
 			t.Logf("same %-28s %s %s → %d", r.name, r.method, r.path, ps)
 		}
@@ -490,9 +517,13 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 	_, pyList, _ := send(t, pyBase, pyToken, request{name: "list fixed", method: "GET", path: "/api/tasks"})
 	_, goList, _ := send(t, goBase, goToken, request{name: "list fixed", method: "GET", path: "/api/tasks"})
 	nextRun := func(list any, key string) any {
-		for _, row := range list.(*jsonx.Object).GetList("tasks") {
-			if row.(*jsonx.Object).Value("key") == key {
-				return row.(*jsonx.Object).Value("next_run_at")
+		if root, ok := list.(map[string]any); ok {
+			if rows, ok := root["tasks"].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok && m["key"] == key {
+						return m["next_run_at"]
+					}
+				}
 			}
 		}
 		return "<missing>"
@@ -526,10 +557,10 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 	sort.Strings(names)
 	for _, name := range names {
 		p, g := pyFiles[name], goFiles[name]
-		if !jsonx.Equal(p, g) {
+		if !testjson.Equal(p, g) {
 			failed++
-			pt, _ := jsonx.Compact(p)
-			gt, _ := jsonx.Compact(g)
+			pt, _ := json.Marshal(p)
+			gt, _ := json.Marshal(g)
 			t.Errorf("DIFF file %s:\n  python %s\n  go     %s", name, pt, gt)
 		} else {
 			t.Logf("same file %s", name)

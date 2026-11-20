@@ -17,7 +17,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 	"configflow/internal/setup"
@@ -297,7 +297,7 @@ func TestFlaskHEADExpectedReadOnlyDifference(t *testing.T) {
 	if err := json.Unmarshal(py.State, &state); err != nil {
 		t.Fatal(err)
 	}
-	current, err := s.Repo.GetProfile(s.Context(), "default")
+	current, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,9 +310,9 @@ func TestFlaskHEADExpectedReadOnlyDifference(t *testing.T) {
 	}
 }
 
-func revisionOfProfile(t *testing.T, p *jsonx.Object) int64 {
+func revisionOfProfile(t *testing.T, p *model.Profile) int64 {
 	t.Helper()
-	data, err := jsonx.Compact(p)
+	data, err := json.Marshal(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,11 +343,11 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 			admin := s.Login()
 			request := &http.Request{Header: http.Header{}}
 			admin(request)
-			profile, err := s.Repo.GetProfile(s.Context(), "default")
+			profile, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw, err := jsonx.Compact(profile)
+			raw, err := json.Marshal(profile)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -387,7 +387,8 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 				t.Cleanup(routersplit.SetSessionReader(func(ctx context.Context, r *repo.Repository, profileID string) ([]routersplit.Session, error) {
 					calls++
 					if calls == 1 {
-						if _, err := r.UpdateProfileMetadata(ctx, profileID, jsonx.Obj("name", "Concurrent metadata")); err != nil {
+						name := "Concurrent metadata"
+						if _, err := r.UpdateProfileMetadataRecord(ctx, profileID, repo.ProfileMetadataUpdate{Name: &name}); err != nil {
 							return nil, err
 						}
 					}
@@ -418,7 +419,7 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 					t.Fatalf("Flask %d %s", py.Status, py.Body)
 				}
 				compare(t, "embedded body", got.Body, py.Body)
-				current, err := s.Repo.GetProfile(s.Context(), "default")
+				current, err := s.Repo.Profile(s.Context(), "default")
 				if err != nil {
 					t.Fatal(err)
 				}

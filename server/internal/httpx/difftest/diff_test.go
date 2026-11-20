@@ -35,11 +35,11 @@ import (
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
-	"configflow/internal/yamlx/yamlxtest"
+	"configflow/internal/testjson"
 )
 
 const (
@@ -69,20 +69,23 @@ func seed(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	profileID, _ := r.DefaultProfileID(ctx)
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		settings := system.GetObject("system_config")
-		settings.Set("server_domain", "http://127.0.0.1:5001")
-		settings.Set("rule_proxy_token", internalToken)
-		settings.Set("retired_rule_proxy_tokens", []any{"diff-retired-token"})
-		system.Set("agents", []any{jsonx.Obj("id", "agent-1", "name", "diff agent", "token", agentToken,
-			"profile_id", profileID, "service_type", "mihomo", "host", "127.0.0.1", "port", 9)})
-		system.Set("backup", jsonx.Obj("webdav_url", "", "webdav_username", "", "webdav_password", "",
-			"auto_backup", false))
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ServerDomain = "http://127.0.0.1:5001"
+		system.SystemConfig.RuleProxyToken = internalToken
+		system.SystemConfig.RetiredRuleProxyTokens = []string{"diff-retired-token"}
+		agentsRaw, err := json.Marshal([]any{map[string]any{"id": "agent-1", "name": "diff agent", "token": agentToken,
+			"profile_id": profileID, "service_type": "mihomo", "host": "127.0.0.1", "port": 9}})
+		if err != nil {
+			return err
+		}
+		if err := system.SetJSON("agents", agentsRaw); err != nil {
+			return err
+		}
+		return system.SetJSON("backup", json.RawMessage(`{"webdav_url":"","webdav_username":"","webdav_password":"","auto_backup":false}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -219,6 +222,19 @@ func send(t *testing.T, base string, r request, tokens map[string]string) respon
 	return response{resp.StatusCode, resp.Header, data}
 }
 
+func decodeJSONValue(data []byte) (any, error) {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	var value any
+	if err := d.Decode(&value); err != nil {
+		return nil, err
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return nil, fmt.Errorf("trailing JSON token")
+	}
+	return value, nil
+}
+
 func login(t *testing.T, base string) string {
 	resp, err := http.Post(base+"/api/auth/login", "application/json",
 		strings.NewReader(`{"username": "`+username+`", "password": "`+password+`"}`))
@@ -227,11 +243,13 @@ func login(t *testing.T, base string) string {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
 		t.Fatalf("login: %s", data)
 	}
-	return "Bearer " + value.(*jsonx.Object).GetString("token")
+	return "Bearer " + body.Token
 }
 
 func requests(t *testing.T) []request {
@@ -353,17 +371,17 @@ func maskJSON(value any, mask []string) any {
 		parts := strings.Split(path, ".")
 		current := value
 		for i, part := range parts {
-			object, ok := current.(*jsonx.Object)
+			object, ok := current.(map[string]any)
 			if !ok {
 				break
 			}
 			if i == len(parts)-1 {
-				if object.Has(part) {
-					object.Set(part, "<masked>")
+				if _, exists := object[part]; exists {
+					object[part] = "<masked>"
 				}
 				break
 			}
-			current = object.Value(part)
+			current = object[part]
 		}
 	}
 	return value
@@ -411,21 +429,21 @@ func compare(r request, py, gor response) []string {
 	if a, b := methodSet(py.header.Get("Allow")), methodSet(gor.header.Get("Allow")); a != b {
 		diffs = append(diffs, fmt.Sprintf("header Allow python %q go %q", a, b))
 	}
-	pv, perr := jsonx.Parse(py.body)
-	gv, gerr := jsonx.Parse(gor.body)
+	pv, perr := decodeJSONValue(py.body)
+	gv, gerr := decodeJSONValue(gor.body)
 	switch {
 	case migrated:
 		// Step B #3/O12: the exact JSON error envelope was verified above.
 	case perr == nil && gerr == nil:
 		if r.name == "server domain number" && py.status == 500 && gor.status == 500 {
-			expected := jsonx.Obj("success", false, "message", "setting must be a string")
-			original := jsonx.Obj("success", false, "message", "'int' object has no attribute 'strip'")
-			if !jsonx.Equal(pv, original) || !jsonx.Equal(gv, expected) {
+			expected := map[string]any{"success": false, "message": "setting must be a string"}
+			original := map[string]any{"success": false, "message": "'int' object has no attribute 'strip'"}
+			if !testjson.Equal(pv, original) || !testjson.Equal(gv, expected) {
 				diffs = append(diffs, "unexpected native setting type error envelope")
 			}
 			break
 		}
-		if !yamlxtest.EqualJSON(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
+		if !testjson.Equal(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}
 	default:
@@ -474,10 +492,10 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 	goBase := startGo(t, goDir)
 
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
-	expired, _ := auth.EncodeHS256(jsonx.Obj("username", username, "exp", time.Now().Add(-time.Hour).Unix(),
-		"iat", time.Now().Add(-25*time.Hour).Unix()), secret)
-	forged, _ := auth.EncodeHS256(jsonx.Obj("username", username, "exp", time.Now().Add(time.Hour).Unix()), "not-the-secret")
-	empty, _ := auth.EncodeHS256(jsonx.NewObject(), secret)
+	expired, _ := auth.EncodeHS256(map[string]any{"username": username, "exp": time.Now().Add(-time.Hour).Unix(),
+		"iat": time.Now().Add(-25 * time.Hour).Unix()}, secret)
+	forged, _ := auth.EncodeHS256(map[string]any{"username": username, "exp": time.Now().Add(time.Hour).Unix()}, "not-the-secret")
+	empty, _ := auth.EncodeHS256(map[string]any{}, secret)
 	common := map[string]string{"expired": "Bearer " + expired, "forged": "Bearer " + forged,
 		"malformed": "Bearer  " + strings.TrimPrefix(goToken, "Bearer "), "claims-empty": "Bearer " + empty}
 	pyTokens, goTokens := map[string]string{"admin": pyToken, "cross": goToken}, map[string]string{"admin": goToken, "cross": pyToken}

@@ -9,11 +9,11 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 func must(t *testing.T, err error) {
@@ -22,35 +22,41 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+func mustJSON(t *testing.T, value any) json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(value)
+	must(t, err)
+	return data
+}
 func seedGraph(t *testing.T, chain string, second bool, cached bool) func(context.Context, *repo.Repository) {
 	return func(ctx context.Context, r *repo.Repository) {
-		catalog := []any{node("relay"), node("exit")}
+		catalog := []map[string]any{node("relay"), node("exit")}
 		if chain == "raw" {
-			catalog[1].(*jsonx.Object).Set("params", jsonx.Obj("dialer-proxy", "relay"))
+			catalog[1]["params"] = map[string]any{"dialer-proxy": "relay"}
 		}
 		if chain == "uri" {
-			catalog[1].(*jsonx.Object).Set("proxy_string", "opaque://exit")
+			catalog[1]["proxy_string"] = "opaque://exit"
 		}
-		feeds := []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/s", "enabled", true)}
+		feeds := []any{map[string]any{"id": "s", "name": "Feed", "url": "https://feed.example/s", "enabled": true}}
 		ids := []any{"s"}
 		if second {
-			feeds = append(feeds, jsonx.Obj("id", "s2", "name", "Second", "url", "https://feed.example/s2"))
+			feeds = append(feeds, map[string]any{"id": "s2", "name": "Second", "url": "https://feed.example/s2"})
 			ids = append(ids, "s2")
 		}
-		_, err := r.SaveShared(ctx, jsonx.Obj("nodes", catalog, "subscriptions", feeds, "subscription_aggregations", []any{}), nil)
+		proposed := testjson.Decode[model.Shared](t, map[string]any{"nodes": catalog, "subscriptions": feeds, "subscription_aggregations": []any{}})
+		_, err := r.SaveSharedRecord(ctx, &proposed, nil)
 		must(t, err)
-		groups := []any{jsonx.Obj("id", "g", "name", "Entry", "type", "select", "manual_nodes", []any{"exit", "relay"}, "subscriptions", ids)}
+		groups := []map[string]any{{"id": "g", "name": "Entry", "type": "select", "manual_nodes": []any{"exit", "relay"}, "subscriptions": ids}}
 		if chain == "managed" {
-			groups[0].(*jsonx.Object).Set("include_groups", []any{"chain-exit"})
-			groups = append(groups, jsonx.Obj("id", "chain-exit", "name", "Via exit", "type", "chain", "chain", jsonx.Obj("entry", jsonx.Obj("type", "node", "id", "relay"), "exit", jsonx.Obj("type", "node", "id", "exit"))))
+			groups[0]["include_groups"] = []any{"chain-exit"}
+			groups = append(groups, map[string]any{"id": "chain-exit", "name": "Via exit", "type": "chain", "chain": map[string]any{"entry": map[string]any{"type": "node", "id": "relay"}, "exit": map[string]any{"type": "node", "id": "exit"}}})
 		}
-		_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", groups)
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+			return p.SetJSON("proxy_groups", mustJSON(t, groups))
 		})
 		must(t, err)
 		if cached {
-			_, err := fixtureSaveSubscriptionNodes(ctx, "s", []any{node("old")}, nil)
+			err := fixtureSaveSubscriptionNodes(ctx, "s", []any{node("old")}, nil)
 			must(t, err)
 		}
 	}
@@ -117,33 +123,35 @@ func TestReviewedDeletion(t *testing.T) {
 	for _, blocker := range []string{"none", "chain", "dialer", "dialer-alias", "rule"} {
 		t.Run(blocker, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
-				catalog := []any{node("remove"), node("keep")}
-				catalog[0].(*jsonx.Object).Set("password", "synthetic-preview-secret")
+				catalog := []map[string]any{node("remove"), node("keep")}
+				catalog[0]["password"] = "synthetic-preview-secret"
 				if blocker == "dialer" {
-					catalog[1].(*jsonx.Object).Set("params", jsonx.Obj("dialer-proxy", "remove"))
+					catalog[1]["params"] = map[string]any{"dialer-proxy": "remove"}
 				}
 				if blocker == "dialer-alias" {
-					catalog[1].(*jsonx.Object).Set("proxy_string", "name: keep\ntype: http\nserver: example.com\nport: 80\nshared_target: &target remove\ndialer-proxy: *target\n")
+					catalog[1]["proxy_string"] = "name: keep\ntype: http\nserver: example.com\nport: 80\nshared_target: &target remove\ndialer-proxy: *target\n"
 				}
-				_, err := r.SaveShared(ctx, jsonx.Obj("nodes", catalog, "subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg", "nodes", []any{"remove", "keep"}, "subscriptions", []any{})}), nil)
+				proposed := testjson.Decode[model.Shared](t, map[string]any{"nodes": catalog, "subscription_aggregations": []any{map[string]any{"id": "agg", "name": "Agg", "nodes": []any{"remove", "keep"}, "subscriptions": []any{}}}})
+				_, err := r.SaveSharedRecord(ctx, &proposed, nil)
 				must(t, err)
-				groups := []any{jsonx.Obj("id", "g", "name", "Group", "type", "select", "manual_nodes", []any{"remove", "keep", "DIRECT"}, "aggregations", []any{"agg"}, "proxies_order", []any{jsonx.Obj("type", "node", "id", "remove")})}
+				groups := []any{map[string]any{"id": "g", "name": "Group", "type": "select", "manual_nodes": []any{"remove", "keep", "DIRECT"}, "aggregations": []any{"agg"}, "proxies_order": []any{map[string]any{"type": "node", "id": "remove"}}}}
 				if blocker == "chain" {
-					groups = append(groups, jsonx.Obj("id", "chain", "name", "Chain", "type", "chain", "enabled", false, "chain", jsonx.Obj("entry", jsonx.Obj("type", "node", "id", "remove"), "exit", jsonx.Obj("type", "node", "id", "keep"))))
+					groups = append(groups, map[string]any{"id": "chain", "name": "Chain", "type": "chain", "enabled": false, "chain": map[string]any{"entry": map[string]any{"type": "node", "id": "remove"}, "exit": map[string]any{"type": "node", "id": "keep"}}})
 				}
-				_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("proxy_groups", groups)
-					if blocker == "rule" {
-						p.Set("rule_configs", []any{jsonx.Obj("id", "rule", "itemType", "rule", "rule_type", "MATCH", "policy", "remove")})
+				_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+					if err := p.SetJSON("proxy_groups", mustJSON(t, groups)); err != nil {
+						return err
 					}
-					return nil, nil
+					if blocker == "rule" {
+						return p.SetJSON("rule_configs", mustJSON(t, []any{map[string]any{"id": "rule", "itemType": "rule", "rule_type": "MATCH", "policy": "remove"}}))
+					}
+					return nil
 				})
 				must(t, err)
-				_, err = r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), "")
+				_, err = r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, "")
 				must(t, err)
-				_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("proxy_groups", []any{jsonx.Obj("id", "legacy", "name", "Legacy", "type", "select", "source", "node", "proxies", []any{"remove", "keep"})})
-					return nil, nil
+				_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+					return p.SetJSON("proxy_groups", mustJSON(t, []any{map[string]any{"id": "legacy", "name": "Legacy", "type": "select", "source": "node", "proxies": []any{"remove", "keep"}}}))
 				})
 				must(t, err)
 			}
@@ -244,12 +252,13 @@ func TestCachePreviewNeverRefreshes(t *testing.T) {
 	for _, state := range []string{"legacy", "matching", "different-url", "empty", "invalid", "filtered", "non-list", "missing"} {
 		t.Run(state, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
-				_, err := r.SaveShared(ctx, jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/s", "interval", 0, "regex_filter", "^HK")}, "nodes", []any{jsonx.Obj("id", "imported", "name", "HK imported", "subscription_id", "s")}), nil)
+				proposed := testjson.Decode[model.Shared](t, map[string]any{"subscriptions": []any{map[string]any{"id": "s", "name": "Feed", "url": "https://feed.example/s", "interval": 0, "regex_filter": "^HK"}}, "nodes": []any{map[string]any{"id": "imported", "name": "HK imported", "subscription_id": "s"}}})
+				_, err := r.SaveSharedRecord(ctx, &proposed, nil)
 				must(t, err)
 				if state == "missing" {
 					return
 				}
-				var list any = []any{jsonx.Obj("id", "hk", "name", "HK cached", "type", "http"), jsonx.Obj("id", "jp", "name", "JP cached", "type", "http")}
+				var list any = []any{map[string]any{"id": "hk", "name": "HK cached", "type": "http"}, map[string]any{"id": "jp", "name": "JP cached", "type": "http"}}
 				if state == "empty" {
 					list = []any{}
 				}
@@ -257,22 +266,22 @@ func TestCachePreviewNeverRefreshes(t *testing.T) {
 					list = nil
 				}
 				if state == "non-list" {
-					list = jsonx.Obj("legacy", true)
+					list = map[string]any{"legacy": true}
 				}
 				if state == "filtered" {
-					list = []any{jsonx.Obj("id", "jp", "name", "JP cached")}
+					list = []any{map[string]any{"id": "jp", "name": "JP cached"}}
 				}
-				metadata := jsonx.Obj("fetched_at", "2026-01-01T00:00:00+00:00")
+				metadata := map[string]any{"fetched_at": "2026-01-01T00:00:00+00:00"}
 				if state != "legacy" {
-					metadata.Set("url", "https://feed.example/s")
+					metadata["url"] = "https://feed.example/s"
 				}
 				if state == "different-url" {
-					metadata.Set("url", "https://feed.example/previous")
+					metadata["url"] = "https://feed.example/previous"
 				}
 				if state == "non-list" {
-					_, err = r.WriteSharedJSON(ctx, "subscribes/s.json", jsonx.Obj("subscription_id", "s", "updated_at", "2026-01-01T00:00:00+00:00", "count", 0, "nodes", list, "metadata", metadata))
+					_, err = r.WriteSharedJSON(ctx, "subscribes/s.json", map[string]any{"subscription_id": "s", "updated_at": "2026-01-01T00:00:00+00:00", "count": 0, "nodes": list, "metadata": metadata})
 				} else {
-					_, err = fixtureSaveSubscriptionNodes(ctx, "s", list, metadata)
+					err = fixtureSaveSubscriptionNodes(ctx, "s", list, metadata)
 				}
 				must(t, err)
 			}
@@ -342,7 +351,8 @@ func TestDeletionConfirmationSurvivesOnlyUnrelatedWrites(t *testing.T) {
 	for _, changed := range []bool{false, true} {
 		t.Run(fmt.Sprint(changed), func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
-				_, err := r.SaveShared(ctx, jsonx.Obj("nodes", []any{node("remove"), node("keep")}), nil)
+				proposed := testjson.Decode[model.Shared](t, map[string]any{"nodes": []any{node("remove"), node("keep")}})
+				_, err := r.SaveSharedRecord(ctx, &proposed, nil)
 				must(t, err)
 			}
 			w := newWorld(t, setup, nil)
@@ -359,11 +369,11 @@ func TestDeletionConfirmationSurvivesOnlyUnrelatedWrites(t *testing.T) {
 
 func TestDeletionDoesNotReviseUnaffectedOrderGroups(t *testing.T) {
 	setup := func(ctx context.Context, r *repo.Repository) {
-		_, err := r.SaveShared(ctx, jsonx.Obj("nodes", []any{node("remove"), node("keep")}), nil)
+		proposed := testjson.Decode[model.Shared](t, map[string]any{"nodes": []any{node("remove"), node("keep")}})
+		_, err := r.SaveSharedRecord(ctx, &proposed, nil)
 		must(t, err)
-		_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", []any{jsonx.Obj("id", "keep-group", "name", "Keep Group", "type", "select", "manual_nodes", []any{"keep"}, "proxies_order", []any{jsonx.Obj("type", "node", "id", "keep")})})
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+			return p.SetJSON("proxy_groups", mustJSON(t, []any{map[string]any{"id": "keep-group", "name": "Keep Group", "type": "select", "manual_nodes": []any{"keep"}, "proxies_order": []any{map[string]any{"type": "node", "id": "keep"}}}}))
 		})
 		must(t, err)
 	}
@@ -382,11 +392,19 @@ func TestSubscriptionDeletionProtectsSelectedSource(t *testing.T) {
 func TestProfileSelectionIsolation(t *testing.T) {
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "none", false, true)(ctx, r)
-		_, err := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), "default")
+		_, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, "default")
 		must(t, err)
-		_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", append(p.GetList("proxy_groups"), jsonx.Obj("id", "other-target", "name", "OtherTarget", "type", "select", "manual_nodes", []any{"relay"})))
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+			raw, err := json.Marshal(p.ProxyGroups)
+			if err != nil {
+				return err
+			}
+			var groups []any
+			if err := json.Unmarshal(raw, &groups); err != nil {
+				return err
+			}
+			groups = append(groups, map[string]any{"id": "other-target", "name": "OtherTarget", "type": "select", "manual_nodes": []any{"relay"}})
+			return p.SetJSON("proxy_groups", mustJSON(t, groups))
 		})
 		must(t, err)
 	}
@@ -412,11 +430,11 @@ func TestNodeMutationsProtectChains(t *testing.T) {
 }
 func TestDeletionWarnsOnEmptySources(t *testing.T) {
 	setup := func(ctx context.Context, r *repo.Repository) {
-		_, err := r.SaveShared(ctx, jsonx.Obj("nodes", []any{node("remove"), node("keep")}, "subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg", "nodes", []any{"remove", "keep"}, "subscriptions", []any{})}), nil)
+		proposed := testjson.Decode[model.Shared](t, map[string]any{"nodes": []any{node("remove"), node("keep")}, "subscription_aggregations": []any{map[string]any{"id": "agg", "name": "Agg", "nodes": []any{"remove", "keep"}, "subscriptions": []any{}}}})
+		_, err := r.SaveSharedRecord(ctx, &proposed, nil)
 		must(t, err)
-		_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Legacy", "type", "select", "source", "node", "proxies", []any{"remove", "keep"})})
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+			return p.SetJSON("proxy_groups", mustJSON(t, []any{map[string]any{"id": "g", "name": "Legacy", "type": "select", "source": "node", "proxies": []any{"remove", "keep"}}}))
 		})
 		must(t, err)
 	}
@@ -461,22 +479,26 @@ func TestMissingAggregationDependencyFailsClosed(t *testing.T) {
 	defer provider.SetAggregationRenderer(nil)()
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "managed", false, true)(ctx, r)
-		_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-			shared.GetList("subscriptions")[0].(*jsonx.Object).Set("interval", jsonx.Int(0))
-			shared.Set("subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg", "nodes", []any{"relay"}, "subscriptions", []any{})})
-			return nil, nil
+		err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+			zero := model.Int(0)
+			shared.Subscriptions[0].Interval = &zero
+			return shared.SetJSON("subscription_aggregations", mustJSON(t, []any{map[string]any{"id": "agg", "name": "Agg", "nodes": []any{"relay"}, "subscriptions": []any{}}}))
 		})
 		must(t, err)
-		_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.GetList("proxy_groups")[0].(*jsonx.Object).Set("aggregations", []any{"agg"})
-			return nil, nil
+		_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+			aggs := []string{"agg"}
+			p.ProxyGroups[0].Aggregations = &aggs
+			return nil
 		})
 		must(t, err)
 	}
 	w := newWorld(t, setup, nil)
 	before := normalize(snapshot(t, w.srv))
 	for _, path := range []string{"/api/subscriptions/s/proxies", "/api/subscriptions/proxies"} {
-		w.srv.Get(path, w.srv.Login()).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "获取订阅代理列表失败"))
+		res := w.srv.Get(path, w.srv.Login()).WantStatus(500)
+		if diff := testjson.Diff(map[string]any{"success": false, "message": "获取订阅代理列表失败"}, json.RawMessage(res.Body)); diff != "" {
+			t.Fatal(diff)
+		}
 		if !reflect.DeepEqual(before, normalize(snapshot(t, w.srv))) {
 			t.Fatal("missing aggregation dependency changed stored data")
 		}
@@ -520,7 +542,7 @@ func TestEveryGlobalRouteRequiresJWT(t *testing.T) {
 func TestFetchWithNullCacheNodes(t *testing.T) {
 	w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "none", false, false)(ctx, r)
-		_, err := fixtureSaveSubscriptionNodes(ctx, "s", nil, nil)
+		err := fixtureSaveSubscriptionNodes(ctx, "s", nil, nil)
 		must(t, err)
 	}, nil)
 	w.control.Offline = true
@@ -546,37 +568,26 @@ func TestUTF8BOMRequestBodies(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var nodes []model.Node
 	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
+		return err
 	}
 	var receipt *substore.CacheMetadata
 	if metadata != nil {
 		raw, err := json.Marshal(metadata)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		receipt = &substore.CacheMetadata{}
 		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
+	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	return err
 }

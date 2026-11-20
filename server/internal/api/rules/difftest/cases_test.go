@@ -9,32 +9,32 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
 func seed(t *testing.T) func(context.Context, *repo.Repository) {
 	t.Helper()
 	return func(ctx context.Context, r *repo.Repository) {
-		if _, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("rule_library", []any{jsonx.Obj("id", "ads", "name", "Ads", "source_type", "content", "behavior", "domain", "content", "+.ads.example\n", "enabled", true), jsonx.Obj("id", "mixed", "name", "Mixed", "source_type", "content", "behavior", "classical", "format", "text", "content", "DOMAIN,Example.com\nDOMAIN,example.com\nIP-CIDR,192.0.2.0/24\nREGEX,^Foo$\n", "enabled", true), jsonx.Obj("id", "cn", "name", "CN", "source_type", "content", "behavior", "domain", "content", "cn.example\n", "enabled", true), jsonx.Obj("id", "empty", "name", "Empty", "source_type", "content", "content", "")})
-			return nil, nil
+		if err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+			return p.SetJSON("rule_library", json.RawMessage(`[{"id":"ads","name":"Ads","source_type":"content","behavior":"domain","content":"+.ads.example\n","enabled":true},{"id":"mixed","name":"Mixed","source_type":"content","behavior":"classical","format":"text","content":"DOMAIN,Example.com\nDOMAIN,example.com\nIP-CIDR,192.0.2.0/24\nREGEX,^Foo$\n","enabled":true},{"id":"cn","name":"CN","source_type":"content","behavior":"domain","content":"cn.example\n","enabled":true},{"id":"empty","name":"Empty","source_type":"content","content":""}]`))
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", []any{jsonx.Obj("id", "group", "name", "PROXY", "type", "select")})
-			p.Set("rule_configs", []any{jsonx.Obj("id", "inline", "itemType", "rule", "rule_type", "DOMAIN", "value", "example.com", "policy", "DIRECT", "enabled", true, "future", jsonx.Obj("keep", true)), jsonx.Obj("id", "set", "itemType", "ruleset", "library_rule_id", "cn", "policy", "DIRECT", "enabled", true), jsonx.Obj("id", "proxied", "itemType", "rule", "rule_type", "DOMAIN-SUFFIX", "value", "proxied.example", "policy", "PROXY", "enabled", true), jsonx.Obj("id", "off", "itemType", "rule", "rule_type", "DOMAIN", "value", "off.example", "policy", "DIRECT", "enabled", false), jsonx.Obj("id", "geo", "itemType", "rule", "rule_type", "GEOIP", "value", "CN", "policy", "DIRECT", "enabled", true)})
-			return nil, nil
+		if _, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+			if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"group","name":"PROXY","type":"select"}]`)); err != nil {
+				return err
+			}
+			return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"inline","itemType":"rule","rule_type":"DOMAIN","value":"example.com","policy":"DIRECT","enabled":true,"future":{"keep":true}},{"id":"set","itemType":"ruleset","library_rule_id":"cn","policy":"DIRECT","enabled":true},{"id":"proxied","itemType":"rule","rule_type":"DOMAIN-SUFFIX","value":"proxied.example","policy":"PROXY","enabled":true},{"id":"off","itemType":"rule","rule_type":"DOMAIN","value":"off.example","policy":"DIRECT","enabled":false},{"id":"geo","itemType":"rule","rule_type":"GEOIP","value":"CN","policy":"DIRECT","enabled":true}]`))
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), "default"); err != nil {
+		if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, "default"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.GetObject("system_config").Set("server_domain", "http://panel.example")
-			return nil, nil
+		if err := r.UpdateSystem(ctx, func(_ context.Context, p *model.System) error {
+			p.SystemConfig.ServerDomain = "http://panel.example"
+			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -157,16 +157,27 @@ func TestRemoteProviderAndLazyMatching(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				seed(t)(ctx, r)
-				_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("rule_library", append(p.GetList("rule_library"), jsonx.Obj("id", "remote", "name", "Remote", "url", source.URL+"/"+path, "behavior", "domain", "format", "text", "enabled", true)))
-					return nil, nil
+				err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+					raw, err := json.Marshal(p.RuleLibrary)
+					if err != nil {
+						return err
+					}
+					var items []any
+					if err := json.Unmarshal(raw, &items); err != nil {
+						return err
+					}
+					items = append(items, map[string]any{"id": "remote", "name": "Remote", "url": source.URL + "/" + path, "behavior": "domain", "format": "text", "enabled": true})
+					merged, err := json.Marshal(items)
+					if err != nil {
+						return err
+					}
+					return p.SetJSON("rule_library", merged)
 				})
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("rule_configs", []any{jsonx.Obj("id", "first", "itemType", "rule", "rule_type", "DOMAIN", "value", "first.example", "policy", "DIRECT"), jsonx.Obj("id", "remote", "itemType", "ruleset", "library_rule_id", "remote", "policy", "DIRECT")})
-					return nil, nil
+				_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+					return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"first","itemType":"rule","rule_type":"DOMAIN","value":"first.example","policy":"DIRECT"},{"id":"remote","itemType":"ruleset","library_rule_id":"remote","policy":"DIRECT"}]`))
 				})
 				if err != nil {
 					t.Fatal(err)

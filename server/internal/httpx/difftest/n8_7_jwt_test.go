@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"configflow/internal/auth"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // T29 checks both directions of actual login and preserved issued-token types.
@@ -27,8 +27,8 @@ func TestN87JWTBoundaryAgainstFlask(t *testing.T) {
 	}
 	pyBase, goBase := startPython(t, pyDir), startGo(t, goDir)
 	pyToken, goToken := login(t, pyBase), login(t, goBase)
-	noExp, _ := auth.EncodeHS256(jsonx.Obj("username", username, "extra", jsonx.Obj("nested", true)), secret)
-	fractional, _ := auth.EncodeHS256(jsonx.Obj("username", username, "exp", jsonx.Float(float64(time.Now().Add(time.Hour).Unix())+0.5), "iat", jsonx.Float(1.5)), secret)
+	noExp, _ := auth.EncodeHS256(map[string]any{"username": username, "extra": map[string]any{"nested": true}}, secret)
+	fractional, _ := auth.EncodeHS256(map[string]any{"username": username, "exp": float64(time.Now().Add(time.Hour).Unix()) + 0.5, "iat": 1.5}, secret)
 	parts := strings.Split(strings.TrimPrefix(goToken, "Bearer "), ".")
 	parts[2] = "!!!!" + parts[2]
 	junk := "Bearer " + strings.Join(parts, ".")
@@ -49,11 +49,11 @@ func TestN87JWTBoundaryAgainstFlask(t *testing.T) {
 				t.Fatalf("Python %d %s; Go %d %s", py.status, py.body, goRes.status, goRes.body)
 			}
 			if row.name == "junk-signature" {
-				wantPy := jsonx.Obj("success", true, "message", "登录状态有效。")
-				wantGo := jsonx.Obj("success", false, "message", "登录已失效，请重新登录。")
-				pv, _ := jsonx.Parse(py.body)
-				gv, _ := jsonx.Parse(goRes.body)
-				if !jsonx.Equal(pv, wantPy) || !jsonx.Equal(gv, wantGo) {
+				wantPy := map[string]any{"success": true, "message": "登录状态有效。"}
+				wantGo := map[string]any{"success": false, "message": "登录已失效，请重新登录。"}
+				pv, _ := testjson.Parse(py.body)
+				gv, _ := testjson.Parse(goRes.body)
+				if !testjson.Equal(pv, wantPy) || !testjson.Equal(gv, wantGo) {
 					t.Fatalf("Python %s; Go %s", py.body, goRes.body)
 				}
 			} else if diffs := compare(req, py, goRes); len(diffs) > 0 {

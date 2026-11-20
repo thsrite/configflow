@@ -32,7 +32,8 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
@@ -52,7 +53,7 @@ func jsonValue(t *testing.T, v any) any {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	doc, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,31 +240,36 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	setupflow.Wire()
 	ctx := w.srv.Context()
 	r := w.srv.Repo
-	_, err := r.CreateProfile(ctx, jsonx.Obj("id", "home", "name", "Home"), "")
+	_, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "Home"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("system_config").Set("config_token", "a20-subscription")
-		c.GetObject("system_config").Set("server_domain", "http://localhost")
-		c.Set("agents", []any{jsonx.Obj("id", "gateway", "name", "Gateway", "host", "127.0.0.1", "port", port, "token", "a20-agent-token", "service_type", "mihomo", "deployment_method", "shell", "profile_id", "home", "version", "1.8.43-go", "status", "online", "enabled", true, "last_heartbeat", time.Now().UTC().Format(time.RFC3339Nano))})
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, c *model.System) error {
+		c.SystemConfig.ConfigToken = "a20-subscription"
+		c.SystemConfig.ServerDomain = "http://localhost"
+		raw, err := json.Marshal([]any{map[string]any{"id": "gateway", "name": "Gateway", "host": "127.0.0.1", "port": port, "token": "a20-agent-token", "service_type": "mihomo", "deployment_method": "shell", "profile_id": "home", "version": "1.8.43-go", "status": "online", "enabled": true, "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano)}})
+		if err != nil {
+			return err
+		}
+		return c.SetJSON("agents", raw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("rule_library", []any{jsonx.Obj("id", "lib", "name", "IP", "source_type", "content", "content", "192.0.2.0/24\n198.51.100.0/24", "behavior", "ipcidr", "format", "text", "enabled", true)})
-		return nil, nil
+	err = r.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+		return c.SetJSON("rule_library", json.RawMessage(`[{"id":"lib","name":"IP","source_type":"content","content":"192.0.2.0/24\n198.51.100.0/24","behavior":"ipcidr","format":"text","enabled":true}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.UpdateProfileTransaction(ctx, "home", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\ndns: {enable: true, enhanced-mode: fake-ip, fake-ip-range: 198.18.0.1/16}\n", "linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{"r"}), "future", jsonx.Obj("unchanged", []any{nil, true, 1.5})))
-		c.Set("oxidns", jsonx.Obj("native_config", "plugins: []\n", "future", "keep"))
-		c.Set("rule_configs", []any{jsonx.Obj("id", "r", "itemType", "ruleset", "library_rule_id", "lib", "policy", "DIRECT", "enabled", true)})
-		return nil, nil
+	_, err = r.UpdateProfile(ctx, "home", func(_ context.Context, c *model.Profile) error {
+		if err := c.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mixed-port: 7890\ndns: {enable: true, enhanced-mode: fake-ip, fake-ip-range: 198.18.0.1/16}\n","linux_gateway":{"enabled":true,"rule_set_ids":["r"]},"future":{"unchanged":[null,true,1.5]}}`)); err != nil {
+			return err
+		}
+		if err := c.SetJSON("oxidns", json.RawMessage(`{"native_config":"plugins: []\n","future":"keep"}`)); err != nil {
+			return err
+		}
+		return c.SetJSON("rule_configs", json.RawMessage(`[{"id":"r","itemType":"ruleset","library_rule_id":"lib","policy":"DIRECT","enabled":true}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -313,7 +319,7 @@ func newWorld(t *testing.T, sessions ...string) *world {
 			t.Log(w.stderr.String())
 		}
 	})
-	w.token, err = auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), "a20-secret")
+	w.token, err = auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, "a20-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,17 +492,17 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 	var got answer
 	got.Headers = map[string]string{}
 	if method == "EDIT" {
-		var updates *jsonx.Object
-		v, err := jsonx.ParseString(goBody)
-		if err != nil {
+		var updates map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(goBody), &updates); err != nil {
 			w.t.Fatal(err)
 		}
-		updates = v.(*jsonx.Object)
-		_, _, err = w.srv.Repo.UpdateProfileTransaction(w.srv.Context(), path, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-			for k, v := range updates.All() {
-				c.Set(k, v)
+		_, err := w.srv.Repo.UpdateProfile(w.srv.Context(), path, func(_ context.Context, c *model.Profile) error {
+			for k, v := range updates {
+				if err := c.SetJSON(k, v); err != nil {
+					return err
+				}
 			}
-			return nil, nil
+			return nil
 		})
 		if err != nil {
 			w.t.Fatal(err)
@@ -504,15 +510,27 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		got.Status = 200
 		got.Body = map[string]any{}
 	} else if method == "AGENT" {
-		updates, err := jsonx.ParseString(goBody)
-		if err != nil {
+		var updates map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(goBody), &updates); err != nil {
 			w.t.Fatal(err)
 		}
-		_, err = w.srv.Repo.UpdateSystemTransaction(w.srv.Context(), func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-			for k, v := range updates.(*jsonx.Object).All() {
-				c.GetList("agents")[0].(*jsonx.Object).Set(k, v)
+		err := w.srv.Repo.UpdateSystem(w.srv.Context(), func(_ context.Context, c *model.System) error {
+			raw, err := json.Marshal(c.Agents[0])
+			if err != nil {
+				return err
 			}
-			return nil, nil
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &obj); err != nil {
+				return err
+			}
+			for k, v := range updates {
+				obj[k] = v
+			}
+			merged, err := json.Marshal([]any{obj})
+			if err != nil {
+				return err
+			}
+			return c.SetJSON("agents", merged)
 		})
 		if err != nil {
 			w.t.Fatal(err)
@@ -520,11 +538,11 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		got.Status = 200
 		got.Body = map[string]any{}
 	} else if method == "GENERATE" {
-		config, err := w.srv.Repo.GetCompatConfig(w.srv.Context(), path, nil)
+		config, err := w.srv.Repo.Config(w.srv.Context(), path, repo.ResourceRoots{})
 		if err != nil {
 			w.t.Fatal(err)
 		}
-		text, err := convert.GenerateMihomoConfig(w.srv.Context(), config, convert.GenerateOptions{BaseURL: "http://localhost", SkipProviderPreflight: true})
+		text, err := convert.MihomoConfig(w.srv.Context(), config, convert.MihomoOptions{BaseURL: "http://localhost", SkipProviderPreflight: true})
 		if err != nil {
 			w.t.Fatal(err)
 		}
@@ -739,32 +757,45 @@ func TestA20SplitHTTPGuards(t *testing.T) {
 	for _, mode := range []string{"full_tun", "invalid", "legacy", "legacy_full_tun"} {
 		t.Run(mode, func(t *testing.T) {
 			w := newWorld(t)
-			config, _ := w.srv.Repo.GetCompatConfig(w.srv.Context(), "home", nil)
-			mihomo := config.GetObject("mihomo").DeepCopy()
-			base := mihomo.GetString("custom_config")
+			profile, err := w.srv.Repo.Profile(w.srv.Context(), "home")
+			if err != nil {
+				t.Fatal(err)
+			}
+			rawMihomo, err := json.Marshal(profile.Mihomo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var mihomo map[string]any
+			if err := json.Unmarshal(rawMihomo, &mihomo); err != nil {
+				t.Fatal(err)
+			}
+			base := profile.Mihomo.CustomConfig
 			switch mode {
 			case "full_tun":
 				text, err := routersplit.FullTunBaseYAML(base)
 				if err != nil {
 					t.Fatal(err)
 				}
-				mihomo.Set("custom_config", text)
-				mihomo.Set("router_split", jsonx.Obj("version", 1, "takeover", "full_tun", "route_rule_set_ids", []any{"r"}, "origin", "setup"))
-				mihomo.Set("linux_gateway", jsonx.Obj("enabled", false, "rule_set_ids", []any{}))
+				mihomo["custom_config"] = text
+				mihomo["router_split"] = map[string]any{"version": 1, "takeover": "full_tun", "route_rule_set_ids": []any{"r"}, "origin": "setup"}
+				mihomo["linux_gateway"] = map[string]any{"enabled": false, "rule_set_ids": []any{}}
 			case "invalid":
-				mihomo.Set("router_split", jsonx.Obj("version", 2))
+				mihomo["router_split"] = map[string]any{"version": 2}
 			case "legacy_full_tun":
 				text, err := routersplit.FullTunBaseYAML(base)
 				if err != nil {
 					t.Fatal(err)
 				}
-				mihomo.Set("custom_config", text)
+				mihomo["custom_config"] = text
 			}
-			updates := jsonx.Obj("mihomo", mihomo)
+			updates := map[string]any{"mihomo": mihomo}
 			if strings.HasPrefix(mode, "legacy") {
-				updates.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "r1", "name", "Main", "proxy_gateway_agent_id", "gateway")}))
+				updates["routers"] = map[string]any{"items": []any{map[string]any{"id": "r1", "name": "Main", "proxy_gateway_agent_id": "gateway"}}}
 			}
-			body, _ := jsonx.Compact(updates)
+			body, err := json.Marshal(updates)
+			if err != nil {
+				t.Fatal(err)
+			}
 			w.call("EDIT", "home", string(body), true)
 			root := "/api/profiles/home/custom-config/linux-gateway"
 			w.call("GET", root, "", true)

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -58,9 +58,21 @@ func TestMarkedDeliveryDoesNotAlterSource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				seed(t)(ctx, r)
-				_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("rule_library", append(p.GetList("rule_library"), jsonx.Obj("id", "delivery", "name", "Delivery", "source_type", "content", "behavior", tc.behavior, "format", tc.format, "content", tc.content)))
-					return nil, nil
+				err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+					raw, err := json.Marshal(p.RuleLibrary)
+					if err != nil {
+						return err
+					}
+					var items []any
+					if err := json.Unmarshal(raw, &items); err != nil {
+						return err
+					}
+					items = append(items, map[string]any{"id": "delivery", "name": "Delivery", "source_type": "content", "behavior": tc.behavior, "format": tc.format, "content": tc.content})
+					merged, err := json.Marshal(items)
+					if err != nil {
+						return err
+					}
+					return p.SetJSON("rule_library", merged)
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -78,16 +90,16 @@ func TestMatchingWildcardQuerySpellings(t *testing.T) {
 		t.Run(pattern, func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				seed(t)(ctx, r)
-				_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.GetList("rule_library")[0].(*jsonx.Object).Set("content", pattern)
-					return nil, nil
+				err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+					c := pattern
+					p.RuleLibrary[0].Content = &c
+					return nil
 				})
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("rule_configs", []any{jsonx.Obj("id", "wildcard", "itemType", "ruleset", "library_rule_id", "ads", "policy", "DIRECT")})
-					return nil, nil
+				_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+					return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"wildcard","itemType":"ruleset","library_rule_id":"ads","policy":"DIRECT"}]`))
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -122,16 +134,16 @@ func TestAcceptedSourceLineBoundaries(t *testing.T) {
 		t.Run(body(separator), func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				seed(t)(ctx, r)
-				_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.GetList("rule_library")[0].(*jsonx.Object).Set("content", strings.Join([]string{"*.example.com", "+.other.example", ""}, separator))
-					return nil, nil
+				err := r.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+					c := strings.Join([]string{"*.example.com", "+.other.example", ""}, separator)
+					p.RuleLibrary[0].Content = &c
+					return nil
 				})
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, _, err = r.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("rule_configs", []any{jsonx.Obj("id", "set", "itemType", "ruleset", "library_rule_id", "ads", "policy", "DIRECT")})
-					return nil, nil
+				_, err = r.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+					return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"set","itemType":"ruleset","library_rule_id":"ads","policy":"DIRECT"}]`))
 				})
 				if err != nil {
 					t.Fatal(err)

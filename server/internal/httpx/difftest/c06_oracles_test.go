@@ -18,7 +18,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -100,11 +100,10 @@ json.dump({'rows':out, 'snapshot':snapshot}, sys.stdout, ensure_ascii=False)
 		t.Fatal(err)
 	}
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		s := system.GetObject("system_config")
-		s.Set("rule_proxy_token", secrets[0])
-		s.Set("retired_rule_proxy_tokens", []any{secrets[1], secrets[2]})
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.RuleProxyToken = secrets[0]
+		system.SystemConfig.RetiredRuleProxyTokens = []string{secrets[1], secrets[2]}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -133,11 +132,10 @@ json.dump({'rows':out, 'snapshot':snapshot}, sys.stdout, ensure_ascii=False)
 			t.Fatalf("row %d: text=%q ranges=%v Python=%+v", i, actual, ranges(text), want)
 		}
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		s := system.GetObject("system_config")
-		s.Set("rule_proxy_token", "rotated-secret")
-		s.Set("retired_rule_proxy_tokens", []any{})
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.RuleProxyToken = "rotated-secret"
+		system.SystemConfig.RetiredRuleProxyTokens = []string{}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

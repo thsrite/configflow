@@ -16,7 +16,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/setup"
 	"configflow/internal/setupflow"
 )
@@ -31,18 +31,20 @@ func testServer(t *testing.T) *httpxtest.Server {
 	t.Cleanup(onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite))
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apionboarding.Register)})
 	ctx := s.Context()
-	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
-		return nil, nil
+	err := s.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+		return c.SetJSON("nodes", json.RawMessage(`[{"id":"n","name":"Example","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Proxy", "type", "select", "manual_nodes", []any{"n"})})
-		c.Set("rule_configs", []any{jsonx.Obj("id", "match", "itemType", "rule", "rule_type", "MATCH", "policy", "Proxy")})
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n"))
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, c *model.Profile) error {
+		if err := c.SetJSON("proxy_groups", json.RawMessage(`[{"id":"g","name":"Proxy","type":"select","manual_nodes":["n"]}]`)); err != nil {
+			return err
+		}
+		if err := c.SetJSON("rule_configs", json.RawMessage(`[{"id":"match","itemType":"rule","rule_type":"MATCH","policy":"Proxy"}]`)); err != nil {
+			return err
+		}
+		return c.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mixed-port: 7890\n"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +60,7 @@ func requestBody(text string) httpxtest.Option {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) json.RawMessage {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,10 +80,6 @@ func snapshot(t *testing.T, s *httpxtest.Server) json.RawMessage {
 		files[rel] = string(data)
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := jsonx.Compact(doc)
 	if err != nil {
 		t.Fatal(err)
 	}

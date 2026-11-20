@@ -31,12 +31,12 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/health"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 const (
@@ -68,36 +68,64 @@ func seed(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("nodes", append(shared.GetList("nodes"),
-			jsonx.Obj("id", "a", "name", "A", "type", "trojan", "server", "example.invalid", "port", jsonx.Int(443),
-				"password", "test-only", "tls", true),
-			jsonx.Obj("id", "j", "name", "香港 J", "proxy_string", `{"type":"http","server":"local.invalid","port":8080}`),
-			jsonx.Obj("id", "u", "name", "URI", "proxy_string", "ss://YWVzLTEyOC1nY206cA@uri.invalid:8388#x"),
-			jsonx.Obj("id", "off", "name", "Off", "type", "http", "server", "o.invalid", "port", jsonx.Int(1), "enabled", false),
-		))
-		shared.Set("subscriptions", append(shared.GetList("subscriptions"),
-			jsonx.Obj("id", "s1", "name", "Feed", "url", "http://127.0.0.1:9/sub", "enabled", true, "regex_filter", "^HK")))
-		return nil, nil
+	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		rawNodes, err := json.Marshal(shared.Nodes)
+		if err != nil {
+			return err
+		}
+		var nodes []any
+		if err := json.Unmarshal(rawNodes, &nodes); err != nil {
+			return err
+		}
+		nodes = append(nodes,
+			map[string]any{"id": "a", "name": "A", "type": "trojan", "server": "example.invalid", "port": 443,
+				"password": "test-only", "tls": true},
+			map[string]any{"id": "j", "name": "香港 J", "proxy_string": `{"type":"http","server":"local.invalid","port":8080}`},
+			map[string]any{"id": "u", "name": "URI", "proxy_string": "ss://YWVzLTEyOC1nY206cA@uri.invalid:8388#x"},
+			map[string]any{"id": "off", "name": "Off", "type": "http", "server": "o.invalid", "port": 1, "enabled": false},
+		)
+		mergedNodes, err := json.Marshal(nodes)
+		if err != nil {
+			return err
+		}
+		if err := shared.SetJSON("nodes", mergedNodes); err != nil {
+			return err
+		}
+		rawSubs, err := json.Marshal(shared.Subscriptions)
+		if err != nil {
+			return err
+		}
+		var subs []any
+		if err := json.Unmarshal(rawSubs, &subs); err != nil {
+			return err
+		}
+		subs = append(subs,
+			map[string]any{"id": "s1", "name": "Feed", "url": "http://127.0.0.1:9/sub", "enabled": true, "regex_filter": "^HK"})
+		mergedSubs, err := json.Marshal(subs)
+		if err != nil {
+			return err
+		}
+		return shared.SetJSON("subscriptions", mergedSubs)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = fixtureSaveSubscriptionNodes(ctx, "s1", []any{
-		jsonx.Obj("name", "HK 01", "type", "ss", "server", "hk.invalid", "port", jsonx.Int(443),
-			"params", jsonx.Obj("cipher", "aes-128-gcm", "password", "p")),
-		jsonx.Obj("name", "广告", "type", "ss", "server", "ad.invalid", "port", jsonx.Int(443)),
+	err = fixtureSaveSubscriptionNodes(ctx, "s1", []any{
+		map[string]any{"name": "HK 01", "type": "ss", "server": "hk.invalid", "port": 443,
+			"params": map[string]any{"cipher": "aes-128-gcm", "password": "p"}},
+		map[string]any{"name": "广告", "type": "ss", "server": "ad.invalid", "port": 443},
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Previous results: one of the current method (history continues),
 	// one of an old method (hidden), one of a deleted node (dropped).
-	_, err = r.WriteSharedJSON(ctx, health.LatencyFile, jsonx.Obj(
-		`["node","a"]`, jsonx.Obj("latency", jsonx.Int(7), "history", []any{jsonx.Int(5), jsonx.Int(7)}, "method", health.Method,
-			"url", "https://www.gstatic.com/generate_204", "unified_delay", true, "dns_servers", []any{}, "dns_bootstrap", []any{}),
-		`["node","j"]`, jsonx.Obj("latency", jsonx.Int(9), "history", []any{jsonx.Int(9)}, "method", "proxy_http_v1"),
-		`["node","gone"]`, jsonx.Obj("latency", jsonx.Int(3), "history", []any{jsonx.Int(3)}, "method", health.Method)))
+	_, err = r.WriteSharedJSON(ctx, health.LatencyFile, map[string]any{
+		`["node","a"]`: map[string]any{"latency": 7, "history": []any{5, 7}, "method": health.Method,
+			"url": "https://www.gstatic.com/generate_204", "unified_delay": true, "dns_servers": []any{}, "dns_bootstrap": []any{}},
+		`["node","j"]`:    map[string]any{"latency": 9, "history": []any{9}, "method": "proxy_http_v1"},
+		`["node","gone"]`: map[string]any{"latency": 3, "history": []any{3}, "method": health.Method},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,6 +199,16 @@ func startGo(t *testing.T, dataDir string) string {
 	return srv.URL
 }
 
+func decodeJSONValue(data []byte) (any, error) {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	var value any
+	if err := d.Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
 func login(t *testing.T, base string) string {
 	resp, err := http.Post(base+"/api/auth/login", "application/json",
 		strings.NewReader(`{"username": "`+username+`", "password": "`+password+`"}`))
@@ -179,11 +217,13 @@ func login(t *testing.T, base string) string {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
 		t.Fatalf("login: %s", data)
 	}
-	return "Bearer " + value.(*jsonx.Object).GetString("token")
+	return "Bearer " + body.Token
 }
 
 // worker is what the fake worker does for one request.
@@ -215,19 +255,19 @@ func send(t *testing.T, base, token string, r request) (int, any, []byte) {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, _ := jsonx.Parse(data)
+	value, _ := decodeJSONValue(data)
 	return resp.StatusCode, value, data
 }
 
 func mask(value any) any {
 	switch v := value.(type) {
-	case *jsonx.Object:
-		out := jsonx.NewObject()
-		for key, item := range v.All() {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
 			if key == "tested_at" && item != nil {
-				out.Set(key, "<set>")
+				out[key] = "<set>"
 			} else {
-				out.Set(key, mask(item))
+				out[key] = mask(item)
 			}
 		}
 		return out
@@ -248,14 +288,12 @@ func sameWorkerStdin(pyInput, goInput string) bool {
 	if !utf8.ValidString(goInput) {
 		return false
 	}
-	pyVal, errPy := jsonx.Parse([]byte(pyInput))
-	goVal, errGo := jsonx.Parse([]byte(goInput))
+	pyVal, errPy := testjson.Parse([]byte(pyInput))
+	goVal, errGo := testjson.Parse([]byte(goInput))
 	if errPy != nil || errGo != nil {
 		return false
 	}
-	pyCompact, errPy := jsonx.Compact(pyVal)
-	goCompact, errGo := jsonx.Compact(goVal)
-	return errPy == nil && errGo == nil && bytes.Equal(pyCompact, goCompact)
+	return testjson.Equal(pyVal, goVal)
 }
 
 func readFile(path string) string {
@@ -266,24 +304,35 @@ func readFile(path string) string {
 	return string(data)
 }
 
-func stored(t *testing.T, dir string) map[string]string {
-	latency := readFile(filepath.Join(dir, "shared", health.LatencyFile))
-	if value, err := jsonx.Parse([]byte(latency)); err == nil {
-		data, _ := jsonx.Indent2(mask(value))
-		latency = string(data)
+func stored(t *testing.T, dir string) map[string]any {
+	latencyRaw := readFile(filepath.Join(dir, "shared", health.LatencyFile))
+	var latency any = latencyRaw
+	if value, err := decodeJSONValue([]byte(latencyRaw)); err == nil {
+		latency = mask(value)
 	}
 	r, err := repo.Open(dir, repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	system, err := r.GetSystem(context.Background())
+	system, err := r.System(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := system.GetObject("system_config")
-	dns, _ := jsonx.Compact(jsonx.Obj("node_test_dns", settings.Value("node_test_dns"),
-		"node_test_dns_config", settings.Value("node_test_dns_config")))
-	return map[string]string{"node_latency.json (masked)": latency, "system_config dns": string(dns)}
+	memberOrNull := func(name string) json.RawMessage {
+		raw, ok, err := system.SystemConfig.MemberJSON(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			return json.RawMessage("null")
+		}
+		return raw
+	}
+	dns := map[string]any{
+		"node_test_dns":        memberOrNull("node_test_dns"),
+		"node_test_dns_config": memberOrNull("node_test_dns_config"),
+	}
+	return map[string]any{"node_latency.json (masked)": latency, "system_config dns": dns}
 }
 
 func results(entries ...string) string {
@@ -415,11 +464,11 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 			inputs[side] = readFile(filepath.Join(fake, "input.json"))
 		}
 		p, g := outcomes[0], outcomes[1]
-		same := p.status == g.status && ((p.value != nil && g.value != nil && jsonx.Equal(mask(p.value), mask(g.value))) || bytes.Equal(p.body, g.body))
+		same := p.status == g.status && ((p.value != nil && g.value != nil && testjson.Equal(mask(p.value), mask(g.value))) || bytes.Equal(p.body, g.body))
 		if r.name == "worker invalid utf-8" {
-			pythonExpected := jsonx.Obj("success", false, "message", "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte")
-			goExpected := jsonx.Obj("success", false, "message", health.WorkerOutputEncodingError)
-			same = p.status == 400 && g.status == 400 && jsonx.Equal(p.value, pythonExpected) && jsonx.Equal(g.value, goExpected)
+			pythonExpected := map[string]any{"success": false, "message": "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"}
+			goExpected := map[string]any{"success": false, "message": health.WorkerOutputEncodingError}
+			same = p.status == 400 && g.status == 400 && testjson.Equal(p.value, pythonExpected) && testjson.Equal(g.value, goExpected)
 			if same {
 				nativeContracts++
 			}
@@ -427,8 +476,8 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 
 		if !same {
 			failed++
-			pm, _ := jsonx.Compact(mask(p.value))
-			gm, _ := jsonx.Compact(mask(g.value))
+			pm, _ := json.Marshal(mask(p.value))
+			gm, _ := json.Marshal(mask(g.value))
 			t.Errorf("DIFF %s %s %s:\n  python %d %s\n  go     %d %s", r.name, r.method, r.path, p.status, pm, g.status, gm)
 		} else if !sameWorkerStdin(inputs[0], inputs[1]) {
 			failed++
@@ -442,9 +491,9 @@ func TestDifferentialLatencyRoutes(t *testing.T) {
 	}
 	pyFiles, goFiles := stored(t, pyDir), stored(t, goDir)
 	for name, p := range pyFiles {
-		if p != goFiles[name] {
+		if diff := testjson.Diff(p, goFiles[name]); diff != "" {
 			failed++
-			t.Errorf("DIFF file %s:\n  python %s\n  go     %s", name, p, goFiles[name])
+			t.Errorf("DIFF file %s:\n%s", name, diff)
 		} else {
 			t.Logf("same file %s", name)
 		}
@@ -466,37 +515,26 @@ func TestWorkerJSONComparisonRejectsChangedValues(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var nodes []model.Node
 	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
+		return err
 	}
 	var receipt *substore.CacheMetadata
 	if metadata != nil {
 		raw, err := json.Marshal(metadata)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		receipt = &substore.CacheMetadata{}
 		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
+	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	return err
 }
