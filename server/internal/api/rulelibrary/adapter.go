@@ -76,7 +76,7 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 	if err != nil {
 		return err
 	}
-	return r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
+	if err := r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return err
@@ -94,7 +94,11 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 		}
 
 		return tx.Err()
-	})
+	}); err != nil {
+		return err
+	}
+	repo.ResetConfigContext(ctx)
+	return nil
 }
 func editSystem(ctx context.Context, fn func(*record) error) error {
 	if err := ctx.Err(); err != nil {
@@ -104,7 +108,7 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 	if err != nil {
 		return err
 	}
-	return r.UpdateSystem(ctx, func(tx context.Context, system *model.System) error {
+	if err := r.UpdateSystem(ctx, func(tx context.Context, system *model.System) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return err
@@ -125,7 +129,11 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 		}
 
 		return tx.Err()
-	})
+	}); err != nil {
+		return err
+	}
+	repo.ResetConfigContext(ctx)
+	return nil
 }
 func validateContent(item record, old *record) error {
 	rule, err := ruleRecord(item)
@@ -212,7 +220,7 @@ func inspect(content string, lines []string, body record) (record, error) {
 			return record{}, err
 		}
 	}
-	out, err := rulefetch.Inspect(content, text(body, "behavior"), text(body, "format"))
+	out, err := rulefetch.Inspect(content, text(body, "behavior"), optionalFormat(body, "format"))
 	if err != nil {
 		return record{}, err
 	}
@@ -221,6 +229,22 @@ func inspect(content string, lines []string, body record) (record, error) {
 		out.Changes = []rulefetch.Change{}
 	}
 	return native(out)
+}
+
+func optionalFormat(r record, key string) string {
+	raw, ok := r.Get(key)
+	if !ok {
+		return ""
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return ""
+	}
+	var out string
+	if json.Unmarshal(trimmed, &out) != nil {
+		return "\x00"
+	}
+	return out
 }
 func reorder(items []record, body record) ([]record, []string, error) {
 	request := map[string]json.RawMessage{}

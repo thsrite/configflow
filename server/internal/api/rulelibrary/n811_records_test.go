@@ -3,9 +3,11 @@ package rulelibrary
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
@@ -67,5 +69,110 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 	}
 	if !bytes.Equal(beforeBackup, afterBackup) {
 		t.Fatalf("unmodified backup: %s -> %s", beforeBackup, afterBackup)
+	}
+}
+
+func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T) {
+	s := fixture(t)
+	ctx := repo.WithScope(s.Context())
+	if _, err := repo.GetConfig(ctx, "default"); err != nil {
+		t.Fatal(err)
+	}
+	sharedSnap, err := repo.SharedConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := errors.New("abort edit")
+	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
+		if err := put(catalog, "rule_library", []record{recordJSON(t, `{"id":"temp","name":"Temp","source_type":"content","content":"+.temp.example\n","behavior":"domain","format":"text"}`)}); err != nil {
+			return err
+		}
+		return stop
+	}); !errors.Is(err, stop) {
+		t.Fatalf("expected stop error, got %v", err)
+	}
+	if err := editSystem(ctx, func(system *record) error {
+		settings := child(*system, "system_config")
+		if err := put(&settings, "github_proxy_domain", "https://failed.example"); err != nil {
+			return err
+		}
+		if err := put(system, "system_config", settings); err != nil {
+			return err
+		}
+		return stop
+	}); !errors.Is(err, stop) {
+		t.Fatalf("expected stop error, got %v", err)
+	}
+	// Failed transactions must not reset the Scope snapshot or baseline.
+	cached, err := repo.GetConfig(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cached.GetList("rule_library")) != 0 {
+		t.Fatalf("failed editShared changed snapshot: %v", cached.GetList("rule_library"))
+	}
+	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
+		return put(catalog, "rule_library", []record{recordJSON(t, `{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}`)})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := repo.GetConfig(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refreshed.GetList("rule_library")) != 1 {
+		t.Fatalf("editShared did not invalidate Scope cache: %v", refreshed.GetList("rule_library"))
+	}
+	if err := repo.SaveSharedRecord(ctx, sharedSnap, nil); !errors.Is(err, repo.ErrInUse) {
+		t.Fatalf("editShared did not clear Scope shared baseline: %v", err)
+	}
+	if err := editSystem(ctx, func(system *record) error {
+		settings := child(*system, "system_config")
+		if err := put(&settings, "github_proxy_domain", "https://mirror.example"); err != nil {
+			return err
+		}
+		return put(system, "system_config", settings)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	afterSystem, err := repo.GetConfig(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := afterSystem.GetObject("system_config").GetString("github_proxy_domain"); got != "https://mirror.example" {
+		t.Fatalf("editSystem did not invalidate Scope cache: %q", got)
+	}
+}
+
+func TestReviewN811CheckContentRejectsNonStringFormat(t *testing.T) {
+	svc := &Service{}
+	for _, raw := range []string{
+		`{"content":"example.com","behavior":"domain","format":123}`,
+		`{"content":"example.com","behavior":"domain","format":true}`,
+		`{"content":"example.com","behavior":"domain","format":[]}`,
+		`{"content":"example.com","behavior":"domain","format":{}}`,
+	} {
+		result, err := svc.Check(recordJSON(t, raw))
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", raw, err)
+		}
+		errs, err := rows(result, "errors")
+		if err != nil || len(errs) != 1 || text(errs[0], "message") != "规则集格式必须是 text、yaml 或 mrs。" {
+			t.Fatalf("%s: expected format validation error, got %+v (%v)", raw, errs, err)
+		}
+	}
+	for _, raw := range []string{
+		`{"content":"example.com","behavior":"domain"}`,
+		`{"content":"example.com","behavior":"domain","format":null}`,
+		`{"content":"example.com","behavior":"domain","format":""}`,
+	} {
+		result, err := svc.Check(recordJSON(t, raw))
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", raw, err)
+		}
+		errs, err := rows(result, "errors")
+		if err != nil || len(errs) != 0 {
+			t.Fatalf("%s: expected valid empty/null format, got %+v (%v)", raw, errs, err)
+		}
 	}
 }

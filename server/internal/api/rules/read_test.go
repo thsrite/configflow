@@ -282,3 +282,34 @@ func TestBinaryCacheDeliveryRemainsOpaque(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewN811DuplicateScanPreservesNullPolicy(t *testing.T) {
+	s := fixture(t)
+	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		p.Set("rule_configs", []any{
+			jsonx.Obj("id", "null_1", "itemType", "rule", "rule_type", "DOMAIN", "value", "nullpolicy.example", "policy", nil, "enabled", true),
+			jsonx.Obj("id", "null_2", "itemType", "rule", "rule_type", "DOMAIN", "value", "nullpolicy.example", "policy", "DIRECT", "enabled", true),
+			jsonx.Obj("id", "abs_1", "itemType", "rule", "rule_type", "DOMAIN", "value", "defaultpolicy.example", "enabled", true),
+			jsonx.Obj("id", "abs_2", "itemType", "rule", "rule_type", "DOMAIN", "value", "defaultpolicy.example", "policy", "DIRECT", "enabled", true),
+		})
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := s.Post("/api/rules/find-duplicates?profile=other", s.Login()).WantStatus(200)
+	var result scanResult
+	if err := json.Unmarshal(out.Body, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Duplicates) != 2 {
+		t.Fatalf("unexpected duplicate groups: %s", out.Body)
+	}
+	nullGroup, defaultGroup := result.Duplicates[0], result.Duplicates[1]
+	if nullGroup.Value != "nullpolicy.example" || !nullGroup.Conflict || string(nullGroup.Occurrences[0].Policy) != "null" {
+		t.Fatalf("explicit null policy lost: %+v", nullGroup)
+	}
+	if defaultGroup.Value != "defaultpolicy.example" || defaultGroup.Conflict || string(defaultGroup.Occurrences[0].Policy) != `"DIRECT"` {
+		t.Fatalf("absent policy did not default to DIRECT: %+v", defaultGroup)
+	}
+}

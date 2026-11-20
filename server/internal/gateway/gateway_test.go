@@ -314,3 +314,59 @@ func TestN811ReaderProjectionExcludesUnconsumedContent(t *testing.T) {
 		t.Fatalf("reader called %d times", calls)
 	}
 }
+
+func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testing.T) {
+	r, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := repo.WithRepository(context.Background(), r)
+	raw := snapshot(true)
+	raw.GetObject("system_config").Set("rule_proxy_token", "synthetic-secret-token")
+	// Standalone ruleset referencing a library entry only by name (no library_rule_id, no format, no .yaml suffix).
+	standalone := jsonx.Obj("id", "r", "itemType", "ruleset", "name", "Proxy IPs",
+		"source_type", "url", "url", "https://rules.example/ip", "behavior", "ipcidr", "policy", "DIRECT", "enabled", true)
+	raw.Set("rule_configs", []any{standalone})
+	lib := raw.GetList("rule_library")[0].(*jsonx.Object)
+	lib.Set("source_type", "url")
+	lib.Set("url", "https://rules.example/ip.yaml")
+	lib.Set("format", "yaml")
+	lib.Set("content", strings.Repeat("x", 1<<20))
+	raw.Set("nodes", []any{jsonx.Obj("id", "unused", "params", jsonx.Obj("password", strings.Repeat("y", 1<<20)))})
+
+	rulesDir, err := r.SharedRulesDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheFile := filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, standalone)))
+	if err := os.MkdirAll(filepath.Dir(cacheFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cacheFile, []byte("payload:\n  - 198.51.100.0/24\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	t.Cleanup(gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
+		calls++
+		if library != nil {
+			t.Fatalf("expected standalone ruleset without library_rule_id, got %+v", library)
+		}
+		if config.Settings.ServerDomain != "https://config.example" || config.Settings.ConfigToken != "" || config.Settings.RuleProxyToken != "" {
+			t.Fatalf("unexpected settings projection: %+v", config.Settings)
+		}
+		if len(config.Library) != 1 || config.Library[0].Format == nil || *config.Library[0].Format != "yaml" || config.Library[0].Content != nil {
+			t.Fatalf("unexpected library projection: %+v", config.Library)
+		}
+		data, err := rulefetch.ReadCache(ctx, item, config)
+		return string(data), err
+	}))
+
+	payload, err := gateway.NewConfig(raw).ProviderPayload(ctx, "r", nil)
+	if err != nil {
+		t.Fatalf("ProviderPayload failed format inference on cached YAML: %v", err)
+	}
+	if calls != 1 || len(payload) != 1 || payload[0] != "198.51.100.0/24" {
+		t.Fatalf("unexpected payload=%v calls=%d", payload, calls)
+	}
+}

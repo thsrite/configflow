@@ -18,4 +18,13 @@ func TestN811LibraryRecordRequestValidation(t *testing.T) {
 		w.call("POST", "/api/rule-library", body(item), true)
 	}
 	w.call("GET", "/api/rule-library", "", true)
+	for _, payload := range []map[string]any{
+		{"content": "example.com", "behavior": "domain", "format": 123},
+		{"content": "example.com", "behavior": "domain", "format": true},
+		{"content": "example.com", "behavior": "domain", "format": nil},
+		{"content": "example.com", "behavior": "domain", "format": ""},
+		{"content": "example.com", "behavior": "domain"},
+	} {
+		w.call("POST", "/api/rule-library/check-content", body(payload), true)
+	}
 }

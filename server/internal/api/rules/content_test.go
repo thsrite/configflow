@@ -100,6 +100,7 @@ func TestPublicRulesetContentCapturedRecords(t *testing.T) {
 	}{
 		{name: "item", config: validConfig, item: validItem, want: "+.item.example\n"},
 		{name: "null-library", config: validConfig, item: validItem, library: json.RawMessage(`null`), want: "+.item.example\n"},
+		{name: "null-library-padded", config: validConfig, item: validItem, library: json.RawMessage(" null \n"), want: "+.item.example\n"},
 		{name: "library-precedence", config: validConfig, item: validItem, library: validLibrary, want: "+.library.example\n"},
 		{name: "malformed-config", config: json.RawMessage(`{`), item: validItem, invalid: true},
 		{name: "non-object-config", config: json.RawMessage(`null`), item: validItem, invalid: true},

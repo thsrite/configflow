@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,9 +39,9 @@ func ReadRulesetContent(ctx context.Context, config, item, library json.RawMessa
 		return "", err
 	}
 	var lib *model.RuleLibraryItem
-	if len(library) != 0 && string(library) != "null" {
+	if trimmed := bytes.TrimSpace(library); len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null")) {
 		lib = &model.RuleLibraryItem{}
-		if err := json.Unmarshal(library, lib); err != nil {
+		if err := json.Unmarshal(trimmed, lib); err != nil {
 			return "", err
 		}
 	}

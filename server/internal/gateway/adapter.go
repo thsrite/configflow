@@ -245,11 +245,17 @@ func (c *Config) storedContent(ctx context.Context, item, library *Rule, require
 				return "", err
 			}
 		}
-		// Only fetch settings and cache identities cross this reader boundary.
-		// Never serialize node parameters or every library's source content per rule.
+		// Only fetch settings and cache/format metadata cross this reader boundary.
+		// Never serialize node parameters, secrets or every library's source content per rule.
 		config := &rulefetch.SourceConfig{}
 		if settings := c.raw.GetObject("system_config"); settings != nil {
-			raw, err = json.Marshal(settings)
+			fetchSettings := jsonx.NewObject()
+			for _, key := range []string{"server_domain", "github_proxy_domain", "rule_fetch_proxy"} {
+				if value, ok := settings.Get(key); ok {
+					fetchSettings.Set(key, value)
+				}
+			}
+			raw, err = json.Marshal(fetchSettings)
 			if err != nil {
 				return "", err
 			}
@@ -266,7 +272,7 @@ func (c *Config) storedContent(ctx context.Context, item, library *Rule, require
 				continue
 			}
 			metadata := jsonx.NewObject()
-			for _, key := range []string{"id", "name"} {
+			for _, key := range []string{"id", "name", "format", "url"} {
 				if value, ok := row.Get(key); ok {
 					metadata.Set(key, value)
 				}

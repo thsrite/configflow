@@ -310,13 +310,13 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 		}
 	}
 	for i, item := range items {
-		policy, err := json.Marshal(sourceField(item.Policy, "DIRECT"))
-		if err != nil {
-			return nil, nil, err
-		}
 		raw, err := native(item)
 		if err != nil {
 			return nil, nil, err
+		}
+		policy, ok := raw["policy"]
+		if !ok {
+			policy = stringJSON("DIRECT")
 		}
 		rows[i] = scanRow{ID: item.ID, Name: item.Name, Kind: defaultText(raw, "itemType", "rule"), Type: item.RuleType, Value: item.Value, Policy: policy, Enabled: rawFlag(raw, "enabled", true) && rawFlag(raw, "library_enabled", true)}
 		if _, ok := raw["name"]; !ok {
