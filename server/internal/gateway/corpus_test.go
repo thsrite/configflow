@@ -18,6 +18,7 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/routersplit"
 	"configflow/internal/yamlx"
 
@@ -231,7 +232,7 @@ func TestPythonCorpus(t *testing.T) {
 	generationEnv(t)
 	ctx := context.Background()
 	counts := map[string]int{}
-	failures := 0
+	failures, exemptMalformedNodes := 0, 0
 	fail := func(i int, row corpusRow, format string, a ...any) {
 		failures++
 		if failures <= 40 {
@@ -245,6 +246,12 @@ func TestPythonCorpus(t *testing.T) {
 	for i, row := range rows {
 		row = nativeGatewayRow(t, i, row, nativeReferences)
 		counts[row.FN]++
+		// NewFixtureConfig drops a configuration model.DecodeConfig refuses;
+		// only the reviewed malformed-nodes apply rows may rely on that.
+		if fixtureUndecodable(t, row) {
+			fail(i, row, "fixture configuration is not representable by model.Config")
+			continue
+		}
 		switch row.FN {
 		case "normalize":
 			a := args[struct {
@@ -426,7 +433,8 @@ func TestPythonCorpus(t *testing.T) {
 			restore := gateway.SetAuthEnabled(a.Auth)
 			err := gateway.NewFixtureConfig(config).Apply(doc, a.BaseURL)
 			restore()
-			if err == nil && hasMalformedNodesShape(config) && len(row.Err) >= 2 && strings.Contains(row.Err[1], "节点.") && strings.Contains(row.Err[1], ".routing-mark") {
+			if err == nil && malformedNodesApplyRow(t, row) {
+				exemptMalformedNodes++
 				// Typed model.Config.Nodes is []model.Node; non-array nodes or
 				// non-object node elements cannot enter model.Config or Mihomo output.
 			} else if m := errorMismatch(err, row.Err); m != "" {
@@ -486,6 +494,11 @@ func TestPythonCorpus(t *testing.T) {
 		}
 	}
 	t.Logf("%d rows: %v", len(rows), counts)
+	// Exactly the two malformed-nodes rows recorded in behaviour-changes may
+	// differ; any other apply row taking the exemption is a new difference.
+	if exemptMalformedNodes != 2 {
+		t.Errorf("malformed-nodes exemption used by %d rows, want 2", exemptMalformedNodes)
+	}
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}
@@ -506,4 +519,40 @@ func hasMalformedNodesShape(config *jsonx.Object) bool {
 		}
 	}
 	return false
+}
+
+// fixtureUndecodable reports whether the row's configuration cannot enter
+// model.Config (NewFixtureConfig would silently use an empty one).
+func fixtureUndecodable(t *testing.T, row corpusRow) bool {
+	t.Helper()
+	var probe struct {
+		Config json.RawMessage `json:"config"`
+	}
+	if json.Unmarshal(row.Args, &probe) != nil || len(probe.Config) == 0 {
+		return false
+	}
+	raw, err := json.Marshal(jsonxObject(t, probe.Config))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = model.DecodeConfig(raw)
+	return err != nil
+}
+
+// malformedNodesApplyRow is the N8-11 W6 difference (behaviour-changes N8-11
+// W6): Python refuses a routing-mark inside a non-array nodes value or a
+// non-object node element; model.Shared keeps such a value only as raw stored
+// bytes, so it never reaches model.Config.Nodes or the generated Mihomo output.
+func malformedNodesApplyRow(t *testing.T, row corpusRow) bool {
+	t.Helper()
+	if row.FN != "apply" || len(row.Err) < 2 || !strings.Contains(row.Err[1], "节点.") || !strings.Contains(row.Err[1], ".routing-mark") {
+		return false
+	}
+	var probe struct {
+		Config json.RawMessage `json:"config"`
+	}
+	if json.Unmarshal(row.Args, &probe) != nil {
+		return false
+	}
+	return hasMalformedNodesShape(jsonxObject(t, probe.Config))
 }

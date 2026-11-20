@@ -110,7 +110,7 @@ func deploymentAction(action string) httpx.HandlerFunc {
 		case "poll":
 			result, e = m.GetDeploymentModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		case "activate":
-			result, e = m.ActivateCandidateModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
+			result, e = m.ActivateDeploymentModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		case "rollback":
 			result, e = m.RollbackDeploymentModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		case "recover":

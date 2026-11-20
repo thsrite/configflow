@@ -917,6 +917,9 @@ func targetByID(ctx context.Context, m *agents.Manager, id string) (Target, bool
 		return Target{}, false, e
 	}
 	t, e := NewTypedTarget(a)
+	if e != nil {
+		return Target{}, false, e
+	}
 	if t.ProfileID == "" {
 		t.ProfileID, e = m.Repository().DefaultProfileID(ctx)
 	}
