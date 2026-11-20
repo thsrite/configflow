@@ -3,10 +3,10 @@ package rulefetch
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
@@ -19,11 +19,11 @@ func TestRuleYAMLAliasBoundaries(t *testing.T) {
 		fmt.Fprintf(&b, "a%d: &a%d [*a%d, *a%d]\n", i, i, i-1, i-1)
 	}
 	for _, source := range []string{b.String(), "payload: [example.com]\na: &a [*a]"} {
-		if got, warnings := NormalizeMihomoYAML(source); got != source || len(warnings) == 0 {
+		if got, warnings := NormalizeYAML(source); got != source || len(warnings) == 0 {
 			t.Fatal("normalizer did not retain unsafe source")
 		}
-		got, err := InspectDomainContent(source, "domain", "yaml")
-		if err != nil || got.GetString("content") != source || len(got.GetList("errors")) == 0 {
+		got, err := Inspect(source, "domain", "yaml")
+		if err != nil || got.Content != source || len(got.Errors) == 0 {
 			t.Fatal("inspection did not reject unsafe graph")
 		}
 		if _, _, err := ReadRulePayload(source); err == nil {
@@ -32,7 +32,7 @@ func TestRuleYAMLAliasBoundaries(t *testing.T) {
 		if got, _, err := RemoveRulePayload(source, func(string) bool { return true }); err == nil || got != "" {
 			t.Fatal("remove did not reject unsafe graph")
 		}
-		if err := ValidateRemoteRuleContent(source, remoteRule("domain", "yaml"), nil, ""); err == nil {
+		if err := ValidateRemote(Content{Data: []byte(source), Text: true}, remoteRule("domain", "yaml"), nil, ""); err == nil {
 			t.Fatal("remote validator accepted unsafe graph")
 		}
 	}
@@ -48,7 +48,7 @@ func TestQuotedMultilineUsesNativeFoldAndRuleValidation(t *testing.T) {
 		t.Fatal("native quoted multiline fold changed")
 	}
 
-	normalized, warnings := NormalizeMihomoYAML(source)
+	normalized, warnings := NormalizeYAML(source)
 	if len(warnings) != 1 || normalized != source {
 		t.Fatal("physical multiline delivery must preserve its original source and warning", warnings)
 	}
@@ -56,26 +56,26 @@ func TestQuotedMultilineUsesNativeFoldAndRuleValidation(t *testing.T) {
 	if err != nil || !yamlx.Equal(root, after) {
 		t.Fatalf("fold changed: %v", err)
 	}
-	if err := ValidateRemoteRuleContent(normalized, remoteRule("domain", "yaml"), nil, ""); err == nil {
+	if err := ValidateRemote(Content{Data: []byte(normalized), Text: true}, remoteRule("domain", "yaml"), nil, ""); err == nil {
 		t.Fatal("folded illegal domain accepted")
 	}
-	result, err := InspectDomainContent(source, "domain", "yaml")
-	if err != nil || len(result.GetList("errors")) == 0 {
+	result, err := Inspect(source, "domain", "yaml")
+	if err != nil || len(result.Errors) == 0 {
 		t.Fatal("editor accepted illegal domain")
 	}
 }
 
 func TestNativeEditSpliceKeepsUntouchedBytes(t *testing.T) {
 	source := "# header\r\nmeta: 'unchanged' # note\r\n\r\npayload:\r\n  - \"example.com\" # rule\r\ntail: [a, b]\r\n"
-	result, err := InspectDomainContent(source, "classical", "yaml")
+	result, err := Inspect(source, "classical", "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(source, "\"example.com\"", "DOMAIN,example.com", 1)
-	if result.GetString("content") != want {
-		t.Fatalf("untouched bytes changed: %q", result.GetString("content"))
+	if result.Content != want {
+		t.Fatalf("untouched bytes changed: %q", result.Content)
 	}
-	if again, err := InspectDomainContent(want, "classical", "yaml"); err != nil || again.GetString("content") != want {
+	if again, err := Inspect(want, "classical", "yaml"); err != nil || again.Content != want {
 		t.Fatal("no-op edit changed bytes")
 	}
 }
@@ -91,12 +91,12 @@ func TestNativeSequenceEditsKeepSemanticsAndComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines, _, err := ReadRulePayload(appended)
-	if err != nil || !jsonx.Equal(strs(lines), []any{"example.com", "other.example", "+.added.example"}) {
+	if err != nil || !slices.Equal(lines, []string{"example.com", "other.example", "+.added.example"}) {
 		t.Fatalf("append: %v %v", lines, err)
 	}
 	removed, _, err := RemoveRulePayload(appended, func(s string) bool { return s == "other.example" })
 	lines, _, readErr := ReadRulePayload(removed)
-	if err != nil || readErr != nil || !jsonx.Equal(strs(lines), []any{"example.com", "+.added.example"}) {
+	if err != nil || readErr != nil || !slices.Equal(lines, []string{"example.com", "+.added.example"}) {
 		t.Fatalf("remove: %v %v %v", lines, err, readErr)
 	}
 	for _, comment := range []string{"# header", "# payload", "# tail"} {
@@ -111,11 +111,11 @@ func FuzzRuleYAMLBoundary(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, source string) {
-		_, _ = NormalizeMihomoYAML(source)
+		_, _ = NormalizeYAML(source)
 		_, _ = AppendRuleLines(source, []string{"example.com"}, yamlx.Seq())
 		_, _, _ = ReadRulePayload(source)
 		_, _, _ = RemoveRulePayload(source, func(s string) bool { return s == "example.com" })
-		_ = ValidateRemoteRuleContent(source, remoteRule("domain", "yaml"), nil, "")
+		_ = ValidateRemote(Content{Data: []byte(source), Text: true}, remoteRule("domain", "yaml"), nil, "")
 	})
 }
 
@@ -137,7 +137,7 @@ func TestNativeEditsFixEmptyAndAliasInsertion(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines, _, err := ReadRulePayload(appended)
-	if err != nil || !jsonx.Equal(strs(lines), []any{"example.com", "example.com", "added.example"}) {
+	if err != nil || !slices.Equal(lines, []string{"example.com", "example.com", "added.example"}) {
 		t.Fatalf("alias order changed: %v %v", lines, err)
 	}
 }
@@ -152,7 +152,7 @@ func TestRuleYAMLLinearAlias40DoesNotMaterializeMetadata(t *testing.T) {
 	if lines, _, err := ReadRulePayload(source); err != nil || len(lines) != 1 || lines[0] != "example.com" {
 		t.Fatalf("payload: %v %v", lines, err)
 	}
-	if got, warnings := NormalizeMihomoYAML(source); got != source || len(warnings) == 0 {
+	if got, warnings := NormalizeYAML(source); got != source || len(warnings) == 0 {
 		t.Fatal("alias source was materialized")
 	}
 	if got, _, err := RemoveRulePayload(source, func(string) bool { return false }); err != nil || got != source {
@@ -166,18 +166,18 @@ func TestQuotedContinuationKeepsRuleMatching(t *testing.T) {
 	if err != nil || len(lines) != 1 || lines[0] != "example.com" {
 		t.Fatalf("native continuation: %v %v", lines, err)
 	}
-	normalized, warnings := NormalizeMihomoYAML(source)
+	normalized, warnings := NormalizeYAML(source)
 	if len(warnings) != 1 || normalized != source {
 		t.Fatal("physical continuation must be delivered unchanged with one warning", warnings)
 	}
-	if err := ValidateRemoteRuleContent(normalized, remoteRule("domain", "yaml"), nil, ""); err != nil {
+	if err := ValidateRemote(Content{Data: []byte(normalized), Text: true}, remoteRule("domain", "yaml"), nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	result, err := InspectDomainContent(source, "classical", "yaml")
+	result, err := Inspect(source, "classical", "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	classical, _, err := ReadRulePayload(result.GetString("content"))
+	classical, _, err := ReadRulePayload(result.Content)
 	if err != nil || len(classical) != 1 {
 		t.Fatalf("%v %v", classical, err)
 	}
@@ -216,10 +216,6 @@ func TestAppendNeverSwallowsPolicyOrAliasErrors(t *testing.T) {
 			if got != tc.source || !errors.Is(err, tc.kind) || !errors.Is(err, repo.ErrValidation) {
 				t.Fatalf("append payload: %v", err)
 			}
-			got, err = AppendRulePayloadAny(tc.source, "example.com", node)
-			if got != tc.source || !errors.Is(err, tc.kind) || !errors.Is(err, repo.ErrValidation) {
-				t.Fatalf("append adapter: %v", err)
-			}
 		}
 	}
 }
@@ -230,7 +226,7 @@ func TestNativeRuleReencodeKeepsScalarTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalized, warnings := NormalizeMihomoYAML(source)
+	normalized, warnings := NormalizeYAML(source)
 	after, err := yamlx.Parse([]byte(normalized))
 	if len(warnings) != 0 || err != nil || !yamlx.Equal(before, after) {
 		t.Fatalf("normalization changed tags: %v %v", warnings, err)

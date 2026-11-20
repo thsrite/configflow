@@ -251,8 +251,8 @@ func liveClient(sleeps *[]time.Duration) *Client {
 	return &Client{Transport: HTTPTransport{}, Sleep: func(d time.Duration) { *sleeps = append(*sleeps, d) }}
 }
 
-func proxyConfig(proxy, serverDomain string) Request {
-	return Request{Config: sysConfig("rule_fetch_proxy", proxy, "server_domain", serverDomain),
+func proxyConfig(proxy, serverDomain string) DownloadRequest {
+	return DownloadRequest{Config: sysConfig("rule_fetch_proxy", proxy, "server_domain", serverDomain),
 		ConnectTimeout: 3 * time.Second, ReadTimeout: 3 * time.Second}
 }
 
@@ -270,7 +270,7 @@ func TestGetAndHeadUseConfiguredProxy(t *testing.T) {
 				req := proxyConfig(proxy.URL, "")
 				req.Method, req.CABundle = method, caBundle(t, origin)
 				var sleeps []time.Duration
-				response, err := liveClient(&sleeps).RequestRule(context.Background(), url, req)
+				response, err := liveClient(&sleeps).Download(context.Background(), url, req)
 				if err != nil {
 					t.Fatalf("%s proxyTLS=%v originTLS=%v: %v", method, proxyTLS, originTLS, err)
 				}
@@ -303,7 +303,7 @@ func TestUntrustedHTTPSProxyCertificateIsRejected(t *testing.T) {
 	for _, originTLS := range []bool{false, true} {
 		origin, proxy := startServer(t, false, originTLS, nil), startServer(t, true, true, nil)
 		var sleeps []time.Duration
-		_, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
+		_, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
 		if class := PythonClass(err); class != "ProxyError" && class != "SSLError" {
 			t.Fatal(err, class)
 		}
@@ -320,7 +320,7 @@ func TestHTTPSProxyUsesEnvironmentCertificateBundle(t *testing.T) {
 		origin, proxy := startServer(t, false, false, nil), startServer(t, true, true, nil)
 		t.Setenv(variable, caBundle(t, proxy))
 		var sleeps []time.Duration
-		response, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
+		response, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -338,7 +338,7 @@ func TestAuthenticatedProxyDoesNotPassCredentialsToOrigin(t *testing.T) {
 	proxy := startServer(t, true, false, func(r *recorder) { r.requiredAuth = expected })
 	authURL := strings.Replace(proxy.URL, "://", "://rule-user:test-secret@", 1)
 	var sleeps []time.Duration
-	response, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", proxyConfig(authURL, ""))
+	response, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", proxyConfig(authURL, ""))
 	if err != nil || response.StatusCode != 200 {
 		t.Fatal(err)
 	}
@@ -356,10 +356,10 @@ func TestClearingProxyUsesDirectConnectionDespiteEnvironment(t *testing.T) {
 	t.Setenv("HTTP_PROXY", environment.URL)
 	var sleeps []time.Duration
 	client := liveClient(&sleeps)
-	if r, err := client.RequestRule(context.Background(), origin.URL+"/first", proxyConfig(configured.URL, "")); err != nil || r.StatusCode != 200 {
+	if r, err := client.Download(context.Background(), origin.URL+"/first", proxyConfig(configured.URL, "")); err != nil || r.StatusCode != 200 {
 		t.Fatal(err)
 	}
-	if r, err := client.RequestRule(context.Background(), origin.URL+"/second", proxyConfig("", "")); err != nil || r.StatusCode != 200 {
+	if r, err := client.Download(context.Background(), origin.URL+"/second", proxyConfig("", "")); err != nil || r.StatusCode != 200 {
 		t.Fatal(err)
 	}
 	if !equalStrings(configured.seenURLs(), []string{"GET " + origin.URL + "/first"}) || len(environment.seen) != 0 ||
@@ -383,14 +383,14 @@ func TestGithubFallbackUsesSameTransport(t *testing.T) {
 		if useProxy {
 			req = proxyConfig(proxy.URL, "")
 		}
-		req.Config.GetObject("system_config").Set("github_proxy_domain", mirror.URL)
+		req.Config.Settings.GitHubProxyDomain = mirror.URL
 		req.Stream, req.MaxBytes = true, 1024
 		var sleeps []time.Duration
 		client := &Client{Transport: HTTPTransport{Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			addr = strings.Replace(addr, "raw.githubusercontent.com", "127.0.0.1", 1)
 			return (&net.Dialer{}).DialContext(ctx, network, addr)
 		}}, Sleep: func(d time.Duration) { sleeps = append(sleeps, d) }}
-		response, err := client.RequestRule(context.Background(), source, req)
+		response, err := client.Download(context.Background(), source, req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -416,7 +416,7 @@ func TestProxyErrorDoesNotRetryDirectly(t *testing.T) {
 	origin := startServer(t, false, false, nil)
 	proxy := startServer(t, true, false, func(r *recorder) { r.reject = true })
 	var sleeps []time.Duration
-	response, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
+	response, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
 	if err != nil || response.StatusCode != 502 || len(proxy.seen) != 1 || len(origin.seen) != 0 {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func TestUnavailableProxyDoesNotRetryDirectly(t *testing.T) {
 	var sleeps []time.Duration
 	req := proxyConfig("http://"+address, "")
 	req.ConnectTimeout = time.Second
-	_, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", req)
+	_, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
 	if PythonClass(err) != "ProxyError" || len(origin.seen) != 0 {
 		t.Fatal(err, PythonClass(err))
 	}
@@ -446,7 +446,7 @@ func TestSelfAPIBypassesProxy(t *testing.T) {
 		t.Setenv("HTTP_PROXY", proxy.URL)
 		var sleeps []time.Duration
 		url := origin.URL + prefix + "/api/rules?token=test-token"
-		response, err := liveClient(&sleeps).RequestRule(context.Background(), url, proxyConfig(proxy.URL, origin.URL+prefix))
+		response, err := liveClient(&sleeps).Download(context.Background(), url, proxyConfig(proxy.URL, origin.URL+prefix))
 		if err != nil || response.StatusCode != 200 || len(proxy.seen) != 0 || !strings.HasSuffix(origin.seen[0].url, "/api/rules?token=test-token") {
 			t.Fatal(err, proxy.seen, origin.seen)
 		}
@@ -466,7 +466,7 @@ func TestProxyResolvesSourceWithoutLocalPreflight(t *testing.T) {
 		local = append(local, addr)
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}}, Sleep: func(d time.Duration) { sleeps = append(sleeps, d) }}
-	response, err := client.RequestRule(context.Background(), url, proxyConfig(proxy.URL, ""))
+	response, err := client.Download(context.Background(), url, proxyConfig(proxy.URL, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestTLSHandshakeEOFRetriesWithBackoff(t *testing.T) {
 		}
 		req.CABundle, req.Stream, req.MaxBytes = caBundle(t, origin), true, 1024
 		var sleeps []time.Duration
-		response, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", req)
+		response, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
 		if err != nil {
 			t.Fatal(failureAt, err)
 		}
@@ -530,7 +530,7 @@ func TestInterruptedTLSBodyRetriesWithoutPartialContent(t *testing.T) {
 		}
 		req.CABundle, req.Stream, req.MaxBytes = caBundle(t, origin), true, int64(len(integrationBody))
 		var sleeps []time.Duration
-		response, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", req)
+		response, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -551,7 +551,7 @@ func TestUntrustedOriginCertificateIsNotRetried(t *testing.T) {
 	req := proxyConfig("", "")
 	req.Stream, req.MaxBytes = true, 1024
 	var sleeps []time.Duration
-	_, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", req)
+	_, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
 	if PythonClass(err) != "SSLError" || len(origin.seen) != 0 || origin.accepted != 1 || len(sleeps) != 0 {
 		t.Fatal(err, origin.accepted, sleeps)
 	}
@@ -574,7 +574,7 @@ func TestChunkedEOFRetriedInvalidLengthNot(t *testing.T) {
 			}
 			req.CABundle, req.Stream, req.MaxBytes = caBundle(t, origin), true, int64(len(integrationBody))
 			var sleeps []time.Duration
-			response, err := liveClient(&sleeps).RequestRule(context.Background(), origin.URL+"/rules", req)
+			response, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
 			attempts := 1
 			if fault == "eof" {
 				attempts = 3

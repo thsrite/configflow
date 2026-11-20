@@ -12,7 +12,6 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
@@ -81,7 +80,7 @@ func nativeReplayEquivalent(got, want string, diagnostics bool) bool {
 		for _, p := range []string{"error ", "ok "} {
 			s = strings.TrimPrefix(s, p)
 		}
-		return jsonx.ParseString(s)
+		return parseOrderedJSON([]byte(s))
 	}
 	g, ge := parse(got)
 	w, we := parse(want)
@@ -90,6 +89,7 @@ func nativeReplayEquivalent(got, want string, diagnostics bool) bool {
 	}
 	return nativeBoundaryEqual(g, w, diagnostics)
 }
+
 func yamlDiagnostic(s string) bool {
 	for _, m := range []string{msgYAMLPayload, msgUniquePayload, msgRemotePayload, msgPayloadList, msgUnreadablePayload} {
 		if strings.Contains(s, m) {
@@ -103,8 +103,9 @@ func yamlDiagnostic(s string) bool {
 	}
 	return false
 }
+
 func nativeBoundaryEqual(g, w any, diagnostics bool) bool {
-	if jsonx.Equal(g, w) {
+	if orderedEqual(g, w) {
 		return true
 	}
 	switch a := g.(type) {
@@ -130,26 +131,27 @@ func nativeBoundaryEqual(g, w any, diagnostics bool) bool {
 			}
 		}
 		return true
-	case *jsonx.Object:
-		b, ok := w.(*jsonx.Object)
+	case *orderedObj:
+		b, ok := w.(*orderedObj)
 		if !ok {
 			return false
 		}
-		diagnostic := diagnostics && yamlDiagnostic(a.GetString("message")) && yamlDiagnostic(b.GetString("message"))
-		if a.Len() != b.Len() {
+		diagnostic := diagnostics && yamlDiagnostic(a.str("message")) && yamlDiagnostic(b.str("message"))
+		if a.len() != b.len() {
 			return false
 		}
-		for k, v := range a.All() {
+		for _, kv := range a.items {
+			k, v := kv.k, kv.v
 			if diagnostic && (k == "message" || k == "line" || k == "before") {
 				continue
 			}
-			if diagnostics && k == "text" && yamlDiagnostic(a.GetString("text")) && yamlDiagnostic(b.GetString("text")) {
+			if diagnostics && k == "text" && yamlDiagnostic(a.str("text")) && yamlDiagnostic(b.str("text")) {
 				continue
 			}
-			if diagnostics && k == "text" && a.Has("errors") && a.Value("errors") != nil && b.Has("errors") {
+			if diagnostics && k == "text" && a.has("errors") && a.val("errors") != nil && b.has("errors") {
 				continue
 			}
-			bv, exists := b.Get(k)
+			bv, exists := b.get(k)
 			if !exists || !nativeBoundaryEqual(v, bv, diagnostics) {
 				return false
 			}
@@ -166,16 +168,16 @@ func nativeReplaySource(fn string, args any) string {
 		if len(a) > 0 {
 			value = a[0]
 			if fn == "validate_domain" {
-				if o, ok := value.(*jsonx.Object); ok {
-					value = o.Value("content")
+				if o, ok := value.(*orderedObj); ok {
+					value = o.val("content")
 				}
 			}
 		}
-	case *jsonx.Object:
-		value = a.Value("content")
+	case *orderedObj:
+		value = a.val("content")
 	}
-	if o, ok := value.(*jsonx.Object); ok {
-		if text, ok := o.Value("__bytes__").(string); ok {
+	if o, ok := value.(*orderedObj); ok {
+		if text, ok := o.val("__bytes__").(string); ok {
 			b, _ := hex.DecodeString(text)
 			return string(b)
 		}
@@ -187,23 +189,24 @@ func nativeReplaySource(fn string, args any) string {
 	}
 	return text
 }
+
 func boundaryHasDiagnostic(text, diagnostic string) bool {
 	text = strings.TrimPrefix(strings.TrimPrefix(text, "error "), "ok ")
-	v, err := jsonx.ParseString(text)
+	v, err := parseOrderedJSON([]byte(text))
 	if err != nil {
 		return false
 	}
 	var has func(any) bool
 	has = func(v any) bool {
 		switch v := v.(type) {
-		case *jsonx.Object:
+		case *orderedObj:
 			for _, key := range []string{"text", "message"} {
-				if strings.Contains(v.GetString(key), diagnostic) {
+				if strings.Contains(v.str(key), diagnostic) {
 					return true
 				}
 			}
-			for _, child := range v.All() {
-				if has(child) {
+			for _, kv := range v.items {
+				if has(kv.v) {
 					return true
 				}
 			}
@@ -220,16 +223,16 @@ func boundaryHasDiagnostic(text, diagnostic string) bool {
 }
 
 func boundaryRefusedSource(text, source string) bool {
-	v, err := jsonx.ParseString(strings.TrimPrefix(strings.TrimPrefix(text, "error "), "ok "))
+	v, err := parseOrderedJSON([]byte(strings.TrimPrefix(strings.TrimPrefix(text, "error "), "ok ")))
 	if err != nil {
 		return false
 	}
 	switch v := v.(type) {
-	case *jsonx.Object:
-		if class := v.GetString("class"); class != "" {
+	case *orderedObj:
+		if class := v.str("class"); class != "" {
 			return class == "ProfileValidationError" || class == "RemoteRuleValidationError"
 		}
-		return v.GetString("content") == source && len(v.GetList("errors")) > 0
+		return v.str("content") == source && len(v.list("errors")) > 0
 	case []any:
 		if len(v) != 2 || v[0] != source {
 			return false
@@ -241,20 +244,20 @@ func boundaryRefusedSource(text, source string) bool {
 }
 
 func sameFailureMetadata(got, want string) bool {
-	decode := func(text string) *jsonx.Object {
-		v, err := jsonx.ParseString(strings.TrimPrefix(strings.TrimPrefix(text, "error "), "ok "))
+	decode := func(text string) *orderedObj {
+		v, err := parseOrderedJSON([]byte(strings.TrimPrefix(strings.TrimPrefix(text, "error "), "ok ")))
 		if err != nil {
 			return nil
 		}
-		o, _ := v.(*jsonx.Object)
+		o, _ := v.(*orderedObj)
 		return o
 	}
 	g, w := decode(got), decode(want)
-	if g == nil || w == nil || g.GetString("class") == "" || g.GetString("class") != w.GetString("class") {
+	if g == nil || w == nil || g.str("class") == "" || g.str("class") != w.str("class") {
 		return false
 	}
-	g.Delete("text")
-	w.Delete("text")
+	g.del("text")
+	w.del("text")
 	return encode(g) == encode(w)
 }
 

@@ -83,7 +83,7 @@ func TestCFG01InternalRedirectBoundary(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			client := &Client{Transport: HTTPTransport{}, Sleep: func(time.Duration) {}}
-			response, err := client.RequestRule(ctx, start, Request{Config: sysConfig("server_domain", source.URL), MaxRedirects: &limit, ConnectTimeout: time.Second, ReadTimeout: time.Second})
+			response, err := client.Download(ctx, start, DownloadRequest{Config: sysConfig("server_domain", source.URL), MaxRedirects: &limit, ConnectTimeout: time.Second, ReadTimeout: time.Second})
 			if (err != nil) != tt.Refused {
 				if response != nil {
 					response.Close()
@@ -133,7 +133,7 @@ func TestCFG01ValidatesBeforeLocalCallback(t *testing.T) {
 				}
 				return &localhttp.Response{StatusCode: 200, URL: req.URL, Body: io.NopCloser(strings.NewReader("ok"))}, nil
 			}}
-			response, err := client.RequestRule(context.Background(), "http://panel.example.com"+tt.path, Request{Config: sysConfig("server_domain", "http://panel.example.com")})
+			response, err := client.Download(context.Background(), "http://panel.example.com"+tt.path, DownloadRequest{Config: sysConfig("server_domain", "http://panel.example.com")})
 			if response != nil {
 				response.Close()
 			}

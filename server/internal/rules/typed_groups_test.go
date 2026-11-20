@@ -1,17 +1,20 @@
 package rules
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/model"
-	"configflow/internal/yamlx"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"os"
 	"strings"
 	"testing"
+
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 type groupExpectedRow struct {
@@ -49,10 +52,10 @@ func groupReference(t *testing.T) groupExpectations {
 	}
 	return result
 }
-func groupRow(t *testing.T, row groupExpectedRow, original *jsonx.Object) *jsonx.Object {
+
+func groupRow(t *testing.T, row groupExpectedRow, original map[string]any) map[string]any {
 	t.Helper()
-	input, err := jsonx.Parse(row.Input)
-	if err != nil || !jsonx.Equal(input, original) {
+	if !testjson.Equal(row.Input, original) {
 		t.Fatal("group reference row input drift")
 	}
 	switch row.Class {
@@ -60,24 +63,57 @@ func groupRow(t *testing.T, row groupExpectedRow, original *jsonx.Object) *jsonx
 	default:
 		t.Fatalf("unknown group classification %q", row.Class)
 	}
-	native, err := jsonx.Parse(row.Native)
-	if err != nil {
-		t.Fatal(err)
-	}
+	native := mustDecodeMap(t, row.Native)
 	if row.Class == "unchanged" {
-		object := native.(*jsonx.Object)
-		if original.GetString("kind") == "group" {
-			for key, value := range object.All() {
-				if !jsonx.Equal(value, original.Value(key)) {
+		if strField(original, "kind") == "group" {
+			for key, value := range native {
+				if !testjson.Equal(value, original[key]) {
 					t.Fatal("unchanged group reference changed an original field")
 				}
 			}
-		} else if !jsonx.Equal(native, original.Value("result")) {
+		} else if !testjson.Equal(row.Native, original["result"]) {
 			t.Fatal("unchanged lower reference drift")
 		}
 	}
-	return native.(*jsonx.Object)
+	return native
 }
+
+func decodeGroupCatalogRaw(raw json.RawMessage) GroupCatalog {
+	var cfg struct {
+		Nodes         []json.RawMessage `json:"nodes"`
+		Subscriptions []json.RawMessage `json:"subscriptions"`
+		Aggregations  []json.RawMessage `json:"subscription_aggregations"`
+		Groups        []json.RawMessage `json:"proxy_groups"`
+	}
+	_ = json.Unmarshal(raw, &cfg)
+	var cat GroupCatalog
+	for _, r := range cfg.Nodes {
+		var n model.Node
+		if jsondecode.Unmarshal(r, &n) == nil {
+			cat.Nodes = append(cat.Nodes, n)
+		}
+	}
+	for _, r := range cfg.Subscriptions {
+		var s model.Subscription
+		if jsondecode.Unmarshal(r, &s) == nil {
+			cat.Subscriptions = append(cat.Subscriptions, s)
+		}
+	}
+	for _, r := range cfg.Aggregations {
+		var a model.Aggregation
+		if jsondecode.Unmarshal(r, &a) == nil {
+			cat.Aggregations = append(cat.Aggregations, a)
+		}
+	}
+	for _, r := range cfg.Groups {
+		var g model.ProxyGroup
+		if jsondecode.Unmarshal(r, &g) == nil {
+			cat.Groups = append(cat.Groups, g)
+		}
+	}
+	return cat
+}
+
 func TestLowerProviderCopyRejectsAliasExplosion(t *testing.T) {
 	var chain strings.Builder
 	chain.WriteString("v0: &v0 [entry]\n")
@@ -93,6 +129,7 @@ func TestLowerProviderCopyRejectsAliasExplosion(t *testing.T) {
 		t.Fatal("self alias accepted")
 	}
 }
+
 func TestTypedGroupDeleteFieldsUsesExplicitRemoval(t *testing.T) {
 	var group model.ProxyGroup
 	if err := json.Unmarshal([]byte(`{"id":"g","url":null,"interval":false,"extension":{"v":1e2}}`), &group); err != nil {
@@ -113,6 +150,7 @@ func TestTypedGroupDeleteFieldsUsesExplicitRemoval(t *testing.T) {
 		t.Fatal("mutated input")
 	}
 }
+
 func FuzzTypedGroupCandidates(f *testing.F) {
 	for _, seed := range []string{`{"manual_nodes":["DIRECT"]}`, `{"proxies_order":[false]}`, `{"regex":false}`, `{"type":"chain"}`, `{"subscriptions":null}`} {
 		f.Add(seed)
@@ -131,23 +169,27 @@ func FuzzTypedGroupCandidates(f *testing.F) {
 	})
 }
 
-func aliasProviderFixture(t *testing.T) (GroupCatalog, *yamlx.Node, *jsonx.Object) {
+func aliasProviderFixture(t *testing.T) (GroupCatalog, *yamlx.Node, json.RawMessage) {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_alias_expected.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := jsonx.Parse(data)
+	var fixture struct {
+		Source string          `json:"source"`
+		Config json.RawMessage `json:"config"`
+		Native json.RawMessage `json:"native"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	document, err := yamlx.Parse([]byte(fixture.Source))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := parsed.(*jsonx.Object)
-	document, err := yamlx.Parse([]byte(fixture.GetString("source")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return groupCatalog(fixture.GetObject("config")), document, fixture.GetObject("native")
+	return decodeGroupCatalogRaw(fixture.Config), document, fixture.Native
 }
+
 func TestProviderCopyPreservesExternalAliasesAndSource(t *testing.T) {
 	catalog, document, expected := aliasProviderFixture(t)
 	if err := LowerProviderFilters(catalog, document); err != nil {
@@ -157,9 +199,8 @@ func TestProviderCopyPreservesExternalAliasesAndSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, err := jsonx.Parse(raw)
-	if err != nil || !jsonx.Equal(actual, expected) {
-		t.Fatal("external alias differs from real Python", err)
+	if !testjson.Equal(expected, json.RawMessage(raw)) {
+		t.Fatalf("external alias differs from real Python:\n%s", testjson.Diff(expected, json.RawMessage(raw)))
 	}
 	providers := yamlx.Get(document, "proxy-providers")
 	group := yamlx.Get(document, "proxy-groups").Content[0]
@@ -186,6 +227,7 @@ func TestProviderCopyPreservesExternalAliasesAndSource(t *testing.T) {
 		t.Fatal("alias binding/comment/meaning changed", err)
 	}
 }
+
 func TestProviderCopyRejectsManualAliasBomb(t *testing.T) {
 	for _, self := range []bool{false, true} {
 		catalog, document, _ := aliasProviderFixture(t)

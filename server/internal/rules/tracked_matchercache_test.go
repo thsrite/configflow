@@ -52,7 +52,7 @@ func (rejectedCacheSpawner) Spawn(context.Context, string, func(context.Context)
 func TestMatcherCleanupRefusalAndNilSpawner(t *testing.T) {
 	for _, name := range []string{"nil", "refused"} {
 		t.Run(name, func(t *testing.T) {
-			f := newFixture(t, func(o *MatcherCacheOptions) {
+			f := newFixture(t, func(o *CacheOptions) {
 				o.Spawner = nil
 				if name == "refused" {
 					o.Spawner = rejectedCacheSpawner{}

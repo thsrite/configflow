@@ -1,27 +1,34 @@
 package rulefetch
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/lifecycle"
-	"configflow/internal/model"
-	"configflow/internal/repo"
-	"configflow/internal/rules"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/rules"
 )
 
 // The old filename is frozen from real Python (the same case appears in the
 // untouched TestRuleCacheFilenameNamespaces), not computed by the migration.
 const oldRemoteName = "by-source/4663082af6b370293ab4dcaac0c518c70514799bcc123b97e9874820611ca277.list"
 
-func migrationFixture(t *testing.T) (context.Context, *repo.Repository, *jsonx.Object, string, string) {
+func migrationFixture(t *testing.T) (context.Context, *repo.Repository, model.RuleConfig, string, string) {
 	t.Helper()
-	rule := jsonx.Obj("id", "r1", "name", "Synthetic", "source_type", "url", "url", "https://x.test/a.yaml", "behavior", "domain", "format", "yaml")
-	ctx, r := cacheRepo(t, rule)
+	rule := model.RuleConfig{
+		ID:         "r1",
+		Name:       "Synthetic",
+		SourceType: strp("url"),
+		URL:        strp("https://x.test/a.yaml"),
+		Behavior:   strp("domain"),
+		Format:     strp("yaml"),
+	}
+	ctx, r := cacheRepo(t, &rule)
 	dir, err := r.SharedRulesDir()
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +42,7 @@ func migrationFixture(t *testing.T) (context.Context, *repo.Repository, *jsonx.O
 	}
 	return ctx, r, rule, old, cachePath(t, r, rule)
 }
+
 func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	ctx, r, rule, old, native := migrationFixture(t)
 	stamp := time.Unix(1700000000, 123456789)
@@ -47,7 +55,10 @@ func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	}
 	beforeJSON, _ := model.Marshal(before)
 	offline := errors.New("synthetic upstream unavailable")
-	content, refreshErr, err := RefreshRemoteRule(ctx, rule, nil, RefreshOptions{AllowStale: true, Fetch: func(string) (any, error) { return nil, offline }})
+	content, refreshErr, err := RefreshRule(ctx, rule, nil, CacheOptions{
+		AllowStale: true,
+		Fetch:      func(context.Context, string) (Content, error) { return Content{}, offline },
+	})
 	if err != nil || !errors.Is(refreshErr, offline) || string(content) != "payload: [example.com]\n" {
 		t.Fatalf("offline fallback: %s %v %v", content, refreshErr, err)
 	}
@@ -73,11 +84,12 @@ func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	if err := os.Remove(old); err != nil {
 		t.Fatal(err)
 	}
-	cached, err := ReadValidatedRuleCache(ctx, rule, nil)
+	cached, err := ReadCache(ctx, rule, nil)
 	if err != nil || string(cached) != string(content) {
 		t.Fatal("native read after migration", err)
 	}
 }
+
 func TestNativeCacheMigrationRejectsBadBytesDeclarationsAndReceipts(t *testing.T) {
 	for _, kind := range []string{"bad-content", "changed-url", "changed-behavior", "native-receipt", "old-receipt"} {
 		t.Run(kind, func(t *testing.T) {
@@ -88,9 +100,9 @@ func TestNativeCacheMigrationRejectsBadBytesDeclarationsAndReceipts(t *testing.T
 					t.Fatal(err)
 				}
 			case "changed-url":
-				rule.Set("url", "https://example.com/new.yaml")
+				rule.URL = strp("https://example.com/new.yaml")
 			case "changed-behavior":
-				rule.Set("behavior", "ipcidr")
+				rule.Behavior = strp("ipcidr")
 			case "native-receipt":
 				if err := os.MkdirAll(filepath.Dir(native), 0700); err != nil {
 					t.Fatal(err)
@@ -103,7 +115,7 @@ func TestNativeCacheMigrationRejectsBadBytesDeclarationsAndReceipts(t *testing.T
 					t.Fatal(err)
 				}
 			}
-			content, err := ReadValidatedRuleCache(ctx, rule, nil)
+			content, err := ReadCache(ctx, rule, nil)
 			if err != nil || content != nil {
 				t.Fatalf("refusal %s: bytes=%d err=%v", kind, len(content), err)
 			}
@@ -116,6 +128,7 @@ func TestNativeCacheMigrationRejectsBadBytesDeclarationsAndReceipts(t *testing.T
 		})
 	}
 }
+
 func TestCacheWriteUsesOriginatingRuntimeAfterDisconnectAndShutdown(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
@@ -128,7 +141,7 @@ func TestCacheWriteUsesOriginatingRuntimeAfterDisconnectAndShutdown(t *testing.T
 			if shutdown {
 				runtime.Shutdown(context.Background())
 			}
-			_, err := WriteValidatedRuleCache(request, rule, []byte("payload: [changed.example]\n"), nil)
+			_, err := WriteCache(request, rule, Content{Data: []byte("payload: [changed.example]\n")}, nil)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("shutdown error: %v", err)
@@ -150,6 +163,7 @@ func TestCacheWriteUsesOriginatingRuntimeAfterDisconnectAndShutdown(t *testing.T
 		})
 	}
 }
+
 func TestDownloadRetryWaitKeepsRequestCancellation(t *testing.T) {
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	runtime.Start(context.Background())
@@ -160,14 +174,14 @@ func TestDownloadRetryWaitKeepsRequestCancellation(t *testing.T) {
 		t.Fatalf("retry ignored cancellation: %v", err)
 	}
 }
+
 func TestLegacyDigestIsReadOnlyMigrationMetadata(t *testing.T) {
 	ctx, _, rule, old, native := migrationFixture(t)
-	record := legacyRule(rule)
-	name, ok := rules.LegacyCacheFilename(record)
+	name, ok := rules.LegacyCacheFilename(rule)
 	if !ok || filepath.Base(old) != filepath.Base(name) || filepath.Base(old) == filepath.Base(native) {
 		t.Fatal("historical address not recognized")
 	}
-	if _, err := ReadCache(ctx, record, nil); err != nil {
+	if _, err := ReadCache(ctx, rule, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -175,8 +189,7 @@ func TestLegacyDigestIsReadOnlyMigrationMetadata(t *testing.T) {
 func TestRefreshCommitChecksRuntimeAfterDownload(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
-			ctx, _, oldRule, _, native := migrationFixture(t)
-			rule := legacyRule(oldRule)
+			ctx, _, rule, _, native := migrationFixture(t)
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 			runtime.Start(context.Background())
 			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
@@ -243,7 +256,7 @@ func FuzzTypedRuleContent(f *testing.F) {
 func TestLegacyCacheMigrationUsesHeldReadSnapshot(t *testing.T) {
 	ctx, r, rule, _, native := migrationFixture(t)
 	err := r.WithReadSnapshot(ctx, func(held context.Context) error {
-		data, err := ReadValidatedRuleCacheWithFormat(held, rule, nil, "yaml")
+		data, err := ReadCacheWithFormat(held, rule, nil, "yaml")
 		if err != nil {
 			return err
 		}
@@ -258,26 +271,27 @@ func TestLegacyCacheMigrationUsesHeldReadSnapshot(t *testing.T) {
 	if _, err := os.Stat(native); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("read-only snapshot wrote cache")
 	}
-	if _, err := ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml"); err != nil {
+	if _, err := ReadCacheWithFormat(ctx, rule, nil, "yaml"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(native); err != nil {
 		t.Fatal("writable read did not migrate cache", err)
 	}
 }
+
 func TestKnownFormatNeverDecodesInferenceLibrary(t *testing.T) {
-	ctx, r, rule := func() (context.Context, *repo.Repository, *jsonx.Object) {
-		rule := remoteSource()
-		ctx, r := cacheRepo(t, rule)
-		return ctx, r, rule
-	}()
-	if _, err := WriteValidatedRuleCache(ctx, rule, []byte("example.com\n"), nil); err != nil {
+	rule := remoteSource()
+	ctx, r := cacheRepo(t, &rule)
+	if _, err := WriteCache(ctx, rule, Content{Data: []byte("example.com\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
-	// This deliberately non-JSON transient value would make even marshaling
-	// the library fail. A caller-known format must not touch that field.
-	config := jsonx.Obj("rule_library", []any{jsonx.Obj("id", "unused", "content", make(chan int))})
-	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, config, "text")
+	// A caller-known format with an existing stable cache must never touch the
+	// lazy library projection.
+	config := &SourceConfig{cacheLibrary: func() []model.RuleLibraryItem {
+		t.Fatal("known format visited library")
+		return nil
+	}}
+	data, err := ReadCacheWithFormat(ctx, rule, config, "text")
 	if err != nil || string(data) != "example.com\n" {
 		t.Fatal("known format visited library", err)
 	}

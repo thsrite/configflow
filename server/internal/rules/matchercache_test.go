@@ -2,7 +2,6 @@ package rules
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,9 +10,7 @@ import (
 	"time"
 
 	"configflow/internal/clock"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle/lifecycletest"
-	"configflow/internal/lockx"
 	"configflow/internal/model"
 )
 
@@ -45,34 +42,38 @@ func (s *cacheTestSpawner) Spawn(ctx context.Context, _ string, fn func(context.
 
 type cacheFixture struct {
 	t      *testing.T
-	cache  *MatcherCache
+	cache  *Cache
 	root   string
 	clock  *testClock
-	config *jsonx.Object
-	opt    *MatcherCacheOptions
+	config MatcherInput
+	opt    *CacheOptions
 }
 
-func newFixture(t *testing.T, tune func(*MatcherCacheOptions)) *cacheFixture {
+func newFixture(t *testing.T, tune func(*CacheOptions)) *cacheFixture {
 	t.Helper()
 	f := &cacheFixture{t: t, root: t.TempDir(), clock: newCacheClock()}
 	dir := f.root
 	spawner := &cacheTestSpawner{}
 	t.Cleanup(spawner.wg.Wait)
-	opt := MatcherCacheOptions{RulesDir: func() string { return dir }, Clock: f.clock, Spawner: spawner}
+	opt := CacheOptions{RulesDir: func() string { return dir }, Clock: f.clock, Spawner: spawner}
 	if tune != nil {
 		tune(&opt)
 	}
-	f.cache = NewMatcherCache(opt)
+	f.cache = NewCache(opt)
 	f.opt = &opt
 	t.Cleanup(f.cache.Clear)
-	f.config = obj(
-		"rule_configs", seq(
-			obj("id", "first", "itemType", "rule", "rule_type", "DOMAIN-SUFFIX", "value", "first.example", "policy", "DIRECT"),
-			obj("id", "set", "itemType", "ruleset", "library_rule_id", "lib", "name", "domains", "policy", "PROXY"),
-		),
-		"rule_library", seq(obj("id", "lib", "name", "domains", "source_type", "content", "behavior", "classical",
-			"content", "DOMAIN-SUFFIX,matched.example\n")),
-	)
+	f.config = MatcherInput{
+		Rules: []model.RuleConfig{
+			{ID: "first", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: "first.example", Policy: strp("DIRECT")},
+			{ID: "set", ItemType: "ruleset", LibraryRuleID: "lib", Name: "domains", Policy: strp("PROXY")},
+		},
+		Library: []model.RuleLibraryItem{
+			{ID: "lib", Name: "domains", SourceType: strp("content"), Behavior: strp("classical"), Content: strp("DOMAIN-SUFFIX,matched.example\n")},
+		},
+		CacheLibrary: []model.RuleLibraryItem{
+			{ID: "lib", Name: "domains"},
+		},
+	}
 	return f
 }
 
@@ -88,31 +89,60 @@ func (f *cacheFixture) write(name, content string) string {
 	return path
 }
 
-func (f *cacheFixture) matcher(config *jsonx.Object, profile string) *CachedMatcher {
-	return f.cache.LocalMatcher(config, profile)
+func (f *cacheFixture) matcher(input MatcherInput, profile string) *Cached {
+	return f.cache.LocalMatcher(input, profile)
 }
 
-func policyOf(t *testing.T, result *jsonx.Object) string {
+func policyOf(t *testing.T, result *Hit) string {
 	t.Helper()
 	if result == nil {
 		return "<nil>"
 	}
-	return result.GetString("policy")
+	return result.Policy
 }
 
-func clone(config *jsonx.Object) *jsonx.Object { return config.DeepCopy() }
+func cloneInput(in MatcherInput) MatcherInput {
+	out := MatcherInput{
+		Rules:        append([]model.RuleConfig(nil), in.Rules...),
+		Library:      append([]model.RuleLibraryItem(nil), in.Library...),
+		CacheLibrary: append([]model.RuleLibraryItem(nil), in.CacheLibrary...),
+	}
+	for i := range out.Rules {
+		if out.Rules[i].Enabled != nil {
+			v := *out.Rules[i].Enabled
+			out.Rules[i].Enabled = &v
+		}
+		if out.Rules[i].Policy != nil {
+			v := *out.Rules[i].Policy
+			out.Rules[i].Policy = &v
+		}
+	}
+	for i := range out.Library {
+		if out.Library[i].Content != nil {
+			v := *out.Library[i].Content
+			out.Library[i].Content = &v
+		}
+		if out.Library[i].SourceType != nil {
+			v := *out.Library[i].SourceType
+			out.Library[i].SourceType = &v
+		}
+		if out.Library[i].URL != nil {
+			v := *out.Library[i].URL
+			out.Library[i].URL = &v
+		}
+	}
+	return out
+}
 
 func TestReusesPositiveAndNegativeMatchesWithoutCachingTraffic(t *testing.T) {
 	f := newFixture(t, nil)
 	first := f.matcher(f.config, "default")
 	result := first.Match("www.matched.example")
-	result.Set("policy", "corrupted")
+	result.Policy = "corrupted"
 	if first.Match("missing.example") != nil {
 		t.Fatal("missing.example matched")
 	}
-	changed := clone(f.config)
-	changed.Set("agents", seq(obj("last_heartbeat", "new")))
-	changed.Set("domain_discovery", obj("ignored", seq("ignored.example")))
+	changed := cloneInput(f.config)
 	second := f.matcher(changed, "default")
 	if second != first {
 		t.Fatal("unrelated config changes replaced the matcher")
@@ -131,7 +161,7 @@ func TestReusesPositiveAndNegativeMatchesWithoutCachingTraffic(t *testing.T) {
 func TestConfigEditsInvalidateImmediately(t *testing.T) {
 	for _, edit := range []string{"inline", "policy", "enabled", "order"} {
 		f := newFixture(t, nil)
-		f.config.GetList("rule_library")[0].(*jsonx.Object).Set("content", "DOMAIN-SUFFIX,matched.example\nDOMAIN-SUFFIX,first.example\n")
+		f.config.Library[0].Content = strp("DOMAIN-SUFFIX,matched.example\nDOMAIN-SUFFIX,first.example\n")
 		old := f.matcher(f.config, "default")
 		if old.Match("new.example") != nil {
 			t.Fatalf("%s: new.example matched", edit)
@@ -139,18 +169,16 @@ func TestConfigEditsInvalidateImmediately(t *testing.T) {
 		if got := policyOf(t, old.Match("first.example")); got != "DIRECT" {
 			t.Fatalf("%s: policy = %q", edit, got)
 		}
-		changed := clone(f.config)
-		rules := changed.GetList("rule_configs")
+		changed := cloneInput(f.config)
 		switch edit {
 		case "inline":
-			lib := changed.GetList("rule_library")[0].(*jsonx.Object)
-			lib.Set("content", lib.GetString("content")+"DOMAIN,new.example\n")
+			changed.Library[0].Content = strp(*changed.Library[0].Content + "DOMAIN,new.example\n")
 		case "policy":
-			rules[0].(*jsonx.Object).Set("policy", "PROXY")
+			changed.Rules[0].Policy = strp("PROXY")
 		case "enabled":
-			rules[0].(*jsonx.Object).Set("enabled", false)
+			changed.Rules[0].Enabled = boolp(false)
 		default:
-			rules[0], rules[1] = rules[1], rules[0]
+			changed.Rules[0], changed.Rules[1] = changed.Rules[1], changed.Rules[0]
 		}
 		fresh := f.matcher(changed, "default")
 		if fresh == old {
@@ -217,12 +245,12 @@ func TestParallelRefreshesComputeEachHostOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	type pair struct{ a, b string }
 	results := make([]pair, 8)
-	matchers := make([]*CachedMatcher, 8)
+	matchers := make([]*Cached, 8)
 	for i := range results {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			m := f.matcher(clone(f.config), "default")
+			m := f.matcher(cloneInput(f.config), "default")
 			matchers[i] = m
 			results[i] = pair{policyOf(t, m.Match("matched.example")), policyOf(t, m.Match("missing.example"))}
 		}()
@@ -239,7 +267,7 @@ func TestParallelRefreshesComputeEachHostOnce(t *testing.T) {
 }
 
 func TestCacheIsBoundedAndProfilesAreIsolated(t *testing.T) {
-	f := newFixture(t, func(o *MatcherCacheOptions) { o.MaxMatchers, o.MaxHostResults = 2, 2 })
+	f := newFixture(t, func(o *CacheOptions) { o.MaxMatchers, o.MaxHostResults = 2, 2 })
 	first := f.matcher(f.config, "first")
 	second := f.matcher(f.config, "second")
 	if first == second {
@@ -299,7 +327,7 @@ func TestIdleEvictionReleasesIndexesAndExistingHandlesRemainUsable(t *testing.T)
 }
 
 func TestBackgroundCleanupRunsWithoutAnotherRequest(t *testing.T) {
-	f := newFixture(t, func(o *MatcherCacheOptions) {
+	f := newFixture(t, func(o *CacheOptions) {
 		o.Clock = clock.Real{}
 		o.IdleSeconds, o.CleanupInterval = 0.025, 0.01
 	})
@@ -349,8 +377,8 @@ func TestClearCancelsCleanupAndStaleCallbacksCannotReschedule(t *testing.T) {
 func TestMatchTouchesIdleTimeAndActiveMatchIsNeverExpired(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	f := newFixture(t, func(o *MatcherCacheOptions) {
-		o.ValidateRemote = func(string, *jsonx.Object) error {
+	f := newFixture(t, func(o *CacheOptions) {
+		o.ValidateRemote = func(string, model.RuleConfig) error {
 			once.Do(func() { close(entered) })
 			<-release
 			return nil
@@ -358,13 +386,12 @@ func TestMatchTouchesIdleTimeAndActiveMatchIsNeverExpired(t *testing.T) {
 	})
 	// A url source with an existing cache file makes the lazy load block in
 	// the validation hook.
-	lib := f.config.GetList("rule_library")[0].(*jsonx.Object)
-	lib.Set("source_type", "url")
-	lib.Set("url", "https://rules.test/domains")
-	f.write(RuleCacheFilename(lib), "DOMAIN-SUFFIX,matched.example\n")
+	f.config.Library[0].SourceType = strp("url")
+	f.config.Library[0].URL = strp("https://rules.test/domains")
+	f.write(CacheFilename(LibraryRule(f.config.Library[0])), "DOMAIN-SUFFIX,matched.example\n")
 	matcher := f.matcher(f.config, "default")
 	f.clock.advance(DefaultIdleSeconds - 1)
-	done := make(chan *jsonx.Object, 1)
+	done := make(chan *Hit, 1)
 	go func() { done <- matcher.Match("new.matched.example") }()
 	<-entered
 	f.clock.advance(DefaultIdleSeconds + 1)
@@ -390,20 +417,22 @@ func TestMatchTouchesIdleTimeAndActiveMatchIsNeverExpired(t *testing.T) {
 
 func TestFailedFileRetriesWithoutRebuildingHealthyIndexes(t *testing.T) {
 	f := newFixture(t, nil)
-	f.config.Set("rule_configs", seq(
-		obj("id", "broken", "itemType", "ruleset", "library_rule_id", "broken", "policy", "FIRST"),
-		f.config.GetList("rule_configs")[1],
-	))
-	f.config.GetList("rule_library")
-	f.config.Set("rule_library", append(f.config.GetList("rule_library"), obj("id", "broken", "name", "broken",
-		"source_type", "content", "behavior", "classical", "content", "DOMAIN,fallback.example")))
+	f.config.Rules = []model.RuleConfig{
+		{ID: "broken", ItemType: "ruleset", LibraryRuleID: "broken", Policy: strp("FIRST")},
+		f.config.Rules[1],
+	}
+	f.config.Library = append(f.config.Library, model.RuleLibraryItem{
+		ID: "broken", Name: "broken", SourceType: strp("content"), Behavior: strp("classical"),
+		Content: strp("DOMAIN,fallback.example"),
+	})
+	f.config.CacheLibrary = append(f.config.CacheLibrary, model.RuleLibraryItem{ID: "broken", Name: "broken"})
 	broken := f.write("broken.list", "DOMAIN,matched.example\nDOMAIN,recovered.example")
 	f.write("domains.list", "DOMAIN,matched.example")
 	if err := os.Chmod(broken, 0); err != nil {
 		t.Fatal(err)
 	}
-	if f, err := os.Open(broken); err == nil {
-		f.Close()
+	if file, err := os.Open(broken); err == nil {
+		file.Close()
 		t.Skip("running with privileges that ignore file modes")
 	}
 	matcher := f.matcher(f.config, "default")
@@ -440,10 +469,6 @@ func TestFailedFileRetriesWithoutRebuildingHealthyIndexes(t *testing.T) {
 	if matcherIndexFor(matcher, "lib") != healthy {
 		t.Fatal("healthy index was rebuilt")
 	}
-	// chmod moved the file's ctime, so the first successful read still differs
-	// from the stamp taken at signature time and schedules one more bounded
-	// retry (Python's open() monkeypatch left the stamps alone); the second
-	// round settles.
 	f.clock.advance(DefaultReadRetry)
 	if got := policyOf(t, matcher.Match("recovered.example")); got != "FIRST" {
 		t.Fatalf("recovered policy after settling = %q", got)
@@ -457,7 +482,7 @@ func TestFailedFileRetriesWithoutRebuildingHealthyIndexes(t *testing.T) {
 }
 
 // matcherIndexFor returns the built index of the source with the library id.
-func matcherIndexFor(m *CachedMatcher, libraryID string) *ruleIndex {
+func matcherIndexFor(m *Cached, libraryID string) *ruleIndex {
 	m.matcher.mu.RLock()
 	defer m.matcher.mu.RUnlock()
 	for slot, index := range m.matcher.indexes {
@@ -499,9 +524,8 @@ func TestLegitimateEmptyFileIsReusedAndChangeIsDetected(t *testing.T) {
 
 func TestMissingURLSourceStaysLocalAndRecoversWhenFileAppears(t *testing.T) {
 	f := newFixture(t, nil)
-	lib := f.config.GetList("rule_library")[0].(*jsonx.Object)
-	lib.Set("source_type", "url")
-	lib.Set("url", "https://must-not-fetch.invalid/rules")
+	f.config.Library[0].SourceType = strp("url")
+	f.config.Library[0].URL = strp("https://must-not-fetch.invalid/rules")
 	old := f.matcher(f.config, "default")
 	if old.Match("matched.example") != nil {
 		t.Fatal("matched without a cache file")
@@ -509,7 +533,7 @@ func TestMissingURLSourceStaysLocalAndRecoversWhenFileAppears(t *testing.T) {
 	if !old.RetryPending() {
 		t.Fatal("missing source did not schedule a retry")
 	}
-	f.write(RuleCacheFilename(lib), "DOMAIN,matched.example")
+	f.write(CacheFilename(LibraryRule(f.config.Library[0])), "DOMAIN,matched.example")
 	current := f.matcher(f.config, "default")
 	if current == old {
 		t.Fatal("new file did not replace the matcher")
@@ -525,8 +549,8 @@ func TestLazyLoadUsesFrozenConfigAndRepository(t *testing.T) {
 	matcher := f.matcher(f.config, "default")
 	other := filepath.Join(f.root, "other")
 	f.write("other/domains.list", "DOMAIN,changed.example")
-	f.config.GetList("rule_configs")[1].(*jsonx.Object).Set("policy", "CHANGED")
-	f.config.GetList("rule_library")[0].(*jsonx.Object).Set("content", "DOMAIN,changed.example")
+	f.config.Rules[1].Policy = strp("CHANGED")
+	f.config.Library[0].Content = strp("DOMAIN,changed.example")
 	// Another repository would resolve elsewhere: swap the directory source.
 	f.opt.RulesDir = func() string { return other }
 	f.cache.opt.RulesDir = f.opt.RulesDir
@@ -547,11 +571,10 @@ func TestLazyLoadUsesFrozenConfigAndRepository(t *testing.T) {
 
 func TestDuplicateLibraryReferencesShareIndexButKeepFirstRuleMetadata(t *testing.T) {
 	f := newFixture(t, nil)
-	rules := f.config.GetList("rule_configs")
-	later := rules[1].(*jsonx.Object).Clone()
-	later.Set("id", "later")
-	later.Set("policy", "LATER")
-	f.config.Set("rule_configs", append(rules, later))
+	later := f.config.Rules[1]
+	later.ID = "later"
+	later.Policy = strp("LATER")
+	f.config.Rules = append(f.config.Rules, later)
 	matcher := f.matcher(f.config, "default")
 	if matcher.Match("missing.example") != nil { // visits both references
 		t.Fatal("matched")
@@ -560,15 +583,12 @@ func TestDuplicateLibraryReferencesShareIndexButKeepFirstRuleMetadata(t *testing
 		t.Fatalf("index count = %d", matcher.Matcher().IndexCount())
 	}
 	hit := matcher.Match("matched.example")
-	if hit.Value("rule_id") != "set" || hit.Value("policy") != "PROXY" || jsonx.Str(hit.Value("priority")) != "2" {
-		t.Fatalf("hit = %s", jsonx.Repr(hit))
+	if hitRuleID(hit) != "set" || hit.Policy != "PROXY" || hit.Priority != 2 {
+		t.Fatalf("hit = %+v", hit)
 	}
 }
 
 func TestReplacedFileBetweenSignatureAndReadIsRetried(t *testing.T) {
-	// Python replaced the file while the first read was running. Here the file
-	// changes after the stamps were taken and before the lazy read; either way
-	// the stale stamp must schedule a bounded retry.
 	f := newFixture(t, nil)
 	path := f.write("domains.list", "DOMAIN,old.example")
 	matcher := f.matcher(f.config, "default")
@@ -607,8 +627,6 @@ func TestMissingExpectedFileRetriesInlineFallbackOnExistingHandle(t *testing.T) 
 	if matcher.Match("file.example") == nil || matcher.Match("matched.example") != nil {
 		t.Fatal("recovered content wrong")
 	}
-	// One further stable read acknowledges the changed stamp; it must not make
-	// every later request re-read a healthy source.
 	f.clock.advance(DefaultReadRetry)
 	if matcher.Match("file.example") == nil {
 		t.Fatal("no match")
@@ -623,9 +641,6 @@ func TestMissingExpectedFileRetriesInlineFallbackOnExistingHandle(t *testing.T) 
 	}
 }
 
-// test_replaced_file_during_lazy_read_is_retried_on_same_handle: the path is
-// replaced atomically after the handle's fstat-before/read/fstat-after; the
-// old content is served once and the stat of the path schedules the retry.
 func TestReplacedFileDuringLazyReadIsRetriedOnSameHandle(t *testing.T) {
 	f := newFixture(t, nil)
 	path := f.write("domains.list", "DOMAIN,old.example")
@@ -656,10 +671,8 @@ func TestReplacedFileDuringLazyReadIsRetriedOnSameHandle(t *testing.T) {
 	}
 }
 
-// Review C09: concurrent handles, config edits, file replacement, eviction
-// and Clear (run with -race).
 func TestConcurrentCacheAccess(t *testing.T) {
-	f := newFixture(t, func(o *MatcherCacheOptions) { o.MaxMatchers = 2; o.CleanupInterval = 0.001 })
+	f := newFixture(t, func(o *CacheOptions) { o.MaxMatchers = 2; o.CleanupInterval = 0.001 })
 	f.write("domains.list", "DOMAIN,file.example")
 	var wg sync.WaitGroup
 	for worker := 0; worker < 8; worker++ {
@@ -667,9 +680,9 @@ func TestConcurrentCacheAccess(t *testing.T) {
 		go func(worker int) {
 			defer wg.Done()
 			for i := 0; i < 200; i++ {
-				config := clone(f.config)
+				config := cloneInput(f.config)
 				if i%3 == 0 {
-					config.GetList("rule_configs")[0].(*jsonx.Object).Set("value", "edit.example")
+					config.Rules[0].Value = "edit.example"
 				}
 				matcher := f.matcher(config, []string{"a", "b", "c"}[(worker+i)%3])
 				if matcher.Match("matched.example") == nil && matcher.Match("file.example") == nil {
@@ -699,7 +712,7 @@ func TestConcurrentCacheAccess(t *testing.T) {
 }
 
 func TestReviewCleanupHonorsIdleDeadlineWithLongSweepInterval(t *testing.T) {
-	f := newFixture(t, func(o *MatcherCacheOptions) {
+	f := newFixture(t, func(o *CacheOptions) {
 		o.Clock = clock.Real{}
 		o.IdleSeconds = 0.025
 		o.CleanupInterval = 60
@@ -712,149 +725,4 @@ func TestReviewCleanupHonorsIdleDeadlineWithLongSweepInterval(t *testing.T) {
 	if f.cache.Size() != 0 {
 		t.Fatal("idle expiry waited for the next full cleanup interval")
 	}
-}
-
-// Historical fixture boundary: delegates to the typed implementation.
-
-// MatcherCacheOptions wires the cache to its environment. Every field except
-// RulesDir is optional.
-type MatcherCacheOptions struct {
-	// RulesDir is the shared rule cache directory (DATA_DIR/shared/rules).
-	RulesDir func() string
-	// StoredLibrary returns the current shared rule_library from the
-	// repository (RuleCacheReadPath consults it for legacy cache names).
-	StoredLibrary func() []any
-	// ValidateRemote checks a url source's cache file against its
-	// declaration; an error marks the file unusable. nil accepts everything.
-	ValidateRemote func(content string, rule *jsonx.Object) error
-	// Clock supplies scheduling time and timers; nil uses real time.
-	Clock clock.Clock
-	// Spawner tracks cleanup work. When nil, eviction runs only on access or
-	// explicit EvictIdle calls; no background work is started.
-	Spawner lockx.Spawner
-	Logger  Logger
-
-	// Tunables, normally the Default* constants (tests shrink them).
-	MaxMatchers, MaxHostResults                    int
-	IdleSeconds, ReadRetrySeconds, CleanupInterval float64
-}
-
-// MatcherCache bridges unported discovery to the native registry.
-type MatcherCache struct {
-	*Cache
-	opt        MatcherCacheOptions
-	wrappersMu sync.Mutex
-	wrappers   map[*Cached]*CachedMatcher
-}
-
-// NewMatcherCache creates the temporary discovery adapter.
-func NewMatcherCache(opt MatcherCacheOptions) *MatcherCache {
-	c := &MatcherCache{opt: opt, wrappers: make(map[*Cached]*CachedMatcher)}
-	native := CacheOptions{RulesDir: func() string { return c.opt.RulesDir() }, Clock: opt.Clock, Spawner: opt.Spawner, Logger: opt.Logger,
-		MaxMatchers: opt.MaxMatchers, MaxHostResults: opt.MaxHostResults, IdleSeconds: opt.IdleSeconds, ReadRetrySeconds: opt.ReadRetrySeconds, CleanupInterval: opt.CleanupInterval}
-	native.StoredLibrary = func() []model.RuleLibraryItem {
-		if c.opt.StoredLibrary == nil {
-			return nil
-		}
-		return legacyLibrary(c.opt.StoredLibrary())
-	}
-	if opt.ValidateRemote != nil {
-		native.ValidateRemote = func(content string, rule model.RuleConfig) error {
-			data, _ := model.Marshal(rule)
-			value, _ := jsonx.Parse(data)
-			return c.opt.ValidateRemote(content, value.(*jsonx.Object))
-		}
-	}
-	c.Cache = NewCache(native)
-	// Preserve defaults for existing diagnostic callers.
-	c.opt.MaxMatchers = c.Cache.opt.MaxMatchers
-	c.opt.MaxHostResults = c.Cache.opt.MaxHostResults
-	c.opt.IdleSeconds = c.Cache.opt.IdleSeconds
-	c.opt.ReadRetrySeconds = c.Cache.opt.ReadRetrySeconds
-	c.opt.CleanupInterval = c.Cache.opt.CleanupInterval
-	return c
-}
-
-// MatcherInputFromJSON projects only rule collections. Unrelated config members
-// are never marshaled or decoded, even when a caller has a large node catalog.
-func MatcherInputFromJSON(config *jsonx.Object) MatcherInput {
-	var rules []model.RuleConfig
-	// Retain disabled/malformed row positions through the established boundary.
-	for _, entry := range config.GetList("rule_configs") {
-		var rule model.RuleConfig
-		if decodeRecord(entry, &rule) != nil {
-			disabled := false
-			rule.Enabled = &disabled
-		}
-		rules = append(rules, rule)
-	}
-	refs := map[string]bool{}
-	for _, rule := range rules {
-		if ruleKind(&rule) == "ruleset" {
-			refs[rule.LibraryRuleID] = true
-		}
-	}
-	result := MatcherInput{Rules: rules}
-	for _, entry := range config.GetList("rule_library") {
-		object, ok := entry.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		id, name := object.GetString("id"), object.GetString("name")
-		result.CacheLibrary = append(result.CacheLibrary, model.RuleLibraryItem{ID: id, Name: name})
-		if refs[id] {
-			var item model.RuleLibraryItem
-			if decodeRecord(object, &item) == nil {
-				result.Library = append(result.Library, item)
-			}
-		}
-	}
-	return result
-}
-
-// LocalMatcher preserves handle identity for existing discovery callers.
-func (c *MatcherCache) LocalMatcher(config *jsonx.Object, profileID string) *CachedMatcher {
-	native := c.Cache.LocalMatcher(MatcherInputFromJSON(config), profileID)
-	c.wrappersMu.Lock()
-	defer c.wrappersMu.Unlock()
-	if value := c.wrappers[native]; value != nil {
-		return value
-	}
-	// Wrapper ownership follows bounded registry ownership; old handles still work.
-	c.Cache.mu.Lock()
-	owned := make(map[*Cached]bool, len(c.Cache.slots))
-	for _, element := range c.Cache.slots {
-		owned[element.Value.(*cacheEntry).matcher] = true
-	}
-	c.Cache.mu.Unlock()
-	for old := range c.wrappers {
-		if !owned[old] {
-			delete(c.wrappers, old)
-		}
-	}
-	result := &CachedMatcher{Cached: native}
-	c.wrappers[native] = result
-	return result
-}
-
-// Clear releases both registry and adapter ownership.
-func (c *MatcherCache) Clear() {
-	c.Cache.Clear()
-	c.wrappersMu.Lock()
-	clear(c.wrappers)
-	c.wrappersMu.Unlock()
-}
-
-// CachedMatcher adapts the native Hit DTO for unported discovery callers.
-type CachedMatcher struct{ *Cached }
-
-// Match returns a private legacy JSON view of the native result.
-func (m *CachedMatcher) Match(host string) *jsonx.Object {
-	hit := m.Cached.Match(host)
-	if hit == nil {
-		return nil
-	}
-	data, _ := json.Marshal(hit)
-	value, _ := jsonx.Parse(data)
-	return value.(*jsonx.Object)
 }

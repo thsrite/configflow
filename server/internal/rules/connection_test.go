@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -16,28 +16,35 @@ import (
 // YAML payload editing (ruleset_content.append_rule_payload, package #12) are
 // outside this package; the fakes below implement the plain-text payload.
 
-func connectionDeps() ConnectionDeps {
-	return ConnectionDeps{
-		RulesetInfo: func(config *jsonx.Object, id string) *jsonx.Object {
-			var references []any
-			for _, entry := range config.GetList("rule_configs") {
-				item := entry.(*jsonx.Object)
-				if item.Value("library_rule_id") == id {
-					references = append(references, obj("enabled", item.GetOr("enabled", true), "after_match", item.GetOr("after_match", false), "policy", item.Value("policy")))
+func connectionDeps(ruleConfigs []model.RuleConfig, library []model.RuleLibraryItem) IPDeps {
+	return IPDeps{
+		Describe: func(id string) (RulesetInfo, error) {
+			var refs []RuleReference
+			for _, item := range ruleConfigs {
+				if item.LibraryRuleID == id {
+					en := true
+					if item.Enabled != nil {
+						en = *item.Enabled
+					}
+					policy := valueOr(item.Policy, "")
+					refs = append(refs, RuleReference{Enabled: en, Policy: policy})
 				}
 			}
-			for _, entry := range config.GetList("rule_library") {
-				library := entry.(*jsonx.Object)
-				if library.Value("id") == id {
-					return obj("id", id, "name", library.Value("name"), "behavior", library.GetOr("behavior", "classical"), "references", references)
+			for _, lib := range library {
+				if lib.ID == id {
+					beh := "classical"
+					if lib.Behavior != nil {
+						beh = *lib.Behavior
+					}
+					return RulesetInfo{ID: id, Name: lib.Name, Behavior: beh, References: refs}, nil
 				}
 			}
-			return nil
+			return RulesetInfo{}, nil
 		},
-		ReadRulePayload: func(content string) ([]string, any, error) {
+		ReadPayload: func(content string) ([]string, *yamlx.Node, error) {
 			return slices.Collect(lines(content)), nil, nil
 		},
-		AppendRulePayload: func(content, line string, _ any) (string, error) {
+		AppendPayload: func(content, line string, _ *yamlx.Node) (string, error) {
 			separator := "\n"
 			if content == "" || strings.HasSuffix(content, "\n") {
 				separator = ""
@@ -47,24 +54,41 @@ func connectionDeps() ConnectionDeps {
 	}
 }
 
-func connectionSetup(behavior, content string, policy any) (config, shared *jsonx.Object) {
-	library := obj("id", "lib", "name", "Library", "source_type", "content", "behavior", behavior, "content", content, "enabled", true)
-	shared = obj("rule_library", seq(library))
-	config = obj("rule_configs", seq(obj("id", "ref", "itemType", "ruleset", "library_rule_id", "lib", "policy", policy)))
-	return
+func connectionSetup(behavior, content, policy string) ([]model.RuleConfig, []model.RuleLibraryItem) {
+	en := true
+	st := "content"
+	beh := behavior
+	c := content
+	library := []model.RuleLibraryItem{{
+		ID: "lib", Name: "Library", SourceType: &st, Behavior: &beh, Content: &c, Enabled: &en,
+	}}
+	configs := []model.RuleConfig{{
+		ID: "ref", ItemType: "ruleset", LibraryRuleID: "lib", Policy: strp(policy),
+	}}
+	return configs, library
 }
 
-func apply(t *testing.T, config, shared *jsonx.Object, value string, ruleType, target string) (*IPRuleResult, error) {
+func applyIP(t *testing.T, configs []model.RuleConfig, library []model.RuleLibraryItem, value, ruleType, target string) (*IPResult, error) {
 	t.Helper()
 	destination, err := ParseDestination(value, ruleType)
 	if err != nil {
 		return nil, err
 	}
-	return ApplyIPRule(connectionDeps(), config, shared, "lib", target, destination, ruleType)
+	res, err := AppendIP(connectionDeps(configs, library), library, "lib", target, destination, ruleType)
+	if err == nil && res != nil {
+		for _, upd := range res.Updated {
+			for i := range library {
+				if library[i].ID == upd.ID {
+					library[i].Content = upd.Content
+				}
+			}
+		}
+	}
+	return res, err
 }
 
-func contentOf(shared *jsonx.Object) string {
-	return shared.GetList("rule_library")[0].(*jsonx.Object).GetString("content")
+func contentOf(library []model.RuleLibraryItem) string {
+	return valueOr(library[0].Content, "")
 }
 
 func TestSingleAddressAppendPreservesContent(t *testing.T) {
@@ -75,21 +99,21 @@ func TestSingleAddressAppendPreservesContent(t *testing.T) {
 		{"ipcidr", "", "2001:db8::8", "IP-CIDR6", "2001:db8::8/128"},
 		{"classical", "", "::ffff:192.0.2.8", "IP-CIDR", "IP-CIDR,192.0.2.8/32,no-resolve"},
 	} {
-		config, shared := connectionSetup(c.behavior, c.content, "DIRECT")
-		result, err := apply(t, config, shared, c.value, c.ruleType, "direct")
+		configs, library := connectionSetup(c.behavior, c.content, "DIRECT")
+		result, err := applyIP(t, configs, library, c.value, c.ruleType, "direct")
 		if err != nil || len(result.Added) != 1 {
 			t.Fatalf("%v: %v %v", c, result, err)
 		}
-		saved := contentOf(shared)
-		lines := strings.Split(strings.TrimRight(saved, "\n"), "\n")
-		if !strings.HasPrefix(saved, c.content) || lines[len(lines)-1] != c.line || strings.Count(saved, c.line) != 1 {
+		saved := contentOf(library)
+		split := strings.Split(strings.TrimRight(saved, "\n"), "\n")
+		if !strings.HasPrefix(saved, c.content) || split[len(split)-1] != c.line || strings.Count(saved, c.line) != 1 {
 			t.Errorf("%v: saved %q", c, saved)
 		}
 		if len(result.Updated) != 1 {
 			t.Errorf("%v: updated %d items", c, len(result.Updated))
 		}
-		again, err := apply(t, config, shared, c.value, c.ruleType, "direct")
-		if err != nil || len(again.Added) != 0 || again.Skipped[0].(*jsonx.Object).GetString("reason") != "exists" {
+		again, err := applyIP(t, configs, library, c.value, c.ruleType, "direct")
+		if err != nil || len(again.Added) != 0 || again.Skipped[0].Reason != "exists" {
 			t.Errorf("%v: second apply %v %v", c, again, err)
 		}
 	}
@@ -100,10 +124,10 @@ func TestExistingCoveringNetworkIsNotDuplicated(t *testing.T) {
 		{"IP-CIDR,192.0.2.0/24,no-resolve", "192.0.2.8", "IP-CIDR", "classical"},
 		{"192.0.2.0/24", "192.0.2.8", "IP-CIDR", "ipcidr"},
 	} {
-		config, shared := connectionSetup(c[3], c[0], "DIRECT")
-		result, err := apply(t, config, shared, c[1], c[2], "direct")
-		if err != nil || len(result.Added) != 0 || result.Skipped[0].(*jsonx.Object).GetString("reason") != "exists" || contentOf(shared) != c[0] {
-			t.Errorf("%v: %v %v content %q", c, result, err, contentOf(shared))
+		configs, library := connectionSetup(c[3], c[0], "DIRECT")
+		result, err := applyIP(t, configs, library, c[1], c[2], "direct")
+		if err != nil || len(result.Added) != 0 || result.Skipped[0].Reason != "exists" || contentOf(library) != c[0] {
+			t.Errorf("%v: %v %v content %q", c, result, err, contentOf(library))
 		}
 	}
 }
@@ -121,16 +145,16 @@ func TestSubnetIsCanonicalizedAndOnlyFullCoverageIsSkipped(t *testing.T) {
 			suffix = 128
 		}
 		content := fmt.Sprintf("%s,%s/%d,no-resolve\n", c[1], host, suffix)
-		config, shared := connectionSetup("classical", content, "DIRECT")
-		result, err := apply(t, config, shared, c[0], c[1], "direct")
+		configs, library := connectionSetup("classical", content, "DIRECT")
+		result, err := applyIP(t, configs, library, c[0], c[1], "direct")
 		if err != nil || len(result.Added) != 1 { // an existing host must not hide the broader subnet
 			t.Fatalf("%v: %v %v", c, result, err)
 		}
-		if want := content + fmt.Sprintf("%s,%s,no-resolve\n", c[1], c[2]); contentOf(shared) != want {
-			t.Errorf("%v: content %q, want %q", c, contentOf(shared), want)
+		if want := content + fmt.Sprintf("%s,%s,no-resolve\n", c[1], c[2]); contentOf(library) != want {
+			t.Errorf("%v: content %q, want %q", c, contentOf(library), want)
 		}
-		again, _ := apply(t, config, shared, c[0], c[1], "direct")
-		if len(again.Added) != 0 || again.Skipped[0].(*jsonx.Object).GetString("reason") != "exists" {
+		again, _ := applyIP(t, configs, library, c[0], c[1], "direct")
+		if len(again.Added) != 0 || again.Skipped[0].Reason != "exists" {
 			t.Errorf("%v: duplicate not skipped", c)
 		}
 	}
@@ -155,12 +179,17 @@ func TestInvalidIPRequestsDoNotChangeRules(t *testing.T) {
 
 func TestIncompatibleSourcesAreNotOverwritten(t *testing.T) {
 	for _, change := range []struct{ key, value string }{{"behavior", "domain"}, {"source_type", "url"}} {
-		config, shared := connectionSetup("classical", "# Keep\n", "DIRECT")
-		shared.GetList("rule_library")[0].(*jsonx.Object).Set(change.key, change.value)
-		if _, err := apply(t, config, shared, "192.0.2.8", "IP-CIDR", "direct"); err == nil || err.Error() != "所选规则集不支持 IP、不可编辑或策略已改变，请重新打开后选择。" {
+		configs, library := connectionSetup("classical", "# Keep\n", "DIRECT")
+		v := change.value
+		if change.key == "behavior" {
+			library[0].Behavior = &v
+		} else {
+			library[0].SourceType = &v
+		}
+		if _, err := applyIP(t, configs, library, "192.0.2.8", "IP-CIDR", "direct"); err == nil || err.Error() != "所选规则集不支持 IP、不可编辑或策略已改变，请重新打开后选择。" {
 			t.Errorf("%v: err = %v", change, err)
 		}
-		if contentOf(shared) != "# Keep\n" {
+		if contentOf(library) != "# Keep\n" {
 			t.Errorf("%v: content changed", change)
 		}
 	}
@@ -168,31 +197,35 @@ func TestIncompatibleSourcesAreNotOverwritten(t *testing.T) {
 
 func TestCurrentProfilePolicyFiltersTargetsAndIsEnforcedOnWrite(t *testing.T) {
 	for policy, want := range map[string]string{"DIRECT": `["direct"]`, "PROXY": `["proxy"]`, "REJECT": `[]`, "PASS": `[]`} {
-		config, _ := connectionSetup("ipcidr", "", policy)
-		config.Set("rule_library", seq(obj("id", "lib", "name", "Library", "source_type", "content", "behavior", "ipcidr", "enabled", true)))
-		targets := IPRuleTargets(config, connectionDeps())
-		if len(targets) != 1 || compact(t, targets[0].Value("targets")) != want {
-			t.Errorf("policy %s: targets %s, want %s", policy, jsonx.Repr(targets), want)
+		configs, library := connectionSetup("ipcidr", "", policy)
+		targets, err := IPTargets(library, connectionDeps(configs, library))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(targets) != 1 || compact(t, targets[0].Targets) != want {
+			t.Errorf("policy %s: targets %+v, want %s", policy, targets, want)
 		}
 	}
-	config, shared := connectionSetup("ipcidr", "", "DIRECT")
-	if _, err := apply(t, config, shared, "192.0.2.8", "IP-CIDR", "proxy"); err == nil {
+	configs, library := connectionSetup("ipcidr", "", "DIRECT")
+	if _, err := applyIP(t, configs, library, "192.0.2.8", "IP-CIDR", "proxy"); err == nil {
 		t.Error("a target the policy does not allow was accepted")
 	}
-	if contentOf(shared) != "" {
+	if contentOf(library) != "" {
 		t.Error("content changed")
 	}
 }
 
 func TestUnreferencedRulesetOffersBothTargetsAndWarns(t *testing.T) {
-	config, shared := connectionSetup("ipcidr", "", "DIRECT")
-	config.Set("rule_configs", seq())
-	config.Set("rule_library", shared.Value("rule_library"))
-	targets := IPRuleTargets(config, connectionDeps())
-	if compact(t, targets[0].Value("targets")) != `["direct","proxy"]` || targets[0].Value("active") != false {
-		t.Fatalf("targets %s", jsonx.Repr(targets))
+	_, library := connectionSetup("ipcidr", "", "DIRECT")
+	var configs []model.RuleConfig
+	targets, err := IPTargets(library, connectionDeps(configs, library))
+	if err != nil {
+		t.Fatal(err)
 	}
-	result, err := apply(t, config, shared, "192.0.2.8", "IP-CIDR", "direct")
+	if compact(t, targets[0].Targets) != `["direct","proxy"]` || targets[0].Active {
+		t.Fatalf("targets %+v", targets)
+	}
+	result, err := applyIP(t, configs, library, "192.0.2.8", "IP-CIDR", "direct")
 	if err != nil || len(result.Warnings) != 1 {
 		t.Fatalf("%v %v", result, err)
 	}
@@ -216,104 +249,16 @@ func TestNormalizeClientRange(t *testing.T) {
 }
 
 func TestApplyAppendFailureKeepsContentAndReturnsNoSuccess(t *testing.T) {
-	config, shared := connectionSetup("ipcidr", "192.0.2.1/32\n", "DIRECT")
-	deps := connectionDeps()
+	configs, library := connectionSetup("ipcidr", "192.0.2.1/32\n", "DIRECT")
+	deps := connectionDeps(configs, library)
 	failure := errors.New("append failed")
-	deps.AppendRulePayload = func(content, line string, _ any) (string, error) { return content, failure }
+	deps.AppendPayload = func(content, line string, _ *yamlx.Node) (string, error) { return content, failure }
 	destination, err := ParseDestination("192.0.2.8", "IP-CIDR")
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := ApplyIPRule(deps, config, shared, "lib", "direct", destination, "IP-CIDR")
-	if result != nil || !errors.Is(err, failure) || contentOf(shared) != "192.0.2.1/32\n" {
+	result, err := AppendIP(deps, library, "lib", "direct", destination, "IP-CIDR")
+	if result != nil || !errors.Is(err, failure) || contentOf(library) != "192.0.2.1/32\n" {
 		t.Fatalf("%v %v", result, err)
 	}
-}
-
-// Historical fixture boundary: delegates to the typed implementation.
-
-// ConnectionDeps adapts the unported discovery description and opaque edit handle.
-type ConnectionDeps struct {
-	RulesetInfo       func(*jsonx.Object, string) *jsonx.Object
-	ReadRulePayload   func(string) ([]string, any, error)
-	AppendRulePayload func(string, string, any) (string, error)
-}
-
-func ipDeps(config *jsonx.Object, deps ConnectionDeps) IPDeps {
-	native := IPDeps{Describe: func(id string) (RulesetInfo, error) {
-		var info RulesetInfo
-		if deps.RulesetInfo == nil {
-			return info, fmt.Errorf("%s", msgRuleInfo)
-		}
-		err := decodeRecord(deps.RulesetInfo(config, id), &info)
-		return info, err
-	}}
-	if deps.ReadRulePayload != nil {
-		native.ReadPayload = func(content string) ([]string, *yamlx.Node, error) {
-			lines, payload, err := deps.ReadRulePayload(content)
-			if err != nil {
-				return nil, nil, err
-			}
-			node, ok := payload.(*yamlx.Node)
-			if payload != nil && !ok {
-				return nil, nil, fmt.Errorf("%s", msgRuleInfo)
-			}
-			return lines, node, nil
-		}
-	}
-	if deps.AppendRulePayload != nil {
-		native.AppendPayload = func(content, line string, node *yamlx.Node) (string, error) {
-			var payload any
-			if node != nil {
-				payload = node
-			}
-			return deps.AppendRulePayload(content, line, payload)
-		}
-	}
-	return native
-}
-
-// IPRuleTargets adapts editable targets to the connection route DTO.
-func IPRuleTargets(config *jsonx.Object, deps ConnectionDeps) []*jsonx.Object {
-	result, err := IPTargets(legacyLibrary(config.GetList("rule_library")), ipDeps(config, deps))
-	if err != nil {
-		return nil
-	}
-	var rows []*jsonx.Object
-	for _, row := range result {
-		rows = append(rows, oldObject(row))
-	}
-	return rows
-}
-
-// IPRuleResult is the temporary connection API response adapter.
-type IPRuleResult struct {
-	Added, Skipped, Warnings []any
-	Updated                  []*jsonx.Object
-}
-
-// ApplyIPRule projects only the shared rules and keeps all unowned fields in place.
-func ApplyIPRule(deps ConnectionDeps, config, shared *jsonx.Object, id, target string, destination *Destination, ruleType string) (*IPRuleResult, error) {
-	config.Set("rule_library", shared.GetOr("rule_library", []any{}))
-	result, err := AppendIP(ipDeps(config, deps), legacyLibrary(shared.GetList("rule_library")), id, target, destination, ruleType)
-	if err != nil {
-		return nil, err
-	}
-	adapted := &IPRuleResult{Added: []any{}, Skipped: []any{}, Warnings: oldStrings(result.Warnings)}
-	for _, row := range result.Added {
-		adapted.Added = append(adapted.Added, oldObject(row))
-	}
-	for _, row := range result.Skipped {
-		adapted.Skipped = append(adapted.Skipped, oldObject(row))
-	}
-	for _, updated := range result.Updated {
-		for _, entry := range shared.GetList("rule_library") {
-			if object, ok := entry.(*jsonx.Object); ok && object.GetString("id") == updated.ID {
-				object.Set("content", valueOr(updated.Content, ""))
-				adapted.Updated = append(adapted.Updated, object)
-				break
-			}
-		}
-	}
-	return adapted, nil
 }

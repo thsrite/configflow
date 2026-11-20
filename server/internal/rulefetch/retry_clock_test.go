@@ -39,7 +39,7 @@ func TestRetryUsesProductionDelaysAndCancellableClock(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				response, err := c.RequestRule(ctx, retrySource, Request{Config: sysConfig()})
+				response, err := c.Download(ctx, retrySource, DownloadRequest{Config: sysConfig()})
 				if response != nil {
 					response.Close()
 				}

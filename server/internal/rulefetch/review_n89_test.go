@@ -30,7 +30,7 @@ func TestReviewN89AllLegacyReceiptsBlockMigration(t *testing.T) {
 			if err := os.WriteFile(candidate+".invalid", []byte("pending edit"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml")
+			data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
 			if err != nil || data != nil {
 				t.Fatalf("invalid %s cache returned %q: %v", kind, data, err)
 			}
@@ -41,7 +41,7 @@ func TestReviewN89AllLegacyReceiptsBlockMigration(t *testing.T) {
 			if err := os.Remove(candidate + ".invalid"); err != nil {
 				t.Fatal(err)
 			}
-			data, err = ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml")
+			data, err = ReadCacheWithFormat(ctx, rule, nil, "yaml")
 			if err != nil || string(data) != "payload: [example.com]\n" {
 				t.Fatalf("valid %s fallback lost: %q %v", kind, data, err)
 			}
@@ -61,7 +61,7 @@ func TestReviewN89MigrationReadStaysInsideRulesDirectory(t *testing.T) {
 	if err := os.Symlink(outside, old); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
 	if data != nil {
 		t.Fatalf("cache read followed escaping symlink: %q (%v)", data, err)
 	}
@@ -84,7 +84,7 @@ func TestReviewN89ReceiptCannotBecomeReadableSentinel(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(native+".invalid", "unavailable"), []byte("payload: [receipt.example]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
 	if err != nil || data != nil {
 		t.Fatalf("receipt supplied cache bytes: %q %v", data, err)
 	}
@@ -101,7 +101,7 @@ func TestReviewN89DanglingReceiptStillBlocksCache(t *testing.T) {
 	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), native+".invalid"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
 	if err != nil || data != nil {
 		t.Fatalf("dangling invalid receipt was treated as absent: %q %v", data, err)
 	}

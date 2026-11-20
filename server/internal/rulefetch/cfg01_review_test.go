@@ -138,7 +138,7 @@ func TestCFG01ReviewNetworkAgainstPython(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			client := &Client{Transport: HTTPTransport{}, Sleep: func(time.Duration) {}}
-			response, err := client.RequestRule(ctx, fill(tt.Start), Request{Config: sysConfig("server_domain", fill(tt.ServerDomain)),
+			response, err := client.Download(ctx, fill(tt.Start), DownloadRequest{Config: sysConfig("server_domain", fill(tt.ServerDomain)),
 				MaxRedirects: &limit, ConnectTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second})
 			var body []byte
 			if response != nil {
@@ -221,7 +221,7 @@ func TestCFG01ReviewHostClassification(t *testing.T) {
 				return &Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader("ok"))}, nil
 			}}
 			client := &Client{Transport: transport, Sleep: func(time.Duration) {}}
-			response, err := client.RequestRule(context.Background(), tt.URL, Request{Config: sysConfig("server_domain", tt.ServerDomain)})
+			response, err := client.Download(context.Background(), tt.URL, DownloadRequest{Config: sysConfig("server_domain", tt.ServerDomain)})
 			if response != nil {
 				response.Close()
 			}

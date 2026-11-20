@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
 
@@ -74,16 +73,16 @@ func droppedURLRow(fn string) bool { return fn == "urlsplit_error" || fn == "nfk
 // classOnly drops the message of an error value unless it is a Chinese
 // user-facing text (PORTING: other exception texts are compared by class).
 func classOnly(v any) any {
-	o, isObject := v.(*jsonx.Object)
+	o, isObject := v.(*orderedObj)
 	if !isObject {
 		return v
 	}
-	text, _ := o.Value("text").(string)
+	text, _ := o.val("text").(string)
 	if strings.ContainsFunc(text, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
 		return v
 	}
-	out := o.Clone()
-	out.Delete("text")
+	out := o.clone()
+	out.del("text")
 	return out
 }
 
@@ -133,11 +132,11 @@ func urlAccepted(fn string, url string, args any) bool {
 		}
 		return false
 	case "page_identity":
-		o, _ := args.(*jsonx.Object)
+		o, _ := args.(*orderedObj)
 		if o == nil {
 			return false
 		}
-		final, _ := o.Value("final_url").(string)
+		final, _ := o.val("final_url").(string)
 		return nonASCIIAuthority(final)
 	}
 	return false

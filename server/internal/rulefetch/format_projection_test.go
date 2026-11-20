@@ -1,34 +1,47 @@
 package rulefetch
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/repo"
-	"configflow/internal/rules"
 	"context"
 	"strings"
 	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/rules"
 )
 
-func knownFormatInput(tb testing.TB, payload int) (context.Context, *jsonx.Object, *jsonx.Object) {
+func knownFormatInput(tb testing.TB, payload int) (context.Context, model.RuleConfig, *SourceConfig) {
 	tb.Helper()
 	r, err := repo.Open(tb.TempDir(), repo.Options{})
 	if err != nil {
 		tb.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	rule := jsonx.Obj("id", "r1", "name", "Synthetic", "source_type", "url", "url", "https://example.com/rules", "format", "text", "behavior", "domain")
-	if _, err := r.WriteSharedText(ctx, "rules/"+rules.CacheFilename(legacyRule(rule)), []byte("example.com\n")); err != nil {
+	rule := model.RuleConfig{
+		ID:         "r1",
+		Name:       "Synthetic",
+		SourceType: strp("url"),
+		URL:        strp("https://example.com/rules"),
+		Format:     strp("text"),
+		Behavior:   strp("domain"),
+	}
+	if _, err := r.WriteSharedText(ctx, "rules/"+rules.CacheFilename(rule), []byte("example.com\n")); err != nil {
 		tb.Fatal(err)
 	}
-	config := jsonx.Obj("rule_library", []any{jsonx.Obj("id", "unused", "name", "Unused", "content", strings.Repeat("x", payload))})
+	config := &SourceConfig{
+		Library: []model.RuleLibraryItem{{ID: "unused", Name: "Unused", Content: strp(strings.Repeat("x", payload))}},
+	}
 	return ctx, rule, config
 }
+
 func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 	ctx, rule, small := knownFormatInput(t, 0)
-	large := jsonx.Obj("rule_library", []any{jsonx.Obj("id", "unused", "content", strings.Repeat("x", 1<<20))})
-	run := func(config *jsonx.Object) float64 {
+	large := &SourceConfig{
+		Library: []model.RuleLibraryItem{{ID: "unused", Content: strp(strings.Repeat("x", 1<<20))}},
+	}
+	run := func(config *SourceConfig) float64 {
 		return testing.AllocsPerRun(10, func() {
-			data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, config, "text")
+			data, err := ReadCacheWithFormat(ctx, rule, config, "text")
 			if err != nil || string(data) != "example.com\n" {
 				t.Fatal(err)
 			}
@@ -41,10 +54,10 @@ func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 	t.Logf("small=%g large=%g allocs/read", a, b)
 	// Allocation counts alone can miss a copied megabyte when the number of
 	// buffers stays constant. Guard bytes/op as well as reporting the benchmark.
-	bytesPerRead := func(config *jsonx.Object) int64 {
+	bytesPerRead := func(config *SourceConfig) int64 {
 		result := testing.Benchmark(func(b *testing.B) {
 			for b.Loop() {
-				data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, config, "text")
+				data, err := ReadCacheWithFormat(ctx, rule, config, "text")
 				if err != nil || string(data) != "example.com\n" {
 					b.Fatal("known-format read changed", err)
 				}
@@ -63,11 +76,12 @@ func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 
 	// Known format is validation authority, never an instruction to accept a
 	// cached file under any interpretation.
-	data, err := ReadValidatedRuleCacheWithFormat(ctx, rule, large, "mrs")
+	data, err := ReadCacheWithFormat(ctx, rule, large, "mrs")
 	if err != nil || data != nil {
 		t.Fatal("wrong explicit format accepted", err)
 	}
 }
+
 func BenchmarkKnownFormatRead(b *testing.B) {
 	for _, size := range []int{0, 1 << 20} {
 		b.Run(map[int]string{0: "empty", 1 << 20: "1MiB"}[size], func(b *testing.B) {
@@ -75,7 +89,7 @@ func BenchmarkKnownFormatRead(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				_, err := ReadValidatedRuleCacheWithFormat(ctx, rule, config, "text")
+				_, err := ReadCacheWithFormat(ctx, rule, config, "text")
 				if err != nil {
 					b.Fatal(err)
 				}

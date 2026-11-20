@@ -34,7 +34,7 @@ func TestCFG03ReviewPhysicalLines(t *testing.T) {
 	parserError := map[string]bool{"multiline-key": true}
 	for _, tt := range cases {
 		t.Run(tt.Name, func(t *testing.T) {
-			out, warnings := NormalizeMihomoYAML(tt.Source)
+			out, warnings := NormalizeYAML(tt.Source)
 			raw, err := json.Marshal(warnings)
 			if err != nil {
 				t.Fatal(err)

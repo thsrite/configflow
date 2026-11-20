@@ -14,8 +14,7 @@ import (
 func TestPeekCacheSharesValidationWithoutMigration(t *testing.T) {
 	for _, kind := range []string{"valid", "receipt", "native receipt", "symlink", "format"} {
 		t.Run(kind, func(t *testing.T) {
-			ctx, _, legacy, old, native := migrationFixture(t)
-			rule := legacyRule(legacy)
+			ctx, _, rule, old, native := migrationFixture(t)
 			switch kind {
 			case "receipt":
 				if err := os.WriteFile(old+".invalid", []byte("pending"), 0600); err != nil {
@@ -94,7 +93,7 @@ func TestRuntimeCacheReadMigratesOnlyWhileActive(t *testing.T) {
 			started := make(chan struct{})
 			go func() {
 				close(started)
-				data, err := ReadCacheWithFormat(request, legacyRule(legacy), nil, "yaml")
+				data, err := ReadCacheWithFormat(request, legacy, nil, "yaml")
 				if err == nil && string(data) != "payload: [example.com]\n" {
 					err = errors.New("lost offline bytes")
 				}

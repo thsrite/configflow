@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -11,33 +10,69 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 // Ported from backend/test_rule_matcher_behavior.py and
 // backend/test_rule_matcher_index.py.
 
-func obj(pairs ...any) *jsonx.Object { return jsonx.Obj(pairs...) }
+func boolp(v bool) *bool { return &v }
 
-func seq(items ...any) []any { return items }
-
-// matcherFor is the Python helper matcher(): one ruleset item, a fixed body.
-func matcherFor(source, behavior string, overrides ...any) *RuleConfigMatcher {
-	item := obj("id", "set", "itemType", "ruleset", "behavior", behavior)
+func applyRuleOverrides(item *model.RuleConfig, overrides ...any) {
 	for i := 0; i+1 < len(overrides); i += 2 {
-		item.Set(overrides[i].(string), overrides[i+1])
+		k := overrides[i].(string)
+		v := overrides[i+1]
+		switch k {
+		case "format":
+			s := v.(string)
+			item.Format = &s
+		case "behavior":
+			s := v.(string)
+			item.Behavior = &s
+		case "source_type":
+			s := v.(string)
+			item.SourceType = &s
+		case "url":
+			s := v.(string)
+			item.URL = &s
+		case "content":
+			s := v.(string)
+			item.Content = &s
+		case "enabled":
+			b := v.(bool)
+			item.Enabled = &b
+		case "library_enabled":
+			b := v.(bool)
+			item.LibraryEnabled = &b
+		case "library_rule_id":
+			item.LibraryRuleID = v.(string)
+		case "policy":
+			s := v.(string)
+			item.Policy = &s
+		case "name":
+			item.Name = v.(string)
+		default:
+			panic("unknown override key: " + k)
+		}
 	}
-	return NewRuleConfigMatcher(seq(item), nil, func(_, _ *jsonx.Object) (string, error) { return source, nil }, nil, nil)
 }
 
-func matchedLine(t *testing.T, m *RuleConfigMatcher, query string) string {
+// matcherFor is the Python helper matcher(): one ruleset item, a fixed body.
+func matcherFor(source, behavior string, overrides ...any) *Matcher {
+	beh := behavior
+	item := model.RuleConfig{ID: "set", ItemType: "ruleset", Behavior: &beh}
+	applyRuleOverrides(&item, overrides...)
+	return NewMatcher([]model.RuleConfig{item}, nil, func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) { return source, nil }, nil, nil)
+}
+
+func matchedLine(t *testing.T, m *Matcher, query string) string {
 	t.Helper()
 	result := m.Match(query)
 	if result == nil {
 		return "<nil>"
 	}
-	return result.GetString("matched_line")
+	return result.MatchedLine
 }
 
 func TestInvalidOrCrossFormatLinesDoNotClaimAMatch(t *testing.T) {
@@ -74,7 +109,7 @@ func TestInvalidOrCrossFormatLinesDoNotClaimAMatch(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := matcherFor(c.content, c.behavior).Match(c.query); got != nil {
-			t.Errorf("%s %q query %q matched %s", c.behavior, c.content, c.query, jsonx.Repr(got))
+			t.Errorf("%s %q query %q matched %+v", c.behavior, c.content, c.query, got)
 		}
 	}
 }
@@ -160,7 +195,7 @@ func TestInvalidPayloadDoesNotFallBackToMatchingDocumentLines(t *testing.T) {
 		`payload: ["+.tmdb.org"`, "payload: [\"+.tmdb.org\"]\npayload: [\"other.org\"]",
 	} {
 		if got := matcherFor(source, "classical", "format", "yaml").Match("api.tmdb.org"); got != nil {
-			t.Errorf("%q matched %s", source, jsonx.Repr(got))
+			t.Errorf("%q matched %+v", source, got)
 		}
 	}
 }
@@ -181,35 +216,42 @@ func TestDeclaredFormatMismatchDoesNotClaimAMatch(t *testing.T) {
 // countingLoader returns content and counts calls (Python's Mock).
 type countingLoader struct {
 	calls   atomic.Int32
-	content func(item, library *jsonx.Object) (string, error)
+	content ContentLoader
 }
 
-func (l *countingLoader) load(item, library *jsonx.Object) (string, error) {
+func (l *countingLoader) load(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error) {
 	l.calls.Add(1)
 	return l.content(item, library)
 }
 
 func fixed(content string) *countingLoader {
-	return &countingLoader{content: func(_, _ *jsonx.Object) (string, error) { return content, nil }}
+	return &countingLoader{content: func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) { return content, nil }}
+}
+
+func hitRuleID(h *Hit) string {
+	if h == nil || h.RuleID == nil {
+		return ""
+	}
+	return *h.RuleID
 }
 
 func TestSourceIndexesDoNotMixFormats(t *testing.T) {
 	loader := fixed(`payload: ["DOMAIN,tmdb.org"]`)
-	rules := seq(
-		obj("id", "text", "itemType", "ruleset", "behavior", "classical", "format", "text"),
-		obj("id", "yaml", "itemType", "ruleset", "behavior", "classical", "format", "yaml"),
-	)
-	subject := NewRuleConfigMatcher(rules, nil, loader.load, func(_, _ *jsonx.Object) (string, bool) { return "shared", true }, nil)
-	if got := subject.Match("tmdb.org").Value("rule_id"); got != "yaml" {
+	configs := []model.RuleConfig{
+		{ID: "text", ItemType: "ruleset", Behavior: strp("classical"), Format: strp("text")},
+		{ID: "yaml", ItemType: "ruleset", Behavior: strp("classical"), Format: strp("yaml")},
+	}
+	subject := NewMatcher(configs, nil, loader.load, func(*model.RuleConfig, *model.RuleLibraryItem) (string, bool) { return "shared", true }, nil)
+	if got := hitRuleID(subject.Match("tmdb.org")); got != "yaml" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if loader.calls.Load() != 2 {
 		t.Fatalf("calls = %d", loader.calls.Load())
 	}
-	if n := subject.InvalidateRulesets(func(item, _ *jsonx.Object) bool { return item.Value("format") == "yaml" }); n != 1 {
+	if n := subject.InvalidateRulesets(func(item *model.RuleConfig, _ *model.RuleLibraryItem) bool { return valueOr(item.Format, "") == "yaml" }); n != 1 {
 		t.Fatalf("invalidated %d", n)
 	}
-	if got := subject.Match("tmdb.org").Value("rule_id"); got != "yaml" {
+	if got := hitRuleID(subject.Match("tmdb.org")); got != "yaml" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if loader.calls.Load() != 3 {
@@ -230,36 +272,38 @@ func TestUndeclaredFormatUsesSharedConverterInference(t *testing.T) {
 }
 
 func TestLibraryFormatIsUsedOverReferenceFormat(t *testing.T) {
-	subject := NewRuleConfigMatcher(
-		seq(obj("id", "set", "itemType", "ruleset", "library_rule_id", "lib", "behavior", "classical", "format", "text")),
-		seq(obj("id", "lib", "format", "yaml")),
-		func(_, _ *jsonx.Object) (string, error) { return `payload: ["DOMAIN,tmdb.org"]`, nil }, nil, nil)
+	subject := NewMatcher(
+		[]model.RuleConfig{{ID: "set", ItemType: "ruleset", LibraryRuleID: "lib", Behavior: strp("classical"), Format: strp("text")}},
+		[]model.RuleLibraryItem{{ID: "lib", Format: strp("yaml")}},
+		func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
+			return `payload: ["DOMAIN,tmdb.org"]`, nil
+		}, nil, nil)
 	if subject.Match("tmdb.org") == nil {
 		t.Fatal("library format ignored")
 	}
 }
 
 func TestSourceReuseIncludesBehaviorAndInvalidatesOnlySelectedIndex(t *testing.T) {
-	var rules []any
+	var configs []model.RuleConfig
 	for _, behavior := range []string{"ipcidr", "domain", "classical"} {
-		rules = append(rules, obj("id", behavior, "itemType", "ruleset", "behavior", behavior, "library_rule_id", "shared"))
+		configs = append(configs, model.RuleConfig{ID: behavior, ItemType: "ruleset", Behavior: strp(behavior), LibraryRuleID: "shared"})
 	}
 	loader := fixed("+.tmdb.org\nIP-CIDR,127.0.0.0/8,no-resolve")
-	subject := NewRuleConfigMatcher(rules, seq(obj("id", "shared", "behavior", "classical")), loader.load,
-		func(_, _ *jsonx.Object) (string, bool) { return "shared", true }, nil)
-	if got := subject.Match("api.tmdb.org").Value("rule_id"); got != "domain" {
+	subject := NewMatcher(configs, []model.RuleLibraryItem{{ID: "shared", Behavior: strp("classical")}}, loader.load,
+		func(*model.RuleConfig, *model.RuleLibraryItem) (string, bool) { return "shared", true }, nil)
+	if got := hitRuleID(subject.Match("api.tmdb.org")); got != "domain" {
 		t.Fatalf("rule_id = %v", got)
 	}
-	if got := subject.Match("127.0.0.1").Value("rule_id"); got != "classical" {
+	if got := hitRuleID(subject.Match("127.0.0.1")); got != "classical" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if loader.calls.Load() != 3 {
 		t.Fatalf("calls = %d", loader.calls.Load())
 	}
-	if n := subject.InvalidateRulesets(func(item, _ *jsonx.Object) bool { return item.Value("id") == "domain" }); n != 1 {
+	if n := subject.InvalidateRulesets(func(item *model.RuleConfig, _ *model.RuleLibraryItem) bool { return item.ID == "domain" }); n != 1 {
 		t.Fatalf("invalidated %d", n)
 	}
-	if got := subject.Match("127.0.0.1").Value("rule_id"); got != "classical" {
+	if got := hitRuleID(subject.Match("127.0.0.1")); got != "classical" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if loader.calls.Load() != 4 {
@@ -268,21 +312,23 @@ func TestSourceReuseIncludesBehaviorAndInvalidatesOnlySelectedIndex(t *testing.T
 }
 
 func TestLibraryBehaviorIsUsedWhenReferenceHasNotBeenHydrated(t *testing.T) {
-	subject := NewRuleConfigMatcher(seq(obj("id", "set", "itemType", "ruleset", "library_rule_id", "lib")),
-		seq(obj("id", "lib", "behavior", "ipcidr")),
-		func(_, _ *jsonx.Object) (string, error) { return "+.tmdb.org", nil }, nil, nil)
+	subject := NewMatcher([]model.RuleConfig{{ID: "set", ItemType: "ruleset", LibraryRuleID: "lib"}},
+		[]model.RuleLibraryItem{{ID: "lib", Behavior: strp("ipcidr")}},
+		func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) { return "+.tmdb.org", nil }, nil, nil)
 	if got := subject.Match("api.tmdb.org"); got != nil {
-		t.Fatalf("matched %s", jsonx.Repr(got))
+		t.Fatalf("matched %+v", got)
 	}
 }
 
 func TestMissingBehaviorDefaultsToDomainLikeGeneratedProviders(t *testing.T) {
-	subject := NewRuleConfigMatcher(seq(obj("id", "set", "itemType", "ruleset")), nil,
-		func(_, _ *jsonx.Object) (string, error) { return "127.0.0.1\nDOMAIN,typed.org\n+.tmdb.org", nil }, nil, nil)
+	subject := NewMatcher([]model.RuleConfig{{ID: "set", ItemType: "ruleset"}}, nil,
+		func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
+			return "127.0.0.1\nDOMAIN,typed.org\n+.tmdb.org", nil
+		}, nil, nil)
 	if subject.Match("127.0.0.1") != nil || subject.Match("typed.org") != nil {
 		t.Fatal("non-domain lines matched a domain provider")
 	}
-	if got := subject.Match("api.tmdb.org").Value("behavior"); got != "domain" {
+	if got := subject.Match("api.tmdb.org").Behavior; got != "domain" {
 		t.Fatalf("behavior = %v", got)
 	}
 }
@@ -307,45 +353,61 @@ func TestInvalidDottedIPsAreNotDomains(t *testing.T) {
 
 // ---- test_rule_matcher_index.py ----
 
-func ruleset(id string, overrides ...any) *jsonx.Object {
-	item := obj("id", id, "itemType", "ruleset", "name", id, "policy", "PROXY", "behavior", "classical")
-	for i := 0; i+1 < len(overrides); i += 2 {
-		item.Set(overrides[i].(string), overrides[i+1])
-	}
+func ruleset(id string, overrides ...any) model.RuleConfig {
+	item := model.RuleConfig{ID: id, ItemType: "ruleset", Name: id, Policy: strp("PROXY"), Behavior: strp("classical")}
+	applyRuleOverrides(&item, overrides...)
 	return item
 }
 
-func textOf(contents map[string]string) LoadContent {
-	return func(item, _ *jsonx.Object) (string, error) { return contents[item.GetString("id")], nil }
+func textOf(contents map[string]string) ContentLoader {
+	return func(item *model.RuleConfig, _ *model.RuleLibraryItem) (string, error) { return contents[item.ID], nil }
 }
 
 // linearMatch is the Python _linear_match: one pass over every rule with the
 // same behavior-aware source interpretation, without any index.
-func linearMatch(configs []any, contents map[string]string, query string) *jsonx.Object {
-	for priority, entry := range configs {
-		item := entry.(*jsonx.Object)
-		if !enabled(item) {
+func linearMatch(configs []model.RuleConfig, contents map[string]string, query string) *Hit {
+	for priority, item := range configs {
+		if item.Enabled != nil && !*item.Enabled {
 			continue
 		}
-		switch itemType(item) {
+		if item.LibraryEnabled != nil && !*item.LibraryEnabled {
+			continue
+		}
+		kind := item.ItemType
+		if kind == "" {
+			kind = "rule"
+		}
+		policy := valueOr(item.Policy, "DIRECT")
+		id := item.ID
+		var idPtr *string
+		if id != "" {
+			idPtr = &id
+		}
+		switch kind {
 		case "rule":
-			ruleType, value := item.GetString("rule_type"), item.GetString("value")
-			if MatchQuery(query, ruleType, value) {
-				return obj("rule_name", ruleType+" 规则", "rule_type", "rule", "matched_line", ruleType+","+value,
-					"policy", item.GetOr("policy", "DIRECT"), "source", "直接配置的规则", "priority", jsonx.Int(priority+1),
-					"rule_id", item.Value("id"), "item_type", "rule", "behavior", "classical")
+			if MatchQuery(query, item.RuleType, item.Value) {
+				return &Hit{
+					RuleName: item.RuleType + " 规则", RuleType: "rule", MatchedLine: item.RuleType + "," + item.Value,
+					Policy: policy, Source: "直接配置的规则", Priority: priority + 1,
+					RuleID: idPtr, ItemType: "rule", Behavior: "classical",
+				}
 			}
 		case "ruleset":
-			format, _ := item.GetOr("format", "text").(string)
-			behavior, _ := item.GetOr("behavior", "classical").(string)
-			for line := range rulesetLines(contents[item.GetString("id")], format) {
-				kind, value, ok := parseRulesetLine(line.value, behavior)
-				if ok && MatchQuery(query, kind, value) {
-					name := item.GetOr("name", "规则集")
-					return obj("rule_name", name, "rule_type", "ruleset", "matched_line", strings.TrimSpace(line.source),
-						"policy", item.GetOr("policy", "DIRECT"), "source", "规则集: "+jsonx.Str(name),
-						"priority", jsonx.Int(priority+1), "rule_id", item.Value("id"), "item_type", "ruleset",
-						"behavior", item.GetOr("behavior", "classical"))
+			format := valueOr(item.Format, "text")
+			behavior := valueOr(item.Behavior, "classical")
+			for line := range rulesetLines(contents[item.ID], format) {
+				rk, rv, ok := parseRulesetLine(line.value, behavior)
+				if ok && MatchQuery(query, rk, rv) {
+					name := item.Name
+					if name == "" {
+						name = "规则集"
+					}
+					return &Hit{
+						RuleName: name, RuleType: "ruleset", MatchedLine: strings.TrimSpace(line.source),
+						Policy: policy, Source: "规则集: " + name,
+						Priority: priority + 1, RuleID: idPtr, ItemType: "ruleset",
+						Behavior: behavior,
+					}
 				}
 			}
 		}
@@ -353,17 +415,10 @@ func linearMatch(configs []any, contents map[string]string, query string) *jsonx
 	return nil
 }
 
-func sameResult(t *testing.T, got, want *jsonx.Object, context string) {
+func sameResult(t *testing.T, got, want *Hit, context string) {
 	t.Helper()
-	var g, w any
-	if got != nil {
-		g = got
-	}
-	if want != nil {
-		w = want
-	}
-	if compact(t, g) != compact(t, w) {
-		t.Errorf("%s:\n got  %s\n want %s", context, compact(t, g), compact(t, w))
+	if !testjson.Equal(want, got) {
+		t.Errorf("%s:\n%s", context, testjson.Diff(want, got))
 	}
 }
 
@@ -390,8 +445,8 @@ payload:
   - 'localhost' # preserve original displayed line
 `
 	contents := map[string]string{"mixed": body}
-	configs := seq(ruleset("disabled", "enabled", false), ruleset("mixed", "format", "yaml"))
-	subject := NewRuleConfigMatcher(configs, nil, textOf(contents), nil, nil)
+	configs := []model.RuleConfig{ruleset("disabled", "enabled", false), ruleset("mixed", "format", "yaml")}
+	subject := NewMatcher(configs, nil, textOf(contents), nil, nil)
 	for _, query := range []string{
 		"EXAMPLE.COM", "a.example.com", "a.b.example.com", "plain.example", "a.plain.example",
 		"a.direct.example", "b.a.direct.example", "direct.example", "only.example", "a.only.example",
@@ -422,7 +477,7 @@ func TestEarliestLineWinsOverSpecificityOrRuleType(t *testing.T) {
 		{[]string{"IP,invalid", "IP-CIDR,bad", "IP-CIDR6,fe80::/16"}, "fe80::1%eth0", "IP-CIDR6,fe80::/16"},
 	}
 	for _, c := range cases {
-		subject := NewRuleConfigMatcher(seq(ruleset("set")), nil, textOf(map[string]string{"set": strings.Join(c.lines, "\n")}), nil, nil)
+		subject := NewMatcher([]model.RuleConfig{ruleset("set")}, nil, textOf(map[string]string{"set": strings.Join(c.lines, "\n")}), nil, nil)
 		if got := matchedLine(t, subject, c.query); got != c.expected {
 			t.Errorf("%v query %q -> %q, want %q", c.lines, c.query, got, c.expected)
 		}
@@ -430,24 +485,24 @@ func TestEarliestLineWinsOverSpecificityOrRuleType(t *testing.T) {
 }
 
 func TestConfigurationPriorityAndLazyLoadingAreUnchanged(t *testing.T) {
-	library := obj("id", "lib", "behavior", "domain")
-	configs := seq(
-		obj("id", "disabled", "rule_type", "DOMAIN", "value", "example.com", "enabled", false),
+	library := model.RuleLibraryItem{ID: "lib", Behavior: strp("domain")}
+	configs := []model.RuleConfig{
+		{ID: "disabled", RuleType: "DOMAIN", Value: "example.com", Enabled: boolp(false)},
 		ruleset("disabled-lib", "library_enabled", false),
-		obj("id", "direct", "rule_type", "DOMAIN", "value", "direct.test"),
+		{ID: "direct", RuleType: "DOMAIN", Value: "direct.test"},
 		ruleset("first", "library_rule_id", "lib", "policy", "first-policy", "behavior", "domain"),
 		ruleset("last", "policy", "last-policy"),
-	)
+	}
 	contents := map[string]string{"first": "+.example.com", "last": "example.com"}
 	var loaded []string
-	loader := func(item, lib *jsonx.Object) (string, error) {
-		loaded = append(loaded, item.GetString("id"))
-		if item.GetString("id") == "first" && lib != library {
+	loader := func(item *model.RuleConfig, lib *model.RuleLibraryItem) (string, error) {
+		loaded = append(loaded, item.ID)
+		if item.ID == "first" && (lib == nil || lib.ID != "lib") {
 			t.Error("loader did not receive the library entry")
 		}
-		return contents[item.GetString("id")], nil
+		return contents[item.ID], nil
 	}
-	subject := NewRuleConfigMatcher(configs, seq(library), loader, nil, nil)
+	subject := NewMatcher(configs, []model.RuleLibraryItem{library}, loader, nil, nil)
 	sameResult(t, subject.Match("direct.test"), linearMatch(configs, contents, "direct.test"), "direct")
 	if len(loaded) != 0 {
 		t.Fatalf("loaded %v before any ruleset was needed", loaded)
@@ -456,7 +511,7 @@ func TestConfigurationPriorityAndLazyLoadingAreUnchanged(t *testing.T) {
 	if len(loaded) != 1 || loaded[0] != "first" {
 		t.Fatalf("loaded %v", loaded)
 	}
-	if got := subject.Match("A.example.com").Value("priority"); jsonx.Str(got) != "4" {
+	if got := subject.Match("A.example.com").Priority; got != 4 {
 		t.Fatalf("priority = %v", got)
 	}
 	if len(loaded) != 1 {
@@ -472,8 +527,8 @@ func TestDirectRulesRetainQueryClassificationAndRegexSemantics(t *testing.T) {
 		{"IP", "192.0.2.1", "www.example.com"}, {"REGEX", `^\\D+$`, "123"}, {"REGEX", `^\\D+$`, "abc"}, {"REGEX", "[", "abc"},
 	}
 	for _, c := range cases {
-		configs := seq(obj("id", "direct", "rule_type", c[0], "value", c[1]))
-		subject := NewRuleConfigMatcher(configs, nil, func(_, _ *jsonx.Object) (string, error) {
+		configs := []model.RuleConfig{{ID: "direct", RuleType: c[0], Value: c[1]}}
+		subject := NewMatcher(configs, nil, func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
 			t.Error("unexpected ruleset load")
 			return "", nil
 		}, nil, nil)
@@ -483,7 +538,7 @@ func TestDirectRulesRetainQueryClassificationAndRegexSemantics(t *testing.T) {
 
 func TestClassicalRegexPreservesRegexEscapesAndOriginalLine(t *testing.T) {
 	content := `DOMAIN-REGEX,^\D+$`
-	subject := NewRuleConfigMatcher(seq(ruleset("set")), nil, textOf(map[string]string{"set": content}), nil, nil)
+	subject := NewMatcher([]model.RuleConfig{ruleset("set")}, nil, textOf(map[string]string{"set": content}), nil, nil)
 	if got := matchedLine(t, subject, "abc"); got != content {
 		t.Errorf("got %q", got)
 	}
@@ -504,9 +559,9 @@ func TestShuffledRulesAndQueriesMatchLinearReference(t *testing.T) {
 		rng := rand.New(rand.NewSource(seed))
 		rules := append([]string(nil), base...)
 		rng.Shuffle(len(rules), func(i, j int) { rules[i], rules[j] = rules[j], rules[i] })
-		configs := seq(ruleset("a"), obj("id", "direct", "rule_type", "DOMAIN-SUFFIX", "value", "test"), ruleset("b"))
+		configs := []model.RuleConfig{ruleset("a"), {ID: "direct", RuleType: "DOMAIN-SUFFIX", Value: "test"}, ruleset("b")}
 		contents := map[string]string{"a": strings.Join(rules[:10], "\n"), "b": strings.Join(rules[10:], "\n")}
-		subject := NewRuleConfigMatcher(configs, nil, textOf(contents), nil, nil)
+		subject := NewMatcher(configs, nil, textOf(contents), nil, nil)
 		var queries []string
 		for _, prefix := range []string{"", "a.", "a.b."} {
 			for _, domain := range []string{"EXAMPLE.COM", "example.net", "sample.test", "unknown.org"} {
@@ -526,7 +581,7 @@ func TestLargeRulesetReusesIndexAndLoadsOnce(t *testing.T) {
 		fmt.Fprintf(&body, "DOMAIN-SUFFIX,rule%d.example\n", i)
 	}
 	loader := fixed(body.String())
-	subject := NewRuleConfigMatcher(seq(ruleset("set")), nil, loader.load, nil, nil)
+	subject := NewMatcher([]model.RuleConfig{ruleset("set")}, nil, loader.load, nil, nil)
 	if subject.Match("warmup.test") != nil {
 		t.Fatal("warmup matched")
 	}
@@ -547,12 +602,12 @@ func TestLargeRulesetReusesIndexAndLoadsOnce(t *testing.T) {
 func TestConcurrentFirstQueriesPublishOneCompleteIndex(t *testing.T) {
 	loading, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	loader := &countingLoader{content: func(_, _ *jsonx.Object) (string, error) {
+	loader := &countingLoader{content: func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
 		once.Do(func() { close(loading) })
 		<-release
 		return "+.example.com\nDOMAIN,other.test", nil
 	}}
-	subject := NewRuleConfigMatcher(seq(ruleset("set")), nil, loader.load, nil, nil)
+	subject := NewMatcher([]model.RuleConfig{ruleset("set")}, nil, loader.load, nil, nil)
 	var wg sync.WaitGroup
 	results := make([]string, 8)
 	for i := range results {
@@ -576,10 +631,12 @@ func TestConcurrentFirstQueriesPublishOneCompleteIndex(t *testing.T) {
 }
 
 func TestFailedRulesetLoadIsCachedAndLaterRulesCanMatch(t *testing.T) {
-	loader := &countingLoader{content: func(_, _ *jsonx.Object) (string, error) { return "", errors.New("missing cache") }}
-	subject := NewRuleConfigMatcher(seq(ruleset("set"), obj("id", "fallback", "rule_type", "DOMAIN", "value", "example.com")), nil, loader.load, nil, nil)
+	loader := &countingLoader{content: func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
+		return "", errors.New("missing cache")
+	}}
+	subject := NewMatcher([]model.RuleConfig{ruleset("set"), {ID: "fallback", RuleType: "DOMAIN", Value: "example.com"}}, nil, loader.load, nil, nil)
 	for i := 0; i < 2; i++ {
-		if got := subject.Match("example.com").Value("rule_id"); got != "fallback" {
+		if got := hitRuleID(subject.Match("example.com")); got != "fallback" {
 			t.Fatalf("rule_id = %v", got)
 		}
 	}
@@ -588,11 +645,11 @@ func TestFailedRulesetLoadIsCachedAndLaterRulesCanMatch(t *testing.T) {
 	}
 }
 
-func byLibraryID(_, library *jsonx.Object) (string, bool) {
+func byLibraryID(_ *model.RuleConfig, library *model.RuleLibraryItem) (string, bool) {
 	if library == nil {
 		return "", false
 	}
-	return library.GetString("id"), true
+	return library.ID, true
 }
 
 func TestCompactIndexKeepsFirstSourceLineAcrossDuplicateAndIgnoredRules(t *testing.T) {
@@ -602,19 +659,19 @@ func TestCompactIndexKeepsFirstSourceLineAcrossDuplicateAndIgnoredRules(t *testi
 		"DOMAIN-KEYWORD,example", "REGEX,example",
 	}
 	contents := map[string]string{"set": strings.Join(lines, "\n")}
-	configs := seq(ruleset("set"))
-	subject := NewRuleConfigMatcher(configs, nil, textOf(contents), nil, nil)
+	configs := []model.RuleConfig{ruleset("set")}
+	subject := NewMatcher(configs, nil, textOf(contents), nil, nil)
 	for _, query := range []string{"example.com", "www.example.com", "192.0.2.1", "192.0.2.250", "absent.test"} {
 		sameResult(t, subject.Match(query), linearMatch(configs, contents, query), query)
 	}
 }
 
 func TestSharedLibraryDoesNotReuseItemDependentLoaderByDefault(t *testing.T) {
-	library := obj("id", "shared", "name", "same-name")
-	configs := seq(ruleset("first", "library_rule_id", "shared"), ruleset("second", "library_rule_id", "shared"))
+	library := model.RuleLibraryItem{ID: "shared", Name: "same-name"}
+	configs := []model.RuleConfig{ruleset("first", "library_rule_id", "shared"), ruleset("second", "library_rule_id", "shared")}
 	contents := map[string]string{"first": "first.example", "second": "second.example"}
-	loader := &countingLoader{content: func(item, _ *jsonx.Object) (string, error) { return contents[item.GetString("id")], nil }}
-	subject := NewRuleConfigMatcher(configs, seq(library), loader.load, nil, nil)
+	loader := &countingLoader{content: func(item *model.RuleConfig, _ *model.RuleLibraryItem) (string, error) { return contents[item.ID], nil }}
+	subject := NewMatcher(configs, []model.RuleLibraryItem{library}, loader.load, nil, nil)
 	for _, query := range []string{"second.example", "first.example"} {
 		sameResult(t, subject.Match(query), linearMatch(configs, contents, query), query)
 	}
@@ -625,18 +682,18 @@ func TestSharedLibraryDoesNotReuseItemDependentLoaderByDefault(t *testing.T) {
 
 func TestOptInReuseSeparatesBehaviorAndPreservesReferenceMetadata(t *testing.T) {
 	for _, reverse := range []bool{false, true} {
-		library := obj("id", "shared", "name", "shared-source")
-		configs := seq(
+		library := model.RuleLibraryItem{ID: "shared", Name: "shared-source"}
+		configs := []model.RuleConfig{
 			ruleset("first", "name", "first display", "library_rule_id", "shared", "policy", "DIRECT", "behavior", "domain"),
 			ruleset("second", "name", "second display", "library_rule_id", "shared", "policy", "PROXY", "behavior", "classical"),
-		)
+		}
 		if reverse {
 			configs[0], configs[1] = configs[1], configs[0]
 		}
 		body := "+.example.com\nIP-CIDR,192.0.2.0/24"
 		contents := map[string]string{"first": body, "second": body}
 		loader := fixed(body)
-		subject := NewRuleConfigMatcher(configs, seq(library), loader.load, byLibraryID, nil)
+		subject := NewMatcher(configs, []model.RuleLibraryItem{library}, loader.load, byLibraryID, nil)
 		// Different behavior parses the same source into distinct indexes.
 		if subject.Match("absent.test") != nil {
 			t.Fatal("absent.test matched")
@@ -651,20 +708,20 @@ func TestOptInReuseSeparatesBehaviorAndPreservesReferenceMetadata(t *testing.T) 
 }
 
 func TestReuseIsScopedToMatcherAndSourceIdentityNotDisplayName(t *testing.T) {
-	configs := seq(ruleset("one", "library_rule_id", "one"), ruleset("two", "library_rule_id", "two"))
-	libraries := seq(obj("id", "one", "name", "same"), obj("id", "two", "name", "same"))
+	configs := []model.RuleConfig{ruleset("one", "library_rule_id", "one"), ruleset("two", "library_rule_id", "two")}
+	libraries := []model.RuleLibraryItem{{ID: "one", Name: "same"}, {ID: "two", Name: "same"}}
 	contents := map[string]string{"one": "one.example", "two": "two.example"}
-	loader := &countingLoader{content: func(_, lib *jsonx.Object) (string, error) { return contents[lib.GetString("id")], nil }}
-	first := NewRuleConfigMatcher(configs, libraries, loader.load, byLibraryID, nil)
-	if got := first.Match("two.example").Value("rule_id"); got != "two" {
+	loader := &countingLoader{content: func(_ *model.RuleConfig, lib *model.RuleLibraryItem) (string, error) { return contents[lib.ID], nil }}
+	first := NewMatcher(configs, libraries, loader.load, byLibraryID, nil)
+	if got := hitRuleID(first.Match("two.example")); got != "two" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if loader.calls.Load() != 2 {
 		t.Fatalf("loader called %d times", loader.calls.Load())
 	}
 	// A different repository/snapshot with the same IDs must build its own index.
-	second := NewRuleConfigMatcher(configs, libraries, fixed("new.example").load, byLibraryID, nil)
-	if got := second.Match("new.example").Value("rule_id"); got != "one" {
+	second := NewMatcher(configs, libraries, fixed("new.example").load, byLibraryID, nil)
+	if got := hitRuleID(second.Match("new.example")); got != "one" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if first.Match("new.example") != nil {
@@ -673,11 +730,11 @@ func TestReuseIsScopedToMatcherAndSourceIdentityNotDisplayName(t *testing.T) {
 }
 
 func TestNoneReuseKeyFallsBackToIndividualItemWithoutKeyCollision(t *testing.T) {
-	configs := seq(ruleset("one"), ruleset("two"), ruleset("three"))
+	configs := []model.RuleConfig{ruleset("one"), ruleset("two"), ruleset("three")}
 	contents := map[string]string{"one": "one.example", "two": "two.example", "three": "three.example"}
-	loader := &countingLoader{content: func(item, _ *jsonx.Object) (string, error) { return contents[item.GetString("id")], nil }}
-	subject := NewRuleConfigMatcher(configs, nil, loader.load, func(item, _ *jsonx.Object) (string, bool) {
-		return "1", item.GetString("id") == "three"
+	loader := &countingLoader{content: func(item *model.RuleConfig, _ *model.RuleLibraryItem) (string, error) { return contents[item.ID], nil }}
+	subject := NewMatcher(configs, nil, loader.load, func(item *model.RuleConfig, _ *model.RuleLibraryItem) (string, bool) {
+		return "1", item.ID == "three"
 	}, nil)
 	for _, query := range []string{"one.example", "two.example", "three.example"} {
 		sameResult(t, subject.Match(query), linearMatch(configs, contents, query), query)
@@ -688,13 +745,16 @@ func TestNoneReuseKeyFallsBackToIndividualItemWithoutKeyCollision(t *testing.T) 
 }
 
 func TestInvalidatingSharedFailedSourceRetriesAllReferencesButKeepsHealthyIndex(t *testing.T) {
-	libraries := seq(obj("id", "failed", "name", "failed"), obj("id", "healthy", "name", "healthy"))
-	configs := seq(ruleset("failed-first", "library_rule_id", "failed"), ruleset("healthy", "library_rule_id", "healthy"),
-		ruleset("failed-second", "library_rule_id", "failed"))
+	libraries := []model.RuleLibraryItem{{ID: "failed", Name: "failed"}, {ID: "healthy", Name: "healthy"}}
+	configs := []model.RuleConfig{
+		ruleset("failed-first", "library_rule_id", "failed"),
+		ruleset("healthy", "library_rule_id", "healthy"),
+		ruleset("failed-second", "library_rule_id", "failed"),
+	}
 	var unavailable atomic.Bool
 	unavailable.Store(true)
-	loader := &countingLoader{content: func(_, lib *jsonx.Object) (string, error) {
-		if lib.GetString("id") == "healthy" {
+	loader := &countingLoader{content: func(_ *model.RuleConfig, lib *model.RuleLibraryItem) (string, error) {
+		if lib.ID == "healthy" {
 			return "healthy.example", nil
 		}
 		if unavailable.Load() {
@@ -702,7 +762,7 @@ func TestInvalidatingSharedFailedSourceRetriesAllReferencesButKeepsHealthyIndex(
 		}
 		return "recovered.example", nil
 	}}
-	subject := NewRuleConfigMatcher(configs, libraries, loader.load, byLibraryID, nil)
+	subject := NewMatcher(configs, libraries, loader.load, byLibraryID, nil)
 	if subject.Match("absent.test") != nil {
 		t.Fatal("absent.test matched")
 	}
@@ -711,39 +771,39 @@ func TestInvalidatingSharedFailedSourceRetriesAllReferencesButKeepsHealthyIndex(
 	}
 	unavailable.Store(false)
 	// Selecting just the later reference still invalidates the one shared source.
-	if n := subject.InvalidateRulesets(func(item, _ *jsonx.Object) bool { return item.Value("id") == "failed-second" }); n != 1 {
+	if n := subject.InvalidateRulesets(func(item *model.RuleConfig, _ *model.RuleLibraryItem) bool { return item.ID == "failed-second" }); n != 1 {
 		t.Fatalf("invalidated %d", n)
 	}
-	if got := subject.Match("recovered.example").Value("rule_id"); got != "failed-first" {
+	if got := hitRuleID(subject.Match("recovered.example")); got != "failed-first" {
 		t.Fatalf("rule_id = %v", got)
 	}
-	if got := subject.Match("healthy.example").Value("rule_id"); got != "healthy" {
+	if got := hitRuleID(subject.Match("healthy.example")); got != "healthy" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if loader.calls.Load() != 3 {
 		t.Fatalf("loader called %d times", loader.calls.Load())
 	}
-	if n := subject.InvalidateRulesets(func(_, _ *jsonx.Object) bool { return false }); n != 0 {
+	if n := subject.InvalidateRulesets(func(*model.RuleConfig, *model.RuleLibraryItem) bool { return false }); n != 0 {
 		t.Fatalf("invalidated %d", n)
 	}
 }
 
 func TestInvalidationWithoutReuseOnlyReloadsSelectedItem(t *testing.T) {
-	configs := seq(ruleset("one"), ruleset("two"))
+	configs := []model.RuleConfig{ruleset("one"), ruleset("two")}
 	contents := map[string]string{"one": "one.example", "two": "two.example"}
-	loader := &countingLoader{content: func(item, _ *jsonx.Object) (string, error) { return contents[item.GetString("id")], nil }}
-	subject := NewRuleConfigMatcher(configs, nil, loader.load, nil, nil)
+	loader := &countingLoader{content: func(item *model.RuleConfig, _ *model.RuleLibraryItem) (string, error) { return contents[item.ID], nil }}
+	subject := NewMatcher(configs, nil, loader.load, nil, nil)
 	if subject.Match("absent.test") != nil {
 		t.Fatal("absent.test matched")
 	}
 	contents["one"] = "changed.example"
-	if n := subject.InvalidateRulesets(func(item, _ *jsonx.Object) bool { return item.Value("id") == "one" }); n != 1 {
+	if n := subject.InvalidateRulesets(func(item *model.RuleConfig, _ *model.RuleLibraryItem) bool { return item.ID == "one" }); n != 1 {
 		t.Fatalf("invalidated %d", n)
 	}
-	if got := subject.Match("two.example").Value("rule_id"); got != "two" {
+	if got := hitRuleID(subject.Match("two.example")); got != "two" {
 		t.Fatalf("rule_id = %v", got)
 	}
-	if got := subject.Match("changed.example").Value("rule_id"); got != "one" {
+	if got := hitRuleID(subject.Match("changed.example")); got != "one" {
 		t.Fatalf("rule_id = %v", got)
 	}
 	if subject.Match("one.example") != nil {
@@ -755,8 +815,6 @@ func TestInvalidationWithoutReuseOnlyReloadsSelectedItem(t *testing.T) {
 }
 
 func splitLinesRef(parts []string, sep string, trailing bool) []string {
-	// Joining rule-file lines (+ trailing separator): every delimiter
-	// ends a line and a final separator does not start an empty one.
 	var out []string
 	out = append(out, parts...)
 	_ = sep
@@ -779,9 +837,9 @@ func TestStreamedLinesPreserveOriginalMatch(t *testing.T) {
 			if strings.Join(got, "\x00") != strings.Join(want, "\x00") || len(got) != len(want) {
 				t.Errorf("sep %q trailing %v: got %q want %q", sep, trailing, got, want)
 			}
-			configs := seq(ruleset("set"))
+			configs := []model.RuleConfig{ruleset("set")}
 			contents := map[string]string{"set": content}
-			subject := NewRuleConfigMatcher(configs, nil, textOf(contents), nil, nil)
+			subject := NewMatcher(configs, nil, textOf(contents), nil, nil)
 			for _, query := range []string{"example.com", "sub.second.example", "absent.test"} {
 				sameResult(t, subject.Match(query), linearMatch(configs, contents, query), fmt.Sprintf("%q %q", sep, query))
 			}
@@ -807,8 +865,6 @@ func TestStreamedEmptyAndMixedNewlines(t *testing.T) {
 }
 
 func TestCompactSourcesPreserveUnicodeAndMalformedCommentText(t *testing.T) {
-	// Python packs source lines into a byte buffer; Go keeps the strings. The
-	// observable promise is the same: the original text comes back unchanged.
 	for _, comment := range []string{"中文", "😀", "\ufffd", "\x00", "\x01\x7f"} {
 		var lines []string
 		for i := 0; i < 300; i++ {
@@ -845,9 +901,9 @@ func TestMixedSourcesKeepOrderSharedKeysPatternsAndFirstDuplicate(t *testing.T) 
 	}
 	lines = append(lines, "DOMAIN-SUFFIX,item0.example", "last.example")
 	content := strings.Join(lines, "\n")
-	configs := seq(ruleset("set"))
+	configs := []model.RuleConfig{ruleset("set")}
 	contents := map[string]string{"set": content}
-	subject := NewRuleConfigMatcher(configs, nil, textOf(contents), nil, nil)
+	subject := NewMatcher(configs, nil, textOf(contents), nil, nil)
 	for _, query := range []string{"early.example", "sub.early.example", "regex42.example", "keyword.example", "middle.example", "item0.example", "last.example"} {
 		sameResult(t, subject.Match(query), linearMatch(configs, contents, query), query)
 	}
@@ -869,112 +925,4 @@ func TestEmptyOrInvalidOnlySourcesIndexNothing(t *testing.T) {
 			t.Error("matched")
 		}
 	}
-}
-
-// Historical fixture boundary: delegates to the typed implementation.
-
-// LoadContent adapts an unported loader. New callers use ContentLoader.
-type LoadContent func(item, library *jsonx.Object) (string, error)
-
-// IndexKey adapts an unported source key. New callers use SourceKey.
-type IndexKey func(item, library *jsonx.Object) (string, bool)
-
-// RuleConfigMatcher is the JSON boundary for existing discovery and cache callers.
-type RuleConfigMatcher struct {
-	*Matcher
-	rules     map[*model.RuleConfig]*jsonx.Object
-	libraries map[*model.RuleLibraryItem]*jsonx.Object
-}
-
-// NewRuleConfigMatcher decodes only rules and declarations once per matcher.
-func NewRuleConfigMatcher(configs, library []any, load LoadContent, key IndexKey, logger Logger) *RuleConfigMatcher {
-	records := make([]model.RuleConfig, 0, len(configs))
-	originals := make([]*jsonx.Object, 0, len(configs))
-	// Keep positions, including malformed rows, for the externally visible priority.
-	for _, entry := range configs {
-		var record model.RuleConfig
-		object, _ := entry.(*jsonx.Object)
-		if object == nil {
-			disabled := false
-			record.Enabled = &disabled
-		} else if decodeRecord(object, &record) != nil {
-			disabled := false
-			record.Enabled = &disabled
-		}
-		records = append(records, record)
-		originals = append(originals, object)
-	}
-	entries := make([]model.RuleLibraryItem, 0, len(library))
-	oldLibrary := make([]*jsonx.Object, 0, len(library))
-	for _, entry := range library {
-		object, ok := entry.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		var record model.RuleLibraryItem
-		if decodeRecord(object, &record) != nil {
-			continue
-		}
-		entries = append(entries, record)
-		oldLibrary = append(oldLibrary, object)
-	}
-	result := &RuleConfigMatcher{rules: make(map[*model.RuleConfig]*jsonx.Object), libraries: make(map[*model.RuleLibraryItem]*jsonx.Object)}
-	for i := range records {
-		result.rules[&records[i]] = originals[i]
-	}
-	for i := range entries {
-		result.libraries[&entries[i]] = oldLibrary[i]
-	}
-	var loader ContentLoader
-	if load != nil {
-		loader = func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error) {
-			return load(result.rules[item], result.libraries[library])
-		}
-	}
-	var source SourceKey
-	if key != nil {
-		source = func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, bool) {
-			return key(result.rules[item], result.libraries[library])
-		}
-	}
-	result.Matcher = NewMatcher(records, entries, loader, source, logger)
-	return result
-}
-
-// Match encodes the native DTO for a legacy caller.
-func (m *RuleConfigMatcher) Match(query string) *jsonx.Object {
-	hit := m.Matcher.Match(query)
-	if hit == nil {
-		return nil
-	}
-	data, _ := json.Marshal(hit)
-	value, _ := jsonx.Parse(data)
-	return value.(*jsonx.Object)
-}
-
-// InvalidateRulesets adapts the existing cache's selector.
-func (m *RuleConfigMatcher) InvalidateRulesets(selectSource func(item, library *jsonx.Object) bool) int {
-	return m.Matcher.InvalidateRulesets(func(item *model.RuleConfig, library *model.RuleLibraryItem) bool {
-		return selectSource(m.rules[item], m.libraries[library])
-	})
-}
-func enabled(item *jsonx.Object) bool {
-	return jsonx.Truthy(item.GetOr("enabled", true)) && jsonx.Truthy(item.GetOr("library_enabled", true))
-}
-func itemType(item *jsonx.Object) string {
-	value, _ := item.GetOr("itemType", "rule").(string)
-	return value
-}
-func rulesetBehavior(item, library *jsonx.Object) string {
-	if value, ok := item.Get("behavior"); ok {
-		text, _ := value.(string)
-		return text
-	}
-	if library != nil {
-		if value, ok := library.Get("behavior"); ok {
-			text, _ := value.(string)
-			return text
-		}
-	}
-	return "domain"
 }

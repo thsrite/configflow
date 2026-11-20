@@ -6,38 +6,35 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // reviewRow answers one row of testdata/review_c14.jsonl.gz.
 func reviewRow(fn string, args []any) (any, error) {
 	str := func(i int) string { s, _ := args[i].(string); return s }
-	obj := func(i int) *jsonx.Object { o, _ := args[i].(*jsonx.Object); return o }
+	obj := func(i int) *orderedObj { o, _ := args[i].(*orderedObj); return o }
 	switch fn {
 	case "unescape":
 		return pyUnescape(str(0)), nil
 	case "meta_content":
 		return metaContent(str(0)), nil
 	case "clean_text":
-		limit, _ := jsonx.AsInt(args[1])
-		return CleanText(str(0), int(limit)), nil
+		return CleanText(str(0), asIntArg(args[1])), nil
 	case "is_github_url":
 		return IsGithubURL(str(0)), nil
 	case "is_internal_rule_url":
-		return IsInternalRuleURLChecked(str(0), obj(1), "")
+		return InternalURL(str(0), decodeSourceConfig(obj(1), false), "")
 	case "github_download_candidates":
-		candidates, err := GithubDownloadCandidates(str(0), obj(1), "")
+		candidates, err := DownloadCandidates(str(0), decodeSourceConfig(obj(1), false), "")
 		var out []any
 		for _, c := range candidates {
 			out = append(out, []any{c.Label, c.URL})
 		}
 		return out, err
 	case "rule_request_options":
-		proxy, err := RuleRequestProxyChecked(str(0), obj(1), "")
-		return jsonx.Obj("proxies", jsonx.Obj("http", proxy, "https", proxy)), err
+		proxy, err := ProxyFor(str(0), decodeSourceConfig(obj(1), false), "")
+		return newOrderedObj("proxies", newOrderedObj("http", proxy, "https", proxy)), err
 	case "page_identity":
-		return PageIdentity(obj(0), "example.com", "now"), nil
+		return runPageIdentity(obj(0), "example.com", "now"), nil
 	}
 	return runCorpusRow(fn, args)
 }
@@ -80,19 +77,19 @@ func TestReviewC14Corpus(t *testing.T) {
 	rows, failures, accepted := 0, map[string]int{}, 0
 	classes := map[string]int{}
 	for sc.Scan() {
-		value, err := jsonx.Parse(sc.Bytes())
+		value, err := parseOrderedJSON(sc.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		row := value.(*jsonx.Object)
+		row := value.(*orderedObj)
 		rows++
-		fn := row.GetString("fn")
+		fn := row.str("fn")
 		if droppedURLRow(fn) {
 			continue
 		}
-		got, gotErr := reviewRow(fn, row.GetList("args"))
+		got, gotErr := reviewRow(fn, row.list("args"))
 		var gotText, wantText string
-		if want, isErr := row.Get("err"); isErr {
+		if want, isErr := row.get("err"); isErr {
 			wantText = encode(classOnly(want))
 			if gotErr != nil {
 				gotText = encode(classOnly(recordedError(gotErr)))
@@ -100,7 +97,7 @@ func TestReviewC14Corpus(t *testing.T) {
 				gotText = "ok " + encode(got)
 			}
 		} else {
-			want, _ := wantURLRow(fn, row.Value("ok"))
+			want, _ := wantURLRow(fn, row.val("ok"))
 			wantText = encode(want)
 			if gotErr != nil {
 				gotText = "error " + encode(recordedError(gotErr))
@@ -111,17 +108,17 @@ func TestReviewC14Corpus(t *testing.T) {
 		if gotText == wantText {
 			continue
 		}
-		if reviewAccepted(fn, row.GetList("args"), wantText) {
+		if reviewAccepted(fn, row.list("args"), wantText) {
 			accepted++
 			continue
 		}
-		if category := nativeReplayDifference(t, "review", fn, row.Value("args"), gotText, wantText); category != "" {
+		if category := nativeReplayDifference(t, "review", fn, row.val("args"), gotText, wantText); category != "" {
 			classes[category]++
 			continue
 		}
 		failures[fn]++
 		if failures[fn] <= 4 {
-			t.Errorf("%s%.400s\n got %.600s\nwant %.600s", fn, encode(row.Value("args")), gotText, wantText)
+			t.Errorf("%s%.400s\n got %.600s\nwant %.600s", fn, encode(row.val("args")), gotText, wantText)
 		}
 	}
 	t.Logf("N7-3b classifications: %v", classes)

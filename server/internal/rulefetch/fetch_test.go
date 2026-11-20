@@ -16,8 +16,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 const (
@@ -67,18 +65,26 @@ func newClient(transport Transport, sleeps *[]time.Duration) *Client {
 	return &Client{Transport: transport, Sleep: func(d time.Duration) { *sleeps = append(*sleeps, d) }}
 }
 
-func sysConfig(kv ...any) *jsonx.Object { return jsonx.Obj("system_config", jsonx.Obj(kv...)) }
+func sysConfig(kv ...string) *SourceConfig {
+	cfg := &SourceConfig{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		v := kv[i+1]
+		switch kv[i] {
+		case "rule_fetch_proxy":
+			cfg.Settings.RuleFetchProxy = v
+		case "github_proxy_domain":
+			cfg.Settings.GitHubProxyDomain = v
+		case "server_domain":
+			cfg.Settings.ServerDomain = v
+		default:
+			panic("unknown sysConfig key: " + kv[i])
+		}
+	}
+	return cfg
+}
 
 func tlsEOF() error {
 	return &FetchError{Class: "SSLError", Message: "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol", Transient: true}
-}
-
-func seconds(values ...int) []time.Duration {
-	out := []time.Duration{}
-	for _, v := range values {
-		out = append(out, time.Duration(v)*time.Second)
-	}
-	return out
 }
 
 func equalStrings(a, b []string) bool {
@@ -105,8 +111,8 @@ func TestTLSEOFRecoversOnThirdAttemptWithSameOptions(t *testing.T) {
 			}}
 			var sleeps []time.Duration
 			config := sysConfig("rule_fetch_proxy", proxy, "github_proxy_domain", retryMirror)
-			response, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource,
-				Request{Method: method, Config: config, ConnectTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second})
+			response, err := newClient(fake, &sleeps).Download(context.Background(), retrySource,
+				DownloadRequest{Method: method, Config: config, ConnectTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +138,7 @@ func TestDisconnectRetriesAreBoundedAndPreserveFinalError(t *testing.T) {
 		failure := &FetchError{Class: class, Message: "interrupted", Transient: true}
 		fake := &fakeTransport{reply: func(int, TransportRequest) (*Response, error) { return nil, failure }}
 		var sleeps []time.Duration
-		_, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource, Request{Config: sysConfig()})
+		_, err := newClient(fake, &sleeps).Download(context.Background(), retrySource, DownloadRequest{Config: sysConfig()})
 		if err != error(failure) || !equalStrings(fake.urls(), repeat(retrySource, 3)) || len(sleeps) != 2 {
 			t.Fatal(class, err, fake.urls(), sleeps)
 		}
@@ -147,7 +153,7 @@ func TestPersistentErrorsAndTimeoutsDoNotRetry(t *testing.T) {
 		failure := &FetchError{Class: class, Message: "persistent"}
 		fake := &fakeTransport{reply: func(int, TransportRequest) (*Response, error) { return nil, failure }}
 		var sleeps []time.Duration
-		_, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource, Request{Config: sysConfig()})
+		_, err := newClient(fake, &sleeps).Download(context.Background(), retrySource, DownloadRequest{Config: sysConfig()})
 		if PythonClass(err) != class || len(fake.calls) != 1 || len(sleeps) != 0 {
 			t.Fatal(class, err, len(fake.calls), sleeps)
 		}
@@ -165,7 +171,7 @@ func TestExhaustSourceBeforeMirror(t *testing.T) {
 		}}
 		var sleeps []time.Duration
 		config := sysConfig("github_proxy_domain", retryMirror)
-		response, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource, Request{Config: config})
+		response, err := newClient(fake, &sleeps).Download(context.Background(), retrySource, DownloadRequest{Config: config})
 		want := append(repeat(retrySource, 3), repeat(retryMirror+retrySource, 1)...)
 		if mirrorFails {
 			var fetchErr *RuleFetchError
@@ -196,7 +202,7 @@ func TestHTTPFailuresGoToMirrorWithoutBackoff(t *testing.T) {
 			return r, nil
 		}}
 		var sleeps []time.Duration
-		response, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource, Request{Config: sysConfig("github_proxy_domain", retryMirror)})
+		response, err := newClient(fake, &sleeps).Download(context.Background(), retrySource, DownloadRequest{Config: sysConfig("github_proxy_domain", retryMirror)})
 		if err != nil || response.StatusCode != 200 || !equalStrings(fake.urls(), []string{retrySource, retryMirror + retrySource}) || len(sleeps) != 0 {
 			t.Fatal(status, err, fake.urls())
 		}
@@ -210,7 +216,7 @@ func TestHTTPFailuresGoToMirrorWithoutBackoff(t *testing.T) {
 func TestSingleURLPreservesHTTPErrorResponse(t *testing.T) {
 	fake := &fakeTransport{reply: func(int, TransportRequest) (*Response, error) { return reply(503, ""), nil }}
 	var sleeps []time.Duration
-	response, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource, Request{Config: sysConfig()})
+	response, err := newClient(fake, &sleeps).Download(context.Background(), retrySource, DownloadRequest{Config: sysConfig()})
 	if err != nil || response.StatusCode != 503 || len(sleeps) != 0 {
 		t.Fatal(err)
 	}
@@ -246,7 +252,7 @@ func TestPartialResponseIsClosedBeforeBackoff(t *testing.T) {
 		return r, nil
 	}}
 	client := &Client{Transport: fake, Sleep: func(d time.Duration) { events = append(events, d.String()) }}
-	response, err := client.RequestRule(context.Background(), retrySource, Request{Config: sysConfig(), Stream: true, MaxBytes: 1024})
+	response, err := client.Download(context.Background(), retrySource, DownloadRequest{Config: sysConfig(), Stream: true, MaxBytes: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,8 +273,8 @@ func TestOversizeBodyClosesWithoutRetryOrMirror(t *testing.T) {
 		return r, nil
 	}}
 	var sleeps []time.Duration
-	_, err := newClient(fake, &sleeps).RequestRule(context.Background(), retrySource,
-		Request{Config: sysConfig("github_proxy_domain", retryMirror), Stream: true, MaxBytes: 1})
+	_, err := newClient(fake, &sleeps).Download(context.Background(), retrySource,
+		DownloadRequest{Config: sysConfig("github_proxy_domain", retryMirror), Stream: true, MaxBytes: 1})
 	if !errors.Is(err, ErrSizeLimit) || !strings.Contains(err.Error(), "size limit") || !equalStrings(fake.urls(), []string{retrySource}) ||
 		!equalStrings(closed, []string{retrySource}) || len(sleeps) != 0 {
 		t.Fatal(err, fake.urls(), closed)
@@ -303,7 +309,7 @@ func TestArbitraryGithubAssetsTryOriginalThenMirror(t *testing.T) {
 				}
 				var sleeps []time.Duration
 				config := sysConfig("github_proxy_domain", fallbackMirror, "rule_fetch_proxy", proxy)
-				response, err := newClient(fake, &sleeps).RequestRule(context.Background(), url, Request{Config: config})
+				response, err := newClient(fake, &sleeps).Download(context.Background(), url, DownloadRequest{Config: config})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -331,7 +337,7 @@ func TestArbitraryGithubAssetsTryOriginalThenMirror(t *testing.T) {
 func TestSuccessfulOriginalDoesNotRequestMirror(t *testing.T) {
 	fake := &fakeTransport{reply: func(int, TransportRequest) (*Response, error) { return reply(200, "x"), nil }}
 	var sleeps []time.Duration
-	if _, err := newClient(fake, &sleeps).RequestRule(context.Background(), fallbackSource, Request{Config: sysConfig("github_proxy_domain", fallbackMirror)}); err != nil ||
+	if _, err := newClient(fake, &sleeps).Download(context.Background(), fallbackSource, DownloadRequest{Config: sysConfig("github_proxy_domain", fallbackMirror)}); err != nil ||
 		!equalStrings(fake.urls(), []string{fallbackSource}) {
 		t.Fatal(err, fake.urls())
 	}
@@ -343,16 +349,13 @@ func TestIncompleteStreamGoesToMirrorWithoutPartialBytes(t *testing.T) {
 	fake := &fakeTransport{reply: func(_ int, req TransportRequest) (*Response, error) {
 		r := reply(200, "complete file")
 		if req.URL == fallbackSource {
-			r.Body = &brokenBody{events: &events}
-			// a ChunkedEncodingError("incomplete body") without a disconnect
-			// cause is not retried: the mirror is tried next.
 			r.Body = &persistentBroken{brokenBody{events: &events}}
 		}
 		return r, nil
 	}}
 	var sleeps []time.Duration
-	response, err := newClient(fake, &sleeps).RequestRule(context.Background(), fallbackSource,
-		Request{Config: sysConfig("github_proxy_domain", fallbackMirror), Stream: true, MaxBytes: 1024})
+	response, err := newClient(fake, &sleeps).Download(context.Background(), fallbackSource,
+		DownloadRequest{Config: sysConfig("github_proxy_domain", fallbackMirror), Stream: true, MaxBytes: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +383,7 @@ func TestBothFailuresAreReportedWithoutCredentials(t *testing.T) {
 		return nil, &FetchError{Class: "ProxyError", Message: "failed via http://user:private@proxy.test:7890"}
 	}}
 	var sleeps []time.Duration
-	_, err := newClient(fake, &sleeps).RequestRule(context.Background(), fallbackSource, Request{Config: sysConfig("github_proxy_domain", fallbackMirror)})
+	_, err := newClient(fake, &sleeps).Download(context.Background(), fallbackSource, DownloadRequest{Config: sysConfig("github_proxy_domain", fallbackMirror)})
 	var fetchErr *RuleFetchError
 	if !errors.As(err, &fetchErr) {
 		t.Fatal(err)
@@ -397,7 +400,7 @@ func TestNonGithubSourceNeverUsesMirror(t *testing.T) {
 		return nil, &FetchError{Class: "ConnectionError", Message: "unavailable"}
 	}}
 	var sleeps []time.Duration
-	_, err := newClient(fake, &sleeps).RequestRule(context.Background(), "https://custom.test/data", Request{Config: sysConfig("github_proxy_domain", fallbackMirror)})
+	_, err := newClient(fake, &sleeps).Download(context.Background(), "https://custom.test/data", DownloadRequest{Config: sysConfig("github_proxy_domain", fallbackMirror)})
 	if PythonClass(err) != "ConnectionError" || !equalStrings(fake.urls(), []string{"https://custom.test/data"}) {
 		t.Fatal(err, fake.urls())
 	}
@@ -410,7 +413,7 @@ func TestMirrorErrorRedactsUserinfoNestedInPath(t *testing.T) {
 		return nil, &FetchError{Class: "ConnectionError", Message: "failed to download " + req.URL}
 	}}
 	var sleeps []time.Duration
-	_, err := newClient(fake, &sleeps).RequestRule(context.Background(), source, Request{Config: sysConfig("github_proxy_domain", fallbackMirror)})
+	_, err := newClient(fake, &sleeps).Download(context.Background(), source, DownloadRequest{Config: sysConfig("github_proxy_domain", fallbackMirror)})
 	var fetchErr *RuleFetchError
 	if !errors.As(err, &fetchErr) || strings.Contains(err.Error(), "private-user") || strings.Contains(err.Error(), "private-password") {
 		t.Fatal(err)
@@ -418,9 +421,6 @@ func TestMirrorErrorRedactsUserinfoNestedInPath(t *testing.T) {
 }
 
 func TestRedirectPolicy(t *testing.T) {
-	// relative redirects follow the hop limit; Location is required; the
-	// scheme is revalidated (test_relative_redirect_preserves_head_and_honors_hop_limit,
-	// test_redirect_revalidates_destination_scheme_before_request).
 	routes := map[string]*Response{}
 	redirect := func(location string) *Response {
 		r := reply(302, "")
@@ -440,57 +440,59 @@ func TestRedirectPolicy(t *testing.T) {
 	routes["http://o.test/rules"] = redirect("/next")
 	routes["http://o.test/next"] = redirect("/final")
 	one := 1
-	if _, err := client.RequestRule(context.Background(), "http://o.test/rules", Request{Method: "head", Config: sysConfig(), MaxRedirects: &one}); err == nil || err.Error() != "Too many redirects" {
+	if _, err := client.Download(context.Background(), "http://o.test/rules", DownloadRequest{Method: "head", Config: sysConfig(), MaxRedirects: &one}); err == nil || err.Error() != "Too many redirects" {
 		t.Fatal(err)
 	}
 	if !equalStrings(fake.urls(), []string{"http://o.test/rules", "http://o.test/next"}) || fake.calls[1].req.Method != "HEAD" {
 		t.Fatal(fake.urls())
 	}
 	fake.calls = nil
-	if r, err := client.RequestRule(context.Background(), "http://o.test/rules", Request{Config: sysConfig()}); err != nil || r.StatusCode != 200 {
+	if r, err := client.Download(context.Background(), "http://o.test/rules", DownloadRequest{Config: sysConfig()}); err != nil || r.StatusCode != 200 {
 		t.Fatal(err)
 	}
 	fake.calls = nil
 	routes["http://o.test/file"] = redirect("file:///etc/hosts")
-	if _, err := client.RequestRule(context.Background(), "http://o.test/file", Request{Config: sysConfig()}); !errors.Is(err, ErrInvalidURL) || len(fake.calls) != 1 {
+	if _, err := client.Download(context.Background(), "http://o.test/file", DownloadRequest{Config: sysConfig()}); !errors.Is(err, ErrInvalidURL) || len(fake.calls) != 1 {
 		t.Fatal(err)
 	}
 	routes["http://o.test/none"] = redirect("")
-	if _, err := client.RequestRule(context.Background(), "http://o.test/none", Request{Config: sysConfig()}); err == nil || err.Error() != "Redirect without Location" {
+	if _, err := client.Download(context.Background(), "http://o.test/none", DownloadRequest{Config: sysConfig()}); err == nil || err.Error() != "Redirect without Location" {
 		t.Fatal(err)
 	}
 	// test_self_api_redirect_cannot_leak_token_to_external_origin
 	fake.calls = nil
 	routes["http://cf.test/api/rules?token=t"] = redirect("http://other.test/rules?token=t")
 	config := sysConfig("server_domain", "http://cf.test", "rule_fetch_proxy", "http://proxy.test:1")
-	if _, err := client.RequestRule(context.Background(), "http://cf.test/api/rules?token=t", Request{Config: config}); err == nil ||
+	if _, err := client.Download(context.Background(), "http://cf.test/api/rules?token=t", DownloadRequest{Config: config}); err == nil ||
 		err.Error() != "Internal API redirect leaves its origin" || len(fake.calls) != 1 || fake.calls[0].req.Proxy != "" {
 		t.Fatal(err, fake.calls)
 	}
 	// test_external_redirect_to_self_api_recomputes_proxy
 	fake.calls = nil
 	routes["http://cf.test/rules"] = redirect("http://cf.test/api/rules")
-	if _, err := client.RequestRule(context.Background(), "http://cf.test/rules", Request{Config: config}); err != nil ||
+	if _, err := client.Download(context.Background(), "http://cf.test/rules", DownloadRequest{Config: config}); err != nil ||
 		fake.calls[0].req.Proxy != "http://proxy.test:1" || fake.calls[1].req.Proxy != "" {
 		t.Fatal(err, fake.calls)
 	}
 	// test_self_api_bypasses_configured_and_environment_proxy (prefix form)
 	fake.calls = nil
 	prefixed := sysConfig("server_domain", "http://cf.test/configflow", "rule_fetch_proxy", "http://proxy.test:1")
-	if _, err := client.RequestRule(context.Background(), "http://cf.test/configflow/api/rules?token=t", Request{Config: prefixed}); err != nil || fake.calls[0].req.Proxy != "" {
+	if _, err := client.Download(context.Background(), "http://cf.test/configflow/api/rules?token=t", DownloadRequest{Config: prefixed}); err != nil || fake.calls[0].req.Proxy != "" {
 		t.Fatal(err)
 	}
-	if !IsInternalRuleURL("http://cf.test:80/configflow/api/x", prefixed, "") || IsInternalRuleURL("http://cf.test/api/x", prefixed, "") ||
-		!IsInternalRuleURL("http://h.test/api/x", sysConfig(), "http://h.test/") {
+	ok1, _ := InternalURL("http://cf.test:80/configflow/api/x", prefixed, "")
+	ok2, _ := InternalURL("http://cf.test/api/x", prefixed, "")
+	ok3, _ := InternalURL("http://h.test/api/x", sysConfig(), "http://h.test/")
+	if !ok1 || ok2 || !ok3 {
 		t.Fatal("internal")
 	}
 }
 
 func TestNormalizeAndOptions(t *testing.T) {
-	if p, err := NormalizeRuleFetchProxy(" http://u:p@proxy.test:7890/ "); err != nil || p != "http://u:p@proxy.test:7890" {
+	if p, err := NormalizeProxy(" http://u:p@proxy.test:7890/ "); err != nil || p != "http://u:p@proxy.test:7890" {
 		t.Fatal(p, err)
 	}
-	if _, err := NormalizeRuleFetchProxy("http://proxy.test/path"); err != ErrInvalidProxy {
+	if _, err := NormalizeProxy("http://proxy.test/path"); err != ErrInvalidProxy {
 		t.Fatal(err)
 	}
 	if _, err := NormalizeRuleFetchProxy(5); err != ErrProxyNotString {
@@ -499,26 +501,4 @@ func TestNormalizeAndOptions(t *testing.T) {
 	if !IsGithubURL("https://raw.githubusercontent.com/a") || IsGithubURL("https://github.com.evil/a") {
 		t.Fatal("github")
 	}
-}
-
-func RuleFetchSettings(config *jsonx.Object) *jsonx.Object {
-	settings := config.GetObject("system_config")
-	if settings == nil {
-		return jsonx.NewObject()
-	}
-	return settings
-}
-
-func GetRuleFetchProxy(config *jsonx.Object) (string, error) { return FetchProxy(sourceConfig(config)) }
-
-func RuleRequestProxyChecked(url string, config *jsonx.Object, host string) (string, error) {
-	return ProxyFor(url, sourceConfig(config), host)
-}
-
-func RuleRequestProxy(url string, config *jsonx.Object, host string) (string, error) {
-	return RuleRequestProxyChecked(url, config, host)
-}
-
-func IsInternalRuleURLChecked(url string, config *jsonx.Object, host string) (bool, error) {
-	return InternalURL(url, sourceConfig(config), host)
 }

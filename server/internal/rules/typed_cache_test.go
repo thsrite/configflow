@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 type cacheExpectedRow struct {
@@ -47,13 +47,10 @@ func cacheReference(t *testing.T) cacheExpected {
 	}
 	return expected
 }
-func assertCacheReferenceInput(t *testing.T, expected cacheExpectedRow, rule *jsonx.Object, original any) {
+
+func assertCacheReferenceInput(t *testing.T, expected cacheExpectedRow, rule any, original any) {
 	t.Helper()
-	input, err := jsonx.Parse(expected.Input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !jsonx.Equal(input, rule) || expected.Original != original {
+	if !testjson.Equal(expected.Input, rule) || expected.Original != original {
 		t.Fatal("reference row input/original drift")
 	}
 	switch expected.Class {

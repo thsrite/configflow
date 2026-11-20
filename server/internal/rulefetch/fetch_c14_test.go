@@ -14,8 +14,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 type rawStep struct {
@@ -185,14 +183,14 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 				url = "http://127.0.0.1:{PORT}/rules.list"
 			}
 			url = strings.ReplaceAll(url, "{PORT}", server.port)
-			system := jsonx.NewObject()
+			cfg := &SourceConfig{}
 			if sc.Proxy != nil {
-				system.Set("rule_fetch_proxy", strings.ReplaceAll(*sc.Proxy, "{PORT}", server.port))
+				cfg.Settings.RuleFetchProxy = strings.ReplaceAll(*sc.Proxy, "{PORT}", server.port)
 			}
 			if sc.ServerDomain != nil {
-				system.Set("server_domain", strings.ReplaceAll(*sc.ServerDomain, "{PORT}", server.port))
+				cfg.Settings.ServerDomain = strings.ReplaceAll(*sc.ServerDomain, "{PORT}", server.port)
 			}
-			req := Request{Config: jsonx.Obj("system_config", system), ConnectTimeout: time.Second, ReadTimeout: time.Second}
+			req := DownloadRequest{Config: cfg, ConnectTimeout: time.Second, ReadTimeout: time.Second}
 			if m, ok := sc.Opts["method"].(string); ok {
 				req.Method = m
 			}
@@ -210,7 +208,7 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 				req.CABundle = v
 			}
 			got := map[string]any{}
-			response, err := client.RequestRule(context.Background(), url, req)
+			response, err := client.Download(context.Background(), url, req)
 			if err == nil {
 				var body []byte
 				if req.Stream && req.MaxBytes == 0 {

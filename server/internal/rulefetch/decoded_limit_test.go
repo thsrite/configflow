@@ -101,13 +101,12 @@ func TestRuleDownloadEnforcesDecodedSizeLimit(t *testing.T) {
 	// A cache refresh uses the same decoded boundary and cannot replace the last
 	// validated bytes with either a partial response or the compressed bomb.
 	ctx, r := cacheRepo(t, nil)
-	legacy := remoteSource()
-	legacy.Set("url", source.URL+"/rules.list")
-	rule := legacyRule(legacy)
+	rule := remoteSource()
+	rule.URL = strp(source.URL + "/rules.list")
 	if _, err := WriteCache(ctx, rule, Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
 		t.Fatal(err)
 	}
-	path := cachePath(t, r, legacy)
+	path := cachePath(t, r, rule)
 	content, _, err := RefreshRule(ctx, rule, &SourceConfig{}, CacheOptions{})
 	if !errors.Is(err, ErrSizeLimit) || content != nil {
 		t.Fatalf("cache accepted decoded bomb: %v", err)

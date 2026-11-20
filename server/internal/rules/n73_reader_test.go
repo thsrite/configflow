@@ -5,20 +5,19 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestN73MatcherReaderMigration(t *testing.T) {
 	classes := map[string]int{}
 	for row, record := range corpus(t)["match"] {
-		contents := record.GetObject("contents")
-		matcher := NewRuleConfigMatcher(record.GetList("configs"), record.GetList("library"), nil, nil, nil)
+		contents := mapField(record, "contents")
+		matcher := newMatcherFromRaw(record["configs"], record["library"], nil, nil, nil)
 		for _, item := range matcher.items {
 			if matcher.formats[item.position] != "yaml" {
 				continue
 			}
-			source := contents.GetString(item.item.ID)
+			source, _ := contents[item.item.ID].(string)
 			category, err := yamlxtest.CompareNativeReader(source, yamlxtest.NativeAST)
 			if err != nil {
 				t.Fatalf("real matcher source row %d: %v", row, err)
@@ -48,7 +47,7 @@ func TestN73MatcherRejectsUnsafeAliases(t *testing.T) {
 				t.Fatal("unsafe alias graph produced rule entries")
 			}
 			if got := matcherFor(source, "classical", "format", "yaml").Match("example.com"); got != nil {
-				t.Fatalf("unsafe alias graph matched: %s", jsonx.Repr(got))
+				t.Fatalf("unsafe alias graph matched: %+v", got)
 			}
 		})
 	}

@@ -3,8 +3,6 @@ package rules
 import (
 	"strings"
 	"unicode"
-
-	"configflow/internal/jsonx"
 )
 
 // Accepted differences from the recorded Python results (functional parity,
@@ -38,20 +36,6 @@ func regexMoreLenient(pythonRejects bool, goErr error) bool {
 // the Go engines stop at int32 (ErrRepeatTooLarge).
 func hugeRepeat(pattern string) bool {
 	return strings.Contains(pattern, "4294967294")
-}
-
-// pythonIteratesNonList: Python iterates a string's characters or a dict's
-// keys when a group's source field is not a list; Go reads only lists
-// (write validation rejects the rest with the same message either way).
-func pythonIteratesNonList(group *jsonx.Object) bool {
-	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies", "proxies_order"} {
-		if value, ok := group.Get(field); ok && value != nil {
-			if _, isList := value.([]any); !isList {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // idna2003Only: host names only the IDNA 2003 codec accepts: an ASCII label

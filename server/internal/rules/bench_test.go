@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // syntheticRuleset is the input testdata/bench.py builds too: 300000 lines of
@@ -31,9 +31,15 @@ func syntheticRuleset() string {
 	return b.String()
 }
 
-func benchMatcher(body string) *RuleConfigMatcher {
-	return NewRuleConfigMatcher(seq(obj("id", "set", "itemType", "ruleset", "behavior", "classical", "policy", "PROXY")), nil,
-		func(_, _ *jsonx.Object) (string, error) { return body, nil }, nil, nil)
+func benchMatcher(body string) *Matcher {
+	beh := "classical"
+	return NewMatcher(
+		[]model.RuleConfig{{ID: "set", ItemType: "ruleset", Behavior: &beh, Policy: strp("PROXY")}},
+		nil,
+		func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) { return body, nil },
+		nil,
+		nil,
+	)
 }
 
 func BenchmarkIndexBuild300kLines(b *testing.B) {

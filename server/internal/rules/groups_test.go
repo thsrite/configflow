@@ -1,13 +1,15 @@
 package rules
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
-	"configflow/internal/yamlbridge"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 // Ported from backend/test_group_exclusion_generation.py (the parts that do not
@@ -15,45 +17,53 @@ import (
 // the other group_candidates functions; the Python-vs-Go corpus covers them
 // broadly (TestCorpusGroupCandidates, TestCorpusFilters).
 
+type testCandidate struct {
+	name     string
+	password string
+}
+
 func TestCandidateFilterPreservesRecordsOrderAndEmptyInclude(t *testing.T) {
-	nodes := []any{
-		obj("name", "US-new", "params", obj("password", "unchanged")), obj("name", "US-expired"), obj("name", "HK-new"),
+	nodes := []testCandidate{
+		{name: "US-new", password: "unchanged"},
+		{name: "US-expired"},
+		{name: "HK-new"},
 	}
-	kept, err := FilterCandidates(nodes, "", "expired")
+	kept, err := Filter(nodes, strp(""), strp("expired"), func(c testCandidate) string { return c.name })
 	if err != nil || len(kept) != 2 || kept[0] != nodes[0] || kept[1] != nodes[2] {
 		t.Fatalf("exclude only: %v %v", kept, err)
 	}
-	kept, err = FilterCandidates(nodes, "^US", "expired")
+	kept, err = Filter(nodes, strp("^US"), strp("expired"), func(c testCandidate) string { return c.name })
 	if err != nil || len(kept) != 1 || kept[0] != nodes[0] {
 		t.Fatalf("include and exclude: %v %v", kept, err)
 	}
-	if _, err := FilterCandidates(nodes, "", "["); !IsCandidateValidationError(err) {
+	if _, err := Filter(nodes, strp(""), strp("["), func(c testCandidate) string { return c.name }); !IsCandidateValidationError(err) {
 		t.Fatalf("invalid regex: %v", err)
 	}
-	if _, err := FilterCandidates(nodes, 5, ""); err == nil || err.Error() != "正则筛选必须是字符串或 null" {
+	if _, err := FilterCandidates(nil, 5, ""); err == nil || err.Error() != "正则筛选必须是字符串或 null" {
 		t.Fatalf("non-string: %v", err)
 	}
 }
 
 func TestExclusionValidationAndRenderingTrimInlineFlagsConsistently(t *testing.T) {
 	expression := "  (?i)expired  "
-	if err := ValidateFilters(obj("exclude_regex", expression, "aggregation_exclude_regex", expression), nil); err != nil {
+	group := model.ProxyGroup{ExcludeRegex: &expression, AggregationExcludeRegex: &expression}
+	if err := CheckFilters(group, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The converter renders the trimmed text; filtering by the raw text must agree.
-	nodes := []any{obj("name", "US-EXPIRED"), obj("name", "US-new")}
-	kept, err := FilterCandidates(nodes, nil, expression)
+	nodes := []testCandidate{{name: "US-EXPIRED"}, {name: "US-new"}}
+	kept, err := Filter(nodes, nil, &expression, func(c testCandidate) string { return c.name })
 	if err != nil || len(kept) != 1 || kept[0] != nodes[1] {
 		t.Fatalf("kept %v %v", kept, err)
 	}
-	if got := filterValue(obj("exclude_regex", expression), "exclude_regex"); got != "(?i)expired" {
-		t.Fatalf("filterValue = %q", got)
+	if got := trimFilter(expression); got != "(?i)expired" {
+		t.Fatalf("trimFilter = %q", got)
 	}
 }
 
 func TestLookaroundFiltersRunOnTheBacktrackingEngine(t *testing.T) {
-	nodes := []any{obj("name", "香港 01"), obj("name", "香港 02 过期"), obj("name", "US 剩余流量 10G"), obj("name", "US-1")}
-	kept, err := FilterCandidates(nodes, "^(?!.*(过期|剩余|流量)).*$", "")
+	nodes := []testCandidate{{name: "香港 01"}, {name: "香港 02 过期"}, {name: "US 剩余流量 10G"}, {name: "US-1"}}
+	kept, err := Filter(nodes, strp("^(?!.*(过期|剩余|流量)).*$"), strp(""), func(c testCandidate) string { return c.name })
 	if err != nil || len(kept) != 2 || kept[0] != nodes[0] || kept[1] != nodes[3] {
 		t.Fatalf("kept %v, %v", kept, err)
 	}
@@ -61,7 +71,7 @@ func TestLookaroundFiltersRunOnTheBacktrackingEngine(t *testing.T) {
 	if re.re2 != nil {
 		t.Fatal("look-ahead must run on regexp2")
 	}
-	if err := ValidateFilters(obj("exclude_regex", "^(?!US)"), nil); err != nil {
+	if err := CheckFilters(model.ProxyGroup{ExcludeRegex: strp("^(?!US)")}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -110,226 +120,141 @@ func TestExclusionFilterShapes(t *testing.T) {
 	}
 }
 
-func catalogFixture() (shared, profile *jsonx.Object) {
-	shared = obj(
-		"nodes", seq(obj("id", "n1", "name", "Node 1"), obj("id", "n2", "name", "Node 2", "enabled", false)),
-		"subscriptions", seq(obj("id", "s1", "name", "Sub1"), obj("id", "s2", "name", "Sub2")),
-		"subscription_aggregations", seq(obj("id", "a1", "name", "Agg1", "subscriptions", seq("s2"))),
-	)
-	profile = obj("proxy_groups", seq(obj("id", "g1", "name", "G1", "type", "select", "manual_nodes", seq("n1"))))
-	return
+func catalogFixture() GroupCatalog {
+	disabled := false
+	nodes := []string{"n1"}
+	return GroupCatalog{
+		Nodes: []model.Node{
+			{ID: "n1", Name: "Node 1"},
+			{ID: "n2", Name: "Node 2", Enabled: &disabled},
+		},
+		Subscriptions: []model.Subscription{
+			{ID: "s1", Name: "Sub1"},
+			{ID: "s2", Name: "Sub2"},
+		},
+		Aggregations: []model.Aggregation{
+			{ID: "a1", Name: "Agg1", Subscriptions: []string{"s2"}},
+		},
+		Groups: []model.ProxyGroup{
+			{ID: "g1", Name: "G1", Type: "select", ManualNodes: &nodes},
+		},
+	}
+}
+
+func parseGroup(t *testing.T, raw string) model.ProxyGroup {
+	t.Helper()
+	var g model.ProxyGroup
+	_ = jsondecode.Unmarshal([]byte(raw), &g)
+	return g
 }
 
 func TestValidateCandidatesRejectsEmptyAndUnknownSources(t *testing.T) {
-	shared, profile := catalogFixture()
+	catalog := catalogFixture()
 	cases := []struct {
-		group *jsonx.Object
-		want  string
+		raw  string
+		want string
 	}{
-		{obj("id", "x", "type", "select"), "策略组必须选择实际消费的候选来源，不能隐式使用 DIRECT"},
-		{obj("id", "x", "type", "select", "manual_nodes", seq("bogus")), "候选来源必须引用有效启用资源"},
-		{obj("id", "x", "type", "select", "manual_nodes", seq("n2")), "候选来源必须引用有效启用资源"},
-		{obj("id", "x", "type", "select", "manual_nodes", "n1"), "manual_nodes 必须是数组"},
-		{obj("id", "x", "type", "select", "follow_group", 5), "follow_group 必须是 ID 字符串"},
-		{obj("id", "x", "type", "select", "follow_group", "missing"), "跟随来源必须是有效启用的普通来源组"},
-		{obj("id", "x", "type", "select", "subscriptions", seq("s1"), "exclude_regex", "["), "exclude_regex 正则表达式无效"},
-		{obj("id", "x", "type", "select", "regex", 5), "regex 必须是字符串或 null"},
-		{obj("id", "x", "type", "select", "manual_nodes", seq("n1"), "proxies_order", seq(obj("type", "node", "id", "n1"), obj("type", "node", "id", "n1"))), "排序项不能重复"},
-		{obj("id", "x", "type", "select", "manual_nodes", seq("n1"), "proxies_order", seq(obj("type", "node"))), "排序项必须包含且仅包含 type 和 id"},
-		{obj("id", "x", "type", "select", "manual_nodes", seq("n1", "DIRECT"), "proxies_order", seq(obj("type", "node", "id", "n1"))), "排序必须包含所有手动节点和引用策略组"},
+		{`{"id":"x","type":"select"}`, "策略组必须选择实际消费的候选来源，不能隐式使用 DIRECT"},
+		{`{"id":"x","type":"select","manual_nodes":["bogus"]}`, "候选来源必须引用有效启用资源"},
+		{`{"id":"x","type":"select","manual_nodes":["n2"]}`, "候选来源必须引用有效启用资源"},
+		{`{"id":"x","type":"select","manual_nodes":"n1"}`, "manual_nodes 必须是数组"},
+		{`{"id":"x","type":"select","follow_group":5}`, "follow_group 必须是 ID 字符串"},
+		{`{"id":"x","type":"select","follow_group":"missing"}`, "跟随来源必须是有效启用的普通来源组"},
+		{`{"id":"x","type":"select","subscriptions":["s1"],"exclude_regex":"["}`, "exclude_regex 正则表达式无效"},
+		{`{"id":"x","type":"select","regex":5}`, "regex 必须是字符串或 null"},
+		{`{"id":"x","type":"select","manual_nodes":["n1"],"proxies_order":[{"type":"node","id":"n1"},{"type":"node","id":"n1"}]}`, "排序项不能重复"},
+		{`{"id":"x","type":"select","manual_nodes":["n1"],"proxies_order":[{"type":"node"}]}`, "排序项必须包含且仅包含 type 和 id"},
+		{`{"id":"x","type":"select","manual_nodes":["n1","DIRECT"],"proxies_order":[{"type":"node","id":"n1"}]}`, "排序必须包含所有手动节点和引用策略组"},
 	}
 	for _, c := range cases {
-		err := ValidateCandidates(c.group, profile, shared, nil)
+		err := CheckCandidates(parseGroup(t, c.raw), catalog, nil)
 		if err == nil || err.Error() != c.want {
-			t.Errorf("%s: err = %v, want %q", jsonx.Repr(c.group), err, c.want)
+			t.Errorf("%s: err = %v, want %q", c.raw, err, c.want)
 		}
 	}
-	for _, ok := range []*jsonx.Object{
-		obj("id", "x", "type", "select", "manual_nodes", seq("n1", "DIRECT", "REJECT")),
-		obj("id", "x", "type", "select", "subscriptions", seq("s1"), "aggregations", seq("a1")),
-		obj("id", "x", "type", "chain"),
-		obj("id", "x", "type", "select", "follow_group", "g1"),
-		obj("id", "x", "type", "select", "source", "node", "proxies", seq("n1")),
+	for _, raw := range []string{
+		`{"id":"x","type":"select","manual_nodes":["n1","DIRECT","REJECT"]}`,
+		`{"id":"x","type":"select","subscriptions":["s1"],"aggregations":["a1"]}`,
+		`{"id":"x","type":"chain"}`,
+		`{"id":"x","type":"select","follow_group":"g1"}`,
+		`{"id":"x","type":"select","source":"node","proxies":["n1"]}`,
 	} {
-		if err := ValidateCandidates(ok, profile, shared, nil); err != nil {
-			t.Errorf("%s rejected: %v", jsonx.Repr(ok), err)
+		if err := CheckCandidates(parseGroup(t, raw), catalog, nil); err != nil {
+			t.Errorf("%s rejected: %v", raw, err)
 		}
 	}
 	// An already empty legacy record with unchanged sources stays editable.
-	legacy := obj("id", "x", "type", "select", "name", "old")
-	if err := ValidateCandidates(obj("id", "x", "type", "select", "name", "renamed"), profile, shared, legacy); err != nil {
+	legacy := parseGroup(t, `{"id":"x","type":"select","name":"old"}`)
+	if err := CheckCandidates(parseGroup(t, `{"id":"x","type":"select","name":"renamed"}`), catalog, &legacy); err != nil {
 		t.Errorf("legacy empty group rejected: %v", err)
 	}
 }
 
 func TestRenderMembersFollowsOrderAndDeduplicatesProviders(t *testing.T) {
-	shared, profile := catalogFixture()
-	config := shared.Clone()
-	config.Set("proxy_groups", profile.Value("proxy_groups"))
-	group := obj("manual_nodes", seq("n1", "DIRECT"), "include_groups", seq("g1"), "subscriptions", seq("s1", "s2"),
-		"aggregations", seq("a1"), "regex", "^US", "aggregation_regex", "^HK", "proxy_order", "strategies_first")
-	rendered := RenderMembers(group, config)
+	catalog := catalogFixture()
+	group := parseGroup(t, `{"manual_nodes":["n1","DIRECT"],"include_groups":["g1"],"subscriptions":["s1","s2"],"aggregations":["a1"],"regex":"^US","aggregation_regex":"^HK","proxy_order":"strategies_first"}`)
+	rendered := RenderGroup(group, catalog)
 	if got := compact(t, rendered); got != `{"proxies":["G1","Node 1","DIRECT"],"use":["Sub1","Agg1"],"filter":"(^US)|(^HK)"}` {
 		t.Errorf("rendered %s", got)
 	}
-	selection := ManagedMembers(group)
-	if len(selection.Members) != 3 || selection.Members[0].Kind != "strategy" {
+	selection := SelectMembers(group)
+	if len(selection.Members) != 3 || selection.Members[0].Type != "strategy" {
 		t.Errorf("members %v", selection.Members)
 	}
 }
 
 func TestMergeGroupUpdate(t *testing.T) {
-	original := obj("id", "g", "name", "G", "url", "https://t.test", "interval", jsonx.Int(300))
-	merged, err := MergeGroupUpdate(original, obj("name", "H", "delete_fields", seq("url")))
-	if err != nil || compact(t, merged) != `{"id":"g","name":"H","interval":300}` {
-		t.Fatalf("merged %v %v", merged, err)
+	original := parseGroup(t, `{"id":"g","name":"G","url":"https://t.test","interval":300}`)
+	var patch model.Fields
+	_ = patch.UnmarshalJSON([]byte(`{"name":"H","delete_fields":["url"]}`))
+	merged, err := MergeGroup(original, patch)
+	if err != nil || !testjson.Equal(json.RawMessage(`{"id":"g","name":"H","interval":300}`), merged) {
+		t.Fatalf("merged %+v %v", merged, err)
 	}
-	if original.GetString("url") == "" {
+	if original.URL == nil || *original.URL == "" {
 		t.Fatal("original mutated")
 	}
-	for patch, want := range map[*jsonx.Object]string{
-		obj("delete_fields", seq("url", "url")):      "delete_fields 必须是无重复的健康检查字段数组",
-		obj("delete_fields", seq("bogus")):           "delete_fields 必须是无重复的健康检查字段数组",
-		obj("delete_fields", "url"):                  "delete_fields 必须是无重复的健康检查字段数组",
-		obj("url", "x", "delete_fields", seq("url")): "同一字段不能同时赋值和删除",
-		obj("regex", 5):                              "regex 必须是字符串或 null",
+	for raw, want := range map[string]string{
+		`{"delete_fields":["url","url"]}`:     "delete_fields 必须是无重复的健康检查字段数组",
+		`{"delete_fields":["bogus"]}`:         "delete_fields 必须是无重复的健康检查字段数组",
+		`{"delete_fields":"url"}`:             "delete_fields 必须是无重复的健康检查字段数组",
+		`{"url":"x","delete_fields":["url"]}`: "同一字段不能同时赋值和删除",
+		`{"regex":5}`:                         "regex 必须是字符串或 null",
 	} {
-		if _, err := MergeGroupUpdate(original, patch); err == nil || err.Error() != want {
-			t.Errorf("patch %s: %v, want %q", jsonx.Repr(patch), err, want)
+		var p model.Fields
+		_ = p.UnmarshalJSON([]byte(raw))
+		if _, err := MergeGroup(original, p); err == nil || err.Error() != want {
+			t.Errorf("patch %s: %v, want %q", raw, err, want)
 		}
 	}
 }
 
 func TestLowerGroupProviderFiltersScopesExclusionsToProviders(t *testing.T) {
-	shared, profile := catalogFixture()
-	config := shared.Clone()
-	profile.GetList("proxy_groups")[0].(*jsonx.Object).Set("subscriptions", seq("s1", "s2"))
-	profile.GetList("proxy_groups")[0].(*jsonx.Object).Set("exclude_regex", "expired")
-	config.Set("proxy_groups", profile.Value("proxy_groups"))
-	main := obj(
-		"proxies", seq(obj("name", "Node 1")),
-		"proxy-providers", obj("Sub1", obj("type", "http", "url", "u1", "path", "./p1.yaml"), "Sub2", obj("type", "http", "url", "u2", "path", "./p2.yaml")),
-		"proxy-groups", seq(obj("name", "G1", "type", "select", "proxies", seq("Node 1"), "use", seq("Sub1", "Sub2"))),
-	)
-	LowerGroupProviderFilters(config, main)
-	group := main.GetList("proxy-groups")[0].(*jsonx.Object)
+	catalog := catalogFixture()
+	subs := []string{"s1", "s2"}
+	catalog.Groups[0].Subscriptions = &subs
+	catalog.Groups[0].ExcludeRegex = strp("expired")
+	mainNode, err := yamlx.FromJSON([]byte(`{
+		"proxies":[{"name":"Node 1"}],
+		"proxy-providers":{
+			"Sub1":{"type":"http","url":"u1","path":"./p1.yaml"},
+			"Sub2":{"type":"http","url":"u2","path":"./p2.yaml"}
+		},
+		"proxy-groups":[{"name":"G1","type":"select","proxies":["Node 1"],"use":["Sub1","Sub2"]}]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := LowerProviderFilters(catalog, mainNode); err != nil {
+		t.Fatal(err)
+	}
+	groupNode := yamlx.Get(mainNode, "proxy-groups").Content[0]
 	// One shared rule: folded into the group filter, providers untouched.
-	if got := group.GetString("filter"); got != `^(?![\s\S]*?(?:expired))` {
+	if got := yamlx.Get(groupNode, "filter").Value; got != `^(?![\s\S]*?(?:expired))` {
 		t.Errorf("filter = %q", got)
 	}
-	if main.GetObject("proxy-providers").Len() != 2 {
-		t.Errorf("providers %v", main.GetObject("proxy-providers").Keys())
+	providers := yamlx.Get(mainNode, "proxy-providers")
+	if len(providers.Content)/2 != 2 {
+		t.Errorf("providers count = %d", len(providers.Content)/2)
 	}
-}
-
-func oldStrings(values []string) []any {
-	out := make([]any, len(values))
-	for i, value := range values {
-		out[i] = value
-	}
-	return out
-}
-
-func filterValue(group *jsonx.Object, field string) string {
-	value, _ := group.Value(field).(string)
-	return trimFilter(value)
-}
-
-func ManagedMembers(group *jsonx.Object) *Selection {
-	value := SelectMembers(legacyGroup(group))
-	result := &Selection{Nodes: oldStrings(value.Nodes), Subscriptions: oldStrings(value.Subscriptions), Aggregations: oldStrings(value.Aggregations), Groups: oldStrings(value.Groups)}
-	for _, member := range value.Members {
-		result.Members = append(result.Members, Member{member.Type, member.ID})
-	}
-	order := make([]any, len(value.Order))
-	for i, entry := range value.Order {
-		order[i] = oldObject(entry)
-	}
-	result.Order = order
-	return result
-}
-
-func ManagedProviders(group, config *jsonx.Object) []ProviderSelection {
-	var result []ProviderSelection
-	for _, provider := range SelectProviders(legacyGroup(group), groupCatalog(config)) {
-		collection := "subscriptions"
-		if provider.Kind == "aggregation" {
-			collection = "subscription_aggregations"
-		}
-		for _, entry := range config.GetList(collection) {
-			object, ok := entry.(*jsonx.Object)
-			if ok && object.GetString("id") == provider.ID {
-				result = append(result, ProviderSelection{object, provider.Include, provider.Exclude})
-				break
-			}
-		}
-	}
-	return result
-}
-
-func ValidateFilters(group, original *jsonx.Object) error {
-	var before *model.ProxyGroup
-	if original != nil {
-		value := legacyGroup(original)
-		before = &value
-	}
-	return CheckFilters(legacyGroup(group), before)
-}
-
-func LowerGroupProviderFilters(config, main *jsonx.Object) {
-	node, err := yamlbridge.Encode(main)
-	if err != nil {
-		return
-	}
-	if err := LowerProviderFilters(groupCatalog(config), node); err != nil {
-		return
-	}
-	value, err := yamlbridge.Value(node)
-	if err != nil {
-		return
-	}
-	object, ok := value.(*jsonx.Object)
-	if !ok {
-		return
-	}
-	for _, key := range main.Keys() {
-		main.Delete(key)
-	}
-	main.Update(object)
-}
-
-func ValidateCandidates(group, profile, shared, original *jsonx.Object) error {
-	catalog := groupCatalog(shared)
-	_ = decodeRecord(profile.GetList("proxy_groups"), &catalog.Groups)
-	var before *model.ProxyGroup
-	if original != nil {
-		value := legacyGroup(original)
-		before = &value
-	}
-	return CheckCandidates(legacyGroup(group), catalog, before)
-}
-
-func MergeGroupUpdate(original, patch *jsonx.Object) (*jsonx.Object, error) {
-	var fields model.Fields
-	if err := decodeRecord(patch, &fields); err != nil {
-		return nil, err
-	}
-	group, err := MergeGroup(legacyGroup(original), fields)
-	if err != nil {
-		return nil, err
-	}
-	return oldObject(group), nil
-}
-
-type Member struct{ Kind, ID any }
-
-type Selection struct {
-	Nodes, Subscriptions, Aggregations, Groups any
-	Members                                    []Member
-	Order                                      any
-}
-
-type ProviderSelection struct {
-	Item             *jsonx.Object
-	Include, Exclude string
 }

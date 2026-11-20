@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // Boundary corpus (testdata/boundary.jsonl.gz from testdata/boundary_gen.py,
@@ -76,13 +74,15 @@ func loadBoundary(t *testing.T) []boundaryRecord {
 	return records
 }
 
-// jsonValue decodes an optional filter value (null, string or another JSON value).
-func jsonValue(raw json.RawMessage) any {
-	if len(raw) == 0 {
-		return nil
+func decodeOptionalFilterRaw(raw json.RawMessage) (*string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
 	}
-	value, _ := jsonx.Parse(raw)
-	return value
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, candidateError(msgFilterString)
+	}
+	return &s, nil
 }
 
 func TestBoundaryCorpus(t *testing.T) {
@@ -130,11 +130,23 @@ func TestBoundaryCorpus(t *testing.T) {
 				}
 			}
 		case "filter":
-			var nodes []any
-			for _, name := range boundaryNames {
-				nodes = append(nodes, jsonx.Obj("name", name))
+			type namedNode struct {
+				idx  int
+				name string
 			}
-			kept, err := FilterCandidates(nodes, jsonValue(r.Include), jsonValue(r.Exclude))
+			nodes := make([]namedNode, len(boundaryNames))
+			for i, name := range boundaryNames {
+				nodes[i] = namedNode{idx: i, name: name}
+			}
+			var kept []namedNode
+			inc, err := decodeOptionalFilterRaw(r.Include)
+			var exc *string
+			if err == nil {
+				exc, err = decodeOptionalFilterRaw(r.Exclude)
+			}
+			if err == nil {
+				kept, err = Filter(nodes, inc, exc, func(n namedNode) string { return n.name })
+			}
 			if r.Error != nil {
 				if err == nil || err.Error() != *r.Error {
 					t.Errorf("filter_candidates(%s, %s) = %v, Python %q", r.Include, r.Exclude, err, *r.Error)
@@ -145,14 +157,9 @@ func TestBoundaryCorpus(t *testing.T) {
 				t.Errorf("filter_candidates(%s, %s): %v", r.Include, r.Exclude, err)
 				continue
 			}
-			got := []int{}
+			got := make([]int, 0, len(kept))
 			for _, item := range kept {
-				for i, name := range boundaryNames {
-					if item.(*jsonx.Object).GetString("name") == name {
-						got = append(got, i)
-						break
-					}
-				}
+				got = append(got, item.idx)
 			}
 			if gotText, wantText := jsonText(t, got), jsonText(t, r.Kept); gotText != wantText {
 				t.Errorf("filter_candidates(%s, %s) kept %s, Python %s", r.Include, r.Exclude, gotText, wantText)

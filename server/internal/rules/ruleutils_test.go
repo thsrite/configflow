@@ -3,14 +3,14 @@ package rules
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
-	"configflow/internal/rulesetfmt"
 )
 
 // rule_utils' pure parts. Python covers them through the remote cache and
@@ -23,6 +23,8 @@ func hexOf(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
+
+func strp(s string) *string { return &s }
 
 func TestSanitizeRuleName(t *testing.T) {
 	for in, want := range map[string]string{
@@ -39,8 +41,8 @@ func TestSanitizeRuleName(t *testing.T) {
 		if SanitizeRuleName(pair[0]) != SanitizeRuleName(pair[1]) {
 			t.Errorf("%v do not collide as legacy names", pair)
 		}
-		a := RuleCacheFilename(obj("id", "r0", "name", pair[0], "source_type", "content"))
-		b := RuleCacheFilename(obj("id", "r1", "name", pair[1], "source_type", "content"))
+		a := CacheFilename(model.RuleConfig{ID: "r0", Name: pair[0], SourceType: strp("content")})
+		b := CacheFilename(model.RuleConfig{ID: "r1", Name: pair[1], SourceType: strp("content")})
 		if a == b {
 			t.Errorf("%v share a cache file", pair)
 		}
@@ -49,24 +51,26 @@ func TestSanitizeRuleName(t *testing.T) {
 
 func TestRuleCacheFilenameNamespaces(t *testing.T) {
 	cases := []struct {
-		rule *jsonx.Object
+		raw  string
 		want string
 	}{
-		{obj("id", "r1", "source_type", "content"), "by-id/" + hexOf("r1") + ".list"},
-		{obj("id", "r1", "library_rule_id", "lib", "source_type", "content"), "by-id/" + hexOf("lib") + ".list"},
-		{obj("name", "Name", "source_type", "content"), "by-name/" + hexOf("Name") + ".list"},
-		{obj("source_type", "content"), "by-name/" + hexOf("") + ".list"},
-		{obj("id", "r1", "url", "https://x.test/a.yaml", "behavior", "domain", "format", "yaml"),
+		{`{"id":"r1","source_type":"content"}`, "by-id/" + hexOf("r1") + ".list"},
+		{`{"id":"r1","library_rule_id":"lib","source_type":"content"}`, "by-id/" + hexOf("lib") + ".list"},
+		{`{"name":"Name","source_type":"content"}`, "by-name/" + hexOf("Name") + ".list"},
+		{`{"source_type":"content"}`, "by-name/" + hexOf("") + ".list"},
+		{`{"id":"r1","url":"https://x.test/a.yaml","behavior":"domain","format":"yaml"}`,
 			"by-source/" + hexOf(`["r1", "https://x.test/a.yaml", "domain", "yaml"]`) + ".list"},
-		{obj("id", "r1", "url", "https://x.test/例"), "by-source/" + hexOf(`["r1", "https://x.test/例", "domain", ""]`) + ".list"},
-		{obj("id", "r1", "source_type", "url"), "by-id/" + hexOf("r1") + ".list"},
+		{`{"id":"r1","url":"https://x.test/例"}`, "by-source/" + hexOf(`["r1", "https://x.test/例", "domain", ""]`) + ".list"},
+		{`{"id":"r1","source_type":"url"}`, "by-id/" + hexOf("r1") + ".list"},
 	}
 	reference := cacheReference(t)
 	for i, c := range cases {
 		expected := reference.Namespace[i]
-		assertCacheReferenceInput(t, expected, c.rule, c.want)
-		if got := RuleCacheFilename(c.rule); got != expected.Native {
-			t.Errorf("RuleCacheFilename(%s) = %s, want %s", jsonx.Repr(c.rule), got, expected.Native)
+		assertCacheReferenceInput(t, expected, json.RawMessage(c.raw), c.want)
+		var rule model.RuleConfig
+		_ = jsondecode.Unmarshal([]byte(c.raw), &rule)
+		if got := CacheFilename(rule); got != expected.Native {
+			t.Errorf("CacheFilename(%s) = %s, want %s", c.raw, got, expected.Native)
 		}
 	}
 }
@@ -83,132 +87,88 @@ func writeCache(t *testing.T, root, relative, content string) string {
 	return path
 }
 
+func ruleLibItem(r model.RuleConfig) model.RuleLibraryItem {
+	return model.RuleLibraryItem{
+		ID: r.ID, Name: r.Name, SourceType: r.SourceType, URL: r.URL,
+		Behavior: r.Behavior, Format: r.Format, Content: r.Content, Enabled: r.Enabled,
+	}
+}
+
 func TestRuleCacheReadPathPrefersCurrentIdentityThenSafeLegacyCaches(t *testing.T) {
 	root := t.TempDir()
-	rule := obj("id", "r1", "name", "Remote", "source_type", "url", "url", "https://rules.test/file", "behavior", "domain")
-	stored := seq(rule.DeepCopy())
-	current := filepath.Join(root, RuleCacheFilename(rule))
-	if got := RuleCacheReadPath(rule, nil, stored, root); got != current {
+	rule := model.RuleConfig{
+		ID: "r1", Name: "Remote", SourceType: strp("url"),
+		URL: strp("https://rules.test/file"), Behavior: strp("domain"),
+	}
+	stored := []model.RuleLibraryItem{ruleLibItem(rule)}
+	current := filepath.Join(root, CacheFilename(rule))
+	if got := CacheReadPath(rule, nil, stored, root); got != current {
 		t.Fatalf("no cache: %s", got)
 	}
 	// A legacy identity cache is used for the unchanged stored declaration.
 	legacyID := writeCache(t, root, "by-id/"+hexOf("r1")+".list", "old.example")
-	if got := RuleCacheReadPath(rule, nil, stored, root); got != legacyID {
+	if got := CacheReadPath(rule, nil, stored, root); got != legacyID {
 		t.Fatalf("legacy id cache not used: %s", got)
 	}
 	// A proposed source cannot borrow it.
-	for key, value := range map[string]any{"url": "https://rules.test/new-source.txt", "behavior": "classical", "format": "yaml"} {
-		proposed := rule.Clone()
-		proposed.Set(key, value)
-		if got := RuleCacheReadPath(proposed, nil, stored, root); got == legacyID {
-			t.Errorf("proposed %s borrowed the legacy cache", key)
+	for _, prop := range []struct {
+		key  string
+		rule model.RuleConfig
+	}{
+		{"url", model.RuleConfig{ID: "r1", Name: "Remote", SourceType: strp("url"), URL: strp("https://rules.test/new-source.txt"), Behavior: strp("domain")}},
+		{"behavior", model.RuleConfig{ID: "r1", Name: "Remote", SourceType: strp("url"), URL: strp("https://rules.test/file"), Behavior: strp("classical")}},
+		{"format", model.RuleConfig{ID: "r1", Name: "Remote", SourceType: strp("url"), URL: strp("https://rules.test/file"), Behavior: strp("domain"), Format: strp("yaml")}},
+	} {
+		if got := CacheReadPath(prop.rule, nil, stored, root); got == legacyID {
+			t.Errorf("proposed %s borrowed the legacy cache", prop.key)
 		}
 	}
 	// A stale snapshot cannot claim the current source's legacy cache either.
-	changed := rule.Clone()
-	changed.Set("url", "https://rules.test/current-source.txt")
-	if got := RuleCacheReadPath(rule, seq(rule), seq(changed), root); got == legacyID {
+	changed := ruleLibItem(rule)
+	changed.URL = strp("https://rules.test/current-source.txt")
+	if got := CacheReadPath(rule, stored, []model.RuleLibraryItem{changed}, root); got == legacyID {
 		t.Error("stale snapshot claimed the legacy cache")
 	}
 	// Current-identity cache wins over every legacy file.
-	writeCache(t, root, RuleCacheFilename(rule), "current.example")
-	if got := RuleCacheReadPath(rule, nil, stored, root); got != current {
+	writeCache(t, root, CacheFilename(rule), "current.example")
+	if got := CacheReadPath(rule, nil, stored, root); got != current {
 		t.Errorf("current cache not preferred: %s", got)
 	}
 }
 
 func TestRuleCacheReadPathLegacyNameCaches(t *testing.T) {
 	root := t.TempDir()
-	unique := obj("id", "remote", "name", "Remote", "source_type", "url", "url", "https://rules.test/file")
-	library := seq(unique.DeepCopy())
+	unique := model.RuleConfig{ID: "remote", Name: "Remote", SourceType: strp("url"), URL: strp("https://rules.test/file")}
+	library := []model.RuleLibraryItem{ruleLibItem(unique)}
 	legacy := writeCache(t, root, "Remote.list", "legacy.test")
-	if got := RuleCacheReadPath(unique, library, library, root); got != legacy {
+	if got := CacheReadPath(unique, library, library, root); got != legacy {
 		t.Errorf("unique legacy url cache not used offline: %s", got)
 	}
 	// Two resources whose names collide must not claim the shared file.
-	a := obj("id", "r0", "name", "a:b", "source_type", "content")
-	b := obj("id", "r1", "name", "a_b", "source_type", "content")
-	both := seq(a, b)
+	a := model.RuleConfig{ID: "r0", Name: "a:b", SourceType: strp("content")}
+	b := model.RuleConfig{ID: "r1", Name: "a_b", SourceType: strp("content")}
+	both := []model.RuleLibraryItem{ruleLibItem(a), ruleLibItem(b)}
 	shared := writeCache(t, root, "a_b.list", "unknown-owner.test")
-	for _, rule := range []*jsonx.Object{a, b} {
-		if got := RuleCacheReadPath(rule, both, both, root); got == shared {
-			t.Errorf("%s read the ambiguous legacy file", rule.GetString("name"))
+	for _, rule := range []model.RuleConfig{a, b} {
+		if got := CacheReadPath(rule, both, both, root); got == shared {
+			t.Errorf("%s read the ambiguous legacy file", rule.Name)
 		}
 	}
 	// An unknown spelling of a known name is not attributed either.
-	other := obj("id", "r9", "name", "a?b", "source_type", "content")
-	if got := RuleCacheReadPath(other, seq(a), seq(a), root); got == filepath.Join(root, "a_b.list") {
+	other := model.RuleConfig{ID: "r9", Name: "a?b", SourceType: strp("content")}
+	if got := CacheReadPath(other, []model.RuleLibraryItem{ruleLibItem(a)}, []model.RuleLibraryItem{ruleLibItem(a)}, root); got == filepath.Join(root, "a_b.list") {
 		t.Error("an unknown spelling claimed the legacy file")
 	}
 }
 
 func TestLegacyIdentityCacheDoesNotTreatR5CoercionAsOwnership(t *testing.T) {
 	root := t.TempDir()
-	current := obj("id", "r", "name", "Synthetic", "url", jsonx.Int(5), "source_type", "url", "behavior", "domain")
-	proposed := current.DeepCopy()
-	proposed.Set("url", "5")
+	var current model.RuleLibraryItem
+	_ = jsondecode.Unmarshal([]byte(`{"id":"r","name":"Synthetic","url":5,"source_type":"url","behavior":"domain"}`), &current)
+	var proposed model.RuleConfig
+	_ = jsondecode.Unmarshal([]byte(`{"id":"r","name":"Synthetic","url":"5","source_type":"url","behavior":"domain"}`), &proposed)
 	old := writeCache(t, root, "by-id/"+hexOf("r")+".list", "old.example")
-	if got := RuleCacheReadPath(proposed, seq(current), seq(current), root); got == old {
+	if got := CacheReadPath(proposed, []model.RuleLibraryItem{current}, []model.RuleLibraryItem{current}, root); got == old {
 		t.Fatal("R5-equivalent URL claimed old identity bytes")
 	}
-}
-
-func ValidateRulePolicies(config *jsonx.Object, names []string, format string) error {
-	var records []model.RuleConfig
-	for _, entry := range config.GetList("rule_configs") {
-		var rule model.RuleConfig
-		if decodeRecord(entry, &rule) == nil {
-			records = append(records, rule)
-		}
-	}
-	return ValidatePolicies(records, names, format)
-}
-
-// Archived fixtures exercise the same typed cache and format owners.
-// RulesetFormat adapts an unported caller to the typed format leaf.
-func RulesetFormat(rule *jsonx.Object, library []any, sourceURL string) string {
-	var r model.RuleConfig
-	if err := decodeRecord(rule, &r); err != nil {
-		return "text"
-	}
-	entries := make([]model.RuleLibraryItem, 0, len(library))
-	for _, entry := range library {
-		var item model.RuleLibraryItem
-		if err := decodeRecord(entry, &item); err != nil {
-			return "text"
-		}
-		entries = append(entries, item)
-	}
-	result, _ := rulesetfmt.RuleFormat(r, entries, sourceURL)
-	if result == "" {
-		return "text"
-	}
-	return result
-}
-
-// RuleCacheFilename adapts existing API/cache callers to CacheFilename.
-func RuleCacheFilename(source *jsonx.Object) string {
-	var rule model.RuleConfig
-	_ = decodeRecord(source, &rule)
-	return CacheFilename(rule)
-}
-
-// RuleCacheReadPath adapts existing API/cache callers to CacheReadPath.
-func RuleCacheReadPath(source *jsonx.Object, library, stored []any, dir string) string {
-	var rule model.RuleConfig
-	_ = decodeRecord(source, &rule)
-	return CacheReadPath(rule, legacyLibrary(library), legacyLibrary(stored), dir)
-}
-func legacyLibrary(source []any) []model.RuleLibraryItem {
-	if source == nil {
-		return nil
-	}
-	result := make([]model.RuleLibraryItem, 0, len(source))
-	for _, value := range source {
-		var item model.RuleLibraryItem
-		if decodeRecord(value, &item) == nil {
-			result = append(result, item)
-		}
-	}
-	return result
 }

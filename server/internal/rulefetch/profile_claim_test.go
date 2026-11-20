@@ -17,8 +17,7 @@ import (
 func TestStoredProfileLocalCacheOwnership(t *testing.T) {
 	for _, state := range []string{"stored", "deleted", "captured only", "proposed", "same name replacement", "unresolved library", "legacy rule_sets"} {
 		t.Run(state, func(t *testing.T) {
-			ctx, r, legacy, old, native := migrationFixture(t)
-			rule := legacyRule(legacy)
+			ctx, r, rule, old, native := migrationFixture(t)
 			rule.ItemType = "ruleset"
 			policy := "DIRECT"
 			rule.Policy = &policy
@@ -96,8 +95,7 @@ func TestStoredProfileLocalCacheOwnership(t *testing.T) {
 }
 
 func TestProfileCacheMigrationRechecksStoredOwner(t *testing.T) {
-	ctx, r, legacy, old, native := migrationFixture(t)
-	rule := legacyRule(legacy)
+	ctx, r, rule, old, native := migrationFixture(t)
 	rule.ItemType = "ruleset"
 	policy := "DIRECT"
 	rule.Policy = &policy
@@ -125,8 +123,7 @@ func TestProfileCacheMigrationRechecksStoredOwner(t *testing.T) {
 func TestProfileCacheClaimsKeepReceiptAndPathGuards(t *testing.T) {
 	for _, kind := range []string{"receipt", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
-			ctx, r, legacy, old, native := migrationFixture(t)
-			rule := legacyRule(legacy)
+			ctx, r, rule, old, native := migrationFixture(t)
 			rule.ItemType = "ruleset"
 			policy := "DIRECT"
 			rule.Policy = &policy
