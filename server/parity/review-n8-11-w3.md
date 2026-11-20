@@ -87,3 +87,16 @@ FAIL	configflow/internal/api/subscriptions	1.271s
 restored
 ok  	configflow/internal/api/subscriptions	1.260s
 ```
+
+L1 修复后的完整预检（.32，代码树 ba2a91464）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt sync
+ssh sunbroke@192.168.0.32 'bash /tmp/preflight.sh .paseo__worktrees__302rx1dg__go-opus-review-n8-11-w3 -p 8'
+```
+
+```text
+== vet
+== full non-race tests (-p 8)
+PREFLIGHT PASS
+```
