@@ -3,14 +3,11 @@ package installer
 import (
 	"fmt"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
-// readCompose adapts the generated Compose document to the existing bundle
-// metadata interface. Both parsing and JSON materialization enforce the facade's
-// alias budget; no user graph is cloned or recursively expanded here.
-func readCompose(text string) (*jsonx.Object, error) {
+// readCompose adapts the generated Compose document to a JSON map for test inspection.
+func readCompose(text string) (map[string]any, error) {
 	document, err := yamlx.Parse([]byte(text))
 	if err != nil {
 		return nil, fmt.Errorf(msgComposeInvalid, err)
@@ -19,11 +16,11 @@ func readCompose(text string) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, fmt.Errorf(msgComposeInvalid, err)
 	}
-	value, err := jsonx.Parse(data)
+	value, err := parseJSONAny(data)
 	if err != nil {
 		return nil, fmt.Errorf(msgComposeInvalid, err)
 	}
-	object, ok := value.(*jsonx.Object)
+	object, ok := value.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf(msgComposeMapping)
 	}

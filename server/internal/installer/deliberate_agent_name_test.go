@@ -3,8 +3,6 @@ package installer
 import (
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // Coordinator decision 6 (2026-11-16): install_script.validate_agent_name
@@ -24,7 +22,7 @@ func singleTrailingNewline(value any) bool {
 
 // deliberateAgentNameFix reports whether err is Go's refusal of an Agent
 // name with one trailing "\n" found under one of keys in object.
-func deliberateAgentNameFix(object *jsonx.Object, err error, keys ...string) bool {
+func deliberateAgentNameFix(object map[string]any, err error, keys ...string) bool {
 	ve, isValue := err.(*ValueError)
 	if !isValue || ve.Message != invalidAgentNameMessage {
 		return false
@@ -33,7 +31,7 @@ func deliberateAgentNameFix(object *jsonx.Object, err error, keys ...string) boo
 		keys = []string{"agent_name"}
 	}
 	for _, key := range keys {
-		if singleTrailingNewline(object.GetOr(key, nil)) {
+		if singleTrailingNewline(object[key]) {
 			return true
 		}
 	}

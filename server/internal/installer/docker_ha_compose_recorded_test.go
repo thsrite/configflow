@@ -9,11 +9,9 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
-func readComposeLines(t *testing.T, path string) []*jsonx.Object {
+func readComposeLines(t *testing.T, path string) []map[string]any {
 	t.Helper()
 	file, err := os.Open(path)
 	if err != nil {
@@ -26,13 +24,13 @@ func readComposeLines(t *testing.T, path string) []*jsonx.Object {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1<<20), 1<<28)
-	var rows []*jsonx.Object
+	var rows []map[string]any
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := parseJSONMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows = append(rows, value.(*jsonx.Object))
+		rows = append(rows, value)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -44,22 +42,22 @@ func readComposeLines(t *testing.T, path string) []*jsonx.Object {
 // generate_bundle call in Go and describes any difference ("" = equal).
 // With digestBundle the Python bundle carries content_sha256 instead of
 // content_base64.
-func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
-	args := row.GetList("args")
-	params, _ := jsonx.DeepCopy(args[0]).(*jsonx.Object)
-	request, _ := jsonx.DeepCopy(args[1]).(*jsonx.Object)
+func replayGenerator(row map[string]any, digestBundle bool) (string, string) {
+	args := mapList(row, "args")
+	params, _ := cloneJSON(args[0]).(map[string]any)
+	request, _ := cloneJSON(args[1]).(map[string]any)
 	var enrollment *Enrollment
-	if e, _ := args[2].(*jsonx.Object); e != nil && e.Len() > 0 {
-		enrollment = &Enrollment{URL: e.GetString("url"), Token: e.GetString("token"), ExpiresAt: e.GetOr("expires_at", nil)}
+	if e, _ := args[2].(map[string]any); e != nil && len(e) > 0 {
+		enrollment = &Enrollment{URL: mapStr(e, "url"), Token: mapStr(e, "token"), ExpiresAt: mapGetOr(e, "expires_at", nil)}
 	}
 	var text string
-	var info *jsonx.Object
+	var info map[string]any
 	var err error
-	fn := row.GetString("fn")
+	fn := mapStr(row, "fn")
 	switch fn {
 	case "generate_compact":
 		text, info, err = GenerateCompact(params, request, enrollment)
-		if strings.Contains(params.GetString("data_dir"), ":") && err != nil && text == "" && info == nil {
+		if strings.Contains(mapStr(params, "data_dir"), ":") && err != nil && text == "" && info == nil {
 			var ve *ValueError
 			if errors.As(err, &ve) && ve.Message == l1CompactPathMessage {
 				return "deliberate (L1 D1 compact colon)", ""
@@ -73,11 +71,11 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 		return "unknown", "unknown function " + fn
 	}
 	if err != nil && deliberateAgentNameFix(params, err) {
-		if pyErr := row.GetList("err"); pyErr == nil || pyErr[1] != invalidAgentNameMessage {
+		if pyErr := mapList(row, "err"); pyErr == nil || pyErr[1] != invalidAgentNameMessage {
 			return "deliberate (decision 6)", ""
 		}
 	}
-	if pyErr := row.GetList("err"); pyErr != nil {
+	if pyErr := mapList(row, "err"); pyErr != nil {
 		if err == nil {
 			return "differ", fmt.Sprintf("python %v %q, go answered", pyErr[0], pyErr[1])
 		}
@@ -94,8 +92,8 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 	if err != nil {
 		return "differ", fmt.Sprintf("python answered, go error %v", err)
 	}
-	out := row.GetList("out")
-	if value, present, oracleErr := writerExpected(fn, row.Value("args")); oracleErr != nil {
+	out := mapList(row, "out")
+	if value, present, oracleErr := writerExpected(fn, row["args"]); oracleErr != nil {
 		return "oracle", oracleErr.Error()
 	} else if present {
 		var ok bool
@@ -109,10 +107,10 @@ func replayGenerator(row *jsonx.Object, digestBundle bool) (string, string) {
 	}
 
 	if !nativeOutcomeEqual(out[1], info, "") {
-		if a, b := info.GetString("content_base64"), out[1].(*jsonx.Object).GetString("content_base64"); a != b {
+		if a, b := mapStr(info, "content_base64"), mapStr(out[1].(map[string]any), "content_base64"); a != b {
 			return "differ", "bundle zip differs: " + zipDifference(b, a)
 		}
-		return "differ", fmt.Sprintf("info python %s go %s", jsonx.Repr(out[1]), jsonx.Repr(info))
+		return "differ", fmt.Sprintf("info python %v go %v", out[1], info)
 	}
 	return "answered", ""
 }
@@ -138,15 +136,15 @@ func TestComposeRecordedCallsMatchPython(t *testing.T) {
 	tests := map[string]bool{}
 	failed := 0
 	for _, row := range rows {
-		tests[row.GetString("test")] = true
+		tests[mapStr(row, "test")] = true
 		outcome, detail := replayGenerator(row, false)
 		if outcome == "differ" {
 			failed++
 			if failed <= 20 {
-				t.Errorf("%s %s: %s", row.GetString("test"), row.GetString("fn"), detail)
+				t.Errorf("%s %s: %s", mapStr(row, "test"), mapStr(row, "fn"), detail)
 			}
 		}
-		counts[row.GetString("fn")+" "+outcome]++
+		counts[mapStr(row, "fn")+" "+outcome]++
 	}
 	t.Logf("recorded A10 calls: %d from %d tests, %v, %d differ", len(rows), len(tests), counts, failed)
 	if len(rows) == 0 {
@@ -164,12 +162,12 @@ func TestComposeCorpusMatchesPython(t *testing.T) {
 	counts := map[string]int{}
 	failed := 0
 	for _, row := range rows {
-		if row.GetString("kind") == "deflate" {
-			input, _ := base64.StdEncoding.DecodeString(row.GetString("input"))
+		if mapStr(row, "kind") == "deflate" {
+			input, _ := base64.StdEncoding.DecodeString(mapStr(row, "input"))
 			out := zlibDeflate(input)
 			if !nativeDeflatePayload(out, input) {
 				failed++
-				t.Errorf("deflate case %v (%d bytes): python %d bytes, go %d", row.Value("id"), len(input), row.GetInt("size"), len(out))
+				t.Errorf("deflate case %v (%d bytes): python %d bytes, go %d", row["id"], len(input), mapInt(row, "size"), len(out))
 			}
 			counts["deflate"]++
 			continue
@@ -178,10 +176,10 @@ func TestComposeCorpusMatchesPython(t *testing.T) {
 		if outcome == "differ" {
 			failed++
 			if failed <= 20 {
-				t.Errorf("case %v %s %.400s: %s", row.Value("id"), row.GetString("fn"), jsonx.Repr(row.Value("args")), detail)
+				t.Errorf("case %v %s %.400v: %s", row["id"], mapStr(row, "fn"), row["args"], detail)
 			}
 		}
-		counts[row.GetString("fn")+" "+outcome]++
+		counts[mapStr(row, "fn")+" "+outcome]++
 	}
 	t.Logf("A10 corpus: %d cases, %v, %d differ", len(rows), counts, failed)
 }

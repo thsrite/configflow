@@ -13,7 +13,6 @@ import (
 	"os"
 	"sync"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -35,7 +34,7 @@ var nativeArtifactReferences = sync.OnceValues(func() (map[string]string, error)
 })
 
 func nativeArtifactDigest(value any) (string, error) {
-	data, err := jsonx.Encode(value, jsonx.Options{SortKeys: true, Compact: true})
+	data, err := sortedCompactJSON(value)
 	if err != nil {
 		return "", err
 	}
@@ -43,7 +42,7 @@ func nativeArtifactDigest(value any) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func nativeZipValue(encoded string) (*jsonx.Object, error) {
+func nativeZipValue(encoded string) (map[string]any, error) {
 	manifest, _, err := installerComposeArchive(encoded)
 	return manifest, err
 }
@@ -62,7 +61,7 @@ func nativeFieldValue(value any, key string) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			return jsonx.Parse(data)
+			return parseJSONAny(data)
 		}
 	}
 	if text, ok := value.(string); ok {
@@ -73,9 +72,9 @@ func nativeFieldValue(value any, key string) (any, error) {
 		value = normalized
 	}
 	switch value := value.(type) {
-	case *jsonx.Object:
-		result := jsonx.Obj()
-		for key, item := range value.All() {
+	case map[string]any:
+		result := make(map[string]any, len(value))
+		for key, item := range value {
 			var next any
 			var err error
 			if key == "content_base64" {
@@ -86,7 +85,7 @@ func nativeFieldValue(value any, key string) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			result.Set(key, next)
+			result[key] = next
 		}
 		return result, nil
 	case []any:
@@ -136,44 +135,44 @@ func nativeOutcomeEqual(want, got any, key string) bool {
 		return e1 == nil && e2 == nil && a == b
 	}
 	switch expected := want.(type) {
-	case *jsonx.Object:
-		actual, ok := got.(*jsonx.Object)
+	case map[string]any:
+		actual, ok := got.(map[string]any)
 		if !ok || expected == nil || actual == nil {
 			return canonical(want) == canonical(got)
 		}
-		expected, actual = expected.Clone(), actual.Clone()
-		if hash := expected.GetString("content_sha256"); hash != "" && actual.Has("content_base64") {
+		expected, actual = cloneMap(expected), cloneMap(actual)
+		if hash := mapStr(expected, "content_sha256"); hash != "" && mapHas(actual, "content_base64") {
 			reference, err := nativeExpectedZipValue(hash)
 			if err != nil {
 				return false
 			}
-			manifest, text, err := installerComposeArchive(actual.GetString("content_base64"))
+			manifest, text, err := installerComposeArchive(mapStr(actual, "content_base64"))
 			references, referenceErr := nativeArtifactReferences()
 			if err != nil || referenceErr != nil || !writerYAMLEqual(references["yaml:"+hash], text) || canonical(reference) != canonical(manifest) {
 				return false
 			}
-			expected.Delete("content_sha256")
-			actual.Delete("content_base64")
-		} else if expected.Has("content_base64") && actual.Has("content_base64") {
-			a, aText, err := installerComposeArchive(expected.GetString("content_base64"))
+			delete(expected, "content_sha256")
+			delete(actual, "content_base64")
+		} else if mapHas(expected, "content_base64") && mapHas(actual, "content_base64") {
+			a, aText, err := installerComposeArchive(mapStr(expected, "content_base64"))
 			if err != nil {
 				return false
 			}
-			b, bText, err := installerComposeArchive(actual.GetString("content_base64"))
+			b, bText, err := installerComposeArchive(mapStr(actual, "content_base64"))
 			if err != nil {
 				return false
 			}
 			if !writerYAMLEqual(aText, bText) || canonical(a) != canonical(b) {
 				return false
 			}
-			expected.Delete("content_base64")
-			actual.Delete("content_base64")
+			delete(expected, "content_base64")
+			delete(actual, "content_base64")
 		}
-		if expected.Len() != actual.Len() {
+		if len(expected) != len(actual) {
 			return false
 		}
-		for name, value := range expected.All() {
-			next, ok := actual.Get(name)
+		for name, value := range expected {
+			next, ok := actual[name]
 			if !ok || !nativeOutcomeEqual(value, next, name) {
 				return false
 			}
@@ -196,18 +195,14 @@ func nativeOutcomeEqual(want, got any, key string) bool {
 
 // nativeExpectedZipValue parses independently generated Python bytes with the
 // same native schema used to compare both generated outputs.
-func nativeExpectedZipValue(identity string) (*jsonx.Object, error) {
+func nativeExpectedZipValue(identity string) (map[string]any, error) {
 	references, err := nativeArtifactReferences()
 	if err != nil {
 		return nil, err
 	}
-	value, err := jsonx.ParseString(references["manifest:"+identity])
+	manifest, err := parseJSONMap([]byte(references["manifest:"+identity]))
 	if err != nil {
-		return nil, err
-	}
-	manifest, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, fmt.Errorf("invalid reference manifest")
+		return nil, fmt.Errorf("invalid reference manifest: %w", err)
 	}
 	node, err := yamlx.Parse([]byte(references["yaml:"+identity]))
 	if err != nil {
@@ -217,17 +212,17 @@ func nativeExpectedZipValue(identity string) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	compose, err := jsonx.Parse(raw)
+	compose, err := parseJSONAny(raw)
 	if err != nil {
 		return nil, err
 	}
-	manifest.GetObject("compose.yaml").Set("yaml", compose)
+	mapObj(manifest, "compose.yaml")["yaml"] = compose
 	return manifest, nil
 }
 
 // installerComposeArchive retains byte checks for every non-JSON payload and
 // normalizes only enrollment.json before the existing archive/schema comparison.
-func installerComposeArchive(encoded string) (*jsonx.Object, string, error) {
+func installerComposeArchive(encoded string) (map[string]any, string, error) {
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, "", err
@@ -249,11 +244,7 @@ func installerComposeArchive(encoded string) (*jsonx.Object, string, error) {
 			return nil, "", err
 		}
 		if entry.Name == "enrollment.json" {
-			value, err := jsonx.Parse(data)
-			if err != nil {
-				return nil, "", err
-			}
-			data, err = jsonx.Encode(value, jsonx.Options{EnsureASCII: true, Indent: 2})
+			data, err = formatOrderedJSON(data, true, false, true)
 			if err != nil {
 				return nil, "", err
 			}
@@ -271,5 +262,17 @@ func installerComposeArchive(encoded string) (*jsonx.Object, string, error) {
 	if err := writer.Close(); err != nil {
 		return nil, "", err
 	}
-	return yamlxtest.ComposeArchive(base64.StdEncoding.EncodeToString(output.Bytes()))
+	rawManifest, text, err := yamlxtest.ComposeArchive(base64.StdEncoding.EncodeToString(output.Bytes()))
+	if err != nil {
+		return nil, "", err
+	}
+	encodedManifest, err := json.Marshal(rawManifest)
+	if err != nil {
+		return nil, "", err
+	}
+	manifest, err := parseJSONMap(encodedManifest)
+	if err != nil {
+		return nil, "", err
+	}
+	return manifest, text, nil
 }

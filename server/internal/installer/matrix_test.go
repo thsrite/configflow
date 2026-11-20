@@ -2,6 +2,7 @@ package installer
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -10,14 +11,13 @@ import (
 	"testing"
 
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 )
 
 // kwargs reads the Python keyword arguments of one matrix case.
-type kwargs struct{ *jsonx.Object }
+type kwargs struct{ m map[string]any }
 
 func (k kwargs) str(name, def string) string {
-	v, ok := k.Get(name)
+	v, ok := k.m[name]
 	if !ok || v == nil {
 		return def
 	}
@@ -25,7 +25,7 @@ func (k kwargs) str(name, def string) string {
 }
 
 func (k kwargs) boolean(name string, def bool) bool {
-	v, ok := k.Get(name)
+	v, ok := k.m[name]
 	if !ok {
 		return def
 	}
@@ -34,12 +34,12 @@ func (k kwargs) boolean(name string, def bool) bool {
 
 // value is an int (*big.Int), str or bool argument; def when absent.
 func (k kwargs) value(name string, def any) any {
-	v, ok := k.Get(name)
+	v, ok := k.m[name]
 	if !ok {
 		return def
 	}
 	switch x := v.(type) {
-	case jsonx.Number:
+	case json.Number:
 		n, _ := new(big.Int).SetString(string(x), 10)
 		return n
 	default:
@@ -57,7 +57,7 @@ func renderCase(fn string, k kwargs) (string, error) {
 		return GenerateCoreInstallScript(k.boolean("installer_forwarding", false))
 	case "go_agent":
 		forwarding := ForwardingOff
-		if v, ok := k.Get("manage_ipv4_forwarding"); ok {
+		if v, ok := k.m["manage_ipv4_forwarding"]; ok {
 			switch v {
 			case nil:
 				forwarding = ForwardingAuto
@@ -107,9 +107,9 @@ func renderCase(fn string, k kwargs) (string, error) {
 			EnrollmentToken: k.str("enrollment_token", ""), InstallationID: k.str("installation_id", ""),
 			FullTun: k.boolean("full_tun", false),
 		}
-		if checksums := k.GetObject("agent_checksums"); checksums != nil {
+		if checksums := mapObj(k.m, "agent_checksums"); checksums != nil {
 			o.AgentChecksums = map[string]string{}
-			for key, value := range checksums.All() {
+			for key, value := range checksums {
 				o.AgentChecksums[key] = value.(string)
 			}
 		}
@@ -147,7 +147,7 @@ func errorText(err error) string {
 	return "error: " + err.Error()
 }
 
-func readJSONLines(t *testing.T, path string) []*jsonx.Object {
+func readJSONLines(t *testing.T, path string) []map[string]any {
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -155,13 +155,13 @@ func readJSONLines(t *testing.T, path string) []*jsonx.Object {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64<<20), 64<<20)
-	var out []*jsonx.Object
+	var out []map[string]any
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := parseJSONMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, value.(*jsonx.Object))
+		out = append(out, value)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -195,15 +195,15 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 	full := map[int64]string{}
 	if path := os.Getenv("INSTALLER_MATRIX_FULL"); path != "" {
 		for _, record := range readJSONLines(t, path) {
-			id := record.GetInt("id")
-			full[id] = record.GetString("output")
+			id := mapInt(record, "id")
+			full[id] = mapStr(record, "output")
 		}
 	}
 	rendered, refused, deliberate := 0, 0, 0
 	for _, record := range cases {
-		id := record.GetInt("id")
-		fn := record.GetString("fn")
-		k := kwargs{record.GetObject("kwargs")}
+		id := mapInt(record, "id")
+		fn := mapStr(record, "fn")
+		k := kwargs{mapObj(record, "kwargs")}
 		output, err := renderCase(fn, k)
 		if handled, problem := n810ScalarMatch(record, output, err); handled {
 			if problem != "" {
@@ -211,34 +211,34 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil && deliberateAgentNameFix(k.Object, err) {
+		if err != nil && deliberateAgentNameFix(k.m, err) {
 			deliberate++ // decision 6: one trailing "\n" in agent_name is refused in Go
 			continue
 		}
-		if !record.GetBool("ok") {
+		if !mapBool(record, "ok") {
 			refused++
-			if err == nil && urllibOnlyRefusal(record.GetString("error")) {
+			if err == nil && urllibOnlyRefusal(mapStr(record, "error")) {
 				// accepted N2 class: urllib-only host refusal
 			} else if err == nil {
-				t.Errorf("case %d %s %s: python refused (%s), go rendered", id, fn, jsonx.Repr(k.Object), record.GetString("error"))
-			} else if got := errorText(err); !sameRefusal(record.GetString("error"), got, k.Object) {
-				t.Errorf("case %d %s %s:\n  python %s\n  go     %s", id, fn, jsonx.Repr(k.Object), record.GetString("error"), got)
+				t.Errorf("case %d %s %v: python refused (%s), go rendered", id, fn, k.m, mapStr(record, "error"))
+			} else if got := errorText(err); !sameRefusal(mapStr(record, "error"), got, k.m) {
+				t.Errorf("case %d %s %v:\n  python %s\n  go     %s", id, fn, k.m, mapStr(record, "error"), got)
 			}
 			continue
 		}
 		rendered++
-		if err != nil && refusedByNetURL(k.Object) {
+		if err != nil && refusedByNetURL(k.m) {
 			continue // N2: a URL net/url refuses
 		}
 		if err != nil {
-			t.Errorf("case %d %s %s: python rendered, go: %v", id, fn, jsonx.Repr(k.Object), err)
+			t.Errorf("case %d %s %v: python rendered, go: %v", id, fn, k.m, err)
 			continue
 		}
 		output, err = installertest.PythonBaseline(output)
 		if err != nil {
 			t.Fatal(err)
 		}
-		matches, oracleErr := writerHashCaseMatches(fn, k.Object, output, record.GetString("sha256"), record.GetInt("length"))
+		matches, oracleErr := writerHashCaseMatches(fn, k.m, output, mapStr(record, "sha256"), mapInt(record, "length"))
 		if oracleErr != nil {
 			t.Fatal(oracleErr)
 		}
@@ -247,7 +247,7 @@ func TestRenderMatrixMatchesPython(t *testing.T) {
 			if py, ok := full[id]; ok {
 				detail = firstDifference(py, output)
 			}
-			t.Errorf("case %d %s %s: output differs %s", id, fn, jsonx.Repr(k.Object), detail)
+			t.Errorf("case %d %s %v: output differs %s", id, fn, k.m, detail)
 		}
 	}
 	t.Logf("matrix: %d cases, %d rendered, %d refused, %d deliberate (decision 6)", len(cases), rendered, refused, deliberate)
@@ -265,20 +265,20 @@ func TestWriteShellcheckSample(t *testing.T) {
 	if err := os.MkdirAll(dir+"/go", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	write := func(name string, records []*jsonx.Object, step int) {
-		var picked []*jsonx.Object
+	write := func(name string, records []map[string]any, step int) {
+		var picked []map[string]any
 		for _, r := range records {
-			if r.GetBool("ok") && shell[r.GetString("fn")] {
+			if mapBool(r, "ok") && shell[mapStr(r, "fn")] {
 				picked = append(picked, r)
 			}
 		}
 		for i := 0; i < len(picked); i += step {
 			r := picked[i]
-			out, err := renderCase(r.GetString("fn"), kwargs{r.GetObject("kwargs")})
+			out, err := renderCase(mapStr(r, "fn"), kwargs{mapObj(r, "kwargs")})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(fmt.Sprintf("%s/go/%s-%d.sh", dir, name, r.GetInt("id")), []byte(out), 0o644); err != nil {
+			if err := os.WriteFile(fmt.Sprintf("%s/go/%s-%d.sh", dir, name, mapInt(r, "id")), []byte(out), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}

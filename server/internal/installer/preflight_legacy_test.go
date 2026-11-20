@@ -3,12 +3,10 @@ package installer
 import (
 	"encoding/json"
 	"strings"
-
-	"configflow/internal/jsonx"
 )
 
-// ParsePreflightReport adapts the remaining request facade to EvaluatePreflight.
-func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
+// ParsePreflightReport adapts test inputs to EvaluatePreflight.
+func ParsePreflightReport(output, networkMode any) (map[string]any, error) {
 	mode, _ := networkMode.(string)
 	if mode != "host" && mode != "macvlan" {
 		return nil, valueError(msgPreflightNetwork)
@@ -25,11 +23,7 @@ func ParsePreflightReport(output, networkMode any) (*jsonx.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	return value.(*jsonx.Object), nil
+	return parseJSONMap(raw)
 }
 
 func pyRstrip(text string) string                  { return trimScriptTail(text) }

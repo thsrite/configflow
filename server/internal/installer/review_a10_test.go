@@ -277,7 +277,7 @@ func TestReviewBundlePrepareKeepsMetacharactersLiteral(t *testing.T) {
 				t.Fatalf("in_data=%v round %d: %+v", inData, round, r)
 			}
 		}
-		data := body.GetString("data_dir")
+		data := mapStr(body, "data_dir")
 		for _, name := range []string{"agent", "oxidns", "ha", ".ha-compose/setup", ".ha-compose/bootstrap.py", ".ha-compose/enrollment.json"} {
 			if _, err := os.Stat(filepath.Join(data, name)); err != nil {
 				t.Fatalf("in_data=%v: %s: %v", inData, name, err)

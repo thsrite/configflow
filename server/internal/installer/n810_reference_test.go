@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 )
 
 type n810ReferenceRow struct {
@@ -41,11 +40,11 @@ func readCompressed(path string) ([]byte, error) {
 	return io.ReadAll(reader)
 }
 func referenceKey(raw []byte) (string, error) {
-	value, err := jsonx.Parse(raw)
+	value, err := parseJSONAny(raw)
 	if err != nil {
 		return "", err
 	}
-	data, err := jsonx.Sorted(value)
+	data, err := sortedCompactJSON(value)
 	return referenceSHA(data), err
 }
 func bindReferenceRow(row n810ReferenceRow, archives map[string]map[string][]byte) error {
@@ -113,7 +112,7 @@ func loadN810References(filename string, count int) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		native, err := jsonx.Parse(row.Native)
+		native, err := parseJSONAny(row.Native)
 		if err != nil {
 			return nil, err
 		}
@@ -130,12 +129,12 @@ var n810SessionReferences = sync.OnceValues(func() (map[string]any, error) { ret
 
 var n810ScalarReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_scalar_native.json.gz", 600) })
 
-func n810ScalarMatch(row *jsonx.Object, output string, err error) (bool, string) {
+func n810ScalarMatch(row map[string]any, output string, err error) (bool, string) {
 	refs, problem := n810ScalarReferences()
 	if problem != nil {
 		return true, problem.Error()
 	}
-	raw, problem := jsonx.Sorted(row)
+	raw, problem := sortedCompactJSON(row)
 	if problem != nil {
 		return true, problem.Error()
 	}
@@ -143,10 +142,10 @@ func n810ScalarMatch(row *jsonx.Object, output string, err error) (bool, string)
 	if !present {
 		return false, ""
 	}
-	expected := value.(*jsonx.Object)
-	if failure := expected.GetObject("error"); failure != nil {
+	expected := value.(map[string]any)
+	if failure := mapObj(expected, "error"); failure != nil {
 		var validation *ValidationError
-		if !errors.As(err, &validation) || validation.Message != failure.GetString("message") || output != "" {
+		if !errors.As(err, &validation) || validation.Message != mapStr(failure, "message") || output != "" {
 			return true, fmt.Sprintf("native integer refusal differs: %v", err)
 		}
 		return true, ""
@@ -158,8 +157,8 @@ func n810ScalarMatch(row *jsonx.Object, output string, err error) (bool, string)
 	if problem != nil {
 		return true, problem.Error()
 	}
-	if row.GetString("fn") == "with_install_output" {
-		if output != expected.GetString("output") {
+	if mapStr(row, "fn") == "with_install_output" {
+		if output != mapStr(expected, "output") {
 			return true, "native layout output differs"
 		}
 		return true, ""
@@ -168,17 +167,17 @@ func n810ScalarMatch(row *jsonx.Object, output string, err error) (bool, string)
 	if problem != nil {
 		return true, problem.Error()
 	}
-	if output != expected.GetString("output") {
+	if output != mapStr(expected, "output") {
 		return true, "native integer output differs"
 	}
 	return true, ""
 }
-func n810SessionExpected(row *jsonx.Object) (*jsonx.Object, bool, error) {
+func n810SessionExpected(row map[string]any) (map[string]any, bool, error) {
 	refs, err := n810SessionReferences()
 	if err != nil {
 		return nil, false, err
 	}
-	raw, err := jsonx.Sorted(row)
+	raw, err := sortedCompactJSON(row)
 	if err != nil {
 		return nil, false, err
 	}
@@ -186,14 +185,14 @@ func n810SessionExpected(row *jsonx.Object) (*jsonx.Object, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-	return value.(*jsonx.Object), true, nil
+	return value.(map[string]any), true, nil
 }
-func n810PreflightExpected(row *jsonx.Object) (any, bool, error) {
+func n810PreflightExpected(row map[string]any) (any, bool, error) {
 	references, err := n810PreflightReferences()
 	if err != nil {
 		return nil, false, err
 	}
-	raw, err := jsonx.Sorted(row)
+	raw, err := sortedCompactJSON(row)
 	if err != nil {
 		return nil, false, err
 	}
@@ -250,12 +249,12 @@ func TestN810PreflightMachineCountersFailClosed(t *testing.T) {
 
 var n810PathReferences = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_path_native.json.gz", 1) })
 
-func n810PathRefusal(row *jsonx.Object, err error) (bool, error) {
+func n810PathRefusal(row map[string]any, err error) (bool, error) {
 	refs, problem := n810PathReferences()
 	if problem != nil {
 		return false, problem
 	}
-	raw, problem := jsonx.Sorted(row)
+	raw, problem := sortedCompactJSON(row)
 	if problem != nil {
 		return false, problem
 	}
@@ -264,7 +263,7 @@ func n810PathRefusal(row *jsonx.Object, err error) (bool, error) {
 		return false, nil
 	}
 	var validation *ValidationError
-	if !errors.As(err, &validation) || validation.Message != expected.(*jsonx.Object).GetString("message") {
+	if !errors.As(err, &validation) || validation.Message != mapStr(expected.(map[string]any), "message") {
 		return true, fmt.Errorf("native path refusal differs: %v", err)
 	}
 	return true, nil
@@ -272,12 +271,12 @@ func n810PathRefusal(row *jsonx.Object, err error) (bool, error) {
 
 var n810Base64References = sync.OnceValues(func() (map[string]any, error) { return loadN810References("n810_base64_native.json.gz", 24) })
 
-func n810Base64Expected(row *jsonx.Object) (*jsonx.Object, bool, error) {
+func n810Base64Expected(row map[string]any) (map[string]any, bool, error) {
 	refs, err := n810Base64References()
 	if err != nil {
 		return nil, false, err
 	}
-	raw, err := jsonx.Sorted(row)
+	raw, err := sortedCompactJSON(row)
 	if err != nil {
 		return nil, false, err
 	}
@@ -285,7 +284,7 @@ func n810Base64Expected(row *jsonx.Object) (*jsonx.Object, bool, error) {
 	if !present {
 		return nil, false, nil
 	}
-	return expected.(*jsonx.Object), true, nil
+	return expected.(map[string]any), true, nil
 }
 
 func TestN810MachineEncodingCannotPassAsEmptyEvidence(t *testing.T) {

@@ -49,7 +49,7 @@ func TestL1CompactMountsWithRealCompose(t *testing.T) {
 	}
 	request := composeParams(tmp, "install_method", "compose_compact", "data_dir", data)
 	guide := composeGuide(t, request, composeCapability("https://config.example"))
-	document, err := yamlx.Parse([]byte(guide.GetString("compose")))
+	document, err := yamlx.Parse([]byte(mapStr(guide, "compose")))
 	if err != nil {
 		t.Fatal(err)
 	}

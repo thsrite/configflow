@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // Port of backend/test_oxidns_docker_install.py (generator cases; the API
@@ -28,7 +28,7 @@ func haParams(mode string) DockerOptions {
 	return o
 }
 
-func loadYAML(t *testing.T, text string) *jsonx.Object {
+func loadYAML(t *testing.T, text string) map[string]any {
 	v, err := readCompose(text)
 	if err != nil {
 		t.Fatal(err)
@@ -37,85 +37,80 @@ func loadYAML(t *testing.T, text string) *jsonx.Object {
 }
 
 func strs(v any) []string {
-	var out []string
-	list, _ := jsonx.AsList(v)
-	for _, item := range list {
-		if s, ok := item.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out
+	return asStrings(v)
 }
 
 func TestHostComposeSeparatesCoreAndHAAuthority(t *testing.T) {
 	compose := loadYAML(t, ok(GenerateDockerAgentCompose(haParams("host"))))
-	services := compose.GetObject("services")
-	main, companion := services.GetObject("agent"), services.GetObject("ha-companion")
-	if main.GetString("network_mode") != "host" || companion.GetString("network_mode") != "host" || main.Has("cap_add") {
+	services := mapObj(compose, "services")
+	main, companion := mapObj(services, "agent"), mapObj(services, "ha-companion")
+	if mapStr(main, "network_mode") != "host" || mapStr(companion, "network_mode") != "host" || mapHas(main, "cap_add") {
 		t.Fatal(main)
 	}
-	caps := strs(companion.Value("cap_add"))
+	caps := strs(companion["cap_add"])
 	slices.Sort(caps)
-	if strings.Join(caps, ",") != "NET_ADMIN,NET_RAW" || strings.Join(strs(main.Value("depends_on")), ",") != "ha-companion" {
+	if strings.Join(caps, ",") != "NET_ADMIN,NET_RAW" || strings.Join(strs(main["depends_on"]), ",") != "ha-companion" {
 		t.Error("caps/depends")
 	}
-	if !slices.Contains(strs(companion.Value("environment")), "SERVICE_TYPE=ha-companion") {
+	if !slices.Contains(strs(companion["environment"]), "SERVICE_TYPE=ha-companion") {
 		t.Error("companion env")
 	}
-	for _, service := range []*jsonx.Object{main, companion} {
-		env := strs(service.Value("environment"))
-		if service.Has("ports") || service.Has("privileged") || !slices.Contains(env, "CONFIGFLOW_DNS_HA=1") ||
-			!slices.Contains(env, "CONFIGFLOW_DNS_HA_NETWORK=host") || !slices.Contains(strs(service.Value("volumes")), "./agent_data/ha:/var/lib/configflow-ha") {
+	for _, service := range []map[string]any{main, companion} {
+		env := strs(service["environment"])
+		if mapHas(service, "ports") || mapHas(service, "privileged") || !slices.Contains(env, "CONFIGFLOW_DNS_HA=1") ||
+			!slices.Contains(env, "CONFIGFLOW_DNS_HA_NETWORK=host") || !slices.Contains(strs(service["volumes"]), "./agent_data/ha:/var/lib/configflow-ha") {
 			t.Error("service")
 		}
 		found := false
-		for _, item := range service.GetList("volumes") {
-			if o, isObj := item.(*jsonx.Object); isObj && strings.HasSuffix(o.GetString("target"), "machine-id") {
-				found = o.Value("read_only") == true && o.GetObject("bind").Value("create_host_path") == false
+		for _, item := range mapList(service, "volumes") {
+			if o, isObj := item.(map[string]any); isObj && strings.HasSuffix(mapStr(o, "target"), "machine-id") {
+				found = o["read_only"] == true && mapObj(o, "bind")["create_host_path"] == false
 			}
-			text := jsonx.Repr(item)
-			if strings.Contains(text, "docker.sock") || strings.Contains(text, "/etc:/etc") {
-				t.Error(text)
+			text, _ := json.Marshal(item)
+			if strings.Contains(string(text), "docker.sock") || strings.Contains(string(text), "/etc:/etc") {
+				t.Error(string(text))
 			}
 		}
 		if !found {
 			t.Error("identity")
 		}
 	}
-	cv, mv := strs(companion.Value("volumes")), strs(main.Value("volumes"))
+	cv, mv := strs(companion["volumes"]), strs(main["volumes"])
 	if !slices.Contains(cv, "./agent_data/agent:/opt/configflow-agent:ro") || !slices.Contains(cv, "./agent_data/oxidns:/etc/oxidns:ro") ||
 		!slices.Contains(mv, "./agent_data/agent:/opt/configflow-agent") {
 		t.Error("volumes")
 	}
 	netns := false
-	for _, item := range main.GetList("volumes") {
-		if o, isObj := item.(*jsonx.Object); isObj && o.GetString("source") == "/proc/1/ns/net" && o.Value("read_only") == true {
+	for _, item := range mapList(main, "volumes") {
+		if o, isObj := item.(map[string]any); isObj && mapStr(o, "source") == "/proc/1/ns/net" && o["read_only"] == true {
 			netns = true
 		}
 	}
-	if !netns || strings.Contains(jsonx.Repr(companion.Value("volumes")), "host-netns") {
+	compVols, _ := json.Marshal(companion["volumes"])
+	if !netns || strings.Contains(string(compVols), "host-netns") {
 		t.Error("netns")
 	}
 }
 
 func TestMacvlanComposeHasOneIsolatedStaticIPAndNoCompanion(t *testing.T) {
 	compose := loadYAML(t, ok(GenerateDockerAgentCompose(haParams("macvlan"))))
-	if strings.Join(compose.GetObject("services").Keys(), ",") != "agent" {
+	if strings.Join(mapKeys(mapObj(compose, "services")), ",") != "agent" {
 		t.Fatal("services")
 	}
-	main := compose.GetObject("services").GetObject("agent")
-	if main.Has("network_mode") || main.Has("ports") || !jsonx.Equal(main.Value("networks"), jsonx.Obj("dns-ha", jsonx.Obj("ipv4_address", "192.168.50.20"))) {
+	main := mapObj(mapObj(compose, "services"), "agent")
+	if mapHas(main, "network_mode") || mapHas(main, "ports") || !testjson.Equal(main["networks"], map[string]any{"dns-ha": map[string]any{"ipv4_address": "192.168.50.20"}}) {
 		t.Error("main")
 	}
-	if !slices.Contains(strs(main.Value("environment")), "CONFIGFLOW_DNS_HA_NETWORK=macvlan") {
+	if !slices.Contains(strs(main["environment"]), "CONFIGFLOW_DNS_HA_NETWORK=macvlan") {
 		t.Error("env")
 	}
-	network := compose.GetObject("networks").GetObject("dns-ha")
-	if network.GetString("driver") != "macvlan" || !jsonx.Equal(network.Value("driver_opts"), jsonx.Obj("parent", "eth0")) ||
-		!jsonx.Equal(network.GetObject("ipam").Value("config"), []any{jsonx.Obj("subnet", "192.168.50.0/24", "gateway", "192.168.50.1")}) {
+	network := mapObj(mapObj(compose, "networks"), "dns-ha")
+	if mapStr(network, "driver") != "macvlan" || !testjson.Equal(network["driver_opts"], map[string]any{"parent": "eth0"}) ||
+		!testjson.Equal(mapObj(network, "ipam")["config"], []any{map[string]any{"subnet": "192.168.50.0/24", "gateway": "192.168.50.1"}}) {
 		t.Error("network")
 	}
-	if strings.Contains(jsonx.Repr(main.Value("volumes")), "host-netns") {
+	mainVols, _ := json.Marshal(main["volumes"])
+	if strings.Contains(string(mainVols), "host-netns") {
 		t.Error("netns")
 	}
 }
@@ -206,21 +201,21 @@ func TestOrdinaryDockerKeepsOriginalNetworkAndPrivileges(t *testing.T) {
 			o.NetworkMode, o.EnableMihomo, o.EnableMosdns, o.EnableOxidns = mode, services[0], services[1], services[2]
 			implicit := ok(GenerateDockerAgentCompose(o))
 			compose := loadYAML(t, implicit)
-			if strings.Join(compose.GetObject("services").Keys(), ",") != "agent" || compose.Has("networks") {
+			if strings.Join(mapKeys(mapObj(compose, "services")), ",") != "agent" || mapHas(compose, "networks") {
 				t.Fatal("services")
 			}
-			service := compose.GetObject("services").GetObject("agent")
-			if service.GetString("network_mode") != mode || service.Has("ports") != (mode == "bridge") || service.Has("cap_add") || service.Has("privileged") {
+			service := mapObj(mapObj(compose, "services"), "agent")
+			if mapStr(service, "network_mode") != mode || mapHas(service, "ports") != (mode == "bridge") || mapHas(service, "cap_add") || mapHas(service, "privileged") {
 				t.Error("service")
 			}
-			for _, item := range strs(service.Value("environment")) {
+			for _, item := range strs(service["environment"]) {
 				if strings.Contains(item, "CONFIGFLOW_DNS_HA") {
 					t.Error(item)
 				}
 			}
-			volumes := jsonx.Repr(service.Value("volumes"))
-			if strings.Contains(volumes, "configflow-ha") || strings.Contains(volumes, "machine-id") {
-				t.Error(volumes)
+			volumes, _ := json.Marshal(service["volumes"])
+			if strings.Contains(string(volumes), "configflow-ha") || strings.Contains(string(volumes), "machine-id") {
+				t.Error(string(volumes))
 			}
 			command := ok(GenerateDockerAgentRun(o))
 			contains(t, command, "--network "+mode)

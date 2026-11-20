@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func testComposeArchive(t *testing.T, compose, script string, mode uint32, extra bool) string {
@@ -39,7 +37,7 @@ func testComposeArchive(t *testing.T, compose, script string, mode uint32, extra
 }
 
 func TestN73SemanticComparisonRejectsMeaningfulChanges(t *testing.T) {
-	reference := jsonx.Obj("content_base64", testComposeArchive(t, "services: {agent: {image: synthetic, replicas: 1}}\n", "echo synthetic\n", 0o100600, false))
+	reference := map[string]any{"content_base64": testComposeArchive(t, "services: {agent: {image: synthetic, replicas: 1}}\n", "echo synthetic\n", 0o100600, false)}
 	tests := []struct {
 		name, compose, script string
 		mode                  uint32
@@ -54,7 +52,7 @@ func TestN73SemanticComparisonRejectsMeaningfulChanges(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actual := jsonx.Obj("content_base64", testComposeArchive(t, test.compose, test.script, test.mode, test.extra))
+			actual := map[string]any{"content_base64": testComposeArchive(t, test.compose, test.script, test.mode, test.extra)}
 			if got := nativeOutcomeEqual(reference, actual, ""); got != test.want {
 				t.Fatalf("equal=%v want %v", got, test.want)
 			}

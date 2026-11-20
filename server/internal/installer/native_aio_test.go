@@ -9,8 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // Port of backend/test_agent_native_aio_install.py: the native cohost
@@ -1138,5 +1136,3 @@ func TestGoAgentUnitPatchFixturesMatchInstallerTemplates(t *testing.T) {
 		}
 	}
 }
-
-var _ = jsonx.Repr

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 )
 
 func TestL1HAVerificationUsesAvailableToolsAndExactVIP(t *testing.T) {
@@ -20,7 +19,7 @@ func TestL1HAVerificationUsesAvailableToolsAndExactVIP(t *testing.T) {
 		t.Run(tool, func(t *testing.T) {
 			dir := t.TempDir()
 			events := filepath.Join(dir, "events")
-			command := mustGuide(t, jsonx.Obj("action", "verify", "vip", "192.0.2.53"), nil).GetString("verification_command")
+			command := mapStr(mustGuide(t, map[string]any{"action": "verify", "vip": "192.0.2.53"}, nil), "verification_command")
 			writeFile(t, filepath.Join(dir, "getent"), "#!/bin/sh\nprintf wrong-resolver >> \"$EVENTS\"\n", 0o755)
 			selected := tool
 			if tool == "failed-dig" {

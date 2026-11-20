@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 const l1DNSResponder = `import socket,struct,pathlib
@@ -31,7 +29,7 @@ func TestL1HAVerificationWithRealDNSClients(t *testing.T) {
 	}
 	image := l1HAImage(t)
 	dir := t.TempDir()
-	command := mustGuide(t, jsonx.Obj("action", "verify", "vip", "192.0.2.53"), nil).GetString("verification_command")
+	command := mapStr(mustGuide(t, map[string]any{"action": "verify", "vip": "192.0.2.53"}, nil), "verification_command")
 	writeFile(t, filepath.Join(dir, "verify.sh"), command, 0o644)
 	writeFile(t, filepath.Join(dir, "dns.py"), l1DNSResponder, 0o644)
 	for _, tool := range []string{"dig", "nslookup", "busybox"} {

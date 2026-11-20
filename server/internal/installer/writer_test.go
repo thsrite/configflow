@@ -13,13 +13,12 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
-var writerOracleValues = sync.OnceValues(func() (*jsonx.Object, error) {
+var writerOracleValues = sync.OnceValues(func() (map[string]any, error) {
 	f, err := os.Open("testdata/n74_writer_expected.json.gz")
 	if err != nil {
 		return nil, err
@@ -34,12 +33,8 @@ var writerOracleValues = sync.OnceValues(func() (*jsonx.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	object, ok := value.(*jsonx.Object)
-	if !ok || object == nil {
+	object, err := parseJSONMap(data)
+	if err != nil || object == nil {
 		return nil, fmt.Errorf("invalid writer oracle fixture")
 	}
 	return object, nil
@@ -50,23 +45,23 @@ func writerExpected(fn string, args any) (any, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	data, err := jsonx.Sorted(jsonx.Obj("fn", fn, "args", args))
+	data, err := sortedCompactJSON(map[string]any{"fn": fn, "args": args})
 	if err != nil {
 		return nil, false, err
 	}
 	sum := sha256.Sum256(data)
-	entry := values.GetObject(hex.EncodeToString(sum[:]))
+	entry := mapObj(values, hex.EncodeToString(sum[:]))
 	if entry == nil {
 		return nil, false, nil
 	}
-	if entry.GetBool("expected_from_legacy") {
+	if mapBool(entry, "expected_from_legacy") {
 		return nil, false, nil
 	}
-	value, ok := entry.Get("expected")
+	value, ok := entry["expected"]
 	if !ok {
 		return nil, false, fmt.Errorf("writer oracle is missing its expected value")
 	}
-	return jsonx.DeepCopy(value), true, nil
+	return cloneJSON(value), true, nil
 }
 
 func writerYAMLEqual(want, got string) bool {
@@ -114,7 +109,7 @@ func TestComposeWriterPreservesUnicodeSeparators(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				n, err := yamlx.Parse([]byte(result.GetString("compose")))
+				n, err := yamlx.Parse([]byte(mapStr(result, "compose")))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -145,7 +140,7 @@ func TestComposeWriterPreservesNumericImageStrings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, err := yamlx.Parse([]byte(result.GetString("compose")))
+		n, err := yamlx.Parse([]byte(mapStr(result, "compose")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +150,7 @@ func TestComposeWriterPreservesNumericImageStrings(t *testing.T) {
 				t.Fatalf("service %s image lost its string type", name)
 			}
 		}
-		if !strings.Contains(result.GetString("compose"), "&agent_image") {
+		if !strings.Contains(mapStr(result, "compose"), "&agent_image") {
 			t.Fatal("shared image anchor was lost")
 		}
 	}
@@ -188,7 +183,7 @@ func TestWriterOracleProvenance(t *testing.T) {
 		}
 	}
 	values, err := writerOracleValues()
-	if err != nil || values.Len() != manifest.Unique {
+	if err != nil || len(values) != manifest.Unique {
 		t.Fatalf("incomplete writer expectations: %v", err)
 	}
 	graphIDs := map[string]bool{}
@@ -246,33 +241,33 @@ func TestWriterOracleProvenance(t *testing.T) {
 	if len(graphIDs) != manifest.Graphs {
 		t.Fatalf("graph count %d, want %d", len(graphIDs), manifest.Graphs)
 	}
-	for id, value := range values.All() {
-		entry := value.(*jsonx.Object)
-		input, err := jsonx.Sorted(jsonx.Obj("fn", entry.Value("fn"), "args", entry.Value("args")))
+	for id, value := range values {
+		entry := value.(map[string]any)
+		input, err := sortedCompactJSON(map[string]any{"fn": entry["fn"], "args": entry["args"]})
 		if err != nil {
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(input)
-		if hex.EncodeToString(sum[:]) != id || len(entry.GetList("sources")) == 0 || len(entry.GetList("categories")) == 0 {
+		if hex.EncodeToString(sum[:]) != id || len(mapList(entry, "sources")) == 0 || len(mapList(entry, "categories")) == 0 {
 			t.Fatalf("invalid source/case identity: %s", id)
 		}
 		for _, field := range []string{"calls", "legacy_calls"} {
-			for _, call := range entry.GetList(field) {
-				if !graphIDs[call.(*jsonx.Object).GetString("graph")] {
+			for _, call := range mapList(entry, field) {
+				if !graphIDs[mapStr(call.(map[string]any), "graph")] {
 					t.Fatal("writer call has no recorded typed graph")
 				}
 			}
 		}
-		if expected, ok := entry.Get("expected"); ok {
-			data, err := jsonx.Sorted(expected)
+		if expected, ok := entry["expected"]; ok {
+			data, err := sortedCompactJSON(expected)
 			if err != nil {
 				t.Fatal(err)
 			}
 			sum := sha256.Sum256(data)
-			if hex.EncodeToString(sum[:]) != entry.GetString("native_result_sha256") {
+			if hex.EncodeToString(sum[:]) != mapStr(entry, "native_result_sha256") {
 				t.Fatal("complete native Python expectation changed")
 			}
-		} else if categories := entry.GetList("categories"); !entry.GetBool("expected_from_legacy") || len(categories) != 1 || categories[0] != "layout" {
+		} else if categories := mapList(entry, "categories"); !mapBool(entry, "expected_from_legacy") || len(categories) != 1 || categories[0] != "layout" {
 			t.Fatal("a semantic change cannot use an unchanged legacy expectation")
 		}
 	}
@@ -289,8 +284,8 @@ func TestWriterComparisonPreservesScalarTags(t *testing.T) {
 			if nativeOutcomeEqual("value: "+tagged+"\n", plain, "compose") {
 				t.Fatal("writer comparison erased a scalar tag")
 			}
-			before := jsonx.Obj("content_base64", testComposeArchive(t, "value: "+tagged+"\n", "echo synthetic\n", 0o100600, false))
-			after := jsonx.Obj("content_base64", testComposeArchive(t, plain, "echo synthetic\n", 0o100600, false))
+			before := map[string]any{"content_base64": testComposeArchive(t, "value: "+tagged+"\n", "echo synthetic\n", 0o100600, false)}
+			after := map[string]any{"content_base64": testComposeArchive(t, plain, "echo synthetic\n", 0o100600, false)}
 			if nativeOutcomeEqual(before, after, "") {
 				t.Fatal("archive writer comparison erased a scalar tag")
 			}
@@ -315,11 +310,7 @@ func historicalEmbeddedJSON(text string) (string, error) {
 				return "", fmt.Errorf("unterminated config heredoc")
 			}
 			last := first + end
-			value, err := jsonx.Parse([]byte(text[first:last]))
-			if err != nil {
-				return "", err
-			}
-			data, err := jsonx.Encode(value, jsonx.Options{EnsureASCII: true, Indent: 2})
+			data, err := formatOrderedJSON([]byte(text[first:last]), true, false, true)
 			if err != nil {
 				return "", err
 			}
@@ -360,15 +351,11 @@ func historicalBootstrapSettings(text string) (string, error) {
 			raw.WriteRune(r)
 			source = tail
 		}
-		value, err := jsonx.ParseString(raw.String())
+		encoded, err := formatOrderedJSON([]byte(raw.String()), false, true, true)
 		if err != nil {
 			return "", err
 		}
-		encoded, err := jsonx.Default(value)
-		if err != nil {
-			return "", err
-		}
-		normalized := jsonx.Repr(string(encoded))
+		normalized := pyASCIIStringRepr(string(encoded))
 		text = text[:first] + normalized + text[last:]
 		start = first + len(normalized)
 	}
@@ -382,11 +369,7 @@ func normalizeComposeSettings(root *yamlx.Node) error {
 		if value == nil {
 			continue
 		}
-		settings, err := jsonx.ParseString(nodeText(value))
-		if err != nil {
-			return err
-		}
-		raw, err := jsonx.Encode(settings, jsonx.Options{EnsureASCII: true, Compact: true})
+		raw, err := formatOrderedJSON([]byte(nodeText(value)), false, false, true)
 		if err != nil {
 			return err
 		}

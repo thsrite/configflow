@@ -4,15 +4,14 @@ import (
 	"testing"
 
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 )
 
-func l1GuideBaseline(t *testing.T, result *jsonx.Object) *jsonx.Object {
+func l1GuideBaseline(t *testing.T, result map[string]any) map[string]any {
 	t.Helper()
 	if result == nil {
 		return nil
 	}
-	raw, err := jsonx.Response(result)
+	raw, err := sortedCompactJSON(result)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,11 +19,11 @@ func l1GuideBaseline(t *testing.T, result *jsonx.Object) *jsonx.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(raw)
+	out, err := parseJSONMap(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return out
 }
 
 func TestL1HAHealthSourceMatchesApprovedDelta(t *testing.T) {
@@ -39,7 +38,7 @@ func TestL1HARefusesBusyPortAndFatalCore(t *testing.T) {
 		t.Run(problem, func(t *testing.T) {
 			tmp := t.TempDir()
 			_, host, guide := newHost(t, tmp, "host", problem, true)
-			r := runCommand(t, guide.GetString("install_command"), tmp, host.env...)
+			r := runCommand(t, mapStr(guide, "install_command"), tmp, host.env...)
 			if r.code == 0 {
 				t.Fatal("unhealthy installation reported success")
 			}

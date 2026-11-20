@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // Port of backend/test_core_install_script.py: the standalone core installer
@@ -433,30 +433,17 @@ func yamlValue(t *testing.T, text string, keys ...any) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v any = document
-	for _, key := range keys {
-		switch k := key.(type) {
-		case string:
-			v = jsonx.Path(v, k)
-		case int:
-			list, _ := v.([]any)
-			if k >= len(list) {
-				return nil
-			}
-			v = list[k]
-		}
-	}
-	return v
+	return jsonPath(document, keys...)
 }
 
 func yamlIs(t *testing.T, got any, wantJSON string) {
 	t.Helper()
-	want, err := jsonx.ParseString(wantJSON)
+	want, err := parseJSONAny([]byte(wantJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(got, want) {
-		data, _ := jsonx.Compact(got)
+	if !testjson.Equal(got, want) {
+		data, _ := sortedCompactJSON(got)
 		t.Errorf("got %s want %s", data, wantJSON)
 	}
 }

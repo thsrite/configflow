@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,9 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // TestDockerHARecordedCallsMatchPython replays testdata/docker_ha_recorded.jsonl.gz:
@@ -54,20 +56,19 @@ func replayRecordFile(t *testing.T, name string) {
 	counts := map[string]int{}
 	differ := 0
 	for line := 0; scanner.Scan(); line++ {
-		value, err := jsonx.Parse(scanner.Bytes())
+		entry, err := parseJSONMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := value.(*jsonx.Object)
-		fn := entry.GetString("fn")
-		if entry.GetList("patched") != nil {
+		fn := mapStr(entry, "fn")
+		if mapList(entry, "patched") != nil {
 			counts[fn+" patched"]++
 			continue
 		}
 		// This row only tested opening the removed server lock path. O3-6
 		// deliberately ignores that legacy directory; a boundary test below
 		// proves enrollment succeeds and leaves it unchanged.
-		if entry.GetString("test") == "review/issue/197" {
+		if mapStr(entry, "test") == "review/issue/197" {
 			counts[fn+" accepted (legacy lock ignored)"]++
 			continue
 		}
@@ -76,7 +77,7 @@ func replayRecordFile(t *testing.T, name string) {
 		if problem != "" {
 			differ++
 			if differ <= 20 {
-				t.Errorf("line %d %s (%s): %s", line+1, fn, entry.GetString("test"), problem)
+				t.Errorf("line %d %s (%s): %s", line+1, fn, mapStr(entry, "test"), problem)
 			}
 		}
 	}
@@ -95,7 +96,7 @@ func replayRecordFile(t *testing.T, name string) {
 }
 
 func canonical(v any) string {
-	data, err := jsonx.Encode(v, jsonx.Options{SortKeys: true, Compact: true})
+	data, err := sortedCompactJSON(v)
 	if err != nil {
 		return "<" + err.Error() + ">"
 	}
@@ -116,36 +117,36 @@ func recordedDifference(a, b string) string {
 // post-processing in gen_review_a10.py) when the recorded answer stores the
 // digest instead of the archive.
 func digestRecordedBundle(recorded, got any) any {
-	want, isObject := recorded.(*jsonx.Object)
-	if !isObject || !want.GetObject("compose_bundle").Has("content_sha256") {
+	want, isObject := recorded.(map[string]any)
+	if !isObject || !mapHas(mapObj(want, "compose_bundle"), "content_sha256") {
 		return got
 	}
-	answer, isObject := got.(*jsonx.Object)
-	if !isObject || !answer.GetObject("compose_bundle").Has("content_base64") {
+	answer, isObject := got.(map[string]any)
+	if !isObject || !mapHas(mapObj(answer, "compose_bundle"), "content_base64") {
 		return got
 	}
-	answer = answer.Clone()
-	bundle := answer.GetObject("compose_bundle").Clone()
-	raw, err := base64.StdEncoding.DecodeString(bundle.GetString("content_base64"))
+	answer = cloneMap(answer)
+	bundle := cloneMap(mapObj(answer, "compose_bundle"))
+	raw, err := base64.StdEncoding.DecodeString(mapStr(bundle, "content_base64"))
 	if err != nil {
 		return got
 	}
 	sum := sha256.Sum256(raw)
-	bundle.Delete("content_base64")
-	bundle.Set("content_sha256", hex.EncodeToString(sum[:]))
-	answer.Set("compose_bundle", bundle)
+	delete(bundle, "content_base64")
+	bundle["content_sha256"] = hex.EncodeToString(sum[:])
+	answer["compose_bundle"] = bundle
 	return answer
 }
 
 // compareOutcome compares a Go answer/error with the recorded 'out'/'err'.
-func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
+func compareOutcome(entry map[string]any, got any, err error) (string, string) {
 	if errors.Is(err, ErrComposeVariantNotPorted) {
 		return "skipped (A10)", ""
 	}
-	if err != nil && refusedByNetURL(entry.Value("args")) {
+	if err != nil && refusedByNetURL(entry["args"]) {
 		return "accepted (N2: URL net/url refuses)", ""
 	}
-	if pyErr := entry.GetList("err"); pyErr != nil {
+	if pyErr := mapList(entry, "err"); pyErr != nil {
 		class, _ := pyErr[0].(string)
 		message, _ := pyErr[1].(string)
 		isValue, _ := pyErr[2].(bool)
@@ -158,7 +159,7 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 		case errors.As(err, &ee):
 			status := -1
 			if len(pyErr) > 3 {
-				n, _ := jsonx.AsInt(pyErr[3])
+				n, _ := asInt64(pyErr[3])
 				status = int(n)
 			}
 			if class != "EnrollmentError" || message != ee.Message || status != ee.Status {
@@ -178,8 +179,8 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 	if err != nil {
 		return "answer", fmt.Sprintf("python answered, go error %T %v", err, err)
 	}
-	expected := entry.Value("out")
-	if value, present, oracleErr := writerExpected(entry.GetString("fn"), entry.Value("args")); oracleErr != nil {
+	expected := entry["out"]
+	if value, present, oracleErr := writerExpected(mapStr(entry, "fn"), entry["args"]); oracleErr != nil {
 		return "oracle", oracleErr.Error()
 	} else if present {
 		expected = value
@@ -191,14 +192,14 @@ func compareOutcome(entry *jsonx.Object, got any, err error) (string, string) {
 	return "answer", ""
 }
 
-func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
-	args := entry.GetList("args")
-	switch entry.GetString("fn") {
+func replayRecorded(t *testing.T, entry map[string]any) (string, string) {
+	args := mapList(entry, "args")
+	switch mapStr(entry, "fn") {
 	case "generate_guide":
-		if request, isObject := args[0].(*jsonx.Object); isObject {
+		if request, isObject := args[0].(map[string]any); isObject {
 			// Deliberate fix (coordinator decision 6): a server_url with one
 			// trailing "\n" passes Python's re.match(r'^https?://[^\s]+$').
-			if server, isString := request.GetOr("server_url", nil).(string); isString && strings.HasSuffix(server, "\n") && isServerURL(strings.TrimSuffix(server, "\n")) {
+			if server, isString := mapGetOr(request, "server_url", nil).(string); isString && strings.HasSuffix(server, "\n") && isServerURL(strings.TrimSuffix(server, "\n")) {
 				_, err := GenerateGuide(args[0], nil)
 				var ve *ValueError
 				if errors.As(err, &ve) && ve.Message == "请填写完整的 ConfigFlow HTTP(S) 地址" {
@@ -208,25 +209,25 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 			}
 		}
 		var enrollment *Enrollment
-		if e, isObject := args[1].(*jsonx.Object); isObject {
-			url, urlOK := e.GetOr("url", nil).(string)
-			token, tokenOK := e.GetOr("token", nil).(string)
+		if e, isObject := args[1].(map[string]any); isObject {
+			url, urlOK := mapGetOr(e, "url", nil).(string)
+			token, tokenOK := mapGetOr(e, "token", nil).(string)
 			if !urlOK || !tokenOK {
 				return "unsupported enrollment", ""
 			}
-			enrollment = &Enrollment{URL: url, Token: token, ExpiresAt: e.Value("expires_at")}
+			enrollment = &Enrollment{URL: url, Token: token, ExpiresAt: e["expires_at"]}
 		} else if args[1] != nil {
 			return "unsupported enrollment", ""
 		}
 		got, err := GenerateGuide(args[0], enrollment)
-		if request, ok := args[0].(*jsonx.Object); ok && got == nil && l1CompactColonRefusal(request, err) {
+		if request, ok := args[0].(map[string]any); ok && got == nil && l1CompactColonRefusal(request, err) {
 			return "deliberate (L1 D1 compact colon)", ""
 		}
-		if request, ok := args[0].(*jsonx.Object); ok && got == nil && l1CompactPathWording(request, entry.GetList("err"), err) {
+		if request, ok := args[0].(map[string]any); ok && got == nil && l1CompactPathWording(request, mapList(entry, "err"), err) {
 			return "deliberate (L1 D1 path wording)", ""
 		}
 		// Deliberate fix (decision 6): an Agent name with one trailing "\n".
-		if request, isObject := args[0].(*jsonx.Object); isObject && entry.Has("out") && deliberateAgentNameFix(request, err) {
+		if request, isObject := args[0].(map[string]any); isObject && mapHas(entry, "out") && deliberateAgentNameFix(request, err) {
 			return "deliberate (agent_name + \"\\n\")", ""
 		}
 		return compareOutcome(entry, l1GuideBaseline(t, got), err)
@@ -243,24 +244,24 @@ func replayRecorded(t *testing.T, entry *jsonx.Object) (string, string) {
 		if expected, present, problem := n810PreflightExpected(entry); problem != nil {
 			return "oracle", problem.Error()
 		} else if present {
-			if err != nil || !jsonx.Equal(expected, got) {
+			if err != nil || !testjson.Equal(expected, got) {
 				return "native report", fmt.Sprintf("native report differs: %v", err)
 			}
 			return "approved native machine grammar", ""
 		}
 		return compareOutcome(entry, got, err)
 	case "bootstrap_command":
-		e, _ := args[0].(*jsonx.Object)
-		request, _ := args[1].(*jsonx.Object)
+		e, _ := args[0].(map[string]any)
+		request, _ := args[1].(map[string]any)
 		if e == nil || request == nil {
 			return "unsupported", ""
 		}
-		got, err := BootstrapCommand(&Enrollment{URL: e.GetString("url"), Token: e.GetString("token")}, request)
+		got, err := BootstrapCommand(&Enrollment{URL: mapStr(e, "url"), Token: mapStr(e, "token")}, request)
 		return compareOutcome(entry, got, err)
 	case "issue", "enroll":
 		return replayIO(t, entry)
 	}
-	return "unknown function", "no replay for " + entry.GetString("fn")
+	return "unknown function", "no replay for " + mapStr(entry, "fn")
 }
 
 // recordedClock feeds the recorded time.time() values, random byte strings
@@ -286,7 +287,7 @@ func (c *recordedClock) install(t *testing.T) {
 			c.fail("go read time.time() more often than python")
 			return float64(time.Now().UnixNano()) / 1e9
 		}
-		value, _ := jsonx.AsFloat(c.times[0])
+		value, _ := asFloat64(c.times[0])
 		c.times = c.times[1:]
 		return value
 	}
@@ -327,11 +328,11 @@ func (c *recordedClock) leftover() string {
 }
 
 // writeTree recreates a recorded docker-ha-installations tree under root.
-func writeTree(t *testing.T, root string, tree *jsonx.Object) {
+func writeTree(t *testing.T, root string, tree map[string]any) {
 	if tree == nil {
 		return
 	}
-	if item := tree.GetList(""); item != nil {
+	if item := mapList(tree, ""); item != nil {
 		// root itself is not a directory
 		if err := os.MkdirAll(filepath.Dir(root), 0o755); err != nil {
 			t.Fatal(err)
@@ -343,7 +344,7 @@ func writeTree(t *testing.T, root string, tree *jsonx.Object) {
 			return
 		}
 		data, _ := hex.DecodeString(item[2].(string))
-		mode, _ := jsonx.AsInt(item[1])
+		mode, _ := asInt64(item[1])
 		if err := os.WriteFile(root, data, os.FileMode(mode)); err != nil {
 			t.Fatal(err)
 		}
@@ -352,16 +353,16 @@ func writeTree(t *testing.T, root string, tree *jsonx.Object) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	keys := tree.Keys()
+	keys := mapKeys(tree)
 	sort.Slice(keys, func(i, j int) bool {
 		return strings.Count(keys[i], "/") < strings.Count(keys[j], "/") || strings.Count(keys[i], "/") == strings.Count(keys[j], "/") && keys[i] < keys[j]
 	})
 	var dirs []string
 	modes := map[string]os.FileMode{}
 	for _, rel := range keys {
-		item := tree.GetList(rel)
+		item := mapList(tree, rel)
 		kind, _ := item[0].(string)
-		mode, _ := jsonx.AsInt(item[1])
+		mode, _ := asInt64(item[1])
 		path := filepath.Join(root, rel)
 		switch kind {
 		case "dir":
@@ -397,15 +398,15 @@ func readTree(root string) any {
 	if err != nil {
 		return nil
 	}
-	out := jsonx.NewObject()
+	out := map[string]any{}
 	if info.Mode()&os.ModeSymlink != 0 {
 		target, _ := os.Readlink(root)
-		out.Set("", []any{"link", jsonx.Int(int64(info.Mode().Perm())), target})
+		out[""] = []any{"link", int64(info.Mode().Perm()), target}
 		return out
 	}
 	if !info.IsDir() {
 		data, _ := os.ReadFile(root)
-		out.Set("", []any{"file", jsonx.Int(int64(info.Mode().Perm())), hex.EncodeToString(data)})
+		out[""] = []any{"file", int64(info.Mode().Perm()), hex.EncodeToString(data)}
 		return out
 	}
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -417,12 +418,12 @@ func readTree(root string) any {
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
 			target, _ := os.Readlink(path)
-			out.Set(rel, []any{"link", jsonx.Int(mode), target})
+			out[rel] = []any{"link", mode, target}
 		case info.IsDir():
-			out.Set(rel, []any{"dir", jsonx.Int(mode), ""})
+			out[rel] = []any{"dir", mode, ""}
 		default:
 			data, _ := os.ReadFile(path)
-			out.Set(rel, []any{"file", jsonx.Int(mode), hex.EncodeToString(data)})
+			out[rel] = []any{"file", mode, hex.EncodeToString(data)}
 		}
 		return nil
 	})
@@ -431,68 +432,83 @@ func readTree(root string) any {
 
 // recordedManager is the Agent manager's _update_agents as recorded.
 type recordedManager struct {
-	record  *jsonx.Object
+	record  map[string]any
 	called  bool
 	problem string
 }
 
-func (m *recordedManager) UpdateAgents(ctx context.Context, profileID string, updater func(context.Context, *[]any) (any, error)) (any, error) {
+func (m *recordedManager) EditAgents(ctx context.Context, profileID string, edit func(context.Context, *[]model.Agent) error) error {
 	m.called = true
 	if m.record == nil {
 		m.problem = "go called the Agent manager, python did not"
-		return nil, errors.New("unexpected manager call")
+		return errors.New("unexpected manager call")
 	}
-	if want := m.record.Value("profile_id"); want != profileID {
+	if want := m.record["profile_id"]; want != profileID {
 		m.problem = fmt.Sprintf("profile id python %v, go %q", want, profileID)
 	}
-	before, ran := m.record.Get("before")
+	before, ran := m.record["before"]
 	if !ran {
-		pyErr := m.record.GetList("err")
+		pyErr := mapList(m.record, "err")
 		message, _ := pyErr[1].(string)
 		if isValue, _ := pyErr[2].(bool); isValue {
-			return nil, &ValueError{Message: message}
+			return &ValueError{Message: message}
 		}
-		return nil, errors.New(message)
+		return errors.New(message)
 	}
-	agents := jsonx.DeepCopy(before).([]any)
-	value, err := updater(ctx, &agents)
-	if pyErr := m.record.GetList("updater_err"); pyErr != nil {
+	rawBefore, err := json.Marshal(before)
+	if err != nil {
+		return err
+	}
+	var agents []model.Agent
+	if err := jsondecode.Unmarshal(rawBefore, &agents); err != nil {
+		return err
+	}
+	err = edit(ctx, &agents)
+	if pyErr := mapList(m.record, "updater_err"); pyErr != nil {
 		if err == nil {
-			m.problem = fmt.Sprintf("python updater raised %v, go returned %s", pyErr, canonical(value))
+			m.problem = fmt.Sprintf("python updater raised %v, go returned nil", pyErr)
 		}
-		return value, err
+		return err
 	}
 	if err != nil {
 		m.problem = fmt.Sprintf("python updater succeeded, go: %v", err)
-		return value, err
+		return err
 	}
-	if want, have := canonical(m.record.Value("after")), canonical(agents); want != have {
+	rawAfter, err := model.Marshal(agents)
+	if err != nil {
+		return err
+	}
+	afterAny, err := parseJSONAny(rawAfter)
+	if err != nil {
+		return err
+	}
+	if want, have := canonical(m.record["after"]), canonical(afterAny); want != have {
 		m.problem = "agents after the update: " + recordedDifference(want, have)
 	}
-	if pyErr := m.record.GetList("err"); pyErr != nil {
+	if pyErr := mapList(m.record, "err"); pyErr != nil {
 		message, _ := pyErr[1].(string)
-		return nil, errors.New(message)
+		return errors.New(message)
 	}
-	return value, nil
+	return nil
 }
 
-func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
-	args := entry.GetList("args")
+func replayIO(t *testing.T, entry map[string]any) (string, string) {
+	args := mapList(entry, "args")
 	dataDir := filepath.Join(t.TempDir(), "data")
-	if entry.GetBool("data_dir_exists") {
+	if mapBool(entry, "data_dir_exists") {
 		if err := os.MkdirAll(dataDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	root := filepath.Join(dataDir, "docker-ha-installations")
-	writeTree(t, root, entry.GetObject("before"))
-	clock := &recordedClock{times: entry.GetList("times"), random: entry.GetList("random"), now: entry.GetList("now")}
+	writeTree(t, root, mapObj(entry, "before"))
+	clock := &recordedClock{times: mapList(entry, "times"), random: mapList(entry, "random"), now: mapList(entry, "now")}
 	clock.install(t)
 	beforeNative := canonical(readTree(root))
 	var outcome, problem string
-	switch entry.GetString("fn") {
+	switch mapStr(entry, "fn") {
 	case "issue":
-		body, isObject := args[0].(*jsonx.Object)
+		body, isObject := args[0].(map[string]any)
 		profileID, isString := args[1].(string)
 		if !isObject || !isString {
 			return "unsupported", ""
@@ -506,8 +522,8 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 
 		// Accepted difference: a hand-edited, unexpired session whose token is
 		// not a string is echoed by Python; Go refuses it (500).
-		if out, isObject := entry.Value("out").(*jsonx.Object); isObject {
-			if _, isString := out.GetOr("token", nil).(string); !isString {
+		if out, isObject := entry["out"].(map[string]any); isObject {
+			if _, isString := mapGetOr(out, "token", nil).(string); !isString {
 				var te *TypeError
 				if errors.As(err, &te) {
 					return "accepted (non-str session token)", clock.problem
@@ -517,7 +533,7 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		}
 		var got any
 		if capability != nil {
-			got = jsonx.Obj("url", capability.URL, "token", capability.Token, "expires_at", capability.ExpiresAt)
+			got = map[string]any{"url": capability.URL, "token": capability.Token, "expires_at": capability.ExpiresAt}
 		}
 		outcome, problem = compareOutcome(entry, got, err)
 	case "enroll":
@@ -529,7 +545,7 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		if args[1] != nil && !present {
 			return "unsupported", ""
 		}
-		manager := &recordedManager{record: entry.GetObject("manager")}
+		manager := &recordedManager{record: mapObj(entry, "manager")}
 		got, err := Enroll(context.Background(), dataDir, manager, sessionID, token, present)
 		if expected, present, problem := n810SessionExpected(entry); problem != nil {
 			return "oracle", problem.Error()
@@ -541,24 +557,24 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 		if problem == "" {
 			problem = manager.problem
 		}
-		if problem == "" && err == nil && !manager.called && entry.GetObject("manager") != nil {
+		if problem == "" && err == nil && !manager.called && mapObj(entry, "manager") != nil {
 			problem = "python called the Agent manager, go did not"
 		}
 	}
-	if problem == "" && entry.Has("out") {
+	if problem == "" && mapHas(entry, "out") {
 		problem = clock.leftover()
 	}
 	if problem == "" {
-		wantTree, haveTree := entry.Value("after"), readTree(root)
+		wantTree, haveTree := entry["after"], readTree(root)
 		// Python created .issue.lock; Go does not open or create it. All data
 		// files and their metadata are still compared, without regenerating corpus.
-		if tree, ok := wantTree.(*jsonx.Object); ok {
-			tree = tree.DeepCopy()
-			tree.Delete(".issue.lock")
+		if tree, ok := wantTree.(map[string]any); ok {
+			tree = cloneMap(tree)
+			delete(tree, ".issue.lock")
 			wantTree = tree
 		}
-		if tree, ok := haveTree.(*jsonx.Object); ok {
-			tree.Delete(".issue.lock")
+		if tree, ok := haveTree.(map[string]any); ok {
+			delete(tree, ".issue.lock")
 		}
 		if want, have := canonical(n810SessionTreeJSON(wantTree)), canonical(n810SessionTreeJSON(haveTree)); want != have {
 			problem = "files afterwards: " + recordedDifference(want, have)
@@ -567,32 +583,32 @@ func replayIO(t *testing.T, entry *jsonx.Object) (string, string) {
 	return outcome, problem
 }
 
-func checkN810SessionRefusal(expected *jsonx.Object, err error, empty bool, before, root string, called bool) (string, string) {
+func checkN810SessionRefusal(expected map[string]any, err error, empty bool, before, root string, called bool) (string, string) {
 	var refusal *EnrollmentError
 	var malformed *RenderError
-	status := int(expected.GetInt("status"))
-	valid := errors.As(err, &refusal) && refusal.Status == status && refusal.Message == expected.GetString("message")
+	status := int(mapInt(expected, "status"))
+	valid := errors.As(err, &refusal) && refusal.Status == status && refusal.Message == mapStr(expected, "message")
 	if status == 500 {
-		valid = errors.As(err, &malformed) && malformed.Message == expected.GetString("message")
-		if expected.GetString("class") == "model-type" {
+		valid = errors.As(err, &malformed) && malformed.Message == mapStr(expected, "message")
+		if mapStr(expected, "class") == "model-type" {
 			valid = errors.Is(err, model.ErrType)
 		}
 	}
 	if !valid {
 		return "native session", fmt.Sprintf("wrong refusal: %v", err)
 	}
-	if !empty || called != expected.GetBool("registry") || canonical(readTree(root)) != before {
+	if !empty || called != mapBool(expected, "registry") || canonical(readTree(root)) != before {
 		return "native session", "refusal returned credentials, called registry or wrote files"
 	}
 	return "approved exact session-ID refusal", ""
 }
 func n810SessionTreeJSON(value any) any {
-	tree, ok := value.(*jsonx.Object)
+	tree, ok := value.(map[string]any)
 	if !ok {
 		return value
 	}
-	result := tree.DeepCopy()
-	for name, item := range result.All() {
+	result := cloneMap(tree)
+	for name, item := range result {
 		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
@@ -608,7 +624,7 @@ func n810SessionTreeJSON(value any) any {
 		if err != nil {
 			continue
 		}
-		decoded, err := jsonx.Parse(raw)
+		decoded, err := parseJSONAny(raw)
 		if err != nil {
 			continue
 		}

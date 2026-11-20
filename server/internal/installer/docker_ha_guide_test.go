@@ -8,6 +8,7 @@ package installer
 // (GET /api/agents/<id>/oxidns-ha-environment) belongs to A18.
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
-func guideParams(t *testing.T, tmp, mode, kind string) *jsonx.Object {
+func guideParams(t *testing.T, tmp, mode, kind string) map[string]any {
 	t.Helper()
 	root := filepath.Join(tmp, "persistent")
 	os.MkdirAll(root, 0o755)
@@ -26,10 +27,21 @@ func guideParams(t *testing.T, tmp, mode, kind string) *jsonx.Object {
 	if _, err := os.Stat(identity); err != nil {
 		writeFile(t, identity, "unique-host-identity-1234567890\n", 0o644)
 	}
-	data := jsonx.Obj("mode", mode, "server_url", "http://config.test:8000", "agent_name", "dns-one", "agent_ip", "192.168.10.20",
-		"data_dir", filepath.Join(root, "new-data"), "network_mode", "host", "ha_host_id_path", identity, "oxidns_port", 8082,
-		"container_name", "original-oxidns", "existing_agent_name", "original-dns", "image", "local.test/agent:guide",
-		"ha_data_dir", filepath.Join(root, "new-ha"), "backup_dir", filepath.Join(root, "backup"))
+	data := map[string]any{
+		"mode":                mode,
+		"server_url":          "http://config.test:8000",
+		"agent_name":          "dns-one",
+		"agent_ip":            "192.168.10.20",
+		"data_dir":            filepath.Join(root, "new-data"),
+		"network_mode":        "host",
+		"ha_host_id_path":     identity,
+		"oxidns_port":         8082,
+		"container_name":      "original-oxidns",
+		"existing_agent_name": "original-dns",
+		"image":               "local.test/agent:guide",
+		"ha_data_dir":         filepath.Join(root, "new-ha"),
+		"backup_dir":          filepath.Join(root, "backup"),
+	}
 	for _, key := range []string{"agent", "core"} {
 		source := filepath.Join(root, "old-"+key)
 		os.MkdirAll(source, 0o755)
@@ -37,14 +49,16 @@ func guideParams(t *testing.T, tmp, mode, kind string) *jsonx.Object {
 		if kind != "bind" {
 			value = "old_" + key
 		}
-		data.Set(key+"_mount", jsonx.Obj("type", kind, "source", value))
+		data[key+"_mount"] = map[string]any{"type": kind, "source": value}
 	}
 	return data
 }
 
-func withChanges(base *jsonx.Object, pairs ...any) *jsonx.Object {
-	out := base.DeepCopy()
-	out.Update(jsonx.Obj(pairs...))
+func withChanges(base map[string]any, pairs ...any) map[string]any {
+	out := cloneMap(base)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		out[pairs[i].(string)] = pairs[i+1]
+	}
 	return out
 }
 
@@ -64,7 +78,7 @@ func runCommand(t *testing.T, script, tmp string, env ...string) runResult {
 	return runShell(t, bashPath(t), path, runOptions{env: env, timeout: 30 * time.Second})
 }
 
-func mustGuide(t *testing.T, request any, enrollment *Enrollment) *jsonx.Object {
+func mustGuide(t *testing.T, request any, enrollment *Enrollment) map[string]any {
 	t.Helper()
 	result, err := GenerateGuide(request, enrollment)
 	if err != nil {
@@ -76,9 +90,9 @@ func mustGuide(t *testing.T, request any, enrollment *Enrollment) *jsonx.Object 
 func wantGuideValueError(t *testing.T, request any) {
 	t.Helper()
 	if _, err := GenerateGuide(request, nil); err == nil {
-		t.Errorf("no error for %s", jsonx.Repr(request))
+		t.Errorf("no error for %v", request)
 	} else if _, ok := err.(*ValueError); !ok {
-		t.Errorf("%s: %T %v, want ValueError", jsonx.Repr(request), err, err)
+		t.Errorf("%v: %T %v, want ValueError", request, err, err)
 	}
 }
 
@@ -152,32 +166,32 @@ func TestIdentityRejectsNonpersistentAmbiguousPaths(t *testing.T) {
 }
 
 func TestInspectionIsAvailableBeforeFullFormAndNeverDumpsCredentials(t *testing.T) {
-	generic := mustGuide(t, jsonx.Obj("action", "inspect"), nil).GetString("inspection_command")
+	generic := mapStr(mustGuide(t, map[string]any{"action": "inspect"}, nil), "inspection_command")
 	contains(t, generic, "docker version")
 	contains(t, generic, "docker compose version")
-	named := mustGuide(t, jsonx.Obj("action", "inspect", "container_name", "existing"), nil).GetString("inspection_command")
+	named := mapStr(mustGuide(t, map[string]any{"action": "inspect", "container_name": "existing"}, nil), "inspection_command")
 	contains(t, named, ".Mounts")
 	contains(t, named, "agent_name")
 	for _, secret := range []string{".Config.Env", `"token"`, `"agent_id"`} {
 		notContains(t, named, secret)
 	}
-	wantGuideValueError(t, jsonx.Obj("action", "inspect", "container_name", "x;echo bad"))
+	wantGuideValueError(t, map[string]any{"action": "inspect", "container_name": "x;echo bad"})
 }
 
 func TestVerificationRejectsInvalidVIP(t *testing.T) {
 	for _, vip := range []any{"127.0.0.1", "192.168.1.2;echo", "::1", nil, "0.0.0.0"} {
-		wantGuideValueError(t, jsonx.Obj("action", "verify", "vip", vip))
+		wantGuideValueError(t, map[string]any{"action": "verify", "vip": vip})
 	}
 }
 
 func TestVerificationUsesLiteralIPv4(t *testing.T) {
-	got := mustGuide(t, jsonx.Obj("action", "verify", "vip", "192.168.10.8"), nil).GetString("verification_command")
+	got := mapStr(mustGuide(t, map[string]any{"action": "verify", "vip": "192.168.10.8"}, nil), "verification_command")
 	if got != strings.ReplaceAll(haVerification, "{{VIP}}", "192.168.10.8") {
 		t.Fatalf("%q", got)
 	}
 }
 
-func loadCompose(t *testing.T, text string) *jsonx.Object {
+func loadCompose(t *testing.T, text string) map[string]any {
 	t.Helper()
 	value, err := readCompose(text)
 	if err != nil {
@@ -191,46 +205,46 @@ func TestMigrationComposeReusesExactMountAndAgentIdentity(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			data := guideParams(t, t.TempDir(), "migrate", kind)
 			result := mustGuide(t, data, nil)
-			compose := loadCompose(t, result.GetString("compose"))
-			services := compose.GetObject("services")
-			main, helper := services.GetObject("agent"), services.GetObject("ha-companion")
-			if main.Value("container_name") != data.Value("container_name") {
+			compose := loadCompose(t, mapStr(result, "compose"))
+			services := mapObj(compose, "services")
+			main, helper := mapObj(services, "agent"), mapObj(services, "ha-companion")
+			if main["container_name"] != data["container_name"] {
 				t.Fatal("container name")
 			}
 			found := false
-			for _, v := range main.GetList("environment") {
+			for _, v := range mapList(main, "environment") {
 				found = found || v == "AGENT_OXIDNS_NAME=original-dns"
 			}
 			if !found {
 				t.Fatal("agent name environment")
 			}
-			if main.Value("image") != data.Value("image") || helper.Value("image") != data.Value("image") {
+			if main["image"] != data["image"] || helper["image"] != data["image"] {
 				t.Fatal("image")
 			}
 			for _, pair := range []struct {
-				service *jsonx.Object
+				service map[string]any
 				ro      bool
 			}{{main, false}, {helper, true}} {
-				volumes := pair.service.GetList("volumes")
-				v0, v1 := volumes[0].(*jsonx.Object), volumes[1].(*jsonx.Object)
-				if v0.Value("source") != data.GetObject("agent_mount").Value("source") || v1.Value("source") != data.GetObject("core_mount").Value("source") ||
-					v0.Value("type") != kind || v0.Value("read_only") != pair.ro {
-					t.Fatalf("volumes %v", jsonx.Repr(volumes))
+				volumes := mapList(pair.service, "volumes")
+				v0, v1 := volumes[0].(map[string]any), volumes[1].(map[string]any)
+				if v0["source"] != mapObj(data, "agent_mount")["source"] || v1["source"] != mapObj(data, "core_mount")["source"] ||
+					v0["type"] != kind || v0["read_only"] != pair.ro {
+					t.Fatalf("volumes %v", volumes)
 				}
 			}
-			if kind == "volume" && !jsonx.Equal(jsonx.Path(compose, "volumes", "old_agent"), jsonx.Obj("external", true, "name", "old_agent")) {
+			if kind == "volume" && !testjson.Equal(jsonPath(compose, "volumes", "old_agent"), map[string]any{"external": true, "name": "old_agent"}) {
 				t.Fatal("external volume")
 			}
-			install, rollback := result.GetString("install_command"), result.GetString("rollback_command")
+			install, rollback := mapStr(result, "install_command"), mapStr(result, "rollback_command")
 			notContains(t, install, "./oxidns_data")
 			notContains(t, install+rollback, "docker rm")
 			notContains(t, install+rollback, "down -v")
 			for _, s := range []string{"docker rename", "docker cp", "oxidns-ha.json", "自定义启动命令"} {
 				contains(t, install, s)
 			}
-			want := []any{jsonx.Obj("path", data.GetString("backup_dir")+"/runtime.env", "format", "raw")}
-			if !jsonx.Equal(main.Value("env_file"), want) {
-				t.Fatalf("env_file %v", jsonx.Repr(main.Value("env_file")))
+			want := []any{map[string]any{"path": mapStr(data, "backup_dir") + "/runtime.env", "format": "raw"}}
+			if !testjson.Equal(main["env_file"], want) {
+				t.Fatalf("env_file %v", main["env_file"])
 			}
 		})
 	}
@@ -238,8 +252,8 @@ func TestMigrationComposeReusesExactMountAndAgentIdentity(t *testing.T) {
 
 func TestGenerationRejectsUnsafeOrAmbiguousFields(t *testing.T) {
 	changes := [][]any{
-		{"agent_mount", jsonx.Obj("type", "bind", "source", "relative")},
-		{"agent_mount", jsonx.Obj("type", "volume", "source", "--option")},
+		{"agent_mount", map[string]any{"type": "bind", "source": "relative"}},
+		{"agent_mount", map[string]any{"type": "volume", "source": "--option"}},
 		{"ha_data_dir", "/tmp/x", "backup_dir", "/tmp/x/backup"},
 		{"container_name", "bad;name"}, {"existing_agent_name", "bad name"},
 		{"image", "repo/image:latest;touch bad"}, {"server_url", "file:///tmp/x"},
@@ -253,14 +267,15 @@ func TestGenerationRejectsUnsafeOrAmbiguousFields(t *testing.T) {
 
 func TestAllGeneratedCommandsAreBashSyntaxAndComposeInterpolationSafe(t *testing.T) {
 	data := guideParams(t, t.TempDir(), "migrate", "bind")
-	data.Set("server_url", data.GetString("server_url")+"/$NOT_A_VARIABLE")
+	data["server_url"] = mapStr(data, "server_url") + "/$NOT_A_VARIABLE"
 	result := mustGuide(t, data, nil)
-	contains(t, result.GetString("compose"), "$$NOT_A_VARIABLE")
-	for _, block := range result.GetList("command_blocks") {
+	contains(t, mapStr(result, "compose"), "$$NOT_A_VARIABLE")
+	for _, block := range mapList(result, "command_blocks") {
+		blk := block.(map[string]any)
 		cmd := exec.Command(bashPath(t), "-n")
-		cmd.Stdin = strings.NewReader(block.(*jsonx.Object).GetString("command"))
+		cmd.Stdin = strings.NewReader(mapStr(blk, "command"))
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%s: %v %s", block.(*jsonx.Object).GetString("id"), err, out)
+			t.Fatalf("%s: %v %s", mapStr(blk, "id"), err, out)
 		}
 	}
 }
@@ -339,13 +354,20 @@ type fakeHostEnv struct {
 }
 
 // fakeHost is fake_host(tmp_path, data, **changes).
-func fakeHost(t *testing.T, tmp string, data *jsonx.Object, changes ...any) fakeHostEnv {
+func fakeHost(t *testing.T, tmp string, data map[string]any, changes ...any) fakeHostEnv {
 	t.Helper()
 	pythonExe(t)
 	writeFile(t, filepath.Join(tmp, "docker"), fakeDocker, 0o755)
-	state := jsonx.Obj("containers", jsonx.Obj(strings.Repeat("a", 64), jsonx.Obj("name", data.Value("container_name"), "running", true)),
-		"agent_mount", data.Value("agent_mount"), "core_mount", data.Value("core_mount"))
-	state.Update(jsonx.Obj(changes...))
+	state := map[string]any{
+		"containers": map[string]any{
+			strings.Repeat("a", 64): map[string]any{"name": data["container_name"], "running": true},
+		},
+		"agent_mount": data["agent_mount"],
+		"core_mount":  data["core_mount"],
+	}
+	for i := 0; i+1 < len(changes); i += 2 {
+		state[changes[i].(string)] = changes[i+1]
+	}
 	statePath := filepath.Join(tmp, "state.json")
 	writeJSONFile(t, statePath, state)
 	events := filepath.Join(tmp, "events")
@@ -354,20 +376,20 @@ func fakeHost(t *testing.T, tmp string, data *jsonx.Object, changes ...any) fake
 
 func writeJSONFile(t *testing.T, path string, value any) {
 	t.Helper()
-	data, err := jsonx.Default(value)
+	data, err := json.Marshal(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, path, string(data), 0o644)
 }
 
-func readJSONFile(t *testing.T, path string) *jsonx.Object {
+func readJSONFile(t *testing.T, path string) map[string]any {
 	t.Helper()
-	value, err := jsonx.Parse([]byte(readFile(t, path)))
+	value, err := parseJSONMap([]byte(readFile(t, path)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return value
 }
 
 func eventCalls(t *testing.T, path string) [][]string {
@@ -378,11 +400,11 @@ func eventCalls(t *testing.T, path string) [][]string {
 		if line == "" {
 			continue
 		}
-		value, err := jsonx.Parse([]byte(line))
-		if err != nil {
+		var call []string
+		if err := json.Unmarshal([]byte(line), &call); err != nil {
 			t.Fatal(err)
 		}
-		calls = append(calls, jsonx.Strings(value.([]any)))
+		calls = append(calls, call)
 	}
 	return calls
 }
@@ -421,7 +443,7 @@ func TestMigrationAndRollbackUseCapturedIDsAndRestoreRestartPolicy(t *testing.T)
 	data := guideParams(t, tmp, "migrate", "bind")
 	host := fakeHost(t, tmp, data)
 	guide := mustGuide(t, data, nil)
-	if result := runCommand(t, guide.GetString("install_command"), tmp, host.env...); result.code != 0 {
+	if result := runCommand(t, mapStr(guide, "install_command"), tmp, host.env...); result.code != 0 {
 		t.Fatal(result.stderr)
 	}
 	calls := eventCalls(t, host.events)
@@ -429,18 +451,18 @@ func TestMigrationAndRollbackUseCapturedIDsAndRestoreRestartPolicy(t *testing.T)
 	if !(stop >= 0 && stop < backup && backup < rename && rename < start) {
 		t.Fatalf("order %d %d %d %d", stop, backup, rename, start)
 	}
-	if strings.TrimSpace(readFile(t, filepath.Join(data.GetString("backup_dir"), "old-id"))) != strings.Repeat("a", 64) {
+	if strings.TrimSpace(readFile(t, filepath.Join(mapStr(data, "backup_dir"), "old-id"))) != strings.Repeat("a", 64) {
 		t.Fatal("old-id")
 	}
-	if !strings.HasPrefix(readFile(t, filepath.Join(data.GetString("backup_dir"), "runtime.env")), "HEARTBEAT_INTERVAL=42") {
+	if !strings.HasPrefix(readFile(t, filepath.Join(mapStr(data, "backup_dir"), "runtime.env")), "HEARTBEAT_INTERVAL=42") {
 		t.Fatal("runtime.env")
 	}
-	if result := runCommand(t, guide.GetString("rollback_command"), tmp, host.env...); result.code != 0 {
+	if result := runCommand(t, mapStr(guide, "rollback_command"), tmp, host.env...); result.code != 0 {
 		t.Fatal(result.stderr)
 	}
-	old := jsonx.Path(readJSONFile(t, host.state), "containers", strings.Repeat("a", 64))
-	if !jsonx.Equal(old, jsonx.Obj("name", data.Value("container_name"), "running", true, "restart", "always")) {
-		t.Fatalf("old container %v", jsonx.Repr(old))
+	old := jsonPath(readJSONFile(t, host.state), "containers", strings.Repeat("a", 64))
+	if !testjson.Equal(old, map[string]any{"name": data["container_name"], "running": true, "restart": "always"}) {
+		t.Fatalf("old container %v", old)
 	}
 }
 
@@ -449,13 +471,13 @@ func TestFailedNewContainerCanRollbackWithoutExecIntoIt(t *testing.T) {
 	data := guideParams(t, tmp, "migrate", "bind")
 	host := fakeHost(t, tmp, data, "fail_main", true)
 	guide := mustGuide(t, data, nil)
-	if runCommand(t, guide.GetString("install_command"), tmp, host.env...).code == 0 {
+	if runCommand(t, mapStr(guide, "install_command"), tmp, host.env...).code == 0 {
 		t.Fatal("install succeeded")
 	}
-	if result := runCommand(t, guide.GetString("rollback_command"), tmp, host.env...); result.code != 0 {
+	if result := runCommand(t, mapStr(guide, "rollback_command"), tmp, host.env...); result.code != 0 {
 		t.Fatal(result.stderr)
 	}
-	if jsonx.Path(readJSONFile(t, host.state), "containers", strings.Repeat("a", 64), "running") != true {
+	if jsonPath(readJSONFile(t, host.state), "containers", strings.Repeat("a", 64), "running") != true {
 		t.Fatal("old container not running")
 	}
 }
@@ -466,13 +488,13 @@ func TestUnsupportedMigrationAbortsBeforeStopOrDataChange(t *testing.T) {
 		data := guideParams(t, tmp, "migrate", "bind")
 		host := fakeHost(t, tmp, data, change...)
 		guide := mustGuide(t, data, nil)
-		if runCommand(t, guide.GetString("install_command"), tmp, host.env...).code == 0 {
+		if runCommand(t, mapStr(guide, "install_command"), tmp, host.env...).code == 0 {
 			t.Fatalf("%v: install succeeded", change)
 		}
 		if anyCall(eventCalls(t, host.events), "stop", "update", "rename", "cp", "run") {
 			t.Fatalf("%v: changing call made", change)
 		}
-		if _, err := os.Stat(data.GetString("backup_dir")); err == nil {
+		if _, err := os.Stat(mapStr(data, "backup_dir")); err == nil {
 			t.Fatalf("%v: backup created", change)
 		}
 	}
@@ -483,16 +505,16 @@ func TestRollbackRefusesNameReplacedByUnrelatedContainer(t *testing.T) {
 	data := guideParams(t, tmp, "migrate", "bind")
 	host := fakeHost(t, tmp, data)
 	guide := mustGuide(t, data, nil)
-	if runCommand(t, guide.GetString("install_command"), tmp, host.env...).code != 0 {
+	if runCommand(t, mapStr(guide, "install_command"), tmp, host.env...).code != 0 {
 		t.Fatal("install failed")
 	}
 	current := readJSONFile(t, host.state)
-	containers := current.GetObject("containers")
-	containers.GetObject(strings.Repeat("c", 64)).Set("name", "moved-new")
-	containers.Set(strings.Repeat("d", 64), jsonx.Obj("name", data.Value("container_name"), "running", true))
+	containers := mapObj(current, "containers")
+	mapObj(containers, strings.Repeat("c", 64))["name"] = "moved-new"
+	containers[strings.Repeat("d", 64)] = map[string]any{"name": data["container_name"], "running": true}
 	writeJSONFile(t, host.state, current)
 	os.WriteFile(host.events, nil, 0o644)
-	if runCommand(t, guide.GetString("rollback_command"), tmp, host.env...).code == 0 {
+	if runCommand(t, mapStr(guide, "rollback_command"), tmp, host.env...).code == 0 {
 		t.Fatal("rollback succeeded")
 	}
 	if anyCall(eventCalls(t, host.events), "stop", "update", "rename") {
@@ -503,17 +525,22 @@ func TestRollbackRefusesNameReplacedByUnrelatedContainer(t *testing.T) {
 func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 	tmp := t.TempDir()
 	data := guideParams(t, tmp, "migrate", "bind")
-	script := mustGuide(t, data, nil).GetString("install_command")
+	script := mapStr(mustGuide(t, data, nil), "install_command")
 	// shlex.split(script) yields the check program as one word: the quoted
 	// migrationCheck text.
 	contains(t, script, " python3 -c "+q(migrationCheck)+" ")
 	original := filepath.Join(tmp, "old-agent")
 	os.MkdirAll(original, 0o755)
-	writeJSONFile(t, filepath.Join(original, "config-oxidns.json"), jsonx.Obj(
-		"agent_name", data.Value("existing_agent_name"), "server_url", data.Value("server_url"), "agent_port", data.Value("oxidns_port"),
-		"service_type", "oxidns", "config_path", "/etc/oxidns/config.yaml", "heartbeat_interval", 42))
+	writeJSONFile(t, filepath.Join(original, "config-oxidns.json"), map[string]any{
+		"agent_name":         data["existing_agent_name"],
+		"server_url":         data["server_url"],
+		"agent_port":         data["oxidns_port"],
+		"service_type":       "oxidns",
+		"config_path":        "/etc/oxidns/config.yaml",
+		"heartbeat_interval": 42,
+	})
 	source := strings.ReplaceAll(migrationCheck, "/opt/configflow-agent", original)
-	cmd := exec.Command(pythonExe(t), "-c", source, data.GetString("existing_agent_name"), data.GetString("server_url"), "8082")
+	cmd := exec.Command(pythonExe(t), "-c", source, mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082")
 	cmd.Stdin = strings.NewReader(`["HTTPS_PROXY=http://private-user:private$password@proxy:8080", "TZ=UTC"]`)
 	cmd.Env = append(os.Environ(), "TZ=UTC")
 	var stdout, stderr strings.Builder
@@ -522,8 +549,8 @@ func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 		t.Fatal(err, stderr.String())
 	}
 	contains(t, stdout.String(), "HTTPS_PROXY=http://private-user:private$password@proxy:8080")
-	compose := loadCompose(t, mustGuide(t, data, nil).GetString("compose"))
-	if jsonx.Path(compose, "services", "agent").(*jsonx.Object).GetList("env_file")[0].(*jsonx.Object).Value("format") != "raw" {
+	compose := loadCompose(t, mapStr(mustGuide(t, data, nil), "compose"))
+	if mapList(jsonPath(compose, "services", "agent").(map[string]any), "env_file")[0].(map[string]any)["format"] != "raw" {
 		t.Fatal("env_file format")
 	}
 	contains(t, stdout.String(), "HEARTBEAT_INTERVAL=42")
@@ -538,15 +565,18 @@ func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 
 // newHost is new_host(tmp_path, monkeypatch, mode, **changes): bootstrap_command
 // replaced by a counter.
-func newHost(t *testing.T, tmp, mode string, changes ...any) (*jsonx.Object, fakeHostEnv, *jsonx.Object) {
+func newHost(t *testing.T, tmp, mode string, changes ...any) (map[string]any, fakeHostEnv, map[string]any) {
 	t.Helper()
 	data := guideParams(t, tmp, "new", "bind")
 	if mode == "macvlan" {
-		data.Update(jsonx.Obj("network_mode", mode, "ha_parent", "eth0", "ha_subnet", "192.168.10.0/24", "ha_gateway", "192.168.10.1"))
+		data["network_mode"] = mode
+		data["ha_parent"] = "eth0"
+		data["ha_subnet"] = "192.168.10.0/24"
+		data["ha_gateway"] = "192.168.10.1"
 	}
 	host := fakeHost(t, tmp, data, changes...)
 	state := readJSONFile(t, host.state)
-	state.Set("containers", jsonx.NewObject())
+	state["containers"] = map[string]any{}
 	writeJSONFile(t, host.state, state)
 	previous := bootstrapCommand
 	bootstrapCommand = func(*Capability, GuideRequest) (string, error) {
@@ -560,7 +590,7 @@ func newHost(t *testing.T, tmp, mode string, changes ...any) (*jsonx.Object, fak
 func setStateField(t *testing.T, path, key string, value any) {
 	t.Helper()
 	state := readJSONFile(t, path)
-	state.Set(key, value)
+	state[key] = value
 	writeJSONFile(t, path, state)
 }
 
@@ -569,7 +599,7 @@ func TestNewRetryReusesOnlyOwnedCompanionAndResumesFailedMain(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			tmp := t.TempDir()
 			data, host, guide := newHost(t, tmp, "host", failure, true)
-			install := guide.GetString("install_command")
+			install := mapStr(guide, "install_command")
 			if first := runCommand(t, install, tmp, host.env...); first.code == 0 {
 				t.Fatal(first.stdout)
 			}
@@ -587,8 +617,8 @@ func TestNewRetryReusesOnlyOwnedCompanionAndResumesFailedMain(t *testing.T) {
 				t.Fatalf("%d companion starts", companions)
 			}
 			running := 0
-			for _, c := range readJSONFile(t, host.state).GetObject("containers").Values() {
-				if c.(*jsonx.Object).Value("running") == true {
+			for _, c := range mapObj(readJSONFile(t, host.state), "containers") {
+				if c.(map[string]any)["running"] == true {
 					running++
 				}
 			}
@@ -607,7 +637,7 @@ func TestNewRetryReusesOnlyOwnedCompanionAndResumesFailedMain(t *testing.T) {
 					t.Fatalf("unexpected run %v", call)
 				}
 			}
-			if _, err := os.Stat(filepath.Join(data.GetString("data_dir"), ".ha-install", "setup")); err != nil {
+			if _, err := os.Stat(filepath.Join(mapStr(data, "data_dir"), ".ha-install", "setup")); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -617,14 +647,15 @@ func TestNewRetryReusesOnlyOwnedCompanionAndResumesFailedMain(t *testing.T) {
 func TestNewRetryRejectsUnrelatedSameNameEvenWithCopiedOwnerLabel(t *testing.T) {
 	tmp := t.TempDir()
 	_, host, guide := newHost(t, tmp, "host", "fail_before_main", true)
-	install := guide.GetString("install_command")
+	install := mapStr(guide, "install_command")
 	if runCommand(t, install, tmp, host.env...).code == 0 {
 		t.Fatal("first run succeeded")
 	}
 	state := readJSONFile(t, host.state)
-	containers := state.GetObject("containers")
-	owned, _ := containers.Pop(strings.Repeat("b", 64))
-	containers.Set(strings.Repeat("d", 64), owned)
+	containers := mapObj(state, "containers")
+	owned := containers[strings.Repeat("b", 64)]
+	delete(containers, strings.Repeat("b", 64))
+	containers[strings.Repeat("d", 64)] = owned
 	writeJSONFile(t, host.state, state)
 	os.WriteFile(host.events, nil, 0o644)
 	if runCommand(t, install, tmp, host.env...).code == 0 {
@@ -638,7 +669,7 @@ func TestNewRetryRejectsUnrelatedSameNameEvenWithCopiedOwnerLabel(t *testing.T) 
 func TestNewRetryReusesOwnedMacvlanButRejectsChangedNetwork(t *testing.T) {
 	tmp := t.TempDir()
 	_, host, guide := newHost(t, tmp, "macvlan", "fail_before_main", true)
-	install := guide.GetString("install_command")
+	install := mapStr(guide, "install_command")
 	if runCommand(t, install, tmp, host.env...).code == 0 {
 		t.Fatal("first run succeeded")
 	}
@@ -673,7 +704,7 @@ func TestNewRetryReusesOwnedMacvlanButRejectsChangedNetwork(t *testing.T) {
 		t.Fatal("no local identity proof")
 	}
 	state := readJSONFile(t, host.state)
-	state.GetObject("network").Set("parent", "other0")
+	mapObj(state, "network")["parent"] = "other0"
 	writeJSONFile(t, host.state, state)
 	os.WriteFile(host.events, nil, 0o644)
 	if runCommand(t, install, tmp, host.env...).code == 0 {
@@ -687,14 +718,14 @@ func TestNewRetryReusesOwnedMacvlanButRejectsChangedNetwork(t *testing.T) {
 func TestNewRetryRejectsChangedSettingsAndDoesNotRewriteMarker(t *testing.T) {
 	tmp := t.TempDir()
 	data, host, guide := newHost(t, tmp, "host", "fail_before_main", true)
-	if runCommand(t, guide.GetString("install_command"), tmp, host.env...).code == 0 {
+	if runCommand(t, mapStr(guide, "install_command"), tmp, host.env...).code == 0 {
 		t.Fatal("first run succeeded")
 	}
-	marker := filepath.Join(data.GetString("data_dir"), ".ha-install", "setup")
+	marker := filepath.Join(mapStr(data, "data_dir"), ".ha-install", "setup")
 	before := readFile(t, marker)
 	changed := mustGuide(t, withChanges(data, "oxidns_port", 9092), &Enrollment{URL: "http://config.test/enroll/same-installation"})
 	os.WriteFile(host.events, nil, 0o644)
-	if runCommand(t, changed.GetString("install_command"), tmp, host.env...).code == 0 {
+	if runCommand(t, mapStr(changed, "install_command"), tmp, host.env...).code == 0 {
 		t.Fatal("changed settings accepted")
 	}
 	if readFile(t, marker) != before {

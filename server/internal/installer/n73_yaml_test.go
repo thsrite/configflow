@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 func TestN73ComposeYAMLGraphs(t *testing.T) {
@@ -20,7 +18,7 @@ func TestN73ComposeYAMLGraphs(t *testing.T) {
 		if _, err := readCompose(text); err == nil {
 			t.Fatal("unsafe Compose graph materialized")
 		}
-		if _, err := annotateCompose(text, jsonx.Obj("services", jsonx.Obj())); err == nil {
+		if _, err := annotateCompose(text, map[string]any{"services": map[string]any{}}); err == nil {
 			t.Fatal("unsafe Compose graph annotated")
 		}
 	}
@@ -31,7 +29,7 @@ func FuzzComposeYAML(f *testing.F) {
 	f.Add("services: &s {agent: *s}")
 	f.Fuzz(func(t *testing.T, text string) {
 		_, _ = readCompose(text)
-		_, _ = annotateCompose(text, jsonx.Obj("services", jsonx.Obj()))
+		_, _ = annotateCompose(text, map[string]any{"services": map[string]any{}})
 	})
 }
 
@@ -47,7 +45,7 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 			if depth < 10000 && err != nil || depth > 10000 && err == nil {
 				t.Fatalf("readCompose: %v", err)
 			}
-			_, err = annotateCompose(source, jsonx.Obj("services", jsonx.Obj()))
+			_, err = annotateCompose(source, map[string]any{"services": map[string]any{}})
 			if (err == nil) != (depth <= 10000) {
 				t.Fatalf("annotateCompose: %v", err)
 			}
@@ -61,7 +59,7 @@ func TestN73ComposeCompositeKeysAreNotMaterialized(t *testing.T) {
 	if _, err := readCompose(text); err == nil || !strings.HasPrefix(err.Error(), "Compose YAML 无效：") {
 		t.Fatalf("non-JSON key refusal: %v", err)
 	}
-	if _, err := annotateCompose(text, jsonx.Obj("services", jsonx.Obj())); err != nil {
+	if _, err := annotateCompose(text, map[string]any{"services": map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
 }

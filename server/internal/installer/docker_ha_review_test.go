@@ -7,16 +7,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // Regression tests of the A09 review (references: testdata/gen_review_a09.py
 // rows review/issue/*, replayed by TestDockerHAReviewCorpusMatchesPython).
 
-func reviewBody() *jsonx.Object {
-	return jsonx.Obj("server_url", "https://panel.test/", "agent_name", "new-dns", "agent_ip", "192.168.50.20",
-		"data_dir", "/srv/oxidns", "oxidns_port", 8082, "network_mode", "host")
+func reviewBody() map[string]any {
+	return map[string]any{
+		"server_url":   "https://panel.test/",
+		"agent_name":   "new-dns",
+		"agent_ip":     "192.168.50.20",
+		"data_dir":     "/srv/oxidns",
+		"oxidns_port":  8082,
+		"network_mode": "host",
+	}
 }
 
 // A session file holding JSON null is Python's `session is None`: issue
@@ -47,7 +51,7 @@ func TestReviewIssueNullSessionRefusesWithoutWrites(t *testing.T) {
 // body['agent_ip'] is a KeyError (500), not a session with host None.
 func TestReviewIssueWithoutAgentIPIsAKeyError(t *testing.T) {
 	body := reviewBody()
-	body.Delete("agent_ip")
+	delete(body, "agent_ip")
 	_, err := IssueEnrollment(context.Background(), t.TempDir(), body, "default")
 	var te *TypeError
 	if !errors.As(err, &te) {

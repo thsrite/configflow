@@ -10,13 +10,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 type evidenceField struct {
@@ -64,7 +63,7 @@ func preflightBlock(values []evidenceField) string {
 	return strings.Join(append(lines, PreflightEnd), "\n") + "\n"
 }
 
-func report(t *testing.T, output any, mode ...string) *jsonx.Object {
+func report(t *testing.T, output any, mode ...string) map[string]any {
 	t.Helper()
 	var m any = "host"
 	if len(mode) > 0 {
@@ -77,31 +76,31 @@ func report(t *testing.T, output any, mode ...string) *jsonx.Object {
 	return result
 }
 
-func reportItem(t *testing.T, r *jsonx.Object, ident string) *jsonx.Object {
+func reportItem(t *testing.T, r map[string]any, ident string) map[string]any {
 	t.Helper()
-	for _, c := range r.GetList("checks") {
-		if c.(*jsonx.Object).Value("id") == ident {
-			return c.(*jsonx.Object)
+	for _, c := range mapList(r, "checks") {
+		if m, ok := c.(map[string]any); ok && m["id"] == ident {
+			return m
 		}
 	}
-	t.Fatalf("no check %s in %s", ident, jsonx.Repr(r))
+	t.Fatalf("no check %s in %v", ident, r)
 	return nil
 }
 
 func TestCompleteNativeLocalOutputOnlyPassesBasicChecks(t *testing.T) {
 	r := report(t, preflightBlock(preflightEvidence()))
-	if r.Value("status") != "pass" || r.Value("host_fingerprint") != strings.Repeat("a", 64) {
-		t.Fatal(jsonx.Repr(r))
+	if r["status"] != "pass" || r["host_fingerprint"] != strings.Repeat("a", 64) {
+		t.Fatal(r)
 	}
-	contains(t, r.GetString("summary"), "基础检查")
-	contains(t, r.GetString("summary"), "VIP")
-	contains(t, reportItem(t, r, "ipv4").GetString("detail"), "Docker bridge")
+	contains(t, mapStr(r, "summary"), "基础检查")
+	contains(t, mapStr(r, "summary"), "VIP")
+	contains(t, mapStr(reportItem(t, r, "ipv4"), "detail"), "Docker bridge")
 }
 
 func TestTerminalPromptsAndOldContainerSuffixDoNotReplaceProtocolEvidence(t *testing.T) {
 	r := report(t, "root@nas:~# pasted command\n"+preflightBlock(preflightEvidence())+"\nold mounts: /persistent/core\n")
-	if r.Value("status") != "pass" {
-		t.Fatal(jsonx.Repr(r))
+	if r["status"] != "pass" {
+		t.Fatal(r)
 	}
 }
 
@@ -118,7 +117,7 @@ func TestOldDuplicateTruncatedOrMalformedOutputIsNeverAPass(t *testing.T) {
 		"CFHA1\ttcp53\t0\t\n" + block,
 		preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, strings.Repeat("x", PreflightMaxFieldBytes+1)})),
 	} {
-		if s := report(t, output).Value("status"); s != "unknown" {
+		if s := report(t, output)["status"]; s != "unknown" {
 			t.Errorf("%.80q: %v", output, s)
 		}
 	}
@@ -126,13 +125,13 @@ func TestOldDuplicateTruncatedOrMalformedOutputIsNeverAPass(t *testing.T) {
 
 func TestBinaryAndDeepJSONCannotTriggerUnhandledParserError(t *testing.T) {
 	invalid := strings.Replace(preflightBlock(preflightEvidence()), "CFHA1\tudp53\t0\t", "CFHA1\tudp53\t0\t/w==", 1)
-	if report(t, invalid).Value("status") != "unknown" {
+	if report(t, invalid)["status"] != "unknown" {
 		t.Fatal("binary accepted")
 	}
 	deep := strings.Repeat("[", 2000) + "0" + strings.Repeat("]", 2000)
 	r := report(t, preflightBlock(preflightEvidence(evidenceField{"daemon_security", 0, deep})))
-	if r.Value("status") != "unknown" || reportItem(t, r, "docker_rootful").Value("status") != "unknown" {
-		t.Fatal(jsonx.Repr(r))
+	if r["status"] != "unknown" || reportItem(t, r, "docker_rootful")["status"] != "unknown" {
+		t.Fatal(r)
 	}
 }
 
@@ -161,8 +160,8 @@ func TestKnownUnsupportedEnvironmentsFailWithoutEchoingRawErrors(t *testing.T) {
 		{evidenceField{"daemon_security", 0, `["name=rootless"]`}, "docker_rootful"},
 	} {
 		r := report(t, preflightBlock(preflightEvidence(c.change)))
-		if r.Value("status") != "fail" || reportItem(t, r, c.ident).Value("status") != "fail" {
-			t.Errorf("%v: %s", c.change, jsonx.Repr(r))
+		if r["status"] != "fail" || reportItem(t, r, c.ident)["status"] != "fail" {
+			t.Errorf("%v: %v", c.change, r)
 		}
 	}
 }
@@ -170,8 +169,8 @@ func TestKnownUnsupportedEnvironmentsFailWithoutEchoingRawErrors(t *testing.T) {
 func TestFailedRequiredProbeIsUnknownNotEmptySuccess(t *testing.T) {
 	for _, c := range [][2]string{{"ipv4", "ipv4"}, {"udp53", "udp53"}, {"tcp53", "tcp53"}, {"docker_endpoint", "docker_endpoint"}, {"daemon_security", "docker_rootful"}} {
 		r := report(t, preflightBlock(preflightEvidence(evidenceField{c[0], 127, "missing tool"})))
-		if r.Value("status") != "unknown" || reportItem(t, r, c[1]).Value("status") != "unknown" {
-			t.Errorf("%s: %s", c[0], jsonx.Repr(r))
+		if r["status"] != "unknown" || reportItem(t, r, c[1])["status"] != "unknown" {
+			t.Errorf("%s: %v", c[0], r)
 		}
 	}
 }
@@ -181,20 +180,20 @@ func TestHostLoopbackOrWildcardPortCollisionFailsButMacvlanDoesNot(t *testing.T)
 		{"tcp53", "LISTEN 0 4096 127.0.0.54:53 0.0.0.0:*"}} {
 		data := preflightBlock(preflightEvidence(evidenceField{c[0], 0, c[1]}))
 		r := report(t, data, "host")
-		if r.Value("status") != "fail" || reportItem(t, r, c[0]).Value("status") != "fail" {
-			t.Errorf("%v host: %s", c, jsonx.Repr(r))
+		if r["status"] != "fail" || reportItem(t, r, c[0])["status"] != "fail" {
+			t.Errorf("%v host: %v", c, r)
 		}
-		contains(t, reportItem(t, r, c[0]).GetString("remedy"), "迁移")
+		contains(t, mapStr(reportItem(t, r, c[0]), "remedy"), "迁移")
 		m := report(t, data, "macvlan")
-		if m.Value("status") != "pass" || reportItem(t, m, c[0]).Value("status") != "pass" {
-			t.Errorf("%v macvlan: %s", c, jsonx.Repr(m))
+		if m["status"] != "pass" || reportItem(t, m, c[0])["status"] != "pass" {
+			t.Errorf("%v macvlan: %v", c, m)
 		}
 	}
 }
 
 func TestUnrecognizedUDPOutputIsUnknown(t *testing.T) {
 	for _, line := range []string{"ss: not supported", "UNCONN 0 0 127.0.0.53:53", "LISTEN 0 1 *:53 *:*"} {
-		if s := reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"udp53", 0, line}))), "udp53").Value("status"); s != "unknown" {
+		if s := reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"udp53", 0, line}))), "udp53")["status"]; s != "unknown" {
 			t.Errorf("%q: %v", line, s)
 		}
 	}
@@ -203,20 +202,20 @@ func TestUnrecognizedUDPOutputIsUnknown(t *testing.T) {
 func TestComposeIsOptionalForRunInstallation(t *testing.T) {
 	for _, v := range []evidenceField{{"compose", 127, ""}, {"compose", 0, "2.29.9"}, {"compose", 0, "nonsense"}} {
 		r := report(t, preflightBlock(preflightEvidence(v)))
-		if r.Value("status") != "warning" {
-			t.Errorf("%v: %s", v, jsonx.Repr(r))
+		if r["status"] != "warning" {
+			t.Errorf("%v: %v", v, r)
 		}
-		contains(t, reportItem(t, r, "compose").GetString("detail"), "Docker Run")
+		contains(t, mapStr(reportItem(t, r, "compose"), "detail"), "Docker Run")
 	}
 }
 
 func TestMissingDefaultIdentityAndLXCAreWarningsNotNativeSuccessOrFailure(t *testing.T) {
 	r := report(t, preflightBlock(preflightEvidence(evidenceField{"machine_fingerprint", 1, ""}, evidenceField{"nesting", 0, "container"})))
-	if r.Value("status") != "warning" || r.Has("host_fingerprint") {
-		t.Fatal(jsonx.Repr(r))
+	if r["status"] != "warning" || mapHas(r, "host_fingerprint") {
+		t.Fatal(r)
 	}
-	contains(t, reportItem(t, r, "host_identity").GetString("detail"), "/etc/machine-id")
-	if reportItem(t, r, "nesting").Value("status") != "warning" {
+	contains(t, mapStr(reportItem(t, r, "host_identity"), "detail"), "/etc/machine-id")
+	if reportItem(t, r, "nesting")["status"] != "warning" {
 		t.Fatal("nesting")
 	}
 }
@@ -225,13 +224,13 @@ func TestPastedShellAndHTMLAreNeverExecuted(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "should-not-exist")
 	attack := "$(touch " + marker + ")<script>alert(1)</script>"
 	r := report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, attack})))
-	if r.Value("status") != "unknown" {
-		t.Fatal(jsonx.Repr(r))
+	if r["status"] != "unknown" {
+		t.Fatal(r)
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("executed")
 	}
-	data, _ := jsonx.Default(r)
+	data, _ := json.Marshal(r)
 	notContains(t, string(data), "<script>")
 }
 
@@ -299,9 +298,9 @@ func TestCollectorContinuesAfterDaemonFailureAndPreservesCallersOptions(t *testi
 	contains(t, result.stdout, PreflightEnd)
 	contains(t, result.stdout, "OPTIONS_RETAINED")
 	r := report(t, result.stdout)
-	if r.Value("status") != "fail" || reportItem(t, r, "docker_daemon").Value("status") != "fail" ||
-		reportItem(t, r, "ipv4").Value("status") != "pass" || reportItem(t, r, "udp53").Value("status") != "pass" {
-		t.Fatal(jsonx.Repr(r))
+	if r["status"] != "fail" || reportItem(t, r, "docker_daemon")["status"] != "fail" ||
+		reportItem(t, r, "ipv4")["status"] != "pass" || reportItem(t, r, "udp53")["status"] != "pass" {
+		t.Fatal(r)
 	}
 }
 
@@ -314,8 +313,8 @@ func TestCollectorDockerContextOverridesHostWithoutDisclosingEndpoint(t *testing
 		t.Fatal(result.stderr)
 	}
 	r := report(t, result.stdout)
-	if reportItem(t, r, "docker_endpoint").Value("status") != "fail" {
-		t.Fatal(jsonx.Repr(r))
+	if reportItem(t, r, "docker_endpoint")["status"] != "fail" {
+		t.Fatal(r)
 	}
 	notContains(t, result.stdout, "private-user")
 	notContains(t, result.stdout, "secret")
@@ -323,13 +322,13 @@ func TestCollectorDockerContextOverridesHostWithoutDisclosingEndpoint(t *testing
 		t.Fatal("daemon queried")
 	}
 	daemon := reportItem(t, r, "docker_daemon")
-	if daemon.Value("status") != "unknown" {
-		t.Fatal(jsonx.Repr(daemon))
+	if daemon["status"] != "unknown" {
+		t.Fatal(daemon)
 	}
-	contains(t, daemon.GetString("detail"), "已跳过")
+	contains(t, mapStr(daemon, "detail"), "已跳过")
 	env = append(env, "DOCKER_CONTEXT=default", "DOCKER_HOST=ssh://elsewhere")
 	result = runCollector(t, CollectorScript(), env, false)
-	if reportItem(t, report(t, result.stdout), "docker_endpoint").Value("status") != "pass" {
+	if reportItem(t, report(t, result.stdout), "docker_endpoint")["status"] != "pass" {
 		t.Fatal(result.stdout)
 	}
 }
@@ -354,7 +353,7 @@ func TestCollectorWithoutEncodingToolsNeverEmitsFalseCompleteBlock(t *testing.T)
 	}
 	notContains(t, string(out), PreflightEnd)
 	contains(t, string(out), "base64")
-	if report(t, string(out)).Value("status") != "unknown" {
+	if report(t, string(out))["status"] != "unknown" {
 		t.Fatal(string(out))
 	}
 }
@@ -367,7 +366,7 @@ func TestFingerprintCollectionNeverOutputsRawMachineID(t *testing.T) {
 	for _, s := range []string{"docker inspect", "docker stop", "docker run"} {
 		notContains(t, script, s)
 	}
-	if mustGuide(t, jsonx.Obj("action", "inspect"), nil).GetString("inspection_command") != script {
+	if mapStr(mustGuide(t, map[string]any{"action": "inspect"}, nil), "inspection_command") != script {
 		t.Fatal("inspection command is not the collector")
 	}
 }
@@ -380,23 +379,23 @@ func TestCollectorIdentitySymlinkIsNotClaimedCompatibleWithInstallation(t *testi
 	os.Symlink(target, link)
 	source := strings.ReplaceAll(CollectorScript(), "/etc/machine-id", q(link))
 	r := report(t, runCollector(t, source, env, false).stdout)
-	if reportItem(t, r, "host_identity").Value("status") != "warning" || r.Has("host_fingerprint") {
-		t.Fatal(jsonx.Repr(r))
+	if reportItem(t, r, "host_identity")["status"] != "warning" || mapHas(r, "host_fingerprint") {
+		t.Fatal(r)
 	}
-	contains(t, reportItem(t, r, "host_identity").GetString("detail"), "软链接")
+	contains(t, mapStr(reportItem(t, r, "host_identity"), "detail"), "软链接")
 	source = strings.ReplaceAll(CollectorScript(), "/etc/machine-id", q(target))
 	result := runCollector(t, source, env, false)
 	r = report(t, result.stdout)
 	sum := sha256.Sum256([]byte("0123456789abcdef0123456789abcdef"))
-	if reportItem(t, r, "host_identity").Value("status") != "pass" || r.Value("host_fingerprint") != hex.EncodeToString(sum[:]) {
-		t.Fatal(jsonx.Repr(r))
+	if reportItem(t, r, "host_identity")["status"] != "pass" || r["host_fingerprint"] != hex.EncodeToString(sum[:]) {
+		t.Fatal(r)
 	}
 	notContains(t, result.stdout, "0123456789abcdef0123456789abcdef")
 }
 
 func TestIPv4ReportShowsActualInterfacesAndPrefixesWithoutSelectingLAN(t *testing.T) {
 	addresses := "2: enp3s0 inet 192.168.10.20/24 scope global enp3s0\n3: docker0 inet 172.17.0.1/16 scope global docker0\n"
-	detail := reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, addresses}))), "ipv4").GetString("detail")
+	detail := mapStr(reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, addresses}))), "ipv4"), "detail")
 	for _, s := range []string{"2 个候选", "enp3s0 · 192.168.10.20/24", "docker0 · 172.17.0.1/16", "Docker bridge", "尚未验证局域网", "不会自动选择"} {
 		contains(t, detail, s)
 	}
@@ -407,7 +406,7 @@ func TestIPv4ReportBoundsVisibleListButKeepsTotalCount(t *testing.T) {
 	for n := 0; n < 10; n++ {
 		addresses.WriteString(itoa(n+1) + ": eth" + itoa(n) + " inet 192.168.10." + itoa(n+1) + "/24 scope global eth" + itoa(n) + "\n")
 	}
-	detail := reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, addresses.String()}))), "ipv4").GetString("detail")
+	detail := mapStr(reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, addresses.String()}))), "ipv4"), "detail")
 	contains(t, detail, "10 个候选")
 	contains(t, detail, "仅显示前 8 条")
 	contains(t, detail, "eth7 · 192.168.10.8/24")
@@ -419,7 +418,7 @@ func TestIPv4ReportBoundsVisibleListButKeepsTotalCount(t *testing.T) {
 
 func TestIPv4ReportCleansControlAndMarkupAndLimitsInterfaceName(t *testing.T) {
 	name := "eth<script>" + "\x1b[31m" + strings.Repeat("x", 100)
-	detail := reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, "2: " + name + " inet 192.168.10.20/24 scope global interface\n"}))), "ipv4").GetString("detail")
+	detail := mapStr(reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"ipv4", 0, "2: " + name + " inet 192.168.10.20/24 scope global interface\n"}))), "ipv4"), "detail")
 	for _, s := range []string{"<", ">", "\x1b", strings.Repeat("x", 49)} {
 		notContains(t, detail, s)
 	}
@@ -442,31 +441,31 @@ func TestSynologySanitizedReconstructedCopyPreservesActionableChecks(t *testing.
 			output = strings.Join(lines, "\n") + "\n"
 		}
 		r := report(t, output)
-		if r.Value("status") != "unknown" || reportItem(t, r, "udp53").Value("status") != "unknown" || reportItem(t, r, "tcp53").Value("status") != "unknown" ||
-			reportItem(t, r, "compose").Value("status") != "warning" || reportItem(t, r, "docker_daemon").Value("status") != "pass" {
-			t.Fatal(jsonx.Repr(r))
+		if r["status"] != "unknown" || reportItem(t, r, "udp53")["status"] != "unknown" || reportItem(t, r, "tcp53")["status"] != "unknown" ||
+			reportItem(t, r, "compose")["status"] != "warning" || reportItem(t, r, "docker_daemon")["status"] != "pass" {
+			t.Fatal(r)
 		}
-		contains(t, reportItem(t, r, "ipv4").GetString("detail"), "ovs_eth0 · 192.168.0.105/24")
-		contains(t, reportItem(t, r, "ipv4").GetString("detail"), "12 个候选")
-		if r.Value("host_fingerprint") != strings.Repeat("a", 64) {
+		contains(t, mapStr(reportItem(t, r, "ipv4"), "detail"), "ovs_eth0 · 192.168.0.105/24")
+		contains(t, mapStr(reportItem(t, r, "ipv4"), "detail"), "12 个候选")
+		if r["host_fingerprint"] != strings.Repeat("a", 64) {
 			t.Fatal("fingerprint")
 		}
 		m := report(t, output, "macvlan")
-		if m.Value("status") != "warning" || reportItem(t, m, "udp53").Value("status") != "pass" || reportItem(t, m, "tcp53").Value("status") != "pass" {
-			t.Fatal(jsonx.Repr(m))
+		if m["status"] != "warning" || reportItem(t, m, "udp53")["status"] != "pass" || reportItem(t, m, "tcp53")["status"] != "pass" {
+			t.Fatal(m)
 		}
-		contains(t, reportItem(t, m, "udp53").GetString("detail"), "尚未验证")
+		contains(t, mapStr(reportItem(t, m, "udp53"), "detail"), "尚未验证")
 	}
 }
 
 func TestExplicitEmptySentinelSurvivesHorizontalWhitespaceCopy(t *testing.T) {
 	for _, separator := range []string{" ", "   ", "\t ", " \t"} {
 		output := strings.ReplaceAll(strings.ReplaceAll(preflightBlock(preflightEvidence()), "\t0\t\n", "\t0\t-\n"), "\t", separator)
-		if report(t, output).Value("status") != "pass" {
+		if report(t, output)["status"] != "pass" {
 			t.Errorf("%q: not pass", separator)
 		}
 		output = strings.Replace(output, "CFHA1"+separator+"udp53"+separator+"0"+separator+"-", "CFHA1"+separator+"udp53"+separator+"127", 1)
-		if reportItem(t, report(t, output), "udp53").Value("status") != "unknown" {
+		if reportItem(t, report(t, output), "udp53")["status"] != "unknown" {
 			t.Errorf("%q: 127 not unknown", separator)
 		}
 	}
@@ -476,7 +475,7 @@ func TestCopyNormalizationNeverRepairsAmbiguousOrInvalidSuccess(t *testing.T) {
 	for _, row := range []string{"CFHA1 udp53 0", "CFHA1 udp53 0   ", "CFHA1\tudp53\t0", "CFHA1 udp53 0 -", "CFHA1 udp53 0 --",
 		"CFHA1 udp53 0 -\\\\", "CFHA1 udp53 0 \\", "CFHA1 udp53 0 c291\\\ncmNl", "CFHA1 udp53 0 !!!!\\"} {
 		output := strings.Replace(preflightBlock(preflightEvidence()), "CFHA1\tudp53\t0\t", row, 1)
-		if report(t, output).Value("status") != "unknown" || report(t, output, "macvlan").Value("status") != "unknown" {
+		if report(t, output)["status"] != "unknown" || report(t, output, "macvlan")["status"] != "unknown" {
 			t.Errorf("%q repaired", row)
 		}
 	}
@@ -485,7 +484,7 @@ func TestCopyNormalizationNeverRepairsAmbiguousOrInvalidSuccess(t *testing.T) {
 func TestCopyNormalizationStillRejectsDuplicateAndUnknownFields(t *testing.T) {
 	output := strings.ReplaceAll(strings.ReplaceAll(preflightBlock(preflightEvidence()), "\t0\t\n", "\t0\t-\n"), "\t", "  ")
 	for _, changed := range []string{strings.ReplaceAll(output, "tcp53", "udp53"), strings.ReplaceAll(output, "tcp53", "unexpected"), output + "CFHA1 udp53 127\n"} {
-		if report(t, changed).Value("status") != "unknown" {
+		if report(t, changed)["status"] != "unknown" {
 			t.Errorf("%q accepted", changed)
 		}
 	}
@@ -504,11 +503,11 @@ func TestExplicitProcSourceRecordsOccupiedAndEmptyTables(t *testing.T) {
 		if c.busy {
 			want = "fail"
 		}
-		if result.Value("status") != want {
-			t.Errorf("%v: %s", c, jsonx.Repr(result))
+		if result["status"] != want {
+			t.Errorf("%v: %v", c, result)
 		}
-		contains(t, result.GetString("detail"), "/proc/net")
-		if reportItem(t, report(t, block, "macvlan"), c.proto+"53").Value("status") != "pass" {
+		contains(t, mapStr(result, "detail"), "/proc/net")
+		if reportItem(t, report(t, block, "macvlan"), c.proto+"53")["status"] != "pass" {
 			t.Errorf("%v macvlan", c)
 		}
 	}
@@ -518,7 +517,7 @@ func TestMalformedProcEvidenceNeverImpliesHostPortIsFree(t *testing.T) {
 	for _, payload := range []string{"source=proc-net-v1", "source=proc-net-v1\ntables=udp", "source=proc-net-v1\ntables=tcp,tcp6",
 		"source=proc-net-v1\ntables=udp,udp6\nudp 4 00000000:0035 FF", "source=proc-net-v1\ntables=udp,udp6\nudp 6 00000000:0035 07",
 		"source=proc-net-v1\ntables=udp,udp6\nudp 4 00000000:0036 07", "source=unknown"} {
-		if reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"udp53", 0, payload}))), "udp53").Value("status") != "unknown" {
+		if reportItem(t, report(t, preflightBlock(preflightEvidence(evidenceField{"udp53", 0, payload}))), "udp53")["status"] != "unknown" {
 			t.Errorf("%q", payload)
 		}
 	}
@@ -535,7 +534,7 @@ func procRow(family int, state, port string) string {
 }
 
 // procCollector is proc_collector(tmp_path, tables).
-func procCollector(t *testing.T, tables map[string]string) (map[string]preflightValue, *jsonx.Object) {
+func procCollector(t *testing.T, tables map[string]string) (map[string]preflightValue, map[string]any) {
 	t.Helper()
 	tmp := t.TempDir()
 	env := collectorEnv(t, tmp)
@@ -567,10 +566,10 @@ func TestCollectorProcFallbackAcceptsValidDualTablesAndConservativeUDPBindings(t
 	if values["tcp53"] != (preflightValue{0, "source=proc-net-v1\ntables=tcp,tcp6"}) {
 		t.Fatalf("%#v", values["tcp53"])
 	}
-	if reportItem(t, r, "tcp53").Value("status") != "pass" || reportItem(t, r, "udp53").Value("status") != "fail" {
-		t.Fatal(jsonx.Repr(r))
+	if reportItem(t, r, "tcp53")["status"] != "pass" || reportItem(t, r, "udp53")["status"] != "fail" {
+		t.Fatal(r)
 	}
-	contains(t, reportItem(t, r, "udp53").GetString("detail"), "2 项")
+	contains(t, mapStr(reportItem(t, r, "udp53"), "detail"), "2 项")
 	if !strings.HasPrefix(values["udp53"].text, "source=proc-net-v1\ntables=udp,udp6\n") {
 		t.Fatalf("%q", values["udp53"].text)
 	}
@@ -595,8 +594,8 @@ func TestCollectorProcFallbackRequiresEveryTableAndValidNonmatchingRows(t *testi
 				tables["udp"] += strings.Replace(procRow(4, "07", "1234"), "0100007F", "invalid", 1)
 			}
 			values, r := procCollector(t, tables)
-			if values["udp53"].code == 0 || reportItem(t, r, "udp53").Value("status") != "unknown" || reportItem(t, r, "tcp53").Value("status") != "pass" {
-				t.Fatal(values["udp53"], jsonx.Repr(r))
+			if values["udp53"].code == 0 || reportItem(t, r, "udp53")["status"] != "unknown" || reportItem(t, r, "tcp53")["status"] != "pass" {
+				t.Fatal(values["udp53"], r)
 			}
 		})
 	}
@@ -608,7 +607,7 @@ func TestCollectorSerializesEmptyFailedFieldsWithExplicitSentinel(t *testing.T) 
 	writeFile(t, filepath.Join(tmp, "ip"), "#!/bin/sh\nexit 127\n", 0o755)
 	result := runCollector(t, CollectorScript(), env, false)
 	contains(t, result.stdout, "CFHA1\tipv4\t127\t-\n")
-	if reportItem(t, report(t, result.stdout), "ipv4").Value("status") != "unknown" {
+	if reportItem(t, report(t, result.stdout), "ipv4")["status"] != "unknown" {
 		t.Fatal(result.stdout)
 	}
 }

@@ -21,8 +21,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 var composeTestToken = strings.Repeat("t", 43)
@@ -59,16 +57,26 @@ elif args[:2]==['network','inspect']:
 else: sys.exit('unexpected mutating Docker operation '+repr(args))
 `
 
-func composeParams(dir string, changes ...any) *jsonx.Object {
+func composeParams(dir string, changes ...any) map[string]any {
 	identity := filepath.Join(dir, "host-id")
 	if _, err := os.Stat(identity); err != nil {
 		os.WriteFile(identity, []byte("unique-compose-host-identity-1234567890\n"), 0o644)
 	}
-	body := jsonx.Obj("install_method", "compose", "mode", "new", "server_url", "http://panel.example",
-		"agent_name", "compose-dns", "agent_ip", "192.168.10.20", "oxidns_port", 8082,
-		"data_dir", filepath.Join(dir, "data"), "network_mode", "host", "ha_host_id_path", identity,
-		"image", "local.test/agent:compose")
-	body.Update(jsonx.Obj(changes...))
+	body := map[string]any{
+		"install_method":  "compose",
+		"mode":            "new",
+		"server_url":      "http://panel.example",
+		"agent_name":      "compose-dns",
+		"agent_ip":        "192.168.10.20",
+		"oxidns_port":     8082,
+		"data_dir":        filepath.Join(dir, "data"),
+		"network_mode":    "host",
+		"ha_host_id_path": identity,
+		"image":           "local.test/agent:compose",
+	}
+	for i := 0; i+1 < len(changes); i += 2 {
+		body[changes[i].(string)] = changes[i+1]
+	}
 	return body
 }
 
@@ -76,9 +84,9 @@ func composeCapability(url string) *Enrollment {
 	return &Enrollment{URL: url + "/api/agents/docker-oxidns-ha-enroll/" + strings.Repeat("a", 32), Token: composeTestToken}
 }
 
-func composeGuide(t *testing.T, body *jsonx.Object, e *Enrollment) *jsonx.Object {
+func composeGuide(t *testing.T, body map[string]any, e *Enrollment) map[string]any {
 	t.Helper()
-	result, err := GenerateGuide(jsonx.DeepCopy(body), e)
+	result, err := GenerateGuide(cloneMap(body), e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,10 +94,10 @@ func composeGuide(t *testing.T, body *jsonx.Object, e *Enrollment) *jsonx.Object
 }
 
 // composeUnpack is unpack(result, destination).
-func composeUnpack(t *testing.T, result *jsonx.Object, destination string) string {
+func composeUnpack(t *testing.T, result map[string]any, destination string) string {
 	t.Helper()
 	os.MkdirAll(destination, 0o755)
-	archive, _ := base64.StdEncoding.DecodeString(result.GetObject("compose_bundle").GetString("content_base64"))
+	archive, _ := base64.StdEncoding.DecodeString(mapStr(mapObj(result, "compose_bundle"), "content_base64"))
 	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
 	if err != nil {
 		t.Fatal(err)
@@ -358,14 +366,14 @@ type composePrep struct {
 	env                  []string
 }
 
-func composePreparation(t *testing.T, dir string, body *jsonx.Object, e *Enrollment, inData bool) composePrep {
+func composePreparation(t *testing.T, dir string, body map[string]any, e *Enrollment, inData bool) composePrep {
 	t.Helper()
 	if e == nil {
 		e = composeCapability("http://panel.example")
 	}
 	destination := filepath.Join(dir, "bundle")
 	if inData {
-		destination = body.GetString("data_dir")
+		destination = mapStr(body, "data_dir")
 	}
 	files := composeUnpack(t, composeGuide(t, body, e), destination)
 	bin := filepath.Join(dir, "bin")
@@ -386,13 +394,13 @@ func TestBundlePrepareInitializesMountsAndIdentityOnce(t *testing.T) {
 	for _, inData := range []bool{false, true} {
 		dir := t.TempDir()
 		body := composeParams(dir, "create_host_identity", true)
-		os.Remove(body.GetString("ha_host_id_path"))
+		os.Remove(mapStr(body, "ha_host_id_path"))
 		p := composePreparation(t, dir, body, nil, inData)
 		if r := p.prepare(t); r.code != 0 {
 			t.Fatalf("in_data=%v: %+v", inData, r)
 		}
-		data := body.GetString("data_dir")
-		identity, _ := os.ReadFile(body.GetString("ha_host_id_path"))
+		data := mapStr(body, "data_dir")
+		identity, _ := os.ReadFile(mapStr(body, "ha_host_id_path"))
 		if len(strings.TrimSpace(string(identity))) != 32 {
 			t.Fatalf("identity %q", identity)
 		}
@@ -407,7 +415,7 @@ func TestBundlePrepareInitializesMountsAndIdentityOnce(t *testing.T) {
 		if r := p.prepare(t); r.code != 0 {
 			t.Fatalf("again: %+v", r)
 		}
-		if again, _ := os.ReadFile(body.GetString("ha_host_id_path")); string(again) != string(identity) {
+		if again, _ := os.ReadFile(mapStr(body, "ha_host_id_path")); string(again) != string(identity) {
 			t.Fatal("identity rewritten")
 		}
 		events, _ := os.ReadFile(p.events)
@@ -435,20 +443,26 @@ func TestBundlePrepareReusesOnlyOwnedProjectAndRenewsFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		compose := loaded
-		stored := jsonx.Obj("containers", jsonx.NewObject(), "networks", jsonx.NewObject())
-		for name, value := range compose.GetObject("services").All() {
-			service := value.(*jsonx.Object)
-			service.GetObject("labels").Set("com.docker.compose.project", compose.GetString("name"))
-			service.GetObject("labels").Set("com.docker.compose.service", name)
-			stored.GetObject("containers").Set(service.GetString("container_name"), service)
+		storedContainers := map[string]any{}
+		storedNetworks := map[string]any{}
+		stored := map[string]any{"containers": storedContainers, "networks": storedNetworks}
+		var firstContainer map[string]any
+		for _, name := range mapKeys(mapObj(compose, "services")) {
+			service := mapObj(mapObj(compose, "services"), name)
+			mapObj(service, "labels")["com.docker.compose.project"] = mapStr(compose, "name")
+			mapObj(service, "labels")["com.docker.compose.service"] = name
+			storedContainers[mapStr(service, "container_name")] = service
+			if firstContainer == nil {
+				firstContainer = service
+			}
 		}
-		for _, value := range compose.GetObject("networks").All() {
-			network := value.(*jsonx.Object)
-			network.GetObject("labels").Set("com.docker.compose.project", compose.GetString("name"))
-			stored.GetObject("networks").Set(network.GetString("name"), network)
+		for _, value := range mapObj(compose, "networks") {
+			network := value.(map[string]any)
+			mapObj(network, "labels")["com.docker.compose.project"] = mapStr(compose, "name")
+			storedNetworks[mapStr(network, "name")] = network
 		}
 		save := func() {
-			data, _ := jsonx.Default(stored)
+			data, _ := json.Marshal(stored)
 			os.WriteFile(p.state, data, 0o644)
 		}
 		save()
@@ -461,18 +475,17 @@ func TestBundlePrepareReusesOnlyOwnedProjectAndRenewsFiles(t *testing.T) {
 		if r := p.prepare(t); r.code != 0 {
 			t.Fatalf("%s renewed: %+v", mode, r)
 		}
-		if got := composeReadJSON(t, filepath.Join(body.GetString("data_dir"), ".ha-compose/enrollment.json"))["token"]; got != strings.Repeat("u", 43) {
+		if got := composeReadJSON(t, filepath.Join(mapStr(body, "data_dir"), ".ha-compose/enrollment.json"))["token"]; got != strings.Repeat("u", 43) {
 			t.Fatalf("token %v", got)
 		}
-		first := stored.GetObject("containers").Values()[0].(*jsonx.Object)
-		mount := first.GetList("volumes")[0].(*jsonx.Object)
-		mount.Set("source", "/foreign/agent")
+		mount := mapList(firstContainer, "volumes")[0].(map[string]any)
+		mount["source"] = "/foreign/agent"
 		save()
 		if r := p.prepare(t); r.code == 0 {
 			t.Fatalf("%s foreign mount accepted", mode)
 		}
-		mount.Set("source", body.GetString("data_dir")+"/agent")
-		first.GetObject("labels").Set("com.docker.compose.project", "foreign-project")
+		mount["source"] = mapStr(body, "data_dir") + "/agent"
+		mapObj(firstContainer, "labels")["com.docker.compose.project"] = "foreign-project"
 		save()
 		if r := p.prepare(t); r.code == 0 {
 			t.Fatalf("%s foreign project accepted", mode)
@@ -486,7 +499,7 @@ func TestBundlePrepareRefusesExistingDataUnownedResourcesAndInvalidEnvironment(t
 			dir := t.TempDir()
 			body := composeParams(dir, "network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "192.168.10.0/24")
 			p := composePreparation(t, dir, body, nil, fault == "extra-package-file")
-			data := body.GetString("data_dir")
+			data := mapStr(body, "data_dir")
 			switch fault {
 			case "old-data", "extra-package-file":
 				os.MkdirAll(data, 0o755)
@@ -496,16 +509,16 @@ func TestBundlePrepareRefusesExistingDataUnownedResourcesAndInvalidEnvironment(t
 				os.Mkdir(target, 0o755)
 				os.Symlink(target, data)
 			case "identity-link":
-				path := body.GetString("ha_host_id_path")
+				path := mapStr(body, "ha_host_id_path")
 				target := filepath.Join(filepath.Dir(path), "real-id")
 				os.Rename(path, target)
 				os.Symlink(target, path)
 			case "foreign-container":
-				os.WriteFile(p.state, []byte(`{"containers": {"`+body.GetString("agent_name")+`-oxidns": {}}}`), 0o644)
+				os.WriteFile(p.state, []byte(`{"containers": {"`+mapStr(body, "agent_name")+`-oxidns": {}}}`), 0o644)
 			case "foreign-network":
 				text, _ := os.ReadFile(filepath.Join(p.files, "compose.yaml"))
 				loaded, _ := readCompose(string(text))
-				name := jsonx.Path(loaded, "networks", "dns-ha", "name").(string)
+				name := jsonPath(loaded, "networks", "dns-ha", "name").(string)
 				os.WriteFile(p.state, []byte(`{"networks": {"`+name+`": {}}}`), 0o644)
 			case "old-compose":
 				os.WriteFile(p.state, []byte(`{"version": "2.19.9"}`), 0o644)
@@ -525,19 +538,19 @@ func TestBundlePrepareRefusesExistingDataUnownedResourcesAndInvalidEnvironment(t
 func TestBundleMissingIdentityDoesNotReserveData(t *testing.T) {
 	dir := t.TempDir()
 	body := composeParams(dir)
-	os.Remove(body.GetString("ha_host_id_path"))
+	os.Remove(mapStr(body, "ha_host_id_path"))
 	p := composePreparation(t, dir, body, nil, true)
 	if r := p.prepare(t); r.code == 0 {
 		t.Fatal("accepted without identity")
 	}
-	data := body.GetString("data_dir")
+	data := mapStr(body, "data_dir")
 	for _, name := range []string{".ha-compose", "agent"} {
 		if _, err := os.Stat(filepath.Join(data, name)); err == nil {
 			t.Fatalf("%s reserved", name)
 		}
 	}
 	corrected := writeFile(t, filepath.Join(dir, "correct-host-id"), "correct-host-identity-1234567890\n", 0o644)
-	body.Set("ha_host_id_path", corrected)
+	body["ha_host_id_path"] = corrected
 	composeUnpack(t, composeGuide(t, body, composeCapability("http://panel.example")), p.files)
 	if r := p.prepare(t); r.code != 0 {
 		t.Fatalf("%+v", r)
@@ -547,16 +560,16 @@ func TestBundleMissingIdentityDoesNotReserveData(t *testing.T) {
 func TestBundleRootLevelIdentityInsideDataDirectoryIsCreatedAndReused(t *testing.T) {
 	dir := t.TempDir()
 	body := composeParams(dir, "create_host_identity", true)
-	body.Set("ha_host_id_path", body.GetString("data_dir")+"/host-id")
+	body["ha_host_id_path"] = mapStr(body, "data_dir") + "/host-id"
 	p := composePreparation(t, dir, body, nil, true)
 	if r := p.prepare(t); r.code != 0 {
 		t.Fatalf("%+v", r)
 	}
-	original, _ := os.ReadFile(body.GetString("ha_host_id_path"))
+	original, _ := os.ReadFile(mapStr(body, "ha_host_id_path"))
 	if r := p.prepare(t); r.code != 0 {
 		t.Fatalf("again %+v", r)
 	}
-	if again, _ := os.ReadFile(body.GetString("ha_host_id_path")); string(again) != string(original) || len(original) == 0 {
+	if again, _ := os.ReadFile(mapStr(body, "ha_host_id_path")); string(again) != string(original) || len(original) == 0 {
 		t.Fatal("identity changed")
 	}
 }

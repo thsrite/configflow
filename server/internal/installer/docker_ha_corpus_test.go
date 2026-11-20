@@ -6,16 +6,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 	"configflow/internal/weburl"
 )
 
-func readDockerHACorpus(t *testing.T) []*jsonx.Object {
+func readDockerHACorpus(t *testing.T) []map[string]any {
 	t.Helper()
 	file, err := os.Open("testdata/docker_ha.jsonl.gz")
 	if err != nil {
@@ -28,13 +28,13 @@ func readDockerHACorpus(t *testing.T) []*jsonx.Object {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<20), 64<<20)
-	var out []*jsonx.Object
+	var out []map[string]any
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := parseJSONMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, value.(*jsonx.Object))
+		out = append(out, value)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func readDockerHACorpus(t *testing.T) []*jsonx.Object {
 }
 
 func digestOf(t *testing.T, v any) string {
-	data, err := jsonx.Encode(v, jsonx.Options{SortKeys: true, Compact: true})
+	data, err := sortedCompactJSON(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,45 +78,45 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 	counts := map[string]int{}
 	failed := 0
 	for _, record := range records {
-		id := jsonx.Str(record.Value("id"))
-		input, _ := record.Value("input").(*jsonx.Object)
-		var result *jsonx.Object
+		id := fmt.Sprint(record["id"])
+		input, _ := record["input"].(map[string]any)
+		var result map[string]any
 		var err error
-		switch record.GetString("kind") {
+		switch mapStr(record, "kind") {
 		case "b64":
-			decoded, ok := b64decodeValidate(record.GetString("input"))
+			decoded, ok := b64decodeValidate(mapStr(record, "input"))
 			if expected, present, err := n810Base64Expected(record); err != nil {
 				t.Fatal(err)
 			} else if present {
-				if ok != expected.GetBool("ok") || (ok && hex.EncodeToString(decoded) != expected.GetString("result")) || (!ok && len(decoded) != 0) {
+				if ok != mapBool(expected, "ok") || (ok && hex.EncodeToString(decoded) != mapStr(expected, "result")) || (!ok && len(decoded) != 0) {
 					t.Fatal("native base64 grammar differs")
 				}
 				counts["approved native base64"]++
 				continue
 			}
-			if ok != record.GetBool("ok") || (ok && hex.EncodeToString(decoded) != record.GetString("result")) {
+			if ok != mapBool(record, "ok") || (ok && hex.EncodeToString(decoded) != mapStr(record, "result")) {
 				failed++
-				t.Errorf("b64 %q: python %v %v, go %v %x", record.GetString("input"), record.GetBool("ok"), record.Value("result"), ok, decoded)
+				t.Errorf("b64 %q: python %v %v, go %v %x", mapStr(record, "input"), mapBool(record, "ok"), record["result"], ok, decoded)
 			}
 			counts["base64"]++
 			continue
 		case "guide":
 			var enrollment *Enrollment
-			if e := input.GetObject("enrollment"); e != nil {
-				enrollment = &Enrollment{URL: e.GetString("url"), Token: e.GetString("token")}
+			if e := mapObj(input, "enrollment"); e != nil {
+				enrollment = &Enrollment{URL: mapStr(e, "url"), Token: mapStr(e, "token")}
 			}
-			result, err = GenerateGuide(jsonx.DeepCopy(input.Value("request")), enrollment)
+			result, err = GenerateGuide(cloneJSON(input["request"]), enrollment)
 			if err == nil {
 				result = l1GuideBaseline(t, result)
 			}
 		default:
-			mode := input.GetOr("mode", "host")
-			result, err = ParsePreflightReport(input.Value("output"), mode)
+			mode := mapGetOr(input, "mode", "host")
+			result, err = ParsePreflightReport(input["output"], mode)
 		}
 		fail := func(format string, args ...any) {
 			failed++
 			if failed <= 25 {
-				t.Errorf("case %s (%s %.300s): "+format, append([]any{id, record.GetString("kind"), jsonx.Repr(input)}, args...)...)
+				t.Errorf("case %s (%s %.300v): "+format, append([]any{id, mapStr(record, "kind"), input}, args...)...)
 			}
 		}
 		if present, problem := n810PathRefusal(record, err); problem != nil {
@@ -128,26 +128,26 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 		if expected, present, problem := n810PreflightExpected(record); problem != nil {
 			t.Fatal(problem)
 		} else if present {
-			if err != nil || !jsonx.Equal(expected, result) {
+			if err != nil || !testjson.Equal(expected, result) {
 				fail("approved native report differs: %v", err)
 			}
 			counts["approved native machine grammar"]++
 			continue
 		}
-		if request := input.GetObject("request"); request != nil && err != nil {
+		if request := mapObj(input, "request"); request != nil && err != nil {
 			if l1CompactColonRefusal(request, err) {
 				counts["deliberate (L1 D1 compact colon refusal)"]++
 				continue
 			}
-			prior := record.GetObject("error")
-			if prior != nil && l1CompactPathWording(request, []any{prior.GetString("class"), prior.GetString("message")}, err) {
+			prior := mapObj(record, "error")
+			if prior != nil && l1CompactPathWording(request, []any{mapStr(prior, "class"), mapStr(prior, "message")}, err) {
 				counts["deliberate (L1 D1 compact path wording)"]++
 				continue
 			}
 		}
-		if request, _ := input.Value("request").(*jsonx.Object); err != nil && request != nil && deliberateAgentNameFix(request, err, "agent_name", "existing_agent_name") {
+		if request, _ := input["request"].(map[string]any); err != nil && request != nil && deliberateAgentNameFix(request, err, "agent_name", "existing_agent_name") {
 			// Decision 6: one trailing "\n" in an Agent name is refused in Go.
-			if !(record.GetBool("ok") == false && record.GetObject("error").GetString("message") == invalidAgentNameMessage) {
+			if !(mapBool(record, "ok") == false && mapStr(mapObj(record, "error"), "message") == invalidAgentNameMessage) {
 				counts["deliberate (agent name trailing newline)"]++
 				continue
 			}
@@ -155,7 +155,7 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 		if err != nil && deliberateServerURLFix(input, err) {
 			// Deliberate fix of a Python validation bug (A09 decision): one
 			// trailing "\n" in server_url is refused in Go.
-			if !(record.GetBool("ok") == false && record.GetObject("error").GetString("message") == invalidServerMessage) {
+			if !(mapBool(record, "ok") == false && mapStr(mapObj(record, "error"), "message") == invalidServerMessage) {
 				counts["deliberate (server_url trailing newline)"]++
 				continue
 			}
@@ -166,31 +166,31 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 		}
 		if err != nil {
 			class, message := pythonClassOf(err)
-			if record.GetBool("ok") {
+			if mapBool(record, "ok") {
 				fail("python answered, go error %v", err)
 				continue
 			}
-			pyError := record.GetObject("error")
+			pyError := mapObj(record, "error")
 			pyClass := "other"
-			if pyError.GetBool("value_error") {
+			if mapBool(pyError, "value_error") {
 				pyClass = "value"
 			}
-			if class != pyClass || (class == "value" && message != pyError.GetString("message")) {
-				fail("python %s %q, go %s %q", pyError.GetString("class"), pyError.GetString("message"), class, message)
+			if class != pyClass || (class == "value" && message != mapStr(pyError, "message")) {
+				fail("python %s %q, go %s %q", mapStr(pyError, "class"), mapStr(pyError, "message"), class, message)
 				continue
 			}
 			counts["refused"]++
 			continue
 		}
-		if !record.GetBool("ok") {
-			fail("python %v, go answered", record.Value("error"))
+		if !mapBool(record, "ok") {
+			fail("python %v, go answered", record["error"])
 			continue
 		}
 		var writerReference any
 		var writerReferencePresent bool
-		if record.GetString("kind") == "guide" {
+		if mapStr(record, "kind") == "guide" {
 			var oracleErr error
-			writerReference, writerReferencePresent, oracleErr = writerExpected("generate_guide", []any{input.Value("request"), input.Value("enrollment")})
+			writerReference, writerReferencePresent, oracleErr = writerExpected("generate_guide", []any{input["request"], input["enrollment"]})
 			if oracleErr != nil {
 				t.Fatal(oracleErr)
 			}
@@ -200,36 +200,31 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				fail("native writer reference differs")
 				continue
 			}
-		} else if digests := record.GetObject("digests"); digests != nil {
-			var keys []string
-			for key := range result.All() {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			pyKeys := digests.Keys()
-			sort.Strings(pyKeys)
+		} else if digests := mapObj(record, "digests"); digests != nil {
+			keys := mapKeys(result)
+			pyKeys := mapKeys(digests)
 			if strings.Join(keys, ",") != strings.Join(pyKeys, ",") {
 				fail("keys python %v go %v", pyKeys, keys)
 				continue
 			}
 			var differ []string
 			for _, key := range keys {
-				if digestOf(t, result.Value(key)) != digests.GetString(key) && !nativeFieldMatches(key, result.Value(key), digests.GetString(key)) {
+				if digestOf(t, result[key]) != mapStr(digests, key) && !nativeFieldMatches(key, result[key], mapStr(digests, key)) {
 					differ = append(differ, key)
 				}
 			}
 			if len(differ) > 0 {
 				detail := ""
 				for _, key := range differ {
-					if text, ok := result.Value(key).(string); ok {
+					if text, ok := result[key].(string); ok {
 						detail += "\n--- go " + key + ":\n" + text
 					}
 				}
 				fail("keys differ %v%.3000s", differ, detail)
 				continue
 			}
-		} else if !jsonx.Equal(result, record.Value("result")) {
-			fail("python %s\ngo     %s", jsonx.Repr(record.Value("result")), jsonx.Repr(result))
+		} else if !testjson.Equal(result, record["result"]) {
+			fail("python %v\ngo     %v", record["result"], result)
 			continue
 		}
 		counts["answered"]++
@@ -244,9 +239,9 @@ const invalidServerMessage = "请填写完整的 ConfigFlow HTTP(S) 地址"
 
 // deliberateServerURLFix reports whether a guide request's server_url ends
 // with exactly one "\n" and Go refused it as an invalid server address.
-func deliberateServerURLFix(input *jsonx.Object, err error) bool {
-	request, _ := input.Value("request").(*jsonx.Object)
-	server, _ := request.GetOr("server_url", nil).(string)
+func deliberateServerURLFix(input map[string]any, err error) bool {
+	request, _ := input["request"].(map[string]any)
+	server, _ := mapGetOr(request, "server_url", nil).(string)
 	ve, isValue := err.(*ValueError)
 	return strings.HasSuffix(server, "\n") && !strings.HasSuffix(server, "\n\n") && isValue && ve.Message == invalidServerMessage
 }
@@ -256,16 +251,21 @@ func deliberateServerURLFix(input *jsonx.Object, err error) bool {
 // re.match(r'^https?://[^\s]+$') accepts "http://x.test\n" and writes the
 // newline into the guide; Go refuses it like any other invalid address.
 func TestServerURLTrailingNewlineIsRefused(t *testing.T) {
-	base := jsonx.Obj("server_url", "http://config.test:8000", "agent_name", "dns-one", "agent_ip", "192.168.10.20",
-		"data_dir", "/srv/cf/new-data", "ha_host_id_path", "/srv/cf/host-id")
+	base := map[string]any{
+		"server_url":      "http://config.test:8000",
+		"agent_name":      "dns-one",
+		"agent_ip":        "192.168.10.20",
+		"data_dir":        "/srv/cf/new-data",
+		"ha_host_id_path": "/srv/cf/host-id",
+	}
 	if _, err := GenerateGuide(base, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, server := range []string{"http://config.test:8000\n", "https://config.test/\n", "http://config.test\n\n", "http://x\r\n"} {
-		request := base.DeepCopy()
-		request.Set("server_url", server)
+		request := cloneMap(base)
+		request["server_url"] = server
 		for _, mode := range []string{"new", "migrate"} {
-			request.Set("mode", mode)
+			request["mode"] = mode
 			_, err := GenerateGuide(request, nil)
 			ve, ok := err.(*ValueError)
 			if !ok || ve.Message != invalidServerMessage {
@@ -293,9 +293,9 @@ func refusedByNetURL(v any) bool {
 				return true
 			}
 		}
-	case *jsonx.Object:
-		for _, key := range v.Keys() {
-			if refusedByNetURL(v.Value(key)) {
+	case map[string]any:
+		for _, item := range v {
+			if refusedByNetURL(item) {
 				return true
 			}
 		}

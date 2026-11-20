@@ -20,12 +20,12 @@ func TestN73ComposeReaderMigrationGate(t *testing.T) {
 	}
 	for _, path := range []string{"testdata/docker_ha_compose.jsonl.gz", "testdata/docker_ha_compose_recorded.jsonl.gz", "testdata/docker_ha_compose_review.jsonl.gz"} {
 		for _, row := range readComposeLines(t, path) {
-			if out := row.GetList("out"); len(out) > 0 {
+			if out := mapList(row, "out"); len(out) > 0 {
 				if text, ok := out[0].(string); ok {
 					sources = append(sources, text)
 				}
 			}
-			sources = append(sources, yamlxtest.TextFields(row.GetObject("out"), "compose")...)
+			sources = append(sources, yamlxtest.TextFields(mapObj(row, "out"), "compose")...)
 		}
 	}
 	if len(sources) == 0 {

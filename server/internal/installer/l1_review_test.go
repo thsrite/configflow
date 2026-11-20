@@ -106,12 +106,12 @@ func TestL1ReviewOwnRunningOxiDNSIsNotAPortConflict(t *testing.T) {
 			tmp := t.TempDir()
 			_, host, guide := newHost(t, tmp, mode)
 			if mode == "host" {
-				if r := runCommand(t, guide.GetString("install_command"), tmp, host.env...); r.code != 0 {
+				if r := runCommand(t, mapStr(guide, "install_command"), tmp, host.env...); r.code != 0 {
 					t.Fatalf("first install: %d %s %s", r.code, r.stdout, r.stderr)
 				}
 			}
 			setStateField(t, host.state, "port_busy", true)
-			r := runCommand(t, guide.GetString("install_command"), tmp, host.env...)
+			r := runCommand(t, mapStr(guide, "install_command"), tmp, host.env...)
 			if r.code != 0 {
 				t.Fatalf("own listener treated as a conflict: %d %s %s", r.code, r.stdout, r.stderr)
 			}

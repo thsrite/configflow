@@ -3,14 +3,14 @@ package installer
 import (
 	"bufio"
 	"compress/gzip"
+	"fmt"
 	"os"
 	"testing"
 
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 )
 
-func readGzipJSONLines(t *testing.T, path string) []*jsonx.Object {
+func readGzipJSONLines(t *testing.T, path string) []map[string]any {
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -22,13 +22,13 @@ func readGzipJSONLines(t *testing.T, path string) []*jsonx.Object {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<20), 64<<20)
-	var out []*jsonx.Object
+	var out []map[string]any
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := parseJSONMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, value.(*jsonx.Object))
+		out = append(out, value)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -56,19 +56,18 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 	scanner.Buffer(make([]byte, 64<<20), 64<<20)
 	total, rendered, refused, failed, deliberate := 0, 0, 0, 0, 0
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		record, err := parseJSONMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		record := value.(*jsonx.Object)
 		total++
-		id := record.GetInt("id")
-		fn := record.GetString("fn")
-		k := kwargs{record.GetObject("kwargs")}
+		id := mapInt(record, "id")
+		fn := mapStr(record, "fn")
+		k := kwargs{mapObj(record, "kwargs")}
 		output, err := func() (out string, err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					err = &ValueError{Message: "panic: " + jsonx.Repr(r)}
+					err = &ValueError{Message: fmt.Sprintf("panic: %v", r)}
 				}
 			}()
 			return renderCase(fn, k)
@@ -83,43 +82,43 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 		if failed > 40 {
 			continue
 		}
-		if err != nil && deliberateAgentNameFix(k.Object, err) {
+		if err != nil && deliberateAgentNameFix(k.m, err) {
 			deliberate++ // decision 6: one trailing "\n" in agent_name is refused in Go
 			continue
 		}
-		if !record.GetBool("ok") {
+		if !mapBool(record, "ok") {
 			refused++
-			if err == nil && urllibOnlyRefusal(record.GetString("error")) {
+			if err == nil && urllibOnlyRefusal(mapStr(record, "error")) {
 				// accepted N2 class: urllib-only host refusal
 			} else if err == nil {
 				failed++
-				t.Errorf("case %d %s %s: python refused (%s), go rendered", id, fn, jsonx.Repr(k.Object), record.GetString("error"))
-			} else if got := errorText(err); !sameRefusal(record.GetString("error"), got, k.Object) {
+				t.Errorf("case %d %s %v: python refused (%s), go rendered", id, fn, k.m, mapStr(record, "error"))
+			} else if got := errorText(err); !sameRefusal(mapStr(record, "error"), got, k.m) {
 				failed++
-				t.Errorf("case %d %s %s:\n  python %s\n  go     %s", id, fn, jsonx.Repr(k.Object), record.GetString("error"), got)
+				t.Errorf("case %d %s %v:\n  python %s\n  go     %s", id, fn, k.m, mapStr(record, "error"), got)
 			}
 			continue
 		}
 		rendered++
-		if err != nil && refusedByNetURL(k.Object) {
+		if err != nil && refusedByNetURL(k.m) {
 			continue // N2: a URL net/url refuses
 		}
 		if err != nil {
 			failed++
-			t.Errorf("case %d %s %s: python rendered, go: %v", id, fn, jsonx.Repr(k.Object), err)
+			t.Errorf("case %d %s %v: python rendered, go: %v", id, fn, k.m, err)
 			continue
 		}
 		output, err = installertest.PythonBaseline(output)
 		if err != nil {
 			t.Fatal(err)
 		}
-		matches, oracleErr := writerHashCaseMatches(fn, k.Object, output, record.GetString("sha256"), record.GetInt("length"))
+		matches, oracleErr := writerHashCaseMatches(fn, k.m, output, mapStr(record, "sha256"), mapInt(record, "length"))
 		if oracleErr != nil {
 			t.Fatal(oracleErr)
 		}
 		if !matches {
 			failed++
-			t.Errorf("case %d %s %s: output differs", id, fn, jsonx.Repr(k.Object))
+			t.Errorf("case %d %s %v: output differs", id, fn, k.m)
 		}
 	}
 	if err := scanner.Err(); err != nil {

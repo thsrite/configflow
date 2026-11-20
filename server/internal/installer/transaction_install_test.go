@@ -8,8 +8,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // Port of backend/test_agent_transaction_install.py (native installer
@@ -262,7 +260,7 @@ func TestDockerGeneratedVolumesPersistIdentityAndTransactionRoots(t *testing.T) 
 		t.Fatal(err)
 	}
 	var lines []string
-	for _, v := range jsonx.Path(compose, "services", "agent", "volumes").([]any) {
+	for _, v := range jsonPath(compose, "services", "agent", "volumes").([]any) {
 		lines = append(lines, v.(string))
 	}
 	text := strings.Join(lines, "\n")
