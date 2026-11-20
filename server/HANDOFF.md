@@ -56,6 +56,14 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-21: batch-18 MERGED (W5 + W6 + W7 + reviews + gate coverage fix), go = 0d65d91ba.** Gate now runs
+every CONFIGFLOW_DIFF/Python test (LIVE 45 required, 0 skips). Batch-18 integration: Opus a02ccfe1 reverted an
+integrator-added repo Scope typed cache (unneeded; provider reads Config once). Remaining allowlist ≈676 lines: 581 test
+imports + 95 prod. Test migration split three ways (test files only, no prod/corpus/pyref changes), Gemini Neon:
+w8 (5552ecee: api/agents, installer, agents/{metrics,upgrades,trafficstore}), w8b (d22313a4: other agents/**, deploy,
+routers, routersplit, gateway, setup*, clients, discovery, notifications, tasks*), w8c (1f82fb75: everything else incl.
+tools/, cmd/). Then W9 = remove prod facades (95 lines) + jsonx/pystr dirs + hard gate + Opus O7 review.
+
 **Update 2026-11-20 (evening): batch-17 MERGED (W3 + W4 + reviews), go = 0fcca2c24.** Codex quota out until
 2026-11-23 21:18 → maintainer: Codex work goes to antigravity/gemini-4-neon-high (mode full-access); HR reviews stay fresh
 Opus. Continue an existing worktree with `paseo run --workspace <wks_id>` (`--cwd` is ignored from an agent session).
