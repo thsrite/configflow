@@ -158,9 +158,9 @@ func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 			target[*value] = struct{}{}
 		}
 	}
-	raw, present, err := recordMemberJSON(system.SystemConfig, "rule_proxy_token")
+	raw, present, err := system.SystemConfig.MemberJSON("rule_proxy_token")
 	add(ruleProxy, raw, present, err)
-	if raw, present, err := recordMemberJSON(system.SystemConfig, "retired_rule_proxy_tokens"); err == nil && present {
+	if raw, present, err := system.SystemConfig.MemberJSON("retired_rule_proxy_tokens"); err == nil && present {
 		var values []json.RawMessage
 		if json.Unmarshal(raw, &values) == nil {
 			for _, raw := range values {
@@ -169,7 +169,7 @@ func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 		}
 	}
 	for i := range system.Agents {
-		raw, present, err := recordMemberJSON(&system.Agents[i], "token")
+		raw, present, err := system.Agents[i].MemberJSON("token")
 		add(agents, raw, present, err)
 	}
 	return ruleProxy, agents
