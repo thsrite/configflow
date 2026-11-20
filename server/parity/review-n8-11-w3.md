@@ -49,3 +49,16 @@ FAIL	configflow/internal/api/subscriptions/difftest	0.851s
 restored
 ok  	configflow/internal/api/subscriptions/difftest	0.858s
 ```
+
+完整预检（.32，代码树 751d17d93）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt sync
+ssh sunbroke@192.168.0.32 'bash /tmp/preflight.sh .paseo__worktrees__302rx1dg__go-opus-review-n8-11-w3 -p 8'
+```
+
+```text
+== vet
+== full non-race tests (-p 8)
+PREFLIGHT PASS
+```
