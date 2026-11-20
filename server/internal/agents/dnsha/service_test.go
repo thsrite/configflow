@@ -99,7 +99,7 @@ type fixture struct {
 
 func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[string]agentfake.Options) *fixture {
 	t.Helper()
-	r, e := repo.Open(t.TempDir(), repo.Options{DefaultConfig: repo.GetDefaultConfig})
+	r, e := repo.Open(t.TempDir(), repo.Options{DefaultSettings: repo.DefaultConfig})
 	if e != nil {
 		t.Fatal(e)
 	}

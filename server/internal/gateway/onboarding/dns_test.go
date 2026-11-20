@@ -111,7 +111,7 @@ except GatewayOnboardingError as e: json.dump({'blocked':True,'message':str(e)},
 	if _, err := s.Execute(context.Background(), testOperation()); err != nil {
 		t.Fatal(err)
 	}
-	profile, _, err := s.Repository.GetPublishSnapshot(context.Background(), "default", true)
+	profile, _, err := s.Repository.PublishConfig(context.Background(), "default", true)
 	if err != nil {
 		t.Fatal(err)
 	}

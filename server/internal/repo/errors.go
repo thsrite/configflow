@@ -2,8 +2,9 @@ package repo
 
 import (
 	"errors"
-
-	"configflow/internal/jsonx"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Error kinds, the exception classes of backend/common/config_repository.py.
@@ -38,9 +39,54 @@ type Error struct {
 
 func (e *Error) Error() string {
 	if e.Kind == ErrNotFound {
-		return jsonx.Repr(e.Message)
+		return pyQuote(e.Message)
 	}
 	return e.Message
+}
+
+func pyQuote(text string) string {
+	var b strings.Builder
+	quote := byte('\'')
+	if strings.Contains(text, "'") && !strings.Contains(text, `"`) {
+		quote = '"'
+	}
+	b.WriteByte(quote)
+	for i := 0; i < len(text); {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		i += size
+		switch {
+		case r == rune(quote) || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < ' ' || r == 0x7f:
+			writePyHex(&b, 'x', r, 2)
+		case r < 0x7f || unicode.IsPrint(r):
+			b.WriteRune(r)
+		case r <= 0xff:
+			writePyHex(&b, 'x', r, 2)
+		case r <= 0xffff:
+			writePyHex(&b, 'u', r, 4)
+		default:
+			writePyHex(&b, 'U', r, 8)
+		}
+	}
+	b.WriteByte(quote)
+	return b.String()
+}
+
+func writePyHex(b *strings.Builder, prefix byte, r rune, width int) {
+	const hex = "0123456789abcdef"
+	b.WriteByte('\\')
+	b.WriteByte(prefix)
+	for shift := (width - 1) * 4; shift >= 0; shift -= 4 {
+		b.WriteByte(hex[(r>>shift)&0xf])
+	}
 }
 
 func (e *Error) Unwrap() error { return e.Cause }

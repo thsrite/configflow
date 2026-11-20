@@ -68,7 +68,7 @@ func TestC29RuntimeShutdownRejectsEveryOwner(t *testing.T) {
 			// Warm the real request cache, so a fast owner cannot rely on a
 			// later repository read happening to notice shutdown.
 			repo.SetRequest(ctx, repo.RequestInfo{Endpoint: "oxidns.oxidns_settings"})
-			if _, err := repo.GetConfig(ctx, "default"); err != nil {
+			if _, err := repo.Config(ctx, "default"); err != nil {
 				t.Fatal(err)
 			}
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Grace: 2 * time.Second})

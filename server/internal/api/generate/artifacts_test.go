@@ -196,7 +196,7 @@ func TestArtifactRejectsForeignExpiredAndCorruptPreviews(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			before, _ := s.Repo.ExportAll(s.Context(), false)
+			before, _ := s.Repo.ExportAllJSON(s.Context(), false)
 			for _, action := range []string{"file?path=surge.conf", "download"} {
 				result := s.Get("/api/generate/artifacts/" + artifact.ID + "/" + action).WantStatus(409)
 				var body struct {
@@ -206,7 +206,7 @@ func TestArtifactRejectsForeignExpiredAndCorruptPreviews(t *testing.T) {
 					t.Fatal("missing preview error")
 				}
 			}
-			after, _ := s.Repo.ExportAll(s.Context(), false)
+			after, _ := s.Repo.ExportAllJSON(s.Context(), false)
 			if !reflect.DeepEqual(before, after) {
 				t.Fatal("read changed configuration")
 			}

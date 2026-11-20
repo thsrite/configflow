@@ -16,7 +16,7 @@ import (
 
 func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 	srv := fixture(t)
-	config, err := repo.GetConfig(srv.Context(), "other")
+	config, err := repo.Config(srv.Context(), "other")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -105,14 +105,14 @@ func operation(c *httpx.Ctx) (*httpx.Response, error) {
 		refresh := c.Request.URL.Query().Get("refresh")
 		data, e = service.Status(c.Context(), id, profile, refresh == "1" || refresh == "true")
 	case "prepare":
-		before, revision, err := m.Repository().GetPublishSnapshot(c.Context(), profile, true)
+		before, revision, err := m.Repository().PublishConfig(c.Context(), profile, true)
 		if err != nil {
 			return nil, err
 		}
 		var result *core.Report
 		result, e = service.Prepare(c.Context(), id, profile, encode(body))
 		if e == nil {
-			after, current, err := m.Repository().GetPublishSnapshot(c.Context(), profile, true)
+			after, current, err := m.Repository().PublishConfig(c.Context(), profile, true)
 			if err != nil {
 				return nil, err
 			}

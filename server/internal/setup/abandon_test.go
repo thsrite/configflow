@@ -39,19 +39,23 @@ func TestAbandonDryRunDeletionAndRetainedInstallation(t *testing.T) {
 			if _, err := s.Action(ctx, testSessionID, "abandon", json.RawMessage(`{}`), ""); err != nil {
 				t.Fatal(err)
 			}
-			system, err := s.repository.GetSystem(ctx)
-			if err != nil || !system.GetObject("system_config").GetBool("setup_suggestion_dismissed") {
+			system, err := s.repository.System(ctx)
+			if err != nil {
 				t.Fatal("abandon did not suppress prompt", err)
+			}
+			dismissedRaw, _, _ := system.SystemConfig.MemberJSON("setup_suggestion_dismissed")
+			if string(dismissedRaw) != "true" {
+				t.Fatalf("abandon did not suppress prompt: %s", dismissedRaw)
 			}
 			if !started {
 				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 					t.Fatal("deleted session remains", err)
 				}
-				if _, err := s.repository.ProfileMetadata(ctx, "setup_"+testSessionID[:20]); !errors.Is(err, repo.ErrNotFound) {
+				if _, err := s.repository.ProfileMetadataRecord(ctx, "setup_"+testSessionID[:20]); !errors.Is(err, repo.ErrNotFound) {
 					t.Fatal("unused profile remains", err)
 				}
-				shared, err := s.repository.GetShared(ctx)
-				if err != nil || len(shared.GetList("subscriptions")) != 0 {
+				shared, err := s.repository.Shared(ctx)
+				if err != nil || len(shared.Subscriptions) != 0 {
 					t.Fatal("wizard source remains", err)
 				}
 			} else {

@@ -320,7 +320,7 @@ func validateDocument(d *model.Document) error {
 			if errors.As(err, &failure) && errors.Is(failure, ErrInUse) {
 				usages := failure.Usages
 				if len(usages) == 0 {
-					usages = []any{profileUsage(profile)}
+					usages = []any{profileUsageRecord(profile)}
 				}
 				return &Error{Kind: ErrInUse, Message: "配置 " + profile.Name + ": " + failure.Error(), Usages: usages, Cause: err}
 			}

@@ -60,7 +60,7 @@ func TestReviewOldInlineReaderCannotOverwriteCommittedDraft(t *testing.T) {
 	createManual(t, s)
 	// A request keeps its compat snapshot while an editor commits a newer DB.
 	reader := s.Context()
-	if _, err := repo.GetConfig(reader, "default"); err != nil {
+	if _, err := repo.Config(reader, "default"); err != nil {
 		t.Fatal(err)
 	}
 	item, err := source(s.Context(), "manual")
@@ -359,7 +359,7 @@ func TestReviewColdInlineReaderPopulatesCurrentDeclaration(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
 	reader := s.Context()
-	if _, err := repo.GetConfig(reader, "default"); err != nil {
+	if _, err := repo.Config(reader, "default"); err != nil {
 		t.Fatal(err)
 	}
 	service := &Service{client: rulefetch.DefaultClient}

@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -20,7 +19,7 @@ func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
 	if interpreter == "" || root == "" {
 		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are required")
 	}
-	python := func(directory, action string) *jsonx.Object {
+	python := func(directory, action string) *testObj {
 		t.Helper()
 		output := filepath.Join(t.TempDir(), "snapshot.json")
 		command := exec.Command(interpreter, "testdata/review_n85_storage.py", directory, output, action)
@@ -28,7 +27,7 @@ func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
 		if data, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("Python action %s: %v\n%s", action, err, data)
 		}
-		return must(jsonx.Parse(must(os.ReadFile(output))(t)))(t).(*jsonx.Object)
+		return parseJSONObj(t, must(os.ReadFile(output))(t))
 	}
 	pyDir, goDir := t.TempDir(), t.TempDir()
 	python(pyDir, "seed")
@@ -58,16 +57,16 @@ func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
 			gotTables, wantTables := xcDump(t, goDir), want.GetObject("tables")
 			// JSON value spelling is not a cross-language formatting contract.
 			// Compare every table column, parsing only fields.value.
-			for _, tables := range []*jsonx.Object{gotTables, wantTables} {
+			for _, tables := range []*testObj{gotTables, wantTables} {
 				for _, value := range tables.GetList("fields") {
 					row := value.([]any)
-					row[4] = must(jsonx.Parse([]byte(row[4].(string))))(t)
+					row[4] = parseJSONVal(t, []byte(row[4].(string)))
 				}
 			}
 			xcSame(t, "all database tables", gotTables, wantTables)
 			data := must(json.Marshal(n85Files(t, goDir)))(t)
-			xcSame(t, "complete file contents", must(jsonx.Parse(data))(t), want.Value("files"))
-			xcSame(t, "complete exported document", must(r.ExportAll(bg, false))(t), want.Value("export"))
+			xcSame(t, "complete file contents", parseJSONVal(t, data), want.Value("files"))
+			xcSame(t, "complete exported document", parseJSONVal(t, must(r.ExportAllJSON(bg, false))(t)), want.Value("export"))
 		})
 		if t.Failed() {
 			return
@@ -147,7 +146,7 @@ func TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites(t *testing.T) {
 // Automatic token maintenance must not re-encode the other members of the
 // settings record through the lossy legacy adapter.
 func TestReviewN85TokenMaintenancePreservesUntouchedMembers(t *testing.T) {
-	for _, entry := range []string{"typed", "legacy"} {
+	for _, entry := range []string{"update", "metadata"} {
 		t.Run(entry, func(t *testing.T) {
 			r := newRepo(t)
 			base := must(r.store.Load())(t)
@@ -159,13 +158,14 @@ func TestReviewN85TokenMaintenancePreservesUntouchedMembers(t *testing.T) {
 			}
 			_, _, err := r.store.Commit(base, base.Document, nil)
 			noError(t, err)
-			if entry == "typed" {
+			if entry == "update" {
 				noError(t, r.Update(bg, func(_ context.Context, d *model.Document) error {
 					profileByKey(d, DefaultProfileID).Name = "unrelated edit"
 					return nil
 				}))
 			} else {
-				_, err = r.UpdateProfileMetadata(bg, DefaultProfileID, parse(t, `{"name":"unrelated edit"}`))
+				name := "unrelated edit"
+				_, err = r.UpdateProfileMetadataRecord(bg, DefaultProfileID, ProfileMetadataUpdate{Name: &name})
 				noError(t, err)
 			}
 			after := must(r.store.Load())(t)

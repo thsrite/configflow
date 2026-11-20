@@ -32,7 +32,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/store"
@@ -58,13 +57,12 @@ type Options struct {
 	DefaultSettings func() *model.Config
 	// InitialSettings supplies the first-start/reset configuration.
 	InitialSettings func() *model.Config
+}
 
-	// DefaultConfig is default_config_factory: defaults merged over the
-	// built-in profile defaults for new profiles and old-format imports.
-	DefaultConfig func() *jsonx.Object
-	// InitialConfig is initial_config_factory: the single-profile document
-	// a fresh data directory and ResetAll start from. Nil: the defaults.
-	InitialConfig func() *jsonx.Object
+type storedEntry struct {
+	store.Entry
+	Model  *model.Document
+	Issues []model.FieldIssue
 }
 
 // Repository is ProfileRepository: one locked atomic document; only derived

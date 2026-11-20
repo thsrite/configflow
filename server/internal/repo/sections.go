@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -137,7 +136,7 @@ func updateProfileIn(document *model.Document, profileID string, fn func(p *mode
 	for _, rule := range current.RuleConfigs {
 		if rule.Policy != nil && previousNames[*rule.Policy] && !currentNames[*rule.Policy] {
 			return nil, inUse("配置 "+current.Name+" 的规则仍引用被删除策略组："+*rule.Policy,
-				jsonx.Obj("kind", "profile", "id", profileID, "name", current.Name))
+				Usage{Kind: "profile", ID: profileID, Name: current.Name})
 		}
 	}
 	for index := range current.RuleConfigs {
@@ -244,16 +243,18 @@ func applySharedIn(document *model.Document, fn func(s *model.Shared) error) (*m
 			if found && !disabled {
 				continue
 			}
-			usages, err := resourceUsage(document, kind, item.id)
+			usages, err := resourceUsages(document, kind, item.id)
 			if err != nil {
 				return nil, err
 			}
 			if len(usages) > 0 {
 				names := make([]string, len(usages))
+				rawUsages := make([]any, len(usages))
 				for index, usage := range usages {
-					names[index] = jsonx.Str(usage.(*jsonx.Object).Value("name"))
+					names[index] = usage.Name
+					rawUsages[index] = usage
 				}
-				return nil, inUse("资源 "+displayName(item.name, item.id)+" 仍被引用："+strings.Join(names, "、"), usages...)
+				return nil, inUse("资源 "+displayName(item.name, item.id)+" 仍被引用："+strings.Join(names, "、"), rawUsages...)
 			}
 		}
 	}

@@ -6,8 +6,6 @@ import (
 	"errors"
 	"os"
 	"testing"
-
-	"configflow/internal/ctxx"
 )
 
 func TestArtifactJSONKeepsLiteralURLSeparators(t *testing.T) {
@@ -47,20 +45,11 @@ func TestArtifactJSONKeepsLiteralURLSeparators(t *testing.T) {
 	}
 }
 
-func TestLegacyProfileMetadataKeepsWorkLifetime(t *testing.T) {
+func TestProfileMetadataRecordHonorsCancellation(t *testing.T) {
 	r := newRepo(t)
 	request, disconnect := context.WithCancel(t.Context())
 	disconnect()
-	metadata, err := r.ProfileMetadata(request, "default")
-	if err != nil || metadata.GetString("id") != "default" {
-		t.Fatalf("disconnected legacy metadata read: %v, %v", metadata, err)
-	}
 	if _, err := r.ProfileMetadataRecord(request, "default"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("native metadata ignored cancellation: %v", err)
-	}
-	work, shutdown := context.WithCancel(t.Context())
-	shutdown()
-	if _, err := r.ProfileMetadata(ctxx.WithParent(request, work), "default"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("legacy metadata ignored work shutdown: %v", err)
 	}
 }

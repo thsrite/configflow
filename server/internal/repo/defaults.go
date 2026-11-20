@@ -133,23 +133,18 @@ func (r *Repository) profileDefaultsJSON() (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	var override json.RawMessage
+	override := json.RawMessage(`{}`)
 	if r.options.DefaultSettings != nil {
 		override, err = configSettingsJSON(r.options.DefaultSettings())
-	} else {
-		override, err = legacyDefaultSettings(r.options)
-	}
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 	return mergeObjectsJSON(base, override)
 }
 func (r *Repository) initialSettingsJSON() (json.RawMessage, error) {
 	if r.options.InitialSettings != nil {
 		return configSettingsJSON(r.options.InitialSettings())
-	}
-	if raw, present, err := legacyInitialSettings(r.options); present || err != nil {
-		return raw, err
 	}
 	return r.profileDefaultsJSON()
 }

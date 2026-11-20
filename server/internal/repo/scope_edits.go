@@ -28,8 +28,7 @@ func UpdateConfig(ctx context.Context, profileID string, fn func(context.Context
 	if scope := ScopeOf(ctx); scope != nil {
 		scope.mu.Lock()
 		scope.bind(r)
-		delete(scope.cache, id)
-		delete(scope.baselines, id)
+		delete(scope.configs, id)
 		scope.mu.Unlock()
 	}
 	return nil

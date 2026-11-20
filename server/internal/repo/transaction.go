@@ -178,9 +178,16 @@ type transaction struct {
 	base storedEntry
 	// document is the typed working copy, owned by the transaction.
 	document *model.Document
-	// legacy is the *jsonx.Object working copy while a legacy updater runs
-	// (legacy.go); it is authoritative until converted back into document.
-	legacy *legacyState
+}
+
+// workingModel returns the typed working document of the write transaction
+// ctx belongs to; ok is false outside a transaction.
+func (r *Repository) workingModel(ctx context.Context) (*model.Document, bool, error) {
+	tx := r.transactionOf(ctx)
+	if tx == nil {
+		return nil, false, nil
+	}
+	return r.systemInView(ctx, tx.document), true, nil
 }
 
 // configurationCommitted dispatches the post-commit observer on native,

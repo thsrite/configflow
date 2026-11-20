@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
@@ -88,15 +87,34 @@ func routerFieldsDiffer(old memberView, updated *memberView, fields []string) bo
 	return false
 }
 
-// storedValue is a stored member as a jsonx value for usage records; absent
-// gives fallback.
-func storedValue(view memberView, member string, fallback any) any {
+type routerUsage struct {
+	Kind        string          `json:"kind"`
+	ID          string          `json:"id"`
+	Name        json.RawMessage `json:"name"`
+	ProfileID   string          `json:"profile_id"`
+	ProfileName json.RawMessage `json:"profile_name"`
+}
+
+// storedJSON returns a stored member's raw JSON value, or fallback when absent.
+func storedJSON(view memberView, member string, fallback json.RawMessage) json.RawMessage {
 	raw, ok := view.get(member)
 	if !ok {
 		return fallback
 	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
+	return raw
+}
+
+// storedAny decodes a stored member as a native JSON value with json.Number
+// precision; absent or invalid JSON gives fallback.
+func storedAny(view memberView, member string, fallback any) any {
+	raw, ok := view.get(member)
+	if !ok {
+		return fallback
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
 		return fallback
 	}
 	return value
@@ -130,15 +148,21 @@ func (r *Repository) routerGuard(ctx context.Context, previous *model.Document, 
 			}
 			isPolicyRouter := policyRouter != nil && *policyRouter == key
 			if jsonTruthy(before) && (identityChanged || (fieldChanged && !isPolicyRouter)) {
-				var profileName any
+				profileName := json.RawMessage("null")
 				if profile := profileByKey(previous, key.ProfileID); profile != nil {
 					if view, err := viewOf(profile); err == nil {
-						profileName = storedValue(view, "name", nil)
+						profileName = storedJSON(view, "name", json.RawMessage("null"))
 					}
 				}
+				fallbackName, _ := json.Marshal(key.RouterID)
 				return nil, inUse("路由器仍有已发布的"+manifest[1]+"；请先发布并核对撤回，再修改类型、地址或删除发布记录",
-					jsonx.Obj("kind", "router", "id", key.RouterID, "name", storedValue(old, "name", key.RouterID),
-						"profile_id", key.ProfileID, "profile_name", profileName))
+					routerUsage{
+						Kind:        "router",
+						ID:          key.RouterID,
+						Name:        storedJSON(old, "name", fallbackName),
+						ProfileID:   key.ProfileID,
+						ProfileName: profileName,
+					})
 			}
 		}
 		if connectionChanged || manifestChanged {

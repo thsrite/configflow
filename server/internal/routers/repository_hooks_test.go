@@ -14,8 +14,8 @@ func TestWireRegistersOnlyNativeRepositoryCallbacks(t *testing.T) {
 	defer repo.SetHooks(previous)
 	Wire()
 	installed := repo.SetHooks(repo.Hooks{})
-	if installed.RedactRouters != nil || installed.JobLock != nil || installed.RedactRoutersJSON == nil || installed.JobLockRecord == nil {
-		t.Fatal("legacy or missing repository callbacks")
+	if installed.RedactRoutersJSON == nil || installed.JobLockRecord == nil {
+		t.Fatal("missing repository callbacks")
 	}
 	raw, err := installed.RedactRoutersJSON(json.RawMessage(`{"items":[{"id":"synthetic","name":"Synthetic","password":"synthetic-password","endpoint":"https://router.example.com"}]}`))
 	if err != nil || strings.Contains(string(raw), "synthetic-password") || !strings.Contains(string(raw), "Synthetic") {

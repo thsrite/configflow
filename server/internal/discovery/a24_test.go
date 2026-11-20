@@ -19,11 +19,11 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 				t.Fatal(err)
 			}
 			r, _ := repo.GetRepository(ctx)
-			before, err := r.ExportAll(ctx, false)
+			before, err := r.ExportAllJSON(ctx, false)
 			if err != nil {
 				t.Fatal(err)
 			}
-			snapshot, _ := json.Marshal(before)
+			snapshot := []byte(before)
 			cacheBefore := ruleCacheSnapshot(t, r.DataDir())
 			sentinel := errors.New("guard rejected")
 			calls := 0
@@ -33,7 +33,7 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 					t.Fatal("missing captured selection")
 				}
 				// Reading through the transaction context must be reentrant and fresh.
-				if _, err := r.GetCompatConfig(tx, "default", repo.ResourceRoots{}); err != nil {
+				if _, err := r.Config(tx, "default", repo.ResourceRoots{}); err != nil {
 					t.Fatal(err)
 				}
 				if reject {
@@ -44,8 +44,8 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 			if calls != 1 {
 				t.Fatalf("guard calls %d", calls)
 			}
-			after, _ := r.ExportAll(ctx, false)
-			wire, _ := json.Marshal(after)
+			after, _ := r.ExportAllJSON(ctx, false)
+			wire := []byte(after)
 			if reject {
 				if !errors.Is(err, sentinel) {
 					t.Fatalf("error: %v", err)
@@ -71,7 +71,7 @@ func TestApplyDomainsGuardPassMatchesDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	source, _ := repo.GetRepository(seed)
-	document, err := source.ExportAll(seed, false)
+	document, err := source.ExportAllJSON(seed, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestApplyDomainsGuardPassMatchesDefault(t *testing.T) {
 			t.Fatal(err)
 		}
 		ctx := repo.WithRepository(context.Background(), r)
-		if _, err := r.ImportAll(ctx, document); err != nil {
+		if _, err := r.ImportAllJSON(ctx, document); err != nil {
 			t.Fatal(err)
 		}
 		var options []ApplyOptions

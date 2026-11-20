@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -74,23 +73,13 @@ func TestReadsInsideTransactionsSeeTheWorkingCopy(t *testing.T) {
 		if got := must(r.Profile(ctx, DefaultProfileID))(t).Name; got != "typed working" {
 			t.Fatalf("typed read in typed tx: %q", got)
 		}
-		if got := must(r.GetProfile(ctx, DefaultProfileID))(t).Value("name"); got != "typed working" {
-			t.Fatalf("legacy read in typed tx: %v", got)
-		}
 		if err := r.Update(ctx, func(context.Context, *model.Document) error { return nil }); err == nil ||
 			!errors.Is(err, ErrInUse) {
 			t.Fatalf("nested write: %v", err)
 		}
 		return nil
 	}))
-	noError(t, r.update(bg, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
-		document.GetObject("profiles").GetObject(DefaultProfileID).Set("name", "legacy working")
-		if got := must(r.Profile(ctx, DefaultProfileID))(t).Name; got != "legacy working" {
-			t.Fatalf("typed read in legacy tx: %q", got)
-		}
-		return nil
-	}))
-	if got := must(r.Profile(bg, DefaultProfileID))(t).Name; got != "legacy working" {
+	if got := must(r.Profile(bg, DefaultProfileID))(t).Name; got != "typed working" {
 		t.Fatalf("committed %q", got)
 	}
 	failed := errors.New("discard")
@@ -100,7 +89,7 @@ func TestReadsInsideTransactionsSeeTheWorkingCopy(t *testing.T) {
 	}); !errors.Is(err, failed) {
 		t.Fatal(err)
 	}
-	if got := must(r.Profile(bg, DefaultProfileID))(t).Name; got != "legacy working" {
+	if got := must(r.Profile(bg, DefaultProfileID))(t).Name; got != "typed working" {
 		t.Fatalf("failed update committed %q", got)
 	}
 	noError(t, r.WithReadSnapshot(bg, func(held context.Context) error {

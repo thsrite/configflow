@@ -476,11 +476,15 @@ func TestTypedRuleSyncSecretsUseSystemConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := s.m.Repository().GetSystemSettings(ctx)
+	sys, err := s.m.Repository().System(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := redact.ExternalPayloadSecrets(ctx, legacy)
+	settingsRaw, err := json.Marshal(sys.SystemConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(settingsRaw))
 	if err != nil {
 		t.Fatal(err)
 	}

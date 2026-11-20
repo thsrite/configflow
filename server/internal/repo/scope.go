@@ -7,7 +7,7 @@ package repo
 // carried by the context: the HTTP layer installs one per request with
 // WithScope (and describes the request with SetRequest), background loops
 // install one per task or run without. Without a Scope nothing is cached:
-// GetConfig reads the repository every time and saves have no merge baseline.
+// Config reads the repository every time and saves have no merge baseline.
 
 import (
 	"context"
@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -122,36 +121,14 @@ func IsGlobalRequest(route RequestRoute) bool {
 		!strings.HasPrefix(route.Path, "/api/") || route.Endpoint == ""
 }
 
-// ProfileAPIPath is profile_context.profile_api_path.
-func ProfileAPIPath(configData *jsonx.Object, suffix string) string {
-	if profileID := configData.Value("profile_id"); jsonx.Truthy(profileID) {
-		return "/api/profiles/" + jsonx.Str(profileID) + suffix
-	}
-	return suffix
-}
-
-// ConfigAPIPath is profile_context.config_api_path.
-func ConfigAPIPath(configData *jsonx.Object, target string) string {
-	if profileID := configData.Value("profile_id"); jsonx.Truthy(profileID) {
-		return "/api/config/" + jsonx.Str(profileID) + "/" + target
-	}
-	return "/api/config/" + target
-}
-
-type baseline struct {
-	value *jsonx.Object
-	build func() (*jsonx.Object, error) // _LazyBaseline
-}
-
-// Scope holds the request-scoped state of common/config.py: the compat
-// snapshots handed out by GetConfig, the three-way merge baselines captured
-// when data was read, and the profile ids already validated for the request.
+// Scope holds the request-scoped state of common/config.py: the resolved
+// snapshots handed out by Config, the three-way merge baselines captured when
+// shared data was read, and the profile ids already validated for the request.
 // It is safe for concurrent use.
 type Scope struct {
 	mu              sync.Mutex
 	repository      *Repository
-	cache           map[string]*jsonx.Object
-	baselines       map[string]baseline
+	configs         map[string]*model.Config
 	recordBaselines map[string]model.Fields
 	request         *RequestInfo
 	// resolved profile ids, valid for (repository, commit count)
@@ -190,8 +167,7 @@ func SetRequest(ctx context.Context, request RequestInfo) {
 func ResetConfigContext(ctx context.Context) {
 	if scope := ScopeOf(ctx); scope != nil {
 		scope.mu.Lock()
-		scope.cache, scope.baselines, scope.resolved = nil, nil, nil
-		scope.recordBaselines = nil
+		scope.configs, scope.recordBaselines, scope.resolved = nil, nil, nil
 		scope.mu.Unlock()
 	}
 }
@@ -201,37 +177,8 @@ func ResetConfigContext(ctx context.Context) {
 func (s *Scope) bind(repository *Repository) {
 	if s.repository != repository {
 		s.repository = repository
-		s.cache, s.baselines, s.resolved = nil, nil, nil
-		s.recordBaselines = nil
+		s.configs, s.recordBaselines, s.resolved = nil, nil, nil
 	}
-}
-
-func (s *Scope) setBaseline(repository *Repository, key string, value baseline) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.bind(repository)
-	if s.baselines == nil {
-		s.baselines = map[string]baseline{}
-	}
-	s.baselines[key] = value
-}
-
-// baselineOf is _baseline(key): nil when nothing was read in this scope.
-func (s *Scope) baselineOf(repository *Repository, key string) (*jsonx.Object, error) {
-	if s == nil {
-		return nil, nil
-	}
-	s.mu.Lock()
-	s.bind(repository)
-	entry := s.baselines[key]
-	s.mu.Unlock()
-	if entry.build != nil {
-		return entry.build()
-	}
-	return entry.value, nil
 }
 
 // resolvedKey is a key of the resolved_profiles memo: an explicit id, or
@@ -322,7 +269,7 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 	if err := ValidateProfileID(profileID); err != nil {
 		return "", err
 	}
-	if _, err := repository.ProfileMetadata(ctx, profileID); err != nil {
+	if _, err := repository.ProfileMetadataRecord(ctx, profileID); err != nil {
 		return "", err
 	}
 	if memo != nil {
@@ -349,12 +296,11 @@ func GetDefaultProfileID(ctx context.Context) (string, error) {
 	return repository.DefaultProfileID(ctx)
 }
 
-// GetConfig is get_config(profile_id): the request-scoped compat view of a
-// profile ("" = the request's profile). Within one Scope the same object is
-// returned every time, so edits made to it are what SaveConfig(ctx, nil, id)
-// stores, merged three-way against the state it was read from. Without a
+// Config returns the request-scoped resolved view of a profile ("" = the
+// request's profile). Within one Scope the same *model.Config snapshot is
+// returned until invalidated by a write or ResetConfigContext. Without a
 // Scope every call returns a fresh view.
-func GetConfig(ctx context.Context, profileID string) (*jsonx.Object, error) {
+func Config(ctx context.Context, profileID string) (*model.Config, error) {
 	resolvedID, err := ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return nil, err
@@ -367,78 +313,50 @@ func GetConfig(ctx context.Context, profileID string) (*jsonx.Object, error) {
 	if scope != nil {
 		scope.mu.Lock()
 		scope.bind(repository)
-		cached := scope.cache[resolvedID]
+		cached := scope.configs[resolvedID]
 		scope.mu.Unlock()
 		if cached != nil {
 			return cached, nil
 		}
 	}
-	config, rebuild, err := repository.compatConfigWithBaseline(ctx, resolvedID)
+	config, err := repository.Config(ctx, resolvedID, nil)
 	if err != nil || scope == nil {
 		return config, err
 	}
-	entry := baseline{value: config.DeepCopy()}
-	if rebuild != nil {
-		// A committed generation is never modified in place: keeping it
-		// yields the exact baseline at save time without copying.
-		entry = baseline{build: rebuild}
-	}
 	scope.mu.Lock()
 	defer scope.mu.Unlock()
-	if cached := scope.cache[resolvedID]; cached != nil {
+	scope.bind(repository)
+	if cached := scope.configs[resolvedID]; cached != nil {
 		return cached, nil
 	}
-	if scope.cache == nil {
-		scope.cache = map[string]*jsonx.Object{}
+	if scope.configs == nil {
+		scope.configs = map[string]*model.Config{}
 	}
-	if scope.baselines == nil {
-		scope.baselines = map[string]baseline{}
-	}
-	scope.cache[resolvedID] = config
-	scope.baselines[resolvedID] = entry
+	scope.configs[resolvedID] = config
 	return config, nil
-}
-
-// GetResourceConfig is get_resource_config(kind, resource_id, profile_id):
-// the compat view with one shared resource (or, with resourceID nil, all of
-// that kind) resolved in addition; nothing is cached or persisted.
-func GetResourceConfig(ctx context.Context, kind string, resourceID *string, profileID string) (*jsonx.Object, error) {
-	resolvedID, err := ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return nil, err
-	}
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roots := ResourceRoots{kind: nil}
-	if resourceID != nil {
-		roots[kind] = []string{*resourceID}
-	}
-	return repository.GetCompatConfig(ctx, resolvedID, roots)
 }
 
 // LoadConfig is load_config(): startup initialisation. Outside a container
 // an empty system_config.server_domain is set from the DefaultServerDomain
 // hook; then the InitAgentManager hook runs and the default view is returned.
-func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
+func LoadConfig(ctx context.Context) (*model.Config, error) {
 	if err := prepareConfig(ctx); err != nil {
 		return nil, err
 	}
 	if h := currentHooks(); h.InitAgentManager != nil {
 		h.InitAgentManager()
 	}
-	return GetConfig(ctx, "")
+	return Config(ctx, "")
 }
 
 // PrepareConfig performs configuration startup preparation without initializing
 // the Agent manager. The server orders that work as a separate Startup step.
-func PrepareConfig(ctx context.Context) (*jsonx.Object, error) {
+func PrepareConfig(ctx context.Context) (*model.Config, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := prepareConfig(ctx); err != nil {
 		return nil, err
 	}
-	return GetConfig(ctx, "")
+	return Config(ctx, "")
 }
 
 func prepareConfig(ctx context.Context) error {
@@ -451,17 +369,16 @@ func prepareConfig(ctx context.Context) error {
 	_, dockerErr := os.Stat("/.dockerenv")
 	_, podmanErr := os.Stat("/run/.containerenv")
 	if dockerErr != nil && podmanErr != nil && h.DefaultServerDomain != nil {
-		system, err := repository.GetSystem(ctx)
+		system, err := repository.System(ctx)
 		if err != nil {
 			return err
 		}
-		if trimText(jsonx.Str(system.GetObject("system_config").GetOr("server_domain", ""))) == "" {
+		if trimText(system.SystemConfig.ServerDomain) == "" {
 			domain := h.DefaultServerDomain()
-			_, err := repository.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-				system.GetObject("system_config").Set("server_domain", domain)
-				return nil, nil
-			})
-			if err != nil {
+			if err := repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+				s.SystemConfig.ServerDomain = domain
+				return nil
+			}); err != nil {
 				return err
 			}
 		}
@@ -469,221 +386,4 @@ func prepareConfig(ctx context.Context) error {
 	return nil
 }
 
-// SaveConfig is save_config(config, profile_id): store the profile fields
-// of config (nil: the Scope's snapshot from GetConfig), merged against the
-// baseline captured when the profile was read in this Scope.
-func SaveConfig(ctx context.Context, config *jsonx.Object, profileID string) error {
-	ctx = ctxx.Detach(ctx)
-	_, err := saveConfig(ctx, config, profileID, true)
-	return err
-}
-
-// saveConfig is the body of save_config (snapshotDefault: a nil config is
-// the Scope's snapshot) and save_config_with_publish_guard (a nil config is
-// refused by save_profile, after the profile was resolved).
-func saveConfig(ctx context.Context, config *jsonx.Object, profileID string, snapshotDefault bool) (*jsonx.Object, error) {
-	resolvedID, err := ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return nil, err
-	}
-	if config == nil && snapshotDefault {
-		if config, err = GetConfig(ctx, resolvedID); err != nil {
-			return nil, err
-		}
-	}
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	base, err := ScopeOf(ctx).baselineOf(repository, resolvedID)
-	if err != nil {
-		return nil, err
-	}
-	_, revision, err := repository.SaveProfile(ctx, resolvedID, config, base)
-	if err != nil {
-		return nil, err
-	}
-	ResetConfigContext(ctx)
-	return jsonx.Obj("expected_profile_id", resolvedID, "expected_config_revision", jsonx.Int(revision)), nil
-}
-
-// SaveConfigWithPublishGuard is save_config_with_publish_guard: save a draft
-// and return the exact committed version for an optional push:
-// {expected_profile_id, expected_service_type, expected_config_revision}.
-func SaveConfigWithPublishGuard(ctx context.Context, config *jsonx.Object, serviceType, profileID string) (*jsonx.Object, error) {
-	ctx = ctxx.Detach(ctx)
-	saved, err := saveConfig(ctx, config, profileID, false)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Obj("expected_profile_id", saved.Value("expected_profile_id"), "expected_service_type", serviceType,
-		"expected_config_revision", saved.Value("expected_config_revision")), nil
-}
-
-// UpdateConfigTransaction is update_config_transaction(updater,
-// profile_id): apply an incremental update to freshly locked profile data;
-// it returns a copy of the stored profile. The Scope's snapshot of that
-// profile is dropped.
-func UpdateConfigTransaction(ctx context.Context, updater Updater, profileID string) (*jsonx.Object, error) {
-	ctx = ctxx.Detach(ctx)
-	resolvedID, err := ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return nil, err
-	}
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, _, err := repository.UpdateProfileTransaction(ctx, resolvedID, updater)
-	if err != nil {
-		return nil, err
-	}
-	if scope := ScopeOf(ctx); scope != nil {
-		scope.mu.Lock()
-		delete(scope.cache, resolvedID)
-		delete(scope.baselines, resolvedID)
-		scope.mu.Unlock()
-	}
-	return result, nil
-}
-
-// SafeImportConfig is safe_import_config(new_data, profile_id).
-func SafeImportConfig(ctx context.Context, newData *jsonx.Object, profileID string) error {
-	ctx = ctxx.Detach(ctx)
-	resolvedID, err := ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return err
-	}
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
-	if _, err := repository.ImportProfile(ctx, resolvedID, newData); err != nil {
-		return err
-	}
-	ResetConfigContext(ctx)
-	return nil
-}
-
-const (
-	sharedBaselineKey = "@shared"
-	systemBaselineKey = "@system"
-)
-
-func sectionBaseline(result, source *jsonx.Object) baseline {
-	if source != nil {
-		return baseline{build: func() (*jsonx.Object, error) { return source.DeepCopy(), nil }}
-	}
-	return baseline{value: result.DeepCopy()}
-}
-
-// GetSharedConfig is get_shared_config(): a copy of the shared section; the
-// state it was read from becomes the baseline of SaveSharedConfig.
-func GetSharedConfig(ctx context.Context) (*jsonx.Object, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, source, err := repository.GetSharedWithSource(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ScopeOf(ctx).setBaseline(repository, sharedBaselineKey, sectionBaseline(result, source))
-	return result, nil
-}
-
-// SaveSharedConfig is save_shared_config(config, baseline); a nil baseline
-// uses the one captured by GetSharedConfig in this Scope, if any.
-func SaveSharedConfig(ctx context.Context, config, base *jsonx.Object) error {
-	ctx = ctxx.Detach(ctx)
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
-	if base == nil {
-		if base, err = ScopeOf(ctx).baselineOf(repository, sharedBaselineKey); err != nil {
-			return err
-		}
-	}
-	if _, err := repository.SaveShared(ctx, config, base); err != nil {
-		return err
-	}
-	ResetConfigContext(ctx)
-	return nil
-}
-
-// UpdateSharedConfigTransaction is update_shared_config_transaction.
-func UpdateSharedConfigTransaction(ctx context.Context, updater Updater) (*jsonx.Object, error) {
-	ctx = ctxx.Detach(ctx)
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, err := repository.UpdateSharedTransaction(ctx, updater)
-	if err != nil {
-		return nil, err
-	}
-	ResetConfigContext(ctx)
-	return result, nil
-}
-
-// UpdateSharedAndConfigTransaction is update_shared_and_config_transaction:
-// update shared resources and one or more profiles in a single commit. A nil
-// profileIDs selects the request's profile.
-func UpdateSharedAndConfigTransaction(ctx context.Context, sharedUpdater Updater, updater ProfileUpdater,
-	profileIDs ProfileSelector) (shared, profiles *jsonx.Object, err error) {
-	ctx = ctxx.Detach(ctx)
-	if profileIDs == nil {
-		resolvedID, err := ResolveProfileID(ctx, "")
-		if err != nil {
-			return nil, nil, err
-		}
-		profileIDs = Profiles(resolvedID)
-	}
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	shared, profiles, err = repository.UpdateSharedAndProfilesTransaction(ctx, sharedUpdater, updater, profileIDs)
-	if err != nil {
-		return nil, nil, err
-	}
-	ResetConfigContext(ctx)
-	return shared, profiles, nil
-}
-
-// GetSystemConfig is get_system_config(): a copy of the system section
-// (settings, backup, agents); the state it was read from becomes the
-// baseline of SaveSystemConfig.
-func GetSystemConfig(ctx context.Context) (*jsonx.Object, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, source, err := repository.GetSystemWithSource(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ScopeOf(ctx).setBaseline(repository, systemBaselineKey, sectionBaseline(result, source))
-	return result, nil
-}
-
-// SaveSystemConfig is save_system_config(config, baseline); a nil baseline
-// uses the one captured by GetSystemConfig in this Scope, if any.
-func SaveSystemConfig(ctx context.Context, config, base *jsonx.Object) error {
-	ctx = ctxx.Detach(ctx)
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
-	if base == nil {
-		if base, err = ScopeOf(ctx).baselineOf(repository, systemBaselineKey); err != nil {
-			return err
-		}
-	}
-	if _, err := repository.SaveSystem(ctx, config, base); err != nil {
-		return err
-	}
-	ResetConfigContext(ctx)
-	return nil
-}
+const sharedBaselineKey = "@shared"

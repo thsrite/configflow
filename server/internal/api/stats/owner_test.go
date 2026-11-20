@@ -3,6 +3,7 @@ package stats
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"sync"
@@ -105,9 +106,26 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 		}
 		clock = clock.Add(SampleInterval)
 	}
-	saved, err := r.ReadProfileJSON("default", HistoryFile)
-	if err != nil || len(saved.GetList("samples")) != HistorySize {
-		t.Fatal("history not bounded", err)
+	path, err := r.ProfilePath("default", HistoryFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readSamples := func() []any {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Samples []any `json:"samples"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		return doc.Samples
+	}
+	if len(readSamples()) != HistorySize {
+		t.Fatal("history not bounded")
 	}
 	var wg sync.WaitGroup
 	for range 20 {
@@ -118,11 +136,9 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	saved, err = r.ReadProfileJSON("default", HistoryFile)
-	if err != nil || len(saved.GetList("samples")) != HistorySize {
-		t.Fatal("concurrent samples lost or grew", err)
+	if len(readSamples()) != HistorySize {
+		t.Fatal("concurrent samples lost or grew")
 	}
-	path, _ := r.ProfilePath("default", HistoryFile)
 	if err := os.WriteFile(path, []byte("{bad"), 0600); err != nil {
 		t.Fatal(err)
 	}

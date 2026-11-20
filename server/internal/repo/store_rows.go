@@ -8,15 +8,14 @@ import (
 	"configflow/internal/store"
 )
 
-// Native stored generations and row commits. Compatibility views are lazy:
-// only old accessors materialize them through legacy.go.
+// Native stored generations and row commits.
 
 func decodeEntry(raw store.Entry) (storedEntry, error) {
 	document, issues, err := decodeModelRows(raw.Document)
 	if err != nil {
 		return storedEntry{}, err
 	}
-	return storedEntry{Entry: raw, Model: document, Issues: issues, legacy: &legacySnapshot{}}, nil
+	return storedEntry{Entry: raw, Model: document, Issues: issues}, nil
 }
 
 func (r *Repository) createStore(doc *model.Document, meta map[string]json.RawMessage) (storedEntry, error) {

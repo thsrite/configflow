@@ -1,28 +1,26 @@
 package repo
 
 import (
-	"configflow/internal/jsonx"
 	"errors"
 	"os"
 	"testing"
+
+	"configflow/internal/testjson"
 )
 
-func nativeReferenceScalar(t *testing.T, record *jsonx.Object, err error) bool {
+func nativeReferenceScalar(t *testing.T, record *testObj, err error) bool {
 	t.Helper()
 	data, readErr := os.ReadFile("testdata/reference_native_scalars.json")
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	value, readErr := jsonx.Parse(data)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
+	value := parseJSONVal(t, data)
 	for _, item := range value.([]any) {
-		fixture := item.(*jsonx.Object)
+		fixture := item.(*testObj)
 		if fixture.GetString("label") != record.GetString("label") {
 			continue
 		}
-		if !jsonx.Equal(record, fixture.Value("record")) {
+		if !testjson.Equal(mustMarshalJSON(t, fixture.Value("record")), mustMarshalJSON(t, record)) {
 			t.Fatal("native reference input/Python outcome changed")
 		}
 		if fixture.Value("native_error") == nil {

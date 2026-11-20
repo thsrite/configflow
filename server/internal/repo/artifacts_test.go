@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -47,17 +46,12 @@ func TestArtifactWritesAreAtomicAndKeepABackup(t *testing.T) {
 		t.Fatal("wrote for a missing profile")
 	}
 
-	data := parse(t, `{"名称": "值", "n": 1.5, "list": []}`)
+	data := parseJSONObj(t, []byte(`{"名称": "值", "n": 1.5, "list": []}`))
 	path = must(r.WriteProfileJSON(bg, "default", "providers/a.json", data))(t)
 	if text := must(readFileString(path))(t); text != "{\n  \"名称\": \"值\",\n  \"n\": 1.5,\n  \"list\": []\n}\n" {
 		t.Fatalf("text %q", text)
 	}
-	wantEqual(t, must(r.ReadProfileJSON("default", "providers/a.json"))(t), data)
-	_, err = r.ReadProfileJSON("default", "providers/missing.json")
-	wantError(t, err, ErrRepository, "Cannot read configuration missing.json:")
-	noError(t, os.WriteFile(path, []byte("[1]"), 0o600))
-	_, err = r.ReadProfileJSON("default", "providers/a.json")
-	wantError(t, err, ErrValidation, "JSON object expected in a.json")
+	wantJSONEqual(t, must(os.ReadFile(path))(t), data)
 	must(r.WriteProfileText(bg, "default", "rules/x.list", []byte("a.test\n")))(t)
 	_, err = r.WriteProfileText(bg, "default", "../x", nil)
 	wantError(t, err, ErrValidation, "")
@@ -69,106 +63,127 @@ func TestArtifactWritesAreAtomicAndKeepABackup(t *testing.T) {
 
 func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 	r := newRepo(t)
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Update(parse(t, `{"subscriptions": [{"id": "s", "name": "S", "url": "https://secret.test/sub"}],
-			"nodes": [{"id": "n", "name": "N", "type": "ss", "server": "secret.test", "port": 1, "password": "pw", "params": {"k": "v"}}]}`))
-		return nil, nil
-	}))(t)
-	_, _, err := r.UpdateProfileFields(bg, "default", parse(t, `{"mihomo": {"custom_config": "secret", "linux_gateway_restore_point": {"x": 1}, "easytier": {"secret": "s"}},
-		"loon": {"custom_config": "secret"}}`), nil)
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		if err := shared.SetJSON("subscriptions", []byte(`[{"id": "s", "name": "S", "url": "https://secret.test/sub"}]`)); err != nil {
+			return err
+		}
+		return shared.SetJSON("nodes", []byte(`[{"id": "n", "name": "N", "type": "ss", "server": "secret.test", "port": 1, "password": "pw", "params": {"k": "v"}}]`))
+	}))
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"mihomo": {"custom_config": "secret", "linux_gateway_restore_point": {"x": 1}, "easytier": {"secret": "s"}}, "loon": {"custom_config": "secret"}}`), nil)
 	noError(t, err)
 	scAppendAgent(t, r, `{"id": "a", "name": "A", "profile_id": "default", "token": "agent-token"}`)
 
 	defer SetHooks(SetHooks(Hooks{}))
-	_, err = r.ExportAll(bg, true)
+	_, err = r.ExportAllJSON(bg, true)
 	wantError(t, err, ErrRepository, "脱敏")
 
-	var sanitizedWith *jsonx.Object
-	SetHooks(Hooks{
-		SanitizeExternalPayload: func(_ context.Context, payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
+	var sanitizedWith model.SystemConfig
+	SetHooks(Hooks{RecordHooks: RecordHooks{
+		SanitizeExternalDocument: func(_ context.Context, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
 			sanitizedWith = systemConfig
 			return payload, nil
 		},
-		RedactOxidnsSettings:   func(any) any { return "oxidns-redacted" },
-		RedactRouters:          func(any) any { return "routers-redacted" },
-		RedactEasytierSettings: func(any) any { return "easytier-redacted" },
-	})
-	result := must(r.ExportAll(bg, true))(t)
+		RedactOxidnsJSON:   func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
+		RedactRoutersJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`"routers-redacted"`), nil },
+		RedactEasytierJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`"easytier-redacted"`), nil },
+	}})
+	result := parseJSONObj(t, must(r.ExportAllJSON(bg, true))(t))
 	system := result.GetObject("system")
 	settings := system.GetObject("system_config")
-	if settings.Has("rule_proxy_token") || settings.Has("retired_rule_proxy_tokens") || settings.Has("config_token") {
-		t.Fatal("tokens exported")
+	if _, has := settings.Get("rule_proxy_token"); has {
+		t.Fatal("rule_proxy_token exported")
 	}
-	if !sanitizedWith.Has("rule_proxy_token") {
+	if _, has := settings.Get("retired_rule_proxy_tokens"); has {
+		t.Fatal("retired_rule_proxy_tokens exported")
+	}
+	if _, has := settings.Get("config_token"); has {
+		t.Fatal("config_token exported")
+	}
+	if sanitizedWith.RuleProxyToken == "" {
 		t.Fatal("the sanitizer must receive the original system_config")
 	}
-	wantEqual(t, system.Value("backup"), jsonx.NewObject())
-	wantEqual(t, system.Value("agents"), []any{})
+	wantJSONEqual(t, system.Value("backup"), map[string]any{})
+	wantJSONEqual(t, system.Value("agents"), []any{})
 	shared := result.GetObject("shared")
-	wantEqual(t, shared.GetList("subscriptions")[0].(*jsonx.Object).Value("url"), "[REDACTED]")
-	node := shared.GetList("nodes")[0].(*jsonx.Object)
-	wantEqual(t, []any{node.Value("server"), node.Value("password"), node.Value("params"), node.Value("name")},
-		[]any{"[REDACTED]", "[REDACTED]", jsonx.NewObject(), "N"})
+	wantJSONEqual(t, shared.GetList("subscriptions")[0].(*testObj).Value("url"), "[REDACTED]")
+	node := shared.GetList("nodes")[0].(*testObj)
+	wantJSONEqual(t, []any{node.Value("server"), node.Value("password"), node.Value("params"), node.Value("name")},
+		[]any{"[REDACTED]", "[REDACTED]", map[string]any{}, "N"})
 	profile := result.GetObject("profiles").GetObject("default")
 	mihomo := profile.GetObject("mihomo")
-	wantEqual(t, mihomo, parse(t, `{"custom_config": "", "easytier": "easytier-redacted"}`))
-	wantEqual(t, profile.Value("oxidns"), "oxidns-redacted")
-	wantEqual(t, profile.Value("routers"), "routers-redacted")
-	wantEqual(t, profile.GetObject("loon").Value("custom_config"), "")
+	wantJSONEqual(t, mihomo, json.RawMessage(`{"custom_config": "", "easytier": "easytier-redacted"}`))
+	wantJSONEqual(t, profile.Value("oxidns"), "oxidns-redacted")
+	wantJSONEqual(t, profile.Value("routers"), "routers-redacted")
+	wantJSONEqual(t, profile.GetObject("loon").Value("custom_config"), "")
 	// The stored document is untouched.
-	if !must(r.GetSystemSettings(bg))(t).Has("rule_proxy_token") {
+	if must(r.System(bg))(t).SystemConfig.RuleProxyToken == "" {
 		t.Fatal("export modified the document")
 	}
 }
 
 func TestNodeDeletionGoesThroughThePlanHook(t *testing.T) {
 	r := newRepo(t)
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("nodes", []any{parse(t, `{"id": "n1", "name": "N1"}`), parse(t, `{"id": "n2", "name": "N2"}`)})
-		return nil, nil
-	}))(t)
-	_, _, err := r.UpdateProfileFields(bg, "default", parse(t, `{"proxy_groups": [{"id": "g", "name": "G", "type": "select", "manual_nodes": ["n1", "n2"]}]}`), nil)
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("nodes", []byte(`[{"id": "n1", "name": "N1"}, {"id": "n2", "name": "N2"}]`))
+	}))
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"proxy_groups": [{"id": "g", "name": "G", "type": "select", "manual_nodes": ["n1", "n2"]}]}`), nil)
 	noError(t, err)
 
 	defer SetHooks(SetHooks(Hooks{}))
-	_, err = r.PreviewNodeDeletion(bg, []any{"n1"})
+	_, err = r.PreviewNodeDeletionIDs(bg, []string{"n1"})
 	wantError(t, err, ErrRepository, "PlanNodeDeletion")
 
 	confirmation := strings.Repeat("a", 64)
 	detach := true
-	SetHooks(Hooks{PlanNodeDeletion: func(document *jsonx.Object, nodeIDs any) (*jsonx.Object, *jsonx.Object, error) {
-		candidate := document.DeepCopy()
-		candidate.GetObject("shared").Set("nodes", []any{parse(t, `{"id": "n2", "name": "N2"}`)})
-		if detach {
-			candidate.GetObject("profiles").GetObject("default").GetList("proxy_groups")[0].(*jsonx.Object).Set("manual_nodes", []any{"n2"})
+	SetHooks(Hooks{RecordHooks: RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, nodeIDs []string) (*NodeDeletionPreview, *model.Document, error) {
+		candidate, err := copyRecord(document)
+		if err != nil {
+			return nil, nil, err
 		}
-		preview := jsonx.Obj("blockers", []any{}, "usages", []any{}, "confirmation", confirmation,
-			"groups", []any{jsonx.Obj("id", "g", "name", "G", "profile_id", "default", "profile_name", "默认配置")})
+		if err := candidate.Shared.SetJSON("nodes", []byte(`[{"id": "n2", "name": "N2"}]`)); err != nil {
+			return nil, nil, err
+		}
+		if detach {
+			nodes := []string{"n2"}
+			profileByKey(candidate, "default").ProxyGroups[0].ManualNodes = &nodes
+		}
+		preview := &NodeDeletionPreview{
+			Nodes:        []DeletionNode{{ID: "n1", Name: "N1"}},
+			Usages:       []DeletionUsage{},
+			Groups:       []DeletionGroup{{ID: "g", Name: "G", ProfileID: "default", ProfileName: "默认配置"}},
+			Blockers:     []string{},
+			EmptySources: []string{},
+			Confirmation: confirmation,
+		}
 		return preview, candidate, nil
-	}})
-	_, err = r.DeleteNodesWithReferences(bg, []any{"n1"}, "not-a-digest")
+	}}})
+	_, err = r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, "not-a-digest")
 	wantError(t, err, ErrValidation, "请先查看并确认删除影响")
-	_, err = r.DeleteNodesWithReferences(bg, []any{"n1"}, strings.Repeat("b", 64))
+	_, err = r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, strings.Repeat("b", 64))
 	wantError(t, err, ErrNodeDeletionChanged, "节点或引用关系已变化")
 	wantError(t, err, ErrInUse, "")
 
 	// A candidate that does not validate becomes a blocker of the preview.
 	detach = false
-	preview := must(r.PreviewNodeDeletion(bg, []any{"n1"}))(t)
-	if blockers := preview.GetList("blockers"); len(blockers) != 1 || !strings.Contains(blockers[0].(string), "引用的共享资源不存在：nodes/n1") {
-		t.Fatalf("blockers %s", jsonx.Repr(blockers))
+	preview := must(r.PreviewNodeDeletionIDs(bg, []string{"n1"}))(t)
+	if len(preview.Blockers) != 1 || !strings.Contains(preview.Blockers[0], "引用的共享资源不存在：nodes/n1") {
+		t.Fatalf("blockers %v", preview.Blockers)
 	}
-	_, err = r.DeleteNodesWithReferences(bg, []any{"n1"}, confirmation)
+	_, err = r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, confirmation)
 	wantError(t, err, ErrInUse, "无法删除：")
-	wantEqual(t, len(must(r.GetShared(bg))(t).GetList("nodes")), 2)
+	if got := len(must(r.Shared(bg))(t).Nodes); got != 2 {
+		t.Fatalf("nodes=%d, want 2", got)
+	}
 
 	detach = true
 	revision := must(r.ConfigRevision(bg, "default"))(t)
-	must(r.DeleteNodesWithReferences(bg, []any{"n1"}, confirmation))(t)
-	wantEqual(t, must(r.GetShared(bg))(t).Value("nodes"), []any{parse(t, `{"id": "n2", "name": "N2"}`)})
-	wantEqual(t, must(r.GetProfile(bg, "default"))(t).GetList("proxy_groups")[0].(*jsonx.Object).Value("manual_nodes"), []any{"n2"})
+	must(r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, confirmation))(t)
+	wantJSONEqual(t, must(r.Shared(bg))(t).Nodes, json.RawMessage(`[{"id": "n2", "name": "N2"}]`))
+	wantJSONEqual(t, *must(r.Profile(bg, "default"))(t).ProxyGroups[0].ManualNodes, []string{"n2"})
 	// One commit: the profile and the shared section each advance once.
-	wantEqual(t, must(r.ConfigRevision(bg, "default"))(t), revision+2)
+	if got := must(r.ConfigRevision(bg, "default"))(t); got != revision+2 {
+		t.Fatalf("revision=%d, want %d", got, revision+2)
+	}
 }
 
 // Export hooks must not resolve credentials from a different repository or
@@ -178,8 +193,9 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 	scAppendAgent(t, r, `{"id":"export-agent","name":"Export","profile_id":"default","token":"synthetic-export-token"}`)
 	scAppendAgent(t, other, `{"id":"other-agent","name":"Other","profile_id":"default","token":"synthetic-other-token"}`)
 	called := false
-	defer SetHooks(SetHooks(Hooks{
-		SanitizeExternalPayload: func(ctx context.Context, payload, settings *jsonx.Object) (*jsonx.Object, error) {
+	pass := func(v json.RawMessage) (json.RawMessage, error) { return v, nil }
+	defer SetHooks(SetHooks(Hooks{RecordHooks: RecordHooks{
+		SanitizeExternalDocument: func(ctx context.Context, payload *model.Document, settings model.SystemConfig) (*model.Document, error) {
 			called = true
 			bound, err := GetRepository(ctx)
 			noError(t, err)
@@ -190,31 +206,29 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 			if !tokens.Has("synthetic-export-token") || tokens.Has("synthetic-other-token") {
 				t.Fatal("sanitizer used another repository")
 			}
-			if len(payload.GetObject("system").GetList("agents")) != 0 {
+			if len(payload.System.Agents) != 0 {
 				t.Fatal("export must omit agents before sanitization")
 			}
-			original := must(bound.GetSystemSettings(ctx))(t)
-			wantEqual(t, settings, original)
+			original := must(bound.System(ctx))(t).SystemConfig
+			wantJSONEqual(t, settings, original)
 			return payload, nil
 		},
-		RedactOxidnsSettings:   func(v any) any { return v },
-		RedactRouters:          func(v any) any { return v },
-		RedactEasytierSettings: func(v any) any { return v },
-	}))
-	must(r.ExportAll(WithRepository(bg, other), true))(t)
+		RedactOxidnsJSON:   pass,
+		RedactRoutersJSON:  pass,
+		RedactEasytierJSON: pass,
+	}}))
+	must(r.ExportAllJSON(WithRepository(bg, other), true))(t)
 	if !called {
 		t.Fatal("sanitizer not called")
 	}
 	called = false
-	full := must(r.ExportAll(WithRepository(bg, other), false))(t)
+	full := parseJSONObj(t, must(r.ExportAllJSON(WithRepository(bg, other), false))(t))
 	if called || len(full.GetObject("system").GetList("agents")) != 1 {
 		t.Fatal("full restorable export was sanitized")
 	}
 }
 
-// Both old and typed registrations may coexist during N8-11. Each operation
-// selects the typed collaborator exactly once and keeps the reviewed inputs.
-func TestN811TypedHooksTakePrecedence(t *testing.T) {
+func TestN811TypedHooksRunOnceWithReviewedInputs(t *testing.T) {
 	r := newRepo(t)
 	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
 		shared.Nodes = []model.Node{{ID: "n", Name: "Node"}}
@@ -223,10 +237,6 @@ func TestN811TypedHooksTakePrecedence(t *testing.T) {
 	calls := 0
 	preview := &NodeDeletionPreview{Nodes: []DeletionNode{{ID: "n", Name: "Node"}}, Usages: []DeletionUsage{}, Groups: []DeletionGroup{}, Blockers: []string{}, EmptySources: []string{}, Confirmation: strings.Repeat("a", 64)}
 	defer SetHooks(SetHooks(Hooks{
-		PlanNodeDeletion: func(*jsonx.Object, any) (*jsonx.Object, *jsonx.Object, error) {
-			t.Fatal("old planner invoked")
-			return nil, nil, nil
-		},
 		RecordHooks: RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, ids []string) (*NodeDeletionPreview, *model.Document, error) {
 			calls++
 			if len(ids) != 1 || ids[0] != "n" || len(document.Shared.Nodes) != 1 {
@@ -243,7 +253,7 @@ func TestN811TypedHooksTakePrecedence(t *testing.T) {
 	}
 }
 
-func TestN811TypedExportHooksTakePrecedence(t *testing.T) {
+func TestN811TypedExportHooksRunOnce(t *testing.T) {
 	r := newRepo(t)
 	_, err := r.UpdateProfile(bg, "default", func(_ context.Context, p *model.Profile) error {
 		return p.SetJSON("mihomo", []byte(`{"custom_config":"private","easytier":{"enabled":true},"linux_gateway_restore_point":{"private":"snapshot"}}`))
@@ -253,13 +263,7 @@ func TestN811TypedExportHooksTakePrecedence(t *testing.T) {
 	pass := func(name string) func(json.RawMessage) (json.RawMessage, error) {
 		return func(raw json.RawMessage) (json.RawMessage, error) { calls[name]++; return raw, nil }
 	}
-	old := func(any) any { t.Fatal("old redaction invoked"); return nil }
 	defer SetHooks(SetHooks(Hooks{
-		SanitizeExternalPayload: func(context.Context, *jsonx.Object, *jsonx.Object) (*jsonx.Object, error) {
-			t.Fatal("old sanitizer invoked")
-			return nil, nil
-		},
-		RedactOxidnsSettings: old, RedactRouters: old, RedactEasytierSettings: old,
 		RecordHooks: RecordHooks{
 			RedactOxidnsJSON: pass("oxidns"), RedactRoutersJSON: pass("routers"), RedactEasytierJSON: pass("easytier"),
 			SanitizeExternalDocument: func(_ context.Context, d *model.Document, s model.SystemConfig) (*model.Document, error) {
@@ -282,26 +286,7 @@ func TestN811TypedExportHooksTakePrecedence(t *testing.T) {
 	}
 }
 
-func TestN811TypedPathsDoNotMaterializeLegacyDocument(t *testing.T) {
-	r := newRepo(t)
-	assertNative := func() {
-		t.Helper()
-		entry := r.cached()
-		if entry == nil || entry.legacy == nil || entry.legacy.document != nil {
-			t.Fatal("native path materialized a legacy document")
-		}
-	}
-	assertNative()
-	must(r.ExportAllJSON(bg, false))(t)
-	assertNative()
-	noError(t, r.UpdateConfig(bg, "default", func(_ context.Context, config *model.Config) error {
-		config.Profile.Mihomo.CustomConfig = "port: 17890"
-		return nil
-	}))
-	assertNative()
-}
-
-func TestN811TypedCommitHooksTakePrecedence(t *testing.T) {
+func TestN811TypedCommitHooksRunOnceInOrder(t *testing.T) {
 	defer SetHooks(SetHooks(Hooks{}))
 	r := newRepo(t)
 	_, err := r.UpdateProfile(bg, "default", func(_ context.Context, profile *model.Profile) error {
@@ -314,13 +299,6 @@ func TestN811TypedCommitHooksTakePrecedence(t *testing.T) {
 	noError(t, err)
 	locks, releases, commits := 0, 0, 0
 	SetHooks(Hooks{
-		JobLock: func(context.Context, string, string, *jsonx.Object) (func(), bool) {
-			t.Fatal("old job lock invoked")
-			return nil, false
-		},
-		ConfigurationCommitted: func(*Repository, *jsonx.Object, *jsonx.Object) {
-			t.Fatal("old commit observer invoked")
-		},
 		RecordHooks: RecordHooks{
 			JobLockRecord: func(_ context.Context, profileID, routerID string, router model.Router) (func(), bool) {
 				locks++

@@ -398,16 +398,7 @@ func sourceField(value *string, fallback string) string {
 	return *value
 }
 
-// scopedLocalConfig retains the admitted request's existing Scope snapshot until
-// repo provides the equivalent scoped model read. No source/cache logic lives here.
+// scopedLocalConfig returns the admitted request's Scope snapshot.
 func scopedLocalConfig(ctx context.Context, id string) (*model.Config, error) {
-	config, err := repo.GetConfig(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(config)
-	if err != nil {
-		return nil, err
-	}
-	return model.DecodeConfig(raw)
+	return repo.Config(ctx, id)
 }

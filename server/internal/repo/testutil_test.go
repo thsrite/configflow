@@ -143,6 +143,111 @@ func (o *testObj) Delete(key string) {
 	}
 }
 
+func (o *testObj) Has(key string) bool {
+	if o == nil {
+		return false
+	}
+	_, ok := o.values[key]
+	return ok
+}
+
+func (o *testObj) GetBool(key string) bool {
+	v, _ := o.Value(key).(bool)
+	return v
+}
+
+func (o *testObj) GetOr(key string, fallback any) any {
+	if v, ok := o.Get(key); ok {
+		return v
+	}
+	return fallback
+}
+
+func (o *testObj) DeepCopy() *testObj {
+	if o == nil {
+		return nil
+	}
+	cp := newTestObj()
+	for _, k := range o.keys {
+		cp.Set(k, testDeepCopy(o.values[k]))
+	}
+	return cp
+}
+
+func testDeepCopy(v any) any {
+	switch x := v.(type) {
+	case *testObj:
+		return x.DeepCopy()
+	case []any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = testDeepCopy(item)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, item := range x {
+			out[k] = testDeepCopy(item)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func testStrings(list []any) []string {
+	out := make([]string, len(list))
+	for i, item := range list {
+		out[i], _ = item.(string)
+	}
+	return out
+}
+
+func testListOf(items []string) []any {
+	out := make([]any, len(items))
+	for i, item := range items {
+		out[i] = item
+	}
+	return out
+}
+
+func testTruthy(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return x
+	case string:
+		return x != ""
+	case json.Number:
+		f, _ := x.Float64()
+		return f != 0
+	case int:
+		return x != 0
+	case int64:
+		return x != 0
+	case float64:
+		return x != 0
+	case []any:
+		return len(x) > 0
+	case *testObj:
+		return x != nil && len(x.keys) > 0
+	default:
+		return true
+	}
+}
+
+func testCompact(t testing.TB, value any) string {
+	t.Helper()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(value); err != nil {
+		t.Fatalf("testCompact %T: %v", value, err)
+	}
+	return string(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
+}
+
 func (o *testObj) Keys() []string { return append([]string(nil), o.keys...) }
 
 func (o *testObj) All() iter.Seq2[string, any] {
@@ -159,16 +264,79 @@ func (o *testObj) MarshalJSON() ([]byte, error) {
 	if o == nil {
 		return []byte("null"), nil
 	}
-	fields := make([]testjson.Field, len(o.keys))
+	var b bytes.Buffer
+	b.WriteByte('{')
 	for i, k := range o.keys {
-		fields[i] = testjson.Field{Key: k, Value: o.values[k]}
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		val, err := json.Marshal(o.values[k])
+		if err != nil {
+			return nil, err
+		}
+		b.Write(key)
+		b.WriteByte(':')
+		b.Write(val)
 	}
-	return json.Marshal(testjson.Obj(fields...))
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+func replaceNonFiniteJSON(raw []byte) []byte {
+	if !bytes.Contains(raw, []byte("NaN")) && !bytes.Contains(raw, []byte("Infinity")) {
+		return raw
+	}
+	out := make([]byte, 0, len(raw))
+	inString := false
+	escaped := false
+	for i := 0; i < len(raw); {
+		b := raw[i]
+		if inString {
+			out = append(out, b)
+			if escaped {
+				escaped = false
+			} else if b == '\\' {
+				escaped = true
+			} else if b == '"' {
+				inString = false
+			}
+			i++
+			continue
+		}
+		if b == '"' {
+			inString = true
+			out = append(out, b)
+			i++
+			continue
+		}
+		if bytes.HasPrefix(raw[i:], []byte("-Infinity")) {
+			out = append(out, `"<non-finite:-Infinity>"`...)
+			i += len("-Infinity")
+			continue
+		}
+		if bytes.HasPrefix(raw[i:], []byte("Infinity")) {
+			out = append(out, `"<non-finite:Infinity>"`...)
+			i += len("Infinity")
+			continue
+		}
+		if bytes.HasPrefix(raw[i:], []byte("NaN")) {
+			out = append(out, `"<non-finite:NaN>"`...)
+			i += len("NaN")
+			continue
+		}
+		out = append(out, b)
+		i++
+	}
+	return out
 }
 
 func parseJSONVal(t testing.TB, raw []byte) any {
 	t.Helper()
-	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec := json.NewDecoder(bytes.NewReader(replaceNonFiniteJSON(raw)))
 	dec.UseNumber()
 	val, err := readTestJSON(dec)
 	if err != nil {

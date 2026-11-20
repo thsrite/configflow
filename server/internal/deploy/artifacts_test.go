@@ -49,7 +49,7 @@ func TestManualArtifactRuntime(t *testing.T) {
 				} else {
 					cancel()
 				}
-				before, err := m.Repository().ExportAll(base, false)
+				before, err := m.Repository().ExportAllJSON(base, false)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -76,7 +76,7 @@ func TestManualArtifactRuntime(t *testing.T) {
 						t.Fatal("disconnect lost frozen bytes", err)
 					}
 				}
-				after, err := m.Repository().ExportAll(base, false)
+				after, err := m.Repository().ExportAllJSON(base, false)
 				if err != nil || !reflect.DeepEqual(before, after) {
 					t.Fatal("artifact generation changed configuration", err)
 				}

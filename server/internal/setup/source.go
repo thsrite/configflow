@@ -177,7 +177,7 @@ func (s *Service) change(ctx context.Context, id string, raw json.RawMessage, ap
 			return err
 		}
 		defer func() { err = publicError(err, record) }()
-		if _, err := s.repository.ProfileMetadata(held, record.ProfileID); err != nil {
+		if _, err := s.repository.ProfileMetadataRecord(held, record.ProfileID); err != nil {
 			return err
 		}
 		fields, err := bodyFields(raw)

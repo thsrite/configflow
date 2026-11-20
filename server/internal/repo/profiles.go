@@ -155,7 +155,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 				}
 				var name any = id
 				if raw, _ := agent.get("name"); jsonTruthy(raw) {
-					name = storedValue(agent, "name", id)
+					name = storedAny(agent, "name", id)
 				}
 				usages = append(usages, map[string]any{"kind": "agent", "id": id, "name": name, "profile_id": profileID, "profile_name": profile.Name})
 				names = append(names, fmt.Sprint(name))

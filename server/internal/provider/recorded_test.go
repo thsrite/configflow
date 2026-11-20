@@ -673,7 +673,7 @@ func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) 
 		return recordedOutcome(items, nil)
 	case "commit_bundle":
 		profileID := args[0].(string)
-		if _, err := w.repo.ProfileMetadata(ctx, profileID); err != nil {
+		if _, err := w.repo.ProfileMetadataRecord(ctx, profileID); err != nil {
 			if _, err := w.repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: profileID, Name: profileID}, ""); err != nil {
 				w.t.Fatal(err)
 			}

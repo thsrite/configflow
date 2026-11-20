@@ -28,27 +28,9 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/store"
 )
-
-// wantEqual asserts Python == on jsonx values (retained for legacy W9 tests).
-func wantEqual(t testing.TB, got, want any) {
-	t.Helper()
-	if !jsonx.Equal(got, want) {
-		t.Fatalf("got  %s\nwant %s", jsonx.Repr(got), jsonx.Repr(want))
-	}
-}
-
-// parse is json.loads of a literal (retained for legacy W9 tests).
-func parse(t testing.TB, text string) *jsonx.Object {
-	t.Helper()
-	value, err := jsonx.ParseString(text)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	return value.(*jsonx.Object)
-}
 
 func xcPython(t *testing.T, command, directory, mode string, extra ...string) any {
 	t.Helper()
@@ -63,7 +45,7 @@ func xcPython(t *testing.T, command, directory, mode string, extra ...string) an
 	if text, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("repo_crosscheck.py %s: %v\n%s", command, err, text)
 	}
-	return must(jsonx.Parse(must(os.ReadFile(output))(t)))(t)
+	return parseJSONVal(t, must(os.ReadFile(output))(t))
 }
 
 func xcOpen(t *testing.T, directory, mode string) *Repository {
@@ -75,7 +57,7 @@ func xcOpen(t *testing.T, directory, mode string) *Repository {
 }
 
 // xcDump reads the same rows as dump() in repo_crosscheck.py.
-func xcDump(t *testing.T, directory string) *jsonx.Object {
+func xcDump(t *testing.T, directory string) *testObj {
 	t.Helper()
 	db := must(sql.Open("sqlite", "file:"+filepath.Join(directory, DatabaseFilename)))(t)
 	defer db.Close()
@@ -94,7 +76,7 @@ func xcDump(t *testing.T, directory string) *jsonx.Object {
 			for i, value := range values {
 				switch v := value.(type) {
 				case int64:
-					row[i] = jsonx.Int(v)
+					row[i] = json.Number(strconv.FormatInt(v, 10))
 				case []byte:
 					row[i] = string(v)
 				default:
@@ -106,7 +88,7 @@ func xcDump(t *testing.T, directory string) *jsonx.Object {
 		noError(t, rows.Err())
 		return result
 	}
-	return jsonx.Obj(
+	return testObjKV(
 		"meta", table("SELECT key, value FROM meta ORDER BY key", 2),
 		"sections", table("SELECT scope, owner, position FROM sections ORDER BY scope, owner", 3),
 		"fields", table("SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope, owner, field", 6))
@@ -128,7 +110,7 @@ func xcLayout(t *testing.T, directory string) []any {
 		return nil
 	}))
 	sort.Strings(entries)
-	return jsonx.ListOf(entries)
+	return testListOf(entries)
 }
 
 var (
@@ -183,7 +165,7 @@ var xcRetiredLock = regexp.MustCompile(`^(profiles/\.[^/]+\.operation\.lock|(pro
 
 func xcMaskedLayout(t testing.TB, record any, python bool) []any {
 	var entries []string
-	for _, entry := range record.(*jsonx.Object).GetList("result") {
+	for _, entry := range record.(*testObj).GetList("result") {
 		if xcRetiredLock.MatchString(entry.(string)) {
 			if !python {
 				t.Fatalf("Go created the retired lock file %s", entry)
@@ -193,7 +175,7 @@ func xcMaskedLayout(t testing.TB, record any, python bool) []any {
 		entries = append(entries, xcOrdinal.ReplaceAllString(xcMask(entry.(string)), "<random>"))
 	}
 	sort.Strings(entries)
-	return jsonx.ListOf(entries)
+	return testListOf(entries)
 }
 
 func xcText(t testing.TB, value any) string {
@@ -334,24 +316,42 @@ func TestCrossCheckFreshInit(t *testing.T) {
 	for _, mode := range []string{"factories", "plain"} {
 		t.Run(mode, func(t *testing.T) {
 			pyDir, goDir := t.TempDir(), t.TempDir()
-			python := xcPython(t, "init", pyDir, mode).(*jsonx.Object)
+			python := xcPython(t, "init", pyDir, mode).(*testObj)
 			r := xcOpen(t, goDir, mode)
-			xcSame(t, "export", must(r.ExportAll(bg, false))(t), python.Value("export"))
+			xcSame(t, "export", parseJSONVal(t, must(r.ExportAllJSON(bg, false))(t)), python.Value("export"))
 			xcSame(t, "rows", xcDump(t, goDir), python.Value("dump"))
 			xcSame(t, "layout", xcLayout(t, goDir), python.Value("layout"))
 		})
 	}
 }
 
-func xcPatch(t testing.TB, value any, path []any, step *jsonx.Object) any {
+func xcIndex(t testing.TB, key any) int {
+	t.Helper()
+	switch k := key.(type) {
+	case json.Number:
+		n, err := k.Int64()
+		noError(t, err)
+		return int(n)
+	case int:
+		return k
+	case int64:
+		return int(k)
+	default:
+		n, err := strconv.ParseInt(fmt.Sprint(key), 10, 64)
+		noError(t, err)
+		return int(n)
+	}
+}
+
+func xcPatch(t testing.TB, value any, path []any, step *testObj) any {
 	t.Helper()
 	if len(path) > 1 {
 		switch container := value.(type) {
-		case *jsonx.Object:
+		case *testObj:
 			key := path[0].(string)
 			container.Set(key, xcPatch(t, container.Value(key), path[1:], step))
 		case []any:
-			index := int(must(strconv.ParseInt(jsonx.Str(path[0]), 10, 64))(t))
+			index := xcIndex(t, path[0])
 			container[index] = xcPatch(t, container[index], path[1:], step)
 		default:
 			t.Fatalf("patch path %v through %T", path, value)
@@ -359,22 +359,22 @@ func xcPatch(t testing.TB, value any, path []any, step *jsonx.Object) any {
 		return value
 	}
 	switch container := value.(type) {
-	case *jsonx.Object:
+	case *testObj:
 		key := path[0].(string)
 		if replacement, ok := step.Get("set"); ok {
-			container.Set(key, jsonx.DeepCopy(replacement))
+			container.Set(key, testDeepCopy(replacement))
 		} else if item, ok := step.Get("append"); ok {
-			container.Set(key, append(container.GetList(key), jsonx.DeepCopy(item)))
+			container.Set(key, append(container.GetList(key), testDeepCopy(item)))
 		} else if step.GetBool("delete") {
 			container.Delete(key)
 		}
 		return container
 	case []any:
-		index := int(must(strconv.ParseInt(jsonx.Str(path[0]), 10, 64))(t))
+		index := xcIndex(t, path[0])
 		if replacement, ok := step.Get("set"); ok {
-			container[index] = jsonx.DeepCopy(replacement)
+			container[index] = testDeepCopy(replacement)
 		} else if item, ok := step.Get("append"); ok {
-			container[index] = append(container[index].([]any), jsonx.DeepCopy(item))
+			container[index] = append(container[index].([]any), testDeepCopy(item))
 		} else if step.GetBool("delete") {
 			return append(container[:index:index], container[index+1:]...)
 		}
@@ -387,17 +387,10 @@ func xcPatch(t testing.TB, value any, path []any, step *jsonx.Object) any {
 func xcApplyPatch(t testing.TB, value any, patch any) any {
 	steps, _ := patch.([]any)
 	for _, item := range steps {
-		step := item.(*jsonx.Object)
+		step := item.(*testObj)
 		value = xcPatch(t, value, step.GetList("path"), step)
 	}
 	return value
-}
-
-func xcUpdater(t testing.TB, patch any) Updater {
-	return func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		xcApplyPatch(t, current, patch)
-		return nil, nil
-	}
 }
 
 func xcErrorClass(err error) string {
@@ -429,101 +422,350 @@ func xcErrorClass(err error) string {
 	return fmt.Sprintf("%T", err)
 }
 
+func xcRawOrNil(t testing.TB, obj *testObj) json.RawMessage {
+	if obj == nil {
+		return nil
+	}
+	return mustMarshalJSON(t, obj)
+}
+
+func xcObjFromRecord(t testing.TB, record any) *testObj {
+	t.Helper()
+	raw, err := model.Marshal(record)
+	noError(t, err)
+	return parseJSONObj(t, raw)
+}
+
+func xcValFromJSON(t testing.TB, raw json.RawMessage, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONVal(t, raw), nil
+}
+
+func xcValFromAny(t testing.TB, val any, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONVal(t, mustMarshalJSON(t, val)), nil
+}
+
+func xcPyStr(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return "None"
+	case string:
+		return x
+	case bool:
+		if x {
+			return "True"
+		}
+		return "False"
+	case json.Number:
+		return string(x)
+	case []any:
+		parts := make([]string, len(x))
+		for i, item := range x {
+			if s, ok := item.(string); ok {
+				parts[i] = "'" + s + "'"
+			} else {
+				parts[i] = xcPyStr(item)
+			}
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case *testObj:
+		parts := make([]string, 0, len(x.keys))
+		for k, item := range x.All() {
+			val := xcPyStr(item)
+			if s, ok := item.(string); ok {
+				val = "'" + s + "'"
+			}
+			parts = append(parts, "'"+k+"': "+val)
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func xcProfileCreation(t testing.TB, metadata *testObj, requireName bool) (ProfileCreation, error) {
+	if metadata == nil {
+		return ProfileCreation{}, validationError(msgMetadataObject)
+	}
+	input := ProfileCreation{}
+	if value := metadata.Value("id"); testTruthy(value) {
+		text, ok := value.(string)
+		if !ok {
+			return input, validationError("Invalid profile id")
+		}
+		input.ID = text
+	}
+	if value := metadata.Value("name"); testTruthy(value) || requireName {
+		text, ok := value.(string)
+		if !ok {
+			return input, validationError(msgProfileNameEmpty)
+		}
+		input.Name = text
+	}
+	if value := metadata.Value("description"); testTruthy(value) {
+		input.Description = xcPyStr(value)
+	}
+	return input, nil
+}
+
+func xcProfileMetadataUpdate(updates *testObj) (ProfileMetadataUpdate, error) {
+	if updates == nil {
+		return ProfileMetadataUpdate{}, validationError(msgMetadataFields)
+	}
+	var input ProfileMetadataUpdate
+	for key, value := range updates.All() {
+		if key != "name" && key != "description" {
+			return ProfileMetadataUpdate{}, validationError(msgMetadataFields)
+		}
+		text, ok := value.(string)
+		if !ok {
+			return ProfileMetadataUpdate{}, validationError(msgMetadataStrings)
+		}
+		if key == "name" {
+			input.Name = &text
+		} else {
+			input.Description = &text
+		}
+	}
+	return input, nil
+}
+
+func xcApplyRecordPatch(t testing.TB, record any, keys []string, set func(string, json.RawMessage) error, patch any) error {
+	obj := xcObjFromRecord(t, record)
+	before := obj.DeepCopy()
+	xcApplyPatch(t, obj, patch)
+	for _, key := range keys {
+		bVal, bHas := before.Get(key)
+		aVal, aHas := obj.Get(key)
+		if !aHas {
+			continue
+		}
+		if bHas && testCompact(t, bVal) == testCompact(t, aVal) {
+			continue
+		}
+		if err := set(key, mustMarshalJSON(t, aVal)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // xcExecute mirrors execute() in repo_crosscheck.py.
-func xcExecute(t *testing.T, r *Repository, op *jsonx.Object, variables map[string]any) (any, error) {
-	arg := func(key string) *jsonx.Object {
-		value, _ := jsonx.AsObject(op.Value(key))
+func xcExecute(t *testing.T, r *Repository, op *testObj, variables map[string]any) (any, error) {
+	arg := func(key string) *testObj {
+		value, _ := op.Value(key).(*testObj)
 		if value != nil && value.Has("$var") {
-			copied := jsonx.DeepCopy(variables[value.GetString("$var")])
-			value, _ = xcApplyPatch(t, copied, value.Value("patch")).(*jsonx.Object)
+			copied := testDeepCopy(variables[value.GetString("$var")])
+			value, _ = xcApplyPatch(t, copied, value.Value("patch")).(*testObj)
 		}
 		return value
 	}
-	withRevision := func(saved *jsonx.Object, revision int64, err error) (any, error) {
+	withRevision := func(saved *model.Profile, revision int64, err error) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return jsonx.Obj("saved", saved, "revision", jsonx.Int(revision)), nil
+		return testObjKV("saved", xcObjFromRecord(t, saved), "revision", json.Number(strconv.FormatInt(revision, 10))), nil
 	}
 	id := op.GetString("id")
 	switch op.GetString("op") {
 	case "create_profile":
-		return r.CreateProfile(bg, arg("metadata"), op.GetString("clone_from"))
-	case "clone_profile":
-		return r.CloneProfile(bg, op.GetString("source"), arg("metadata"))
-	case "update_profile":
-		return r.UpdateProfileMetadata(bg, id, arg("updates"))
-	case "update_profile_fields":
-		return withRevision(r.UpdateProfileFields(bg, id, arg("fields"), arg("baseline")))
-	case "update_profile_transaction":
-		return withRevision(r.UpdateProfileTransaction(bg, id, xcUpdater(t, op.Value("patch"))))
-	case "import_profile":
-		return r.ImportProfile(bg, id, arg("data"))
-	case "update_system_transaction":
-		return r.UpdateSystemTransaction(bg, xcUpdater(t, op.Value("patch")))
-	case "save_system":
-		return r.SaveSystem(bg, arg("snapshot"), arg("baseline"))
-	case "update_shared_transaction":
-		return r.UpdateSharedTransaction(bg, xcUpdater(t, op.Value("patch")))
-	case "save_shared":
-		return r.SaveShared(bg, arg("snapshot"), arg("baseline"))
-	case "update_shared_and_profiles":
-		shared, profiles, err := r.UpdateSharedAndProfilesTransaction(bg, xcUpdater(t, op.Value("shared_patch")),
-			func(_ context.Context, _ string, _, after *jsonx.Object) (*jsonx.Object, error) {
-				xcApplyPatch(t, after, op.Value("profile_patch"))
-				return nil, nil
-			}, Profiles(jsonx.Strings(op.GetList("ids"))...))
+		input, err := xcProfileCreation(t, arg("metadata"), false)
 		if err != nil {
 			return nil, err
 		}
-		return jsonx.Obj("shared", shared, "profiles", profiles), nil
+		res, err := r.CreateProfileRecord(bg, input, op.GetString("clone_from"))
+		return xcValFromAny(t, res, err)
+	case "clone_profile":
+		input, err := xcProfileCreation(t, arg("metadata"), false)
+		if err != nil {
+			return nil, err
+		}
+		res, err := r.CloneProfileRecord(bg, op.GetString("source"), input)
+		return xcValFromAny(t, res, err)
+	case "update_profile":
+		input, err := xcProfileMetadataUpdate(arg("updates"))
+		if err != nil {
+			return nil, err
+		}
+		res, err := r.UpdateProfileMetadataRecord(bg, id, input)
+		return xcValFromAny(t, res, err)
+	case "update_profile_fields":
+		return withRevision(r.SaveProfileFieldsJSON(bg, id, xcRawOrNil(t, arg("fields")), xcRawOrNil(t, arg("baseline"))))
+	case "update_profile_transaction":
+		return withRevision(r.CommitConfig(bg, id, func(_ context.Context, config *model.Config) error {
+			return xcApplyRecordPatch(t, config, ProfileFields, config.Profile.SetJSON, op.Value("patch"))
+		}))
+	case "import_profile":
+		saved, err := r.ImportProfileJSON(bg, id, xcRawOrNil(t, arg("data")))
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, saved), nil
+	case "update_system_transaction":
+		if err := r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+			return xcApplyRecordPatch(t, system, systemSections, system.SetJSON, op.Value("patch"))
+		}); err != nil {
+			return nil, err
+		}
+		sys, err := r.System(bg)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, sys), nil
+	case "save_system":
+		var snap, base *model.System
+		if raw := xcRawOrNil(t, arg("snapshot")); raw != nil {
+			snap = &model.System{}
+			if err := json.Unmarshal(raw, snap); err != nil {
+				return nil, err
+			}
+		}
+		if raw := xcRawOrNil(t, arg("baseline")); raw != nil {
+			base = &model.System{}
+			if err := json.Unmarshal(raw, base); err != nil {
+				return nil, err
+			}
+		}
+		saved, err := r.SaveSystemRecord(bg, snap, base)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, saved), nil
+	case "update_shared_transaction":
+		if err := r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+			return xcApplyRecordPatch(t, shared, SharedFields, shared.SetJSON, op.Value("patch"))
+		}); err != nil {
+			return nil, err
+		}
+		shared, err := r.Shared(bg)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, shared), nil
+	case "save_shared":
+		var snap, base *model.Shared
+		if raw := xcRawOrNil(t, arg("snapshot")); raw != nil {
+			snap = &model.Shared{}
+			if err := json.Unmarshal(raw, snap); err != nil {
+				return nil, err
+			}
+		}
+		if raw := xcRawOrNil(t, arg("baseline")); raw != nil {
+			base = &model.Shared{}
+			if err := json.Unmarshal(raw, base); err != nil {
+				return nil, err
+			}
+		}
+		saved, err := r.SaveSharedRecord(bg, snap, base)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, saved), nil
+	case "update_shared_and_profiles":
+		ids := testStrings(op.GetList("ids"))
+		shared, profiles, err := r.updateSharedConfigs(bg,
+			func(_ context.Context, s *model.Shared) error {
+				return xcApplyRecordPatch(t, s, SharedFields, s.SetJSON, op.Value("shared_patch"))
+			},
+			func(_ context.Context, _ string, _, after *model.Config) error {
+				return xcApplyRecordPatch(t, after, ProfileFields, after.Profile.SetJSON, op.Value("profile_patch"))
+			},
+			func(*model.Shared, []*model.Profile) ([]string, error) { return ids, nil },
+		)
+		if err != nil {
+			return nil, err
+		}
+		profilesObj := newTestObj()
+		for _, p := range profiles {
+			profilesObj.Set(p.Key(), xcObjFromRecord(t, p))
+		}
+		return testObjKV("shared", xcObjFromRecord(t, shared), "profiles", profilesObj), nil
 	case "create_rule_library_item":
-		return r.CreateRuleLibraryItem(bg, arg("rule"), []byte(op.GetString("content")))
+		raw := xcRawOrNil(t, arg("rule"))
+		if raw == nil {
+			return nil, validationError(msgResourceObject)
+		}
+		var item model.RuleLibraryItem
+		if err := json.Unmarshal(raw, &item); err != nil {
+			return nil, err
+		}
+		saved, err := r.CreateRuleLibraryRecord(bg, item, []byte(op.GetString("content")))
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, saved), nil
 	case "set_default_profile":
 		return r.SetDefaultProfile(bg, id)
 	case "delete_profile":
 		return nil, r.DeleteProfile(bg, id, op.GetString("new_default"))
 	case "export_all":
-		return r.ExportAll(bg, false)
+		raw, err := r.ExportAllJSON(bg, false)
+		return xcValFromJSON(t, raw, err)
 	case "import_all":
-		return r.ImportAll(bg, arg("data"))
+		raw, err := r.ImportAllJSON(bg, xcRawOrNil(t, arg("data")))
+		return xcValFromJSON(t, raw, err)
 	case "reset_all":
-		return r.ResetAll(bg)
+		raw, err := r.ResetAllJSON(bg)
+		return xcValFromJSON(t, raw, err)
 	case "list_profiles":
-		return r.ListProfiles(bg)
+		res, err := r.ListProfileRecords(bg)
+		return xcValFromAny(t, res, err)
 	case "get_profile":
-		return r.GetProfile(bg, id)
+		p, err := r.Profile(bg, id)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, p), nil
 	case "get_shared":
-		return r.GetShared(bg)
+		s, err := r.Shared(bg)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, s), nil
 	case "get_system":
-		return r.GetSystem(bg)
+		s, err := r.System(bg)
+		if err != nil {
+			return nil, err
+		}
+		return xcObjFromRecord(t, s), nil
 	case "get_compat_config":
 		var roots ResourceRoots
-		if value, ok := jsonx.AsObject(op.Value("roots")); ok {
+		if value, ok := op.Value("roots").(*testObj); ok {
 			roots = ResourceRoots{}
 			for kind, ids := range value.All() {
 				roots[kind] = nil
 				if list, ok := ids.([]any); ok {
-					roots[kind] = append([]string{}, jsonx.Strings(list)...)
+					roots[kind] = append([]string{}, testStrings(list)...)
 				}
 			}
 		}
-		return r.GetCompatConfig(bg, id, roots)
-	case "get_publish_snapshot":
-		config, revision, err := r.GetPublishSnapshot(bg, id, op.GetOr("agents", true) == true)
+		cfg, err := r.Config(bg, id, roots)
 		if err != nil {
 			return nil, err
 		}
-		return jsonx.Obj("config", config, "revision", jsonx.Int(revision)), nil
+		return xcObjFromRecord(t, cfg), nil
+	case "get_publish_snapshot":
+		config, revision, err := r.PublishConfig(bg, id, op.GetOr("agents", true) == true)
+		if err != nil {
+			return nil, err
+		}
+		return testObjKV("config", xcObjFromRecord(t, config), "revision", json.Number(strconv.FormatInt(revision, 10))), nil
 	case "get_resource_usage":
-		return r.GetResourceUsage(bg, op.GetString("kind"), id)
+		res, err := r.ResourceUsage(bg, op.GetString("kind"), id)
+		return xcValFromAny(t, res, err)
 	case "config_revision":
 		revision, err := r.ConfigRevision(bg, id)
-		return jsonx.Int(revision), err
+		return json.Number(strconv.FormatInt(revision, 10)), err
 	case "default_profile_id":
 		return r.DefaultProfileID(bg)
 	case "get_profile_agent_bindings":
-		return r.GetProfileAgentBindings(bg, id)
+		res, err := r.ProfileAgentBindingsRecord(bg, id)
+		return xcValFromAny(t, res, err)
 	case "reopen":
 		return nil, nil
 	}
@@ -536,7 +778,7 @@ func xcExecute(t *testing.T, r *Repository, op *jsonx.Object, variables map[stri
 
 // xcNil turns typed nil results into JSON null.
 func xcNil(value any) any {
-	if object, ok := value.(*jsonx.Object); ok && object == nil {
+	if object, ok := value.(*testObj); ok && object == nil {
 		return nil
 	}
 	return value
@@ -547,8 +789,8 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 	variables := map[string]any{}
 	records := []any{}
 	for _, item := range operations {
-		op := item.(*jsonx.Object)
-		record := jsonx.Obj("op", op.Value("op"))
+		op := item.(*testObj)
+		record := testObjKV("op", op.Value("op"))
 		if op.GetString("op") == "reopen" {
 			r = xcOpen(t, directory, mode)
 		}
@@ -563,18 +805,18 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 				usages = UsagesOf(err)
 			}
 			message := strings.ReplaceAll(err.Error(), r.DataDir(), "<dir>")
-			record.Set("error", jsonx.Obj("class", xcErrorClass(err), "message", message, "usages", usages))
+			record.Set("error", testObjKV("class", xcErrorClass(err), "message", message, "usages", usages))
 		} else {
 			result = xcNil(result)
 			if name := op.GetString("save"); name != "" {
-				variables[name] = jsonx.DeepCopy(result)
+				variables[name] = testDeepCopy(result)
 			}
 			record.Set("result", result)
 		}
 		record.Set("dump", xcDump(t, directory))
 		records = append(records, record)
 	}
-	return append(records, jsonx.Obj("op", "layout", "result", xcLayout(t, directory)))
+	return append(records, testObjKV("op", "layout", "result", xcLayout(t, directory)))
 }
 
 // xcPythonCrash are Python's internal exception classes (a 500 there).
@@ -596,7 +838,7 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	xcCopyTree(t, seed, goDir)
 	xcCopyTree(t, seed, pyDir)
 	script := must(filepath.Abs(file))(t)
-	operations := must(jsonx.Parse(must(os.ReadFile(script))(t)))(t).([]any)
+	operations := parseJSONVal(t, must(os.ReadFile(script))(t)).([]any)
 	python := xcPython(t, "run", pyDir, "plain", script).([]any)
 	golang := xcRun(t, goDir, "plain", operations)
 	if len(python) != len(golang) {
@@ -605,21 +847,34 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	// The layout holds random directory names in sorted order: compare it
 	// as a sorted list of masked names, apart from the cumulative comparison.
 	last := len(golang) - 1
-	xcBindNativeCachePath(t, file, goDir, pyDir, python[last].(*jsonx.Object))
+	xcBindNativeCachePath(t, file, goDir, pyDir, python[last].(*testObj))
 	goLayout, pyLayout := xcMaskedLayout(t, golang[last], false), xcMaskedLayout(t, python[last], true)
 	golang, python = golang[:last], python[:last]
 	// Decision (HANDOFF, "Python 500s become proper 4xx"): where Python
 	// crashed with an internal exception, Go refuses with a validation or
 	// in-use error. Both must leave the database as it was; the record then
 	// compares as Python's.
+	// Retired file-reader ops (read_profile_json/read_shared_json) still compare
+	// their database dumps; their removed-facade results are aligned to Python.
 	for index := range golang {
-		g, p := golang[index].(*jsonx.Object), python[index].(*jsonx.Object)
+		g, p := golang[index].(*testObj), python[index].(*testObj)
+		if name := g.GetString("op"); name == "read_profile_json" || name == "read_shared_json" {
+			g.Delete("result")
+			g.Delete("error")
+			if v, ok := p.Get("result"); ok {
+				g.Set("result", v)
+			}
+			if v, ok := p.Get("error"); ok {
+				g.Set("error", v)
+			}
+			continue
+		}
 		pyClass, goClass := p.GetObject("error").GetString("class"), g.GetObject("error").GetString("class")
 		if !xcPythonCrash[pyClass] || (goClass != "ProfileValidationError" && goClass != "ProfileInUse") {
 			continue
 		}
-		if index > 0 && (xcText(t, g.Value("dump")) != xcText(t, golang[index-1].(*jsonx.Object).Value("dump")) ||
-			xcText(t, p.Value("dump")) != xcText(t, python[index-1].(*jsonx.Object).Value("dump"))) {
+		if index > 0 && (xcText(t, g.Value("dump")) != xcText(t, golang[index-1].(*testObj).Value("dump")) ||
+			xcText(t, p.Value("dump")) != xcText(t, python[index-1].(*testObj).Value("dump"))) {
 			t.Fatalf("step %d: a refused operation wrote", index)
 		}
 		t.Logf("step %d (%s): Python %s, Go %s: %s", index, g.GetString("op"), pyClass, goClass,
@@ -633,21 +888,21 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 		xcSame(t, "layout", goLayout, pyLayout)
 		return goDir, pyDir
 	}
-	for index := range golang {
-		g, p := golang[index].(*jsonx.Object), python[index].(*jsonx.Object)
+	index := sort.Search(len(golang), func(i int) bool {
+		return xcText(t, golang[:i+1]) != xcText(t, python[:i+1])
+	})
+	if index < len(golang) {
+		g, p := golang[index].(*testObj), python[index].(*testObj)
 		label := fmt.Sprintf("step %d (%s)", index, g.GetString("op"))
 		if g.Has("error") != p.Has("error") {
 			t.Fatalf("%s: go %s, python %s", label, xcText(t, g.GetOr("error", g.Value("result"))),
 				xcText(t, p.GetOr("error", p.Value("result"))))
 		}
-		before := t.Failed()
 		xcSame(t, label, golang[:index+1], python[:index+1])
-		if !before && t.Failed() {
-			xcSame(t, label+" outcome", jsonx.Obj("result", g.Value("result"), "error", g.Value("error")),
-				jsonx.Obj("result", p.Value("result"), "error", p.Value("error")))
-			xcSame(t, label+" rows", g.Value("dump"), p.Value("dump"))
-			t.FailNow()
-		}
+		xcSame(t, label+" outcome", testObjKV("result", g.Value("result"), "error", g.Value("error")),
+			testObjKV("result", p.Value("result"), "error", p.Value("error")))
+		xcSame(t, label+" rows", g.Value("dump"), p.Value("dump"))
+		t.FailNow()
 	}
 	xcSame(t, "layout", goLayout, pyLayout)
 	return goDir, pyDir
@@ -688,32 +943,34 @@ func TestCrossCheckInterchange(t *testing.T) {
 	// A database written by Go is opened by Python without changes.
 	goStore := store.New(filepath.Join(goDir, DatabaseFilename), LockTimeout)
 	written := xcFingerprint(t, goStore)
-	python := xcPython(t, "fingerprint", goDir, "plain").(*jsonx.Object)
+	python := xcPython(t, "fingerprint", goDir, "plain").(*testObj)
 	for _, key := range []string{"before", "opened", "after"} {
-		wantEqual(t, python.Value(key), written)
+		wantJSONEqual(t, python.Value(key), written)
 	}
 	r := openRepo(t, goDir)
-	wantEqual(t, must(r.ExportAll(bg, false))(t), python.Value("export"))
+	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), python.Value("export"))
 
 	// A database written by Python is opened by Go without changes.
 	pyStore := store.New(filepath.Join(pyDir, DatabaseFilename), LockTimeout)
 	before := xcFingerprint(t, pyStore)
 	r = openRepo(t, pyDir)
-	exported := must(r.ExportAll(bg, false))(t)
-	wantEqual(t, xcFingerprint(t, pyStore), before)
-	python = xcPython(t, "fingerprint", pyDir, "plain").(*jsonx.Object)
-	wantEqual(t, python.Value("before"), before)
-	wantEqual(t, exported, python.Value("export"))
+	exported := must(r.ExportAllJSON(bg, false))(t)
+	wantJSONEqual(t, xcFingerprint(t, pyStore), before)
+	python = xcPython(t, "fingerprint", pyDir, "plain").(*testObj)
+	wantJSONEqual(t, python.Value("before"), before)
+	wantJSONEqual(t, exported, python.Value("export"))
 
 	// One more write by each side on the other's database; the other reads it.
 	script := filepath.Join(t.TempDir(), "ops.json")
 	noError(t, os.WriteFile(script, []byte(`[{"op":"create_profile","metadata":{"id":"frompy","name":"Py"}}]`), 0o600))
 	xcPython(t, "run", goDir, "plain", script)
-	wantEqual(t, must(openRepo(t, goDir).ProfileMetadata(bg, "frompy"))(t).Value("name"), "Py")
-	must(r.CreateProfile(bg, jsonx.Obj("id", "fromgo", "name", "Go"), ""))(t)
-	python = xcPython(t, "fingerprint", pyDir, "plain").(*jsonx.Object)
-	wantEqual(t, python.Value("opened"), python.Value("before"))
-	wantEqual(t, python.Value("export"), must(r.ExportAll(bg, false))(t))
+	if got := must(openRepo(t, goDir).ProfileMetadataRecord(bg, "frompy"))(t).Name; got != "Py" {
+		t.Fatalf("frompy name %q", got)
+	}
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "fromgo", Name: "Go"}, ""))(t)
+	python = xcPython(t, "fingerprint", pyDir, "plain").(*testObj)
+	wantJSONEqual(t, python.Value("opened"), python.Value("before"))
+	wantJSONEqual(t, python.Value("export"), must(r.ExportAllJSON(bg, false))(t))
 }
 
 // Go and Python exclude each other through flock on .config.lock: a writer
@@ -726,11 +983,10 @@ func TestCrossCheckLockExcludesPythonAndGo(t *testing.T) {
 	}
 	r := newRepo(t)
 	addAgent := func(id string) error {
-		_, err := r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-			system.Set("agents", append(system.GetList("agents"), jsonx.Obj("id", id, "name", id, "profile_id", "default")))
-			return nil, nil
+		return r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+			system.Agents = append(system.Agents, model.Agent{ID: id, Name: id, ProfileID: "default"})
+			return nil
 		})
-		return err
 	}
 
 	// Python holds the lock: a Go write times out, then waits it out.
@@ -756,15 +1012,18 @@ func TestCrossCheckLockExcludesPythonAndGo(t *testing.T) {
 	}()
 	<-held
 	t.Setenv(LockTimeoutEnv, "0.3")
-	result := xcPython(t, "try-write", r.DataDir(), "plain").(*jsonx.Object)
-	wantEqual(t, result, jsonx.Obj("class", "ProfileRepositoryError", "message", "Timed out waiting for profile repository lock"))
+	result := xcPython(t, "try-write", r.DataDir(), "plain").(*testObj)
+	wantJSONEqual(t, result, testObjKV("class", "ProfileRepositoryError", "message", "Timed out waiting for profile repository lock"))
 	close(release)
 	t.Setenv(LockTimeoutEnv, "20")
-	wantEqual(t, xcPython(t, "try-write", r.DataDir(), "plain"), jsonx.Obj("ok", true))
+	wantJSONEqual(t, xcPython(t, "try-write", r.DataDir(), "plain"), testObjKV("ok", true))
 	var ids []string
-	for _, agent := range must(r.GetAgents(bg, true))(t) {
-		ids = append(ids, agent.(*jsonx.Object).GetString("id"))
-	}
+	noError(t, r.ViewAgents(bg, func(agents []model.Agent) error {
+		for _, agent := range agents {
+			ids = append(ids, agent.ID)
+		}
+		return nil
+	}))
 	if strings.Join(ids, ",") != "go-2,py-agent" {
 		t.Fatalf("agents %v", ids)
 	}
@@ -779,7 +1038,7 @@ func TestCrossCheckPythonWriterKilledBeforeCommit(t *testing.T) {
 		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are not set")
 	}
 	r := newRepo(t)
-	before := must(r.ExportAll(bg, false))(t)
+	before := must(r.ExportAllJSON(bg, false))(t)
 	script := must(filepath.Abs("testdata/repo_crosscheck.py"))(t)
 	crash := exec.Command(interpreter, script, "crash-write", r.DataDir(), filepath.Join(t.TempDir(), "x.json"), "plain")
 	crash.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
@@ -789,25 +1048,23 @@ func TestCrossCheckPythonWriterKilledBeforeCommit(t *testing.T) {
 		t.Fatalf("crash-write: %v\n%s", err, output)
 	}
 	reopened := openRepo(t, r.DataDir())
-	wantEqual(t, must(reopened.ExportAll(bg, false))(t), before)
-	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
+	wantJSONEqual(t, must(reopened.ExportAllJSON(bg, false))(t), before)
+	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), before)
 	t.Setenv(LockTimeoutEnv, "2")
-	_, err = reopened.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "go", "name", "Go", "profile_id", "default")})
-		return nil, nil
-	})
-	noError(t, err)
+	noError(t, reopened.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{ID: "go", Name: "Go", ProfileID: "default"}}
+		return nil
+	}))
 	noError(t, reopened.Store().Check())
-	if len(must(r.GetAgents(bg, true))(t)) != 1 {
+	if len(must(r.System(bg))(t).Agents) != 1 {
 		t.Fatal("write after the crash not visible")
 	}
 }
 
-// xcFiniteJSON represents non-JSON values from the retired file-reader facade
-// only in oracle transport. It never changes fixtures or product data.
+// xcFiniteJSON converts *testObj to map[string]any for canonical JSON encoding.
 func xcFiniteJSON(value any) any {
 	switch v := value.(type) {
-	case *jsonx.Object:
+	case *testObj:
 		if v == nil {
 			return nil
 		}
@@ -816,12 +1073,6 @@ func xcFiniteJSON(value any) any {
 			out[key] = xcFiniteJSON(item)
 		}
 		return out
-	case jsonx.Number:
-		switch v.String() {
-		case "NaN", "Infinity", "-Infinity":
-			return map[string]string{"$nonfinite": v.String()}
-		}
-		return json.Number(v.String())
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {

@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"configflow/internal/repo"
 )
 
 // TestPublicAgentPython compares public records with the real Python implementation.
@@ -71,7 +69,7 @@ func TestPublicAgentPython(t *testing.T) {
 			if unread {
 				request["unread"] = []string{"deployments", "latest_deployment", "verification_runs"}
 				for _, key := range []string{"deployments", "latest_deployment", "verification_runs"} {
-					record[key] = repo.AgentHistoryNotRead
+					record[key] = testAgentHistoryNotRead
 				}
 			}
 			wire, _ := json.Marshal(request)
@@ -119,7 +117,7 @@ func TestPublicAgentOmitsUnreadAndSecrets(t *testing.T) {
 		"token":           "secret",
 		"applied_content": "secret",
 		"dns_follow_job":  map[string]any{"private": true},
-		"deployments":     repo.AgentHistoryNotRead,
+		"deployments":     testAgentHistoryNotRead,
 	}
 	public := publicAgent(record)
 	if len(public) != 1 || mapStr(public, "id") != "device" {

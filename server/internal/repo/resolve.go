@@ -1,11 +1,13 @@
 package repo
 
 import (
-	"configflow/internal/jsondecode"
 	"encoding/json"
 	"fmt"
 
+	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/yamlx"
 )
 
 // Typed resolution of a profile's composition (N8-5b): which shared
@@ -296,6 +298,32 @@ func selectDialerTargets(profile *model.Profile, c catalogs, selected selection,
 		}
 	}
 	return nil
+}
+
+// nodeRawDialer reads a typed node's raw dialer-proxy value through the shared
+// native converter. Absent/null yields nil; strings yield string; any other
+// YAML kind yields a non-nil non-string value.
+func nodeRawDialer(node *model.Node) (any, error) {
+	target, err := convert.NodeDialer(*node)
+	if err != nil {
+		return nil, &Error{Kind: ErrValidation, Message: err.Error(), Cause: err}
+	}
+	if target == nil {
+		return nil, nil
+	}
+	resolved := yamlx.Resolve(target)
+	if resolved == nil {
+		return nil, nil
+	}
+	raw, err := yamlx.ToJSON(resolved)
+	if err != nil {
+		return nil, err
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 // resolveConfig builds the Config of a profile from one document: roots

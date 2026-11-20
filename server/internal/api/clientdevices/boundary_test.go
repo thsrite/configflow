@@ -154,7 +154,7 @@ func TestR17FlaskHTTPAndStoredState(t *testing.T) {
 					}
 				}
 			}
-			stored, err := s.Repo.GetProfile(s.Context(), "default")
+			stored, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)
 			}

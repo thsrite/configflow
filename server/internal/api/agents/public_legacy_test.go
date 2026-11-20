@@ -9,14 +9,17 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/testjson"
 )
+
+type testUnreadHistorySentinel struct{}
+
+var testAgentHistoryNotRead any = &testUnreadHistorySentinel{}
 
 func publicAgent(record map[string]any) map[string]any {
 	cleaned := make(map[string]any, len(record))
 	for key, value := range record {
-		if value == repo.AgentHistoryNotRead {
+		if value == testAgentHistoryNotRead {
 			continue
 		}
 		cleaned[key] = value

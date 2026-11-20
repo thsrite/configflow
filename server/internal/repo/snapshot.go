@@ -43,7 +43,6 @@ func (r *Repository) WithReadSnapshot(ctx context.Context, fn func(held context.
 		if err != nil {
 			return err
 		}
-		entry.legacy = &legacySnapshot{}
 		s := &readSnapshot{repository: r, entry: entry}
 		s.active.Store(true)
 		defer s.active.Store(false)

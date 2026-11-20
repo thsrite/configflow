@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/store"
 )
@@ -190,27 +189,25 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 				return nil
 			})
 		})
-	step(t, "legacy no-op profile update keeps every setting row", []modelRowKey{profile(p, "_revision"), profile(p, "updated_at")}, func() error {
-		_, _, err := r.UpdateProfileTransaction(bg, p, func(context.Context, *jsonx.Object) (*jsonx.Object, error) { return nil, nil })
+	step(t, "no-op profile update keeps every setting row", []modelRowKey{profile(p, "_revision"), profile(p, "updated_at")}, func() error {
+		_, err := r.UpdateProfile(bg, p, func(context.Context, *model.Profile) error { return nil })
 		return err
 	})
-	step(t, "legacy shared update", []modelRowKey{shared("subscriptions"), shared("_revision")}, func() error {
-		_, err := r.UpdateSharedTransaction(bg, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-			current.Set("subscriptions", append(current.GetList("subscriptions"),
-				jsonx.Obj("id", "s2", "name", "Sub 2", "url", "https://sub.example.com/y")))
-			return nil, nil
+	step(t, "typed shared subscription update", []modelRowKey{shared("subscriptions"), shared("_revision")}, func() error {
+		return r.UpdateShared(bg, func(_ context.Context, current *model.Shared) error {
+			current.Subscriptions = append(current.Subscriptions, model.Subscription{ID: "s2", Name: "Sub 2", URL: "https://sub.example.com/y"})
+			return nil
 		})
-		return err
 	})
-	refused(t, "legacy updater with a wrong-shaped setting", ErrValidation, func() error {
-		_, _, err := r.UpdateProfileTransaction(bg, p, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-			current.Set("mosdns", "not an object")
-			return nil, nil
+	refused(t, "updater with a wrong-shaped setting", ErrValidation, func() error {
+		_, err := r.UpdateProfile(bg, p, func(_ context.Context, current *model.Profile) error {
+			return current.SetJSON("mosdns", []byte(`"not an object"`))
 		})
 		return err
 	})
 	step(t, "metadata rename", []modelRowKey{profile(p, "name"), profile(p, "_revision"), profile(p, "updated_at")}, func() error {
-		_, err := r.UpdateProfileMetadata(bg, p, jsonx.Obj("name", "N8-5b"))
+		name := "N8-5b"
+		_, err := r.UpdateProfileMetadataRecord(bg, p, ProfileMetadataUpdate{Name: &name})
 		return err
 	})
 	var cloneRows []modelRowKey
@@ -221,7 +218,7 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 		}
 	}
 	step(t, "clone", cloneRows, func() error {
-		_, err := r.CloneProfile(bg, p, jsonx.Obj("id", "copy", "name", "Copy"))
+		_, err := r.CloneProfileRecord(bg, p, ProfileCreation{ID: "copy", Name: "Copy"})
 		return err
 	})
 	step(t, "default switch", []modelRowKey{system("system_config"), system("_revision")}, func() error {
@@ -240,10 +237,8 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 		}
 	}
 	for key, part := range map[modelRowKey]string{
-		shared("nodes"): `"remark":7,"n85":{"z":1.0}`,
-		// A legacy writer re-encodes the rows it changes as a whole (as
-		// Python did); values survive, escapes are not kept.
-		shared("subscriptions"):    `"description":"é","n85":null`,
+		shared("nodes"):            `"remark":7,"n85":{"z":1.0}`,
+		shared("subscriptions"):    `"description":"\u00e9","n85":null`,
 		profile(p, "proxy_groups"): `"n85":[1.50]`,
 		profile(p, "mihomo"):       `"n85":1e2`,
 	} {

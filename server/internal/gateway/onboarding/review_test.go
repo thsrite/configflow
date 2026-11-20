@@ -16,7 +16,7 @@ import (
 func nativeProfile(t *testing.T, edit func(document *yamlx.Node)) (Document, string) {
 	t.Helper()
 	s := testService(t)
-	raw, _, err := s.Repository.GetPublishSnapshot(context.Background(), "default", true)
+	raw, _, err := s.Repository.PublishConfig(context.Background(), "default", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestAssertReadyClassifiesValidationErrors(t *testing.T) {
 	if _, err := s.Execute(context.Background(), testOperation()); err != nil {
 		t.Fatal(err)
 	}
-	raw, _, err := s.Repository.GetPublishSnapshot(context.Background(), "default", true)
+	raw, _, err := s.Repository.PublishConfig(context.Background(), "default", true)
 	if err != nil {
 		t.Fatal(err)
 	}

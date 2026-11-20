@@ -44,7 +44,7 @@ func TestCommitConfigReturnsCommittedSnapshotAndRollsBack(t *testing.T) {
 
 	// Verify CommitConfig works safely inside a request Scope without breaking rollback.
 	scoped := WithScope(WithRepository(bg, r))
-	if _, err := GetConfig(scoped, "default"); err != nil {
+	if _, err := Config(scoped, "default"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := r.CommitConfig(scoped, "default", func(_ context.Context, c *model.Config) error {

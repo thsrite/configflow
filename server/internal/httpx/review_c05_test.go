@@ -16,7 +16,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -111,16 +110,20 @@ func c05Observe(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	first, err := repo.GetConfig(c.Context(), profile)
+	first, err := repo.Config(c.Context(), profile)
 	if err != nil {
 		return nil, err
 	}
-	second, err := repo.GetConfig(c.Context(), profile)
+	second, err := repo.Config(c.Context(), profile)
 	if err != nil {
 		return nil, err
 	}
-	return httpx.JSON(jsonx.Obj("profile", profile, "middleware_profile", c.ProfileID,
-		"config_profile", first.Value("profile_id"), "reused", first == second)), nil
+	return httpx.JSON(map[string]any{
+		"profile":            profile,
+		"middleware_profile": c.ProfileID,
+		"config_profile":     first.ProfileID,
+		"reused":             first == second,
+	}), nil
 }
 
 // The views observe selection only. The real App, repository, JWT gate and
@@ -141,7 +144,7 @@ func TestC05ReviewProfileHTTPReferences(t *testing.T) {
 		}
 	})})
 	for _, id := range []string{"path", "query", "query-id", "header", "explicit", "fallback"} {
-		if _, err := server.Repo.CreateProfile(server.Context(), jsonx.Obj("id", id, "name", id), ""); err != nil {
+		if _, err := server.Repo.CreateProfileRecord(server.Context(), repo.ProfileCreation{ID: id, Name: id}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,7 +193,7 @@ func TestC05ReviewProfileHTTPReferences(t *testing.T) {
 func TestC05ReviewProfileHelperReferences(t *testing.T) {
 	server := httpxtest.New(t, httpxtest.Options{})
 	for _, id := range []string{"query", "explicit", "fallback"} {
-		if _, err := server.Repo.CreateProfile(server.Context(), jsonx.Obj("id", id, "name", id), ""); err != nil {
+		if _, err := server.Repo.CreateProfileRecord(server.Context(), repo.ProfileCreation{ID: id, Name: id}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -246,42 +249,27 @@ func TestC05ReviewProfileHelperReferences(t *testing.T) {
 					c05EqualJSON(t, got, row.Out)
 				}
 			case "paths":
-				value, err := jsonx.Parse(row.Config)
-				if err != nil {
-					t.Fatal(err)
-				}
-				config := value.(*jsonx.Object)
-				c05EqualJSON(t, []string{repo.ProfileAPIPath(config, "/rules"), repo.ConfigAPIPath(config, "mihomo")}, row.Out)
+				// ProfileAPIPath/ConfigAPIPath had no production callers and were retired in N8-11 W9.
+				return
 			case "url":
-				var params [][2]any
-				for _, pair := range row.Params {
-					var decoded [2]any
-					for i, raw := range pair {
-						var err error
-						decoded[i], err = jsonx.Parse(raw)
-						if err != nil {
-							t.Fatal(err)
-						}
-					}
-					params = append(params, decoded)
-				}
 				// The frozen recorder used dynamic urlencode arguments. Project its
 				// archived call shape only in this test; production accepts typed
 				// repeated string pairs and no longer implements Python coercion.
 				var pairs [][2]string
-				for _, pair := range params {
-					key := jsonx.Str(pair[0])
-					switch value := pair[1].(type) {
+				for _, pair := range row.Params {
+					key := c05PyStr(c05DecodeJSON(t, pair[0]))
+					val := c05DecodeJSON(t, pair[1])
+					switch value := val.(type) {
 					case []any:
 						for _, item := range value {
-							pairs = append(pairs, [2]string{key, jsonx.Str(item)})
+							pairs = append(pairs, [2]string{key, c05PyStr(item)})
 						}
-					case *jsonx.Object:
-						for _, name := range value.Keys() {
+					case *c05OrderedObj:
+						for _, name := range value.keys {
 							pairs = append(pairs, [2]string{key, name})
 						}
 					default:
-						pairs = append(pairs, [2]string{key, jsonx.Str(value)})
+						pairs = append(pairs, [2]string{key, c05PyStr(value)})
 					}
 				}
 				got, err := convert.AppendQuery(row.URL, pairs)
@@ -319,5 +307,75 @@ func TestC05ReviewProfileHelperReferences(t *testing.T) {
 				t.Fatalf("unknown reference function %q", row.Function)
 			}
 		})
+	}
+}
+
+type c05OrderedObj struct {
+	keys []string
+}
+
+func c05DecodeJSON(t *testing.T, raw json.RawMessage) any {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	return c05ReadJSON(t, dec)
+}
+
+func c05ReadJSON(t *testing.T, dec *json.Decoder) any {
+	t.Helper()
+	tok, err := dec.Token()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return tok
+	}
+	if delim == '{' {
+		obj := &c05OrderedObj{}
+		seen := map[string]bool{}
+		for dec.More() {
+			k, err := dec.Token()
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = c05ReadJSON(t, dec)
+			name := k.(string)
+			if !seen[name] {
+				seen[name] = true
+				obj.keys = append(obj.keys, name)
+			}
+		}
+		if _, err := dec.Token(); err != nil {
+			t.Fatal(err)
+		}
+		return obj
+	}
+	var list []any
+	for dec.More() {
+		list = append(list, c05ReadJSON(t, dec))
+	}
+	if _, err := dec.Token(); err != nil {
+		t.Fatal(err)
+	}
+	return list
+}
+
+func c05PyStr(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return "None"
+	case bool:
+		if x {
+			return "True"
+		}
+		return "False"
+	case string:
+		return x
+	case json.Number:
+		return x.String()
+	default:
+		raw, _ := json.Marshal(x)
+		return string(raw)
 	}
 }

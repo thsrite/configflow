@@ -34,7 +34,7 @@ func (s *Service) Action(ctx context.Context, id, operation string, raw json.Raw
 			return err
 		}
 		defer func() { err = publicError(err, record) }()
-		if _, err := s.repository.ProfileMetadata(held, record.ProfileID); err != nil {
+		if _, err := s.repository.ProfileMetadataRecord(held, record.ProfileID); err != nil {
 			return err
 		}
 		body, err := bodyFields(raw)

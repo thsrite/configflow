@@ -7,16 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // xcBindNativeCachePath adjusts one exact source address, retaining strict
 // directory membership and comparing the complete bytes of both cache files.
-func xcBindNativeCachePath(t *testing.T, source, goDir, pyDir string, layout *jsonx.Object) {
+func xcBindNativeCachePath(t *testing.T, source, goDir, pyDir string, layout *testObj) {
 	t.Helper()
 	data := must(os.ReadFile("testdata/n89_cache_paths.json"))(t)
-	refs := must(jsonx.Parse(data))(t).(*jsonx.Object)
+	refs := parseJSONObj(t, data)
 	ref := refs.GetObject(filepath.Base(source))
 	if ref == nil {
 		t.Fatal("missing exact D2 repository reference")

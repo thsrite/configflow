@@ -405,17 +405,17 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 					t.Fatal("invalid new router id")
 				}
 			}
-			stored, err := s.Repo.GetProfile(s.Context(), "default")
+			stored, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)
 			}
 			compareBoundary(t, stored, oracle.Stored[i])
-			system, err := s.Repo.GetSystem(s.Context())
+			system, err := s.Repo.System(s.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
 			compareBoundary(t, system, oracle.Systems[i])
-			shared, err := s.Repo.GetShared(s.Context())
+			shared, err := s.Repo.Shared(s.Context())
 			if err != nil {
 				t.Fatal(err)
 			}

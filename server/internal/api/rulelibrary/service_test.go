@@ -1,7 +1,6 @@
 package rulelibrary
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,11 +17,7 @@ func fixture(t *testing.T) *httpxtest.Server {
 }
 func doc(t *testing.T, s *httpxtest.Server) string {
 	t.Helper()
-	v, err := s.Repo.ExportAll(s.Context(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := json.Marshal(v)
+	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

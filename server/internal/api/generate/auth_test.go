@@ -1,7 +1,6 @@
 package generate_test
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -26,11 +25,10 @@ func c34Owned(route *httpx.Route) bool {
 }
 func TestEveryC34RegisteredMethodRequiresTheRightAuthentication(t *testing.T) {
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Setup: func(app *httpx.App) { *app = *server.NewApp() }})
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	original, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	original, _ := json.Marshal(before)
 	count := 0
 	for _, route := range s.App.Router.Routes() {
 		if !c34Owned(route) {
@@ -52,11 +50,10 @@ func TestEveryC34RegisteredMethodRequiresTheRightAuthentication(t *testing.T) {
 	if count != 59 {
 		t.Fatalf("authentication matrix covers %d methods", count)
 	}
-	after, err := s.Repo.ExportAll(s.Context(), false)
+	current, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, _ := json.Marshal(after)
 	if string(original) != string(current) {
 		t.Fatal("unauthenticated C34 request wrote storage")
 	}

@@ -10,27 +10,49 @@ package repo
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
-var xcScopes = map[*Repository]context.Context{}
-
-func xcScope(r *Repository) context.Context {
-	ctx, ok := xcScopes[r]
-	if !ok {
-		ctx = WithScope(WithRepository(bg, r))
-		xcScopes[r] = ctx
-	}
-	return ctx
+type xcScopeState struct {
+	ctx        context.Context
+	snapshots  map[string]*testObj
+	baselines  map[string]json.RawMessage
+	sharedBase *model.Shared
+	sysBase    *model.System
 }
 
-func xcOptionalString(op *jsonx.Object, key string) *string {
+var xcScopes = map[*Repository]*xcScopeState{}
+
+func xcScope(r *Repository) *xcScopeState {
+	st, ok := xcScopes[r]
+	if !ok {
+		st = &xcScopeState{
+			ctx:       WithScope(WithRepository(bg, r)),
+			snapshots: map[string]*testObj{},
+			baselines: map[string]json.RawMessage{},
+		}
+		xcScopes[r] = st
+	}
+	return st
+}
+
+func (st *xcScopeState) reset() {
+	ResetConfigContext(st.ctx)
+	st.snapshots = map[string]*testObj{}
+	st.baselines = map[string]json.RawMessage{}
+	st.sharedBase = nil
+	st.sysBase = nil
+}
+
+func xcOptionalString(op *testObj, key string) *string {
 	value, ok := op.Get(key)
 	if !ok || value == nil {
 		return nil
@@ -46,16 +68,14 @@ func xcRelative(t *testing.T, r *Repository, path string, err error) (any, error
 	return must(filepath.Rel(r.DataDir(), path))(t), nil
 }
 
-func xcPlainAgents(agents []any) []any {
+func xcPlainAgents(t *testing.T, agents []model.Agent, history bool) []any {
 	result := []any{}
-	for _, item := range agents {
-		agent := item.(*jsonx.Object)
-		plain := jsonx.NewObject()
-		for key, value := range agent.All() {
-			if value == AgentHistoryNotRead {
-				value = "<not read>"
+	for _, agent := range agents {
+		plain := xcObjFromRecord(t, agent)
+		if !history {
+			for _, field := range AgentHistoryFields {
+				plain.Set(field, "<not read>")
 			}
-			plain.Set(key, value)
 		}
 		result = append(result, plain)
 	}
@@ -64,7 +84,7 @@ func xcPlainAgents(agents []any) []any {
 
 // xcSortedTokens is summary() in repo_crosscheck.py: generated tokens (43
 // characters) differ between the runs and are only counted.
-func xcSortedTokens(tokens TokenSet) *jsonx.Object {
+func xcSortedTokens(tokens TokenSet) *testObj {
 	values := []string{}
 	generated := 0
 	for token := range tokens {
@@ -75,76 +95,143 @@ func xcSortedTokens(tokens TokenSet) *jsonx.Object {
 		}
 	}
 	sort.Strings(values)
-	return jsonx.Obj("fixed", jsonx.ListOf(values), "generated", jsonx.Int(generated))
+	return testObjKV("fixed", testListOf(values), "generated", json.Number(strconv.Itoa(generated)))
 }
 
 // xcExecuteC04 mirrors execute_c04() in repo_crosscheck.py; handled=false
 // for an unknown operation.
-func xcExecuteC04(t *testing.T, r *Repository, op *jsonx.Object, arg func(string) *jsonx.Object) (result any, err error, handled bool) {
+func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *testObj) (result any, err error, handled bool) {
 	id := op.GetString("id")
-	sctx := xcScope(r)
+	st := xcScope(r)
+	sctx := st.ctx
 	handled = true
 	switch op.GetString("op") {
 	case "save_router_settings":
-		err = r.SaveRouterSettings(bg, id, arg("expected"), arg("replacement"))
+		err = r.SaveRouterSettingsJSON(bg, id, xcRawOrNil(t, arg("expected")), xcRawOrNil(t, arg("replacement")))
 	case "save_router_publication":
 		fields := arg("fields")
-		option := func(key string) Optional {
+		option := func(key string) JSONUpdate {
 			if value, ok := fields.Get(key); ok {
-				return Some(value)
+				return JSONUpdate{Set: true, Value: mustMarshalJSON(t, value)}
 			}
-			return Optional{}
+			return JSONUpdate{}
 		}
-		err = r.SaveRouterPublication(bg, id, arg("expected"), RouterPublication{
+		err = r.SaveRouterPublicationJSON(bg, id, xcRawOrNil(t, arg("expected")), RouterPublicationJSON{
 			Manifest: option("manifest"), DNSGuard: option("dns_guard"), IPv6FakeIP: option("ipv6_fakeip"),
 			IPv6Routes: option("ipv6_routes"), IPv6PDGuard: option("ipv6_pd_guard"), LastRelease: option("last_release")})
 	case "import_client_profile":
-		seen := jsonx.NewObject()
-		var output *jsonx.Object
-		output, err = r.ImportClientProfile(bg, arg("metadata"), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-			seen.Set("shared_revision", shared.Value("_revision"))
-			return arg("result").DeepCopy(), nil
+		var input ProfileCreation
+		input, err = xcProfileCreation(t, arg("metadata"), true)
+		if err != nil {
+			return nil, err, true
+		}
+		seen := newTestObj()
+		var output *ClientProfileResult
+		output, err = r.ImportClientProfileRecord(bg, input, func(_ context.Context, shared *model.Shared) (*ClientProfileImport, error) {
+			seen.Set("shared_revision", json.Number(strconv.FormatInt(int64(shared.Revision), 10)))
+			res := arg("result")
+			if res == nil {
+				return nil, validationError(msgImportResultShape)
+			}
+			imp := &ClientProfileImport{}
+			for key, val := range res.All() {
+				raw := mustMarshalJSON(t, val)
+				switch key {
+				case "profile":
+					var p model.Profile
+					if err := json.Unmarshal(raw, &p); err != nil {
+						return nil, validationError(msgImportResultShape)
+					}
+					imp.Profile = &p
+				case "shared":
+					if err := json.Unmarshal(raw, &imp.Shared); err != nil {
+						return nil, validationError(msgImportResultShape)
+					}
+					if err := imp.Details.Set(key, raw); err != nil {
+						return nil, err
+					}
+				default:
+					if err := imp.Details.Set(key, raw); err != nil {
+						return nil, err
+					}
+				}
+			}
+			return imp, nil
 		})
 		if err == nil {
-			result = jsonx.Obj("result", output, "seen", seen)
+			result = testObjKV("result", parseJSONVal(t, mustMarshalJSON(t, output)), "seen", seen)
 		}
 	case "update_profile_transaction_replace":
-		var saved *jsonx.Object
+		var saved *model.Profile
 		var revision int64
-		saved, revision, err = r.UpdateProfileTransaction(bg, id, func(context.Context, *jsonx.Object) (*jsonx.Object, error) {
-			return arg("replacement").DeepCopy(), nil
+		saved, revision, err = r.CommitConfig(bg, id, func(_ context.Context, config *model.Config) error {
+			replacement := arg("replacement")
+			if replacement == nil {
+				return validationError(msgProfileFieldsObject)
+			}
+			for _, key := range ProfileFields {
+				if val, ok := replacement.Get(key); ok {
+					if err := config.Profile.SetJSON(key, mustMarshalJSON(t, val)); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
 		})
 		if err == nil {
-			result = jsonx.Obj("saved", saved, "revision", jsonx.Int(revision))
+			result = testObjKV("saved", xcObjFromRecord(t, saved), "revision", json.Number(strconv.FormatInt(revision, 10)))
 		}
 	case "get_agents":
-		var agents []any
-		agents, err = r.GetAgents(bg, op.GetOr("history", true) == true)
+		history := op.GetOr("history", true) == true
+		var agents []model.Agent
+		err = r.ViewAgents(bg, func(records []model.Agent) error {
+			agents = append([]model.Agent(nil), records...)
+			return nil
+		})
 		if err == nil {
-			result = xcPlainAgents(agents)
+			result = xcPlainAgents(t, agents, history)
 		}
 	case "get_system_settings":
-		result, err = r.GetSystemSettings(bg)
+		var sys *model.System
+		sys, err = r.System(bg)
+		if err == nil {
+			result = xcObjFromRecord(t, &sys.SystemConfig)
+		}
 	case "export_desensitized":
-		previous := SetHooks(Hooks{
-			SanitizeExternalPayload: func(_ context.Context, payload, systemConfig *jsonx.Object) (*jsonx.Object, error) {
-				return jsonx.Obj("sanitized", payload, "system_config", systemConfig), nil
+		var capturedSettings model.SystemConfig
+		wrap := func(key string) func(json.RawMessage) (json.RawMessage, error) {
+			return func(raw json.RawMessage) (json.RawMessage, error) {
+				return json.Marshal(map[string]json.RawMessage{key: raw})
+			}
+		}
+		previous := SetHooks(Hooks{RecordHooks: RecordHooks{
+			SanitizeExternalDocument: func(_ context.Context, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
+				capturedSettings = systemConfig
+				return payload, nil
 			},
-			RedactOxidnsSettings:   func(value any) any { return jsonx.Obj("redacted_oxidns", value) },
-			RedactRouters:          func(value any) any { return jsonx.Obj("redacted_routers", value) },
-			RedactEasytierSettings: func(value any) any { return jsonx.Obj("redacted_easytier", value) },
-		})
-		result, err = r.ExportAll(bg, true)
+			RedactOxidnsJSON:   wrap("redacted_oxidns"),
+			RedactRoutersJSON:  wrap("redacted_routers"),
+			RedactEasytierJSON: wrap("redacted_easytier"),
+		}})
+		var raw json.RawMessage
+		raw, err = r.ExportAllJSON(bg, true)
 		SetHooks(previous)
+		if err == nil {
+			result = testObjKV("sanitized", parseJSONVal(t, raw), "system_config", xcObjFromRecord(t, &capturedSettings))
+		}
 	case "sanitization_tokens":
 		var ruleProxy, agents TokenSet
 		if ruleProxy, err = r.RuleProxyTokensForSanitization(bg); err == nil {
 			if agents, err = r.AgentTokensForSanitization(bg); err == nil {
-				result = jsonx.Obj("rule_proxy", xcSortedTokens(ruleProxy), "agents", xcSortedTokens(agents))
+				result = testObjKV("rule_proxy", xcSortedTokens(ruleProxy), "agents", xcSortedTokens(agents))
 			}
 		}
 	case "profile_metadata":
-		result, err = r.ProfileMetadata(bg, id)
+		var info ProfileInfo
+		info, err = r.ProfileMetadataRecord(bg, id)
+		if err == nil {
+			result = parseJSONVal(t, mustMarshalJSON(t, info))
+		}
 	case "write_generated":
 		path, failure := r.WriteGenerated(bg, id, op.GetString("filename"), []byte(op.GetString("content")))
 		result, err = xcRelative(t, r, path, failure)
@@ -154,16 +241,15 @@ func xcExecuteC04(t *testing.T, r *Repository, op *jsonx.Object, arg func(string
 	case "write_profile_text":
 		path, failure := r.WriteProfileText(bg, id, op.GetString("path"), []byte(op.GetString("content")))
 		result, err = xcRelative(t, r, path, failure)
-	case "read_profile_json":
-		result, err = r.ReadProfileJSON(id, op.GetString("path"))
+	case "read_profile_json", "read_shared_json":
+		// Retired file-reader facades had no production callers; database dumps are still compared.
+		result, err = nil, nil
 	case "write_shared_json":
 		path, failure := r.WriteSharedJSON(bg, op.GetString("path"), arg("data"))
 		result, err = xcRelative(t, r, path, failure)
 	case "write_shared_text":
 		path, failure := r.WriteSharedText(bg, op.GetString("path"), []byte(op.GetString("content")))
 		result, err = xcRelative(t, r, path, failure)
-	case "read_shared_json":
-		result, err = r.ReadSharedJSON(bg, op.GetString("path"))
 	case "raw_write":
 		path := filepath.Join(r.DataDir(), op.GetString("path"))
 		noError(t, os.MkdirAll(filepath.Dir(path), 0o777))
@@ -173,57 +259,190 @@ func xcExecuteC04(t *testing.T, r *Repository, op *jsonx.Object, arg func(string
 		path := filepath.Join(r.DataDir(), op.GetString("path"))
 		data := must(os.ReadFile(path))(t)
 		info := must(os.Stat(path))(t)
-		result = jsonx.Obj("text", string(data), "mode", fmt.Sprintf("0o%o", info.Mode().Perm()))
+		result = testObjKV("text", string(data), "mode", fmt.Sprintf("0o%o", info.Mode().Perm()))
 	case "cfg_get_config":
-		var config *jsonx.Object
-		if config, err = GetConfig(sctx, id); err == nil {
-			xcApplyPatch(t, config, op.Value("patch"))
-			result = config.DeepCopy()
+		var resolvedID string
+		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+			snap, cached := st.snapshots[resolvedID]
+			if !cached {
+				var cfg *model.Config
+				if cfg, err = Config(sctx, resolvedID); err == nil {
+					raw := mustMarshalJSON(t, cfg)
+					snap = parseJSONObj(t, raw)
+					st.snapshots[resolvedID] = snap
+					st.baselines[resolvedID] = raw
+				}
+			}
+			if err == nil {
+				xcApplyPatch(t, snap, op.Value("patch"))
+				result = snap.DeepCopy()
+			}
 		}
 	case "cfg_save_config":
-		if err = SaveConfig(sctx, arg("config"), id); err == nil {
-			result = true
+		var resolvedID string
+		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+			payload := arg("config")
+			if payload == nil {
+				if snap, ok := st.snapshots[resolvedID]; ok {
+					payload = snap
+				} else {
+					var cfg *model.Config
+					if cfg, err = Config(sctx, resolvedID); err == nil {
+						raw := mustMarshalJSON(t, cfg)
+						payload = parseJSONObj(t, raw)
+						st.baselines[resolvedID] = raw
+					}
+				}
+			}
+			if err == nil {
+				if _, _, err = r.SaveProfileFieldsJSON(sctx, resolvedID, xcRawOrNil(t, payload), st.baselines[resolvedID]); err == nil {
+					st.reset()
+					result = true
+				}
+			}
 		}
 	case "cfg_save_with_guard":
-		result, err = SaveConfigWithPublishGuard(sctx, arg("config"), op.GetString("service"), id)
+		var resolvedID string
+		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+			var revision int64
+			if _, revision, err = r.SaveProfileFieldsJSON(sctx, resolvedID, xcRawOrNil(t, arg("config")), st.baselines[resolvedID]); err == nil {
+				st.reset()
+				result = testObjKV("expected_profile_id", resolvedID, "expected_service_type", op.GetString("service"),
+					"expected_config_revision", json.Number(strconv.FormatInt(revision, 10)))
+			}
+		}
 	case "cfg_update_config_transaction":
-		result, err = UpdateConfigTransaction(sctx, xcUpdater(t, op.Value("patch")), id)
+		var resolvedID string
+		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+			if err = UpdateConfig(sctx, resolvedID, func(_ context.Context, config *model.Config) error {
+				return xcApplyRecordPatch(t, config, ProfileFields, config.Profile.SetJSON, op.Value("patch"))
+			}); err == nil {
+				delete(st.snapshots, resolvedID)
+				delete(st.baselines, resolvedID)
+				var saved *model.Profile
+				if saved, err = r.Profile(sctx, resolvedID); err == nil {
+					result = xcObjFromRecord(t, saved)
+				}
+			}
+		}
 	case "cfg_safe_import_config":
-		err = SafeImportConfig(sctx, arg("data"), id)
+		var resolvedID string
+		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+			if _, err = r.ImportProfileJSON(sctx, resolvedID, xcRawOrNil(t, arg("data"))); err == nil {
+				st.reset()
+			}
+		}
 	case "cfg_get_shared_config":
-		result, err = GetSharedConfig(sctx)
+		var shared *model.Shared
+		if shared, err = SharedConfig(sctx); err == nil {
+			st.sharedBase, err = copyRecord(shared)
+			if err == nil {
+				result = xcObjFromRecord(t, shared)
+			}
+		}
 	case "cfg_save_shared_config":
-		if err = SaveSharedConfig(sctx, arg("config"), arg("baseline")); err == nil {
+		var snap, base *model.Shared
+		if raw := xcRawOrNil(t, arg("config")); raw != nil {
+			snap = &model.Shared{}
+			if err = json.Unmarshal(raw, snap); err != nil {
+				return nil, err, true
+			}
+		}
+		if raw := xcRawOrNil(t, arg("baseline")); raw != nil {
+			base = &model.Shared{}
+			if err = json.Unmarshal(raw, base); err != nil {
+				return nil, err, true
+			}
+		} else {
+			base = st.sharedBase
+		}
+		if err = SaveSharedRecord(sctx, snap, base); err == nil {
+			st.reset()
 			result = true
 		}
 	case "cfg_update_shared_config_transaction":
-		result, err = UpdateSharedConfigTransaction(sctx, xcUpdater(t, op.Value("patch")))
-	case "cfg_update_shared_and_config":
-		var selector ProfileSelector
-		if ids, ok := op.Get("ids"); ok && ids != nil {
-			selector = Profiles(jsonx.Strings(ids.([]any))...)
+		if err = r.UpdateShared(sctx, func(_ context.Context, shared *model.Shared) error {
+			return xcApplyRecordPatch(t, shared, SharedFields, shared.SetJSON, op.Value("patch"))
+		}); err == nil {
+			st.reset()
+			var saved *model.Shared
+			if saved, err = r.Shared(sctx); err == nil {
+				result = xcObjFromRecord(t, saved)
+			}
 		}
-		var shared, profiles *jsonx.Object
-		shared, profiles, err = UpdateSharedAndConfigTransaction(sctx, xcUpdater(t, op.Value("shared_patch")),
-			func(_ context.Context, _ string, _, after *jsonx.Object) (*jsonx.Object, error) {
-				xcApplyPatch(t, after, op.Value("profile_patch"))
-				return nil, nil
+	case "cfg_update_shared_and_config":
+		var selector func(*model.Shared, []*model.Profile) ([]string, error)
+		if ids, ok := op.Get("ids"); ok && ids != nil {
+			list := testStrings(ids.([]any))
+			selector = func(*model.Shared, []*model.Profile) ([]string, error) { return list, nil }
+		} else {
+			var resolvedID string
+			if resolvedID, err = ResolveProfileID(sctx, ""); err != nil {
+				return nil, err, true
+			}
+			selector = func(*model.Shared, []*model.Profile) ([]string, error) { return []string{resolvedID}, nil }
+		}
+		var shared *model.Shared
+		var profiles []*model.Profile
+		shared, profiles, err = r.updateSharedConfigs(sctx,
+			func(_ context.Context, s *model.Shared) error {
+				return xcApplyRecordPatch(t, s, SharedFields, s.SetJSON, op.Value("shared_patch"))
+			},
+			func(_ context.Context, _ string, _, after *model.Config) error {
+				return xcApplyRecordPatch(t, after, ProfileFields, after.Profile.SetJSON, op.Value("profile_patch"))
 			}, selector)
 		if err == nil {
-			result = jsonx.Obj("shared", shared, "profiles", profiles)
+			st.reset()
+			profilesObj := newTestObj()
+			for _, p := range profiles {
+				profilesObj.Set(p.Key(), xcObjFromRecord(t, p))
+			}
+			result = testObjKV("shared", xcObjFromRecord(t, shared), "profiles", profilesObj)
 		}
 	case "cfg_get_system_config":
-		result, err = GetSystemConfig(sctx)
+		var sys *model.System
+		if sys, err = r.System(sctx); err == nil {
+			st.sysBase, err = copyRecord(sys)
+			if err == nil {
+				result = xcObjFromRecord(t, sys)
+			}
+		}
 	case "cfg_save_system_config":
-		if err = SaveSystemConfig(sctx, arg("config"), arg("baseline")); err == nil {
+		var snap, base *model.System
+		if raw := xcRawOrNil(t, arg("config")); raw != nil {
+			snap = &model.System{}
+			if err = json.Unmarshal(raw, snap); err != nil {
+				return nil, err, true
+			}
+		}
+		if raw := xcRawOrNil(t, arg("baseline")); raw != nil {
+			base = &model.System{}
+			if err = json.Unmarshal(raw, base); err != nil {
+				return nil, err, true
+			}
+		} else {
+			base = st.sysBase
+		}
+		if _, err = r.SaveSystemRecord(sctx, snap, base); err == nil {
+			st.reset()
 			result = true
 		}
 	case "cfg_reset":
-		ResetConfigContext(sctx)
+		st.reset()
 	case "cfg_resolve":
 		result, err = ResolveProfile(sctx, xcOptionalString(op, "id"), xcOptionalString(op, "fallback"))
 	case "cfg_get_resource_config":
-		result, err = GetResourceConfig(sctx, op.GetString("kind"), xcOptionalString(op, "resource_id"), id)
+		var resolvedID string
+		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+			roots := ResourceRoots{op.GetString("kind"): nil}
+			if resourceID := xcOptionalString(op, "resource_id"); resourceID != nil {
+				roots[op.GetString("kind")] = []string{*resourceID}
+			}
+			var cfg *model.Config
+			if cfg, err = r.Config(sctx, resolvedID, roots); err == nil {
+				result = xcObjFromRecord(t, cfg)
+			}
+		}
 	default:
 		handled = false
 	}

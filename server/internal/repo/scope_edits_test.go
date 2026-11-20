@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -14,11 +15,21 @@ func TestScopedRecordTransactions(t *testing.T) {
 			r, ctx := scRepository(t)
 			marker := func(ctx context.Context, id string) string {
 				t.Helper()
-				value, err := GetConfig(ctx, id)
+				value, err := Config(ctx, id)
 				if err != nil {
 					t.Fatal(err)
 				}
-				return value.GetObject("mihomo").GetString("marker")
+				raw, err := model.Marshal(value.Profile.Mihomo)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var mihomo struct {
+					Marker string `json:"marker"`
+				}
+				if err := json.Unmarshal(raw, &mihomo); err != nil {
+					t.Fatal(err)
+				}
+				return mihomo.Marker
 			}
 			for _, id := range []string{"default", "other"} {
 				if got := marker(ctx, id); got != "" {
@@ -31,7 +42,7 @@ func TestScopedRecordTransactions(t *testing.T) {
 				}
 			}
 			scope := ScopeOf(ctx)
-			cached, baseline := scope.cache["default"], scope.baselines["default"]
+			cached := scope.configs["default"]
 			stop := errors.New("reject edit")
 			edit := func(_ context.Context, config *model.Config) error {
 				if err := config.Profile.SetJSON("mihomo", []byte(`{"marker":"edited"}`)); err != nil {
@@ -61,8 +72,7 @@ func TestScopedRecordTransactions(t *testing.T) {
 					t.Fatal(err)
 				}
 				wantDefault = ""
-				afterBaseline, hasBaseline := scope.baselines["default"]
-				if scope.cache["default"] != cached || !hasBaseline || afterBaseline.value != baseline.value {
+				if scope.configs["default"] != cached {
 					t.Fatal("failed transaction invalidated scope")
 				}
 			} else if err != nil {

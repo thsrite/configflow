@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -9,6 +10,21 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
+
+func mihomoMarker(t *testing.T, cfg *model.Config) string {
+	t.Helper()
+	raw, err := model.Marshal(cfg.Profile.Mihomo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Marker string `json:"marker"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m.Marker
+}
 
 func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 	t.Run("runtime-shutdown-and-disconnect", func(t *testing.T) {
@@ -37,7 +53,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					defer disconnect()
 
 					for _, id := range []string{"default", "other"} {
-						if _, err := repo.GetConfig(request, id); err != nil {
+						if _, err := repo.Config(request, id); err != nil {
 							t.Fatal(err)
 						}
 						if err := r.UpdateConfig(bg, id, func(_ context.Context, config *model.Config) error {
@@ -84,11 +100,11 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 							t.Fatal("shutdown transaction modified storage")
 						}
 						// Cached pre-external snapshot must still be intact.
-						snap, err := repo.GetConfig(base, "default")
+						snap, err := repo.Config(base, "default")
 						if err != nil {
 							t.Fatal(err)
 						}
-						if got := snap.GetObject("mihomo").GetString("marker"); got != "" {
+						if got := mihomoMarker(t, snap); got != "" {
 							t.Fatalf("shutdown transaction invalidated scope cache: %q", got)
 						}
 						return
@@ -99,14 +115,14 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					if afterHead == beforeHead {
 						t.Fatal("disconnected request did not commit")
 					}
-					defSnap, err := repo.GetConfig(base, "default")
+					defSnap, err := repo.Config(base, "default")
 					if err != nil {
 						t.Fatal(err)
 					}
-					if got := defSnap.GetObject("mihomo").GetString("marker"); got != "ok" {
+					if got := mihomoMarker(t, defSnap); got != "ok" {
 						t.Fatalf("default marker after disconnect commit = %q, want ok", got)
 					}
-					otherSnap, err := repo.GetConfig(base, "other")
+					otherSnap, err := repo.Config(base, "other")
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -114,7 +130,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					if sharedPath {
 						wantOther = "external"
 					}
-					if got := otherSnap.GetObject("mihomo").GetString("marker"); got != wantOther {
+					if got := mihomoMarker(t, otherSnap); got != wantOther {
 						t.Fatalf("other marker = %q, want %q", got, wantOther)
 					}
 				})

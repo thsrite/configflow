@@ -233,7 +233,7 @@ func lanAddress(t *testing.T) string {
 
 func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 	// Keep unrelated demo subscription jobs out of this Agent-only transcript.
-	r, err := repo.Open(dir, repo.Options{DefaultConfig: repo.GetDefaultConfig})
+	r, err := repo.Open(dir, repo.Options{DefaultSettings: repo.DefaultConfig})
 	if err != nil {
 		t.Fatal(err)
 	}

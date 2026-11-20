@@ -28,7 +28,7 @@ func TestReviewC34AuthenticationMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	before, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,13 +55,11 @@ func TestReviewC34AuthenticationMatrix(t *testing.T) {
 	if count != 59 {
 		t.Fatalf("matrix covered %d methods", count)
 	}
-	after, err := s.Repo.ExportAll(s.Context(), false)
+	after, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := json.Marshal(before)
-	b, _ := json.Marshal(after)
-	if string(a) != string(b) {
+	if string(before) != string(after) {
 		t.Fatal("rejected authentication changed storage")
 	}
 	admin := s.Login()

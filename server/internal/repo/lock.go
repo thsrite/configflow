@@ -15,7 +15,6 @@ import (
 	"time"
 	"unicode"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
 )
 
@@ -289,7 +288,7 @@ func resolvePath(path string) string {
 func resolve(path string) (string, error) {
 	resolved, _ := realpath(path)
 	if _, err := os.Stat(resolved); errors.Is(err, syscall.ELOOP) {
-		return "", errors.New("Symlink loop from " + jsonx.Repr(resolved))
+		return "", errors.New("Symlink loop from " + pyQuote(resolved))
 	}
 	return resolved, nil
 }

@@ -9,16 +9,17 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func scRepository(t *testing.T) (*Repository, context.Context) {
 	t.Helper()
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "other", "name", "Other"), ""))(t)
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "other", Name: "Other"}, ""))(t)
 	return r, WithRepository(WithScope(bg), r)
 }
 
@@ -36,89 +37,104 @@ func scRequest(r *Repository, header string) context.Context {
 
 func scAppendAgent(t *testing.T, r *Repository, agent string) {
 	t.Helper()
-	must(r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", append(system.GetList("agents"), parse(t, agent)))
-		return nil, nil
-	}))(t)
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		var record model.Agent
+		if err := json.Unmarshal([]byte(agent), &record); err != nil {
+			return err
+		}
+		system.Agents = append(system.Agents, record)
+		return nil
+	}))
 }
 
 func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 	r, ctx := scRepository(t)
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Update(parse(t, `{"nodes": [{"id": "n", "name": "Node"}],
-			"rule_library": [{"id": "r", "name": "Rule", "enabled": {"custom": []}}]}`))
-		return nil, nil
-	}))(t)
-	_, _, err := r.UpdateProfileFields(bg, "default", parse(t, `{
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		if err := shared.SetJSON("nodes", []byte(`[{"id": "n", "name": "Node"}]`)); err != nil {
+			return err
+		}
+		return shared.SetJSON("rule_library", []byte(`[{"id": "r", "name": "Rule", "enabled": {"custom": []}}]`))
+	}))
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{
 		"proxy_groups": [{"id": "g", "name": "Group", "type": "select", "manual_nodes": ["n"]}],
 		"rule_configs": [{"id": "rule", "itemType": "ruleset", "library_rule_id": "r"}]}`), nil)
 	noError(t, err)
 	entry := must(r.readEntry(bg, false))(t)
-	source := must(entry.legacyDocument())(t)
-	before := source.DeepCopy()
-	config := must(GetConfig(ctx, "default"))(t)
-	config.GetList("proxy_groups")[0].(*jsonx.Object).Set("name", "Changed")
-	config.GetList("rule_configs")[0].(*jsonx.Object).GetObject("library_enabled").Set("custom", []any{"Changed"})
-	shared := must(GetSharedConfig(ctx))(t)
-	shared.GetList("nodes")[0].(*jsonx.Object).Set("name", "Changed")
-	system := must(GetSystemConfig(ctx))(t)
-	system.GetObject("system_config").Set("server_domain", "https://changed.example")
-	noError(t, SaveConfig(ctx, config, "default"))
-	noError(t, SaveSharedConfig(ctx, shared, nil))
-	noError(t, SaveSystemConfig(ctx, system, nil))
-	if must(must(r.readEntry(bg, false))(t).legacyDocument())(t) == source {
+	source := entry.Model
+	before := mustMarshalJSON(t, source)
+
+	config := must(Config(ctx, "default"))(t)
+	baseline := mustMarshalJSON(t, config)
+	config.Profile.ProxyGroups[0].Name = "Changed"
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, config), baseline)
+	noError(t, err)
+
+	shared := must(SharedConfig(ctx))(t)
+	shared.Nodes[0].Name = "Changed"
+	noError(t, SaveSharedRecord(ctx, shared, nil))
+
+	system := must(r.System(bg))(t)
+	system.SystemConfig.ServerDomain = "https://changed.example"
+	must(r.SaveSystemRecord(bg, system, nil))(t)
+
+	if must(r.readEntry(bg, false))(t).Model == source {
 		t.Fatal("the committed generation was not replaced")
 	}
-	wantEqual(t, source, before)
-	wantEqual(t, must(r.GetProfile(bg, "default"))(t).GetList("proxy_groups")[0].(*jsonx.Object).Value("name"), "Changed")
-	wantEqual(t, must(r.GetShared(bg))(t).GetList("nodes")[0].(*jsonx.Object).Value("name"), "Changed")
+	wantJSONEqual(t, mustMarshalJSON(t, source), before)
+	if got := must(r.Profile(bg, "default"))(t).ProxyGroups[0].Name; got != "Changed" {
+		t.Fatalf("profile group name %q", got)
+	}
+	if got := must(r.Shared(bg))(t).Nodes[0].Name; got != "Changed" {
+		t.Fatalf("shared node name %q", got)
+	}
 }
 
 func TestProfileBaselineIsTheReadViewAndKeepsConcurrentEdits(t *testing.T) {
 	r, ctx := scRepository(t)
-	config := must(GetConfig(ctx, "default"))(t)
-	readView := config.DeepCopy()
-	config.GetObject("mihomo").Set("custom_config", "mixed-port: 7901")
-	group := parse(t, `{"id": "g", "name": "Concurrent", "type": "select"}`)
-	_, _, err := r.UpdateProfileFields(bg, "default", jsonx.Obj("proxy_groups", []any{group}), nil)
+	config := must(Config(ctx, "default"))(t)
+	readView := mustMarshalJSON(t, config)
+	config.Profile.Mihomo.CustomConfig = "mixed-port: 7901"
+	groupJSON := json.RawMessage(`{"id": "g", "name": "Concurrent", "type": "select"}`)
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"proxy_groups":[`+string(groupJSON)+`]}`), nil)
 	noError(t, err)
-	wantEqual(t, must(ScopeOf(ctx).baselineOf(r, "default"))(t), readView)
-	noError(t, SaveConfig(ctx, config, "default"))
-	saved := must(r.GetProfile(bg, "default"))(t)
-	wantEqual(t, saved.GetObject("mihomo").Value("custom_config"), "mixed-port: 7901")
-	wantEqual(t, saved.Value("proxy_groups"), []any{group})
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, config), readView)
+	noError(t, err)
+	saved := must(r.Profile(bg, "default"))(t)
+	if saved.Mihomo.CustomConfig != "mixed-port: 7901" {
+		t.Fatalf("custom_config %q", saved.Mihomo.CustomConfig)
+	}
+	wantJSONEqual(t, saved.ProxyGroups, json.RawMessage(`[`+string(groupJSON)+`]`))
 }
 
 func TestSharedBaselineKeepsConcurrentEdits(t *testing.T) {
 	r, ctx := scRepository(t)
-	shared := must(GetSharedConfig(ctx))(t)
-	shared.Set("nodes", []any{parse(t, `{"id": "mine", "name": "Mine"}`)})
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("subscriptions", []any{parse(t, `{"id": "s", "name": "Concurrent", "url": "https://example.test/s"}`)})
-		return nil, nil
-	}))(t)
-	noError(t, SaveSharedConfig(ctx, shared, nil))
-	saved := must(r.GetShared(bg))(t)
-	wantEqual(t, saved.Value("nodes"), []any{parse(t, `{"id": "mine", "name": "Mine"}`)})
-	wantEqual(t, saved.GetList("subscriptions")[0].(*jsonx.Object).Value("id"), "s")
+	shared := must(SharedConfig(ctx))(t)
+	noError(t, shared.SetJSON("nodes", []byte(`[{"id": "mine", "name": "Mine"}]`)))
+	noError(t, r.UpdateShared(bg, func(_ context.Context, current *model.Shared) error {
+		return current.SetJSON("subscriptions", []byte(`[{"id": "s", "name": "Concurrent", "url": "https://example.test/s"}]`))
+	}))
+	noError(t, SaveSharedRecord(ctx, shared, nil))
+	saved := must(r.Shared(bg))(t)
+	wantJSONEqual(t, saved.Nodes, json.RawMessage(`[{"id": "mine", "name": "Mine"}]`))
+	if len(saved.Subscriptions) != 1 || saved.Subscriptions[0].ID != "s" {
+		t.Fatalf("subscriptions %+v", saved.Subscriptions)
+	}
 }
 
-func TestTransactionReadsKeepAnEagerBaseline(t *testing.T) {
+func TestTransactionReadsKeepAnEagerSharedBaseline(t *testing.T) {
 	r, ctx := scRepository(t)
-	var view *jsonx.Object
-	var entry baseline
-	_, _, err := r.UpdateProfileTransaction(ctx, "default", func(ctx context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		view = must(GetConfig(ctx, "default"))(t)
-		entry = ScopeOf(ctx).baselines["default"]
-		profile.Set("name", "Changed in transaction")
-		return nil, nil
-	})
+	var viewRaw []byte
+	var captured model.Fields
+	noError(t, r.Update(ctx, func(ctx context.Context, d *model.Document) error {
+		view := must(SharedConfig(ctx))(t)
+		viewRaw = mustMarshalJSON(t, view)
+		captured = ScopeOf(ctx).recordBaselines[sharedBaselineKey]
+		d.Shared.Nodes = append(d.Shared.Nodes, model.Node{ID: "n1", Name: "Changed in transaction"})
+		return nil
+	}))
+	capturedRaw, err := captured.MarshalJSON()
 	noError(t, err)
-	// The transaction's working copy may still change: never keep it as a baseline source.
-	if entry.build != nil || entry.value == nil || entry.value == view {
-		t.Fatal("baseline inside a transaction must be an eager copy")
-	}
-	wantEqual(t, entry.value, view)
+	wantJSONEqual(t, capturedRaw, viewRaw)
 }
 
 func TestRequestReusesTheValidatedProfile(t *testing.T) {
@@ -126,15 +142,25 @@ func TestRequestReusesTheValidatedProfile(t *testing.T) {
 	start := r.metadataReads.Load()
 	ctx := scRequest(r, "other")
 	ResetConfigContext(ctx)
-	wantEqual(t, must(ResolveProfileID(ctx, ""))(t), "other")
-	config := must(GetConfig(ctx, ""))(t)
-	wantEqual(t, config.Value("profile_id"), "other")
-	if must(GetConfig(ctx, "other"))(t) != config {
+	if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
+	config := must(Config(ctx, ""))(t)
+	if config.ProfileID != "other" {
+		t.Fatalf("profile_id %q", config.ProfileID)
+	}
+	if must(Config(ctx, "other"))(t) != config {
 		t.Fatal("the request's snapshot was not reused")
 	}
-	wantEqual(t, must(ResolveProfileID(ctx, "other"))(t), "other")
-	wantEqual(t, must(ResolveProfileID(ctx, "default"))(t), "default")
-	wantEqual(t, must(ResolveProfileID(ctx, "default"))(t), "default")
+	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
+	if got := must(ResolveProfileID(ctx, "default"))(t); got != "default" {
+		t.Fatalf("got %q", got)
+	}
+	if got := must(ResolveProfileID(ctx, "default"))(t); got != "default" {
+		t.Fatalf("got %q", got)
+	}
 	if calls := r.metadataReads.Load() - start; calls != 2 {
 		t.Fatalf("profile validated %d times, want 2 (other, default)", calls)
 	}
@@ -144,15 +170,19 @@ func TestDeletingAProfileInTheSameRequestIsNoticed(t *testing.T) {
 	r, _ := scRepository(t)
 	ctx := scRequest(r, "other")
 	ResetConfigContext(ctx)
-	wantEqual(t, must(ResolveProfileID(ctx, ""))(t), "other")
-	wantEqual(t, must(ResolveProfileID(ctx, "other"))(t), "other")
-	must(GetConfig(ctx, ""))(t)
+	if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
+	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
+	must(Config(ctx, ""))(t)
 	noError(t, r.DeleteProfile(bg, "other", ""))
 	_, err := ResolveProfileID(ctx, "")
 	wantError(t, err, ErrNotFound, "")
 	_, err = ResolveProfileID(ctx, "other")
 	wantError(t, err, ErrNotFound, "")
-	_, err = GetConfig(ctx, "")
+	_, err = Config(ctx, "")
 	wantError(t, err, ErrNotFound, "")
 }
 
@@ -160,17 +190,27 @@ func TestSwitchingTheDefaultInTheSameRequestIsNoticed(t *testing.T) {
 	r, _ := scRepository(t)
 	ctx := scRequest(r, "")
 	ResetConfigContext(ctx)
-	wantEqual(t, must(ResolveProfileID(ctx, ""))(t), "default")
+	if got := must(ResolveProfileID(ctx, ""))(t); got != "default" {
+		t.Fatalf("got %q", got)
+	}
 	must(r.SetDefaultProfile(bg, "other"))(t)
-	wantEqual(t, must(ResolveProfileID(ctx, ""))(t), "other")
+	if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func TestAnotherRequestDoesNotReuseTheValidatedProfile(t *testing.T) {
 	r, _ := scRepository(t)
 	outer := scRequest(r, "other")
-	wantEqual(t, must(ResolveProfileID(outer, ""))(t), "other")
-	wantEqual(t, must(ResolveProfileID(scRequest(r, ""), ""))(t), "default")
-	wantEqual(t, must(ResolveProfileID(outer, ""))(t), "other")
+	if got := must(ResolveProfileID(outer, ""))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
+	if got := must(ResolveProfileID(scRequest(r, ""), ""))(t); got != "default" {
+		t.Fatalf("got %q", got)
+	}
+	if got := must(ResolveProfileID(outer, ""))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 // scHandle replays install_profile_context around a handler: reset, resolve
@@ -197,11 +237,13 @@ func TestFullRequestValidatesTheProfileOnce(t *testing.T) {
 	start := r.metadataReads.Load()
 	route := RequestRoute{Endpoint: "rules.list_rules", Blueprint: "rules", Path: "/api/rules"}
 	header := scHandle(t, r, route, "other", func(ctx context.Context) {
-		config := must(GetConfig(ctx, ""))(t)
-		if must(GetConfig(ctx, must(ResolveProfileID(ctx, ""))(t)))(t) != config {
+		config := must(Config(ctx, ""))(t)
+		if must(Config(ctx, must(ResolveProfileID(ctx, ""))(t)))(t) != config {
 			t.Fatal("the request's snapshot was not reused")
 		}
-		wantEqual(t, config.Value("profile_id"), "other")
+		if config.ProfileID != "other" {
+			t.Fatalf("profile_id %q", config.ProfileID)
+		}
 	})
 	if header != "other" {
 		t.Fatalf("X-ConfigFlow-Profile %q", header)
@@ -215,9 +257,13 @@ func TestGlobalRequestFollowsADefaultSwitch(t *testing.T) {
 	r, _ := scRepository(t)
 	route := RequestRoute{Endpoint: "settings.switch_default", Blueprint: "settings", Path: "/api/settings/default-profile"}
 	header := scHandle(t, r, route, "", func(ctx context.Context) {
-		wantEqual(t, must(ResolveProfileID(ctx, ""))(t), "default")
+		if got := must(ResolveProfileID(ctx, ""))(t); got != "default" {
+			t.Fatalf("got %q", got)
+		}
 		must(r.SetDefaultProfile(ctx, "other"))(t)
-		wantEqual(t, must(ResolveProfileID(ctx, ""))(t), "other")
+		if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+			t.Fatalf("got %q", got)
+		}
 	})
 	if header != "" {
 		t.Fatalf("global request got profile header %q", header)
@@ -248,10 +294,18 @@ func TestTransactionWorkingCopyIsValidatedWithoutTheMemo(t *testing.T) {
 	r, _ := scRepository(t)
 	ctx := scRequest(r, "other")
 	ResetConfigContext(ctx)
-	wantEqual(t, must(ResolveProfileID(ctx, "other"))(t), "other")
+	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
 	abort := errors.New("abort")
-	err := r.update(ctx, writeOptions{}, func(ctx context.Context, document *jsonx.Object) error {
-		document.GetObject("profiles").Delete("other")
+	err := r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		kept := document.Profiles[:0]
+		for _, p := range document.Profiles {
+			if p.Key() != "other" {
+				kept = append(kept, p)
+			}
+		}
+		document.Profiles = kept
 		// commit_count only grows after the commit: never answer from the memo here.
 		_, err := ResolveProfileID(ctx, "other")
 		wantError(t, err, ErrNotFound, "")
@@ -260,13 +314,15 @@ func TestTransactionWorkingCopyIsValidatedWithoutTheMemo(t *testing.T) {
 	if err != abort {
 		t.Fatalf("got %v", err)
 	}
-	wantEqual(t, must(ResolveProfileID(ctx, "other"))(t), "other")
+	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func TestRedactionTokensAreReadOncePerGenerationWithoutCopyingSystem(t *testing.T) {
 	r, _ := scRepository(t)
 	scAppendAgent(t, r, `{"id": "a", "name": "A", "profile_id": "default", "token": "agent-token-one"}`)
-	ruleToken := must(r.GetSystem(bg))(t).GetObject("system_config").GetString("rule_proxy_token")
+	ruleToken := must(r.System(bg))(t).SystemConfig.RuleProxyToken
 	var cached *sanitizationTokens
 	for range 3 {
 		if !must(r.AgentTokensForSanitization(bg))(t).Has("agent-token-one") || !must(r.RuleProxyTokensForSanitization(bg))(t).Has(ruleToken) {
@@ -283,17 +339,16 @@ func TestRedactionTokensAreReadOncePerGenerationWithoutCopyingSystem(t *testing.
 func TestRotatedTokensAreRedactedByTheNextResponse(t *testing.T) {
 	r, _ := scRepository(t)
 	scAppendAgent(t, r, `{"id": "a", "name": "A", "profile_id": "default", "token": "agent-token-one"}`)
-	oldRuleToken := must(r.GetSystem(bg))(t).GetObject("system_config").GetString("rule_proxy_token")
+	oldRuleToken := must(r.System(bg))(t).SystemConfig.RuleProxyToken
 	if !must(r.AgentTokensForSanitization(bg))(t).Has("agent-token-one") || !must(r.RuleProxyTokensForSanitization(bg))(t).Has(oldRuleToken) {
 		t.Fatal("token missing")
 	}
-	must(r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetList("agents")[0].(*jsonx.Object).Set("token", "agent-token-two")
-		settings := system.GetObject("system_config")
-		settings.Set("retired_rule_proxy_tokens", []any{oldRuleToken})
-		settings.Set("rule_proxy_token", "rule-token-two")
-		return nil, nil
-	}))(t)
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Token = "agent-token-two"
+		system.SystemConfig.RetiredRuleProxyTokens = []string{oldRuleToken}
+		system.SystemConfig.RuleProxyToken = "rule-token-two"
+		return nil
+	}))
 	agents, rules := must(r.AgentTokensForSanitization(bg))(t), must(r.RuleProxyTokensForSanitization(bg))(t)
 	if !agents.Has("agent-token-two") || agents.Has("agent-token-one") || !rules.Has("rule-token-two") || !rules.Has(oldRuleToken) {
 		t.Fatalf("agents %v rules %v", agents, rules)
@@ -313,22 +368,23 @@ func TestTokensWrittenByAnotherRepositoryAreRedacted(t *testing.T) {
 func TestHeadChangesWithEveryCommitAndOnlyThen(t *testing.T) {
 	r, _ := scRepository(t)
 	head := must(r.Head(bg))(t)
-	must(r.GetSystem(bg))(t)
-	_, _, err := r.GetPublishSnapshot(bg, "default", true)
+	must(r.System(bg))(t)
+	_, _, err := r.PublishConfig(bg, "default", true)
 	noError(t, err)
-	must(r.GetShared(bg))(t)
+	must(r.Shared(bg))(t)
 	if must(r.Head(bg))(t) != head {
 		t.Fatal("head changed by reads")
 	}
 	seen := map[any]bool{head: true}
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", append(shared.GetList("rule_library"),
-			parse(t, `{"id": "r", "name": "Rule", "source_type": "content", "content": "a.test"}`)))
-		return nil, nil
-	}))(t)
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		var item model.RuleLibraryItem
+		noError(t, json.Unmarshal([]byte(`{"id": "r", "name": "Rule", "source_type": "content", "content": "a.test"}`), &item))
+		shared.RuleLibrary = append(shared.RuleLibrary, item)
+		return nil
+	}))
 	seen[must(r.Head(bg))(t)] = true
 	// description is not a profile field: only the revision and updated_at change.
-	_, _, err = r.UpdateProfileFields(bg, "other", jsonx.Obj("description", "edited"), nil)
+	_, _, err = r.SaveProfileFieldsJSON(bg, "other", []byte(`{"description":"edited"}`), nil)
 	noError(t, err)
 	seen[must(r.Head(bg))(t)] = true
 	scAppendAgent(t, r, `{"id": "agent", "name": "Agent", "token": "agent-token", "profile_id": "default"}`)
@@ -338,16 +394,16 @@ func TestHeadChangesWithEveryCommitAndOnlyThen(t *testing.T) {
 	}
 	// A write by another process (another repository object on the same files) is noticed too.
 	other := openRepo(t, r.DataDir())
-	_, _, err = other.UpdateProfileFields(bg, "default", jsonx.Obj("description", "elsewhere"), nil)
+	_, _, err = other.SaveProfileFieldsJSON(bg, "default", []byte(`{"description":"elsewhere"}`), nil)
 	noError(t, err)
 	if now := must(r.Head(bg))(t); now != must(other.Head(bg))(t) || seen[now] {
 		t.Fatal("external commit not noticed")
 	}
 	// Saving a value and saving the old one back are two generations, not the first one again.
 	before := must(r.Head(bg))(t)
-	_, _, err = r.UpdateProfileFields(bg, "default", jsonx.Obj("description", "x"), nil)
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", []byte(`{"description":"x"}`), nil)
 	noError(t, err)
-	_, _, err = r.UpdateProfileFields(bg, "default", jsonx.Obj("description", "elsewhere"), nil)
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", []byte(`{"description":"elsewhere"}`), nil)
 	noError(t, err)
 	if must(r.Head(bg))(t) == before {
 		t.Fatal("head repeated")
@@ -358,39 +414,31 @@ func TestPublishSnapshotWithoutAgentsOnlyLeavesTheAgentRecordsOut(t *testing.T) 
 	r, _ := scRepository(t)
 	scAppendAgent(t, r, `{"id": "agent", "name": "Agent", "token": "agent-token", "profile_id": "default",
 		"deployments": {"d": {"status": "succeeded"}}}`)
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", append(shared.GetList("rule_library"),
-			parse(t, `{"id": "r", "name": "Rule", "source_type": "content", "content": "a.test"}`)))
-		return nil, nil
-	}))(t)
-	_, _, err := r.UpdateProfileFields(bg, "default", parse(t, `{"rule_configs": [{"id": "set", "itemType": "ruleset", "library_rule_id": "r"}]}`), nil)
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		var item model.RuleLibraryItem
+		noError(t, json.Unmarshal([]byte(`{"id": "r", "name": "Rule", "source_type": "content", "content": "a.test"}`), &item))
+		shared.RuleLibrary = append(shared.RuleLibrary, item)
+		return nil
+	}))
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"rule_configs": [{"id": "set", "itemType": "ruleset", "library_rule_id": "r"}]}`), nil)
 	noError(t, err)
-	full, revision, err := r.GetPublishSnapshot(bg, "default", true)
+	full, revision, err := r.PublishConfig(bg, "default", true)
 	noError(t, err)
-	bare, bareRevision, err := r.GetPublishSnapshot(bg, "default", false)
+	bare, bareRevision, err := r.PublishConfig(bg, "default", false)
 	noError(t, err)
-	if bare.Has("agents") || full.GetList("agents")[0].(*jsonx.Object).Value("id") != "agent" {
+	fullObj := parseJSONObj(t, mustMarshalJSON(t, full))
+	bareObj := parseJSONObj(t, mustMarshalJSON(t, bare))
+	if _, has := bareObj.Get("agents"); has || len(full.Agents) != 1 || full.Agents[0].ID != "agent" {
 		t.Fatal("agents")
 	}
-	full.Delete("agents")
-	wantEqual(t, full, bare)
+	fullObj.Delete("agents")
+	wantJSONEqual(t, fullObj, bareObj)
 	if revision != bareRevision {
 		t.Fatal("revision")
 	}
-	wantEqual(t, bare.GetList("rule_configs")[0].(*jsonx.Object).Value("library_rule_id"), "r")
-
-	// get_agents(history=False): history fields hold the sentinel.
-	agents := must(r.GetAgents(bg, false))(t)
-	agent := agents[0].(*jsonx.Object)
-	if agent.Value("deployments") != AgentHistoryNotRead || agent.Value("token") != "agent-token" {
-		t.Fatal("history sentinel")
+	if bare.Profile.RuleConfigs[0].LibraryRuleID != "r" {
+		t.Fatalf("library_rule_id %q", bare.Profile.RuleConfigs[0].LibraryRuleID)
 	}
-	if _, err := AgentHistory(agent, "deployments"); err == nil || err.Error() != AgentHistoryNotReadMessage {
-		t.Fatalf("got %v", err)
-	}
-	if _, err := jsonx.Compact(agent); err == nil {
-		t.Fatal("the sentinel must not be encodable")
-	}
-	withHistory := must(r.GetAgents(bg, true))(t)[0].(*jsonx.Object)
-	wantEqual(t, must(AgentHistory(withHistory, "deployments"))(t), parse(t, `{"d": {"status": "succeeded"}}`))
+	historyRaw := must(AgentHistoryJSON(full.Agents[0], "deployments"))(t)
+	wantJSONEqual(t, historyRaw, json.RawMessage(`{"d": {"status": "succeeded"}}`))
 }

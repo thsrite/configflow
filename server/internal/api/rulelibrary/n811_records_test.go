@@ -75,7 +75,7 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T) {
 	s := fixture(t)
 	ctx := repo.WithScope(s.Context())
-	if _, err := repo.GetConfig(ctx, "default"); err != nil {
+	if _, err := repo.Config(ctx, "default"); err != nil {
 		t.Fatal(err)
 	}
 	sharedSnap, err := repo.SharedConfig(ctx)
@@ -104,24 +104,24 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 		t.Fatalf("expected stop error, got %v", err)
 	}
 	// Failed transactions must not reset the Scope snapshot or baseline.
-	cached, err := repo.GetConfig(ctx, "default")
+	cached, err := repo.Config(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cached.GetList("rule_library")) != 0 {
-		t.Fatalf("failed editShared changed snapshot: %v", cached.GetList("rule_library"))
+	if len(cached.RuleLibrary) != 0 {
+		t.Fatalf("failed editShared changed snapshot: %v", cached.RuleLibrary)
 	}
 	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
 		return put(catalog, "rule_library", []record{recordJSON(t, `{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}`)})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	refreshed, err := repo.GetConfig(ctx, "default")
+	refreshed, err := repo.Config(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refreshed.GetList("rule_library")) != 1 {
-		t.Fatalf("editShared did not invalidate Scope cache: %v", refreshed.GetList("rule_library"))
+	if len(refreshed.RuleLibrary) != 1 {
+		t.Fatalf("editShared did not invalidate Scope cache: %v", refreshed.RuleLibrary)
 	}
 	if err := repo.SaveSharedRecord(ctx, sharedSnap, nil); !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("editShared did not clear Scope shared baseline: %v", err)
@@ -135,11 +135,11 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	afterSystem, err := repo.GetConfig(ctx, "default")
+	afterSystem, err := repo.Config(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := afterSystem.GetObject("system_config").GetString("github_proxy_domain"); got != "https://mirror.example" {
+	if got := afterSystem.SystemConfig.GitHubProxyDomain; got != "https://mirror.example" {
 		t.Fatalf("editSystem did not invalidate Scope cache: %q", got)
 	}
 }

@@ -1,10 +1,10 @@
 package oxidns
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -51,8 +51,8 @@ func TestC05ReviewSettingsReferences(t *testing.T) {
 func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
 	t.Parallel()
 	want := clone(DefaultSettings())
-	repositoryDefaults := repo.GetDefaultOxidnsSettings()
-	encoded, err := jsonx.Compact(repositoryDefaults)
+	repositoryDefaults := repo.DefaultOxidnsSettings()
+	encoded, err := json.Marshal(repositoryDefaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,11 +85,25 @@ func TestC05ReviewDefaultsAndNormalizationAreIndependent(t *testing.T) {
 	}
 	mutated := DefaultSettings()
 	set(get(mutated, "api"), "username", S("changed"))
-	repositoryDefaults.GetObject("api").Set("username", "changed")
+	if err := repositoryDefaults.UnmarshalJSON([]byte(`{"api":{"username":"changed"}}`)); err != nil {
+		t.Fatal(err)
+	}
 	if difference := firstDifference(DefaultSettings(), want, "defaults"); difference != "" {
 		t.Fatal(difference)
 	}
-	if repo.GetDefaultOxidnsSettings().GetObject("api").GetString("username") != "" {
+	freshRaw, err := json.Marshal(repo.DefaultOxidnsSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fresh struct {
+		API struct {
+			Username string `json:"username"`
+		} `json:"api"`
+	}
+	if err := json.Unmarshal(freshRaw, &fresh); err != nil {
+		t.Fatal(err)
+	}
+	if fresh.API.Username != "" {
 		t.Fatal("repository defaults share nested data")
 	}
 }

@@ -129,7 +129,7 @@ func (m *Manager) editRegistry(ctx context.Context, profileID string, edit func(
 			return err
 		}
 		if profileID != "" {
-			if _, err := m.repository.ProfileMetadata(tx, profileID); err != nil {
+			if _, err := m.repository.ProfileMetadataRecord(tx, profileID); err != nil {
 				return err
 			}
 		}
