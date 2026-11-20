@@ -56,6 +56,12 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-21 (evening): batch-19 MERGED (test migration w8/w8b/w8c + coverage review), go = be137cf89.**
+Allowlist 676 → 131. Coverage review (Gemini 51ce3131) restored 4 weakened tests + fixed store test encoder (encoding/json
+escapes U+2028/2029 and encodes nil slices as null — tests comparing bytes with Python must not use it). Live stage caught
+that; preflight does not run live tests. W9 (Gemini e0e11c14, branch go-n8-11-w9) dispatched: clear allowlist, delete
+jsonx/pystr + all *_legacy.go, harden gate; then fresh Opus O7 review + batch gate → N8-11 done.
+
 **Update 2026-11-21: batch-18 MERGED (W5 + W6 + W7 + reviews + gate coverage fix), go = 0d65d91ba.** Gate now runs
 every CONFIGFLOW_DIFF/Python test (LIVE 45 required, 0 skips). Batch-18 integration: Opus a02ccfe1 reverted an
 integrator-added repo Scope typed cache (unneeded; provider reads Config once). Remaining allowlist ≈676 lines: 581 test
