@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 const nativeFixedIPv4Message = "请填写有效的固定局域网 IPv4 地址；Host 模式填写宿主机地址，Macvlan 模式填写容器地址"
@@ -15,7 +13,7 @@ const nativeFixedIPv4Message = "请填写有效的固定局域网 IPv4 地址；
 // Python session is inspected before cleaning up only that case's test files.
 func numericGuideBoundary(r request) (int, bool) {
 	cases := []struct {
-		body   *jsonx.Object
+		body   *orderedObject
 		status int
 	}{
 		{haNewBody("agent_ip", 3232248340, "agent_name", "int-dns"), 200},
@@ -23,7 +21,7 @@ func numericGuideBoundary(r request) (int, bool) {
 	}
 	for _, method := range []string{"compose", "compose_direct", "compose_compact"} {
 		cases = append(cases, struct {
-			body   *jsonx.Object
+			body   *orderedObject
 			status int
 		}{haNewBody("install_method", method, "agent_name", method+"-int", "agent_ip", 3232248340, "data_dir", "/srv/oxidns-int", "oxidns_port", 8083), 200})
 	}
@@ -34,29 +32,30 @@ func numericGuideBoundary(r request) (int, bool) {
 	}
 	return 0, false
 }
+
 func checkNumericGuideBoundary(t *testing.T, r request, p, g response, python *haSide) bool {
 	t.Helper()
 	old, ok := numericGuideBoundary(r)
 	if !ok {
 		return false
 	}
-	answer, err := jsonx.Parse(g.body)
-	if err != nil || g.status != 400 || !jsonx.Equal(answer, jsonx.Obj("success", false, "message", nativeFixedIPv4Message)) || p.status != old {
+	answer, err := parsePythonJSON(g.body)
+	if err != nil || g.status != 400 || !jsonEqual(answer, oObj("success", false, "message", nativeFixedIPv4Message)) || p.status != old {
 		t.Fatalf("numeric guide boundary changed: Python %d Go %d %s", p.status, g.status, g.body)
 	}
 	if old == 200 {
-		value, err := jsonx.Parse(p.body)
-		if err != nil || !value.(*jsonx.Object).GetBool("success") {
+		value, err := parsePythonJSON(p.body)
+		if err != nil || !value.(*orderedObject).GetBool("success") {
 			t.Fatal("old numeric guide success changed")
 		}
-		body, _ := jsonx.ParseString(r.body)
-		method := body.(*jsonx.Object).GetString("install_method")
+		body, _ := parsePythonJSONString(r.body)
+		method := body.(*orderedObject).GetString("install_method")
 		var session string
 		if method == "" {
 			_, found := normalizeHA(p.body)
 			session = found["session"]
 		} else {
-			capability, err := composeEnrollment(method, value.(*jsonx.Object), body.(*jsonx.Object))
+			capability, err := composeEnrollment(method, value.(*orderedObject), body.(*orderedObject))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -67,8 +66,8 @@ func checkNumericGuideBoundary(t *testing.T, r request, p, g response, python *h
 		if err != nil {
 			t.Fatal(err)
 		}
-		stored, err := jsonx.Parse(raw)
-		if err != nil || !jsonx.Equal(stored.(*jsonx.Object).Value("host"), jsonx.Int(3232248340)) {
+		stored, err := parsePythonJSON(raw)
+		if err != nil || !jsonEqual(stored.(*orderedObject).Value("host"), int64(3232248340)) {
 			t.Fatal("Python no longer stores the numeric host")
 		}
 		index := findIndex(t, python.dir, session)
@@ -96,16 +95,16 @@ func approvedSessionHTTPBoundary(t *testing.T, name string, p, g response) bool 
 	if rule[1] == 401 {
 		message = "安装凭据无效，请重新生成安装命令。"
 	}
-	parsed, err := jsonx.Parse(g.body)
-	if p.status != rule[0] || g.status != rule[1] || err != nil || !jsonx.Equal(parsed, jsonx.Obj("success", false, "message", message)) {
+	parsed, err := parsePythonJSON(g.body)
+	if p.status != rule[0] || g.status != rule[1] || err != nil || !jsonEqual(parsed, oObj("success", false, "message", message)) {
 		t.Fatalf("corrupt session policy changed for %s: Python %d Go %d %s", name, p.status, g.status, g.body)
 	}
 	if rule[0] == 500 && !strings.Contains(string(p.body), "Internal Server Error") {
 		t.Fatal("old corrupt-session error class changed")
 	}
 	if rule[0] == 200 {
-		original, err := jsonx.Parse(p.body)
-		if err != nil || !original.(*jsonx.Object).GetBool("success") {
+		original, err := parsePythonJSON(p.body)
+		if err != nil || !original.(*orderedObject).GetBool("success") {
 			t.Fatal("old NaN admission changed")
 		}
 	}

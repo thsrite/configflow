@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func n810DownloadVariant(r downloadRequest, python response) (downloadRequest, bool) {
@@ -21,11 +19,11 @@ func n810DownloadVariant(r downloadRequest, python response) (downloadRequest, b
 	if python.status != 500 {
 		return r, false
 	}
-	parsed, err := jsonx.Parse(python.body)
+	parsed, err := parsePythonJSON(python.body)
 	if err != nil {
 		return r, false
 	}
-	body, ok := parsed.(*jsonx.Object)
+	body, ok := parsed.(*orderedObject)
 	if !ok {
 		return r, false
 	}
@@ -42,6 +40,7 @@ func n810DownloadVariant(r downloadRequest, python response) (downloadRequest, b
 	}
 	return next, true
 }
+
 func n810DownloadHTTP(t *testing.T, r downloadRequest, python, native, reference response) []string {
 	t.Helper()
 	original := map[string]any{"name": r.name, "method": r.method, "path": r.path, "headers": r.headers, "known_httpx": r.httpx, "python_status": python.status, "python_body": string(python.body)}
@@ -101,16 +100,16 @@ func nativeFileDiagnostic(python, native response) (any, any, bool) {
 	if python.status != 500 || native.status != 500 {
 		return nil, nil, false
 	}
-	p, err := jsonx.Parse(python.body)
+	p, err := parsePythonJSON(python.body)
 	if err != nil {
 		return nil, nil, false
 	}
-	g, err := jsonx.Parse(native.body)
+	g, err := parsePythonJSON(native.body)
 	if err != nil {
 		return nil, nil, false
 	}
-	a, aok := p.(*jsonx.Object)
-	b, bok := g.(*jsonx.Object)
+	a, aok := p.(*orderedObject)
+	b, bok := g.(*orderedObject)
 	if !aok || !bok || a.Len() != 2 || b.Len() != 2 || a.Value("success") != false || b.Value("success") != false {
 		return nil, nil, false
 	}

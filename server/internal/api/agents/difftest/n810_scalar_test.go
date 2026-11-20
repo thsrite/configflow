@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 )
 
 // approvedInstallerIntegerRefusal covers only the approved native machine-number
@@ -61,8 +60,8 @@ func approvedInstallerIntegerRefusal(r installerRequest, python, native response
 	if message == "" && target.Path == "/api/agents/install-script" && query.Get("install_core") == "true" {
 		raw, present := query["port"]
 		if present {
-			old, err := jsonx.Parse(python.body)
-			if object, ok := old.(*jsonx.Object); err == nil && ok && python.status == 400 && object.GetString("message") == fmt.Sprintf("invalid literal for int() with base 10: %s", jsonx.Repr(raw[0])) {
+			old, err := parsePythonJSON(python.body)
+			if object, ok := old.(*orderedObject); err == nil && ok && python.status == 400 && object.GetString("message") == fmt.Sprintf("invalid literal for int() with base 10: %s", pyStringRepr(raw[0])) {
 				message = "Invalid installer integer"
 			}
 		}
@@ -70,17 +69,17 @@ func approvedInstallerIntegerRefusal(r installerRequest, python, native response
 	if message == "" {
 		return false
 	}
-	value, err := jsonx.Parse(native.body)
-	if err != nil || !jsonx.Equal(value, jsonx.Obj("success", false, "message", message)) {
+	value, err := parsePythonJSON(native.body)
+	if err != nil || !jsonEqual(value, oObj("success", false, "message", message)) {
 		return false
 	}
 	if python.status == 200 {
 		return true
 	}
-	old, err := jsonx.Parse(python.body)
+	old, err := parsePythonJSON(python.body)
 	if err != nil {
 		return false
 	}
-	object, ok := old.(*jsonx.Object)
+	object, ok := old.(*orderedObject)
 	return ok && python.status == 400 && !object.GetBool("success") && object.GetString("message") != "" && (nonASCII || len(query.Get("port")) > 4300 || len(query.Get("deployment_health_timeout")) > 4300 || strings.HasPrefix(object.GetString("message"), "invalid literal for int() with base 10: ") || strings.HasPrefix(object.GetString("message"), "Exceeds the limit (4300 digits) for integer string conversion: value has "))
 }

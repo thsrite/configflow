@@ -4,12 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -55,26 +56,43 @@ func seedContentBaseline(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := jsonx.NewObject()
+	files := oObj()
 	for path, digest := range digests {
 		files.Set(path, digest)
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		a := system.GetList("agents")[0].(*jsonx.Object)
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		raw, err := json.Marshal(system)
+		if err != nil {
+			return err
+		}
+		doc, err := parsePythonJSON(raw)
+		if err != nil {
+			return err
+		}
+		agentsList := doc.(*orderedObject).GetList("agents")
+		a := agentsList[0].(*orderedObject)
 		a.Set("config_version", digests["config.yaml"])
 		a.Set("pushed_at", "2026-01-01T00:00:00Z")
 		a.Set("config_revision", 1)
-		a.Set("applied_content", jsonx.Obj("fingerprint", fp, "files", files, "profile_id", "default", "service_type", "mihomo", "config_version", digests["config.yaml"], "deployment_id", "previous", "config_path", "config.yaml", "base_url", "https://original.example.test/prefix"))
-		return system, nil
+		a.Set("applied_content", oObj("fingerprint", fp, "files", files, "profile_id", "default", "service_type", "mihomo", "config_version", digests["config.yaml"], "deployment_id", "previous", "config_path", "config.yaml", "base_url", "https://original.example.test/prefix"))
+		return system.SetJSON("agents", mustRawJSON(t, agentsList))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := r.GetCompatConfig(ctx, "default", nil)
+	cfg, err := r.Config(ctx, "default", repo.ResourceRoots{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = deploy.NewReceipts(dir).Capture(ctx, "agent-1", old, deploy.NewSource(cfg, nil), "https://original.example.test/prefix", nil); err != nil {
+	cfgRaw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := deploy.SourceFromJSON(cfgRaw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = deploy.NewReceipts(dir).Capture(ctx, "agent-1", old, src, "https://original.example.test/prefix", nil); err != nil {
 		t.Fatal(err)
 	}
 }

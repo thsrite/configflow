@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 // These four exceptions bind the complete original request, fixture source,
@@ -24,6 +22,7 @@ type metricsHTTPOriginal struct {
 	PythonStatus int            `json:"python_status"`
 	PythonBody   string         `json:"python_body"`
 }
+
 type metricsHTTPPolicy struct {
 	Name         string          `json:"name"`
 	Original     json.RawMessage `json:"original"`
@@ -58,6 +57,7 @@ func decodeMetricsHTTPPolicies(raw []byte) ([]metricsHTTPPolicy, error) {
 	}
 	return rows, nil
 }
+
 func metricsHTTPPolicies(t *testing.T) []metricsHTTPPolicy {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_metrics_http_native.jsonl")
@@ -76,11 +76,13 @@ func metricsHTTPPolicies(t *testing.T) []metricsHTTPPolicy {
 	}
 	return rows
 }
+
 func samePolicyJSON(a, b []byte) bool {
-	av, ae := jsonx.Parse(a)
-	bv, be := jsonx.Parse(b)
-	return ae == nil && be == nil && jsonx.Equal(av, bv)
+	av, ae := parsePythonJSON(a)
+	bv, be := parsePythonJSON(b)
+	return ae == nil && be == nil && jsonEqual(av, bv)
 }
+
 func metricsPolicyRequest(row metricsHTTPPolicy, r request) bool {
 	return samePolicyJSON(n810Canonical(row.input.Request), n810Canonical(n810RequestKey(r)))
 }
@@ -106,6 +108,7 @@ func checkMetricsSeed(t *testing.T, seedDir string) {
 		t.Fatal("live oddMetrics seed changed", err)
 	}
 }
+
 func compareMetricsPolicy(row metricsHTTPPolicy, py, gor response) []string {
 	var diffs []string
 	if py.status != row.input.PythonStatus || gor.status != row.NativeStatus {
@@ -127,6 +130,7 @@ func compareMetricsPolicy(row metricsHTTPPolicy, py, gor response) []string {
 	}
 	return diffs
 }
+
 func compareMetricsHTTP(t *testing.T, seedDir string, r request, py, gor response) ([]string, bool) {
 	t.Helper()
 	for _, row := range metricsHTTPPolicies(t) {
@@ -154,11 +158,11 @@ func editedSeed(t *testing.T, seedDir string, row metricsHTTPPolicy) *strings.Re
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(raw)
+	value, err := parsePythonJSON(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	object, ok := value.(*jsonx.Object)
+	object, ok := value.(*orderedObject)
 	if !ok {
 		t.Fatal("edited seed is not an object")
 	}
@@ -183,6 +187,7 @@ func editedSeed(t *testing.T, seedDir string, row metricsHTTPPolicy) *strings.Re
 	}
 	return replace
 }
+
 func compareEditedTrafficFile(t *testing.T, seedDir, py, gor string) []string {
 	t.Helper()
 	for _, row := range metricsHTTPPolicies(t) {

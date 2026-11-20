@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/repo"
@@ -180,8 +179,7 @@ func (f installerFuzz) dockerValue(field string) string {
 // jsonValue is a random JSON value for an install-command field.
 func (f installerFuzz) jsonValue(field string) string {
 	str := func(s string) string {
-		data, _ := jsonx.Encode(s, jsonx.Options{EnsureASCII: f.rng.IntN(2) == 0})
-		return string(data)
+		return encodeStringJSON(s, f.rng.IntN(2) == 0)
 	}
 	switch f.rng.IntN(12) {
 	case 0:
@@ -287,7 +285,7 @@ func (f installerFuzz) validQuery() string {
 func (f installerFuzz) validBody() string {
 	var parts []string
 	for _, p := range f.validPairs() {
-		key, _ := jsonx.Encode(p[0], jsonx.Options{EnsureASCII: true})
+		key := encodeStringJSON(p[0], true)
 		var value string
 		switch p[0] {
 		case "install_core", "ipv4_forwarding", "prepare_dns_ha":
@@ -295,10 +293,9 @@ func (f installerFuzz) validBody() string {
 		case "port", "mihomo_agent_port", "oxidns_agent_port":
 			value = p[1]
 		default:
-			data, _ := jsonx.Encode(p[1], jsonx.Options{EnsureASCII: f.rng.IntN(2) == 0})
-			value = string(data)
+			value = encodeStringJSON(p[1], f.rng.IntN(2) == 0)
 		}
-		parts = append(parts, string(key)+":"+value)
+		parts = append(parts, key+":"+value)
 	}
 	return "{" + strings.Join(parts, ",") + "}"
 }
@@ -425,8 +422,8 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 				diffs = append(diffs, "native policy reference: "+strings.Join(next, "; "))
 			}
 			if expected.status == 200 && kind == "install-command" {
-				value, _ := jsonx.Parse(expected.body)
-				nativeDownloads[r.body] = value.(*jsonx.Object).GetString("download_path")
+				value, _ := parsePythonJSON(expected.body)
+				nativeDownloads[r.body] = value.(*orderedObject).GetString("download_path")
 			}
 		}
 		if len(diffs) > 0 {
@@ -480,10 +477,10 @@ func TestInstallerFuzzAgainstFlask(t *testing.T) {
 		}
 		py, gor := check("install-command", r, "download_path", "expires_at")
 		if py.status == 200 && gor.status == 200 {
-			pyAnswer, _ := jsonx.Parse(py.body)
-			goAnswer, _ := jsonx.Parse(gor.body)
-			pyDown := sendInstaller(t, pyBase, installerRequest{method: "GET", path: pyAnswer.(*jsonx.Object).GetString("download_path")}, "")
-			goDown := sendInstaller(t, goBase, installerRequest{method: "GET", path: goAnswer.(*jsonx.Object).GetString("download_path")}, "")
+			pyAnswer, _ := parsePythonJSON(py.body)
+			goAnswer, _ := parsePythonJSON(gor.body)
+			pyDown := sendInstaller(t, pyBase, installerRequest{method: "GET", path: pyAnswer.(*orderedObject).GetString("download_path")}, "")
+			goDown := sendInstaller(t, goBase, installerRequest{method: "GET", path: goAnswer.(*orderedObject).GetString("download_path")}, "")
 			if reference, ok := nativeDownloads[r.body]; ok {
 				pyDown = sendInstaller(t, nativeBase, installerRequest{method: "GET", path: reference}, "")
 			}

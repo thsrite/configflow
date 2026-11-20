@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -53,10 +53,10 @@ func (f *fakePanelAgent) take() []string {
 	return out
 }
 
-func panelNode(name string) *jsonx.Object {
-	return jsonx.Obj("name", name, "type", "Trojan", "udp", true, "xudp", true, "tfo", false, "id", "x", "alive", true,
-		"history", []any{jsonx.Obj("time", "t1", "delay", 300), jsonx.Obj("time", "t2", "delay", 120)},
-		"extra", jsonx.Obj("https://cp.test/204", jsonx.Obj("alive", false, "history", []any{jsonx.Obj("delay", 90), jsonx.Obj("delay", 0)}),
+func panelNode(name string) *orderedObject {
+	return oObj("name", name, "type", "Trojan", "udp", true, "xudp", true, "tfo", false, "id", "x", "alive", true,
+		"history", []any{oObj("time", "t1", "delay", 300), oObj("time", "t2", "delay", 120)},
+		"extra", oObj("https://cp.test/204", oObj("alive", false, "history", []any{oObj("delay", 90), oObj("delay", 0)}),
 			"odd", "not a dict"))
 }
 
@@ -68,7 +68,7 @@ func (f *fakePanelAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.URL.RawQuery, r.Header.Get("Authorization"), r.Header.Get("Accept"), r.Header.Get("Content-Type"), body))
 	f.mu.Unlock()
 	send := func(status int, v any) {
-		data, _ := jsonx.Default(v)
+		data, _ := encodeDefaultJSON(v)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		w.Write(data)
@@ -79,7 +79,7 @@ func (f *fakePanelAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch phase {
 	case "401":
-		send(401, jsonx.Obj("message", "nope"))
+		send(401, oObj("message", "nope"))
 		return
 	case "302":
 		http.Redirect(w, r, "/elsewhere", http.StatusFound)
@@ -97,36 +97,36 @@ func (f *fakePanelAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		raw(200, strings.Repeat(" ", 16*1024*1024+1))
 		return
 	case "controller":
-		send(409, jsonx.Obj("success", false, "code", "CONTROLLER_UNAVAILABLE", "message", "secret detail"))
+		send(409, oObj("success", false, "code", "CONTROLLER_UNAVAILABLE", "message", "secret detail"))
 		return
 	case "codelist":
-		send(502, jsonx.Obj("success", false, "code", []any{"x"}))
+		send(502, oObj("success", false, "code", []any{"x"}))
 		return
 	case "timeout":
-		send(504, jsonx.Obj("message", "Timeout"))
+		send(504, oObj("message", "Timeout"))
 		return
 	case "long":
-		send(418, jsonx.Obj("message", strings.Repeat("长", 400)))
+		send(418, oObj("message", strings.Repeat("长", 400)))
 		return
 	case "coreerror":
-		send(500, jsonx.Obj("message", "download failed: dial tcp: i/o timeout"))
+		send(500, oObj("message", "download failed: dial tcp: i/o timeout"))
 		return
 	case "partial":
-		send(502, jsonx.Obj("success", false, "code", "CACHE_FLUSH_FAILED", "message", "core secret", "flushed", []any{"main_cache"}))
+		send(502, oObj("success", false, "code", "CACHE_FLUSH_FAILED", "message", "core secret", "flushed", []any{"main_cache"}))
 		return
 	case "cacheunknown":
-		send(409, jsonx.Obj("success", false, "code", "CACHE_UNKNOWN"))
+		send(409, oObj("success", false, "code", "CACHE_UNKNOWN"))
 		return
 	case "taskfailed":
-		send(200, jsonx.Obj("success", true, "task", jsonx.Obj("id", strings.Repeat("a", 32), "status", "failed", "phase", "done",
+		send(200, oObj("success", true, "task", oObj("id", strings.Repeat("a", 32), "status", "failed", "phase", "done",
 			"downloaded", 1, "download_total", 2, "reloaded", 0, "reload_total", 1, "code", "DOWNLOAD_FAILED", "message", "http://u:secret@x")))
 		return
 	case "taskbad":
-		send(200, jsonx.Obj("success", true, "task", jsonx.Obj("id", "http://secret", "status", "running", "phase", "downloading",
+		send(200, oObj("success", true, "task", oObj("id", "http://secret", "status", "running", "phase", "downloading",
 			"downloaded", 0, "download_total", 2, "reloaded", 0, "reload_total", 1)))
 		return
 	case "busy":
-		send(409, jsonx.Obj("success", false, "code", "RULE_UPDATE_BUSY", "message", "secret"))
+		send(409, oObj("success", false, "code", "RULE_UPDATE_BUSY", "message", "secret"))
 		return
 	case "nan":
 		raw(200, `{"a": NaN, "b": 1e400, "c": -0.0, "d": 1.50}`)
@@ -142,27 +142,27 @@ func (f *fakePanelAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if phase == "alpha" {
 			version = "alpha-0a1b2c3"
 		}
-		send(200, jsonx.Obj("meta", true, "version", version))
+		send(200, oObj("meta", true, "version", version))
 	case path == "/api/mihomo/proxies":
-		send(200, jsonx.Obj("proxies", jsonx.Obj("HK", panelNode("HK"), "G", jsonx.Obj("name", "G", "type", "Selector",
+		send(200, oObj("proxies", oObj("HK", panelNode("HK"), "G", oObj("name", "G", "type", "Selector",
 			"now", "HK", "all", []any{"HK"}, "hidden", false, "icon", "", "fixed", "", "testUrl", "u", "history", []any{}),
 			"odd", "x"), "extra", 1))
 	case path == "/api/mihomo/providers/proxies":
-		send(200, jsonx.Obj("providers", jsonx.Obj(
-			"sub", jsonx.Obj("name", "sub", "vehicleType", "HTTP", "subscriptionInfo", jsonx.Obj("Total", 1),
+		send(200, oObj("providers", oObj(
+			"sub", oObj("name", "sub", "vehicleType", "HTTP", "subscriptionInfo", oObj("Total", 1),
 				"proxies", []any{panelNode("HK"), "odd"}),
-			"Proxy", jsonx.Obj("name", "Proxy", "vehicleType", "Compatible", "proxies", []any{panelNode("DIRECT"), jsonx.Obj("type", "x")}),
+			"Proxy", oObj("name", "Proxy", "vehicleType", "Compatible", "proxies", []any{panelNode("DIRECT"), oObj("type", "x")}),
 			"none", nil)))
 	case strings.HasPrefix(path, "/api/mihomo/"):
-		send(200, jsonx.Obj("ok", true, "delay", 81))
+		send(200, oObj("ok", true, "delay", 81))
 	case path == "/api/oxidns/cache":
-		send(200, jsonx.Obj("success", true, "caches", []any{"main_cache", "probe"}))
+		send(200, oObj("success", true, "caches", []any{"main_cache", "probe"}))
 	case path == "/api/oxidns/cache/flush":
 		var tags any = []any{"probe"}
-		if value, err := jsonx.Parse(body); err == nil {
-			tags = value.(*jsonx.Object).Value("tags")
+		if value, err := parsePythonJSON(body); err == nil {
+			tags = value.(*orderedObject).Value("tags")
 		}
-		send(200, jsonx.Obj("success", true, "flushed", tags))
+		send(200, oObj("success", true, "flushed", tags))
 	case path == "/api/oxidns/rules/update":
 		status, state, phaseName, done := 202, "running", "downloading", 0
 		if r.Method == "GET" {
@@ -172,7 +172,7 @@ func (f *fakePanelAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if done == 2 {
 			reloaded = 1
 		}
-		send(status, jsonx.Obj("success", true, "task", jsonx.Obj("id", strings.Repeat("a", 32), "status", state, "phase", phaseName,
+		send(status, oObj("success", true, "task", oObj("id", strings.Repeat("a", 32), "status", state, "phase", phaseName,
 			"downloaded", done, "download_total", 2, "reloaded", reloaded, "reload_total", 1, "token", "secret")))
 	default:
 		http.NotFound(w, r)
@@ -184,13 +184,13 @@ func panelSeed(t *testing.T, dir string, port, closed int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := func(id, version, service string, p int) *jsonx.Object {
-		return jsonx.Obj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
+	agent := func(id, version, service string, p int) *orderedObject {
+		return oObj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
 			"host", "127.0.0.1", "port", p, "version", version, "config_version", "0", "enabled", true, "status", "online")
 	}
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
 		busy := agent("dns-busy", "1.8.36-go", "oxidns", port)
-		busy.Set("oxidns_ha_publication", jsonx.Obj("status", "publishing", "kind", "deploy"))
+		busy.Set("oxidns_ha_publication", oObj("status", "publishing", "kind", "deploy"))
 		// Review cases: a bad host with a non-latin-1 token (origin checked
 		// first), malformed HA publication records (Python raises).
 		badHost := agent("dns-badhost", "1.8.36-go", "oxidns", port)
@@ -199,13 +199,13 @@ func panelSeed(t *testing.T, dir string, port, closed int) {
 		haText := agent("dns-ha-text", "1.8.36-go", "oxidns", port)
 		haText.Set("oxidns_ha_publication", "x")
 		haList := agent("dns-ha-list", "1.8.36-go", "oxidns", port)
-		haList.Set("oxidns_ha_publication", jsonx.Obj("status", []any{"a"}))
+		haList.Set("oxidns_ha_publication", oObj("status", []any{"a"}))
 		haNumber := agent("dns-ha-number", "1.8.36-go", "oxidns", port)
-		haNumber.Set("oxidns_ha_publication", jsonx.Obj("status", 1))
+		haNumber.Set("oxidns_ha_publication", oObj("status", 1))
 		haDone := agent("dns-ha-done", "1.8.36-go", "oxidns", port)
-		haDone.Set("oxidns_ha_publication", jsonx.Obj("status", "rollback_failed"))
+		haDone.Set("oxidns_ha_publication", oObj("status", "rollback_failed"))
 		// Below 1.8.55-go: Python's ranking collector never contacts these Agents.
-		system.Set("agents", []any{
+		if err := system.SetJSON("agents", mustRawJSON(t, []any{
 			agent("gw-old", "1.8.14-go", "mihomo", port), agent("gw", "1.8.15-go", "mihomo", port),
 			agent("gw16", "1.8.16-go", "mihomo", port), agent("gw18", "1.8.18-go", "mihomo", port),
 			agent("gw26", "1.8.26-go", "mihomo", port), agent("gw56", "1.8.56-go", "mihomo", port),
@@ -213,14 +213,10 @@ func panelSeed(t *testing.T, dir string, port, closed int) {
 			agent("dns", "1.8.36-go", "oxidns", port), agent("dns35", "1.8.35-go", "oxidns", port),
 			agent("dns29", "1.8.29-go", "oxidns", port), agent("dns30", "1.8.30-go", "oxidns", port), busy,
 			badHost, haText, haList, haNumber, haDone,
-		})
-		config := system.GetObject("system_config")
-		if config == nil {
-			config = jsonx.NewObject()
-			system.Set("system_config", config)
+		})); err != nil {
+			return err
 		}
-		config.Set("rule_fetch_proxy", "http://127.0.0.1:"+strconv.Itoa(closed))
-		return nil, nil
+		return system.SystemConfig.SetJSON("rule_fetch_proxy", mustRawJSON(t, "http://127.0.0.1:"+strconv.Itoa(closed)))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -446,14 +442,14 @@ type fakeRankingAgent struct {
 
 func (f *fakeRankingAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	send := func(v any) {
-		data, _ := jsonx.Default(v)
+		data, _ := encodeDefaultJSON(v)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
 	}
 	switch r.URL.Path {
 	case "/api/oxidns/overview":
-		send(jsonx.Obj("success", true, "health", jsonx.Obj("version", "1.6.1", "status", "ok", "uptime_ms", 1, "instance_id", "core-one"),
-			"capabilities", jsonx.Obj("query_recorders", []any{"records"}), "collected_at_ms", 1000,
+		send(oObj("success", true, "health", oObj("version", "1.6.1", "status", "ok", "uptime_ms", 1, "instance_id", "core-one"),
+			"capabilities", oObj("query_recorders", []any{"records"}), "collected_at_ms", 1000,
 			"source_revision", strings.Repeat("a", 64), "runtime_revision", strings.Repeat("d", 64), "metrics", ""))
 	case "/api/oxidns/rankings":
 		q := r.URL.Query()
@@ -464,14 +460,14 @@ func (f *fakeRankingAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 		n := sinceMS / 900_000
 		sample := n%40 + 3
-		section := func(rows ...any) *jsonx.Object {
-			return jsonx.Obj("sample_size", sample, "at_limit", false, "rows", rows)
+		section := func(rows ...any) *orderedObject {
+			return oObj("sample_size", sample, "at_limit", false, "rows", rows)
 		}
-		send(jsonx.Obj("success", true, "recorder", q.Get("recorder"), "retention_days", 7,
-			"clients", section(jsonx.Obj("key", "192.0.2.1", "count", sample-1), jsonx.Obj("key", fmt.Sprintf("192.0.2.%d", n%5+2), "count", 1)),
-			"domains", section(jsonx.Obj("key", fmt.Sprintf("d%d.例子.test.", n%7), "count", sample), jsonx.Obj("key", "a.test.", "count", 2)),
-			"blocked", jsonx.Obj("available", n%3 != 0, "sample_size", 1, "at_limit", false,
-				"rows", []any{jsonx.Obj("key", fmt.Sprintf("ads%d.test.", n%2), "count", 1)})))
+		send(oObj("success", true, "recorder", q.Get("recorder"), "retention_days", 7,
+			"clients", section(oObj("key", "192.0.2.1", "count", sample-1), oObj("key", fmt.Sprintf("192.0.2.%d", n%5+2), "count", 1)),
+			"domains", section(oObj("key", fmt.Sprintf("d%d.例子.test.", n%7), "count", sample), oObj("key", "a.test.", "count", 2)),
+			"blocked", oObj("available", n%3 != 0, "sample_size", 1, "at_limit", false,
+				"rows", []any{oObj("key", fmt.Sprintf("ads%d.test.", n%2), "count", 1)})))
 	default:
 		http.NotFound(w, r)
 	}
@@ -539,13 +535,12 @@ func TestRankingCollectorDifferentialAgainstFlask(t *testing.T) {
 		t.Fatal(err)
 	}
 	heartbeat := naiveISO(time.Now().Add(30 * time.Second))
-	agent := func(id, version string) *jsonx.Object {
-		return jsonx.Obj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", "oxidns",
+	agent := func(id, version string) *orderedObject {
+		return oObj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", "oxidns",
 			"host", "127.0.0.1", "port", port, "version", version, "enabled", true, "status", "online", "last_heartbeat", heartbeat)
 	}
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{agent("dns", "1.8.60-go"), agent("dns-old", "1.8.54-go")})
-		return nil, nil
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", mustRawJSON(t, []any{agent("dns", "1.8.60-go"), agent("dns-old", "1.8.54-go")}))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -606,16 +601,16 @@ func n811NumericPanel(t *testing.T, r request, python, native response, pyCalls,
 	if r.method != "GET" || r.path != path || r.body != "" {
 		t.Fatal("ASCII query binding changed", r.name)
 	}
-	py, err := jsonx.Parse(python.body)
+	py, err := parsePythonJSON(python.body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if python.status != 200 || py.(*jsonx.Object).Value("success") != true || len(pyCalls) != 1 {
+	if python.status != 200 || py.(*orderedObject).Value("success") != true || len(pyCalls) != 1 {
 		t.Fatal("Python ASCII-change reference changed", r.name, python.status, pyCalls)
 	}
-	actual, err := jsonx.Parse(native.body)
-	want := jsonx.Obj("success", false, "code", "INVALID_REQUEST", "message", "请求参数无效。")
-	if err != nil || native.status != 400 || !jsonx.Equal(actual, want) || len(goCalls) != 0 {
+	actual, err := parsePythonJSON(native.body)
+	want := oObj("success", false, "code", "INVALID_REQUEST", "message", "请求参数无效。")
+	if err != nil || native.status != 400 || !jsonEqual(actual, want) || len(goCalls) != 0 {
 		return []string{fmt.Sprintf("ASCII numeric refusal: status=%d body=%s calls=%v", native.status, native.body, goCalls)}, true
 	}
 	for _, header := range []string{"Content-Type", "Cache-Control", "X-ConfigFlow-Profile"} {

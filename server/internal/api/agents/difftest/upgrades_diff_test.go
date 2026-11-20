@@ -24,6 +24,7 @@ package difftest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -39,7 +40,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/upgrades"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -91,7 +92,7 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.URL.RawQuery, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), hexID.ReplaceAllString(string(body), "<id>")))
 	f.mu.Unlock()
 	send := func(status int, v any) {
-		data, _ := jsonx.Default(v)
+		data, _ := encodeDefaultJSON(v)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		w.Write(data)
@@ -102,7 +103,7 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch phase {
 	case "500":
-		send(500, jsonx.Obj("success", false, "message", "agent secret failure"))
+		send(500, oObj("success", false, "message", "agent secret failure"))
 		return
 	case "notjson":
 		raw(200, "not json")
@@ -124,36 +125,36 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case path == "/api/status":
-		send(200, jsonx.Obj("success", true, "status", "running", "uptime", 12))
+		send(200, oObj("success", true, "status", "running", "uptime", 12))
 	case path == "/api/logs":
 		logs := "line one\nauth tok-op-2 and tok%2Dop%2D2 here\nGET http://x/?k=tok-op-2\nplain\n"
-		send(200, jsonx.Obj("success", true, "logs", logs, "error_logs", "", "lines", r.URL.Query().Get("lines")))
+		send(200, oObj("success", true, "logs", logs, "error_logs", "", "lines", r.URL.Query().Get("lines")))
 	case path == "/api/logs/sources":
-		send(200, jsonx.Obj("success", true, "sources", []any{jsonx.Obj("id", "mihomo", "label", "Mihomo")}))
+		send(200, oObj("success", true, "sources", []any{oObj("id", "mihomo", "label", "Mihomo")}))
 	case path == "/api/logs/clear" || path == "/api/logs/validate":
-		send(200, jsonx.Obj("success", true, "echo", string(body)))
+		send(200, oObj("success", true, "echo", string(body)))
 	case path == "/api/config/logging":
-		send(200, jsonx.Obj("success", true, "enabled", true))
+		send(200, oObj("success", true, "enabled", true))
 	case path == "/api/restart":
-		send(200, jsonx.Obj("success", true, "message", "restarting"))
+		send(200, oObj("success", true, "message", "restarting"))
 	case path == "/api/uninstall":
-		send(200, jsonx.Obj("success", true))
+		send(200, oObj("success", true))
 	case path == "/api/capabilities":
 		if token != "Bearer tok-follow" && token != "Bearer tok-addr" {
-			send(401, jsonx.Obj("success", false))
+			send(401, oObj("success", false))
 			return
 		}
-		send(200, jsonx.Obj("success", true))
+		send(200, oObj("success", true))
 	case path == "/api/agent-address":
 		switch {
 		case phase == "env":
-			send(200, jsonx.Obj("success", true, "configured", "192.0.2.9", "addresses", []any{f.lan}, "writable", false))
+			send(200, oObj("success", true, "configured", "192.0.2.9", "addresses", []any{f.lan}, "writable", false))
 			return
 		case phase == "addrreject400" && r.Method == "POST":
-			send(400, jsonx.Obj("success", false, "message", "地址格式不对"))
+			send(400, oObj("success", false, "message", "地址格式不对"))
 			return
 		case phase == "addrreject500" && r.Method == "POST":
-			send(500, jsonx.Obj("success", false))
+			send(500, oObj("success", false))
 			return
 		}
 		if token == "Bearer tok-addr-old" {
@@ -161,41 +162,41 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.Method == "POST" {
-			value, _ := jsonx.Parse(body)
-			requested, _ := value.(*jsonx.Object).Value("host").(string)
+			value, _ := parsePythonJSON(body)
+			requested, _ := value.(*orderedObject).Value("host").(string)
 			if requested != f.lan {
-				send(400, jsonx.Obj("success", false, "message", "这台设备没有地址 "+requested))
+				send(400, oObj("success", false, "message", "这台设备没有地址 "+requested))
 				return
 			}
-			send(200, jsonx.Obj("success", true, "host", requested))
+			send(200, oObj("success", true, "host", requested))
 			return
 		}
-		send(200, jsonx.Obj("success", true, "configured", "", "addresses", []any{f.lan, "127.0.0.1", "172.17.0.2", 5}, "writable", true))
+		send(200, oObj("success", true, "configured", "", "addresses", []any{f.lan, "127.0.0.1", "172.17.0.2", 5}, "writable", true))
 	case path == "/api/upgrade-info":
 		switch {
 		case phase == "legacy" || token == "Bearer tok-legacy":
 			raw(404, "404 page not found")
 		case phase == "wrongid":
-			send(200, jsonx.Obj("agent_id", "someone-else", "deployment_method", "shell", "architecture", "linux-amd64"))
+			send(200, oObj("agent_id", "someone-else", "deployment_method", "shell", "architecture", "linux-amd64"))
 		case phase == "infolist":
 			send(200, []any{1})
 		case phase == "noarch":
-			send(200, jsonx.Obj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "deployment_method", "shell"))
+			send(200, oObj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "deployment_method", "shell"))
 		case phase == "done":
-			send(200, jsonx.Obj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "version", agents.GetLatestVersion(), "migration_ready", true))
+			send(200, oObj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "version", agents.GetLatestVersion(), "migration_ready", true))
 		default:
-			send(200, jsonx.Obj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "deployment_method", "shell", "architecture", "linux-amd64"))
+			send(200, oObj("agent_id", strings.TrimPrefix(token, "Bearer tok-"), "deployment_method", "shell", "architecture", "linux-amd64"))
 		}
 	case path == "/api/update" && r.Method == "POST":
-		value, _ := jsonx.Parse(body)
+		value, _ := parsePythonJSON(body)
 		f.mu.Lock()
-		f.updates[client(r)], _ = value.(*jsonx.Object).Value("update_id").(string)
+		f.updates[client(r)], _ = value.(*orderedObject).Value("update_id").(string)
 		f.mu.Unlock()
 		if phase == "reject" {
-			send(409, jsonx.Obj("success", false, "message", "another Agent update or service operation is active"))
+			send(409, oObj("success", false, "message", "another Agent update or service operation is active"))
 			return
 		}
-		send(202, jsonx.Obj("success", true))
+		send(202, oObj("success", true))
 	case path == "/api/update":
 		f.mu.Lock()
 		id := f.updates[client(r)]
@@ -204,10 +205,10 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if phase == "done" {
 			status = "succeeded"
 		}
-		send(200, jsonx.Obj("update_id", id, "agent_id", strings.TrimPrefix(token, "Bearer tok-"), "status", status,
+		send(200, oObj("update_id", id, "agent_id", strings.TrimPrefix(token, "Bearer tok-"), "status", status,
 			"message", "下载 configflow-agent-linux-amd64", "updated_at", "2026-10-18T00:00:01Z",
-			"events", []any{jsonx.Obj("at", "2026-10-18T00:00:00Z", "status", "queued"),
-				jsonx.Obj("at", "2026-10-18T00:00:01Z", "status", status, "message", "https://u:p@dl.example/x")}))
+			"events", []any{oObj("at", "2026-10-18T00:00:00Z", "status", "queued"),
+				oObj("at", "2026-10-18T00:00:01Z", "status", status, "message", "https://u:p@dl.example/x")}))
 	default:
 		raw(404, "404 page not found")
 	}
@@ -240,39 +241,53 @@ func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 	// source downloads are not A15 operations: disable them in the identical
 	// seed, otherwise a test lasting over the scheduler's first round changes
 	// unrelated caches/task evidence while the two servers are compared.
-	if _, err = r.UpdateSharedTransaction(context.Background(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		for _, entry := range shared.GetList("subscriptions") {
-			entry.(*jsonx.Object).Set("interval", jsonx.Int(0))
+	if err = r.UpdateShared(context.Background(), func(_ context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal(shared)
+		if err != nil {
+			return err
 		}
-		for _, entry := range shared.GetList("rule_library") {
-			entry.(*jsonx.Object).Set("update_interval", jsonx.Int(0))
+		doc, err := parsePythonJSON(raw)
+		if err != nil {
+			return err
 		}
-		return nil, nil
+		obj := doc.(*orderedObject)
+		subs := obj.GetList("subscriptions")
+		for _, entry := range subs {
+			entry.(*orderedObject).Set("interval", int64(0))
+		}
+		if err := shared.SetJSON("subscriptions", mustRawJSON(t, subs)); err != nil {
+			return err
+		}
+		lib := obj.GetList("rule_library")
+		for _, entry := range lib {
+			entry.(*orderedObject).Set("update_interval", int64(0))
+		}
+		return shared.SetJSON("rule_library", mustRawJSON(t, lib))
 	}); err != nil {
 		t.Fatal(err)
 	}
-	agent := func(id, service string, p int) *jsonx.Object {
-		return jsonx.Obj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
+	agent := func(id, service string, p int) *orderedObject {
+		return oObj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
 			"host", "127.0.0.1", "port", p, "version", "1.1.0-go", "config_version", "0", "enabled", true,
 			"deployment_method", "shell", "created_at", "2026-11-01T00:00:00")
 	}
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
 		docker := agent("op-docker", "mihomo", port)
 		docker.Set("deployment_method", "docker")
 		busy := agent("op-busy", "mihomo", port)
-		busy.Set("latest_upgrade", jsonx.Obj("update_id", "busy-job", "status", "checking", "protocol", 2))
+		busy.Set("latest_upgrade", oObj("update_id", "busy-job", "status", "checking", "protocol", 2))
 		upgrading := agent("op-upgrading", "mihomo", port)
-		upgrading.Set("latest_upgrade", jsonx.Obj("update_id", strings.Repeat("b", 32), "agent_id", "op-upgrading", "protocol", 1,
+		upgrading.Set("latest_upgrade", oObj("update_id", strings.Repeat("b", 32), "agent_id", "op-upgrading", "protocol", 1,
 			"target_version", agents.GetLatestVersion(), "previous_version", "1.1.0-go", "status", "downloading",
-			"started_at", jsonx.Float(float64(time.Now().Unix())), "updated_at", 1.5))
+			"started_at", float64(time.Now().Unix()), "updated_at", 1.5))
 		failed := agent("op-failed", "mihomo", port)
-		failed.Set("latest_upgrade", jsonx.Obj("update_id", "old-job", "status", "failed", "protocol", 2,
+		failed.Set("latest_upgrade", oObj("update_id", "old-job", "status", "failed", "protocol", 2,
 			"error", "Agent download size or SHA-256 mismatch", "target_version", "9.9.9-go", "previous_version", "1.1.0-go"))
 		legacy := agent("legacy", "mihomo", port)
 		ha := agent("follow-ha", "oxidns", port)
-		ha.Set("oxidns_ha", jsonx.Obj("enabled", true, "vip", "192.0.2.53"))
+		ha.Set("oxidns_ha", oObj("enabled", true, "vip", "192.0.2.53"))
 		addrHA := agent("addr-ha", "oxidns", port)
-		addrHA.Set("oxidns_ha", jsonx.Obj("enabled", true, "vip", "192.0.2.54"))
+		addrHA.Set("oxidns_ha", oObj("enabled", true, "vip", "192.0.2.54"))
 		addrOld := agent("addr-old", "oxidns", port)
 		addrOld.Set("deployment_method", "docker")
 		// Review A15: tokens http.client sends as latin-1 / cannot encode, a
@@ -300,17 +315,13 @@ func upgradesSeed(t *testing.T, dir string, port, closed int, lan string) {
 		ftwinA.Set("name", "ftwin")
 		ftwinB.Set("name", "ftwin")
 		ftwinB.Set("host", lan)
-		system.Set("agents", []any{agent("op-1", "mihomo", port), agent("op-2", "mihomo", port), docker, busy, upgrading,
+		if err := system.SetJSON("agents", mustRawJSON(t, []any{agent("op-1", "mihomo", port), agent("op-2", "mihomo", port), docker, busy, upgrading,
 			failed, legacy, agent("op-gone", "mihomo", closed), agent("op-uninstall", "mihomo", port),
 			agent("follow", "oxidns", port), ha, agent("addr", "oxidns", port), addrHA, addrOld,
-			latin, cjk, noHost, badRecord, pairs, intRecord, agent("op-noarch", "mihomo", port), twinA, twinB, ftwinA, ftwinB, v6Scoped, v6Loop})
-		config := system.GetObject("system_config")
-		if config == nil {
-			config = jsonx.NewObject()
-			system.Set("system_config", config)
+			latin, cjk, noHost, badRecord, pairs, intRecord, agent("op-noarch", "mihomo", port), twinA, twinB, ftwinA, ftwinB, v6Scoped, v6Loop})); err != nil {
+			return err
 		}
-		config.Set("server_domain", "http://127.0.0.1:5001")
-		return nil, nil
+		return system.SystemConfig.SetJSON("server_domain", json.RawMessage(`"http://127.0.0.1:5001"`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -495,10 +506,10 @@ func upgradesRequests(lan string) []upgradesRequest {
 func upgradeAgents(t *testing.T, dir string) any {
 	value := finalAgents(t, dir)
 	for _, item := range value.([]any) {
-		agent := item.(*jsonx.Object)
+		agent := item.(*orderedObject)
 		maskJSON(agent, []string{"latest_upgrade.update_id", "latest_upgrade.started_at", "latest_upgrade.updated_at",
 			"latest_upgrade.recovery_reported_at", "latest_upgrade.events.*.at"})
-		if state, ok := agent.Value("latest_upgrade").(*jsonx.Object); ok && hexID.MatchString(jsonx.Str(state.Value("update_id"))) {
+		if state, ok := agent.Value("latest_upgrade").(*orderedObject); ok && hexID.MatchString(strValue(state.Value("update_id"))) {
 			state.Set("update_id", "<id>")
 		}
 	}
@@ -653,10 +664,10 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	}
 	pyAgents, goAgents := upgradeAgents(t, pyDir), upgradeAgents(t, goDir)
 	adjustUpgradeStoredPolicy(t, pyAgents, goAgents)
-	if !jsonx.Equal(pyAgents, goAgents) {
+	if !jsonEqual(pyAgents, goAgents) {
 		failed++
-		pyText, _ := jsonx.Sorted(pyAgents)
-		goText, _ := jsonx.Sorted(goAgents)
+		pyText, _ := encodeSortedJSON(pyAgents)
+		goText, _ := encodeSortedJSON(goAgents)
 		t.Errorf("DIFF stored agents:\n  python %s\n  go     %s", pyText, goText)
 	}
 	if py, gor := notificationItems(t, pyDir), notificationItems(t, goDir); py != gor {

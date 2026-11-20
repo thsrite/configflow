@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
@@ -18,16 +17,16 @@ func equalComposeYAML(left, right string) bool {
 }
 
 func equalGuideComposeLayout(expected, actual []byte) []byte {
-	left, err := jsonx.Parse(expected)
+	left, err := parsePythonJSON(expected)
 	if err != nil {
 		return expected
 	}
-	right, err := jsonx.Parse(actual)
+	right, err := parsePythonJSON(actual)
 	if err != nil {
 		return expected
 	}
-	a, aok := left.(*jsonx.Object)
-	b, bok := right.(*jsonx.Object)
+	a, aok := left.(*orderedObject)
+	b, bok := right.(*orderedObject)
 	if !aok || !bok {
 		return expected
 	}
@@ -36,16 +35,16 @@ func equalGuideComposeLayout(expected, actual []byte) []byte {
 	if xok && yok && equalComposeYAML(x, y) {
 		a.Set("compose", y)
 	}
-	leftBundle, lok := a.Value("compose_bundle").(*jsonx.Object)
-	rightBundle, rok := b.Value("compose_bundle").(*jsonx.Object)
+	leftBundle, lok := a.Value("compose_bundle").(*orderedObject)
+	rightBundle, rok := b.Value("compose_bundle").(*orderedObject)
 	if lok && rok {
 		leftArchive, leftYAML, leftErr := installerArchive(leftBundle.GetString("content_base64"))
 		rightArchive, rightYAML, rightErr := installerArchive(rightBundle.GetString("content_base64"))
-		if leftErr == nil && rightErr == nil && equalComposeYAML(leftYAML, rightYAML) && jsonx.Equal(leftArchive, rightArchive) {
+		if leftErr == nil && rightErr == nil && equalComposeYAML(leftYAML, rightYAML) && jsonEqual(leftArchive, rightArchive) {
 			leftBundle.Set("content_base64", rightBundle.GetString("content_base64"))
 		}
 	}
-	result, err := jsonx.Response(a)
+	result, err := encodeResponseJSON(a)
 	if err != nil {
 		return expected
 	}
@@ -65,16 +64,16 @@ func TestN73GuideComposeComparisonKeepsEveryOtherValue(t *testing.T) {
 		{"success", "services: {agent: {image: synthetic, port: 7890}}\n", "echo synthetic", false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			actual, _ := jsonx.Response(jsonx.Obj("success", test.success, "compose", test.compose, "install_script", test.script))
-			a, err := jsonx.Parse(equalGuideComposeLayout(expected, actual))
+			actual, _ := encodeResponseJSON(oObj("success", test.success, "compose", test.compose, "install_script", test.script))
+			a, err := parsePythonJSON(equalGuideComposeLayout(expected, actual))
 			if err != nil {
 				t.Fatal(err)
 			}
-			b, err := jsonx.Parse(actual)
+			b, err := parsePythonJSON(actual)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := jsonx.Equal(a, b); got != test.want {
+			if got := jsonEqual(a, b); got != test.want {
 				t.Fatalf("equal=%v want %v", got, test.want)
 			}
 		})

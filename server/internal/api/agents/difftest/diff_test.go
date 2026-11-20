@@ -12,6 +12,7 @@ package difftest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -31,9 +32,9 @@ import (
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
 )
@@ -60,30 +61,31 @@ func seed(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
-		system.Set("agents", []any{jsonx.Obj("id", "agent-1", "name", "diff agent", "token", agentToken,
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		if err := system.SystemConfig.SetJSON("server_domain", json.RawMessage(`"http://127.0.0.1:5001"`)); err != nil {
+			return err
+		}
+		return system.SetJSON("agents", mustRawJSON(t, []any{oObj("id", "agent-1", "name", "diff agent", "token", agentToken,
 			"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.1", "port", 9, "version", "1.0.0",
 			"config_version", "0", "enabled", true),
 			// An unfinished deployment: the profile binding cannot change (409).
-			jsonx.Obj("id", "agent-busy", "name", "busy agent", "token", agentToken+"-busy",
+			oObj("id", "agent-busy", "name", "busy agent", "token", agentToken+"-busy",
 				"profile_id", "default", "service_type", "mihomo", "host", "10.9.0.2", "port", 9, "version", "1.0.0",
 				"config_version", "0", "enabled", true,
-				"deployments", jsonx.Obj("binding-request", jsonx.Obj("deployment_id", "binding-request", "status", "preparing",
+				"deployments", oObj("binding-request", oObj("deployment_id", "binding-request", "status", "preparing",
 					"profile_id", "default", "service_type", "mihomo"))),
 			// An update waiting for confirmation: no edit, no delete (409).
-			jsonx.Obj("id", "agent-upgrading", "name", "upgrading agent", "token", agentToken+"-upgrading",
+			oObj("id", "agent-upgrading", "name", "upgrading agent", "token", agentToken+"-upgrading",
 				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.3", "port", 9, "version", "1.0.0",
-				"config_version", "0", "enabled", true, "latest_upgrade", jsonx.Obj("status", "downloading")),
+				"config_version", "0", "enabled", true, "latest_upgrade", oObj("status", "downloading")),
 			// Saved history with unusual lines (A04 review): see seedMetrics.
-			jsonx.Obj("id", "agent-odd", "name", "odd agent", "token", agentToken+"-odd",
+			oObj("id", "agent-odd", "name", "odd agent", "token", agentToken+"-odd",
 				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.9", "port", 9, "version", "1.0.0",
 				"config_version", "0", "enabled", true),
-		})
-		return nil, nil
+		}))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -336,16 +338,16 @@ func login(t *testing.T, base string) string {
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
-	value, err := jsonx.Parse(data)
+	value, err := parsePythonJSON(data)
 	if err != nil {
 		t.Fatalf("login: %s", data)
 	}
-	return "Bearer " + value.(*jsonx.Object).GetString("token")
+	return "Bearer " + value.(*orderedObject).GetString("token")
 }
 
 func lookup(value any, path string) any {
 	for _, part := range strings.Split(path, ".") {
-		object, ok := value.(*jsonx.Object)
+		object, ok := value.(*orderedObject)
 		if !ok {
 			return nil
 		}
@@ -371,7 +373,7 @@ func maskPath(value any, parts []string) {
 			}
 			break
 		}
-		object, ok := current.(*jsonx.Object)
+		object, ok := current.(*orderedObject)
 		if !ok {
 			break
 		}
@@ -399,8 +401,8 @@ func compare(r request, py, gor response) []string {
 			diffs = append(diffs, fmt.Sprintf("header %s python %q go %q", name, a, b))
 		}
 	}
-	pv, perr := jsonx.Parse(py.body)
-	gv, gerr := jsonx.Parse(gor.body)
+	pv, perr := parsePythonJSON(py.body)
+	gv, gerr := parsePythonJSON(gor.body)
 	if migrated {
 		// Step B #3: the exact error envelope was checked above.
 	} else if perr == nil && gerr == nil {
@@ -410,7 +412,7 @@ func compare(r request, py, gor response) []string {
 		if r.nonFiniteMetrics {
 			diffs = append(diffs, compareNonFiniteMetrics(r, pv, gv)...)
 		}
-		if !jsonx.Equal(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
+		if !jsonEqual(maskJSON(pv, r.mask), maskJSON(gv, r.mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}
 	} else if !bytes.Equal(py.body, gor.body) {
@@ -673,13 +675,21 @@ func finalAgents(t *testing.T, dir string) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	system, err := r.GetSystem(context.Background())
+	system, err := r.System(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := system.GetList("agents")
+	raw, err := json.Marshal(system)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parsePythonJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := parsed.(*orderedObject).GetList("agents")
 	for _, item := range agents {
-		agent := item.(*jsonx.Object)
+		agent := item.(*orderedObject)
 		for _, key := range []string{"id", "token", "last_heartbeat", "created_at", "updated_at", "traffic_history_since"} {
 			if agent.Has(key) {
 				agent.Set(key, "<masked>")
@@ -725,8 +735,8 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 				body   []byte
 				values map[string]string
 			}{{py.body, pyValues}, {gor.body, goValues}} {
-				value, _ := jsonx.Parse(side.body)
-				side.values[name] = jsonx.Str(lookup(value, path))
+				value, _ := parsePythonJSON(side.body)
+				side.values[name] = strValue(lookup(value, path))
 			}
 		}
 		if r.noOracle {
@@ -754,16 +764,16 @@ func TestDifferentialAgainstFlask(t *testing.T) {
 	}
 	pyAgents, goAgents := finalAgents(t, pyDir), finalAgents(t, goDir)
 	n810AdjustStored(t, pyAgents, goAgents)
-	if !jsonx.Equal(pyAgents, goAgents) {
+	if !jsonEqual(pyAgents, goAgents) {
 		failed++
-		pyText, _ := jsonx.Sorted(pyAgents)
-		goText, _ := jsonx.Sorted(goAgents)
+		pyText, _ := encodeSortedJSON(pyAgents)
+		goText, _ := encodeSortedJSON(goAgents)
 		t.Errorf("DIFF stored agents:\n  python %s\n  go     %s", pyText, goText)
 	} else {
 		keys := func(v any) string {
 			var out []string
 			for _, item := range v.([]any) {
-				out = append(out, strings.Join(item.(*jsonx.Object).Keys(), ","))
+				out = append(out, strings.Join(item.(*orderedObject).Keys(), ","))
 			}
 			sort.Strings(out)
 			return strings.Join(out, " | ")
@@ -844,17 +854,19 @@ func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[
 		if err != nil {
 			return err.Error()
 		}
-		value, _ := jsonx.Parse(data)
-		entry, _ := lookup(value, "metrics_history_flush").(*jsonx.Object)
-		out := jsonx.NewObject()
+		value, _ := parsePythonJSON(data)
+		entry, _ := lookup(value, "metrics_history_flush").(*orderedObject)
+		out := oObj()
 		for _, key := range []string{"last_status", "last_trigger", "last_error", "run_count", "failure_count", "consecutive_failures"} {
 			out.Set(key, entry.Value(key))
 		}
 		return out
 	}
-	if py, gor := status(pyDir), status(goDir); !jsonx.Equal(py, gor) {
+	if py, gor := status(pyDir), status(goDir); !jsonEqual(py, gor) {
 		failed++
-		t.Errorf("DIFF task-status metrics_history_flush:\n  python %s\n  go     %s", jsonx.Repr(py), jsonx.Repr(gor))
+		pyText, _ := encodeCompactJSON(py)
+		goText, _ := encodeCompactJSON(gor)
+		t.Errorf("DIFF task-status metrics_history_flush:\n  python %s\n  go     %s", pyText, goText)
 	}
 	t.Logf("after stop: %d files, %d metrics files compared", len(pyFiles), compared)
 	return failed
@@ -864,13 +876,13 @@ func compareAfterStop(t *testing.T, pyDir, goDir string, pyValues, goValues map[
 // by oddMetrics: history[*].cpu.usage_percent, summary.cpu.avg and
 // summary.network_sent.avg. Everything else remains a strict JSON comparison.
 func compareNonFiniteMetrics(r request, python, native any) []string {
-	p, _ := python.(*jsonx.Object)
-	g, _ := native.(*jsonx.Object)
+	p, _ := python.(*orderedObject)
+	g, _ := native.(*orderedObject)
 	pd, gd := p.GetObject("data"), g.GetObject("data")
 	var diffs []string
 	count := 0
-	check := func(path string, po, goObj *jsonx.Object, key, want string) {
-		n, ok := po.Value(key).(jsonx.Number)
+	check := func(path string, po, goObj *orderedObject, key, want string) {
+		n, ok := po.Value(key).(json.Number)
 		if !ok || string(n) != want {
 			return
 		}
@@ -884,22 +896,22 @@ func compareNonFiniteMetrics(r request, python, native any) []string {
 	if strings.HasPrefix(r.path, "/api/agents/agent-odd/metrics/history") {
 		ph, gh := pd.GetList("history"), gd.GetList("history")
 		for i, point := range ph {
-			pp, _ := point.(*jsonx.Object)
-			var gp *jsonx.Object
+			pp, _ := point.(*orderedObject)
+			var gp *orderedObject
 			if i < len(gh) {
-				gp, _ = gh[i].(*jsonx.Object)
+				gp, _ = gh[i].(*orderedObject)
 			}
 			check(fmt.Sprintf("data.history[%d].cpu.usage_percent", i), pp.GetObject("cpu"), gp.GetObject("cpu"), "usage_percent", "NaN")
 		}
 	} else if strings.HasPrefix(r.path, "/api/agents/agent-odd/metrics/summary") {
 		ps, gs := pd.GetObject("summary"), gd.GetObject("summary")
 		cpu := ps.GetObject("cpu")
-		if n, ok := cpu.Value("avg").(jsonx.Number); !ok || string(n) != "NaN" {
+		if n, ok := cpu.Value("avg").(json.Number); !ok || string(n) != "NaN" {
 			diffs = append(diffs, "Python seeded CPU average must be NaN")
 		} else {
 			count++
-			expected := jsonx.Float(2.5625) // (1+3+4.25+2)/4; the missing sample is ignored.
-			if !jsonx.Equal(gs.GetObject("cpu").Value("avg"), expected) {
+			expected := 2.5625 // (1+3+4.25+2)/4; the missing sample is ignored.
+			if !jsonEqual(gs.GetObject("cpu").Value("avg"), expected) {
 				diffs = append(diffs, "Go seeded CPU average must be 2.5625 over valid samples")
 			}
 			cpu.Set("avg", expected)
@@ -917,12 +929,12 @@ func compareNonFiniteMetrics(r request, python, native any) []string {
 // compareNonFinitePanel asserts the exact fakePanelAgent "nan" response. Only
 // data.a (NaN) and data.b (Infinity) are expected to become null; c/d stay exact.
 func compareNonFinitePanel(python, native any) []string {
-	p, _ := python.(*jsonx.Object)
-	g, _ := native.(*jsonx.Object)
+	p, _ := python.(*orderedObject)
+	g, _ := native.(*orderedObject)
 	pd, gd := p.GetObject("data"), g.GetObject("data")
 	var diffs []string
 	for _, field := range []struct{ key, literal string }{{"a", "NaN"}, {"b", "Infinity"}} {
-		n, ok := pd.Value(field.key).(jsonx.Number)
+		n, ok := pd.Value(field.key).(json.Number)
 		if !ok || string(n) != field.literal {
 			diffs = append(diffs, "panel non-finite fixture: Python data."+field.key+" must be "+field.literal)
 			continue
@@ -945,22 +957,22 @@ func equalSavedMetricLines(t *testing.T, name, python, native string) bool {
 		return false
 	}
 	for i := range pl {
-		pv, pe := jsonx.ParseString(pl[i])
-		gv, ge := jsonx.ParseString(gl[i])
+		pv, pe := parsePythonJSONString(pl[i])
+		gv, ge := parsePythonJSONString(gl[i])
 		if pe != nil || ge != nil {
 			return false
 		}
 		if name == "metrics/agent-odd_metrics.jsonl" {
-			p, _ := pv.(*jsonx.Object)
-			g, _ := gv.(*jsonx.Object)
-			if n, ok := p.GetObject("cpu").Value("usage_percent").(jsonx.Number); ok && string(n) == "NaN" {
+			p, _ := pv.(*orderedObject)
+			g, _ := gv.(*orderedObject)
+			if n, ok := p.GetObject("cpu").Value("usage_percent").(json.Number); ok && string(n) == "NaN" {
 				if value, present := g.GetObject("cpu").Get("usage_percent"); !present || value != nil {
 					return false
 				}
 				p.GetObject("cpu").Set("usage_percent", nil)
 			}
 		}
-		if !jsonx.Equal(pv, gv) {
+		if !jsonEqual(pv, gv) {
 			return false
 		}
 	}
@@ -974,13 +986,14 @@ func noOracleDelta(py, gor response) string {
 	if py.status != 401 || gor.status != 403 {
 		return fmt.Sprintf("status python=%d go=%d, want 401/403", py.status, gor.status)
 	}
-	want, _ := jsonx.Encode(jsonx.Obj("message", apiagents.RegistrationLocked, "success", false), jsonx.Options{SortKeys: true})
-	got, err := jsonx.Parse(gor.body)
+	wantObj := oObj("message", apiagents.RegistrationLocked, "success", false)
+	got, err := parsePythonJSON(gor.body)
 	if err != nil {
 		return "go body: " + err.Error()
 	}
-	text, _ := jsonx.Encode(got, jsonx.Options{SortKeys: true})
-	if string(text) != string(want) {
+	if !jsonEqual(got, wantObj) {
+		want, _ := encodeSortedDefaultJSON(wantObj)
+		text, _ := encodeSortedDefaultJSON(got)
 		return "go body " + string(text) + ", want " + string(want)
 	}
 	return ""

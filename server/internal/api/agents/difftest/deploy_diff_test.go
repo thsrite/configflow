@@ -7,7 +7,7 @@ import (
 	"compress/gzip"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 	"configflow/internal/yamlx"
@@ -36,15 +36,24 @@ func publishSeed(t *testing.T, dir string, port int) {
 		t.Fatal(e)
 	}
 	ctx := context.Background()
-	_, e = r.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("system_config", jsonx.Obj("server_domain", "https://panel.example.com"))
-		s.Set("agents", []any{jsonx.Obj("id", "a14-agent", "name", "Synthetic", "token", "a14-synthetic-token", "host", "127.0.0.1", "port", port, "service_type", "mihomo", "profile_id", "default", "deployment_method", "docker", "version", "1.8.60-go", "enabled", true)})
-		return s, nil
+	e = r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		if err := s.SetJSON("system_config", mustRawJSON(t, oObj("server_domain", "https://panel.example.com"))); err != nil {
+			return err
+		}
+		return s.SetJSON("agents", mustRawJSON(t, []any{oObj("id", "a14-agent", "name", "Synthetic", "token", "a14-synthetic-token", "host", "127.0.0.1", "port", port, "service_type", "mihomo", "profile_id", "default", "deployment_method", "docker", "version", "1.8.60-go", "enabled", true)}))
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, _, e = r.UpdateProfileFields(ctx, "default", jsonx.Obj("mihomo", jsonx.Obj("custom_config", "mode: rule\n"), "proxy_groups", []any{}, "rule_configs", []any{}), nil)
+	_, e = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		if err := p.SetJSON("mihomo", mustRawJSON(t, oObj("custom_config", "mode: rule\n"))); err != nil {
+			return err
+		}
+		if err := p.SetJSON("proxy_groups", json.RawMessage(`[]`)); err != nil {
+			return err
+		}
+		return p.SetJSON("rule_configs", json.RawMessage(`[]`))
+	})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -70,9 +79,8 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = gr.UpdateSystemTransaction(context.Background(), func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetList("agents")[0].(*jsonx.Object).Set("port", port(gs))
-		return s, nil
+	e = gr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
+		return s.Agents[0].SetJSON("port", mustRawJSON(t, port(gs)))
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -82,7 +90,7 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = pr.UpdateSystemTransaction(context.Background(), func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) { return s, nil })
+	e = pr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error { return nil })
 	if e != nil {
 		t.Fatal(e)
 	}

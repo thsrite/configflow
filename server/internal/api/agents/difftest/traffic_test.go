@@ -11,6 +11,7 @@ package difftest
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -42,51 +42,74 @@ func seedTraffic(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", append(system.GetList("agents"),
-			jsonx.Obj("id", "agent-traffic", "name", "traffic agent", "token", trafficAgentToken,
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		raw, err := json.Marshal(system)
+		if err != nil {
+			return err
+		}
+		doc, err := parsePythonJSON(raw)
+		if err != nil {
+			return err
+		}
+		return system.SetJSON("agents", mustRawJSON(t, append(doc.(*orderedObject).GetList("agents"),
+			oObj("id", "agent-traffic", "name", "traffic agent", "token", trafficAgentToken,
 				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.4", "port", 9, "version", "1.8.52-go",
 				"config_version", "0", "enabled", true, "domain_discovery_enabled", true),
-			jsonx.Obj("id", "agent-traffic-old", "name", "old traffic agent", "token", oldAgentToken,
+			oObj("id", "agent-traffic-old", "name", "old traffic agent", "token", oldAgentToken,
 				"profile_id", "other", "service_type", "mihomo", "host", "127.0.0.5", "port", 9, "version", "1.8.50-go",
 				"config_version", "0", "enabled", true, "domain_discovery_enabled", true, "traffic_history_enabled", true,
 				"traffic_history_since", "2026-11-01T00:00:00+00:00"),
 			// A05 review: hand-edited traffic store file (see seedTrafficReview).
-			jsonx.Obj("id", "agent-edit", "name", "edited store agent", "token", editAgentToken,
+			oObj("id", "agent-edit", "name", "edited store agent", "token", editAgentToken,
 				"profile_id", "default", "service_type", "mihomo", "host", "127.0.0.7", "port", 9, "version", "1.8.52-go",
 				"config_version", "0", "enabled", true, "domain_discovery_enabled", true),
-			jsonx.Obj("id", "agent-dns", "name", "dns agent", "token", dnsAgentToken,
+			oObj("id", "agent-dns", "name", "dns agent", "token", dnsAgentToken,
 				"profile_id", "default", "service_type", "oxidns", "host", "127.0.0.6", "port", 9, "version", "1.8.52-go",
-				"config_version", "0", "enabled", true, "domain_discovery_enabled", true, "traffic_history_enabled", true)))
-		return nil, nil
+				"config_version", "0", "enabled", true, "domain_discovery_enabled", true, "traffic_history_enabled", true))))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Default discovery rulesets: one served from its cache file, one from
 	// its content, one regional, one referenced only after MATCH.
-	cached := jsonx.Obj("id", "rs-proxy", "name", "域名发现-代理", "source_type", "content", "behavior", "classical", "content", "DOMAIN,a.example")
-	if _, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", append(shared.GetList("rule_library"),
-			jsonx.Obj("id", "rs-direct", "name", "域名发现-直连", "source_type", "content", "behavior", "domain", "content", "+.example.com"),
+	cached := oObj("id", "rs-proxy", "name", "域名发现-代理", "source_type", "content", "behavior", "classical", "content", "DOMAIN,a.example")
+	if err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal(shared)
+		if err != nil {
+			return err
+		}
+		doc, err := parsePythonJSON(raw)
+		if err != nil {
+			return err
+		}
+		return shared.SetJSON("rule_library", mustRawJSON(t, append(doc.(*orderedObject).GetList("rule_library"),
+			oObj("id", "rs-direct", "name", "域名发现-直连", "source_type", "content", "behavior", "domain", "content", "+.example.com"),
 			cached,
-			jsonx.Obj("id", "rs-us", "name", "域名发现-🇺🇸 美国", "source_type", "content", "behavior", "domain", "content", "+.example.us"),
-			jsonx.Obj("id", "rs-late", "name", "after match", "source_type", "content", "behavior", "domain", "content", "x")))
-		return nil, nil
+			oObj("id", "rs-us", "name", "域名发现-🇺🇸 美国", "source_type", "content", "behavior", "domain", "content", "+.example.us"),
+			oObj("id", "rs-late", "name", "after match", "source_type", "content", "behavior", "domain", "content", "x"))))
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.Set("rule_configs", append([]any{
-			jsonx.Obj("id", "r1", "itemType", "ruleset", "library_rule_id", "rs-direct", "policy", "DIRECT", "enabled", true),
-			jsonx.Obj("id", "r2", "itemType", "ruleset", "library_rule_id", "rs-proxy", "policy", "PROXY", "enabled", true),
-			jsonx.Obj("id", "r3", "itemType", "ruleset", "library_rule_id", "rs-us", "policy", "US", "enabled", true),
-			jsonx.Obj("id", "r4", "itemType", "rule", "rule_type", "MATCH", "policy", "DIRECT", "enabled", true),
-			jsonx.Obj("id", "r5", "itemType", "ruleset", "library_rule_id", "rs-late", "policy", "DIRECT", "enabled", true),
-		}, profile.GetList("rule_configs")...))
-		profile.Set("domain_discovery", jsonx.Obj("direct_ruleset", "rs-direct", "proxy_ruleset", "rs-proxy",
-			"regional_rulesets", jsonx.Obj("US", "rs-us", "late", "rs-late", "gone", "rs-missing")))
-		return nil, nil
+	if _, err := r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
+		raw, err := json.Marshal(profile)
+		if err != nil {
+			return err
+		}
+		doc, err := parsePythonJSON(raw)
+		if err != nil {
+			return err
+		}
+		if err := profile.SetJSON("rule_configs", mustRawJSON(t, append([]any{
+			oObj("id", "r1", "itemType", "ruleset", "library_rule_id", "rs-direct", "policy", "DIRECT", "enabled", true),
+			oObj("id", "r2", "itemType", "ruleset", "library_rule_id", "rs-proxy", "policy", "PROXY", "enabled", true),
+			oObj("id", "r3", "itemType", "ruleset", "library_rule_id", "rs-us", "policy", "US", "enabled", true),
+			oObj("id", "r4", "itemType", "rule", "rule_type", "MATCH", "policy", "DIRECT", "enabled", true),
+			oObj("id", "r5", "itemType", "ruleset", "library_rule_id", "rs-late", "policy", "DIRECT", "enabled", true),
+		}, doc.(*orderedObject).GetList("rule_configs")...))); err != nil {
+			return err
+		}
+		return profile.SetJSON("domain_discovery", mustRawJSON(t, oObj("direct_ruleset", "rs-direct", "proxy_ruleset", "rs-proxy",
+			"regional_rulesets", oObj("US", "rs-us", "late", "rs-late", "gone", "rs-missing"))))
 	}); err != nil {
 		t.Fatal(err)
 	}

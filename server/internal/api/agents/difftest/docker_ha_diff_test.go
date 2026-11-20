@@ -26,8 +26,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 var (
@@ -81,17 +79,17 @@ func haBlock(fields map[string][2]string) string {
 }
 
 func jsonText(v any) string {
-	data, err := jsonx.Default(v)
+	data, err := encodeDefaultJSON(v)
 	if err != nil {
 		panic(err)
 	}
 	return string(data)
 }
 
-func haNewBody(pairs ...any) *jsonx.Object {
-	body := jsonx.Obj("server_url", "https://panel.example", "agent_name", "new-dns", "agent_ip", "192.168.50.20",
+func haNewBody(pairs ...any) *orderedObject {
+	body := oObj("server_url", "https://panel.example", "agent_name", "new-dns", "agent_ip", "192.168.50.20",
 		"data_dir", "/srv/oxidns", "oxidns_port", 8082, "network_mode", "host", "ha_host_id_path", "/srv/host-id")
-	body.Update(jsonx.Obj(pairs...))
+	body.Update(oObj(pairs...))
 	return body
 }
 
@@ -115,7 +113,7 @@ func haReadOnlyRequests() []request {
 	block := haBlock(nil)
 	var out []request
 	out = append(out,
-		guideReq("guide no login", jsonx.Obj("action", "inspect"), func(r *request) { r.admin = false }),
+		guideReq("guide no login", oObj("action", "inspect"), func(r *request) { r.admin = false }),
 		guideReq("guide empty body", ""),
 		guideReq("guide not json", "{bad"),
 		guideReq("guide list", "[]"),
@@ -127,15 +125,15 @@ func haReadOnlyRequests() []request {
 		guideReq("guide deep", strings.Repeat("[", 5000)+strings.Repeat("]", 5000)),
 		guideReq("guide digit limit", `{"action": "inspect", "n": `+strings.Repeat("9", 4301)+`}`),
 		guideReq("guide digit limit large", `{"action": "check", "n": `+strings.Repeat("9", 20000)+`}`),
-		guideReq("guide 16k inspect", jsonx.Obj("action", "inspect", "padding", strings.Repeat("x", 17000))),
+		guideReq("guide 16k inspect", oObj("action", "inspect", "padding", strings.Repeat("x", 17000))),
 		guideReq("guide 16k exact", `{"action": "inspect", "p": "`+strings.Repeat("x", 16384-30)+`"}`),
 		guideReq("guide 16k garbage", strings.Repeat("x", 17000)),
 		guideReq("guide 16k list", "["+strings.Repeat(`"x",`, 4000)+`"x"]`),
-		guideReq("guide 128k check", jsonx.Obj("action", "check", "output", strings.Repeat("x", 129*1024))),
-		guideReq("guide 100k check", jsonx.Obj("action", "check", "output", strings.Repeat("terminal notes\n", 6000)+block)),
-		guideReq("guide 100k check no action", jsonx.Obj("output", strings.Repeat("x", 100000))),
-		guideReq("guide no content type", jsonx.Obj("action", "inspect"), func(r *request) { r.contentType = "" }),
-		guideReq("guide text content type", jsonx.Obj("action", "inspect"), func(r *request) { r.contentType = "text/plain" }),
+		guideReq("guide 128k check", oObj("action", "check", "output", strings.Repeat("x", 129*1024))),
+		guideReq("guide 100k check", oObj("action", "check", "output", strings.Repeat("terminal notes\n", 6000)+block)),
+		guideReq("guide 100k check no action", oObj("output", strings.Repeat("x", 100000))),
+		guideReq("guide no content type", oObj("action", "inspect"), func(r *request) { r.contentType = "" }),
+		guideReq("guide text content type", oObj("action", "inspect"), func(r *request) { r.contentType = "text/plain" }),
 	)
 	checks := []struct {
 		name   string
@@ -143,7 +141,7 @@ func haReadOnlyRequests() []request {
 		mode   any
 	}{
 		{"pass", block, "host"}, {"pass macvlan", block, "macvlan"}, {"default mode", block, nil}, {"bridge", block, "bridge"},
-		{"mode null", block, jsonx.Obj()}, {"legacy", "old legacy text", "host"}, {"number", 5, "host"}, {"missing", nil, "host"},
+		{"mode null", block, oObj()}, {"legacy", "old legacy text", "host"}, {"number", 5, "host"}, {"missing", nil, "host"},
 		{"oversize", strings.Repeat("例", 32769), "host"}, {"crlf", strings.ReplaceAll(block, "\n", "\r\n"), "host"},
 		{"markdown", strings.ReplaceAll(block, "\n", "\\\n"), "host"},
 		{"busy port", haBlock(map[string][2]string{"udp53": {"0", "UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*"}}), "host"},
@@ -155,12 +153,12 @@ func haReadOnlyRequests() []request {
 		{"lone surrogate escape", nil, "host"},
 	}
 	for _, c := range checks {
-		body := jsonx.Obj("action", "check")
+		body := oObj("action", "check")
 		if c.output != nil {
 			body.Set("output", c.output)
 		}
 		if c.mode != nil {
-			if o, ok := c.mode.(*jsonx.Object); ok && o.Len() == 0 {
+			if o, ok := c.mode.(*orderedObject); ok && o.Len() == 0 {
 				body.Set("network_mode", nil)
 			} else {
 				body.Set("network_mode", c.mode)
@@ -169,14 +167,14 @@ func haReadOnlyRequests() []request {
 		out = append(out, guideReq("check "+c.name, body))
 	}
 	for _, name := range []any{"", "existing", "x;echo bad", 0, 1, nil, []any{}, "a.b_c-1", strings.Repeat("a", 129)} {
-		out = append(out, guideReq(fmt.Sprintf("inspect %.20v", name), jsonx.Obj("action", "inspect", "container_name", name)))
+		out = append(out, guideReq(fmt.Sprintf("inspect %.20v", name), oObj("action", "inspect", "container_name", name)))
 	}
 	for _, vip := range []any{"192.168.10.8", "127.0.0.1", "0.0.0.0", "::1", nil, 3232238088, true, false, 1.5, "01.2.3.4", "255.255.255.255"} {
-		out = append(out, guideReq(fmt.Sprintf("verify %v", vip), jsonx.Obj("action", "verify", "vip", vip)))
+		out = append(out, guideReq(fmt.Sprintf("verify %v", vip), oObj("action", "verify", "vip", vip)))
 	}
-	out = append(out, guideReq("verify missing", jsonx.Obj("action", "verify")))
+	out = append(out, guideReq("verify missing", oObj("action", "verify")))
 	for _, action := range []any{"bogus", nil, 1, "CHECK"} {
-		out = append(out, guideReq(fmt.Sprintf("action %v", action), jsonx.Obj("action", action)))
+		out = append(out, guideReq(fmt.Sprintf("action %v", action), oObj("action", action)))
 	}
 	// Generation refusals (no capability is issued before a refusal).
 	for _, change := range [][]any{
@@ -193,22 +191,22 @@ func haReadOnlyRequests() []request {
 	// Migration (deterministic: no capability).
 	migrate := haNewBody("mode", "migrate", "container_name", "original-oxidns", "existing_agent_name", "original-dns",
 		"ha_data_dir", "/srv/cf/new-ha", "backup_dir", "/srv/cf/backup",
-		"agent_mount", jsonx.Obj("type", "bind", "source", "/srv/cf/old-agent"), "core_mount", jsonx.Obj("type", "volume", "source", "old_core"))
+		"agent_mount", oObj("type", "bind", "source", "/srv/cf/old-agent"), "core_mount", oObj("type", "volume", "source", "old_core"))
 	out = append(out,
 		guideReq("migrate", migrate),
 		guideReq("migrate macvlan", withPairs(migrate, "network_mode", "macvlan", "ha_parent", "eth0", "ha_subnet", "192.168.50.0/24", "ha_gateway", "192.168.50.1")),
 		guideReq("migrate identity", withPairs(migrate, "create_host_identity", true)),
 		guideReq("migrate overlapping", withPairs(migrate, "backup_dir", "/srv/cf/new-ha/b")),
-		guideReq("migrate same mounts", withPairs(migrate, "core_mount", jsonx.Obj("type", "bind", "source", "/srv/cf/old-agent"))),
+		guideReq("migrate same mounts", withPairs(migrate, "core_mount", oObj("type", "bind", "source", "/srv/cf/old-agent"))),
 		guideReq("migrate bad name", withPairs(migrate, "existing_agent_name", "bad name")),
 		guideReq("migrate dollar url", withPairs(migrate, "server_url", "https://panel.example/$X")),
 	)
 	return out
 }
 
-func withPairs(o *jsonx.Object, pairs ...any) *jsonx.Object {
-	out := o.DeepCopy()
-	out.Update(jsonx.Obj(pairs...))
+func withPairs(o *orderedObject, pairs ...any) *orderedObject {
+	out := o.Clone()
+	out.Update(oObj(pairs...))
 	return out
 }
 
@@ -220,15 +218,15 @@ func compareHA(t *testing.T, name string, py, gor response, same, failed *int, m
 	}
 	pyNorm, gorNorm := py, gor
 	if name == "generate refused [server_url http://[bad]" {
-		p, pe := jsonx.Parse(py.body)
-		g, ge := jsonx.Parse(gor.body)
+		p, pe := parsePythonJSON(py.body)
+		g, ge := parsePythonJSON(gor.body)
 		if pe != nil || ge != nil || py.status != 400 || gor.status != 400 {
 			*failed++
 			t.Errorf("invalid IPv6 refusal changed")
 			return
 		}
-		po, pok := p.(*jsonx.Object)
-		goObject, gok := g.(*jsonx.Object)
+		po, pok := p.(*orderedObject)
+		goObject, gok := g.(*orderedObject)
 		if !pok || !gok || po.GetBool("success") || goObject.GetBool("success") || po.GetString("message") != "Invalid IPv6 URL" || !strings.HasPrefix(goObject.GetString("message"), `parse "http://[bad":`) {
 			*failed++
 			t.Errorf("unexpected IPv6 diagnostics: %s / %s", py.body, gor.body)
@@ -238,7 +236,7 @@ func compareHA(t *testing.T, name string, py, gor response, same, failed *int, m
 		// Only this named input's diagnostic text differs; other fields/headers
 		// are still compared by the normal comparator below.
 		po.Set("message", goObject.GetString("message"))
-		pyNorm.body, _ = jsonx.Response(po)
+		pyNorm.body, _ = encodeResponseJSON(po)
 		t.Log("EXPECTED invalid IPv6 URL: native net/url diagnostic")
 	}
 	pyNorm.body, _ = normalizeHA(pyNorm.body)
@@ -284,9 +282,9 @@ func installationFiles(t *testing.T, dir string) map[string]string {
 			}
 			data, _ := os.ReadFile(filepath.Join(root, entry.Name()))
 			label := "<unreferenced unreadable session>"
-			if value, err := jsonx.Parse(data); err == nil {
-				if o, ok := value.(*jsonx.Object); ok {
-					label = "<session " + jsonx.Str(o.Value("name")) + ">"
+			if value, err := parsePythonJSON(data); err == nil {
+				if o, ok := value.(*orderedObject); ok {
+					label = "<session " + strValue(o.Value("name")) + ">"
 				}
 			}
 			labels[session] = label
@@ -306,8 +304,8 @@ func installationFiles(t *testing.T, dir string) map[string]string {
 		}
 		if session, found := strings.CutSuffix(name, ".json"); found {
 			name = labels[session] + ".json"
-			if value, err := jsonx.Parse(data); err == nil {
-				if o, ok := value.(*jsonx.Object); ok {
+			if value, err := parsePythonJSON(data); err == nil {
+				if o, ok := value.(*orderedObject); ok {
 					for _, key := range []string{"id", "token", "token_hash", "expires"} {
 						if o.Has(key) {
 							o.Set(key, "<masked>")
@@ -389,7 +387,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 			if p.status != 400 || !strings.Contains(string(p.body), "Exceeds the limit (4300 digits)") {
 				t.Fatal("old machine version digit limit changed")
 			}
-			expected, _ := both(guideReq("native compose digit reference", jsonx.Obj("action", "check", "output", haBlock(nil), "network_mode", "host")))
+			expected, _ := both(guideReq("native compose digit reference", oObj("action", "check", "output", haBlock(nil), "network_mode", "host")))
 			compareHA(t, "native unlimited Compose component", expected, g, &same, &failed)
 			continue
 		}
@@ -401,11 +399,11 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	{
 		body := haNewBody("mode", "migrate", "container_name", "original-oxidns", "existing_agent_name", "original-dns",
 			"ha_data_dir", "/srv/cf/new-ha", "backup_dir", "/srv/cf/backup", "server_url", "https://panel.example\n",
-			"agent_mount", jsonx.Obj("type", "bind", "source", "/srv/cf/old-agent"), "core_mount", jsonx.Obj("type", "volume", "source", "old_core"))
+			"agent_mount", oObj("type", "bind", "source", "/srv/cf/old-agent"), "core_mount", oObj("type", "volume", "source", "old_core"))
 		p, g := both(guideReq("deliberate server_url trailing newline", body))
 		want := `{"message":"请填写完整的 ConfigFlow HTTP(S) 地址","success":false}`
-		goAnswer, _ := jsonx.Parse(g.body)
-		if data, _ := jsonx.Encode(goAnswer, jsonx.Options{SortKeys: true, Compact: true}); p.status != 200 || g.status != 400 || string(data) != want {
+		goAnswer, _ := parsePythonJSON(g.body)
+		if data, _ := encodeSortedJSON(goAnswer); p.status != 200 || g.status != 400 || string(data) != want {
 			failed++
 			t.Errorf("deliberate difference changed: python %d, go %d %s", p.status, g.status, g.body)
 		} else {
@@ -426,7 +424,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	}
 
 	// New installations: the capability is issued and the answer carries it.
-	issue := func(name string, body *jsonx.Object, extra ...func(*request)) (map[string]string, map[string]string) {
+	issue := func(name string, body *orderedObject, extra ...func(*request)) (map[string]string, map[string]string) {
 		p, g := check(guideReq(name, body, extra...))
 		_, pf := normalizeHA(p.body)
 		_, gf := normalizeHA(g.body)
@@ -446,7 +444,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	issue("generate identity", haNewBody("create_host_identity", true, "agent_name", "id-dns"))
 	issue("generate odd url", haNewBody("server_url", "https://panel.example/it's/$(id)/", "agent_name", "odd-dns"))
 	issue("generate int agent ip", haNewBody("agent_ip", 3232248340, "agent_name", "int-dns"))
-	issue("generate extra fields", haNewBody("agent_name", "extra-dns", "extra", jsonx.Obj("nested", []any{1, 2.5, nil, "例"}), "ha_gateway", 0))
+	issue("generate extra fields", haNewBody("agent_name", "extra-dns", "extra", oObj("nested", []any{1, 2.5, nil, "例"}), "ha_gateway", 0))
 	issue("generate other profile header", haNewBody("agent_name", "other-dns"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "other"} })
 	issue("generate other profile query", haNewBody("agent_name", "query-dns"), func(r *request) { r.path += "?profile=other" })
 	check(guideReq("generate bad profile header", haNewBody("agent_name", "bad-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "bad id!"} }))
@@ -527,14 +525,14 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	}
 	// Success and replay of a lost answer.
 	p, g := checkV(enroll("enroll ok", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
-	pyIdentity, _ := jsonx.Parse(p.body)
-	goIdentity, _ := jsonx.Parse(g.body)
+	pyIdentity, _ := parsePythonJSON(p.body)
+	goIdentity, _ := parsePythonJSON(g.body)
 	p2, g2 := checkV(enroll("enroll replay", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
 	if string(p2.body) != string(p.body) || string(g2.body) != string(g.body) {
 		t.Errorf("replay differs: python %s / %s go %s / %s", p.body, p2.body, g.body, g2.body)
 	}
-	py.agentID = pyIdentity.(*jsonx.Object).GetString("agent_id")
-	gs.agentID = goIdentity.(*jsonx.Object).GetString("agent_id")
+	py.agentID = pyIdentity.(*orderedObject).GetString("agent_id")
+	gs.agentID = goIdentity.(*orderedObject).GetString("agent_id")
 	agentValues := []map[string]string{{"session": py.session, "secret": py.secret, "agent": py.agentID}, {"session": gs.session, "secret": gs.secret, "agent": gs.agentID}}
 	// Changed identity: the Agent's port is edited.
 	{
@@ -548,19 +546,19 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 		checkV(enroll("enroll restored identity", "{session}", "Bearer {secret}", "{}"), "agent_id", "token")
 	}
 	// Expiry and renewal keep the installation.
-	editSession := func(side *haSide, session string, edit func(*jsonx.Object) string) {
+	editSession := func(side *haSide, session string, edit func(*orderedObject) string) {
 		path := filepath.Join(side.dir, "docker-ha-installations", session+".json")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		value, _ := jsonx.Parse(data)
-		if err := os.WriteFile(path, []byte(edit(value.(*jsonx.Object))), 0o600); err != nil {
+		value, _ := parsePythonJSON(data)
+		if err := os.WriteFile(path, []byte(edit(value.(*orderedObject))), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	expire := func(o *jsonx.Object) string {
-		o.Set("expires", jsonx.Float(float64(time.Now().UnixNano())/1e9-1))
+	expire := func(o *orderedObject) string {
+		o.Set("expires", float64(time.Now().UnixNano())/1e9-1)
 		return jsonText(o)
 	}
 	editSession(py, py.session, expire)
@@ -608,24 +606,24 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	// Hand-edited installation records (one installation per case).
 	handEdits := []struct {
 		name string
-		edit func(*jsonx.Object) string
+		edit func(*orderedObject) string
 	}{
-		{"invalid json", func(*jsonx.Object) string { return "{bad" }},
-		{"list json", func(*jsonx.Object) string { return "[]" }},
-		{"invalid utf-8", func(*jsonx.Object) string { return "{\"x\": \"\xff\"}" }},
-		{"no expires", func(o *jsonx.Object) string { o.Delete("expires"); return jsonText(o) }},
-		{"string expires", func(o *jsonx.Object) string { o.Set("expires", "soon"); return jsonText(o) }},
-		{"nan expires", func(o *jsonx.Object) string { o.Set("expires", jsonx.Float(nanValue())); return jsonText(o) }},
-		{"huge expires", func(o *jsonx.Object) string { o.Set("expires", jsonx.BigInt(bigPow(10, 30))); return jsonText(o) }},
-		{"bool expires", func(o *jsonx.Object) string { o.Set("expires", true); return jsonText(o) }},
-		{"no token hash", func(o *jsonx.Object) string { o.Delete("token_hash"); return jsonText(o) }},
-		{"int token hash", func(o *jsonx.Object) string { o.Set("token_hash", 5); return jsonText(o) }},
-		{"non-ascii token hash", func(o *jsonx.Object) string { o.Set("token_hash", "é"); return jsonText(o) }},
-		{"bad profile", func(o *jsonx.Object) string { o.Set("profile_id", "bad id!"); return jsonText(o) }},
-		{"int profile", func(o *jsonx.Object) string { o.Set("profile_id", 5); return jsonText(o) }},
-		{"missing profile", func(o *jsonx.Object) string { o.Set("profile_id", "gone"); return jsonText(o) }},
-		{"no name", func(o *jsonx.Object) string { o.Delete("name"); return jsonText(o) }},
-		{"float port", func(o *jsonx.Object) string { o.Set("port", 8082.0); return jsonText(o) }},
+		{"invalid json", func(*orderedObject) string { return "{bad" }},
+		{"list json", func(*orderedObject) string { return "[]" }},
+		{"invalid utf-8", func(*orderedObject) string { return "{\"x\": \"\xff\"}" }},
+		{"no expires", func(o *orderedObject) string { o.Delete("expires"); return jsonText(o) }},
+		{"string expires", func(o *orderedObject) string { o.Set("expires", "soon"); return jsonText(o) }},
+		{"nan expires", func(o *orderedObject) string { o.Set("expires", nanValue()); return jsonText(o) }},
+		{"huge expires", func(o *orderedObject) string { o.Set("expires", bigPow(10, 30)); return jsonText(o) }},
+		{"bool expires", func(o *orderedObject) string { o.Set("expires", true); return jsonText(o) }},
+		{"no token hash", func(o *orderedObject) string { o.Delete("token_hash"); return jsonText(o) }},
+		{"int token hash", func(o *orderedObject) string { o.Set("token_hash", 5); return jsonText(o) }},
+		{"non-ascii token hash", func(o *orderedObject) string { o.Set("token_hash", "é"); return jsonText(o) }},
+		{"bad profile", func(o *orderedObject) string { o.Set("profile_id", "bad id!"); return jsonText(o) }},
+		{"int profile", func(o *orderedObject) string { o.Set("profile_id", 5); return jsonText(o) }},
+		{"missing profile", func(o *orderedObject) string { o.Set("profile_id", "gone"); return jsonText(o) }},
+		{"no name", func(o *orderedObject) string { o.Delete("name"); return jsonText(o) }},
+		{"float port", func(o *orderedObject) string { o.Set("port", 8082.0); return jsonText(o) }},
 	}
 	for i, h := range handEdits {
 		name := fmt.Sprintf("hand-%d", i)
@@ -693,7 +691,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	pyAgents, goAgents := finalAgents(t, pyDir), finalAgents(t, goDir)
 	for _, list := range []any{pyAgents, goAgents} {
 		for _, item := range list.([]any) {
-			if o := item.(*jsonx.Object); o.Has("docker_ha_installation_id") {
+			if o := item.(*orderedObject); o.Has("docker_ha_installation_id") {
 				o.Set("docker_ha_installation_id", "<masked>")
 			}
 		}
@@ -704,7 +702,7 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	var filtered []any
 	skipped := 0
 	for _, item := range pyAgents.([]any) {
-		o := item.(*jsonx.Object)
+		o := item.(*orderedObject)
 		if o.GetString("name") == "hand-5-oxidns" {
 			if !o.Has("docker_ha_installation_id") {
 				t.Fatal("old NaN Agent lost its marker")
@@ -718,9 +716,11 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 		t.Fatalf("expected one Python NaN enrollment, got %d", skipped)
 	}
 	pyAgents = filtered
-	if !jsonx.Equal(pyAgents, goAgents) {
+	if !jsonEqual(pyAgents, goAgents) {
 		failed++
-		t.Errorf("stored agents differ:\npython %s\ngo     %s", jsonx.Repr(pyAgents), jsonx.Repr(goAgents))
+		pyText, _ := encodeCompactJSON(pyAgents)
+		goText, _ := encodeCompactJSON(goAgents)
+		t.Errorf("stored agents differ:\npython %s\ngo     %s", pyText, goText)
 	}
 	t.Logf("docker HA routes: %d comparisons equal, %d differ", same, failed)
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -33,25 +32,27 @@ func n810OperationRows(t *testing.T) []n810OperationRow {
 		t.Fatal("HTTP error policy scope changed")
 	}
 	for _, row := range rows {
-		value, err := jsonx.Parse(row.Original)
+		value, err := parsePythonJSON(row.Original)
 		if err != nil {
 			t.Fatal(err)
 		}
-		compact, err := jsonx.Compact(value)
+		compact, err := encodeCompactJSON(value)
 		if err != nil || fmt.Sprintf("%x", sha256.Sum256(compact)) != row.SHA {
 			t.Fatal("original HTTP row changed")
 		}
 	}
 	return rows
 }
-func n810InputMatches(row *jsonx.Object, r upgradesRequest) bool {
+
+func n810InputMatches(row *orderedObject, r upgradesRequest) bool {
 	return row.GetString("name") == r.name && row.GetString("method") == r.method && row.GetString("path") == r.path && row.GetString("phase") == r.phase && row.GetString("body") == r.body && row.GetString("content_type") == r.contentType && row.GetBool("admin") == r.admin && len(r.headers) == 0 && len(r.mask) == 0 && len(r.capture) == 0 && r.wait == 0 && !r.nonFiniteMetrics
 }
+
 func n810OperationPolicy(t *testing.T, r upgradesRequest) *n810OperationRow {
 	t.Helper()
 	for _, row := range n810OperationRows(t) {
-		value, _ := jsonx.Parse(row.Original)
-		original := value.(*jsonx.Object)
+		value, _ := parsePythonJSON(row.Original)
+		original := value.(*orderedObject)
 		if original.GetString("name") != r.name {
 			continue
 		}
@@ -62,6 +63,7 @@ func n810OperationPolicy(t *testing.T, r upgradesRequest) *n810OperationRow {
 	}
 	return nil
 }
+
 func n810OperationFingerprint(t *testing.T, dir string) store.Fingerprint {
 	t.Helper()
 	r, err := repo.OpenDefault(dir)
@@ -74,10 +76,11 @@ func n810OperationFingerprint(t *testing.T, dir string) store.Fingerprint {
 	}
 	return fp
 }
+
 func compareN810Operation(t *testing.T, row *n810OperationRow, python, native response) []string {
 	t.Helper()
-	value, _ := jsonx.Parse(row.Original)
-	original := value.(*jsonx.Object)
+	value, _ := parsePythonJSON(row.Original)
+	original := value.(*orderedObject)
 	var diffs []string
 	if int64(python.status) != original.GetInt("python_status") || string(python.body) != original.GetString("python_body") {
 		diffs = append(diffs, "original Python status/body bytes changed")
@@ -87,8 +90,8 @@ func compareN810Operation(t *testing.T, row *n810OperationRow, python, native re
 			diffs = append(diffs, "response header changed: "+header)
 		}
 	}
-	parsed, err := jsonx.Parse(native.body)
-	obj, ok := parsed.(*jsonx.Object)
+	parsed, err := parsePythonJSON(native.body)
+	obj, ok := parsed.(*orderedObject)
 	if err != nil || !ok || obj == nil || obj.Value("success") != false {
 		return append(diffs, "native error did not refuse")
 	}
@@ -96,7 +99,7 @@ func compareN810Operation(t *testing.T, row *n810OperationRow, python, native re
 	switch row.Kind {
 	case "reply":
 		status = 502
-		if !jsonx.Equal(obj, jsonx.Obj("success", false, "code", "INVALID_RESPONSE", "message", agents.ErrInvalidAgentReply.Message)) {
+		if !jsonEqual(obj, oObj("success", false, "code", "INVALID_RESPONSE", "message", agents.ErrInvalidAgentReply.Message)) {
 			diffs = append(diffs, "malformed Agent reply lost structured Chinese 502")
 		}
 	case "header":
@@ -104,7 +107,7 @@ func compareN810Operation(t *testing.T, row *n810OperationRow, python, native re
 			diffs = append(diffs, "native header error category changed")
 		}
 	case "endpoint":
-		if !jsonx.Equal(obj, jsonx.Obj("success", false, "message", agents.ErrAgentEndpoint.Error())) {
+		if !jsonEqual(obj, oObj("success", false, "message", agents.ErrAgentEndpoint.Error())) {
 			diffs = append(diffs, "native endpoint refusal changed")
 		}
 	case "payload":
@@ -124,6 +127,7 @@ func compareN810Operation(t *testing.T, row *n810OperationRow, python, native re
 	}
 	return diffs
 }
+
 func TestN810HTTPPolicyRowsCannotBeSkipped(t *testing.T) {
 	rows := n810OperationRows(t)
 	seen := map[string]bool{}
@@ -132,8 +136,8 @@ func TestN810HTTPPolicyRowsCannotBeSkipped(t *testing.T) {
 		if row == nil {
 			continue
 		}
-		value, _ := jsonx.Parse(row.Original)
-		original := value.(*jsonx.Object)
+		value, _ := parsePythonJSON(row.Original)
+		original := value.(*orderedObject)
 		if !n810InputMatches(original, r) {
 			t.Fatal("original row not checked")
 		}

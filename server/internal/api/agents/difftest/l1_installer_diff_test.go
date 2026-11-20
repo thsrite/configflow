@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
@@ -37,11 +36,11 @@ func TestL1CompactColonDifferentialAgainstFlask(t *testing.T) {
 	if p.status != 200 || g.status != 400 {
 		t.Fatalf("Python %d %s; Go %d %s", p.status, p.body, g.status, g.body)
 	}
-	goBody, err := jsonx.Parse(g.body)
-	if err != nil || !jsonx.Equal(goBody, jsonx.Obj("success", false, "message", "持久数据根目录须为规范的绝对路径，不能包含逗号、冒号或换行")) {
+	goBody, err := parsePythonJSON(g.body)
+	if err != nil || !jsonEqual(goBody, oObj("success", false, "message", "持久数据根目录须为规范的绝对路径，不能包含逗号、冒号或换行")) {
 		t.Fatalf("Go refusal: %s (%v)", g.body, err)
 	}
-	pyBody, err := jsonx.Parse(p.body)
+	pyBody, err := parsePythonJSON(p.body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +54,7 @@ func TestL1CompactColonDifferentialAgainstFlask(t *testing.T) {
 			} `yaml:"volumes"`
 		} `yaml:"services"`
 	}
-	if err := yamlx.Unmarshal([]byte(pyBody.(*jsonx.Object).GetString("compose")), &compose); err != nil {
+	if err := yamlx.Unmarshal([]byte(pyBody.(*orderedObject).GetString("compose")), &compose); err != nil {
 		t.Fatal(err)
 	}
 	agent, ok := compose.Services["agent"]
@@ -101,7 +100,7 @@ func TestL1CompactColonDifferentialAgainstFlask(t *testing.T) {
 	if sessions != 1 || indexes != 1 {
 		t.Fatalf("Python must create one session and one index: %v", files)
 	}
-	if !jsonx.Equal(finalAgents(t, pyDir), finalAgents(t, goDir)) {
+	if !jsonEqual(finalAgents(t, pyDir), finalAgents(t, goDir)) {
 		t.Fatal("guide generation must not register an agent")
 	}
 	t.Log("EXPECTED L1 D1: Python 200 + unsafe mount/capability, Go 400 + no writes")

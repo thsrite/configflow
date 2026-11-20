@@ -9,8 +9,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // n810Variant supplies an independent Flask reference for native ASCII query
@@ -41,6 +39,7 @@ func n810Variant(r request) (request, bool) {
 	}
 	return next, true
 }
+
 func n810APIKind(r request) string {
 	if _, ok := n810Variant(r); ok {
 		return "reference"
@@ -65,6 +64,7 @@ type n810APIResult struct {
 	Calls   []string          `json:"calls,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
+
 type n810APIRow struct {
 	Original map[string]any `json:"original"`
 	SHA      string         `json:"sha256"`
@@ -75,19 +75,21 @@ type n810APIRow struct {
 func n810RequestKey(r request) map[string]any {
 	return map[string]any{"name": r.name, "method": r.method, "path": r.path, "body": r.body, "content_type": r.contentType, "admin": r.admin, "headers": r.headers, "mask": r.mask, "capture": r.capture, "no_oracle": r.noOracle, "nonfinite_metrics": r.nonFiniteMetrics}
 }
+
 func n810Body(t *testing.T, r request, response response) string {
 	t.Helper()
-	value, err := jsonx.Parse(response.body)
+	value, err := parsePythonJSON(response.body)
 	if err != nil {
 		return string(response.body)
 	}
 	value = maskJSON(value, r.mask)
-	raw, err := jsonx.Sorted(value)
+	raw, err := encodeSortedJSON(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return string(raw)
 }
+
 func n810Canonical(value any) []byte {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -105,6 +107,7 @@ func n810Canonical(value any) []byte {
 	}
 	return result
 }
+
 func n810RecordAPI(t *testing.T, r request, python response, calls []string, native *n810APIResult) {
 	t.Helper()
 	path := os.Getenv("N810_RECORD_API_PYTHON")
@@ -122,6 +125,7 @@ func n810RecordAPI(t *testing.T, r request, python response, calls []string, nat
 		t.Fatal(err)
 	}
 }
+
 func n810BoundAPI(t *testing.T, r request, python response, calls []string) *n810APIRow {
 	t.Helper()
 	if n810APIKind(r) == "" || os.Getenv("N810_RECORD_API_PYTHON") != "" {
@@ -155,6 +159,7 @@ func n810BoundAPI(t *testing.T, r request, python response, calls []string) *n81
 	t.Fatalf("native API policy row missing: %s", r.name)
 	return nil
 }
+
 func n810CompareAPI(t *testing.T, r request, python, native response, calls, goCalls []string) ([]string, bool) {
 	row := n810BoundAPI(t, r, python, calls)
 	if row == nil {
@@ -179,27 +184,27 @@ func n810CompareAPI(t *testing.T, r request, python, native response, calls, goC
 	var expected any
 	var err error
 	if row.Kind != "cache-tags" {
-		expected, err = jsonx.Parse([]byte(n810Body(t, r, python)))
+		expected, err = parsePythonJSON([]byte(n810Body(t, r, python)))
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	if row.Kind == "panel-native-number" {
 		expectedStatus = 200
-		expected, _ = jsonx.Parse([]byte(`{"success":true,"data":{"a":null,"b":1e400,"c":-0.0,"d":1.5}}`))
+		expected, _ = parsePythonJSON([]byte(`{"success":true,"data":{"a":null,"b":1e400,"c":-0.0,"d":1.5}}`))
 		if !json.Valid(native.body) {
 			return []string{"native panel response is invalid JSON"}, true
 		}
 	}
 	if row.Kind == "cache-tags" {
 		expectedStatus = 400
-		expected = jsonx.Obj("success", false, "code", "INVALID_REQUEST", "message", "清理缓存请求无效。")
+		expected = oObj("success", false, "code", "INVALID_REQUEST", "message", "清理缓存请求无效。")
 	}
 	if row.Kind == "heartbeat-number" {
 		expectedStatus = 400
-		expected = jsonx.Obj("success", false, "message", "Invalid heartbeat data")
+		expected = oObj("success", false, "message", "Invalid heartbeat data")
 	}
-	got, err := jsonx.Parse(native.body)
+	got, err := parsePythonJSON(native.body)
 	var diffs []string
 	if native.status != expectedStatus {
 		diffs = append(diffs, fmt.Sprintf("native status %d want %d", native.status, expectedStatus))
@@ -219,8 +224,8 @@ func n810CompareAPI(t *testing.T, r request, python, native response, calls, goC
 		}
 	}
 	if row.Kind == "shape" && err == nil {
-		a, aok := expected.(*jsonx.Object)
-		b, bok := got.(*jsonx.Object)
+		a, aok := expected.(*orderedObject)
+		b, bok := got.(*orderedObject)
 		if !aok || !bok || a.Len() != 2 || b.Len() != 2 || a.Value("success") != false || b.Value("success") != false {
 			diffs = append(diffs, "native shape error envelope changed")
 		} else {
@@ -229,7 +234,7 @@ func n810CompareAPI(t *testing.T, r request, python, native response, calls, goC
 				diffs = append(diffs, "native shape diagnostic missing")
 			}
 		}
-	} else if err != nil || !jsonx.Equal(expected, got) {
+	} else if err != nil || !jsonEqual(expected, got) {
 		diffs = append(diffs, "native error body differs")
 	}
 	if strings.Join(calls, "\n") != strings.Join(goCalls, "\n") {
@@ -253,12 +258,12 @@ func n810AdjustStored(t *testing.T, python, native any) {
 		}
 		defer file.Close()
 		for _, item := range python.([]any) {
-			record := item.(*jsonx.Object)
+			record := item.(*orderedObject)
 			host, present := n810DockerHosts[record.GetString("name")]
 			if !present {
 				continue
 			}
-			before, err := jsonx.Sorted(record)
+			before, err := encodeSortedJSON(record)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -288,27 +293,27 @@ func n810AdjustStored(t *testing.T, python, native any) {
 		if !present || row.Original["native_host"] != host {
 			t.Fatal("native host policy widened")
 		}
-		var old, new *jsonx.Object
+		var old, new *orderedObject
 		for _, item := range python.([]any) {
-			if a := item.(*jsonx.Object); a.GetString("name") == name {
+			if a := item.(*orderedObject); a.GetString("name") == name {
 				old = a
 			}
 		}
 		for _, item := range native.([]any) {
-			if a := item.(*jsonx.Object); a.GetString("name") == name {
+			if a := item.(*orderedObject); a.GetString("name") == name {
 				new = a
 			}
 		}
 		if old == nil || new == nil {
 			t.Fatal("bound stored Agent missing", name)
 		}
-		encoded, err := jsonx.Sorted(old)
+		encoded, err := encodeSortedJSON(old)
 		if err != nil || string(encoded) != row.Original["python_agent"] {
 			t.Fatal("original stored Agent changed", name, err)
 		}
 		expected := old.Clone()
 		expected.Set("host", host)
-		if !jsonx.Equal(expected, new) {
+		if !jsonEqual(expected, new) {
 			t.Fatal("native stored Agent changed outside bound host", name)
 		}
 		old.Set("host", host)
@@ -326,6 +331,7 @@ func n810Result(t *testing.T, r request, response response, calls []string) n810
 	}
 	return n810APIResult{response.status, n810Body(t, r, response), calls, headers}
 }
+
 func n810InstallerInput(r installerRequest) request {
 	headers := map[string]string{"_fixture_host": r.host, "_fixture_download": fmt.Sprint(r.download)}
 	for key, value := range r.headers {
@@ -352,6 +358,7 @@ func n810MatchesOriginal(r request, current, original map[string]any) bool {
 	}
 	return bytes.Equal(normalize(current), normalize(original))
 }
+
 func TestN810APIOriginalBinding(t *testing.T) {
 	raw, err := os.ReadFile("testdata/n810_api_python.jsonl")
 	if err != nil {

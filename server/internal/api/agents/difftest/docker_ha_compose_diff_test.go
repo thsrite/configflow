@@ -20,12 +20,11 @@ import (
 
 	"configflow/internal/installer"
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
 // composeEnrollment reads the capability a Compose answer carries.
-func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Capability, error) {
+func composeEnrollment(method string, answer, body *orderedObject) (*installer.Capability, error) {
 	environment := func(key string) (string, error) {
 		node, err := yamlx.Parse([]byte(answer.GetString("compose")))
 		if err != nil {
@@ -60,11 +59,11 @@ func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Ca
 			}
 			data, _ := io.ReadAll(stream)
 			stream.Close()
-			value, err := jsonx.Parse(data)
+			value, err := parsePythonJSON(data)
 			if err != nil {
 				return nil, err
 			}
-			settings := value.(*jsonx.Object)
+			settings := value.(*orderedObject)
 			return &installer.Capability{URL: settings.GetString("url"), Token: settings.GetString("token")}, nil
 		}
 		return nil, fmt.Errorf("no enrollment.json in the bundle")
@@ -73,11 +72,11 @@ func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Ca
 		if err != nil {
 			return nil, err
 		}
-		value, err := jsonx.Parse([]byte(text))
+		value, err := parsePythonJSON([]byte(text))
 		if err != nil {
 			return nil, err
 		}
-		settings := value.(*jsonx.Object)
+		settings := value.(*orderedObject)
 		return &installer.Capability{URL: settings.GetString("url"), Token: settings.GetString("token")}, nil
 	default:
 		key, err := environment("INSTALL_KEY")
@@ -95,21 +94,21 @@ func composeEnrollment(method string, answer, body *jsonx.Object) (*installer.Ca
 
 // compareComposeAnswer checks one side's Compose answer against the Go
 // generators given that side's capability.
-func compareComposeAnswer(side string, body *jsonx.Object, r response) []string {
+func compareComposeAnswer(side string, body *orderedObject, r response) []string {
 	if r.status != 200 {
 		return []string{fmt.Sprintf("%s status %d: %.300s", side, r.status, r.body)}
 	}
-	parsed, err := jsonx.Parse(r.body)
+	parsed, err := parsePythonJSON(r.body)
 	if err != nil {
 		return []string{side + " body: " + err.Error()}
 	}
-	answer := parsed.(*jsonx.Object)
+	answer := parsed.(*orderedObject)
 	method := body.GetString("install_method")
 	enrollment, err := composeEnrollment(method, answer, body)
 	if err != nil {
 		return []string{side + " capability: " + err.Error()}
 	}
-	raw, err := jsonx.Default(body)
+	raw, err := encodeDefaultJSON(body)
 	if err != nil {
 		return []string{side + " request: " + err.Error()}
 	}
@@ -121,8 +120,8 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 	if err != nil {
 		return []string{side + " response: " + err.Error()}
 	}
-	value, err := jsonx.Parse(encoded)
-	expected, ok := value.(*jsonx.Object)
+	value, err := parsePythonJSON(encoded)
+	expected, ok := value.(*orderedObject)
 	if err == nil && !ok {
 		return []string{side + " non-object guide"}
 	}
@@ -132,7 +131,7 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 	// routes/docker_ha_installation.py adds the expiry and one warning.
 	expected.Set("enrollment_expires_at", answer.Value("enrollment_expires_at"))
 	expected.Set("warnings", append(expected.GetList("warnings"), "新装命令的本机安装凭据有效期为 24 小时；过期后重新生成。生成命令不会创建设备记录。"))
-	expectedBytes, encodeErr := jsonx.Response(expected)
+	expectedBytes, encodeErr := encodeResponseJSON(expected)
 	if encodeErr != nil {
 		return []string{side + " expected: " + encodeErr.Error()}
 	}
@@ -143,20 +142,21 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 		}
 	}
 	normalized := equalGuideComposeLayout(expectedBytes, r.body)
-	parsedExpected, parseErr := jsonx.Parse(normalized)
+	parsedExpected, parseErr := parsePythonJSON(normalized)
 	if parseErr != nil {
 		return []string{side + " expected: " + parseErr.Error()}
 	}
-	expected = parsedExpected.(*jsonx.Object)
+	expected = parsedExpected.(*orderedObject)
 	left, leftErr := installerJSONValues(expected)
 	right, rightErr := installerJSONValues(answer)
-	if leftErr == nil && rightErr == nil && jsonx.Equal(left, right) {
+	if leftErr == nil && rightErr == nil && jsonEqual(left, right) {
 		return nil
 	}
 	var diffs []string
 	for _, key := range answer.Keys() {
-		if !jsonx.Equal(answer.Value(key), expected.Value(key)) {
-			a, b := jsonx.Repr(answer.Value(key)), jsonx.Repr(expected.Value(key))
+		if !jsonEqual(answer.Value(key), expected.Value(key)) {
+			a, _ := encodeCompactJSON(answer.Value(key))
+			b, _ := encodeCompactJSON(expected.Value(key))
 			diffs = append(diffs, fmt.Sprintf("%s key %s: answer %.300s generators %.300s", side, key, a, b))
 		}
 	}
@@ -167,8 +167,8 @@ func compareComposeAnswer(side string, body *jsonx.Object, r response) []string 
 }
 
 // composeBodies are the Compose requests of the differential.
-func composeBodies() []*jsonx.Object {
-	var out []*jsonx.Object
+func composeBodies() []*orderedObject {
+	var out []*orderedObject
 	for _, method := range []string{"compose", "compose_direct", "compose_compact"} {
 		out = append(out,
 			haNewBody("install_method", method, "agent_name", method),

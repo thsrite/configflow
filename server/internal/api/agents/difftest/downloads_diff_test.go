@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 )
 
 var downloadHeaders = []string{"Content-Type", "Content-Disposition", "Cache-Control", "ETag", "Last-Modified",
@@ -76,8 +75,8 @@ func compareDownload(py, gor response) []string {
 		}
 	}
 	var diffs []string
-	pv, perr := jsonx.Parse(py.body)
-	gv, gerr := jsonx.Parse(gor.body)
+	pv, perr := parsePythonJSON(py.body)
+	gv, gerr := parsePythonJSON(gor.body)
 	if nativeP, nativeG, ok := nativeFileDiagnostic(py, gor); ok {
 		pv, gv = nativeP, nativeG
 	}
@@ -99,7 +98,7 @@ func compareDownload(py, gor response) []string {
 	if migrated {
 		// Step B #3: exact JSON error envelope checked above.
 	} else if jsonBody {
-		if !jsonx.Equal(pv, gv) {
+		if !jsonEqual(pv, gv) {
 			diffs = append(diffs, fmt.Sprintf("json python %s go %s", py.body, gor.body))
 		}
 	} else if string(py.body) != string(gor.body) {

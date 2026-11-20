@@ -27,7 +27,7 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -53,16 +53,15 @@ func (f *fakeOxidns) take() []string {
 	return out
 }
 
-func section(rows ...any) *jsonx.Object {
+func section(rows ...any) *orderedObject {
 	sample := 0
 	for _, r := range rows {
-		n, _ := r.(*jsonx.Object).Value("count").(jsonx.Number).Int64()
-		sample += int(n)
+		sample += int(intValue(r.(*orderedObject).Value("count")))
 	}
 	if rows == nil {
 		rows = []any{}
 	}
-	return jsonx.Obj("sample_size", sample, "rows", rows, "at_limit", false)
+	return oObj("sample_size", sample, "rows", rows, "at_limit", false)
 }
 
 func oxidnsMetrics(count int) string {
@@ -95,7 +94,7 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Get("Authorization"), r.Header.Get("Accept"), r.Header.Get("X-ConfigFlow-Query-Sources")))
 	f.mu.Unlock()
 	send := func(status int, v any) {
-		body, _ := jsonx.Default(v)
+		body, _ := encodeDefaultJSON(v)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		w.Write(body)
@@ -118,7 +117,7 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch phase {
 	case "401":
-		send(401, jsonx.Obj("message", "core-password"))
+		send(401, oObj("message", "core-password"))
 		return
 	case "302":
 		http.Redirect(w, r, "/api/oxidns/overview", http.StatusFound)
@@ -130,10 +129,10 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		raw(200, "application/json", []byte(strings.Repeat(" ", 5*1024*1024+1)))
 		return
 	case "coreauth":
-		send(502, jsonx.Obj("success", false, "code", "CORE_AUTH_FAILED", "message", "core-password"))
+		send(502, oObj("success", false, "code", "CORE_AUTH_FAILED", "message", "core-password"))
 		return
 	case "codelist":
-		send(502, jsonx.Obj("success", false, "code", []any{"x"}))
+		send(502, oObj("success", false, "code", []any{"x"}))
 		return
 	case "bom":
 		raw(200, "application/json", append([]byte("\xef\xbb\xbf"), []byte(`{"ok": true, "records": [], "next_cursor": null}`)...))
@@ -142,7 +141,7 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		raw(200, "application/json", []byte("{\"ok\": true, \"records\": [], \"next_cursor\": \"\xff\"}"))
 		return
 	case "notfound":
-		send(404, jsonx.Obj("success", false, "code", "RECORD_NOT_FOUND", "message", "private trace"))
+		send(404, oObj("success", false, "code", "RECORD_NOT_FOUND", "message", "private trace"))
 		return
 	case "nan":
 		raw(200, "application/json", []byte(`{"ok": true, "records": [{"id": 1, "created_at_ms": NaN, "elapsed_ms": 0, "questions_json": [], "answers_json": []}], "next_cursor": null}`))
@@ -185,43 +184,43 @@ func (f *fakeOxidns) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch strings.TrimPrefix(r.URL.Path, "/api/oxidns/") {
 	case "overview":
-		send(200, jsonx.Obj("success", true,
-			"health", jsonx.Obj("version", "1.6.1", "status", "ok", "uptime_ms", 1234.5, "instance_id", instance),
-			"capabilities", jsonx.Obj("query_recorders", []any{"records", "other"}),
+		send(200, oObj("success", true,
+			"health", oObj("version", "1.6.1", "status", "ok", "uptime_ms", 1234.5, "instance_id", instance),
+			"capabilities", oObj("query_recorders", []any{"records", "other"}),
 			"collected_at_ms", collected, "source_revision", revision, "runtime_revision", strings.Repeat("d", 64),
-			"upstream_labels", []any{jsonx.Obj("plugin_tag", "remote", "upstream", "https://u:p@dns.test/dns-query?k=s",
+			"upstream_labels", []any{oObj("plugin_tag", "remote", "upstream", "https://u:p@dns.test/dns-query?k=s",
 				"address", "https://u:p@[2001:DB8::1]:8443/dns-query#f")},
 			"metrics", oxidnsMetrics(count), "config", "private configuration"))
 	case "rankings":
 		if phase == "rankfail" {
-			send(502, jsonx.Obj("success", false, "code", "CORE_UNREACHABLE"))
+			send(502, oObj("success", false, "code", "CORE_UNREACHABLE"))
 			return
 		}
 		recorder := r.URL.Query().Get("recorder")
 		if recorder == "" {
 			recorder = "records"
 		}
-		blocked := jsonx.Obj("available", true, "reason", "rule_dns", "matcher_tags", []any{"qs.match.a"})
-		blocked.Update(section(jsonx.Obj("key", "ads.test", "count", 3)))
-		send(200, jsonx.Obj("success", true, "recorder", recorder, "collected_at_ms", collected,
+		blocked := oObj("available", true, "reason", "rule_dns", "matcher_tags", []any{"qs.match.a"})
+		blocked.Update(section(oObj("key", "ads.test", "count", 3)))
+		send(200, oObj("success", true, "recorder", recorder, "collected_at_ms", collected,
 			"source_revision", revision, "runtime_revision", strings.Repeat("d", 64), "instance_id", instance,
 			"retention_days", 7, "sample_limit", 10000,
-			"clients", section(jsonx.Obj("key", "192.0.2.2", "count", 2), jsonx.Obj("key", "2001:db8::2", "count", 1)),
-			"domains", section(jsonx.Obj("key", "b.test", "count", 2), jsonx.Obj("key", "a.test", "count", 2)),
+			"clients", section(oObj("key", "192.0.2.2", "count", 2), oObj("key", "2001:db8::2", "count", 1)),
+			"domains", section(oObj("key", "b.test", "count", 2), oObj("key", "a.test", "count", 2)),
 			"blocked", blocked))
 	case "clients":
-		send(200, jsonx.Obj("ok", true, "recorder", "records", "sample_size", 3,
-			"rows", []any{jsonx.Obj("key", "192.168.0.2", "count", 2), jsonx.Obj("key", "2001:db8::2", "count", 1)},
+		send(200, oObj("ok", true, "recorder", "records", "sample_size", 3,
+			"rows", []any{oObj("key", "192.168.0.2", "count", 2), oObj("key", "2001:db8::2", "count", 1)},
 			"token", "core-private-token"))
 	case "queries":
-		row := jsonx.Obj("id", 42, "created_at_ms", 1792100000123, "elapsed_ms", 0.25, "client_ip", "192.0.2.1",
-			"questions_json", []any{jsonx.Obj("name", "例子.test.", "qtype", "A")}, "answers_json", []any{},
+		row := oObj("id", 42, "created_at_ms", 1792100000123, "elapsed_ms", 0.25, "client_ip", "192.0.2.1",
+			"questions_json", []any{oObj("name", "例子.test.", "qtype", "A")}, "answers_json", []any{},
 			"rcode", "No Error", "resolution_source", "cache", "private_field", "omit")
-		send(200, jsonx.Obj("ok", true, "records", []any{row}, "next_cursor", "1792100000123:42"))
+		send(200, oObj("ok", true, "records", []any{row}, "next_cursor", "1792100000123:42"))
 	default:
-		row := jsonx.Obj("id", 42, "created_at_ms", 1792100000123, "elapsed_ms", 0, "questions_json", []any{},
-			"answers_json", []any{}, "steps", []any{jsonx.Obj("tag", "cache")}, "resolution_source", "bogus")
-		send(200, jsonx.Obj("ok", true, "record", row))
+		row := oObj("id", 42, "created_at_ms", 1792100000123, "elapsed_ms", 0, "questions_json", []any{},
+			"answers_json", []any{}, "steps", []any{oObj("tag", "cache")}, "resolution_source", "bogus")
+		send(200, oObj("ok", true, "record", row))
 	}
 }
 
@@ -230,17 +229,17 @@ func oxidnsSeed(t *testing.T, dir string, port, closed, port6 int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := func(id, version, service string, p int) *jsonx.Object {
-		return jsonx.Obj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
+	agent := func(id, version, service string, p int) *orderedObject {
+		return oObj("id", id, "name", id, "token", "tok-"+id, "profile_id", "default", "service_type", service,
 			"host", "127.0.0.1", "port", p, "version", version, "config_version", "0", "enabled", true, "status", "online")
 	}
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+		list := []any{
 			agent("oxi-old", "1.7.0-go", "oxidns", port), agent("oxi-cli", "1.7.1-go", "oxidns", port),
 			agent("oxi-dash", "1.8.14-go", "oxidns", port), agent("oxi-fail", "1.8.20-go", "oxidns", port),
 			agent("oxi-ancient", "1.6.0-go", "oxidns", port), agent("mihomo", "1.8.20-go", "mihomo", port),
 			agent("oxi-gone", "1.8.14-go", "oxidns", closed),
-		})
+		}
 		// Scoped IPv6 hosts (A06 review): a decimal zone is reached, an
 		// interface name on a global address fails resolution (glibc).
 		if port6 > 0 {
@@ -248,9 +247,9 @@ func oxidnsSeed(t *testing.T, dir string, port, closed, port6 int) {
 			zone.Set("host", "::1%1")
 			named := agent("oxi-zone-name", "1.7.1-go", "oxidns", port6)
 			named.Set("host", "[::1%lo]")
-			system.Set("agents", append(system.GetList("agents"), zone, named))
+			list = append(list, zone, named)
 		}
-		return nil, nil
+		return system.SetJSON("agents", mustRawJSON(t, list))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -362,14 +361,13 @@ func oxidnsCompare(r request, py, gor response) []string {
 			kept = append(kept, d)
 		}
 	}
-	pv, perr := jsonx.Parse(py.body)
-	gv, gerr := jsonx.Parse(gor.body)
+	pv, perr := parsePythonJSON(py.body)
+	gv, gerr := parsePythonJSON(gor.body)
 	if perr != nil || gerr != nil {
 		return diffs
 	}
-	options := jsonx.Options{SortKeys: true, EnsureASCII: true}
-	pt, _ := jsonx.Encode(maskJSON(pv, r.mask), options)
-	gt, _ := jsonx.Encode(maskJSON(gv, r.mask), options)
+	pt, _ := encodeSortedDefaultJSON(maskJSON(pv, r.mask))
+	gt, _ := encodeSortedDefaultJSON(maskJSON(gv, r.mask))
 	if string(pt) != string(gt) {
 		kept = append(kept, fmt.Sprintf("json python %s go %s", pt, gt))
 	}
@@ -391,14 +389,14 @@ func stateFiles(t *testing.T, dir string) map[string]string {
 		}
 		data, _ := os.ReadFile(filepath.Join(dir, "dns-monitor", e.Name()))
 		if strings.HasSuffix(e.Name(), ".json") {
-			value, err := jsonx.Parse(data)
+			value, err := parsePythonJSON(data)
 			if err != nil {
 				out[e.Name()] = "unreadable: " + string(data)
 				continue
 			}
-			object := value.(*jsonx.Object)
+			object := value.(*orderedObject)
 			object.Set("generation", "<masked>")
-			text, _ := jsonx.Compact(object)
+			text, _ := encodeCompactJSON(object)
 			out[e.Name()] = string(text)
 		} else {
 			out[e.Name()] = fmt.Sprintf("%d bytes", len(data))

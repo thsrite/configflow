@@ -23,7 +23,6 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 
 	_ "modernc.org/sqlite"
 )
@@ -103,18 +102,19 @@ func compareInstaller(py, gor response, mask []string) []string {
 	if migrated {
 		// Step B #3: exact error-envelope migration only.
 	} else if strings.HasPrefix(py.header.Get("Content-Type"), "application/json") {
-		a, errA := jsonx.Parse(py.body)
-		b, errB := jsonx.Parse(gor.body)
-		if obj, ok := b.(*jsonx.Object); ok && gor.status == 200 {
+		a, errA := parsePythonJSON(py.body)
+		b, errB := parsePythonJSON(gor.body)
+		if obj, ok := b.(*orderedObject); ok && gor.status == 200 {
 			if obj.Has("install_command") || obj.Has("verification_command") {
 				raw, err := installertest.GuideBaseline(gor.body)
 				if err != nil {
 					return []string{err.Error()}
 				}
-				b, err = jsonx.Parse(raw)
+				b, err = parsePythonJSON(raw)
 				if err != nil {
 					return []string{err.Error()}
 				}
+				obj, _ = b.(*orderedObject)
 			}
 			if script, ok := obj.Value("script").(string); ok {
 				baseline, err := installertest.PythonBaseline(script)
@@ -130,7 +130,7 @@ func compareInstaller(py, gor response, mask []string) []string {
 		if errB == nil {
 			b, errB = installerJSONValues(b)
 		}
-		if errA != nil || errB != nil || !jsonx.Equal(maskJSON(a, mask), maskJSON(b, mask)) {
+		if errA != nil || errB != nil || !jsonEqual(maskJSON(a, mask), maskJSON(b, mask)) {
 			diffs = append(diffs, fmt.Sprintf("json python %.400s go %.400s", py.body, gor.body))
 		}
 	} else if py.status == 200 && gor.status == 200 && strings.HasPrefix(py.header.Get("Content-Type"), "text/yaml") {
@@ -487,22 +487,22 @@ func TestInstallerDifferentialAgainstFlask(t *testing.T) {
 		if !r.download || py.status != 200 || gor.status != 200 {
 			continue
 		}
-		pyAnswer, _ := jsonx.Parse(py.body)
-		goAnswer, _ := jsonx.Parse(gor.body)
-		pyPath := pyAnswer.(*jsonx.Object).GetString("download_path")
-		goPath := goAnswer.(*jsonx.Object).GetString("download_path")
+		pyAnswer, _ := parsePythonJSON(py.body)
+		goAnswer, _ := parsePythonJSON(gor.body)
+		pyPath := pyAnswer.(*orderedObject).GetString("download_path")
+		goPath := goAnswer.(*orderedObject).GetString("download_path")
 		if !strings.HasPrefix(goPath, "/api/agents/i/") || len(goPath) != len("/api/agents/i/")+22 {
 			t.Errorf("%s: go download_path %q", r.name, goPath)
 		}
-		pyExpires := pyAnswer.(*jsonx.Object).GetInt("expires_at")
-		goExpires := goAnswer.(*jsonx.Object).GetInt("expires_at")
+		pyExpires := pyAnswer.(*orderedObject).GetInt("expires_at")
+		goExpires := goAnswer.(*orderedObject).GetInt("expires_at")
 		if d := goExpires - pyExpires; d < -5 || d > 5 || goExpires-time.Now().Unix() > installer.TTLSeconds {
 			t.Errorf("%s: expires_at python %d go %d", r.name, pyExpires, goExpires)
 		}
 		pyDown := sendInstaller(t, pyBase, download(pyPath), "")
 		goDown := sendInstaller(t, goBase, download(goPath), "")
 		check(r.name+" → download", pyDown, goDown)
-		if string(goDown.body) != goAnswer.(*jsonx.Object).GetString("script") {
+		if string(goDown.body) != goAnswer.(*orderedObject).GetString("script") {
 			t.Errorf("%s: go download differs from the previewed script", r.name)
 		}
 		scripts[r.name] = [2]string{strings.TrimPrefix(pyPath, "/api/agents/i/"), strings.TrimPrefix(goPath, "/api/agents/i/")}

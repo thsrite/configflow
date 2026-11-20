@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -48,9 +48,8 @@ func TestPublishLegacyProxyAgainstFlask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = repository.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetList("agents")[0].(*jsonx.Object).Set("service_type", "surge")
-		return system, nil
+	err = repository.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+		return system.Agents[0].SetJSON("service_type", []byte(`"surge"`))
 	})
 	if err != nil {
 		t.Fatal(err)

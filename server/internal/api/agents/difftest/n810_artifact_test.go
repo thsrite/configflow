@@ -4,13 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -32,11 +32,11 @@ func installerJSONText(text string) (string, error) {
 				return "", fmt.Errorf("unterminated JSON heredoc")
 			}
 			last := first + end
-			value, err := jsonx.ParseString(text[first:last])
+			value, err := parsePythonJSONString(text[first:last])
 			if err != nil {
 				return "", err
 			}
-			data, err := jsonx.Sorted(value)
+			data, err := encodeSortedJSON(value)
 			if err != nil {
 				return "", err
 			}
@@ -73,11 +73,11 @@ func installerJSONText(text string) (string, error) {
 			raw.WriteRune(r)
 			source = tail
 		}
-		value, err := jsonx.ParseString(raw.String())
+		value, err := parsePythonJSONString(raw.String())
 		if err != nil {
 			return "", err
 		}
-		data, err := jsonx.Sorted(value)
+		data, err := encodeSortedJSON(value)
 		if err != nil {
 			return "", err
 		}
@@ -87,18 +87,19 @@ func installerJSONText(text string) (string, error) {
 	}
 	return text, nil
 }
+
 func installerJSONValues(value any) (any, error) {
 	switch x := value.(type) {
 	case string:
 		return installerJSONText(x)
-	case *jsonx.Object:
+	case *orderedObject:
 		result := x.Clone()
-		for key, item := range x.All() {
-			v, err := installerJSONValues(item)
+		for _, f := range x.fields {
+			v, err := installerJSONValues(f.value)
 			if err != nil {
 				return nil, err
 			}
-			result.Set(key, v)
+			result.Set(f.key, v)
 		}
 		return result, nil
 	case []any:
@@ -114,6 +115,7 @@ func installerJSONValues(value any) (any, error) {
 	}
 	return value, nil
 }
+
 func installerComposeSettings(root *yamlx.Node) error {
 	for _, service := range yamlx.Pairs(yamlx.Get(root, "services")) {
 		env := yamlx.Get(service, "environment")
@@ -121,11 +123,11 @@ func installerComposeSettings(root *yamlx.Node) error {
 		if value == nil {
 			continue
 		}
-		settings, err := jsonx.ParseString(value.Value)
+		settings, err := parsePythonJSONString(value.Value)
 		if err != nil {
 			return err
 		}
-		data, err := jsonx.Sorted(settings)
+		data, err := encodeSortedJSON(settings)
 		if err != nil {
 			return err
 		}
@@ -133,7 +135,8 @@ func installerComposeSettings(root *yamlx.Node) error {
 	}
 	return nil
 }
-func installerArchive(encoded string) (*jsonx.Object, string, error) {
+
+func installerArchive(encoded string) (*orderedObject, string, error) {
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, "", err
@@ -155,11 +158,11 @@ func installerArchive(encoded string) (*jsonx.Object, string, error) {
 			return nil, "", err
 		}
 		if entry.Name == "enrollment.json" {
-			value, err := jsonx.Parse(data)
+			value, err := parsePythonJSON(data)
 			if err != nil {
 				return nil, "", err
 			}
-			data, err = jsonx.Sorted(value)
+			data, err = encodeSortedJSON(value)
 			if err != nil {
 				return nil, "", err
 			}
@@ -176,8 +179,22 @@ func installerArchive(encoded string) (*jsonx.Object, string, error) {
 	if err := writer.Close(); err != nil {
 		return nil, "", err
 	}
-	return yamlxtest.ComposeArchive(base64.StdEncoding.EncodeToString(buffer.Bytes()))
+	archive, composeYAML, err := yamlxtest.ComposeArchive(base64.StdEncoding.EncodeToString(buffer.Bytes()))
+	if err != nil {
+		return nil, "", err
+	}
+	raw, err := json.Marshal(archive)
+	if err != nil {
+		return nil, "", err
+	}
+	parsed, err := parsePythonJSON(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	obj, _ := parsed.(*orderedObject)
+	return obj, composeYAML, nil
 }
+
 func TestN810ArtifactComparisonKeepsShellBytesAndJSONValues(t *testing.T) {
 	base := "echo before\ncat <<'CONFIGFLOW_JSON_EOF'\n{\"name\":\"设备\",\"port\":8080}\nCONFIGFLOW_JSON_EOF\necho after\n"
 	normalized, err := installerJSONText(base)

@@ -1,8 +1,8 @@
 package difftest
 
 import (
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"context"
 	"encoding/json"
@@ -55,16 +55,23 @@ func TestRuleSyncHTTPAgainstFlask(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		records := system.GetList("agents")
-		for _, entry := range records {
-			entry.(*jsonx.Object).Set("host", "127.0.0.1")
+	e = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+		raw, err := json.Marshal(system)
+		if err != nil {
+			return err
 		}
-		wrong := records[0].(*jsonx.Object).DeepCopy()
+		doc, err := parsePythonJSON(raw)
+		if err != nil {
+			return err
+		}
+		records := doc.(*orderedObject).GetList("agents")
+		for _, entry := range records {
+			entry.(*orderedObject).Set("host", "127.0.0.1")
+		}
+		wrong := records[0].(*orderedObject).Clone()
 		wrong.Set("id", "wrong-service")
 		wrong.Set("service_type", "mosdns")
-		system.Set("agents", append(records, wrong))
-		return nil, nil
+		return system.SetJSON("agents", mustRawJSON(t, append(records, wrong)))
 	})
 	if e != nil {
 		t.Fatal(e)
