@@ -14,15 +14,15 @@ func TestN810RegistrationVersionValidationFollowsAuthorization(t *testing.T) {
 			s := o9Server(t)
 			_, tokens := o9Command(t, s)
 			body := o9Body()
-			body.Set("version", 7)
+			body["version"] = 7
 			s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
-			body.Set("registration_token", tokens[0])
+			body["registration_token"] = tokens[0]
 			before, err := s.Repo.Store().Fingerprint()
 			if err != nil {
 				t.Fatal(err)
 			}
-			response := s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(400).Object()
-			if response.GetString("message") != core.ErrRegistrationVersion.Error() {
+			response := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(400))
+			if mapStr(response, "message") != core.ErrRegistrationVersion.Error() {
 				t.Fatal(response)
 			}
 			after, err := s.Repo.Store().Fingerprint()
@@ -33,9 +33,9 @@ func TestN810RegistrationVersionValidationFollowsAuthorization(t *testing.T) {
 				t.Fatal("invalid version consumed proof")
 			}
 			if replacement == "missing" {
-				body.Delete("version")
+				delete(body, "version")
 			} else {
-				body.Set("version", nil)
+				body["version"] = nil
 			}
 			s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
 			state := mustO9System(t, s)
@@ -45,6 +45,7 @@ func TestN810RegistrationVersionValidationFollowsAuthorization(t *testing.T) {
 		})
 	}
 }
+
 func TestN810ManualRegistrationUsesSharedVersionValidation(t *testing.T) {
 	s := o9Server(t)
 	admin := s.Login()

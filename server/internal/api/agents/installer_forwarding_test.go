@@ -9,7 +9,6 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
 	"configflow/internal/installer/installertest"
-	"configflow/internal/jsonx"
 )
 
 // API cases of backend/test_standalone_forwarding_install.py (the shell and
@@ -23,11 +22,11 @@ func forwardingServer(t *testing.T) (*httpxtest.Server, httpxtest.Option) {
 // makeCommand is make(client, admin, **params): POST install-command, 200.
 func makeCommand(t *testing.T, srv *httpxtest.Server, admin httpxtest.Option, pairs ...any) string {
 	t.Helper()
-	body := jsonx.Obj("name", "gateway", "type", "mihomo", "server_url", "https://config.test/panel")
+	body := map[string]any{"name": "gateway", "type": "mihomo", "server_url": "https://config.test/panel"}
 	for i := 0; i < len(pairs); i += 2 {
-		body.Set(pairs[i].(string), pairs[i+1])
+		body[pairs[i].(string)] = pairs[i+1]
 	}
-	return srv.Post("/api/agents/install-command", httpxtest.JSON(body), admin).WantStatus(200).Object().GetString("script")
+	return mapStr(parseBodyMap(t, srv.Post("/api/agents/install-command", httpxtest.JSON(body), admin).WantStatus(200)), "script")
 }
 
 func TestAPIEnablesForwardingForMihomoByDefault(t *testing.T) {
@@ -73,12 +72,12 @@ func TestAPIRejectsInvalidForwardingRequests(t *testing.T) {
 		{[]any{"ipv4_forwarding", false, "agent_type", "shell"}, "旧版 Shell Agent"},
 		{[]any{"ipv4_forwarding", true, "restart_command", "/custom/restart", "stop_command", "/s", "start_command", "/t", "status_command", "/u"}, "仅使用 systemd 或 OpenRC"},
 	} {
-		body := jsonx.Obj("name", "gateway", "type", "mihomo", "server_url", "https://config.test/panel")
+		body := map[string]any{"name": "gateway", "type": "mihomo", "server_url": "https://config.test/panel"}
 		for i := 0; i < len(c.params); i += 2 {
-			body.Set(c.params[i].(string), c.params[i+1])
+			body[c.params[i].(string)] = c.params[i+1]
 		}
 		res := srv.Post("/api/agents/install-command", httpxtest.JSON(body), admin).WantStatus(400)
-		if !strings.Contains(res.Object().GetString("message"), c.message) {
+		if !strings.Contains(mapStr(parseBodyMap(t, res), "message"), c.message) {
 			t.Errorf("%v: %s", c.params, res.Text())
 		}
 	}

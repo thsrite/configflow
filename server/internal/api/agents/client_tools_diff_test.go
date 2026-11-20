@@ -19,7 +19,6 @@ import (
 	registry "configflow/internal/agents"
 	"configflow/internal/discovery"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -42,44 +41,68 @@ func a24Fixture(t *testing.T) *httpxtest.Server {
 	t.Cleanup(registry.ResetRuntime)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "a24-admin", Password: "a24-password", SecretKey: "a24-synthetic-secret", DefaultFactories: false, Register: httpxtest.Routes(Register)})
 	ctx := s.Context()
-	if _, err := s.Repo.CreateProfile(ctx, jsonx.Obj("id", "office", "name", "Office"), ""); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "office", Name: "Office"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", append(shared.GetList("rule_library"), []any{jsonx.Obj("id", "domains", "name", "Domains", "source_type", "content", "behavior", "domain", "content", "+.exists.example\n", "enabled", true), jsonx.Obj("id", "ip", "name", "IPs", "source_type", "content", "behavior", "classical", "content", "", "enabled", true), jsonx.Obj("id", "cidr", "name", "CIDRs", "source_type", "content", "behavior", "ipcidr", "content", "192.0.2.0/24\n", "enabled", true)}...))
-		return nil, nil
-	})
-	if err != nil {
+	if err := s.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		var extra []model.RuleLibraryItem
+		raw := mustRawJSON(t, []map[string]any{
+			{"id": "domains", "name": "Domains", "source_type": "content", "behavior": "domain", "content": "+.exists.example\n", "enabled": true},
+			{"id": "ip", "name": "IPs", "source_type": "content", "behavior": "classical", "content": "", "enabled": true},
+			{"id": "cidr", "name": "CIDRs", "source_type": "content", "behavior": "ipcidr", "content": "192.0.2.0/24\n", "enabled": true},
+		})
+		if err := json.Unmarshal(raw, &extra); err != nil {
+			return err
+		}
+		shared.RuleLibrary = append(shared.RuleLibrary, extra...)
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "office", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("domain_discovery", jsonx.Obj("direct_ruleset", "domains", "proxy_ruleset", "domains"))
-		p.Set("rule_configs", []any{jsonx.Obj("id", "ref-ip", "itemType", "ruleset", "library_rule_id", "ip", "policy", "DIRECT", "enabled", true), jsonx.Obj("id", "ref-domain", "itemType", "ruleset", "library_rule_id", "domains", "policy", "DIRECT", "enabled", true), jsonx.Obj("id", "fallback", "itemType", "rule", "rule_type", "MATCH", "policy", "DIRECT", "enabled", true)})
-		p.GetObject("oxidns").Set("device_policies", []any{jsonx.Obj("ip", "192.0.2.5", "name", "旧电脑", "mode", "direct")})
-		return nil, nil
-	})
-	if err != nil {
+	if _, err := s.Repo.UpdateProfile(ctx, "office", func(_ context.Context, p *model.Profile) error {
+		if err := p.SetJSON("domain_discovery", mustRawJSON(t, map[string]any{"direct_ruleset": "domains", "proxy_ruleset": "domains"})); err != nil {
+			return err
+		}
+		if err := p.SetJSON("rule_configs", mustRawJSON(t, []map[string]any{
+			{"id": "ref-ip", "itemType": "ruleset", "library_rule_id": "ip", "policy": "DIRECT", "enabled": true},
+			{"id": "ref-domain", "itemType": "ruleset", "library_rule_id": "domains", "policy": "DIRECT", "enabled": true},
+			{"id": "fallback", "itemType": "rule", "rule_type": "MATCH", "policy": "DIRECT", "enabled": true},
+		})); err != nil {
+			return err
+		}
+		ox := map[string]any{}
+		if raw := mustRawJSON(t, p.OxiDNS); len(raw) > 0 && string(raw) != "null" {
+			ox = parseJSONMap(t, raw)
+		}
+		ox["device_policies"] = []any{map[string]any{"ip": "192.0.2.5", "name": "旧电脑", "mode": "direct"}}
+		return p.SetJSON("oxidns", mustRawJSON(t, ox))
+	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		list := []any{}
+	if err := s.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		list := []map[string]any{}
 		for _, v := range []struct{ id, kind, profile string }{{"m", "mihomo", "office"}, {"d", "oxidns", "office"}, {"peer", "oxidns", "office"}, {"default", "oxidns", "default"}, {"other", "mosdns", "office"}} {
-			list = append(list, jsonx.Obj("id", v.id, "name", v.id, "profile_id", v.profile, "service_type", v.kind, "token", "secret-"+v.id, "host", "127.0.0.1", "port", 9, "enabled", true, "last_heartbeat", "2020-01-01T00:00:00", "version", "1.6.0-go"))
+			list = append(list, map[string]any{
+				"id": v.id, "name": v.id, "profile_id": v.profile, "service_type": v.kind,
+				"token": "secret-" + v.id, "host": "127.0.0.1", "port": 9, "enabled": true,
+				"last_heartbeat": "2020-01-01T00:00:00", "version": "1.6.0-go",
+			})
 		}
 		// Legacy Agent labels are not restricted to strings by registration/edit.
-		list[2].(*jsonx.Object).Set("name", jsonx.Int(7))
-		for i, name := range []any{nil, false, true, jsonx.Int(0), "", []any{}, jsonx.Obj(), jsonx.Obj("label", "future"), []any{"array"}} {
-			label := list[2].(*jsonx.Object).Clone()
-			label.Set("id", fmt.Sprintf("legacy-label-%d", i))
-			label.Set("name", name)
-			label.Set("token", fmt.Sprintf("secret-label-%d", i))
+		list[2]["name"] = 7
+		for i, name := range []any{nil, false, true, 0, "", []any{}, map[string]any{}, map[string]any{"label": "future"}, []any{"array"}} {
+			label := cloneMap(t, list[2])
+			label["id"] = fmt.Sprintf("legacy-label-%d", i)
+			label["name"] = name
+			label["token"] = fmt.Sprintf("secret-label-%d", i)
 			list = append(list, label)
 		}
-		system.Set("agents", list)
-		system.GetObject("system_config").Set("server_domain", "http://127.0.0.1:5001")
-		return nil, nil
-	})
-	if err != nil {
+		if err := system.SetJSON("agents", mustRawJSON(t, list)); err != nil {
+			return err
+		}
+		system.SystemConfig.ServerDomain = "http://127.0.0.1:5001"
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	for _, folder := range []string{"traffic", "probes", "regions", "traffic_history"} {
@@ -143,8 +166,8 @@ func newClientWorldSetup(t *testing.T, setup func(*httpxtest.Server)) *clientWor
 	})
 	scanner := bufio.NewScanner(output)
 	scanner.Buffer(make([]byte, 65536), 16<<20)
-	login := s.Post("/api/auth/login", httpxtest.JSON(jsonx.Obj("username", "a24-admin", "password", "a24-password"))).WantStatus(200).Object()
-	token := login.GetString("token")
+	login := parseBodyMap(t, s.Post("/api/auth/login", httpxtest.JSON(map[string]any{"username": "a24-admin", "password": "a24-password"})).WantStatus(200))
+	token := mapStr(login, "token")
 	if token == "" {
 		t.Fatal("no JWT")
 	}
@@ -190,7 +213,7 @@ func a24NormalizeInPlace(v any) any {
 }
 func a24State(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
-	document, err := s.Repo.ExportAll(s.Context(), false)
+	document, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,16 +623,17 @@ func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 				t.Fatal(err)
 			}
 			if kind == "domain-default" {
-				_, _, err = s.Repo.UpdateProfileTransaction(ctx, "office", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.GetObject("domain_discovery").Set("direct_ruleset", nil)
-					return nil, nil
+				_, err = s.Repo.UpdateProfile(ctx, "office", func(_ context.Context, p *model.Profile) error {
+					settings := parseJSONMap(t, mustRawJSON(t, p.DomainDiscovery))
+					settings["direct_ruleset"] = nil
+					return p.SetJSON("domain_discovery", mustRawJSON(t, settings))
 				})
 			} else {
 				id := "m"
 				if kind == "policy" {
 					id = "d"
 				}
-				_, err = manager.EditAgent(ctx, id, agentEditsForTest(t, jsonx.Obj("profile_id", "default")))
+				_, err = manager.EditAgent(ctx, id, agentEditsForTest(t, map[string]any{"profile_id": "default"}))
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -640,7 +664,7 @@ func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = manager.ObserveHeartbeat(ctx, "m", agentModelForTest(t, jsonx.Obj("version", "2.0.0-live", "service_status", "running", "system_metrics", jsonx.Obj("cpu", jsonx.Obj("usage_percent", 12))))); err != nil {
+	if _, err = manager.ObserveHeartbeat(ctx, "m", agentModelForTest(t, map[string]any{"version": "2.0.0-live", "service_status": "running", "system_metrics": map[string]any{"cpu": map[string]any{"usage_percent": 12}}})); err != nil {
 		t.Fatal(err)
 	}
 	record, err := (clientTools{}).SetDiscovery(ctx, "m", true)
@@ -651,16 +675,12 @@ func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := jsonx.Parse(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := parsed.(*jsonx.Object)
-	if legacy.GetString("version") != "2.0.0-live" || legacy.GetString("service_status") != "running" || legacy.GetObject("system_metrics").GetObject("cpu").GetInt("usage_percent") != 12 {
+	legacy := parseJSONMap(t, encoded)
+	if mapStr(legacy, "version") != "2.0.0-live" || mapStr(legacy, "service_status") != "running" || mapInt(mapObj(mapObj(legacy, "system_metrics"), "cpu"), "usage_percent") != 12 {
 		t.Fatal("lost runtime overlay")
 	}
 	public := publicAgent(legacy)
-	if public.Has("token") {
+	if mapHas(public, "token") {
 		t.Fatal("credential escaped")
 	}
 }

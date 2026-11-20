@@ -17,8 +17,9 @@ import (
 	"configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // gatewayAgent answers the Linux gateway API of one forwarding target.
@@ -61,18 +62,18 @@ func gatewayForwardingServer(t *testing.T) (*httpxtest.Server, *gatewayAgent, ht
 	t.Cleanup(agents.SetDefaultClient(fake))
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
 	ctx := s.Context()
-	_, err := s.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "gw", "name", "GW", "service_type", "mihomo", "profile_id", "default",
-			"token", "synthetic-agent-token", "host", "127.0.0.1", "port", 8081, "version", "1.8.43-go",
-			"deployment_method", "shell", "status", "online", "last_heartbeat", time.Now().UTC().Format(time.RFC3339Nano))})
-		return nil, nil
+	err := s.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", mustRawJSON(t, []any{map[string]any{
+			"id": "gw", "name": "GW", "service_type": "mihomo", "profile_id": "default",
+			"token": "synthetic-agent-token", "host": "127.0.0.1", "port": 8081, "version": "1.8.43-go",
+			"deployment_method": "shell", "status": "online", "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano),
+		}}))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "r1", "name", "Router", "proxy_gateway_agent_id", "gw")}))
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, c *model.Profile) error {
+		return c.SetJSON("routers", mustRawJSON(t, map[string]any{"items": []any{map[string]any{"id": "r1", "name": "Router", "proxy_gateway_agent_id": "gw"}}}))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +87,7 @@ func gatewayForwardingServer(t *testing.T) (*httpxtest.Server, *gatewayAgent, ht
 func TestReviewA20HeadGatewayForwardingIsReadOnly(t *testing.T) {
 	s, fake, admin := gatewayForwardingServer(t)
 	get := s.Get("/api/agents/gateway-forwarding", admin).WantStatus(200)
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	before, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,11 +136,11 @@ func TestReviewA20HeadGatewayForwardingIsReadOnly(t *testing.T) {
 	if writes := fake.writes(); len(writes) != 0 {
 		t.Fatalf("HEAD wrote to the Agent: %v", writes)
 	}
-	after, err := s.Repo.ExportAll(s.Context(), false)
+	after, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
+	if !testjson.Equal(before, after) {
 		t.Fatal("HEAD changed stored state")
 	}
 	// Control: the same body through POST does reach the device.
@@ -186,20 +187,25 @@ func TestStepBA20MalformedReportOnlyAffectsItsGateway(t *testing.T) {
 	} {
 		t.Run(filter, func(t *testing.T) {
 			s, fake, admin := gatewayForwardingServer(t)
-			_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-				healthy := jsonx.Obj("id", "healthy", "name", "Healthy", "service_type", "mihomo", "profile_id", "default",
-					"token", "synthetic-healthy-token", "host", "127.0.0.1", "port", 8082, "version", "1.8.43-go",
-					"deployment_method", "shell", "status", "online", "last_heartbeat", time.Now().UTC().Format(time.RFC3339Nano))
-				current, _ := system.Get("agents")
-				system.Set("agents", append(current.([]any), healthy))
-				return nil, nil
+			err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+				healthy := map[string]any{
+					"id": "healthy", "name": "Healthy", "service_type": "mihomo", "profile_id": "default",
+					"token": "synthetic-healthy-token", "host": "127.0.0.1", "port": 8082, "version": "1.8.43-go",
+					"deployment_method": "shell", "status": "online", "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano),
+				}
+				doc := parseJSONMap(t, mustRawJSON(t, system))
+				return system.SetJSON("agents", mustRawJSON(t, append(mapList(doc, "agents"), healthy)))
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-				c.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "r1", "proxy_gateway_agent_id", "gw"), jsonx.Obj("id", "r2", "proxy_gateway_agent_id", "healthy")}))
-				return nil, nil
+			_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, c *model.Profile) error {
+				return c.SetJSON("routers", mustRawJSON(t, map[string]any{
+					"items": []any{
+						map[string]any{"id": "r1", "proxy_gateway_agent_id": "gw"},
+						map[string]any{"id": "r2", "proxy_gateway_agent_id": "healthy"},
+					},
+				}))
 			})
 			if err != nil {
 				t.Fatal(err)

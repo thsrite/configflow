@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 // TestReviewA24ShutdownRejectsWrites checks every owner against a stopped Runtime.
@@ -60,12 +61,8 @@ func TestReviewA24PublicCredentials(t *testing.T) {
 		`{"id":"device","future":{"message":"Bearer secret-bearer","authorization":"Basic secret-basic"}}`,
 		`{"id":"device","description":"-----BEGIN PRIVATE KEY-----\nsecret-pem\n-----END PRIVATE KEY-----"}`,
 	} {
-		v, err := jsonx.Parse([]byte(text))
-		if err != nil {
-			t.Fatal(err)
-		}
-		record := v.(*jsonx.Object)
-		before := record.DeepCopy()
+		record := parseJSONMap(t, []byte(text))
+		before := cloneMap(t, record)
 		public := publicAgent(record)
 		raw, err := json.Marshal(public)
 		if err != nil {
@@ -74,10 +71,10 @@ func TestReviewA24PublicCredentials(t *testing.T) {
 		if strings.Contains(string(raw), "secret-") {
 			t.Errorf("credentials escaped: %s", raw)
 		}
-		if !jsonx.Equal(record, before) {
+		if !testjson.Equal(record, before) {
 			t.Error("source was mutated")
 		}
-		if public.GetString("id") != record.GetString("id") {
+		if mapStr(public, "id") != mapStr(record, "id") {
 			t.Error("public identity lost")
 		}
 	}
@@ -86,30 +83,33 @@ func TestReviewA24PublicCredentials(t *testing.T) {
 // TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials covers both public HTTP exits.
 func TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials(t *testing.T) {
 	s := a24Fixture(t)
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		for _, item := range system.GetList("agents") {
-			agent := item.(*jsonx.Object)
-			if agent.GetString("id") == "m" {
-				agent.Set("host", "operator:secret-password@192.0.2.8")
-				agent.Set("registration_key", "secret-registration")
+	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		for i := range system.Agents {
+			agent := &system.Agents[i]
+			if agent.ID == "m" {
+				setAgentJSONFields(t, agent, map[string]any{
+					"host":             "operator:secret-password@192.0.2.8",
+					"registration_key": "secret-registration",
+				})
 			}
-			if agent.GetString("id") == "d" {
-				agent.Set("latest_deployment", jsonx.Obj("status", "failed", "password", "secret-deployment", "message", "password=secret-message"))
+			if agent.ID == "d" {
+				setAgentJSONFields(t, agent, map[string]any{
+					"latest_deployment": map[string]any{"status": "failed", "password": "secret-deployment", "message": "password=secret-message"},
+				})
 			}
 		}
-		return nil, nil
-	})
-	if err != nil {
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	login := s.Post("/api/auth/login", httpxtest.JSON(jsonx.Obj("username", "a24-admin", "password", "a24-password"))).WantStatus(200).Object()
-	auth := httpxtest.Bearer(login.GetString("token"))
+	login := parseBodyMap(t, s.Post("/api/auth/login", httpxtest.JSON(map[string]any{"username": "a24-admin", "password": "a24-password"})).WantStatus(200))
+	auth := httpxtest.Bearer(mapStr(login, "token"))
 	for _, path := range []string{"/api/agents/m/domain-discovery", "/api/agents/d/oxidns/device-policies"} {
-		var options = []httpxtest.Option{auth}
+		options := []httpxtest.Option{auth}
 		method := "GET"
 		if strings.HasSuffix(path, "domain-discovery") {
 			method = "PUT"
-			options = append(options, httpxtest.JSON(jsonx.Obj("enabled", true)))
+			options = append(options, httpxtest.JSON(map[string]any{"enabled": true}))
 		}
 		reply := s.Do(method, path, options...).WantStatus(200)
 		if strings.Contains(string(reply.Body), "secret-") {
@@ -121,13 +121,12 @@ func TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials(t *testing.T) {
 // TestReviewA24TargetsIgnoreUnrelatedLegacySettings checks normalized legacy settings.
 func TestReviewA24TargetsIgnoreUnrelatedLegacySettings(t *testing.T) {
 	w := newClientWorldSetup(t, func(s *httpxtest.Server) {
-		_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "office", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-			settings := profile.GetObject("domain_discovery")
-			settings.Set("history", []any{"old entry", nil})
-			settings.Set("region_probe_port", "17999")
-			return nil, nil
-		})
-		if err != nil {
+		if _, err := s.Repo.UpdateProfile(s.Context(), "office", func(_ context.Context, profile *model.Profile) error {
+			settings := parseJSONMap(t, mustRawJSON(t, profile.DomainDiscovery))
+			settings["history"] = []any{"old entry", nil}
+			settings["region_probe_port"] = "17999"
+			return profile.SetJSON("domain_discovery", mustRawJSON(t, settings))
+		}); err != nil {
 			t.Fatal(err)
 		}
 	})

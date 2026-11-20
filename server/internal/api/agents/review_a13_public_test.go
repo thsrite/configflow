@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,27 +10,27 @@ import (
 	"testing"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 // TestReviewA13PublicReadsUseSharedCredentialSanitizer checks all list/detail variants.
 func TestReviewA13PublicReadsUseSharedCredentialSanitizer(t *testing.T) {
 	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-env-registration")
 	f := newContentHTTP(t, false, true)
-	_, err := f.s.Repo.UpdateSystemTransaction(f.s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		record := system.GetList("agents")[0].(*jsonx.Object)
-		record.Set("host", "operator:synthetic-password@192.0.2.10")
-		record.Set("password", "synthetic-password")
-		record.Set("registration_key", "synthetic-legacy-registration")
-		record.Set("description", "old synthetic-env-registration and synthetic-legacy-registration")
-		record.Set("journal", "old synthetic-api-key")
-		record.Set("latest_upgrade", jsonx.Obj("status", "failed", "message", "old stored-agent-token"))
-		record.Set("deployments", jsonx.Obj("old", jsonx.Obj("status", "failed", "api_key", "synthetic-api-key", "message", "password=synthetic-diagnostic")))
-		record.Set("future", jsonx.Obj("keep", true))
-		return system, nil
-	})
-	if err != nil {
+	if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
+		setAgentJSONFields(t, &system.Agents[0], map[string]any{
+			"host":             "operator:synthetic-password@192.0.2.10",
+			"password":         "synthetic-password",
+			"registration_key": "synthetic-legacy-registration",
+			"description":      "old synthetic-env-registration and synthetic-legacy-registration",
+			"journal":          "old synthetic-api-key",
+			"latest_upgrade":   map[string]any{"status": "failed", "message": "old stored-agent-token"},
+			"deployments":      map[string]any{"old": map[string]any{"status": "failed", "api_key": "synthetic-api-key", "message": "password=synthetic-diagnostic"}},
+			"future":           map[string]any{"keep": true},
+		})
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/api/agents?summary=1", "/api/agents?history=0", "/api/agents", "/api/agents/content-agent"} {
@@ -43,8 +44,12 @@ func TestReviewA13PublicReadsUseSharedCredentialSanitizer(t *testing.T) {
 			t.Error("ordinary future field lost")
 		}
 	}
-	record, err := f.manager.GetAgentByID(f.s.Context(), "content-agent", true)
-	if err != nil || record.GetString("password") != "synthetic-password" || record.GetString("registration_key") != "synthetic-legacy-registration" {
+	record, err := f.manager.ReadAgent(f.s.Context(), "content-agent", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := parseJSONMap(t, mustRawJSON(t, record))
+	if mapStr(stored, "password") != "synthetic-password" || mapStr(stored, "registration_key") != "synthetic-legacy-registration" {
 		t.Fatal("public reads mutated stored credentials")
 	}
 }
@@ -66,13 +71,13 @@ func TestReviewA13CollectedSecretsStayOutOfErrorsAndLogs(t *testing.T) {
 	for _, panicWorker := range []bool{false, true} {
 		t.Run(map[bool]string{false: "error", true: "panic"}[panicWorker], func(t *testing.T) {
 			f := newContentHTTP(t, true, false)
-			_, err := f.s.Repo.UpdateSystemTransaction(f.s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-				record := system.GetList("agents")[0].(*jsonx.Object)
-				record.Set("deployments", jsonx.Obj("old", jsonx.Obj("status", "failed", "api_key", secret)))
-				record.Set("journal", "old "+secret)
-				return system, nil
-			})
-			if err != nil {
+			if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
+				setAgentJSONFields(t, &system.Agents[0], map[string]any{
+					"deployments": map[string]any{"old": map[string]any{"status": "failed", "api_key": secret}},
+					"journal":     "old " + secret,
+				})
+				return nil
+			}); err != nil {
 				t.Fatal(err)
 			}
 			restore := SetContentPrepare(func(context.Context, deploy.Target, *deploy.Source, string, string) (*deploy.Bundle, error) {
@@ -86,7 +91,7 @@ func TestReviewA13CollectedSecretsStayOutOfErrorsAndLogs(t *testing.T) {
 				t.Error("collected credential escaped the public record")
 			}
 			failure := f.settle(t).WantStatus(200)
-			if failure.Object().GetString("reason") != "check_failed" || failure.Contains(secret) {
+			if mapStr(parseBodyMap(t, failure), "reason") != "check_failed" || failure.Contains(secret) {
 				t.Error("collected credential escaped a preparation failure")
 			}
 		})
@@ -98,4 +103,5 @@ func TestReviewA13CollectedSecretsStayOutOfErrorsAndLogs(t *testing.T) {
 	if !strings.Contains(string(data), "Content comparison worker panicked") {
 		t.Error("panic path did not exercise the real logger")
 	}
+	_ = json.RawMessage(nil)
 }

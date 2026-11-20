@@ -3,6 +3,7 @@ package agents
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"sync"
@@ -10,8 +11,8 @@ import (
 
 	core "configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 type lockedBuffer struct {
@@ -42,30 +43,29 @@ func TestReviewA14UnexpectedPushFailureIsLoggedAndRecorded(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = logx.Setup(logx.Config{Level: logx.Info, Console: io.Discard}) })
 	// Until A18 registers the pair publisher an HA member fails closed (500).
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetList("agents")[0].(*jsonx.Object).Set("oxidns_ha", jsonx.Obj("enabled", true))
-		return system, nil
-	})
-	if err != nil {
+	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		return system.Agents[0].SetJSON("oxidns_ha", json.RawMessage(`{"enabled":true}`))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	response := s.Post("/api/agents/publish-agent/push-config", httpxtest.JSON(map[string]any{"deployment_id": "unexpected"}), admin)
 	response.WantStatus(500)
-	body := response.Object()
-	if body.GetString("failed_stage") != "preparing" || body.GetString("deployment_id") != "unexpected" ||
-		!strings.Contains(body.GetString("error_details"), "DNS HA pair publication is not available") {
+	body := parseBodyMap(t, response)
+	if mapStr(body, "failed_stage") != "preparing" || mapStr(body, "deployment_id") != "unexpected" ||
+		!strings.Contains(mapStr(body, "error_details"), "DNS HA pair publication is not available") {
 		t.Fatal("response", body)
 	}
 	m, err := core.Get(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, err := m.GetAgentByID(s.Context(), "publish-agent", true)
+	agent, err := m.ReadAgent(s.Context(), "publish-agent", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := agent.GetObject("deployments").GetObject("unexpected")
-	if task.GetString("status") != "failed" || task.GetString("failed_stage") != "preparing" || task.GetString("message") != "Deployment preparation failed" {
+	agentMap := parseJSONMap(t, mustRawJSON(t, agent))
+	task := mapObj(mapObj(agentMap, "deployments"), "unexpected")
+	if mapStr(task, "status") != "failed" || mapStr(task, "failed_stage") != "preparing" || mapStr(task, "message") != "Deployment preparation failed" {
 		t.Fatal("record", task)
 	}
 	for _, call := range fake.Calls() {

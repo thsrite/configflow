@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 )
 
 type n810HeartbeatRule struct {
@@ -23,7 +22,7 @@ type n810HeartbeatRule struct {
 	Body   map[string]any `json:"native_body"`
 }
 
-func heartbeatPolicy(t *testing.T, input string, status int, body *jsonx.Object) (int, any, bool) {
+func heartbeatPolicy(t *testing.T, input string, status int, body map[string]any) (int, any, bool) {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_heartbeat_policy.json")
 	if err != nil {
@@ -56,19 +55,11 @@ func heartbeatPolicy(t *testing.T, input string, status int, body *jsonx.Object)
 		if status != row.Original.Status || !reflect.DeepEqual(oldBody, row.Original.Body) {
 			t.Fatal("old heartbeat response no longer matches complete bound row")
 		}
-		nativeRaw, err := json.Marshal(row.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		nativeBody, err := jsonx.Parse(nativeRaw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return row.Status, nativeBody, true
+		return row.Status, row.Body, true
 	}
 	return status, body, false
 }
-func expectHeartbeatNative(t *testing.T, h heartbeatEnv, input string, status int, body *jsonx.Object) {
+func expectHeartbeatNative(t *testing.T, h heartbeatEnv, input string, status int, body map[string]any) {
 	t.Helper()
 	nativeStatus, nativeBody, found := heartbeatPolicy(t, input, status, body)
 	if !found {
@@ -78,14 +69,14 @@ func expectHeartbeatNative(t *testing.T, h heartbeatEnv, input string, status in
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body([]byte(input), "application/json")).WantStatus(nativeStatus).WantJSON(nativeBody)
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body([]byte(input), "application/json")).WantStatus(nativeStatus), nativeBody)
 	after, err := h.s.Repo.Store().Fingerprint()
 	if err != nil || before != after {
 		t.Fatal("invalid heartbeat changed repository", err)
 	}
 }
 func TestN810HeartbeatPolicyDoesNotAcceptChangedInput(t *testing.T) {
-	if _, _, found := heartbeatPolicy(t, `{"version":1}`, 500, jsonx.Obj("success", false, "message", "synthetic")); found {
+	if _, _, found := heartbeatPolicy(t, `{"version":1}`, 500, map[string]any{"success": false, "message": "synthetic"}); found {
 		t.Fatal("unbound row selected")
 	}
 }

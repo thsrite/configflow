@@ -3,6 +3,7 @@ package agents
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"testing"
 
 	core "configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -84,7 +84,11 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.FinishDeploymentPreparation("publish-agent", id)
-			if _, err := m.RecordDeployment(s.Context(), "publish-agent", id, jsonx.Obj("status", "uploading", "submitted", true), core.RecordOptions{}); err != nil {
+			patch, err := core.DecodeDeploymentUpdate(json.RawMessage(`{"status":"uploading","submitted":true}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.RecordDeploymentModel(s.Context(), "publish-agent", id, patch, core.RecordOptions{}); err != nil {
 				t.Fatal(err)
 			}
 			before, err := s.Repo.Store().Fingerprint()
@@ -101,7 +105,7 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 				t.Fatal("API used a different device client")
 			}
 			result.WantStatus(http.StatusBadGateway)
-			result.WantJSON(jsonx.Obj("success", false, "code", "INVALID_RESPONSE", "message", tt.failure.Message))
+			wantBodyJSON(t, result, map[string]any{"success": false, "code": "INVALID_RESPONSE", "message": tt.failure.Message})
 			if strings.Contains(result.Text(), "synthetic-publish-token") {
 				t.Fatal("device diagnostic leaked credential")
 			}

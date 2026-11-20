@@ -19,10 +19,10 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 func contentBundle(t *testing.T, main, rules string) *deploy.Bundle {
@@ -71,22 +71,31 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := jsonx.NewObject()
+	files := map[string]any{}
 	for k, v := range digests {
-		files.Set(k, v)
+		files[k] = v
 	}
-	record := jsonx.Obj("id", "content-agent", "name", "Synthetic", "host", "192.0.2.10", "port", 8080, "token", "stored-agent-token", "service_type", "mihomo", "profile_id", "default", "version", "1.0.0", "enabled", true, "deployments", jsonx.Obj("old", jsonx.Obj("status", "failed", "prepared_content", "private-prepared")), "ipv6_verifications", []any{jsonx.Obj("id", "private-run")}, "dns_follow_job", jsonx.Obj("secret", "private-job"))
+	record := map[string]any{
+		"id": "content-agent", "name": "Synthetic", "host": "192.0.2.10", "port": 8080,
+		"token": "stored-agent-token", "service_type": "mihomo", "profile_id": "default",
+		"version": "1.0.0", "enabled": true,
+		"deployments":        map[string]any{"old": map[string]any{"status": "failed", "prepared_content": "private-prepared"}},
+		"ipv6_verifications": []any{map[string]any{"id": "private-run"}},
+		"dns_follow_job":     map[string]any{"secret": "private-job"},
+	}
 	if baseline {
-		record.Set("config_version", digests["config.yaml"])
-		record.Set("pushed_at", "2026-01-01T00:00:00Z")
-		record.Set("config_revision", 1)
-		record.Set("applied_content", jsonx.Obj("fingerprint", fp, "files", files, "profile_id", "default", "service_type", "mihomo", "config_version", digests["config.yaml"], "deployment_id", "previous", "config_path", "config.yaml", "base_url", "https://original.example.test/prefix", "extra", "private-baseline"))
+		record["config_version"] = digests["config.yaml"]
+		record["pushed_at"] = "2026-01-01T00:00:00Z"
+		record["config_revision"] = 1
+		record["applied_content"] = map[string]any{
+			"fingerprint": fp, "files": files, "profile_id": "default", "service_type": "mihomo",
+			"config_version": digests["config.yaml"], "deployment_id": "previous", "config_path": "config.yaml",
+			"base_url": "https://original.example.test/prefix", "extra": "private-baseline",
+		}
 	}
-	_, err = f.s.Repo.UpdateSystemTransaction(f.s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{record})
-		return system, nil
-	})
-	if err != nil {
+	if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", mustRawJSON(t, []any{record}))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	f.manager, err = core.Get(f.s.Context())
@@ -141,7 +150,7 @@ func (f *contentHTTP) settle(t *testing.T) *httpxtest.Result {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		r := f.get("/api/agents/content-agent/push-diff").WantStatus(200)
-		if r.Object().GetString("status") != "checking" {
+		if mapStr(parseBodyMap(t, r), "status") != "checking" {
 			return r
 		}
 		if time.Now().After(deadline) {
@@ -156,7 +165,7 @@ func TestContentHTTPAuthAndUnavailableStates(t *testing.T) {
 	for _, path := range []string{"/api/agents", "/api/agents/content-agent", "/api/agents/content-agent/push-diff", "/api/agents/content-agent/push-diff/entries?version=x&file=x&change=added"} {
 		f.s.Get(path).WantStatus(401)
 	}
-	f.get("/api/agents/content-agent/push-diff").WantStatus(200).WantJSON(jsonx.Obj("status", "never-pushed", "service_type", "mihomo"))
+	wantBodyJSON(t, f.get("/api/agents/content-agent/push-diff").WantStatus(200), map[string]any{"status": "never-pushed", "service_type": "mihomo"})
 	if f.calls.Load() != 0 {
 		t.Fatal("prepared missing baseline")
 	}
@@ -189,11 +198,16 @@ func TestContentHTTPHistorySummaryAndPending(t *testing.T) {
 	if f.calls.Load() != 1 {
 		t.Fatal("status and diff did not share worker")
 	}
-	_, err := f.s.Repo.UpdateSystemTransaction(f.s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetList("agents")[0].(*jsonx.Object).GetObject("deployments").Set("next", jsonx.Obj("status", "ready"))
-		return system, nil
-	})
-	if err != nil {
+	if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
+		a := &system.Agents[0]
+		raw, _, err := a.MemberJSON("deployments")
+		if err != nil {
+			return err
+		}
+		deps := parseJSONMap(t, raw)
+		deps["next"] = map[string]any{"status": "ready"}
+		return a.SetJSON("deployments", mustRawJSON(t, deps))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	pending := f.get("/api/agents?history=0").WantStatus(200)
@@ -213,38 +227,39 @@ func TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation(t *testing.
 		fmt.Fprintf(&lines, "DOMAIN,fresh-%03d.example.test\n", i)
 	}
 	f.candidate.Store(contentBundle(t, "mode: global\nsecret: external-user-secret\n", lines.String()))
-	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), "synthetic-feed", []any{}, jsonx.Obj("hosts", jsonx.Obj("entries", jsonx.Obj("host.example.test", "192.0.2.4"))))
+	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), "synthetic-feed", []any{}, map[string]any{"hosts": map[string]any{"entries": map[string]any{"host.example.test": "192.0.2.4"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := f.settle(t).WantStatus(200)
-	body := result.Object()
-	if body.GetString("status") != "changed" || body.GetString("content") != "full" || result.Header.Get("Cache-Control") != "no-store" || result.Contains("stored-agent-token") || !result.Contains("[REDACTED]") || !result.Contains("external-user-secret") {
+	body := parseBodyMap(t, result)
+	if mapStr(body, "status") != "changed" || mapStr(body, "content") != "full" || result.Header.Get("Cache-Control") != "no-store" || result.Contains("stored-agent-token") || !result.Contains("[REDACTED]") || !result.Contains("external-user-secret") {
 		t.Fatal(string(result.Body))
 	}
-	version := body.GetString("version")
+	version := mapStr(body, "version")
 	query := "/api/agents/content-agent/push-diff/entries?version=" + version + "&file=rules%2Fexample.list&change=added"
 	page := f.get(query + "&offset=20&limit=50").WantStatus(200)
-	if page.Header.Get("Cache-Control") != "no-store" || len(page.Object().GetList("entries")) != 50 || page.Object().GetInt("total") != 81 {
+	pageObj := parseBodyMap(t, page)
+	if page.Header.Get("Cache-Control") != "no-store" || len(mapList(pageObj, "entries")) != 50 || mapInt(pageObj, "total") != 81 {
 		t.Fatal(string(page.Body))
 	}
 	searched := f.get(query + "&q=" + url.QueryEscape("stored-agent-token")).WantStatus(200)
-	if searched.Object().GetInt("total") != 0 {
+	if mapInt(parseBodyMap(t, searched), "total") != 0 {
 		t.Fatal("stored credential searchable")
 	}
 	searched = f.get(query + "&q=fresh-001").WantStatus(200)
-	if searched.Object().GetInt("total") != 1 {
+	if mapInt(parseBodyMap(t, searched), "total") != 1 {
 		t.Fatal(string(searched.Body))
 	}
 	f.get(strings.Replace(query, "change=added", "change=modified", 1)).WantStatus(404)
-	f.get(strings.Replace(query, "version="+version, "version=old", 1)).WantStatus(200).WantJSON(jsonx.Obj("status", "stale", "reason", "replaced"))
+	wantBodyJSON(t, f.get(strings.Replace(query, "version="+version, "version=old", 1)).WantStatus(200), map[string]any{"status": "stale", "reason": "replaced"})
 	before := f.calls.Load()
 	cached := f.get("/api/agents/content-agent/push-diff").WantStatus(200)
-	if f.calls.Load() != before || !jsonx.Equal(cached.Object(), body) {
+	if f.calls.Load() != before || !testjson.Equal(json.RawMessage(cached.Body), body) {
 		t.Fatal("list was not cached")
 	}
 	contentChecks.dispatcher.Invalidate()
-	f.get(query).WantStatus(200).WantJSON(jsonx.Obj("status", "stale", "reason", "expired"))
+	wantBodyJSON(t, f.get(query).WantStatus(200), map[string]any{"status": "stale", "reason": "expired"})
 }
 func TestContentHTTPPageValidation(t *testing.T) {
 	f := newContentHTTP(t, false, false)
@@ -253,7 +268,7 @@ func TestContentHTTPPageValidation(t *testing.T) {
 		f.get(valid + suffix).WantStatus(400)
 	}
 	for _, suffix := range []string{"&offset=000", "&limit=200", "&q=" + strings.Repeat("中", 200)} {
-		f.get(valid + suffix).WantStatus(200).WantJSON(jsonx.Obj("status", "stale", "reason", "expired"))
+		wantBodyJSON(t, f.get(valid+suffix).WantStatus(200), map[string]any{"status": "stale", "reason": "expired"})
 	}
 }
 
@@ -262,15 +277,16 @@ func TestContentHTTPUnavailableProfileLegacyAndPreparation(t *testing.T) {
 	restore := SetContentPrepare(func(context.Context, deploy.Target, *deploy.Source, string, string) (*deploy.Bundle, error) {
 		return nil, errors.New("private preparation failure: stored-agent-token")
 	})
-	f.settle(t).WantJSON(jsonx.Obj("status", "unknown", "reason", "check_failed", "service_type", "mihomo", "baseline", jsonx.Obj("pushed_at", "2026-01-01T00:00:00Z", "config_revision", 1)))
+	wantBodyJSON(t, f.settle(t), map[string]any{
+		"status": "unknown", "reason": "check_failed", "service_type": "mihomo",
+		"baseline": map[string]any{"pushed_at": "2026-01-01T00:00:00Z", "config_revision": 1},
+	})
 	restore()
-	mutate := func(fn func(*jsonx.Object)) {
+	mutate := func(fn func(*model.Agent) error) {
 		t.Helper()
-		_, err := f.s.Repo.UpdateSystemTransaction(f.s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-			fn(system.GetList("agents")[0].(*jsonx.Object))
-			return system, nil
-		})
-		if err != nil {
+		if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
+			return fn(&system.Agents[0])
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -292,8 +308,11 @@ func TestContentHTTPUnavailableProfileLegacyAndPreparation(t *testing.T) {
 		t.Fatalf("stale profile: %v %v", public, err)
 	}
 	f.get("/api/agents?history=0").WantStatus(200)
-	mutate(func(a *jsonx.Object) { a.Set("profile_id", "default"); a.Delete("applied_content") })
-	f.get("/api/agents/content-agent/push-diff").WantStatus(200).WantJSON(jsonx.Obj("status", "unknown", "reason", "baseline_missing", "service_type", "mihomo"))
+	mutate(func(a *model.Agent) error {
+		a.ProfileID = "default"
+		return a.Clear("applied_content")
+	})
+	wantBodyJSON(t, f.get("/api/agents/content-agent/push-diff").WantStatus(200), map[string]any{"status": "unknown", "reason": "baseline_missing", "service_type": "mihomo"})
 }
 
 func TestContentHTTPMissingReceiptUsesDigests(t *testing.T) {
@@ -303,12 +322,13 @@ func TestContentHTTPMissingReceiptUsesDigests(t *testing.T) {
 	}
 	f.candidate.Store(contentBundle(t, "mode: global\n", "DOMAIN,new.example.test\n"))
 	r := f.settle(t).WantStatus(200)
-	if r.Object().GetString("status") != "changed" || r.Object().GetString("content") != "digests" || r.Object().GetString("content_reason") != "bundle_missing" {
+	obj := parseBodyMap(t, r)
+	if mapStr(obj, "status") != "changed" || mapStr(obj, "content") != "digests" || mapStr(obj, "content_reason") != "bundle_missing" {
 		t.Fatal(string(r.Body))
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata map[string]any) (map[string]any, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -336,9 +356,10 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := jsonx.Parse(data)
+	parsed, err := decodeJSONAny(data)
 	if err != nil {
 		return nil, err
 	}
-	return parsed.(*jsonx.Object), nil
+	out, _ := parsed.(map[string]any)
+	return out, nil
 }

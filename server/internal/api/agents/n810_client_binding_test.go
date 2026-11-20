@@ -1,7 +1,6 @@
 package agents
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -92,12 +92,12 @@ func TestN810ClientCorruptBindingNeverFallsBackToDefault(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
 	defer device.Close()
-	if _, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		for _, raw := range system.GetList("agents") {
-			a := raw.(*jsonx.Object)
-			a.Set("port", device.Listener.Addr().(*net.TCPAddr).Port)
+	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		port := model.Int(device.Listener.Addr().(*net.TCPAddr).Port)
+		for i := range system.Agents {
+			system.Agents[i].Port = port
 		}
-		return nil, nil
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestN810ClientCorruptBindingNeverFallsBackToDefault(t *testing.T) {
 			response = s.Post(path, admin, httpxtest.Body([]byte(test.body), "application/json"))
 		}
 		response.WantStatus(400)
-		if response.Header.Get("Cache-Control") != "no-store" || response.Object().GetString("message") != "Invalid profile id" {
+		if response.Header.Get("Cache-Control") != "no-store" || mapStr(parseBodyMap(t, response), "message") != "Invalid profile id" {
 			t.Fatal("stored binding guard lost error", test.path, response)
 		}
 	}
@@ -164,8 +164,8 @@ func TestN810PolicyPeersSkipCorruptBinding(t *testing.T) {
 	s := a24Fixture(t)
 	admin := s.Login()
 	corruptClientBinding(t, s, "peer")
-	response := s.Get("/api/agents/d/oxidns/device-policies", admin).WantStatus(200).Object()
-	peers := response.GetList("agents")
+	response := parseBodyMap(t, s.Get("/api/agents/d/oxidns/device-policies", admin).WantStatus(200))
+	peers := mapList(response, "agents")
 	found := false
 	for _, raw := range peers {
 		data, _ := json.Marshal(raw)

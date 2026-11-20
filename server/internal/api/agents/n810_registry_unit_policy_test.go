@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func n810UnitCanonical(t *testing.T, value any) []byte {
@@ -29,7 +27,8 @@ func n810UnitCanonical(t *testing.T, value any) []byte {
 	}
 	return raw
 }
-func nativeRegistryShape(t *testing.T, body any, old string) *jsonx.Object {
+
+func nativeRegistryShape(t *testing.T, body any, old string) map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_registry_unit_policy.json")
 	if err != nil {
@@ -49,13 +48,14 @@ func nativeRegistryShape(t *testing.T, body any, old string) *jsonx.Object {
 			t.Fatal("original registry unit row changed")
 		}
 		if bytes.Equal(n810UnitCanonical(t, original), n810UnitCanonical(t, row.Original)) {
-			return jsonx.Obj("success", false, "message", row.Native)
+			return map[string]any{"success": false, "message": row.Native}
 		}
 	}
 	t.Fatal("unbound original registry unit input/500 result")
 	return nil
 }
-func nativeLogVersionStatus(t *testing.T, request *jsonx.Object, oldStatus int) int {
+
+func nativeLogVersionStatus(t *testing.T, request any, oldStatus int) int {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_log_version_policy.json")
 	if err != nil {

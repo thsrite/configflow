@@ -20,9 +20,10 @@ import (
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func newServer(t *testing.T) *httpxtest.Server {
@@ -35,50 +36,38 @@ func newServer(t *testing.T) *httpxtest.Server {
 	return httpxtest.New(t, httpxtest.Options{DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
 }
 
-func payload(pairs ...any) *jsonx.Object {
-	p := jsonx.Obj("name", "secure-agent", "host", "10.0.0.8", "port", 8080, "service_type", "mihomo", "version", "1.2.3")
-	p.Update(jsonx.Obj(pairs...))
+func payload(pairs ...any) map[string]any {
+	p := map[string]any{"name": "secure-agent", "host": "10.0.0.8", "port": 8080, "service_type": "mihomo", "version": "1.2.3"}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		p[pairs[i].(string)] = pairs[i+1]
+	}
 	return p
 }
 
 func storedAgents(t *testing.T, s *httpxtest.Server) []any {
-	system, err := s.Repo.GetSystem(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return system.GetList("agents")
+	t.Helper()
+	return mapList(system(t, s), "agents")
 }
 
-func system(t *testing.T, s *httpxtest.Server) *jsonx.Object {
-	system, err := s.Repo.GetSystem(s.Context())
+func system(t *testing.T, s *httpxtest.Server) map[string]any {
+	t.Helper()
+	sys, err := s.Repo.System(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return system
+	return parseJSONMap(t, mustRawJSON(t, sys))
 }
 
 func TestFirstRegistrationReturnsTokenAndPersistsIt(t *testing.T) {
 	s := newServer(t)
-	body := s.Post("/api/agents/register", httpxtest.JSON(payload())).WantStatus(200).Object()
-	if strings.Join(sortedKeys(body), ",") != "id,is_new,status,success,token" || body.Value("success") != true || body.Value("is_new") != true {
+	body := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(payload())).WantStatus(200))
+	if strings.Join(sortedMapKeys(body), ",") != "id,is_new,status,success,token" || body["success"] != true || body["is_new"] != true {
 		t.Fatalf("body %v", body)
 	}
-	persisted := storedAgents(t, s)[0].(*jsonx.Object)
-	if persisted.Value("id") != body.Value("id") || persisted.Value("token") != body.Value("token") {
+	persisted := storedAgents(t, s)[0].(map[string]any)
+	if persisted["id"] != body["id"] || persisted["token"] != body["token"] {
 		t.Fatal("not persisted")
 	}
-}
-
-func sortedKeys(o *jsonx.Object) []string {
-	keys := o.Keys()
-	for i := range keys {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[j] < keys[i] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
-	return keys
 }
 
 func TestDuplicateRegistrationRequiresExistingBearerAndDoesNotMutate(t *testing.T) {
@@ -88,15 +77,15 @@ func TestDuplicateRegistrationRequiresExistingBearerAndDoesNotMutate(t *testing.
 		"oversized": "Bearer " + strings.Repeat("x", auth.MaxAuthTokenLength+1),
 	} {
 		s := newServer(t)
-		created := s.Post("/api/agents/register", httpxtest.JSON(payload())).Object()
+		created := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(payload())))
 		before := storedAgents(t, s)
 		options := []httpxtest.Option{httpxtest.JSON(payload("port", 9999, "version", "attacker"))}
 		if authorization != "" {
 			options = append(options, httpxtest.Header("Authorization", authorization))
 		}
-		s.Post("/api/agents/register", options...).WantStatus(401).WantJSON(jsonx.Obj("success", false, "message", "Unauthorized"))
+		wantBodyJSON(t, s.Post("/api/agents/register", options...).WantStatus(401), map[string]any{"success": false, "message": "Unauthorized"})
 		after := storedAgents(t, s)
-		if !jsonx.Equal(after, before) || after[0].(*jsonx.Object).Value("token") != created.Value("token") {
+		if !testjson.Equal(after, before) || after[0].(map[string]any)["token"] != created["token"] {
 			t.Fatalf("%s: mutated", name)
 		}
 	}
@@ -104,14 +93,14 @@ func TestDuplicateRegistrationRequiresExistingBearerAndDoesNotMutate(t *testing.
 
 func TestAuthenticatedDuplicateRegistrationNeverReturnsToken(t *testing.T) {
 	s := newServer(t)
-	created := s.Post("/api/agents/register", httpxtest.JSON(payload())).Object()
-	result := s.Post("/api/agents/register", httpxtest.JSON(payload("port", 9090)), httpxtest.Bearer(created.GetString("token"))).WantStatus(200)
-	result.WantJSON(jsonx.Obj("success", true, "id", created.Value("id"), "status", "online", "is_new", false))
+	created := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(payload())))
+	result := s.Post("/api/agents/register", httpxtest.JSON(payload("port", 9090)), httpxtest.Bearer(mapStr(created, "token"))).WantStatus(200)
+	wantBodyJSON(t, result, map[string]any{"success": true, "id": created["id"], "status": "online", "is_new": false})
 	if result.Contains("token") {
 		t.Fatal("token in body")
 	}
-	persisted := storedAgents(t, s)[0].(*jsonx.Object)
-	if persisted.Value("token") != created.Value("token") || !jsonx.Equal(persisted.Value("port"), 9090) {
+	persisted := storedAgents(t, s)[0].(map[string]any)
+	if persisted["token"] != created["token"] || mapInt(persisted, "port") != 9090 {
 		t.Fatal("persisted")
 	}
 }
@@ -120,15 +109,15 @@ func TestRegistrationKeyDoesNotBypassExistingAgentToken(t *testing.T) {
 	s := newServer(t)
 	t.Setenv("AGENT_REGISTRATION_KEY", "valid-registration-key")
 	p := payload("registration_key", "valid-registration-key")
-	created := s.Post("/api/agents/register", httpxtest.JSON(p)).WantStatus(200).Object()
+	created := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(p)).WantStatus(200))
 	before := storedAgents(t, s)
 	s.Post("/api/agents/register", httpxtest.JSON(p)).WantStatus(401)
-	if !jsonx.Truthy(created.Value("token")) || !jsonx.Equal(storedAgents(t, s), before) {
+	if mapStr(created, "token") == "" || !testjson.Equal(storedAgents(t, s), before) {
 		t.Fatal("mutated")
 	}
-	s.Post("/api/agents/register", httpxtest.JSON(payload("name", "other", "registration_key", "wrong"))).
-		WantStatus(403).WantJSON(jsonx.Obj("success", false, "message", apiagents.RegistrationLocked))
-	if before[0].(*jsonx.Object).Has("registration_key") {
+	wantBodyJSON(t, s.Post("/api/agents/register", httpxtest.JSON(payload("name", "other", "registration_key", "wrong"))).
+		WantStatus(403), map[string]any{"success": false, "message": apiagents.RegistrationLocked})
+	if mapHas(before[0].(map[string]any), "registration_key") {
 		t.Fatal("key stored")
 	}
 }
@@ -139,8 +128,8 @@ func TestL1LockedOrdinaryRegistrationExplainsEnrollmentWithoutLeakingKey(t *test
 	before := storedAgents(t, s)
 	for _, method := range []string{"shell", "docker"} {
 		r := s.Post("/api/agents/register", httpxtest.JSON(payload("deployment_method", method))).WantStatus(403)
-		r.WantJSON(jsonx.Obj("success", false, "message", apiagents.RegistrationLocked))
-		if strings.Contains(r.Text(), os.Getenv("AGENT_REGISTRATION_KEY")) || !jsonx.Equal(storedAgents(t, s), before) {
+		wantBodyJSON(t, r, map[string]any{"success": false, "message": apiagents.RegistrationLocked})
+		if strings.Contains(r.Text(), os.Getenv("AGENT_REGISTRATION_KEY")) || !testjson.Equal(storedAgents(t, s), before) {
 			t.Fatal("refusal leaked registration key or changed registry")
 		}
 	}
@@ -150,10 +139,10 @@ func TestHostMatchingHappensAfterRealClientIPNormalization(t *testing.T) {
 	s := newServer(t)
 	p := payload("host", "172.18.0.4")
 	proxy := httpxtest.Header("X-Forwarded-For", "203.0.113.9, 172.18.0.1")
-	created := s.Post("/api/agents/register", httpxtest.JSON(p), proxy).Object()
+	created := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(p), proxy))
 	s.Post("/api/agents/register", httpxtest.JSON(p), proxy).WantStatus(401)
-	accepted := s.Post("/api/agents/register", httpxtest.JSON(p), proxy, httpxtest.Bearer(created.GetString("token"))).WantStatus(200)
-	if storedAgents(t, s)[0].(*jsonx.Object).Value("host") != "203.0.113.9" || accepted.Object().Has("token") {
+	accepted := s.Post("/api/agents/register", httpxtest.JSON(p), proxy, httpxtest.Bearer(mapStr(created, "token"))).WantStatus(200)
+	if storedAgents(t, s)[0].(map[string]any)["host"] != "203.0.113.9" || mapHas(parseBodyMap(t, accepted), "token") {
 		t.Fatal("host")
 	}
 }
@@ -168,8 +157,8 @@ func TestRegistrationLogsOnlyBoundedControlFreeWhitelistedFields(t *testing.T) {
 	defer root.Close()
 	raw, prefix, nested, control := "raw-secret-8d2f", "prefix-secret-4a6c", "nested-secret-1b9e", "unicode-control-secret-3c7a"
 	p := payload("name", "safe-agent-"+strings.Repeat("x", 256)+prefix, "service_type", "mihomo\r\n"+raw,
-		"version", "1.2.3 "+control, "raw", raw, "prefix", jsonx.Obj("value", prefix),
-		"nested", jsonx.Obj("authorization", jsonx.Obj("token", nested)))
+		"version", "1.2.3\u2028"+control, "raw", raw, "prefix", map[string]any{"value": prefix},
+		"nested", map[string]any{"authorization": map[string]any{"token": nested}})
 	result := s.Post("/api/agents/register", httpxtest.JSON(p)).WantStatus(nativeLogVersionStatus(t, p, 200))
 	data, _ := os.ReadFile(logFile)
 	text := string(data)
@@ -185,14 +174,14 @@ func TestRegistrationLogsOnlyBoundedControlFreeWhitelistedFields(t *testing.T) {
 
 func TestManualAgentCreateDoesNotReturnToken(t *testing.T) {
 	s := newServer(t)
-	result := s.Post("/api/agents", httpxtest.JSON(jsonx.Obj("name", "manual", "host", "10.0.0.9"))).WantStatus(200)
-	token := storedAgents(t, s)[0].(*jsonx.Object).GetString("token")
+	result := s.Post("/api/agents", httpxtest.JSON(map[string]any{"name": "manual", "host": "10.0.0.9"})).WantStatus(200)
+	token := mapStr(storedAgents(t, s)[0].(map[string]any), "token")
 	if result.Contains(token) {
 		t.Fatal("token returned")
 	}
-	s.Post("/api/agents", httpxtest.JSON(jsonx.Obj("name", "manual", "host", "10.0.0.9"))).WantStatus(500).
-		WantJSON(jsonx.Obj("success", false, "message", "Unauthorized"))
-	s.Post("/api/agents", httpxtest.JSON([]any{1})).WantStatus(500).WantJSON(nativeRegistryShape(t, []any{1}, "'list' object has no attribute 'get'"))
+	wantBodyJSON(t, s.Post("/api/agents", httpxtest.JSON(map[string]any{"name": "manual", "host": "10.0.0.9"})).WantStatus(500),
+		map[string]any{"success": false, "message": "Unauthorized"})
+	wantBodyJSON(t, s.Post("/api/agents", httpxtest.JSON([]any{1})).WantStatus(500), nativeRegistryShape(t, []any{1}, "'list' object has no attribute 'get'"))
 }
 
 type heartbeatEnv struct {
@@ -207,22 +196,20 @@ func newHeartbeat(t *testing.T) heartbeatEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registered, err := manager.RegisterAgent(s.Context(), jsonx.Obj("name", "secured", "host", "127.0.0.1"), nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return heartbeatEnv{s: s, id: registered.GetString("id"), token: registered.GetString("token")}
+	id, token := registerAgentForTest(t, s.Context(), manager, map[string]any{"name": "secured", "host": "127.0.0.1"})
+	return heartbeatEnv{s: s, id: id, token: token}
 }
 
 func (h heartbeatEnv) path() string { return "/api/agents/" + h.id + "/heartbeat" }
 
-func (h heartbeatEnv) agent(t *testing.T) *jsonx.Object {
+func (h heartbeatEnv) agent(t *testing.T) map[string]any {
+	t.Helper()
 	manager, _ := agents.Get(h.s.Context())
-	agent, err := manager.GetAgentByID(h.s.Context(), h.id, true)
+	agent, err := manager.ReadAgent(h.s.Context(), h.id, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return agent
+	return parseJSONMap(t, mustRawJSON(t, agent))
 }
 
 func TestHeartbeatRejectsUnauthorizedWithoutMutatingSystem(t *testing.T) {
@@ -230,12 +217,12 @@ func TestHeartbeatRejectsUnauthorizedWithoutMutatingSystem(t *testing.T) {
 		"Bearer token with spaces", "Bearer  token", "Bearer\twrong", "Bearer " + strings.Repeat("x", auth.MaxAuthTokenLength+1)} {
 		h := newHeartbeat(t)
 		before := system(t, h.s)
-		options := []httpxtest.Option{httpxtest.JSON(jsonx.Obj("version", "attacker", "config_version", "attacker"))}
+		options := []httpxtest.Option{httpxtest.JSON(map[string]any{"version": "attacker", "config_version": "attacker"})}
 		if authorization != "" {
 			options = append(options, httpxtest.Header("Authorization", authorization))
 		}
 		h.s.Post(h.path(), options...).WantStatus(401)
-		if !jsonx.Equal(system(t, h.s), before) {
+		if !testjson.Equal(system(t, h.s), before) {
 			t.Fatalf("%q mutated", authorization)
 		}
 	}
@@ -243,33 +230,33 @@ func TestHeartbeatRejectsUnauthorizedWithoutMutatingSystem(t *testing.T) {
 
 func TestHeartbeatAcceptsMatchingBearerToken(t *testing.T) {
 	h := newHeartbeat(t)
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("version", "2.0.0", "config_version", "cfg-2", "service_status", "running"))).
-		WantStatus(200).WantJSON(jsonx.Obj("success", true, "domain_discovery_enabled", false, "traffic_history_enabled", false, "reads_host", true))
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"version": "2.0.0", "config_version": "cfg-2", "service_status": "running"})).
+		WantStatus(200), map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true})
 	agent := h.agent(t)
-	if agent.Value("version") != "2.0.0" || agent.Value("config_version") != "cfg-2" || agent.Value("service_status") != "running" {
+	if agent["version"] != "2.0.0" || agent["config_version"] != "cfg-2" || agent["service_status"] != "running" {
 		t.Fatalf("agent %v", agent)
 	}
 }
 
 func TestHeartbeatRejectsUnapprovedOrMalformedFieldsWithoutMutation(t *testing.T) {
 	for _, body := range []any{
-		[]any{}, jsonx.Obj("unexpected", "value"), jsonx.Obj("version", 2), jsonx.Obj("version", strings.Repeat("v", 129)),
-		jsonx.Obj("config_version", nil), jsonx.Obj("config_version", strings.Repeat("c", 129)), jsonx.Obj("service_status", false),
-		jsonx.Obj("service_status", strings.Repeat("s", 65)), jsonx.Obj("system_metrics", []any{}),
-		jsonx.Obj("system_metrics", jsonx.Obj("unexpected", jsonx.NewObject())),
-		jsonx.Obj("system_metrics", jsonx.Obj("cpu", jsonx.Obj("unexpected", 1))),
-		jsonx.Obj("system_metrics", jsonx.Obj("cpu", jsonx.Obj("usage_percent", "high"))),
-		jsonx.Obj("system_metrics", jsonx.Obj("memory", jsonx.Obj("total", -1))),
-		jsonx.Obj("system_metrics", jsonx.Obj("collected_at", strings.Repeat("t", 65))),
-		jsonx.Obj("system_metrics", jsonx.Obj("memory", jsonx.Obj("total", 1.5))),
-		jsonx.Obj("system_metrics", jsonx.Obj("cpu", jsonx.Obj("usage_percent", 101))),
+		[]any{}, map[string]any{"unexpected": "value"}, map[string]any{"version": 2}, map[string]any{"version": strings.Repeat("v", 129)},
+		map[string]any{"config_version": nil}, map[string]any{"config_version": strings.Repeat("c", 129)}, map[string]any{"service_status": false},
+		map[string]any{"service_status": strings.Repeat("s", 65)}, map[string]any{"system_metrics": []any{}},
+		map[string]any{"system_metrics": map[string]any{"unexpected": map[string]any{}}},
+		map[string]any{"system_metrics": map[string]any{"cpu": map[string]any{"unexpected": 1}}},
+		map[string]any{"system_metrics": map[string]any{"cpu": map[string]any{"usage_percent": "high"}}},
+		map[string]any{"system_metrics": map[string]any{"memory": map[string]any{"total": -1}}},
+		map[string]any{"system_metrics": map[string]any{"collected_at": strings.Repeat("t", 65)}},
+		map[string]any{"system_metrics": map[string]any{"memory": map[string]any{"total": 1.5}}},
+		map[string]any{"system_metrics": map[string]any{"cpu": map[string]any{"usage_percent": 101}}},
 		nil,
 	} {
 		h := newHeartbeat(t)
 		before := system(t, h.s)
-		h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(body)).WantStatus(400).
-			WantJSON(jsonx.Obj("success", false, "message", "Invalid heartbeat data"))
-		if !jsonx.Equal(system(t, h.s), before) {
+		wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(body)).WantStatus(400),
+			map[string]any{"success": false, "message": "Invalid heartbeat data"})
+		if !testjson.Equal(system(t, h.s), before) {
 			t.Fatalf("%v mutated", body)
 		}
 	}
@@ -281,9 +268,9 @@ func TestHeartbeatRejectsMalformedJSONAndOversizedBody(t *testing.T) {
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body([]byte(`{"version":`), "application/json")).WantStatus(400)
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body([]byte{0xff}, "application/json")).WantStatus(400)
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body([]byte(`{}`), "text/plain")).WantStatus(400)
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body(bytes.Repeat([]byte(" "), 32769), "application/json")).
-		WantStatus(413).WantJSON(jsonx.Obj("success", false, "message", "Request body too large"))
-	if !jsonx.Equal(system(t, h.s), before) {
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.Body(bytes.Repeat([]byte(" "), 32769), "application/json")).
+		WantStatus(413), map[string]any{"success": false, "message": "Request body too large"})
+	if !testjson.Equal(system(t, h.s), before) {
 		t.Fatal("mutated")
 	}
 }
@@ -317,45 +304,46 @@ func TestHeartbeatWithoutContentLengthReadsOnlyMaxPlusOneBytes(t *testing.T) {
 	}
 	chunked := &countingReader{r: strings.NewReader(`{"version":"chunked"}`)}
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), streamBody(chunked)).WantStatus(200)
-	if h.agent(t).Value("version") != "chunked" {
+	if h.agent(t)["version"] != "chunked" {
 		t.Fatal("chunked heartbeat")
 	}
 }
 
 func TestHeartbeatAcceptsWhitelistedSystemMetrics(t *testing.T) {
 	h := newHeartbeat(t)
-	metrics := jsonx.Obj(
-		"cpu", jsonx.Obj("usage_percent", 12.5, "core_count", 4),
-		"memory", jsonx.Obj("total", 1024, "used", 512, "available", 512, "used_percent", 50.0),
-		"disk", jsonx.Obj("total", 2048, "used", 1024, "free", 1024, "used_percent", 50.0),
-		"network", jsonx.Obj("bytes_sent", 10, "bytes_recv", 20, "speed_sent", 1, "speed_recv", 2),
-		"collected_at", "2026-08-31T00:00:00Z")
+	metrics := map[string]any{
+		"cpu":          map[string]any{"usage_percent": 12.5, "core_count": 4},
+		"memory":       map[string]any{"total": 1024, "used": 512, "available": 512, "used_percent": 50.0},
+		"disk":         map[string]any{"total": 2048, "used": 1024, "free": 1024, "used_percent": 50.0},
+		"network":      map[string]any{"bytes_sent": 10, "bytes_recv": 20, "speed_sent": 1, "speed_recv": 2},
+		"collected_at": "2026-08-31T00:00:00Z",
+	}
 	var seen any
 	agents.RegisterHooks(agents.Hooks{AddMetrics: func(_ *agents.Manager, _ string, m any) error { seen = m; return nil }})
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("system_metrics", metrics))).WantStatus(200)
-	if !jsonx.Equal(h.agent(t).Value("system_metrics"), metrics) || !jsonx.Equal(seen, metrics) {
+	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"system_metrics": metrics})).WantStatus(200)
+	if !testjson.Equal(h.agent(t)["system_metrics"], metrics) || !testjson.Equal(seen, metrics) {
 		t.Fatal("metrics")
 	}
 }
 
 func TestHeartbeatEndpointRecordsStateAndRejectsUnknownAgents(t *testing.T) {
 	h := newHeartbeat(t)
-	revision := system(t, h.s).GetInt("_revision")
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("version", "1.0.0", "service_status", "running"))).WantStatus(200)
-	if system(t, h.s).GetInt("_revision") != revision || h.agent(t).Value("service_status") != "running" {
+	revision := mapInt(system(t, h.s), "_revision")
+	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"version": "1.0.0", "service_status": "running"})).WantStatus(200)
+	if mapInt(system(t, h.s), "_revision") != revision || h.agent(t)["service_status"] != "running" {
 		t.Fatal("heartbeat wrote")
 	}
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("version", "2.0.0"))).WantStatus(200)
-	if storedAgents(t, h.s)[0].(*jsonx.Object).Value("version") != "2.0.0" {
+	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"version": "2.0.0"})).WantStatus(200)
+	if storedAgents(t, h.s)[0].(map[string]any)["version"] != "2.0.0" {
 		t.Fatal("version not written")
 	}
-	h.s.Post("/api/agents/missing/heartbeat", httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.NewObject())).WantStatus(401)
+	h.s.Post("/api/agents/missing/heartbeat", httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{})).WantStatus(401)
 }
 
 func TestHeartbeatReportedHostUsesAddressFollowHooks(t *testing.T) {
 	h := newHeartbeat(t)
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("host", "192.0.2.50"))).WantStatus(200).
-		WantJSON(jsonx.Obj("success", true, "domain_discovery_enabled", false, "traffic_history_enabled", false, "reads_host", true))
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.50"})).WantStatus(200),
+		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true})
 	var followed string
 	agents.RegisterHooks(agents.Hooks{
 		AddressFollowTyped: func(_ context.Context, _ *agents.Manager, _ *model.Agent, host string) error {
@@ -364,8 +352,8 @@ func TestHeartbeatReportedHostUsesAddressFollowHooks(t *testing.T) {
 		},
 		AddressConfirmedTyped: func(_ *model.Agent, host string) string { return host },
 	})
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("host", "192.0.2.50"))).WantStatus(200).
-		WantJSON(jsonx.Obj("success", true, "domain_discovery_enabled", false, "traffic_history_enabled", false, "reads_host", true, "confirmed_host", "192.0.2.50"))
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.50"})).WantStatus(200),
+		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true, "confirmed_host": "192.0.2.50"})
 	if followed != "192.0.2.50" {
 		t.Fatal("not followed")
 	}
@@ -374,27 +362,27 @@ func TestHeartbeatReportedHostUsesAddressFollowHooks(t *testing.T) {
 func TestAgentItemUpdateAndDelete(t *testing.T) {
 	h := newHeartbeat(t)
 	manager, _ := agents.Get(h.s.Context())
-	if _, err := h.s.Repo.CreateProfile(h.s.Context(), jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+	if _, err := h.s.Repo.CreateProfileRecord(h.s.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := manager.BeginDeployment(h.s.Context(), h.id, "binding-request"); err != nil {
 		t.Fatal(err)
 	}
-	result := h.s.Put("/api/agents/"+h.id, httpxtest.JSON(jsonx.Obj("profile_id", "other"))).WantStatus(409).Object()
-	if !strings.Contains(result.GetString("message"), "unfinished deployment") || h.agent(t).Value("profile_id") != "default" {
+	result := parseBodyMap(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(map[string]any{"profile_id": "other"})).WantStatus(409))
+	if !strings.Contains(mapStr(result, "message"), "unfinished deployment") || h.agent(t)["profile_id"] != "default" {
 		t.Fatal("binding changed")
 	}
 	manager.FinishDeploymentPreparation(h.id, "binding-request")
-	h.s.Put("/api/agents/"+h.id, httpxtest.JSON(jsonx.Obj("name", "renamed", "token", "ignored"))).WantStatus(200).WantJSON(jsonx.Obj("success", true, "data", true))
-	if h.agent(t).Value("name") != "renamed" || h.agent(t).Value("token") != h.token {
+	wantBodyJSON(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(map[string]any{"name": "renamed", "token": "ignored"})).WantStatus(200), map[string]any{"success": true, "data": true})
+	if h.agent(t)["name"] != "renamed" || h.agent(t)["token"] != h.token {
 		t.Fatal("edit")
 	}
-	h.s.Put("/api/agents/missing", httpxtest.JSON(jsonx.NewObject())).WantStatus(404).WantJSON(jsonx.Obj("success", false, "message", "Agent not found"))
-	h.s.Put("/api/agents/"+h.id, httpxtest.JSON(jsonx.Obj("profile_id", "bad id"))).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "Invalid profile id"))
-	h.s.Put("/api/agents/"+h.id, httpxtest.JSON(nil)).WantStatus(500).WantJSON(nativeRegistryShape(t, nil, "argument of type 'NoneType' is not iterable"))
+	wantBodyJSON(t, h.s.Put("/api/agents/missing", httpxtest.JSON(map[string]any{})).WantStatus(404), map[string]any{"success": false, "message": "Agent not found"})
+	wantBodyJSON(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(map[string]any{"profile_id": "bad id"})).WantStatus(500), map[string]any{"success": false, "message": "Invalid profile id"})
+	wantBodyJSON(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(nil)).WantStatus(500), nativeRegistryShape(t, nil, "argument of type 'NoneType' is not iterable"))
 	var cleared []string
 	agents.OnAgentDeleted("test", func(_ context.Context, id string) error { cleared = append(cleared, id); return nil })
-	h.s.Delete("/api/agents/" + h.id).WantStatus(200).WantJSON(jsonx.Obj("success", true))
+	wantBodyJSON(t, h.s.Delete("/api/agents/"+h.id).WantStatus(200), map[string]any{"success": true})
 	h.s.Delete("/api/agents/" + h.id).WantStatus(404)
 	if len(storedAgents(t, h.s)) != 0 || len(cleared) != 1 {
 		t.Fatal("delete")
@@ -404,7 +392,7 @@ func TestAgentItemUpdateAndDelete(t *testing.T) {
 // test_agent_registration_security.py::test_duplicate_registration_attack_is_rejected_after_repository_restart
 func TestDuplicateRegistrationAttackIsRejectedAfterRepositoryRestart(t *testing.T) {
 	first := newServer(t)
-	created := first.Post("/api/agents/register", httpxtest.JSON(payload())).WantStatus(200).Object()
+	created := parseBodyMap(t, first.Post("/api/agents/register", httpxtest.JSON(payload())).WantStatus(200))
 	// A new process: a fresh repository on the same data directory, no
 	// heartbeat state in memory, a new manager.
 	agents.ResetRuntime()
@@ -412,13 +400,13 @@ func TestDuplicateRegistrationAttackIsRejectedAfterRepositoryRestart(t *testing.
 		Register: httpxtest.Routes(apiagents.Register)})
 	before := storedAgents(t, restarted)
 	restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9999, "version", "attacker"))).WantStatus(401)
-	legitimate := restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9090)),
-		httpxtest.Bearer(created.GetString("token"))).WantStatus(200).Object()
-	if jsonx.Equal(before[0].(*jsonx.Object).Value("port"), 9999) || legitimate.Value("id") != created.Value("id") || legitimate.Has("token") {
+	legitimate := parseBodyMap(t, restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9090)),
+		httpxtest.Bearer(mapStr(created, "token"))).WantStatus(200))
+	if mapInt(before[0].(map[string]any), "port") == 9999 || legitimate["id"] != created["id"] || mapHas(legitimate, "token") {
 		t.Fatalf("legitimate %v", legitimate)
 	}
-	persisted := storedAgents(t, restarted)[0].(*jsonx.Object)
-	if persisted.Value("token") != created.Value("token") || !jsonx.Equal(persisted.Value("port"), 9090) {
+	persisted := storedAgents(t, restarted)[0].(map[string]any)
+	if persisted["token"] != created["token"] || mapInt(persisted, "port") != 9090 {
 		t.Fatalf("persisted %v", persisted)
 	}
 }
@@ -429,9 +417,9 @@ func TestHeartbeatRejectsMalformedEncodingOrJSONWithoutMutation(t *testing.T) {
 	for _, raw := range [][]byte{{0xff}, []byte(`{"version":`)} {
 		h := newHeartbeat(t)
 		before := system(t, h.s)
-		h.s.Post(h.path(), httpxtest.Bearer(h.token), streamBody(bytes.NewReader(raw))).WantStatus(400).
-			WantJSON(jsonx.Obj("success", false, "message", "Invalid heartbeat data"))
-		if !jsonx.Equal(system(t, h.s), before) {
+		wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), streamBody(bytes.NewReader(raw))).WantStatus(400),
+			map[string]any{"success": false, "message": "Invalid heartbeat data"})
+		if !testjson.Equal(system(t, h.s), before) {
 			t.Fatalf("%q mutated", raw)
 		}
 	}
@@ -447,8 +435,8 @@ func TestHeartbeatAcceptsBOMAndUTF16Bodies(t *testing.T) {
 	for name, raw := range map[string][]byte{"bom": append([]byte{0xEF, 0xBB, 0xBF}, `{"version": "bom"}`...), "utf16": utf16} {
 		h := newHeartbeat(t)
 		h.s.Post(h.path(), httpxtest.Bearer(h.token), streamBody(bytes.NewReader(raw))).WantStatus(200)
-		if h.agent(t).Value("version") != name {
-			t.Fatalf("%s: %v", name, h.agent(t).Value("version"))
+		if h.agent(t)["version"] != name {
+			t.Fatalf("%s: %v", name, h.agent(t)["version"])
 		}
 	}
 }
@@ -465,12 +453,12 @@ func TestAgentItemUpdateWithNonObjectBodies(t *testing.T) {
 		{"xprofile_idx", "string indices must be integers, not 'str'"},
 		{[]any{"other"}, "'list' object has no attribute 'get'"},
 		{[]any{"profile_id"}, "list indices must be integers or slices, not str"},
-		{jsonx.Int(5), "argument of type 'int' is not iterable"},
-		{jsonx.Float(1.5), "argument of type 'float' is not iterable"},
+		{5, "argument of type 'int' is not iterable"},
+		{1.5, "argument of type 'float' is not iterable"},
 		{true, "argument of type 'bool' is not iterable"},
 		{nil, "argument of type 'NoneType' is not iterable"},
 	} {
-		h.s.Put("/api/agents/"+h.id, httpxtest.JSON(c.body)).WantStatus(500).WantJSON(nativeRegistryShape(t, c.body, c.want))
+		wantBodyJSON(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(c.body)).WantStatus(500), nativeRegistryShape(t, c.body, c.want))
 	}
 }
 
@@ -493,7 +481,7 @@ func TestAgentDeleteRunsStoreHooksInPythonOrder(t *testing.T) {
 	if got := strings.Join(agents.AgentDeletedHookNames(), ","); got != "traffic_store,domain_probe,region_check,extra" {
 		t.Fatalf("names %s", got)
 	}
-	h.s.Delete("/api/agents/" + h.id).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "region store failed"))
+	wantBodyJSON(t, h.s.Delete("/api/agents/"+h.id).WantStatus(500), map[string]any{"success": false, "message": "region store failed"})
 	if strings.Join(order, ",") != "traffic_store,domain_probe,region_check" || len(storedAgents(t, h.s)) != 0 {
 		t.Fatalf("order %v", order)
 	}
@@ -507,34 +495,32 @@ func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cases := parseJSONAny(t, data)
 	// N8-7: retain Unicode14 evidence; explicitly accept two newly assigned
 	// printable characters under PORTING's native Unicode-range decision.
 	changed := 0
 	for i, item := range cases.([]any) {
-		c := item.(*jsonx.Object)
-		expected := c.Value("output")
-		switch c.GetObject("input").GetString("name") {
+		c := item.(map[string]any)
+		expected := c["output"]
+		input := mapObj(c, "input")
+		switch mapStr(input, "name") {
 		case "ext-h \U00031350":
-			old := jsonx.Obj("name", "ext-h ", "host", "ext-h ", "port", "ext-h ", "service_type", "ext-h ", "version", "ext-h ")
-			if !jsonx.Equal(expected, old) {
+			old := map[string]any{"name": "ext-h ", "host": "ext-h ", "port": "ext-h ", "service_type": "ext-h ", "version": "ext-h "}
+			if !testjson.Equal(expected, old) {
 				t.Fatal("Unicode14 Ext-H golden changed")
 			}
-			expected = jsonx.Obj("name", "ext-h \U00031350", "host", "ext-h \U00031350", "port", "ext-h \U00031350", "service_type", "ext-h \U00031350", "version", "ext-h \U00031350")
+			expected = map[string]any{"name": "ext-h \U00031350", "host": "ext-h \U00031350", "port": "ext-h \U00031350", "service_type": "ext-h \U00031350", "version": "ext-h \U00031350"}
 			changed++
 		case "kawi \U00011F00":
-			old := jsonx.Obj("name", "kawi ", "host", "kawi ", "port", "kawi ", "service_type", "kawi ", "version", "kawi ")
-			if !jsonx.Equal(expected, old) {
+			old := map[string]any{"name": "kawi ", "host": "kawi ", "port": "kawi ", "service_type": "kawi ", "version": "kawi "}
+			if !testjson.Equal(expected, old) {
 				t.Fatal("Unicode14 Kawi golden changed")
 			}
-			expected = jsonx.Obj("name", "kawi \U00011F00", "host", "kawi \U00011F00", "port", "kawi \U00011F00", "service_type", "kawi \U00011F00", "version", "kawi \U00011F00")
+			expected = map[string]any{"name": "kawi \U00011F00", "host": "kawi \U00011F00", "port": "kawi \U00011F00", "service_type": "kawi \U00011F00", "version": "kawi \U00011F00"}
 			changed++
 		}
-		if got := nativeRegistrationLogFields(t, c.GetObject("input")); !jsonx.Equal(got, expected) {
-			t.Errorf("%d: %v → %v, want %v", i, c.GetObject("input").Value("name"), got, expected)
+		if got := nativeRegistrationLogFields(t, input); !testjson.Equal(got, expected) {
+			t.Errorf("%d: %v → %v, want %v", i, input["name"], got, expected)
 		}
 	}
 	if changed != 2 {
@@ -550,27 +536,25 @@ func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
 func TestHeartbeatKeepsThePublicationHistory(t *testing.T) {
 	h := newHeartbeat(t)
 	manager, _ := agents.Get(h.s.Context())
-	_, err := manager.UpdateAgents(h.s.Context(), "", func(_ context.Context, list *[]any) (any, error) {
-		agent := (*list)[0].(*jsonx.Object)
-		deployments := jsonx.NewObject()
+	if err := manager.EditAgents(h.s.Context(), "", func(_ context.Context, list *[]model.Agent) error {
+		deployments := map[string]any{}
 		for _, key := range []string{"release-0", "release-1", "release-2", "release-3", "release-4"} {
-			deployments.Set(key, jsonx.Obj("deployment_id", key, "status", "succeeded"))
+			deployments[key] = map[string]any{"deployment_id": key, "status": "succeeded"}
 		}
-		agent.Set("deployments", deployments)
-		agent.Set("ipv6_verifications", jsonx.Obj("release-4", jsonx.Obj("status", "ok")))
-		return nil, nil
-	})
-	if err != nil {
+		if err := (*list)[0].SetJSON("deployments", mustRawJSON(t, deployments)); err != nil {
+			return err
+		}
+		return (*list)[0].SetJSON("ipv6_verifications", mustRawJSON(t, map[string]any{"release-4": map[string]any{"status": "ok"}}))
+	}); err != nil {
 		t.Fatal(err)
 	}
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("version", "1.8.54-go", "service_status", "running"))).
-		WantStatus(200).Object()
-	h.s.Post(h.path(), httpxtest.Header("Authorization", "Bearer wrong"), httpxtest.JSON(jsonx.NewObject())).WantStatus(401)
+	parseBodyMap(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"version": "1.8.54-go", "service_status": "running"})).WantStatus(200))
+	h.s.Post(h.path(), httpxtest.Header("Authorization", "Bearer wrong"), httpxtest.JSON(map[string]any{})).WantStatus(401)
 	stored := h.agent(t)
-	persisted := storedAgents(t, h.s)[0].(*jsonx.Object)
-	if stored.Value("version") != "1.8.54-go" || stored.Value("service_status") != "running" || stored.GetObject("deployments").Len() != 5 ||
-		persisted.Value("version") != "1.8.54-go" || persisted.GetObject("deployments").Len() != 5 ||
-		persisted.GetObject("ipv6_verifications").GetObject("release-4").Value("status") != "ok" {
+	persisted := storedAgents(t, h.s)[0].(map[string]any)
+	if stored["version"] != "1.8.54-go" || stored["service_status"] != "running" || len(mapObj(stored, "deployments")) != 5 ||
+		persisted["version"] != "1.8.54-go" || len(mapObj(persisted, "deployments")) != 5 ||
+		mapObj(mapObj(persisted, "ipv6_verifications"), "release-4")["status"] != "ok" {
 		t.Fatalf("stored %v", persisted)
 	}
 }
@@ -579,29 +563,22 @@ func TestHeartbeatKeepsThePublicationHistory(t *testing.T) {
 // printable letters. The registration log still truncates at each control.
 // Source: https://www.unicode.org/Public/15.0.0/ucd/UnicodeData.txt
 func TestRegistrationLogFieldsRejectUnicode15FormatControls(t *testing.T) {
-	expected := jsonx.Obj("name", "safe", "host", "safe", "port", "safe", "service_type", "safe", "version", "safe")
+	expected := map[string]any{"name": "safe", "host": "safe", "port": "safe", "service_type": "safe", "version": "safe"}
 	for r := rune(0x13439); r <= 0x1343F; r++ {
 		text := "safe" + string(r) + "forged"
-		input := jsonx.Obj("name", text, "host", text, "port", text, "service_type", text, "version", text, "token", "synthetic-secret")
-		if got := nativeRegistrationLogFields(t, input); !jsonx.Equal(got, expected) {
+		input := map[string]any{"name": text, "host": text, "port": text, "service_type": text, "version": text, "token": "synthetic-secret"}
+		if got := nativeRegistrationLogFields(t, input); !testjson.Equal(got, expected) {
 			t.Fatalf("%U: %v", r, got)
 		}
 	}
 }
 
-func nativeRegistrationLogFields(t *testing.T, input *jsonx.Object) *jsonx.Object {
+func nativeRegistrationLogFields(t *testing.T, input map[string]any) map[string]any {
 	t.Helper()
-	raw, err := jsonx.Compact(input)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := mustRawJSON(t, input)
 	encoded, err := json.Marshal(apiagents.RegistrationLogFields(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := jsonx.Parse(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return result.(*jsonx.Object)
+	return parseJSONMap(t, encoded)
 }

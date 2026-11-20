@@ -15,9 +15,9 @@ func TestN810InstallerUnsafeAliasesNeverIssueCapabilities(t *testing.T) {
 	for _, method := range []string{"compose_compact", "compose_direct"} {
 		for _, directory := range []string{"//", "//etc", "//opt", "/etc/", "/./etc", "/opt/../etc"} {
 			body := dockerHABody()
-			body.Set("agent_ip", "192.0.2.7")
-			body.Set("install_method", method)
-			body.Set("data_dir", directory)
+			body["agent_ip"] = "192.0.2.7"
+			body["install_method"] = method
+			body["data_dir"] = directory
 			srv.Post("/api/agents/docker-oxidns-ha-guide", httpxtest.JSON(body), admin).WantStatus(400)
 		}
 	}
@@ -37,7 +37,7 @@ func TestN810InstallerNonASCIIQueryNumberNeverDefaultsOrIssues(t *testing.T) {
 		"/api/agents/docker-agent-compose?mihomo_port=" + url.QueryEscape("８０８０"),
 	} {
 		response := srv.Get(route, admin).WantStatus(400)
-		if response.Object().GetString("message") != "Invalid installer integer" {
+		if mapStr(parseBodyMap(t, response), "message") != "Invalid installer integer" {
 			t.Fatal("invalid number defaulted or returned wrong refusal")
 		}
 	}
@@ -58,8 +58,8 @@ func TestN810InstallerNumericIdentityNeverIssues(t *testing.T) {
 	for _, method := range []string{"script", "compose", "compose_direct", "compose_compact"} {
 		for _, address := range []any{3232236039, true, false} {
 			body := dockerHABody()
-			body.Set("agent_ip", address)
-			body.Set("install_method", method)
+			body["agent_ip"] = address
+			body["install_method"] = method
 			srv.Post("/api/agents/docker-oxidns-ha-guide", httpxtest.JSON(body), admin).WantStatus(400)
 		}
 	}

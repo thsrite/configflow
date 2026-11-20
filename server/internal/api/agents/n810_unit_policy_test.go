@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func n810UnitCanonical(t *testing.T, value any) []byte {
@@ -29,7 +27,7 @@ func n810UnitCanonical(t *testing.T, value any) []byte {
 	}
 	return raw
 }
-func nativeQueryUnit(t *testing.T, row *jsonx.Object) string {
+func nativeQueryUnit(t *testing.T, row map[string]any) string {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n810_query_unit_policy.json")
 	if err != nil {
@@ -51,14 +49,14 @@ func nativeQueryUnit(t *testing.T, row *jsonx.Object) string {
 			return rule.Native
 		}
 	}
-	return row.GetString("lines")
+	return mapStr(row, "lines")
 }
 func TestN810RegistryUnitPolicyDoesNotMatchChangedInput(t *testing.T) {
-	old := jsonx.Obj("value", "١٢", "lines", "12")
+	old := map[string]any{"value": "١٢", "lines": "12"}
 	if nativeQueryUnit(t, old) != "100" {
 		t.Fatal("native row was ignored")
 	}
-	old.Set("lines", "13")
+	old["lines"] = "13"
 	if nativeQueryUnit(t, old) != "13" {
 		t.Fatal("changed original row matched policy")
 	}

@@ -8,7 +8,6 @@ import (
 
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 )
 
 // test_agent_install_commands.py::test_storage_failures_have_actionable_errors
@@ -24,8 +23,8 @@ func TestStorageFailuresHaveActionableErrors(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "install-commands", "snapshots.sqlite3"), []byte(strings.Repeat("not a database ", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	res := srv.Post("/api/agents/install-command", httpxtest.JSON(jsonx.NewObject()), admin).WantStatus(500)
-	if !strings.Contains(res.Object().GetString("message"), "检查数据目录") {
+	res := srv.Post("/api/agents/install-command", httpxtest.JSON(map[string]any{}), admin).WantStatus(500)
+	if !strings.Contains(mapStr(parseBodyMap(t, res), "message"), "检查数据目录") {
 		t.Errorf("save: %s", res.Text())
 	}
 	res = srv.Get("/api/agents/i/" + strings.Repeat("A", 22)).WantStatus(503)

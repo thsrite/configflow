@@ -16,10 +16,10 @@ import (
 	core "configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 func o9Server(t *testing.T) *httpxtest.Server {
@@ -31,17 +31,22 @@ func o9Server(t *testing.T) *httpxtest.Server {
 	t.Setenv("DATA_DIR", s.DataDir)
 	return s
 }
-func o9Body() *jsonx.Object {
-	return jsonx.Obj("name", "new-device", "host", "192.0.2.30", "port", 8080, "service_type", "mihomo", "deployment_method", "shell", "version", "1.8.60-go")
+func o9Body() map[string]any {
+	return map[string]any{
+		"name": "new-device", "host": "192.0.2.30", "port": 8080,
+		"service_type": "mihomo", "deployment_method": "shell", "version": "1.8.60-go",
+	}
 }
 
 var o9Token = regexp.MustCompile(`"registration_token": "([A-Za-z0-9_-]{43})"`)
 
 func o9Command(t *testing.T, s *httpxtest.Server, pairs ...any) (string, []string) {
 	t.Helper()
-	body := jsonx.Obj("name", "new-device", "agent_ip", "192.0.2.30", "server_url", "https://panel.example.com")
-	body.Update(jsonx.Obj(pairs...))
-	script := s.Post("/api/agents/install-command", s.Login(), httpxtest.JSON(body)).WantStatus(200).Object().GetString("script")
+	body := map[string]any{"name": "new-device", "agent_ip": "192.0.2.30", "server_url": "https://panel.example.com"}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		body[pairs[i].(string)] = pairs[i+1]
+	}
+	script := mapStr(parseBodyMap(t, s.Post("/api/agents/install-command", s.Login(), httpxtest.JSON(body)).WantStatus(200)), "script")
 	var tokens []string
 	for _, match := range o9Token.FindAllStringSubmatch(script, -1) {
 		tokens = append(tokens, match[1])
@@ -57,11 +62,13 @@ func o9Command(t *testing.T, s *httpxtest.Server, pairs ...any) (string, []strin
 func TestO9AnonymousAgentRegistrationCannotReadProfileSecrets(t *testing.T) {
 	s, _, _ := newDeployHTTP(t)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
-	if _, _, err := s.Repo.UpdateProfileFields(s.Context(), "default", jsonx.Obj("mihomo", jsonx.Obj("custom_config", "mode: rule\nsecret: o9-synthetic-controller-secret\n")), nil); err != nil {
+	if _, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, profile *model.Profile) error {
+		return profile.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mode: rule\nsecret: o9-synthetic-controller-secret\n"}`))
+	}); err != nil {
 		t.Fatal(err)
 	}
-	body := s.Post("/api/agents/register", httpxtest.JSON(o9Body())).WantStatus(403).Object()
-	if body.Has("token") || body.GetString("message") != RegistrationLocked {
+	body := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(o9Body())).WantStatus(403))
+	if mapHas(body, "token") || mapStr(body, "message") != RegistrationLocked {
 		t.Fatalf("unsafe refusal: %v", body)
 	}
 	list, err := s.Repo.System(s.Context())
@@ -72,8 +79,8 @@ func TestO9AnonymousAgentRegistrationCannotReadProfileSecrets(t *testing.T) {
 		t.Fatal("anonymous Agent persisted")
 	}
 	s.Get("/api/agents/o9-rogue/config?token=wrong").WantStatus(401)
-	legitimate := s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200).Object()
-	config := s.Get("/api/agents/" + legitimate.GetString("id") + "/config?token=" + legitimate.GetString("token")).WantStatus(200)
+	legitimate := parseBodyMap(t, s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200))
+	config := s.Get("/api/agents/" + mapStr(legitimate, "id") + "/config?token=" + mapStr(legitimate, "token")).WantStatus(200)
 	if !strings.Contains(config.Text(), "o9-synthetic-controller-secret") {
 		t.Fatal("legitimate Agent lost configuration access")
 	}
@@ -87,23 +94,23 @@ func TestO9BootstrapProofsAndExistingTokens(t *testing.T) {
 			switch proof {
 			case "key":
 				t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-registration-key")
-				body.Set("registration_key", "synthetic-registration-key")
+				body["registration_key"] = "synthetic-registration-key"
 			case "jwt":
 				options = append(options, s.Login())
 			case "credential":
 				_, tokens := o9Command(t, s)
-				body.Set("registration_token", tokens[0])
+				body["registration_token"] = tokens[0]
 			}
 			options = append(options, httpxtest.JSON(body))
-			answer := s.Post("/api/agents/register", options...).WantStatus(200).Object()
-			if answer.GetString("token") == "" {
+			answer := parseBodyMap(t, s.Post("/api/agents/register", options...).WantStatus(200))
+			if mapStr(answer, "token") == "" {
 				t.Fatal("missing token")
 			}
 			t.Setenv("AGENT_REGISTRATION_KEY", "rotated-registration-key")
-			s.Post("/api/agents/register", httpxtest.Bearer(answer.GetString("token")), httpxtest.JSON(o9Body())).WantStatus(200)
+			s.Post("/api/agents/register", httpxtest.Bearer(mapStr(answer, "token")), httpxtest.JSON(o9Body())).WantStatus(200)
 			// A valid JWT/key cannot take over an already-owned identity.
 			s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(401)
-			s.Post("/api/agents/"+answer.GetString("id")+"/heartbeat", httpxtest.Bearer(answer.GetString("token")), httpxtest.JSON(jsonx.Obj("version", "1.8.60-go"))).WantStatus(200)
+			s.Post("/api/agents/"+mapStr(answer, "id")+"/heartbeat", httpxtest.Bearer(mapStr(answer, "token")), httpxtest.JSON(map[string]any{"version": "1.8.60-go"})).WantStatus(200)
 			stored, err := s.Repo.System(s.Context())
 			if err != nil {
 				t.Fatal(err)
@@ -132,7 +139,7 @@ func TestO9CredentialRefusalsAndAtomicConsumption(t *testing.T) {
 				t.Fatal("plaintext capability stored")
 			}
 			body := o9Body()
-			body.Set("registration_token", tokens[0])
+			body["registration_token"] = tokens[0]
 			status := 403
 			switch kind {
 			case "expired":
@@ -143,36 +150,36 @@ func TestO9CredentialRefusalsAndAtomicConsumption(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "wrong":
-				body.Set("registration_token", strings.Repeat("x", 43))
+				body["registration_token"] = strings.Repeat("x", 43)
 			case "wrong-host":
-				body.Set("host", "192.0.2.31")
+				body["host"] = "192.0.2.31"
 			case "wrong-name":
-				body.Set("name", "another-device")
+				body["name"] = "another-device"
 			case "wrong-service":
-				body.Set("service_type", "oxidns")
+				body["service_type"] = "oxidns"
 			case "wrong-port":
-				body.Set("port", 8082)
+				body["port"] = 8082
 			case "wrong-method":
-				body.Set("deployment_method", "docker")
+				body["deployment_method"] = "docker"
 			case "wrong-profile":
-				if _, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+				if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 					t.Fatal(err)
 				}
-				body.Set("profile_id", "other")
+				body["profile_id"] = "other"
 			case "used", "leaked-second-host":
-				registered := s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200).Object()
+				registered := parseBodyMap(t, s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200))
 				if kind == "used" {
-					s.Delete("/api/agents/"+registered.GetString("id"), s.Login()).WantStatus(200)
+					s.Delete("/api/agents/"+mapStr(registered, "id"), s.Login()).WantStatus(200)
 				} else {
-					body.Set("host", "192.0.2.31")
+					body["host"] = "192.0.2.31"
 				}
 			case "failed-register":
-				body.Set("profile_id", "bad id!")
+				body["profile_id"] = "bad id!"
 				status = 500
 			}
 			s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(status)
 			if kind == "failed-register" {
-				body.Pop("profile_id")
+				delete(body, "profile_id")
 				s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
 			}
 		})
@@ -195,8 +202,8 @@ func TestO9CredentialConcurrentSingleUseAndRestart(t *testing.T) {
 		go func(host string) {
 			defer wg.Done()
 			body := o9Body()
-			body.Set("host", host)
-			body.Set("registration_token", tokens[0])
+			body["host"] = host
+			body["registration_token"] = tokens[0]
 			b, _ := json.Marshal(body)
 			resp, err := http.Post(url+"/api/agents/register", "application/json", strings.NewReader(string(b)))
 			if err != nil {
@@ -236,7 +243,7 @@ func TestO9RegistrationCapacityExpiryAndShutdown(t *testing.T) {
 	if _, err := m.CreateRegistrationCredentials(s.Context(), identities); err != nil {
 		t.Fatal(err)
 	}
-	s.Post("/api/agents/install-command", s.Login(), httpxtest.JSON(jsonx.Obj())).WantStatus(200)
+	s.Post("/api/agents/install-command", s.Login(), httpxtest.JSON(map[string]any{})).WantStatus(200)
 	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		for i := range system.RegistrationSessions {
 			system.RegistrationSessions[i].Expires = 1
@@ -254,7 +261,11 @@ func TestO9RegistrationCapacityExpiryAndShutdown(t *testing.T) {
 		t.Fatalf("disconnected credential issuance: %v", err)
 	}
 	proof := core.RegistrationAuthorization{Credential: tokens[0]}
-	if _, err := m.RegisterAuthorizedAgent(request, o9Body(), nil, proof); err != nil {
+	input, err := core.DecodeRegistrationInput(mustRawJSON(t, o9Body()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RegisterIdentity(request, input, core.RegistrationOptions{Authorization: &proof}); err != nil {
 		t.Fatalf("disconnected request: %v", err)
 	}
 	ctx := runtime.BindRequest(s.Context())
@@ -263,7 +274,12 @@ func TestO9RegistrationCapacityExpiryAndShutdown(t *testing.T) {
 	if _, err := m.CreateRegistrationCredentials(ctx, []model.AgentRegistrationSession{identity}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("shutdown issue: %v", err)
 	}
-	if _, err := m.RegisterAuthorizedAgent(ctx, o9Body(), nil, core.RegistrationAuthorization{AllowNew: true}); !errors.Is(err, context.Canceled) {
+	input, err = core.DecodeRegistrationInput(mustRawJSON(t, o9Body()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowNew := core.RegistrationAuthorization{AllowNew: true}
+	if _, err := m.RegisterIdentity(ctx, input, core.RegistrationOptions{Authorization: &allowNew}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("shutdown register: %v", err)
 	}
 	after, _ := json.Marshal(mustO9System(t, s))
@@ -297,11 +313,11 @@ func TestO9AIOAndDockerIssueIndependentServiceProofs(t *testing.T) {
 	}
 	for i, service := range []string{"mihomo", "oxidns"} {
 		body := o9Body()
-		body.Set("name", "new-device-"+service)
-		body.Set("service_type", service)
-		body.Set("registration_token", tokens[i])
+		body["name"] = "new-device-" + service
+		body["service_type"] = service
+		body["registration_token"] = tokens[i]
 		if i == 1 {
-			body.Set("port", 8082)
+			body["port"] = 8082
 		}
 		s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
 	}
@@ -334,12 +350,12 @@ func TestO9PublicScriptCannotMintProofAndCredentialsStayOutOfLogs(t *testing.T) 
 	}
 	token := string(match[1])
 	body := o9Body()
-	body.Set("registration_token", token)
-	body.Set("name", token)
+	body["registration_token"] = token
+	body["name"] = token
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 	body = o9Body()
-	body.Set("registration_token", token)
-	body.Set("profile_id", token)
+	body["registration_token"] = token
+	body["profile_id"] = token
 	failure := s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(500)
 	if strings.Contains(failure.Text(), token) {
 		t.Fatal("proof reflected by registration error")
@@ -365,25 +381,24 @@ func TestO9PublicScriptCannotMintProofAndCredentialsStayOutOfLogs(t *testing.T) 
 func TestO9BackupDoesNotResurrectBootstrapSessions(t *testing.T) {
 	s := o9Server(t)
 	_, tokens := o9Command(t, s)
-	backup, err := s.Repo.ExportAll(s.Context(), false)
+	backupRaw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if backup.GetObject("system").Has("agent_registration_sessions") {
+	backup := parseJSONMap(t, backupRaw)
+	if mapHas(mapObj(backup, "system"), "agent_registration_sessions") {
 		t.Fatal("backup exported installation capabilities")
 	}
 	// Even an old/full current-schema backup that contains the Go field is
 	// stripped on import, rather than trusting a previously unconsumed hash.
-	stored, err := s.Repo.GetSystem(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	backup.GetObject("system").Set("agent_registration_sessions", stored.Value("agent_registration_sessions"))
-	if _, err := s.Repo.ImportAll(s.Context(), backup); err != nil {
+	stored := mustO9System(t, s)
+	storedMap := parseJSONMap(t, mustRawJSON(t, stored))
+	mapObj(backup, "system")["agent_registration_sessions"] = storedMap["agent_registration_sessions"]
+	if _, err := s.Repo.ImportAllJSON(s.Context(), mustRawJSON(t, backup)); err != nil {
 		t.Fatal(err)
 	}
 	body := o9Body()
-	body.Set("registration_token", tokens[0])
+	body["registration_token"] = tokens[0]
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 }
 
@@ -395,9 +410,9 @@ func TestO9CredentialIdentityUsesRenderedPortAndReportedHost(t *testing.T) {
 		t.Fatal("no proof")
 	}
 	body := o9Body()
-	body.Set("port", 80)
-	body.Set("host", "172.20.0.5")
-	body.Set("registration_token", string(match[1]))
+	body["port"] = 80
+	body["host"] = "172.20.0.5"
+	body["registration_token"] = string(match[1])
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
 }
 
@@ -406,13 +421,13 @@ func TestO9LoginDisabledKeepsExplicitRegistrationKeyPolicy(t *testing.T) {
 	previous := auth.Configure(auth.Config{})
 	defer auth.Configure(previous)
 	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-key")
-	script := s.Post("/api/agents/install-command", httpxtest.JSON(jsonx.Obj("name", "new-device"))).WantStatus(200).Object().GetString("script")
+	script := mapStr(parseBodyMap(t, s.Post("/api/agents/install-command", httpxtest.JSON(map[string]any{"name": "new-device"})).WantStatus(200)), "script")
 	if o9Token.MatchString(script) {
 		t.Fatal("anonymous template bypassed explicit registration key policy")
 	}
 	s.Post("/api/agents/register", httpxtest.JSON(o9Body())).WantStatus(403)
 	body := o9Body()
-	body.Set("registration_key", "synthetic-key")
+	body["registration_key"] = "synthetic-key"
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
 }
 
@@ -420,20 +435,20 @@ func TestO9ValidBootstrapProofConsumedEvenWhenJWTAlsoPresent(t *testing.T) {
 	s := o9Server(t)
 	_, tokens := o9Command(t, s)
 	body := o9Body()
-	body.Set("registration_token", tokens[0])
-	registered := s.Post("/api/agents/register", s.Login(), httpxtest.JSON(body)).WantStatus(200).Object()
-	s.Delete("/api/agents/"+registered.GetString("id"), s.Login()).WantStatus(200)
+	body["registration_token"] = tokens[0]
+	registered := parseBodyMap(t, s.Post("/api/agents/register", s.Login(), httpxtest.JSON(body)).WantStatus(200))
+	s.Delete("/api/agents/"+mapStr(registered, "id"), s.Login()).WantStatus(200)
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 }
 
 func TestO9ValidBootstrapProofConsumedAlongsideExistingAgentToken(t *testing.T) {
 	s := o9Server(t)
-	registered := s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200).Object()
+	registered := parseBodyMap(t, s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200))
 	_, tokens := o9Command(t, s)
 	body := o9Body()
-	body.Set("registration_token", tokens[0])
-	s.Post("/api/agents/register", httpxtest.Bearer(registered.GetString("token")), httpxtest.JSON(body)).WantStatus(200)
-	s.Delete("/api/agents/"+registered.GetString("id"), s.Login()).WantStatus(200)
+	body["registration_token"] = tokens[0]
+	s.Post("/api/agents/register", httpxtest.Bearer(mapStr(registered, "token")), httpxtest.JSON(body)).WantStatus(200)
+	s.Delete("/api/agents/"+mapStr(registered, "id"), s.Login()).WantStatus(200)
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 }
 
@@ -470,9 +485,9 @@ func TestO9AnonymousRefusalDoesNotRevealExistingIdentity(t *testing.T) {
 	s := o9Server(t)
 	s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(200)
 	unknown := o9Body()
-	unknown.Set("name", "unknown-device")
+	unknown["name"] = "unknown-device"
 	garbage := o9Body()
-	garbage.Set("registration_token", strings.Repeat("A", 43))
+	garbage["registration_token"] = strings.Repeat("A", 43)
 	tests := []struct {
 		name    string
 		options []httpxtest.Option
@@ -486,7 +501,7 @@ func TestO9AnonymousRefusalDoesNotRevealExistingIdentity(t *testing.T) {
 	var first string
 	for _, test := range tests {
 		response := s.Post("/api/agents/register", test.options...).WantStatus(403)
-		if body := response.Object(); body.GetString("message") != RegistrationLocked {
+		if body := parseBodyMap(t, response); mapStr(body, "message") != RegistrationLocked {
 			t.Fatalf("%s: distinguishable refusal: %v", test.name, body)
 		}
 		if first == "" {
@@ -499,7 +514,7 @@ func TestO9AnonymousRefusalDoesNotRevealExistingIdentity(t *testing.T) {
 	s.Post("/api/agents/register", s.Login(), httpxtest.JSON(o9Body())).WantStatus(401)
 	_, tokens := o9Command(t, s)
 	proof := o9Body()
-	proof.Set("registration_token", tokens[0])
+	proof["registration_token"] = tokens[0]
 	s.Post("/api/agents/register", httpxtest.JSON(proof)).WantStatus(401)
 	if sessions := mustO9System(t, s).RegistrationSessions; len(sessions) != 1 {
 		t.Fatalf("ownership refusal consumed the proof: %d sessions", len(sessions))
@@ -518,10 +533,10 @@ func TestO9DockerPairedCommandsShareOneProofPerService(t *testing.T) {
 	if response.Header.Get("Cache-Control") != "no-store" {
 		t.Fatal("cacheable credentials")
 	}
-	body := response.Object()
+	body := parseBodyMap(t, response)
 	re := regexp.MustCompile(`AGENT_(MIHOMO|OXIDNS)_REGISTRATION_TOKEN=([A-Za-z0-9_-]{43})`)
-	compose := re.FindAllStringSubmatch(body.GetString("compose"), -1)
-	run := re.FindAllStringSubmatch(body.GetString("run"), -1)
+	compose := re.FindAllStringSubmatch(mapStr(body, "compose"), -1)
+	run := re.FindAllStringSubmatch(mapStr(body, "run"), -1)
 	if len(compose) != 2 || len(run) != 2 || compose[0][2] == compose[1][2] {
 		t.Fatal("missing independent service proofs")
 	}
@@ -534,12 +549,12 @@ func TestO9DockerPairedCommandsShareOneProofPerService(t *testing.T) {
 		}
 		service := strings.ToLower(match[1])
 		registration := o9Body()
-		registration.Set("name", "paired-device-"+service)
-		registration.Set("deployment_method", "docker")
-		registration.Set("service_type", service)
-		registration.Set("registration_token", match[2])
+		registration["name"] = "paired-device-" + service
+		registration["deployment_method"] = "docker"
+		registration["service_type"] = service
+		registration["registration_token"] = match[2]
 		if service == "oxidns" {
-			registration.Set("port", 8082)
+			registration["port"] = 8082
 		}
 		s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(200)
 	}
@@ -559,8 +574,8 @@ func TestO9RegistrationCapacityEvictsOldestCommand(t *testing.T) {
 	re := regexp.MustCompile(`AGENT_MIHOMO_REGISTRATION_TOKEN=([A-Za-z0-9_-]{43})`)
 	var oldest, latest string
 	for i := 0; i <= core.MaxRegistrationSessions; i++ {
-		body := s.Get(path, authorization).WantStatus(200).Object()
-		match := re.FindStringSubmatch(body.GetString("compose"))
+		body := parseBodyMap(t, s.Get(path, authorization).WantStatus(200))
+		match := re.FindStringSubmatch(mapStr(body, "compose"))
 		if len(match) != 2 {
 			t.Fatal("missing credential")
 		}
@@ -573,11 +588,11 @@ func TestO9RegistrationCapacityEvictsOldestCommand(t *testing.T) {
 		t.Fatal("unbounded sessions")
 	}
 	registration := o9Body()
-	registration.Set("name", "new-device-mihomo")
-	registration.Set("deployment_method", "docker")
-	registration.Set("registration_token", oldest)
-	s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(403).WantJSON(jsonx.Obj("success", false, "message", RegistrationLocked))
-	registration.Set("registration_token", latest)
+	registration["name"] = "new-device-mihomo"
+	registration["deployment_method"] = "docker"
+	registration["registration_token"] = oldest
+	wantBodyJSON(t, s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(403), map[string]any{"success": false, "message": RegistrationLocked})
+	registration["registration_token"] = latest
 	s.Post("/api/agents/register", httpxtest.JSON(registration)).WantStatus(200)
 }
 
@@ -592,13 +607,13 @@ func TestO9RegistrationProofRejectsBooleanPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := o9Body()
-	body.Set("registration_token", issued["mihomo"])
-	body.Set("port", true)
+	body["registration_token"] = issued["mihomo"]
+	body["port"] = true
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(403)
 	if len(mustO9System(t, s).RegistrationSessions) != 1 {
 		t.Fatal("invalid JSON type consumed proof")
 	}
-	body.Set("port", 1)
+	body["port"] = 1
 	s.Post("/api/agents/register", httpxtest.JSON(body)).WantStatus(200)
 	if len(mustO9System(t, s).RegistrationSessions) != 0 {
 		t.Fatal("exact numeric identity did not consume proof")

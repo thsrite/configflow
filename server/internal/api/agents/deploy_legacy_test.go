@@ -2,7 +2,7 @@ package agents
 
 import (
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -12,12 +12,11 @@ import (
 
 func TestSurgeNullRestartPreservesLegacyProtocol(t *testing.T) {
 	s, admin, fake := newDeployHTTP(t)
-	_, e := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetList("agents")[0].(*jsonx.Object).Set("service_type", "surge")
-		return system, nil
-	})
-	if e != nil {
-		t.Fatal(e)
+	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		system.Agents[0].ServiceType = "surge"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	response := s.Post("/api/agents/publish-agent/push-config", httpxtest.JSON(map[string]any{"restart": nil}), admin)
 	response.WantStatus(200)
@@ -33,8 +32,8 @@ func TestSurgeNullRestartPreservesLegacyProtocol(t *testing.T) {
 		MD5     string `json:"md5"`
 		Restart *bool  `json:"restart_after_update"`
 	}
-	if e = json.Unmarshal(calls[0].Body, &payload); e != nil {
-		t.Fatal(e)
+	if err := json.Unmarshal(calls[0].Body, &payload); err != nil {
+		t.Fatal(err)
 	}
 	sum := md5.Sum([]byte(payload.Config))
 	if payload.MD5 != hex.EncodeToString(sum[:]) || payload.Restart != nil {

@@ -6,9 +6,10 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"context"
+	"encoding/json"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -35,15 +36,32 @@ func newDeployHTTP(t *testing.T) (*httpxtest.Server, httpxtest.Option, *agentfak
 	host, port, _ := net.SplitHostPort(u.Host)
 	n, _ := strconv.Atoi(port)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "publish-agent", "name", "Synthetic", "host", host, "port", n, "token", "synthetic-publish-token", "profile_id", "default", "service_type", "mihomo", "deployment_method", "docker", "version", "1.8.60-go", "enabled", true)})
-		return system, nil
-	})
-	if err != nil {
+	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", mustRawJSON(t, []map[string]any{{
+			"id": "publish-agent", "name": "Synthetic", "host": host, "port": n,
+			"token": "synthetic-publish-token", "profile_id": "default", "service_type": "mihomo",
+			"deployment_method": "docker", "version": "1.8.60-go", "enabled": true,
+		}}))
+	}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileFields(s.Context(), "default", jsonx.Obj("mihomo", jsonx.Obj("custom_config", "mode: rule\n"), "nodes", []any{}, "subscriptions", []any{}, "proxy_groups", []any{}, "rule_configs", []any{}), nil)
-	if err != nil {
+	if err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, shared *model.Shared) error {
+		if err := shared.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
+			return err
+		}
+		return shared.SetJSON("subscriptions", json.RawMessage(`[]`))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, profile *model.Profile) error {
+		if err := profile.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mode: rule\n"}`)); err != nil {
+			return err
+		}
+		if err := profile.SetJSON("proxy_groups", json.RawMessage(`[]`)); err != nil {
+			return err
+		}
+		return profile.SetJSON("rule_configs", json.RawMessage(`[]`))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	m, err := core.Get(s.Context())
@@ -76,15 +94,15 @@ func TestDeployHTTPPublishPreviewAndGuards(t *testing.T) {
 	s.Post(base+"/push-config", httpxtest.JSON(map[string]any{"expected_profile_id": "default", "expected_service_type": "mihomo", "expected_config_revision": rev + 1}), admin).WantStatus(409)
 	generated := s.Post(base+"/generate-config", httpxtest.JSON(map[string]any{"expected_profile_id": "default", "expected_service_type": "mihomo", "base_url": "https://panel.example.com"}), admin)
 	generated.WantStatus(200)
-	pv := generated.Object()
-	key := pv.GetString("id")
-	did := pv.GetString("deployment_id")
-	if key == "" || did == "" || !strings.Contains(pv.GetString("content"), "mode: rule") {
+	pv := parseBodyMap(t, generated)
+	key := mapStr(pv, "id")
+	did := mapStr(pv, "deployment_id")
+	if key == "" || did == "" || !strings.Contains(mapStr(pv, "content"), "mode: rule") {
 		t.Fatal(pv)
 	}
 	file := s.Get(base+"/generated-config/"+key+"/file?path=installed.yaml", admin)
 	file.WantStatus(200)
-	if string(file.Body) != pv.GetString("content") {
+	if string(file.Body) != mapStr(pv, "content") {
 		t.Fatal("preview bytes differ")
 	}
 	zip := s.Get(base+"/generated-config/"+key+"/download", admin)
@@ -96,10 +114,11 @@ func TestDeployHTTPPublishPreviewAndGuards(t *testing.T) {
 	s.Get(base+"/generated-config/invalid/download", admin).WantStatus(409)
 	pushed := s.Post(base+"/push-config", httpxtest.JSON(map[string]any{"generation_id": key, "restart": false}), admin)
 	pushed.WantStatus(202)
-	if pushed.Object().GetString("deployment_id") != did {
+	pushedObj := parseBodyMap(t, pushed)
+	if mapStr(pushedObj, "deployment_id") != did {
 		t.Fatal("new transaction for frozen generation")
 	}
-	if pushed.Object().Has("prepared_content") || pushed.Object().Has("oxidns_validation_receipt") {
+	if mapHas(pushedObj, "prepared_content") || mapHas(pushedObj, "oxidns_validation_receipt") {
 		t.Fatal("private proof exposed")
 	}
 	s.Post(base+"/push-config", httpxtest.JSON(map[string]any{"deployment_id": "other"}), admin).WantStatus(409)

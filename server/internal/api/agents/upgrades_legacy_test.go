@@ -1,53 +1,179 @@
 package agents_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"sort"
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/upgrades"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
-func legacyUpgradeObject(value any) *jsonx.Object {
-	raw, _ := model.Marshal(value)
-	parsed, _ := jsonx.Parse(raw)
-	out, _ := parsed.(*jsonx.Object)
-	return out
+func decodeJSONAny(data []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
-func legacyUpgradeSetRequestForTest(fn func(*jsonx.Object, string, string, *jsonx.Object) (*agents.Response, error)) func() {
-	return upgrades.SetRequestForTest(func(_ context.Context, a *model.Agent, method, path string, body []byte) (*agents.Response, error) {
-		var payload *jsonx.Object
-		if len(body) > 0 {
-			v, _ := jsonx.Parse(body)
-			payload, _ = v.(*jsonx.Object)
+
+func parseJSONAny(t testing.TB, data []byte) any {
+	t.Helper()
+	v, err := decodeJSONAny(data)
+	if err != nil {
+		t.Fatalf("parse JSON (%v): %s", err, data)
+	}
+	return v
+}
+
+func parseJSONMap(t testing.TB, data []byte) map[string]any {
+	t.Helper()
+	v := parseJSONAny(t, data)
+	m, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("expected JSON object, got %T: %s", v, data)
+	}
+	return m
+}
+
+func parseBodyAny(t testing.TB, r *httpxtest.Result) any {
+	t.Helper()
+	return parseJSONAny(t, r.Body)
+}
+
+func parseBodyMap(t testing.TB, r *httpxtest.Result) map[string]any {
+	t.Helper()
+	return parseJSONMap(t, r.Body)
+}
+
+func wantBodyJSON(t testing.TB, r *httpxtest.Result, want any) *httpxtest.Result {
+	t.Helper()
+	if !testjson.Equal(json.RawMessage(r.Body), want) {
+		t.Fatalf("body %s\nwant %v\ndiff: %s", r.Body, want, testjson.Diff(json.RawMessage(r.Body), want))
+	}
+	return r
+}
+
+func mustRawJSON(t testing.TB, v any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func cloneMap(t testing.TB, m map[string]any) map[string]any {
+	t.Helper()
+	return parseJSONMap(t, mustRawJSON(t, m))
+}
+
+func mapStr(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return s
+}
+
+func mapInt(m map[string]any, key string) int64 {
+	if m == nil {
+		return 0
+	}
+	switch v := m[key].(type) {
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return n
 		}
-		return fn(legacyUpgradeObject(a), method, path, payload)
-	})
-}
-func legacyUpgradeSetReachesForTest(fn func(*jsonx.Object, string) bool) func() {
-	return upgrades.SetReachesForTest(func(a *model.Agent, host string) bool { return fn(legacyUpgradeObject(a), host) })
-}
-func legacyUpgradeSetAskForTest(fn func(*jsonx.Object, string, string, *jsonx.Object) (int, *jsonx.Object)) func() {
-	return upgrades.SetAskForTest(func(a *model.Agent, host, method string, body []byte) (int, model.Fields) {
-		var payload *jsonx.Object
-		if len(body) > 0 {
-			v, _ := jsonx.Parse(body)
-			payload, _ = v.(*jsonx.Object)
+		if f, err := v.Float64(); err == nil {
+			return int64(f)
 		}
-		status, data := fn(legacyUpgradeObject(a), host, method, payload)
-		raw, _ := jsonx.Compact(data)
-		var fields model.Fields
-		_ = jsondecode.Unmarshal(raw, &fields)
-		return status, fields
-	})
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	}
+	return 0
 }
-func legacyUpgradeAgentResponse(payload any, status int) *agents.Response {
-	raw, _ := jsonx.Default(payload)
+
+func mapFloat(m map[string]any, key string) (float64, bool) {
+	if m == nil {
+		return 0, false
+	}
+	switch v := m[key].(type) {
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	}
+	return 0, false
+}
+
+func mapObj(m map[string]any, key string) map[string]any {
+	if m == nil {
+		return nil
+	}
+	v, _ := m[key].(map[string]any)
+	return v
+}
+
+func mapList(m map[string]any, key string) []any {
+	if m == nil {
+		return nil
+	}
+	v, _ := m[key].([]any)
+	return v
+}
+
+func mapHas(m map[string]any, key string) bool {
+	if m == nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
+
+func sortedMapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func upgradeAgentResponse(payload any, status int) *agents.Response {
+	raw, _ := json.Marshal(payload)
 	return &agents.Response{StatusCode: status, Header: map[string][]string{"Content-Type": {"application/json"}}, Body: raw}
+}
+
+func registerAgentForTest(t testing.TB, ctx context.Context, m *agents.Manager, body map[string]any) (id, token string) {
+	t.Helper()
+	input, err := agents.DecodeRegistrationInput(mustRawJSON(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := m.RegisterIdentity(ctx, input, agents.RegistrationOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Token != nil {
+		token = *res.Token
+	}
+	return res.ID, token
 }
 
 func TestN810TypedHeartbeatHooksTakePrecedence(t *testing.T) {
@@ -63,7 +189,7 @@ func TestN810TypedHeartbeatHooksTakePrecedence(t *testing.T) {
 		},
 		AddressConfirmedTyped: func(_ *model.Agent, host string) string { confirmed++; return host },
 	})
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj("host", "192.0.2.50"))).WantStatus(200)
+	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.50"})).WantStatus(200)
 	if followed != 1 || confirmed != 1 {
 		t.Fatal("typed heartbeat hooks did not run exactly once", followed, confirmed)
 	}
@@ -83,15 +209,15 @@ func TestN810CorruptUpgradeDoesNotBreakAgentList(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, path := range []string{"/api/agents", "/api/agents?summary=1"} {
-				items, ok := a.s.Get(path, a.admin).WantStatus(200).JSON().([]any)
+				items, ok := parseBodyAny(t, a.s.Get(path, a.admin).WantStatus(200)).([]any)
 				if !ok || len(items) != 2 {
 					t.Fatal("bad Agent hid the list", items)
 				}
 				found := false
 				for _, item := range items {
-					record := item.(*jsonx.Object)
-					if record.GetString("id") == a.other.GetString("id") {
-						found = record.GetString("name") == "other-agent"
+					record := item.(map[string]any)
+					if mapStr(record, "id") == a.otherID {
+						found = mapStr(record, "name") == "other-agent"
 					}
 				}
 				if !found {
@@ -121,8 +247,8 @@ func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	result := h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(jsonx.Obj())).WantStatus(200).Object()
-	if result.Value("domain_discovery_enabled") != true || result.Value("traffic_history_enabled") != true {
+	result := parseBodyMap(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{})).WantStatus(200))
+	if result["domain_discovery_enabled"] != true || result["traffic_history_enabled"] != true {
 		t.Fatal("typed snapshot changed existing heartbeat preferences", result)
 	}
 }

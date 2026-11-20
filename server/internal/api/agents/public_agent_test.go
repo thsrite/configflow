@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -67,16 +66,12 @@ func TestPublicAgentPython(t *testing.T) {
 	}
 	for i, text := range cases {
 		for _, unread := range []bool{false, true} {
-			recordValue, err := jsonx.Parse([]byte(text))
-			if err != nil {
-				t.Fatal(err)
-			}
-			record := recordValue.(*jsonx.Object)
+			record := parseJSONMap(t, []byte(text))
 			request := map[string]any{"record": json.RawMessage(text)}
 			if unread {
 				request["unread"] = []string{"deployments", "latest_deployment", "verification_runs"}
 				for _, key := range []string{"deployments", "latest_deployment", "verification_runs"} {
-					record.Set(key, repo.AgentHistoryNotRead)
+					record[key] = repo.AgentHistoryNotRead
 				}
 			}
 			wire, _ := json.Marshal(request)
@@ -119,12 +114,18 @@ func TestPublicAgentPython(t *testing.T) {
 }
 
 func TestPublicAgentOmitsUnreadAndSecrets(t *testing.T) {
-	record := jsonx.Obj("id", "device", "token", "secret", "applied_content", "secret", "dns_follow_job", jsonx.Obj("private", true), "deployments", repo.AgentHistoryNotRead)
+	record := map[string]any{
+		"id":              "device",
+		"token":           "secret",
+		"applied_content": "secret",
+		"dns_follow_job":  map[string]any{"private": true},
+		"deployments":     repo.AgentHistoryNotRead,
+	}
 	public := publicAgent(record)
-	if public.Len() != 1 || public.GetString("id") != "device" {
+	if len(public) != 1 || mapStr(public, "id") != "device" {
 		t.Fatalf("public: %#v", public)
 	}
-	if record.Len() != 5 {
+	if len(record) != 5 {
 		t.Fatal("source changed")
 	}
 }

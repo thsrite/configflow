@@ -7,26 +7,29 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/testjson"
 )
 
 // TestReviewA13ProjectionCredentialReferences checks references across public subrecords.
 func TestReviewA13ProjectionCredentialReferences(t *testing.T) {
 	for _, field := range []string{"journal", "oxidns_ha_publication"} {
 		t.Run(field, func(t *testing.T) {
-			record := jsonx.Obj("id", "device", "deployments", jsonx.Obj("old", jsonx.Obj("status", "failed", "api_key", "synthetic-cross-key")))
-			if field == "journal" {
-				record.Set(field, "old synthetic-cross-key")
-			} else {
-				record.Set(field, jsonx.Obj("status", "failed", "message", "old synthetic-cross-key", "members", []any{}))
+			record := map[string]any{
+				"id":          "device",
+				"deployments": map[string]any{"old": map[string]any{"status": "failed", "api_key": "synthetic-cross-key"}},
 			}
-			before := record.DeepCopy()
+			if field == "journal" {
+				record[field] = "old synthetic-cross-key"
+			} else {
+				record[field] = map[string]any{"status": "failed", "message": "old synthetic-cross-key", "members": []any{}}
+			}
+			before := cloneMap(t, record)
 			raw, err := json.Marshal(publicAgent(record))
 			if err != nil || strings.Contains(string(raw), "synthetic-cross-key") {
 				t.Errorf("projection lost credential knowledge: %s (%v)", raw, err)
 			}
-			if !jsonx.Equal(record, before) {
+			if !testjson.Equal(record, before) {
 				t.Error("public projection mutated the original record")
 			}
 		})
@@ -47,8 +50,12 @@ func TestReviewA13ProjectionDoesNotLogSecrets(t *testing.T) {
 		}
 	})
 	const secret = "synthetic-cross-key"
-	record := jsonx.Obj("id", "device", "deployments", jsonx.Obj("old", jsonx.Obj("status", "failed", "api_key", secret)), "journal", "old "+secret)
-	record.Set("cycle", record)
+	record := map[string]any{
+		"id":          "device",
+		"deployments": map[string]any{"old": map[string]any{"status": "failed", "api_key": secret}},
+		"journal":     "old " + secret,
+	}
+	record["cycle"] = record
 	_, err = json.Marshal(publicAgent(record))
 	if err != nil {
 		if strings.Contains(err.Error(), secret) {

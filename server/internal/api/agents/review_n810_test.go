@@ -9,7 +9,6 @@ import (
 
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 )
@@ -47,12 +46,12 @@ func TestReviewN810CorruptHAFollowKeepsHeartbeat(t *testing.T) {
 	}
 	path := "/api/agents/" + a.id() + "/heartbeat"
 	for i := 0; i < 3; i++ {
-		reply := a.s.Post(path, a.agentAuth(), httpxtest.JSON(jsonx.Obj("host", "192.0.2.77"))).WantStatus(200).Object()
-		if reply.Value("success") != true || reply.Value("domain_discovery_enabled") != true || reply.Has("confirmed_host") {
+		reply := parseBodyMap(t, a.s.Post(path, a.agentAuth(), httpxtest.JSON(map[string]any{"host": "192.0.2.77"})).WantStatus(200))
+		if reply["success"] != true || reply["domain_discovery_enabled"] != true || mapHas(reply, "confirmed_host") {
 			t.Fatal("heartbeat lost its reply", reply)
 		}
 	}
-	if host := a.stored(a.id()).GetString("host"); host != "127.0.0.1" {
+	if host := mapStr(a.stored(a.id()), "host"); host != "127.0.0.1" {
 		t.Fatal("damaged HA guard followed address", host)
 	}
 	after, err := a.s.Repo.Store().Fingerprint()
@@ -65,10 +64,10 @@ func TestReviewN810CorruptHAFollowKeepsHeartbeat(t *testing.T) {
 	address := "/api/agents/" + a.id() + "/address"
 	for _, r := range []*httpxtest.Result{
 		a.s.Get(address, a.admin),
-		a.s.Put(address, a.admin, httpxtest.JSON(jsonx.Obj("host", "192.0.2.77"))),
+		a.s.Put(address, a.admin, httpxtest.JSON(map[string]any{"host": "192.0.2.77"})),
 	} {
 		r.WantStatus(500)
-		if !strings.Contains(r.Object().GetString("message"), "oxidns_ha.enabled") {
+		if !strings.Contains(mapStr(parseBodyMap(t, r), "message"), "oxidns_ha.enabled") {
 			t.Fatal("dialog hid damaged field", r.Text())
 		}
 	}

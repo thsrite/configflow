@@ -3,8 +3,6 @@ package agents
 import (
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // TestA15ReviewArgIntLikeWerkzeug: request.args.get('lines', 100, type=int)
@@ -17,14 +15,11 @@ func TestA15ReviewArgIntLikeWerkzeug(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, item := range value.(*jsonx.Object).GetList("lines") {
-		row := item.(*jsonx.Object)
-		if got := pyArgInt(row.GetString("value"), 100).String(); got != nativeQueryUnit(t, row) {
-			t.Errorf("int(%s) → %s, Python %s", jsonx.Repr(row.GetString("value")), got, row.GetString("lines"))
+	root := parseJSONMap(t, data)
+	for _, item := range mapList(root, "lines") {
+		row := item.(map[string]any)
+		if got := pyArgInt(mapStr(row, "value"), 100).String(); got != nativeQueryUnit(t, row) {
+			t.Errorf("int(%q) → %s, Python %s", mapStr(row, "value"), got, mapStr(row, "lines"))
 		}
 	}
 }
