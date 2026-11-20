@@ -162,20 +162,45 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 	rows := []json.RawMessage{}
 	for i := range all {
 		agent := &all[i]
-		bound := agent.ProfileID
+		// Display/identity fields require original string tokens, not R5 numeric projections.
+		bound, err := storedAgentString(agent, "profile_id")
+		if err != nil {
+			return cfg, nil, err
+		}
 		if bound == "" {
 			bound = def
 		}
-		if agent.ServiceType != "oxidns" || bound != id {
+		serviceType, err := storedAgentString(agent, "service_type")
+		if err != nil {
+			return cfg, nil, err
+		}
+		if serviceType != "oxidns" || bound != id {
 			continue
 		}
-		name := agent.Name
-		if name == "" {
-			name = agent.ID
+		agentID, err := storedAgentString(agent, "id")
+		if err != nil {
+			return cfg, nil, err
 		}
-		status := agent.Status
-		if status == "" {
-			status = "offline"
+		name, err := storedAgentString(agent, "name")
+		if err != nil {
+			return cfg, nil, err
+		}
+		if name == "" {
+			name = agentID
+		}
+		host, err := storedAgentString(agent, "host")
+		if err != nil {
+			return cfg, nil, err
+		}
+		status := "offline"
+		if agents.FreshHeartbeat(agent.LastHeartbeat, nil) {
+			status, err = storedAgentString(agent, "status")
+			if err != nil {
+				return cfg, nil, err
+			}
+			if status == "" {
+				status = "offline"
+			}
 		}
 		var deployment *model.Deployment
 		if agent.LatestDeployment != nil {
@@ -195,7 +220,7 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 			Status     string            `json:"status"`
 			HA         json.RawMessage   `json:"oxidns_ha"`
 			Deployment *model.Deployment `json:"deployment"`
-		}{agent.ID, name, agent.Host, status, ha, deployment})
+		}{agentID, name, host, status, ha, deployment})
 		if err != nil {
 			return cfg, nil, err
 		}
@@ -460,4 +485,14 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(c.Context(), cfg, err)
 	}
 	return public(c.Context(), cfg, value, 200)
+}
+
+func storedAgentString(agent *model.Agent, key string) (string, error) {
+	raw, _, err := agent.MemberJSON(key)
+	if err != nil {
+		return "", err
+	}
+	var value string
+	_ = json.Unmarshal(raw, &value)
+	return value, nil
 }
