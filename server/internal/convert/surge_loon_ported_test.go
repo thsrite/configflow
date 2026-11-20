@@ -30,7 +30,7 @@ func mustJSON(t *testing.T, text string) *jsonx.Object {
 
 func withFakeSubStore(t *testing.T) {
 	t.Helper()
-	t.Cleanup(convert.SetMihomoEnv(corpusEnv(nil, nil)))
+	t.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
 }
 
 func surgeOf(t *testing.T, config *jsonx.Object) string {
@@ -535,7 +535,7 @@ func TestNTPDirectIsOffUnlessTheEffectiveMatchEnablesIt(t *testing.T) {
 // Sub-Store not wired: a URI node string fails closed instead of skipping
 // the dialer check.
 func TestSurgeLoonFailClosedWithoutSubStore(t *testing.T) {
-	t.Cleanup(convert.SetMihomoEnv(convert.MihomoEnv{}))
+	t.Cleanup(convert.SetMihomoEnvironment(convert.DefaultMihomoEnvironment()))
 	config := mustJSON(t, `{"nodes": [{"id": "n", "name": "N", "proxy_string": "ss://YWVzOnB3@h.example.test:1#x"}]}`)
 	for _, generate := range []func(context.Context, *jsonx.Object, string) (string, error){
 		convert.GenerateSurgeConfig, convert.GenerateLoonConfig} {

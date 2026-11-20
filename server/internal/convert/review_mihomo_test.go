@@ -175,7 +175,7 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 		defer restore()
 	}
 	if row.fn == "generate" {
-		restore := convert.SetMihomoEnv(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
 		args := e.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()

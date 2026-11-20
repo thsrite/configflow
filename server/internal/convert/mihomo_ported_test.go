@@ -13,6 +13,8 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/rules"
+	"configflow/internal/yamlbridge"
+	"configflow/internal/yamlx"
 )
 
 // Hand-ported Python tests that the recorded replay (mihomo_recorded_test.go)
@@ -26,12 +28,12 @@ type countingConverter struct {
 	fail  map[string]bool
 }
 
-func (c *countingConverter) ConvertProxyString(_ context.Context, s string) *jsonx.Object {
+func (c *countingConverter) ConvertProxy(_ context.Context, s string) (*yamlx.Node, error) {
 	c.calls = append(c.calls, s)
 	if c.fail[s] {
-		return nil
+		return nil, nil
 	}
-	return jsonx.Obj("name", "x", "type", "http", "server", s[strings.Index(s, "@")+1:strings.LastIndex(s, ":")], "port", jsonx.Int(80))
+	return yamlbridge.Encode(jsonx.Obj("name", "x", "type", "http", "server", s[strings.Index(s, "@")+1:strings.LastIndex(s, ":")], "port", jsonx.Int(80)))
 }
 
 func uriNode(id string) *jsonx.Object {
@@ -54,11 +56,11 @@ func chainProfile() *jsonx.Object {
 		"proxy_groups", []any{chainGroup("chain", nil, "b")}, "rule_configs", []any{})
 }
 
-func withEnv(t *testing.T, converter convert.ProxyStringConverter) {
+func withEnv(t *testing.T, converter convert.NodeConverter) {
 	t.Helper()
 	env := corpusEnv(nil, nil)
 	env.Converter = converter
-	t.Cleanup(convert.SetMihomoEnv(env))
+	t.Cleanup(convert.SetMihomoEnvironment(env))
 }
 
 // test_proxy_chains.py::test_invalid_chain_metadata_is_rejected_before_conversion
@@ -201,12 +203,13 @@ func TestTakeoverMode(t *testing.T) {
 // after the emitted graph was validated; its errors abort generation.
 func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 	env := corpusEnv(nil, nil)
-	var gotConfig, gotMain *jsonx.Object
-	env.PrepareProviderBundle = func(_ context.Context, config, main *jsonx.Object) error {
+	var gotConfig *model.Config
+	var gotMain *yamlx.Node
+	env.Preflight = func(_ context.Context, config *model.Config, main *yamlx.Node) error {
 		gotConfig, gotMain = config, main
 		return nil
 	}
-	defer convert.SetMihomoEnv(env)()
+	defer convert.SetMihomoEnvironment(env)()
 	config := chainProfile()
 	config.Set("nodes", []any{
 		jsonx.Obj("id", "a", "name", "A", "type", "http", "server", "a.test", "port", jsonx.Int(80)),
@@ -215,24 +218,23 @@ func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 	if _, err := convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	for key, value := range config.All() {
-		if !jsonx.Equal(gotConfig.Value(key), value) {
-			t.Fatalf("preflight did not receive logical field %s", key)
-		}
+	if gotConfig == nil || gotConfig.ProfileID != "default" || len(gotConfig.Nodes) != 2 || gotConfig.Profile == nil ||
+		len(gotConfig.Profile.ProxyGroups) != 1 || gotConfig.Profile.ProxyGroups[0].Type != "chain" {
+		t.Fatalf("preflight did not receive logical profile before chain lowering: %+v", gotConfig)
 	}
-	if gotMain == nil || len(gotMain.GetList("proxies")) == 0 || gotMain.Value("rules") == nil {
+	if gotMain == nil || yamlx.Get(gotMain, "proxies") == nil || len(yamlx.Get(gotMain, "proxies").Content) == 0 || yamlx.Get(gotMain, "rules") == nil {
 		t.Fatalf("preflight did not receive the finished document: %v", gotMain)
 	}
-	env.PrepareProviderBundle = func(context.Context, *jsonx.Object, *jsonx.Object) error {
+	env.Preflight = func(context.Context, *model.Config, *yamlx.Node) error {
 		return errors.New("订阅 Feed 无法交付")
 	}
-	defer convert.SetMihomoEnv(env)()
+	defer convert.SetMihomoEnvironment(env)()
 	if _, err := convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{}); err == nil || err.Error() != "订阅 Feed 无法交付" {
 		t.Fatalf("preflight error not returned: %v", err)
 	}
 	// Without the provider wired, preflight fails closed; skipping it needs nothing.
-	env.PrepareProviderBundle = nil
-	defer convert.SetMihomoEnv(env)()
+	env.Preflight = nil
+	defer convert.SetMihomoEnvironment(env)()
 	var missing *convert.HookMissingError
 	if _, err := convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{}); !errors.As(err, &missing) {
 		t.Fatalf("want HookMissingError, got %v", err)
@@ -243,14 +245,19 @@ func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 }
 
 func TestMihomoEnvProviderInterval(t *testing.T) {
-	interval := mihomoenv.Env().ProviderInterval
-	if v, err := interval(jsonx.NewObject()); err != nil || v != refresh.DefaultProviderInterval {
+	interval := mihomoenv.NativeEnv().ProviderInterval
+	if v, err := interval(model.MihomoSettings{}); err != nil || v != refresh.DefaultProviderInterval {
 		t.Fatalf("default: %d %v", v, err)
 	}
-	if v, err := interval(jsonx.Obj("provider_update_interval", jsonx.Int(0))); err != nil || v != 0 {
+	zero := model.Int(0)
+	if v, err := interval(model.MihomoSettings{ProviderUpdateInterval: &zero}); err != nil || v != 0 {
 		t.Fatalf("zero: %d %v", v, err)
 	}
-	_, err := interval(jsonx.Obj("provider_update_interval", "3600"))
+	var bad model.MihomoSettings
+	if err := json.Unmarshal([]byte(`{"provider_update_interval":"bad"}`), &bad); err != nil {
+		t.Fatal(err)
+	}
+	_, err := interval(bad)
 	if err == nil || err.Error() != "Mihomo 订阅同步间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数" {
 		t.Fatalf("invalid: %v", err)
 	}
@@ -335,7 +342,7 @@ func TestTypedMihomoProviderInterval(t *testing.T) {
 			if err := json.Unmarshal([]byte(tt.source), &settings); err != nil {
 				t.Fatal(err)
 			}
-			got, err := convert.MihomoEnvironmentFromLegacy(mihomoenv.Env()).ProviderInterval(settings)
+			got, err := mihomoenv.NativeEnv().ProviderInterval(settings)
 			if (err != nil) != tt.invalid || (!tt.invalid && got != tt.want) {
 				t.Fatalf("got %d %v", got, err)
 			}

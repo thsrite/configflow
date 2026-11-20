@@ -38,7 +38,7 @@ func generateByteCase(t *testing.T, entry *jsonx.Object) (string, error) {
 	profile := args.GetObject("profile").DeepCopy()
 	switch entry.GetString("fn") {
 	case "generate":
-		restore := convert.SetMihomoEnv(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
+		restore := convert.SetMihomoEnvironment(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
 		defer restore()
 		return convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{
 			BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true,
@@ -67,7 +67,7 @@ func TestN88GenerationBytes(t *testing.T) {
 		fixture.Sources[name] = generationDigest(data)
 		rows[name] = loadJSONLines(t, "testdata/"+name)
 	}
-	restore := convert.SetMihomoEnv(corpusEnv(nil, nil))
+	restore := convert.SetMihomoEnvironment(corpusEnv(nil, nil))
 	defer restore()
 	if os.Getenv("CONFIGFLOW_RECORD_N88") == "1" {
 		for _, name := range []string{"mihomo_corpus.jsonl.gz", "surge_loon_corpus.jsonl.gz"} {
@@ -182,7 +182,7 @@ func TestN88GenerationBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			restore := convert.SetMihomoEnv(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
+			restore := convert.SetMihomoEnvironment(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
 			typed, err := convert.MihomoConfig(context.Background(), config, convert.MihomoOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), CoreVersion: version, ForAgent: args.GetBool("for_agent")})
 			restore()
 			if err != nil || typed != out {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -15,7 +16,10 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
+	"configflow/internal/yamlbridge"
+	"configflow/internal/yamlx"
 )
 
 // replayedError is an exception recorded from Python (class + message).
@@ -40,17 +44,17 @@ type recordedEnv struct {
 	problems     []string
 }
 
-func (r *recordedEnv) mihomoEnv(base convert.MihomoEnv) convert.MihomoEnv {
+func (r *recordedEnv) mihomoEnv(base convert.MihomoEnvironment) convert.MihomoEnvironment {
 	env := base
 	conversions := r.env.GetObject("conversions")
 	env.Converter = recordedConverter{conversions}
 	caches := r.env.GetObject("caches")
-	env.LoadSubscriptionCache = func(_ context.Context, id string) (*jsonx.Object, error) {
+	env.LoadSubscriptionCache = func(_ context.Context, id string) (json.RawMessage, error) {
 		cache, _ := caches.Value(id).(*jsonx.Object)
 		if cache == nil {
 			return nil, nil
 		}
-		return cache.DeepCopy(), nil
+		return jsonx.Compact(cache)
 	}
 	downloads := r.env.GetObject("downloads")
 	env.DownloadedText = func(_ context.Context, url string) (string, bool) {
@@ -61,7 +65,7 @@ func (r *recordedEnv) mihomoEnv(base convert.MihomoEnv) convert.MihomoEnv {
 		text, ok := entry.Value("text").(string)
 		return text, ok
 	}
-	env.PrepareProviderBundle = func(context.Context, *jsonx.Object, *jsonx.Object) error {
+	env.Preflight = func(context.Context, *model.Config, *yamlx.Node) error {
 		r.preflight = true
 		switch value := r.env.Value("preflight").(type) {
 		case string:
@@ -152,12 +156,12 @@ func (r *recordedEnv) hooks() convert.MihomoHooks {
 
 type recordedConverter struct{ conversions *jsonx.Object }
 
-func (c recordedConverter) ConvertProxyString(_ context.Context, s string) *jsonx.Object {
+func (c recordedConverter) ConvertProxy(_ context.Context, s string) (*yamlx.Node, error) {
 	proxy, _ := c.conversions.Value(s).(*jsonx.Object)
 	if proxy == nil {
-		return nil
+		return nil, nil
 	}
-	return proxy.DeepCopy()
+	return yamlbridge.Encode(proxy)
 }
 
 func loadRecorded(t *testing.T) []*jsonx.Object {
@@ -191,7 +195,7 @@ func replayRow(t *testing.T, entry *jsonx.Object, oracle writerOracle) string {
 	t.Helper()
 	ctx := context.Background()
 	rec := &recordedEnv{env: entry.GetObject("env")}
-	restoreEnv := convert.SetMihomoEnv(rec.mihomoEnv(corpusEnv(nil, nil)))
+	restoreEnv := convert.SetMihomoEnvironment(rec.mihomoEnv(corpusEnv(nil, nil)))
 	defer restoreEnv()
 	restoreHooks := convert.RegisterMihomoHooks(rec.hooks())
 	defer restoreHooks()

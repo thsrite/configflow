@@ -36,7 +36,7 @@ func TestReviewN89GenerationCallbackSamples(t *testing.T) {
 }
 
 func TestReviewN89ClientFilterGenerationSamples(t *testing.T) {
-	t.Cleanup(convert.SetMihomoEnv(corpusEnv(nil, nil)))
+	t.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
 	// These two original normal profiles include filtered candidate nodes.
 	for i, fn := range []string{"surge", "loon"} {

@@ -162,16 +162,8 @@ func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := MihomoEnv{ProviderInterval: func(settings *jsonx.Object) (int64, error) {
-		value, ok := settings.Value("provider_update_interval").(jsonx.Number)
-		if !ok || !value.IsInt() {
-			t.Fatalf("adapter did not lower shared integer: %T", settings.Value("provider_update_interval"))
-		}
-		n, _ := value.Int64()
-		return n, nil
-	}}
-	if value, err := MihomoEnvironmentFromLegacy(legacy).ProviderInterval(config.Profile.Mihomo); err != nil || value != 3600 {
-		t.Fatalf("quoted interval: %d %v", value, err)
+	if config.Profile.Mihomo.ProviderUpdateInterval == nil || *config.Profile.Mihomo.ProviderUpdateInterval != 3600 {
+		t.Fatalf("quoted interval: %v", config.Profile.Mihomo.ProviderUpdateInterval)
 	}
 	doc, err := MihomoDocument(t.Context(), config, MihomoOptions{SkipProviderPreflight: true})
 	if err != nil {

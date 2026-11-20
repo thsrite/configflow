@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 
@@ -19,9 +18,9 @@ import (
 
 func nativeGenerationEnv(t testing.TB) MihomoEnvironment {
 	t.Helper()
-	return MihomoEnvironmentFromLegacy(MihomoEnv{
-		ProviderInterval: func(*jsonx.Object) (int64, error) { return 3600, nil },
-	})
+	env := DefaultMihomoEnvironment()
+	env.ProviderInterval = func(model.MihomoSettings) (int64, error) { return 3600, nil }
+	return env
 }
 
 func TestNativeMihomoMissingCollaborators(t *testing.T) {

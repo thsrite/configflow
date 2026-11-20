@@ -4,10 +4,90 @@ package convert
 // hosts parsing use, with its acceptance rules.
 
 import (
+	"fmt"
 	"math/bits"
+	"net/netip"
 	"strconv"
 	"strings"
 )
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// parseIPv6 parses an IPv6 address the way ipaddress.IPv6Address does; the
+// zone ("%eth0") is accepted and dropped from the returned address.
+func parseIPv6(text string) (netip.Addr, bool) {
+	addr := text
+	if i := strings.IndexByte(text, '%'); i >= 0 {
+		zone := text[i+1:]
+		if zone == "" || strings.Contains(zone, "%") {
+			return netip.Addr{}, false
+		}
+		addr = text[:i]
+	}
+	if !strings.Contains(addr, ":") {
+		return netip.Addr{}, false
+	}
+	// Embedded IPv4 tail: Python parses it with the strict IPv4 rules.
+	if i := strings.LastIndexByte(addr, ':'); strings.Contains(addr[i+1:], ".") {
+		v4, ok := parseIPv4(addr[i+1:])
+		if !ok {
+			return netip.Addr{}, false
+		}
+		b := v4.As4()
+		addr = addr[:i+1] + fmt.Sprintf("%x:%x", int(b[0])<<8|int(b[1]), int(b[2])<<8|int(b[3]))
+	}
+	for _, part := range strings.Split(addr, ":") {
+		if len(part) > 4 {
+			return netip.Addr{}, false
+		}
+		for i := 0; i < len(part); i++ {
+			c := part[i]
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return netip.Addr{}, false
+			}
+		}
+	}
+	parsed, err := netip.ParseAddr(addr)
+	if err != nil || !parsed.Is6() || parsed.Zone() != "" {
+		return netip.Addr{}, false
+	}
+	return parsed, true
+}
+
+// parseIPv4 parses dotted-quad text the way ipaddress.IPv4Address does:
+// exactly four ASCII decimal octets, no leading zeros, each at most 255.
+func parseIPv4(text string) (netip.Addr, bool) {
+	parts := strings.Split(text, ".")
+	if len(parts) != 4 {
+		return netip.Addr{}, false
+	}
+	var b [4]byte
+	for i, part := range parts {
+		if part == "" || len(part) > 3 {
+			return netip.Addr{}, false
+		}
+		value := 0
+		for j := 0; j < len(part); j++ {
+			c := part[j]
+			if c < '0' || c > '9' {
+				return netip.Addr{}, false
+			}
+			value = value*10 + int(c-'0')
+		}
+		if value > 255 || (len(part) > 1 && part[0] == '0') {
+			return netip.Addr{}, false
+		}
+		b[i] = byte(value)
+	}
+	return netip.AddrFrom4(b), true
+}
 
 // prefixFromString is _prefix_from_prefix_string: ASCII digits only, in
 // 0..max.

@@ -178,7 +178,7 @@ func classed(err error) error {
 // mutations), random nodes, Mihomo proxy lists, groups, Loon rules and names.
 func TestSurgeLoonCorpus(t *testing.T) {
 	nativeSubs := nativeSubsCallers(t, "surge_loon_corpus")
-	restore := convert.SetMihomoEnv(corpusEnv(nil, nil))
+	restore := convert.SetMihomoEnvironment(corpusEnv(nil, nil))
 	defer restore()
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
 	native := yamlxtest.ReaderCases(t, "../subs/testdata/n7_reader_expected.json.gz")

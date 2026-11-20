@@ -28,7 +28,7 @@ func batch6GenerationProfile(count int) *jsonx.Object {
 // wall-clock pass/fail thresholds. The entire public generation path is timed;
 // each node must not transcode the full profile again at the legacy boundary.
 func BenchmarkMihomoGenerationProfile(b *testing.B) {
-	b.Cleanup(convert.SetMihomoEnv(corpusEnv(nil, nil)))
+	b.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
 	for _, count := range []int{32, 128} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			cfg := batch6GenerationProfile(count)
@@ -48,7 +48,7 @@ func BenchmarkMihomoGenerationProfile(b *testing.B) {
 }
 
 func TestGenerationRetainsAllNodesAndSource(t *testing.T) {
-	t.Cleanup(convert.SetMihomoEnv(corpusEnv(nil, nil)))
+	t.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
 	cfg := batch6GenerationProfile(128)
 	before, err := jsonx.Compact(cfg)
 	if err != nil {

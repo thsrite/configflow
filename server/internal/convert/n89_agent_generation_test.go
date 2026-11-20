@@ -104,7 +104,7 @@ func TestN89AgentGenerationReferences(t *testing.T) {
 			args := row.entry.GetObject("args")
 			profile := args.GetObject("profile").DeepCopy()
 			report := jsonx.NewObject()
-			restore := convert.SetMihomoEnv(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
+			restore := convert.SetMihomoEnvironment(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
 			out, err := convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), Report: report, MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent")})
 			restore()
 			var invalid *convert.EasyTierSettingsError

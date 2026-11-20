@@ -54,7 +54,7 @@ type MihomoEnvironment struct {
 var environmentState = struct {
 	sync.RWMutex
 	value MihomoEnvironment
-}{value: MihomoEnvironment{Clients: legacyClientCallbacks()}}
+}{value: MihomoEnvironment{Clients: defaultClientCollaborators()}}
 
 // SetMihomoEnvironment installs a typed environment and returns a restoration.
 func SetMihomoEnvironment(env MihomoEnvironment) func() {

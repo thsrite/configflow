@@ -262,7 +262,7 @@ func TestTypedClientSharedNumericText(t *testing.T) {
 }
 
 func TestTypedClientJSONKeepsNativeDuplicateKeys(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: legacyClientCallbacks()}))
+	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	for _, source := range []string{
 		`{"name":"ignored","type":"ss","server":"example.com","port":443,"password":"first","password":"last"}`,
 	} {
@@ -281,7 +281,7 @@ func TestTypedClientJSONKeepsNativeDuplicateKeys(t *testing.T) {
 }
 
 func TestTypedClientChecksOnlyConsumedText(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: legacyClientCallbacks()}))
+	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	var node model.Node
 	if err := json.Unmarshal([]byte(`{"id":"n","name":"Outer","type":false,"server":[],"params":[],"proxy_string":"{\"name\":false,\"type\":\"http\",\"server\":\"example.com\",\"port\":80}"}`), &node); err != nil {
 		t.Fatal(err)
@@ -299,7 +299,7 @@ func TestTypedClientChecksOnlyConsumedText(t *testing.T) {
 }
 
 func TestTypedClientParsedTextErrorKeepsOwnerID(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: legacyClientCallbacks()}))
+	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	source := `{"type":"http","server":[],"port":80}`
 	node := model.Node{ID: "owner", Name: "Outer", ProxyString: &source}
 	line, _, err := SurgeNode(node)

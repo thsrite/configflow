@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/ippresence"
@@ -22,7 +21,7 @@ func preparedFixture(t *testing.T, goal string) (*Service, context.Context) {
 	s.owners.DNS = identityDNS()
 	gateway.Wire()
 	ippresence.Wire()
-	convert.SetMihomoEnv(mihomoenv.Env())
+	mihomoenv.Wire()
 	_, err := s.repository.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
 		shared.Set("nodes", []any{jsonx.Obj("id", "synthetic-node", "name", "Synthetic node", "type", "ss", "server", "192.0.2.10", "port", jsonx.Int(443), "params", jsonx.Obj("password", "synthetic-node-password", "cipher", "aes-128-gcm"))})
 		return nil, nil

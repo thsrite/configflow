@@ -63,7 +63,7 @@ func TestN88ReviewByteSamples(t *testing.T) {
 				entry := rows[sample.Source][sample.Row]
 				args := entry.GetObject("args")
 				profile := args.GetObject("profile").DeepCopy()
-				restore := convert.SetMihomoEnv(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
+				restore := convert.SetMihomoEnvironment(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
 				defer restore()
 				var out string
 				var err error

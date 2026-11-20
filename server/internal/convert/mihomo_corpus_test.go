@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -21,17 +22,19 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
+	"configflow/internal/yamlbridge"
+	"configflow/internal/yamlx"
 )
 
 // fakeSubStore mirrors fake_convert of testdata/gen_mihomo.py (and gen.py).
 type fakeSubStore struct{}
 
-func (fakeSubStore) ConvertProxyString(_ context.Context, s string) *jsonx.Object {
+func (fakeSubStore) ConvertProxy(_ context.Context, s string) (*yamlx.Node, error) {
 	if strings.Contains(s, "fail") {
-		return nil
+		return nil, nil
 	}
 	if strings.Contains(s, "empty") {
-		return jsonx.NewObject()
+		return yamlx.Map(), nil
 	}
 	proxy := jsonx.Obj("name", "from-uri", "type", "http", "server", "fixture.test", "port", jsonx.Int(80))
 	if _, after, ok := strings.Cut(s, "dial-"); ok {
@@ -42,19 +45,19 @@ func (fakeSubStore) ConvertProxyString(_ context.Context, s string) *jsonx.Objec
 		proxy.Set("type", "vless")
 		proxy.Set("reality-opts", jsonx.Obj("public-key", "k"))
 	}
-	return proxy
+	return yamlbridge.Encode(proxy)
 }
 
 // corpusEnv serves subscription caches and download caches from a row.
-func corpusEnv(caches, downloads *jsonx.Object) convert.MihomoEnv {
-	env := mihomoenv.Env()
+func corpusEnv(caches, downloads *jsonx.Object) convert.MihomoEnvironment {
+	env := mihomoenv.NativeEnv()
 	env.Converter = fakeSubStore{}
-	env.LoadSubscriptionCache = func(_ context.Context, id string) (*jsonx.Object, error) {
+	env.LoadSubscriptionCache = func(_ context.Context, id string) (json.RawMessage, error) {
 		cache, _ := caches.Value(id).(*jsonx.Object)
 		if cache == nil {
 			return nil, nil
 		}
-		return cache.DeepCopy(), nil
+		return jsonx.Compact(cache)
 	}
 	env.DownloadedText = func(_ context.Context, url string) (string, bool) {
 		entry, ok := downloads.Value(refresh.DownloadCachePath(url)).(*jsonx.Object)
@@ -64,7 +67,7 @@ func corpusEnv(caches, downloads *jsonx.Object) convert.MihomoEnv {
 		text, ok := entry.Value("text").(string)
 		return text, ok
 	}
-	env.PrepareProviderBundle = nil
+	env.Preflight = nil
 	return env
 }
 
@@ -263,7 +266,7 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	case "generate":
 		args := e.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()
-		restore := convert.SetMihomoEnv(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
 		report := jsonx.NewObject()
 		out, err := convert.GenerateMihomoConfig(ctx, profile, convert.GenerateOptions{
@@ -289,7 +292,7 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	case "ruleset_downloads", "provider_downloads":
 		args := e.GetList("args")
 		profile := args[0].(*jsonx.Object).DeepCopy()
-		restore := convert.SetMihomoEnv(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
 		var list []convert.Download
 		var err error
@@ -597,7 +600,7 @@ func TestNativeMihomoOriginalInputsUnchanged(t *testing.T) {
 		args := row.entry.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()
 		before := encode(profile)
-		restore := convert.SetMihomoEnv(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
+		restore := convert.SetMihomoEnvironment(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
 		_, _ = convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent")})
 		restore()
 		if before != encode(profile) {

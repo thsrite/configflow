@@ -57,8 +57,6 @@ type PyError struct {
 
 func (e *PyError) Error() string { return e.Message }
 
-func pyError(class, message string) error { return &PyError{Class: class, Message: message} }
-
 // PyErrorClass returns the Python class of a PyError, or "".
 func PyErrorClass(err error) string {
 	var p *PyError
@@ -66,10 +64,6 @@ func PyErrorClass(err error) string {
 		return p.Class
 	}
 	return ""
-}
-
-func attributeError(v any, attribute string) error {
-	return pyError("AttributeError", "'"+pyTypeName(v)+"' object has no attribute '"+attribute+"'")
 }
 
 // ProxyYAMLError is a structured proxy validation failure. The underlying

@@ -1,14 +1,75 @@
 package convert
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"configflow/internal/health/check"
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
+	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
-	"context"
-	"encoding/json"
 )
+
+func subsError(err error) error {
+	var reference *subs.DialerReferenceError
+	if errors.As(err, &reference) {
+		return &DialerReferenceError{Message: reference.Message, cause: err}
+	}
+	return err
+}
+
+func defaultClientCollaborators() ClientCollaborators {
+	return ClientCollaborators{
+		ParseNodes: subscriptionSources,
+		FilterNodes: func(nodes []model.Node, include, exclude *string) ([]model.Node, error) {
+			return rules.Filter(nodes, include, exclude, func(node model.Node) string { return node.Name })
+		},
+	}
+}
+
+// DefaultMihomoEnvironment wires all typed config-domain collaborators without
+// legacy JSON documents. Production callers (convert/mihomoenv) attach storage,
+// Sub-Store, refresh interval, and provider preflight callbacks on top.
+func DefaultMihomoEnvironment() MihomoEnvironment {
+	env := MihomoEnvironment{Clients: defaultClientCollaborators()}
+	bindSubscriptionEnvironment(&env)
+	env.RenderMembers = func(group model.ProxyGroup, config *model.Config) (*yamlx.Node, error) {
+		return rules.RenderGroupDocument(group, rules.GroupResources(config)), nil
+	}
+	env.ProviderHealth = func(health *model.ProviderHealthCheck) (*yamlx.Node, error) {
+		raw, err := model.Marshal(health)
+		if err != nil {
+			return nil, err
+		}
+		if err := check.ValidateHealthJSON(raw, true); err != nil {
+			return nil, err
+		}
+		var fields model.Fields
+		if err := fields.Set("health_check", raw); err != nil {
+			return nil, err
+		}
+		resolved, err := check.ResolveProviderHealth(&fields)
+		if err != nil {
+			return nil, err
+		}
+		data, err := jsonresp.Encode(resolved)
+		if err != nil {
+			return nil, err
+		}
+		return yamlx.FromJSON(data)
+	}
+	env.FilterGroups = func(config *model.Config, document *yamlx.Node) error {
+		return rules.LowerProviderFilters(rules.GroupResources(config), document)
+	}
+	env.ValidateRules = func(config *model.Config, names []string, client string) error {
+		return rules.ValidatePolicies(config.Profile.RuleConfigs, names, client)
+	}
+	return env
+}
 
 // bindSubscriptionEnvironment connects native subscription owners directly. The
 // remaining legacy environment adapters belong to the rules/provider owners;

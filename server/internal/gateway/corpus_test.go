@@ -216,12 +216,12 @@ type configArgs struct {
 // and router split hooks as in production.
 func generationEnv(t *testing.T) {
 	t.Helper()
-	env := mihomoenv.Env()
+	env := mihomoenv.NativeEnv()
 	env.Converter = nil
-	env.LoadSubscriptionCache = func(context.Context, string) (*jsonx.Object, error) { return nil, nil }
+	env.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) { return nil, nil }
 	env.DownloadedText = func(context.Context, string) (string, bool) { return "", false }
-	env.PrepareProviderBundle = nil
-	t.Cleanup(convert.SetMihomoEnv(env))
+	env.Preflight = nil
+	t.Cleanup(convert.SetMihomoEnvironment(env))
 	hooks := gateway.Hooks()
 	t.Cleanup(convert.SetMihomoIntegrations(hooks))
 }
