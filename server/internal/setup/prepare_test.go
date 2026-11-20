@@ -10,7 +10,6 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/ippresence"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
@@ -22,16 +21,15 @@ func preparedFixture(t *testing.T, goal string) (*Service, context.Context) {
 	gateway.Wire()
 	ippresence.Wire()
 	mihomoenv.Wire()
-	_, err := s.repository.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("nodes", []any{jsonx.Obj("id", "synthetic-node", "name", "Synthetic node", "type", "ss", "server", "192.0.2.10", "port", jsonx.Int(443), "params", jsonx.Obj("password", "synthetic-node-password", "cipher", "aes-128-gcm"))})
-		return nil, nil
+	err := s.repository.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("nodes", json.RawMessage(`[{"id":"synthetic-node","name":"Synthetic node","type":"ss","server":"192.0.2.10","port":443,"params":{"password":"synthetic-node-password","cipher":"aes-128-gcm"}}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	seeded, _, err := s.repository.UpdateProfileTransaction(ctx, "setup_"+testSessionID[:20], func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.GetObject("mihomo").Set("custom_config", "secret: synthetic-controller\nexternal-controller: 127.0.0.1:9090\ndns:\n  nameserver: [https://192.0.2.54/dns-query]\n")
-		return nil, nil
+	_, err = s.repository.UpdateProfile(ctx, "setup_"+testSessionID[:20], func(_ context.Context, profile *model.Profile) error {
+		profile.Mihomo.CustomConfig = "secret: synthetic-controller\nexternal-controller: 127.0.0.1:9090\ndns:\n  nameserver: [https://192.0.2.54/dns-query]\n"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +42,11 @@ func preparedFixture(t *testing.T, goal string) (*Service, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record.ProfileRevision = pointer(model.Int(seeded.GetInt("_revision")))
+	seeded, err := s.repository.Profile(ctx, "setup_"+testSessionID[:20])
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.ProfileRevision = pointer(seeded.Revision)
 	if err := store.write(ctx, record); err != nil {
 		t.Fatal(err)
 	}
@@ -82,11 +84,11 @@ func TestPrepareFieldsMatchRealPythonAndRetainOwnership(t *testing.T) {
 			s, ctx := preparedFixture(t, goal)
 			store := storeFor(s.repository)
 			record, _ := store.read(ctx, testSessionID)
-			profile, err := s.repository.GetProfile(ctx, record.ProfileID)
+			profile, err := s.repository.Profile(ctx, record.ProfileID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			shared, err := s.repository.GetShared(ctx)
+			shared, err := s.repository.Shared(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,23 +101,35 @@ with tempfile.TemporaryDirectory() as root:
 			if _, err := s.Prepare(ctx, testSessionID, body, "http://localhost"); err != nil {
 				t.Fatal(err)
 			}
-			saved, err := s.repository.GetProfile(ctx, record.ProfileID)
+			saved, err := s.repository.Profile(ctx, record.ProfileID)
 			if err != nil {
 				t.Fatal(err)
 			}
 			raw, _ := json.Marshal(saved)
 			equalJSON(t, ownedForTest(t, raw), ownedForTest(t, want))
-			revision := saved.GetInt("_revision")
+			revision := saved.Revision
 			if _, err := s.Prepare(ctx, testSessionID, body, "http://localhost"); err != nil {
 				t.Fatal(err)
 			}
-			saved, _ = s.repository.GetProfile(ctx, record.ProfileID)
-			if saved.GetInt("_revision") != revision {
+			saved, _ = s.repository.Profile(ctx, record.ProfileID)
+			if saved.Revision != revision {
 				t.Fatal("idempotent prepare advanced profile revision")
 			}
-			_, _, err = s.repository.UpdateProfileTransaction(ctx, record.ProfileID, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				p.GetObject("oxidns").GetObject("query_recorder").Set("enabled", false)
-				return nil, nil
+			_, err = s.repository.UpdateProfile(ctx, record.ProfileID, func(_ context.Context, p *model.Profile) error {
+				oxRaw, err := p.OxiDNS.MarshalJSON()
+				if err != nil {
+					return err
+				}
+				var ox map[string]any
+				if err := json.Unmarshal(oxRaw, &ox); err != nil {
+					return err
+				}
+				ox["query_recorder"].(map[string]any)["enabled"] = false
+				raw, err := json.Marshal(ox)
+				if err != nil {
+					return err
+				}
+				return p.SetJSON("oxidns", raw)
 			})
 			if err != nil {
 				t.Fatal(err)

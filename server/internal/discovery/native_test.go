@@ -1,11 +1,9 @@
 package discovery
 
 import (
-	"configflow/internal/jsonx"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -235,20 +233,4 @@ func TestNativeRegistryRetainsHeartbeatOverlay(t *testing.T) {
 	if err != nil || stored.Agents[0].LastHeartbeat != "2000-01-01T00:00:00Z" {
 		t.Fatal("test did not distinguish runtime and stored state")
 	}
-}
-
-func object(value any) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	out, ok := parsed.(*jsonx.Object)
-	if !ok {
-		return nil, fmt.Errorf("expected JSON object")
-	}
-	return out, nil
 }

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 )
@@ -78,9 +78,21 @@ func TestCompletionChecksAndPublicationContentGuards(t *testing.T) {
 	if !enabled(record.Completed) || record.MaxStep != 5 || defaultID != record.ProfileID || text(record.PreviousDefault) != "default" {
 		t.Fatal("finish did not preserve default choice")
 	}
-	_, _, err := s.repository.UpdateProfileTransaction(ctx, record.ProfileID, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("oxidns").GetObject("query_recorder").Set("enabled", false)
-		return nil, nil
+	_, err := s.repository.UpdateProfile(ctx, record.ProfileID, func(_ context.Context, p *model.Profile) error {
+		oxRaw, err := p.OxiDNS.MarshalJSON()
+		if err != nil {
+			return err
+		}
+		var ox map[string]any
+		if err := json.Unmarshal(oxRaw, &ox); err != nil {
+			return err
+		}
+		ox["query_recorder"].(map[string]any)["enabled"] = false
+		raw, err := json.Marshal(ox)
+		if err != nil {
+			return err
+		}
+		return p.SetJSON("oxidns", raw)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -201,10 +213,10 @@ func TestRouterDraftAttachmentAndManualManagedFinish(t *testing.T) {
 		}
 	}
 	record, _ = storeFor(s.repository).read(ctx, testSessionID)
-	profile, _ := s.repository.GetProfile(ctx, record.ProfileID)
+	profile, _ := s.repository.Profile(ctx, record.ProfileID)
 	raw, _ := json.Marshal(profile)
 	attached, err := findRouter(raw, draft.ID)
-	if err != nil || attached == nil || attached.ProxyGatewayAgentID != "synthetic-mihomo" || attached.DNSAgentID != "synthetic-oxidns" || len(record.RouterDraft) != 0 || len(profile.GetObject("routers").GetList("items")) != 1 {
+	if err != nil || attached == nil || attached.ProxyGatewayAgentID != "synthetic-mihomo" || attached.DNSAgentID != "synthetic-oxidns" || len(record.RouterDraft) != 0 || len(profile.Routers.Items) != 1 {
 		t.Fatal("draft did not attach idempotently", err)
 	}
 	if _, err := s.Action(ctx, testSessionID, "finish", json.RawMessage(`{"router_mode":"manual"}`), ""); err == nil || err.Error() != msgAcknowledgeRoutes {

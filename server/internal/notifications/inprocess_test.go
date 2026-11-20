@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -9,21 +10,24 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/tasks"
 )
 
 func TestLeafTransactionsShareMutexAndLeaveLegacyLock(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "notifications.lock")
-	if err := os.WriteFile(path, []byte("python sentinel"), 0600); err != nil {
+	path := filepath.Join(dir, "notifications.json")
+	_ = path
+	lockPath := filepath.Join(dir, "notifications.lock")
+	if err := os.WriteFile(lockPath, []byte("python sentinel"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	stamp := time.Unix(1700000000, 0)
-	if err := os.Chtimes(path, stamp, stamp); err != nil {
+	if err := os.Chtimes(lockPath, stamp, stamp); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Stat(path)
+	before, err := os.Stat(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +35,17 @@ func TestLeafTransactionsShareMutexAndLeaveLegacyLock(t *testing.T) {
 	for range 20 {
 		wg.Go(func() {
 			for range 5 {
-				if err := Transaction(dir, func(items *jsonx.Object) error {
-					entry := items.GetObject("counter")
-					count := entry.GetInt("count")
-					items.Set("counter", jsonx.Obj("state", "pending", "count", jsonx.Int(count+1)))
+				if err := UpdateItems(context.Background(), dir, func(items *Items) error {
+					var count int
+					if entry, ok := items.Get("counter"); ok && entry != nil {
+						if raw, ok := entry.Extra.Get("count"); ok {
+							_ = json.Unmarshal(raw, &count)
+						}
+					}
+					next := &Item{State: "pending"}
+					rawCount, _ := json.Marshal(count + 1)
+					next.Extra.Set("count", rawCount)
+					items.Set("counter", next)
 					return nil
 				}); err != nil {
 					t.Error(err)
@@ -43,19 +54,26 @@ func TestLeafTransactionsShareMutexAndLeaveLegacyLock(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if err := Transaction(dir, func(items *jsonx.Object) error {
-		if items.GetObject("counter").GetInt("count") != 100 {
-			t.Error("updates lost")
+	if err := UpdateItems(context.Background(), dir, func(items *Items) error {
+		entry, ok := items.Get("counter")
+		var count int
+		if ok && entry != nil {
+			if raw, exists := entry.Extra.Get("count"); exists {
+				_ = json.Unmarshal(raw, &count)
+			}
+		}
+		if count != 100 {
+			t.Errorf("updates lost: count=%d", count)
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.Stat(path)
+	after, err := os.Stat(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +84,7 @@ func TestLeafTransactionsShareMutexAndLeaveLegacyLock(t *testing.T) {
 
 func TestNoNewNotificationLockFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := Transaction(dir, func(*jsonx.Object) error { return nil }); err != nil {
+	if err := UpdateItems(context.Background(), dir, func(*Items) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "notifications.lock")); !os.IsNotExist(err) {
@@ -95,26 +113,35 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 				t.Fatal(err)
 			}
 			ctx := repo.WithRepository(context.Background(), repository)
-			previous := currentSources()
-			t.Cleanup(func() { ResetSources(); SetSources(previous) })
-			task := func(message string) []*jsonx.Object {
-				return []*jsonx.Object{jsonx.Obj("key", "sample", "name", "sample", "category", "subscription", "enabled", true,
-					"last_status", "failed", "last_error", message, "run_count", 1)}
+			previous := currentInputs()
+			t.Cleanup(func() { ResetInputs(); SetInputs(previous) })
+			task := func(message string) []*tasks.Task {
+				return []*tasks.Task{{
+					Key:      "sample",
+					Name:     "sample",
+					Category: "subscription",
+					Enabled:  true,
+					HistoryData: &tasks.HistoryData{
+						LastStatus: new("failed"),
+						LastError:  new(message),
+						RunCount:   "1",
+					},
+				}}
 			}
-			SetSources(Sources{
-				Agents:    func(context.Context) ([]*jsonx.Object, error) { return nil, nil },
-				ListTasks: func(context.Context) ([]*jsonx.Object, error) { return task("current"), nil },
+			SetInputs(Inputs{
+				Agents: func(context.Context) ([]model.Agent, error) { return nil, nil },
+				Rows:   func(context.Context) ([]*tasks.Task, error) { return task("current"), nil },
 			})
-			initial, err := Snapshot(ctx, "")
+			initial, err := SnapshotItems(ctx, "")
 			if err != nil || len(initial) != 1 {
 				t.Fatal(initial, err)
 			}
-			version := initial[0].(*jsonx.Object).Value("version")
+			version := stringValue(initial[0].Version)
 			entered, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once
 			t.Cleanup(func() { once.Do(func() { close(release) }) })
 			var calls atomic.Int32
-			SetSources(Sources{ListTasks: func(context.Context) ([]*jsonx.Object, error) {
+			SetInputs(Inputs{Rows: func(context.Context) ([]*tasks.Task, error) {
 				if calls.Add(1) == 1 {
 					close(entered)
 					<-release
@@ -126,18 +153,18 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 				return task("new"), nil
 			}})
 			old := make(chan error, 1)
-			go func() { _, err := Snapshot(ctx, ""); old <- err }()
+			go func() { _, err := SnapshotItems(ctx, ""); old <- err }()
 			notificationResult(t, entered)
 			changed := make(chan error, 1)
 			go func() {
 				var err error
 				switch name {
 				case "newer snapshot", "unchanged snapshot":
-					_, err = Snapshot(ctx, "")
+					_, err = SnapshotItems(ctx, "")
 				case "notice":
-					err = RecordNotice(ctx, repository, "task:sample", "new notice", "new notice", nil)
+					err = SaveNotice(ctx, repository, "task:sample", "new notice", "new notice", nil)
 				case "read":
-					err = MarkRead(repository.DataDir(), jsonx.Obj("task:sample", version))
+					err = Dismiss(ctx, repository.DataDir(), map[string]string{"task:sample": version})
 				}
 				changed <- err
 			}()
@@ -150,15 +177,18 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 			if err := notificationResult(t, old); err != nil {
 				t.Fatal(err)
 			}
-			if err := Transaction(repository.DataDir(), func(items *jsonx.Object) error {
-				item := items.GetObject("task:sample")
+			if err := UpdateItems(ctx, repository.DataDir(), func(items *Items) error {
+				item, _ := items.Get("task:sample")
+				if item == nil {
+					t.Fatal("missing task:sample")
+				}
 				switch name {
 				case "read":
-					if item.GetString("state") != "dismissed" {
+					if item.State != "dismissed" {
 						t.Error("stale observation undid read", item)
 					}
 				case "notice":
-					if item.GetString("message") != "new notice" {
+					if stringValue(item.Message) != "new notice" {
 						t.Error("stale observation overwrote notice", item)
 					}
 				default:
@@ -166,7 +196,7 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 					if name == "unchanged snapshot" {
 						want = "current"
 					}
-					if item.GetString("message") != want {
+					if stringValue(item.Message) != want {
 						t.Error("stale observation overwrote snapshot", item)
 					}
 				}

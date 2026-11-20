@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/taskstatus"
 )
 
 func TestHistoryCountersAgainstPython(t *testing.T) {
@@ -49,11 +49,7 @@ json.dump(result,sys.stdout)`)
 	}
 	for i, raw := range inputs {
 		t.Run(string(raw), func(t *testing.T) {
-			value, err := jsonx.Parse(raw)
-			if err != nil {
-				t.Fatal(err)
-			}
-			row, err := History(jsonx.Obj("run_count", value))
+			row, err := ProjectHistory(&taskstatus.Receipt{RunCount: raw})
 			if expected[i].Error {
 				if err == nil {
 					t.Fatal("invalid counter accepted")
@@ -63,9 +59,9 @@ json.dump(result,sys.stdout)`)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := jsonx.Compact(row.Value("run_count"))
-			if err != nil || !bytes.Equal(got, expected[i].Count) {
-				t.Fatalf("got %s, want %s: %v", got, expected[i].Count, err)
+			got := []byte(row.RunCount)
+			if !bytes.Equal(got, expected[i].Count) {
+				t.Fatalf("got %s, want %s", got, expected[i].Count)
 			}
 		})
 	}

@@ -2,6 +2,7 @@ package notifications_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +10,12 @@ import (
 
 	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 // The task rows come from packages not ported yet; these tests use a
@@ -22,61 +24,71 @@ import (
 
 var running = false
 
-func subscriptionRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
+func subscriptionRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	shared, err := repository.GetShared(ctx)
+	shared, err := repository.Shared(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var rows []*jsonx.Object
-	for _, value := range shared.GetList("subscriptions") {
-		sub := value.(*jsonx.Object)
-		key := "subscription:" + sub.GetString("id")
-		entry, _ := statuses.Value(key).(*jsonx.Object)
-		enabled := sub.Value("enabled") != false && jsonx.Truthy(sub.Value("url"))
-		fields := []any{"resource_id", sub.Value("id"), "enabled", enabled, "interval_seconds", sub.Value("interval"),
-			"notifications_enabled", enabled, "running", running, "link", "/subscriptions"}
-		history, err := tasks.History(entry)
+	var rows []*tasks.Task
+	for _, sub := range shared.Subscriptions {
+		key := "subscription:" + sub.ID
+		enabled := model.SwitchEnabled(&sub, "enabled", sub.Enabled, true) && strings.TrimSpace(sub.URL) != ""
+		history, err := tasks.ProjectHistory(statuses.Entry(key))
 		if err != nil {
 			return nil, err
 		}
-		fields = append(fields, tasks.Spread(history)...)
-		rows = append(rows, tasks.Row(key, "subscription", sub.GetString("name"), fields...))
+		intervalRaw, _ := json.Marshal(sub.Interval)
+		link := "/subscriptions"
+		rows = append(rows, &tasks.Task{
+			Key:                  key,
+			Category:             "subscription",
+			Name:                 sub.Name,
+			ResourceID:           sub.ID,
+			Enabled:              enabled,
+			IntervalSeconds:      intervalRaw,
+			NotificationsEnabled: new(enabled),
+			Running:              running,
+			Link:                 &link,
+			HistoryData:          history,
+		})
 	}
 	return rows, nil
 }
 
-func none(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }
+func none(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 
-func storedAgents(ctx context.Context) ([]*jsonx.Object, error) {
+func storedAgents(ctx context.Context) ([]model.Agent, error) {
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	system, err := repository.GetSystem(ctx)
+	system, err := repository.System(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var agents []*jsonx.Object
-	for _, item := range system.GetList("agents") {
-		agents = append(agents, item.(*jsonx.Object))
-	}
-	return agents, nil
+	return system.Agents, nil
 }
 
-func summarize(report, plan *jsonx.Object) *jsonx.Object {
+func summarize(_ *notifications.RouterReport, plan json.RawMessage) (*notifications.RouterSummary, error) {
+	var parsed struct {
+		Stages []struct {
+			Ops []json.RawMessage `json:"ops"`
+		} `json:"stages"`
+	}
+	_ = json.Unmarshal(plan, &parsed)
 	pending := 0
-	for _, stage := range plan.GetList("stages") {
-		pending += len(stage.(*jsonx.Object).GetList("ops"))
+	for _, stage := range parsed.Stages {
+		pending += len(stage.Ops)
 	}
 	state := "synced"
 	if pending > 0 {
 		state = "pending"
 	}
-	return jsonx.Obj("state", state, "pending", pending, "items", []any{}, "message", "")
+	return &notifications.RouterSummary{State: state, Pending: model.Int(pending)}, nil
 }
 
 type fixture struct {
@@ -88,18 +100,16 @@ type fixture struct {
 func setup(t *testing.T) *fixture {
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents,
 		tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRows(slot, none))
+		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
-	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, subscriptionRows))
-	notifications.ResetSources()
-	notifications.SetSources(notifications.Sources{ListTasks: tasks.ListTasks, Agents: storedAgents, Summarize: summarize})
-	t.Cleanup(notifications.ResetSources)
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, subscriptionRows))
+	notifications.ResetInputs()
+	notifications.SetInputs(notifications.Inputs{Rows: tasks.List, Agents: storedAgents, Summarize: summarize})
+	t.Cleanup(notifications.ResetInputs)
 	running = false
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apinotifications.RegisterAlways)})
-	_, err := srv.Repo.UpdateSharedTransaction(srv.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{jsonx.Obj("id", "feed", "name", "常用订阅", "url", "https://test.invalid/?token=private",
-			"enabled", true, "interval", 3600)})
-		return nil, nil
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"常用订阅","url":"https://test.invalid/?token=private","enabled":true,"interval":3600}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -107,33 +117,57 @@ func setup(t *testing.T) *fixture {
 	return &fixture{t, srv, notifications.TaskStatus(srv.Context(), srv.DataDir)}
 }
 
-func (f *fixture) items() map[string]*jsonx.Object {
+func strVal(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func boolVal(p *bool) bool {
+	return p != nil && *p
+}
+
+func (f *fixture) items() map[string]*notifications.Item {
 	f.t.Helper()
 	res := f.srv.Get("/api/notifications").WantStatus(200)
 	if res.Header.Get("Cache-Control") != "no-store" {
 		f.t.Fatal(res.Header)
 	}
-	out := map[string]*jsonx.Object{}
-	for _, item := range res.Object().GetList("items") {
-		o := item.(*jsonx.Object)
-		out[o.GetString("id")] = o
+	var payload struct {
+		Items []*notifications.Item `json:"items"`
+	}
+	if err := json.Unmarshal(res.Body, &payload); err != nil {
+		f.t.Fatal(err)
+	}
+	out := map[string]*notifications.Item{}
+	for _, item := range payload.Items {
+		out[item.ID] = item
 	}
 	return out
 }
 
-func (f *fixture) saved() *jsonx.Object {
+func (f *fixture) saved() map[string]map[string]any {
 	f.t.Helper()
 	data, err := os.ReadFile(filepath.Join(f.srv.DataDir, "notifications.json"))
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	value, _ := jsonx.Parse(data)
-	return value.(*jsonx.Object).GetObject("items")
+	var doc struct {
+		Items map[string]map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		f.t.Fatal(err)
+	}
+	if doc.Items == nil {
+		return map[string]map[string]any{}
+	}
+	return doc.Items
 }
 
 func (f *fixture) record(key string, result taskstatus.Result) {
 	f.t.Helper()
-	if _, err := f.status.Record(key, result); err != nil {
+	if _, err := f.status.SaveResult(f.srv.Context(), key, result); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -144,11 +178,19 @@ func (f *fixture) fail() {
 }
 
 func (f *fixture) read(versions ...string) {
-	o := jsonx.NewObject()
+	m := map[string]string{}
 	for i := 0; i+1 < len(versions); i += 2 {
-		o.Set(versions[i], versions[i+1])
+		m[versions[i]] = versions[i+1]
 	}
-	f.srv.Post("/api/notifications/read", httpxtest.JSON(jsonx.Obj("versions", o))).WantStatus(200)
+	f.srv.Post("/api/notifications/read", httpxtest.JSON(map[string]any{"versions": m})).WantStatus(200)
+}
+
+func mustJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 const key = "task:subscription:feed"
@@ -157,40 +199,41 @@ const key = "task:subscription:feed"
 func TestReadRemovesBodyPersistsDedupeAndANewFailureNotifiesAgain(t *testing.T) {
 	f := setup(t)
 	f.fail()
-	if f.saved().GetObject(key).GetString("state") != "pending" {
+	if f.saved()[key]["state"] != "pending" {
 		t.Fatal("pending after the failure, without a browser")
 	}
 	first := f.items()[key]
-	if first.GetString("severity") != "warning" || first.GetString("impact") != "仍使用上一次有效缓存" {
-		t.Fatal(jsonx.Repr(first))
+	if strVal(first.Severity) != "warning" || strVal(first.Impact) != "仍使用上一次有效缓存" {
+		t.Fatalf("%+v", first)
 	}
-	if !jsonx.Equal(first.Value("target"), notifications.Target("/subscriptions", "检查订阅设置", "subscription", "feed", "section", "settings")) {
-		t.Fatal(jsonx.Repr(first.Value("target")))
+	wantTarget := notifications.Destination("/subscriptions", "检查订阅设置", map[string]string{"subscription": "feed", "section": "settings"})
+	if !testjson.Equal(wantTarget, first.Target) {
+		t.Fatalf("target diff: %s", testjson.Diff(wantTarget, first.Target))
 	}
-	f.read(key, first.GetString("version"))
+	f.read(key, strVal(first.Version))
 	if _, ok := f.items()[key]; ok {
 		t.Fatal("read")
 	}
-	saved := f.saved().GetObject(key)
-	if saved.Len() != 3 || len(saved.GetString("fingerprint")) != 64 || saved.GetString("state") != "dismissed" ||
-		saved.Value("source") != "task" {
-		t.Fatal(jsonx.Repr(saved))
+	saved := f.saved()[key]
+	fp, _ := saved["fingerprint"].(string)
+	if len(saved) != 3 || len(fp) != 64 || saved["state"] != "dismissed" || saved["source"] != "task" {
+		t.Fatalf("%+v", saved)
 	}
 	if _, ok := f.items()[key]; ok {
 		t.Fatal("acknowledgement persisted")
 	}
 	f.fail()
 	third := f.items()[key]
-	if third.GetBool("read") || third.GetInt("failure_count") != 2 || third.GetString("version") == first.GetString("version") {
-		t.Fatal(jsonx.Repr(third))
+	if boolVal(third.Read) || string(third.FailureCount) != "2" || strVal(third.Version) == strVal(first.Version) {
+		t.Fatalf("%+v", third)
 	}
-	f.read(key, first.GetString("version"))
+	f.read(key, strVal(first.Version))
 	if _, ok := f.items()[key]; !ok {
 		t.Fatal("stale read")
 	}
-	f.read(key, third.GetString("version"))
+	f.read(key, strVal(third.Version))
 	f.record("subscription:feed", taskstatus.Result{OK: true})
-	if f.saved().Has(key) {
+	if _, ok := f.saved()[key]; ok {
 		t.Fatal("recovered")
 	}
 }
@@ -201,24 +244,23 @@ func TestRecoveryAndRecurrenceWithoutBrowserAndStaleReadIsIgnored(t *testing.T) 
 	f.fail()
 	original := f.items()[key]
 	f.record("subscription:feed", taskstatus.Result{OK: true})
-	if f.saved().Has(key) {
+	if _, ok := f.saved()[key]; ok {
 		t.Fatal("recovered without a browser")
 	}
 	f.fail()
 	reopened := f.items()[key]
-	if reopened.GetString("state") != "pending" || reopened.GetBool("read") || reopened.GetString("version") == original.GetString("version") {
-		t.Fatal(jsonx.Repr(reopened))
+	if reopened.State != "pending" || boolVal(reopened.Read) || strVal(reopened.Version) == strVal(original.Version) {
+		t.Fatalf("%+v", reopened)
 	}
-	f.read(key, original.GetString("version"))
-	if f.items()[key].GetBool("read") {
+	f.read(key, strVal(original.Version))
+	if boolVal(f.items()[key].Read) {
 		t.Fatal("stale read")
 	}
 }
 
-func (f *fixture) setSubscriptions(list []any) {
-	_, err := f.srv.Repo.UpdateSharedTransaction(f.srv.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", list)
-		return nil, nil
+func (f *fixture) setSubscriptions(raw json.RawMessage) {
+	err := f.srv.Repo.UpdateShared(f.srv.Context(), func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("subscriptions", raw)
 	})
 	if err != nil {
 		f.t.Fatal(err)
@@ -229,17 +271,20 @@ func (f *fixture) setSubscriptions(list []any) {
 func TestRemovedAndDisabledSourcesClearNotificationsAndDedupeMarkers(t *testing.T) {
 	f := setup(t)
 	f.fail()
-	sub := jsonx.Obj("id", "feed", "name", "常用订阅", "url", "https://test.invalid/?token=private", "enabled", false, "interval", 3600)
-	f.setSubscriptions([]any{sub})
+	sub := map[string]any{"id": "feed", "name": "常用订阅", "url": "https://test.invalid/?token=private", "enabled": false, "interval": 3600}
+	f.setSubscriptions(mustJSON([]any{sub}))
 	if _, ok := f.items()[key]; ok {
 		t.Fatal("disabled")
 	}
-	sub.Set("enabled", true)
-	f.setSubscriptions([]any{sub})
+	sub["enabled"] = true
+	f.setSubscriptions(mustJSON([]any{sub}))
 	row := f.items()[key]
-	f.read(key, row.GetString("version"))
-	f.setSubscriptions([]any{})
-	if _, ok := f.items()[key]; ok || f.saved().Has(key) {
+	f.read(key, strVal(row.Version))
+	f.setSubscriptions(json.RawMessage(`[]`))
+	if _, ok := f.items()[key]; ok {
+		t.Fatal("removed source keeps its marker")
+	}
+	if _, ok := f.saved()[key]; ok {
 		t.Fatal("removed source keeps its marker")
 	}
 }
@@ -249,10 +294,10 @@ func TestTaskRunningOrSourceReadFailureNeverClearsPending(t *testing.T) {
 	f := setup(t)
 	f.fail()
 	running = true
-	if f.items()[key].GetString("state") != "pending" {
+	if f.items()[key].State != "pending" {
 		t.Fatal("running is not recovery")
 	}
-	notifications.SetSources(notifications.Sources{ListTasks: func(context.Context) ([]*jsonx.Object, error) {
+	notifications.SetInputs(notifications.Inputs{Rows: func(context.Context) ([]*tasks.Task, error) {
 		return nil, notifications.ErrSourceUnavailable
 	}})
 	f.srv.Get("/api/notifications").WantStatus(503)
@@ -263,11 +308,11 @@ func TestCompletedReceiptIsPersistedBeforeWorkerReleasesRunningFlag(t *testing.T
 	f := setup(t)
 	running = true
 	f.fail()
-	if f.saved().GetObject(key).GetString("state") != "pending" {
+	if f.saved()[key]["state"] != "pending" {
 		t.Fatal("pending")
 	}
 	f.record("subscription:feed", taskstatus.Result{OK: true})
-	if f.saved().Has(key) {
+	if _, ok := f.saved()[key]; ok {
 		t.Fatal("the completed receipt counts even while the running flag is set")
 	}
 }
@@ -275,19 +320,17 @@ func TestCompletedReceiptIsPersistedBeforeWorkerReleasesRunningFlag(t *testing.T
 // test_manual_backup_failure_is_actionable_even_without_automatic_backup
 func TestManualBackupFailureIsActionableEvenWithoutAutomaticBackup(t *testing.T) {
 	f := setup(t)
-	_, err := f.srv.Repo.UpdateSystemTransaction(f.srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("backup", jsonx.Obj("auto_backup", false, "webdav_url", "https://backup.invalid",
-			"webdav_username", "admin", "webdav_password", "private"))
-		return nil, nil
+	err := f.srv.Repo.UpdateSystem(f.srv.Context(), func(_ context.Context, system *model.System) error {
+		return system.SetJSON("backup", json.RawMessage(`{"auto_backup":false,"webdav_url":"https://backup.invalid","webdav_username":"admin","webdav_password":"private"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.record("webdav_backup", taskstatus.Result{Error: "HTTP 401", Trigger: "manual"})
 	row := f.items()["task:webdav_backup"]
-	if row.GetString("state") != "pending" || row.GetString("title") != "WebDAV 手动备份" ||
-		!jsonx.Equal(row.GetObject("target").Value("query"), jsonx.Obj("section", "backup")) {
-		t.Fatal(jsonx.Repr(row))
+	if row.State != "pending" || strVal(row.Title) != "WebDAV 手动备份" ||
+		!testjson.Equal(map[string]string{"section": "backup"}, row.Target.Query) {
+		t.Fatalf("%+v", row)
 	}
 	f.record("webdav_backup", taskstatus.Result{OK: true, Trigger: "manual"})
 	if _, ok := f.items()["task:webdav_backup"]; ok {
@@ -320,21 +363,31 @@ func TestExistingHistoryAndReadBodiesAreRemovedOnUpgrade(t *testing.T) {
 	f.fail()
 	path := filepath.Join(f.srv.DataDir, "notifications.json")
 	data, _ := os.ReadFile(path)
-	value, _ := jsonx.Parse(data)
-	items := value.(*jsonx.Object).GetObject("items")
-	recovered := items.GetObject(key).Clone()
-	recovered.Set("state", "resolved")
-	recovered.Set("resolved_at", notifications.Now())
-	items.Set("recently-recovered", recovered)
-	items.GetObject(key).Set("read", true)
-	encoded, _ := jsonx.Default(value)
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	items := doc["items"].(map[string]any)
+	orig := items[key].(map[string]any)
+	recovered := map[string]any{}
+	for k, v := range orig {
+		recovered[k] = v
+	}
+	recovered["state"] = "resolved"
+	recovered["resolved_at"] = notifications.Now()
+	items["recently-recovered"] = recovered
+	orig["read"] = true
+	encoded, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.WriteFile(path, encoded, 0o644)
 	if len(f.items()) != 0 {
 		t.Fatal("nothing pending")
 	}
 	saved := f.saved()
-	if saved.Has("recently-recovered") || saved.GetObject(key).Len() != 3 {
-		t.Fatal(jsonx.Repr(saved))
+	if _, has := saved["recently-recovered"]; has || len(saved[key]) != 3 {
+		t.Fatalf("%+v", saved)
 	}
 }
 
@@ -343,8 +396,10 @@ func TestOldUnreadProblemIsRetainedAndStaleReadCannotClearANewReceipt(t *testing
 	f := setup(t)
 	f.fail()
 	first := f.items()[key]
-	err := notifications.Transaction(f.srv.DataDir, func(items *jsonx.Object) error {
-		items.GetObject(key).Set("first_seen_at", "2000-01-01T00:00:00+00:00")
+	err := notifications.UpdateItems(f.srv.Context(), f.srv.DataDir, func(items *notifications.Items) error {
+		if item, ok := items.Get(key); ok {
+			item.FirstSeenAt = new("2000-01-01T00:00:00+00:00")
+		}
 		return nil
 	})
 	if err != nil {
@@ -354,19 +409,19 @@ func TestOldUnreadProblemIsRetainedAndStaleReadCannotClearANewReceipt(t *testing
 		t.Fatal("old problems stay")
 	}
 	f.fail()
-	if f.items()[key].GetString("version") == first.GetString("version") {
+	if strVal(f.items()[key].Version) == strVal(first.Version) {
 		t.Fatal("new version")
 	}
-	f.read(key, first.GetString("version"))
+	f.read(key, strVal(first.Version))
 	if _, ok := f.items()[key]; !ok {
 		t.Fatal("stale read")
 	}
 }
 
-func (f *fixture) setAgents(agents ...any) {
-	_, err := f.srv.Repo.UpdateSystemTransaction(f.srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", agents)
-		return nil, nil
+func (f *fixture) setAgents(agents ...model.Agent) {
+	err := f.srv.Repo.UpdateSystem(f.srv.Context(), func(_ context.Context, system *model.System) error {
+		system.Agents = agents
+		return nil
 	})
 	if err != nil {
 		f.t.Fatal(err)
@@ -376,29 +431,40 @@ func (f *fixture) setAgents(agents ...any) {
 // test_latest_deployment_status_uses_exact_record_and_keeps_failures_while_retrying
 func TestLatestDeploymentStatusUsesExactRecordAndKeepsFailuresWhileRetrying(t *testing.T) {
 	f := setup(t)
-	agent := jsonx.Obj("id", "a", "name", "网关", "service_type", "mihomo", "profile_id", "default", "enabled", true,
-		"token", "very-private-token", "latest_deployment", jsonx.Obj("deployment_id", "d1", "profile_id", "default",
-			"status", "rollback_failed", "rollback_error", "恢复失败 very-private-token https://device.test/?secret=hidden"))
+	agent := model.Agent{
+		ID:          "a",
+		Name:        "网关",
+		ServiceType: "mihomo",
+		ProfileID:   "default",
+		Enabled:     new(true),
+		Token:       "very-private-token",
+		LatestDeployment: &model.Deployment{
+			DeploymentID:  "d1",
+			ProfileID:     "default",
+			Status:        "rollback_failed",
+			RollbackError: new("恢复失败 very-private-token https://device.test/?secret=hidden"),
+		},
+	}
 	f.setAgents(agent)
-	if err := notifications.RecordAgent(f.srv.Context(), agent, f.srv.Repo); err != nil {
+	if err := notifications.SaveAgent(f.srv.Context(), &agent, f.srv.Repo); err != nil {
 		t.Fatal(err)
 	}
 	row := f.items()["deployment:a"]
-	if row.GetString("severity") != "error" ||
-		!jsonx.Equal(row.GetObject("target").Value("query"), jsonx.Obj("agent", "a", "profile", "default", "section", "deployment", "deployment", "d1")) {
-		t.Fatal(jsonx.Repr(row))
+	wantQuery := map[string]string{"agent": "a", "profile": "default", "section": "deployment", "deployment": "d1"}
+	if strVal(row.Severity) != "error" || !testjson.Equal(wantQuery, row.Target.Query) {
+		t.Fatalf("%+v", row)
 	}
-	if text := jsonx.Repr(row); strings.Contains(text, "very-private-token") || strings.Contains(text, "secret=hidden") {
+	if text := string(mustJSON(row)); strings.Contains(text, "very-private-token") || strings.Contains(text, "secret=hidden") {
 		t.Fatal(text)
 	}
-	agent.Set("latest_deployment", jsonx.Obj("deployment_id", "d2", "profile_id", "default", "status", "preparing"))
+	agent.LatestDeployment = &model.Deployment{DeploymentID: "d2", ProfileID: "default", Status: "preparing"}
 	f.setAgents(agent)
-	if f.items()["deployment:a"].GetString("state") != "pending" {
+	if f.items()["deployment:a"].State != "pending" {
 		t.Fatal("unknown is not recovery")
 	}
-	agent.GetObject("latest_deployment").Set("status", "succeeded")
+	agent.LatestDeployment.Status = "succeeded"
 	f.setAgents(agent)
-	if err := notifications.RecordAgent(f.srv.Context(), agent, f.srv.Repo); err != nil {
+	if err := notifications.SaveAgent(f.srv.Context(), &agent, f.srv.Repo); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := f.items()["deployment:a"]; ok {
@@ -406,33 +472,44 @@ func TestLatestDeploymentStatusUsesExactRecordAndKeepsFailuresWhileRetrying(t *t
 	}
 }
 
-func (f *fixture) seedRouter(profile string) *jsonx.Object {
-	router := jsonx.Obj("id", "r", "name", "主路由", "type", "routeros", "endpoint", "http://router.test",
-		"username", "user", "password", "private", "ip_rule_sets", []any{})
-	_, _, err := f.srv.Repo.UpdateProfileTransaction(f.srv.Context(), profile, func(_ context.Context, config *jsonx.Object) (*jsonx.Object, error) {
-		config.Set("routers", jsonx.Obj("items", []any{router}))
-		return nil, nil
+func (f *fixture) seedRouter(profile string) *model.Router {
+	var router model.Router
+	if err := json.Unmarshal([]byte(`{"id":"r","name":"主路由","type":"routeros","endpoint":"http://router.test","username":"user","password":"private","ip_rule_sets":[]}`), &router); err != nil {
+		f.t.Fatal(err)
+	}
+	_, err := f.srv.Repo.UpdateProfile(f.srv.Context(), profile, func(_ context.Context, cfg *model.Profile) error {
+		cfg.Routers.Items = []model.Router{router}
+		return nil
 	})
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return router
+	return &router
 }
 
-func (f *fixture) config(profile string) *jsonx.Object {
-	config, err := repo.GetConfig(f.srv.Context(), profile)
+func (f *fixture) config(profile string) json.RawMessage {
+	cfg, err := f.srv.Repo.Config(f.srv.Context(), profile, nil)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return config
+	return mustJSON(cfg)
 }
 
-func forwardReport() *jsonx.Object {
-	return jsonx.Obj("in_sync", false, "routes", jsonx.Obj("forward_hint", jsonx.Obj("status", "drop", "warning", "同口转发被阻止", "fix_command", "command")))
+func forwardReport() *notifications.RouterReport {
+	return &notifications.RouterReport{
+		InSync: new(false),
+		Routes: &notifications.RouteHints{
+			ForwardHint: &notifications.RouterCheck{
+				Status:     "drop",
+				Warning:    "同口转发被阻止",
+				FixCommand: "command",
+			},
+		},
+	}
 }
 
-func routePlan() *jsonx.Object {
-	return jsonx.Obj("stages", []any{jsonx.Obj("key", "routes", "title", "代理路由", "ops", []any{jsonx.Obj("kind", "route_add")})})
+func routePlan() json.RawMessage {
+	return json.RawMessage(`{"stages":[{"key":"routes","title":"代理路由","ops":[{"kind":"route_add"}]}]}`)
 }
 
 // test_router_notices_keep_profile_section_freshness_and_unknown_is_not_recovery
@@ -441,40 +518,40 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 	router := f.seedRouter("default")
 	report := forwardReport()
 	ctx := f.srv.Context()
-	if err := notifications.RecordRouter(ctx, "default", f.config("default"), router, report, routePlan(), ""); err != nil {
+	if err := notifications.SaveRouter(ctx, "default", f.config("default"), router, report, routePlan(), ""); err != nil {
 		t.Fatal(err)
 	}
 	k := "router:default:r:firewall"
 	row := f.items()[k]
-	if !jsonx.Equal(row.GetObject("target").Value("query"), jsonx.Obj("router", "r", "profile", "default", "section", "ipv4-forward-hint")) ||
-		!jsonx.Truthy(row.Value("checked_at")) || row.GetBool("stale") {
-		t.Fatal(jsonx.Repr(row))
+	wantQuery := map[string]string{"router": "r", "profile": "default", "section": "ipv4-forward-hint"}
+	if !testjson.Equal(wantQuery, row.Target.Query) || len(row.CheckedAt) == 0 || string(row.CheckedAt) == "null" || string(row.CheckedAt) == `""` || boolVal(row.Stale) {
+		t.Fatalf("%+v", row)
 	}
-	if f.items()["router:default:r:changes"].GetString("severity") != "neutral" {
+	if strVal(f.items()["router:default:r:changes"].Severity) != "neutral" {
 		t.Fatal("changes")
 	}
-	report.GetObject("routes").Set("forward_hint", jsonx.Obj("status", "unknown"))
-	notifications.RecordRouter(ctx, "default", f.config("default"), router, report, nil, "")
-	if f.items()[k].GetString("state") != "pending" {
+	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "unknown"}
+	notifications.SaveRouter(ctx, "default", f.config("default"), router, report, nil, "")
+	if f.items()[k].State != "pending" {
 		t.Fatal("unknown")
 	}
-	notifications.RecordRouter(ctx, "default", f.config("default"), router, jsonx.NewObject(), nil, "")
-	if f.items()[k].GetString("state") != "pending" {
+	notifications.SaveRouter(ctx, "default", f.config("default"), router, &notifications.RouterReport{}, nil, "")
+	if f.items()[k].State != "pending" {
 		t.Fatal("empty")
 	}
-	_, _, err := f.srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, config *jsonx.Object) (*jsonx.Object, error) {
-		config.Set("custom_notification_test", "changed")
-		return nil, nil
+	_, err := f.srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, cfg *model.Profile) error {
+		cfg.Fields.Set("custom_notification_test", json.RawMessage(`"changed"`))
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f.items()[k].GetBool("stale") {
+	if !boolVal(f.items()[k].Stale) {
 		t.Fatal("stale after a configuration change")
 	}
-	report.GetObject("routes").Set("forward_hint", jsonx.Obj("status", "ok"))
-	report.Set("in_sync", true)
-	notifications.RecordRouter(ctx, "default", f.config("default"), router, report, nil, "")
+	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "ok"}
+	report.InSync = new(true)
+	notifications.SaveRouter(ctx, "default", f.config("default"), router, report, nil, "")
 	if _, ok := f.items()[k]; ok {
 		t.Fatal("resolved")
 	}
@@ -484,22 +561,22 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 func TestSameRouterIDInDifferentProfilesDoesNotMerge(t *testing.T) {
 	f := setup(t)
 	ctx := f.srv.Context()
-	if _, err := f.srv.Repo.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "其他"), ""); err != nil {
+	if _, err := f.srv.Repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "其他"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	var router *jsonx.Object
+	var router *model.Router
 	for _, profile := range []string{"default", "other"} {
 		router = f.seedRouter(profile)
-		notifications.RecordRouter(ctx, profile, f.config(profile), router,
-			jsonx.Obj("ipv6_dns", jsonx.Obj("status", "blocked", "blockers", []any{"需要指定 LAN"})), nil, "")
+		notifications.SaveRouter(ctx, profile, f.config(profile), router,
+			&notifications.RouterReport{IPv6DNS: &notifications.RouterCheck{Status: "blocked", Blockers: []string{"需要指定 LAN"}}}, nil, "")
 	}
 	rows := f.items()
-	if rows["router:default:r:ipv6_dns"].GetString("profile_id") != "default" || rows["router:other:r:ipv6_dns"].GetString("profile_id") != "other" {
+	if strVal(rows["router:default:r:ipv6_dns"].ProfileID) != "default" || strVal(rows["router:other:r:ipv6_dns"].ProfileID) != "other" {
 		t.Fatal("profiles")
 	}
-	notifications.RecordRouter(ctx, "other", f.config("other"), router, jsonx.Obj("desired", jsonx.NewObject(), "routes", jsonx.NewObject()), nil, "")
+	notifications.SaveRouter(ctx, "other", f.config("other"), router, &notifications.RouterReport{Desired: json.RawMessage(`{}`), Routes: &notifications.RouteHints{}, HasRoutes: true}, nil, "")
 	rows = f.items()
-	if _, ok := rows["router:other:r:ipv6_dns"]; ok || rows["router:default:r:ipv6_dns"].GetString("state") != "pending" {
+	if _, ok := rows["router:other:r:ipv6_dns"]; ok || rows["router:default:r:ipv6_dns"].State != "pending" {
 		t.Fatal("independent")
 	}
 }
@@ -511,10 +588,9 @@ func TestConfirmedRouterReleaseRemovesPreviousFailure(t *testing.T) {
 	f.seedRouter("default")
 	setRelease := func(ok bool) {
 		f.t.Helper()
-		_, _, err := f.srv.Repo.UpdateProfileTransaction(f.srv.Context(), "default", func(_ context.Context, config *jsonx.Object) (*jsonx.Object, error) {
-			router := config.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-			router.Set("last_release", jsonx.Obj("ok", ok, "at", notifications.Now(), "message", "回读失败"))
-			return nil, nil
+		_, err := f.srv.Repo.UpdateProfile(f.srv.Context(), "default", func(_ context.Context, cfg *model.Profile) error {
+			cfg.Routers.Items[0].LastRelease = &model.RouterRelease{OK: ok, At: notifications.Now(), Message: "回读失败"}
+			return nil
 		})
 		if err != nil {
 			f.t.Fatal(err)
@@ -522,7 +598,7 @@ func TestConfirmedRouterReleaseRemovesPreviousFailure(t *testing.T) {
 	}
 	key := "router:default:r:release"
 	setRelease(false)
-	if f.items()[key].GetString("state") != "pending" {
+	if f.items()[key].State != "pending" {
 		t.Fatal("old release failure missing")
 	}
 	setRelease(true)
@@ -542,54 +618,54 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 	router := f.seedRouter("default")
 	config := f.config("default")
 	report := forwardReport()
-	notifications.RecordRouter(ctx, "default", config, router, report, routePlan(), "")
+	notifications.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
 	rows := f.items()
 	if len(rows) != 2 {
 		t.Fatal(len(rows))
 	}
-	readAll := func(rows map[string]*jsonx.Object) {
+	readAll := func(rows map[string]*notifications.Item) {
 		var versions []string
 		for k, row := range rows {
-			versions = append(versions, k, row.GetString("version"))
+			versions = append(versions, k, strVal(row.Version))
 		}
 		f.read(versions...)
 	}
 	readAll(rows)
-	notifications.RecordRouter(ctx, "default", config, router, report, nil, "")
-	notifications.RecordRouter(ctx, "default", config, router, report, routePlan(), "")
+	notifications.SaveRouter(ctx, "default", config, router, report, nil, "")
+	notifications.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
 	if len(f.items()) != 0 {
 		t.Fatal("replayed")
 	}
-	report.GetObject("routes").Set("forward_hint", jsonx.Obj("status", "unknown"))
-	notifications.RecordRouter(ctx, "default", config, router, report, nil, "")
+	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "unknown"}
+	notifications.SaveRouter(ctx, "default", config, router, report, nil, "")
 	if len(f.items()) != 0 {
 		t.Fatal("unknown")
 	}
-	report.GetObject("routes").Set("forward_hint", jsonx.Obj("status", "ok"))
-	report.Set("in_sync", true)
-	notifications.RecordRouter(ctx, "default", config, router, report, nil, "")
-	if f.saved().Len() != 0 {
-		t.Fatal(jsonx.Repr(f.saved()))
+	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "ok"}
+	report.InSync = new(true)
+	notifications.SaveRouter(ctx, "default", config, router, report, nil, "")
+	if len(f.saved()) != 0 {
+		t.Fatalf("%+v", f.saved())
 	}
 	report = forwardReport()
-	notifications.RecordRouter(ctx, "default", config, router, report, routePlan(), "")
+	notifications.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
 	rows = f.items()
 	if len(rows) != 2 {
 		t.Fatal(len(rows))
 	}
 	readAll(rows)
 	// This notification fixture owns no publisher; explicitly permit catalog cleanup.
-	previous := repo.SetHooks(repo.Hooks{JobLock: func(context.Context, string, string, *jsonx.Object) (func(), bool) { return func() {}, true }})
+	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: func(context.Context, string, string, model.Router) (func(), bool) { return func() {}, true }}})
 	defer repo.SetHooks(previous)
-	_, _, err := f.srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, config *jsonx.Object) (*jsonx.Object, error) {
-		config.Set("routers", jsonx.Obj("items", []any{}))
-		return nil, nil
+	_, err := f.srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, cfg *model.Profile) error {
+		cfg.Routers.Items = []model.Router{}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.items()) != 0 || f.saved().Len() != 0 {
-		t.Fatal(jsonx.Repr(f.saved()))
+	if len(f.items()) != 0 || len(f.saved()) != 0 {
+		t.Fatalf("%+v", f.saved())
 	}
 }
 
@@ -597,7 +673,7 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 func TestNotificationsRequireAuthentication(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apinotifications.RegisterAlways)})
 	srv.Get("/api/notifications").WantStatus(401)
-	srv.Post("/api/notifications/read", httpxtest.JSON(jsonx.Obj("versions", jsonx.NewObject()))).WantStatus(401)
+	srv.Post("/api/notifications/read", httpxtest.JSON(map[string]any{"versions": map[string]string{}})).WantStatus(401)
 }
 
 func TestEventMessageHidesAddressesAndSecrets(t *testing.T) {

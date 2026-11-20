@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
@@ -91,10 +91,11 @@ func fixedService(t *testing.T) (*FixedIPService, *routerfake.Fake, FixedIPInten
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(t.Context(), db)
-	_, _, err = db.UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("device_notes", jsonx.Obj("192.0.2.21", "Synthetic"))
-		doc.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "router-one", "type", "routeros", "endpoint", httpServer.URL, "username", "synthetic-user", "password", "synthetic-pass", "verify_tls", false)}))
-		return nil, nil
+	_, err = db.UpdateProfile(ctx, "default", func(_ context.Context, doc *model.Profile) error {
+		if err := doc.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"Synthetic"}`)); err != nil {
+			return err
+		}
+		return doc.SetJSON("routers", raw(map[string]any{"items": []any{map[string]any{"id": "router-one", "type": "routeros", "endpoint": httpServer.URL, "username": "synthetic-user", "password": "synthetic-pass", "verify_tls": false}}}))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -188,9 +189,8 @@ func TestR17RollbackAfterConcurrentDraftEdit(t *testing.T) {
 			d = routers.NewDriver(r).(routers.FixedIPDriver)
 		}
 		return &fixedAfterWrite{FixedIPDriver: d, after: func() {
-			_, _, err := s.Repo.UpdateProfileTransaction(t.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-				current.Set("device_notes", jsonx.Obj("192.0.2.21", "outside edit"))
-				return nil, nil
+			_, err := s.Repo.UpdateProfile(t.Context(), "default", func(_ context.Context, current *model.Profile) error {
+				return current.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"outside edit"}`))
 			})
 			if err != nil {
 				t.Error(err)
@@ -203,8 +203,8 @@ func TestR17RollbackAfterConcurrentDraftEdit(t *testing.T) {
 	if len(f.Snapshot().Tables["/ip/dhcp-server/lease"]) != 0 {
 		t.Fatal("reservation not compensated")
 	}
-	current, _ := s.Repo.GetProfile(t.Context(), "default")
-	if current.GetObject("device_notes").GetString("192.0.2.21") != "outside edit" {
+	current, _ := s.Repo.Profile(t.Context(), "default")
+	if note, _ := current.DeviceNotes.Get("192.0.2.21"); note != "outside edit" {
 		t.Fatal("outside metadata overwritten")
 	}
 }
@@ -224,13 +224,12 @@ func (d *fixedAfterWrite) ApplyFixedIP(ctx context.Context, op *routers.FixedIPO
 func TestR17BatchLocksAndRollback(t *testing.T) {
 	s, f, intent := fixedService(t)
 	ctx := repo.WithRepository(t.Context(), s.Repo)
-	_, _, err := s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		rows := current.GetObject("routers").GetList("items")
-		clone := rows[0].(*jsonx.Object).DeepCopy()
-		clone.Set("id", "clone")
-		current.GetObject("routers").Set("items", append(rows, clone))
-		current.GetObject("device_notes").Set("192.0.2.22", "Second")
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, current *model.Profile) error {
+		clone := current.Routers.Items[0]
+		clone.ID = "clone"
+		current.Routers.Items = append(current.Routers.Items, clone)
+		current.DeviceNotes.Set("192.0.2.22", "Second")
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -366,8 +365,9 @@ func TestR17DeleteRollbackRemapsMetadata(t *testing.T) {
 	if err = s.Apply(t.Context(), "default", preview.Token); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := s.Repo.GetProfile(t.Context(), "default")
-	old := before.GetObject("client_fixed_ips").GetObject("192.0.2.21").GetString("id")
+	before, _ := s.Repo.Profile(t.Context(), "default")
+	oldBinding, _ := before.ClientFixedIPs.Get("192.0.2.21")
+	old := oldBinding.ID
 	intent.Operation = "delete"
 	preview, err = s.Preview(t.Context(), "default", intent)
 	if err != nil {
@@ -375,9 +375,9 @@ func TestR17DeleteRollbackRemapsMetadata(t *testing.T) {
 	}
 	s.Open = func(r *routers.Router) routers.FixedIPDriver {
 		return &fixedAfterDelete{FixedIPDriver: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
-			_, _, err := s.Repo.UpdateProfileTransaction(t.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-				current.GetObject("device_notes").Set("192.0.2.21", "outside edit")
-				return nil, nil
+			_, err := s.Repo.UpdateProfile(t.Context(), "default", func(_ context.Context, current *model.Profile) error {
+				current.DeviceNotes.Set("192.0.2.21", "outside edit")
+				return nil
 			})
 			if err != nil {
 				t.Error(err)
@@ -387,9 +387,9 @@ func TestR17DeleteRollbackRemapsMetadata(t *testing.T) {
 	if err = s.Apply(t.Context(), "default", preview.Token); err == nil {
 		t.Fatal("concurrent edit not detected")
 	}
-	current, _ := s.Repo.GetProfile(t.Context(), "default")
-	binding := current.GetObject("client_fixed_ips").GetObject("192.0.2.21")
-	if binding.GetString("id") == old || len(f.Snapshot().Tables["/ip/dhcp-server/lease"]) != 1 || binding.GetString("id") != f.Snapshot().Tables["/ip/dhcp-server/lease"][0][".id"] {
+	current, _ := s.Repo.Profile(t.Context(), "default")
+	binding, _ := current.ClientFixedIPs.Get("192.0.2.21")
+	if binding.ID == old || len(f.Snapshot().Tables["/ip/dhcp-server/lease"]) != 1 || binding.ID != f.Snapshot().Tables["/ip/dhcp-server/lease"][0][".id"] {
 		t.Fatal("restored identity not saved")
 	}
 }
@@ -412,11 +412,14 @@ func TestR17DistinctDeviceLocksAndMixedVendors(t *testing.T) {
 	second := routerfake.NewIkuai(routerfake.IkuaiState{Tables: map[string][]routerfake.Row{"dhcp_server": {{"id": 1, "enabled": "yes", "status": 1, "interface": "lan1", "check_relay_only": 0, "addr_pool": "192.0.2.10-192.0.2.200", "netmask": "255.255.255.0", "gateway": "192.0.2.1"}}, "dhcp_static": {}, "dhcp_lease": {{"ip_addr": "192.0.2.22", "mac": "02:00:00:00:00:22", "interface": "lan1"}}, "monitor_lanip": {}}})
 	httpServer := httptest.NewServer(second)
 	defer httpServer.Close()
-	_, _, err := s.Repo.UpdateProfileTransaction(t.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.GetObject("device_notes").Set("192.0.2.22", "Second")
-		rows := current.GetObject("routers").GetList("items")
-		current.GetObject("routers").Set("items", append(rows, jsonx.Obj("id", "router-two", "type", "ikuai", "endpoint", httpServer.URL, "username", routerfake.IkuaiUser, "password", routerfake.IkuaiPassword, "verify_tls", false)))
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(t.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		current.DeviceNotes.Set("192.0.2.22", "Second")
+		var added model.Router
+		if err := json.Unmarshal(raw(map[string]any{"id": "router-two", "type": "ikuai", "endpoint": httpServer.URL, "username": routerfake.IkuaiUser, "password": routerfake.IkuaiPassword, "verify_tls": false}), &added); err != nil {
+			return err
+		}
+		current.Routers.Items = append(current.Routers.Items, added)
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -433,8 +436,8 @@ func TestR17DistinctDeviceLocksAndMixedVendors(t *testing.T) {
 	if lockx.Violations() != before {
 		t.Fatal("cross-device blocking lock order violation")
 	}
-	current, _ := s.Repo.GetProfile(t.Context(), "default")
-	if len(current.GetObject("client_fixed_ips").Keys()) != 2 {
+	current, _ := s.Repo.Profile(t.Context(), "default")
+	if len(current.ClientFixedIPs.Keys()) != 2 {
 		t.Fatal("mixed batch metadata not committed")
 	}
 }

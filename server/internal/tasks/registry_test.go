@@ -5,20 +5,20 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/taskstatus"
 )
 
 func TestProviderRestorationIsNestedAndDoesNotFakeCompleteness(t *testing.T) {
 	before := Missing()
 	t.Run("fake", func(t *testing.T) {
 		for _, slot := range before {
-			t.Cleanup(SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
+			t.Cleanup(SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*Task, error) { return nil, nil }))
 		}
 		if !Complete() {
 			t.Fatal(Missing())
 		}
 		t.Run("override", func(t *testing.T) {
-			t.Cleanup(SetRows(SlotRouters, nil))
+			t.Cleanup(SetRowBuilder(SlotRouters, nil))
 			if HasRows(SlotRouters) {
 				t.Fatal("override not installed")
 			}

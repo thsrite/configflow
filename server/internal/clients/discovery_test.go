@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routerdoc"
 	"configflow/internal/routers"
@@ -233,16 +233,17 @@ func TestRepositoryDeviceWriteRespectsRuntime(t *testing.T) {
 	ctx := rt.BindRequest(request)
 	cancel()
 	save := func(c Change) error {
-		_, _, err := r.UpdateProfileTransaction(ctx, "default", func(work context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		_, err := r.UpdateProfile(ctx, "default", func(work context.Context, current *model.Profile) error {
 			next, err := UpdateDevice(work, raw(current), c, "")
 			if err != nil {
-				return nil, err
+				return err
 			}
-			value, err := jsonx.Parse(next)
-			if err != nil {
-				return nil, err
+			var decoded model.Profile
+			if err := json.Unmarshal(next, &decoded); err != nil {
+				return err
 			}
-			return value.(*jsonx.Object), nil
+			*current = decoded
+			return nil
 		})
 		return err
 	}

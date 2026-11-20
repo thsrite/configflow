@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/routerdoc"
@@ -203,14 +203,14 @@ func TestReviewR16CancellationAtRepositoryCommit(t *testing.T) {
 			request, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			reached := false
-			_, _, err = r.UpdateProfileTransaction(rt.BindRequest(request), "default", func(work context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+			_, err = r.UpdateProfile(rt.BindRequest(request), "default", func(work context.Context, current *model.Profile) error {
 				next, e := UpdateDevice(work, raw(current), Change{IP: "192.0.2.10", Name: "synthetic client"}, "")
 				if e != nil {
-					return nil, e
+					return e
 				}
-				value, e := jsonx.Parse(next)
-				if e != nil {
-					return nil, e
+				var decoded model.Profile
+				if e := json.Unmarshal(next, &decoded); e != nil {
+					return e
 				}
 				reached = true
 				if shutdown {
@@ -218,7 +218,8 @@ func TestReviewR16CancellationAtRepositoryCommit(t *testing.T) {
 				} else {
 					cancel()
 				}
-				return value.(*jsonx.Object), nil
+				*current = decoded
+				return nil
 			})
 			if !reached {
 				t.Fatal("commit checkpoint was not reached")

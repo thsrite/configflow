@@ -2,14 +2,13 @@ package taskstatus
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 // Ported from the task_status parts of backend/test_scheduled_tasks.py.
@@ -24,47 +23,75 @@ func fixedStore(t *testing.T) (*Store, *time.Time) {
 
 func yes() *bool { v := true; return &v }
 
+func receiptJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func strPtrVal(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 func TestRecordKeepsRetainedCacheAndCounts(t *testing.T) {
 	store, _ := fixedStore(t)
 	mustRecord := func(r Result) {
 		t.Helper()
-		if _, err := store.Record("x", r); err != nil {
+		if _, err := store.SaveResult(context.Background(), "x", r); err != nil {
 			t.Fatal(err)
 		}
 	}
 	mustRecord(Result{Error: "boom", CacheRetained: yes(), CacheUpdatedAt: "2026-01-01T00:00:00Z"})
 	mustRecord(Result{Error: "boom again", CacheRetained: yes()})
 	mustRecord(Result{Skipped: true, Error: "nothing to do"})
-	entry, _ := store.Get("x")
-	if entry.GetString("last_status") != "skipped" {
-		t.Errorf("status %q", entry.GetString("last_status"))
+	snap, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if entry.GetInt("failure_count") != 2 || entry.GetInt("run_count") != 2 || entry.GetInt("consecutive_failures") != 2 {
-		t.Errorf("a skipped run changed the counts: %s", jsonx.Repr(entry))
+	entry := snap.Entry("x")
+	if strPtrVal(entry.LastStatus) != "skipped" {
+		t.Errorf("status %q", strPtrVal(entry.LastStatus))
 	}
-	if entry.Has("cache_retained") {
+	if string(entry.FailureCount) != "2" || string(entry.RunCount) != "2" || string(entry.ConsecutiveFailures) != "2" {
+		t.Errorf("a skipped run changed the counts: %s", receiptJSON(t, entry))
+	}
+	if entry.CacheRetained != nil {
 		t.Error("a skipped run keeps no cache_retained")
 	}
-	if entry.GetString("cache_updated_at") != "2026-01-01T00:00:00Z" {
+	if strPtrVal(entry.CacheUpdatedAt) != "2026-01-01T00:00:00Z" {
 		t.Error("cache_updated_at must survive")
 	}
 	mustRecord(Result{OK: true, DurationMs: 12.6})
-	entry, _ = store.Get("x")
-	if entry.GetString("last_status") != "success" || entry.GetInt("last_duration_ms") != 12 || entry.GetInt("consecutive_failures") != 0 ||
-		entry.GetInt("run_count") != 3 || entry.GetString("last_success_at") != "2026-11-14T12:00:00Z" || entry.GetString("last_error") != "" {
-		t.Errorf("after success: %s", jsonx.Repr(entry))
+	snap, err = store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry = snap.Entry("x")
+	if strPtrVal(entry.LastStatus) != "success" || entry.LastDurationMs == nil || int64(*entry.LastDurationMs) != 12 || string(entry.ConsecutiveFailures) != "0" ||
+		string(entry.RunCount) != "3" || strPtrVal(entry.LastSuccessAt) != "2026-11-14T12:00:00Z" || strPtrVal(entry.LastError) != "" {
+		t.Errorf("after success: %s", receiptJSON(t, entry))
 	}
 	if err := store.Forget("x", "missing"); err != nil {
 		t.Fatal(err)
 	}
-	if entry, _ = store.Get("x"); entry.Len() != 0 {
-		t.Errorf("forgotten entry: %s", jsonx.Repr(entry))
+	snap, err = store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := snap["x"]; exists {
+		t.Errorf("forgotten entry: %s", string(snap["x"]))
 	}
 }
 
 func TestFileBytesAndKeyOrderMatchPython(t *testing.T) {
 	store, _ := fixedStore(t)
-	if _, err := store.Record("subscription:s", Result{Error: "例子失败", StartedAt: "2026-11-14T11:59:00Z", Trigger: "pull", DurationMs: -5}); err != nil {
+	if _, err := store.SaveResult(context.Background(), "subscription:s", Result{Error: "例子失败", StartedAt: "2026-11-14T11:59:00Z", Trigger: "pull", DurationMs: -5}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(store.DataDir, Filename))
@@ -93,21 +120,21 @@ func TestErrorIsCutAndCorruptFileStartsOver(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(store.DataDir, Filename), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	entry, err := store.Record("k", Result{Error: strings.Repeat("错", 3000)})
+	entry, err := store.SaveResult(context.Background(), "k", Result{Error: strings.Repeat("错", 3000)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len([]rune(entry.GetString("last_error"))); got != MaxError {
+	if got := len([]rune(strPtrVal(entry.LastError))); got != MaxError {
 		t.Errorf("last_error has %d characters", got)
 	}
-	all, _ := store.Load()
-	if all.Len() != 1 {
-		t.Errorf("load: %s", jsonx.Repr(all))
+	all, _ := store.Read()
+	if len(all) != 1 {
+		t.Errorf("load: %s", receiptJSON(t, all))
 	}
 	if err := os.WriteFile(filepath.Join(store.DataDir, Filename), []byte("[1]"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if all, _ = store.Load(); all.Len() != 0 {
+	if all, _ = store.Read(); len(all) != 0 {
 		t.Error("a non-object file must read as empty")
 	}
 }
@@ -117,13 +144,14 @@ func TestOnRecordRunsAfterTheWrite(t *testing.T) {
 	var seen []string
 	store.OnRecord = func(key string) {
 		// the lock is released: reading must not deadlock and sees the entry
-		entry, err := store.Get(key)
-		if err != nil || entry.GetString("last_status") != "success" {
+		snap, err := store.Read()
+		entry := snap.Entry(key)
+		if err != nil || strPtrVal(entry.LastStatus) != "success" {
 			t.Errorf("hook saw %v %v", entry, err)
 		}
 		seen = append(seen, key)
 	}
-	if _, err := store.Record("a", Result{OK: true}); err != nil {
+	if _, err := store.SaveResult(context.Background(), "a", Result{OK: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(seen) != 1 || seen[0] != "a" {
@@ -133,9 +161,9 @@ func TestOnRecordRunsAfterTheWrite(t *testing.T) {
 
 func TestUpdatingExistingEntryKeepsKeyOrder(t *testing.T) {
 	store, clock := fixedStore(t)
-	_, _ = store.Record("a", Result{Error: "x", CacheRetained: yes()})
+	_, _ = store.SaveResult(context.Background(), "a", Result{Error: "x", CacheRetained: yes()})
 	*clock = clock.Add(time.Minute)
-	_, _ = store.Record("a", Result{OK: true})
+	_, _ = store.SaveResult(context.Background(), "a", Result{OK: true})
 	data, _ := os.ReadFile(filepath.Join(store.DataDir, Filename))
 	want := `{"a":{"last_run_at":"2026-11-14T12:01:00Z","last_finished_at":"2026-11-14T12:01:00Z","last_status":"success","last_duration_ms":0,"last_trigger":"schedule","last_error":"","run_count":2,"failure_count":1,"consecutive_failures":0,"last_success_at":"2026-11-14T12:01:00Z"}}`
 	if string(data) != want {
@@ -144,19 +172,19 @@ func TestUpdatingExistingEntryKeepsKeyOrder(t *testing.T) {
 }
 
 func TestParseTime(t *testing.T) {
-	got, ok := ParseTime("2026-11-14T08:00:00+08:00")
+	got, ok := ParseTimestamp("2026-11-14T08:00:00+08:00")
 	if !ok || !got.Equal(time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("%v %v", got, ok)
 	}
-	if got, ok = ParseTime("2026-11-14T12:00:00Z"); !ok || !got.Equal(time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)) {
+	if got, ok = ParseTimestamp("2026-11-14T12:00:00Z"); !ok || !got.Equal(time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)) {
 		t.Errorf("%v %v", got, ok)
 	}
-	if got, ok = ParseTime("2026-11-14T12:00:00"); !ok || got.Location() != time.UTC || got.Hour() != 12 {
+	if got, ok = ParseTimestamp("2026-11-14T12:00:00"); !ok || got.Location() != time.UTC || got.Hour() != 12 {
 		t.Errorf("naive must be UTC: %v %v", got, ok)
 	}
-	for _, bad := range []any{"", nil, 5, "garbage"} {
-		if _, ok := ParseTime(bad); ok {
-			t.Errorf("%v parsed", bad)
+	for _, bad := range []string{"", "garbage"} {
+		if _, ok := ParseTimestamp(bad); ok {
+			t.Errorf("%q parsed", bad)
 		}
 	}
 	if !strings.HasSuffix(NowISO(), "Z") || len(NowISO()) != 20 {
@@ -180,7 +208,7 @@ func TestFromISOFormatMatchesPython(t *testing.T) {
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 			t.Fatal(err)
 		}
-		got, ok := ParseTime(line.In)
+		got, ok := ParseTimestamp(line.In)
 		switch {
 		case line.Us == nil && ok:
 			t.Errorf("%q: Python rejects it, Go gave %v", line.In, got)

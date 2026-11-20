@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -107,9 +106,8 @@ func TestSetupBuiltinResolutionIsIdempotentAndKeepsNamesakes(t *testing.T) {
 	c := &catalog{Items: []builtin{
 		{"builtin:synthetic", model.RuleLibraryItem{Name: "Synthetic", SourceType: pointer("content"), Content: pointer("+.example.com"), Behavior: pointer("domain"), Format: pointer("text"), Enabled: pointer(true)}, "proxy"},
 	}}
-	_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", []any{jsonx.Obj("id", "existing", "name", "Synthetic", "source_type", "content", "content", "DOMAIN,example.com", "behavior", "classical", "format", "text")})
-		return nil, nil
+	err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("rule_library", json.RawMessage(`[{"id":"existing","name":"Synthetic","source_type":"content","content":"DOMAIN,example.com","behavior":"classical","format":"text"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)

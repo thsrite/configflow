@@ -20,10 +20,11 @@ import (
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 )
 
 const secret = "c07-synthetic-jwt-key"
@@ -54,7 +55,7 @@ func newWorld(t *testing.T) *world {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
+		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
 	}
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, refresh.SubscriptionTasks))
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, refresh.RuleTasks))
@@ -68,25 +69,25 @@ func newWorld(t *testing.T) *world {
 	for _, category := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources} {
 		t.Cleanup(tasks.SetRunner(category, func(context.Context, string, string) error { return nil }))
 	}
-	t.Cleanup(notifications.SetSources(notifications.Sources{ListTasks: tasks.AvailableTasks, MissingTasks: tasks.Missing, Agents: func(context.Context) ([]*jsonx.Object, error) { return nil, nil }}))
+	t.Cleanup(notifications.SetInputs(notifications.Inputs{Rows: tasks.Available, MissingTasks: tasks.Missing, Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }}))
 	previousNow, previousClock := apistats.Now, notifications.Clock
 	apistats.Now = func() time.Time { return fixed }
 	notifications.Clock = func() time.Time { return fixed }
 	t.Cleanup(func() { apistats.Now = previousNow; notifications.Clock = previousClock })
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apilogs.Register, apistats.Register, apitasks.Register, apinotifications.Register)})
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic feed", "url", "https://feed.example.com/sub", "interval", 3600, "enabled", true)})
-		shared.Set("rule_library", []any{jsonx.Obj("id", "r", "name", "Synthetic rules", "source_type", "url", "url", "https://rules.example.com/list", "update_interval", 3600, "enabled", true)})
-		return nil, nil
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, shared *model.Shared) error {
+		if err := shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic feed","url":"https://feed.example.com/sub","interval":3600,"enabled":true}]`)); err != nil {
+			return err
+		}
+		return shared.SetJSON("rule_library", json.RawMessage(`[{"id":"r","name":"Synthetic rules","source_type":"url","url":"https://rules.example.com/list","update_interval":3600,"enabled":true}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("config_token", "fixture-capability")
-		system.GetObject("system_config").Set("rule_proxy_token", "fixture-local-secret")
-		system.Set("backup", jsonx.Obj("webdav_username", "fixture-user", "webdav_password", "fixture-password", "webdav_url", ""))
-		return nil, nil
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ConfigToken = "fixture-capability"
+		system.SystemConfig.RuleProxyToken = "fixture-local-secret"
+		return system.SetJSON("backup", json.RawMessage(`{"webdav_username":"fixture-user","webdav_password":"fixture-password","webdav_url":""}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +104,7 @@ func newWorld(t *testing.T) *world {
 	if out, err := exec.Command("cp", "-a", s.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 		t.Fatalf("copy fixture: %v %s", err, out)
 	}
-	token, err := auth.EncodeHS256(jsonx.Obj("username", "diff-admin", "exp", time.Now().Add(time.Hour).Unix()), secret)
+	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func python(t *testing.T, w *world, commands []command) []answer {
 
 func state(t *testing.T, w *world) json.RawMessage {
 	t.Helper()
-	doc, err := w.s.Repo.ExportAll(w.s.Context(), false)
+	doc, err := w.s.Repo.ExportAllJSON(w.s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func state(t *testing.T, w *world) json.RawMessage {
 		t.Fatal(err)
 	}
 	data, err := json.Marshal(struct {
-		Document *jsonx.Object              `json:"document"`
+		Document json.RawMessage            `json:"document"`
 		Files    map[string]json.RawMessage `json:"files"`
 	}{doc, files})
 	if err != nil {
@@ -421,7 +422,7 @@ func TestC07NotificationReadAndCombinedRedaction(t *testing.T) {
 func TestC07ExpectedReadinessDifferenceKeepsUnseenFailures(t *testing.T) {
 	w := newWorld(t)
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents} {
-		t.Cleanup(tasks.SetRows(slot, nil))
+		t.Cleanup(tasks.SetRowBuilder(slot, nil))
 	}
 	old := []byte(`{"items":{"task:router_rule_sync:default:r":{"state":"pending","source":"task","version":"old","read":false},"task:agent_rule_sync:a":{"state":"pending","source":"task","version":"old","read":false}}}`)
 	commands := w.commands([]command{

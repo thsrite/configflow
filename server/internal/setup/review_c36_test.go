@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/redact"
@@ -33,13 +32,16 @@ func TestReviewC36ResponsesRedactPrivateSessionCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, id := range []string{"default", record.ProfileID} {
-				if _, err := s.repository.UpdateProfileMetadata(ctx, id, jsonx.Obj("name", "Visible "+secret)); err != nil {
+				if _, err := s.repository.UpdateProfileMetadataRecord(ctx, id, repo.ProfileMetadataUpdate{Name: pointer("Visible " + secret)}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			_, err = s.repository.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-				shared.Set("subscriptions", []any{jsonx.Obj("id", "synthetic-source", "name", "Visible "+secret, "url", "https://example.com/sub", "enabled", true)})
-				return nil, nil
+			err = s.repository.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+				raw, err := json.Marshal([]any{map[string]any{"id": "synthetic-source", "name": "Visible " + secret, "url": "https://example.com/sub", "enabled": true}})
+				if err != nil {
+					return err
+				}
+				return shared.SetJSON("subscriptions", raw)
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -134,9 +136,8 @@ func TestReviewC36MissingOwnersReturn503WithoutCommit(t *testing.T) {
 				s.owners.ReadRouteContent = func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error) {
 					return "", nil
 				}
-				_, _, err := s.repository.UpdateProfileTransaction(ctx, "setup_"+testSessionID[:20], func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-					profile.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "synthetic-router", "name", "Router", "type", "ikuai", "proxy_gateway_agent_id", "synthetic-mihomo", "dns_agent_id", "synthetic-oxidns")}))
-					return nil, nil
+				_, err := s.repository.UpdateProfile(ctx, "setup_"+testSessionID[:20], func(_ context.Context, profile *model.Profile) error {
+					return profile.SetJSON("routers", json.RawMessage(`{"items":[{"id":"synthetic-router","name":"Router","type":"ikuai","proxy_gateway_agent_id":"synthetic-mihomo","dns_agent_id":"synthetic-oxidns"}]}`))
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -237,17 +238,17 @@ func TestReviewC36PrepareRevisionAndStoredOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile, err := s.repository.GetProfile(ctx, record.ProfileID)
+	profile, err := s.repository.Profile(ctx, record.ProfileID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := profile.GetInt("_revision")
+	previous := profile.Revision
 	body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]}}`)
 	for attempt := range 2 {
 		if _, err := s.Prepare(ctx, testSessionID, body, "http://localhost"); err != nil {
 			t.Fatal(err)
 		}
-		profile, err = s.repository.GetProfile(ctx, record.ProfileID)
+		profile, err = s.repository.Profile(ctx, record.ProfileID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -271,7 +272,7 @@ func TestReviewC36PrepareRevisionAndStoredOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if profile.GetInt("_revision") != previous+1 || record.ProfileRevision == nil || *record.ProfileRevision != model.Int(previous+1) || record.ConfigRevision == nil || *record.ConfigRevision != model.Int(revision) || text(record.OwnedDigest) != full || text(record.OwnedDigestWithoutBase) != without {
+		if profile.Revision != previous+1 || record.ProfileRevision == nil || *record.ProfileRevision != previous+1 || record.ConfigRevision == nil || *record.ConfigRevision != model.Int(revision) || text(record.OwnedDigest) != full || text(record.OwnedDigestWithoutBase) != without {
 			t.Fatalf("prepare attempt %d did not preserve revision/ownership contract", attempt)
 		}
 	}

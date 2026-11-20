@@ -28,7 +28,6 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -178,31 +177,19 @@ func equal(t *testing.T, label string, a, b any) {
 		t.Errorf("%s\nFlask: %s\nGo: %s", label, aa, bb)
 	}
 }
-func native(t *testing.T, v any) any {
-	t.Helper()
-	b, e := jsonx.Compact(v)
-	if e != nil {
-		t.Fatal(e)
-	}
-	var out any
-	if e = json.Unmarshal([]byte(b), &out); e != nil {
-		t.Fatal(e)
-	}
-	return out
-}
 func state(t *testing.T, r *repo.Repository, dir string) any {
 	t.Helper()
 	ctx := context.Background()
-	p, e := r.GetProfile(ctx, "default")
+	p, e := r.Profile(ctx, "default")
 	if e != nil {
 		t.Fatal(e)
 	}
-	shared, e := r.GetShared(ctx)
+	shared, e := r.Shared(ctx)
 	if e != nil {
 		t.Fatal(e)
 	}
-	pn := native(t, p).(map[string]any)
-	sn := native(t, shared).(map[string]any)
+	pn := nativeJSON(t, p).(map[string]any)
+	sn := nativeJSON(t, shared).(map[string]any)
 	files := map[string]any{}
 	for _, folder := range []string{"probes", "regions"} {
 		values := map[string]any{}

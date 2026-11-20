@@ -13,6 +13,7 @@ import (
 	"weak"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -289,18 +290,18 @@ func TestAutomaticProbeAdoptionRecheckAndNoRepeatedWrites(t *testing.T) {
 	previous := client
 	client = fake
 	t.Cleanup(func() { client = previous })
-	fields, err := object(map[string]any{"proxy_groups": []any{map[string]string{"id": "g1", "name": "PROXY", "type": "select"}}, "rule_configs": []ruleConfig{}})
-	if err != nil {
+	var err error
+	if _, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
+		profile.ProxyGroups = []model.ProxyGroup{{ID: "g1", Name: "PROXY", Type: "select"}}
+		profile.RuleConfigs = []model.RuleConfig{}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = r.UpdateProfileFields(ctx, "default", fields, nil); err != nil {
-		t.Fatal(err)
-	}
-	system, err := object(map[string]any{"agents": []Agent{{ID: "a1", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", Enabled: true, Version: minRegionVersion}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = r.SaveSystem(ctx, system, nil); err != nil {
+	if err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{ID: "a1", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: ptr(true), Version: minRegionVersion}}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = InitRulesets(ctx, "default", nil, "PROXY"); err != nil {

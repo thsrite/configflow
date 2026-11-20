@@ -1,14 +1,16 @@
 package taskstatus
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 type reviewRecord struct {
@@ -53,15 +55,15 @@ func TestReviewRecordCountersLikePython(t *testing.T) {
 	for _, row := range records {
 		dir := t.TempDir()
 		raw := strings.NewReplacer(`"__Infinity__"`, "Infinity", `"__NaN__"`, "NaN").Replace(string(row.Value))
-		value, err := jsonx.Parse([]byte(raw))
+		keyJSON, err := json.Marshal(row.Field)
 		if err != nil {
 			t.Fatal(err)
 		}
-		before, _ := jsonx.Compact(jsonx.Obj("k", jsonx.Obj(row.Field, value)))
+		before := []byte(fmt.Sprintf(`{"k":{%s:%s}}`, keyJSON, raw))
 		if err := os.WriteFile(filepath.Join(dir, Filename), before, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		entry, err := New(dir).Record("k", Result{OK: row.OK, StartedAt: "S", DurationMs: 1})
+		entry, err := New(dir).SaveResult(context.Background(), "k", Result{OK: row.OK, StartedAt: "S", DurationMs: 1})
 		name := row.Field + "=" + string(row.Value)
 		used := row.Field == "run_count" || !row.OK
 		nonfinite := raw == "Infinity" || raw == "NaN"
@@ -85,10 +87,19 @@ func TestReviewRecordCountersLikePython(t *testing.T) {
 			}
 			continue
 		}
+		if err != nil {
+			t.Errorf("%s ok=%v: %v", name, row.OK, err)
+			continue
+		}
+		entryBytes, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entryFields map[string]json.RawMessage
+		if err := json.Unmarshal(entryBytes, &entryFields); err != nil {
+			t.Fatal(err)
+		}
 		if nonfinite {
-			if err != nil {
-				t.Fatalf("stored nonfinite: %v", err)
-			}
 			want := "null"
 			if used {
 				want = "1"
@@ -96,24 +107,20 @@ func TestReviewRecordCountersLikePython(t *testing.T) {
 			if row.Field == "consecutive_failures" && row.OK {
 				want = "0"
 			}
-			got, _ := jsonx.Compact(entry.Value(row.Field))
-			if string(got) != want {
+			got := string(entryFields[row.Field])
+			if got != want {
 				t.Errorf("%s: native value %s want %s", name, got, want)
 			}
 			// Other fields still compare against the original fixture below.
-		}
-		if err != nil {
-			t.Errorf("%s ok=%v: %v", name, row.OK, err)
-			continue
 		}
 		for key, want := range row.Out.Entry {
 			if nonfinite && key == row.Field {
 				continue
 			}
-			got, _ := jsonx.Compact(entry.Value(key))
-			wantValue, _ := jsonx.Parse([]byte(strings.NewReplacer(`"__Infinity__"`, "Infinity", `"__NaN__"`, "NaN").Replace(string(want))))
-			if wantBytes, _ := jsonx.Compact(wantValue); string(got) != string(wantBytes) {
-				t.Errorf("%s ok=%v: %s = %s, want %s", name, row.OK, key, got, want)
+			gotRaw := entryFields[key]
+			wantText := strings.NewReplacer(`"__Infinity__"`, "Infinity", `"__NaN__"`, "NaN").Replace(string(want))
+			if !testjson.Equal(json.RawMessage(wantText), gotRaw) {
+				t.Errorf("%s ok=%v: %s = %s, want %s", name, row.OK, key, gotRaw, wantText)
 			}
 		}
 	}
@@ -125,7 +132,7 @@ func TestReviewRecordCountersLikePython(t *testing.T) {
 func TestReviewParseTimeKeepsOffset(t *testing.T) {
 	_, times := loadReview(t)
 	for _, row := range times {
-		got, ok := ParseTime(row.In)
+		got, ok := ParseTimestamp(row.In)
 		if !ok {
 			t.Errorf("%q: not parsed", row.In)
 			continue

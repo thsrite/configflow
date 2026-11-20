@@ -2,12 +2,12 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/repo"
@@ -55,7 +55,7 @@ func TestBackgroundSurvivesDisconnectWithFreshScope(t *testing.T) {
 		}
 		close(entered)
 		<-gate
-		_, err := store.WriteSharedJSON(ctx, "completed.json", jsonx.Obj("done", true))
+		_, err := store.WriteSharedJSON(ctx, "completed.json", map[string]bool{"done": true})
 		if err != nil {
 			t.Error(err)
 		}
@@ -81,9 +81,15 @@ func TestBackgroundSurvivesDisconnectWithFreshScope(t *testing.T) {
 	if IsBackground(key) {
 		t.Fatal("key leaked")
 	}
-	saved, err := store.ReadSharedJSON(context.Background(), "completed.json")
-	if err != nil || saved.Value("done") != true {
-		t.Fatal(saved, err)
+	raw, err := store.ReadSharedBytes(context.Background(), "completed.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Done bool `json:"done"`
+	}
+	if err := json.Unmarshal(raw, &saved); err != nil || !saved.Done {
+		t.Fatal(string(raw), err)
 	}
 }
 

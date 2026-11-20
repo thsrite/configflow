@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
@@ -118,11 +118,36 @@ func normalizeJSON(v any) {
 }
 func configJSON(t *testing.T, r *repo.Repository) json.RawMessage {
 	t.Helper()
-	doc, err := r.GetCompatConfig(context.Background(), "default", nil)
+	doc, err := r.Config(context.Background(), "default", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw(doc)
+}
+
+func applyProfileJSON(current *model.Profile, updated json.RawMessage) error {
+	var before, after map[string]json.RawMessage
+	if err := json.Unmarshal(raw(current), &before); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(updated, &after); err != nil {
+		return err
+	}
+	for k, v := range after {
+		if !bytes.Equal(before[k], v) {
+			if err := current.SetJSON(k, v); err != nil {
+				return err
+			}
+		}
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			if err := current.Clear(k); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Only translates HTTP to R16 package calls; production profile/auth/shape
@@ -149,16 +174,12 @@ func testHTTP(t *testing.T, r *repo.Repository, discovery *DiscoveryService) htt
 				var c Change
 				err = json.NewDecoder(req.Body).Decode(&c)
 				if err == nil {
-					_, _, err = r.UpdateProfileTransaction(req.Context(), "default", func(ctx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+					_, err = r.UpdateProfile(req.Context(), "default", func(ctx context.Context, current *model.Profile) error {
 						updated, e := UpdateDevice(ctx, raw(current), c, "")
 						if e != nil {
-							return nil, e
+							return e
 						}
-						v, e := jsonx.Parse(updated)
-						if e != nil {
-							return nil, e
-						}
-						return v.(*jsonx.Object), nil
+						return applyProfileJSON(current, updated)
 					})
 				}
 			}

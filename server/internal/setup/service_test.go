@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 const testSessionID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -59,8 +59,8 @@ func TestSetupIndexCreationAndSourceResume(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	shared, err := r.GetShared(ctx)
-	if err != nil || len(shared.GetList("subscriptions")) != 1 {
+	shared, err := r.Shared(ctx)
+	if err != nil || len(shared.Subscriptions) != 1 {
 		t.Fatal("duplicated wizard source", err)
 	}
 	for _, body := range []string{`{"node_ids":[null]}`, `{"subscription_ids":null}`, `{"url":"file:///synthetic"}`, `{"node_ids":["missing"]}`} {
@@ -119,9 +119,8 @@ func TestWizardWriteOwnersPreserveRuntimeGeneration(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
 			s, base := serviceFixture(t, "gateway")
-			_, err := s.repository.UpdateSharedTransaction(base, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-				shared.Set("nodes", []any{jsonx.Obj("id", "synthetic-node", "name", "Synthetic", "type", "ss", "server", "192.0.2.10", "port", jsonx.Int(443), "password", "synthetic-node-password", "cipher", "aes-128-gcm")})
-				return nil, nil
+			err := s.repository.UpdateShared(base, func(_ context.Context, shared *model.Shared) error {
+				return shared.SetJSON("nodes", json.RawMessage(`[{"id":"synthetic-node","name":"Synthetic","type":"ss","server":"192.0.2.10","port":443,"password":"synthetic-node-password","cipher":"aes-128-gcm"}]`))
 			})
 			if err != nil {
 				t.Fatal(err)
