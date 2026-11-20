@@ -250,11 +250,12 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if body == nil {
 		return httpx.Message(400, false, msgNodeObject), nil
 	}
-	// The typed repository accepts already validated IDs; retain the request
-	// shape guard that previously lived in its legacy facade.
+	// A non-list or non-string member becomes an empty selection, which the
+	// planner rejects with msgSelectNodes. The repository checks confirmation
+	// first, so /delete keeps Python's order of the two 400 messages.
 	var ids []string
 	if !strings.HasPrefix(strings.TrimSpace(string(body["ids"])), "[") || json.Unmarshal(body["ids"], &ids) != nil {
-		return httpx.Message(400, false, msgSelectNodes), nil
+		ids = nil
 	}
 	response, err := reviewedDeletion(c.Context(), ids, body.text("confirmation"), strings.HasSuffix(c.Path(), "/delete-preview"))
 	if errors.Is(err, repo.ErrNodeDeletionChanged) {
