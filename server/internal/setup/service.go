@@ -213,7 +213,8 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 	for _, item := range selectableSubscriptions(shared.Subscriptions) {
 		out.Subscriptions = append(out.Subscriptions, Choice{item.ID, item.Name})
 	}
-	for _, item := range shared.Nodes {
+	for i := range shared.Nodes {
+		item := &shared.Nodes[i]
 		if resourceEnabled(item, item.Enabled) {
 			out.Nodes = append(out.Nodes, Choice{item.ID, item.Name})
 		}

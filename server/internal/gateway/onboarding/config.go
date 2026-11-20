@@ -65,50 +65,31 @@ func readConfig(config Document) (model.Profile, model.Shared, error) {
 	}
 
 	if err == nil {
-		for i, f := range storedFlags(config["rule_configs"], "enabled", len(profile.RuleConfigs)) {
-			profile.RuleConfigs[i].Enabled = f
+		setSwitch := func(record model.SwitchMember, key string, target **bool) {
+			enabled := model.SwitchEnabled(record, key, *target, true)
+			*target = &enabled
 		}
-		for i, f := range storedFlags(config["rule_configs"], "library_enabled", len(profile.RuleConfigs)) {
-			profile.RuleConfigs[i].LibraryEnabled = f
+		for i := range profile.RuleConfigs {
+			setSwitch(&profile.RuleConfigs[i], "enabled", &profile.RuleConfigs[i].Enabled)
+			setSwitch(&profile.RuleConfigs[i], "library_enabled", &profile.RuleConfigs[i].LibraryEnabled)
 		}
-		for i, f := range storedFlags(config["proxy_groups"], "enabled", len(profile.ProxyGroups)) {
-			profile.ProxyGroups[i].Enabled = f
+		for i := range profile.ProxyGroups {
+			setSwitch(&profile.ProxyGroups[i], "enabled", &profile.ProxyGroups[i].Enabled)
 		}
-		for i, f := range storedFlags(config["rule_library"], "enabled", len(shared.RuleLibrary)) {
-			shared.RuleLibrary[i].Enabled = f
+		for i := range shared.RuleLibrary {
+			setSwitch(&shared.RuleLibrary[i], "enabled", &shared.RuleLibrary[i].Enabled)
 		}
-		for i, f := range storedFlags(config["nodes"], "enabled", len(shared.Nodes)) {
-			shared.Nodes[i].Enabled = f
+		for i := range shared.Nodes {
+			setSwitch(&shared.Nodes[i], "enabled", &shared.Nodes[i].Enabled)
 		}
-		for i, f := range storedFlags(config["subscriptions"], "enabled", len(shared.Subscriptions)) {
-			shared.Subscriptions[i].Enabled = f
+		for i := range shared.Subscriptions {
+			setSwitch(&shared.Subscriptions[i], "enabled", &shared.Subscriptions[i].Enabled)
 		}
-		for i, f := range storedFlags(config["subscription_aggregations"], "enabled", len(shared.Aggregations)) {
-			shared.Aggregations[i].Enabled = f
+		for i := range shared.Aggregations {
+			setSwitch(&shared.Aggregations[i], "enabled", &shared.Aggregations[i].Enabled)
 		}
 	}
 	return profile, shared, err
-}
-
-// Stored enablement is fail-closed: an absent switch uses the schema default;
-// null or an invalid typed switch cannot prove that a source is enabled. R5's
-// nil fallback alone cannot distinguish those states.
-func storedFlags(raw json.RawMessage, key string, count int) []*bool {
-	var rows []json.RawMessage
-	if json.Unmarshal(raw, &rows) != nil {
-		return nil
-	}
-	out := make([]*bool, count)
-	for i, row := range rows {
-		if i >= len(out) {
-			break
-		}
-		if flag, exists := object(row)[key]; exists {
-			enabled := string(flag) == "true"
-			out[i] = &enabled
-		}
-	}
-	return out
 }
 
 // DomainCandidate exposes DNS selections without the IP editor's selected field.

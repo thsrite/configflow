@@ -26,15 +26,17 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 		return 0, nil, nil, err
 	}
 	subsByID := map[string]model.Subscription{}
-	for _, source := range subscriptions {
+	for i := range subscriptions {
+		source := &subscriptions[i]
 		if resourceEnabled(source, source.Enabled) {
-			subsByID[source.ID] = source
+			subsByID[source.ID] = *source
 		}
 	}
 	nodesByID := map[string]model.Node{}
-	for _, node := range manual {
+	for i := range manual {
+		node := &manual[i]
 		if resourceEnabled(node, node.Enabled) {
-			nodesByID[node.ID] = node
+			nodesByID[node.ID] = *node
 		}
 	}
 	for index, ids := range [][]string{record.SubscriptionIDs, record.NodeIDs} {
@@ -83,18 +85,19 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 				}
 				nodes = append(nodes, node)
 			}
-			for _, node := range nodes {
+			for i := range nodes {
+				node := &nodes[i]
 				if !resourceEnabled(node, node.Enabled) {
 					continue
 				}
-				usable, err := convert.NodeProxy(ctx, node, substore.NativeConverter())
+				usable, err := convert.NodeProxy(ctx, *node, substore.NativeConverter())
 				if err != nil {
 					return 0, nil, nil, err
 				}
 				if usable == nil {
 					continue
 				}
-				output[index] = append(output[index], node)
+				output[index] = append(output[index], *node)
 				count++
 			}
 		}

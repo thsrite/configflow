@@ -2,7 +2,6 @@ package setup
 
 import (
 	"context"
-	"encoding/json"
 
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -31,21 +30,8 @@ func updateShared(ctx context.Context, r *repo.Repository, update func(*model.Sh
 	})
 }
 
-// resourceEnabled retains the distinction between an absent legacy flag
-// (enabled by default) and explicit null (disabled). Typed true/false takes the
-// fast path; opaque members remain preserved by the shared model codec.
-func resourceEnabled(item json.Marshaler, flag *bool) bool {
-	if flag != nil {
-		return *flag
-	}
-	raw, err := item.MarshalJSON()
-	if err != nil {
-		return false
-	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
-		return false
-	}
-	value, present := fields["enabled"]
-	return !present || string(value) != "null"
+// resourceEnabled evaluates a stored resource switch with the shared JSON
+// truthiness rule, defaulting to enabled when absent.
+func resourceEnabled(item model.SwitchMember, flag *bool) bool {
+	return model.SwitchEnabled(item, "enabled", flag, true)
 }
