@@ -12,7 +12,10 @@ import (
 func TestConfigFindingsEveryAPIErrorUsesJSON(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.GET("/api/failure", "test.failure", func(*httpx.Ctx) (*httpx.Response, error) { return nil, errors.New("private diagnostic") })
-		r.POST("/api/parse", "test.parse", func(c *httpx.Ctx) (*httpx.Response, error) { _, err := c.JSON(); return nil, err })
+		r.POST("/api/parse", "test.parse", func(c *httpx.Ctx) (*httpx.Response, error) {
+			var v any
+			return nil, c.Bind(&v)
+		})
 		r.GET("/api/empty", "test.empty", func(*httpx.Ctx) (*httpx.Response, error) { return nil, nil })
 		r.GET("/api/plain", "test.plain", func(*httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Bytes(500, "text/html", []byte("private diagnostic")), nil

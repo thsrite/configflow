@@ -301,7 +301,7 @@ func TestReadRuleSourceContentAndSaveRuleToLocal(t *testing.T) {
 		t.Fatal(string(data))
 	}
 	failing := &Client{Transport: staticTransport{503}, Sleep: func(time.Duration) {}}
-	if _, err := ReadSource(ctx, rule, failing); err == nil || err.Error() != "Rule download failed (HTTPError)" || PythonClass(err) != "RequestException" {
+	if _, err := ReadSource(ctx, rule, failing); err == nil || err.Error() != "Rule download failed (HTTPError)" || errorClass(err) != "RequestException" {
 		t.Fatal(err)
 	}
 	if _, err := SaveSource(ctx, model.RuleConfig{SourceType: strp("url")}, client); err == nil || err.Error() != "请提供有效的规则来源和订阅地址" {

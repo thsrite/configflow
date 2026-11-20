@@ -162,7 +162,7 @@ func TestCFG01ReviewNetworkAgainstPython(t *testing.T) {
 					t.Fatalf("forbidden destination requested %d times", hits)
 				}
 				// The route answers 400 Invalid remote URL only for ValueError.
-				if class := PythonClass(err); class != "ValueError" {
+				if class := errorClass(err); class != "ValueError" {
 					t.Fatalf("refusal is %s, not a URL error: %v", class, err)
 				}
 			default:

@@ -154,7 +154,7 @@ func TestPersistentErrorsAndTimeoutsDoNotRetry(t *testing.T) {
 		fake := &fakeTransport{reply: func(int, TransportRequest) (*Response, error) { return nil, failure }}
 		var sleeps []time.Duration
 		_, err := newClient(fake, &sleeps).Download(context.Background(), retrySource, DownloadRequest{Config: sysConfig()})
-		if PythonClass(err) != class || len(fake.calls) != 1 || len(sleeps) != 0 {
+		if errorClass(err) != class || len(fake.calls) != 1 || len(sleeps) != 0 {
 			t.Fatal(class, err, len(fake.calls), sleeps)
 		}
 	}
@@ -401,7 +401,7 @@ func TestNonGithubSourceNeverUsesMirror(t *testing.T) {
 	}}
 	var sleeps []time.Duration
 	_, err := newClient(fake, &sleeps).Download(context.Background(), "https://custom.test/data", DownloadRequest{Config: sysConfig("github_proxy_domain", fallbackMirror)})
-	if PythonClass(err) != "ConnectionError" || !equalStrings(fake.urls(), []string{"https://custom.test/data"}) {
+	if errorClass(err) != "ConnectionError" || !equalStrings(fake.urls(), []string{"https://custom.test/data"}) {
 		t.Fatal(err, fake.urls())
 	}
 }

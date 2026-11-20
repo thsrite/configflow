@@ -20,29 +20,17 @@ func (e nativeClassError) Error() string {
 func (e nativeClassError) ErrorClass() string { return e.class }
 func (e nativeClassError) HTTPStatus() int    { return e.status }
 
-type legacyClassError struct{}
-
-func (legacyClassError) Error() string       { return "private legacy message" }
-func (legacyClassError) PythonClass() string { return "RuleFetchError" }
-
-type dualClassError struct{ nativeClassError }
-
-func (dualClassError) PythonClass() string { return "LegacyLabel" }
-
 var _ weburl.ClassError = nativeClassError{}
 
-func TestSafeErrorDetailsClassMigration(t *testing.T) {
+func TestSafeErrorDetailsClass(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
 		want string
 	}{
 		{"native", nativeClassError{"RuleFetchError", 502}, "exception_type=RuleFetchError status=502"},
-		{"legacy fallback", legacyClassError{}, "exception_type=RuleFetchError"},
-		{"native first", dualClassError{nativeClassError{"RuleFetchError", 503}}, "exception_type=RuleFetchError status=503"},
 		{"wrapped native", fmt.Errorf("outer: %w", nativeClassError{"HTTPError", 504}), "exception_type=HTTPError status=504"},
-		{"wrapped legacy", fmt.Errorf("outer: %w", legacyClassError{}), "exception_type=RuleFetchError"},
-		{"native deeper than legacy", errors.Join(legacyClassError{}, nativeClassError{"HTTPError", 502}), "exception_type=HTTPError status=502"},
+		{"joined native", errors.Join(errors.New("plain"), nativeClassError{"HTTPError", 502}), "exception_type=HTTPError status=502"},
 		{"sanitize", nativeClassError{"Type=https://user:secret@example.com?token=hidden", 400}, "exception_type=Typehttpsusersecretexample.comtokenhidden status=400"},
 		{"bounded", nativeClassError{strings.Repeat("A", 100), 500}, "exception_type=" + strings.Repeat("A", 80) + " status=500"},
 		{"empty", nativeClassError{"", 500}, "exception_type=Exception status=500"},

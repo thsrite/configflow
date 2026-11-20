@@ -304,7 +304,7 @@ func TestUntrustedHTTPSProxyCertificateIsRejected(t *testing.T) {
 		origin, proxy := startServer(t, false, originTLS, nil), startServer(t, true, true, nil)
 		var sleeps []time.Duration
 		_, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", proxyConfig(proxy.URL, ""))
-		if class := PythonClass(err); class != "ProxyError" && class != "SSLError" {
+		if class := errorClass(err); class != "ProxyError" && class != "SSLError" {
 			t.Fatal(err, class)
 		}
 		if len(origin.seen) != 0 || len(proxy.seen) != 0 || proxy.accepted != 1 || len(sleeps) != 0 {
@@ -433,8 +433,8 @@ func TestUnavailableProxyDoesNotRetryDirectly(t *testing.T) {
 	req := proxyConfig("http://"+address, "")
 	req.ConnectTimeout = time.Second
 	_, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
-	if PythonClass(err) != "ProxyError" || len(origin.seen) != 0 {
-		t.Fatal(err, PythonClass(err))
+	if errorClass(err) != "ProxyError" || len(origin.seen) != 0 {
+		t.Fatal(err, errorClass(err))
 	}
 }
 
@@ -552,7 +552,7 @@ func TestUntrustedOriginCertificateIsNotRetried(t *testing.T) {
 	req.Stream, req.MaxBytes = true, 1024
 	var sleeps []time.Duration
 	_, err := liveClient(&sleeps).Download(context.Background(), origin.URL+"/rules", req)
-	if PythonClass(err) != "SSLError" || len(origin.seen) != 0 || origin.accepted != 1 || len(sleeps) != 0 {
+	if errorClass(err) != "SSLError" || len(origin.seen) != 0 || origin.accepted != 1 || len(sleeps) != 0 {
 		t.Fatal(err, origin.accepted, sleeps)
 	}
 }
@@ -584,7 +584,7 @@ func TestChunkedEOFRetriedInvalidLengthNot(t *testing.T) {
 				if content, _ := response.Content(); string(content) != string(integrationBody) || len(sleeps) != 2 {
 					t.Fatal(string(content), sleeps)
 				}
-			} else if PythonClass(err) != "ChunkedEncodingError" || !strings.Contains(err.Error(), "InvalidChunkLength") || len(sleeps) != 0 {
+			} else if errorClass(err) != "ChunkedEncodingError" || !strings.Contains(err.Error(), "InvalidChunkLength") || len(sleeps) != 0 {
 				t.Fatal(err)
 			}
 			if !equalStrings(origin.seenURLs(), repeat("GET /rules", attempts)) || origin.accepted != attempts {

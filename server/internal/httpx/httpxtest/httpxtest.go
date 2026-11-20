@@ -10,7 +10,7 @@
 //	res := srv.Get("/api/server-domain", admin)
 //	res.WantStatus(200)
 //	if res.Object().GetString("server_domain") != "" { ... }
-//	res = srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("generate", true)), admin)
+//	res = srv.Post("/api/config-token", httpxtest.JSON(map[string]any{"generate": true}), admin)
 //
 // Use it from an external test package (package foo_test) when foo is one of
 // the packages wired here. Authentication settings are process-wide
@@ -21,6 +21,7 @@ package httpxtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,8 +33,8 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // Default credentials of an authenticated test server (the Python fixture's).
@@ -196,6 +197,85 @@ func setBody(r *http.Request, data []byte, contentType string) {
 	}
 }
 
+// Object is a test-only view of a decoded JSON response object.
+type Object struct {
+	values map[string]any
+}
+
+// Len returns the number of keys in the object.
+func (o *Object) Len() int {
+	if o == nil {
+		return 0
+	}
+	return len(o.values)
+}
+
+// Has reports whether key is present in the object.
+func (o *Object) Has(key string) bool {
+	if o == nil {
+		return false
+	}
+	_, ok := o.values[key]
+	return ok
+}
+
+// Value returns the raw decoded value for key, or nil when absent.
+func (o *Object) Value(key string) any {
+	if o == nil {
+		return nil
+	}
+	return o.values[key]
+}
+
+// GetString returns the string value for key, or "".
+func (o *Object) GetString(key string) string {
+	s, _ := o.Value(key).(string)
+	return s
+}
+
+// GetBool returns the bool value for key, or false.
+func (o *Object) GetBool(key string) bool {
+	b, _ := o.Value(key).(bool)
+	return b
+}
+
+// GetInt returns the integer value for key, or 0.
+func (o *Object) GetInt(key string) int64 {
+	switch n := o.Value(key).(type) {
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return i
+		}
+		if f, err := n.Float64(); err == nil {
+			return int64(f)
+		}
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
+	}
+	return 0
+}
+
+// GetObject returns the nested object for key, or nil.
+func (o *Object) GetObject(key string) *Object {
+	m, ok := o.Value(key).(map[string]any)
+	if !ok {
+		return nil
+	}
+	return &Object{values: m}
+}
+
+// MarshalJSON encodes the underlying map for test inspection helpers.
+func (o *Object) MarshalJSON() ([]byte, error) {
+	if o == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(o.values)
+}
+
 // Result is a recorded response.
 type Result struct {
 	T      testing.TB
@@ -237,7 +317,7 @@ func (s *Server) Delete(path string, options ...Option) *Result {
 func (s *Server) Login() Option {
 	s.T.Helper()
 	config := auth.Current()
-	res := s.Post("/api/auth/login", JSON(jsonx.Obj("username", config.AdminUsername, "password", config.AdminPassword)))
+	res := s.Post("/api/auth/login", JSON(map[string]any{"username": config.AdminUsername, "password": config.AdminPassword}))
 	res.WantStatus(200)
 	token := res.Object().GetString("token")
 	if token == "" {
@@ -258,32 +338,33 @@ func (r *Result) WantStatus(status int) *Result {
 // JSON decodes the body (fails the test when it is not JSON).
 func (r *Result) JSON() any {
 	r.T.Helper()
-	value, err := jsonx.Parse(r.Body)
-	if err != nil {
+	dec := json.NewDecoder(bytes.NewReader(r.Body))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
 		r.T.Fatalf("response is not JSON (%v): %s", err, r.Body)
 	}
 	return value
 }
 
 // Object decodes the body as a JSON object.
-func (r *Result) Object() *jsonx.Object {
+func (r *Result) Object() *Object {
 	r.T.Helper()
-	object, ok := r.JSON().(*jsonx.Object)
+	m, ok := r.JSON().(map[string]any)
 	if !ok {
 		r.T.Fatalf("response is not a JSON object: %s", r.Body)
 	}
-	return object
+	return &Object{values: m}
 }
 
 // Text is the body as a string.
 func (r *Result) Text() string { return string(r.Body) }
 
-// WantJSON fails unless the body equals want as JSON values (Python ==).
+// WantJSON fails unless the body equals want as JSON values.
 func (r *Result) WantJSON(want any) *Result {
 	r.T.Helper()
-	if got := r.JSON(); !jsonx.Equal(got, want) {
-		encoded, _ := jsonresp.Encode(want)
-		r.T.Fatalf("body %s\nwant %s", r.Body, encoded)
+	if diff := testjson.Diff(json.RawMessage(r.Body), want); diff != "" {
+		r.T.Fatalf("body %s\ndiff: %s", r.Body, diff)
 	}
 	return r
 }

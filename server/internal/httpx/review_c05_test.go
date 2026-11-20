@@ -17,6 +17,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -91,12 +92,12 @@ func c05EqualJSON(t *testing.T, got any, want json.RawMessage) {
 
 func c05Observe(c *httpx.Ctx) (*httpx.Response, error) {
 	if strings.Contains(c.Path(), "/proxies") || strings.HasSuffix(c.Path(), "/provider") {
-		result, err := auth.ValidateTokenOrJWT(c, jsonx.Obj("system_config", jsonx.Obj("config_token", "c05-config-token")))
+		result, err := auth.ValidateSystemTokenOrJWT(c, &model.System{SystemConfig: model.SystemConfig{ConfigToken: "c05-config-token"}})
 		if err != nil {
 			return nil, err
 		}
 		if !result.Valid {
-			return httpx.JSONStatus(401, jsonx.Obj("valid", false, "message", result.Message)), nil
+			return httpx.JSONStatus(401, map[string]any{"valid": false, "message": result.Message}), nil
 		}
 	}
 	arg := func(name string) *string {

@@ -9,8 +9,9 @@ import (
 	"reflect"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 )
+
+const maxResponseDepth = 256
 
 // responseValue replaces non-finite numbers without modifying caller-owned
 // values. It is used only after native encoding rejects a response. Struct
@@ -43,8 +44,6 @@ type responseVisit struct {
 }
 
 var (
-	objectType        = reflect.TypeFor[*jsonx.Object]()
-	numberType        = reflect.TypeFor[jsonx.Number]()
 	marshalerType     = reflect.TypeFor[json.Marshaler]()
 	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
 )
@@ -53,7 +52,7 @@ func normalizeResponseValue(v reflect.Value, active map[responseVisit]bool, dept
 	if !v.IsValid() {
 		return reflect.Zero(reflect.TypeFor[any]()), false, nil
 	}
-	if depth > jsonx.MaxDepth {
+	if depth > maxResponseDepth {
 		return reflect.Value{}, false, errors.New("normalize JSON response: nesting limit exceeded")
 	}
 	if v.Kind() == reflect.Interface {
@@ -69,16 +68,8 @@ func normalizeResponseValue(v reflect.Value, active map[responseVisit]bool, dept
 		}
 		return v, false, nil
 	}
-	if v.Type() == numberType {
-		switch v.String() {
-		case "NaN", "Infinity", "-Infinity":
-			return reflect.ValueOf(json.RawMessage("null")), true, nil
-		}
-		return v, false, nil
-	}
-	isObject := v.Type() == objectType
-	bridgePointer := v.Kind() == reflect.Pointer && (v.Type().Elem() == numberType || v.Type().Elem() == reflect.TypeFor[json.RawMessage]())
-	if !isObject && !bridgePointer && (v.Type().Implements(marshalerType) || v.Type().Implements(textMarshalerType)) {
+	rawPointer := v.Kind() == reflect.Pointer && v.Type().Elem() == reflect.TypeFor[json.RawMessage]()
+	if !rawPointer && (v.Type().Implements(marshalerType) || v.Type().Implements(textMarshalerType)) {
 		return v, false, nil
 	}
 	if v.Kind() == reflect.Float32 || v.Kind() == reflect.Float64 {
@@ -114,18 +105,6 @@ func normalizeResponseValue(v reflect.Value, active map[responseVisit]bool, dept
 		defer delete(active, id)
 	}
 	changed := false
-	if isObject {
-		out := jsonx.NewObject()
-		for key, item := range v.Interface().(*jsonx.Object).All() {
-			next, altered, err := normalizeResponseValue(reflect.ValueOf(item), active, depth+1)
-			if err != nil {
-				return reflect.Value{}, false, err
-			}
-			changed = changed || altered
-			out.Set(key, next.Interface())
-		}
-		return reflect.ValueOf(out), changed, nil
-	}
 	switch v.Kind() {
 	case reflect.Pointer:
 		next, altered, err := normalizeResponseValue(v.Elem(), active, depth+1)

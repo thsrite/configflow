@@ -61,7 +61,14 @@ func recordedClass(err error) string {
 	case errors.Is(err, repo.ErrValidation):
 		return "ProfileValidationError"
 	}
-	return PythonClass(err)
+	return errorClass(err)
+}
+
+func errorClass(err error) string {
+	if class := errorClassOf(err); class != "" {
+		return class
+	}
+	return "ValueError"
 }
 
 func recordedError(err error) any {

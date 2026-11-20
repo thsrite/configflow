@@ -1,18 +1,9 @@
 # N8-11 migration ratchet: category server-relative-file:symbol.
 # Only remove entries as callers migrate; stale entries fail the gate.
-legacy-file internal/auth/legacy.go:<file>
 legacy-file internal/mosdns/legacy.go:<file>
 legacy-file internal/repo/legacy.go:<file>
 retired-directory internal/jsonx:<directory>
 retired-directory internal/pystr:<directory>
-retired-import internal/auth/legacy.go:configflow/internal/jsonx
-retired-import internal/httpx/ctx.go:configflow/internal/jsonx
-retired-import internal/httpx/errors.go:configflow/internal/jsonx
-retired-import internal/httpx/httpxtest/httpxtest.go:configflow/internal/jsonx
-retired-import internal/httpx/jsonvalue.go:configflow/internal/jsonx
-retired-import internal/httpx/n8_1_test.go:configflow/internal/jsonx
-retired-import internal/httpx/pyconv.go:configflow/internal/jsonx
-retired-import internal/httpx/response.go:configflow/internal/jsonx
 retired-import internal/httpx/review_c05_test.go:configflow/internal/jsonx
 retired-import internal/mosdns/legacy.go:configflow/internal/jsonx
 retired-import internal/mosdns/n73_reference_test.go:configflow/internal/jsonx
@@ -53,8 +44,3 @@ retired-import internal/yamlbridge/value_test.go:configflow/internal/jsonx
 retired-import internal/yamlx/yamlxtest/artifact.go:configflow/internal/jsonx
 retired-import internal/yamlx/yamlxtest/fixtures.go:configflow/internal/jsonx
 retired-import internal/yamlx/yamlxtest/readers.go:configflow/internal/jsonx
-retired-symbol internal/httpx/ctx.go:PyParseInt
-retired-symbol internal/httpx/pyconv.go:PyParseInt
-retired-symbol internal/httpx/pyconv.go:PyTypeName
-retired-symbol internal/rulefetch/transport.go:PythonClass
-retired-symbol internal/weburl/logsafe.go:PythonClass

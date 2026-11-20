@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 // Response is what a handler returns: Flask's Response object. Build it with
@@ -69,7 +67,10 @@ func JSONStatus(status int, v any) *Response {
 
 // Message is the common {"success": false, "message": msg} body with status.
 func Message(status int, success bool, message string) *Response {
-	return JSONStatus(status, jsonx.Obj("success", success, "message", message))
+	return JSONStatus(status, struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}{success, message})
 }
 
 // Bytes is a raw response with a content type.
@@ -225,11 +226,19 @@ func File(options FileOptions) (*Response, error) {
 		if !options.NoETag {
 			mtime := float64(body.modTime.UnixNano()) / 1e9
 			check := adler32.Checksum([]byte(options.Path))
-			r.Header().Set("ETag", `"`+jsonx.Float(mtime).String()+"-"+strconv.FormatInt(body.size, 10)+"-"+
+			r.Header().Set("ETag", `"`+formatETagFloat(mtime)+"-"+strconv.FormatInt(body.size, 10)+"-"+
 				strconv.FormatUint(uint64(check), 10)+`"`)
 		}
 	}
 	return r, nil
+}
+
+func formatETagFloat(v float64) string {
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if !strings.ContainsRune(s, '.') {
+		s += ".0"
+	}
+	return s
 }
 
 // contentDisposition is werkzeug's send_file header: a plain ASCII token

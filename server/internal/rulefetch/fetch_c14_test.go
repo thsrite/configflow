@@ -223,7 +223,7 @@ func TestFetchDifferentialAgainstRequests(t *testing.T) {
 				response.Close()
 			}
 			if err != nil {
-				class := PythonClass(err)
+				class := errorClass(err)
 				if errors.Is(err, ErrRedirectEncoding) {
 					class = "RedirectEncoding"
 				}

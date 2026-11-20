@@ -15,7 +15,6 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/localhttp"
 	"configflow/internal/weburl"
 )
@@ -42,10 +41,6 @@ type Ctx struct {
 	body     []byte
 	bodyRead bool
 	bodyErr  error
-
-	jsonDone  bool
-	jsonValue any
-	jsonErr   error
 
 	values map[string]any
 	query  [][2]string
@@ -133,18 +128,46 @@ func (c *Ctx) ArgDefault(name, def string) string {
 	return def
 }
 
-// ArgInt is request.args.get(name, def, type=int): the default when the
-// argument is missing or int() rejects it. Values beyond int64 saturate.
+// ArgInt parses a query parameter as a base-10 integer, returning def when
+// missing or invalid. Values beyond int64 saturate.
 func (c *Ctx) ArgInt(name string, def int64) int64 {
 	v, ok := c.Arg(name)
 	if !ok {
 		return def
 	}
-	n, ok := PyParseInt(v)
+	n, ok := parseArgInt(v)
 	if !ok {
 		return def
 	}
 	return saturate(n)
+}
+
+func parseArgInt(text string) (*big.Int, bool) {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return nil, false
+	}
+	negative := false
+	if s[0] == '+' || s[0] == '-' {
+		negative = s[0] == '-'
+		s = s[1:]
+	}
+	if s == "" {
+		return nil, false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return nil, false
+		}
+	}
+	value, ok := new(big.Int).SetString(s, 10)
+	if !ok {
+		return nil, false
+	}
+	if negative {
+		value.Neg(value)
+	}
+	return value, true
 }
 
 func saturate(n *big.Int) int64 {
@@ -309,75 +332,6 @@ func (c *Ctx) IsJSON() bool {
 // ErrNotJSON is the 415 of request.json for a request that is not
 // application/json.
 var errNotJSONDescription = "Did not attempt to load JSON data because the request Content-Type was not 'application/json'."
-
-// JSON is request.json / request.get_json(): the decoded body (a jsonx
-// value). Errors are *HTTPError: 415 when the Content-Type is not JSON, 400
-// (Flask's generic Bad Request, not the decoder message) when the body does
-// not decode. Return the error to send Werkzeug's page, or use err.Error()
-// where Python put str(e) into a message.
-func (c *Ctx) JSON() (any, error) {
-	if !c.IsJSON() {
-		return nil, &HTTPError{Code: 415, Description: errNotJSONDescription}
-	}
-	value, err := c.decodeJSON()
-	if err != nil {
-		return nil, BadRequest("")
-	}
-	return value, nil
-}
-
-// JSONSilent is request.get_json(silent=True): nil when the body is not JSON
-// (wrong Content-Type or undecodable).
-func (c *Ctx) JSONSilent() any {
-	if !c.IsJSON() {
-		return nil
-	}
-	value, err := c.decodeJSON()
-	if err != nil {
-		return nil
-	}
-	return value
-}
-
-// JSONForce is request.get_json(force=True, silent=True): the body decoded
-// whatever the Content-Type, nil when it does not decode.
-func (c *Ctx) JSONForce() any {
-	value, err := c.decodeJSON()
-	if err != nil {
-		return nil
-	}
-	return value
-}
-
-// JSONObject is the common `data = request.get_json(silent=True); if not
-// isinstance(data, dict)` pattern: the object or nil.
-func (c *Ctx) JSONObject() *jsonx.Object {
-	o, _ := c.JSONSilent().(*jsonx.Object)
-	return o
-}
-
-// JSONForceError is JSONForce with the decoding error: json.loads(body) for
-// handlers that parse the raw body themselves and must tell its exceptions
-// apart (a SyntaxError is JSONDecodeError; an invalid encoding is
-// UnicodeDecodeError; other errors are other ValueErrors).
-func (c *Ctx) JSONForceError() (any, error) { return c.decodeJSON() }
-
-func (c *Ctx) decodeJSON() (any, error) {
-	if c.jsonDone {
-		return c.jsonValue, c.jsonErr
-	}
-	c.jsonDone = true
-	data, err := c.Data()
-	if err == nil {
-		var text []byte
-		text, err = decodeJSONBytes(data)
-		if err == nil {
-			c.jsonValue, err = jsonx.Parse(text)
-		}
-	}
-	c.jsonErr = err
-	return c.jsonValue, c.jsonErr
-}
 
 // decodeJSONBytes is the bytes branch of json.loads: detect UTF-8 (BOM
 // stripped), UTF-16 and UTF-32 and return UTF-8 text.

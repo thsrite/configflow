@@ -66,15 +66,6 @@ func IsRequestException(err error) bool {
 	return errors.As(err, &f) || errors.As(err, &r)
 }
 
-// PythonClass is type(err).__name__ for the errors of this package and the
-// repository errors it passes on; plain errors are ValueError.
-func PythonClass(err error) string {
-	if class := errorClassOf(err); class != "" {
-		return class
-	}
-	return "ValueError"
-}
-
 // TransportRequest is one HTTP request without redirect handling.
 type TransportRequest struct {
 	Method string // "GET" or "HEAD"

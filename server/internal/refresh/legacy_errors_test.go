@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"configflow/internal/convert"
-	"configflow/internal/httpx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
@@ -40,7 +39,28 @@ func errorFromLegacy(err error) error {
 }
 
 // pyTypeName is type(v).__name__ for a JSON value.
-func pyTypeName(v any) string { return httpx.PyTypeName(v) }
+func pyTypeName(v any) string {
+	switch value := v.(type) {
+	case nil:
+		return "NoneType"
+	case string:
+		return "str"
+	case bool:
+		return "bool"
+	case map[string]any:
+		if value == nil {
+			return "NoneType"
+		}
+		return "dict"
+	case []any:
+		return "list"
+	case int, int64:
+		return "int"
+	case float64:
+		return "float"
+	}
+	return "object"
+}
 
 // osErrorClass is the OSError subclass Python raises for a file error.
 func osErrorClass(err error) string {

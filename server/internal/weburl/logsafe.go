@@ -208,13 +208,6 @@ type ClassError interface {
 	ErrorClass() string
 }
 
-// pythonClassError is a migration fallback for callers not yet using ClassError.
-// Remove it once the remaining callers have adopted ErrorClass.
-type pythonClassError interface {
-	error
-	PythonClass() string
-}
-
 // SafeErrorDetails is bounded error metadata for logs without the message
 // or URL: "exception_type=<class>[ status=<code>]".
 func SafeErrorDetails(err error) string {
@@ -222,11 +215,6 @@ func SafeErrorDetails(err error) string {
 	var classed ClassError
 	if errors.As(err, &classed) {
 		typeName = classed.ErrorClass()
-	} else {
-		var legacy pythonClassError
-		if errors.As(err, &legacy) {
-			typeName = legacy.PythonClass()
-		}
 	}
 	name := exceptionNameChars.ReplaceAllString(typeName, "")
 	if len(name) > 80 {

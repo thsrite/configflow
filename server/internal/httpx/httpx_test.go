@@ -377,8 +377,11 @@ func TestJSONRequestParsing(t *testing.T) {
 	var gotErr error
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.POST("/static/echo", "test.echo", func(c *httpx.Ctx) (*httpx.Response, error) {
-			got, gotErr = c.JSON()
-			return httpx.JSON(map[string]any{"silent": c.JSONSilent()}), nil
+			got = nil
+			gotErr = c.Bind(&got)
+			var silent any
+			c.BindSilent(&silent)
+			return httpx.JSON(map[string]any{"silent": silent}), nil
 		})
 	})})
 	srv.Post("/static/echo", httpxtest.Body([]byte("\xef\xbb\xbf{\"a\": 1}"), "application/json"))
@@ -418,16 +421,20 @@ func TestQueryParsingFollowsWerkzeug(t *testing.T) {
 	}
 }
 
-func TestPyParseInt(t *testing.T) {
-	for text, want := range map[string]string{" 12 ": "12", "+5": "5", "-7": "-7", "1_000": "1000", "٣": "3"} {
-		n, ok := httpx.PyParseInt(text)
-		if !ok || n.String() != want {
-			t.Errorf("%q → %v %v", text, n, ok)
+func TestArgInt(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		r.GET("/static/int", "test.int", func(c *httpx.Ctx) (*httpx.Response, error) {
+			return httpx.JSON(map[string]any{"n": c.ArgInt("n", 99)}), nil
+		})
+	})})
+	for text, want := range map[string]int64{" 12 ": 12, "+5": 5, "-7": -7, "99999999999999999999999": 1<<63 - 1, "-99999999999999999999999": -1 << 63} {
+		if got := srv.Get("/static/int", httpxtest.Query("n", text)).WantStatus(200).Object().GetInt("n"); got != want {
+			t.Errorf("%q → %d, want %d", text, got, want)
 		}
 	}
-	for _, text := range []string{"", "1.5", "_1", "1__0", "1_", "abc", "0x10"} {
-		if _, ok := httpx.PyParseInt(text); ok {
-			t.Errorf("%q accepted", text)
+	for _, text := range []string{"", "1.5", "1_000", "abc", "0x10"} {
+		if got := srv.Get("/static/int", httpxtest.Query("n", text)).WantStatus(200).Object().GetInt("n"); got != 99 {
+			t.Errorf("%q → %d, want default 99", text, got)
 		}
 	}
 }

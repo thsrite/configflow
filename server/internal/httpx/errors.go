@@ -5,9 +5,9 @@ import (
 	"errors"
 	"html"
 	"net/http"
+	"strconv"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -54,7 +54,7 @@ func reasonPhrase(code int) string {
 	return http.StatusText(code)
 }
 
-func itoa(n int) string { return jsonx.Int(int64(n)).String() }
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // Werkzeug's default descriptions.
 const (
@@ -128,19 +128,22 @@ func RepositoryErrorHandler(_ *Ctx, err error) *Response {
 	}
 	switch {
 	case errors.Is(err, repo.ErrValidation):
-		return JSONStatus(400, jsonx.Obj("success", false, "message", e.Error()))
+		return Message(400, false, e.Error())
 	case errors.Is(err, repo.ErrNotFound):
-		return JSONStatus(404, jsonx.Obj("success", false, "message", "Profile not found: "+e.Message))
+		return Message(404, false, "Profile not found: "+e.Message)
 	case errors.Is(err, repo.ErrExists), errors.Is(err, repo.ErrInUse):
-		payload := jsonx.Obj("success", false, "message", e.Error())
 		if errors.Is(err, repo.ErrInUse) {
 			usages := e.Usages
 			if usages == nil {
 				usages = []any{}
 			}
-			payload.Set("usages", usages)
+			return JSONStatus(409, struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+				Usages  []any  `json:"usages"`
+			}{false, e.Error(), usages})
 		}
-		return JSONStatus(409, payload)
+		return Message(409, false, e.Error())
 	}
-	return JSONStatus(400, jsonx.Obj("success", false, "message", e.Error()))
+	return Message(400, false, e.Error())
 }

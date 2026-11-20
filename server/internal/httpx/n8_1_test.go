@@ -13,7 +13,6 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/rules"
@@ -74,11 +73,7 @@ func TestN8JSONResponsePythonBoundary(t *testing.T) {
 	for i, row := range cases {
 		t.Run(row.Name, func(t *testing.T) {
 			got := srv.Do(row.Method, fmt.Sprintf("/static/n8/%d", i)).WantStatus(row.Status)
-			want, err := jsonx.Parse(row.Expected)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got.WantJSON(want)
+			got.WantJSON(row.Expected)
 		})
 	}
 }
@@ -100,7 +95,7 @@ func TestN8NativeValuesCannotBypassResponsePolicy(t *testing.T) {
 	})
 	for _, path := range []string{"/static/ordinary", "/static/single"} {
 		res := srv.Get(path).WantStatus(200)
-		res.WantJSON(jsonx.Obj("nested", []any{jsonx.Obj("secret", "[REDACTED]")}, "raw", jsonx.Obj("value", "[REDACTED]"), "exact", jsonx.Number("9007199254740993123456789")))
+		res.WantJSON(map[string]any{"nested": []any{map[string]any{"secret": "[REDACTED]"}}, "raw": map[string]any{"value": "[REDACTED]"}, "exact": json.Number("9007199254740993123456789")})
 		if !strings.HasPrefix(res.Text(), `{"exact":9007199254740993123456789,"nested":`) {
 			t.Fatal("output keys are not sorted", res.Text())
 		}
@@ -108,8 +103,11 @@ func TestN8NativeValuesCannotBypassResponsePolicy(t *testing.T) {
 }
 
 func TestN8ResponseEncodingFailureReturns500(t *testing.T) {
-	cyclic := jsonx.NewObject()
-	cyclic.Set("self", cyclic)
+	type node struct {
+		Self *node `json:"self"`
+	}
+	cyclic := &node{}
+	cyclic.Self = cyclic
 	for _, value := range []any{cyclic, make(chan int)} {
 		srv := jsonServer(t, func() any { return value }, nil)
 		srv.Get("/static/ordinary").WantStatus(500)
@@ -145,7 +143,7 @@ func TestN8PersistedIdentitiesAtConsumerMigration(t *testing.T) {
 	tests := []struct{ name, got, want string }{
 		{"notification fingerprint", fingerprint, "0267bf46778074b7eeb98037dc5d72c1d23748a3309dd1832c5d53fac18f1ebe" /* Python: 796d41c65fccf7be4c1f6905927f38f7f68e19ff85cd21bbda74bc5b0b851228 */},
 		{"router signature", routerSig, "17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa" /* Python: 7d96d6c8c83a86b93be94139573ba2f7dd84d73d69229b31d424e377f9e38239 */},
-		{"rule cache filename", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, jsonx.Obj("id", "rule-中文", "url", "https://example.com/rules", "behavior", "domain", "format", "yaml"))), "by-source/e2364080e064f144014eb27e7dee12c0a88691411bbd10e8fb11fe2d4ae2883a.list" /* Python: by-source/4426c62b307f4cf12000498eb551a75eb9f77bec2df4f934d1069ff52488381b.list */},
+		{"rule cache filename", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, map[string]any{"id": "rule-中文", "url": "https://example.com/rules", "behavior": "domain", "format": "yaml"})), "by-source/e2364080e064f144014eb27e7dee12c0a88691411bbd10e8fb11fe2d4ae2883a.list" /* Python: by-source/4426c62b307f4cf12000498eb551a75eb9f77bec2df4f934d1069ff52488381b.list */},
 		{"hosts digest", hostsDigest, "203f1eaef2b304a1972e5313ea3d41d096aeddeee5ae1c45623154fd11fa6aef" /* Python: b8cb494707314c3de1a4489ad0b63c0dfbdfe553d368ebcd7bfa7446c9919d48 */},
 	}
 	for _, tt := range tests {
@@ -160,12 +158,12 @@ func TestN8PersistedIdentitiesAtConsumerMigration(t *testing.T) {
 // Flask materializes jsonify with sorted original keys. A hook that merely
 // reassigns those bytes must not change which colliding redacted key wins.
 func TestN8MaterializedBodyKeepsCollisionOrdering(t *testing.T) {
-	payload := jsonx.Obj("private-secret-z", 1, "private-secret-a", 2, "[REDACTED]", 3)
+	payload := map[string]any{"private-secret-z": 1, "private-secret-a": 2, "[REDACTED]": 3}
 	srv := jsonServer(t, func() any { return payload }, func(app *httpx.App) {
 		app.AfterRequest(func(_ *httpx.Ctx, r *httpx.Response) { r.SetBody(r.Body()) })
 	})
 	for _, path := range []string{"/static/ordinary", "/static/single"} {
-		srv.Get(path).WantStatus(200).WantJSON(jsonx.Obj("[REDACTED]", 1))
+		srv.Get(path).WantStatus(200).WantJSON(map[string]any{"[REDACTED]": 1})
 	}
 }
 
@@ -184,17 +182,21 @@ func TestN8NonFiniteResponsesAreValidJSON(t *testing.T) {
 		Hidden  float64            `json:"-"`
 	}
 	inf := math.Inf(1)
-	legacyNaN := jsonx.Number("NaN")
-	payload := native{Embedded: Embedded{math.NaN()}, Values: []float64{math.NaN(), inf, math.Inf(-1), 1e308}, Map: map[string]float64{"nan": math.NaN(), "finite": 2}, Pointer: &inf, Binary: []byte{1, 2, 3}, At: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Hidden: math.NaN()}
+	negInf := math.Inf(-1)
+	nanVal := math.NaN()
+	payload := native{Embedded: Embedded{nanVal}, Values: []float64{nanVal, inf, negInf, 1e308}, Map: map[string]float64{"nan": nanVal, "finite": 2}, Pointer: &inf, Binary: []byte{1, 2, 3}, At: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Hidden: nanVal}
+	wantPayload := map[string]any{"embedded": nil, "values": []any{nil, nil, nil, json.Number("1e308")}, "map": map[string]any{"nan": nil, "finite": 2}, "pointer": nil, "binary": "AQID", "at": "2026-01-02T03:04:05Z"}
 	cases := []struct {
 		name  string
 		value any
 		want  any
 	}{
-		{"native DTO", payload, jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z")},
-		{"legacy mixed", jsonx.Obj("none", nil, "legacy", []any{nil, jsonx.Number("NaN"), jsonx.Number("Infinity"), jsonx.Number("-Infinity")}, "native", payload), jsonx.Obj("none", nil, "legacy", []any{nil, nil, nil, nil}, "native", jsonx.Obj("embedded", nil, "values", []any{nil, nil, nil, jsonx.Number("1e308")}, "map", jsonx.Obj("nan", nil, "finite", 2), "pointer", nil, "binary", "AQID", "at", "2026-01-02T03:04:05Z"))},
-		{"scalar legacy pointer", &legacyNaN, nil},
-		{"scalar NaN", math.NaN(), nil}, {"scalar infinity", inf, nil}, {"scalar legacy", jsonx.Number("-Infinity"), nil},
+		{"native DTO", payload, wantPayload},
+		{"nested mixed", map[string]any{"none": nil, "nonfinite": []any{nil, nanVal, inf, negInf}, "native": payload}, map[string]any{"none": nil, "nonfinite": []any{nil, nil, nil, nil}, "native": wantPayload}},
+		{"scalar pointer", &nanVal, nil},
+		{"scalar NaN", nanVal, nil},
+		{"scalar infinity", inf, nil},
+		{"scalar neg infinity", negInf, nil},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,7 +213,7 @@ func TestN8NonFiniteResponsesAreValidJSON(t *testing.T) {
 
 func TestN8RawNonFiniteResponses(t *testing.T) {
 	raw := []byte(`{"numbers":[NaN,Infinity,-Infinity,1e308],"text":"NaN Infinity -Infinity \"NaN\""}`)
-	want := jsonx.Obj("numbers", []any{nil, nil, nil, jsonx.Number("1e308")}, "text", `NaN Infinity -Infinity "NaN"`)
+	want := map[string]any{"numbers": []any{nil, nil, nil, json.Number("1e308")}, "text": `NaN Infinity -Infinity "NaN"`}
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.GET("/static/raw-nonfinite", "test.raw_nonfinite", func(_ *httpx.Ctx) (*httpx.Response, error) { return httpx.RawJSON(200, raw), nil })
 		r.GET("/static/value-nonfinite", "test.value_nonfinite", func(_ *httpx.Ctx) (*httpx.Response, error) { return httpx.JSON(json.RawMessage(raw)), nil })

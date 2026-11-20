@@ -48,20 +48,14 @@
 // map[string]json.RawMessage. Custom codecs decode ordinary DTOs via jsondecode.
 // Number/RawMessage fields preserve business validation of wrong forms rather
 // than turning every wrong field type into a generic decoder error. The native
-// binders reject non-finite JSON; legacy JSON helpers migrate per consumer.
+// binders reject non-finite JSON.
 //
-//	c.JSON()               legacy request.json: 415 / 400 *HTTPError on bad input (err.Error() is str(e))
-//	c.JSONSilent()         request.get_json(silent=True); JSONObject() for the usual isinstance(dict) check; JSONForce()
 //	c.Data(), c.Stream(), c.ContentLength()   request.get_data(), request.stream, request.content_length
 //	c.Form(name)           request.form.get
 //	c.Method(), c.Path(), c.RemoteAddr(), c.Host(), c.HostURL(), c.URLRoot(), c.Scheme()
 //	c.IsInternalCall()     the request came from Invoke (MCP) and is already authenticated
 //	c.ProfileID            g.configflow_profile_id ("" for global requests)
 //	c.Set/c.Get            flask.g for later hooks
-//
-// Python messages that embed exception texts are reproduced with
-// PyTypeName / NoAttributeGet ("'NoneType' object has no attribute 'get'")
-// and PyParseInt (int(text)).
 //
 // # Responses
 //
@@ -73,8 +67,8 @@
 //	httpx.Stream(status, type, write)   generator responses
 //	r.WithStatus(n), r.WithHeader(k, v), r.NoStore()   (Cache-Control: no-store)
 //
-// Values may be native structs, maps, slices, scalars, json.RawMessage or legacy
-// jsonx values. writeJSON encodes first, applies one global token-redaction pass,
+// Values may be native structs, maps, slices, scalars, or json.RawMessage.
+// writeJSON encodes first, applies one global token-redaction pass,
 // then writes UTF-8 JSON with sorted keys and no trailing newline. The policy
 // drops rule_proxy_token / retired_rule_proxy_tokens / rule_fetch_proxy keys and
 // replaces any string containing a stored credential with "[REDACTED]", except
