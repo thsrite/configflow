@@ -18,19 +18,9 @@ type jsonObject interface {
 	All() iter.Seq2[string, any]
 }
 
-type legacyNumber interface {
-	Int64() (int64, bool)
-}
-
 func numberText(v any) (string, bool) {
-	switch n := v.(type) {
-	case json.Number:
+	if n, ok := v.(json.Number); ok {
 		return string(n), true
-	case legacyNumber:
-		rv := reflect.ValueOf(v)
-		if rv.Kind() == reflect.String {
-			return rv.String(), true
-		}
 	}
 	return "", false
 }

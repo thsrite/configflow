@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/testgolden"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
@@ -22,23 +21,23 @@ func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
+	value, err := mosParse(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
-	for key, want := range value.(*jsonx.Object).All() {
+	for key, want := range value.(*mosObj).All() {
 		kind, source, _ := strings.Cut(key, ":")
-		row := jsonx.Obj()
+		row := newMosObj()
 		switch kind {
 		case "generate", "generate-nolog":
-			settings := jsonx.Obj("custom_config", source)
+			settings := mosKV("custom_config", source)
 			if kind == "generate-nolog" {
 				settings.Set("log_enabled", false)
 				settings.Set("api_enabled", false)
 			}
 			row.Set("fn", "generate")
-			row.Set("args", []any{jsonx.Obj("mosdns", settings), ""})
+			row.Set("args", []any{mosKV("mosdns", settings), ""})
 			output := want.([]any)
 			if output[0] == "ok" {
 				row.Set("out", output[1])
@@ -65,7 +64,7 @@ func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 			}
 			row.Set("fn", "upstreams")
 			row.Set("args", []any{source})
-			row.Set("out", jsonx.Obj("dump", string(text)))
+			row.Set("out", mosKV("dump", string(text)))
 		}
 		if msg, _, ok := compareRow(t, oracle, row); !ok || msg != "" {
 			t.Errorf("%q: %s", key, msg)

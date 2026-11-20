@@ -11,7 +11,6 @@ import (
 	"os"
 
 	"configflow/internal/logx"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -55,7 +54,7 @@ func run() error {
 		answer["class"] = category
 		if err == nil {
 			var value any
-			value, err = yamlbridge.Value(root)
+			value, err = yamlxtest.Value(root)
 			if err == nil {
 				answer["values"] = yamlxtest.ValueGraph(value)
 			}

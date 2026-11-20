@@ -9,8 +9,8 @@ import (
 func TestN73DesiredReaderMigrationGate(t *testing.T) {
 	var sources []string
 	for _, row := range yamlxtest.Rows(t, "testdata/r01_corpus.jsonl.gz") {
-		if row.GetString("fn") == "compute_desired" {
-			sources = append(sources, yamlxtest.TextFields(row.GetObject("in"), "custom_config")...)
+		if row["fn"] == "compute_desired" {
+			sources = append(sources, yamlxtest.TextFields(row["in"], "custom_config")...)
 		}
 	}
 	if len(sources) == 0 {

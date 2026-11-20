@@ -2,8 +2,10 @@ package oxidns
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -46,15 +47,18 @@ func TestN73OxidnsReaderInputs(t *testing.T) {
 		rowIndex := 0
 		for scanner.Scan() {
 			rowIndex++
-			v, err := jsonx.Parse(scanner.Bytes())
-			row, ok := v.(*jsonx.Object)
+			dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+			dec.UseNumber()
+			var v any
+			err := dec.Decode(&v)
+			row, ok := v.(map[string]any)
 			if err != nil || !ok {
 				t.Fatal("fixture JSON failed")
 			}
-			args := row.Value("args")
+			args := row["args"]
 			native := yamlxtest.TextFields(args, "native_config")
 			native = append(native, n73IncludeInputs(args)...)
-			if row.Value("fn") == "load_native_yaml" {
+			if row["fn"] == "load_native_yaml" {
 				if list, ok := args.([]any); ok && len(list) != 0 {
 					if text, ok := list[0].(string); ok {
 						native = append(native, text)
@@ -194,22 +198,22 @@ func n73IncludeInputs(value any) []string {
 	var visit func(any)
 	visit = func(value any) {
 		switch value := value.(type) {
-		case *jsonx.Object:
-			if files, ok := value.Value("additional_files").([]any); ok {
+		case map[string]any:
+			if files, ok := value["additional_files"].([]any); ok {
 				for _, item := range files {
-					file, ok := item.(*jsonx.Object)
+					file, ok := item.(map[string]any)
 					if !ok {
 						continue
 					}
-					path := file.GetString("path")
+					path, _ := file["path"].(string)
 					if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
 						continue
 					}
-					content, ok := file.Value("content").(string)
+					content, ok := file["content"].(string)
 					if !ok {
 						continue
 					}
-					if file.GetString("encoding") == "base64" {
+					if enc, _ := file["encoding"].(string); enc == "base64" {
 						data, err := base64.StdEncoding.DecodeString(content)
 						if err != nil || !utf8.Valid(data) {
 							continue
@@ -221,7 +225,7 @@ func n73IncludeInputs(value any) []string {
 					}
 				}
 			}
-			for _, item := range value.All() {
+			for _, item := range value {
 				visit(item)
 			}
 		case []any:

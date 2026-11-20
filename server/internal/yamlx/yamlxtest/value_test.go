@@ -1,10 +1,10 @@
-package yamlbridge
+package yamlxtest
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -19,7 +19,7 @@ func TestValueRetainsPhysicalSharingAndScalarPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	object := value.(*jsonx.Object)
+	object := value.(*OrderedObject)
 	if object.Value("base") != object.Value("copy") {
 		t.Fatal("mapping alias expanded")
 	}
@@ -27,12 +27,13 @@ func TestValueRetainsPhysicalSharingAndScalarPolicy(t *testing.T) {
 	if &first[0] != &second[0] {
 		t.Fatal("sequence alias expanded")
 	}
-	for key, want := range map[string]any{"when": "2001-01-01", "bin": "YWJj", "number": ".inf", "large": jsonx.Number("100000000000000000001")} {
+	for key, want := range map[string]any{"when": "2001-01-01", "bin": "YWJj", "number": ".inf", "large": json.Number("100000000000000000001")} {
 		if object.Value(key) != want {
 			t.Errorf("%s: got %#v, want %#v", key, object.Value(key), want)
 		}
 	}
 }
+
 func TestValueRejectsUnvalidatedUnsafeGraphs(t *testing.T) {
 	recursive := yamlx.Seq()
 	recursive.Content = []*yamlx.Node{{Kind: yaml.AliasNode, Alias: recursive}}

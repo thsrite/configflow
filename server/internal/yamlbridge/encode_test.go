@@ -1,16 +1,128 @@
 package yamlbridge
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
+	"iter"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
+
+type testObj struct {
+	keys   []string
+	values map[string]any
+}
+
+func newTestObj(kv ...any) *testObj {
+	o := &testObj{values: map[string]any{}}
+	for i := 0; i+1 < len(kv); i += 2 {
+		o.Set(kv[i].(string), kv[i+1])
+	}
+	return o
+}
+
+func (o *testObj) Set(key string, value any) {
+	if _, ok := o.values[key]; !ok {
+		o.keys = append(o.keys, key)
+	}
+	o.values[key] = value
+}
+
+func (o *testObj) All() iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
+		for _, k := range o.keys {
+			if !yield(k, o.values[k]) {
+				return
+			}
+		}
+	}
+}
+
+func (o *testObj) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, k := range o.keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		kb, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		vb, err := json.Marshal(o.values[k])
+		if err != nil {
+			return nil, err
+		}
+		b.Write(kb)
+		b.WriteByte(':')
+		b.Write(vb)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+func parseTestJSON(source string) (any, error) {
+	if !utf8.ValidString(source) {
+		return nil, errors.New("invalid utf-8")
+	}
+	dec := json.NewDecoder(strings.NewReader(source))
+	dec.UseNumber()
+	val, err := readTestJSON(dec)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("trailing token")
+	}
+	return val, nil
+}
+
+func readTestJSON(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return tok, nil
+	}
+	switch delim {
+	case '{':
+		o := newTestObj()
+		for dec.More() {
+			k, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			v, err := readTestJSON(dec)
+			if err != nil {
+				return nil, err
+			}
+			o.Set(k.(string), v)
+		}
+		_, err := dec.Token()
+		return o, err
+	case '[':
+		list := []any{}
+		for dec.More() {
+			v, err := readTestJSON(dec)
+			if err != nil {
+				return nil, err
+			}
+			list = append(list, v)
+		}
+		_, err := dec.Token()
+		return list, err
+	}
+	return nil, errors.New("unexpected delimiter")
+}
 
 func TestEncodeNativeDocuments(t *testing.T) {
 	for _, source := range []string{
@@ -45,9 +157,9 @@ func TestEncodeNativeDocuments(t *testing.T) {
 }
 
 func TestEncodeSharedValues(t *testing.T) {
-	shared := jsonx.Obj("name", "shared")
+	shared := newTestObj("name", "shared")
 	list := []any{shared}
-	n, err := Encode(jsonx.Obj("one", list, "two", list, "three", shared))
+	n, err := Encode(newTestObj("one", list, "two", list, "three", shared))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +195,7 @@ func writerAliasChain() any {
 }
 
 func writerRecursiveObject() any {
-	v := jsonx.NewObject()
+	v := newTestObj()
 	v.Set("self", v)
 	return v
 }
@@ -129,7 +241,7 @@ func TestEncodeNativeGraphs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err = Encode(jsonx.Obj("one", selected, "two", yamlx.Get(other, "selected")))
+	n, err = Encode(newTestObj("one", selected, "two", yamlx.Get(other, "selected")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,15 +293,13 @@ func FuzzEncode(f *testing.F) {
 		if _, err := yamlx.FromJSON([]byte(source)); err != nil {
 			t.Skip()
 		}
-		value, err := jsonx.ParseString(source)
+		value, err := parseTestJSON(source)
 		if err != nil {
-			t.Skip() // Invalid UTF-8 cannot produce a legacy generator input.
+			t.Skip()
 		}
-		// The temporary builder receives JSON values. Compare their actual
-		// encoding, including arbitrary precision and float shape.
 		data, err := json.Marshal(value)
 		if err != nil {
-			t.Skip() // Non-finite values are covered explicitly above.
+			t.Skip()
 		}
 		want, err := yamlx.FromJSON(data)
 		if err != nil {

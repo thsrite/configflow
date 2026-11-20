@@ -1,21 +1,60 @@
 package yamlxtest
 
 import (
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
+func mapString(m map[string]any, key string) string {
+	v, _ := m[key].(string)
+	return v
+}
+
+func mapBool(m map[string]any, key string) bool {
+	v, _ := m[key].(bool)
+	return v
+}
+
+func mapList(m map[string]any, key string) []any {
+	v, _ := m[key].([]any)
+	return v
+}
+
+func mapObject(m map[string]any, key string) map[string]any {
+	v, _ := m[key].(map[string]any)
+	return v
+}
+
+func mapHas(m map[string]any, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
+func mapInt(m map[string]any, key string) int {
+	switch v := m[key].(type) {
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return 0
+}
+
 // Fixture reads a gzip JSON-object fixture without normalizing its values.
-func Fixture(t testing.TB, path string) *jsonx.Object {
+func Fixture(t testing.TB, path string) map[string]any {
 	t.Helper()
 	f, err := os.Open(path)
 	if err != nil {
@@ -31,17 +70,19 @@ func Fixture(t testing.TB, path string) *jsonx.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := jsonx.Parse(data)
-	if err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
 		t.Fatal(err)
 	}
-	return v.(*jsonx.Object)
+	return v.(map[string]any)
 }
 
 // ReaderCases reads the separately recorded Python business expectations.
-func ReaderCases(t testing.TB, path string) *jsonx.Object {
+func ReaderCases(t testing.TB, path string) map[string]any {
 	t.Helper()
-	return Fixture(t, path).GetObject("cases")
+	return mapObject(Fixture(t, path), "cases")
 }
 
 // CheckReaderFixtures checks every recorded actual loader input against the old
@@ -63,15 +104,15 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 	sources := Fixture(t, valuesPath)
 	expected := Fixture(t, expectedPath)
 	modes, classes := map[string]int{}, map[string]int{}
-	for id, item := range sources.All() {
-		record := item.(*jsonx.Object)
-		source, mode := record.GetString("source"), record.GetString("mode")
+	for id, item := range sources {
+		record := item.(map[string]any)
+		source, mode := mapString(record, "source"), mapString(record, "mode")
 		digest := sha256.Sum256([]byte(mode + "\x00" + source))
 		if hex.EncodeToString(digest[:]) != id {
 			t.Fatalf("bad fixture input hash %s", id)
 		}
 		modes[mode]++
-		for _, category := range record.GetList("classes") {
+		for _, category := range mapList(record, "classes") {
 			label := category.(string)
 			if label == "UNCLASSIFIED" {
 				t.Fatalf("unclassified %s", id)
@@ -82,12 +123,12 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 		if err != nil {
 			t.Fatal(err)
 		}
-		if history.OldError != record.GetString("old_error") {
+		if history.OldError != mapString(record, "old_error") {
 			t.Fatalf("historical loader error changed for %s", id)
 		}
 		n, err := yamlx.Parse([]byte(source))
 		if err == nil {
-			CheckParseAudit(t, n, record.GetList("parse_nodes"))
+			CheckParseAudit(t, n, mapList(record, "parse_nodes"))
 			project, ok := projectors[mode]
 			if !ok {
 				t.Fatalf("unknown reader mode %s", mode)
@@ -98,20 +139,20 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 		if err != nil {
 			newMessage = err.Error()
 		}
-		if newMessage != record.GetString("error") {
-			t.Fatalf("native load changed %s: got %v, recorded %s", id, err, record.GetString("error"))
+		if newMessage != mapString(record, "error") {
+			t.Fatalf("native load changed %s: got %v, recorded %s", id, err, mapString(record, "error"))
 		}
 		if err != nil && !(errors.Is(err, yamlx.ErrSyntax) || errors.Is(err, yamlx.ErrPolicy) || errors.Is(err, yamlx.ErrType) || errors.Is(err, yamlx.ErrAliasBudget) || errors.Is(err, yamlx.ErrAliasRecursion)) {
 			t.Fatalf("unclassified error %s: %v", id, err)
 		}
 	}
 	totals, changed, classified := map[string]int{}, map[string]int{}, map[string]int{}
-	for id, item := range expected.GetObject("cases").All() {
-		row := item.(*jsonx.Object)
+	for id, item := range mapObject(expected, "cases") {
+		row := item.(map[string]any)
 		domain, _, _ := strings.Cut(id, "/")
 		totals[domain]++
-		if row.GetBool("unchanged_original") {
-			if domain != "convert" || row.GetBool("changed") || row.Has("old") || row.Has("expected") {
+		if mapBool(row, "unchanged_original") {
+			if domain != "convert" || mapBool(row, "changed") || mapHas(row, "old") || mapHas(row, "expected") {
 				t.Fatalf("invalid original-golden manifest %s", id)
 			}
 			// collect checked the full original Python result against its old
@@ -119,19 +160,19 @@ func CheckReaderFixtures(t testing.TB, valuesPath, expectedPath string, projecto
 			// second order-normalised copy in this large fixture.
 			continue
 		}
-		actualChange := !EqualJSON(row.Value("old"), row.Value("expected"))
-		if actualChange != row.GetBool("changed") {
+		actualChange := !EqualJSON(row["old"], row["expected"])
+		if actualChange != mapBool(row, "changed") {
 			t.Fatalf("false changed flag %s", id)
 		}
 		if !actualChange {
 			continue
 		}
 		changed[domain]++
-		if len(row.GetList("classes")) == 0 {
+		if len(mapList(row, "classes")) == 0 {
 			t.Fatalf("unexplained expected change %s", id)
 		}
-		for _, key := range append(append([]any{}, row.GetList("old_loads")...), row.GetList("native_loads")...) {
-			if sources.GetObject(key.(string)) == nil {
+		for _, key := range append(append([]any{}, mapList(row, "old_loads")...), mapList(row, "native_loads")...) {
+			if mapObject(sources, key.(string)) == nil {
 				t.Fatalf("missing loader input %s", id)
 			}
 		}
@@ -168,19 +209,19 @@ func CheckParseAudit(t testing.TB, root *yamlx.Node, records []any) {
 			return
 		}
 		seen[n] = id
-		row := records[id-1].(*jsonx.Object)
-		if int(row.GetInt("id")) != id || int(row.GetInt("kind")) != int(n.Kind) || row.GetString("tag") != n.Tag || row.GetString("value") != n.Value || int(row.GetInt("Line")) != n.Line || int(row.GetInt("Column")) != n.Column {
+		row := records[id-1].(map[string]any)
+		if mapInt(row, "id") != id || mapInt(row, "kind") != int(n.Kind) || mapString(row, "tag") != n.Tag || mapString(row, "value") != n.Value || mapInt(row, "Line") != n.Line || mapInt(row, "Column") != n.Column {
 			t.Fatalf("raw Parse audit changed at node %d", id)
 		}
-		children := row.GetList("content")
+		children := mapList(row, "content")
 		if len(children) != len(n.Content) {
 			t.Fatal("audit child count mismatch")
 		}
 		for i, child := range n.Content {
-			value, _ := children[i].(jsonx.Number).Int64()
+			value, _ := children[i].(json.Number).Int64()
 			walk(child, int(value))
 		}
-		walk(n.Alias, int(row.GetInt("alias")))
+		walk(n.Alias, mapInt(row, "alias"))
 	}
 	walk(root, 1)
 	if len(seen) != len(records) {

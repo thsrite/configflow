@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/yamlx/yamlxtest"
 )
 
 func TestNativeRuleTextAgainstPython(t *testing.T) {
@@ -48,11 +48,11 @@ func TestNativeRuleTextAgainstPython(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			args := []any{tt.input}
 			got, err, ok := callRow(tt.fn, args)
-			if err != nil || !ok || !jsonx.Equal(got, tt.native) {
+			if err != nil || !ok || !yamlxtest.EqualJSON(got, tt.native) {
 				t.Fatalf("native value=%q error=%v", got, err)
 			}
-			reference := oracle.Call(t, jsonx.Obj("fn", tt.fn, "args", args))
-			if reference.Has("err") || !jsonx.Equal(reference.Value("out"), tt.python) {
+			reference := oracle.Call(t, mosKV("fn", tt.fn, "args", args))
+			if reference.Has("err") || !yamlxtest.EqualJSON(reference.Value("out"), tt.python) {
 				t.Fatalf("Python value=%v", reference)
 			}
 		})

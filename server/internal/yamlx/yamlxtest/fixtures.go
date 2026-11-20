@@ -2,16 +2,16 @@ package yamlxtest
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // Rows reads a synthetic JSON-lines fixture without interpreting YAML values.
-func Rows(t testing.TB, path string) []*jsonx.Object {
+func Rows(t testing.TB, path string) []map[string]any {
 	t.Helper()
 	file, err := os.Open(path)
 	if err != nil {
@@ -30,13 +30,15 @@ func Rows(t testing.TB, path string) []*jsonx.Object {
 		scanner = bufio.NewScanner(file)
 	}
 	scanner.Buffer(make([]byte, 65536), 1<<27)
-	var rows []*jsonx.Object
+	var rows []map[string]any
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
-		if err != nil {
+		dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		dec.UseNumber()
+		var value any
+		if err := dec.Decode(&value); err != nil {
 			t.Fatal(err)
 		}
-		row, ok := value.(*jsonx.Object)
+		row, ok := value.(map[string]any)
 		if !ok {
 			t.Fatal("fixture row is not an object")
 		}

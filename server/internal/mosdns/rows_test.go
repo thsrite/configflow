@@ -2,26 +2,348 @@ package mosdns
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"iter"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
+// mosObj is an ordered JSON object helper for MosDNS test corpora and oracles.
+type mosObj struct {
+	keys   []string
+	values map[string]any
+}
+
+func newMosObj() *mosObj { return &mosObj{values: map[string]any{}} }
+
+func mosKV(kv ...any) *mosObj {
+	o := newMosObj()
+	for i := 0; i+1 < len(kv); i += 2 {
+		o.Set(kv[i].(string), mosNormalizeVal(kv[i+1]))
+	}
+	return o
+}
+
+func mosInt(n int64) json.Number { return json.Number(strconv.FormatInt(n, 10)) }
+
+func mosNormalizeVal(v any) any {
+	switch x := v.(type) {
+	case int:
+		return mosInt(int64(x))
+	case int64:
+		return mosInt(x)
+	default:
+		return v
+	}
+}
+
+func (o *mosObj) Len() int {
+	if o == nil {
+		return 0
+	}
+	return len(o.keys)
+}
+
+func (o *mosObj) Get(key string) (any, bool) {
+	if o == nil {
+		return nil, false
+	}
+	v, ok := o.values[key]
+	return v, ok
+}
+
+func (o *mosObj) Value(key string) any {
+	if o == nil {
+		return nil
+	}
+	return o.values[key]
+}
+
+func (o *mosObj) Has(key string) bool {
+	if o == nil {
+		return false
+	}
+	_, ok := o.values[key]
+	return ok
+}
+
+func (o *mosObj) GetObject(key string) *mosObj {
+	v, _ := o.Value(key).(*mosObj)
+	return v
+}
+
+func (o *mosObj) GetList(key string) []any {
+	v, _ := o.Value(key).([]any)
+	return v
+}
+
+func (o *mosObj) GetString(key string) string {
+	v, _ := o.Value(key).(string)
+	return v
+}
+
+func (o *mosObj) GetBool(key string) bool {
+	v, _ := o.Value(key).(bool)
+	return v
+}
+
+func (o *mosObj) Set(key string, value any) {
+	if _, exists := o.values[key]; !exists {
+		o.keys = append(o.keys, key)
+	}
+	o.values[key] = mosNormalizeVal(value)
+}
+
+func (o *mosObj) Delete(key string) {
+	if _, exists := o.values[key]; !exists {
+		return
+	}
+	delete(o.values, key)
+	for i, k := range o.keys {
+		if k == key {
+			o.keys = append(o.keys[:i], o.keys[i+1:]...)
+			break
+		}
+	}
+}
+
+func (o *mosObj) All() iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
+		if o == nil {
+			return
+		}
+		for _, k := range o.keys {
+			if !yield(k, o.values[k]) {
+				return
+			}
+		}
+	}
+}
+
+func (o *mosObj) DeepCopy() *mosObj {
+	if o == nil {
+		return nil
+	}
+	cp := newMosObj()
+	for _, k := range o.keys {
+		cp.Set(k, mosDeepCopy(o.values[k]))
+	}
+	return cp
+}
+
+func mosDeepCopy(v any) any {
+	switch x := v.(type) {
+	case *mosObj:
+		return x.DeepCopy()
+	case []any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = mosDeepCopy(item)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func mosParse(raw []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	val, err := readMosJSON(dec)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("trailing JSON token")
+	}
+	return val, nil
+}
+
+func readMosJSON(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return tok, nil
+	}
+	switch delim {
+	case '{':
+		o := newMosObj()
+		for dec.More() {
+			k, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			v, err := readMosJSON(dec)
+			if err != nil {
+				return nil, err
+			}
+			o.Set(k.(string), v)
+		}
+		_, err := dec.Token()
+		return o, err
+	case '[':
+		list := []any{}
+		for dec.More() {
+			v, err := readMosJSON(dec)
+			if err != nil {
+				return nil, err
+			}
+			list = append(list, v)
+		}
+		_, err := dec.Token()
+		return list, err
+	}
+	return nil, errors.New("unexpected json delimiter")
+}
+
+// mosCompact encodes values identically to Python json.dumps(v, ensure_ascii=False, separators=(',', ':')).
+func mosCompact(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := mosWriteJSON(&buf, v); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func mosWriteString(buf *bytes.Buffer, s string) {
+	const hex = "0123456789abcdef"
+	buf.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		switch b {
+		case '"':
+			buf.WriteString(`\"`)
+		case '\\':
+			buf.WriteString(`\\`)
+		case '\b':
+			buf.WriteString(`\b`)
+		case '\f':
+			buf.WriteString(`\f`)
+		case '\n':
+			buf.WriteString(`\n`)
+		case '\r':
+			buf.WriteString(`\r`)
+		case '\t':
+			buf.WriteString(`\t`)
+		default:
+			if b < 0x20 {
+				buf.WriteString(`\u00`)
+				buf.WriteByte(hex[b>>4])
+				buf.WriteByte(hex[b&0x0f])
+			} else {
+				buf.WriteByte(b)
+			}
+		}
+	}
+	buf.WriteByte('"')
+}
+
+func mosWriteJSON(buf *bytes.Buffer, v any) error {
+	switch x := v.(type) {
+	case nil:
+		buf.WriteString("null")
+	case bool:
+		if x {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	case string:
+		mosWriteString(buf, x)
+	case json.Number:
+		buf.WriteString(string(x))
+	case int:
+		buf.WriteString(strconv.Itoa(x))
+	case int64:
+		buf.WriteString(strconv.FormatInt(x, 10))
+	case float64:
+		buf.WriteString(strconv.FormatFloat(x, 'g', -1, 64))
+	case []any:
+		buf.WriteByte('[')
+		for i, item := range x {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			if err := mosWriteJSON(buf, item); err != nil {
+				return err
+			}
+		}
+		buf.WriteByte(']')
+	case *mosObj:
+		if x == nil {
+			buf.WriteString("null")
+			return nil
+		}
+		buf.WriteByte('{')
+		for i, k := range x.keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			mosWriteString(buf, k)
+			buf.WriteByte(':')
+			if err := mosWriteJSON(buf, x.values[k]); err != nil {
+				return err
+			}
+		}
+		buf.WriteByte('}')
+	default:
+		return fmt.Errorf("Object of type %T is not JSON serializable", v)
+	}
+	return nil
+}
+
+func mosConfigFromObj(config *mosObj) (*model.Config, error) {
+	projection := newMosObj()
+	if config != nil {
+		for _, key := range []string{"mosdns", "rule_configs", "rules", "rule_sets", "system_config", "profile_id", "rule_library"} {
+			if value, ok := config.Get(key); ok {
+				projection.Set(key, value)
+			}
+		}
+	}
+	data, err := mosCompact(projection)
+	if err != nil {
+		return nil, err
+	}
+	return ConfigFromJSON(data)
+}
+
+func mosSliceValue(value any) ([]any, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	out, err := mosParse(data)
+	if err != nil {
+		return nil, err
+	}
+	list, ok := out.([]any)
+	if !ok {
+		return nil, fmt.Errorf("mosdns: expected array")
+	}
+	return list, nil
+}
+
 // Rows of testdata/corpus.jsonl.gz (gen.py) and testdata/recorded.jsonl.gz
 // (c21_record.py): {"fn", "args": [...], "out" | "err": [class, message]}.
 
-func loadRows(t *testing.T, path string) []*jsonx.Object {
+func loadRows(t *testing.T, path string) []*mosObj {
 	t.Helper()
 	file, err := testgolden.Open(t, path)
 	if err != nil {
@@ -34,13 +356,13 @@ func loadRows(t *testing.T, path string) []*jsonx.Object {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1<<20), 1<<27)
-	var rows []*jsonx.Object
+	var rows []*mosObj
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := mosParse(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows = append(rows, value.(*jsonx.Object))
+		rows = append(rows, value.(*mosObj))
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -70,7 +392,7 @@ func filesValue(files []SourceFile) []any {
 		if f.URL != nil {
 			u = *f.URL
 		}
-		out = append(out, jsonx.Obj("part", f.Part, "url", u, "local_path", f.LocalPath))
+		out = append(out, mosKV("part", f.Part, "url", u, "local_path", f.LocalPath))
 	}
 	return out
 }
@@ -83,7 +405,7 @@ func rowNode(node *yamlx.Node) (any, error) {
 		}
 		return nil, err
 	}
-	return jsonx.Parse(data)
+	return mosParse(data)
 }
 
 func rowRuleList(rules []model.RuleConfig) ([]any, error) {
@@ -93,11 +415,11 @@ func rowRuleList(rules []model.RuleConfig) ([]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		original, err := jsonx.Parse(raw)
+		original, err := mosParse(raw)
 		if err != nil {
 			return nil, err
 		}
-		object := original.(*jsonx.Object)
+		object := original.(*mosObj)
 		type ruleDTO model.RuleConfig
 		value := ruleDTO(rule)
 		value.Fields = model.Fields{}
@@ -105,11 +427,11 @@ func rowRuleList(rules []model.RuleConfig) ([]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		known, err := jsonx.Parse(data)
+		known, err := mosParse(data)
 		if err != nil {
 			return nil, err
 		}
-		for key, value := range known.(*jsonx.Object).All() {
+		for key, value := range known.(*mosObj).All() {
 			if key == "Fields" || !object.Has(key) {
 				continue
 			}
@@ -132,8 +454,8 @@ func strOrNone(v any) string {
 	return s
 }
 
-func asConfig(v any) (*jsonx.Object, bool) {
-	o, ok := v.(*jsonx.Object)
+func asConfig(v any) (*mosObj, bool) {
+	o, ok := v.(*mosObj)
 	return o, ok
 }
 
@@ -156,23 +478,39 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		if !ok1 || !ok2 {
 			return nil, nil, false
 		}
+		native, lerr := mosConfigFromObj(config)
+		if lerr != nil {
+			return nil, lerr, true
+		}
 		if fn == "generate" {
-			out, err = GenerateMosDNSConfig(config, base)
+			out, err = Generate(native, base)
 		} else {
-			out, err = GetMosDNSRulesetDownloads(config, base)
+			var dl []Download
+			dl, err = Downloads(native, base)
+			if err == nil {
+				out, err = mosSliceValue(dl)
+			}
 		}
 	case "custom_files":
 		config, ok1 := asConfig(arg(0))
 		if !ok1 {
 			return nil, nil, false
 		}
-		out, err = GetMosDNSCustomFiles(config)
+		native, lerr := mosConfigFromObj(config)
+		if lerr != nil {
+			return nil, lerr, true
+		}
+		var files []File
+		files, err = CustomFiles(native)
+		if err == nil {
+			out, err = mosSliceValue(files)
+		}
 	case "split":
 		config, ok1 := asConfig(arg(0))
 		if !ok1 {
 			return nil, nil, false
 		}
-		native, lerr := legacyConfig(config)
+		native, lerr := mosConfigFromObj(config)
 		if lerr != nil {
 			return nil, lerr, true
 		}
@@ -231,7 +569,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 				if derr != nil {
 					return nil, derr, true
 				}
-				out = jsonx.Obj("dump", string(data))
+				out = mosKV("dump", string(data))
 			}
 		}
 	case "proxy_url":
@@ -241,7 +579,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		if !ok1 || !ok2 || !ok3 {
 			return nil, nil, false
 		}
-		native, lerr := legacyConfig(config)
+		native, lerr := mosConfigFromObj(config)
 		if lerr != nil {
 			return nil, lerr, true
 		}
@@ -258,11 +596,11 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		if !ok1 || !ok2 || !ok3 {
 			return nil, nil, false
 		}
-		native, lerr := legacyConfig(config)
+		native, lerr := mosConfigFromObj(config)
 		if lerr != nil {
 			return nil, lerr, true
 		}
-		data, cerr := jsonx.Compact(arg(2))
+		data, cerr := mosCompact(arg(2))
 		if cerr != nil {
 			return nil, cerr, true
 		}
@@ -274,7 +612,7 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		files, err = RuleFiles(native, base, item, stem)
 		out = filesValue(files)
 	case "custom_matches":
-		data, cerr := jsonx.Compact(arg(0))
+		data, cerr := mosCompact(arg(0))
 		if cerr != nil {
 			return nil, cerr, true
 		}
@@ -317,14 +655,14 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 
 // compareRow returns "" when Go matches the row, else a description.
 // accepted reports an independently checked native schema or output comparison.
-func compareRow(t *testing.T, oracle *goldenOracle, entry *jsonx.Object) (msg string, accepted, supported bool) {
+func compareRow(t *testing.T, oracle *goldenOracle, entry *mosObj) (msg string, accepted, supported bool) {
 	fn := entry.GetString("fn")
 	args := entry.GetList("args")
 	out, err, ok := callRow(fn, args)
 	if !ok {
 		return "", false, false
 	}
-	if !jsonx.Equal(entry.Value("out"), out) || err != nil || entry.Has("err") {
+	if !yamlxtest.EqualJSON(entry.Value("out"), out) || err != nil || entry.Has("err") {
 		if nativeR5Outcome(t, oracle, entry, out, err) || nativeMosDNSOutcome(t, oracle, entry, out, err) {
 			return "", true, true
 		}
@@ -359,8 +697,8 @@ func compareRow(t *testing.T, oracle *goldenOracle, entry *jsonx.Object) (msg st
 			}
 		}
 		if fn == "upstreams" {
-			a, aok := out.(*jsonx.Object)
-			b, bok := want.(*jsonx.Object)
+			a, aok := out.(*mosObj)
+			b, bok := want.(*mosObj)
 			if aok && bok && a.Len() == 1 && b.Len() == 1 && yamlxtest.SemanticEqual(a.GetString("dump"), b.GetString("dump")) {
 				return "", false, true
 			}
@@ -402,7 +740,7 @@ func TestCorpus(t *testing.T) {
 }
 
 func compact(v any) string {
-	b, err := jsonx.Compact(v)
+	b, err := mosCompact(v)
 	if err != nil {
 		return fmt.Sprintf("<%v>", err)
 	}

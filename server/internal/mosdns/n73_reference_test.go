@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
@@ -30,7 +29,7 @@ func mosDNSSources(fn string, args []any) []string {
 }
 
 func sameMosDNSOutput(fn string, want, got any) bool {
-	if jsonx.Equal(want, got) {
+	if yamlxtest.EqualJSON(want, got) {
 		return true
 	}
 	if fn == "generate" {
@@ -39,8 +38,8 @@ func sameMosDNSOutput(fn string, want, got any) bool {
 		return aok && bok && yamlxtest.SemanticEqual(a, b)
 	}
 	if fn == "upstreams" {
-		a, aok := want.(*jsonx.Object)
-		b, bok := got.(*jsonx.Object)
+		a, aok := want.(*mosObj)
+		b, bok := got.(*mosObj)
 		return aok && bok && a.Len() == 1 && b.Len() == 1 && yamlxtest.SemanticEqual(a.GetString("dump"), b.GetString("dump"))
 	}
 	return false
@@ -48,7 +47,7 @@ func sameMosDNSOutput(fn string, want, got any) bool {
 
 // nativeMosDNSOutcome permits only an independently classified input change;
 // all generated values are compared against the actual Python converter.
-func nativeMosDNSOutcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got any, actualErr error) bool {
+func nativeMosDNSOutcome(t *testing.T, oracle *goldenOracle, row *mosObj, got any, actualErr error) bool {
 	t.Helper()
 	fn := row.GetString("fn")
 	args := row.GetList("args")
@@ -68,7 +67,7 @@ func nativeMosDNSOutcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, 
 	if !changed && (actualErr != nil || row.Has("err") || fn != "generate" && fn != "upstreams") {
 		return false
 	}
-	args = jsonx.DeepCopy(args).([]any)
+	args = mosDeepCopy(args).([]any)
 	normalize := func(source string) string {
 		text, err := yamlxtest.ReferenceText(source)
 		if err != nil {
@@ -78,8 +77,8 @@ func nativeMosDNSOutcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, 
 	}
 	switch fn {
 	case "generate":
-		config, _ := args[0].(*jsonx.Object)
-		settings, _ := config.Value("mosdns").(*jsonx.Object)
+		config, _ := args[0].(*mosObj)
+		settings, _ := config.Value("mosdns").(*mosObj)
 		for _, key := range []string{"custom_config", "local_dns", "remote_dns", "fallback_dns"} {
 			if text, ok := settings.Value(key).(string); ok {
 				if key == "custom_config" {
@@ -101,12 +100,12 @@ func nativeMosDNSOutcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, 
 			args[0] = normalize(source)
 		}
 	}
-	request := jsonx.Obj("fn", fn, "args", args)
+	request := mosKV("fn", fn, "args", args)
 	if actualErr == nil && (fn == "generate" || fn == "upstreams") {
 		actualText := ""
 		if fn == "generate" {
 			actualText, _ = got.(string)
-		} else if object, ok := got.(*jsonx.Object); ok {
+		} else if object, ok := got.(*mosObj); ok {
 			actualText = object.GetString("dump")
 		}
 		normalized, err := yamlxtest.ReferenceText(actualText)
@@ -167,16 +166,16 @@ func newGoldenOracle(t *testing.T, script string) *goldenOracle {
 	t.Helper()
 	return &goldenOracle{lines: testgolden.NewLines(t, script)}
 }
-func (o *goldenOracle) Call(t *testing.T, request any) *jsonx.Object {
+func (o *goldenOracle) Call(t *testing.T, request any) *mosObj {
 	t.Helper()
-	input, err := jsonx.Compact(request)
+	input, err := mosCompact(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	output := o.lines.Call(t, input, nil)
-	value, err := jsonx.Parse(output)
+	value, err := mosParse(output)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return value.(*mosObj)
 }

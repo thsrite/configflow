@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
@@ -16,7 +15,7 @@ import (
 // projectR5Record changes only declared input members using the shared model's
 // decoded values. It never reads generated Go output. Missing optional values
 // become missing inputs, allowing the real Python function's consumer defaults.
-func projectR5Record(original *jsonx.Object, native reflect.Value) *jsonx.Object {
+func projectR5Record(original *mosObj, native reflect.Value) *mosObj {
 	out := original.DeepCopy()
 	typ := native.Type()
 	for i := 0; i < native.NumField(); i++ {
@@ -62,9 +61,9 @@ func projectR5Value(original any, value reflect.Value) any {
 	}
 	switch value.Kind() {
 	case reflect.Struct:
-		object, _ := original.(*jsonx.Object)
+		object, _ := original.(*mosObj)
 		if object == nil {
-			object = jsonx.NewObject()
+			object = newMosObj()
 		}
 		return projectR5Record(object, value)
 	case reflect.Slice:
@@ -83,7 +82,7 @@ func projectR5Value(original any, value reflect.Value) any {
 	case reflect.Bool:
 		return value.Bool()
 	case reflect.Int, reflect.Int64:
-		return jsonx.Int(value.Int())
+		return mosInt(value.Int())
 	}
 	return original
 }
@@ -95,13 +94,13 @@ func stringsValue(values []string) []any {
 	return out
 }
 func r5Arguments(fn string, args []any) ([]any, bool) {
-	projected := jsonx.DeepCopy(args).([]any)
+	projected := mosDeepCopy(args).([]any)
 	projectConfig := func(index int) {
-		original, ok := args[index].(*jsonx.Object)
+		original, ok := args[index].(*mosObj)
 		if !ok {
 			return
 		}
-		native, err := legacyConfig(original)
+		native, err := mosConfigFromObj(original)
 		if err != nil {
 			return
 		}
@@ -118,9 +117,9 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 			}
 		}
 		if raw, present := original.Get("system_config"); present {
-			system, ok := raw.(*jsonx.Object)
+			system, ok := raw.(*mosObj)
 			if !ok {
-				system = jsonx.NewObject()
+				system = newMosObj()
 			}
 			sys := projectR5Record(system, reflect.ValueOf(native.SystemConfig))
 			if _, ok := system.Value("rule_proxy_token").(string); !ok {
@@ -135,7 +134,7 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 		}
 		for _, key := range []string{"rules", "rule_sets"} {
 			if old, ok := original.Get(key); ok {
-				data, err := jsonx.Compact(jsonx.Obj("rules", original.Value("rules"), "rule_sets", original.Value("rule_sets")))
+				data, err := mosCompact(mosKV("rules", original.Value("rules"), "rule_sets", original.Value("rule_sets")))
 				var lists ruleLists
 				if err == nil {
 					err = json.Unmarshal(data, &lists)
@@ -154,7 +153,7 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 			for _, key := range []string{"rule_configs", "rule_sets"} {
 				if entries, ok := out.Value(key).([]any); ok {
 					for _, entry := range entries {
-						if item, ok := entry.(*jsonx.Object); ok && (key == "rule_sets" || item.Value("itemType") == "ruleset") && !item.Has("name") {
+						if item, ok := entry.(*mosObj); ok && (key == "rule_sets" || item.Value("itemType") == "ruleset") && !item.Has("name") {
 							item.Set("name", "")
 						}
 					}
@@ -166,7 +165,7 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 			for _, key := range []string{"rule_configs", "rules", "rule_sets"} {
 				if entries, ok := out.Value(key).([]any); ok {
 					for _, entry := range entries {
-						if item, ok := entry.(*jsonx.Object); ok {
+						if item, ok := entry.(*mosObj); ok {
 							for _, field := range []string{"id", "name", "library_rule_id", "rule_type", "value"} {
 								if !item.Has(field) {
 									item.Set(field, "")
@@ -193,7 +192,7 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 			projectConfig(0)
 		}
 	case "custom_matches":
-		data, err := jsonx.Compact(jsonx.Obj("custom_matches", args[0]))
+		data, err := mosCompact(mosKV("custom_matches", args[0]))
 		if err == nil {
 			var settings model.MosDNSSettings
 			if json.Unmarshal(data, &settings) == nil {
@@ -202,12 +201,12 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 		}
 	}
 	if fn == "ruleset_files" && len(args) > 2 {
-		data, err := jsonx.Compact(args[2])
+		data, err := mosCompact(args[2])
 		if err == nil {
 			var item model.RuleConfig
 			if json.Unmarshal(data, &item) == nil {
 				projected[2] = projectR5Value(args[2], reflect.ValueOf(item))
-				if object, ok := projected[2].(*jsonx.Object); ok && !object.Has("name") {
+				if object, ok := projected[2].(*mosObj); ok && !object.Has("name") {
 					object.Set("name", item.Name)
 				}
 			}
@@ -222,11 +221,11 @@ func r5Arguments(fn string, args []any) ([]any, bool) {
 			}
 		}
 	}
-	a, _ := jsonx.Compact(args)
-	b, _ := jsonx.Compact(projected)
+	a, _ := mosCompact(args)
+	b, _ := mosCompact(projected)
 	return projected, string(a) != string(b)
 }
-func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got any, actualErr error) bool {
+func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *mosObj, got any, actualErr error) bool {
 	t.Helper()
 	fn := row.GetString("fn")
 	if fn == "upstreams" && errors.Is(actualErr, ErrUpstreamType) {
@@ -239,9 +238,9 @@ func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got 
 		return false
 	}
 	if fn == "generate" {
-		config, _ := args[0].(*jsonx.Object)
+		config, _ := args[0].(*mosObj)
 		if config != nil {
-			if settings, ok := config.Value("mosdns").(*jsonx.Object); ok {
+			if settings, ok := config.Value("mosdns").(*mosObj); ok {
 				for _, key := range []string{"custom_config", "local_dns", "remote_dns", "fallback_dns"} {
 					if source, ok := settings.Value(key).(string); ok {
 						if key != "custom_config" {
@@ -258,7 +257,7 @@ func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got 
 			}
 		}
 	}
-	answer := oracle.Call(t, jsonx.Obj("fn", fn, "args", args))
+	answer := oracle.Call(t, mosKV("fn", fn, "args", args))
 	if expected := answer.GetList("err"); expected != nil {
 		return actualErr != nil && len(expected) == 2 && errClass(actualErr) == expected[0]
 	}
@@ -271,7 +270,7 @@ func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *jsonx.Object, got 
 		b, bok := want.(string)
 		return aok && bok && yamlxtest.SemanticEqual(a, b)
 	}
-	return jsonx.Equal(got, want)
+	return yamlxtest.EqualJSON(got, want)
 }
 func isUnifiedSwitch(key string) bool {
 	switch key {
@@ -282,13 +281,13 @@ func isUnifiedSwitch(key string) bool {
 }
 
 func TestR5ReferenceProjectionStaysNarrow(t *testing.T) {
-	args := []any{jsonx.Obj("mosdns", jsonx.Obj("cache_size", true, "cache_enabled", "false"), "future", jsonx.Obj("keep", 7))}
+	args := []any{mosKV("mosdns", mosKV("cache_size", true, "cache_enabled", "false"), "future", mosKV("keep", 7))}
 	projected, changed := r5Arguments("generate", args)
 	if !changed {
 		t.Fatal("missing R5 projection")
 	}
-	config := projected[0].(*jsonx.Object)
-	if !jsonx.Equal(config.Value("future"), args[0].(*jsonx.Object).Value("future")) {
+	config := projected[0].(*mosObj)
+	if !yamlxtest.EqualJSON(config.Value("future"), args[0].(*mosObj).Value("future")) {
 		t.Fatal("unowned field changed")
 	}
 	if config.GetObject("mosdns").Has("cache_size") {
@@ -297,7 +296,7 @@ func TestR5ReferenceProjectionStaysNarrow(t *testing.T) {
 	if got, ok := config.GetObject("mosdns").Get("cache_enabled"); !ok || got != "false" {
 		t.Fatalf("unified boolean switch should be preserved for reference, got (%v, %v)", got, ok)
 	}
-	normal := []any{jsonx.Obj("mosdns", jsonx.Obj("cache_size", jsonx.Int(128)))}
+	normal := []any{mosKV("mosdns", mosKV("cache_size", mosInt(128)))}
 	if _, changed = r5Arguments("generate", normal); changed {
 		t.Fatal("normal input changed")
 	}

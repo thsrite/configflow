@@ -1,15 +1,36 @@
-// Package yamlbridge builds native YAML graphs from legacy generated values.
-// It owns no document schema. N8 removes this remaining jsonx transition.
+// Package yamlbridge builds validated native YAML graphs from Go values and YAML nodes.
+// It owns no document schema.
 package yamlbridge
 
 import (
+	"encoding/json"
 	"fmt"
+	"iter"
+	"math"
+	"reflect"
+	"sort"
+	"strconv"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
 )
+
+type orderedObject interface {
+	All() iter.Seq2[string, any]
+}
+
+func isNilContainer(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Interface:
+		return rv.IsNil()
+	}
+	return false
+}
 
 // Encode constructs one validated physical graph without expanding aliases.
 // Native subtrees are copied; orphan anchors are defined at their first use and
@@ -18,6 +39,9 @@ func Encode(value any) (*yamlx.Node, error) {
 	type listID struct {
 		first  *any
 		length int
+	}
+	type mapID struct {
+		ptr uintptr
 	}
 	seen := map[any]*yamlx.Node{}
 	anchors := 0
@@ -105,8 +129,8 @@ func Encode(value any) (*yamlx.Node, error) {
 			return yamlx.Str(v), nil
 		case bool:
 			return yamlx.Bool(v), nil
-		case *jsonx.Object:
-			if v == nil {
+		case orderedObject:
+			if isNilContainer(v) {
 				return yamlx.Null(), nil
 			}
 			if n := seen[v]; n != nil {
@@ -116,6 +140,29 @@ func Encode(value any) (*yamlx.Node, error) {
 			seen[v] = n
 			for key, item := range v.All() {
 				child, err := build(item)
+				if err != nil {
+					return nil, err
+				}
+				n.Content = append(n.Content, yamlx.Str(key), child)
+			}
+			return n, nil
+		case map[string]any:
+			if v == nil {
+				return yamlx.Null(), nil
+			}
+			id := mapID{reflect.ValueOf(v).Pointer()}
+			if n := seen[id]; n != nil {
+				return alias(n), nil
+			}
+			n := yamlx.Map()
+			seen[id] = n
+			keys := make([]string, 0, len(v))
+			for key := range v {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				child, err := build(v[key])
 				if err != nil {
 					return nil, err
 				}
@@ -139,12 +186,40 @@ func Encode(value any) (*yamlx.Node, error) {
 				n.Content = append(n.Content, child)
 			}
 			return n, nil
-		}
-		if number, ok := jsonx.AsNumber(value); ok {
-			if number == "NaN" || number == "Infinity" || number == "-Infinity" {
-				return yamlx.Float(number.Float64()), nil
+		case json.Number:
+			switch string(v) {
+			case "NaN":
+				return yamlx.Float(math.NaN()), nil
+			case "Infinity":
+				return yamlx.Float(math.Inf(1)), nil
+			case "-Infinity":
+				return yamlx.Float(math.Inf(-1)), nil
 			}
-			return yamlx.FromJSON([]byte(string(number)))
+			return yamlx.FromJSON([]byte(string(v)))
+		case int:
+			return yamlx.FromJSON([]byte(strconv.Itoa(v)))
+		case int8:
+			return yamlx.FromJSON([]byte(strconv.FormatInt(int64(v), 10)))
+		case int16:
+			return yamlx.FromJSON([]byte(strconv.FormatInt(int64(v), 10)))
+		case int32:
+			return yamlx.FromJSON([]byte(strconv.FormatInt(int64(v), 10)))
+		case int64:
+			return yamlx.FromJSON([]byte(strconv.FormatInt(v, 10)))
+		case uint:
+			return yamlx.FromJSON([]byte(strconv.FormatUint(uint64(v), 10)))
+		case uint8:
+			return yamlx.FromJSON([]byte(strconv.FormatUint(uint64(v), 10)))
+		case uint16:
+			return yamlx.FromJSON([]byte(strconv.FormatUint(uint64(v), 10)))
+		case uint32:
+			return yamlx.FromJSON([]byte(strconv.FormatUint(uint64(v), 10)))
+		case uint64:
+			return yamlx.FromJSON([]byte(strconv.FormatUint(v, 10)))
+		case float32:
+			return yamlx.Float(float64(v)), nil
+		case float64:
+			return yamlx.Float(v), nil
 		}
 		return nil, fmt.Errorf("cannot represent an object: %T", value)
 	}

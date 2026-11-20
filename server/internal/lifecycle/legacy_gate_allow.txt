@@ -1,21 +1,6 @@
 # N8-11 migration ratchet: category server-relative-file:symbol.
 # Only remove entries as callers migrate; stale entries fail the gate.
-legacy-file internal/mosdns/legacy.go:<file>
 retired-directory internal/jsonx:<directory>
 retired-directory internal/pystr:<directory>
-retired-import internal/mosdns/legacy.go:configflow/internal/jsonx
-retired-import internal/mosdns/n73_reference_test.go:configflow/internal/jsonx
-retired-import internal/mosdns/native_text_test.go:configflow/internal/jsonx
-retired-import internal/mosdns/r5_reference_test.go:configflow/internal/jsonx
-retired-import internal/mosdns/review_c21_test.go:configflow/internal/jsonx
-retired-import internal/mosdns/rows_test.go:configflow/internal/jsonx
-retired-import internal/oxidns/n73_readers_test.go:configflow/internal/jsonx
 retired-import internal/pystr/pystr.go:configflow/internal/jsonx
 retired-import internal/pystr/pystr_test.go:configflow/internal/jsonx
-retired-import internal/yamlbridge/encode.go:configflow/internal/jsonx
-retired-import internal/yamlbridge/encode_test.go:configflow/internal/jsonx
-retired-import internal/yamlbridge/value.go:configflow/internal/jsonx
-retired-import internal/yamlbridge/value_test.go:configflow/internal/jsonx
-retired-import internal/yamlx/yamlxtest/artifact.go:configflow/internal/jsonx
-retired-import internal/yamlx/yamlxtest/fixtures.go:configflow/internal/jsonx
-retired-import internal/yamlx/yamlxtest/readers.go:configflow/internal/jsonx

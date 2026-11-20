@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -117,7 +116,7 @@ func TestN73DocumentReaderInjectionValues(t *testing.T) {
 		if record.GetString("error") != "" {
 			t.Fatal("recorded refusal now accepted")
 		}
-		value, err := yamlbridge.Value(root)
+		value, err := yamlxtest.Value(root)
 		if err != nil {
 			t.Fatal(err)
 		}
