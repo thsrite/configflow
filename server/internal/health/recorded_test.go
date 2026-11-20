@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -27,14 +28,20 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/health/check"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
-func loadRecordedRows(t *testing.T, name string) []*jsonx.Object {
+type recordedRow struct {
+	raw     json.RawMessage
+	data    map[string]any
+	rawArgs map[string]json.RawMessage
+	mutated json.RawMessage
+}
+
+func loadRecordedRows(t *testing.T, name string) []recordedRow {
 	t.Helper()
 	handle, err := os.Open(name)
 	if err != nil {
@@ -45,15 +52,26 @@ func loadRecordedRows(t *testing.T, name string) []*jsonx.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rows []*jsonx.Object
+	var rows []recordedRow
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1<<20), 1<<28)
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		line := bytes.Clone(scanner.Bytes())
+		m, err := decodeMap(line)
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows = append(rows, value.(*jsonx.Object))
+		var aux struct {
+			Args    map[string]json.RawMessage `json:"args"`
+			Mutated json.RawMessage            `json:"mutated"`
+		}
+		_ = json.Unmarshal(line, &aux)
+		rows = append(rows, recordedRow{
+			raw:     line,
+			data:    m,
+			rawArgs: aux.Args,
+			mutated: aux.Mutated,
+		})
 	}
 	return rows
 }
@@ -96,76 +114,86 @@ func sameWorkerJSONStdin(want string, got []byte) bool {
 	if !utf8.Valid(got) {
 		return false
 	}
-	wantVal, errW := jsonx.Parse([]byte(want))
-	gotVal, errG := jsonx.Parse(got)
-	if errW != nil || errG != nil {
-		return false
+	return testjson.Equal(json.RawMessage(want), json.RawMessage(got))
+}
+
+func anyString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case json.Number:
+		return x.String()
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case int:
+		return strconv.Itoa(x)
+	case bool:
+		if x {
+			return "True"
+		}
+		return "False"
+	case nil:
+		return "None"
+	default:
+		return fmt.Sprint(x)
 	}
-	return bytes.Equal(mustCompact(wantVal), mustCompact(gotVal))
 }
 
 type replayRunner struct {
-	worker   *jsonx.Object
+	worker   map[string]any
 	mismatch []string
 }
 
 func (r *replayRunner) Run(_ context.Context, command Command) (Result, error) {
 	w := r.worker
-	if argv, _ := jsonx.Compact(w.Value("argv")); string(argv) != string(mustCompact(jsonx.ListOf(command.Argv))) {
-		r.mismatch = append(r.mismatch, "argv "+string(argv)+" vs "+strings.Join(command.Argv, " "))
+	if !testjson.Equal(w["argv"], command.Argv) {
+		r.mismatch = append(r.mismatch, "argv "+encode(w["argv"])+" vs "+strings.Join(command.Argv, " "))
 	}
-	if input := w.GetString("input"); !sameWorkerJSONStdin(input, command.Stdin) {
+	if input := mapStr(w, "input"); !sameWorkerJSONStdin(input, command.Stdin) {
 		r.mismatch = append(r.mismatch, "stdin:\n    python "+input+"\n    go     "+string(command.Stdin))
 	}
-	if timeout, ok := w.GetNumber("timeout"); ok {
-		if want := time.Duration(timeout.Float64() * float64(time.Second)); want != command.Timeout {
-			r.mismatch = append(r.mismatch, fmt.Sprintf("timeout %v vs %v", want, command.Timeout))
-		}
-	}
-	for key, value := range w.GetObject("env").All() {
-		found := false
-		for _, item := range command.Env {
-			if item == key+"="+jsonx.Str(value) {
-				found = true
+	if rawTimeout, ok := w["timeout"].(json.Number); ok {
+		if f, err := rawTimeout.Float64(); err == nil {
+			if want := time.Duration(f * float64(time.Second)); want != command.Timeout {
+				r.mismatch = append(r.mismatch, fmt.Sprintf("timeout %v vs %v", want, command.Timeout))
 			}
 		}
-		if !found {
-			r.mismatch = append(r.mismatch, "env "+key)
+	}
+	if envMap, ok := w["env"].(map[string]any); ok {
+		for key, value := range envMap {
+			found := false
+			for _, item := range command.Env {
+				if item == key+"="+anyString(value) {
+					found = true
+				}
+			}
+			if !found {
+				r.mismatch = append(r.mismatch, "env "+key)
+			}
 		}
 	}
-	switch w.GetString("err") {
+	switch mapStr(w, "err") {
 	case "TimeoutExpired":
 		return Result{}, ErrTimeout
 	case "OSError":
 		return Result{}, &OSError{Err: errors.New("exec format error")}
 	case "":
 	default:
-		return Result{}, errors.New("unrecorded worker failure " + w.GetString("err"))
+		return Result{}, errors.New("unrecorded worker failure " + mapStr(w, "err"))
 	}
-	stdout, _ := w.Value("stdout").(string)
-	stderr, _ := w.Value("stderr").(string)
-	code, _ := w.GetNumber("returncode")
-	n, _ := code.Int64()
-	return Result{Stdout: []byte(stdout), Stderr: []byte(stderr), ReturnCode: int(n)}, nil
+	stdout, _ := w["stdout"].(string)
+	stderr, _ := w["stderr"].(string)
+	return Result{Stdout: []byte(stdout), Stderr: []byte(stderr), ReturnCode: int(mapInt(w, "returncode"))}, nil
 }
 
-func mustCompact(v any) []byte { b, _ := jsonx.Compact(v); return b }
+type mapNodeConverter map[string]json.RawMessage
 
-type mapConverter map[string]*jsonx.Object
-
-func (m mapConverter) ConvertProxyString(_ context.Context, proxy string) *jsonx.Object {
-	if value := m[proxy]; value != nil {
-		return value.DeepCopy()
+func (m mapNodeConverter) ConvertProxy(_ context.Context, proxy string) (*yamlx.Node, error) {
+	raw := m[proxy]
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
 	}
-	return nil
-}
-
-func objects(value any) []*jsonx.Object {
-	var out []*jsonx.Object
-	for _, item := range value.([]any) {
-		out = append(out, item.(*jsonx.Object))
-	}
-	return out
+	return yamlx.FromJSON(raw)
 }
 
 func TestRecordedPythonSuite(t *testing.T) {
@@ -188,19 +216,20 @@ func replayRecordedFile(t *testing.T, name string) map[string]int {
 	return replayRecordedRows(t, rows, nativeExpectations(t, name))
 }
 
-func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typedExpectation) map[string]int {
+func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedExpectation) map[string]int {
 	t.Helper()
 	var defaults *repo.Repository
 	counts := map[string]int{}
 	classified := map[string]int{}
 	failures := 0
-	for i, row := range rows {
-		fn := row.GetString("fn")
-		args := row.GetObject("args")
-		arg := func(name string) any { return args.Value(name) }
-		obj := func(name string) *jsonx.Object { o, _ := arg(name).(*jsonx.Object); return o }
+	for i, rec := range rows {
+		row := rec.data
+		fn := mapStr(row, "fn")
+		args, _ := row["args"].(map[string]any)
+		arg := func(name string) any { return args[name] }
+		rawArg := func(name string) json.RawMessage { return rec.rawArgs[name] }
 		str := func(name string) string { s, _ := arg(name).(string); return s }
-		if fn == "region_of_name" && strings.ContainsAny(string(mustCompact(args)), "İıſ") {
+		if fn == "region_of_name" && strings.ContainsAny(encode(args), "İıſ") {
 			counts["accepted (İ ı ſ under IGNORECASE)"]++
 			continue
 		}
@@ -209,165 +238,242 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typed
 		var err error
 		switch fn {
 		case "load_config", "effective_settings", "describe_settings", "check_settings", "settings", "_proxy_of":
-			system := row.GetObject("system")
+			system, _ := row["system"].(map[string]any)
 			r := defaults
-			if r == nil || system.Len() > 0 {
+			if r == nil || len(system) > 0 {
 				r, err = repo.Open(dir, repo.Options{})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if system.Len() == 0 {
+				if len(system) == 0 {
 					defaults = r
 				}
 			}
 			ctx = repo.WithScope(repo.WithRepository(ctx, r))
-			if system.Len() > 0 {
-				if _, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-					target := current.SetDefault("system_config", jsonx.NewObject()).(*jsonx.Object)
-					for key, value := range system.All() {
-						target.Set(key, jsonx.DeepCopy(value))
+			if len(system) > 0 {
+				if err := r.UpdateSystem(ctx, func(_ context.Context, current *model.System) error {
+					existingRaw, err := json.Marshal(current.SystemConfig)
+					if err != nil {
+						return err
 					}
-					return nil, nil
+					merged, err := decodeMap(existingRaw)
+					if err != nil {
+						return err
+					}
+					if merged == nil {
+						merged = map[string]any{}
+					}
+					for key, value := range system {
+						merged[key] = value
+					}
+					updatedRaw, err := json.Marshal(merged)
+					if err != nil {
+						return err
+					}
+					var nextCfg model.SystemConfig
+					if err := json.Unmarshal(updatedRaw, &nextCfg); err != nil {
+						return err
+					}
+					current.SystemConfig = nextCfg
+					return nil
 				}); err != nil {
 					t.Fatalf("row %d: seed system: %v", i, err)
 				}
 				repo.ResetConfigContext(ctx)
 			}
 		}
-		envVars := row.GetObject("env")
-		runner := &replayRunner{worker: row.GetObject("worker")}
-		converter := mapConverter{}
-		for _, item := range row.GetList("conversions") {
-			call := item.(*jsonx.Object)
-			proxy, _ := call.GetList("args")[0].(string)
-			converter[proxy], _ = call.Value("ok").(*jsonx.Object)
+		envVars, _ := row["env"].(map[string]any)
+		workerMap, _ := row["worker"].(map[string]any)
+		runner := &replayRunner{worker: workerMap}
+		converter := mapNodeConverter{}
+		if conversions, ok := row["conversions"].([]any); ok {
+			for _, item := range conversions {
+				call, _ := item.(map[string]any)
+				callArgs, _ := call["args"].([]any)
+				if len(callArgs) == 0 {
+					continue
+				}
+				proxy, _ := callArgs[0].(string)
+				if okObj, ok := call["ok"].(map[string]any); ok && okObj != nil {
+					raw, _ := json.Marshal(okObj)
+					converter[proxy] = raw
+				}
+			}
 		}
-		env := &Env{
+		env := &ProbeEnv{
 			LookupEnv: func(key string) (string, bool) {
-				value, ok := envVars.Value(key).(string)
+				if envVars == nil {
+					return "", false
+				}
+				value, ok := envVars[key].(string)
 				return value, ok
 			},
 			Environ: func() []string { return nil },
 			Runner:  runner,
 			Now:     time.Now,
 			ProbeBinary: func() (string, error) {
-				w := runner.worker
-				if failure := w.GetObject("binary_err"); failure != nil {
-					return "", &ProbeUnavailable{Message: failure.GetString("text")}
+				if failure, ok := workerMap["binary_err"].(map[string]any); ok && failure != nil {
+					return "", &ProbeUnavailable{Message: mapStr(failure, "text")}
 				}
-				return w.GetString("binary"), nil
+				return mapStr(workerMap, "binary"), nil
 			},
-			Converter: converter,
+			Collaborators: defaultCollaborators(func() convert.NodeConverter { return converter }),
 		}
-		now := naive(t, row.GetString("now"))
+		now := naive(t, mapStr(row, "now"))
 		storeNow := now
-		if o, ok := arg("now").(*jsonx.Object); ok {
-			storeNow = naive(t, strings.SplitN(o.GetString("__datetime__"), "+", 2)[0])
+		if o, ok := arg("now").(map[string]any); ok {
+			storeNow = naive(t, strings.SplitN(mapStr(o, "__datetime__"), "+", 2)[0])
 		}
 		var value any
 		func() {
 			recordedEnvMu.Lock()
 			defer recordedEnvMu.Unlock()
-			defer SetEnv(env)()
+			defer SetProbeEnv(env)()
 			switch fn {
 			case "validate_health":
-				err = check.ValidateHealth(arg("values"), jsonx.Truthy(arg("provider")))
+				err = check.ValidateHealthJSON(rawArg("values"), pyTruthy(arg("provider")))
 			case "initialize_group_health":
-				group := obj("group")
-				check.InitializeGroupHealth(group)
-				value = group
+				var fields model.Fields
+				if json.Unmarshal(rawArg("group"), &fields) == nil {
+					_ = check.InitGroupHealth(&fields)
+				}
+				value = fields
 			case "initialize_provider_health":
-				source := obj("source")
-				initializeProviderHealth(source)
-				value = source
+				var fields model.Fields
+				if json.Unmarshal(rawArg("source"), &fields) == nil {
+					_ = check.InitProviderHealth(&fields)
+				}
+				value = fields
 			case "provider_health_check":
-				value, err = check.ProviderHealthCheck(obj("source"))
+				var fields model.Fields
+				if json.Unmarshal(rawArg("source"), &fields) == nil {
+					value, err = check.ResolveProviderHealth(&fields)
+				} else {
+					value, err = check.ResolveProviderHealth(nil)
+				}
+				if errors.Is(err, check.ErrMissingHealthCheck) {
+					err = &check.KeyError{Key: "health_check"}
+				}
 			case "_ipv4_server":
-				value, err = ipv4Server(arg("value"), str("message"))
+				text, ok := arg("value").(string)
+				if !ok {
+					err = valueError(str("message"))
+				} else {
+					value, err = ipv4ServerString(text, str("message"))
+				}
 			case "_server":
-				value, err = server(arg("value"))
+				text, ok := arg("value").(string)
+				if !ok {
+					err = valueError(DNSError)
+				} else {
+					value, err = serverString(text)
+				}
 			case "normalize_dns_servers":
-				value, err = NormalizeDNSServers(arg("value"), jsonx.Truthy(arg("bootstrap")))
+				value, err = NormalizeDNSServersJSON(rawArg("value"), pyTruthy(arg("bootstrap")))
 			case "_needs_bootstrap":
 				value = needsBootstrap(str("server"))
 			case "normalize_config":
-				value, err = NormalizeConfig(arg("value"))
+				value, err = NormalizeDNSConfigJSON(rawArg("value"))
 			case "load_config":
-				value, err = LoadConfig(ctx)
+				value, err = LoadDNSConfig(ctx)
 			case "effective_settings":
-				value, err = EffectiveSettings(ctx, arg("value"))
+				raw, _ := optRaw(arg("value"))
+				value, err = EffectiveDNSSettingsJSON(ctx, raw)
 			case "describe_settings":
-				value, err = DescribeSettings(ctx, arg("value"))
+				raw, _ := optRaw(arg("value"))
+				value, err = DescribeDNSSettingsJSON(ctx, raw)
 			case "check_settings":
-				value, err = CheckSettings(ctx, arg("value"))
+				raw, _ := optRaw(arg("value"))
+				value, err = CheckDNSSettingsJSON(ctx, raw)
 			case "settings":
-				value, err = Settings(ctx)
+				value, err = ResolveSettings(ctx)
 			case "_proxy_of":
-				if proxy := proxyOf(ctx, obj("node"), converter); proxy != nil {
-					value = proxy
+				if nodeRaw := rawArg("node"); len(nodeRaw) > 0 && !bytes.Equal(bytes.TrimSpace(nodeRaw), []byte("null")) {
+					if proxy, ok := defaultCollaborators(func() convert.NodeConverter { return converter }).ConvertNode(ctx, nodeRaw); ok {
+						value = proxy
+					}
 				}
 			case "_needs_sub_store":
-				value = needsSubStore(obj("node"))
+				nodeMap, _ := arg("node").(map[string]any)
+				raw, ok := nodeMap["proxy_string"].(string)
+				value = ok && raw != "" && defaultCollaborators(nil).NeedsRemoteConversion(raw)
 			case "_run_probe":
-				value, err = runProbe(ctx, objects(arg("proxies")), obj("options"))
+				var typedProxies []model.Fields
+				if uerr := json.Unmarshal(rawArg("proxies"), &typedProxies); uerr != nil {
+					err = uerr
+					break
+				}
+				var typedOptions ProbeSettings
+				if optBytes := bytes.TrimSpace(rawArg("options")); len(optBytes) > 0 && !bytes.Equal(optBytes, []byte("null")) {
+					if uerr := jsondecode.Unmarshal(optBytes, &typedOptions); uerr != nil {
+						err = uerr
+						break
+					}
+				}
+				value, err = runProbeFields(ctx, typedProxies, typedOptions)
 			case "region_of_name":
 				value, err = evalRegionOfName(arg("name"))
 			case "region_label":
 				value, err = evalRegionLabel(arg("code"))
 			case "service_requests":
-				value = fixtureCheckServiceRequests()
+				value = check.BuildServiceRequests()
 			case "evaluate_services":
-				value, err = fixtureCheckEvaluateServices(arg("results").([]any))
+				value, err = evalEvaluateServices(arg("results"))
 			case "exit_info":
-				value, err = fixtureCheckExitInfo(arg("results").([]any))
+				value, err = evalExitInfo(arg("results"))
 			case "public_services":
-				value = fixtureCheckPublicServices()
+				value = check.PublicServiceList()
 			case "domain_request":
-				value = fixtureCheckDomainRequest(str("request_id"), str("url"))
+				value = check.BuildDomainRequest(str("request_id"), str("url"))
 			case "classify_domain_result":
-				value, err = fixtureCheckClassifyDomainResult(arg("result"), str("original_url"))
+				value, err = evalClassifyDomain(arg("result"), str("original_url"))
 			case "summarize_domain":
-				value, err = fixtureCheckSummarizeDomain(obj("per_target"))
+				value, err = evalSummarizeDomain(arg("per_target"))
 			case "pick_targets":
-				value, err = fixtureCheckPickTargets(arg("targets").([]any), arg("preferred_group"))
+				value, err = evalPickTargets(arg("targets"), arg("preferred_group"))
 			case "probe_url":
 				value, err = evalProbeURL(str("host"), arg("port"))
 			case "path_healthy":
 				value, err = evalPathHealthy(arg("stats"))
 			case "judge":
-				value, err = fixtureCheckJudge(arg("direct"), arg("proxy"), check.JudgeOptions{
-					PassiveFailing: jsonx.Truthy(arg("passive_failing")),
-					DirectHealthy:  jsonx.Truthy(arg("direct_healthy")),
-					ProxyHealthy:   jsonx.Truthy(arg("proxy_healthy")),
+				value, err = evalJudge(arg("direct"), arg("proxy"), check.JudgeOptions{
+					PassiveFailing: pyTruthy(arg("passive_failing")),
+					DirectHealthy:  pyTruthy(arg("direct_healthy")),
+					ProxyHealthy:   pyTruthy(arg("proxy_healthy")),
 				})
 			case "domain_suggestion":
 				value, err = evalDomainSuggestion(arg("hosts"))
 			case "RegionStore.update", "RegionStore.load", "ProbeStore.save", "ProbeStore.load":
 				storeDir := filepath.Join(dir, "store")
 				agent := str("agent_id")
-				region, probe := fixtureNewRegionStore(storeDir), fixtureNewProbeStore(storeDir)
-				if before, ok := row.Value("before").(string); ok {
+				region, probe := check.NewRegionStore(storeDir), check.NewProbeStore(storeDir)
+				if before, ok := row["before"].(string); ok {
 					_ = os.MkdirAll(storeDir, 0o755)
 					_ = os.WriteFile(region.Path(agent), []byte(before), 0o644)
 				}
 				switch fn {
 				case "RegionStore.update":
-					mutated := row.GetObject("mutated")
-					err = region.Update(agent, func(data *jsonx.Object) error {
-						for _, key := range data.Keys() {
-							data.Delete(key)
+					err = region.UpdateData(agent, func(data *check.RegionData) error {
+						var rawCheck model.Fields
+						if uerr := jsondecode.Unmarshal(rec.mutated, &rawCheck); uerr != nil {
+							return uerr
 						}
-						for key, item := range mutated.All() {
-							data.Set(key, jsonx.DeepCopy(item))
+						if !rawCheck.Has("domains") || !rawCheck.Has("websites") {
+							return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
 						}
+						var next check.RegionData
+						if uerr := jsondecode.Unmarshal(rec.mutated, &next); uerr != nil {
+							return uerr
+						}
+						*data = next
 						return nil
 					}, storeNow)
 				case "RegionStore.load":
-					value = region.Load(agent)
+					value = region.LoadData(agent)
 				case "ProbeStore.save":
-					err = probe.Save(agent, obj("results"), storeNow)
+					err = saveProbeRaw(probe, agent, rawArg("results"), storeNow)
 				case "ProbeStore.load":
-					value, err = probe.Load(agent, storeNow)
+					value = probe.LoadEntries(agent, storeNow)
 				}
 			default:
 				t.Fatalf("row %d: unknown function %s", i, fn)
@@ -383,38 +489,38 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, native map[int]typed
 			continue
 		}
 
-		got, want := jsonx.NewObject(), jsonx.NewObject()
+		got, want := map[string]any{}, map[string]any{}
 		if err != nil {
-			got.Set("err", jsonx.Obj("class", recordedClass(err), "text", err.Error()))
+			got["err"] = map[string]any{"class": recordedClass(err), "text": err.Error()}
 		} else {
-			got.Set("ok", value)
+			got["ok"] = value
 		}
-		if row.Has("err") {
-			want.Set("err", row.Value("err"))
+		if errVal, hasErr := row["err"]; hasErr {
+			want["err"] = errVal
 		} else if strings.HasPrefix(fn, "initialize_") {
-			want.Set("ok", row.Value("mutated"))
+			want["ok"] = row["mutated"]
 		} else {
-			want.Set("ok", row.Value("ok"))
+			want["ok"] = row["ok"]
 		}
 		if strings.HasPrefix(fn, "RegionStore.") || strings.HasPrefix(fn, "ProbeStore.") {
-			data, readErr := os.ReadFile(fixtureNewRegionStore(filepath.Join(dir, "store")).Path(str("agent_id")))
+			data, readErr := os.ReadFile(check.NewRegionStore(filepath.Join(dir, "store")).Path(str("agent_id")))
 			var after any
 			if readErr == nil {
 				after = string(data)
 			}
-			got.Set("after", after)
-			want.Set("after", row.Value("after"))
+			got["after"] = after
+			want["after"] = row["after"]
 		}
-		gotText, wantText := mustCompact(got), mustCompact(want)
-		if !bytes.Equal(gotText, wantText) && len(runner.mismatch) == 0 && n2Accepted(got, want, row) {
+		equal := testjson.Equal(want, got)
+		if !equal && len(runner.mismatch) == 0 && n2Accepted(got, want, row) {
 			counts["accepted (N2 URL parsing)"]++
 			continue
 		}
-		if !bytes.Equal(gotText, wantText) || len(runner.mismatch) > 0 {
+		if !equal || len(runner.mismatch) > 0 {
 			failures++
 			if failures <= 30 {
-				t.Errorf("row %d %s (%s):\n  got  %s\n  want %s\n  worker %v", i, fn, row.GetString("test"),
-					clip(string(gotText)), clip(string(wantText)), runner.mismatch)
+				t.Errorf("row %d %s (%s):\n  got  %s\n  want %s\n  worker %v", i, fn, mapStr(row, "test"),
+					clip(encode(got)), clip(encode(want)), runner.mismatch)
 			}
 		}
 		counts[fn]++
@@ -440,647 +546,17 @@ func clip(s string) string {
 	return s
 }
 
-func n2Accepted(got, want *jsonx.Object, args *jsonx.Object) bool {
-	gotErr, wantErr := got.GetObject("err"), want.GetObject("err")
+func n2Accepted(got, want, args map[string]any) bool {
+	gotErr, _ := got["err"].(map[string]any)
+	wantErr, _ := want["err"].(map[string]any)
 	switch {
 	case gotErr != nil && wantErr == nil && n2URLDifference(args):
 		return true
 	case gotErr == nil && wantErr != nil && hasNFKCDelimiterAuthority(args):
 		return true
 	case gotErr != nil && wantErr != nil:
-		return gotErr.GetString("class") == wantErr.GetString("class") && !hasCJK(wantErr.GetString("text"))
+		return mapStr(gotErr, "class") == mapStr(wantErr, "class") && !hasCJK(mapStr(wantErr, "text"))
 	}
-	encoded, _ := jsonx.Compact(args)
-	return strings.Contains(string(encoded), "İ") || strings.Contains(string(encoded), `\u0130`)
-}
-
-// legacyProbeConverter only transcodes the neighbouring Sub-Store callback.
-// Node parsing, branch selection and fixing remain in the native health owner.
-type legacyProbeConverter struct{ converter convert.ProxyStringConverter }
-
-func (c legacyProbeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
-	if c.converter == nil {
-		return nil, nil
-	}
-	proxy := c.converter.ConvertProxyString(ctx, text)
-	if proxy == nil {
-		return nil, nil
-	}
-	raw, err := jsonx.Compact(proxy)
-	if err != nil {
-		return nil, err
-	}
-	return yamlx.FromJSON(raw)
-}
-
-// Env is the legacy environment configuration retained for api/nodes tests.
-// Removed when api/nodes migrates to ProbeEnv.
-type Env struct {
-	LookupEnv   func(string) (string, bool)
-	Environ     func() []string
-	Runner      Runner
-	Now         func() time.Time
-	ProbeBinary func() (string, error)
-	Converter   convert.ProxyStringConverter
-}
-
-// DefaultEnv returns the default legacy Env.
-func DefaultEnv() *Env {
-	return &Env{
-		LookupEnv: os.LookupEnv,
-		Environ:   os.Environ,
-		Runner:    ExecRunner{},
-		Now:       time.Now,
-	}
-}
-
-var currentLegacyEnv = DefaultEnv()
-
-type dynamicLegacyRunner struct{ env *Env }
-
-func (d dynamicLegacyRunner) Run(ctx context.Context, cmd Command) (Result, error) {
-	if d.env != nil && d.env.Runner != nil {
-		return d.env.Runner.Run(ctx, cmd)
-	}
-	return ExecRunner{}.Run(ctx, cmd)
-}
-
-func probeEnvFromLegacy(env *Env) *ProbeEnv {
-	if env == nil {
-		env = DefaultEnv()
-	}
-	p := &ProbeEnv{
-		LookupEnv: func(key string) (string, bool) {
-			if env.LookupEnv != nil {
-				return env.LookupEnv(key)
-			}
-			return "", false
-		},
-		Environ: func() []string {
-			if env.Environ != nil {
-				return env.Environ()
-			}
-			return nil
-		},
-		Runner: dynamicLegacyRunner{env: env},
-		Now: func() time.Time {
-			if env.Now != nil {
-				return env.Now()
-			}
-			return time.Now()
-		},
-		Collaborators: defaultCollaborators(func() convert.NodeConverter { return legacyProbeConverter{env.Converter} }),
-	}
-	p.ProbeBinary = func() (string, error) {
-		if env.ProbeBinary != nil {
-			return env.ProbeBinary()
-		}
-		return FindBinary(p)
-	}
-	return p
-}
-
-// SetEnv installs env as the active environment and returns a restore callback.
-// Removed when api/nodes migrates to SetProbeEnv.
-func SetEnv(env *Env) (restore func()) {
-	prevLegacy := currentLegacyEnv
-	currentLegacyEnv = env
-	restoreProbe := SetProbeEnv(probeEnvFromLegacy(env))
-	return func() {
-		currentLegacyEnv = prevLegacy
-		restoreProbe()
-	}
-}
-
-// CurrentEnv returns the currently installed legacy Env.
-// Removed when api/nodes migrates off legacy Env.
-func CurrentEnv() *Env { return currentLegacyEnv }
-
-// FindProbeBinary locates the worker binary using a legacy Env.
-// Removed when api/nodes migrates to FindBinary.
-func FindProbeBinary(e *Env) (string, error) {
-	p := probeEnvFromLegacy(e)
-	p.ProbeBinary = nil
-	return FindBinary(p)
-}
-
-func toRawJSON(value any) (json.RawMessage, error) {
-	if value == nil {
-		return nil, nil
-	}
-	raw, err := jsonx.Compact(value)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(raw), nil
-}
-
-func encodeToLegacyValue(value any) (any, error) {
-	raw, err := jsonresp.Encode(value)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Parse(raw)
-}
-
-func encodeToLegacyObject(value any) (*jsonx.Object, error) {
-	parsed, err := encodeToLegacyValue(value)
-	if err != nil {
-		return nil, err
-	}
-	obj, ok := parsed.(*jsonx.Object)
-	if !ok {
-		return nil, fmt.Errorf("expected JSON object, got %T", parsed)
-	}
-	return obj, nil
-}
-
-func encodeToLegacySlice(value any) ([]any, error) {
-	parsed, err := encodeToLegacyValue(value)
-	if err != nil {
-		return nil, err
-	}
-	list, ok := parsed.([]any)
-	if !ok {
-		return nil, fmt.Errorf("expected JSON array, got %T", parsed)
-	}
-	return list, nil
-}
-
-// NormalizeDNSServers adapts legacy jsonx values to NormalizeDNSServersJSON.
-// Removed when api/nodes migrates off jsonx.
-func NormalizeDNSServers(value any, bootstrap bool) ([]any, error) {
-	raw, err := jsonx.Compact(value)
-	if err != nil {
-		message := DNSError
-		if bootstrap {
-			message = BootstrapError
-		}
-		return nil, valueError(message)
-	}
-	servers, err := NormalizeDNSServersJSON(raw, bootstrap)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacySlice(servers)
-}
-
-// NormalizeConfig adapts legacy jsonx values to NormalizeDNSConfigJSON.
-// Removed when api/nodes migrates off jsonx.
-func NormalizeConfig(value any) (*jsonx.Object, error) {
-	raw, err := jsonx.Compact(value)
-	if err != nil {
-		return nil, valueError(msgSelectDNSMode)
-	}
-	cfg, err := NormalizeDNSConfigJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(cfg)
-}
-
-// LoadConfig adapts LoadDNSConfig to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func LoadConfig(ctx context.Context) (*jsonx.Object, error) {
-	cfg, err := LoadDNSConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(cfg)
-}
-
-// EffectiveSettings adapts EffectiveDNSSettingsJSON to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func EffectiveSettings(ctx context.Context, value any) (*jsonx.Object, error) {
-	raw, err := toRawJSON(value)
-	if err != nil {
-		return nil, err
-	}
-	effective, err := EffectiveDNSSettingsJSON(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(effective)
-}
-
-// DescribeSettings adapts DescribeDNSSettingsJSON to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func DescribeSettings(ctx context.Context, value any) (*jsonx.Object, error) {
-	raw, err := toRawJSON(value)
-	if err != nil {
-		return nil, err
-	}
-	view, err := DescribeDNSSettingsJSON(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(view)
-}
-
-// SaveConfig adapts SaveDNSConfigJSON to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func SaveConfig(ctx context.Context, value any) (*jsonx.Object, error) {
-	raw, err := jsonx.Compact(value)
-	if err != nil {
-		return nil, valueError(msgSelectDNSMode)
-	}
-	view, err := SaveDNSConfigJSON(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(view)
-}
-
-// CheckSettings adapts CheckDNSSettingsJSON to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func CheckSettings(ctx context.Context, value any) (*jsonx.Object, error) {
-	raw, err := toRawJSON(value)
-	if err != nil {
-		return nil, err
-	}
-	result, err := CheckDNSSettingsJSON(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(result)
-}
-
-// DNSSettings adapts ResolveDNSSettings to a legacy slice.
-// Removed when api/nodes migrates off jsonx.
-func DNSSettings(ctx context.Context) (any, error) {
-	servers, err := ResolveDNSSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacySlice(servers)
-}
-
-// Settings adapts ResolveSettings to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func Settings(ctx context.Context) (*jsonx.Object, error) {
-	settings, err := ResolveSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(settings)
-}
-
-// CollectCandidates adapts CollectCandidateNodes to legacy *jsonx.Object maps.
-// Removed when api/nodes migrates off jsonx.
-func CollectCandidates(ctx context.Context) ([]string, map[string]*jsonx.Object, error) {
-	list, err := CollectCandidateNodes(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	keys := make([]string, len(list))
-	nodes := make(map[string]*jsonx.Object, len(list))
-	for i, c := range list {
-		keys[i] = c.Key
-		parsed, err := jsonx.Parse(c.Raw)
-		if err != nil {
-			return nil, nil, err
-		}
-		obj, ok := parsed.(*jsonx.Object)
-		if !ok {
-			return nil, nil, fmt.Errorf("candidate %s did not decode to object", c.Key)
-		}
-		nodes[c.Key] = obj
-	}
-	return keys, nodes, nil
-}
-
-// LoadResults adapts LoadLatencyResults to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func LoadResults(ctx context.Context) *jsonx.Object {
-	obj, err := encodeToLegacyObject(LoadLatencyResults(ctx))
-	if err != nil {
-		return jsonx.NewObject()
-	}
-	return obj
-}
-
-// RunTests adapts RunLatencyTests to a legacy *jsonx.Object.
-// Removed when api/nodes migrates off jsonx.
-func RunTests(ctx context.Context, names, keys []string) (*jsonx.Object, error) {
-	outcome, err := RunLatencyTests(ctx, names, keys)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(outcome)
-}
-
-// Internal legacy shims used only by replay harnesses in package health.
-
-func ipv4Server(value any, message string) (string, error) {
-	text, ok := value.(string)
-	if !ok {
-		return "", valueError(message)
-	}
-	return ipv4ServerString(text, message)
-}
-
-func server(value any) (string, error) {
-	text, ok := value.(string)
-	if !ok {
-		return "", valueError(DNSError)
-	}
-	return serverString(text)
-}
-
-func proxyOf(ctx context.Context, node *jsonx.Object, converter convert.ProxyStringConverter) *jsonx.Object {
-	if node == nil {
-		return nil
-	}
-	raw, err := jsonx.Compact(node)
-	if err != nil {
-		return nil
-	}
-	fields, ok := defaultCollaborators(func() convert.NodeConverter { return legacyProbeConverter{converter} }).ConvertNode(ctx, raw)
-	if !ok {
-		return nil
-	}
-	obj, err := encodeToLegacyObject(fields)
-	if err != nil {
-		return nil
-	}
-	return obj
-}
-
-func needsSubStore(node *jsonx.Object) bool {
-	if node == nil {
-		return false
-	}
-	raw, ok := node.Value("proxy_string").(string)
-	if !ok || raw == "" {
-		return false
-	}
-	return defaultCollaborators(nil).NeedsRemoteConversion(raw)
-}
-
-func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Object) (*jsonx.Object, error) {
-	typedProxies := make([]model.Fields, len(proxies))
-	for i, p := range proxies {
-		raw, err := jsonx.Compact(p)
-		if err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(raw, &typedProxies[i]); err != nil {
-			return nil, err
-		}
-	}
-	var typedOptions ProbeSettings
-	if options != nil {
-		raw, err := jsonx.Compact(options)
-		if err != nil {
-			return nil, err
-		}
-		if err := jsondecode.Unmarshal(raw, &typedOptions); err != nil {
-			return nil, err
-		}
-	}
-	results, err := runProbeFields(ctx, typedProxies, typedOptions)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(results)
-}
-
-func initializeProviderHealth(source *jsonx.Object) {
-	raw, _ := json.Marshal(source)
-	var fields model.Fields
-	if json.Unmarshal(raw, &fields) != nil {
-		return
-	}
-	if check.InitProviderHealth(&fields) != nil {
-		return
-	}
-	next, err := encodeToLegacyObject(fields)
-	if err != nil {
-		return
-	}
-	for _, key := range source.Keys() {
-		source.Delete(key)
-	}
-	source.Update(next)
-}
-
-// Archived discovery fixture adapters use typed health/check owners.
-type fixtureProbeStore struct{ *check.ProbeStore }
-type fixtureRegionStore struct{ *check.RegionStore }
-
-func fixtureNewProbeStore(dir string) *fixtureProbeStore {
-	return &fixtureProbeStore{check.NewProbeStore(dir)}
-}
-func fixtureNewRegionStore(dir string) *fixtureRegionStore {
-	return &fixtureRegionStore{check.NewRegionStore(dir)}
-}
-func fixtureCheckDecode[T any](value any, target *T) error {
-	raw, err := jsonx.Compact(value)
-	if err != nil {
-		return err
-	}
-	return jsondecode.Unmarshal(raw, target)
-}
-
-// ControlTargets returns check.DefaultControlTargets as a legacy *jsonx.Object.
-// Removed in N8-11 when discovery/bridge.go calls check.DefaultControlTargets directly.
-func fixtureCheckControlTargets() *jsonx.Object {
-	obj, _ := encodeToLegacyObject(check.DefaultControlTargets())
-	return obj
-}
-
-// Judge adapts legacy jsonx path statistics to check.JudgePath.
-// Removed in N8-11 when discovery/bridge.go calls check.JudgePath directly.
-func fixtureCheckJudge(direct, proxy any, options check.JudgeOptions) (*jsonx.Object, error) {
-	var d, p *check.PathStats
-	if direct != nil {
-		var parsed check.PathStats
-		if err := fixtureCheckDecode(direct, &parsed); err != nil {
-			return nil, err
-		}
-		d = &parsed
-	}
-	if proxy != nil {
-		var parsed check.PathStats
-		if err := fixtureCheckDecode(proxy, &parsed); err != nil {
-			return nil, err
-		}
-		p = &parsed
-	}
-	return encodeToLegacyObject(check.JudgePath(d, p, options))
-}
-
-// Save adapts legacy jsonx probe results to fixtureProbeStore.SaveEntries.
-// Removed in N8-11 when discovery/bridge.go calls SaveEntries directly.
-func (s *fixtureProbeStore) Save(agentID string, results *jsonx.Object, now time.Time) error {
-	return s.SaveContext(context.Background(), agentID, results, now)
-}
-
-// SaveContext adapts legacy probe entries while preserving the owner's lifetime.
-func (s *fixtureProbeStore) SaveContext(ctx context.Context, agentID string, results *jsonx.Object, now time.Time) error {
-	if results == nil {
-		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
-	}
-	var entries model.Map[check.TimedRecord]
-	if err := fixtureCheckDecode(results, &entries); err != nil {
-		return err
-	}
-	return s.SaveEntriesContext(ctx, agentID, entries, now)
-}
-
-// Load adapts fixtureProbeStore.LoadEntries to a legacy *jsonx.Object.
-// Removed in N8-11 when discovery/bridge.go calls LoadEntries directly.
-func (s *fixtureProbeStore) Load(agentID string, now time.Time) (*jsonx.Object, error) {
-	return encodeToLegacyObject(s.LoadEntries(agentID, now))
-}
-
-// LatestProbes adapts check.LatestProbeEntries to a legacy *jsonx.Object.
-// Removed in N8-11 when discovery/bridge.go calls check.LatestProbeEntries directly.
-func fixtureCheckLatestProbes(agentIDs []string, store *fixtureProbeStore) (*jsonx.Object, error) {
-	entries, err := check.LatestProbeEntries(agentIDs, store.ProbeStore)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(entries)
-}
-
-// ExitRequest returns check.DefaultExitRequest as a legacy *jsonx.Object.
-// Removed in N8-11 when discovery/bridge.go calls check.DefaultExitRequest directly.
-func fixtureCheckExitRequest() *jsonx.Object {
-	obj, _ := encodeToLegacyObject(check.DefaultExitRequest())
-	return obj
-}
-
-// ServiceRequests returns check.BuildServiceRequests as a legacy []any.
-// Removed in N8-11 when discovery/bridge.go calls check.BuildServiceRequests directly.
-func fixtureCheckServiceRequests() []any {
-	list, _ := encodeToLegacySlice(check.BuildServiceRequests())
-	return list
-}
-
-// DomainRequest returns check.BuildDomainRequest as a legacy *jsonx.Object.
-// Removed in N8-11 when discovery/bridge.go calls check.BuildDomainRequest directly.
-func fixtureCheckDomainRequest(requestID, url string) *jsonx.Object {
-	obj, _ := encodeToLegacyObject(check.BuildDomainRequest(requestID, url))
-	return obj
-}
-
-// PublicServices returns check.PublicServiceList as a legacy []any.
-// Removed in N8-11 when discovery/bridge.go calls check.PublicServiceList directly.
-func fixtureCheckPublicServices() []any {
-	list, _ := encodeToLegacySlice(check.PublicServiceList())
-	return list
-}
-
-// PickTargets adapts legacy jsonx targets to check.ChooseTargets.
-// Removed in N8-11 when discovery/bridge.go calls check.ChooseTargets directly.
-func fixtureCheckPickTargets(targets []any, preferredGroup any) ([]any, error) {
-	var typedTargets []check.AvailableTarget
-	if err := fixtureCheckDecode(targets, &typedTargets); err != nil {
-		return nil, err
-	}
-	var preferred check.Text
-	if preferredGroup != nil {
-		if err := fixtureCheckDecode(preferredGroup, &preferred); err != nil {
-			return nil, err
-		}
-	}
-	return encodeToLegacySlice(check.ChooseTargets(typedTargets, string(preferred)))
-}
-
-// ExitInfo adapts legacy jsonx results to check.SummarizeExit.
-// Removed in N8-11 when discovery/bridge.go calls check.SummarizeExit directly.
-func fixtureCheckExitInfo(results []any) (*jsonx.Object, error) {
-	var typedResults []check.RegionResult
-	if err := fixtureCheckDecode(results, &typedResults); err != nil {
-		return nil, err
-	}
-	summary, err := check.SummarizeExit(typedResults)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(summary)
-}
-
-// EvaluateServices adapts legacy jsonx results to check.EvaluateServiceList.
-// Removed in N8-11 when discovery/bridge.go calls check.EvaluateServiceList directly.
-func fixtureCheckEvaluateServices(results []any) (*jsonx.Object, error) {
-	var typedResults []check.RegionResult
-	if err := fixtureCheckDecode(results, &typedResults); err != nil {
-		return nil, err
-	}
-	verdicts, err := check.EvaluateServiceList(typedResults)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(verdicts)
-}
-
-// ClassifyDomainResult adapts a legacy jsonx result to check.ClassifyDomain.
-// Removed in N8-11 when discovery/bridge.go calls check.ClassifyDomain directly.
-func fixtureCheckClassifyDomainResult(result any, originalURL string) (*jsonx.Object, error) {
-	var typedResult *check.RegionResult
-	if result != nil {
-		var parsed check.RegionResult
-		if err := fixtureCheckDecode(result, &parsed); err != nil {
-			return nil, err
-		}
-		typedResult = &parsed
-	}
-	classified, err := check.ClassifyDomain(typedResult, originalURL)
-	if err != nil {
-		return nil, err
-	}
-	return encodeToLegacyObject(classified)
-}
-
-// SummarizeDomain adapts legacy jsonx per-target states to check.SummarizeTargets.
-// Removed in N8-11 when discovery/bridge.go calls check.SummarizeTargets directly.
-func fixtureCheckSummarizeDomain(perTarget *jsonx.Object) (*jsonx.Object, error) {
-	var typedTargets model.Map[check.TargetState]
-	if perTarget != nil {
-		if err := fixtureCheckDecode(perTarget, &typedTargets); err != nil {
-			return nil, err
-		}
-	}
-	return encodeToLegacyObject(check.SummarizeTargets(typedTargets))
-}
-
-// Load adapts fixtureRegionStore.LoadData to a legacy *jsonx.Object.
-// Removed in N8-11 when discovery/bridge.go calls LoadData directly.
-func (s *fixtureRegionStore) Load(agentID string) *jsonx.Object {
-	obj, _ := encodeToLegacyObject(s.LoadData(agentID))
-	return obj
-}
-
-// Update adapts a legacy *jsonx.Object mutator to fixtureRegionStore.UpdateData.
-// Removed in N8-11 when discovery/bridge.go calls UpdateData directly.
-func (s *fixtureRegionStore) Update(agentID string, mutate func(*jsonx.Object) error, now time.Time) error {
-	return s.UpdateContext(context.Background(), agentID, mutate, now)
-}
-
-// UpdateContext adapts a legacy region mutator while preserving the owner's lifetime.
-func (s *fixtureRegionStore) UpdateContext(ctx context.Context, agentID string, mutate func(*jsonx.Object) error, now time.Time) error {
-	return s.UpdateDataContext(ctx, agentID, func(data *check.RegionData) error {
-		obj, err := encodeToLegacyObject(data)
-		if err != nil {
-			return err
-		}
-		if err := mutate(obj); err != nil {
-			return err
-		}
-		var rawCheck model.Fields
-		if err := fixtureCheckDecode(obj, &rawCheck); err != nil {
-			return err
-		}
-		if !rawCheck.Has("domains") || !rawCheck.Has("websites") {
-			return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
-		}
-		var next check.RegionData
-		if err := fixtureCheckDecode(obj, &next); err != nil {
-			return err
-		}
-		*data = next
-		return nil
-	}, now)
+	encoded := encode(args)
+	return strings.Contains(encoded, "İ") || strings.Contains(encoded, `\u0130`)
 }

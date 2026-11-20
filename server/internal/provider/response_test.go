@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -13,9 +14,10 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 type serveFixture struct {
@@ -39,11 +41,11 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 			}
 			f.mu.Unlock()
 			profile := c.ArgDefault("profile", "alpha")
-			config := any(jsonx.Obj("v", jsonx.Int(1)))
+			config := []byte(`{"v":1}`)
 			if kind == "subscription" {
-				config = jsonx.NewObject()
+				config = []byte(`{}`)
 			}
-			return ServeProvider(c, kind, map[string]string{"aggregation": "agg-1", "subscription": "feed"}[kind], profile, config, render)
+			return serveProviderJSON(c, kind, map[string]string{"aggregation": "agg-1", "subscription": "feed"}[kind], profile, config, render)
 		})
 	})})
 	ctx := f.srv.Context()
@@ -53,7 +55,7 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 	flights = lockx.NewFlight[flightKey, *responseCopy](responseTestSpawner{runner}, "provider-render")
 	t.Cleanup(func() { runner.Shutdown(context.Background()); flights = previous })
 	for _, id := range []string{"alpha", "beta"} {
-		if _, err := f.srv.Repo.CreateProfile(ctx, jsonx.Obj("id", id, "name", id), ""); err != nil {
+		if _, err := f.srv.Repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: id, Name: id}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -245,7 +247,7 @@ func TestAggregationFallsBackToCommittedArtifactBeforeFirstServe(t *testing.T) {
 func TestFailedRenderIsNotStoredAsLastGood(t *testing.T) {
 	f := newServeFixture(t, 0.2)
 	got := f.serve(func(context.Context) (*httpx.Response, error) {
-		return httpx.JSONStatus(400, jsonx.Obj("success", false)), nil
+		return httpx.JSONStatus(400, map[string]any{"success": false}), nil
 	}, "")
 	if got.status != 400 || got.body != "{\"success\":false}" { // the copy uses the common native JSON response exit
 		t.Fatalf("got %+v", got)
@@ -363,15 +365,18 @@ func TestRequestedFilters(t *testing.T) {
 	}{
 		{"", nil, 200},
 		{"?format=surge", nil, 200},
-		{"?regex=HK", jsonx.Obj("success", false, "message", "来源正则筛选仅支持 Surge/Loon 格式"), 400},
-		{"?format=clash&exclude_regex=", jsonx.Obj("success", false, "message", "来源正则筛选仅支持 Surge/Loon 格式"), 400},
+		{"?regex=HK", map[string]any{"success": false, "message": "来源正则筛选仅支持 Surge/Loon 格式"}, 400},
+		{"?format=clash&exclude_regex=", map[string]any{"success": false, "message": "来源正则筛选仅支持 Surge/Loon 格式"}, 400},
 		{"?format=surge&regex=HK", []any{"HK", ""}, 200},
 		{"?format=loon&exclude_regex=JP&regex=", []any{"", "JP"}, 200},
-		{"?format=surge&regex=(", jsonx.Obj("success", false, "message", "正则表达式无效"), 400},
-		{"?format=loon&regex=%2B%2B", jsonx.Obj("success", false, "message", "正则表达式无效"), 400},
+		{"?format=surge&regex=(", map[string]any{"success": false, "message": "正则表达式无效"}, 400},
+		{"?format=loon&regex=%2B%2B", map[string]any{"success": false, "message": "正则表达式无效"}, 400},
 		{"?format=loon&regex=%20%20", []any{"  ", ""}, 200},
 	}
 	for _, c := range cases {
-		srv.Get("/f" + c.query).WantStatus(c.code).WantJSON(c.want)
+		res := srv.Get("/f" + c.query).WantStatus(c.code)
+		if diff := testjson.Diff(json.RawMessage(res.Body), c.want); diff != "" {
+			t.Fatalf("%s: body %s\n%s", c.query, res.Body, diff)
+		}
 	}
 }

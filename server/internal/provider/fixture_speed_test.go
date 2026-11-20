@@ -4,11 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // corpusRepositoryFactory pays initial schema/config creation once, then copies
@@ -39,28 +39,30 @@ func TestCorpusRepositoryCopiesCannotLeakState(t *testing.T) {
 	factory := corpusRepositoryFactory(t)
 	clean := factory(t)
 	ctx := repo.WithRepository(context.Background(), clean)
-	before, err := clean.ExportAll(ctx, false)
+	before, err := clean.ExportAllJSON(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dirty := factory(t)
 	dirtyCtx := repo.WithRepository(context.Background(), dirty)
-	if _, err := dirty.WriteSharedJSON(dirtyCtx, "subscribes/leaked.json", jsonx.Obj("value", "dirty")); err != nil {
+	if _, err := dirty.WriteSharedJSON(dirtyCtx, "subscribes/leaked.json", map[string]any{"value": "dirty"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := dirty.UpdateSharedTransaction(dirtyCtx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", []any{jsonx.Obj("id", "leaked", "name", "Leaked", "content", "DOMAIN,leaked.example")})
-		return nil, nil
+	if err := dirty.UpdateShared(dirtyCtx, func(_ context.Context, shared *model.Shared) error {
+		shared.RuleLibrary = []model.RuleLibraryItem{testjson.Decode[model.RuleLibraryItem](t, map[string]any{
+			"id": "leaked", "name": "Leaked", "content": "DOMAIN,leaked.example",
+		})}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range []*repo.Repository{clean, factory(t)} {
 		currentCtx := repo.WithRepository(context.Background(), r)
-		after, err := r.ExportAll(currentCtx, false)
+		after, err := r.ExportAllJSON(currentCtx, false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(before, after) {
+		if !testjson.Equal(before, after) {
 			t.Fatal("database rows/revisions leaked from another corpus case")
 		}
 		if _, err := os.Stat(filepath.Join(r.DataDir(), "shared/subscribes/leaked.json")); !os.IsNotExist(err) {

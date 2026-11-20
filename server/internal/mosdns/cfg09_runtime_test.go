@@ -9,16 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/taskstatus"
 )
-
-// This native interface makes the in-flight O3-6c dependency explicit. The
-// regression automatically runs on the merged tree, without a custom build tag.
-type contextReceiptStore interface {
-	RecordContext(context.Context, string, taskstatus.Result) (*jsonx.Object, error)
-}
 
 func TestCFG09RuntimeReceiptBoundary(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
@@ -28,11 +21,7 @@ func TestCFG09RuntimeReceiptBoundary(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			store := taskstatus.New(t.TempDir())
-			recorder, ok := any(store).(contextReceiptStore)
-			if !ok {
-				t.Skip("O3-6c RecordContext not merged; this regression must execute in joint validation")
-			}
-			if _, err := store.Record("baseline", taskstatus.Result{OK: true}); err != nil {
+			if _, err := store.SaveResult(context.Background(), "baseline", taskstatus.Result{OK: true}); err != nil {
 				t.Fatal(err)
 			}
 			receipt := filepath.Join(store.DataDir, taskstatus.Filename)
@@ -51,7 +40,7 @@ func TestCFG09RuntimeReceiptBoundary(t *testing.T) {
 			} else {
 				disconnect()
 			}
-			_, err = recorder.RecordContext(request, "new", taskstatus.Result{OK: true})
+			_, err = store.SaveResult(request, "new", taskstatus.Result{OK: true})
 			after, readErr := os.ReadFile(receipt)
 			if readErr != nil {
 				t.Fatal(readErr)
@@ -85,14 +74,11 @@ func TestCFG09RuntimeNativeStorageCauses(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			recorder, ok := any(taskstatus.New(dir)).(contextReceiptStore)
-			if !ok {
-				t.Skip("O3-6c RecordContext not merged; native cause integration pending")
-			}
+			store := taskstatus.New(dir)
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 			runtime.Start(context.Background())
 			defer runtime.Shutdown(context.Background())
-			_, err := recorder.RecordContext(runtime.BindRequest(context.Background()), "native", taskstatus.Result{OK: true})
+			_, err := store.SaveResult(runtime.BindRequest(context.Background()), "native", taskstatus.Result{OK: true})
 			if err == nil || isBadRequest(err) || errors.Is(err, context.Canceled) {
 				t.Fatalf("native storage failure lost: %v", err)
 			}

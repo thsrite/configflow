@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -28,11 +27,7 @@ type ownedWriteState struct {
 
 func ownedState(t *testing.T, ctx context.Context, r *repo.Repository) ownedWriteState {
 	t.Helper()
-	doc, err := r.ExportAll(ctx, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := jsonx.Compact(doc)
+	raw, err := r.ExportAllJSON(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,11 +112,15 @@ func TestC29RealRuntimeDisconnectCompletesEveryOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, err := r.GetProfile(ctx, "default")
+	config, err := r.Profile(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.GetObject("oxidns").GetInt("worker_threads") != 7 || saved.Guard.ConfigRevision != 1 {
+	node, err := config.OxiDNS.Node()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workers := get(node, "worker_threads"); workers == nil || workers.Value != "7" || saved.Guard.ConfigRevision != 1 {
 		t.Fatal("disconnected request did not complete settings commit", saved.Guard)
 	}
 	output, err := BuildTypedZIP(request, &model.Config{Profile: &model.Profile{}}, "plugins: []", nil, []File{{Path: "notes.bin", Content: []byte{0, 1, 255}}}, "")

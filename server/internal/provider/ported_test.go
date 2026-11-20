@@ -16,12 +16,12 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -32,28 +32,28 @@ func repoContext(t *testing.T) (context.Context, *repo.Repository) {
 		t.Fatal(err)
 	}
 	t.Cleanup(SetLocations(fakeLocations{}))
-	t.Cleanup(SetEnv(&Env{NodeID: SequentialNodeIDs(), Converter: nilConverter{}}))
-	t.Cleanup(setRefreshFixture(fixedClock{corpusNow}, nilConverter{}))
+	t.Cleanup(SetDeliveryEnv(&DeliveryEnv{NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}}))
+	t.Cleanup(setRefreshFixture(fixedClock{corpusNow}, nilNodeConverter{}))
 	return repo.WithRepository(context.Background(), r), r
 }
 
-func emptySnapshot(t *testing.T, main *jsonx.Object) *Snapshot {
+func emptySnapshot(t *testing.T, main map[string]any) *DeliverySnapshot {
 	if main == nil {
-		main = jsonx.Obj("proxies", []any{}, "proxy-groups", []any{})
+		main = map[string]any{"proxies": []any{}, "proxy-groups": []any{}}
 	}
-	s, err := Capture("default", main, nil)
+	s, err := captureFromMap("default", main, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
-func mustParseYAML(t *testing.T, text string) *jsonx.Object {
+func mustParseYAML(t *testing.T, text string) map[string]any {
 	v, err := readProviderTestValue(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*jsonx.Object)
+	return v.(map[string]any)
 }
 
 func wantContains(t *testing.T, detail string, parts ...string) {
@@ -72,7 +72,7 @@ func TestInvalidYAMLKeepsSourcePositionAndOriginalProblem(t *testing.T) {
 	if parseErr == nil {
 		t.Fatal("invalid fixture accepted")
 	}
-	_, err := ParseProviderProxies(source, "机场 A", "./providers/a.yaml")
+	_, err := ParseNodes(source, "机场 A", "./providers/a.yaml")
 	var strategy *rules.StrategyReferenceError
 	if !errors.As(err, &strategy) || errClass(err) != "DialerReferenceError" {
 		t.Fatalf("err %v (%s)", err, errClass(err))
@@ -95,7 +95,7 @@ func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
 		{"base: &base\n  type: []\nproxies:\n  - <<: *base\n    name: Merged\n", "proxies[0].type", "2"},
 	}
 	for _, c := range cases {
-		_, err := ParseProviderProxies(c.text, "Feed", "")
+		_, err := ParseNodes(c.text, "Feed", "")
 		if err == nil {
 			t.Fatalf("%q accepted", c.text)
 		}
@@ -105,14 +105,14 @@ func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
 
 func TestUnknownDocumentShapeDoesNotInventALineNumber(t *testing.T) {
 	repoContext(t)
-	_, err := ParseProviderProxies("- not-a-provider\n", "Feed", "")
+	_, err := ParseNodes("- not-a-provider\n", "Feed", "")
 	wantContains(t, err.Error(), "CTX[订阅|Feed|]", "字段：文档根节点|None|None|")
 }
 
 func TestSourceExcerptAndURLNeverExposeNodeCredentials(t *testing.T) {
 	repoContext(t)
 	text := "proxies: [{name: Broken, type: [], password: secret-password, uuid: secret-uuid}]"
-	_, err := ParseProviderProxies(text, "Feed", "https://user:secret-login@example.test/feed?token=secret-token")
+	_, err := ParseNodes(text, "Feed", "https://user:secret-login@example.test/feed?token=secret-token")
 	// The excerpt and path redaction are A11's (source_excerpt, failure_text in
 	// preparation_context); this module passes the field's exact position.
 	wantContains(t, err.Error(), "字段：proxies[0].type|1|", "|本次订阅返回的内容|None]")
@@ -126,7 +126,7 @@ func TestYAMLErrorOnSecretContinuationReportsLocationWithoutValue(t *testing.T) 
 		"proxies: [{name: Broken, password: \"hidden-first\n    hidden-second\" broken}]\n",
 		"proxies: [{name: Broken, password: \"hidden-first\n    hidden-second\\q",
 	} {
-		_, err := ParseProviderProxies(text, "Sensitive", "")
+		_, err := ParseNodes(text, "Sensitive", "")
 		if err == nil || !strings.Contains(err.Error(), "SRC[Provider YAML 内容无效|") || strings.Contains(err.Error(), "|None|None|") {
 			t.Fatalf("%q: %v", text, err)
 		}
@@ -139,7 +139,7 @@ func TestClosedQuotedSecretDoesNotHideFollowingNonsecretField(t *testing.T) {
 		flow := "proxies: [{name: Broken, password: " + quote + "hidden-first\n    hidden-second" + quote + ",\n    type: []}]\n"
 		block := "proxies:\n  - name: Broken\n    password: " + quote + "hidden-first\n      hidden-second" + quote + "\n    type: []\n"
 		for text, line := range map[string]string{flow: "3", block: "5"} {
-			_, err := ParseProviderProxies(text, "Feed", "")
+			_, err := ParseNodes(text, "Feed", "")
 			wantContains(t, err.Error(), "字段：proxies[0].type|"+line+"|")
 		}
 	}
@@ -148,12 +148,20 @@ func TestClosedQuotedSecretDoesNotHideFollowingNonsecretField(t *testing.T) {
 func TestValidProviderOutputAndSuccessPathParsingUnchanged(t *testing.T) {
 	repoContext(t)
 	for _, text := range []string{"{}", "proxies: []", "proxies: [{name: Good, type: http, server: example.test, port: 80}]"} {
-		want, err := fixtureParseProxiesFromYAML(text)
+		wantNodes, err := substore.ParseProxyNodes(text)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := ParseProviderProxies(text, "Feed", "")
-		if err != nil || !jsonx.Equal(want, got) {
+		want, err := nodesToAny(wantNodes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotNodes, err := ParseNodes(text, "Feed", "")
+		if err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		got, err := nodesToAny(gotNodes)
+		if err != nil || !testjson.Equal(want, got) {
 			t.Fatalf("%q: %v %v", text, got, err)
 		}
 	}
@@ -162,24 +170,24 @@ func TestValidProviderOutputAndSuccessPathParsingUnchanged(t *testing.T) {
 // test_dialer_provider_content.py::test_empty_provider_is_valid
 func TestEmptyProviderIsValid(t *testing.T) {
 	for _, text := range []string{"{}", "proxies: []"} {
-		got, err := ParseProviderProxies(text, nil, nil)
+		got, err := ParseNodes(text, "", "")
 		if err != nil || len(got) != 0 {
 			t.Fatalf("%q: %v %v", text, got, err)
 		}
 	}
 }
 
-func fetchReturning(text, source string, calls *int) refresh.SourceFetch {
-	return func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+func fetchReturning(text, source string, calls *int) refresh.FetchSourceFn {
+	return func(context.Context, string, string) (*refresh.SourceResult, error) {
 		if calls != nil {
 			*calls++
 		}
-		return &substore.SubscriptionResult{Text: text, Source: source, FetchedAt: corpusNowISO}, nil
+		return &refresh.SourceResult{Text: text, Source: source, FetchedAt: corpusNowISO}, nil
 	}
 }
 
-func fetchFailing(message string) refresh.SourceFetch {
-	return func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+func fetchFailing(message string) refresh.FetchSourceFn {
+	return func(context.Context, string, string) (*refresh.SourceResult, error) {
 		return nil, &fakeErr{"ConnectionError", message}
 	}
 }
@@ -187,11 +195,11 @@ func fetchFailing(message string) refresh.SourceFetch {
 func TestInvalidDownloadDoesNotFallBackToCache(t *testing.T) {
 	ctx, r := repoContext(t)
 	// A valid cache exists: content errors must not use it.
-	if _, err := r.WriteSharedJSON(ctx, "subscribes/s.json", jsonx.Obj("nodes", []any{jsonx.Obj("name", "Cached", "type", "http", "server", "c.test", "port", jsonx.Int(1))})); err != nil {
-		t.Fatal(err)
-	}
-	sub := jsonx.Obj("id", "s", "name", "Feed", "url", "https://example.test/sub")
-	_, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{
+	writeSharedJSONFile(t, ctx, r, "subscribes/s.json", map[string]any{
+		"nodes": []any{map[string]any{"name": "Cached", "type": "http", "server": "c.test", "port": 1}},
+	})
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub"})
+	_, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchReturning("proxies: [{name: Bad, type: []}]", "rendered_yaml", nil), AllowTransportFallback: true,
 		SourcePath: "./providers/s.yaml"})
 	if err == nil {
@@ -205,8 +213,8 @@ func TestInvalidDownloadDoesNotFallBackToCache(t *testing.T) {
 
 func TestMissingCacheRetainsTransportDiagnosticAndSource(t *testing.T) {
 	ctx, _ := repoContext(t)
-	sub := jsonx.Obj("id", "s", "name", "Feed", "url", "https://example.test/sub")
-	_, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub"})
+	_, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchFailing("Connection refused https://user:secret-login@example.test/sub?token=secret-token")})
 	if err == nil {
 		t.Fatal("accepted")
@@ -220,8 +228,8 @@ func TestMissingCacheRetainsTransportDiagnosticAndSource(t *testing.T) {
 
 func TestTransportFallbackStillReturnsEmptyWithoutFalseContentError(t *testing.T) {
 	ctx, _ := repoContext(t)
-	sub := jsonx.Obj("id", "s", "name", "Feed", "url", "https://example.test/sub")
-	got, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub"})
+	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchFailing("unavailable"), AllowTransportFallback: true})
 	if err != nil || got.HasName || got.Content != "" || len(got.CacheUpdates) != 0 {
 		t.Fatalf("%+v %v", got, err)
@@ -230,7 +238,7 @@ func TestTransportFallbackStillReturnsEmptyWithoutFalseContentError(t *testing.T
 
 func TestFinalBundleErrorIdentifiesActualProviderFile(t *testing.T) {
 	repoContext(t)
-	_, err := ValidateRenderedBundle(emptySnapshot(t, nil), []*Rendered{
+	_, err := ValidateArtifacts(emptySnapshot(t, nil), []*Artifact{
 		{Name: "First", HasName: true, LocalPath: "./providers/first.yaml", Content: "proxies: []"},
 		{Name: "Second", HasName: true, LocalPath: "./providers/second.yaml", Content: "proxies:\n - name: Bad\n   type: 11"},
 	})
@@ -245,13 +253,19 @@ func TestFinalBundleErrorIdentifiesActualProviderFile(t *testing.T) {
 
 func TestPreparedProviderFailureKeepsAliasAndRealOutputPath(t *testing.T) {
 	ctx, _ := repoContext(t)
-	main := mustParseYAML(t, `proxy-providers:
+	main, err := yamlx.Parse([]byte(`proxy-providers:
   Provider alias: {url: /subscriptions/s/proxies, path: ./providers/actual.yaml}
   Other alias: {url: /subscriptions/s/proxies, path: ./providers/other.yaml}
-`)
-	config := jsonx.Obj("profile_id", "default", "subscriptions", []any{jsonx.Obj("id", "s", "name", "Source name")})
-	_, err := PrepareProviderBundle(ctx, config, main, BundleOptions{RenderAll: true, Prepared: map[string]*Rendered{
-		"Provider alias": {Content: "proxies:\n - name: Invalid\n   type: []", CacheUpdates: []CacheUpdate{}}}})
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := configFromMap(map[string]any{"profile_id": "default", "subscriptions": []any{map[string]any{"id": "s", "name": "Source name"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = PrepareBundle(ctx, cfg, main, DeliveryOptions{RenderAll: true, Prepared: map[string]*Artifact{
+		"Provider alias": {Content: "proxies:\n - name: Invalid\n   type: []", CacheUpdates: []CacheWrite{}}}})
 	if err == nil {
 		t.Fatal("accepted")
 	}
@@ -268,7 +282,7 @@ func TestTopologyErrorHasSourceButNoGuessedLine(t *testing.T) {
   - {name: Upstream, type: http}
 proxy-groups: []
 `)
-	_, err := ValidateRenderedBundle(emptySnapshot(t, main), []*Rendered{{Name: "Feed", HasName: true,
+	_, err := ValidateArtifacts(emptySnapshot(t, main), []*Artifact{{Name: "Feed", HasName: true,
 		LocalPath: "./providers/feed.yaml", Content: "proxies: [{name: Bad, type: http, dialer-proxy: Missing}]"}})
 	if err == nil {
 		t.Fatal("accepted")
@@ -287,30 +301,37 @@ func TestProviderDeliversFilteredProxiesButCachesRawNodes(t *testing.T) {
   - {name: 日本 01, type: ss, server: 1.1.1.2, port: 2, cipher: aes-128-gcm, password: p}
   - {name: 剩余流量 100G, type: ss, server: 1.1.1.3, port: 3, cipher: aes-128-gcm, password: p}
 `
-	sub := jsonx.Obj("id", "s1", "name", "Air", "url", "http://airport.test/sub", "regex_filter", "香港|日本")
-	got, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s1", "name": "Air", "url": "http://airport.test/sub", "regex_filter": "香港|日本"})
+	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchReturning(text, "sub_store", nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []any
-	for _, p := range mustParseYAML(t, got.Content).GetList("proxies") {
-		names = append(names, p.(*jsonx.Object).Value("name"))
+	for _, p := range mapList(mustParseYAML(t, got.Content), "proxies") {
+		names = append(names, p.(map[string]any)["name"])
 	}
-	if !jsonx.Equal(names, []any{"香港 01", "日本 01"}) || len(got.CacheUpdates) != 1 || len(got.CacheUpdates[0].Nodes) != 3 {
+	if !testjson.Equal(names, []any{"香港 01", "日本 01"}) || len(got.CacheUpdates) != 1 || len(got.CacheUpdates[0].Nodes) != 3 {
 		t.Fatalf("%v %+v", names, got.CacheUpdates)
 	}
 }
 
 const policyURL = "https://airport.test/sub?token=private"
 
-func policyCache(t *testing.T, ctx context.Context) *jsonx.Object {
-	proxies := []any{jsonx.Obj("name", "Remote", "type", "ss", "server", "example.test", "port", jsonx.Int(443), "cipher", "aes-128-gcm", "password", "p")}
-	nodes, err := substore.ProxiesToNodes(proxies)
+func policyCache(t *testing.T, ctx context.Context) *substore.Cache {
+	node := yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("Remote"),
+		yamlx.Str("type"), yamlx.Str("ss"),
+		yamlx.Str("server"), yamlx.Str("example.test"),
+		yamlx.Str("port"), yamlx.Int(443),
+		yamlx.Str("cipher"), yamlx.Str("aes-128-gcm"),
+		yamlx.Str("password"), yamlx.Str("p"),
+	)
+	nodes, err := substore.ProxyNodes([]*yamlx.Node{node})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := fixtureSaveSubscriptionNodes(ctx, "s", nodes, jsonx.Obj("url", policyURL))
+	cache, err := substore.SaveCache(ctx, "s", nodes, &substore.CacheMetadata{URL: policyURL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,21 +342,21 @@ func policyCache(t *testing.T, ctx context.Context) *jsonx.Object {
 func TestPublishPreparationUsesCacheAndStagesNoFakeRefresh(t *testing.T) {
 	ctx, _ := repoContext(t)
 	before := policyCache(t, ctx)
-	sub := jsonx.Obj("id", "s", "name", "Feed", "url", policyURL, "enabled", true, "interval", jsonx.Int(0))
-	got, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{
-		Fetch: func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": policyURL, "enabled": true, "interval": 0})
+	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
+		Fetch: func(context.Context, string, string) (*refresh.SourceResult, error) {
 			t.Fatal("publish must not bypass manual mode")
 			return nil, nil
 		}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []any{jsonx.Obj("name", "Remote", "type", "ss", "server", "example.test", "port", jsonx.Int(443), "cipher", "aes-128-gcm", "password", "p")}
-	if !jsonx.Equal(mustParseYAML(t, got.Content).Value("proxies"), want) || len(got.CacheUpdates) != 0 {
+	want := []any{map[string]any{"name": "Remote", "type": "ss", "server": "example.test", "port": 443, "cipher": "aes-128-gcm", "password": "p"}}
+	if !testjson.Equal(mustParseYAML(t, got.Content)["proxies"], want) || len(got.CacheUpdates) != 0 {
 		t.Fatalf("%q %+v", got.Content, got.CacheUpdates)
 	}
-	after, _ := substore.LoadSubscriptionCache(ctx, "s")
-	if !jsonx.Equal(before, after) {
+	after, _ := substore.LoadCache(ctx, "s")
+	if !testjson.Equal(before, after) {
 		t.Fatal("cache changed")
 	}
 }
@@ -345,8 +366,8 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 	ctx, r := repoContext(t)
 	content := "proxies:\n- cipher: aes-128-gcm\n  name: Remote\n  password: p\n  port: 443\n  server: example.test\n  type: ss\n"
 	calls := 0
-	sub := jsonx.Obj("id", "s", "name", "Feed", "url", policyURL, "enabled", true, "interval", jsonx.Int(259200))
-	first, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": policyURL, "enabled": true, "interval": 259200})
+	first, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,15 +376,15 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 		t.Fatal(err)
 	}
 	ctx = repo.WithRepository(context.Background(), reopened)
-	second, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
+	second, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Content != second.Content || calls != 1 ||
-		!jsonx.Equal(first.CacheUpdates[0].Metadata.Value("fetched_at"), second.CacheUpdates[0].Metadata.Value("fetched_at")) {
+		first.CacheUpdates[0].Metadata.FetchedAt != second.CacheUpdates[0].Metadata.FetchedAt {
 		t.Fatalf("calls %d", calls)
 	}
-	if cache, _ := substore.LoadSubscriptionCache(ctx, "s"); cache != nil {
+	if cache, _ := substore.LoadCache(ctx, "s"); cache != nil {
 		t.Fatal("validated nodes written")
 	}
 }
@@ -372,16 +393,16 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 func TestNoChainDirectSubscriptionPreservesDuplicateLegacyNames(t *testing.T) {
 	ctx, _ := repoContext(t)
 	text := "proxies: [{name: Same, type: http, server: a.test, port: 80}, {name: Same, type: http, server: b.test, port: 80}]"
-	sub := jsonx.Obj("id", "s", "name", "Feed", "url", "https://example.test/sub", "interval", jsonx.Int(259200))
-	got, err := PrepareSubscriptionProvider(ctx, sub, jsonx.NewObject(), emptySnapshot(t, nil), PrepareOptions{Fetch: fetchReturning(text, "rendered_yaml", nil)})
+	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub", "interval": 259200})
+	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(text, "rendered_yaml", nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var servers []any
-	for _, p := range mustParseYAML(t, got.Content).GetList("proxies") {
-		servers = append(servers, p.(*jsonx.Object).Value("server"))
+	for _, p := range mapList(mustParseYAML(t, got.Content), "proxies") {
+		servers = append(servers, p.(map[string]any)["server"])
 	}
-	if !jsonx.Equal(servers, []any{"a.test", "b.test"}) {
+	if !testjson.Equal(servers, []any{"a.test", "b.test"}) {
 		t.Fatal(servers)
 	}
 }
@@ -393,72 +414,25 @@ func TestDefaultHooksFailClosedAndPassThrough(t *testing.T) {
 	ctx, _ := repoContext(t)
 	SetLocations(nil)
 	defer SetLocations(fakeLocations{})
-	config := jsonx.Obj("profile_id", "default", "subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg")})
-	main := mustParseYAML(t, "proxy-providers:\n  Agg: {url: /aggregations/agg/provider, path: ./providers/agg.yaml}\n")
-	_, err := PrepareProviderBundle(ctx, config, main, BundleOptions{RenderAll: true})
+	cfg, err := configFromMap(map[string]any{"profile_id": "default", "subscription_aggregations": []any{map[string]any{"id": "agg", "name": "Agg"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, err := yamlx.Parse([]byte("proxy-providers:\n  Agg: {url: /aggregations/agg/provider, path: ./providers/agg.yaml}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = PrepareBundle(ctx, cfg, main, DeliveryOptions{RenderAll: true})
 	if !errors.Is(err, ErrAggregationProviderMissing) {
 		t.Fatalf("err %v", err)
 	}
 }
 
-func setRefreshFixture(clock substore.Clock, converter convert.ProxyStringConverter) func() {
+func setRefreshFixture(clock substore.Clock, converter convert.NodeConverter) func() {
 	env := refresh.DefaultRefreshEnv()
 	env.Clock = clock
-	env.Sources.Converter = legacyConverter{converter}
+	env.Sources.Converter = converter
 	return refresh.SetRefreshEnv(env)
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var nodes []model.Node
-	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
-	}
-	var receipt *substore.CacheMetadata
-	if metadata != nil {
-		raw, err := json.Marshal(metadata)
-		if err != nil {
-			return nil, err
-		}
-		receipt = &substore.CacheMetadata{}
-		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
-		}
-	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
-}
-
-func fixtureParseProxiesFromYAML(text string) ([]any, error) {
-	nodes, err := substore.ParseProxyNodes(text)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]any, 0, len(nodes))
-	for _, node := range nodes {
-		data, err := yamlx.ToJSON(node)
-		if err != nil {
-			return nil, err
-		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, parsed)
-	}
-	return out, nil
-}
+var _ = json.Marshal

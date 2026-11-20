@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/taskstatus"
 )
@@ -58,8 +57,8 @@ func TestCFG09ReceiptFailureAfterDownload(t *testing.T) {
 		for _, boundary := range []string{"cause", "public"} {
 			t.Run(scenario+"/"+boundary, func(t *testing.T) {
 				const rawURL = "https://rules.example.com/cfg09.list"
-				rule := jsonx.Obj("id", "cfg09-source", "name", "Synthetic CFG09", "source_type", "url", "url", rawURL, "behavior", "domain", "format", "text", "enabled", true)
-				ctx, r := testRepo(t, jsonx.Obj("rule_library", []any{rule}))
+				rule := map[string]any{"id": "cfg09-source", "name": "Synthetic CFG09", "source_type": "url", "url": rawURL, "behavior": "domain", "format": "text", "enabled": true}
+				ctx, r := testRepo(t, map[string]any{"rule_library": []any{rule}})
 				receipt := filepath.Join(r.DataDir(), taskstatus.Filename)
 				switch scenario {
 				case "rename-directory":

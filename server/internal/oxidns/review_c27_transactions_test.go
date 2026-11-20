@@ -3,6 +3,7 @@ package oxidns
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -10,8 +11,9 @@ import (
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func c27Snapshot(t *testing.T, native bool) *Profile {
@@ -117,35 +119,18 @@ func TestC27ReviewNativeIdentitiesRemainEditable(t *testing.T) {
 	}
 }
 
-func c27ToJSONX(n *Node) any {
-	v, _ := jsonx.Parse(ToJSON(n))
-	return v
-}
-
-func c27FromJSONX(v any) *Node {
-	raw, err := jsonx.Compact(v)
+func c27ProfileFromModel(p *model.Profile) *Profile {
+	raw, err := json.Marshal(p)
 	if err != nil {
-		return Null()
+		empty, _ := NewTypedProfile(nil)
+		return empty
 	}
-	n, err := FromJSON(raw)
+	out, err := ProfileFromJSON(raw)
 	if err != nil {
-		return Null()
+		empty, _ := NewTypedProfile(nil)
+		return empty
 	}
-	return n
-}
-
-func c27Profile(obj *jsonx.Object) *Profile {
-	raw, err := jsonx.Compact(obj)
-	if err != nil {
-		p, _ := NewTypedProfile(nil)
-		return p
-	}
-	p, err := ProfileFromJSON(raw)
-	if err != nil {
-		p, _ := NewTypedProfile(nil)
-		return p
-	}
-	return p
+	return out
 }
 
 func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context) {
@@ -156,11 +141,17 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	p := c27Snapshot(t, native)
-	fields := jsonx.Obj("rule_configs", c27ToJSONX(p.get("rule_configs")), "oxidns", c27ToJSONX(p.Settings()))
-	if _, _, err := r.UpdateProfileFields(ctx, "default", fields, nil); err != nil {
+	fields, err := json.Marshal(map[string]json.RawMessage{
+		"rule_configs": ToJSON(p.get("rule_configs")),
+		"oxidns":       ToJSON(p.Settings()),
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), "default"); err != nil {
+	if _, _, err := r.SaveProfileFieldsJSON(ctx, "default", fields, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, "default"); err != nil {
 		t.Fatal(err)
 	}
 	return r, ctx
@@ -168,23 +159,36 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 
 func c27Transaction(r *repo.Repository, ctx context.Context, id, choice string) error {
 	scope := repo.ScopeOf(ctx)
-	_, _, err := r.UpdateProfileTransaction(ctx, "default", func(held context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	_, err := r.UpdateProfile(ctx, "default", func(held context.Context, current *model.Profile) error {
 		if repo.ScopeOf(held) != scope {
-			return nil, fmt.Errorf("transaction owner lost the request Scope")
+			return fmt.Errorf("transaction owner lost the request Scope")
 		}
-		after := current.DeepCopy()
+		before := c27ProfileFromModel(current)
 		if id != "a" && id != "b" {
-			after.Set("rule_configs", append(after.GetList("rule_configs"), jsonx.Obj("id", id, "itemType", "rule", "rule_type", "DOMAIN",
-				"value", id+".example.com", "policy", "DIRECT")))
+			var rule model.RuleConfig
+			rawRule, err := json.Marshal(map[string]any{
+				"id": id, "itemType": "rule", "rule_type": "DOMAIN",
+				"value": id + ".example.com", "policy": "DIRECT",
+			})
+			if err != nil {
+				return err
+			}
+			if err := json.Unmarshal(rawRule, &rule); err != nil {
+				return err
+			}
+			current.RuleConfigs = append(current.RuleConfigs, rule)
 		}
-		result, err := ApplyRuleDNS(c27Profile(current), c27Profile(after), []DNSAssignment{{id, choice}}, RuleDNSApplyOptions{})
+		after := c27ProfileFromModel(current)
+		result, err := ApplyRuleDNS(before, after, []DNSAssignment{{id, choice}}, RuleDNSApplyOptions{})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if result.Changed {
-			after.Set("oxidns", c27ToJSONX(result.Settings))
+			if err := current.OxiDNS.SetNode(result.Settings); err != nil {
+				return err
+			}
 		}
-		return after, nil
+		return nil
 	})
 	return err
 }
@@ -200,11 +204,15 @@ func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
 	defer unblock()
 	first := make(chan error, 1)
 	go func() {
-		_, _, err := r.UpdateProfileTransaction(base, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		_, err := r.UpdateProfile(base, "default", func(_ context.Context, current *model.Profile) error {
 			close(locked)
 			<-release
-			current.GetObject("oxidns").Set("retained_first_writer", true)
-			return current, nil
+			node, err := current.OxiDNS.Node()
+			if err != nil {
+				return err
+			}
+			set(node, "retained_first_writer", B(true))
+			return current.OxiDNS.SetNode(node)
 		})
 		first <- err
 	}()
@@ -245,12 +253,21 @@ func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
 			t.Fatal("transaction did not finish")
 		}
 	}
-	saved, err := r.GetCompatConfig(base, "default", nil)
+	saved, err := r.Config(base, "default", repo.ResourceRoots{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := saved.GetObject("oxidns")
-	if !settings.GetBool("retained_first_writer") || !jsonx.Equal(settings.Value("proxy_rules"), []any{"a"}) {
+	settingsRaw, err := json.Marshal(saved.Profile.OxiDNS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := testjson.Parse(settingsRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, _ := testjson.Path(settings, "retained_first_writer")
+	proxyRules, _ := testjson.Path(settings, "proxy_rules")
+	if retained != true || !testjson.Equal(proxyRules, []any{"a"}) {
 		t.Fatal("canceled transaction lost its DNS edit or the preceding writer")
 	}
 }
@@ -258,11 +275,11 @@ func TestC27ReviewCanceledTransactionWaitsAndCommits(t *testing.T) {
 func TestC27ReviewConcurrentTransactionsMerge(t *testing.T) {
 	t.Parallel()
 	r, base := c27Repository(t, false)
-	original, err := r.GetProfile(base, "default")
+	original, err := r.Profile(base, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := r.GetProfile(base, "other")
+	other, err := r.Profile(base, "other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,22 +306,25 @@ func TestC27ReviewConcurrentTransactionsMerge(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	saved, err := r.GetProfile(base, "default")
+	saved, err := r.Profile(base, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(saved.GetList("rule_configs")) != len(original.GetList("rule_configs"))+workers || saved.GetInt("_revision") != original.GetInt("_revision")+workers {
+	if len(saved.RuleConfigs) != len(original.RuleConfigs)+workers || int64(saved.Revision) != int64(original.Revision)+workers {
 		t.Fatal("concurrent transactions lost rule edits or revisions")
 	}
-	settings := saved.GetObject("oxidns")
-	if len(settings.GetList("direct_rules")) != workers/2 || len(settings.GetList("proxy_rules")) != workers/2 {
-		t.Fatal("concurrent DNS assignments were lost")
-	}
-	nextOther, err := r.GetProfile(base, "other")
+	settingsNode, err := saved.OxiDNS.Node()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(other, nextOther) {
+	if len(items(get(settingsNode, "direct_rules"))) != workers/2 || len(items(get(settingsNode, "proxy_rules"))) != workers/2 {
+		t.Fatal("concurrent DNS assignments were lost")
+	}
+	nextOther, err := r.Profile(base, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !testjson.Equal(other, nextOther) {
 		t.Fatal("default-profile transaction changed another profile")
 	}
 }
@@ -312,27 +332,29 @@ func TestC27ReviewConcurrentTransactionsMerge(t *testing.T) {
 func TestC27ReviewLockedTransactionRollsBack(t *testing.T) {
 	t.Parallel()
 	r, base := c27Repository(t, true)
-	_, _, err := r.UpdateProfileTransaction(base, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		document, err := LoadNativeYAML(current.GetObject("oxidns").GetString("native_config"), NativeLabel)
+	_, err := r.UpdateProfile(base, "default", func(_ context.Context, current *model.Profile) error {
+		settings, err := current.OxiDNS.Node()
 		if err != nil {
-			return nil, err
+			return err
+		}
+		document, err := LoadNativeYAML(str(get(settings, "native_config")), NativeLabel)
+		if err != nil {
+			return err
 		}
 		for _, plugin := range items(get(document, "plugins")) {
 			if isOneOf(get(plugin, "tag"), BlackholeTag) {
 				set(get(plugin, "args"), "mode", S("nxdomain"))
 			}
 		}
-		settings := c27FromJSONX(current.Value("oxidns"))
 		if err := setNativeConfig(settings, document); err != nil {
-			return nil, err
+			return err
 		}
-		current.Set("oxidns", c27ToJSONX(settings))
-		return current, nil
+		return current.OxiDNS.SetNode(settings)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := r.GetProfile(base, "default")
+	before, err := r.Profile(base, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,12 +368,12 @@ func TestC27ReviewLockedTransactionRollsBack(t *testing.T) {
 	if !errors.As(err, &locked) || len(locked.Usages) != 1 {
 		t.Fatalf("conflict lost typed usages: %v", err)
 	}
-	after, err := r.GetProfile(base, "default")
+	after, err := r.Profile(base, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeJSON, _ := jsonx.Compact(before)
-	afterJSON, _ := jsonx.Compact(after)
+	beforeJSON, _ := json.Marshal(before)
+	afterJSON, _ := json.Marshal(after)
 	if !bytes.Equal(beforeJSON, afterJSON) {
 		t.Fatal("conflict committed rule data, settings or revision")
 	}

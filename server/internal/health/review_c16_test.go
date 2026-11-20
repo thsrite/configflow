@@ -5,6 +5,7 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,8 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func TestReviewStoreDeleteOfADirectoryFailsLikeOSRemove(t *testing.T) {
@@ -61,34 +63,54 @@ func TestReviewCancelledRequestFinishesTheLatencyTest(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := repo.WithRepository(context.Background(), r)
-	if _, err := r.UpdateSharedTransaction(base, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("nodes", []any{jsonx.Obj("id", "n1", "name", "A", "type", "ss", "server", "a.test", "port", jsonx.Int(1),
-			"cipher", "aes-128-gcm", "password", "p")})
-		return nil, nil
+	if err := r.UpdateShared(base, func(_ context.Context, shared *model.Shared) error {
+		shared.Nodes = []model.Node{testjson.Decode[model.Node](t, map[string]any{
+			"id": "n1", "name": "A", "type": "ss", "server": "a.test", "port": 1,
+			"cipher": "aes-128-gcm", "password": "p",
+		})}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	script := filepath.Join(t.TempDir(), "probe.sh")
 	_ = os.WriteFile(script, []byte("#!/bin/sh\ncat >/dev/null\nsleep 0.3\nprintf '%s' '{\"version\": 4, \"results\": [{\"name\": \"[\\\"node\\\",\\\"n1\\\"]\", \"latency\": 42}]}'\n"), 0o755)
-	t.Cleanup(SetEnv(&Env{
-		LookupEnv:   func(string) (string, bool) { return "", false },
-		Environ:     os.Environ,
-		Runner:      ExecRunner{},
-		Now:         time.Now,
-		ProbeBinary: func() (string, error) { return script, nil },
+	t.Cleanup(SetProbeEnv(&ProbeEnv{
+		LookupEnv:     func(string) (string, bool) { return "", false },
+		Environ:       os.Environ,
+		Runner:        ExecRunner{},
+		Now:           time.Now,
+		ProbeBinary:   func() (string, error) { return script, nil },
+		Collaborators: defaultCollaborators(nil),
 	}))
 	for i := 0; i < 3; i++ {
 		ctx, cancel := context.WithCancel(base)
 		go func() { time.Sleep(50 * time.Millisecond); cancel() }()
-		outcome, err := RunTests(ctx, nil, nil)
+		outcome, err := RunLatencyTests(ctx, nil, nil)
 		if err != nil {
 			t.Fatalf("round %d: %v", i, err)
 		}
-		if got := outcome.GetObject("results").GetObject(`["node","n1"]`).Value("latency"); !jsonx.Equal(got, jsonx.Int(42)) {
-			t.Fatalf("round %d: %s", i, jsonx.Repr(outcome))
+		outcomeRaw, err := json.Marshal(outcome)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if stored := LoadResults(base).GetObject(`["node","n1"]`); len(stored.GetList("history")) != i+1 {
-			t.Fatalf("round %d: stored %s", i, jsonx.Repr(stored))
+		parsedOutcome, err := testjson.Parse(outcomeRaw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := testjson.Path(parsedOutcome, "results", `["node","n1"]`, "latency"); !testjson.Equal(got, 42) {
+			t.Fatalf("round %d: %s", i, outcomeRaw)
+		}
+		storedRaw, err := json.Marshal(LoadLatencyResults(base))
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsedStored, err := testjson.Parse(storedRaw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hist, _ := testjson.Path(parsedStored, `["node","n1"]`, "history")
+		if list, _ := hist.([]any); len(list) != i+1 {
+			t.Fatalf("round %d: stored %s", i, storedRaw)
 		}
 	}
 }

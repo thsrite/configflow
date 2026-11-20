@@ -1,10 +1,10 @@
 package mosdns
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/rulefetch"
 )
 
@@ -12,22 +12,28 @@ import (
 // library_rule_id on some rule, enabled: null) no longer make the archive
 // or the rule proxy refuse; they compare like Python's == and truthiness.
 func TestReviewSnapshotToleratesOtherJSONTypes(t *testing.T) {
-	ctx, _ := testRepo(t, jsonx.NewObject())
-	config := jsonx.Obj("profile_id", "office", "system_config", jsonx.Obj("server_domain", "https://cf.test",
-		"config_token", jsonx.Int(5)),
-		"rule_configs", []any{
-			jsonx.Obj("itemType", "rule", "library_rule_id", jsonx.Int(7), "enabled", "yes"),
-			jsonx.Obj("library_rule_id", "inline", "enabled", true),
-			jsonx.Obj("library_rule_id", "off", "enabled", nil),
-			jsonx.Obj("library_rule_id", "zero", "library_enabled", jsonx.Int(0)),
+	ctx, _ := testRepo(t, nil)
+	config := map[string]any{
+		"profile_id":    "office",
+		"system_config": map[string]any{"server_domain": "https://cf.test", "config_token": 5},
+		"rule_configs": []any{
+			map[string]any{"itemType": "rule", "library_rule_id": 7, "enabled": "yes"},
+			map[string]any{"library_rule_id": "inline", "enabled": true},
+			map[string]any{"library_rule_id": "off", "enabled": nil},
+			map[string]any{"library_rule_id": "zero", "library_enabled": 0},
 		},
-		"rule_library", []any{
-			jsonx.Obj("id", jsonx.Int(7), "name", jsonx.Int(7), "source_type", "content", "content", "x"),
-			jsonx.Obj("id", "inline", "name", "Inline", "source_type", "content", "content", "+.a.test"),
-			jsonx.Obj("id", "off", "name", "Off", "source_type", "content", "content", "+.off.test"),
-			jsonx.Obj("id", "zero", "name", "Zero", "source_type", "content", "content", "+.zero.test"),
-		})
-	nativeCfg, err := legacyConfig(config)
+		"rule_library": []any{
+			map[string]any{"id": 7, "name": 7, "source_type": "content", "content": "x"},
+			map[string]any{"id": "inline", "name": "Inline", "source_type": "content", "content": "+.a.test"},
+			map[string]any{"id": "off", "name": "Off", "source_type": "content", "content": "+.off.test"},
+			map[string]any{"id": "zero", "name": "Zero", "source_type": "content", "content": "+.zero.test"},
+		},
+	}
+	rawCfg, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeCfg, err := ConfigFromJSON(rawCfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"configflow/internal/health/check"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 type typedExpectation struct {
@@ -59,31 +59,21 @@ func nativeExpectations(t *testing.T, filename string) map[int]typedExpectation 
 }
 
 func sameNativeOutput(expected json.RawMessage, out any) (bool, error) {
-	want, err := jsonx.Parse(expected)
-	if err != nil {
+	if _, err := testjson.Parse(expected); err != nil {
 		return false, err
 	}
-	actual, err := toLegacyAny(out)
-	if err != nil {
-		return false, err
-	}
-	return jsonx.Equal(actual, want), nil
+	return testjson.Equal(out, expected), nil
 }
 
 func TestNativeReferenceChecksValuesAndSiblings(t *testing.T) {
 	want := json.RawMessage(`{"verdict":"both_ok","confidence":60}`)
 	for _, raw := range []string{`{"verdict":"both_ok","confidence":59}`, `{"verdict":"both_ok"}`, `{"verdict":"wrong","confidence":60}`} {
-		value, err := jsonx.Parse([]byte(raw))
-		if err != nil {
-			t.Fatal(err)
-		}
-		same, err := sameNativeOutput(want, value)
+		same, err := sameNativeOutput(want, json.RawMessage(raw))
 		if err != nil || same {
 			t.Fatalf("reference accepted changed result: %s (%v)", raw, err)
 		}
 	}
-	value, _ := jsonx.Parse(want)
-	if same, err := sameNativeOutput(want, value); err != nil || !same {
+	if same, err := sameNativeOutput(want, want); err != nil || !same {
 		t.Fatal("positive control rejected", err)
 	}
 }

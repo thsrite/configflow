@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/lockx"
-	"configflow/internal/substore"
+	"configflow/internal/refresh"
 )
 
 type timedResponse struct {
@@ -148,16 +147,28 @@ func TestProviderPreparationKeepsRuntimeCancellation(t *testing.T) {
 	runner.Start(ctx)
 	defer runner.Shutdown(context.Background())
 	entered, done := make(chan struct{}), make(chan error, 1)
-	fetch := func(ctx context.Context, _ string, _ string) (*substore.SubscriptionResult, error) {
+	fetch := func(ctx context.Context, _ string, _ string) (*refresh.SourceResult, error) {
 		close(entered)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	defer SetEnv(&Env{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilConverter{}})()
-	config := jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://example.com/feed", "enabled", true)})
-	main := jsonx.Obj("proxies", []any{}, "proxy-groups", []any{}, "proxy-providers", jsonx.Obj("Feed", jsonx.Obj("url", "/subscriptions/s/proxies", "path", "./providers/Feed.yaml")))
+	defer SetDeliveryEnv(&DeliveryEnv{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}})()
+	cfg, err := configFromMap(map[string]any{
+		"subscriptions": []any{map[string]any{"id": "s", "name": "Feed", "url": "https://example.com/feed", "enabled": true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainNode, err := graphFromAny(map[string]any{
+		"proxies":         []any{},
+		"proxy-groups":    []any{},
+		"proxy-providers": map[string]any{"Feed": map[string]any{"url": "/subscriptions/s/proxies", "path": "./providers/Feed.yaml"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := runner.Spawn(ctx, "provider-prepare", func(work context.Context) {
-		_, err := PrepareProviderBundle(work, config, main, BundleOptions{RenderAll: true})
+		_, err := PrepareBundle(work, cfg, mainNode, DeliveryOptions{RenderAll: true})
 		done <- err
 	}); err != nil {
 		t.Fatal(err)

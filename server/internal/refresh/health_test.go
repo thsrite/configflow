@@ -9,15 +9,17 @@ package refresh
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -28,13 +30,13 @@ func TestParseUserinfo(t *testing.T) {
 		want   any
 	}{
 		{"upload=1024; download=2048; total=10737418240; expire=1798732800",
-			jsonx.Obj("upload", jsonx.Int(1024), "download", jsonx.Int(2048), "total", jsonx.Int(10737418240), "expire", jsonx.Int(1798732800))},
-		{"upload=1; total=5", jsonx.Obj("upload", jsonx.Int(1), "total", jsonx.Int(5))},
+			map[string]any{"upload": 1024, "download": 2048, "total": 10737418240, "expire": 1798732800}},
+		{"upload=1; total=5", map[string]any{"upload": 1, "total": 5}},
 		{"", nil},
 		{"garbage", nil},
 	}
 	for _, c := range cases {
-		got, err := ParseUserinfo(c.header)
+		got, err := parseTraffic(c.header)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,8 +44,8 @@ func TestParseUserinfo(t *testing.T) {
 		if got != nil {
 			value = got
 		}
-		if !jsonx.Equal(value, c.want) {
-			t.Errorf("%q: %s", c.header, jsonx.Repr(value))
+		if !testjson.Equal(value, c.want) {
+			t.Errorf("%q: %s", c.header, compactJSON(value))
 		}
 	}
 }
@@ -67,9 +69,9 @@ func TestFetchUserinfoSkipsNonHTTP(t *testing.T) {
 	env := DefaultRefreshEnv()
 	env.HTTP = client
 	t.Cleanup(SetRefreshEnv(env))
-	for _, url := range []any{"file:///etc/passwd", nil, 5} {
-		if got, err := FetchUserinfo(context.Background(), url); got != nil || err != nil {
-			t.Errorf("%v: %v %v", url, got, err)
+	for _, url := range []string{"file:///etc/passwd", "", "ftp://example.test/sub"} {
+		if got, err := FetchTraffic(context.Background(), url); got != nil || err != nil {
+			t.Errorf("%q: %v %v", url, got, err)
 		}
 	}
 }
@@ -89,8 +91,8 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 	env := DefaultRefreshEnv()
 	env.HTTP = client
 	t.Cleanup(SetRefreshEnv(env))
-	got, err := FetchUserinfo(context.Background(), "HTTPS://airport.test/sub")
-	if err != nil || !jsonx.Equal(got, jsonx.Obj("upload", jsonx.Int(1), "download", jsonx.Int(2), "total", jsonx.Int(3), "expire", jsonx.Int(4))) {
+	got, err := FetchTraffic(context.Background(), "HTTPS://airport.test/sub")
+	if err != nil || !testjson.Equal(got, map[string]any{"upload": 1, "download": 2, "total": 3, "expire": 4}) {
 		t.Fatal(got, err)
 	}
 	req := client.requests[0]
@@ -98,11 +100,11 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 		t.Fatal(req)
 	}
 	status = 404
-	if got, err := FetchUserinfo(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
+	if got, err := FetchTraffic(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
 		t.Fatal(got, err)
 	}
 	failure = &substore.RequestError{Class: "ConnectTimeout", Message: "timeout"}
-	if got, err := FetchUserinfo(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
+	if got, err := FetchTraffic(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
 		t.Fatal(got, err)
 	}
 }
@@ -110,76 +112,85 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 // test_flow_ui_apis.py::test_subscription_health_history_and_derived_fields
 // (record_fetch / load_health / forget; the routes are C30).
 func TestSubscriptionHealthHistory(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	for i := range HistorySize + 3 {
-		if _, err := RecordFetch(f.ctx, "s1", FetchRecord{OK: true, Count: jsonx.Int(i)}); err != nil {
+		if _, err := RecordHealth(f.ctx, "s1", FetchEventInput{OK: true, Count: model.Int(i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	RecordFetch(f.ctx, "s1", FetchRecord{OK: false, FromCache: true, Count: jsonx.Int(9)})
-	entry, _ := RecordFetch(f.ctx, "s1", FetchRecord{OK: true, Count: jsonx.Int(10),
-		Traffic: jsonx.Obj("upload", jsonx.Int(1), "download", jsonx.Int(2), "total", jsonx.Int(100), "expire", jsonx.Int(2000000000))})
-	health, _ := LoadHealth(f.ctx)
-	item := health.GetObject("s1")
-	history := item.GetList("history")
-	if len(history) != HistorySize || history[len(history)-2].(*jsonx.Object).Value("status") != "cache" ||
-		history[len(history)-1].(*jsonx.Object).Value("status") != "ok" || item.GetObject("traffic").GetInt("total") != 100 {
-		t.Fatal(jsonx.Repr(item))
+	_, _ = RecordHealth(f.ctx, "s1", FetchEventInput{OK: false, FromCache: true, Count: 9})
+	traffic := testjson.Decode[Traffic](t, map[string]any{"upload": 1, "download": 2, "total": 100, "expire": 2000000000})
+	entry, _ := RecordHealth(f.ctx, "s1", FetchEventInput{OK: true, Count: 10, Traffic: &traffic})
+	health, _ := ReadHealth(f.ctx)
+	item := health.Entry("s1")
+	if item == nil || len(item.History) != HistorySize ||
+		item.History[len(item.History)-2].Status != "cache" ||
+		item.History[len(item.History)-1].Status != "ok" ||
+		item.Traffic == nil || item.Traffic.Total == nil || item.Traffic.Total.String() != "100" {
+		t.Fatalf("unexpected item: %s", compactJSON(item))
 	}
-	if history[0].(*jsonx.Object).GetInt("count") != 5 || !jsonx.Equal(entry, item) {
-		t.Fatal(jsonx.Repr(history[0]))
+	if item.History[0].Count == nil || int64(*item.History[0].Count) != 5 || !testjson.Equal(entry, item) {
+		t.Fatalf("unexpected history[0]: %s", compactJSON(item.History[0]))
 	}
-	if entry, _ := RecordFetch(f.ctx, "", FetchRecord{OK: true}); entry.Len() != 0 {
-		t.Fatal(entry)
+	if empty, _ := RecordHealth(f.ctx, "", FetchEventInput{OK: true}); empty != nil && len(empty.History) != 0 {
+		t.Fatal(empty)
 	}
-	if err := Forget(f.ctx, "s1"); err != nil {
+	if err := ForgetHealth(f.ctx, "s1"); err != nil {
 		t.Fatal(err)
 	}
-	health, _ = LoadHealth(f.ctx)
-	if health.Has("s1") {
-		t.Fatal(jsonx.Repr(health))
+	health, _ = ReadHealth(f.ctx)
+	if _, exists := health["s1"]; exists {
+		t.Fatalf("entry still present: %s", compactJSON(health))
 	}
 }
 
 // load_health treats a missing, damaged or non-object file as {}; a
 // hand-edited history that is a string or an object is list()-ed.
 func TestHealthFileEdges(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	path, _ := f.repo.SharedPath(HealthFile)
 	for _, text := range []string{"[1, 2]", "{broken", "\xff"} {
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		os.WriteFile(path, []byte(text), 0o644)
-		if health, err := LoadHealth(f.ctx); err != nil || health.Len() != 0 {
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.WriteFile(path, []byte(text), 0o644)
+		if health, err := ReadHealth(f.ctx); err != nil || len(health) != 0 {
 			t.Fatal(text, health, err)
 		}
 	}
 	// R5: the real-Python archive remains unchanged; the independent fixture
 	// runs these same writes on typed history/count projections.
 	refs := loadNativeReferences(t)
-	edge := refs.GetObject("edge")
-	os.WriteFile(path, []byte(edge.GetObject("files").GetString("health")), 0o644)
+	edge := mapObj(refs, "edge")
+	_ = os.WriteFile(path, []byte(mapStr(mapObj(edge, "files"), "health")), 0o644)
 	env := DefaultRefreshEnv()
 	env.Clock = &fakeClock{now: corpusNow}
 	t.Cleanup(SetRefreshEnv(env))
-	for i, item := range edge.GetList("output") {
-		call := item.(*jsonx.Object)
-		parsed, err := jsonx.Parse([]byte(call.GetString("call")))
+	edgeNative := mapList(refs, "edge_native")
+	for i, item := range mapList(edge, "output") {
+		call := item.(map[string]any)
+		parsed, err := decodeAny([]byte(mapStr(call, "call")))
 		if err != nil {
 			t.Fatal(err)
 		}
 		args := parsed.([]any)
-		options := args[1].(*jsonx.Object)
-		_, err = RecordFetch(f.ctx, args[0].(string), FetchRecord{OK: options.Value("ok") == true, FromCache: options.Value("from_cache") == true, Count: options.Value("count")})
+		options := args[1].(map[string]any)
+		var count model.Int
+		_ = decodeInto(options["count"], &count)
+		_, err = RecordHealth(f.ctx, args[0].(string), FetchEventInput{
+			OK:        options["ok"] == true,
+			FromCache: options["from_cache"] == true,
+			Count:     count,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := refs.GetList("edge_native")[i].(*jsonx.Object).Value("output")
-		if !jsonx.Equal(readHealth(t, f.repo), want) {
-			t.Fatalf("edge %d: %s, want %s", i, jsonx.Repr(readHealth(t, f.repo)), jsonx.Repr(want))
+		want := edgeNative[i].(map[string]any)["output"]
+		got := readHealth(t, f.repo)
+		if !testjson.Equal(got, want) {
+			t.Fatalf("edge %d: %s, want %s", i, compactJSON(got), compactJSON(want))
 		}
 	}
-	os.WriteFile(path, []byte(`{"s": null}`), 0o644)
-	Forget(f.ctx, "s")
+	_ = os.WriteFile(path, []byte(`{"s": null}`), 0o644)
+	_ = ForgetHealth(f.ctx, "s")
 	data, _ := os.ReadFile(path)
 	if string(data) == "{}\n" || string(data) == "{}" {
 		t.Fatal("a null entry is popped without saving")
@@ -204,42 +215,72 @@ proxy-groups:
   - {name: PROXY, type: select, proxies: [HK 01, JP 01, SG 01]}
 `
 
-func airSub() *jsonx.Object {
-	return jsonx.Obj("id", "air", "name", "机场", "url", "https://sub.test/air", "enabled", true)
+func airSub(t *testing.T) model.Subscription {
+	t.Helper()
+	return testjson.Decode[model.Subscription](t, map[string]any{
+		"id": "air", "name": "机场", "url": "https://sub.test/air", "enabled": true,
+	})
 }
 
 // test_subscription_hosts.py::test_only_downloaded_bodies_carry_hosts_into_the_cache_metadata
 func TestOnlyDownloadedBodiesCarryHostsIntoTheCacheMetadata(t *testing.T) {
 	// Sequential: missing fetched_at values use the process-wide Env clock.
-	feed := airSub()
-	metadata, err := SourceCacheMetadata(feed, &substore.SubscriptionResult{Text: airport, Source: "direct_yaml", FetchedAt: "x"})
-	if err != nil || metadata.GetObject("hosts").GetInt("total") != 3 {
-		t.Fatal(jsonx.Repr(metadata), err)
+	feed := airSub(t)
+	metadata, err := CacheMetadata(context.Background(), feed, &SourceResult{Text: airport, Source: "direct_yaml", FetchedAt: "x"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if metadata, _ := SourceCacheMetadata(feed, &substore.SubscriptionResult{Text: airport, Source: "cache"}); metadata.Has("hosts") {
-		t.Fatal(jsonx.Repr(metadata))
+	metaParsed, err := testjson.Parse(mustMarshalBytes(t, metadata))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total, _ := testjson.Path(metaParsed, "hosts", "total"); !testjson.Equal(total, 3) {
+		t.Fatalf("unexpected metadata: %s", compactJSON(metadata))
+	}
+	if metadata, _ := CacheMetadata(context.Background(), feed, &SourceResult{Text: airport, Source: "cache"}); len(metadata.Hosts) != 0 {
+		t.Fatalf("unexpected hosts on cache source: %s", compactJSON(metadata))
 	}
 	doc, _ := yamlx.Parse([]byte(airport))
 	conversionBytes, _ := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Get(doc, "proxies")))
 	conversion := string(conversionBytes)
-	if metadata, _ := SourceCacheMetadata(feed, &substore.SubscriptionResult{Text: conversion, Source: "sub_store"}); metadata.Has("hosts") {
-		t.Fatal(jsonx.Repr(metadata))
+	if metadata, _ := CacheMetadata(context.Background(), feed, &SourceResult{Text: conversion, Source: "sub_store"}); len(metadata.Hosts) != 0 {
+		t.Fatalf("unexpected hosts on sub_store source: %s", compactJSON(metadata))
 	}
-	if !slices.Equal(metadata.Keys()[:3], []string{"subscription_name", "url", "fetched_at"}) {
-		t.Fatal(metadata.Keys())
+	rawMeta := string(mustMarshalBytes(t, metadata))
+	i1 := strings.Index(rawMeta, `"subscription_name"`)
+	i2 := strings.Index(rawMeta, `"url"`)
+	i3 := strings.Index(rawMeta, `"fetched_at"`)
+	if i1 < 0 || i2 <= i1 || i3 <= i2 {
+		t.Fatalf("unexpected key order: %s", rawMeta)
 	}
 }
 
 // test_subscription_hosts.py::test_scheduled_download_stores_hosts_next_to_nodes
 func TestScheduledDownloadStoresHostsNextToNodes(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	f.download(airport, "direct_yaml", nil)
-	if _, _, _, err := DownloadSubscriptionNodes(f.ctx, airSub()); err != nil {
+	if _, _, _, err := DownloadNodes(f.ctx, airSub(t)); err != nil {
 		t.Fatal(err)
 	}
-	cache, _ := substore.LoadSubscriptionCache(f.ctx, "air")
-	entries := cache.GetObject("metadata").GetObject("hosts").GetObject("entries")
-	if cache.GetInt("count") != 3 || !jsonx.Equal(entries.Value("google.com"), []any{"203.0.113.66"}) {
-		t.Fatal(jsonx.Repr(cache))
+	cache, err := substore.LoadCache(f.ctx, "air")
+	if err != nil || cache == nil {
+		t.Fatal(cache, err)
 	}
+	parsed, err := testjson.Parse(mustMarshalBytes(t, cache))
+	if err != nil {
+		t.Fatal(err)
+	}
+	google, _ := testjson.Path(parsed, "metadata", "hosts", "entries", "google.com")
+	if cache.Count == nil || int64(*cache.Count) != 3 || !testjson.Equal(google, []any{"203.0.113.66"}) {
+		t.Fatalf("unexpected cache: %s", compactJSON(cache))
+	}
+}
+
+func mustMarshalBytes(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

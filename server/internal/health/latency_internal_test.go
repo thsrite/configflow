@@ -2,32 +2,75 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // test_node_latency.py::test_raw_and_cached_node_credentials_are_preserved
 func TestRawAndCachedNodeCredentialsArePreserved(t *testing.T) {
 	t.Parallel()
-	raw := proxyOf(context.Background(), jsonx.Obj("id", "a", "name", "A", "type", "trojan", "server", "example.invalid",
-		"port", jsonx.Int(443), "password", "secret", "tls", true), nil)
-	if raw.GetString("password") != "secret" || raw.Value("tls") != true {
-		t.Fatal(raw)
+	rawInput, err := json.Marshal(map[string]any{
+		"id": "a", "name": "A", "type": "trojan", "server": "example.invalid",
+		"port": 443, "password": "secret", "tls": true,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	node := jsonx.Obj("name", "nested", "type", "vless", "server", "example.invalid", "port", jsonx.Int(443),
-		"params", jsonx.Obj("uuid", "uuid", "network", "ws", "ws-opts", jsonx.Obj("path", "/path"),
-			"reality-opts", jsonx.Obj("public-key", "public")))
-	proxy := proxyOf(context.Background(), node, nil)
-	if proxy.GetString("uuid") != "uuid" || !jsonx.Equal(proxy.Value("ws-opts"), jsonx.Obj("path", "/path")) ||
-		proxy.GetObject("reality-opts").GetString("public-key") != "public" {
-		t.Fatal(proxy)
+	raw, ok := defaultCollaborators(nil).ConvertNode(context.Background(), rawInput)
+	if !ok {
+		t.Fatal("expected converted raw node")
 	}
-	if node.GetObject("params").GetObject("reality-opts").Has("short-id") {
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawParsed, err := testjson.Parse(rawJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pw, _ := testjson.Path(rawParsed, "password"); pw != "secret" {
+		t.Fatalf("password = %v in %s", pw, rawJSON)
+	}
+	if tlsVal, _ := testjson.Path(rawParsed, "tls"); tlsVal != true {
+		t.Fatalf("tls = %v in %s", tlsVal, rawJSON)
+	}
+	node := map[string]any{
+		"name": "nested", "type": "vless", "server": "example.invalid", "port": 443,
+		"params": map[string]any{
+			"uuid": "uuid", "network": "ws",
+			"ws-opts":      map[string]any{"path": "/path"},
+			"reality-opts": map[string]any{"public-key": "public"},
+		},
+	}
+	nodeInput, err := json.Marshal(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy, ok := defaultCollaborators(nil).ConvertNode(context.Background(), nodeInput)
+	if !ok {
+		t.Fatal("expected converted nested node")
+	}
+	proxyJSON, err := json.Marshal(proxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyParsed, err := testjson.Parse(proxyJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uuid, _ := testjson.Path(proxyParsed, "uuid")
+	wsOpts, _ := testjson.Path(proxyParsed, "ws-opts")
+	pubKey, _ := testjson.Path(proxyParsed, "reality-opts", "public-key")
+	if uuid != "uuid" || !testjson.Equal(wsOpts, map[string]any{"path": "/path"}) || pubKey != "public" {
+		t.Fatalf("proxy = %s", proxyJSON)
+	}
+	if _, hasShortID := node["params"].(map[string]any)["reality-opts"].(map[string]any)["short-id"]; hasShortID {
 		t.Fatal("cache mutated")
 	}
 }

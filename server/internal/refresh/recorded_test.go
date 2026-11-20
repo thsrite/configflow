@@ -19,10 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
+	"configflow/internal/yamlx"
 )
 
 // frozenClock is the recorder's frozen time: datetime.now() fixed for the
@@ -33,7 +36,7 @@ func (c frozenClock) Now() time.Time      { return c.now }
 func (c frozenClock) Monotonic() float64  { return 1000 }
 func (c frozenClock) Sleep(time.Duration) {}
 
-func loadRecorded(t *testing.T, name string) []*jsonx.Object {
+func loadRecorded(t *testing.T, name string) []map[string]any {
 	t.Helper()
 	handle, err := os.Open(name)
 	if err != nil {
@@ -44,15 +47,15 @@ func loadRecorded(t *testing.T, name string) []*jsonx.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rows []*jsonx.Object
+	var rows []map[string]any
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1<<20), 1<<28)
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		row, err := decodeMap(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows = append(rows, value.(*jsonx.Object))
+		rows = append(rows, row)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -61,33 +64,40 @@ func loadRecorded(t *testing.T, name string) []*jsonx.Object {
 }
 
 // recordedResult is the recorder's {"__result__": [text, source, traffic,
-// fetched_at]} form of a SubscriptionResult.
-func recordedResult(r *substore.SubscriptionResult) any {
+// fetched_at]} form of a SourceResult.
+func recordedResult(r *SourceResult) any {
 	if r == nil {
 		return nil
 	}
 	var traffic any
 	if r.Traffic != nil {
-		traffic = r.Traffic
+		if data, err := jsonresp.Encode(r.Traffic); err == nil {
+			traffic, _ = decodeAny(data)
+		}
 	}
-	return jsonx.Obj("__result__", []any{r.Text, r.Source, traffic, fetchedAtValue(r)})
+	var fetchedAt any
+	if r.FetchedAt != "" {
+		fetchedAt = r.FetchedAt
+	}
+	return map[string]any{"__result__": []any{r.Text, r.Source, traffic, fetchedAt}}
 }
 
-func resultFromRecord(value any) *substore.SubscriptionResult {
+func resultFromRecord(value any) *SourceResult {
 	var list []any
-	if o, ok := value.(*jsonx.Object); ok {
-		list, _ = o.Value("__result__").([]any)
+	if o, ok := value.(map[string]any); ok {
+		list, _ = o["__result__"].([]any)
 	} else {
 		list, _ = value.([]any)
 	}
 	if len(list) < 2 {
 		return nil
 	}
-	r := &substore.SubscriptionResult{}
+	r := &SourceResult{}
 	r.Text, _ = list[0].(string)
 	r.Source, _ = list[1].(string)
-	if len(list) > 2 {
-		r.Traffic, _ = list[2].(*jsonx.Object)
+	if len(list) > 2 && list[2] != nil {
+		r.Traffic = &Traffic{}
+		_ = decodeInto(list[2], r.Traffic)
 	}
 	if len(list) > 3 {
 		r.FetchedAt, _ = list[3].(string)
@@ -99,7 +109,7 @@ func recordedDatetime(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
-	return jsonx.Obj("__datetime__", pyISO(*t))
+	return map[string]any{"__datetime__": pyISO(*t)}
 }
 
 // recordedClassOf is type(err).__name__ for the replay comparison.
@@ -112,9 +122,9 @@ func recordedClassOf(err error) string {
 }
 
 // seedFiles writes the files the call read (null: absent).
-func seedFiles(t *testing.T, ctx context.Context, r *repo.Repository, files *jsonx.Object) {
+func seedFiles(t *testing.T, ctx context.Context, r *repo.Repository, files map[string]any) {
 	t.Helper()
-	for label, value := range files.All() {
+	for label, value := range files {
 		text, ok := value.(string)
 		if !ok {
 			continue
@@ -135,41 +145,49 @@ func seedFiles(t *testing.T, ctx context.Context, r *repo.Repository, files *jso
 	}
 }
 
-func readFiles(t *testing.T, r *repo.Repository, files *jsonx.Object) *jsonx.Object {
+func readFiles(t *testing.T, r *repo.Repository, files map[string]any) map[string]any {
 	t.Helper()
-	out := jsonx.NewObject()
-	for _, label := range files.Keys() {
+	out := map[string]any{}
+	for label := range files {
 		path := filepath.Join(r.DataDir(), label)
 		if label != taskstatus.Filename {
 			path, _ = r.SharedPath(label)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			out.Set(label, nil)
+			out[label] = nil
 			continue
 		}
-		out.Set(label, string(data))
+		out[label] = string(data)
 	}
 	return out
 }
 
-// replayConverter answers convert_proxy_string with the recorded results.
-type replayConverter struct{ answers map[string]*jsonx.Object }
+// replayNodeConverter answers convert_proxy_string with the recorded results.
+type replayNodeConverter struct{ answers map[string]map[string]any }
 
-func (c replayConverter) ConvertProxyString(_ context.Context, proxy string) *jsonx.Object {
-	return c.answers[proxy]
+func (c replayNodeConverter) ConvertProxy(_ context.Context, proxy string) (*yamlx.Node, error) {
+	answer := c.answers[proxy]
+	if answer == nil {
+		return nil, nil
+	}
+	raw, err := jsonresp.Encode(answer)
+	if err != nil {
+		return nil, err
+	}
+	return yamlx.FromJSON(raw)
 }
 
 type replayCall struct {
-	row *jsonx.Object
+	row map[string]any
 	ctx context.Context
 	r   *repo.Repository
 }
 
-func (c *replayCall) arg(name string) any { return c.row.GetObject("args").Value(name) }
+func (c *replayCall) arg(name string) any { return mapObj(c.row, "args")[name] }
 
-func (c *replayCall) obj(name string) *jsonx.Object {
-	o, _ := c.arg(name).(*jsonx.Object)
+func (c *replayCall) obj(name string) map[string]any {
+	o, _ := c.arg(name).(map[string]any)
 	return o
 }
 
@@ -178,99 +196,153 @@ func (c *replayCall) str(name string) string {
 	return s
 }
 
+func encodeToAny(value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	data, err := jsonresp.Encode(value)
+	if err != nil {
+		return nil, err
+	}
+	return decodeAny(data)
+}
+
 // replay runs one recorded call; it returns the recorded form of the output.
 func (c *replayCall) replay() (any, error) {
 	ctx := c.ctx
-	switch c.row.GetString("fn") {
+	switch mapStr(c.row, "fn") {
 	case "validate_refresh_interval":
 		label, _ := c.arg("label").(string)
-		_, err := ValidateRefreshInterval(c.arg("value"), label)
+		_, err := parseIntervalAny(c.arg("value"), label)
 		if err != nil {
 			return nil, err
 		}
 		return c.arg("value"), nil
 	case "source_cache_metadata":
-		return SourceCacheMetadata(c.obj("sub"), resultFromRecord(c.arg("result")))
+		meta, err := CacheMetadata(context.Background(), sourceFromMap(c.obj("sub")), resultFromRecord(c.arg("result")))
+		if err != nil {
+			return nil, err
+		}
+		return encodeToAny(meta)
 	case "_is_fresh":
-		interval, _ := c.arg("interval").(jsonx.Number).Int64()
-		return isFresh(c.arg("timestamp"), interval), nil
+		ts, _ := c.arg("timestamp").(string)
+		return fresh(ts, mapInt(mapObj(c.row, "args"), "interval")), nil
 	case "_download_cache_path":
 		return DownloadCachePath(c.str("url")), nil
 	case "remember_source_download":
-		r, err := RememberSourceDownload(ctx, c.obj("sub"), resultFromRecord(c.arg("result")))
+		r, err := RememberDownload(ctx, sourceFromMap(c.obj("sub")), resultFromRecord(c.arg("result")))
 		return recordedResult(r), err
 	case "download_subscription_nodes":
-		nodes, result, cache, err := DownloadSubscriptionNodes(ctx, c.obj("sub"))
+		nodes, result, cache, err := DownloadNodes(ctx, sourceFromMap(c.obj("sub")))
 		if err != nil {
 			return nil, err
 		}
-		return []any{nodes, recordedResult(result), cache}, nil
+		nodesAny, _ := encodeToAny(nodes)
+		cacheAny, _ := encodeToAny(cache)
+		return []any{nodesAny, recordedResult(result), cacheAny}, nil
 	case "refresh_subscription":
 		trigger, _ := c.arg("trigger").(string)
-		nodes, result, cache, err := RefreshSubscription(ctx, c.obj("sub"), trigger)
+		nodes, result, cache, err := RefreshSource(ctx, sourceFromMap(c.obj("sub")), trigger)
 		if err != nil {
 			return nil, err
 		}
-		return []any{nodes, recordedResult(result), cache}, nil
+		nodesAny, _ := encodeToAny(nodes)
+		cacheAny, _ := encodeToAny(cache)
+		return []any{nodesAny, recordedResult(result), cacheAny}, nil
 	case "fetch_subscription_source":
-		answers := c.row.GetList("fetches")
+		answers := mapList(c.row, "fetches")
 		calls := 0
-		r, err := FetchSubscriptionSource(ctx, c.obj("sub"), func(_ context.Context, subID, url string) (*substore.SubscriptionResult, error) {
+		r, err := FetchSource(ctx, sourceFromMap(c.obj("sub")), func(_ context.Context, subID, url string) (*SourceResult, error) {
 			if calls >= len(answers) {
 				return nil, errors.New("unrecorded fetch")
 			}
-			answer := answers[calls].(*jsonx.Object)
+			answer := answers[calls].(map[string]any)
 			calls++
-			if spec := answer.Value("err"); spec != nil {
-				return nil, buildError(spec)
+			if spec := answer["err"]; spec != nil {
+				return nil, errorFromLegacy(buildError(spec))
 			}
-			return resultFromRecord(answer.Value("ok")), nil
+			return resultFromRecord(answer["ok"]), nil
 		})
 		return recordedResult(r), err
 	case "parse_userinfo":
-		info, err := ParseUserinfo(c.str("header"))
-		if info == nil {
+		info, err := parseTraffic(c.str("header"))
+		if info == nil || err != nil {
 			return nil, err
 		}
-		return info, err
+		return encodeToAny(info)
 	case "load_health":
-		return LoadHealth(ctx)
+		data, err := ReadHealth(detached(ctx))
+		if err != nil {
+			return nil, err
+		}
+		return encodeToAny(data)
 	case "record_fetch":
-		traffic, _ := c.arg("traffic").(*jsonx.Object)
-		return RecordFetch(ctx, c.str("sub_id"), FetchRecord{OK: jsonx.Truthy(c.arg("ok")), Count: c.arg("count"),
-			FromCache: jsonx.Truthy(c.arg("from_cache")), Traffic: traffic})
+		var count model.Int
+		_ = decodeInto(c.arg("count"), &count)
+		var traffic *Traffic
+		if tObj := c.obj("traffic"); tObj != nil {
+			traffic = &Traffic{}
+			_ = decodeInto(tObj, traffic)
+		}
+		res, err := RecordHealth(ctx, c.str("sub_id"), FetchEventInput{
+			OK:        pyTruthy(c.arg("ok")),
+			Count:     count,
+			FromCache: pyTruthy(c.arg("from_cache")),
+			Traffic:   traffic,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return encodeToAny(res)
 	case "forget":
-		return nil, Forget(ctx, c.str("sub_id"))
+		return nil, ForgetHealth(ctx, c.str("sub_id"))
 	case "describe_failure":
-		return DescribeFailure(buildError(c.arg("error"))), nil
+		return FailureReason(errorFromLegacy(buildError(c.arg("error")))), nil
 	case "rule_interval":
-		return RuleInterval(c.obj("rule")), nil
+		return int64(RemoteInterval(ruleFromMap(c.obj("rule")))), nil
 	case "subscription_interval":
-		return SubscriptionInterval(c.obj("sub")), nil
+		return int64(SourceInterval(sourceFromMap(c.obj("sub")))), nil
 	case "next_run_at":
-		interval, _ := c.arg("interval").(jsonx.Number)
 		var now *time.Time
-		if o, ok := c.arg("now").(*jsonx.Object); ok {
-			parsed, ok := parseTime(o.GetString("__datetime__"))
+		if o, ok := c.arg("now").(map[string]any); ok {
+			parsed, ok := parseStamp(mapStr(o, "__datetime__"))
 			if !ok {
 				return nil, errors.New("bad recorded now")
 			}
 			now = &parsed
 		}
-		at, err := NextRunAt(c.arg("entry"), interval, c.arg("baseline"), now)
+		at, err := nextRunAt(c.arg("entry"), c.arg("interval"), c.arg("baseline"), now)
 		return recordedDatetime(at), err
 	case "subscription_cache_time":
-		return SubscriptionCacheTime(ctx, c.obj("sub"))
+		at, err := SourceCacheAt(ctx, sourceFromMap(c.obj("sub")))
+		if at == nil {
+			return nil, err
+		}
+		return *at, err
 	case "is_library_source":
-		return IsLibrarySource(ctx, c.obj("rule"))
+		return StoredRule(ctx, ruleFromMap(c.obj("rule")))
 	case "find_resource":
-		return FindResource(ctx, c.str("kind"), c.str("resource_id"))
+		resource, err := LookupResource(ctx, c.str("kind"), c.str("resource_id"))
+		if err != nil {
+			return nil, err
+		}
+		if resource.Subscription != nil {
+			return encodeToAny(resource.Subscription)
+		}
+		return encodeToAny(resource.Rule)
 	case "_history":
-		return historyOf(c.arg("entry"))
+		var receipt taskstatus.Receipt
+		_ = decodeInto(c.arg("entry"), &receipt)
+		res, err := tasks.ProjectHistory(&receipt)
+		if err != nil {
+			return nil, err
+		}
+		return encodeToAny(res)
 	case "_host":
-		return host(c.arg("url")), nil
+		text, _ := c.arg("url").(string)
+		return sourceHost(text), nil
 	}
-	return nil, errors.New("unknown function " + c.row.GetString("fn"))
+	return nil, errors.New("unknown function " + mapStr(c.row, "fn"))
 }
 
 func TestRecordedPythonSuite(t *testing.T) {
@@ -287,21 +359,21 @@ func TestRecordedPythonSuite(t *testing.T) {
 	replayRecordedRows(t, rows, template)
 }
 
-func replayRecordedRows(t *testing.T, rows []*jsonx.Object, template string) {
+func replayRecordedRows(t *testing.T, rows []map[string]any, template string) {
 	t.Helper()
 	counts := map[string]int{}
 	failures := 0
 	for i, row := range rows {
-		fn := row.GetString("fn")
-		if patchedCollaborator(fn, row.GetList("patched")) {
+		fn := mapStr(row, "fn")
+		if patchedCollaborator(fn, mapList(row, "patched")) {
 			// The test replaced a collaborator of this call (e.g.
 			// save_subscription_nodes with a lambda): not Python's behaviour.
 			counts["skipped: monkeypatched collaborator"]++
 			continue
 		}
-		now, ok := taskstatus.FromISOFormat(row.GetString("now"))
+		now, ok := taskstatus.FromISOFormat(mapStr(row, "now"))
 		if !ok {
-			t.Fatalf("row %d: now %q", i, row.GetString("now"))
+			t.Fatalf("row %d: now %q", i, mapStr(row, "now"))
 		}
 		var r *repo.Repository
 		var err error
@@ -322,81 +394,75 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, template string) {
 			}
 			ctx = repo.WithScope(repo.WithRepository(ctx, r))
 		}
-		if before := row.GetObject("before"); before != nil {
+		if before := mapObj(row, "before"); before != nil {
 			seedFiles(t, ctx, r, before)
 		}
-		if shared := row.GetObject("shared"); shared != nil {
-			if _, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-				for key, value := range shared.All() {
-					current.Set(key, jsonx.DeepCopy(value))
-				}
-				return nil, nil
-			}); err != nil {
-				t.Fatalf("row %d: seed shared: %v", i, err)
-			}
+		if shared := mapObj(row, "shared"); shared != nil {
+			seedSharedMap(t, ctx, r, shared)
 		}
-		uuids := row.GetList("uuids")
-		downloads := row.GetList("downloads")
-		conversions := map[string]*jsonx.Object{}
-		for _, item := range row.GetList("conversions") {
-			call := item.(*jsonx.Object)
-			proxy, _ := call.GetList("args")[0].(string)
-			answer, _ := call.Value("ok").(*jsonx.Object)
+		uuids := mapList(row, "uuids")
+		downloads := mapList(row, "downloads")
+		conversions := map[string]map[string]any{}
+		for _, item := range mapList(row, "conversions") {
+			call := item.(map[string]any)
+			callArgs := mapList(call, "args")
+			if len(callArgs) == 0 {
+				continue
+			}
+			proxy, _ := callArgs[0].(string)
+			answer, _ := call["ok"].(map[string]any)
 			conversions[proxy] = answer
 		}
 		nextUUID, nextDownload := 0, 0
-		env := &Env{
-			Clock: frozenClock{now: now},
-			RandomHex: func() string {
-				if nextUUID >= len(uuids) {
-					return "ffffffff"
-				}
-				nextUUID++
-				return uuids[nextUUID-1].(string)
-			},
-			FetchSubscription: func(_ context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error) {
-				if nextDownload >= len(downloads) {
-					return nil, errors.New("unrecorded download")
-				}
-				answer := downloads[nextDownload].(*jsonx.Object)
-				nextDownload++
-				if spec := answer.Value("err"); spec != nil {
-					return nil, buildError(spec)
-				}
-				return resultFromRecord(answer.Value("ok")), nil
-			},
-			Converter: replayConverter{answers: conversions},
+		env := DefaultRefreshEnv()
+		env.Clock = frozenClock{now: now}
+		env.RandomHex = func() string {
+			if nextUUID >= len(uuids) {
+				return "ffffffff"
+			}
+			nextUUID++
+			return uuids[nextUUID-1].(string)
 		}
+		env.Sources.Fetch = func(_ context.Context, subID, url string, opts substore.FetchOptions) (*SourceResult, error) {
+			if nextDownload >= len(downloads) {
+				return nil, errors.New("unrecorded download")
+			}
+			answer := downloads[nextDownload].(map[string]any)
+			nextDownload++
+			if spec := answer["err"]; spec != nil {
+				return nil, errorFromLegacy(buildError(spec))
+			}
+			return resultFromRecord(answer["ok"]), nil
+		}
+		env.Sources.Converter = replayNodeConverter{answers: conversions}
 		call := &replayCall{row: row, ctx: ctx, r: r}
 		var value any
 		func() {
-			defer SetRefreshEnv(refreshEnvForTest(env))()
+			defer SetRefreshEnv(env)()
 			value, err = call.replay()
 		}()
-		var got, want *jsonx.Object
+		var got, want map[string]any
 		if err != nil {
-			got = jsonx.Obj("err", jsonx.Obj("class", recordedClassOf(err), "text", err.Error()))
+			got = map[string]any{"err": map[string]any{"class": recordedClassOf(err), "text": err.Error()}}
 		} else {
-			got = jsonx.Obj("ok", value)
+			got = map[string]any{"ok": value}
 		}
-		if row.Has("err") {
-			want = jsonx.Obj("err", row.Value("err"))
+		if errVal, hasErr := row["err"]; hasErr {
+			want = map[string]any{"err": errVal}
 		} else {
-			want = jsonx.Obj("ok", row.Value("ok"))
+			want = map[string]any{"ok": row["ok"]}
 		}
 		if fn == "forget" && err == nil {
-			got.Set("ok", nil)
+			got["ok"] = nil
 		}
-		if after := row.GetObject("after"); after != nil {
-			got.Set("after", readFiles(t, r, after))
-			want.Set("after", after)
+		if after := mapObj(row, "after"); after != nil {
+			got["after"] = readFiles(t, r, after)
+			want["after"] = after
 		}
-		gotText, _ := jsonx.Compact(got)
-		wantText, _ := jsonx.Compact(want)
 		if !sourceWriterOutcomeEqual(fn, want, got) {
 			failures++
 			if failures <= 30 {
-				t.Errorf("row %d %s (%s):\n  got  %s\n  want %s", i, fn, row.GetString("test"), clip(string(gotText)), clip(string(wantText)))
+				t.Errorf("row %d %s (%s):\n  got  %s\n  want %s", i, fn, mapStr(row, "test"), clip(compactJSON(got)), clip(compactJSON(want)))
 			}
 		}
 		counts[fn]++

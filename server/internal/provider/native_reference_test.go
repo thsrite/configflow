@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
-func nativeDeliveryReferences(t *testing.T, rows []*jsonx.Object) map[int]*jsonx.Object {
+func nativeDeliveryReferences(t *testing.T, rows []map[string]any) map[int]map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/n88d_native_reference.json.gz")
 	if err != nil {
@@ -57,25 +57,25 @@ func nativeDeliveryReferences(t *testing.T, rows []*jsonx.Object) map[int]*jsonx
 	if len(manifest.Rows) != 79 {
 		t.Fatal("native reference matrix changed")
 	}
-	result := map[int]*jsonx.Object{}
+	result := map[int]map[string]any{}
 	for key, ref := range manifest.Rows {
 		index, err := strconv.Atoi(key)
 		if err != nil || index < 0 || index >= len(rows) || ref.Reason == "" {
 			t.Fatal("invalid native row", key)
 		}
-		input, err := jsonx.Parse(ref.Input)
-		if err != nil || !jsonx.Equal(input, rows[index].Value("input")) {
+		input, err := decodeAny(ref.Input)
+		if err != nil || !testjson.Equal(input, rows[index]["input"]) {
 			t.Fatal("native row input changed", key)
 		}
-		original, err := jsonx.Parse(ref.Original)
-		if err != nil || !jsonx.Equal(original, expectedOf(rows[index])) {
+		original, err := decodeAny(ref.Original)
+		if err != nil || !testjson.Equal(original, expectedOf(rows[index])) {
 			t.Fatal("native row original changed", key)
 		}
-		expected, err := jsonx.Parse(ref.Expected)
+		expected, err := decodeMap(ref.Expected)
 		if err != nil {
 			t.Fatal(err)
 		}
-		result[index] = expected.(*jsonx.Object)
+		result[index] = expected
 	}
 	return result
 }

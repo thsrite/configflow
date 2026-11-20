@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"configflow/internal/ippresence"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -89,7 +88,7 @@ func BenchmarkOxiDNSMetadataChain(b *testing.B) {
 	ctx := repo.WithRepository(context.Background(), repository)
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
-		item := jsonx.Obj("id", id, "name", id, "source_type", "url", "behavior", "classical", "url", "https://rules.example/"+id)
+		item := map[string]any{"id": id, "name": id, "source_type": "url", "behavior": "classical", "url": "https://rules.example/" + id}
 		if _, err := rulefetch.WriteCache(ctx, metadataCacheRule(b, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
 			b.Fatal(err)
 		}
@@ -131,7 +130,7 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 	ctx := repo.WithRepository(t.Context(), repository)
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
-		item := jsonx.Obj("id", id, "name", id, "source_type", "url", "behavior", "classical", "url", "https://rules.example/"+id)
+		item := map[string]any{"id": id, "name": id, "source_type": "url", "behavior": "classical", "url": "https://rules.example/" + id}
 		if _, err := rulefetch.WriteCache(ctx, metadataCacheRule(t, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
 			t.Fatal(err)
 		}

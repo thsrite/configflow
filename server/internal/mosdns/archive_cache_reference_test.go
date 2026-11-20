@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/testgolden"
 )
 
@@ -24,7 +23,7 @@ type archiveCacheReference struct {
 	RetainOld   bool   `json:"retain_old"`
 }
 
-func archiveCacheReferences(t *testing.T, rows []*jsonx.Object) map[int]archiveCacheReference {
+func archiveCacheReferences(t *testing.T, rows []map[string]any) map[int]archiveCacheReference {
 	t.Helper()
 	data, err := testgolden.ReadFile(t, "testdata/n89_archive_cache_expected.json")
 	if err != nil {
@@ -60,7 +59,11 @@ func archiveCacheReferences(t *testing.T, rows []*jsonx.Object) map[int]archiveC
 	}
 	result := map[int]archiveCacheReference{}
 	for _, reference := range references.Rows {
-		if reference.Index < 0 || reference.Index >= len(rows) || reference.Index >= len(hashes) || reference.InputSHA256 != hashes[reference.Index] || reference.Test != rows[reference.Index].GetString("test") {
+		rowTest := ""
+		if reference.Index >= 0 && reference.Index < len(rows) {
+			rowTest, _ = rows[reference.Index]["test"].(string)
+		}
+		if reference.Index < 0 || reference.Index >= len(rows) || reference.Index >= len(hashes) || reference.InputSHA256 != hashes[reference.Index] || reference.Test != rowTest {
 			t.Fatal("D2 reference lost its exact original input binding")
 		}
 		if _, exists := result[reference.Index]; exists {
@@ -77,22 +80,27 @@ func archiveCacheReferences(t *testing.T, rows []*jsonx.Object) map[int]archiveC
 	return result
 }
 
-func archiveExpectedCaches(t *testing.T, row *jsonx.Object, reference archiveCacheReference) map[string]string {
+func archiveExpectedCaches(t *testing.T, row map[string]any, reference archiveCacheReference) map[string]string {
 	t.Helper()
 	after := map[string]string{}
-	for path, value := range row.GetObject("after").All() {
-		content, ok := hexBytes(value)
-		if !ok {
-			t.Fatal("non-byte archive cache reference")
+	if afterMap, ok := row["after"].(map[string]any); ok {
+		for path, value := range afterMap {
+			content, ok := hexBytes(value)
+			if !ok {
+				t.Fatal("non-byte archive cache reference")
+			}
+			after[path] = string(content)
 		}
-		after[path] = string(content)
 	}
 	if reference.Kind == "native_cache" {
 		content, exists := after[reference.Old]
 		if !exists || reference.Old == reference.Native || reference.Native == "" {
 			t.Fatal("D2 path transition does not bind an original cache")
 		}
-		if row.GetObject("world").GetObject("files").Has(reference.Old) != reference.RetainOld {
+		world, _ := row["world"].(map[string]any)
+		files, _ := world["files"].(map[string]any)
+		_, hadOld := files[reference.Old]
+		if hadOld != reference.RetainOld {
 			t.Fatal("D2 rollback retention differs from the original world")
 		}
 		if !reference.RetainOld {

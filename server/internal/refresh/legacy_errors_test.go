@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
@@ -54,6 +54,13 @@ func osErrorClass(err error) string {
 	return "OSError"
 }
 
+func pyQuote(s string) string {
+	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
+		return strconv.Quote(s)
+	}
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, "\\", "\\\\"), "'", "\\'") + "'"
+}
+
 // pyOSError is str(OSError) for a failed file operation on path.
 func pyOSError(err error, path string) string {
 	var errno syscall.Errno
@@ -62,7 +69,7 @@ func pyOSError(err error, path string) string {
 		if text != "" {
 			text = strings.ToUpper(text[:1]) + text[1:]
 		}
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), text, jsonx.Repr(path))
+		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), text, pyQuote(path))
 	}
 	return err.Error()
 }
@@ -79,7 +86,7 @@ func errorText(err error) string {
 	}
 	var linkErr *os.LinkError
 	if errors.As(err, &linkErr) {
-		return pyOSError(linkErr.Err, linkErr.Old) + " -> " + jsonx.Repr(linkErr.New)
+		return pyOSError(linkErr.Err, linkErr.Old) + " -> " + pyQuote(linkErr.New)
 	}
 	return err.Error()
 }

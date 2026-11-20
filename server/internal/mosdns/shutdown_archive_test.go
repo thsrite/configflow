@@ -2,6 +2,7 @@ package mosdns
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
@@ -25,7 +25,7 @@ import (
 	"configflow/internal/testjson"
 )
 
-func archiveRuntime(t *testing.T, world *jsonx.Object) (context.Context, *repo.Repository, *lifecycle.Runtime) {
+func archiveRuntime(t *testing.T, world map[string]any) (context.Context, *repo.Repository, *lifecycle.Runtime) {
 	t.Helper()
 	base, r := testRepo(t, world)
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
@@ -66,7 +66,7 @@ func archiveDurableState(t *testing.T, r *repo.Repository) (store.Fingerprint, m
 }
 
 func TestO36cArchiveClosedRuntime(t *testing.T) {
-	ctx, r, runtime := archiveRuntime(t, jsonx.NewObject())
+	ctx, r, runtime := archiveRuntime(t, nil)
 	before, files := archiveDurableState(t, r)
 	runtime.Shutdown(context.Background())
 	data, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", nil, nil, ArchiveOptions{})
@@ -77,7 +77,7 @@ func TestO36cArchiveClosedRuntime(t *testing.T) {
 }
 
 func TestO36cArchiveShutdownAfterFetch(t *testing.T) {
-	ctx, r, runtime := archiveRuntime(t, jsonx.NewObject())
+	ctx, r, runtime := archiveRuntime(t, nil)
 	before, files := archiveDurableState(t, r)
 	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		runtime.Shutdown(context.Background())
@@ -113,9 +113,9 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 				}
 			}))
 			t.Cleanup(server.Close)
-			rule := jsonx.Obj("id", "o3-archive", "name", "O3 archive", "source_type", "url", "url", server.URL,
-				"behavior", "domain", "format", "text", "enabled", true)
-			request, r, runtime := archiveRuntime(t, jsonx.Obj("rule_library", []any{rule}))
+			rule := map[string]any{"id": "o3-archive", "name": "O3 archive", "source_type": "url", "url": server.URL,
+				"behavior": "domain", "format": "text", "enabled": true}
+			request, r, runtime := archiveRuntime(t, map[string]any{"rule_library": []any{rule}})
 			t.Cleanup(unblock)
 			ctx, disconnect := context.WithCancel(request)
 			defer disconnect()
@@ -125,8 +125,12 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 				return fetchNative(ctx, url, config, host)
 			})
 			before, files := archiveDurableState(t, r)
-			snapshot, err := legacyConfig(jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", "https://panel.example.com"),
-				"rule_configs", []any{}, "rule_library", []any{rule}))
+			rawSnap, err := json.Marshal(map[string]any{"profile_id": "default", "system_config": map[string]any{"server_domain": "https://panel.example.com"},
+				"rule_configs": []any{}, "rule_library": []any{rule}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := ConfigFromJSON(rawSnap)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -197,7 +201,7 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 				if err != nil || string(data) != "example.com\n" {
 					t.Fatal("archive did not publish its cache", err)
 				}
-				entry, err := taskstatus.New(r.DataDir()).Get(refresh.RuleSourceKey(rule.Value("id")))
+				entry, err := taskstatus.New(r.DataDir()).Get(refresh.RuleTaskKey(rule["id"].(string)))
 				if err != nil || entry.GetString("last_status") != "success" {
 					t.Fatal("archive did not record success", err)
 				}

@@ -1,10 +1,10 @@
 package provider
 
 import (
+	"maps"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -18,29 +18,34 @@ func writerOutcomeEqual(kind string, want, got any) bool {
 	if kind != "prepare_sub" && kind != "bundle" {
 		return false
 	}
-	a, aok := want.(*jsonx.Object)
-	b, bok := got.(*jsonx.Object)
-	if !aok || !bok || a == nil || b == nil || a.Len() != 1 || b.Len() != 1 {
+	a, aok := want.(map[string]any)
+	b, bok := got.(map[string]any)
+	if !aok || !bok || len(a) != 1 || len(b) != 1 {
 		return false
 	}
 	for _, key := range []string{"out", "output"} {
-		x, present := a.Get(key)
-		y, ok := b.Get(key)
+		x, present := a[key]
+		y, ok := b[key]
 		if !present || !ok {
 			continue
 		}
 		if kind == "prepare_sub" {
 			return renderedWriterEqual(x, y)
 		}
-		if xo, ok := x.(*jsonx.Object); ok {
-			yo, ok := y.(*jsonx.Object)
-			if !ok || xo == nil || yo == nil || !xo.Has("bundle") || !yo.Has("bundle") {
+		if xo, ok := x.(map[string]any); ok {
+			yo, ok := y.(map[string]any)
+			if !ok {
 				return false
 			}
-			xc, yc := xo.Clone(), yo.Clone()
-			xc.Delete("bundle")
-			yc.Delete("bundle")
-			return yamlxtest.EqualJSON(xc, yc) && renderedWriterListEqual(xo.Value("bundle"), yo.Value("bundle"))
+			_, xHas := xo["bundle"]
+			_, yHas := yo["bundle"]
+			if !xHas || !yHas {
+				return false
+			}
+			xc, yc := maps.Clone(xo), maps.Clone(yo)
+			delete(xc, "bundle")
+			delete(yc, "bundle")
+			return yamlxtest.EqualJSON(xc, yc) && renderedWriterListEqual(xo["bundle"], yo["bundle"])
 		}
 		return renderedWriterListEqual(x, y)
 	}
@@ -65,22 +70,22 @@ func renderedWriterEqual(want, got any) bool {
 	if yamlxtest.EqualJSON(want, got) {
 		return true
 	}
-	a, aok := want.(*jsonx.Object)
-	b, bok := got.(*jsonx.Object)
-	if !aok || !bok || a == nil || b == nil || !a.Has("content") || !b.Has("content") {
+	a, aok := want.(map[string]any)
+	b, bok := got.(map[string]any)
+	if !aok || !bok {
 		return false
 	}
-	x, xok := a.Value("content").(string)
-	y, yok := b.Value("content").(string)
+	x, xok := a["content"].(string)
+	y, yok := b["content"].(string)
 	if !xok || !yok {
 		return false
 	}
 	if !providerWriterYAMLEqual(x, y) {
 		return false
 	}
-	ac, bc := a.Clone(), b.Clone()
-	ac.Delete("content")
-	bc.Delete("content")
+	ac, bc := maps.Clone(a), maps.Clone(b)
+	delete(ac, "content")
+	delete(bc, "content")
 	return yamlxtest.EqualJSON(ac, bc)
 }
 
@@ -93,12 +98,12 @@ func providerWriterYAMLEqual(a, b string) bool {
 	return err == nil && yamlx.Equal(left, right)
 }
 
-func providerWriterFilesEqual(want, got *jsonx.Object) bool {
-	if want.Len() != got.Len() {
+func providerWriterFilesEqual(want, got map[string]any) bool {
+	if len(want) != len(got) {
 		return false
 	}
-	for name, value := range want.All() {
-		actual, ok := got.Get(name)
+	for name, value := range want {
+		actual, ok := got[name]
 		if !ok {
 			return false
 		}
@@ -115,7 +120,7 @@ func providerWriterFilesEqual(want, got *jsonx.Object) bool {
 }
 
 func TestRenderedWriterComparison(t *testing.T) {
-	want := jsonx.Obj("output", jsonx.Obj("name", "Feed", "content", "proxies: [{name: A, port: 80}]", "cache_updates", []any{}))
+	want := map[string]any{"output": map[string]any{"name": "Feed", "content": "proxies: [{name: A, port: 80}]", "cache_updates": []any{}}}
 	for _, tc := range []struct {
 		name, content string
 		updates       any
@@ -128,7 +133,7 @@ func TestRenderedWriterComparison(t *testing.T) {
 		{"cache", "proxies: [{name: A, port: 80}]", []any{"changed"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := jsonx.Obj("output", jsonx.Obj("name", "Feed", "content", tc.content, "cache_updates", tc.updates))
+			got := map[string]any{"output": map[string]any{"name": "Feed", "content": tc.content, "cache_updates": tc.updates}}
 			if equal := writerOutcomeEqual("prepare_sub", want, got); equal != tc.equal {
 				t.Fatalf("equal=%v want %v", equal, tc.equal)
 			}
@@ -138,16 +143,16 @@ func TestRenderedWriterComparison(t *testing.T) {
 
 func TestProviderWriterFileComparison(t *testing.T) {
 	name := "profiles/default/providers/feed.yaml"
-	want := jsonx.Obj(name, "proxies: [{name: A}]", "state.json", "{\"x\":1}")
+	want := map[string]any{name: "proxies: [{name: A}]", "state.json": "{\"x\":1}"}
 	for _, tc := range []struct {
 		name  string
-		files *jsonx.Object
+		files map[string]any
 		equal bool
 	}{
-		{"format", jsonx.Obj(name, "proxies:\n  - name: A\n", "state.json", "{\"x\":1}"), true},
-		{"storage-bytes", jsonx.Obj(name, "proxies: [{name: A}]", "state.json", "{\"x\": 1}"), false},
-		{"value", jsonx.Obj(name, "proxies: [{name: B}]", "state.json", "{\"x\":1}"), false},
-		{"missing", jsonx.Obj(name, "proxies: [{name: A}]"), false},
+		{"format", map[string]any{name: "proxies:\n  - name: A\n", "state.json": "{\"x\":1}"}, true},
+		{"storage-bytes", map[string]any{name: "proxies: [{name: A}]", "state.json": "{\"x\": 1}"}, false},
+		{"value", map[string]any{name: "proxies: [{name: B}]", "state.json": "{\"x\":1}"}, false},
+		{"missing", map[string]any{name: "proxies: [{name: A}]"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if equal := providerWriterFilesEqual(want, tc.files); equal != tc.equal {

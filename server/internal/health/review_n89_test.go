@@ -93,7 +93,8 @@ func TestReviewN89RealWorkerLifetimeControlsPersistence(t *testing.T) {
 				if err := os.WriteFile(script, []byte(code), 0700); err != nil {
 					t.Fatal(err)
 				}
-				env := probeEnvFromLegacy(DefaultEnv())
+				envCopy := *CurrentProbeEnv()
+				env := &envCopy
 				env.ProbeBinary = func() (string, error) { return script, nil }
 				env.Environ = func() []string { return append(os.Environ(), "REVIEW_READY="+ready, "REVIEW_RELEASE="+release) }
 				t.Cleanup(SetProbeEnv(env))

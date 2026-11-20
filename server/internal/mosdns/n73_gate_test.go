@@ -1,11 +1,11 @@
 package mosdns
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -13,12 +13,12 @@ import (
 func TestN73MosDNSReaderMigrationGate(t *testing.T) {
 	for _, path := range []string{"testdata/corpus.jsonl.gz", "testdata/recorded.jsonl.gz"} {
 		byCaller := map[string][]string{}
-		for _, row := range loadRows(t, path) {
-			args := row.GetList("args")
+		for _, row := range loadArchiveRows(t, path) {
+			args, _ := row["args"].([]any)
 			if len(args) == 0 {
 				continue
 			}
-			switch row.GetString("fn") {
+			switch mapStr(row, "fn") {
 			case "generate":
 				byCaller["custom/upstreams"] = append(byCaller["custom/upstreams"], yamlxtest.TextFields(args[0], "custom_config", "local_dns", "remote_dns", "fallback_dns")...)
 			case "upstreams":
@@ -39,9 +39,9 @@ func TestN73MosDNSReaderMigrationGate(t *testing.T) {
 
 func TestN73ArchiveAndReviewReaderMigrationGate(t *testing.T) {
 	var sources []string
-	for _, row := range loadRows(t, "testdata/c28_recorded.jsonl.gz") {
-		if row.GetString("fn") == "build" {
-			args := row.GetList("args")
+	for _, row := range loadArchiveRows(t, "testdata/c28_recorded.jsonl.gz") {
+		if mapStr(row, "fn") == "build" {
+			args, _ := row["args"].([]any)
 			if len(args) > 1 {
 				if text, ok := args[1].(string); ok {
 					sources = append(sources, text)
@@ -54,12 +54,12 @@ func TestN73ArchiveAndReviewReaderMigrationGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
 		t.Fatal(err)
 	}
 	sources = nil
-	for key := range value.(*jsonx.Object).All() {
+	for key := range value {
 		kind, source, _ := strings.Cut(key, ":")
 		if kind == "convert" {
 			_, source, _ = strings.Cut(source, ":")

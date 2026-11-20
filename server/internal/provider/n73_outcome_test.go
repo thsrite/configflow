@@ -3,31 +3,30 @@ package provider
 import (
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
 // nativeProviderOutcome grants no blanket message exemption: the native error
 // must match its source verbatim, while owner/kind/path/label remain unchanged.
-func nativeProviderOutcome(kind string, input, want, got *jsonx.Object) bool {
+func nativeProviderOutcome(kind string, input, want, got map[string]any) bool {
 	if kind == "parse" {
-		switch input.GetString("text") {
+		switch mapStr(input, "text") {
 		case "{[a]: b}", "proxies: [\t]", "x: !!timestamp 2026-13-45":
-			proxies, ok := got.Value("output").([]any)
-			return got.Len() == 1 && ok && len(proxies) == 0
+			proxies, ok := got["output"].([]any)
+			return len(got) == 1 && ok && len(proxies) == 0
 		}
 	}
-	if got.GetString("error") != "DialerReferenceError" || got.Len() != 2 {
+	if mapStr(got, "error") != "DialerReferenceError" || len(got) != 2 {
 		return false
 	}
-	message := got.GetString("message")
+	message := mapStr(got, "message")
 	for _, source := range yamlxtest.TextFields(input, "text", "content") {
 		_, err := yamlx.Parse([]byte(source))
 		if err == nil {
 			continue
 		}
-		prefix, rest, found := strings.Cut(want.GetString("message"), "SRC[Provider YAML 内容无效|")
+		prefix, rest, found := strings.Cut(mapStr(want, "message"), "SRC[Provider YAML 内容无效|")
 		if !found {
 			if kind == "parse" && nativeParseOutcome(input, want, got) {
 				return true
@@ -46,14 +45,14 @@ func nativeProviderOutcome(kind string, input, want, got *jsonx.Object) bool {
 		return false
 	}
 	prefix := ""
-	if input.GetString("name") != "" || input.GetString("path") != "" {
-		prefix = "CTX[订阅|" + input.GetString("name") + "|" + input.GetString("path") + "]"
+	if mapStr(input, "name") != "" || mapStr(input, "path") != "" {
+		prefix = "CTX[订阅|" + mapStr(input, "name") + "|" + mapStr(input, "path") + "]"
 	}
 	// Unknown-tag scalars retain their shape, then take the original field's
 	// validation path; Chinese field text and exact position are still required.
-	switch input.GetString("text") {
+	switch mapStr(input, "text") {
 	case "proxies: {[a]: b}":
-		node, err := yamlx.Parse([]byte(input.GetString("text")))
+		node, err := yamlx.Parse([]byte(mapStr(input, "text")))
 		if err != nil {
 			return false
 		}

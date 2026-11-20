@@ -74,10 +74,10 @@ func TestConversionPanicsDoNotStrandBatchOrPublishPanicText(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	env := probeEnvFromLegacy(testEnv(&fakeRunner{fn: func(Command) (Result, error) {
+	env := testEnv(&fakeRunner{fn: func(Command) (Result, error) {
 		t.Error("all conversions failed; worker must not run")
 		return Result{}, nil
-	}}, nil))
+	}}, nil)
 	env.Collaborators.ConvertNode = func(context.Context, json.RawMessage) (model.Fields, bool) { panic("synthetic-private-detail") }
 	var saved json.RawMessage
 	env.Collaborators.WriteLatencyFile = func(_ context.Context, raw json.RawMessage) error {

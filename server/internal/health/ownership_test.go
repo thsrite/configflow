@@ -2,12 +2,12 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 )
 
 type lifetimeRunner func(context.Context, Command) (Result, error)
@@ -27,14 +27,14 @@ func TestDNSOwnerKeepsWorkParentForIO(t *testing.T) {
 		canceled <- ctx.Err()
 		return Result{}, ctx.Err()
 	})
-	t.Cleanup(SetEnv(testEnv(runner, nil)))
+	t.Cleanup(SetProbeEnv(testEnv(runner, nil)))
 	request, disconnect := context.WithCancel(context.Background())
 	job, shutdown := context.WithCancel(context.Background())
 	defer shutdown()
 	bound := ctxx.WithParent(request, job)
 	disconnect()
 	done := make(chan error, 1)
-	go func() { _, err := CheckSettings(bound, jsonx.Obj("mode", "system")); done <- err }()
+	go func() { _, err := CheckDNSSettingsJSON(bound, json.RawMessage(`{"mode":"system"}`)); done <- err }()
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):

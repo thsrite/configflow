@@ -187,7 +187,7 @@ func FuzzN88dDelivery(f *testing.F) {
 	})
 }
 
-var _ convert.NodeConverter = legacyConverter{}
+var _ convert.NodeConverter = nilNodeConverter{}
 
 func TestN88dProviderPathsUseSharedURLCompatibility(t *testing.T) {
 	for _, address := range []string{"/subscriptions/s0/proxies?label=50%", "https://user:synthetic^value@example.com/subscriptions/s0/proxies?label=50%", "http://[2001:db8::1%test]/subscriptions/s0/proxies"} {

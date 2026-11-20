@@ -9,15 +9,19 @@ package mosdns
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,17 +29,77 @@ import (
 	"time"
 
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
+func loadArchiveRows(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 1<<20), 1<<27)
+	var rows []map[string]any
+	for scanner.Scan() {
+		dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		dec.UseNumber()
+		var row map[string]any
+		if err := dec.Decode(&row); err != nil {
+			t.Fatal(err)
+		}
+		rows = append(rows, row)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+func mapStr(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return s
+}
+
+func mapInt(m map[string]any, key string) int64 {
+	if m == nil {
+		return 0
+	}
+	return anyInt(m[key])
+}
+
+func anyInt(v any) int64 {
+	switch n := v.(type) {
+	case json.Number:
+		i, _ := n.Int64()
+		return i
+	case float64:
+		return int64(n)
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	}
+	return 0
+}
+
 func hexBytes(v any) ([]byte, bool) {
-	if o, ok := v.(*jsonx.Object); ok {
-		if text, ok := o.Value("__bytes__").(string); ok {
+	if o, ok := v.(map[string]any); ok {
+		if text, ok := o["__bytes__"].(string); ok {
 			data, _ := hex.DecodeString(text)
 			return data, true
 		}
@@ -45,29 +109,31 @@ func hexBytes(v any) ([]byte, bool) {
 
 // testRepo opens a fresh repository with the recorded shared rule library,
 // rule cache files and task-status.json.
-func testRepo(t *testing.T, world *jsonx.Object) (context.Context, *repo.Repository) {
+func testRepo(t *testing.T, world map[string]any) (context.Context, *repo.Repository) {
 	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-	if library := world.GetList("rule_library"); len(library) > 0 {
-		if _, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-			shared.Set("rule_library", jsonx.DeepCopy(library))
-			return nil, nil
+	if library, _ := world["rule_library"].([]any); len(library) > 0 {
+		if err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+			shared.RuleLibrary = testjson.Decode[[]model.RuleLibraryItem](t, library)
+			return nil
 		}); err != nil {
 			t.Fatalf("seed library: %v", err)
 		}
 	}
 	rulesDir, _ := r.SharedRulesDir()
-	for name, value := range world.GetObject("files").All() {
-		data, _ := hexBytes(value)
-		path := filepath.Join(rulesDir, strings.TrimPrefix(name, "rules/"))
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		os.WriteFile(path, data, 0o644)
+	if files, ok := world["files"].(map[string]any); ok {
+		for name, value := range files {
+			data, _ := hexBytes(value)
+			path := filepath.Join(rulesDir, strings.TrimPrefix(name, "rules/"))
+			os.MkdirAll(filepath.Dir(path), 0o755)
+			os.WriteFile(path, data, 0o644)
+		}
 	}
-	if text, ok := world.Value("task_status").(string); ok {
+	if text, ok := world["task_status"].(string); ok {
 		os.WriteFile(filepath.Join(r.DataDir(), taskstatus.Filename), []byte(text), 0o644)
 	}
 	return ctx, r
@@ -106,7 +172,7 @@ func readZip(t *testing.T, data []byte) [][2]string {
 // answers replays the recorded _fetch_remote_content results per URL.
 type answers struct {
 	mu    sync.Mutex
-	byURL map[string][]*jsonx.Object
+	byURL map[string][]map[string]any
 }
 
 func (a *answers) fetch(_ context.Context, url string, _ *model.Config, _ string) ([]byte, error) {
@@ -125,20 +191,20 @@ func (a *answers) fetch(_ context.Context, url string, _ *model.Config, _ string
 	if len(queue) > 1 {
 		a.byURL[url] = queue[1:]
 	}
-	if spec := answer.GetObject("err"); spec != nil {
-		class, message := spec.GetString("class"), spec.GetString("message")
+	if spec, ok := answer["err"].(map[string]any); ok && spec != nil {
+		class, message := mapStr(spec, "class"), mapStr(spec, "message")
 		switch {
-		case spec.Value("requests") == true:
-			return nil, &rulefetch.FetchError{Class: class, Message: message, Status: int(spec.GetInt("status"))}
+		case spec["requests"] == true:
+			return nil, &rulefetch.FetchError{Class: class, Message: message, Status: int(mapInt(spec, "status"))}
 		case class == "RemoteRuleValidationError":
 			return nil, rulefetch.NewRemoteRuleMessage(message)
 		}
 		return nil, errors.New(message)
 	}
-	if data, ok := hexBytes(answer.Value("ok")); ok {
+	if data, ok := hexBytes(answer["ok"]); ok {
 		return data, nil
 	}
-	return []byte(answer.GetString("ok")), nil
+	return []byte(mapStr(answer, "ok")), nil
 }
 
 func withFetch(t *testing.T, fn nativeFetchFunc) {
@@ -148,7 +214,7 @@ func withFetch(t *testing.T, fn nativeFetchFunc) {
 }
 
 func decodeDownloads(list []any) ([]Download, error) {
-	data, err := jsonx.Compact(list)
+	data, err := json.Marshal(list)
 	if err != nil {
 		return nil, err
 	}
@@ -157,38 +223,41 @@ func decodeDownloads(list []any) ([]Download, error) {
 }
 
 func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
-	rows := loadRows(t, "testdata/c28_recorded.jsonl.gz")
+	rows := loadArchiveRows(t, "testdata/c28_recorded.jsonl.gz")
 	references := archiveCacheReferences(t, rows)
 	usedReferences := 0
 	built, failures := 0, 0
 	for i, row := range rows {
 		// The cancellation test races its downloads (only the first ones are
 		// recorded); TestArchiveFailureDoesNotWaitForOtherDownloads covers it.
-		if row.GetString("fn") != "build" || row.Has("unsupported") ||
-			strings.Contains(row.GetString("test"), "cancels_queue_without_waiting") {
+		_, hasUnsupported := row["unsupported"]
+		if mapStr(row, "fn") != "build" || hasUnsupported ||
+			strings.Contains(mapStr(row, "test"), "cancels_queue_without_waiting") {
 			continue
 		}
-		world := row.GetObject("world")
-		if id := world.GetString("default_profile"); id != "default" {
+		world, _ := row["world"].(map[string]any)
+		if id := mapStr(world, "default_profile"); id != "default" {
 			continue
 		}
-		name := row.GetString("test") + " #" + jsonx.Str(i)
+		name := mapStr(row, "test") + " #" + strconv.Itoa(i)
 		reference, approved := references[i]
 		if approved {
 			usedReferences++
 		}
-		args := row.GetList("args")
+		args, _ := row["args"].([]any)
 		ctx, r := testRepo(t, world)
-		limits := row.GetList("limits")
+		limits, _ := row["limits"].([]any)
 		savedFiles, savedTotal := MaxFiles, MaxTotalBytes
-		files, _ := jsonx.AsInt(limits[0])
-		total, _ := jsonx.AsInt(limits[1])
-		MaxFiles, MaxTotalBytes = int(files), int(total)
-		recorded := &answers{byURL: map[string][]*jsonx.Object{}}
-		for _, item := range row.GetObject("answers").GetList("fetch") {
-			answer := item.(*jsonx.Object)
-			url := answer.GetList("args")[0].(string)
-			recorded.byURL[url] = append(recorded.byURL[url], answer)
+		MaxFiles, MaxTotalBytes = int(anyInt(limits[0])), int(anyInt(limits[1]))
+		recorded := &answers{byURL: map[string][]map[string]any{}}
+		if ansMap, ok := row["answers"].(map[string]any); ok {
+			if fetchList, ok := ansMap["fetch"].([]any); ok {
+				for _, item := range fetchList {
+					answer := item.(map[string]any)
+					url := answer["args"].([]any)[0].(string)
+					recorded.byURL[url] = append(recorded.byURL[url], answer)
+				}
+			}
 		}
 		saved := fetchNativeFn
 		fetchNativeFn = recorded.fetch
@@ -198,14 +267,18 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 		}
 		var custom []File
 		for _, item := range args[3].([]any) {
-			object := item.(*jsonx.Object)
-			content, ok := hexBytes(object.Value("content"))
+			object := item.(map[string]any)
+			content, ok := hexBytes(object["content"])
 			if !ok {
-				content = []byte(object.GetString("content"))
+				content = []byte(mapStr(object, "content"))
 			}
-			custom = append(custom, File{Path: object.GetString("path"), Content: string(content)})
+			custom = append(custom, File{Path: mapStr(object, "path"), Content: string(content)})
 		}
-		nativeCfg, err := legacyConfig(args[0].(*jsonx.Object))
+		rawCfg, err := json.Marshal(args[0])
+		if err != nil {
+			t.Fatalf("%s: marshal snapshot %v", name, err)
+		}
+		nativeCfg, err := ConfigFromJSON(rawCfg)
 		if err != nil {
 			t.Fatalf("%s: snapshot %v", name, err)
 		}
@@ -224,11 +297,11 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			}
 			continue
 		}
-		if want := row.GetObject("err"); want != nil {
+		if want, ok := row["err"].(map[string]any); ok && want != nil {
 			var archive *ArchiveError
-			if !errors.As(err, &archive) || err.Error() != want.GetString("message") {
+			if !errors.As(err, &archive) || err.Error() != mapStr(want, "message") {
 				failures++
-				t.Errorf("%s:\n  got  %v\n  want %s %q", name, err, want.GetString("class"), want.GetString("message"))
+				t.Errorf("%s:\n  got  %v\n  want %s %q", name, err, mapStr(want, "class"), mapStr(want, "message"))
 			}
 			continue
 		}
@@ -238,13 +311,15 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			continue
 		}
 		var want [][2]string
-		for _, item := range row.GetList("out") {
-			pair := item.([]any)
-			content, ok := hexBytes(pair[1])
-			if !ok {
-				content = []byte(pair[1].(string))
+		if outList, ok := row["out"].([]any); ok {
+			for _, item := range outList {
+				pair := item.([]any)
+				content, ok := hexBytes(pair[1])
+				if !ok {
+					content = []byte(pair[1].(string))
+				}
+				want = append(want, [2]string{pair[0].(string), string(content)})
 			}
-			want = append(want, [2]string{pair[0].(string), string(content)})
 		}
 		if got := readZip(t, data); !equalEntries(got, want) {
 			failures++
@@ -315,15 +390,15 @@ func remoteSnapshot() *model.Config {
 func remoteDownloads(n int) []Download {
 	out := make([]Download, n)
 	for i := range out {
-		url := "https://rules.test/" + jsonx.Str(i)
-		out[i] = Download{Name: "测试规则", LocalPath: "rules/" + jsonx.Str(i) + ".txt",
+		url := "https://rules.test/" + strconv.Itoa(i)
+		out[i] = Download{Name: "测试规则", LocalPath: "rules/" + strconv.Itoa(i) + ".txt",
 			URL: "https://cf.test/prefix/api/profiles/office/mosdns/rule-proxy?token=internal-secret&url=" + url}
 	}
 	return out
 }
 
 func TestArchiveFetchesAreParallelAndBounded(t *testing.T) {
-	ctx, _ := testRepo(t, jsonx.NewObject())
+	ctx, _ := testRepo(t, nil)
 	var active, peak, count int32
 	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		now := atomic.AddInt32(&active, 1)
@@ -348,7 +423,7 @@ func TestArchiveFetchesAreParallelAndBounded(t *testing.T) {
 }
 
 func TestArchiveFailureDoesNotWaitForOtherDownloads(t *testing.T) {
-	ctx, _ := testRepo(t, jsonx.NewObject())
+	ctx, _ := testRepo(t, nil)
 	release := make(chan struct{})
 	defer close(release)
 	var calls int32
@@ -379,7 +454,7 @@ func TestArchiveFailureDoesNotWaitForOtherDownloads(t *testing.T) {
 }
 
 func TestArchiveBudgets(t *testing.T) {
-	ctx, _ := testRepo(t, jsonx.NewObject())
+	ctx, _ := testRepo(t, nil)
 	var calls int32
 	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		atomic.AddInt32(&calls, 1)
@@ -406,7 +481,7 @@ func TestArchiveBudgets(t *testing.T) {
 }
 
 func TestArchivePathsAndReferences(t *testing.T) {
-	ctx, _ := testRepo(t, jsonx.NewObject())
+	ctx, _ := testRepo(t, nil)
 	for _, path := range []string{"../escape", "/absolute", "./rules/../../escape", "rules\\escape", "config.yaml", "a//b", "\x01"} {
 		if _, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", nil, []File{{path, "x"}}, ArchiveOptions{}); err == nil {
 			t.Errorf("%q accepted", path)
@@ -431,7 +506,7 @@ func TestArchivePathsAndReferences(t *testing.T) {
 }
 
 func TestArchiveEarlyFailureWorkersRemainTracked(t *testing.T) {
-	base, _ := testRepo(t, jsonx.NewObject())
+	base, _ := testRepo(t, nil)
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
 	runtime.Start(base)
 	defer runtime.Shutdown(context.Background())

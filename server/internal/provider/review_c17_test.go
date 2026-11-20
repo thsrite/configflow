@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/refresh"
 	"configflow/internal/substore"
 )
 
@@ -22,18 +22,29 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 	cancel()
 	content := "proxies:\n- {name: Remote, type: http, server: example.test, port: 80}\n"
 	var sawCancelled bool
-	fetch := func(ctx context.Context, subID, url string) (*substore.SubscriptionResult, error) {
+	fetch := func(ctx context.Context, subID, url string) (*refresh.SourceResult, error) {
 		if ctx.Err() != nil {
 			sawCancelled = true
 			return nil, ctx.Err()
 		}
-		return &substore.SubscriptionResult{Text: content, Source: "direct_yaml", FetchedAt: corpusNowISO}, nil
+		return &refresh.SourceResult{Text: content, Source: "direct_yaml", FetchedAt: corpusNowISO}, nil
 	}
-	defer SetEnv(&Env{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilConverter{}})()
-	config := jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.test/s", "enabled", true)})
-	main := jsonx.Obj("proxies", []any{}, "proxy-groups", []any{},
-		"proxy-providers", jsonx.Obj("Feed", jsonx.Obj("url", "/subscriptions/s/proxies", "path", "./providers/Feed.yaml")))
-	bundle, err := PrepareProviderBundle(ctx, config, main, BundleOptions{RenderAll: true})
+	defer SetDeliveryEnv(&DeliveryEnv{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}})()
+	cfg, err := configFromMap(map[string]any{
+		"subscriptions": []any{map[string]any{"id": "s", "name": "Feed", "url": "https://feed.test/s", "enabled": true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainNode, err := graphFromAny(map[string]any{
+		"proxies":         []any{},
+		"proxy-groups":    []any{},
+		"proxy-providers": map[string]any{"Feed": map[string]any{"url": "/subscriptions/s/proxies", "path": "./providers/Feed.yaml"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := PrepareBundle(ctx, cfg, mainNode, DeliveryOptions{RenderAll: true})
 	if err != nil || sawCancelled {
 		t.Fatalf("bundle: %v (fetch saw a cancelled context: %v)", err, sawCancelled)
 	}
@@ -41,10 +52,10 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 		t.Fatalf("bundle %+v", bundle)
 	}
 	bundle[0].AggregationID = "agg"
-	if err := CommitProviderBundle(ctx, "default", bundle); err != nil {
+	if err := CommitArtifacts(ctx, "default", bundle); err != nil {
 		t.Fatal(err)
 	}
-	if cache, _ := substore.LoadSubscriptionCache(base, "s"); cache == nil {
+	if cache, _ := substore.LoadCache(base, "s"); cache == nil {
 		t.Fatal("node cache not committed")
 	}
 	path, _ := r.ProfilePath("default", "providers/agg.yaml")
@@ -56,26 +67,29 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 // Validate on a hand-made main whose proxies are not dicts: CPython 3.11's
 // subscript texts (review_c17_ref.py).
 func TestReviewValidateSubscriptTexts(t *testing.T) {
-	proxies := []any{jsonx.Obj("name", "A", "type", "http", "server", "a.test", "port", jsonx.Int(80))}
+	proxies, err := nodesFromAny([]any{map[string]any{"name": "A", "type": "http", "server": "a.test", "port": 80}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
-		main  *jsonx.Object
+		main  map[string]any
 		name  *string
 		class string
 		text  string
 	}{
-		{jsonx.Obj("proxies", []any{}, "proxy-providers", jsonx.Obj("Feed", jsonx.Int(1))), ProviderName("Feed"),
+		{map[string]any{"proxies": []any{}, "proxy-providers": map[string]any{"Feed": 1}}, providerNamePtr("Feed"),
 			"AttributeError", "'int' object has no attribute 'get'"},
-		{jsonx.Obj("proxies", []any{"x"}, "proxy-providers", jsonx.NewObject()), nil,
+		{map[string]any{"proxies": []any{"x"}, "proxy-providers": map[string]any{}}, nil,
 			"TypeError", "string indices must be integers, not 'str'"},
-		{jsonx.Obj("proxies", []any{[]any{"x"}}, "proxy-providers", jsonx.NewObject()), nil,
+		{map[string]any{"proxies": []any{[]any{"x"}}, "proxy-providers": map[string]any{}}, nil,
 			"TypeError", "list indices must be integers or slices, not str"},
 	}
 	for i, c := range cases {
-		snap, err := Capture("default", c.main, nil)
+		snap, err := captureFromMap("default", c.main, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = snap.Validate(jsonx.DeepCopy(proxies), false, c.name)
+		err = snap.Validate(proxies, false, c.name)
 		var input *InputError
 		field := "proxies"
 		if i == 0 {

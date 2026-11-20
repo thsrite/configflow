@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -14,13 +14,14 @@ func TestReviewN88dReferenceBindings(t *testing.T) {
 	checked := 0
 	for index, expected := range refs {
 		row := rows[index]
-		if row.GetString("kind") != "snapshot" {
+		if mapStr(row, "kind") != "snapshot" {
 			continue
 		}
 		checked++
 		t.Run(fmt.Sprint(index), func(t *testing.T) {
-			got := snapshotRow(row.GetObject("input"))
-			if !jsonx.Equal(expected, got) {
+			in, _ := row["input"].(map[string]any)
+			got := snapshotRow(in)
+			if !testjson.Equal(expected, got) {
 				t.Fatal(diffText(expected, got))
 			}
 		})

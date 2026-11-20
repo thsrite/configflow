@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -19,9 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/convert"
 	"configflow/internal/instance"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/lockx"
@@ -33,7 +31,7 @@ import (
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
-	"configflow/internal/yamlbridge"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -64,9 +62,25 @@ func proxiesYAML(t *testing.T) string {
 	return string(text)
 }
 
-func ruleDecl() *jsonx.Object {
-	return jsonx.Obj("id", "rule", "name", "Streaming", "source_type", "url", "url", ruleURL,
-		"behavior", "domain", "format", "text", "enabled", true)
+func ruleDecl(t *testing.T) model.RuleLibraryItem {
+	t.Helper()
+	return testjson.Decode[model.RuleLibraryItem](t, map[string]any{
+		"id": "rule", "name": "Streaming", "source_type": "url", "url": ruleURL,
+		"behavior": "domain", "format": "text", "enabled": true,
+	})
+}
+
+func refreshCacheRule(tb testing.TB, value any) model.RuleConfig {
+	tb.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal(data, &rule); err != nil {
+		tb.Fatal(err)
+	}
+	return rule
 }
 
 // fakeClock is wall time that tests move, and a monotonic counter.
@@ -121,7 +135,7 @@ type fixture struct {
 	ctx       context.Context
 	repo      *repo.Repository
 	clock     *fakeClock
-	env       *Env
+	env       *RefreshEnv
 	transport *fakeTransport
 	fetches   []string
 	fetchMu   sync.Mutex
@@ -139,12 +153,14 @@ func setup(t *testing.T, subInterval any) *fixture {
 	}
 	f := &fixture{t: t, repo: r, clock: &fakeClock{now: time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)}}
 	f.ctx = repo.WithRepository(context.Background(), r)
-	_, err = r.UpdateSharedTransaction(f.ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", subURL, "enabled", true, "interval", subInterval)})
-		shared.Set("nodes", []any{})
-		shared.Set("subscription_aggregations", []any{})
-		shared.Set("rule_library", []any{ruleDecl()})
-		return nil, nil
+	err = r.UpdateShared(f.ctx, func(_ context.Context, shared *model.Shared) error {
+		shared.Subscriptions = []model.Subscription{testjson.Decode[model.Subscription](t, map[string]any{
+			"id": "s", "name": "Feed", "url": subURL, "enabled": true, "interval": subInterval,
+		})}
+		shared.Nodes = []model.Node{}
+		shared.Aggregations = []model.Aggregation{}
+		shared.RuleLibrary = []model.RuleLibraryItem{ruleDecl(t)}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -154,80 +170,94 @@ func setup(t *testing.T, subInterval any) *fixture {
 		return 0, "", errors.New("no request")
 	}}
 	hex := 0
-	f.env = &Env{Clock: f.clock, RuleClient: &rulefetch.Client{Transport: f.transport, Sleep: func(time.Duration) {}},
-		RandomHex: func() string { hex++; return strings.Repeat("0", 7) + string(rune('0'+hex%10)) },
-		FetchSubscription: func(_ context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error) {
-			t.Errorf("unexpected subscription download %s", url)
-			return nil, errors.New("no request")
-		}}
-	t.Cleanup(SetRefreshEnv(refreshEnvForTest(f.env)))
+	f.env = DefaultRefreshEnv()
+	f.env.Clock = f.clock
+	f.env.RuleClient = &rulefetch.Client{Transport: f.transport, Sleep: func(time.Duration) {}}
+	f.env.RandomHex = func() string { hex++; return strings.Repeat("0", 7) + string(rune('0'+hex%10)) }
+	f.env.Sources.Fetch = func(_ context.Context, subID, url string, opts substore.FetchOptions) (*SourceResult, error) {
+		t.Errorf("unexpected subscription download %s", url)
+		return nil, errors.New("no request")
+	}
+	t.Cleanup(SetRefreshEnv(f.env))
 	return f
 }
 
 // download installs a subscription download answer and records calls.
 func (f *fixture) download(text, source string, err error) {
-	f.env.FetchSubscription = func(_ context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error) {
+	f.env.Sources.Fetch = func(_ context.Context, subID, url string, opts substore.FetchOptions) (*SourceResult, error) {
 		f.fetchMu.Lock()
 		f.fetches = append(f.fetches, subID+" "+url+" refresh="+map[bool]string{true: "True", false: "False"}[opts.Refresh])
 		f.fetchMu.Unlock()
 		if err != nil {
 			return nil, err
 		}
-		return &substore.SubscriptionResult{Text: text, Source: source}, nil
+		return &SourceResult{Text: text, Source: source}, nil
 	}
 }
 
-func (f *fixture) status(key string) *jsonx.Object {
-	entry, err := taskstatus.New(f.repo.DataDir()).Get(key)
+func (f *fixture) status(key string) map[string]any {
+	snap, err := taskstatus.New(f.repo.DataDir()).Read()
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return entry
+	raw, ok := snap[key]
+	if !ok || len(raw) == 0 {
+		return map[string]any{}
+	}
+	m, err := decodeMap(raw)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return m
 }
 
-func (f *fixture) cache() *jsonx.Object {
-	cache, err := substore.LoadSubscriptionCache(f.ctx, "s")
+func (f *fixture) cache() *substore.Cache {
+	cache, err := substore.LoadCache(f.ctx, "s")
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	return cache
 }
 
-func (f *fixture) updateShared(fn func(shared *jsonx.Object)) {
-	_, err := f.repo.UpdateSharedTransaction(f.ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
+func (f *fixture) updateShared(fn func(shared *model.Shared)) {
+	err := f.repo.UpdateShared(f.ctx, func(_ context.Context, shared *model.Shared) error {
 		fn(shared)
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		f.t.Fatal(err)
 	}
 }
 
-func (f *fixture) sub() *jsonx.Object {
-	shared, err := f.repo.GetShared(f.ctx)
+func (f *fixture) sub() model.Subscription {
+	shared, err := f.repo.Shared(f.ctx)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return shared.GetList("subscriptions")[0].(*jsonx.Object)
+	return shared.Subscriptions[0]
 }
 
 // cacheSource is test_subscription_refresh_policy.cache_source: stored
 // nodes of url whose updated_at is age seconds ago.
-func (f *fixture) cacheSource(age time.Duration, url string) *jsonx.Object {
-	proxies, err := fixtureParseProxiesFromYAML(proxiesYAML(f.t))
+func (f *fixture) cacheSource(age time.Duration, url string) *substore.Cache {
+	proxies, err := substore.ParseProxyNodes(proxiesYAML(f.t))
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	nodes, err := substore.ProxiesToNodes(proxies)
+	nodes, err := substore.ProxyNodes(proxies)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	value, err := fixtureSaveSubscriptionNodes(f.ctx, "s", nodes, jsonx.Obj("url", url))
+	value, err := substore.SaveCache(f.ctx, "s", nodes, &substore.CacheMetadata{URL: url})
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	value.Set("updated_at", isoMicro(f.clock.Now().Add(-age)))
-	if _, err := f.repo.WriteSharedJSON(f.ctx, "subscribes/s.json", value); err != nil {
+	value.UpdatedAt = isoMicro(f.clock.Now().Add(-age))
+	data, err := jsonresp.Encode(value)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.repo.WriteSharedText(f.ctx, "subscribes/s.json", data); err != nil {
 		f.t.Fatal(err)
 	}
 	return f.cache()
@@ -239,7 +269,7 @@ func timeoutError() error {
 
 // test_scheduled_tasks.py::test_record_counts_runs_failures_and_skips
 func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	retained := true
 	for _, r := range []taskstatus.Result{
 		{Error: "boom", CacheRetained: &retained, CacheUpdatedAt: "2026-01-01T00:00:00Z"},
@@ -251,18 +281,19 @@ func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
 		}
 	}
 	entry := f.status("x")
-	if entry.GetInt("run_count") != 2 || entry.GetInt("failure_count") != 2 || entry.GetInt("consecutive_failures") != 2 ||
-		entry.Value("last_status") != "skipped" || entry.Value("last_error") != "nothing to do" {
-		t.Fatal(jsonx.Repr(entry))
+	if mapInt(entry, "run_count") != 2 || mapInt(entry, "failure_count") != 2 || mapInt(entry, "consecutive_failures") != 2 ||
+		entry["last_status"] != "skipped" || entry["last_error"] != "nothing to do" {
+		t.Fatal(compactJSON(entry))
 	}
-	recordStatus(f.ctx, "x", taskstatus.Result{OK: true, DurationMs: 12.6})
+	_ = recordStatus(f.ctx, "x", taskstatus.Result{OK: true, DurationMs: 12.6})
 	entry = f.status("x")
-	if entry.GetInt("run_count") != 3 || entry.GetInt("failure_count") != 2 || entry.GetInt("consecutive_failures") != 0 ||
-		entry.Value("last_error") != "" || entry.Has("cache_retained") || entry.GetInt("last_duration_ms") != 12 {
-		t.Fatal(jsonx.Repr(entry))
+	_, hasRetained := entry["cache_retained"]
+	if mapInt(entry, "run_count") != 3 || mapInt(entry, "failure_count") != 2 || mapInt(entry, "consecutive_failures") != 0 ||
+		entry["last_error"] != "" || hasRetained || mapInt(entry, "last_duration_ms") != 12 {
+		t.Fatal(compactJSON(entry))
 	}
-	taskstatus.New(f.repo.DataDir()).Forget("x", "missing")
-	if f.status("x").Len() != 0 {
+	_ = taskstatus.New(f.repo.DataDir()).Forget("x", "missing")
+	if len(f.status("x")) != 0 {
 		t.Fatal("forget")
 	}
 }
@@ -279,24 +310,28 @@ func mustTime(t *testing.T, text string) time.Time {
 func TestNextRunBacksOffAfterFailuresButNeverBeyondTheInterval(t *testing.T) {
 	t.Parallel()
 	start := mustTime(t, "2026-10-24T00:00:00Z")
-	base := func(kv ...any) *jsonx.Object {
-		return jsonx.Obj(append([]any{"last_run_at", "2026-10-24T00:00:00Z"}, kv...)...)
+	base := func(kv ...any) map[string]any {
+		m := map[string]any{"last_run_at": "2026-10-24T00:00:00Z"}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i].(string)] = kv[i+1]
+		}
+		return m
 	}
 	cases := []struct {
-		entry    *jsonx.Object
+		entry    map[string]any
 		interval int64
 		baseline any
 		want     *time.Time
 	}{
 		{base("last_status", "success"), 3600, nil, ptr(start.Add(time.Hour))},
-		{base("last_status", "failed", "consecutive_failures", jsonx.Int(1)), 86400, nil, ptr(start.Add(5 * time.Minute))},
-		{base("last_status", "failed", "consecutive_failures", jsonx.Int(3)), 86400, nil, ptr(start.Add(20 * time.Minute))},
-		{base("last_status", "failed", "consecutive_failures", jsonx.Int(30)), 3600, nil, ptr(start.Add(time.Hour))},
+		{base("last_status", "failed", "consecutive_failures", 1), 86400, nil, ptr(start.Add(5 * time.Minute))},
+		{base("last_status", "failed", "consecutive_failures", 3), 86400, nil, ptr(start.Add(20 * time.Minute))},
+		{base("last_status", "failed", "consecutive_failures", 30), 3600, nil, ptr(start.Add(time.Hour))},
 		{base(), 0, nil, nil},
-		{jsonx.NewObject(), 3600, "2026-10-24T01:00:00Z", ptr(start.Add(2 * time.Hour))},
+		{map[string]any{}, 3600, "2026-10-24T01:00:00Z", ptr(start.Add(2 * time.Hour))},
 	}
 	for i, c := range cases {
-		got, err := NextRunAt(c.entry, jsonx.Int(c.interval), c.baseline, nil)
+		got, err := nextRunAt(c.entry, c.interval, c.baseline, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,7 +345,7 @@ func ptr[T any](v T) *T { return &v }
 
 // noRules is the policy tests' fixture: no library rules.
 func (f *fixture) noRules() {
-	f.updateShared(func(shared *jsonx.Object) { shared.Set("rule_library", []any{}) })
+	f.updateShared(func(shared *model.Shared) { shared.RuleLibrary = []model.RuleLibraryItem{} })
 }
 
 // test_scheduled_tasks.py::test_failure_reasons_are_readable_and_never_render_the_address
@@ -328,7 +363,7 @@ func TestFailureReasonsAreReadableAndNeverRenderTheAddress(t *testing.T) {
 			DirectError: &substore.RequestError{Class: "Timeout", Message: "y"}}, "连接上游超时"},
 	}
 	for _, c := range cases {
-		if got := DescribeFailure(c.err); got != c.want {
+		if got := FailureReason(errorFromLegacy(c.err)); got != c.want {
 			t.Errorf("%T %v: %q, want %q", c.err, c.err, got, c.want)
 		}
 	}
@@ -336,20 +371,27 @@ func TestFailureReasonsAreReadableAndNeverRenderTheAddress(t *testing.T) {
 
 // listRows is the subscription and rule rows the way /api/tasks lists
 // them, by key.
-func (f *fixture) listRows() map[string]*jsonx.Object {
-	store := taskstatus.New(f.repo.DataDir())
-	statuses, err := store.Load()
+func (f *fixture) listRows() map[string]map[string]any {
+	statuses, err := taskstatus.New(f.repo.DataDir()).Read()
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	out := map[string]*jsonx.Object{}
-	for _, build := range []func(context.Context, *jsonx.Object) ([]*jsonx.Object, error){SubscriptionRows, RuleRows} {
+	out := map[string]map[string]any{}
+	for _, build := range []func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error){SubscriptionTasks, RuleTasks} {
 		rows, err := build(f.ctx, statuses)
 		if err != nil {
 			f.t.Fatal(err)
 		}
 		for _, row := range rows {
-			out[row.GetString("key")] = row
+			data, err := jsonresp.Encode(row)
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			m, err := decodeMap(data)
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			out[mapStr(m, "key")] = m
 		}
 	}
 	return out
@@ -357,11 +399,14 @@ func (f *fixture) listRows() map[string]*jsonx.Object {
 
 // test_scheduled_tasks.py::test_failed_rule_refresh_survives_a_reload_with_reason_and_retained_cache
 func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
-	if _, err := rulefetch.WriteCache(f.ctx, refreshCacheRule(t, ruleDecl()), rulefetch.Content{Data: []byte("+.old.test\n")}, nil); err != nil {
+	f := setup(t, 86400)
+	rule := ruleDecl(t)
+	if _, err := rulefetch.WriteCache(f.ctx, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) { return nil, timeoutError() }})
+	_, _, err := RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
+		Fetch: func(context.Context, string) (rulefetch.Content, error) { return rulefetch.Content{}, timeoutError() },
+	})
 	if err == nil {
 		t.Fatal("refresh succeeded")
 	}
@@ -373,24 +418,26 @@ func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T
 	f.repo, f.ctx = reopened, repo.WithRepository(context.Background(), reopened)
 	rows := f.listRows()
 	row := rows["rule_source:rule"]
-	want := jsonx.Obj("category", "rule_source", "name", "Streaming", "detail", "rules.test", "last_status", "failed",
-		"last_error", "连接上游超时", "cache_retained", true, "failure_count", jsonx.Int(1), "last_trigger", "schedule",
-		"interval_seconds", jsonx.Int(86400), "enabled", true, "editable", true, "can_run", true)
-	for key, value := range want.All() {
-		if !jsonx.Equal(row.Value(key), value) {
-			t.Errorf("%s = %s, want %s", key, jsonx.Repr(row.Value(key)), jsonx.Repr(value))
+	want := map[string]any{
+		"category": "rule_source", "name": "Streaming", "detail": "rules.test", "last_status": "failed",
+		"last_error": "连接上游超时", "cache_retained": true, "failure_count": 1, "last_trigger": "schedule",
+		"interval_seconds": 86400, "enabled": true, "editable": true, "can_run": true,
+	}
+	for key, value := range want {
+		if !testjson.Equal(row[key], value) {
+			t.Errorf("%s = %s, want %s", key, compactJSON(row[key]), compactJSON(value))
 		}
 	}
-	if !jsonx.Truthy(row.Value("cache_updated_at")) {
+	if !pyTruthy(row["cache_updated_at"]) {
 		t.Error("cache_updated_at")
 	}
-	if mustTime(t, row.GetString("next_run_at")).Sub(mustTime(t, row.GetString("last_run_at"))) != 5*time.Minute {
-		t.Error(jsonx.Repr(row))
+	if mustTime(t, mapStr(row, "next_run_at")).Sub(mustTime(t, mapStr(row, "last_run_at"))) != 5*time.Minute {
+		t.Error(compactJSON(row))
 	}
-	if text, _ := jsonx.Compact(row); strings.Contains(string(text), "private") {
+	if strings.Contains(compactJSON(row), "private") {
 		t.Error("the address leaked")
 	}
-	cached, _ := rulefetch.ReadValidatedRuleCache(f.ctx, ruleDecl(), nil)
+	cached, _ := rulefetch.ReadCache(f.ctx, refreshCacheRule(t, rule), nil)
 	if string(cached) != "+.old.test\n" {
 		t.Errorf("cache %q", cached)
 	}
@@ -398,57 +445,69 @@ func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T
 
 // test_scheduled_tasks.py::test_rule_without_valid_cache_reports_that_nothing_is_retained
 func TestRuleWithoutValidCacheReportsThatNothingIsRetained(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
-	_, _, err := RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) { return []byte("DOMAIN,bad.test\n"), nil }})
+	f := setup(t, 86400)
+	_, _, err := RefreshRemote(f.ctx, ruleDecl(t), "schedule", RuleReadOptions{
+		Fetch: func(context.Context, string) (rulefetch.Content, error) {
+			return rulefetch.Content{Data: []byte("DOMAIN,bad.test\n")}, nil
+		},
+	})
 	if err == nil {
 		t.Fatal("refresh succeeded")
 	}
 	entry := f.status("rule_source:rule")
-	if entry.Value("cache_retained") != false || !strings.Contains(entry.GetString("last_error"), "第 1 行") {
-		t.Fatal(jsonx.Repr(entry))
+	if entry["cache_retained"] != false || !strings.Contains(mapStr(entry, "last_error"), "第 1 行") {
+		t.Fatal(compactJSON(entry))
 	}
 }
 
 // test_scheduled_tasks.py::test_device_reads_use_the_cache_and_only_a_missing_cache_downloads_now
 func TestDeviceReadsUseTheCacheAndOnlyAMissingCacheDownloadsNow(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	calls := 0
-	fetch := func(body string) func(string) (any, error) {
-		return func(string) (any, error) { calls++; return []byte(body), nil }
+	fetch := func(body string) func(context.Context, string) (rulefetch.Content, error) {
+		return func(context.Context, string) (rulefetch.Content, error) {
+			calls++
+			return rulefetch.Content{Data: []byte(body)}, nil
+		}
 	}
-	content, stale, err := ReadRuleSource(f.ctx, ruleDecl(), RuleOptions{Fetch: fetch("+.new.test\n")})
+	rule := ruleDecl(t)
+	content, stale, err := ReadRemote(f.ctx, rule, RuleReadOptions{Fetch: fetch("+.new.test\n")})
 	if err != nil || string(content) != "+.new.test\n" || stale != nil {
 		t.Fatal(content, stale, err)
 	}
-	if f.status("rule_source:rule").Value("last_trigger") != "pull" {
-		t.Fatal(jsonx.Repr(f.status("rule_source:rule")))
+	if f.status("rule_source:rule")["last_trigger"] != "pull" {
+		t.Fatal(compactJSON(f.status("rule_source:rule")))
 	}
-	content, stale, err = ReadRuleSource(f.ctx, ruleDecl(), RuleOptions{Fetch: func(string) (any, error) {
+	content, stale, err = ReadRemote(f.ctx, rule, RuleReadOptions{Fetch: func(context.Context, string) (rulefetch.Content, error) {
 		t.Error("cached")
-		return nil, errors.New("cached")
+		return rulefetch.Content{}, errors.New("cached")
 	}})
 	if err != nil || string(content) != "+.new.test\n" || stale != nil {
 		t.Fatal(content, stale, err)
 	}
 	// A declaration outside the library has no task and refreshes on each read.
-	outside := ruleDecl()
-	outside.Set("id", "profile-only")
-	outside.Set("url", "https://other.test/list")
+	outside := testjson.Decode[model.RuleLibraryItem](t, map[string]any{
+		"id": "profile-only", "name": "Streaming", "source_type": "url", "url": "https://other.test/list",
+		"behavior": "domain", "format": "text", "enabled": true,
+	})
 	calls = 0
-	ReadRuleSource(f.ctx, outside, RuleOptions{Fetch: fetch("+.other.test\n")})
-	ReadRuleSource(f.ctx, outside, RuleOptions{Fetch: fetch("+.other.test\n")})
-	if calls != 2 || f.status("rule_source:profile-only").Len() != 0 {
-		t.Fatal(calls, jsonx.Repr(f.status("rule_source:profile-only")))
+	_, _, _ = ReadRemote(f.ctx, outside, RuleReadOptions{Fetch: fetch("+.other.test\n")})
+	_, _, _ = ReadRemote(f.ctx, outside, RuleReadOptions{Fetch: fetch("+.other.test\n")})
+	if calls != 2 || len(f.status("rule_source:profile-only")) != 0 {
+		t.Fatal(calls, compactJSON(f.status("rule_source:profile-only")))
 	}
 }
 
 // A failed last refresh of a library source marks the cached bytes stale
 // (StaleRuleCache with the recorded reason).
 func TestDeviceReadOfAFailedSourceIsStale(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
-	rulefetch.WriteCache(f.ctx, refreshCacheRule(t, ruleDecl()), rulefetch.Content{Data: []byte("+.old.test\n")}, nil)
-	RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) { return nil, timeoutError() }})
-	content, stale, err := ReadRuleSource(f.ctx, ruleDecl(), RuleOptions{})
+	f := setup(t, 86400)
+	rule := ruleDecl(t)
+	_, _ = rulefetch.WriteCache(f.ctx, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil)
+	_, _, _ = RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
+		Fetch: func(context.Context, string) (rulefetch.Content, error) { return rulefetch.Content{}, timeoutError() },
+	})
+	content, stale, err := ReadRemote(f.ctx, rule, RuleReadOptions{})
 	var staleErr *StaleRuleCache
 	if err != nil || string(content) != "+.old.test\n" || !errors.As(stale, &staleErr) || stale.Error() != "连接上游超时" {
 		t.Fatal(content, stale, err)
@@ -457,10 +516,12 @@ func TestDeviceReadOfAFailedSourceIsStale(t *testing.T) {
 
 // test_scheduled_tasks.py::test_scheduler_skips_disabled_sources_and_sources_without_automatic_updates
 func TestSchedulerSkipsDisabledSourcesAndSourcesWithoutAutomaticUpdates(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
-	f.updateShared(func(shared *jsonx.Object) {
-		shared.GetList("subscriptions")[0].(*jsonx.Object).Set("interval", jsonx.Int(0))
-		shared.GetList("rule_library")[0].(*jsonx.Object).Set("enabled", false)
+	f := setup(t, 86400)
+	f.updateShared(func(shared *model.Shared) {
+		zero := model.Int(0)
+		shared.Subscriptions[0].Interval = &zero
+		disabled := false
+		shared.RuleLibrary[0].Enabled = &disabled
 	})
 	if n, err := RunRound(f.ctx, nil); n != 0 || err != nil {
 		t.Fatal(n, err)
@@ -469,12 +530,12 @@ func TestSchedulerSkipsDisabledSourcesAndSourcesWithoutAutomaticUpdates(t *testi
 
 // test_scheduled_tasks.py::test_rule_source_due_on_first_round_without_cache
 func TestRuleSourceDueOnFirstRoundWithoutCache(t *testing.T) {
-	f := setup(t, jsonx.Int(0))
+	f := setup(t, 0)
 	f.transport.reply = func(string) (int, string, error) { return 200, "+.new.test\n", nil }
 	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
-	cached, _ := rulefetch.ReadValidatedRuleCache(f.ctx, ruleDecl(), nil)
+	cached, _ := rulefetch.ReadCache(f.ctx, refreshCacheRule(t, ruleDecl(t)), nil)
 	if string(cached) != "+.new.test\n" {
 		t.Fatalf("cache %q", cached)
 	}
@@ -490,10 +551,10 @@ func TestRuleSourceDueOnFirstRoundWithoutCache(t *testing.T) {
 // (fetch_subscription_source half; the provider endpoints are C17/C30/C31).
 func TestAutoDeliveryReadsCacheWithoutUpstreamOrExtendingAge(t *testing.T) {
 	for _, interval := range []int64{0, 259200} {
-		f := setup(t, jsonx.Int(interval))
+		f := setup(t, interval)
 		before := f.cacheSource(120*time.Second, subURL)
 		for range 2 {
-			result, err := FetchSubscriptionSource(f.ctx, f.sub(), func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+			result, err := FetchSource(f.ctx, f.sub(), func(context.Context, string, string) (*SourceResult, error) {
 				t.Error("unexpected upstream request")
 				return nil, errors.New("no")
 			})
@@ -513,7 +574,7 @@ func TestAutoDeliveryReadsCacheWithoutUpstreamOrExtendingAge(t *testing.T) {
 				t.Fatal(result)
 			}
 		}
-		if !jsonx.Equal(f.cache(), before) {
+		if !testjson.Equal(f.cache(), before) {
 			t.Fatal("cache changed")
 		}
 	}
@@ -522,8 +583,8 @@ func TestAutoDeliveryReadsCacheWithoutUpstreamOrExtendingAge(t *testing.T) {
 // test_subscription_refresh_policy.py::test_manual_only_without_cache_explains_action_without_fetching
 // (fetch_subscription_source half).
 func TestManualOnlyWithoutCacheExplainsActionWithoutFetching(t *testing.T) {
-	f := setup(t, jsonx.Int(0))
-	_, err := FetchSubscriptionSource(f.ctx, f.sub(), nil)
+	f := setup(t, 0)
+	_, err := FetchSource(f.ctx, f.sub(), nil)
 	var ref *rules.StrategyReferenceError
 	if !errors.As(err, &ref) || !strings.Contains(err.Error(), "手动更新") {
 		t.Fatal(err)
@@ -535,11 +596,11 @@ func TestManualOnlyWithoutCacheExplainsActionWithoutFetching(t *testing.T) {
 
 // test_subscription_refresh_policy.py::test_expired_cache_is_served_and_the_scheduled_task_refreshes_it
 func TestExpiredCacheIsServedAndTheScheduledTaskRefreshesIt(t *testing.T) {
-	f := setup(t, jsonx.Int(259200))
+	f := setup(t, 259200)
 	f.noRules()
 	before := f.cacheSource(259201*time.Second, subURL)
-	result, err := FetchSubscriptionSource(f.ctx, f.sub(), nil)
-	if err != nil || result.Source != "cache" || !jsonx.Equal(f.cache(), before) {
+	result, err := FetchSource(f.ctx, f.sub(), nil)
+	if err != nil || result.Source != "cache" || !testjson.Equal(f.cache(), before) {
 		t.Fatal(result, err)
 	}
 	f.download(proxiesYAML(t), "direct_yaml", nil)
@@ -554,33 +615,33 @@ func TestExpiredCacheIsServedAndTheScheduledTaskRefreshesIt(t *testing.T) {
 		t.Fatal(n, err)
 	}
 	entry := f.status("subscription:s")
-	if entry.Value("last_status") != "success" || entry.GetInt("run_count") != 1 || entry.Value("last_trigger") != "schedule" {
-		t.Fatal(jsonx.Repr(entry))
+	if entry["last_status"] != "success" || mapInt(entry, "run_count") != 1 || entry["last_trigger"] != "schedule" {
+		t.Fatal(compactJSON(entry))
 	}
-	if !(f.cache().GetString("updated_at") > before.GetString("updated_at")) {
-		t.Fatal(f.cache().GetString("updated_at"), before.GetString("updated_at"))
+	if !(f.cache().UpdatedAt > before.UpdatedAt) {
+		t.Fatal(f.cache().UpdatedAt, before.UpdatedAt)
 	}
 }
 
 // test_subscription_refresh_policy.py::test_failed_scheduled_refresh_keeps_nodes_and_retries_sooner
 func TestFailedScheduledRefreshKeepsNodesAndRetriesSooner(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	f.noRules()
 	before := f.cacheSource(86401*time.Second, subURL)
 	f.download("proxies: []", "direct_yaml", nil)
 	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
-	if !jsonx.Equal(f.cache(), before) {
+	if !testjson.Equal(f.cache(), before) {
 		t.Fatal("cache changed")
 	}
 	entry := f.status("subscription:s")
-	if entry.Value("last_status") != "failed" || entry.Value("cache_retained") != true ||
-		entry.Value("last_error") != "订阅没有返回任何节点，已保留原有缓存" {
-		t.Fatal(jsonx.Repr(entry))
+	if entry["last_status"] != "failed" || entry["cache_retained"] != true ||
+		entry["last_error"] != "订阅没有返回任何节点，已保留原有缓存" {
+		t.Fatal(compactJSON(entry))
 	}
-	due, err := NextRunAt(entry, jsonx.Int(86400), nil, nil)
-	if err != nil || due.Sub(mustTime(t, entry.GetString("last_run_at"))) != RetrySeconds*time.Second {
+	due, err := nextRunAt(entry, 86400, nil, nil)
+	if err != nil || due.Sub(mustTime(t, mapStr(entry, "last_run_at"))) != RetrySeconds*time.Second {
 		t.Fatal(due, err)
 	}
 }
@@ -588,19 +649,19 @@ func TestFailedScheduledRefreshKeepsNodesAndRetriesSooner(t *testing.T) {
 // test_subscription_refresh_policy.py::test_dry_previews_share_download_across_restart_without_changing_validated_nodes
 // (fetch_subscription_source half; prepare_subscription_provider is C17).
 func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *testing.T) {
-	f := setup(t, jsonx.Int(259200))
+	f := setup(t, 259200)
 	calls := 0
-	fetch := func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+	fetch := func(context.Context, string, string) (*SourceResult, error) {
 		calls++
-		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
+		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
-	first, err := FetchSubscriptionSource(f.ctx, f.sub(), fetch)
+	first, err := FetchSource(f.ctx, f.sub(), fetch)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reopened, _ := repo.Open(f.repo.DataDir(), repo.Options{})
 	f.repo, f.ctx = reopened, repo.WithRepository(context.Background(), reopened)
-	second, err := FetchSubscriptionSource(f.ctx, f.sub(), fetch)
+	second, err := FetchSource(f.ctx, f.sub(), fetch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,27 +675,38 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 
 // test_subscription_refresh_policy.py::test_expired_download_is_refetched_and_manual_mode_never_uses_it_without_nodes
 func TestExpiredDownloadIsRefetchedAndManualModeNeverUsesItWithoutNodes(t *testing.T) {
-	f := setup(t, jsonx.Int(60))
+	f := setup(t, 60)
 	calls := 0
-	fetch := func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+	fetch := func(context.Context, string, string) (*SourceResult, error) {
 		calls++
-		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
+		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
 	sub := f.sub()
-	if _, err := FetchSubscriptionSource(f.ctx, sub, fetch); err != nil {
+	if _, err := FetchSource(f.ctx, sub, fetch); err != nil {
 		t.Fatal(err)
 	}
-	entry, err := f.repo.ReadSharedJSON(f.ctx, DownloadCachePath(subURL))
+	raw, err := readSharedData(f.ctx, DownloadCachePath(subURL))
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry.Set("fetched_at", isoMicro(f.clock.Now().Add(-61*time.Second)))
-	f.repo.WriteSharedJSON(f.ctx, DownloadCachePath(subURL), entry)
-	if _, err := FetchSubscriptionSource(f.ctx, sub, fetch); err != nil || calls != 2 {
+	entry, err := decodeMap(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry["fetched_at"] = isoMicro(f.clock.Now().Add(-61 * time.Second))
+	updated, err := jsonresp.Encode(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.repo.WriteSharedText(f.ctx, DownloadCachePath(subURL), updated); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FetchSource(f.ctx, sub, fetch); err != nil || calls != 2 {
 		t.Fatal(err, calls)
 	}
-	sub.Set("interval", jsonx.Int(0))
-	_, err = FetchSubscriptionSource(f.ctx, sub, fetch)
+	zero := model.Int(0)
+	sub.Interval = &zero
+	_, err = FetchSource(f.ctx, sub, fetch)
 	if err == nil || !strings.Contains(err.Error(), "手动更新") || calls != 2 {
 		t.Fatal(err, calls)
 	}
@@ -642,11 +714,11 @@ func TestExpiredDownloadIsRefetchedAndManualModeNeverUsesItWithoutNodes(t *testi
 
 // test_subscription_refresh_policy.py::test_changed_url_in_manual_mode_needs_manual_refresh
 func TestChangedURLInManualModeNeedsManualRefresh(t *testing.T) {
-	f := setup(t, jsonx.Int(0))
+	f := setup(t, 0)
 	f.cacheSource(0, subURL)
 	sub := f.sub()
-	sub.Set("url", subURL+"&new=1")
-	_, err := FetchSubscriptionSource(f.ctx, sub, func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+	sub.URL = subURL + "&new=1"
+	_, err := FetchSource(f.ctx, sub, func(context.Context, string, string) (*SourceResult, error) {
 		t.Error("no request")
 		return nil, errors.New("no")
 	})
@@ -659,65 +731,79 @@ func TestChangedURLInManualModeNeedsManualRefresh(t *testing.T) {
 // and test_invalid_mihomo_sync_setting_does_not_save_yaml (the validator;
 // the routes are C30/C34).
 func TestInvalidSourceIntervalsAreRejected(t *testing.T) {
-	bad := []any{nil, "", "0", true, jsonx.Int(-1), jsonx.Int(1), jsonx.Int(59), jsonx.Float(60.5), jsonx.Int(604801), jsonx.Float(0.5)}
+	bad := []any{nil, "", "0", true, -1, 1, 59, 60.5, 604801, 0.5}
 	for _, value := range bad {
-		if _, err := ValidateRefreshInterval(value, ""); err == nil || err.Error() != "订阅源更新间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数" {
-			t.Errorf("%s: %v", jsonx.Repr(value), err)
+		if _, err := parseIntervalAny(value, ""); err == nil || err.Error() != "订阅源更新间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数" {
+			t.Errorf("%s: %v", compactJSON(value), err)
 		}
 	}
-	if _, err := ValidateRefreshInterval(jsonx.Int(1), "Mihomo 订阅同步间隔"); err.Error() != "Mihomo 订阅同步间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数" {
+	if _, err := parseIntervalAny(1, "Mihomo 订阅同步间隔"); err == nil || err.Error() != "Mihomo 订阅同步间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数" {
 		t.Error(err)
 	}
 	for _, value := range []int64{0, 60, 3600, 604800} {
-		if got, err := ValidateRefreshInterval(jsonx.Int(value), ""); err != nil || got != value {
+		if got, err := parseIntervalAny(value, ""); err != nil || got != value {
 			t.Errorf("%d: %d %v", value, got, err)
 		}
 	}
 }
 
-// RefreshSubscription records the fetch and the run: success with the
+// RefreshSource records the fetch and the run: success with the
 // filtered node count and traffic, failure without a cache (not retained).
 func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	f.download("", "", &substore.SubscriptionFetchError{DirectError: &substore.RequestError{Class: "HTTPError", Status: 403}})
-	_, _, _, err := RefreshSubscription(f.ctx, f.sub(), "manual")
+	_, _, _, err := RefreshSource(f.ctx, f.sub(), "manual")
 	if err == nil {
 		t.Fatal("no error")
 	}
 	entry := f.status("subscription:s")
-	if entry.Value("last_error") != "上游返回 HTTP 403" || entry.Value("cache_retained") != false || entry.Value("last_trigger") != "manual" ||
-		entry.Has("cache_updated_at") || entry.GetInt("last_duration_ms") != 12 {
-		t.Fatal(jsonx.Repr(entry))
+	_, hasCacheUpdated := entry["cache_updated_at"]
+	if entry["last_error"] != "上游返回 HTTP 403" || entry["cache_retained"] != false || entry["last_trigger"] != "manual" ||
+		hasCacheUpdated || mapInt(entry, "last_duration_ms") != 12 {
+		t.Fatal(compactJSON(entry))
 	}
-	health, _ := LoadHealth(f.ctx)
-	history := health.GetObject("s").GetList("history")
-	if len(history) != 1 || history[0].(*jsonx.Object).Value("status") != "fail" {
-		t.Fatal(jsonx.Repr(health))
+	health, _ := ReadHealth(f.ctx)
+	sEntry := health.Entry("s")
+	if sEntry == nil || len(sEntry.History) != 1 || sEntry.History[0].Status != "fail" {
+		t.Fatal(compactJSON(health))
 	}
-	f.env.FetchSubscription = func(context.Context, string, string, substore.FetchOptions) (*substore.SubscriptionResult, error) {
-		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml",
-			Traffic: jsonx.Obj("upload", jsonx.Int(1), "total", jsonx.Int(5))}, nil
+	traffic := testjson.Decode[Traffic](t, map[string]any{"upload": 1, "total": 5})
+	f.env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*SourceResult, error) {
+		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml", Traffic: &traffic}, nil
 	}
-	nodes, result, cache, err := RefreshSubscription(f.ctx, f.sub(), "schedule")
-	if err != nil || len(nodes) != 1 || result.FetchedAt != "2026-10-24T00:00:00+00:00" || cache.Value("updated_at") != result.FetchedAt {
+	nodes, result, cache, err := RefreshSource(f.ctx, f.sub(), "schedule")
+	if err != nil || len(nodes) != 1 || result.FetchedAt != "2026-10-24T00:00:00+00:00" || cache.UpdatedAt == nil || *cache.UpdatedAt != result.FetchedAt {
 		t.Fatal(nodes, result, cache, err)
 	}
-	node := nodes[0].(*jsonx.Object)
-	if node.Value("id") != "node_00000001" || node.Value("subscription_id") != "s" || node.Value("subscription_name") != "Feed" {
-		t.Fatal(jsonx.Repr(node))
+	nodeParsed, err := testjson.Parse(mustMarshalBytes(t, nodes[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeID, _ := testjson.Path(nodeParsed, "id")
+	subID, _ := testjson.Path(nodeParsed, "subscription_id")
+	subName, _ := testjson.Path(nodeParsed, "subscription_name")
+	if nodeID != "node_00000001" || subID != "s" || subName != "Feed" {
+		t.Fatal(compactJSON(nodes[0]))
 	}
 	entry = f.status("subscription:s")
-	if entry.Value("last_status") != "success" || entry.Value("cache_updated_at") != result.FetchedAt || entry.Has("cache_retained") {
-		t.Fatal(jsonx.Repr(entry))
+	_, hasRetained := entry["cache_retained"]
+	if entry["last_status"] != "success" || entry["cache_updated_at"] != result.FetchedAt || hasRetained {
+		t.Fatal(compactJSON(entry))
 	}
-	health, _ = LoadHealth(f.ctx)
-	got := health.GetObject("s")
-	if !jsonx.Equal(got.GetList("history")[1], jsonx.Obj("at", "2026-10-24T00:00:00Z", "status", "ok", "count", jsonx.Int(1))) ||
-		!jsonx.Equal(got.Value("traffic"), jsonx.Obj("upload", jsonx.Int(1), "total", jsonx.Int(5))) || got.Value("traffic_at") != "2026-10-24T00:00:00Z" {
-		t.Fatal(jsonx.Repr(got))
+	health, _ = ReadHealth(f.ctx)
+	got := health.Entry("s")
+	if got == nil || len(got.History) < 2 ||
+		!testjson.Equal(got.History[1], map[string]any{"at": "2026-10-24T00:00:00Z", "status": "ok", "count": 1}) ||
+		!testjson.Equal(got.Traffic, map[string]any{"upload": 1, "total": 5}) ||
+		got.TrafficAt == nil || *got.TrafficAt != "2026-10-24T00:00:00Z" {
+		t.Fatal(compactJSON(got))
 	}
-	downloaded, err := f.repo.ReadSharedJSON(f.ctx, DownloadCachePath(subURL))
-	if err != nil || downloaded.Value("text") != proxiesYAML(t) || downloaded.Value("fetched_at") != result.FetchedAt {
+	downloadedRaw, err := readSharedData(f.ctx, DownloadCachePath(subURL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloaded, err := decodeMap(downloadedRaw)
+	if err != nil || downloaded["text"] != proxiesYAML(t) || downloaded["fetched_at"] != result.FetchedAt {
 		t.Fatal(downloaded, err)
 	}
 }
@@ -725,24 +811,24 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 // Run now: the background refresh claims the task (a second start is
 // busy), runs with trigger "manual" and releases it.
 func TestRunNowClaimsTheTask(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	gate := make(chan struct{})
-	f.env.FetchSubscription = func(ctx context.Context, _ string, _ string, _ substore.FetchOptions) (*substore.SubscriptionResult, error) {
+	f.env.Sources.Fetch = func(ctx context.Context, _ string, _ string, _ substore.FetchOptions) (*SourceResult, error) {
 		<-gate
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
+		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
 	request, cancel := context.WithCancel(f.ctx)
 	defer cancel()
-	key, err := RunNow(request, "subscription", "s")
+	key, err := RunResourceNow(request, "subscription", "s")
 	cancel()
 	if err != nil || key != "subscription:s" || !IsRunning(key) {
 		t.Fatal(key, err)
 	}
 	var busy *TaskBusy
-	if _, err := RunNow(f.ctx, "subscription", "s"); !errors.As(err, &busy) || err.Error() != msgTaskBusy {
+	if _, err := RunResourceNow(f.ctx, "subscription", "s"); !errors.As(err, &busy) || err.Error() != msgTaskBusy {
 		t.Fatal(err)
 	}
 	if err := runTask(f.ctx, "subscription:s", "s"); err == nil || err.Error() != msgTaskBusy {
@@ -750,15 +836,15 @@ func TestRunNowClaimsTheTask(t *testing.T) {
 	}
 	close(gate)
 	waitIdle(t, key)
-	if f.status(key).Value("last_trigger") != "manual" || f.status(key).Value("last_status") != "success" {
-		t.Fatal(jsonx.Repr(f.status(key)))
+	if f.status(key)["last_trigger"] != "manual" || f.status(key)["last_status"] != "success" {
+		t.Fatal(compactJSON(f.status(key)))
 	}
 	var lookup *LookupError
-	if _, err := RunNow(f.ctx, "subscription", "gone"); !errors.As(err, &lookup) {
+	if _, err := RunResourceNow(f.ctx, "subscription", "gone"); !errors.As(err, &lookup) {
 		t.Fatal(err)
 	}
-	f.updateShared(func(shared *jsonx.Object) { shared.GetList("subscriptions")[0].(*jsonx.Object).Delete("url") })
-	if _, err := RunNow(f.ctx, "subscription", "s"); err == nil || err.Error() != "这个来源没有订阅地址，不需要更新" {
+	f.updateShared(func(shared *model.Shared) { shared.Subscriptions[0].URL = "" })
+	if _, err := RunResourceNow(f.ctx, "subscription", "s"); err == nil || err.Error() != "这个来源没有订阅地址，不需要更新" {
 		t.Fatal(err)
 	}
 }
@@ -775,8 +861,11 @@ func waitIdle(t *testing.T, key string) {
 
 // Instance ownership must not cause the scheduler to skip its rounds.
 func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
-	f := setup(t, jsonx.Int(60))
-	f.updateShared(func(shared *jsonx.Object) { shared.GetList("rule_library")[0].(*jsonx.Object).Set("enabled", false) })
+	f := setup(t, 60)
+	f.updateShared(func(shared *model.Shared) {
+		disabled := false
+		shared.RuleLibrary[0].Enabled = &disabled
+	})
 	f.download(proxiesYAML(t), "direct_yaml", nil)
 	owner, err := instance.Acquire(context.Background(), f.repo.DataDir())
 	if err != nil {
@@ -816,10 +905,9 @@ func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if entry := f.status(SubscriptionKey("s")); entry.GetInt("run_count") != 1 || entry.GetString("last_trigger") != "schedule" {
+	if entry := f.status(SourceTaskKey("s")); mapInt(entry, "run_count") != 1 || mapStr(entry, "last_trigger") != "schedule" {
 		t.Fatal("scheduler did not refresh under the instance lock", entry)
 	}
-
 }
 
 func awaitRefresh(t *testing.T, condition func() bool) {
@@ -838,440 +926,27 @@ func awaitRefresh(t *testing.T, condition func() bool) {
 // rejected, the valid cache kept, and the run recorded as failed with the
 // cache retained and the offending line in the reason.
 func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
-	rulefetch.WriteCache(f.ctx, refreshCacheRule(t, ruleDecl()), rulefetch.Content{Data: []byte("+.valid.example\n")}, nil)
-	_, _, err := RefreshRuleSource(f.ctx, ruleDecl(), "schedule", RuleOptions{Fetch: func(string) (any, error) {
-		return []byte("DOMAIN,bad.example"), nil
-	}})
+	f := setup(t, 86400)
+	rule := ruleDecl(t)
+	_, _ = rulefetch.WriteCache(f.ctx, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.valid.example\n")}, nil)
+	_, _, err := RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
+		Fetch: func(context.Context, string) (rulefetch.Content, error) {
+			return rulefetch.Content{Data: []byte("DOMAIN,bad.example")}, nil
+		},
+	})
 	var invalid *rulefetch.RemoteRuleValidationError
 	if !errors.As(err, &invalid) {
 		t.Fatal(err)
 	}
-	cached, _ := rulefetch.ReadValidatedRuleCache(f.ctx, ruleDecl(), nil)
+	cached, _ := rulefetch.ReadCache(f.ctx, refreshCacheRule(t, rule), nil)
 	entry := f.status("rule_source:rule")
-	if string(cached) != "+.valid.example\n" || entry.Value("last_status") != "failed" || entry.Value("cache_retained") != true ||
-		!strings.Contains(entry.GetString("last_error"), "DOMAIN,bad.example") || !jsonx.Truthy(entry.Value("cache_updated_at")) {
-		t.Fatal(string(cached), jsonx.Repr(entry))
+	if string(cached) != "+.valid.example\n" || entry["last_status"] != "failed" || entry["cache_retained"] != true ||
+		!strings.Contains(mapStr(entry, "last_error"), "DOMAIN,bad.example") || !pyTruthy(entry["cache_updated_at"]) {
+		t.Fatal(string(cached), compactJSON(entry))
 	}
 	// A device read now gets the valid bytes marked stale.
-	content, stale, err := ReadRuleSource(f.ctx, ruleDecl(), RuleOptions{})
+	content, stale, err := ReadRemote(f.ctx, rule, RuleReadOptions{})
 	if err != nil || string(content) != "+.valid.example\n" || stale == nil || !strings.Contains(stale.Error(), "DOMAIN,bad.example") {
 		t.Fatal(content, stale, err)
 	}
-}
-
-// Env holds the I/O of the module: the clock (wall time for receipts and
-// due times, monotonic time for durations, sleeps of the scheduler loop),
-// the subscription download (sub_store_client.get_subscription_proxies_yaml),
-// the rule download client, the HTTP client of fetch_userinfo, node ids and
-// the Sub-Store node converter. Tests install adapted fixtures with SetRefreshEnv.
-type Env struct {
-	Clock substore.Clock
-	// FetchSubscription is get_subscription_proxies_yaml(sub_id, url, **opts).
-	FetchSubscription func(ctx context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error)
-	// RuleClient downloads rule sources (nil: rulefetch.DefaultClient).
-	RuleClient *rulefetch.Client
-	// HTTP is the requests client of fetch_userinfo.
-	HTTP substore.HTTPClient
-	// RandomHex is uuid.uuid4().hex[:8] (generated node ids).
-	RandomHex func() string
-	// Converter is sub_store_client.convert_proxy_string (nil: the
-	// process-wide Sub-Store client at the time of the call).
-	Converter convert.ProxyStringConverter
-}
-
-func (e *Env) converter() convert.ProxyStringConverter {
-	if e.Converter != nil {
-		return e.Converter
-	}
-	return substore.Converter()
-}
-
-func (e *Env) ruleClient() *rulefetch.Client {
-	if e.RuleClient != nil {
-		return e.RuleClient
-	}
-	return rulefetch.DefaultClient
-}
-
-type nodeConverter struct{ old convert.ProxyStringConverter }
-
-func (c nodeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if c.old == nil {
-		return nil, nil
-	}
-	value := c.old.ConvertProxyString(ctx, text)
-	if value == nil {
-		return nil, nil
-	}
-	return yamlbridge.Encode(value)
-}
-func refreshEnvForTest(e *Env) *RefreshEnv {
-	if e == nil {
-		return DefaultRefreshEnv()
-	}
-	native := DefaultRefreshEnv()
-	native.Clock, native.HTTP, native.RandomHex = e.Clock, e.HTTP, e.RandomHex
-	native.RuleClient = e.ruleClient()
-	native.Sources.Fetch = func(ctx context.Context, id, url string, options substore.FetchOptions) (*SourceResult, error) {
-		if e.FetchSubscription == nil {
-			return nil, errors.New("subscription fetch owner unavailable")
-		}
-		result, err := e.FetchSubscription(ctx, id, url, options)
-		return typedResult(result), errorFromLegacy(err)
-	}
-	native.Sources.Converter = nodeConverter{e.converter()}
-	return native
-}
-
-// Archived JSON fixtures adapt only at this test boundary to the native owners.
-// ParseUserinfo adapts the existing quota parser to the legacy API.
-func ParseUserinfo(header string) (*jsonx.Object, error) {
-	value, err := parseTraffic(header)
-	if value == nil {
-		return nil, err
-	}
-	return legacyObject(value), err
-}
-
-// FetchUserinfo validates the legacy URL shape before native quota fetching.
-func FetchUserinfo(ctx context.Context, value any) (*jsonx.Object, error) {
-	url, ok := value.(string)
-	if !ok {
-		return nil, nil
-	}
-	traffic, err := FetchTraffic(ctx, url)
-	if traffic == nil {
-		return nil, err
-	}
-	return legacyObject(traffic), err
-}
-
-// LoadHealth adapts raw snapshot members without interpreting unowned entries.
-func LoadHealth(ctx context.Context) (*jsonx.Object, error) {
-	data, err := ReadHealth(detached(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return legacyObject(data), nil
-}
-
-// RecordFetch adapts one outcome to the native health writer.
-func RecordFetch(ctx context.Context, id string, value FetchRecord) (*jsonx.Object, error) {
-	var count model.Int
-	_ = decodeLegacy(value.Count, &count)
-	var traffic *Traffic
-	if value.Traffic != nil {
-		traffic = &Traffic{}
-		_ = decodeLegacy(value.Traffic, traffic)
-	}
-	result, err := RecordHealth(ctx, id, FetchEventInput{OK: value.OK, Count: count, FromCache: value.FromCache, Traffic: traffic})
-	if err != nil {
-		return nil, err
-	}
-	return legacyObject(result), nil
-}
-
-// SourceCacheMetadata adapts one source/result record to the native metadata owner.
-func SourceCacheMetadata(sub *jsonx.Object, result *substore.SubscriptionResult) (*jsonx.Object, error) {
-	metadata, err := CacheMetadata(context.Background(), sourceRecord(sub), typedResult(result))
-	if err != nil {
-		return nil, err
-	}
-	return legacyObject(metadata), nil
-}
-
-// RememberSourceDownload adapts the source transport receipt write.
-func RememberSourceDownload(ctx context.Context, sub *jsonx.Object, result *substore.SubscriptionResult) (*substore.SubscriptionResult, error) {
-	value, err := RememberDownload(ctx, sourceRecord(sub), typedResult(result))
-	return oldResult(value), err
-}
-
-// DownloadSubscriptionNodes adapts nodes and receipts for existing source callers.
-func DownloadSubscriptionNodes(ctx context.Context, sub *jsonx.Object) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
-	nodes, result, cache, err := DownloadNodes(ctx, sourceRecord(sub))
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return legacyNodes(nodes), oldResult(result), legacyObject(cache), nil
-}
-
-// FetchSubscriptionSource adapts an unported fetch callback to the native flow.
-func FetchSubscriptionSource(ctx context.Context, sub *jsonx.Object, fetch SourceFetch) (*substore.SubscriptionResult, error) {
-	var native FetchSourceFn
-	if fetch != nil {
-		native = func(ctx context.Context, id, url string) (*SourceResult, error) {
-			result, err := fetch(ctx, id, url)
-			return typedResult(result), errorFromLegacy(err)
-		}
-	}
-	result, err := FetchSource(ctx, sourceRecord(sub), native)
-	return oldResult(result), err
-}
-
-func newResult(text, source string, traffic *jsonx.Object, at string) *substore.SubscriptionResult {
-	var quota *Traffic
-	if traffic != nil {
-		quota = &Traffic{}
-		_ = decodeLegacy(traffic, quota)
-	}
-	return oldResult(makeResult(text, source, quota, at))
-}
-
-func fetchedAtValue(result *substore.SubscriptionResult) any {
-	if result.FetchedAt == "" {
-		return nil
-	}
-	return result.FetchedAt
-}
-
-func isFresh(timestamp any, interval int64) bool {
-	text, _ := timestamp.(string)
-	return fresh(text, interval)
-}
-
-func typedResult(result *substore.SubscriptionResult) *SourceResult {
-	if result == nil {
-		return nil
-	}
-	var traffic *Traffic
-	if result.Traffic != nil {
-		traffic = &Traffic{}
-		_ = decodeLegacy(result.Traffic, traffic)
-	}
-	return &SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}
-}
-
-func oldResult(result *SourceResult) *substore.SubscriptionResult {
-	if result == nil {
-		return nil
-	}
-	var traffic *jsonx.Object
-	if result.Traffic != nil {
-		traffic = legacyObject(result.Traffic)
-	}
-	return &substore.SubscriptionResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}
-}
-
-func sourceRecord(value *jsonx.Object) model.Subscription {
-	var result model.Subscription
-	_ = decodeLegacy(value, &result)
-	return result
-}
-
-func legacyNodes(nodes []model.Node) []any {
-	data, _ := model.Marshal(nodes)
-	value, _ := jsonx.Parse(data)
-	result, _ := value.([]any)
-	return result
-}
-
-// FetchRecord is the old boundary for a fetch outcome. Native owners use FetchEventInput.
-type FetchRecord struct {
-	OK        bool
-	Count     any
-	FromCache bool
-	Traffic   *jsonx.Object
-}
-
-// Archived JSON fixtures adapt only at this test boundary to the native owners.
-// SubscriptionKey adapts an existing task ID to its native string identity.
-func SubscriptionKey(id any) string { return SourceTaskKey(legacyID(id)) }
-
-// NextRunAt adapts the legacy scalar and receipt boundary to NextDue.
-func NextRunAt(entry any, interval jsonx.Number, baseline any, now *time.Time) (*time.Time, error) {
-	receipt := &taskstatus.Receipt{}
-	_ = decodeLegacy(entry, receipt)
-	text, _ := baseline.(string)
-	seconds, ok := interval.Int64()
-	if !ok {
-		// Overflowing intervals still have the same scheduling short circuits:
-		// no previous run is due now, and failed sources cap positive intervals.
-		_, hasLast := parseStamp(textOr(receipt.LastRunAt, ""))
-		if !hasLast {
-			_, hasLast = parseStamp(text)
-		}
-		if !hasLast {
-			return NextDue(receipt, 1, optionalText(text), now)
-		}
-		value, integer := interval.BigInt()
-		if !integer || value.Sign() < 0 || textOr(receipt.LastStatus, "") != "failed" {
-			return nil, ErrScheduleTime
-		}
-		seconds = math.MaxInt64
-	}
-	return NextDue(receipt, model.Int(seconds), optionalText(text), now)
-}
-
-// SubscriptionCacheTime adapts the native nullable cache timestamp.
-func SubscriptionCacheTime(ctx context.Context, sub *jsonx.Object) (any, error) {
-	at, err := SourceCacheAt(ctx, sourceRecord(sub))
-	if at == nil {
-		return nil, err
-	}
-	return *at, err
-}
-
-// RuleCacheTime adapts the native nullable file timestamp.
-func RuleCacheTime(ctx context.Context, rule *jsonx.Object) (any, error) {
-	at, err := RuleCacheAt(ctx, libraryRecord(rule))
-	if at == nil {
-		return nil, err
-	}
-	return *at, err
-}
-
-// IsLibrarySource adapts a legacy rule declaration.
-func IsLibrarySource(ctx context.Context, rule *jsonx.Object) (bool, error) {
-	return StoredRule(ctx, libraryRecord(rule))
-}
-
-// RefreshSubscription adapts baseline task/source callers.
-func RefreshSubscription(ctx context.Context, sub *jsonx.Object, trigger string) ([]any, *substore.SubscriptionResult, *jsonx.Object, error) {
-	nodes, result, cache, err := RefreshSource(ctx, sourceRecord(sub), trigger)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return legacyNodes(nodes), oldResult(result), legacyObject(cache), nil
-}
-
-// FindResource adapts a native current resource snapshot.
-func FindResource(ctx context.Context, kind, id string) (*jsonx.Object, error) {
-	resource, err := LookupResource(ctx, kind, id)
-	if err != nil {
-		return nil, err
-	}
-	if resource.Subscription != nil {
-		return legacyObject(resource.Subscription), nil
-	}
-	return legacyObject(resource.Rule), nil
-}
-
-// RunNow adapts the manual task entry point.
-func RunNow(ctx context.Context, kind, id string) (string, error) {
-	return RunResourceNow(ctx, kind, id)
-}
-
-func parseTime(value any) (time.Time, bool) { text, _ := value.(string); return parseStamp(text) }
-
-// Archived JSON fixtures adapt only at this test boundary to the native owners.
-// SubscriptionInterval projects only the stored interval for unported callers.
-func SubscriptionInterval(value *jsonx.Object) jsonx.Number {
-	var source model.Subscription
-	_ = decodeLegacy(value, &source)
-	return jsonx.Int(int64(SourceInterval(source)))
-}
-
-// RuleInterval projects only the stored update interval for unported callers.
-func RuleInterval(value *jsonx.Object) jsonx.Number {
-	var source model.RuleLibraryItem
-	_ = decodeLegacy(value, &source)
-	return jsonx.Int(int64(RemoteInterval(source)))
-}
-
-func snapshot(value *jsonx.Object) taskstatus.Snapshot {
-	var result taskstatus.Snapshot
-	_ = decodeLegacy(value, &result)
-	return result
-}
-func rowObjects(rows []*tasks.Task, err error) ([]*jsonx.Object, error) {
-	if err != nil {
-		return nil, err
-	}
-	result := make([]*jsonx.Object, len(rows))
-	for i, row := range rows {
-		result[i] = legacyObject(row)
-	}
-	return result, nil
-}
-
-// SubscriptionRows adapts task rows for unported tests/callers.
-func SubscriptionRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
-	return rowObjects(SubscriptionTasks(ctx, snapshot(statuses)))
-}
-
-// RuleRows adapts task rows for unported tests/callers.
-func RuleRows(ctx context.Context, statuses *jsonx.Object) ([]*jsonx.Object, error) {
-	return rowObjects(RuleTasks(ctx, snapshot(statuses)))
-}
-func historyOf(value any) (*jsonx.Object, error) {
-	var receipt taskstatus.Receipt
-	_ = decodeLegacy(value, &receipt)
-	result, err := tasks.ProjectHistory(&receipt)
-	if err != nil {
-		return nil, err
-	}
-	return legacyObject(result), nil
-}
-func host(value any) string { text, _ := value.(string); return sourceHost(text) }
-
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var nodes []model.Node
-	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
-	}
-	var receipt *substore.CacheMetadata
-	if metadata != nil {
-		raw, err := json.Marshal(metadata)
-		if err != nil {
-			return nil, err
-		}
-		receipt = &substore.CacheMetadata{}
-		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
-		}
-	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
-}
-
-func fixtureParseProxiesFromYAML(text string) ([]any, error) {
-	nodes, err := substore.ParseProxyNodes(text)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]any, 0, len(nodes))
-	for _, node := range nodes {
-		data, err := yamlx.ToJSON(node)
-		if err != nil {
-			return nil, err
-		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, parsed)
-	}
-	return out, nil
-}
-
-func refreshCacheRule(tb testing.TB, value any) model.RuleConfig {
-	tb.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	var rule model.RuleConfig
-	if err := json.Unmarshal(data, &rule); err != nil {
-		tb.Fatal(err)
-	}
-	return rule
 }

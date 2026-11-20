@@ -1,16 +1,17 @@
 package oxidns
 
 import (
-	"configflow/internal/lifecycle"
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func settingsRepository(t *testing.T) (context.Context, *repo.Repository) {
@@ -26,11 +27,10 @@ func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 	locked, release := make(chan struct{}), make(chan struct{})
 	holder := make(chan error, 1)
 	go func() {
-		_, _, err := r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
 			close(locked)
 			<-release
-			p.GetObject("mosdns").Set("custom_hosts", "192.0.2.7 preserved.example")
-			return p, nil
+			return p.SetJSON("mosdns", json.RawMessage(`{"custom_hosts":"192.0.2.7 preserved.example"}`))
 		})
 		holder <- err
 	}()
@@ -49,12 +49,22 @@ func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 	if err := <-result; err != nil {
 		t.Fatalf("cancelled request aborted owned save: %v", err)
 	}
-	profile, err := r.GetProfile(ctx, "default")
+	profile, err := r.Profile(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.GetObject("oxidns").GetInt("worker_threads") != 6 || profile.GetObject("mosdns").GetString("custom_hosts") != "192.0.2.7 preserved.example" {
-		t.Fatal("fresh transaction snapshot lost concurrent fields", profile)
+	raw, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := testjson.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workers, _ := testjson.Path(parsed, "oxidns", "worker_threads")
+	hosts, _ := testjson.Path(parsed, "mosdns", "custom_hosts")
+	if !testjson.Equal(workers, 6) || hosts != "192.0.2.7 preserved.example" {
+		t.Fatal("fresh transaction snapshot lost concurrent fields", string(raw))
 	}
 }
 func TestC29IfMatchSerializesWholeDraftSaves(t *testing.T) {

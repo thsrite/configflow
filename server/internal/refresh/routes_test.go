@@ -7,6 +7,7 @@ package refresh_test
 // rows; the slots of other modules are empty fakes.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,30 +18,53 @@ import (
 
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
-func none(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }
+func none(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
+
+func wantJSON(t *testing.T, res *httpxtest.Result, want any) {
+	t.Helper()
+	if diff := testjson.Diff(json.RawMessage(res.Body), want); diff != "" {
+		t.Fatalf("body %s\n%s", res.Body, diff)
+	}
+}
+
+func decodeObject(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var out map[string]any
+	if err := dec.Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
 
 // server mutates process-wide task slots; its callers must stay sequential.
 func server(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	refresh.Wire()
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRows(slot, none))
+		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
-	_, err := srv.Repo.UpdateSharedTransaction(srv.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://airport.test/sub?token=private",
-			"enabled", true, "interval", jsonx.Int(86400))})
-		shared.Set("rule_library", []any{jsonx.Obj("id", "rule", "name", "Streaming", "source_type", "url",
-			"url", "https://rules.test/list.txt?key=private", "behavior", "domain", "format", "text", "enabled", true)})
-		return nil, nil
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
+		shared.Subscriptions = []model.Subscription{testjson.Decode[model.Subscription](t, map[string]any{
+			"id": "s", "name": "Feed", "url": "https://airport.test/sub?token=private",
+			"enabled": true, "interval": 86400,
+		})}
+		shared.RuleLibrary = []model.RuleLibraryItem{testjson.Decode[model.RuleLibraryItem](t, map[string]any{
+			"id": "rule", "name": "Streaming", "source_type": "url",
+			"url": "https://rules.test/list.txt?key=private", "behavior": "domain", "format": "text", "enabled": true,
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,14 +81,16 @@ func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
 	}
 }
 
-func rows(t *testing.T, srv *httpxtest.Server) map[string]*jsonx.Object {
+func rows(t *testing.T, srv *httpxtest.Server) map[string]map[string]any {
 	res := srv.Get("/api/tasks").WantStatus(200)
 	if res.Header.Get("Cache-Control") != "no-store" {
 		t.Fatal(res.Header)
 	}
-	out := map[string]*jsonx.Object{}
-	for _, row := range res.Object().GetList("tasks") {
-		out[row.(*jsonx.Object).GetString("key")] = row.(*jsonx.Object)
+	body := decodeObject(t, res.Body)
+	out := map[string]map[string]any{}
+	for _, item := range body["tasks"].([]any) {
+		row := item.(map[string]any)
+		out[row["key"].(string)] = row
 	}
 	return out
 }
@@ -86,24 +112,24 @@ func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 		return &refresh.SourceResult{Text: text, Source: "direct_yaml"}, nil
 	}
 	t.Cleanup(refresh.SetRefreshEnv(env))
-	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", "subscription:s"))).WantStatus(202).
-		WantJSON(jsonx.Obj("success", true, "message", "已开始运行，结果会显示在列表中"))
+	wantJSON(t, srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": "subscription:s"})).WantStatus(202),
+		map[string]any{"success": true, "message": "已开始运行，结果会显示在列表中"})
 	deadline := time.Now().Add(10 * time.Second)
 	for refresh.IsRunning("subscription:s") && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	row := rows(t, srv)["subscription:s"]
-	if row.Value("last_status") != "success" || row.Value("last_trigger") != "manual" || row.GetInt("run_count") != 1 || row.Value("running") != false {
-		t.Fatal(jsonx.Repr(row))
+	if row["last_status"] != "success" || row["last_trigger"] != "manual" || !testjson.Equal(row["run_count"], 1) || row["running"] != false {
+		t.Fatalf("unexpected row: %v", row)
 	}
-	cache, err := substore.LoadSubscriptionCache(srv.Context(), "s")
-	if err != nil || cache.GetInt("count") != 1 {
+	cache, err := substore.LoadCache(srv.Context(), "s")
+	if err != nil || cache == nil || cache.Count == nil || int64(*cache.Count) != 1 {
 		t.Fatal(cache, err)
 	}
-	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", "subscription:gone"))).WantStatus(404).
-		WantJSON(jsonx.Obj("success", false, "message", "任务对应的来源已不存在，请刷新后重试"))
-	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.Obj("key", "agent_rule_sync:a"))).WantStatus(400)
-	srv.Post("/api/tasks/run", httpxtest.JSON(jsonx.NewObject())).WantStatus(400)
+	wantJSON(t, srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": "subscription:gone"})).WantStatus(404),
+		map[string]any{"success": false, "message": "任务对应的来源已不存在，请刷新后重试"})
+	srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": "agent_rule_sync:a"})).WantStatus(400)
+	srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{})).WantStatus(400)
 }
 
 // test_scheduled_tasks.py::test_interval_edit_validates_and_rule_source_edits_keep_it (route part)
@@ -114,20 +140,24 @@ func TestIntervalEditValidatesOnTheRealRows(t *testing.T) {
 		return nil, errors.New("no request")
 	}
 	t.Cleanup(refresh.SetRefreshEnv(env))
-	put := func(body *jsonx.Object) *httpxtest.Result {
+	put := func(body map[string]any) *httpxtest.Result {
 		return srv.Put("/api/tasks/interval", httpxtest.JSON(body))
 	}
-	put(jsonx.Obj("key", "rule_source:rule", "interval_seconds", jsonx.Int(30))).WantStatus(400)
-	put(jsonx.Obj("key", "rule_source:rule", "interval_seconds", jsonx.Int(3600), "x", jsonx.Int(1))).WantStatus(400)
-	put(jsonx.Obj("key", "router_rule_sync:p:r", "interval_seconds", jsonx.Int(3600))).WantStatus(400)
-	task := put(jsonx.Obj("key", "rule_source:rule", "interval_seconds", jsonx.Int(0))).WantStatus(200).Object().GetObject("task")
-	if task.GetInt("interval_seconds") != 0 || task.Value("enabled") != false || task.Value("next_run_at") != nil {
-		t.Fatal(jsonx.Repr(task))
+	put(map[string]any{"key": "rule_source:rule", "interval_seconds": 30}).WantStatus(400)
+	put(map[string]any{"key": "rule_source:rule", "interval_seconds": 3600, "x": 1}).WantStatus(400)
+	put(map[string]any{"key": "router_rule_sync:p:r", "interval_seconds": 3600}).WantStatus(400)
+	res := put(map[string]any{"key": "rule_source:rule", "interval_seconds": 0}).WantStatus(200)
+	task := decodeObject(t, res.Body)["task"].(map[string]any)
+	if !testjson.Equal(task["interval_seconds"], 0) || task["enabled"] != false || task["next_run_at"] != nil {
+		t.Fatalf("unexpected task: %v", task)
 	}
-	put(jsonx.Obj("key", "subscription:s", "interval_seconds", jsonx.Int(3600))).WantStatus(200)
-	shared, _ := srv.Repo.GetShared(srv.Context())
-	if shared.GetList("subscriptions")[0].(*jsonx.Object).GetInt("interval") != 3600 {
-		t.Fatal(jsonx.Repr(shared))
+	put(map[string]any{"key": "subscription:s", "interval_seconds": 3600}).WantStatus(200)
+	shared, err := srv.Repo.Shared(srv.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shared.Subscriptions[0].Interval == nil || int64(*shared.Subscriptions[0].Interval) != 3600 {
+		t.Fatalf("unexpected shared subscriptions: %+v", shared.Subscriptions)
 	}
 }
 
@@ -135,11 +165,11 @@ func TestIntervalEditValidatesOnTheRealRows(t *testing.T) {
 // rule source that never ran.
 func TestRowShape(t *testing.T) {
 	srv := server(t)
-	subs, err := subscriptionRows(srv.Context(), jsonx.NewObject())
+	subs, err := subscriptionRows(t, srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	rules, err := ruleRows(srv.Context(), jsonx.NewObject())
+	rules, err := ruleRows(t, srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,82 +179,66 @@ func TestRowShape(t *testing.T) {
 		"link", "notifications_enabled", "last_run_at", "last_status", "last_error", "last_duration_ms", "last_trigger",
 		"last_success_at", "run_count", "failure_count", "consecutive_failures", "cache_retained", "cache_updated_at"}
 	wantRule := slices.Clone(wantSub)
-	// _rule_rows passes notifications_enabled before editable/can_run, which
-	// exist already: the same order.
 	slices.Sort(wantSub)
 	slices.Sort(wantRule)
-	gotSub, gotRule := sub.Keys(), rule.Keys()
+	gotSub, gotRule := mapKeys(sub), mapKeys(rule)
 	slices.Sort(gotSub)
 	slices.Sort(gotRule)
 	if !slices.Equal(gotSub, wantSub) || !slices.Equal(gotRule, wantRule) {
-		t.Fatal(sub.Keys(), rule.Keys())
+		t.Fatal(gotSub, gotRule)
 	}
-	want := jsonx.Obj("category", "subscription", "name", "Feed", "detail", "", "resource_id", "s", "enabled", true,
-		"interval_seconds", jsonx.Int(86400), "editable", true, "can_run", true, "run_hint", "", "running", false,
-		"state_message", "", "link", "/subscriptions", "notifications_enabled", true, "run_count", jsonx.Int(0),
-		"failure_count", jsonx.Int(0), "cache_updated_at", nil)
-	for key, value := range want.All() {
-		if !jsonx.Equal(sub.Value(key), value) {
-			t.Errorf("subscription %s = %s", key, jsonx.Repr(sub.Value(key)))
+	want := map[string]any{
+		"category": "subscription", "name": "Feed", "detail": "", "resource_id": "s", "enabled": true,
+		"interval_seconds": 86400, "editable": true, "can_run": true, "run_hint": "", "running": false,
+		"state_message": "", "link": "/subscriptions", "notifications_enabled": true, "run_count": 0,
+		"failure_count": 0, "cache_updated_at": nil,
+	}
+	for key, value := range want {
+		if !testjson.Equal(sub[key], value) {
+			t.Errorf("subscription %s = %v", key, sub[key])
 		}
 	}
-	if sub.Value("next_run_at") == nil || rule.Value("detail") != "rules.test" || rule.Value("link") != "/rule-library" {
-		t.Fatal(jsonx.Repr(sub), jsonx.Repr(rule))
+	if sub["next_run_at"] == nil || rule["detail"] != "rules.test" || rule["link"] != "/rule-library" {
+		t.Fatalf("sub=%v rule=%v", sub, rule)
 	}
 }
 
-func subscriptionRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func subscriptionRows(t *testing.T, ctx context.Context) ([]map[string]any, error) {
+	rows, err := refresh.SubscriptionTasks(ctx, taskstatus.Snapshot{})
 	if err != nil {
 		return nil, err
 	}
-	var statuses taskstatus.Snapshot
-	if err := json.Unmarshal(raw, &statuses); err != nil {
-		return nil, err
-	}
-	rows, err := refresh.SubscriptionTasks(ctx, statuses)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*jsonx.Object, len(rows))
+	out := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		data, err := json.Marshal(row)
 		if err != nil {
 			return nil, err
 		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = parsed.(*jsonx.Object)
+		out[i] = decodeObject(t, data)
 	}
 	return out, nil
 }
 
-func ruleRows(ctx context.Context, value *jsonx.Object) ([]*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
+func ruleRows(t *testing.T, ctx context.Context) ([]map[string]any, error) {
+	rows, err := refresh.RuleTasks(ctx, taskstatus.Snapshot{})
 	if err != nil {
 		return nil, err
 	}
-	var statuses taskstatus.Snapshot
-	if err := json.Unmarshal(raw, &statuses); err != nil {
-		return nil, err
-	}
-	rows, err := refresh.RuleTasks(ctx, statuses)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*jsonx.Object, len(rows))
+	out := make([]map[string]any, len(rows))
 	for i, row := range rows {
 		data, err := json.Marshal(row)
 		if err != nil {
 			return nil, err
 		}
-		parsed, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = parsed.(*jsonx.Object)
+		out[i] = decodeObject(t, data)
 	}
 	return out, nil
 }

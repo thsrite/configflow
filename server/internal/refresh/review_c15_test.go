@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/substore"
 )
 
@@ -16,38 +16,39 @@ import (
 // request thread is never interrupted. Repository locks taken with a
 // cancelled context fail at random, so the run is repeated.
 func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	f.download(proxiesYAML(t), "direct_yaml", nil)
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithCancel(f.ctx)
 		cancel()
-		if _, _, _, err := RefreshSubscription(ctx, f.sub(), "manual"); err != nil {
+		if _, _, _, err := RefreshSource(ctx, f.sub(), "manual"); err != nil {
 			t.Fatalf("round %d: %v", i, err)
 		}
-		if got := f.status("subscription:s").GetInt("run_count"); got != int64(i+1) {
+		if got := mapInt(f.status("subscription:s"), "run_count"); got != int64(i+1) {
 			t.Fatalf("round %d: run_count %d", i, got)
 		}
-		health, err := LoadHealth(f.ctx)
+		health, err := ReadHealth(f.ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n := len(health.GetObject("s").GetList("history")); n != min(i+1, HistorySize) {
-			t.Fatalf("round %d: history %d", i, n)
+		entry := health.Entry("s")
+		if entry == nil || len(entry.History) != min(i+1, HistorySize) {
+			t.Fatalf("round %d: history %+v", i, entry)
 		}
 	}
-	if f.cache().GetInt("count") != 1 {
-		t.Fatal(jsonx.Repr(f.cache()))
+	if c := f.cache(); c == nil || c.Count == nil || int64(*c.Count) != 1 {
+		t.Fatalf("unexpected cache: %+v", c)
 	}
 	// A delivery served from the transport cache under a cancelled request
 	// context, and the fetch path that writes it.
-	f.updateShared(func(shared *jsonx.Object) {
-		shared.GetList("subscriptions")[0].(*jsonx.Object).Set("url", subURL+"&moved=1")
+	f.updateShared(func(shared *model.Shared) {
+		shared.Subscriptions[0].URL = subURL + "&moved=1"
 	})
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithCancel(f.ctx)
 		cancel()
-		result, err := FetchSubscriptionSource(ctx, f.sub(), func(context.Context, string, string) (*substore.SubscriptionResult, error) {
-			return &substore.SubscriptionResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
+		result, err := FetchSource(ctx, f.sub(), func(context.Context, string, string) (*SourceResult, error) {
+			return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 		})
 		if err != nil {
 			t.Fatalf("round %d: %v", i, err)
@@ -62,7 +63,7 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 // Public found/missing behavior and declaration changes remain covered through
 // repository-backed tests; malformed collections follow the shared R5 codec.
 func TestReviewTypedLookupUsesCurrentDeclaration(t *testing.T) {
-	f := setup(t, jsonx.Int(86400))
+	f := setup(t, 86400)
 	found, err := LookupResource(f.ctx, "subscription", "s")
 	if err != nil || found.Subscription == nil || found.Subscription.ID != "s" {
 		t.Fatal(found, err)
@@ -70,7 +71,7 @@ func TestReviewTypedLookupUsesCurrentDeclaration(t *testing.T) {
 	if _, err := LookupResource(f.ctx, "subscription", "missing"); err == nil {
 		t.Fatal("missing source was found")
 	}
-	current := libraryRecord(ruleDecl())
+	current := ruleDecl(t)
 	stored, err := StoredRule(f.ctx, current)
 	if err != nil || !stored {
 		t.Fatal(stored, err)
@@ -83,7 +84,7 @@ func TestReviewTypedLookupUsesCurrentDeclaration(t *testing.T) {
 }
 
 func TestN89FetchWithoutCausesRetainsBusinessDiagnostic(t *testing.T) {
-	if got := DescribeFailure(&substore.SubscriptionFetchError{}); got != msgSubscriptionFetchUnknown {
+	if got := FailureReason(&substore.SubscriptionFetchError{}); got != msgSubscriptionFetchUnknown {
 		t.Fatal(got)
 	}
 }
