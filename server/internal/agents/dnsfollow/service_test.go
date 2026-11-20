@@ -15,7 +15,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 )
@@ -128,11 +128,15 @@ func newPeer(t *testing.T, id, service string, o agentfake.Options) *peer {
 	t.Cleanup(p.server.Close)
 	return p
 }
-func (p *peer) record() *jsonx.Object {
+func (p *peer) record() model.Agent {
 	u, _ := url.Parse(p.server.URL)
 	host, port, _ := net.SplitHostPort(u.Host)
 	n, _ := strconv.Atoi(port)
-	return jsonx.Obj("id", p.id, "name", p.service, "service_type", p.service, "host", host, "port", n, "token", p.token, "profile_id", "default", "enabled", true, "version", "1.8.60-go")
+	enabled := true
+	return model.Agent{
+		ID: p.id, Name: p.service, ServiceType: p.service, Host: host, Port: model.Int(n),
+		Token: p.token, ProfileID: "default", Enabled: &enabled, Version: "1.8.60-go",
+	}
 }
 func (p *peer) uploads() int {
 	n := 0
@@ -161,16 +165,19 @@ func newFixture(t *testing.T, o Options, targetOptions agentfake.Options) *fixtu
 	ctx := repo.WithScope(repo.WithRepository(t.Context(), r))
 	source := newPeer(t, "source", "mihomo", agentfake.Options{})
 	target := newPeer(t, "target", "oxidns", targetOptions)
-	_, e = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{source.record(), target.record()})
-		return nil, nil
+	e = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.Agents = []model.Agent{source.record(), target.record()}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, _, e = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.Set("oxidns", jsonx.Obj("config_mode", "native", "native_config", nativeDraft))
-		return nil, nil
+	_, e = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
+		raw, err := json.Marshal(map[string]any{"config_mode": "native", "native_config": nativeDraft})
+		if err != nil {
+			return err
+		}
+		return profile.SetJSON("oxidns", raw)
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -243,11 +250,12 @@ func (f *fixture) agent(t *testing.T) *agent {
 }
 func (f *fixture) profile(t *testing.T) string {
 	t.Helper()
-	p, e := f.r.GetProfile(f.ctx, "default")
+	p, e := f.r.Profile(f.ctx, "default")
 	if e != nil {
 		t.Fatal(e)
 	}
-	return p.GetObject("oxidns").GetString("native_config")
+	s, _ := oxidnsMap(t, p)["native_config"].(string)
+	return s
 }
 
 func TestConfirmedFollowChangesOnlySelectedUpstream(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
@@ -24,20 +23,20 @@ func TestNativeStatisticsDisconnectFinishesAndShutdownDoesNotWrite(t *testing.T)
 			request, cancel := context.WithCancel(bound)
 			cancel()
 			if shutdown {
-				e.f.hook = func(_ *jsonx.Object, endpoint string, _ query) {
+				e.f.hook = func(_ *model.Agent, endpoint string, _ query) {
 					if endpoint == "overview" {
 						runtime.Shutdown(context.Background())
 					}
 				}
 			}
-			_, err := ResetStatistics(request, registryFor(e.m), "one", []byte(`{}`))
+			_, err := ResetStatistics(request, e.m, "one", []byte(`{}`))
 			after := readFile(t, e.store.Path("one"))
 			if shutdown {
 				if !errors.Is(err, context.Canceled) || !bytes.Equal(saved, after) {
 					t.Fatalf("shutdown changed statistics: %v", err)
 				}
 				calls := len(e.f.endpoints())
-				if _, err := ReadOverview(bound, registryFor(e.m), "one", nil); !errors.Is(err, context.Canceled) || len(e.f.endpoints()) != calls {
+				if _, err := ReadOverview(bound, e.m, "one", nil); !errors.Is(err, context.Canceled) || len(e.f.endpoints()) != calls {
 					t.Fatal("stopped generation collected another snapshot", err)
 				}
 			} else if err != nil || bytes.Equal(saved, after) {
@@ -94,7 +93,7 @@ func TestCoreVersionCacheDoesNotPublishAfterShutdown(t *testing.T) {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
 			installLatest(t)
 			m, client := panelManager(t, panelAgentRecord("version", "1.8.60-go"))
-			client.add(jsonResponse(jsonx.Obj("version", "v1.19.1"), 200))
+			client.add(jsonResponse(map[string]any{"version": "v1.19.1"}, 200))
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 			runtime.Start(context.Background())
 			defer runtime.Shutdown(context.Background())
@@ -112,7 +111,7 @@ func TestCoreVersionCacheDoesNotPublishAfterShutdown(t *testing.T) {
 				}
 				return "v1.19.2", nil
 			}
-			_, err := CoreUpdateCheck(request, registryFor(m), "mihomo", false)
+			_, err := CoreUpdateCheck(request, m, "mihomo", false)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) || coreCachedOf("release") != nil {
 					t.Fatalf("shutdown published cached version: %v", err)

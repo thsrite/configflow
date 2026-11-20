@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -44,16 +44,27 @@ func fixture(t *testing.T) (*Service, context.Context) {
 		t.Fatal(e)
 	}
 	t.Cleanup(m.Close)
-	_, e = m.UpdateAgents(ctx, "", func(ctx context.Context, rows *[]any) (any, error) {
-		*rows = []any{jsonx.Obj("id", "source", "host", "192.0.2.2", "port", 8080, "token", "synthetic-source-token", "profile_id", "default", "service_type", "mihomo", "deployment_method", "shell", "enabled", true, "status", "online", "last_heartbeat", time.Now().Format(time.RFC3339), "version", "1.8.50-go", "unknown_member", jsonx.Obj("keep", true))}
-		return nil, nil
+	e = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		var src model.Agent
+		data := raw(map[string]any{
+			"id": "source", "host": "192.0.2.2", "port": 8080, "token": "synthetic-source-token",
+			"profile_id": "default", "service_type": "mihomo", "deployment_method": "shell",
+			"enabled": true, "status": "online", "last_heartbeat": time.Now().Format(time.RFC3339),
+			"version": "1.8.50-go", "unknown_member": map[string]any{"keep": true},
+		})
+		if err := json.Unmarshal(data, &src); err != nil {
+			return err
+		}
+		sys.Agents = []model.Agent{src}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, _, e = r.UpdateProfileTransaction(ctx, "default", func(ctx context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("mihomo", jsonx.Obj("custom_config", "ipv6: true\ndns: {ipv6: false}\n", "linux_gateway", jsonx.Obj("enabled", true)))
-		return nil, nil
+	_, e = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Mihomo.CustomConfig = "ipv6: true\ndns: {ipv6: false}\n"
+		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":true}`))
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -306,13 +317,13 @@ func TestReadinessReusesRouterOwnerAndSetupSuborder(t *testing.T) {
 		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer device.Close()
-	_, _, e := s.Manager.Repository().UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		r := jsonx.Obj("id", "router-one", "type", "routeros", "endpoint", device.URL, "username", "api", "password", "synthetic-router-password", "proxy_gateway_agent_id", "source")
-		clone := r.DeepCopy()
-		clone.Set("id", "router-clone")
-		clone.Set("endpoint", device.URL+"/")
-		c.Set("routers", jsonx.Obj("items", []any{r, clone}))
-		return nil, nil
+	_, e := s.Manager.Repository().UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		r1 := model.Router{ID: "router-one", Type: "routeros", Endpoint: device.URL, Username: "api", Password: "synthetic-router-password", ProxyGatewayAgentID: "source"}
+		r2 := r1
+		r2.ID = "router-clone"
+		r2.Endpoint = device.URL + "/"
+		p.Routers.Items = []model.Router{r1, r2}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -352,9 +363,13 @@ func TestCapturedCredentialsSurviveConcurrentCredentialReplacement(t *testing.T)
 		t.Run(map[bool]string{false: "report", true: "error"}[reject], func(t *testing.T) {
 			startRuntime(t)
 			s, ctx := fixture(t)
-			_, e := s.Manager.UpdateAgents(ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-				*rows = append(*rows, jsonx.Obj("id", "peer", "profile_id", "default", "token", "synthetic-peer-old-token", "password", "synthetic-peer-old-password"))
-				return nil, nil
+			e := s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+				var peer model.Agent
+				if err := json.Unmarshal([]byte(`{"id":"peer","profile_id":"default","token":"synthetic-peer-old-token","password":"synthetic-peer-old-password"}`), &peer); err != nil {
+					return err
+				}
+				sys.Agents = append(sys.Agents, peer)
+				return nil
 			})
 			if e != nil {
 				t.Fatal(e)

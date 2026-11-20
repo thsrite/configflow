@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -51,12 +50,11 @@ func TestValidationAgainstPython(t *testing.T) {
 				if string(raw) == "null" {
 					return nil
 				}
-				v, e := jsonx.Parse(raw)
-				if e != nil {
+				var rec model.Agent
+				if e := json.Unmarshal(raw, &rec); e != nil {
 					t.Fatal(e)
 				}
-				r, _ := v.(*jsonx.Object)
-				a, e := decodeAgent(r)
+				a, e := modelAgent(&rec)
 				if e != nil {
 					t.Fatal(e)
 				}

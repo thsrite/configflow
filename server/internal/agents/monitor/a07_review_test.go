@@ -7,17 +7,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"configflow/internal/instance"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/testjson"
 )
 
 type a07Review struct {
@@ -73,7 +74,7 @@ func TestReviewNewerReleaseDigitLimit(t *testing.T) {
 		want := c[2].(map[string]any)
 		got, err := newerRelease(c[0].(string), c[1].(string))
 		if native, bound := nativeVersionExpected(t, "newer_release", raw); bound {
-			if err != nil || got != native.Value("result") {
+			if err != nil || got != native["result"] {
 				t.Errorf("native release count: %v %v want %v", got, err, native)
 			}
 			continue
@@ -97,7 +98,7 @@ func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 		current, cached, force, want := c[0].(string), c[1].(bool), c[2].(bool), c[3].(map[string]any)
 		latest := installLatest(t)
 		m, client := panelManager(t, panelAgentRecord("version", "1.8.60-go"))
-		client.add(jsonResponse(jsonx.Obj("version", current), 200))
+		client.add(jsonResponse(map[string]any{"version": current}, 200))
 		if cached {
 			settings, _ := downloadSettings(context.Background())
 			coreLatest["release"] = &coreCached{finishedAt: monotonic(), latest: "v1.2.3", settings: settings}
@@ -110,24 +111,28 @@ func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 		before := coreCachedOf("release")
 		result, err := panelCall(m, "core/update", "GET", args, nil)
 		if native, bound := nativeVersionExpected(t, "core_update", raw); bound {
-			if got := outcomeOf(result, err); sortedDump(t, got) != sortedDump(t, native) {
-				t.Errorf("native machine version: %v want %v", got, native)
+			wantVal, parseErr := testjson.Parse(mustMarshal(t, native))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			if diff := diffRefVal(t, outcomeOf(result, err), wantVal); diff != "" {
+				t.Errorf("native machine version: %s", diff)
 			}
 			if latest.count() != 0 || coreCachedOf("release") != before {
 				t.Fatal("invalid machine version fetched or changed cached release")
 			}
 			continue
 		}
-		label := truncateText(current, 8) + " cached=" + jsonx.Str(cached) + " force=" + jsonx.Str(force)
+		label := fmt.Sprintf("%s cached=%v force=%v", truncateText(current, 8), cached, force)
 		if want["exception"] != nil {
 			sameOutcome(t, label, reviewOutcome(err), want)
 		} else if err != nil {
 			t.Errorf("%s: %v", label, err)
 		} else {
-			data := result.GetObject("data")
+			data := asMap(toJSONMap(t, result)["data"])
 			w := want["result"].(map[string]any)["data"].(map[string]any)
-			if data.Value("has_update") != w["has_update"] || data.Value("latest") != w["latest"] || data.Value("current") != w["current"] ||
-				data.Value("release_url") != w["release_url"] || data.Value("error") != w["error"] {
+			if data["has_update"] != w["has_update"] || data["latest"] != w["latest"] || data["current"] != w["current"] ||
+				data["release_url"] != w["release_url"] || data["error"] != w["error"] {
 				t.Errorf("%s: %v, want %v", label, data, w)
 			}
 		}
@@ -154,15 +159,15 @@ func TestReviewCoreUpdateFetchCarriesTheHostURL(t *testing.T) {
 		return nil, errors.New("Invalid HTTP/HTTPS URL")
 	}
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.60-go"))
-	client.add(jsonResponse(jsonx.Obj("version", "v1.19.1"), 200))
-	result, err := PanelCall(WithHostURL(context.Background(), "http://panel.test:5000/"), m, "mihomo", "core/update", "GET", nil, nil, "")
+	client.add(jsonResponse(map[string]any{"version": "v1.19.1"}, 200))
+	result, err := CallPanel(WithHostURL(context.Background(), "http://panel.test:5000/"), m, "mihomo", "core/update", "GET", nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if hostURL != "http://panel.test:5000/" || latest.count() != 1 {
 		t.Fatalf("host_url %q, %d fetches", hostURL, latest.count())
 	}
-	if e := result.GetObject("data").GetString("error"); !strings.Contains(e, "version.txt 内容不是版本号") {
+	if e := asStr(asMap(toJSONMap(t, result)["data"])["error"]); !strings.Contains(e, "version.txt 内容不是版本号") {
 		t.Fatal(e)
 	}
 }
@@ -173,7 +178,7 @@ func TestReviewCoreUpdateFetchCarriesTheHostURL(t *testing.T) {
 func TestReviewCacheOriginBeforeTokenEncoding(t *testing.T) {
 	want := loadA07Review(t).CacheBadHost
 	m, client := cacheManager(t, map[string][]any{"dns": {"host", "bad/host", "token", "令牌"}})
-	_, err := CacheCall(ctx, m, "dns", "GET", nil)
+	_, err := CallCache(ctx, m, "dns", "GET", nil)
 	sameOutcome(t, "cache", reviewOutcome(err), want)
 	if client.count() != 0 {
 		t.Fatal("contacted")
@@ -187,15 +192,12 @@ func TestReviewRuleUpdateHAActiveFollowsPython(t *testing.T) {
 	for _, raw := range loadA07Review(t).RuleUpdateHA {
 		var c []json.RawMessage
 		json.Unmarshal(raw, &c)
-		field, err := jsonx.Parse(c[0])
-		if err != nil {
-			t.Fatal(err)
-		}
+		field := parseJSONVal(t, c[0])
 		var want map[string]any
 		json.Unmarshal(c[1], &want)
 		m, client := ruleManager(t, ruleAgent("oxidns_ha_publication", field))
 		client.set(errors.New("no network"))
-		_, _, err = RuleUpdateCall(ctx, m, "dns", "POST", nil)
+		_, _, err := CallRuleUpdate(ctx, m, "dns", "POST", nil)
 		label := string(c[0])
 		if nativeHARefusal(t, raw, err) {
 			if client.count() != 0 {
@@ -273,5 +275,4 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 	if err != nil || fetched[stamp] {
 		t.Fatal("ranking round did not remove retired Agent history under the instance lock", fetched, err)
 	}
-
 }

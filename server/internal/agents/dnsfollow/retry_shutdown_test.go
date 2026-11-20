@@ -7,18 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 func TestShutdownBetweenRetryCommitsRetainsCompleteWaitingState(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	f.editAgent(t, "target", func(a *agents.Record) {
-		a.Set("dns_follow_state", jsonx.Obj("status", "failed"))
-		a.Set("dns_follow_job", jsonx.Obj("binding_id", "old-private-job"))
+	f.editAgent(t, "target", func(a *model.Agent) {
+		_ = a.SetJSON("dns_follow_state", []byte(`{"status":"failed"}`))
+		_ = a.SetJSON("dns_follow_job", []byte(`{"binding_id":"old-private-job"}`))
 	})
 	startRuntime(t, f.ctx)
 	ctx := lifecycle.BindRequest(f.ctx)

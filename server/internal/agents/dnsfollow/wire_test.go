@@ -6,8 +6,8 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/tasks"
 )
 
@@ -35,7 +35,7 @@ func TestC07RunnerAndManagerOwnerLifecycle(t *testing.T) {
 	if runner == nil {
 		t.Fatal("C07 DNS follow runner missing")
 	}
-	f.editAgent(t, "target", func(a *agents.Record) { a.Set("dns_follow_state", jsonx.Obj("status", "failed")) })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = a.SetJSON("dns_follow_state", []byte(`{"status":"failed"}`)) })
 	if err := runner(f.ctx, "dns_follow", "target"); err != nil {
 		t.Fatal(err)
 	}

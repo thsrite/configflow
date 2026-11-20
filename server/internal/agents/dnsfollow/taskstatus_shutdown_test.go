@@ -2,6 +2,7 @@ package dnsfollow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,8 +13,8 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -103,12 +104,16 @@ func TestTaskStatusRetainsOwnerLifetimeAfterPrecheck(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				value, err := jsonx.Parse(data)
-				if err != nil {
+				var stored map[string]struct {
+					RunCount    int    `json:"run_count"`
+					LastTrigger string `json:"last_trigger"`
+					LastStatus  string `json:"last_status"`
+				}
+				if err := json.Unmarshal(data, &stored); err != nil {
 					t.Fatal(err)
 				}
-				row := value.(*jsonx.Object).GetObject("dns_follow:target")
-				if row.GetInt("run_count") != 2 || row.GetString("last_trigger") != "event" || row.GetString("last_status") != "success" {
+				row := stored["dns_follow:target"]
+				if row.RunCount != 2 || row.LastTrigger != "event" || row.LastStatus != "success" {
 					t.Fatal("disconnected outcome did not commit once", row)
 				}
 			}
@@ -117,9 +122,15 @@ func TestTaskStatusRetainsOwnerLifetimeAfterPrecheck(t *testing.T) {
 }
 
 func TestTaskRowPropagatesInvalidHistory(t *testing.T) {
-	raw := jsonx.Obj("id", "target", "service_type", "oxidns", "dns_follow", jsonx.Obj("id", "binding"))
-	statuses := jsonx.Obj("dns_follow:target", jsonx.Obj("run_count", jsonx.Obj("invalid", true)))
-	if _, err := taskRow(t.Context(), raw, statuses); !errors.Is(err, tasks.ErrInvalidHistory) {
+	var a model.Agent
+	if err := json.Unmarshal([]byte(`{"id":"target","service_type":"oxidns","dns_follow":{"id":"binding"}}`), &a); err != nil {
+		t.Fatal(err)
+	}
+	var statuses taskstatus.Snapshot
+	if err := json.Unmarshal([]byte(`{"dns_follow:target":{"run_count":{"invalid":true}}}`), &statuses); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agentTaskRow(t.Context(), &a, statuses); !errors.Is(err, tasks.ErrInvalidHistory) {
 		t.Fatal("invalid history was ignored", err)
 	}
 }

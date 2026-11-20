@@ -7,21 +7,22 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
+	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 )
 
 func TestOutcomeRedactsCredentialsAndPreservesUnknownFields(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	f.editAgent(t, "target", func(a *agents.Record) {
-		a.Set("name", "target synthetic-source-token")
-		a.Set("future_agent", jsonx.Obj("n", 23))
-		a.GetObject("dns_follow").Set("future_binding", jsonx.Obj("x", true))
-		a.GetObject("dns_follow_state").Set("future_state", jsonx.Obj("x", 7))
-		a.Set("dns_follow_job", jsonx.Obj("password", "synthetic-private-password"))
+	f.editAgent(t, "target", func(a *model.Agent) {
+		a.Name = "target synthetic-source-token"
+		_ = a.Fields.Set("future_agent", json.RawMessage(`{"n":23}`))
+		_ = a.DNSFollow.Fields.Set("future_binding", json.RawMessage(`{"x":true}`))
+		_ = a.DNSFollowState.Fields.Set("future_state", json.RawMessage(`{"x":7}`))
+		_ = a.SetJSON("dns_follow_job", []byte(`{"password":"synthetic-private-password"}`))
 	})
 	var logs bytes.Buffer
 	root, err := logx.Setup(logx.Config{Level: logx.Debug, Console: &logs})
@@ -50,21 +51,25 @@ func TestOutcomeRedactsCredentialsAndPreservesUnknownFields(t *testing.T) {
 			t.Fatalf("leaked %s", secret)
 		}
 	}
-	raw, err := f.m.GetAgentByID(f.ctx, "target", true)
+	raw, err := f.m.ReadAgent(f.ctx, "target", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if raw.GetObject("future_agent").GetInt("n") != 23 || raw.GetObject("dns_follow").GetObject("future_binding").Value("x") != true || raw.GetObject("dns_follow_state").GetObject("future_state").GetInt("x") != 7 || raw.GetObject("dns_follow_job").GetString("password") != "synthetic-private-password" {
-		t.Fatal("owner rewrite lost private or future fields")
+	fa, _ := raw.Fields.Get("future_agent")
+	fb, _ := raw.DNSFollow.Fields.Get("future_binding")
+	fs, _ := raw.DNSFollowState.Fields.Get("future_state")
+	jp, _ := raw.DNSFollowJob.Fields.Get("password")
+	if string(fa) != `{"n":23}` || string(fb) != `{"x":true}` || string(fs) != `{"x":7}` || string(jp) != `"synthetic-private-password"` {
+		t.Fatal("owner rewrite lost private or future fields", string(fa), string(fb), string(fs), string(jp))
 	}
 }
-func taskRowMust(t *testing.T, f *fixture) *jsonx.Object {
+func taskRowMust(t *testing.T, f *fixture) *tasks.Task {
 	t.Helper()
-	a, err := f.m.GetAgentByID(f.ctx, "target", true)
+	a, err := f.m.ReadAgent(f.ctx, "target", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := taskRow(f.ctx, a, jsonx.Obj())
+	row, err := agentTaskRow(f.ctx, a, taskstatus.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}

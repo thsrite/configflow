@@ -87,12 +87,12 @@ func TestStoppedRuntimeRefusesEveryHAWrite(t *testing.T) {
 		{"disable", func() error { _, e := f.s.Disable(ctx, "primary", true); return e }},
 		{"advance", func() error { _, e := f.s.Advance(ctx, "primary"); return e }},
 		{"status", func() error { _, e := f.s.Status(ctx, "primary"); return e }},
-		{"publish", func() error { _, _, e := f.s.Publish(ctx, "primary", b, zeroPublish()); return e }},
-		{"activate", func() error { _, e := f.s.Activate(ctx, "primary", "stopped"); return e }},
-		{"deployment", func() error { _, e := f.s.Deployment(ctx, "primary", "stopped"); return e }},
-		{"rules", func() error { _, _, e := f.s.Rules(ctx, "primary", "POST"); return e }},
+		{"publish", func() error { _, _, e := f.s.PublishPair(ctx, "primary", b, zeroPublish()); return e }},
+		{"activate", func() error { _, e := f.s.ActivatePair(ctx, "primary", "stopped"); return e }},
+		{"deployment", func() error { _, e := f.s.PairDeployment(ctx, "primary", "stopped"); return e }},
+		{"rules", func() error { _, _, e := f.s.PairRules(ctx, "primary", "POST"); return e }},
 		{"service", func() error {
-			_, e := f.s.ServiceOperation(ctx, "primary", func() (*agents.Result, error) { t.Fatal("stopped service operation ran"); return nil, nil }, false)
+			_, e := f.s.ServiceOperationJSON(ctx, "primary", func() (json.RawMessage, error) { t.Fatal("stopped service operation ran"); return nil, nil }, false)
 			return e
 		}},
 	}
@@ -164,7 +164,7 @@ func TestShutdownAtAcceptedDeviceWriteResumesJournal(t *testing.T) {
 				defer close(finished)
 				if !enable {
 					b := f.bundle(t, "primary", "shutdown-release", false)
-					_, _, e := f.s.Publish(ctx, "primary", b, zeroPublish())
+					_, _, e := f.s.PublishPair(ctx, "primary", b, zeroPublish())
 					if e != nil {
 						done <- e
 						return

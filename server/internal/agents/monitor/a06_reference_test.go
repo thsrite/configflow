@@ -9,32 +9,44 @@ package monitor
 // totals transitions with every deployment state.
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
-func loadReference(t *testing.T, fields ...string) *jsonx.Object {
+func loadReference(t *testing.T, fields ...string) map[string]any {
 	t.Helper()
 	return referenceFields(t, "testdata/a06_reference.json.gz", fields...)
 }
 
-func dumpSorted(t *testing.T, v any) string {
+func diffRefJSON(t *testing.T, got any, wantJSON string) string {
 	t.Helper()
-	encoded, err := jsonx.Encode(v, jsonx.Options{SortKeys: true, EnsureASCII: true})
+	want, err := testjson.Parse([]byte(wantJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(encoded)
+	return diffRefVal(t, got, want)
 }
 
-func cases(ref *jsonx.Object, key string) []*jsonx.Object {
-	var out []*jsonx.Object
-	for _, item := range ref.GetList(key) {
-		out = append(out, item.(*jsonx.Object))
+func diffRefVal(t *testing.T, got any, want any) string {
+	t.Helper()
+	gotVal, err := testjson.Parse(mustMarshal(t, got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return testjson.Diff(want, gotVal)
+}
+
+func cases(ref map[string]any, key string) []map[string]any {
+	var out []map[string]any
+	for _, item := range asList(ref[key]) {
+		out = append(out, asMap(item))
 	}
 	if len(out) == 0 {
 		panic("no reference cases for " + key)
@@ -51,32 +63,39 @@ func pairs(value any) [][2]string {
 	return out
 }
 
+func displayUpstream(value any) string {
+	s, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return displayAddress(truncateText(s, 2048))
+}
+
 func TestReferenceMetrics(t *testing.T) {
 	ref := loadReference(t, "metrics")
 	for _, c := range cases(ref, "metrics") {
-		text := c.GetString("text")
+		text := asStr(c["text"])
 		var result any
-		parsed, err := ParseMetrics(text)
+		parsed, err := ReadMetrics(text)
 		if err != nil {
-			result = jsonx.Obj("error", err.Error())
+			result = map[string]any{"error": err.Error()}
 		} else {
-			summary, _ := SummarizeMetrics(text)
-			result = jsonx.Obj("parsed", parsed, "summary", summary)
+			result = map[string]any{"parsed": parsed, "summary": Summarize(parsed)}
 		}
 		if want, changed := asciiMetricExpectation(text); changed {
-			if !jsonx.Equal(result, want) {
-				t.Fatalf("ASCII metric refusal %q: got %s want %s", text, dumpSorted(t, result), dumpSorted(t, want))
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Fatalf("ASCII metric refusal %q: %s", text, diff)
 			}
 			continue
 		}
 		if want, bound := nativeStateExpectation(t, "metrics", c); bound {
-			if got := dumpSorted(t, result); got != want {
-				t.Errorf("native metric number: got %s want %s", got, want)
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Errorf("native metric number: %s", diff)
 			}
 			continue
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			t.Errorf("%q:\n got  %s\n want %s", text, got, c.GetString("result"))
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			t.Errorf("%q: %s", text, diff)
 		}
 	}
 }
@@ -84,62 +103,77 @@ func TestReferenceMetrics(t *testing.T) {
 func TestReferenceBaselineArithmetic(t *testing.T) {
 	ref := loadReference(t, "baseline")
 	for _, c := range cases(ref, "baseline") {
-		current := parse(t, c.GetString("current"))
-		baseline := parse(t, c.GetString("baseline"))
-		encoded, _ := jsonx.Compact(baseline)
-		persisted, _ := jsonx.Parse(encoded)
-		baseline = persisted.(*jsonx.Object)
-		carried := parse(t, c.GetString("carried"))
-		adjusted, partial, err := ApplyMetricsBaseline(current, baseline)
+		current := parse(t, asStr(c["current"]))
+		baseline := parse(t, asStr(c["baseline"]))
+		var persisted Observations
+		if err := jsondecode.Unmarshal(mustMarshal(t, baseline), &persisted); err != nil {
+			t.Fatal(err)
+		}
+		baseline = &persisted
+		carried := parse(t, asStr(c["carried"]))
+		adjusted, partial, err := ApplyBaseline(current, baseline)
 		if err != nil {
 			t.Fatal(err)
 		}
-		added := AddObservations(adjusted, carried)
-		result := jsonx.Obj("restarted", MetricsCountersRestarted(current, baseline), "adjusted", adjusted, "partial", partial,
-			"zero", ZeroBaseline(current), "added", added, "summary", SummarizeObservations(AddObservations(adjusted, carried)))
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			t.Errorf("%q:\n got  %s\n want %s", c.GetString("current"), got, c.GetString("result"))
+		added := CarryObservations(adjusted, carried)
+		var addedObs Observations
+		_ = jsondecode.Unmarshal(mustMarshal(t, added), &addedObs)
+		result := map[string]any{
+			"restarted": CountersRestarted(current, baseline),
+			"adjusted":  adjusted,
+			"partial":   partial,
+			"zero":      ZeroObservations(current),
+			"added":     added,
+			"summary":   Summarize(&addedObs),
+		}
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			t.Errorf("%q: %s", asStr(c["current"]), diff)
 		}
 	}
 }
 
 func TestReferenceUpstreamLabels(t *testing.T) {
 	ref := loadReference(t, "public_upstreams", "upstream")
-	if len(ref.GetList("upstream")) == 0 {
+	if len(asList(ref["upstream"])) == 0 {
 		t.Fatal("no cases")
 	}
-	for _, item := range ref.GetList("upstream") {
+	for _, item := range asList(ref["upstream"]) {
 		pair := item.([]any)
 		if got := displayUpstream(pair[0]); got != pair[1] && !labelEdgeCase(pair[0]) {
-			t.Errorf("%s: got %q want %q", jsonx.Repr(pair[0]), got, pair[1])
+			t.Errorf("%#v: got %q want %q", pair[0], got, pair[1])
 		}
 	}
-	rows := []any{jsonx.Obj("tag", "r", "upstream", "é", "requests", 1), jsonx.Obj("tag", "ü", "upstream", "https://u:p@x/"),
-		jsonx.Obj("tag", nil, "upstream", 7)}
-	labels := []any{jsonx.Obj("plugin_tag", "r", "upstream", "é", "address", "https://a:b@addr.test:8443/q?x")}
+	rows := []any{
+		map[string]any{"tag": "r", "upstream": "é", "requests": 1},
+		map[string]any{"tag": "ü", "upstream": "https://u:p@x/"},
+		map[string]any{"tag": nil, "upstream": 7},
+	}
+	labels := []any{
+		map[string]any{"plugin_tag": "r", "upstream": "é", "address": "https://a:b@addr.test:8443/q?x"},
+	}
 	result, err := publicUpstreams(rows, labels)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := dumpSorted(t, result); got != ref.GetString("public_upstreams") {
-		t.Errorf("public upstreams:\n got  %s\n want %s", got, ref.GetString("public_upstreams"))
+	if diff := diffRefJSON(t, result, asStr(ref["public_upstreams"])); diff != "" {
+		t.Errorf("public upstreams: %s", diff)
 	}
 }
 
 func TestReferenceIPAddresses(t *testing.T) {
 	ref := loadReference(t, "ip")
-	if len(ref.GetList("ip")) == 0 {
+	if len(asList(ref["ip"])) == 0 {
 		t.Fatal("no cases")
 	}
-	for _, item := range ref.GetList("ip") {
+	for _, item := range asList(ref["ip"]) {
 		pair := item.([]any)
 		canonical, _, ok := parseIP(pair[0].(string))
 		var got any
 		if ok {
 			got = canonical
 		}
-		if !jsonx.Equal(got, pair[1]) {
-			t.Errorf("%q: got %s want %s", pair[0], jsonx.Repr(got), jsonx.Repr(pair[1]))
+		if got != pair[1] {
+			t.Errorf("%q: got %#v want %#v", pair[0], got, pair[1])
 		}
 	}
 }
@@ -147,36 +181,43 @@ func TestReferenceIPAddresses(t *testing.T) {
 func TestReferenceAgentOrigins(t *testing.T) {
 	ref := loadReference(t, "origin")
 	for _, c := range cases(ref, "origin") {
-		origin, err := AgentOrigin(c.GetObject("agent"))
+		agent, decErr := decodeAgentMap(asMap(c["agent"]))
+		var origin string
+		var err error
+		if decErr != nil {
+			err = unreachable()
+		} else {
+			origin, err = Origin(agent)
+		}
 		var e *Error
 		switch {
-		case c.Has("error"):
-			if !errors.As(err, &e) || e.Code != c.GetString("error") {
-				t.Errorf("%s: got %q %v want %s", jsonx.Repr(c.Value("agent")), origin, err, c.GetString("error"))
+		case c["error"] != nil:
+			if !errors.As(err, &e) || e.Code != asStr(c["error"]) {
+				t.Errorf("%v: got %q %v want %s", c["agent"], origin, err, asStr(c["error"]))
 			}
-		case err != nil || origin != c.GetString("result"):
-			t.Errorf("%s: got %q %v want %s", jsonx.Repr(c.Value("agent")), origin, err, c.GetString("result"))
+		case err != nil || origin != asStr(c["result"]):
+			t.Errorf("%v: got %q %v want %s", c["agent"], origin, err, asStr(c["result"]))
 		}
 	}
 }
 
-func checkParams(t *testing.T, name string, c *jsonx.Object, result query, err error) {
+func checkParams(t *testing.T, name string, c map[string]any, result query, err error) {
 	t.Helper()
 	var e *Error
-	if c.Has("error") {
-		if !errors.As(err, &e) || e.Code != c.GetString("error") {
-			t.Errorf("%s %s: got %v %v want %s", name, jsonx.Repr(c.Value("args")), result, err, c.GetString("error"))
+	if _, hasErr := c["error"]; hasErr {
+		if !errors.As(err, &e) || e.Code != asStr(c["error"]) {
+			t.Errorf("%s %v: got %v %v want %s", name, c["args"], result, err, asStr(c["error"]))
 		}
 		return
 	}
-	want := pairs(c.Value("result"))
+	want := pairs(c["result"])
 	if err != nil || len(result) != len(want) {
-		t.Errorf("%s %s: got %v %v want %v", name, jsonx.Repr(c.Value("args")), result, err, want)
+		t.Errorf("%s %v: got %v %v want %v", name, c["args"], result, err, want)
 		return
 	}
 	for i := range want {
 		if result[i] != want[i] {
-			t.Errorf("%s %s: got %v want %v", name, jsonx.Repr(c.Value("args")), result, want)
+			t.Errorf("%s %v: got %v want %v", name, c["args"], result, want)
 		}
 	}
 }
@@ -184,24 +225,26 @@ func checkParams(t *testing.T, name string, c *jsonx.Object, result query, err e
 func TestReferenceRequestParameters(t *testing.T) {
 	ref := loadReference(t, "client_params", "dashboard_params", "query_params", "recorder_tags")
 	for _, c := range cases(ref, "query_params") {
-		detail := c.GetList("extra")[0] == true
-		result, err := QueryParams(pairs(c.Value("args")), detail)
+		detail := asList(c["extra"])[0] == true
+		result, err := QueryParams(pairs(c["args"]), detail)
 		checkParams(t, "query_params", c, result, err)
 	}
 	for _, c := range cases(ref, "client_params") {
-		result, err := ClientParams(pairs(c.Value("args")))
+		result, err := ClientParams(pairs(c["args"]))
 		checkParams(t, "client_params", c, result, err)
 	}
 	for _, c := range cases(ref, "dashboard_params") {
-		result, err := dashboardParams(pairs(c.Value("args")))
+		result, err := dashboardParams(pairs(c["args"]))
 		checkParams(t, "dashboard_params", c, result, err)
 	}
-	if len(ref.GetList("recorder_tags")) == 0 {
+	if len(asList(ref["recorder_tags"])) == 0 {
 		t.Fatal("no cases")
 	}
-	for _, item := range ref.GetList("recorder_tags") {
+	for _, item := range asList(ref["recorder_tags"]) {
 		pair := item.([]any)
-		if ValidRecorderTag(pair[0]) != pair[1] {
+		tag, ok := pair[0].(string)
+		got := ok && validRecorderTag(tag)
+		if got != (pair[1] == true) {
 			t.Errorf("recorder tag %q: want %v", pair[0], pair[1])
 		}
 	}
@@ -209,18 +252,15 @@ func TestReferenceRequestParameters(t *testing.T) {
 
 func TestReferenceStateValidation(t *testing.T) {
 	ref := loadReference(t, "validate_state")
-	if len(ref.GetList("validate_state")) == 0 {
+	if len(asList(ref["validate_state"])) == 0 {
 		t.Fatal("no cases")
 	}
-	for _, item := range ref.GetList("validate_state") {
+	for _, item := range asList(ref["validate_state"]) {
 		pair := item.([]any)
-		value, err := jsonx.ParseString(pair[0].(string))
-		if err != nil {
-			t.Fatal(err)
-		}
+		text := pair[0].(string)
+		_, err := DecodeState([]byte(text))
 		want := pair[1] == true // a TypeError reads as damaged, like False
-		if got := ValidateState(value); got != want {
-			text := pair[0].(string)
+		if got := err == nil; got != want {
 			if len(text) > 300 {
 				text = text[:300]
 			}
@@ -233,38 +273,38 @@ func TestReferenceRankingSectionsAndRecords(t *testing.T) {
 	ref := loadReference(t, "ranking_section", "record")
 	for _, c := range cases(ref, "ranking_section") {
 		var result any
-		section, err := rankingSection(c.Value("value"), c.GetString("kind"))
+		section, err := decodeRankingSection(mustMarshal(t, c["value"]), asStr(c["kind"]), 10)
 		if err != nil {
-			result = jsonx.Obj("error", err.(*Error).Code)
+			result = map[string]any{"error": err.(*Error).Code}
 		} else {
 			result = section
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			t.Errorf("%s %s:\n got  %s\n want %s", c.GetString("kind"), jsonx.Repr(c.Value("value")), got, c.GetString("result"))
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			t.Errorf("%s %v: %s", asStr(c["kind"]), c["value"], diff)
 		}
 	}
 	for _, c := range cases(ref, "record") {
 		var result any
-		out, err := record(c.Value("value"), c.Value("detail") == true)
+		out, err := queryRecord(mustMarshal(t, c["value"]), c["detail"] == true)
 		if err != nil {
-			result = jsonx.Obj("error", err.(*Error).Code)
+			result = map[string]any{"error": err.(*Error).Code}
 		} else {
-			result = out
+			result = json.RawMessage(out)
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			t.Errorf("%s:\n got  %s\n want %s", jsonx.Repr(c.Value("value")), got, c.GetString("result"))
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			t.Errorf("%v: %s", c["value"], diff)
 		}
 	}
 }
 
 func TestReferenceTimestamps(t *testing.T) {
 	ref := loadReference(t, "timestamps")
-	if len(ref.GetList("timestamps")) == 0 {
+	if len(asList(ref["timestamps"])) == 0 {
 		t.Fatal("no cases")
 	}
-	for _, item := range ref.GetList("timestamps") {
+	for _, item := range asList(ref["timestamps"]) {
 		pair := item.([]any)
-		ms, _ := pair[0].(jsonx.Number).Int64()
+		ms := asInt64(pair[0])
 		if got := isoUTC(fromTimestampMS(ms)); got != pair[1] {
 			t.Errorf("%d: got %s want %s", ms, got, pair[1])
 		}
@@ -273,28 +313,39 @@ func TestReferenceTimestamps(t *testing.T) {
 
 func TestReferenceAgentAnswers(t *testing.T) {
 	ref := loadReference(t, "responses")
-	agent := jsonx.Obj("id", "oxi", "host", "127.0.0.1", "port", 8082, "token", "tok", "service_type", "oxidns", "version", "1.8.14-go")
+	agent := mustAgentMap(map[string]any{
+		"id": "oxi", "host": "127.0.0.1", "port": 8082, "token": "tok",
+		"service_type": "oxidns", "version": "1.8.14-go",
+	})
 	for _, c := range cases(ref, "responses") {
-		body := decodeHex(c.GetString("body"))
-		status, _ := c.Value("status").(jsonx.Number).Int64()
+		body := decodeHex(asStr(c["body"]))
+		status := asInt64(c["status"])
 		m := newManager(t, nil)
 		install(m, &agents.Response{StatusCode: int(status), Body: body})
 		var result any
-		data, err := request(ctx, m, agent, "clients", query{{"search", "a b"}}, MinClientsAgentVersion)
+		data, err := monitorRequest(ctx, m, agent, "clients", query{{"search", "a b"}}, MinClientsAgentVersion)
 		if err != nil {
 			e := err.(*Error)
-			result = jsonx.Obj("error", e.Code, "status", e.Status, "message", e.Message)
+			result = map[string]any{"error": e.Code, "status": e.Status, "message": e.Message}
 		} else {
-			result = jsonx.Obj("data", data)
+			result = map[string]any{"data": data}
 		}
 		if want, bound := nativeStateExpectation(t, "responses", c); bound {
-			if got := dumpSorted(t, result); got != want {
-				t.Errorf("native response: got %s want %s", got, want)
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Errorf("native response: %s", diff)
 			}
 			continue
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			t.Errorf("%d %q:\n got  %s\n want %s", status, body, got, c.GetString("result"))
+		// N8-11: CPython's 4300-digit int_max_str_digits cap is retired; Go's
+		// native JSON decoder accepts valid 4301-digit RFC 8259 integer literals.
+		if status == 200 && string(body) == `{"x": `+strings.Repeat("1", 4301)+`}` {
+			if diff := diffRefJSON(t, result, `{"data":{"x":`+strings.Repeat("1", 4301)+`}}`); diff != "" {
+				t.Errorf("native 4301-digit response: %s", diff)
+			}
+			continue
+		}
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			t.Errorf("%d %q: %s", status, body, diff)
 		}
 	}
 }
@@ -314,6 +365,59 @@ func decodeHex(s string) []byte {
 	return out
 }
 
+func advanceCorpusCase(t *testing.T, c map[string]any) (any, error) {
+	t.Helper()
+	var prev *DashboardState
+	var prevVal any
+	if rawPrev := asMap(c["previous"]); rawPrev != nil {
+		raw := mustMarshal(t, rawPrev)
+		var err error
+		prev, err = DecodeState(raw)
+		if err != nil {
+			return nil, err
+		}
+		prevVal, err = testjson.Parse(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var agent *model.Agent
+	if rawAgent := asMap(c["agent"]); rawAgent != nil {
+		var err error
+		agent, err = decodeAgentMap(rawAgent)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var stamp SnapshotIdentity
+	if err := jsondecode.Unmarshal(mustMarshal(t, c["snapshot"]), &stamp); err != nil {
+		return nil, err
+	}
+	var status CoreStatus
+	if err := jsondecode.Unmarshal(mustMarshal(t, c["core"]), &status); err != nil {
+		return nil, err
+	}
+	obs := new(Observations)
+	_ = jsondecode.Unmarshal(mustMarshal(t, c["observations"]), obs)
+	state, err := AdvanceState(prev, &stamp, &status, obs, asStr(c["target"]), agent, c["manual"] == true)
+	if err != nil {
+		return nil, err
+	}
+	adjusted, partial, err := StateTotals(state, obs)
+	if err != nil {
+		return nil, err
+	}
+	same := false
+	if prev != nil {
+		stateVal, err := testjson.Parse(mustMarshal(t, state))
+		if err != nil {
+			t.Fatal(err)
+		}
+		same = testjson.Equal(prevVal, stateVal)
+	}
+	return map[string]any{"state": state, "same": same, "totals": adjusted, "partial": partial}, nil
+}
+
 func TestReferenceAdvanceAndTotals(t *testing.T) {
 	ref := loadReference(t, "advance")
 	previous := tokenHex
@@ -321,28 +425,7 @@ func TestReferenceAdvanceAndTotals(t *testing.T) {
 	t.Cleanup(func() { tokenHex = previous })
 	failures := 0
 	for _, c := range cases(ref, "advance") {
-		prev, _ := c.Value("previous").(*jsonx.Object)
-		agent, _ := c.Value("agent").(*jsonx.Object)
-		var prevCopy *jsonx.Object
-		if prev != nil {
-			prevCopy = prev.DeepCopy()
-		}
-		var agentCopy *jsonx.Object
-		if agent != nil {
-			agentCopy = agent.DeepCopy()
-		}
-		var result any
-		state, err := Advance(prevCopy, c.GetObject("snapshot"), c.GetObject("core"), c.GetObject("observations"),
-			c.GetString("target"), agentCopy, c.Value("manual") == true)
-		if err == nil {
-			adjusted, partial, terr := Totals(state, c.GetObject("observations"))
-			if terr != nil {
-				err = terr
-			} else {
-				same := prev != nil && jsonx.Equal(state, prev)
-				result = jsonx.Obj("state", state, "same", same, "totals", adjusted, "partial", partial)
-			}
-		}
+		result, err := advanceCorpusCase(t, c)
 		if err != nil {
 			name := err.Error()
 			if errors.Is(err, ErrPublicationPending) {
@@ -350,20 +433,19 @@ func TestReferenceAdvanceAndTotals(t *testing.T) {
 			} else if i := strings.Index(name, ":"); i >= 0 {
 				name = name[:i]
 			}
-			result = jsonx.Obj("error", name)
+			result = map[string]any{"error": name}
 		}
 		if want, bound := nativeStateExpectation(t, "advance", c); bound {
-			if got := dumpSorted(t, result); got != want {
-				t.Errorf("native state refusal: got %s want %s", got, want)
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Errorf("native state refusal: %s", diff)
 			}
 			continue
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
 			failures++
 			if failures <= 10 {
-				t.Errorf("previous=%s snapshot=%s core=%s target=%s manual=%v agent=%s:\n got  %s\n want %s",
-					jsonx.Repr(prev != nil), jsonx.Repr(c.Value("snapshot")), jsonx.Repr(c.Value("core")), c.GetString("target")[:4],
-					c.Value("manual"), jsonx.Repr(c.Value("agent")), got, c.GetString("result"))
+				t.Errorf("previous=%v target=%s manual=%v: %s",
+					c["previous"] != nil, asStr(c["target"])[:4], c["manual"], diff)
 			}
 		}
 	}
@@ -389,12 +471,26 @@ func asciiMetricExpectation(text string) (any, bool) {
 	summaryServers, summaryCaches := []any{}, []any{}
 	failed, inflight := any(nil), any(nil)
 	if strings.HasPrefix(text, "cache_") && token != "7 ١٢٣" {
-		caches = []any{jsonx.Obj("tag", "c", "lookups", nil, "fresh_hits", nil, "stale_hits", nil, "misses", nil, "expired", nil, "entries", nil)}
-		summaryCaches = []any{jsonx.Obj("tag", "c", "lookups", nil, "fresh_hits", nil, "stale_hits", nil, "misses", nil, "expired", nil, "entries", nil, "hits", nil, "hit_rate", nil)}
+		caches = []any{map[string]any{"tag": "c", "lookups": nil, "fresh_hits": nil, "stale_hits": nil, "misses": nil, "expired": nil, "entries": nil}}
+		summaryCaches = []any{map[string]any{"tag": "c", "lookups": nil, "fresh_hits": nil, "stale_hits": nil, "misses": nil, "expired": nil, "entries": nil, "hits": nil, "hit_rate": nil}}
 	} else if strings.HasPrefix(text, "server_") {
 		failed, inflight = 0, 0
-		servers = []any{jsonx.Obj("tag", "s", "protocol", "udp", "requests", nil, "failed", 0, "inflight", 0, "latency_sum_ms", nil, "latency_count", 4)}
-		summaryServers = []any{jsonx.Obj("tag", "s", "protocol", "udp", "requests", nil, "failed", 0, "inflight", 0, "avg_latency_ms", nil)}
+		servers = []any{map[string]any{"tag": "s", "protocol": "udp", "requests": nil, "failed": 0, "inflight": 0, "latency_sum_ms": nil, "latency_count": 4}}
+		summaryServers = []any{map[string]any{"tag": "s", "protocol": "udp", "requests": nil, "failed": 0, "inflight": 0, "avg_latency_ms": nil}}
 	}
-	return jsonx.Obj("parsed", jsonx.Obj("servers", servers, "caches", caches, "upstreams", []any{}), "summary", jsonx.Obj("servers", summaryServers, "caches", summaryCaches, "upstreams", []any{}, "metrics", jsonx.Obj("requests_total", nil, "failed_total", failed, "inflight", inflight, "avg_latency_ms", nil, "cache_hit_rate", nil))), true
+	raw, err := json.Marshal(map[string]any{
+		"parsed": map[string]any{"servers": servers, "caches": caches, "upstreams": []any{}},
+		"summary": map[string]any{
+			"servers": summaryServers, "caches": summaryCaches, "upstreams": []any{},
+			"metrics": map[string]any{"requests_total": nil, "failed_total": failed, "inflight": inflight, "avg_latency_ms": nil, "cache_hit_rate": nil},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	val, err := testjson.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return val, true
 }

@@ -3,8 +3,6 @@ package monitor
 import (
 	"bytes"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func TestDamagedPublicationCheckpointCanBeResetAndMonitoringResumes(t *testing.T) {
@@ -16,27 +14,29 @@ func TestDamagedPublicationCheckpointCanBeResetAndMonitoringResumes(t *testing.T
 			a := e.m.agent("one")
 			switch kind {
 			case "deployments":
-				a.Set("deployments", []any{})
+				setAgentField(a, "deployments", []any{})
 			case "latest_deployment":
-				a.Set("latest_deployment", "")
+				setAgentField(a, "latest_deployment", "")
 			case "entry":
-				a.GetObject("deployments").Set("publish-one", jsonx.Int(0))
+				setAgentField(a, "deployments", map[string]any{"publish-one": 0})
 			case "status":
-				a.GetObject("deployments").GetObject("publish-one").Set("status", []any{"succeeded"})
+				d, _ := a.Deployments.Get("publish-one")
+				_ = d.SetJSON("status", []byte(`["succeeded"]`))
+				a.Deployments.Set("publish-one", d)
 			}
-			_, err := Overview(ctx, e.m, "one", nil)
+			_, err := ReadOverview(ctx, e.m, "one", nil)
 			wantMonitorError(t, err, "DASHBOARD_STATE_ERROR", 500)
 			if !bytes.Equal(saved, readFile(t, e.store.Path("one"))) {
 				t.Fatal("damaged guard discarded checkpoint")
 			}
-			result, err := ResetDashboard(ctx, e.m, "one", jsonx.Obj())
-			if err != nil || result.GetObject("statistics").GetString("reason") != "manual" {
+			result, err := ResetStatistics(ctx, e.m, "one", []byte(`{}`))
+			if err != nil || asMap(toJSONMap(t, result)["statistics"])["reason"] != "manual" {
 				t.Fatalf("manual statistics reset failed: %v", err)
 			}
-			if _, present := e.read(t).Get("pending"); present {
+			if _, present := e.read(t)["pending"]; present {
 				t.Fatal("manual reset retained pending")
 			}
-			if result, err = Overview(ctx, e.m, "one", nil); err != nil || result.Value("success") != true {
+			if result, err = ReadOverview(ctx, e.m, "one", nil); err != nil || !result.Success {
 				t.Fatalf("monitoring did not recover: %v", err)
 			}
 		})
@@ -51,32 +51,33 @@ func TestPendingCheckpointDoesNotTrustProjectedStoredProofs(t *testing.T) {
 			saved := readFile(t, e.store.Path("one"))
 			change(e.f, 3000, 6, 60, revB, revE)
 			a := e.m.agent("one")
-			task := a.GetObject("deployments").GetObject("publish-one")
-			task.Set("status", "succeeded")
-			a.GetObject("latest_deployment").Set("status", "succeeded")
+			d, _ := a.Deployments.Get("publish-one")
+			d.Status = "succeeded"
+			a.LatestDeployment.Status = "succeeded"
 			switch field {
 			case "agent-profile":
-				a.Set("profile_id", jsonx.Int(7))
-				task.Set("profile_id", jsonx.Int(7))
-				a.Set("Profile_ID", "default")
+				setAgentField(a, "profile_id", 7)
+				_ = d.SetJSON("profile_id", []byte(`7`))
+				setAgentField(a, "Profile_ID", "default")
 			case "task-profile":
-				task.Set("profile_id", jsonx.Int(7))
-				task.Set("Profile_ID", "default")
+				_ = d.SetJSON("profile_id", []byte(`7`))
+				_ = d.Fields.Set("Profile_ID", []byte(`"default"`))
 			case "task-service":
-				task.Set("service_type", jsonx.Int(7))
-				task.Set("Service_Type", "oxidns")
+				_ = d.SetJSON("service_type", []byte(`7`))
+				_ = d.Fields.Set("Service_Type", []byte(`"oxidns"`))
 			case "latest-id":
-				a.GetObject("latest_deployment").Set("deployment_id", jsonx.Int(7))
-				a.GetObject("latest_deployment").Set("Deployment_ID", "publish-one")
+				_ = a.LatestDeployment.SetJSON("deployment_id", []byte(`7`))
+				_ = a.LatestDeployment.Fields.Set("Deployment_ID", []byte(`"publish-one"`))
 			case "manual-rollback":
-				task.Set("manual_rollback", jsonx.Int(1))
+				_ = d.SetJSON("manual_rollback", []byte(`1`))
 			}
-			_, err := Overview(ctx, e.m, "one", nil)
+			a.Deployments.Set("publish-one", d)
+			_, err := ReadOverview(ctx, e.m, "one", nil)
 			wantMonitorError(t, err, "DASHBOARD_STATE_ERROR", 500)
 			if !bytes.Equal(saved, readFile(t, e.store.Path("one"))) {
 				t.Fatal("bad original proof discarded pending state")
 			}
-			if _, err := ResetDashboard(ctx, e.m, "one", jsonx.Obj()); err != nil {
+			if _, err := ResetStatistics(ctx, e.m, "one", []byte(`{}`)); err != nil {
 				t.Fatal("explicit statistics reset could not recover", err)
 			}
 		})
@@ -93,20 +94,21 @@ func TestReviewN810SupersededCheckDoesNotTrustDamagedStatus(t *testing.T) {
 			saved := readFile(t, e.store.Path("one"))
 			task(e.m, "publish-two", "preparing", revC)
 			a := e.m.agent("one")
-			one := a.GetObject("deployments").GetObject("publish-one")
+			one, _ := a.Deployments.Get("publish-one")
 			switch kind {
 			case "task-status":
-				one.Set("status", []any{"succeeded"})
+				_ = one.SetJSON("status", []byte(`["succeeded"]`))
 			case "latest-status":
-				one.Set("status", "succeeded")
-				a.GetObject("latest_deployment").Set("status", jsonx.Obj("value", "preparing"))
+				one.Status = "succeeded"
+				_ = a.LatestDeployment.SetJSON("status", []byte(`{"value":"preparing"}`))
 			}
-			_, err := Overview(ctx, e.m, "one", nil)
+			a.Deployments.Set("publish-one", one)
+			_, err := ReadOverview(ctx, e.m, "one", nil)
 			wantMonitorError(t, err, "DASHBOARD_STATE_ERROR", 500)
 			if !bytes.Equal(saved, readFile(t, e.store.Path("one"))) {
 				t.Fatal("damaged status discarded the pending checkpoint")
 			}
-			if _, err := ResetDashboard(ctx, e.m, "one", jsonx.Obj()); err != nil {
+			if _, err := ResetStatistics(ctx, e.m, "one", []byte(`{}`)); err != nil {
 				t.Fatal("explicit statistics reset could not recover", err)
 			}
 		})

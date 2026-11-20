@@ -14,7 +14,7 @@ import (
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestStandbyFailuresNeverTouchHolder(t *testing.T) {
@@ -142,11 +142,11 @@ func TestStagedActivationRechecksActualHolder(t *testing.T) {
 		t.Fatalf("journal: %s %s", last.Status, last.Message)
 	}
 	f.segment.SetHolder("secondary")
-	r, e := f.s.Activate(f.ctx, "secondary", childID("primary", "staged", "secondary"))
+	r, e := f.s.ActivatePair(f.ctx, "secondary", childID("primary", "staged", "secondary"))
 	if e != nil {
 		t.Fatal(e)
 	}
-	if r.GetString("status") == "failed" {
+	if r.Status == "failed" {
 		t.Fatal(r)
 	}
 	last = f.drain(t, 12)
@@ -180,9 +180,13 @@ func TestHandoffKeepsReservationUntilCleanup(t *testing.T) {
 		t.Fatalf("journal: %s %s", last.Status, last.Message)
 	}
 	called := false
-	r, e := f.s.ServiceOperation(f.ctx, "secondary", func() (*agents.Result, error) { called = true; return nil, nil }, false)
-	if e != nil || called || r.GetInt("http_status") != 409 {
-		t.Fatal(r, e, called)
+	rawReply, e := f.s.ServiceOperationJSON(f.ctx, "secondary", func() (json.RawMessage, error) { called = true; return nil, nil }, false)
+	var statusReply struct {
+		HTTPStatus int `json:"http_status"`
+	}
+	_ = json.Unmarshal(rawReply, &statusReply)
+	if e != nil || called || statusReply.HTTPStatus != 409 {
+		t.Fatal(string(rawReply), e, called)
 	}
 	_, e = f.s.Disable(f.ctx, "primary", true)
 	if !IsUserError(e) {
@@ -376,14 +380,13 @@ func TestIdentityChangeAndPayloadTamperFailClosed(t *testing.T) {
 			}
 			a, _ := f.s.get(f.ctx, "primary")
 			if change == "identity" {
-				_, e = f.m.UpdateAgents(f.ctx, "", func(ctx context.Context, rows *[]any) (any, error) {
-					for _, v := range *rows {
-						r := v.(*jsonx.Object)
-						if r.GetString("id") == "secondary" {
-							r.Delete("host")
+				e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+					for i := range sys.Agents {
+						if sys.Agents[i].ID == "secondary" {
+							sys.Agents[i].Clear("host")
 						}
 					}
-					return nil, nil
+					return nil
 				})
 			} else {
 				p, _, err := f.s.readPayload(f.ctx, a.OxiDNSHAPublication)

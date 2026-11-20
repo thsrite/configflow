@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 func cacheText(tag string, lookups, fresh, stale any, extra ...any) string {
@@ -61,18 +61,18 @@ func upstreamText(tag, name string, requests, failed, elapsed, count any) string
 	return strings.Join(lines, "\n")
 }
 
-func summarize(t *testing.T, text string) *jsonx.Object {
+func summarize(t *testing.T, text string) map[string]any {
 	t.Helper()
-	result, err := SummarizeMetrics(text)
+	obs, err := ReadMetrics(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return result
+	return toJSONMap(t, Summarize(obs))
 }
 
-func parse(t *testing.T, text string) *jsonx.Object {
+func parse(t *testing.T, text string) *Observations {
 	t.Helper()
-	result, err := ParseMetrics(text)
+	result, err := ReadMetrics(text)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,32 +81,37 @@ func parse(t *testing.T, text string) *jsonx.Object {
 
 func wantJSON(t *testing.T, got, want any) {
 	t.Helper()
-	if !jsonx.Equal(got, want) {
-		t.Fatalf("got %s\nwant %s", jsonx.Repr(got), jsonx.Repr(want))
+	if diff := testjson.Diff(want, got); diff != "" {
+		t.Fatalf("JSON mismatch: %s\ngot  %s\nwant %s", diff, mustMarshal(t, got), mustMarshal(t, want))
 	}
 }
 
 func approx(t *testing.T, got any, want float64) {
 	t.Helper()
-	n, ok := got.(jsonx.Number)
-	if !ok || math.Abs(n.Float64()-want) > 1e-6*math.Max(1, math.Abs(want)) {
-		t.Fatalf("got %s want ≈ %v", jsonx.Repr(got), want)
+	if got == nil {
+		t.Fatalf("got nil want ≈ %v", want)
+	}
+	f := asFloat(got)
+	if math.Abs(f-want) > 1e-6*math.Max(1, math.Abs(want)) {
+		t.Fatalf("got %v want ≈ %v", got, want)
 	}
 }
 
-func metricsOf(o *jsonx.Object) *jsonx.Object { return o.GetObject("metrics") }
+func metricsOf(o map[string]any) map[string]any { return asMap(o["metrics"]) }
 
-func row(o *jsonx.Object, kind string, i int) *jsonx.Object {
-	return o.GetList(kind)[i].(*jsonx.Object)
+func row(o map[string]any, kind string, i int) map[string]any {
+	return asMap(asList(o[kind])[i])
 }
 
 func TestMultipleCachesUseLookupWeightedRateIncludingExpired(t *testing.T) {
 	result := summarize(t, cacheText("large", 100, 60, 10, 20, 10, 40)+"\n"+cacheText("small", 10, 10, 0, 0, 0, 5))
-	approx(t, metricsOf(result).Value("cache_hit_rate"), 100*80.0/110)
-	wantJSON(t, row(result, "caches", 0), jsonx.Obj("tag", "large", "lookups", 100, "hits", 70, "fresh_hits", 60,
-		"stale_hits", 10, "misses", 20, "expired", 10, "entries", 40, "hit_rate", 70))
-	wantJSON(t, row(result, "caches", 1).Value("hit_rate"), 100)
-	wantJSON(t, metricsOf(result).Value("requests_total"), nil)
+	approx(t, metricsOf(result)["cache_hit_rate"], 100*80.0/110)
+	wantJSON(t, row(result, "caches", 0), map[string]any{
+		"tag": "large", "lookups": 100, "hits": 70, "fresh_hits": 60,
+		"stale_hits": 10, "misses": 20, "expired": 10, "entries": 40, "hit_rate": 70,
+	})
+	wantJSON(t, row(result, "caches", 1)["hit_rate"], 100)
+	wantJSON(t, metricsOf(result)["requests_total"], nil)
 }
 
 func TestServerTotalsAndWeightedLatencyArePerListener(t *testing.T) {
@@ -118,30 +123,32 @@ func TestServerTotalsAndWeightedLatencyArePerListener(t *testing.T) {
 	}, "\n"))
 	m := metricsOf(result)
 	wantJSON(t, pick(m, "requests_total", "failed_total", "inflight", "cache_hit_rate"),
-		jsonx.Obj("requests_total", 110, "failed_total", 3, "inflight", 4, "cache_hit_rate", nil))
-	approx(t, m.Value("avg_latency_ms"), 2000.0/110)
-	wantJSON(t, []any{row(result, "servers", 0).Value("protocol"), row(result, "servers", 0).Value("avg_latency_ms"),
-		row(result, "servers", 1).Value("protocol"), row(result, "servers", 1).Value("avg_latency_ms")},
+		map[string]any{"requests_total": 110, "failed_total": 3, "inflight": 4, "cache_hit_rate": nil})
+	approx(t, m["avg_latency_ms"], 2000.0/110)
+	wantJSON(t, []any{row(result, "servers", 0)["protocol"], row(result, "servers", 0)["avg_latency_ms"],
+		row(result, "servers", 1)["protocol"], row(result, "servers", 1)["avg_latency_ms"]},
 		[]any{"tcp", 100, "udp", 10})
 }
 
 func TestZeroObservationsAreKnownButZeroDenominatorsAreUnknown(t *testing.T) {
 	result := summarize(t, cacheText("c", 0, 0, 0)+"\n"+serverText("s", "udp", 0, 0, 0, 0))
-	wantJSON(t, metricsOf(result), jsonx.Obj("requests_total", 0, "failed_total", 0, "inflight", 0,
-		"avg_latency_ms", nil, "cache_hit_rate", nil))
-	wantJSON(t, row(result, "caches", 0).Value("hits"), 0)
-	wantJSON(t, row(result, "caches", 0).Value("hit_rate"), nil)
+	wantJSON(t, metricsOf(result), map[string]any{
+		"requests_total": 0, "failed_total": 0, "inflight": 0,
+		"avg_latency_ms": nil, "cache_hit_rate": nil,
+	})
+	wantJSON(t, row(result, "caches", 0)["hits"], 0)
+	wantJSON(t, row(result, "caches", 0)["hit_rate"], nil)
 }
 
 func TestEmptyOrUnrelatedInputDoesNotFabricateZeroes(t *testing.T) {
 	for _, text := range []string{"", "# TYPE cache_hit_total counter\n", "unrelated_total 500"} {
 		result := summarize(t, text)
-		for _, v := range metricsOf(result).Values() {
+		for _, v := range metricsOf(result) {
 			if v != nil {
-				t.Fatal(text, jsonx.Repr(result))
+				t.Fatal(text, result)
 			}
 		}
-		if len(result.GetList("servers")) != 0 || len(result.GetList("caches")) != 0 {
+		if len(asList(result["servers"])) != 0 || len(asList(result["caches"])) != 0 {
 			t.Fatal(text)
 		}
 	}
@@ -156,34 +163,34 @@ func TestPartialCacheAndListenerMakeRelatedGlobalTotalsUnknown(t *testing.T) {
 	}, "\n"))
 	partial := row(result, "caches", 1)
 	wantJSON(t, pick(partial, "fresh_hits", "stale_hits", "hits", "lookups"),
-		jsonx.Obj("fresh_hits", 4, "stale_hits", nil, "hits", nil, "lookups", nil))
+		map[string]any{"fresh_hits": 4, "stale_hits": nil, "hits": nil, "lookups": nil})
 	m := metricsOf(result)
 	wantJSON(t, pick(m, "cache_hit_rate", "requests_total", "avg_latency_ms", "inflight"),
-		jsonx.Obj("cache_hit_rate", nil, "requests_total", nil, "avg_latency_ms", nil, "inflight", 0))
+		map[string]any{"cache_hit_rate": nil, "requests_total": nil, "avg_latency_ms": nil, "inflight": 0})
 }
 
 func TestInvalidValuesAreUnknownNotZero(t *testing.T) {
 	for _, bad := range []string{"NaN", "+Inf", "-Inf", "-1", "1e999", "not_a_number", "1_000"} {
 		result := summarize(t, cacheText("c", 10, bad, 0)+"\n"+serverText("s", "udp", bad, 0, 1, 1))
-		if row(result, "caches", 0).Value("fresh_hits") != nil || row(result, "caches", 0).Value("hits") != nil ||
-			metricsOf(result).Value("cache_hit_rate") != nil || metricsOf(result).Value("requests_total") != nil {
-			t.Fatal(bad, jsonx.Repr(result))
+		if row(result, "caches", 0)["fresh_hits"] != nil || row(result, "caches", 0)["hits"] != nil ||
+			metricsOf(result)["cache_hit_rate"] != nil || metricsOf(result)["requests_total"] != nil {
+			t.Fatal(bad, result)
 		}
 	}
 }
 
 func TestContradictoryHitCountNeverExceeds100Percent(t *testing.T) {
 	result := summarize(t, cacheText("c", 10, 12, 1))
-	wantJSON(t, row(result, "caches", 0).Value("hits"), 13)
-	wantJSON(t, row(result, "caches", 0).Value("hit_rate"), nil)
-	wantJSON(t, metricsOf(result).Value("cache_hit_rate"), nil)
+	wantJSON(t, row(result, "caches", 0)["hits"], 13)
+	wantJSON(t, row(result, "caches", 0)["hit_rate"], nil)
+	wantJSON(t, metricsOf(result)["cache_hit_rate"], nil)
 }
 
 func TestLabelsUsePrometheusEscapingAndAllowCommasBracesAndTimestamp(t *testing.T) {
 	text := `cache_entry_count{plugin_tag="a\"b\\c\nd,{x}",ignored="value,with=punctuation"} 7 1792100000000`
 	result := summarize(t, text)
-	wantJSON(t, row(result, "caches", 0).Value("tag"), "a\"b\\c\nd,{x}")
-	wantJSON(t, row(result, "caches", 0).Value("entries"), 7)
+	wantJSON(t, row(result, "caches", 0)["tag"], "a\"b\\c\nd,{x}")
+	wantJSON(t, row(result, "caches", 0)["entries"], 7)
 }
 
 func TestPrefixedAliasesDuplicatesAndConflictsDoNotDoubleCount(t *testing.T) {
@@ -194,9 +201,9 @@ func TestPrefixedAliasesDuplicatesAndConflictsDoNotDoubleCount(t *testing.T) {
 	}
 	prefixed := strings.Join(prefixedLines, "\n")
 	wantJSON(t, summarize(t, text), summarize(t, prefixed))
-	wantJSON(t, metricsOf(summarize(t, text+"\n"+prefixed)).Value("requests_total"), 12)
+	wantJSON(t, metricsOf(summarize(t, text+"\n"+prefixed))["requests_total"], 12)
 	conflict := "\noxidns_server_request_total{protocol=\"udp\",plugin_tag=\"s\"} 13"
-	wantJSON(t, metricsOf(summarize(t, text+conflict)).Value("requests_total"), nil)
+	wantJSON(t, metricsOf(summarize(t, text+conflict))["requests_total"], nil)
 }
 
 func TestMalformedOrUnusableSamplesAreSkipped(t *testing.T) {
@@ -212,7 +219,7 @@ func TestMalformedOrUnusableSamplesAreSkipped(t *testing.T) {
 		`cache_entry_count{plugin_tag="a"} 1 extra invalid`,
 	} {
 		result := summarize(t, line)
-		if len(result.GetList("caches")) != 0 || len(result.GetList("servers")) != 0 {
+		if len(asList(result["caches"])) != 0 || len(asList(result["servers"])) != 0 {
 			t.Fatal(line)
 		}
 	}
@@ -224,14 +231,14 @@ func TestScientificNotationAndLargeIntegerCounter(t *testing.T) {
 		`server_latency_count{plugin_tag="s",protocol="udp"} 2e2`,
 		`server_latency_sum_ms{plugin_tag="s",protocol="udp"} 3.0e3`,
 	}, "\n"))
-	if metricsOf(result).Value("requests_total").(jsonx.Number).String() != "18446744073709551615" {
-		t.Fatal(jsonx.Repr(result))
+	if numString(metricsOf(result)["requests_total"]) != "18446744073709551615" {
+		t.Fatal(result)
 	}
-	wantJSON(t, metricsOf(result).Value("avg_latency_ms"), 15)
+	wantJSON(t, metricsOf(result)["avg_latency_ms"], 15)
 }
 
-// test_nontext_input_is_rejected: ParseMetrics takes a Go string; the str
-// check of Python is the caller's (overviewSnapshot rejects a non-string
+// test_nontext_input_is_rejected: ReadMetrics takes a Go string; the str
+// check of Python is the caller's (readOverviewSnapshot rejects a non-string
 // "metrics" with INVALID_RESPONSE, TestOverviewRejectsNonTextMetrics).
 
 func TestInputLimitsRejectInsteadOfReturningTruncatedTotals(t *testing.T) {
@@ -242,7 +249,7 @@ func TestInputLimitsRejectInsteadOfReturningTruncatedTotals(t *testing.T) {
 	}
 	want := func(text, message string) {
 		t.Helper()
-		_, err := SummarizeMetrics(text)
+		_, err := ReadMetrics(text)
 		if err == nil || !strings.Contains(err.Error(), message) {
 			t.Fatalf("%q: %v", text, err)
 		}
@@ -261,14 +268,14 @@ func TestInputLimitsRejectInsteadOfReturningTruncatedTotals(t *testing.T) {
 
 func TestInconsistentCacheCannotBeHiddenByAnotherCacheDenominator(t *testing.T) {
 	result := summarize(t, cacheText("bad", 10, 12, 1)+"\n"+cacheText("good", 100, 20, 0))
-	wantJSON(t, row(result, "caches", 1).Value("hit_rate"), 20)
-	wantJSON(t, metricsOf(result).Value("cache_hit_rate"), nil)
+	wantJSON(t, row(result, "caches", 1)["hit_rate"], 20)
+	wantJSON(t, metricsOf(result)["cache_hit_rate"], nil)
 }
 
 func TestNonfiniteAggregateIsUnknown(t *testing.T) {
 	result := summarize(t, serverText("a", "udp", "1e308", 0, "1e308", 1)+"\n"+serverText("b", "tcp", "1e308", 0, "1e308", 1))
-	wantJSON(t, metricsOf(result).Value("requests_total"), nil)
-	wantJSON(t, metricsOf(result).Value("avg_latency_ms"), nil)
+	wantJSON(t, metricsOf(result)["requests_total"], nil)
+	wantJSON(t, metricsOf(result)["avg_latency_ms"], nil)
 }
 
 func TestUpstreamsKeepAttemptsSeparateFromListenerRequests(t *testing.T) {
@@ -279,12 +286,12 @@ func TestUpstreamsKeepAttemptsSeparateFromListenerRequests(t *testing.T) {
 		`forward_upstream_timeout_total{plugin_tag="remote",upstream="https://dns.example/dns-query"} 2`,
 	}, "\n")
 	result := summarize(t, text)
-	wantJSON(t, metricsOf(result).Value("requests_total"), 8)
-	wantJSON(t, result.Value("upstreams"), []any{
-		jsonx.Obj("tag", "remote", "upstream", "https://dns.example/dns-query", "requests", 10, "failed", 2, "avg_latency_ms", 20),
-		jsonx.Obj("tag", "local", "upstream", "udp://192.0.2.1", "requests", 5, "failed", 0, "avg_latency_ms", 5),
+	wantJSON(t, metricsOf(result)["requests_total"], 8)
+	wantJSON(t, result["upstreams"], []any{
+		map[string]any{"tag": "remote", "upstream": "https://dns.example/dns-query", "requests": 10, "failed": 2, "avg_latency_ms": 20},
+		map[string]any{"tag": "local", "upstream": "udp://192.0.2.1", "requests": 5, "failed": 0, "avg_latency_ms": 5},
 	})
-	wantJSON(t, summarize(t, text+"\n"+text).Value("upstreams"), result.Value("upstreams"))
+	wantJSON(t, summarize(t, text+"\n"+text)["upstreams"], result["upstreams"])
 }
 
 func TestResetUsesRawWeightedDifferencesAndKeepsLiveGauges(t *testing.T) {
@@ -293,72 +300,76 @@ func TestResetUsesRawWeightedDifferencesAndKeepsLiveGauges(t *testing.T) {
 		cacheText("cache", 100, 50, 10, 30, 10, 99),
 		upstreamText("forward", "dns", 50, 5, 5000, 50),
 	}, "\n"))
-	encoded, _ := jsonx.Compact(baseline) // identical after persistence
-	persisted, _ := jsonx.Parse(encoded)
-	baseline = persisted.(*jsonx.Object)
+	persisted, err := decodeObservations(mustMarshal(t, baseline)) // identical after persistence
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline = persisted
 	current := parse(t, strings.Join([]string{
 		serverText("dns", "udp", 110, 3, 1300, 110, 4),
 		cacheText("cache", 120, 65, 12, 32, 11, 105),
 		upstreamText("forward", "dns", 54, 6, 5800, 54),
 	}, "\n"))
-	original := current.DeepCopy()
-	delta, partial, err := ApplyMetricsBaseline(current, baseline)
+	original := toJSONMap(t, current)
+	delta, partial, err := ApplyBaseline(current, baseline)
 	if err != nil || partial {
 		t.Fatal(err, partial)
 	}
-	result := SummarizeObservations(delta)
+	result := toJSONMap(t, Summarize(delta))
 	wantJSON(t, current, original)
-	wantJSON(t, metricsOf(result), jsonx.Obj("requests_total", 10, "failed_total", 2, "avg_latency_ms", 30,
-		"inflight", 4, "cache_hit_rate", 85))
-	wantJSON(t, row(result, "caches", 0).Value("entries"), 105)
+	wantJSON(t, metricsOf(result), map[string]any{
+		"requests_total": 10, "failed_total": 2, "avg_latency_ms": 30,
+		"inflight": 4, "cache_hit_rate": 85,
+	})
+	wantJSON(t, row(result, "caches", 0)["entries"], 105)
 	wantJSON(t, pick(row(result, "upstreams", 0), "requests", "avg_latency_ms", "failed"),
-		jsonx.Obj("requests", 4, "avg_latency_ms", 200, "failed", 1))
+		map[string]any{"requests": 4, "avg_latency_ms": 200, "failed": 1})
 }
 
 func TestResetToSameSampleHasZeroCountersAndUnknownRatios(t *testing.T) {
 	snapshot := parse(t, serverText("s", "udp", 100, 0, 1000, 100, 7)+"\n"+cacheText("c", 5, 2, 1, 0, 0, 20))
-	adjusted, partial, _ := ApplyMetricsBaseline(snapshot, snapshot)
-	result := SummarizeObservations(adjusted)
+	adjusted, partial, _ := ApplyBaseline(snapshot, snapshot)
+	result := toJSONMap(t, Summarize(adjusted))
 	if partial {
 		t.Fatal("partial")
 	}
 	wantJSON(t, pick(metricsOf(result), "requests_total", "avg_latency_ms", "cache_hit_rate", "inflight"),
-		jsonx.Obj("requests_total", 0, "avg_latency_ms", nil, "cache_hit_rate", nil, "inflight", 7))
-	wantJSON(t, row(result, "caches", 0).Value("entries"), 20)
+		map[string]any{"requests_total": 0, "avg_latency_ms": nil, "cache_hit_rate": nil, "inflight": 7})
+	wantJSON(t, row(result, "caches", 0)["entries"], 20)
 }
 
 func TestNewOrMissingSeriesArePartialNotFabricatedFromZero(t *testing.T) {
 	baseline := parse(t, serverText("old", "udp", 100, 2, 500, 100))
 	current := parse(t, serverText("new", "udp", 5, 1, 20, 5, 2))
-	adjusted, partial, _ := ApplyMetricsBaseline(current, baseline)
-	result := SummarizeObservations(adjusted)
+	adjusted, partial, _ := ApplyBaseline(current, baseline)
+	result := toJSONMap(t, Summarize(adjusted))
 	if !partial {
 		t.Fatal("not partial")
 	}
 	wantJSON(t, pick(metricsOf(result), "requests_total", "avg_latency_ms", "inflight"),
-		jsonx.Obj("requests_total", nil, "avg_latency_ms", nil, "inflight", 2))
+		map[string]any{"requests_total": nil, "avg_latency_ms": nil, "inflight": 2})
 }
 
 func TestPluginCounterResetReportsNewLifetimeInsteadOfNegative(t *testing.T) {
 	baseline := parse(t, upstreamText("f", "dns", 100, 5, 1000, 100))
 	current := parse(t, upstreamText("f", "dns", 3, 0, 15, 3))
-	adjusted, partial, _ := ApplyMetricsBaseline(current, baseline)
-	result := SummarizeObservations(adjusted)
+	adjusted, partial, _ := ApplyBaseline(current, baseline)
+	result := toJSONMap(t, Summarize(adjusted))
 	if !partial {
 		t.Fatal("not partial")
 	}
-	wantJSON(t, pick(row(result, "upstreams", 0), "requests", "avg_latency_ms"), jsonx.Obj("requests", 3, "avg_latency_ms", 5))
+	wantJSON(t, pick(row(result, "upstreams", 0), "requests", "avg_latency_ms"), map[string]any{"requests": 3, "avg_latency_ms": 5})
 }
 
 func TestMissingLatencyCounterDoesNotBecomeAverageOfAverages(t *testing.T) {
 	baseline := parse(t, upstreamText("f", "dns", 20, 2, "NaN", 18))
 	current := parse(t, upstreamText("f", "dns", 25, 3, 1000, 22))
-	adjusted, partial, _ := ApplyMetricsBaseline(current, baseline)
+	adjusted, partial, _ := ApplyBaseline(current, baseline)
 	if !partial {
 		t.Fatal("not partial")
 	}
-	result := SummarizeObservations(adjusted)
-	wantJSON(t, pick(row(result, "upstreams", 0), "requests", "avg_latency_ms"), jsonx.Obj("requests", 5, "avg_latency_ms", nil))
+	result := toJSONMap(t, Summarize(adjusted))
+	wantJSON(t, pick(row(result, "upstreams", 0), "requests", "avg_latency_ms"), map[string]any{"requests": 5, "avg_latency_ms": nil})
 }
 
 func TestUpstreamIdentityIsGroupAndNameNotNameAlone(t *testing.T) {
@@ -367,20 +378,20 @@ func TestUpstreamIdentityIsGroupAndNameNotNameAlone(t *testing.T) {
 		upstreamText("remote", "dns", 3, 1, 12, 2),
 		`forward_upstream_query_total{plugin_tag="missing_name"} 99`,
 	}, "\n"))
-	if len(result.GetList("upstreams")) != 2 {
-		t.Fatal(jsonx.Repr(result))
+	if len(asList(result["upstreams"])) != 2 {
+		t.Fatal(result)
 	}
-	wantJSON(t, []any{row(result, "upstreams", 0).Value("requests"), row(result, "upstreams", 1).Value("requests")}, []any{3, 1})
-	wantJSON(t, []any{row(result, "upstreams", 0).Value("avg_latency_ms"), row(result, "upstreams", 1).Value("avg_latency_ms")}, []any{6, 10})
+	wantJSON(t, []any{row(result, "upstreams", 0)["requests"], row(result, "upstreams", 1)["requests"]}, []any{3, 1})
+	wantJSON(t, []any{row(result, "upstreams", 0)["avg_latency_ms"], row(result, "upstreams", 1)["avg_latency_ms"]}, []any{6, 10})
 }
 
 func TestCounterResetDetectionExcludesGaugesAndMissingSeries(t *testing.T) {
 	baseline := parse(t, serverText("s", "udp", 100, 0, 1000, 100, 7)+"\n"+cacheText("c", 5, 2, 1, 0, 0, 20))
 	gaugesChanged := parse(t, serverText("s", "udp", 101, 0, 1010, 101, 0)+"\n"+cacheText("c", 5, 2, 1, 0, 0, 0))
-	if MetricsCountersRestarted(gaugesChanged, baseline) || MetricsCountersRestarted(parse(t, ""), baseline) {
+	if CountersRestarted(gaugesChanged, baseline) || CountersRestarted(parse(t, ""), baseline) {
 		t.Fatal("restart")
 	}
-	if !MetricsCountersRestarted(parse(t, serverText("s", "udp", 1, 0, 10, 1)), baseline) {
+	if !CountersRestarted(parse(t, serverText("s", "udp", 1, 0, 10, 1)), baseline) {
 		t.Fatal("no restart")
 	}
 }

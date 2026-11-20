@@ -8,6 +8,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
+	"configflow/internal/model"
 )
 
 func TestLostAcceptedReplyRestartAndRollbackFailedNeverUploadTwice(t *testing.T) {
@@ -145,7 +146,7 @@ func TestBindingChangedAfterUploadCannotFinalizeDraft(t *testing.T) {
 	f.target.mu.Lock()
 	f.target.hook = func(r *http.Request) {
 		if r.Method == "POST" && r.URL.Path == "/api/deployments" {
-			f.editAgent(t, "target", func(a *agents.Record) { a.GetObject("dns_follow").Set("id", "replacement-binding") })
+			f.editAgent(t, "target", func(a *model.Agent) { a.DNSFollow.ID = "replacement-binding" })
 		}
 	}
 	f.target.mu.Unlock()

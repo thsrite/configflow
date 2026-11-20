@@ -2,12 +2,13 @@ package dnsha
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestNoOrSplitVIPRefusesBeforeCoreMutation(t *testing.T) {
@@ -139,17 +140,30 @@ func TestMalformedHandoffFlagsCannotBypassVIPGate(t *testing.T) {
 					}
 				}
 			}
-			_, e := f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-				for _, v := range *rows {
-					a := v.(*jsonx.Object)
-					j := a.GetObject("oxidns_ha_publication")
+			e := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+				for i := range sys.Agents {
+					raw, err := json.Marshal(sys.Agents[i].OxiDNSHAPublication)
+					if err != nil {
+						return err
+					}
+					var j map[string]any
+					if err := json.Unmarshal(raw, &j); err != nil {
+						return err
+					}
 					if field == "handoff_required" {
-						j.Set(field, "yes")
+						j[field] = "yes"
 					} else {
-						j.GetObject("handoff").Set(field, "yes")
+						j["handoff"].(map[string]any)[field] = "yes"
+					}
+					updated, err := json.Marshal(j)
+					if err != nil {
+						return err
+					}
+					if err := sys.Agents[i].SetJSON("oxidns_ha_publication", updated); err != nil {
+						return err
 					}
 				}
-				return nil, nil
+				return nil
 			})
 			if e != nil {
 				t.Fatal(e)

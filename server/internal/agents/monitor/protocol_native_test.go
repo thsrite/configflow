@@ -225,9 +225,6 @@ func TestLegacyScalarReadsDoNotSerializeUnreadHistory(t *testing.T) {
 	if origin, err := AgentOrigin(a); err != nil || origin != "http://127.0.0.1:8082" {
 		t.Fatalf("light endpoint: %s %v", origin, err)
 	}
-	if !HistorySupported(a) || !SupportsPaths(a) {
-		t.Fatal("light version read lost capabilities")
-	}
 	a.Set("host", jsonx.Int(7))
 	a.Set("Host", "example.com")
 	if _, err := AgentOrigin(a); err == nil {

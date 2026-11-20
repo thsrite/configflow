@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func TestNativeRankingCacheOwnsPublicRowsAndShares(t *testing.T) {
@@ -13,14 +11,14 @@ func TestNativeRankingCacheOwnsPublicRowsAndShares(t *testing.T) {
 	t.Cleanup(ResetRankingsCache)
 	m := dashboardManager(t, t.TempDir())
 	client := transport(t, nil, nil)
-	clients := client.rk().GetObject("clients")
-	clients.Set("sample_size", 2)
-	clients.Set("rows", []any{jsonx.Obj("key", "192.0.2.1", "count", 2)})
-	blocked := client.rk().GetObject("blocked")
-	blocked.Set("sample_size", 1)
-	blocked.Set("rows", []any{jsonx.Obj("key", "ads.example", "count", 1)})
-	blocked.Set("matcher_tags", []any{"adguard_match"})
-	first, err := ReadOverview(ctx, registryFor(m), "one", nil)
+	clients := asMap(client.rk()["clients"])
+	clients["sample_size"] = 2
+	clients["rows"] = []any{map[string]any{"key": "192.0.2.1", "count": 2}}
+	blocked := asMap(client.rk()["blocked"])
+	blocked["sample_size"] = 1
+	blocked["rows"] = []any{map[string]any{"key": "ads.example", "count": 1}}
+	blocked["matcher_tags"] = []any{"adguard_match"}
+	first, err := ReadOverview(ctx, m, "one", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +43,7 @@ func TestNativeRankingCacheOwnsPublicRowsAndShares(t *testing.T) {
 	if first.Rankings.Blocked != nil && first.Rankings.Blocked.Section != nil && len(first.Rankings.Blocked.Section.Rows) > 0 {
 		first.Rankings.Blocked.Section.Rows[0].Key = "changed.example"
 	}
-	again, err := ReadOverview(ctx, registryFor(m), "one", nil)
+	again, err := ReadOverview(ctx, m, "one", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

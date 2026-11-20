@@ -12,8 +12,8 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 func waitReport(t *testing.T, s *Service, ctx context.Context, key string) Document {
@@ -124,9 +124,9 @@ func TestPublicationSnapshotAndAdaptedDigest(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
 	seedPublication(t, s, ctx, "publication-one")
-	_, _, e := s.Manager.Repository().UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("mihomo").Set("custom_config", "ipv6: false\n")
-		return nil, nil
+	_, e := s.Manager.Repository().UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Mihomo.CustomConfig = "ipv6: false\n"
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -248,9 +248,13 @@ func TestTwoLevelRedactionKeepsProtocolFields(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = s.Manager.UpdateAgents(ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		*rows = append(*rows, jsonx.Obj("id", "peer", "token", "synthetic-peer-token", "profile_id", "default", "password", "synthetic-peer-password"))
-		return nil, nil
+	e = s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		var peer model.Agent
+		if err := json.Unmarshal([]byte(`{"id":"peer","token":"synthetic-peer-token","profile_id":"default","password":"synthetic-peer-password"}`), &peer); err != nil {
+			return err
+		}
+		sys.Agents = append(sys.Agents, peer)
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -275,9 +279,18 @@ func TestTwoLevelRedactionKeepsProtocolFields(t *testing.T) {
 
 func addClient(t *testing.T, s *Service, ctx context.Context) {
 	t.Helper()
-	_, e := s.Manager.UpdateAgents(ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		*rows = append(*rows, jsonx.Obj("id", "client", "host", "192.0.2.3", "port", 8080, "token", "synthetic-client-token", "profile_id", "default", "service_type", "oxidns", "deployment_method", "shell", "enabled", true, "status", "online", "last_heartbeat", time.Now().Format(time.RFC3339)))
-		return nil, nil
+	e := s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		var client model.Agent
+		data := raw(map[string]any{
+			"id": "client", "host": "192.0.2.3", "port": 8080, "token": "synthetic-client-token",
+			"profile_id": "default", "service_type": "oxidns", "deployment_method": "shell",
+			"enabled": true, "status": "online", "last_heartbeat": time.Now().Format(time.RFC3339),
+		})
+		if err := json.Unmarshal(data, &client); err != nil {
+			return err
+		}
+		sys.Agents = append(sys.Agents, client)
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -381,17 +394,24 @@ func TestClientChecksRequireMatchingRunAndIdentity(t *testing.T) {
 func TestVerificationRunsAtMostTwoWorkers(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
-	a, e := s.Manager.GetAgentByID(ctx, "source", true)
+	a, e := s.Manager.ReadAgent(ctx, "source", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = s.Manager.UpdateAgents(ctx, "", func(_ context.Context, rows *[]any) (any, error) {
+	baseRaw, e := json.Marshal(a)
+	if e != nil {
+		t.Fatal(e)
+	}
+	e = s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		for _, id := range []string{"source-two", "source-three"} {
-			clone := a.DeepCopy()
-			clone.Set("id", id)
-			*rows = append(*rows, clone)
+			var clone model.Agent
+			if err := json.Unmarshal(baseRaw, &clone); err != nil {
+				return err
+			}
+			clone.ID = id
+			sys.Agents = append(sys.Agents, clone)
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)

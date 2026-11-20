@@ -2,12 +2,13 @@ package ipv6
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // Review A23 F1: deployment history is trimmed by insertion order (A14 keeps
@@ -16,20 +17,19 @@ func TestEnrollKeepsDeploymentHistoryOrder(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
 	ids := []string{"z-older", "m-middle", "a-newest"}
-	_, e := s.Manager.UpdateAgents(ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		for _, row := range *rows {
-			a := row.(*jsonx.Object)
-			if a.GetString("id") != "source" {
+	e := s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		for i := range sys.Agents {
+			if sys.Agents[i].ID != "source" {
 				continue
 			}
-			history := jsonx.NewObject()
-			for _, id := range ids {
-				history.Set(id, jsonx.Obj("deployment_id", id, "status", "succeeded"))
+			if err := sys.Agents[i].SetJSON("deployments", []byte(`{"z-older":{"deployment_id":"z-older","status":"succeeded"},"m-middle":{"deployment_id":"m-middle","status":"succeeded"},"a-newest":{"deployment_id":"a-newest","status":"succeeded"}}`)); err != nil {
+				return err
 			}
-			a.Set("deployments", history)
-			a.Set("latest_deployment", jsonx.Obj("deployment_id", "a-newest", "status", "preparing"))
+			if err := sys.Agents[i].SetJSON("latest_deployment", []byte(`{"deployment_id":"a-newest","status":"preparing"}`)); err != nil {
+				return err
+			}
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -41,16 +41,15 @@ func TestEnrollKeepsDeploymentHistoryOrder(t *testing.T) {
 	if e = s.Enroll(ctx, "source", "a-newest", config); e != nil {
 		t.Fatal(e)
 	}
-	a, e := s.Manager.GetAgentByID(ctx, "source", true)
+	a, e := s.Manager.ReadAgent(ctx, "source", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	history, _ := a.Value("deployments").(*jsonx.Object)
-	if history == nil || !slices.Equal(history.Keys(), ids) {
-		t.Fatalf("deployment history reordered: %v", history)
+	if !slices.Equal(a.Deployments.Keys(), ids) {
+		t.Fatalf("deployment history reordered: %v", a.Deployments.Keys())
 	}
-	task, _ := history.Value("a-newest").(*jsonx.Object)
-	if task == nil || !jsonx.Truthy(task.Value("ipv6_verification_requested")) {
+	task, ok := a.Deployments.Get("a-newest")
+	if !ok || task.IPv6VerificationRequested == nil || !*task.IPv6VerificationRequested {
 		t.Fatal("enrollment not recorded", task)
 	}
 }
@@ -60,9 +59,13 @@ func TestEnrollKeepsDeploymentHistoryOrder(t *testing.T) {
 func TestPrepareFailureUsesCapturedCredentials(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
-	_, e := s.Manager.UpdateAgents(ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		*rows = append(*rows, jsonx.Obj("id", "peer", "profile_id", "default", "token", "synthetic-peer-old-token", "password", "synthetic-peer-old-password"))
-		return nil, nil
+	e := s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		var peer model.Agent
+		if err := json.Unmarshal([]byte(`{"id":"peer","profile_id":"default","token":"synthetic-peer-old-token","password":"synthetic-peer-old-password"}`), &peer); err != nil {
+			return err
+		}
+		sys.Agents = append(sys.Agents, peer)
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)

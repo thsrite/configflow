@@ -5,7 +5,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,7 +27,7 @@ import (
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -64,7 +63,7 @@ func (c localClient) Do(ctx context.Context, r agents.Request) (*agents.Response
 type devices struct {
 	segment *agentfake.Segment
 	urls    map[string]string
-	records []any
+	records []map[string]any
 	fakes   map[string]*agentfake.Agent
 }
 
@@ -120,17 +119,16 @@ func newDevices(t *testing.T, scenario string) *devices {
 		}))
 		t.Cleanup(srv.Close)
 		d.urls[host] = srv.URL
-		d.records = append(d.records, jsonx.Obj("id", id, "name", "DNS "+id, "host", host, "port", 8082, "token", token, "service_type", "oxidns", "profile_id", "default", "enabled", true, "deployment_method", "shell", "version", "1.8.60-go"))
+		d.records = append(d.records, map[string]any{"id": id, "name": "DNS " + id, "host": host, "port": 8082, "token": token, "service_type": "oxidns", "profile_id": "default", "enabled": true, "deployment_method": "shell", "version": "1.8.60-go"})
 	}
 	if scenario == "reconfigure" || scenario == "lost-yield" {
-		for _, raw := range d.records {
-			a := raw.(*jsonx.Object)
+		for _, a := range d.records {
 			other, role := "secondary", "primary"
-			if a.GetString("id") == "secondary" {
+			if a["id"] == "secondary" {
 				other, role = "primary", "secondary"
 			}
-			a.Set("oxidns_ha", jsonx.Obj("enabled", true, "group_id", "synthetic-existing-group", "peer_id", other, "vip", "192.0.2.53", "vrid", 53, "role", role))
-			a.Set("oxidns_ha_state", jsonx.Obj("status", "succeeded", "error", ""))
+			a["oxidns_ha"] = map[string]any{"enabled": true, "group_id": "synthetic-existing-group", "peer_id": other, "vip": "192.0.2.53", "vrid": 53, "role": role}
+			a["oxidns_ha_state"] = map[string]any{"status": "succeeded", "error": ""}
 		}
 		d.segment.Configure("primary", "secondary")
 	}
@@ -179,16 +177,14 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	dnsha.Register()
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: false, Register: httpxtest.Routes(apiagents.Register)})
 	ctx := srv.Context()
-	_, e := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("agents", d.records)
-		return nil, nil
+	e := srv.Repo.UpdateSystem(ctx, func(_ context.Context, doc *model.System) error {
+		return json.Unmarshal(mustJSON(t, d.records), &doc.Agents)
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, _, e = srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("oxidns", jsonx.Obj("config_mode", "native", "native_config", draft))
-		return nil, nil
+	_, e = srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, doc *model.Profile) error {
+		return doc.SetJSON("oxidns", mustJSON(t, map[string]any{"config_mode": "native", "native_config": draft}))
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -199,7 +195,7 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	}
 	m.SetClient(localClient{d.urls})
 	for _, id := range []string{"primary", "secondary"} {
-		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, jsonx.Obj("service_status", "running"))); e != nil {
+		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, map[string]any{"service_status": "running"})); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -242,14 +238,15 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	}
 	stored := []any{}
 	for _, id := range []string{"primary", "secondary"} {
-		a, e := m.GetAgentByID(ctx, id, true)
+		a, e := m.ReadAgent(ctx, id, true)
 		if e != nil {
 			t.Fatal(e)
 		}
-		v := jsonx.NewObject()
+		rawMap := jsonValue(t, mustJSON(t, a)).(map[string]any)
+		v := map[string]any{}
 		for _, key := range []string{"oxidns_ha", "oxidns_ha_state", "oxidns_ha_publication"} {
-			if value, ok := a.Get(key); ok {
-				v.Set(key, value)
+			if value, ok := rawMap[key]; ok {
+				v[key] = value
 			}
 		}
 		stored = append(stored, v)

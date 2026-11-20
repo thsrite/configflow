@@ -20,9 +20,9 @@ import (
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 type syncFake struct {
@@ -162,25 +162,44 @@ func newWorkerFixture(t *testing.T, service string) *syncFixture {
 	u := strings.TrimPrefix(srv.URL, "http://")
 	host, port, _ := net.SplitHostPort(u)
 	n, _ := strconv.Atoi(port)
-	_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		a := (*list)[0].(*jsonx.Object)
-		a.Set("host", host)
-		a.Set("port", n)
-		a.Set("service_type", service)
-		a.Set("version", "1.8.60-go")
-		return nil, nil
+	e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.Agents[0].Host = host
+		sys.Agents[0].Port = model.Int(n)
+		sys.Agents[0].ServiceType = service
+		sys.Agents[0].Version = "1.8.60-go"
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = s.m.Repository().UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", append(shared.GetList("rule_library"), jsonx.Obj("id", "lib-a", "name", "Selected", "source_type", "content", "behavior", "domain", "format", "text", "content", "old.example.com")))
-		return nil, nil
+	e = s.m.Repository().Update(ctx, func(_ context.Context, d *model.Document) error {
+		var item model.RuleLibraryItem
+		if err := json.Unmarshal([]byte(`{"id":"lib-a","name":"Selected","source_type":"content","behavior":"domain","format":"text","content":"old.example.com"}`), &item); err != nil {
+			return err
+		}
+		d.Shared.Nodes = []model.Node{}
+		d.Shared.Subscriptions = []model.Subscription{}
+		d.Shared.RuleLibrary = append(d.Shared.RuleLibrary, item)
+		for _, p := range d.Profiles {
+			if p == nil || p.ID != "default" {
+				continue
+			}
+			p.ProxyGroups = []model.ProxyGroup{}
+			if err := p.SetJSON("mosdns", json.RawMessage(`{}`)); err != nil {
+				return err
+			}
+			if err := json.Unmarshal([]byte(`[{"id":"set-a","itemType":"ruleset","library_rule_id":"lib-a","policy":"DIRECT","enabled":true},{"id":"single","itemType":"rule","rule_type":"DOMAIN","value":"old-inline.example.com","policy":"DIRECT","enabled":true}]`), &p.RuleConfigs); err != nil {
+				return err
+			}
+			if err := p.SetJSON("oxidns", json.RawMessage(`{"direct_rulesets":["set-a"],"direct_rules":["single"]}`)); err != nil {
+				return err
+			}
+			if err := p.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mode: rule\n"}`)); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
-	if e != nil {
-		t.Fatal(e)
-	}
-	_, _, e = s.m.Repository().UpdateProfileFields(ctx, "default", jsonx.Obj("nodes", []any{}, "subscriptions", []any{}, "proxy_groups", []any{}, "mosdns", jsonx.NewObject(), "rule_configs", []any{jsonx.Obj("id", "set-a", "itemType", "ruleset", "library_rule_id", "lib-a", "policy", "DIRECT", "enabled", true), jsonx.Obj("id", "single", "itemType", "rule", "rule_type", "DOMAIN", "value", "old-inline.example.com", "policy", "DIRECT", "enabled", true)}, "oxidns", jsonx.Obj("direct_rulesets", []any{"set-a"}, "direct_rules", []any{"single"}), "mihomo", jsonx.Obj("custom_config", "mode: rule\n")), nil)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -188,11 +207,14 @@ func newWorkerFixture(t *testing.T, service string) *syncFixture {
 	if e != nil {
 		t.Fatal(e)
 	}
-	record, e := s.m.GetAgentByID(ctx, "device", false)
+	record, e := s.m.ReadAgent(ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	target := deploy.NewTarget(record)
+	target, e := deploy.NewTypedTarget(record)
+	if e != nil {
+		t.Fatal(e)
+	}
 	main := `mode: rule
 dns: {nameserver: [192.0.2.1]}
 rule-providers:
@@ -211,26 +233,26 @@ rules: ['RULE-SET,selected,DIRECT', 'DOMAIN,old-inline.example.com,DIRECT', 'MAT
 		t.Fatal(e)
 	}
 	for i := 0; i < 8; i++ {
-		r, e := s.m.GetDeployment(ctx, "device", "applied")
+		r, e := s.m.GetDeploymentModel(ctx, "device", "applied")
 		if e != nil {
 			t.Fatal(e)
 		}
-		if r.GetString("status") == "succeeded" {
+		if r.Status == "succeeded" {
 			break
 		}
 	}
-	record, e = s.m.GetAgentByID(ctx, "device", false)
+	record, e = s.m.ReadAgent(ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if record.GetObject("applied_content") == nil {
+	if record.AppliedContent == nil {
 		t.Fatal("baseline was not applied")
 	}
 	fake.bundle = baseline
 	s.m.SetClient(fake)
 	f := &syncFixture{ctx: ctx, s: s, fake: fake, agent: device, now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), source: source, baseline: baseline}
 	s.now = func() time.Time { return f.now }
-	_, e = s.m.ObserveHeartbeat(ctx, "device", agentModelForTest(t, jsonx.Obj("version", "1.8.60-go", "config_version", record.GetString("config_version"))))
+	_, e = s.m.ObserveHeartbeat(ctx, "device", agentModelForTest(t, map[string]any{"version": "1.8.60-go", "config_version": record.ConfigVersion}))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -241,14 +263,14 @@ rules: ['RULE-SET,selected,DIRECT', 'DOMAIN,old-inline.example.com,DIRECT', 'MAT
 }
 func (f *syncFixture) edit(t *testing.T, content string) {
 	t.Helper()
-	_, e := f.s.m.Repository().UpdateSharedTransaction(f.ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		for _, entry := range s.GetList("rule_library") {
-			rule := entry.(*jsonx.Object)
-			if rule.GetString("id") == "lib-a" {
-				rule.Set("content", content)
+	e := f.s.m.Repository().UpdateShared(f.ctx, func(_ context.Context, s *model.Shared) error {
+		for i := range s.RuleLibrary {
+			if s.RuleLibrary[i].ID == "lib-a" {
+				c := content
+				s.RuleLibrary[i].Content = &c
 			}
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -256,11 +278,7 @@ func (f *syncFixture) edit(t *testing.T, content string) {
 }
 func (f *syncFixture) state(t *testing.T) *model.RuleSyncState {
 	t.Helper()
-	r, e := f.s.m.GetAgentByID(f.ctx, "device", false)
-	if e != nil {
-		t.Fatal(e)
-	}
-	a, e := decodeAgent(r)
+	a, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -292,11 +310,11 @@ func TestWorkerDebounceVerifiedRefreshAndIdle(t *testing.T) {
 	if f.fake.providerPaths[0] != "/api/mihomo/providers/rules/selected" {
 		t.Fatal(f.fake.providerPaths)
 	}
-	record, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	record, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	receipt, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(record), true)
+	receipt, e := f.s.receipts.LoadAgent(f.ctx, record, true)
 	if e != nil || receipt == nil {
 		t.Fatal(receipt, e)
 	}
@@ -349,11 +367,11 @@ func TestWorkerRejectsUnverifiedSnapshotAndBacksOff(t *testing.T) {
 	if state.Status != "failed" || state.RetryAt == nil {
 		t.Fatalf("%+v", state)
 	}
-	r, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	r, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	receipt, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(r), false)
+	receipt, e := f.s.receipts.LoadAgent(f.ctx, r, false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -424,20 +442,19 @@ func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 	if _, e := f.s.Configure(f.ctx, "device", []byte(`{"library":false,"rules":true}`)); e != nil {
 		t.Fatal(e)
 	}
-	_, _, e := f.s.m.Repository().UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		for _, entry := range doc.GetList("rule_configs") {
-			r := entry.(*jsonx.Object)
-			if r.GetString("id") == "single" {
-				r.Set("value", "new-inline.example.com")
+	_, e := f.s.m.Repository().UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		for i := range p.RuleConfigs {
+			if p.RuleConfigs[i].ID == "single" {
+				p.RuleConfigs[i].Value = "new-inline.example.com"
 			}
 		}
-		doc.GetObject("mihomo").Set("custom_config", "mode: global\ndns: {nameserver: [192.0.2.99]}\n")
-		return nil, nil
+		p.Mihomo.CustomConfig = "mode: global\ndns: {nameserver: [192.0.2.99]}\n"
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	record, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	record, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -449,16 +466,20 @@ func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	receipt, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(record), true)
+	receipt, e := f.s.receipts.LoadAgent(f.ctx, record, true)
 	if e != nil || receipt == nil {
 		t.Fatal(receipt, e)
 	}
-	live, e := fetchLegacySnapshot(f.ctx, f.s.m, record, Baseline{receipt, receipt.Bundle})
+	live, e := FetchSnapshot(f.ctx, f.s.m, record, Baseline{receipt, receipt.Bundle})
+	if e != nil {
+		t.Fatal(e)
+	}
+	target, e := deploy.NewTypedTarget(record)
 	if e != nil {
 		t.Fatal(e)
 	}
 	beforePreview := systemBytes(t, f.s)
-	preview, e := PrepareCandidate(f.ctx, deploy.NewTarget(record), projected, Baseline{receipt, live}, Settings{Rules: true}, "preview", false)
+	preview, e := PrepareCandidate(f.ctx, target, projected, Baseline{receipt, live}, Settings{Rules: true}, "preview", false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -561,11 +582,11 @@ func TestRuleSyncRuntimeDuringDeviceIO(t *testing.T) {
 				if !bytes.Equal(before, systemBytes(t, f.s)) {
 					t.Fatal("shutdown wrote state or acknowledged receipt")
 				}
-				r, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+				r, e := f.s.m.ReadAgent(f.ctx, "device", false)
 				if e != nil {
 					t.Fatal(e)
 				}
-				baseline, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(r), false)
+				baseline, e := f.s.receipts.LoadAgent(f.ctx, r, false)
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -610,11 +631,11 @@ func TestEditDuringRefreshIsNotAcknowledged(t *testing.T) {
 	if state.Status != "pending" || state.Message != msgChangedDuring {
 		t.Fatalf("%+v", state)
 	}
-	r, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	r, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	baseline, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(r), false)
+	baseline, e := f.s.receipts.LoadAgent(f.ctx, r, false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -629,11 +650,11 @@ func TestWorkerUsesDerivedOfflineStatus(t *testing.T) {
 	entry := f.s.m.Runtime().Entries()["device"]
 	entry.LastHeartbeat = time.Now().Add(-5 * time.Minute).Format("2006-01-02T15:04:05.000000")
 	f.s.m.Runtime().SetEntry("device", entry)
-	stored, e := f.s.m.GetAgentByID(f.ctx, "device", false)
+	stored, e := f.s.m.ReadAgent(f.ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if stored.GetString("status") != "online" {
+	if stored.Status != "online" {
 		t.Fatal("negative control needs stored online status")
 	}
 	if e = f.s.Run(f.ctx, "device"); e != nil {
@@ -651,7 +672,7 @@ func TestWorkerUsesDerivedOfflineStatus(t *testing.T) {
 func TestBindingChangeDuringNativeStatusPreventsDownload(t *testing.T) {
 	f := newWorkerFixture(t, "oxidns")
 	r := f.s.m.Repository()
-	if _, e := r.CreateProfile(f.ctx, jsonx.Obj("id", "other", "name", "Other"), ""); e != nil {
+	if _, e := r.CreateProfileRecord(f.ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	f.edit(t, "new.example.com")
@@ -663,7 +684,7 @@ func TestBindingChangeDuringNativeStatusPreventsDownload(t *testing.T) {
 	f.fake.mu.Lock()
 	f.fake.onNativeGet = func() {
 		called.Store(true)
-		if _, e := f.s.m.EditAgent(f.ctx, "device", agentEditsForTest(t, jsonx.Obj("profile_id", "other"))); e != nil {
+		if _, e := f.s.m.EditAgent(f.ctx, "device", agentEditsForTest(t, map[string]any{"profile_id": "other"})); e != nil {
 			t.Error(e)
 		}
 	}

@@ -27,7 +27,7 @@ func TestReviewO3ProductionCollectorPausesBetweenSlots(t *testing.T) {
 	fake := newFakeAgent(generate(13, t0, 1, 100))
 	useAgent(t, fake.do)
 	store := NewRankingStore(t.TempDir())
-	if err := rankingCollectAgent(ctx, nil, store, historyAgent, []string{"records"}, i64(t0+rDay+120)); err != nil {
+	if _, err := CollectAgentHistory(ctx, nil, store, historyAgent, []string{"records"}, i64(t0+rDay+120), RankingSlotsPerRound, RankingCoreRetentionDays, 200*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()

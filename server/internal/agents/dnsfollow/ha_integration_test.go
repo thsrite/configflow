@@ -12,7 +12,7 @@ import (
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/agents/dnsha"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 type haFollowClient struct{ origins map[string]string }
@@ -43,9 +43,9 @@ func (c haFollowClient) Do(ctx context.Context, r agents.Request) (*agents.Respo
 func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	standby := newPeer(t, "standby", "oxidns", agentfake.Options{})
-	_, e := f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		*rows = append(*rows, standby.record())
-		return nil, nil
+	e := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		sys.Agents = append(sys.Agents, standby.record())
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -63,19 +63,33 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
       entry: sequence_main
       listen: 0.0.0.0:53
 `
-	_, _, e = f.r.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("oxidns").Set("native_config", haDraft)
-		return nil, nil
+	_, e = f.r.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		o := oxidnsMap(t, p)
+		o["native_config"] = haDraft
+		setOxidnsMap(t, p, o)
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	current, rev, e := f.r.GetPublishSnapshot(f.ctx, "default", false)
+	current, rev, e := f.r.PublishConfig(f.ctx, "default", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	source := deploy.NewSource(current, &rev)
-	prepared, e := deploy.PrepareContent(f.ctx, f.m, deploy.NewTarget(f.target.record()), source, deploy.PrepareOptions{DeploymentID: "target-ha-baseline", BaseURL: "https://panel.example"})
+	currentRaw, e := json.Marshal(current)
+	if e != nil {
+		t.Fatal(e)
+	}
+	source, e := deploy.SourceFromJSON(currentRaw, &rev)
+	if e != nil {
+		t.Fatal(e)
+	}
+	tRec := f.target.record()
+	tTarget, e := deploy.NewTypedTarget(&tRec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	prepared, e := deploy.PrepareContent(f.ctx, f.m, tTarget, source, deploy.PrepareOptions{DeploymentID: "target-ha-baseline", BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -96,12 +110,24 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 		t.Fatal(published)
 	}
 	// Establish the same actual baseline on the peer before adding HA ownership.
-	raw, rev, e := f.r.GetPublishSnapshot(f.ctx, "default", false)
+	rawCfg, rev, e := f.r.PublishConfig(f.ctx, "default", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	src := deploy.NewSource(raw, &rev)
-	p, e := deploy.PrepareContent(f.ctx, f.m, deploy.NewTarget(standby.record()), src, deploy.PrepareOptions{DeploymentID: "standby-baseline", BaseURL: "https://panel.example"})
+	rawBytes, e := json.Marshal(rawCfg)
+	if e != nil {
+		t.Fatal(e)
+	}
+	src, e := deploy.SourceFromJSON(rawBytes, &rev)
+	if e != nil {
+		t.Fatal(e)
+	}
+	sRec := standby.record()
+	sTarget, e := deploy.NewTypedTarget(&sRec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	p, e := deploy.PrepareContent(f.ctx, f.m, sTarget, src, deploy.PrepareOptions{DeploymentID: "standby-baseline", BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -130,10 +156,9 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 	}
 	segment.Configure("target", "standby")
 	f.m.SetClient(haFollowClient{origins})
-	_, e = f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		for _, v := range *rows {
-			a := v.(*jsonx.Object)
-			id := a.GetString("id")
+	e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		for i := range sys.Agents {
+			id := sys.Agents[i].ID
 			if id != "target" && id != "standby" {
 				continue
 			}
@@ -141,10 +166,18 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 			if id == "standby" {
 				other, role = "target", "secondary"
 			}
-			a.Set("oxidns_ha", jsonx.Obj("enabled", true, "group_id", "synthetic-follow-pair", "peer_id", other, "vip", "192.0.2.53", "vrid", 53, "role", role))
-			a.Set("oxidns_ha_state", jsonx.Obj("status", "succeeded", "error", ""))
+			haRaw, err := json.Marshal(map[string]any{"enabled": true, "group_id": "synthetic-follow-pair", "peer_id": other, "vip": "192.0.2.53", "vrid": 53, "role": role})
+			if err != nil {
+				return err
+			}
+			if err := sys.Agents[i].SetJSON("oxidns_ha", haRaw); err != nil {
+				return err
+			}
+			if err := sys.Agents[i].SetJSON("oxidns_ha_state", []byte(`{"status":"succeeded","error":""}`)); err != nil {
+				return err
+			}
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -176,8 +209,8 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 			if f.target.uploads() != beforeTarget+1 || standby.uploads() != beforeStandby+1 {
 				t.Fatal("follow did not publish exactly one pair")
 			}
-			peer, e := f.m.GetAgentByID(f.ctx, "standby", true)
-			if e != nil || peer.GetObject("oxidns_ha_publication").GetString("status") != "succeeded" {
+			peer, e := f.m.ReadAgent(f.ctx, "standby", true)
+			if e != nil || peer.OxiDNSHAPublication == nil || peer.OxiDNSHAPublication.Status != "succeeded" {
 				t.Fatal("peer result", e)
 			}
 			return

@@ -9,7 +9,6 @@ package monitor
 
 import (
 	"compress/gzip"
-	"configflow/internal/jsonresp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,10 +27,13 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
-func loadReview(t *testing.T, fields ...string) *jsonx.Object {
+func loadReview(t *testing.T, fields ...string) map[string]any {
 	t.Helper()
 	return referenceFields(t, "testdata/a06_review.json.gz", fields...)
 }
@@ -57,25 +59,16 @@ func (f *failures) done(total int) {
 	}
 }
 
-func parseText(t *testing.T, text string) any {
-	t.Helper()
-	value, err := jsonx.ParseString(text)
-	if err != nil {
-		t.Fatalf("%s: %v", text, err)
-	}
-	return value
-}
-
-func errorResult(err error) *jsonx.Object {
+func errorResult(err error) map[string]any {
 	var e *Error
 	if errors.As(err, &e) {
-		return jsonx.Obj("error", e.Code, "status", e.Status, "message", e.Message)
+		return map[string]any{"error": e.Code, "status": e.Status, "message": e.Message}
 	}
 	name := err.Error()
 	if i := strings.Index(name, ":"); i >= 0 {
 		name = name[:i]
 	}
-	return jsonx.Obj("error", name)
+	return map[string]any{"error": name}
 }
 
 func TestReviewMetrics(t *testing.T) {
@@ -83,29 +76,28 @@ func TestReviewMetrics(t *testing.T) {
 	f := &failures{t: t}
 	all := cases(ref, "metrics")
 	for _, c := range all {
-		text := c.GetString("text")
+		text := asStr(c["text"])
 		var result any
-		parsed, err := ParseMetrics(text)
+		parsed, err := ReadMetrics(text)
 		if err != nil {
-			result = jsonx.Obj("error", err.Error())
+			result = map[string]any{"error": err.Error()}
 		} else {
-			summary, _ := SummarizeMetrics(text)
-			result = jsonx.Obj("parsed", parsed, "summary", summary)
+			result = map[string]any{"parsed": parsed, "summary": Summarize(parsed)}
 		}
 		if want, bound := asciiReviewExpectation(t, "metrics", c); bound {
-			if got := dumpSorted(t, result); got != want {
-				t.Fatalf("ASCII native row: got %s want %s", got, want)
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Fatalf("ASCII native row: %s", diff)
 			}
 			continue
 		}
 		if want, bound := nativeStateExpectation(t, "metrics", c); bound {
-			if got := dumpSorted(t, result); got != want {
-				t.Errorf("native metric: got %s want %s", got, want)
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Errorf("native metric: %s", diff)
 			}
 			continue
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			f.add("%q:\n got  %s\n want %s", text, got, c.GetString("result"))
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			f.add("%q: %s", text, diff)
 		}
 	}
 	f.done(len(all))
@@ -116,22 +108,39 @@ func TestReviewBaselineArithmetic(t *testing.T) {
 	f := &failures{t: t}
 	all := cases(ref, "baseline")
 	for _, c := range all {
-		current := parseText(t, c.GetString("current")).(*jsonx.Object)
-		baseline := parseText(t, c.GetString("baseline")).(*jsonx.Object)
-		carried := parseText(t, c.GetString("carried")).(*jsonx.Object)
 		var result any
-		adjusted, partial, err := ApplyMetricsBaseline(current, baseline)
+		var current, baseline, carried Observations
+		err := jsondecode.Unmarshal([]byte(asStr(c["current"])), &current)
+		if err == nil {
+			err = jsondecode.Unmarshal([]byte(asStr(c["baseline"])), &baseline)
+		}
+		if err == nil {
+			_ = jsondecode.Unmarshal([]byte(asStr(c["carried"])), &carried)
+		}
 		if err != nil {
 			result = errorResult(err)
 		} else {
-			added := AddObservations(adjusted, carried)
-			result = jsonx.Obj("restarted", MetricsCountersRestarted(current, baseline), "adjusted", adjusted,
-				"partial", partial, "zero", ZeroBaseline(current), "added", added,
-				"summary", SummarizeObservations(added), "raw_summary", SummarizeObservations(current))
+			adjusted, partial, err := ApplyBaseline(&current, &baseline)
+			if err != nil {
+				result = errorResult(err)
+			} else {
+				added := CarryObservations(adjusted, &carried)
+				var addedObs Observations
+				_ = jsondecode.Unmarshal(mustMarshal(t, added), &addedObs)
+				result = map[string]any{
+					"restarted":   CountersRestarted(&current, &baseline),
+					"adjusted":    adjusted,
+					"partial":     partial,
+					"zero":        ZeroObservations(&current),
+					"added":       added,
+					"summary":     Summarize(&addedObs),
+					"raw_summary": Summarize(&current),
+				}
+			}
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			f.add("current=%s baseline=%s carried=%s:\n got  %s\n want %s", c.GetString("current"),
-				c.GetString("baseline"), c.GetString("carried"), got, c.GetString("result"))
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			f.add("current=%s baseline=%s carried=%s: %s", asStr(c["current"]),
+				asStr(c["baseline"]), asStr(c["carried"]), diff)
 		}
 	}
 	f.done(len(all))
@@ -140,7 +149,7 @@ func TestReviewBaselineArithmetic(t *testing.T) {
 func TestReviewIPAddresses(t *testing.T) {
 	ref := loadReview(t, "ip")
 	f := &failures{t: t}
-	all := ref.GetList("ip")
+	all := asList(ref["ip"])
 	for _, item := range all {
 		pair := item.([]any)
 		canonical, _, ok := parseIP(pair[0].(string))
@@ -148,8 +157,8 @@ func TestReviewIPAddresses(t *testing.T) {
 		if ok {
 			got = canonical
 		}
-		if !jsonx.Equal(got, pair[1]) {
-			f.add("%q: got %s want %s", pair[0], jsonx.Repr(got), jsonx.Repr(pair[1]))
+		if got != pair[1] {
+			f.add("%q: got %#v want %#v", pair[0], got, pair[1])
 		}
 	}
 	f.done(len(all))
@@ -179,11 +188,11 @@ func labelEdgeCase(input any) bool {
 func TestReviewUpstreamLabels(t *testing.T) {
 	ref := loadReview(t, "upstream")
 	f := &failures{t: t}
-	all := ref.GetList("upstream")
+	all := asList(ref["upstream"])
 	for _, item := range all {
 		pair := item.([]any)
 		if got := displayUpstream(pair[0]); got != pair[1] && !labelEdgeCase(pair[0]) {
-			f.add("%s: got %q want %q", jsonx.Repr(pair[0]), got, pair[1])
+			f.add("%#v: got %q want %q", pair[0], got, pair[1])
 		}
 	}
 	f.done(len(all))
@@ -192,15 +201,15 @@ func TestReviewUpstreamLabels(t *testing.T) {
 func TestReviewRequestParameters(t *testing.T) {
 	ref := loadReview(t, "client_params", "dashboard_params", "query_params")
 	for _, c := range cases(ref, "query_params") {
-		result, err := QueryParams(pairs(c.Value("args")), c.GetList("extra")[0] == true)
+		result, err := QueryParams(pairs(c["args"]), asList(c["extra"])[0] == true)
 		checkParams(t, "query_params", c, result, err)
 	}
 	for _, c := range cases(ref, "client_params") {
-		result, err := ClientParams(pairs(c.Value("args")))
+		result, err := ClientParams(pairs(c["args"]))
 		checkParams(t, "client_params", c, result, err)
 	}
 	for _, c := range cases(ref, "dashboard_params") {
-		result, err := dashboardParams(pairs(c.Value("args")))
+		result, err := dashboardParams(pairs(c["args"]))
 		checkParams(t, "dashboard_params", c, result, err)
 	}
 }
@@ -211,48 +220,54 @@ func TestReviewRankingSections(t *testing.T) {
 	all := cases(ref, "ranking_section")
 	for _, c := range all {
 		var result any
-		section, err := rankingSection(parseText(t, c.GetString("value")), c.GetString("kind"))
+		section, err := decodeRankingSection([]byte(asStr(c["value"])), asStr(c["kind"]), 10)
 		if err != nil {
-			result = jsonx.Obj("error", err.(*Error).Code)
+			result = map[string]any{"error": err.(*Error).Code}
 		} else {
 			result = section
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
-			f.add("%s %s:\n got  %s\n want %s", c.GetString("kind"), c.GetString("value"), got, c.GetString("result"))
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
+			f.add("%s %s: %s", asStr(c["kind"]), asStr(c["value"]), diff)
 		}
 	}
 	f.done(len(all))
 }
 
-// answering replaces doRequest with an Agent answering dataText and returns
+// answering replaces requestNative with an Agent answering dataText and returns
 // the calls seen, as gen_a06_review.with_answer records them.
 func answering(t *testing.T, dataText string) *[]any {
 	t.Helper()
 	seen := &[]any{}
-	previous := doRequest
-	doRequest = func(_ context.Context, _ Manager, _ *jsonx.Object, endpoint string, params query, minVersion string) (*jsonx.Object, error) {
+	previous := requestNative
+	requestNative = func(_ context.Context, _ Registry, _ *model.Agent, endpoint string, params query, minVersion string) (model.Fields, error) {
 		list := []any{}
 		for _, pair := range params {
 			list = append(list, []any{pair[0], pair[1]})
 		}
-		*seen = append(*seen, jsonx.Obj("endpoint", endpoint, "params", list, "min_version", minVersion))
-		return parseText(t, dataText).(*jsonx.Object), nil
+		*seen = append(*seen, map[string]any{"endpoint": endpoint, "params": list, "min_version": minVersion})
+		raw, _ := jsonresp.NormalizeNonFinite([]byte(dataText))
+		var fields model.Fields
+		if err := jsondecode.Unmarshal(raw, &fields); err != nil {
+			return model.Fields{}, NewError("INVALID_RESPONSE", 0, "")
+		}
+		return fields, nil
 	}
-	t.Cleanup(func() { doRequest = previous })
+	t.Cleanup(func() { requestNative = previous })
 	return seen
 }
 
-func reviewAgent(version string) *jsonx.Object {
-	return jsonx.Obj("id", "oxi", "name", "DNS", "host", "127.0.0.1", "port", 8082, "profile_id", "default",
-		"service_type", "oxidns", "version", version, "status", "online", "token", "tok")
+func reviewAgent(version string) *model.Agent {
+	return mustAgentMap(map[string]any{
+		"id": "oxi", "name": "DNS", "host": "127.0.0.1", "port": 8082, "profile_id": "default",
+		"service_type": "oxidns", "version": version, "status": "online", "token": "tok",
+	})
 }
 
-func answerResult(t *testing.T, result any, err error, seen *[]any) string {
-	t.Helper()
+func answerPayload(result any, err error, seen *[]any) map[string]any {
 	if err != nil {
 		result = errorResult(err)
 	}
-	return dumpSorted(t, jsonx.Obj("result", result, "seen", *seen))
+	return map[string]any{"result": result, "seen": *seen}
 }
 
 func TestReviewClientsQueriesAndQuery(t *testing.T) {
@@ -260,32 +275,30 @@ func TestReviewClientsQueriesAndQuery(t *testing.T) {
 	f := &failures{t: t}
 	all := cases(ref, "clients")
 	for _, c := range all {
-		seen := answering(t, c.GetString("data"))
-		m := &fakeManager{agents: map[string]*jsonx.Object{"oxi": reviewAgent(c.GetString("version"))}, dataDir: t.TempDir()}
-		result, err := Clients(ctx, m, "oxi", pairs(c.Value("args")))
-		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
-			f.add("clients %s %s %s:\n got  %s\n want %s", c.GetString("version"), jsonx.Repr(c.Value("args")),
-				c.GetString("data"), got, c.GetString("result"))
+		seen := answering(t, asStr(c["data"]))
+		m := &fakeManager{agents: map[string]*model.Agent{"oxi": reviewAgent(asStr(c["version"]))}, dataDir: t.TempDir()}
+		result, err := ReadClients(ctx, m, "oxi", pairs(c["args"]))
+		if diff := diffRefJSON(t, answerPayload(result, err, seen), asStr(c["result"])); diff != "" {
+			f.add("clients %s %v %s: %s", asStr(c["version"]), c["args"], asStr(c["data"]), diff)
 		}
 	}
 	for _, c := range cases(ref, "queries") {
-		seen := answering(t, c.GetString("data"))
-		m := &fakeManager{agents: map[string]*jsonx.Object{"oxi": reviewAgent(c.GetString("version"))}, dataDir: t.TempDir()}
-		result, err := Queries(ctx, m, "oxi", pairs(c.Value("args")))
-
-		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
-			f.add("queries %s %s:\n got  %s\n want %s", jsonx.Repr(c.Value("args")), c.GetString("data"), got, c.GetString("result"))
+		seen := answering(t, asStr(c["data"]))
+		m := &fakeManager{agents: map[string]*model.Agent{"oxi": reviewAgent(asStr(c["version"]))}, dataDir: t.TempDir()}
+		result, err := ReadQueries(ctx, m, "oxi", pairs(c["args"]))
+		if diff := diffRefJSON(t, answerPayload(result, err, seen), asStr(c["result"])); diff != "" {
+			f.add("queries %v %s: %s", c["args"], asStr(c["data"]), diff)
 		}
 	}
 	for _, c := range cases(ref, "query") {
-		seen := answering(t, c.GetString("data"))
-		m := &fakeManager{agents: map[string]*jsonx.Object{"oxi": reviewAgent("1.8.20-go")}, dataDir: t.TempDir()}
-		result, err := Query(ctx, m, "oxi", c.GetString("record_id"), pairs(c.Value("args")))
-		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
-			f.add("query %s %s:\n got  %s\n want %s", c.GetString("record_id"), c.GetString("data"), got, c.GetString("result"))
+		seen := answering(t, asStr(c["data"]))
+		m := &fakeManager{agents: map[string]*model.Agent{"oxi": reviewAgent("1.8.20-go")}, dataDir: t.TempDir()}
+		result, err := ReadQuery(ctx, m, "oxi", asStr(c["record_id"]), pairs(c["args"]))
+		if diff := diffRefJSON(t, answerPayload(result, err, seen), asStr(c["result"])); diff != "" {
+			f.add("query %s %s: %s", asStr(c["record_id"]), asStr(c["data"]), diff)
 		}
 	}
-	f.done(len(all) + len(ref.GetList("queries")) + len(ref.GetList("query")))
+	f.done(len(all) + len(asList(ref["queries"])) + len(asList(ref["query"])))
 }
 
 func TestReviewOverviewSnapshots(t *testing.T) {
@@ -293,32 +306,41 @@ func TestReviewOverviewSnapshots(t *testing.T) {
 	f := &failures{t: t}
 	all := cases(ref, "overview_snapshot")
 	for _, c := range all {
-		seen := answering(t, c.GetString("data"))
-		m := &fakeManager{agents: map[string]*jsonx.Object{}, dataDir: t.TempDir()}
+		seen := answering(t, asStr(c["data"]))
+		m := &fakeManager{agents: map[string]*model.Agent{}, dataDir: t.TempDir()}
 		var result any
-		snap, err := overviewSnapshot(ctx, m, reviewAgent("1.8.20-go"), c.Value("dashboard") == true)
+		snap, err := readOverviewSnapshot(ctx, m, reviewAgent("1.8.20-go"), c["dashboard"] == true)
 		if err == nil {
-			summary := SummarizeObservations(snap.observations)
+			summary := toJSONMap(t, Summarize(snap.Observations))
+			labels := make([]any, len(snap.Labels))
+			for i, l := range snap.Labels {
+				labels[i] = map[string]any{"plugin_tag": l.PluginTag, "upstream": l.Upstream, "address": l.Address}
+			}
 			var upstreams []any
-			if upstreams, err = publicUpstreams(summary.GetList("upstreams"), snap.labels); err == nil {
-				summary.Set("upstreams", upstreams)
-				result = jsonx.Obj("core", snap.core, "recorders", snap.recorders, "summary", summary)
+			if upstreams, err = publicUpstreams(asList(summary["upstreams"]), labels); err == nil {
+				summary["upstreams"] = upstreams
+				recorders := snap.Recorders
+				if recorders == nil {
+					recorders = []string{}
+				}
+				result = map[string]any{"core": snap.Core, "recorders": recorders, "summary": summary}
 			}
 		}
+		payload := answerPayload(result, err, seen)
 		if want, bound := asciiReviewExpectation(t, "overview_snapshot", c); bound {
-			if got := answerResult(t, result, err, seen); got != want {
-				t.Fatalf("ASCII native row: got %s want %s", got, want)
+			if diff := diffRefVal(t, payload, want); diff != "" {
+				t.Fatalf("ASCII native row: %s", diff)
 			}
 			continue
 		}
 		if want, bound := nativeStateExpectation(t, "overview_snapshot", c); bound {
-			if got := answerResult(t, result, err, seen); got != want {
-				t.Errorf("native overview: got %s want %s", got, want)
+			if diff := diffRefVal(t, payload, want); diff != "" {
+				t.Errorf("native overview: %s", diff)
 			}
 			continue
 		}
-		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
-			f.add("dashboard=%v %s:\n got  %s\n want %s", c.Value("dashboard"), c.GetString("data"), got, c.GetString("result"))
+		if diff := diffRefJSON(t, payload, asStr(c["result"])); diff != "" {
+			f.add("dashboard=%v %s: %s", c["dashboard"], asStr(c["data"]), diff)
 		}
 	}
 	f.done(len(all))
@@ -329,13 +351,12 @@ func TestReviewDashboardRankings(t *testing.T) {
 	f := &failures{t: t}
 	all := cases(ref, "dashboard_rankings")
 	for _, c := range all {
-		seen := answering(t, c.GetString("data"))
-		m := &fakeManager{agents: map[string]*jsonx.Object{}, dataDir: t.TempDir()}
-		result, err := dashboardRankings(ctx, m, reviewAgent("1.8.20-go"), pairs(c.Value("params")), c.GetObject("snapshot"),
-			c.GetObject("state"), c.GetList("recorders"))
-		if got := answerResult(t, result, err, seen); got != c.GetString("result") {
-			f.add("params=%s recorders=%s %s:\n got  %s\n want %s", jsonx.Repr(c.Value("params")),
-				jsonx.Repr(c.Value("recorders")), c.GetString("data"), got, c.GetString("result"))
+		seen := answering(t, asStr(c["data"]))
+		m := &fakeManager{agents: map[string]*model.Agent{}, dataDir: t.TempDir()}
+		result, err := dashboardRankings(ctx, m, reviewAgent("1.8.20-go"), pairs(c["params"]), asMap(c["snapshot"]),
+			asMap(c["state"]), asList(c["recorders"]))
+		if diff := diffRefJSON(t, answerPayload(result, err, seen), asStr(c["result"])); diff != "" {
+			f.add("params=%v recorders=%v %s: %s", c["params"], c["recorders"], asStr(c["data"]), diff)
 		}
 	}
 	f.done(len(all))
@@ -344,11 +365,12 @@ func TestReviewDashboardRankings(t *testing.T) {
 func TestReviewStateValidation(t *testing.T) {
 	ref := loadReview(t, "validate_state")
 	f := &failures{t: t}
-	all := ref.GetList("validate_state")
+	all := asList(ref["validate_state"])
 	for _, item := range all {
 		pair := item.([]any)
 		want := pair[1] == true // a TypeError reads as damaged, like False
-		if got := ValidateState(parseText(t, pair[0].(string))); got != want {
+		_, err := DecodeState([]byte(pair[0].(string)))
+		if got := err == nil; got != want {
 			f.add("%s: got %v want %v", pair[0], got, pair[1])
 		}
 	}
@@ -362,9 +384,9 @@ func TestReviewStateFiles(t *testing.T) {
 	store := NewStateStore(t.TempDir())
 	path := filepath.Join(t.TempDir(), "state.json")
 	for _, c := range all {
-		raw := decodeHex(c.GetString("raw"))
+		raw := decodeHex(asStr(c["raw"]))
 		if strings.Contains(string(raw), `\ud800`) || strings.Contains(string(raw), "\xed\xa0\x80") {
-			// Lone surrogates: the accepted jsonx deviation (U+FFFD / refused
+			// Lone surrogates: the accepted deviation (U+FFFD / refused
 			// bytes); only a hand-edited state file can hold them.
 			continue
 		}
@@ -372,28 +394,28 @@ func TestReviewStateFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		var result any
-		state, err := store.read(path)
+		state, err := store.readState(path)
 		var stateErr *StateError
 		switch {
 		case errors.As(err, &stateErr):
-			result = jsonx.Obj("error", stateErr.Message)
+			result = map[string]any{"error": stateErr.Message}
 		case err != nil:
 			result = errorResult(err)
 		default:
-			result = jsonx.Obj("state", state)
+			result = map[string]any{"state": state}
 		}
 		if want, bound := nativeStateExpectation(t, "state_files", c); bound {
-			if got := dumpSorted(t, result); got != want {
-				t.Errorf("native duplicate state: got %s want %s", got, want)
+			if diff := diffRefVal(t, result, want); diff != "" {
+				t.Errorf("native duplicate state: %s", diff)
 			}
 			continue
 		}
-		if got := dumpSorted(t, result); got != c.GetString("result") {
+		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
 			shown := raw
 			if len(shown) > 200 {
 				shown = shown[:200]
 			}
-			f.add("%q:\n got  %s\n want %s", shown, got, c.GetString("result"))
+			f.add("%q: %s", shown, diff)
 		}
 	}
 	f.done(len(all))
@@ -402,13 +424,19 @@ func TestReviewStateFiles(t *testing.T) {
 func TestReviewTargetDigests(t *testing.T) {
 	ref := loadReview(t, "target")
 	f := &failures{t: t}
-	all := ref.GetList("target")
+	all := asList(ref["target"])
+	refusedWant := testjson.Obj(testjson.Field{Key: "refused", Value: true})
 	for _, item := range all {
 		pair := item.([]any)
-		digest, err := target(parseText(t, pair[0].(string)).(*jsonx.Object))
+		var a model.Agent
+		err := jsondecode.Unmarshal([]byte(pair[0].(string)), &a)
+		var digest string
+		if err == nil {
+			digest, err = TargetIdentity(&a)
+		}
 		if want, bound := nativeStateExpectation(t, "target", pair); bound {
 			var syntax *json.SyntaxError
-			if want != dumpSorted(t, jsonx.Obj("refused", true)) || err == nil || digest != "" || !errors.As(err, &syntax) {
+			if testjson.Diff(refusedWant, want) != "" || err == nil || digest != "" || !errors.As(err, &syntax) {
 				t.Errorf("invalid stored identity was hashed: digest=%s error=%v", digest, err)
 			}
 			continue
@@ -443,11 +471,11 @@ func TestScopedAgentHostIsReachedLikePython(t *testing.T) {
 		ok   bool
 	}{{"::1%1", true}, {"[::1%1]", true}, {"::1%lo", false}} {
 		agent := reviewAgent("1.8.20-go")
-		agent.Set("host", c.host)
-		agent.Set("port", port)
-		m := &fakeManager{agents: map[string]*jsonx.Object{"oxi": agent}, dataDir: t.TempDir(), client: agents.HTTPClient{}}
-		result, err := Clients(ctx, m, "oxi", nil)
-		if c.ok && (err != nil || result.GetString("recorder") != "r") {
+		setAgentField(agent, "host", c.host)
+		setAgentField(agent, "port", port)
+		m := &fakeManager{agents: map[string]*model.Agent{"oxi": agent}, dataDir: t.TempDir(), client: agents.HTTPClient{}}
+		result, err := ReadClients(ctx, m, "oxi", nil)
+		if c.ok && (err != nil || result.Recorder != "r") {
 			t.Fatalf("%s: %v %v", c.host, result, err)
 		}
 		if !c.ok {
@@ -480,21 +508,18 @@ func TestReviewOverviewFlows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	previousRequest, previousClock, previousToken := doRequest, monotonic, tokenHex
+	root := parseJSONMap(t, data)
+	previousRequest, previousClock, previousToken := requestNative, monotonic, tokenHex
 	reuse, backoff := RankingReuseSeconds, RankingBackoffSeconds
 	RankingReuseSeconds, RankingBackoffSeconds = 60, 180
 	t.Cleanup(func() {
-		doRequest, monotonic, tokenHex = previousRequest, previousClock, previousToken
+		requestNative, monotonic, tokenHex = previousRequest, previousClock, previousToken
 		RankingReuseSeconds, RankingBackoffSeconds = reuse, backoff
 	})
 	fails := &failures{t: t}
 	total := 0
-	for index, item := range value.(*jsonx.Object).GetList("flows") {
-		flow := item.(*jsonx.Object)
+	for index, item := range asList(root["flows"]) {
+		flow := asMap(item)
 		ResetRankingsCache()
 		counter := 0
 		tokenHex = func() string {
@@ -503,49 +528,50 @@ func TestReviewOverviewFlows(t *testing.T) {
 		}
 		clock := 1000.0
 		monotonic = func() float64 { return clock }
-		m := &fakeManager{agents: map[string]*jsonx.Object{}, dataDir: t.TempDir()}
+		m := &fakeManager{agents: map[string]*model.Agent{}, dataDir: t.TempDir()}
 		store := NewStateStore(m.dataDir)
-		outputs := flow.GetList("outputs")
-		for i, s := range flow.GetList("steps") {
+		outputs := asList(flow["outputs"])
+		for i, s := range asList(flow["steps"]) {
 			total++
-			step := s.(*jsonx.Object)
-			want := outputs[i].(*jsonx.Object)
-			clock += step.GetFloat("dt")
+			step := asMap(s)
+			want := asMap(outputs[i])
+			clock += asFloat(step["dt"])
 			m.mu.Lock()
-			m.agents["oxi"] = step.GetObject("agent").DeepCopy()
+			m.agents["oxi"] = mustAgentMap(asMap(step["agent"]))
 			m.mu.Unlock()
 			seen := []any{}
-			doRequest = func(_ context.Context, _ Manager, _ *jsonx.Object, endpoint string, params query, minVersion string) (*jsonx.Object, error) {
+			requestNative = func(_ context.Context, _ Registry, _ *model.Agent, endpoint string, params query, minVersion string) (model.Fields, error) {
 				list := []any{}
 				for _, pair := range params {
 					list = append(list, []any{pair[0], pair[1]})
 				}
-				seen = append(seen, jsonx.Obj("endpoint", endpoint, "params", list, "min_version", minVersion))
+				seen = append(seen, map[string]any{"endpoint": endpoint, "params": list, "min_version": minVersion})
 				if endpoint == "overview" {
-					return step.GetObject("overview").DeepCopy(), nil
+					return fieldsFromValue(cloneMap(asMap(step["overview"])))
 				}
-				mode := step.GetString("mode")
+				mode := asStr(step["mode"])
 				if mode == "core_unreachable" || mode == "agent_unreachable" {
-					return nil, NewError(strings.ToUpper(mode), 0, "")
+					return model.Fields{}, NewError(strings.ToUpper(mode), 0, "")
 				}
-				answer := step.GetObject("rankings").DeepCopy()
+				answer := cloneMap(asMap(step["rankings"]))
 				recorder, _ := params.get("recorder")
 				if recorder == "" {
 					recorder = "r"
-					if recorders := jsonx.Path(step.Value("overview"), "capabilities", "query_recorders").([]any); len(recorders) > 0 {
+					caps := asMap(asMap(step["overview"])["capabilities"])
+					if recorders := asList(caps["query_recorders"]); len(recorders) > 0 {
 						recorder = recorders[0].(string)
 					}
 				}
-				answer.Set("recorder", recorder)
-				return answer, nil
+				answer["recorder"] = recorder
+				return fieldsFromValue(answer)
 			}
-			action := step.GetObject("action")
+			action := asMap(step["action"])
 			var result any
 			var err error
-			if action.GetString("kind") == "overview" {
-				result, err = Overview(ctx, m, "oxi", pairs(action.Value("args")))
+			if asStr(action["kind"]) == "overview" {
+				result, err = ReadOverview(ctx, m, "oxi", pairs(action["args"]))
 			} else {
-				result, err = ResetDashboard(ctx, m, "oxi", action.GetObject("body").DeepCopy())
+				result, err = ResetStatistics(ctx, m, "oxi", mustMarshal(t, action["body"]))
 			}
 			if err != nil {
 				result = errorResult(err)
@@ -554,10 +580,11 @@ func TestReviewOverviewFlows(t *testing.T) {
 			if content, err := os.ReadFile(store.Path("oxi")); err == nil {
 				state = string(content)
 			}
-			got := jsonx.Obj("result", dumpSorted(t, result), "seen", dumpSorted(t, seen), "state", state)
-			expected := jsonx.Obj("result", want.Value("result"), "seen", want.Value("seen"), "state", want.Value("state"))
-			if !jsonx.Equal(got, expected) {
-				fails.add("flow %d step %d %s:\n got  %s\n want %s", index, i, jsonx.Repr(action), jsonx.Repr(got), jsonx.Repr(expected))
+			resDiff := diffRefJSON(t, result, asStr(want["result"]))
+			seenDiff := diffRefJSON(t, seen, asStr(want["seen"]))
+			if resDiff != "" || seenDiff != "" || state != want["state"] {
+				fails.add("flow %d step %d %v:\n resultDiff=%s\n seenDiff=%s\n state=%v want=%v",
+					index, i, action, resDiff, seenDiff, state, want["state"])
 				break
 			}
 		}
@@ -566,7 +593,7 @@ func TestReviewOverviewFlows(t *testing.T) {
 	if total < 2000 {
 		t.Fatalf("only %d steps replayed", total)
 	}
-	t.Logf("%d flows, %d steps", len(value.(*jsonx.Object).GetList("flows")), total)
+	t.Logf("%d flows, %d steps", len(asList(root["flows"])), total)
 }
 
 type asciiReviewChange struct {
@@ -616,7 +643,8 @@ func loadASCIIReview() {
 		asciiReviewRows[key] = row.Changes
 	}
 }
-func asciiReviewExpectation(t *testing.T, section string, row *jsonx.Object) (string, bool) {
+
+func asciiReviewExpectation(t *testing.T, section string, row map[string]any) (any, bool) {
 	t.Helper()
 	asciiReviewOnce.Do(loadASCIIReview)
 	if asciiReviewError != nil {
@@ -633,9 +661,9 @@ func asciiReviewExpectation(t *testing.T, section string, row *jsonx.Object) (st
 	sum := sha256.Sum256(data)
 	changes, found := asciiReviewRows[section+":"+hex.EncodeToString(sum[:])]
 	if !found {
-		return "", false
+		return nil, false
 	}
-	decoder := json.NewDecoder(strings.NewReader(row.GetString("result")))
+	decoder := json.NewDecoder(strings.NewReader(asStr(row["result"])))
 	decoder.UseNumber()
 	var expected any
 	if err := decoder.Decode(&expected); err != nil {
@@ -687,12 +715,13 @@ func asciiReviewExpectation(t *testing.T, section string, row *jsonx.Object) (st
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
+	value, err := testjson.Parse(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dumpSorted(t, value), true
+	return value, true
 }
+
 func TestASCIIReviewBindingsHaveNoStaleRows(t *testing.T) {
 	counts := map[string]int{}
 	for _, section := range []string{"metrics", "overview_snapshot"} {

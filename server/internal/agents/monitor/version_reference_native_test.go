@@ -9,14 +9,13 @@ import (
 	"testing"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 )
 
 var versionRefOnce sync.Once
-var versionRefIndex map[string]map[[32]byte]*jsonx.Object
+var versionRefIndex map[string]map[[32]byte]map[string]any
 var versionRefErr error
 
-func nativeVersionExpected(t *testing.T, section string, raw json.RawMessage) (*jsonx.Object, bool) {
+func nativeVersionExpected(t *testing.T, section string, raw json.RawMessage) (map[string]any, bool) {
 	t.Helper()
 	versionRefOnce.Do(func() {
 		data, err := os.ReadFile("testdata/n810_versions_native.json")
@@ -50,7 +49,7 @@ func nativeVersionExpected(t *testing.T, section string, raw json.RawMessage) (*
 				return
 			}
 		}
-		versionRefIndex = map[string]map[[32]byte]*jsonx.Object{}
+		versionRefIndex = map[string]map[[32]byte]map[string]any{}
 		for _, row := range fixture.Rows {
 			if _, known := fixture.Sources[row.Source]; !known {
 				versionRefErr = errStateSource
@@ -66,15 +65,11 @@ func nativeVersionExpected(t *testing.T, section string, raw json.RawMessage) (*
 				versionRefErr = errStateSource
 				return
 			}
-			value, err := jsonx.Parse(row.Want)
-			if err != nil {
-				versionRefErr = err
-				return
-			}
+			value := parseJSONMap(t, row.Want)
 			if versionRefIndex[row.Section] == nil {
-				versionRefIndex[row.Section] = map[[32]byte]*jsonx.Object{}
+				versionRefIndex[row.Section] = map[[32]byte]map[string]any{}
 			}
-			versionRefIndex[row.Section][sum] = value.(*jsonx.Object)
+			versionRefIndex[row.Section][sum] = value
 		}
 		if len(versionRefIndex["newer_release"]) != 4 || len(versionRefIndex["core_update"]) != 8 {
 			versionRefErr = errStateSource

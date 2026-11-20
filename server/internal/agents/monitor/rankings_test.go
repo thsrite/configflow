@@ -4,13 +4,14 @@ package monitor
 // from stored 15-minute periods. The fake Agent below behaves as the core
 // does: one request ranks at most the newest 10,000 records of its window
 // and returns at most `rows` entries. Python's tests patch
-// oxidns_monitor._request; here doRequest. The random records come from Go's
+// oxidns_monitor._request; here requestNative. The random records come from Go's
 // generator (the expectations are exact counts of the same records, so the
 // sequence itself does not matter).
 
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -21,7 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/agents"
+	"configflow/internal/model"
 )
 
 const (
@@ -99,18 +101,18 @@ func topCounts(records []rankRecord, pick func(rankRecord) string, rows int) []H
 	return out
 }
 
-func (f *fakeAgent) section(records []rankRecord, pick func(rankRecord) string, rows int) *jsonx.Object {
+func (f *fakeAgent) section(records []rankRecord, pick func(rankRecord) string, rows int) map[string]any {
 	list := []any{}
 	for _, row := range topCounts(records, pick, rows) {
-		list = append(list, jsonx.Obj("key", row.Key, "count", row.Count, "share", 0))
+		list = append(list, map[string]any{"key": row.Key, "count": row.Count, "share": 0})
 	}
-	return jsonx.Obj("sample_size", len(records), "at_limit", len(records) == f.cap, "rows", list)
+	return map[string]any{"sample_size": len(records), "at_limit": len(records) == f.cap, "rows": list}
 }
 
 func byClient(r rankRecord) string { return r.client }
 func byDomain(r rankRecord) string { return r.domain }
 
-func (f *fakeAgent) do(_ context.Context, _ Manager, _ *jsonx.Object, endpoint string, params query, minVersion string) (*jsonx.Object, error) {
+func (f *fakeAgent) answerMap(endpoint string, params query, minVersion string) (map[string]any, error) {
 	if endpoint != "rankings" || minVersion != HistoryAgentVersion {
 		panic("unexpected request " + endpoint + " " + minVersion)
 	}
@@ -130,15 +132,27 @@ func (f *fakeAgent) do(_ context.Context, _ Manager, _ *jsonx.Object, endpoint s
 		return nil, NewError("CORE_UNREACHABLE", 0, "")
 	}
 	sample := f.window(since, until, false)
-	var blocked *jsonx.Object
+	var blocked map[string]any
 	if f.blocked {
-		blocked = jsonx.Obj("available", true)
-		blocked.Update(f.section(f.window(since, until, true), byDomain, rows))
+		blocked = map[string]any{"available": true}
+		updateMap(blocked, f.section(f.window(since, until, true), byDomain, rows))
 	} else {
-		blocked = jsonx.Obj("available", false, "reason", "unsupported_configuration")
+		blocked = map[string]any{"available": false, "reason": "unsupported_configuration"}
 	}
-	return jsonx.Obj("success", true, "recorder", recorder, "retention_days", 7,
-		"clients", f.section(sample, byClient, rows), "domains", f.section(sample, byDomain, rows), "blocked", blocked), nil
+	return map[string]any{
+		"success": true, "recorder": recorder, "retention_days": 7,
+		"clients": f.section(sample, byClient, rows),
+		"domains": f.section(sample, byDomain, rows),
+		"blocked": blocked,
+	}, nil
+}
+
+func (f *fakeAgent) do(_ context.Context, _ Registry, _ *model.Agent, endpoint string, params query, minVersion string) (model.Fields, error) {
+	answer, err := f.answerMap(endpoint, params, minVersion)
+	if err != nil {
+		return model.Fields{}, err
+	}
+	return fieldsFromValue(answer)
 }
 
 func (f *fakeAgent) callList() [][2]int64 {
@@ -209,26 +223,26 @@ func rowsEqual(t *testing.T, got, want []HistoryRow, label string) {
 	}
 }
 
-func useAgent(t *testing.T, do func(context.Context, Manager, *jsonx.Object, string, query, string) (*jsonx.Object, error)) {
-	previous := doRequest
-	doRequest = do
-	t.Cleanup(func() { doRequest = previous })
+func useAgent(t *testing.T, do func(context.Context, Registry, *model.Agent, string, query, string) (model.Fields, error)) {
+	previous := requestNative
+	requestNative = do
+	t.Cleanup(func() { requestNative = previous })
 }
 
-var historyAgent = jsonx.Obj("id", "dns", "name", "DNS", "version", HistoryAgentVersion)
+var historyAgent = mustAgentMap(map[string]any{"id": "dns", "name": "DNS", "version": HistoryAgentVersion})
 
 func i64(v int64) *int64 { return &v }
 
-func collect(t *testing.T, store *RankingStore, agent *jsonx.Object, now int64, budget, retention int) int {
+func collect(t *testing.T, store *RankingStore, agent *model.Agent, now int64, budget, retention int) int {
 	t.Helper()
-	n, err := CollectAgent(ctx, nil, store, agent, []string{"records"}, i64(now), budget, retention, 0)
+	n, err := CollectAgentHistory(ctx, nil, store, agent, []string{"records"}, i64(now), budget, retention, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return n
 }
 
-func collectAll(t *testing.T, store *RankingStore, agent *jsonx.Object, fake *fakeAgent, now int64) {
+func collectAll(t *testing.T, store *RankingStore, agent *model.Agent, fake *fakeAgent, now int64) {
 	t.Helper()
 	useAgent(t, fake.do)
 	for collect(t, store, agent, now, 10_000, 0) > 0 {
@@ -247,10 +261,11 @@ func query1(t *testing.T, store *RankingStore, agentID, recorder string, since, 
 // installFakeAgents owns the hook in the parent; children only read its map.
 func installFakeAgents(t *testing.T, fakes map[string]*fakeAgent) {
 	t.Helper()
-	useAgent(t, func(ctx context.Context, m Manager, agent *jsonx.Object, endpoint string, params query, minVersion string) (*jsonx.Object, error) {
-		fake := fakes[agent.GetString("id")]
+	useAgent(t, func(ctx context.Context, m Registry, agent *model.Agent, endpoint string, params query, minVersion string) (model.Fields, error) {
+		id := originalText(agent.MemberJSON("id"))
+		fake := fakes[id]
 		if fake == nil {
-			return nil, fmt.Errorf("unexpected test Agent %q", agent.GetString("id"))
+			return model.Fields{}, fmt.Errorf("unexpected test Agent %q", id)
 		}
 		return fake.do(ctx, m, agent, endpoint, params, minVersion)
 	})
@@ -272,8 +287,8 @@ func TestParallelSeedFixturesAreIsolated(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			t.Parallel()
 			store := NewRankingStore(t.TempDir())
-			agent := historyAgent.DeepCopy()
-			agent.Set("id", id)
+			agent := cloneAgent(historyAgent)
+			setAgentField(agent, "id", id)
 			for collect(t, store, agent, t0+rSlot+120, 10_000, 0) > 0 {
 			}
 			got := query1(t, store, id, "records", t0, t0+rHour)
@@ -301,8 +316,8 @@ func TestStoredPeriodsAddUpToTheExactCountsOfEveryRecord(t *testing.T) {
 			store := NewRankingStore(t.TempDir())
 			fake := fakes[id]
 			records := fake.records
-			agent := historyAgent.DeepCopy()
-			agent.Set("id", id)
+			agent := cloneAgent(historyAgent)
+			setAgentField(agent, "id", id)
 			now := t0 + 3*rDay + 2*rSlot
 			for collect(t, store, agent, now, 10_000, 0) > 0 {
 			}
@@ -551,22 +566,22 @@ func useStores(t *testing.T) {
 
 type panelEnv struct {
 	m       *fakeManager
-	current *jsonx.Object
+	current map[string]any
 	live    []query
 	mu      sync.Mutex
 }
 
 // panelAnswers answers overview with current and rankings with a live
 // sample (recorded in live).
-func (e *panelEnv) answer(nowMS int64) func(context.Context, Manager, *jsonx.Object, string, query, string) (*jsonx.Object, error) {
-	return func(_ context.Context, _ Manager, _ *jsonx.Object, endpoint string, params query, _ string) (*jsonx.Object, error) {
+func (e *panelEnv) answer(nowMS int64) func(context.Context, Registry, *model.Agent, string, query, string) (model.Fields, error) {
+	return func(_ context.Context, _ Registry, _ *model.Agent, endpoint string, params query, _ string) (model.Fields, error) {
 		if endpoint == "overview" {
-			return e.current.DeepCopy(), nil
+			return fieldsFromValue(cloneMap(e.current))
 		}
 		e.mu.Lock()
 		e.live = append(e.live, params)
 		e.mu.Unlock()
-		return rankingData(nowMS), nil
+		return fieldsFromValue(rankingData(nowMS))
 	}
 }
 
@@ -574,11 +589,11 @@ func newPanelEnv(t *testing.T, records []rankRecord, now int64) *panelEnv {
 	freshRankings(t)
 	useStores(t)
 	m := dashboardManager(t, t.TempDir())
-	m.agents["one"].Set("version", HistoryAgentVersion)
+	setAgentField(m.agents["one"], "version", HistoryAgentVersion)
 	store := GetRankingStore(m.DataDir())
 	useAgent(t, newFakeAgent(records).do)
 	for {
-		n, err := CollectAgent(ctx, m, store, m.agents["one"], []string{"records"}, i64(now), 10_000, 0, 0)
+		n, err := CollectAgentHistory(ctx, m, store, m.agents["one"], []string{"records"}, i64(now), 10_000, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -591,11 +606,11 @@ func newPanelEnv(t *testing.T, records []rankRecord, now int64) *panelEnv {
 	return e
 }
 
-func rankingRows(section *jsonx.Object) []HistoryRow {
+func rankingRows(section map[string]any) []HistoryRow {
 	var out []HistoryRow
-	for _, item := range section.GetList("rows") {
-		row := item.(*jsonx.Object)
-		out = append(out, HistoryRow{row.GetString("key"), row.GetInt("count")})
+	for _, item := range asList(section["rows"]) {
+		row := asMap(item)
+		out = append(out, HistoryRow{asStr(row["key"]), asInt64(row["count"])})
 	}
 	return out
 }
@@ -609,19 +624,19 @@ func TestThePanelRanksFromTheStoredPeriodsForEachRange(t *testing.T) {
 		key   string
 		since int64
 	}{{"24h", now - rDay}, {"7d", now - 7*rDay}} {
-		result := overview(t, e.m, "one", "range", tc.key).GetObject("rankings")
+		result := asMap(overview(t, e.m, "one", "range", tc.key)["rankings"])
 		since := tc.since - tc.since%rHour
 		want := exact(records, max(since, t0), until)
-		if result.Value("source") != "history" || result.Value("range") != tc.key {
+		if result["source"] != "history" || result["range"] != tc.key {
 			t.Fatal(result)
 		}
-		clients := result.GetObject("clients")
-		if clients.GetInt("sample_size") != want.records || clients.Value("at_limit") != false {
+		clients := asMap(result["clients"])
+		if asInt64(clients["sample_size"]) != want.records || clients["at_limit"] != false {
 			t.Fatal(clients)
 		}
-		rowsEqual(t, rankingRows(result.GetObject("domains")), want.domains, "domains")
-		rowsEqual(t, rankingRows(result.GetObject("blocked")), want.blocked, "blocked")
-		if result.GetInt("until_ms") != until*1000 || result.GetInt("missing_slots") != 0 {
+		rowsEqual(t, rankingRows(asMap(result["domains"])), want.domains, "domains")
+		rowsEqual(t, rankingRows(asMap(result["blocked"])), want.blocked, "blocked")
+		if asInt64(result["until_ms"]) != until*1000 || asInt64(result["missing_slots"]) != 0 {
 			t.Fatal(result)
 		}
 	}
@@ -635,12 +650,12 @@ func TestTheRoundRangeStartsAtTheStatisticsStart(t *testing.T) {
 	useStores(t)
 	records := generate(10, t0, 2, 400)
 	m := dashboardManager(t, t.TempDir())
-	m.agents["one"].Set("version", HistoryAgentVersion)
+	setAgentField(m.agents["one"], "version", HistoryAgentVersion)
 	start := t0 + 5*rHour + 20*60
 	e := &panelEnv{m: m, current: snapshotData(start*1000, 10, 100)}
 	useAgent(t, e.answer(start*1000))
 	first := overview(t, m, "one")
-	if first.GetObject("statistics").GetInt("started_at_ms") != start*1000 {
+	if asInt64(asMap(first["statistics"])["started_at_ms"]) != start*1000 {
 		t.Fatal(first)
 	}
 	now := t0 + 2*rDay + 120
@@ -648,26 +663,26 @@ func TestTheRoundRangeStartsAtTheStatisticsStart(t *testing.T) {
 	collectAll(t, store, m.agents["one"], newFakeAgent(records), now)
 	e.current = snapshotData(now*1000, 10, 100)
 	useAgent(t, e.answer(now*1000))
-	result := overview(t, m, "one").GetObject("rankings")
+	result := asMap(overview(t, m, "one")["rankings"])
 	since := start - start%rHour
 	want := exact(records, since, LastCompleteSlotEnd(now))
-	if result.Value("range") != "round" || result.GetInt("since_ms") != since*1000 || result.GetInt("first_ms") != since*1000 {
+	if result["range"] != "round" || asInt64(result["since_ms"]) != since*1000 || asInt64(result["first_ms"]) != since*1000 {
 		t.Fatal(result)
 	}
-	if result.GetObject("clients").GetInt("sample_size") != want.records {
-		t.Fatal(result.GetObject("clients"), want.records)
+	if asInt64(asMap(result["clients"])["sample_size"]) != want.records {
+		t.Fatal(result["clients"], want.records)
 	}
-	rowsEqual(t, rankingRows(result.GetObject("domains")), want.domains, "domains")
+	rowsEqual(t, rankingRows(asMap(result["domains"])), want.domains, "domains")
 }
 
 func TestThePanelFallsBackToTheLiveSampleUntilPeriodsExist(t *testing.T) {
 	freshRankings(t)
 	useStores(t)
 	m := dashboardManager(t, t.TempDir())
-	m.agents["one"].Set("version", HistoryAgentVersion)
+	setAgentField(m.agents["one"], "version", HistoryAgentVersion)
 	f := transport(t, nil, nil)
-	result := overview(t, m, "one", "range", "7d").GetObject("rankings")
-	if result.Value("source") == "history" || result.Value("success") != true || result.Value("history") != "collecting" {
+	result := asMap(overview(t, m, "one", "range", "7d")["rankings"])
+	if result["source"] == "history" || result["success"] != true || result["history"] != "collecting" {
 		t.Fatal(result)
 	}
 	if len(f.rankingCalls()) == 0 {
@@ -679,12 +694,12 @@ func TestAnOlderAgentKeepsTheLiveSample(t *testing.T) {
 	records := generate(8, t0, 1, 300)
 	now := t0 + rDay + 120
 	e := newPanelEnv(t, records, now)
-	e.m.agents["one"].Set("version", "1.8.54-go")
-	result := overview(t, e.m, "one").GetObject("rankings")
-	if result.Value("source") == "history" || len(e.live) == 0 {
+	setAgentField(e.m.agents["one"], "version", "1.8.54-go")
+	result := asMap(overview(t, e.m, "one")["rankings"])
+	if result["source"] == "history" || len(e.live) == 0 {
 		t.Fatal(result)
 	}
-	if result.Value("history") != "upgrade_required" || result.Value("history_version") != HistoryAgentVersion {
+	if result["history"] != "upgrade_required" || result["history_version"] != HistoryAgentVersion {
 		t.Fatal(result)
 	}
 }
@@ -702,8 +717,8 @@ func TestThePanelSaysWhichSlotsAreMissing(t *testing.T) {
 		return err
 	})
 	store.version++ // the Python test deletes behind the store's back; its answers were not cached yet
-	result := overview(t, e.m, "one", "range", "24h").GetObject("rankings")
-	if result.GetInt("missing_slots") != 8 {
+	result := asMap(overview(t, e.m, "one", "range", "24h")["rankings"])
+	if asInt64(result["missing_slots"]) != 8 {
 		t.Fatal(result)
 	}
 }
@@ -713,57 +728,77 @@ func TestUnknownRangesAreRefused(t *testing.T) {
 		freshRankings(t)
 		m := dashboardManager(t, t.TempDir())
 		transport(t, nil, nil)
-		_, err := Overview(ctx, m, "one", args("range", value))
+		_, err := ReadOverview(ctx, m, "one", args("range", value))
 		wantMonitorError(t, err, "INVALID_QUERY", 400)
 	}
 }
 
 type roundManager struct {
 	*fakeManager
-	list []*jsonx.Object
+	list      []*model.Agent
+	recorders func(*model.Agent) ([]string, error)
+	collectFn func(*RankingStore, *model.Agent, []string, *int64) error
+	usableFn  func(*model.Agent) bool
 }
 
-func (m *roundManager) GetAllAgents(context.Context, bool) ([]*jsonx.Object, error) {
-	out := make([]*jsonx.Object, len(m.list))
+func (m *roundManager) ReadAgents(_ context.Context, _ bool, inspect func(*model.Agent)) ([]model.Agent, error) {
+	out := make([]model.Agent, len(m.list))
 	for i, a := range m.list {
-		out[i] = a.DeepCopy()
+		cp := cloneAgent(a)
+		if inspect != nil {
+			inspect(cp)
+		}
+		out[i] = *cp
 	}
 	return out, nil
 }
 
-func patchRound(t *testing.T, recorders func(*jsonx.Object) ([]string, error),
-	collectFn func(*RankingStore, *jsonx.Object, []string, *int64) error, usable func(*jsonx.Object) bool) {
-	pr, pc, pu := rankingRecorders, rankingCollectAgent, rankingIsUsable
-	t.Cleanup(func() { rankingRecorders, rankingCollectAgent, rankingIsUsable = pr, pc, pu })
-	if recorders != nil {
-		rankingRecorders = func(_ context.Context, _ Manager, agent *jsonx.Object) ([]string, error) { return recorders(agent) }
+func (m *roundManager) historyUsable(a *model.Agent) bool {
+	if m.usableFn != nil {
+		return m.usableFn(a)
 	}
-	if collectFn != nil {
-		rankingCollectAgent = func(_ context.Context, _ Manager, store *RankingStore, agent *jsonx.Object, rec []string, now *int64) error {
-			return collectFn(store, agent, rec, now)
-		}
+	return agents.AgentEnabledModel(a) && originalText(a.MemberJSON("status")) == "online" && agents.FreshHeartbeat(originalText(a.MemberJSON("last_heartbeat")), nil)
+}
+
+func (m *roundManager) historyRecorders(ctx context.Context, a *model.Agent) ([]string, error) {
+	if m.recorders != nil {
+		return m.recorders(a)
 	}
-	if usable != nil {
-		rankingIsUsable = usable
+	snapshot, err := readOverviewSnapshot(ctx, m, a, true)
+	if err != nil {
+		return nil, err
 	}
+	return snapshot.Recorders, nil
+}
+
+func (m *roundManager) historyCollect(ctx context.Context, store *RankingStore, a *model.Agent, recorders []string, now *int64) error {
+	if m.collectFn != nil {
+		return m.collectFn(store, a, recorders, now)
+	}
+	_, err := CollectAgentHistory(ctx, m, store, a, recorders, now, RankingSlotsPerRound, RankingCoreRetentionDays, 200*time.Millisecond)
+	return err
 }
 
 func TestACollectionRoundCoversUsableNewOxidnsDevicesOnly(t *testing.T) {
 	var seen []string
-	patchRound(t, func(*jsonx.Object) ([]string, error) { return []string{"records"}, nil },
-		func(_ *RankingStore, agent *jsonx.Object, _ []string, _ *int64) error {
-			seen = append(seen, agent.GetString("id"))
+	m := &roundManager{
+		fakeManager: &fakeManager{dataDir: t.TempDir()},
+		list: []*model.Agent{
+			mustAgentMap(map[string]any{"id": "new", "service_type": "oxidns", "version": HistoryAgentVersion}),
+			mustAgentMap(map[string]any{"id": "old", "service_type": "oxidns", "version": "1.8.54-go"}),
+			mustAgentMap(map[string]any{"id": "off", "service_type": "oxidns", "version": "1.8.60-go", "enabled": false}),
+			mustAgentMap(map[string]any{"id": "mihomo", "service_type": "mihomo", "version": "1.9.0-go"}),
+		},
+		recorders: func(*model.Agent) ([]string, error) { return []string{"records"}, nil },
+		collectFn: func(_ *RankingStore, agent *model.Agent, _ []string, _ *int64) error {
+			seen = append(seen, originalText(agent.MemberJSON("id")))
 			return nil
-		}, func(agent *jsonx.Object) bool { return agent.Value("enabled") != false })
-	m := &roundManager{fakeManager: &fakeManager{dataDir: t.TempDir()}, list: []*jsonx.Object{
-		jsonx.Obj("id", "new", "service_type", "oxidns", "version", HistoryAgentVersion),
-		jsonx.Obj("id", "old", "service_type", "oxidns", "version", "1.8.54-go"),
-		jsonx.Obj("id", "off", "service_type", "oxidns", "version", "1.8.60-go", "enabled", false),
-		jsonx.Obj("id", "mihomo", "service_type", "mihomo", "version", "1.9.0-go"),
-	}}
+		},
+		usableFn: func(agent *model.Agent) bool { return agent.Enabled == nil || *agent.Enabled },
+	}
 	ResetRankingStores()
 	t.Cleanup(ResetRankingStores)
-	if err := CollectRound(ctx, m, nil, i64(t0)); err != nil {
+	if err := CollectHistoryRound(ctx, m, nil, i64(t0)); err != nil {
 		t.Fatal(err)
 	}
 	if fmt.Sprint(seen) != "[new]" {
@@ -778,14 +813,14 @@ func TestARoundWithoutAFinishedPeriodSaysOtherRangesAreComplete(t *testing.T) {
 	later := now + 5*60
 	e.current = snapshotData(later*1000, 10, 100)
 	useAgent(t, e.answer(later*1000))
-	if _, err := ResetDashboard(ctx, e.m, "one", jsonx.NewObject()); err != nil {
+	if _, err := ResetStatistics(ctx, e.m, "one", json.RawMessage(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	result := overview(t, e.m, "one").GetObject("rankings")
-	if result.Value("source") == "history" || result.Value("history") != "pending_range" {
+	result := asMap(overview(t, e.m, "one")["rankings"])
+	if result["source"] == "history" || result["history"] != "pending_range" {
 		t.Fatal(result)
 	}
-	if overview(t, e.m, "one", "range", "24h").GetObject("rankings").Value("source") != "history" {
+	if asMap(overview(t, e.m, "one", "range", "24h")["rankings"])["source"] != "history" {
 		t.Fatal("24h not from history")
 	}
 }
@@ -861,18 +896,20 @@ func TestACaughtUpDeviceIsNotContactedUntilTheNextSlotEnds(t *testing.T) {
 		}
 		return n
 	}
-	patchRound(t, func(*jsonx.Object) ([]string, error) { ask("overview"); return []string{"records"}, nil },
-		nil, func(*jsonx.Object) bool { return true })
 	fake := newFakeAgent(generate(13, t0, 1, 100))
-	useAgent(t, func(c context.Context, m Manager, a *jsonx.Object, endpoint string, p query, v string) (*jsonx.Object, error) {
+	useAgent(t, func(c context.Context, m Registry, a *model.Agent, endpoint string, p query, v string) (model.Fields, error) {
 		ask("rankings")
 		return fake.do(c, m, a, endpoint, p, v)
 	})
 	previousSleep := rankingSleep
 	rankingSleep = func(context.Context, time.Duration) bool { return true }
 	t.Cleanup(func() { rankingSleep = previousSleep })
-	m := &roundManager{fakeManager: &fakeManager{dataDir: t.TempDir()},
-		list: []*jsonx.Object{jsonx.Obj("id", "dns", "service_type", "oxidns", "version", HistoryAgentVersion)}}
+	m := &roundManager{
+		fakeManager: &fakeManager{dataDir: t.TempDir()},
+		list:        []*model.Agent{mustAgentMap(map[string]any{"id": "dns", "service_type": "oxidns", "version": HistoryAgentVersion})},
+		recorders:   func(*model.Agent) ([]string, error) { ask("overview"); return []string{"records"}, nil },
+		usableFn:    func(*model.Agent) bool { return true },
+	}
 	store := NewRankingStore(m.dataDir)
 	now := t0 + rDay + 120
 	rounds := 0
@@ -880,7 +917,7 @@ func TestACaughtUpDeviceIsNotContactedUntilTheNextSlotEnds(t *testing.T) {
 		if _, ok := store.CaughtUp("dns"); ok {
 			break
 		}
-		if err := CollectRound(ctx, m, store, i64(now)); err != nil {
+		if err := CollectHistoryRound(ctx, m, store, i64(now)); err != nil {
 			t.Fatal(err)
 		}
 		rounds++
@@ -895,12 +932,12 @@ func TestACaughtUpDeviceIsNotContactedUntilTheNextSlotEnds(t *testing.T) {
 	asked = nil
 	mu.Unlock()
 	for minute := int64(1); minute < 14; minute++ { // the rest of this quarter hour
-		CollectRound(ctx, m, store, i64(now+minute*60))
+		CollectHistoryRound(ctx, m, store, i64(now+minute*60))
 	}
 	if len(asked) != 0 {
 		t.Fatal(asked)
 	}
-	CollectRound(ctx, m, store, i64(now+15*60)) // the next slot ended
+	CollectHistoryRound(ctx, m, store, i64(now+15*60)) // the next slot ended
 	if fmt.Sprint(asked) != "[overview rankings]" {
 		t.Fatal(asked)
 	}
@@ -926,29 +963,29 @@ func TestADeviceCutShortIsNotCountedAsCaughtUp(t *testing.T) {
 
 func TestSlotRankingRejectsUnexpectedAnswers(t *testing.T) {
 	store := NewRankingStore(t.TempDir())
-	good, _ := newFakeAgent(nil).do(ctx, nil, nil, "rankings", query{{"recorder", "records"}, {"since_ms", "0"}, {"until_ms", "900000"}, {"rows", "2000"}}, HistoryAgentVersion)
-	for _, mutate := range []func(*jsonx.Object){
-		func(o *jsonx.Object) { o.Set("success", jsonx.Int(1)) },
-		func(o *jsonx.Object) { o.Set("recorder", "other") },
-		func(o *jsonx.Object) { o.Set("blocked", nil) },
-		func(o *jsonx.Object) { o.GetObject("blocked").Set("available", jsonx.Int(1)) },
-		func(o *jsonx.Object) { o.GetObject("clients").Set("at_limit", true) },
-		func(o *jsonx.Object) { o.Set("domains", "x") },
+	good, _ := newFakeAgent(nil).answerMap("rankings", query{{"recorder", "records"}, {"since_ms", "0"}, {"until_ms", "900000"}, {"rows", "2000"}}, HistoryAgentVersion)
+	for _, mutate := range []func(map[string]any){
+		func(o map[string]any) { o["success"] = 1 },
+		func(o map[string]any) { o["recorder"] = "other" },
+		func(o map[string]any) { o["blocked"] = nil },
+		func(o map[string]any) { asMap(o["blocked"])["available"] = 1 },
+		func(o map[string]any) { asMap(o["clients"])["at_limit"] = true },
+		func(o map[string]any) { o["domains"] = "x" },
 	} {
-		answer := good.DeepCopy()
+		answer := cloneMap(good)
 		mutate(answer)
-		useAgent(t, func(context.Context, Manager, *jsonx.Object, string, query, string) (*jsonx.Object, error) {
-			return answer.DeepCopy(), nil
+		useAgent(t, func(context.Context, Registry, *model.Agent, string, query, string) (model.Fields, error) {
+			return fieldsFromValue(cloneMap(answer))
 		})
 		if n := collect(t, store, historyAgent, t0+rDay+120, 5, 1); n != 0 {
 			t.Fatal(n)
 		}
 	}
 	// An unavailable blocked section stores the slot without blocked counts.
-	answer := good.DeepCopy()
-	answer.Set("blocked", jsonx.Obj("available", false))
-	useAgent(t, func(context.Context, Manager, *jsonx.Object, string, query, string) (*jsonx.Object, error) {
-		return answer.DeepCopy(), nil
+	answer := cloneMap(good)
+	answer["blocked"] = map[string]any{"available": false}
+	useAgent(t, func(context.Context, Registry, *model.Agent, string, query, string) (model.Fields, error) {
+		return fieldsFromValue(cloneMap(answer))
 	})
 	if n := collect(t, store, historyAgent, t0+rDay+120, 1, 1); n != 1 {
 		t.Fatal(n)
@@ -959,9 +996,11 @@ func TestSlotRankingRejectsUnexpectedAnswers(t *testing.T) {
 }
 
 func TestCollectRoundAttributeErrorOfANonTextVersion(t *testing.T) {
-	m := &roundManager{fakeManager: &fakeManager{dataDir: t.TempDir()},
-		list: []*jsonx.Object{jsonx.Obj("id", "x", "service_type", "oxidns", "version", jsonx.Int(5))}}
-	if err := CollectRound(ctx, m, NewRankingStore(m.dataDir), i64(t0)); err == nil {
+	m := &roundManager{
+		fakeManager: &fakeManager{dataDir: t.TempDir()},
+		list:        []*model.Agent{mustAgentMap(map[string]any{"id": "x", "service_type": "oxidns", "version": 5})},
+	}
+	if err := CollectHistoryRound(ctx, m, NewRankingStore(m.dataDir), i64(t0)); err == nil {
 		t.Fatal("a non-str version is an AttributeError in supported()")
 	}
 }

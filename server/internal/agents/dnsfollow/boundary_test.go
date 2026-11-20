@@ -14,29 +14,56 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
-func (f *fixture) editAgent(t *testing.T, id string, edit func(*agents.Record)) {
+func (f *fixture) editAgent(t *testing.T, id string, edit func(*model.Agent)) {
 	t.Helper()
-	_, err := f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		for _, row := range *rows {
-			if a, ok := row.(*jsonx.Object); ok && a.GetString("id") == id {
-				edit(a)
+	err := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		for i := range sys.Agents {
+			if sys.Agents[i].ID == id {
+				edit(&sys.Agents[i])
 			}
 		}
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 }
-func (f *fixture) editDraft(t *testing.T, edit func(*jsonx.Object)) {
+func (f *fixture) editDraft(t *testing.T, edit func(*model.Profile)) {
 	t.Helper()
-	_, _, err := f.r.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) { edit(p); return nil, nil })
+	_, err := f.r.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		edit(p)
+		return nil
+	})
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+func oxidnsMap(t *testing.T, p *model.Profile) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(p.OxiDNS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var o map[string]any
+	if err := json.Unmarshal(raw, &o); err != nil {
+		t.Fatal(err)
+	}
+	if o == nil {
+		o = map[string]any{}
+	}
+	return o
+}
+func setOxidnsMap(t *testing.T, p *model.Profile, o map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetJSON("oxidns", raw); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -73,35 +100,41 @@ func TestBindingValidationIsStrictAndDoesNotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixtureValue, err := jsonx.Parse(fixtureBytes)
-	if err != nil {
+	var fixtures map[string]struct {
+		Key     string             `json:"key"`
+		Rules   []model.RuleConfig `json:"rules"`
+		Actions json.RawMessage    `json:"actions"`
+	}
+	if err := json.Unmarshal(fixtureBytes, &fixtures); err != nil {
 		t.Fatal(err)
 	}
-	fixtures := fixtureValue.(*jsonx.Object)
 	// The complete records and DNS actions come from backend.test_dns_follow.pin_rule.
 	for _, name := range []string{"active", "parked"} {
 		t.Run(name, func(t *testing.T) {
-			sample := fixtures.GetObject(name)
-			rules, _ := jsonx.AsList(sample.Value("rules"))
+			sample := fixtures[name]
 			pinnedIndex := 0
-			f.editDraft(t, func(p *jsonx.Object) {
-				existing, _ := jsonx.AsList(p.Value("rule_configs"))
-				kept := []any{}
-				for _, row := range existing {
-					a, ok := row.(*jsonx.Object)
-					if !ok || (a.GetString("id") != "rule-a" && a.GetString("id") != "rule-b") {
+			f.editDraft(t, func(p *model.Profile) {
+				kept := []model.RuleConfig{}
+				for _, row := range p.RuleConfigs {
+					if row.ID != "rule-a" && row.ID != "rule-b" {
 						kept = append(kept, row)
 					}
 				}
 				pinnedIndex = len(kept) + 2
-				p.Set("rule_configs", append(kept, rules...))
-				p.GetObject("oxidns").Set(sample.GetString("key"), sample.Value("actions"))
+				p.RuleConfigs = append(kept, sample.Rules...)
+				o := oxidnsMap(t, p)
+				var actions any
+				_ = json.Unmarshal(sample.Actions, &actions)
+				o[sample.Key] = actions
+				setOxidnsMap(t, p, o)
 			})
 			_, err := f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"auto"}`))
 			wantRefusal(t, err, fmt.Sprintf(msgPinned, pinnedIndex))
-			f.editDraft(t, func(p *jsonx.Object) {
-				p.GetObject("oxidns").Delete("rule_actions")
-				p.GetObject("oxidns").Delete("rule_dns_parked")
+			f.editDraft(t, func(p *model.Profile) {
+				o := oxidnsMap(t, p)
+				delete(o, "rule_actions")
+				delete(o, "rule_dns_parked")
+				setOxidnsMap(t, p, o)
 			})
 		})
 	}
@@ -132,14 +165,14 @@ func TestBusyOwnerAcrossManagersPrecedesValidation(t *testing.T) {
 
 func TestNetworkAndHASelection(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
-	f.editAgent(t, "target", func(a *agents.Record) { a.Set("oxidns_ha", jsonx.Obj("enabled", true)) })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = a.SetJSON("oxidns_ha", []byte(`{"enabled":true}`)) })
 	_, err := f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"auto"}`))
 	wantRefusal(t, err, msgHANetwork)
 	_, err = f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"network","address":"2001:db8::7"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.editAgent(t, "target", func(a *agents.Record) { a.Delete("oxidns_ha") })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = a.Clear("oxidns_ha") })
 	f.publishSource(t, "source-next")
 	if err = f.s.Tick(f.ctx); err != nil {
 		t.Fatal(err)
@@ -156,9 +189,11 @@ func TestDraftDriftAndConcurrentEditPreserved(t *testing.T) {
 			f.bind(t)
 			f.publishSource(t, "source-next")
 			edit := func() {
-				f.editDraft(t, func(p *jsonx.Object) {
-					o := p.GetObject("oxidns")
-					o.Set("native_config", strings.Replace(o.GetString("native_config"), "worker_threads: 2", "worker_threads: 3", 1))
+				f.editDraft(t, func(p *model.Profile) {
+					o := oxidnsMap(t, p)
+					s, _ := o["native_config"].(string)
+					o["native_config"] = strings.Replace(s, "worker_threads: 2", "worker_threads: 3", 1)
+					setOxidnsMap(t, p, o)
 				})
 			}
 			if during {
@@ -199,7 +234,10 @@ func TestOwnershipChangedDuringVerificationRejectsChild(t *testing.T) {
 	f.target.mu.Lock()
 	f.target.hook = func(r *http.Request) {
 		if r.URL.Path == "/api/dns/active" {
-			f.editAgent(t, "source", func(a *agents.Record) { a.GetObject("latest_deployment").Set("manual_rollback", true) })
+			f.editAgent(t, "source", func(a *model.Agent) {
+				yes := true
+				a.LatestDeployment.ManualRollback = &yes
+			})
 		}
 	}
 	f.target.mu.Unlock()
@@ -229,7 +267,7 @@ func TestSettledAndBrokenRoundsRestWithoutWrites(t *testing.T) {
 	if f.r.CommitCount() != before || len(f.source.paths)+len(f.target.paths) != paths || f.s.rounds.Len() != 1 {
 		t.Fatal("settled round performed work")
 	}
-	f.editAgent(t, "source", func(a *agents.Record) { a.Set("enabled", false) })
+	f.editAgent(t, "source", func(a *model.Agent) { off := false; a.Enabled = &off })
 	for i := 0; i < 2; i++ {
 		if err := f.s.Tick(f.ctx); err != nil {
 			t.Fatal(err)
@@ -254,7 +292,7 @@ func TestSettledAndBrokenRoundsRestWithoutWrites(t *testing.T) {
 	if f.r.CommitCount() != before {
 		t.Fatal("recheck rewrote unchanged failure")
 	}
-	f.editAgent(t, "source", func(a *agents.Record) { a.Set("enabled", true) })
+	f.editAgent(t, "source", func(a *model.Agent) { on := true; a.Enabled = &on })
 	f.publishSource(t, "repaired-source")
 	if err := f.s.Tick(f.ctx); err != nil {
 		t.Fatal(err)
@@ -267,9 +305,9 @@ func TestSettledAndBrokenRoundsRestWithoutWrites(t *testing.T) {
 func TestRetryNullSourceAndPrivateProjection(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	f.editAgent(t, "target", func(a *agents.Record) {
-		a.Set("dns_follow_state", jsonx.Obj("status", "failed", "message", "synthetic-target-token https://user:secret@dns.example/a?token=credential", "events", []any{}))
-		a.Set("dns_follow_job", jsonx.Obj("candidate_settings", jsonx.Obj("token", "synthetic-private-job")))
+	f.editAgent(t, "target", func(a *model.Agent) {
+		_ = a.SetJSON("dns_follow_state", []byte(`{"status":"failed","message":"synthetic-target-token https://user:secret@dns.example/a?token=credential","events":[]}`))
+		_ = a.SetJSON("dns_follow_job", []byte(`{"candidate_settings":{"token":"synthetic-private-job"}}`))
 	})
 	view, err := f.s.Options(f.ctx, "target")
 	if err != nil {
@@ -289,13 +327,14 @@ func TestRetryNullSourceAndPrivateProjection(t *testing.T) {
 	if string(fields["source_deployment_id"]) != "null" || value(out.State.Attempt) != 1 || f.agent(t).DNSFollowJob != nil {
 		t.Fatal(string(b))
 	}
-	row, err := taskRow(f.ctx, f.target.record(), jsonx.Obj())
+	rec := f.target.record()
+	row, err := agentTaskRow(f.ctx, &rec, taskstatus.Snapshot{})
 	if err != nil || row != nil {
 		t.Fatal(row, err)
 	}
-	raw, _ := f.m.GetAgentByID(f.ctx, "target", true)
-	row, err = taskRow(f.ctx, raw, jsonx.Obj())
-	if err != nil || row.GetBool("can_run") || row.GetString("state_message") != msgRetryQueued {
+	raw, _ := f.m.ReadAgent(f.ctx, "target", true)
+	row, err = agentTaskRow(f.ctx, raw, taskstatus.Snapshot{})
+	if err != nil || row.CanRun || row.StateMessage != msgRetryQueued {
 		t.Fatal(row, err)
 	}
 	_, err = f.s.Disable(f.ctx, "target")
@@ -339,7 +378,10 @@ func TestPrepareUsesProductionOptionsAndRechecksOwnership(t *testing.T) {
 		}
 		p, err := deploy.PrepareContent(ctx, m, a, src, o)
 		if calls == 2 {
-			f.editAgent(t, "source", func(a *agents.Record) { a.GetObject("latest_deployment").Set("manual_rollback", true) })
+			f.editAgent(t, "source", func(a *model.Agent) {
+				yes := true
+				a.LatestDeployment.ManualRollback = &yes
+			})
 		}
 		return p, err
 	}
@@ -384,58 +426,4 @@ func TestStoredIndexFallbackIsNeverUpstreamZeroEvidence(t *testing.T) {
 	if _, err := boundEntry(doc, &b); err != nil {
 		t.Fatal("genuine zero rejected", err)
 	}
-}
-
-func (s *Service) decodeAgent(ctx context.Context, raw *agents.Record) (*agent, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return nil, err
-	}
-	var a model.Agent
-	if err = json.Unmarshal(encoded, &a); err != nil {
-		return nil, err
-	}
-	return s.modelAgent(ctx, &a)
-}
-
-func (s *Service) tokens(list []*agent) []any {
-	secrets := s.secrets(list)
-	out := make([]any, len(secrets))
-	for i := range secrets {
-		out[i] = secrets[i]
-	}
-	return out
-}
-
-func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object) (*jsonx.Object, error) {
-	data, err := json.Marshal(record)
-	if err != nil {
-		return nil, err
-	}
-	var a model.Agent
-	if err := json.Unmarshal(data, &a); err != nil {
-		return nil, err
-	}
-	data, err = json.Marshal(statuses)
-	if err != nil {
-		return nil, err
-	}
-	var receipts taskstatus.Snapshot
-	if err := json.Unmarshal(data, &receipts); err != nil {
-		return nil, err
-	}
-	row, err := agentTaskRow(ctx, &a, receipts)
-	if err != nil || row == nil {
-		return nil, err
-	}
-	data, err = json.Marshal(row)
-	if err != nil {
-		return nil, err
-	}
-	var out jsonx.Object
-	err = json.Unmarshal(data, &out)
-	return &out, err
 }

@@ -10,7 +10,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -42,13 +41,12 @@ func TestHAValidationLockOrderingAndAllOrNothingLeases(t *testing.T) {
 }
 func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 	f := fixtureNew(t, Options{}, false, nil)
-	_, e := f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		for _, v := range *rows {
-			a := v.(*jsonx.Object)
-			a.Set("future_agent", jsonx.Obj("opaque", true))
-			a.Set("port", jsonx.Int(8082))
+	e := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		for i := range sys.Agents {
+			_ = sys.Agents[i].Fields.Set("future_agent", json.RawMessage(`{"opaque":true}`))
+			_ = sys.Agents[i].SetJSON("port", []byte(`8082`))
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -57,11 +55,11 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		for _, v := range *rows {
-			v.(*jsonx.Object).Set("port", jsonx.Float(8082))
+	e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		for i := range sys.Agents {
+			_ = sys.Agents[i].SetJSON("port", []byte(`8082.0`))
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -70,11 +68,11 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 	if _, e = f.s.members(f.ctx, a.OxiDNSHAPublication); e != nil {
 		t.Fatalf("numeric identity falsely changed: %v", e)
 	}
-	_, e = f.m.UpdateAgents(f.ctx, "", func(_ context.Context, rows *[]any) (any, error) {
-		for _, v := range *rows {
-			v.(*jsonx.Object).Set("port", jsonx.Int(8082))
+	e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		for i := range sys.Agents {
+			_ = sys.Agents[i].SetJSON("port", []byte(`8082`))
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -84,16 +82,18 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 		t.Fatalf("identity journal: %s", last.Message)
 	}
 	for _, id := range []string{"primary", "secondary"} {
-		a, e := f.m.GetAgentByID(f.ctx, id, true)
+		a, e := f.m.ReadAgent(f.ctx, id, true)
 		if e != nil {
 			t.Fatal(e)
 		}
-		if a.GetObject("future_agent").Value("opaque") != true {
-			t.Fatal("unknown member lost")
+		extra, _ := a.Fields.Get("future_agent")
+		if string(extra) != `{"opaque":true}` {
+			t.Fatal("unknown member lost", string(extra))
 		}
-		j := a.GetObject("oxidns_ha_publication")
-		if value, ok := j.Get("active_agent_id"); !ok || value != nil {
-			t.Fatal("completion lost explicit active_agent_id:null")
+		jRaw, _ := json.Marshal(a.OxiDNSHAPublication)
+		j := parseObject(jRaw)
+		if value, ok := j["active_agent_id"]; !ok || string(value) != "null" {
+			t.Fatal("completion lost explicit active_agent_id:null", string(jRaw))
 		}
 	}
 }
@@ -137,14 +137,19 @@ func TestRawClientRequestsAndMalformedReplies(t *testing.T) {
 }
 func TestUpstreamAndLoopbackBlockBeforeDeviceCalls(t *testing.T) {
 	f := fixtureNew(t, Options{}, false, nil)
-	_, _, e := f.r.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("oxidns").Set("native_config", `plugins:
+	_, e := f.r.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		raw, _ := json.Marshal(p.OxiDNS)
+		o := parseObject(raw)
+		if o == nil {
+			o = object{}
+		}
+		o["native_config"] = rawObject(`plugins:
   - tag: forward_remote
     type: forward
     args:
       upstreams: [{addr: udp://127.0.0.1:1053}]
 `)
-		return nil, nil
+		return p.SetJSON("oxidns", rawObject(o))
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -229,9 +234,12 @@ func TestFinalGenerationRequiresMatchingPeerAndPinsBothIdentities(t *testing.T) 
 }
 func TestAffectedRoutersAcrossProfiles(t *testing.T) {
 	f := fixtureNew(t, Options{}, false, nil)
-	_, _, e := f.r.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "router-example", "dns_agent_id", "secondary"), jsonx.Obj("id", "other", "dns_agent_id", "unrelated")}))
-		return nil, nil
+	_, e := f.r.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Routers.Items = []model.Router{
+			{ID: "router-example", DNSAgentID: "secondary"},
+			{ID: "other", DNSAgentID: "unrelated"},
+		}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)

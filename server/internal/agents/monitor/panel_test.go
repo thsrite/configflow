@@ -19,18 +19,19 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
-func panelAgentRecord(changes ...any) *jsonx.Object {
-	a := jsonx.Obj("id", "mihomo", "name", "Gateway", "host", "127.0.0.1", "port", 8080,
-		"service_type", "mihomo", "version", "1.8.15-go", "status", "online", "token", "agent-private-token")
-	for i := 0; i+1 < len(changes); i += 2 {
-		a.Set(changes[i].(string), changes[i+1])
+func panelAgentRecord(changes ...any) *model.Agent {
+	a := map[string]any{
+		"id": "mihomo", "name": "Gateway", "host": "127.0.0.1", "port": 8080,
+		"service_type": "mihomo", "version": "1.8.15-go", "status": "online", "token": "agent-private-token",
 	}
-	return a
+	for i := 0; i+1 < len(changes); i += 2 {
+		a[changes[i].(string)] = changes[i+1]
+	}
+	return mustAgentMap(a)
 }
 
 // replyClient answers queued responses (or errors), then {"ok": true}.
@@ -49,7 +50,7 @@ func (c *replyClient) Do(_ context.Context, r agents.Request) (*agents.Response,
 		header[k] = r.Header.Get(k)
 	}
 	c.calls = append(c.calls, call{url: u.Scheme + "://" + u.Host + u.EscapedPath(), query: u.Query(), rawQ: u.RawQuery, header: header, req: r})
-	var reply any = jsonResponse(jsonx.Obj("ok", true), 200)
+	var reply any = jsonResponse(map[string]any{"ok": true}, 200)
 	if len(c.replies) > 0 {
 		reply, c.replies = c.replies[0], c.replies[1:]
 	}
@@ -75,25 +76,33 @@ func (c *replyClient) count() int {
 	return len(c.calls)
 }
 
-func panelManager(t *testing.T, agent *jsonx.Object) (*fakeManager, *replyClient) {
+func panelManager(t *testing.T, agent *model.Agent) (*fakeManager, *replyClient) {
 	if agent == nil {
 		agent = panelAgentRecord()
 	}
 	client := &replyClient{}
-	return &fakeManager{agents: map[string]*jsonx.Object{"mihomo": agent}, dataDir: t.TempDir(), client: client}, client
+	return &fakeManager{agents: map[string]*model.Agent{"mihomo": agent}, dataDir: t.TempDir(), client: client}, client
 }
 
-func panelCall(m Manager, resource, method string, a [][2]string, body any) (*jsonx.Object, error) {
-	return PanelCall(ctx, m, "mihomo", resource, method, a, body, "")
+func panelCall(m Registry, resource, method string, a [][2]string, body any) (*PanelResult, error) {
+	var raw json.RawMessage
+	if body != nil {
+		var err error
+		raw, err = json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return CallPanel(ctx, m, "mihomo", resource, method, a, raw, "")
 }
 
-func mustPanel(t *testing.T, m Manager, resource, method string, a [][2]string, body any) *jsonx.Object {
+func mustPanel(t *testing.T, m Registry, resource, method string, a [][2]string, body any) map[string]any {
 	t.Helper()
 	result, err := panelCall(m, resource, method, a, body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return result
+	return toJSONMap(t, result)
 }
 
 func queryOf(c call) map[string]string {
@@ -106,8 +115,8 @@ func queryOf(c call) map[string]string {
 
 func TestForwardsNamedResourcesAsSingleEncodedSegment(t *testing.T) {
 	m, client := panelManager(t, nil)
-	result := mustPanel(t, m, "proxy", "PUT", args("name", "节点/香港 01"), jsonx.Obj("name", "HK"))
-	wantJSON(t, result, jsonx.Obj("success", true, "data", jsonx.Obj("ok", true)))
+	result := mustPanel(t, m, "proxy", "PUT", args("name", "节点/香港 01"), map[string]any{"name": "HK"})
+	wantJSON(t, result, map[string]any{"success": true, "data": map[string]any{"ok": true}})
 	c := client.calls[0]
 	if c.req.Method != "PUT" || c.url != "http://127.0.0.1:8080/api/mihomo/proxies/%E8%8A%82%E7%82%B9%2F%E9%A6%99%E6%B8%AF%2001" {
 		t.Fatal(c.req.Method, c.url)
@@ -133,11 +142,11 @@ func TestRejectsOperationsOutsideThePanel(t *testing.T) {
 		resource, method string
 		body             any
 	}{
-		{"configs", "PUT", jsonx.Obj("mode", "rule")},
+		{"configs", "PUT", map[string]any{"mode": "rule"}},
 		{"restart", "POST", nil},
-		{"configs", "PATCH", jsonx.Obj("mode", "rule", "tun", jsonx.Obj("enable", false))},
-		{"configs", "PATCH", jsonx.Obj("external-controller", "0.0.0.0:9090")},
-		{"proxy", "PUT", jsonx.Obj("name", "")},
+		{"configs", "PATCH", map[string]any{"mode": "rule", "tun": map[string]any{"enable": false}}},
+		{"configs", "PATCH", map[string]any{"external-controller": "0.0.0.0:9090"}},
+		{"proxy", "PUT", map[string]any{"name": ""}},
 	}
 	for _, tc := range cases {
 		m, client := panelManager(t, nil)
@@ -152,7 +161,7 @@ func TestRejectsOperationsOutsideThePanel(t *testing.T) {
 
 func TestModeSwitchOnlySendsMode(t *testing.T) {
 	m, client := panelManager(t, nil)
-	mustPanel(t, m, "configs", "PATCH", nil, jsonx.Obj("mode", "global"))
+	mustPanel(t, m, "configs", "PATCH", nil, map[string]any{"mode": "global"})
 	if string(client.calls[0].req.Body) != `{"mode": "global"}` {
 		t.Fatal(string(client.calls[0].req.Body))
 	}
@@ -172,9 +181,9 @@ func TestRequiresNewMihomoAgent(t *testing.T) {
 
 func TestEmptyReplyAndCoreErrors(t *testing.T) {
 	m, client := panelManager(t, nil)
-	client.add(&agents.Response{StatusCode: 204}, jsonResponse(jsonx.Obj("message", "Timeout"), 504),
-		jsonResponse(jsonx.Obj("success", false, "code", "CONTROLLER_UNAVAILABLE"), 409))
-	wantJSON(t, mustPanel(t, m, "connection", "DELETE", args("name", "abc"), nil), jsonx.Obj("success", true, "data", nil))
+	client.add(&agents.Response{StatusCode: 204}, jsonResponse(map[string]any{"message": "Timeout"}, 504),
+		jsonResponse(map[string]any{"success": false, "code": "CONTROLLER_UNAVAILABLE"}, 409))
+	wantJSON(t, mustPanel(t, m, "connection", "DELETE", args("name", "abc"), nil), map[string]any{"success": true, "data": nil})
 	_, err := panelCall(m, "proxy/delay", "GET", args("name", "HK"), nil)
 	if e := wantMonitorError(t, err, "CORE_ERROR", 504); e.Message != "Timeout" {
 		t.Fatal(e)
@@ -186,7 +195,7 @@ func TestEmptyReplyAndCoreErrors(t *testing.T) {
 func TestReloadAndUpgradeNeedNewerAgentAndSendNoBody(t *testing.T) {
 	old, client := panelManager(t, nil)
 	for _, rm := range [][2]string{{"configs/reload", "PUT"}, {"upgrade", "POST"}} {
-		_, err := panelCall(old, rm[0], rm[1], nil, jsonx.Obj("path", "/tmp/evil.yaml"))
+		_, err := panelCall(old, rm[0], rm[1], nil, map[string]any{"path": "/tmp/evil.yaml"})
 		if e := wantMonitorError(t, err, "UPGRADE_REQUIRED", 409); !strings.Contains(e.Message, "1.8.16-go") {
 			t.Fatal(e)
 		}
@@ -195,7 +204,7 @@ func TestReloadAndUpgradeNeedNewerAgentAndSendNoBody(t *testing.T) {
 		t.Fatal(client.calls)
 	}
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-	mustPanel(t, m, "configs/reload", "PUT", nil, jsonx.Obj("path", "/tmp/evil.yaml", "payload", "x"))
+	mustPanel(t, m, "configs/reload", "PUT", nil, map[string]any{"path": "/tmp/evil.yaml", "payload": "x"})
 	mustPanel(t, m, "upgrade", "POST", args("channel", "alpha"), nil)
 	for i, want := range [][2]string{{"PUT", "configs"}, {"POST", "upgrade"}} {
 		c := client.calls[i]
@@ -213,10 +222,10 @@ func TestProviderNodeDelayEncodesBothNamesAndKeepsTestOptions(t *testing.T) {
 	name := "🇯🇵 JP-05 · AWS2 / 50%?#"
 	testURL := "http://127.0.0.1:18080/generate_204?value=a&other=b"
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.18-go"))
-	client.add(jsonResponse(jsonx.Obj("delay", 123), 200))
+	client.add(jsonResponse(map[string]any{"delay": 123}, 200))
 	result := mustPanel(t, m, "providers/proxy/delay", "GET", args("provider", provider, "name", name, "url", testURL,
 		"timeout", "7300", "unrelated", "discard"), nil)
-	wantJSON(t, result, jsonx.Obj("success", true, "data", jsonx.Obj("delay", 123)))
+	wantJSON(t, result, map[string]any{"success": true, "data": map[string]any{"delay": 123}})
 	c := client.calls[0]
 	if !strings.HasSuffix(c.url, "/api/mihomo/providers/proxies/%E8%AE%A2%E9%98%85%20%2F%20A%25%3F%23/"+
 		"%F0%9F%87%AF%F0%9F%87%B5%20JP-05%20%C2%B7%20AWS2%20%2F%2050%25%3F%23/healthcheck") {
@@ -232,9 +241,9 @@ func TestProviderNodeDelayEncodesBothNamesAndKeepsTestOptions(t *testing.T) {
 
 func TestOrdinaryNodeStillWorksOnOlderAgentAndProviderRequiresUpdate(t *testing.T) {
 	m, client := panelManager(t, nil)
-	client.add(jsonResponse(jsonx.Obj("delay", 81), 200))
+	client.add(jsonResponse(map[string]any{"delay": 81}, 200))
 	result := mustPanel(t, m, "proxy/delay", "GET", args("name", "普通节点"), nil)
-	if result.GetObject("data").GetInt("delay") != 81 {
+	if asInt64(asMap(result["data"])["delay"]) != 81 {
 		t.Fatal(result)
 	}
 	c := client.calls[0]
@@ -279,7 +288,7 @@ func TestProviderNodeCoreFailureIsReportedWithoutTestingAnotherNode(t *testing.T
 		expected int
 	}{{404, "Resource not found", 400}, {504, "Timeout", 504}, {503, "An error occurred in the delay test", 502}} {
 		m, client := panelManager(t, panelAgentRecord("version", "1.8.18-go"))
-		client.add(jsonResponse(jsonx.Obj("message", tc.message), tc.status))
+		client.add(jsonResponse(map[string]any{"message": tc.message}, tc.status))
 		_, err := panelCall(m, "providers/proxy/delay", "GET", args("provider", "Airport", "name", "HK"), nil)
 		if e := wantMonitorError(t, err, "CORE_ERROR", tc.expected); e.Message != tc.message || client.count() != 1 {
 			t.Fatal(e, client.calls)
@@ -299,7 +308,7 @@ func TestProviderHealthcheckKeepsNoParams(t *testing.T) {
 func TestCoreUpgradeErrorsKeepOriginalText(t *testing.T) {
 	for _, message := range []string{"download failed: dial tcp: i/o timeout", "Agent download connection failed"} {
 		m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-		client.add(jsonResponse(jsonx.Obj("message", message), 500))
+		client.add(jsonResponse(map[string]any{"message": message}, 500))
 		_, err := panelCall(m, "upgrade", "POST", nil, nil)
 		if e := wantMonitorError(t, err, "CORE_ERROR", 502); e.Message != message {
 			t.Fatal(e)
@@ -315,9 +324,9 @@ func TestLiveFlowNeedsNewerAgentAndForwardsWithoutParams(t *testing.T) {
 		t.Fatal(e)
 	}
 	m.agents["mihomo"] = panelAgentRecord("version", "1.8.26-go")
-	client.add(jsonResponse(jsonx.Obj("interval", jsonx.Float(2.0), "paths", []any{}), 200))
+	client.add(jsonResponse(map[string]any{"interval": 2.0, "paths": []any{}}, 200))
 	result := mustPanel(t, m, "flow", "GET", args("url", "http://ignored"), nil)
-	wantJSON(t, result.Value("data"), jsonx.Obj("interval", jsonx.Float(2.0), "paths", []any{}))
+	wantJSON(t, result["data"], map[string]any{"interval": 2.0, "paths": []any{}})
 	if c := client.calls[0]; c.req.Method != "GET" || !strings.HasSuffix(c.url, "/api/mihomo/flow") || c.rawQ != "" || c.req.Body != nil {
 		t.Fatal(c)
 	}
@@ -331,9 +340,9 @@ func TestLiveLogsNeedNewerAgentAndForwardOnlyLevelAndCursor(t *testing.T) {
 		t.Fatal(e)
 	}
 	m.agents["mihomo"] = panelAgentRecord("version", "1.8.56-go")
-	client.add(jsonResponse(jsonx.Obj("stream", "debug", "entries", []any{}, "next", 7), 200))
+	client.add(jsonResponse(map[string]any{"stream": "debug", "entries": []any{}, "next": 7}, 200))
 	result := mustPanel(t, m, "logs", "GET", args("level", "debug", "after", "7", "path", "/etc"), nil)
-	wantJSON(t, result.Value("data"), jsonx.Obj("stream", "debug", "entries", []any{}, "next", 7))
+	wantJSON(t, result["data"], map[string]any{"stream": "debug", "entries": []any{}, "next": 7})
 	if c := client.calls[0]; !strings.HasSuffix(c.url, "/api/mihomo/logs") || c.rawQ != "level=debug&after=7" {
 		t.Fatal(c)
 	}
@@ -355,14 +364,16 @@ func TestLiveLogsRejectInvalidLevelOrCursor(t *testing.T) {
 	}
 }
 
-func node(name string, extra ...any) *jsonx.Object {
-	n := jsonx.Obj("name", name, "type", "Trojan", "udp", true, "xudp", true, "tfo", false, "mptcp", false, "smux", false,
-		"interface", "", "routing-mark", 0, "dialer-proxy", "", "provider-name", "sub", "id", strings.Repeat("x", 36), "alive", true,
-		"history", []any{jsonx.Obj("time", "t1", "delay", 300), jsonx.Obj("time", "t2", "delay", 120)},
-		"extra", jsonx.Obj("https://cp.cloudflare.com/generate_204", jsonx.Obj("alive", false,
-			"history", []any{jsonx.Obj("time", "t1", "delay", 90), jsonx.Obj("time", "t2", "delay", 0)})))
+func node(name string, extra ...any) map[string]any {
+	n := map[string]any{
+		"name": name, "type": "Trojan", "udp": true, "xudp": true, "tfo": false, "mptcp": false, "smux": false,
+		"interface": "", "routing-mark": 0, "dialer-proxy": "", "provider-name": "sub", "id": strings.Repeat("x", 36), "alive": true,
+		"history": []any{map[string]any{"time": "t1", "delay": 300}, map[string]any{"time": "t2", "delay": 120}},
+		"extra": map[string]any{"https://cp.cloudflare.com/generate_204": map[string]any{"alive": false,
+			"history": []any{map[string]any{"time": "t1", "delay": 90}, map[string]any{"time": "t2", "delay": 0}}}},
+	}
 	for i := 0; i+1 < len(extra); i += 2 {
-		n.Set(extra[i].(string), extra[i+1])
+		n[extra[i].(string)] = extra[i+1]
 	}
 	return n
 }
@@ -371,57 +382,65 @@ func TestNodeListingsKeepOnlyPanelFieldsAndTheNewestDelay(t *testing.T) {
 	m, client := panelManager(t, nil)
 	group := node("Proxy", "type", "Selector", "now", "HK", "all", []any{"HK", "JP"}, "testUrl", "https://cp.cloudflare.com/generate_204",
 		"hidden", false, "icon", "i", "fixed", "")
-	client.add(jsonResponse(jsonx.Obj("proxies", jsonx.Obj("Proxy", group, "HK", node("HK"), "odd", "not a dict")), 200))
-	proxies := mustPanel(t, m, "proxies", "GET", nil, nil).GetObject("data").GetObject("proxies")
-	wantJSON(t, proxies.Value("HK"), jsonx.Obj("name", "HK", "type", "Trojan", "udp", true, "alive", true,
-		"history", []any{jsonx.Obj("time", "t2", "delay", 120)},
-		"extra", jsonx.Obj("https://cp.cloudflare.com/generate_204", jsonx.Obj("alive", false, "history", []any{jsonx.Obj("time", "t2", "delay", 0)}))))
-	p := proxies.GetObject("Proxy")
-	got := jsonx.NewObject()
+	client.add(jsonResponse(map[string]any{"proxies": map[string]any{"Proxy": group, "HK": node("HK"), "odd": "not a dict"}}, 200))
+	proxies := asMap(asMap(mustPanel(t, m, "proxies", "GET", nil, nil)["data"])["proxies"])
+	wantJSON(t, proxies["HK"], map[string]any{
+		"name": "HK", "type": "Trojan", "udp": true, "alive": true,
+		"history": []any{map[string]any{"time": "t2", "delay": 120}},
+		"extra":   map[string]any{"https://cp.cloudflare.com/generate_204": map[string]any{"alive": false, "history": []any{map[string]any{"time": "t2", "delay": 0}}}},
+	})
+	p := asMap(proxies["Proxy"])
+	got := map[string]any{}
 	for _, key := range []string{"now", "all", "testUrl", "hidden", "icon", "fixed"} {
-		got.Set(key, p.Value(key))
+		got[key] = p[key]
 	}
-	wantJSON(t, got, jsonx.Obj("now", "HK", "all", []any{"HK", "JP"}, "testUrl", "https://cp.cloudflare.com/generate_204",
-		"hidden", false, "icon", "i", "fixed", ""))
-	if proxies.Value("odd") != "not a dict" {
+	wantJSON(t, got, map[string]any{
+		"now": "HK", "all": []any{"HK", "JP"}, "testUrl": "https://cp.cloudflare.com/generate_204",
+		"hidden": false, "icon": "i", "fixed": "",
+	})
+	if proxies["odd"] != "not a dict" {
 		t.Fatal(proxies)
 	}
 }
 
 func TestProviderListingSlimsNodesAndKeepsOnlyNamesOfCompatibleMembers(t *testing.T) {
 	m, client := panelManager(t, nil)
-	subscription := jsonx.Obj("name", "sub", "type", "Proxy", "vehicleType", "HTTP", "updatedAt", "now", "testUrl", "u",
-		"subscriptionInfo", jsonx.Obj("Total", 1), "proxies", []any{node("HK"), node("JP", "history", []any{})})
+	subscription := map[string]any{
+		"name": "sub", "type": "Proxy", "vehicleType": "HTTP", "updatedAt": "now", "testUrl": "u",
+		"subscriptionInfo": map[string]any{"Total": 1}, "proxies": []any{node("HK"), node("JP", "history", []any{})},
+	}
 	all := make([]any, 500)
 	for i := range all {
 		all[i] = "HK"
 	}
-	compatible := jsonx.Obj("name", "Proxy", "type", "Proxy", "vehicleType", "Compatible",
-		"proxies", []any{node("DIRECT", "type", "Direct"), node("Auto", "type", "URLTest", "all", all, "now", "HK")})
-	client.add(jsonResponse(jsonx.Obj("providers", jsonx.Obj("sub", subscription, "Proxy", compatible,
-		"empty", jsonx.Obj("name", "empty", "vehicleType", "File"))), 200))
-	providers := mustPanel(t, m, "providers/proxies", "GET", nil, nil).GetObject("data").GetObject("providers")
-	sub := providers.GetObject("sub").Clone()
-	sub.Delete("proxies")
-	want := subscription.Clone()
-	want.Delete("proxies")
+	compatible := map[string]any{
+		"name": "Proxy", "type": "Proxy", "vehicleType": "Compatible",
+		"proxies": []any{node("DIRECT", "type", "Direct"), node("Auto", "type", "URLTest", "all", all, "now", "HK")},
+	}
+	client.add(jsonResponse(map[string]any{"providers": map[string]any{"sub": subscription, "Proxy": compatible,
+		"empty": map[string]any{"name": "empty", "vehicleType": "File"}}}, 200))
+	providers := asMap(asMap(mustPanel(t, m, "providers/proxies", "GET", nil, nil)["data"])["providers"])
+	sub := cloneMap(asMap(providers["sub"]))
+	delete(sub, "proxies")
+	want := cloneMap(subscription)
+	delete(want, "proxies")
 	wantJSON(t, sub, want)
-	nodes := providers.GetObject("sub").GetList("proxies")
-	wantJSON(t, nodes[0].(*jsonx.Object).Value("history"), []any{jsonx.Obj("time", "t2", "delay", 120)})
-	if _, ok := nodes[0].(*jsonx.Object).Get("xudp"); ok {
+	nodes := asList(asMap(providers["sub"])["proxies"])
+	wantJSON(t, asMap(nodes[0])["history"], []any{map[string]any{"time": "t2", "delay": 120}})
+	if _, ok := asMap(nodes[0])["xudp"]; ok {
 		t.Fatal(nodes[0])
 	}
-	wantJSON(t, nodes[1].(*jsonx.Object).Value("history"), []any{})
-	wantJSON(t, providers.GetObject("Proxy").Value("proxies"), []any{jsonx.Obj("name", "DIRECT"), jsonx.Obj("name", "Auto")})
-	wantJSON(t, providers.Value("empty"), jsonx.Obj("name", "empty", "vehicleType", "File"))
+	wantJSON(t, asMap(nodes[1])["history"], []any{})
+	wantJSON(t, asMap(providers["Proxy"])["proxies"], []any{map[string]any{"name": "DIRECT"}, map[string]any{"name": "Auto"}})
+	wantJSON(t, providers["empty"], map[string]any{"name": "empty", "vehicleType": "File"})
 }
 
 func TestOtherRepliesPassThroughUnchanged(t *testing.T) {
 	m, client := panelManager(t, nil)
-	reply := jsonx.Obj("proxies", jsonx.Obj("HK", node("HK")))
+	reply := map[string]any{"proxies": map[string]any{"HK": node("HK")}}
 	client.add(jsonResponse(reply, 200), jsonResponse([]any{"unexpected"}, 200))
-	wantJSON(t, mustPanel(t, m, "proxy", "PUT", args("name", "Proxy"), jsonx.Obj("name", "HK")).Value("data"), reply)
-	wantJSON(t, mustPanel(t, m, "proxies", "GET", nil, nil).Value("data"), []any{"unexpected"})
+	wantJSON(t, mustPanel(t, m, "proxy", "PUT", args("name", "Proxy"), map[string]any{"name": "HK"})["data"], reply)
+	wantJSON(t, mustPanel(t, m, "proxies", "GET", nil, nil)["data"], []any{"unexpected"})
 }
 
 // --- core update check ---------------------------------------------------------
@@ -436,7 +455,7 @@ type latestFake struct {
 	mu       sync.Mutex
 	calls    []ruleCall
 	replies  []any // string body or error
-	settings *jsonx.Object
+	settings map[string]any
 }
 
 func (f *latestFake) count() int {
@@ -446,7 +465,9 @@ func (f *latestFake) count() int {
 }
 
 func installLatest(t *testing.T) *latestFake {
-	f := &latestFake{settings: jsonx.Obj("rule_fetch_proxy", "", "github_proxy_domain", "", "backup", jsonx.Obj("large", "not needed"))}
+	f := &latestFake{settings: map[string]any{
+		"rule_fetch_proxy": "", "github_proxy_domain": "", "backup": map[string]any{"large": "not needed"},
+	}}
 	previousRule, previousSettings, previousClock := requestRule, downloadSettings, monotonic
 	requestRule = func(_ context.Context, u string, r rulefetch.DownloadRequest) (*rulefetch.Response, error) {
 		f.mu.Lock()
@@ -462,9 +483,13 @@ func installLatest(t *testing.T) *latestFake {
 	downloadSettings = func(context.Context) (*model.SystemConfig, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		result := jsonx.NewObject()
+		result := map[string]any{}
 		for _, key := range []string{"rule_fetch_proxy", "github_proxy_domain", "server_domain"} {
-			result.Set(key, f.settings.GetOr(key, ""))
+			if val, ok := f.settings[key]; ok {
+				result[key] = val
+			} else {
+				result[key] = ""
+			}
 		}
 		return testDownloadSettings(t, result), nil
 	}
@@ -494,11 +519,11 @@ func TestCoreUpdateCheckFollowsTheCoresOwnChannelAndComparison(t *testing.T) {
 	} {
 		latest := installLatest(t)
 		m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-		client.add(jsonResponse(jsonx.Obj("meta", true, "version", tc.current), 200))
+		client.add(jsonResponse(map[string]any{"meta": true, "version": tc.current}, 200))
 		latest.add(tc.upstream)
-		data := mustPanel(t, m, "core/update", "GET", nil, nil).GetObject("data")
-		if data.Value("current") != tc.current || data.Value("latest") != strings.TrimSpace(tc.upstream) ||
-			data.Value("channel") != tc.channel || data.Value("has_update") != tc.hasUpdate || data.Value("error") != "" {
+		data := asMap(mustPanel(t, m, "core/update", "GET", nil, nil)["data"])
+		if data["current"] != tc.current || data["latest"] != strings.TrimSpace(tc.upstream) ||
+			data["channel"] != tc.channel || data["has_update"] != tc.hasUpdate || data["error"] != "" {
 			t.Fatal(tc, data)
 		}
 		r := latest.calls[0]
@@ -541,11 +566,11 @@ func TestCoreUpdateCheckFailureStillReportsTheRunningVersion(t *testing.T) {
 	} {
 		latest := installLatest(t)
 		m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-		client.add(jsonResponse(jsonx.Obj("meta", true, "version", "v1.19.32"), 200))
+		client.add(jsonResponse(map[string]any{"meta": true, "version": "v1.19.32"}, 200))
 		latest.add(tc.failure)
-		data := mustPanel(t, m, "core/update", "GET", nil, nil).GetObject("data")
-		failure := data.GetString("error")
-		if data.Value("current") != "v1.19.32" || data.Value("latest") != "" || data.Value("has_update") != false ||
+		data := asMap(mustPanel(t, m, "core/update", "GET", nil, nil)["data"])
+		failure := asStr(data["error"])
+		if data["current"] != "v1.19.32" || data["latest"] != "" || data["has_update"] != false ||
 			!strings.Contains(failure, tc.reason) || strings.Contains(failure, "secret") {
 			t.Fatal(tc.reason, data)
 		}
@@ -565,7 +590,7 @@ func TestCoreUpdateCheckFailureReportsTheLastTryOfSourceAndMirror(t *testing.T) 
 func TestCoreUpdateCheckReportsAnUnreachableCore(t *testing.T) {
 	latest := installLatest(t)
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-	client.add(jsonResponse(jsonx.Obj("success", false, "code", "CORE_UNREACHABLE"), 502))
+	client.add(jsonResponse(map[string]any{"success": false, "code": "CORE_UNREACHABLE"}, 502))
 	_, err := panelCall(m, "core/update", "GET", nil, nil)
 	wantMonitorError(t, err, "CORE_UNREACHABLE", 502)
 	if latest.count() != 0 {
@@ -584,35 +609,35 @@ func TestCoreUpdateCheckCachesGithubAndAManualCheckRefreshes(t *testing.T) {
 	latest := installLatest(t)
 	clock := fakeClock(t, 1000)
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-	check := func(force bool) *jsonx.Object {
-		client.add(jsonResponse(jsonx.Obj("meta", true, "version", "v1.19.32"), 200))
+	check := func(force bool) map[string]any {
+		client.add(jsonResponse(map[string]any{"meta": true, "version": "v1.19.32"}, 200))
 		a := [][2]string{}
 		if force {
 			a = args("force", "1")
 		}
-		return mustPanel(t, m, "core/update", "GET", a, nil).GetObject("data")
+		return asMap(mustPanel(t, m, "core/update", "GET", a, nil)["data"])
 	}
 	latest.add(&rulefetch.FetchError{Class: "ConnectTimeout"})
-	if check(false).GetString("error") == "" {
+	if asStr(check(false)["error"]) == "" {
 		t.Fatal("no error")
 	}
 	*clock += CoreCheckFailureTTL - 1
-	if check(false).GetString("error") == "" || latest.count() != 1 {
+	if asStr(check(false)["error"]) == "" || latest.count() != 1 {
 		t.Fatal("failure retried")
 	}
 	*clock += 2
 	latest.add("v1.19.32")
-	if check(false).Value("has_update") != false || latest.count() != 2 {
+	if check(false)["has_update"] != false || latest.count() != 2 {
 		t.Fatal("not refreshed")
 	}
 	*clock += CoreCheckTTL - 1
-	if check(false).Value("latest") != "v1.19.32" || latest.count() != 2 {
+	if check(false)["latest"] != "v1.19.32" || latest.count() != 2 {
 		t.Fatal("cache not used")
 	}
 	latest.add("v1.19.33")
 	data := check(true)
-	if data.Value("has_update") != true || data.Value("latest") != "v1.19.33" || latest.count() != 3 ||
-		!strings.HasSuffix(data.GetString("release_url"), "/releases/tag/v1.19.33") {
+	if data["has_update"] != true || data["latest"] != "v1.19.33" || latest.count() != 3 ||
+		!strings.HasSuffix(asStr(data["release_url"]), "/releases/tag/v1.19.33") {
 		t.Fatal(data)
 	}
 }
@@ -621,30 +646,30 @@ func TestACoreNewerThanTheReleaseIsNotOfferedADowngrade(t *testing.T) {
 	latest := installLatest(t)
 	clock := fakeClock(t, 1000)
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-	check := func(current string) *jsonx.Object {
-		client.add(jsonResponse(jsonx.Obj("meta", true, "version", current), 200))
-		return mustPanel(t, m, "core/update", "GET", nil, nil).GetObject("data")
+	check := func(current string) map[string]any {
+		client.add(jsonResponse(map[string]any{"meta": true, "version": current}, 200))
+		return asMap(mustPanel(t, m, "core/update", "GET", nil, nil)["data"])
 	}
 	latest.add("v1.19.33")
-	if check("v1.19.32").Value("has_update") != true {
+	if check("v1.19.32")["has_update"] != true {
 		t.Fatal("no update")
 	}
 	data := check("v1.19.34")
-	if data.Value("has_update") != false || data.Value("latest") != "v1.19.33" || latest.count() != 1 {
+	if data["has_update"] != false || data["latest"] != "v1.19.33" || latest.count() != 1 {
 		t.Fatal(data)
 	}
 	*clock += CoreCheckFailureTTL - 1
-	if check("v1.19.34").Value("has_update") != false || latest.count() != 1 {
+	if check("v1.19.34")["has_update"] != false || latest.count() != 1 {
 		t.Fatal("refetched early")
 	}
 	*clock += 2
 	latest.add("v1.19.34")
 	data = check("v1.19.34")
-	if data.Value("has_update") != false || data.Value("latest") != "v1.19.34" || latest.count() != 2 {
+	if data["has_update"] != false || data["latest"] != "v1.19.34" || latest.count() != 2 {
 		t.Fatal(data)
 	}
 	*clock += CoreCheckFailureTTL + 1
-	if check("v1.19.34").Value("latest") != "v1.19.34" || latest.count() != 2 {
+	if check("v1.19.34")["latest"] != "v1.19.34" || latest.count() != 2 {
 		t.Fatal("long TTL not used")
 	}
 }
@@ -741,20 +766,20 @@ func TestFailureCacheCountsFromWhenTheFetchEnded(t *testing.T) {
 func TestChangingTheDownloadProxyRetriesACachedFailureAtOnce(t *testing.T) {
 	latest := installLatest(t)
 	m, client := panelManager(t, panelAgentRecord("version", "1.8.16-go"))
-	check := func() *jsonx.Object {
-		client.add(jsonResponse(jsonx.Obj("meta", true, "version", "v1.19.32"), 200))
-		return mustPanel(t, m, "core/update", "GET", nil, nil).GetObject("data")
+	check := func() map[string]any {
+		client.add(jsonResponse(map[string]any{"meta": true, "version": "v1.19.32"}, 200))
+		return asMap(mustPanel(t, m, "core/update", "GET", nil, nil)["data"])
 	}
 	latest.add(&rulefetch.FetchError{Class: "ConnectionError"})
-	if check().GetString("error") == "" || check().GetString("error") == "" || latest.count() != 1 {
+	if asStr(check()["error"]) == "" || asStr(check()["error"]) == "" || latest.count() != 1 {
 		t.Fatal("failure not cached")
 	}
 	latest.mu.Lock()
-	latest.settings.Set("rule_fetch_proxy", "http://127.0.0.1:7890")
+	latest.settings["rule_fetch_proxy"] = "http://127.0.0.1:7890"
 	latest.mu.Unlock()
 	latest.add("v1.19.33")
 	data := check()
-	if data.Value("error") != "" || data.Value("has_update") != true || latest.count() != 2 {
+	if data["error"] != "" || data["has_update"] != true || latest.count() != 2 {
 		t.Fatal(data)
 	}
 	if latest.calls[1].request.Config.Settings.RuleFetchProxy != "http://127.0.0.1:7890" {
@@ -769,9 +794,9 @@ type historyFlagManager struct {
 	reads []bool
 }
 
-func (m *historyFlagManager) GetAgentByID(c context.Context, id string, history bool) (*jsonx.Object, error) {
+func (m *historyFlagManager) ReadAgent(c context.Context, id string, history bool) (*model.Agent, error) {
 	m.reads = append(m.reads, history)
-	return m.fakeManager.GetAgentByID(c, id, history)
+	return m.fakeManager.ReadAgent(c, id, history)
 }
 
 // TestPanelLookupsDoNotCopyTheHistoryButPublicationStatisticsDo is the Go
@@ -779,30 +804,32 @@ func (m *historyFlagManager) GetAgentByID(c context.Context, id string, history 
 // the panel, monitor and rule update lookups read the Agent without its
 // publication history; the publication statistics read it with history.
 func TestPanelLookupsDoNotCopyTheHistoryButPublicationStatisticsDo(t *testing.T) {
-	base := &fakeManager{agents: map[string]*jsonx.Object{
+	base := &fakeManager{agents: map[string]*model.Agent{
 		"mihomo": panelAgentRecord("version", "1.8.54-go"),
-		"dns":    jsonx.Obj("id", "dns", "service_type", "oxidns", "version", "1.8.54-go", "host", "dns.test", "port", 8080, "token", "t"),
+		"dns": mustAgentMap(map[string]any{
+			"id": "dns", "service_type": "oxidns", "version": "1.8.54-go", "host": "dns.test", "port": 8080, "token": "t",
+		}),
 	}, dataDir: t.TempDir(), client: &replyClient{}}
 	m := &historyFlagManager{fakeManager: base}
-	if _, err := panelAgent(ctx, m, "mihomo", PanelMinAgentVersion, ""); err != nil {
+	if _, err := readPanelAgent(ctx, m, "mihomo", PanelMinAgentVersion, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := agentFor(ctx, m, "dns", MinAgentVersion, false); err != nil {
+	if _, err := readDNSAgent(ctx, m, "dns", MinAgentVersion, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ruleUpdateAgent(ctx, m, "dns"); err != nil {
+	if _, err := readDNSAgent(ctx, m, "dns", RuleUpdateMinAgentVersion, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(m.reads) != 3 || m.reads[0] || m.reads[1] || m.reads[2] {
 		t.Fatal(m.reads)
 	}
-	if _, err := agentFor(ctx, m, "dns", MinAgentVersion, true); err != nil || !m.reads[3] {
+	if _, err := readDNSAgent(ctx, m, "dns", MinAgentVersion, true); err != nil || !m.reads[3] {
 		t.Fatal(err, m.reads)
 	}
 	// checkpoint reads the history (its records decide the pending task).
 	m.reads = nil
 	transport(t, nil, nil)
-	if err := Checkpoint(ctx, m, "dns", "publish-one", strings.Repeat("b", 64)); err != nil {
+	if err := CheckpointStatistics(ctx, m, "dns", "publish-one", strings.Repeat("b", 64)); err != nil {
 		t.Fatal(err)
 	}
 	for _, history := range m.reads {
@@ -854,9 +881,9 @@ func TestPanelAnswersThatAreNotJSONOrTooLarge(t *testing.T) {
 		&agents.Response{StatusCode: 200, Body: make([]byte, PanelMaxResponseBytes+1)},
 		&agents.Response{StatusCode: 401, Body: []byte("{}")},
 		errors.New("refused"),
-		jsonResponse(jsonx.Obj("success", false, "code", []any{"x"}), 502),
+		jsonResponse(map[string]any{"success": false, "code": []any{"x"}}, 502),
 		&agents.Response{StatusCode: 200, Body: []byte(" \r\n")},
-		jsonResponse(jsonx.Obj("message", strings.Repeat("长", 400)), 418))
+		jsonResponse(map[string]any{"message": strings.Repeat("长", 400)}, 418))
 	_, err := panelCall(m, "version", "GET", nil, nil)
 	if e := wantMonitorError(t, err, "UPGRADE_REQUIRED", 409); e.Message != "请将此 Agent 升级到 1.8.15-go 或更新版本后使用 Mihomo 面板。" {
 		t.Fatal(e)
@@ -878,7 +905,7 @@ func TestPanelAnswersThatAreNotJSONOrTooLarge(t *testing.T) {
 	if err == nil || errors.As(err, &monitorErr) {
 		t.Fatal("an unhashable code is a TypeError (500)", err)
 	}
-	wantJSON(t, mustPanel(t, m, "version", "GET", nil, nil), jsonx.Obj("success", true, "data", nil))
+	wantJSON(t, mustPanel(t, m, "version", "GET", nil, nil), map[string]any{"success": true, "data": nil})
 	_, err = panelCall(m, "version", "GET", nil, nil)
 	if e := wantMonitorError(t, err, "CORE_ERROR", 400); runeLen(e.Message) != 300 {
 		t.Fatal(e)
@@ -889,14 +916,10 @@ func TestPanelAnswersThatAreNotJSONOrTooLarge(t *testing.T) {
 	}
 }
 
-func testDownloadSettings(t *testing.T, o *jsonx.Object) *model.SystemConfig {
+func testDownloadSettings(t *testing.T, o map[string]any) *model.SystemConfig {
 	t.Helper()
-	raw, err := jsonx.Compact(o)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var settings model.SystemConfig
-	if err := json.Unmarshal(raw, &settings); err != nil {
+	if err := json.Unmarshal(mustMarshal(t, o), &settings); err != nil {
 		t.Fatal(err)
 	}
 	return &settings

@@ -16,7 +16,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -108,7 +107,7 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 	segment := agentfake.NewSegment("primary")
 	client := &transport{urls: map[string]string{}}
 	devices := map[string]*agentfake.Agent{}
-	records := []any{}
+	records := []model.Agent{}
 	for i, id := range []string{"primary", "secondary"} {
 		host := primaryHost
 		if i == 1 {
@@ -127,27 +126,30 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 		srv := httptest.NewServer(segment.Handler(id, token, fake))
 		t.Cleanup(srv.Close)
 		client.urls[host] = srv.URL
-		a := jsonx.Obj("id", id, "name", "DNS "+id, "host", host, "port", 8082, "profile_id", "default", "service_type", "oxidns", "deployment_method", "shell", "enabled", true, "token", token, "version", "1.8.60-go")
+		a := map[string]any{"id": id, "name": "DNS " + id, "host": host, "port": 8082, "profile_id": "default", "service_type": "oxidns", "deployment_method": "shell", "enabled": true, "token": token, "version": "1.8.60-go"}
 		if paired {
 			other, role := "secondary", "primary"
 			if i == 1 {
 				other, role = "primary", "secondary"
 			}
-			a.Set("oxidns_ha", jsonx.Obj("enabled", true, "group_id", "synthetic-group", "peer_id", other, "vip", vip, "vrid", 53, "role", role))
-			a.Set("oxidns_ha_state", jsonx.Obj("status", "succeeded", "error", ""))
+			a["oxidns_ha"] = map[string]any{"enabled": true, "group_id": "synthetic-group", "peer_id": other, "vip": vip, "vrid": 53, "role": role}
+			a["oxidns_ha_state"] = map[string]any{"status": "succeeded", "error": ""}
 		}
-		records = append(records, a)
+		records = append(records, *agentModelForTest(t, a))
 	}
-	_, e = r.UpdateSystemTransaction(ctx, func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("agents", records)
-		return nil, nil
+	e = r.UpdateSystem(ctx, func(_ context.Context, doc *model.System) error {
+		doc.Agents = records
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, _, e = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("oxidns", jsonx.Obj("config_mode", "native", "native_config", config))
-		return nil, nil
+	_, e = r.UpdateProfile(ctx, "default", func(_ context.Context, doc *model.Profile) error {
+		raw, err := json.Marshal(map[string]any{"config_mode": "native", "native_config": config})
+		if err != nil {
+			return err
+		}
+		return doc.SetJSON("oxidns", raw)
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -159,7 +161,7 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 	t.Cleanup(m.Close)
 	m.SetClient(client)
 	for _, id := range []string{"primary", "secondary"} {
-		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, jsonx.Obj("service_status", "running"))); e != nil {
+		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, map[string]any{"service_status": "running"})); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -202,7 +204,7 @@ func (f *fixture) bundle(t *testing.T, id, did string, reload bool) *deploy.Bund
 	}
 	return b
 }
-func (f *fixture) publish(t *testing.T, id, did string, activate bool) *agents.Result {
+func (f *fixture) publish(t *testing.T, id, did string, activate bool) *model.Deployment {
 	t.Helper()
 	a, e := f.s.get(f.ctx, id)
 	if e != nil {
@@ -217,10 +219,7 @@ func (f *fixture) publish(t *testing.T, id, did string, activate bool) *agents.R
 	if e != nil {
 		t.Fatal(e)
 	}
-	raw, _ := json.Marshal(result)
-	var legacy agents.Result
-	_ = json.Unmarshal(raw, &legacy)
-	return &legacy
+	return result
 }
 func (f *fixture) drain(t *testing.T, rounds int) *model.HAPublicationSummary {
 	t.Helper()
@@ -369,70 +368,6 @@ func TestInitialEnableCapturesOneSource(t *testing.T) {
 	if a.OxiDNSHA != nil || b.OxiDNSHA != nil || a.OxiDNSHAPublication != nil || a.LatestDeployment.HAPublication == nil {
 		t.Fatal("disable shape/history")
 	}
-}
-
-func decodeAgent(raw *agents.Record) (*agent, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return nil, err
-	}
-	var a model.Agent
-	if err = json.Unmarshal(data, &a); err != nil {
-		return nil, err
-	}
-	return modelAgent(&a)
-}
-
-// ServiceOperation fences restart/update/uninstall against a pair reservation.
-func (s *Service) ServiceOperation(ctx context.Context, id string, op func() (*agents.Result, error), uninstall bool) (*agents.Result, error) {
-	raw, err := s.ServiceOperationJSON(ctx, id, func() (json.RawMessage, error) {
-		value, err := op()
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(value)
-	}, uninstall)
-	if err != nil {
-		return nil, err
-	}
-	var result agents.Result
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// Compatibility test codecs preserve the old assertions against the same native owner.
-func resultObject(value any, err error) (*agents.Result, error) {
-	if err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var result agents.Result
-	err = json.Unmarshal(raw, &result)
-	return &result, err
-}
-func (s *Service) Publish(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions) (*agents.Result, bool, error) {
-	result, handled, err := s.PublishPair(ctx, id, b, o)
-	value, err := resultObject(result, err)
-	return value, handled, err
-}
-func (s *Service) Deployment(ctx context.Context, id, did string) (*agents.Result, error) {
-	return resultObject(s.PairDeployment(ctx, id, did))
-}
-func (s *Service) Activate(ctx context.Context, id, did string) (*agents.Result, error) {
-	return resultObject(s.ActivatePair(ctx, id, did))
-}
-func (s *Service) Rules(ctx context.Context, id, method string) (*agents.Result, int, error) {
-	result, code, err := s.PairRules(ctx, id, method)
-	value, err := resultObject(result, err)
-	return value, code, err
 }
 
 func agentModelForTest(t testing.TB, value any) *model.Agent {

@@ -11,7 +11,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
@@ -36,13 +35,13 @@ func TestStructurePublicationIgnoresStoredForceRefresh(t *testing.T) {
 	if e := persistSync(f.ctx, f.s.m, "device", nil, &model.RuleSyncState{Status: "failed", Message: msgFailed, RetryAt: &past, ForceRefresh: ptr(true)}); e != nil {
 		t.Fatal(e)
 	}
-	_, _, e := f.s.m.Repository().UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		for _, entry := range doc.GetList("rule_configs") {
-			if r := entry.(*jsonx.Object); r.GetString("id") == "single" {
-				r.Set("value", "new-inline.example.com")
+	_, e := f.s.m.Repository().UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		for i := range p.RuleConfigs {
+			if p.RuleConfigs[i].ID == "single" {
+				p.RuleConfigs[i].Value = "new-inline.example.com"
 			}
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -78,9 +77,14 @@ func TestStructurePublicationIgnoresStoredForceRefresh(t *testing.T) {
 func TestFalsyEnabledRuleIsNotAnEffectiveChange(t *testing.T) {
 	source := func(value string, enabled any) *deploy.Source {
 		t.Helper()
-		raw := jsonx.Obj("profile_id", "default", "rule_library", []any{}, "rule_configs", []any{
-			jsonx.Obj("id", "single", "itemType", "rule", "rule_type", "DOMAIN", "value", value, "policy", "DIRECT", "enabled", enabled),
-		}, "oxidns", jsonx.Obj("direct_rules", []any{"single"}))
+		raw := map[string]any{
+			"profile_id":   "default",
+			"rule_library": []any{},
+			"rule_configs": []any{
+				map[string]any{"id": "single", "itemType": "rule", "rule_type": "DOMAIN", "value": value, "policy": "DIRECT", "enabled": enabled},
+			},
+			"oxidns": map[string]any{"direct_rules": []any{"single"}},
+		}
 		data, e := json.Marshal(raw)
 		if e != nil {
 			t.Fatal(e)
@@ -129,13 +133,13 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 	if _, e := f.s.Configure(f.ctx, "device", []byte(`{"library":false,"rules":true}`)); e != nil {
 		t.Fatal(e)
 	}
-	_, _, e := f.s.m.Repository().UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		for _, entry := range doc.GetList("rule_configs") {
-			if r := entry.(*jsonx.Object); r.GetString("id") == "single" {
-				r.Set("value", "new-inline.example.com")
+	_, e := f.s.m.Repository().UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		for i := range p.RuleConfigs {
+			if p.RuleConfigs[i].ID == "single" {
+				p.RuleConfigs[i].Value = "new-inline.example.com"
 			}
 		}
-		return nil, nil
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -184,12 +188,12 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 	if e = resumed.Run(f.ctx, "device"); e != nil {
 		t.Fatal(e)
 	}
-	r, e := f.s.m.GetDeployment(f.ctx, "device", id)
+	r, e := f.s.m.GetDeploymentModel(f.ctx, "device", id)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if r.GetString("status") != "failed" {
-		t.Fatalf("interrupted preparation %s", r.GetString("status"))
+	if r.Status != "failed" {
+		t.Fatalf("interrupted preparation %s", r.Status)
 	}
 	if state = f.state(t); state.Status != "failed" || state.Message != msgReloadFailed || value(state.RetryAt) == 0 {
 		t.Fatalf("resumed state %s %s", state.Status, state.Message)
@@ -212,17 +216,20 @@ func TestWrongTypeRuleSyncMembersReadAsAbsent(t *testing.T) {
 		{"null", nil, false},
 		{"list", []any{}, false},
 		{"string", "x", false},
-		{"settings list", jsonx.Obj("settings", []any{true}), false},
-		{"state null", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false), "state", nil), true},
-		{"state list", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false), "state", []any{"x"}), true},
-		{"state wrong members", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false), "state", jsonx.Obj("status", 5, "retry_at", "soon", "noticed_at", nil, "native_task", 7, "force_refresh", "yes")), true},
+		{"settings list", map[string]any{"settings": []any{true}}, false},
+		{"state null", map[string]any{"settings": map[string]any{"library": true, "rules": false}, "state": nil}, true},
+		{"state list", map[string]any{"settings": map[string]any{"library": true, "rules": false}, "state": []any{"x"}}, true},
+		{"state wrong members", map[string]any{"settings": map[string]any{"library": true, "rules": false}, "state": map[string]any{"status": 5, "retry_at": "soon", "noticed_at": nil, "native_task": 7, "force_refresh": "yes"}}, true},
 	}
 	for _, tt := range shapes {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, s := fixtureService(t)
-			_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-				(*list)[0].(*jsonx.Object).Set("rule_sync", tt.value)
-				return nil, nil
+			raw, err := json.Marshal(tt.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+				return sys.Agents[0].SetJSON("rule_sync", raw)
 			})
 			if e != nil {
 				t.Fatal(e)

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -68,18 +68,18 @@ func TestStateProductionLimitCancellationAndLegacySentinel(t *testing.T) {
 	original := LockTimeout
 	LockTimeout = 20 * time.Millisecond
 	t.Cleanup(func() { LockTimeout = original })
-	_, err = store.Read(context.Background(), "one")
+	_, err = store.ReadState(context.Background(), "one")
 	var busy *StateError
 	if !errors.As(err, &busy) || busy.Message != "DNS statistics state is busy" {
 		t.Fatal(err)
 	}
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err = store.Read(canceled, "one"); !errors.Is(err, context.Canceled) {
+	if _, err = store.ReadState(canceled, "one"); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	release()
-	if _, err = NewStateStore(filepath.Dir(store.Directory)).Read(context.Background(), "one"); err != nil {
+	if _, err = NewStateStore(filepath.Dir(store.Directory)).ReadState(context.Background(), "one"); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.Stat(legacy)
@@ -93,7 +93,7 @@ func TestStateProductionLimitCancellationAndLegacySentinel(t *testing.T) {
 	if !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) || string(data) != "python sentinel" {
 		t.Fatal("legacy lock changed")
 	}
-	if _, err = store.Read(context.Background(), "two"); err != nil {
+	if _, err = store.ReadState(context.Background(), "two"); err != nil {
 		t.Fatal(err)
 	}
 	path := store.Path("two")
@@ -110,13 +110,13 @@ func TestConfigurationVerificationRemainsLockedThroughLeafCAS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			stored, err := e.m.GetAgentByID(ctx, "one", true)
+			stored, err := e.m.ReadAgent(ctx, "one", true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = repository.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-				system.Set("agents", []any{stored})
-				return nil, nil
+			if err = repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+				system.Agents = []model.Agent{*stored}
+				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -124,29 +124,32 @@ func TestConfigurationVerificationRemainsLockedThroughLeafCAS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := FromAgents(manager)
-			digest, err := target(stored)
+			owner := TypedFromAgents(manager)
+			digest, err := TargetIdentity(stored)
 			if err != nil {
 				t.Fatal(err)
 			}
-			pending := jsonx.Obj("deployment_id", "publish-one", "expected_revision", revB)
+			pending := &PendingPublication{DeploymentID: "publish-one", ExpectedRevision: revB}
 			verify := func(held context.Context) error {
 				if kind == "publication" {
-					return verifyPublication(held, owner, "one", digest, pending)
+					return verifyNativePublication(held, owner, "one", digest, pending)
 				}
-				return verifyTarget(held, owner, "one", digest)
+				return verifyNativeTarget(held, owner, "one", digest)
 			}
-			state, err := e.store.Read(ctx, "one")
+			state, err := e.store.ReadState(ctx, "one")
 			if err != nil {
 				t.Fatal(err)
 			}
-			replacement := state.DeepCopy()
-			replacement.Set("generation", "11111111111111111111111111111111")
+			replacement, err := DecodeState(mustMarshal(t, state))
+			if err != nil {
+				t.Fatal(err)
+			}
+			replacement.Generation = "11111111111111111111111111111111"
 			release := holdState(t, e.store)
 			verified := make(chan struct{})
 			finished := make(chan error, 1)
 			go func() {
-				finished <- compareState(ctx, owner, e.store, "one", state.GetString("generation"), replacement, func(held context.Context) error {
+				finished <- compareDashboardState(ctx, owner, e.store, "one", state.Generation, replacement, func(held context.Context) error {
 					err := verify(held)
 					close(verified)
 					return err
@@ -156,14 +159,15 @@ func TestConfigurationVerificationRemainsLockedThroughLeafCAS(t *testing.T) {
 			changed, started := make(chan error, 1), make(chan struct{})
 			go func() {
 				close(started)
-				_, err := manager.UpdateAgents(ctx, "", func(_ context.Context, values *[]any) (any, error) {
-					agent := (*values)[0].(*jsonx.Object)
+				err := manager.EditAgents(ctx, "", func(_ context.Context, values *[]model.Agent) error {
+					agent := &(*values)[0]
 					if kind == "target" {
-						agent.Set("host", "192.0.2.24")
-					} else {
-						agent.GetObject("deployments").GetObject("publish-one").Set("status", "failed")
+						return agent.SetJSON("host", []byte(`"192.0.2.24"`))
 					}
-					return nil, nil
+					d, _ := agent.Deployments.Get("publish-one")
+					d.Status = "failed"
+					agent.Deployments.Set("publish-one", d)
+					return nil
 				})
 				changed <- err
 			}()
@@ -184,7 +188,7 @@ func TestConfigurationVerificationRemainsLockedThroughLeafCAS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = compareState(ctx, owner, e.store, "one", replacement.GetString("generation"), state, verify)
+			err = compareDashboardState(ctx, owner, e.store, "one", replacement.Generation, state, verify)
 			if kind == "target" {
 				wantMonitorError(t, err, "DASHBOARD_CHANGED", 409)
 			} else if !errors.Is(err, ErrStateConflict) {

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,14 +11,14 @@ import (
 	"testing"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 var stateRefOnce sync.Once
-var stateRefIndex map[string]map[[32]byte]string
+var stateRefIndex map[string]map[[32]byte]any
 var stateRefErr error
 
-func nativeStateExpectation(t *testing.T, section string, row any) (string, bool) {
+func nativeStateExpectation(t *testing.T, section string, row any) (any, bool) {
 	t.Helper()
 	stateRefOnce.Do(func() {
 		data, err := os.ReadFile("testdata/n810_state_native.json")
@@ -52,7 +53,7 @@ func nativeStateExpectation(t *testing.T, section string, row any) (string, bool
 				return
 			}
 		}
-		stateRefIndex = map[string]map[[32]byte]string{}
+		stateRefIndex = map[string]map[[32]byte]any{}
 		for _, row := range fixture.Rows {
 			if _, known := fixture.Sources[row.Source]; !known {
 				stateRefErr = errStateSource
@@ -70,17 +71,17 @@ func nativeStateExpectation(t *testing.T, section string, row any) (string, bool
 			}
 			want := row.Want
 			if row.WantText != "" {
-				want = []byte(row.WantText)
+				want = bytes.ReplaceAll([]byte(row.WantText), []byte(`:Infinity`), []byte(`:1e400`))
 			}
-			value, err := jsonx.Parse(want)
+			value, err := testjson.Parse(want)
 			if err != nil {
 				stateRefErr = err
 				return
 			}
 			if stateRefIndex[row.Section] == nil {
-				stateRefIndex[row.Section] = map[[32]byte]string{}
+				stateRefIndex[row.Section] = map[[32]byte]any{}
 			}
-			stateRefIndex[row.Section][sum] = dumpSorted(t, value)
+			stateRefIndex[row.Section][sum] = value
 		}
 		if len(stateRefIndex["advance"]) != 88 || len(stateRefIndex["state_files"]) != 3 || len(stateRefIndex["responses"]) != 4 || len(stateRefIndex["metrics"]) != 15 || len(stateRefIndex["target"]) != 17 || len(stateRefIndex["overview_snapshot"]) != 1 {
 			stateRefErr = fmt.Errorf("%w: counts advance=%d state=%d response=%d metric=%d target=%d", errStateSource, len(stateRefIndex["advance"]), len(stateRefIndex["state_files"]), len(stateRefIndex["responses"]), len(stateRefIndex["metrics"]), len(stateRefIndex["target"]))
@@ -89,7 +90,7 @@ func nativeStateExpectation(t *testing.T, section string, row any) (string, bool
 	if stateRefErr != nil {
 		t.Fatal(stateRefErr)
 	}
-	raw, err := jsonx.Compact(row)
+	raw, err := json.Marshal(row)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +112,8 @@ func TestNativeStateReferenceRejectsUnboundRow(t *testing.T) {
 			continue
 		}
 		matched++
-		changed := c.DeepCopy()
-		changed.Set("target", "unbound-target")
+		changed := cloneMap(c)
+		changed["target"] = "unbound-target"
 		if _, ok := nativeStateExpectation(t, "advance", changed); ok {
 			t.Fatal("changed input matched native exception")
 		}

@@ -67,7 +67,9 @@ func TestInputProjectionAndPreconditions(t *testing.T) {
 		{"nested metadata participates", func(f *fixture) { f.cfg["plugin"] = map[string]any{"created_at": "later"} }, "checking", "", true},
 		{"rule bytes", func(f *fixture) { f.cfg["test_rule"] = "DOMAIN,changed.example.test\n" }, "checking", "", true},
 		{"pending latest", func(f *fixture) { f.agent["latest_deployment"] = map[string]any{"status": "ready"} }, "unknown", "deployment_pending", false},
-		{"pending history", func(f *fixture) { f.agent["deployments"] = map[string]any{"next": map[string]any{"status": "uploading"}} }, "unknown", "deployment_pending", false},
+		{"pending history", func(f *fixture) {
+			f.agent["deployments"] = map[string]any{"next": map[string]any{"status": "uploading"}}
+		}, "unknown", "deployment_pending", false},
 		{"baseline missing", func(f *fixture) { delete(f.agent, "applied_content") }, "unknown", "baseline_missing", false},
 		{"bad fingerprint", func(f *fixture) { f.agent["applied_content"].(map[string]any)["fingerprint"] = "v1:bad" }, "unknown", "baseline_invalid", false},
 		{"profile mismatch", func(f *fixture) { f.agent["profile_id"] = "other" }, "unknown", "profile_mismatch", false},

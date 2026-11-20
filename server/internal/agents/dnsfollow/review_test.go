@@ -14,7 +14,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -102,27 +101,45 @@ func TestMalformedListenerReplyKeepsSpecificRefusal(t *testing.T) {
 func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	_, err := f.r.UpdateSystemTransaction(f.ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("backup", jsonx.Obj("auto_backup", true))
-		return nil, nil
+	err := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		on := true
+		sys.Backup.AutoBackup = &on
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fired := false
-	draft := func(document *jsonx.Object) string {
-		return document.GetObject("profiles").GetObject("default").GetObject("oxidns").GetString("native_config")
+	draft := func(doc *model.Document) string {
+		if doc == nil {
+			return ""
+		}
+		var p *model.Profile
+		for _, item := range doc.Profiles {
+			if item != nil && item.ID == "default" {
+				p = item
+				break
+			}
+		}
+		if p == nil {
+			return ""
+		}
+		raw, _ := json.Marshal(p.OxiDNS)
+		var o map[string]any
+		_ = json.Unmarshal(raw, &o)
+		s, _ := o["native_config"].(string)
+		return s
 	}
-	previous := repo.SetHooks(repo.Hooks{ConfigurationCommitted: func(_ *repo.Repository, before, after *jsonx.Object) {
+	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: func(_ *repo.Repository, before, after *model.Document) {
 		if fired || before == nil || after == nil || draft(before) == draft(after) || !strings.Contains(draft(after), "127.0.0.1:2053") {
 			return
 		}
 		fired = true
 		// A new Mihomo publication reserves right after the draft commit.
-		f.editAgent(t, "source", func(a *agents.Record) {
-			a.Set("latest_deployment", jsonx.Obj("deployment_id", "source-newer", "status", "preparing"))
+		f.editAgent(t, "source", func(a *model.Agent) {
+			_ = a.SetJSON("latest_deployment", []byte(`{"deployment_id":"source-newer","status":"preparing"}`))
 		})
-	}})
+	}}})
 	defer repo.SetHooks(previous)
 	f.publishSource(t, "source-next")
 	if e := f.s.Tick(f.ctx); e != nil {
@@ -157,8 +174,8 @@ func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 // name says "Agent", and a stored empty name stays empty in the options.
 func TestDeviceAndSourceNamesFollowStoredRecord(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
-	f.editAgent(t, "target", func(a *agents.Record) { a.Delete("name") })
-	f.editAgent(t, "source", func(a *agents.Record) { a.Set("name", "") })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = a.Clear("name") })
+	f.editAgent(t, "source", func(a *model.Agent) { a.Name = "" })
 	view, err := f.s.Options(f.ctx, "target")
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +212,7 @@ func TestPreparationFailureRecordHidesOtherAgentCredentials(t *testing.T) {
 	if st.Status != "failed" || !ok || child.Status != "failed" {
 		t.Fatalf("state %q %q child %+v", st.Status, st.Message, child)
 	}
-	raw, err := f.m.GetAgentByID(f.ctx, "target", true)
+	raw, err := f.m.ReadAgent(f.ctx, "target", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,11 +231,25 @@ func TestPreparationFailureRecordHidesOtherAgentCredentials(t *testing.T) {
 func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		edit func(*jsonx.Object)
+		edit func(*model.Agent)
 	}{
-		{"missing", func(job *jsonx.Object) { job.Delete("candidate_settings") }},
-		{"null", func(job *jsonx.Object) { job.Set("candidate_settings", nil) }},
-		{"text", func(job *jsonx.Object) { job.Set("candidate_settings", "synthetic") }},
+		{"missing", func(a *model.Agent) { _ = a.DNSFollowJob.Clear("candidate_settings") }},
+		{"null", func(a *model.Agent) {
+			raw, _ := json.Marshal(a.DNSFollowJob)
+			var m map[string]any
+			_ = json.Unmarshal(raw, &m)
+			m["candidate_settings"] = nil
+			b, _ := json.Marshal(m)
+			_ = a.SetJSON("dns_follow_job", b)
+		}},
+		{"text", func(a *model.Agent) {
+			raw, _ := json.Marshal(a.DNSFollowJob)
+			var m map[string]any
+			_ = json.Unmarshal(raw, &m)
+			m["candidate_settings"] = "synthetic"
+			b, _ := json.Marshal(m)
+			_ = a.SetJSON("dns_follow_job", b)
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, Options{}, agentfake.Options{})
@@ -234,7 +265,7 @@ func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 			if st := state(f.agent(t)); st.Status != "publishing" || f.agent(t).DNSFollowJob == nil {
 				t.Fatal(st)
 			}
-			f.editAgent(t, "target", func(a *agents.Record) { tc.edit(a.GetObject("dns_follow_job")) })
+			f.editAgent(t, "target", tc.edit)
 			before := f.profile(t)
 			f.target.mu.Lock()
 			f.target.pollOffline = false
@@ -242,12 +273,12 @@ func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 			if err := f.s.Tick(f.ctx); err != nil {
 				t.Fatal(err)
 			}
-			p, err := f.r.GetProfile(f.ctx, "default")
+			p, err := f.r.Profile(f.ctx, "default")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if p.GetObject("oxidns") == nil || f.profile(t) != before {
-				t.Fatalf("corrupt job replaced the draft: %v", p.Value("oxidns"))
+			if len(oxidnsMap(t, p)) == 0 || f.profile(t) != before {
+				t.Fatalf("corrupt job replaced the draft: %v", p.OxiDNS)
 			}
 			a := f.agent(t)
 			if st := state(a); value(st.DraftSynced) || a.DNSFollow.UpstreamSignature == a.DNSFollowJob.CandidateSignature {
@@ -263,9 +294,10 @@ func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	_, err := f.r.UpdateSystemTransaction(f.ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("backup", jsonx.Obj("auto_backup", true))
-		return nil, nil
+	err := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		on := true
+		sys.Backup.AutoBackup = &on
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -274,17 +306,34 @@ func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 	startRuntime(t, f.ctx)
 	arrived, release := make(chan struct{}), make(chan struct{})
 	fired := false
-	draft := func(document *jsonx.Object) string {
-		return document.GetObject("profiles").GetObject("default").GetObject("oxidns").GetString("native_config")
+	draft := func(doc *model.Document) string {
+		if doc == nil {
+			return ""
+		}
+		var p *model.Profile
+		for _, item := range doc.Profiles {
+			if item != nil && item.ID == "default" {
+				p = item
+				break
+			}
+		}
+		if p == nil {
+			return ""
+		}
+		raw, _ := json.Marshal(p.OxiDNS)
+		var o map[string]any
+		_ = json.Unmarshal(raw, &o)
+		s, _ := o["native_config"].(string)
+		return s
 	}
-	previous := repo.SetHooks(repo.Hooks{ConfigurationCommitted: func(_ *repo.Repository, before, after *jsonx.Object) {
+	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: func(_ *repo.Repository, before, after *model.Document) {
 		if fired || draft(before) == draft(after) || !strings.Contains(draft(after), "127.0.0.1:2053") {
 			return
 		}
 		fired = true
 		close(arrived)
 		<-release
-	}})
+	}}})
 	defer repo.SetHooks(previous)
 	done := make(chan error, 1)
 	go func() { done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()

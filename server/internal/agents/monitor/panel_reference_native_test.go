@@ -5,13 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
-func nativePanelExpectation(t *testing.T, c *jsonx.Object, got any) bool {
+func nativePanelExpectation(t *testing.T, c map[string]any, got any) bool {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n810_panel_native.json")
 	if err != nil {
@@ -42,7 +43,7 @@ func nativePanelExpectation(t *testing.T, c *jsonx.Object, got any) bool {
 	if hex.EncodeToString(bound[:]) != fixture.RowSHA256 {
 		t.Fatal("native row binding changed")
 	}
-	raw, err = jsonx.Compact(c)
+	raw, err = json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +54,13 @@ func nativePanelExpectation(t *testing.T, c *jsonx.Object, got any) bool {
 	if sum = sha256.Sum256(raw); sum != bound {
 		return false
 	}
-	expected, err := jsonx.ParseString(fixture.NativeText)
+	expectedText := strings.ReplaceAll(fixture.NativeText, `:Infinity`, `:1e400`)
+	expected, err := testjson.Parse([]byte(expectedText))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sortedDump(t, got) != sortedDump(t, expected) {
-		t.Fatalf("nonstandard JSON reply: got %s want %s", sortedDump(t, got), sortedDump(t, expected))
+	if diff := testjson.Diff(expected, got); diff != "" {
+		t.Fatalf("nonstandard JSON reply: %s", diff)
 	}
 	return true
 }

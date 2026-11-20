@@ -11,14 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/redact"
@@ -32,9 +30,14 @@ func fixtureService(t *testing.T) (context.Context, *Service) {
 		t.Fatal(e)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	_, e = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "device", "name", "Synthetic", "host", "127.0.0.1", "port", 18080, "token", "synthetic-rule-token", "profile_id", "default", "service_type", "mihomo", "version", MinAgentVersion, "enabled", true)})
-		return nil, nil
+	e = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		enabled := true
+		sys.Agents = []model.Agent{{
+			ID: "device", Name: "Synthetic", Host: "127.0.0.1", Port: 18080,
+			Token: "synthetic-rule-token", ProfileID: "default", ServiceType: "mihomo",
+			Version: MinAgentVersion, Enabled: &enabled,
+		}}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -65,11 +68,11 @@ func TestConfigureAndStateCommitBoundaries(t *testing.T) {
 	if e != nil || !view.Settings.Library || view.State.Status != "pending" {
 		t.Fatalf("configure %+v %v", view, e)
 	}
-	record, e := s.m.GetAgentByID(ctx, "device", false)
+	record, e := s.m.ReadAgent(ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if SettingsFor(record) != (Settings{Library: true}) {
+	if AgentSettings(record) != (Settings{Library: true}) {
 		t.Fatal("stored settings")
 	}
 	before := string(systemBytes(t, s))
@@ -154,21 +157,30 @@ func TestRealRuntimeShutdownAndDisconnect(t *testing.T) {
 }
 func TestHASettingsPairAtomicity(t *testing.T) {
 	ctx, s := fixtureService(t)
-	_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		a := (*list)[0].(*jsonx.Object)
-		a.Set("service_type", "oxidns")
-		a.Set("oxidns_ha", jsonx.Obj("enabled", true, "peer_id", "peer", "group_id", "group", "role", "primary"))
-		b := a.DeepCopy()
-		b.Set("id", "peer")
-		b.GetObject("oxidns_ha").Set("peer_id", "device")
-		b.GetObject("oxidns_ha").Set("role", "secondary")
-		*list = append(*list, b)
-		return nil, nil
+	e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.Agents[0].ServiceType = "oxidns"
+		if err := sys.Agents[0].SetJSON("oxidns_ha", []byte(`{"enabled":true,"peer_id":"peer","group_id":"group","role":"primary"}`)); err != nil {
+			return err
+		}
+		raw, err := json.Marshal(sys.Agents[0])
+		if err != nil {
+			return err
+		}
+		var b model.Agent
+		if err := json.Unmarshal(raw, &b); err != nil {
+			return err
+		}
+		b.ID = "peer"
+		if err := b.SetJSON("oxidns_ha", []byte(`{"enabled":true,"peer_id":"device","group_id":"group","role":"secondary"}`)); err != nil {
+			return err
+		}
+		sys.Agents = append(sys.Agents, b)
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	pair, e := s.m.HAPair(ctx, "device")
+	pair, e := s.m.ReadHAPair(ctx, "device")
 	if e != nil || len(pair) != 2 {
 		t.Fatal(pair, e)
 	}
@@ -177,21 +189,24 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, id := range []string{"device", "peer"} {
-		a, e := s.m.GetAgentByID(ctx, id, false)
-		if e != nil || SettingsFor(a) != (Settings{Library: true}) {
+		a, e := s.m.ReadAgent(ctx, id, false)
+		if e != nil || AgentSettings(a) != (Settings{Library: true}) {
 			t.Fatal("pair settings", e)
 		}
 	}
 
-	_, e = s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		(*list)[0].(*jsonx.Object).Set(agents.HAField, jsonx.Obj("status", "preparing", "enable", jsonx.Obj("peer_id", "peer")))
-		return nil, nil
+	e = s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		return sys.Agents[0].SetJSON(agents.HAField, []byte(`{"status":"preparing","enable":{"peer_id":"peer"}}`))
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
+	pairPtrs := make([]*model.Agent, len(pair))
+	for i := range pair {
+		pairPtrs[i] = &pair[i]
+	}
 	beforeEnable := systemBytes(t, s)
-	if e = configureLegacyPair(ctx, s.m, pair, Settings{Rules: true}); e == nil || e.Error() != msgPairEnabling {
+	if e = configurePair(ctx, s.m, pairPtrs, Settings{Rules: true}); e == nil || e.Error() != msgPairEnabling {
 		t.Fatalf("concurrent enable guard: %v", e)
 	}
 	if e = persistSync(ctx, s.m, "device", &Settings{Rules: true}, nil); e == nil || e.Error() != msgPairEnabling {
@@ -200,23 +215,22 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 	if !bytes.Equal(beforeEnable, systemBytes(t, s)) {
 		t.Fatal("enable race overwrote settings")
 	}
-	_, e = s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		(*list)[0].(*jsonx.Object).Delete(agents.HAField)
-		return nil, nil
+	e = s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		return sys.Agents[0].Clear(agents.HAField)
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
 	// A changed relationship cannot be overwritten by an already captured pair.
-	_, e = s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		(*list)[1].(*jsonx.Object).GetObject("oxidns_ha").Set("group_id", "other")
-		return nil, nil
+	e = s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.Agents[1].OxiDNSHA.GroupID = "other"
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
 	before := systemBytes(t, s)
-	if e = configureLegacyPair(ctx, s.m, pair, Settings{Rules: true}); e == nil {
+	if e = configurePair(ctx, s.m, pairPtrs, Settings{Rules: true}); e == nil {
 		t.Fatal("changed pair accepted")
 	}
 	if !reflect.DeepEqual(before, systemBytes(t, s)) {
@@ -227,27 +241,35 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 func TestTaskRowAndPinnedWithheld(t *testing.T) {
 	f := newWorkerFixture(t, "oxidns")
 	ctx := f.ctx
-	record, e := f.s.m.GetAgentByID(ctx, "device", false)
+	if e := f.s.saveState(ctx, "device", model.RuleSyncState{Status: "blocked", Message: msgBaseline}); e != nil {
+		t.Fatal(e)
+	}
+	record, e := f.s.m.ReadAgent(ctx, "device", false)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = f.s.saveState(ctx, "device", model.RuleSyncState{Status: "blocked", Message: msgBaseline}); e != nil {
-		t.Fatal(e)
-	}
-	record, e = f.s.m.GetAgentByID(ctx, "device", false)
+	row, e := agentTaskRow(ctx, record, taskstatus.Snapshot{})
 	if e != nil {
 		t.Fatal(e)
 	}
-	row, e := taskRow(ctx, record, jsonx.NewObject())
-	if e != nil {
-		t.Fatal(e)
-	}
-	if row == nil || row.GetString("key") != "agent_rule_sync:device" || row.GetString("last_status") != "skipped" || row.GetString("last_error") != msgBaseline {
+	if row == nil || row.Key != "agent_rule_sync:device" || row.LastStatus == nil || *row.LastStatus != "skipped" || row.LastError == nil || *row.LastError != msgBaseline {
 		t.Fatal(row)
 	}
-	_, _, e = f.s.m.Repository().UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.GetObject("oxidns").Set("rule_actions", jsonx.Obj("set-a", jsonx.Obj("action", "upstream", "source", "local", "upstream", jsonx.Obj("addr", "udp://192.0.2.99"))))
-		return nil, nil
+	_, e = f.s.m.Repository().UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		raw, err := json.Marshal(p.OxiDNS)
+		if err != nil {
+			return err
+		}
+		var o map[string]any
+		if err := json.Unmarshal(raw, &o); err != nil {
+			return err
+		}
+		o["rule_actions"] = map[string]any{"set-a": map[string]any{"action": "upstream", "source": "local", "upstream": map[string]any{"addr": "udp://192.0.2.99"}}}
+		updated, err := json.Marshal(o)
+		if err != nil {
+			return err
+		}
+		return p.SetJSON("oxidns", updated)
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -271,15 +293,23 @@ func TestTaskRowAndPinnedWithheld(t *testing.T) {
 
 func TestRoundAdmissionRotationAndDrain(t *testing.T) {
 	ctx, s := fixtureService(t)
-	_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		first := (*list)[0].(*jsonx.Object)
-		first.Set("rule_sync", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false)))
-		for i := 1; i < 5; i++ {
-			record := first.DeepCopy()
-			record.Set("id", fmt.Sprintf("device-%d", i))
-			*list = append(*list, record)
+	e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		if err := sys.Agents[0].SetJSON("rule_sync", []byte(`{"settings":{"library":true,"rules":false}}`)); err != nil {
+			return err
 		}
-		return nil, nil
+		raw, err := json.Marshal(sys.Agents[0])
+		if err != nil {
+			return err
+		}
+		for i := 1; i < 5; i++ {
+			var record model.Agent
+			if err := json.Unmarshal(raw, &record); err != nil {
+				return err
+			}
+			record.ID = fmt.Sprintf("device-%d", i)
+			sys.Agents = append(sys.Agents, record)
+		}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -298,17 +328,13 @@ func TestRoundAdmissionRotationAndDrain(t *testing.T) {
 			t.Fatal(e)
 		}
 		lifecycle.Stop(20 * time.Second)
-		records, e := s.m.GetAllAgents(ctx, false)
+		records, e := s.m.ReadAgents(ctx, false, nil)
 		if e != nil {
 			t.Fatal(e)
 		}
 		changed := 0
-		for _, r := range records {
-			a, e := decodeAgent(r)
-			if e != nil {
-				t.Fatal(e)
-			}
-			if stateOf(a).Message == msgOffline {
+		for i := range records {
+			if stateOf(&records[i]).Message == msgOffline {
 				changed++
 			}
 		}
@@ -336,10 +362,10 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer root.Close()
-	record := jsonx.Obj("id", "a16-secret-presence", "name", "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token", "token", "synthetic-rule-token", "status", "online", "last_heartbeat", "2026-01-02T03:04:05Z")
-	observeLegacyPresence(ctx, s.m, []*agents.Record{record})
-	record.Set("status", "offline")
-	observeLegacyPresence(ctx, s.m, []*agents.Record{record})
+	record := agentModelForTest(t, map[string]any{"id": "a16-secret-presence", "name": "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token", "token": "synthetic-rule-token", "status": "online", "last_heartbeat": "2026-01-02T03:04:05Z"})
+	observePresence(ctx, s.m, []*model.Agent{record})
+	record.Status = "offline"
+	observePresence(ctx, s.m, []*model.Agent{record})
 	output := logs.String()
 	if !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") {
 		t.Fatal("presence transition/username missing", output)
@@ -347,24 +373,24 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 	if strings.Contains(output, "presence-password") || strings.Contains(output, "synthetic-rule-token") {
 		t.Fatal("presence credential leak", output)
 	}
-	if record.GetString("name") != "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token" {
+	if record.Name != "alice https://uri-user:presence-password@example.com/?token=synthetic-rule-token" {
 		t.Fatal("presence mutated registry")
 	}
 	// N8's shared redactor returns native JSON; the adapter must still handle
 	// historical non-string metadata without exposing nested credentials.
 	logs.Reset()
-	nested := jsonx.Obj("id", "a16-nested-presence", "name", jsonx.Obj("label", "alice", "token", "synthetic-rule-token"), "token", "synthetic-rule-token", "status", "online")
+	nested := agentModelForTest(t, map[string]any{"id": "a16-nested-presence", "name": map[string]any{"label": "alice", "token": "synthetic-rule-token"}, "token": "synthetic-rule-token", "status": "online"})
 	before, e := json.Marshal(nested)
 	if e != nil {
 		t.Fatal(e)
 	}
-	observeLegacyPresence(ctx, s.m, []*agents.Record{nested})
-	nested.Set("status", "offline")
-	observeLegacyPresence(ctx, s.m, []*agents.Record{nested})
+	observePresence(ctx, s.m, []*model.Agent{nested})
+	nested.Status = "offline"
+	observePresence(ctx, s.m, []*model.Agent{nested})
 	if output := logs.String(); !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") || strings.Contains(output, "synthetic-rule-token") {
 		t.Fatal("nested presence metadata was lost or leaked", output)
 	}
-	nested.Set("status", "online")
+	nested.Status = "online"
 	after, e := json.Marshal(nested)
 	if e != nil || !bytes.Equal(before, after) {
 		t.Fatal("nested presence metadata mutated registry", e)
@@ -374,22 +400,31 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 func TestProfileFilteringKeepsLiteralDefaultAndDisabledAgents(t *testing.T) {
 	ctx, s := fixtureService(t)
 	r := s.m.Repository()
-	if _, e := r.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), ""); e != nil {
+	if _, e := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := r.SetDefaultProfile(ctx, "other"); e != nil {
 		t.Fatal(e)
 	}
-	_, e := s.m.UpdateAgents(ctx, "", func(_ context.Context, list *[]any) (any, error) {
-		original := (*list)[0].(*jsonx.Object)
-		unbound := original.DeepCopy()
-		unbound.Set("id", "other-device")
-		unbound.Set("profile_id", "other")
-		disabled := original.DeepCopy()
-		disabled.Set("id", "disabled")
-		disabled.Set("enabled", false)
-		*list = append(*list, unbound, disabled)
-		return nil, nil
+	e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		raw, err := json.Marshal(sys.Agents[0])
+		if err != nil {
+			return err
+		}
+		var unbound, disabled model.Agent
+		if err := json.Unmarshal(raw, &unbound); err != nil {
+			return err
+		}
+		unbound.ID = "other-device"
+		unbound.ProfileID = "other"
+		if err := json.Unmarshal(raw, &disabled); err != nil {
+			return err
+		}
+		disabled.ID = "disabled"
+		off := false
+		disabled.Enabled = &off
+		sys.Agents = append(sys.Agents, unbound, disabled)
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -405,131 +440,27 @@ func TestProfileFilteringKeepsLiteralDefaultAndDisabledAgents(t *testing.T) {
 	}
 }
 
-type unreadHistory struct{}
-
-func (unreadHistory) MarshalJSON() ([]byte, error) {
-	return nil, errors.New("history must not be encoded")
-}
-func TestSettingsAndAgentViewNeverReadHistory(t *testing.T) {
+func TestAgentSettingsStrictBooleans(t *testing.T) {
 	tests := []struct {
-		name     string
-		settings *jsonx.Object
-		want     Settings
+		name string
+		raw  string
+		want Settings
 	}{
-		{"strict booleans", jsonx.Obj("library", true, "rules", false), Settings{Library: true}},
-		{"historical wrong type", jsonx.Obj("library", true, "rules", "true"), Settings{Library: true}},
-		{"null", jsonx.Obj("library", nil, "rules", nil), Settings{}},
+		{"strict booleans", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":false}}}`, Settings{Library: true}},
+		{"historical wrong type", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":"true"}}}`, Settings{Library: true}},
+		{"null", `{"id":"device","rule_sync":{"settings":{"library":null,"rules":null}}}`, Settings{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record := jsonx.Obj("id", "device", "rule_sync", jsonx.Obj("settings", tt.settings), "deployments", unreadHistory{}, "ipv6_verifications", unreadHistory{})
-			if got := SettingsFor(record); got != tt.want {
-				t.Fatalf("%+v want %+v", got, tt.want)
+			var record model.Agent
+			if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
+				t.Fatal(err)
 			}
-			if _, e := decodeAgent(record); e != nil {
-				t.Fatal(e)
+			if got := AgentSettings(&record); got != tt.want {
+				t.Fatalf("%+v want %+v", got, tt.want)
 			}
 		})
 	}
-}
-
-func decodeAgent(record *agents.Record) (*model.Agent, error) {
-	raw, err := json.Marshal(agentView(record))
-	if err != nil {
-		return nil, fmt.Errorf("encode agent snapshot: %w", err)
-	}
-	var a model.Agent
-	if err = json.Unmarshal(raw, &a); err != nil {
-		return nil, fmt.Errorf("decode agent snapshot: %w", err)
-	}
-	return &a, nil
-}
-
-// SettingsFor reads strictly boolean scopes; historical wrong types are off.
-func SettingsFor(record *agents.Record) Settings {
-	sync := record.GetObject("rule_sync")
-	if sync == nil {
-		return Settings{}
-	}
-	raw, err := json.Marshal(sync.Value("settings"))
-	if err != nil {
-		return Settings{}
-	}
-	var s model.RuleSyncSettings
-	if json.Unmarshal(raw, &s) != nil {
-		return Settings{}
-	}
-	return Settings{Library: s.Library != nil && *s.Library, Rules: s.Rules != nil && *s.Rules}
-}
-
-// agentView deliberately omits history members; none of this package's typed
-// reads needs them, and the light-read sentinel must never enter a JSON codec.
-func agentView(record *agents.Record) *jsonx.Object {
-	out := jsonx.NewObject()
-	if record == nil {
-		return out
-	}
-	for key, v := range record.All() {
-		if !slices.Contains(repo.AgentHistoryFields, key) {
-			out.Set(key, v)
-		}
-	}
-	return out
-}
-
-func taskRow(ctx context.Context, record *agents.Record, statuses *jsonx.Object) (*jsonx.Object, error) {
-	a, err := decodeAgent(record)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(statuses)
-	if err != nil {
-		return nil, err
-	}
-	var receipts taskstatus.Snapshot
-	if err := json.Unmarshal(data, &receipts); err != nil {
-		return nil, err
-	}
-	row, err := agentTaskRow(ctx, a, receipts)
-	if err != nil || row == nil {
-		return nil, err
-	}
-	data, err = json.Marshal(row)
-	if err != nil {
-		return nil, err
-	}
-	var out jsonx.Object
-	err = json.Unmarshal(data, &out)
-	return &out, err
-}
-func configureLegacyPair(ctx context.Context, m *agents.Manager, records []*agents.Record, settings Settings) error {
-	rows := make([]*model.Agent, 0, len(records))
-	for _, record := range records {
-		a, err := decodeAgent(record)
-		if err != nil {
-			return err
-		}
-		rows = append(rows, a)
-	}
-	return configurePair(ctx, m, rows, settings)
-}
-func observeLegacyPresence(ctx context.Context, m *agents.Manager, records []*agents.Record) {
-	rows := make([]*model.Agent, 0, len(records))
-	for _, record := range records {
-		a, err := decodeAgent(record)
-		if err != nil {
-			panic(err)
-		}
-		rows = append(rows, a)
-	}
-	observePresence(ctx, m, rows)
-}
-func fetchLegacySnapshot(ctx context.Context, m *agents.Manager, record *agents.Record, baseline Baseline) (*deploy.Bundle, error) {
-	a, err := decodeAgent(record)
-	if err != nil {
-		return nil, err
-	}
-	return FetchSnapshot(ctx, m, a, baseline)
 }
 
 func TestTypedRuleSyncSecretsUseSystemConfig(t *testing.T) {

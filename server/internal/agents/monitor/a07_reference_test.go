@@ -8,9 +8,12 @@ package monitor
 // by operation with every stored row compared.
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,49 +22,47 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
-func loadA07(t *testing.T, fields ...string) *jsonx.Object {
+func loadA07(t *testing.T, fields ...string) map[string]any {
 	t.Helper()
 	return referenceFields(t, "testdata/a07_reference.json.gz", fields...)
 }
 
-func sortedDump(t *testing.T, v any) string {
-	t.Helper()
-	b, err := jsonx.Encode(v, jsonx.Options{SortKeys: true, EnsureASCII: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
 // outcomeOf is the corpus' outcome of a call: {"ok": result}, the
 // MonitorError fields, or {"exception": ...} for any other error.
-func outcomeOf(result any, err error) any {
+func outcomeOf(result any, err error) map[string]any {
 	if err == nil {
-		return jsonx.Obj("ok", result)
+		return map[string]any{"ok": result}
 	}
-	var flushErr *FlushError
+	var flushErr *CacheOperationError
 	if errors.As(err, &flushErr) {
-		return jsonx.Obj("error", flushErr.Err.Code, "status", flushErr.Err.Status, "message", flushErr.Err.Message,
-			"flushed", flushErr.Flushed)
+		flushed := flushErr.Flushed
+		if flushed == nil {
+			flushed = []string{}
+		}
+		return map[string]any{
+			"error": flushErr.Err.Code, "status": flushErr.Err.Status,
+			"message": flushErr.Err.Message, "flushed": flushed,
+		}
 	}
 	var e *Error
 	if errors.As(err, &e) {
-		return jsonx.Obj("error", e.Code, "status", e.Status, "message", e.Message)
+		return map[string]any{"error": e.Code, "status": e.Status, "message": e.Message}
 	}
-	return jsonx.Obj("exception", "")
+	return map[string]any{"exception": ""}
 }
 
-func caseClient(c *jsonx.Object) *replyClient {
-	reply := c.GetList("reply")
+func caseClient(c map[string]any) *replyClient {
+	reply := asList(c["reply"])
 	client := &replyClient{}
 	if reply[0] == "raise" {
 		client.add(errors.New("refused"))
 	} else {
 		body, _ := base64.StdEncoding.DecodeString(reply[1].(string))
-		status, _ := jsonx.AsInt(reply[0])
+		status := asInt64(reply[0])
 		client.add(&agents.Response{StatusCode: int(status), Body: body})
 	}
 	return client
@@ -84,51 +85,61 @@ func seenOf(client *replyClient) []any {
 		if r.Body != nil {
 			data = string(r.Body)
 		}
-		headers := jsonx.NewObject()
+		headers := map[string]any{}
 		for _, key := range []string{"Authorization", "Accept", "Content-Type"} {
 			if value := r.Header.Get(key); value != "" {
-				headers.Set(key, value)
+				headers[key] = value
 			}
 		}
-		out = append(out, jsonx.Obj("method", r.Method, "url", lowerOrigin(r.URL), "data", data, "headers", headers,
-			"timeout", []any{jsonx.Int(int64(r.Timeout.Connect.Seconds())), jsonx.Int(int64(r.Timeout.Read.Seconds()))},
-			"trust_env", !r.NoProxy, "allow_redirects", !r.NoRedirects, "stream", r.MaxBody > 0))
+		out = append(out, map[string]any{
+			"method": r.Method, "url": lowerOrigin(r.URL), "data": data, "headers": headers,
+			"timeout":         []any{int64(r.Timeout.Connect.Seconds()), int64(r.Timeout.Read.Seconds())},
+			"trust_env":       !r.NoProxy,
+			"allow_redirects": !r.NoRedirects,
+			"stream":          r.MaxBody > 0,
+		})
 	}
 	return out
 }
 
-func normalizeSeen(t *testing.T, text string) string {
-	value, err := jsonx.ParseString(text)
+func normalizeSeen(t *testing.T, text string) any {
+	t.Helper()
+	value := parseJSONVal(t, []byte(text))
+	for _, item := range asList(value) {
+		o := asMap(item)
+		o["url"] = lowerOrigin(asStr(o["url"]))
+	}
+	parsed, err := testjson.Parse(mustMarshal(t, value))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range value.([]any) {
-		o := item.(*jsonx.Object)
-		o.Set("url", lowerOrigin(o.GetString("url")))
-	}
-	return sortedDump(t, value)
+	return parsed
 }
 
-func caseManager(t *testing.T, c *jsonx.Object, client *replyClient) (*fakeManager, string) {
-	agent := c.GetObject("agent")
-	id, _ := agent.Value("id").(string)
-	return &fakeManager{agents: map[string]*jsonx.Object{id: agent.DeepCopy()}, dataDir: t.TempDir(), client: client}, id
+func caseManager(t *testing.T, c map[string]any, client *replyClient) (*fakeManager, string) {
+	agentMap := asMap(c["agent"])
+	id := asStr(agentMap["id"])
+	return &fakeManager{agents: map[string]*model.Agent{id: mustAgentMap(agentMap)}, dataDir: t.TempDir(), client: client}, id
 }
 
 // nonLatin1Token reports cases whose token http.client could not encode:
 // the corpus' patched Session.request never reaches http.client, so Python
 // answered them; the real requests stack raises UnicodeEncodeError
 // (AGENT_UNREACHABLE), as the Flask differential confirms.
-func nonLatin1Token(c *jsonx.Object) bool {
-	token, ok := c.GetObject("agent").Value("token").(string)
+func nonLatin1Token(c map[string]any) bool {
+	token, ok := asMap(c["agent"])["token"].(string)
 	if !ok {
 		return false
 	}
-	_, ok = latin1(token)
-	return !ok
+	for _, r := range token {
+		if r > 0xff {
+			return true
+		}
+	}
+	return false
 }
 
-func compareCall(t *testing.T, label string, c *jsonx.Object, result any, err error, client *replyClient) {
+func compareCall(t *testing.T, label string, c map[string]any, result any, err error, client *replyClient) {
 	t.Helper()
 	if nonLatin1Token(c) {
 		wantMonitorError(t, err, "AGENT_UNREACHABLE", 502)
@@ -144,25 +155,40 @@ func compareCall(t *testing.T, label string, c *jsonx.Object, result any, err er
 		return
 	}
 	got := outcomeOf(result, err)
-	if nativePanelExpectation(t, c, got) {
-		if g, w := sortedDump(t, seenOf(client)), normalizeSeen(t, c.GetString("seen")); g != w {
-			t.Fatalf("native refusal request changed: %s vs %s", g, w)
-		}
-		return
-	}
-	want, perr := jsonx.ParseString(c.GetString("outcome"))
+	gotVal, perr := testjson.Parse(mustMarshal(t, got))
 	if perr != nil {
 		t.Fatal(perr)
 	}
-	if _, ok := want.(*jsonx.Object).Get("exception"); ok {
-		if _, raised := got.(*jsonx.Object).Get("exception"); !raised {
-			t.Errorf("%s: Python raised %s, Go %s", label, c.GetString("outcome"), sortedDump(t, got))
+	if nativePanelExpectation(t, c, gotVal) {
+		if diff := diffRefVal(t, seenOf(client), normalizeSeen(t, asStr(c["seen"]))); diff != "" {
+			t.Fatalf("native refusal request changed: %s", diff)
 		}
-	} else if sortedDump(t, got) != sortedDump(t, want) {
-		t.Errorf("%s:\n go %s\n py %s", label, sortedDump(t, got), sortedDump(t, want))
+		return
 	}
-	if g, w := sortedDump(t, seenOf(client)), normalizeSeen(t, c.GetString("seen")); g != w {
-		t.Errorf("%s seen:\n go %s\n py %s", label, g, w)
+	// N8-11: CPython's 4300-digit int_max_str_digits cap is retired; native
+	// CallPanel preserves valid 4301-digit RFC 8259 integer literals intact.
+	if reply := asList(c["reply"]); len(reply) == 2 && asInt64(reply[0]) == 200 {
+		if decoded, dErr := base64.StdEncoding.DecodeString(asStr(reply[1])); dErr == nil && string(decoded) == `{"n": `+strings.Repeat("1", 4301)+`}` {
+			want := `{"ok":{"success":true,"data":{"n":` + strings.Repeat("1", 4301) + `}}}`
+			if diff := diffRefJSON(t, got, want); diff != "" {
+				t.Errorf("%s native 4301-digit reply: %s", label, diff)
+			}
+			if diff := diffRefVal(t, seenOf(client), normalizeSeen(t, asStr(c["seen"]))); diff != "" {
+				t.Errorf("%s seen: %s", label, diff)
+			}
+			return
+		}
+	}
+	wantMap := parseJSONMap(t, []byte(asStr(c["outcome"])))
+	if _, ok := wantMap["exception"]; ok {
+		if _, raised := got["exception"]; !raised {
+			t.Errorf("%s: Python raised %s, Go %v", label, asStr(c["outcome"]), got)
+		}
+	} else if diff := diffRefJSON(t, got, asStr(c["outcome"])); diff != "" {
+		t.Errorf("%s: %s", label, diff)
+	}
+	if diff := diffRefVal(t, seenOf(client), normalizeSeen(t, asStr(c["seen"]))); diff != "" {
+		t.Errorf("%s seen: %s", label, diff)
 	}
 }
 
@@ -175,55 +201,112 @@ func pairsOf(list []any) [][2]string {
 	return out
 }
 
+func stringSliceOf(value any) ([]string, bool) {
+	list, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, len(list))
+	for i, item := range list {
+		s, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		out[i] = s
+	}
+	return out, true
+}
+
+func callCacheCorpus(ctx context.Context, m Registry, id, method string, value any) (*CacheResult, error) {
+	var tags []string
+	if value != nil {
+		if list, ok := value.([]any); ok {
+			for _, item := range list {
+				if _, isList := item.([]any); isList {
+					return nil, errors.New("cache tags must be strings")
+				}
+				if _, isMap := item.(map[string]any); isMap {
+					return nil, errors.New("cache tags must be strings")
+				}
+			}
+		}
+		var ok bool
+		tags, ok = stringSliceOf(value)
+		if !ok || !validTags(tags, true) {
+			return nil, CacheFail("INVALID_REQUEST", 400)
+		}
+	}
+	return CallCache(ctx, m, id, method, tags)
+}
+
+func callRuleUpdateCorpus(ctx context.Context, m Registry, id, method string, value any) (any, int, error) {
+	var paths []string
+	if value != nil {
+		var ok bool
+		paths, ok = stringSliceOf(value)
+		if !ok {
+			return nil, 0, RuleUpdateFail("INVALID_REQUEST", 400)
+		}
+	}
+	result, status, err := CallRuleUpdate(ctx, m, id, method, paths)
+	if err != nil {
+		return nil, status, err
+	}
+	if result.Pair != nil {
+		return json.RawMessage(result.Pair), status, nil
+	}
+	return result, status, nil
+}
+
 func TestReferencePanelCalls(t *testing.T) {
 	ref := loadA07(t, "panel")
-	for i, item := range ref.GetList("panel") {
-		c := item.(*jsonx.Object)
+	for i, item := range asList(ref["panel"]) {
+		c := asMap(item)
 		client := caseClient(c)
 		m, id := caseManager(t, c, client)
-		result, err := PanelCall(ctx, m, id, c.GetString("resource"), c.GetString("method"), pairsOf(c.GetList("args")),
-			c.Value("body"), "")
-		compareCall(t, sortedDump(t, jsonx.Obj("i", i, "resource", c.Value("resource"), "args", c.Value("args"))), c, result, err, client)
+		var body json.RawMessage
+		if c["body"] != nil {
+			body = mustMarshal(t, c["body"])
+		}
+		result, err := CallPanel(ctx, m, id, asStr(c["resource"]), asStr(c["method"]), pairsOf(asList(c["args"])), body, "")
+		compareCall(t, fmt.Sprintf("i=%d resource=%v args=%v", i, c["resource"], c["args"]), c, result, err, client)
 	}
 }
 
 func TestReferenceCacheCalls(t *testing.T) {
 	ref := loadA07(t, "cache")
-	for i, item := range ref.GetList("cache") {
-		c := item.(*jsonx.Object)
+	for i, item := range asList(ref["cache"]) {
+		c := asMap(item)
 		client := caseClient(c)
 		m, id := caseManager(t, c, client)
-		result, err := CacheCall(ctx, m, id, c.GetString("method"), c.Value("tags"))
-		compareCall(t, sortedDump(t, jsonx.Obj("i", i, "tags", c.Value("tags"), "reply", c.Value("reply"))), c, result, err, client)
+		result, err := callCacheCorpus(ctx, m, id, asStr(c["method"]), c["tags"])
+		compareCall(t, fmt.Sprintf("i=%d tags=%v reply=%v", i, c["tags"], c["reply"]), c, result, err, client)
 	}
 }
 
 func TestReferenceRuleUpdateCalls(t *testing.T) {
 	ref := loadA07(t, "rule_update")
-	for i, item := range ref.GetList("rule_update") {
-		c := item.(*jsonx.Object)
+	for i, item := range asList(ref["rule_update"]) {
+		c := asMap(item)
 		client := caseClient(c)
 		m, id := caseManager(t, c, client)
-		data, status, err := RuleUpdateCall(ctx, m, id, c.GetString("method"), c.Value("paths"))
+		data, status, err := callRuleUpdateCorpus(ctx, m, id, asStr(c["method"]), c["paths"])
 		var result any
 		if err == nil {
-			result = []any{data, jsonx.Int(int64(status))}
+			result = []any{data, status}
 		}
-		compareCall(t, sortedDump(t, jsonx.Obj("i", i, "paths_len", len(c.GetList("paths")), "reply", c.Value("reply"))), c, result, err, client)
+		compareCall(t, fmt.Sprintf("i=%d paths_len=%d reply=%v", i, len(asList(c["paths"])), c["reply"]), c, result, err, client)
 	}
 }
 
 func TestReferencePanelHelpers(t *testing.T) {
 	ref := loadA07(t, "core_version_texts", "last_complete_slot_end", "newer_release")
-	for _, item := range ref.GetList("newer_release") {
+	for _, item := range asList(ref["newer_release"]) {
 		c := item.([]any)
-		raw, encodeErr := jsonx.Compact(c)
-		if encodeErr != nil {
-			t.Fatal(encodeErr)
-		}
+		raw := mustMarshal(t, c)
 		if native, bound := nativeVersionExpected(t, "newer_release", raw); bound {
 			got, err := newerRelease(c[0].(string), c[1].(string))
-			if err != nil || got != native.Value("result") {
+			if err != nil || got != native["result"] {
 				t.Errorf("native release: %v %v want %v", got, err, native)
 			}
 			continue
@@ -232,7 +315,7 @@ func TestReferencePanelHelpers(t *testing.T) {
 			t.Errorf("newer_release(%q, %q) = %v", c[0], c[1], got)
 		}
 	}
-	for _, item := range ref.GetList("core_version_texts") {
+	for _, item := range asList(ref["core_version_texts"]) {
 		c := item.([]any)
 		raw, _ := base64.StdEncoding.DecodeString(c[0].(string))
 		version := trimText(agents.DecodeUTF8Replace(raw))
@@ -240,14 +323,14 @@ func TestReferencePanelHelpers(t *testing.T) {
 		if coreVersionPattern.MatchString(version) {
 			got = version
 		}
-		if !jsonx.Equal(got, c[1]) {
+		if got != c[1] {
 			t.Errorf("version.txt %q: %v want %v", raw, got, c[1])
 		}
 	}
-	for _, item := range ref.GetList("last_complete_slot_end") {
+	for _, item := range asList(ref["last_complete_slot_end"]) {
 		c := item.([]any)
-		n, _ := jsonx.AsInt(c[0])
-		want, _ := jsonx.AsInt(c[1])
+		n := asInt64(c[0])
+		want := asInt64(c[1])
 		if got := LastCompleteSlotEnd(n); got != want {
 			t.Errorf("last_complete_slot_end(%d) = %d want %d", n, got, want)
 		}
@@ -256,45 +339,44 @@ func TestReferencePanelHelpers(t *testing.T) {
 
 // --- ranking scenario ---------------------------------------------------------------
 
-func slotFromCorpus(o *jsonx.Object) *Slot {
-	slot := &Slot{Records: o.GetInt("records"), Partial: o.Value("partial") == true, Rows: map[string]*Counts{}}
-	if blocked, ok := jsonx.AsInt(o.Value("blocked")); ok && o.Value("blocked") != nil {
+func slotFromCorpus(o map[string]any) *Slot {
+	slot := &Slot{Records: asInt64(o["records"]), Partial: o["partial"] == true, Rows: map[string]*Counts{}}
+	if blocked, ok := asInt64OK(o["blocked"]); ok && o["blocked"] != nil {
 		slot.Blocked = &blocked
 	}
-	rows := o.GetObject("rows")
-	for kind, value := range rows.All() {
+	rows := asMap(o["rows"])
+	for kind, value := range rows {
 		counts := &Counts{Values: map[string]int64{}}
 		for _, pair := range value.([]any) {
 			p := pair.([]any)
-			n, _ := jsonx.AsInt(p[1])
-			counts.Add(p[0].(string), n)
+			counts.Add(p[0].(string), asInt64(p[1]))
 		}
 		slot.Rows[kind] = counts
 	}
 	return slot
 }
 
-func answerJSON(a *HistoryAnswer) *jsonx.Object {
-	rows := jsonx.NewObject()
+func answerJSON(a *HistoryAnswer) map[string]any {
+	rows := map[string]any{}
 	for _, kind := range RankingKinds {
 		list := []any{}
 		for _, row := range a.Rows[kind] {
-			list = append(list, []any{row.Key, jsonx.Int(row.Count)})
+			list = append(list, []any{row.Key, row.Count})
 		}
-		rows.Set(kind, list)
+		rows[kind] = list
 	}
 	var first, last any
 	if a.Slots != 0 {
-		first, last = jsonx.Int(a.First), jsonx.Int(a.Last)
+		first, last = a.First, a.Last
 	}
-	return jsonx.Obj("records", a.Records, "blocked_records", a.BlockedRecords, "blocked_slots", a.BlockedSlots,
-		"slots", a.Slots, "partial_slots", a.PartialSlots, "first", first, "last", last, "rows", rows)
+	return map[string]any{
+		"records": a.Records, "blocked_records": a.BlockedRecords, "blocked_slots": a.BlockedSlots,
+		"slots": a.Slots, "partial_slots": a.PartialSlots, "first": first, "last": last, "rows": rows,
+	}
 }
 
 func sqlValue(v any) any {
 	switch x := v.(type) {
-	case int64:
-		return jsonx.Int(x)
 	case []byte:
 		return string(x)
 	case nil:
@@ -304,7 +386,7 @@ func sqlValue(v any) any {
 }
 
 // dbDump is the generator's db_dump with Go's driver.
-func dbDump(t *testing.T, path string) *jsonx.Object {
+func dbDump(t *testing.T, path string) map[string]any {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
@@ -340,10 +422,12 @@ func dbDump(t *testing.T, path string) *jsonx.Object {
 		}
 		return out
 	}
-	out := jsonx.Obj("journal_mode", mode,
-		"master", rowsOf("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name"))
+	out := map[string]any{
+		"journal_mode": mode,
+		"master":       rowsOf("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name"),
+	}
 	for _, table := range []string{"ranking_periods", "ranking_rows", "ranking_slots"} {
-		out.Set(table, rowsOf("SELECT rowid, * FROM "+table+" ORDER BY rowid"))
+		out[table] = rowsOf("SELECT rowid, * FROM " + table + " ORDER BY rowid")
 	}
 	db.Close()
 	header := make([]byte, 100)
@@ -353,7 +437,7 @@ func dbDump(t *testing.T, path string) *jsonx.Object {
 	}
 	f.Read(header)
 	f.Close()
-	out.Set("header_18_20", []any{jsonx.Int(int64(header[18])), jsonx.Int(int64(header[19]))})
+	out["header_18_20"] = []any{int64(header[18]), int64(header[19])}
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	files := []string{}
 	for _, e := range entries {
@@ -364,62 +448,60 @@ func dbDump(t *testing.T, path string) *jsonx.Object {
 	for i, f := range files {
 		list[i] = f
 	}
-	out.Set("files", list)
+	out["files"] = list
 	return out
 }
 
 func TestReferenceRankingScenario(t *testing.T) {
-	ref := loadA07(t, "ranking").GetObject("ranking")
-	ops, results := ref.GetList("ops"), ref.GetList("results")
+	ref := asMap(loadA07(t, "ranking")["ranking"])
+	ops, results := asList(ref["ops"]), asList(ref["results"])
 	store := NewRankingStore(t.TempDir())
 	for i, item := range ops {
-		op := item.(*jsonx.Object)
+		op := asMap(item)
 		var got any
-		switch op.GetString("op") {
+		switch asStr(op["op"]) {
 		case "collect":
 			var records []rankRecord
-			for _, r := range op.GetList("records") {
+			for _, r := range asList(op["records"]) {
 				f := r.([]any)
-				at, _ := jsonx.AsInt(f[0])
-				records = append(records, rankRecord{at, f[1].(string), f[2].(string), f[3] == true})
+				records = append(records, rankRecord{asInt64(f[0]), f[1].(string), f[2].(string), f[3] == true})
 			}
 			useAgent(t, newFakeAgent(records).do)
-			agentID := op.GetString("agent")
-			stored, err := CollectAgent(ctx, nil, store, jsonx.Obj("id", agentID, "name", agentID, "version", HistoryAgentVersion),
-				[]string{op.GetString("recorder")}, i64(op.GetInt("now")), int(op.GetInt("budget")), int(op.GetInt("retention")), 0)
+			agentID := asStr(op["agent"])
+			stored, err := CollectAgentHistory(ctx, nil, store, mustAgentMap(map[string]any{"id": agentID, "name": agentID, "version": HistoryAgentVersion}),
+				[]string{asStr(op["recorder"])}, i64(asInt64(op["now"])), int(asInt64(op["budget"])), int(asInt64(op["retention"])), 0)
 			if err != nil {
 				t.Fatal(err)
 			}
 			var caught any
 			if end, ok := store.CaughtUp(agentID); ok {
-				caught = jsonx.Int(end)
+				caught = end
 			}
-			got = []any{jsonx.Int(int64(stored)), caught}
+			got = []any{int64(stored), caught}
 		case "add":
-			added, err := store.AddSlot(op.GetString("agent"), op.GetString("recorder"), op.GetInt("start"), slotFromCorpus(op.GetObject("slot")))
+			added, err := store.AddSlot(asStr(op["agent"]), asStr(op["recorder"]), asInt64(op["start"]), slotFromCorpus(asMap(op["slot"])))
 			if err != nil {
 				t.Fatal(err)
 			}
 			got = added
 		case "query":
-			answer, err := store.Query(op.GetString("agent"), op.GetString("recorder"), op.GetInt("since"), op.GetInt("until"))
+			answer, err := store.Query(asStr(op["agent"]), asStr(op["recorder"]), asInt64(op["since"]), asInt64(op["until"]))
 			if err != nil {
 				t.Fatal(err)
 			}
 			got = answerJSON(answer)
 		case "has_any":
-			found, err := store.HasAny(op.GetString("agent"), op.GetString("recorder"))
+			found, err := store.HasAny(asStr(op["agent"]), asStr(op["recorder"]))
 			if err != nil {
 				t.Fatal(err)
 			}
 			got = found
 		case "fetched":
 			var starts []int64
-			for _, s := range op.GetList("starts") {
-				n, _ := jsonx.AsInt(s)
-				starts = append(starts, n)
+			for _, s := range asList(op["starts"]) {
+				starts = append(starts, asInt64(s))
 			}
-			done, err := store.Fetched(op.GetString("agent"), op.GetString("recorder"), starts)
+			done, err := store.Fetched(asStr(op["agent"]), asStr(op["recorder"]), starts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -430,45 +512,48 @@ func TestReferenceRankingScenario(t *testing.T) {
 			sort.Slice(list, func(a, b int) bool { return list[a] < list[b] })
 			out := []any{}
 			for _, s := range list {
-				out = append(out, jsonx.Int(s))
+				out = append(out, s)
 			}
 			got = out
 		case "maintain":
 			var ids []string
-			for _, id := range op.GetList("agents") {
+			for _, id := range asList(op["agents"]) {
 				ids = append(ids, id.(string))
 			}
-			if err := store.Maintain(ids, i64(op.GetInt("now"))); err != nil {
+			if err := store.Maintain(ids, i64(asInt64(op["now"]))); err != nil {
 				t.Fatal(err)
 			}
-			got = jsonx.Int(store.version)
+			got = store.version
 		case "dump":
 			got = dbDump(t, store.Path)
 		}
-		want, err := jsonx.ParseString(results[i].(string))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if op.GetString("op") == "dump" {
+		wantRaw := []byte(asStr(results[i]))
+		if asStr(op["op"]) == "dump" {
 			// CPython keeps each sqlite3 connection until the cyclic GC
 			// collects it, so its -wal/-shm files exist or not depending on
 			// when the GC last ran; Go closes every connection at once (the
 			// last close checkpoints and removes them). Only the database
 			// file itself is compared.
-			want.(*jsonx.Object).Set("files", []any{filepath.Base(store.Path)})
+			wantMap := parseJSONMap(t, wantRaw)
+			wantMap["files"] = []any{filepath.Base(store.Path)}
+			wantRaw = mustMarshal(t, wantMap)
 		}
-		if g, w := sortedDump(t, got), sortedDump(t, want); g != w {
-			if len(g) > 600 {
-				g, w = g[:600], w[:600]
+		wantVal, err := testjson.Parse(wantRaw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := diffRefVal(t, got, wantVal); diff != "" {
+			if len(diff) > 600 {
+				diff = diff[:600]
 			}
-			t.Fatalf("op %d %s:\n go %s\n py %s", i, op.GetString("op"), g, w)
+			t.Fatalf("op %d %s: %s", i, asStr(op["op"]), diff)
 		}
 	}
 }
 
-func numericQueryChange(c *jsonx.Object) bool {
-	resource := c.GetString("resource")
-	for _, pair := range pairsOf(c.GetList("args")) {
+func numericQueryChange(c map[string]any) bool {
+	resource := asStr(c["resource"])
+	for _, pair := range pairsOf(asList(c["args"])) {
 		if resource == "logs" && pair[0] == "after" {
 			switch pair[1] {
 			case "١٢", "²", "①", "０":

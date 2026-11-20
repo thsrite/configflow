@@ -17,8 +17,9 @@ import (
 	"testing"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
+	"configflow/internal/rulefetch"
 )
 
 func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
@@ -32,14 +33,48 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 		_, _ = io.WriteString(w, content.Load().(string))
 	}))
 	t.Cleanup(ruleServer.Close)
-	_, err := f.r.UpdateSharedTransaction(f.ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("rule_library", []any{jsonx.Obj("id", "library-example", "name", "Synthetic library", "source_type", "url", "url", ruleServer.URL+"/rules.txt", "behavior", "domain", "format", "text")})
-		return nil, nil
+	err := f.r.UpdateShared(f.ctx, func(_ context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal([]map[string]any{{
+			"id":          "library-example",
+			"name":        "Synthetic library",
+			"source_type": "url",
+			"url":         ruleServer.URL + "/rules.txt",
+			"behavior":    "domain",
+			"format":      "text",
+		}})
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(raw, &shared.RuleLibrary)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = f.r.UpdateProfileFields(f.ctx, "default", jsonx.Obj("rule_configs", []any{jsonx.Obj("id", "ruleset-example", "itemType", "ruleset", "library_rule_id", "library-example", "policy", "DIRECT", "enabled", true)}, "oxidns", jsonx.Obj("config_mode", "template", "direct_rulesets", []any{"ruleset-example"}, "local_dns", "udp://192.0.2.1:53", "remote_dns", "udp://192.0.2.2:53")), nil)
+	_, err = f.r.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		rulesRaw, err := json.Marshal([]map[string]any{{
+			"id":              "ruleset-example",
+			"itemType":        "ruleset",
+			"library_rule_id": "library-example",
+			"policy":          "DIRECT",
+			"enabled":         true,
+		}})
+		if err != nil {
+			return err
+		}
+		if err := p.SetJSON("rule_configs", rulesRaw); err != nil {
+			return err
+		}
+		oxidnsRaw, err := json.Marshal(map[string]any{
+			"config_mode":     "template",
+			"direct_rulesets": []string{"ruleset-example"},
+			"local_dns":       "udp://192.0.2.1:53",
+			"remote_dns":      "udp://192.0.2.2:53",
+		})
+		if err != nil {
+			return err
+		}
+		return p.SetJSON("oxidns", oxidnsRaw)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,13 +109,17 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := jsonx.Parse(raw)
+	cfg, err := model.DecodeConfig(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := cfg.(*jsonx.Object)
-	library := config.GetList("rule_library")[0].(*jsonx.Object)
-	_, stale, err := refresh.RefreshRuleSource(f.ctx, library, "manual", refresh.RuleOptions{Config: config})
+	library := cfg.RuleLibrary[0]
+	_, stale, err := refresh.RefreshRemote(f.ctx, library, "manual", refresh.RuleReadOptions{
+		Config: &rulefetch.SourceConfig{
+			Settings: cfg.SystemConfig,
+			Library:  cfg.RuleLibrary,
+		},
+	})
 	if err != nil || stale != nil {
 		t.Fatalf("library refresh: %v / %v", err, stale)
 	}
@@ -90,7 +129,7 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") == "1" {
 		assertPythonForcedLibrary(t, source, prepared.Bundle)
 	}
-	if _, _, err = f.s.Rules(f.ctx, "primary", "POST"); err != nil {
+	if _, _, err = f.s.PairRules(f.ctx, "primary", "POST"); err != nil {
 		t.Fatal(err)
 	}
 	if last := f.drain(t, 12); last.Status != "succeeded" {

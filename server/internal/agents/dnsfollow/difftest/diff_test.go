@@ -29,7 +29,7 @@ import (
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -94,11 +94,11 @@ func newDevice(t *testing.T, id, service, scenario string) *device {
 	t.Cleanup(d.server.Close)
 	return d
 }
-func (d *device) record() *jsonx.Object {
+func (d *device) record() map[string]any {
 	u, _ := url.Parse(d.server.URL)
 	h, p, _ := net.SplitHostPort(u.Host)
 	n, _ := strconv.Atoi(p)
-	return jsonx.Obj("id", d.id, "name", d.service, "service_type", d.service, "host", h, "port", n, "profile_id", "default", "enabled", true, "version", "1.8.60-go", "token", "synthetic-"+d.id+"-token")
+	return map[string]any{"id": d.id, "name": d.service, "service_type": d.service, "host": h, "port": n, "profile_id": "default", "enabled": true, "version": "1.8.60-go", "token": "synthetic-" + d.id + "-token"}
 }
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
@@ -174,16 +174,14 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	deploy.Wire()
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
 	ctx := srv.Context()
-	_, err := srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("agents", []any{source.record(), target.record()})
-		return nil, nil
+	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		return json.Unmarshal(mustJSON(t, []any{source.record(), target.record()}), &s.Agents)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("oxidns", jsonx.Obj("config_mode", "native", "native_config", draft))
-		return nil, nil
+	_, err = srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("oxidns", mustJSON(t, map[string]any{"config_mode": "native", "native_config": draft}))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -194,24 +192,31 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	}
 	t.Cleanup(m.Close)
 	publish := func(id, ident string, baseline bool) {
-		a, e := m.GetAgentByID(ctx, id, true)
+		a, e := m.ReadAgent(ctx, id, true)
 		if e != nil {
 			t.Fatal(e)
 		}
-		raw, rev, e := srv.Repo.GetPublishSnapshot(ctx, "default", false)
+		tgt, e := deploy.NewTypedTarget(a)
 		if e != nil {
 			t.Fatal(e)
 		}
-		src := deploy.NewSource(raw, &rev)
+		raw, rev, e := srv.Repo.PublishConfig(ctx, "default", false)
+		if e != nil {
+			t.Fatal(e)
+		}
+		src, e := deploy.SourceFromJSON(mustJSON(t, raw), &rev)
+		if e != nil {
+			t.Fatal(e)
+		}
 		var bundle *deploy.Bundle
 		if baseline {
-			p, e := deploy.PrepareContent(ctx, m, deploy.NewTarget(a), src, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: ident})
+			p, e := deploy.PrepareContent(ctx, m, tgt, src, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: ident})
 			if e != nil {
 				t.Fatal(e)
 			}
 			bundle = p.Bundle
 		} else {
-			bundle, e = deploy.Build(ctx, deploy.BuildInput{Target: deploy.NewTarget(a), Source: src, ConfigContent: "dns:\n  enable: true\n  listen: 0.0.0.0:2053\n", DeploymentID: ident})
+			bundle, e = deploy.Build(ctx, deploy.BuildInput{Target: tgt, Source: src, ConfigContent: "dns:\n  enable: true\n  listen: 0.0.0.0:2053\n", DeploymentID: ident})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -257,10 +262,10 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	request("PUT", body, true, "")
 	if replies[len(replies)-1].(map[string]any)["status"] == 200 {
 		if scenario == "drift" {
-			_, _, e := srv.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				o := p.GetObject("oxidns")
-				o.Set("native_config", strings.Replace(o.GetString("native_config"), "worker_threads: 2", "worker_threads: 3", 1))
-				return nil, nil
+			_, e := srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+				o := valueJSON(t, mustJSON(t, p.OxiDNS)).(map[string]any)
+				o["native_config"] = strings.Replace(o["native_config"].(string), "worker_threads: 2", "worker_threads: 3", 1)
+				return p.SetJSON("oxidns", mustJSON(t, o))
 			})
 			if e != nil {
 				t.Fatal(e)
@@ -277,15 +282,15 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 			request("DELETE", "", true, "")
 		}
 	}
-	a, e := m.GetAgentByID(ctx, "target", true)
+	a, e := m.ReadAgent(ctx, "target", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	s, e := m.GetAgentByID(ctx, "source", true)
+	s, e := m.ReadAgent(ctx, "source", true)
 	if e != nil {
 		t.Fatal(e)
 	}
-	p, e := srv.Repo.GetProfile(ctx, "default")
+	p, e := srv.Repo.Profile(ctx, "default")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -306,10 +311,13 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 			proofs = proofs && st["target_deployment_id"] == expected
 		}
 	}
-	job := a.GetObject("dns_follow_job")
-	if a.Has("dns_follow_job") {
-		settings := job.GetObject("candidate_settings")
-		doc, e := yamlx.Parse([]byte(settings.GetString("native_config")))
+	aMap := valueJSON(t, mustJSON(t, a)).(map[string]any)
+	pOxi := valueJSON(t, mustJSON(t, p.OxiDNS)).(map[string]any)
+	jobRaw, hasJob := aMap["dns_follow_job"]
+	if hasJob {
+		job := jobRaw.(map[string]any)
+		settings := job["candidate_settings"].(map[string]any)
+		doc, e := yamlx.Parse([]byte(settings["native_config"].(string)))
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -318,9 +326,15 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 		if e != nil {
 			t.Fatal(e)
 		}
-		proofs = proofs && job.GetString("candidate_signature") == deploy.CanonicalDigest(raw)
+		proofs = proofs && job["candidate_signature"] == deploy.CanonicalDigest(raw)
 	}
-	return valueJSON(t, mustJSON(t, map[string]any{"replies": replies, "draft": yamlJSON(t, p.GetObject("oxidns").GetString("native_config")), "state": a.Value("dns_follow_state"), "has_job": a.Has("dns_follow_job"), "proofs": proofs, "source_status": s.GetObject("latest_deployment").GetString("status"), "target_status": a.GetObject("latest_deployment").GetString("status")}))
+	statusOf := func(rec *model.Agent) string {
+		if rec == nil || rec.LatestDeployment == nil {
+			return ""
+		}
+		return rec.LatestDeployment.Status
+	}
+	return valueJSON(t, mustJSON(t, map[string]any{"replies": replies, "draft": yamlJSON(t, pOxi["native_config"].(string)), "state": aMap["dns_follow_state"], "has_job": hasJob, "proofs": proofs, "source_status": statusOf(s), "target_status": statusOf(a)}))
 }
 
 var hex32 = regexp.MustCompile(`^[0-9a-f]{32}$`)
