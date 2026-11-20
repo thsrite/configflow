@@ -38,7 +38,7 @@ func TestReviewC07LegacyCountersAndSilentBinding(t *testing.T) {
 
 func TestReviewC07UnknownExactKeyAgainstFlask(t *testing.T) {
 	w := newWorld(t)
-	t.Cleanup(tasks.SetRows(tasks.SlotMetrics, nil))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, nil))
 	commands := w.commands([]command{
 		{Method: "POST", Path: "/api/tasks/run", Body: `{"key":"metrics_history_flush:unknown"}`},
 		{Method: "PUT", Path: "/api/tasks/interval", Body: `{"key":"metrics_history_flush:unknown","interval_seconds":600}`},

@@ -34,7 +34,7 @@ func TestReviewN73DProviderReaderCauses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, original := yamlx.Parse([]byte(tt.source))
-			proxies, err := provider.ParseProviderProxies(tt.source, "Synthetic", "./providers/example.yaml")
+			proxies, err := provider.ParseNodes(tt.source, "Synthetic", "./providers/example.yaml")
 			if proxies != nil || !errors.Is(err, tt.kind) {
 				t.Fatalf("provider lost reader cause: %v", err)
 			}

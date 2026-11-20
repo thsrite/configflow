@@ -402,8 +402,8 @@ func TestReferenceCorpus(t *testing.T) {
 		if fn == "next_run_at" && strings.HasSuffix(mapStr(want, "output"), ":15.250000") {
 			// Accepted: sub-second UTC offsets are cut to seconds
 			// (time.FixedZone); the instant must still match.
-			a, _ := taskstatus.ParseTime(mapStr(got, "output"))
-			b, _ := taskstatus.ParseTime(mapStr(want, "output"))
+			a, _ := taskstatus.ParseTimestamp(mapStr(got, "output"))
+			b, _ := taskstatus.ParseTimestamp(mapStr(want, "output"))
 			if !a.Equal(b) {
 				t.Errorf("row %d: instant %v, want %v", i, a, b)
 			}

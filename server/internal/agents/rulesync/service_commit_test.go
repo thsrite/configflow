@@ -31,7 +31,7 @@ func holdTaskStatusLock(t *testing.T) func() {
 		return time.Now()
 	}
 	go func() {
-		_, err := store.Record("lock-holder", taskstatus.Result{OK: true})
+		_, err := store.SaveResult(context.Background(), "lock-holder", taskstatus.Result{OK: true})
 		done <- err
 	}()
 	var once sync.Once
@@ -102,7 +102,7 @@ func TestStateTaskStatusLockWaitRuntimeBoundary(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				ctx, s := fixtureService(t)
 				dir := s.m.Repository().DataDir()
-				if _, err := taskstatus.New(dir).Record("existing", taskstatus.Result{OK: true}); err != nil {
+				if _, err := taskstatus.New(dir).SaveResult(context.Background(), "existing", taskstatus.Result{OK: true}); err != nil {
 					t.Fatal(err)
 				}
 				beforeStatus := optionalReceipt(t, dir, taskstatus.Filename)

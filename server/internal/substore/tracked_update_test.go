@@ -32,8 +32,8 @@ func TestUpdateRefusedSpawnReleasesBusyState(t *testing.T) {
 	h.store.setVersion("2.40.0")
 	h.release = `{"tag_name":"v2.41.0","assets":[{"name":"sub-store.bundle.js","browser_download_url":"https://example.com/bundle.js"}]}`
 	h.d.Spawner = refusedUpdateSpawner{}
-	if ok, message := h.d.StartSubStoreUpdate(h.ctx); ok || message != msgUpdateUnavailable {
-		t.Fatal(ok, message)
+	if message, err := h.d.StartUpdate(h.ctx); err == nil || err.Error() != msgUpdateUnavailable {
+		t.Fatal(message, err)
 	}
 	if state := h.d.UpdateSnapshot(); state.State != "failed" {
 		t.Fatal(state)
@@ -64,16 +64,16 @@ func TestTrackedUpdateIgnoresDisconnectAndCancelsHTTPOnShutdown(t *testing.T) {
 	h.d.Spawner = runner
 	request, cancel := context.WithCancel(h.ctx)
 	cancel()
-	if ok, message := h.d.StartSubStoreUpdate(request); !ok {
-		t.Fatal(message)
+	if message, err := h.d.StartUpdate(request); err != nil {
+		t.Fatal(message, err)
 	}
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("download not started")
 	}
-	if ok, message := h.d.StartSubStoreUpdate(h.ctx); ok || message != msgUpdateBusy {
-		t.Fatal("update not exclusive", ok, message)
+	if message, err := h.d.StartUpdate(h.ctx); err == nil || err.Error() != msgUpdateBusy {
+		t.Fatal("update not exclusive", message, err)
 	}
 	runner.Shutdown(context.Background())
 	select {

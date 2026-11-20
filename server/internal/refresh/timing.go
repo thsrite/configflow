@@ -19,7 +19,7 @@ var ErrFailureCount = errors.New("invalid refresh failure counter")
 var stampOffset = regexp.MustCompile(`^[+-][0-9]{2}(:?[0-9]{2}(:?[0-9]{2}([.,][0-9]+)?)?)?$`)
 
 func parseStamp(text string) (time.Time, bool) {
-	instant, ok := taskstatus.ParseTime(text)
+	instant, ok := taskstatus.ParseTimestamp(text)
 	if !ok {
 		return time.Time{}, false
 	}
@@ -81,7 +81,7 @@ func NextDue(entry *taskstatus.Receipt, interval model.Int, baseline *string, no
 	return &due, nil
 }
 func fresh(timestamp string, interval int64) bool {
-	updated, ok := taskstatus.ParseTime(timestamp)
+	updated, ok := taskstatus.ParseTimestamp(timestamp)
 	if !ok {
 		return false
 	}

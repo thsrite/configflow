@@ -147,11 +147,11 @@ func contentIdentity(item model.RuleLibraryItem) string {
 		return ""
 	}
 	content := text(item.Content)
-	report, err := rulefetch.InspectDomainContent(content, behavior, format)
-	if err != nil || len(report.GetList("errors")) != 0 {
+	report, err := rulefetch.Inspect(content, behavior, format)
+	if err != nil || len(report.Errors) != 0 {
 		return ""
 	}
-	content, warnings, err := rulefetch.NormalizeMihomoRuleset(content, behavior, format)
+	content, warnings, err := rulefetch.NormalizeRuleset(content, behavior, format)
 	if err != nil || len(warnings) != 0 {
 		return ""
 	}

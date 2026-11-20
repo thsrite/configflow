@@ -122,3 +122,11 @@ type SourceValidationError struct {
 
 func (e *SourceValidationError) Error() string { return e.Message }
 func (e *SourceValidationError) Unwrap() error { return errors.Join(repo.ErrValidation, e.Cause) }
+
+// ErrorClass returns the stable native logging category.
+func (e *SourceValidationError) ErrorClass() string {
+	if e.CacheShape {
+		return "DialerReferenceError"
+	}
+	return "ValueError"
+}

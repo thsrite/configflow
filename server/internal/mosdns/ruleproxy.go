@@ -320,7 +320,7 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 				if staleErr != nil {
 					stale = true
 					routeLogger.Warningf("规则集「%s」更新失败，使用上一次有效缓存：%s",
-						declared.Name, refresh.DescribeFailure(staleErr))
+						declared.Name, refresh.FailureReason(staleErr))
 				}
 			}
 		} else {

@@ -183,7 +183,7 @@ func RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) 
 	store := notifications.TaskStatus(ctx, r.DataDir())
 	started, clock := taskstatus.NowISO(), time.Now()
 	record := func(ok, skipped bool, msg string) error {
-		_, err := store.RecordContext(ctx, "domain_discovery:"+id, taskstatus.Result{OK: ok, Skipped: skipped, Error: msg, StartedAt: started, DurationMs: float64(time.Since(clock).Milliseconds()), Trigger: trigger})
+		_, err := store.SaveResult(ctx, "domain_discovery:"+id, taskstatus.Result{OK: ok, Skipped: skipped, Error: msg, StartedAt: started, DurationMs: float64(time.Since(clock).Milliseconds()), Trigger: trigger})
 		return err
 	}
 	if proxyPath(c) == nil {

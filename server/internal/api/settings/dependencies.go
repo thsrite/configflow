@@ -12,7 +12,7 @@ import (
 func listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
 	refresh, _ := c.Arg("refresh")
 	force := refresh == "1" || refresh == "true"
-	dependencies, err := substore.Default().Dependencies.ListDependencies(c.Context(), force)
+	dependencies, err := substore.Default().Dependencies.List(c.Context(), force)
 	if err != nil {
 		return nil, err
 	}
@@ -23,13 +23,13 @@ func listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
 // the online update runs in the background; progress is polled through the
 // dependency list.
 func updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
-	ok, message := substore.Default().Dependencies.StartSubStoreUpdate(c.Context())
-	if ok {
+	message, err := substore.Default().Dependencies.StartUpdate(c.Context())
+	if err == nil {
 		appLogger.Info("Sub-Store 在线更新：" + message)
 		return httpx.JSONStatus(202, map[string]any{"success": true, "message": message}), nil
 	}
-	appLogger.Warning("Sub-Store 在线更新：" + message)
-	return httpx.JSONStatus(409, map[string]any{"success": false, "message": message}), nil
+	appLogger.Warning("Sub-Store 在线更新：" + err.Error())
+	return httpx.JSONStatus(409, map[string]any{"success": false, "message": err.Error()}), nil
 }
 
 // setSubStoreMode is POST /api/settings/dependencies/sub-store/mode.

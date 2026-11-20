@@ -55,7 +55,7 @@ func TestActiveListenerHTTPAuthenticationMissingPortAndSavedSettings(t *testing.
 	}
 	settings.SetWebListener(m)
 	t.Cleanup(func() { settings.SetWebListener(nil) })
-	if _, err := m.Start(context.Background()); err != nil {
+	if _, err := m.Listen(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}

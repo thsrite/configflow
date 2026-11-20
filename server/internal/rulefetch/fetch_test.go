@@ -495,9 +495,6 @@ func TestNormalizeAndOptions(t *testing.T) {
 	if _, err := NormalizeProxy("http://proxy.test/path"); err != ErrInvalidProxy {
 		t.Fatal(err)
 	}
-	if _, err := NormalizeRuleFetchProxy(5); err != ErrProxyNotString {
-		t.Fatal(err)
-	}
 	if !IsGithubURL("https://raw.githubusercontent.com/a") || IsGithubURL("https://github.com.evil/a") {
 		t.Fatal("github")
 	}

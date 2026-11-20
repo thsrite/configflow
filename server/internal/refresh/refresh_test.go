@@ -299,7 +299,7 @@ func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
 }
 
 func mustTime(t *testing.T, text string) time.Time {
-	value, ok := taskstatus.ParseTime(text)
+	value, ok := taskstatus.ParseTimestamp(text)
 	if !ok {
 		t.Fatalf("parse %s", text)
 	}

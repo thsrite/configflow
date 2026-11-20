@@ -93,7 +93,7 @@ func (d *Dependencies) requestProxy(ctx context.Context) string {
 	if r.View(ctx, func(doc *model.Document) error { value = doc.System.SystemConfig.RuleFetchProxy; return nil }) != nil {
 		return ""
 	}
-	proxy, err := rulefetch.NormalizeRuleFetchProxy(value)
+	proxy, err := rulefetch.NormalizeProxy(value)
 	if err != nil {
 		return ""
 	}

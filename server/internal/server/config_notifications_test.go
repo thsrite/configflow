@@ -30,14 +30,14 @@ func TestConfigFindingsFailedReceiptsCreateNotificationsBeforeAllTaskSlotsExist(
 		t.Fatal(err)
 	}
 	for range 3 {
-		_, err := taskstatus.New(srv.DataDir).Record(refresh.SourceTaskKey("backoff"), taskstatus.Result{OK: false, Trigger: "scheduled", Error: "上游返回 HTTP 403"})
+		_, err := taskstatus.New(srv.DataDir).SaveResult(ctx, refresh.SourceTaskKey("backoff"), taskstatus.Result{OK: false, Trigger: "scheduled", Error: "上游返回 HTTP 403"})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	// A due task completes; projecting all known receipts must also expose
 	// the pre-existing backoff failure without executing that source again.
-	_, err = notifications.TaskStatus(ctx, srv.DataDir).Record(refresh.SourceTaskKey("due"), taskstatus.Result{OK: true, Trigger: "scheduled"})
+	_, err = notifications.TaskStatus(ctx, srv.DataDir).SaveResult(ctx, refresh.SourceTaskKey("due"), taskstatus.Result{OK: true, Trigger: "scheduled"})
 	if err != nil {
 		t.Fatal(err)
 	}

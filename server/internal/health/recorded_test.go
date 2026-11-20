@@ -77,7 +77,6 @@ func loadRecordedRows(t *testing.T, name string) []recordedRow {
 }
 
 func recordedClass(err error) string {
-	var keyErr *check.KeyError
 	var cv *check.ValueError
 	var hv *ValueError
 	var pu *ProbeUnavailable
@@ -89,7 +88,7 @@ func recordedClass(err error) string {
 		return "ProbeUnavailable"
 	case errors.As(err, &pb):
 		return "ProbeBusy"
-	case errors.As(err, &keyErr):
+	case errors.Is(err, check.ErrMissingHealthCheck):
 		return "KeyError"
 	}
 	if repo.IsValueError(err) {
@@ -350,9 +349,6 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 					value, err = check.ResolveProviderHealth(&fields)
 				} else {
 					value, err = check.ResolveProviderHealth(nil)
-				}
-				if errors.Is(err, check.ErrMissingHealthCheck) {
-					err = &check.KeyError{Key: "health_check"}
 				}
 			case "_ipv4_server":
 				text, ok := arg("value").(string)

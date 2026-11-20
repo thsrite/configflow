@@ -152,7 +152,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				if e == nil || !IsPreparationFailure(e) {
 					t.Fatal("missing cache accepted", e)
 				}
-				if cache, _ := substore.LoadSubscriptionCache(f.ctx, "selected-sub"); cache != nil {
+				if cache, _ := substore.LoadCache(f.ctx, "selected-sub"); cache != nil {
 					t.Fatal("failed download committed cache")
 				}
 				return
@@ -163,7 +163,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			if e = provider.CommitArtifacts(f.ctx, "default", p.Providers); e != nil {
 				t.Fatal(e)
 			}
-			cache, e := substore.LoadSubscriptionCache(f.ctx, "selected-sub")
+			cache, e := substore.LoadCache(f.ctx, "selected-sub")
 			if e != nil || cache == nil {
 				t.Fatal("download not saved", e)
 			}
@@ -199,7 +199,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			if a != b {
 				t.Fatal("first push is not synced")
 			}
-			cache, e = substore.LoadSubscriptionCache(f.ctx, "selected-sub")
+			cache, e = substore.LoadCache(f.ctx, "selected-sub")
 			if e != nil {
 				t.Fatal(e)
 			}

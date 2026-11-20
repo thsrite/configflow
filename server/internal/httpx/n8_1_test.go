@@ -130,10 +130,21 @@ func TestN8PersistedIdentitiesAtConsumerMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	item := jsonx.Obj("source", "notice", "title", "中文", "message", "message", "severity", "warning", "status_label", "pending", "target", jsonx.Obj("id", "router"), "evidence", []any{"a", "b"})
+	var item notifications.Item
+	if err := json.Unmarshal([]byte(`{"source":"notice","title":"中文","message":"message","severity":"warning","status_label":"pending","target":{"id":"router"},"evidence":["a","b"]}`), &item); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := notifications.IncidentFingerprint("notice", &item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerSig, err := notifications.RouterDigest(json.RawMessage(`{"z":"中文","a":1}`), json.RawMessage(`{"id":"router"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct{ name, got, want string }{
-		{"notification fingerprint", notifications.Fingerprint("notice", item), "0267bf46778074b7eeb98037dc5d72c1d23748a3309dd1832c5d53fac18f1ebe" /* Python: 796d41c65fccf7be4c1f6905927f38f7f68e19ff85cd21bbda74bc5b0b851228 */},
-		{"router signature", notifications.RouterSignature(jsonx.Obj("z", "中文", "a", 1), jsonx.Obj("id", "router")), "17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa" /* Python: 7d96d6c8c83a86b93be94139573ba2f7dd84d73d69229b31d424e377f9e38239 */},
+		{"notification fingerprint", fingerprint, "0267bf46778074b7eeb98037dc5d72c1d23748a3309dd1832c5d53fac18f1ebe" /* Python: 796d41c65fccf7be4c1f6905927f38f7f68e19ff85cd21bbda74bc5b0b851228 */},
+		{"router signature", routerSig, "17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa" /* Python: 7d96d6c8c83a86b93be94139573ba2f7dd84d73d69229b31d424e377f9e38239 */},
 		{"rule cache filename", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, jsonx.Obj("id", "rule-中文", "url", "https://example.com/rules", "behavior", "domain", "format", "yaml"))), "by-source/e2364080e064f144014eb27e7dee12c0a88691411bbd10e8fb11fe2d4ae2883a.list" /* Python: by-source/4426c62b307f4cf12000498eb551a75eb9f77bec2df4f934d1069ff52488381b.list */},
 		{"hosts digest", hostsDigest, "203f1eaef2b304a1972e5313ea3d41d096aeddeee5ae1c45623154fd11fa6aef" /* Python: b8cb494707314c3de1a4489ad0b63c0dfbdfe553d368ebcd7bfa7446c9919d48 */},
 	}

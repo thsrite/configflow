@@ -201,8 +201,9 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 				if err != nil || string(data) != "example.com\n" {
 					t.Fatal("archive did not publish its cache", err)
 				}
-				entry, err := taskstatus.New(r.DataDir()).Get(refresh.RuleTaskKey(rule["id"].(string)))
-				if err != nil || entry.GetString("last_status") != "success" {
+				snap, err := taskstatus.New(r.DataDir()).Read()
+				entry := snap.Entry(refresh.RuleTaskKey(rule["id"].(string)))
+				if err != nil || entry == nil || entry.LastStatus == nil || *entry.LastStatus != "success" {
 					t.Fatal("archive did not record success", err)
 				}
 			}

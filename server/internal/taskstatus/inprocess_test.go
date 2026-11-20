@@ -1,6 +1,7 @@
 package taskstatus
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,19 +29,19 @@ func TestStoreInstancesShareMutexAndLeaveLegacyLock(t *testing.T) {
 		wg.Go(func() {
 			store := New(dir)
 			for item := range 5 {
-				if _, err := store.Record(fmt.Sprintf("%d:%d", worker, item), Result{OK: true}); err != nil {
+				if _, err := store.SaveResult(context.Background(), fmt.Sprintf("%d:%d", worker, item), Result{OK: true}); err != nil {
 					t.Error(err)
 				}
 			}
 		})
 	}
 	wg.Wait()
-	values, err := New(dir).Load()
+	values, err := New(dir).Read()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if values.Len() != 100 {
-		t.Fatal("updates lost", values.Len())
+	if len(values) != 100 {
+		t.Fatal("updates lost", len(values))
 	}
 	after, err := os.Stat(path)
 	if err != nil {
@@ -57,7 +58,7 @@ func TestStoreInstancesShareMutexAndLeaveLegacyLock(t *testing.T) {
 
 func TestNoNewTaskStatusLockFile(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := New(dir).Record("task", Result{OK: true}); err != nil {
+	if _, err := New(dir).SaveResult(context.Background(), "task", Result{OK: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, Filename+".lock")); !os.IsNotExist(err) {

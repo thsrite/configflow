@@ -155,8 +155,8 @@ func TestCustomBuiltinPortIsSharedByClientReadinessAndUpdate(t *testing.T) {
 		t.Fatalf("version %s", v)
 	}
 	dh.release = `{"tag_name": "v2.40.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`
-	if ok, message := dh.d.StartSubStoreUpdate(dh.ctx); ok || message != "当前已是最新版本 2.40.0" {
-		t.Fatalf("%v %s", ok, message)
+	if message, err := dh.d.StartUpdate(dh.ctx); err == nil || err.Error() != "当前已是最新版本 2.40.0" {
+		t.Fatalf("%q %v", message, err)
 	}
 	if dh.store.envRequests != 3 {
 		t.Fatalf("%d version requests", dh.store.envRequests)
@@ -208,9 +208,9 @@ func TestBaseURLFallsBackToEnvWithoutBundle(t *testing.T) {
 func TestUpdateRefusedWithoutBundle(t *testing.T) {
 	dh := newDepsHarness(t)
 	os.Remove(filepath.Join(dh.builtin, SubStoreAsset))
-	ok, message := dh.d.StartSubStoreUpdate(dh.ctx)
-	if ok || !strings.Contains(message, "内置") {
-		t.Fatalf("%v %s", ok, message)
+	message, err := dh.d.StartUpdate(dh.ctx)
+	if err == nil || !strings.Contains(err.Error(), "内置") {
+		t.Fatalf("%q %v", message, err)
 	}
 }
 
@@ -500,9 +500,9 @@ func TestStartSubStoreUpdateRunsTheUpdate(t *testing.T) {
 	dh.release = fmt.Sprintf(`{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js",
 		"browser_download_url": %q, "digest": "sha256:%s"}]}`, dh.github.URL+"/dl/sub-store.bundle.js", hex.EncodeToString(sum[:]))
 	dh.commands.runVersion = "2.41.0"
-	ok, message := dh.d.StartSubStoreUpdate(dh.ctx)
-	if !ok || message != "开始更新到 2.41.0" {
-		t.Fatalf("%v %s", ok, message)
+	message, err := dh.d.StartUpdate(dh.ctx)
+	if err != nil || message != "开始更新到 2.41.0" {
+		t.Fatalf("%q %v", message, err)
 	}
 	state := dh.d.UpdateSnapshot()
 	if state.State != "success" || state.TargetVersion != "2.41.0" {
@@ -513,18 +513,18 @@ func TestStartSubStoreUpdateRunsTheUpdate(t *testing.T) {
 	if !locked {
 		t.Fatal("update lock busy")
 	}
-	if ok, message := dh.d.StartSubStoreUpdate(dh.ctx); ok || message != "已有更新任务在进行中" {
-		t.Fatalf("%v %s", ok, message)
+	if message, err := dh.d.StartUpdate(dh.ctx); err == nil || err.Error() != "已有更新任务在进行中" {
+		t.Fatalf("%q %v", message, err)
 	}
 	unlock()
 	dh.github.Close()
-	if ok, message := dh.d.StartSubStoreUpdate(dh.ctx); ok || message != "当前已是最新版本 2.41.0" {
-		t.Fatalf("%v %s", ok, message)
+	if message, err := dh.d.StartUpdate(dh.ctx); err == nil || err.Error() != "当前已是最新版本 2.41.0" {
+		t.Fatalf("%q %v", message, err)
 	}
 	fresh := newDepsHarness(t)
 	fresh.github.Close()
-	if ok, message := fresh.d.StartSubStoreUpdate(fresh.ctx); ok || message != "检查更新失败：exception_type=ConnectionError" {
-		t.Fatalf("%v %s", ok, message)
+	if message, err := fresh.d.StartUpdate(fresh.ctx); err == nil || err.Error() != "检查更新失败：exception_type=ConnectionError" {
+		t.Fatalf("%q %v", message, err)
 	}
 }
 

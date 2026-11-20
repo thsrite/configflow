@@ -25,7 +25,7 @@ func TestO36cForgetStatusWhileWaiting(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			app := fixture(t)
 			status := taskstatus.New(app.DataDir)
-			if _, err := status.SaveResult(app.Context(), refresh.RuleSourceKey("manual"), taskstatus.Result{OK: true}); err != nil {
+			if _, err := status.SaveResult(app.Context(), refresh.RuleTaskKey("manual"), taskstatus.Result{OK: true}); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(app.DataDir, taskstatus.Filename)
@@ -62,7 +62,7 @@ func TestO36cForgetStatusWhileWaiting(t *testing.T) {
 			}
 			holderDone := make(chan error, 1)
 			go func() {
-				_, err := holder.Record("holder", taskstatus.Result{OK: true})
+				_, err := holder.SaveResult(context.Background(), "holder", taskstatus.Result{OK: true})
 				holderDone <- err
 			}()
 			select {

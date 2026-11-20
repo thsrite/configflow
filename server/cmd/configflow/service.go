@@ -173,13 +173,17 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		edge := &httpx.Edge{API: app, Root: frontendDir, AccessLog: os.Stdout}
 		web = newHTTPServer(edge)
 		manager = &weblistener.Manager{DataDir: dataDir, Server: webServer{web, edge}}
-		status, err := manager.Start(work)
+		status, err := manager.Listen(work)
 		if err != nil {
 			return fmt.Errorf("[web-listener] %w", err)
 		}
 		defer manager.Close()
 		apisettings.SetWebListener(manager)
-		logx.Get("backend.app").Info("Web UI listening on port " + strconv.FormatInt(status.GetInt("port"), 10))
+		port := 0
+		if status.Port != nil {
+			port = *status.Port
+		}
+		logx.Get("backend.app").Info("Web UI listening on port " + strconv.Itoa(port))
 	}
 	printStartupBanner(address)
 	lifecycle.Start(work)

@@ -14,6 +14,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/taskstatus"
 	"configflow/internal/testjson"
 )
 
@@ -203,11 +204,18 @@ func TestCommitHookRunsOutsideLockAndUploadFailureCannotRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitWorker(t, worker)
-	receipt, err := notifications.TaskStatus(ctx, r.DataDir()).Get("webdav_backup")
+	snap, err := notifications.TaskStatus(ctx, r.DataDir()).Read()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.GetString("last_status") != "failed" || receipt.GetInt("run_count") < 2 {
+	receipt := snap.Entry("webdav_backup")
+	var runs int64
+	if receipt != nil {
+		if c, cerr := taskstatus.Count(receipt.RunCount); cerr == nil && c.IsInt64() {
+			runs = c.Int64()
+		}
+	}
+	if receipt == nil || receipt.LastStatus == nil || *receipt.LastStatus != "failed" || runs < 2 {
 		t.Fatalf("receipt %#v", receipt)
 	}
 }

@@ -33,6 +33,9 @@ type IntervalError struct{ Message string }
 
 func (e *IntervalError) Error() string { return e.Message }
 
+// ErrorClass returns the stable native logging category.
+func (e *IntervalError) ErrorClass() string { return "ValueError" }
+
 // CheckInterval validates a typed interval supplied by the source owner.
 func CheckInterval(value model.Int, label string) (int64, error) {
 	if label == "" {

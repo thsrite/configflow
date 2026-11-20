@@ -45,7 +45,7 @@ func activeListener(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	m := &weblistener.Manager{DataDir: dir, Server: s, LookupEnv: func(string) (string, bool) { return "", false }}
-	if _, err := m.Start(context.Background()); err != nil {
+	if _, err := m.Listen(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	settings.SetWebListener(m)

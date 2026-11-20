@@ -51,13 +51,12 @@ func testEnv(runner Runner, vars map[string]string) *ProbeEnv {
 
 func errorClass(err error) string {
 	var cv *check.ValueError
-	var ck *check.KeyError
 	var hv *ValueError
 	var pu *ProbeUnavailable
 	switch {
 	case errors.As(err, &cv), errors.As(err, &hv):
 		return "ValueError"
-	case errors.As(err, &ck):
+	case errors.Is(err, check.ErrMissingHealthCheck):
 		return "KeyError"
 	case errors.As(err, &pu):
 		return "ProbeUnavailable"
@@ -313,9 +312,6 @@ func TestReferenceCorpus(t *testing.T) {
 				out, callErr = check.ResolveProviderHealth(&fields)
 			} else {
 				out, callErr = check.ResolveProviderHealth(nil)
-			}
-			if errors.Is(callErr, check.ErrMissingHealthCheck) {
-				callErr = &check.KeyError{Key: "health_check"}
 			}
 		case "normalize_dns_servers":
 			raw, _ := jsonresp.Encode([]any{arg(0)})

@@ -166,7 +166,6 @@ func pythonClass(err error) string {
 		strategy *rules.StrategyReferenceError
 		interval *refresh.IntervalError
 		health   *check.ValueError
-		hkey     *check.KeyError
 		candid   *rules.CandidateValidationError
 		hook     *convert.HookMissingError
 	)
@@ -186,7 +185,7 @@ func pythonClass(err error) string {
 		return "ListenerReferenceError"
 	case errors.As(err, &interval), errors.As(err, &health):
 		return "ValueError"
-	case errors.As(err, &hkey):
+	case errors.Is(err, check.ErrMissingHealthCheck):
 		return "KeyError"
 	case errors.As(err, &candid):
 		return "CandidateValidationError"

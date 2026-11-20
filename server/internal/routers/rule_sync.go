@@ -477,7 +477,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	default:
 		syncLogger.Warningf(messageSyncLogFailed, label, message)
 	}
-	_, err = notifications.TaskStatus(ctx, s.Repo.DataDir()).RecordContext(ctx, syncTaskKey(profile, id), taskstatus.Result{OK: receipt.Status == "synced", StartedAt: timestamp, Error: receipt.Message, Trigger: trigger, DurationMs: float64(lifecycle.ClockFrom(ctx).Now().Sub(started).Milliseconds())})
+	_, err = notifications.TaskStatus(ctx, s.Repo.DataDir()).SaveResult(ctx, syncTaskKey(profile, id), taskstatus.Result{OK: receipt.Status == "synced", StartedAt: timestamp, Error: receipt.Message, Trigger: trigger, DurationMs: float64(lifecycle.ClockFrom(ctx).Now().Sub(started).Milliseconds())})
 	return receipt.Public(true), err
 }
 func syncTaskKey(profile, id string) string { return "router_rule_sync:" + profile + ":" + id }
@@ -515,7 +515,7 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 			}
 			checked, valid := time.Time{}, false
 			if receipt.CheckedAt != nil {
-				checked, valid = taskstatus.ParseTime(*receipt.CheckedAt)
+				checked, valid = taskstatus.ParseTimestamp(*receipt.CheckedAt)
 			}
 			if receipt.Status != "running" && receipt.Status != "queued" && valid && lifecycle.ClockFrom(held).Now().Sub(checked) < time.Duration(r.RuleSyncInterval)*time.Minute {
 				continue

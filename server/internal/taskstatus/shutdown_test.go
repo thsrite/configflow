@@ -42,7 +42,7 @@ func TestO36cStatusLockWaitRuntimeBoundary(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				s := New(t.TempDir())
-				if _, err := s.Record("existing", Result{OK: true}); err != nil {
+				if _, err := s.SaveResult(context.Background(), "existing", Result{OK: true}); err != nil {
 					t.Fatal(err)
 				}
 				before := statusBytes(t, s)
@@ -61,7 +61,7 @@ func TestO36cStatusLockWaitRuntimeBoundary(t *testing.T) {
 				done := make(chan error, 1)
 				go func() {
 					if record {
-						_, err := s.RecordContext(ctx, "existing", Result{OK: true})
+						_, err := s.SaveResult(ctx, "existing", Result{OK: true})
 						done <- err
 					} else {
 						done <- s.ForgetContext(ctx, "existing")
@@ -100,7 +100,7 @@ func TestO36cStatusLockWaitRuntimeBoundary(t *testing.T) {
 
 func TestO36cStatusShutdownDuringRecord(t *testing.T) {
 	s := New(t.TempDir())
-	if _, err := s.Record("existing", Result{OK: true}); err != nil {
+	if _, err := s.SaveResult(context.Background(), "existing", Result{OK: true}); err != nil {
 		t.Fatal(err)
 	}
 	before := statusBytes(t, s)
@@ -109,7 +109,7 @@ func TestO36cStatusShutdownDuringRecord(t *testing.T) {
 		runtime.Shutdown(context.Background())
 		return time.Now()
 	}
-	_, err := s.RecordContext(ctx, "existing", Result{OK: true})
+	_, err := s.SaveResult(ctx, "existing", Result{OK: true})
 	if !errors.Is(err, context.Canceled) || !bytes.Equal(before, statusBytes(t, s)) {
 		t.Fatalf("mid-record shutdown committed: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestRecordContextPreservesNativeStorageErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, ctx := statusRuntime(t)
-		_, err := s.RecordContext(ctx, "native", Result{OK: true})
+		_, err := s.SaveResult(ctx, "native", Result{OK: true})
 		var link *os.LinkError
 		if !errors.As(err, &link) || link.Op != "rename" || link.New != s.path() {
 			t.Fatalf("rename cause was replaced: %T %v", err, err)
@@ -142,7 +142,7 @@ func TestRecordContextPreservesNativeStorageErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, ctx := statusRuntime(t)
-		_, err := New(root).RecordContext(ctx, "native", Result{OK: true})
+		_, err := New(root).SaveResult(ctx, "native", Result{OK: true})
 		var path *os.PathError
 		if !errors.As(err, &path) || errors.Is(err, context.Canceled) {
 			t.Fatalf("path cause was replaced: %T %v", err, err)

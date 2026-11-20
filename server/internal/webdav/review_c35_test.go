@@ -330,11 +330,12 @@ func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
 	}
 	waitWorker(t, worker)
 	ctx := repo.WithRepository(context.Background(), r)
-	receipt, err := notifications.TaskStatus(ctx, r.DataDir()).Get("webdav_backup")
+	snap, err := notifications.TaskStatus(ctx, r.DataDir()).Read()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.GetString("last_status") != "failed" || receipt.GetString("last_error") != ErrUnsafePath.Error() {
+	receipt := snap.Entry("webdav_backup")
+	if receipt == nil || receipt.LastStatus == nil || *receipt.LastStatus != "failed" || receipt.LastError == nil || *receipt.LastError != ErrUnsafePath.Error() {
 		t.Fatal("stored invalid path failed silently or used an unclear message")
 	}
 	fake.mu.Lock()

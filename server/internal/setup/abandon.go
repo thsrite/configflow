@@ -146,7 +146,7 @@ func (s *Service) abandon(ctx context.Context, record *Record, out *abandonPlan)
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if err := refresh.Forget(ctx, id); err != nil {
+				if err := refresh.ForgetHealth(ctx, id); err != nil {
 					return err
 				}
 				if err := ctx.Err(); err != nil {

@@ -54,7 +54,7 @@ func TestTaskStatusRetainsOwnerLifetimeAfterPrecheck(t *testing.T) {
 			t.Cleanup(m.Close)
 			f := &fixture{ctx: ctx, r: r, m: m, s: New(m, Options{})}
 			store := taskstatus.New(r.DataDir())
-			if _, err = store.Record("dns_follow:target", taskstatus.Result{OK: true}); err != nil {
+			if _, err = store.SaveResult(context.Background(), "dns_follow:target", taskstatus.Result{OK: true}); err != nil {
 				t.Fatal(err)
 			}
 			startRuntime(t, ctx)

@@ -16,7 +16,7 @@ func TestHostsProjectionRetainsScalarKeyTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	hosts := yamlx.Get(n, "hosts")
-	if err := subs.ProjectHostsYAMLKeys(hosts); err != nil {
+	if err := subs.ValidateHostsGraph(hosts); err != nil {
 		t.Fatal(err)
 	}
 	var tags []string
@@ -30,7 +30,7 @@ func TestHostsProjectionRetainsScalarKeyTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = subs.ProjectHostsYAMLKeys(yamlx.Get(n, "hosts")); !errors.Is(err, yamlx.ErrPolicy) {
+	if err = subs.ValidateHostsGraph(yamlx.Get(n, "hosts")); !errors.Is(err, yamlx.ErrPolicy) {
 		t.Fatal(err)
 	}
 }
@@ -39,7 +39,7 @@ func TestNativeReaderMigrationFixtures(t *testing.T) {
 	projectors := map[string]func(*yamlx.Node) error{
 		"parser":  func(n *yamlx.Node) error { return yamlx.ProjectJSONKeys(n, yamlx.RejectNonStringKeys) },
 		"dialers": func(n *yamlx.Node) error { return yamlx.ProjectJSONKeys(n, yamlx.DiscardNonStringKeys) },
-		"hosts":   func(n *yamlx.Node) error { return subs.ProjectHostsYAMLKeys(yamlx.Get(n, "hosts")) },
+		"hosts":   func(n *yamlx.Node) error { return subs.ValidateHostsGraph(yamlx.Get(n, "hosts")) },
 		"substore": func(n *yamlx.Node) error {
 			p := yamlx.Get(n, "proxies")
 			if p == nil {

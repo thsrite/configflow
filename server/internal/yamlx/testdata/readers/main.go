@@ -124,7 +124,7 @@ func run() error {
 			case "dialers":
 				nextErr = yamlx.ProjectJSONKeys(node, yamlx.DiscardNonStringKeys)
 			case "hosts":
-				nextErr = subs.ProjectHostsYAMLKeys(yamlx.Get(node, "hosts"))
+				nextErr = subs.ValidateHostsGraph(yamlx.Get(node, "hosts"))
 			case "substore":
 				if proxies := yamlx.Get(node, "proxies"); proxies != nil {
 					nextErr = yamlx.ProjectJSONKeys(proxies, yamlx.StringifyScalarKeys)

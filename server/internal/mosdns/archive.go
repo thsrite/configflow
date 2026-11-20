@@ -634,7 +634,7 @@ func fetchDeclaredSource(ctx context.Context, fetch nativeFetchFunc, config *mod
 		return "", err
 	}
 	if stale != nil {
-		archiveLogger.Warningf("MosDNS ZIP 规则“%s”更新失败，使用上一次有效缓存：%s", name, refresh.DescribeFailure(stale))
+		archiveLogger.Warningf("MosDNS ZIP 规则“%s”更新失败，使用上一次有效缓存：%s", name, refresh.FailureReason(stale))
 	}
 	return decodeText(content)
 }

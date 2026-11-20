@@ -21,7 +21,7 @@ func savedManager(t *testing.T, env map[string]string) *Manager {
 	if err := os.WriteFile(m.statePath(), []byte(`{"port":`+strconv.Itoa(freePort(t))+`}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(context.Background()); err != nil {
+	if _, err := m.Listen(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -44,8 +44,8 @@ func TestIPv4OnlyKernelKeepsOneNativeSocketAcrossUpdate(t *testing.T) {
 		t.Fatal("IPv6 socket created without kernel support")
 	}
 	port := freePort(t)
-	status, err := m.Update(context.Background(), port)
-	if err != nil || status.Value("ipv6") != false || len(m.active.listeners) != 1 {
+	status, err := m.ChangePort(context.Background(), port)
+	if err != nil || status.IPv6 || len(m.active.listeners) != 1 {
 		t.Fatal(status, err)
 	}
 	if !healthy(context.Background(), port, false, m.Server.ListenerToken()) {
@@ -69,7 +69,7 @@ func TestNativeHealthFailureLeavesOldListenerAndStateUsable(t *testing.T) {
 		w.Write([]byte(server.ListenerToken() + "\n"))
 	})
 	m.HealthTimeout = 20 * time.Millisecond
-	_, err := m.Update(context.Background(), port)
+	_, err := m.ChangePort(context.Background(), port)
 	wantError(t, err, 503, msgHealthFailed)
 	assertOldListener(t, m, old, before)
 	if c, err := net.DialTimeout("tcp4", "127.0.0.1:"+strconv.Itoa(port), 100*time.Millisecond); err == nil {
@@ -92,7 +92,7 @@ func TestPersistenceFailureStillRollsBackLiveSockets(t *testing.T) {
 		return ok
 	}
 	t.Cleanup(func() { os.Chmod(m.DataDir, 0700) })
-	_, err := m.Update(context.Background(), freePort(t))
+	_, err := m.ChangePort(context.Background(), freePort(t))
 	if chmodErr := os.Chmod(m.DataDir, 0700); chmodErr != nil {
 		t.Fatal(chmodErr)
 	}
@@ -121,7 +121,7 @@ func TestReviewStateReadFailureAfterHealthRollsBackWithSafeError(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(m.DataDir, 0700) })
 	port := freePort(t)
-	_, err = m.Update(context.Background(), port)
+	_, err = m.ChangePort(context.Background(), port)
 	if chmodErr := os.Chmod(m.DataDir, 0700); chmodErr != nil {
 		t.Fatal(chmodErr)
 	}
@@ -151,7 +151,7 @@ func TestHealthyProbeCannotCommitAfterRuntimeShutdown(t *testing.T) {
 				return ok
 			}
 			port := freePort(t)
-			_, err := m.Update(request, port)
+			_, err := m.ChangePort(request, port)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatal(err)
@@ -187,7 +187,7 @@ func TestReviewShutdownBetweenSavedStateAndActiveSwitchRestoresSelection(t *test
 	}
 	done := make(chan error, 1)
 	port := freePort(t)
-	go func() { _, err := m.Update(runtime.BindRequest(context.Background()), port); done <- err }()
+	go func() { _, err := m.ChangePort(runtime.BindRequest(context.Background()), port); done <- err }()
 	select {
 	case <-checked:
 	case <-time.After(5 * time.Second):
@@ -228,11 +228,11 @@ func TestCustomReservedPortsAtStartupAndUpdate(t *testing.T) {
 			before, _ := os.ReadFile(m.statePath())
 			reserved := freePort(t)
 			env[key] = strconv.Itoa(reserved)
-			_, err := m.Update(context.Background(), reserved)
+			_, err := m.ChangePort(context.Background(), reserved)
 			wantError(t, err, 409, "")
 			assertOldListener(t, m, old, before)
 			env["CONFIGFLOW_WEB_PORT"] = strconv.Itoa(reserved)
-			_, err = m.Start(context.Background())
+			_, err = m.Listen(context.Background())
 			wantError(t, err, 409, "")
 			delete(env, "CONFIGFLOW_WEB_PORT")
 			assertOldListener(t, m, old, before)
@@ -249,7 +249,7 @@ func TestInvalidInternalEnvironmentAndSharedPortPreserveActiveConfig(t *testing.
 				old := m.active
 				before, _ := os.ReadFile(m.statePath())
 				env[key] = value
-				_, err := m.Start(context.Background())
+				_, err := m.Listen(context.Background())
 				wantError(t, err, 400, key+" 须为 1–65535 的整数")
 				assertOldListener(t, m, old, before)
 			})
@@ -261,7 +261,7 @@ func TestInvalidInternalEnvironmentAndSharedPortPreserveActiveConfig(t *testing.
 	before, _ := os.ReadFile(m.statePath())
 	env["CONFIGFLOW_BACKEND_PORT"] = "15801"
 	env["SUB_STORE_BACKEND_API_PORT"] = "15801"
-	_, err := m.Start(context.Background())
+	_, err := m.Listen(context.Background())
 	wantError(t, err, 409, "ConfigFlow 后端与 Sub-Store 须使用不同的端口")
 	assertOldListener(t, m, old, before)
 }

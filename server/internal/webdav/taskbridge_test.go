@@ -66,16 +66,17 @@ func TestBackupTaskUsesStoredConfigurationAndRuntimeAdmission(t *testing.T) {
 			}
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			statuses, err := taskstatus.New(r.DataDir()).Load()
+			statuses, err := taskstatus.New(r.DataDir()).Read()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if shutdown {
-				if f.uploads != 0 || statuses.Len() != 0 {
+				if f.uploads != 0 || len(statuses) != 0 {
 					t.Fatal("stopped generation uploaded or recorded a result")
 				}
 			} else {
-				if f.uploads != 1 || statuses.GetObject(tasks.BackupTaskKey).GetString("last_status") != "success" {
+				entry := statuses.Entry(tasks.BackupTaskKey)
+				if f.uploads != 1 || entry == nil || entry.LastStatus == nil || *entry.LastStatus != "success" {
 					t.Fatal("backup/receipt missing", f.uploads, statuses)
 				}
 				for _, data := range f.files {

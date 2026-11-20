@@ -113,7 +113,7 @@ func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error)
 	}
 	store := notifications.TaskStatus(ctx, snapshot.DataDir)
 	store.Now = s.Now
-	_, recordErr := store.RecordContext(ctx, "webdav_backup", taskstatus.Result{OK: err == nil, StartedAt: started.UTC().Format("2006-01-02T15:04:05Z"), Trigger: trigger, DurationMs: float64(time.Since(clock).Milliseconds()), Error: detail})
+	_, recordErr := store.SaveResult(ctx, "webdav_backup", taskstatus.Result{OK: err == nil, StartedAt: started.UTC().Format("2006-01-02T15:04:05Z"), Trigger: trigger, DurationMs: float64(time.Since(clock).Milliseconds()), Error: detail})
 	if err != nil {
 		return Result{}, err
 	}

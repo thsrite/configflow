@@ -19,14 +19,14 @@ func TestReviewN2RuleURLs(t *testing.T) {
 			t.Errorf("%q accepted", raw)
 		}
 	}
-	if got, err := NormalizeRuleFetchProxy(" HTTP://User:p^w@Proxy.example:7890/ "); err != nil || got != "http://User:p^w@Proxy.example:7890" {
+	if got, err := NormalizeProxy(" HTTP://User:p^w@Proxy.example:7890/ "); err != nil || got != "http://User:p^w@Proxy.example:7890" {
 		t.Errorf("proxy %q %v", got, err)
 	}
-	if got, err := NormalizeRuleFetchProxy("http://User:pa%20ss@Proxy.example:7890"); err != nil || got != "http://User:pa%20ss@Proxy.example:7890" {
+	if got, err := NormalizeProxy("http://User:pa%20ss@Proxy.example:7890"); err != nil || got != "http://User:pa%20ss@Proxy.example:7890" {
 		t.Errorf("encoded proxy password space %q %v", got, err)
 	}
 	for _, raw := range []string{"http://p:1/x", "http://p:1/?a", "http://p:1#f"} {
-		if _, err := NormalizeRuleFetchProxy(raw); err != ErrInvalidProxy {
+		if _, err := NormalizeProxy(raw); err != ErrInvalidProxy {
 			t.Errorf("%q: %v", raw, err)
 		}
 	}

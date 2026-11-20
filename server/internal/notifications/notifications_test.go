@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/agents/diag"
 	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
@@ -677,18 +678,18 @@ func TestNotificationsRequireAuthentication(t *testing.T) {
 }
 
 func TestEventMessageHidesAddressesAndSecrets(t *testing.T) {
-	got := notifications.EventMessage("恢复失败 very-private-token https://device.test/?secret=hidden password: abc Bearer xyz", "very-private-token")
+	got := diag.EventMessage("恢复失败 very-private-token https://device.test/?secret=hidden password: abc Bearer xyz", []any{"very-private-token"})
 	if got != "恢复失败 [REDACTED] [下载地址已隐藏] password: [REDACTED] Bearer [REDACTED]" {
 		t.Fatal(got)
 	}
 	text := "key: |\n  secret\n  more\nnext token=abc;x \"api_key\": \"q w\" -----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY----- tail"
-	if got := notifications.EventMessage(text); got != "key: |\n  secret\n  more\nnext token=[REDACTED];x \"api_key\": [REDACTED] [PRIVATE KEY REDACTED] tail" {
+	if got := diag.EventMessage(text, nil); got != "key: |\n  secret\n  more\nnext token=[REDACTED];x \"api_key\": [REDACTED] [PRIVATE KEY REDACTED] tail" {
 		t.Fatalf("%q", got)
 	}
-	if got := notifications.EventMessage("password: |\n  hidden\n  more\nnext"); got != "password: [REDACTED]\nnext" {
+	if got := diag.EventMessage("password: |\n  hidden\n  more\nnext", nil); got != "password: [REDACTED]\nnext" {
 		t.Fatalf("%q", got)
 	}
-	if notifications.EventMessage(5) != "" {
+	if diag.EventMessage(5, nil) != "" {
 		t.Fatal("non-strings")
 	}
 }

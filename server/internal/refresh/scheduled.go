@@ -34,15 +34,24 @@ type TaskBusy struct{ Message string }
 
 func (e *TaskBusy) Error() string { return e.Message }
 
+// ErrorClass returns the stable native logging category.
+func (e *TaskBusy) ErrorClass() string { return "TaskBusy" }
+
 // StaleRuleCache diagnoses failed refreshes while validated old bytes are served.
 type StaleRuleCache struct{ Message string }
 
 func (e *StaleRuleCache) Error() string { return e.Message }
 
+// ErrorClass returns the stable native logging category.
+func (e *StaleRuleCache) ErrorClass() string { return "StaleRuleCache" }
+
 // LookupError means the resource referenced by a task no longer exists.
 type LookupError struct{ Message string }
 
 func (e *LookupError) Error() string { return e.Message }
+
+// ErrorClass returns the stable native logging category.
+func (e *LookupError) ErrorClass() string { return "LookupError" }
 
 // SourceTaskKey is a subscription's stable task identity.
 func SourceTaskKey(id string) string { return "subscription:" + id }
@@ -142,7 +151,7 @@ func recordStatus(ctx context.Context, key string, result taskstatus.Result) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = store.RecordContext(ctx, key, result)
+	_, err = store.SaveResult(ctx, key, result)
 	return err
 }
 func taskStatusOf(ctx context.Context) (*taskstatus.Store, error) {

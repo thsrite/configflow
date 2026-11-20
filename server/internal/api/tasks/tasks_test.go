@@ -93,7 +93,7 @@ func TestTasksListIsNoStoreAndIncludesTheBackupRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskstatus.New(srv.DataDir).Record(tasks.BackupTaskKey, taskstatus.Result{Error: "HTTP 401", Trigger: "manual"})
+	taskstatus.New(srv.DataDir).SaveResult(context.Background(), tasks.BackupTaskKey, taskstatus.Result{Error: "HTTP 401", Trigger: "manual"})
 	rows, _ := decodeMap(t, srv.Get("/api/tasks").Body)["tasks"].([]any)
 	backup, _ := rows[1].(map[string]any)
 	want := map[string]any{

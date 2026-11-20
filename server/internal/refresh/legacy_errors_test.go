@@ -31,6 +31,14 @@ func pyErr(class, format string, args ...any) *PyError {
 	return &PyError{Class: class, Message: fmt.Sprintf(format, args...)}
 }
 
+func errorFromLegacy(err error) error {
+	var reporter interface{ ErrorClass() string }
+	if errors.As(err, &reporter) && reporter.ErrorClass() == "ValueError" {
+		return &PublicFailure{Reason: err.Error(), Cause: err}
+	}
+	return err
+}
+
 // pyTypeName is type(v).__name__ for a JSON value.
 func pyTypeName(v any) string { return httpx.PyTypeName(v) }
 

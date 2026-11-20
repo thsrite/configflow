@@ -83,8 +83,15 @@ func TestServiceProcess(t *testing.T) {
 				return err
 			}})
 			lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-first", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
-				entry, err := taskstatus.New(dir).Get(metrics.TaskKey)
-				if err != nil || entry.GetInt("run_count") != 1 || metrics.For(dir).PendingCount() != 0 {
+				snap, err := taskstatus.New(dir).Read()
+				entry := snap.Entry(metrics.TaskKey)
+				var runs int64
+				if entry != nil {
+					if c, cerr := taskstatus.Count(entry.RunCount); cerr == nil && c.IsInt64() {
+						runs = c.Int64()
+					}
+				}
+				if err != nil || runs != 1 || metrics.For(dir).PendingCount() != 0 {
 					t.Errorf("first flush did not precede drain: entry=%v err=%v", entry, err)
 				}
 				trace("first")
@@ -118,8 +125,15 @@ func TestServiceProcess(t *testing.T) {
 				if mode == "publish" {
 					want = 2
 				}
-				entry, err := taskstatus.New(dir).Get(metrics.TaskKey)
-				if err != nil || entry.GetInt("run_count") != want || metrics.For(dir).PendingCount() != 0 {
+				snap, err := taskstatus.New(dir).Read()
+				entry := snap.Entry(metrics.TaskKey)
+				var runs int64
+				if entry != nil {
+					if c, cerr := taskstatus.Count(entry.RunCount); cerr == nil && c.IsInt64() {
+						runs = c.Int64()
+					}
+				}
+				if err != nil || runs != want || metrics.For(dir).PendingCount() != 0 {
 					t.Errorf("last flush did not follow work: entry=%v err=%v", entry, err)
 				}
 				trace("last")

@@ -43,10 +43,10 @@ func TestListenerAdmissionPreservesLegacyFilesAndValidationOrder(t *testing.T) {
 	}
 	disconnected, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := m.Start(disconnected); err != nil {
+	if _, err := m.Listen(disconnected); err != nil {
 		t.Fatal("client disconnect aborted owner", err)
 	}
-	if _, err := m.Status(disconnected); err != nil {
+	if _, err := m.InformationFor(disconnected); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.Stat(path)
@@ -67,15 +67,15 @@ func TestListenerAdmissionPreservesLegacyFilesAndValidationOrder(t *testing.T) {
 	defer release()
 	other := &Manager{DataDir: m.DataDir}
 	result := make(chan error, 1)
-	go func() { _, err := other.Status(context.Background()); result <- err }()
+	go func() { _, err := other.InformationFor(context.Background()); result <- err }()
 	wantError(t, listenerResult(t, result), 409, msgBusy)
-	_, err = other.Update(context.Background(), false)
+	_, err = other.ChangePort(context.Background(), 0)
 	wantError(t, err, 400, "")
 	if lockx.Violations() != 0 {
 		t.Fatal("unexpected order violation", lockx.Violations())
 	}
 	fresh := manager(t, map[string]string{"CONFIGFLOW_WEB_PORT": strconv.Itoa(freePort(t))})
-	if _, err = fresh.Start(context.Background()); err != nil {
+	if _, err = fresh.Listen(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(filepath.Join(fresh.DataDir, "web-listener.lock")); !os.IsNotExist(err) {

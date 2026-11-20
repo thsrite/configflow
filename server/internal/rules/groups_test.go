@@ -39,9 +39,6 @@ func TestCandidateFilterPreservesRecordsOrderAndEmptyInclude(t *testing.T) {
 	if _, err := Filter(nodes, strp(""), strp("["), func(c testCandidate) string { return c.name }); !IsCandidateValidationError(err) {
 		t.Fatalf("invalid regex: %v", err)
 	}
-	if _, err := FilterCandidates(nil, 5, ""); err == nil || err.Error() != "正则筛选必须是字符串或 null" {
-		t.Fatalf("non-string: %v", err)
-	}
 }
 
 func TestExclusionValidationAndRenderingTrimInlineFlagsConsistently(t *testing.T) {

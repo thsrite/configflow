@@ -176,7 +176,7 @@ func wireIPv6() {
 func wireGatewayGuards() { deploy.SetGatewayGuards(gatewayGuards()) }
 
 func wireCore() {
-	notifications.SetSources(notifications.Sources{ListTasks: tasks.AvailableTasks, MissingTasks: tasks.Missing})
+	notifications.SetInputs(notifications.Inputs{Rows: tasks.Available, MissingTasks: tasks.Missing})
 	repo.RegisterHooks(repo.Hooks{DefaultServerDomain: defaultServerDomain})
 	// Desensitized export of EasyTier settings (repo cannot import convert).
 	repo.RegisterHooks(repo.Hooks{RedactEasytierSettings: convert.RedactEasyTierSettings})

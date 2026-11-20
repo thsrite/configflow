@@ -1,6 +1,11 @@
 package substore
 
 import (
+	"encoding/json"
+	"math"
+	"strconv"
+	"strings"
+
 	"configflow/internal/model"
 )
 
@@ -21,6 +26,28 @@ type UpdateState struct {
 	Message       string  `json:"message"`
 	TargetVersion string  `json:"target_version"`
 	FinishedAt    float64 `json:"finished_at"`
+}
+
+// MarshalJSON encodes FinishedAt with a floating-point JSON token (e.g. 0.0).
+func (u UpdateState) MarshalJSON() ([]byte, error) {
+	if math.IsNaN(u.FinishedAt) || math.IsInf(u.FinishedAt, 0) {
+		return json.Marshal(struct {
+			State         string  `json:"state"`
+			Message       string  `json:"message"`
+			TargetVersion string  `json:"target_version"`
+			FinishedAt    float64 `json:"finished_at"`
+		}{u.State, u.Message, u.TargetVersion, u.FinishedAt})
+	}
+	token := strconv.FormatFloat(u.FinishedAt, 'g', -1, 64)
+	if !strings.ContainsAny(token, ".eE") {
+		token += ".0"
+	}
+	return json.Marshal(struct {
+		State         string      `json:"state"`
+		Message       string      `json:"message"`
+		TargetVersion string      `json:"target_version"`
+		FinishedAt    json.Number `json:"finished_at"`
+	}{u.State, u.Message, u.TargetVersion, json.Number(token)})
 }
 
 // DependencyStatus describes the bundled converter and its current lifecycle.

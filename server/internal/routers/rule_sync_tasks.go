@@ -93,7 +93,7 @@ func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.
 			}
 			var due *time.Time
 			if r.AutoRuleSync && ready && status != "paused" && receipt.CheckedAt != nil {
-				if checked, ok := taskstatus.ParseTime(*receipt.CheckedAt); ok {
+				if checked, ok := taskstatus.ParseTimestamp(*receipt.CheckedAt); ok {
 					next := checked.Add(time.Duration(interval) * time.Second)
 					due = &next
 				}

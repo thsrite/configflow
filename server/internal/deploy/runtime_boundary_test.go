@@ -109,8 +109,8 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 		{"atomic-file", func() error {
 			return WriteFileAtomic(ctx, filepath.Join(f.m.Repository().DataDir(), "closed.txt"), []byte("no write"))
 		}},
-		{"provider-cache", func() error { return provider.CommitCacheUpdates(ctx, nil) }},
-		{"provider-artifacts", func() error { return provider.CommitProviderBundle(ctx, "default", nil) }},
+		{"provider-cache", func() error { return provider.CommitWrites(ctx, nil) }},
+		{"provider-artifacts", func() error { return provider.CommitArtifacts(ctx, "default", nil) }},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {

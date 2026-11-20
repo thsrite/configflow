@@ -45,7 +45,7 @@ func TestN87ReviewOccurrenceCounterDoesNotOverflow(t *testing.T) {
 
 func TestN87ReviewNullableLegacyAgentCodecs(t *testing.T) {
 	t.Run("absent deployment owner", func(t *testing.T) {
-		if err := RecordAgent(t.Context(), nil, nil); err != nil {
+		if err := SaveAgent(t.Context(), nil, nil); err != nil {
 			t.Fatalf("nil Agent stopped being a no-op: %v", err)
 		}
 	})
@@ -55,7 +55,7 @@ func TestN87ReviewNullableLegacyAgentCodecs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err = RecordRegistrationRejection(t.Context(), repository, nil, "synthetic denial"); err != nil {
+		if err = RejectRegistration(t.Context(), repository, nil, "synthetic denial"); err != nil {
 			t.Fatalf("nil registration record was not projected: %v", err)
 		}
 		var saved storeDocument
