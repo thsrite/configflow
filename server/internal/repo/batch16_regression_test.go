@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"configflow/internal/ctxx"
 )
 
 func TestArtifactJSONKeepsLiteralURLSeparators(t *testing.T) {
@@ -49,7 +51,15 @@ func TestProfileMetadataRecordHonorsCancellation(t *testing.T) {
 	r := newRepo(t)
 	request, disconnect := context.WithCancel(t.Context())
 	disconnect()
+	if id, err := ResolveProfileID(WithRepository(request, r), "default"); err != nil || id != "default" {
+		t.Fatalf("disconnected profile resolution failed: %q, %v", id, err)
+	}
 	if _, err := r.ProfileMetadataRecord(request, "default"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("native metadata ignored cancellation: %v", err)
+	}
+	work, shutdown := context.WithCancel(t.Context())
+	shutdown()
+	if _, err := ResolveProfileID(WithRepository(ctxx.WithParent(request, work), r), "default"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("profile resolution ignored work shutdown: %v", err)
 	}
 }

@@ -269,7 +269,10 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 	if err := ValidateProfileID(profileID); err != nil {
 		return "", err
 	}
-	if _, err := repository.ProfileMetadataRecord(ctx, profileID); err != nil {
+	// Request preparation must finish before detached handlers (such as
+	// provider rendering) start, even if the HTTP waiter already disconnected;
+	// work shutdown carried by ctxx.WithParent is still honored.
+	if _, err := repository.ProfileMetadataRecord(ctxx.Detach(ctx), profileID); err != nil {
 		return "", err
 	}
 	if memo != nil {
