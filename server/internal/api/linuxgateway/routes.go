@@ -78,38 +78,17 @@ func editor(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(json.RawMessage(data)).NoStore(), nil
 }
 func provider(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := repo.GetConfig(c.Context(), c.Param("profile_id"))
+	native, err := repo.Config(c.Context(), c.Param("profile_id"))
 	if err != nil {
 		return nil, err
 	}
-	var system model.System
-	rawSystem, err := json.Marshal(struct {
-		SystemConfig any `json:"system_config"`
-	}{config.Value("system_config")})
-	if err != nil {
-		return nil, err
-	}
-	if err = json.Unmarshal(rawSystem, &system); err != nil {
-		return nil, err
-	}
+	system := model.System{SystemConfig: native.SystemConfig, Backup: native.Backup}
 	validation, err := auth.ValidateSystemTokenOrJWT(c, &system)
 	if err != nil {
 		return nil, err
 	}
 	if !validation.Valid {
 		return httpx.Message(401, false, validation.Message), nil
-	}
-	repository, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return nil, err
-	}
-	profileID, err := repo.ResolveProfileID(c.Context(), c.Param("profile_id"))
-	if err != nil {
-		return nil, err
-	}
-	native, err := repository.Config(c.Context(), profileID, nil)
-	if err != nil {
-		return nil, err
 	}
 	gw := gateway.NewConfig(native)
 	var content string

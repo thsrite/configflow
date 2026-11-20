@@ -826,7 +826,7 @@ func (r *Repository) GetCompatConfig(ctx context.Context, profileID string, root
 // view and the committed document it was resolved from (nil inside a
 // transaction). The source is shared and must never be modified.
 func (r *Repository) GetCompatConfigWithSource(ctx context.Context, profileID string) (result, source *jsonx.Object, err error) {
-	result, rebuild, err := r.compatConfigWithBaseline(ctx, profileID)
+	result, rebuild, _, err := r.compatConfigWithBaseline(ctx, profileID)
 	if err != nil || rebuild == nil {
 		return result, nil, err
 	}
@@ -840,25 +840,26 @@ func (r *Repository) GetCompatConfigWithSource(ctx context.Context, profileID st
 
 // compatConfigWithBaseline is the compat view and, when it was read from a
 // committed generation, a function that resolves the same view again from
-// that generation (the three-way merge baseline of SaveConfig).
-func (r *Repository) compatConfigWithBaseline(ctx context.Context, profileID string) (*jsonx.Object, func() (*jsonx.Object, error), error) {
+// that generation (the three-way merge baseline of SaveConfig) plus the
+// committed typed document itself.
+func (r *Repository) compatConfigWithBaseline(ctx context.Context, profileID string) (*jsonx.Object, func() (*jsonx.Object, error), *model.Document, error) {
 	if r.InTransaction(ctx) {
 		document, _, err := r.workingModel(ctx)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		result, err := legacyConfig(document, profileID, nil, true)
-		return result, nil, err
+		return result, nil, nil, err
 	}
 	entry, err := r.readEntry(ctx, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	result, err := legacyConfig(entry.Model, profileID, nil, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return result, func() (*jsonx.Object, error) { return legacyConfig(entry.Model, profileID, nil, true) }, nil
+	return result, func() (*jsonx.Object, error) { return legacyConfig(entry.Model, profileID, nil, true) }, entry.Model, nil
 }
 
 // CompatConfigFrom is compat_config_from: resolve again from a document

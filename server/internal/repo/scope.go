@@ -151,6 +151,7 @@ type Scope struct {
 	mu              sync.Mutex
 	repository      *Repository
 	cache           map[string]*jsonx.Object
+	docs            map[string]*model.Document
 	baselines       map[string]baseline
 	recordBaselines map[string]model.Fields
 	request         *RequestInfo
@@ -190,7 +191,7 @@ func SetRequest(ctx context.Context, request RequestInfo) {
 func ResetConfigContext(ctx context.Context) {
 	if scope := ScopeOf(ctx); scope != nil {
 		scope.mu.Lock()
-		scope.cache, scope.baselines, scope.resolved = nil, nil, nil
+		scope.cache, scope.docs, scope.baselines, scope.resolved = nil, nil, nil, nil
 		scope.recordBaselines = nil
 		scope.mu.Unlock()
 	}
@@ -201,7 +202,7 @@ func ResetConfigContext(ctx context.Context) {
 func (s *Scope) bind(repository *Repository) {
 	if s.repository != repository {
 		s.repository = repository
-		s.cache, s.baselines, s.resolved = nil, nil, nil
+		s.cache, s.docs, s.baselines, s.resolved = nil, nil, nil, nil
 		s.recordBaselines = nil
 	}
 }
@@ -349,6 +350,53 @@ func GetDefaultProfileID(ctx context.Context) (string, error) {
 	return repository.DefaultProfileID(ctx)
 }
 
+// Config returns the request-scoped resolved typed view of a profile ("" = the
+// request's profile). Within one Scope, calls for the same profile resolve from
+// the same committed generation snapshot; without a Scope or inside a write
+// transaction every call reads fresh state.
+func Config(ctx context.Context, profileID string) (*model.Config, error) {
+	resolvedID, err := ResolveProfileID(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	repository, err := GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if repository.InTransaction(ctx) {
+		return repository.Config(ctx, resolvedID, nil)
+	}
+	scope := ScopeOf(ctx)
+	if scope != nil {
+		scope.mu.Lock()
+		scope.bind(repository)
+		doc := scope.docs[resolvedID]
+		scope.mu.Unlock()
+		if doc != nil {
+			return resolveConfig(doc, resolvedID, nil, true)
+		}
+	}
+	entry, err := repository.readEntry(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	result, err := resolveConfig(entry.Model, resolvedID, nil, true)
+	if err != nil || scope == nil {
+		return result, err
+	}
+	scope.mu.Lock()
+	defer scope.mu.Unlock()
+	scope.bind(repository)
+	if doc := scope.docs[resolvedID]; doc != nil {
+		return resolveConfig(doc, resolvedID, nil, true)
+	}
+	if scope.docs == nil {
+		scope.docs = map[string]*model.Document{}
+	}
+	scope.docs[resolvedID] = entry.Model
+	return result, nil
+}
+
 // GetConfig is get_config(profile_id): the request-scoped compat view of a
 // profile ("" = the request's profile). Within one Scope the same object is
 // returned every time, so edits made to it are what SaveConfig(ctx, nil, id)
@@ -373,7 +421,7 @@ func GetConfig(ctx context.Context, profileID string) (*jsonx.Object, error) {
 			return cached, nil
 		}
 	}
-	config, rebuild, err := repository.compatConfigWithBaseline(ctx, resolvedID)
+	config, rebuild, committedDoc, err := repository.compatConfigWithBaseline(ctx, resolvedID)
 	if err != nil || scope == nil {
 		return config, err
 	}
@@ -396,6 +444,14 @@ func GetConfig(ctx context.Context, profileID string) (*jsonx.Object, error) {
 	}
 	scope.cache[resolvedID] = config
 	scope.baselines[resolvedID] = entry
+	if committedDoc != nil {
+		if scope.docs == nil {
+			scope.docs = map[string]*model.Document{}
+		}
+		if scope.docs[resolvedID] == nil {
+			scope.docs[resolvedID] = committedDoc
+		}
+	}
 	return config, nil
 }
 
@@ -541,6 +597,7 @@ func UpdateConfigTransaction(ctx context.Context, updater Updater, profileID str
 	if scope := ScopeOf(ctx); scope != nil {
 		scope.mu.Lock()
 		delete(scope.cache, resolvedID)
+		delete(scope.docs, resolvedID)
 		delete(scope.baselines, resolvedID)
 		scope.mu.Unlock()
 	}

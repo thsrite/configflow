@@ -17,9 +17,9 @@ func TestSystemTokenUsesOriginalCredentialTypes(t *testing.T) {
 	}{
 		{"configured token", `{"config_token":"public-capability"}`, "public-capability", 200},
 		{"numeric projection", `{"config_token":42}`, "42", 401},
-		{"fractional zero", `{"config_token":0.0}`, "", 200},
-		{"empty object", `{"config_token":{ }}`, "", 200},
-		{"empty list", `{"config_token":[ ]}`, "", 200},
+		{"fractional zero", `{"config_token":0.0}`, "", 401},
+		{"empty object", `{"config_token":{ }}`, "", 401},
+		{"empty list", `{"config_token":[ ]}`, "", 401},
 		{"internal current", `{"rule_proxy_token":"private-capability"}`, "private-capability", 401},
 		{"internal mixed retired", `{"retired_rule_proxy_tokens":[42,"retired-capability"]}`, "retired-capability", 401},
 	}

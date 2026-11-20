@@ -29,6 +29,7 @@ func UpdateConfig(ctx context.Context, profileID string, fn func(context.Context
 		scope.mu.Lock()
 		scope.bind(r)
 		delete(scope.cache, id)
+		delete(scope.docs, id)
 		delete(scope.baselines, id)
 		scope.mu.Unlock()
 	}

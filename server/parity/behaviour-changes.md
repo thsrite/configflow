@@ -2397,3 +2397,4 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 - 旧哈希允许一次性失配；不仿 Python 的空白或 ensure_ascii 编码。新会话同内容前后一致，对象键顺序不影响哈希，大整数值变化仍影响哈希。
 - 规则 `policy` 显式为 `null`（或非字符串值）时不再按缺失键套用默认 `PROXY`/`Proxy`，而是继续拒绝引用并在中文提示中以 JSON 文本呈现（如 `'null'`，与 Python 的 `'None'` 属已登记的“非字符串值用 JSON 文本”类差异，HTTP 状态与 `ready=false` 不变）。`gateway/onboarding` 的 `TestPythonPreparation/null-policy` 与 `rules` 单测显式覆盖。
 - `gateway.NewConfig` 彻底切至 typed `*model.Config` 并删除 `ApplyJSONX` 后，`nodes` 字段遵循 `[]model.Node` 类型边界：合法节点对象（含未知成员与嵌套 `routing-mark`）仍全部拦截；非数组 `nodes`（如对象）或非对象节点元素（如嵌套数组）无法进入 `model.Config.Nodes` 或 Mihomo 生成输出，在冻结语料 `a19_corpus` 中仅对应 2 行畸形 `nodes` 样例，其余 7492/7494 行完全一致。
+- （协调者裁定，W6 复核 L2）gateway 校验时，config 的 `nodes` 为对象或嵌套数组且带 `routing-mark` 的错型存储，Python 拒绝、Go 放行；错型 `nodes` 不进入 `model.Config.Nodes`，也不进入生成的 Mihomo 输出，故接受。

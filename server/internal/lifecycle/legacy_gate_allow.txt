@@ -219,7 +219,6 @@ retired-import internal/api/aggregations/difftest/cases_test.go:configflow/inter
 retired-import internal/api/aggregations/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/aggregations/review_test.go:configflow/internal/jsonx
 retired-import internal/api/auth/login_test.go:configflow/internal/jsonx
-retired-import internal/api/clientdevices/handlers.go:configflow/internal/jsonx
 retired-import internal/api/clientdevices/handlers_test.go:configflow/internal/jsonx
 retired-import internal/api/config/custom_test.go:configflow/internal/jsonx
 retired-import internal/api/config/difftest/diff_test.go:configflow/internal/jsonx
