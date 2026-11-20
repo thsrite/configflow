@@ -28,7 +28,9 @@ type UpdateState struct {
 	FinishedAt    float64 `json:"finished_at"`
 }
 
-// MarshalJSON encodes FinishedAt with a floating-point JSON token (e.g. 0.0).
+// MarshalJSON encodes FinishedAt as a plain decimal floating-point token
+// (0.0 when idle, 1763700000.25 after an update): Unix timestamps never use
+// exponent notation, and a whole value keeps its ".0".
 func (u UpdateState) MarshalJSON() ([]byte, error) {
 	if math.IsNaN(u.FinishedAt) || math.IsInf(u.FinishedAt, 0) {
 		return json.Marshal(struct {
@@ -38,8 +40,8 @@ func (u UpdateState) MarshalJSON() ([]byte, error) {
 			FinishedAt    float64 `json:"finished_at"`
 		}{u.State, u.Message, u.TargetVersion, u.FinishedAt})
 	}
-	token := strconv.FormatFloat(u.FinishedAt, 'g', -1, 64)
-	if !strings.ContainsAny(token, ".eE") {
+	token := strconv.FormatFloat(u.FinishedAt, 'f', -1, 64)
+	if !strings.Contains(token, ".") {
 		token += ".0"
 	}
 	return json.Marshal(struct {
