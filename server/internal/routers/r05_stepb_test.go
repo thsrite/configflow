@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
+	"configflow/internal/testjson"
 )
 
 type stepBWire struct{ method, path, contentType, body string }
@@ -183,9 +184,16 @@ func TestR05StepBProbeInvalidResponses(t *testing.T) {
 // catching RouterError must retain last_probe on failure, with one revision.
 func stepBSaveFailedProbe(t *testing.T, failure *routers.RouterError) {
 	t.Helper()
-	record := jsonx.Obj("id", "r-ik", "type", "ikuai", "endpoint", "http://example.com", "last_probe", jsonx.Obj("ok", true), "custom", "kept")
-	other := jsonx.Obj("id", "other", "type", "ikuai", "endpoint", "http://other.example.com", "last_probe", jsonx.Obj("ok", true))
-	db, err := repo.Open(t.TempDir(), repo.Options{InitialConfig: func() *jsonx.Object { return jsonx.Obj("routers", jsonx.Obj("items", []any{record, other})) }})
+	recordRaw := json.RawMessage(`{"id":"r-ik","type":"ikuai","endpoint":"http://example.com","last_probe":{"ok":true},"custom":"kept"}`)
+	otherRaw := json.RawMessage(`{"id":"other","type":"ikuai","endpoint":"http://other.example.com","last_probe":{"ok":true}}`)
+	initRaw := mustJSON(t, map[string]any{"routers": map[string]any{"items": []json.RawMessage{recordRaw, otherRaw}}})
+	db, err := repo.Open(t.TempDir(), repo.Options{InitialSettings: func() *model.Config {
+		cfg, err := model.DecodeConfig(initRaw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,27 +201,28 @@ func stepBSaveFailedProbe(t *testing.T, failure *routers.RouterError) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile, err := db.GetProfile(t.Context(), "default")
+	profile, err := db.Profile(t.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := profile.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-	replacement := expected.DeepCopy()
-	receipt := jsonx.Obj("at", time.Now().Format("2006-01-02T15:04:05"), "ok", false, "message", failure.Message)
-	replacement.Set("last_probe", receipt)
-	if err = db.SaveRouterSettings(t.Context(), "default", expected, replacement); err != nil {
+	expected := profile.Routers.Items[0]
+	expectedBytes := mustJSON(t, expected)
+	replacement := expected
+	replacement.LastProbe = &model.RouterProbe{At: time.Now().Format("2006-01-02T15:04:05"), OK: false, Message: new(failure.Message)}
+	replacementBytes := mustJSON(t, replacement)
+	if err = db.SaveRouterSettingsJSON(t.Context(), "default", expectedBytes, replacementBytes); err != nil {
 		t.Fatal(err)
 	}
-	actual, err := db.GetProfile(t.Context(), "default")
+	actual, err := db.Profile(t.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := actual.GetObject("routers").GetList("items")
+	rows := actual.Routers.Items
 	revision, err := db.ConfigRevision(t.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revision != before+1 || len(rows) != 2 || !jsonx.Equal(rows[0], replacement) || !jsonx.Equal(rows[1], other) {
+	if revision != before+1 || len(rows) != 2 || !testjson.Equal(replacement, rows[0]) || !testjson.Equal(otherRaw, rows[1]) {
 		t.Fatal("failed probe not saved in isolation", actual)
 	}
 }

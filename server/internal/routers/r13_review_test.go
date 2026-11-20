@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/notifications"
 )
 
@@ -133,7 +132,7 @@ func TestR13ReviewNoticeWaitingForLeafLock(t *testing.T) {
 			held, release := make(chan struct{}), make(chan struct{})
 			blocker := make(chan error, 1)
 			go func() {
-				blocker <- notifications.TransactionContext(context.Background(), l.db.DataDir(), func(*jsonx.Object) error {
+				blocker <- notifications.UpdateItems(context.Background(), l.db.DataDir(), func(*notifications.Items) error {
 					close(held)
 					<-release
 					return nil

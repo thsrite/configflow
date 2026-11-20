@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -20,10 +20,9 @@ func TestN73BaseYAMLGraphs(t *testing.T) {
 		if _, err := FullTunBaseYAML(source); err == nil {
 			t.Fatal("unsafe graph generated")
 		}
-		config := jsonx.Obj("mihomo", jsonx.Obj("custom_config", source))
-		full, err := BaseIsFullTun(config)
-		if err != nil || full {
-			t.Fatalf("unsafe graph used for TUN shape: %v %v", full, err)
+		profile := &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: source}}
+		if BaseFullTun(profile) {
+			t.Fatalf("unsafe graph used for TUN shape")
 		}
 	}
 }
@@ -79,8 +78,8 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 			} else if err == nil {
 				t.Fatal("over-depth generated")
 			}
-			config := jsonx.Obj("mihomo", jsonx.Obj("custom_config", source))
-			_, _ = BaseIsFullTun(config)
+			profile := &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: source}}
+			_ = BaseFullTun(profile)
 			t.Logf("depth=%d bytes=%d elapsed=%s", depth, len(nested), time.Since(started))
 		})
 	}

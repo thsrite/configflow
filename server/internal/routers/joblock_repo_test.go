@@ -9,13 +9,22 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers/routerfake"
 )
 
-func jobRepository(t *testing.T) (*repo.Repository, context.Context, *jsonx.Object) {
+func rawRouterJSON(t *testing.T, router model.Router) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(router)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func jobRepository(t *testing.T) (*repo.Repository, context.Context, model.Router) {
 	t.Helper()
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
@@ -24,29 +33,46 @@ func jobRepository(t *testing.T) (*repo.Repository, context.Context, *jsonx.Obje
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(t.Context(), r)
-	if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "live", "name", "Synthetic"), ""); err != nil {
+	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "live", Name: "Synthetic"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	connection := jsonx.Obj("id", "router", "name", "Synthetic", "type", "routeros", "endpoint", "http://192.0.2.40/",
-		"username", "synthetic-user", "password", "synthetic-password", "verify_tls", true)
-	if _, _, err := r.UpdateProfileFields(ctx, "live", jsonx.Obj("routers", jsonx.Obj("items", []any{connection})), nil); err != nil {
+	connection := model.Router{
+		ID:        "router",
+		Name:      "Synthetic",
+		Type:      "routeros",
+		Endpoint:  "http://192.0.2.40/",
+		Username:  "synthetic-user",
+		Password:  "synthetic-password",
+		VerifyTLS: new(true),
+	}
+	if _, err := r.UpdateProfile(ctx, "live", func(_ context.Context, p *model.Profile) error {
+		p.Routers.Items = []model.Router{connection}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	return r, ctx, connection
 }
 
-func jobUpdate(r *repo.Repository, ctx context.Context, change string, connection *jsonx.Object) error {
-	items := []any{}
+func jobUpdate(r *repo.Repository, ctx context.Context, change string, connection model.Router) error {
+	items := []model.Router{}
 	if change != "delete" {
-		updated := connection.DeepCopy()
+		updated := connection
 		if change == "manifest" {
-			updated.Set("ros_policy_state", jsonx.Obj("owner", "configflow:synthetic", "resources", []any{}))
+			var state model.ROSPolicyState
+			if err := json.Unmarshal([]byte(`{"owner":"configflow:synthetic","resources":[]}`), &state); err != nil {
+				return err
+			}
+			updated.ROSPolicyState = &state
 		} else {
-			updated.Set("password", "synthetic-replacement")
+			updated.Password = "synthetic-replacement"
 		}
 		items = append(items, updated)
 	}
-	_, _, err := r.UpdateProfileFields(ctx, "live", jsonx.Obj("routers", jsonx.Obj("items", items)), nil)
+	_, err := r.UpdateProfile(ctx, "live", func(_ context.Context, p *model.Profile) error {
+		p.Routers.Items = items
+		return nil
+	})
 	return err
 }
 
@@ -59,8 +85,8 @@ func TestO36bWireUnlocksRepository(t *testing.T) {
 	if err := jobUpdate(r, ctx, "password", connection); err != nil {
 		t.Fatal("wired idle device was rejected", err)
 	}
-	current, err := r.GetProfile(ctx, "live")
-	if err != nil || current.GetObject("routers").GetList("items")[0].(*jsonx.Object).GetString("password") != "synthetic-replacement" {
+	current, err := r.Profile(ctx, "live")
+	if err != nil || len(current.Routers.Items) != 1 || current.Routers.Items[0].Password != "synthetic-replacement" {
 		t.Fatal("idle connection repair was not persisted", err)
 	}
 }
@@ -113,19 +139,19 @@ func TestO36bCallerHeldSettingsAndPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unlock()
-	updated := connection.DeepCopy()
-	updated.Set("password", "synthetic-updated")
-	if err := r.SaveRouterSettings(held, "live", connection, updated); err != nil {
+	updated := connection
+	updated.Password = "synthetic-updated"
+	if err := r.SaveRouterSettingsJSON(held, "live", rawRouterJSON(t, connection), rawRouterJSON(t, updated)); err != nil {
 		t.Fatal("settings tried to reacquire its caller's L1", err)
 	}
-	manifest := jsonx.Obj("owner", "configflow:synthetic", "resources", []any{})
-	if err := r.SaveRouterPublication(held, "live", updated, repo.RouterPublication{Manifest: repo.Some(manifest)}); err != nil {
+	manifest := json.RawMessage(`{"owner":"configflow:synthetic","resources":[]}`)
+	if err := r.SaveRouterPublicationJSON(held, "live", rawRouterJSON(t, updated), repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: manifest}}); err != nil {
 		t.Fatal("publication tried to reacquire its caller's L1", err)
 	}
-	if err := r.SaveRouterPublication(held, "live", updated, repo.RouterPublication{Manifest: repo.Some(nil)}); err != nil {
+	if err := r.SaveRouterPublicationJSON(held, "live", rawRouterJSON(t, updated), repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: json.RawMessage("null")}}); err != nil {
 		t.Fatal("withdrawal tried to reacquire its caller's L1", err)
 	}
-	if err := r.SaveRouterSettings(held, "live", updated, nil); err != nil {
+	if err := r.SaveRouterSettingsJSON(held, "live", rawRouterJSON(t, updated), nil); err != nil {
 		t.Fatal("delete tried to reacquire its caller's L1", err)
 	}
 	if lockx.Violations() != violations || violations != 0 {
@@ -143,10 +169,14 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	defer server.Close()
 	driver := NewRouterOS(server.URL, "synthetic-user", "synthetic-password", false)
 	defer driver.Close()
-	connection.Set("endpoint", server.URL)
-	if _, _, err := r.UpdateProfileFields(base, "live", jsonx.Obj("routers", jsonx.Obj("items", []any{connection})), nil); err != nil {
+	connection.Endpoint = server.URL
+	if _, err := r.UpdateProfile(base, "live", func(_ context.Context, p *model.Profile) error {
+		p.Routers.Items = []model.Router{connection}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
+	connRaw := rawRouterJSON(t, connection)
 	violations := lockx.Violations()
 	entered, releaseCommit := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -173,7 +203,7 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 			defer unlock()
 			undo, err := driver.Apply(held, json.RawMessage(`{"kind":"route_add","cidr":"198.51.100.0/24","gateway":"192.0.2.1","comment":"cf-o36b"}`))
 			if err == nil {
-				err = r.SaveRouterPublication(held, "live", connection, repo.RouterPublication{Manifest: repo.Some(jsonx.Obj("owner", "configflow:synthetic", "resources", []any{}))})
+				err = r.SaveRouterPublicationJSON(held, "live", connRaw, repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: json.RawMessage(`{"owner":"configflow:synthetic","resources":[]}`)}})
 			}
 			return result{undo, err}
 		}()
@@ -238,7 +268,7 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	if _, err := driver.Apply(held, published.undo); err != nil {
 		t.Fatal("next publisher could not restore", err)
 	}
-	if err := r.SaveRouterPublication(held, "live", connection, repo.RouterPublication{Manifest: repo.Some(nil)}); err != nil {
+	if err := r.SaveRouterPublicationJSON(held, "live", connRaw, repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: json.RawMessage("null")}}); err != nil {
 		t.Fatal("next publisher could not save withdrawal", err)
 	}
 	if len(fake.Snapshot().Tables[rosRoutes]) != 0 || lockx.Violations() != violations || violations != 0 {

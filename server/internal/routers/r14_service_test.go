@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -22,13 +20,13 @@ const r14New = "IP-CIDR,203.0.113.0/24\nIP-CIDR6,2001:db8:2::/48\nDOMAIN-SUFFIX,
 
 func r14Hook(t *testing.T) {
 	t.Helper()
-	old := repo.SetHooks(repo.Hooks{JobLock: func(ctx context.Context, profile, id string, raw *jsonx.Object) (func(), bool) {
-		var r Router
-		if raw != nil {
+	old := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
+		JobLockRecord: func(ctx context.Context, profile, id string, raw model.Router) (func(), bool) {
+			var r Router
 			_ = json.Unmarshal(mustPolicyJSON(raw), &r)
-		}
-		_, release, lockErr := RouterJobLock(ctx, profile, id, &r)
-		return release, lockErr == nil
+			_, release, lockErr := RouterJobLock(ctx, profile, id, &r)
+			return release, lockErr == nil
+		},
 	}})
 	t.Cleanup(func() { repo.SetHooks(old) })
 }
@@ -46,11 +44,13 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
 	r.Endpoint = http.URL
 	r.source = nil
 	raw := mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
-	var initial agents.Record
-	if err := json.Unmarshal(raw, &initial); err != nil {
-		t.Fatal(err)
-	}
-	db, err := repo.Open(t.TempDir(), repo.Options{InitialConfig: func() *agents.Record { return &initial }})
+	db, err := repo.Open(t.TempDir(), repo.Options{InitialSettings: func() *model.Config {
+		cfg, err := model.DecodeConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,9 +152,9 @@ func TestR14FailuresBeforeWrites(t *testing.T) {
 			case "missing":
 				receipt.Baseline = nil
 			case "disabled":
-				_, _, err := s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-					current.GetObject("routers").GetList("items")[0].(*jsonx.Object).Set("auto_rule_sync", false)
-					return nil, nil
+				_, err := s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, current *model.Profile) error {
+					current.Routers.Items[0].AutoRuleSync = new(false)
+					return nil
 				})
 				if err != nil {
 					t.Fatal(err)

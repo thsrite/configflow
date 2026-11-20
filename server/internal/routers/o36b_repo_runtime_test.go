@@ -2,6 +2,7 @@ package routers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -12,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -57,11 +58,11 @@ func o36bRepositoryState(t *testing.T, r *repo.Repository) (store.Fingerprint, m
 	return head, files
 }
 
-func o36bRouterCommit(ctx context.Context, r *repo.Repository, connection *jsonx.Object, operation string) error {
+func o36bRouterCommit(ctx context.Context, r *repo.Repository, connection model.Router, operation string) error {
 	if strings.HasPrefix(operation, "generic-") {
 		return jobUpdate(r, ctx, strings.TrimPrefix(operation, "generic-"), connection)
 	}
-	device := jobConnection(connection.GetString("endpoint"))
+	device := jobConnection(connection.Endpoint)
 	held, release, err := RouterJobLock(ctx, "live", "router", device)
 	if err != nil {
 		return err
@@ -72,17 +73,25 @@ func o36bRouterCommit(ctx context.Context, r *repo.Repository, connection *jsonx
 		return err
 	}
 	defer unlock()
+	connRaw, err := json.Marshal(connection)
+	if err != nil {
+		return err
+	}
 	switch operation {
 	case "settings":
-		replacement := connection.DeepCopy()
-		replacement.Set("password", "synthetic-runtime-repair")
-		return r.SaveRouterSettings(held, "live", connection, replacement)
+		replacement := connection
+		replacement.Password = "synthetic-runtime-repair"
+		replRaw, err := json.Marshal(replacement)
+		if err != nil {
+			return err
+		}
+		return r.SaveRouterSettingsJSON(held, "live", connRaw, replRaw)
 	case "settings-delete":
-		return r.SaveRouterSettings(held, "live", connection, nil)
+		return r.SaveRouterSettingsJSON(held, "live", connRaw, nil)
 	case "publication":
-		return r.SaveRouterPublication(held, "live", connection, repo.RouterPublication{Manifest: repo.Some(jsonx.Obj("owner", "configflow:synthetic", "resources", []any{}))})
+		return r.SaveRouterPublicationJSON(held, "live", connRaw, repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: json.RawMessage(`{"owner":"configflow:synthetic","resources":[]}`)}})
 	default:
-		return r.SaveRouterPublication(held, "live", connection, repo.RouterPublication{Manifest: repo.Some(nil)})
+		return r.SaveRouterPublicationJSON(held, "live", connRaw, repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: json.RawMessage("null")}})
 	}
 }
 
@@ -126,12 +135,11 @@ func TestO36bRepositoryRuntimeCommitBoundary(t *testing.T) {
 						done := make(chan error, 1)
 						holder = done
 						go func() {
-							_, err := r.UpdateSystemTransaction(base, func(context.Context, *jsonx.Object) (*jsonx.Object, error) {
+							done <- r.UpdateSystem(base, func(context.Context, *model.System) error {
 								close(entered)
 								<-leave
-								return nil, failure
+								return failure
 							})
-							done <- err
 						}()
 						select {
 						case <-entered:
@@ -178,7 +186,7 @@ func TestO36bRepositoryRuntimeCommitBoundary(t *testing.T) {
 						}
 						o36bCheckRouterCommit(t, r, base, operation)
 					}
-					_, unlock, err := RouterJobLock(base, "live", "router", jobConnection(connection.GetString("endpoint")))
+					_, unlock, err := RouterJobLock(base, "live", "router", jobConnection(connection.Endpoint))
 					if err != nil {
 						t.Fatal("finished commit retained its job lease", err)
 					}
@@ -194,11 +202,11 @@ func TestO36bRepositoryRuntimeCommitBoundary(t *testing.T) {
 
 func o36bCheckRouterCommit(t *testing.T, r *repo.Repository, ctx context.Context, operation string) {
 	t.Helper()
-	profile, err := r.GetProfile(ctx, "live")
+	profile, err := r.Profile(ctx, "live")
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := profile.GetObject("routers").GetList("items")
+	items := profile.Routers.Items
 	if operation == "generic-delete" || operation == "settings-delete" {
 		if len(items) != 0 {
 			t.Fatal("disconnected delete retained router")
@@ -208,26 +216,29 @@ func o36bCheckRouterCommit(t *testing.T, r *repo.Repository, ctx context.Context
 	if len(items) != 1 {
 		t.Fatal("disconnected commit lost router")
 	}
-	current, ok := items[0].(*jsonx.Object)
-	if !ok {
-		t.Fatal("router is not a document")
-	}
+	current := items[0]
 	switch operation {
 	case "generic-password":
-		if current.GetString("password") != "synthetic-replacement" {
+		if current.Password != "synthetic-replacement" {
 			t.Fatal("connection edit was not committed")
 		}
 	case "settings":
-		if current.GetString("password") != "synthetic-runtime-repair" {
+		if current.Password != "synthetic-runtime-repair" {
 			t.Fatal("caller-held connection edit was not committed")
 		}
 	case "withdrawal":
-		if current.Has("ros_policy_state") {
+		if current.ROSPolicyState != nil {
 			t.Fatal("publication withdrawal retained manifest")
 		}
 	default:
-		manifest := current.GetObject("ros_policy_state")
-		if manifest == nil || manifest.GetString("owner") != "configflow:synthetic" {
+		var manifest struct {
+			Owner string `json:"owner"`
+		}
+		if current.ROSPolicyState != nil {
+			b, _ := json.Marshal(current.ROSPolicyState)
+			_ = json.Unmarshal(b, &manifest)
+		}
+		if current.ROSPolicyState == nil || manifest.Owner != "configflow:synthetic" {
 			t.Fatal("verified manifest was not committed")
 		}
 	}

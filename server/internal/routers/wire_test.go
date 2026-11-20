@@ -1,22 +1,9 @@
 package routers
 
-import (
-	"testing"
-
-	"configflow/internal/jsonx"
-)
+import "testing"
 
 func TestRedactHookKeepsOtherFieldsAndDropsSecrets(t *testing.T) {
-	doc, err := jsonx.Parse([]byte(`{"items":[{"id":"r1","name":"主路由","username":"admin","password":"pw",
-		"endpoint":"http://192.168.1.1","last_probe":{"ok":true},"dns_guard_state":{"x":1},"custom":5},
-		"skip"],"other":true}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := jsonx.Compact(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := []byte(`{"items":[{"id":"r1","name":"主路由","username":"admin","password":"pw","endpoint":"http://192.168.1.1","last_probe":{"ok":true},"dns_guard_state":{"x":1},"custom":5},"skip"],"other":true}`)
 	got, err := RedactRouters(raw)
 	if err != nil {
 		t.Fatal(err)

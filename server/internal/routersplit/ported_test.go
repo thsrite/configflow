@@ -2,24 +2,28 @@ package routersplit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"regexp"
 	"testing"
 
 	"configflow/internal/gateway/gwbase"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
 // Behaviour the recorded replay cannot observe: Go types (errors.As), the
-// fail-closed ProfileSessions hook, the frontend copy of the messages.
+// fail-closed SessionReader hook, the frontend copy of the messages.
 
 // test_invalid_marker_fails_closed: `isinstance(error.value, LinuxGatewayError)`
 // and code/status — as Go's errors.As.
 func TestRouterSplitErrorIsALinuxGatewayError(t *testing.T) {
-	config := jsonx.Obj("mihomo", jsonx.Obj("router_split", jsonx.Obj("version", true)))
-	err := CheckGeneration(config)
+	var profile model.Profile
+	if err := json.Unmarshal([]byte(`{"mihomo":{"router_split":{"version":true}}}`), &profile); err != nil {
+		t.Fatal(err)
+	}
+	err := CheckProfile(&profile)
 	var gateway *gwbase.LinuxGatewayError
 	if !errors.As(err, &gateway) || gateway.Message != Messages[CodeInvalid] {
 		t.Fatalf("errors.As(LinuxGatewayError) failed for %#v", err)
@@ -44,40 +48,47 @@ func TestProfileSessionsHookFailsClosedUntilRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "home", "name", "home"), ""); err != nil {
+	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "home"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	restore := SetProfileSessions(nil)
+	restore := SetSessionReader(nil)
 	defer restore()
 	var missing *HookMissingError
-	if _, err := LegacyContext(ctx, r, "home"); !errors.As(err, &missing) {
-		t.Fatalf("LegacyContext without the hook: %v", err)
+	if _, err := ReadContext(ctx, r, "home"); !errors.As(err, &missing) {
+		t.Fatalf("ReadContext without the hook: %v", err)
 	}
-	gateway := jsonx.Obj("mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true)))
-	if _, err := PublishLegacySource(ctx, r, "home", gateway, "a"); !errors.As(err, &missing) {
-		t.Fatalf("PublishLegacySource without the hook: %v", err)
+	var gateway model.Profile
+	if err := json.Unmarshal([]byte(`{"mihomo":{"linux_gateway":{"enabled":true}}}`), &gateway); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishSource(ctx, r, "home", &gateway, "a"); !errors.As(err, &missing) {
+		t.Fatalf("PublishSource without the hook: %v", err)
 	}
 	// Marked or profile-less calls never read the sessions.
-	if source, err := PublishLegacySource(ctx, r, "", gateway, "a"); err != nil || source != nil {
+	if source, err := PublishSource(ctx, r, "", &gateway, "a"); err != nil || source != "" {
 		t.Fatalf("no profile: %v %v", source, err)
 	}
-	session := jsonx.Obj("id", "s1", "goal", "router", "completed", 1)
-	SetProfileSessions(func(_ context.Context, got *repo.Repository, profileID string) ([]*jsonx.Object, error) {
+	sessionRaw := json.RawMessage(`[{"id":"s1","goal":"router","completed":1}]`)
+	var sessions []Session
+	if err := json.Unmarshal(sessionRaw, &sessions); err != nil {
+		t.Fatal(err)
+	}
+	SetSessionReader(func(_ context.Context, got *repo.Repository, profileID string) ([]Session, error) {
 		if got != r || profileID != "home" {
 			t.Errorf("hook got %p %q", got, profileID)
 		}
-		return []*jsonx.Object{session}, nil
+		return sessions, nil
 	})
-	legacy, err := LegacyContext(ctx, r, "home")
+	legacy, err := ReadContext(ctx, r, "home")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `{"session_goal":"router","session_id":"s1","session_completed":true,"has_gateway_session":false,"mihomo_agent_ids":[]}`
-	n89SessionPolicy(t, []*jsonx.Object{session}, want, legacy)
+	n89SessionPolicy(t, sessionRaw, want, legacy)
 
-	state, err := RouterSplitState(ctx, r, "home", gateway, nil)
-	if err != nil || state.Value("mode") != "legacy" || state.Value("source") != "setup" {
-		t.Fatalf("state %s %v", encode(state), err)
+	state, err := ProfileState(&gateway, legacy)
+	if err != nil || state.Mode == nil || *state.Mode != "legacy" || state.Source == nil || *state.Source != "setup" {
+		t.Fatalf("state %+v %v", state, err)
 	}
 }
 
@@ -110,7 +121,7 @@ func TestFrontendKeepsTheSameRouterSplitCopy(t *testing.T) {
 // dumped base YAML has the same &id001 / *id001 as Python's.
 func TestFullTunBaseYAMLKeepsAliases(t *testing.T) {
 	text := "base: &b [1, 2]\nlist: *b\n"
-	got, err := FullTunBaseYAML(text)
+	got, err := FullTunYAML(text)
 	if err != nil {
 		t.Fatal(err)
 	}

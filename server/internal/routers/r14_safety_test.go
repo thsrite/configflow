@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/taskstatus"
 )
 
 func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
@@ -120,24 +121,22 @@ func TestR14CancelAndUnpublishedDraftDuringDownload(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			s, f, r := r14Fixture(t)
 			s.Download = func(ctx context.Context, _ json.RawMessage, _ json.RawMessage) (string, error) {
-				_, _, err := s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-					router := doc.GetObject("routers").GetList("items")[0].(*jsonx.Object)
+				_, err := s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
 					if mode == "disable" {
-						router.Set("auto_rule_sync", false)
+						p.Routers.Items[0].AutoRuleSync = new(false)
 					} else if mode == "gateway" {
-						router.Set("proxy_gateway_agent_id", "other")
+						p.Routers.Items[0].ProxyGatewayAgentID = "other"
 					}
-					return nil, nil
+					return nil
 				})
 				if err != nil {
 					return "", err
 				}
 				if mode == "local_content" {
-					_, err = s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-						rule := doc.GetList("rule_library")[0].(*jsonx.Object)
-						rule.Set("source_type", "content")
-						rule.Set("content", r14Old)
-						return nil, nil
+					err = s.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+						shared.RuleLibrary[0].SourceType = new("content")
+						shared.RuleLibrary[0].Content = new(r14Old)
+						return nil
 					})
 				}
 				return r14New, err
@@ -185,19 +184,19 @@ func TestR14TasksRows(t *testing.T) {
 			if err = s.store().Write(ctx, "default", r.ID, receipt); err != nil {
 				t.Fatal(err)
 			}
-			rows, err := ruleSyncRows(ctx, jsonx.NewObject())
+			rows, err := ruleSyncTasks(ctx, taskstatus.Snapshot{})
 			if err != nil || len(rows) != 1 {
 				t.Fatal(err, rows)
 			}
 			row := rows[0]
-			if row.GetString("key") != syncTaskKey("default", r.ID) || row.GetInt("interval_seconds") != 3600 {
+			if row.Key != syncTaskKey("default", r.ID) || string(row.IntervalSeconds) != "3600" {
 				t.Fatalf("task identity %s", mustPolicyJSON(row))
 			}
 			running := status == "running" || status == "queued"
-			if row.GetBool("running") != running {
+			if row.Running != running {
 				t.Fatal("running status")
 			}
-			if row.GetBool("can_run") != (status == "synced" || status == "failed") {
+			if row.CanRun != (status == "synced" || status == "failed") {
 				t.Fatalf("run eligibility %s", mustPolicyJSON(row))
 			}
 		})
@@ -206,17 +205,30 @@ func TestR14TasksRows(t *testing.T) {
 func TestR14SourceSelectionAndCacheIdentity(t *testing.T) {
 	s, _, r := r14Fixture(t)
 	ctx := repo.WithRepository(t.Context(), s.Repo)
-	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("rule_library", append(doc.GetList("rule_library"), jsonx.Obj("id", "collision", "name", "Synthetic.", "source_type", "url", "url", "https://example.com/other", "behavior", "classical", "enabled", true)))
-		return nil, nil
+	err := s.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		shared.RuleLibrary = append(shared.RuleLibrary, model.RuleLibraryItem{
+			ID:         "collision",
+			Name:       "Synthetic.",
+			SourceType: new("url"),
+			URL:        new("https://example.com/other"),
+			Behavior:   new("classical"),
+			Enabled:    new(true),
+		})
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, doc *jsonx.Object) (*jsonx.Object, error) {
-		doc.Set("rule_configs", append(doc.GetList("rule_configs"), jsonx.Obj("id", "second", "itemType", "ruleset", "library_rule_id", "collision", "enabled", true, "policy", "PROXY")))
-		doc.GetObject("routers").GetList("items")[0].(*jsonx.Object).Set("ip_rule_sets", []any{"remote", "second", "remote"})
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.RuleConfigs = append(p.RuleConfigs, model.RuleConfig{
+			ID:            "second",
+			ItemType:      "ruleset",
+			LibraryRuleID: "collision",
+			Enabled:       new(true),
+			Policy:        new("PROXY"),
+		})
+		p.Routers.Items[0].IPRuleSets = []string{"remote", "second", "remote"}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

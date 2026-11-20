@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 func TestN89TopologyChecksOnlyConsumedIdentity(t *testing.T) {
@@ -28,13 +28,8 @@ func TestN89TopologyChecksOnlyConsumedIdentity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := jsonx.Parse(data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want, err := jsonx.Parse([]byte(tc.want))
-			if err != nil || !jsonx.Equal(got, want) {
-				t.Fatalf("whole state differs: %s %v", data, err)
+			if !testjson.Equal(json.RawMessage(tc.want), json.RawMessage(data)) {
+				t.Fatalf("whole state differs: %s", testjson.Diff(json.RawMessage(tc.want), json.RawMessage(data)))
 			}
 			if tc.name == "legacy-ignores-unrelated-link" {
 				ids, err := LegacyAgentIDs(&p, c)
@@ -73,11 +68,8 @@ func TestN89InstallationProofRequiresStoredText(t *testing.T) {
 		want bool
 	}{{`0`, false}, {`1`, false}, {`true`, false}, {`[]`, false}, {`{}`, false}, {`""`, false}, {`"0"`, true}, {`"synthetic-proof"`, true}} {
 		t.Run(tc.raw, func(t *testing.T) {
-			agent, err := jsonx.Parse([]byte(`{"gateway_installation_id":` + tc.raw + `}`))
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := GatewayWasUsed(jsonx.NewObject(), agent, nil)
+			agent := json.RawMessage(`{"gateway_installation_id":` + tc.raw + `}`)
+			got, err := GatewayWasUsed(map[string]any{}, agent, nil)
 			if err != nil || got != tc.want {
 				t.Fatalf("proof %s: %v %v", tc.raw, got, err)
 			}
