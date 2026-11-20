@@ -56,6 +56,20 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-20 (afternoon): P0 + W1 + W2 MERGED, go = 5f034b1ba** (batch-16, gate PASS after fixes by Codex
+533a78db: pyref source metadata for oxidns/adapter.go (TestBoundaryGenerationCorpus 270→266, 4 refs no longer needed after
+the enabled fix), oracle registration, repo JSON writes SetEscapeHTML(false), legacy ProfileMetadata Detach, shared field
+position order, compact built-in defaults). Lesson: agents must run CONFIGFLOW_DIFF difftests of ALL affected packages +
+full preflight and refresh pyref source metadata themselves (now in every brief).
+In flight: W3 (38c8b940) + W4 (6296c861) told to rebase onto go and finish their W1-dependent last steps; wave 2 started
+early for the non-W3/W4-dependent packages: W5 config-api (Codex 317a5ae8, branch go-n8-11-w5-config-api; incl. 409
+usages fix, auth caller migration, W1 review L1 validations, non-finite 400) and W6 deploy-gateway (Codex e857938b, HR,
+branch go-n8-11-w6-deploy-gateway). W7 waits for W3/W4; W8 later (load). Gate coverage fix ready on go-gate-diff-coverage
+@0bb5d949f (needs onboarding null-policy fix to pass) → merge together with the "flag truthiness" task (W2 review L3:
+explicit null/0/""/false/[]/{} = disabled, missing = default, else enabled; one shared helper across rules/matcher,
+discovery, convert, provider/delivery, routers/ipv6_plan, notifications, oxidns adapter; + onboarding null policy shown as
+JSON null) — dispatch after W3/W4 merge.
+
 **Update 2026-11-20 (N8-11 wave 1):** P0 (aa803cd5, go-n8-11-p0@212aeac09) batch-15 gate FAILED: it changed
 weburl/logsafe.go which is a source of many pyref archives (mosdns/oxidns…) → "Python 参考已变化" in preflight + core race.
 P0 told to refresh source metadata only (entries unchanged). Wave 1 all based on P0 212aeac09:
