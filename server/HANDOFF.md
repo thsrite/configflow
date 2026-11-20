@@ -56,6 +56,18 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-20 (evening): batch-17 MERGED (W3 + W4 + reviews), go = 0fcca2c24.** Codex quota out until
+2026-11-23 21:18 → maintainer: Codex work goes to antigravity/gemini-4-neon-high (mode full-access); HR reviews stay fresh
+Opus. Continue an existing worktree with `paseo run --workspace <wks_id>` (`--cwd` is ignored from an agent session).
+Preflight script now logs per tree (~/.cache/rt-tmp/preflight-<dir>.log); don't pin briefs to .32 — pick the idle host.
+State: W5 done + Opus review (401bcf8e, 0 high, 3 medium fixed) → branch go-opus-review-n8-11-w5@b11f95a36, waiting for W6.
+Ruling: DELETE /api/profiles/<id> with malformed JSON → 400 (empty body still deletes). W6 (Gemini 71b8dd8d, branch
+go-n8-11-w6-deploy-gateway) rebasing onto go to integrate W4's RuleSourceReader + fix onboarding null policy (explicit
+null ≠ missing; shown as JSON null) → then fresh Opus HR review → batch W5+W6. W7 (Gemini 6f6e6553, branch
+go-n8-11-w7-generation) started, includes the "flag truthiness" sweep (missing → default; false/null/numeric 0/""/[]/{}
+→ false; else true; one shared helper). W8 after W6 merges (api/agents tests overlap). Gate coverage branch
+go-gate-diff-coverage@0bb5d949f joins the W7 batch.
+
 **Update 2026-11-20 (afternoon): P0 + W1 + W2 MERGED, go = 5f034b1ba** (batch-16, gate PASS after fixes by Codex
 533a78db: pyref source metadata for oxidns/adapter.go (TestBoundaryGenerationCorpus 270→266, 4 refs no longer needed after
 the enabled fix), oracle registration, repo JSON writes SetEscapeHTML(false), legacy ProfileMetadata Detach, shared field
