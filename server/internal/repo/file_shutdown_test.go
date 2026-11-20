@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -81,15 +80,14 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			r, runtime, base := commitRuntime(t)
-			rule := jsonx.Obj("id", "o3-rule", "name", "O3", "source_type", "url",
-				"url", "https://rules.example.com/o3.txt", "behavior", "domain", "format", "text", "enabled", true)
+			rule := testjson.Decode[model.RuleConfig](t, json.RawMessage(`{"id":"o3-rule","name":"O3","source_type":"url","url":"https://rules.example.com/o3.txt","behavior":"domain","format":"text","enabled":true}`))
 			content := []byte("example.com\n")
 			for range 2 {
-				if _, err := rulefetch.WriteCache(base, fileCacheRule(t, rule), rulefetch.Content{Data: content}, nil); err != nil {
+				if _, err := rulefetch.WriteCache(base, rule, rulefetch.Content{Data: content}, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
-			path, err := r.SharedPath(filepath.ToSlash(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)))))
+			path, err := r.SharedPath(filepath.ToSlash(filepath.Join("rules", rules.CacheFilename(rule))))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -115,7 +113,7 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 			defer disconnect()
 			done := make(chan error, 1)
 			go func() {
-				_, err := rulefetch.WriteCache(ctx, fileCacheRule(t, rule), rulefetch.Content{Data: content}, nil)
+				_, err := rulefetch.WriteCache(ctx, rule, rulefetch.Content{Data: content}, nil)
 				done <- err
 			}()
 			escaped := false
@@ -156,14 +154,13 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 
 func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 	r, runtime, base := commitRuntime(t)
-	rule := jsonx.Obj("id", "closed-rule", "name", "Closed", "source_type", "url",
-		"url", "https://rules.example.com/closed.txt", "behavior", "domain", "format", "text")
+	rule := testjson.Decode[model.RuleConfig](t, json.RawMessage(`{"id":"closed-rule","name":"Closed","source_type":"url","url":"https://rules.example.com/closed.txt","behavior":"domain","format":"text"}`))
 	for range 2 {
-		if _, err := rulefetch.WriteCache(base, fileCacheRule(t, rule), rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
+		if _, err := rulefetch.WriteCache(base, rule, rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule))))
+	path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(rule)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +170,7 @@ func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 	}
 	ctx := runtime.BindRequest(base)
 	runtime.Shutdown(context.Background())
-	_, err = rulefetch.WriteCache(ctx, fileCacheRule(t, rule), rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil)
+	_, err = rulefetch.WriteCache(ctx, rule, rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil)
 	info, statErr := os.Stat(path)
 	if !errors.Is(err, context.Canceled) || statErr != nil || !info.ModTime().Equal(old) {
 		t.Fatalf("closed Runtime touched rule freshness: %v, %v", err, statErr)
@@ -197,7 +194,7 @@ func TestO36cFileOwnerLockRuntimeBoundary(t *testing.T) {
 					path, err = r.SharedPath("owner.json")
 					write = func(ctx context.Context) error {
 						if kind == "shared-json" {
-							_, err := r.WriteSharedJSON(ctx, "owner.json", jsonx.Obj("value", "new"))
+							_, err := r.WriteSharedJSON(ctx, "owner.json", map[string]any{"value": "new"})
 							return err
 						}
 						_, err := r.WriteSharedText(ctx, "owner.json", []byte("new"))
@@ -207,7 +204,7 @@ func TestO36cFileOwnerLockRuntimeBoundary(t *testing.T) {
 					path, err = r.ProfilePath("default", "owner.json")
 					write = func(ctx context.Context) error {
 						if kind == "profile-json" {
-							_, err := r.WriteProfileJSON(ctx, "default", "owner.json", jsonx.Obj("value", "new"))
+							_, err := r.WriteProfileJSON(ctx, "default", "owner.json", map[string]any{"value": "new"})
 							return err
 						}
 						_, err := r.WriteProfileText(ctx, "default", "owner.json", []byte("new"))
@@ -272,17 +269,4 @@ func TestO36cFileOwnerLockRuntimeBoundary(t *testing.T) {
 			})
 		}
 	}
-}
-
-func fileCacheRule(tb testing.TB, value any) model.RuleConfig {
-	tb.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	var rule model.RuleConfig
-	if err := json.Unmarshal(data, &rule); err != nil {
-		tb.Fatal(err)
-	}
-	return rule
 }

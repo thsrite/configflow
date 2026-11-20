@@ -7,18 +7,21 @@ package repo
 // tokenURLSafe, a re-executed test binary as the second process).
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 const mpHelperEnv = "CONFIGFLOW_REPO_MP_HELPER"
@@ -264,20 +267,31 @@ func TestThreadLockRemainsReentrantForSameThread(t *testing.T) {
 func TestRepositoryCreatesIsolatedDefaultProfile(t *testing.T) {
 	repository := newRepo(t)
 	root := repository.DataDir()
-	profiles := must(repository.ListProfiles(bg))(t)
-	wantEqual(t, profiles[0].(*jsonx.Object).Value("id"), "default")
-	wantEqual(t, must(repository.ProfileDir("default"))(t), filepath.Join(root, "profiles", "default"))
-	wantEqual(t, repository.DatabasePath(), filepath.Join(root, "configflow.sqlite3"))
+	profiles := must(repository.ListProfileRecords(bg))(t)
+	if profiles[0].ID != "default" {
+		t.Fatalf("first profile %q", profiles[0].ID)
+	}
+	if got := must(repository.ProfileDir("default"))(t); got != filepath.Join(root, "profiles", "default") {
+		t.Fatalf("profile dir %q", got)
+	}
+	if got := repository.DatabasePath(); got != filepath.Join(root, "configflow.sqlite3") {
+		t.Fatalf("db path %q", got)
+	}
 	mpAbsent(t, filepath.Join(root, "config.json"))
-	wantEqual(t, must(repository.ExportAll(bg, false))(t).Value("schema_version"), 5)
+	wantJSONEqual(t, parseJSONObj(t, must(repository.ExportAllJSON(bg, false))(t)).Value("schema_version"), 5)
 	mpAbsent(t, filepath.Join(root, "system.json"))
 	mpAbsent(t, filepath.Join(root, "profiles", "default", "config.json"))
-	profile := must(repository.GetProfile(bg, "default"))(t)
-	wantEqual(t, profile.Value("proxy_groups"), []any{})
-	if profile.Has("resource_refs") || profile.Has("node_dialers") {
+	profile := parseJSONObj(t, must(repository.ExportProfileJSON(bg, "default"))(t))
+	wantJSONEqual(t, profile.Value("proxy_groups"), []any{})
+	if _, ok := profile.Get("resource_refs"); ok {
 		t.Fatal("intermediate-format fields in a new profile")
 	}
-	wantEqual(t, must(repository.SharedCacheDir())(t), filepath.Join(root, "shared", "subscribes"))
+	if _, ok := profile.Get("node_dialers"); ok {
+		t.Fatal("intermediate-format fields in a new profile")
+	}
+	if got := must(repository.SharedCacheDir())(t); got != filepath.Join(root, "shared", "subscribes") {
+		t.Fatalf("shared cache dir %q", got)
+	}
 }
 
 func mpAbsent(t *testing.T, path string) {
@@ -299,14 +313,22 @@ func mpFixedToken(t *testing.T, token string) {
 	mpToken(t, func() string { return token })
 }
 
-func mpSystemConfig(t *testing.T, repository *Repository) *jsonx.Object {
+func mpSystemConfig(t *testing.T, repository *Repository) *testObj {
 	t.Helper()
-	return must(repository.GetSystem(bg))(t).GetObject("system_config")
+	sys := must(repository.System(bg))(t)
+	return parseJSONObj(t, must(model.Marshal(sys.SystemConfig))(t))
 }
 
-func mpPersistedSystemConfig(t *testing.T, repository *Repository) *jsonx.Object {
+func mpPersistedSystemConfig(t *testing.T, repository *Repository) *testObj {
 	t.Helper()
-	return must(must(decodeEntry(must(repository.Store().Load())(t)))(t).legacyDocument())(t).GetObject("system").GetObject("system_config")
+	entry := must(repository.Store().Load())(t)
+	for _, field := range entry.Document.System.Fields {
+		if field.Name == "system_config" {
+			return parseJSONObj(t, field.Value)
+		}
+	}
+	t.Fatal("system_config field missing")
+	return nil
 }
 
 func mpNoTemporaries(t *testing.T, repository *Repository) {
@@ -333,9 +355,11 @@ func TestEmptyDataDirectoryGeneratesAndAtomicallyPersistsRuleProxyToken(t *testi
 	mpFixedToken(t, "generated-default-token")
 	repository := newRepo(t)
 
-	wantEqual(t, mpSystemConfig(t, repository).Value("rule_proxy_token"), "generated-default-token")
-	wantEqual(t, mpSystemConfig(t, repository).GetOr("config_token", ""), "")
-	wantEqual(t, mpPersistedSystemConfig(t, repository).Value("rule_proxy_token"), "generated-default-token")
+	wantJSONEqual(t, mpSystemConfig(t, repository).Value("rule_proxy_token"), "generated-default-token")
+	if got := mpSystemConfig(t, repository).GetString("config_token"); got != "" {
+		t.Fatalf("config_token %q", got)
+	}
+	wantJSONEqual(t, mpPersistedSystemConfig(t, repository).Value("rule_proxy_token"), "generated-default-token")
 	mpNoTemporaries(t, repository)
 	mpAbsent(t, filepath.Join(repository.DataDir(), "config.json"))
 }
@@ -354,27 +378,31 @@ func TestLegacyMissingOrEmptyRuleProxyTokenIsGeneratedAndPersisted(t *testing.T)
 	} {
 		t.Run(name, func(t *testing.T) {
 			mpFixedToken(t, "generated-legacy-token")
-			legacySystemConfig := parse(t, text)
-			repository := must(Open(t.TempDir(), Options{InitialConfig: func() *jsonx.Object {
-				return jsonx.Obj("system_config", legacySystemConfig.DeepCopy(), "rule_configs", []any{})
+			legacySystemConfig := parseJSONObj(t, []byte(text))
+			repository := must(Open(t.TempDir(), Options{InitialSettings: func() *model.Config {
+				p := decodeJSON[model.Profile](t, `{"rule_configs":[]}`)
+				return &model.Config{Profile: &p, SystemConfig: decodeJSON[model.SystemConfig](t, text)}
 			}}))(t)
 
-			wantEqual(t, mpSystemConfig(t, repository).Value("rule_proxy_token"), "generated-legacy-token")
-			if token := legacySystemConfig.Value("config_token"); jsonx.Truthy(token) {
-				wantEqual(t, mpSystemConfig(t, repository).Value("config_token"), token)
+			wantJSONEqual(t, mpSystemConfig(t, repository).Value("rule_proxy_token"), "generated-legacy-token")
+			if token := legacySystemConfig.GetString("config_token"); token != "" {
+				wantJSONEqual(t, mpSystemConfig(t, repository).Value("config_token"), token)
 			}
-			wantEqual(t, mpPersistedSystemConfig(t, repository).Value("rule_proxy_token"), "generated-legacy-token")
+			wantJSONEqual(t, mpPersistedSystemConfig(t, repository).Value("rule_proxy_token"), "generated-legacy-token")
 		})
 	}
 }
 
 func TestNewRepositoryRotatesEqualFactoryTokens(t *testing.T) {
 	mpFixedToken(t, "generated-new-token")
-	repository := must(Open(t.TempDir(), Options{InitialConfig: func() *jsonx.Object {
-		return parse(t, `{"system_config": {"config_token": "factory-shared-token", "rule_proxy_token": "factory-shared-token"}}`)
+	repository := must(Open(t.TempDir(), Options{InitialSettings: func() *model.Config {
+		return &model.Config{
+			Profile:      &model.Profile{},
+			SystemConfig: decodeJSON[model.SystemConfig](t, `{"config_token": "factory-shared-token", "rule_proxy_token": "factory-shared-token"}`),
+		}
 	}}))(t)
 
-	want := parse(t, `{
+	want := json.RawMessage(`{
 		"server_domain": "",
 		"github_proxy_domain": "",
 		"rule_fetch_proxy": "",
@@ -382,19 +410,20 @@ func TestNewRepositoryRotatesEqualFactoryTokens(t *testing.T) {
 		"rule_proxy_token": "generated-new-token",
 		"retired_rule_proxy_tokens": ["factory-shared-token"]
 	}`)
-	wantEqual(t, mpSystemConfig(t, repository), want)
+	wantJSONEqual(t, mpSystemConfig(t, repository), want)
 }
 
-func mpSetSystemConfig(pairs ...any) Updater {
-	return func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Update(jsonx.Obj(pairs...))
-		return nil, nil
-	}
+func mpSetSystemConfig(t *testing.T, r *Repository, key, value string) {
+	t.Helper()
+	raw := mustMarshalJSON(t, value)
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		return system.SystemConfig.SetJSON(key, raw)
+	}))
 }
 
 func TestExistingNonemptyRuleProxyTokenIsPreserved(t *testing.T) {
 	repository := newRepo(t)
-	must(repository.UpdateSystemTransaction(bg, mpSetSystemConfig("rule_proxy_token", "keep-existing")))(t)
+	mpSetSystemConfig(t, repository, "rule_proxy_token", "keep-existing")
 	mpToken(t, func() string {
 		t.Error("must not replace an existing token")
 		return "replaced"
@@ -402,18 +431,19 @@ func TestExistingNonemptyRuleProxyTokenIsPreserved(t *testing.T) {
 
 	reloaded := openRepo(t, repository.DataDir())
 
-	wantEqual(t, mpSystemConfig(t, reloaded).Value("rule_proxy_token"), "keep-existing")
+	wantJSONEqual(t, mpSystemConfig(t, reloaded).Value("rule_proxy_token"), "keep-existing")
 }
 
 func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T) {
 	repository := newRepo(t)
-	system := must(repository.GetSystem(bg))(t)
-	system.GetObject("system_config").Update(jsonx.Obj("config_token", "shared-token", "rule_proxy_token", "shared-token"))
-	document := must(repository.ExportAll(bg, false))(t)
-	document.Set("system", system)
 	// Persist a raw document that skips the repository's token rule.
-	base := must(decodeEntry(must(repository.Store().Load())(t)))(t)
-	if _, _, err := repository.commitStore(context.Background(), base, must(modelFromLegacy(document, base.Entry.Document))(t), nil); err != nil {
+	base := must(repository.Store().Load())(t)
+	rows := cloneStoreDoc(t, base.Document)
+	sc := mpPersistedSystemConfig(t, repository)
+	sc.Set("config_token", "shared-token")
+	sc.Set("rule_proxy_token", "shared-token")
+	setStoreField(&rows.System.Fields, "system_config", mustMarshalJSON(t, sc))
+	if _, _, err := repository.Store().Commit(base, rows, nil); err != nil {
 		t.Fatal(err)
 	}
 	mpFixedToken(t, "rotated-internal-token")
@@ -421,15 +451,15 @@ func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T) 
 	restarted := openRepo(t, repository.DataDir())
 
 	systemConfig := mpSystemConfig(t, restarted)
-	wantEqual(t, systemConfig.Value("config_token"), "shared-token")
-	wantEqual(t, systemConfig.Value("rule_proxy_token"), "rotated-internal-token")
-	wantEqual(t, mpPersistedSystemConfig(t, restarted), systemConfig)
+	wantJSONEqual(t, systemConfig.Value("config_token"), "shared-token")
+	wantJSONEqual(t, systemConfig.Value("rule_proxy_token"), "rotated-internal-token")
+	wantJSONEqual(t, mpPersistedSystemConfig(t, restarted), systemConfig)
 	mpTokens(t, restarted, "shared-token", "rotated-internal-token")
-	wantEqual(t, systemConfig.Value("retired_rule_proxy_tokens"), []any{"shared-token"})
+	wantJSONEqual(t, systemConfig.Value("retired_rule_proxy_tokens"), []any{"shared-token"})
 	for range 3 {
 		restarted = openRepo(t, repository.DataDir())
 		mpTokens(t, restarted, "shared-token", "rotated-internal-token")
-		wantEqual(t, mpSystemConfig(t, restarted).Value("retired_rule_proxy_tokens"), []any{"shared-token"})
+		wantJSONEqual(t, mpSystemConfig(t, restarted).Value("retired_rule_proxy_tokens"), []any{"shared-token"})
 	}
 	mpNoTemporaries(t, repository)
 }
@@ -438,39 +468,42 @@ func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T) 
 // from a legacy config.json; the same system_config is given as the initial
 // configuration of a fresh data directory (same conversion path).
 func TestLegacyRetiredRuleProxyTokensAreNormalizedAndPreserved(t *testing.T) {
-	repository := must(Open(t.TempDir(), Options{InitialConfig: func() *jsonx.Object {
-		return parse(t, `{"system_config": {
+	repository := must(Open(t.TempDir(), Options{InitialSettings: func() *model.Config {
+		return &model.Config{
+			Profile: &model.Profile{},
+			SystemConfig: decodeJSON[model.SystemConfig](t, `{
 			"rule_proxy_token": "current-internal",
 			"retired_rule_proxy_tokens": ["retired-one", "", null, "retired-one", "retired-two"]
-		}}`)
+		}`),
+		}
 	}}))(t)
 
-	wantEqual(t, mpSystemConfig(t, repository).Value("retired_rule_proxy_tokens"), []any{"retired-one", "retired-two"})
+	wantJSONEqual(t, mpSystemConfig(t, repository).Value("retired_rule_proxy_tokens"), []any{"retired-one", "retired-two"})
 	mpTokens(t, repository, "current-internal", "retired-one", "retired-two")
-	wantEqual(t, mpSystemConfig(t, openRepo(t, repository.DataDir())).Value("retired_rule_proxy_tokens"),
+	wantJSONEqual(t, mpSystemConfig(t, openRepo(t, repository.DataDir())).Value("retired_rule_proxy_tokens"),
 		[]any{"retired-one", "retired-two"})
 }
 
 func TestSystemTransactionNeverPersistsEqualConfigAndRuleProxyTokens(t *testing.T) {
 	repository := newRepo(t)
-	internalToken := mpSystemConfig(t, repository).Value("rule_proxy_token")
+	internalToken := mpSystemConfig(t, repository).GetString("rule_proxy_token")
 	mpFixedToken(t, "transaction-rotated-token")
 
-	must(repository.UpdateSystemTransaction(bg, mpSetSystemConfig("config_token", internalToken)))(t)
+	mpSetSystemConfig(t, repository, "config_token", internalToken)
 
 	persisted := mpPersistedSystemConfig(t, repository)
-	wantEqual(t, persisted.Value("config_token"), internalToken)
-	wantEqual(t, persisted.Value("rule_proxy_token"), "transaction-rotated-token")
-	wantEqual(t, mpSystemConfig(t, repository), persisted)
+	wantJSONEqual(t, persisted.Value("config_token"), internalToken)
+	wantJSONEqual(t, persisted.Value("rule_proxy_token"), "transaction-rotated-token")
+	wantJSONEqual(t, mpSystemConfig(t, repository), persisted)
 }
 
 func TestExistingNonemptyRuleProxyTokenIsPreservedAcrossRestarts(t *testing.T) {
 	for _, oldToken := range []string{"legacy token/&?=秘密", " whitespace ", "🔐/+=?%token", "\n\t"} {
 		t.Run(oldToken, func(t *testing.T) {
 			original := newRepo(t)
-			system := must(original.GetSystem(bg))(t)
-			system.GetObject("system_config").Set("rule_proxy_token", oldToken)
-			must(original.SaveSystem(bg, system, nil))(t)
+			system := must(original.System(bg))(t)
+			system.SystemConfig.RuleProxyToken = oldToken
+			must(original.SaveSystemRecord(bg, system, nil))(t)
 			mpToken(t, func() string {
 				t.Error("must not replace any existing nonempty token")
 				return "replaced"
@@ -478,11 +511,11 @@ func TestExistingNonemptyRuleProxyTokenIsPreservedAcrossRestarts(t *testing.T) {
 
 			for range 3 {
 				restarted := openRepo(t, original.DataDir())
-				wantEqual(t, mpSystemConfig(t, restarted).Value("rule_proxy_token"), oldToken)
+				wantJSONEqual(t, mpSystemConfig(t, restarted).Value("rule_proxy_token"), oldToken)
 				mpTokens(t, restarted, oldToken)
 			}
 
-			wantEqual(t, mpPersistedSystemConfig(t, original).Value("rule_proxy_token"), oldToken)
+			wantJSONEqual(t, mpPersistedSystemConfig(t, original).Value("rule_proxy_token"), oldToken)
 			mpNoTemporaries(t, original)
 		})
 	}
@@ -494,7 +527,7 @@ func TestProfileIDCannotEscapeProfilesDirectory(t *testing.T) {
 	for _, profileID := range []string{"../outside", "..", "a/b", "a\\b", "C:"} {
 		_, err := repository.ProfileDir(profileID)
 		wantError(t, err, ErrValidation, "")
-		_, err = repository.GetProfile(bg, profileID)
+		_, err = repository.Profile(bg, profileID)
 		wantError(t, err, ErrValidation, "")
 	}
 
@@ -513,27 +546,27 @@ func TestProfileIDCannotEscapeProfilesDirectory(t *testing.T) {
 func mpGroups(names ...string) []any {
 	groups := make([]any, len(names))
 	for index, name := range names {
-		groups[index] = jsonx.Obj("id", name, "name", name)
+		groups[index] = testObjKV("id", name, "name", name)
 	}
 	return groups
 }
 
 func mpSaveGroups(t *testing.T, repository *Repository, profileID string, names ...string) error {
 	t.Helper()
-	_, _, err := repository.SaveProfile(bg, profileID, jsonx.Obj("proxy_groups", mpGroups(names...)), nil)
+	_, _, err := repository.SaveProfileFieldsJSON(bg, profileID, mustMarshalJSON(t, testObjKV("proxy_groups", mpGroups(names...))), nil)
 	return err
 }
 
 func mpProfileGroups(t *testing.T, repository *Repository, profileID string) any {
 	t.Helper()
-	return must(repository.GetProfile(bg, profileID))(t).Value("proxy_groups")
+	return parseJSONObj(t, must(repository.ExportProfileJSON(bg, profileID))(t)).Value("proxy_groups")
 }
 
 func mpProfileIDs(t *testing.T, repository *Repository) map[string]bool {
 	t.Helper()
 	ids := map[string]bool{}
-	for _, profile := range must(repository.ListProfiles(bg))(t) {
-		ids[profile.(*jsonx.Object).GetString("id")] = true
+	for _, profile := range must(repository.ListProfileRecords(bg))(t) {
+		ids[profile.ID] = true
 	}
 	return ids
 }
@@ -565,21 +598,21 @@ func TestFailedDatabaseCommitKeepsPreviousData(t *testing.T) {
 	if after := must(repository.Store().Fingerprint())(t); after != before {
 		t.Fatalf("database changed: %+v → %+v", before, after)
 	}
-	wantEqual(t, mpProfileGroups(t, repository, "default"), mpGroups("old"))
-	wantEqual(t, mpProfileGroups(t, openRepo(t, repository.DataDir()), "default"), mpGroups("old"))
+	wantJSONEqual(t, mpProfileGroups(t, repository, "default"), mpGroups("old"))
+	wantJSONEqual(t, mpProfileGroups(t, openRepo(t, repository.DataDir()), "default"), mpGroups("old"))
 }
 
 func TestPartialSystemMetadataSaveKeepsOtherFields(t *testing.T) {
 	repository := newRepo(t)
-	must(repository.UpdateSystemTransaction(bg, mpSetSystemConfig("config_token", "token")))(t)
-	must(repository.UpdateSystemTransaction(bg, mpSetSystemConfig("server_domain", "http://configflow.test")))(t)
+	mpSetSystemConfig(t, repository, "config_token", "token")
+	mpSetSystemConfig(t, repository, "server_domain", "http://configflow.test")
 
 	systemConfig := mpSystemConfig(t, repository)
-	if !jsonx.Truthy(systemConfig.Value("rule_proxy_token")) {
+	if systemConfig.GetString("rule_proxy_token") == "" {
 		t.Fatal("no rule proxy token")
 	}
 	systemConfig.Delete("rule_proxy_token")
-	wantEqual(t, systemConfig, parse(t, `{
+	wantJSONEqual(t, systemConfig, json.RawMessage(`{
 		"server_domain": "http://configflow.test",
 		"github_proxy_domain": "",
 		"rule_fetch_proxy": "",
@@ -617,8 +650,8 @@ func mpRun(t *testing.T, timeout time.Duration, functions ...func() error) []err
 
 func TestConcurrentProfileSavesDoNotCrossContaminate(t *testing.T) {
 	repository := newRepo(t)
-	must(repository.CreateProfile(bg, jsonx.Obj("id", "alpha", "name", "Alpha"), ""))(t)
-	must(repository.CreateProfile(bg, jsonx.Obj("id", "beta", "name", "Beta"), ""))(t)
+	must(repository.CreateProfileRecord(bg, ProfileCreation{ID: "alpha", Name: "Alpha"}, ""))(t)
+	must(repository.CreateProfileRecord(bg, ProfileCreation{ID: "beta", Name: "Beta"}, ""))(t)
 
 	save := func(profileID string) func() error {
 		return func() error {
@@ -633,8 +666,8 @@ func TestConcurrentProfileSavesDoNotCrossContaminate(t *testing.T) {
 	if failures := mpRun(t, 60*time.Second, save("alpha"), save("beta")); len(failures) > 0 {
 		t.Fatal(failures)
 	}
-	wantEqual(t, mpProfileGroups(t, repository, "alpha"), mpGroups("alpha"))
-	wantEqual(t, mpProfileGroups(t, repository, "beta"), mpGroups("beta"))
+	wantJSONEqual(t, mpProfileGroups(t, repository, "alpha"), mpGroups("alpha"))
+	wantJSONEqual(t, mpProfileGroups(t, repository, "beta"), mpGroups("beta"))
 }
 
 func TestConcurrentProfileCreationPreservesSystemIndex(t *testing.T) {
@@ -643,7 +676,7 @@ func TestConcurrentProfileCreationPreservesSystemIndex(t *testing.T) {
 	create := func(profileID string) func() error {
 		return func() error {
 			<-start
-			_, err := repository.CreateProfile(bg, jsonx.Obj("id", profileID), "")
+			_, err := repository.CreateProfileRecord(bg, ProfileCreation{ID: profileID}, "")
 			return err
 		}
 	}
@@ -657,10 +690,10 @@ func TestConcurrentProfileCreationPreservesSystemIndex(t *testing.T) {
 	}
 }
 
-func mpAppendGroup(id, name string) Updater {
-	return func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.Set("proxy_groups", append(profile.GetList("proxy_groups"), jsonx.Obj("id", id, "name", name)))
-		return nil, nil
+func mpAppendGroup(id, name string) func(context.Context, *model.Profile) error {
+	return func(_ context.Context, profile *model.Profile) error {
+		profile.ProxyGroups = append(profile.ProxyGroups, model.ProxyGroup{ID: id, Name: name})
+		return nil
 	}
 }
 
@@ -672,7 +705,7 @@ func TestProfileTransactionPreservesConcurrentListUpdates(t *testing.T) {
 		id := "sub-" + string(rune('a'+index))
 		want[id] = true
 		workers = append(workers, func() error {
-			_, _, err := repository.UpdateProfileTransaction(bg, "default", mpAppendGroup(id, "Group "+id))
+			_, err := repository.UpdateProfile(bg, "default", mpAppendGroup(id, "Group "+id))
 			return err
 		})
 	}
@@ -680,16 +713,11 @@ func TestProfileTransactionPreservesConcurrentListUpdates(t *testing.T) {
 		t.Fatal(failures)
 	}
 	got := map[string]bool{}
-	for _, item := range must(repository.GetProfile(bg, "default"))(t).GetList("proxy_groups") {
-		got[item.(*jsonx.Object).GetString("id")] = true
+	for _, item := range must(repository.Profile(bg, "default"))(t).ProxyGroups {
+		got[item.ID] = true
 	}
-	if len(got) != len(want) {
-		t.Fatalf("groups %v", got)
-	}
-	for id := range want {
-		if !got[id] {
-			t.Fatalf("groups %v", got)
-		}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("groups %v, want %v", got, want)
 	}
 }
 
@@ -702,24 +730,24 @@ func TestSaveProfileRollsBackProfileWhenSystemCommitFails(t *testing.T) {
 	failure := mpFailCommit(repository, "injected system commit failure")
 	mpWantFailure(t, mpSaveGroups(t, repository, "default", "new"), failure)
 
-	wantEqual(t, mpProfileGroups(t, repository, "default"), mpGroups("old"))
+	wantJSONEqual(t, mpProfileGroups(t, repository, "default"), mpGroups("old"))
 }
 
 func TestSaveProfileRollsBackSystemWhenCommitFailsAfterReplace(t *testing.T) {
 	repository := newRepo(t)
-	before := must(repository.GetSystem(bg))(t)
+	before := must(model.Marshal(must(repository.System(bg))(t)))(t)
 	// Every row is written; the transaction must still roll back.
 	failure := mpFailCommit(repository, "injected post-replace failure")
 	mpWantFailure(t, mpSaveGroups(t, repository, "default", "new"), failure)
 
-	wantEqual(t, must(repository.GetSystem(bg))(t), before)
-	wantEqual(t, mpProfileGroups(t, repository, "default"), []any{})
+	wantJSONEqual(t, must(model.Marshal(must(repository.System(bg))(t)))(t), before)
+	wantJSONEqual(t, mpProfileGroups(t, repository, "default"), []any{})
 }
 
 func TestCreateProfileCleansDirectoryWhenSystemCommitFails(t *testing.T) {
 	repository := newRepo(t)
 	failure := mpFailCommit(repository, "injected system commit failure")
-	_, err := repository.CreateProfile(bg, jsonx.Obj("id", "orphan"), "")
+	_, err := repository.CreateProfileRecord(bg, ProfileCreation{ID: "orphan"}, "")
 	mpWantFailure(t, err, failure)
 
 	mpAbsent(t, must(repository.ProfileDir("orphan"))(t))
@@ -736,16 +764,22 @@ func TestCreateProfileRestoresPreexistingOrphanDirectoryOnCommitFailure(t *testi
 	noError(t, os.WriteFile(filepath.Join(orphanDir, "config.json"), originalConfig, 0o666))
 	noError(t, os.WriteFile(filepath.Join(orphanDir, "important.txt"), []byte("keep me"), 0o666))
 	failure := mpFailCommit(repository, "system commit failed")
-	_, err := repository.CreateProfile(bg, jsonx.Obj("id", "orphan"), "")
+	_, err := repository.CreateProfileRecord(bg, ProfileCreation{ID: "orphan"}, "")
 	mpWantFailure(t, err, failure)
 
-	wantEqual(t, string(must(os.ReadFile(filepath.Join(orphanDir, "config.json")))(t)), string(originalConfig))
-	wantEqual(t, string(must(os.ReadFile(filepath.Join(orphanDir, "important.txt")))(t)), "keep me")
-	var names []any
+	if got := must(os.ReadFile(filepath.Join(orphanDir, "config.json")))(t); !bytes.Equal(got, originalConfig) {
+		t.Fatalf("config.json %q", got)
+	}
+	if got := string(must(os.ReadFile(filepath.Join(orphanDir, "important.txt")))(t)); got != "keep me" {
+		t.Fatalf("important.txt %q", got)
+	}
+	var names []string
 	for _, entry := range must(os.ReadDir(orphanDir))(t) {
 		names = append(names, entry.Name())
 	}
-	wantEqual(t, names, []any{"config.json", "important.txt"})
+	if !reflect.DeepEqual(names, []string{"config.json", "important.txt"}) {
+		t.Fatalf("names %v", names)
+	}
 	if mpProfileIDs(t, repository)["orphan"] {
 		t.Fatal("profile was created")
 	}
@@ -753,7 +787,7 @@ func TestCreateProfileRestoresPreexistingOrphanDirectoryOnCommitFailure(t *testi
 
 func TestDeleteProfileSerializesWithInFlightProfileWrite(t *testing.T) {
 	repository := newRepo(t)
-	must(repository.CreateProfile(bg, jsonx.Obj("id", "deletable"), ""))(t)
+	must(repository.CreateProfileRecord(bg, ProfileCreation{ID: "deletable"}, ""))(t)
 	writeStarted, allowWrite := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	repository.Store().BeforeCommit = func() error {
@@ -799,13 +833,12 @@ func TestUpdateProfileTransactionRollsBackProfileWhenSystemCommitFails(t *testin
 	repository := newRepo(t)
 	noError(t, mpSaveGroups(t, repository, "default", "old"))
 	failure := mpFailCommit(repository, "system commit failed")
-	_, _, err := repository.UpdateProfileTransaction(bg, "default", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.Update(jsonx.Obj("proxy_groups", mpGroups("new")))
-		return nil, nil
+	_, err := repository.UpdateProfile(bg, "default", func(_ context.Context, profile *model.Profile) error {
+		return profile.SetJSON("proxy_groups", mustMarshalJSON(t, mpGroups("new")))
 	})
 	mpWantFailure(t, err, failure)
 
-	wantEqual(t, mpProfileGroups(t, repository, "default"), mpGroups("old"))
+	wantJSONEqual(t, mpProfileGroups(t, repository, "default"), mpGroups("old"))
 }
 
 func mpTombstones(t *testing.T, repository *Repository, profileID string) []string {
@@ -815,11 +848,11 @@ func mpTombstones(t *testing.T, repository *Repository, profileID string) []stri
 
 func TestDeleteProfileArchivesDerivedFilesWithoutDestroyingRecoveryData(t *testing.T) {
 	repository := newRepo(t)
-	must(repository.CreateProfile(bg, jsonx.Obj("id", "keep", "name", "Keep"), ""))(t)
+	must(repository.CreateProfileRecord(bg, ProfileCreation{ID: "keep", Name: "Keep"}, ""))(t)
 	directory := must(repository.ProfileDir("keep"))(t)
 	noError(t, os.Mkdir(directory, 0o777))
 	noError(t, os.WriteFile(filepath.Join(directory, "important.txt"), []byte("keep me"), 0o666))
-	profile := must(repository.ExportProfile(bg, "keep"))(t)
+	profile := must(repository.ExportProfileJSON(bg, "keep"))(t)
 
 	noError(t, repository.DeleteProfile(bg, "keep", ""))
 
@@ -831,12 +864,16 @@ func TestDeleteProfileArchivesDerivedFilesWithoutDestroyingRecoveryData(t *testi
 	if len(tombstones) != 1 {
 		t.Fatalf("tombstones %v", tombstones)
 	}
-	wantEqual(t, string(must(os.ReadFile(filepath.Join(tombstones[0], "important.txt")))(t)), "keep me")
+	if got := string(must(os.ReadFile(filepath.Join(tombstones[0], "important.txt")))(t)); got != "keep me" {
+		t.Fatalf("important.txt %q", got)
+	}
 	exported := filepath.Join(tombstones[0], "deleted-profile.json")
 	text := must(os.ReadFile(exported))(t)
-	wantEqual(t, must(jsonx.Parse(text))(t), profile)
+	wantJSONEqual(t, text, profile)
 	// The file is what Python writes: json.dumps(profile, ensure_ascii=False, indent=2) + "\n".
-	wantEqual(t, string(text), string(must(fileJSON(profile))(t)))
+	if !bytes.Equal(text, must(fileJSON(json.RawMessage(profile)))(t)) {
+		t.Fatal("deleted-profile.json formatting differs")
+	}
 	if mode := must(os.Stat(exported))(t).Mode().Perm(); mode != 0o600 {
 		t.Fatalf("mode %o", mode)
 	}
@@ -844,17 +881,19 @@ func TestDeleteProfileArchivesDerivedFilesWithoutDestroyingRecoveryData(t *testi
 
 func TestDeleteProfileRestoresDirectoryWhenSystemCommitFails(t *testing.T) {
 	repository := newRepo(t)
-	must(repository.CreateProfile(bg, jsonx.Obj("id", "keep", "name", "Keep"), ""))(t)
+	must(repository.CreateProfileRecord(bg, ProfileCreation{ID: "keep", Name: "Keep"}, ""))(t)
 	directory := must(repository.ProfileDir("keep"))(t)
 	noError(t, os.Mkdir(directory, 0o777))
 	marker := filepath.Join(directory, "important.txt")
 	noError(t, os.WriteFile(marker, []byte("original"), 0o666))
-	before := must(repository.GetSystem(bg))(t)
+	before := must(model.Marshal(must(repository.System(bg))(t)))(t)
 	failure := mpFailCommit(repository, "system commit failed")
 	mpWantFailure(t, repository.DeleteProfile(bg, "keep", ""), failure)
 
-	wantEqual(t, must(repository.GetSystem(bg))(t), before)
-	wantEqual(t, string(must(os.ReadFile(marker))(t)), "original")
+	wantJSONEqual(t, must(model.Marshal(must(repository.System(bg))(t)))(t), before)
+	if got := string(must(os.ReadFile(marker))(t)); got != "original" {
+		t.Fatalf("marker %q", got)
+	}
 	if tombstones := mpTombstones(t, repository, "keep"); len(tombstones) != 0 {
 		t.Fatalf("tombstones left: %v", tombstones)
 	}
@@ -866,22 +905,24 @@ func TestDeleteProfileRestoresDirectoryWhenSystemCommitFails(t *testing.T) {
 func TestIndependentRepositoriesMergeLockedFieldAndListUpdates(t *testing.T) {
 	first := newRepo(t)
 	second := openRepo(t, first.DataDir())
-	must2 := func(_ *jsonx.Object, _ int64, err error) error { return err }
-	noError(t, must2(first.SaveProfile(bg, "default", parse(t, `{"mihomo": {"custom_config": "before"}}`), nil)))
+	_, _, err := first.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{"mihomo": {"custom_config": "before"}}`), nil)
+	noError(t, err)
 
 	failures := mpRun(t, 10*time.Second,
 		func() error {
-			return must2(first.UpdateProfileFields(bg, "default", parse(t, `{"mihomo": {"custom_config": "field"}}`), nil))
+			_, _, err := first.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{"mihomo": {"custom_config": "field"}}`), nil)
+			return err
 		},
 		func() error {
-			return must2(second.UpdateProfileTransaction(bg, "default", mpAppendGroup("concurrent", "concurrent")))
+			_, err := second.UpdateProfile(bg, "default", mpAppendGroup("concurrent", "concurrent"))
+			return err
 		})
 	if len(failures) > 0 {
 		t.Fatal(failures)
 	}
-	result := must(first.GetProfile(bg, "default"))(t)
-	wantEqual(t, result.GetObject("mihomo").Value("custom_config"), "field")
-	wantEqual(t, result.Value("proxy_groups"), mpGroups("concurrent"))
+	result := parseJSONObj(t, must(first.ExportProfileJSON(bg, "default"))(t))
+	wantJSONEqual(t, result.GetObject("mihomo").Value("custom_config"), "field")
+	wantJSONEqual(t, result.Value("proxy_groups"), mpGroups("concurrent"))
 }
 
 func TestUpdateProfileFieldsThreeWayMergesStaleListAppends(t *testing.T) {
@@ -889,17 +930,19 @@ func TestUpdateProfileFieldsThreeWayMergesStaleListAppends(t *testing.T) {
 	second := openRepo(t, first.DataDir())
 	noError(t, mpSaveGroups(t, first, "default", "existing"))
 
-	firstBaseline := must(first.GetProfile(bg, "default"))(t)
-	secondBaseline := must(second.GetProfile(bg, "default"))(t)
+	firstBaseline := parseJSONObj(t, must(first.ExportProfileJSON(bg, "default"))(t))
+	secondBaseline := parseJSONObj(t, must(second.ExportProfileJSON(bg, "default"))(t))
 	firstValue := append(append([]any{}, firstBaseline.GetList("proxy_groups")...), mpGroups("from-first")...)
 	secondValue := append(append([]any{}, secondBaseline.GetList("proxy_groups")...), mpGroups("from-second")...)
 
-	_, _, err := first.UpdateProfileFields(bg, "default", jsonx.Obj("proxy_groups", firstValue),
-		jsonx.Obj("proxy_groups", firstBaseline.Value("proxy_groups")))
+	_, _, err := first.SaveProfileFieldsJSON(bg, "default",
+		mustMarshalJSON(t, testObjKV("proxy_groups", firstValue)),
+		mustMarshalJSON(t, testObjKV("proxy_groups", firstBaseline.Value("proxy_groups"))))
 	noError(t, err)
-	_, _, err = second.UpdateProfileFields(bg, "default", jsonx.Obj("proxy_groups", secondValue),
-		jsonx.Obj("proxy_groups", secondBaseline.Value("proxy_groups")))
+	_, _, err = second.SaveProfileFieldsJSON(bg, "default",
+		mustMarshalJSON(t, testObjKV("proxy_groups", secondValue)),
+		mustMarshalJSON(t, testObjKV("proxy_groups", secondBaseline.Value("proxy_groups"))))
 	noError(t, err)
 
-	wantEqual(t, mpProfileGroups(t, first, "default"), mpGroups("existing", "from-first", "from-second"))
+	wantJSONEqual(t, mpProfileGroups(t, first, "default"), mpGroups("existing", "from-first", "from-second"))
 }

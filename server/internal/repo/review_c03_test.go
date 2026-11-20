@@ -5,18 +5,19 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func c03ProfileWithLink(t *testing.T, target string) (*Repository, string) {
 	t.Helper()
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "p2", "name", "P2"), ""))(t)
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "p2", Name: "P2"}, ""))(t)
 	link := filepath.Join(r.ProfilesDir(), "p2")
 	noError(t, os.RemoveAll(link))
 	noError(t, os.Symlink(target, link))
@@ -28,13 +29,13 @@ func c03ProfileWithLink(t *testing.T, target string) (*Repository, string) {
 func TestDeleteProfileThroughSymlinkLoopFailsLikePython(t *testing.T) {
 	r, link := c03ProfileWithLink(t, "p2")
 	err := r.DeleteProfile(bg, "p2", "")
-	if err == nil || err.Error() != "Symlink loop from "+jsonx.Repr(link) {
+	if err == nil || err.Error() != "Symlink loop from '"+link+"'" {
 		t.Fatalf("got %v", err)
 	}
 	if _, isRepo := err.(*Error); isRepo {
 		t.Fatal("a symlink loop is not a repository error (Python RuntimeError, HTTP 500)")
 	}
-	if len(must(r.ListProfiles(bg))(t)) != 2 {
+	if len(must(r.ListProfileRecords(bg))(t)) != 2 {
 		t.Fatal("profile deleted")
 	}
 	if _, err := r.ProfilePath("p2", "generated/config.yaml"); err == nil {
@@ -77,14 +78,13 @@ func TestDanglingJournalLinkIsNotSetAside(t *testing.T) {
 // name's str() instead (accepted difference: handled error for a crash).
 func TestDeleteProfileBoundToAgentWithNonStringName(t *testing.T) {
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "p2", "name", "P2"), ""))(t)
-	must(r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "a1", "name", jsonx.Int(5), "profile_id", "p2")})
-		return nil, nil
-	}))(t)
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "p2", Name: "P2"}, ""))(t)
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", json.RawMessage(`[{"id":"a1","name":5,"profile_id":"p2"}]`))
+	}))
 	err := r.DeleteProfile(bg, "p2", "")
 	wantError(t, err, ErrInUse, "配置「P2」仍被以下 Agent 使用：5")
-	if len(must(r.ListProfiles(bg))(t)) != 2 {
+	if len(must(r.ListProfileRecords(bg))(t)) != 2 {
 		t.Fatal("profile deleted")
 	}
 }
@@ -94,10 +94,7 @@ func TestDeleteProfileBoundToAgentWithNonStringName(t *testing.T) {
 // (see also the "mosdns list with bad dns" reference case).
 func TestNonObjectMosdnsIsRefusedBeforeRuleReferences(t *testing.T) {
 	r := newRepo(t)
-	_, _, err := r.UpdateProfileTransaction(bg, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("mosdns", []any{"direct_rules"})
-		return nil, nil
-	})
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{"mosdns":["direct_rules"]}`), nil)
 	wantError(t, err, ErrValidation, "mosdns 参数必须是对象")
 }
 
@@ -142,10 +139,16 @@ func TestDataDirExpandUserLikePython(t *testing.T) {
 
 func c03Increment(t *testing.T, r *Repository, count int) {
 	for range count {
-		_, err := r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-			settings := system.GetObject("system_config")
-			settings.Set("counter", jsonx.Int(settings.GetInt("counter")+1))
-			return nil, nil
+		err := r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+			var n int64
+			if raw, ok := system.SystemConfig.Fields.Get("counter"); ok {
+				_ = json.Unmarshal(raw, &n)
+			}
+			raw, err := json.Marshal(n + 1)
+			if err != nil {
+				return err
+			}
+			return system.SystemConfig.Fields.Set("counter", raw)
 		})
 		if err != nil {
 			t.Error(err)
@@ -162,32 +165,37 @@ func TestTwoThreadsOnOneInstanceLoseNoUpdate(t *testing.T) {
 	}
 	<-done
 	<-done
-	wantEqual(t, must(r.GetSystem(bg))(t).GetObject("system_config").Value("counter"), jsonx.Int(20))
-	wantEqual(t, must(openRepo(t, r.DataDir()).GetSystem(bg))(t).GetObject("system_config").Value("counter"), jsonx.Int(20))
+	raw, _ := must(r.System(bg))(t).SystemConfig.Fields.Get("counter")
+	wantJSONEqual(t, raw, 20)
+	reopenedRaw, _ := must(openRepo(t, r.DataDir()).System(bg))(t).SystemConfig.Fields.Get("counter")
+	wantJSONEqual(t, reopenedRaw, 20)
 }
 
 // test_config_storage_migration.py::test_write_from_another_process_is_seen
 // (the other process is the Python repository).
 func TestWriteFromAnotherProcessIsSeen(t *testing.T) {
 	r := newRepo(t)
-	if must(r.GetProfile(bg, "default"))(t).Value("name") == "From another process" {
+	if must(r.Profile(bg, "default"))(t).Name == "From another process" {
 		t.Fatal("precondition")
 	}
 	script := filepath.Join(t.TempDir(), "ops.json")
 	noError(t, os.WriteFile(script, []byte(`[{"op":"update_profile","id":"default","updates":{"name":"From another process"}}]`), 0o600))
 	xcPython(t, "run", r.DataDir(), "plain", script)
-	wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("name"), "From another process")
+	if got := must(r.Profile(bg, "default"))(t).Name; got != "From another process" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 // test_config_storage_migration.py::test_cache_follows_the_generation and
 // the reopening half of test_restart_is_idempotent (without legacy files).
 func TestCacheFollowsTheGeneration(t *testing.T) {
 	r := newRepo(t)
-	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Cached")))(t)
+	cached := "Cached"
+	must(r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &cached}))(t)
 	loads, validations := r.loads.Load(), r.validations.Load()
 	for range 3 {
-		must(r.GetProfile(bg, "default"))(t)
-		must(r.ExportAll(bg, false))(t)
+		must(r.Profile(bg, "default"))(t)
+		must(r.ExportAllJSON(bg, false))(t)
 	}
 	if r.loads.Load() != loads || r.validations.Load() != validations {
 		t.Fatal("cached generation reloaded")
@@ -202,9 +210,12 @@ func TestCacheFollowsTheGeneration(t *testing.T) {
 	if len(opSnapshots(t, r, "*")) > 0 {
 		t.Fatal("snapshot taken")
 	}
-	must(openRepo(t, r.DataDir()).UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Elsewhere")))(t)
+	elsewhere := "Elsewhere"
+	must(openRepo(t, r.DataDir()).UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &elsewhere}))(t)
 	for range 3 {
-		wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("name"), "Elsewhere")
+		if got := must(r.Profile(bg, "default"))(t).Name; got != "Elsewhere" {
+			t.Fatalf("got %q", got)
+		}
 	}
 	if r.loads.Load() != loads+1 || r.validations.Load() != validations+1 {
 		t.Fatalf("loads %d validations %d", r.loads.Load()-loads, r.validations.Load()-validations)

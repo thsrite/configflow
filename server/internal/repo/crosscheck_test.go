@@ -32,6 +32,24 @@ import (
 	"configflow/internal/store"
 )
 
+// wantEqual asserts Python == on jsonx values (retained for legacy W9 tests).
+func wantEqual(t testing.TB, got, want any) {
+	t.Helper()
+	if !jsonx.Equal(got, want) {
+		t.Fatalf("got  %s\nwant %s", jsonx.Repr(got), jsonx.Repr(want))
+	}
+}
+
+// parse is json.loads of a literal (retained for legacy W9 tests).
+func parse(t testing.TB, text string) *jsonx.Object {
+	t.Helper()
+	value, err := jsonx.ParseString(text)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return value.(*jsonx.Object)
+}
+
 func xcPython(t *testing.T, command, directory, mode string, extra ...string) any {
 	t.Helper()
 	interpreter, repo := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")

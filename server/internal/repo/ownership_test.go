@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -11,9 +12,9 @@ import (
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 )
 
 func TestMain(m *testing.M) {
@@ -86,9 +87,10 @@ func TestMissingJobLockFailsClosed(t *testing.T) {
 	old := SetHooks(Hooks{})
 	defer SetHooks(old)
 	head := must(r.Head(bg))(t)
-	router := rsRouter(t, r).DeepCopy()
-	router.Set("endpoint", "http://192.0.2.5")
-	_, _, err := r.SaveProfile(bg, "live", jsonx.Obj("routers", jsonx.Obj("items", []any{router})), nil)
+	router := rsRouter(t, r)
+	router.Endpoint = "http://192.0.2.5"
+	raw := mustMarshalJSON(t, map[string]any{"routers": map[string]any{"items": []model.Router{router}}})
+	_, _, err := r.SaveProfileFieldsJSON(bg, "live", raw, nil)
 	if !errors.Is(err, ErrInUse) {
 		t.Fatal("unwired job gate allowed change", err)
 	}
@@ -98,10 +100,24 @@ func TestMissingJobLockFailsClosed(t *testing.T) {
 }
 
 func setOwnershipMarker(r *Repository, ctx context.Context, value string) error {
-	return r.update(ctx, writeOptions{}, func(_ context.Context, document *jsonx.Object) error {
-		document.GetObject("shared").Set("marker", value)
-		return nil
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return r.Update(ctx, func(_ context.Context, document *model.Document) error {
+		return document.Shared.Fields.Set("marker", raw)
 	})
+}
+
+func readOwnershipMarker(t *testing.T, r *Repository, ctx context.Context) string {
+	t.Helper()
+	raw, ok := must(r.Shared(ctx))(t).Fields.Get("marker")
+	if !ok {
+		return ""
+	}
+	var s string
+	noError(t, json.Unmarshal(raw, &s))
+	return s
 }
 
 func TestOwnerLifetimeAndLocalBatch(t *testing.T) {
@@ -119,7 +135,7 @@ func TestOwnerLifetimeAndLocalBatch(t *testing.T) {
 	}
 	err = setOwnershipMarker(r, ctxx.Uninterruptible(ctx), "batch")
 	noError(t, err)
-	if must(r.GetShared(bg))(t).GetString("marker") != "batch" {
+	if readOwnershipMarker(t, r, bg) != "batch" {
 		t.Fatal("batch interrupted after detach")
 	}
 }
@@ -135,7 +151,7 @@ func TestReadSnapshotSerializesWriterAndExpires(t *testing.T) {
 		go func() { written <- setOwnershipMarker(r, bg, "new") }()
 		key := resolvePath(r.lockFile)
 		repoEventually(t, func() bool { configLocksHeld := configLocks.Held(key); return configLocksHeld })
-		if must(r.GetShared(held))(t).GetString("marker") != "old" {
+		if readOwnershipMarker(t, r, held) != "old" {
 			t.Fatal("incoherent snapshot")
 		}
 		select {
@@ -143,7 +159,7 @@ func TestReadSnapshotSerializesWriterAndExpires(t *testing.T) {
 			t.Fatal("writer escaped snapshot", err)
 		default:
 		}
-		_, err := r.SaveShared(held, jsonx.NewObject(), nil)
+		_, err := r.SaveSharedRecord(held, &model.Shared{}, nil)
 		if !errors.Is(err, ErrReadOnlySnapshot) {
 			t.Fatal("snapshot allowed write", err)
 		}
@@ -153,7 +169,7 @@ func TestReadSnapshotSerializesWriterAndExpires(t *testing.T) {
 	if readSnapshotActive(past) || holdsLock(past, r.lockFile) {
 		t.Fatal("released context still holds snapshot/lock")
 	}
-	if must(r.GetShared(past))(t).GetString("marker") != "new" {
+	if readOwnershipMarker(t, r, past) != "new" {
 		t.Fatal("expired snapshot reused")
 	}
 	_, release, err := lockx.NewMutex(lockx.LevelDevice, "after-snapshot").Lock(past, time.Second)
@@ -163,7 +179,7 @@ func TestReadSnapshotSerializesWriterAndExpires(t *testing.T) {
 
 func TestProfileOperationsSerializePerProfileAndAllowParallelProfiles(t *testing.T) {
 	r := newRepo(t)
-	_, err := r.CreateProfile(bg, jsonx.Obj("id", "other", "name", "Other"), "")
+	_, err := r.CreateProfileRecord(bg, ProfileCreation{ID: "other", Name: "Other"}, "")
 	noError(t, err)
 	entered, release := make(chan struct{}), make(chan struct{})
 	defer func() {
@@ -200,7 +216,7 @@ func TestProfileOperationsSerializePerProfileAndAllowParallelProfiles(t *testing
 
 func TestDeleteWaitsForProfileWrite(t *testing.T) {
 	r := newRepo(t)
-	_, err := r.CreateProfile(bg, jsonx.Obj("id", "other", "name", "Other"), "")
+	_, err := r.CreateProfileRecord(bg, ProfileCreation{ID: "other", Name: "Other"}, "")
 	noError(t, err)
 	entered, release := make(chan struct{}), make(chan struct{})
 	defer func() {
@@ -256,7 +272,7 @@ func TestResourceLeafWaitAndLegacyFiles(t *testing.T) {
 		stamp := time.Unix(1700000000, 0)
 		noError(t, os.Chtimes(legacy, stamp, stamp))
 		before := must(os.Stat(legacy))(t)
-		_, err := r.WriteSharedJSON(bg, "sample.json", jsonx.NewObject())
+		_, err := r.WriteSharedJSON(bg, "sample.json", map[string]any{})
 		noError(t, err)
 		_, err = r.WriteProfileText(bg, "default", "artifact", []byte("complete"))
 		noError(t, err)
@@ -279,7 +295,7 @@ func TestResourceLeafWaitAndLegacyFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	newPath := filepath.Join(r.dataDir, "shared", "new.json")
-	_, err = r.WriteSharedJSON(bg, "new.json", jsonx.NewObject())
+	_, err = r.WriteSharedJSON(bg, "new.json", map[string]any{})
 	noError(t, err)
 	if _, err := os.Stat(newPath + ".lock"); !os.IsNotExist(err) {
 		t.Fatal("created file lock", err)

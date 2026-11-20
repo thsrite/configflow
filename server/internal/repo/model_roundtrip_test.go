@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/store"
 )
@@ -356,12 +355,14 @@ func TestStoredRoundTrip(t *testing.T) {
 		// are retained; current legacy validation intentionally permits these cases.
 		commit("profile R5", []modelRowKey{profileKey("description")}, func(d *model.Document) { d.Profiles[0].Description = "will replace via raw fixture" })
 		// Inject raw wrong types through the store only, then exercise unrelated typed edits.
-		raw := entry.Document
-		legacy := must(decodeRows(raw))(t)
-		legacy.GetObject("profiles").GetObject(owner).Set("description", jsonx.Obj("password", "synthetic-never-log"))
-		legacy.GetObject("system").Set("_revision", true)
-		legacy.GetObject("shared").Set("_revision", true)
-		injected := must(encodeRows(legacy, raw))(t)
+		injected := cloneStoreDoc(t, entry.Document)
+		for i := range injected.Profiles {
+			if injected.Profiles[i].ID == owner {
+				setStoreField(&injected.Profiles[i].Fields, "description", json.RawMessage(`{"password":"synthetic-never-log"}`))
+			}
+		}
+		setStoreField(&injected.System.Fields, "_revision", json.RawMessage(`true`))
+		setStoreField(&injected.Shared.Fields, "_revision", json.RawMessage(`true`))
 		var written bool
 		entry, written, err = target.Commit(entry, injected, nil)
 		if err != nil || !written {

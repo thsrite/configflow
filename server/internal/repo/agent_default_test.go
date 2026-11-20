@@ -1,8 +1,6 @@
 package repo
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/store"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,12 +8,13 @@ import (
 	"testing"
 
 	"configflow/internal/model"
+	"configflow/internal/store"
 )
 
 func TestAgentDefaultProfileUsesScopedRowView(t *testing.T) {
 	r := agentViewRepo(t)
 	for _, id := range []string{"selected", "7"} {
-		if _, err := r.CreateProfile(t.Context(), jsonx.Obj("id", id, "name", id), ""); err != nil {
+		if _, err := r.CreateProfileRecord(t.Context(), ProfileCreation{ID: id, Name: id}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -87,7 +86,7 @@ func TestAgentDefaultProfileUsesScopedRowView(t *testing.T) {
 
 func TestAgentDefaultProfileCoalescesColdGeneration(t *testing.T) {
 	r := agentViewRepo(t)
-	if _, err := r.CreateProfile(t.Context(), jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+	if _, err := r.CreateProfileRecord(t.Context(), ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{DefaultProfileID, "other"} {

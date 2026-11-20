@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 // A real private snapshot exercises both repositories' writes. The database
@@ -54,39 +56,29 @@ func TestN82ReviewPrivateRepositoryInterchange(t *testing.T) {
 	if err != nil {
 		t.Fatal("private fingerprint failed")
 	}
-	if err := r.update(bg, writeOptions{}, func(context.Context, *jsonx.Object) error { return nil }); err != nil {
+	if err := r.Update(bg, func(context.Context, *model.Document) error { return nil }); err != nil {
 		t.Fatal("private no-op failed")
 	}
 	if after, err := r.Store().Fingerprint(); err != nil || stamp != after {
 		t.Fatal("private no-op wrote rows")
 	}
-	doc, err := r.ExportAll(bg, false)
+	docRaw, err := r.ExportAllJSON(bg, false)
 	if err != nil {
 		t.Fatal("private export failed")
 	}
-	id := doc.GetObject("profiles").Keys()[0]
+	id := parseJSONObj(t, docRaw).GetObject("profiles").Keys()[0]
 	expectedPath := filepath.Join(directory, "expected.json")
 	audit := func() {
 		t.Helper()
-		doc, err := r.ExportAll(bg, false)
-		if err != nil {
-			t.Fatal("private export failed")
-		}
-		data, err := jsonx.Compact(doc)
+		data, err := r.ExportAllJSON(bg, false)
 		if err != nil || os.WriteFile(expectedPath, data, 0o600) != nil {
 			t.Fatal("private expectation failed")
 		}
 		run("audit", expectedPath)
 	}
 	audit()
-	_, _, err = r.UpdateProfileTransaction(bg, id, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		settings := current.GetObject("mihomo")
-		if settings == nil {
-			settings = jsonx.NewObject()
-			current.Set("mihomo", settings)
-		}
-		settings.Set("n82_review_go", jsonx.Obj("marker", true, "opaque", jsonx.Obj("z", jsonx.Float(1.0), "a", nil)))
-		return nil, nil
+	_, err = r.UpdateProfile(bg, id, func(_ context.Context, current *model.Profile) error {
+		return current.Mihomo.Fields.Set("n82_review_go", json.RawMessage(`{"marker":true,"opaque":{"z":1.0,"a":null}}`))
 	})
 	if err != nil {
 		t.Fatal("Go profile write failed")
@@ -102,12 +94,13 @@ func TestN82ReviewPrivateRepositoryInterchange(t *testing.T) {
 	if err != nil {
 		t.Fatal("expectation missing")
 	}
-	want, err := jsonx.Parse(expected)
+	actual, err := r.ExportAllJSON(bg, false)
 	if err != nil {
-		t.Fatal("expectation decode failed")
+		t.Fatal("Python→Go profile values differ; contents suppressed")
 	}
-	actual, err := r.ExportAll(bg, false)
-	if err != nil || !jsonx.Equal(actual, want) {
+	actualVal, aErr := testjson.Parse(actual)
+	wantVal, wErr := testjson.Parse(expected)
+	if aErr != nil || wErr != nil || !testjson.Equal(wantVal, actualVal) {
 		t.Fatal("Python→Go profile values differ; contents suppressed")
 	}
 	audit()

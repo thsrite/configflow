@@ -6,50 +6,20 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // rcDefaultRepo is ProfileRepository(root, get_default_config).
 func rcDefaultRepo(t *testing.T, dataDir string) *Repository {
 	t.Helper()
-	return must(Open(dataDir, Options{DefaultConfig: GetDefaultConfig}))(t)
-}
-
-// rcUpd turns an in-place edit into an Updater.
-func rcUpd(edit func(current *jsonx.Object)) Updater {
-	return func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		edit(current)
-		return nil, nil
-	}
-}
-
-// rcAppend is obj[key].append(items...).
-func rcAppend(obj *jsonx.Object, key string, items ...any) {
-	obj.Set(key, append(append([]any{}, obj.GetList(key)...), items...))
-}
-
-// rcAt is list[index] as an object.
-func rcAt(t testing.TB, list any, index int) *jsonx.Object {
-	t.Helper()
-	items, ok := jsonx.AsList(list)
-	if !ok || index >= len(items) {
-		t.Fatalf("no item %d in %s", index, jsonx.Repr(list))
-	}
-	object, ok := jsonx.AsObject(items[index])
-	if !ok {
-		t.Fatalf("item %d is not an object: %s", index, jsonx.Repr(items[index]))
-	}
-	return object
-}
-
-// rcList parses a JSON array literal.
-func rcList(t testing.TB, text string) []any {
-	t.Helper()
-	return parse(t, `{"v":`+text+`}`).GetList("v")
+	return must(Open(dataDir, Options{DefaultSettings: DefaultConfig}))(t)
 }
 
 // rcSQL runs statements on the database behind the repository's back.
@@ -77,16 +47,16 @@ func rcPragma(t testing.TB, path, statement string) string {
 	case string:
 		return typed
 	case int64:
-		return jsonx.Int(typed).String()
+		return strconv.FormatInt(typed, 10)
 	}
 	t.Fatalf("unexpected pragma value %T", value)
 	return ""
 }
 
-func rcLegacy(t testing.TB, hostname string) *jsonx.Object {
+func rcLegacyObj(t testing.TB, hostname string) *testObj {
 	t.Helper()
-	data := GetDefaultConfig()
-	extra := parse(t, strings.ReplaceAll(`{
+	data := parseJSONObj(t, must(model.Marshal(DefaultConfig()))(t))
+	extra := parseJSONObj(t, []byte(strings.ReplaceAll(`{
 		"subscriptions": [{"id": "sub", "name": "Source", "url": "https://HOST/subscription"}],
 		"nodes": [{"id": "node", "name": "Node", "server": "HOST", "type": "socks5", "port": 1080}],
 		"subscription_aggregations": [{"id": "agg", "name": "Aggregate", "subscriptions": ["sub"], "nodes": ["node"]}],
@@ -95,7 +65,7 @@ func rcLegacy(t testing.TB, hostname string) *jsonx.Object {
 		"rule_configs": [
 			{"id": "r1", "itemType": "ruleset", "library_rule_id": "lib", "name": "Domains", "behavior": "domain", "policy": "DIRECT"},
 			{"id": "r2", "itemType": "rule", "rule_type": "MATCH", "policy": "Proxy"}
-		]}`, "HOST", hostname))
+		]}`, "HOST", hostname)))
 	for key, value := range extra.All() {
 		data.Set(key, value)
 	}
@@ -104,37 +74,39 @@ func rcLegacy(t testing.TB, hostname string) *jsonx.Object {
 }
 
 func TestOriginalInlineRulesBecomeSharedSourcesWithoutChangingPolicies(t *testing.T) {
-	legacy := rcLegacy(t, "one.example")
-	rcAppend(legacy, "rule_configs", parse(t, `{"id": "inline", "itemType": "ruleset", "name": "Domains",
+	legacy := rcLegacyObj(t, "one.example")
+	inline := parseJSONObj(t, []byte(`{"id": "inline", "itemType": "ruleset", "name": "Domains",
 		"content": "private.example", "behavior": "domain", "policy": "Proxy", "enabled": false}`))
+	legacy.Set("rule_configs", append(legacy.GetList("rule_configs"), inline))
 	r := rcDefaultRepo(t, t.TempDir())
-	must(r.ImportAll(bg, legacy))(t)
-	resolved := must(r.GetCompatConfig(bg, "default", nil))(t)
-	rules := map[string]*jsonx.Object{}
+	must(r.ImportAllJSON(bg, mustMarshalJSON(t, legacy)))(t)
+	resolved := parseJSONObj(t, must(model.Marshal(must(r.Config(bg, "default", nil))(t)))(t))
+	rules := map[string]*testObj{}
 	for _, item := range resolved.GetList("rule_configs") {
-		rule := item.(*jsonx.Object)
+		rule := item.(*testObj)
 		rules[rule.GetString("id")] = rule
 	}
-	wantEqual(t, rules["r1"].Value("content"), "one.example")
-	wantEqual(t, rules["inline"].Value("content"), "private.example")
-	wantEqual(t, rules["inline"].Value("policy"), "Proxy")
-	wantEqual(t, rules["inline"].Value("enabled"), false)
-	if jsonx.Equal(rules["inline"].Value("library_rule_id"), rules["r1"].Value("library_rule_id")) {
+	wantJSONEqual(t, rules["r1"].Value("content"), "one.example")
+	wantJSONEqual(t, rules["inline"].Value("content"), "private.example")
+	wantJSONEqual(t, rules["inline"].Value("policy"), "Proxy")
+	wantJSONEqual(t, rules["inline"].Value("enabled"), false)
+	if rules["inline"].GetString("library_rule_id") == rules["r1"].GetString("library_rule_id") {
 		t.Fatal("inline rule shares the library entry of r1")
 	}
-	stored := must(r.GetProfile(bg, "default"))(t).GetList("rule_configs")
-	if rcAt(t, stored, len(stored)-1).Has("content") {
+	stored := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t)).GetList("rule_configs")
+	last := stored[len(stored)-1].(*testObj)
+	if _, ok := last.Get("content"); ok {
 		t.Fatal("content persisted in the profile")
 	}
 }
 
 func TestUnsupportedImportPreservesExistingDataAndOriginalFile(t *testing.T) {
 	r := rcDefaultRepo(t, t.TempDir())
-	must(r.ImportAll(bg, rcLegacy(t, "one.example")))(t)
+	must(r.ImportAllJSON(bg, mustMarshalJSON(t, rcLegacyObj(t, "one.example"))))(t)
 	before := must(r.Store().Fingerprint())(t)
-	invalid := must(r.ExportAll(bg, false))(t)
+	invalid := parseJSONObj(t, must(r.ExportAllJSON(bg, false))(t))
 	invalid.Set("schema_version", 2)
-	_, err := r.ImportAll(bg, invalid)
+	_, err := r.ImportAllJSON(bg, mustMarshalJSON(t, invalid))
 	wantError(t, err, ErrValidation, "")
 	if must(r.Store().Fingerprint())(t) != before {
 		t.Fatal("database changed")
@@ -144,20 +116,22 @@ func TestUnsupportedImportPreservesExistingDataAndOriginalFile(t *testing.T) {
 func TestIndependentConcurrentProfileWritesAndSharedUpdatesSurvive(t *testing.T) {
 	root := t.TempDir()
 	r := rcDefaultRepo(t, root)
-	must(r.CreateProfile(bg, jsonx.Obj("name", "Second", "id", "second"), ""))(t)
+	must(r.CreateProfileRecord(bg, ProfileCreation{Name: "Second", ID: "second"}, ""))(t)
 	otherWriter := rcDefaultRepo(t, root)
-	one := must(r.GetProfile(bg, "default"))(t)
-	two := must(otherWriter.GetProfile(bg, "second"))(t)
+	one := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t))
+	two := parseJSONObj(t, must(otherWriter.ExportProfileJSON(bg, "second"))(t))
 	one.GetObject("mihomo").Set("custom_config", "mixed-port: 7901")
 	two.GetObject("mihomo").Set("custom_config", "mixed-port: 7902")
-	shared := must(r.GetShared(bg))(t)
-	shared.Set("nodes", rcList(t, `[{"id": "node", "name": "Node", "server": "new.example", "port": 1080, "type": "socks5"}]`))
+	oneRaw := mustMarshalJSON(t, one)
+	twoRaw := mustMarshalJSON(t, two)
+	shared := must(r.Shared(bg))(t)
+	shared.Nodes = []model.Node{decodeJSON[model.Node](t, `{"id": "node", "name": "Node", "server": "new.example", "port": 1080, "type": "socks5"}`)}
 	var group sync.WaitGroup
 	errs := make([]error, 3)
 	jobs := []func() error{
-		func() error { _, _, err := r.SaveProfile(bg, "default", one, nil); return err },
-		func() error { _, _, err := otherWriter.SaveProfile(bg, "second", two, nil); return err },
-		func() error { _, err := r.SaveShared(bg, shared, nil); return err },
+		func() error { _, _, err := r.SaveProfileFieldsJSON(bg, "default", oneRaw, nil); return err },
+		func() error { _, _, err := otherWriter.SaveProfileFieldsJSON(bg, "second", twoRaw, nil); return err },
+		func() error { _, err := r.SaveSharedRecord(bg, shared, nil); return err },
 	}
 	for index, job := range jobs {
 		group.Add(1)
@@ -167,209 +141,249 @@ func TestIndependentConcurrentProfileWritesAndSharedUpdatesSurvive(t *testing.T)
 	for _, err := range errs {
 		noError(t, err)
 	}
-	wantEqual(t, jsonx.Path(must(r.GetCompatConfig(bg, "default", nil))(t), "mihomo", "custom_config"), "mixed-port: 7901")
-	wantEqual(t, jsonx.Path(must(r.GetCompatConfig(bg, "second", nil))(t), "mihomo", "custom_config"), "mixed-port: 7902")
-	wantEqual(t, rcAt(t, must(r.GetShared(bg))(t).Value("nodes"), 0).Value("server"), "new.example")
-	_, _, err := r.SaveProfile(bg, "default", one, nil)
+	if got := must(r.Config(bg, "default", nil))(t).Profile.Mihomo.CustomConfig; got != "mixed-port: 7901" {
+		t.Fatalf("default custom_config %q", got)
+	}
+	if got := must(r.Config(bg, "second", nil))(t).Profile.Mihomo.CustomConfig; got != "mixed-port: 7902" {
+		t.Fatalf("second custom_config %q", got)
+	}
+	if got := must(r.Shared(bg))(t).Nodes[0].Server; got != "new.example" {
+		t.Fatalf("node server %q", got)
+	}
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", oneRaw, nil)
 	wantError(t, err, ErrInUse, "")
 }
 
 func TestImportIsWholeSystemAtomicAndInvalidatesOldSnapshots(t *testing.T) {
 	r := rcDefaultRepo(t, t.TempDir())
-	must(r.ImportAll(bg, rcLegacy(t, "one.example")))(t)
-	must(r.CreateProfile(bg, jsonx.Obj("name", "Second", "id", "second"), "default"))(t)
-	system := must(r.GetSystem(bg))(t)
-	system.Set("agents", rcList(t, `[{"id": "agent", "profile_id": "second", "token": "secret"}]`))
-	system.Set("backup", jsonx.Obj("webdav_password", "restore-me"))
-	must(r.SaveSystem(bg, system, nil))(t)
-	backup := must(r.ExportAll(bg, false))(t)
-	stale := must(r.GetProfile(bg, "default"))(t)
-	changed := must(r.GetProfile(bg, "second"))(t)
+	must(r.ImportAllJSON(bg, mustMarshalJSON(t, rcLegacyObj(t, "one.example"))))(t)
+	must(r.CreateProfileRecord(bg, ProfileCreation{Name: "Second", ID: "second"}, "default"))(t)
+	system := must(r.System(bg))(t)
+	system.Agents = []model.Agent{decodeJSON[model.Agent](t, `{"id": "agent", "profile_id": "second", "token": "secret"}`)}
+	noError(t, system.SetJSON("backup", json.RawMessage(`{"webdav_password": "restore-me"}`)))
+	must(r.SaveSystemRecord(bg, system, nil))(t)
+	backupRaw := must(r.ExportAllJSON(bg, false))(t)
+	backupObj := parseJSONObj(t, backupRaw)
+	staleRaw := must(r.ExportProfileJSON(bg, "default"))(t)
+	changed := parseJSONObj(t, must(r.ExportProfileJSON(bg, "second"))(t))
 	changed.GetObject("mihomo").Set("custom_config", "mixed-port: 9900")
-	_, _, err := r.SaveProfile(bg, "second", changed, nil)
+	_, _, err := r.SaveProfileFieldsJSON(bg, "second", mustMarshalJSON(t, changed), nil)
 	noError(t, err)
-	invalid := backup.DeepCopy()
-	rcAt(t, jsonx.Path(invalid, "profiles", "second", "proxy_groups"), 0).Set("manual_nodes", []any{"missing"})
-	before := must(r.ExportAll(bg, false))(t)
-	_, err = r.ImportAll(bg, invalid)
+	invalid := parseJSONObj(t, backupRaw)
+	invalid.GetObject("profiles").GetObject("second").GetList("proxy_groups")[0].(*testObj).Set("manual_nodes", []any{"missing"})
+	before := must(r.ExportAllJSON(bg, false))(t)
+	_, err = r.ImportAllJSON(bg, mustMarshalJSON(t, invalid))
 	wantError(t, err, ErrInUse, "")
-	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
-	must(r.ImportAll(bg, backup))(t)
-	wantEqual(t, must(r.GetProfile(bg, "second"))(t).Value("mihomo"), jsonx.Path(backup, "profiles", "second", "mihomo"))
-	wantEqual(t, must(r.GetSystem(bg))(t).Value("agents"), jsonx.Path(backup, "system", "agents"))
-	wantEqual(t, jsonx.Path(must(r.GetSystem(bg))(t), "backup", "webdav_password"), "restore-me")
-	_, _, err = r.SaveProfile(bg, "default", stale, nil)
+	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), before)
+	must(r.ImportAllJSON(bg, backupRaw))(t)
+	wantJSONEqual(t, parseJSONObj(t, must(r.ExportProfileJSON(bg, "second"))(t)).Value("mihomo"),
+		backupObj.GetObject("profiles").GetObject("second").Value("mihomo"))
+	gotSys := parseJSONObj(t, must(model.Marshal(must(r.System(bg))(t)))(t))
+	wantJSONEqual(t, gotSys.Value("agents"), backupObj.GetObject("system").Value("agents"))
+	wantJSONEqual(t, gotSys.GetObject("backup").Value("webdav_password"), "restore-me")
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", staleRaw, nil)
 	wantError(t, err, ErrInUse, "")
 }
 
 func TestProfileOnlyAcceptsReferenceIdsAndNeverPersistsSourceCopies(t *testing.T) {
 	r := rcDefaultRepo(t, t.TempDir())
-	must(r.ImportAll(bg, rcLegacy(t, "one.example")))(t)
-	snapshot := must(r.GetCompatConfig(bg, "default", nil))(t)
-	rcAt(t, snapshot.Value("nodes"), 0).Set("server", "override.example")
-	rcAt(t, snapshot.Value("rule_configs"), 0).Set("content", "override.example")
-	_, _, err := r.SaveProfile(bg, "default", snapshot, nil)
+	must(r.ImportAllJSON(bg, mustMarshalJSON(t, rcLegacyObj(t, "one.example"))))(t)
+	snapshot := parseJSONObj(t, must(model.Marshal(must(r.Config(bg, "default", nil))(t)))(t))
+	snapshot.GetList("nodes")[0].(*testObj).Set("server", "override.example")
+	snapshot.GetList("rule_configs")[0].(*testObj).Set("content", "override.example")
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, snapshot), nil)
 	noError(t, err)
-	resolved := must(r.GetCompatConfig(bg, "default", nil))(t)
-	wantEqual(t, rcAt(t, resolved.Value("nodes"), 0).Value("server"), "one.example")
-	wantEqual(t, rcAt(t, resolved.Value("rule_configs"), 0).Value("content"), "one.example")
-	raw := must(r.GetProfile(bg, "default"))(t)
-	if raw.Has("nodes") || rcAt(t, raw.Value("rule_configs"), 0).Has("content") {
+	resolved := parseJSONObj(t, must(model.Marshal(must(r.Config(bg, "default", nil))(t)))(t))
+	wantJSONEqual(t, resolved.GetList("nodes")[0].(*testObj).Value("server"), "one.example")
+	wantJSONEqual(t, resolved.GetList("rule_configs")[0].(*testObj).Value("content"), "one.example")
+	raw := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t))
+	if _, hasNodes := raw.Get("nodes"); hasNodes {
 		t.Fatal("source copies persisted")
 	}
-	rcAt(t, raw.Value("proxy_groups"), 0).Set("manual_nodes", rcList(t, `[{"id": "node", "server": "override.example"}]`))
-	_, _, err = r.SaveProfile(bg, "default", raw, nil)
+	if _, hasContent := raw.GetList("rule_configs")[0].(*testObj).Get("content"); hasContent {
+		t.Fatal("source copies persisted")
+	}
+	raw.GetList("proxy_groups")[0].(*testObj).Set("manual_nodes", []any{testObjKV("id", "node", "server", "override.example")})
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, raw), nil)
 	wantError(t, err, ErrValidation, "")
 }
 
 func TestSharedDeletionAndDisableReportsAllProfileUsage(t *testing.T) {
 	r := newRepo(t)
-	must(r.UpdateSharedTransaction(bg, rcUpd(func(shared *jsonx.Object) {
-		rcAppend(shared, "nodes", jsonx.Obj("id", "n", "name", "Node"))
-	})))(t)
-	_, _, err := r.UpdateProfileFields(bg, "default", parse(t, `{"proxy_groups": [
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		shared.Nodes = append(shared.Nodes, model.Node{ID: "n", Name: "Node"})
+		return nil
+	}))
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{"proxy_groups": [
 		{"id": "choice", "name": "Choice", "type": "select", "manual_nodes": ["n"]}]}`), nil)
 	noError(t, err)
-	must(r.CloneProfile(bg, "default", jsonx.Obj("id", "other", "name", "Other")))(t)
-	updaters := []Updater{
-		rcUpd(func(shared *jsonx.Object) { shared.Set("nodes", []any{}) }),
-		rcUpd(func(shared *jsonx.Object) { rcAt(t, shared.Value("nodes"), 0).Set("enabled", false) }),
+	must(r.CloneProfileRecord(bg, "default", ProfileCreation{ID: "other", Name: "Other"}))(t)
+	off := false
+	updaters := []func(context.Context, *model.Shared) error{
+		func(_ context.Context, shared *model.Shared) error { shared.Nodes = []model.Node{}; return nil },
+		func(_ context.Context, shared *model.Shared) error { shared.Nodes[0].Enabled = &off; return nil },
 	}
 	for _, updater := range updaters {
-		_, err := r.UpdateSharedTransaction(bg, updater)
+		err := r.UpdateShared(bg, updater)
 		wantError(t, err, ErrInUse, "")
 		ids := map[string]bool{}
 		for _, usage := range UsagesOf(err) {
-			ids[usage.(*jsonx.Object).GetString("id")] = true
+			ids[parseJSONObj(t, mustMarshalJSON(t, usage)).GetString("id")] = true
 		}
 		if len(ids) != 2 || !ids["default"] || !ids["other"] {
-			t.Fatalf("usages %s", jsonx.Repr(UsagesOf(err)))
+			t.Fatalf("usages %v", UsagesOf(err))
 		}
 	}
 }
 
 func TestSystemTransactionsValidateNestedProfileReadsAndBindings(t *testing.T) {
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "bound", "name", "Bound"), ""))(t)
-	must(r.UpdateSystemTransaction(bg, func(ctx context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		metadata, err := r.ProfileMetadata(ctx, "bound")
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "bound", Name: "Bound"}, ""))(t)
+	noError(t, r.UpdateSystem(bg, func(ctx context.Context, system *model.System) error {
+		metadata, err := r.ProfileMetadataRecord(ctx, "bound")
 		if err != nil {
-			return nil, err
+			return err
 		}
-		wantEqual(t, metadata.Value("name"), "Bound")
-		rcAppend(system, "agents", jsonx.Obj("id", "a", "name", "Agent", "profile_id", "bound"))
-		return nil, nil
-	}))(t)
-	wantError(t, r.DeleteProfile(bg, "bound", ""), ErrInUse, "")
-	before := must(r.ExportAll(bg, false))(t)
-	_, err := r.UpdateSystemTransaction(bg, rcUpd(func(system *jsonx.Object) {
-		rcAt(t, system.Value("agents"), 0).Set("profile_id", "missing")
+		if metadata.Name != "Bound" {
+			t.Fatalf("metadata name %q", metadata.Name)
+		}
+		system.Agents = append(system.Agents, model.Agent{ID: "a", Name: "Agent", ProfileID: "bound"})
+		return nil
 	}))
+	wantError(t, r.DeleteProfile(bg, "bound", ""), ErrInUse, "")
+	before := must(r.ExportAllJSON(bg, false))(t)
+	err := r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].ProfileID = "missing"
+		return nil
+	})
 	wantError(t, err, ErrValidation, "")
-	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
-	keys := must(r.GetSystem(bg))(t).Keys()
-	wantEqual(t, jsonx.ListOf(keys), []any{"system_config", "backup", "agents", "_revision"})
+	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), before)
+	sysObj := parseJSONObj(t, must(model.Marshal(must(r.System(bg))(t)))(t))
+	if !reflect.DeepEqual(sysObj.Keys(), []string{"system_config", "backup", "agents", "_revision"}) {
+		t.Fatalf("system keys %v", sysObj.Keys())
+	}
 }
 
 func TestSharedCachePathsAreAtomicAndRejectEscape(t *testing.T) {
 	r := newRepo(t)
-	must(r.WriteSharedJSON(bg, "subscribes/sub.json", jsonx.Obj("nodes", []any{})))(t)
-	wantEqual(t, must(r.ReadSharedJSON(bg, "subscribes/sub.json"))(t), jsonx.Obj("nodes", []any{}))
+	must(r.WriteSharedJSON(bg, "subscribes/sub.json", map[string]any{"nodes": []any{}}))(t)
+	wantJSONEqual(t, must(r.ReadSharedBytes(bg, "subscribes/sub.json"))(t), json.RawMessage(`{"nodes":[]}`))
 	must(r.WriteSharedText(bg, "rules/domains.txt", []byte("example.com")))(t)
 	text := must(readFileString(must(r.SharedRulesDir())(t) + "/domains.txt"))(t)
 	if text != "example.com" {
 		t.Fatalf("content %q", text)
 	}
 	for _, path := range []string{"../escape.json", "/tmp/escape.json", ""} {
-		_, err := r.WriteSharedJSON(bg, path, jsonx.NewObject())
+		_, err := r.WriteSharedJSON(bg, path, map[string]any{})
 		wantError(t, err, ErrValidation, "")
 	}
 }
 
 func TestGlobalSettingsThreeWayMergePreservesConcurrentAgentUpdates(t *testing.T) {
 	r := newRepo(t)
-	ctx := WithScope(WithRepository(bg, r))
-	snapshot := must(GetSystemConfig(ctx))(t)
-	snapshot.GetObject("system_config").Set("server_domain", "https://configured.example")
-	must(r.UpdateSystemTransaction(bg, rcUpd(func(system *jsonx.Object) {
-		rcAppend(system, "agents", jsonx.Obj("id", "a", "profile_id", "default"))
-	})))(t)
-	noError(t, SaveSystemConfig(ctx, snapshot, nil))
-	system := must(r.GetSystem(bg))(t)
-	wantEqual(t, system.Value("agents"), rcList(t, `[{"id": "a", "profile_id": "default"}]`))
-	wantEqual(t, jsonx.Path(system, "system_config", "server_domain"), "https://configured.example")
+	baseline := must(r.System(bg))(t)
+	snapshot := must(r.System(bg))(t)
+	snapshot.SystemConfig.ServerDomain = "https://configured.example"
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = append(system.Agents, decodeJSON[model.Agent](t, `{"id": "a", "profile_id": "default"}`))
+		return nil
+	}))
+	must(r.SaveSystemRecord(bg, snapshot, baseline))(t)
+	system := must(r.System(bg))(t)
+	wantJSONEqual(t, must(model.Marshal(system.Agents))(t), json.RawMessage(`[{"id": "a", "profile_id": "default"}]`))
+	if system.SystemConfig.ServerDomain != "https://configured.example" {
+		t.Fatalf("server_domain %q", system.SystemConfig.ServerDomain)
+	}
 }
 
 func rcRuleDNSRepository(t *testing.T) *Repository {
 	t.Helper()
 	r := newRepo(t)
-	must(r.SaveShared(bg, parse(t, `{"rule_library": [
-		{"id": "lib", "name": "Ads", "source_type": "content", "content": "ads.test", "behavior": "domain"}]}`), nil))(t)
-	_, _, err := r.SaveProfile(bg, "default", parse(t, `{"rule_configs": [
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("rule_library", json.RawMessage(`[
+			{"id": "lib", "name": "Ads", "source_type": "content", "content": "ads.test", "behavior": "domain"}]`))
+	}))
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{"rule_configs": [
 		{"id": "rule", "itemType": "rule", "rule_type": "DOMAIN", "value": "a.test", "policy": "DIRECT"},
 		{"id": "set", "itemType": "ruleset", "library_rule_id": "lib", "policy": "REJECT"}]}`), nil)
 	noError(t, err)
-	must(r.CloneProfile(bg, "default", jsonx.Obj("id", "other", "name", "Other")))(t)
+	must(r.CloneProfileRecord(bg, "default", ProfileCreation{ID: "other", Name: "Other"}))(t)
 	return r
 }
 
-func rcIDs(list any) []any {
-	items, _ := jsonx.AsList(list)
-	ids := []any{}
-	for _, item := range items {
-		ids = append(ids, item.(*jsonx.Object).Value("id"))
+func rcOxidnsUpdate(t *testing.T, fields string) func(context.Context, *model.Profile) error {
+	t.Helper()
+	extra := parseJSONObj(t, []byte(fields))
+	return func(_ context.Context, profile *model.Profile) error {
+		raw, _, err := recordMemberJSON(profile, "oxidns")
+		if err != nil {
+			return err
+		}
+		obj := parseJSONObj(t, raw)
+		for k, v := range extra.All() {
+			obj.Set(k, v)
+		}
+		return profile.SetJSON("oxidns", mustMarshalJSON(t, obj))
 	}
-	return ids
-}
-
-func rcOxidnsUpdate(fields *jsonx.Object) Updater {
-	return rcUpd(func(profile *jsonx.Object) { profile.GetObject("oxidns").Update(fields.DeepCopy()) })
 }
 
 func TestSharedAndProfilesTransactionCommitsOnce(t *testing.T) {
 	r := rcRuleDNSRepository(t)
-	sharedRevision := must(r.GetShared(bg))(t).GetInt("_revision")
-	revisions := map[string]int64{}
+	sharedRevision := must(r.Shared(bg))(t).Revision
+	revisions := map[string]model.Int{}
 	for _, profileID := range []string{"default", "other"} {
-		revisions[profileID] = must(r.GetProfile(bg, profileID))(t).GetInt("_revision")
+		revisions[profileID] = must(r.Profile(bg, profileID))(t).Revision
 	}
-	seen := map[string][2][]any{}
-	add := rcUpd(func(shared *jsonx.Object) {
-		rcAppend(shared, "rule_library", parse(t, `{"id": "new", "name": "New", "source_type": "content",
+	seen := map[string][2][]string{}
+	add := func(_ context.Context, shared *model.Shared) error {
+		shared.RuleLibrary = append(shared.RuleLibrary, decodeJSON[model.RuleLibraryItem](t, `{"id": "new", "name": "New", "source_type": "content",
 			"content": "new.test", "behavior": "classical"}`))
-	})
-	compose := func(_ context.Context, profileID string, before, after *jsonx.Object) (*jsonx.Object, error) {
-		// before is resolved against the shared data as it was, after against the new one.
-		seen[profileID] = [2][]any{rcIDs(before.Value("rule_library")), rcIDs(after.Value("rule_library"))}
-		rule := parse(t, `{"id": "ref", "itemType": "ruleset", "library_rule_id": "new", "policy": "DIRECT"}`)
-		rule.Set("behavior", "classical") // Hydrated fields never persist.
-		after.Set("rule_configs", append([]any{rule}, after.GetList("rule_configs")...))
-		return nil, nil
+		return nil
 	}
-	selector := func(_, profiles *jsonx.Object) ([]string, error) {
+	ruleLibIDs := func(items []model.RuleLibraryItem) []string {
+		ids := make([]string, len(items))
+		for i, it := range items {
+			ids[i] = it.ID
+		}
+		return ids
+	}
+	compose := func(_ context.Context, profileID string, before, after *model.Config) error {
+		// before is resolved against the shared data as it was, after against the new one.
+		seen[profileID] = [2][]string{ruleLibIDs(before.RuleLibrary), ruleLibIDs(after.RuleLibrary)}
+		rule := decodeJSON[model.RuleConfig](t, `{"id": "ref", "itemType": "ruleset", "library_rule_id": "new", "policy": "DIRECT", "behavior": "classical"}`)
+		after.Profile.RuleConfigs = append([]model.RuleConfig{rule}, after.Profile.RuleConfigs...)
+		return nil
+	}
+	selector := func(_ *model.Shared, profiles []*model.Profile) ([]string, error) {
 		var ids []string
-		for _, profileID := range profiles.Keys() {
-			if profileID == "other" {
-				ids = append(ids, profileID)
+		for _, p := range profiles {
+			if p.ID == "other" {
+				ids = append(ids, p.ID)
 			}
 		}
 		return ids, nil
 	}
-	shared, profiles, err := r.UpdateSharedAndProfilesTransaction(bg, add, compose, selector)
+	err := r.UpdateSharedConfigs(bg, add, compose, selector)
 	noError(t, err)
 	if len(seen) != 1 {
 		t.Fatalf("seen %v", seen)
 	}
-	wantEqual(t, seen["other"][0], []any{"lib"})
-	wantEqual(t, seen["other"][1], []any{"lib", "new"})
-	wantEqual(t, jsonx.ListOf(profiles.Keys()), []any{"other"})
-	wantEqual(t, shared.Value("_revision"), sharedRevision+1)
-	wantEqual(t, must(r.GetProfile(bg, "other"))(t).Value("_revision"), revisions["other"]+1)
-	wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("_revision"), revisions["default"])
-	stored := rcAt(t, must(r.GetProfile(bg, "other"))(t).Value("rule_configs"), 0)
-	wantEqual(t, stored, parse(t, `{"id": "ref", "itemType": "ruleset", "library_rule_id": "new", "policy": "DIRECT"}`))
-	resolved := rcAt(t, must(r.GetCompatConfig(bg, "other", nil))(t).Value("rule_configs"), 0)
-	wantEqual(t, resolved.Value("behavior"), "classical")
+	if !reflect.DeepEqual(seen["other"][0], []string{"lib"}) || !reflect.DeepEqual(seen["other"][1], []string{"lib", "new"}) {
+		t.Fatalf("seen %v", seen["other"])
+	}
+	if got := must(r.Shared(bg))(t).Revision; got != sharedRevision+1 {
+		t.Fatalf("shared revision %d", got)
+	}
+	if got := must(r.Profile(bg, "other"))(t).Revision; got != revisions["other"]+1 {
+		t.Fatalf("other revision %d", got)
+	}
+	if got := must(r.Profile(bg, "default"))(t).Revision; got != revisions["default"] {
+		t.Fatalf("default revision %d", got)
+	}
+	stored := parseJSONObj(t, must(r.ExportProfileJSON(bg, "other"))(t)).GetList("rule_configs")[0]
+	wantJSONEqual(t, stored, json.RawMessage(`{"id": "ref", "itemType": "ruleset", "library_rule_id": "new", "policy": "DIRECT"}`))
+	resolved := parseJSONObj(t, must(model.Marshal(must(r.Config(bg, "other", nil))(t)))(t)).GetList("rule_configs")[0].(*testObj)
+	wantJSONEqual(t, resolved.Value("behavior"), "classical")
 	if !strings.HasSuffix(resolved.GetString("url"), "/rule-library/content/new") {
 		t.Fatalf("url %q", resolved.GetString("url"))
 	}
@@ -377,43 +391,47 @@ func TestSharedAndProfilesTransactionCommitsOnce(t *testing.T) {
 
 func TestSharedAndProfilesTransactionRollsBackAll(t *testing.T) {
 	r := rcRuleDNSRepository(t)
-	before := must(r.ExportAll(bg, false))(t)
-	rename := rcUpd(func(shared *jsonx.Object) { rcAt(t, shared.Value("rule_library"), 0).Set("name", "Renamed") })
-	fail := func(_ context.Context, profileID string, _, after *jsonx.Object) (*jsonx.Object, error) {
-		after.Set("rule_configs", []any{})
+	before := must(r.ExportAllJSON(bg, false))(t)
+	rename := func(_ context.Context, shared *model.Shared) error {
+		shared.RuleLibrary[0].Name = "Renamed"
+		return nil
+	}
+	fail := func(_ context.Context, profileID string, _, after *model.Config) error {
+		after.Profile.RuleConfigs = []model.RuleConfig{}
 		if profileID == "other" {
-			return nil, NewValidationError("boom")
+			return NewValidationError("boom")
 		}
-		return nil, nil
+		return nil
 	}
-	_, _, err := r.UpdateSharedAndProfilesTransaction(bg, rename, fail, Profiles("default", "other"))
+	selectBoth := func(*model.Shared, []*model.Profile) ([]string, error) { return []string{"default", "other"}, nil }
+	err := r.UpdateSharedConfigs(bg, rename, fail, selectBoth)
 	wantError(t, err, ErrValidation, "boom")
-	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
+	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), before)
 	// Whole-document validation also rejects everything at once.
-	follow := func(_ context.Context, _ string, _, after *jsonx.Object) (*jsonx.Object, error) {
-		after.GetObject("oxidns").Set("rule_dns_follow", []any{"missing"})
-		return nil, nil
+	follow := func(_ context.Context, _ string, _, after *model.Config) error {
+		return after.Profile.SetJSON("oxidns", json.RawMessage(`{"rule_dns_follow":["missing"]}`))
 	}
-	_, _, err = r.UpdateSharedAndProfilesTransaction(bg, rename, follow, Profiles("default"))
+	selectDefault := func(*model.Shared, []*model.Profile) ([]string, error) { return []string{"default"}, nil }
+	err = r.UpdateSharedConfigs(bg, rename, follow, selectDefault)
 	wantError(t, err, ErrInUse, "")
-	wantEqual(t, must(r.ExportAll(bg, false))(t), before)
+	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), before)
 }
 
 func TestRuleDnsIdsMustExist(t *testing.T) {
 	r := rcRuleDNSRepository(t)
-	_, _, err := r.UpdateProfileTransaction(bg, "default", rcOxidnsUpdate(parse(t, `{
+	_, err := r.UpdateProfile(bg, "default", rcOxidnsUpdate(t, `{
 		"rule_actions": {"set": {"action": "blackhole"}}, "rule_dns_follow": ["rule"],
-		"rule_dns_parked": {"rule": {"action": "direct"}}}`)))
+		"rule_dns_parked": {"rule": {"action": "direct"}}}`))
 	noError(t, err)
 	for _, fields := range []string{
 		`{"rule_actions": {"gone": {"action": "refused"}}}`,
 		`{"rule_dns_follow": ["gone"]}`,
 		`{"rule_dns_parked": {"gone": {"action": "proxy"}}}`,
 	} {
-		_, _, err := r.UpdateProfileTransaction(bg, "default", rcOxidnsUpdate(parse(t, fields)))
+		_, err := r.UpdateProfile(bg, "default", rcOxidnsUpdate(t, fields))
 		wantError(t, err, ErrInUse, "OxiDNS DNS 处理仍引用不存在的规则 gone")
 	}
-	_, _, err = r.UpdateProfileTransaction(bg, "default", rcOxidnsUpdate(parse(t, `{"rule_actions": "x"}`)))
+	_, err = r.UpdateProfile(bg, "default", rcOxidnsUpdate(t, `{"rule_actions": "x"}`))
 	wantError(t, err, ErrValidation, "")
 }
 
@@ -426,16 +444,18 @@ func TestRuleDnsActionShapesAreValidated(t *testing.T) {
 		{"rule_actions", `{"set": {"action": "upstream", "upstream": {"addr": "1.1.1.1"}}}`},
 		{"rule_dns_parked", `{"rule": {"action": "drop"}}`},
 	} {
-		fields := parse(t, `{"`+entry[0]+`": `+entry[1]+`}`)
-		_, _, err := r.UpdateProfileTransaction(bg, "default", rcOxidnsUpdate(fields))
+		_, err := r.UpdateProfile(bg, "default", rcOxidnsUpdate(t, `{"`+entry[0]+`": `+entry[1]+`}`))
 		wantError(t, err, ErrValidation, "OxiDNS "+entry[0]+" 中规则")
 	}
 	// Imports skip the settings normalizer and must be refused the same way.
-	exported := must(r.ExportProfile(bg, "default"))(t)
-	exported.GetObject("oxidns").Set("rule_actions", parse(t, `{"set": {"kind": "blackhole"}}`))
-	_, err := r.ImportProfile(bg, "default", exported)
+	exported := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t))
+	exported.GetObject("oxidns").Set("rule_actions", parseJSONObj(t, []byte(`{"set": {"kind": "blackhole"}}`)))
+	_, err := r.ImportProfileJSON(bg, "default", mustMarshalJSON(t, exported))
 	wantError(t, err, ErrValidation, "")
-	wantEqual(t, must(r.GetProfile(bg, "default"))(t).GetObject("oxidns").GetOr("rule_actions", jsonx.NewObject()), jsonx.NewObject())
+	oxidns := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t)).GetObject("oxidns")
+	if val, ok := oxidns.Get("rule_actions"); ok {
+		wantJSONEqual(t, val, json.RawMessage(`{}`))
+	}
 }
 
 // The route half of test_every_delete_path_cleans_rule_dns_fields (DELETE
@@ -443,23 +463,23 @@ func TestRuleDnsActionShapesAreValidated(t *testing.T) {
 // half.
 func TestEveryDeletePathCleansRuleDnsFields(t *testing.T) {
 	r := rcRuleDNSRepository(t)
-	fields := parse(t, `{"rule_actions": {"set": {"action": "blackhole"}}, "rule_dns_follow": ["rule"], "rule_dns_parked": {}}`)
+	fields := `{"rule_actions": {"set": {"action": "blackhole"}}, "rule_dns_follow": ["rule"], "rule_dns_parked": {}}`
 	for _, profileID := range []string{"default", "other"} {
-		_, _, err := r.UpdateProfileTransaction(bg, profileID, rcOxidnsUpdate(fields))
+		_, err := r.UpdateProfile(bg, profileID, rcOxidnsUpdate(t, fields))
 		noError(t, err)
 	}
 	// An import replacing the composition drops the DNS entries of rules it lacks.
-	exported := must(r.ExportProfile(bg, "default"))(t)
+	exported := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t))
 	kept := []any{}
 	for _, item := range exported.GetList("rule_configs") {
-		if item.(*jsonx.Object).Value("id") != "set" {
+		if item.(*testObj).GetString("id") != "set" {
 			kept = append(kept, item)
 		}
 	}
 	exported.Set("rule_configs", kept)
 	exported.Delete("oxidns")
-	must(r.ImportProfile(bg, "default", exported))(t)
-	oxidns := must(r.GetProfile(bg, "default"))(t).GetObject("oxidns")
-	wantEqual(t, oxidns.Value("rule_actions"), jsonx.NewObject())
-	wantEqual(t, oxidns.Value("rule_dns_follow"), []any{"rule"})
+	must(r.ImportProfileJSON(bg, "default", mustMarshalJSON(t, exported)))(t)
+	oxidns := parseJSONObj(t, must(r.ExportProfileJSON(bg, "default"))(t)).GetObject("oxidns")
+	wantJSONEqual(t, oxidns.Value("rule_actions"), json.RawMessage(`{}`))
+	wantJSONEqual(t, oxidns.Value("rule_dns_follow"), []any{"rule"})
 }

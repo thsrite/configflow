@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -103,11 +103,13 @@ func TestO36cSQLiteLockRuntimeBoundary(t *testing.T) {
 }
 
 func commitMarker(ctx context.Context, r *repo.Repository, marker string) error {
-	_, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.GetObject("system_config").Set("o3_commit_marker", marker)
-		return current, nil
+	raw, err := json.Marshal(marker)
+	if err != nil {
+		return err
+	}
+	return r.UpdateSystem(ctx, func(_ context.Context, current *model.System) error {
+		return current.SystemConfig.Fields.Set("o3_commit_marker", raw)
 	})
-	return err
 }
 
 func commitState(t *testing.T, r *repo.Repository) (store.Fingerprint, map[string]string) {
@@ -208,10 +210,10 @@ func TestO36cRepoLockWaitRuntimeBoundary(t *testing.T) {
 			holder := make(chan error, 1)
 			holdError := errors.New("synthetic holder rollback")
 			go func() {
-				_, err := r.UpdateSystemTransaction(base, func(_ context.Context, _ *jsonx.Object) (*jsonx.Object, error) {
+				err := r.UpdateSystem(base, func(_ context.Context, _ *model.System) error {
 					close(locked)
 					<-release
-					return nil, holdError
+					return holdError
 				})
 				holder <- err
 			}()
@@ -280,12 +282,11 @@ func TestO36cRepoOwnerRuntimeMatrix(t *testing.T) {
 					r.Store().BeforeCommit = func() error { stop(); return nil }
 					defer func() { r.Store().BeforeCommit = nil }()
 				}
-				_, err := r.UpdateSystemTransaction(request, func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+				err := r.UpdateSystem(request, func(_ context.Context, current *model.System) error {
 					if point == "updater" {
 						stop()
 					}
-					current.GetObject("system_config").Set("o3_commit_marker", "runtime-matrix")
-					return current, nil
+					return current.SystemConfig.Fields.Set("o3_commit_marker", json.RawMessage(`"runtime-matrix"`))
 				})
 				after, afterFiles := commitState(t, r)
 				if shutdown {

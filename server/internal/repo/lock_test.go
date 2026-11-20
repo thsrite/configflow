@@ -4,6 +4,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestLockTimeoutParsing(t *testing.T) {
@@ -38,15 +39,19 @@ func TestWriteWaitsForForeignFileLockUntilTimeout(t *testing.T) {
 	defer handle.Close()
 	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_EX))
 	started := time.Now()
-	_, err := r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "blocked"))
+	blocked := "blocked"
+	_, err := r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &blocked})
 	wantError(t, err, ErrRepository, "Timed out waiting for profile repository lock")
 	if waited := time.Since(started); waited < 250*time.Millisecond || waited > 3*time.Second {
 		t.Fatalf("waited %v", waited)
 	}
 	// Reads never need the lock.
-	wantEqual(t, must(r.GetProfile(bg, "default"))(t).Value("_revision"), 0)
+	if got := must(r.Profile(bg, "default"))(t).Revision; got != 0 {
+		t.Fatalf("revision %d", got)
+	}
 	noError(t, syscall.Flock(int(handle.Fd()), syscall.LOCK_UN))
-	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "free")))(t)
+	free := "free"
+	must(r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &free}))(t)
 }
 
 func TestWriteWaitsForReleasedFileLock(t *testing.T) {
@@ -63,7 +68,8 @@ func TestWriteWaitsForReleasedFileLock(t *testing.T) {
 		syscall.Flock(fd, syscall.LOCK_UN)
 	}()
 	started := time.Now()
-	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "waited")))(t)
+	waitedName := "waited"
+	must(r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &waitedName}))(t)
 	<-released // the deferred Close must not race with the unlocking goroutine
 	if waited := time.Since(started); waited < 150*time.Millisecond {
 		t.Fatalf("did not wait: %v", waited)
@@ -72,33 +78,40 @@ func TestWriteWaitsForReleasedFileLock(t *testing.T) {
 
 func TestNestedWriteIsRefusedAndReadsSeeWorkingCopy(t *testing.T) {
 	r := newRepo(t)
-	_, err := r.UpdateSystemTransaction(bg, func(ctx context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err := r.UpdateSystem(bg, func(ctx context.Context, system *model.System) error {
 		if !r.InTransaction(ctx) || r.InTransaction(bg) {
 			t.Error("InTransaction")
 		}
-		_, err := r.UpdateProfileMetadata(ctx, "default", jsonx.Obj("name", "nested"))
+		nested := "nested"
+		_, err := r.UpdateProfileMetadataRecord(ctx, "default", ProfileMetadataUpdate{Name: &nested})
 		wantError(t, err, ErrInUse, "不能在配置事务中再次开启写事务")
-		_, err = r.UpdateSharedTransaction(ctx, func(context.Context, *jsonx.Object) (*jsonx.Object, error) { return nil, nil })
+		err = r.UpdateShared(ctx, func(context.Context, *model.Shared) error { return nil })
 		wantError(t, err, ErrInUse, "不能在配置事务中再次开启写事务")
-		system.GetObject("system_config").Set("marker", "working")
-		return nil, nil
+		return system.SystemConfig.Fields.Set("marker", json.RawMessage(`"working"`))
 	})
 	noError(t, err)
 
-	_, _, err = r.UpdateProfileTransaction(bg, "default", func(ctx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	_, err = r.UpdateProfile(bg, "default", func(ctx context.Context, current *model.Profile) error {
 		// The working copy is the transaction's document; edits made by the
 		// updater to its snapshot are applied after it returns.
-		wantEqual(t, must(r.GetSystem(ctx))(t).GetObject("system_config").Value("marker"), "working")
-		done := make(chan any, 1)
+		raw, _ := must(r.System(ctx))(t).SystemConfig.Fields.Get("marker")
+		if string(raw) != `"working"` {
+			t.Fatalf("marker %s", raw)
+		}
+		done := make(chan int64, 1)
 		go func() { // another call chain: the committed state, without waiting
 			done <- must(r.ConfigRevision(context.Background(), "default"))(t)
 		}()
-		wantEqual(t, <-done, 0)
-		current.GetObject("mihomo").Set("custom_config", "x")
-		return nil, nil
+		if got := <-done; got != 0 {
+			t.Fatalf("concurrent revision %d", got)
+		}
+		current.Mihomo.CustomConfig = "x"
+		return nil
 	})
 	noError(t, err)
-	wantEqual(t, must(r.ConfigRevision(bg, "default"))(t), 1)
+	if got := must(r.ConfigRevision(bg, "default"))(t); got != 1 {
+		t.Fatalf("revision %d", got)
+	}
 }
 
 func TestReenteringAHeldLockTimesOut(t *testing.T) {
@@ -139,10 +152,16 @@ func TestConcurrentWritersAreSerialized(t *testing.T) {
 		go func() {
 			defer group.Done()
 			for range rounds {
-				_, _, err := r.UpdateProfileTransaction(bg, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-					mihomo := current.GetObject("mihomo")
-					mihomo.Set("counter", jsonx.Int(mihomo.GetInt("counter")+1))
-					return nil, nil
+				_, err := r.UpdateProfile(bg, "default", func(_ context.Context, current *model.Profile) error {
+					var count int64
+					if raw, ok := current.Mihomo.Fields.Get("counter"); ok {
+						_ = json.Unmarshal(raw, &count)
+					}
+					raw, err := json.Marshal(count + 1)
+					if err != nil {
+						return err
+					}
+					return current.Mihomo.Fields.Set("counter", raw)
 				})
 				if err != nil {
 					failures <- err
@@ -155,9 +174,17 @@ func TestConcurrentWritersAreSerialized(t *testing.T) {
 	for err := range failures {
 		t.Fatal(err)
 	}
-	profile := must(r.GetProfile(bg, "default"))(t)
-	wantEqual(t, profile.GetObject("mihomo").Value("counter"), writers*rounds)
-	wantEqual(t, profile.Value("_revision"), writers*rounds)
+	profile := must(r.Profile(bg, "default"))(t)
+	var counter int64
+	if raw, ok := profile.Mihomo.Fields.Get("counter"); ok {
+		noError(t, json.Unmarshal(raw, &counter))
+	}
+	if counter != writers*rounds {
+		t.Fatalf("counter %d, want %d", counter, writers*rounds)
+	}
+	if int(profile.Revision) != writers*rounds {
+		t.Fatalf("revision %d, want %d", profile.Revision, writers*rounds)
+	}
 	if r.CommitCount() != writers*rounds {
 		t.Fatalf("commit count %d", r.CommitCount())
 	}

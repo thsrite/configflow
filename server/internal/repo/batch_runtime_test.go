@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -22,14 +22,14 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 	t.Helper()
 	switch kind {
 	case "delete":
-		if _, err := r.CreateProfile(base, jsonx.Obj("id", "delete-me", "name", "Delete"), ""); err != nil {
+		if _, err := r.CreateProfileRecord(base, repo.ProfileCreation{ID: "delete-me", Name: "Delete"}, ""); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.WriteProfileText(base, "delete-me", "private.txt", []byte("retained artifact")); err != nil {
 			t.Fatal(err)
 		}
 		return func(ctx context.Context) error { return r.DeleteProfile(ctx, "delete-me", "") }, func() {
-			if _, err := r.ProfileMetadata(base, "delete-me"); err == nil {
+			if _, err := r.ProfileMetadataRecord(base, "delete-me"); err == nil {
 				t.Fatal("deleted profile is still in the database")
 			}
 			paths, err := filepath.Glob(filepath.Join(r.DataDir(), "migrations", "deleted-delete-me-*", "private.txt"))
@@ -44,8 +44,8 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 			if err != nil {
 				t.Fatal(err)
 			}
-			profile, err := jsonx.Parse(data)
-			if err != nil || profile.(*jsonx.Object).GetString("id") != "delete-me" {
+			var profile model.Profile
+			if err := json.Unmarshal(data, &profile); err != nil || profile.ID != "delete-me" {
 				t.Fatal("deleted profile export is incomplete", err)
 			}
 		}
@@ -57,24 +57,35 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 		if err != nil {
 			t.Fatal(err)
 		}
-		document, err := r.ExportAll(base, false)
+		documentRaw, err := r.ExportAllJSON(base, false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		document.GetObject("system").GetObject("system_config").Set("o3_commit_marker", "after-import")
+		var doc map[string]any
+		if err := json.Unmarshal(documentRaw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		doc["system"].(map[string]any)["system_config"].(map[string]any)["o3_commit_marker"] = "after-import"
+		updatedRaw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
 		return func(ctx context.Context) error {
 				if kind == "reset" {
-					_, err := r.ResetAll(ctx)
+					_, err := r.ResetAllJSON(ctx)
 					return err
 				}
-				_, err := r.ImportAll(ctx, document)
+				_, err := r.ImportAllJSON(ctx, updatedRaw)
 				return err
 			}, func() {
-				system, err := r.GetSystem(base)
+				system, err := r.System(base)
 				if err != nil {
 					t.Fatal(err)
 				}
-				marker := system.GetObject("system_config").GetString("o3_commit_marker")
+				var marker string
+				if raw, ok := system.SystemConfig.Fields.Get("o3_commit_marker"); ok {
+					_ = json.Unmarshal(raw, &marker)
+				}
 				if (kind == "reset" && marker != "") || (kind == "import" && marker != "after-import") {
 					t.Fatal("import/reset document did not commit", marker)
 				}
@@ -89,17 +100,32 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 				}
 			}
 	case "create-rule":
-		rule := jsonx.Obj("id", "batch-rule", "name", "Batch", "source_type", "content", "content", "example.com\n",
-			"behavior", "domain", "format", "text", "enabled", true)
+		ruleJSON := json.RawMessage(`{"id":"batch-rule","name":"Batch","source_type":"content","content":"example.com\n","behavior":"domain","format":"text","enabled":true}`)
+		rule := testjson.Decode[model.RuleLibraryItem](t, ruleJSON)
 		return func(ctx context.Context) error {
-				_, err := r.CreateRuleLibraryItem(ctx, rule, []byte("example.com\n"))
+				_, err := r.CreateRuleLibraryRecord(ctx, rule, []byte("example.com\n"))
 				return err
 			}, func() {
-				shared, err := r.GetShared(base)
-				if err != nil || !jsonx.Equal(shared.GetList("rule_library"), []any{rule}) {
+				shared, err := r.Shared(base)
+				if err != nil {
 					t.Fatal("created rule document incomplete", err)
 				}
-				path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule))))
+				gotRaw, err := model.Marshal(shared.RuleLibrary)
+				if err != nil {
+					t.Fatal(err)
+				}
+				gotVal, err := testjson.Parse(gotRaw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantVal, err := testjson.Parse([]byte("[" + string(ruleJSON) + "]"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !testjson.Equal(wantVal, gotVal) {
+					t.Fatal("created rule document incomplete", string(gotRaw))
+				}
+				path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, ruleJSON))))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -121,10 +147,10 @@ func holdBatchRepository(t *testing.T, r *repo.Repository, base context.Context)
 	holder := make(chan error, 1)
 	failure := errors.New("synthetic holder rollback")
 	go func() {
-		_, err := r.UpdateSystemTransaction(base, func(context.Context, *jsonx.Object) (*jsonx.Object, error) {
+		err := r.UpdateSystem(base, func(context.Context, *model.System) error {
 			close(entered)
 			<-release
-			return nil, failure
+			return failure
 		})
 		holder <- err
 	}()

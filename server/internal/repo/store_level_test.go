@@ -3,30 +3,35 @@ package repo
 // The repository-level cases of backend/test_config_store.py.
 
 import (
+	"bytes"
 	"os"
+	"reflect"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 func TestRepositoryExportIsByteIdenticalAfterReopening(t *testing.T) {
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "second", "name", "第二个", "description", "desc"), ""))(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "alpha", "name", "Alpha"), ""))(t)
-	must(r.UpdateProfileMetadata(bg, "second", jsonx.Obj("name", "改名")))(t)
-	exported := string(must(jsonx.Encode(must(r.ExportAll(bg, false))(t), jsonx.Options{}))(t))
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "second", Name: "第二个", Description: "desc"}, ""))(t)
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "alpha", Name: "Alpha"}, ""))(t)
+	renamed := "改名"
+	must(r.UpdateProfileMetadataRecord(bg, "second", ProfileMetadataUpdate{Name: &renamed}))(t)
+	exported := must(r.ExportAllJSON(bg, false))(t)
 	reopened := openRepo(t, r.DataDir())
-	if got := string(must(jsonx.Encode(must(reopened.ExportAll(bg, false))(t), jsonx.Options{}))(t)); got != exported {
+	if got := must(reopened.ExportAllJSON(bg, false))(t); !bytes.Equal(got, exported) {
 		t.Fatal("export differs after reopening")
 	}
-	var ids []any
-	for _, item := range must(reopened.ListProfiles(bg))(t) {
-		ids = append(ids, item.(*jsonx.Object).Value("id"))
+	var ids []string
+	for _, item := range must(reopened.ListProfileRecords(bg))(t) {
+		ids = append(ids, item.ID)
 	}
-	wantEqual(t, ids, []any{"default", "second", "alpha"})
-	profile := must(reopened.GetProfile(bg, "second"))(t)
-	wantEqual(t, []any{profile.Value("name"), profile.Value("description"), profile.Value("_revision")}, []any{"改名", "desc", 1})
+	if !reflect.DeepEqual(ids, []string{"default", "second", "alpha"}) {
+		t.Fatalf("ids %v", ids)
+	}
+	profile := must(reopened.Profile(bg, "second"))(t)
+	if profile.Name != "改名" || profile.Description != "desc" || profile.Revision != 1 {
+		t.Fatalf("profile %+v", profile)
+	}
 }
 
 // The per-connection pragmas (foreign_keys, synchronous, busy_timeout) are
@@ -63,13 +68,14 @@ func TestWalModeIsResetToDeleteAtStartup(t *testing.T) {
 func TestFingerprintIsStableAcrossReadsAndChangesOnWrite(t *testing.T) {
 	r := newRepo(t)
 	first := must(r.Store().Fingerprint())(t)
-	must(r.GetSystem(bg))(t)
-	must(r.ExportAll(bg, false))(t)
-	must(openRepo(t, r.DataDir()).ListProfiles(bg))(t)
+	must(r.System(bg))(t)
+	must(r.ExportAllJSON(bg, false))(t)
+	must(openRepo(t, r.DataDir()).ListProfileRecords(bg))(t)
 	if got := must(r.Store().Fingerprint())(t); got != first {
 		t.Fatal("fingerprint changed by reads")
 	}
-	must(r.UpdateProfileMetadata(bg, "default", jsonx.Obj("description", "changed")))(t)
+	desc := "changed"
+	must(r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Description: &desc}))(t)
 	if got := must(r.Store().Fingerprint())(t); got == first {
 		t.Fatal("fingerprint unchanged by a write")
 	}

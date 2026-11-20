@@ -14,14 +14,16 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/store"
 )
 
@@ -42,8 +44,8 @@ func TestFreshDirectoryCreatesDatabaseWithoutConfigJson(t *testing.T) {
 	if lexists(filepath.Join(r.DataDir(), "config.json")) {
 		t.Fatal("config.json created")
 	}
-	wantEqual(t, must(jsonx.Parse(must(r.Store().Meta("migration"))(t)))(t).(*jsonx.Object).Value("source"), "defaults")
-	record := must(jsonx.Parse(must(r.Store().Meta("legacy_config"))(t)))(t).(*jsonx.Object)
+	wantJSONEqual(t, parseJSONObj(t, must(r.Store().Meta("migration"))(t)).Value("source"), "defaults")
+	record := parseJSONObj(t, must(r.Store().Meta("legacy_config"))(t))
 	if record.Value("sha256") != nil || record.Value("size") != nil {
 		t.Fatal("legacy record")
 	}
@@ -53,7 +55,9 @@ func TestFreshDirectoryCreatesDatabaseWithoutConfigJson(t *testing.T) {
 	if len(opSnapshots(t, r, "*")) > 0 {
 		t.Fatal("snapshot taken")
 	}
-	wantEqual(t, must(r.ListProfiles(bg))(t)[0].(*jsonx.Object).Value("id"), "default")
+	if got := must(r.ListProfileRecords(bg))(t)[0].ID; got != "default" {
+		t.Fatalf("first profile %q", got)
+	}
 }
 
 func TestStaleTemporaryBuildIsDiscarded(t *testing.T) {
@@ -95,7 +99,9 @@ func TestMissingDatabaseAfterAnEarlierOneIsReported(t *testing.T) {
 	// Python re-migrates from the legacy files; without any, as here, both
 	// start from the defaults (and log the earlier copies as an error).
 	reopened := openRepo(t, r.DataDir())
-	wantEqual(t, must(reopened.ListProfiles(bg))(t)[0].(*jsonx.Object).Value("id"), "default")
+	if got := must(reopened.ListProfileRecords(bg))(t)[0].ID; got != "default" {
+		t.Fatalf("first profile %q", got)
+	}
 }
 
 func TestOrphanJournalWithoutDatabaseIsSetAside(t *testing.T) {
@@ -146,7 +152,7 @@ func TestInvalidRowsLoadButRefuseWritesWithoutRebuilding(t *testing.T) {
 	if must(r.Store().Fingerprint())(t) != fingerprint {
 		t.Fatal("database changed")
 	}
-	_, err := opened.UpdateSharedTransaction(bg, func(context.Context, *jsonx.Object) (*jsonx.Object, error) { return nil, nil })
+	err := opened.UpdateShared(bg, func(context.Context, *model.Shared) error { return nil })
 	wantError(t, err, ErrValidation, "绑定的配置不存在")
 	if must(r.Store().Fingerprint())(t) != fingerprint {
 		t.Fatal("database changed")
@@ -175,7 +181,7 @@ func TestSymlinkedDatabaseIsRejected(t *testing.T) {
 
 func TestStartupEnsuresTheRuleProxyToken(t *testing.T) {
 	r := newRepo(t)
-	token := must(r.GetSystemSettings(bg))(t).GetString("rule_proxy_token")
+	token := must(r.System(bg))(t).SystemConfig.RuleProxyToken
 	if len(token) != 43 {
 		t.Fatalf("token %q", token)
 	}
@@ -187,11 +193,13 @@ func TestStartupEnsuresTheRuleProxyToken(t *testing.T) {
 	// A database whose token was removed gets one at the next start.
 	rcSQL(t, r.DatabasePath(), `UPDATE fields SET value = '{"server_domain": ""}' WHERE scope = 'system' AND field = 'system_config'`,
 		"UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'generation'")
-	settings := must(openRepo(t, r.DataDir()).GetSystemSettings(bg))(t)
-	if len(settings.GetString("rule_proxy_token")) != 43 || settings.GetString("rule_proxy_token") == token {
+	settings := must(openRepo(t, r.DataDir()).System(bg))(t).SystemConfig
+	if len(settings.RuleProxyToken) != 43 || settings.RuleProxyToken == token {
 		t.Fatal("token not ensured at startup")
 	}
-	wantEqual(t, settings.Value("retired_rule_proxy_tokens"), []any{})
+	if len(settings.RetiredRuleProxyTokens) != 0 {
+		t.Fatalf("retired tokens %v", settings.RetiredRuleProxyTokens)
+	}
 }
 
 func TestLegacyFilesWithoutDatabaseAreRefused(t *testing.T) {
@@ -223,7 +231,7 @@ func TestRootCacheDirectoriesAloneAreAFreshInstall(t *testing.T) {
 		noError(t, os.WriteFile(filepath.Join(directory, relative), []byte("x"), 0o600))
 	}
 	r := openRepo(t, directory)
-	wantEqual(t, must(jsonx.Parse(must(r.Store().Meta("migration"))(t)))(t).(*jsonx.Object).Value("source"), "defaults")
+	wantJSONEqual(t, parseJSONObj(t, must(r.Store().Meta("migration"))(t)).Value("source"), "defaults")
 	// Unlike Python's migration, the old caches are not copied into shared/.
 	if lexists(filepath.Join(directory, "shared", "subscribes", "a.json")) {
 		t.Fatal("legacy cache copied")
@@ -238,13 +246,15 @@ func TestLegacyConfigNextToADatabaseIsIgnored(t *testing.T) {
 	if must(r.Store().Fingerprint())(t) != fingerprint {
 		t.Fatal("config.json was imported")
 	}
-	wantEqual(t, must(reopened.GetShared(bg))(t).Value("subscriptions"), []any{})
+	if subs := must(reopened.Shared(bg))(t).Subscriptions; len(subs) != 0 {
+		t.Fatalf("subscriptions %+v", subs)
+	}
 }
 
 func TestReaderIsNotBlockedByAWriterHoldingItsTransaction(t *testing.T) {
 	writer := newRepo(t)
 	reader := openRepo(t, writer.DataDir())
-	originalName := must(reader.GetProfile(bg, "default"))(t).Value("name")
+	originalName := must(reader.Profile(bg, "default"))(t).Name
 	inside, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	writer.Store().BeforeCommit = func() error {
 		close(inside)
@@ -252,19 +262,24 @@ func TestReaderIsNotBlockedByAWriterHoldingItsTransaction(t *testing.T) {
 		return nil
 	}
 	go func() {
-		_, err := writer.UpdateProfileMetadata(bg, "default", jsonx.Obj("name", "Committed"))
+		committed := "Committed"
+		_, err := writer.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &committed})
 		done <- err
 	}()
 	<-inside
 	reader.dropCache()
 	started := time.Now()
-	wantEqual(t, must(reader.GetProfile(bg, "default"))(t).Value("name"), originalName)
+	if got := must(reader.Profile(bg, "default"))(t).Name; got != originalName {
+		t.Fatalf("name %q, want %q", got, originalName)
+	}
 	if time.Since(started) > 2*time.Second {
 		t.Fatal("reader was blocked")
 	}
 	close(release)
 	noError(t, <-done)
-	wantEqual(t, must(reader.GetProfile(bg, "default"))(t).Value("name"), "Committed")
+	if got := must(reader.Profile(bg, "default"))(t).Name; got != "Committed" {
+		t.Fatalf("name %q", got)
+	}
 }
 
 func TestReaderDoesNotNeedTheDocumentLock(t *testing.T) {
@@ -281,7 +296,9 @@ func TestReaderDoesNotNeedTheDocumentLock(t *testing.T) {
 	<-held
 	reader.dropCache()
 	started := time.Now()
-	wantEqual(t, must(reader.ListProfiles(bg))(t)[0].(*jsonx.Object).Value("id"), "default")
+	if got := must(reader.ListProfileRecords(bg))(t)[0].ID; got != "default" {
+		t.Fatalf("first profile %q", got)
+	}
 	if time.Since(started) > 2*time.Second {
 		t.Fatal("reader waited for the document lock")
 	}
@@ -294,14 +311,18 @@ func TestRestoredOlderDatabaseIsNeverServedFromCache(t *testing.T) {
 	other := openRepo(t, r.DataDir())
 	mark := func(key string, value any) {
 		t.Helper()
-		must(r.UpdateSystemTransaction(bg, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-			system.GetObject("system_config").Set(key, value)
-			return nil, nil
-		}))(t)
+		raw := mustMarshalJSON(t, value)
+		noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+			return system.SystemConfig.Fields.Set(key, raw)
+		}))
 	}
 	marker := func(repository *Repository) any {
 		t.Helper()
-		return must(repository.GetSystem(bg))(t).GetObject("system_config").Value("marker")
+		raw, ok := must(repository.System(bg))(t).SystemConfig.Fields.Get("marker")
+		if !ok {
+			return nil
+		}
+		return parseJSONVal(t, raw)
 	}
 	mark("marker", "snapshot")
 	backup := filepath.Join(t.TempDir(), "backup.sqlite3")
@@ -309,31 +330,34 @@ func TestRestoredOlderDatabaseIsNeverServedFromCache(t *testing.T) {
 	for _, value := range []string{"live0", "live1", "live2"} {
 		mark("marker", value)
 	}
-	wantEqual(t, marker(other), "live2")
+	wantJSONEqual(t, marker(other), "live2")
 	// An operator restores the snapshot while the service runs; later
 	// writes bring the generation back to the number cached before.
 	noError(t, os.WriteFile(r.DatabasePath(), must(os.ReadFile(backup))(t), 0o600))
 	for _, value := range []string{"post0", "post1", "post2"} {
 		mark("marker", value)
 	}
-	wantEqual(t, marker(r), "post2")
-	wantEqual(t, marker(other), "post2")
+	wantJSONEqual(t, marker(r), "post2")
+	wantJSONEqual(t, marker(other), "post2")
 	mark("other", 1)
-	settings := must(openRepo(t, r.DataDir()).GetSystem(bg))(t).GetObject("system_config")
-	wantEqual(t, []any{settings.Value("marker"), settings.Value("other")}, []any{"post2", 1})
+	settings := must(openRepo(t, r.DataDir()).System(bg))(t).SystemConfig
+	rawMarker, _ := settings.Fields.Get("marker")
+	rawOther, _ := settings.Fields.Get("other")
+	wantJSONEqual(t, rawMarker, "post2")
+	wantJSONEqual(t, rawOther, 1)
 }
 
 func TestDeletingAProfileWithoutDerivedFilesKeepsItsJson(t *testing.T) {
 	// This storage fixture has no publisher; explicitly provide its cleanup gate.
-	previous := SetHooks(Hooks{JobLock: func(context.Context, string, string, *jsonx.Object) (func(), bool) { return func() {}, true }})
+	previous := SetHooks(Hooks{RecordHooks: RecordHooks{JobLockRecord: func(context.Context, string, string, model.Router) (func(), bool) { return func() {}, true }}})
 	defer SetHooks(previous)
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "gone", "name", "Gone", "description", "含凭据"), ""))(t)
-	_, _, err := r.UpdateProfileFields(bg, "gone", parse(t, `{"routers": {"items": [
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "gone", Name: "Gone", Description: "含凭据"}, ""))(t)
+	_, _, err := r.SaveProfileFieldsJSON(bg, "gone", json.RawMessage(`{"routers": {"items": [
 		{"id": "r", "name": "Router", "type": "routeros", "endpoint": "https://r.example",
 		 "username": "admin", "password": "secret"}]}}`), nil)
 	noError(t, err)
-	exported := must(r.ExportProfile(bg, "gone"))(t)
+	exported := must(r.ExportProfileJSON(bg, "gone"))(t)
 	if lexists(must(r.ProfileDir("gone"))(t)) {
 		t.Fatal("profile directory exists")
 	}
@@ -344,8 +368,8 @@ func TestDeletingAProfileWithoutDerivedFilesKeepsItsJson(t *testing.T) {
 	}
 	saved := filepath.Join(tombstones[0], "deleted-profile.json")
 	text := must(os.ReadFile(saved))(t)
-	wantEqual(t, must(jsonx.Parse(text))(t), exported)
-	if !bytes.Equal(text, must(fileJSON(exported))(t)) {
+	wantJSONEqual(t, text, exported)
+	if !bytes.Equal(text, must(fileJSON(json.RawMessage(exported)))(t)) {
 		t.Fatal("not json.dumps(profile, ensure_ascii=False, indent=2) + newline")
 	}
 	if mode := must(os.Stat(saved))(t).Mode().Perm(); mode != 0o600 {
@@ -360,7 +384,7 @@ func TestFailedDeleteRemovesTheTombstone(t *testing.T) {
 	for _, withDirectory := range []bool{true, false} {
 		t.Run(map[bool]string{true: "directory", false: "no directory"}[withDirectory], func(t *testing.T) {
 			r := newRepo(t)
-			must(r.CreateProfile(bg, jsonx.Obj("id", "kept", "name", "Kept"), ""))(t)
+			must(r.CreateProfileRecord(bg, ProfileCreation{ID: "kept", Name: "Kept"}, ""))(t)
 			directory := must(r.ProfileDir("kept"))(t)
 			if withDirectory {
 				noError(t, os.Mkdir(directory, 0o755))
@@ -373,7 +397,7 @@ func TestFailedDeleteRemovesTheTombstone(t *testing.T) {
 			if !errors.Is(err, failure) {
 				t.Fatalf("got %v", err)
 			}
-			if _, err := r.ProfileMetadata(bg, "kept"); err != nil {
+			if _, err := r.ProfileMetadataRecord(bg, "kept"); err != nil {
 				t.Fatal("profile deleted")
 			}
 			if left := opGlob(t, filepath.Join(r.MigrationsDir(), "deleted-kept-*")); len(left) > 0 {
@@ -393,30 +417,34 @@ func TestFailedDeleteRemovesTheTombstone(t *testing.T) {
 
 func TestExportImportRoundTripAndImportSnapshot(t *testing.T) {
 	r := newRepo(t)
-	must(r.CreateProfile(bg, jsonx.Obj("id", "second", "name", "Second"), ""))(t)
-	must(r.UpdateSharedTransaction(bg, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("nodes", append(shared.GetList("nodes"), parse(t, `{"id": "n", "name": "Node", "type": "ss", "server": "s.example", "port": 1}`)))
-		return nil, nil
-	}))(t)
-	exported := must(r.ExportAll(bg, false))(t)
-	imported := must(r.ImportAll(bg, exported.DeepCopy()))(t)
-	withoutRevisions := func(document *jsonx.Object) *jsonx.Object {
-		document = document.DeepCopy()
+	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "second", Name: "Second"}, ""))(t)
+	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+		shared.Nodes = append(shared.Nodes, decodeJSON[model.Node](t, `{"id": "n", "name": "Node", "type": "ss", "server": "s.example", "port": 1}`))
+		return nil
+	}))
+	exported := must(r.ExportAllJSON(bg, false))(t)
+	imported := must(r.ImportAllJSON(bg, exported))(t)
+	withoutRevisions := func(raw json.RawMessage) *testObj {
+		document := parseJSONObj(t, raw)
 		document.GetObject("system").Delete("_revision")
 		document.GetObject("shared").Delete("_revision")
 		for _, profile := range document.GetObject("profiles").All() {
-			profile.(*jsonx.Object).Delete("_revision")
+			profile.(*testObj).Delete("_revision")
 		}
 		return document
 	}
-	wantEqual(t, withoutRevisions(imported), withoutRevisions(exported))
-	wantEqual(t, jsonx.ListOf(imported.GetObject("profiles").Keys()), jsonx.ListOf(exported.GetObject("profiles").Keys()))
+	wantJSONEqual(t, withoutRevisions(imported), withoutRevisions(exported))
+	if !reflect.DeepEqual(parseJSONObj(t, imported).GetObject("profiles").Keys(), parseJSONObj(t, exported).GetObject("profiles").Keys()) {
+		t.Fatal("profile key order changed")
+	}
 	snapshots := opSnapshots(t, r, "import")
 	if len(snapshots) != 1 {
 		t.Fatalf("snapshots %v", snapshots)
 	}
 	saved := must(store.New(filepath.Join(snapshots[0], DatabaseFilename), LockTimeout).Load())(t)
-	wantEqual(t, must(decodeRows(saved.Document))(t), exported)
+	savedDoc, _, err := decodeModelRows(saved.Document)
+	noError(t, err)
+	wantJSONEqual(t, must(model.Marshal(savedDoc))(t), exported)
 	if lexists(filepath.Join(snapshots[0], "config.json")) {
 		t.Fatal("legacy file in an import snapshot")
 	}
@@ -430,13 +458,13 @@ func TestBackupsOfEverySupportedSchemaImport(t *testing.T) {
 		"system_config": {"server_domain": "https://cf.example"}}`
 	schema2 := `{"schema_version": 2, "system": {"schema_version": 2, "profiles": [{"id": "default", "name": "默认"}, {"id": "p2", "name": "P2"}]},
 		"profiles": {"default": ` + single + `, "p2": {"nodes": [{"id": "node-1", "name": "Other", "type": "ss", "server": "o.example", "port": 2}]}}}`
-	current := string(must(jsonx.Compact(must(newRepo(t).ExportAll(bg, false))(t)))(t))
+	current := string(must(newRepo(t).ExportAllJSON(bg, false))(t))
 	for name, backup := range map[string]string{"single": single, "schema2": schema2, "schema5": current} {
 		t.Run(name, func(t *testing.T) {
 			r := newRepo(t)
-			result := must(r.ImportAll(bg, parse(t, backup)))(t)
-			wantEqual(t, result.Value("schema_version"), 5)
-			wantEqual(t, must(openRepo(t, r.DataDir()).ExportAll(bg, false))(t), result)
+			result := must(r.ImportAllJSON(bg, json.RawMessage(backup)))(t)
+			wantJSONEqual(t, parseJSONObj(t, result).Value("schema_version"), 5)
+			wantJSONEqual(t, must(openRepo(t, r.DataDir()).ExportAllJSON(bg, false))(t), result)
 			if lexists(filepath.Join(r.DataDir(), "config.json")) {
 				t.Fatal("config.json written")
 			}
@@ -450,7 +478,7 @@ func TestProfileIdCannotEscapeProfilesDirectory(t *testing.T) {
 	for _, profileID := range []string{"../outside", "..", "a/b", `a\b`, "C:", "", "x\n"} {
 		_, err := r.ProfileDir(profileID)
 		wantError(t, err, ErrValidation, "")
-		_, err = r.GetProfile(bg, profileID)
+		_, err = r.Profile(bg, profileID)
 		wantError(t, err, ErrValidation, "")
 	}
 	for _, relative := range []string{"../outside", "", "/etc/passwd", "a/../../x", "a\x00b"} {
@@ -465,7 +493,9 @@ func TestProfileIdCannotEscapeProfilesDirectory(t *testing.T) {
 	noError(t, os.Symlink(t.TempDir(), filepath.Join(directory, "link")))
 	_, err := r.ProfilePath("default", "link/file")
 	wantError(t, err, ErrValidation, "Profile path escapes profile directory")
-	wantEqual(t, must(r.ProfilePath("default", "generated/config.yaml"))(t), filepath.Join(directory, "generated", "config.yaml"))
+	if got, want := must(r.ProfilePath("default", "generated/config.yaml"))(t), filepath.Join(directory, "generated", "config.yaml"); got != want {
+		t.Fatalf("path %q, want %q", got, want)
+	}
 }
 
 // The repository half of backend/test_profile_clone_router_isolation.py: a
@@ -475,16 +505,17 @@ func TestProfileIdCannotEscapeProfilesDirectory(t *testing.T) {
 func TestProfileCloneDoesNotCopyRouterAccess(t *testing.T) {
 	r, locks := rsRepository(t)
 	rsPersist(t, r, locks)
-	_, _, err := r.UpdateProfileFields(bg, "live", parse(t, `{"mihomo": {"custom_config": "mixed-port: 7890"},
+	_, _, err := r.SaveProfileFieldsJSON(bg, "live", json.RawMessage(`{"mihomo": {"custom_config": "mixed-port: 7890"},
 		"client_fixed_ips": {}, "device_notes": {"192.168.0.9": "TV"}}`), nil)
 	noError(t, err)
-	must(r.CloneProfile(bg, "live", jsonx.Obj("id", "copy", "name", "Copy")))(t)
-	clone := must(r.GetProfile(bg, "copy"))(t)
-	wantEqual(t, clone.Value("routers"), parse(t, `{"items": []}`))
-	wantEqual(t, clone.Value("client_fixed_ips"), jsonx.NewObject())
-	wantEqual(t, clone.Value("mihomo"), must(r.GetProfile(bg, "live"))(t).Value("mihomo"))
-	wantEqual(t, clone.Value("device_notes"), parse(t, `{"192.168.0.9": "TV"}`))
-	wantEqual(t, clone.Value("_revision"), 0)
+	must(r.CloneProfileRecord(bg, "live", ProfileCreation{ID: "copy", Name: "Copy"}))(t)
+	clone := parseJSONObj(t, must(r.ExportProfileJSON(bg, "copy"))(t))
+	live := parseJSONObj(t, must(r.ExportProfileJSON(bg, "live"))(t))
+	wantJSONEqual(t, clone.Value("routers"), json.RawMessage(`{"items": []}`))
+	wantJSONEqual(t, clone.Value("client_fixed_ips"), json.RawMessage(`{}`))
+	wantJSONEqual(t, clone.Value("mihomo"), live.Value("mihomo"))
+	wantJSONEqual(t, clone.Value("device_notes"), json.RawMessage(`{"192.168.0.9": "TV"}`))
+	wantJSONEqual(t, clone.Value("_revision"), 0)
 	noError(t, r.DeleteProfile(bg, "copy", ""))
-	wantEqual(t, rsRouter(t, r).Value("ros_policy_state"), parse(t, rsManifest))
+	wantJSONEqual(t, rsRouterObj(t, r).Value("ros_policy_state"), json.RawMessage(rsManifest))
 }

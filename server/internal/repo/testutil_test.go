@@ -4,12 +4,15 @@ package repo
 // helpers to your own _test.go file with a distinctive prefix.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"iter"
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 var bg = context.Background()
@@ -74,22 +77,200 @@ func containsText(text, part string) bool {
 	return false
 }
 
-// wantEqual asserts Python == on jsonx values.
-func wantEqual(t testing.TB, got, want any) {
-	t.Helper()
-	if !jsonx.Equal(got, want) {
-		t.Fatalf("got  %s\nwant %s", jsonx.Repr(got), jsonx.Repr(want))
+// testObj is a mutable ordered JSON object helper for repository tests.
+type testObj struct {
+	keys   []string
+	values map[string]any
+}
+
+func newTestObj() *testObj { return &testObj{values: map[string]any{}} }
+
+func testObjKV(kv ...any) *testObj {
+	o := newTestObj()
+	for i := 0; i+1 < len(kv); i += 2 {
+		o.Set(kv[i].(string), kv[i+1])
+	}
+	return o
+}
+
+func (o *testObj) Get(key string) (any, bool) {
+	if o == nil {
+		return nil, false
+	}
+	v, ok := o.values[key]
+	return v, ok
+}
+
+func (o *testObj) Value(key string) any {
+	if o == nil {
+		return nil
+	}
+	return o.values[key]
+}
+
+func (o *testObj) GetObject(key string) *testObj {
+	v, _ := o.Value(key).(*testObj)
+	return v
+}
+
+func (o *testObj) GetList(key string) []any {
+	v, _ := o.Value(key).([]any)
+	return v
+}
+
+func (o *testObj) GetString(key string) string {
+	v, _ := o.Value(key).(string)
+	return v
+}
+
+func (o *testObj) Set(key string, value any) {
+	if _, exists := o.values[key]; !exists {
+		o.keys = append(o.keys, key)
+	}
+	o.values[key] = value
+}
+
+func (o *testObj) Delete(key string) {
+	if _, exists := o.values[key]; !exists {
+		return
+	}
+	delete(o.values, key)
+	for i, k := range o.keys {
+		if k == key {
+			o.keys = append(o.keys[:i], o.keys[i+1:]...)
+			break
+		}
 	}
 }
 
-// parse is json.loads of a literal.
-func parse(t testing.TB, text string) *jsonx.Object {
-	t.Helper()
-	value, err := jsonx.ParseString(text)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+func (o *testObj) Keys() []string { return append([]string(nil), o.keys...) }
+
+func (o *testObj) All() iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
+		for _, k := range o.keys {
+			if !yield(k, o.values[k]) {
+				return
+			}
+		}
 	}
-	return value.(*jsonx.Object)
+}
+
+func (o *testObj) MarshalJSON() ([]byte, error) {
+	if o == nil {
+		return []byte("null"), nil
+	}
+	fields := make([]testjson.Field, len(o.keys))
+	for i, k := range o.keys {
+		fields[i] = testjson.Field{Key: k, Value: o.values[k]}
+	}
+	return json.Marshal(testjson.Obj(fields...))
+}
+
+func parseJSONVal(t testing.TB, raw []byte) any {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	val, err := readTestJSON(dec)
+	if err != nil {
+		t.Fatalf("parse JSON %q: %v", string(raw), err)
+	}
+	return val
+}
+
+func readTestJSON(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return tok, nil
+	}
+	switch delim {
+	case '{':
+		o := newTestObj()
+		for dec.More() {
+			k, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			v, err := readTestJSON(dec)
+			if err != nil {
+				return nil, err
+			}
+			o.Set(k.(string), v)
+		}
+		_, err := dec.Token()
+		return o, err
+	case '[':
+		list := []any{}
+		for dec.More() {
+			v, err := readTestJSON(dec)
+			if err != nil {
+				return nil, err
+			}
+			list = append(list, v)
+		}
+		_, err := dec.Token()
+		return list, err
+	}
+	return nil, errors.New("unexpected json delimiter")
+}
+
+func parseJSONObj(t testing.TB, raw []byte) *testObj {
+	t.Helper()
+	obj, ok := parseJSONVal(t, raw).(*testObj)
+	if !ok {
+		t.Fatalf("expected JSON object, got %s", raw)
+	}
+	return obj
+}
+
+func mustMarshalJSON(t testing.TB, value any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	return raw
+}
+
+func decodeJSON[T any](t testing.TB, text string) T {
+	t.Helper()
+	var out T
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("decodeJSON: %v", err)
+	}
+	return out
+}
+
+// wantJSONEqual asserts structural JSON equality via testjson.
+func wantJSONEqual(t testing.TB, got, want any) {
+	t.Helper()
+	toVal := func(v any) any {
+		var raw []byte
+		switch x := v.(type) {
+		case json.RawMessage:
+			raw = x
+		case []byte:
+			raw = x
+		default:
+			var err error
+			raw, err = json.Marshal(x)
+			if err != nil {
+				t.Fatalf("marshal %T: %v", x, err)
+			}
+		}
+		parsed, err := testjson.Parse(raw)
+		if err != nil {
+			t.Fatalf("testjson.Parse %s: %v", raw, err)
+		}
+		return parsed
+	}
+	left, right := toVal(got), toVal(want)
+	if !testjson.Equal(right, left) {
+		t.Fatalf("JSON mismatch:\n%s", testjson.Diff(right, left))
+	}
 }
 
 func readFileString(path string) (string, error) {

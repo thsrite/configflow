@@ -2,9 +2,8 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func TestSmokeFreshOpen(t *testing.T) {
@@ -13,21 +12,21 @@ func TestSmokeFreshOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profiles, err := r.ListProfiles(ctx)
+	profiles, err := r.ListProfileRecords(ctx)
 	if err != nil || len(profiles) != 1 {
 		t.Fatalf("profiles %v %v", profiles, err)
 	}
-	if _, err := r.CreateProfile(ctx, jsonx.Obj("id", "work", "name", "Work"), "default"); err != nil {
+	if _, err := r.CreateProfileRecord(ctx, ProfileCreation{ID: "work", Name: "Work"}, "default"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.UpdateProfileFields(ctx, "work", jsonx.Obj("mihomo", jsonx.Obj("custom_config", "x: 1")), nil); err != nil {
+	if _, _, err := r.SaveProfileFieldsJSON(ctx, "work", json.RawMessage(`{"mihomo":{"custom_config":"x: 1"}}`), nil); err != nil {
 		t.Fatal(err)
 	}
-	exported, err := r.ExportAll(ctx, false)
+	exported, err := r.ExportAllJSON(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.ImportAll(ctx, exported); err != nil {
+	if _, err := r.ImportAllJSON(ctx, exported); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.DeleteProfile(ctx, "work", ""); err != nil {

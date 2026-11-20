@@ -8,7 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/store"
 )
@@ -99,9 +98,9 @@ func TestAgentViewUsesWorkingAndPinnedSnapshotsWithoutPublishingThem(t *testing.
 		if got := agentViewName(t, r, tx); got != "uncommitted" {
 			t.Fatal(got)
 		}
-		legacy, err := r.GetSystem(tx)
-		if err != nil || legacy.GetList("agents")[0].(*jsonx.Object).GetString("name") != "uncommitted" {
-			t.Fatal("legacy working view unavailable", err)
+		typed, err := r.System(tx)
+		if err != nil || len(typed.Agents) == 0 || typed.Agents[0].Name != "uncommitted" {
+			t.Fatal("working view unavailable", err)
 		}
 		if r.agentsCache != cached {
 			t.Fatal("uncommitted view was published")
