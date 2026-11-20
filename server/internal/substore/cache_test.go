@@ -7,7 +7,6 @@ package substore
 import (
 	"context"
 	"encoding/json"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,34 +14,43 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/subs"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
-var cacheNode = jsonx.Obj("id", "n", "name", "HK", "type", "ss", "server", "192.0.2.1", "port", jsonx.Int(443),
-	"cipher", "aes-128-gcm", "password", "secret")
+func testCacheNode(t *testing.T) model.Node {
+	t.Helper()
+	var n model.Node
+	raw := `{"id":"n","name":"HK","type":"ss","server":"192.0.2.1","port":443,"cipher":"aes-128-gcm","password":"secret"}`
+	if err := json.Unmarshal([]byte(raw), &n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
 
 func sharedRepo(t *testing.T) (context.Context, *repo.Repository) {
+	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{
-			jsonx.Obj("id", "keep", "name", "Keep", "url", "https://example.test/keep", "enabled", true),
-			jsonx.Obj("id", "drop", "name", "Drop", "url", "https://example.test/drop", "enabled", true)})
-		return nil, nil
+	enabled := true
+	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		shared.Subscriptions = []model.Subscription{
+			{ID: "keep", Name: "Keep", URL: "https://example.test/keep", Enabled: &enabled},
+			{ID: "drop", Name: "Drop", URL: "https://example.test/drop", Enabled: &enabled},
+		}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"keep", "drop"} {
-		must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, id, []any{cacheNode.DeepCopy()}, nil))
+		must[*Cache](t)(SaveCache(ctx, id, []model.Node{testCacheNode(t)}, nil))
 	}
 	return ctx, r
 }
@@ -65,13 +73,14 @@ func TestDeletingASubscriptionRemovesItsNodeCache(t *testing.T) {
 	if !must[bool](t)(DeleteSubscriptionCache(ctx, "drop")) {
 		t.Fatal("nothing removed")
 	}
-	if must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "drop")) != nil {
+	if must[*Cache](t)(LoadCache(ctx, "drop")) != nil {
 		t.Fatal("cache still readable")
 	}
 	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json" {
 		t.Fatalf("files %s", got)
 	}
-	if !jsonx.Equal(must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "keep")).Value("nodes"), []any{cacheNode}) {
+	kept := must[*Cache](t)(LoadCache(ctx, "keep"))
+	if !testjson.Equal([]model.Node{testCacheNode(t)}, kept.Nodes) {
 		t.Fatal("kept cache changed")
 	}
 	if must[bool](t)(DeleteSubscriptionCache(ctx, "drop")) {
@@ -82,16 +91,16 @@ func TestDeletingASubscriptionRemovesItsNodeCache(t *testing.T) {
 // test_subscription_cache_cleanup.py::test_startup_prunes_only_caches_without_a_subscription
 func TestStartupPrunesOnlyCachesWithoutASubscription(t *testing.T) {
 	ctx, r := sharedRepo(t)
-	must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "removed/earlier", []any{cacheNode.DeepCopy()}, nil)) // path-safe name
-	_, err := r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		var kept []any
-		for _, s := range shared.GetList("subscriptions") {
-			if s.(*jsonx.Object).GetString("id") != "drop" {
+	must[*Cache](t)(SaveCache(ctx, "removed/earlier", []model.Node{testCacheNode(t)}, nil)) // path-safe name
+	err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		var kept []model.Subscription
+		for _, s := range shared.Subscriptions {
+			if s.ID != "drop" {
 				kept = append(kept, s)
 			}
 		}
-		shared.Set("subscriptions", kept)
-		return nil, nil
+		shared.Subscriptions = kept
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -166,8 +175,8 @@ func TestSavedCacheBytes(t *testing.T) {
 	previous := cacheClock
 	cacheClock = fixedClock{time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)}
 	defer func() { cacheClock = previous }()
-	payload := must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "keep", []any{cacheNode.DeepCopy()},
-		jsonx.Obj("subscription_name", "机场", "url", "https://example.test/keep")))
+	payload := must[*Cache](t)(SaveCache(ctx, "keep", []model.Node{testCacheNode(t)},
+		&CacheMetadata{SubscriptionName: "机场", URL: "https://example.test/keep"}))
 	data, err := os.ReadFile(filepath.Join(must[string](t)(r.SharedCacheDir()), "keep.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -179,13 +188,13 @@ func TestSavedCacheBytes(t *testing.T) {
 	if string(data) != want {
 		t.Fatalf("file:\n%s", data)
 	}
-	if payload.GetString("updated_at") != "2026-11-15T08:00:00Z" {
+	if payload.UpdatedAt != "2026-11-15T08:00:00Z" {
 		t.Fatal("payload time")
 	}
-	// fetched_at replaces updated_at; a non-list count is 0.
-	payload = must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "keep", "x", jsonx.Obj("fetched_at", "2026-01-01T00:00:00.5+00:00")))
-	if payload.GetString("updated_at") != "2026-01-01T00:00:00.5+00:00" || payload.GetInt("count") != 0 {
-		t.Fatalf("payload %s", jsonx.Repr(payload))
+	// fetched_at replaces updated_at; an empty nodes list has count 0.
+	payload = must[*Cache](t)(SaveCache(ctx, "keep", nil, &CacheMetadata{FetchedAt: "2026-01-01T00:00:00.5+00:00"}))
+	if payload.UpdatedAt != "2026-01-01T00:00:00.5+00:00" || payload.Count == nil || int64(*payload.Count) != 0 {
+		t.Fatalf("payload %+v", payload)
 	}
 }
 
@@ -200,26 +209,24 @@ func TestLoadSubscriptionCacheLegacyAndBroken(t *testing.T) {
 	ctx, r := sharedRepo(t)
 	dir := must[string](t)(r.SharedCacheDir())
 	os.WriteFile(filepath.Join(dir, "old.json"), []byte(`{"nodes": [1, 2]}`), 0o644)
-	if got := must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "old")); got.GetInt("count") != 2 {
-		t.Fatalf("old %s", jsonx.Repr(got))
+	if got := must[*Cache](t)(LoadCache(ctx, "old")); got == nil || got.Count == nil || int64(*got.Count) != 2 {
+		t.Fatalf("old %+v", got)
 	}
 	logs := captureLogs(t)
 	os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{`), 0o644)
-	if must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "broken")) != nil {
+	if must[*Cache](t)(LoadCache(ctx, "broken")) != nil {
 		t.Fatal("broken cache read")
 	}
 	if !strings.Contains(logs.text(), "读取订阅缓存失败 (broken): decode stored JSON:") {
 		t.Fatalf("log:\n%s", logs.text())
 	}
 	os.WriteFile(filepath.Join(dir, "list.json"), []byte(`[1]`), 0o644)
-	if must[*jsonx.Object](t)(LoadSubscriptionCache(ctx, "list")) != nil {
+	if must[*Cache](t)(LoadCache(ctx, "list")) != nil {
 		t.Fatal("list cache read")
 	}
 }
 
 // test_subscription_hosts.py::test_hosts_change_invalidates_agent_content_checks_once
-// (metadata as source_cache_metadata stores it: hosts extracted from the
-// downloaded body).
 func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 	ctx, _ := sharedRepo(t)
 	calls := 0
@@ -229,10 +236,10 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 		"hosts:\n  jp-node.example.net: jp-entry.example.org\n  google.com: 203.0.113.66\n"
 	store := func(text string) {
 		t.Helper()
-		metadata := jsonx.Obj("subscription_name", "机场", "hosts", fixtureHosts(text))
-		proxies := must[[]any](t)(ParseProxiesFromYAML(text))
-		nodes := must[[]any](t)(ProxiesToNodes(proxies))
-		must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "air", nodes, metadata))
+		metadata := &CacheMetadata{SubscriptionName: "机场", Hosts: subs.ExtractHosts(text)}
+		proxies := must[[]*yamlx.Node](t)(ParseProxyNodes(text))
+		nodes := must[[]model.Node](t)(ProxyNodes(proxies))
+		must[*Cache](t)(SaveCache(ctx, "air", nodes, metadata))
 	}
 	// C11's test_only_hosts_changes_invalidate_agent_content_checks: a node
 	// address change without hosts does not invalidate the main config.
@@ -268,160 +275,8 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 func TestNodeCountChangeIsLogged(t *testing.T) {
 	ctx, _ := sharedRepo(t)
 	logs := captureLogs(t)
-	must[*jsonx.Object](t)(SaveSubscriptionNodes(ctx, "keep", []any{cacheNode, cacheNode}, jsonx.Obj("subscription_name", "Keep\nX")))
+	must[*Cache](t)(SaveCache(ctx, "keep", []model.Node{testCacheNode(t), testCacheNode(t)}, &CacheMetadata{SubscriptionName: "Keep\nX"}))
 	if !strings.Contains(logs.text(), "订阅 Keep?X 节点数变化：1 → 2") {
 		t.Fatalf("log:\n%s", logs.text())
 	}
-}
-
-// Archived JSON fixtures adapt only at this test boundary to the native owners.
-// SaveSubscriptionNodes transcodes the old cache boundary once per batch.
-func SaveSubscriptionNodes(ctx context.Context, id string, nodes any, metadata *jsonx.Object) (*jsonx.Object, error) {
-	record, err := decodeLegacy[*Cache](jsonx.Obj("subscription_id", id, "updated_at", "", "count", jsonx.Int(0), "nodes", nodes, "metadata", metadata))
-	if err != nil {
-		return nil, err
-	}
-	var raw struct {
-		Nodes []json.RawMessage `json:"nodes"`
-	}
-	data, err := json.Marshal(jsonx.Obj("nodes", nodes))
-	if err != nil {
-		return nil, err
-	}
-	if jsondecode.Unmarshal(data, &raw) == nil {
-		count := model.Int(len(raw.Nodes))
-		record.Count = &count
-	}
-	result, err := saveCache(ctx, id, record)
-	if err != nil {
-		return nil, err
-	}
-	return encodeLegacy(result)
-}
-
-// ParseProxiesFromYAML transcodes the complete native proxy batch once.
-func ParseProxiesFromYAML(text string) ([]any, error) {
-	values, err := ParseProxyNodes(text)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]any, 0, len(values))
-	for _, v := range values {
-		data, err := yamlx.ToJSON(v)
-		if err != nil {
-			return nil, err
-		}
-		item, err := jsonx.Parse(data)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, nil
-}
-
-// ParseUserinfo adapts native subscription traffic for unported callers.
-func ParseUserinfo(text string) (*jsonx.Object, error) {
-	value, err := ReadUserinfo(text)
-	if err != nil || value == nil {
-		return nil, err
-	}
-	return encodeLegacy(value)
-}
-
-// ParseVersion adapts old dynamic input to the native version parser.
-func ParseVersion(value any) []*big.Int {
-	text, ok := value.(string)
-	if !ok {
-		return nil
-	}
-	return VersionParts(text)
-}
-
-// IsNewer adapts old dynamic version inputs.
-func IsNewer(candidate, current any) bool {
-	a, ok := candidate.(string)
-	if !ok {
-		return false
-	}
-	b, _ := current.(string)
-	return VersionNewer(a, b)
-}
-
-// FetchLatestRelease transcodes the selected release at the legacy response boundary.
-func (d *Dependencies) FetchLatestRelease(ctx context.Context, force bool) (*jsonx.Object, string) {
-	value, message := d.Latest(ctx, force)
-	if value == nil {
-		return nil, message
-	}
-	result, err := encodeLegacy(value)
-	if err != nil {
-		return nil, err.Error()
-	}
-	return result, message
-}
-
-// GetUpdateState transcodes the native observation for old HTTP owners.
-func (d *Dependencies) GetUpdateState() *jsonx.Object {
-	state := d.UpdateSnapshot()
-	value, err := encodeLegacy(state)
-	if err == nil && value != nil {
-		value.Set("finished_at", jsonx.Float(state.FinishedAt))
-	}
-	return value
-}
-
-// GetSubStoreStatus transcodes one complete native snapshot.
-func (d *Dependencies) GetSubStoreStatus(ctx context.Context, force bool) (*jsonx.Object, error) {
-	value, err := d.Snapshot(ctx, force)
-	if err != nil {
-		return nil, err
-	}
-	return legacyDependencyStatus(value)
-}
-
-// Archived JSON fixtures adapt only at this test boundary to the native owners.
-// read/write remain only for old test fixtures; native owners use state records.
-func (r *Runtime) read() any {
-	value, err := r.loadState()
-	if err != nil {
-		return nil
-	}
-	result, _ := encodeLegacy(value)
-	return result
-}
-
-func (r *Runtime) write(pairs ...any) error {
-	value := jsonx.Obj(pairs...)
-	patch, err := decodeLegacy[runtimePatch](value)
-	if err != nil {
-		return err
-	}
-	return r.writeState(context.Background(), patch)
-}
-
-// JSON transcodes a native HTTP JSON payload for unported consumers.
-func (r *Response) JSON() (any, error) {
-	data, err := r.JSONData()
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Parse(data)
-}
-
-func fixtureHosts(text string) *jsonx.Object {
-	data, _ := json.Marshal(subs.ExtractHosts(text))
-	value, _ := jsonx.Parse(data)
-	object, _ := value.(*jsonx.Object)
-	return object
-}
-
-// Archived JSON fixtures adapt only at this test boundary to the native owners.
-// Status transcodes the lifecycle snapshot for unported response consumers.
-func (r *Runtime) Status(ctx context.Context, running bool) (*jsonx.Object, error) {
-	value, err := r.Snapshot(ctx, running)
-	if err != nil {
-		return nil, err
-	}
-	return encodeLegacy(value)
 }

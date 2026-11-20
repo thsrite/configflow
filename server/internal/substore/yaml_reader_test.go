@@ -15,7 +15,7 @@ func TestProxyYAMLEntrypointsRejectAliasAmplification(t *testing.T) {
 		fmt.Fprintf(&b, "x%d: &x%d [*x%d, *x%d]\n", i, i, i-1, i-1)
 	}
 	for _, source := range []string{b.String() + "proxies: *x40\n", "proxies: &self [*self]\n"} {
-		if _, err := ParseProxiesFromYAML(source); err == nil || !strings.Contains(err.Error(), "引用") {
+		if _, err := ParseProxyNodes(source); err == nil || !strings.Contains(err.Error(), "引用") {
 			t.Fatalf("missing rejection: %v", err)
 		}
 		// Detection returns only a boolean and never materialises YAML values; the
@@ -33,7 +33,7 @@ func FuzzProxyYAMLReaders(f *testing.F) {
 			t.Skip()
 		}
 		_ = isYAMLResponse(source)
-		_, _ = ParseProxiesFromYAML(source)
+		_, _ = ParseProxyNodes(source)
 	})
 }
 
@@ -42,7 +42,7 @@ func TestProxyYAMLSubtreeBudgetCannotFillNull(t *testing.T) {
 	if _, err := yamlx.Parse([]byte(source)); err != nil {
 		t.Fatalf("full source should fit budget: %v", err)
 	}
-	if proxies, err := ParseProxiesFromYAML(source); !errors.Is(err, yamlx.ErrAliasBudget) || proxies != nil {
+	if proxies, err := ParseProxyNodes(source); !errors.Is(err, yamlx.ErrAliasBudget) || proxies != nil {
 		t.Fatalf("subtree must refuse explicitly, not fill null: %v", err)
 	}
 }

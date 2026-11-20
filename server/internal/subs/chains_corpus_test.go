@@ -1,19 +1,22 @@
 package subs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 // matchError checks a Go error against a recorded Python exception: the text
 // must be equal for DialerReferenceError, any error will do for the other
 // exception types (TypeError, KeyError ... of malformed documents).
-func matchError(t *testing.T, where string, err error, want any) bool {
+func matchError(t *testing.T, where string, err error, wantRaw json.RawMessage) bool {
 	t.Helper()
-	msg, isErr := isErrorOut(want)
+	msg, errType, isErr := isErrorRaw(wantRaw)
 	if !isErr {
 		if err != nil {
 			t.Fatalf("%s: unexpected error %v", where, err)
@@ -24,67 +27,110 @@ func matchError(t *testing.T, where string, err error, want any) bool {
 		t.Fatalf("%s: want error %q, got none", where, msg)
 	}
 	var de *DialerReferenceError
-	if errors.As(err, &de) && asObj(want).GetString("type") == "DialerReferenceError" && de.Message != msg {
+	if errors.As(err, &de) && errType == "DialerReferenceError" && de.Message != msg {
 		t.Fatalf("%s: error %q, want %q", where, de.Message, msg)
 	}
-	if asObj(want).GetString("type") == "DialerReferenceError" && !errors.As(err, &de) {
+	if errType == "DialerReferenceError" && !errors.As(err, &de) {
 		t.Fatalf("%s: error %v is not a DialerReferenceError (%q)", where, err, msg)
 	}
 	return true
 }
 
+func loweredProfileRaw(t *testing.T, origRaw json.RawMessage, origCfg, runtime *model.Config) json.RawMessage {
+	t.Helper()
+	if runtime == origCfg {
+		return origRaw
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(origRaw, &out); err != nil {
+		t.Fatal(err)
+	}
+	groupJSON, err := model.Marshal(runtime.Profile.ProxyGroups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeJSON, err := model.Marshal(runtime.Nodes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out["proxy_groups"] = groupJSON
+	out["nodes"] = nodeJSON
+	return rawJSON(t, out)
+}
+
 func TestChainsCorpus(t *testing.T) {
 	rows := loadCorpus(t, "chains.jsonl.gz")
 	native := nativeChainExpectations(t)
+	ops := sharedDialers()
 	stats := map[string]int{}
 	for i, row := range rows {
-		in := asObj(row.In)
-		want := asObj(row.Out)
-		if entry := native.GetObject(fmt.Sprintf("chains/%d", i)); entry != nil {
-			want = entry.GetObject("expected")
+		wantRaw := row.OutRaw
+		if entry, ok := native[fmt.Sprintf("chains/%d", i)]; ok {
+			wantRaw = entry.Expected
 		}
-		where := func(what string) string { return what + " row " + jsonx.Str(jsonx.Int(i)) + " " + compact(t, in) }
-		profile := in.DeepCopy()
-		if matchError(t, where("validate"), ValidateDialers(profile), want.Value("validate")) {
+		var want map[string]json.RawMessage
+		if err := json.Unmarshal(wantRaw, &want); err != nil {
+			t.Fatalf("row %d want: %v", i, err)
+		}
+		where := func(what string) string { return fmt.Sprintf("%s row %d %s", what, i, row.InRaw) }
+
+		cfg, err := decodeConfigRaw(row.InRaw)
+		if err == nil {
+			err = referenceFailure(ops.Validate(cfg))
+		}
+		if matchError(t, where("validate"), err, want["validate"]) {
 			stats["validate_errors"]++
 		}
-		profile = in.DeepCopy()
-		lowered, err := LowerProxyChains(profile)
-		if matchError(t, where("lower"), err, want.Value("lower")) {
+
+		cfg, err = decodeConfigRaw(row.InRaw)
+		var lowered *model.Config
+		if err == nil {
+			lowered, err = LowerChains(cfg)
+			if err != nil {
+				err = dre(err.Error())
+			}
+		}
+		_, hasProvidersMain := want["providers_main"]
+		if matchError(t, where("lower"), err, want["lower"]) {
 			stats["lower_errors"]++
-			if !want.Has("providers_main") {
+			if !hasProvidersMain {
 				continue
 			}
 		} else {
 			stats["lowered"]++
-			if g, w := compact(t, lowered), compact(t, want.Value("lower")); g != w {
-				t.Fatalf("%s\n got  %s\n want %s", where("lower"), g, w)
+			gotRaw := loweredProfileRaw(t, row.InRaw, cfg, lowered)
+			if !testjson.Equal(want["lower"], gotRaw) {
+				t.Fatalf("%s\n got  %s\n want %s\n diff %s", where("lower"), gotRaw, want["lower"], testjson.Diff(want["lower"], gotRaw))
 			}
 		}
-		if !want.Has("providers_main") {
+		if !hasProvidersMain {
 			continue
 		}
 		stats["providers"]++
-		main := want.GetObject("providers_in").DeepCopy()
-		perr := LowerChainProviders(lowered, main)
-		matchError(t, where("providers"), perr, want.Value("providers_result"))
-		if g, w := compact(t, main), compact(t, want.Value("providers_main")); g != w {
-			t.Fatalf("%s\n got  %s\n want %s", where("providers"), g, w)
+		mainNode := yamlFromRaw(t, want["providers_in"])
+		perr := referenceFailure(ChainProviders(lowered, mainNode))
+		matchError(t, where("providers"), perr, want["providers_result"])
+		gotMain := yamlToRaw(t, mainNode)
+		if !testjson.Equal(want["providers_main"], gotMain) {
+			t.Fatalf("%s\n got  %s\n want %s", where("providers"), gotMain, want["providers_main"])
 		}
 	}
 	t.Logf("%d rows %v", len(rows), stats)
 }
 
 func TestChainProviderFilterWithoutSources(t *testing.T) {
-	runtime := jsonx.Obj("proxy_groups", []any{jsonx.Obj("id", "chain", "name", "Chain", "_chain_dialer", jsonx.Obj("type", "node", "id", "entry"))})
-	main := jsonx.Obj("proxy-groups", []any{jsonx.Obj("name", "Chain", "type", "select", "filter", "(`z")})
-	// Python compiles sorting filters only when a provider consumes them. An
-	// unused invalid pattern must not make a static-only chain fail generation.
-	if err := LowerChainProviders(runtime, main); err != nil {
+	cfg, err := decodeConfigRaw(json.RawMessage(`{"proxy_groups":[{"id":"chain","name":"Chain","_chain_dialer":{"type":"node","id":"entry"}}]}`))
+	if err != nil {
 		t.Fatal(err)
 	}
-	expected := jsonx.Obj("proxy-groups", []any{jsonx.Obj("name", "Chain", "type", "select")})
-	if !jsonx.Equal(main, expected) {
-		t.Fatal(compact(t, main))
+	mainNode := yamlFromRaw(t, json.RawMessage(`{"proxy-groups":[{"name":"Chain","type":"select","filter":"(`+"`"+`z"}]}`))
+	// Python compiles sorting filters only when a provider consumes them. An
+	// unused invalid pattern must not make a static-only chain fail generation.
+	if err := ChainProviders(cfg, mainNode); err != nil {
+		t.Fatal(err)
+	}
+	expected := yamlx.Map(yamlx.Str("proxy-groups"), yamlx.Seq(yamlx.Map(yamlx.Str("name"), yamlx.Str("Chain"), yamlx.Str("type"), yamlx.Str("select"))))
+	if !yamlx.Equal(mainNode, expected) {
+		t.Fatal(string(yamlToRaw(t, mainNode)))
 	}
 }

@@ -13,12 +13,18 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
-func nativeParserExpectations(t *testing.T) *jsonx.Object {
+type nativeParserCase struct {
+	InputSHA string          `json:"input_sha256"`
+	Classes  []string        `json:"classes"`
+	Output   json.RawMessage `json:"output"`
+	Reject   bool            `json:"reject"`
+}
+
+func nativeParserExpectations(t *testing.T) map[string]nativeParserCase {
 	t.Helper()
 	zipped, err := os.ReadFile("testdata/n89_parser_reference.json.gz")
 	if err != nil {
@@ -34,12 +40,9 @@ func nativeParserExpectations(t *testing.T) *jsonx.Object {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		Sources   map[string]string `json:"sources"`
-		LoaderSHA string            `json:"native_loader_sha256"`
-		Cases     map[string]struct {
-			InputSHA string   `json:"input_sha256"`
-			Classes  []string `json:"classes"`
-		} `json:"cases"`
+		Sources   map[string]string           `json:"sources"`
+		LoaderSHA string                      `json:"native_loader_sha256"`
+		Cases     map[string]nativeParserCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
@@ -90,11 +93,7 @@ func nativeParserExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("parser input drift %s", key)
 		}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object).GetObject("cases")
+	return manifest.Cases
 }
 
 func TestN89NativeParserRecords(t *testing.T) {

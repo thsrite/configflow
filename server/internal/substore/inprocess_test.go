@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"configflow/internal/ctxx"
-	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 )
 
 func substoreEventually(t *testing.T, fn func() bool) {
@@ -195,9 +195,9 @@ func TestCacheRemovalPreservesPythonLock(t *testing.T) {
 				t.Fatal(err)
 			}
 			if prune {
-				_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-					shared.Set("subscriptions", []any{})
-					return nil, nil
+				err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+					shared.Subscriptions = []model.Subscription{}
+					return nil
 				})
 				if err == nil {
 					_, err = PruneOrphanCaches(ctx)

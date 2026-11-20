@@ -1,10 +1,7 @@
 package substore
 
 import (
-	"configflow/internal/jsonx"
-	"configflow/internal/lifecycle"
-	"configflow/internal/model"
-	"configflow/internal/yamlx"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -18,19 +15,26 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/yamlx"
 )
 
 // Explicit approved native boundaries; the original archive/comparator stay fixed.
-func nativeClientExpectations(t *testing.T) *jsonx.Object {
+func nativeClientExpectations(t *testing.T) map[string]map[string]any {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_client_native.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		Sources map[string]string `json:"sources"`
+		Sources map[string]string         `json:"sources"`
+		Cases   map[string]map[string]any `json:"cases"`
 	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&manifest); err != nil {
 		t.Fatal(err)
 	}
 	for name, want := range manifest.Sources {
@@ -43,11 +47,7 @@ func nativeClientExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("native client source drift %s", name)
 		}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object).GetObject("cases")
+	return manifest.Cases
 }
 
 func TestN89NativeProxyRecords(t *testing.T) {

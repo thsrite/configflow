@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,13 +18,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // depsHarness is the Python fixture `dirs`.
@@ -97,7 +99,7 @@ func TestVersionCompare(t *testing.T) {
 		want bool
 	}{{"2.42.3", "2.42.2", true}, {"v2.43.0", "2.42.10", true}, {"2.42.3", "2.42.3", false}, {"bad", "2.42.3", false},
 		{"2.42.3", "", true}} {
-		if IsNewer(c.a, c.b) != c.want {
+		if VersionNewer(c.a, c.b) != c.want {
 			t.Errorf("is_newer(%q, %q) != %v", c.a, c.b, c.want)
 		}
 	}
@@ -140,7 +142,6 @@ func TestBaseURLAlwaysBuiltinWhenBundled(t *testing.T) {
 func TestCustomBuiltinPortIsSharedByClientReadinessAndUpdate(t *testing.T) {
 	dh := newDepsHarness(t)
 	dh.setenv("SUB_STORE_BACKEND_API_PORT", dh.store.port())
-	// An external URL must not divert the bundled process or its conversions.
 	dh.setenv("SUB_STORE_URL", "http://unrelated-service:3001")
 	expected := "http://127.0.0.1:" + dh.store.port()
 	if base := must[string](t)(dh.service.Env.BaseURL()); base != expected {
@@ -237,9 +238,9 @@ func TestUpdateSuccessWritesRuntimeBundle(t *testing.T) {
 	dh.serve(content)
 	dh.commands.runVersion = "2.41.0"
 	dh.run(dh.releaseFor(content, "2.41.0"))
-	state := dh.d.GetUpdateState()
-	if state.GetString("state") != "success" || state.GetString("message") != "Sub-Store 已更新到 2.41.0" {
-		t.Fatalf("state %s", jsonx.Repr(state))
+	state := dh.d.UpdateSnapshot()
+	if state.State != "success" || state.Message != "Sub-Store 已更新到 2.41.0" {
+		t.Fatalf("state %+v", state)
 	}
 	if readText(t, filepath.Join(dh.runtime, SubStoreAsset)) != string(content) ||
 		strings.TrimSpace(readText(t, filepath.Join(dh.runtime, "VERSION"))) != "2.41.0" {
@@ -249,8 +250,8 @@ func TestUpdateSuccessWritesRuntimeBundle(t *testing.T) {
 		t.Fatalf("restarts %d", dh.commands.restarts)
 	}
 	dh.unlocked(t)
-	if lifecycle := stateOf(dh.service.Runtime); lifecycle.GetString("state") != "running" {
-		t.Fatalf("runtime state %s", jsonx.Repr(lifecycle))
+	if lifecycle := stateOf(dh.service.Runtime); lifecycle == nil || lifecycle.State == nil || *lifecycle.State != "running" {
+		t.Fatalf("runtime state %+v", lifecycle)
 	}
 	check := dh.commands.calls[len(dh.commands.calls)-2]
 	if strings.Join(check, " ") != "node --check "+filepath.Join(dh.runtime, "sub-store.download.js") {
@@ -267,16 +268,16 @@ func TestUpdateRollsBackWhenNewVersionDoesNotStart(t *testing.T) {
 	dh.serve(content)
 	dh.commands.onRestart = func(n int) (CommandResult, error) {
 		if n == 1 {
-			dh.store.setVersion("") // the new version never answers
+			dh.store.setVersion("")
 		} else {
 			dh.store.setVersion("2.40.5")
 		}
 		return CommandResult{}, nil
 	}
 	dh.run(dh.releaseFor(content, "2.41.0"))
-	state := dh.d.GetUpdateState()
-	if state.GetString("state") != "failed" || state.GetString("message") != "更新失败：Sub-Store 2.41.0 启动后未就绪；已回滚到 2.40.5" {
-		t.Fatalf("state %s", jsonx.Repr(state))
+	state := dh.d.UpdateSnapshot()
+	if state.State != "failed" || state.Message != "更新失败：Sub-Store 2.41.0 启动后未就绪；已回滚到 2.40.5" {
+		t.Fatalf("state %+v", state)
 	}
 	if strings.TrimSpace(readText(t, filepath.Join(dh.runtime, "VERSION"))) != "2.40.5" ||
 		readText(t, filepath.Join(dh.runtime, SubStoreAsset)) != "runtime" {
@@ -288,7 +289,7 @@ func TestUpdateRollsBackWhenNewVersionDoesNotStart(t *testing.T) {
 	if _, err := os.Stat(dh.runtime + ".bak"); err == nil {
 		t.Fatal("backup left behind")
 	}
-	if state.Value("finished_at") == jsonx.Float(0) {
+	if state.FinishedAt == 0 {
 		t.Fatal("finished_at not set")
 	}
 }
@@ -299,9 +300,9 @@ func TestUpdateRejectsChecksumMismatch(t *testing.T) {
 	dh.setenv("SUB_STORE_BACKEND_API_PORT", dh.store.port())
 	dh.serve([]byte("tampered"))
 	dh.run(dh.releaseFor([]byte("original"), "2.41.0"))
-	state := dh.d.GetUpdateState()
-	if state.GetString("state") != "failed" || state.GetString("message") != "更新失败：文件校验失败（SHA256 不匹配），请检查 GitHub 代理设置" {
-		t.Fatalf("state %s", jsonx.Repr(state))
+	state := dh.d.UpdateSnapshot()
+	if state.State != "failed" || state.Message != "更新失败：文件校验失败（SHA256 不匹配），请检查 GitHub 代理设置" {
+		t.Fatalf("state %+v", state)
 	}
 	if _, err := os.Stat(filepath.Join(dh.runtime, SubStoreAsset)); err == nil {
 		t.Fatal("bundle installed")
@@ -332,7 +333,7 @@ func TestUpdateRestoresPreviousBundleWhenRestartRaises(t *testing.T) {
 	if dh.commands.restarts != 2 {
 		t.Fatalf("restarts %d", dh.commands.restarts)
 	}
-	message := dh.d.GetUpdateState().GetString("message")
+	message := dh.d.UpdateSnapshot().Message
 	if message != "更新失败：exception_type=errors.errorString；已回滚到 2.40.5" {
 		t.Fatalf("message %s", message)
 	}
@@ -350,7 +351,7 @@ func TestUpdateFailureMessages(t *testing.T) {
 		dh.serve([]byte("tiny"))
 		dh.d.MinBundleSize = 500 * 1024
 		dh.run(dh.releaseFor([]byte("tiny"), "2.41.0"))
-		if m := dh.d.GetUpdateState().GetString("message"); m != "更新失败：下载的文件过小（4 字节），可能不是有效的 Sub-Store 后端" {
+		if m := dh.d.UpdateSnapshot().Message; m != "更新失败：下载的文件过小（4 字节），可能不是有效的 Sub-Store 后端" {
 			t.Fatalf("message %s", m)
 		}
 	})
@@ -359,7 +360,7 @@ func TestUpdateFailureMessages(t *testing.T) {
 		dh.serve([]byte("not js"))
 		dh.commands.checkCode = 1
 		dh.run(dh.releaseFor([]byte("not js"), "2.41.0"))
-		if m := dh.d.GetUpdateState().GetString("message"); m != "更新失败：下载的文件不是有效的 JavaScript：SyntaxError: Unexpected token" {
+		if m := dh.d.UpdateSnapshot().Message; m != "更新失败：下载的文件不是有效的 JavaScript：SyntaxError: Unexpected token" {
 			t.Fatalf("message %s", m)
 		}
 	})
@@ -369,7 +370,7 @@ func TestUpdateFailureMessages(t *testing.T) {
 		dh.serve([]byte("x"))
 		dh.commands.onRestart = func(int) (CommandResult, error) { dh.store.setVersion(""); return CommandResult{}, nil }
 		dh.run(dh.releaseFor([]byte("x"), "2.41.0"))
-		if m := dh.d.GetUpdateState().GetString("message"); m != "更新失败：Sub-Store 2.41.0 启动后未就绪；回滚未完成，请检查容器日志" {
+		if m := dh.d.UpdateSnapshot().Message; m != "更新失败：Sub-Store 2.41.0 启动后未就绪；回滚未完成，请检查容器日志" {
 			t.Fatalf("message %s", m)
 		}
 		if _, err := os.Stat(dh.runtime); err == nil {
@@ -377,13 +378,11 @@ func TestUpdateFailureMessages(t *testing.T) {
 		}
 	})
 	t.Run("maintenance fails", func(t *testing.T) {
-		// Anything that escapes _install_release (the maintenance locks) is
-		// reported as busy.
 		dh := newDepsHarness(t)
 		dh.d.runtime = &Runtime{env: dh.service.Env, Directory: filepath.Join(t.TempDir(), "file")}
 		os.WriteFile(dh.d.runtime.Directory, nil, 0o644)
 		dh.run(dh.releaseFor([]byte("x"), "2.41.0"))
-		if m := dh.d.GetUpdateState().GetString("message"); m != "Sub-Store 正忙或服务不可用，请稍后重试" {
+		if m := dh.d.UpdateSnapshot().Message; m != "Sub-Store 正忙或服务不可用，请稍后重试" {
 			t.Fatalf("message %s", m)
 		}
 		dh.unlocked(t)
@@ -399,25 +398,32 @@ func TestFetchLatestRelease(t *testing.T) {
 		"body": %q, "assets": [{"name": "other"}, {"name": "sub-store.bundle.js", "browser_download_url": "https://github.com/a/sub-store.bundle.js",
 		"size": 600000, "digest": "sha256:abc"}]}`, body)
 	native, message := dh.d.Latest(dh.ctx, false)
-	data, err := encodeLegacy(native)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if message != "" {
 		t.Fatal(message)
 	}
-	want := jsonx.Obj("version", "2.43.1", "published_at", "2026-11-01T00:00:00Z", "release_url", "https://github.com/r",
-		"notes", strings.Repeat("说明", 1000), "download_url", "https://github.com/a/sub-store.bundle.js",
-		"size", jsonx.Int(600000), "sha256", "abc")
-	if !jsonx.Equal(data, want) || strings.Join(data.Keys(), ",") != strings.Join(want.Keys(), ",") {
-		t.Fatalf("data %s", jsonx.Repr(data))
+	want := Release{
+		Version: "2.43.1", PublishedAt: "2026-11-01T00:00:00Z", ReleaseURL: "https://github.com/r",
+		Notes: strings.Repeat("说明", 1000), DownloadURL: "https://github.com/a/sub-store.bundle.js",
+		Size: 600000, SHA256: "abc",
 	}
-	dh.d.FetchLatestRelease(dh.ctx, false)
+	if native == nil || *native != want {
+		t.Fatalf("data %+v", native)
+	}
+	raw, err := json.Marshal(native)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, ok := jsonObjectKeys(raw)
+	wantKeys := []string{"version", "published_at", "release_url", "notes", "download_url", "size", "sha256"}
+	if !ok || !slices.Equal(keys, wantKeys) {
+		t.Fatalf("keys %v want %v", keys, wantKeys)
+	}
+	dh.d.Latest(dh.ctx, false)
 	if dh.apiHits != 1 {
 		t.Fatal("not cached")
 	}
 	dh.clock.advance(30*60 - 1)
-	dh.d.FetchLatestRelease(dh.ctx, false)
+	dh.d.Latest(dh.ctx, false)
 	if dh.apiHits != 1 {
 		t.Fatal("cache expired early")
 	}
@@ -435,7 +441,7 @@ func TestFetchLatestRelease(t *testing.T) {
 		`{"body": {"a": 1}, "assets": [{"name": "sub-store.bundle.js"}]}`: "检查更新失败：exception_type=ReleaseError",
 	} {
 		dh.release = release
-		if _, message := dh.d.FetchLatestRelease(dh.ctx, true); message != want {
+		if _, message := dh.d.Latest(dh.ctx, true); message != want {
 			t.Errorf("%s: %s", release, message)
 		}
 	}
@@ -445,7 +451,7 @@ func TestFetchLatestRelease(t *testing.T) {
 		t.Fatalf("numeric digest projection %#v %s", numeric, message)
 	}
 	dh.github.Close()
-	if _, message := dh.d.FetchLatestRelease(dh.ctx, true); message != "检查更新失败：exception_type=ConnectionError" {
+	if _, message := dh.d.Latest(dh.ctx, true); message != "检查更新失败：exception_type=ConnectionError" {
 		t.Fatalf("message %s", message)
 	}
 }
@@ -459,24 +465,26 @@ func TestGetSubStoreStatus(t *testing.T) {
 	dh.release = `{"tag_name": "v2.42.0", "published_at": "p", "html_url": "u", "body": "n",
 		"assets": [{"name": "sub-store.bundle.js", "browser_download_url": "d"}]}`
 	dh.service.Runtime.getMode = func(context.Context) (string, error) { return "on_demand", nil }
-	status := must[*jsonx.Object](t)(dh.d.GetSubStoreStatus(dh.ctx, false))
-	want := jsonx.Obj("key", "sub-store", "name", "Sub-Store", "description", "订阅解析与节点格式转换",
-		"homepage", "https://github.com/sub-store-org/Sub-Store", "running", true,
-		"lifecycle", jsonx.Obj("managed", true, "mode", "on_demand", "state", "running", "idle_seconds", jsonx.Int(300), "error", ""),
-		"current_version", "2.40.0", "builtin_version", "2.40.0", "online_updated", true, "runtime", "v26.0.0",
-		"latest_version", "2.42.0", "latest_published_at", "p", "release_url", "u", "release_notes", "n", "check_error", "",
-		"has_update", true, "updatable", true,
-		"update", jsonx.Obj("state", "idle", "message", "", "target_version", "", "finished_at", jsonx.Float(0)))
-	if !jsonx.Equal(status, want) {
-		t.Fatalf("status %s", jsonx.Repr(status))
+	status := must[*DependencyStatus](t)(dh.d.Snapshot(dh.ctx, false))
+	want := &DependencyStatus{
+		Key: "sub-store", Name: "Sub-Store", Description: "订阅解析与节点格式转换",
+		Homepage: "https://github.com/sub-store-org/Sub-Store", Running: true,
+		Lifecycle:      &RuntimeStatus{Managed: true, Mode: "on_demand", State: "running", IdleSeconds: 300, Error: ""},
+		CurrentVersion: "2.40.0", BuiltinVersion: "2.40.0", OnlineUpdated: true, Runtime: "v26.0.0",
+		LatestVersion: "2.42.0", LatestPublishedAt: "p", ReleaseURL: "u", ReleaseNotes: "n", CheckError: "",
+		HasUpdate: true, Updatable: true,
+		Update: UpdateState{State: "idle", Message: "", TargetVersion: "", FinishedAt: 0},
+	}
+	if !testjson.Equal(want, status) {
+		t.Fatalf("status:\n%s", testjson.Diff(want, status))
 	}
 	// Without the bundle: detection only.
 	os.Remove(filepath.Join(dh.builtin, SubStoreAsset))
 	dh.setenv("SUB_STORE_URL", dh.store.srv.URL)
-	status = must[*jsonx.Object](t)(dh.d.GetSubStoreStatus(dh.ctx, false))
-	if status.Value("updatable") != false || status.GetString("runtime") != "" || status.GetString("builtin_version") != "" ||
-		status.Value("online_updated") != false || status.GetObject("lifecycle").GetString("mode") != "external" {
-		t.Fatalf("status %s", jsonx.Repr(status))
+	status = must[*DependencyStatus](t)(dh.d.Snapshot(dh.ctx, false))
+	if status.Updatable || status.Runtime != "" || status.BuiltinVersion != "" ||
+		status.OnlineUpdated || status.Lifecycle.Mode != "external" {
+		t.Fatalf("status %+v", status)
 	}
 }
 
@@ -496,9 +504,9 @@ func TestStartSubStoreUpdateRunsTheUpdate(t *testing.T) {
 	if !ok || message != "开始更新到 2.41.0" {
 		t.Fatalf("%v %s", ok, message)
 	}
-	state := dh.d.GetUpdateState()
-	if state.GetString("state") != "success" || state.GetString("target_version") != "2.41.0" {
-		t.Fatalf("state %s", jsonx.Repr(state))
+	state := dh.d.UpdateSnapshot()
+	if state.State != "success" || state.TargetVersion != "2.41.0" {
+		t.Fatalf("state %+v", state)
 	}
 	dh.unlocked(t)
 	_, unlock, locked := dh.d.updateLock.TryLock(dh.ctx)
@@ -509,7 +517,6 @@ func TestStartSubStoreUpdateRunsTheUpdate(t *testing.T) {
 		t.Fatalf("%v %s", ok, message)
 	}
 	unlock()
-	// GitHub unreachable: the last good release is still used (and is current).
 	dh.github.Close()
 	if ok, message := dh.d.StartSubStoreUpdate(dh.ctx); ok || message != "当前已是最新版本 2.41.0" {
 		t.Fatalf("%v %s", ok, message)

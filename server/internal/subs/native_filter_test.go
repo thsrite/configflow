@@ -15,17 +15,20 @@ import (
 	"testing"
 )
 
-func nativeFilterExpectations(t *testing.T) *jsonx.Object {
+type nativeFilterCase struct {
+	InputSHA string          `json:"input_sha256"`
+	Output   json.RawMessage `json:"output"`
+}
+
+func nativeFilterExpectations(t *testing.T) map[string]nativeFilterCase {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_filter_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		SourceSHA string `json:"source_sha256"`
-		Cases     map[string]struct {
-			InputSHA string `json:"input_sha256"`
-		} `json:"cases"`
+		SourceSHA string                      `json:"source_sha256"`
+		Cases     map[string]nativeFilterCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
@@ -61,11 +64,7 @@ func nativeFilterExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("filter input drift %s", key)
 		}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object).GetObject("cases")
+	return manifest.Cases
 }
 
 func TestN89NativeFilterRetainsRawItems(t *testing.T) {

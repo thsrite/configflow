@@ -1,33 +1,28 @@
 package subs
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 // Ports of the pure-function tests of backend/test_*.py. The tests that
 // render through generate_mihomo_config / HTTP routes belong to the converter
 // (#6) and route packages (#15) and are listed in the hand-back.
 
-func mustLoad(t *testing.T, text string) any {
+func mustLoadNode(t *testing.T, text string) *yamlx.Node {
 	t.Helper()
-	v, err := readSubscriptionYAML(text, false)
+	n, err := readSubscriptionYAMLNode(text, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v
-}
-
-func obj(t *testing.T, text string) *jsonx.Object {
-	t.Helper()
-	v, err := jsonx.ParseString(text)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v.(*jsonx.Object)
+	return n
 }
 
 func js(t *testing.T, v any) string { return compact(t, v) }
@@ -35,36 +30,37 @@ func js(t *testing.T, v any) string { return compact(t, v) }
 // ---- test_subscription_regex_filter.py
 
 func TestFilterKeepsMatchingNamesAndIgnoresBlankOrInvalidPattern(t *testing.T) {
-	items := []any{obj(t, `{"name":"香港 01"}`), obj(t, `{"name":"日本 01"}`), obj(t, `{"name":"HK-02"}`)}
-	names := func(l []any) []string {
+	items := []*yamlx.Node{
+		yamlx.Map(yamlx.Str("name"), yamlx.Str("香港 01")),
+		yamlx.Map(yamlx.Str("name"), yamlx.Str("日本 01")),
+		yamlx.Map(yamlx.Str("name"), yamlx.Str("HK-02")),
+	}
+	names := func(l []*yamlx.Node) []string {
 		var out []string
 		for _, i := range l {
-			out = append(out, i.(*jsonx.Object).GetString("name"))
+			out = append(out, yamlx.Get(i, "name").Value)
 		}
 		return out
 	}
-	got := names(FilterSubscriptionItems(obj(t, `{"regex_filter":"香港|HK"}`), items))
+	got := names(FilterProxies(model.Subscription{RegexFilter: strp("香港|HK")}, items))
 	if strings.Join(got, ",") != "香港 01,HK-02" {
 		t.Fatal(got)
 	}
-	for _, sub := range []string{`{"regex_filter":"  "}`, `{}`, `{"regex_filter":"("}`} {
-		if len(FilterSubscriptionItems(obj(t, sub), items)) != len(items) {
-			t.Fatalf("%s must not filter", sub)
+	for _, sub := range []model.Subscription{{RegexFilter: strp("  ")}, {}, {RegexFilter: strp("(")}} {
+		if len(FilterProxies(sub, items)) != len(items) {
+			t.Fatalf("%+v must not filter", sub)
 		}
 	}
 }
 
 func TestValidateRegexFilter(t *testing.T) {
-	for _, v := range []any{nil, "", "^(?!.*剩余).*$"} {
-		if msg := ValidateRegexFilter(v); msg != "" {
-			t.Fatalf("%v: %s", v, msg)
+	for _, v := range []string{"", "^(?!.*剩余).*$"} {
+		if msg := ValidateFilter(v); msg != "" {
+			t.Fatalf("%q: %s", v, msg)
 		}
 	}
-	if ValidateRegexFilter("(") == "" || ValidateRegexFilter(jsonx.Int(123)) == "" {
-		t.Fatal("invalid values must be reported")
-	}
 	// The detail after the Chinese prefix is the regex engine's error text.
-	if got := ValidateRegexFilter("("); !strings.HasPrefix(got, "节点筛选正则无效: ") {
+	if got := ValidateFilter("("); !strings.HasPrefix(got, "节点筛选正则无效: ") {
 		t.Fatal(got)
 	}
 }
@@ -90,15 +86,15 @@ proxy-groups:
 `
 
 func TestExtractReadsOnlyTheTopLevelSectionAndNormalizes(t *testing.T) {
-	record := ExtractSubscriptionHosts(airportHosts)
-	want := `{"entries":{"jp-node.example.net":"jp-entry.example.org","hk-node.example.net":["198.51.100.12","2001:db8::12"],"google.com":["203.0.113.66"]},"total":3,"skipped_count":0,"skipped":[]}`
-	if js(t, record) != want {
+	record := ExtractHosts(airportHosts)
+	want := json.RawMessage(`{"entries":{"jp-node.example.net":"jp-entry.example.org","hk-node.example.net":["198.51.100.12","2001:db8::12"],"google.com":["203.0.113.66"]},"total":3,"skipped_count":0,"skipped":[]}`)
+	if !testjson.Equal(want, record) {
 		t.Fatal(js(t, record))
 	}
 }
 
 func hostsDoc(key string, value any) string {
-	v, _ := jsonx.Compact(value)
+	v, _ := json.Marshal(value)
 	return fmt.Sprintf("proxies: []\nhosts: {%q: %s, ok.test: 198.51.100.7}\n", key, v)
 }
 
@@ -119,7 +115,7 @@ func TestExtractDropsUnsafeOrMalformedEntriesWithAReason(t *testing.T) {
 		{"node.test", "198.51.100.1,198.51.100.2", "invalid_value"},
 		{"node.test", []any{}, "invalid_value"},
 		{"node.test", []any{"198.51.100.1", "other.test"}, "invalid_value"},
-		{"node.test", obj(t, `{"a":1}`), "invalid_value"},
+		{"node.test", map[string]any{"a": 1}, "invalid_value"},
 		{"node.test", "node.test", "invalid_value"},
 		{"node.test", "0.0.0.0", "invalid_value"},
 		{"node.test", "224.0.0.1", "invalid_value"},
@@ -129,12 +125,12 @@ func TestExtractDropsUnsafeOrMalformedEntriesWithAReason(t *testing.T) {
 		{"bad_label-.test..", "198.51.100.1", "invalid_domain"},
 	}
 	for _, c := range cases {
-		record := ExtractSubscriptionHosts(hostsDoc(c.key, c.value))
-		if js(t, record.Value("entries")) != `{"ok.test":["198.51.100.7"]}` {
+		record := ExtractHosts(hostsDoc(c.key, c.value))
+		if !testjson.Equal(json.RawMessage(`{"ok.test":["198.51.100.7"]}`), record.Entries) {
 			t.Fatalf("%s: %s", c.key, js(t, record))
 		}
-		want := fmt.Sprintf(`[{"domain":%q,"reason":%q}]`, strings.ToLower(c.key), c.reason)
-		if js(t, record.Value("skipped")) != want || js(t, record.Value("total")) != "2" || js(t, record.Value("skipped_count")) != "1" {
+		want := json.RawMessage(fmt.Sprintf(`[{"domain":%q,"reason":%q}]`, strings.ToLower(c.key), c.reason))
+		if !testjson.Equal(want, record.Skipped) || record.Total != 2 || record.SkippedCount != 1 {
 			t.Fatalf("%s: %s", c.key, js(t, record))
 		}
 	}
@@ -146,12 +142,12 @@ func TestExtractBoundsEntriesAndStoredSamples(t *testing.T) {
 	for i := 0; i < MaxEntries+30; i++ {
 		fmt.Fprintf(&b, "  n%d.test: 198.51.100.1\n", i)
 	}
-	record := ExtractSubscriptionHosts(b.String())
-	if record.GetObject("entries").Len() != MaxEntries || record.GetInt("skipped_count") != 30 || len(record.GetList("skipped")) != 20 {
-		t.Fatal(js(t, record.Value("skipped_count")))
+	record := ExtractHosts(b.String())
+	if record.Entries.Len() != MaxEntries || record.SkippedCount != 30 || len(record.Skipped) != 20 {
+		t.Fatal(record.SkippedCount)
 	}
-	for _, s := range record.GetList("skipped") {
-		if s.(*jsonx.Object).GetString("reason") != "over_limit" {
+	for _, s := range record.Skipped {
+		if s.Reason != "over_limit" {
 			t.Fatal(js(t, s))
 		}
 	}
@@ -166,12 +162,12 @@ func TestExtractHandlesBodiesWithoutOrWithFlowHosts(t *testing.T) {
 		{"hosts:\n  node.test:\n  - 198.51.100.4\nproxies: []\n", `{"node.test":["198.51.100.4"]}`},
 	}
 	for _, c := range cases {
-		record := ExtractSubscriptionHosts(c.text)
+		record := ExtractHosts(c.text)
 		var got any
 		if record != nil {
-			got = record.Value("entries")
+			got = record.Entries
 		}
-		if js(t, got) != c.want {
+		if !testjson.Equal(json.RawMessage(c.want), got) {
 			t.Fatalf("%q: %s", c.text, js(t, got))
 		}
 	}
@@ -182,53 +178,85 @@ func TestExtractReportsASectionItCannotUse(t *testing.T) {
 		"proxies: []\nhosts: [198.51.100.1]\n":       "not_mapping",
 		"proxies: []\nhosts:\n  a.test: [unclosed\n": "parse_error",
 	} {
-		want := fmt.Sprintf(`{"entries":{},"total":0,"skipped_count":1,"skipped":[{"domain":"","reason":%q}]}`, reason)
-		if got := js(t, ExtractSubscriptionHosts(text)); got != want {
-			t.Fatalf("%q: %s", text, got)
+		want := json.RawMessage(fmt.Sprintf(`{"entries":{},"total":0,"skipped_count":1,"skipped":[{"domain":"","reason":%q}]}`, reason))
+		if got := ExtractHosts(text); !testjson.Equal(want, got) {
+			t.Fatalf("%q: %s", text, js(t, got))
 		}
 	}
 }
 
-func hostsIndexFixture(t *testing.T, feeds map[string]string) (HostsIndexOf, *jsonx.Object) {
-	caches := jsonx.NewObject()
-	var subs []any
+func hostsIndexFixture(t *testing.T, feeds map[string]string) (HostIndexLoader, *model.Config) {
+	caches := map[string]*SubscriptionCache{}
+	var subsList []model.Subscription
 	for id, body := range feeds {
-		doc := mustLoad(t, body).(*jsonx.Object)
-		var nodes []any
-		for _, p := range doc.GetList("proxies") {
-			po := p.(*jsonx.Object)
-			nodes = append(nodes, jsonx.Obj("name", po.Value("name"), "server", po.Value("server")))
+		doc := mustLoadNode(t, body)
+		var nodes []json.RawMessage
+		if proxies := yamlx.Get(doc, "proxies"); proxies != nil {
+			for _, p := range proxies.Content {
+				entry := yamlx.Map(
+					yamlx.Str("name"), yamlx.Clone(yamlx.Get(p, "name")),
+					yamlx.Str("server"), yamlx.Clone(yamlx.Get(p, "server")),
+				)
+				nodes = append(nodes, yamlToRaw(t, entry))
+			}
 		}
 		url := "https://sub.test/" + id
-		caches.Set(id, jsonx.Obj("nodes", nodes, "metadata", jsonx.Obj("url", url, "hosts", ExtractSubscriptionHosts(body))))
-		subs = append(subs, jsonx.Obj("id", id, "name", id, "url", url, "enabled", true))
-	}
-	index := func(sub *jsonx.Object) *HostsIndex {
-		c := asObj(caches.Value(sub.GetString("id")))
-		if c == nil {
-			return nil
+		rawCache := rawJSON(t, map[string]any{
+			"nodes":    nodes,
+			"metadata": map[string]any{"url": url, "hosts": ExtractHosts(body)},
+		})
+		var cache SubscriptionCache
+		if err := jsondecode.Unmarshal(rawCache, &cache); err != nil {
+			t.Fatal(err)
 		}
-		return NewHostsIndex(c).ForURL(sub)
+		caches[id] = &cache
+		enabled := true
+		subsList = append(subsList, model.Subscription{ID: id, Name: id, URL: url, Enabled: &enabled})
 	}
-	return index, jsonx.Obj("subscriptions", subs, "subscription_aggregations", []any{}, "nodes", []any{})
+	index := func(sub model.Subscription) (*HostIndex, error) {
+		c := caches[sub.ID]
+		if c == nil {
+			return nil, nil
+		}
+		idx, err := NewHostIndex(c)
+		if err != nil || idx == nil {
+			return nil, err
+		}
+		return idx.ForSubscription(sub), nil
+	}
+	return index, &model.Config{Profile: &model.Profile{}, Subscriptions: subsList}
 }
 
-func providerFor(id string) *jsonx.Object {
-	return jsonx.Obj("proxy-providers", jsonx.Obj(id, jsonx.Obj("type", "http", "url", "https://panel.test/api/subscriptions/"+id+"/proxies")))
+func providerFor(id string) *yamlx.Node {
+	return yamlx.Map(
+		yamlx.Str("proxy-providers"),
+		yamlx.Map(
+			yamlx.Str(id),
+			yamlx.Map(
+				yamlx.Str("type"), yamlx.Str("http"),
+				yamlx.Str("url"), yamlx.Str("https://panel.test/api/subscriptions/"+id+"/proxies"),
+			),
+		),
+	)
 }
 
 func TestMergesOnlyDomainsOfNodesTheConfigurationDelivers(t *testing.T) {
 	index, config := hostsIndexFixture(t, map[string]string{"air": airportHosts})
 	main := providerFor("air")
-	report := MergeSubscriptionHosts(main, config, nil, nil, nil, nil, index)
-	if js(t, main.Value("hosts")) != `{"jp-node.example.net":"jp-entry.example.org","hk-node.example.net":["198.51.100.12","2001:db8::12"]}` {
-		t.Fatal(js(t, main.Value("hosts")))
+	report, _, err := MergeHosts(main, config, nil, nil, nil, index)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if report.GetInt("merged") != 2 || report.GetInt("ignored") != 1 || report.GetInt("domain_mapped") != 1 {
+	wantHosts := json.RawMessage(`{"jp-node.example.net":"jp-entry.example.org","hk-node.example.net":["198.51.100.12","2001:db8::12"]}`)
+	if !testjson.Equal(wantHosts, yamlToRaw(t, yamlx.Get(main, "hosts"))) {
+		t.Fatal(string(yamlToRaw(t, yamlx.Get(main, "hosts"))))
+	}
+	if report.Merged != 2 || report.Ignored != 1 || report.DomainMapped != 1 {
 		t.Fatal(js(t, report))
 	}
-	if js(t, report.Value("subscriptions")) != `[{"id":"air","name":"air","total":3,"merged":2,"ignored":1}]` {
-		t.Fatal(js(t, report.Value("subscriptions")))
+	wantSubs := json.RawMessage(`[{"id":"air","name":"air","total":3,"merged":2,"ignored":1}]`)
+	if !testjson.Equal(wantSubs, report.Subscriptions) {
+		t.Fatal(js(t, report.Subscriptions))
 	}
 }
 
@@ -237,16 +265,19 @@ func TestHandWrittenHostsWinThenMosdnsThenSubscriptions(t *testing.T) {
 	body = strings.Replace(body, "  - {name: SG 01,", "  - {name: W, type: socks5, server: wild.example.net, port: 1}\n  - {name: SG 01,", 1)
 	index, config := hostsIndexFixture(t, map[string]string{"air": body})
 	main := providerFor("air")
-	main.Set("hosts", obj(t, `{"jp-node.example.net":"192.0.2.10","+.wild.example.net":"192.0.2.11"}`))
-	report := MergeSubscriptionHosts(main, config, []string{"jp-node.example.net", "+.wild.example.net"}, []string{"hk-node.example.net"}, nil, nil, index)
-	if js(t, main.Value("hosts")) != `{"jp-node.example.net":"192.0.2.10","+.wild.example.net":"192.0.2.11"}` {
-		t.Fatal(js(t, main.Value("hosts")))
+	yamlx.Set(main, "hosts", yamlFromRaw(t, json.RawMessage(`{"jp-node.example.net":"192.0.2.10","+.wild.example.net":"192.0.2.11"}`)))
+	report, _, err := MergeHosts(main, config, []string{"jp-node.example.net", "+.wild.example.net"}, []string{"hk-node.example.net"}, nil, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantHosts := json.RawMessage(`{"jp-node.example.net":"192.0.2.10","+.wild.example.net":"192.0.2.11"}`)
+	if !testjson.Equal(wantHosts, yamlToRaw(t, yamlx.Get(main, "hosts"))) {
+		t.Fatal(string(yamlToRaw(t, yamlx.Get(main, "hosts"))))
 	}
 	reasons := map[string]string{}
-	for _, it := range report.GetList("items") {
-		o := it.(*jsonx.Object)
-		if o.GetString("status") == "ignored" {
-			reasons[o.GetString("domain")] = o.GetString("reason")
+	for _, it := range report.Items {
+		if it.Status == "ignored" {
+			reasons[it.Domain] = it.Reason
 		}
 	}
 	want := map[string]string{"jp-node.example.net": "custom_hosts", "wild.example.net": "custom_hosts", "hk-node.example.net": "mosdns_hosts"}
@@ -258,16 +289,18 @@ func TestHandWrittenHostsWinThenMosdnsThenSubscriptions(t *testing.T) {
 func TestAMappingLoopIsNeverEmitted(t *testing.T) {
 	index, config := hostsIndexFixture(t, map[string]string{"air": airportHosts})
 	main := providerFor("air")
-	main.Set("hosts", obj(t, `{"+.example.org":"jp-node.example.net"}`))
-	report := MergeSubscriptionHosts(main, config, nil, nil, nil, nil, index)
-	hosts := main.GetObject("hosts")
-	if hosts.GetString("+.example.org") != "jp-node.example.net" || hosts.Has("jp-node.example.net") {
-		t.Fatal(js(t, hosts))
+	yamlx.Set(main, "hosts", yamlFromRaw(t, json.RawMessage(`{"+.example.org":"jp-node.example.net"}`)))
+	report, _, err := MergeHosts(main, config, nil, nil, nil, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := yamlx.Get(main, "hosts")
+	if yamlx.Get(hosts, "+.example.org").Value != "jp-node.example.net" || yamlx.Get(hosts, "jp-node.example.net") != nil {
+		t.Fatal(string(yamlToRaw(t, hosts)))
 	}
 	found := false
-	for _, it := range report.GetList("items") {
-		o := it.(*jsonx.Object)
-		if o.GetString("domain") == "jp-node.example.net" && o.GetString("reason") == "cycle" {
+	for _, it := range report.Items {
+		if it.Domain == "jp-node.example.net" && it.Reason == "cycle" {
 			found = true
 		}
 	}
@@ -277,13 +310,20 @@ func TestAMappingLoopIsNeverEmitted(t *testing.T) {
 }
 
 func TestHostsDigestAndDescribeChange(t *testing.T) {
-	a := ExtractSubscriptionHosts(airportHosts)
-	if HostsDigest(a) != HostsDigest(ExtractSubscriptionHosts(airportHosts)) || HostsDigest(a) == HostsDigest(nil) {
+	a := ExtractHosts(airportHosts)
+	da, _ := HostDigest(a)
+	da2, _ := HostDigest(ExtractHosts(airportHosts))
+	dnil, _ := HostDigest(nil)
+	if da != da2 || da == dnil {
 		t.Fatal("digest")
 	}
-	b := ExtractSubscriptionHosts(strings.Replace(airportHosts, "203.0.113.66", "203.0.113.67", 1))
-	if js(t, DescribeChange(a, b)) != `{"added":0,"removed":0,"changed":1}` {
-		t.Fatal(js(t, DescribeChange(a, b)))
+	b := ExtractHosts(strings.Replace(airportHosts, "203.0.113.66", "203.0.113.67", 1))
+	diff, err := CompareHosts(a, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !testjson.Equal(json.RawMessage(`{"added":0,"removed":0,"changed":1}`), diff) {
+		t.Fatal(js(t, diff))
 	}
 }
 
@@ -291,19 +331,19 @@ func TestHostsDigestAndDescribeChange(t *testing.T) {
 
 func TestListenerAddressIsDerivedFromDnsListen(t *testing.T) {
 	cases := []struct {
-		listen any
+		listen string
 		addr   string
 		reason string
 	}{
 		{"0.0.0.0:1053", "udp://127.0.0.1:1053", ""}, {"[::]:53", "udp://127.0.0.1:53", ""}, {":7874", "udp://127.0.0.1:7874", ""},
 		{"127.0.0.1:7874", "udp://127.0.0.1:7874", ""}, {"192.168.1.2:53", "udp://192.168.1.2:53", ""},
 		{"[::1]:1053", "udp://[::1]:1053", ""}, {"localhost:53", "", "listen_unparsed"}, {"0.0.0.0", "", "listen_unparsed"},
-		{"0.0.0.0:0", "", "listen_unparsed"}, {"", "", "no_listen"}, {nil, "", "no_listen"},
+		{"0.0.0.0:0", "", "listen_unparsed"}, {"", "", "no_listen"},
 	}
 	for _, c := range cases {
-		a, r := ListenerAddress(c.listen)
+		a, r := DNSListener(c.listen)
 		if a != c.addr || r != c.reason {
-			t.Fatalf("%v: %q %q", c.listen, a, r)
+			t.Fatalf("%q: %q %q", c.listen, a, r)
 		}
 	}
 }
@@ -330,9 +370,10 @@ func TestCompressMergesOnlyWithinOneRegistrableDomain(t *testing.T) {
 }
 
 func TestFinalTargetFollowsHostsLikeMihomo(t *testing.T) {
-	hosts := obj(t, `{"a.test":"b.test","b.test":"c.test","x.test":"y.test","y.test":"198.51.100.1","+.wild.test":["198.51.100.2"],"w.test":"n.wild.test","ip.test":["198.51.100.3"]}`)
+	hosts := yamlFromRaw(t, json.RawMessage(`{"a.test":"b.test","b.test":"c.test","x.test":"y.test","y.test":"198.51.100.1","+.wild.test":["198.51.100.2"],"w.test":"n.wild.test","ip.test":["198.51.100.3"]}`))
+	resolver := NewHostResolver(hosts)
 	for domain, want := range map[string]string{"a.test": "c.test", "x.test": "", "w.test": "", "ip.test": "", "missing.test": ""} {
-		if got := FinalTarget(hosts, domain); got != want {
+		if got := resolver.Target(domain); got != want {
 			t.Fatalf("%s: %q", domain, got)
 		}
 	}
@@ -340,22 +381,22 @@ func TestFinalTargetFollowsHostsLikeMihomo(t *testing.T) {
 
 func TestCoreVersions(t *testing.T) {
 	cases := []struct {
-		text   any
+		text   string
 		parsed string
 		old    bool
 	}{
 		{"v1.19.33", "1.19.33", false}, {"v1.19.20", "1.19.20", false}, {"v1.19.19", "1.19.19", true},
 		{"Mihomo Meta v1.18.10 linux amd64", "1.18.10", true}, {"1.20.0", "1.20.0", false},
-		{"alpha-1a2b3c4", "", false}, {"", "", false}, {nil, "", false},
+		{"alpha-1a2b3c4", "", false}, {"", "", false},
 	}
 	for _, c := range cases {
-		v, ok := ParseCoreVersion(c.text)
+		v, ok := CoreVersion(c.text)
 		got := ""
 		if ok {
 			got = fmt.Sprintf("%s.%s.%s", v[0], v[1], v[2])
 		}
-		if got != c.parsed || CoreTooOld(c.text) != c.old {
-			t.Fatalf("%v: %q %v", c.text, got, CoreTooOld(c.text))
+		if got != c.parsed || IsCoreTooOld(c.text) != c.old {
+			t.Fatalf("%q: %q %v", c.text, got, IsCoreTooOld(c.text))
 		}
 	}
 }
@@ -374,41 +415,49 @@ proxy-groups:
 `
 
 func TestExtractRecordsOnlyWhatChainedNodesNeed(t *testing.T) {
-	record, err := ExtractSubscriptionDialers(airportDialers)
+	record, err := ExtractDialers(airportDialers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"targets":{"Hidden":{"type":"url-test","members":["Entry","HK"]},"Relay":{"type":"select","members":["Entry","HK"],"url":"http://x/204","interval":300,"lazy":true}},"unresolved":[]}`
-	if js(t, record) != want {
+	want := json.RawMessage(`{"targets":{"Hidden":{"type":"url-test","members":["Entry","HK"]},"Relay":{"type":"select","members":["Entry","HK"],"url":"http://x/204","interval":300,"lazy":true}},"unresolved":[]}`)
+	if !testjson.Equal(want, record) {
 		t.Fatal(js(t, record))
 	}
 }
 
 func TestExtractReportsDynamicGroupsAsUnresolved(t *testing.T) {
 	text := "proxies:\n  - {name: A, type: ss, dialer-proxy: Dyn}\nproxy-groups:\n  - {name: Dyn, type: select, use: [p]}\n"
-	record, _ := ExtractSubscriptionDialers(text)
-	if js(t, record) != `{"targets":{},"unresolved":["Dyn"]}` {
+	record, _ := ExtractDialers(text)
+	if !testjson.Equal(json.RawMessage(`{"targets":{},"unresolved":["Dyn"]}`), record) {
 		t.Fatal(js(t, record))
 	}
-	if r, _ := ExtractSubscriptionDialers("proxies: []\n"); r != nil {
+	if r, _ := ExtractDialers("proxies: []\n"); r != nil {
 		t.Fatal("no dialer-proxy means no record")
 	}
 }
 
 func TestAdaptingTouchesOnlyAirportGroupsAndIsStable(t *testing.T) {
-	record := obj(t, `{"targets":{"Relay":{"type":"select","members":["X"]}},"unresolved":["Hidden"]}`)
-	proxies := []any{obj(t, `{"name":"a","dialer-proxy":"Relay"}`), obj(t, `{"name":"b","dialer-proxy":"Hidden"}`), obj(t, `{"name":"c","dialer-proxy":"Other"}`), obj(t, `{"name":"d"}`)}
-	main := obj(t, `{"proxy-groups":[{"name":"Air/Relay"}],"proxies":[{"name":"Other"}]}`)
-	got := AdaptSubscriptionProxies("Air", proxies, main, record, true)
-	want := `[{"name":"a","dialer-proxy":"Air/Relay"},{"name":"c","dialer-proxy":"Other"},{"name":"d"}]`
-	if js(t, got) != want {
-		t.Fatal(js(t, got))
+	var record DialersData
+	if err := json.Unmarshal([]byte(`{"targets":{"Relay":{"type":"select","members":["X"]}},"unresolved":["Hidden"]}`), &record); err != nil {
+		t.Fatal(err)
 	}
-	if again := AdaptSubscriptionProxies("Air", got, main, record, true); js(t, again) != want {
+	proxies := yamlFromRaw(t, json.RawMessage(`[{"name":"a","dialer-proxy":"Relay"},{"name":"b","dialer-proxy":"Hidden"},{"name":"c","dialer-proxy":"Other"},{"name":"d"}]`)).Content
+	main := yamlFromRaw(t, json.RawMessage(`{"proxy-groups":[{"name":"Air/Relay"}],"proxies":[{"name":"Other"}]}`))
+	got, err := AdaptProxies("Air", proxies, main, &record, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := json.RawMessage(`[{"name":"a","dialer-proxy":"Air/Relay"},{"name":"c","dialer-proxy":"Other"},{"name":"d"}]`)
+	if !testjson.Equal(want, yamlToRaw(t, yamlx.Seq(got...))) {
+		t.Fatal(string(yamlToRaw(t, yamlx.Seq(got...))))
+	}
+	again, err := AdaptProxies("Air", got, main, &record, true)
+	if err != nil || !testjson.Equal(want, yamlToRaw(t, yamlx.Seq(again...))) {
 		t.Fatal("adapting must be idempotent")
 	}
-	if none := AdaptSubscriptionProxies("Air", proxies, main, record, false); js(t, none) != `[{"name":"c","dialer-proxy":"Other"},{"name":"d"}]` {
-		t.Fatal(js(t, none))
+	none, err := AdaptProxies("Air", proxies, main, &record, false)
+	if err != nil || !testjson.Equal(json.RawMessage(`[{"name":"c","dialer-proxy":"Other"},{"name":"d"}]`), yamlToRaw(t, yamlx.Seq(none...))) {
+		t.Fatal(string(yamlToRaw(t, yamlx.Seq(none...))))
 	}
 }
 
@@ -418,114 +467,185 @@ func chainNode(id string) string {
 	return fmt.Sprintf(`{"id":%q,"name":%q,"type":"http","server":"%s.test","port":80}`, id, strings.ToUpper(id), id)
 }
 
-func chainProfile(t *testing.T, groups ...string) *jsonx.Object {
+func chainProfileJSON(groups ...string) string {
 	chain := `{"id":"chain","name":"Chain","type":"chain","chain":{"entry":{"type":"node","id":"a"},"exit":{"type":"node","id":"b"}}}`
 	all := append([]string{chain}, groups...)
-	return obj(t, fmt.Sprintf(`{"profile_id":"default","nodes":[%s,%s],"proxy_groups":[%s],"rule_configs":[]}`,
-		chainNode("a"), chainNode("b"), strings.Join(all, ",")))
+	return fmt.Sprintf(`{"profile_id":"default","nodes":[%s,%s],"proxy_groups":[%s],"rule_configs":[]}`,
+		chainNode("a"), chainNode("b"), strings.Join(all, ","))
+}
+
+func chainProfileConfig(t *testing.T, groups ...string) *model.Config {
+	t.Helper()
+	cfg, err := decodeConfigRaw(json.RawMessage(chainProfileJSON(groups...)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
 }
 
 func TestInvalidChainMetadataIsRejectedBeforeConversion(t *testing.T) {
-	mutations := map[string]func(p *jsonx.Object){
-		"missing_exit": func(p *jsonx.Object) {
-			p.GetList("proxy_groups")[0].(*jsonx.Object).GetObject("chain").GetObject("exit").Set("id", "missing")
+	mutations := map[string]func(t *testing.T) *model.Config{
+		"missing_exit": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Profile.ProxyGroups[0].Chain.Exit.ID = "missing"
+			return cfg
 		},
-		"missing_entry": func(p *jsonx.Object) {
-			p.GetList("proxy_groups")[0].(*jsonx.Object).GetObject("chain").GetObject("entry").Set("id", "missing")
+		"missing_entry": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Profile.ProxyGroups[0].Chain.Entry.ID = "missing"
+			return cfg
 		},
-		"disabled_exit":  func(p *jsonx.Object) { p.GetList("nodes")[1].(*jsonx.Object).Set("enabled", false) },
-		"disabled_entry": func(p *jsonx.Object) { p.GetList("nodes")[0].(*jsonx.Object).Set("enabled", false) },
-		"duplicate_name": func(p *jsonx.Object) { p.GetList("proxy_groups")[0].(*jsonx.Object).Set("name", "B") },
-		"reserved_name":  func(p *jsonx.Object) { p.GetList("proxy_groups")[0].(*jsonx.Object).Set("name", "DIRECT") },
-		"self_entry": func(p *jsonx.Object) {
-			p.GetList("proxy_groups")[0].(*jsonx.Object).GetObject("chain").GetObject("entry").Set("id", "b")
+		"disabled_exit": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			f := false
+			cfg.Nodes[1].Enabled = &f
+			return cfg
 		},
-		"subscription_exit":  func(p *jsonx.Object) { p.GetList("nodes")[1].(*jsonx.Object).Set("subscription_id", "feed") },
-		"subscription_entry": func(p *jsonx.Object) { p.GetList("nodes")[0].(*jsonx.Object).Set("subscription_id", "feed") },
-		"malformed_entry": func(p *jsonx.Object) {
-			p.GetList("proxy_groups")[0].(*jsonx.Object).GetObject("chain").Set("entry", nil)
+		"disabled_entry": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			f := false
+			cfg.Nodes[0].Enabled = &f
+			return cfg
 		},
-		"malformed_chain": func(p *jsonx.Object) { p.GetList("proxy_groups")[0].(*jsonx.Object).Set("chain", []any{}) },
-		"duplicate_id": func(p *jsonx.Object) {
-			g := p.GetList("proxy_groups")
-			dup := g[0].(*jsonx.Object).DeepCopy()
-			dup.Set("name", "Other")
-			p.Set("proxy_groups", append(g, dup))
+		"duplicate_name": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Profile.ProxyGroups[0].Name = "B"
+			return cfg
+		},
+		"reserved_name": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Profile.ProxyGroups[0].Name = "DIRECT"
+			return cfg
+		},
+		"self_entry": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Profile.ProxyGroups[0].Chain.Entry.ID = "b"
+			return cfg
+		},
+		"subscription_exit": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Nodes[1].SubscriptionID = "feed"
+			return cfg
+		},
+		"subscription_entry": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			cfg.Nodes[0].SubscriptionID = "feed"
+			return cfg
+		},
+		"malformed_entry": func(t *testing.T) *model.Config {
+			raw := fmt.Sprintf(`{"profile_id":"default","nodes":[%s,%s],"proxy_groups":[{"id":"chain","name":"Chain","type":"chain","chain":{"entry":null,"exit":{"type":"node","id":"b"}}}],"rule_configs":[]}`,
+				chainNode("a"), chainNode("b"))
+			cfg, err := decodeConfigRaw(json.RawMessage(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return cfg
+		},
+		"malformed_chain": func(t *testing.T) *model.Config {
+			raw := fmt.Sprintf(`{"profile_id":"default","nodes":[%s,%s],"proxy_groups":[{"id":"chain","name":"Chain","type":"chain","chain":[]}],"rule_configs":[]}`,
+				chainNode("a"), chainNode("b"))
+			cfg, err := decodeConfigRaw(json.RawMessage(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return cfg
+		},
+		"duplicate_id": func(t *testing.T) *model.Config {
+			cfg := chainProfileConfig(t)
+			dup := cfg.Profile.ProxyGroups[0]
+			dup.Name = "Other"
+			cfg.Profile.ProxyGroups = append(cfg.Profile.ProxyGroups, dup)
+			return cfg
 		},
 	}
-	for name, mutate := range mutations {
-		p := chainProfile(t)
-		mutate(p)
-		if _, err := LowerProxyChains(p); err == nil {
+	for name, build := range mutations {
+		p := build(t)
+		if _, err := LowerChains(p); err == nil {
 			t.Fatalf("%s: lowering must be rejected", name)
-		} else if _, ok := err.(*DialerReferenceError); !ok {
-			t.Fatalf("%s: %T", name, err)
+		} else {
+			err = referenceFailure(err)
+			if _, ok := err.(*DialerReferenceError); !ok {
+				t.Fatalf("%s: %T (%v)", name, err, err)
+			}
 		}
 	}
 }
 
 func TestLoweringIDsAreUniqueAndNestedObjectsAreIndependent(t *testing.T) {
-	p := chainProfile(t, `{"id":"chooser","name":"Choose","type":"select","proxies_order":[{"type":"strategy","id":"chain"}]}`)
-	p.Set("nodes", append(p.GetList("nodes"), obj(t, chainNode("__chain__chain"))))
-	p.GetList("nodes")[1].(*jsonx.Object).Set("params", obj(t, `{"headers":{"User-Agent":"shared"}}`))
-	before := p.DeepCopy()
-	runtime, err := LowerProxyChains(p)
+	raw := fmt.Sprintf(`{"profile_id":"default","nodes":[%s,{"id":"b","name":"B","type":"http","server":"b.test","port":80,"params":{"headers":{"User-Agent":"shared"}}},%s],"proxy_groups":[{"id":"chain","name":"Chain","type":"chain","chain":{"entry":{"type":"node","id":"a"},"exit":{"type":"node","id":"b"}}},{"id":"chooser","name":"Choose","type":"select","proxies_order":[{"type":"strategy","id":"chain"}]}],"rule_configs":[]}`,
+		chainNode("a"), chainNode("__chain__chain"))
+	p, err := decodeConfigRaw(json.RawMessage(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeNodes, _ := model.Marshal(p.Nodes)
+	beforeGroups, _ := model.Marshal(p.Profile.ProxyGroups)
+	runtime, err := LowerChains(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
-	var derived *jsonx.Object
-	for _, n := range runtime.GetList("nodes") {
-		o := n.(*jsonx.Object)
-		if seen[o.GetString("id")] {
+	var derived *model.Node
+	for i := range runtime.Nodes {
+		n := &runtime.Nodes[i]
+		if seen[n.ID] {
 			t.Fatal("duplicate id")
 		}
-		seen[o.GetString("id")] = true
-		if o.GetString("name") == "Chain" {
-			derived = o
+		seen[n.ID] = true
+		if n.Name == "Chain" {
+			derived = n
 		}
 	}
-	for _, g := range runtime.GetList("proxy_groups") {
-		o := g.(*jsonx.Object)
-		if seen[o.GetString("id")] || o.GetString("type") == "chain" {
+	for _, g := range runtime.Profile.ProxyGroups {
+		if seen[g.ID] || g.Type == "chain" {
 			t.Fatal("group id clash or chain left")
 		}
-		seen[o.GetString("id")] = true
+		seen[g.ID] = true
 	}
-	order := runtime.GetList("proxy_groups")[0].(*jsonx.Object).GetList("proxies_order")
-	if js(t, order) != fmt.Sprintf(`[{"type":"node","id":%q}]`, derived.GetString("id")) {
+	order := runtime.Profile.ProxyGroups[0].ProxiesOrder
+	wantOrder := json.RawMessage(fmt.Sprintf(`[{"type":"node","id":%q}]`, derived.ID))
+	if !testjson.Equal(wantOrder, order) {
 		t.Fatal(js(t, order))
 	}
-	derived.GetObject("params").GetObject("headers").Set("User-Agent", "runtime")
-	if !jsonx.Equal(p, before) {
+	if err := json.Unmarshal([]byte(`{"headers":{"User-Agent":"runtime"}}`), &derived.Params); err != nil {
+		t.Fatal(err)
+	}
+	afterNodes, _ := model.Marshal(p.Nodes)
+	afterGroups, _ := model.Marshal(p.Profile.ProxyGroups)
+	if !testjson.Equal(json.RawMessage(beforeNodes), json.RawMessage(afterNodes)) ||
+		!testjson.Equal(json.RawMessage(beforeGroups), json.RawMessage(afterGroups)) {
 		t.Fatal("the profile must not change")
 	}
-	if runtime.GetList("nodes")[1].(*jsonx.Object).GetObject("params").GetObject("headers").GetString("User-Agent") != "shared" {
+	origParams, err := model.Marshal(runtime.Nodes[1].Params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !testjson.Equal(json.RawMessage(`{"headers":{"User-Agent":"shared"}}`), json.RawMessage(origParams)) {
 		t.Fatal("the original node must stay untouched")
 	}
 }
 
 func TestIndirectGroupCycleChecksEveryBranch(t *testing.T) {
-	p := chainProfile(t, `{"id":"entry","name":"Entry","type":"select","manual_nodes":["a"],"include_groups":["nested"]}`,
+	p := chainProfileConfig(t, `{"id":"entry","name":"Entry","type":"select","manual_nodes":["a"],"include_groups":["nested"]}`,
 		`{"id":"nested","name":"Nested","type":"select","include_groups":["chain"]}`)
-	p.GetList("proxy_groups")[0].(*jsonx.Object).GetObject("chain").Set("entry", obj(t, `{"type":"group","id":"entry"}`))
-	if err := ValidateDialers(p); err == nil {
+	p.Profile.ProxyGroups[0].Chain.Entry = model.ResourceRef{Type: "group", ID: "entry"}
+	if err := sharedDialers().Validate(p); err == nil {
 		t.Fatal("cycle must be rejected")
 	}
 }
 
 func TestFollowChainIsRejectedEvenWhenFollowerIsDisabled(t *testing.T) {
-	p := chainProfile(t, `{"id":"follower","name":"Follower","type":"select","follow_group":"chain","enabled":false}`)
-	if err := ValidateDialers(p); err == nil {
+	p := chainProfileConfig(t, `{"id":"follower","name":"Follower","type":"select","follow_group":"chain","enabled":false}`)
+	if err := sharedDialers().Validate(p); err == nil {
 		t.Fatal("must be rejected")
 	}
 }
 
 func TestManualOnlyConstraintIncludesNestedStaticGroupMembers(t *testing.T) {
-	p := chainProfile(t, `{"id":"entry","name":"Entry","type":"select","manual_nodes":["a"]}`)
-	p.GetList("proxy_groups")[0].(*jsonx.Object).GetObject("chain").Set("entry", obj(t, `{"type":"group","id":"entry"}`))
-	p.GetList("nodes")[0].(*jsonx.Object).Set("subscription_id", "feed")
-	if err := ValidateDialers(p); err == nil {
+	p := chainProfileConfig(t, `{"id":"entry","name":"Entry","type":"select","manual_nodes":["a"]}`)
+	p.Profile.ProxyGroups[0].Chain.Entry = model.ResourceRef{Type: "group", ID: "entry"}
+	p.Nodes[0].SubscriptionID = "feed"
+	if err := sharedDialers().Validate(p); err == nil {
 		t.Fatal("must be rejected")
 	}
 }
@@ -536,51 +656,61 @@ func TestDisabledChainCannotBeUsedByEnabledConsumer(t *testing.T) {
 		`{"id":"g","name":"Group","type":"select","proxies_order":[{"type":"strategy","id":"chain"}]}`,
 		`{"id":"outer","name":"Outer","type":"chain","chain":{"entry":{"type":"group","id":"chain"},"exit":{"type":"node","id":"b"}}}`,
 	} {
-		p := chainProfile(t, consumer)
-		p.GetList("proxy_groups")[0].(*jsonx.Object).Set("enabled", false)
-		if _, err := LowerProxyChains(p); err == nil {
+		p := chainProfileConfig(t, consumer)
+		f := false
+		p.Profile.ProxyGroups[0].Enabled = &f
+		if _, err := LowerChains(p); err == nil {
 			t.Fatalf("%s must be rejected", consumer)
 		}
 	}
 }
 
 func TestDisabledChainPreservesDisabledExitMetadataWithoutEmitting(t *testing.T) {
-	p := chainProfile(t)
-	p.GetList("proxy_groups")[0].(*jsonx.Object).Set("enabled", false)
-	p.GetList("nodes")[1].(*jsonx.Object).Set("enabled", false)
-	if err := ValidateDialers(p); err != nil {
+	p := chainProfileConfig(t)
+	f := false
+	p.Profile.ProxyGroups[0].Enabled = &f
+	p.Nodes[1].Enabled = &f
+	if err := sharedDialers().Validate(p); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestRawDialerCycleThroughNamedChainIsRejected(t *testing.T) {
-	p := chainProfile(t)
-	p.GetList("nodes")[0].(*jsonx.Object).Set("params", obj(t, `{"dialer-proxy":"Chain"}`))
-	if err := ValidateDialers(p); err == nil {
+	p := chainProfileConfig(t)
+	if err := json.Unmarshal([]byte(`{"dialer-proxy":"Chain"}`), &p.Nodes[0].Params); err != nil {
+		t.Fatal(err)
+	}
+	if err := sharedDialers().Validate(p); err == nil {
 		t.Fatal("must be rejected")
 	}
 }
 
 func TestChainAsExitComposesAllHops(t *testing.T) {
-	p := obj(t, fmt.Sprintf(`{"nodes":[%s,%s,%s],"proxy_groups":[
+	raw := fmt.Sprintf(`{"nodes":[%s,%s,%s],"proxy_groups":[
 		{"id":"inner","name":"Inner","type":"chain","chain":{"entry":{"type":"node","id":"a"},"exit":{"type":"node","id":"b"}}},
 		{"id":"outer","name":"Outer","type":"chain","chain":{"entry":{"type":"node","id":"c"},"exit":{"type":"group","id":"inner"}}}]}`,
-		chainNode("a"), chainNode("b"), chainNode("c")))
-	runtime, err := LowerProxyChains(p)
+		chainNode("a"), chainNode("b"), chainNode("c"))
+	p, err := decodeConfigRaw(json.RawMessage(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	byName := map[string]*jsonx.Object{}
-	byID := map[string]*jsonx.Object{}
-	for _, n := range runtime.GetList("nodes") {
-		o := n.(*jsonx.Object)
-		byName[o.GetString("name")] = o
-		byID[o.GetString("id")] = o
+	runtime, err := LowerChains(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]model.Node{}
+	byID := map[string]model.Node{}
+	for _, n := range runtime.Nodes {
+		byName[n.Name] = n
+		byID[n.ID] = n
 	}
 	// A -> (B -> C) is (A -> B) -> C: Outer dials through the cloned inner entry.
 	outer := byName["Outer"]
-	hop := byID[outer.GetObject("dialer_ref").GetString("id")]
-	if hop == nil || hop.GetObject("dialer_ref") == nil {
+	if outer.DialerRef == nil {
+		t.Fatalf("outer %s", js(t, outer))
+	}
+	hop, ok := byID[outer.DialerRef.ID]
+	if !ok || hop.DialerRef == nil {
 		t.Fatalf("outer %s", js(t, outer))
 	}
 }
@@ -588,34 +718,38 @@ func TestChainAsExitComposesAllHops(t *testing.T) {
 // test_reported_core_version_comes_from_domain_discovery_only, with the
 // traffic store replaced by a map.
 func TestReportedCoreVersionComesFromDomainDiscoveryOnly(t *testing.T) {
-	statuses := map[string]*jsonx.Object{}
+	statuses := map[string]CoreStatus{}
 	calls := 0
-	load := func(id string) *jsonx.Object { calls++; return statuses[id] }
-	agent := jsonx.Obj("id", "a1", "service_type", "mihomo", "domain_discovery_enabled", true)
-	if v := ReportedCoreVersion(agent, load); v != "" {
+	load := func(id string) CoreStatus { calls++; return statuses[id] }
+	on := true
+	offFlag := false
+	mihomo := "mihomo"
+	mosdnsKind := "mosdns"
+	agent := CoreAgent{ID: "a1", ServiceType: &mihomo, DiscoveryEnabled: &on}
+	if v := AgentCoreVersion(agent, load); v != "" {
 		t.Fatalf("no report: %q", v)
 	}
-	statuses["a1"] = jsonx.Obj("status", "running", "mihomo_version", "v1.19.10", "items", []any{})
-	if v := ReportedCoreVersion(agent, load); v != "v1.19.10" {
+	statuses["a1"] = CoreStatus{MihomoVersion: "v1.19.10"}
+	if v := AgentCoreVersion(agent, load); v != "v1.19.10" {
 		t.Fatalf("got %q", v)
 	}
 	calls = 0
-	off := agent.Clone()
-	off.Set("domain_discovery_enabled", false)
-	mosdns := agent.Clone()
-	mosdns.Set("service_type", "mosdns")
-	if ReportedCoreVersion(off, load) != "" || ReportedCoreVersion(mosdns, load) != "" || calls != 0 {
+	off := agent
+	off.DiscoveryEnabled = &offFlag
+	mosdns := agent
+	mosdns.ServiceType = &mosdnsKind
+	if AgentCoreVersion(off, load) != "" || AgentCoreVersion(mosdns, load) != "" || calls != 0 {
 		t.Fatalf("stale or non-Mihomo report used (%d loads)", calls)
 	}
-	old := jsonx.Obj("id", "old", "name", "旧内核", "domain_discovery_enabled", true)
-	statuses["old"] = jsonx.Obj("mihomo_version", "v1.19.0")
-	other := jsonx.Obj("id", "other", "profile_id", "p2", "domain_discovery_enabled", true)
-	statuses["other"] = jsonx.Obj("mihomo_version", "v1.19.0")
-	got := OutdatedAgents([]*jsonx.Object{agent, old, other}, "default", "default", load)
-	if js(t, got) != `[{"name":"a1","version":"v1.19.10"},{"name":"旧内核","version":"v1.19.0"}]` {
+	old := CoreAgent{ID: "old", Name: "旧内核", DiscoveryEnabled: &on}
+	statuses["old"] = CoreStatus{MihomoVersion: "v1.19.0"}
+	other := CoreAgent{ID: "other", ProfileID: "p2", DiscoveryEnabled: &on}
+	statuses["other"] = CoreStatus{MihomoVersion: "v1.19.0"}
+	got := OldCoreAgents([]CoreAgent{agent, old, other}, "default", "default", load)
+	if !testjson.Equal(json.RawMessage(`[{"name":"a1","version":"v1.19.10"},{"name":"旧内核","version":"v1.19.0"}]`), got) {
 		t.Fatalf("outdated %s", js(t, got))
 	}
-	if js(t, OutdatedAgents(nil, "default", "default", load)) != "[]" {
+	if !testjson.Equal(json.RawMessage("[]"), OldCoreAgents(nil, "default", "default", load)) {
 		t.Fatal("empty result must be a list")
 	}
 }

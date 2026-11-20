@@ -35,7 +35,7 @@ func TestUpdateRefusedSpawnReleasesBusyState(t *testing.T) {
 	if ok, message := h.d.StartSubStoreUpdate(h.ctx); ok || message != msgUpdateUnavailable {
 		t.Fatal(ok, message)
 	}
-	if state := h.d.GetUpdateState(); state.GetString("state") != "failed" {
+	if state := h.d.UpdateSnapshot(); state.State != "failed" {
 		t.Fatal(state)
 	}
 	h.unlocked(t)
@@ -86,7 +86,7 @@ func TestTrackedUpdateIgnoresDisconnectAndCancelsHTTPOnShutdown(t *testing.T) {
 	if err := runner.WaitIdle(wait); err != nil {
 		t.Fatal(err)
 	}
-	if state := h.d.GetUpdateState(); state.GetString("state") == "running" {
+	if state := h.d.UpdateSnapshot(); state.State == "running" {
 		t.Fatal("cancelled update still running", state)
 	}
 	h.unlocked(t)

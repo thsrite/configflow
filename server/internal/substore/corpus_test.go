@@ -7,16 +7,20 @@ package substore
 // requests' URL preparation and response decoding.
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 type corpusRow struct {
@@ -33,16 +37,19 @@ func loadCorpus(t *testing.T) []corpusRow {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var list []map[string]any
+	if err := dec.Decode(&list); err != nil {
 		t.Fatal(err)
 	}
 	var rows []corpusRow
-	for _, item := range value.([]any) {
-		o := item.(*jsonx.Object)
-		output, has := o.Get("output")
-		rows = append(rows, corpusRow{fn: o.GetString("fn"), input: o.Value("input"), output: output, hasOut: has,
-			errName: o.GetString("error"), message: o.GetString("message")})
+	for _, o := range list {
+		output, has := o["output"]
+		fn, _ := o["fn"].(string)
+		errName, _ := o["error"].(string)
+		msg, _ := o["message"].(string)
+		rows = append(rows, corpusRow{fn: fn, input: o["input"], output: output, hasOut: has, errName: errName, message: msg})
 	}
 	return rows
 }
@@ -50,10 +57,28 @@ func loadCorpus(t *testing.T) []corpusRow {
 func bytesOf(list []any) []byte {
 	b := make([]byte, len(list))
 	for i, v := range list {
-		n, _ := v.(jsonx.Number).Int64()
+		var n int64
+		switch x := v.(type) {
+		case json.Number:
+			n, _ = x.Int64()
+		case float64:
+			n = int64(x)
+		}
 		b[i] = byte(n)
 	}
 	return b
+}
+
+func yamlNodesToJSON(nodes []*yamlx.Node) ([]any, error) {
+	out := make([]any, 0, len(nodes))
+	for _, node := range nodes {
+		data, err := yamlx.ToJSON(node)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, json.RawMessage(data))
+	}
+	return out, nil
 }
 
 func TestPythonCorpus(t *testing.T) {
@@ -67,22 +92,26 @@ func TestPythonCorpus(t *testing.T) {
 		var err error
 		switch row.fn {
 		case "parse_userinfo":
-			var info *jsonx.Object
-			info, err = ParseUserinfo(row.input.(string))
+			var info *Traffic
+			info, err = ReadUserinfo(row.input.(string))
 			if info != nil {
 				got = info
 			}
 		case "parse_version":
-			if parts := ParseVersion(row.input); parts != nil {
-				list := []any{}
-				for _, p := range parts {
-					list = append(list, jsonx.BigInt(p))
+			if s, ok := row.input.(string); ok {
+				if parts := VersionParts(s); parts != nil {
+					list := make([]json.Number, 0, len(parts))
+					for _, p := range parts {
+						list = append(list, json.Number(p.String()))
+					}
+					got = list
 				}
-				got = list
 			}
 		case "is_newer":
 			pair := row.input.([]any)
-			got = IsNewer(pair[0], pair[1])
+			a, okA := pair[0].(string)
+			b, _ := pair[1].(string)
+			got = okA && VersionNewer(a, b)
 		case "builtin_sub_store_url":
 			value := row.input.(string)
 			env := &Env{LookupEnv: func(key string) (string, bool) { return value, key == "SUB_STORE_BACKEND_API_PORT" }}
@@ -90,17 +119,19 @@ func TestPythonCorpus(t *testing.T) {
 		case "is_yaml_response":
 			got = isYAMLResponse(row.input.(string))
 		case "parse_proxies_from_yaml":
-			var proxies []any
-			proxies, err = ParseProxiesFromYAML(row.input.(string))
-			got = proxies
+			var nodes []*yamlx.Node
+			nodes, err = ParseProxyNodes(row.input.(string))
+			if err == nil {
+				got, err = yamlNodesToJSON(nodes)
+			}
 		case "proxies_to_nodes":
-			var proxies []any
-			if proxies, err = ParseProxiesFromYAML(row.input.(string)); err == nil {
-				got, err = ProxiesToNodes(proxies)
+			var nodes []*yamlx.Node
+			if nodes, err = ParseProxyNodes(row.input.(string)); err == nil {
+				got, err = ProxyNodes(nodes)
 			}
 		case "proxy_type_line":
 			s := row.input.(string)
-			got = "节点转换开始: proxy_type=" + proxyTypeOf(s) + " input_length=" + jsonx.Str(jsonx.Int(len([]rune(s))))
+			got = "节点转换开始: proxy_type=" + proxyTypeOf(s) + " input_length=" + strconv.Itoa(len([]rune(s)))
 		case "prepare_url":
 			in := row.input.([]any)
 			var params []Param
@@ -110,17 +141,11 @@ func TestPythonCorpus(t *testing.T) {
 			}
 			got, err = PrepareURL(in[0].(string), params)
 			if row.hasOut && err == nil {
-				// The requested URL is compared after normalisation a server
-				// does anyway (N2): escapes decoded, an empty port dropped,
-				// and DNS host names are case-insensitive.
 				if text, isText := row.output.(string); isText && sameRequestedURL(got.(string), text) {
 					got = text
 				}
 			}
 			if strings.Contains(in[0].(string), "%zz") || strings.Contains(in[0].(string), " w@") {
-				// Accepted (N2): with a malformed escape requests quoted every
-				// "%" (so %41 was sent as %2541); unencoded spaces in
-				// credentials are refused by net/url.
 				continue
 			}
 		case "response_text", "response_json":
@@ -132,23 +157,26 @@ func TestPythonCorpus(t *testing.T) {
 			if row.fn == "response_text" {
 				got = resp.Text()
 				if in[0].(string) == "" && !utf8.Valid(resp.Body) {
-					// requests guesses with charset_normalizer (not reproduced).
 					continue
 				}
 			} else {
-				got, err = resp.JSON()
+				var raw []byte
+				raw, err = resp.JSONData()
+				if err == nil {
+					got = json.RawMessage(raw)
+				}
 			}
 		default:
 			t.Fatalf("unknown fn %s", row.fn)
 		}
-		if expected := native.GetObject(fmt.Sprintf("corpus/%d", i)); expected != nil {
-			if expected.Has("version_components") {
+		if expected := native[fmt.Sprintf("corpus/%d", i)]; expected != nil {
+			if _, hasVC := expected["version_components"]; hasVC {
 				parts := VersionParts(row.input.(string))
-				actual := make([]any, 0, len(parts))
+				actual := make([]string, 0, len(parts))
 				for _, part := range parts {
 					actual = append(actual, part.String())
 				}
-				if !jsonx.Equal(actual, expected.Value("version_components")) {
+				if !testjson.Equal(expected["version_components"], actual) {
 					t.Fatalf("native version components mismatch at %d", i)
 				}
 				continue
@@ -160,20 +188,20 @@ func TestPythonCorpus(t *testing.T) {
 			assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/corpus/%d", i), got, err)
 			continue
 		}
-		label := row.fn + " " + jsonx.Repr(row.input)
+		label := fmt.Sprintf("%s %v", row.fn, row.input)
 		if len(label) > 200 {
 			label = label[:200]
 		}
 		if row.hasOut {
 			if err != nil {
-				t.Errorf("%s: Go error %v, Python %s", label, err, jsonx.Repr(row.output))
-			} else if !jsonx.Equal(got, row.output) {
-				t.Errorf("%s: Go %s, Python %s", label, jsonx.Repr(got), jsonx.Repr(row.output))
+				t.Errorf("%s: Go error %v, Python %v", label, err, row.output)
+			} else if !testjson.Equal(row.output, got) {
+				t.Errorf("%s:\n%s", label, testjson.Diff(row.output, got))
 			}
 			continue
 		}
 		if err == nil {
-			t.Errorf("%s: Go %s, Python %s: %s", label, jsonx.Repr(got), row.errName, row.message)
+			t.Errorf("%s: Go %v, Python %s: %s", label, got, row.errName, row.message)
 			continue
 		}
 		if class := pythonClass(err); class != row.errName && !(row.errName != "" && strings.HasSuffix(row.errName, "Error") && class == "YAMLError") {

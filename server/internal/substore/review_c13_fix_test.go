@@ -15,13 +15,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 func withEnviron(t *testing.T, entries ...string) {
@@ -179,7 +178,7 @@ func TestReviewMakedirsNativeErrors(t *testing.T) {
 // an invalid response is rejected with its original value and never cached as a successful empty object.
 func TestReviewFalsyConversionIsRemembered(t *testing.T) {
 	h := newHarness(t, harnessOptions{builtin: true, version: "2.42.3"})
-	h.store.download = func(string, string, url.Values, *jsonx.Object) (int, string, http.Header) {
+	h.store.download = func(string, string, url.Values, map[string]any) (int, string, http.Header) {
 		return 200, "proxies: [0, {name: A}]", http.Header{}
 	}
 	c := h.service.Client
@@ -224,9 +223,9 @@ func TestReviewUpdatePanicIsAFailure(t *testing.T) {
 		t.Fatal("update lock kept")
 	}
 	release()
-	state := d.GetUpdateState()
-	if state.GetString("state") != "failed" || state.GetString("message") != "更新失败："+msgUnexpectedUpdate {
-		t.Fatalf("state %s", jsonx.Repr(state))
+	state := d.UpdateSnapshot()
+	if state.State != "failed" || state.Message != "更新失败："+msgUnexpectedUpdate {
+		t.Fatalf("state %+v", state)
 	}
 }
 
@@ -295,7 +294,7 @@ func TestRedirectHopsChooseTheirOwnProxy(t *testing.T) {
 		if err != nil || resp.Text() != c.text {
 			t.Fatalf("%s: %v %+v", c.noProxy, err, resp)
 		}
-		if !jsonx.Equal(jsonx.ListOf(seen), jsonx.ListOf(c.want)) {
+		if !slices.Equal(seen, c.want) {
 			t.Errorf("%s: saw %q, want %q", c.noProxy, seen, c.want)
 		}
 	}

@@ -22,7 +22,7 @@ func TestReviewN72RelinkKeepsAliasChains(t *testing.T) {
 		if err != nil || strings.Join(changed, ",") != "listeners[0].proxy" {
 			t.Fatalf("changed %v err %v", changed, err)
 		}
-		out := profile.GetObject("mihomo").GetString("custom_config")
+		out := profile.Mihomo.CustomConfig
 		got := yamlx.Get(yamlx.Get(mustListenerParse(t, out), "listeners").Content[0], "users")
 		want := yamlx.Get(mustListenerParse(t, source), "u")
 		if !yamlx.Equal(got, want) {
@@ -45,7 +45,7 @@ func TestReviewN72RelinkKeepsAliasItemComments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out := profile.GetObject("mihomo").GetString("custom_config")
+			out := profile.Mihomo.CustomConfig
 			if !strings.HasPrefix(out, "# top\n") || strings.Index(out, tt.comment) < strings.Index(out, "listeners:") {
 				t.Fatalf("alias comment moved away from its listener:\n%s", out)
 			}

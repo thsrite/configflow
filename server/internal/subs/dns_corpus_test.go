@@ -1,10 +1,12 @@
 package subs
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 func TestProxyServerDNSCorpus(t *testing.T) {
@@ -13,17 +15,22 @@ func TestProxyServerDNSCorpus(t *testing.T) {
 	kinds := map[string]int{}
 	for i, row := range rows {
 		kinds[row.Fn]++
-		if entry := native.GetObject(strconv.Itoa(i)); entry != nil {
-			row.Out = entry.Value("out")
+		wantRaw := row.OutRaw
+		if entry, ok := native[strconv.Itoa(i)]; ok {
+			wantRaw = entry.Out
 		}
 		switch row.Fn {
 		case "compress":
-			got := jsonx.ListOf(Compress(strList(row.In)))
-			if g, w := compact(t, got), compact(t, row.Out); g != w {
-				t.Fatalf("row %d compress(%s)\n got  %s\n want %s", i, compact(t, row.In), g, w)
+			got := Compress(strList(row.In))
+			if got == nil {
+				got = []string{}
+			}
+			if !testjson.Equal(wantRaw, got) {
+				t.Fatalf("row %d compress(%s)\n got  %s\n want %s", i, row.InRaw, compact(t, got), wantRaw)
 			}
 		case "listener_address":
-			addr, reason := ListenerAddress(row.In)
+			text, _ := row.In.(string)
+			addr, reason := DNSListener(text)
 			var a, r any
 			if addr != "" {
 				a = addr
@@ -31,46 +38,80 @@ func TestProxyServerDNSCorpus(t *testing.T) {
 			if reason != "" {
 				r = reason
 			}
-			if g, w := compact(t, []any{a, r}), compact(t, row.Out); g != w {
-				t.Fatalf("row %d listener_address(%s): got %s want %s", i, compact(t, row.In), g, w)
+			got := []any{a, r}
+			if !testjson.Equal(wantRaw, got) {
+				t.Fatalf("row %d listener_address(%s): got %s want %s", i, row.InRaw, compact(t, got), wantRaw)
 			}
 		case "parse_core_version":
-			v, ok := ParseCoreVersion(row.In)
+			text, _ := row.In.(string)
+			v, ok := CoreVersion(text)
 			var got any
 			if ok {
-				got = []any{jsonx.BigInt(v[0]), jsonx.BigInt(v[1]), jsonx.BigInt(v[2])}
+				got = []json.Number{json.Number(v[0].String()), json.Number(v[1].String()), json.Number(v[2].String())}
 			}
-			if g, w := compact(t, got), compact(t, row.Out); g != w {
-				t.Fatalf("row %d parse_core_version(%s): got %s want %s", i, compact(t, row.In), g, w)
+			if !testjson.Equal(wantRaw, got) {
+				t.Fatalf("row %d parse_core_version(%s): got %s want %s", i, row.InRaw, compact(t, got), wantRaw)
 			}
 		case "core_too_old":
-			if got := CoreTooOld(row.In); got != row.Out.(bool) {
-				t.Fatalf("row %d core_too_old(%s): got %v", i, compact(t, row.In), got)
+			text, _ := row.In.(string)
+			var want bool
+			if err := json.Unmarshal(wantRaw, &want); err != nil {
+				t.Fatal(err)
+			}
+			if got := IsCoreTooOld(text); got != want {
+				t.Fatalf("row %d core_too_old(%s): got %v", i, row.InRaw, got)
 			}
 		case "final_target":
-			in := asObj(row.In)
-			got := FinalTarget(in.GetObject("hosts"), in.GetString("domain"))
+			var in struct {
+				Hosts  json.RawMessage `json:"hosts"`
+				Domain string          `json:"domain"`
+			}
+			if err := json.Unmarshal(row.InRaw, &in); err != nil {
+				t.Fatal(err)
+			}
+			got := NewHostResolver(yamlFromRaw(t, in.Hosts)).Target(in.Domain)
 			var g any
 			if got != "" {
 				g = got
 			}
-			if gs, ws := compact(t, g), compact(t, row.Out); gs != ws {
-				t.Fatalf("row %d final_target(%s): got %s want %s", i, compact(t, row.In), gs, ws)
+			if !testjson.Equal(wantRaw, g) {
+				t.Fatalf("row %d final_target(%s): got %s want %s", i, row.InRaw, compact(t, g), wantRaw)
 			}
 		case "apply_node_dns":
-			in := asObj(row.In)
-			main := in.GetObject("main")
-			core, _ := in.Value("core_version").(string)
-			report := ApplyNodeDNS(main, in.GetObject("merged"), core)
-			want := asObj(row.Out)
-			var r any
-			if report != nil {
-				r = report
+			var in struct {
+				Main        json.RawMessage `json:"main"`
+				Merged      json.RawMessage `json:"merged"`
+				CoreVersion any             `json:"core_version"`
 			}
-			if g, w := compact(t, jsonx.Obj("report", r, "main", main)), compact(t, want); g != w {
-				t.Fatalf("row %d apply_node_dns\n in   %s\n got  %s\n want %s", i, compact(t, row.In), g, w)
+			if err := json.Unmarshal(row.InRaw, &in); err != nil {
+				t.Fatal(err)
+			}
+			mainNode := yamlFromRaw(t, in.Main)
+			mergedNode := yamlFromRaw(t, in.Merged)
+			core, _ := in.CoreVersion.(string)
+			report, err := ApplyDNS(mainNode, mergedNode, core)
+			if err != nil {
+				t.Fatalf("row %d apply_node_dns error: %v", i, err)
+			}
+			got := map[string]any{
+				"report": report,
+				"main":   yamlToRaw(t, mainNode),
+			}
+			if !testjson.Equal(wantRaw, got) {
+				t.Fatalf("row %d apply_node_dns\n in   %s\n got  %s\n want %s\n diff %s", i, row.InRaw, compact(t, got), wantRaw, testjson.Diff(wantRaw, got))
 			}
 		}
 	}
 	t.Logf("%v", kinds)
+}
+
+func yamlMapKeys(n *yamlx.Node) []string {
+	var keys []string
+	if n == nil {
+		return keys
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		keys = append(keys, n.Content[i].Value)
+	}
+	return keys
 }

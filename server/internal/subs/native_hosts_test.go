@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 	"crypto/sha256"
@@ -17,19 +16,22 @@ import (
 	"testing"
 )
 
-func nativeHostsExpectations(t *testing.T) *jsonx.Object {
+type nativeHostsCase struct {
+	InputSHA string          `json:"input_sha256"`
+	Reason   string          `json:"reason"`
+	Output   json.RawMessage `json:"output"`
+}
+
+func nativeHostsExpectations(t *testing.T) map[string]nativeHostsCase {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_hosts_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		Sources   map[string]string `json:"sources"`
-		LoaderSHA string            `json:"native_loader_sha256"`
-		Cases     map[string]struct {
-			InputSHA string `json:"input_sha256"`
-			Reason   string `json:"reason"`
-		} `json:"cases"`
+		Sources   map[string]string          `json:"sources"`
+		LoaderSHA string                     `json:"native_loader_sha256"`
+		Cases     map[string]nativeHostsCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
@@ -72,11 +74,7 @@ func nativeHostsExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("hosts input drift %s", key)
 		}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object).GetObject("cases")
+	return manifest.Cases
 }
 
 func TestN89TypedHostCacheAndFilteredSource(t *testing.T) {

@@ -1,12 +1,13 @@
 package subs
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx/yamlxtest"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 // C10 adversarial review: Python reference results for edge inputs
@@ -15,15 +16,20 @@ import (
 // are counted, not compared: yamlx represents them differently (domain-level
 // accepted difference).
 
-func reviewOut(row corpusRow) (*jsonx.Object, bool) {
-	o, ok := row.Out.(*jsonx.Object)
-	if !ok {
-		return nil, false
+func reviewOut(raw json.RawMessage) (kind string, msg string, ok bool) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil || len(m) != 1 {
+		return "", "", false
 	}
-	if o.Len() == 1 && (o.Has("error") || o.Has("unrepresentable")) {
-		return o, true
+	if v, has := m["error"]; has {
+		_ = json.Unmarshal(v, &msg)
+		return "error", msg, true
 	}
-	return nil, false
+	if v, has := m["unrepresentable"]; has {
+		_ = json.Unmarshal(v, &msg)
+		return "unrepresentable", msg, true
+	}
+	return "", "", false
 }
 
 // yamlxDiffers are inputs on which internal/yamlx differs from PyYAML. The
@@ -39,43 +45,47 @@ func TestReviewC10References(t *testing.T) {
 	dialersNative := nativeDialersExpectations(t)
 	compared, unrepresentable, known, acceptedUTF8 := 0, 0, 0, 0
 	for i, row := range rows {
+		wantRaw := row.OutRaw
 		if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/review_c10/%d", i)); changed {
-			if expected.Has("error") {
-				row.Out = jsonx.Obj("error", expected.GetString("error"))
+			if expected.HasError {
+				wantRaw = rawJSON(t, map[string]string{"error": expected.Error})
 			} else {
-				row.Out = expected.Value("value")
+				wantRaw = expected.Value
 			}
 		}
-		if expected := hostsNative.GetObject(fmt.Sprintf("review_c10/%d", i)); expected != nil {
-			row.Out = expected.Value("output")
+		if expected, ok := hostsNative[fmt.Sprintf("review_c10/%d", i)]; ok {
+			wantRaw = expected.Output
 		}
-		if entry := dialersNative.GetObject(fmt.Sprintf("review_c10/%d", i)); entry != nil {
-			expected := entry.GetObject("expected")
-			if expected.Has("error") {
-				row.Out = jsonx.Obj("error", expected.Value("error"))
+		if entry, ok := dialersNative[fmt.Sprintf("review_c10/%d", i)]; ok {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(entry.Expected, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if rawErr, hasErr := fields["error"]; hasErr {
+				wantRaw = rawJSON(t, map[string]json.RawMessage{"error": rawErr})
 			} else {
-				row.Out = expected.Value("value")
+				wantRaw = fields["value"]
 			}
 		}
 		if row.Fn == "parse_uri_list" {
-			if expected := native.GetObject(fmt.Sprintf("review_c10/%d", i)); expected != nil {
-				row.Out = expected.Value("output")
+			if expected, ok := native[fmt.Sprintf("review_c10/%d", i)]; ok {
+				wantRaw = expected.Output
 			}
 		}
-		if yamlxDiffers[row.In.(string)] {
+		in := row.In.(string)
+		if yamlxDiffers[in] {
 			known++
 			continue
 		}
-		special, isSpecial := reviewOut(row)
-		if isSpecial && special.Has("unrepresentable") {
-			record := oracle.GetObject(fmt.Sprintf("subs/review_c10/%d", i))
-			if len(record.GetList("old_loads"))+len(record.GetList("native_loads")) > 0 {
+		specialKind, specialMsg, isSpecial := reviewOut(wantRaw)
+		if isSpecial && specialKind == "unrepresentable" {
+			record := oracle[fmt.Sprintf("subs/review_c10/%d", i)]
+			if len(record.OldLoads)+len(record.NativeLoads) > 0 {
 				t.Fatalf("uncompared YAML row %d", i)
 			}
 			unrepresentable++
 			continue
 		}
-		in := row.In.(string)
 		if row.Fn == "parse_uri_list" && strings.Contains(in, "sni=%ff%fe") {
 			// Go's strings.ToValidUTF8 replaces the invalid byte run once.
 			// These synthetic SNI values are not valid UTF-8 host names or
@@ -88,23 +98,16 @@ func TestReviewC10References(t *testing.T) {
 		var err error
 		switch row.Fn {
 		case "parse_uri_list":
-			nodes := ParseURIList(in)
-			list := make([]any, len(nodes))
-			for j, n := range nodes {
-				list[j] = n
-			}
-			got = list
+			got = parsedListJSON(t, ParseList(in))
 		case "parse_yaml_object":
-			if node := ParseYAMLObject(in); node != nil {
-				got = node
-			}
+			got = parseObjectJSON(t, in)
 		case "extract_subscription_hosts":
-			if record := ExtractSubscriptionHosts(in); record != nil {
+			if record := ExtractHosts(in); record != nil {
 				got = record
 			}
 		case "extract_subscription_dialers":
-			var record *jsonx.Object
-			record, err = ExtractSubscriptionDialers(in)
+			var record *DialersData
+			record, err = ExtractDialers(in)
 			if record != nil {
 				got = record
 			}
@@ -114,16 +117,16 @@ func TestReviewC10References(t *testing.T) {
 		compared++
 		if isSpecial {
 			if err == nil {
-				t.Errorf("row %d %s(%q): Python raised %s, Go returned %s", i, row.Fn, in, special.GetString("error"), compact(t, got))
+				t.Errorf("row %d %s(%q): Python raised %s, Go returned %s", i, row.Fn, in, specialMsg, compact(t, got))
 			}
 			continue
 		}
 		if err != nil {
-			t.Errorf("row %d %s(%q): Go error %v, Python %s", i, row.Fn, in, err, compact(t, row.Out))
+			t.Errorf("row %d %s(%q): Go error %v, Python %s", i, row.Fn, in, err, wantRaw)
 			continue
 		}
-		if g, w := compact(t, got), compact(t, row.Out); !yamlxtest.EqualJSON(got, row.Out) {
-			t.Errorf("row %d %s(%q)\n got  %s\n want %s", i, row.Fn, in, g, w)
+		if !testjson.Equal(wantRaw, got) {
+			t.Errorf("row %d %s(%q)\n got  %s\n want %s", i, row.Fn, in, compact(t, got), wantRaw)
 		}
 	}
 	t.Logf("%d rows compared, %d unrepresentable in JSON skipped, %d known yamlx differences, %d accepted invalid-UTF-8 SNI rows",
@@ -136,13 +139,20 @@ func TestReviewC10References(t *testing.T) {
 // Regression (review C10): only string names can equal a dialer target
 // (Python: a nameless proxy contributes None, a numeric name an int).
 func TestAdaptSubscriptionProxiesIgnoresNonStringNames(t *testing.T) {
-	main := jsonx.Obj("proxies", []any{jsonx.Obj("type", "ss"), jsonx.Obj("name", jsonx.Int(5))}, "proxy-groups", []any{})
-	record := jsonx.Obj("targets", jsonx.Obj("None", jsonx.NewObject(), "5", jsonx.NewObject()), "unresolved", []any{})
-	proxies := []any{jsonx.Obj("name", "a", "dialer-proxy", "None"), jsonx.Obj("name", "b", "dialer-proxy", "5"),
-		jsonx.Obj("name", "c", "dialer-proxy", "x")}
-	got := AdaptSubscriptionProxies("S", proxies, main, record, true)
-	if want := `[{"name":"c","dialer-proxy":"x"}]`; compact(t, got) != want {
-		t.Fatalf("got %s, want %s (Python reference)", compact(t, got), want)
+	main := yamlFromRaw(t, json.RawMessage(`{"proxies":[{"type":"ss"},{"name":5}],"proxy-groups":[]}`))
+	var record DialersData
+	if err := json.Unmarshal([]byte(`{"targets":{"None":{},"5":{}},"unresolved":[]}`), &record); err != nil {
+		t.Fatal(err)
+	}
+	proxies := yamlFromRaw(t, json.RawMessage(`[{"name":"a","dialer-proxy":"None"},{"name":"b","dialer-proxy":"5"},{"name":"c","dialer-proxy":"x"}]`)).Content
+	got, err := AdaptProxies("S", proxies, main, &record, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotRaw := yamlToRaw(t, yamlx.Seq(got...))
+	want := json.RawMessage(`[{"name":"c","dialer-proxy":"x"}]`)
+	if !testjson.Equal(want, gotRaw) {
+		t.Fatalf("got %s, want %s (Python reference)", gotRaw, want)
 	}
 }
 

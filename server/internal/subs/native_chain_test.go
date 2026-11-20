@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"configflow/internal/jsonresp"
-	"configflow/internal/jsonx"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,19 +15,22 @@ import (
 	"testing"
 )
 
-func nativeChainExpectations(t *testing.T) *jsonx.Object {
+type nativeChainCase struct {
+	InputSHA string          `json:"input_sha256"`
+	Classes  []string        `json:"classes"`
+	Expected json.RawMessage `json:"expected"`
+}
+
+func nativeChainExpectations(t *testing.T) map[string]nativeChainCase {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_chain_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		Sources map[string]string `json:"sources"`
-		N7SHA   string            `json:"n7_reference_sha256"`
-		Cases   map[string]struct {
-			InputSHA string   `json:"input_sha256"`
-			Classes  []string `json:"classes"`
-		} `json:"cases"`
+		Sources map[string]string          `json:"sources"`
+		N7SHA   string                     `json:"n7_reference_sha256"`
+		Cases   map[string]nativeChainCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
@@ -51,20 +53,18 @@ func nativeChainExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("chain source drift %s", name)
 		}
 		if name == "golden" {
-			root, err := jsonx.Parse(source)
-			if err != nil {
+			var root struct {
+				Cases []json.RawMessage `json:"cases"`
+			}
+			if err := json.Unmarshal(sanitizeNonFiniteJSON(source), &root); err != nil {
 				t.Fatal(err)
 			}
-			for index, entry := range root.(*jsonx.Object).GetList("cases") {
+			for index, entry := range root.Cases {
 				if _, changed := manifest.Cases[fmt.Sprintf("golden/%d", index)]; !changed {
 					lines[name] = append(lines[name], "")
 					continue
 				}
-				encoded, err := jsonresp.Encode(entry)
-				if err != nil {
-					t.Fatal(err)
-				}
-				canonical, err := jsonresp.Canonical(encoded)
+				canonical, err := jsonresp.Canonical(entry)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -108,9 +108,5 @@ func nativeChainExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("chain input drift %s", key)
 		}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object).GetObject("cases")
+	return manifest.Cases
 }

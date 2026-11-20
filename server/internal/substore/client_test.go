@@ -7,6 +7,7 @@ package substore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -17,7 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 const testYAML = "proxies: [{name: A, type: ss, server: example.test, port: 443, cipher: aes-128-gcm, password: p}]"
@@ -40,9 +42,9 @@ func closedURL(t *testing.T) string {
 	return "http://" + addr + "/sub?token=private"
 }
 
-func fetch(t *testing.T, c *Client, subID, url string, opts FetchOptions) *SubscriptionResult {
+func fetch(t *testing.T, c *Client, subID, url string, opts FetchOptions) *FetchResult {
 	t.Helper()
-	result, err := c.GetSubscriptionProxiesYAML(context.Background(), subID, url, "", opts)
+	result, err := c.Fetch(context.Background(), subID, url, "", opts)
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
@@ -57,8 +59,8 @@ func TestYAMLAndTrafficUseOneGetAndNoSubStore(t *testing.T) {
 	if result.Text != testYAML || result.Source != "direct_yaml" {
 		t.Fatalf("result %q %q", result.Text, result.Source)
 	}
-	if jsonx.Repr(result.Traffic) != "{'upload': 1, 'download': 2, 'total': 100}" {
-		t.Fatalf("traffic %s", jsonx.Repr(result.Traffic))
+	if !testjson.Equal(json.RawMessage(`{"upload":1,"download":2,"total":100}`), result.Traffic) {
+		t.Fatalf("traffic %+v", result.Traffic)
 	}
 	if airport.count() != 1 || len(h.store.eventList()) != 0 {
 		t.Fatalf("airport %d, sub-store %v", airport.count(), h.store.eventList())
@@ -73,16 +75,15 @@ func TestRawBodyConvertedLocallyWithoutSecondAirportGet(t *testing.T) {
 	h, c := external(t)
 	airport := newFakeAirport(t, serveText("ss://encoded-node", map[string]string{"subscription-userinfo": testFlow}))
 	result := fetch(t, c, "s", airport.url(), FetchOptions{})
-	if result.Source != "sub_store" || result.Traffic.GetInt("total") != 100 {
-		t.Fatalf("result %s %s", result.Source, jsonx.Repr(result.Traffic))
+	if result.Source != "sub_store" || result.Traffic == nil || result.Traffic.Total == nil || string(*result.Traffic.Total) != "100" {
+		t.Fatalf("result %s %+v", result.Source, result.Traffic)
 	}
 	if airport.count() != 1 {
 		t.Fatalf("airport hit %d times", airport.count())
 	}
 	payload := h.store.createdPayloads()[0]
-	if payload.GetString("source") != "local" || payload.GetString("content") != "ss://encoded-node" ||
-		payload.Value("noFlow") != true {
-		t.Fatalf("payload %s", jsonx.Repr(payload))
+	if payload["source"] != "local" || payload["content"] != "ss://encoded-node" || payload["noFlow"] != true {
+		t.Fatalf("payload %+v", payload)
 	}
 	if h.store.downloads[0].Get("noFlow") != "true" {
 		t.Fatalf("download query %v", h.store.downloads[0])
@@ -106,14 +107,12 @@ func TestRenderedYAMLKeepsSourceAndNoSecondRequest(t *testing.T) {
 }
 
 // test_subscription_fetch_requests.py::test_direct_transport_failure_can_still_use_sub_store
-// (a refused connection instead of requests.Timeout: both are transport
-// failures).
 func TestDirectTransportFailureCanStillUseSubStore(t *testing.T) {
 	h, c := external(t)
 	if source := fetch(t, c, "s", closedURL(t), FetchOptions{}).Source; source != "sub_store" {
 		t.Fatalf("source %s", source)
 	}
-	if h.store.createdPayloads()[0].Has("content") {
+	if _, has := h.store.createdPayloads()[0]["content"]; has {
 		t.Fatal("content sent without a downloaded body")
 	}
 }
@@ -130,8 +129,8 @@ func TestFragmentOptionsGoToSubStoreWithoutProbe(t *testing.T) {
 		t.Fatalf("airport %d downloads %v", airport.count(), h.store.downloads)
 	}
 	payload := h.store.createdPayloads()[0]
-	if payload.GetString("url") != u || payload.Has("content") {
-		t.Fatalf("payload %s", jsonx.Repr(payload))
+	if _, hasContent := payload["content"]; payload["url"] != u || hasContent {
+		t.Fatalf("payload %+v", payload)
 	}
 }
 
@@ -149,7 +148,7 @@ func TestConcurrentAndRecentRefreshesAcrossIDsShareOneGet(t *testing.T) {
 	results := make([]*FetchResult, 5)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() { defer wg.Done(); results[0] = fetchNative(t, c, "manual", u, FetchOptions{}) }()
+	go func() { defer wg.Done(); results[0] = fetch(t, c, "manual", u, FetchOptions{}) }()
 	if !waitFor(t, entered, 5*time.Second) {
 		t.Fatal("not entered")
 	}
@@ -157,7 +156,7 @@ func TestConcurrentAndRecentRefreshesAcrossIDsShareOneGet(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i] = fetchNative(t, c, fmt.Sprintf("agg-%d", i), u, FetchOptions{Refresh: true})
+			results[i] = fetch(t, c, fmt.Sprintf("agg-%d", i), u, FetchOptions{Refresh: true})
 		}(i)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -168,7 +167,7 @@ func TestConcurrentAndRecentRefreshesAcrossIDsShareOneGet(t *testing.T) {
 			t.Fatal("results differ")
 		}
 	}
-	if fetchNative(t, c, "another-profile", u, FetchOptions{}) != results[0] {
+	if fetch(t, c, "another-profile", u, FetchOptions{}) != results[0] {
 		t.Fatal("recent result not reused")
 	}
 	if airport.count() != 1 {
@@ -223,10 +222,10 @@ func TestManualRefreshDebouncesThenRenewsSharedAutomaticCache(t *testing.T) {
 func TestConversionFailureDoesNotRedownloadBody(t *testing.T) {
 	h, c := external(t)
 	airport := newFakeAirport(t, serveText("ss://node", nil))
-	h.store.download = func(string, string, url.Values, *jsonx.Object) (int, string, http.Header) {
+	h.store.download = func(string, string, url.Values, map[string]any) (int, string, http.Header) {
 		return 200, "<html>failure</html>", nil
 	}
-	_, err := c.GetSubscriptionProxiesYAML(context.Background(), "s", airport.url(), "", FetchOptions{})
+	_, err := c.Fetch(context.Background(), "s", airport.url(), "", FetchOptions{})
 	var fetchErr *SubscriptionFetchError
 	if !errors.As(err, &fetchErr) {
 		t.Fatalf("err %v", err)
@@ -290,12 +289,12 @@ func TestFailureBackoffCapsAndSuccessResetsIt(t *testing.T) {
 	const u = "https://airport.test/sub?token=private"
 	ctx := context.Background()
 	for _, cooldown := range []float64{3, 6, 12, 24, 48, 96, 192, 300, 300} {
-		if _, err := c.GetSubscriptionProxiesYAML(ctx, "s", u, "", FetchOptions{}); err == nil {
+		if _, err := c.Fetch(ctx, "s", u, "", FetchOptions{}); err == nil {
 			t.Fatal("no error")
 		}
 		count := len(seen)
 		h.clock.set(h.clock.Monotonic() + cooldown - 0.1)
-		if _, err := c.GetSubscriptionProxiesYAML(ctx, "s", u, "", FetchOptions{Refresh: true}); err == nil {
+		if _, err := c.Fetch(ctx, "s", u, "", FetchOptions{Refresh: true}); err == nil {
 			t.Fatal("no error during the cooldown")
 		}
 		if len(seen) != count {
@@ -310,7 +309,7 @@ func TestFailureBackoffCapsAndSuccessResetsIt(t *testing.T) {
 	}
 	failing = true
 	h.clock.set(h.clock.Monotonic() + 300)
-	if _, err := c.GetSubscriptionProxiesYAML(ctx, "s", u, "", FetchOptions{}); err == nil {
+	if _, err := c.Fetch(ctx, "s", u, "", FetchOptions{}); err == nil {
 		t.Fatal("no error")
 	}
 	entry, _ := c.results.get(c.results.keys()[0])
@@ -323,11 +322,11 @@ func TestFailureBackoffCapsAndSuccessResetsIt(t *testing.T) {
 func TestFailedBurstsShareErrorButRetryAfterThreeSeconds(t *testing.T) {
 	h, c := external(t)
 	airport := newFakeAirport(t, func(w http.ResponseWriter, r *http.Request) { hijack(w) })
-	h.store.download = func(string, string, url.Values, *jsonx.Object) (int, string, http.Header) { return -1, "", nil }
+	h.store.download = func(string, string, url.Values, map[string]any) (int, string, http.Header) { return -1, "", nil }
 	gets := func() int { return airport.count() + len(h.store.downloads) }
 	ctx := context.Background()
 	for i := 0; i < 5; i++ {
-		if _, err := c.GetSubscriptionProxiesYAML(ctx, "s", airport.url(), "", FetchOptions{}); err == nil {
+		if _, err := c.Fetch(ctx, "s", airport.url(), "", FetchOptions{}); err == nil {
 			t.Fatal("no error")
 		}
 	}
@@ -335,7 +334,7 @@ func TestFailedBurstsShareErrorButRetryAfterThreeSeconds(t *testing.T) {
 		t.Fatalf("%d GETs", gets())
 	}
 	h.clock.set(4)
-	if _, err := c.GetSubscriptionProxiesYAML(ctx, "s", airport.url(), "", FetchOptions{}); err == nil {
+	if _, err := c.Fetch(ctx, "s", airport.url(), "", FetchOptions{}); err == nil {
 		t.Fatal("no error")
 	}
 	if gets() != 4 {
@@ -352,7 +351,7 @@ func TestBlockedUpstreamIsNotRetriedViaSubStore(t *testing.T) {
 			ctx := context.Background()
 			for _, moment := range []float64{0, 5, 30, 59} {
 				h.clock.set(moment)
-				_, err := c.GetSubscriptionProxiesYAML(ctx, "s", airport.url(), "", FetchOptions{Refresh: true})
+				_, err := c.Fetch(ctx, "s", airport.url(), "", FetchOptions{Refresh: true})
 				var fetchErr *SubscriptionFetchError
 				if !errors.As(err, &fetchErr) || fetchErr.SubStoreError != nil || StatusOf(fetchErr.DirectError) != status {
 					t.Fatalf("err %#v", err)
@@ -362,7 +361,7 @@ func TestBlockedUpstreamIsNotRetriedViaSubStore(t *testing.T) {
 				t.Fatalf("airport %d sub-store %v", airport.count(), h.store.eventList())
 			}
 			h.clock.set(61)
-			c.GetSubscriptionProxiesYAML(ctx, "s", airport.url(), "", FetchOptions{})
+			c.Fetch(ctx, "s", airport.url(), "", FetchOptions{})
 			if airport.count() != 2 {
 				t.Fatalf("airport %d", airport.count())
 			}
@@ -375,7 +374,7 @@ func TestSubscriptionTempSubDisablesFlowInfo(t *testing.T) {
 	h, c := external(t)
 	airport := newFakeAirport(t, serveText("ss://example", nil))
 	fetch(t, c, "sub_1", airport.srv.URL+"/c/?token=abc", FetchOptions{})
-	if got := h.store.createdPayloads()[0].GetString("url"); got != airport.srv.URL+"/c/?token=abc#noFlow" {
+	if got, _ := h.store.createdPayloads()[0]["url"].(string); got != airport.srv.URL+"/c/?token=abc#noFlow" {
 		t.Fatalf("url %q", got)
 	}
 }
@@ -383,10 +382,10 @@ func TestSubscriptionTempSubDisablesFlowInfo(t *testing.T) {
 // test_sub_store_no_flow.py::test_node_convert_temp_sub_disables_flow_info
 func TestNodeConvertTempSubDisablesFlowInfo(t *testing.T) {
 	h, c := external(t)
-	c.ConvertProxyString(context.Background(), "ss://YWVzLTEyOC1nY206cA@1.1.1.1:1#a")
+	_, _ = c.ConvertProxy(context.Background(), "ss://YWVzLTEyOC1nY206cA@1.1.1.1:1#a")
 	payloads := h.store.createdPayloads()
-	if len(payloads) != 1 || payloads[0].GetString("url") != "https://example.com#noFlow" {
-		t.Fatalf("payloads %s", jsonx.Repr(payloads))
+	if len(payloads) != 1 || payloads[0]["url"] != "https://example.com#noFlow" {
+		t.Fatalf("payloads %+v", payloads)
 	}
 }
 
@@ -395,21 +394,19 @@ func TestURLWithExistingFragmentIsLeftUnchanged(t *testing.T) {
 	h, c := external(t)
 	u := `http://airport.test/sub#{"insecure":true}`
 	fetch(t, c, "sub_1", u, FetchOptions{})
-	if got := h.store.createdPayloads()[0].GetString("url"); got != u {
+	if got, _ := h.store.createdPayloads()[0]["url"].(string); got != u {
 		t.Fatalf("url %q", got)
 	}
 }
 
-// test_sub_store_runtime.py::test_client_holds_lease_until_cleanup_even_on_failure:
-// with the bundled Sub-Store, the shared work lock is held through the
-// temporary subscription's deletion even when the download fails.
+// test_sub_store_runtime.py::test_client_holds_lease_until_cleanup_even_on_failure
 func TestClientHoldsLeaseUntilCleanupEvenOnFailure(t *testing.T) {
 	for _, entry := range []string{"node", "subscription"} {
 		t.Run(entry, func(t *testing.T) {
 			h := newHarness(t, harnessOptions{builtin: true})
 			h.store.setVersion("2.40.0")
 			c, rt := h.service.Client, h.service.Runtime
-			h.store.download = func(string, string, url.Values, *jsonx.Object) (int, string, http.Header) {
+			h.store.download = func(string, string, url.Values, map[string]any) (int, string, http.Header) {
 				return 500, "bad conversion", nil
 			}
 			leased := false
@@ -419,7 +416,7 @@ func TestClientHoldsLeaseUntilCleanupEvenOnFailure(t *testing.T) {
 			}
 			ctx := context.Background()
 			if entry == "node" {
-				if c.ConvertProxyString(ctx, "ss://test") != nil {
+				if proxy, _ := c.ConvertProxy(ctx, "ss://test"); proxy != nil {
 					t.Fatal("conversion did not fail")
 				}
 			} else {
@@ -440,7 +437,7 @@ func TestClientHoldsLeaseUntilCleanupEvenOnFailure(t *testing.T) {
 			if err := rt.tryWork(context.Background(), func(context.Context) error { return nil }); err != nil {
 				t.Fatalf("lease kept after cleanup: %v", err)
 			}
-			if stateOf(rt).Value("last_used") == nil {
+			if !hasLastUsed(rt) {
 				t.Fatal("idle time not recorded")
 			}
 		})
@@ -485,13 +482,13 @@ func TestDirectSubscriptionFetchLogDoesNotIncludeSubscriptionURL(t *testing.T) {
 func TestConvertProxyStringLogsOnlyEventTypeAndLength(t *testing.T) {
 	logs := captureLogs(t)
 	h, c := external(t)
-	h.store.download = func(string, string, url.Values, *jsonx.Object) (int, string, http.Header) {
+	h.store.download = func(string, string, url.Values, map[string]any) (int, string, http.Header) {
 		return 200, "proxies:\n  - {name: safe-name, type: vless, server: safe.test, port: 443}\n", http.Header{"Content-Type": {"text/yaml"}}
 	}
 	proxyURI := "vless://user-secret@example.test:443?token=converter-secret#fragment-secret"
-	result := c.ConvertProxyString(context.Background(), proxyURI)
-	if result.GetString("type") != "vless" {
-		t.Fatalf("result %s", jsonx.Repr(result))
+	result, err := c.ConvertProxy(context.Background(), proxyURI)
+	if err != nil || result == nil || yamlx.Get(result, "type").Value != "vless" {
+		t.Fatalf("result %+v %v", result, err)
 	}
 	text := logs.text()
 	for _, forbidden := range []string{"vless://", "user-secret", "example.test", "converter-secret", "fragment-secret"} {
@@ -511,13 +508,11 @@ func TestConvertProxyStringLogsOnlyEventTypeAndLength(t *testing.T) {
 func TestSubStoreCombinedRequestsErrorsKeepCausesWithoutLeaking(t *testing.T) {
 	logs := captureLogs(t)
 	h, c := external(t)
-	// Sub-Store's download fails first (a refused connection), then the
-	// direct fallback (a read timeout of a fragment URL).
 	h.setenv("SUB_STORE_URL", strings.TrimSuffix(closedURL(t), "/sub?token=private"))
 	slow := newFakeAirport(t, func(w http.ResponseWriter, r *http.Request) { time.Sleep(400 * time.Millisecond) })
 	h.service.Env.HTTP = timeoutClient{RequestsClient{}, 100 * time.Millisecond}
 	secret := slow.srv.URL + "/sub?token=dynamic-request-secret#secret-fragment"
-	_, err := c.GetSubscriptionProxiesYAML(context.Background(), "sub-1", secret, "", FetchOptions{})
+	_, err := c.Fetch(context.Background(), "sub-1", secret, "", FetchOptions{})
 	var fetchErr *SubscriptionFetchError
 	if !errors.As(err, &fetchErr) {
 		t.Fatalf("err %v", err)
@@ -566,13 +561,4 @@ func TestSweepDropsExpiredResultsAndOldFailures(t *testing.T) {
 	if c.results.len() != 1 {
 		t.Fatalf("%d results after 15 minutes", c.results.len())
 	}
-}
-
-func fetchNative(t *testing.T, c *Client, id, url string, opts FetchOptions) *FetchResult {
-	t.Helper()
-	v, err := c.Fetch(context.Background(), id, url, "", opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
 }

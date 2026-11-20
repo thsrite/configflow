@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,17 +14,20 @@ import (
 	"testing"
 )
 
-func nativeDNSExpectations(t *testing.T) *jsonx.Object {
+type nativeDNSCase struct {
+	InputSHA string          `json:"input_sha256"`
+	Out      json.RawMessage `json:"out"`
+}
+
+func nativeDNSExpectations(t *testing.T) map[string]nativeDNSCase {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_dns_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var manifest struct {
-		SourceSHA string `json:"source_sha256"`
-		Cases     map[string]struct {
-			InputSHA string `json:"input_sha256"`
-		} `json:"cases"`
+		SourceSHA string                   `json:"source_sha256"`
+		Cases     map[string]nativeDNSCase `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
@@ -61,11 +63,7 @@ func nativeDNSExpectations(t *testing.T) *jsonx.Object {
 			t.Fatalf("DNS input drift %s", key)
 		}
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.Object).GetObject("cases")
+	return manifest.Cases
 }
 
 func TestN89DNSOwnsOnlyGeneratedSubtree(t *testing.T) {

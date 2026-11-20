@@ -2,14 +2,28 @@ package subs
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
-func nativeReaderCases(t *testing.T) *jsonx.Object {
+type nativeOracleExpected struct {
+	HasError bool
+	Error    string
+	Message  string
+	Value    json.RawMessage
+}
+
+type nativeOracleRow struct {
+	Changed     bool              `json:"changed"`
+	Classes     []string          `json:"classes"`
+	ExpectedRaw json.RawMessage   `json:"expected"`
+	OldLoads    []json.RawMessage `json:"old_loads"`
+	NativeLoads []json.RawMessage `json:"native_loads"`
+}
+
+func nativeReaderCases(t *testing.T) map[string]nativeOracleRow {
 	t.Helper()
 	f, err := os.Open("testdata/n7_reader_expected.json.gz")
 	if err != nil {
@@ -25,24 +39,38 @@ func nativeReaderCases(t *testing.T) *jsonx.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := jsonx.Parse(data)
-	if err != nil {
+	var root struct {
+		Cases map[string]nativeOracleRow `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
 		t.Fatal(err)
 	}
-	return v.(*jsonx.Object).GetObject("cases")
+	return root.Cases
 }
 
-func changedNativeCase(t *testing.T, cases *jsonx.Object, id string) (*jsonx.Object, bool) {
+func changedNativeCase(t *testing.T, cases map[string]nativeOracleRow, id string) (*nativeOracleExpected, bool) {
 	t.Helper()
-	row := cases.GetObject(id)
-	if row == nil {
+	row, ok := cases[id]
+	if !ok {
 		t.Fatalf("missing reader oracle %s", id)
 	}
-	if !row.GetBool("changed") {
+	if !row.Changed {
 		return nil, false
 	}
-	if len(row.GetList("classes")) == 0 {
+	if len(row.Classes) == 0 {
 		t.Fatalf("unclassified reader change %s", id)
 	}
-	return row.GetObject("expected"), true
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(row.ExpectedRaw, &fields); err != nil {
+		t.Fatalf("invalid expected %s: %v", id, err)
+	}
+	out := &nativeOracleExpected{Value: fields["value"]}
+	if rawErr, hasErr := fields["error"]; hasErr {
+		out.HasError = true
+		_ = json.Unmarshal(rawErr, &out.Error)
+	}
+	if rawMsg, hasMsg := fields["message"]; hasMsg {
+		_ = json.Unmarshal(rawMsg, &out.Message)
+	}
+	return out, true
 }

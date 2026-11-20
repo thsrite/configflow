@@ -1,18 +1,16 @@
 package subs
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx/yamlxtest"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
-
-func asObj(v any) *jsonx.Object {
-	o, _ := v.(*jsonx.Object)
-	return o
-}
 
 func TestFilterCorpus(t *testing.T) {
 	rows := loadCorpus(t, "filter.jsonl.gz")
@@ -21,9 +19,17 @@ func TestFilterCorpus(t *testing.T) {
 	for i, row := range rows {
 		switch row.Fn {
 		case "validate_regex_filter":
-			got := ValidateRegexFilter(row.In)
-			want, _ := row.Out.(string)
-			if row.Out != nil && !isString(row.Out) {
+			var got string
+			switch v := row.In.(type) {
+			case nil:
+				got = ""
+			case string:
+				got = ValidateFilter(v)
+			default:
+				got = msgFilterType
+			}
+			want, isStr := row.Out.(string)
+			if row.Out != nil && !isStr {
 				t.Fatalf("row %d: unexpected output %v", i, row.Out)
 			}
 			// The detail after the Chinese prefix is the regex engine's error
@@ -33,32 +39,48 @@ func TestFilterCorpus(t *testing.T) {
 				continue
 			}
 			if got != want {
-				t.Fatalf("row %d validate_regex_filter(%s): got %q want %q", i, compact(t, row.In), got, want)
+				t.Fatalf("row %d validate_regex_filter(%s): got %q want %q", i, row.InRaw, got, want)
 			}
 		case "filter_subscription_items":
-			in := asObj(row.In)
-			items, _ := in.Value("items").([]any)
-			got := FilterSubscriptionItems(in.Value("sub"), items)
-			if pattern := jsonx.Str(asObj(in.Value("sub")).Value("regex_filter")); strings.Contains(pattern, `\N{`) {
+			var in struct {
+				Sub   json.RawMessage `json:"sub"`
+				Items json.RawMessage `json:"items"`
+			}
+			if err := json.Unmarshal(row.InRaw, &in); err != nil {
+				t.Fatal(err)
+			}
+			var sub model.Subscription
+			if err := jsondecode.Unmarshal(in.Sub, &sub); err != nil {
+				sub = model.Subscription{}
+			}
+			itemsNode := yamlFromRaw(t, in.Items)
+			selected := FilterProxies(sub, itemsNode.Content)
+			gotRaw := yamlToRaw(t, yamlx.Seq(selected...))
+
+			pattern := ""
+			if sub.RegexFilter != nil {
+				pattern = *sub.RegexFilter
+			}
+			if strings.Contains(pattern, `\N{`) {
 				// Documented difference: \N{name} is not supported by the rules
 				// regex engine, the filter is not applied (Python applies it).
 				pending++
-				if g, w := compact(t, got), compact(t, items); g != w {
+				if !testjson.Equal(in.Items, gotRaw) {
 					t.Fatalf("row %d: unsupported pattern should leave the items unfiltered", i)
 				}
 				continue
 			}
-			if pattern := jsonx.Str(asObj(in.Value("sub")).Value("regex_filter")); strings.Contains(pattern, "$") &&
-				strings.Contains(compact(t, items), `\n"`) {
+			if strings.Contains(pattern, "$") && strings.Contains(string(in.Items), `\n"`) {
 				// Python's $ also matches before a trailing newline; RE2's only
 				// at the end (names with a trailing newline are not realistic).
 				continue
 			}
-			if expected := native.GetObject(fmt.Sprint(i)); expected != nil {
-				row.Out = expected.Value("output")
+			wantRaw := row.OutRaw
+			if expected, ok := native[fmt.Sprint(i)]; ok {
+				wantRaw = expected.Output
 			}
-			if g, w := compact(t, got), compact(t, row.Out); g != w {
-				t.Fatalf("row %d filter %s\n got  %s\n want %s", i, compact(t, row.In), g, w)
+			if !testjson.Equal(wantRaw, gotRaw) {
+				t.Fatalf("row %d filter %s\n got  %s\n want %s", i, row.InRaw, gotRaw, wantRaw)
 			}
 		}
 	}
@@ -72,42 +94,70 @@ func TestHostsCorpus(t *testing.T) {
 	kinds := map[string]int{}
 	for i, row := range rows {
 		kinds[row.Fn]++
-		if expected := native.GetObject(fmt.Sprintf("hosts/%d", i)); expected != nil {
-			row.Out = expected.Value("output")
+		wantRaw := row.OutRaw
+		if expected, ok := native[fmt.Sprintf("hosts/%d", i)]; ok {
+			wantRaw = expected.Output
 		}
 		switch row.Fn {
 		case "extract_subscription_hosts":
 			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/hosts/%d", i)); changed {
-				if expected.Has("error") {
+				if expected.HasError {
 					t.Fatalf("unexpected native oracle rejection %d", i)
 				}
-				row.Out = expected.Value("value")
+				wantRaw = expected.Value
 			}
-			got := ExtractSubscriptionHosts(row.In.(string))
+			got := ExtractHosts(row.In.(string))
 			var g any
 			if got != nil {
 				g = got
 			}
-			if gs, ws := compact(t, g), compact(t, row.Out); !yamlxtest.EqualJSON(g, row.Out) {
-				t.Fatalf("row %d extract(%q)\n got  %s\n want %s", i, row.In, gs, ws)
+			if !testjson.Equal(wantRaw, g) {
+				t.Fatalf("row %d extract(%q)\n got  %s\n want %s", i, row.In, compact(t, g), wantRaw)
 			}
 		case "hosts_digest":
-			if got := HostsDigest(asObj(row.In)); got != row.Out.(string) {
-				t.Fatalf("row %d hosts_digest(%s): got %s want %v", i, compact(t, row.In), got, row.Out)
+			var rec *HostsData
+			if err := jsondecode.Unmarshal(row.InRaw, &rec); err != nil {
+				rec = nil
+			}
+			got, _ := HostDigest(rec)
+			var want string
+			_ = json.Unmarshal(wantRaw, &want)
+			if got != want {
+				t.Fatalf("row %d hosts_digest(%s): got %s want %s", i, row.InRaw, got, want)
 			}
 		case "describe_change":
-			in := asObj(row.In)
-			got := DescribeChange(asObj(in.Value("previous")), asObj(in.Value("current")))
-			if g, w := compact(t, got), compact(t, row.Out); g != w {
-				t.Fatalf("row %d describe_change got %s want %s", i, g, w)
+			var in struct {
+				Previous json.RawMessage `json:"previous"`
+				Current  json.RawMessage `json:"current"`
+			}
+			if err := json.Unmarshal(row.InRaw, &in); err != nil {
+				t.Fatal(err)
+			}
+			var prev, curr *HostsData
+			_ = jsondecode.Unmarshal(in.Previous, &prev)
+			_ = jsondecode.Unmarshal(in.Current, &curr)
+			got, err := CompareHosts(prev, curr)
+			if err != nil {
+				t.Fatalf("row %d describe_change: %v", i, err)
+			}
+			if !testjson.Equal(wantRaw, got) {
+				t.Fatalf("row %d describe_change got %s want %s", i, compact(t, got), wantRaw)
 			}
 		case "_matches":
-			in := asObj(row.In)
-			if got := Matches(in.Value("pattern"), in.GetString("domain")); got != row.Out.(bool) {
-				t.Fatalf("row %d _matches(%s): got %v", i, compact(t, row.In), got)
+			var in struct {
+				Pattern any    `json:"pattern"`
+				Domain  string `json:"domain"`
+			}
+			if err := json.Unmarshal(row.InRaw, &in); err != nil {
+				t.Fatal(err)
+			}
+			pattern, ok := in.Pattern.(string)
+			got := ok && hostPatternMatches(hostPatternText(pattern), in.Domain)
+			if got != row.Out.(bool) {
+				t.Fatalf("row %d _matches(%s): got %v", i, row.InRaw, got)
 			}
 		case "merge_subscription_hosts":
-			checkMerge(t, i, row)
+			checkMerge(t, i, row, wantRaw)
 		}
 	}
 	t.Logf("%v", kinds)
@@ -115,36 +165,75 @@ func TestHostsCorpus(t *testing.T) {
 
 func strList(v any) []string {
 	var out []string
+	if v == nil {
+		return out
+	}
 	for _, x := range v.([]any) {
 		out = append(out, x.(string))
 	}
 	return out
 }
 
-func checkMerge(t *testing.T, i int, row corpusRow) {
-	in := asObj(row.In)
-	main := in.GetObject("main")
-	caches := in.GetObject("caches")
-	indexOf := func(sub *jsonx.Object) *HostsIndex {
-		id, _ := sub.Value("id").(string)
-		if !caches.Has(id) {
-			return nil
+func checkMerge(t *testing.T, i int, row corpusRow, wantRaw json.RawMessage) {
+	var in struct {
+		Main       json.RawMessage            `json:"main"`
+		Config     json.RawMessage            `json:"config"`
+		Caches     map[string]json.RawMessage `json:"caches"`
+		UserKeys   []string                   `json:"user_keys"`
+		MosdnsKeys []string                   `json:"mosdns_keys"`
+		Inline     []struct {
+			Node  json.RawMessage `json:"node"`
+			Proxy json.RawMessage `json:"proxy"`
+		} `json:"inline"`
+	}
+	if err := json.Unmarshal(row.InRaw, &in); err != nil {
+		t.Fatal(err)
+	}
+	mainNode := yamlFromRaw(t, in.Main)
+	cfg, err := decodeConfigRaw(in.Config)
+	if err != nil {
+		t.Fatalf("row %d config: %v", i, err)
+	}
+	loader := func(sub model.Subscription) (*HostIndex, error) {
+		raw, ok := in.Caches[sub.ID]
+		if !ok {
+			return nil, nil
 		}
-		cache := asObj(caches.Value(id))
+		var cache *SubscriptionCache
+		if err := jsondecode.Unmarshal(raw, &cache); err != nil {
+			cache = &SubscriptionCache{}
+		}
 		if cache == nil {
-			cache = jsonx.NewObject()
+			cache = &SubscriptionCache{}
 		}
-		return NewHostsIndex(cache).ForURL(sub)
+		index, err := NewHostIndex(cache)
+		if err != nil || index == nil {
+			return nil, err
+		}
+		return index.ForSubscription(sub), nil
 	}
-	var inline []InlineProxy
-	for _, v := range in.GetList("inline") {
-		o := asObj(v)
-		inline = append(inline, InlineProxy{Node: o.GetObject("node"), Proxy: asObj(o.Value("proxy"))})
+	selected := make([]HostInline, 0, len(in.Inline))
+	for _, item := range in.Inline {
+		var node model.Node
+		if err := jsondecode.Unmarshal(item.Node, &node); err != nil {
+			t.Fatalf("row %d inline node: %v", i, err)
+		}
+		selected = append(selected, HostInline{Node: node, Proxy: yamlFromRaw(t, item.Proxy)})
 	}
-	merged := jsonx.NewObject()
-	report := MergeSubscriptionHosts(main, in.GetObject("config"), strList(in.Value("user_keys")), strList(in.Value("mosdns_keys")), inline, merged, indexOf)
-	got := jsonx.Obj("report", report, "main", main, "merged", merged)
-	if g, w := compact(t, got), compact(t, row.Out); g != w {
-		t.Fatalf("row %d merge\n in   %s\n got  %s\n want %s", i, compact(t, row.In), g, w)
+	report, merged, err := MergeHosts(mainNode, cfg, in.UserKeys, in.MosdnsKeys, selected, loader)
+	if err != nil {
+		t.Fatalf("row %d merge error: %v", i, err)
+	}
+	mergedRaw := json.RawMessage("{}")
+	if merged != nil {
+		mergedRaw = yamlToRaw(t, merged)
+	}
+	got := map[string]any{
+		"report": report,
+		"main":   yamlToRaw(t, mainNode),
+		"merged": mergedRaw,
+	}
+	if !testjson.Equal(wantRaw, got) {
+		t.Fatalf("row %d merge\n in   %s\n got  %s\n want %s\n diff %s", i, row.InRaw, compact(t, got), wantRaw, testjson.Diff(wantRaw, got))
 	}
 }

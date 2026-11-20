@@ -1,13 +1,12 @@
 package subs
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 )
@@ -17,15 +16,15 @@ import (
 // test_other_references_still_block_deletion_without_changing_listener,
 // test_roundtrip_failure_does_not_partially_rename_or_rewrite_profile) and
 // through generate_mihomo_config belong to C33 and the converter work; their listener-level
-// assertions are covered here against RelinkGroupListeners and
-// ValidateListenerPolicies directly.
+// assertions are covered here against RelinkListeners and
+// ValidateListenerNode directly.
 
 func strp(s string) *string { return &s }
 
-func relink(t *testing.T, source string, newName *string) (*jsonx.Object, []string, error) {
+func relink(t *testing.T, source string, newName *string) (*model.Profile, []string, error) {
 	t.Helper()
-	profile := jsonx.Obj("mihomo", jsonx.Obj("custom_config", source))
-	changed, err := RelinkGroupListeners(profile, "Pinned", newName)
+	profile := &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: source}}
+	changed, err := RelinkListeners(profile, "Pinned", newName)
 	return profile, changed, err
 }
 
@@ -56,7 +55,7 @@ func TestListenerEditDoesNotChangeSharedYamlAliasOrUnrelatedDocument(t *testing.
 	if err != nil || strings.Join(changed, ",") != "listeners[0].proxy" {
 		t.Fatalf("changed %v err %v", changed, err)
 	}
-	document := mustListenerParse(t, profile.GetObject("mihomo").GetString("custom_config"))
+	document := mustListenerParse(t, profile.Mihomo.CustomConfig)
 	if yamlx.Get(yamlx.Get(document, "shared"), "proxy").Value != "Pinned" {
 		t.Fatal("shared alias changed")
 	}
@@ -64,8 +63,8 @@ func TestListenerEditDoesNotChangeSharedYamlAliasOrUnrelatedDocument(t *testing.
 		t.Fatal("proxy kept")
 	}
 	unrelated, changed, err := relink(t, "# keep this comment\nlisteners: []\n", nil)
-	if err != nil || len(changed) != 0 || unrelated.GetObject("mihomo").GetString("custom_config") != "# keep this comment\nlisteners: []\n" {
-		t.Fatalf("unrelated changed: %v %v %q", changed, err, unrelated.GetObject("mihomo").GetString("custom_config"))
+	if err != nil || len(changed) != 0 || unrelated.Mihomo.CustomConfig != "# keep this comment\nlisteners: []\n" {
+		t.Fatalf("unrelated changed: %v %v %q", changed, err, unrelated.Mihomo.CustomConfig)
 	}
 }
 
@@ -82,13 +81,17 @@ func TestCommentEditsKeepAliasConsumersAndFlowOrMergeSemantics(t *testing.T) {
 	names := []*string{nil, strp(`Renamed # : "quoted"`), strp("false"), strp("on"), strp("No"), strp("012")}
 	for si, source := range sources {
 		for _, name := range names {
-			t.Run(fmt.Sprintf("%d/%v", si, jsonx.Repr(deref(name))), func(t *testing.T) {
+			label := "nil"
+			if name != nil {
+				label = fmt.Sprintf("%q", *name)
+			}
+			t.Run(fmt.Sprintf("%d/%s", si, label), func(t *testing.T) {
 				expected := expectEdited(t, source, name)
 				profile, changed, err := relink(t, source, name)
 				if err != nil || strings.Join(changed, ",") != "listeners[0].proxy" {
 					t.Fatalf("changed %v err %v (%v)", changed, err, causeOf(err))
 				}
-				result := profile.GetObject("mihomo").GetString("custom_config")
+				result := profile.Mihomo.CustomConfig
 				if !yamlx.Equal(mustListenerParse(t, result), expected) {
 					t.Fatalf("result does not load to the expected document:\n%s", result)
 				}
@@ -118,7 +121,7 @@ func TestCommentEditKeepsScalarTypesLiteralContentAndWindowsNewlines(t *testing.
 	if err != nil {
 		t.Fatal(err, causeOf(err))
 	}
-	result := profile.GetObject("mihomo").GetString("custom_config")
+	result := profile.Mihomo.CustomConfig
 	if !yamlx.Equal(mustListenerParse(t, result), expected) {
 		t.Fatalf("result:\n%q", result)
 	}
@@ -152,7 +155,7 @@ sub-rules: {lan-rules: [MATCH,DIRECT]} # sub-rule explanation
 		if err != nil {
 			t.Fatal(err, causeOf(err))
 		}
-		result := profile.GetObject("mihomo").GetString("custom_config")
+		result := profile.Mihomo.CustomConfig
 		want := []string{"# mixed port", "# inbound explanation", "# listener name", "# fixed policy explanation",
 			"# rule explanation", "# listener port", "# sub-rule explanation"}
 		for i := 0; i < 230; i++ {
@@ -183,40 +186,64 @@ func TestUncertainNativeConfigIsRefused(t *testing.T) {
 		if !errors.As(err, &se) {
 			t.Fatalf("%q: not a StrategyReferenceError", source)
 		}
-		if profile.GetObject("mihomo").GetString("custom_config") != source {
+		if profile.Mihomo.CustomConfig != source {
 			t.Fatalf("%q: rewritten", source)
 		}
 	}
 }
 
-func listenerDocument(t *testing.T, target any) *jsonx.Object {
+func listenerDocument(t *testing.T, target any) *yamlx.Node {
 	t.Helper()
-	listener := jsonx.Obj("name", "pinned", "type", "mixed", "listen", "127.0.0.1", "port", jsonx.Int(17890),
-		"proxy", target, "rule", "lan-rules", "future-field", []any{"preserved"})
-	doc := jsonx.Obj("dns", jsonx.Obj("enable", false), "future-setting", jsonx.Obj("keep", false),
-		"listeners", []any{listener, jsonx.Obj("name", "direct", "type", "mixed", "port", jsonx.Int(17891), "proxy", "DIRECT")},
-		"sub-rules", jsonx.Obj("lan-rules", []any{"MATCH,DIRECT"}),
-		"proxy-groups", []any{jsonx.Obj("name", "Pinned", "type", "select", "proxies", []any{"DIRECT"})})
+	var proxyNode *yamlx.Node
+	if target == nil {
+		proxyNode = yamlx.Null()
+	} else {
+		proxyNode = yamlx.Str(target.(string))
+	}
+	listener := yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("pinned"),
+		yamlx.Str("type"), yamlx.Str("mixed"),
+		yamlx.Str("listen"), yamlx.Str("127.0.0.1"),
+		yamlx.Str("port"), yamlx.Int(17890),
+		yamlx.Str("proxy"), proxyNode,
+		yamlx.Str("rule"), yamlx.Str("lan-rules"),
+		yamlx.Str("future-field"), yamlx.Seq(yamlx.Str("preserved")),
+	)
+	doc := yamlx.Map(
+		yamlx.Str("dns"), yamlx.Map(yamlx.Str("enable"), yamlx.Bool(false)),
+		yamlx.Str("future-setting"), yamlx.Map(yamlx.Str("keep"), yamlx.Bool(false)),
+		yamlx.Str("listeners"), yamlx.Seq(
+			listener,
+			yamlx.Map(
+				yamlx.Str("name"), yamlx.Str("direct"),
+				yamlx.Str("type"), yamlx.Str("mixed"),
+				yamlx.Str("port"), yamlx.Int(17891),
+				yamlx.Str("proxy"), yamlx.Str("DIRECT"),
+			),
+		),
+		yamlx.Str("sub-rules"), yamlx.Map(yamlx.Str("lan-rules"), yamlx.Seq(yamlx.Str("MATCH,DIRECT"))),
+		yamlx.Str("proxy-groups"), yamlx.Seq(yamlx.Map(
+			yamlx.Str("name"), yamlx.Str("Pinned"),
+			yamlx.Str("type"), yamlx.Str("select"),
+			yamlx.Str("proxies"), yamlx.Seq(yamlx.Str("DIRECT")),
+		)),
+	)
 	// a YAML round trip, as the converter reads the base config
-	data, err := json.Marshal(doc)
+	text, err := yamlx.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	node, err := yamlx.FromJSON(data)
+	node, err := readSubscriptionYAMLNode(string(text), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := yamlx.Marshal(node)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return mustLoad(t, string(text)).(*jsonx.Object)
+	return node
 }
 
 // The validation part of test_generation_rejects_missing_listener_target_without_dialer_topology.
 func TestGenerationRejectsMissingListenerTargetWithoutDialerTopology(t *testing.T) {
 	for _, target := range []string{"Missing", "${FIXED_POLICY}", " Pinned "} {
-		err := ValidateListenerPolicies(listenerDocument(t, target))
+		err := ValidateListenerNode(listenerDocument(t, target))
 		if err == nil || !strings.Contains(err.Error(), "listeners[0].proxy") {
 			t.Fatalf("%q: %v", target, err)
 		}
@@ -226,7 +253,7 @@ func TestGenerationRejectsMissingListenerTargetWithoutDialerTopology(t *testing.
 // The validation part of test_generation_keeps_valid_or_unpinned_listener_targets.
 func TestGenerationKeepsValidOrUnpinnedListenerTargets(t *testing.T) {
 	for _, target := range []any{"", nil, "DIRECT", "GLOBAL", "Pinned"} {
-		if err := ValidateListenerPolicies(listenerDocument(t, target)); err != nil {
+		if err := ValidateListenerNode(listenerDocument(t, target)); err != nil {
 			t.Fatalf("%v: %v", target, err)
 		}
 	}
@@ -238,7 +265,7 @@ func TestListenerDuplicateKeysAndCRLFRegression(t *testing.T) {
 	if err != nil || len(changed) != 1 {
 		t.Fatalf("%v %v", changed, err)
 	}
-	if got := profile.GetObject("mihomo").GetString("custom_config"); got != strings.Replace(source, "proxy: Pinned", "proxy: Renamed", 1) {
+	if got := profile.Mihomo.CustomConfig; got != strings.Replace(source, "proxy: Pinned", "proxy: Renamed", 1) {
 		t.Fatalf("CRLF splice changed layout: %q", got)
 	}
 	duplicate := "listeners:\n- name: one\n  proxy: Pinned\n  proxy: DIRECT\n"
@@ -247,7 +274,7 @@ func TestListenerDuplicateKeysAndCRLFRegression(t *testing.T) {
 	if !errors.Is(err, yamlx.ErrDuplicateKey) || !errors.As(err, &detail) || detail.Key != "proxy" || detail.Line != 4 || !strings.HasPrefix(err.Error(), msgListenerBaseParse) {
 		t.Fatalf("wrong duplicate diagnostic: %v", err)
 	}
-	if profile.GetObject("mihomo").GetString("custom_config") != duplicate {
+	if profile.Mihomo.CustomConfig != duplicate {
 		t.Fatal("duplicate source changed")
 	}
 }

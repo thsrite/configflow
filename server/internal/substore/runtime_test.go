@@ -17,8 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // lifecycleService is the Python fixture `service`: idle_seconds=0, mode in
@@ -108,27 +109,27 @@ func TestConcurrentConversionsShareStartAndCannotBeStopped(t *testing.T) {
 func TestPollingNeverStartsOrExtendsIdleTime(t *testing.T) {
 	h, rt, _ := lifecycleService(t)
 	ctx := context.Background()
-	if status := must[*jsonx.Object](t)(rt.Status(ctx, false)); status.GetString("state") != "sleeping" {
-		t.Fatalf("status %s", jsonx.Repr(status))
+	if status := must[*RuntimeStatus](t)(rt.Snapshot(ctx, false)); status.State != "sleeping" {
+		t.Fatalf("status %+v", status)
 	}
 	if _, starts, _ := process(h); starts != 0 {
 		t.Fatal("polling started Sub-Store")
 	}
 	rt.Use(ctx, func(ctx context.Context) error { return nil })
-	completed := stateOf(rt).Value("last_used")
+	completed := lastUsed(stateOf(rt))
 	for i := 0; i < 5; i++ {
-		if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("state") != "running" {
+		if must[*RuntimeStatus](t)(rt.Snapshot(ctx, true)).State != "running" {
 			t.Fatal("not running")
 		}
 	}
-	if !jsonx.Equal(stateOf(rt).Value("last_used"), completed) {
+	if lastUsed(stateOf(rt)) != completed {
 		t.Fatal("polling extended the idle time")
 	}
 	rt.Tick(ctx)
 	if h.store.running() {
 		t.Fatal("still running")
 	}
-	if must[*jsonx.Object](t)(rt.Status(ctx, false)).GetString("state") != "sleeping" {
+	if must[*RuntimeStatus](t)(rt.Snapshot(ctx, false)).State != "sleeping" {
 		t.Fatal("not sleeping")
 	}
 }
@@ -141,7 +142,8 @@ func TestIdleTimeBeginsAfterFailedTaskFinishes(t *testing.T) {
 	failure := errors.New("conversion failed")
 	err := rt.Use(ctx, func(ctx context.Context) error {
 		rt.withControl(ctx, func(ctx context.Context) error {
-			return rt.write("last_used", jsonx.Float(SystemClock.Monotonic()-400))
+			ts := SystemClock.Monotonic() - 400
+			return rt.writeState(ctx, runtimePatch{LastUsed: &ts})
 		})
 		rt.Tick(ctx)
 		if !h.store.running() {
@@ -169,8 +171,6 @@ func TestUpdateWaitsForConversionAndBlocksNewWorkAndStop(t *testing.T) {
 	updateDone, convertDone := make(chan error, 1), make(chan error, 1)
 	rt.Use(ctx, func(ctx context.Context) error {
 		go func() {
-			// This is an independent maintenance request, not a nested lease
-			// upgrade by the conversion that is still holding its shared lease.
 			updateDone <- rt.Maintenance(context.Background(), func(ctx context.Context) error {
 				close(updating)
 				if !waitFor(t, finish, 3*time.Second) {
@@ -187,7 +187,7 @@ func TestUpdateWaitsForConversionAndBlocksNewWorkAndStop(t *testing.T) {
 	if !waitFor(t, updating, 3*time.Second) {
 		t.Fatal("update did not start")
 	}
-	if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("state") != "updating" {
+	if must[*RuntimeStatus](t)(rt.Snapshot(ctx, true)).State != "updating" {
 		t.Fatal("state is not updating")
 	}
 	go func() { convertDone <- rt.Use(ctx, func(ctx context.Context) error { close(converted); return nil }) }()
@@ -223,7 +223,7 @@ func TestStartFailureCanRetryAndIsNotShownAsSleeping(t *testing.T) {
 	if !IsRuntimeUnavailable(err) || ran {
 		t.Fatalf("err=%v ran=%v (work must not run before readiness)", err, ran)
 	}
-	if must[*jsonx.Object](t)(rt.Status(ctx, false)).GetString("state") != "failed" {
+	if must[*RuntimeStatus](t)(rt.Snapshot(ctx, false)).State != "failed" {
 		t.Fatal("not failed")
 	}
 	rt.command = nil
@@ -233,7 +233,7 @@ func TestStartFailureCanRetryAndIsNotShownAsSleeping(t *testing.T) {
 		}
 		return nil
 	})
-	if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("error") != "" {
+	if must[*RuntimeStatus](t)(rt.Snapshot(ctx, true)).Error != "" {
 		t.Fatal("error kept")
 	}
 }
@@ -277,7 +277,7 @@ func TestExternalServerIsNeverManaged(t *testing.T) {
 	if _, starts, stops := process(h); starts != 0 || stops != 0 {
 		t.Fatal("external Sub-Store managed")
 	}
-	if must[*jsonx.Object](t)(rt.Status(ctx, true)).GetString("mode") != "external" {
+	if must[*RuntimeStatus](t)(rt.Snapshot(ctx, true)).Mode != "external" {
 		t.Fatal("mode is not external")
 	}
 	if err := rt.SetMode(ctx, "always"); !IsRuntimeUnavailable(err) || err.Error() != "外部 Sub-Store 的运行模式由其部署环境管理" {
@@ -285,9 +285,7 @@ func TestExternalServerIsNeverManaged(t *testing.T) {
 	}
 }
 
-// test_sub_store_runtime.py::test_lock_protects_work_in_another_process: a
-// Runtime objects for one physical root share work leases; server process
-// exclusion is checked by internal/instance's real cross-process tests.
+// test_sub_store_runtime.py::test_lock_protects_work_in_another_process
 func TestRuntimeCopiesShareWorkLease(t *testing.T) {
 	h, rt, _ := lifecycleService(t)
 	other := NewRuntime(rt.env, rt.Root(), 0)
@@ -324,18 +322,19 @@ func TestModeIsReadFromTheSettingsAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", append(system.GetList("agents"), jsonx.Obj("id", "agent", "name", "Agent", "token", "agent-token",
-			"profile_id", "default", "deployments", jsonx.Obj("d", jsonx.Obj("status", "succeeded")))))
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = append(system.Agents, model.Agent{
+			ID: "agent", Name: "Agent", Token: "agent-token", ProfileID: "default",
+		})
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	setMode := func(value string) {
-		_, err := r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-			system.GetObject("system_config").Set("sub_store_mode", value)
-			return nil, nil
+		err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+			system.SystemConfig.SubStoreMode = new(value)
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -353,16 +352,10 @@ func TestModeIsReadFromTheSettingsAlone(t *testing.T) {
 		t.Fatalf("mode %q", mode)
 	}
 	// The settings are a copy: editing them does not reach the stored document.
-	settings := must[*jsonx.Object](t)(r.GetSystemSettings(ctx))
-	settings.Set("sub_store_mode", "always")
-	if must[*jsonx.Object](t)(r.GetSystemSettings(ctx)).GetString("sub_store_mode") != "bogus" {
+	settings := must[*model.System](t)(r.System(ctx))
+	settings.SystemConfig.SubStoreMode = new("always")
+	if got := must[*model.System](t)(r.System(ctx)).SystemConfig.SubStoreMode; got == nil || *got != "bogus" {
 		t.Fatal("settings are not a copy")
-	}
-	system := must[*jsonx.Object](t)(r.UpdateSystemTransaction(ctx, func(context.Context, *jsonx.Object) (*jsonx.Object, error) {
-		return nil, nil
-	}))
-	if len(settings.Keys()) != len(system.GetObject("system_config").Keys()) {
-		t.Fatal("settings keys differ from system_config")
 	}
 }
 
@@ -373,21 +366,21 @@ func TestSaveModeChangesOnlyTheMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-	before := must[*jsonx.Object](t)(r.GetSystem(ctx))
+	before := must[*model.System](t)(r.System(ctx))
 	if err := saveMode(ctx, "always"); err != nil {
 		t.Fatal(err)
 	}
-	after := must[*jsonx.Object](t)(r.GetSystem(ctx))
-	if after.GetObject("system_config").GetString("sub_store_mode") != "always" {
+	after := must[*model.System](t)(r.System(ctx))
+	if after.SystemConfig.SubStoreMode == nil || *after.SystemConfig.SubStoreMode != "always" {
 		t.Fatal("mode not saved")
 	}
-	if !jsonx.Equal(after.Value("agents"), before.Value("agents")) || !jsonx.Equal(after.Value("backup"), before.Value("backup")) {
+	if !testjson.Equal(before.Agents, after.Agents) || !testjson.Equal(before.Backup, after.Backup) {
 		t.Fatal("other sections changed")
 	}
-	for key, value := range before.GetObject("system_config").All() {
-		if !jsonx.Equal(after.GetObject("system_config").Value(key), value) {
-			t.Fatalf("%s changed", key)
-		}
+	expectedCfg := before.SystemConfig
+	expectedCfg.SubStoreMode = new("always")
+	if !testjson.Equal(expectedCfg, after.SystemConfig) {
+		t.Fatalf("other system_config fields changed:\n%s", testjson.Diff(expectedCfg, after.SystemConfig))
 	}
 }
 
@@ -395,8 +388,10 @@ func TestSaveModeChangesOnlyTheMode(t *testing.T) {
 func TestStateFileBytes(t *testing.T) {
 	_, rt, _ := lifecycleService(t)
 	rt.withControl(context.Background(), func(ctx context.Context) error {
-		rt.write("state", "running", "error", "")
-		return rt.write("last_used", jsonx.Float(12.5), "state", "sleeping")
+		running, empty := "running", ""
+		rt.writeState(ctx, runtimePatch{State: &running, Error: &empty})
+		sleeping, ts := "sleeping", 12.5
+		return rt.writeState(ctx, runtimePatch{LastUsed: &ts, State: &sleeping})
 	})
 	data, _ := os.ReadFile(filepath.Join(rt.Root(), "state.json"))
 	if string(data) != `{"state":"sleeping","error":"","last_used":12.5}` {
@@ -462,7 +457,7 @@ func (f commandFunc) Run(_ context.Context, argv []string, _ time.Duration) (Com
 func TestStartTimesOutWhenNeverReady(t *testing.T) {
 	h := newHarness(t, harnessOptions{builtin: true})
 	rt := h.service.Runtime
-	h.commands.runVersion = "" // the process starts but never answers
+	h.commands.runVersion = ""
 	h.store.setVersion("")
 	started := rt.scheduler(context.Background()).Now()
 	err := rt.Use(context.Background(), func(ctx context.Context) error { t.Error("work ran"); return nil })
@@ -470,8 +465,8 @@ func TestStartTimesOutWhenNeverReady(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 	state := stateOf(rt)
-	if state.GetString("state") != "failed" || state.GetString("error") != err.Error() {
-		t.Fatalf("state %s", jsonx.Repr(state))
+	if state == nil || state.State == nil || *state.State != "failed" || state.Error != err.Error() {
+		t.Fatalf("state %+v", state)
 	}
 	if elapsed := rt.scheduler(context.Background()).Now().Sub(started); elapsed != startupWait {
 		t.Fatal("did not wait 20 s")

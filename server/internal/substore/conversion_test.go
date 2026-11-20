@@ -7,6 +7,7 @@ package substore
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +16,8 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -55,8 +57,10 @@ func newConversionStore(t *testing.T) *conversionStore {
 		if r := []rune(server); len(r) > 12 {
 			server = string(r[len(r)-12:])
 		}
-		data, err := jsonx.Compact(jsonx.Obj("name", "from-uri", "type", "anytls", "server", server, "port", jsonx.Int(443),
-			"converted-by", s.version(), "target", target, "alpn", []any{"h2"}))
+		data, err := json.Marshal(map[string]any{
+			"name": "from-uri", "type": "anytls", "server": server, "port": 443,
+			"converted-by": s.version(), "target": target, "alpn": []string{"h2"},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -80,8 +84,29 @@ func (s *conversionStore) count() int {
 	return len(s.asked)
 }
 
-func (s *conversionStore) convert(proxy string) *jsonx.Object {
-	return s.c.ConvertProxyString(context.Background(), proxy)
+func (s *conversionStore) convert(proxy string) *yamlx.Node {
+	node, _ := s.c.ConvertProxy(context.Background(), proxy)
+	return node
+}
+
+func yamlStr(n *yamlx.Node, key string) string {
+	if n == nil {
+		return ""
+	}
+	v := yamlx.Get(n, key)
+	if v == nil {
+		return ""
+	}
+	return v.Value
+}
+
+func nodeJSON(t *testing.T, n *yamlx.Node) json.RawMessage {
+	t.Helper()
+	data, err := yamlx.ToJSON(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return json.RawMessage(data)
 }
 
 // test_node_conversion_cache.py::test_the_same_node_is_converted_once_and_callers_get_their_own_copy
@@ -91,24 +116,26 @@ func TestTheSameNodeIsConvertedOnceAndCallersGetTheirOwnCopy(t *testing.T) {
 	if s.count() != 1 || s.asked[0] != (asked{testNode, "ClashMeta"}) {
 		t.Fatalf("asked %v", s.asked)
 	}
-	// convert_node_to_mihomo names the result and repairs its fields in place.
-	first.Set("name", "renamed by the caller")
-	first.Set("alpn", append(first.GetList("alpn"), "changed"))
+	// Mutating the returned node and nested sequence must not affect cached copy.
+	yamlx.Set(first, "name", yamlx.Str("renamed by the caller"))
+	alpn := yamlx.Get(first, "alpn")
+	alpn.Content = append(alpn.Content, yamlx.Str("changed"))
 	second := s.convert(testNode)
 	if s.count() != 1 {
 		t.Fatal("asked again")
 	}
-	want := jsonx.Obj("name", "from-uri", "type", "anytls", "server", testNode[len(testNode)-12:], "port", jsonx.Int(443),
-		"converted-by", "2.42.3", "target", "ClashMeta", "alpn", []any{"h2"})
-	if !jsonx.Equal(second, want) {
-		t.Fatalf("second %s", jsonx.Repr(second))
+	want := map[string]any{
+		"name": "from-uri", "type": "anytls", "server": testNode[len(testNode)-12:], "port": 443,
+		"converted-by": "2.42.3", "target": "ClashMeta", "alpn": []string{"h2"},
 	}
-	list := second.GetList("alpn")
-	list[0] = "changed again"
-	if jsonx.Repr(s.convert(testNode).Value("alpn")) != "['h2']" {
+	if !testjson.Equal(want, nodeJSON(t, second)) {
+		t.Fatalf("second:\n%s", testjson.Diff(want, nodeJSON(t, second)))
+	}
+	yamlx.Get(second, "alpn").Content[0].Value = "changed again"
+	if got := yamlx.Get(s.convert(testNode), "alpn"); len(got.Content) != 1 || got.Content[0].Value != "h2" {
 		t.Fatal("caller's change reached the cache")
 	}
-	if s.convert(otherNode).GetString("server") != otherNode[len(otherNode)-12:] || s.count() != 2 {
+	if yamlStr(s.convert(otherNode), "server") != otherNode[len(otherNode)-12:] || s.count() != 2 {
 		t.Fatal("other node")
 	}
 }
@@ -122,7 +149,7 @@ func TestAFailedConversionIsAskedAgain(t *testing.T) {
 	}
 	delete(s.fail, testNode)
 	s.convert(testNode)
-	if s.convert(testNode).GetString("type") != "anytls" || s.count() != 3 {
+	if yamlStr(s.convert(testNode), "type") != "anytls" || s.count() != 3 {
 		t.Fatalf("asked %d", s.count())
 	}
 }
@@ -130,11 +157,11 @@ func TestAFailedConversionIsAskedAgain(t *testing.T) {
 // test_node_conversion_cache.py::test_another_sub_store_version_converts_again
 func TestAnotherSubStoreVersionConvertsAgain(t *testing.T) {
 	s := newConversionStore(t)
-	if s.convert(testNode).GetString("converted-by") != "2.42.3" {
+	if yamlStr(s.convert(testNode), "converted-by") != "2.42.3" {
 		t.Fatal("first")
 	}
 	s.setVersion("2.43.0")
-	if s.convert(testNode).GetString("converted-by") != "2.43.0" || s.convert(testNode).GetString("converted-by") != "2.43.0" {
+	if yamlStr(s.convert(testNode), "converted-by") != "2.43.0" || yamlStr(s.convert(testNode), "converted-by") != "2.43.0" {
 		t.Fatal("new version")
 	}
 	if s.count() != 2 {
@@ -142,7 +169,7 @@ func TestAnotherSubStoreVersionConvertsAgain(t *testing.T) {
 	}
 	// Rolled back: the answers of that version are its own.
 	s.setVersion("2.42.3")
-	if s.convert(testNode).GetString("converted-by") != "2.42.3" || s.count() != 2 {
+	if yamlStr(s.convert(testNode), "converted-by") != "2.42.3" || s.count() != 2 {
 		t.Fatal("rollback")
 	}
 }
@@ -166,7 +193,6 @@ func TestAnUpdateDuringTheConversionKeepsNothing(t *testing.T) {
 }
 
 // test_node_conversion_cache.py::test_nothing_is_kept_without_a_known_version
-// (” and None: an empty VERSION file and none at all).
 func TestNothingIsKeptWithoutAKnownVersion(t *testing.T) {
 	for _, name := range []string{"empty", "missing"} {
 		t.Run(name, func(t *testing.T) {
@@ -214,8 +240,8 @@ func TestEachTargetFormatHasItsOwnResult(t *testing.T) {
 	s := newConversionStore(t)
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
-		if s.convert(testNode).GetString("target") != "ClashMeta" ||
-			s.c.ConvertProxyStringTarget(ctx, testNode, "Surge").GetString("target") != "Surge" {
+		surge, _ := s.c.ConvertTarget(ctx, testNode, "Surge")
+		if yamlStr(s.convert(testNode), "target") != "ClashMeta" || yamlStr(surge, "target") != "Surge" {
 			t.Fatal("target")
 		}
 	}
@@ -253,8 +279,6 @@ func TestOnlyTheMostRecentlyUsedNodesAreKept(t *testing.T) {
 }
 
 // test_node_conversion_cache.py::test_a_version_file_that_cannot_be_read_only_costs_the_memory
-// (Python's OSError from active_bundle; here an undecodable VERSION file,
-// the error active_bundle raises in Go as in Python).
 func TestAVersionFileThatCannotBeReadOnlyCostsTheMemory(t *testing.T) {
 	s := newConversionStore(t)
 	os.WriteFile(filepath.Join(s.h.builtin, "VERSION"), []byte{0xff, 0xfe, '\n'}, 0o644)
@@ -266,7 +290,7 @@ func TestAVersionFileThatCannotBeReadOnlyCostsTheMemory(t *testing.T) {
 // test_node_conversion_cache.py::test_concurrent_requests_for_one_node_agree
 func TestConcurrentRequestsForOneNodeAgree(t *testing.T) {
 	s := newConversionStore(t)
-	results := make([]*jsonx.Object, 64)
+	results := make([]*yamlx.Node, 64)
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
 	for i := range results {
@@ -279,9 +303,9 @@ func TestConcurrentRequestsForOneNodeAgree(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	seen := map[*jsonx.Object]bool{}
+	seen := map[*yamlx.Node]bool{}
 	for _, r := range results {
-		if !jsonx.Equal(r, results[0]) {
+		if !yamlx.Equal(r, results[0]) {
 			t.Fatal("results differ")
 		}
 		seen[r] = true
@@ -297,13 +321,13 @@ func TestConcurrentRequestsForOneNodeAgree(t *testing.T) {
 }
 
 // test_node_conversion_cache.py::test_rendering_again_does_not_start_sub_store:
-// through the real client and convert.ConvertNodeToMihomo, the second
-// conversion makes no request at all, so the on-demand runtime is never
-// entered and Sub-Store stays asleep.
+// through the real client and convert.NodeProxy, the second conversion makes
+// no request at all, so the on-demand runtime is never entered and Sub-Store
+// stays asleep.
 func TestRenderingAgainDoesNotStartSubStore(t *testing.T) {
 	h := newHarness(t, harnessOptions{builtin: true, version: "2.42.3"})
 	h.commands.runVersion = "2.42.3"
-	h.store.download = func(_, _ string, query url.Values, _ *jsonx.Object) (int, string, http.Header) {
+	h.store.download = func(_, _ string, query url.Values, _ map[string]any) (int, string, http.Header) {
 		if query.Get("content") != testNode {
 			t.Errorf("content %q", query.Get("content"))
 		}
@@ -311,23 +335,23 @@ func TestRenderingAgainDoesNotStartSubStore(t *testing.T) {
 	}
 	c := h.service.Client
 	ctx := context.Background()
-	first := must[*jsonx.Object](t)(convert.ConvertNodeToMihomo(ctx, jsonx.Obj("name", "Home", "proxy_string", testNode), c))
+	first := must[*yamlx.Node](t)(convert.NodeProxy(ctx, model.Node{Name: "Home", ProxyString: new(testNode)}, c))
 	starts, _ := h.commands.counts()
 	if events := h.store.eventList(); starts != 1 || len(events) != 3 {
 		t.Fatalf("starts %d events %v", starts, events)
 	}
-	second := must[*jsonx.Object](t)(convert.ConvertNodeToMihomo(ctx, jsonx.Obj("name", "Home", "proxy_string", testNode), c))
-	third := must[*jsonx.Object](t)(convert.ConvertNodeToMihomo(ctx, jsonx.Obj("name", "Away", "proxy_string", testNode), c))
+	second := must[*yamlx.Node](t)(convert.NodeProxy(ctx, model.Node{Name: "Home", ProxyString: new(testNode)}, c))
+	third := must[*yamlx.Node](t)(convert.NodeProxy(ctx, model.Node{Name: "Away", ProxyString: new(testNode)}, c))
 	starts, _ = h.commands.counts()
 	if events := h.store.eventList(); starts != 1 || len(events) != 3 {
 		t.Fatalf("starts %d events %v", starts, events)
 	}
-	if !jsonx.Equal(first, second) || first.GetString("name") != "Home" || first.GetString("server") != "node.example.test" {
-		t.Fatalf("first %s second %s", jsonx.Repr(first), jsonx.Repr(second))
+	if !yamlx.Equal(first, second) || yamlStr(first, "name") != "Home" || yamlStr(first, "server") != "node.example.test" {
+		t.Fatalf("first %s second %s", nodeJSON(t, first), nodeJSON(t, second))
 	}
-	want := first.Clone()
-	want.Set("name", "Away")
-	if !jsonx.Equal(third, want) {
-		t.Fatalf("third %s", jsonx.Repr(third))
+	want := yamlx.Clone(first)
+	yamlx.Set(want, "name", yamlx.Str("Away"))
+	if !yamlx.Equal(third, want) {
+		t.Fatalf("third %s", nodeJSON(t, third))
 	}
 }

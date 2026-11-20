@@ -8,80 +8,96 @@ package substore
 // waiters with mixed flags.
 
 import (
-	"configflow/internal/yamlx"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
-func reviewReference(t *testing.T) *jsonx.Object {
+func reviewReference(t *testing.T) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile("testdata/review_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	// Python's json.dumps emits bare Infinity for YAML .inf test outputs.
+	data = bytes.ReplaceAll(data, []byte(": Infinity"), []byte(`: "__Infinity__"`))
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var root map[string]any
+	if err := dec.Decode(&root); err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return root
+}
+
+func reviewList(m map[string]any, key string) []any {
+	l, _ := m[key].([]any)
+	return l
 }
 
 // checkOutcome compares a Go result with a reference row ({output} or
 // {error, message}); withMessage also compares the exception text.
-func checkOutcome(t *testing.T, label string, row *jsonx.Object, got any, err error, withMessage bool) {
+func checkOutcome(t *testing.T, label string, row map[string]any, got any, err error, withMessage bool) {
 	t.Helper()
-	if want, ok := row.Get("output"); ok {
+	if want, ok := row["output"]; ok {
 		if err != nil {
-			t.Errorf("%s: Go error %v, Python %s", label, err, jsonx.Repr(want))
-		} else if !jsonx.Equal(got, want) {
-			t.Errorf("%s: Go %s, Python %s", label, jsonx.Repr(got), jsonx.Repr(want))
+			t.Errorf("%s: Go error %v, Python %v", label, err, want)
+		} else if !testjson.Equal(want, got) {
+			t.Errorf("%s:\n%s", label, testjson.Diff(want, got))
 		}
 		return
 	}
+	errClass, _ := row["error"].(string)
+	errMsg, _ := row["message"].(string)
 	if err == nil {
-		t.Errorf("%s: Go %s, Python %s: %s", label, jsonx.Repr(got), row.GetString("error"), row.GetString("message"))
+		t.Errorf("%s: Go %v, Python %s: %s", label, got, errClass, errMsg)
 		return
 	}
-	if class := pythonClass(err); class != row.GetString("error") {
-		t.Errorf("%s: Go %s (%v), Python %s", label, class, err, row.GetString("error"))
+	if class := pythonClass(err); class != errClass {
+		t.Errorf("%s: Go %s (%v), Python %s", label, class, err, errClass)
 	}
-	if withMessage && err.Error() != row.GetString("message") {
-		t.Errorf("%s: message %q, Python %q", label, err.Error(), row.GetString("message"))
+	if withMessage && err.Error() != errMsg {
+		t.Errorf("%s: message %q, Python %q", label, err.Error(), errMsg)
 	}
 }
 
 func TestReviewParseUserinfo(t *testing.T) {
 	native := nativeClientExpectations(t)
-	for i, item := range reviewReference(t).GetList("parse_userinfo") {
-		row := item.(*jsonx.Object)
-		info, err := ParseUserinfo(row.GetString("input"))
+	for i, item := range reviewList(reviewReference(t), "parse_userinfo") {
+		row := item.(map[string]any)
+		in, _ := row["input"].(string)
+		info, err := ReadUserinfo(in)
 		var got any
 		if info != nil {
 			got = info
 		}
-		if expected := native.GetObject(fmt.Sprintf("review/userinfo/%d", i)); expected != nil {
+		if expected := native[fmt.Sprintf("review/userinfo/%d", i)]; expected != nil {
 			row = expected
 		}
-		checkOutcome(t, "parse_userinfo "+jsonx.Repr(row.Value("input")), row, got, err, true)
+		checkOutcome(t, fmt.Sprintf("parse_userinfo %q", row["input"]), row, got, err, true)
 	}
 }
 
 func TestReviewIsYAMLResponse(t *testing.T) {
 	oracle := nativeReaderCases(t)
-	for i, item := range reviewReference(t).GetList("is_yaml_response") {
-		row := item.(*jsonx.Object)
-		assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/review/is_yaml_response/%d", i), isYAMLResponse(row.GetString("input")), nil)
+	for i, item := range reviewList(reviewReference(t), "is_yaml_response") {
+		row := item.(map[string]any)
+		in, _ := row["input"].(string)
+		assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/review/is_yaml_response/%d", i), isYAMLResponse(in), nil)
 	}
 }
 
@@ -93,24 +109,26 @@ func TestReviewParseProxiesFromYAML(t *testing.T) {
 	ref := reviewReference(t)
 	oracle := nativeReaderCases(t)
 	for _, fn := range []string{"parse_proxies_from_yaml", "proxies_to_nodes"} {
-		for i, item := range ref.GetList(fn) {
-			row := item.(*jsonx.Object)
-			text := row.GetString("input")
-			label := fn + " " + jsonx.Repr(text)
-			proxies, err := ParseProxiesFromYAML(text)
-			var got any = proxies
-			if err == nil && fn == "proxies_to_nodes" {
-				got, err = ProxiesToNodes(proxies)
+		for i, item := range reviewList(ref, fn) {
+			row := item.(map[string]any)
+			text, _ := row["input"].(string)
+			label := fmt.Sprintf("%s %q", fn, text)
+			nodes, err := ParseProxyNodes(text)
+			var got any
+			if err == nil {
+				if fn == "proxies_to_nodes" {
+					got, err = ProxyNodes(nodes)
+				} else {
+					got, err = yamlNodesToJSON(nodes)
+				}
 			}
-			if expected := native.GetObject(fmt.Sprintf("review/%s/%d", fn, i)); expected != nil {
+			if expected := native[fmt.Sprintf("review/%s/%d", fn, i)]; expected != nil {
 				checkOutcome(t, label, expected, got, err, true)
 				continue
 			}
-			if row.Has("unserializable") {
-				// Python keeps a date key until json.dumps refuses it when
-				// the cache is written; Go refuses it here (TypeError).
+			if _, has := row["unserializable"]; has {
 				if err == nil || !errors.Is(err, yamlx.ErrType) {
-					t.Errorf("%s: Go %s %v, want a TypeError", label, jsonx.Repr(got), err)
+					t.Errorf("%s: Go %v %v, want a TypeError", label, got, err)
 				}
 				continue
 			}
@@ -120,11 +138,11 @@ func TestReviewParseProxiesFromYAML(t *testing.T) {
 }
 
 func TestReviewResponseText(t *testing.T) {
-	for _, item := range reviewReference(t).GetList("response_text") {
-		row := item.(*jsonx.Object)
-		in := row.GetList("input")
+	for _, item := range reviewList(reviewReference(t), "response_text") {
+		row := item.(map[string]any)
+		in := row["input"].([]any)
 		resp := &Response{Header: http.Header{"Content-Type": {latin1Encode(in[0].(string))}}, Body: bytesOf(in[1].([]any))}
-		checkOutcome(t, "response_text "+jsonx.Repr(in[0]), row, resp.Text(), nil, false)
+		checkOutcome(t, fmt.Sprintf("response_text %q", in[0]), row, resp.Text(), nil, false)
 	}
 }
 
@@ -138,14 +156,14 @@ func latin1Encode(s string) string {
 }
 
 // TestReviewRuntimeMalformedState: a state.json that is not an object (or
-// holds a last_used Python cannot subtract) fails where Python fails
-// (TypeError in _write, AttributeError at state.get, TypeError/OverflowError
-// at now - last_used) instead of being treated as empty.
+// holds a last_used Python cannot subtract) fails where Python fails.
 func TestReviewRuntimeMalformedState(t *testing.T) {
 	reference := nativeRuntimeReference(t)
-	for index, item := range reviewReference(t).GetList("runtime") {
-		row := item.(*jsonx.Object)
-		state, action, running := row.GetString("state"), row.GetString("action"), row.GetBool("running")
+	for index, item := range reviewList(reviewReference(t), "runtime") {
+		row := item.(map[string]any)
+		state, _ := row["state"].(string)
+		action, _ := row["action"].(string)
+		running, _ := row["running"].(bool)
 		base := t.TempDir()
 		builtin := filepath.Join(base, "opt")
 		os.MkdirAll(builtin, 0o755)
@@ -166,7 +184,7 @@ func TestReviewRuntimeMalformedState(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(r.Directory, "state.json"), []byte(latin1Encode(state)), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		commands := []any{}
+		commands := []string{}
 		r.command = func(_ context.Context, name string) (string, error) {
 			commands = append(commands, name)
 			if name == "status" {
@@ -182,21 +200,22 @@ func TestReviewRuntimeMalformedState(t *testing.T) {
 		case "tick":
 			err = r.Tick(context.Background())
 		case "status":
-			var status *jsonx.Object
-			if status, err = r.Status(context.Background(), running); status != nil {
+			var status *RuntimeStatus
+			if status, err = r.Snapshot(context.Background(), running); status != nil {
 				got = status
 			}
 		default:
 			err = r.Use(context.Background(), func(ctx context.Context) error { return nil })
 		}
-		expected := reference.GetList("expectations")[index].(*jsonx.Object)
-		label := action + " " + jsonx.Repr(state) + " running=" + jsonx.Repr(running)
+		expected := reference.Expectations[index]
+		label := fmt.Sprintf("%s %q running=%v", action, state, running)
 		checkOutcome(t, label, expected, got, err, true)
-		if !jsonx.Equal(commands, expected.Value("commands")) {
-			t.Errorf("%s: commands %s, Python %s", label, jsonx.Repr(commands), jsonx.Repr(expected.Value("commands")))
+		if !testjson.Equal(expected["commands"], commands) {
+			t.Errorf("%s: commands %v, Python %v", label, commands, expected["commands"])
 		}
 		after, _ := os.ReadFile(filepath.Join(r.Directory, "state.json"))
-		compareRuntimeStateFile(t, label, after, []byte(latin1Encode(expected.GetString("after"))))
+		wantAfter, _ := expected["after"].(string)
+		compareRuntimeStateFile(t, label, after, []byte(latin1Encode(wantAfter)))
 	}
 }
 
@@ -225,7 +244,7 @@ func coalescingClient(t *testing.T, limit int) (*Client, *fakeClock, *string, *i
 		*count++
 		switch *outcome {
 		case "ok":
-			return &FetchResult{Text: "r" + jsonx.Str(jsonx.Int(*count)), Source: "direct_yaml", FetchedAt: "t"}, nil
+			return &FetchResult{Text: "r" + strconv.Itoa(*count), Source: "direct_yaml", FetchedAt: "t"}, nil
 		case "fail":
 			return nil, &SubscriptionFetchError{pyErr("ValueError", "s"), pyErr("ValueError", "d")}
 		}
@@ -235,12 +254,8 @@ func coalescingClient(t *testing.T, limit int) (*Client, *fakeClock, *string, *i
 	return c, clock, outcome, count
 }
 
-// TestReviewCoalescingClockEdges replays reuse windows (300/30/900 s), the
-// 600 s retention, failure cooldowns (3 s doubling to 300 s, ≥60 s for
-// 403/429), the failure reset, the one-hour failure purge and the entry
-// bound against Python's dict bookkeeping, step by step.
 func TestReviewCoalescingClockEdges(t *testing.T) {
-	scenarios := reviewReference(t).Value("coalescing").(*jsonx.Object)
+	scenarios := reviewReference(t)["coalescing"].(map[string]any)
 	steps := map[string][][]any{}
 	const u = "https://sub.test/a"
 	step := func(at float64, url string, refresh, prefer bool, outcome string) []any {
@@ -275,8 +290,8 @@ func TestReviewCoalescingClockEdges(t *testing.T) {
 	steps["failure bound 3"] = [][]any{step(0, "u1", false, false, "fail"), step(10, "u2", false, false, "fail"),
 		step(20, "u3", false, false, "fail"), step(30, "u4", false, false, "fail"), step(40, "u1", false, false, "fail"),
 		step(50, "u4", false, false, "fail")}
-	if len(steps) != scenarios.Len() {
-		t.Fatalf("%d scenarios here, %d in the reference", len(steps), scenarios.Len())
+	if len(steps) != len(scenarios) {
+		t.Fatalf("%d scenarios here, %d in the reference", len(steps), len(scenarios))
 	}
 	for name, script := range steps {
 		limit := 0
@@ -284,38 +299,35 @@ func TestReviewCoalescingClockEdges(t *testing.T) {
 			limit = 3
 		}
 		c, clock, outcome, count := coalescingClient(t, limit)
-		want := scenarios.GetList(name)
+		want := scenarios[name].([]any)
 		for i, s := range script {
 			clock.set(s[0].(float64))
 			*outcome = s[4].(string)
 			before := *count
-			result, err := c.GetSubscriptionProxiesYAML(context.Background(), "s", s[1].(string), "",
+			result, err := c.Fetch(context.Background(), "s", s[1].(string), "",
 				FetchOptions{Refresh: s[2].(bool), PreferCached: s[3].(bool)})
 			got := ""
 			if err != nil {
 				fetchErr := err.(*SubscriptionFetchError)
 				got = "error None"
 				if status := StatusOf(fetchErr.DirectError); status != 0 {
-					got = "error " + jsonx.Str(jsonx.Int(status))
+					got = "error " + strconv.Itoa(status)
 				}
 			} else {
 				got = result.Text
 			}
 			c.mu.Lock()
-			row := jsonx.Obj("fetched", *count != before, "got", got, "results", jsonx.Int(c.results.len()),
-				"failures", jsonx.Int(c.failures.len()))
+			row := map[string]any{"fetched": *count != before, "got": got, "results": c.results.len(), "failures": c.failures.len()}
 			c.mu.Unlock()
-			if !jsonx.Equal(row, want[i]) {
-				t.Errorf("%s step %d (%v): Go %s, Python %s", name, i, s, jsonx.Repr(row), jsonx.Repr(want[i]))
+			if !testjson.Equal(want[i], row) {
+				t.Errorf("%s step %d (%v):\n%s", name, i, s, testjson.Diff(want[i], row))
 			}
 		}
 	}
 }
 
-// TestReviewInflightWaitersIgnoreFlags: while a download is in flight,
-// refresh / prefer_cached callers wait for it instead of starting another.
 func TestReviewInflightWaitersIgnoreFlags(t *testing.T) {
-	want := reviewReference(t).Value("inflight").(*jsonx.Object)
+	want := reviewReference(t)["inflight"]
 	c, _, _, _ := coalescingClient(t, 0)
 	release := make(chan struct{})
 	var mu sync.Mutex
@@ -333,7 +345,7 @@ func TestReviewInflightWaitersIgnoreFlags(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result, err := c.GetSubscriptionProxiesYAML(context.Background(), "s", "https://sub.test/a", "",
+			result, err := c.Fetch(context.Background(), "s", "https://sub.test/a", "",
 				FetchOptions{Refresh: refresh, PreferCached: prefer})
 			if err != nil {
 				t.Error(err)
@@ -353,20 +365,36 @@ func TestReviewInflightWaitersIgnoreFlags(t *testing.T) {
 	close(release)
 	wg.Wait()
 	sort.Strings(got)
-	gotList := []any{}
-	for _, g := range got {
-		gotList = append(gotList, g)
-	}
-	if row := jsonx.Obj("calls", jsonx.Int(calls), "got", gotList); !jsonx.Equal(row, want) {
-		t.Errorf("Go %s, Python %s", jsonx.Repr(row), jsonx.Repr(want))
+	if row := map[string]any{"calls": calls, "got": got}; !testjson.Equal(want, row) {
+		t.Errorf("%s", testjson.Diff(want, row))
 	}
 }
 
-// stateOf is the runtime's state.json as an object (nil when it is not one).
-func stateOf(r *Runtime) *jsonx.Object {
-	object, _ := r.read().(*jsonx.Object)
-	return object
+// stateOf returns the runtime's state.json record (nil on read error).
+func stateOf(r *Runtime) *runtimeState {
+	st, err := r.loadState()
+	if err != nil {
+		return nil
+	}
+	return st
 }
 
 // lastUsed is the stored last_used as a float.
-func lastUsed(state *jsonx.Object) float64 { return state.GetFloat("last_used") }
+func lastUsed(state *runtimeState) float64 {
+	if state == nil {
+		return 0
+	}
+	return state.LastUsed
+}
+
+func hasLastUsed(r *Runtime) bool {
+	data, err := os.ReadFile(filepath.Join(r.Root(), "state.json"))
+	if err != nil {
+		return false
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return false
+	}
+	return m["last_used"] != nil
+}

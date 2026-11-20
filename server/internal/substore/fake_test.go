@@ -3,6 +3,7 @@ package substore
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -17,7 +18,6 @@ import (
 	"time"
 
 	schedclock "configflow/internal/clock"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
@@ -32,20 +32,20 @@ type fakeSubStore struct {
 	mu           sync.Mutex
 	version      string // "" = not running (the env endpoint answers 503)
 	events       []string
-	created      []*jsonx.Object
+	created      []map[string]any
 	downloads    []url.Values
 	envRequests  int
 	createStatus int
 	// download answers a download (nil: one converted proxy per request).
-	download func(name, target string, query url.Values, sub *jsonx.Object) (int, string, http.Header)
-	subs     map[string]*jsonx.Object
+	download func(name, target string, query url.Values, sub map[string]any) (int, string, http.Header)
+	subs     map[string]map[string]any
 	onDelete func()
 }
 
 const fakeProxyYAML = "proxies:\n  - {name: from-sub-store, type: ss, server: example.test, port: 443, cipher: aes-128-gcm, password: p}\n"
 
 func newFakeSubStore(t *testing.T) *fakeSubStore {
-	f := &fakeSubStore{createStatus: 201, subs: map[string]*jsonx.Object{}}
+	f := &fakeSubStore{createStatus: 201, subs: map[string]map[string]any{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -71,10 +71,10 @@ func (f *fakeSubStore) eventList() []string {
 	return append([]string(nil), f.events...)
 }
 
-func (f *fakeSubStore) createdPayloads() []*jsonx.Object {
+func (f *fakeSubStore) createdPayloads() []map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]*jsonx.Object(nil), f.created...)
+	return append([]map[string]any(nil), f.created...)
 }
 
 func segment(escaped string) string {
@@ -101,10 +101,10 @@ func (f *fakeSubStore) serve(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"status":"success","data":{"backend":"Node","version":"`+version+`"}}`)
 	case r.Method == "POST" && path == "/api/subs":
 		body, _ := io.ReadAll(r.Body)
-		value, _ := jsonx.Parse(body)
-		payload, _ := value.(*jsonx.Object)
+		var payload map[string]any
+		_ = json.Unmarshal(body, &payload)
 		f.created = append(f.created, payload)
-		name := payload.GetString("name")
+		name, _ := payload["name"].(string)
 		f.subs[name] = payload
 		f.events = append(f.events, "create:"+name)
 		status := f.createStatus

@@ -2,11 +2,11 @@ package subs
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"testing"
 
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlx/yamlxtest"
+	"configflow/internal/testjson"
 )
 
 func TestParserCorpus(t *testing.T) {
@@ -18,45 +18,49 @@ func TestParserCorpus(t *testing.T) {
 		counts[row.Fn]++
 		switch row.Fn {
 		case "parse_uri_list":
+			wantRaw := row.OutRaw
 			if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/parser/%d", i)); changed {
-				if expected.Has("error") {
+				if expected.HasError {
 					t.Fatalf("unexpected native oracle rejection %d", i)
 				}
-				row.Out = expected.Value("value")
+				wantRaw = expected.Value
 			}
-			if expected := native.GetObject(fmt.Sprintf("parser/%d", i)); expected != nil {
-				row.Out = expected.Value("output")
+			if expected, ok := native[fmt.Sprintf("parser/%d", i)]; ok {
+				wantRaw = expected.Output
 			}
-			nodes := ParseURIList(row.In.(string))
-			got := make([]any, len(nodes))
-			for j, n := range nodes {
-				got[j] = n
-			}
-			if g, w := compact(t, got), compact(t, row.Out); !yamlxtest.EqualJSON(got, row.Out) {
-				t.Fatalf("row %d parse_uri_list(%q)\n got  %s\n want %s", i, row.In, g, w)
+			gotRaw := parsedListJSON(t, ParseList(row.In.(string)))
+			if !testjson.Equal(wantRaw, gotRaw) {
+				t.Fatalf("row %d parse_uri_list(%q)\n got  %s\n want %s", i, row.In, gotRaw, wantRaw)
 			}
 		case "b64decode":
-			out := row.Out.(*jsonx.Object)
+			var out map[string]json.RawMessage
+			if err := json.Unmarshal(row.OutRaw, &out); err != nil {
+				t.Fatal(err)
+			}
 			b, err := decodeSubscriptionBase64(row.In.(string))
-			if out.Has("error") {
+			if errVal, hasErr := out["error"]; hasErr {
 				if err == nil {
-					t.Fatalf("row %d decodeSubscriptionBase64(%q): want error %v, got %x", i, row.In, out.Value("error"), b)
+					t.Fatalf("row %d decodeSubscriptionBase64(%q): want error %s, got %x", i, row.In, errVal, b)
 				}
-			} else if err != nil || hex.EncodeToString(b) != out.GetString("hex") {
-				t.Fatalf("row %d decodeSubscriptionBase64(%q): got %x (%v), want %s", i, row.In, b, err, out.GetString("hex"))
+			} else {
+				var wantHex string
+				_ = json.Unmarshal(out["hex"], &wantHex)
+				if err != nil || hex.EncodeToString(b) != wantHex {
+					t.Fatalf("row %d decodeSubscriptionBase64(%q): got %x (%v), want %s", i, row.In, b, err, wantHex)
+				}
 			}
 		case "int":
 			n, err := parseURIPort(row.In.(string))
-			expected := native.GetObject(fmt.Sprintf("parser/%d", i))
-			if expected == nil {
+			expected, ok := native[fmt.Sprintf("parser/%d", i)]
+			if !ok {
 				t.Fatalf("missing native URI port helper %d", i)
 			}
-			if expected.GetBool("reject") {
+			if expected.Reject {
 				if err == nil {
 					t.Fatalf("native URI port %d accepted invalid text", i)
 				}
-			} else if err != nil || !jsonx.Equal(jsonx.Int(int64(n)), expected.Value("output")) {
-				t.Fatalf("native URI port %d got %d %v want %v", i, n, err, expected.Value("output"))
+			} else if err != nil || !testjson.Equal(expected.Output, int64(n)) {
+				t.Fatalf("native URI port %d got %d %v want %s", i, n, err, expected.Output)
 			}
 		}
 	}

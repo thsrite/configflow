@@ -1,12 +1,13 @@
 package subs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -37,16 +38,20 @@ func runCommentedCorpus(t *testing.T, file string, count int) {
 	}
 	stats := map[string]int{}
 	for i, row := range rows {
-		in := asObj(row.In)
-		source := in.GetString("config")
-		profile := jsonx.Obj("mihomo", jsonx.Obj("custom_config", source))
-		var newName *string
-		if s, ok := in.Value("new").(string); ok {
-			newName = &s
+		var in struct {
+			Config string  `json:"config"`
+			Old    string  `json:"old"`
+			New    *string `json:"new"`
 		}
-		if strings.TrimSpace(source) == "" || newName != nil && *newName == in.GetString("old") {
-			changed, err := RelinkGroupListeners(profile, in.GetString("old"), newName)
-			if err != nil || len(changed) != 0 || profile.GetObject("mihomo").GetString("custom_config") != source {
+		if err := json.Unmarshal(row.InRaw, &in); err != nil {
+			t.Fatalf("row %d: %v", i, err)
+		}
+		source := in.Config
+		profile := &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: source}}
+		newName := in.New
+		if strings.TrimSpace(source) == "" || newName != nil && *newName == in.Old {
+			changed, err := RelinkListeners(profile, in.Old, newName)
+			if err != nil || len(changed) != 0 || profile.Mihomo.CustomConfig != source {
 				t.Errorf("row %d no-op changed", i)
 			}
 			stats["no-op"]++
@@ -57,10 +62,10 @@ func runCommentedCorpus(t *testing.T, file string, count int) {
 		var paths []string
 		var expectedErr error
 		if parseErr == nil {
-			expected, paths, expectedErr = listenerCorpusExpected(original, in.GetString("old"), newName)
+			expected, paths, expectedErr = listenerCorpusExpected(original, in.Old, newName)
 		}
-		changed, err := RelinkGroupListeners(profile, in.GetString("old"), newName)
-		result := profile.GetObject("mihomo").GetString("custom_config")
+		changed, err := RelinkListeners(profile, in.Old, newName)
+		result := profile.Mihomo.CustomConfig
 		if parseErr != nil || expectedErr != nil {
 			if err == nil || result != source {
 				t.Errorf("row %d invalid input changed or accepted: %v", i, err)
@@ -112,7 +117,7 @@ func runCommentedCorpus(t *testing.T, file string, count int) {
 		if strings.Contains(source, "\r\n") && !strings.ContainsAny(strings.ReplaceAll(source, "\r\n", ""), "\r\n") && strings.Contains(strings.ReplaceAll(result, "\r\n", ""), "\n") {
 			t.Errorf("row %d CRLF changed to bare LF", i)
 		}
-		if asObj(row.Out).Has("error") {
+		if _, _, isErr := isErrorRaw(row.OutRaw); isErr {
 			stats["python-emitter-or-schema-error-recovered"]++
 		}
 		stats["semantic-and-comments-match"]++
