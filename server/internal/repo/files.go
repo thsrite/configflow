@@ -125,13 +125,17 @@ func writeAtomicUsing(ctx context.Context, path string, content []byte,
 	return nil
 }
 
-// fileJSON is json.dumps(data, ensure_ascii=False, indent=2) + "\n".
+// fileJSON writes indented UTF-8 JSON with a trailing newline.
+// Artifact files are not HTML, so URL query separators remain literal.
 func fileJSON(data any) ([]byte, error) {
-	text, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
+	var text bytes.Buffer
+	encoder := json.NewEncoder(&text)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
 		return nil, err
 	}
-	return append(text, '\n'), nil
+	return text.Bytes(), nil
 }
 
 func writeJSON(path string, data any) error {

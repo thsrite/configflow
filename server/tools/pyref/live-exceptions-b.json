@@ -438,5 +438,15 @@
     "guard": "CONFIGFLOW_DIFF=1 explicit live Python zone oracle; t.Context() owns the subprocess",
     "kind": "differential",
     "reason": "core-2 的真实 Python zoneinfo 边界对照；逐行绑定七组固定 zone/wall 输入，普通测试在显式 guard 跳过，不允许生产创建 Python 进程。"
+  },
+  {
+    "id": "B-N811-GLOBAL-FLASK",
+    "file": "server/internal/repo/n811_global_difftest_test.go",
+    "function": "TestN811GlobalFlaskBoundaries",
+    "callee": "exec.Command",
+    "count": 2,
+    "guard": "CONFIGFLOW_DIFF=1 explicit live Flask HTTP and storage differential",
+    "kind": "differential",
+    "reason": "Copies the synthetic Go seed tree, starts the real Flask JSONL oracle and compares global-route HTTP responses and persisted state, including router ownership conflicts. Ordinary tests skip before either process constructor; cleanup closes stdin and waits for the oracle."
   }
 ]

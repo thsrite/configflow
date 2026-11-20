@@ -758,7 +758,9 @@ func (r *Repository) GetProfileAgentBindings(ctx context.Context, id string) (*j
 // and updated_at of a profile, without copying the profile. It is the cheap
 // existence check (ErrNotFound, or ErrValidation for a malformed id).
 func (r *Repository) ProfileMetadata(ctx context.Context, id string) (*jsonx.Object, error) {
-	result, err := r.ProfileMetadataRecord(ctx, id)
+	// Legacy request preparation must finish before the detached provider work
+	// starts, even if its HTTP waiter has already disconnected.
+	result, err := r.ProfileMetadataRecord(ctxx.Detach(ctx), id)
 	if err != nil {
 		return nil, err
 	}
