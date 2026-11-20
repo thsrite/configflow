@@ -2,6 +2,7 @@ package aggregations_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +17,8 @@ import (
 	"configflow/internal/api/aggregations"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 )
@@ -49,7 +50,15 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	mihomoenv.Wire()
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(aggregations.Register)})
 	ctx := srv.Context()
-	_, err := srv.Repo.SaveShared(ctx, jsonx.Obj("nodes", []any{}, "subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "http://127.0.0.1:9/feed")}, "subscription_aggregations", []any{jsonx.Obj("id", "a", "name", "Aggregate", "nodes", []any{}, "subscriptions", []any{"s"})}), nil)
+	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {
+		if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
+			return err
+		}
+		if err := s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Feed","url":"http://127.0.0.1:9/feed"}]`)); err != nil {
+			return err
+		}
+		return s.SetJSON("subscription_aggregations", json.RawMessage(`[{"id":"a","name":"Aggregate","nodes":[],"subscriptions":["s"]}]`))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

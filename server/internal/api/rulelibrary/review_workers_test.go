@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
@@ -44,13 +45,13 @@ func TestReviewConnectivityWorkerBoundAndRawRequest(t *testing.T) {
 	}))
 	defer origin.Close()
 	defer unblock()
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		items := []any{}
-		for i := range 27 {
-			items = append(items, jsonx.Obj("id", fmt.Sprint(i), "name", fmt.Sprint(i), "source_type", "url", "url", fmt.Sprintf("%s/%d", origin.URL, i)))
-		}
-		p.Set("rule_library", items)
-		return nil, nil
+	items := make([]map[string]any, 0, 27)
+	for i := range 27 {
+		items = append(items, map[string]any{"id": fmt.Sprint(i), "name": fmt.Sprint(i), "source_type": "url", "url": fmt.Sprintf("%s/%d", origin.URL, i)})
+	}
+	itemsRaw, _ := json.Marshal(items)
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		return p.SetJSON("rule_library", itemsRaw)
 	})
 	if err != nil {
 		t.Fatal(err)

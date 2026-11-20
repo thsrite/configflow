@@ -17,8 +17,8 @@ import (
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 )
@@ -29,15 +29,17 @@ func saveFixtureConfig(t *testing.T, s *httpxtest.Server, cfg any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fields jsonx.Object
+	var fields map[string]json.RawMessage
 	if err = json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		for key, value := range fields.All() {
-			current.Set(key, value)
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		for key, value := range fields {
+			if err := current.SetJSON(key, value); err != nil {
+				return err
+			}
 		}
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,9 +47,8 @@ func saveFixtureConfig(t *testing.T, s *httpxtest.Server, cfg any) {
 }
 func addGateway(t *testing.T, s *httpxtest.Server) {
 	t.Helper()
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("agents", []any{jsonx.Obj("id", "gateway", "name", "Synthetic gateway", "host", "192.0.2.4", "port", 9100, "service_type", "mihomo", "profile_id", "default", "enabled", true, "status", "offline", "token", "synthetic-agent-token")})
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, current *model.System) error {
+		return current.SetJSON("agents", json.RawMessage(`[{"id":"gateway","name":"Synthetic gateway","host":"192.0.2.4","port":9100,"service_type":"mihomo","profile_id":"default","enabled":true,"status":"offline","token":"synthetic-agent-token"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,10 +95,12 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			addGateway(t, s)
 			plan := s.Post("/api/routers/router-one/plan")
 			plan.WantStatus(200)
-			if plan.Object().GetObject("plan").GetBool("empty") || len(plan.Object().GetObject("plan").GetList("blockers")) != 0 {
+			planObj := decodeJSON(t, plan)["plan"].(map[string]any)
+			blockers, _ := planObj["blockers"].([]any)
+			if planObj["empty"] == true || len(blockers) != 0 {
 				t.Fatalf("not a writable plan: %s", plan.Body)
 			}
-			raw, _ := json.Marshal(map[string]string{"fingerprint": plan.Object().GetObject("plan").GetString("fingerprint")})
+			raw, _ := json.Marshal(map[string]string{"fingerprint": planObj["fingerprint"].(string)})
 			bound := runtimeHTTP(t, s, runtime)
 			request, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -151,17 +154,17 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			if after != expectedRevision {
 				t.Fatalf("publication missing: %d/%d", before, after)
 			}
-			profile, _ := s.Repo.GetProfile(s.Context(), "default")
-			record := profile.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-			last := record.GetObject("last_release")
+			profile, _ := s.Repo.Profile(s.Context(), "default")
+			record := profile.Routers.Items[0]
+			last := record.LastRelease
 			if mode == "shutdown_before" {
 				if last != nil || status == 200 || len(fake.Snapshot().Tables["/ip/route"]) != 1 || len(fake.Calls()) != calls {
 					t.Fatal("pre-write shutdown was reported/committed as a successful release")
 				}
 				return
 			}
-			if last == nil || last.GetBool("ok") != (mode == "disconnect") {
-				t.Fatalf("incorrect release receipt: %v", last)
+			if last == nil || last.OK != (mode == "disconnect") {
+				t.Fatalf("incorrect release receipt: %+v", last)
 			}
 			if mode == "shutdown" {
 				if status != 502 {

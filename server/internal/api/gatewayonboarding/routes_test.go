@@ -15,11 +15,20 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/setupflow"
 )
 
 const validForm = `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query"}`
+
+func decodeBody(t *testing.T, res *httpxtest.Result) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(res.Body, &out); err != nil {
+		t.Fatalf("%v: %s", err, res.Body)
+	}
+	return out
+}
 
 func testServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
@@ -28,18 +37,20 @@ func testServer(t *testing.T) *httpxtest.Server {
 	setupflow.Wire()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
 	ctx := s.Context()
-	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
-		return nil, nil
+	err := s.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+		return c.SetJSON("nodes", json.RawMessage(`[{"id":"n","name":"Example","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Proxy", "type", "select", "manual_nodes", []any{"n"})})
-		c.Set("rule_configs", []any{jsonx.Obj("id", "match", "itemType", "rule", "rule_type", "MATCH", "policy", "Proxy")})
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n"))
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, c *model.Profile) error {
+		if err := c.SetJSON("proxy_groups", json.RawMessage(`[{"id":"g","name":"Proxy","type":"select","manual_nodes":["n"]}]`)); err != nil {
+			return err
+		}
+		if err := c.SetJSON("rule_configs", json.RawMessage(`[{"id":"match","itemType":"rule","rule_type":"MATCH","policy":"Proxy"}]`)); err != nil {
+			return err
+		}
+		return c.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mixed-port: 7890\n"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +66,7 @@ func requestBody(text string) httpxtest.Option {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) json.RawMessage {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +86,6 @@ func snapshot(t *testing.T, s *httpxtest.Server) json.RawMessage {
 		files[rel] = string(data)
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := jsonx.Compact(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,14 +168,14 @@ func TestSetupUnavailableReturns503BeforeCommit(t *testing.T) {
 			if raw != "{" {
 				s.Get("/api/profiles/default/gateway-onboarding", admin).WantStatus(200)
 				preview := s.Post("/api/profiles/default/gateway-onboarding/preview", admin, requestBody(validForm)).WantStatus(200)
-				if preview.Object().Value("ready") != true {
+				if decodeBody(t, preview)["ready"] != true {
 					t.Fatal(preview.Text())
 				}
 			}
 			before := snapshot(t, s)
 			revision, _ := s.Repo.ConfigRevision(s.Context(), "default")
 			response := s.Post("/api/profiles/default/gateway-onboarding", admin, requestBody(validForm)).WantStatus(503)
-			if response.Object().GetString("message") != "等待首次使用向导模块" || response.Header.Get("Cache-Control") != "no-store" {
+			if decodeBody(t, response)["message"] != "等待首次使用向导模块" || response.Header.Get("Cache-Control") != "no-store" {
 				t.Fatal(response.Text())
 			}
 			afterRevision, _ := s.Repo.ConfigRevision(s.Context(), "default")
@@ -184,11 +191,11 @@ func TestSaveAndPreviewHTTP(t *testing.T) {
 	url := "/api/profiles/default/gateway-onboarding"
 	before := snapshot(t, s)
 	preview := s.Post(url+"/preview", admin, requestBody(validForm)).WantStatus(200)
-	if preview.Object().Value("ready") != true || !bytes.Equal(before, snapshot(t, s)) {
+	if decodeBody(t, preview)["ready"] != true || !bytes.Equal(before, snapshot(t, s)) {
 		t.Fatal(preview.Text())
 	}
 	saved := s.Post(url, admin, requestBody(validForm)).WantStatus(200)
-	if saved.Object().Value("draft") != true || bytes.Equal(before, snapshot(t, s)) {
+	if decodeBody(t, saved)["draft"] != true || bytes.Equal(before, snapshot(t, s)) {
 		t.Fatal(saved.Text())
 	}
 }
@@ -196,9 +203,8 @@ func TestSaveAndPreviewHTTP(t *testing.T) {
 func TestProductionCheckerRejectsLoopWithoutWrites(t *testing.T) {
 	s := testServer(t)
 	admin := s.Login()
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("mihomo").Set("custom_config", "dns:\n  nameserver: [udp://127.0.0.1:1053]\n")
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("mihomo", json.RawMessage(`{"custom_config":"dns:\n  nameserver: [udp://127.0.0.1:1053]\n"}`))
 	})
 	if err != nil {
 		t.Fatal(err)

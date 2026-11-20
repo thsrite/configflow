@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -47,23 +48,22 @@ func TestR15ForwardingHeadAndMalformedReportIsolation(t *testing.T) {
 	defer two.Close()
 	s := fixture(t)
 	login := s.Login()
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		records := []any{}
-		for i, url := range []string{one.URL, two.URL} {
-			host, portText, _ := net.SplitHostPort(strings.TrimPrefix(url, "http://"))
-			port, _ := strconv.Atoi(portText)
-			id := []string{"bad", "healthy"}[i]
-			records = append(records, jsonx.Obj("id", id, "name", id, "host", host, "port", port, "service_type", "mihomo", "profile_id", "default", "enabled", true, "status", "online", "last_heartbeat", time.Now().UTC().Format(time.RFC3339Nano), "version", "1.8.43-go", "deployment_method", "shell", "token", "synthetic-"+id+"-token"))
-		}
-		current.Set("agents", records)
-		return nil, nil
+	records := []map[string]any{}
+	for i, url := range []string{one.URL, two.URL} {
+		host, portText, _ := net.SplitHostPort(strings.TrimPrefix(url, "http://"))
+		port, _ := strconv.Atoi(portText)
+		id := []string{"bad", "healthy"}[i]
+		records = append(records, map[string]any{"id": id, "name": id, "host": host, "port": port, "service_type": "mihomo", "profile_id": "default", "enabled": true, "status": "online", "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano), "version": "1.8.43-go", "deployment_method": "shell", "token": "synthetic-" + id + "-token"})
+	}
+	agentsRaw, _ := json.Marshal(records)
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, current *model.System) error {
+		return current.SetJSON("agents", agentsRaw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "router-bad", "name", "Bad reference synthetic-healthy-token", "proxy_gateway_agent_id", "bad"), jsonx.Obj("id", "router-healthy", "name", "Healthy", "proxy_gateway_agent_id", "healthy")}))
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		return current.SetJSON("routers", json.RawMessage(`{"items":[{"id":"router-bad","name":"Bad reference synthetic-healthy-token","proxy_gateway_agent_id":"bad"},{"id":"router-healthy","name":"Healthy","proxy_gateway_agent_id":"healthy"}]}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,8 +86,15 @@ func TestR15ForwardingHeadAndMalformedReportIsolation(t *testing.T) {
 	bad.Store(true)
 	result := s.Get("/api/routers/gateway-forwarding", login)
 	result.WantStatus(200)
-	gateways := result.Object().GetList("gateways")
-	if len(gateways) != 2 || gateways[0].(*jsonx.Object).GetString("state") != "error" || gateways[1].(*jsonx.Object).GetString("state") != "persisted" {
+	var out struct {
+		Gateways []struct {
+			State string `json:"state"`
+		} `json:"gateways"`
+	}
+	if err := json.Unmarshal(result.Body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Gateways) != 2 || out.Gateways[0].State != "error" || out.Gateways[1].State != "persisted" {
 		t.Fatalf("bad report hid healthy gateway: %s", result.Body)
 	}
 	if strings.Contains(result.Text(), "synthetic-healthy-token") || strings.Contains(result.Text(), "synthetic-report-token") {

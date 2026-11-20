@@ -9,10 +9,18 @@ import (
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	core "configflow/internal/routers"
 )
+
+func decodeJSON(t *testing.T, res *httpxtest.Result) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(res.Body, &out); err != nil {
+		t.Fatalf("%v: %s", err, res.Body)
+	}
+	return out
+}
 
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
@@ -39,7 +47,7 @@ func TestR15CRUDHeadAndAuth(t *testing.T) {
 	if strings.Contains(created.Text(), "synthetic-password") {
 		t.Fatal("password exposed")
 	}
-	id := created.Object().GetObject("router").GetString("id")
+	id := decodeJSON(t, created)["router"].(map[string]any)["id"].(string)
 	s.Put("/api/routers/"+id, login, httpxtest.JSON(map[string]string{"name": "Renamed"})).WantStatus(200)
 	s.Delete("/api/routers/"+id, login).WantStatus(200)
 	s.Get("/api/routers").WantStatus(401)
@@ -50,8 +58,8 @@ func TestR15JobLockPrecedesValidation(t *testing.T) {
 	login := s.Login()
 	created := s.Post("/api/routers", login, httpxtest.JSON(routerBody("http://192.0.2.1")))
 	created.WantStatus(200)
-	id := created.Object().GetObject("router").GetString("id")
-	cfg, _ := s.Repo.GetCompatConfig(s.Context(), "default", repo.ResourceRoots{})
+	id := decodeJSON(t, created)["router"].(map[string]any)["id"].(string)
+	cfg, _ := s.Repo.Config(s.Context(), "default", repo.ResourceRoots{})
 	raw, _ := json.Marshal(cfg)
 	r := core.ManagementRouters(raw)[0]
 	_, release, lockErr := core.RouterJobLock(s.Context(), "default", id, r)
@@ -75,7 +83,7 @@ func TestR15FlaskRoutePriorities(t *testing.T) {
 	for _, tc := range []struct{ method, path, endpoint string }{{"GET", "/api/agents/gateway-installations/upstream-routers", "agents.gateway_installation_status"}, {"GET", "/api/agents/i/status", "agents.download_install_command"}, {"POST", "/api/agents/one/mihomo/rule-targets", "agents.mihomo_panel"}, {"GET", "/api/agents/one/mihomo/rule-targets", "agents.rule_targets"}, {"GET", "/api/agents/one/upstream-routers", "agents.upstream_router_pending"}} {
 		result := s.Do(tc.method, tc.path)
 		result.WantStatus(200)
-		if result.Object().GetString("endpoint") != tc.endpoint {
+		if decodeJSON(t, result)["endpoint"] != tc.endpoint {
 			t.Fatalf("%s => %s", tc.path, result.Text())
 		}
 	}
@@ -86,17 +94,17 @@ func TestR15WorkspaceDraftIsOfflineAndAtomic(t *testing.T) {
 	login := s.Login()
 	created := s.Post("/api/routers", login, httpxtest.JSON(routerBody("http://192.0.2.1")))
 	created.WantStatus(200)
-	id := created.Object().GetObject("router").GetString("id")
+	id := decodeJSON(t, created)["router"].(map[string]any)["id"].(string)
 	path := "/api/routers/" + id + "/policy-settings"
 	state := s.Get(path, login)
 	state.WantStatus(200)
-	workspace := state.Object().GetObject("workspace")
-	request := map[string]any{"revision": workspace.GetString("revision"), "base_url": "", "router": map[string]any{"ip_rule_sets": []string{}, "ros_policy_rule_sets": []string{}, "proxy_gateway_agent_id": "gateway"}}
+	workspace := decodeJSON(t, state)["workspace"].(map[string]any)
+	request := map[string]any{"revision": workspace["revision"], "base_url": "", "router": map[string]any{"ip_rule_sets": []string{}, "ros_policy_rule_sets": []string{}, "proxy_gateway_agent_id": "gateway"}}
 	saved := s.Put(path, login, httpxtest.JSON(request))
 	saved.WantStatus(200)
 	s.Put(path, login, httpxtest.JSON(request)).WantStatus(409)
-	stored, _ := s.Repo.GetProfile(s.Context(), "default")
-	if stored.GetObject("routers").GetList("items")[0].(*jsonx.Object).GetString("proxy_gateway_agent_id") != "gateway" {
+	stored, _ := s.Repo.Profile(s.Context(), "default")
+	if stored.Routers.Items[0].ProxyGatewayAgentID != "gateway" {
 		t.Fatal("draft not saved")
 	}
 	before, _ := s.Repo.ConfigRevision(s.Context(), "default")

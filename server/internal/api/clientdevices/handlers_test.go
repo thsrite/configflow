@@ -14,12 +14,23 @@ import (
 
 	api "configflow/internal/api/clientdevices"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
+
+func decodeBody(t *testing.T, res *httpxtest.Result) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(res.Body, &out); err != nil {
+		t.Fatalf("%v: %s", err, res.Body)
+	}
+	return out
+}
 
 func rosState() routerfake.State {
 	return routerfake.State{Tables: map[string][]routerfake.Row{"/ip/dhcp-server": {{".id": "*1", "name": "dhcp-example", "interface": "bridge", "disabled": "false"}}, "/ip/dhcp-server/network": {{".id": "*2", "address": "192.0.2.0/24", "gateway": "192.0.2.1"}}, "/ip/address": {{".id": "*3", "address": "192.0.2.1/24", "interface": "bridge"}}, "/ip/dhcp-server/lease": {{".id": "*10", "address": "192.0.2.21", "mac-address": "02:00:00:00:00:21", "server": "dhcp-example", "dynamic": "true", "disabled": "false", "comment": ""}}, "/ip/arp": {{".id": "*11", "address": "192.0.2.21", "mac-address": "02:00:00:00:00:21", "interface": "bridge", "status": "reachable"}}}}
@@ -32,10 +43,12 @@ func fixture(t *testing.T) (*httpxtest.Server, *routerfake.Fake) {
 	t.Cleanup(device.Close)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, SecretKey: "synthetic-fixed-secret", Register: httpxtest.Routes(api.Register)})
 	routers.Wire()
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("device_notes", jsonx.Obj("192.0.2.21", "Synthetic"))
-		current.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "router-one", "name", "Synthetic", "type", "routeros", "endpoint", device.URL, "username", "synthetic-user", "password", "synthetic-pass", "verify_tls", false)}))
-		return nil, nil
+	routersRaw, _ := json.Marshal(map[string]any{"items": []any{map[string]any{"id": "router-one", "name": "Synthetic", "type": "routeros", "endpoint": device.URL, "username": "synthetic-user", "password": "synthetic-pass", "verify_tls": false}}})
+	_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		if err := current.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"Synthetic"}`)); err != nil {
+			return err
+		}
+		return current.SetJSON("routers", routersRaw)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,17 +81,17 @@ func TestR17HTTPRoutes(t *testing.T) {
 	}
 	preview := s.Post("/api/client-devices/fixed-ip/preview", login, httpxtest.JSON(requestBody("add")))
 	preview.WantStatus(200)
-	token := preview.Object().GetString("token")
+	token, _ := decodeBody(t, preview)["token"].(string)
 	if token == "" || token == "[REDACTED]" {
 		t.Fatal("preview token missing/redacted")
 	}
 	s.Post("/api/client-devices/fixed-ip/apply", login, httpxtest.JSON(map[string]string{"profile_id": "default", "token": token})).WantStatus(200)
-	stored, err := s.Repo.GetProfile(s.Context(), "default")
+	stored, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	binding := stored.GetObject("client_fixed_ips").GetObject("192.0.2.21")
-	if binding == nil || binding.GetString("router_id") != "router-one" {
+	binding, ok := stored.ClientFixedIPs.Get("192.0.2.21")
+	if !ok || binding.RouterID != "router-one" {
 		t.Fatalf("binding %+v", binding)
 	}
 	s.Post("/api/client-devices/fixed-ip/apply", login, httpxtest.JSON(map[string]string{"profile_id": "default", "token": token})).WantStatus(502)
@@ -89,7 +102,8 @@ func TestR17HTTPRoutes(t *testing.T) {
 	}
 	deletion := s.Post("/api/client-devices/fixed-ip/preview", login, httpxtest.JSON(requestBody("delete")))
 	deletion.WantStatus(200)
-	s.Post("/api/client-devices/fixed-ip/apply", login, httpxtest.JSON(map[string]string{"profile_id": "default", "token": deletion.Object().GetString("token")})).WantStatus(200)
+	delToken, _ := decodeBody(t, deletion)["token"].(string)
+	s.Post("/api/client-devices/fixed-ip/apply", login, httpxtest.JSON(map[string]string{"profile_id": "default", "token": delToken})).WantStatus(200)
 	if len(f.Snapshot().Tables["/ip/dhcp-server/lease"]) != 0 {
 		t.Fatal("owned reservation remains")
 	}
@@ -114,10 +128,16 @@ func TestR17HTTPFailureShapesAndPeerSecrets(t *testing.T) {
 		}
 		s.Do(method, tc.path, login, httpxtest.Body([]byte(tc.body), "application/json")).WantStatus(tc.status)
 	}
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("device_notes", jsonx.Obj("192.0.2.21", "reference synthetic-peer-password"))
-		current.GetObject("routers").Set("items", append(current.GetObject("routers").GetList("items"), jsonx.Obj("id", "peer", "type", "unsupported", "username", "visible-user", "password", "synthetic-peer-password")))
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		if err := current.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"reference synthetic-peer-password"}`)); err != nil {
+			return err
+		}
+		var peer model.Router
+		if err := json.Unmarshal([]byte(`{"id":"peer","type":"unsupported","username":"visible-user","password":"synthetic-peer-password"}`), &peer); err != nil {
+			return err
+		}
+		current.Routers.Items = append(current.Routers.Items, peer)
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,19 +156,18 @@ func TestR17HTTPFailureShapesAndPeerSecrets(t *testing.T) {
 func TestR17AgentProfilePinning(t *testing.T) {
 	s, _ := fixture(t)
 	login := s.Login()
-	if _, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("agents", []any{jsonx.Obj("id", "agent-other", "name", "Other OxiDNS", "service_type", "oxidns", "profile_id", "other", "host", "192.0.2.80", "token", "synthetic-other-agent-token")})
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, current *model.System) error {
+		return current.SetJSON("agents", json.RawMessage(`[{"id":"agent-other","name":"Other OxiDNS","service_type":"oxidns","profile_id":"other","host":"192.0.2.80","token":"synthetic-other-agent-token"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := s.Get("/api/client-devices?agent=agent-other", login)
 	result.WantStatus(200)
-	if result.Object().GetString("profile_id") != "other" {
+	if decodeBody(t, result)["profile_id"] != "other" {
 		t.Fatal("Agent profile not pinned")
 	}
 	s.Do("HEAD", "/api/client-devices?agent=agent-other", login).WantStatus(200)
@@ -160,8 +179,9 @@ func TestR17SetupGuardAndExpiry(t *testing.T) {
 	login := s.Login()
 	preview := s.Post("/api/client-devices/fixed-ip/preview", login, httpxtest.JSON(requestBody("add")))
 	preview.WantStatus(200)
+	previewToken, _ := decodeBody(t, preview)["token"].(string)
 	signer := clients.FixedIPToken{Secret: "synthetic-fixed-secret"}
-	payload, err := signer.Verify(preview.Object().GetString("token"))
+	payload, err := signer.Verify(previewToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +200,7 @@ func TestR17SetupGuardAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Post("/api/client-devices/fixed-ip/preview", login, httpxtest.JSON(requestBody("add"))).WantStatus(409)
-	s.Post("/api/client-devices/fixed-ip/apply", login, httpxtest.JSON(map[string]string{"profile_id": "default", "token": preview.Object().GetString("token")})).WantStatus(409)
+	s.Post("/api/client-devices/fixed-ip/apply", login, httpxtest.JSON(map[string]string{"profile_id": "default", "token": previewToken})).WantStatus(409)
 	if len(f.Snapshot().Tables["/ip/dhcp-server/lease"]) != 1 || f.Snapshot().Tables["/ip/dhcp-server/lease"][0]["dynamic"] != "true" {
 		t.Fatal("blocked write changed lease")
 	}
@@ -220,25 +240,25 @@ func TestR17UDPProtocolSideEntryHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	yamlx.Set(draft, "native_config", oxidns.S(string(encoded)))
-	var settings jsonx.Object
-	if err = json.Unmarshal(oxidns.ToJSON(draft), &settings); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.Set("oxidns", &settings)
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		return current.OxiDNS.SetNode(draft)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	get := s.Get("/api/client-devices", login)
 	get.WantStatus(200)
-	if !get.Object().GetBool("editable") || len(get.Object().GetList("side_entries")) != 1 {
+	gotBody := decodeBody(t, get)
+	sideEntries, _ := gotBody["side_entries"].([]any)
+	if gotBody["editable"] != true || len(sideEntries) != 1 {
 		t.Fatal("udp scheme misclassified as plugin reference")
 	}
 	s.Put("/api/client-devices", login, httpxtest.JSON(map[string]string{"profile_id": "default", "ip": "192.0.2.21", "name": "Synthetic", "mode": "direct", "previous_name": "Synthetic", "previous_mode": "", "base_url": ""})).WantStatus(200)
-	stored, _ := s.Repo.GetProfile(s.Context(), "default")
-	if !strings.Contains(stored.GetObject("oxidns").GetString("native_config"), "side_forward") {
+	stored, _ := s.Repo.Profile(s.Context(), "default")
+	oxiRaw, _ := json.Marshal(stored.OxiDNS)
+	oxiVal, _ := testjson.Parse(oxiRaw)
+	nativeCfg, _ := testjson.Path(oxiVal, "native_config")
+	if nc, _ := nativeCfg.(string); !strings.Contains(nc, "side_forward") {
 		t.Fatal("side plugin lost")
 	}
 }
@@ -250,12 +270,12 @@ func TestR17MalformedDiscoveryRowsPreserveHealthyDevice(t *testing.T) {
 	f.Reset(seed)
 	result := s.Get("/api/client-devices/discovery?refresh=1", s.Login())
 	result.WantStatus(200)
-	devices := result.Object().GetList("devices")
+	devices, _ := decodeBody(t, result)["devices"].([]any)
 	if len(devices) != 1 {
 		t.Fatalf("healthy device hidden: %s", result.Body)
 	}
-	row := devices[0].(*jsonx.Object)
-	if row.GetString("mac") != "02:00:00:00:00:21" || row.GetObject("fixed_ip") == nil {
+	row, _ := devices[0].(map[string]any)
+	if row["mac"] != "02:00:00:00:00:21" || row["fixed_ip"] == nil {
 		t.Fatalf("healthy evidence dropped: %s", result.Body)
 	}
 }

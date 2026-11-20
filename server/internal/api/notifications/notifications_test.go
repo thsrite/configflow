@@ -2,15 +2,16 @@ package notifications_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"configflow/internal/agents"
 	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/notifications"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 )
 
 const listEndpoint = "notifications.list_notifications"
@@ -24,10 +25,10 @@ func registered() bool {
 // C07 registers the list immediately and reports explicit readiness. Agent
 // wiring supplies the real registry even before the task owners are ready.
 func TestListRouteRegistersBeforeTaskSlotsAndAgentsSourceIsUnconditional(t *testing.T) {
-	notifications.ResetSources()
+	notifications.ResetInputs()
 	agents.ResetHooks()
-	t.Cleanup(func() { notifications.ResetSources(); agents.ResetHooks() })
-	notifications.SetSources(notifications.Sources{ListTasks: tasks.ListTasks})
+	t.Cleanup(func() { notifications.ResetInputs(); agents.ResetHooks() })
+	notifications.SetInputs(notifications.Inputs{Rows: tasks.List})
 	if tasks.Complete() {
 		t.Fatal("precondition: some task slots are still unported")
 	}
@@ -47,7 +48,7 @@ func TestListRouteRegistersBeforeTaskSlotsAndAgentsSourceIsUnconditional(t *test
 	}
 	missing := tasks.Missing()
 	for i, slot := range missing {
-		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
+		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
 		if last := i == len(missing)-1; apinotifications.ListComplete() != last {
 			t.Fatalf("after providing %s (last %v) registered=%v", slot, last, registered())
 		}
@@ -57,8 +58,11 @@ func TestListRouteRegistersBeforeTaskSlotsAndAgentsSourceIsUnconditional(t *test
 	if !srv.App.Router.HasEndpoint(listEndpoint) {
 		t.Fatal("not registered in a test server")
 	}
-	body := srv.Get("/api/notifications").WantStatus(200).Object()
-	if body.Value("success") != true {
-		t.Fatalf("body %v", body)
+	res := srv.Get("/api/notifications").WantStatus(200)
+	var body struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(res.Body, &body); err != nil || !body.Success {
+		t.Fatalf("body %s (%v)", res.Body, err)
 	}
 }

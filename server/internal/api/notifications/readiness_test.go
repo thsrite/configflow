@@ -3,6 +3,7 @@ package notifications_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,30 +11,35 @@ import (
 
 	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
 )
 
 func notificationServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotBackup, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRows(slot, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
+		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
 	}
-	t.Cleanup(notifications.SetSources(notifications.Sources{
-		ListTasks: tasks.AvailableTasks, MissingTasks: tasks.Missing,
-		Agents: func(context.Context) ([]*jsonx.Object, error) { return nil, nil },
+	t.Cleanup(notifications.SetInputs(notifications.Inputs{
+		Rows: tasks.Available, MissingTasks: tasks.Missing,
+		Agents: func(context.Context) ([]model.Agent, error) { return nil, nil },
 	}))
 	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apinotifications.Register)})
 }
 
 func TestMissingTaskSlotsCannotRetireRouterOrAgentFailures(t *testing.T) {
 	s := notificationServer(t)
-	t.Cleanup(tasks.SetRows(tasks.SlotRouters, nil))
-	t.Cleanup(tasks.SetRows(tasks.SlotAgents, nil))
-	if err := notifications.Transaction(s.DataDir, func(items *jsonx.Object) error {
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, nil))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotAgents, nil))
+	if err := notifications.UpdateItems(s.Context(), s.DataDir, func(items *notifications.Items) error {
 		for _, key := range []string{"task:router_rule_sync:default:r", "task:agent_rule_sync:a", "deployment:a"} {
-			items.Set(key, jsonx.Obj("state", "pending", "source", "task", "version", "v", "read", false))
+			var item notifications.Item
+			if err := json.Unmarshal([]byte(`{"state":"pending","source":"task","version":"v","read":false}`), &item); err != nil {
+				return err
+			}
+			items.Set(key, &item)
 		}
 		return nil
 	}); err != nil {
@@ -43,8 +49,13 @@ func TestMissingTaskSlotsCannotRetireRouterOrAgentFailures(t *testing.T) {
 	before, _ := os.ReadFile(path)
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		r := s.Do(method, "/api/notifications", httpxtest.Body([]byte(`{"versions":{}}`), "application/json")).WantStatus(503)
-		if method == http.MethodGet && len(r.Object().GetList("missing_slots")) != 2 {
-			t.Fatal(r.Text())
+		if method == http.MethodGet {
+			var body struct {
+				MissingSlots []string `json:"missing_slots"`
+			}
+			if err := json.Unmarshal(r.Body, &body); err != nil || len(body.MissingSlots) != 2 {
+				t.Fatal(r.Text())
+			}
 		}
 		if method == http.MethodHead && r.Text() != "" {
 			t.Fatal("HEAD body", r.Text())
@@ -98,8 +109,10 @@ func TestReadBindingRejectsMalformedAndWrongShapes(t *testing.T) {
 
 func TestInvalidSavedHistoryReturnsUnavailableWithoutReplacingReceipts(t *testing.T) {
 	s := notificationServer(t)
-	t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) {
-		_, err := tasks.History(jsonx.Obj("run_count", "bad"))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) {
+		var receipt taskstatus.Receipt
+		_ = json.Unmarshal([]byte(`{"run_count":"bad"}`), &receipt)
+		_, err := tasks.ProjectHistory(&receipt)
 		return nil, err
 	}))
 	path := filepath.Join(s.DataDir, "notifications.json")

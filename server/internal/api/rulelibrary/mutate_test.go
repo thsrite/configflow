@@ -13,16 +13,17 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestReplaceAndDeletePreserveIndependentState(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
 	createManual(t, s)
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetList("rule_library")[0].(*jsonx.Object).Set("update_interval", jsonx.Int(7200))
-		return nil, nil
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		v := model.Int(7200)
+		p.RuleLibrary[0].UpdateInterval = &v
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,9 +58,8 @@ func TestReplaceAndDeletePreserveIndependentState(t *testing.T) {
 func TestLibraryDeletionRejectsReferencesAtomically(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_configs", []any{jsonx.Obj("id", "reference", "itemType", "ruleset", "library_rule_id", "manual", "policy", "DIRECT")})
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"reference","itemType":"ruleset","library_rule_id":"manual","policy":"DIRECT"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +128,13 @@ func TestManualCacheAndSingleUseLoopbackBoundary(t *testing.T) {
 	defer origin.Close()
 	for _, path := range []string{"/ok", "/missing"} {
 		r := s.Post("/api/rule-library/test-single", auth, httpxtest.JSON(map[string]string{"url": origin.URL + path})).WantStatus(200)
-		if r.Object().GetBool("available") != (path == "/ok") {
+		var out struct {
+			Available bool `json:"available"`
+		}
+		if err := json.Unmarshal(r.Body, &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.Available != (path == "/ok") {
 			t.Fatal("unexpected availability", r.Text())
 		}
 	}
@@ -169,7 +175,14 @@ func TestSuccessfulDraftLeavesNoTemporaryArtifacts(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
 	auth := s.Login()
-	token := s.Get("/api/rule-library/manual/draft-content", auth).WantStatus(200).Object().GetString("revision")
+	draftRes := s.Get("/api/rule-library/manual/draft-content", auth).WantStatus(200)
+	var draft struct {
+		Revision string `json:"revision"`
+	}
+	if err := json.Unmarshal(draftRes.Body, &draft); err != nil {
+		t.Fatal(err)
+	}
+	token := draft.Revision
 	s.Put("/api/rule-library/manual/draft-content", auth, httpxtest.JSON(map[string]string{"revision": token, "content": "+.new.example\n"})).WantStatus(200)
 	err := filepath.WalkDir(filepath.Join(s.DataDir, "shared/rules"), func(path string, d os.DirEntry, err error) error {
 		if err != nil {

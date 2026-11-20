@@ -9,8 +9,8 @@ import (
 	"configflow/internal/configexport"
 	"configflow/internal/convert"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 )
@@ -27,9 +27,11 @@ func exportApp(t *testing.T) *httpxtest.Server {
 
 func TestFullAndShareableBackupHTTP(t *testing.T) {
 	s := exportApp(t)
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Update(jsonx.Obj("config_token", "synthetic-config-token", "rule_proxy_token", "synthetic-rule-token"))
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		if err := system.SystemConfig.SetJSON("config_token", json.RawMessage(`"synthetic-config-token"`)); err != nil {
+			return err
+		}
+		return system.SystemConfig.SetJSON("rule_proxy_token", json.RawMessage(`"synthetic-rule-token"`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,11 +70,11 @@ func TestGlobalOwnersRuntimeShutdownAndDisconnect(t *testing.T) {
 		for _, shutdown := range []bool{true, false} {
 			t.Run(map[bool]string{true: "reset", false: "import"}[reset]+map[bool]string{true: "/shutdown", false: "/disconnect"}[shutdown], func(t *testing.T) {
 				s := exportApp(t)
-				_, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "extra", "name", "Extra"), "")
+				_, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "extra", Name: "Extra"}, "")
 				if err != nil {
 					t.Fatal(err)
 				}
-				before, err := s.Repo.ExportAll(s.Context(), false)
+				before, err := s.Repo.ExportAllJSON(s.Context(), false)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -87,27 +89,31 @@ func TestGlobalOwnersRuntimeShutdownAndDisconnect(t *testing.T) {
 				} else {
 					cancel()
 				}
-				var data *jsonx.Object
+				var encoded []byte
 				if !reset {
-					data = before.DeepCopy()
-					data.GetObject("profiles").GetObject("extra").Set("name", "Changed")
-				}
-				encoded, encodeErr := json.Marshal(data)
-				if encodeErr != nil {
-					t.Fatal(encodeErr)
+					var doc map[string]any
+					if err := json.Unmarshal(before, &doc); err != nil {
+						t.Fatal(err)
+					}
+					doc["profiles"].(map[string]any)["extra"].(map[string]any)["name"] = "Changed"
+					var encodeErr error
+					encoded, encodeErr = json.Marshal(doc)
+					if encodeErr != nil {
+						t.Fatal(encodeErr)
+					}
+				} else {
+					encoded = []byte("null")
 				}
 				err = writeGlobal(ctx, encoded, reset)
-				after, readErr := s.Repo.ExportAll(s.Context(), false)
+				after, readErr := s.Repo.ExportAllJSON(s.Context(), false)
 				if readErr != nil {
 					t.Fatal(readErr)
 				}
-				a, _ := json.Marshal(before)
-				b, _ := json.Marshal(after)
 				if shutdown {
-					if err == nil || !bytes.Equal(a, b) {
+					if err == nil || !bytes.Equal(before, after) {
 						t.Fatal("shutdown committed global write")
 					}
-				} else if err != nil || bytes.Equal(a, b) {
+				} else if err != nil || bytes.Equal(before, after) {
 					t.Fatalf("disconnect interrupted write: %v", err)
 				}
 			})

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/rulefetch"
 )
@@ -27,16 +27,16 @@ func TestLocalDeliveryReviewWarnings(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := fixture(t)
-			_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-				source := shared.GetList("rule_library")[0].(*jsonx.Object)
-				source.Set("behavior", tc.behavior)
-				source.Set("format", tc.format)
-				return nil, nil
+			err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, shared *model.Shared) error {
+				behavior, format := tc.behavior, tc.format
+				shared.RuleLibrary[0].Behavior = &behavior
+				shared.RuleLibrary[0].Format = &format
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			path, err := rulefetch.RuleCacheReadPath(s.Context(), jsonx.Obj("id", "ads", "name", "Ads"), nil)
+			path, err := rulefetch.CacheReadPath(s.Context(), model.RuleConfig{ID: "ads", Name: "Ads"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,21 +73,21 @@ func TestLocalDeliveryReviewWarnings(t *testing.T) {
 
 func TestLocalDeliveryWarningRedactsRuleName(t *testing.T) {
 	s := fixture(t)
-	config, err := s.Repo.GetSystem(s.Context())
+	config, err := s.Repo.System(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := config.GetObject("system_config").GetString("rule_proxy_token")
+	token := config.SystemConfig.RuleProxyToken
 	if token == "" {
 		t.Fatal("fixture lacks a live token")
 	}
 	name := "Operator " + token + " https://reader:synthetic-password@example.com/list?token=synthetic-query\nforged"
-	_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		source := shared.GetList("rule_library")[0].(*jsonx.Object)
-		source.Set("name", name)
-		source.Set("format", "yaml")
-		source.Set("content", "payload: {}\n")
-		return nil, nil
+	err = s.Repo.UpdateShared(s.Context(), func(_ context.Context, shared *model.Shared) error {
+		format, content := "yaml", "payload: {}\n"
+		shared.RuleLibrary[0].Name = name
+		shared.RuleLibrary[0].Format = &format
+		shared.RuleLibrary[0].Content = &content
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

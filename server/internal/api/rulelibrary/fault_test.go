@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestStageWriteFailureDoesNotPublishDeclaration(t *testing.T) {
@@ -86,8 +87,13 @@ func TestCanceledConnectivityRequestCompletesAndJoinsWorkers(t *testing.T) {
 		t.Fatal("connectivity workers did not finish")
 	}
 	reply.WantStatus(200)
-	results := reply.Object().GetList("results")
-	if len(results) != 1 {
+	var testReply struct {
+		Results []any `json:"results"`
+	}
+	if err := json.Unmarshal(reply.Body, &testReply); err != nil {
+		t.Fatal(err)
+	}
+	if len(testReply.Results) != 1 {
 		t.Fatal(reply.Text())
 	}
 	if !reply.Contains(`"available":true`) {
@@ -117,7 +123,14 @@ func TestUnknownCommitFailureRetainsDurableInvalidation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			token := s.Get("/api/rule-library/manual/draft-content", auth).WantStatus(200).Object().GetString("revision")
+			draftRes := s.Get("/api/rule-library/manual/draft-content", auth).WantStatus(200)
+			var draftBody struct {
+				Revision string `json:"revision"`
+			}
+			if err := json.Unmarshal(draftRes.Body, &draftBody); err != nil {
+				t.Fatal(err)
+			}
+			token := draftBody.Revision
 			s.Repo.Store().BeforeCommit = func() error { return errors.New("controlled unknown storage failure") }
 			if draft {
 				s.Put("/api/rule-library/manual/draft-content", auth, httpxtest.JSON(map[string]string{"revision": token, "content": "+.attempt.example\n"})).WantStatus(500)
@@ -134,9 +147,10 @@ func TestUnknownCommitFailureRetainsDurableInvalidation(t *testing.T) {
 			}
 			// A later observed committed head can be newer than the rejected call's
 			// baseline; the preserved receipt must still prevent old bytes being served.
-			_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				p.GetList("rule_library")[0].(*jsonx.Object).Set("content", "+.committed.example\n")
-				return nil, nil
+			err = s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+				content := "+.committed.example\n"
+				p.RuleLibrary[0].Content = &content
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)

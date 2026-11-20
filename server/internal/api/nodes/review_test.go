@@ -2,6 +2,7 @@ package nodes_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
@@ -9,29 +10,32 @@ import (
 
 	"configflow/internal/api/nodes"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func deletionServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	nodes.Wire()
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
-	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("nodes", []any{
-		jsonx.Obj("id", "remove", "name", "Remove"), jsonx.Obj("id", "keep", "name", "Keep")},
-		"subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Agg", "nodes", []any{"remove", "keep"}, "subscriptions", []any{})}), nil)
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+		if err := s.SetJSON("nodes", json.RawMessage(`[{"id":"remove","name":"Remove"},{"id":"keep","name":"Keep"}]`)); err != nil {
+			return err
+		}
+		return s.SetJSON("subscription_aggregations", json.RawMessage(`[{"id":"agg","name":"Agg","nodes":["remove","keep"],"subscriptions":[]}]`))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"default", "other"} {
 		if id != "default" {
-			if _, err := srv.Repo.CreateProfile(srv.Context(), jsonx.Obj("id", id, "name", "Other"), ""); err != nil {
+			if _, err := srv.Repo.CreateProfileRecord(srv.Context(), repo.ProfileCreation{ID: id, Name: "Other"}, ""); err != nil {
 				t.Fatal(err)
 			}
 		}
-		_, _, err := srv.Repo.UpdateProfileTransaction(srv.Context(), id, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Group", "type", "select", "manual_nodes", []any{"remove", "keep"}, "aggregations", []any{"agg"})})
-			return nil, nil
+		_, err := srv.Repo.UpdateProfile(srv.Context(), id, func(_ context.Context, p *model.Profile) error {
+			return p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"g","name":"Group","type":"select","manual_nodes":["remove","keep"],"aggregations":["agg"]}]`))
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -40,16 +44,22 @@ func deletionServer(t *testing.T) *httpxtest.Server {
 	return srv
 }
 
-func deletionBody(t *testing.T, srv *httpxtest.Server) *jsonx.Object {
+func deletionBody(t *testing.T, srv *httpxtest.Server) map[string]any {
 	t.Helper()
-	plan := srv.Post("/api/nodes/delete-preview", httpxtest.JSON(jsonx.Obj("ids", []any{"remove"}))).WantStatus(200).Object()
-	return jsonx.Obj("ids", []any{"remove"}, "confirmation", plan.GetString("confirmation"))
+	res := srv.Post("/api/nodes/delete-preview", httpxtest.JSON(map[string]any{"ids": []string{"remove"}})).WantStatus(200)
+	var plan struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if err := json.Unmarshal(res.Body, &plan); err != nil {
+		t.Fatal(err)
+	}
+	return map[string]any{"ids": []string{"remove"}, "confirmation": plan.Confirmation}
 }
 
 func TestReviewedDeletionCommitFailureIsAtomic(t *testing.T) {
 	srv := deletionServer(t)
 	body := deletionBody(t, srv)
-	before, err := srv.Repo.ExportAll(srv.Context(), false)
+	before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +81,11 @@ func TestReviewedDeletionCommitFailureIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := reopened.ExportAll(context.Background(), false)
+	after, err := reopened.ExportAllJSON(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
+	if !testjson.Equal(before, after) {
 		t.Fatal("failed deletion detached references or deleted nodes")
 	}
 	srv.Post("/api/nodes/delete", httpxtest.JSON(body)).WantStatus(200)
@@ -87,11 +97,11 @@ func TestReviewedDeletionSerializesConcurrentReferenceWrite(t *testing.T) {
 	locked, release := make(chan struct{}), make(chan struct{})
 	writeDone := make(chan error, 1)
 	go func() {
-		_, _, err := srv.Repo.UpdateProfileTransaction(srv.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+		_, err := srv.Repo.UpdateProfile(srv.Context(), "other", func(_ context.Context, p *model.Profile) error {
 			close(locked)
 			<-release
-			p.GetList("proxy_groups")[0].(*jsonx.Object).Set("name", "Changed reference")
-			return nil, nil
+			p.ProxyGroups[0].Name = "Changed reference"
+			return nil
 		})
 		writeDone <- err
 	}()
@@ -103,11 +113,11 @@ func TestReviewedDeletionSerializesConcurrentReferenceWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	(<-deleted).WantStatus(409)
-	shared, err := srv.Repo.GetShared(srv.Context())
+	shared, err := srv.Repo.Shared(srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shared.GetList("nodes")) != 2 {
+	if len(shared.Nodes) != 2 {
 		t.Fatal("stale preview deleted nodes")
 	}
 	// The fresh preview is safe to execute even after request cancellation.

@@ -15,8 +15,9 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 type fakeClient struct{}
@@ -73,20 +74,21 @@ func TestRoutesAgainstFlask(t *testing.T) {
 		t.Fatal(e)
 	}
 	m.SetClient(fakeClient{})
-	_, e = m.UpdateAgents(srv.Context(), "", func(_ context.Context, rows *[]any) (any, error) {
-		*rows = []any{jsonx.Obj("id", "source", "name", "Synthetic", "host", "192.0.2.2", "port", 8080, "token", "synthetic-source-token", "profile_id", "default", "service_type", "mihomo", "deployment_method", "shell", "enabled", true, "status", "online", "last_heartbeat", time.Now().Format(time.RFC3339), "version", "1.8.50-go")}
-		*rows = append(*rows, jsonx.Obj("id", "client", "name", "Client", "host", "192.0.2.3", "port", 8080, "token", "synthetic-client-token", "profile_id", "default", "service_type", "oxidns", "deployment_method", "shell", "enabled", true, "status", "online", "last_heartbeat", "2000-01-01T00:00:00+00:00"))
-		return nil, nil
+	agentsRaw, _ := json.Marshal([]any{
+		map[string]any{"id": "source", "name": "Synthetic", "host": "192.0.2.2", "port": 8080, "token": "synthetic-source-token", "profile_id": "default", "service_type": "mihomo", "deployment_method": "shell", "enabled": true, "status": "online", "last_heartbeat": time.Now().Format(time.RFC3339), "version": "1.8.50-go"},
+		map[string]any{"id": "client", "name": "Client", "host": "192.0.2.3", "port": 8080, "token": "synthetic-client-token", "profile_id": "default", "service_type": "oxidns", "deployment_method": "shell", "enabled": true, "status": "online", "last_heartbeat": "2000-01-01T00:00:00+00:00"},
+	})
+	e = srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, sys *model.System) error {
+		return sys.SetJSON("agents", agentsRaw)
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = srv.Repo.CreateProfile(srv.Context(), jsonx.Obj("id", "other", "name", "Other"), ""); e != nil {
+	if _, e = srv.Repo.CreateProfileRecord(srv.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); e != nil {
 		t.Fatal(e)
 	}
-	_, _, e = srv.Repo.UpdateProfileTransaction(srv.Context(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("mihomo", jsonx.Obj("custom_config", "ipv6: true\ndns: {ipv6: false}\n", "linux_gateway", jsonx.Obj("enabled", true)))
-		return nil, nil
+	_, e = srv.Repo.UpdateProfile(srv.Context(), "default", func(_ context.Context, c *model.Profile) error {
+		return c.SetJSON("mihomo", json.RawMessage(`{"custom_config":"ipv6: true\ndns: {ipv6: false}\n","linux_gateway":{"enabled":true}}`))
 	})
 	if e != nil {
 		t.Fatal(e)

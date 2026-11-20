@@ -3,6 +3,7 @@ package subscriptions_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,9 +15,10 @@ import (
 	"configflow/internal/api/nodes"
 	"configflow/internal/api/subscriptions"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
@@ -28,11 +30,13 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 	}
 	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register, subscriptions.Register)})
-	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil)
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := srv.Repo.ExportAll(srv.Context(), false)
+	before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,11 +56,7 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.path+test.body, func(t *testing.T) {
-			value, err := jsonx.Parse([]byte(test.body))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result := srv.Post(test.path, httpxtest.JSON(value))
+			result := srv.Post(test.path, httpxtest.Body([]byte(test.body), "application/json"))
 			if result.Status != 400 {
 				t.Errorf("status %d: %s", result.Status, result.Body)
 				return
@@ -64,12 +64,15 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 			if !strings.HasPrefix(result.Header.Get("Content-Type"), "application/json") {
 				t.Fatal("non-JSON failure")
 			}
-			body := result.Object()
-			if body.GetBool("success") || body.GetString("message") != test.message {
+			var body struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(result.Body, &body); err != nil || body.Success || body.Message != test.message {
 				t.Fatalf("unexpected error: %s", result.Body)
 			}
-			after, err := srv.Repo.ExportAll(srv.Context(), false)
-			if err != nil || !jsonx.Equal(before, after) {
+			after, err := srv.Repo.ExportAllJSON(srv.Context(), false)
+			if err != nil || !testjson.Equal(before, after) {
 				t.Fatalf("invalid request changed storage: %v", err)
 			}
 			if calls != 0 {
@@ -86,7 +89,9 @@ func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 	}
 	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
-	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil)
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +102,10 @@ func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"subscription_id":"s","nodes":[1],"count":1}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(jsonx.Obj())).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "订阅操作失败"))
+	res := srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(map[string]any{})).WantStatus(500)
+	if diff := testjson.Diff(map[string]any{"success": false, "message": "订阅操作失败"}, json.RawMessage(res.Body)); diff != "" {
+		t.Fatal(diff)
+	}
 }
 
 func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
@@ -107,10 +115,12 @@ func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
 	}
 	t.Cleanup(refresh.SetRefreshEnv(env))
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
-	if _, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub")}), nil); err != nil {
+	if err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
+	}); err != nil {
 		t.Fatal(err)
 	}
-	before, err := srv.Repo.ExportAll(srv.Context(), false)
+	before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,9 +134,12 @@ func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
 	if _, err := db.Exec("CREATE TRIGGER deny_import BEFORE INSERT ON fields BEGIN SELECT RAISE(ABORT, 'synthetic-write-denied'); END"); err != nil {
 		t.Fatal(err)
 	}
-	srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(jsonx.Obj())).WantStatus(500).WantJSON(jsonx.Obj("success", false, "message", "订阅操作失败"))
-	after, err := srv.Repo.ExportAll(srv.Context(), false)
-	if err != nil || !jsonx.Equal(before, after) {
+	res := srv.Post("/api/subscriptions/s/fetch", httpxtest.JSON(map[string]any{})).WantStatus(500)
+	if diff := testjson.Diff(map[string]any{"success": false, "message": "订阅操作失败"}, json.RawMessage(res.Body)); diff != "" {
+		t.Fatal(diff)
+	}
+	after, err := srv.Repo.ExportAllJSON(srv.Context(), false)
+	if err != nil || !testjson.Equal(before, after) {
 		t.Fatalf("failed import changed configuration: %v", err)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 )
 
@@ -31,8 +30,8 @@ func TestReviewSettingsLogsDoNotEchoValues(t *testing.T) {
 			}
 			t.Cleanup(func() { _, _ = logx.Setup(logx.Config{Console: io.Discard}) })
 			const value = "https://operator:synthetic-log-secret@panel.example.com/?token=synthetic-query-secret\nforged-log-entry"
-			s.Post(tc.path, httpxtest.JSON(jsonx.Obj(tc.requestKey, value))).WantStatus(200)
-			if system(t, s).GetObject("system_config").GetString(tc.storedKey) != value {
+			s.Post(tc.path, httpxtest.JSON(map[string]any{tc.requestKey: value})).WantStatus(200)
+			if asString(asMap(systemMap(t, s)["system_config"])[tc.storedKey]) != value {
 				t.Fatal("logging protection changed the stored setting")
 			}
 			if !strings.Contains(logs.String(), tc.event) {
@@ -71,7 +70,7 @@ func TestProxySaveFailureDoesNotEchoCredentials(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(s.Repo.DatabasePath(), 0600) })
 	response := s.Post(endpoint, httpxtest.Body([]byte(`{"rule_fetch_proxy":"http://synthetic-user:synthetic-secret@proxy.example.com:8080"}`), "application/json")).WantStatus(500)
-	if response.Object().GetString("message") != "保存规则下载代理失败" {
+	if asString(decodeMap(t, response.Body)["message"]) != "保存规则下载代理失败" {
 		t.Fatal(response.Text())
 	}
 	after, err := s.Repo.Store().Fingerprint()

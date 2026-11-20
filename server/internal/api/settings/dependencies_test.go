@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 const modePath = "/api/settings/dependencies/sub-store/mode"
@@ -76,34 +76,39 @@ func TestModeRouteValidationAndAtomicPersistence(t *testing.T) {
 		if body != "" {
 			options = append(options, httpxtest.Body([]byte(body), "application/json"))
 		}
-		srv.Post(modePath, options...).WantStatus(400).
-			WantJSON(jsonx.Obj("success", false, "message", "请选择按需启动或常驻运行"))
+		res := srv.Post(modePath, options...).WantStatus(400)
+		assertJSON(t, res, map[string]any{"success": false, "message": "请选择按需启动或常驻运行"})
 	}
-	before := system(t, srv)
-	srv.Post(modePath, httpxtest.JSON(jsonx.Obj("mode", "always"))).WantStatus(200).
-		WantJSON(jsonx.Obj("success", true, "mode", "always"))
-	after := system(t, srv)
-	if after.GetObject("system_config").GetString("sub_store_mode") != "always" {
+	before := systemMap(t, srv)
+	res := srv.Post(modePath, httpxtest.JSON(map[string]any{"mode": "always"})).WantStatus(200)
+	assertJSON(t, res, map[string]any{"success": true, "mode": "always"})
+	after := systemMap(t, srv)
+	if afterCfg := asMap(after["system_config"]); asString(afterCfg["sub_store_mode"]) != "always" {
 		t.Fatal("mode not saved")
 	}
-	if !jsonx.Equal(after.Value("agents"), before.Value("agents")) || !jsonx.Equal(after.Value("backup"), before.Value("backup")) {
+	if !testjson.Equal(after["agents"], before["agents"]) || !testjson.Equal(after["backup"], before["backup"]) {
 		t.Fatal("other sections changed")
 	}
-	for key, value := range before.GetObject("system_config").All() {
-		if !jsonx.Equal(after.GetObject("system_config").Value(key), value) {
+	beforeCfg := asMap(before["system_config"])
+	afterCfg := asMap(after["system_config"])
+	for key, value := range beforeCfg {
+		if key == "sub_store_mode" {
+			continue
+		}
+		if !testjson.Equal(afterCfg[key], value) {
 			t.Fatalf("%s changed", key)
 		}
 	}
 	authed := newServer(t, true)
-	authed.Post(modePath, httpxtest.JSON(jsonx.Obj("mode", "on_demand"))).WantStatus(401)
+	authed.Post(modePath, httpxtest.JSON(map[string]any{"mode": "on_demand"})).WantStatus(401)
 }
 
 // An external Sub-Store's mode is managed elsewhere: 409 with the message.
 func TestModeRouteRefusesExternalSubStore(t *testing.T) {
 	subStoreWorld(t, false, `{}`)
 	srv := newServer(t, false)
-	srv.Post(modePath, httpxtest.JSON(jsonx.Obj("mode", "always"))).WantStatus(409).
-		WantJSON(jsonx.Obj("success", false, "message", "外部 Sub-Store 的运行模式由其部署环境管理"))
+	res := srv.Post(modePath, httpxtest.JSON(map[string]any{"mode": "always"})).WantStatus(409)
+	assertJSON(t, res, map[string]any{"success": false, "message": "外部 Sub-Store 的运行模式由其部署环境管理"})
 }
 
 func TestDependencyListRoute(t *testing.T) {
@@ -112,6 +117,13 @@ func TestDependencyListRoute(t *testing.T) {
 	response := srv.Get("/api/settings/dependencies?refresh=1").WantStatus(200)
 	var wire struct {
 		Dependencies []struct {
+			CurrentVersion string `json:"current_version"`
+			LatestVersion  string `json:"latest_version"`
+			HasUpdate      bool   `json:"has_update"`
+			Runtime        string `json:"runtime"`
+			Lifecycle      struct {
+				State string `json:"state"`
+			} `json:"lifecycle"`
 			Update struct {
 				FinishedAt json.Number `json:"finished_at"`
 			} `json:"update"`
@@ -120,16 +132,11 @@ func TestDependencyListRoute(t *testing.T) {
 	if err := json.Unmarshal(response.Body, &wire); err != nil || len(wire.Dependencies) != 1 || wire.Dependencies[0].Update.FinishedAt.String() != "0.0" {
 		t.Fatal("idle completion time lost its floating-point JSON token", string(response.Body), err)
 	}
-	body := response.Object()
-	list := body.GetList("dependencies")
-	if len(list) != 1 {
-		t.Fatalf("body %s", jsonx.Repr(body))
-	}
-	card := list[0].(*jsonx.Object)
-	if card.GetString("current_version") != "2.40.0" || card.GetString("latest_version") != "2.41.0" ||
-		card.Value("has_update") != true || card.GetObject("lifecycle").GetString("state") != "running" ||
-		card.GetString("runtime") != "v26.0.0" {
-		t.Fatalf("card %s", jsonx.Repr(card))
+	card := wire.Dependencies[0]
+	if card.CurrentVersion != "2.40.0" || card.LatestVersion != "2.41.0" ||
+		!card.HasUpdate || card.Lifecycle.State != "running" ||
+		card.Runtime != "v26.0.0" {
+		t.Fatalf("card %+v", card)
 	}
 	newServer(t, true).Get("/api/settings/dependencies").WantStatus(401)
 }
@@ -137,14 +144,14 @@ func TestDependencyListRoute(t *testing.T) {
 func TestUpdateRoute(t *testing.T) {
 	subStoreWorld(t, true, `{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`)
 	srv := newServer(t, false)
-	srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(202).
-		WantJSON(jsonx.Obj("success", true, "message", "开始更新到 2.41.0"))
+	assertJSON(t, srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(202),
+		map[string]any{"success": true, "message": "开始更新到 2.41.0"})
 	// The (not started) background task still holds the update lock.
-	srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409).
-		WantJSON(jsonx.Obj("success", false, "message", "已有更新任务在进行中"))
+	assertJSON(t, srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409),
+		map[string]any{"success": false, "message": "已有更新任务在进行中"})
 	subStoreWorld(t, false, `{}`)
-	srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409).
-		WantJSON(jsonx.Obj("success", false, "message", "当前环境没有内置 Sub-Store，无法在线更新"))
+	assertJSON(t, srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409),
+		map[string]any{"success": false, "message": "当前环境没有内置 Sub-Store，无法在线更新"})
 }
 
 // heldUpdateSpawner retains the route's in-progress observation without

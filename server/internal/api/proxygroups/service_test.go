@@ -10,50 +10,51 @@ import (
 	"configflow/internal/api/aggregations"
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(aggregations.Register, apirules.Register, Register)})
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("subscriptions", []any{jsonx.Obj("id", "feed", "name", "Feed", "url", "https://source.example/feed", "regex_filter", "HK|JP|广告")})
-		p.Set("nodes", []any{jsonx.Obj("id", "manual", "name", "HK manual", "type", "http", "server", "example.com", "port", 80)})
-		p.Set("subscription_aggregations", []any{jsonx.Obj("id", "agg", "name", "Aggregate", "subscriptions", []any{"feed"}, "nodes", []any{"manual"})})
-		return nil, nil
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		if err := p.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"Feed","url":"https://source.example/feed","regex_filter":"HK|JP|广告"}]`)); err != nil {
+			return err
+		}
+		if err := p.SetJSON("nodes", json.RawMessage(`[{"id":"manual","name":"HK manual","type":"http","server":"example.com","port":80}]`)); err != nil {
+			return err
+		}
+		return p.SetJSON("subscription_aggregations", json.RawMessage(`[{"id":"agg","name":"Aggregate","subscriptions":["feed"],"nodes":["manual"]}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("proxy_groups", []any{jsonx.Obj("id", "auto", "name", "Auto", "type", "url-test", "manual_nodes", []any{"DIRECT"}, "url", "http://probe.example/old", "interval", 73, "future", jsonx.Obj("keep", true)), jsonx.Obj("id", "select", "name", "Select", "type", "select", "manual_nodes", []any{"DIRECT"})})
-		p.Set("rule_configs", []any{jsonx.Obj("id", "rule", "itemType", "rule", "rule_type", "DOMAIN", "value", "example.com", "policy", "Auto")})
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
+		if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"auto","name":"Auto","type":"url-test","manual_nodes":["DIRECT"],"url":"http://probe.example/old","interval":73,"future":{"keep":true}},{"id":"select","name":"Select","type":"select","manual_nodes":["DIRECT"]}]`)); err != nil {
+			return err
+		}
+		return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"rule","itemType":"rule","rule_type":"DOMAIN","value":"example.com","policy":"Auto"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "other", "name", "Other"), "default"); err != nil {
+	if _, err = s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, "default"); err != nil {
 		t.Fatal(err)
 	}
-	nodes := []any{}
+	var nodes []model.Node
 	for _, name := range []string{"HK 01", "HK 02", "JP 01", "广告", "US hidden", "HK 01"} {
-		nodes = append(nodes, jsonx.Obj("name", name, "type", "ss"))
+		nodes = append(nodes, model.Node{Name: name, Type: "ss"})
 	}
-	if _, err = fixtureSaveSubscriptionNodes(s.Context(), "feed", nodes, nil); err != nil {
+	if _, err = substore.SaveCache(s.Context(), "feed", nodes, nil); err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 func state(t *testing.T, s *httpxtest.Server) string {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := json.Marshal(doc)
+	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,14 +63,19 @@ func state(t *testing.T, s *httpxtest.Server) string {
 func TestBatchRollbackAndProfileIsolation(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
-	before, err := s.Repo.GetProfile(s.Context(), "default")
+	before, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
+	beforeRaw, _ := json.Marshal(before)
 	s.Put("/api/proxy-groups/batch-health-url?profile=other", auth, httpxtest.JSON(map[string]any{"ids": []string{"auto"}, "url": "https://probe.example/new"})).WantStatus(200)
-	after, err := s.Repo.GetProfile(s.Context(), "default")
-	if err != nil || !jsonx.Equal(before, after) {
-		t.Fatal("other-profile edit changed default", err)
+	after, err := s.Repo.Profile(s.Context(), "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRaw, _ := json.Marshal(after)
+	if !testjson.Equal(beforeRaw, afterRaw) {
+		t.Fatal("other-profile edit changed default")
 	}
 	for _, test := range []struct {
 		body   any
@@ -94,20 +100,22 @@ func TestGroupMutationReferencesAndUnknowns(t *testing.T) {
 		t.Fatal("rejected mutation changed data")
 	}
 	s.Put("/api/proxy-groups/auto", auth, httpxtest.JSON(map[string]any{"name": "Renamed"})).WantStatus(200)
-	p, err := s.Repo.GetProfile(s.Context(), "default")
+	p, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	group := p.GetList("proxy_groups")[0].(*jsonx.Object)
-	if !group.GetObject("future").GetBool("keep") || p.GetList("rule_configs")[0].(*jsonx.Object).GetString("policy") != "Renamed" {
+	groupRaw, _ := json.Marshal(p.ProxyGroups[0])
+	groupParsed, _ := testjson.Parse(groupRaw)
+	keepVal, _ := testjson.Path(groupParsed, "future", "keep")
+	if keepVal != true || p.RuleConfigs[0].Policy == nil || *p.RuleConfigs[0].Policy != "Renamed" {
 		t.Fatal("rename lost unknown data or policy reference")
 	}
 	s.Post("/api/proxy-groups/reorder", auth, httpxtest.JSON(map[string]any{"groups": []any{map[string]any{"id": "select", "name": "display value"}}})).WantStatus(200)
-	p, err = s.Repo.GetProfile(s.Context(), "default")
+	p, err = s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.GetList("proxy_groups")[0].(*jsonx.Object).GetString("name") != "Select" {
+	if p.ProxyGroups[0].Name != "Select" {
 		t.Fatal("legacy reorder persisted display-only fields")
 	}
 	before = state(t, s)
@@ -155,60 +163,30 @@ func TestPreviewBucketOrderingAndSourceFilters(t *testing.T) {
 func TestListenerRelinkingPreservesUserComments(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("mihomo").Set("custom_config", "# user heading\nlisteners:\n  - name: local\n    type: mixed\n    port: 7890\n    proxy: Select # keep comment\n")
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(s.Context(), "other", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("mihomo", json.RawMessage(`{"custom_config":"# user heading\nlisteners:\n  - name: local\n    type: mixed\n    port: 7890\n    proxy: Select # keep comment\n"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, patch := range []map[string]any{{"name": "Renamed"}, {"enabled": false}} {
 		r := s.Put("/api/proxy-groups/select?profile=other", auth, httpxtest.JSON(patch)).WantStatus(200)
-		if len(r.Object().GetList("listener_changes")) != 1 {
+		var out struct {
+			ListenerChanges []any `json:"listener_changes"`
+		}
+		if err := json.Unmarshal(r.Body, &out); err != nil {
+			t.Fatal(err)
+		}
+		if len(out.ListenerChanges) != 1 {
 			t.Fatal("listener was not relinked", r.Text())
 		}
-		p, err := s.Repo.GetProfile(s.Context(), "other")
+		p, err := s.Repo.Profile(s.Context(), "other")
 		if err != nil {
 			t.Fatal(err)
 		}
-		content := p.GetObject("mihomo").GetString("custom_config")
+		content := p.Mihomo.CustomConfig
 		if !strings.Contains(content, "# user heading") || !strings.Contains(content, "# keep comment") {
 			t.Fatalf("listener editing lost comments: %q", content)
 		}
 	}
-}
-
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var nodes []model.Node
-	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
-	}
-	var receipt *substore.CacheMetadata
-	if metadata != nil {
-		raw, err := json.Marshal(metadata)
-		if err != nil {
-			return nil, err
-		}
-		receipt = &substore.CacheMetadata{}
-		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
-		}
-	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
 }

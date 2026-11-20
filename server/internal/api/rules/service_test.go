@@ -11,9 +11,10 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func fixture(t *testing.T) *httpxtest.Server {
@@ -22,27 +23,26 @@ func fixture(t *testing.T) *httpxtest.Server {
 	t.Cleanup(agents.ResetHooks)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, SecretKey: "c32-synthetic-secret", Register: httpxtest.Routes(Register)})
 	ctx := s.Context()
-	if _, err := s.Repo.CreateProfile(ctx, jsonx.Obj("id", "other", "name", "Other"), ""); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_library", []any{jsonx.Obj("id", "ads", "name", "Ads", "behavior", "domain", "source_type", "content", "content", "+.ads.example\n", "enabled", true)})
-		return nil, nil
+	err := s.Repo.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+		return p.SetJSON("rule_library", json.RawMessage(`[{"id":"ads","name":"Ads","behavior":"domain","source_type":"content","content":"+.ads.example\n","enabled":true}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("proxy_groups", []any{jsonx.Obj("id", "proxy", "name", "PROXY", "type", "select")})
-		p.Set("rule_configs", []any{jsonx.Obj("id", "rule_1", "itemType", "rule", "rule_type", "DOMAIN", "value", "example.com", "policy", "DIRECT", "enabled", true, "future", jsonx.Obj("keep", true)), jsonx.Obj("id", "set", "itemType", "ruleset", "library_rule_id", "ads", "policy", "DIRECT", "enabled", true), jsonx.Obj("id", "last", "itemType", "rule", "rule_type", "MATCH", "value", "", "policy", "DIRECT", "enabled", true)})
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+		if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"proxy","name":"PROXY","type":"select"}]`)); err != nil {
+			return err
+		}
+		return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"rule_1","itemType":"rule","rule_type":"DOMAIN","value":"example.com","policy":"DIRECT","enabled":true,"future":{"keep":true}},{"id":"set","itemType":"ruleset","library_rule_id":"ads","policy":"DIRECT","enabled":true},{"id":"last","itemType":"rule","rule_type":"MATCH","value":"","policy":"DIRECT","enabled":true}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("system_config").Set("server_domain", "http://panel.example")
-		return nil, nil
+	err = s.Repo.UpdateSystem(ctx, func(_ context.Context, p *model.System) error {
+		return p.SystemConfig.SetJSON("server_domain", json.RawMessage(`"http://panel.example"`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -53,30 +53,33 @@ func TestCoreRegistrationAndProfileIsolation(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
 	s.Get("/api/profiles/other/rules", auth).WantStatus(200)
-	s.Post("/api/profiles/other/rules", auth, httpxtest.JSON(jsonx.Obj("id", "new", "rule_type", "DOMAIN-SUFFIX", "value", "new.example", "policy", "DIRECT"))).WantStatus(200)
-	s.Put("/api/rules/new?profile=other", auth, httpxtest.JSON(jsonx.Obj("remark", "new label"))).WantStatus(200)
-	s.Post("/api/rules/group-name?profile=other", auth, httpxtest.JSON(jsonx.Obj("ids", []any{"rule_1", "new"}, "group_name", "  Group  "))).WantStatus(200)
-	s.Put("/api/rules/policy?profile=other", auth, httpxtest.JSON(jsonx.Obj("ids", []any{"new"}, "policy", "PROXY", "group_name", ""))).WantStatus(200)
-	s.Post("/api/rules/batch?profile=other", auth, httpxtest.JSON(jsonx.Obj("domains", []any{"a.example", "b.example"}, "rule_type", "DOMAIN", "policy", "DIRECT"))).WantStatus(200)
-	s.Post("/api/rules/reorder?profile=other", auth, httpxtest.JSON(jsonx.Obj("ids", []any{"new"}, "position", "bottom"))).WantStatus(200)
+	s.Post("/api/profiles/other/rules", auth, httpxtest.JSON(map[string]any{"id": "new", "rule_type": "DOMAIN-SUFFIX", "value": "new.example", "policy": "DIRECT"})).WantStatus(200)
+	s.Put("/api/rules/new?profile=other", auth, httpxtest.JSON(map[string]any{"remark": "new label"})).WantStatus(200)
+	s.Post("/api/rules/group-name?profile=other", auth, httpxtest.JSON(map[string]any{"ids": []string{"rule_1", "new"}, "group_name": "  Group  "})).WantStatus(200)
+	s.Put("/api/rules/policy?profile=other", auth, httpxtest.JSON(map[string]any{"ids": []string{"new"}, "policy": "PROXY", "group_name": ""})).WantStatus(200)
+	s.Post("/api/rules/batch?profile=other", auth, httpxtest.JSON(map[string]any{"domains": []string{"a.example", "b.example"}, "rule_type": "DOMAIN", "policy": "DIRECT"})).WantStatus(200)
+	s.Post("/api/rules/reorder?profile=other", auth, httpxtest.JSON(map[string]any{"ids": []string{"new"}, "position": "bottom"})).WantStatus(200)
 	s.Get("/api/rules/dns?profile=other", auth).WantStatus(200)
-	s.Put("/api/rules/dns?profile=other", auth, httpxtest.JSON(jsonx.Obj("routes", jsonx.Obj("rule_1", "direct")))).WantStatus(200)
+	s.Put("/api/rules/dns?profile=other", auth, httpxtest.JSON(map[string]any{"routes": map[string]string{"rule_1": "direct"}})).WantStatus(200)
 	s.Delete("/api/rules/new?profile=other", auth).WantStatus(200)
-	p, err := s.Repo.GetProfile(s.Context(), "default")
+	p, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.GetList("rule_configs")) != 0 {
+	if len(p.RuleConfigs) != 0 {
 		t.Fatal("default profile changed")
 	}
-	p, err = s.Repo.GetProfile(s.Context(), "other")
+	p, err = s.Repo.Profile(s.Context(), "other")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range p.GetList("rule_configs") {
-		entry := item.(*jsonx.Object)
-		if entry.GetString("id") == "rule_1" && !entry.GetObject("future").GetBool("keep") {
-			t.Fatal("future data lost")
+	for _, entry := range p.RuleConfigs {
+		if entry.ID == "rule_1" {
+			raw, _ := json.Marshal(entry)
+			parsed, _ := testjson.Parse(raw)
+			if keep, _ := testjson.Path(parsed, "future", "keep"); keep != true {
+				t.Fatal("future data lost")
+			}
 		}
 	}
 }
@@ -86,9 +89,8 @@ func TestPinnedWithheldHookIsBestEffort(t *testing.T) {
 			s := fixture(t)
 			ctx := s.Context()
 			if name != "no-device" {
-				_, err := s.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-					p.Set("agents", []any{jsonx.Obj("id", "dns", "name", "DNS", "profile_id", "other", "service_type", "oxidns", "enabled", true, "rule_sync", jsonx.Obj("settings", jsonx.Obj("library", true, "rules", false)))})
-					return nil, nil
+				err := s.Repo.UpdateSystem(ctx, func(_ context.Context, p *model.System) error {
+					return p.SetJSON("agents", json.RawMessage(`[{"id":"dns","name":"DNS","profile_id":"other","service_type":"oxidns","enabled":true,"rule_sync":{"settings":{"library":true,"rules":false}}}]`))
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -127,11 +129,11 @@ func TestPinnedWithheldHookIsBestEffort(t *testing.T) {
 			if (name == "true" || name == "false" || name == "error") && calls != 1 {
 				t.Fatal("hook not called")
 			}
-			p, err := s.Repo.GetProfile(ctx, "other")
+			p, err := s.Repo.Profile(ctx, "other")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if p.GetList("rule_configs")[0].(*jsonx.Object).GetString("policy") != "PROXY" {
+			if p.RuleConfigs[0].Policy == nil || *p.RuleConfigs[0].Policy != "PROXY" {
 				t.Fatal("save rolled back")
 			}
 			text := log.String()

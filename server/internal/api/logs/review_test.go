@@ -2,22 +2,23 @@ package logs
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
 func TestReviewLogFailuresRedactStoredTokens(t *testing.T) {
 	c := newLogClient(t)
 	secret := "synthetic log credential"
-	_, err := c.repo.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("rule_proxy_token", secret)
-		return nil, nil
+	secretRaw, _ := json.Marshal(secret)
+	err := c.repo.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+		return system.SystemConfig.SetJSON("rule_proxy_token", secretRaw)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -34,8 +35,10 @@ func TestReviewLogFailuresRedactStoredTokens(t *testing.T) {
 			if err != nil || r.Status != 500 || strings.Contains(string(r.Body), token) {
 				t.Fatal("error response leaked stored token", endpoint, err)
 			}
-			body, err := jsonx.Parse(r.Body)
-			if err != nil || body.(*jsonx.Object).GetString("error") != "[REDACTED]" {
+			var body struct {
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal(r.Body, &body); err != nil || body.Error != "[REDACTED]" {
 				t.Fatal("failure skipped central redaction", string(r.Body), err)
 			}
 		}

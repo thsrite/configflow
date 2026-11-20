@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
+	"configflow/internal/model"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 	"configflow/internal/webdav"
 )
 
@@ -60,20 +60,31 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 				}))
 				t.Cleanup(remote.Close)
 				t.Cleanup(webdav.SetDefault(webdav.NewService(remote.Client())))
-				_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, document *jsonx.Object) (*jsonx.Object, error) {
-					settings := document.GetObject("system_config")
-					settings.Set("server_domain", "https://before.example.com")
-					settings.Set("config_token", "before-token")
-					settings.Set("subscription_aggregation_enabled", false)
-					document.Set("backup", jsonx.Obj("webdav_url", remote.URL, "webdav_username", "operator", "webdav_password", "synthetic-password", "webdav_path", "/archive/", "auto_backup", false, "keep_latest", jsonx.Int(3)))
-					return nil, nil
+				err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, document *model.System) error {
+					document.SystemConfig.ServerDomain = "https://before.example.com"
+					document.SystemConfig.ConfigToken = "before-token"
+					if err := document.SystemConfig.SetJSON("subscription_aggregation_enabled", json.RawMessage("false")); err != nil {
+						return err
+					}
+					raw, err := json.Marshal(map[string]any{
+						"webdav_url":      remote.URL,
+						"webdav_username": "operator",
+						"webdav_password": "synthetic-password",
+						"webdav_path":     "/archive/",
+						"auto_backup":     false,
+						"keep_latest":     3,
+					})
+					if err != nil {
+						return err
+					}
+					return document.SetJSON("backup", raw)
 				})
 				if err != nil {
 					t.Fatal(err)
 				}
 				// Warm the real store and request baseline: a shutdown test must
 				// not rely on a later cache miss or network call noticing cancel.
-				if _, err := repo.GetSystemConfig(s.Context()); err != nil {
+				if _, err := s.Repo.System(s.Context()); err != nil {
 					t.Fatal(err)
 				}
 				before, err := s.Repo.Store().Fingerprint()
@@ -81,7 +92,7 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 					t.Fatal(err)
 				}
 				files := storedFiles(t, s.DataDir)
-				exported, err := s.Repo.ExportAll(s.Context(), false)
+				exported, err := s.Repo.ExportAllJSON(s.Context(), false)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -150,9 +161,8 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 						t.Fatal("backup did not finish remote directory work or changed config")
 					}
 					if operation == "backup-now" {
-						value, err := jsonx.Parse(uploaded)
-						if err != nil || !jsonx.Equal(value, exported) {
-							t.Fatal("disconnected backup did not upload the complete document")
+						if diff := testjson.Diff(exported, json.RawMessage(uploaded)); diff != "" {
+							t.Fatalf("disconnected backup did not upload the complete document: %s", diff)
 						}
 						receipt, err := os.ReadFile(filepath.Join(s.DataDir, taskstatus.Filename))
 						if err != nil || !bytes.Contains(receipt, []byte(`"last_status":"success"`)) {
@@ -164,22 +174,22 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 				if after.Generation != before.Generation+1 {
 					t.Fatalf("commit generation before=%d after=%d", before.Generation, after.Generation)
 				}
-				doc := system(t, s)
-				settings := doc.GetObject("system_config")
+				doc := systemMap(t, s)
+				settingsCfg := asMap(doc["system_config"])
 				var got, want any
 				switch operation {
 				case "proxy":
-					got, want = settings.Value("rule_fetch_proxy"), "http://proxy.example.com:8080"
+					got, want = settingsCfg["rule_fetch_proxy"], "http://proxy.example.com:8080"
 				case "domain":
-					got, want = settings.Value("server_domain"), "https://after.example.com"
+					got, want = settingsCfg["server_domain"], "https://after.example.com"
 				case "token":
-					got, want = settings.Value("config_token"), "after-token"
+					got, want = settingsCfg["config_token"], "after-token"
 				case "delete-token":
-					got, want = settings.Value("config_token"), ""
+					got, want = settingsCfg["config_token"], ""
 				case "aggregation":
-					got, want = settings.Value("subscription_aggregation_enabled"), true
+					got, want = settingsCfg["subscription_aggregation_enabled"], true
 				case "backup-config":
-					got, want = doc.GetObject("backup").GetInt("keep_latest"), int64(9)
+					got, want = asInt(asMap(doc["backup"])["keep_latest"]), int64(9)
 				}
 				if !reflect.DeepEqual(got, want) {
 					t.Fatalf("write not complete: %v want %v", got, want)

@@ -3,6 +3,7 @@ package logs
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 )
 
@@ -41,7 +41,7 @@ func TestLogStatPermissionFailureDoesNotBecomeMissingOrFallback(t *testing.T) {
 		t.Fatal("fixture did not deny directory traversal", err)
 	}
 	ctx := repo.WithRepository(context.Background(), c.repo)
-	if _, err := c.repo.GetSystem(ctx); err != nil {
+	if _, err := c.repo.System(ctx); err != nil {
 		t.Fatal("database must remain readable", err)
 	}
 	for _, endpoint := range []string{"/api/logs/info", "/api/logs/tail", "/api/logs/clear"} {
@@ -53,12 +53,14 @@ func TestLogStatPermissionFailureDoesNotBecomeMissingOrFallback(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		value, err := jsonx.Parse(res.Body)
-		if err != nil {
+		var body struct {
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}
+		if err := json.Unmarshal(res.Body, &body); err != nil {
 			t.Fatal(err)
 		}
-		body := value.(*jsonx.Object)
-		if res.Status != 500 || body.GetBool("success") || !strings.Contains(body.GetString("error"), "permission denied") || !strings.Contains(body.GetString("error"), path) {
+		if res.Status != 500 || body.Success || !strings.Contains(body.Error, "permission denied") || !strings.Contains(body.Error, path) {
 			t.Fatal("permission failure hidden", endpoint, res.Status, string(res.Body))
 		}
 	}

@@ -2,21 +2,22 @@ package profiles
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 func TestReviewC34BindingCredentials(t *testing.T) {
 	s := profileApp(t)
-	if _, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "target", "name", "Target"), ""); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "target", Name: "Target"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "legacy", "name", "Legacy", "host", "operator:synthetic-binding-password@192.0.2.9", "profile_id", "default", "token", "synthetic-binding-token")})
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", json.RawMessage(`[{"id":"legacy","name":"Legacy","host":"operator:synthetic-binding-password@192.0.2.9","profile_id":"default","token":"synthetic-binding-token"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,26 +33,24 @@ func TestReviewC34BindingCredentials(t *testing.T) {
 	if before != state(t, s) {
 		t.Fatal("metadata sanitization changed storage")
 	}
-	response := s.Post("/api/profiles/default/agents/rebind", httpxtest.JSON(jsonx.Obj("target_profile_id", "target", "agent_ids", []any{"legacy"})))
+	response := s.Post("/api/profiles/default/agents/rebind", httpxtest.JSON(map[string]any{"target_profile_id": "target", "agent_ids": []string{"legacy"}}))
 	response.WantStatus(200)
 	if strings.Contains(string(response.Body), "synthetic-binding-password") {
 		t.Errorf("rebind leaks host credentials: %s", response.Body)
 	}
-	system, err := s.Repo.GetSystem(s.Context())
-	if err != nil || system.GetList("agents")[0].(*jsonx.Object).GetString("host") != "operator:synthetic-binding-password@192.0.2.9" {
+	system, err := s.Repo.System(s.Context())
+	if err != nil || system.Agents[0].Host != "operator:synthetic-binding-password@192.0.2.9" {
 		t.Fatal("redaction changed restorable host credentials", err)
 	}
-	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		agent := system.GetList("agents")[0].(*jsonx.Object)
-		agent.Set("name", "password=synthetic-binding-error")
-		agent.Set("latest_upgrade", jsonx.Obj("status", "installing"))
-		return nil, nil
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		system.Agents[0].Name = "password=synthetic-binding-error"
+		return system.Agents[0].SetJSON("latest_upgrade", json.RawMessage(`{"status":"installing"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	before = state(t, s)
-	response = s.Post("/api/profiles/target/agents/rebind", httpxtest.JSON(jsonx.Obj("target_profile_id", "default", "agent_ids", []any{"legacy"})))
+	response = s.Post("/api/profiles/target/agents/rebind", httpxtest.JSON(map[string]any{"target_profile_id": "default", "agent_ids": []string{"legacy"}}))
 	response.WantStatus(409)
 	if strings.Contains(string(response.Body), "synthetic-binding-error") {
 		t.Errorf("conflict diagnostic leaks a credential: %s", response.Body)

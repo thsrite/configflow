@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -16,8 +15,9 @@ import (
 
 	"configflow/internal/api/settings"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 	"configflow/internal/webdav"
 )
 
@@ -70,14 +70,27 @@ func TestBackupEndpointsUseMaskedCredentialAndHideRemoteErrors(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(settings.Register)})
 	admin := srv.Login()
 	ctx := srv.Context()
-	_, err = srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("backup", jsonx.Obj("webdav_url", remote.URL, "webdav_username", "synthetic-user", "webdav_password", "synthetic-password", "auto_backup", false))
-		return nil, nil
+	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		raw, err := json.Marshal(map[string]any{
+			"webdav_url":      remote.URL,
+			"webdav_username": "synthetic-user",
+			"webdav_password": "synthetic-password",
+			"auto_backup":     false,
+		})
+		if err != nil {
+			return err
+		}
+		return system.SetJSON("backup", raw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := jsonx.Obj("webdav_url", remote.URL, "webdav_username", "synthetic-user", "webdav_password", "******", "webdav_path", "one/two")
+	body := map[string]any{
+		"webdav_url":      remote.URL,
+		"webdav_username": "synthetic-user",
+		"webdav_password": "******",
+		"webdav_path":     "one/two",
+	}
 	srv.Post("/api/backup/test", httpxtest.JSON(body)).WantStatus(401)
 	srv.Post("/api/backup/test", httpxtest.JSON(body), admin).WantStatus(200)
 	srv.Post("/api/backup/now", httpxtest.JSON(body), admin).WantStatus(200)
@@ -85,15 +98,12 @@ func TestBackupEndpointsUseMaskedCredentialAndHideRemoteErrors(t *testing.T) {
 	if json.Unmarshal(uploaded, &doc) != nil {
 		t.Fatal("backup is not JSON")
 	}
-	expected, err := srv.Repo.ExportAll(ctx, false)
+	expected, err := srv.Repo.ExportAllJSON(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, _ := jsonx.Compact(expected)
-	var wanted any
-	_ = json.Unmarshal(want, &wanted)
-	if !reflect.DeepEqual(doc, wanted) {
-		t.Fatal("manual backup is not full export")
+	if diff := testjson.Diff(expected, json.RawMessage(uploaded)); diff != "" {
+		t.Fatalf("manual backup is not full export: %s", diff)
 	}
 	mu.Lock()
 	denied = true
@@ -113,8 +123,7 @@ func TestBackupEndpointsUseMaskedCredentialAndHideRemoteErrors(t *testing.T) {
 	}
 	for _, path := range []string{"/api/backup/test", "/api/backup/now"} {
 		for _, invalid := range []string{`null`, `[]`, `{}`, `{"webdav_url":null}`, `{"auto_backup":"false"}`, `{"unknown":true}`, `{"keep_latest":true}`, `{"keep_daily":3651}`} {
-			parsed, _ := jsonx.Parse([]byte(invalid))
-			srv.Post(path, httpxtest.JSON(parsed), admin).WantStatus(400)
+			srv.Post(path, httpxtest.Body([]byte(invalid), "application/json"), admin).WantStatus(400)
 		}
 	}
 }

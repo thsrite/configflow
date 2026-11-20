@@ -2,14 +2,17 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
@@ -20,9 +23,12 @@ func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
 				t.Fatal(err)
 			}
 			ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-			_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-				shared.Set("subscriptions", []any{jsonx.Obj("id", "s", "interval", 86400)})
-				return nil, nil
+			err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+				raw, err := json.Marshal([]any{map[string]any{"id": "s", "interval": 86400}})
+				if err != nil {
+					return err
+				}
+				return shared.SetJSON("subscriptions", raw)
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -32,8 +38,8 @@ func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
 			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
 			request, cancel := context.WithCancel(runtime.BindRequest(ctx))
 			defer cancel()
-			t.Cleanup(tasks.SetRows(tasks.SlotSubscriptions, func(context.Context, *jsonx.Object) ([]*jsonx.Object, error) { return nil, nil }))
-			before, err := r.ExportAll(ctx, false)
+			t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
+			before, err := r.ExportAllJSON(ctx, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -51,16 +57,16 @@ func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatal(err)
 				}
-				after, err := r.ExportAll(ctx, false)
-				if err != nil || !jsonx.Equal(before, after) {
+				after, err := r.ExportAllJSON(ctx, false)
+				if err != nil || !testjson.Equal(before, after) {
 					t.Fatal("shutdown changed stored document", err)
 				}
 			} else {
 				if err != nil {
 					t.Fatal(err)
 				}
-				shared, err := r.GetShared(ctx)
-				if err != nil || shared.GetList("subscriptions")[0].(*jsonx.Object).GetInt("interval") != 60 {
+				shared, err := r.Shared(ctx)
+				if err != nil || len(shared.Subscriptions) == 0 || !testjson.Equal(shared.Subscriptions[0].Interval, 60) {
 					t.Fatal("disconnect aborted save", err)
 				}
 			}

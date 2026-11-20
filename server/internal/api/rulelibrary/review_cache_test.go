@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	apirules "configflow/internal/api/rules"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -123,9 +123,10 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	// C33's DB commit is followed by a different owner's fresh transaction
 	// before C33 reaches its cache publication. No sleeps or mocked stores.
 	for _, content := range []string{"+.first-commit.example\n", "+.newer-owner.example\n"} {
-		_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-			p.GetList("rule_library")[0].(*jsonx.Object).Set("content", content)
-			return nil, nil
+		err = s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+			c := content
+			p.RuleLibrary[0].Content = &c
+			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -173,11 +174,11 @@ func TestReviewStageAllowsMetadataAndPreservesPreparedBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		current := p.GetList("rule_library")[0].(*jsonx.Object)
-		current.Set("name", "Renamed")
-		current.Set("update_interval", jsonx.Int(3600))
-		return nil, nil
+	err = s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		p.RuleLibrary[0].Name = "Renamed"
+		v := model.Int(3600)
+		p.RuleLibrary[0].UpdateInterval = &v
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -222,13 +223,14 @@ func TestReviewAbortClearsOnlyItsUnchangedBaseline(t *testing.T) {
 			if changed {
 				want = "+.new-owner.example\n"
 			}
-			_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				current := p.GetList("rule_library")[0].(*jsonx.Object)
-				current.Set("update_interval", jsonx.Int(7200))
+			err = s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+				v := model.Int(7200)
+				p.RuleLibrary[0].UpdateInterval = &v
 				if changed {
-					current.Set("content", want)
+					w := want
+					p.RuleLibrary[0].Content = &w
 				}
-				return nil, nil
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)

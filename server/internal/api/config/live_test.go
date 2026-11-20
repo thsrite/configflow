@@ -10,7 +10,6 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -18,13 +17,18 @@ import (
 func TestLiveConfigProfileAndAuthentication(t *testing.T) {
 	mihomoenv.Wire()
 	s := exportApp(t)
-	_, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "phone", "name", "手机:/配置"), "")
+	_, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "phone", Name: "手机:/配置"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Update(jsonx.Obj("config_token", "synthetic-config-token", "rule_proxy_token", "synthetic-rule-token", "retired_rule_proxy_tokens", []any{"synthetic-retired-token"}))
-		return nil, nil
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		if err := system.SystemConfig.SetJSON("config_token", json.RawMessage(`"synthetic-config-token"`)); err != nil {
+			return err
+		}
+		if err := system.SystemConfig.SetJSON("rule_proxy_token", json.RawMessage(`"synthetic-rule-token"`)); err != nil {
+			return err
+		}
+		return system.SystemConfig.SetJSON("retired_rule_proxy_tokens", json.RawMessage(`["synthetic-retired-token"]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +60,8 @@ func TestLiveConfigProfileAndAuthentication(t *testing.T) {
 func TestLoonFilenamePercentEncoding(t *testing.T) {
 	mihomoenv.Wire()
 	s := exportApp(t)
-	if _, err := s.Repo.UpdateProfileMetadata(s.Context(), "default", jsonx.Obj("name", "Phone @ Home + Office")); err != nil {
+	name := "Phone @ Home + Office"
+	if _, err := s.Repo.UpdateProfileMetadataRecord(s.Context(), "default", repo.ProfileMetadataUpdate{Name: &name}); err != nil {
 		t.Fatal(err)
 	}
 	response := s.Get("/api/config/loon")

@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
@@ -63,8 +62,13 @@ func TestMatchingLazySourcesAndValidation(t *testing.T) {
 	}{{"example.com.", 200, true}, {"ads.example", 200, true}, {"unmatched.example", 200, false}, {"_service._tcp.example", 200, false}, {"", 400, false}, {"not a domain", 400, false}, {"https://example.com", 400, false}} {
 		t.Run(tc.query, func(t *testing.T) {
 			out := s.Post("/api/rules/match-test?profile=other", auth, httpxtest.JSON(map[string]string{"query": tc.query})).WantStatus(tc.status)
-			if tc.status == 200 && out.Object().GetBool("matched") != tc.matched {
-				t.Fatalf("%s", out.Body)
+			if tc.status == 200 {
+				var body struct {
+					Matched bool `json:"matched"`
+				}
+				if err := json.Unmarshal(out.Body, &body); err != nil || body.Matched != tc.matched {
+					t.Fatalf("%s", out.Body)
+				}
 			}
 		})
 	}
@@ -75,16 +79,19 @@ func TestMatchingLazySourcesAndValidation(t *testing.T) {
 func TestDuplicateScanKeepsAllOccurrencesAndPriorities(t *testing.T) {
 	s := fixture(t)
 	ctx := s.Context()
-	_, err := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_library", append(p.GetList("rule_library"), []any{jsonx.Obj("id", "a", "name", "A", "source_type", "content", "behavior", "classical", "content", "# comment\nDOMAIN,First.example\nREGEXP,^Case$\nDOMAIN,three.example\nDOMAIN,THREE.example\nDOMAIN,three.example\nDOMAIN,first.example\n"), jsonx.Obj("id", "b", "name", "B", "source_type", "content", "behavior", "classical", "content", "DOMAIN,Conflict.example\nREGEXP,^Case$\n"), jsonx.Obj("id", "empty", "name", "Empty", "source_type", "content", "content", ""), jsonx.Obj("id", "off", "name", "Off", "source_type", "content", "content", "DOMAIN,three.example", "enabled", false)}...))
-		return nil, nil
+	err := s.Repo.UpdateShared(ctx, func(_ context.Context, p *model.Shared) error {
+		var extra []model.RuleLibraryItem
+		if err := json.Unmarshal([]byte(`[{"id":"a","name":"A","source_type":"content","behavior":"classical","content":"# comment\nDOMAIN,First.example\nREGEXP,^Case$\nDOMAIN,three.example\nDOMAIN,THREE.example\nDOMAIN,three.example\nDOMAIN,first.example\n"},{"id":"b","name":"B","source_type":"content","behavior":"classical","content":"DOMAIN,Conflict.example\nREGEXP,^Case$\n"},{"id":"empty","name":"Empty","source_type":"content","content":""},{"id":"off","name":"Off","source_type":"content","content":"DOMAIN,three.example","enabled":false}]`), &extra); err != nil {
+			return err
+		}
+		p.RuleLibrary = append(p.RuleLibrary, extra...)
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(ctx, "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_configs", []any{jsonx.Obj("id", "a", "itemType", "ruleset", "library_rule_id", "a", "policy", "DIRECT"), jsonx.Obj("id", "direct", "itemType", "rule", "rule_type", "DOMAIN", "value", "Conflict.example", "policy", "DIRECT"), jsonx.Obj("id", "b", "itemType", "ruleset", "library_rule_id", "b", "policy", "PROXY"), jsonx.Obj("id", "empty", "itemType", "ruleset", "library_rule_id", "empty"), jsonx.Obj("id", "off", "itemType", "ruleset", "library_rule_id", "off"), jsonx.Obj("id", "disabled", "itemType", "rule", "rule_type", "DOMAIN", "value", "Conflict.example", "enabled", false)})
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(ctx, "other", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"a","itemType":"ruleset","library_rule_id":"a","policy":"DIRECT"},{"id":"direct","itemType":"rule","rule_type":"DOMAIN","value":"Conflict.example","policy":"DIRECT"},{"id":"b","itemType":"ruleset","library_rule_id":"b","policy":"PROXY"},{"id":"empty","itemType":"ruleset","library_rule_id":"empty"},{"id":"off","itemType":"ruleset","library_rule_id":"off"},{"id":"disabled","itemType":"rule","rule_type":"DOMAIN","value":"Conflict.example","enabled":false}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -118,17 +125,25 @@ func TestDuplicateLargeRepeatedSourceIsComplete(t *testing.T) {
 	for i := 0; i < count; i++ {
 		fmt.Fprintln(&content, "DOMAIN,repeat.example")
 	}
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetList("rule_library")[0].(*jsonx.Object).Set("behavior", "classical")
-		p.GetList("rule_library")[0].(*jsonx.Object).Set("content", content.String())
-		return nil, nil
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		behavior, body := "classical", content.String()
+		p.RuleLibrary[0].Behavior = &behavior
+		p.RuleLibrary[0].Content = &body
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := s.Post("/api/rules/find-duplicates?profile=other", s.Login()).WantStatus(200)
-	groups := out.Object().GetList("duplicates")
-	if len(groups) != 1 || groups[0].(*jsonx.Object).GetInt("count") != count {
+	var dupResult struct {
+		Duplicates []struct {
+			Count int `json:"count"`
+		} `json:"duplicates"`
+	}
+	if err := json.Unmarshal(out.Body, &dupResult); err != nil {
+		t.Fatal(err)
+	}
+	if len(dupResult.Duplicates) != 1 || dupResult.Duplicates[0].Count != count {
 		t.Fatalf("lost occurrences (%d bytes)", len(out.Body))
 	}
 }
@@ -148,9 +163,11 @@ func TestRemoteProviderValidationAndCache(t *testing.T) {
 	}))
 	defer source.Close()
 	s := fixture(t)
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_library", append(p.GetList("rule_library"), jsonx.Obj("id", "remote", "name", "Remote", "source_type", "url", "url", source.URL, "behavior", "domain", "format", "text")))
-		return nil, nil
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		p.RuleLibrary = append(p.RuleLibrary, testjson.Decode[model.RuleLibraryItem](t, map[string]any{
+			"id": "remote", "name": "Remote", "source_type": "url", "url": source.URL, "behavior": "domain", "format": "text",
+		}))
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -160,7 +177,7 @@ func TestRemoteProviderValidationAndCache(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatal("validated library cache not reused", calls.Load())
 	}
-	if _, err := taskstatus.New(s.DataDir).Record("rule_source:remote", taskstatus.Result{OK: false, Error: "synthetic unavailable", CacheRetained: boolPointer(true)}); err != nil {
+	if _, err := taskstatus.New(s.DataDir).SaveResult(s.Context(), "rule_source:remote", taskstatus.Result{OK: false, Error: "synthetic unavailable", CacheRetained: boolPointer(true)}); err != nil {
 		t.Fatal(err)
 	}
 	stale := s.Get("/api/rules/local/Remote").WantStatus(200)
@@ -169,15 +186,20 @@ func TestRemoteProviderValidationAndCache(t *testing.T) {
 	}
 	// Use a different source identity to force actual validation, rather than a cached hit.
 	invalid.Store(true)
-	_, err = s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetList("rule_library")[1].(*jsonx.Object).Set("url", source.URL+"/invalid")
-		return nil, nil
+	err = s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+		u := source.URL + "/invalid"
+		p.RuleLibrary[1].URL = &u
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := s.Get("/api/rules/local/Remote").WantStatus(422)
-	if out.Object().GetBool("cache_retained") || len(out.Object().GetList("errors")) == 0 {
+	var errBody struct {
+		CacheRetained bool  `json:"cache_retained"`
+		Errors        []any `json:"errors"`
+	}
+	if err := json.Unmarshal(out.Body, &errBody); err != nil || errBody.CacheRetained || len(errBody.Errors) == 0 {
 		t.Fatalf("%s", out.Body)
 	}
 }
@@ -196,32 +218,36 @@ func TestSourceEntryPointsUsePersistedProxy(t *testing.T) {
 	}))
 	defer proxy.Close()
 	s := fixture(t)
-	_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
+	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
 		for _, id := range []string{"first-remote", "second-remote"} {
-			p.Set("rule_library", append(p.GetList("rule_library"), jsonx.Obj("id", id, "name", id, "source_type", "url", "url", "http://127.0.0.1:1/"+id, "behavior", "domain", "format", "text")))
+			p.RuleLibrary = append(p.RuleLibrary, testjson.Decode[model.RuleLibraryItem](t, map[string]any{
+				"id": id, "name": id, "source_type": "url", "url": "http://127.0.0.1:1/" + id, "behavior": "domain", "format": "text",
+			}))
 		}
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("system_config").Set("rule_fetch_proxy", strings.Replace(proxy.URL, "http://", "http://proxy-user:synthetic-pass@", 1))
-		return nil, nil
+	proxyRaw, _ := json.Marshal(strings.Replace(proxy.URL, "http://", "http://proxy-user:synthetic-pass@", 1))
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, p *model.System) error {
+		return p.SystemConfig.SetJSON("rule_fetch_proxy", proxyRaw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_configs", []any{jsonx.Obj("id", "remote", "itemType", "ruleset", "library_rule_id", "second-remote", "policy", "DIRECT")})
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(s.Context(), "other", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"remote","itemType":"ruleset","library_rule_id":"second-remote","policy":"DIRECT"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.Get("/api/profiles/other/rules/local/first-remote").WantStatus(200)
 	out := s.Post("/api/rules/match-test?profile=other", s.Login(), httpxtest.JSON(map[string]string{"query": "remote.example"})).WantStatus(200)
-	if !out.Object().GetBool("matched") || calls.Load() != 2 {
+	var matchOut struct {
+		Matched bool `json:"matched"`
+	}
+	if err := json.Unmarshal(out.Body, &matchOut); err != nil || !matchOut.Matched || calls.Load() != 2 {
 		t.Fatalf("proxy requests=%d result=%s", calls.Load(), out.Body)
 	}
 }
@@ -238,22 +264,28 @@ func TestCancelledLocalOwnerCompletesCache(t *testing.T) {
 func TestDuplicateResponseUsesCentralRedaction(t *testing.T) {
 	const secret = "duplicate-private-capability"
 	s := fixture(t)
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("system_config").Set("rule_proxy_token", secret)
-		return nil, nil
+	secretRaw, _ := json.Marshal(secret)
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, p *model.System) error {
+		return p.SystemConfig.SetJSON("rule_proxy_token", secretRaw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_configs", []any{jsonx.Obj("id", "one", "itemType", "rule", "rule_type", "DOMAIN", "value", secret, "policy", "DIRECT"), jsonx.Obj("id", "two", "itemType", "rule", "rule_type", "DOMAIN", "value", secret, "policy", "DIRECT")})
-		return nil, nil
+	rulesRaw, _ := json.Marshal([]any{
+		map[string]any{"id": "one", "itemType": "rule", "rule_type": "DOMAIN", "value": secret, "policy": "DIRECT"},
+		map[string]any{"id": "two", "itemType": "rule", "rule_type": "DOMAIN", "value": secret, "policy": "DIRECT"},
+	})
+	_, err = s.Repo.UpdateProfile(s.Context(), "other", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("rule_configs", rulesRaw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := s.Post("/api/rules/find-duplicates?profile=other", s.Login()).WantStatus(200)
-	if strings.Contains(out.Text(), secret) || len(out.Object().GetList("duplicates")) != 1 {
+	var dupBody struct {
+		Duplicates []any `json:"duplicates"`
+	}
+	if err := json.Unmarshal(out.Body, &dupBody); err != nil || strings.Contains(out.Text(), secret) || len(dupBody.Duplicates) != 1 {
 		t.Fatal("duplicate response bypassed credential redaction")
 	}
 }
@@ -262,10 +294,10 @@ func TestBinaryCacheDeliveryRemainsOpaque(t *testing.T) {
 	for _, data := range [][]byte{{0xff, 0, 0x7f}, []byte("opaque-mrs\n")} {
 		t.Run(fmt.Sprintf("%x", data), func(t *testing.T) {
 			s := fixture(t)
-			source := jsonx.Obj("id", "binary", "name", "Binary", "source_type", "content", "behavior", "domain", "format", "mrs", "content", "")
-			_, err := s.Repo.UpdateSharedTransaction(s.Context(), func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				p.Set("rule_library", append(p.GetList("rule_library"), source))
-				return nil, nil
+			source := map[string]any{"id": "binary", "name": "Binary", "source_type": "content", "behavior": "domain", "format": "mrs", "content": ""}
+			err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
+				p.RuleLibrary = append(p.RuleLibrary, testjson.Decode[model.RuleLibraryItem](t, source))
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -285,14 +317,13 @@ func TestBinaryCacheDeliveryRemainsOpaque(t *testing.T) {
 
 func TestReviewN811DuplicateScanPreservesNullPolicy(t *testing.T) {
 	s := fixture(t)
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.Set("rule_configs", []any{
-			jsonx.Obj("id", "null_1", "itemType", "rule", "rule_type", "DOMAIN", "value", "nullpolicy.example", "policy", nil, "enabled", true),
-			jsonx.Obj("id", "null_2", "itemType", "rule", "rule_type", "DOMAIN", "value", "nullpolicy.example", "policy", "DIRECT", "enabled", true),
-			jsonx.Obj("id", "abs_1", "itemType", "rule", "rule_type", "DOMAIN", "value", "defaultpolicy.example", "enabled", true),
-			jsonx.Obj("id", "abs_2", "itemType", "rule", "rule_type", "DOMAIN", "value", "defaultpolicy.example", "policy", "DIRECT", "enabled", true),
-		})
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(s.Context(), "other", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("rule_configs", json.RawMessage(`[
+			{"id":"null_1","itemType":"rule","rule_type":"DOMAIN","value":"nullpolicy.example","policy":null,"enabled":true},
+			{"id":"null_2","itemType":"rule","rule_type":"DOMAIN","value":"nullpolicy.example","policy":"DIRECT","enabled":true},
+			{"id":"abs_1","itemType":"rule","rule_type":"DOMAIN","value":"defaultpolicy.example","enabled":true},
+			{"id":"abs_2","itemType":"rule","rule_type":"DOMAIN","value":"defaultpolicy.example","policy":"DIRECT","enabled":true}
+		]`))
 	})
 	if err != nil {
 		t.Fatal(err)

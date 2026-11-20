@@ -11,10 +11,10 @@ import (
 	apiprofiles "configflow/internal/api/profiles"
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
+	"configflow/internal/testjson"
 )
 
 func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
@@ -34,11 +34,11 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 	cfg := inputConfig(device.URL)
 	cfg["routers"].(map[string]any)["items"].([]any)[0].(map[string]any)["last_probe"] = map[string]any{"ok": true, "at": "2000-01-01T00:00:00"}
 	saveFixtureConfig(t, s, cfg)
-	before, err := s.Repo.GetProfile(s.Context(), "default")
+	before, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, _ := json.Marshal(before.GetObject("routers").GetList("items")[0])
+	expected, _ := json.Marshal(before.Routers.Items[0])
 	_, rows, err := (&core.ManagementService{Repo: s.Repo}).Records(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
@@ -58,16 +58,16 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 	s.Put(root, login, httpxtest.JSON(map[string]string{"endpoint": "http://192.0.2.9"})).WantStatus(400)
 	changed := s.Put(root, login, httpxtest.JSON(map[string]string{"password": "synthetic-rotated-password"}))
 	changed.WantStatus(200)
-	if strings.Contains(changed.Text(), "synthetic-rotated-password") || changed.Object().GetObject("router").Value("last_probe") != nil {
+	if strings.Contains(changed.Text(), "synthetic-rotated-password") || decodeJSON(t, changed)["router"].(map[string]any)["last_probe"] != nil {
 		t.Fatal("repair exposed credentials or kept a stale probe")
 	}
-	profile, err := s.Repo.GetProfile(s.Context(), "default")
+	profile, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := profile.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-	raw, _ := json.Marshal(record.GetObject("ros_policy_state"))
-	if string(raw) != string(manifest) || record.GetString("password") != "synthetic-rotated-password" {
+	record := profile.Routers.Items[0]
+	raw, _ := json.Marshal(record.ROSPolicyState)
+	if string(raw) != string(manifest) || record.Password != "synthetic-rotated-password" {
 		t.Fatal("repair changed ownership or lost the new password")
 	}
 	if len(fake.Calls()) != 0 {
@@ -76,22 +76,22 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 	s.Post(root+"/probe", login).WantStatus(200)
 	assertBatchProtected(t, s, login)
 	s.Put(root, login, httpxtest.JSON(map[string]string{"password": ""})).WantStatus(200)
-	profile, _ = s.Repo.GetProfile(s.Context(), "default")
-	record = profile.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-	if record.GetString("password") != "synthetic-rotated-password" || record.GetObject("last_probe") == nil || !record.GetObject("last_probe").GetBool("ok") {
+	profile, _ = s.Repo.Profile(s.Context(), "default")
+	record = profile.Routers.Items[0]
+	if record.Password != "synthetic-rotated-password" || record.LastProbe == nil || !record.LastProbe.OK {
 		t.Fatal("empty password repair cleared credentials or a valid probe")
 	}
 }
 
 func createSpare(t *testing.T, s *httpxtest.Server) {
 	t.Helper()
-	if _, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "spare", "name", "Spare"), ""); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "spare", Name: "Spare"}, ""); err != nil {
 		t.Fatal(err)
 	}
 }
 func assertBatchProtected(t *testing.T, s *httpxtest.Server, login ...httpxtest.Option) {
 	t.Helper()
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	before, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +99,11 @@ func assertBatchProtected(t *testing.T, s *httpxtest.Server, login ...httpxtest.
 	if err != nil {
 		t.Fatal(err)
 	}
-	whole, err := s.Repo.ExportAll(s.Context(), false)
-	if err != nil {
+	var whole map[string]any
+	if err := json.Unmarshal(before, &whole); err != nil {
 		t.Fatal(err)
 	}
-	whole.GetObject("profiles").GetObject("default").Set("routers", jsonx.Obj("items", []any{}))
+	whole["profiles"].(map[string]any)["default"].(map[string]any)["routers"] = map[string]any{"items": []any{}}
 	for _, tc := range []struct {
 		method, path string
 		body         any
@@ -114,11 +114,11 @@ func assertBatchProtected(t *testing.T, s *httpxtest.Server, login ...httpxtest.
 		}
 		s.Do(tc.method, tc.path, options...).WantStatus(409)
 	}
-	after, err := s.Repo.ExportAll(s.Context(), false)
+	after, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
+	if !testjson.Equal(before, after) {
 		t.Fatal("batch HTTP changed protected configuration")
 	}
 	afterFingerprint, err := s.Repo.Store().Fingerprint()

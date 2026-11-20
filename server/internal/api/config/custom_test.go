@@ -12,18 +12,16 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/yamlx"
 )
 
 func stored(t *testing.T, s *httpxtest.Server) string {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(doc)
 	return string(raw)
 }
 func businessFiles(t *testing.T, root string) map[string]string {
@@ -89,7 +87,7 @@ func TestCustomSavesAndPublishGuards(t *testing.T) {
 		if engine == "mihomo" {
 			content = "ipv6: false\n"
 		}
-		response := s.Post("/api/custom-config/"+engine, httpxtest.JSON(jsonx.Obj("config", content)))
+		response := s.Post("/api/custom-config/"+engine, httpxtest.JSON(map[string]any{"config": content}))
 		response.WantStatus(200)
 		var out struct {
 			Success bool

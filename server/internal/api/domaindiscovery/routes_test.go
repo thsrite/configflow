@@ -11,7 +11,6 @@ import (
 	"configflow/internal/api/domaindiscovery"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 )
 
 func TestEveryRouteRequiresAdministratorAuthentication(t *testing.T) {
@@ -39,7 +38,7 @@ func TestCancelledHTTPWritesFinishAndPreserveUnknownFields(t *testing.T) {
 		})
 	}})
 	ctx := srv.Context()
-	_, _, err := srv.Repo.UpdateProfileFields(ctx, "default", jsonx.Obj("domain_discovery", jsonx.Obj("future_setting", jsonx.Obj("keep", true), "history", []any{jsonx.Obj("value", "old.example.net", "target", "proxy", "ruleset_id", "missing", "future_history", true)})), nil)
+	_, _, err := srv.Repo.SaveProfileFieldsJSON(ctx, "default", json.RawMessage(`{"domain_discovery":{"future_setting":{"keep":true},"history":[{"value":"old.example.net","target":"proxy","ruleset_id":"missing","future_history":true}]}}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,16 +51,16 @@ func TestCancelledHTTPWritesFinishAndPreserveUnknownFields(t *testing.T) {
 			t.Fatalf("cancelled %s: %d %s", rt.path, w.Code, w.Body)
 		}
 	}
-	profile, err := srv.Repo.GetProfile(ctx, "default")
+	profile, err := srv.Repo.Profile(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := jsonx.Compact(profile.GetObject("domain_discovery"))
+	b, err := json.Marshal(profile.DomainDiscovery)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var saved map[string]any
-	if err = json.Unmarshal([]byte(b), &saved); err != nil {
+	if err = json.Unmarshal(b, &saved); err != nil {
 		t.Fatal(err)
 	}
 	if saved["auto_probe"] != true || saved["future_setting"].(map[string]any)["keep"] != true || saved["website_notes"].(map[string]any)["example.com"] != "kept" || saved["history"].([]any)[0].(map[string]any)["future_history"] != true {

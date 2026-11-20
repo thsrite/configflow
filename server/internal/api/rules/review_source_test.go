@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/testjson"
 )
 
 type reviewTransport func(context.Context, rulefetch.TransportRequest) (*rulefetch.Response, error)
@@ -36,30 +36,31 @@ func TestReviewSourceTimeoutAndMirror(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv := fixture(t)
 			ctx := srv.Context()
-			config, err := repo.GetConfig(ctx, "other")
+			config, err := srv.Repo.Config(ctx, "other", repo.ResourceRoots{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			library := jsonx.Obj("id", "remote", "name", "Remote", "source_type", "url", "url", "https://primary.example.com/source", "behavior", "domain", "format", "text")
-			item := jsonx.Obj("url", "https://mirror.example.com/source")
+			library := map[string]any{"id": "remote", "name": "Remote", "source_type": "url", "url": "https://primary.example.com/source", "behavior": "domain", "format": "text"}
+			item := map[string]any{"url": "https://mirror.example.com/source"}
 			var requests []string
 			service := &Service{client: &rulefetch.Client{Transport: reviewTransport(func(_ context.Context, req rulefetch.TransportRequest) (*rulefetch.Response, error) {
 				requests = append(requests, req.URL)
 				if req.Method != "GET" || req.ConnectTimeout != 30*time.Second || req.ReadTimeout != 30*time.Second {
 					t.Fatalf("download contract: %+v", req)
 				}
-				if req.URL == library.GetString("url") {
+				if req.URL == library["url"] {
 					if invalid {
 						return reviewResponse(req, 200, "IP-CIDR,192.0.2.0/24\n"), nil
 					}
 					return reviewResponse(req, 503, "unavailable"), nil
 				}
-				if req.URL != item.GetString("url") {
+				if req.URL != item["url"] {
 					t.Fatalf("unexpected address: %s", req.URL)
 				}
 				return reviewResponse(req, 200, "+.mirror.example.com\n"), nil
 			})}}
-			content, err := service.sourceContent(ctx, fetchConfig(testSourceConfig(t, config)), testSourceRule(t, item), testSourceLibrary(t, library), sourceOptions{})
+			srcCfg := fetchConfig(config)
+			content, err := service.sourceContent(ctx, srcCfg, testSourceRule(t, item), testSourceLibrary(t, library), sourceOptions{})
 			if invalid {
 				var validation *rulefetch.RemoteRuleValidationError
 				if !errors.As(err, &validation) || len(requests) != 1 {
@@ -70,13 +71,14 @@ func TestReviewSourceTimeoutAndMirror(t *testing.T) {
 			if err != nil || content != "+.mirror.example.com\n" || len(requests) != 2 {
 				t.Fatalf("mirror: content=%q err=%v requests=%v", content, err, requests)
 			}
-			mirror := library.Clone()
-			mirror.Set("url", item.GetString("url"))
-			cached, err := rulefetch.ReadValidatedRuleCache(ctx, mirror, config)
+			mirrorRule := testSourceRule(t, library)
+			mirrorURL := item["url"].(string)
+			mirrorRule.URL = &mirrorURL
+			cached, err := rulefetch.ReadCache(ctx, mirrorRule, srcCfg)
 			if err != nil || string(cached) != content {
 				t.Fatalf("mirror cache: %q %v", cached, err)
 			}
-			primary, err := rulefetch.ReadValidatedRuleCache(ctx, library, config)
+			primary, err := rulefetch.ReadCache(ctx, testSourceRule(t, library), srcCfg)
 			if err != nil || primary != nil {
 				t.Fatalf("mirror was cached as primary: %q %v", primary, err)
 			}
@@ -93,7 +95,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv := fixture(t)
 			runtime, ctx := reviewRuntimeContext(t, srv.Context())
-			before, err := srv.Repo.ExportAll(srv.Context(), false)
+			before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,7 +106,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 				runtime.Shutdown(context.Background())
 				return reviewResponse(req, 200, "+.remote.example.com\n"), nil
 			})}}
-			source := jsonx.Obj("id", "shutdown-source", "name", "Shutdown source", "source_type", "url", "url", "https://primary.example.com/source", "behavior", "domain", "format", "text")
+			source := map[string]any{"id": "shutdown-source", "name": "Shutdown source", "source_type": "url", "url": "https://primary.example.com/source", "behavior": "domain", "format": "text"}
 			if compose {
 				raw, marshalErr := json.Marshal(source)
 				if marshalErr != nil {
@@ -112,20 +114,20 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 				}
 				_, err = service.Compose(ctx, "other", composeBody(record{"kind": stringJSON("new_library"), "library": raw}, "direct"), "")
 			} else {
-				config, getErr := repo.GetConfig(srv.Context(), "other")
+				config, getErr := srv.Repo.Config(srv.Context(), "other", repo.ResourceRoots{})
 				if getErr != nil {
 					t.Fatal(getErr)
 				}
-				_, err = service.sourceContent(lifecycle.Detach(ctx), fetchConfig(testSourceConfig(t, config)), testSourceRule(t, jsonx.Obj("url", "https://mirror.example.com/source")), testSourceLibrary(t, source), sourceOptions{})
+				_, err = service.sourceContent(lifecycle.Detach(ctx), fetchConfig(config), testSourceRule(t, map[string]any{"url": "https://mirror.example.com/source"}), testSourceLibrary(t, source), sourceOptions{})
 			}
 			if !errors.Is(err, context.Canceled) || calls != 1 {
 				t.Fatalf("shutdown err=%v requests=%d", err, calls)
 			}
-			after, readErr := srv.Repo.ExportAll(srv.Context(), false)
-			if readErr != nil || !jsonx.Equal(before, after) {
+			after, readErr := srv.Repo.ExportAllJSON(srv.Context(), false)
+			if readErr != nil || !testjson.Equal(before, after) {
 				t.Fatalf("shutdown committed source/profile/DNS: %v", readErr)
 			}
-			cached, readErr := rulefetch.ReadValidatedRuleCache(srv.Context(), source, nil)
+			cached, readErr := rulefetch.ReadCache(srv.Context(), testSourceRule(t, source), nil)
 			if readErr != nil || cached != nil {
 				t.Fatalf("shutdown cached response: %q %v", cached, readErr)
 			}

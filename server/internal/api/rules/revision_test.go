@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestFieldComparisonKeepsJSONTypesAndNumbers(t *testing.T) {
@@ -77,20 +77,20 @@ func TestRuleWritesPreserveUntouchedDNSRows(t *testing.T) {
 				run  func()
 			}{
 				{"create", func() {
-					s.Post(path("/rules"), auth, httpxtest.JSON(jsonx.Obj("id", "new", "rule_type", "DOMAIN", "value", "new.example", "policy", "DIRECT"))).WantStatus(200)
+					s.Post(path("/rules"), auth, httpxtest.JSON(map[string]any{"id": "new", "rule_type": "DOMAIN", "value": "new.example", "policy": "DIRECT"})).WantStatus(200)
 				}},
 				{"update", func() {
-					s.Put(path("/rules/new"), auth, httpxtest.JSON(jsonx.Obj("remark", "changed"))).WantStatus(200)
+					s.Put(path("/rules/new"), auth, httpxtest.JSON(map[string]any{"remark": "changed"})).WantStatus(200)
 				}},
 				{"policy", func() {
-					s.Put(path("/rules/policy"), auth, httpxtest.JSON(jsonx.Obj("ids", []any{"new"}, "policy", "DIRECT"))).WantStatus(200)
+					s.Put(path("/rules/policy"), auth, httpxtest.JSON(map[string]any{"ids": []string{"new"}, "policy": "DIRECT"})).WantStatus(200)
 				}},
 				{"reorder", func() {
-					s.Post(path("/rules/reorder"), auth, httpxtest.JSON(jsonx.Obj("ids", []any{"new"}, "position", "bottom"))).WantStatus(200)
+					s.Post(path("/rules/reorder"), auth, httpxtest.JSON(map[string]any{"ids": []string{"new"}, "position": "bottom"})).WantStatus(200)
 				}},
 				{"delete", func() { s.Delete(path("/rules/new"), auth).WantStatus(200) }},
 				{"create-set", func() {
-					s.Post(path("/rule-sets"), auth, httpxtest.JSON(jsonx.Obj("id", "new-set", "library_rule_id", "ads", "policy", "DIRECT"))).WantStatus(200)
+					s.Post(path("/rule-sets"), auth, httpxtest.JSON(map[string]any{"id": "new-set", "library_rule_id": "ads", "policy": "DIRECT"})).WantStatus(200)
 				}},
 				{"delete-set", func() { s.Delete(path("/rule-sets/new-set"), auth).WantStatus(200) }},
 			}
@@ -126,9 +126,8 @@ func TestRuleWritesPreserveUntouchedDNSRows(t *testing.T) {
 
 func TestRuleDeleteChangesOnlyReferencedDNSRow(t *testing.T) {
 	s := fixture(t)
-	_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "other", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("mosdns").Set("direct_rules", []any{"rule_1"})
-		return nil, nil
+	_, err := s.Repo.UpdateProfile(s.Context(), "other", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("mosdns", json.RawMessage(`{"direct_rules":["rule_1"]}`))
 	})
 	if err != nil {
 		t.Fatal(err)

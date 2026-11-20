@@ -2,14 +2,16 @@ package settings_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
 
 	"configflow/internal/api/settings"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 	"configflow/internal/weblistener"
 )
 
@@ -22,20 +24,69 @@ func newServer(t *testing.T, auth bool) *httpxtest.Server {
 	return httpxtest.New(t, httpxtest.Options{Auth: auth, Register: httpxtest.Routes(settings.Register)})
 }
 
-func system(t *testing.T, srv *httpxtest.Server) *jsonx.Object {
+func assertJSON(t *testing.T, res *httpxtest.Result, want any) *httpxtest.Result {
 	t.Helper()
-	s, err := srv.Repo.GetSystem(srv.Context())
+	if diff := testjson.Diff(want, json.RawMessage(res.Body)); diff != "" {
+		t.Fatalf("response JSON diff: %s\nbody: %s", diff, res.Body)
+	}
+	return res
+}
+
+func decodeMap(t *testing.T, data []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("unmarshal %s: %v", data, err)
+	}
+	return out
+}
+
+func asMap(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func asInt(v any) int64 {
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return i
+	}
+	return 0
+}
+
+func systemMap(t *testing.T, srv *httpxtest.Server) map[string]any {
+	t.Helper()
+	s, err := srv.Repo.System(srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decodeMap(t, raw)
 }
 
 func updateSettings(t *testing.T, srv *httpxtest.Server, key string, value any) {
 	t.Helper()
-	_, err := srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetObject("system_config").Set(key, value)
-		return nil, nil
+	err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, s *model.System) error {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return s.SystemConfig.SetJSON(key, raw)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,45 +96,48 @@ func updateSettings(t *testing.T, srv *httpxtest.Server, key string, value any) 
 // test_rule_fetch_proxy_settings.py::test_proxy_defaults_to_empty_for_new_and_existing_settings
 func TestProxyDefaultsToEmptyForNewAndExistingSettings(t *testing.T) {
 	srv := newServer(t, false)
-	if system(t, srv).GetObject("system_config").Value("rule_fetch_proxy") != "" {
+	if asMap(systemMap(t, srv)["system_config"])["rule_fetch_proxy"] != "" {
 		t.Fatal("default")
 	}
-	_, err := srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetObject("system_config").Delete("rule_fetch_proxy")
-		return nil, nil
+	err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, s *model.System) error {
+		s.SystemConfig.RuleFetchProxy = ""
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.Get(endpoint).WantJSON(jsonx.Obj("rule_fetch_proxy", ""))
+	assertJSON(t, srv.Get(endpoint), map[string]any{"rule_fetch_proxy": ""})
 }
 
 // test_rule_fetch_proxy_settings.py::test_save_proxy_is_global_persistent_and_can_be_cleared
 func TestSaveProxyIsGlobalPersistentAndCanBeCleared(t *testing.T) {
 	srv := newServer(t, false)
-	if _, err := srv.Repo.CreateProfile(srv.Context(), jsonx.Obj("id", "another", "name", "Another"), ""); err != nil {
+	if _, err := srv.Repo.CreateProfileRecord(srv.Context(), repo.ProfileCreation{ID: "another", Name: "Another"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	res := srv.Post(endpoint, httpxtest.JSON(jsonx.Obj("rule_fetch_proxy", " "+proxy+" "))).WantStatus(200)
-	if res.Object().GetString("rule_fetch_proxy") != proxy {
+	res := srv.Post(endpoint, httpxtest.JSON(map[string]any{"rule_fetch_proxy": " " + proxy + " "})).WantStatus(200)
+	if asString(decodeMap(t, res.Body)["rule_fetch_proxy"]) != proxy {
 		t.Fatal(res.Text())
 	}
 	reopened, err := repo.Open(srv.DataDir, repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, _ := reopened.GetSystem(context.Background())
-	if saved.GetObject("system_config").GetString("rule_fetch_proxy") != proxy {
+	saved, err := reopened.System(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.SystemConfig.RuleFetchProxy != proxy {
 		t.Fatal("not persisted")
 	}
-	srv.Get(endpoint, httpxtest.Header("X-ConfigFlow-Profile", "another")).WantJSON(jsonx.Obj("rule_fetch_proxy", proxy))
-	srv.Post(endpoint, httpxtest.JSON(jsonx.Obj("rule_fetch_proxy", "  "))).WantStatus(200)
-	srv.Get(endpoint).WantJSON(jsonx.Obj("rule_fetch_proxy", ""))
+	assertJSON(t, srv.Get(endpoint, httpxtest.Header("X-ConfigFlow-Profile", "another")), map[string]any{"rule_fetch_proxy": proxy})
+	srv.Post(endpoint, httpxtest.JSON(map[string]any{"rule_fetch_proxy": "  "})).WantStatus(200)
+	assertJSON(t, srv.Get(endpoint), map[string]any{"rule_fetch_proxy": ""})
 }
 
 // test_rule_fetch_proxy_settings.py::test_invalid_proxy_does_not_overwrite_previous_or_echo_credentials
 func TestInvalidProxyDoesNotOverwritePreviousOrEchoCredentials(t *testing.T) {
-	values := []any{nil, false, 123, []any{}, jsonx.NewObject(), "192.168.0.3:7890",
+	values := []any{nil, false, 123, []any{}, map[string]any{}, "192.168.0.3:7890",
 		"socks5://proxy-user:proxy-secret@proxy.test:1080",
 		"http://proxy-user:proxy-secret@proxy.test:invalid",
 		"http://proxy-user:proxy-secret@proxy.test:70000",
@@ -93,21 +147,21 @@ func TestInvalidProxyDoesNotOverwritePreviousOrEchoCredentials(t *testing.T) {
 	for _, value := range values {
 		srv := newServer(t, false)
 		updateSettings(t, srv, "rule_fetch_proxy", proxy)
-		before := system(t, srv)
-		res := srv.Post(endpoint, httpxtest.JSON(jsonx.Obj("rule_fetch_proxy", value))).WantStatus(400)
-		if !jsonx.Equal(system(t, srv), before) || res.Contains("proxy-secret") || res.Contains("proxy-user") {
-			t.Fatalf("%v: %s", jsonx.Repr(value), res.Text())
+		before := systemMap(t, srv)
+		res := srv.Post(endpoint, httpxtest.JSON(map[string]any{"rule_fetch_proxy": value})).WantStatus(400)
+		if !testjson.Equal(systemMap(t, srv), before) || res.Contains("proxy-secret") || res.Contains("proxy-user") {
+			t.Fatalf("%#v: %s", value, res.Text())
 		}
 	}
 }
 
 // test_rule_fetch_proxy_settings.py::test_missing_proxy_field_cannot_accidentally_clear_setting
 func TestMissingProxyFieldCannotAccidentallyClearSetting(t *testing.T) {
-	for _, body := range []any{jsonx.NewObject(), []any{}, jsonx.Obj("unrelated", proxy)} {
+	for _, body := range []any{map[string]any{}, []any{}, map[string]any{"unrelated": proxy}} {
 		srv := newServer(t, false)
 		updateSettings(t, srv, "rule_fetch_proxy", proxy)
 		srv.Post(endpoint, httpxtest.JSON(body)).WantStatus(400)
-		if system(t, srv).GetObject("system_config").GetString("rule_fetch_proxy") != proxy {
+		if asString(asMap(systemMap(t, srv)["system_config"])["rule_fetch_proxy"]) != proxy {
 			t.Fatal("cleared")
 		}
 	}
@@ -117,14 +171,14 @@ func TestMissingProxyFieldCannotAccidentallyClearSetting(t *testing.T) {
 func TestProxySettingRequiresAuthentication(t *testing.T) {
 	srv := newServer(t, true)
 	srv.Get(endpoint).WantStatus(401)
-	srv.Post(endpoint, httpxtest.JSON(jsonx.Obj("rule_fetch_proxy", proxy))).WantStatus(401)
+	srv.Post(endpoint, httpxtest.JSON(map[string]any{"rule_fetch_proxy": proxy})).WantStatus(401)
 }
 
 // test_security_regressions.py::test_anonymous_config_token_response_does_not_expose_internal_rule_proxy_token
 func TestAnonymousConfigTokenResponseDoesNotExposeInternalRuleProxyToken(t *testing.T) {
 	srv := newServer(t, false)
 	updateSettings(t, srv, "rule_proxy_token", "internal-rule-proxy-token")
-	res := srv.Get("/api/config-token").WantStatus(200).WantJSON(jsonx.Obj("config_token", ""))
+	res := assertJSON(t, srv.Get("/api/config-token").WantStatus(200), map[string]any{"config_token": ""})
 	if res.Contains("internal-rule-proxy-token") {
 		t.Fatal("leak")
 	}
@@ -135,9 +189,9 @@ func TestConfigTokenPostRejectsInternalRuleProxyToken(t *testing.T) {
 	srv := newServer(t, false)
 	updateSettings(t, srv, "rule_proxy_token", "internal-rule-proxy-token")
 	updateSettings(t, srv, "config_token", "public-token")
-	before := system(t, srv).GetObject("system_config")
-	res := srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("token", "internal-rule-proxy-token"))).WantStatus(400)
-	if res.Object().Value("success") != false || !jsonx.Equal(system(t, srv).GetObject("system_config"), before) {
+	before := systemMap(t, srv)["system_config"]
+	res := srv.Post("/api/config-token", httpxtest.JSON(map[string]any{"token": "internal-rule-proxy-token"})).WantStatus(400)
+	if decodeMap(t, res.Body)["success"] != false || !testjson.Equal(systemMap(t, srv)["system_config"], before) {
 		t.Fatal(res.Text())
 	}
 }
@@ -149,7 +203,7 @@ func TestConfigTokenPostRejectsEmbeddedEncodedCurrentOrRetiredInternalToken(t *t
 		updateSettings(t, srv, "rule_proxy_token", "current-internal-token")
 		updateSettings(t, srv, "retired_rule_proxy_tokens", []any{"retired-internal-token"})
 		updateSettings(t, srv, "config_token", "public-token")
-		before := system(t, srv).GetObject("system_config")
+		before := systemMap(t, srv)["system_config"]
 		for _, internal := range []string{"current-internal-token", "retired-internal-token"} {
 			encoded := internal
 			for i := 0; i < layers; i++ {
@@ -159,8 +213,8 @@ func TestConfigTokenPostRejectsEmbeddedEncodedCurrentOrRetiredInternalToken(t *t
 					encoded = url.QueryEscape(encoded)
 				}
 			}
-			srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("token", "managed::"+encoded+"::suffix"))).WantStatus(400)
-			if !jsonx.Equal(system(t, srv).GetObject("system_config"), before) {
+			srv.Post("/api/config-token", httpxtest.JSON(map[string]any{"token": "managed::" + encoded + "::suffix"})).WantStatus(400)
+			if !testjson.Equal(systemMap(t, srv)["system_config"], before) {
 				t.Fatal("changed")
 			}
 		}
@@ -172,7 +226,7 @@ func TestConfigTokenGetScrubsLegacyEmbeddedInternalToken(t *testing.T) {
 	srv := newServer(t, false)
 	updateSettings(t, srv, "rule_proxy_token", "internal-token-x")
 	updateSettings(t, srv, "config_token", "legacy::internal-token-x::embedded")
-	res := srv.Get("/api/config-token").WantStatus(200).WantJSON(jsonx.Obj("config_token", "[REDACTED]"))
+	res := assertJSON(t, srv.Get("/api/config-token").WantStatus(200), map[string]any{"config_token": "[REDACTED]"})
 	if res.Contains("internal-token-x") {
 		t.Fatal("leak")
 	}
@@ -180,47 +234,50 @@ func TestConfigTokenGetScrubsLegacyEmbeddedInternalToken(t *testing.T) {
 
 func TestConfigTokenLifecycle(t *testing.T) {
 	srv := newServer(t, false)
-	res := srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("generate", true))).WantStatus(200)
-	token := res.Object().GetString("config_token")
+	res := srv.Post("/api/config-token", httpxtest.JSON(map[string]any{"generate": true})).WantStatus(200)
+	token := asString(decodeMap(t, res.Body)["config_token"])
 	if len(token) != 32 {
 		t.Fatal(res.Text())
 	}
-	srv.Get("/api/config-token").WantJSON(jsonx.Obj("config_token", token))
-	srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("token", "  "))).WantStatus(400).
-		WantJSON(jsonx.Obj("success", false, "message", "Token is required or set generate=true"))
-	srv.Post("/api/config-token", httpxtest.JSON(jsonx.Obj("token", 5))).WantStatus(500).
-		WantJSON(jsonx.Obj("success", false, "message", "setting must be a string"))
-	srv.Delete("/api/config-token").WantStatus(200).WantJSON(jsonx.Obj("success", true))
-	srv.Get("/api/config-token").WantJSON(jsonx.Obj("config_token", ""))
+	assertJSON(t, srv.Get("/api/config-token"), map[string]any{"config_token": token})
+	assertJSON(t, srv.Post("/api/config-token", httpxtest.JSON(map[string]any{"token": "  "})).WantStatus(400),
+		map[string]any{"success": false, "message": "Token is required or set generate=true"})
+	assertJSON(t, srv.Post("/api/config-token", httpxtest.JSON(map[string]any{"token": 5})).WantStatus(500),
+		map[string]any{"success": false, "message": "setting must be a string"})
+	assertJSON(t, srv.Delete("/api/config-token").WantStatus(200), map[string]any{"success": true})
+	assertJSON(t, srv.Get("/api/config-token"), map[string]any{"config_token": ""})
 }
 
 func TestServerDomainAndAggregationAndVersion(t *testing.T) {
 	srv := newServer(t, false)
-	srv.Get("/api/server-domain").WantJSON(jsonx.Obj("server_domain", ""))
-	srv.Post("/api/server-domain", httpxtest.JSON(jsonx.Obj("new_domain", " https://cf.example "))).
-		WantJSON(jsonx.Obj("success", true, "server_domain", "https://cf.example"))
-	srv.Post("/api/server-domain", httpxtest.JSON(jsonx.Obj("new_domain", ""))).WantStatus(400)
+	assertJSON(t, srv.Get("/api/server-domain"), map[string]any{"server_domain": ""})
+	assertJSON(t, srv.Post("/api/server-domain", httpxtest.JSON(map[string]any{"new_domain": " https://cf.example "})),
+		map[string]any{"success": true, "server_domain": "https://cf.example"})
+	srv.Post("/api/server-domain", httpxtest.JSON(map[string]any{"new_domain": ""})).WantStatus(400)
 	srv.Post("/api/server-domain", httpxtest.Body([]byte("x"), "text/plain")).WantStatus(415)
 	srv.Do("HEAD", "/api/server-domain").WantStatus(200)
-	srv.Get("/api/settings/subscription-aggregation").WantJSON(jsonx.Obj("enabled", false))
-	srv.Post("/api/settings/subscription-aggregation", httpxtest.JSON(jsonx.Obj("enabled", "yes"))).
-		WantJSON(jsonx.Obj("success", true, "enabled", "yes"))
-	srv.Get("/api/version").WantJSON(jsonx.Obj("version", "dev"))
+	assertJSON(t, srv.Get("/api/settings/subscription-aggregation"), map[string]any{"enabled": false})
+	assertJSON(t, srv.Post("/api/settings/subscription-aggregation", httpxtest.JSON(map[string]any{"enabled": "yes"})),
+		map[string]any{"success": true, "enabled": "yes"})
+	assertJSON(t, srv.Get("/api/version"), map[string]any{"version": "dev"})
 }
 
 func TestBackupConfigMasksPasswordAndValidates(t *testing.T) {
 	srv := newServer(t, false)
-	srv.Get("/api/backup/config").WantJSON(jsonx.Obj("webdav_url", "", "webdav_username", "", "webdav_password", "",
-		"webdav_path", "/config-flow-backup/", "auto_backup", false, "keep_latest", 30, "keep_daily", 30))
-	srv.Post("/api/backup/config", httpxtest.JSON(jsonx.Obj("webdav_url", "https://dav.example", "webdav_password", "pw",
-		"keep_latest", 5))).WantJSON(jsonx.Obj("success", true, "message", "备份配置已保存"))
-	srv.Post("/api/backup/config", httpxtest.JSON(jsonx.Obj("webdav_password", "******"))).WantStatus(200)
-	got := srv.Get("/api/backup/config").Object()
-	if got.Value("webdav_password") != "******" || got.GetInt("keep_latest") != 5 {
-		t.Fatal(jsonx.Repr(got))
+	assertJSON(t, srv.Get("/api/backup/config"), map[string]any{
+		"webdav_url": "", "webdav_username": "", "webdav_password": "",
+		"webdav_path": "/config-flow-backup/", "auto_backup": false, "keep_latest": 30, "keep_daily": 30,
+	})
+	assertJSON(t, srv.Post("/api/backup/config", httpxtest.JSON(map[string]any{
+		"webdav_url": "https://dav.example", "webdav_password": "pw", "keep_latest": 5,
+	})), map[string]any{"success": true, "message": "备份配置已保存"})
+	srv.Post("/api/backup/config", httpxtest.JSON(map[string]any{"webdav_password": "******"})).WantStatus(200)
+	got := decodeMap(t, srv.Get("/api/backup/config").Body)
+	if got["webdav_password"] != "******" || asInt(got["keep_latest"]) != 5 {
+		t.Fatalf("%#v", got)
 	}
-	backup := system(t, srv).GetObject("backup")
-	if backup.GetString("webdav_password") != "pw" {
+	backup := asMap(systemMap(t, srv)["backup"])
+	if asString(backup["webdav_password"]) != "pw" {
 		t.Fatal("the mask keeps the saved password")
 	}
 	for body, message := range map[string]string{
@@ -232,18 +289,18 @@ func TestBackupConfigMasksPasswordAndValidates(t *testing.T) {
 		`{"keep_daily": true}`:  "保留份数须为 0–1000 的整数，每日保留天数须为 0–3650 的整数",
 		`{"keep_daily": 5.0}`:   "保留份数须为 0–1000 的整数，每日保留天数须为 0–3650 的整数",
 	} {
-		srv.Post("/api/backup/config", httpxtest.Body([]byte(body), "application/json")).WantStatus(400).
-			WantJSON(jsonx.Obj("success", false, "message", message))
+		assertJSON(t, srv.Post("/api/backup/config", httpxtest.Body([]byte(body), "application/json")).WantStatus(400),
+			map[string]any{"success": false, "message": message})
 	}
 }
 
 func TestWebPortUnsupportedWithoutWebFrontEnd(t *testing.T) {
 	settings.SetWebListener(nil)
 	srv := newServer(t, false)
-	srv.Get("/api/settings/web-port").WantJSON(weblistener.Unsupported())
-	srv.Post("/api/settings/web-port", httpxtest.JSON(jsonx.NewObject())).WantStatus(400).
-		WantJSON(jsonx.Obj("success", false, "message", "请提供 Web 监听端口"))
-	srv.Post("/api/settings/web-port", httpxtest.JSON(jsonx.Obj("port", "80"))).WantStatus(400)
-	srv.Post("/api/settings/web-port", httpxtest.JSON(jsonx.Obj("port", 8080))).WantStatus(503).
-		WantJSON(jsonx.Obj("success", false, "message", "当前部署不支持在 Web 中修改监听端口"))
+	assertJSON(t, srv.Get("/api/settings/web-port"), weblistener.UnsupportedInformation())
+	assertJSON(t, srv.Post("/api/settings/web-port", httpxtest.JSON(map[string]any{})).WantStatus(400),
+		map[string]any{"success": false, "message": "请提供 Web 监听端口"})
+	srv.Post("/api/settings/web-port", httpxtest.JSON(map[string]any{"port": "80"})).WantStatus(400)
+	assertJSON(t, srv.Post("/api/settings/web-port", httpxtest.JSON(map[string]any{"port": 8080})).WantStatus(503),
+		map[string]any{"success": false, "message": "当前部署不支持在 Web 中修改监听端口"})
 }

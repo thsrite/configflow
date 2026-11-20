@@ -8,14 +8,14 @@ import (
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func TestReviewComposeCommitFailureIsAtomic(t *testing.T) {
 	s := fixture(t)
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	before, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,11 +32,11 @@ func TestReviewComposeCommitFailureIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := reopened.ExportAll(context.Background(), false)
+	after, err := reopened.ExportAllJSON(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
+	if !testjson.Equal(before, after) {
 		t.Fatal("failed commit changed shared/profile/DNS storage")
 	}
 }

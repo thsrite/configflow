@@ -2,6 +2,7 @@ package domaindiscovery_test
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 
 	"configflow/internal/api/domaindiscovery"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 func TestInitTargetsDeduplicateInFirstOccurrenceOrder(t *testing.T) {
@@ -26,10 +27,11 @@ func TestInitTargetsDeduplicateInFirstOccurrenceOrder(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register)})
-			_, _, err := s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-				p.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "PROXY", "type", "select")})
-				p.Set("rule_configs", []any{jsonx.Obj("id", "fallback", "itemType", "rule", "rule_type", "MATCH", "policy", "DIRECT")})
-				return nil, nil
+			_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
+				if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"g","name":"PROXY","type":"select"}]`)); err != nil {
+					return err
+				}
+				return p.SetJSON("rule_configs", json.RawMessage(`[{"id":"fallback","itemType":"rule","rule_type":"MATCH","policy":"DIRECT"}]`))
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -37,43 +39,43 @@ func TestInitTargetsDeduplicateInFirstOccurrenceOrder(t *testing.T) {
 			var previous []string
 			for round := 1; round <= 2; round++ {
 				s.Post("/api/domain-discovery/rulesets/init", httpxtest.JSON(map[string]any{"targets": tc.input, "proxy_policy": "PROXY"})).WantStatus(200)
-				shared, err := s.Repo.GetShared(s.Context())
+				shared, err := s.Repo.Shared(s.Context())
 				if err != nil {
 					t.Fatal(err)
 				}
-				libraries := shared.GetList("rule_library")
-				profile, err := s.Repo.GetProfile(s.Context(), "default")
+				libraries := shared.RuleLibrary
+				profile, err := s.Repo.Profile(s.Context(), "default")
 				if err != nil {
 					t.Fatal(err)
 				}
-				refs := profile.GetList("rule_configs")
+				refs := profile.RuleConfigs
 				if len(libraries) != round*len(tc.want) || len(refs) != round*len(tc.want)+1 {
 					t.Fatalf("redundant resources: round=%d libraries=%d references=%d", round, len(libraries), len(refs)-1)
 				}
-				if refs[len(refs)-1].(*jsonx.Object).GetString("id") != "fallback" {
+				if refs[len(refs)-1].ID != "fallback" {
 					t.Fatal("new references moved after MATCH")
 				}
 				for i, target := range tc.want {
 					index := (round-1)*len(tc.want) + i
-					library := libraries[index].(*jsonx.Object)
-					ref := refs[index].(*jsonx.Object)
+					library := libraries[index]
+					ref := refs[index]
 					policy := "DIRECT"
 					if target == "proxy" {
 						policy = "PROXY"
 					}
-					if ref.GetString("library_rule_id") != library.GetString("id") || ref.GetString("policy") != policy {
+					if ref.LibraryRuleID != library.ID || ref.Policy == nil || *ref.Policy != policy {
 						t.Fatal("first occurrence order or binding lost")
 					}
-					if slices.Contains(previous, library.GetString("id")) {
+					if slices.Contains(previous, library.ID) {
 						t.Fatal("separate initialization reused a resource")
 					}
-					if round == 2 && library.GetString("name") != libraries[i].(*jsonx.Object).GetString("name")+"-2" {
+					if round == 2 && library.Name != libraries[i].Name+"-2" {
 						t.Fatal("separate initialization lost name suffix")
 					}
 				}
 				previous = nil
 				for _, item := range libraries {
-					previous = append(previous, item.(*jsonx.Object).GetString("id"))
+					previous = append(previous, item.ID)
 				}
 				root, err := s.Repo.SharedRulesDir()
 				if err != nil {

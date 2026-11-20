@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	shared "configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 func composeBody(source record, dns string) record {
@@ -24,35 +24,53 @@ func TestComposeAtomicValuesAndLibraries(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
 	body := composeBody(record{"kind": stringJSON("values"), "rule_type": stringJSON("DOMAIN"), "text": stringJSON("example.com\n*.new.example\nfull:exact.example\nDOMAIN-REGEX,^a{1,3}\\.example$\n")}, "direct")
-	result := s.Post("/api/rules/compose?profile=other", auth, httpxtest.JSON(body)).WantStatus(200).Object()
-	if len(result.GetObject("data").GetList("rules")) != 3 || len(result.GetList("skipped")) != 1 {
+	res := s.Post("/api/rules/compose?profile=other", auth, httpxtest.JSON(body)).WantStatus(200)
+	var result struct {
+		Data struct {
+			Rules []any `json:"rules"`
+		} `json:"data"`
+		Skipped []any `json:"skipped"`
+	}
+	if err := json.Unmarshal(res.Body, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Data.Rules) != 3 || len(result.Skipped) != 1 {
 		t.Fatal("unexpected composition result")
 	}
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	before, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	bad := composeBody(record{"kind": stringJSON("new_library"), "library": json.RawMessage(`{"id":"client-id","name":"New","source_type":"content","behavior":"domain","content":"+.new.example\n"}`)}, "default")
 	bad["rule"] = json.RawMessage(`{"policy":"unknown"}`)
 	s.Post("/api/rules/compose?profile=other", auth, httpxtest.JSON(bad)).WantStatus(400)
-	after, err := s.Repo.ExportAll(s.Context(), false)
+	after, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
+	if !testjson.Equal(before, after) {
 		t.Fatal("shared/profile changes were not rolled back")
 	}
 	bad["rule"] = json.RawMessage(`{"policy":"DIRECT"}`)
-	added := s.Post("/api/rules/compose?profile=other", auth, httpxtest.JSON(bad)).WantStatus(200).Object().GetObject("data")
-	lib := added.GetObject("library")
-	if !strings.HasPrefix(lib.GetString("id"), "lib_") || lib.GetString("id") == "client-id" {
+	addedRes := s.Post("/api/rules/compose?profile=other", auth, httpxtest.JSON(bad)).WantStatus(200)
+	var added struct {
+		Data struct {
+			Library struct {
+				ID string `json:"id"`
+			} `json:"library"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(addedRes.Body, &added); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(added.Data.Library.ID, "lib_") || added.Data.Library.ID == "client-id" {
 		t.Fatal("server did not own library identity")
 	}
-	shared, err := s.Repo.GetShared(s.Context())
+	shared, err := s.Repo.Shared(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shared.GetList("rule_library")) != 2 {
+	if len(shared.RuleLibrary) != 2 {
 		t.Fatal("new library not committed")
 	}
 	s.Post("/api/rules/compose?profile=other", auth, httpxtest.JSON(composeBody(record{"kind": stringJSON("library"), "library_rule_ids": json.RawMessage(`["ads"]`)}, "default"))).WantStatus(409)
@@ -68,15 +86,21 @@ func TestComposeCacheFailureDoesNotUndoCommit(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0755) })
 	body := composeBody(record{"kind": stringJSON("new_library"), "library": json.RawMessage(`{"name":"No cache","source_type":"content","behavior":"domain","content":"+.new.example\n"}`)}, "default")
-	result := s.Post("/api/rules/compose?profile=other", s.Login(), httpxtest.JSON(body)).WantStatus(200).Object()
-	if !jsonx.Equal(result.Value("warnings"), []any{msgComposedCacheWarning}) {
-		t.Fatalf("warnings %v", result.Value("warnings"))
+	res := s.Post("/api/rules/compose?profile=other", s.Login(), httpxtest.JSON(body)).WantStatus(200)
+	var result struct {
+		Warnings []string `json:"warnings"`
 	}
-	shared, err := s.Repo.GetShared(s.Context())
+	if err := json.Unmarshal(res.Body, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !testjson.Equal([]any{msgComposedCacheWarning}, result.Warnings) {
+		t.Fatalf("warnings %v", result.Warnings)
+	}
+	shared, err := s.Repo.Shared(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shared.GetList("rule_library")) != 2 {
+	if len(shared.RuleLibrary) != 2 {
 		t.Fatal("accepted commit was lost")
 	}
 }

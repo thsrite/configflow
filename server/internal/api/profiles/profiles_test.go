@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -24,11 +24,10 @@ func profileApp(t *testing.T) *httpxtest.Server {
 }
 func state(t *testing.T, s *httpxtest.Server) string {
 	t.Helper()
-	doc, err := s.Repo.ExportAll(s.Context(), false)
+	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(doc)
 	return string(raw)
 }
 func files(t *testing.T, root string) map[string]string {
@@ -55,30 +54,30 @@ func files(t *testing.T, root string) map[string]string {
 }
 func TestProfilesCRUDAndClientImport(t *testing.T) {
 	s := profileApp(t)
-	s.Post("/api/profiles", httpxtest.JSON(jsonx.Obj("id", "phone", "name", "Phone"))).WantStatus(201)
-	s.Put("/api/profiles/phone", httpxtest.JSON(jsonx.Obj("name", "手机", "description", "Portable"))).WantStatus(200)
+	s.Post("/api/profiles", httpxtest.JSON(map[string]any{"id": "phone", "name": "Phone"})).WantStatus(201)
+	s.Put("/api/profiles/phone", httpxtest.JSON(map[string]any{"name": "手机", "description": "Portable"})).WantStatus(200)
 	s.Get("/api/profiles/phone").WantStatus(200)
-	s.Post("/api/profiles/phone/clone", httpxtest.JSON(jsonx.Obj("id", "copy", "name", "Copy"))).WantStatus(201)
+	s.Post("/api/profiles/phone/clone", httpxtest.JSON(map[string]any{"id": "copy", "name": "Copy"})).WantStatus(201)
 	s.Post("/api/profiles/copy/default").WantStatus(200)
 	s.Get("/api/profiles/phone/agents").WantStatus(200)
 	s.Get("/api/profiles/phone/export").WantStatus(200)
-	s.Post("/api/profiles/phone/import", httpxtest.JSON(jsonx.Obj("loon", jsonx.Obj("custom_config", "[General]\nip-mode=ipv4-only")))).WantStatus(200)
+	s.Post("/api/profiles/phone/import", httpxtest.JSON(map[string]any{"loon": map[string]any{"custom_config": "[General]\nip-mode=ipv4-only"}})).WantStatus(200)
 	s.Delete("/api/profiles/phone").WantStatus(204)
 	for _, body := range []string{`{`, `[]`, `null`, `"text"`} {
 		s.Post("/api/profiles/copy/import", httpxtest.Body([]byte(body), "application/json")).WantStatus(400)
 		s.Post("/api/profiles/copy/agents/rebind", httpxtest.Body([]byte(body), "application/json")).WantStatus(400)
 	}
-	payload := jsonx.Obj("client_type", "loon", "content", "[General]\nip-mode=ipv4-only\n[Proxy Group]\nProxy = select,DIRECT\n[Rule]\nFINAL,Proxy\n", "name", "Imported", "id", "imported", "dry_run", true)
+	payload := map[string]any{"client_type": "loon", "content": "[General]\nip-mode=ipv4-only\n[Proxy Group]\nProxy = select,DIRECT\n[Rule]\nFINAL,Proxy\n", "name": "Imported", "id": "imported", "dry_run": true}
 	before := state(t, s)
 	s.Post("/api/profiles/import-client", httpxtest.JSON(payload)).WantStatus(200)
 	if state(t, s) != before {
 		t.Fatal("dry-run wrote DB")
 	}
-	payload.Set("dry_run", false)
+	payload["dry_run"] = false
 	s.Post("/api/profiles/import-client", httpxtest.JSON(payload)).WantStatus(201)
 	s.Get("/api/profiles/imported").WantStatus(200)
-	payload.Set("id", "bad")
-	payload.Set("content", "nothing")
+	payload["id"] = "bad"
+	payload["content"] = "nothing"
 	before = state(t, s)
 	s.Post("/api/profiles/import-client", httpxtest.JSON(payload)).WantStatus(400)
 	if state(t, s) != before {
@@ -166,23 +165,28 @@ func TestProfileRegistration(t *testing.T) {
 
 func TestProfileExportRedactsCredentialEncodingCombinations(t *testing.T) {
 	s := profileApp(t)
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Update(jsonx.Obj("rule_proxy_token", "synthetic-rule+/ 当前", "retired_rule_proxy_tokens", []any{"synthetic-retired+/ 旧"}))
-		system.Set("agents", []any{jsonx.Obj("id", "synthetic-agent", "name", "Agent", "profile_id", "default", "token", "synthetic-agent+/ 设备")})
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		if err := system.SystemConfig.SetJSON("rule_proxy_token", json.RawMessage(`"synthetic-rule+/ 当前"`)); err != nil {
+			return err
+		}
+		if err := system.SystemConfig.SetJSON("retired_rule_proxy_tokens", json.RawMessage(`["synthetic-retired+/ 旧"]`)); err != nil {
+			return err
+		}
+		return system.SetJSON("agents", json.RawMessage(`[{"id":"synthetic-agent","name":"Agent","profile_id":"default","token":"synthetic-agent+/ 设备"}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	embedded := jsonx.NewObject()
+	embedded := map[string]string{}
 	for _, credential := range []string{"synthetic-rule+/ 当前", "synthetic-retired+/ 旧", "synthetic-agent+/ 设备"} {
 		text := credential
 		for level := 0; level <= 20; level++ {
-			embedded.Set(credential+"-"+string(rune('a'+level)), "https://example.com/source?token="+text)
+			embedded[credential+"-"+string(rune('a'+level))] = "https://example.com/source?token=" + text
 			text = url.QueryEscape(text)
 		}
 	}
-	_, _, err = s.Repo.UpdateProfileFields(s.Context(), "default", jsonx.Obj("mihomo", jsonx.Obj("future_payload", embedded)), nil)
+	fieldsRaw, _ := json.Marshal(map[string]any{"mihomo": map[string]any{"future_payload": embedded}})
+	_, _, err = s.Repo.SaveProfileFieldsJSON(s.Context(), "default", fieldsRaw, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,25 +209,24 @@ func TestProfileExportRedactsCredentialEncodingCombinations(t *testing.T) {
 
 func TestAgentBindingHTTPUsesAtomicManagerOwner(t *testing.T) {
 	s := profileApp(t)
-	if _, err := s.Repo.CreateProfile(s.Context(), jsonx.Obj("id", "target", "name", "Target"), ""); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "target", Name: "Target"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "first", "name", "First", "host", "192.0.2.1", "port", jsonx.Int(8080), "profile_id", "default", "token", "synthetic-first"), jsonx.Obj("id", "second", "name", "Second", "host", "192.0.2.2", "port", jsonx.Int(8080), "profile_id", "default", "token", "synthetic-second", "latest_upgrade", jsonx.Obj("status", "installing"))})
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		return system.SetJSON("agents", json.RawMessage(`[{"id":"first","name":"First","host":"192.0.2.1","port":8080,"profile_id":"default","token":"synthetic-first"},{"id":"second","name":"Second","host":"192.0.2.2","port":8080,"profile_id":"default","token":"synthetic-second","latest_upgrade":{"status":"installing"}}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := jsonx.Obj("target_profile_id", "target", "agent_ids", []any{"first", "second"})
+	payload := map[string]any{"target_profile_id": "target", "agent_ids": []string{"first", "second"}}
 	before := state(t, s)
 	s.Post("/api/profiles/default/agents/rebind", httpxtest.JSON(payload)).WantStatus(409)
 	if state(t, s) != before {
 		t.Fatal("busy rebind partially committed")
 	}
-	_, err = s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetList("agents")[1].(*jsonx.Object).Delete("latest_upgrade")
-		return nil, nil
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		system.Agents[1].LatestUpgrade = nil
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -233,8 +236,8 @@ func TestAgentBindingHTTPUsesAtomicManagerOwner(t *testing.T) {
 	if bytes.Contains(response.Body, []byte("synthetic-first")) || bytes.Contains(response.Body, []byte("synthetic-second")) {
 		t.Fatal("rebind leaked credentials")
 	}
-	bindings, err := s.Repo.GetProfileAgentBindings(s.Context(), "target")
-	if err != nil || len(bindings.GetList("agents")) != 2 {
+	bindings, err := s.Repo.ProfileAgentBindingsRecord(s.Context(), "target")
+	if err != nil || len(bindings.Agents) != 2 {
 		t.Fatal("bindings not moved atomically", err)
 	}
 }

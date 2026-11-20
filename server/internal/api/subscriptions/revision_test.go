@@ -1,23 +1,39 @@
 package subscriptions_test
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
 	"configflow/internal/api/subscriptions"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
-	"database/sql"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 	_ "modernc.org/sqlite"
 )
 
 func TestConfigFindingsIdenticalSubscriptionPutDoesNotChangeRevision(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
-	_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Synthetic", "url", "https://feed.example/sub", "unknown", jsonx.Obj("z", 1, "a", 2))}), nil)
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal([]any{
+			testjson.Obj(
+				testjson.Field{Key: "id", Value: "s"},
+				testjson.Field{Key: "name", Value: "Synthetic"},
+				testjson.Field{Key: "url", Value: "https://feed.example/sub"},
+				testjson.Field{Key: "unknown", Value: testjson.Obj(testjson.Field{Key: "z", Value: 1}, testjson.Field{Key: "a", Value: 2})},
+			),
+		})
+		if err != nil {
+			return err
+		}
+		return shared.SetJSON("subscriptions", raw)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	shared, err := srv.Repo.GetShared(srv.Context())
+	shared, err := srv.Repo.Shared(srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +53,7 @@ func TestConfigFindingsIdenticalSubscriptionPutDoesNotChangeRevision(t *testing.
 	}
 	beforeRevision, beforeValue := readField()
 	for range 2 {
-		srv.Put("/api/subscriptions/s", httpxtest.JSON(shared.GetList("subscriptions")[0])).WantStatus(200)
+		srv.Put("/api/subscriptions/s", httpxtest.JSON(shared.Subscriptions[0])).WantStatus(200)
 	}
 	afterRevision, afterValue := readField()
 	if beforeRevision != afterRevision || beforeValue != afterValue {

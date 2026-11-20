@@ -13,10 +13,10 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/substore"
+	"configflow/internal/testjson"
 )
 
 func TestGlobalGateAndProfileToken(t *testing.T) {
@@ -29,22 +29,26 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	t.Cleanup(func() { logger.Close() })
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(subscriptions.Register)})
 	ctx := srv.Context()
-	_, err = srv.Repo.SaveShared(ctx, jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "https://feed.example/sub", "interval", 0)}), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		s := system.GetObject("system_config")
-		s.Set("config_token", "synthetic-pull-token")
-		s.Set("rule_proxy_token", "synthetic-internal-token")
-		s.Set("retired_rule_proxy_tokens", []any{"synthetic-retired-token"})
-		return nil, nil
+	err = srv.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		raw, err := json.Marshal([]any{map[string]any{"id": "s", "name": "Feed", "url": "https://feed.example/sub", "interval": 0}})
+		if err != nil {
+			return err
+		}
+		return shared.SetJSON("subscriptions", raw)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = fixtureSaveSubscriptionNodes(ctx, "s", []any{jsonx.Obj("id", "cached", "name", "Remote", "type", "http", "server", "example.com", "port", 80)}, nil)
+	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ConfigToken = "synthetic-pull-token"
+		system.SystemConfig.RuleProxyToken = "synthetic-internal-token"
+		system.SystemConfig.RetiredRuleProxyTokens = []string{"synthetic-retired-token"}
+		return nil
+	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixtureSaveSubscriptionNodes(ctx, "s", []any{map[string]any{"id": "cached", "name": "Remote", "type": "http", "server": "example.com", "port": 80}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/api/subscriptions/s/proxies?token=synthetic-pull-token", "/api/subscriptions/proxies?token=synthetic-pull-token"} {
@@ -63,7 +67,7 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	for _, token := range []string{"synthetic-internal-token", "synthetic-retired-token"} {
 		srv.Get(prefix+"?token="+token, admin).WantStatus(401)
 	}
-	expired, err := auth.EncodeHS256(jsonx.Obj("username", "admin", "exp", time.Now().Add(-time.Hour).Unix()), auth.Current().SecretKey)
+	expired, err := auth.EncodeHS256(map[string]any{"username": "admin", "exp": time.Now().Add(-time.Hour).Unix()}, auth.Current().SecretKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,20 +78,22 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	}
 	for _, path := range []string{prefix, "/api/profiles/default/subscriptions/missing/proxies"} {
 		res := srv.Get(path + "?token=synthetic-other-profile-token").WantStatus(401)
-		res.WantJSON(jsonx.Obj("message", "Invalid or missing authentication", "success", false))
+		if diff := testjson.Diff(map[string]any{"message": "Invalid or missing authentication", "success": false}, json.RawMessage(res.Body)); diff != "" {
+			t.Fatalf("%s: %s", path, diff)
+		}
 	}
-	_, err = srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("config_token", "synthetic-retired-token")
-		return nil, nil
+	err = srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ConfigToken = "synthetic-retired-token"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv.Get(prefix + "?token=synthetic-retired-token").WantStatus(401)
 	srv.Get(prefix + "?token=synthetic-pull-token").WantStatus(401)
-	_, err = srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Set("config_token", "synthetic-rotated-token")
-		return nil, nil
+	err = srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ConfigToken = "synthetic-rotated-token"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -120,37 +126,26 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata *jsonx.Object) (*jsonx.Object, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata map[string]any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var nodes []model.Node
 	if err := json.Unmarshal(raw, &nodes); err != nil {
-		return nil, err
+		return err
 	}
 	var receipt *substore.CacheMetadata
 	if metadata != nil {
 		raw, err := json.Marshal(metadata)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		receipt = &substore.CacheMetadata{}
 		if err := json.Unmarshal(raw, receipt); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
-	if err != nil {
-		return nil, err
-	}
-	data, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	return parsed.(*jsonx.Object), nil
+	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	return err
 }

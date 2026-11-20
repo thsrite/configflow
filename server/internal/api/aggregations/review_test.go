@@ -2,6 +2,7 @@ package aggregations_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"os"
@@ -13,8 +14,8 @@ import (
 	"configflow/internal/api/aggregations"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 )
@@ -33,9 +34,15 @@ func TestReviewCatalogCancellation(t *testing.T) {
 			}
 			t.Run(label+tc.method+tc.path, func(t *testing.T) {
 				srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(aggregations.Register)})
-				_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("nodes", []any{}, "subscriptions", []any{}, "subscription_aggregations", []any{
-					jsonx.Obj("id", "a", "name", "A", "nodes", []any{}, "subscriptions", []any{}), jsonx.Obj("id", "b", "name", "B", "nodes", []any{}, "subscriptions", []any{}),
-				}), nil)
+				err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+					if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
+						return err
+					}
+					if err := s.SetJSON("subscriptions", json.RawMessage(`[]`)); err != nil {
+						return err
+					}
+					return s.SetJSON("subscription_aggregations", json.RawMessage(`[{"id":"a","name":"A","nodes":[],"subscriptions":[]},{"id":"b","name":"B","nodes":[],"subscriptions":[]}]`))
+				})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -86,9 +93,15 @@ func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 			generation.Wire()
 			mihomoenv.Wire()
 			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(aggregations.Register)})
-			_, err := srv.Repo.SaveShared(srv.Context(), jsonx.Obj("nodes", []any{}, "subscriptions", []any{jsonx.Obj("id", "s", "name", "Feed", "url", "http://127.0.0.1:9/feed")}, "subscription_aggregations", []any{
-				jsonx.Obj("id", "a", "name", "Aggregate", "nodes", []any{}, "subscriptions", []any{"s"}),
-			}), nil)
+			err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+				if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
+					return err
+				}
+				if err := s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Feed","url":"http://127.0.0.1:9/feed"}]`)); err != nil {
+					return err
+				}
+				return s.SetJSON("subscription_aggregations", json.RawMessage(`[{"id":"a","name":"Aggregate","nodes":[],"subscriptions":["s"]}]`))
+			})
 			if err != nil {
 				t.Fatal(err)
 			}

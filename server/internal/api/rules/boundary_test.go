@@ -7,24 +7,24 @@ import (
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 func TestHEADCollectionsAndDNSStayReadOnly(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()
-	before, err := s.Repo.ExportAll(s.Context(), false)
+	before, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/api/rules", "/api/profiles/other/rules", "/api/rule-sets", "/api/rules/dns?profile=other"} {
 		s.Do("HEAD", path, auth, httpxtest.JSON(map[string]any{"routes": map[string]string{"rule_1": "blackhole"}})).WantStatus(200)
 	}
-	after, err := s.Repo.ExportAll(s.Context(), false)
+	after, err := s.Repo.ExportAllJSON(s.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonx.Equal(before, after) {
+	if !testjson.Equal(before, after) {
 		t.Fatal("HEAD changed rules or routing")
 	}
 }
@@ -32,7 +32,7 @@ func TestComposeRejectsYAMLPolicyFailuresAtomically(t *testing.T) {
 	for _, content := range []string{"payload: [a.example]\npayload: [b.example]\n", "payload: &a [*a]\n"} {
 		t.Run(content, func(t *testing.T) {
 			s := fixture(t)
-			before, err := s.Repo.ExportAll(s.Context(), false)
+			before, err := s.Repo.ExportAllJSON(s.Context(), false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -40,11 +40,11 @@ func TestComposeRejectsYAMLPolicyFailuresAtomically(t *testing.T) {
 			raw, _ := json.Marshal(library)
 			request := composeBody(record{"kind": stringJSON("new_library"), "library": raw}, "default")
 			s.Post("/api/rules/compose?profile=other", s.Login(), httpxtest.JSON(request)).WantStatus(400)
-			after, err := s.Repo.ExportAll(s.Context(), false)
+			after, err := s.Repo.ExportAllJSON(s.Context(), false)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !jsonx.Equal(before, after) {
+			if !testjson.Equal(before, after) {
 				t.Fatal("rejected YAML changed state")
 			}
 		})

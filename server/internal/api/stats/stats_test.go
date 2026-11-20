@@ -2,15 +2,18 @@ package stats
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
-func overviewOf(t *testing.T, app *httpx.App, repository *repo.Repository, header string) (int, *jsonx.Object) {
+func overviewOf(t *testing.T, app *httpx.App, repository *repo.Repository, header string) (int, map[string]any) {
 	t.Helper()
 	request := httpx.InvokeRequest{Method: "GET", Path: "/api/stats/overview"}
 	if header != "" {
@@ -20,11 +23,11 @@ func overviewOf(t *testing.T, app *httpx.App, repository *repo.Repository, heade
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(res.Body)
-	if err != nil {
+	var value map[string]any
+	if err := json.Unmarshal(res.Body, &value); err != nil {
 		t.Fatalf("%v %s", err, res.Body)
 	}
-	return res.Status, value.(*jsonx.Object)
+	return res.Status, value
 }
 
 func TestOverviewCountsAndHistorySampling(t *testing.T) {
@@ -33,9 +36,8 @@ func TestOverviewCountsAndHistorySampling(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := repository.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{jsonx.Obj("id", "s1", "name", "S", "url", "https://sub.test/x")})
-		return nil, nil
+	if err := repository.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"s1","name":"S","url":"https://sub.test/x"}]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -46,45 +48,59 @@ func TestOverviewCountsAndHistorySampling(t *testing.T) {
 	defer func() { Now = time.Now }()
 
 	status, body := overviewOf(t, app, repository, "")
-	data := body.GetObject("data")
-	if status != 200 || data.GetObject("subscriptions").GetInt("total") != 1 ||
-		!jsonx.Equal(data.GetObject("subscriptions").Value("history"), []any{1}) ||
-		!jsonx.Equal(data.GetObject("rules").Value("history"), []any{0}) {
-		t.Fatal(jsonx.Repr(body))
+	data := body["data"].(map[string]any)
+	subs := data["subscriptions"].(map[string]any)
+	rules := data["rules"].(map[string]any)
+	if status != 200 || subs["total"].(float64) != 1 ||
+		!testjson.Equal([]any{1}, subs["history"]) ||
+		!testjson.Equal([]any{0}, rules["history"]) {
+		t.Fatalf("%#v", body)
 	}
-	profile := data.GetObject("profile")
-	if _, ok := profile.Value("updated_at").(string); !ok || profile.GetInt("revision") < 1 {
-		t.Fatal(jsonx.Repr(profile))
+	profile := data["profile"].(map[string]any)
+	if _, ok := profile["updated_at"].(string); !ok || profile["revision"].(float64) < 1 {
+		t.Fatalf("%#v", profile)
 	}
-	saved, err := repository.ReadProfileJSON("default", HistoryFile)
-	if err != nil || len(saved.GetList("samples")) != 1 ||
-		saved.GetList("samples")[0].(*jsonx.Object).GetString("at") != "2026-11-14T12:00:00Z" {
-		t.Fatalf("%v %v", err, jsonx.Repr(saved))
+	historyPath, err := repository.ProfilePath("default", HistoryFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawSaved, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Samples []struct {
+			At string `json:"at"`
+		} `json:"samples"`
+	}
+	if err := json.Unmarshal(rawSaved, &saved); err != nil || len(saved.Samples) != 1 || saved.Samples[0].At != "2026-11-14T12:00:00Z" {
+		t.Fatalf("%v %s", err, rawSaved)
 	}
 	// Within the sampling interval: not saved, the last point shows the current value.
 	clock = clock.Add(10 * time.Minute)
-	if _, err := repository.UpdateSharedTransaction(ctx, func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{})
-		return nil, nil
+	if err := repository.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return shared.SetJSON("subscriptions", json.RawMessage(`[]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
 	_, body = overviewOf(t, app, repository, "")
-	if !jsonx.Equal(body.GetObject("data").GetObject("subscriptions").Value("history"), []any{0}) {
-		t.Fatal(jsonx.Repr(body))
+	if !testjson.Equal([]any{0}, body["data"].(map[string]any)["subscriptions"].(map[string]any)["history"]) {
+		t.Fatalf("%#v", body)
 	}
-	saved, _ = repository.ReadProfileJSON("default", HistoryFile)
-	if len(saved.GetList("samples")) != 1 {
+	rawSaved, _ = os.ReadFile(historyPath)
+	saved.Samples = nil
+	_ = json.Unmarshal(rawSaved, &saved)
+	if len(saved.Samples) != 1 {
 		t.Fatal("sampled too early")
 	}
 	clock = clock.Add(30 * time.Minute)
 	_, body = overviewOf(t, app, repository, "")
-	if !jsonx.Equal(body.GetObject("data").GetObject("subscriptions").Value("history"), []any{1, 0}) {
-		t.Fatal(jsonx.Repr(body))
+	if !testjson.Equal([]any{1, 0}, body["data"].(map[string]any)["subscriptions"].(map[string]any)["history"]) {
+		t.Fatalf("%#v", body)
 	}
 	status, body = overviewOf(t, app, repository, "missing")
-	if status != 404 || body.GetString("message") != "Profile not found: missing" {
-		t.Fatal(status, jsonx.Repr(body))
+	if status != 404 || body["message"] != "Profile not found: missing" {
+		t.Fatalf("%d %#v", status, body)
 	}
 }
 

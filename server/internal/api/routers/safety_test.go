@@ -14,10 +14,11 @@ import (
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
+	"configflow/internal/testjson"
 )
 
 func TestR15MalformedProbePersistsOnlyProbe(t *testing.T) {
@@ -50,36 +51,43 @@ func TestR15MalformedProbePersistsOnlyProbe(t *testing.T) {
 			}
 			fake.Reset(seed)
 			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
-			before, err := s.Repo.GetProfile(s.Context(), "default")
+			before, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)
 			}
 			result := s.Post("/api/routers/router-one/probe")
 			result.WantStatus(502)
-			if result.Object().GetBool("success") || result.Object().GetObject("probe").GetBool("ok") || result.Object().GetString("message") == "" {
+			resObj := decodeJSON(t, result)
+			resProbe, _ := resObj["probe"].(map[string]any)
+			resMsg, _ := resObj["message"].(string)
+			if resObj["success"] == true || resProbe["ok"] == true || resMsg == "" {
 				t.Fatal("failure not represented")
 			}
-			after, err := s.Repo.GetProfile(s.Context(), "default")
+			after, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if after.GetInt("_revision") != before.GetInt("_revision")+1 {
+			if after.Revision != before.Revision+1 {
 				t.Fatal("failed probe revision was not incremented exactly once")
 			}
-			before.Delete("_revision")
-			after.Delete("_revision")
-			before.Delete("updated_at")
-			after.Delete("updated_at")
-			old := before.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-			current := after.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-			if current.GetObject("last_probe").GetBool("ok") || current.GetObject("last_probe").GetString("message") != result.Object().GetString("message") {
+			beforeRaw, _ := json.Marshal(before)
+			afterRaw, _ := json.Marshal(after)
+			var beforeMap, afterMap map[string]any
+			_ = json.Unmarshal(beforeRaw, &beforeMap)
+			_ = json.Unmarshal(afterRaw, &afterMap)
+			delete(beforeMap, "_revision")
+			delete(afterMap, "_revision")
+			delete(beforeMap, "updated_at")
+			delete(afterMap, "updated_at")
+			old := beforeMap["routers"].(map[string]any)["items"].([]any)[0].(map[string]any)
+			current := afterMap["routers"].(map[string]any)["items"].([]any)[0].(map[string]any)
+			currentProbe, _ := current["last_probe"].(map[string]any)
+			if currentProbe["ok"] == true || currentProbe["message"] != resMsg {
 				t.Fatal("failed probe not stored")
 			}
-			old.Delete("last_probe")
-			current.Delete("last_probe")
-			a, _ := json.Marshal(before)
-			b, _ := json.Marshal(after)
-			if string(a) != string(b) {
+			delete(old, "last_probe")
+			delete(current, "last_probe")
+			if !testjson.Equal(beforeMap, afterMap) {
 				t.Fatal("probe replaced unrelated fields")
 			}
 			if len(fake.Snapshot().Tables["static_rt"]) != 0 {
@@ -118,7 +126,7 @@ func TestR15ProbeRequestDisconnectAndRuntimeShutdown(t *testing.T) {
 			}})
 			created := s.Post("/api/routers", httpxtest.JSON(routerBody(server.URL)))
 			created.WantStatus(200)
-			id := created.Object().GetObject("router").GetString("id")
+			id := decodeJSON(t, created)["router"].(map[string]any)["id"].(string)
 			before, _ := s.Repo.ConfigRevision(s.Context(), "default")
 			boundHTTP := runtimeHTTP(t, s, runtime)
 			request, cancel := context.WithCancel(t.Context())
@@ -197,12 +205,14 @@ func TestR15MalformedRecordIsolationAndPeerCredentials(t *testing.T) {
 	addGateway(t, s)
 	list := s.Get("/api/routers", login)
 	list.WantStatus(200)
-	if len(list.Object().GetList("routers")) < 2 || strings.Contains(list.Text(), "synthetic-peer-password") || !strings.Contains(list.Text(), "visible-user") {
+	routersList, _ := decodeJSON(t, list)["routers"].([]any)
+	if len(routersList) < 2 || strings.Contains(list.Text(), "synthetic-peer-password") || !strings.Contains(list.Text(), "visible-user") {
 		t.Fatalf("bad row or peer credential broke projection: %s", list.Body)
 	}
 	pending := s.Get("/api/agents/gateway/upstream-routers?profile=default", login)
 	pending.WantStatus(200)
-	if strings.Contains(pending.Text(), "synthetic-peer-password") || len(pending.Object().GetList("routers")) != 2 {
+	pendingList, _ := decodeJSON(t, pending)["routers"].([]any)
+	if strings.Contains(pending.Text(), "synthetic-peer-password") || len(pendingList) != 2 {
 		t.Fatalf("global reminders lost isolation/privacy: %s", pending.Body)
 	}
 }
@@ -219,9 +229,8 @@ func TestR15PolicyReadGuardsRawRecordsBeforeDriverCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		current.GetObject("routers").GetList("items")[0].(*jsonx.Object).Set("rule_sync_interval", "second malformed value")
-		return nil, nil
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		return current.Routers.Items[0].SetJSON("rule_sync_interval", json.RawMessage(`"second malformed value"`))
 	})
 	if err != nil {
 		t.Fatal(err)

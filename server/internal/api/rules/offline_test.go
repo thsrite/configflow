@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
@@ -36,8 +35,8 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 	// either URL or mirror fallback, and existing bytes win over inline content.
 	for _, sourceType := range []string{"content", "url"} {
 		t.Run(sourceType, func(t *testing.T) {
-			source := jsonx.Obj("id", "offline", "name", "Offline", "source_type", sourceType, "url", "http://127.0.0.1:1/forbidden", "behavior", "domain", "format", "text", "content", "+.inline.example\n")
-			config := jsonx.Obj("profile_id", "other", "rule_library", []any{source})
+			source := map[string]any{"id": "offline", "name": "Offline", "source_type": sourceType, "url": "http://127.0.0.1:1/forbidden", "behavior": "domain", "format": "text", "content": "+.inline.example\n"}
+			config := map[string]any{"profile_id": "other", "rule_library": []any{source}}
 			configRaw, _ := json.Marshal(config)
 			itemRaw := json.RawMessage(`{"id":"selected","itemType":"ruleset","library_rule_id":"offline"}`)
 			libRaw, _ := json.Marshal(source)
@@ -51,7 +50,7 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 			if err != nil || value != want {
 				t.Fatalf("offline missing cache: %q %v", value, err)
 			}
-			source.Set("id", "cached-"+sourceType)
+			source["id"] = "cached-" + sourceType
 			libRaw, _ = json.Marshal(source)
 			lib.Raw = libRaw
 			configRaw, _ = json.Marshal(config)
@@ -77,7 +76,7 @@ func TestRouterMissingCacheIsAnIncompletePlan(t *testing.T) {
 	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	Wire()
 	t.Cleanup(func() { routers.RulesetContent = previousLoader })
-	config := jsonx.Obj("profile_id", "other", "rule_configs", []any{jsonx.Obj("id", "remote", "name", "Remote", "itemType", "ruleset", "library_rule_id", "offline", "policy", "PROXY")}, "rule_library", []any{jsonx.Obj("id", "offline", "name", "Remote", "source_type", "url", "url", "http://127.0.0.1:1/forbidden", "behavior", "ipcidr", "format", "text")})
+	config := map[string]any{"profile_id": "other", "rule_configs": []any{map[string]any{"id": "remote", "name": "Remote", "itemType": "ruleset", "library_rule_id": "offline", "policy": "PROXY"}}, "rule_library": []any{map[string]any{"id": "offline", "name": "Remote", "source_type": "url", "url": "http://127.0.0.1:1/forbidden", "behavior": "ipcidr", "format": "text"}}}
 	raw, _ := json.Marshal(config)
 	plan, err := routers.ComputeDesired(repo.WithScope(s.Context()), raw, "192.0.2.1", []string{"remote"}, nil)
 	if err != nil || plan == nil || len(plan.BlockingWarnings) != 1 || !strings.Contains(plan.BlockingWarnings[0], "没有本地缓存") {

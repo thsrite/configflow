@@ -5,12 +5,12 @@ import (
 
 	"configflow/internal/api/settings"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 func TestConfigFindingsRejectUnpairedSurrogatesWithoutCommit(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(settings.Register)})
-	before, err := srv.Repo.ExportAll(srv.Context(), false)
+	before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,13 +22,13 @@ func TestConfigFindingsRejectUnpairedSurrogatesWithoutCommit(t *testing.T) {
 				t.Errorf("%s %s status=%d body=%s", test.path, scalar, result.Status, result.Body)
 				continue
 			}
-			if result.Object().GetBool("success") {
+			if success, _ := decodeMap(t, result.Body)["success"].(bool); success {
 				t.Error("accepted invalid Unicode")
 			}
 		}
 	}
-	after, err := srv.Repo.ExportAll(srv.Context(), false)
-	if err != nil || !jsonx.Equal(before, after) {
+	after, err := srv.Repo.ExportAllJSON(srv.Context(), false)
+	if err != nil || !testjson.Equal(before, after) {
 		t.Fatalf("invalid Unicode committed: %v", err)
 	}
 	// Valid pairs and a literal U+FFFD remain valid data. An escaped backslash

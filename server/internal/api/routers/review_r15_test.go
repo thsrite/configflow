@@ -9,7 +9,6 @@ import (
 
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -42,16 +41,16 @@ func TestReviewR15ProbeRedirectKeepsManagementOrigin(t *testing.T) {
 	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
 	result := s.Post("/api/routers/router-one/probe")
 	result.WantStatus(502)
-	got := result.Object().GetString("message")
+	got, _ := decodeJSON(t, result)["message"].(string)
 	if got != want.Message || strings.Contains(got, "synthetic-token") {
 		t.Fatalf("message=%q want %q", got, want.Message)
 	}
-	profile, err := s.Repo.GetProfile(s.Context(), "default")
+	profile, err := s.Repo.Profile(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored := profile.GetObject("routers").GetList("items")[0].(*jsonx.Object).GetObject("last_probe")
-	if stored.GetString("message") != want.Message {
-		t.Fatalf("stored message=%q", stored.GetString("message"))
+	stored := profile.Routers.Items[0].LastProbe
+	if stored == nil || stored.Message == nil || *stored.Message != want.Message {
+		t.Fatalf("stored message=%+v", stored)
 	}
 }

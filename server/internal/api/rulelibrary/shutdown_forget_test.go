@@ -3,6 +3,7 @@ package rulelibrary
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/refresh"
 	"configflow/internal/taskstatus"
@@ -25,21 +25,25 @@ func TestO36cForgetStatusWhileWaiting(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			app := fixture(t)
 			status := taskstatus.New(app.DataDir)
-			if _, err := status.Record(refresh.RuleSourceKey("manual"), taskstatus.Result{OK: true}); err != nil {
+			if _, err := status.SaveResult(app.Context(), refresh.RuleSourceKey("manual"), taskstatus.Result{OK: true}); err != nil {
 				t.Fatal(err)
 			}
-			data, err := status.Load()
+			path := filepath.Join(app.DataDir, taskstatus.Filename)
+			raw, err := os.ReadFile(path)
 			if err != nil {
+				t.Fatal(err)
+			}
+			var data map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &data); err != nil {
 				t.Fatal(err)
 			}
 			// A malformed counter makes the holder roll back after Now,
 			// giving a real leaf-lock barrier without changing the status file.
-			data.Set("holder", jsonx.Obj("run_count", []any{"invalid counter"}))
-			before, err := jsonx.Compact(data)
+			data["holder"] = json.RawMessage(`{"run_count":["invalid counter"]}`)
+			before, err := json.Marshal(data)
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(app.DataDir, taskstatus.Filename)
 			if err := os.WriteFile(path, before, 0600); err != nil {
 				t.Fatal(err)
 			}
