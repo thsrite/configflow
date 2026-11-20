@@ -15,6 +15,7 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -88,7 +89,7 @@ func TestC29RuntimeShutdownRejectsEveryOwner(t *testing.T) {
 				_, err = SaveSettings(bound, "default", M("worker_threads", I(7)), "")
 			} else {
 				var result []byte
-				result, err = BuildZIP(bound, jsonx.NewObject(), "plugins: []", nil, []File{{Path: "notes.txt", Content: []byte("must not be packed")}}, "")
+				result, err = BuildTypedZIP(bound, &model.Config{Profile: &model.Profile{}}, "plugins: []", nil, []File{{Path: "notes.txt", Content: []byte("must not be packed")}}, "")
 				if result != nil {
 					t.Fatal("archive escaped after shutdown")
 				}
@@ -123,7 +124,7 @@ func TestC29RealRuntimeDisconnectCompletesEveryOwner(t *testing.T) {
 	if config.GetObject("oxidns").GetInt("worker_threads") != 7 || saved.Guard.ConfigRevision != 1 {
 		t.Fatal("disconnected request did not complete settings commit", saved.Guard)
 	}
-	output, err := BuildZIP(request, jsonx.NewObject(), "plugins: []", nil, []File{{Path: "notes.bin", Content: []byte{0, 1, 255}}}, "")
+	output, err := BuildTypedZIP(request, &model.Config{Profile: &model.Profile{}}, "plugins: []", nil, []File{{Path: "notes.bin", Content: []byte{0, 1, 255}}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

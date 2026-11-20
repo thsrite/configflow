@@ -166,7 +166,8 @@ func (r row) decodeArgs() ([]*Node, error) {
 
 func profileOf(n *Node) *Profile {
 	if !isMap(n) {
-		return NewProfile(nil)
+		p, _ := NewTypedProfile(nil)
+		return p
 	}
 	p, err := ProfileFromJSON(ToJSON(n))
 	if err != nil {

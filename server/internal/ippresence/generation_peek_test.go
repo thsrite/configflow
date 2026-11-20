@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
@@ -29,12 +28,12 @@ type generationReadState struct {
 
 func generationState(t *testing.T, ctx context.Context, r *repo.Repository) generationReadState {
 	t.Helper()
-	document, err := r.ExportAll(ctx, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := jsonx.Compact(document)
-	if err != nil {
+	var data []byte
+	if err := r.View(ctx, func(doc *model.Document) error {
+		var err error
+		data, err = model.Marshal(doc)
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 	revision, err := r.ConfigRevision(ctx, "default")

@@ -23,18 +23,29 @@ func nativeSeed(t *testing.T, custom bool) func(context.Context, *repo.Repositor
 			if custom {
 				config.GetObject("oxidns").Set("rule_actions", jsonx.Obj("proxied", jsonx.Obj("action", "blackhole")))
 			}
-			view := oxidns.NewProfile(config)
+			rawConfig, err := jsonx.Compact(config)
+			if err != nil {
+				return nil, err
+			}
+			view, err := oxidns.ProfileFromJSON(rawConfig)
+			if err != nil {
+				return nil, err
+			}
 			settings, err := oxidns.PrepareEditor(view.Settings(), view, "http://localhost")
 			if err != nil {
 				return nil, err
 			}
 			if custom {
-				text := oxidns.ToJSONX(settings).(*jsonx.Object).GetString("native_config")
+				parsed, err := jsonx.Parse(oxidns.ToJSON(settings))
+				if err != nil {
+					return nil, err
+				}
+				raw := parsed.(*jsonx.Object)
+				text := raw.GetString("native_config")
 				changed := strings.NewReplacer("mode: 'null'", "mode: nxdomain", `mode: "null"`, "mode: nxdomain").Replace(text)
 				if text == changed {
 					t.Fatal("fixture did not customize blackhole plugin")
 				}
-				raw := oxidns.ToJSONX(settings).(*jsonx.Object)
 				raw.Set("native_config", changed)
 				data, err := json.Marshal(raw)
 				if err != nil {
@@ -45,7 +56,11 @@ func nativeSeed(t *testing.T, custom bool) func(context.Context, *repo.Repositor
 					return nil, err
 				}
 			}
-			p.Set("oxidns", oxidns.ToJSONX(settings))
+			encoded, err := jsonx.Parse(oxidns.ToJSON(settings))
+			if err != nil {
+				return nil, err
+			}
+			p.Set("oxidns", encoded)
 			return nil, nil
 		}); err != nil {
 			t.Fatal(err)

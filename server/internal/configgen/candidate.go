@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -35,11 +36,11 @@ func Capture(ctx context.Context, profileID string, engine Engine, baseURL strin
 	if err != nil {
 		return Candidate{}, err
 	}
-	config, revision, err := r.GetPublishSnapshot(ctx, id, false)
+	config, revision, err := r.PublishConfig(ctx, id, false)
 	if err != nil {
 		return Candidate{}, err
 	}
-	raw, err := json.Marshal(config)
+	raw, err := model.Marshal(config)
 	if err != nil {
 		return Candidate{}, err
 	}
@@ -47,13 +48,13 @@ func Capture(ctx context.Context, profileID string, engine Engine, baseURL strin
 	if err != nil {
 		return Candidate{}, err
 	}
-	hosts, err := json.Marshal(download.Output.SubscriptionHosts)
-	if err != nil {
-		return Candidate{}, err
+	hosts := download.Output.SubscriptionHosts
+	if len(hosts) == 0 {
+		hosts = json.RawMessage("null")
 	}
-	dialers, err := json.Marshal(download.Output.SubscriptionDialers)
-	if err != nil {
-		return Candidate{}, err
+	dialers := download.Output.SubscriptionDialers
+	if len(dialers) == 0 {
+		dialers = json.RawMessage("null")
 	}
 	return Candidate{Content: download.Output.Content, Archive: download.Data, Source: raw, Revision: revision, SubscriptionHosts: hosts, SubscriptionDialers: dialers}, nil
 }

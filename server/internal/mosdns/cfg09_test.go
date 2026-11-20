@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/taskstatus"
 )
 
@@ -75,7 +76,7 @@ func TestCFG09ReceiptFailureAfterDownload(t *testing.T) {
 					t.Cleanup(func() { _ = os.Chmod(r.DataDir(), 0700) })
 				}
 				calls := 0
-				withFetch(t, func(context.Context, string, *jsonx.Object, string) ([]byte, error) {
+				withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 					calls++
 					return []byte("example.com\n"), nil
 				})

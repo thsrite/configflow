@@ -2,7 +2,6 @@ package ippresence
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
@@ -22,37 +20,30 @@ func (d *denyingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, os.ErrPermission
 }
 
-func TestTypedPresenceMatchesOfflineLegacy(t *testing.T) {
-	ctx, _, _, config := listRepo(t)
+func TestTypedPresenceMatchesOfflineCache(t *testing.T) {
+	ctx, _, _, library := listRepo(t)
 	var requests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	entry := config.GetList("rule_library")[0].(*jsonx.Object)
-	entry.Set("url", server.URL+"/rules.list")
-	path, err := rulefetch.RuleCacheReadPath(ctx, entry, config.GetList("rule_library"))
+	url := server.URL + "/rules.list"
+	library[0].URL = &url
+	rule := model.RuleConfig{
+		ID:            library[0].ID,
+		Name:          library[0].Name,
+		SourceType:    library[0].SourceType,
+		URL:           library[0].URL,
+		Behavior:      library[0].Behavior,
+		Format:        library[0].Format,
+		LibraryRuleID: library[0].ID,
+	}
+	path, err := rulefetch.CacheReadPath(ctx, rule, library)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	var library []model.RuleLibraryItem
-	data, err := jsonx.Compact(config.Value("rule_library"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = json.Unmarshal(data, &library); err != nil {
-		t.Fatal(err)
-	}
-	var rule model.RuleConfig
-	data, err = jsonx.Compact(entry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = json.Unmarshal(data, &rule); err != nil {
 		t.Fatal(err)
 	}
 	// Neither path may try HTTP, even for missing or invalid cache bytes.
@@ -60,12 +51,18 @@ func TestTypedPresenceMatchesOfflineLegacy(t *testing.T) {
 	previous := http.DefaultTransport
 	http.DefaultTransport = transport
 	defer func() { http.DefaultTransport = previous }()
+	boolPtr := func(b bool) *bool { return &b }
 	for _, tt := range []struct {
 		name     string
 		body     []byte
 		absent   bool
-		expected any
-	}{{"domain", []byte("DOMAIN-SUFFIX,example.com\n"), false, false}, {"ip", []byte("IP-CIDR,192.0.2.0/24\n"), false, true}, {"invalid UTF8", []byte{0xff}, false, nil}, {"missing", nil, true, nil}} {
+		expected *bool
+	}{
+		{"domain", []byte("DOMAIN-SUFFIX,example.com\n"), false, boolPtr(false)},
+		{"ip", []byte("IP-CIDR,192.0.2.0/24\n"), false, boolPtr(true)},
+		{"invalid UTF8", []byte{0xff}, false, nil},
+		{"missing", nil, true, nil},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.absent {
 				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -75,21 +72,16 @@ func TestTypedPresenceMatchesOfflineLegacy(t *testing.T) {
 				t.Fatal(err)
 			}
 			ClearMemo()
-			want, oldErr := ClassicalIPLines(ctx, entry, config)
-			if want != tt.expected {
-				t.Fatalf("legacy path did not inspect cache: got %v want %v", want, tt.expected)
-			}
-			ClearMemo()
 			got, err := TypedClassicalIPLines(ctx, rule, library)
-			if (err == nil) != (oldErr == nil) {
-				t.Fatalf("error: %v / %v", err, oldErr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if want == nil {
+			if tt.expected == nil {
 				if got != nil {
 					t.Fatalf("want unknown: %v", *got)
 				}
-			} else if got == nil || *got != want {
-				t.Fatalf("presence: %v / %v", got, want)
+			} else if got == nil || *got != *tt.expected {
+				t.Fatalf("presence: %v / %v", got, *tt.expected)
 			}
 		})
 	}
@@ -100,18 +92,19 @@ func TestTypedPresenceMatchesOfflineLegacy(t *testing.T) {
 	if err := os.WriteFile(path, []byte("DOMAIN-SUFFIX,example.com\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	old, err := rulefetch.ReadValidatedRuleCache(ctx, entry, config)
+	srcCfg := &rulefetch.SourceConfig{Library: library}
+	old, err := rulefetch.ReadCache(ctx, rule, srcCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	known, err := rulefetch.ReadValidatedRuleCacheWithFormat(ctx, entry, config, "text")
+	known, err := rulefetch.ReadCacheWithFormat(ctx, rule, srcCfg, "text")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(old) == 0 || string(old) != string(known) {
 		t.Fatalf("known-format entry changed validation: %q / %q", old, known)
 	}
-	invalid, err := rulefetch.ReadValidatedRuleCacheWithFormat(ctx, entry, config, "yaml")
+	invalid, err := rulefetch.ReadCacheWithFormat(ctx, rule, srcCfg, "yaml")
 	if err != nil || invalid != nil {
 		t.Fatalf("known format bypassed validation: %q / %v", invalid, err)
 	}

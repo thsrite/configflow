@@ -24,8 +24,10 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/taskstatus"
@@ -107,7 +109,7 @@ type answers struct {
 	byURL map[string][]*jsonx.Object
 }
 
-func (a *answers) fetch(_ context.Context, url string, _ *jsonx.Object, _ string) ([]byte, error) {
+func (a *answers) fetch(_ context.Context, url string, _ *model.Config, _ string) ([]byte, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	queue := a.byURL[url]
@@ -139,10 +141,19 @@ func (a *answers) fetch(_ context.Context, url string, _ *jsonx.Object, _ string
 	return []byte(answer.GetString("ok")), nil
 }
 
-func withFetch(t *testing.T, fn func(context.Context, string, *jsonx.Object, string) ([]byte, error)) {
-	saved := fetchRemoteFn
-	fetchRemoteFn = fn
-	t.Cleanup(func() { fetchRemoteFn = saved })
+func withFetch(t *testing.T, fn nativeFetchFunc) {
+	saved := fetchNativeFn
+	fetchNativeFn = fn
+	t.Cleanup(func() { fetchNativeFn = saved })
+}
+
+func decodeDownloads(list []any) ([]Download, error) {
+	data, err := jsonx.Compact(list)
+	if err != nil {
+		return nil, err
+	}
+	var out []Download
+	return out, jsondecode.Unmarshal(data, &out)
 }
 
 func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
@@ -179,9 +190,9 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			url := answer.GetList("args")[0].(string)
 			recorded.byURL[url] = append(recorded.byURL[url], answer)
 		}
-		saved := fetchRemoteFn
-		fetchRemoteFn = recorded.fetch
-		downloads, err := DecodeList[Download](args[2].([]any))
+		saved := fetchNativeFn
+		fetchNativeFn = recorded.fetch
+		downloads, err := decodeDownloads(args[2].([]any))
 		if err != nil {
 			t.Fatalf("%s: downloads %v", name, err)
 		}
@@ -194,9 +205,13 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			}
 			custom = append(custom, File{Path: object.GetString("path"), Content: string(content)})
 		}
-		data, err := BuildMosDNSZip(ctx, args[0].(*jsonx.Object), args[1].(string), downloads, custom,
+		nativeCfg, err := legacyConfig(args[0].(*jsonx.Object))
+		if err != nil {
+			t.Fatalf("%s: snapshot %v", name, err)
+		}
+		data, err := BuildZIP(ctx, nativeCfg, args[1].(string), downloads, custom,
 			ArchiveOptions{BaseURL: args[4].(string), SkipReferenceValidation: args[5] == false})
-		fetchRemoteFn = saved
+		fetchNativeFn = saved
 		MaxFiles, MaxTotalBytes = savedFiles, savedTotal
 		built++
 		if reference.Kind == "unowned_refusal" {
@@ -285,9 +300,16 @@ func keys(m map[string]string) []string {
 }
 
 // remoteSnapshot is a profile whose downloads all go to remote sources.
-func remoteSnapshot() *jsonx.Object {
-	return jsonx.Obj("profile_id", "office", "system_config", jsonx.Obj("server_domain", "https://cf.test/prefix",
-		"rule_proxy_token", "internal-secret"), "rule_configs", []any{}, "rule_library", []any{})
+func remoteSnapshot() *model.Config {
+	return &model.Config{
+		ProfileID: "office",
+		SystemConfig: model.SystemConfig{
+			ServerDomain:   "https://cf.test/prefix",
+			RuleProxyToken: "internal-secret",
+		},
+		Profile:     &model.Profile{RuleConfigs: []model.RuleConfig{}},
+		RuleLibrary: []model.RuleLibraryItem{},
+	}
 }
 
 func remoteDownloads(n int) []Download {
@@ -303,7 +325,7 @@ func remoteDownloads(n int) []Download {
 func TestArchiveFetchesAreParallelAndBounded(t *testing.T) {
 	ctx, _ := testRepo(t, jsonx.NewObject())
 	var active, peak, count int32
-	withFetch(t, func(context.Context, string, *jsonx.Object, string) ([]byte, error) {
+	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		now := atomic.AddInt32(&active, 1)
 		atomic.AddInt32(&count, 1)
 		for {
@@ -316,7 +338,7 @@ func TestArchiveFetchesAreParallelAndBounded(t *testing.T) {
 		atomic.AddInt32(&active, -1)
 		return []byte("domain:parallel.test"), nil
 	})
-	data, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(19), nil, ArchiveOptions{})
+	data, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(19), nil, ArchiveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +352,7 @@ func TestArchiveFailureDoesNotWaitForOtherDownloads(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	var calls int32
-	withFetch(t, func(_ context.Context, url string, _ *jsonx.Object, _ string) ([]byte, error) {
+	withFetch(t, func(_ context.Context, url string, _ *model.Config, _ string) ([]byte, error) {
 		atomic.AddInt32(&calls, 1)
 		if strings.HasSuffix(url, "/0") {
 			return nil, &rulefetch.FetchError{Class: "ReadTimeout", Message: "source-secret"}
@@ -340,7 +362,7 @@ func TestArchiveFailureDoesNotWaitForOtherDownloads(t *testing.T) {
 	})
 	done := make(chan error, 1)
 	go func() {
-		_, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(80), nil, ArchiveOptions{})
+		_, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(80), nil, ArchiveOptions{})
 		done <- err
 	}()
 	select {
@@ -359,25 +381,25 @@ func TestArchiveFailureDoesNotWaitForOtherDownloads(t *testing.T) {
 func TestArchiveBudgets(t *testing.T) {
 	ctx, _ := testRepo(t, jsonx.NewObject())
 	var calls int32
-	withFetch(t, func(context.Context, string, *jsonx.Object, string) ([]byte, error) {
+	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		atomic.AddInt32(&calls, 1)
 		return []byte("domain:" + strings.Repeat("long-label.", 8) + "test"), nil
 	})
 	savedFiles, savedTotal := MaxFiles, MaxTotalBytes
 	defer func() { MaxFiles, MaxTotalBytes = savedFiles, savedTotal }()
 	MaxTotalBytes = 80
-	_, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(80), nil, ArchiveOptions{})
+	_, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(80), nil, ArchiveOptions{})
 	if err == nil || !strings.Contains(err.Error(), "大小限制") || atomic.LoadInt32(&calls) > 2*MaxWorkers {
 		t.Fatalf("size: %v after %d downloads", err, atomic.LoadInt32(&calls))
 	}
 	MaxTotalBytes, MaxFiles = savedTotal, 2
 	time.Sleep(200 * time.Millisecond) // the first build's last downloads finish
 	var late int32
-	withFetch(t, func(context.Context, string, *jsonx.Object, string) ([]byte, error) {
+	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		atomic.AddInt32(&late, 1)
 		return nil, errors.New("must not fetch")
 	})
-	_, err = BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(2), nil, ArchiveOptions{})
+	_, err = BuildZIP(ctx, remoteSnapshot(), "plugins: []", remoteDownloads(2), nil, ArchiveOptions{})
 	if err == nil || err.Error() != "生成配置超过打包文件数量限制" || atomic.LoadInt32(&late) != 0 {
 		t.Fatalf("files: %v", err)
 	}
@@ -386,21 +408,21 @@ func TestArchiveBudgets(t *testing.T) {
 func TestArchivePathsAndReferences(t *testing.T) {
 	ctx, _ := testRepo(t, jsonx.NewObject())
 	for _, path := range []string{"../escape", "/absolute", "./rules/../../escape", "rules\\escape", "config.yaml", "a//b", "\x01"} {
-		if _, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", nil, []File{{path, "x"}}, ArchiveOptions{}); err == nil {
+		if _, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", nil, []File{{path, "x"}}, ArchiveOptions{}); err == nil {
 			t.Errorf("%q accepted", path)
 		}
 	}
-	_, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", nil, []File{
+	_, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", nil, []File{
 		{"./rules/same.txt", "domain:a.test"}, {"rules/same.txt", "domain:b.test"}}, ArchiveOptions{})
 	if err == nil || err.Error() != "生成配置包含内容冲突的文件路径" {
 		t.Errorf("conflict: %v", err)
 	}
 	config := "plugins:\n- type: domain_set\n  args:\n    files: [./rules/missing.txt]"
-	if _, err := BuildMosDNSZip(ctx, remoteSnapshot(), config, nil, nil, ArchiveOptions{}); err == nil ||
+	if _, err := BuildZIP(ctx, remoteSnapshot(), config, nil, nil, ArchiveOptions{}); err == nil ||
 		err.Error() != "MosDNS 配置引用了未打包的规则文件" {
 		t.Errorf("missing reference: %v", err)
 	}
-	if _, err := BuildMosDNSZip(ctx, remoteSnapshot(), config, nil, nil, ArchiveOptions{SkipReferenceValidation: true}); err != nil {
+	if _, err := BuildZIP(ctx, remoteSnapshot(), config, nil, nil, ArchiveOptions{SkipReferenceValidation: true}); err != nil {
 		t.Errorf("skipped validation: %v", err)
 	}
 	if got := label("https://x.test/?token=1"); got != "未命名规则" {
@@ -422,7 +444,7 @@ func TestArchiveEarlyFailureWorkersRemainTracked(t *testing.T) {
 		}
 	}()
 	var started, stopped atomic.Int32
-	withFetch(t, func(ctx context.Context, url string, _ *jsonx.Object, _ string) ([]byte, error) {
+	withFetch(t, func(ctx context.Context, url string, _ *model.Config, _ string) ([]byte, error) {
 		if started.Add(1) == MaxWorkers {
 			close(all)
 		}
@@ -437,7 +459,7 @@ func TestArchiveEarlyFailureWorkersRemainTracked(t *testing.T) {
 		<-release
 		return nil, ctx.Err()
 	})
-	if _, err := BuildMosDNSZip(runtime.BindRequest(base), remoteSnapshot(), "plugins: []", remoteDownloads(MaxWorkers), nil, ArchiveOptions{}); err == nil {
+	if _, err := BuildZIP(runtime.BindRequest(base), remoteSnapshot(), "plugins: []", remoteDownloads(MaxWorkers), nil, ArchiveOptions{}); err == nil {
 		t.Fatal("failure hidden")
 	}
 	waiting, cancel := context.WithCancel(t.Context())

@@ -27,8 +27,12 @@ func TestReviewSnapshotToleratesOtherJSONTypes(t *testing.T) {
 			jsonx.Obj("id", "off", "name", "Off", "source_type", "content", "content", "+.off.test"),
 			jsonx.Obj("id", "zero", "name", "Zero", "source_type", "content", "content", "+.zero.test"),
 		})
+	nativeCfg, err := legacyConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 	files := func(url string) error {
-		_, err := BuildMosDNSZip(ctx, config, "plugins: []", []Download{{URL: url, Name: "r", LocalPath: "r.txt"}}, nil, ArchiveOptions{})
+		_, err := BuildZIP(ctx, nativeCfg, "plugins: []", []Download{{URL: url, Name: "r", LocalPath: "r.txt"}}, nil, ArchiveOptions{})
 		return err
 	}
 	if err := files("/api/profiles/office/rule-library/content/inline"); err != nil {
@@ -41,10 +45,7 @@ func TestReviewSnapshotToleratesOtherJSONTypes(t *testing.T) {
 			t.Fatalf("%s: %v", id, err)
 		}
 	}
-	var snap snapshot
-	if err := viaJSON(config, &snap); err != nil {
-		t.Fatal(err)
-	}
+	snap := snapshotOf(nativeCfg)
 	if ok, err := authorized(snap, AuthRequest{Token: "5"}, nil); err != nil || ok {
 		t.Fatalf("a numeric config_token never equals a query token: %v %v", ok, err)
 	}

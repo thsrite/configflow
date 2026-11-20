@@ -11,14 +11,14 @@ import (
 	api "configflow/internal/api/generate"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 )
 
 func TestGeneratedDownloadsPreviewsAndProfileIsolation(t *testing.T) {
 	mihomoenv.Wire()
 	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(api.Register)})
-	if _, err := s.Repo.CloneProfile(s.Context(), "default", jsonx.Obj("id", "office", "name", "Office")); err != nil {
+	if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "office", Name: "Office"}, "default"); err != nil {
 		t.Fatal(err)
 	}
 	for _, prefix := range []string{"/api/generate", "/api/profiles/office/generate"} {

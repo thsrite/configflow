@@ -366,3 +366,84 @@ type PublishGuard struct {
 
 // ErrRuleProxyToken identifies a missing rule-provider capability.
 var ErrRuleProxyToken = errors.New(msgProxyTokenRequired)
+
+type profileIdentity struct {
+	ID     string `json:"profile_id"`
+	Fields model.Fields
+	raw    model.Raw
+}
+
+func (v *profileIdentity) UnmarshalJSON(data []byte) error {
+	return model.DecodeRecord(data, v, &v.raw)
+}
+
+// ConfigFromJSON decodes the MosDNS projection without decoding unrelated resources.
+func ConfigFromJSON(data []byte) (*model.Config, error) {
+	var fields model.Fields
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	var profileFields model.Fields
+	for _, key := range []string{"mosdns", "rule_configs", "rules", "rule_sets"} {
+		if raw, ok := fields.Get(key); ok {
+			if err := profileFields.Set(key, raw); err != nil {
+				return nil, err
+			}
+		}
+	}
+	raw, err := profileFields.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	profile := new(model.Profile)
+	if err = json.Unmarshal(raw, profile); err != nil {
+		return nil, err
+	}
+	config := &model.Config{Profile: profile}
+	if raw, ok := fields.Get("system_config"); ok {
+		var projection model.Fields
+		if err = projection.Set("system_config", raw); err != nil {
+			return nil, err
+		}
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var system model.System
+		if err = json.Unmarshal(data, &system); err != nil {
+			return nil, err
+		}
+		config.SystemConfig = system.SystemConfig
+	}
+	if raw, ok := fields.Get("profile_id"); ok {
+		var projection model.Fields
+		if err = projection.Set("profile_id", raw); err != nil {
+			return nil, err
+		}
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var identity profileIdentity
+		if err = json.Unmarshal(data, &identity); err != nil {
+			return nil, err
+		}
+		config.ProfileID = identity.ID
+	}
+	if raw, ok := fields.Get("rule_library"); ok {
+		var projection model.Fields
+		if err = projection.Set("rule_library", raw); err != nil {
+			return nil, err
+		}
+		data, err := projection.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var shared model.Shared
+		if err = json.Unmarshal(data, &shared); err != nil {
+			return nil, err
+		}
+		config.RuleLibrary = shared.RuleLibrary
+	}
+	return config, nil
+}

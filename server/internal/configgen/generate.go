@@ -4,7 +4,6 @@
 package configgen
 
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,13 +12,15 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
 	"configflow/internal/faultprobe"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/subs"
+	"configflow/internal/yamlx"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Engine identifies one supported generated configuration format.
@@ -46,8 +47,8 @@ func (e Engine) Valid() bool {
 // Output contains generated text and the optional Mihomo materialization report.
 type Output struct {
 	Content             string
-	SubscriptionHosts   *jsonx.Object
-	SubscriptionDialers *jsonx.Object
+	SubscriptionHosts   json.RawMessage
+	SubscriptionDialers json.RawMessage
 }
 
 // Download holds one response payload or the atomically saved generated path.
@@ -59,31 +60,49 @@ type Download struct {
 	Output Output
 }
 
-// Render generates from the caller's captured configuration snapshot.
-func Render(ctx context.Context, config *jsonx.Object, engine Engine, baseURL string) (Output, error) {
+// RenderConfig generates from a typed resolved configuration snapshot.
+func RenderConfig(ctx context.Context, config *model.Config, engine Engine, baseURL string) (Output, error) {
 	var out Output
 	var err error
 	switch engine {
 	case Mihomo:
-		report := jsonx.NewObject()
-		out.Content, err = convert.GenerateMihomoConfig(ctx, config, convert.GenerateOptions{BaseURL: baseURL, Report: report})
+		report := &convert.GenerationReport{}
+		out.Content, err = convert.MihomoConfig(ctx, config, convert.MihomoOptions{BaseURL: baseURL, Report: report})
 		if err == nil {
-			out.SubscriptionHosts, _ = jsonx.AsObject(report.Value("subscription_hosts"))
-			out.SubscriptionDialers, _ = jsonx.AsObject(report.Value("subscription_dialers"))
-			if dns, ok := jsonx.AsObject(out.SubscriptionHosts.Value("dns")); ok && dns.GetBool("applied") {
-				if outdated, readErr := outdatedAgents(ctx, config.GetString("profile_id")); readErr == nil {
-					dns.Set("outdated_agents", outdated)
+			if report.SubscriptionHosts != nil {
+				if dns := yamlx.Resolve(yamlx.Get(report.SubscriptionHosts, "dns")); dns != nil && dns.Kind == yaml.MappingNode {
+					if applied := yamlx.Resolve(yamlx.Get(dns, "applied")); applied != nil && applied.Kind == yaml.ScalarNode && applied.ShortTag() == "!!bool" && applied.Value == "true" {
+						profileID := ""
+						if config != nil {
+							profileID = config.ProfileID
+						}
+						if outdated, readErr := outdatedAgents(ctx, profileID); readErr == nil {
+							if raw, mErr := json.Marshal(outdated); mErr == nil {
+								if node, yErr := yamlx.FromJSON(raw); yErr == nil {
+									yamlx.Set(dns, "outdated_agents", node)
+								}
+							}
+						}
+					}
+				}
+				if raw, yErr := yamlx.ToJSON(report.SubscriptionHosts); yErr == nil {
+					out.SubscriptionHosts = raw
+				}
+			}
+			if report.SubscriptionDialers != nil {
+				if raw, yErr := yamlx.ToJSON(report.SubscriptionDialers); yErr == nil {
+					out.SubscriptionDialers = raw
 				}
 			}
 		}
 	case Surge:
-		out.Content, err = convert.GenerateSurgeConfig(ctx, config, baseURL)
+		out.Content, err = convert.SurgeConfig(ctx, config, baseURL)
 	case Loon:
-		out.Content, err = convert.GenerateLoonConfig(ctx, config, baseURL)
+		out.Content, err = convert.LoonConfig(ctx, config, baseURL)
 	case MosDNS:
-		out.Content, err = mosdns.GenerateMosDNSConfig(config, baseURL)
+		out.Content, err = mosdns.Generate(config, baseURL)
 	case OxiDNS:
-		profile, e := dnsProfile(config)
+		profile, e := oxidns.NewTypedProfile(config)
 		if e != nil {
 			return out, e
 		}
@@ -102,68 +121,33 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 		return Download{}, err
 	}
 	faultprobe.Point(ctx, faultprobe.GenerateBuild)
-	var config *jsonx.Object
-	var native *model.Config
-	var out Output
-	var err error
-	if engine == MosDNS || engine == OxiDNS {
-		repository, e := repo.GetRepository(ctx)
-		if e != nil {
-			return Download{}, e
-		}
-		profileID, e := repo.ResolveProfileID(ctx, id)
-		if e != nil {
-			return Download{}, e
-		}
-		native, err = repository.Config(ctx, profileID, nil)
-		if err == nil {
-			if engine == MosDNS {
-				out.Content, err = mosdns.Generate(native, baseURL)
-			} else {
-				var profile *oxidns.Profile
-				profile, err = oxidns.NewTypedProfile(native)
-				if err == nil {
-					out.Content, err = oxidns.Generate(profile, baseURL)
-				}
-			}
-		}
-	} else {
-		config, err = repo.GetConfig(ctx, id)
-		if err == nil {
-			out, err = Render(ctx, config, engine, baseURL)
-		}
-	}
+	repository, err := repo.GetRepository(ctx)
 	if err != nil {
 		return Download{}, err
 	}
-	return materialize(ctx, config, native, out, engine, baseURL)
+	profileID, err := repo.ResolveProfileID(ctx, id)
+	if err != nil {
+		return Download{}, err
+	}
+	config, err := repository.Config(ctx, profileID, nil)
+	if err != nil {
+		return Download{}, err
+	}
+	return build(ctx, config, engine, baseURL)
 }
 
-// build uses a frozen legacy snapshot supplied by the artifact owner. Ordinary
-// Build keeps its direct typed repository path; neither path reloads a snapshot.
-func build(ctx context.Context, config *jsonx.Object, engine Engine, baseURL string) (Download, error) {
+func build(ctx context.Context, config *model.Config, engine Engine, baseURL string) (Download, error) {
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
-	out, err := Render(ctx, config, engine, baseURL)
+	out, err := RenderConfig(ctx, config, engine, baseURL)
 	if err != nil {
 		return Download{}, err
 	}
-	var native *model.Config
-	if engine == MosDNS {
-		data, e := jsonx.Compact(config)
-		if e != nil {
-			return Download{}, e
-		}
-		native, err = mosdns.ConfigFromJSON(data)
-		if err != nil {
-			return Download{}, err
-		}
-	}
-	return materialize(ctx, config, native, out, engine, baseURL)
+	return materialize(ctx, config, out, engine, baseURL)
 }
 
-func materialize(ctx context.Context, config *jsonx.Object, native *model.Config, out Output, engine Engine, baseURL string) (Download, error) {
+func materialize(ctx context.Context, config *model.Config, out Output, engine Engine, baseURL string) (Download, error) {
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
@@ -180,36 +164,30 @@ func materialize(ctx context.Context, config *jsonx.Object, native *model.Config
 		if err := ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		result.Path, err = r.WriteGenerated(ctx, config.GetString("profile_id"), name, []byte(out.Content))
+		result.Path, err = r.WriteGenerated(ctx, config.ProfileID, name, []byte(out.Content))
 		if err != nil {
 			return Download{}, err
 		}
 	case MosDNS:
-		downloads, err := mosdns.Downloads(native, baseURL)
+		downloads, err := mosdns.Downloads(config, baseURL)
 		if err != nil {
 			return Download{}, err
 		}
-		files, err := mosdns.CustomFiles(native)
+		files, err := mosdns.CustomFiles(config)
 		if err != nil {
 			return Download{}, err
 		}
 		if err = ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		result.Data, err = mosdns.BuildZIP(ctx, native, out.Content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL})
+		result.Data, err = mosdns.BuildZIP(ctx, config, out.Content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL})
 		if err != nil {
 			return Download{}, err
 		}
 		result.Name = "mosdns-config.zip"
 		result.MIME = "application/zip"
 	case OxiDNS:
-		var profile *oxidns.Profile
-		var err error
-		if native != nil {
-			profile, err = oxidns.NewTypedProfile(native)
-		} else {
-			profile, err = dnsProfile(config)
-		}
+		profile, err := oxidns.NewTypedProfile(config)
 		if err != nil {
 			return Download{}, err
 		}
@@ -217,13 +195,13 @@ func materialize(ctx context.Context, config *jsonx.Object, native *model.Config
 		if err != nil {
 			return Download{}, err
 		}
-		raw, err := json.Marshal(rows)
-		if err != nil {
-			return Download{}, err
-		}
-		var downloads []mosdns.Download
-		if err = jsondecode.Unmarshal(raw, &downloads); err != nil {
-			return Download{}, err
+		downloads := make([]mosdns.Download, 0, len(rows))
+		for _, row := range rows {
+			behavior := ""
+			if row.Behavior != nil {
+				behavior = row.Behavior.Value
+			}
+			downloads = append(downloads, mosdns.Download{Name: row.Name, URL: row.URL, LocalPath: row.LocalPath, Behavior: behavior})
 		}
 		files, err := oxidns.CustomFiles(profile)
 		if err != nil {
@@ -232,11 +210,7 @@ func materialize(ctx context.Context, config *jsonx.Object, native *model.Config
 		if err := ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		if native != nil {
-			result.Data, err = oxidns.BuildTypedZIP(ctx, native, out.Content, downloads, files, baseURL)
-		} else {
-			result.Data, err = oxidns.BuildZIP(ctx, config, out.Content, downloads, files, baseURL)
-		}
+		result.Data, err = oxidns.BuildTypedZIP(ctx, config, out.Content, downloads, files, baseURL)
 		if err != nil {
 			return Download{}, err
 		}
@@ -248,28 +222,38 @@ func materialize(ctx context.Context, config *jsonx.Object, native *model.Config
 	return result, nil
 }
 
-func outdatedAgents(ctx context.Context, id string) ([]any, error) {
+func outdatedAgents(ctx context.Context, id string) ([]subs.CoreReport, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	system, err := r.GetSystem(ctx)
-	if err != nil {
+	var list []subs.CoreAgent
+	if err := r.View(ctx, func(doc *model.Document) error {
+		list = make([]subs.CoreAgent, 0, len(doc.System.Agents))
+		for _, agent := range doc.System.Agents {
+			raw, err := model.Marshal(agent)
+			if err != nil {
+				continue
+			}
+			var core subs.CoreAgent
+			if json.Unmarshal(raw, &core) == nil {
+				list = append(list, core)
+			}
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	defaultID, err := r.DefaultProfileID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	list := []*jsonx.Object{}
-	for _, value := range system.GetList("agents") {
-		if agent, ok := jsonx.AsObject(value); ok {
-			list = append(list, agent)
-		}
-	}
-	store, err := trafficstore.Get(ctx)
+	store, err := trafficstore.GetNative(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return subs.OutdatedAgents(list, id, defaultID, store.StatusOf), nil
+	return subs.OldCoreAgents(list, id, defaultID, func(agentID string) subs.CoreStatus {
+		status, _ := subs.DecodeCoreStatus(store.StatusJSON(agentID))
+		return status
+	}), nil
 }

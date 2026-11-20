@@ -8,6 +8,7 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
+	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 )
 
@@ -370,7 +371,13 @@ func parseCustomMatches(list *Node) (*Node, error) {
 	}
 	return seqOf(mosdns.MatchEntries(settings.CustomMatches)), nil
 }
-func (p *Profile) renderMembers(group *Node) *Node { return legacyMembers(group, p.doc) }
+func (p *Profile) renderMembers(group *Node) *Node {
+	var typed model.ProxyGroup
+	if err := json.Unmarshal(ToJSON(group), &typed); err != nil {
+		return M()
+	}
+	return rules.RenderGroupDocument(typed, rules.GroupResources(p.source))
+}
 
 // NativeClassicalIPLinesFunc queries offline content from typed metadata only.
 type NativeClassicalIPLinesFunc func(context.Context, model.RuleConfig, []model.RuleLibraryItem) (*bool, error)

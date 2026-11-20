@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/repo"
 	"configflow/internal/testgolden"
@@ -71,7 +71,11 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	configs := jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", "http://config.example", "rule_proxy_token", "c29-private"), "rule_configs", []any{jsonx.Obj("library_rule_id", "inline", "enabled", true)}, "rule_library", []any{jsonx.Obj("id", "inline", "name", "Inline", "source_type", "content", "content", "DOMAIN,inline.example\nDOMAIN-SUFFIX,suffix.example", "format", "text", "behavior", "classical")})
+	raw := json.RawMessage(`{"profile_id":"default","system_config":{"server_domain":"http://config.example","rule_proxy_token":"c29-private"},"rule_configs":[{"library_rule_id":"inline","enabled":true}],"rule_library":[{"id":"inline","name":"Inline","source_type":"content","content":"DOMAIN,inline.example\nDOMAIN-SUFFIX,suffix.example","format":"text","behavior":"classical"}]}`)
+	configs, err := mosdns.ConfigFromJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name, text string
 		downloads  []mosdns.Download
@@ -98,10 +102,6 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			raw, err := jsonx.Compact(configs)
-			if err != nil {
-				t.Fatal(err)
-			}
 			input := archiveInput{Config: raw, YAML: c.text, Downloads: append([]mosdns.Download{}, c.downloads...), Files: []archiveFile{}, BaseURL: "http://config.example"}
 			for _, file := range c.files {
 				input.Files = append(input.Files, archiveFile{file.Path, file.Content})
@@ -125,9 +125,9 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 				referenceFetches[path] += count
 			}
 
-			before, _ := jsonx.Compact(configs)
-			output, err := BuildZIP(ctx, configs, c.text, c.downloads, c.files, "http://config.example")
-			after, _ := jsonx.Compact(configs)
+			before, _ := model.Marshal(configs)
+			output, err := BuildTypedZIP(ctx, configs, c.text, c.downloads, c.files, "http://config.example")
+			after, _ := model.Marshal(configs)
 			if !bytes.Equal(before, after) {
 				t.Fatal("profile input changed")
 			}
@@ -179,8 +179,9 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 }
 
 func TestC29ArchiveRejectsUnsafeYAML(t *testing.T) {
+	empty := &model.Config{Profile: &model.Profile{}}
 	for _, text := range []string{"plugins: []\nplugins: []", "value: &a [*a]", "plugins: !!str []"} {
-		_, err := BuildZIP(context.Background(), jsonx.NewObject(), text, nil, nil, "")
+		_, err := BuildTypedZIP(context.Background(), empty, text, nil, nil, "")
 		if !errors.Is(err, yamlx.ErrPolicy) && !errors.Is(err, yamlx.ErrAliasRecursion) {
 			t.Fatalf("%q: %v", text, err)
 		}

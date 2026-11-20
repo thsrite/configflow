@@ -8,16 +8,22 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/server"
 )
 
 func TestReviewC34AuthenticationMatrix(t *testing.T) {
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Setup: func(app *httpx.App) { *app = *server.NewApp() }})
-	_, err := s.Repo.UpdateSystemTransaction(s.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.GetObject("system_config").Update(jsonx.Obj("config_token", "synthetic-config", "rule_proxy_token", "synthetic-rule", "retired_rule_proxy_tokens", []any{"synthetic-retired"}))
-		system.Set("agents", []any{jsonx.Obj("id", "agent", "profile_id", "default", "token", "synthetic-agent")})
-		return nil, nil
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ConfigToken = "synthetic-config"
+		system.SystemConfig.RuleProxyToken = "synthetic-rule"
+		system.SystemConfig.RetiredRuleProxyTokens = []string{"synthetic-retired"}
+		var agent model.Agent
+		if err := json.Unmarshal([]byte(`{"id":"agent","profile_id":"default","token":"synthetic-agent"}`), &agent); err != nil {
+			return err
+		}
+		system.Agents = []model.Agent{agent}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +74,7 @@ func TestReviewC34AuthenticationMatrix(t *testing.T) {
 				continue
 			}
 			path := strings.NewReplacer("<profile_id>", "default", "<service>", "mihomo", "<preview_id>", "synthetic", "<action>", "download", "<filename>", "name.lcf").Replace(route.Path)
-			response := s.Do(method, path, admin, httpxtest.JSON(jsonx.NewObject()))
+			response := s.Do(method, path, admin, httpxtest.JSON(map[string]any{}))
 			if response.Status == 401 || response.Status == 403 {
 				t.Fatalf("valid JWT rejected: %s %s: %s", method, path, response.Body)
 			}
@@ -86,7 +92,7 @@ func TestReviewC34ForeignAliasDispatch(t *testing.T) {
 	s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
 		*app = *server.NewApp()
 		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(jsonx.Obj("endpoint", c.Endpoint, "profile", c.ProfileID)), nil
+			return httpx.JSON(map[string]string{"endpoint": c.Endpoint, "profile": c.ProfileID}), nil
 		})
 	}})
 	aliases := []struct{ methods, path, endpoint string }{

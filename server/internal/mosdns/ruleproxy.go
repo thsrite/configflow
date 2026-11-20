@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"configflow/internal/auth"
+	"configflow/internal/convert"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
@@ -35,8 +36,7 @@ var routeLogger = logx.Get("backend.routes.mosdns")
 // MaxRuleProxyBytes bounds a proxied download (a variable for tests).
 var MaxRuleProxyBytes int64 = 5 * 1024 * 1024
 
-// RequestRule downloads a rule source (tests replace it).
-var RequestRule = rulefetch.RequestRule
+var downloadRule = rulefetch.DefaultClient.Download
 
 // Client errors (400) of the rule proxy's download.
 var (
@@ -46,11 +46,17 @@ var (
 
 type nativeFetchFunc func(context.Context, string, *model.Config, string) ([]byte, error)
 
+var fetchNativeFn nativeFetchFunc = fetchNative
+
+// captureFetch binds the download hook before archive workers can outlive their
+// caller. A worker must not reread a subsequently replaced test hook.
+func captureFetch() nativeFetchFunc { return fetchNativeFn }
+
 func fetchNative(ctx context.Context, rawURL string, config *model.Config, hostURL string) ([]byte, error) {
 	redirects := 3
-	response, err := requestCaptured(ctx, rawURL, config, rulefetch.Request{
-		ConnectTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, Stream: true,
-		MaxRedirects: &redirects, HostURL: hostURL,
+	response, err := downloadRule(ctx, rawURL, rulefetch.DownloadRequest{
+		Config: sourceConfigOf(config), ConnectTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second,
+		Stream: true, MaxRedirects: &redirects, HostURL: hostURL,
 	})
 	if err != nil {
 		return nil, err
@@ -274,27 +280,39 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 	if !found {
 		// Normal hostname routing, including Fake-IP networks and the
 		// download proxy.
-		fetchURL, err := proxySourceURL(request.URL, config)
+		fetchURL, err := convert.GitHubURL(request.URL, config)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := rulefetch.ValidateRuleURL(fetchURL); err != nil {
 			return nil, err
 		}
-		declared, err := resolveLegacySource(request.URL, config, request.SourceID)
+		sourceConfig := sourceConfigOf(config)
+		declared, err := rulefetch.ResolveSource(request.URL, sourceConfig, request.SourceID)
 		if err != nil {
 			return nil, err
 		}
+		fetch := captureFetch()
 		var fetchErr error
 		if declared != nil {
-			if format, err := rulesetfmt.RuleFormat(model.RuleConfig{LibraryRuleID: declared.ID, Name: declared.Name}, config.RuleLibrary, ""); err != nil {
+			if format, err := rulesetfmt.RuleFormat(*declared, config.RuleLibrary, ""); err != nil {
 				return nil, err
 			} else if format == "mrs" {
 				return nil, rulefetch.NewRemoteRuleMessage(mrsMessage)
 			}
+			item, err := libraryItemOf(*declared)
+			if err != nil {
+				return nil, err
+			}
 			var raw []byte
 			var staleErr error
-			raw, staleErr, fetchErr = readCapturedSource(ctx, *declared, config, func(string) (any, error) { return fetchCaptured(ctx, fetchURL, config, request.HostURL) })
+			raw, staleErr, fetchErr = refresh.ReadRemote(ctx, item, refresh.RuleReadOptions{
+				Config: sourceConfig,
+				Fetch: func(callCtx context.Context, _ string) (rulefetch.Content, error) {
+					data, err := fetch(callCtx, fetchURL, config, request.HostURL)
+					return rulefetch.Content{Data: data}, err
+				},
+			})
 			if fetchErr == nil {
 				if content, err = decodeText(raw); err != nil {
 					return nil, err
@@ -307,7 +325,7 @@ func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyRespons
 			}
 		} else {
 			var raw []byte
-			raw, fetchErr = fetchCaptured(ctx, fetchURL, nil, request.HostURL)
+			raw, fetchErr = fetch(ctx, fetchURL, nil, request.HostURL)
 			content = strings.ToValidUTF8(string(raw), "�")
 		}
 		if fetchErr != nil {

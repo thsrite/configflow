@@ -7,9 +7,20 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
+
+func customMosDNSConfig(customConfig, localDNS string) *model.Config {
+	return &model.Config{
+		Profile: &model.Profile{
+			MosDNS: model.MosDNSSettings{
+				CustomConfig: customConfig,
+				LocalDNS:     localDNS,
+			},
+		},
+	}
+}
 
 func TestN73YAMLReadGraphs(t *testing.T) {
 	var chain strings.Builder
@@ -24,9 +35,9 @@ func TestN73YAMLReadGraphs(t *testing.T) {
 				t.Fatalf("unsafe document not refused: %v", err)
 			}
 		}
-		_, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", graph)), "")
+		_, err := Generate(customMosDNSConfig(graph, ""), "")
 		unsafeError(err)
-		_, err = ParseDNSUpstreams(graph + "addr: https://dns.example/dns-query\n")
+		_, err = Upstreams(graph + "addr: https://dns.example/dns-query\n")
 		unsafeError(err)
 		_, err = ConvertRuleContentForMosDNS(graph + "payload: [example.com]\n")
 		unsafeError(err)
@@ -36,19 +47,19 @@ func TestN73YAMLReadGraphs(t *testing.T) {
 
 func TestN73PolicyDoesNotHideBehindDefaultConfig(t *testing.T) {
 	for _, text := range []string{"a: 1\na: 2\n", "a: !!str [x]\n", "a: {<<: 3}\n", "a: !!bool yes\n"} {
-		_, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", text)), "")
+		_, err := Generate(customMosDNSConfig(text, ""), "")
 		if !errors.Is(err, yamlx.ErrPolicy) {
 			t.Fatalf("policy failure hidden: %v", err)
 		}
 	}
-	if _, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", "a: [\n")), ""); err != nil {
+	if _, err := Generate(customMosDNSConfig("a: [\n", ""), ""); err != nil {
 		t.Fatalf("ordinary syntax fallback changed: %v", err)
 	}
 }
 
 func TestN73RemovedSectionsKeepSharedValues(t *testing.T) {
 	input := "plugins: &old [original, value]\nkeep: *old\ncustom: !custom {value: preserved}\n"
-	output, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", input)), "")
+	output, err := Generate(customMosDNSConfig(input, ""), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,10 +77,10 @@ func FuzzMosDNSYAML(f *testing.F) {
 	f.Add("payload: [example.com]")
 	f.Add("x: &x [*x]\npayload: *x")
 	f.Fuzz(func(t *testing.T, text string) {
-		_, _ = ParseDNSUpstreams(text)
+		_, _ = Upstreams(text)
 		_, _ = ConvertRuleContentForMosDNS(text)
 		_ = checkReferences(text, nil, false)
-		out, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", text)), "")
+		out, err := Generate(customMosDNSConfig(text, ""), "")
 		if err == nil {
 			if _, err := yamlx.Parse([]byte(out)); err != nil {
 				t.Fatalf("invalid generated YAML: %v", err)
@@ -86,14 +97,14 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 			started := time.Now()
 			source := "extra: " + nested
-			out, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", source)), "")
+			out, err := Generate(customMosDNSConfig(source, ""), "")
 			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err = yamlx.Parse([]byte(out)); err != nil {
 				t.Fatal(err)
 			}
-			_, err = ParseDNSUpstreams("addr: https://dns.example/dns-query\nextra: " + nested)
+			_, err = Upstreams("addr: https://dns.example/dns-query\nextra: " + nested)
 			if depth < 10000 && err != nil {
 				t.Fatal(err)
 			}
@@ -111,8 +122,8 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 }
 
 func TestN73UpstreamTimestampSurvivesVerifiedGeneration(t *testing.T) {
-	config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", "extra: null\n", "local_dns", "- {addr: x, when: 2001-01-01 10:00:00}\n"))
-	if _, err := GenerateMosDNSConfig(config, ""); err != nil {
+	config := customMosDNSConfig("extra: null\n", "- {addr: x, when: 2001-01-01 10:00:00}\n")
+	if _, err := Generate(config, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -125,11 +136,11 @@ func TestN73CompositeKeysFollowEachMosDNSSchema(t *testing.T) {
 	if err != nil || out != "full:example.com" {
 		t.Fatalf("payload keys: %q %v", out, err)
 	}
-	upstreams, err := ParseDNSUpstreams("addr: https://dns.example/dns-query\n? [a,b]\n: preserved\n")
+	upstreams, err := Upstreams("addr: https://dns.example/dns-query\n? [a,b]\n: preserved\n")
 	if err != nil || len(upstreams) != 1 {
 		t.Fatalf("upstream composite metadata: %v", err)
 	}
-	if _, ok := upstreams[0].(*yamlx.Node); !ok {
+	if !hasNonStringKey(upstreams[0]) {
 		t.Fatal("non-JSON metadata must remain a Node")
 	}
 }

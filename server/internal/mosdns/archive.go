@@ -22,8 +22,10 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rulesetfmt"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 
@@ -301,7 +303,7 @@ func (s *snapshot) resolve(ctx context.Context, config *model.Config, raw, baseU
 		return source{}, nil, err
 	}
 	if !found {
-		declared, err := resolveLegacySource(raw, config, sourceID)
+		declared, err := rulefetch.ResolveSource(raw, sourceConfigOf(config), sourceID)
 		if err != nil {
 			return source{}, nil, err
 		}
@@ -553,6 +555,31 @@ func BuildZIP(ctx context.Context, config *model.Config, yamlContent string, dow
 	return data, err
 }
 
+func sourceConfigOf(config *model.Config) *rulefetch.SourceConfig {
+	if config == nil {
+		return nil
+	}
+	var ruleConfigs []model.RuleConfig
+	if config.Profile != nil {
+		ruleConfigs = config.Profile.RuleConfigs
+	}
+	return &rulefetch.SourceConfig{
+		Settings: config.SystemConfig,
+		Library:  config.RuleLibrary,
+		Rules:    ruleConfigs,
+	}
+}
+
+func libraryItemOf(rule model.RuleConfig) (model.RuleLibraryItem, error) {
+	data, err := model.Marshal(rule)
+	if err != nil {
+		return model.RuleLibraryItem{}, err
+	}
+	var item model.RuleLibraryItem
+	err = json.Unmarshal(data, &item)
+	return item, err
+}
+
 // fetchSource returns a source's text: inline content, the remote
 // declaration's validated cache or download, or an undeclared URL.
 func fetchSource(ctx context.Context, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
@@ -562,7 +589,7 @@ func fetchSource(ctx context.Context, fetch nativeFetchFunc, config *model.Confi
 	if src.inline {
 		return src.content, nil
 	}
-	text, err := fetchLegacySource(ctx, fetch, config, src, name)
+	text, err := fetchDeclaredSource(ctx, fetch, config, src, name)
 
 	if cancelled := ctx.Err(); cancelled != nil {
 		return "", cancelled
@@ -571,6 +598,45 @@ func fetchSource(ctx context.Context, fetch nativeFetchFunc, config *model.Confi
 		return "", archiveErr("规则“" + name + "”下载失败：" + detail(err))
 	}
 	return text, nil
+}
+
+func fetchDeclaredSource(ctx context.Context, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
+	sourceConfig := sourceConfigOf(config)
+	declared, err := rulefetch.ResolveSource(src.url, sourceConfig, src.identity)
+	if err != nil {
+		return "", err
+	}
+	if declared == nil {
+		content, err := fetch(ctx, src.url, config, "")
+		return strings.ToValidUTF8(string(content), "\ufffd"), err
+	}
+	var library []model.RuleLibraryItem
+	if config != nil {
+		library = config.RuleLibrary
+	}
+	if format, err := rulesetfmt.RuleFormat(*declared, library, ""); err != nil {
+		return "", err
+	} else if format == "mrs" {
+		return "", rulefetch.NewRemoteRuleMessage(mrsMessage)
+	}
+	item, err := libraryItemOf(*declared)
+	if err != nil {
+		return "", err
+	}
+	content, stale, err := refresh.ReadRemote(ctx, item, refresh.RuleReadOptions{
+		Config: sourceConfig,
+		Fetch: func(callCtx context.Context, target string) (rulefetch.Content, error) {
+			data, err := fetch(callCtx, target, config, "")
+			return rulefetch.Content{Data: data}, err
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if stale != nil {
+		archiveLogger.Warningf("MosDNS ZIP 规则“%s”更新失败，使用上一次有效缓存：%s", name, refresh.DescribeFailure(stale))
+	}
+	return decodeText(content)
 }
 
 const mrsMessage = "OxiDNS/MosDNS 不支持 MRS 二进制规则，请使用该订阅的 Text 或 YAML 版本。"

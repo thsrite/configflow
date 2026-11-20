@@ -2,32 +2,34 @@ package ippresence
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
-	"configflow/internal/testjson"
 )
 
 // Behaviour the replay cannot observe: the memo (keyed by content hash, or
 // by cache path + mtime_ns + size, cleared when 1024 entries are reached)
 // and the hook registration of Wire.
 
-func listRepo(t *testing.T) (context.Context, string, *jsonx.Object, *jsonx.Object) {
+func listRepo(t *testing.T) (context.Context, string, model.RuleConfig, []model.RuleLibraryItem) {
 	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
-	entry := jsonx.Obj("id", "lib-tiktok", "name", "TikTok", "source_type", "url", "url", "https://rules.test/TikTok.list",
-		"behavior", "classical", "format", "text")
+	var entry model.RuleLibraryItem
+	if err := json.Unmarshal([]byte(`{"id":"lib-tiktok","name":"TikTok","source_type":"url","url":"https://rules.test/TikTok.list","behavior":"classical","format":"text"}`), &entry); err != nil {
+		t.Fatal(err)
+	}
 	root, err := r.SharedRulesDir()
 	if err != nil {
 		t.Fatal(err)
@@ -35,17 +37,18 @@ func listRepo(t *testing.T) (context.Context, string, *jsonx.Object, *jsonx.Obje
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	config := jsonx.Obj("rule_library", []any{entry})
-	item := jsonx.Obj("id", "tiktok", "itemType", "ruleset", "library_rule_id", "lib-tiktok", "behavior", "classical")
-	return ctx, filepath.Join(root, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, entry))), item, config
+	var item model.RuleConfig
+	if err := json.Unmarshal([]byte(`{"id":"tiktok","itemType":"ruleset","library_rule_id":"lib-tiktok","behavior":"classical"}`), &item); err != nil {
+		t.Fatal(err)
+	}
+	return ctx, filepath.Join(root, rules.CacheFilename(rules.LibraryRule(entry))), item, []model.RuleLibraryItem{entry}
 }
 
 // A cache file rewritten with the same size and modification time keeps the
-// memoized answer (Python keys the memo by path, st_mtime_ns, st_size); a
-// new size or mtime is read again.
+// memoized answer (keyed by path, mtime_ns, size); a new size or mtime is read again.
 func TestCacheMemoIsKeyedByPathMtimeAndSize(t *testing.T) {
 	ClearMemo()
-	ctx, path, item, config := listRepo(t)
+	ctx, path, item, library := listRepo(t)
 	stamp := time.Unix(1700000000, 123456789)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -58,10 +61,10 @@ func TestCacheMemoIsKeyedByPathMtimeAndSize(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	check := func(want any) {
+	check := func(want bool) {
 		t.Helper()
-		got, err := ClassicalIPLines(ctx, item, config)
-		if err != nil || got != want {
+		got, err := TypedClassicalIPLines(ctx, item, library)
+		if err != nil || got == nil || *got != want {
 			t.Fatalf("got %v %v, want %v", got, err, want)
 		}
 	}
@@ -80,9 +83,11 @@ func TestCacheMemoIsKeyedByPathMtimeAndSize(t *testing.T) {
 func TestContentMemoLimit(t *testing.T) {
 	ClearMemo()
 	ctx := context.Background()
+	srcType := "content"
 	for i := 0; i < memoLimit; i++ {
-		item := jsonx.Obj("source_type", "content", "content", "DOMAIN,"+string(rune('a'+i%26))+jsonx.Int(int64(i)).String()+".test")
-		if got, err := ClassicalIPLines(ctx, item, nil); err != nil || got != false {
+		content := fmt.Sprintf("DOMAIN,%c%d.test", rune('a'+i%26), i)
+		item := model.RuleConfig{SourceType: &srcType, Content: &content}
+		if got, err := TypedClassicalIPLines(ctx, item, nil); err != nil || got == nil || *got {
 			t.Fatalf("%d: %v %v", i, got, err)
 		}
 	}
@@ -92,7 +97,8 @@ func TestContentMemoLimit(t *testing.T) {
 	if full != memoLimit {
 		t.Fatalf("memo holds %d", full)
 	}
-	if _, err := ClassicalIPLines(ctx, jsonx.Obj("source_type", "content", "content", "1.1.1.1"), nil); err != nil {
+	ipContent := "1.1.1.1"
+	if _, err := TypedClassicalIPLines(ctx, model.RuleConfig{SourceType: &srcType, Content: &ipContent}, nil); err != nil {
 		t.Fatal(err)
 	}
 	memoMu.Lock()
@@ -103,20 +109,25 @@ func TestContentMemoLimit(t *testing.T) {
 	}
 }
 
-// Wire registers convert.MihomoHooks.IsFullTun (takeover_mode now answers
+// Wire registers convert.MihomoIntegrations.FullTun (GatewayMode now answers
 // for a marked profile instead of failing closed).
 func TestWireRegistersIsFullTun(t *testing.T) {
-	marked := jsonx.Obj("mihomo", jsonx.Obj("router_split", jsonx.Obj("version", jsonx.Int(1), "takeover", "full_tun",
-		"route_rule_set_ids", []any{}, "origin", "setup")))
-	restore := convert.RegisterMihomoHooks(convert.MihomoHooks{})
+	var markedProfile model.Profile
+	if err := json.Unmarshal([]byte(`{"mihomo":{"router_split":{"version":1,"takeover":"full_tun","route_rule_set_ids":[],"origin":"setup"}}}`), &markedProfile); err != nil {
+		t.Fatal(err)
+	}
+	restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{})
 	defer restore()
 	Wire()
-	mode, err := convert.TakeoverMode(marked)
+	mode, err := convert.GatewayMode(&model.Config{Profile: &markedProfile})
 	if err != nil || mode != "full_tun" {
-		t.Fatalf("TakeoverMode %q %v", mode, err)
+		t.Fatalf("GatewayMode %q %v", mode, err)
 	}
-	invalid := jsonx.Obj("mihomo", jsonx.Obj("router_split", jsonx.Obj("version", jsonx.Int(2))))
-	if mode, err := convert.TakeoverMode(invalid); err != nil || mode != "" {
-		t.Fatalf("TakeoverMode invalid marker %q %v", mode, err)
+	var invalidProfile model.Profile
+	if err := json.Unmarshal([]byte(`{"mihomo":{"router_split":{"version":2}}}`), &invalidProfile); err != nil {
+		t.Fatal(err)
+	}
+	if mode, err := convert.GatewayMode(&model.Config{Profile: &invalidProfile}); err != nil || mode != "" {
+		t.Fatalf("GatewayMode invalid marker %q %v", mode, err)
 	}
 }

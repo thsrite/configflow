@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"configflow/internal/devicenotes"
-	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
 	"configflow/internal/yamlx"
 )
@@ -151,10 +150,8 @@ func run(t *testing.T, op, config, name string, rows json.RawMessage) map[string
 		result, err = devicenotes.Set(notes, policies, "192.0.2.1", name)
 	case "save":
 		// This is the only storage-adapter boundary; compare the mutated document too.
-		value, e := jsonx.Parse([]byte(config))
+		p, e := oxidns.ProfileFromJSON([]byte(config))
 		must(t, e)
-		raw := value.(*jsonx.Object)
-		p := oxidns.NewProfile(raw)
 		s := p.Settings()
 		if s == nil {
 			s = oxidns.M()
@@ -164,7 +161,7 @@ func run(t *testing.T, op, config, name string, rows json.RawMessage) map[string
 		out, e := oxidns.SavePolicyRows(p, s, rowNode, "http://127.0.0.1:5001")
 		err = e
 		if err == nil {
-			result = map[string]any{"same": out == s, "settings": json.RawMessage(oxidns.ToJSON(out)), "notes": raw.Value("device_notes")}
+			result = map[string]any{"same": out == s, "settings": json.RawMessage(oxidns.ToJSON(out)), "notes": p.DeviceNotesJSON()}
 		}
 	default:
 		if op == "prepare" {

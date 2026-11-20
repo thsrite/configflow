@@ -4,14 +4,13 @@ import (
 	"errors"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
 func TestN73YAMLOnlyValuesRemainNodes(t *testing.T) {
 	for _, text := range []string{"s: !!set {a}", "{1: x, extra: !!omap [{a: 1}]}", "? [a,b]\n: c"} {
-		config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", text))
-		output, err := GenerateMosDNSConfig(config, "")
+		config := customMosDNSConfig(text, "")
+		output, err := Generate(config, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -36,12 +35,12 @@ func TestN73YAMLOnlyValuesRemainNodes(t *testing.T) {
 			}
 		}
 	}
-	_, err := GenerateMosDNSConfig(jsonx.Obj("mosdns", jsonx.Obj("custom_config", "r: &r [*r]")), "")
+	_, err := Generate(customMosDNSConfig("r: &r [*r]", ""), "")
 	if !errors.Is(err, yamlx.ErrAliasRecursion) {
 		t.Fatalf("recursive user graph: %v", err)
 	}
-	config := jsonx.Obj("mosdns", jsonx.Obj("custom_config", "plugins: {1: x}\nextra: 1"))
-	if _, err := GenerateMosDNSConfig(config, ""); err != nil {
+	config := customMosDNSConfig("plugins: {1: x}\nextra: 1", "")
+	if _, err := Generate(config, ""); err != nil {
 		t.Fatal(err)
 	}
 }

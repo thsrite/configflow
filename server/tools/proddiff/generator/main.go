@@ -64,6 +64,14 @@ func offlineFetch(context.Context, string, string) (*substore.SubscriptionResult
 	return nil, errOffline
 }
 
+func oxidnsProfile(config *jsonx.Object) (*oxidns.Profile, error) {
+	data, err := jsonx.Compact(config)
+	if err != nil {
+		return nil, err
+	}
+	return oxidns.ProfileFromJSON(data)
+}
+
 func objectByID(items []any, id string) (*jsonx.Object, error) {
 	for _, item := range items {
 		if obj, ok := item.(*jsonx.Object); ok && obj.GetString("id") == id {
@@ -193,13 +201,21 @@ func generate(ctx context.Context, j job) (string, error) {
 	case "mosdns", "agent-mosdns":
 		return mosdns.GenerateMosDNSConfig(config, baseURL)
 	case "oxidns", "agent-oxidns":
-		return oxidns.Generate(oxidns.NewProfile(config), baseURL)
+		profile, err := oxidnsProfile(config)
+		if err != nil {
+			return "", err
+		}
+		return oxidns.Generate(profile, baseURL)
 	case "mosdns-files":
 		return encodeLegacy(mosdns.GetMosDNSCustomFiles(config))
 	case "mosdns-downloads":
 		return encodeLegacy(mosdns.GetMosDNSRulesetDownloads(config, baseURL))
 	case "oxidns-files":
-		files, err := oxidns.CustomFiles(oxidns.NewProfile(config))
+		profile, err := oxidnsProfile(config)
+		if err != nil {
+			return "", err
+		}
+		files, err := oxidns.CustomFiles(profile)
 		if err != nil {
 			return "", err
 		}
@@ -209,7 +225,11 @@ func generate(ctx context.Context, j job) (string, error) {
 		}
 		return encode(output, nil)
 	case "oxidns-downloads":
-		files, err := oxidns.RulesetDownloads(oxidns.NewProfile(config), baseURL)
+		profile, err := oxidnsProfile(config)
+		if err != nil {
+			return "", err
+		}
+		files, err := oxidns.RulesetDownloads(profile, baseURL)
 		if err != nil {
 			return "", err
 		}

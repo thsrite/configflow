@@ -48,13 +48,24 @@ func dnsSeed(t *testing.T, native, locked bool) func(context.Context, *repo.Repo
 				if err != nil {
 					return nil, err
 				}
-				view := oxidns.NewProfile(config)
+				rawConfig, err := jsonx.Compact(config)
+				if err != nil {
+					return nil, err
+				}
+				view, err := oxidns.ProfileFromJSON(rawConfig)
+				if err != nil {
+					return nil, err
+				}
 				settings, err := oxidns.PrepareEditor(view.Settings(), view, "http://localhost")
 				if err != nil {
 					return nil, err
 				}
 				if locked {
-					raw := oxidns.ToJSONX(settings).(*jsonx.Object)
+					parsed, err := jsonx.Parse(oxidns.ToJSON(settings))
+					if err != nil {
+						return nil, err
+					}
+					raw := parsed.(*jsonx.Object)
 					text := raw.GetString("native_config")
 					changed := strings.NewReplacer("mode: 'null'", "mode: nxdomain", `mode: "null"`, "mode: nxdomain").Replace(text)
 					if changed == text {
@@ -70,7 +81,11 @@ func dnsSeed(t *testing.T, native, locked bool) func(context.Context, *repo.Repo
 						return nil, err
 					}
 				}
-				p.Set("oxidns", oxidns.ToJSONX(settings))
+				encoded, err := jsonx.Parse(oxidns.ToJSON(settings))
+				if err != nil {
+					return nil, err
+				}
+				p.Set("oxidns", encoded)
 				return nil, nil
 			})
 			if err != nil {

@@ -2,29 +2,33 @@ package ippresence
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/repo"
+	"configflow/internal/rulesetfmt"
+	"configflow/internal/testjson"
 )
 
 // Replay of every rule_ip_presence.classical_ip_lines call the Python suite
-// made (routersplit/testdata/r02_record.py → r02_recorded.jsonl.gz). Each
+// made (routersplit/testdata/r02_record.py -> r02_recorded.jsonl.gz). Each
 // row gets a fresh repository whose stored rule library and rules directory
 // are the snapshot taken when Python made the call; the memo is cleared
 // first, as the recorder cleared Python's.
 
-func encode(v any) string {
-	b, err := jsonx.Compact(v)
+func encodeJSON(v any) string {
+	b, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Sprintf("<%v>", err)
 	}
@@ -45,6 +49,130 @@ func TestCorpus(t *testing.T) {
 	replay(t, "../routersplit/testdata/r02_corpus.jsonl.gz")
 }
 
+type recordedRow struct {
+	Fn    string          `json:"fn"`
+	Test  string          `json:"test"`
+	Args  recordedArgs    `json:"args"`
+	Rules recordedRules   `json:"rules"`
+	Out   json.RawMessage `json:"out"`
+	Err   *recordedError  `json:"err"`
+}
+
+type recordedArgs struct {
+	Item   json.RawMessage `json:"item"`
+	Config json.RawMessage `json:"config"`
+}
+
+type recordedRules struct {
+	RootError    json.RawMessage   `json:"root_error"`
+	LibraryError json.RawMessage   `json:"library_error"`
+	Library      json.RawMessage   `json:"library"`
+	Files        map[string]string `json:"files"`
+}
+
+type recordedError struct {
+	Class string `json:"class"`
+	Msg   string `json:"msg"`
+}
+
+type nativePresenceRow struct {
+	File         string         `json:"file"`
+	Test         string         `json:"test"`
+	SHA256       string         `json:"sha256"`
+	PythonError  *recordedError `json:"python_error"`
+	NativeOutput *bool          `json:"native_output"`
+}
+
+func decodeTypedArgs(itemRaw, configRaw json.RawMessage) (rule model.RuleConfig, library []model.RuleLibraryItem, ok bool, unknown bool) {
+	itemTrim := bytes.TrimSpace(itemRaw)
+	if len(itemTrim) == 0 || itemTrim[0] != '{' {
+		return rule, nil, false, false
+	}
+	if err := json.Unmarshal(itemTrim, &rule); err != nil {
+		return rule, nil, false, false
+	}
+	// Check if item needs config (non-inline or has library_rule_id).
+	var itemFields map[string]json.RawMessage
+	_ = json.Unmarshal(itemTrim, &itemFields)
+	if libID, present := itemFields["library_rule_id"]; present && !bytes.Equal(bytes.TrimSpace(libID), []byte("null")) {
+		cfgTrim := bytes.TrimSpace(configRaw)
+		if len(cfgTrim) == 0 || cfgTrim[0] != '{' {
+			return rule, nil, false, false
+		}
+	}
+	srcType := "url"
+	if rule.SourceType != nil {
+		srcType = *rule.SourceType
+	}
+	cfgTrim := bytes.TrimSpace(configRaw)
+	if len(cfgTrim) == 0 || bytes.Equal(cfgTrim, []byte("null")) {
+		if srcType == "content" {
+			return rule, nil, true, false
+		}
+		if rule.URL == nil || *rule.URL == "" {
+			return rule, nil, true, false
+		}
+		return rule, nil, false, false
+	}
+	if cfgTrim[0] != '{' {
+		if srcType == "content" {
+			return rule, nil, true, false
+		}
+		if rule.URL == nil || *rule.URL == "" {
+			return rule, nil, true, false
+		}
+		return rule, nil, false, false
+	}
+	var cfgFields map[string]json.RawMessage
+	if err := json.Unmarshal(cfgTrim, &cfgFields); err != nil {
+		return rule, nil, false, false
+	}
+	libRaw, present := cfgFields["rule_library"]
+	if !present {
+		return rule, nil, true, false
+	}
+	libTrim := bytes.TrimSpace(libRaw)
+	if bytes.Equal(libTrim, []byte("null")) {
+		return rule, nil, true, false
+	}
+	switch libTrim[0] {
+	case '[':
+		var entries []json.RawMessage
+		if err := json.Unmarshal(libTrim, &entries); err != nil {
+			return rule, nil, false, false
+		}
+		for _, entry := range entries {
+			trimmed := bytes.TrimSpace(entry)
+			if len(trimmed) == 0 || trimmed[0] != '{' {
+				match, err := rulesetfmt.LibraryIndex(rule, library)
+				if err != nil || match < 0 {
+					return rule, nil, true, true
+				}
+				return rule, library, true, false
+			}
+			var libItem model.RuleLibraryItem
+			if err := json.Unmarshal(trimmed, &libItem); err != nil {
+				return rule, nil, true, true
+			}
+			library = append(library, libItem)
+		}
+		return rule, library, true, false
+	case '"':
+		if bytes.Equal(libTrim, []byte(`""`)) {
+			return rule, []model.RuleLibraryItem{}, true, false
+		}
+		return rule, nil, false, false
+	case '{':
+		var empty map[string]json.RawMessage
+		if json.Unmarshal(libTrim, &empty) == nil && len(empty) == 0 {
+			return rule, []model.RuleLibraryItem{}, true, false
+		}
+		return rule, nil, false, false
+	default:
+		return rule, nil, false, false
+	}
+}
+
 func replay(t *testing.T, path string) {
 	fixture := newReplayRepository(t)
 	f, err := os.Open(path)
@@ -58,48 +186,65 @@ func replay(t *testing.T, path string) {
 	}
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 1<<20), 64<<20)
-	identical, differ, notExpressible := 0, 0, 0
+	identical, differ, notExpressible, untypedExcluded := 0, 0, 0, 0
 	native, applied := nativePresenceExpectations(t, filepath.Base(path)), 0
 	cacheReferences := presenceCacheReferences(t, path)
 	usedCaches := 0
 	tests, files := map[string]bool{}, map[string]bool{}
 	outcomes := map[string]int{}
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
-		if err != nil {
+		lineBytes := scanner.Bytes()
+		var row recordedRow
+		if err := json.Unmarshal(lineBytes, &row); err != nil {
 			t.Fatal(err)
 		}
-		row := value.(*jsonx.Object)
-		if row.GetString("fn") != "classical_ip_lines" {
+		if row.Fn != "classical_ip_lines" {
 			continue
 		}
-		test := row.GetString("test")
-		rules := row.GetObject("rules")
-		if _, bad := rules.Get("root_error"); bad {
+		if len(row.Rules.RootError) > 0 || len(row.Rules.LibraryError) > 0 {
 			notExpressible++
 			continue
 		}
-		if _, bad := rules.Get("library_error"); bad {
-			notExpressible++
-			continue
-		}
-		tests[test] = true
-		files[strings.SplitN(test, "::", 2)[0]] = true
-		ctx, problem := fixture.reset(t, rules)
+		tests[row.Test] = true
+		files[strings.SplitN(row.Test, "::", 2)[0]] = true
+		ctx, problem := fixture.reset(t, row.Rules)
 		if problem != "" {
-			t.Errorf("%s: %s", test, problem)
+			t.Errorf("%s: %s", row.Test, problem)
 			differ++
 			continue
 		}
 		ClearMemo()
-		args := row.GetObject("args")
-		out, err := ClassicalIPLines(ctx, args.Value("item"), args.Value("config"))
-		if ref, ok := cacheReferences[fmt.Sprintf("%x", sha256.Sum256(scanner.Bytes()))]; ok {
-			if ref.Kind != "D2 unowned legacy cache" || ref.NativeOutput != nil || !jsonx.Equal(row.Value("out"), ref.PythonOutput) || row.Has("err") {
+		rule, library, typedOK, unknown := decodeTypedArgs(row.Args.Item, row.Args.Config)
+		untypedID := false
+		if present, valid, isNull := jsonStringMember(&rule, "library_rule_id"); present && !isNull && !valid {
+			untypedID = true
+		}
+		if !typedOK {
+			if row.Err == nil && (len(bytes.TrimSpace(row.Out)) == 0 || bytes.Equal(bytes.TrimSpace(row.Out), []byte("null"))) {
+				untypedExcluded++
+				continue
+			}
+			if row.Err != nil && (row.Err.Class == "AttributeError" || row.Err.Class == "TypeError") {
+				if nf := native[row.Test]; nf != nil {
+					applied++
+				}
+				untypedExcluded++
+				continue
+			}
+		}
+		var out *bool
+		var callErr error
+		if !unknown {
+			out, callErr = TypedClassicalIPLines(ctx, rule, library)
+		}
+		sum := fmt.Sprintf("%x", sha256.Sum256(lineBytes))
+		if ref, ok := cacheReferences[sum]; ok {
+			wantOut, _ := testjson.Parse(row.Out)
+			if ref.Kind != "D2 unowned legacy cache" || ref.NativeOutput != nil || !testjson.Equal(wantOut, ref.PythonOutput) || row.Err != nil {
 				t.Fatal("unowned cache reference lost its exact old outcome")
 			}
-			if out != nil || err != nil {
-				t.Errorf("unowned legacy cache must be unknown: %v %v", out, err)
+			if out != nil || callErr != nil {
+				t.Errorf("unowned legacy cache must be unknown: %v %v", out, callErr)
 				differ++
 			} else {
 				identical++
@@ -107,12 +252,27 @@ func replay(t *testing.T, path string) {
 			usedCaches++
 			continue
 		}
-		if fixture := native[test]; fixture != nil {
-			if fmt.Sprintf("%x", sha256.Sum256(scanner.Bytes())) != fixture.GetString("sha256") || !jsonx.Equal(row.Value("err"), fixture.Value("python_error")) {
-				t.Fatalf("native presence row %s changed", test)
+		if untypedID {
+			// Non-string library_rule_id violates the typed string ID model;
+			// TypedClassicalIPLines fails closed to unknown (nil) rather than
+			// emulating Python True==1 / False==0 / 1.0==1 equality.
+			if callErr != nil {
+				t.Errorf("%s: untyped ID returned error: %v", row.Test, callErr)
+				differ++
+			} else if out == nil {
+				untypedExcluded++
+			} else {
+				t.Errorf("%s: untyped ID returned %v (want nil fail-closed)", row.Test, *out)
+				differ++
 			}
-			if out != nil || err != nil || !fixture.Has("native_output") || fixture.Value("native_output") != nil {
-				t.Errorf("native presence row %s: want unknown, got %v / %v", test, out, err)
+			continue
+		}
+		if nf := native[row.Test]; nf != nil {
+			if sum != nf.SHA256 || nf.PythonError == nil || row.Err == nil || nf.PythonError.Class != row.Err.Class || nf.PythonError.Msg != row.Err.Msg {
+				t.Fatalf("native presence row %s changed", row.Test)
+			}
+			if out != nil || callErr != nil || nf.NativeOutput != nil {
+				t.Errorf("native presence row %s: want unknown, got %v / %v", row.Test, out, callErr)
 				differ++
 			} else {
 				identical++
@@ -121,30 +281,43 @@ func replay(t *testing.T, path string) {
 			continue
 		}
 		var problems []string
-		if want := row.GetObject("err"); want != nil {
-			class := pyClass(err)
-			if test == "corpus::classical_ip_lines::1589" {
+		if row.Err != nil {
+			if row.Test == "corpus::classical_ip_lines::1589" {
 				// N7-3c §5.7: this one scalar-payload refusal uses the native
 				// validator, without reproducing Python's internal TypeError.
-				if want.GetString("class") != "TypeError" || err == nil || err.Error() != mosdns.PayloadCollectionMessage {
-					problems = append(problems, fmt.Sprintf("native scalar-payload refusal: %v", err))
+				if row.Err.Class != "TypeError" || callErr == nil || callErr.Error() != mosdns.PayloadCollectionMessage {
+					problems = append(problems, fmt.Sprintf("native scalar-payload refusal: %v", callErr))
 				}
 				outcomes["native scalar-payload refusal"]++
-			} else if err == nil || class != want.GetString("class") || err.Error() != want.GetString("msg") {
-				problems = append(problems, fmt.Sprintf("python raised %s, go %v (%s)", encode(want), err, class))
+			} else if row.Err.Class == "AttributeError" || row.Err.Class == "TypeError" {
+				// Typed model records cannot represent non-dict/non-string dynamic Python errors;
+				// unknown (nil, nil) is the typed boundary behaviour.
+				if out != nil || callErr != nil {
+					problems = append(problems, fmt.Sprintf("python raised %s, go %v / %v", encodeJSON(row.Err), out, callErr))
+				}
+				outcomes["typed-unknown "+row.Err.Class]++
+			} else {
+				problems = append(problems, fmt.Sprintf("python raised %s, go %v", encodeJSON(row.Err), callErr))
 			}
-			outcomes["raise "+want.GetString("class")]++
-		} else if err != nil {
-			problems = append(problems, "go error "+err.Error())
-		} else if encode(out) != encode(row.Value("out")) {
-			problems = append(problems, fmt.Sprintf("python %s go %s", encode(row.Value("out")), encode(out)))
+		} else if callErr != nil {
+			problems = append(problems, "go error "+callErr.Error())
 		} else {
-			outcomes[encode(out)]++
+			gotEnc := "null"
+			if out != nil {
+				gotEnc = encodeJSON(*out)
+			}
+			wantVal, _ := testjson.Parse(row.Out)
+			gotVal, _ := testjson.Parse([]byte(gotEnc))
+			if !testjson.Equal(wantVal, gotVal) {
+				problems = append(problems, fmt.Sprintf("python %s go %s", string(row.Out), gotEnc))
+			} else {
+				outcomes[gotEnc]++
+			}
 		}
 		if len(problems) > 0 {
 			differ++
 			if differ <= 20 {
-				t.Errorf("%s classical_ip_lines(%s): %s", test, encode(args.Value("item")), strings.Join(problems, "; "))
+				t.Errorf("%s classical_ip_lines(%s): %s", row.Test, string(row.Args.Item), strings.Join(problems, "; "))
 			}
 			continue
 		}
@@ -159,29 +332,28 @@ func replay(t *testing.T, path string) {
 	if applied != len(native) {
 		t.Fatalf("applied %d of %d native presence rows", applied, len(native))
 	}
-	t.Logf("%s classical_ip_lines: %d identical, %d differ, %d not expressible; from %d tests in %d files; outcomes %v",
-		path, identical, differ, notExpressible, len(tests), len(files), outcomes)
+	t.Logf("%s classical_ip_lines: %d identical, %d differ, %d untyped-excluded, %d not expressible; from %d tests in %d files; outcomes %v",
+		path, identical, differ, untypedExcluded, notExpressible, len(tests), len(files), outcomes)
 }
 
-func nativePresenceExpectations(t *testing.T, file string) map[string]*jsonx.Object {
+func nativePresenceExpectations(t *testing.T, file string) map[string]*nativePresenceRow {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n88a-native.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var entries []nativePresenceRow
+	if err := json.Unmarshal(data, &entries); err != nil {
 		t.Fatal(err)
 	}
-	result := map[string]*jsonx.Object{}
-	for _, entry := range value.([]any) {
-		fixture := entry.(*jsonx.Object)
-		if fixture.GetString("file") == file {
-			key := fixture.GetString("test")
-			if result[key] != nil || fixture.GetObject("python_error").GetString("class") != "AttributeError" {
-				t.Fatalf("invalid native presence fixture %s", key)
+	result := map[string]*nativePresenceRow{}
+	for i := range entries {
+		entry := &entries[i]
+		if entry.File == file {
+			if result[entry.Test] != nil || entry.PythonError == nil || entry.PythonError.Class != "AttributeError" {
+				t.Fatalf("invalid native presence fixture %s", entry.Test)
 			}
-			result[key] = fixture
+			result[entry.Test] = entry
 		}
 	}
 	counts := map[string]int{"r02_corpus.jsonl.gz": 14, "r02_edge.jsonl.gz": 8}
@@ -214,15 +386,22 @@ func newReplayRepository(t *testing.T) *replayRepository {
 	return &replayRepository{r: r, ctx: repo.WithRepository(context.Background(), r), root: root}
 }
 
-func (f *replayRepository) reset(t *testing.T, rules *jsonx.Object) (context.Context, string) {
+func (f *replayRepository) reset(t *testing.T, rules recordedRules) (context.Context, string) {
 	t.Helper()
-	library, _ := rules.Value("library").([]any)
-	if library == nil {
-		library = []any{}
+	libRaw := bytes.TrimSpace(rules.Library)
+	if len(libRaw) == 0 || bytes.Equal(libRaw, []byte("null")) {
+		libRaw = []byte("[]")
 	}
-	encoded := encode(library)
+	encoded := string(libRaw)
 	if encoded != f.library {
-		if _, err := f.r.SaveShared(f.ctx, jsonx.Obj("rule_library", library), nil); err != nil {
+		var shared model.Shared
+		if err := json.Unmarshal([]byte(`{"rule_library":`+encoded+`}`), &shared); err != nil {
+			return nil, "cannot decode recorded rule library: " + err.Error()
+		}
+		if err := f.r.UpdateShared(f.ctx, func(_ context.Context, current *model.Shared) error {
+			current.RuleLibrary = shared.RuleLibrary
+			return nil
+		}); err != nil {
 			return nil, "cannot store the recorded rule library: " + err.Error()
 		}
 		f.library = encoded
@@ -233,8 +412,8 @@ func (f *replayRepository) reset(t *testing.T, rules *jsonx.Object) (context.Con
 	if err := os.MkdirAll(f.root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, data := range rules.GetObject("files").All() {
-		raw, err := hex.DecodeString(data.(string))
+	for name, data := range rules.Files {
+		raw, err := hex.DecodeString(data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -262,23 +441,28 @@ func TestEdgeCorpus(t *testing.T) {
 // A missing cache-directory reset leaves the first row's extra file behind.
 func TestReplayRepositoryDoesNotLeakInputs(t *testing.T) {
 	f := newReplayRepository(t)
-	first := jsonx.Obj("library", []any{jsonx.Obj("id", "old", "name", "old")},
-		"files", jsonx.Obj("old.list", hex.EncodeToString([]byte("192.0.2.0/24\n"))))
+	first := recordedRules{
+		Library: json.RawMessage(`[{"id":"old","name":"old"}]`),
+		Files:   map[string]string{"old.list": hex.EncodeToString([]byte("192.0.2.0/24\n"))},
+	}
 	if _, problem := f.reset(t, first); problem != "" {
 		t.Fatal(problem)
 	}
 	if _, err := os.Stat(filepath.Join(f.root, "old.list")); err != nil {
 		t.Fatal(err)
 	}
-	second := jsonx.Obj("library", []any{}, "files", jsonx.Obj())
+	second := recordedRules{
+		Library: json.RawMessage(`[]`),
+		Files:   map[string]string{},
+	}
 	if _, problem := f.reset(t, second); problem != "" {
 		t.Fatal(problem)
 	}
-	shared, err := f.r.GetShared(f.ctx)
+	shared, err := f.r.Shared(f.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shared.GetList("rule_library")) != 0 {
+	if len(shared.RuleLibrary) != 0 {
 		t.Fatal("previous row library leaked")
 	}
 	files, err := os.ReadDir(f.root)

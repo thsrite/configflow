@@ -3,6 +3,7 @@ package mosdns
 import (
 	"bufio"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,8 +13,8 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/testgolden"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -66,12 +67,65 @@ func errClass(err error) string {
 	return fmt.Sprintf("%T", err)
 }
 
-func filesValue(files []RulesetFile) []any {
+func filesValue(files []SourceFile) []any {
 	out := []any{}
 	for _, f := range files {
-		out = append(out, jsonx.Obj("part", f.Part, "url", f.URL, "local_path", f.LocalPath))
+		var u any
+		if f.URL != nil {
+			u = *f.URL
+		}
+		out = append(out, jsonx.Obj("part", f.Part, "url", u, "local_path", f.LocalPath))
 	}
 	return out
+}
+
+func rowNode(node *yamlx.Node) (any, error) {
+	data, err := yamlx.ToJSON(node)
+	if err != nil {
+		if hasNonStringKey(node) {
+			return node, nil
+		}
+		return nil, err
+	}
+	return jsonx.Parse(data)
+}
+
+func rowRuleList(rules []model.RuleConfig) ([]any, error) {
+	result := []any{}
+	for _, rule := range rules {
+		raw, err := model.Marshal(rule)
+		if err != nil {
+			return nil, err
+		}
+		original, err := jsonx.Parse(raw)
+		if err != nil {
+			return nil, err
+		}
+		object := original.(*jsonx.Object)
+		type ruleDTO model.RuleConfig
+		value := ruleDTO(rule)
+		value.Fields = model.Fields{}
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		known, err := jsonx.Parse(data)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range known.(*jsonx.Object).All() {
+			if key == "Fields" || !object.Has(key) {
+				continue
+			}
+			if value == nil {
+				object.Delete(key)
+			} else {
+				object.Set(key, value)
+			}
+		}
+		result = append(result, object)
+	}
+	return result, nil
 }
 
 func strOrNone(v any) string {
@@ -119,9 +173,20 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		if !ok1 {
 			return nil, nil, false
 		}
-		var rules, sets any
-		rules, sets, err = SplitRulesAndRulesets(config)
-		out = []any{rules, sets}
+		native, lerr := legacyConfig(config)
+		if lerr != nil {
+			return nil, lerr, true
+		}
+		rules, sets, serr := SplitRules(native)
+		if serr != nil {
+			return nil, serr, true
+		}
+		r, rerr := rowRuleList(rules)
+		if rerr != nil {
+			return nil, rerr, true
+		}
+		s, err2 := rowRuleList(sets)
+		out, err = []any{r, s}, err2
 	case "convert":
 		content, ok1 := arg(0).(string)
 		if !ok1 {
@@ -152,19 +217,23 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		kind, value := ParseClashRuleValue(line)
 		out = []any{kind, value}
 	case "upstreams":
-		var list []any
-		list, err = ParseDNSUpstreams(arg(0))
-		if err == nil {
-			node, derr := yamlbridge.Encode(list)
-			if derr != nil {
-				return nil, derr, true
+		raw := arg(0)
+		text, isStr := raw.(string)
+		if raw == nil {
+			text, isStr = "", true
+		}
+		if !isStr {
+			err = ErrUpstreamType
+		} else {
+			var nodes []*yamlx.Node
+			nodes, err = Upstreams(text)
+			if err == nil {
+				data, derr := yamlx.Marshal(yamlx.Seq(nodes...))
+				if derr != nil {
+					return nil, derr, true
+				}
+				out = jsonx.Obj("dump", string(data))
 			}
-			data, derr := yamlx.Marshal(node)
-			if derr != nil {
-				return nil, derr, true
-			}
-			text := string(data)
-			out = jsonx.Obj("dump", text)
 		}
 	case "proxy_url":
 		config, ok1 := asConfig(arg(0))
@@ -173,7 +242,13 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		if !ok1 || !ok2 || !ok3 {
 			return nil, nil, false
 		}
-		out, err = BuildRuleProxyURL(config, base, url, arg(3), arg(4))
+		native, lerr := legacyConfig(config)
+		if lerr != nil {
+			return nil, lerr, true
+		}
+		p, _ := arg(3).(string)
+		id, _ := arg(4).(string)
+		out, err = RuleProxyURL(native, base, url, p, id)
 	case "ruleset_files":
 		config, ok1 := asConfig(arg(0))
 		base, ok2 := arg(1).(string)
@@ -184,14 +259,51 @@ func callRow(fn string, args []any) (out any, err error, ok bool) {
 		if !ok1 || !ok2 || !ok3 {
 			return nil, nil, false
 		}
-		var files []RulesetFile
-		files, err = RulesetFiles(config, base, arg(2), stem)
+		native, lerr := legacyConfig(config)
+		if lerr != nil {
+			return nil, lerr, true
+		}
+		data, cerr := jsonx.Compact(arg(2))
+		if cerr != nil {
+			return nil, cerr, true
+		}
+		var item model.RuleConfig
+		if uerr := json.Unmarshal(data, &item); uerr != nil {
+			return nil, uerr, true
+		}
+		var files []SourceFile
+		files, err = RuleFiles(native, base, item, stem)
 		out = filesValue(files)
 	case "custom_matches":
-		out, err = ParseCustomMatches(arg(0))
+		data, cerr := jsonx.Compact(arg(0))
+		if cerr != nil {
+			return nil, cerr, true
+		}
+		var fields model.Fields
+		if ferr := fields.Set("custom_matches", data); ferr != nil {
+			return nil, ferr, true
+		}
+		raw, merr := fields.MarshalJSON()
+		if merr != nil {
+			return nil, merr, true
+		}
+		var settings model.MosDNSSettings
+		if uerr := json.Unmarshal(raw, &settings); uerr != nil {
+			return nil, uerr, true
+		}
+		list := []any{}
+		for _, node := range MatchEntries(settings.CustomMatches) {
+			v, nerr := rowNode(node)
+			if nerr != nil {
+				return nil, nerr, true
+			}
+			list = append(list, v)
+		}
+		out = list
 	case "ruleset_parts":
+		behavior, _ := arg(0).(string)
 		parts := []any{}
-		for _, p := range RulesetParts(arg(0)) {
+		for _, p := range Parts(behavior) {
 			parts = append(parts, p)
 		}
 		out = parts

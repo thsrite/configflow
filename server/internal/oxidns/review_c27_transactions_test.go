@@ -117,6 +117,37 @@ func TestC27ReviewNativeIdentitiesRemainEditable(t *testing.T) {
 	}
 }
 
+func c27ToJSONX(n *Node) any {
+	v, _ := jsonx.Parse(ToJSON(n))
+	return v
+}
+
+func c27FromJSONX(v any) *Node {
+	raw, err := jsonx.Compact(v)
+	if err != nil {
+		return Null()
+	}
+	n, err := FromJSON(raw)
+	if err != nil {
+		return Null()
+	}
+	return n
+}
+
+func c27Profile(obj *jsonx.Object) *Profile {
+	raw, err := jsonx.Compact(obj)
+	if err != nil {
+		p, _ := NewTypedProfile(nil)
+		return p
+	}
+	p, err := ProfileFromJSON(raw)
+	if err != nil {
+		p, _ := NewTypedProfile(nil)
+		return p
+	}
+	return p
+}
+
 func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context) {
 	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
@@ -125,7 +156,7 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	p := c27Snapshot(t, native)
-	fields := jsonx.Obj("rule_configs", ToJSONX(p.get("rule_configs")), "oxidns", ToJSONX(p.Settings()))
+	fields := jsonx.Obj("rule_configs", c27ToJSONX(p.get("rule_configs")), "oxidns", c27ToJSONX(p.Settings()))
 	if _, _, err := r.UpdateProfileFields(ctx, "default", fields, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -146,12 +177,12 @@ func c27Transaction(r *repo.Repository, ctx context.Context, id, choice string) 
 			after.Set("rule_configs", append(after.GetList("rule_configs"), jsonx.Obj("id", id, "itemType", "rule", "rule_type", "DOMAIN",
 				"value", id+".example.com", "policy", "DIRECT")))
 		}
-		result, err := ApplyRuleDNS(NewProfile(current), NewProfile(after), []DNSAssignment{{id, choice}}, RuleDNSApplyOptions{})
+		result, err := ApplyRuleDNS(c27Profile(current), c27Profile(after), []DNSAssignment{{id, choice}}, RuleDNSApplyOptions{})
 		if err != nil {
 			return nil, err
 		}
 		if result.Changed {
-			after.Set("oxidns", ToJSONX(result.Settings))
+			after.Set("oxidns", c27ToJSONX(result.Settings))
 		}
 		return after, nil
 	})
@@ -291,11 +322,11 @@ func TestC27ReviewLockedTransactionRollsBack(t *testing.T) {
 				set(get(plugin, "args"), "mode", S("nxdomain"))
 			}
 		}
-		settings := fromJSONX(current.Value("oxidns"))
+		settings := c27FromJSONX(current.Value("oxidns"))
 		if err := setNativeConfig(settings, document); err != nil {
 			return nil, err
 		}
-		current.Set("oxidns", ToJSONX(settings))
+		current.Set("oxidns", c27ToJSONX(settings))
 		return current, nil
 	})
 	if err != nil {

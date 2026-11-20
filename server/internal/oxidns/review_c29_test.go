@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/yamlx"
 )
@@ -37,17 +37,24 @@ func TestReviewC29ReaderCausesReachConsumers(t *testing.T) {
 			t.Run(test.name+"/"+field, func(t *testing.T) {
 				settings := M("local_dns", "192.0.2.53", "remote_dns", "192.0.2.54")
 				set(settings, field, S(test.source))
-				profile := NewProfile(nil)
+				profile, err := NewTypedProfile(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
 				set(profile.doc, "oxidns", settings)
 				if output, err := Generate(profile, "http://config.example"); output != "" || !errors.Is(err, test.cause) {
 					t.Errorf("Generate lost reader cause: %q %v", output, err)
 				}
 				if field != "custom_config" {
-					draft, err := PrepareEditor(M("local_dns", "192.0.2.53", "remote_dns", "192.0.2.54", "fallback_dns", "192.0.2.55"), NewProfile(nil), "")
+					empty, err := NewTypedProfile(nil)
 					if err != nil {
 						t.Fatal(err)
 					}
-					if _, err := ApplyCommonSettings(draft, M(field, test.source), NewProfile(nil), ""); !errors.Is(err, test.cause) {
+					draft, err := PrepareEditor(M("local_dns", "192.0.2.53", "remote_dns", "192.0.2.54", "fallback_dns", "192.0.2.55"), empty, "")
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := ApplyCommonSettings(draft, M(field, test.source), empty, ""); !errors.Is(err, test.cause) {
 						t.Errorf("ApplyCommonSettings lost reader cause: %v", err)
 					}
 				}
@@ -85,16 +92,21 @@ func TestReviewC29ArchiveLimits(t *testing.T) {
 		}, "生成配置超过打包文件数量限制"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			config := jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", upstream.URL),
-				"rule_library", []any{jsonx.Obj("id", "inline", "source_type", "content", "content", "example.com")},
-				"rule_configs", []any{jsonx.Obj("library_rule_id", "inline")})
-			output, err := BuildZIP(context.Background(), config, "plugins: []", test.downloads, test.files, upstream.URL)
+			sourceType, content := "content", "example.com"
+			config := &model.Config{
+				ProfileID:    "default",
+				SystemConfig: model.SystemConfig{ServerDomain: upstream.URL},
+				RuleLibrary:  []model.RuleLibraryItem{{ID: "inline", SourceType: &sourceType, Content: &content}},
+				Profile:      &model.Profile{RuleConfigs: []model.RuleConfig{{LibraryRuleID: "inline"}}},
+			}
+			output, err := BuildTypedZIP(context.Background(), config, "plugins: []", test.downloads, test.files, upstream.URL)
 			var failure *mosdns.ArchiveError
 			if output != nil || !errors.As(err, &failure) || failure.Message != test.message {
 				t.Fatalf("wrong archive refusal: %d bytes, %v, want %q", len(output), err, test.message)
 			}
 		})
 	}
+	empty := &model.Config{Profile: &model.Profile{}}
 	for _, path := range []string{"../escape", "a/../../escape", "/absolute", "a//b", "a/./b", "a\\..\\escape", "a\x00b", "a\nb", "././state/learned.txt"} {
 		t.Run(path, func(t *testing.T) {
 			for _, download := range []bool{false, true} {
@@ -105,7 +117,7 @@ func TestReviewC29ArchiveLimits(t *testing.T) {
 				} else {
 					files = []File{{Path: path}}
 				}
-				if output, err := BuildZIP(context.Background(), jsonx.NewObject(), "plugins: []", downloads, files, ""); err == nil || output != nil {
+				if output, err := BuildTypedZIP(context.Background(), empty, "plugins: []", downloads, files, ""); err == nil || output != nil {
 					t.Fatalf("unsafe path escaped: %q %v", path, err)
 				}
 			}
@@ -115,7 +127,7 @@ func TestReviewC29ArchiveLimits(t *testing.T) {
 		t.Fatal("archive rejection performed source I/O")
 	}
 	files := []File{{Path: "a", Content: []byte(strings.Repeat("x", 26))}, {Path: "b", Content: []byte(strings.Repeat("x", 27))}}
-	if output, err := BuildZIP(context.Background(), jsonx.NewObject(), "plugins: []", nil, files, ""); err != nil || len(output) == 0 {
+	if output, err := BuildTypedZIP(context.Background(), empty, "plugins: []", nil, files, ""); err != nil || len(output) == 0 {
 		t.Fatalf("exact file/byte limits rejected: %v", err)
 	}
 }

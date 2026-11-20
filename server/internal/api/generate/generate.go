@@ -13,7 +13,7 @@ import (
 	"configflow/internal/configgen"
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
@@ -84,11 +84,19 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		}
 		return httpx.File(httpx.FileOptions{Path: file.Path, Data: file.Data, DownloadName: file.Name, AsAttachment: true, MimeType: file.MIME})
 	}
-	config, err := repo.GetConfig(c.Context(), c.ProfileID)
+	repository, err := repo.GetRepository(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	out, err := configgen.Render(c.Context(), config, engine, base)
+	profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+	if err != nil {
+		return nil, err
+	}
+	config, err := repository.Config(c.Context(), profileID, nil)
+	if err != nil {
+		return nil, err
+	}
+	out, err := configgen.RenderConfig(c.Context(), config, engine, base)
 	if err != nil {
 		return failure(engine, err, preview)
 	}
@@ -104,18 +112,15 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		if err != nil {
 			return nil, err
 		}
-		value, err := jsonx.Parse(raw)
+		rawSys, err := model.Marshal(config.SystemConfig)
 		if err != nil {
 			return nil, err
 		}
-		value, err = redact.SanitizeExternalPayload(c.Context(), value, config.GetObject("system_config"))
+		secrets, err := redact.ExternalPayloadSecrets(c.Context(), json.RawMessage(rawSys))
 		if err != nil {
 			return nil, err
 		}
-		sanitizedJSON, err := json.Marshal(value)
-		if err != nil {
-			return nil, err
-		}
+		sanitizedJSON := redact.SanitizeCredentials(json.RawMessage(raw), secrets)
 		sanitized, err := yamlx.FromJSON(sanitizedJSON)
 		if err != nil {
 			return nil, err
@@ -127,11 +132,19 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		out.Content = string(text)
 	}
 	if engine == configgen.Mihomo {
+		hosts := out.SubscriptionHosts
+		if len(hosts) == 0 {
+			hosts = json.RawMessage("null")
+		}
+		dialers := out.SubscriptionDialers
+		if len(dialers) == 0 {
+			dialers = json.RawMessage("null")
+		}
 		return httpx.JSON(struct {
-			Content string        `json:"content"`
-			Hosts   *jsonx.Object `json:"subscription_hosts"`
-			Dialers *jsonx.Object `json:"subscription_dialers"`
-		}{out.Content, out.SubscriptionHosts, out.SubscriptionDialers}), nil
+			Content string          `json:"content"`
+			Hosts   json.RawMessage `json:"subscription_hosts"`
+			Dialers json.RawMessage `json:"subscription_dialers"`
+		}{out.Content, hosts, dialers}), nil
 	}
 	return httpx.JSON(struct {
 		Content string `json:"content"`

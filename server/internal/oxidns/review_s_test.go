@@ -83,7 +83,11 @@ plugins: [] # plugins comment
 		t.Fatal("override mutated merge source")
 	}
 	settings := M("config_mode", "native", "native_config", reviewDump(t, doc))
-	result, err := ApplyCommonSettings(settings, M("log.level", "debug"), NewProfile(nil), "")
+	empty, err := NewTypedProfile(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ApplyCommonSettings(settings, M("log.level", "debug"), empty, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +222,10 @@ func TestReviewExpandedWithoutSources(t *testing.T) {
 
 func TestReviewPublicEditorsPreserveYAML(t *testing.T) {
 	t.Parallel()
-	p := NewProfile(nil)
+	p, err := NewTypedProfile(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	draft, err := PrepareEditor(M("local_dns", "udp://192.0.2.53", "remote_dns", "https://dns.example/q"), p, "")
 	if err != nil {
 		t.Fatal(err)

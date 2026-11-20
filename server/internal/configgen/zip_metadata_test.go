@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
 )
@@ -43,10 +43,10 @@ with zipfile.ZipFile(buffer) as z:
 		build func() ([]byte, error)
 	}{
 		{"mosdns", func() ([]byte, error) {
-			return mosdns.BuildMosDNSZip(context.Background(), jsonx.Obj(), "synthetic: content\n", nil, []mosdns.File{{Path: "rules/synthetic.txt", Content: "synthetic: content\n"}}, mosdns.ArchiveOptions{SkipReferenceValidation: true})
+			return mosdns.BuildZIP(context.Background(), &model.Config{Profile: &model.Profile{}}, "synthetic: content\n", nil, []mosdns.File{{Path: "rules/synthetic.txt", Content: "synthetic: content\n"}}, mosdns.ArchiveOptions{SkipReferenceValidation: true})
 		}},
 		{"oxidns", func() ([]byte, error) {
-			return oxidns.BuildZIP(context.Background(), jsonx.Obj(), "synthetic: content\n", nil, []oxidns.File{{Path: "rules/synthetic.txt", Content: []byte("synthetic: content\n")}}, "")
+			return oxidns.BuildTypedZIP(context.Background(), &model.Config{Profile: &model.Profile{}}, "synthetic: content\n", nil, []oxidns.File{{Path: "rules/synthetic.txt", Content: []byte("synthetic: content\n")}}, "")
 		}},
 	}
 	for _, builder := range builders {

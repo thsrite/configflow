@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"configflow/internal/ippresence"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 )
@@ -21,7 +22,7 @@ func init() {
 		repository *repo.Repository
 		openErr    error
 	)
-	oxidns.SetClassicalIPLines(func(ctx context.Context, item, config any) (any, error) {
+	oxidns.SetNativeClassicalIPLines(func(ctx context.Context, item model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
 		once.Do(func() {
 			dir, err := os.MkdirTemp("", "oxidns-boundary-")
 			if err != nil {
@@ -33,6 +34,6 @@ func init() {
 		if openErr != nil {
 			return nil, openErr
 		}
-		return ippresence.ClassicalIPLines(repo.WithRepository(ctx, repository), item, config)
+		return ippresence.PeekTypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
 	})
 }

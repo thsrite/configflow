@@ -30,7 +30,10 @@ func TestStepBC26ProtocolSchemeIsNotReference(t *testing.T) {
 }
 
 func TestStepBC26IndependentSidePolicyLifecycle(t *testing.T) {
-	p := NewProfile(nil)
+	p, err := NewTypedProfile(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	draft, err := PrepareEditor(M("local_dns", "udp://192.0.2.53", "remote_dns", "https://dns.example/q"), p, "")
 	if err != nil {
 		t.Fatal(err)

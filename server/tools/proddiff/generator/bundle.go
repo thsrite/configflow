@@ -86,7 +86,10 @@ func deploymentBundle(ctx context.Context, config *jsonx.Object, j job, opts con
 			in.CustomFiles = append(in.CustomFiles, deploy.CustomFile{Path: f.Path, Content: []byte(f.Content)})
 		}
 	case "oxidns":
-		profile := oxidns.NewProfile(config)
+		profile, err := oxidnsProfile(config)
+		if err != nil {
+			return "", err
+		}
 		in.ConfigContent, err = oxidns.Generate(profile, baseURL)
 		if err != nil {
 			return "", err

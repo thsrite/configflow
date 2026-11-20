@@ -189,7 +189,10 @@ func TestR17SetupGuardAndExpiry(t *testing.T) {
 func TestR17UDPProtocolSideEntryHTTP(t *testing.T) {
 	s, _ := fixture(t)
 	login := s.Login()
-	p := oxidns.NewProfile(nil)
+	p, err := oxidns.NewTypedProfile(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	draft, err := oxidns.PrepareEditor(oxidns.M("local_dns", "udp://192.0.2.53", "remote_dns", "https://dns.example/q"), p, "")
 	if err != nil {
 		t.Fatal(err)

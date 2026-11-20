@@ -1,14 +1,15 @@
 package ippresence
 
 import (
-	"configflow/internal/store"
 	"context"
 	"errors"
 	"os"
 
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rules"
 	"configflow/internal/rulesetfmt"
+	"configflow/internal/store"
 )
 
 // TypedClassicalIPLines probes a captured typed declaration using only inline
@@ -26,18 +27,49 @@ func PeekTypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, libra
 
 type cacheReader func(context.Context, model.RuleConfig, *rulefetch.SourceConfig, string) ([]byte, error)
 
+func jsonStringMember(record model.SwitchMember, name string) (present, validString, isNull bool) {
+	raw, ok, err := record.MemberJSON(name)
+	if err != nil || !ok {
+		return false, true, false
+	}
+	if string(raw) == "null" {
+		return true, false, true
+	}
+	return true, len(raw) > 0 && raw[0] == '"', false
+}
+
 func typedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem, read cacheReader) (*bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if rule.LibraryRuleID != "" {
-		index, err := rulesetfmt.LibraryIndex(rule, library)
-		if err != nil {
+	present, validStr, isNull := jsonStringMember(&rule, "library_rule_id")
+	if present && !isNull {
+		if !validStr {
 			return nil, nil
 		}
-		if index >= 0 {
-			item := library[index]
-			rule = model.RuleConfig{ID: item.ID, Name: item.Name, SourceType: item.SourceType, URL: item.URL, Content: item.Content, Behavior: item.Behavior, Format: item.Format}
+		for i := range library {
+			itemPresent, itemValid, itemNull := jsonStringMember(&library[i], "id")
+			if itemPresent && (itemNull || !itemValid) {
+				continue
+			}
+			if !itemPresent && rule.LibraryRuleID == "" {
+				continue
+			}
+			if library[i].ID == rule.LibraryRuleID {
+				rule = rules.LibraryRule(library[i])
+				break
+			}
+		}
+	} else if !present && rule.LibraryRuleID != "" {
+		for i := range library {
+			itemPresent, itemValid, itemNull := jsonStringMember(&library[i], "id")
+			if itemPresent && (itemNull || !itemValid) {
+				continue
+			}
+			if library[i].ID == rule.LibraryRuleID {
+				rule = rules.LibraryRule(library[i])
+				break
+			}
 		}
 	}
 	source := "url"
@@ -46,6 +78,9 @@ func typedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library [
 	}
 	if source == "content" {
 		if rule.Content == nil {
+			return nil, nil
+		}
+		if cPresent, cValid, _ := jsonStringMember(&rule, "content"); cPresent && !cValid {
 			return nil, nil
 		}
 		return inlineIPLines(*rule.Content)

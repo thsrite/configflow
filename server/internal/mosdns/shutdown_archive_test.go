@@ -69,7 +69,7 @@ func TestO36cArchiveClosedRuntime(t *testing.T) {
 	ctx, r, runtime := archiveRuntime(t, jsonx.NewObject())
 	before, files := archiveDurableState(t, r)
 	runtime.Shutdown(context.Background())
-	data, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", nil, nil, ArchiveOptions{})
+	data, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", nil, nil, ArchiveOptions{})
 	after, afterFiles := archiveDurableState(t, r)
 	if !errors.Is(err, context.Canceled) || len(data) != 0 || before != after || !reflect.DeepEqual(files, afterFiles) {
 		t.Fatalf("closed Runtime delivered an archive: err=%v bytes=%d", err, len(data))
@@ -79,12 +79,12 @@ func TestO36cArchiveClosedRuntime(t *testing.T) {
 func TestO36cArchiveShutdownAfterFetch(t *testing.T) {
 	ctx, r, runtime := archiveRuntime(t, jsonx.NewObject())
 	before, files := archiveDurableState(t, r)
-	withFetch(t, func(context.Context, string, *jsonx.Object, string) ([]byte, error) {
+	withFetch(t, func(context.Context, string, *model.Config, string) ([]byte, error) {
 		runtime.Shutdown(context.Background())
 		return []byte("example.com\n"), nil
 	})
 	downloads := []Download{{URL: "https://rules.example.com/late.txt", Name: "late", LocalPath: "rules/late.txt"}}
-	data, err := BuildMosDNSZip(ctx, remoteSnapshot(), "plugins: []", downloads, nil, ArchiveOptions{})
+	data, err := BuildZIP(ctx, remoteSnapshot(), "plugins: []", downloads, nil, ArchiveOptions{})
 	after, afterFiles := archiveDurableState(t, r)
 	if !errors.Is(err, context.Canceled) || len(data) != 0 || before != after || !reflect.DeepEqual(files, afterFiles) {
 		t.Fatalf("late source result delivered after shutdown: err=%v bytes=%d", err, len(data))
@@ -120,20 +120,23 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 			ctx, disconnect := context.WithCancel(request)
 			defer disconnect()
 			fetchDone := make(chan struct{})
-			withFetch(t, func(ctx context.Context, url string, config *jsonx.Object, host string) ([]byte, error) {
+			withFetch(t, func(ctx context.Context, url string, config *model.Config, host string) ([]byte, error) {
 				defer close(fetchDone)
-				return fetchRemote(ctx, url, config, host)
+				return fetchNative(ctx, url, config, host)
 			})
 			before, files := archiveDurableState(t, r)
-			snapshot := jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", "https://panel.example.com"),
-				"rule_configs", []any{}, "rule_library", []any{rule})
+			snapshot, err := legacyConfig(jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", "https://panel.example.com"),
+				"rule_configs", []any{}, "rule_library", []any{rule}))
+			if err != nil {
+				t.Fatal(err)
+			}
 			type outcome struct {
 				data []byte
 				err  error
 			}
 			done := make(chan outcome, 1)
 			go func() {
-				data, err := BuildMosDNSZip(ctx, snapshot, "plugins: []", []Download{{URL: server.URL, Name: "O3", LocalPath: "rules/o3.txt"}}, nil, ArchiveOptions{})
+				data, err := BuildZIP(ctx, snapshot, "plugins: []", []Download{{URL: server.URL, Name: "O3", LocalPath: "rules/o3.txt"}}, nil, ArchiveOptions{})
 				done <- outcome{data, err}
 			}()
 			select {
