@@ -160,7 +160,7 @@ func setup(t *testing.T, subInterval any) *fixture {
 			t.Errorf("unexpected subscription download %s", url)
 			return nil, errors.New("no request")
 		}}
-	t.Cleanup(SetEnv(f.env))
+	t.Cleanup(SetRefreshEnv(refreshEnvForTest(f.env)))
 	return f
 }
 
@@ -864,7 +864,7 @@ func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 // due times, monotonic time for durations, sleeps of the scheduler loop),
 // the subscription download (sub_store_client.get_subscription_proxies_yaml),
 // the rule download client, the HTTP client of fetch_userinfo, node ids and
-// the Sub-Store node converter. Tests install fakes with SetEnv.
+// the Sub-Store node converter. Tests install adapted fixtures with SetRefreshEnv.
 type Env struct {
 	Clock substore.Clock
 	// FetchSubscription is get_subscription_proxies_yaml(sub_id, url, **opts).
@@ -880,33 +880,6 @@ type Env struct {
 	Converter convert.ProxyStringConverter
 }
 
-// DefaultEnv is the production environment on the process-wide Sub-Store
-// service.
-func DefaultEnv() *Env {
-	return &Env{
-		Clock: substore.SystemClock,
-		FetchSubscription: func(ctx context.Context, subID, url string, opts substore.FetchOptions) (*substore.SubscriptionResult, error) {
-			return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, subID, url, "", opts)
-		},
-		HTTP:      substore.RequestsClient{},
-		RandomHex: func() string { return substore.Default().Env.RandomHex() },
-	}
-}
-
-var (
-	envMu sync.Mutex
-	env   *Env
-)
-
-func currentTestEnv() *Env {
-	envMu.Lock()
-	defer envMu.Unlock()
-	if env == nil {
-		env = DefaultEnv()
-	}
-	return env
-}
-
 func (e *Env) converter() convert.ProxyStringConverter {
 	if e.Converter != nil {
 		return e.Converter
@@ -919,22 +892,6 @@ func (e *Env) ruleClient() *rulefetch.Client {
 		return e.RuleClient
 	}
 	return rulefetch.DefaultClient
-}
-
-// SetEnv replaces the environment (tests) and returns a function restoring
-// the previous one.
-func SetEnv(e *Env) (restore func()) {
-	restoreNative := SetRefreshEnv(refreshEnvForTest(e))
-	envMu.Lock()
-	previous := env
-	env = e
-	envMu.Unlock()
-	return func() {
-		restoreNative()
-		envMu.Lock()
-		env = previous
-		envMu.Unlock()
-	}
 }
 
 type nodeConverter struct{ old convert.ProxyStringConverter }

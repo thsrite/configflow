@@ -370,7 +370,7 @@ func replayRecordedRows(t *testing.T, rows []*jsonx.Object, template string) {
 		call := &replayCall{row: row, ctx: ctx, r: r}
 		var value any
 		func() {
-			defer SetEnv(env)()
+			defer SetRefreshEnv(refreshEnvForTest(env))()
 			value, err = call.replay()
 		}()
 		var got, want *jsonx.Object

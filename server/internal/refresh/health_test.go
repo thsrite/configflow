@@ -64,7 +64,9 @@ func TestFetchUserinfoSkipsNonHTTP(t *testing.T) {
 		t.Error("unexpected request")
 		return nil, errors.New("no")
 	}}
-	t.Cleanup(SetEnv(&Env{Clock: substore.SystemClock, HTTP: client}))
+	env := DefaultRefreshEnv()
+	env.HTTP = client
+	t.Cleanup(SetRefreshEnv(env))
 	for _, url := range []any{"file:///etc/passwd", nil, 5} {
 		if got, err := FetchUserinfo(context.Background(), url); got != nil || err != nil {
 			t.Errorf("%v: %v %v", url, got, err)
@@ -84,7 +86,9 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 		}
 		return &substore.Response{StatusCode: status, Header: http.Header{"Subscription-Userinfo": {"upload=1; download=2; total=3; expire=4"}}}, nil
 	}}
-	t.Cleanup(SetEnv(&Env{Clock: substore.SystemClock, HTTP: client}))
+	env := DefaultRefreshEnv()
+	env.HTTP = client
+	t.Cleanup(SetRefreshEnv(env))
 	got, err := FetchUserinfo(context.Background(), "HTTPS://airport.test/sub")
 	if err != nil || !jsonx.Equal(got, jsonx.Obj("upload", jsonx.Int(1), "download", jsonx.Int(2), "total", jsonx.Int(3), "expire", jsonx.Int(4))) {
 		t.Fatal(got, err)
@@ -154,7 +158,9 @@ func TestHealthFileEdges(t *testing.T) {
 	refs := loadNativeReferences(t)
 	edge := refs.GetObject("edge")
 	os.WriteFile(path, []byte(edge.GetObject("files").GetString("health")), 0o644)
-	t.Cleanup(SetEnv(&Env{Clock: &fakeClock{now: corpusNow}}))
+	env := DefaultRefreshEnv()
+	env.Clock = &fakeClock{now: corpusNow}
+	t.Cleanup(SetRefreshEnv(env))
 	for i, item := range edge.GetList("output") {
 		call := item.(*jsonx.Object)
 		parsed, err := jsonx.Parse([]byte(call.GetString("call")))

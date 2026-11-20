@@ -224,7 +224,7 @@ func failure(err error, message string) *httpx.Response {
 	var nonfinite *nonfiniteBodyError
 	if errors.As(err, &nonfinite) {
 		var request *httpx.HTTPError
-		if errors.As(err, &request) {
+		if errors.As(err, &request) && request.Code == 400 {
 			return httpx.Message(400, false, request.Description)
 		}
 	}

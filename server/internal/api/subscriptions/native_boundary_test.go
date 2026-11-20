@@ -65,6 +65,28 @@ func TestNativeRetiredCapabilityRemainsPrivateWithMalformedSibling(t *testing.T)
 	srv.Get("/api/profiles/default/subscriptions/missing/proxies?token=synthetic-retired-capability").WantStatus(401)
 }
 
+func TestNativeMalformedConfigTokenFailsClosed(t *testing.T) {
+	for _, raw := range []string{"false", "0", "[]", "{}"} {
+		t.Run(raw, func(t *testing.T) {
+			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+			if err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
+				return system.SystemConfig.SetJSON("config_token", []byte(raw))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			srv.Get("/api/profiles/default/subscriptions/missing/proxies").WantStatus(401)
+			// An empty string is an unconfigured credential. With login disabled,
+			// authentication admits it and the missing resource returns 404.
+			if err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
+				return system.SystemConfig.SetJSON("config_token", []byte(`""`))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			srv.Get("/api/profiles/default/subscriptions/missing/proxies").WantStatus(404)
+		})
+	}
+}
+
 func TestSubscriptionWritesKeepRuntimeThroughPreflight(t *testing.T) {
 	for _, stopped := range []bool{false, true} {
 		for _, tc := range []struct{ method, path, body string }{

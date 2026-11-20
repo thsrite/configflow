@@ -2351,4 +2351,4 @@ subscriptions 的创建、更新、排序、抓取，aggregations 的创建、�
 
 证据：`api/subscriptions/native_boundary_test.go::TestNativeResourceRequestsRejectNonfiniteBeforeEffects` 覆盖资源写入口并检查 repository head 不变，有限 JSON 对照确实提交；`api/subscriptions/difftest/native_request_test.go::TestNativeReorderNonfiniteBoundary` 对真实 Flask 逐词固定 200→400 的批准差异，不改冻结语料。
 
-W3 的 typed token 校验对损坏存储中被 model 标记类型错误的 `config_token` 采取 fail closed：即使全局登录关闭，也不把类型错误误当成空凭据而放行（返回既有 401/认证失败消息）；Python 对 false/0/空集合等假值可能当作未配置令牌。正常字符串凭据、内部能力优先拒绝顺序、JWT/公开 token 及轮换语义保持原状。有效的 retired token 即使邻居成员类型错误也仍会被识别并拒绝；对应 native 回归固定混合列表，不容许坏邻居造成内部能力公开。此损坏凭据边界连同 provider/token 路径交 Opus 抽查。
+协调者已明确批准：W3 的 typed token 校验对损坏存储中被 model 标记类型错误的 `config_token` 采取 fail closed：即使全局登录关闭，也不把类型错误误当成空凭据而放行（返回既有 401/认证失败消息）；Python 对 false/0/空集合等假值可能当作未配置令牌。正常字符串凭据、内部能力优先拒绝顺序、JWT/公开 token 及轮换语义保持原状。有效的 retired token 即使邻居成员类型错误也仍会被识别并拒绝；对应 native 回归固定混合列表，不容许坏邻居造成内部能力公开。TestNativeMalformedConfigTokenFailsClosed 验证 false/0/[]/{} 拒绝，修复为空字符串后恢复未配置凭据的放行；TestGlobalGateAndProfileToken 覆盖正常凭据与轮换。此损坏凭据边界连同 provider/token 路径交 Opus 抽查。

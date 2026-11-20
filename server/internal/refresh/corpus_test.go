@@ -110,7 +110,9 @@ func buildError(spec any) error {
 func TestReferenceCorpus(t *testing.T) {
 	// Sequential: all rows share a frozen clock through the process-wide Env.
 	clock := &fakeClock{now: corpusNow}
-	t.Cleanup(SetEnv(&Env{Clock: clock}))
+	env := DefaultRefreshEnv()
+	env.Clock = clock
+	t.Cleanup(SetRefreshEnv(env))
 	given := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	counts := map[string]int{}
 	refs := loadNativeReferences(t)

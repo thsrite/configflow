@@ -20,5 +20,5 @@ func refreshEnv() *RefreshEnv {
 	if value != nil {
 		return value
 	}
-	return refreshEnvFromLegacy(currentEnv())
+	return DefaultRefreshEnv()
 }

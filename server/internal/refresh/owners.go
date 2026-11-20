@@ -148,6 +148,3 @@ func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {
 
 // detached keeps the admitted Runtime generation while completing request work.
 func detached(ctx context.Context) context.Context { return lifecycle.Detach(ctx) }
-
-func currentEnv() *RefreshEnv                          { return DefaultRefreshEnv() }
-func refreshEnvFromLegacy(env *RefreshEnv) *RefreshEnv { return env }
