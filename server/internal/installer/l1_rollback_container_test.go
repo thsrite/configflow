@@ -135,11 +135,11 @@ func TestL1RollbackWithRealInitManagers(t *testing.T) {
 				var source string
 				var err error
 				if aio {
-					o := NewAIOOptions(server, "l1-replacement")
+					o := DefaultAIOOptions(server, "l1-replacement")
 					o.BinaryDownloadURL, o.ManageIPv4Forwarding, o.ManageTun = server, false, false
-					source, err = GenerateGoAIOInstallScript(o)
+					source, err = RenderAIOInstall(o)
 				} else {
-					source, err = GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: server, AgentName: "l1-replacement", ServiceType: "oxidns", BinaryDownloadURL: server, ManageIPv4Forwarding: ForwardingOff})
+					source, err = RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: server, AgentName: "l1-replacement", ServiceType: "oxidns", BinaryDownloadURL: server, ManageIPv4Forwarding: ForwardingOff})
 				}
 				if err != nil {
 					t.Fatal(err)

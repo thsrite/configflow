@@ -16,7 +16,7 @@ import (
 // internal/api/agents/installer_ha_test.go.
 
 func haGenerated(core bool) string {
-	return ok(GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://config.test", AgentName: "ha-node", ServiceType: "oxidns",
+	return ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "ha-node", ServiceType: "oxidns",
 		PrepareDNSHA: true, InstallCore: core}))
 }
 
@@ -37,7 +37,7 @@ func TestMarkersAndAutoInstallKeepNormalInstallerUnchanged(t *testing.T) {
 		checkSh(t, source)
 	}
 	plain := func(prepare bool) string {
-		return ok(GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://config.test", AgentName: "plain", ServiceType: "oxidns", PrepareDNSHA: prepare}))
+		return ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "plain", ServiceType: "oxidns", PrepareDNSHA: prepare}))
 	}
 	ordinary := plain(false)
 	notContains(t, ordinary, DNSHAPreparationInterface)
@@ -255,7 +255,7 @@ func TestExistingBinaryWithoutSystemdUnitStillInstallsServicePackage(t *testing.
 
 // fullHAInstaller is full_installer(tmp_path, monkeypatch).
 func fullHAInstaller(t *testing.T) *singleHarness {
-	h := newSingleHarness(t, singleSetup{service: "oxidns", installCore: true, mutate: func(o *GoAgentOptions) { o.PrepareDNSHA = true }})
+	h := newSingleHarness(t, singleSetup{service: "oxidns", installCore: true, mutate: func(o *AgentInstallOptions) { o.PrepareDNSHA = true }})
 	for name, body := range map[string]string{"keepalived": "exit 0", "ip": "printf \"[]\\n\""} {
 		writeFile(t, filepath.Join(h.tmp, "commands", name), "#!/bin/sh\n"+body+"\n", 0o755)
 	}

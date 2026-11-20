@@ -37,7 +37,6 @@ type AIOInstallOptions struct {
 	ManageTun               bool
 	InstallationDescription string
 	TunPrepareAssumeEnabled bool
-	portError               error
 }
 
 // DefaultAIODescription is the default installation_description.
@@ -124,9 +123,6 @@ func RenderAIOInstall(o AIOInstallOptions) (string, error) {
 	}
 	if !matchesClass(o.AgentName, "_-") {
 		return "", valueError("Invalid agent name: use letters, numbers, hyphens or underscores")
-	}
-	if o.portError != nil {
-		return "", o.portError
 	}
 	var ports []string
 	for _, port := range []int{o.MihomoAgentPort, o.OxidnsAgentPort} {

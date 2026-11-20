@@ -49,8 +49,6 @@ type AgentInstallOptions struct {
 	PrepareDNSHA            bool
 	RegistrationToken       string
 	RegistrationKey         string
-	portError, timeoutError error
-	invalidCorePort         bool
 }
 
 // standaloneForwardingFunctions is _standalone_forwarding_functions().
@@ -89,9 +87,6 @@ func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 	if !matchesClass(o.AgentName, "_-") {
 		return "", valueError("Invalid agent name: use letters, numbers, hyphens or underscores")
 	}
-	if o.portError != nil {
-		return "", o.portError
-	}
 	port := big.NewInt(int64(agentPort))
 	if !inRange(port, 1, 65535) {
 		return "", valueError("Invalid Agent port")
@@ -120,9 +115,6 @@ func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 			o.StopCommand != "" || o.StartCommand != "" || o.StatusCommand != "" {
 			return "", valueError(msgInstallCoreDefaults)
 		}
-		if o.invalidCorePort {
-			return "", valueError("Invalid Agent port")
-		}
 		dnsPort := int64(53)
 		if serviceType == "mihomo" {
 			dnsPort = 1053
@@ -150,9 +142,6 @@ func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 		manageForwarding = forwardingSupported
 	} else if manageForwarding && !forwardingSupported {
 		return "", valueError(StandaloneForwardingUnsupported)
-	}
-	if o.timeoutError != nil {
-		return "", o.timeoutError
 	}
 	if !timeoutValue.IsInt64() || timeoutValue.Cmp(big.NewInt(math.MaxInt64/int64(time.Second))) > 0 || timeoutValue.Cmp(big.NewInt(math.MinInt64/int64(time.Second))) < 0 {
 		return "", valueError("Invalid deployment health timeout")

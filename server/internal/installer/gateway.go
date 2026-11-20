@@ -109,7 +109,6 @@ type GatewayInstallOptions struct {
 	AgentChecksums    map[string]string
 	InstallationID    string
 	FullTun           bool
-	portError         error
 }
 
 func isSHA256Hex(s string) bool {
@@ -185,7 +184,6 @@ func RenderGatewayInstall(o GatewayInstallOptions) (string, error) {
 		}
 	}
 	aioOptions := DefaultAIOOptions(serverURL, o.AgentName)
-	aioOptions.portError = o.portError
 	aioOptions.AgentIP = o.AgentIP
 	aioOptions.BinaryDownloadURL = binaryDownloadURL
 	if o.MihomoAgentPort != 0 {

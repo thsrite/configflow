@@ -14,13 +14,13 @@ import (
 // Port of backend/test_agent_native_aio_install.py: the native cohost
 // installer with isolated files and mocked services.
 
-func aioGenerated(t *testing.T, mutate func(*AIOOptions)) (string, error) {
-	o := NewAIOOptions("https://config.test", "cohost")
+func aioGenerated(t *testing.T, mutate func(*AIOInstallOptions)) (string, error) {
+	o := DefaultAIOOptions("https://config.test", "cohost")
 	o.BinaryDownloadURL = "https://config.test/download"
 	if mutate != nil {
 		mutate(&o)
 	}
-	return GenerateGoAIOInstallScript(o)
+	return RenderAIOInstall(o)
 }
 
 // aioConfigs is configs(script): the two heredoc JSON configs.
@@ -45,19 +45,18 @@ func aioConfigs(t *testing.T, script string) map[string]map[string]any {
 func TestNativeAIORejectsConflictingOrInvalidOptions(t *testing.T) {
 	// manage_ipv4_forwarding/manage_tun None or 1 and float ports are Python
 	// type errors that Go's types rule out.
-	for i, mutate := range []func(*AIOOptions){
-		func(o *AIOOptions) { o.MihomoAgentPort = 0 }, func(o *AIOOptions) { o.OxidnsAgentPort = 65536 },
-		func(o *AIOOptions) { o.MihomoAgentPort = true }, func(o *AIOOptions) { o.MihomoAgentPort = "8080.5" },
-		func(o *AIOOptions) { o.OxidnsAgentPort = 8080 },
-		func(o *AIOOptions) { o.MihomoConfigPath = "relative/config.yaml" }, func(o *AIOOptions) { o.MihomoConfigPath = "/" },
-		func(o *AIOOptions) { o.MihomoConfigPath = "/etc/../oxidns/config.yaml" },
-		func(o *AIOOptions) { o.MihomoConfigPath = "/etc/oxidns/config.yaml" },
-		func(o *AIOOptions) { o.MihomoConfigPath = "/etc/oxidns/other.yaml" },
-		func(o *AIOOptions) { o.MihomoServiceUnit = "oxidns.service" }, func(o *AIOOptions) { o.MihomoServiceUnit = "configflow-agent" },
-		func(o *AIOOptions) { o.MihomoConfigPath = "/opt/configflow-agent/mihomo/core.yaml" },
-		func(o *AIOOptions) { o.OxidnsConfigPath = "//opt/configflow-agent/oxidns/core.yaml" },
-		func(o *AIOOptions) { o.MihomoServiceBinary = "/opt/configflow-agent/mihomo/core" },
-		func(o *AIOOptions) { o.OxidnsServiceBinary = "/usr/../opt/configflow-agent/oxidns/core" },
+	for i, mutate := range []func(*AIOInstallOptions){
+		func(o *AIOInstallOptions) { o.MihomoAgentPort = 0 }, func(o *AIOInstallOptions) { o.OxidnsAgentPort = 65536 },
+		func(o *AIOInstallOptions) { o.OxidnsAgentPort = 8080 },
+		func(o *AIOInstallOptions) { o.MihomoConfigPath = "relative/config.yaml" }, func(o *AIOInstallOptions) { o.MihomoConfigPath = "/" },
+		func(o *AIOInstallOptions) { o.MihomoConfigPath = "/etc/../oxidns/config.yaml" },
+		func(o *AIOInstallOptions) { o.MihomoConfigPath = "/etc/oxidns/config.yaml" },
+		func(o *AIOInstallOptions) { o.MihomoConfigPath = "/etc/oxidns/other.yaml" },
+		func(o *AIOInstallOptions) { o.MihomoServiceUnit = "oxidns.service" }, func(o *AIOInstallOptions) { o.MihomoServiceUnit = "configflow-agent" },
+		func(o *AIOInstallOptions) { o.MihomoConfigPath = "/opt/configflow-agent/mihomo/core.yaml" },
+		func(o *AIOInstallOptions) { o.OxidnsConfigPath = "//opt/configflow-agent/oxidns/core.yaml" },
+		func(o *AIOInstallOptions) { o.MihomoServiceBinary = "/opt/configflow-agent/mihomo/core" },
+		func(o *AIOInstallOptions) { o.OxidnsServiceBinary = "/usr/../opt/configflow-agent/oxidns/core" },
 	} {
 		if _, err := aioGenerated(t, mutate); err == nil {
 			t.Errorf("case %d accepted", i)
@@ -69,7 +68,10 @@ func TestNativeAIORejectsConflictingOrInvalidOptions(t *testing.T) {
 
 func TestNativeAIOConfigAndQuotedValues(t *testing.T) {
 	literal := `/etc/mihomo/custom ${HOME} "quoted".yaml`
-	script := ok(aioGenerated(t, func(o *AIOOptions) { o.MihomoConfigPath = literal; o.MihomoServiceUnit = "mihomo-custom.service" }))
+	script := ok(aioGenerated(t, func(o *AIOInstallOptions) {
+		o.MihomoConfigPath = literal
+		o.MihomoServiceUnit = "mihomo-custom.service"
+	}))
 	cfgs := aioConfigs(t, script)
 	if cfgs["mihomo"]["config_path"] != literal || cfgs["mihomo"]["service_unit"] != "mihomo-custom" {
 		t.Fatal(cfgs["mihomo"])
@@ -88,7 +90,7 @@ func TestNativeAIOConfigAndQuotedValues(t *testing.T) {
 }
 
 func TestNativeAIOAllowsCorePathsWithSimilarDirectoryPrefix(t *testing.T) {
-	cfg := aioConfigs(t, ok(aioGenerated(t, func(o *AIOOptions) {
+	cfg := aioConfigs(t, ok(aioGenerated(t, func(o *AIOInstallOptions) {
 		o.MihomoConfigPath = "/opt/configflow-agent-core/mihomo/config.yaml"
 		o.MihomoServiceBinary = "/opt/configflow-agent-core/mihomo/core"
 	})))["mihomo"]
@@ -233,7 +235,7 @@ if value == '1' and os.environ.get('DELETE_FORWARD_CONFIG_ON_ENABLE') == 'yes':
 }
 
 // newAIOHarness is harness(tmp_path, manager, existing, **options).
-func newAIOHarness(t *testing.T, manager string, existing bool, mutate func(*AIOOptions)) aioHarness {
+func newAIOHarness(t *testing.T, manager string, existing bool, mutate func(*AIOInstallOptions)) aioHarness {
 	return newAIOHarnessSource(t, manager, existing, ok(aioGenerated(t, mutate)))
 }
 
@@ -598,7 +600,7 @@ func TestNativeAIOTunPreparationFailurePreservesAgentsAndForwarding(t *testing.T
 
 func TestNativeAIOCanSkipTunPreparationWhileManagingIPv4Forwarding(t *testing.T) {
 	managers(t, func(t *testing.T, manager string) {
-		h := newAIOHarness(t, manager, true, func(o *AIOOptions) { o.ManageTun = false })
+		h := newAIOHarness(t, manager, true, func(o *AIOInstallOptions) { o.ManageTun = false })
 		notContains(t, readFile(t, h.installer), "-prepare-tun")
 		r := h.run(t, "1", "TUN_PREPARE_FAIL=yes")
 		if r.code != 0 {
@@ -996,7 +998,7 @@ func TestNativeAIORefusesForwardingHookSymlinkWithoutChangingTarget(t *testing.T
 
 func TestNativeAIOExplicitlyUnmanagedForwardingHasNoHelpersOrEffects(t *testing.T) {
 	managers(t, func(t *testing.T, manager string) {
-		h := newAIOHarness(t, manager, true, func(o *AIOOptions) { o.ManageIPv4Forwarding = false })
+		h := newAIOHarness(t, manager, true, func(o *AIOInstallOptions) { o.ManageIPv4Forwarding = false })
 		source := readFile(t, h.installer)
 		notContains(t, source, "enable-ipv4-forwarding.sh")
 		notContains(t, source, "99-configflow-aio-forward.conf")
@@ -1075,7 +1077,7 @@ func TestNativeAIORefusesLegacyBeforeChanges(t *testing.T) {
 func TestSingleInstallerRefusesAIOInstallAndUninstall(t *testing.T) {
 	for _, choice := range []string{"1", "2"} {
 		h := newAIOHarness(t, "systemd", true, nil)
-		script := ok(GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://config.test", AgentName: "single", ServiceType: "mihomo"}))
+		script := ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "single", ServiceType: "mihomo"}))
 		script = strings.ReplaceAll(strings.ReplaceAll(script, "/opt/configflow-agent", h.path("agent")), "/dev/tty", "/dev/stdin")
 		writeFile(t, h.installer, script, 0o644)
 		original := readFile(t, h.path("agent/oxidns/config.json"))

@@ -1184,11 +1184,11 @@ func TestEmbeddedCorePhaseDoesNotAskForASeparateAgent(t *testing.T) {
 			t.Parallel()
 			var combined string
 			if kind == "single" {
-				combined = ok(GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://config.test", AgentName: "single", ServiceType: selected, InstallCore: true}))
+				combined = ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "single", ServiceType: selected, InstallCore: true}))
 			} else {
-				o := NewAIOOptions("https://config.test", "cohost")
+				o := DefaultAIOOptions("https://config.test", "cohost")
 				o.InstallCore = true
-				combined = ok(GenerateGoAIOInstallScript(o))
+				combined = ok(RenderAIOInstall(o))
 			}
 			start := strings.Index(combined, "(\nset -- --core "+selected+"\n")
 			preamble := combined[start : start+strings.Index(combined[start:], "#!/bin/sh")]

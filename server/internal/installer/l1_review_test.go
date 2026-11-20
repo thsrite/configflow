@@ -32,7 +32,7 @@ func TestL1ReviewFailedFreshInstallRemovesForwardingHook(t *testing.T) {
 // removed with everything inside; a pre-existing sibling is untouched.
 func TestL1ReviewFailedFreshAIORemovesOnlyCreatedDirectories(t *testing.T) {
 	managers(t, func(t *testing.T, manager string) {
-		h := newAIOHarness(t, manager, false, func(o *AIOOptions) {
+		h := newAIOHarness(t, manager, false, func(o *AIOInstallOptions) {
 			o.ManageIPv4Forwarding, o.ManageTun = false, false
 		})
 		candidate := filepath.Join(h.tmp, "fake-agent")

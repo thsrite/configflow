@@ -7,7 +7,6 @@ legacy-file internal/agents/runtime_legacy.go:<file>
 legacy-file internal/agents/trafficstore/legacy.go:<file>
 legacy-file internal/auth/legacy.go:<file>
 legacy-file internal/convert/legacy.go:<file>
-legacy-file internal/installer/options_legacy.go:<file>
 legacy-file internal/mosdns/legacy.go:<file>
 legacy-file internal/repo/legacy.go:<file>
 legacy-file internal/routersplit/legacy.go:<file>

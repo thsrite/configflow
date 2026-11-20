@@ -42,8 +42,8 @@ func TestAPIEnablesForwardingForMihomoByDefault(t *testing.T) {
 func TestAPIOptOutMatchesTheGeneratorOptOut(t *testing.T) {
 	srv, admin := forwardingServer(t)
 	script := makeCommand(t, srv, admin, "ipv4_forwarding", false, "agent_ip", "192.0.2.20")
-	want, err := installer.GenerateGoAgentInstallScript(installer.GoAgentOptions{ServerURL: "https://config.test/panel", AgentName: "gateway",
-		ServiceType: "mihomo", AgentIP: "192.0.2.20", ConfigPath: "/etc/mihomo/config.yaml", RestartCommand: "systemctl restart mihomo",
+	want, err := installer.RenderAgentInstall(installer.AgentInstallOptions{ServerURL: "https://config.test/panel", AgentName: "gateway",
+		ServiceType: "mihomo", AgentPort: 8080, AgentIP: "192.0.2.20", ConfigPath: "/etc/mihomo/config.yaml", RestartCommand: "systemctl restart mihomo",
 		BinaryDownloadURL: "https://config.test/panel/api/agents/download"})
 	if err != nil || installertest.BootstrapBaseline(script) != installertest.BootstrapBaseline(want) {
 		t.Fatalf("API script differs from the generator (%v)", err)

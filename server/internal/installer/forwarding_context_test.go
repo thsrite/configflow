@@ -27,9 +27,9 @@ func checkSh(t *testing.T, script string) {
 }
 
 func TestSingleServiceMihomoThatPersistsForwardingTellsTheEnvironmentCheck(t *testing.T) {
-	for _, mutate := range []func(*GoAgentOptions){
+	for _, mutate := range []func(*AgentInstallOptions){
 		forwardingOption(ForwardingAuto), forwardingOption(ForwardingOn),
-		func(o *GoAgentOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = true },
+		func(o *AgentInstallOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = true },
 	} {
 		script := ok(standaloneGenerated("mihomo", mutate))
 		if strings.Count(script, forwardingExport) != 1 ||
@@ -43,7 +43,7 @@ func TestSingleServiceMihomoThatPersistsForwardingTellsTheEnvironmentCheck(t *te
 
 func TestSingleServiceGatewayRecordIsRefusedBeforeTheEnvironmentCheck(t *testing.T) {
 	for _, core := range []bool{false, true} {
-		script := ok(standaloneGenerated("mihomo", func(o *GoAgentOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = core }))
+		script := ok(standaloneGenerated("mihomo", func(o *AgentInstallOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = core }))
 		refusal := strings.Index(script, "if [ -e \"$AGENT_DIR/linux-gateway.json\" ] || [ -L \"$AGENT_DIR/linux-gateway.json\" ]; then\n    fail \"检测到 Linux 网关记录")
 		export, step := strings.Index(script, forwardingExport), strings.Index(script, `cf_step "检查 IPv4 转发持久化"`)
 		if refusal < 0 || !(refusal < export && export < step) || strings.Count(script, "检测到 Linux 网关记录") != 1 {
@@ -55,16 +55,16 @@ func TestSingleServiceGatewayRecordIsRefusedBeforeTheEnvironmentCheck(t *testing
 func TestInstallsThatDoNotManageForwardingNeverSetTheContext(t *testing.T) {
 	for _, c := range []struct {
 		service string
-		mutate  func(*GoAgentOptions)
+		mutate  func(*AgentInstallOptions)
 	}{
 		{"mihomo", forwardingOption(ForwardingOff)},
-		{"mihomo", func(o *GoAgentOptions) { o.ManageIPv4Forwarding = ForwardingOff; o.InstallCore = true }},
-		{"mihomo", func(o *GoAgentOptions) {
+		{"mihomo", func(o *AgentInstallOptions) { o.ManageIPv4Forwarding = ForwardingOff; o.InstallCore = true }},
+		{"mihomo", func(o *AgentInstallOptions) {
 			o.ManageIPv4Forwarding = ForwardingAuto
 			o.ServiceManager, o.StopCommand, o.StartCommand, o.StatusCommand = "command", "stop-it", "start-it", "status-it"
 		}},
 		{"oxidns", forwardingOption(ForwardingAuto)},
-		{"oxidns", func(o *GoAgentOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = true }},
+		{"oxidns", func(o *AgentInstallOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = true }},
 		{"mosdns", forwardingOption(ForwardingAuto)},
 	} {
 		script := ok(standaloneGenerated(c.service, c.mutate))
@@ -74,7 +74,7 @@ func TestInstallsThatDoNotManageForwardingNeverSetTheContext(t *testing.T) {
 }
 
 func TestAIOThatPersistsForwardingTellsTheEnvironmentCheck(t *testing.T) {
-	for _, script := range []string{ok(aioGenerated(t, nil)), ok(aioGenerated(t, func(o *AIOOptions) { o.InstallCore = true }))} {
+	for _, script := range []string{ok(aioGenerated(t, nil)), ok(aioGenerated(t, func(o *AIOInstallOptions) { o.InstallCore = true }))} {
 		if strings.Count(script, forwardingExport+`"$BINARY_TMP" -config "$STAGE_DIR/mihomo-config.json"`) != 1 ||
 			strings.Count(script, InstallerForwardingEnvironmentEnd+`cf_step_done "运行环境检查通过"`) != 1 ||
 			strings.Count(script, installerForwardingVariable) != 3 {
@@ -82,9 +82,9 @@ func TestAIOThatPersistsForwardingTellsTheEnvironmentCheck(t *testing.T) {
 		}
 		checkSh(t, script)
 	}
-	o := NewAIOOptions("https://config.test", "gw")
+	o := DefaultAIOOptions("https://config.test", "gw")
 	o.ManageIPv4Forwarding, o.ManageTun = false, false
-	selective := ok(GenerateGoAIOInstallScript(o))
+	selective := ok(RenderAIOInstall(o))
 	notContains(t, selective, installerForwardingVariable)
 	notContains(t, selective, "{ipv4_forwarding_environment")
 }
@@ -99,8 +99,8 @@ func TestCoreOnlyInstallerIsInstallCoresShUnchanged(t *testing.T) {
 
 func TestCorePhaseOfAForwardingInstallerDefersToTheAgentStep(t *testing.T) {
 	for name, source := range map[string]string{
-		"single": ok(standaloneGenerated("mihomo", func(o *GoAgentOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = true })),
-		"aio":    ok(aioGenerated(t, func(o *AIOOptions) { o.InstallCore = true })),
+		"single": ok(standaloneGenerated("mihomo", func(o *AgentInstallOptions) { o.ManageIPv4Forwarding = ForwardingAuto; o.InstallCore = true })),
+		"aio":    ok(aioGenerated(t, func(o *AIOInstallOptions) { o.InstallCore = true })),
 	} {
 		contains(t, source, pyRstrip(ok(GenerateCoreInstallScript(true))))
 		notContains(t, source, "旁路网关修复：")

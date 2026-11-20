@@ -207,9 +207,9 @@ func TestDockerRunUsesSameReportingAndPreservesDockerExit(t *testing.T) {
 	}{{false, 0}, {true, 0}, {false, 37}} {
 		t.Run(fmt.Sprintf("verbose=%v/%d", c.verbose, c.exitCode), func(t *testing.T) {
 			tmp := t.TempDir()
-			o := NewDockerOptions("https://config.example")
+			o := DefaultDockerOptions("https://config.example")
 			o.AgentName = "docker-test"
-			docker, err := GenerateDockerAgentRun(o)
+			docker, err := RenderDockerRun(o)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -228,7 +228,7 @@ func (b *l1ReviewBox) agentProcesses() string {
 func l1ReviewSingle(t *testing.T, name string) string {
 	t.Helper()
 	const server = "http://127.0.0.1:18751"
-	source, err := GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: server, AgentName: name, ServiceType: "oxidns", BinaryDownloadURL: server, ManageIPv4Forwarding: ForwardingOff})
+	source, err := RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: server, AgentName: name, ServiceType: "oxidns", BinaryDownloadURL: server, ManageIPv4Forwarding: ForwardingOff})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,9 +238,9 @@ func l1ReviewSingle(t *testing.T, name string) string {
 func l1ReviewAIO(t *testing.T) string {
 	t.Helper()
 	const server = "http://127.0.0.1:18751"
-	o := NewAIOOptions(server, "l1-review-aio")
+	o := DefaultAIOOptions(server, "l1-review-aio")
 	o.BinaryDownloadURL, o.ManageIPv4Forwarding, o.ManageTun = server, false, false
-	source, err := GenerateGoAIOInstallScript(o)
+	source, err := RenderAIOInstall(o)
 	if err != nil {
 		t.Fatal(err)
 	}

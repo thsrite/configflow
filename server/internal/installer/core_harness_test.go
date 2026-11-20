@@ -107,13 +107,13 @@ trap 'printf "core cleanup\n" >> "$EVENTS"' 0
 exit 0
 `
 
-func singleGenerated(service string, mutate func(*GoAgentOptions)) (string, error) {
-	o := GoAgentOptions{ServerURL: "https://config.test", AgentName: "single", ServiceType: service,
+func singleGenerated(service string, mutate func(*AgentInstallOptions)) (string, error) {
+	o := AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "single", ServiceType: service,
 		BinaryDownloadURL: "https://config.test/api/agents/download"}
 	if mutate != nil {
 		mutate(&o)
 	}
-	return GenerateGoAgentInstallScript(o)
+	return RenderAgentInstall(o)
 }
 
 type singleHarness struct {
@@ -131,7 +131,7 @@ type singleSetup struct {
 	service, manager string
 	realCore         bool
 	installCore      bool
-	mutate           func(*GoAgentOptions) // the monkeypatched single.generated
+	mutate           func(*AgentInstallOptions) // the monkeypatched single.generated
 	settings         []string
 }
 
@@ -145,7 +145,7 @@ func newSingleHarness(t *testing.T, s singleSetup) *singleHarness {
 	}
 	tmp := t.TempDir()
 	python := pythonExe(t)
-	source := ok(singleGenerated(s.service, func(o *GoAgentOptions) {
+	source := ok(singleGenerated(s.service, func(o *AgentInstallOptions) {
 		o.InstallCore = s.installCore
 		if s.mutate != nil {
 			s.mutate(o)
@@ -225,7 +225,7 @@ case "$*" in *--property=LoadState*) printf '%s\n' "${CORE_LOAD_STATE:-loaded}" 
 func TestDefaultLayoutAliasesAreAccepted(t *testing.T) {
 	// install_core="false" (a str) is a Python type error ruled out by Go's bool.
 	for _, service := range []string{"mihomo", "oxidns"} {
-		source := ok(singleGenerated(service, func(o *GoAgentOptions) {
+		source := ok(singleGenerated(service, func(o *AgentInstallOptions) {
 			o.InstallCore = true
 			o.ConfigPath = "/etc/" + service + "/config.yaml"
 			o.ServiceUnit = service + ".service"
@@ -451,7 +451,7 @@ exit 0
 
 // newAIOCoreHarness is test_aio_agent_core_install.harness(tmp_path, monkeypatch, manager, existing, real_core).
 func newAIOCoreHarness(t *testing.T, manager string, existing, realCore bool) aioHarness {
-	source := ok(aioGenerated(t, func(o *AIOOptions) { o.InstallCore = true }))
+	source := ok(aioGenerated(t, func(o *AIOInstallOptions) { o.InstallCore = true }))
 	if !realCore {
 		source = withFakeCore(t, source, aioFakeCore)
 	}
@@ -491,11 +491,11 @@ case "$*" in *--property=LoadState*) printf '%s\n' "${CORE_LOAD_STATE:-loaded}" 
 
 func TestDefaultUnitAndBinaryAliasesAreAccepted(t *testing.T) {
 	// install_core="false" (a str) is a Python type error ruled out by Go's bool.
-	o := NewAIOOptions("https://config.test", "gateway")
+	o := DefaultAIOOptions("https://config.test", "gateway")
 	o.InstallCore = true
 	o.MihomoServiceUnit, o.OxidnsServiceUnit = "mihomo.service", "oxidns.service"
 	o.MihomoServiceBinary, o.OxidnsServiceBinary = "/usr/local/bin/mihomo", "/usr/local/bin/oxidns"
-	if strings.Split(ok(GenerateGoAIOInstallScript(o)), "\n")[1] != AgentCoreInstallInterface {
+	if strings.Split(ok(RenderAIOInstall(o)), "\n")[1] != AgentCoreInstallInterface {
 		t.Fatal("no core interface marker")
 	}
 }

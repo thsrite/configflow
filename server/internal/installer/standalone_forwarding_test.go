@@ -29,17 +29,17 @@ func standaloneHookScript() string {
 	return strings.ReplaceAll(aioHookScript(), AIOForwardingHookComment, StandaloneForwardingHookComment)
 }
 
-func standaloneGenerated(service string, mutate func(*GoAgentOptions)) (string, error) {
-	o := GoAgentOptions{ServerURL: "https://config.test", AgentName: "single", ServiceType: service, AgentIP: "192.0.2.20",
+func standaloneGenerated(service string, mutate func(*AgentInstallOptions)) (string, error) {
+	o := AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "single", ServiceType: service, AgentIP: "192.0.2.20",
 		BinaryDownloadURL: "https://config.test/api/agents/download"}
 	if mutate != nil {
 		mutate(&o)
 	}
-	return GenerateGoAgentInstallScript(o)
+	return RenderAgentInstall(o)
 }
 
-func forwardingOption(f Forwarding) func(*GoAgentOptions) {
-	return func(o *GoAgentOptions) { o.ManageIPv4Forwarding = f }
+func forwardingOption(f Forwarding) func(*AgentInstallOptions) {
+	return func(o *AgentInstallOptions) { o.ManageIPv4Forwarding = f }
 }
 
 func TestOptOutIsByteIdenticalToThePreviousRelease(t *testing.T) {
@@ -76,7 +76,7 @@ func TestAutomaticChoiceEnablesForwardingForMihomo(t *testing.T) {
 	expected := deltas(t).SingleServiceScriptSHA256
 	for _, core := range []bool{false, true} {
 		for _, value := range []Forwarding{ForwardingAuto, ForwardingOn} {
-			script := ok(standaloneGenerated("mihomo", func(o *GoAgentOptions) { o.InstallCore = core; o.ManageIPv4Forwarding = value }))
+			script := ok(standaloneGenerated("mihomo", func(o *AgentInstallOptions) { o.InstallCore = core; o.ManageIPv4Forwarding = value }))
 			contains(t, script, "persist_ipv4_forwarding\n")
 			if sha256Hex(withoutReviewedInstallerDeltas(t, script, core)) == expected[digestKey("mihomo", core)] {
 				t.Error("forwarding script equals the opt-out baseline")
@@ -88,22 +88,22 @@ func TestAutomaticChoiceEnablesForwardingForMihomo(t *testing.T) {
 // test_forwarding_option_must_be_a_boolean (1, 0, "true", "false", "yes") is
 // a Python type check that Go's Forwarding type rules out.
 
-var customLifecycle = func(o *GoAgentOptions) {
+var customLifecycle = func(o *AgentInstallOptions) {
 	o.RestartCommand, o.StopCommand, o.StartCommand, o.StatusCommand = "/custom/restart", "/custom/stop", "/custom/start", "/custom/status"
 }
 
 func TestForwardingNeedsMihomoUnderSystemdOrOpenRC(t *testing.T) {
 	for _, c := range []struct {
 		service string
-		mutate  func(*GoAgentOptions)
+		mutate  func(*AgentInstallOptions)
 	}{
 		{"oxidns", nil}, {"mosdns", nil}, {"mihomo", customLifecycle},
-		{"mihomo", func(o *GoAgentOptions) {
+		{"mihomo", func(o *AgentInstallOptions) {
 			o.ServiceManager, o.StopCommand, o.StartCommand, o.StatusCommand = "command", "/s", "/t", "/u"
 		}},
 	} {
-		with := func(f Forwarding) func(*GoAgentOptions) {
-			return func(o *GoAgentOptions) {
+		with := func(f Forwarding) func(*AgentInstallOptions) {
+			return func(o *AgentInstallOptions) {
 				if c.mutate != nil {
 					c.mutate(o)
 				}
@@ -119,11 +119,11 @@ func TestForwardingNeedsMihomoUnderSystemdOrOpenRC(t *testing.T) {
 }
 
 func TestExplicitStandardManagersKeepForwarding(t *testing.T) {
-	for _, mutate := range []func(*GoAgentOptions){
-		func(o *GoAgentOptions) { o.ServiceManager = "systemd" }, func(o *GoAgentOptions) { o.ServiceManager = "openrc" },
-		func(o *GoAgentOptions) { o.RestartCommand = "rc-service mihomo restart" },
+	for _, mutate := range []func(*AgentInstallOptions){
+		func(o *AgentInstallOptions) { o.ServiceManager = "systemd" }, func(o *AgentInstallOptions) { o.ServiceManager = "openrc" },
+		func(o *AgentInstallOptions) { o.RestartCommand = "rc-service mihomo restart" },
 	} {
-		contains(t, ok(standaloneGenerated("mihomo", func(o *GoAgentOptions) { mutate(o); o.ManageIPv4Forwarding = ForwardingAuto })), "persist_ipv4_forwarding\n")
+		contains(t, ok(standaloneGenerated("mihomo", func(o *AgentInstallOptions) { mutate(o); o.ManageIPv4Forwarding = ForwardingAuto })), "persist_ipv4_forwarding\n")
 	}
 }
 
@@ -139,7 +139,7 @@ func serviceHeredoc(t *testing.T, script, manager string) string {
 
 func TestHookIsRegisteredWhereTheAgentLooksForIt(t *testing.T) {
 	for _, core := range []bool{false, true} {
-		script := ok(standaloneGenerated("mihomo", func(o *GoAgentOptions) { o.InstallCore = core; o.ManageIPv4Forwarding = ForwardingAuto }))
+		script := ok(standaloneGenerated("mihomo", func(o *AgentInstallOptions) { o.InstallCore = core; o.ManageIPv4Forwarding = ForwardingAuto }))
 		systemd := strings.Split(strings.TrimSuffix(serviceHeredoc(t, script, "systemd"), "\n"), "\n")
 		var pre []int
 		for i, line := range systemd {
@@ -229,7 +229,7 @@ type standaloneSetup struct {
 	manager     string
 	installCore bool
 	forwarding  *Forwarding // nil = the harness default (None)
-	mutate      func(*GoAgentOptions)
+	mutate      func(*AgentInstallOptions)
 }
 
 // newStandaloneHarness is harness(tmp_path, monkeypatch, manager, install_core, **options).
@@ -242,7 +242,7 @@ func newStandaloneHarness(t *testing.T, s standaloneSetup) *standaloneHarness {
 	if s.forwarding != nil {
 		forwarding = *s.forwarding
 	}
-	source := ok(standaloneGenerated("mihomo", func(o *GoAgentOptions) {
+	source := ok(standaloneGenerated("mihomo", func(o *AgentInstallOptions) {
 		o.InstallCore = s.installCore
 		o.ManageIPv4Forwarding = forwarding
 		if s.mutate != nil {

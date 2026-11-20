@@ -43,12 +43,12 @@ func TestAgentNameTrailingNewlineIsRefused(t *testing.T) {
 		if err := ValidateAgentName(name); err == nil || err.Error() != invalidAgentNameMessage {
 			t.Errorf("%q: %v", name, err)
 		}
-		o := NewDockerOptions("http://panel.example")
+		o := DefaultDockerOptions("http://panel.example")
 		o.AgentName = name
-		if _, err := GenerateDockerAgentCompose(o); err == nil || err.Error() != invalidAgentNameMessage {
+		if _, err := RenderDockerCompose(o); err == nil || err.Error() != invalidAgentNameMessage {
 			t.Errorf("compose %q: %v", name, err)
 		}
-		if _, err := GenerateDockerAgentRun(o); err == nil || err.Error() != invalidAgentNameMessage {
+		if _, err := RenderDockerRun(o); err == nil || err.Error() != invalidAgentNameMessage {
 			t.Errorf("run %q: %v", name, err)
 		}
 	}

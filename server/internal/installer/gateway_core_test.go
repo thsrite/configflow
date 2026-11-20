@@ -15,28 +15,30 @@ import (
 // installer against a fully isolated fake host. These tests swap
 // CoreReleases (monkeypatch of CORE_RELEASES), so none of them is parallel.
 
-func gatewayGenerate(mutate func(*GatewayOptions)) (string, error) {
-	o := GatewayOptions{ServerURL: "https://cf.test", AgentName: "gateway", AgentIP: "192.168.8.2",
+func gatewayGenerate(mutate func(*GatewayInstallOptions)) (string, error) {
+	o := GatewayInstallOptions{MihomoAgentPort: 8080, OxidnsAgentPort: 8082, ServerURL: "https://cf.test", AgentName: "gateway", AgentIP: "192.168.8.2",
 		AgentChecksums: map[string]string{"linux-amd64": strings.Repeat("a", 64), "linux-arm64": strings.Repeat("b", 64)},
 		InstallationID: "install-session-0123456789", EnrollmentURL: "https://cf.test/api/enroll",
 		EnrollmentToken: "session-token-01234567890123456789"}
 	if mutate != nil {
 		mutate(&o)
 	}
-	return GenerateGatewayInstallScript(o)
+	return RenderGatewayInstall(o)
 }
 
 func TestGatewayInvalidInputRejected(t *testing.T) {
-	for i, mutate := range []func(*GatewayOptions){
-		func(o *GatewayOptions) { o.AgentName = "name;touch /tmp/bad" }, func(o *GatewayOptions) { o.AgentIP = "127.0.0.1" },
-		func(o *GatewayOptions) { o.AgentIP = "bad" }, func(o *GatewayOptions) { o.ServerURL = "file:///etc/passwd" },
-		func(o *GatewayOptions) { o.ServerURL = "https://user:pass@cf.test" },
-		func(o *GatewayOptions) { o.EnrollmentURL = "https://other.test/enroll" },
-		func(o *GatewayOptions) { o.EnrollmentToken = "x\nfoo" }, func(o *GatewayOptions) { o.InstallationID = "bad" },
-		func(o *GatewayOptions) { o.AgentChecksums = map[string]string{} },
-		func(o *GatewayOptions) { o.AgentChecksums = map[string]string{"linux-amd64": "invalid"} },
-		func(o *GatewayOptions) { o.AgentChecksums = map[string]string{"linux-armv7": strings.Repeat("a", 64)} },
-		func(o *GatewayOptions) { o.MihomoAgentPort = 8082 },
+	for i, mutate := range []func(*GatewayInstallOptions){
+		func(o *GatewayInstallOptions) { o.AgentName = "name;touch /tmp/bad" }, func(o *GatewayInstallOptions) { o.AgentIP = "127.0.0.1" },
+		func(o *GatewayInstallOptions) { o.AgentIP = "bad" }, func(o *GatewayInstallOptions) { o.ServerURL = "file:///etc/passwd" },
+		func(o *GatewayInstallOptions) { o.ServerURL = "https://user:pass@cf.test" },
+		func(o *GatewayInstallOptions) { o.EnrollmentURL = "https://other.test/enroll" },
+		func(o *GatewayInstallOptions) { o.EnrollmentToken = "x\nfoo" }, func(o *GatewayInstallOptions) { o.InstallationID = "bad" },
+		func(o *GatewayInstallOptions) { o.AgentChecksums = map[string]string{} },
+		func(o *GatewayInstallOptions) { o.AgentChecksums = map[string]string{"linux-amd64": "invalid"} },
+		func(o *GatewayInstallOptions) {
+			o.AgentChecksums = map[string]string{"linux-armv7": strings.Repeat("a", 64)}
+		},
+		func(o *GatewayInstallOptions) { o.MihomoAgentPort = 8082 },
 	} {
 		if _, err := gatewayGenerate(mutate); err == nil {
 			t.Errorf("case %d accepted", i)
@@ -47,7 +49,7 @@ func TestGatewayInvalidInputRejected(t *testing.T) {
 }
 
 func TestOptInDoesNotChangeOrdinaryAIOAndShSyntax(t *testing.T) {
-	ordinary := ok(GenerateGoAIOInstallScript(NewAIOOptions("https://cf.test", "ordinary")))
+	ordinary := ok(RenderAIOInstall(DefaultAIOOptions("https://cf.test", "ordinary")))
 	contains(t, ordinary, "read -r choice < /dev/tty")
 	notContains(t, ordinary, `"installation_token":`)
 	notContains(t, ordinary, "configflow-gateway")
@@ -175,7 +177,7 @@ if cfg['service_type'] == os.environ.get('FAIL_AGENT_CHECK'): raise SystemExit(4
 	CoreReleases = releases
 	defer func() { CoreReleases = original }()
 	hashes := map[string]string{"linux-amd64": sha256Hex(agent), "linux-arm64": sha256Hex(agent)}
-	source := ok(gatewayGenerate(func(g *GatewayOptions) { g.AgentChecksums = hashes; g.FullTun = o.fullTun }))
+	source := ok(gatewayGenerate(func(g *GatewayInstallOptions) { g.AgentChecksums = hashes; g.FullTun = o.fullTun }))
 	source = replaceAll(source, [][2]string{
 		{"/etc/", tmp + "/etc/"}, {"/etc ", tmp + "/etc "},
 		{"/usr/local", tmp + "/usr/local"}, {"/opt/", tmp + "/opt/"},
@@ -953,10 +955,10 @@ func TestOrdinaryAIOScriptIsThePreviousReleasePlusIntentionalForwardingContextDe
 		require(t, strings.Count(expected, p[0]) == 1, "delta %q", p[0])
 		expected = strings.Replace(expected, p[0], p[1], 1)
 	}
-	o := NewAIOOptions("https://cf.test", "ordinary")
+	o := DefaultAIOOptions("https://cf.test", "ordinary")
 	o.AgentIP = "192.168.8.3"
 	o.BinaryDownloadURL = "https://cf.test/api/agents/download"
-	script := ok(GenerateGoAIOInstallScript(o))
+	script := ok(RenderAIOInstall(o))
 	if got := withoutReviewedInstallerDeltas(t, script, false); got != expected {
 		t.Fatalf("ordinary AIO script differs from the baseline (%d vs %d bytes)", len(got), len(expected))
 	}
@@ -967,16 +969,16 @@ func TestOrdinaryAIOScriptIsThePreviousReleasePlusIntentionalForwardingContextDe
 
 func TestAssumedTunPreparationIsOnlyForTheGatewayInstaller(t *testing.T) {
 	// tun_prepare_assume_enabled=1 (an int) is a Python type case ruled out by Go's bool.
-	for i, mutate := range []func(*AIOOptions){
-		func(o *AIOOptions) { o.TunPrepareAssumeEnabled = true },
-		func(o *AIOOptions) {
+	for i, mutate := range []func(*AIOInstallOptions){
+		func(o *AIOInstallOptions) { o.TunPrepareAssumeEnabled = true },
+		func(o *AIOInstallOptions) {
 			o.TunPrepareAssumeEnabled, o.ManageTun, o.NonInteractive = true, false, true
 			o.VerifiedAgentPath = "$GATEWAY_STAGE/configflow-agent"
 		},
 	} {
-		o := NewAIOOptions("https://cf.test", "ordinary")
+		o := DefaultAIOOptions("https://cf.test", "ordinary")
 		mutate(&o)
-		if _, err := GenerateGoAIOInstallScript(o); err == nil {
+		if _, err := RenderAIOInstall(o); err == nil {
 			t.Errorf("case %d accepted", i)
 		} else if _, isValue := err.(*ValueError); !isValue {
 			t.Errorf("case %d: %T", i, err)
@@ -986,7 +988,7 @@ func TestAssumedTunPreparationIsOnlyForTheGatewayInstaller(t *testing.T) {
 
 func TestFullTunScriptPersistsForwardingAndPreparesTun(t *testing.T) {
 	// generate(full_tun="yes") is a Python type case ruled out by Go's bool.
-	script := ok(gatewayGenerate(func(o *GatewayOptions) { o.FullTun = true }))
+	script := ok(gatewayGenerate(func(o *GatewayInstallOptions) { o.FullTun = true }))
 	for _, needle := range []string{"prepare_ipv4_forwarding", "install_ipv4_forwarding_hook", "persist_ipv4_forwarding",
 		"-prepare-tun -assume-tun-enabled;", "$3>=40", "Agent 1.8.40-go 或更新",
 		"if [ -e /opt/configflow-agent/mihomo/linux-gateway.json ] || [ -L /opt/configflow-agent/mihomo/linux-gateway.json ]",

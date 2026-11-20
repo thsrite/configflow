@@ -472,7 +472,7 @@ func TestInstallEntrypointsRequestForwardingToolsOnlyWhenEnabled(t *testing.T) {
 		want   []string
 	}{
 		{ok(aioGenerated(t, nil)), []string{"agent_ensure_dependencies zoneinfo sysctl cmp ln"}},
-		{ok(aioGenerated(t, func(o *AIOOptions) { o.ManageIPv4Forwarding, o.ManageTun = false, false })), []string{"agent_ensure_dependencies zoneinfo"}},
+		{ok(aioGenerated(t, func(o *AIOInstallOptions) { o.ManageIPv4Forwarding, o.ManageTun = false, false })), []string{"agent_ensure_dependencies zoneinfo"}},
 		{ok(singleGenerated("mihomo", nil)), []string{"agent_ensure_dependencies"}},
 		{ok(singleGenerated("oxidns", nil)), []string{"agent_ensure_dependencies zoneinfo"}},
 		{ok(gatewayGenerate(nil)), []string{"agent_ensure_dependencies ha_ip nft ss tar gzip sha256sum cmp zoneinfo", "agent_ensure_dependencies zoneinfo"}},
@@ -702,7 +702,7 @@ func TestOtherInstallersDoNotAddForwardingPackages(t *testing.T) {
 			if mode == "single" {
 				script, e, tmp = installerHarness(t, "single", false)
 			} else {
-				h := newAIOHarness(t, "openrc", true, func(o *AIOOptions) { o.ManageIPv4Forwarding, o.ManageTun = false, false })
+				h := newAIOHarness(t, "openrc", true, func(o *AIOInstallOptions) { o.ManageIPv4Forwarding, o.ManageTun = false, false })
 				script, e, tmp = h.installer, env(h.env), h.tmp
 			}
 			e, events := isolateDependencies(t, tmp, e, forwardingTools, "apk", true)

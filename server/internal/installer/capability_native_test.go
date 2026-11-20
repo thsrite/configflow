@@ -302,7 +302,15 @@ func TestN810InstallCommandStoreShutdownDuringTokenDoesNotOpenDatabase(t *testin
 }
 
 func TestN810NativeIntegersHaveNoInterpreterDigitLimit(t *testing.T) {
-	text, err := GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://panel.example.com", AgentName: "native-dns", ServiceType: "oxidns", AgentPort: strings.Repeat("0", 5000) + "8082", DeploymentHealthTimeout: strings.Repeat("0", 5000) + "30"})
+	port, err := parseInstallInteger(strings.Repeat("0", 5000) + "8082")
+	if err != nil {
+		t.Fatalf("leading-zero port: %v", err)
+	}
+	timeout, err := parseInstallInteger(strings.Repeat("0", 5000) + "30")
+	if err != nil {
+		t.Fatalf("leading-zero timeout: %v", err)
+	}
+	text, err := RenderAgentInstall(AgentInstallOptions{ServerURL: "https://panel.example.com", AgentName: "native-dns", ServiceType: "oxidns", AgentPort: int(port.Int64()), DeploymentHealthTimeout: timeout})
 	if err != nil || !strings.Contains(text, `"agent_port": 8082`) || !strings.Contains(text, `"deployment_health_timeout": 30`) {
 		t.Fatalf("native leading-zero input: %v", err)
 	}

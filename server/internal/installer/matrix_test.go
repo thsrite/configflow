@@ -47,6 +47,74 @@ func (k kwargs) value(name string, def any) any {
 	}
 }
 
+func testCompatInteger(value any, fallback int64) (*big.Int, error) {
+	if value == nil {
+		return big.NewInt(fallback), nil
+	}
+	switch n := value.(type) {
+	case int:
+		return big.NewInt(int64(n)), nil
+	case int64:
+		return big.NewInt(n), nil
+	case *big.Int:
+		if n != nil {
+			return new(big.Int).Set(n), nil
+		}
+	case bool:
+		if n {
+			return big.NewInt(1), nil
+		}
+		return big.NewInt(0), nil
+	case string:
+		return parseInstallInteger(n)
+	}
+	return nil, valueError("Invalid installer integer")
+}
+
+func testCompatPort(value any, fallback int64) (int, error) {
+	n, err := testCompatInteger(value, fallback)
+	if err != nil {
+		return 0, err
+	}
+	if !inRange(n, 1, 65535) {
+		return 0, valueError("Invalid Agent port")
+	}
+	return int(n.Int64()), nil
+}
+
+func testCompatIntegerText(value any, fallback int64) (string, error) {
+	if boolean, ok := value.(bool); ok {
+		if boolean {
+			return "True", nil
+		}
+		return "False", nil
+	}
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	n, err := testCompatInteger(value, fallback)
+	if err != nil {
+		return "", err
+	}
+	return n.String(), nil
+}
+
+func testCompatDecimalPort(value any) bool {
+	switch n := value.(type) {
+	case string:
+		return asciiDigits(n)
+	case bool:
+		return false
+	case int:
+		return n >= 0
+	case int64:
+		return n >= 0
+	case *big.Int:
+		return n != nil && n.Sign() >= 0
+	}
+	return false
+}
+
 func renderCase(fn string, k kwargs) (string, error) {
 	switch fn {
 	case "with_install_output":
@@ -65,24 +133,63 @@ func renderCase(fn string, k kwargs) (string, error) {
 				forwarding = ForwardingOn
 			}
 		}
-		return GenerateGoAgentInstallScript(GoAgentOptions{
+		rawPort := k.value("agent_port", nil)
+		port, portErr := testCompatPort(rawPort, 8080)
+		rawTimeout := k.value("deployment_health_timeout", nil)
+		timeout, timeoutErr := testCompatInteger(rawTimeout, 30)
+		opts := AgentInstallOptions{
 			ServerURL: k.str("server_url", ""), AgentName: k.str("agent_name", ""), ServiceType: k.str("service_type", ""),
-			AgentPort: k.value("agent_port", nil), AgentIP: k.str("agent_ip", ""), ConfigPath: k.str("config_path", ""),
+			AgentPort: port, AgentIP: k.str("agent_ip", ""), ConfigPath: k.str("config_path", ""),
 			RestartCommand: k.str("restart_command", ""), BinaryDownloadURL: k.str("binary_download_url", ""),
 			ServiceManager: k.str("service_manager", ""), ServiceUnit: k.str("service_unit", ""),
 			ServiceBinary: k.str("service_binary", ""), StopCommand: k.str("stop_command", ""),
 			StartCommand: k.str("start_command", ""), StatusCommand: k.str("status_command", ""),
 			HealthURL: k.str("health_url", ""), HealthDNSAddress: k.str("health_dns_address", ""),
-			HealthDNSName: k.str("health_dns_name", ""), DeploymentHealthTimeout: k.value("deployment_health_timeout", nil),
+			HealthDNSName: k.str("health_dns_name", ""), DeploymentHealthTimeout: timeout,
 			InstallCore: k.boolean("install_core", false), ManageIPv4Forwarding: forwarding,
 			PrepareDNSHA: k.boolean("prepare_dns_ha", false),
-		})
+		}
+		if portErr != nil {
+			opts.AgentPort = 8080
+			if _, err := RenderAgentInstall(opts); err != nil && (opts.ServiceType != "mihomo" && opts.ServiceType != "mosdns" && opts.ServiceType != "oxidns" ||
+				(opts.PrepareDNSHA && opts.ServiceType != "oxidns") || !matchesClass(opts.AgentName, "_-")) {
+				return "", err
+			}
+			return "", portErr
+		}
+		if opts.InstallCore && rawPort != nil && !testCompatDecimalPort(rawPort) {
+			if _, err := RenderAgentInstall(opts); err != nil && err.Error() != msgCoreDNSPortConflict {
+				return "", err
+			}
+			return "", valueError("Invalid Agent port")
+		}
+		if timeoutErr != nil {
+			opts.DeploymentHealthTimeout = big.NewInt(30)
+			if _, err := RenderAgentInstall(opts); err != nil {
+				return "", err
+			}
+			return "", timeoutErr
+		}
+		return RenderAgentInstall(opts)
 	case "aio":
-		o := NewAIOOptions(k.str("server_url", ""), k.str("agent_name", ""))
+		o := DefaultAIOOptions(k.str("server_url", ""), k.str("agent_name", ""))
 		o.AgentIP = k.str("agent_ip", "")
 		o.BinaryDownloadURL = k.str("binary_download_url", "")
-		o.MihomoAgentPort = k.value("mihomo_agent_port", o.MihomoAgentPort)
-		o.OxidnsAgentPort = k.value("oxidns_agent_port", o.OxidnsAgentPort)
+		rawMihomo := k.value("mihomo_agent_port", o.MihomoAgentPort)
+		rawOxidns := k.value("oxidns_agent_port", o.OxidnsAgentPort)
+		mihomoPort, portErr := testCompatPort(rawMihomo, 8080)
+		oxidnsPort, secondErr := testCompatPort(rawOxidns, 8082)
+		if rawMihomo != nil && !testCompatDecimalPort(rawMihomo) {
+			portErr = valueError("Invalid Agent port")
+		}
+		if rawOxidns != nil && !testCompatDecimalPort(rawOxidns) {
+			secondErr = valueError("Invalid Agent port")
+		}
+		if portErr == nil {
+			portErr = secondErr
+		}
+		o.MihomoAgentPort = mihomoPort
+		o.OxidnsAgentPort = oxidnsPort
 		o.MihomoConfigPath = k.str("mihomo_config_path", o.MihomoConfigPath)
 		o.OxidnsConfigPath = k.str("oxidns_config_path", o.OxidnsConfigPath)
 		o.MihomoServiceUnit = k.str("mihomo_service_unit", o.MihomoServiceUnit)
@@ -98,12 +205,39 @@ func renderCase(fn string, k kwargs) (string, error) {
 		o.ManageTun = k.boolean("manage_tun", true)
 		o.InstallationDescription = k.str("installation_description", o.InstallationDescription)
 		o.TunPrepareAssumeEnabled = k.boolean("tun_prepare_assume_enabled", false)
-		return GenerateGoAIOInstallScript(o)
+		if portErr != nil {
+			o.MihomoAgentPort, o.OxidnsAgentPort = 8080, 8082
+			if _, err := RenderAIOInstall(o); err != nil &&
+				(o.TunPrepareAssumeEnabled && !(o.ManageTun && o.VerifiedAgentPath != "") ||
+					o.VerifiedAgentPath != "" && o.VerifiedAgentPath != "$GATEWAY_STAGE/configflow-agent" ||
+					o.VerifiedAgentPath != "" && !o.NonInteractive ||
+					(o.InstallationID != "") != (o.InstallationToken != "") ||
+					o.InstallationID != "" && !isInstallationID(o.InstallationID) ||
+					o.InstallationToken != "" && !IsSessionToken(o.InstallationToken) ||
+					!matchesClass(o.AgentName, "_-")) {
+				return "", err
+			}
+			return "", portErr
+		}
+		return RenderAIOInstall(o)
 	case "gateway":
-		o := GatewayOptions{
+		rawMihomo := k.value("mihomo_agent_port", nil)
+		rawOxidns := k.value("oxidns_agent_port", nil)
+		mihomoPort, portErr := testCompatPort(rawMihomo, 8080)
+		oxidnsPort, secondErr := testCompatPort(rawOxidns, 8082)
+		if rawMihomo != nil && !testCompatDecimalPort(rawMihomo) {
+			portErr = valueError("Invalid Agent port")
+		}
+		if rawOxidns != nil && !testCompatDecimalPort(rawOxidns) {
+			secondErr = valueError("Invalid Agent port")
+		}
+		if portErr == nil {
+			portErr = secondErr
+		}
+		o := GatewayInstallOptions{
 			ServerURL: k.str("server_url", ""), AgentName: k.str("agent_name", ""), AgentIP: k.str("agent_ip", ""),
-			BinaryDownloadURL: k.str("binary_download_url", ""), MihomoAgentPort: k.value("mihomo_agent_port", nil),
-			OxidnsAgentPort: k.value("oxidns_agent_port", nil), EnrollmentURL: k.str("enrollment_url", ""),
+			BinaryDownloadURL: k.str("binary_download_url", ""), MihomoAgentPort: mihomoPort,
+			OxidnsAgentPort: oxidnsPort, EnrollmentURL: k.str("enrollment_url", ""),
 			EnrollmentToken: k.str("enrollment_token", ""), InstallationID: k.str("installation_id", ""),
 			FullTun: k.boolean("full_tun", false),
 		}
@@ -113,9 +247,16 @@ func renderCase(fn string, k kwargs) (string, error) {
 				o.AgentChecksums[key] = value.(string)
 			}
 		}
-		return GenerateGatewayInstallScript(o)
+		if portErr != nil {
+			o.MihomoAgentPort, o.OxidnsAgentPort = 8080, 8082
+			if _, err := RenderGatewayInstall(o); err != nil {
+				return "", err
+			}
+			return "", portErr
+		}
+		return RenderGatewayInstall(o)
 	case "compose", "run":
-		o := NewDockerOptions(k.str("server_url", ""))
+		o := DefaultDockerOptions(k.str("server_url", ""))
 		o.AgentName = k.str("agent_name", o.AgentName)
 		o.AgentIP = k.str("agent_ip", "")
 		o.DataDir = k.str("data_dir", o.DataDir)
@@ -123,18 +264,25 @@ func renderCase(fn string, k kwargs) (string, error) {
 		o.EnableMihomo = k.boolean("enable_mihomo", true)
 		o.EnableMosdns = k.boolean("enable_mosdns", false)
 		o.EnableOxidns = k.boolean("enable_oxidns", false)
-		o.MihomoPort = k.value("mihomo_port", o.MihomoPort)
-		o.MosdnsPort = k.value("mosdns_port", o.MosdnsPort)
-		o.OxidnsPort = k.value("oxidns_port", o.OxidnsPort)
+		var err error
+		if o.MihomoPort, err = testCompatIntegerText(k.value("mihomo_port", o.MihomoPort), 8080); err != nil {
+			return "", err
+		}
+		if o.MosdnsPort, err = testCompatIntegerText(k.value("mosdns_port", o.MosdnsPort), 8081); err != nil {
+			return "", err
+		}
+		if o.OxidnsPort, err = testCompatIntegerText(k.value("oxidns_port", o.OxidnsPort), 8082); err != nil {
+			return "", err
+		}
 		o.EnableDNSHA = k.boolean("enable_dns_ha", false)
 		o.HAParent = k.str("ha_parent", "")
 		o.HASubnet = k.str("ha_subnet", "")
 		o.HAGateway = k.str("ha_gateway", "")
 		o.HAHostIDPath = k.str("ha_host_id_path", o.HAHostIDPath)
 		if fn == "compose" {
-			return GenerateDockerAgentCompose(o)
+			return RenderDockerCompose(o)
 		}
-		return GenerateDockerAgentRun(o)
+		return RenderDockerRun(o)
 	}
 	panic("unknown generator " + fn)
 }

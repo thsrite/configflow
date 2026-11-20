@@ -19,8 +19,8 @@ import (
 // test_companion_entrypoint_writes_private_evidence_without_starting_core,
 // test_companion_supervisor_socket_cannot_control_core_or_agent.
 
-func haParams(mode string) DockerOptions {
-	o := NewDockerOptions("https://config.example")
+func haParams(mode string) DockerInstallOptions {
+	o := DefaultDockerOptions("https://config.example")
 	o.AgentName, o.AgentIP, o.EnableMihomo, o.EnableOxidns, o.EnableDNSHA, o.NetworkMode = "dns-a", "192.168.50.20", false, true, true, mode
 	if mode == "macvlan" {
 		o.HAParent, o.HASubnet, o.HAGateway = "eth0", "192.168.50.0/24", "192.168.50.1"
@@ -41,7 +41,7 @@ func strs(v any) []string {
 }
 
 func TestHostComposeSeparatesCoreAndHAAuthority(t *testing.T) {
-	compose := loadYAML(t, ok(GenerateDockerAgentCompose(haParams("host"))))
+	compose := loadYAML(t, ok(RenderDockerCompose(haParams("host"))))
 	services := mapObj(compose, "services")
 	main, companion := mapObj(services, "agent"), mapObj(services, "ha-companion")
 	if mapStr(main, "network_mode") != "host" || mapStr(companion, "network_mode") != "host" || mapHas(main, "cap_add") {
@@ -93,7 +93,7 @@ func TestHostComposeSeparatesCoreAndHAAuthority(t *testing.T) {
 }
 
 func TestMacvlanComposeHasOneIsolatedStaticIPAndNoCompanion(t *testing.T) {
-	compose := loadYAML(t, ok(GenerateDockerAgentCompose(haParams("macvlan"))))
+	compose := loadYAML(t, ok(RenderDockerCompose(haParams("macvlan"))))
 	if strings.Join(mapKeys(mapObj(compose, "services")), ",") != "agent" {
 		t.Fatal("services")
 	}
@@ -116,15 +116,15 @@ func TestMacvlanComposeHasOneIsolatedStaticIPAndNoCompanion(t *testing.T) {
 }
 
 func TestHAGeneratorRejectsIncompatibleOrUnsafeInputs(t *testing.T) {
-	changes := []func(*DockerOptions){
-		func(o *DockerOptions) { o.NetworkMode = "bridge" }, func(o *DockerOptions) { o.EnableMihomo = true },
-		func(o *DockerOptions) { o.EnableMosdns = true }, func(o *DockerOptions) { o.EnableOxidns = false },
-		func(o *DockerOptions) { o.AgentIP = "" }, func(o *DockerOptions) { o.AgentIP = "127.0.0.1" },
-		func(o *DockerOptions) { o.AgentIP = "224.0.0.1" }, func(o *DockerOptions) { o.AgentIP = "0.0.0.0" },
-		func(o *DockerOptions) { o.HAHostIDPath = "relative" }, func(o *DockerOptions) { o.HAHostIDPath = "/tmp/id,readonly" },
+	changes := []func(*DockerInstallOptions){
+		func(o *DockerInstallOptions) { o.NetworkMode = "bridge" }, func(o *DockerInstallOptions) { o.EnableMihomo = true },
+		func(o *DockerInstallOptions) { o.EnableMosdns = true }, func(o *DockerInstallOptions) { o.EnableOxidns = false },
+		func(o *DockerInstallOptions) { o.AgentIP = "" }, func(o *DockerInstallOptions) { o.AgentIP = "127.0.0.1" },
+		func(o *DockerInstallOptions) { o.AgentIP = "224.0.0.1" }, func(o *DockerInstallOptions) { o.AgentIP = "0.0.0.0" },
+		func(o *DockerInstallOptions) { o.HAHostIDPath = "relative" }, func(o *DockerInstallOptions) { o.HAHostIDPath = "/tmp/id,readonly" },
 	}
 	for i, change := range changes {
-		for _, generate := range []func(DockerOptions) (string, error){GenerateDockerAgentCompose, GenerateDockerAgentRun} {
+		for _, generate := range []func(DockerInstallOptions) (string, error){RenderDockerCompose, RenderDockerRun} {
 			o := haParams("host")
 			change(&o)
 			if _, err := generate(o); err == nil {
@@ -135,15 +135,15 @@ func TestHAGeneratorRejectsIncompatibleOrUnsafeInputs(t *testing.T) {
 }
 
 func TestMacvlanGeneratorRejectsMismatchedAddressing(t *testing.T) {
-	for i, change := range []func(*DockerOptions){
-		func(o *DockerOptions) { o.HAParent = "eth0;bad" }, func(o *DockerOptions) { o.HASubnet = "192.168.50.3/24" },
-		func(o *DockerOptions) { o.HASubnet = "192.168.50.20/32" }, func(o *DockerOptions) { o.HAGateway = "192.168.60.1" },
-		func(o *DockerOptions) { o.AgentIP = "192.168.50.0" }, func(o *DockerOptions) { o.AgentIP = "192.168.50.255" },
-		func(o *DockerOptions) { o.AgentIP = "192.168.60.20" }, func(o *DockerOptions) { o.AgentIP = "192.168.50.1" },
+	for i, change := range []func(*DockerInstallOptions){
+		func(o *DockerInstallOptions) { o.HAParent = "eth0;bad" }, func(o *DockerInstallOptions) { o.HASubnet = "192.168.50.3/24" },
+		func(o *DockerInstallOptions) { o.HASubnet = "192.168.50.20/32" }, func(o *DockerInstallOptions) { o.HAGateway = "192.168.60.1" },
+		func(o *DockerInstallOptions) { o.AgentIP = "192.168.50.0" }, func(o *DockerInstallOptions) { o.AgentIP = "192.168.50.255" },
+		func(o *DockerInstallOptions) { o.AgentIP = "192.168.60.20" }, func(o *DockerInstallOptions) { o.AgentIP = "192.168.50.1" },
 	} {
 		o := haParams("macvlan")
 		change(&o)
-		if _, err := GenerateDockerAgentCompose(o); err == nil {
+		if _, err := RenderDockerCompose(o); err == nil {
 			t.Errorf("change %d accepted", i)
 		}
 	}
@@ -161,7 +161,7 @@ func TestGeneratedRunExecutesLiteralArgumentsAndStartsOnlyExpectedServices(t *te
 		url := `https://config.test/"$(touch ` + marker + `)`
 		o := haParams(mode)
 		o.ServerURL, o.DataDir, o.HAHostIDPath = url, filepath.Join(tmp, "data ' folder"), identity
-		script := writeFile(t, filepath.Join(tmp, "install.sh"), ok(GenerateDockerAgentRun(o)), 0o644)
+		script := writeFile(t, filepath.Join(tmp, "install.sh"), ok(RenderDockerRun(o)), 0o644)
 		r := runShell(t, "bash", script, runOptions{env: []string{"PATH=" + tmp + ":" + os.Getenv("PATH"), "DOCKER_EVENTS=" + events}})
 		if r.code != 0 {
 			t.Fatal(r.stderr + r.stdout)
@@ -197,9 +197,9 @@ func TestGeneratedRunExecutesLiteralArgumentsAndStartsOnlyExpectedServices(t *te
 func TestOrdinaryDockerKeepsOriginalNetworkAndPrivileges(t *testing.T) {
 	for _, mode := range []string{"host", "bridge", "existing-private-network"} {
 		for _, services := range [][3]bool{{true, false, false}, {false, true, false}, {false, false, true}, {true, false, true}} {
-			o := NewDockerOptions("https://config.example")
+			o := DefaultDockerOptions("https://config.example")
 			o.NetworkMode, o.EnableMihomo, o.EnableMosdns, o.EnableOxidns = mode, services[0], services[1], services[2]
-			implicit := ok(GenerateDockerAgentCompose(o))
+			implicit := ok(RenderDockerCompose(o))
 			compose := loadYAML(t, implicit)
 			if strings.Join(mapKeys(mapObj(compose, "services")), ",") != "agent" || mapHas(compose, "networks") {
 				t.Fatal("services")
@@ -217,7 +217,7 @@ func TestOrdinaryDockerKeepsOriginalNetworkAndPrivileges(t *testing.T) {
 			if strings.Contains(string(volumes), "configflow-ha") || strings.Contains(string(volumes), "machine-id") {
 				t.Error(string(volumes))
 			}
-			command := ok(GenerateDockerAgentRun(o))
+			command := ok(RenderDockerRun(o))
 			contains(t, command, "--network "+mode)
 			notContains(t, command, "--cap-add")
 			notContains(t, command, "CONFIGFLOW_DNS_HA")
@@ -227,7 +227,7 @@ func TestOrdinaryDockerKeepsOriginalNetworkAndPrivileges(t *testing.T) {
 
 func TestGeneratedGoInstallerDoesNotPrintBinaryDownloadURL(t *testing.T) {
 	// Deferred case from test_safe_url_queries.py (C02).
-	script := ok(GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://server.test/?token=server-secret", AgentName: "probe",
+	script := ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://server.test/?token=server-secret", AgentName: "probe",
 		ServiceType: "mihomo", BinaryDownloadURL: "https://download.test/bin?token=installer-secret#key=fragment-secret"}))
 	notContains(t, script, "URL: $BINARY_URL")
 	contains(t, script, `wget -q -O "$BINARY_TMP" "$BINARY_URL"`)

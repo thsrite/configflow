@@ -15,13 +15,13 @@ import (
 // docker/docker-agent-entrypoint-service.sh, which no generator renders;
 // they stay with the image (finish domain, #40).
 
-func goGenerated(mutate func(*GoAgentOptions)) (string, error) {
-	o := GoAgentOptions{ServerURL: "https://config.test", AgentName: "native-test", ServiceType: "mihomo",
+func goGenerated(mutate func(*AgentInstallOptions)) (string, error) {
+	o := AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "native-test", ServiceType: "mihomo",
 		BinaryDownloadURL: "https://config.test/api/agents/download"}
 	if mutate != nil {
 		mutate(&o)
 	}
-	return GenerateGoAgentInstallScript(o)
+	return RenderAgentInstall(o)
 }
 
 func generatedConfig(t *testing.T, script string) map[string]any {
@@ -39,7 +39,7 @@ func generatedConfig(t *testing.T, script string) map[string]any {
 
 func TestNativeInstallHasExplicitLifecycleWithoutBootGate(t *testing.T) {
 	for _, service := range []string{"mihomo", "mosdns", "oxidns"} {
-		script := ok(goGenerated(func(o *GoAgentOptions) { o.ServiceType = service }))
+		script := ok(goGenerated(func(o *AgentInstallOptions) { o.ServiceType = service }))
 		cfg := generatedConfig(t, script)
 		if cfg["service_manager"] != "__CONFIGFLOW_INIT__" || cfg["service_unit"] != service || cfg["service_binary"] != service || cfg["deployment_method"] != "shell" {
 			t.Errorf("%s: %v", service, cfg)
@@ -59,10 +59,10 @@ func TestNativeInstallHasExplicitLifecycleWithoutBootGate(t *testing.T) {
 }
 
 func TestCustomRestartRequiresExplicitLifecycle(t *testing.T) {
-	if _, err := goGenerated(func(o *GoAgentOptions) { o.RestartCommand = "/custom/restart" }); err == nil || !strings.Contains(err.Error(), "stop_command") {
+	if _, err := goGenerated(func(o *AgentInstallOptions) { o.RestartCommand = "/custom/restart" }); err == nil || !strings.Contains(err.Error(), "stop_command") {
 		t.Fatalf("err %v", err)
 	}
-	cfg := generatedConfig(t, ok(goGenerated(func(o *GoAgentOptions) {
+	cfg := generatedConfig(t, ok(goGenerated(func(o *AgentInstallOptions) {
 		o.RestartCommand, o.StopCommand, o.StartCommand, o.StatusCommand = "/custom/restart", "/custom/stop", "/custom/start", "/custom/status"
 	})))
 	if cfg["service_manager"] != "command" || cfg["stop_command"] != "/custom/stop" || cfg["start_command"] != "/custom/start" {
@@ -72,7 +72,7 @@ func TestCustomRestartRequiresExplicitLifecycle(t *testing.T) {
 
 func TestInstallerPreservesLiteralJSONAndShellCharacters(t *testing.T) {
 	value := "/tmp/\"config${HOME}{service_type}\\file\n.yaml"
-	if cfg := generatedConfig(t, ok(goGenerated(func(o *GoAgentOptions) { o.ConfigPath = value }))); cfg["config_path"] != value {
+	if cfg := generatedConfig(t, ok(goGenerated(func(o *AgentInstallOptions) { o.ConfigPath = value }))); cfg["config_path"] != value {
 		t.Fatal(cfg["config_path"])
 	}
 }
@@ -129,7 +129,7 @@ fi
 // newNativeHarness is native_install_harness(tmp_path, manager, service).
 func newNativeHarness(t *testing.T, manager, service string) nativeHarness {
 	tmp := t.TempDir()
-	source := ok(goGenerated(func(o *GoAgentOptions) { o.ServiceType = service; o.ServiceUnit = "new-core" }))
+	source := ok(goGenerated(func(o *AgentInstallOptions) { o.ServiceType = service; o.ServiceUnit = "new-core" }))
 	if runtime.GOOS == "darwin" {
 		source = strings.ReplaceAll(source, "sed -i ", "sed -i '' ")
 	}
@@ -253,9 +253,9 @@ func TestNativeReinstallSafelyDetachesOldGateAndIsRepeatable(t *testing.T) {
 }
 
 func TestDockerGeneratedVolumesPersistIdentityAndTransactionRoots(t *testing.T) {
-	o := NewDockerOptions("https://config.test")
+	o := DefaultDockerOptions("https://config.test")
 	o.EnableMosdns = true
-	compose, err := readCompose(ok(GenerateDockerAgentCompose(o)))
+	compose, err := readCompose(ok(RenderDockerCompose(o)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestDockerGeneratedVolumesPersistIdentityAndTransactionRoots(t *testing.T) 
 	for _, volume := range []string{"./agent_data/agent:/opt/configflow-agent", "./agent_data/mihomo:/etc/mihomo", "./agent_data/mosdns:/etc/mosdns"} {
 		contains(t, text+"\n", volume+"\n")
 	}
-	command := ok(GenerateDockerAgentRun(o))
+	command := ok(RenderDockerRun(o))
 	contains(t, command, "./agent_data/agent:/opt/configflow-agent")
 	contains(t, command, "./agent_data/mihomo:/etc/mihomo")
 	notContains(t, command, "/root/.config/mihomo")

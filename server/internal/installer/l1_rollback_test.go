@@ -187,7 +187,7 @@ func TestL1AIOSecondStartFailureRestoresBothOrRemovesNewFiles(t *testing.T) {
 	managers(t, func(t *testing.T, manager string) {
 		for _, existing := range []bool{false, true} {
 			t.Run(map[bool]string{true: "existing", false: "new"}[existing], func(t *testing.T) {
-				h := newAIOHarness(t, manager, existing, func(o *AIOOptions) {
+				h := newAIOHarness(t, manager, existing, func(o *AIOInstallOptions) {
 					o.ManageIPv4Forwarding, o.ManageTun = false, false
 				})
 				candidate := filepath.Join(h.tmp, "fake-agent")

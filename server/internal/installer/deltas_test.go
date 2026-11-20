@@ -159,7 +159,7 @@ func sha256Hex(s string) string {
 }
 
 func singleServiceScript(t *testing.T, service string, installCore bool, forwarding Forwarding) string {
-	return ok(GenerateGoAgentInstallScript(GoAgentOptions{ServerURL: "https://config.test", AgentName: "single",
+	return ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "single",
 		ServiceType: service, AgentIP: "192.0.2.20", BinaryDownloadURL: "https://config.test/api/agents/download",
 		InstallCore: installCore, ManageIPv4Forwarding: forwarding}))
 }

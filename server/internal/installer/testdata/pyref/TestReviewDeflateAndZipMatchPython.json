@@ -595,7 +595,7 @@
       "server/go.sum": "bdb21d60d4cbfe73226d5b181e849f26b9bd1f63b493c961e86fb7fd65c6cca3",
       "server/internal/installer/archive_native_test.go": "884d6d044e1dd40042e30df2c5fa723f2650194cfbbbb40f8cf1902cccd74b9f",
       "server/internal/installer/guide_legacy_test.go": "409da7c229ab2c16e04343e8369a9cf91a2f84772bde0e068c52cc74fdf303c3",
-      "server/internal/installer/native_aio_test.go": "59cc66b0abec8ceec800728dbdda5cec969b5c0e4058d4730ceb3c606a68f101",
+      "server/internal/installer/native_aio_test.go": "1bde6e462f791698d6497f49a3229aabaeddc0d8ef2ddc2e9b2563a3e4d51573",
       "server/internal/installer/preflight_legacy_test.go": "14777f383d236fc542c3d5d5101198003f31f5d568b8e3cd9cf2a73fc4547d73",
       "server/internal/installer/review_a10_test.go": "f756fe2650065bc43592245537d454c849f2dd64bb872b42ca2a59530ec2d288",
       "server/internal/installer/testdata/review_a10_deflate.py": "85e43e9d22aadadcb57b66065bed96452f1fef0dd19b164f1b776fa19acdfe8f",
