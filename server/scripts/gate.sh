@@ -136,21 +136,24 @@ run_proddiff() {
 }
 run_difftest() {
   echo '== difftest (uncached)'
-  local packages
-  packages=$(go list ./... | grep '/difftest$') || fail 'no difftest packages'
-  # Intentional splitting: go list produces whitespace-free import paths.
-  CONFIGFLOW_DIFF=1 go test "${pflag[@]}" -count=1 -timeout=40m $packages >"$logs/diff.log" 2>&1 \
-    || { cat "$logs/diff.log"; fail difftest; }
-  cat "$logs/diff.log"
+  "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py --difftest "$logs" "${pflag[@]}" || fail difftest
 }
 run_live() {
   echo '== synthetic live (uncached, required JSON execution manifest)'
   "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py "$logs" "${pflag[@]}" || fail 'synthetic live'
 }
+# Run every comparison even when an earlier group fails, retaining all evidence.
+run_compare() {
+  local bad=0
+  (run_proddiff) || bad=1
+  (run_difftest) || bad=1
+  (run_live) || bad=1
+  ((bad == 0)) || fail compare
+}
 case "$stage" in
-  all) run_core "$@"; run_proddiff; run_difftest; run_live ;;
+  all) run_core "$@"; run_compare ;;
   core) run_core "$@" ;;
-  compare) run_proddiff; run_difftest; run_live ;;
+  compare) run_compare ;;
   proddiff) run_proddiff ;;
   difftest) run_difftest ;;
 esac

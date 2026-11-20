@@ -18,7 +18,7 @@ class EvidenceTests(unittest.TestCase):
     trace = '123 execve("python", ["python", "-c", "from webdav3.client import Client\\nTLS_REJECTED"], []) = 0'
 
     def test_complete(self):
-        self.assertEqual(live.validate(self.events(), self.trace), 23)
+        self.assertEqual(live.validate(self.events(), self.trace), 2)
 
     def test_missing_test(self):
         with self.assertRaisesRegex(RuntimeError, "missing run/pass"):
@@ -41,6 +41,26 @@ class EvidenceTests(unittest.TestCase):
         for trace in ("", self.trace.replace("= 0", "= -1 ENOENT")):
             with self.subTest(trace=trace), self.assertRaisesRegex(RuntimeError, "WebDAV"):
                 live.validate(self.events(), trace)
+
+
+class DiscoveryTests(unittest.TestCase):
+    def test_omitted_environment_package_fails(self):
+        discovery = {"diff": {"configflow/internal/x/difftest": ["TestX"]},
+                     "live": {}, "sources": {"configflow/internal/newpackage": ["oracle_test.go"]}}
+        with self.assertRaisesRegex(RuntimeError, "omitted from compare"):
+            live.checked_manifest(discovery, "diff")
+
+    def test_discovered_test_requires_execution(self):
+        manifest = {"configflow/internal/newpackage": ["TestNewOracle"]}
+        with self.assertRaisesRegex(RuntimeError, "TestNewOracle"):
+            live.validate([], "", manifest, webdav=False)
+
+    def test_new_test_skip_fails(self):
+        manifest = {"configflow/internal/newpackage": ["TestNewOracle"]}
+        events = [dict(Package="configflow/internal/newpackage", Test="TestNewOracle", Action=action)
+                  for action in ("run", "skip")]
+        with self.assertRaisesRegex(RuntimeError, "skip:"):
+            live.validate(events, "", manifest, webdav=False)
 
 
 if __name__ == "__main__":

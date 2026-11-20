@@ -64,7 +64,7 @@ class RoutingTests(unittest.TestCase):
         shutil.copy(SOURCE, scripts / "gate.sh")
         (scripts / "proddiff.sh").write_text('#!/bin/bash\necho "proddiff $*"\n')
         (scripts / "proddiff.sh").chmod(0o755)
-        (scripts / "gate-live.py").write_text('print("synthetic live fake")\n')
+        (scripts / "gate-live.py").write_text('import os, sys\nprint("synthetic live fake", *sys.argv[1:])\nsys.exit(1 if os.getenv("FAIL_DIFF") and "--difftest" in sys.argv else 0)\n')
         (self.server / "tools/pyref").mkdir(parents=True)
         (self.root / "rt").mkdir()
         binary = self.root / "bin"
@@ -76,7 +76,7 @@ class RoutingTests(unittest.TestCase):
         self.env = dict(os.environ, HOME=str(self.root), PATH=str(binary) + ":" + os.environ["PATH"],
                         GATE_LOGS=str(self.root / "logs"), CONFIGFLOW_DIFF_PYTHON=shutil.which("python3"))
         for key in ("GATE_ONLY", "GATE_FULL", "GATE_SLOTS", "FAIL_RACE", "EMPTY_FINGERPRINT",
-                    "GATE_FUZZ_JOBS", "GATE_FUZZ_PARALLEL", "GATE_FUZZTIME", "FAIL_FUZZ"):
+                    "GATE_FUZZ_JOBS", "GATE_FUZZ_PARALLEL", "GATE_FUZZTIME", "FAIL_FUZZ", "FAIL_DIFF"):
             self.env.pop(key, None)
 
     def run_gate(self, targets=(), **env):
@@ -155,6 +155,13 @@ class RoutingTests(unittest.TestCase):
         self.assertNotIn("== race", result.stdout)
         self.assertFalse((self.root / "rt/.gate-last-full").exists())
         self.assertFalse(any("-race" in args for args, _ in self.calls()))
+
+    def test_failed_diff_still_runs_live(self):
+        result = self.run_gate(GATE_ONLY="compare", FAIL_DIFF="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("== synthetic live", result.stdout)
+        self.assertIn("GATE FAIL: compare", result.stderr)
+        self.assertFalse((self.root / "rt/.gate-last-full").exists())
 
     def test_default_runs_both(self):
         result = self.run_gate()

@@ -14,7 +14,9 @@ GATE_ONLY=compare server/scripts/gate.sh -p 6
 
 Core: gofmt, whole-repository vet, both lifecycle build modes (build, scoped vet,
 lifecycle tests), whole-repository race, supplied fuzz targets (60s by default).
-Compare: observer self-checks + proddiff, every `/difftest` package, synthetic live.
+Compare: observer self-checks + proddiff, every `/difftest` package, discovered synthetic live.
+All three comparison groups run even if an earlier one fails; the final status
+remains failed and logs retain results for the other groups.
 Legacy `GATE_ONLY=proddiff` and `difftest` keep their narrow meaning.
 
 ## Fuzz temporary space and concurrency
@@ -69,15 +71,31 @@ withdrawn by the coordinator; no `--no-cache` interface or dependency is needed.
 
 ## Synthetic live: required execution evidence
 
-`gate-live.py` contains the exact six-package/23-entry manifest (21 top-level
-tests and two Python-specific subtests). It sets absolute CONFIGFLOW_PY and
-CONFIGFLOW_REPO, CONFIGFLOW_DIFF_PYTHON, CONFIGFLOW_DIFF=1 and disables bytecode
-writes. It unsets CONFIGFLOW_SNAPSHOT and excludes private-snapshot subtests.
-Missing interpreters or required imports fail the stage; they never count as
-successful skips. This stage uses race and fresh execution.
+`gate-live.py` invokes `go run ./tools/gatediscover` to build the manifest from
+`go list -json ./...` active test files and Go ASTs. All `/difftest` tests remain
+in the non-race diff group. Ordinary tests referencing CONFIGFLOW_DIFF,
+CONFIGFLOW_DIFF_PYTHON, CONFIGFLOW_PY, CONFIGFLOW_REPO or CONFIGFLOW_YAML_PYTHON,
+including transitive callers of helpers in other files, enter synthetic live
+with race. Package-scope references conservatively select every test. Both
+Go discovery and the Python runner reject an environment-bearing test package
+missing from the compare manifest. New packages/tests need no whitelist edit.
 
-`live.json` must contain run **and** pass for each manifest entry, and no selected
-skip/fail event. `live-manifest.json` records the precise expectation. In
+Both groups set absolute CONFIGFLOW_PY and CONFIGFLOW_REPO,
+CONFIGFLOW_DIFF_PYTHON, CONFIGFLOW_YAML_PYTHON, CONFIGFLOW_DIFF=1 and disable
+bytecode writes. They unset CONFIGFLOW_SNAPSHOT, PYREF_MODE, PYREF_ACCEPT and
+PYREF_INPUT_FINGERPRINT; fresh tests do not inherit a stale fingerprint or record
+goldens. Three snapshot-only tests have explicit, recorded exclusions in the
+Go discovery tool; private-snapshot subtests are excluded from synthetic live.
+Missing interpreters or required imports fail the stage. `*-discovery.json`
+records source files and exclusions; `*-manifest.json` records required tests;
+`*-results.json` retains terminal per-test actions even after a test failure.
+The current inventory and baseline coverage gaps are in
+[gate-env-coverage.md](../parity/gate-env-coverage.md).
+
+`diff.json` and `live.json` must contain run **and** pass for every required
+entry, and no ordinary test/subtest skip/fail event. Invalid difftest fuzz seeds
+may skip; they are not required ordinary tests. The live runner selects the
+discovered top-level names with `-run`; diff retains its full package execution. `live-manifest.json` records the precise expectation. In
 particular repo's `TestStoredRoundTrip/python-written-rows` must exist and pass.
 The legacy WebDAV test has no Python-specific subtest/log event and ignores the
 configured interpreter path. `gate-test-exec.sh` therefore runs only its test
@@ -95,6 +113,8 @@ Validator negative controls: run on a test server:
 
 ```sh
 cd server
+go test -race ./tools/gatediscover
+go vet ./tools/gatediscover
 PYTHONDONTWRITEBYTECODE=1 python scripts/test-gate-live.py
 bash -n scripts/gate.sh scripts/gate-test-exec.sh
 ```
