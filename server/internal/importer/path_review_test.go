@@ -10,8 +10,10 @@ import (
 
 	"configflow/internal/importer"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 func TestImportedNamesCannotEscapeRepository(t *testing.T) {
@@ -41,7 +43,7 @@ rules: ['RULE-SET,../../outside,Pool', 'MATCH,Pool']
 			return nil, err
 		}
 		for _, item := range result.Shared.RuleLibrary {
-			filename := rules.RuleCacheFilename(repositoryObject(t, item))
+			filename := rules.CacheFilename(testjson.Decode[model.RuleConfig](t, repositoryObject(t, item)))
 			if !filepath.IsLocal(filename) {
 				t.Fatal("imported rule name escapes cache directory")
 			}

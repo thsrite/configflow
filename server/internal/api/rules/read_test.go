@@ -15,9 +15,11 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 func TestPublicProvidersNormalizeOnlyDelivery(t *testing.T) {
@@ -268,7 +270,7 @@ func TestBinaryCacheDeliveryRemainsOpaque(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.Repo.WriteSharedText(s.Context(), "rules/"+shared.RuleCacheFilename(source), data); err != nil {
+			if _, err = s.Repo.WriteSharedText(s.Context(), "rules/"+shared.CacheFilename(testjson.Decode[model.RuleConfig](t, source)), data); err != nil {
 				t.Fatal(err)
 			}
 			for _, query := range []string{"", "?target=mihomo"} {

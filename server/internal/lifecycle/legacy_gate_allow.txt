@@ -23,7 +23,6 @@ legacy-file internal/routersplit/legacy.go:<file>
 legacy-file internal/rulefetch/cache_legacy.go:<file>
 legacy-file internal/rulefetch/content_legacy.go:<file>
 legacy-file internal/rulefetch/fetch_legacy.go:<file>
-legacy-file internal/rules/format_legacy.go:<file>
 legacy-file internal/rules/groups_legacy.go:<file>
 legacy-file internal/rules/reorder_legacy.go:<file>
 legacy-file internal/subs/legacy.go:<file>
@@ -255,7 +254,6 @@ retired-import internal/api/oxidns/difftest/diff_test.go:configflow/internal/jso
 retired-import internal/api/profiles/profiles.go:configflow/internal/jsonx
 retired-import internal/api/profiles/profiles_test.go:configflow/internal/jsonx
 retired-import internal/api/profiles/review_test.go:configflow/internal/jsonx
-retired-import internal/api/proxygroups/adapter.go:configflow/internal/jsonx
 retired-import internal/api/proxygroups/service_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/adapters.go:configflow/internal/jsonx
 retired-import internal/api/routers/forwarding_test.go:configflow/internal/jsonx
@@ -264,7 +262,6 @@ retired-import internal/api/routers/publish_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/repository_guard_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/review_r15_test.go:configflow/internal/jsonx
 retired-import internal/api/routers/safety_test.go:configflow/internal/jsonx
-retired-import internal/api/rulelibrary/adapter.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/difftest/cases_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/difftest/diff_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/difftest/dns_test.go:configflow/internal/jsonx
@@ -275,9 +272,7 @@ retired-import internal/api/rulelibrary/mutate_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/review_cache_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/review_workers_test.go:configflow/internal/jsonx
 retired-import internal/api/rulelibrary/shutdown_forget_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/adapter.go:configflow/internal/jsonx
 retired-import internal/api/rules/boundary_test.go:configflow/internal/jsonx
-retired-import internal/api/rules/compose_adapter.go:configflow/internal/jsonx
 retired-import internal/api/rules/compose_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/delivery_warning_test.go:configflow/internal/jsonx
 retired-import internal/api/rules/difftest/cases_test.go:configflow/internal/jsonx
@@ -636,7 +631,6 @@ retired-import internal/rules/compat_drift_test.go:configflow/internal/jsonx
 retired-import internal/rules/connection_test.go:configflow/internal/jsonx
 retired-import internal/rules/corpus_test.go:configflow/internal/jsonx
 retired-import internal/rules/differences_test.go:configflow/internal/jsonx
-retired-import internal/rules/format_legacy.go:configflow/internal/jsonx
 retired-import internal/rules/groups_legacy.go:configflow/internal/jsonx
 retired-import internal/rules/groups_test.go:configflow/internal/jsonx
 retired-import internal/rules/matchercache_test.go:configflow/internal/jsonx

@@ -12,7 +12,9 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 func c04ReferenceValue(t *testing.T, section string) any {
@@ -199,7 +201,7 @@ func TestCreateRuleLibraryItemHoldsCacheLockThroughCommit(t *testing.T) {
 	})
 	noError(t, err)
 	rule := jsonx.Obj("id", "lib9", "name", "L", "source_type", "content")
-	path := must(r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule))))(t)
+	path := must(r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)))))(t)
 	checked := false
 	defer SetHooks(SetHooks(Hooks{ConfigurationCommitted: func(*Repository, *jsonx.Object, *jsonx.Object) {
 		_, release, acquired := fileLocks.TryLock(bg, resolvePath(path))
@@ -224,7 +226,7 @@ func TestCreateRuleLibraryItemHoldsCacheLockThroughCommit(t *testing.T) {
 func TestCreateRuleLibraryItemFailedCommitRemovesCache(t *testing.T) {
 	r := newRepo(t)
 	rule := jsonx.Obj("id", "lib9", "name", "L", "url", "https://example.test/x", "policy", "DIRECT")
-	path := must(r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule))))(t)
+	path := must(r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)))))(t)
 	if _, err := r.CreateRuleLibraryItem(bg, rule, []byte("x")); err == nil {
 		t.Fatal("a rule source with a policy was accepted")
 	}

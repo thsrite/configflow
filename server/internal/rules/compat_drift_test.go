@@ -1,11 +1,9 @@
 package rules
 
-// compat.go keeps a copy of converters/common.ruleset_format (RulesetFormat)
-// because its port, internal/convert, imports this package. So the two cannot
-// drift, the copy runs over convert's Python corpus
-// (../convert/testdata/gen.py). Rows where Python raises (malformed library
-// items, URLs urlsplit refuses, non-string URLs) are skipped: the copy has no
-// error path and returns a format there.
+// The archived converter corpus also exercises the typed rulesetfmt owner
+// through the test-only fixture adapter. Rows where Python raises are skipped
+// here because this historical projection has no error return; the owner has
+// separate malformed-input coverage.
 
 import (
 	"bufio"

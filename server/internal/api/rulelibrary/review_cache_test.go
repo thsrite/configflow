@@ -41,11 +41,11 @@ func TestReviewUnreadableReceiptCannotReviveLegacyCache(t *testing.T) {
 	if _, err = os.Stat(path + ".invalid"); !os.IsPermission(err) {
 		t.Fatalf("fixture must deny marker lookup: %v", err)
 	}
-	raw, err := legacy(item)
+	raw, err := ruleRecord(item)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := rulefetch.ReadValidatedRuleCache(s.Context(), raw, nil)
+	cache, err := rulefetch.ReadCache(s.Context(), raw, nil)
 	if err != nil || cache != nil {
 		t.Fatalf("unreadable invalidation served cache: %q %v", cache, err)
 	}

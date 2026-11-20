@@ -3,16 +3,15 @@ package proxygroups
 // Legacy collaborators are confined to this boundary. The service retains
 // native JSON members and delegates validation and rendering to their owners.
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -93,30 +92,35 @@ func edit(ctx context.Context, id string, fn func(context.Context, *object) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := repo.UpdateConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+	return repo.UpdateConfig(ctx, id, func(tx context.Context, config *model.Config) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		p, err := native(raw)
+		p, err := native(config)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		before, err := native(config)
+		if err != nil {
+			return err
 		}
 		if err = fn(tx, &p); err != nil {
-			return nil, err
+			return err
 		}
-		next, err := legacy(p)
-		if err != nil {
-			return nil, err
+		for _, key := range repo.ProfileFields {
+			raw, present := p.Get(key)
+			previous, _ := before.Get(key)
+			if present && !bytes.Equal(raw, previous) {
+				if err := config.Profile.SetJSON(key, raw); err != nil {
+					return err
+				}
+			}
 		}
-		if err := tx.Err(); err != nil {
-			return nil, err
-		}
-		raw.Update(next)
-		return nil, nil
-	}, id)
-	return err
+		return tx.Err()
+	})
 }
+
 func healthKind(kind string) bool { return check.IsGroupHealthType(kind) }
 func healthFields() []string      { return shared.HealthFields }
 func initializeHealth(group object) (object, error) {
@@ -419,22 +423,6 @@ func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
 func boundNonempty(c *httpx.Ctx) bool {
 	var raw json.RawMessage
 	return c.BindSilent(&raw) && shared.EnabledField(raw, false)
-}
-
-func legacy(o object) (*jsonx.Object, error) {
-	raw, err := json.Marshal(o)
-	if err != nil {
-		return nil, err
-	}
-	v, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	out, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("expected object")
-	}
-	return out, nil
 }
 
 func orderPosition(body object) string {

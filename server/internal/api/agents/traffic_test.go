@@ -25,7 +25,9 @@ import (
 	"configflow/internal/api/domaindiscovery"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 const trafficToken = "agent-token-0123456789abcdef"
@@ -420,7 +422,7 @@ func TestTrafficReportReturnsProviderRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	rulesDir, _ := s.Repo.SharedRulesDir()
-	cachePath := filepath.Join(rulesDir, rules.RuleCacheFilename(cached))
+	cachePath := filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, cached)))
 	os.MkdirAll(filepath.Dir(cachePath), 0o755)
 	if err := os.WriteFile(cachePath, []byte("DOMAIN,a.example\nDOMAIN,b.example\n"), 0o644); err != nil {
 		t.Fatal(err)

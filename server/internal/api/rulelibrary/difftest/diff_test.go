@@ -30,6 +30,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
@@ -37,6 +38,7 @@ import (
 	"configflow/internal/routers"
 	shared "configflow/internal/rules"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -348,7 +350,7 @@ func (w *world) pairIDs(a, b any) {
 						if err != nil {
 							w.t.Fatal(err)
 						}
-						w.ids["shared/rules/"+shared.RuleCacheFilename(value.(*jsonx.Object))] = replacement + ".list"
+						w.ids["shared/rules/"+shared.CacheFilename(testjson.Decode[model.RuleConfig](w.t, value.(*jsonx.Object)))] = replacement + ".list"
 					}
 				}
 

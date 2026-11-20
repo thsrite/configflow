@@ -1,19 +1,16 @@
 package rules
 
-// Request records delegate rule semantics to typed owners. Profile writes retain
-// the repository compatibility boundary until W1 supplies resolved transactions.
+// Request records delegate rule semantics and resolved transactions to their owners.
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"reflect"
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
@@ -75,44 +72,52 @@ func editProfile(ctx context.Context, id string, edit func(record) error) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := repo.UpdateConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+	return repo.UpdateConfig(ctx, id, func(tx context.Context, config *model.Config) error {
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		profile, err := native(raw)
+		profile, err := native(config)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		before := maps.Clone(profile)
+		before, err := native(config)
+		if err != nil {
+			return err
+		}
 		if err = edit(profile); err != nil {
-			return nil, err
+			return err
 		}
-		if err := tx.Err(); err != nil {
-			return nil, err
+		if err := applyFields(before, profile, repo.ProfileFields, config.Profile.SetJSON); err != nil {
+			return err
 		}
-		for key, value := range profile {
-			previous, existed := before[key]
-			if bytes.Equal(previous, value) {
+		return tx.Err()
+	})
+}
+
+func applyFields(before, after record, keys []string, set func(string, json.RawMessage) error) error {
+	for _, key := range keys {
+		value, present := after[key]
+		if !present {
+			continue
+		}
+		previous, existed := before[key]
+		if bytes.Equal(previous, value) {
+			continue
+		}
+		if existed {
+			same, err := sameJSONValue(previous, value)
+			if err != nil {
+				return fmt.Errorf("compare field %s: %w", key, err)
+			}
+			if same {
 				continue
 			}
-			if existed {
-				same, err := sameJSONValue(previous, value)
-				if err != nil {
-					return nil, fmt.Errorf("compare profile field %s: %w", key, err)
-				}
-				if same {
-					continue
-				}
-			}
-			next, err := jsonx.Parse(value)
-			if err != nil {
-				return nil, err
-			}
-			raw.Set(key, next)
 		}
-		return nil, tx.Err()
-	}, id)
-	return err
+		if err := set(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // sameJSONValue distinguishes real edits from re-encoding a nested object.
@@ -399,20 +404,4 @@ func selectedText(ids []json.RawMessage) string {
 }
 func rawFlag(item record, key string, fallback bool) bool {
 	return shared.EnabledField(item[key], fallback)
-}
-
-func legacy(value record) (*jsonx.Object, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	v, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	out, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("expected configuration object")
-	}
-	return out, nil
 }

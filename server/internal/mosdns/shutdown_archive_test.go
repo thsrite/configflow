@@ -16,11 +16,13 @@ import (
 
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/store"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 func archiveRuntime(t *testing.T, world *jsonx.Object) (context.Context, *repo.Repository, *lifecycle.Runtime) {
@@ -184,7 +186,7 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 				if !found {
 					t.Fatal("archive does not contain the downloaded bytes")
 				}
-				path, err := r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule)))
+				path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule))))
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -1,8 +1,8 @@
 package rulelibrary
 
-// Record DTOs delegate source semantics to typed owners. Creation and coupled
-// profile transactions retain repository compatibility until W1 supplies them.
+// Record DTOs delegate sources and coupled transactions to their typed owners.
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +13,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
@@ -34,21 +33,6 @@ func native(v any) (record, error) {
 	var out record
 	err = json.Unmarshal(raw, &out)
 	return out, err
-}
-func legacy(r record) (*jsonx.Object, error) {
-	raw, err := json.Marshal(r)
-	if err != nil {
-		return nil, err
-	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	out, ok := value.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("expected configuration object")
-	}
-	return out, nil
 }
 func readBody(c *httpx.Ctx) (record, bool, error) {
 	var raw json.RawMessage
@@ -101,16 +85,14 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 		if err != nil {
 			return err
 		}
+		before := value
 		if err = fn(tx, &value); err != nil {
 			return err
 		}
-		for _, key := range repo.SharedFields {
-			if raw, ok := value.Get(key); ok {
-				if err := shared.SetJSON(key, raw); err != nil {
-					return err
-				}
-			}
+		if err := applyFields(before, value, repo.SharedFields, shared.SetJSON); err != nil {
+			return err
 		}
+
 		return tx.Err()
 	})
 }
@@ -131,19 +113,17 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 		if err != nil {
 			return err
 		}
+		before := value
 		if err := fn(&value); err != nil {
 			return err
 		}
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		encoded, err := json.Marshal(value)
-		if err != nil {
+		if err := applyFields(before, value, value.Keys(), system.SetJSON); err != nil {
 			return err
 		}
-		if err := json.Unmarshal(encoded, system); err != nil {
-			return err
-		}
+
 		return tx.Err()
 	})
 }
@@ -181,14 +161,19 @@ func create(ctx context.Context, item record, content []byte) error {
 	if err != nil {
 		return err
 	}
-	raw, err := legacy(item)
+	data, err := json.Marshal(item)
+	var value model.RuleLibraryItem
+	if err == nil {
+		err = json.Unmarshal(data, &value)
+	}
 	if err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = r.CreateRuleLibraryItem(ctx, raw, content)
+	_, err = r.CreateRuleLibraryRecord(ctx, value, content)
+
 	return err
 }
 func hasIP(item, catalog record) (bool, error) {
@@ -267,7 +252,7 @@ func usage(ctx context.Context, id string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	refs, err := r.GetResourceUsage(ctx, "rule_library", id)
+	refs, err := r.ResourceUsage(ctx, "rule_library", id)
 	return len(refs), err
 }
 
@@ -348,7 +333,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 	}
 	warnings := []profileWarning{}
 	applicable := []sourceChange{}
-	selector := func(shared, profiles *jsonx.Object) ([]string, error) {
+	selector := func(shared *model.Shared, profiles []*model.Profile) ([]string, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -368,7 +353,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 			}
 		}
 		ids := []string{}
-		for id, raw := range profiles.All() {
+		for _, raw := range profiles {
 			profile, err := native(raw)
 			if err != nil {
 				return nil, err
@@ -381,7 +366,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 				return nil, err
 			}
 			if routing || downloads {
-				ids = append(ids, id)
+				ids = append(ids, raw.Key())
 			}
 		}
 		return ids, nil
@@ -389,59 +374,60 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	_, _, err := repo.UpdateSharedAndConfigTransaction(ctx, func(tx context.Context, raw *jsonx.Object) (*jsonx.Object, error) {
+	err := repo.UpdateSharedConfigs(ctx, func(tx context.Context, shared *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		catalog, err := native(raw)
+		catalog, err := native(shared)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		before, err := native(shared)
+		if err != nil {
+			return err
 		}
 		if err = edit(tx, &catalog); err != nil {
-			return nil, err
+			return err
 		}
-		next, err := legacy(catalog)
-		if err != nil {
-			return nil, err
+		if err := applyFields(before, catalog, repo.SharedFields, shared.SetJSON); err != nil {
+			return err
 		}
-		if err = tx.Err(); err != nil {
-			return nil, err
-		}
-		return next, nil
-	}, func(tx context.Context, id string, old, current *jsonx.Object) (*jsonx.Object, error) {
+		return tx.Err()
+	}, func(tx context.Context, id string, old, current *model.Config) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		before, err := native(old)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		after, err := native(current)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		baseline, err := native(current)
+		if err != nil {
+			return err
 		}
 		routing, downloads, err := affects(before, applicable)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		updated, messages, err := rebuild(before, after, routing, downloads, base)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, message := range messages {
 			warnings = append(warnings, profileWarning{id, message})
 		}
-		next, err := legacy(updated)
-		if err != nil {
-			return nil, err
+		if err := applyFields(baseline, updated, repo.ProfileFields, current.Profile.SetJSON); err != nil {
+			return err
 		}
-		if err = tx.Err(); err != nil {
-			return nil, err
-		}
-		return next, nil
+		return tx.Err()
 	}, selector)
+
 	return warnings, err
 }
 func dnsProfile(p record) (*oxidns.Profile, error) {
@@ -649,4 +635,17 @@ func orderPosition(body record) string {
 		return "top"
 	}
 	return text(body, "position")
+}
+
+func applyFields(before, after record, keys []string, set func(string, json.RawMessage) error) error {
+	for _, key := range keys {
+		raw, present := after.Get(key)
+		previous, _ := before.Get(key)
+		if present && !bytes.Equal(previous, raw) {
+			if err := set(key, raw); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

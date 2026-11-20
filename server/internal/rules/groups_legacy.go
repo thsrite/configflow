@@ -1,6 +1,9 @@
 package rules
 
 import (
+	"encoding/json"
+
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
@@ -70,4 +73,12 @@ func FilterCandidates(items []any, include, exclude any) ([]any, error) {
 // RenderMembers adapts the native managed membership DTO.
 func RenderMembers(group, config *jsonx.Object) *jsonx.Object {
 	return oldObject(RenderGroup(legacyGroup(group), groupCatalog(config)))
+}
+
+func decodeRecord(source, target any) error {
+	data, err := json.Marshal(source)
+	if err != nil {
+		return err
+	}
+	return jsondecode.Unmarshal(data, target)
 }

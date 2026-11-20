@@ -22,9 +22,10 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
-
+	"configflow/internal/testjson"
 	_ "modernc.org/sqlite"
 )
 
@@ -90,7 +91,7 @@ func seedTraffic(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	rulesDir, _ := r.SharedRulesDir()
-	cachePath := filepath.Join(rulesDir, rules.RuleCacheFilename(cached))
+	cachePath := filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, cached)))
 	os.MkdirAll(filepath.Dir(cachePath), 0o755)
 	if err := os.WriteFile(cachePath, []byte("DOMAIN,a.example\nDOMAIN,b.example\n"), 0o644); err != nil {
 		t.Fatal(err)

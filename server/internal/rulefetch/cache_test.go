@@ -21,6 +21,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 func cacheRepo(t *testing.T, rule *jsonx.Object) (context.Context, *repo.Repository) {
@@ -48,7 +49,7 @@ func cachePath(t *testing.T, r *repo.Repository, rule *jsonx.Object) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return filepath.Join(dir, rules.RuleCacheFilename(rule))
+	return filepath.Join(dir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)))
 }
 
 func fetchBytes(raw string) func(string) (any, error) {
@@ -106,7 +107,7 @@ func TestNoValidCacheNeverSavesPartialResponse(t *testing.T) {
 func TestOldInvalidCacheIsNeverUsedAsFallback(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, rule)
-	if _, err := r.WriteSharedText(ctx, "rules/"+rules.RuleCacheFilename(rule), []byte("DOMAIN,wrong.test")); err != nil {
+	if _, err := r.WriteSharedText(ctx, "rules/"+rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)), []byte("DOMAIN,wrong.test")); err != nil {
 		t.Fatal(err)
 	}
 	if value, err := ReadValidatedRuleCache(ctx, rule, nil); err != nil || value != nil {
@@ -149,7 +150,7 @@ func TestSourceIdentityPreventsLateOldRefresh(t *testing.T) {
 	if _, err := WriteValidatedRuleCache(ctx, old, []byte("old.test"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if rules.RuleCacheFilename(rule) == rules.RuleCacheFilename(old) {
+	if rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)) == rules.CacheFilename(testjson.Decode[model.RuleConfig](t, old)) {
 		t.Fatal("same name")
 	}
 	if v, _ := ReadValidatedRuleCache(ctx, rule, nil); string(v) != "new.test" {
@@ -260,7 +261,7 @@ func TestReadRuleSourceContentAndSaveRuleToLocal(t *testing.T) {
 		t.Fatal(v, err)
 	}
 	name, err := SaveRuleToLocal(ctx, rule, client)
-	if err != nil || name != rules.RuleCacheFilename(rule) {
+	if err != nil || name != rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)) {
 		t.Fatal(name, err)
 	}
 	if data, _ := os.ReadFile(cachePath(t, r, rule)); string(data) != "+.ok.test\n" {

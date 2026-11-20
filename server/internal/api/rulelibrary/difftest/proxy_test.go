@@ -13,8 +13,10 @@ import (
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 func TestManualCacheUsesGlobalForwardProxy(t *testing.T) {
@@ -74,7 +76,7 @@ func TestUnavailableRefreshKeepsRawCacheAndPreferences(t *testing.T) {
 	// The notice, raw file bytes and every other stored field still compare exactly.
 	stamp := fixedClock{}.Now()
 	for _, root := range []string{w.srv.DataDir, w.pyDir} {
-		name := rules.RuleCacheFilename(jsonx.Obj("id", "retained", "source_type", "url", "url", origin.URL+"/source", "behavior", "domain", "format", "text"))
+		name := rules.CacheFilename(testjson.Decode[model.RuleConfig](t, jsonx.Obj("id", "retained", "source_type", "url", "url", origin.URL+"/source", "behavior", "domain", "format", "text")))
 		if root == w.pyDir {
 			matched := false
 			for python, native := range created.CachePaths {

@@ -10,10 +10,12 @@ import (
 
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 type refusingTransport struct{ calls atomic.Int32 }
@@ -56,7 +58,7 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 			// Seed an existing cache from an offline/legacy snapshot. This test
 			// exercises read precedence, not permission to publish an unregistered
 			// declaration through the guarded current-library writer.
-			if _, err = s.Repo.WriteSharedText(s.Context(), "rules/"+shared.RuleCacheFilename(source), []byte("+.cached.example\n")); err != nil {
+			if _, err = s.Repo.WriteSharedText(s.Context(), "rules/"+shared.CacheFilename(testjson.Decode[model.RuleConfig](t, source)), []byte("+.cached.example\n")); err != nil {
 				t.Fatal(err)
 			}
 			value, err = routers.RulesetContent(s.Context(), configRaw, item, lib)

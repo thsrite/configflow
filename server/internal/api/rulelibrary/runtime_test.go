@@ -17,6 +17,7 @@ import (
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
 
@@ -168,13 +169,10 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 				app := fixture(t)
 				createManual(t, app)
 				groups := &proxygroups.Service{}
-				other, err := legacy(recordJSON(t, `{"id":"other","name":"Other"}`))
-				if err != nil {
+				if _, err := app.Repo.CreateProfileRecord(app.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 					t.Fatal(err)
 				}
-				if _, err = app.Repo.CreateProfile(app.Context(), other, ""); err != nil {
-					t.Fatal(err)
-				}
+
 				if _, err := groups.Create(app.Context(), "default", recordJSON(t, `{"id":"group","name":"Group","type":"url-test","manual_nodes":["DIRECT"],"url":"http://probe.example/old"}`), "http://localhost"); err != nil {
 					t.Fatal(err)
 				}

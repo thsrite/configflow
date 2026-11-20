@@ -1,14 +1,13 @@
 package rules
 
-// Shared source preparation and the combined transaction use the legacy storage
-// interfaces only here; composition orchestration remains native.
+// Shared source preparation uses native source and repository owners.
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -88,48 +87,50 @@ func editSharedProfile(ctx context.Context, id string, sharedEdit func(record) e
 	if err != nil {
 		return err
 	}
-	_, _, err = repo.UpdateSharedAndConfigTransaction(ctx, func(tx context.Context, value *jsonx.Object) (*jsonx.Object, error) {
+	err = repo.UpdateSharedConfigs(ctx, func(tx context.Context, value *model.Shared) error {
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		native, err := native(value)
+		catalog, err := native(value)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if err := sharedEdit(native); err != nil {
-			return nil, err
-		}
-		next, err := legacy(native)
+		before, err := native(value)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		value.Update(next)
-		return nil, nil
-	}, func(tx context.Context, id string, before, after *jsonx.Object) (*jsonx.Object, error) {
+		if err := sharedEdit(catalog); err != nil {
+			return err
+		}
+		if err := applyFields(before, catalog, repo.SharedFields, value.SetJSON); err != nil {
+			return err
+		}
+		return tx.Err()
+	}, func(tx context.Context, _ string, before, after *model.Config) error {
 		if err := tx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		old, err := native(before)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		next, err := native(after)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		baseline, err := native(after)
+		if err != nil {
+			return err
 		}
 		if err := profileEdit(old, next); err != nil {
-			return nil, err
+			return err
 		}
-		if err := tx.Err(); err != nil {
-			return nil, err
+		if err := applyFields(baseline, next, repo.ProfileFields, after.Profile.SetJSON); err != nil {
+			return err
 		}
-		out, err := legacy(next)
-		if err != nil {
-			return nil, err
-		}
-		after.Update(out)
-		return nil, nil
-	}, repo.Profiles(resolved))
+		return tx.Err()
+	}, func(*model.Shared, []*model.Profile) ([]string, error) { return []string{resolved}, nil })
+
 	return err
 }
 func libraryInUse(id string, index int) error {

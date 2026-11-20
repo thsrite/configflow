@@ -17,6 +17,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 // snapshot is test_linux_gateway.py's snapshot(): one selected inline rule set.
@@ -63,7 +64,7 @@ func TestDefaultContentReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache := filepath.Join(rulesDir, rules.RuleCacheFilename(source))
+	cache := filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, source)))
 	if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestDefaultContentReader(t *testing.T) {
 	if err != nil || len(payload) != 0 {
 		t.Fatalf("empty cached source: %v %v", payload, err)
 	}
-	if err := os.Remove(filepath.Join(rulesDir, rules.RuleCacheFilename(source))); err != nil {
+	if err := os.Remove(filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, source)))); err != nil {
 		t.Fatal(err)
 	}
 	_, err = gateway.NewConfig(config).ProviderPayload(ctx, "r", nil)

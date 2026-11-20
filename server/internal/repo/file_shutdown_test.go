@@ -15,6 +15,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 func TestO36cAtomicFileRuntimeBoundary(t *testing.T) {
@@ -88,7 +89,7 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			path, err := r.SharedPath(filepath.ToSlash(filepath.Join("rules", rules.RuleCacheFilename(rule))))
+			path, err := r.SharedPath(filepath.ToSlash(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule)))))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -162,7 +163,7 @@ func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	path, err := r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule)))
+	path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule))))
 	if err != nil {
 		t.Fatal(err)
 	}

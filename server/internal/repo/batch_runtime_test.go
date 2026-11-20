@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/store"
+	"configflow/internal/testjson"
 )
 
 func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind string) (func(context.Context) error, func()) {
@@ -97,7 +99,7 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 				if err != nil || !jsonx.Equal(shared.GetList("rule_library"), []any{rule}) {
 					t.Fatal("created rule document incomplete", err)
 				}
-				path, err := r.SharedPath(filepath.Join("rules", rules.RuleCacheFilename(rule)))
+				path, err := r.SharedPath(filepath.Join("rules", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, rule))))
 				if err != nil {
 					t.Fatal(err)
 				}

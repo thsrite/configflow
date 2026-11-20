@@ -9,8 +9,10 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/testjson"
 )
 
 // Behaviour the replay cannot observe: the memo (keyed by content hash, or
@@ -35,7 +37,7 @@ func listRepo(t *testing.T) (context.Context, string, *jsonx.Object, *jsonx.Obje
 	}
 	config := jsonx.Obj("rule_library", []any{entry})
 	item := jsonx.Obj("id", "tiktok", "itemType", "ruleset", "library_rule_id", "lib-tiktok", "behavior", "classical")
-	return ctx, filepath.Join(root, rules.RuleCacheFilename(entry)), item, config
+	return ctx, filepath.Join(root, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, entry))), item, config
 }
 
 // A cache file rewritten with the same size and modification time keeps the
