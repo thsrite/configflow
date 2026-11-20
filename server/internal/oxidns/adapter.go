@@ -145,7 +145,23 @@ func text(value *string, fallback string) string {
 }
 func enabled(value *bool) bool { return value == nil || *value }
 func ruleNode(item model.RuleConfig) *Node {
-	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", item.Value, "enabled", enabled(item.Enabled), "library_enabled", enabled(item.LibraryEnabled))
+	// A nil stored boolean can be absent or an explicit null/wrong-type value.
+	// Preserve that evidence: only an absent flag defaults to enabled.
+	var stored struct {
+		Enabled        json.RawMessage `json:"enabled"`
+		LibraryEnabled json.RawMessage `json:"library_enabled"`
+	}
+	if item.Enabled == nil || item.LibraryEnabled == nil {
+		data, _ := model.Marshal(item)
+		_ = json.Unmarshal(data, &stored)
+	}
+	flag := func(value *bool, raw json.RawMessage) bool {
+		if value != nil {
+			return *value
+		}
+		return len(raw) == 0
+	}
+	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", item.Value, "enabled", flag(item.Enabled, stored.Enabled), "library_enabled", flag(item.LibraryEnabled, stored.LibraryEnabled))
 	if item.LibraryRuleID != "" {
 		set(out, "library_rule_id", S(item.LibraryRuleID))
 	}
