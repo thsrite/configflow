@@ -8,14 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
 func typedDialerConfig(t *testing.T, text string) *model.Config {
 	t.Helper()
-	config, err := dialerConfigFromLegacy(mustJSON(t, text))
+	config, err := DecodeDialerConfigJ(mustJSON(t, text))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +253,7 @@ func assertGraphDAG(t *testing.T, graph *Graph) {
 }
 
 // These classifiers check stored-member shapes, not generated business results.
-func dialerFieldType(obj *jsonx.Object, key, kind string, nullable bool) string {
+func dialerFieldType(obj *JObj, key, kind string, nullable bool) string {
 	raw, present := obj.Get(key)
 	if !present || raw == nil && nullable {
 		return ""
@@ -283,7 +282,7 @@ func dialerRefIssue(raw any) string {
 	if raw == nil {
 		return ""
 	}
-	ref, ok := raw.(*jsonx.Object)
+	ref, ok := raw.(*JObj)
 	if !ok || ref == nil || ref.Len() != 2 {
 		return "dialer.reference shape"
 	}
@@ -298,7 +297,7 @@ func dialerRefIssue(raw any) string {
 	return ""
 }
 func dialerResourceIssue(raw any, kind string) string {
-	obj, ok := raw.(*jsonx.Object)
+	obj, ok := raw.(*JObj)
 	if !ok || obj == nil {
 		return "dialer.resource object"
 	}
@@ -312,7 +311,7 @@ func dialerResourceIssue(raw any, kind string) string {
 	}
 	if kind == "node" {
 		if raw := obj.Value("dialer_ref"); raw != nil {
-			if ref, ok := raw.(*jsonx.Object); ok {
+			if ref, ok := raw.(*JObj); ok {
 				if typ := ref.GetString("type"); typ != "node" && typ != "group" {
 					return "dialer.reference type"
 				}
@@ -348,7 +347,7 @@ func dialerResourceIssue(raw any, kind string) string {
 		return "dialer.chain object"
 	}
 	if raw := obj.Value("chain"); raw != nil {
-		chain, ok := raw.(*jsonx.Object)
+		chain, ok := raw.(*JObj)
 		if !ok {
 			return "dialer.chain object"
 		}
@@ -360,7 +359,7 @@ func dialerResourceIssue(raw any, kind string) string {
 	}
 	return ""
 }
-func dialerProfileIssue(profile *jsonx.Object) string {
+func dialerProfileIssue(profile *JObj) string {
 	if profile == nil {
 		return "dialer.config object"
 	}
@@ -375,7 +374,7 @@ func dialerProfileIssue(profile *jsonx.Object) string {
 		}
 		for _, item := range items {
 			if source.kind == "subscription" || source.kind == "aggregation" {
-				if obj, ok := item.(*jsonx.Object); ok && !obj.Has("id") {
+				if obj, ok := item.(*JObj); ok && !obj.Has("id") {
 					return "dialer.catalog id required"
 				}
 			}
@@ -387,7 +386,7 @@ func dialerProfileIssue(profile *jsonx.Object) string {
 	return ""
 }
 func emittedShapeIssue(raw any) string {
-	obj, ok := raw.(*jsonx.Object)
+	obj, ok := raw.(*JObj)
 	if !ok || obj == nil {
 		return "dialer.emitted object"
 	}
@@ -407,7 +406,7 @@ func emittedShapeIssue(raw any) string {
 	return ""
 }
 func nameOverrideIssue(raw any) string {
-	obj, ok := raw.(*jsonx.Object)
+	obj, ok := raw.(*JObj)
 	if !ok || obj == nil {
 		return "dialer.override object"
 	}
@@ -422,7 +421,7 @@ func nameOverrideIssue(raw any) string {
 			return "dialer.proxy-name array"
 		}
 		for _, item := range items {
-			rule, ok := item.(*jsonx.Object)
+			rule, ok := item.(*JObj)
 			if !ok {
 				return "dialer.name-rule object"
 			}
@@ -443,14 +442,14 @@ func dialerRowIssue(row corpusRow) string {
 	case "validate_dialers", "validate_shapes", "dependency_graph", "incoming_dialers", "dependency_node_ids", "reject_surge_dialers", "dialer_target", "resolve_dialer", "overlay_dialer", "group_dependencies":
 		if row.fn == "resolve_dialer" || row.fn == "overlay_dialer" {
 			node := obj(row.args[1])
-			if ref, ok := node.Value("dialer_ref").(*jsonx.Object); ok {
+			if ref, ok := node.Value("dialer_ref").(*JObj); ok {
 				key := "proxy_groups"
 				if ref.GetString("type") == "node" {
 					key = "nodes"
 				}
 				found := false
 				for _, raw := range obj(row.args[0]).GetList(key) {
-					if resource, ok := raw.(*jsonx.Object); ok && jsonx.Equal(resource.Value("id"), ref.Value("id")) {
+					if resource, ok := raw.(*JObj); ok && EqualJ(resource.Value("id"), ref.Value("id")) {
 						found = true
 						if !resource.Has("name") {
 							return "dialer.target name required"
@@ -508,7 +507,7 @@ func dialerRowIssue(row corpusRow) string {
 			}
 		}
 		if raw, present := config.Get("proxy-providers"); present {
-			definitions, ok := raw.(*jsonx.Object)
+			definitions, ok := raw.(*JObj)
 			if !ok {
 				return "dialer.providers object"
 			}
@@ -516,19 +515,19 @@ func dialerRowIssue(row corpusRow) string {
 				if issue := emittedShapeIssue(raw); issue != "" {
 					return issue
 				}
-				definition := raw.(*jsonx.Object)
+				definition := raw.(*JObj)
 				if override, present := definition.Get("override"); present {
 					if issue := nameOverrideIssue(override); issue != "" {
 						return issue
 					}
-					if issue := dialerFieldType(override.(*jsonx.Object), "dialer-proxy", "string", true); issue != "" {
+					if issue := dialerFieldType(override.(*JObj), "dialer-proxy", "string", true); issue != "" {
 						return issue
 					}
 				}
 			}
 		}
 		if row.args[2] != nil {
-			payloads, ok := row.args[2].(*jsonx.Object)
+			payloads, ok := row.args[2].(*JObj)
 			if !ok {
 				return "dialer.payloads object"
 			}
@@ -556,7 +555,7 @@ func nativeProviderReplay(t *testing.T, row corpusRow, result any, err error) bo
 	if len(rules) != 1 {
 		return false
 	}
-	rule, ok := rules[0].(*jsonx.Object)
+	rule, ok := rules[0].(*JObj)
 	if !ok || rule.GetString("pattern") != "(b)" || obj(row.args[0]).GetString("name") != "abc" {
 		return false
 	}
@@ -586,7 +585,7 @@ func nativeProviderBoundary(t *testing.T, row corpusRow, result any, err error) 
 	if len(rules) != 1 {
 		return false
 	}
-	rule, ok := rules[0].(*jsonx.Object)
+	rule, ok := rules[0].(*JObj)
 	if !ok {
 		return false
 	}
@@ -620,4 +619,4 @@ func nativeProviderBoundary(t *testing.T, row corpusRow, result any, err error) 
 
 // DialerProfileReplayIssue exposes only the owned-field schema classifier to
 // external generator tests; it never computes a generated business result.
-func DialerProfileReplayIssue(profile *jsonx.Object) string { return dialerProfileIssue(profile) }
+func DialerProfileReplayIssue(profile *JObj) string { return dialerProfileIssue(profile) }

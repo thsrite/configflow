@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 func nativeScalarReplay(t *testing.T, index int, row corpusRow, result any, err error) bool {
@@ -30,7 +28,7 @@ func nativeScalarReplay(t *testing.T, index int, row corpusRow, result any, err 
 		t.Fatalf("native scalar fixtures: %v", err)
 	}
 	digest := func(value any) string {
-		encoded, err := jsonx.Compact(value)
+		encoded, err := CompactJ(value)
 		if err != nil {
 			t.Fatal(err)
 		}

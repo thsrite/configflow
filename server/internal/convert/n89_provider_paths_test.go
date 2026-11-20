@@ -7,21 +7,21 @@ import (
 	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 	"configflow/internal/yamlx"
 )
 
-func providerPathReferences(t *testing.T) *jsonx.Object {
+func providerPathReferences(t *testing.T) *convert.JObj {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_provider_paths.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := jsonx.Parse(data)
+	parsed, err := convert.ParseJ(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	refs := parsed.(*jsonx.Object)
+	refs := parsed.(*convert.JObj)
 	archive, err := os.ReadFile("testdata/mihomo_corpus.jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +34,8 @@ func providerPathReferences(t *testing.T) *jsonx.Object {
 	}
 	return refs.GetObject("rows")
 }
-func providerPathReference(t *testing.T, refs *jsonx.Object, index int, row mihomoRow) mihomoRow {
+
+func providerPathReference(t *testing.T, refs *convert.JObj, index int, row mihomoRow) mihomoRow {
 	t.Helper()
 	ref := refs.GetObject(strconv.Itoa(index))
 	if ref == nil {
@@ -76,7 +77,7 @@ func providerPathReference(t *testing.T, refs *jsonx.Object, index int, row miho
 		entry.Set("out", string(rendered))
 	} else {
 		for _, item := range entry.GetList("out") {
-			provider := item.(*jsonx.Object)
+			provider := item.(*convert.JObj)
 			provider.Set("local_path", rewrite(provider.GetString("local_path")))
 		}
 	}
@@ -86,6 +87,7 @@ func providerPathReference(t *testing.T, refs *jsonx.Object, index int, row miho
 	row.entry = entry
 	return row
 }
+
 func TestD2ProviderPathReferencesBoundToOriginalRows(t *testing.T) {
 	refs := providerPathReferences(t)
 	for index, row := range loadMihomoCorpus(t) {
@@ -94,8 +96,8 @@ func TestD2ProviderPathReferencesBoundToOriginalRows(t *testing.T) {
 }
 
 // Only reverse the independently recorded path scalars for the original byte
-// manifest. Edit keeps every other byte (and typed/legacy agreement) observable.
-func providerByteReference(t *testing.T, refs *jsonx.Object, index int, output string) string {
+// manifest. Edit keeps every other byte observable.
+func providerByteReference(t *testing.T, refs *convert.JObj, index int, output string) string {
 	t.Helper()
 	reference := refs.GetObject(strconv.Itoa(index))
 	if reference == nil {

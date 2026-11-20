@@ -54,7 +54,7 @@ func TestN88bReviewWrongTypedOutputIdentities(t *testing.T) {
 			if tt.index >= 0 {
 				values[tt.index] = tt.value
 			}
-			config, err := configFromLegacy(mustJSON(t, fmt.Sprintf(base, values...)))
+			config, err := DecodeConfigJ(mustJSON(t, fmt.Sprintf(base, values...)))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 )
 
 func TestN88ReviewByteGateCoverage(t *testing.T) {
@@ -17,7 +17,7 @@ func TestN88ReviewByteGateCoverage(t *testing.T) {
 	if err = json.Unmarshal(data, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	rows := map[string][]*jsonx.Object{}
+	rows := map[string][]*convert.JObj{}
 	for name := range fixture.Sources {
 		rows[name] = loadJSONLines(t, "testdata/"+name)
 	}

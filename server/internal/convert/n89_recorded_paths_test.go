@@ -9,20 +9,20 @@ import (
 	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 )
 
-func recordedProviderReferences(t *testing.T) *jsonx.Object {
+func recordedProviderReferences(t *testing.T) *convert.JObj {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_recorded_provider_paths.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := jsonx.Parse(data)
+	parsed, err := convert.ParseJ(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	refs := parsed.(*jsonx.Object)
+	refs := parsed.(*convert.JObj)
 	archive, err := os.ReadFile("testdata/mihomo_recorded.jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func recordedProviderReferences(t *testing.T) *jsonx.Object {
 	return refs.GetObject("rows")
 }
 
-func recordedProviderReference(t *testing.T, refs *jsonx.Object, index int, entry *jsonx.Object) *jsonx.Object {
+func recordedProviderReference(t *testing.T, refs *convert.JObj, index int, entry *convert.JObj) *convert.JObj {
 	t.Helper()
 	ref := refs.GetObject(strconv.Itoa(index))
 	if ref == nil {
@@ -72,22 +72,22 @@ func recordedProviderReference(t *testing.T, refs *jsonx.Object, index int, entr
 	}
 	entry = entry.DeepCopy()
 	if paths := ref.GetObject("paths"); paths.Len() > 0 {
-		wrapper := jsonx.Obj(strconv.Itoa(index), jsonx.Obj("fn", "generate", "paths", paths))
+		wrapper := convert.JObjKV(strconv.Itoa(index), convert.JObjKV("fn", "generate", "paths", paths))
 		entry = providerPathReference(t, wrapper, index, mihomoRow{entry: entry, fn: "generate"}).entry
 	}
 	for _, raw := range ref.GetList("gateway_filters") {
-		patch := raw.(*jsonx.Object)
+		patch := raw.(*convert.JObj)
 		calls := entry.GetObject("env").GetList("gateway")
 		call := int(patch.GetInt("call"))
 		group := int(patch.GetInt("group"))
 		if call < 0 || call >= len(calls) {
 			t.Fatal("R5 gateway call missing")
 		}
-		groups := calls[call].(*jsonx.Object).GetObject("before").GetList("proxy-groups")
+		groups := calls[call].(*convert.JObj).GetObject("before").GetList("proxy-groups")
 		if group < 0 || group >= len(groups) {
 			t.Fatal("R5 gateway group missing")
 		}
-		item := groups[group].(*jsonx.Object)
+		item := groups[group].(*convert.JObj)
 		if item.GetString("name") != patch.GetString("name") || item.Has("filter") || patch.GetString("filter") != "(0)|(0)" {
 			t.Fatal("R5 hook patch does not bind original absent filter")
 		}

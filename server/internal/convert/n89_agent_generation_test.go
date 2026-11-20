@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"configflow/internal/convert"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,20 +13,20 @@ import (
 	"strconv"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 )
 
-func nativeAgentGenerationCases(t *testing.T, archive string) *jsonx.Object {
+func nativeAgentGenerationCases(t *testing.T, archive string) *convert.JObj {
 	t.Helper()
 	data, err := os.ReadFile("testdata/n89_agent_generation_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := jsonx.Parse(data)
+	parsed, err := convert.ParseJ(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := parsed.(*jsonx.Object)
+	fixture := parsed.(*convert.JObj)
 	source, err := os.ReadFile("testdata/" + archive + ".jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +64,8 @@ func nativeAgentGenerationCases(t *testing.T, archive string) *jsonx.Object {
 	}
 	return cases
 }
-func applyNativeAgentGeneration(row mihomoRow, expected *jsonx.Object) mihomoRow {
+
+func applyNativeAgentGeneration(row mihomoRow, expected *convert.JObj) mihomoRow {
 	if expected == nil {
 		return row
 	}
@@ -103,13 +103,26 @@ func TestN89AgentGenerationReferences(t *testing.T) {
 			}
 			args := row.entry.GetObject("args")
 			profile := args.GetObject("profile").DeepCopy()
-			report := jsonx.NewObject()
+			cfg, err := convert.DecodeConfigJ(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			version, err := coreVersionRaw(args.Value("core_version"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := &convert.GenerationReport{}
 			restore := convert.SetMihomoEnvironment(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
-			out, err := convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), Report: report, MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent")})
+			out, err := convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
+				BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"),
+				SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"),
+				Report: report, CoreVersion: version, ForAgent: args.GetBool("for_agent"),
+			})
 			restore()
+			reportObj := reportToJ(report)
 			var invalid *convert.EasyTierSettingsError
-			if !errors.As(err, &invalid) || err.Error() != row.errMsg || out != "" || !sameValue(row.entry.Value("report"), report) || !sameValue(row.entry.Value("mutated"), profile) {
-				t.Fatalf("Agent pipeline %s/%d mismatch: err=%v report=%s", archive, index, err, encode(report))
+			if !errors.As(err, &invalid) || err.Error() != row.errMsg || out != "" || !sameValue(row.entry.Value("report"), reportObj) || !sameValue(row.entry.Value("mutated"), profile) {
+				t.Fatalf("Agent pipeline %s/%d mismatch: err=%v report=%s", archive, index, err, encode(reportObj))
 			}
 			checked++
 		}

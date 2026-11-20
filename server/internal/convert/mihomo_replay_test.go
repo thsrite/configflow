@@ -6,19 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
 // MihomoReplayIssue only classifies the shapes owned by N8-8b. This is test-only:
 // normal archived outputs keep their original Python and byte oracles.
-func MihomoReplayIssue(profile *jsonx.Object) string {
+func MihomoReplayIssue(profile *JObj) string {
 	if profile == nil {
 		return "config object"
 	}
-	data, err := json.Marshal(profile)
-	if err != nil {
+	data, err := CompactJ(profile)
+	if err != nil || !json.Valid(data) {
 		return "nonfinite stored config"
 	}
 	var p model.Profile
@@ -35,7 +34,7 @@ func MihomoReplayIssue(profile *jsonx.Object) string {
 	}
 	for _, key := range []string{"subscriptions", "subscription_aggregations"} {
 		for _, raw := range profile.GetList(key) {
-			if item, ok := raw.(*jsonx.Object); ok {
+			if item, ok := raw.(*JObj); ok {
 				if value, present := item.Get("health_check"); present && value == nil {
 					return "R5 " + key + ".health_check null"
 				}
@@ -48,15 +47,15 @@ func MihomoReplayIssue(profile *jsonx.Object) string {
 			return "R8 quoted provider interval"
 		}
 
-		if n, ok := settings.Value("provider_update_interval").(jsonx.Number); ok && !n.IsInt() {
+		if n, ok := settings.Value("provider_update_interval").(json.Number); ok && !IsIntNumber(n) {
 			return "R8 provider_update_interval integer"
 		}
 	}
 
 	for _, key := range []string{"subscriptions", "subscription_aggregations"} {
 		for _, item := range profile.GetList(key) {
-			if row, ok := item.(*jsonx.Object); ok {
-				if _, numeric := row.Value("health_check_url").(jsonx.Number); numeric {
+			if row, ok := item.(*JObj); ok {
+				if _, numeric := row.Value("health_check_url").(json.Number); numeric {
 					return "shared numeric health URL text"
 				}
 			}
@@ -158,7 +157,7 @@ const NativeMihomoRulesMessage = msgMihomoRules
 func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
 	env := nativeGenerationEnv(t)
 	t.Cleanup(SetMihomoEnvironment(env))
-	config, err := configFromLegacy(mustJSON(t, `{"mihomo":{"provider_update_interval":"3600"},"proxy_groups":[{"id":"g","name":"G","type":"url-test","interval":"300","manual_nodes":["DIRECT"]}],"subscriptions":[{"id":"s","name":"S","health_check_url":5}]}`))
+	config, err := DecodeConfigJ(mustJSON(t, `{"mihomo":{"provider_update_interval":"3600"},"proxy_groups":[{"id":"g","name":"G","type":"url-test","interval":"300","manual_nodes":["DIRECT"]}],"subscriptions":[{"id":"s","name":"S","health_check_url":5}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +188,7 @@ func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
 
 func TestMihomoFollowKeepsLocalQuotedInterval(t *testing.T) {
 	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
-	config, err := configFromLegacy(mustJSON(t, `{"proxy_groups":[{"id":"f","name":"Follower","type":"url-test","follow_group":"s","interval":"300"},{"id":"s","name":"Source","type":"url-test","manual_nodes":["DIRECT"]}]}`))
+	config, err := DecodeConfigJ(mustJSON(t, `{"proxy_groups":[{"id":"f","name":"Follower","type":"url-test","follow_group":"s","interval":"300"},{"id":"s","name":"Source","type":"url-test","manual_nodes":["DIRECT"]}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

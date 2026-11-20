@@ -6,16 +6,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/substore"
-	"configflow/internal/yamlx/yamlxtest"
+	"configflow/internal/yamlx"
 )
 
-func loadJSONLines(t *testing.T, path string) []*jsonx.Object {
+func loadJSONLines(t *testing.T, path string) []*convert.JObj {
 	t.Helper()
 	file, err := os.Open(path)
 	if err != nil {
@@ -28,13 +29,13 @@ func loadJSONLines(t *testing.T, path string) []*jsonx.Object {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1<<20), 1<<26)
-	var rows []*jsonx.Object
+	var rows []*convert.JObj
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := convert.ParseJ(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows = append(rows, value.(*jsonx.Object))
+		rows = append(rows, value.(*convert.JObj))
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
@@ -42,7 +43,30 @@ func loadJSONLines(t *testing.T, path string) []*jsonx.Object {
 	return rows
 }
 
-func rowOf(entry *jsonx.Object) mihomoRow {
+func loadGzipJObj(t testing.TB, path string) *convert.JObj {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	z, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer z.Close()
+	data, err := io.ReadAll(z)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := convert.ParseJ(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v.(*convert.JObj)
+}
+
+func rowOf(entry *convert.JObj) mihomoRow {
 	row := mihomoRow{entry: entry, fn: entry.GetString("fn")}
 	if e := entry.GetList("err"); e != nil {
 		row.errClass, row.errMsg = e[0].(string), e[1].(string)
@@ -73,6 +97,25 @@ func stringsAny(list []string) []any {
 	return out
 }
 
+func decodeClientConfig(profile *convert.JObj) (*model.Config, error) {
+	if err := convert.ValidateResourceArraysJ(profile); err != nil {
+		return nil, err
+	}
+	return convert.DecodeConfigJ(profile)
+}
+
+func decodeYAMLProxies(list []any) ([]*yamlx.Node, error) {
+	nodes := make([]*yamlx.Node, len(list))
+	for i, item := range list {
+		n, err := convert.YAMLNodeFromJ(item)
+		if err != nil {
+			return nil, err
+		}
+		nodes[i] = n
+	}
+	return nodes, nil
+}
+
 // runSurgeLoonRow runs one row of testdata/surge_loon_corpus.jsonl.gz (also
 // used by the recorded replay for the helper calls).
 func runSurgeLoonRow(t *testing.T, row mihomoRow) string {
@@ -83,12 +126,14 @@ func runSurgeLoonRow(t *testing.T, row mihomoRow) string {
 	case "surge", "loon":
 		args := e.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()
+		cfg, err := decodeClientConfig(profile)
 		var out string
-		var err error
-		if row.fn == "surge" {
-			out, err = convert.GenerateSurgeConfig(ctx, profile, args.GetString("base_url"))
-		} else {
-			out, err = convert.GenerateLoonConfig(ctx, profile, args.GetString("base_url"))
+		if err == nil {
+			if row.fn == "surge" {
+				out, err = convert.SurgeConfig(ctx, cfg, args.GetString("base_url"))
+			} else {
+				out, err = convert.LoonConfig(ctx, cfg, args.GetString("base_url"))
+			}
 		}
 		if msg := sameError(t, row, err); msg != "" {
 			return msg
@@ -100,7 +145,7 @@ func runSurgeLoonRow(t *testing.T, row mihomoRow) string {
 		}
 		mutatedEqual := sameValue(e.Value("mutated"), profile)
 		if e.GetBool("native_yaml_oracle") {
-			mutatedEqual = yamlxtest.EqualJSON(e.Value("mutated"), profile)
+			mutatedEqual = convert.EqualJ(e.Value("mutated"), profile)
 		}
 		if e.Has("mutated") && !mutatedEqual {
 			return "mutated profile differs:\n  python " + encode(e.Value("mutated")) + "\n  go     " + encode(mihomoConv(profile))
@@ -108,50 +153,89 @@ func runSurgeLoonRow(t *testing.T, row mihomoRow) string {
 		return ""
 	}
 	args := e.GetList("args")
-	arg := func(i int) any { return jsonx.DeepCopy(args[i]) }
+	arg := func(i int) any { return convert.DeepCopyJ(args[i]) }
 	var got any
 	var err error
 	switch row.fn {
 	case "node_surge":
-		node, ok := arg(0).(*jsonx.Object)
+		nodeObj, ok := arg(0).(*convert.JObj)
 		if !ok {
 			return "non-object node"
 		}
-		var line, wg string
-		line, wg, err = convert.ConvertNodeToSurge(node)
-		got = []any{noneString(line), noneString(wg)}
+		var node model.Node
+		if node, err = convert.DecodeJ[model.Node](nodeObj); err == nil {
+			var line, wg string
+			line, wg, err = convert.SurgeNode(node)
+			got = []any{noneString(line), noneString(wg)}
+		}
 	case "node_loon":
-		var line string
-		line, err = convert.ConvertNodeToLoon(arg(0).(*jsonx.Object))
-		got = noneString(line)
+		var node model.Node
+		if node, err = convert.DecodeJ[model.Node](arg(0)); err == nil {
+			var line string
+			line, err = convert.LoonNode(node)
+			got = noneString(line)
+		}
 	case "proxies_surge", "proxies_loon":
 		proxies, _ := arg(0).([]any)
-		if row.fn == "proxies_surge" {
-			got, err = convert.ConvertProxiesToSurgeText(proxies, substore.ProxiesToNodes)
-		} else {
-			got, err = convert.ConvertProxiesToLoonText(proxies, substore.ProxiesToNodes)
+		var nodes []*yamlx.Node
+		if nodes, err = decodeYAMLProxies(proxies); err == nil {
+			target := "surge"
+			if row.fn == "proxies_loon" {
+				target = "loon"
+			}
+			got, err = convert.ClientProxyText(nodes, substore.ProxyNodes, target)
 		}
 	case "group_surge":
-		smart, _ := arg(3).(*jsonx.Object)
-		var line string
-		line, err = convert.ConvertProxyGroupToSurge(arg(0), arg(1).(*jsonx.Object), args[2].(string), smart)
-		got = noneString(line)
+		var group model.ProxyGroup
+		var cfg *model.Config
+		var smart map[string]string
+		if group, err = convert.DecodeJ[model.ProxyGroup](arg(0)); err == nil {
+			if cfg, err = convert.DecodeConfigJ(arg(1).(*convert.JObj)); err == nil {
+				if arg(3) != nil {
+					smart, err = convert.DecodeJ[map[string]string](arg(3))
+				}
+				if err == nil {
+					var line string
+					line, err = convert.SurgeGroup(group, cfg, args[2].(string), smart)
+					got = noneString(line)
+				}
+			}
+		}
 	case "group_loon":
 		var members []string
 		for _, m := range args[1].([]any) {
 			members = append(members, m.(string))
 		}
-		var line string
-		line, err = convert.ConvertProxyGroupToLoon(arg(0), members)
-		got = noneString(line)
+		var group model.ProxyGroup
+		if group, err = convert.DecodeJ[model.ProxyGroup](arg(0)); err == nil {
+			var line string
+			line, err = convert.LoonGroup(group, members)
+			got = noneString(line)
+		}
 	case "group_nodes":
-		got, err = convert.GetProxyGroupNodes(arg(0), arg(1).(*jsonx.Object))
+		var group model.ProxyGroup
+		var cfg *model.Config
+		if group, err = convert.DecodeJ[model.ProxyGroup](arg(0)); err == nil {
+			if cfg, err = convert.DecodeConfigJ(arg(1).(*convert.JObj)); err == nil {
+				var names []string
+				if names, err = convert.ClientGroupNodes(group, cfg); err == nil {
+					got = stringsAny(names)
+				}
+			}
+		}
 	case "build_rules":
-		var lines, remote []string
-		lines, remote, err = convert.BuildLoonRules(arg(0).(*jsonx.Object), args[1].(string))
-		got = []any{stringsAny(lines), stringsAny(remote)}
+		var cfg *model.Config
+		if cfg, err = convert.DecodeConfigJ(arg(0).(*convert.JObj)); err == nil {
+			var lines, remote []string
+			if lines, remote, err = convert.LoonRules(cfg, args[1].(string)); err == nil {
+				got = []any{stringsAny(lines), stringsAny(remote)}
+			}
+		}
 	case "sanitize":
-		got, err = convert.SanitizeLoonName(arg(0))
+		var text string
+		if text, err = convert.DecodeJ[string](arg(0)); err == nil {
+			got = convert.ClientSanitizeNameForTest(text)
+		}
 	default:
 		return "unknown fn " + row.fn
 	}
@@ -174,14 +258,14 @@ func classed(err error) error {
 
 // TestSurgeLoonCorpus compares the Surge and Loon converters with CPython on
 // testdata/surge_loon_corpus.jsonl.gz (gen_surge_loon.py): random profiles
-// through generate_surge_config / generate_loon_config (bytes, errors,
-// mutations), random nodes, Mihomo proxy lists, groups, Loon rules and names.
+// through SurgeConfig / LoonConfig (bytes, errors, mutations), random nodes,
+// Mihomo proxy lists, groups, Loon rules and names.
 func TestSurgeLoonCorpus(t *testing.T) {
 	nativeSubs := nativeSubsCallers(t, "surge_loon_corpus")
 	restore := convert.SetMihomoEnvironment(corpusEnv(nil, nil))
 	defer restore()
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
-	native := yamlxtest.ReaderCases(t, "../subs/testdata/n7_reader_expected.json.gz")
+	native := loadGzipJObj(t, "../subs/testdata/n7_reader_expected.json.gz").GetObject("cases")
 	counts := map[string]int{}
 	typedStorage := map[string]int{}
 	generated := map[string]int{}
@@ -237,10 +321,10 @@ func TestSurgeLoonCorpus(t *testing.T) {
 		}
 		if issue != "" {
 			typedStorage[issue]++
-			// Non-object nodes cannot enter the *Object compatibility signature;
+			// Non-object nodes cannot enter the typed record boundary;
 			// they have already been rejected by the actual typed record decoder.
 			if row.fn == "node_loon" || row.fn == "node_surge" {
-				if _, ok := entry.GetList("args")[0].(*jsonx.Object); !ok {
+				if _, ok := entry.GetList("args")[0].(*convert.JObj); !ok {
 					continue
 				}
 			}

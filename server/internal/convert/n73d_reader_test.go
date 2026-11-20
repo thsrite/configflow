@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -25,11 +25,11 @@ func TestN73CustomReaderAliasBoundaries(t *testing.T) {
 		want         error
 	}{{"depth40", diamond.String(), yamlx.ErrAliasBudget}, {"self", "mixed-port: 7890\na: &a [*a]", yamlx.ErrAliasRecursion}, {"non-string-key", "mixed-port: 7890\n1: value", yamlx.ErrPolicy}} {
 		t.Run(test.name, func(t *testing.T) {
-			config := jsonx.Obj("mihomo", jsonx.Obj("custom_config", test.source))
-			if out, err := GenerateMihomoConfig(context.Background(), config, GenerateOptions{SkipProviderPreflight: true}); out != "" || !errors.Is(err, test.want) {
+			config := &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: test.source}}}
+			if out, err := MihomoConfig(context.Background(), config, MihomoOptions{SkipProviderPreflight: true}); out != "" || !errors.Is(err, test.want) {
 				t.Fatalf("config: %q %v", out, err)
 			}
-			if out, err := GenerateMihomoDocument(context.Background(), config, GenerateOptions{SkipProviderPreflight: true}); out != nil || !errors.Is(err, test.want) {
+			if out, err := MihomoDocument(context.Background(), config, MihomoOptions{SkipProviderPreflight: true}); out != nil || !errors.Is(err, test.want) {
 				t.Fatalf("document: %v %v", out, err)
 			}
 		})

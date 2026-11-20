@@ -1,12 +1,12 @@
 package convert_test
 
 import (
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
+
+	"configflow/internal/convert"
 )
 
 // Sample full outputs from the frozen pre-migration manifest. Selecting sources
@@ -24,7 +24,7 @@ func TestReviewN89SubscriptionGenerationSamples(t *testing.T) {
 	if len(fixture.Cases) != 4548 {
 		t.Fatalf("frozen byte manifest has %d cases", len(fixture.Cases))
 	}
-	rows := map[string][]*jsonx.Object{}
+	rows := map[string][]*convert.JObj{}
 	for name, expected := range fixture.Sources {
 		data, err := os.ReadFile("testdata/" + name)
 		if err != nil || generationDigest(data) != expected {

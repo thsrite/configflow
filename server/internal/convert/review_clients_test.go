@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 	"configflow/internal/logx"
 )
 
@@ -14,14 +14,14 @@ import (
 // the remote cache key. The two Python tuple keys are distinct.
 func TestLoonRemoteCacheKeepsSourceAndExclusionSeparate(t *testing.T) {
 	withFakeSubStore(t)
-	config := jsonx.Obj(
+	config := convert.JObjKV(
 		"subscriptions", []any{
-			jsonx.Obj("id", "a", "name", "First"),
-			jsonx.Obj("id", "a\x01b", "name", "Second"),
+			convert.JObjKV("id", "a", "name", "First"),
+			convert.JObjKV("id", "a\x01b", "name", "Second"),
 		},
 		"proxy_groups", []any{
-			jsonx.Obj("id", "one", "name", "One", "type", "select", "subscriptions", []any{"a"}, "exclude_regex", "b\x01c"),
-			jsonx.Obj("id", "two", "name", "Two", "type", "select", "subscriptions", []any{"a\x01b"}, "exclude_regex", "c"),
+			convert.JObjKV("id", "one", "name", "One", "type", "select", "subscriptions", []any{"a"}, "exclude_regex", "b\x01c"),
+			convert.JObjKV("id", "two", "name", "Two", "type", "select", "subscriptions", []any{"a\x01b"}, "exclude_regex", "c"),
 		},
 	)
 	out := loonOf(t, config)
@@ -54,10 +54,10 @@ func TestSurgeDebugLogOmitsSubscriptionURLsAndTokens(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	config := jsonx.Obj(
-		"system_config", jsonx.Obj("server_domain", "https://panel.example.com", "config_token", "synthetic-config-token"),
-		"subscriptions", []any{jsonx.Obj("id", "feed", "name", "Feed")},
-		"proxy_groups", []any{jsonx.Obj("id", "group", "name", "Proxy", "type", "select", "subscriptions", []any{"feed"})},
+	config := convert.JObjKV(
+		"system_config", convert.JObjKV("server_domain", "https://panel.example.com", "config_token", "synthetic-config-token"),
+		"subscriptions", []any{convert.JObjKV("id", "feed", "name", "Feed")},
+		"proxy_groups", []any{convert.JObjKV("id", "group", "name", "Proxy", "type", "select", "subscriptions", []any{"feed"})},
 	)
 	surgeOf(t, config)
 	for _, secret := range []string{"synthetic-config-token", "https://panel.example.com", "/subscriptions/"} {

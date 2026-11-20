@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,31 +13,37 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/weburl"
+	"configflow/internal/yamlx"
 )
 
 // fakeConverter mirrors fake_convert of testdata/gen.py.
 type fakeConverter struct{ calls []string }
 
-func (f *fakeConverter) ConvertProxyString(_ context.Context, s string) *jsonx.Object {
+func (f *fakeConverter) ConvertProxy(_ context.Context, s string) (*yamlx.Node, error) {
 	f.calls = append(f.calls, s)
 	if strings.Contains(s, "fail") {
-		return nil
+		return nil, nil
 	}
 	if strings.Contains(s, "empty") {
-		return jsonx.NewObject()
+		return yamlx.Map(), nil
 	}
-	proxy := jsonx.Obj("name", "from-uri", "type", "http", "server", "fixture.test", "port", jsonx.Int(80))
+	proxy := yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("from-uri"),
+		yamlx.Str("type"), yamlx.Str("http"),
+		yamlx.Str("server"), yamlx.Str("fixture.test"),
+		yamlx.Str("port"), yamlx.Int(80),
+	)
 	if _, after, ok := strings.Cut(s, "dial-"); ok {
 		target, _, _ := strings.Cut(after, "&")
-		proxy.Set("dialer-proxy", target)
+		yamlx.Set(proxy, "dialer-proxy", yamlx.Str(target))
 	}
 	if strings.Contains(s, "vless") {
-		proxy.Set("type", "vless")
-		proxy.Set("reality-opts", jsonx.Obj("public-key", "k"))
+		yamlx.Set(proxy, "type", yamlx.Str("vless"))
+		yamlx.Set(proxy, "reality-opts", yamlx.Map(yamlx.Str("public-key"), yamlx.Str("k")))
 	}
-	return proxy
+	return proxy, nil
 }
 
 type corpusRow struct {
@@ -65,11 +72,11 @@ func loadCorpus(t *testing.T) []corpusRow {
 	scanner.Buffer(make([]byte, 1<<20), 1<<24)
 	var rows []corpusRow
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := ParseJ(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := value.(*jsonx.Object)
+		entry := value.(*JObj)
 		row := corpusRow{fn: entry.GetString("fn"), args: entry.GetList("args")}
 		row.out, row.hasOut = entry.Get("out")
 		if e := entry.GetList("err"); e != nil {
@@ -86,7 +93,7 @@ func loadCorpus(t *testing.T) []corpusRow {
 
 func compactText(t *testing.T, v any) string {
 	t.Helper()
-	b, err := jsonx.Compact(v)
+	b, err := CompactJ(v)
 	if err != nil {
 		t.Fatalf("encode %#v: %v", v, err)
 	}
@@ -96,11 +103,11 @@ func compactText(t *testing.T, v any) string {
 // pyConv mirrors conv() of gen.py for Go results.
 func pyConv(v any) any {
 	switch value := v.(type) {
-	case *jsonx.Object:
+	case *JObj:
 		if value == nil {
 			return nil
 		}
-		out := jsonx.NewObject()
+		out := NewJObj()
 		for k, child := range value.All() {
 			out.Set(k, pyConv(child))
 		}
@@ -112,7 +119,7 @@ func pyConv(v any) any {
 		}
 		return out
 	case []byte:
-		return jsonx.Obj("__bytes__", hex.EncodeToString(value))
+		return JObjKV("__bytes__", hex.EncodeToString(value))
 	}
 	return v
 }
@@ -124,7 +131,7 @@ func sortedSet(items []any) []any {
 		item any
 	}, len(items))
 	for i, item := range items {
-		b, _ := jsonx.Encode(item, jsonx.Options{EnsureASCII: true, SortKeys: true})
+		b, _ := EncodeJ(item, true, true)
 		keyed[i].key, keyed[i].item = string(b), item
 	}
 	sort.Slice(keyed, func(i, j int) bool { return keyed[i].key < keyed[j].key })
@@ -143,8 +150,8 @@ func refsOut(refs []Ref) []any {
 	return out
 }
 
-func obj(v any) *jsonx.Object {
-	o, _ := v.(*jsonx.Object)
+func obj(v any) *JObj {
+	o, _ := v.(*JObj)
 	return o
 }
 
@@ -153,7 +160,15 @@ func str(v any) string {
 	return s
 }
 
-// runCorpusRow calls the Go port of row.fn; it returns the conv() result and
+func modelToJ(v any) (any, error) {
+	data, err := model.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return ParseJ(data)
+}
+
+// runCorpusRow calls the typed Go port of row.fn; it returns the conv() result and
 // the mutated argument.
 func runCorpusRow(row corpusRow) (result any, mutated any, err error) {
 	ctx := context.Background()
@@ -161,22 +176,38 @@ func runCorpusRow(row corpusRow) (result any, mutated any, err error) {
 	a := row.args
 	switch row.fn {
 	case "udp_fallback":
-		s, err := UDPFallback(obj(a[0]))
-		if s == "" {
+		cfg, err := DecodeRulesConfigJ(obj(a[0]))
+		if err != nil {
 			return nil, nil, err
 		}
-		return s, nil, err
-	case "ntp_direct":
-		b, err := NTPDirect(obj(a[0]))
-		return b, nil, err
-	case "emitted_rules":
-		r, err := EmittedRules(obj(a[0]))
-		if r == nil {
-			r = []any{}
+		s := FallbackPolicy(cfg)
+		if s == "" {
+			return nil, nil, nil
 		}
-		return r, nil, err
+		return s, nil, nil
+	case "ntp_direct":
+		cfg, err := DecodeRulesConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		return DirectNTP(cfg), nil, nil
+	case "emitted_rules":
+		cfg, err := DecodeRulesConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		rules := RulesForOutput(cfg)
+		if len(rules) == 0 {
+			return []any{}, nil, nil
+		}
+		out, err := modelToJ(rules)
+		return out, nil, err
 	case "after_match_comment":
-		return AfterMatchComment(obj(a[0])), nil, nil
+		rule, err := DecodeJ[model.RuleConfig](a[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		return RuleComment(rule), nil, nil
 	case "network_as_protocol":
 		x, y := NetworkAsProtocol(str(a[0]), str(a[1]))
 		return []any{x, y}, nil, nil
@@ -185,7 +216,15 @@ func runCorpusRow(row corpusRow) (result any, mutated any, err error) {
 	case "set_general_option":
 		return SetGeneralOption(str(a[0]), str(a[1]), str(a[2])), nil, nil
 	case "ruleset_format":
-		f, err := RulesetFormat(obj(a[0]), obj(a[1]), str(a[2]))
+		rule, err := DecodeJ[model.RuleConfig](a[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeRuleLibraryConfigJ(obj(a[1]))
+		if err != nil {
+			return nil, nil, err
+		}
+		f, err := RuleFormat(rule, cfg, str(a[2]))
 		return f, nil, err
 	case "parse_hosts_pairs":
 		out := []any{}
@@ -195,75 +234,147 @@ func runCorpusRow(row corpusRow) (result any, mutated any, err error) {
 		return out, nil, nil
 	case "fix_proxy_fields":
 		proxy := obj(a[0])
-		FixProxyFields(proxy)
+		node, err := YAMLNodeFromJ(proxy)
+		if err != nil {
+			return nil, proxy, nil
+		}
+		FixProxyNode(node)
+		if proxy != nil {
+			updated, err := JFromYAMLNode(node)
+			if err == nil {
+				if uo, ok := updated.(*JObj); ok {
+					for _, k := range proxy.Keys() {
+						proxy.Delete(k)
+					}
+					proxy.Update(uo)
+				}
+			}
+		}
 		return nil, proxy, nil
 	case "apply_github_proxy_domain":
-		u, err := ApplyGithubProxyDomain(str(a[0]), obj(a[1]))
+		var cfg *model.Config
+		if o := obj(a[1]); o != nil {
+			wire, err := DecodeJ[model.System](selectJMembers(o, "system_config"))
+			if err != nil {
+				return "", nil, err
+			}
+			cfg = &model.Config{SystemConfig: wire.SystemConfig}
+		}
+		u, err := GitHubURL(str(a[0]), cfg)
 		return u, nil, err
 	case "mihomo_used_ports":
-		used, err := MihomoUsedPorts(obj(a[0]))
+		node, err := YAMLNodeFromJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		used := UsedPorts(node)
 		var items []any
 		for p := range used {
-			items = append(items, p)
+			items = append(items, JInt(p))
 		}
-		return sortedSet(items), nil, err
+		return sortedSet(items), nil, nil
 	case "mihomo_listen_ports":
-		owners, err := MihomoListenPorts(obj(a[0]))
-		ports := map[jsonx.Number]string{}
-		var keys []jsonx.Number
+		node, err := YAMLNodeFromJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		owners := ListenPorts(node)
+		ports := map[json.Number]string{}
+		var keys []json.Number
 		for _, o := range owners {
-			ports[o.Port] = o.Owner
-			keys = append(keys, o.Port)
+			n := JInt(o.Port)
+			ports[n] = o.Owner
+			keys = append(keys, n)
 		}
 		sortPorts(keys)
 		out := []any{}
 		for _, k := range keys {
 			out = append(out, []any{k, ports[k]})
 		}
-		return out, nil, err
+		return out, nil, nil
 	case "parse_structured_proxy_string":
-		p, err := ParseStructuredProxyString(str(a[0]))
+		p, err := StructuredProxy(str(a[0]))
+		if err != nil || p == nil {
+			return nil, nil, err
+		}
+		jv, err := JFromYAMLNode(p)
 		if err != nil {
 			return nil, nil, err
 		}
-		if p == nil {
-			return nil, nil, nil
-		}
-		return pyConv(p), nil, nil
+		return pyConv(jv), nil, nil
 	case "convert_node_to_mihomo":
-		p, err := ConvertNodeToMihomo(ctx, obj(a[0]), conv)
-		if p == nil {
+		node, err := DecodeJ[model.Node](a[0])
+		if err != nil {
 			return nil, nil, err
 		}
-		return pyConv(p), nil, err
+		p, err := NodeProxy(ctx, node, conv)
+		if err != nil || p == nil {
+			return nil, nil, err
+		}
+		jv, err := JFromYAMLNode(p)
+		if err != nil {
+			return nil, nil, err
+		}
+		return pyConv(jv), nil, nil
 	case "node_conversions":
-		results := NewConversionResults()
+		results := NewConversions()
 		var outs []any
 		strs := a[0].([]any)
-		scoped := WithNodeConversions(ctx, results, false)
+		scoped := WithConversions(ctx, results, false)
 		for _, s := range strs {
-			p, _ := ConvertNodeToMihomo(scoped, jsonx.Obj("name", "n", "proxy_string", s), conv)
-			outs = append(outs, nilIfNone(p))
+			ps, _ := s.(string)
+			var ptr *string
+			if s != nil {
+				ptr = &ps
+			}
+			p, _ := NodeProxy(scoped, model.Node{Name: "n", ProxyString: ptr}, conv)
+			outs = append(outs, jNodeOrNil(p))
 		}
-		reuse := WithNodeConversions(ctx, results, true)
+		reuse := WithConversions(ctx, results, true)
 		for _, s := range strs {
-			p, _ := ConvertNodeToMihomo(reuse, jsonx.Obj("name", "again", "proxy_string", s), conv)
-			outs = append(outs, nilIfNone(p))
+			ps, _ := s.(string)
+			var ptr *string
+			if s != nil {
+				ptr = &ps
+			}
+			p, _ := NodeProxy(reuse, model.Node{Name: "again", ProxyString: ptr}, conv)
+			outs = append(outs, jNodeOrNil(p))
 		}
-		record := jsonx.NewObject()
+		record := NewJObj()
 		for _, k := range results.Keys() {
-			v, _ := results.Get(k)
-			record.Set(k, nilIfNone(v))
+			v, _, _ := results.Get(k)
+			record.Set(k, jNodeOrNil(v))
 		}
 		return []any{outs, record}, nil, nil
 	case "validate_dialers":
-		return nil, nil, ValidateDialers(obj(a[0]))
-	case "validate_shapes":
-		return nil, nil, ValidateShapes(obj(a[0]), a[1] == true)
-	case "dependency_graph":
-		g, err := DependencyGraph(obj(a[0]))
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
 		if err != nil {
 			return nil, nil, err
+		}
+		return nil, nil, DialerFailure(ConfigDialers(cfg))
+	case "validate_shapes":
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, DialerFailure(ConfigShapes(cfg, a[1] == true))
+	case "dependency_graph":
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		g, err := BuildDialerGraph(cfg)
+		if err != nil {
+			return nil, nil, DialerFailure(err)
 		}
 		out := []any{}
 		for _, k := range g.Keys() {
@@ -272,75 +383,265 @@ func runCorpusRow(row corpusRow) (result any, mutated any, err error) {
 		}
 		return out, nil, nil
 	case "incoming_dialers":
-		refs, err := IncomingDialers(obj(a[0]), str(a[1]), str(a[2]))
-		return refsOut(refs), nil, err
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		refs, err := IncomingRefs(cfg, str(a[1]), str(a[2]))
+		return refsOut(refs), nil, DialerFailure(err)
 	case "dependency_node_ids":
-		ids, err := DependencyNodeIDs(obj(a[0]), jsonx.Strings(a[1].([]any)), a[2] == true)
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		ids, err := RequiredNodes(cfg, JStrings(a[1].([]any)), a[2] == true)
 		var items []any
 		for id := range ids {
 			items = append(items, id)
 		}
-		return sortedSet(items), nil, err
+		return sortedSet(items), nil, DialerFailure(err)
 	case "reject_surge_dialers":
-		return nil, nil, RejectSurgeDialers(ctx, obj(a[0]), str(a[1]), conv)
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, DialerFailure(RejectUnsupportedDialers(ctx, cfg, str(a[1]), conv))
 	case "overlay_dialer":
-		p, err := OverlayDialer(obj(a[0]), obj(a[1]), obj(a[2]))
-		if p == nil {
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
 			return nil, nil, err
 		}
-		return p, nil, err
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		node, err := DecodeJ[model.Node](a[1])
+		if err != nil {
+			return nil, nil, err
+		}
+		var proxyNode *yamlx.Node
+		if p := obj(a[2]); p != nil {
+			proxyNode, err = YAMLNodeFromJ(p)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		out, err := ApplyNodeDialer(cfg, node, proxyNode)
+		if err != nil {
+			return nil, nil, DialerFailure(err)
+		}
+		return jNodeOrNil(out), nil, nil
 	case "raw_dialer":
-		v, err := RawDialer(obj(a[0]))
-		return v, nil, err
+		node, err := DecodeJ[model.Node](a[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		val, err := NodeDialer(node)
+		if err != nil {
+			return nil, nil, DialerFailure(err)
+		}
+		if val == nil {
+			return nil, nil, nil
+		}
+		jv, err := JFromYAMLNode(val)
+		return jv, nil, err
 	case "resolve_dialer":
-		v, err := ResolveDialer(obj(a[0]), obj(a[1]))
-		return v, nil, err
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		node, err := DecodeJ[model.Node](a[1])
+		if err != nil {
+			return nil, nil, err
+		}
+		name, err := ResolveNodeDialer(cfg, node)
+		if err != nil {
+			return nil, nil, DialerFailure(err)
+		}
+		if name == nil {
+			return nil, nil, nil
+		}
+		return *name, nil, nil
 	case "dialer_target":
-		r, err := DialerTarget(obj(a[0]), obj(a[1]))
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		node, err := DecodeJ[model.Node](a[1])
+		if err != nil {
+			return nil, nil, err
+		}
+		r, err := NodeDialerTarget(cfg, node)
+		if err != nil {
+			return nil, nil, DialerFailure(err)
+		}
 		if r == nil {
-			return nil, nil, err
+			return nil, nil, nil
 		}
-		return []any{r.Kind, r.IDValue()}, nil, err
+		return []any{r.Kind, r.ID}, nil, nil
 	case "group_members":
-		refs, err := GroupMembers(obj(a[0]))
-		return refsOut(refs), nil, err
-	case "filter_provider_candidates":
-		var proxies []*jsonx.Object
-		for _, p := range a[0].([]any) {
-			proxies = append(proxies, obj(p))
-		}
-		got, err := FilterProviderCandidates(proxies, a[1], a[2], a[3])
-		return jsonx.ListOf(got), nil, err
-	case "provider_proxy_name":
-		name, err := ProviderProxyName(obj(a[0]), obj(a[1]))
-		return name, nil, err
-	case "validate_emitted":
-		return nil, nil, ValidateEmitted(obj(a[0]), EmitOptions{ForceChains: a[1] == true,
-			ProviderProxies: obj(a[2]), RequireProviders: a[3] == true})
-	case "normalize_settings":
-		s, err := NormalizeEasyTierSettings(a[0])
-		if s == nil {
+		group, err := DecodeJ[model.ProxyGroup](a[0])
+		if err != nil {
 			return nil, nil, err
 		}
-		return s, nil, err
+		return refsOut(GroupRefs(group)), nil, nil
+	case "filter_provider_candidates":
+		var proxies []*yamlx.Node
+		for _, p := range a[0].([]any) {
+			n, err := YAMLNodeFromJ(p)
+			if err != nil {
+				return nil, nil, err
+			}
+			proxies = append(proxies, n)
+		}
+		got, err := FilterProxyNodes(proxies, FilterSpec{Include: str(a[1]), Exclude: str(a[2]), ExcludeType: str(a[3])})
+		if err != nil {
+			return nil, nil, DialerFailure(err)
+		}
+		out := make([]any, len(got))
+		for i, n := range got {
+			jv, err := JFromYAMLNode(n)
+			if err != nil {
+				return nil, nil, err
+			}
+			out[i] = jv
+		}
+		return out, nil, nil
+	case "provider_proxy_name":
+		override, err := DecodeJ[NameOverride](a[1])
+		if err != nil {
+			return nil, nil, err
+		}
+		name, err := ProviderName(obj(a[0]).GetString("name"), override)
+		return name, nil, DialerFailure(err)
+	case "validate_emitted":
+		doc, err := YAMLNodeFromJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		var payloads map[string][]*yamlx.Node
+		if p := obj(a[2]); p != nil {
+			payloads = map[string][]*yamlx.Node{}
+			for k, raw := range p.All() {
+				items, _ := raw.([]any)
+				list := make([]*yamlx.Node, len(items))
+				for i, item := range items {
+					n, err := YAMLNodeFromJ(item)
+					if err != nil {
+						return nil, nil, err
+					}
+					list[i] = n
+				}
+				payloads[k] = list
+			}
+		}
+		err = ValidateTopology(doc, TopologyOptions{
+			ForceChains:      a[1] == true,
+			ProviderProxies:  payloads,
+			RequireProviders: a[3] == true,
+		})
+		return nil, nil, DialerFailure(err)
+	case "normalize_settings":
+		var settings *model.EasyTierSettings
+		if a[0] != nil {
+			s, err := DecodeJ[model.EasyTierSettings](a[0])
+			if err != nil {
+				return nil, nil, easytierError(err.Error())
+			}
+			settings = &s
+		}
+		normalized, err := NormalizeEasyTier(settings)
+		if err != nil {
+			return nil, nil, easytierError(err.Error())
+		}
+		if normalized == nil {
+			return nil, nil, nil
+		}
+		out, err := modelToJ(normalized)
+		return out, nil, err
 	case "redact_settings":
-		return RedactEasyTierSettings(a[0]), nil, nil
+		if a[0] == nil {
+			return nil, nil, nil
+		}
+		s, err := DecodeJ[model.EasyTierSettings](a[0])
+		if err != nil {
+			return a[0], nil, nil
+		}
+		redacted, err := RedactEasyTier(&s)
+		if err != nil {
+			return a[0], nil, nil
+		}
+		out, err := modelToJ(redacted)
+		if err != nil {
+			return a[0], nil, nil
+		}
+		return out, nil, nil
 	case "apply_easytier":
 		document := obj(a[0])
-		r, err := ApplyEasyTier(document, a[1], a[2] == true, a[3])
+		docNode, err := YAMLNodeFromJ(document)
+		if err != nil {
+			return nil, document, err
+		}
+		var cfg *model.Config
+		if o := obj(a[1]); o != nil {
+			profile, err := DecodeJ[model.Profile](selectJMembers(o, "mihomo"))
+			if err != nil {
+				return nil, document, err
+			}
+			cfg = &model.Config{Profile: &profile}
+		}
+		var version json.RawMessage
+		if a[3] != nil {
+			raw, err := CompactJ(a[3])
+			if err != nil {
+				return nil, document, err
+			}
+			version = raw
+		}
+		r, err := ApplyEasyTierNode(docNode, cfg, a[2] == true, version)
+		if err != nil {
+			err = easytierError(err.Error())
+		}
+		updated, jerr := JFromYAMLNode(docNode)
+		if jerr == nil && document != nil {
+			if uo, ok := updated.(*JObj); ok {
+				for _, k := range document.Keys() {
+					document.Delete(k)
+				}
+				document.Update(uo)
+			}
+		}
 		if r == nil {
 			return nil, document, err
 		}
-		return jsonx.Obj("proxy", r.Proxy, "target", r.Target, "rules", jsonx.Int(r.Rules)), document, err
+		return JObjKV("proxy", r.Proxy, "target", r.Target, "rules", JInt(int64(r.Rules))), document, err
 	}
 	panic("unknown corpus function " + row.fn)
 }
 
-func nilIfNone(p *jsonx.Object) any {
+func jNodeOrNil(p *yamlx.Node) any {
 	if p == nil {
 		return nil
 	}
-	return p
+	jv, err := JFromYAMLNode(p)
+	if err != nil {
+		return nil
+	}
+	return jv
 }
 
 func intentional(class string) bool {
@@ -362,7 +663,7 @@ func goClass(err error) string {
 	return "error"
 }
 
-// TestCorpus runs every recorded Python call through the Go port: results,
+// TestCorpus runs every recorded Python call through the typed Go port: results,
 // mutated arguments and intentional error messages must be identical; an
 // unintended Python exception must be an unintended Go error (the class is
 // compared and only reported).
@@ -463,7 +764,7 @@ func refusedByNetURL(v any) bool {
 				return true
 			}
 		}
-	case *jsonx.Object:
+	case *JObj:
 		for _, key := range v.Keys() {
 			if refusedByNetURL(v.Value(key)) {
 				return true

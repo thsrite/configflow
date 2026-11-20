@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 )
 
 // TestLogicalGraphAndIncomingReferencesProtectChains ports the logical graph
 // assertions of test_proxy_chains.py without involving C33's CRUD owners.
 func TestLogicalGraphAndIncomingReferencesProtectChains(t *testing.T) {
-	value, err := jsonx.ParseString(`{"profile_id":"default","nodes":[
+	value, err := convert.ParseJString(`{"profile_id":"default","nodes":[
  {"id":"a","name":"A","type":"http","server":"a.example.com","port":80},
  {"id":"b","name":"B","type":"http","server":"b.example.com","port":80}],
  "proxy_groups":[
@@ -21,9 +21,15 @@ func TestLogicalGraphAndIncomingReferencesProtectChains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := value.(*jsonx.Object)
-	before := profile.DeepCopy()
-	graph, err := convert.DependencyGraph(profile)
+	cfg, err := convert.DecodeConfigJ(value.(*convert.JObj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := model.Marshal(cfg.Profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := convert.BuildDialerGraph(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +44,7 @@ func TestLogicalGraphAndIncomingReferencesProtectChains(t *testing.T) {
 		{"group", "chain", map[convert.Ref]bool{{Kind: "group", ID: "outer"}: true, {Kind: "group", ID: "g"}: true}},
 		{"node", "a", nil}, {"node", "b", nil},
 	} {
-		incoming, err := convert.IncomingDialers(profile, tc.kind, tc.id)
+		incoming, err := convert.IncomingRefs(cfg, tc.kind, tc.id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +60,8 @@ func TestLogicalGraphAndIncomingReferencesProtectChains(t *testing.T) {
 			t.Fatalf("chain is not an incoming reference of %s", tc.id)
 		}
 	}
-	if !jsonx.Equal(profile, before) {
+	after, err := model.Marshal(cfg.Profile)
+	if err != nil || string(before) != string(after) {
 		t.Fatal("logical reference inspection mutated stored metadata")
 	}
 }

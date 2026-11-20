@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -51,7 +50,7 @@ func TestCommonFullUnicodeUppercase(t *testing.T) {
 // common helpers. Only normal rows remain Python byte oracles, per N8-8a's
 // approved boundary; malformed shapes have explicit typed assertions below.
 // This symbol exists only in the test build, including external-package tests.
-func CommonReplayIssue(config *jsonx.Object) string {
+func CommonReplayIssue(config *JObj) string {
 	if config == nil {
 		return "config object"
 	}
@@ -65,7 +64,7 @@ func CommonReplayIssue(config *jsonx.Object) string {
 			return key + " array"
 		}
 		for _, raw := range items {
-			item, ok := raw.(*jsonx.Object)
+			item, ok := raw.(*JObj)
 			if !ok || item == nil {
 				return key + " object"
 			}
@@ -98,7 +97,7 @@ func commonRowIssue(row corpusRow) string {
 	case "udp_fallback", "ntp_direct", "emitted_rules":
 		return CommonReplayIssue(obj(row.args[0]))
 	case "after_match_comment":
-		return CommonReplayIssue(jsonx.Obj("rule_configs", []any{row.args[0]}))
+		return CommonReplayIssue(JObjKV("rule_configs", []any{row.args[0]}))
 	case "ruleset_format":
 		config := obj(row.args[1]).DeepCopy()
 		config.Set("rule_configs", []any{row.args[0]})
@@ -118,7 +117,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 		{`{"rule_configs":[1]}`, "", "", false, 0},
 		{`{"rule_configs":[{"itemType":"rule","rule_type":"MATCH","enabled":0,"udp_fallback":"DIRECT"}]}`, "", "", false, 1},
 	} {
-		config, err := rulesConfigFromLegacy(mustJSON(t, tt.raw))
+		config, err := DecodeRulesConfigJ(mustJSON(t, tt.raw))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +133,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 	for _, raw := range []string{`null`, `1`, `false`, `[]`, `"bad"`} {
-		config, err := ruleLibraryConfigFromLegacy(mustJSON(t, `{"rule_library":[`+raw+`]}`))
+		config, err := DecodeRuleLibraryConfigJ(mustJSON(t, `{"rule_library":[`+raw+`]}`))
 		if err != nil {
 			t.Fatal(err)
 		}

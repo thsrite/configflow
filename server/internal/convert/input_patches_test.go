@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 )
 
 type inputPatchCase struct {
@@ -89,8 +89,8 @@ func keepOriginalInput(t testing.TB, row mihomoRow, paths []string) mihomoRow {
 		if err != nil || index < 0 || index >= len(input.GetList("nodes")) || index >= len(expected.GetList("nodes")) {
 			t.Fatal("side-effect node index changed")
 		}
-		before := input.GetList("nodes")[index].(*jsonx.Object).GetObject("params").GetObject("reality-opts")
-		after := expected.GetList("nodes")[index].(*jsonx.Object).GetObject("params").GetObject("reality-opts")
+		before := input.GetList("nodes")[index].(*convert.JObj).GetObject("params").GetObject("reality-opts")
+		after := expected.GetList("nodes")[index].(*convert.JObj).GetObject("params").GetObject("reality-opts")
 		if before == nil || after == nil || before.Has("short-id") || !after.Has("short-id") || after.Value("short-id") != "" {
 			t.Fatal("side-effect evidence changed")
 		}

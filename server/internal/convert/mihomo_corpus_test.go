@@ -18,11 +18,10 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/health/check"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -36,31 +35,36 @@ func (fakeSubStore) ConvertProxy(_ context.Context, s string) (*yamlx.Node, erro
 	if strings.Contains(s, "empty") {
 		return yamlx.Map(), nil
 	}
-	proxy := jsonx.Obj("name", "from-uri", "type", "http", "server", "fixture.test", "port", jsonx.Int(80))
+	proxy := yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("from-uri"),
+		yamlx.Str("type"), yamlx.Str("http"),
+		yamlx.Str("server"), yamlx.Str("fixture.test"),
+		yamlx.Str("port"), yamlx.Int(80),
+	)
 	if _, after, ok := strings.Cut(s, "dial-"); ok {
 		target, _, _ := strings.Cut(after, "&")
-		proxy.Set("dialer-proxy", target)
+		yamlx.Set(proxy, "dialer-proxy", yamlx.Str(target))
 	}
 	if strings.Contains(s, "vless") {
-		proxy.Set("type", "vless")
-		proxy.Set("reality-opts", jsonx.Obj("public-key", "k"))
+		yamlx.Set(proxy, "type", yamlx.Str("vless"))
+		yamlx.Set(proxy, "reality-opts", yamlx.Map(yamlx.Str("public-key"), yamlx.Str("k")))
 	}
-	return yamlbridge.Encode(proxy)
+	return proxy, nil
 }
 
 // corpusEnv serves subscription caches and download caches from a row.
-func corpusEnv(caches, downloads *jsonx.Object) convert.MihomoEnvironment {
+func corpusEnv(caches, downloads *convert.JObj) convert.MihomoEnvironment {
 	env := mihomoenv.NativeEnv()
 	env.Converter = fakeSubStore{}
 	env.LoadSubscriptionCache = func(_ context.Context, id string) (json.RawMessage, error) {
-		cache, _ := caches.Value(id).(*jsonx.Object)
+		cache, _ := caches.Value(id).(*convert.JObj)
 		if cache == nil {
 			return nil, nil
 		}
-		return jsonx.Compact(cache)
+		return convert.CompactJ(cache)
 	}
 	env.DownloadedText = func(_ context.Context, url string) (string, bool) {
-		entry, ok := downloads.Value(refresh.DownloadCachePath(url)).(*jsonx.Object)
+		entry, ok := downloads.Value(refresh.DownloadCachePath(url)).(*convert.JObj)
 		if !ok {
 			return "", false
 		}
@@ -71,16 +75,18 @@ func corpusEnv(caches, downloads *jsonx.Object) convert.MihomoEnvironment {
 	return env
 }
 
-// corpusHooks mirror the fake fake_ip_network / mihomo_dns_loop of gen_mihomo.py.
-func corpusHooks() convert.MihomoHooks {
-	return convert.MihomoHooks{
+// corpusIntegrations mirrors the fake fake_ip_network / mihomo_dns_loop of gen_mihomo.py.
+func corpusIntegrations() convert.MihomoIntegrations {
+	return convert.MihomoIntegrations{
 		FakeIPNetworkError: func(value string) error {
 			if strings.Contains(value, "bad") || !strings.Contains(value, "/") {
 				return errors.New("fake")
 			}
 			return nil
 		},
-		MihomoDNSLoop: func(dns *jsonx.Object, hosts []netip.Addr) (string, any, bool, error) {
+		DNSLoop: func(dnsNode *yamlx.Node, hosts []netip.Addr) (string, string, bool, error) {
+			dnsVal, _ := convert.JFromYAMLNode(dnsNode)
+			dns, _ := dnsVal.(*convert.JObj)
 			names := make([]string, len(hosts))
 			for i, h := range hosts {
 				names[i] = h.String()
@@ -92,7 +98,7 @@ func corpusHooks() convert.MihomoHooks {
 				values := dns.Value(key)
 				var items []any
 				switch x := values.(type) {
-				case *jsonx.Object:
+				case *convert.JObj:
 					items = x.Values()
 				case []any:
 					items = x
@@ -105,13 +111,13 @@ func corpusHooks() convert.MihomoHooks {
 					}
 				}
 			}
-			return "", nil, false, nil
+			return "", "", false, nil
 		},
 	}
 }
 
 type mihomoRow struct {
-	entry    *jsonx.Object
+	entry    *convert.JObj
 	fn       string
 	errClass string
 	errMsg   string
@@ -132,11 +138,11 @@ func loadMihomoCorpus(t *testing.T) []mihomoRow {
 	scanner.Buffer(make([]byte, 1<<20), 1<<26)
 	var rows []mihomoRow
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := convert.ParseJ(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := value.(*jsonx.Object)
+		entry := value.(*convert.JObj)
 		row := mihomoRow{entry: entry, fn: entry.GetString("fn")}
 		if e := entry.GetList("err"); e != nil {
 			row.errClass, row.errMsg = e[0].(string), e[1].(string)
@@ -223,11 +229,11 @@ func sameError(t *testing.T, row mihomoRow, err error) string {
 // mihomoConv mirrors conv() of gen_mihomo.py for Go values.
 func mihomoConv(v any) any {
 	switch value := v.(type) {
-	case *jsonx.Object:
+	case *convert.JObj:
 		if value == nil {
 			return nil
 		}
-		out := jsonx.NewObject()
+		out := convert.NewJObj()
 		for k, child := range value.All() {
 			out.Set(k, mihomoConv(child))
 		}
@@ -239,13 +245,13 @@ func mihomoConv(v any) any {
 		}
 		return out
 	case []byte:
-		return jsonx.Obj("__bytes__", hex.EncodeToString(value))
+		return convert.JObjKV("__bytes__", hex.EncodeToString(value))
 	}
 	return v
 }
 
 func encode(v any) string {
-	b, err := jsonx.Encode(v, jsonx.Options{Compact: true})
+	b, err := convert.CompactJ(v)
 	if err != nil {
 		return fmt.Sprintf("<%v>", err)
 	}
@@ -258,6 +264,64 @@ func sameValue(want, got any) bool {
 
 func bool_(v any) bool { b, _ := v.(bool); return b }
 
+func reportToJ(report *convert.GenerationReport) *convert.JObj {
+	target := convert.NewJObj()
+	if report == nil {
+		return target
+	}
+	if report.SubscriptionHosts != nil {
+		if wire, err := convert.JFromYAMLNode(report.SubscriptionHosts); err == nil {
+			target.Set("subscription_hosts", wire)
+		}
+	}
+	if report.SubscriptionDialers != nil {
+		if wire, err := convert.JFromYAMLNode(report.SubscriptionDialers); err == nil {
+			target.Set("subscription_dialers", wire)
+		}
+	}
+	return target
+}
+
+func downloadsToJ(list []convert.ResourceDownload) []any {
+	got := []any{}
+	for _, d := range list {
+		got = append(got, convert.JObjKV("name", d.Name, "url", d.URL, "local_path", d.LocalPath))
+	}
+	return got
+}
+
+func coreVersionRaw(v any) (json.RawMessage, error) {
+	if v == nil {
+		return nil, nil
+	}
+	return convert.CompactJ(v)
+}
+
+func validateBaseFromJ(document, previous any, reserved map[int]string, localAddresses []any) error {
+	root, err := convert.YAMLNodeFromJ(document)
+	if err != nil {
+		return err
+	}
+	var before *yamlx.Node
+	if previous != nil {
+		before, err = convert.YAMLNodeFromJ(previous)
+		if err != nil {
+			return err
+		}
+	}
+	hosts := []netip.Addr{}
+	for _, raw := range localAddresses {
+		value, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		if address, err := netip.ParseAddr(value); err == nil {
+			hosts = append(hosts, address)
+		}
+	}
+	return convert.ValidateBaseNode(root, before, reserved, hosts)
+}
+
 func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	t.Helper()
 	ctx := context.Background()
@@ -268,12 +332,19 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 		profile := args.GetObject("profile").DeepCopy()
 		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
-		report := jsonx.NewObject()
-		out, err := convert.GenerateMihomoConfig(ctx, profile, convert.GenerateOptions{
-			BaseURL: args.GetString("base_url"), SyncLANHosts: bool_(args.Value("sync_lan_hosts")),
-			SkipProviderPreflight: true, RegionProbe: bool_(args.Value("region_probe")), Report: report,
-			MihomoCoreVersion: args.Value("core_version"), ForAgent: bool_(args.Value("for_agent")),
-		})
+		cfg, err := convert.DecodeConfigJ(profile)
+		var out string
+		report := &convert.GenerationReport{}
+		if err == nil {
+			var version json.RawMessage
+			if version, err = coreVersionRaw(args.Value("core_version")); err == nil {
+				out, err = convert.MihomoConfig(ctx, cfg, convert.MihomoOptions{
+					BaseURL: args.GetString("base_url"), SyncLANHosts: bool_(args.Value("sync_lan_hosts")),
+					SkipProviderPreflight: true, RegionProbe: bool_(args.Value("region_probe")), Report: report,
+					CoreVersion: version, ForAgent: bool_(args.Value("for_agent")),
+				})
+			}
+		}
 		if msg := sameError(t, row, err); msg != "" {
 			return msg
 		}
@@ -281,8 +352,9 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 			if msg := oracle.compare(e.GetString("out"), out); msg != "" {
 				return msg
 			}
-			if !sameValue(e.Value("report"), report) {
-				return "report differs:\n  python " + encode(e.Value("report")) + "\n  go     " + encode(mihomoConv(report))
+			reportObj := reportToJ(report)
+			if !sameValue(e.Value("report"), reportObj) {
+				return "report differs:\n  python " + encode(e.Value("report")) + "\n  go     " + encode(mihomoConv(reportObj))
 			}
 		}
 		if !sameValue(e.Value("mutated"), profile) {
@@ -291,23 +363,22 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 		return ""
 	case "ruleset_downloads", "provider_downloads":
 		args := e.GetList("args")
-		profile := args[0].(*jsonx.Object).DeepCopy()
+		profile := args[0].(*convert.JObj).DeepCopy()
 		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
-		var list []convert.Download
-		var err error
-		if row.fn == "ruleset_downloads" {
-			list, err = convert.GetMihomoRulesetDownloads(ctx, profile, args[1].(string))
-		} else {
-			list, err = convert.GetMihomoProviderDownloads(ctx, profile, args[1].(string), nil)
+		cfg, err := convert.DecodeConfigJ(profile)
+		var list []convert.ResourceDownload
+		if err == nil {
+			if row.fn == "ruleset_downloads" {
+				list, err = convert.MihomoRulesetDownloads(ctx, cfg, args[1].(string))
+			} else {
+				list, err = convert.MihomoProviderDownloads(ctx, cfg, args[1].(string), nil)
+			}
 		}
 		if msg := sameError(t, row, err); msg != "" || err != nil {
 			return msg
 		}
-		got := []any{}
-		for _, d := range list {
-			got = append(got, d.Object())
-		}
+		got := downloadsToJ(list)
 		if !sameValue(e.Value("out"), got) {
 			return "downloads differ:\n  python " + encode(e.Value("out")) + "\n  go     " + encode(got)
 		}
@@ -326,32 +397,78 @@ func runHelperRow(t *testing.T, row mihomoRow) string {
 	case "apply_no_resolve_to_logic_rule":
 		got = convert.ApplyNoResolveToLogicRule(args[0].(string))
 	case "normalize_find_process_mode":
-		doc := args[0].(*jsonx.Object)
-		convert.NormalizeFindProcessMode(doc)
-		got = doc
+		var doc *yamlx.Node
+		if doc, err = convert.YAMLNodeFromJ(args[0]); err == nil {
+			if err = convert.NormalizeProcessMode(doc); err == nil {
+				got, err = convert.JFromYAMLNode(doc)
+			}
+		}
 	case "validate_ipv6_flags":
-		err = convert.ValidateIPv6Flags(args[0])
+		var doc *yamlx.Node
+		if doc, err = convert.YAMLNodeFromJ(args[0]); err == nil {
+			err = convert.ValidateIPv6Node(doc)
+		}
 	case "build_provider_health_check":
-		got, err = convert.BuildProviderHealthCheck(args[0].(*jsonx.Object))
+		var record model.Subscription
+		if record, err = convert.DecodeJ[model.Subscription](args[0]); err == nil {
+			var node *yamlx.Node
+			if node, err = convert.BuildProviderHealthForTest(record); err == nil {
+				got, err = convert.JFromYAMLNode(node)
+			}
+		}
 	case "split_rules_and_rulesets":
-		var a, b any
-		a, b, err = convert.SplitRulesAndRulesets(args[0].(*jsonx.Object))
-		got = []any{a, b}
+		var cfg *model.Config
+		if cfg, err = convert.DecodeConfigJ(args[0].(*convert.JObj)); err == nil {
+			var a, b []model.RuleConfig
+			if a, b, err = convert.MihomoRuleLists(cfg); err == nil {
+				ab, err1 := model.Marshal(a)
+				bb, err2 := model.Marshal(b)
+				if err1 != nil {
+					err = err1
+				} else if err2 != nil {
+					err = err2
+				} else {
+					av, _ := convert.ParseJ(ab)
+					bv, _ := convert.ParseJ(bb)
+					got = []any{av, bv}
+				}
+			}
+		}
 	case "sync_mosdns_hosts":
-		doc := args[0].(*jsonx.Object)
-		err = convert.SyncMosdnsHosts(doc, args[1].(*jsonx.Object))
-		got = doc
+		var doc *yamlx.Node
+		var cfg *model.Config
+		if cfg, err = convert.DecodeConfigJ(args[1].(*convert.JObj)); err == nil {
+			if doc, err = convert.YAMLNodeFromJ(args[0]); err == nil {
+				if err = convert.SyncMihomoHostsForTest(doc, cfg); err == nil {
+					got, err = convert.JFromYAMLNode(doc)
+				}
+			}
+		}
 	case "inject_region_probe":
-		doc := args[0].(*jsonx.Object)
-		port, _ := jsonx.AsNumber(args[1])
-		var injected bool
-		injected, err = convert.InjectRegionProbe(doc, port)
-		got = []any{injected, doc}
+		var doc *yamlx.Node
+		if doc, err = convert.YAMLNodeFromJ(args[0]); err == nil {
+			n, ok := args[1].(json.Number)
+			var port int64
+			if ok && convert.IsIntNumber(n) {
+				port, err = n.Int64()
+			} else {
+				err = fmt.Errorf("region probe port must be int")
+			}
+			if err == nil {
+				var injected bool
+				if injected, err = convert.AddRegionProbeForTest(doc, port); err == nil {
+					var out any
+					if out, err = convert.JFromYAMLNode(doc); err == nil {
+						got = []any{injected, out}
+					}
+				}
+			}
+		}
 	case "validate_base_settings":
-		restore := convert.RegisterMihomoHooks(corpusHooks())
+		restore := convert.SetMihomoIntegrations(corpusIntegrations())
 		defer restore()
 		var reserved map[int]string
-		if r, ok := args[2].(*jsonx.Object); ok {
+		if r, ok := args[2].(*convert.JObj); ok {
 			reserved = map[int]string{}
 			for k, v := range r.All() {
 				n, _ := strconv.Atoi(k)
@@ -359,27 +476,46 @@ func runHelperRow(t *testing.T, row mihomoRow) string {
 			}
 		}
 		local, _ := args[3].([]any)
-		err = convert.ValidateBaseSettings(args[0], args[1], reserved, local)
+		err = validateBaseFromJ(args[0], args[1], reserved, local)
 	case "sniff_port_error":
-		got, err = convert.SniffPortError(args[0])
+		var node *yamlx.Node
+		if node, err = convert.YAMLNodeFromJ(args[0]); err == nil {
+			got = convert.SniffPortInvalid(node)
+		}
 	case "split_host_port":
-		var host string
-		var port int
-		var ok bool
-		host, port, ok, err = convert.SplitHostPort(args[0])
-		if ok {
-			got = []any{host, jsonx.Int(port)}
+		if text, ok := args[0].(string); ok {
+			if host, port, ok := convert.ParseListener(text); ok {
+				got = []any{host, convert.JInt(int64(port))}
+			}
 		}
 	case "agent_context":
 		bindings := args[0].([]any)
-		agents := args[1].(*jsonx.Object)
-		source := fakeAgentSource{bindings: bindings, agents: agents, fail: args[2] == true}
-		reserved, order, hosts := convert.AgentContext(source, "p")
-		ports := jsonx.NewObject()
+		records := args[1].(*convert.JObj)
+		fail := args[2] == true
+		var agents []model.Agent
+		if !fail {
+			for _, id := range bindings {
+				key, ok := id.(string)
+				if !ok {
+					continue
+				}
+				raw := records.GetObject(key)
+				if raw == nil {
+					continue
+				}
+				agent, err := convert.DecodeJ[model.Agent](raw)
+				if err != nil {
+					continue
+				}
+				agents = append(agents, agent)
+			}
+		}
+		reserved, order, hosts := convert.AgentPorts(agents)
+		ports := convert.NewJObj()
 		for _, port := range order {
 			ports.Set(strconv.Itoa(port), reserved[port])
 		}
-		got = []any{ports, hosts}
+		got = []any{ports, convert.JListOf(hosts)}
 	case "controller_scope":
 		got = convert.ControllerScope(args[0].(string))
 	default:
@@ -449,7 +585,7 @@ func TestMihomoCorpus(t *testing.T) {
 		if row.fn == "generate" || row.fn == "provider_downloads" || row.fn == "ruleset_downloads" {
 			profile := row.entry.GetObject("args").GetObject("profile")
 			if row.fn != "generate" {
-				profile, _ = row.entry.GetList("args")[0].(*jsonx.Object)
+				profile, _ = row.entry.GetList("args")[0].(*convert.JObj)
 			}
 			if issue := convert.MihomoReplayIssue(profile); issue != "" {
 				typedStorage[issue]++
@@ -472,7 +608,7 @@ func TestMihomoCorpus(t *testing.T) {
 		}
 		switch i {
 		case 8485, 8544, 8981, 9030, 9266, 9290, 9496, 10257, 10310, 11876, 12491, 12496, 12547, 12608, 12990, 13712:
-			if row.fn != "validate_base_settings" || row.entry.GetList("args")[0].(*jsonx.Object).GetString("external-controller") != "127.0.0.1:９０" {
+			if row.fn != "validate_base_settings" || row.entry.GetList("args")[0].(*convert.JObj).GetString("external-controller") != "127.0.0.1:９０" {
 				t.Fatalf("native listener fixture moved at row %d", i)
 			}
 			row.errClass = "BaseSettingsError"
@@ -482,10 +618,10 @@ func TestMihomoCorpus(t *testing.T) {
 			clone := row.entry.DeepCopy()
 			clone.Delete("err")
 			address := convert.DefaultHealthCheckURL
-			if n, ok := row.entry.GetList("args")[0].(*jsonx.Object).Value("health_check_url").(jsonx.Number); ok {
+			if n, ok := row.entry.GetList("args")[0].(*convert.JObj).Value("health_check_url").(json.Number); ok {
 				address = n.String()
 			}
-			clone.Set("out", jsonx.Obj("enable", true, "url", address, "interval", jsonx.Int(300), "lazy", true))
+			clone.Set("out", convert.JObjKV("enable", true, "url", address, "interval", convert.JInt(300), "lazy", true))
 			row.entry = clone
 			row.errClass = ""
 			row.errMsg = ""
@@ -532,37 +668,16 @@ func TestMihomoCorpus(t *testing.T) {
 	}
 }
 
-type fakeAgentSource struct {
-	bindings []any
-	agents   *jsonx.Object
-	fail     bool
-}
-
-func (f fakeAgentSource) ProfileAgentIDs(string) ([]any, error) {
-	if f.fail {
-		return nil, errors.New("no profile")
-	}
-	return f.bindings, nil
-}
-
-func (f fakeAgentSource) AgentByID(id any) *jsonx.Object {
-	agent, _ := f.agents.Value(id.(string)).(*jsonx.Object)
-	if agent == nil {
-		return nil
-	}
-	return agent.DeepCopy()
-}
-
 // Malformed agent records have typed R5 defaults; integral floats use R8. The
 // normal input subset continues to compare the real Python result unchanged.
 func agentContextIssue(args []any) string {
-	records := args[1].(*jsonx.Object)
+	records := args[1].(*convert.JObj)
 	for _, id := range args[0].([]any) {
 		key, ok := id.(string)
 		if !ok {
 			return "R5 Agent binding string"
 		}
-		agent, ok := records.Value(key).(*jsonx.Object)
+		agent, ok := records.Value(key).(*convert.JObj)
 		if !ok {
 			continue
 		}
@@ -577,11 +692,11 @@ func agentContextIssue(args []any) string {
 			return "R5 Agent missing host"
 		}
 		if value, present := agent.Get("port"); present {
-			number, ok := value.(jsonx.Number)
+			number, ok := value.(json.Number)
 			if !ok {
 				return "R5 Agent.port"
 			}
-			if !number.IsInt() {
+			if !convert.IsIntNumber(number) {
 				return "R8 Agent.port"
 			}
 		}
@@ -599,11 +714,24 @@ func TestNativeMihomoOriginalInputsUnchanged(t *testing.T) {
 		row := rows[index]
 		args := row.entry.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()
-		before := encode(profile)
+		cfg, err := convert.DecodeConfigJ(profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, err := model.Marshal(cfg.Profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		version, _ := coreVersionRaw(args.Value("core_version"))
 		restore := convert.SetMihomoEnvironment(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
-		_, _ = convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent")})
+		_, _ = convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
+			BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"),
+			SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"),
+			CoreVersion: version, ForAgent: args.GetBool("for_agent"),
+		})
 		restore()
-		if before != encode(profile) {
+		after, err := model.Marshal(cfg.Profile)
+		if err != nil || string(before) != string(after) {
 			t.Fatalf("source row %d changed input", index)
 		}
 	}

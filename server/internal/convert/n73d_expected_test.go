@@ -7,17 +7,17 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
 
-type mihomoReaderOracle struct{ references *jsonx.Object }
+type mihomoReaderOracle struct{ references *convert.JObj }
 
 func loadMihomoReaderOracle(t testing.TB) mihomoReaderOracle {
 	t.Helper()
-	return mihomoReaderOracle{yamlxtest.Fixture(t, "testdata/n73d_expected.json.gz")}
+	return mihomoReaderOracle{loadGzipJObj(t, "testdata/n73d_expected.json.gz")}
 }
 
 func (o mihomoReaderOracle) row(t testing.TB, corpus string, index int, row mihomoRow) mihomoRow {
@@ -26,16 +26,16 @@ func (o mihomoReaderOracle) row(t testing.TB, corpus string, index int, row miho
 	if reference == nil {
 		return row
 	}
-	if reference.GetString("fn") != row.fn || !jsonx.Equal(reference.Value("args"), row.entry.Value("args")) {
+	if reference.GetString("fn") != row.fn || !convert.EqualJ(reference.Value("args"), row.entry.Value("args")) {
 		t.Fatal("reader oracle source changed")
 	}
-	old := jsonx.NewObject()
+	old := convert.NewJObj()
 	for _, key := range []string{"out", "err", "report", "mutated"} {
 		if value, ok := row.entry.Get(key); ok {
 			old.Set(key, value)
 		}
 	}
-	if !jsonx.Equal(old, reference.Value("old")) || len(reference.GetList("classes")) == 0 {
+	if !convert.EqualJ(old, reference.Value("old")) || len(reference.GetList("classes")) == 0 {
 		t.Fatal("reader oracle provenance/classification changed")
 	}
 	entry := row.entry.DeepCopy()
@@ -48,13 +48,54 @@ func (o mihomoReaderOracle) row(t testing.TB, corpus string, index int, row miho
 	return rowOf(entry)
 }
 
+func checkParseAuditJ(t testing.TB, root *yamlx.Node, records []any) {
+	t.Helper()
+	seen := map[*yamlx.Node]int{}
+	var walk func(*yamlx.Node, int)
+	walk = func(n *yamlx.Node, id int) {
+		if n == nil {
+			if id != 0 {
+				t.Fatal("audit alias target mismatch")
+			}
+			return
+		}
+		if id < 1 || id > len(records) {
+			t.Fatal("audit node missing")
+		}
+		if previous := seen[n]; previous != 0 {
+			if previous != id {
+				t.Fatal("audit sharing mismatch")
+			}
+			return
+		}
+		seen[n] = id
+		row := records[id-1].(*convert.JObj)
+		if int(row.GetInt("id")) != id || int(row.GetInt("kind")) != int(n.Kind) || row.GetString("tag") != n.Tag || row.GetString("value") != n.Value || int(row.GetInt("Line")) != n.Line || int(row.GetInt("Column")) != n.Column {
+			t.Fatalf("raw Parse audit changed at node %d", id)
+		}
+		children := row.GetList("content")
+		if len(children) != len(n.Content) {
+			t.Fatal("audit child count mismatch")
+		}
+		for i, child := range n.Content {
+			value, _ := children[i].(json.Number).Int64()
+			walk(child, int(value))
+		}
+		walk(n.Alias, int(row.GetInt("alias")))
+	}
+	walk(root, 1)
+	if len(seen) != len(records) {
+		t.Fatal("audit includes unreachable nodes")
+	}
+}
+
 func TestN73DocumentReaderInjectionValues(t *testing.T) {
-	sources := yamlxtest.Fixture(t, "testdata/n73d_reader_values.json.gz")
+	sources := loadGzipJObj(t, "testdata/n73d_reader_values.json.gz")
 	if sources.Len() != 3837 {
 		t.Fatalf("source count changed: %d", sources.Len())
 	}
 	for id, item := range sources.All() {
-		record := item.(*jsonx.Object)
+		record := item.(*convert.JObj)
 		if record.GetString("mode") != "convert-document" {
 			t.Fatal("unexpected reader mode")
 		}
@@ -64,7 +105,7 @@ func TestN73DocumentReaderInjectionValues(t *testing.T) {
 		}
 		root, err := yamlx.Parse([]byte(source))
 		if err == nil {
-			yamlxtest.CheckParseAudit(t, root, record.GetList("parse_nodes"))
+			checkParseAuditJ(t, root, record.GetList("parse_nodes"))
 			err = yamlx.ProjectJSONKeys(root, yamlx.RejectNonStringKeys)
 		}
 		if err != nil {
@@ -84,11 +125,11 @@ func TestN73DocumentReaderInjectionValues(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		graph, err := jsonx.Parse(encoded)
+		graph, err := convert.ParseJ(encoded)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !jsonx.Equal(graph, record.Value("values")) {
+		if !convert.EqualJ(graph, record.Value("values")) {
 			t.Fatalf("injected value graph changed: %s", id)
 		}
 	}
@@ -98,7 +139,7 @@ func TestN73DocumentReaderInjectionValues(t *testing.T) {
 	}
 	counts := map[string]int{}
 	for _, item := range refs.references.All() {
-		row := item.(*jsonx.Object)
+		row := item.(*convert.JObj)
 		if len(row.GetList("classes")) != 1 {
 			t.Fatal("unclassified or ambiguous row")
 		}

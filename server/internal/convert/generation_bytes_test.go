@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -32,22 +31,38 @@ func generationDigest(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func generateByteCase(t *testing.T, entry *jsonx.Object) (string, error) {
+func generateByteCase(t *testing.T, entry *convert.JObj) (string, error) {
 	t.Helper()
 	args := entry.GetObject("args")
 	profile := args.GetObject("profile").DeepCopy()
 	switch entry.GetString("fn") {
 	case "generate":
+		cfg, err := convert.DecodeConfigJ(profile)
+		if err != nil {
+			return "", err
+		}
+		version, err := coreVersionRaw(args.Value("core_version"))
+		if err != nil {
+			return "", err
+		}
 		restore := convert.SetMihomoEnvironment(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
 		defer restore()
-		return convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{
+		return convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
 			BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true,
-			RegionProbe: args.GetBool("region_probe"), Report: jsonx.NewObject(), MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent"),
+			RegionProbe: args.GetBool("region_probe"), Report: &convert.GenerationReport{}, CoreVersion: version, ForAgent: args.GetBool("for_agent"),
 		})
 	case "surge":
-		return convert.GenerateSurgeConfig(context.Background(), profile, args.GetString("base_url"))
+		cfg, err := decodeClientConfig(profile)
+		if err != nil {
+			return "", err
+		}
+		return convert.SurgeConfig(context.Background(), cfg, args.GetString("base_url"))
 	case "loon":
-		return convert.GenerateLoonConfig(context.Background(), profile, args.GetString("base_url"))
+		cfg, err := decodeClientConfig(profile)
+		if err != nil {
+			return "", err
+		}
+		return convert.LoonConfig(context.Background(), cfg, args.GetString("base_url"))
 	}
 	return "", fmt.Errorf("not a generated config")
 }
@@ -58,7 +73,7 @@ func generateByteCase(t *testing.T, entry *jsonx.Object) (string, error) {
 func TestN88GenerationBytes(t *testing.T) {
 	const path = "testdata/n88_generation_bytes.json"
 	fixture := generationByteFixture{Baseline: "2277ce047d4abb78ffed436442c19b31152ba85d", Sources: map[string]string{}}
-	rows := map[string][]*jsonx.Object{}
+	rows := map[string][]*convert.JObj{}
 	for _, name := range []string{"mihomo_corpus.jsonl.gz", "surge_loon_corpus.jsonl.gz"} {
 		data, err := os.ReadFile("testdata/" + name)
 		if err != nil {
@@ -81,7 +96,7 @@ func TestN88GenerationBytes(t *testing.T) {
 					continue
 				}
 				// Include only well-typed stored records, including nested records.
-				data, err := json.Marshal(jsonx.Obj("profiles", jsonx.Obj("p", profile), "shared", profile, "system", profile))
+				data, err := convert.CompactJ(convert.JObjKV("profiles", convert.JObjKV("p", profile), "shared", profile, "system", profile))
 				if err != nil {
 					continue
 				}
@@ -159,36 +174,6 @@ func TestN88GenerationBytes(t *testing.T) {
 			t.Errorf("%s/%d: %v", sample.Source, sample.Row, err)
 			continue
 		}
-		if entry.GetString("fn") == "generate" {
-			args := entry.GetObject("args")
-			data, err := json.Marshal(args.GetObject("profile"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var profile model.Profile
-			var shared model.Shared
-			var system model.System
-			if err = json.Unmarshal(data, &profile); err != nil {
-				t.Fatal(err)
-			}
-			if err = json.Unmarshal(data, &shared); err != nil {
-				t.Fatal(err)
-			}
-			if err = json.Unmarshal(data, &system); err != nil {
-				t.Fatal(err)
-			}
-			config := &model.Config{Profile: &profile, ProfileID: args.GetObject("profile").GetString("profile_id"), Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary, SystemConfig: system.SystemConfig, Backup: system.Backup, Agents: system.Agents, HasAgents: args.GetObject("profile").Has("agents")}
-			version, err := json.Marshal(args.Value("core_version"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			restore := convert.SetMihomoEnvironment(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
-			typed, err := convert.MihomoConfig(context.Background(), config, convert.MihomoOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), CoreVersion: version, ForAgent: args.GetBool("for_agent")})
-			restore()
-			if err != nil || typed != out {
-				t.Errorf("%s/%d: typed/legacy bytes differ: %v", sample.Source, sample.Row, err)
-			}
-		}
 		if entry.GetString("fn") != "generate" {
 			typed, err := typedClientByteCase(t, entry)
 			if err != nil || typed != out {
@@ -232,7 +217,7 @@ func TestN88GenerationBytes(t *testing.T) {
 
 // The frozen baseline covers all three engines. A shortened or duplicated
 // manifest must fail before it can silently turn a missing engine into a pass.
-func validateGenerationByteCoverage(fixture generationByteFixture, rows map[string][]*jsonx.Object) error {
+func validateGenerationByteCoverage(fixture generationByteFixture, rows map[string][]*convert.JObj) error {
 	counts := map[string]int{}
 	seen := map[string]bool{}
 	for _, sample := range fixture.Cases {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
@@ -13,8 +12,8 @@ import (
 // byte contract. It uses the production model/options decoders, not a second
 // parser. The immutable 2195-config byte gate still executes every source row.
 func ClientNodeReplayIssue(value any, target string) string {
-	node, err := decodeLegacy[model.Node](value)
-	object, ok := value.(*jsonx.Object)
+	node, err := DecodeJ[model.Node](value)
+	object, ok := value.(*JObj)
 	if !ok || object == nil {
 		return "node object"
 	}
@@ -55,6 +54,7 @@ func ClientNodeReplayIssue(value any, target string) string {
 	}
 	return clientOptionsReplayIssue(node.Type, params, target)
 }
+
 func clientOptionsReplayIssue(kind string, params *yamlx.Node, target string) string {
 	options, err := decodeClientOptions(params)
 	if err != nil {
@@ -96,14 +96,14 @@ func clientOptionsReplayIssue(kind string, params *yamlx.Node, target string) st
 // ClientGroupReplayIssue identifies malformed policy records and the approved
 // missing-health fallback. Ordinary empty/missing optional fields stay normal.
 func ClientGroupReplayIssue(value any, target string) string {
-	group, err := decodeLegacy[model.ProxyGroup](value)
+	group, err := DecodeJ[model.ProxyGroup](value)
 	if err != nil {
 		return "group record"
 	}
 	if issues := model.Issues(group); len(issues) > 0 {
 		return "group." + issues[0].Path + " R5"
 	}
-	object, ok := value.(*jsonx.Object)
+	object, ok := value.(*JObj)
 	if !ok || object == nil {
 		return "group object"
 	}
@@ -129,8 +129,8 @@ func ClientGroupReplayIssue(value any, target string) string {
 }
 
 // ClientProfileReplayIssue audits only fields owned by this client migration.
-func ClientProfileReplayIssue(config *jsonx.Object, target string) string {
-	profile, err := decodeLegacy[model.Profile](config)
+func ClientProfileReplayIssue(config *JObj, target string) string {
+	profile, err := DecodeJ[model.Profile](config)
 	if err != nil {
 		return "profile record"
 	}

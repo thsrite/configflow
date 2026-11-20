@@ -8,7 +8,6 @@ import (
 	"testing"
 	"unsafe"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
@@ -32,19 +31,18 @@ func TestNativeProxyPolicyErrorsDoNotReachSubStore(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateCache(t)
-			for _, parse := range []func(string) (*jsonx.Object, error){ParseStructuredProxyString, InspectStructuredProxyString} {
-				if got, err := parse(tc.source); got != nil || !errors.Is(err, tc.kind) {
-					t.Fatalf("parse: %v %v", got, err)
-				}
+			if got, err := StructuredProxy(tc.source); got != nil || !errors.Is(err, tc.kind) {
+				t.Fatalf("parse: %v %v", got, err)
 			}
 			converter := &fakeConverter{}
-			if got, err := ConvertNodeToMihomo(context.Background(), jsonx.Obj("name", "example", "proxy_string", tc.source), converter); got != nil || !errors.Is(err, tc.kind) {
+			src := tc.source
+			if got, err := NodeProxy(context.Background(), model.Node{Name: "example", ProxyString: &src}, converter); got != nil || !errors.Is(err, tc.kind) {
 				t.Fatalf("conversion: %v %v", got, err)
 			}
 			if len(converter.calls) != 0 || cacheLen() != 0 {
 				t.Fatal("invalid document was retried or cached")
 			}
-			if _, err := NodeDialer(model.Node{ProxyString: &tc.source}); !errors.Is(err, tc.kind) {
+			if _, err := NodeDialer(model.Node{ProxyString: &src}); !errors.Is(err, tc.kind) {
 				t.Fatalf("dialer: %v", err)
 			}
 		})
@@ -53,7 +51,8 @@ func TestNativeProxyPolicyErrorsDoNotReachSubStore(t *testing.T) {
 
 func TestNativeProxySyntaxKeepsFallback(t *testing.T) {
 	converter := &fakeConverter{}
-	value, err := ConvertNodeToMihomo(context.Background(), jsonx.Obj("name", "example", "proxy_string", "type: [broken"), converter)
+	src := "type: [broken"
+	value, err := NodeProxy(context.Background(), model.Node{Name: "example", ProxyString: &src}, converter)
 	if err != nil || value == nil || len(converter.calls) != 1 {
 		t.Fatalf("%v %v %d", value, err, len(converter.calls))
 	}
@@ -66,7 +65,7 @@ func FuzzStructuredProxyYAML(f *testing.F) {
 	f.Fuzz(func(t *testing.T, source string) {
 		// Only the reader is exercised; serialization of the returned graph could
 		// independently expand aliases and is outside this reader's contract.
-		_, _ = ParseStructuredProxyString(source)
+		_, _ = StructuredProxy(source)
 	})
 }
 
@@ -77,12 +76,12 @@ func TestNativeProxyLinearAlias40PreservesSharing(t *testing.T) {
 	for i := 1; i <= 40; i++ {
 		fmt.Fprintf(&b, "a%d: &a%d {child: *a%d}\n", i, i, i-1)
 	}
-	value, err := ParseStructuredProxyString(b.String())
+	value, err := StructuredProxy(b.String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 40; i++ {
-		if value.GetObject(fmt.Sprintf("a%d", i)).GetObject("child") != value.GetObject(fmt.Sprintf("a%d", i-1)) {
+		if yamlx.Resolve(yamlx.Get(yamlx.Get(value, fmt.Sprintf("a%d", i)), "child")) != yamlx.Resolve(yamlx.Get(value, fmt.Sprintf("a%d", i-1))) {
 			t.Fatalf("alias %d copied or replaced", i)
 		}
 	}
@@ -94,12 +93,12 @@ func TestNativeProxyLinearAlias40PreservesSharing(t *testing.T) {
 func TestProxyUsesSharedKeyProjectionAndBigIntegers(t *testing.T) {
 	isolateCache(t)
 	text := "type: ss\n1: first\n\"1\": second\nbig: !!int " + strings.Repeat("9", 100)
-	got, err := ParseStructuredProxyString(text)
-	if err != nil || got.GetString("1") != "second" {
+	got, err := StructuredProxy(text)
+	if err != nil || scalarText(yamlx.Get(got, "1")) != "second" {
 		t.Fatalf("shared projection: %v", err)
 	}
-	number, ok := got.Value("big").(jsonx.Number)
-	if !ok || string(number) != strings.Repeat("9", 100) {
+	bigNode := yamlx.Get(got, "big")
+	if bigNode == nil || bigNode.ShortTag() != "!!int" || bigNode.Value != strings.Repeat("9", 100) {
 		t.Fatal("large integer lost precision")
 	}
 }
@@ -111,13 +110,13 @@ func TestProxyScalarAliasesKeepBackingDataShared(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		fmt.Fprintf(&b, "copy%d: *value\n", i)
 	}
-	got, err := ParseStructuredProxyString(b.String())
+	got, err := StructuredProxy(b.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	original := got.GetString("value")
+	original := scalarText(yamlx.Get(got, "value"))
 	for i := 0; i < 100; i++ {
-		if unsafe.StringData(got.GetString(fmt.Sprintf("copy%d", i))) != unsafe.StringData(original) {
+		if unsafe.StringData(scalarText(yamlx.Get(got, fmt.Sprintf("copy%d", i)))) != unsafe.StringData(original) {
 			t.Fatalf("scalar alias %d copied its backing data", i)
 		}
 	}

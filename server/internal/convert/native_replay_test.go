@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 type nativeProxyReplayCase struct{ ID, Category, Native string }
@@ -21,7 +19,7 @@ func nativeProxyReplay(t *testing.T, suite string, row corpusRow, result, mutate
 	var find func(any)
 	find = func(v any) {
 		switch v := v.(type) {
-		case *jsonx.Object:
+		case *JObj:
 			if text, ok := v.Value("proxy_string").(string); ok {
 				source = text
 			}

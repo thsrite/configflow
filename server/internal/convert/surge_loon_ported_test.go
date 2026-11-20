@@ -14,18 +14,18 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 	"configflow/internal/substore"
 )
 
-func mustJSON(t *testing.T, text string) *jsonx.Object {
+func mustJSON(t *testing.T, text string) *convert.JObj {
 	t.Helper()
-	v, err := jsonx.Parse([]byte(text))
+	v, err := convert.ParseJ([]byte(text))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*jsonx.Object)
+	return v.(*convert.JObj)
 }
 
 func withFakeSubStore(t *testing.T) {
@@ -33,18 +33,26 @@ func withFakeSubStore(t *testing.T) {
 	t.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
 }
 
-func surgeOf(t *testing.T, config *jsonx.Object) string {
+func surgeOf(t *testing.T, config *convert.JObj) string {
 	t.Helper()
-	out, err := convert.GenerateSurgeConfig(context.Background(), config, "")
+	cfg, err := decodeClientConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := convert.SurgeConfig(context.Background(), cfg, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return out
 }
 
-func loonOf(t *testing.T, config *jsonx.Object) string {
+func loonOf(t *testing.T, config *convert.JObj) string {
 	t.Helper()
-	out, err := convert.GenerateLoonConfig(context.Background(), config, "")
+	cfg, err := decodeClientConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := convert.LoonConfig(context.Background(), cfg, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,17 +79,17 @@ func surgeExport(t *testing.T, proxy string) string {
 	t.Helper()
 	withFakeSubStore(t)
 	node := mustJSON(t, proxy)
-	yaml := jsonx.Obj("name", node.Value("name"), "proxy_string", proxyYAML(t, node))
-	line, _, err := convert.ConvertNodeToSurge(yaml)
+	raw := proxyYAML(t, node)
+	line, _, err := convert.SurgeNode(model.Node{Name: node.GetString("name"), ProxyString: &raw})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return line
 }
 
-func proxyYAML(t *testing.T, node *jsonx.Object) string {
+func proxyYAML(t *testing.T, node *convert.JObj) string {
 	t.Helper()
-	b, err := jsonx.Encode(node, jsonx.Options{Compact: true})
+	b, err := convert.CompactJ(node)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +116,7 @@ func TestSurgeExportSnellObfsFromObfsOpts(t *testing.T) {
 
 // --- test_surge_loon_group_exclusion.py
 
-func exclusionConfig(t *testing.T) *jsonx.Object {
+func exclusionConfig(t *testing.T) *convert.JObj {
 	return mustJSON(t, `{
 		"profile_id": "home",
 		"system_config": {"server_domain": "https://config.test", "config_token": "secret /&?"},
@@ -139,15 +147,23 @@ func policyQueries(t *testing.T, line string) map[string]url.Values {
 	return out
 }
 
-func groupAt(config *jsonx.Object, i int) *jsonx.Object {
-	return config.GetList("proxy_groups")[i].(*jsonx.Object)
+func groupAt(config *convert.JObj, i int) *convert.JObj {
+	return config.GetList("proxy_groups")[i].(*convert.JObj)
 }
 
 func TestSurgeFiltersEachDynamicSourceWithoutFilteringExplicitMembers(t *testing.T) {
 	config := exclusionConfig(t)
-	original := config.DeepCopy()
+	cfg := mustDecodeConfig(t, config)
+	before, err := model.Marshal(cfg.Profile)
+	if err != nil {
+		t.Fatal(err)
+	}
 	group := groupAt(config, 1)
-	line, err := convert.ConvertProxyGroupToSurge(group, config, "", nil)
+	gModel, err := convert.DecodeJ[model.ProxyGroup](group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := convert.SurgeGroup(gModel, cfg, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +180,8 @@ func TestSurgeFiltersEachDynamicSourceWithoutFilteringExplicitMembers(t *testing
 	if !reflect.DeepEqual(queries, want) {
 		t.Fatalf("queries %v", queries)
 	}
-	if strings.Contains(line, "policy-regex-filter") || !jsonx.Equal(config, original) {
+	after, err := model.Marshal(cfg.Profile)
+	if strings.Contains(line, "policy-regex-filter") || err != nil || string(before) != string(after) {
 		t.Fatal("filter or mutation")
 	}
 }
@@ -174,10 +191,14 @@ func TestSurgeFollowInheritsExclusionOnlyForBothSources(t *testing.T) {
 	source := groupAt(config, 1)
 	source.Set("regex", "")
 	source.Set("aggregation_regex", "")
-	follower := jsonx.Obj("id", "follow", "name", "跟随", "type", "select", "follow_group", "mixed",
+	follower := convert.JObjKV("id", "follow", "name", "跟随", "type", "select", "follow_group", "mixed",
 		"regex", "wrong", "exclude_regex", "wrong", "aggregation_regex", "wrong", "aggregation_exclude_regex", "wrong")
 	config.Set("proxy_groups", append(config.GetList("proxy_groups"), follower))
-	line, err := convert.ConvertProxyGroupToSurge(follower, config, "", nil)
+	fModel, err := convert.DecodeJ[model.ProxyGroup](follower)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := convert.SurgeGroup(fModel, mustDecodeConfig(t, config), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,9 +223,12 @@ func TestSurgeLegacyMembersFilterBeforeAddingExplicitNodes(t *testing.T) {
 	withFakeSubStore(t)
 	config := mustJSON(t, `{"nodes": [{"name": "HK 01", "subscription_id": "sub"}, {"name": "HK 到期", "subscription_id": "sub"},
 		{"name": "JP 01", "subscription_id": "sub"}]}`)
-	group := mustJSON(t, `{"subscriptions": ["sub"], "regex": "HK", "exclude_regex": "到期", "proxies": ["HK 到期"]}`)
-	got, err := convert.GetProxyGroupNodes(group, config)
-	if err != nil || !jsonx.Equal(got, []any{"HK 01", "HK 到期"}) {
+	group, err := convert.DecodeJ[model.ProxyGroup](mustJSON(t, `{"subscriptions": ["sub"], "regex": "HK", "exclude_regex": "到期", "proxies": ["HK 到期"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := convert.ClientGroupNodes(group, mustDecodeConfig(t, config))
+	if err != nil || !reflect.DeepEqual(got, []string{"HK 01", "HK 到期"}) {
 		t.Fatalf("got %v %v", got, err)
 	}
 }
@@ -270,7 +294,7 @@ func TestLoonSeparatesSubscriptionAndAggregationFilters(t *testing.T) {
 	if !containsLine(loonSection(output, "Proxy Group"), "混合 = select,手动-排除,引用-排除,混合-筛选,混合-聚合筛选") {
 		t.Fatal(output)
 	}
-	if !jsonx.Equal(config, original) {
+	if !convert.EqualJ(config, original) {
 		t.Fatal("config mutated")
 	}
 }
@@ -291,9 +315,9 @@ func TestLoonRemoteReuseRespectsEachGroupExclusionAndFollowSource(t *testing.T) 
 	source.Set("regex", "")
 	source.Set("aggregation_regex", "")
 	config.Set("proxy_groups", append(config.GetList("proxy_groups"),
-		jsonx.Obj("id", "plain", "name", "全部", "type", "select", "subscriptions", []any{"sub"}),
-		jsonx.Obj("id", "different", "name", "另一个筛选", "type", "select", "subscriptions", []any{"sub"}, "exclude_regex", "另一种排除"),
-		jsonx.Obj("id", "follow", "name", "跟随", "type", "select", "follow_group", "mixed", "exclude_regex", "wrong",
+		convert.JObjKV("id", "plain", "name", "全部", "type", "select", "subscriptions", []any{"sub"}),
+		convert.JObjKV("id", "different", "name", "另一个筛选", "type", "select", "subscriptions", []any{"sub"}, "exclude_regex", "另一种排除"),
+		convert.JObjKV("id", "follow", "name", "跟随", "type", "select", "follow_group", "mixed", "exclude_regex", "wrong",
 			"aggregation_exclude_regex", "wrong", "regex", "wrong", "aggregation_regex", "wrong")))
 	output := loonOf(t, config)
 	entries := remoteEntries(t, output)
@@ -327,12 +351,16 @@ func TestLoonRemoteReuseRespectsEachGroupExclusionAndFollowSource(t *testing.T) 
 // --- test_loon_generation.py (pure-function cases; the route cases are C34's)
 
 func TestUnsupportedTransportsAreSkipped(t *testing.T) {
-	for _, node := range []string{
+	for _, raw := range []string{
 		`{"name": "grpc", "type": "vless", "server": "a.test", "port": 443, "params": {"uuid": "u", "network": "grpc"}}`,
 		`{"name": "t", "type": "tuic", "server": "a.test", "port": 443}`,
 	} {
-		if line, err := convert.ConvertNodeToLoon(mustJSON(t, node)); err != nil || line != "" {
-			t.Fatalf("%s: %q %v", node, line, err)
+		node, err := convert.DecodeJ[model.Node](mustJSON(t, raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if line, err := convert.LoonNode(node); err != nil || line != "" {
+			t.Fatalf("%s: %q %v", raw, line, err)
 		}
 	}
 }
@@ -351,7 +379,7 @@ func TestLogicalRulesWithUnsupportedSubrulesAreCommented(t *testing.T) {
 		{"itemType": "rule", "rule_type": "OR", "value": "((PROCESS-NAME,curl),(DOMAIN,b.test))", "policy": "DIRECT"},
 		{"itemType": "ruleset", "name": "Apple", "policy": "DIRECT",
 		 "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple.list"}]}`)
-	lines, remote, err := convert.BuildLoonRules(config, "")
+	lines, remote, err := convert.LoonRules(mustDecodeConfig(t, config), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,8 +393,11 @@ func TestLogicalRulesWithUnsupportedSubrulesAreCommented(t *testing.T) {
 
 func TestNodeFormatsFollowLoonDocs(t *testing.T) {
 	line := func(nodeType, params string) string {
-		node := mustJSON(t, `{"name": "n", "type": "`+nodeType+`", "server": "a.test", "port": 443, "params": `+params+`}`)
-		out, err := convert.ConvertNodeToLoon(node)
+		node, err := convert.DecodeJ[model.Node](mustJSON(t, `{"name": "n", "type": "`+nodeType+`", "server": "a.test", "port": 443, "params": `+params+`}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := convert.LoonNode(node)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -393,7 +424,7 @@ func TestLoonRejectsUnknownPolicy(t *testing.T) {
 	withFakeSubStore(t)
 	config := mustJSON(t, `{"rule_configs": [{"id": "r", "itemType": "rule", "rule_type": "DOMAIN", "value": "a.test",
 		"policy": "Missing", "enabled": true}]}`)
-	_, err := convert.GenerateLoonConfig(context.Background(), config, "")
+	_, err := convert.LoonConfig(context.Background(), mustDecodeConfig(t, config), "")
 	var strategy *rules.StrategyReferenceError
 	if !errors.As(err, &strategy) {
 		t.Fatalf("err %v", err)
@@ -402,16 +433,16 @@ func TestLoonRejectsUnknownPolicy(t *testing.T) {
 
 // --- test_udp_fallback.py (Surge / Loon halves)
 
-func udpRule(id, kind, value, policy string, extra ...any) *jsonx.Object {
-	r := jsonx.Obj("id", id, "itemType", "rule", "rule_type", kind, "value", value, "policy", policy, "enabled", true)
+func udpRule(id, kind, value, policy string, extra ...any) *convert.JObj {
+	r := convert.JObjKV("id", id, "itemType", "rule", "rule_type", kind, "value", value, "policy", policy, "enabled", true)
 	for i := 0; i+1 < len(extra); i += 2 {
 		r.Set(extra[i].(string), extra[i+1])
 	}
 	return r
 }
 
-func udpConfig(rulesList []any, clients ...any) *jsonx.Object {
-	c := jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", "https://config.test"),
+func udpConfig(rulesList []any, clients ...any) *convert.JObj {
+	c := convert.JObjKV("profile_id", "default", "system_config", convert.JObjKV("server_domain", "https://config.test"),
 		"rule_configs", rulesList, "rule_library", []any{})
 	for i := 0; i+1 < len(clients); i += 2 {
 		c.Set(clients[i].(string), clients[i+1])
@@ -419,7 +450,7 @@ func udpConfig(rulesList []any, clients ...any) *jsonx.Object {
 	return c
 }
 
-var afterMatch = func() *jsonx.Object {
+var afterMatch = func() *convert.JObj {
 	return udpRule("quic", "AND", "((NETWORK,udp),(DST-PORT,443/3478))", "REJECT")
 }
 
@@ -457,7 +488,7 @@ func TestSurgeKeepsFinalLastAndWritesTheNativeFallback(t *testing.T) {
 func TestSurgeBaseConfigWinsOverTheOption(t *testing.T) {
 	withFakeSubStore(t)
 	config := udpConfig([]any{udpRule("final", "MATCH", "", "DIRECT", "udp_fallback", "REJECT")},
-		"surge", jsonx.Obj("custom_config", "[General]\nudp-policy-not-supported-behaviour = DIRECT\n"))
+		"surge", convert.JObjKV("custom_config", "[General]\nudp-policy-not-supported-behaviour = DIRECT\n"))
 	wantLines(t, udpSection(surgeOf(t, config), "General"), []string{"udp-policy-not-supported-behaviour = DIRECT"})
 }
 
@@ -467,10 +498,10 @@ func TestLoonRulesAfterMatchNeverMoveBeforeFinal(t *testing.T) {
 		udpRule("ntp", "AND", "((NETWORK,udp),(DST-PORT,123))", "DIRECT"),
 		udpRule("final", "MATCH", "", "DIRECT", "udp_fallback", "REJECT"),
 		udpRule("late", "DOMAIN", "late.test", "REJECT"),
-		jsonx.Obj("id", "set", "itemType", "ruleset", "library_rule_id", "lib", "name", "Late", "url", "/rules/late",
+		convert.JObjKV("id", "set", "itemType", "ruleset", "library_rule_id", "lib", "name", "Late", "url", "/rules/late",
 			"policy", "REJECT", "enabled", true),
 	})
-	config.Set("rule_library", []any{jsonx.Obj("id", "lib", "name", "Late", "source_type", "content",
+	config.Set("rule_library", []any{convert.JObjKV("id", "lib", "name", "Late", "source_type", "content",
 		"content", "DOMAIN,late.test", "behavior", "domain", "url", "/rules/late")})
 	output := loonOf(t, config)
 	if !containsLine(udpSection(output, "General"), "udp-fallback-mode = REJECT") || strings.Contains(output, "udp-fallback-mode = DIRECT") {
@@ -490,9 +521,9 @@ func TestLoonCustomGeneralGetsTheOptionUnlessItSetsOne(t *testing.T) {
 	rulesList := func() []any {
 		return []any{udpRule("final", "MATCH", "", "DIRECT", "udp_fallback", "REJECT"), udpRule("port", "DST-PORT", "443/3478", "REJECT")}
 	}
-	general := udpSection(loonOf(t, udpConfig(rulesList(), "loon", jsonx.Obj("custom_config", "[General]\nip-mode = ipv4-only"))), "General")
+	general := udpSection(loonOf(t, udpConfig(rulesList(), "loon", convert.JObjKV("custom_config", "[General]\nip-mode = ipv4-only"))), "General")
 	wantLines(t, general, []string{"ip-mode = ipv4-only", "udp-fallback-mode = REJECT"})
-	kept := udpConfig(rulesList(), "loon", jsonx.Obj("custom_config", "[General]\nudp-fallback-mode = DIRECT"))
+	kept := udpConfig(rulesList(), "loon", convert.JObjKV("custom_config", "[General]\nudp-fallback-mode = DIRECT"))
 	wantLines(t, udpSection(loonOf(t, kept), "General"), []string{"udp-fallback-mode = DIRECT"})
 	if !strings.HasPrefix(udpSection(loonOf(t, kept), "Rule")[0], "# 仅 Mihomo 生效") {
 		t.Fatal("rule after MATCH not commented first")
@@ -514,14 +545,14 @@ func TestNTPDirectGoesFirstInSurgeAndLoon(t *testing.T) {
 	if got := udpSection(loonOf(t, config), "Rule")[0]; got != "AND,((PROTOCOL,UDP),(DEST-PORT,123)),DIRECT" {
 		t.Fatal(got)
 	}
-	if list := config.GetList("rule_configs"); len(list) != 2 || list[0].(*jsonx.Object).GetString("id") != "lan" {
+	if list := config.GetList("rule_configs"); len(list) != 2 || list[0].(*convert.JObj).GetString("id") != "lan" {
 		t.Fatal("rule_configs changed")
 	}
 }
 
 func TestNTPDirectIsOffUnlessTheEffectiveMatchEnablesIt(t *testing.T) {
 	withFakeSubStore(t)
-	for _, match := range []*jsonx.Object{udpRule("final", "MATCH", "", "DIRECT"),
+	for _, match := range []*convert.JObj{udpRule("final", "MATCH", "", "DIRECT"),
 		udpRule("final", "MATCH", "", "DIRECT", "ntp_direct", true, "enabled", false)} {
 		config := udpConfig([]any{udpRule("lan", "DOMAIN", "lan.test", "DIRECT"), match})
 		if strings.Contains(surgeOf(t, config)+loonOf(t, config), "DEST-PORT,123") {
@@ -537,35 +568,42 @@ func TestNTPDirectIsOffUnlessTheEffectiveMatchEnablesIt(t *testing.T) {
 func TestSurgeLoonFailClosedWithoutSubStore(t *testing.T) {
 	t.Cleanup(convert.SetMihomoEnvironment(convert.DefaultMihomoEnvironment()))
 	config := mustJSON(t, `{"nodes": [{"id": "n", "name": "N", "proxy_string": "ss://YWVzOnB3@h.example.test:1#x"}]}`)
-	for _, generate := range []func(context.Context, *jsonx.Object, string) (string, error){
-		convert.GenerateSurgeConfig, convert.GenerateLoonConfig} {
-		_, err := generate(context.Background(), config.DeepCopy(), "")
+	for _, generate := range []func(context.Context, *model.Config, string) (string, error){
+		convert.SurgeConfig, convert.LoonConfig} {
+		_, err := generate(context.Background(), mustDecodeConfig(t, config.DeepCopy()), "")
 		var hook *convert.HookMissingError
 		if !errors.As(err, &hook) {
 			t.Fatalf("err %v", err)
 		}
 	}
 	// Without URI node strings Sub-Store is not needed.
-	if _, err := convert.GenerateSurgeConfig(context.Background(), jsonx.NewObject(), ""); err != nil {
+	if _, err := convert.SurgeConfig(context.Background(), &model.Config{Profile: &model.Profile{}}, ""); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestProxiesTextSkipsFailingNodes(t *testing.T) {
-	proxies := []any{
-		jsonx.Obj("name", "A", "type", "ss", "server", "a.test", "port", jsonx.Int(1), "cipher", "aes-128-gcm", "password", "p"),
-		jsonx.Obj("name", "B", "type", "ss", "server", false, "port", jsonx.Int(1)), // incompatible stored server type is skipped; numeric text uses the shared codec
-		jsonx.Obj("name", "W", "type", "wireguard", "server", "w.test", "port", jsonx.Int(1)),
+	proxies, err := decodeYAMLProxies([]any{
+		convert.JObjKV("name", "A", "type", "ss", "server", "a.test", "port", convert.JInt(1), "cipher", "aes-128-gcm", "password", "p"),
+		convert.JObjKV("name", "B", "type", "ss", "server", false, "port", convert.JInt(1)), // incompatible stored server type is skipped; numeric text uses the shared codec
+		convert.JObjKV("name", "W", "type", "wireguard", "server", "w.test", "port", convert.JInt(1)),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	text, err := convert.ConvertProxiesToSurgeText(proxies, substore.ProxiesToNodes)
+	text, err := convert.ClientProxyText(proxies, substore.ProxyNodes, "surge")
 	if err != nil || text != "A = ss, a.test, 1, encrypt-method=aes-128-gcm, password=p" {
 		t.Fatalf("surge %q %v", text, err)
 	}
-	text, err = convert.ConvertProxiesToLoonText(proxies, substore.ProxiesToNodes)
+	text, err = convert.ClientProxyText(proxies, substore.ProxyNodes, "loon")
 	if err != nil || text != `A = Shadowsocks,a.test,1,aes-128-gcm,"p",fast-open=false,udp=false` {
 		t.Fatalf("loon %q %v", text, err)
 	}
-	_, err = convert.ConvertProxiesToLoonText([]any{jsonx.Obj("name", "D", "dialer-proxy", "R")}, substore.ProxiesToNodes)
+	dialerProxies, err := decodeYAMLProxies([]any{convert.JObjKV("name", "D", "dialer-proxy", "R")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = convert.ClientProxyText(dialerProxies, substore.ProxyNodes, "loon")
 	var dialer *convert.DialerReferenceError
 	if !errors.As(err, &dialer) || err.Error() != "Loon 订阅暂不支持 dialer-proxy，不能静默移除拨号配置" {
 		t.Fatalf("err %v", err)

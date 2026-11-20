@@ -1,15 +1,13 @@
 package convert_test
 
 import (
-	"configflow/internal/convert"
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 )
 
 type clientBytePatch struct {
@@ -76,7 +74,8 @@ func readClientByteExceptions(t *testing.T) map[int]clientByteException {
 	}
 	return result
 }
-func explicitClientBytes(t *testing.T, entry *jsonx.Object, exception clientByteException) string {
+
+func explicitClientBytes(t *testing.T, entry *convert.JObj, exception clientByteException) string {
 	t.Helper()
 	if entry.GetString("fn") != exception.Fn {
 		t.Fatal("client exception target moved")
@@ -104,27 +103,13 @@ func explicitClientBytes(t *testing.T, entry *jsonx.Object, exception clientByte
 	return out
 }
 
-func typedClientByteCase(t *testing.T, entry *jsonx.Object) (string, error) {
+func typedClientByteCase(t *testing.T, entry *convert.JObj) (string, error) {
 	t.Helper()
 	args := entry.GetObject("args")
-	source := args.GetObject("profile")
-	data, err := json.Marshal(source)
+	config, err := convert.DecodeConfigJ(args.GetObject("profile"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var profile model.Profile
-	var shared model.Shared
-	var system model.System
-	if err = json.Unmarshal(data, &profile); err != nil {
-		t.Fatal(err)
-	}
-	if err = json.Unmarshal(data, &shared); err != nil {
-		t.Fatal(err)
-	}
-	if err = json.Unmarshal(data, &system); err != nil {
-		t.Fatal(err)
-	}
-	config := &model.Config{Profile: &profile, ProfileID: source.GetString("profile_id"), Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary, SystemConfig: system.SystemConfig, Backup: system.Backup, Agents: system.Agents, HasAgents: source.Has("agents")}
 	if entry.GetString("fn") == "surge" {
 		return convert.SurgeConfig(context.Background(), config, args.GetString("base_url"))
 	}

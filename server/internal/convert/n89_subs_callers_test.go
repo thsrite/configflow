@@ -4,16 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+
+	"configflow/internal/convert"
 )
 
 type subsCallerCase struct {
@@ -97,11 +96,22 @@ func TestN89CallerReferenceProvenance(t *testing.T) {
 		rows := loadJSONLines(t, "testdata/"+archive+".jsonl.gz")
 		for index, expected := range versions {
 			args := rows[index].GetList("args")
-			document := args[0].(*jsonx.Object).DeepCopy()
-			_, err := convert.ApplyEasyTier(document, args[1], true, args[3])
-			var invalid *convert.EasyTierSettingsError
-			mutated, parseErr := jsonx.Parse(expected.NativeMutated)
-			if expected.NativeError[0] != "EasyTierSettingsError" || !errors.As(err, &invalid) || err.Error() != expected.NativeError[1] || parseErr != nil || !jsonx.Equal(document, mutated) {
+			docNode, err := convert.YAMLNodeFromJ(args[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := convert.DecodeConfigJ(args[1].(*convert.JObj))
+			if err != nil {
+				t.Fatal(err)
+			}
+			version, err := coreVersionRaw(args[3])
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = convert.ApplyEasyTierNode(docNode, cfg, true, version)
+			gotDoc, convErr := convert.JFromYAMLNode(docNode)
+			mutated, parseErr := convert.ParseJ(expected.NativeMutated)
+			if expected.NativeError[0] != "EasyTierSettingsError" || err == nil || err.Error() != expected.NativeError[1] || convErr != nil || parseErr != nil || !convert.EqualJ(gotDoc, mutated) {
 				t.Fatalf("Agent fixture %s/%d mismatch: %v", archive, index, err)
 			}
 		}

@@ -3,14 +3,15 @@ package convert_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/rulesetfmt"
 	"configflow/internal/yamlx"
 )
@@ -30,8 +31,8 @@ func TestMihomoReviewYAMLFailureLogOmitsConfiguration(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			config := jsonx.Obj("mihomo", jsonx.Obj("custom_config", "secret: ["+secret))
-			_, err = convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
+			cfg := &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{CustomConfig: "secret: [" + secret}}}
+			_, err = convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{SkipProviderPreflight: true})
 			var custom *convert.CustomConfigYAMLError
 			if !errors.As(err, &custom) {
 				t.Fatalf("expected custom YAML rejection, got %v", err)
@@ -55,15 +56,16 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 		name string
 		url  any
 	}{
-		{"null", nil}, {"empty", ""}, {"false", false}, {"zero", jsonx.Int(0)},
-		{"empty-list", []any{}}, {"empty-object", jsonx.NewObject()},
+		{"null", nil}, {"empty", ""}, {"false", false}, {"zero", convert.JInt(0)},
+		{"empty-list", []any{}}, {"empty-object", convert.NewJObj()},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			config := jsonx.Obj(
-				"rule_library", []any{jsonx.Obj("id", "lib", "name", "Library", "url", test.url)},
-				"rule_configs", []any{jsonx.Obj("id", "r", "name", "Rules", "itemType", "ruleset", "library_rule_id", "lib", "url", "/fallback.yaml", "policy", "DIRECT")},
+			config := convert.JObjKV(
+				"rule_library", []any{convert.JObjKV("id", "lib", "name", "Library", "url", test.url)},
+				"rule_configs", []any{convert.JObjKV("id", "r", "name", "Rules", "itemType", "ruleset", "library_rule_id", "lib", "url", "/fallback.yaml", "policy", "DIRECT")},
 			)
-			doc, err := convert.GenerateMihomoDocument(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
+			cfg := mustDecodeConfig(t, config)
+			doc, err := convert.MihomoDocument(context.Background(), cfg, convert.MihomoOptions{SkipProviderPreflight: true})
 			if test.url != nil && test.name != "empty" && test.name != "zero" {
 				if !errors.Is(err, rulesetfmt.ErrURLType) {
 					t.Fatalf("want native URL type validation, got %v", err)
@@ -73,16 +75,16 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			provider := doc.GetObject("rule-providers").GetObject("Rules")
+			provider := yamlx.Get(yamlx.Get(doc, "rule-providers"), "Rules")
 			format, extension := "yaml", "yaml"
 			if test.name == "zero" {
 				// Numeric URL reads as "0", so it no longer uses the YAML fallback.
 				format, extension = "text", "list"
 			}
-			if provider.GetString("format") != format || provider.GetString("path") != "./ruleset/Rules."+extension {
+			if yamlx.Get(provider, "format").Value != format || yamlx.Get(provider, "path").Value != "./ruleset/Rules."+extension {
 				t.Fatalf("wrong fallback format: %v", provider)
 			}
-			downloads, err := convert.GetMihomoRulesetDownloads(context.Background(), config, "")
+			downloads, err := convert.MihomoRulesetDownloads(context.Background(), cfg, "")
 			if err != nil || len(downloads) != 1 || downloads[0].LocalPath != "./ruleset/Rules."+extension {
 				t.Fatalf("wrong fallback download: %+v, %v", downloads, err)
 			}
@@ -108,7 +110,7 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 			// PORTING: CPython-only decimal digit spellings are not reimplemented.
 			if name := entry.GetString("case"); name == "sniff-ports-['１-６５５３５']" || name == "sniff-ports-['²']" {
 				args := entry.GetList("args")
-				err := convert.ValidateBaseSettings(args[0], args[1], nil, nil)
+				err := validateBaseFromJ(args[0], args[1], nil, nil)
 				var validation *convert.BaseSettingsError
 				want := "sniffer.sniff.HTTP.ports：" + convert.SniffPortsHint
 				if !errors.As(err, &validation) || err.Error() != want {
@@ -121,7 +123,7 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 			profile := entry.GetObject("args").GetObject("profile")
 			if entry.GetString("fn") != "generate" {
 				if args := entry.GetList("args"); len(args) > 0 {
-					profile, _ = args[0].(*jsonx.Object)
+					profile, _ = args[0].(*convert.JObj)
 				}
 			}
 			if convert.MihomoReplayIssue(profile) == "R8 quoted provider interval" {
@@ -141,34 +143,48 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 	e := row.entry
 	if row.fn == "takeover" {
 		args := e.GetList("args")
-		restore := convert.RegisterMihomoHooks(convert.MihomoHooks{
-			GatewayEnabled: func(*jsonx.Object) (bool, error) {
+		restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{
+			GatewayEnabled: func(*model.Config) (bool, error) {
 				if args[1] == true {
 					return false, errors.New("synthetic gateway failure")
 				}
 				return args[0] == true, nil
 			},
-			IsFullTun: func(*jsonx.Object) (bool, error) { return args[2] == true, nil },
+			FullTun: func(*model.Config) (bool, error) { return args[2] == true, nil },
 		})
 		defer restore()
-		mode, err := convert.TakeoverMode(jsonx.NewObject())
+		mode, err := convert.GatewayMode(&model.Config{Profile: &model.Profile{}})
 		if msg := sameError(t, row, err); msg != "" || err != nil {
 			return msg
 		}
 		return compareOut(row, noneString(mode))
 	}
 	if e.GetBool("gateway_fixture") {
-		restore := convert.RegisterMihomoHooks(convert.MihomoHooks{
-			GatewayEnabled: func(*jsonx.Object) (bool, error) { return true, nil },
-			ApplyLinuxGateway: func(main, _ *jsonx.Object, _ string) error {
-				providers := main.GetObject("rule-providers")
+		restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{
+			GatewayEnabled: func(*model.Config) (bool, error) { return true, nil },
+			ApplyGateway: func(main *yamlx.Node, _ *model.Config, _ string) error {
+				providers := yamlx.Get(main, "rule-providers")
 				if providers == nil {
-					providers = jsonx.NewObject()
-					main.Set("rule-providers", providers)
+					providers = yamlx.Map()
+					yamlx.Set(main, "rule-providers", providers)
 				}
-				providers.Set("Gateway", jsonx.Obj("type", "http", "url", "/gateway.rules", "path", "./ruleset/gateway.list", "behavior", "classical", "format", "text"))
-				providers.Set("File", jsonx.Obj("type", "file", "url", "/ignored", "path", "./ruleset/local.list"))
-				providers.Set("Empty", jsonx.Obj("type", "http", "url", "", "path", "./ruleset/empty.list"))
+				yamlx.Set(providers, "Gateway", yamlx.Map(
+					yamlx.Str("type"), yamlx.Str("http"),
+					yamlx.Str("url"), yamlx.Str("/gateway.rules"),
+					yamlx.Str("path"), yamlx.Str("./ruleset/gateway.list"),
+					yamlx.Str("behavior"), yamlx.Str("classical"),
+					yamlx.Str("format"), yamlx.Str("text"),
+				))
+				yamlx.Set(providers, "File", yamlx.Map(
+					yamlx.Str("type"), yamlx.Str("file"),
+					yamlx.Str("url"), yamlx.Str("/ignored"),
+					yamlx.Str("path"), yamlx.Str("./ruleset/local.list"),
+				))
+				yamlx.Set(providers, "Empty", yamlx.Map(
+					yamlx.Str("type"), yamlx.Str("http"),
+					yamlx.Str("url"), yamlx.Str(""),
+					yamlx.Str("path"), yamlx.Str("./ruleset/empty.list"),
+				))
 				return nil
 			},
 		})
@@ -179,12 +195,26 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 		defer restore()
 		args := e.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()
-		report := jsonx.NewObject()
-		doc, err := convert.GenerateMihomoDocument(context.Background(), profile, convert.GenerateOptions{
-			BaseURL: args.GetString("base_url"), SkipProviderPreflight: true,
-			SyncLANHosts: args.GetBool("sync_lan_hosts"), RegionProbe: args.GetBool("region_probe"),
-			MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent"), Report: report,
-		})
+		cfg, err := convert.DecodeConfigJ(profile)
+		report := &convert.GenerationReport{}
+		var doc any
+		if err == nil {
+			var version json.RawMessage
+			if version, err = coreVersionRaw(args.Value("core_version")); err == nil {
+				var text string
+				text, err = convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
+					BaseURL: args.GetString("base_url"), SkipProviderPreflight: true,
+					SyncLANHosts: args.GetBool("sync_lan_hosts"), RegionProbe: args.GetBool("region_probe"),
+					CoreVersion: version, ForAgent: args.GetBool("for_agent"), Report: report,
+				})
+				if err == nil {
+					var parsed *yamlx.Node
+					if parsed, err = yamlx.Parse([]byte(text)); err == nil {
+						doc, err = convert.JFromYAMLNode(parsed)
+					}
+				}
+			}
+		}
 		if msg := sameError(t, row, err); msg != "" {
 			return msg
 		}
@@ -193,7 +223,8 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 				return "generated document differs:\nPython " + encode(e.Value("document")) + "\nGo " + encode(mihomoConv(doc))
 			}
 		}
-		if !sameValue(e.Value("report"), report) {
+		reportObj := reportToJ(report)
+		if !sameValue(e.Value("report"), reportObj) {
 			return "generation report differs"
 		}
 		if !sameValue(e.Value("mutated"), profile) {
@@ -202,15 +233,19 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 		return ""
 	}
 	if args := e.GetList("args"); row.fn == "provider_downloads" && len(args) == 3 {
-		downloads, err := convert.GetMihomoProviderDownloads(context.Background(), args[0].(*jsonx.Object), args[1].(string), args[2].(*jsonx.Object))
+		cfg, err := convert.DecodeConfigJ(args[0].(*convert.JObj))
+		var main *yamlx.Node
+		if err == nil && args[2] != nil {
+			main, err = convert.YAMLNodeFromJ(args[2])
+		}
+		var downloads []convert.ResourceDownload
+		if err == nil {
+			downloads, err = convert.MihomoProviderDownloads(context.Background(), cfg, args[1].(string), main)
+		}
 		if msg := sameError(t, row, err); msg != "" || err != nil {
 			return msg
 		}
-		out := []any{}
-		for _, download := range downloads {
-			out = append(out, download.Object())
-		}
-		return compareOut(row, out)
+		return compareOut(row, downloadsToJ(downloads))
 	}
 	return runMihomoRow(t, row, oracle)
 }

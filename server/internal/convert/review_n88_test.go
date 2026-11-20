@@ -10,12 +10,10 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 )
 
-// This review sample also runs unmodified on the pre-migration baseline, using
-// only generator APIs that existed there. It checks all three engines without
-// repeating the author's complete 4548-output run.
+// This review sample checks all three engines against the frozen baseline
+// manifest without repeating the complete 4548-output run.
 func TestN88ReviewByteSamples(t *testing.T) {
 	var fixture struct {
 		Baseline string            `json:"baseline"`
@@ -36,7 +34,7 @@ func TestN88ReviewByteSamples(t *testing.T) {
 	if fixture.Baseline != "2277ce047d4abb78ffed436442c19b31152ba85d" {
 		t.Fatal("baseline changed")
 	}
-	rows := map[string][]*jsonx.Object{}
+	rows := map[string][]*convert.JObj{}
 	for name, digest := range fixture.Sources {
 		data, err := os.ReadFile("testdata/" + name)
 		if err != nil {
@@ -69,11 +67,31 @@ func TestN88ReviewByteSamples(t *testing.T) {
 				var err error
 				switch fn {
 				case "generate":
-					out, err = convert.GenerateMihomoConfig(context.Background(), profile, convert.GenerateOptions{BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"), Report: jsonx.NewObject(), MihomoCoreVersion: args.Value("core_version"), ForAgent: args.GetBool("for_agent")})
+					cfg, cerr := convert.DecodeConfigJ(profile)
+					if cerr != nil {
+						t.Fatal(cerr)
+					}
+					version, verr := coreVersionRaw(args.Value("core_version"))
+					if verr != nil {
+						t.Fatal(verr)
+					}
+					out, err = convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
+						BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"),
+						SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"),
+						Report: &convert.GenerationReport{}, CoreVersion: version, ForAgent: args.GetBool("for_agent"),
+					})
 				case "surge":
-					out, err = convert.GenerateSurgeConfig(context.Background(), profile, args.GetString("base_url"))
+					cfg, cerr := decodeClientConfig(profile)
+					if cerr != nil {
+						t.Fatal(cerr)
+					}
+					out, err = convert.SurgeConfig(context.Background(), cfg, args.GetString("base_url"))
 				case "loon":
-					out, err = convert.GenerateLoonConfig(context.Background(), profile, args.GetString("base_url"))
+					cfg, cerr := decodeClientConfig(profile)
+					if cerr != nil {
+						t.Fatal(cerr)
+					}
+					out, err = convert.LoonConfig(context.Background(), cfg, args.GetString("base_url"))
 				}
 				if err != nil {
 					t.Fatal(err)

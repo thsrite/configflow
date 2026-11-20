@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
@@ -178,14 +177,14 @@ func easyTierRowIssue(row corpusRow) string {
 	case "normalize_settings", "redact_settings":
 		value = row.args[0]
 	case "apply_easytier":
-		config, ok := row.args[1].(*jsonx.Object)
+		config, ok := row.args[1].(*JObj)
 		if !ok && row.args[1] != nil {
 			return "easytier.config object"
 		}
 		if config != nil {
 			mihomo, present := config.Get("mihomo")
 			if present && mihomo != nil {
-				obj, ok := mihomo.(*jsonx.Object)
+				obj, ok := mihomo.(*JObj)
 				if !ok {
 					return "easytier.mihomo object"
 				}
@@ -197,7 +196,7 @@ func easyTierRowIssue(row corpusRow) string {
 				return "easytier.version string"
 			}
 		}
-		doc, ok := row.args[0].(*jsonx.Object)
+		doc, ok := row.args[0].(*JObj)
 		if !ok {
 			return "easytier.document object"
 		}
@@ -208,7 +207,7 @@ func easyTierRowIssue(row corpusRow) string {
 					return "easytier.document." + key + " array"
 				}
 				for _, item := range items {
-					obj, ok := item.(*jsonx.Object)
+					obj, ok := item.(*JObj)
 					if !ok {
 						return "easytier.document.resource object"
 					}
@@ -231,11 +230,11 @@ func easyTierRowIssue(row corpusRow) string {
 	if value == nil {
 		return ""
 	}
-	settings, ok := value.(*jsonx.Object)
+	settings, ok := value.(*JObj)
 	if !ok {
 		return "easytier.settings object"
 	}
-	check := func(obj *jsonx.Object, key, kind string, nullable bool) string {
+	check := func(obj *JObj, key, kind string, nullable bool) string {
 		raw, present := obj.Get(key)
 		if !present || raw == nil && nullable {
 			return ""
@@ -255,8 +254,8 @@ func easyTierRowIssue(row corpusRow) string {
 				}
 			}
 		case "int":
-			number, ok := raw.(jsonx.Number)
-			valid = ok && number.IsInt()
+			number, ok := raw.(json.Number)
+			valid = ok && IsIntNumber(number)
 		}
 		if !valid {
 			return "easytier." + key + " " + kind
@@ -277,7 +276,7 @@ func easyTierRowIssue(row corpusRow) string {
 		return issue
 	}
 	if raw, present := settings.Get("keepalive"); present && raw != nil {
-		keep, ok := raw.(*jsonx.Object)
+		keep, ok := raw.(*JObj)
 		if !ok {
 			return "easytier.keepalive object"
 		}
@@ -288,7 +287,7 @@ func easyTierRowIssue(row corpusRow) string {
 		}
 	}
 	if raw, present := settings.Get("options"); present {
-		options, ok := raw.(*jsonx.Object)
+		options, ok := raw.(*JObj)
 		if !ok {
 			return "easytier.options object"
 		}

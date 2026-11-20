@@ -3,24 +3,26 @@ package convert
 import (
 	"container/list"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
-func mustJSON(t *testing.T, text string) *jsonx.Object {
+func mustJSON(t *testing.T, text string) *JObj {
 	t.Helper()
-	v, err := jsonx.ParseString(text)
+	v, err := ParseJString(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*jsonx.Object)
+	return v.(*JObj)
 }
 
 // ---------------------------------------------------- test_proxy_yaml_cache.py
@@ -75,7 +77,11 @@ func TestOldParseSemanticsOnFirstAndRepeatedCalls(t *testing.T) {
 		text := row.args[0].(string)
 		want := compactText(t, row.out)
 		for i := 0; i < 2; i++ {
-			got, err := ParseStructuredProxyString(text)
+			node, err := StructuredProxy(text)
+			var got any
+			if err == nil && node != nil {
+				got, err = JFromYAMLNode(node)
+			}
 			if nativeProxyReplay(t, "corpus", row, got, nil, err) {
 				continue
 			}
@@ -96,22 +102,24 @@ const nestedProxy = "type: vless\nname: original\nserver: proxy.example\nport: 4
 
 func TestNestedResultsAndConversionNamesDoNotPolluteCache(t *testing.T) {
 	calls := isolateCache(t)
-	first := parsedProxyForTest(nestedProxy)
-	first.GetObject("ws-opts").GetObject("headers").Set("Host", "changed.invalid")
-	first.Set("alpn", append(first.GetList("alpn"), "changed"))
-	first.Set("dialer-proxy", "changed")
-	later := parsedProxyForTest(nestedProxy)
-	if later.GetObject("ws-opts").GetObject("headers").GetString("Host") != "edge.example" ||
-		len(later.GetList("alpn")) != 1 || later.Has("dialer-proxy") {
-		t.Fatalf("cache polluted: %s", compactText(t, later))
+	first := parsedProxyNodeForTest(nestedProxy)
+	yamlx.Set(yamlx.Get(yamlx.Get(first, "ws-opts"), "headers"), "Host", yamlx.Str("changed.invalid"))
+	alpn := yamlx.Get(first, "alpn")
+	alpn.Content = append(alpn.Content, yamlx.Str("changed"))
+	yamlx.Set(first, "dialer-proxy", yamlx.Str("changed"))
+	later := parsedProxyNodeForTest(nestedProxy)
+	if scalarText(yamlx.Get(yamlx.Get(yamlx.Get(later, "ws-opts"), "headers"), "Host")) != "edge.example" ||
+		len(yamlx.Get(later, "alpn").Content) != 1 || yamlx.Get(later, "dialer-proxy") != nil {
+		t.Fatalf("cache polluted: %v", later)
 	}
 	ctx := context.Background()
-	one, _ := ConvertNodeToMihomo(ctx, jsonx.Obj("name", "one", "proxy_string", nestedProxy), nil)
-	two, _ := ConvertNodeToMihomo(ctx, jsonx.Obj("name", "two", "proxy_string", nestedProxy), nil)
-	if one.GetString("name") != "one" || two.GetString("name") != "two" {
+	src := nestedProxy
+	one, _ := NodeProxy(ctx, model.Node{Name: "one", ProxyString: &src}, nil)
+	two, _ := NodeProxy(ctx, model.Node{Name: "two", ProxyString: &src}, nil)
+	if scalarText(yamlx.Get(one, "name")) != "one" || scalarText(yamlx.Get(two, "name")) != "two" {
 		t.Fatal("names")
 	}
-	if parsedProxyForTest(nestedProxy).GetString("name") != "original" {
+	if scalarText(yamlx.Get(parsedProxyNodeForTest(nestedProxy), "name")) != "original" {
 		t.Fatal("name leaked into cache")
 	}
 	if *calls != 1 {
@@ -126,7 +134,7 @@ func TestFullTextChangeInvalidatesAndLRUEvicts(t *testing.T) {
 	for _, text := range []string{a, b, " \n" + a + "\n ", c} {
 		trimmed := strings.TrimSpace(text)
 		want := trimmed[strings.LastIndex(trimmed, ": ")+2:]
-		if got := parsedProxyForTest(text).GetString("server"); got != want {
+		if got := scalarText(yamlx.Get(parsedProxyNodeForTest(text), "server")); got != want {
 			t.Fatalf("%q: %s", text, got)
 		}
 	}
@@ -137,7 +145,7 @@ func TestFullTextChangeInvalidatesAndLRUEvicts(t *testing.T) {
 	if !hasA || !hasC || cacheLen() != 2 || *calls != 3 {
 		t.Fatalf("cache a=%v c=%v len=%d calls=%d", hasA, hasC, cacheLen(), *calls)
 	}
-	if parsedProxyForTest(b).GetString("server") != "b.example" || *calls != 4 || cacheLen() != 2 {
+	if scalarText(yamlx.Get(parsedProxyNodeForTest(b), "server")) != "b.example" || *calls != 4 || cacheLen() != 2 {
 		t.Fatal("b reload")
 	}
 }
@@ -145,10 +153,10 @@ func TestFullTextChangeInvalidatesAndLRUEvicts(t *testing.T) {
 func TestURIAndValidJSONDoNotTouchYAMLCache(t *testing.T) {
 	isolateCache(t)
 	parseProxyYAML = func(string) (*yamlx.Node, error) { panic("YAML path entered") }
-	if parsedProxyForTest("ss://sample@proxy.example:443") != nil {
+	if parsedProxyNodeForTest("ss://sample@proxy.example:443") != nil {
 		t.Fatal("uri")
 	}
-	if got := compactText(t, parsedProxyForTest(`{"type":"ss","port":443}`)); got != `{"type":"ss","port":443}` {
+	if got := compactText(t, jNodeOrNil(parsedProxyNodeForTest(`{"type":"ss","port":443}`))); got != `{"type":"ss","port":443}` {
 		t.Fatal(got)
 	}
 	if cacheLen() != 0 {
@@ -159,7 +167,7 @@ func TestURIAndValidJSONDoNotTouchYAMLCache(t *testing.T) {
 func TestFailedAndNonProxyResultsNotRetained(t *testing.T) {
 	for _, text := range []string{"type: [", "null", "name: sample", "type: false"} {
 		calls := isolateCache(t)
-		if parsedProxyForTest(text) != nil || parsedProxyForTest(text) != nil {
+		if parsedProxyNodeForTest(text) != nil || parsedProxyNodeForTest(text) != nil {
 			t.Fatalf("%q parsed", text)
 		}
 		if *calls != 2 || cacheLen() != 0 {
@@ -178,11 +186,11 @@ func TestLoaderFailureDoesNotPoisonLaterRetry(t *testing.T) {
 		}
 		return yamlx.Parse([]byte(text))
 	}
-	if parsedProxyForTest("type: ss") != nil {
+	if parsedProxyNodeForTest("type: ss") != nil {
 		t.Fatal("first")
 	}
 	for i := 0; i < 2; i++ {
-		if got := compactText(t, parsedProxyForTest("type: ss")); got != `{"type":"ss"}` {
+		if got := compactText(t, jNodeOrNil(parsedProxyNodeForTest("type: ss"))); got != `{"type":"ss"}` {
 			t.Fatal(got)
 		}
 	}
@@ -200,7 +208,7 @@ func TestInputByteBudgetBoundary(t *testing.T) {
 		text := "type: ss\nname: abc"
 		proxyYAMLMaxInputBytes = len(text)
 		for i := 0; i < 2; i++ {
-			if got := parsedProxyForTest(text + tc.extra).GetString("name"); got != "abc"+tc.extra {
+			if got := scalarText(yamlx.Get(parsedProxyNodeForTest(text+tc.extra), "name")); got != "abc"+tc.extra {
 				t.Fatal(got)
 			}
 		}
@@ -219,7 +227,7 @@ func TestMultibyteInputBelowCharacterLimitStillBypassesByteLimit(t *testing.T) {
 	text := "type: ss\nname: " + strings.Repeat("中", 10)
 	proxyYAMLMaxInputBytes = len([]rune(text)) + 1
 	for i := 0; i < 2; i++ {
-		if parsedProxyForTest(text).GetString("name") != strings.Repeat("中", 10) {
+		if scalarText(yamlx.Get(parsedProxyNodeForTest(text), "name")) != strings.Repeat("中", 10) {
 			t.Fatal("name")
 		}
 	}
@@ -235,15 +243,15 @@ func TestResultBudgetsBypassWithoutChangingResults(t *testing.T) {
 		text  string
 		want  any
 	}{
-		{&proxyYAMLMaxResultBytes, 100, "type: ss\ntext: " + strings.Repeat("x", 200), jsonx.Obj("type", "ss", "text", strings.Repeat("x", 200))},
-		{&proxyYAMLMaxObjects, 5, "type: ss\nvalues: [a, b, c, d, e, f]", jsonx.Obj("type", "ss", "values", []any{"a", "b", "c", "d", "e", "f"})},
-		{&proxyYAMLMaxDepth, 2, "type: ss\nvalues: [[[item]]]", jsonx.Obj("type", "ss", "values", []any{[]any{[]any{"item"}}})},
+		{&proxyYAMLMaxResultBytes, 100, "type: ss\ntext: " + strings.Repeat("x", 200), JObjKV("type", "ss", "text", strings.Repeat("x", 200))},
+		{&proxyYAMLMaxObjects, 5, "type: ss\nvalues: [a, b, c, d, e, f]", JObjKV("type", "ss", "values", []any{"a", "b", "c", "d", "e", "f"})},
+		{&proxyYAMLMaxDepth, 2, "type: ss\nvalues: [[[item]]]", JObjKV("type", "ss", "values", []any{[]any{[]any{"item"}}})},
 	} {
 		calls := isolateCache(t)
 		want := compactText(t, tc.want)
 		*tc.limit = tc.value
 		for i := 0; i < 2; i++ {
-			if got := compactText(t, parsedProxyForTest(tc.text)); got != want {
+			if got := compactText(t, jNodeOrNil(parsedProxyNodeForTest(tc.text))); got != want {
 				t.Fatalf("%q: %s", tc.text, got)
 			}
 		}
@@ -258,17 +266,21 @@ func TestResultBudgetsBypassWithoutChangingResults(t *testing.T) {
 func TestNativeYAMLScalarBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		source string
-		want   *jsonx.Object
+		want   *JObj
 	}{
-		{"type: ss\nvalue: 2026-10-17", jsonx.Obj("type", "ss", "value", "2026-10-17")},
-		{"type: ss\nvalue: !!binary aGVsbG8=", jsonx.Obj("type", "ss", "value", "aGVsbG8=")},
-		{"type: ss\nyes: first\ntrue: second", jsonx.Obj("type", "ss", "yes", "first", "true", "second")},
-		{"type: ss\nvalue: !!set {a: null, b: null}", jsonx.Obj("type", "ss", "value", jsonx.Obj("a", nil, "b", nil))},
+		{"type: ss\nvalue: 2026-10-17", JObjKV("type", "ss", "value", "2026-10-17")},
+		{"type: ss\nvalue: !!binary aGVsbG8=", JObjKV("type", "ss", "value", "aGVsbG8=")},
+		{"type: ss\nyes: first\ntrue: second", JObjKV("type", "ss", "yes", "first", "true", "second")},
+		{"type: ss\nvalue: !!set {a: null, b: null}", JObjKV("type", "ss", "value", JObjKV("a", nil, "b", nil))},
 	} {
 		isolateCache(t)
 		for i := 0; i < 2; i++ {
-			got, err := ParseStructuredProxyString(tc.source)
-			if err != nil || !jsonx.Equal(got, tc.want) {
+			node, err := StructuredProxy(tc.source)
+			if err != nil {
+				t.Fatalf("%s: %v", tc.source, err)
+			}
+			got, err := JFromYAMLNode(node)
+			if err != nil || !EqualJ(got, tc.want) {
 				t.Fatalf("%s: %v %v", tc.source, got, err)
 			}
 		}
@@ -276,17 +288,17 @@ func TestNativeYAMLScalarBoundary(t *testing.T) {
 }
 
 // test_aliases_and_cycles_keep_identity_and_bypass_cache: shared containers
-// bypass the cache (Go keeps the shared *Object of an alias; a recursive
+// bypass the cache (Go keeps the shared *yamlx.Node of an alias; a recursive
 // node is a yamlx error, so the string goes to Sub-Store — documented).
 func TestAliasesAndCyclesBypassCache(t *testing.T) {
 	calls := isolateCache(t)
 	alias := "type: ss\na: &shared {x: 1}\nb: *shared"
 	for i := 0; i < 2; i++ {
-		result := parsedProxyForTest(alias)
-		if result.GetObject("a") != result.GetObject("b") {
+		result := parsedProxyNodeForTest(alias)
+		if yamlx.Resolve(yamlx.Get(result, "a")) != yamlx.Resolve(yamlx.Get(result, "b")) {
 			t.Fatal("alias identity lost")
 		}
-		if parsedProxyForTest("&root {type: ss, self: *root}") != nil {
+		if parsedProxyNodeForTest("&root {type: ss, self: *root}") != nil {
 			t.Fatal("recursive node")
 		}
 	}
@@ -302,7 +314,7 @@ func TestAliasDiamondDoesNotExpandDuringCacheScreening(t *testing.T) {
 	for i := 1; i <= 40; i++ {
 		fmt.Fprintf(&b, "a%d: &a%d {l: *a%d, r: *a%d}\n", i, i, i-1, i-1)
 	}
-	if _, err := ParseStructuredProxyString(b.String()); !errors.Is(err, yamlx.ErrAliasBudget) {
+	if _, err := StructuredProxy(b.String()); !errors.Is(err, yamlx.ErrAliasBudget) {
 		t.Fatalf("expected alias budget: %v", err)
 	}
 	if cacheLen() != 0 {
@@ -310,45 +322,45 @@ func TestAliasDiamondDoesNotExpandDuringCacheScreening(t *testing.T) {
 	}
 }
 
-func itoa(i int) string { return jsonx.Int(i).String() }
+func itoa(i int) string { return strconv.Itoa(i) }
 
 func TestConcurrentColdCallsParseOnceAndReturnPrivateResults(t *testing.T) {
 	calls := isolateCache(t)
 	var wg sync.WaitGroup
-	results := make([]*jsonx.Object, 8)
+	results := make([]*yamlx.Node, 8)
 	for i := range results {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			r := parsedProxyForTest(nestedProxy)
-			r.GetObject("ws-opts").GetObject("headers").Set("Host", itoa(n))
+			r := parsedProxyNodeForTest(nestedProxy)
+			yamlx.Set(yamlx.Get(yamlx.Get(r, "ws-opts"), "headers"), "Host", yamlx.Str(itoa(n)))
 			results[n] = r
 		}(i)
 	}
 	wg.Wait()
 	for i, r := range results {
-		if r.GetObject("ws-opts").GetObject("headers").GetString("Host") != itoa(i) {
+		if scalarText(yamlx.Get(yamlx.Get(yamlx.Get(r, "ws-opts"), "headers"), "Host")) != itoa(i) {
 			t.Fatal("shared result")
 		}
 	}
 	if *calls != 1 {
 		t.Fatalf("calls %d", *calls)
 	}
-	if parsedProxyForTest(nestedProxy).GetObject("ws-opts").GetObject("headers").GetString("Host") != "edge.example" {
+	if scalarText(yamlx.Get(yamlx.Get(yamlx.Get(parsedProxyNodeForTest(nestedProxy), "ws-opts"), "headers"), "Host")) != "edge.example" {
 		t.Fatal("cache polluted")
 	}
 }
 
 // test_deepcopy_does_not_hold_cache_lock is structural in Go: loadProxyYAML
-// releases proxyYAMLMu before DeepCopy. Checked by taking the lock from
+// releases proxyYAMLMu before cloning. Checked by taking the lock from
 // another goroutine while results are copied in a loop.
 func TestDeepCopyDoesNotHoldCacheLock(t *testing.T) {
 	isolateCache(t)
-	parsedProxyForTest(nestedProxy)
+	parsedProxyNodeForTest(nestedProxy)
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 200; i++ {
-			parsedProxyForTest(nestedProxy)
+			parsedProxyNodeForTest(nestedProxy)
 		}
 		close(done)
 	}()
@@ -369,20 +381,29 @@ func TestDeepCopyDoesNotHoldCacheLock(t *testing.T) {
 type countingConverter struct {
 	mu       sync.Mutex
 	requests int
-	kept     map[string]*jsonx.Object
+	kept     map[string][]byte
 }
 
-func (c *countingConverter) ConvertProxyString(_ context.Context, s string) *jsonx.Object {
+func (c *countingConverter) ConvertProxy(_ context.Context, s string) (*yamlx.Node, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if kept, ok := c.kept[s]; ok {
-		return kept.DeepCopy()
+		return yamlx.Parse(kept)
 	}
 	c.requests++
-	proxy := jsonx.Obj("name", "from-uri", "type", "anytls", "server", "node.example.test", "port", jsonx.Int(443),
-		"password", "secret")
-	c.kept[s] = proxy.DeepCopy()
-	return proxy
+	proxy := yamlx.Map(
+		yamlx.Str("name"), yamlx.Str("from-uri"),
+		yamlx.Str("type"), yamlx.Str("anytls"),
+		yamlx.Str("server"), yamlx.Str("node.example.test"),
+		yamlx.Str("port"), yamlx.Int(443),
+		yamlx.Str("password"), yamlx.Str("secret"),
+	)
+	data, err := yamlx.Marshal(proxy)
+	if err != nil {
+		return nil, err
+	}
+	c.kept[s] = data
+	return proxy, nil
 }
 
 // test_rendering_again_does_not_start_sub_store: the converted node is named
@@ -391,21 +412,24 @@ func (c *countingConverter) ConvertProxyString(_ context.Context, s string) *jso
 func TestRenderingAgainDoesNotStartSubStore(t *testing.T) {
 	ctx := context.Background()
 	node := "anytls://secret@node.example.test:443?sni=example.test#one"
-	conv := &countingConverter{kept: map[string]*jsonx.Object{}}
-	first, _ := ConvertNodeToMihomo(ctx, jsonx.Obj("name", "Home", "proxy_string", node), conv)
-	second, _ := ConvertNodeToMihomo(ctx, jsonx.Obj("name", "Home", "proxy_string", node), conv)
-	third, _ := ConvertNodeToMihomo(ctx, jsonx.Obj("name", "Away", "proxy_string", node), conv)
+	conv := &countingConverter{kept: map[string][]byte{}}
+	first, _ := NodeProxy(ctx, model.Node{Name: "Home", ProxyString: &node}, conv)
+	second, _ := NodeProxy(ctx, model.Node{Name: "Home", ProxyString: &node}, conv)
+	third, _ := NodeProxy(ctx, model.Node{Name: "Away", ProxyString: &node}, conv)
 	if conv.requests != 1 {
 		t.Fatalf("requests %d", conv.requests)
 	}
-	if compactText(t, first) != compactText(t, second) || first.GetString("name") != "Home" ||
-		first.GetString("server") != "node.example.test" {
-		t.Fatal(compactText(t, first))
+	firstJ := jNodeOrNil(first).(*JObj)
+	secondJ := jNodeOrNil(second).(*JObj)
+	thirdJ := jNodeOrNil(third).(*JObj)
+	if compactText(t, firstJ) != compactText(t, secondJ) || firstJ.GetString("name") != "Home" ||
+		firstJ.GetString("server") != "node.example.test" {
+		t.Fatal(compactText(t, firstJ))
 	}
-	want := first.DeepCopy()
+	want := firstJ.DeepCopy()
 	want.Set("name", "Away")
-	if compactText(t, third) != compactText(t, want) {
-		t.Fatal(compactText(t, third))
+	if compactText(t, thirdJ) != compactText(t, want) {
+		t.Fatal(compactText(t, thirdJ))
 	}
 }
 
@@ -414,22 +438,26 @@ func TestRenderingAgainDoesNotStartSubStore(t *testing.T) {
 func TestNodeConversionsReuse(t *testing.T) {
 	ctx := context.Background()
 	conv := &fakeConverter{}
-	results := NewConversionResults()
-	scoped := WithNodeConversions(ctx, results, false)
+	results := NewConversions()
+	scoped := WithConversions(ctx, results, false)
 	for _, s := range []string{"ss://a@proxy.example:1", "ss://fail@proxy.example:1"} {
-		ConvertNodeToMihomo(scoped, jsonx.Obj("name", "n", "proxy_string", s), conv)
+		ps := s
+		_, _ = NodeProxy(scoped, model.Node{Name: "n", ProxyString: &ps}, conv)
 	}
 	if len(conv.calls) != 2 || results.Len() != 2 {
 		t.Fatal(conv.calls)
 	}
-	reuse := WithNodeConversions(ctx, results, true)
-	p, _ := ConvertNodeToMihomo(reuse, jsonx.Obj("name", "again", "proxy_string", "ss://a@proxy.example:1"), conv)
-	failed, _ := ConvertNodeToMihomo(reuse, jsonx.Obj("name", "again", "proxy_string", "ss://fail@proxy.example:1"), conv)
-	if len(conv.calls) != 2 || p.GetString("name") != "again" || failed != nil {
+	reuse := WithConversions(ctx, results, true)
+	s1 := "ss://a@proxy.example:1"
+	s2 := "ss://fail@proxy.example:1"
+	p, _ := NodeProxy(reuse, model.Node{Name: "again", ProxyString: &s1}, conv)
+	failed, _ := NodeProxy(reuse, model.Node{Name: "again", ProxyString: &s2}, conv)
+	if len(conv.calls) != 2 || scalarText(yamlx.Get(p, "name")) != "again" || failed != nil {
 		t.Fatal("reuse asked Sub-Store again")
 	}
 	// Without reuse the same scope records again; outside a scope nothing is recorded.
-	ConvertNodeToMihomo(ctx, jsonx.Obj("name", "x", "proxy_string", "ss://b@proxy.example:1"), conv)
+	s3 := "ss://b@proxy.example:1"
+	_, _ = NodeProxy(ctx, model.Node{Name: "x", ProxyString: &s3}, conv)
 	if results.Len() != 2 {
 		t.Fatal("recorded outside the scope")
 	}
@@ -437,8 +465,8 @@ func TestNodeConversionsReuse(t *testing.T) {
 
 // ------------------------------------------------------------ dialer tests
 
-func dialerNode(id string, extra ...any) *jsonx.Object {
-	n := jsonx.Obj("id", id, "name", id, "enabled", true, "type", "http", "server", "example.test", "port", jsonx.Int(80))
+func dialerNode(id string, extra ...any) *JObj {
+	n := JObjKV("id", id, "name", id, "enabled", true, "type", "http", "server", "example.test", "port", JInt(80))
 	for i := 0; i+1 < len(extra); i += 2 {
 		n.Set(extra[i].(string), extra[i+1])
 	}
@@ -447,6 +475,7 @@ func dialerNode(id string, extra ...any) *jsonx.Object {
 
 func wantDialerError(t *testing.T, err error, fragment string) {
 	t.Helper()
+	err = DialerFailure(err)
 	var d *DialerReferenceError
 	if !errors.As(err, &d) || !strings.Contains(d.Message, fragment) {
 		t.Fatalf("want DialerReferenceError containing %q, got %v", fragment, err)
@@ -457,21 +486,31 @@ func wantDialerError(t *testing.T, err error, fragment string) {
 func TestRawDialerDynamicGroupChecksRealCandidateEdges(t *testing.T) {
 	for _, nested := range []bool{false, true} {
 		for _, cycle := range []bool{false, true} {
-			groups := []any{jsonx.Obj("name", "Dynamic", "use", []any{"Feed"})}
+			groups := []any{JObjKV("name", "Dynamic", "use", []any{"Feed"})}
 			if nested {
-				groups = append(groups, jsonx.Obj("name", "Outer", "proxies", []any{"Dynamic"}))
+				groups = append(groups, JObjKV("name", "Outer", "proxies", []any{"Dynamic"}))
 			}
 			target := "Dynamic"
 			if nested {
 				target = "Outer"
 			}
-			main := jsonx.Obj("proxies", []any{jsonx.Obj("name", "Exit", "dialer-proxy", target)},
-				"proxy-groups", groups, "proxy-providers", jsonx.Obj("Feed", jsonx.NewObject()))
-			candidate := jsonx.Obj("name", "Remote")
+			main, err := YAMLNodeFromJ(JObjKV("proxies", []any{JObjKV("name", "Exit", "dialer-proxy", target)},
+				"proxy-groups", groups, "proxy-providers", JObjKV("Feed", NewJObj())))
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := JObjKV("name", "Remote")
 			if cycle {
 				candidate.Set("dialer-proxy", target)
 			}
-			err := ValidateEmitted(main, EmitOptions{ProviderProxies: jsonx.Obj("Feed", []any{candidate}), RequireProviders: true})
+			candNode, err := YAMLNodeFromJ(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = ValidateTopology(main, TopologyOptions{
+				ProviderProxies:  map[string][]*yamlx.Node{"Feed": {candNode}},
+				RequireProviders: true,
+			})
 			if cycle {
 				wantDialerError(t, err, "")
 			} else if err != nil {
@@ -484,11 +523,14 @@ func TestRawDialerDynamicGroupChecksRealCandidateEdges(t *testing.T) {
 // test_dialer_provider_scope.py::test_static_provider_dialer_and_builtin_allowed
 func TestStaticProviderDialerAndBuiltinAllowed(t *testing.T) {
 	for _, target := range []string{"DIRECT", "Relay"} {
-		err := ValidateEmitted(jsonx.Obj("proxies", []any{jsonx.Obj("name", "Remote", "dialer-proxy", target)},
-			"proxy-groups", []any{jsonx.Obj("name", "Relay", "proxies", []any{"DIRECT"}),
-				jsonx.Obj("name", "UnrelatedDynamic", "use", []any{"Feed"})},
-			"proxy-providers", jsonx.Obj("Feed", jsonx.NewObject())), EmitOptions{})
+		main, err := YAMLNodeFromJ(JObjKV("proxies", []any{JObjKV("name", "Remote", "dialer-proxy", target)},
+			"proxy-groups", []any{JObjKV("name", "Relay", "proxies", []any{"DIRECT"}),
+				JObjKV("name", "UnrelatedDynamic", "use", []any{"Feed"})},
+			"proxy-providers", JObjKV("Feed", NewJObj())))
 		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateTopology(main, TopologyOptions{}); err != nil {
 			t.Fatalf("%s: %v", target, err)
 		}
 	}
@@ -496,33 +538,44 @@ func TestStaticProviderDialerAndBuiltinAllowed(t *testing.T) {
 
 // test_dialer_provider_scope.py::test_no_chain_dynamic_group_legacy_allowed
 func TestNoChainDynamicGroupLegacyAllowed(t *testing.T) {
-	if err := ValidateEmitted(jsonx.Obj("proxies", []any{jsonx.Obj("name", "Remote")},
-		"proxy-groups", []any{jsonx.Obj("name", "Entry", "use", []any{"Feed"})},
-		"proxy-providers", jsonx.Obj("Feed", jsonx.NewObject())), EmitOptions{}); err != nil {
+	main, err := YAMLNodeFromJ(JObjKV("proxies", []any{JObjKV("name", "Remote")},
+		"proxy-groups", []any{JObjKV("name", "Entry", "use", []any{"Feed"})},
+		"proxy-providers", JObjKV("Feed", NewJObj())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateTopology(main, TopologyOptions{}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 // test_dialer_review_fixes.py::test_emitted_dialer_graph_checks_ordinary_group_members
 func TestEmittedDialerGraphChecksOrdinaryGroupMembers(t *testing.T) {
-	err := ValidateEmitted(jsonx.Obj("proxies", []any{jsonx.Obj("name", "exit", "dialer-proxy", "relay"), jsonx.Obj("name", "relay")},
-		"proxy-groups", []any{jsonx.Obj("name", "Entry", "proxies", []any{"gone"})}), EmitOptions{})
+	main, err := YAMLNodeFromJ(JObjKV("proxies", []any{JObjKV("name", "exit", "dialer-proxy", "relay"), JObjKV("name", "relay")},
+		"proxy-groups", []any{JObjKV("name", "Entry", "proxies", []any{"gone"})}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateTopology(main, TopologyOptions{})
 	wantDialerError(t, err, "未生成")
 }
 
 // test_dialer_round2.py::test_disabled_managed_source_keeps_manual_only_closure_contract
 func TestDisabledManagedSourceKeepsManualOnlyClosureContract(t *testing.T) {
-	source := dialerNode("source", "dialer_ref", jsonx.Obj("type", "node", "id", "relay"))
+	source := dialerNode("source", "dialer_ref", JObjKV("type", "node", "id", "relay"))
 	source.Set("enabled", false)
-	profile := jsonx.Obj("nodes", []any{source, dialerNode("relay", "subscription_id", "s")})
-	wantDialerError(t, ValidateDialers(profile), "手动")
+	cfg, err := DecodeDialerConfigJ(JObjKV("nodes", []any{source, dialerNode("relay", "subscription_id", "s")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDialerError(t, ConfigDialers(cfg), "手动")
 }
 
 func deepNodes(cycle bool) []any {
 	var nodes []any
 	for i := 0; i < 1100; i++ {
 		if i < 1099 || cycle {
-			nodes = append(nodes, dialerNode(itoa(i), "dialer_ref", jsonx.Obj("type", "node", "id", itoa((i+1)%1100))))
+			nodes = append(nodes, dialerNode(itoa(i), "dialer_ref", JObjKV("type", "node", "id", itoa((i+1)%1100))))
 		} else {
 			nodes = append(nodes, dialerNode(itoa(i)))
 		}
@@ -533,29 +586,37 @@ func deepNodes(cycle bool) []any {
 // test_dialer_round2.py::test_deep_graph_validation_and_closure_are_stack_safe
 func TestDeepGraphValidationAndClosureAreStackSafe(t *testing.T) {
 	for _, cycle := range []bool{false, true} {
-		profile := jsonx.Obj("nodes", deepNodes(cycle))
-		err := ValidateDialers(profile)
+		profile := JObjKV("nodes", deepNodes(cycle))
+		cfg, err := DecodeDialerConfigJ(profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = ConfigDialers(cfg)
 		if cycle {
 			wantDialerError(t, err, "循环")
 		} else {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ids, err := DependencyNodeIDs(profile, []string{"0"}, true)
+			ids, err := RequiredNodes(cfg, []string{"0"}, true)
 			if err != nil || len(ids) != 1100 {
 				t.Fatalf("%d %v", len(ids), err)
 			}
 		}
 		var proxies []any
 		for _, n := range profile.GetList("nodes") {
-			node := n.(*jsonx.Object)
-			p := jsonx.Obj("name", node.Value("name"))
+			node := n.(*JObj)
+			p := JObjKV("name", node.Value("name"))
 			if ref := node.GetObject("dialer_ref"); ref != nil {
 				p.Set("dialer-proxy", ref.Value("id"))
 			}
 			proxies = append(proxies, p)
 		}
-		err = ValidateEmitted(jsonx.Obj("proxies", proxies), EmitOptions{})
+		main, err := YAMLNodeFromJ(JObjKV("proxies", proxies))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = ValidateTopology(main, TopologyOptions{})
 		if cycle {
 			wantDialerError(t, err, "循环")
 		} else if err != nil {
@@ -566,9 +627,9 @@ func TestDeepGraphValidationAndClosureAreStackSafe(t *testing.T) {
 
 // --------------------------------------------------- test_mihomo_easytier.py
 
-func easytierSettings(extra ...any) *jsonx.Object {
-	value := jsonx.Obj("enabled", true, "name", "EasyTier", "routes", []any{"10.144.144.0/24", "10.200.0.5/24"},
-		"options", jsonx.Obj("network-name", "home", "network-secret", "s3cret-value",
+func easytierSettings(extra ...any) *JObj {
+	value := JObjKV("enabled", true, "name", "EasyTier", "routes", []any{"10.144.144.0/24", "10.200.0.5/24"},
+		"options", JObjKV("network-name", "home", "network-secret", "s3cret-value",
 			"peers", []any{"tcp://203.0.113.10:11010"}, "udp", true))
 	for i := 0; i+1 < len(extra); i += 2 {
 		value.Set(extra[i].(string), extra[i+1])
@@ -576,13 +637,23 @@ func easytierSettings(extra ...any) *jsonx.Object {
 	return value
 }
 
-func easytierConfig(settings any) *jsonx.Object {
-	return jsonx.Obj("mihomo", jsonx.Obj("easytier", settings))
+func easytierConfig(t *testing.T, settings *JObj) *model.Config {
+	t.Helper()
+	s, err := DecodeJ[model.EasyTierSettings](settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{EasyTier: &s}}}
 }
 
-func baseDocument() *jsonx.Object {
-	return jsonx.Obj("mixed-port", jsonx.Int(7890), "dns", jsonx.Obj("enable", true,
-		"nameserver", []any{"https://223.5.5.5/dns-query"}), "rules", []any{"MATCH,DIRECT"})
+func baseDocumentNode(t *testing.T) *yamlx.Node {
+	t.Helper()
+	doc, err := YAMLNodeFromJ(JObjKV("mixed-port", JInt(7890), "dns", JObjKV("enable", true,
+		"nameserver", []any{"https://223.5.5.5/dns-query"}), "rules", []any{"MATCH,DIRECT"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return doc
 }
 
 // test_every_documented_outbound_option_is_accepted_and_written_verbatim
@@ -604,12 +675,13 @@ func TestEveryDocumentedOutboundOptionIsAcceptedAndWrittenVerbatim(t *testing.T)
 	if len(keys) != len(EasyTierFields) {
 		t.Fatal("FIELDS changed")
 	}
-	document := baseDocument()
-	if _, err := ApplyEasyTier(document, easytierConfig(easytierSettings("options", options)), false, nil); err != nil {
+	document := baseDocumentNode(t)
+	if _, err := ApplyEasyTierNode(document, easytierConfig(t, easytierSettings("options", options)), false, nil); err != nil {
 		t.Fatal(err)
 	}
-	proxies := document.GetList("proxies")
-	want := jsonx.Obj("name", "EasyTier", "type", "easytier")
+	docJ := jNodeOrNil(document).(*JObj)
+	proxies := docJ.GetList("proxies")
+	want := JObjKV("name", "EasyTier", "type", "easytier")
 	want.Update(options)
 	if got := compactText(t, proxies[len(proxies)-1]); got != compactText(t, want) {
 		t.Fatalf("got %s", got)
@@ -617,34 +689,35 @@ func TestEveryDocumentedOutboundOptionIsAcceptedAndWrittenVerbatim(t *testing.T)
 }
 
 func TestRoutesGoBeforeEveryRuleAndDisabledChangesNothing(t *testing.T) {
-	document := baseDocument()
-	if _, err := ApplyEasyTier(document, easytierConfig(easytierSettings()), false, nil); err != nil {
+	document := baseDocumentNode(t)
+	if _, err := ApplyEasyTierNode(document, easytierConfig(t, easytierSettings()), false, nil); err != nil {
 		t.Fatal(err)
 	}
-	rules := document.GetList("rules")
+	rules := jNodeOrNil(document).(*JObj).GetList("rules")
 	if rules[0] != "IP-CIDR,10.144.144.0/24,EasyTier,no-resolve" || rules[1] != "IP-CIDR,10.200.0.0/24,EasyTier,no-resolve" ||
 		rules[len(rules)-1] != "MATCH,DIRECT" {
 		t.Fatal(rules)
 	}
-	off := baseDocument()
-	result, err := ApplyEasyTier(off, easytierConfig(easytierSettings("enabled", false)), false, nil)
-	if err != nil || result != nil || compactText(t, off) != compactText(t, baseDocument()) {
+	off := baseDocumentNode(t)
+	result, err := ApplyEasyTierNode(off, easytierConfig(t, easytierSettings("enabled", false)), false, nil)
+	if err != nil || result != nil || compactText(t, jNodeOrNil(off)) != compactText(t, jNodeOrNil(baseDocumentNode(t))) {
 		t.Fatal("disabled changed the document")
 	}
 }
 
 func TestKeepaliveGroupStartsTheLazyInstanceAndTakesTheRoutes(t *testing.T) {
-	document := baseDocument()
-	settings := easytierSettings("keepalive", jsonx.Obj("enabled", true, "url", "http://10.144.144.2/", "interval", jsonx.Int(60)))
-	if _, err := ApplyEasyTier(document, easytierConfig(settings), false, nil); err != nil {
+	document := baseDocumentNode(t)
+	settings := easytierSettings("keepalive", JObjKV("enabled", true, "url", "http://10.144.144.2/", "interval", JInt(60)))
+	if _, err := ApplyEasyTierNode(document, easytierConfig(t, settings), false, nil); err != nil {
 		t.Fatal(err)
 	}
-	groups := document.GetList("proxy-groups")
+	docJ := jNodeOrNil(document).(*JObj)
+	groups := docJ.GetList("proxy-groups")
 	if got := compactText(t, groups[len(groups)-1]); got != `{"name":"EasyTier 保活","type":"fallback","proxies":["EasyTier"],"url":"http://10.144.144.2/","interval":60}` {
 		t.Fatal(got)
 	}
-	if document.GetList("rules")[0] != "IP-CIDR,10.144.144.0/24,EasyTier 保活,no-resolve" {
-		t.Fatal(document.GetList("rules"))
+	if docJ.GetList("rules")[0] != "IP-CIDR,10.144.144.0/24,EasyTier 保活,no-resolve" {
+		t.Fatal(docJ.GetList("rules"))
 	}
 }
 
@@ -652,23 +725,25 @@ func TestMagicDNSRoutesTheZoneAndKeepsAUserPolicy(t *testing.T) {
 	options := easytierSettings().GetObject("options")
 	options.Set("tld-dns-zone", "lan.example.")
 	settings := easytierSettings("magic_dns", true, "options", options)
-	document := baseDocument()
-	if _, err := ApplyEasyTier(document, easytierConfig(settings), false, nil); err != nil {
+	document := baseDocumentNode(t)
+	if _, err := ApplyEasyTierNode(document, easytierConfig(t, settings), false, nil); err != nil {
 		t.Fatal(err)
 	}
+	docJ := jNodeOrNil(document).(*JObj)
 	found := false
-	for _, r := range document.GetList("rules")[:3] {
+	for _, r := range docJ.GetList("rules")[:3] {
 		found = found || r == "DOMAIN-SUFFIX,lan.example,EasyTier"
 	}
-	if !found || compactText(t, document.GetObject("dns").Value("nameserver-policy")) != `{"+.lan.example":"et://EasyTier"}` {
-		t.Fatal(compactText(t, document))
+	if !found || compactText(t, docJ.GetObject("dns").Value("nameserver-policy")) != `{"+.lan.example":"et://EasyTier"}` {
+		t.Fatal(compactText(t, docJ))
 	}
-	user := baseDocument()
-	user.GetObject("dns").Set("nameserver-policy", jsonx.Obj("+.lan.example", "192.0.2.53"))
-	if _, err := ApplyEasyTier(user, easytierConfig(settings), false, nil); err != nil {
+	user := baseDocumentNode(t)
+	yamlx.Set(yamlx.Get(user, "dns"), "nameserver-policy", yamlx.Map(yamlx.Str("+.lan.example"), yamlx.Str("192.0.2.53")))
+	if _, err := ApplyEasyTierNode(user, easytierConfig(t, settings), false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if compactText(t, user.GetObject("dns").Value("nameserver-policy")) != `{"+.lan.example":"192.0.2.53"}` {
+	userJ := jNodeOrNil(user).(*JObj)
+	if compactText(t, userJ.GetObject("dns").Value("nameserver-policy")) != `{"+.lan.example":"192.0.2.53"}` {
 		t.Fatal("user policy replaced")
 	}
 }
@@ -679,13 +754,13 @@ func TestTargetScope(t *testing.T) {
 		subscription, agent bool
 	}{{"subscription", true, false}, {"agent", false, true}, {"all", true, true}} {
 		for _, forAgent := range []bool{false, true} {
-			document := baseDocument()
-			result, err := ApplyEasyTier(document, easytierConfig(easytierSettings("apply_to", tc.applyTo)), forAgent, nil)
+			document := baseDocumentNode(t)
+			result, err := ApplyEasyTierNode(document, easytierConfig(t, easytierSettings("apply_to", tc.applyTo)), forAgent, nil)
 			want := tc.subscription
 			if forAgent {
 				want = tc.agent
 			}
-			if err != nil || (result != nil) != want || document.Has("proxies") != want {
+			if err != nil || (result != nil) != want || (yamlx.Get(document, "proxies") != nil) != want {
 				t.Fatalf("%s agent=%v: %v %v", tc.applyTo, forAgent, result, err)
 			}
 		}
@@ -693,38 +768,43 @@ func TestTargetScope(t *testing.T) {
 }
 
 func TestOldAgentCoreAndInvalidVersionsAreRefused(t *testing.T) {
-	config := easytierConfig(easytierSettings("apply_to", "agent"))
-	_, err := ApplyEasyTier(baseDocument(), config, true, "v1.19.30")
-	var e *EasyTierSettingsError
-	if !errors.As(err, &e) || !strings.Contains(e.Message, "v1.19.31") {
+	config := easytierConfig(t, easytierSettings("apply_to", "agent"))
+	_, err := ApplyEasyTierNode(baseDocumentNode(t), config, true, json.RawMessage(`"v1.19.30"`))
+	if err == nil || !strings.Contains(err.Error(), "v1.19.31") {
 		t.Fatal(err)
 	}
-	_, err = ApplyEasyTier(baseDocument(), config, true, "alpha-abc")
-	if !errors.As(err, &e) || !strings.Contains(e.Message, "alpha-abc") {
+	_, err = ApplyEasyTierNode(baseDocumentNode(t), config, true, json.RawMessage(`"alpha-abc"`))
+	if err == nil || !strings.Contains(err.Error(), "alpha-abc") {
 		t.Fatal("invalid nonempty Agent version was not refused", err)
 	}
-	for _, version := range []string{"v1.19.34", ""} {
-		document := baseDocument()
-		if _, err := ApplyEasyTier(document, config, true, version); err != nil {
+	for _, version := range []json.RawMessage{json.RawMessage(`"v1.19.34"`), json.RawMessage(`""`)} {
+		document := baseDocumentNode(t)
+		if _, err := ApplyEasyTierNode(document, config, true, version); err != nil {
 			t.Fatal(err)
 		}
-		proxies := document.GetList("proxies")
-		if proxies[len(proxies)-1].(*jsonx.Object).GetString("type") != "easytier" {
-			t.Fatal(version)
+		proxies := jNodeOrNil(document).(*JObj).GetList("proxies")
+		if proxies[len(proxies)-1].(*JObj).GetString("type") != "easytier" {
+			t.Fatal(string(version))
 		}
 	}
 }
 
 func TestNameClashAndUnknownDialerAreRefused(t *testing.T) {
-	document := jsonx.Obj("proxies", []any{jsonx.Obj("name", "EasyTier", "type", "ss")}, "proxy-groups", []any{}, "rules", []any{})
-	_, err := ApplyEasyTier(document, easytierConfig(easytierSettings()), false, nil)
+	document, err := YAMLNodeFromJ(JObjKV("proxies", []any{JObjKV("name", "EasyTier", "type", "ss")}, "proxy-groups", []any{}, "rules", []any{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ApplyEasyTierNode(document, easytierConfig(t, easytierSettings()), false, nil)
 	if err == nil || !strings.Contains(err.Error(), "重名") {
 		t.Fatal(err)
 	}
 	options := easytierSettings().GetObject("options")
 	options.Set("dialer-proxy", "missing")
-	_, err = ApplyEasyTier(jsonx.Obj("proxies", []any{}, "proxy-groups", []any{}, "rules", []any{}),
-		easytierConfig(easytierSettings("options", options)), false, nil)
+	emptyDoc, err := YAMLNodeFromJ(JObjKV("proxies", []any{}, "proxy-groups", []any{}, "rules", []any{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ApplyEasyTierNode(emptyDoc, easytierConfig(t, easytierSettings("options", options)), false, nil)
 	if err == nil || !strings.Contains(err.Error(), "dialer-proxy") {
 		t.Fatal(err)
 	}
@@ -732,51 +812,70 @@ func TestNameClashAndUnknownDialerAreRefused(t *testing.T) {
 
 func TestInvalidSettingsAreRefused(t *testing.T) {
 	for _, tc := range []struct {
-		change func(s *jsonx.Object)
+		change func(s *JObj)
 		text   string
 	}{
-		{func(s *jsonx.Object) { s.GetObject("options").Delete("network-name") }, "network-name"},
-		{func(s *jsonx.Object) { s.GetObject("options").Delete("peers") }, "peers"},
-		{func(s *jsonx.Object) {
+		{func(s *JObj) { s.GetObject("options").Delete("network-name") }, "network-name"},
+		{func(s *JObj) { s.GetObject("options").Delete("peers") }, "peers"},
+		{func(s *JObj) {
 			s.GetObject("options").Set("listeners", []any{"tcp://0.0.0.0:11010"})
 			s.GetObject("options").Set("no-listener", true)
 		}, "no-listener"},
-		{func(s *jsonx.Object) {
+		{func(s *JObj) {
 			s.GetObject("options").Set("proxy-networks", []any{"192.168.0.0/24->10.200.0.0/24"})
 		}, "映射"},
-		{func(s *jsonx.Object) { s.Set("routes", []any{"2001:db8::/64"}) }, "IPv4"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("peers", []any{"203.0.113.10:11010"}) }, "格式不对"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("mtu", jsonx.Int(100)) }, "mtu"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("ip-version", "v4") }, "ip-version"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("udp", "yes") }, "udp"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("bogus", jsonx.Int(1)) }, "bogus"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("exit-nodes", []any{"node-a"}) }, "exit-nodes"},
-		{func(s *jsonx.Object) { s.GetObject("options").Set("local-public-key", "abc") }, "local-private-key"},
-		{func(s *jsonx.Object) {
-			s.Set("keepalive", jsonx.Obj("enabled", true, "url", "", "interval", jsonx.Int(300)))
+		{func(s *JObj) { s.Set("routes", []any{"2001:db8::/64"}) }, "IPv4"},
+		{func(s *JObj) { s.GetObject("options").Set("peers", []any{"203.0.113.10:11010"}) }, "格式不对"},
+		{func(s *JObj) { s.GetObject("options").Set("mtu", JInt(100)) }, "mtu"},
+		{func(s *JObj) { s.GetObject("options").Set("ip-version", "v4") }, "ip-version"},
+		{func(s *JObj) { s.GetObject("options").Set("udp", "yes") }, "udp"},
+		{func(s *JObj) { s.GetObject("options").Set("bogus", JInt(1)) }, "bogus"},
+		{func(s *JObj) { s.GetObject("options").Set("exit-nodes", []any{"node-a"}) }, "exit-nodes"},
+		{func(s *JObj) { s.GetObject("options").Set("local-public-key", "abc") }, "local-private-key"},
+		{func(s *JObj) {
+			s.Set("keepalive", JObjKV("enabled", true, "url", "", "interval", JInt(300)))
 		}, "检测地址"},
-		{func(s *jsonx.Object) { s.Set("name", "a,b") }, "逗号"},
-		{func(s *jsonx.Object) { s.Set("apply_to", "phones") }, "下发范围"},
+		{func(s *JObj) { s.Set("name", "a,b") }, "逗号"},
+		{func(s *JObj) { s.Set("apply_to", "phones") }, "下发范围"},
 	} {
 		value := easytierSettings()
 		tc.change(value)
-		_, err := NormalizeEasyTierSettings(value)
-		var e *EasyTierSettingsError
-		if !errors.As(err, &e) || !strings.Contains(e.Message, tc.text) {
+		s, err := DecodeJ[model.EasyTierSettings](value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = NormalizeEasyTier(&s)
+		if err == nil || !strings.Contains(err.Error(), tc.text) {
 			t.Fatalf("%s: %v", tc.text, err)
 		}
 	}
 }
 
 func TestListeningWithoutPeersIsAllowedAndBlankValuesAreDropped(t *testing.T) {
-	value := easytierSettings("options", jsonx.Obj("network-name", "home", "listeners", []any{"tcp://0.0.0.0:11010"},
+	value := easytierSettings("options", JObjKV("network-name", "home", "listeners", []any{"tcp://0.0.0.0:11010"},
 		"hostname", " ", "peers", []any{}, "mtu", nil))
-	got, err := NormalizeEasyTierSettings(value)
-	if err != nil || compactText(t, got.Value("options")) != `{"network-name":"home","listeners":["tcp://0.0.0.0:11010"]}` {
-		t.Fatal(err, compactText(t, got))
+	s, err := DecodeJ[model.EasyTierSettings](value)
+	if err != nil {
+		t.Fatal(err)
 	}
-	disabled, err := NormalizeEasyTierSettings(jsonx.Obj("enabled", false, "options", jsonx.NewObject()))
-	if err != nil || disabled.Value("enabled") != false || disabled.GetObject("options").Len() != 0 {
+	got, err := NormalizeEasyTier(&s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotJ, err := modelToJ(got)
+	if err != nil || compactText(t, gotJ.(*JObj).Value("options")) != `{"network-name":"home","listeners":["tcp://0.0.0.0:11010"]}` {
+		t.Fatal(err, compactText(t, gotJ))
+	}
+	sOff, err := DecodeJ[model.EasyTierSettings](JObjKV("enabled", false, "options", NewJObj()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := NormalizeEasyTier(&sOff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disJ, err := modelToJ(disabled)
+	if err != nil || disJ.(*JObj).Value("enabled") != false || disJ.(*JObj).GetObject("options").Len() != 0 {
 		t.Fatal(err)
 	}
 }
@@ -784,29 +883,45 @@ func TestListeningWithoutPeersIsAllowedAndBlankValuesAreDropped(t *testing.T) {
 func TestRedactedCopyKeepsShape(t *testing.T) {
 	options := easytierSettings().GetObject("options")
 	options.Set("local-private-key", "cHJpdg==")
-	value, err := NormalizeEasyTierSettings(easytierSettings("options", options))
+	s, err := DecodeJ[model.EasyTierSettings](easytierSettings("options", options))
 	if err != nil {
 		t.Fatal(err)
 	}
-	redacted := RedactEasyTierSettings(value).(*jsonx.Object).GetObject("options")
+	value, err := NormalizeEasyTier(&s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redactedModel, err := RedactEasyTier(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redactedJ, err := modelToJ(redactedModel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valJ, err := modelToJ(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redacted := redactedJ.(*JObj).GetObject("options")
 	if redacted.GetString("network-secret") != "[REDACTED]" || redacted.GetString("local-private-key") != "[REDACTED]" ||
-		redacted.GetString("network-name") != "home" || value.GetObject("options").GetString("network-secret") != "s3cret-value" {
+		redacted.GetString("network-name") != "home" || valJ.(*JObj).GetObject("options").GetString("network-secret") != "s3cret-value" {
 		t.Fatal(compactText(t, redacted))
 	}
 }
 
 // ---------------------------------------------------- documented differences
 
-// Python sets of ports hold True as the port True (printed "True"); Go keys
-// it as 1.
+// Python sets of ports hold True as the port True (printed "True"); Go only
+// counts integer ports.
 func TestBoolPortIsPortOne(t *testing.T) {
-	used, err := MihomoUsedPorts(jsonx.Obj("port", true, "mixed-port", jsonx.Int(1)))
-	if err != nil || len(used) != 1 || !used[jsonx.Int(1)] {
-		t.Fatal(used, err)
+	used := UsedPorts(yamlx.Map(yamlx.Str("port"), yamlx.Bool(true), yamlx.Str("mixed-port"), yamlx.Int(1)))
+	if len(used) != 1 || !used[1] {
+		t.Fatal(used)
 	}
 }
 
-// The INFO lines convert_node_to_mihomo writes (logger backend.converters.mihomo).
+// The INFO lines NodeProxy writes (logger backend.converters.mihomo).
 func TestConversionLogLines(t *testing.T) {
 	var buffer strings.Builder
 	root, err := logx.Setup(logx.Config{Level: logx.Info, Console: &buffer})
@@ -819,9 +934,11 @@ func TestConversionLogLines(t *testing.T) {
 		_ = quiet
 	}()
 	ctx := context.Background()
-	ConvertNodeToMihomo(ctx, jsonx.Obj("name", "节点", "proxy_string", "type: ss"), nil)
-	ConvertNodeToMihomo(ctx, jsonx.Obj("name", jsonx.Int(5), "proxy_string", "ss://a@proxy.example:1"), &fakeConverter{})
-	ConvertNodeToMihomo(ctx, jsonx.Obj("proxy_string", "ss://a@proxy.example:1"), &fakeConverter{})
+	ss := "type: ss"
+	uri := "ss://a@proxy.example:1"
+	_, _ = NodeProxy(ctx, model.Node{Name: "节点", ProxyString: &ss}, nil)
+	_, _ = NodeProxy(ctx, model.Node{Name: "5", ProxyString: &uri}, &fakeConverter{})
+	_, _ = NodeProxy(ctx, model.Node{ProxyString: &uri}, &fakeConverter{})
 	want := []string{
 		" - backend.converters.mihomo - INFO - 节点 '节点' 为 JSON/YAML 格式，本地解析",
 		" - backend.converters.mihomo - INFO - 节点 '5' 为 URI/base64 格式，使用 Sub-Store 的转换结果",
@@ -838,9 +955,9 @@ func TestConversionLogLines(t *testing.T) {
 	}
 }
 
-// parsedProxyForTest exposes the object for legacy replay; policy errors are
+// parsedProxyNodeForTest exposes the parsed node; policy errors are
 // asserted separately by the native-reader boundary tests.
-func parsedProxyForTest(text string) *jsonx.Object {
-	value, _ := ParseStructuredProxyString(text)
+func parsedProxyNodeForTest(text string) *yamlx.Node {
+	value, _ := StructuredProxy(text)
 	return value
 }

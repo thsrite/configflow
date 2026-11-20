@@ -1,64 +1,117 @@
 package convert_test
 
 import (
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/substore"
 )
 
-func executeClientBoundary(t *testing.T, entry *jsonx.Object) (any, error) {
+func executeClientBoundary(t *testing.T, entry *convert.JObj) (any, error) {
 	t.Helper()
 	fn := entry.GetString("fn")
 	if fn == "surge" || fn == "loon" {
 		args := entry.GetObject("args")
-		profile := args.GetObject("profile").DeepCopy()
-		if fn == "surge" {
-			return convert.GenerateSurgeConfig(context.Background(), profile, args.GetString("base_url"))
+		cfg, err := decodeClientConfig(args.GetObject("profile").DeepCopy())
+		if err != nil {
+			return "", err
 		}
-		return convert.GenerateLoonConfig(context.Background(), profile, args.GetString("base_url"))
+		if fn == "surge" {
+			return convert.SurgeConfig(context.Background(), cfg, args.GetString("base_url"))
+		}
+		return convert.LoonConfig(context.Background(), cfg, args.GetString("base_url"))
 	}
 	args := entry.GetList("args")
-	arg := func(i int) any { return jsonx.DeepCopy(args[i]) }
+	arg := func(i int) any { return convert.DeepCopyJ(args[i]) }
 	switch fn {
 	case "node_surge":
-		line, section, err := convert.ConvertNodeToSurge(arg(0).(*jsonx.Object))
+		node, err := convert.DecodeJ[model.Node](arg(0))
+		if err != nil {
+			return nil, err
+		}
+		line, section, err := convert.SurgeNode(node)
 		return []any{noneString(line), noneString(section)}, err
 	case "node_loon":
-		line, err := convert.ConvertNodeToLoon(arg(0).(*jsonx.Object))
+		node, err := convert.DecodeJ[model.Node](arg(0))
+		if err != nil {
+			return nil, err
+		}
+		line, err := convert.LoonNode(node)
 		return noneString(line), err
 	case "proxies_surge":
-		return convert.ConvertProxiesToSurgeText(arg(0).([]any), substore.ProxiesToNodes)
+		nodes, err := decodeYAMLProxies(arg(0).([]any))
+		if err != nil {
+			return "", err
+		}
+		return convert.ClientProxyText(nodes, substore.ProxyNodes, "surge")
 	case "proxies_loon":
-		return convert.ConvertProxiesToLoonText(arg(0).([]any), substore.ProxiesToNodes)
+		nodes, err := decodeYAMLProxies(arg(0).([]any))
+		if err != nil {
+			return "", err
+		}
+		return convert.ClientProxyText(nodes, substore.ProxyNodes, "loon")
 	case "group_surge":
-		smart, _ := arg(3).(*jsonx.Object)
-		line, err := convert.ConvertProxyGroupToSurge(arg(0), arg(1).(*jsonx.Object), args[2].(string), smart)
+		group, err := convert.DecodeJ[model.ProxyGroup](arg(0))
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := convert.DecodeConfigJ(arg(1).(*convert.JObj))
+		if err != nil {
+			return nil, err
+		}
+		var smart map[string]string
+		if arg(3) != nil {
+			smart, err = convert.DecodeJ[map[string]string](arg(3))
+			if err != nil {
+				return nil, err
+			}
+		}
+		line, err := convert.SurgeGroup(group, cfg, args[2].(string), smart)
 		return noneString(line), err
 	case "group_loon":
 		var members []string
 		for _, m := range args[1].([]any) {
 			members = append(members, m.(string))
 		}
-		line, err := convert.ConvertProxyGroupToLoon(arg(0), members)
+		group, err := convert.DecodeJ[model.ProxyGroup](arg(0))
+		if err != nil {
+			return nil, err
+		}
+		line, err := convert.LoonGroup(group, members)
 		return noneString(line), err
 	case "group_nodes":
-		return convert.GetProxyGroupNodes(arg(0), arg(1).(*jsonx.Object))
+		group, err := convert.DecodeJ[model.ProxyGroup](arg(0))
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := convert.DecodeConfigJ(arg(1).(*convert.JObj))
+		if err != nil {
+			return nil, err
+		}
+		return convert.ClientGroupNodes(group, cfg)
 	case "build_rules":
-		lines, remote, err := convert.BuildLoonRules(arg(0).(*jsonx.Object), args[1].(string))
+		cfg, err := convert.DecodeConfigJ(arg(0).(*convert.JObj))
+		if err != nil {
+			return nil, err
+		}
+		lines, remote, err := convert.LoonRules(cfg, args[1].(string))
 		return []any{stringsAny(lines), stringsAny(remote)}, err
 	case "sanitize":
-		return convert.SanitizeLoonName(arg(0))
+		text, err := convert.DecodeJ[string](arg(0))
+		if err != nil {
+			return "", err
+		}
+		return convert.ClientSanitizeNameForTest(text), nil
 	}
 	t.Fatalf("unknown client call %s", fn)
 	return nil, nil
 }
-func clientEntryIssue(t *testing.T, entry *jsonx.Object) (issue string) {
+
+func clientEntryIssue(t *testing.T, entry *convert.JObj) (issue string) {
 	t.Helper()
 	fn := entry.GetString("fn")
 	// Keep all production decoder/shape diagnoses first. Only a formerly
@@ -72,7 +125,7 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) (issue string) {
 	if index := strings.LastIndexByte(fn, '_'); index >= 0 {
 		target = fn[index+1:]
 	}
-	profileIssue := func(profile *jsonx.Object) string {
+	profileIssue := func(profile *convert.JObj) string {
 		if issue := convert.CommonReplayIssue(profile); issue != "" {
 			return issue
 		}
@@ -95,11 +148,11 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) (issue string) {
 		if issue := convert.ClientGroupReplayIssue(args[0], "surge"); issue != "" {
 			return issue
 		}
-		return profileIssue(args[1].(*jsonx.Object))
+		return profileIssue(args[1].(*convert.JObj))
 	case "group_loon":
 		return convert.ClientGroupReplayIssue(args[0], "loon")
 	case "build_rules":
-		return profileIssue(args[0].(*jsonx.Object))
+		return profileIssue(args[0].(*convert.JObj))
 	case "sanitize":
 		if _, ok := args[0].(string); !ok {
 			return "sanitize string"
@@ -107,16 +160,28 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) (issue string) {
 	case "proxies_surge", "proxies_loon":
 		proxies, _ := args[0].([]any)
 		for _, proxy := range proxies {
-			if object, ok := proxy.(*jsonx.Object); !ok || object == nil {
+			if object, ok := proxy.(*convert.JObj); !ok || object == nil {
 				return "subscription proxy object"
 			}
 		}
-		nodes, err := substore.ProxiesToNodes(proxies)
+		yamlProxies, err := decodeYAMLProxies(proxies)
+		if err != nil {
+			return ""
+		}
+		nodes, err := substore.ProxyNodes(yamlProxies)
 		if err != nil {
 			return ""
 		}
 		for _, node := range nodes {
-			if issue := convert.ClientNodeReplayIssue(node, target); issue != "" {
+			data, err := model.Marshal(node)
+			if err != nil {
+				continue
+			}
+			parsed, err := convert.ParseJ(data)
+			if err != nil {
+				continue
+			}
+			if issue := convert.ClientNodeReplayIssue(parsed, target); issue != "" {
 				return "subscription " + issue
 			}
 		}
@@ -126,18 +191,18 @@ func clientEntryIssue(t *testing.T, entry *jsonx.Object) (issue string) {
 
 // The production scalar decoder is the authority; the index records input shape,
 // never a native business output. Type discriminators are deliberately excluded.
-func clientAcceptedNumericText(entry *jsonx.Object) string {
-	numeric := func(object *jsonx.Object, fields ...string) string {
+func clientAcceptedNumericText(entry *convert.JObj) string {
+	numeric := func(object *convert.JObj, fields ...string) string {
 		if object == nil {
 			return ""
 		}
 		for _, field := range fields {
 			raw, _ := object.Get(field)
-			if _, ok := raw.(jsonx.Number); !ok {
+			if _, ok := raw.(json.Number); !ok {
 				continue
 			}
-			data, err := json.Marshal(raw)
-			if err != nil {
+			data, err := convert.CompactJ(raw)
+			if err != nil || !json.Valid(data) {
 				continue
 			}
 			var value model.String
@@ -149,7 +214,7 @@ func clientAcceptedNumericText(entry *jsonx.Object) string {
 	}
 	fn := entry.GetString("fn")
 	if fn == "node_surge" || fn == "node_loon" {
-		node, _ := entry.GetList("args")[0].(*jsonx.Object)
+		node, _ := entry.GetList("args")[0].(*convert.JObj)
 		if field := numeric(node, "name", "server"); field != "" {
 			return "native numeric text node." + field
 		}

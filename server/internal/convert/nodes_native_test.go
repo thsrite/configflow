@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 
@@ -89,13 +89,17 @@ func TestMihomoQuotedPort(t *testing.T) {
 
 // Remaining archived helper rows use these test-only adapters. Runtime code
 // no longer models CPython set layout or Python's bool/integer key equality.
-func sortPorts(values []jsonx.Number) {
-	sort.Slice(values, func(i, j int) bool { a, _ := values[i].BigInt(); b, _ := values[j].BigInt(); return a.Cmp(b) < 0 })
+func sortPorts(values []json.Number) {
+	sort.Slice(values, func(i, j int) bool {
+		a, _ := new(big.Int).SetString(string(values[i]), 10)
+		b, _ := new(big.Int).SetString(string(values[j]), 10)
+		return a.Cmp(b) < 0
+	})
 }
 
 // NodeReplayIssue identifies malformed members whose dynamic behavior is not
 // an oracle for the typed node converter. The predicate only reads types.
-func NodeReplayIssue(node *jsonx.Object) string {
+func NodeReplayIssue(node *JObj) string {
 	if node == nil {
 		return "node object"
 	}
@@ -112,7 +116,7 @@ func NodeReplayIssue(node *jsonx.Object) string {
 		}
 	}
 	if value, present := node.Get("params"); present {
-		if object, ok := value.(*jsonx.Object); !ok || object == nil {
+		if object, ok := value.(*JObj); !ok || object == nil {
 			return "node.params object"
 		}
 	}
@@ -122,8 +126,8 @@ func NodeReplayIssue(node *jsonx.Object) string {
 	if _, text := node.Value("port").(string); text {
 		return "node.port quoted integer native boundary"
 	}
-	data, err := json.Marshal(node)
-	if err != nil {
+	data, err := CompactJ(node)
+	if err != nil || !json.Valid(data) {
 		return "node nonfinite JSON"
 	}
 	var typed model.Node
@@ -140,7 +144,7 @@ func NodeReplayIssue(node *jsonx.Object) string {
 }
 
 // NodeProfileReplayIssue applies the migrated node schema to generation rows.
-func NodeProfileReplayIssue(config *jsonx.Object) string {
+func NodeProfileReplayIssue(config *JObj) string {
 	if config == nil {
 		return "config object"
 	}
@@ -150,7 +154,7 @@ func NodeProfileReplayIssue(config *jsonx.Object) string {
 			return "nodes array"
 		}
 		for _, raw := range nodes {
-			node, ok := raw.(*jsonx.Object)
+			node, ok := raw.(*JObj)
 			if !ok || node == nil {
 				return "node object"
 			}
@@ -160,7 +164,7 @@ func NodeProfileReplayIssue(config *jsonx.Object) string {
 		}
 	}
 	if raw, present := config.Get("system_config"); present {
-		system, ok := raw.(*jsonx.Object)
+		system, ok := raw.(*JObj)
 		if !ok || system == nil {
 			return "system_config object"
 		}
@@ -177,8 +181,8 @@ func structuredTypeIssue(text string) string {
 	if strings.HasPrefix(strings.TrimSpace(text), "{") {
 		// The old JSON reader accepted Python's NaN/Infinity extensions. They
 		// are not JSON; a YAML flow document reads those words as strings.
-		if value, err := jsonx.ParseString(text); err == nil && !json.Valid([]byte(text)) {
-			if _, ok := value.(*jsonx.Object); ok {
+		if value, err := ParseJString(text); err == nil && !json.Valid([]byte(text)) {
+			if _, ok := value.(*JObj); ok {
 				return "structured nonfinite JSON"
 			}
 		}
@@ -211,16 +215,16 @@ func structuredTypeIssue(text string) string {
 	return ""
 }
 
-func portReplayIssue(document *jsonx.Object) string {
+func portReplayIssue(document *JObj) string {
 	check := func(value any) string {
 		if value == nil {
 			return ""
 		}
-		number, ok := value.(jsonx.Number)
+		number, ok := value.(json.Number)
 		if !ok {
 			return "port integer"
 		}
-		if !number.IsInt() {
+		if !IsIntNumber(number) {
 			return "port integer notation"
 		}
 		if _, err := strconv.ParseInt(string(number), 10, 64); err != nil {
@@ -234,7 +238,7 @@ func portReplayIssue(document *jsonx.Object) string {
 		}
 	}
 	for _, item := range document.GetList("listeners") {
-		if listener, ok := item.(*jsonx.Object); ok {
+		if listener, ok := item.(*JObj); ok {
 			if issue := check(listener.Value("port")); issue != "" {
 				return issue
 			}
@@ -270,7 +274,7 @@ func nodeRowIssue(row corpusRow) string {
 	case "apply_github_proxy_domain":
 		if config := obj(row.args[1]); config != nil {
 			if value, present := config.Get("system_config"); present {
-				if _, ok := value.(*jsonx.Object); !ok {
+				if _, ok := value.(*JObj); !ok {
 					return "system_config object"
 				}
 			}
@@ -315,12 +319,12 @@ func TestNativeNodeR5AndParamsValidation(t *testing.T) {
 	} {
 		t.Run(tt.field, func(t *testing.T) {
 			value := mustJSON(t, `{"name":"outer","type":"http","server":"example.com","port":80}`)
-			raw, err := jsonx.ParseString(tt.raw)
+			raw, err := ParseJString(tt.raw)
 			if err != nil {
 				t.Fatal(err)
 			}
 			value.Set(tt.field, raw)
-			node, err := decodeLegacy[model.Node](value)
+			node, err := DecodeJ[model.Node](value)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -497,14 +501,15 @@ func FuzzTypedNodeProxy(f *testing.F) {
 	})
 }
 
-func usedPorts(value *jsonx.Object) ([]any, error) {
-	ports, err := MihomoUsedPorts(value)
+func usedPorts(value *JObj) ([]any, error) {
+	node, err := YAMLNodeFromJ(value)
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]jsonx.Number, 0, len(ports))
+	ports := UsedPorts(node)
+	keys := make([]json.Number, 0, len(ports))
 	for key := range ports {
-		keys = append(keys, key)
+		keys = append(keys, JInt(key))
 	}
 	sortPorts(keys)
 	result := make([]any, len(keys))

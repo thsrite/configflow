@@ -1,7 +1,6 @@
 package convert
 
 import (
-	"configflow/internal/jsonx"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -10,17 +9,17 @@ import (
 
 // Full per-row/source hashes and historical Python results are additionally
 // verified by TestN89CallerReferenceProvenance in the public-boundary package.
-func nativeSubsVersionCases(t *testing.T, archive string) *jsonx.Object {
+func nativeSubsVersionCases(t *testing.T, archive string) *JObj {
 	t.Helper()
 	fixture, err := os.ReadFile("testdata/n89_subs_callers_reference.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := jsonx.Parse(fixture)
+	parsed, err := ParseJ(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := parsed.(*jsonx.Object)
+	root := parsed.(*JObj)
 	source, err := os.ReadFile("testdata/" + archive + ".jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +30,8 @@ func nativeSubsVersionCases(t *testing.T, archive string) *jsonx.Object {
 	}
 	return root.GetObject("cases")
 }
-func applyNativeSubsVersion(row *corpusRow, expected *jsonx.Object) {
+
+func applyNativeSubsVersion(row *corpusRow, expected *JObj) {
 	if expected == nil {
 		return
 	}

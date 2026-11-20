@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/convert"
 	"configflow/internal/yamlx"
 )
 
@@ -141,7 +141,7 @@ func TestMihomoWriterOracleProvenance(t *testing.T) {
 	if len(refs) != 111 {
 		t.Fatalf("expected 111 explicitly classified Python writer bugs, got %d", len(refs))
 	}
-	corpora := map[string][]*jsonx.Object{}
+	corpora := map[string][]*convert.JObj{}
 	counts := map[string]int{}
 	seen := map[string]bool{}
 	for _, ref := range refs {

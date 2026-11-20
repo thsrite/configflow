@@ -8,13 +8,14 @@ package convert
 import (
 	"bufio"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/rulesetfmt"
 )
 
@@ -33,11 +34,11 @@ func loadRows(t *testing.T, path string) []corpusRow {
 	scanner.Buffer(make([]byte, 1<<20), 1<<26)
 	var rows []corpusRow
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
+		value, err := ParseJ(scanner.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := value.(*jsonx.Object)
+		entry := value.(*JObj)
 		row := corpusRow{fn: entry.GetString("fn"), args: entry.GetList("args")}
 		row.out, row.hasOut = entry.Get("out")
 		if e := entry.GetList("err"); e != nil {
@@ -55,21 +56,21 @@ func loadRows(t *testing.T, path string) []corpusRow {
 // reviewConv mirrors conv() of review_c12_gen.py.
 func reviewConv(v any) any {
 	switch value := v.(type) {
-	case jsonx.Number:
+	case json.Number:
 		switch value {
 		case "NaN":
-			return jsonx.Obj("__float__", "nan")
+			return JObjKV("__float__", "nan")
 		case "Infinity":
-			return jsonx.Obj("__float__", "inf")
+			return JObjKV("__float__", "inf")
 		case "-Infinity":
-			return jsonx.Obj("__float__", "-inf")
+			return JObjKV("__float__", "-inf")
 		}
 		return value
-	case *jsonx.Object:
+	case *JObj:
 		if value == nil {
 			return nil
 		}
-		out := jsonx.NewObject()
+		out := NewJObj()
 		for k, child := range value.All() {
 			out.Set(k, reviewConv(child))
 		}
@@ -88,39 +89,57 @@ func runReviewRow(row corpusRow) (any, any, error) {
 	a := row.args
 	switch row.fn {
 	case "listen_ports_ordered":
-		owners, err := MihomoListenPorts(obj(a[0]))
+		node, err := YAMLNodeFromJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		owners := ListenPorts(node)
 		out := []any{}
 		for _, o := range owners {
-			out = append(out, []any{jsonx.Repr(o.Value), o.Owner})
+			out = append(out, []any{strconv.FormatInt(o.Port, 10), o.Owner})
 		}
-		return out, nil, err
+		return out, nil, nil
 	case "used_ports_repr":
 		used, err := usedPorts(obj(a[0]))
 		out := []any{}
 		for _, p := range used {
-			out = append(out, jsonx.Repr(p))
+			out = append(out, string(p.(json.Number)))
 		}
 		return out, nil, err
 	case "dependency_node_ids":
-		ids, err := DependencyNodeIDs(obj(a[0]), jsonx.Strings(a[1].([]any)), a[2] == true)
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
+		if err != nil {
+			return nil, nil, err
+		}
+		ids, err := RequiredNodes(cfg, JStrings(a[1].([]any)), a[2] == true)
 		items := []any{}
 		for id := range ids {
 			items = append(items, id)
 		}
-		return jsonx.Obj("__set__", sortedSet(items)), nil, err
+		return JObjKV("__set__", sortedSet(items)), nil, DialerFailure(err)
 	case "dependency_graph":
-		g, err := DependencyGraph(obj(a[0]))
+		if err := ValidateResourceArraysJ(obj(a[0])); err != nil {
+			return nil, nil, err
+		}
+		cfg, err := DecodeDialerConfigJ(obj(a[0]))
 		if err != nil {
 			return nil, nil, err
+		}
+		g, err := BuildDialerGraph(cfg)
+		if err != nil {
+			return nil, nil, DialerFailure(err)
 		}
 		out := []any{}
 		for _, k := range g.Keys() {
 			children, _ := g.Children(k)
 			refs := []any{}
 			for _, c := range children {
-				refs = append(refs, []any{c.Kind, c.IDValue()})
+				refs = append(refs, []any{c.Kind, c.ID})
 			}
-			out = append(out, []any{[]any{k.Kind, k.IDValue()}, refs})
+			out = append(out, []any{[]any{k.Kind, k.ID}, refs})
 		}
 		return out, nil, nil
 	}
@@ -131,8 +150,8 @@ func runReviewRow(row corpusRow) (any, any, error) {
 // into the text json.dumps writes, which is what the Go port stores.
 func stripKeyMarks(v any) any {
 	switch value := v.(type) {
-	case *jsonx.Object:
-		out := jsonx.NewObject()
+	case *JObj:
+		out := NewJObj()
 		for k, child := range value.All() {
 			if text, ok := strings.CutPrefix(k, "<key>"); ok {
 				k = text
@@ -165,7 +184,7 @@ func reviewKnown(t *testing.T, row corpusRow) string {
 		return "Turkish i under IGNORECASE"
 	case (row.fn == "parse_structured_proxy_string" || row.fn == "convert_node_to_mihomo") &&
 		(strings.Contains(text, "&a [*a]") || strings.Contains(text, "!!set")):
-		// A recursive alias or a !!set cannot be held in jsonx (domain
+		// A recursive alias or a !!set cannot be held in JSON (domain
 		// decision on yamlx): the string is not parsed locally.
 		return "unrepresentable YAML value"
 	case row.fn == "filter_provider_candidates" && strings.Contains(text, `\\N{`):
@@ -194,7 +213,7 @@ func hasNFKCDelimiterAuthority(v any) bool {
 				return true
 			}
 		}
-	case *jsonx.Object:
+	case *JObj:
 		for _, key := range v.Keys() {
 			if hasNFKCDelimiterAuthority(v.Value(key)) {
 				return true
@@ -219,7 +238,7 @@ func noneSlotOrder(t *testing.T, row corpusRow, result any) bool {
 		}
 	}
 	for _, item := range document.GetList("listeners") {
-		if l, ok := item.(*jsonx.Object); ok && l.Value("port") == nil {
+		if l, ok := item.(*JObj); ok && l.Value("port") == nil {
 			hasNone = true
 		}
 	}
