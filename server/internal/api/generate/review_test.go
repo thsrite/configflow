@@ -128,3 +128,37 @@ func TestReviewC34ForeignAliasDispatch(t *testing.T) {
 		t.Fatalf("foreign alias methods=%d", count)
 	}
 }
+
+func TestPreviewOxiDNSPreservesAuthObjectAndRedactsSystemSecrets(t *testing.T) {
+	s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) { *app = *server.NewApp() }})
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+		system.SystemConfig.RuleProxyToken = "synthetic-preview-secret"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, profile *model.Profile) error {
+		return profile.SetJSON("oxidns", json.RawMessage(`{"config_mode":"native","native_config":"api:\n  http:\n    listen: 127.0.0.1:9199\n    auth:\n      type: basic\n      username: admin\n      password: synthetic-preview-secret\nplugins: []\n"}`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := s.Do("POST", "/api/generate/oxidns/preview")
+	res.WantStatus(200)
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(res.Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body.Content, "auth: \"[REDACTED]\"") || strings.Contains(body.Content, "auth: '[REDACTED]'") {
+		t.Fatalf("preview collapsed api.http.auth mapping into scalar redaction:\n%s", body.Content)
+	}
+	if !strings.Contains(body.Content, "type: basic") || !strings.Contains(body.Content, "username: admin") {
+		t.Fatalf("preview dropped api.http.auth mapping fields:\n%s", body.Content)
+	}
+	if strings.Contains(body.Content, "synthetic-preview-secret") || !strings.Contains(body.Content, "[REDACTED]") {
+		t.Fatalf("preview did not redact system secret:\n%s", body.Content)
+	}
+}

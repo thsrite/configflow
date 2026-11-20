@@ -116,11 +116,14 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		if err != nil {
 			return nil, err
 		}
-		secrets, err := redact.ExternalPayloadSecrets(c.Context(), json.RawMessage(rawSys))
+		sanitizedValue, err := redact.SanitizeExternalPayload(c.Context(), json.RawMessage(raw), json.RawMessage(rawSys))
 		if err != nil {
 			return nil, err
 		}
-		sanitizedJSON := redact.SanitizeCredentials(json.RawMessage(raw), secrets)
+		sanitizedJSON, err := json.Marshal(sanitizedValue)
+		if err != nil {
+			return nil, err
+		}
 		sanitized, err := yamlx.FromJSON(sanitizedJSON)
 		if err != nil {
 			return nil, err
