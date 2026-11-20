@@ -372,7 +372,7 @@ func PublishSource(ctx context.Context, r *repo.Repository, id string, profile *
 	if state != StateAbsent || id == "" {
 		return "", nil
 	}
-	c, err := sessionContext(ctx, r, id)
+	c, err := readSessions(ctx, r, id)
 	if err != nil {
 		return "", err
 	}

@@ -20,7 +20,7 @@ import (
 func fixtureRecord(id, digest string) *Record {
 	return &Record{ID: id, ProfileID: "setup_synthetic", Name: "Synthetic", Goal: "gateway", Step: 3, MaxStep: 3,
 		CreatedAt: "2026-01-01T00:00:00Z", SubscriptionIDs: []string{}, NodeIDs: []string{},
-		Prepared: pointer(true), ProfileRevision: pointer(model.Int(1)), Completed: pointer(false), OwnedDigest: &digest}
+		Prepared: pointer(true), ProfileRevision: pointer(model.Int(1)), Completed: pointer(false), DigestVersion: pointer(digestVersion), OwnedDigest: &digest}
 }
 
 func setupRepository(t *testing.T) (*repo.Repository, context.Context) {
@@ -60,7 +60,7 @@ func TestRecordPreservesUnknownAndExplicitClear(t *testing.T) {
 	}
 }
 
-func TestOwnedDigestMatchesPython(t *testing.T) {
+func TestOwnedDigestUsesNativeEncoding(t *testing.T) {
 	type probe struct {
 		Profile json.RawMessage `json:"profile"`
 		Without bool            `json:"without"`
@@ -91,8 +91,8 @@ func TestOwnedDigestMatchesPython(t *testing.T) {
 	}
 	for i, test := range tests {
 		got, err := OwnedDigest(test.Profile, test.Without)
-		if err != nil || got != want[i] {
-			t.Fatalf("digest case %d: %s != %s: %v", i, got, want[i], err)
+		if err != nil || got == want[i] {
+			t.Fatalf("digest case %d retained old Python hash: %s / %s: %v", i, got, want[i], err)
 		}
 	}
 }

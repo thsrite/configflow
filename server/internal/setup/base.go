@@ -1,15 +1,14 @@
 package setup
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/routersplit"
 	"configflow/internal/yamlx"
 	"gopkg.in/yaml.v3"
+	"strconv"
 )
 
 // ControllerSecretError returns the public reason a newly entered controller
@@ -37,28 +36,12 @@ func nodeString(node *yamlx.Node) string {
 	return ""
 }
 
-// nodeBoundary only projects the existing shared legacy boundary; it does not
-// interpret YAML or define a second scalar policy.
-func nodeBoundary(node *yamlx.Node) (any, error) {
-	raw, err := yamlx.ToJSON(node)
-	if err != nil {
-		return nil, err
-	}
-	return jsonx.Parse(raw)
-}
 func nodeDescription(node *yamlx.Node, stringForm bool) (string, error) {
 	node = yamlx.Resolve(node)
-	if nodeString(node) != "" || node != nil && node.ShortTag() == "!!str" {
+	if node != nil && node.Kind == yaml.ScalarNode && node.ShortTag() == "!!str" {
 		return node.Value, nil
 	}
-	value, err := nodeBoundary(node)
-	if err != nil {
-		return "", err
-	}
-	if stringForm {
-		return jsonx.Str(value), nil
-	}
-	raw, err := jsonx.Default(value)
+	raw, err := yamlx.ToJSON(node)
 	return string(raw), err
 }
 
@@ -148,11 +131,11 @@ func (s *Service) mihomoBase(source string, fullTUN bool, reserved map[string]st
 		return "", nil, failure(msgTunMapping, 400)
 	}
 	if fullTUN {
-		next, err := routersplit.FullTunDocument(document)
+		next, err := routersplit.FullTunNode(document)
 		if err != nil {
 			return "", nil, ownerValidation(err)
 		}
-		document = next.(*yamlx.Node)
+		document = next
 		if !yamlx.Equal(tun, yamlx.Get(document, "tun")) {
 			change := msgFullTUN
 			removed := []string{}
@@ -167,33 +150,18 @@ func (s *Service) mihomoBase(source string, fullTUN bool, reserved map[string]st
 			changes = append(changes, change)
 		}
 	} else if tun != nil && tun.Kind == yaml.MappingNode {
-		if filters := routersplit.TunFilters(tun); len(filters) > 0 {
+		if filters := routersplit.TunFilterPaths(tun); len(filters) > 0 {
 			return "", nil, failure(fmt.Sprintf(msgTunFilter, filters[0]), 400)
 		}
-		value, err := nodeBoundary(yamlx.Get(tun, "enable"))
-		if err != nil {
-			return "", nil, err
-		}
-		if jsonx.Truthy(value) {
+		if routersplit.TunActive(yamlx.Get(tun, "enable")) {
 			yamlx.Set(tun, "enable", yamlx.Bool(false))
 			changes = append(changes, msgTunDisabled)
 		}
 	}
-	raw, err := yamlx.ToJSON(document)
-	if err != nil {
-		return "", nil, err
-	}
-	var projected jsonx.Object
-	if err = json.Unmarshal(raw, &projected); err != nil {
-		return "", nil, err
-	}
-	ports, err := convert.MihomoListenPorts(&projected)
-	if err != nil {
-		return "", nil, err
-	}
+	ports := convert.ListenPorts(document)
 	for _, port := range ports {
-		if label, exists := reserved[string(port.Port)]; exists {
-			return "", nil, failure(fmt.Sprintf(msgPortCollision, port.Owner, string(port.Port), label), 400)
+		if label, exists := reserved[strconv.FormatInt(port.Port, 10)]; exists {
+			return "", nil, failure(fmt.Sprintf(msgPortCollision, port.Owner, strconv.FormatInt(port.Port, 10), label), 400)
 		}
 	}
 	data, err := yamlx.Marshal(document)

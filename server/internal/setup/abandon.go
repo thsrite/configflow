@@ -2,13 +2,13 @@ package setup
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -31,28 +31,26 @@ func (s *Service) abandonPlan(ctx context.Context, record *Record) (abandonPlan,
 	if enabled(record.Completed) {
 		return out, failure(msgAlreadyCompleted, 409)
 	}
-	profile, err := s.repository.GetProfile(ctx, record.ProfileID)
+	profile, err := s.repository.Profile(ctx, record.ProfileID)
 	if err != nil {
 		return out, err
 	}
-	if name := profile.GetString("name"); name != "" {
+	if name := profile.Name; name != "" {
 		out.Profile.Name = name
 	}
-	bindings, err := s.repository.GetProfileAgentBindings(ctx, record.ProfileID)
+	bindings, err := s.repository.ProfileAgentBindingsRecord(ctx, record.ProfileID)
 	if err != nil {
 		return out, err
 	}
-	agents := bindings.GetList("agents")
+	agents := bindings.Agents
 	if len(agents) > 0 {
 		names := []string{}
 		for _, entry := range agents[:min(3, len(agents))] {
-			agent, ok := jsonx.AsObject(entry)
-			if !ok {
-				return out, ErrCorruptRecord
-			}
-			name := agent.GetString("name")
+			var name, id string
+			_ = json.Unmarshal(entry.Name, &name)
+			_ = json.Unmarshal(entry.ID, &id)
 			if name == "" {
-				name = agent.GetString("id")
+				name = id
 			}
 			names = append(names, name)
 		}
@@ -62,7 +60,7 @@ func (s *Service) abandonPlan(ctx context.Context, record *Record) (abandonPlan,
 		}
 		out.KeptReason = pointer(fmt.Sprintf(msgBoundDevices, strings.Join(names, "、"), suffix))
 		out.Guidance = msgBoundGuidance
-	} else if len(profile.GetObject("routers").GetList("items")) > 0 {
+	} else if len(profile.Routers.Items) > 0 {
 		out.KeptReason = pointer(msgKeepRouters)
 		out.Guidance = msgKeepRoutersGuidance
 	} else {
@@ -108,11 +106,12 @@ func (s *Service) abandon(ctx context.Context, record *Record, out *abandonPlan)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := s.repository.UpdateSystemTransaction(ctx, func(commit context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		settings := system.GetObject("system_config")
-		settings.Set("setup_suggestion_dismissed", true)
-		system.Set("system_config", settings)
-		return nil, commit.Err()
+	err := s.repository.UpdateSystem(ctx, func(commit context.Context, system *model.System) error {
+		if err := commit.Err(); err != nil {
+			return err
+		}
+		system.SystemConfig.SetupSuggestionDismissed = pointer(true)
+		return commit.Err()
 	})
 	if err != nil {
 		return err

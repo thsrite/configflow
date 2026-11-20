@@ -1,12 +1,10 @@
 package setup
 
 import (
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/rules"
 )
@@ -21,24 +19,13 @@ func stringsOf(values *[]string) []string {
 }
 
 func filteredNodeIDs(nodes []model.Node, include, exclude string) ([]string, error) {
-	raw, err := json.Marshal(nodes)
-	if err != nil {
-		return nil, err
-	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	items, _ := jsonx.AsList(value)
-	matched, err := rules.FilterCandidates(items, include, exclude)
+	matched, err := rules.Filter(nodes, &include, &exclude, func(node model.Node) string { return node.Name })
 	if err != nil {
 		return nil, err
 	}
 	ids := []string{}
-	for _, item := range matched {
-		if node, ok := jsonx.AsObject(item); ok {
-			ids = append(ids, node.GetString("id"))
-		}
+	for _, node := range matched {
+		ids = append(ids, node.ID)
 	}
 	return ids, nil
 }

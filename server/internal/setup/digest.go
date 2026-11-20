@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"configflow/internal/jsonx"
+	"bytes"
+	"configflow/internal/model"
 )
 
 // OwnedDigest identifies the stored profile sections controlled by the wizard.
 // withoutBase excludes only Mihomo custom_config; unrelated metadata is ignored.
-// Existing Python-written session hashes remain valid through the shared legacy
-// fingerprint encoder; no new JSON encoder or Python compatibility code lives here.
+// Versioned session evidence uses canonical native JSON; old hashes fail closed.
 func OwnedDigest(profile json.RawMessage, withoutBase bool) (string, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(profile, &fields); err != nil || fields == nil {
@@ -36,13 +36,9 @@ func OwnedDigest(profile json.RawMessage, withoutBase bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode setup ownership fields: %w", err)
 	}
-	value, err := jsonx.Parse(raw)
+	raw, err = canonicalDigestJSON(raw)
 	if err != nil {
-		return "", fmt.Errorf("read setup ownership fields: %w", err)
-	}
-	raw, err = jsonx.Encode(value, jsonx.Options{SortKeys: true})
-	if err != nil {
-		return "", fmt.Errorf("encode stored setup fingerprint: %w", err)
+		return "", err
 	}
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
@@ -66,14 +62,27 @@ func CoreFingerprint(config json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	value, err := jsonx.Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	raw, err = jsonx.Encode(value, jsonx.Options{SortKeys: true, Compact: true})
+	raw, err = canonicalDigestJSON(raw)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// digestVersion marks native encoding/json fingerprints. Every object is decoded
+// recursively and Marshal sorts string map keys; number token spelling is kept.
+const digestVersion model.Int = 1
+
+func canonicalDigestJSON(raw []byte) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+func currentDigest(record *Record) bool {
+	return record.DigestVersion != nil && *record.DigestVersion == digestVersion
 }

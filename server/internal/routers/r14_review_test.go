@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -80,14 +80,14 @@ func TestR14ReviewRepositoryHookSharesJobLock(t *testing.T) {
 	Wire()
 	current := repo.SetHooks(repo.Hooks{})
 	repo.SetHooks(current)
-	if current.JobLock == nil {
+	if current.JobLockRecord == nil {
 		t.Fatal("routers did not register the job lock hook")
 	}
-	var raw jsonx.Object
+	var raw model.Router
 	if err := json.Unmarshal([]byte(`{"id":"`+r.ID+`","type":"routeros","endpoint":"`+r.Endpoint+`/"}`), &raw); err != nil {
 		t.Fatal(err)
 	}
-	release, ok := current.JobLock(t.Context(), "default", r.ID, &raw)
+	release, ok := current.JobLockRecord(t.Context(), "default", r.ID, raw)
 	if !ok {
 		t.Fatal("hook could not take a free job lock")
 	}

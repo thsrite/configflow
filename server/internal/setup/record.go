@@ -27,6 +27,7 @@ type Record struct {
 	Completed              *bool           `json:"completed"`
 	Abandoned              *bool           `json:"abandoned"`
 	AbandonedAt            *string         `json:"abandoned_at"`
+	DigestVersion          *model.Int      `json:"digest_version"`
 	OwnedDigest            *string         `json:"owned_digest"`
 	OwnedDigestWithoutBase *string         `json:"owned_digest_without_base"`
 	DNSFallback            *string         `json:"dns_fallback"`

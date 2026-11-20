@@ -1,27 +1,27 @@
 package setupflow
 
 import (
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 	"context"
+	"encoding/json"
 )
 
 // Wire installs the shared read-only C36 adapter. ProfileSessions runs before
 // callers acquire repository write locks; bound Agents come from repo's snapshot.
 func Wire() {
-	routersplit.SetProfileSessions(func(ctx context.Context, r *repo.Repository, profile string) ([]*jsonx.Object, error) {
+	routersplit.SetSessionReader(func(ctx context.Context, r *repo.Repository, profile string) ([]routersplit.Session, error) {
 		sessions, err := ProfileSessions(ctx, r.DataDir(), profile)
 		if err != nil {
 			return nil, err
 		}
-		out := make([]*jsonx.Object, 0, len(sessions))
+		out := make([]routersplit.Session, 0, len(sessions))
 		for _, session := range sessions {
-			v, err := jsonx.Parse(session.Raw)
-			if err != nil {
+			var value routersplit.Session
+			if err := json.Unmarshal(session.Raw, &value); err != nil {
 				return nil, err
 			}
-			out = append(out, v.(*jsonx.Object))
+			out = append(out, value)
 		}
 		return out, nil
 	})

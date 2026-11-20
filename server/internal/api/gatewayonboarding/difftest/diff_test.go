@@ -359,17 +359,22 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			pyDigests := pythonOwnedDigests(t, raw)
 			dir := filepath.Join(s.DataDir, "setup-sessions")
 			if err := os.MkdirAll(dir, 0700); err != nil {
 				t.Fatal(err)
 			}
 			const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-			record, err := json.Marshal(map[string]any{"id": id, "profile_id": "default", "goal": "gateway", "completed": false, "owned_digest": full, "owned_digest_without_base": without})
+			pyRecord, err := json.Marshal(map[string]any{"id": id, "profile_id": "default", "goal": "gateway", "completed": false, "owned_digest": pyDigests[0], "owned_digest_without_base": pyDigests[1]})
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err := json.Marshal(map[string]any{"id": id, "profile_id": "default", "goal": "gateway", "completed": false, "digest_version": 1, "owned_digest": full, "owned_digest_without_base": without})
 			if err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(dir, id+".json")
-			if err := os.WriteFile(path, record, 0600); err != nil {
+			if err := os.WriteFile(path, pyRecord, 0600); err != nil {
 				t.Fatal(err)
 			}
 			trace := filepath.Join(t.TempDir(), "adopt.jsonl")
@@ -379,7 +384,7 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 				attempts = 1
 				t.Setenv("A21_CONCURRENT_WRITE", "1")
 				calls := 0
-				t.Cleanup(routersplit.SetProfileSessions(func(ctx context.Context, r *repo.Repository, profileID string) ([]*jsonx.Object, error) {
+				t.Cleanup(routersplit.SetSessionReader(func(ctx context.Context, r *repo.Repository, profileID string) ([]routersplit.Session, error) {
 					calls++
 					if calls == 1 {
 						if _, err := r.UpdateProfileMetadata(ctx, profileID, jsonx.Obj("name", "Concurrent metadata")); err != nil {
@@ -390,18 +395,21 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					out := make([]*jsonx.Object, 0, len(sessions))
+					out := make([]routersplit.Session, 0, len(sessions))
 					for _, session := range sessions {
-						v, err := jsonx.Parse(session.Raw)
-						if err != nil {
+						var v routersplit.Session
+						if err := json.Unmarshal(session.Raw, &v); err != nil {
 							return nil, err
 						}
-						out = append(out, v.(*jsonx.Object))
+						out = append(out, v)
 					}
 					return out, nil
 				}))
 			}
 			o := newOracle(t, s, trace)
+			if err := os.WriteFile(path, record, 0600); err != nil {
+				t.Fatal(err)
+			}
 			previous := revisionOfProfile(t, profile)
 			for attempt := range attempts {
 				py := o.call(t, "POST", "/api/profiles/default/gateway-onboarding", validForm, request.Header.Get("Authorization"))
@@ -441,7 +449,7 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 					if !os.IsNotExist(err) || !bytes.Equal(record, saved) {
 						t.Fatalf("+2 write adopted: trace=%s err=%v", observed, err)
 					}
-					compare(t, "Python +2 session unchanged", record, state.Files["setup-sessions/"+id+".json"])
+					compare(t, "Python +2 session unchanged", pyRecord, state.Files["setup-sessions/"+id+".json"])
 					continue
 				}
 				if err != nil {
@@ -474,4 +482,28 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 			}
 		})
 	}
+}
+
+func pythonOwnedDigests(t *testing.T, profile json.RawMessage) [2]string {
+	t.Helper()
+	root, err := filepath.Abs("../../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "-c", `import json,sys;from backend.common.setup_flow import owned_digest
+p=json.load(sys.stdin);json.dump([owned_digest(p),owned_digest(p,base=False)],sys.stdout)`)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+root)
+	cmd.Stdin = bytes.NewReader(profile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Python owned_digest: %v %s", err, out)
+	}
+	var digests [2]string
+	if err := json.Unmarshal(out, &digests); err != nil {
+		t.Fatal(err)
+	}
+	return digests
 }

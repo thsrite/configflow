@@ -2390,3 +2390,10 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 - 全局 import/reset 的设备归属 409 现只返回 success/message，与 Flask 相同；repo.Error 的完整 usages 保留给其他消费者。这是修正 W1 记录的既有差异，没有新增 API 差异。
 - `internal/auth` 去掉对 `httpx.PyParseInt`/`httpx.PyTypeName` 的转发：JWT 数值声明的字符串形式（`exp`/`iat`/`nbf`）按原生 ASCII 十进制解析（`strings.TrimSpace` + `big.Int.SetString(..., 10)`），拒绝非 ASCII 数字；非字符串/非数值类型声明仍返回 `*ClaimTypeError`（500），诊断消息改为原生 `numeric JWT claim must be an integer or numeric string`，不再拼接 Python `int()` TypeError 文本。
 - `GET /api/backup/config` 保留已存储非字符串字段（`webdav_username`/`webdav_path`/`auto_backup`/`keep_latest`/`keep_daily`）与密码真值的原始 JSON 呈现，避免 R5 标量投影改写类型；`webdav_url` 维持既有 `backupEditorURL` 脱敏/校验策略（非字符串或无效 URI 返回 `""`），`TestN811W5StoredBackupTypes` 显式固定该既有差异。
+
+## N8-11 W6：设置向导的原生持久化哈希与规则策略显式 null 提示
+
+- 按 D2 和协调者 2026-11-20 裁定，OwnedDigest/CoreFingerprint 使用 encoding/json：递归解码后按字符串 map 键排序，保留 json.Number 的数字字面量；默认原生 JSON 转义。会话新增 digest_version；没有版本的正在进行会话按现有“配置已被其他页面修改”冲突路径拒绝继续提交，不以 revision 推断相等。用户可以放弃并重新开始向导，旧 profile 的依赖保留规则不变。
+- 旧哈希允许一次性失配；不仿 Python 的空白或 ensure_ascii 编码。新会话同内容前后一致，对象键顺序不影响哈希，大整数值变化仍影响哈希。
+- 规则 `policy` 显式为 `null`（或非字符串值）时不再按缺失键套用默认 `PROXY`/`Proxy`，而是继续拒绝引用并在中文提示中以 JSON 文本呈现（如 `'null'`，与 Python 的 `'None'` 属已登记的“非字符串值用 JSON 文本”类差异，HTTP 状态与 `ready=false` 不变）。`gateway/onboarding` 的 `TestPythonPreparation/null-policy` 与 `rules` 单测显式覆盖。
+- `gateway.NewConfig` 彻底切至 typed `*model.Config` 并删除 `ApplyJSONX` 后，`nodes` 字段遵循 `[]model.Node` 类型边界：合法节点对象（含未知成员与嵌套 `routing-mark`）仍全部拦截；非数组 `nodes`（如对象）或非对象节点元素（如嵌套数组）无法进入 `model.Config.Nodes` 或 Mihomo 生成输出，在冻结语料 `a19_corpus` 中仅对应 2 行畸形 `nodes` 样例，其余 7492/7494 行完全一致。

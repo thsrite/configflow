@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/model"
 	"context"
 	"errors"
 	"os"
@@ -131,12 +132,12 @@ func TestO36bJobHookInsideRepositoryAndLegacySentinel(t *testing.T) {
 	}
 	defer release()
 	connection := jsonx.Obj("type", "routeros", "endpoint", "http://192.0.2.3/")
-	unlock, ok := jobLockHook(held, "p", "r", connection)
+	unlock, ok := jobLockHook(held, "p", "r", model.Router{Type: connection.GetString("type"), Endpoint: connection.GetString("endpoint")})
 	if !ok {
 		t.Fatal("L3 commit guard did not acquire L1 try lock")
 	}
 	defer unlock()
-	if _, duplicate := jobLockHook(held, "alias", "alias", connection); duplicate {
+	if _, duplicate := jobLockHook(held, "alias", "alias", model.Router{Type: connection.GetString("type"), Endpoint: connection.GetString("endpoint")}); duplicate {
 		t.Fatal("commit guard bypassed the publisher's key")
 	}
 	if lockx.Violations() != violations || violations != 0 {

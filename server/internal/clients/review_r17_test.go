@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 )
@@ -24,15 +23,15 @@ func TestReviewR17RepositoryHookSharesJobLock(t *testing.T) {
 	}
 	hooks := repo.SetHooks(repo.Hooks{})
 	repo.SetHooks(hooks)
-	if hooks.JobLock == nil {
-		t.Fatal("routers.Wire registered no repository JobLock")
+	if hooks.JobLockRecord == nil {
+		t.Fatal("routers.Wire registered no repository JobLockRecord")
 	}
-	profile, err := s.Repo.GetProfile(t.Context(), "default")
+	profile, err := s.Repo.Profile(t.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := profile.GetObject("routers").GetList("items")[0].(*jsonx.Object)
-	release, ok := hooks.JobLock(t.Context(), "default", "router-one", router)
+	router := profile.Routers.Items[0]
+	release, ok := hooks.JobLockRecord(t.Context(), "default", "router-one", router)
 	if !ok {
 		t.Fatal("repository hook could not take an idle router job lock")
 	}

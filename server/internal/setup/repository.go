@@ -3,61 +3,32 @@ package setup
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
-// The current repository still exposes legacy objects. These adapters contain
-// only serialization; wizard state and business decisions use native records.
+// Shared reads and edits use the repository's sole typed transaction owner.
 func sharedSnapshot(ctx context.Context, r *repo.Repository) (model.Shared, error) {
-	var shared model.Shared
-	value, err := r.GetShared(ctx)
+	shared, err := r.Shared(ctx)
 	if err != nil {
-		return shared, err
+		return model.Shared{}, err
 	}
-	raw, err := json.Marshal(value)
-	if err == nil {
-		err = json.Unmarshal(raw, &shared)
-	}
-	if err != nil {
-		return shared, fmt.Errorf("decode setup shared resources: %w", err)
-	}
-	return shared, nil
+	return *shared, nil
 }
-
 func updateShared(ctx context.Context, r *repo.Repository, update func(*model.Shared) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := r.UpdateSharedTransaction(ctx, func(held context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		raw, err := json.Marshal(current)
-		if err != nil {
-			return nil, err
+	return r.UpdateShared(ctx, func(tx context.Context, current *model.Shared) error {
+		if err := tx.Err(); err != nil {
+			return err
 		}
-		var shared model.Shared
-		if err := json.Unmarshal(raw, &shared); err != nil {
-			return nil, err
+		if err := update(current); err != nil {
+			return err
 		}
-		if err := update(&shared); err != nil {
-			return nil, err
-		}
-		raw, err = json.Marshal(shared)
-		if err != nil {
-			return nil, err
-		}
-		var next jsonx.Object
-		if err := json.Unmarshal(raw, &next); err != nil {
-			return nil, err
-		}
-		if err := held.Err(); err != nil {
-			return nil, err
-		}
-		return &next, nil
+		return tx.Err()
 	})
-	return err
 }
 
 // resourceEnabled retains the distinction between an absent legacy flag

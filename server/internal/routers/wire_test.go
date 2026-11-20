@@ -13,7 +13,11 @@ func TestRedactHookKeepsOtherFieldsAndDropsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := jsonx.Compact(redactHook(doc))
+	raw, err := jsonx.Compact(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := RedactRouters(raw)
 	if err != nil {
 		t.Fatal(err)
 	}

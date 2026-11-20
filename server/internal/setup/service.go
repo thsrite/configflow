@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
@@ -94,7 +93,7 @@ func (s *Service) Create(ctx context.Context, raw json.RawMessage) (json.RawMess
 		var missing *Error
 		if errors.As(err, &missing) && missing.Status == 404 {
 			profileID := "setup_" + id[:20]
-			if _, err := s.repository.ProfileMetadata(held, profileID); err == nil {
+			if _, err := s.repository.ProfileMetadataRecord(held, profileID); err == nil {
 				return failure(msgIdentityConflict, 409)
 			} else if !errors.Is(err, repo.ErrNotFound) {
 				return err
@@ -113,15 +112,15 @@ func (s *Service) Create(ctx context.Context, raw json.RawMessage) (json.RawMess
 		if err := held.Err(); err != nil {
 			return err
 		}
-		_, err = s.repository.CreateProfile(held, jsonx.Obj("id", record.ProfileID, "name", record.Name), "")
+		_, err = s.repository.CreateProfileRecord(held, repo.ProfileCreation{ID: record.ProfileID, Name: record.Name}, "")
 		if err != nil && !errors.Is(err, repo.ErrExists) {
 			return err
 		}
-		system, err := s.repository.GetSystem(held)
+		system, err := s.repository.System(held)
 		if err != nil {
 			return err
 		}
-		if system.GetObject("system_config").GetString("config_token") == "" {
+		if storedConfigToken(&system.SystemConfig) == "" {
 			secret := make([]byte, 32)
 			if _, err := rand.Read(secret); err != nil {
 				return fmt.Errorf("create configuration token: %w", err)
@@ -129,12 +128,14 @@ func (s *Service) Create(ctx context.Context, raw json.RawMessage) (json.RawMess
 			if err := held.Err(); err != nil {
 				return err
 			}
-			_, err = s.repository.UpdateSystemTransaction(held, func(commit context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-				settings := current.GetObject("system_config")
-				if settings.GetString("config_token") == "" {
-					settings.Set("config_token", base64.RawURLEncoding.EncodeToString(secret))
+			err = s.repository.UpdateSystem(held, func(commit context.Context, current *model.System) error {
+				if err := commit.Err(); err != nil {
+					return err
 				}
-				return nil, commit.Err()
+				if storedConfigToken(&current.SystemConfig) == "" {
+					current.SystemConfig.ConfigToken = base64.RawURLEncoding.EncodeToString(secret)
+				}
+				return commit.Err()
 			})
 			return err
 		}
@@ -189,7 +190,7 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 		if err != nil {
 			return out, err
 		}
-		if _, err := s.repository.ProfileMetadata(ctx, record.ProfileID); errors.Is(err, repo.ErrNotFound) {
+		if _, err := s.repository.ProfileMetadataRecord(ctx, record.ProfileID); errors.Is(err, repo.ErrNotFound) {
 			continue
 		} else if err != nil {
 			return out, err
@@ -204,11 +205,11 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 		}
 		out.Sessions = append(out.Sessions, value)
 	}
-	system, err := s.repository.GetSystem(ctx)
+	system, err := s.repository.System(ctx)
 	if err != nil {
 		return out, err
 	}
-	out.Suggested = len(records) == 0 && len(system.GetList("agents")) == 0 && !system.GetObject("system_config").GetBool("setup_suggestion_dismissed")
+	out.Suggested = len(records) == 0 && len(system.Agents) == 0 && !(system.SystemConfig.SetupSuggestionDismissed != nil && *system.SystemConfig.SetupSuggestionDismissed)
 	for _, item := range selectableSubscriptions(shared.Subscriptions) {
 		out.Subscriptions = append(out.Subscriptions, Choice{item.ID, item.Name})
 	}
@@ -291,11 +292,11 @@ func publicRecord(record *Record) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	var payload jsonx.Object
+	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
-	secrets := redact.CollectCredentials(&payload, nil)
+	secrets := redact.CollectCredentials(json.RawMessage(raw), nil)
 	var hasPassword bool
 	if len(record.RouterDraft) != 0 && string(record.RouterDraft) != "null" {
 		var router routers.Router
@@ -304,14 +305,11 @@ func publicRecord(record *Record) (json.RawMessage, error) {
 		}
 		hasPassword = router.Password != ""
 	}
-	if err := json.Unmarshal(redact.SanitizeCredentials(&payload, secrets), &payload); err != nil {
+	if err := json.Unmarshal(redact.SanitizeCredentials(json.RawMessage(raw), secrets), &payload); err != nil {
 		return nil, err
 	}
 	if len(record.RouterDraft) != 0 && string(record.RouterDraft) != "null" {
-		cleaned, err := json.Marshal(payload.Value("router_draft"))
-		if err != nil {
-			return nil, err
-		}
+		cleaned := payload["router_draft"]
 		var router routers.Router
 		if err := json.Unmarshal(cleaned, &router); err != nil {
 			return nil, err
@@ -324,13 +322,9 @@ func publicRecord(record *Record) (json.RawMessage, error) {
 		if err != nil {
 			return nil, err
 		}
-		value, err := jsonx.Parse(view)
-		if err != nil {
-			return nil, err
-		}
-		payload.Set("router_draft", value)
+		payload["router_draft"] = view
 	}
-	return json.Marshal(redact.SanitizeWithSecrets(&payload, secrets, false))
+	return json.Marshal(redact.SanitizeWithSecrets(payload, secrets, false))
 }
 
 // Get describes one session and the default-profile choice, without writing.
@@ -343,7 +337,7 @@ func (s *Service) Get(ctx context.Context, id string) (json.RawMessage, error) {
 			return err
 		}
 		defer func() { err = publicError(err, record) }()
-		if _, err := s.repository.ProfileMetadata(held, record.ProfileID); err != nil {
+		if _, err := s.repository.ProfileMetadataRecord(held, record.ProfileID); err != nil {
 			return err
 		}
 		result, err = s.described(held, record)
@@ -366,7 +360,7 @@ func (s *Service) Patch(ctx context.Context, id string, raw json.RawMessage) (js
 			return err
 		}
 		defer func() { err = publicError(err, record) }()
-		profile, err := s.repository.GetProfile(held, record.ProfileID)
+		profile, err := s.repository.Profile(held, record.ProfileID)
 		if err != nil {
 			return err
 		}
@@ -397,8 +391,8 @@ func (s *Service) Patch(ctx context.Context, id string, raw json.RawMessage) (js
 				return failure(msgRouterSelection, 409)
 			}
 			found := false
-			for _, item := range profile.GetObject("routers").GetList("items") {
-				if router, ok := jsonx.AsObject(item); ok && router.GetString("id") == id {
+			for _, router := range profile.Routers.Items {
+				if router.ID == id {
 					found = true
 				}
 			}
@@ -437,13 +431,13 @@ func (s *Service) described(ctx context.Context, record *Record) (json.RawMessag
 		return nil, err
 	}
 	if record.Goal == "router" && enabled(record.Prepared) && record.LegacyTakeover == nil {
-		profile, err := s.repository.GetProfile(ctx, record.ProfileID)
+		profile, err := s.repository.Profile(ctx, record.ProfileID)
 		if err != nil {
 			return nil, err
 		}
-		settings, err := gateway.SettingsOf(gatewayModelConfig(profile))
+		settings, err := gateway.SettingsOf(&model.Config{Profile: profile})
 		if err == nil {
-			state, _ := routersplit.ReadMarker(profile)
+			state, _ := routersplit.ReadMarkerProfile(profile)
 			fields["legacy_takeover"], _ = json.Marshal(state == routersplit.StateAbsent && settings.Enabled)
 		} else {
 			var malformed *gateway.Error
@@ -473,29 +467,29 @@ func (s *Service) profileSummary(ctx context.Context, record *Record) (defaultSu
 	if err != nil {
 		return out, err
 	}
-	profile, err := s.repository.ProfileMetadata(ctx, id)
+	profile, err := s.repository.ProfileMetadataRecord(ctx, id)
 	if err != nil {
 		return out, err
 	}
-	bound, err := s.repository.GetProfileAgentBindings(ctx, id)
+	bound, err := s.repository.ProfileAgentBindingsRecord(ctx, id)
 	if err != nil {
 		return out, err
 	}
-	out.IsDefault, out.Current = id == record.ProfileID, Choice{id, profile.GetString("name")}
-	out.Suggested = !out.IsDefault && len(bound.GetList("agents")) == 0
+	out.IsDefault, out.Current = id == record.ProfileID, Choice{id, profile.Name}
+	out.Suggested = !out.IsDefault && len(bound.Agents) == 0
 	previous := text(record.PreviousDefault)
 	if !out.IsDefault || previous == "" {
 		return out, nil
 	}
 	out.Leftovers = &leftovers{Subscriptions: []Choice{}}
-	old, err := s.repository.ProfileMetadata(ctx, previous)
+	old, err := s.repository.ProfileMetadataRecord(ctx, previous)
 	if err == nil {
-		bindings, err := s.repository.GetProfileAgentBindings(ctx, previous)
+		bindings, err := s.repository.ProfileAgentBindingsRecord(ctx, previous)
 		if err != nil {
 			return out, err
 		}
-		if len(bindings.GetList("agents")) == 0 {
-			out.Leftovers.Profile = &Choice{previous, old.GetString("name")}
+		if len(bindings.Agents) == 0 {
+			out.Leftovers.Profile = &Choice{previous, old.Name}
 		}
 	}
 	shared, err := sharedSnapshot(ctx, s.repository)
@@ -512,14 +506,13 @@ func (s *Service) profileSummary(ctx context.Context, record *Record) (defaultSu
 			if item.ID != id {
 				continue
 			}
-			usages, err := s.repository.GetResourceUsage(ctx, "subscriptions", id)
+			usages, err := s.repository.ResourceUsage(ctx, "subscriptions", id)
 			if err != nil {
 				return out, err
 			}
 			unused := true
 			for _, usage := range usages {
-				value, ok := jsonx.AsObject(usage)
-				unused = unused && ok && value.GetString("kind") == "profile" && value.GetString("id") == previous
+				unused = unused && usage.Kind == "profile" && usage.ID == previous
 			}
 			if unused {
 				out.Leftovers.Subscriptions = append(out.Leftovers.Subscriptions, Choice{id, item.Name})
@@ -527,4 +520,17 @@ func (s *Service) profileSummary(ctx context.Context, record *Record) (defaultSu
 		}
 	}
 	return out, nil
+}
+
+// storedConfigToken requires the credential's original string token.
+func storedConfigToken(settings *model.SystemConfig) string {
+	raw, _, err := settings.MemberJSON("config_token")
+	if err != nil {
+		return ""
+	}
+	var token string
+	if json.Unmarshal(raw, &token) != nil {
+		return ""
+	}
+	return token
 }

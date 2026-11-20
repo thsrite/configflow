@@ -304,7 +304,6 @@ retired-import internal/clients/boundary_test.go:configflow/internal/jsonx
 retired-import internal/clients/discovery_test.go:configflow/internal/jsonx
 retired-import internal/clients/fixed_test.go:configflow/internal/jsonx
 retired-import internal/clients/review_r16_test.go:configflow/internal/jsonx
-retired-import internal/clients/review_r17_test.go:configflow/internal/jsonx
 retired-import internal/configgen/adapter.go:configflow/internal/jsonx
 retired-import internal/configgen/generate.go:configflow/internal/jsonx
 retired-import internal/configgen/zip_metadata_test.go:configflow/internal/jsonx
@@ -565,7 +564,6 @@ retired-import internal/repo/store_rows_test.go:configflow/internal/jsonx
 retired-import internal/repo/testutil_test.go:configflow/internal/jsonx
 retired-import internal/routers/joblock_repo_test.go:configflow/internal/jsonx
 retired-import internal/routers/joblock_test.go:configflow/internal/jsonx
-retired-import internal/routers/legacy_wire.go:configflow/internal/jsonx
 retired-import internal/routers/o36b_repo_runtime_test.go:configflow/internal/jsonx
 retired-import internal/routersplit/legacy.go:configflow/internal/jsonx
 retired-import internal/routersplit/n73_reference_test.go:configflow/internal/jsonx
@@ -577,7 +575,6 @@ retired-import internal/routersplit/ported_test.go:configflow/internal/jsonx
 retired-import internal/routersplit/recorded_test.go:configflow/internal/jsonx
 retired-import internal/routers/r05_stepb_test.go:configflow/internal/jsonx
 retired-import internal/routers/r13_review_test.go:configflow/internal/jsonx
-retired-import internal/routers/r14_review_test.go:configflow/internal/jsonx
 retired-import internal/routers/r14_safety_test.go:configflow/internal/jsonx
 retired-import internal/routers/r14_service_test.go:configflow/internal/jsonx
 retired-import internal/routers/task_legacy_test.go:configflow/internal/jsonx
@@ -623,22 +620,11 @@ retired-import internal/server/gateway_guards_test.go:configflow/internal/jsonx
 retired-import internal/server/rules_wire_test.go:configflow/internal/jsonx
 retired-import internal/server/setup_installation_test.go:configflow/internal/jsonx
 retired-import internal/server/setup_wire_test.go:configflow/internal/jsonx
-retired-import internal/setup/abandon.go:configflow/internal/jsonx
-retired-import internal/setup/action.go:configflow/internal/jsonx
-retired-import internal/setup/base.go:configflow/internal/jsonx
-retired-import internal/setup/completion.go:configflow/internal/jsonx
 retired-import internal/setup/completion_test.go:configflow/internal/jsonx
-retired-import internal/setup/digest.go:configflow/internal/jsonx
-retired-import internal/setupflow/wire.go:configflow/internal/jsonx
-retired-import internal/setup/generation_adapter.go:configflow/internal/jsonx
-retired-import internal/setup/prepare.go:configflow/internal/jsonx
 retired-import internal/setup/prepare_test.go:configflow/internal/jsonx
 retired-import internal/setup/presets_test.go:configflow/internal/jsonx
-retired-import internal/setup/repository.go:configflow/internal/jsonx
 retired-import internal/setup/review_c36_test.go:configflow/internal/jsonx
-retired-import internal/setup/service.go:configflow/internal/jsonx
 retired-import internal/setup/service_test.go:configflow/internal/jsonx
-retired-import internal/setup/strategy.go:configflow/internal/jsonx
 retired-import internal/store/backup_linux_test.go:configflow/internal/jsonx
 retired-import internal/store/crosscheck_test.go:configflow/internal/jsonx
 retired-import internal/store/legacy_test.go:configflow/internal/jsonx

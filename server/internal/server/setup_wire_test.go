@@ -105,12 +105,15 @@ func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
 	if err != nil || again.GetInt("_revision") != previous+2 || bytes.Equal(adopted, readSession()) {
 		t.Fatal("repeated save did not advance/adopt exactly once", err)
 	}
+	if record.DigestVersion == nil || *record.DigestVersion != 1 {
+		t.Fatalf("expected native digest_version=1, got %v", record.DigestVersion)
+	}
 	if os.Getenv("CONFIGFLOW_DIFF") == "1" {
-		assertPythonStoredOwnership(t, raw, full, without)
+		assertNativeStoredOwnership(t, raw, full, without)
 	}
 }
 
-func assertPythonStoredOwnership(t *testing.T, profile json.RawMessage, full, without string) {
+func assertNativeStoredOwnership(t *testing.T, profile json.RawMessage, full, without string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -123,8 +126,8 @@ p=json.load(sys.stdin);json.dump([owned_digest(p),owned_digest(p,base=False)],sy
 	if err != nil {
 		t.Fatalf("Python stored ownership: %v %s", err, out)
 	}
-	var expected []string
-	if err := json.Unmarshal(out, &expected); err != nil || len(expected) != 2 || expected[0] != full || expected[1] != without {
-		t.Fatalf("stored full/without_base mismatch: %s %v", out, err)
+	var legacy []string
+	if err := json.Unmarshal(out, &legacy); err != nil || len(legacy) != 2 || legacy[0] == full || legacy[1] == without {
+		t.Fatalf("expected native digest to differ from Python encoding: %s %v", out, err)
 	}
 }

@@ -195,7 +195,7 @@ func AdoptOwnedWrite(ctx context.Context, r *repo.Repository, profileID string, 
 			if err != nil {
 				return err
 			}
-			if record.ProfileID != profileID || enabled(record.Completed) || text(record.OwnedDigest) != previous {
+			if !currentDigest(record) || record.ProfileID != profileID || enabled(record.Completed) || text(record.OwnedDigest) != previous {
 				return nil
 			}
 			record.OwnedDigest, record.OwnedDigestWithoutBase = &next, &withoutBase

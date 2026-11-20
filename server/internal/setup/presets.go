@@ -56,7 +56,7 @@ type catalog struct {
 }
 
 func loadCatalog() (*catalog, error) {
-	raw, err := json.Marshal(repo.GetInitialConfig())
+	raw, err := json.Marshal(repo.InitialConfig())
 	if err != nil {
 		return nil, err
 	}

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"bytes"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/routersplit"
@@ -51,15 +51,14 @@ func encodeFields(value any) (map[string]json.RawMessage, error) {
 	err = json.Unmarshal(raw, &fields)
 	return fields, err
 }
-func boundary(fields map[string]json.RawMessage) (*jsonx.Object, error) {
+func boundary(fields map[string]json.RawMessage) (*model.Config, error) {
 	raw, err := json.Marshal(fields)
 	if err != nil {
 		return nil, err
 	}
-	var value jsonx.Object
-	err = json.Unmarshal(raw, &value)
-	return &value, err
+	return model.DecodeConfig(raw)
 }
+
 func (s *Service) selections(ctx context.Context, record *Record, fields map[string]json.RawMessage) (Selections, error) {
 	shared, err := sharedSnapshot(ctx, s.repository)
 	if err != nil {
@@ -237,7 +236,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	if err != nil {
 		return err
 	}
-	config, _, err := s.repository.GetPublishSnapshot(ctx, record.ProfileID, false)
+	config, _, err := s.repository.PublishConfig(ctx, record.ProfileID, false)
 	if err != nil {
 		return err
 	}
@@ -245,7 +244,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	if err != nil {
 		return err
 	}
-	shared, err := s.repository.GetShared(ctx)
+	shared, err := s.repository.Shared(ctx)
 	if err != nil {
 		return err
 	}
@@ -286,15 +285,15 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 		}
 	}
 	rules = append(rules, model.RuleConfig{ID: "setup_final", ItemType: "rule", RuleType: "MATCH", Policy: pointer(final), Enabled: pointer(true)})
-	stored, err := s.repository.GetProfile(ctx, record.ProfileID)
+	stored, err := s.repository.Profile(ctx, record.ProfileID)
 	if err != nil {
 		return err
 	}
-	settings, err := gateway.SettingsOf(gatewayModelConfig(stored))
+	settings, err := gateway.SettingsOf(&model.Config{Profile: stored})
 	if err != nil {
 		return err
 	}
-	state, marker := routersplit.ReadMarker(stored)
+	state, marker := routersplit.ReadMarkerProfile(stored)
 	legacy := record.Goal == "router" && state == routersplit.StateAbsent && settings.Enabled
 	fullTUN := record.Goal == "router" && !legacy
 	dns := oxidns.DefaultSettings()
@@ -368,9 +367,9 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 			if err != nil {
 				return err
 			}
-			for _, id := range marker.GetList("route_rule_set_ids") {
-				if value, ok := id.(string); ok && ids[value] {
-					keep = append(keep, value)
+			for _, id := range marker.RouteRuleSetIDs {
+				if ids[id] {
+					keep = append(keep, id)
 				}
 			}
 		} else {
@@ -402,11 +401,11 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	for key, value := range fields {
 		configFields[key] = value
 	}
-	latestShared, err := s.repository.GetShared(ctx)
+	latestShared, err := s.repository.Shared(ctx)
 	if err != nil {
 		return err
 	}
-	configFields["rule_library"], err = json.Marshal(latestShared.GetList("rule_library"))
+	configFields["rule_library"], err = json.Marshal(latestShared.RuleLibrary)
 	if err != nil {
 		return err
 	}
@@ -435,7 +434,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 		return err
 	}
 	if record.Goal == "gateway" {
-		editor, err := gateway.NewConfig(gatewayModelConfig(candidate)).EditorState(false)
+		editor, err := gateway.NewConfig(candidate).EditorState(false)
 		if err != nil {
 			return err
 		}
@@ -481,6 +480,9 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 		}
 	}
 	edited := false
+	if enabled(record.Prepared) && !currentDigest(record) {
+		return failure(msgForeignEdit, 409)
+	}
 	if record.OwnedDigest == nil {
 		var revision model.Int
 		if json.Unmarshal(storedFields["_revision"], &revision) != nil || record.ProfileRevision == nil {
@@ -509,22 +511,23 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		_, _, err = s.repository.UpdateProfileTransaction(ctx, record.ProfileID, func(commit context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		_, err = s.repository.UpdateProfile(ctx, record.ProfileID, func(commit context.Context, current *model.Profile) error {
 			now, err := encodeFields(current)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if !equalJSONValue(now["_revision"], storedFields["_revision"]) {
-				return nil, failure(msgProfileChanged, 409)
+				return failure(msgProfileChanged, 409)
 			}
 			for key, value := range fields {
 				now[key] = value
 			}
-			next, err := boundary(now)
-			if err != nil {
-				return nil, err
+			for key, value := range fields {
+				if err := current.SetJSON(key, value); err != nil {
+					return err
+				}
 			}
-			return next, commit.Err()
+			return commit.Err()
 		})
 		if err != nil {
 			return err
@@ -537,7 +540,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 		}
 		record.MihomoChanges = &changes
 	}
-	saved, err := s.repository.GetProfile(ctx, record.ProfileID)
+	saved, err := s.repository.Profile(ctx, record.ProfileID)
 	if err != nil {
 		return err
 	}
@@ -569,9 +572,10 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	record.DNSFallback, record.TrafficFallback, record.LocalDNS = &dnsFallback, &trafficFallback, &local
 	record.DomainRules, record.QueryRecorder = &selections, &query
 	record.NodeCount = pointer(model.Int(count))
-	record.ProfileRevision = pointer(model.Int(saved.GetInt("_revision")))
+	record.ProfileRevision = pointer(model.Int(saved.Revision))
 	record.ConfigRevision = pointer(model.Int(revision))
 	record.OwnedDigest, record.OwnedDigestWithoutBase = &digest, &without
+	record.DigestVersion = pointer(digestVersion)
 	record.ControllerSecretSaved, record.ControllerAddress = pointer(true), &controller
 	if record.Goal == "router" {
 		record.LegacyTakeover = &legacy
@@ -584,22 +588,10 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 }
 
 func equalJSONValue(a, b json.RawMessage) bool {
-	if len(a) == 0 {
-		a = json.RawMessage(`null`)
-	}
-	if len(b) == 0 {
-		b = json.RawMessage(`null`)
-	}
-	x, err := jsonx.Parse(a)
+	left, err := canonicalDigestJSON(a)
 	if err != nil {
 		return false
 	}
-	y, err := jsonx.Parse(b)
-	return err == nil && jsonx.Equal(x, y)
-}
-
-func gatewayModelConfig(obj *jsonx.Object) *model.Config {
-	raw, _ := jsonx.Compact(obj)
-	cfg, _ := model.DecodeConfig(raw)
-	return cfg
+	right, err := canonicalDigestJSON(b)
+	return err == nil && bytes.Equal(left, right)
 }

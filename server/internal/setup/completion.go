@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
@@ -21,10 +20,11 @@ import (
 const routeRuleBudget = 30 * time.Second
 
 type checkedInstallation struct {
-	ID          string            `json:"id"`
-	Fingerprint string            `json:"fingerprint"`
-	Mihomo      installedIdentity `json:"mihomo"`
-	OxiDNS      installedIdentity `json:"oxidns"`
+	ID            string            `json:"id"`
+	Fingerprint   string            `json:"fingerprint"`
+	DigestVersion *model.Int        `json:"digest_version"`
+	Mihomo        installedIdentity `json:"mihomo"`
+	OxiDNS        installedIdentity `json:"oxidns"`
 }
 type installedIdentity struct {
 	ID   string `json:"id"`
@@ -81,7 +81,7 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 	if err != nil {
 		return nil, err
 	}
-	config, revision, err := s.repository.GetPublishSnapshot(ctx, record.ProfileID, false)
+	config, revision, err := s.repository.PublishConfig(ctx, record.ProfileID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 			return nil, ErrCorruptRecord
 		}
 	}
-	if installation == nil || installation.Phase != "published" || installation.TargetChanged || installation.ConfigChanged && (checked.ID != installation.ID || checked.Fingerprint != fingerprint) {
+	if installation == nil || installation.Phase != "published" || installation.TargetChanged || installation.ConfigChanged && (checked.DigestVersion == nil || *checked.DigestVersion != digestVersion || checked.ID != installation.ID || checked.Fingerprint != fingerprint) {
 		return nil, failure(msgNeedPublish, 409)
 	}
 	pair := installation.Agents
@@ -111,7 +111,7 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 			return nil, failure(msgAgentOffline, 409)
 		}
 	}
-	fullTUN := record.Goal == "router" && routersplit.IsFullTun(config) && !enabled(record.LegacyTakeover)
+	fullTUN := record.Goal == "router" && fullTunProfile(config.Profile) && !enabled(record.LegacyTakeover)
 	if fullTUN && s.owners.ReadRouteContent == nil {
 		return nil, unavailable()
 	}
@@ -126,7 +126,7 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 	} else if !status.Managed.Active || status.Managed.Pending || !enabled(status.Managed.Healthy) {
 		return nil, failure(msgGatewayUnhealthy, 409)
 	}
-	checked = checkedInstallation{installation.ID, fingerprint, installedIdentity{pair.Mihomo.ID, pair.Mihomo.Name, pair.Mihomo.Host}, installedIdentity{pair.OxiDNS.ID, pair.OxiDNS.Name, pair.OxiDNS.Host}}
+	checked = checkedInstallation{installation.ID, fingerprint, pointer(digestVersion), installedIdentity{pair.Mihomo.ID, pair.Mihomo.Name, pair.Mihomo.Host}, installedIdentity{pair.OxiDNS.ID, pair.OxiDNS.Name, pair.OxiDNS.Host}}
 	record.Installation, err = json.Marshal(checked)
 	if err != nil {
 		return nil, err
@@ -135,11 +135,8 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 	missing := []string{}
 	var loader routers.ContentLoader
 	if fullTUN {
-		for _, id := range routersplit.RouteRuleSetIDs(config) {
-			if value, ok := id.(string); ok {
-				ruleIDs = append(ruleIDs, value)
-			}
-		}
+		_, marker := routersplit.ReadMarkerProfile(config.Profile)
+		ruleIDs = append(ruleIDs, marker.RouteRuleSetIDs...)
 		loader = s.routeLoader(ctx, raw, &missing)
 	} else {
 		settings, err := gatewayRuleIDs(config)
@@ -296,7 +293,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 			if len(verification.Blockers) > 0 || !verification.Empty {
 				return failure(msgRouterUnsynced, 409)
 			}
-			latest, err := s.repository.GetProfile(ctx, record.ProfileID)
+			latest, err := s.repository.Profile(ctx, record.ProfileID)
 			if err != nil {
 				return err
 			}
@@ -320,7 +317,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 	} else {
 		record.RouterVerification = pointer("client_pending")
 	}
-	latest, _, err := s.repository.GetPublishSnapshot(ctx, record.ProfileID, false)
+	latest, _, err := s.repository.PublishConfig(ctx, record.ProfileID, false)
 	if err != nil {
 		return err
 	}
@@ -336,7 +333,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 	if jsondecode.Unmarshal(record.Installation, &checked) != nil {
 		return ErrCorruptRecord
 	}
-	if checked.Fingerprint != fingerprint {
+	if checked.DigestVersion == nil || *checked.DigestVersion != digestVersion || checked.Fingerprint != fingerprint {
 		return failure(msgCoreChanged, 409)
 	}
 	record.Completed, record.Step, record.MaxStep = pointer(true), 5, 5
@@ -376,7 +373,12 @@ func findRouter(config json.RawMessage, id string) (*routers.Router, error) {
 // Keep spawner's contract checked at the native seam.
 var _ lockx.Spawner = lifecycle.DefaultSpawner{}
 
-func gatewayRuleIDs(config *jsonx.Object) ([]string, error) {
-	settings, err := gateway.SettingsOf(gatewayModelConfig(config))
+func gatewayRuleIDs(config *model.Config) ([]string, error) {
+	settings, err := gateway.SettingsOf(config)
 	return settings.RuleSetIDs, err
+}
+
+func fullTunProfile(profile *model.Profile) bool {
+	state, _ := routersplit.ReadMarkerProfile(profile)
+	return state == routersplit.StateValid
 }

@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/routers"
 	"configflow/internal/routersplit"
 )
@@ -116,14 +116,10 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, _, err := s.repository.UpdateProfileTransaction(ctx, record.ProfileID, func(commit context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		if routersplit.IsFullTun(current) && len(router.IPRuleSets) == 0 {
-			router.IPRuleSets = []string{}
-			for _, id := range routersplit.RouteRuleSetIDs(current) {
-				if value, ok := id.(string); ok {
-					router.IPRuleSets = append(router.IPRuleSets, value)
-				}
-			}
+	_, err := s.repository.UpdateProfile(ctx, record.ProfileID, func(commit context.Context, current *model.Profile) error {
+		state, marker := routersplit.ReadMarkerProfile(current)
+		if state == routersplit.StateValid && len(router.IPRuleSets) == 0 {
+			router.IPRuleSets = append([]string{}, marker.RouteRuleSetIDs...)
 		}
 		var profile struct {
 			Routers struct {
@@ -132,14 +128,14 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 		}
 		raw, err := json.Marshal(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err = jsondecode.Unmarshal(raw, &profile); err != nil {
-			return nil, err
+			return err
 		}
 		proposed, err := json.Marshal(router)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		found := false
 		for _, raw := range profile.Routers.Items {
@@ -147,12 +143,12 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 				ID string `json:"id"`
 			}
 			if err = jsondecode.Unmarshal(raw, &identity); err != nil {
-				return nil, err
+				return err
 			}
 			if identity.ID == router.ID {
 				found = true
 				if !equalJSONValue(raw, proposed) {
-					return nil, failure(msgDraftConflict, 409)
+					return failure(msgDraftConflict, 409)
 				}
 			}
 		}
@@ -161,27 +157,26 @@ func (s *Service) connectRouterDraft(ctx context.Context, record *Record) error 
 		}
 		fields, err := encodeFields(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		routerFields := map[string]json.RawMessage{}
 		if len(fields["routers"]) > 0 && string(fields["routers"]) != "null" {
 			if err := json.Unmarshal(fields["routers"], &routerFields); err != nil {
-				return nil, err
+				return err
 			}
 		}
 		routerFields["items"], err = json.Marshal(profile.Routers.Items)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		fields["routers"], err = json.Marshal(routerFields)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		next, err := boundary(fields)
-		if err != nil {
-			return nil, err
+		if err := current.SetJSON("routers", fields["routers"]); err != nil {
+			return err
 		}
-		return next, commit.Err()
+		return commit.Err()
 	})
 	if err != nil {
 		return err

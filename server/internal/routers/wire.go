@@ -12,7 +12,7 @@ import (
 // Wire installs native notifications, the shared publication lock and scheduler.
 func Wire() {
 	wireRuleSync()
-	repo.RegisterHooks(repo.Hooks{RedactRouters: redactHook, JobLock: jobLockHook})
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return RedactRouters(raw) }, JobLockRecord: jobLockHook}})
 	notifications.SetInputs(notifications.Inputs{Summarize: pendingSummary})
 }
 
