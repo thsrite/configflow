@@ -39,7 +39,7 @@ func TestReviewN73DUnsafeYAMLListing(t *testing.T) {
 	}{{chain.String(), 42}, {"payload: &p [*p]\n", 0}} {
 		source := test.source
 		f := newFixture(t, nil)
-		f.cfg.Set("test_rule", source)
+		f.cfg["test_rule"] = source
 		f.status()
 		f.spawn.run(t)
 		result := f.diff()

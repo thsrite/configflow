@@ -3,7 +3,6 @@ package deploy
 import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
 	"encoding/json"
 	"testing"
 )
@@ -39,9 +38,11 @@ func TestFinalResourceRetryUsesContentIdentity(t *testing.T) {
 	if uploads != 1 {
 		t.Fatal("duplicate upload", uploads)
 	}
-	prepared := f.agent(t).GetObject("deployments").GetObject(m.DeploymentID).GetObject("prepared_content")
-	if prepared.GetObject("files").Has("geoip.metadb") {
-		t.Fatal("resource entered comparison identity")
+	dep, _ := f.agent(t).Deployments.Get(m.DeploymentID)
+	if dep.PreparedContent != nil && dep.PreparedContent.Files != nil {
+		if _, ok := dep.PreparedContent.Files.Get("geoip.metadb"); ok {
+			t.Fatal("resource entered comparison identity")
+		}
 	}
 }
 func TestCapabilityAbsenceAndMalformedFields(t *testing.T) {
@@ -70,11 +71,11 @@ func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
 		t.Fatal(r, e)
 	}
 	a := f.agent(t)
-	state := a.GetObject("deployments").GetObject("checked")
-	if !ReceiptMatches(fixtureAgent(a), fixtureTask(state)) {
+	state, ok := a.Deployments.Get("checked")
+	if !ok || !ReceiptMatches(a, &state) {
 		t.Fatal("trusted validation receipt missing")
 	}
-	if a.Has("applied_content") {
+	if a.AppliedContent != nil {
 		t.Fatal("staging advanced baseline")
 	}
 	_, e = f.m.GetDeploymentModel(f.ctx, "publish-agent", "checked")
@@ -85,7 +86,7 @@ func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
 	if e != nil || resultView(fixtureTask(r)).Status != "succeeded" {
 		t.Fatal(r, e)
 	}
-	if f.agent(t).GetObject("applied_content").GetString("deployed_config_sha256") == "" {
+	if f.agent(t).AppliedContent == nil || textValue(f.agent(t).AppliedContent.DeployedConfigSHA256) == "" {
 		t.Fatal("installed YAML digest missing")
 	}
 }
@@ -98,17 +99,17 @@ func TestPairGateUsesAuthoritativeActiveJournal(t *testing.T) {
 		{name: "absent"}, {name: "enabled", enabled: true, want: true}, {name: "active-journal", status: "preparing", want: true}, {name: "completed-journal", status: "succeeded"}, {name: "failed-journal", status: "failed"}, {name: "old-public-summary", summary: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			record := jsonx.Obj("id", "a")
+			record := map[string]any{"id": "a"}
 			if tc.enabled {
-				record.Set("oxidns_ha", jsonx.Obj("enabled", true))
+				record["oxidns_ha"] = map[string]any{"enabled": true}
 			}
 			if tc.status != "" {
-				record.Set(agents.HAField, jsonx.Obj("id", "pair", "status", tc.status))
+				record[agents.HAField] = map[string]any{"id": "pair", "status": tc.status}
 			}
 			if tc.summary {
-				record.Set("latest_deployment", jsonx.Obj("ha_publication", jsonx.Obj("status", "succeeded")))
+				record["latest_deployment"] = map[string]any{"ha_publication": map[string]any{"status": "succeeded"}}
 			}
-			if got := pairRequired(NewTarget(record)); got != tc.want {
+			if got := pairRequired(testTarget(t, record)); got != tc.want {
 				t.Fatal(got, tc.want)
 			}
 		})

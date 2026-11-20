@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
@@ -59,20 +58,20 @@ func fixtureNode(t *testing.T, v any) *yamlx.Node {
 }
 
 func TestTUNFilterKeysRefused(t *testing.T) {
-	config := NewFixtureConfig(jsonx.Obj("profile_id", "home",
-		"mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))))
+	config := NewFixtureConfig(map[string]any{"profile_id": "home",
+		"mihomo": map[string]any{"linux_gateway": map[string]any{"enabled": true, "rule_set_ids": []any{}}}})
 	for _, key := range tunFilterKeys {
 		t.Run(key, func(t *testing.T) {
-			for _, value := range []any{[]any{"x"}, "x", jsonx.Int(1)} {
-				doc := fixtureNode(t, jsonx.Obj("tun", jsonx.Obj("enable", true, key, value)))
+			for _, value := range []any{[]any{"x"}, "x", 1} {
+				doc := fixtureNode(t, map[string]any{"tun": map[string]any{"enable": true, key: value}})
 				err := config.Apply(doc, "")
 				var gwErr *Error
 				if !errors.As(err, &gwErr) || gwErr.Message != fmt.Sprintf(fmtTunFilter, key) {
 					t.Fatalf("%v: %v", value, err)
 				}
 			}
-			for _, value := range []any{[]any{}, "", jsonx.Int(0), nil, false} {
-				doc := fixtureNode(t, jsonx.Obj("tun", jsonx.Obj(key, value)))
+			for _, value := range []any{[]any{}, "", 0, nil, false} {
+				doc := fixtureNode(t, map[string]any{"tun": map[string]any{key: value}})
 				if err := config.Apply(doc, ""); err != nil {
 					t.Fatalf("unset %v refused: %v", value, err)
 				}
@@ -85,13 +84,13 @@ func TestTUNFilterKeysRefused(t *testing.T) {
 // section, a truthy scalar is refused (expected values from
 // apply_linux_gateway on the test server).
 func TestScalarSections(t *testing.T) {
-	config := NewFixtureConfig(jsonx.Obj("profile_id", "home",
-		"mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))))
+	config := NewFixtureConfig(map[string]any{"profile_id": "home",
+		"mihomo": map[string]any{"linux_gateway": map[string]any{"enabled": true, "rule_set_ids": []any{}}}})
 	values := []struct {
 		value  any
 		truthy bool
 	}{
-		{false, false}, {true, true}, {jsonx.Int(0), false}, {jsonx.Int(1), true}, {jsonx.Float(0), false},
+		{false, false}, {true, true}, {0, false}, {1, true}, {0.0, false},
 		{"", false}, {"x", true}, {nil, false},
 	}
 	for _, key := range []string{"tun", "dns"} {
@@ -100,7 +99,7 @@ func TestScalarSections(t *testing.T) {
 			want = msgDNSNotObject
 		}
 		for _, v := range values {
-			doc := fixtureNode(t, jsonx.Obj(key, v.value))
+			doc := fixtureNode(t, map[string]any{key: v.value})
 			err := config.Apply(doc, "")
 			var gwErr *Error
 			switch {

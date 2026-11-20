@@ -2,7 +2,6 @@ package deploy
 
 import (
 	"bytes"
-	"configflow/internal/jsonx"
 	"configflow/internal/rulefetch"
 	"context"
 	"encoding/base64"
@@ -64,11 +63,7 @@ func TestPythonRulesAndLocations(t *testing.T) {
 			t.Errorf("context %q want %q", got, row.Result)
 		}
 	}
-	config, err := jsonx.Parse(corpus.Source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := NewSource(config.(*jsonx.Object), nil)
+	src := testSource(t, corpus.Source)
 	for _, row := range corpus.Materialized {
 		got, err := MaterializeRule(context.Background(), row.URL, src, "", MaterializeOptions{})
 		if row.Error != "" {
@@ -93,7 +88,7 @@ func TestLoopbackRuleDownload(t *testing.T) {
 		_, _ = w.Write([]byte("DOMAIN,example.com"))
 	}))
 	defer srv.Close()
-	src := NewSource(jsonx.NewObject(), nil)
+	src := testSource(t, `{}`)
 	for _, tc := range []struct {
 		path   string
 		failed bool
@@ -129,7 +124,7 @@ func TestDownloadKeepsPerAttemptTimeouts(t *testing.T) {
 	transport := &timeoutTransport{t: t}
 	rulefetch.DefaultClient = &rulefetch.Client{Transport: transport}
 	t.Cleanup(func() { rulefetch.DefaultClient = previous })
-	data, err := fetchBytes(context.Background(), "https://rules.example/source", NewSource(jsonx.NewObject(), nil))
+	data, err := fetchBytes(context.Background(), "https://rules.example/source", testSource(t, `{}`))
 	if err != nil || string(data) != "DOMAIN,example.com" || transport.calls != 1 {
 		t.Fatal(string(data), err, transport.calls)
 	}

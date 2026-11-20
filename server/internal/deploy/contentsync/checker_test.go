@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/repo"
@@ -42,7 +41,7 @@ func TestProductionTTLsAndNoQueue(t *testing.T) {
 	// The default two slots never leave jobs waiting in an unbounded queue.
 	f.c.Invalidate()
 	for i := 0; i < 10; i++ {
-		f.agent.Set("id", fmt.Sprintf("agent-%d", i))
+		f.agent["id"] = fmt.Sprintf("agent-%d", i)
 		f.status()
 	}
 	if f.spawn.count() != Workers || len(f.c.slots) != Workers {
@@ -58,25 +57,25 @@ func TestInputProjectionAndPreconditions(t *testing.T) {
 		newJob         bool
 	}{
 		{"runtime metadata", func(f *fixture) {
-			f.agent.Set("last_heartbeat", "later")
-			f.agent.Set("version", "next")
-			f.cfg.Set("_revision", 9)
-			f.cfg.Set("name", "renamed")
-			f.cfg.Set("backup", nil)
+			f.agent["last_heartbeat"] = "later"
+			f.agent["version"] = "next"
+			f.cfg["_revision"] = 9
+			f.cfg["name"] = "renamed"
+			f.cfg["backup"] = nil
 		}, "synced", "", false},
-		{"profile_name participates", func(f *fixture) { f.cfg.Set("profile_name", "renamed") }, "checking", "", true},
-		{"nested metadata participates", func(f *fixture) { f.cfg.Set("plugin", jsonx.Obj("created_at", "later")) }, "checking", "", true},
-		{"rule bytes", func(f *fixture) { f.cfg.Set("test_rule", "DOMAIN,changed.example.test\n") }, "checking", "", true},
-		{"pending latest", func(f *fixture) { f.agent.Set("latest_deployment", jsonx.Obj("status", "ready")) }, "unknown", "deployment_pending", false},
-		{"pending history", func(f *fixture) { f.agent.Set("deployments", jsonx.Obj("next", jsonx.Obj("status", "uploading"))) }, "unknown", "deployment_pending", false},
-		{"baseline missing", func(f *fixture) { f.agent.Delete("applied_content") }, "unknown", "baseline_missing", false},
-		{"bad fingerprint", func(f *fixture) { f.agent.GetObject("applied_content").Set("fingerprint", "v1:bad") }, "unknown", "baseline_invalid", false},
-		{"profile mismatch", func(f *fixture) { f.agent.Set("profile_id", "other") }, "unknown", "profile_mismatch", false},
-		{"source profile mismatch", func(f *fixture) { f.cfg.Set("profile_id", "other") }, "unknown", "profile_mismatch", false},
-		{"service mismatch", func(f *fixture) { f.agent.Set("service_type", "oxidns") }, "unknown", "service_mismatch", false},
-		{"version mismatch", func(f *fixture) { f.agent.Set("config_version", "next") }, "unknown", "version_mismatch", false},
-		{"deployment id missing", func(f *fixture) { f.agent.GetObject("applied_content").Delete("deployment_id") }, "unknown", "baseline_invalid", false},
-		{"path missing", func(f *fixture) { f.agent.GetObject("applied_content").Delete("config_path") }, "unknown", "baseline_invalid", false},
+		{"profile_name participates", func(f *fixture) { f.cfg["profile_name"] = "renamed" }, "checking", "", true},
+		{"nested metadata participates", func(f *fixture) { f.cfg["plugin"] = map[string]any{"created_at": "later"} }, "checking", "", true},
+		{"rule bytes", func(f *fixture) { f.cfg["test_rule"] = "DOMAIN,changed.example.test\n" }, "checking", "", true},
+		{"pending latest", func(f *fixture) { f.agent["latest_deployment"] = map[string]any{"status": "ready"} }, "unknown", "deployment_pending", false},
+		{"pending history", func(f *fixture) { f.agent["deployments"] = map[string]any{"next": map[string]any{"status": "uploading"}} }, "unknown", "deployment_pending", false},
+		{"baseline missing", func(f *fixture) { delete(f.agent, "applied_content") }, "unknown", "baseline_missing", false},
+		{"bad fingerprint", func(f *fixture) { f.agent["applied_content"].(map[string]any)["fingerprint"] = "v1:bad" }, "unknown", "baseline_invalid", false},
+		{"profile mismatch", func(f *fixture) { f.agent["profile_id"] = "other" }, "unknown", "profile_mismatch", false},
+		{"source profile mismatch", func(f *fixture) { f.cfg["profile_id"] = "other" }, "unknown", "profile_mismatch", false},
+		{"service mismatch", func(f *fixture) { f.agent["service_type"] = "oxidns" }, "unknown", "service_mismatch", false},
+		{"version mismatch", func(f *fixture) { f.agent["config_version"] = "next" }, "unknown", "version_mismatch", false},
+		{"deployment id missing", func(f *fixture) { delete(f.agent["applied_content"].(map[string]any), "deployment_id") }, "unknown", "baseline_invalid", false},
+		{"path missing", func(f *fixture) { delete(f.agent["applied_content"].(map[string]any), "config_path") }, "unknown", "baseline_invalid", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, nil)
@@ -93,14 +92,14 @@ func TestInputProjectionAndPreconditions(t *testing.T) {
 	for _, status := range []string{"failed", "rolled_back", "succeeded"} {
 		t.Run(status, func(t *testing.T) {
 			f := newFixture(t, nil)
-			f.agent.Set("latest_deployment", jsonx.Obj("status", status))
+			f.agent["latest_deployment"] = map[string]any{"status": status}
 			requireStatus(t, f.status(), "checking", "")
 		})
 	}
 	t.Run("never pushed", func(t *testing.T) {
 		f := newFixture(t, nil)
-		f.agent.Delete("applied_content")
-		f.agent.Delete("config_version")
+		delete(f.agent, "applied_content")
+		delete(f.agent, "config_version")
 		requireStatus(t, f.status(), "never-pushed", "")
 		if f.spawn.count() != 0 {
 			t.Fatal("scheduled missing baseline")
@@ -115,20 +114,20 @@ func TestOldWorkersInvalidationAndReturnToOriginal(t *testing.T) {
 			f.status()
 			switch kind {
 			case "changed input":
-				f.cfg.Set("test_rule", "different")
+				f.cfg["test_rule"] = "different"
 				f.status()
 			case "new baseline":
-				f.agent.GetObject("applied_content").Set("deployment_id", "new")
+				f.agent["applied_content"].(map[string]any)["deployment_id"] = "new"
 				f.status()
 			case "A to B to A":
-				f.cfg.Set("test_rule", "different")
+				f.cfg["test_rule"] = "different"
 				f.status()
-				f.cfg.Set("test_rule", "DOMAIN,example.test\n")
+				f.cfg["test_rule"] = "DOMAIN,example.test\n"
 				f.status()
 			case "invalidation":
 				f.c.Invalidate()
 			case "pending":
-				f.agent.Set("latest_deployment", jsonx.Obj("status", "preparing"))
+				f.agent["latest_deployment"] = map[string]any{"status": "preparing"}
 				f.status()
 			case "close":
 				f.c.Close()
@@ -142,7 +141,7 @@ func TestOldWorkersInvalidationAndReturnToOriginal(t *testing.T) {
 				return
 			}
 			if kind == "pending" {
-				f.agent.Delete("latest_deployment")
+				delete(f.agent, "latest_deployment")
 			}
 			requireStatus(t, f.status(), "checking", "")
 			if f.spawn.count() != 1 {
@@ -213,7 +212,7 @@ func TestSynchronousCompareCacheAndGeneration(t *testing.T) {
 		return base(ctx, target, s, url, id)
 	}
 	requireStatus(t, f.c.CompareNow(f.ctx, f.target(), f.source(), ""), "synced", "")
-	if e := f.c.entries[f.agent.GetString("id")]; e != nil && e.result != nil {
+	if e := f.c.entries[f.agent["id"].(string)]; e != nil && e.result != nil {
 		t.Fatal("cached across generation")
 	}
 }
@@ -232,7 +231,7 @@ func TestConcurrentPollsAndIsolatedScopes(t *testing.T) {
 	}
 	f.spawn.run(t)
 	other := newFixture(t, nil)
-	other.cfg.Set("test_rule", "changed")
+	other.cfg["test_rule"] = "changed"
 	other.status()
 	other.spawn.run(t)
 	requireStatus(t, other.status(), "changed", "")

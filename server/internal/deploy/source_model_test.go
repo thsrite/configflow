@@ -5,12 +5,11 @@ import (
 	"sync"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
 func TestCapturedSourceTypedViewCachesOneOwnedSnapshot(t *testing.T) {
-	source := NewSource(jsonx.Obj("profile_id", "default", "future_profile", jsonx.Obj("n", jsonx.Float(2.5)), "system_config", jsonx.Obj("server_domain", "https://config.example"), "agents", []any{}), nil)
+	source := testSource(t, `{"profile_id":"default","future_profile":{"n":2.5},"system_config":{"server_domain":"https://config.example"},"agents":[]}`)
 	before, err := source.Raw()
 	if err != nil {
 		t.Fatal(err)

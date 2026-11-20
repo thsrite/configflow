@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -21,17 +20,23 @@ import (
 )
 
 // snapshot is test_linux_gateway.py's snapshot(): one selected inline rule set.
-func snapshot(enabled bool) *jsonx.Object {
-	return jsonx.Obj(
-		"profile_id", "home",
-		"system_config", jsonx.Obj("server_domain", "https://config.example", "config_token", "a+b&c"),
-		"mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n",
-			"linux_gateway", jsonx.Obj("enabled", enabled, "rule_set_ids", []any{"r"})),
-		"rule_configs", []any{jsonx.Obj("id", "r", "itemType", "ruleset", "name", "Proxy IPs",
-			"library_rule_id", "lib", "behavior", "ipcidr", "policy", "DIRECT", "enabled", true)},
-		"rule_library", []any{jsonx.Obj("id", "lib", "name", "Proxy IPs", "behavior", "ipcidr",
-			"source_type", "content", "content", "1.1.1.0/24\n8.8.8.8", "enabled", true)},
-	)
+func snapshot(enabled bool) map[string]any {
+	return map[string]any{
+		"profile_id":    "home",
+		"system_config": map[string]any{"server_domain": "https://config.example", "config_token": "a+b&c"},
+		"mihomo": map[string]any{
+			"custom_config": "mixed-port: 7890\n",
+			"linux_gateway": map[string]any{"enabled": enabled, "rule_set_ids": []any{"r"}},
+		},
+		"rule_configs": []any{map[string]any{
+			"id": "r", "itemType": "ruleset", "name": "Proxy IPs",
+			"library_rule_id": "lib", "behavior": "ipcidr", "policy": "DIRECT", "enabled": true,
+		}},
+		"rule_library": []any{map[string]any{
+			"id": "lib", "name": "Proxy IPs", "behavior": "ipcidr",
+			"source_type": "content", "content": "1.1.1.0/24\n8.8.8.8", "enabled": true,
+		}},
+	}
 }
 
 // TestDefaultContentReader covers test_empty_stable_id_cache_survives_source_rename:
@@ -44,10 +49,10 @@ func TestDefaultContentReader(t *testing.T) {
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	config := snapshot(true)
-	source := config.GetList("rule_library")[0].(*jsonx.Object)
-	source.Set("source_type", "url")
-	source.Set("url", "https://rules.example/ip.txt")
-	source.Delete("content")
+	source := config["rule_library"].([]any)[0].(map[string]any)
+	source["source_type"] = "url"
+	source["url"] = "https://rules.example/ip.txt"
+	delete(source, "content")
 
 	if _, err := gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil); !errors.Is(err, gateway.ErrRulesetContentUnavailable) {
 		t.Fatalf("without a reader: %v", err)
@@ -71,7 +76,7 @@ func TestDefaultContentReader(t *testing.T) {
 	if err := os.WriteFile(cache, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	source.Set("name", "Renamed source")
+	source["name"] = "Renamed source"
 	payload, err := gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil)
 	if err != nil || len(payload) != 0 {
 		t.Fatalf("empty cached source: %v %v", payload, err)
@@ -252,15 +257,15 @@ func TestHooks(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
-		config  *jsonx.Object
+		config  map[string]any
 		enabled bool
 		wantErr bool
 	}{
-		{"absent", jsonx.Obj("mihomo", jsonx.NewObject()), false, false},
-		{"no mihomo", jsonx.NewObject(), false, false},
+		{"absent", map[string]any{"mihomo": map[string]any{}}, false, false},
+		{"no mihomo", map[string]any{}, false, false},
 		{"on", snapshot(true), true, false},
 		{"off", snapshot(false), false, false},
-		{"malformed", jsonx.Obj("mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", "yes"))), false, true},
+		{"malformed", map[string]any{"mihomo": map[string]any{"linux_gateway": map[string]any{"enabled": "yes"}}}, false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -283,10 +288,10 @@ func TestN811RuleReaderRestoreFailsClosed(t *testing.T) {
 		return "198.51.100.0/24", nil
 	})
 	raw := snapshot(true)
-	source := raw.GetList("rule_library")[0].(*jsonx.Object)
-	source.Set("source_type", "url")
-	source.Set("url", "https://example.com/rules")
-	source.Delete("content")
+	source := raw["rule_library"].([]any)[0].(map[string]any)
+	source["source_type"] = "url"
+	source["url"] = "https://example.com/rules"
+	delete(source, "content")
 	config := gateway.NewFixtureConfig(raw)
 	if _, err := config.ProviderPayload(t.Context(), "r", nil); err != nil {
 		t.Fatal(err)
@@ -302,13 +307,13 @@ func TestN811RuleReaderRestoreFailsClosed(t *testing.T) {
 
 func TestN811ReaderProjectionExcludesUnconsumedContent(t *testing.T) {
 	raw := snapshot(true)
-	raw.Delete("system_config")
-	source := raw.GetList("rule_library")[0].(*jsonx.Object)
-	source.Set("source_type", "url")
-	source.Set("url", "https://example.com/rules")
-	source.Delete("content")
-	raw.Set("rule_library", append(raw.GetList("rule_library"), jsonx.Obj("id", "unused", "name", "Unused", "content", strings.Repeat("x", 1<<20))))
-	raw.Set("nodes", []any{jsonx.Obj("id", "unused", "params", jsonx.Obj("password", strings.Repeat("x", 1<<20)))})
+	delete(raw, "system_config")
+	source := raw["rule_library"].([]any)[0].(map[string]any)
+	source["source_type"] = "url"
+	source["url"] = "https://example.com/rules"
+	delete(source, "content")
+	raw["rule_library"] = append(raw["rule_library"].([]any), map[string]any{"id": "unused", "name": "Unused", "content": strings.Repeat("x", 1<<20)})
+	raw["nodes"] = []any{map[string]any{"id": "unused", "params": map[string]any{"password": strings.Repeat("x", 1<<20)}}}
 	calls := 0
 	t.Cleanup(gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		calls++
@@ -332,17 +337,19 @@ func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testin
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	raw := snapshot(true)
-	raw.GetObject("system_config").Set("rule_proxy_token", "synthetic-secret-token")
+	raw["system_config"].(map[string]any)["rule_proxy_token"] = "synthetic-secret-token"
 	// Standalone ruleset referencing a library entry only by name (no library_rule_id, no format, no .yaml suffix).
-	standalone := jsonx.Obj("id", "r", "itemType", "ruleset", "name", "Proxy IPs",
-		"source_type", "url", "url", "https://rules.example/ip", "behavior", "ipcidr", "policy", "DIRECT", "enabled", true)
-	raw.Set("rule_configs", []any{standalone})
-	lib := raw.GetList("rule_library")[0].(*jsonx.Object)
-	lib.Set("source_type", "url")
-	lib.Set("url", "https://rules.example/ip.yaml")
-	lib.Set("format", "yaml")
-	lib.Set("content", strings.Repeat("x", 1<<20))
-	raw.Set("nodes", []any{jsonx.Obj("id", "unused", "params", jsonx.Obj("password", strings.Repeat("y", 1<<20)))})
+	standalone := map[string]any{
+		"id": "r", "itemType": "ruleset", "name": "Proxy IPs",
+		"source_type": "url", "url": "https://rules.example/ip", "behavior": "ipcidr", "policy": "DIRECT", "enabled": true,
+	}
+	raw["rule_configs"] = []any{standalone}
+	lib := raw["rule_library"].([]any)[0].(map[string]any)
+	lib["source_type"] = "url"
+	lib["url"] = "https://rules.example/ip.yaml"
+	lib["format"] = "yaml"
+	lib["content"] = strings.Repeat("x", 1<<20)
+	raw["nodes"] = []any{map[string]any{"id": "unused", "params": map[string]any{"password": strings.Repeat("y", 1<<20)}}}
 
 	rulesDir, err := r.SharedRulesDir()
 	if err != nil {

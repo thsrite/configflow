@@ -14,12 +14,12 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -32,10 +32,11 @@ func draftService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.UpdateProfileTransaction(context.Background(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n", "linux_gateway", jsonx.Obj("enabled", false, "rule_set_ids", []any{}), "future", []any{jsonx.Obj("nested", nil)}))
-		c.Set("oxidns", jsonx.Obj("custom_config", "plugins: []\n", "extra", 7))
-		return nil, nil
+	_, err = r.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+		p.Mihomo.CustomConfig = "mixed-port: 7890\n"
+		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":false,"rule_set_ids":[]}`))
+		p.Mihomo.Fields.Set("future", json.RawMessage(`[{"nested":null}]`))
+		return p.SetJSON("oxidns", json.RawMessage(`{"custom_config":"plugins: []\n","extra":7}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,11 +53,7 @@ func opBody(t *testing.T, raw string) Request {
 }
 func state(t *testing.T, s *Service) string {
 	t.Helper()
-	v, err := s.Repository.ExportAll(context.Background(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := jsonx.Compact(v)
+	b, err := s.Repository.ExportAllJSON(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,11 +114,12 @@ func TestDraftRuntimeAndDisconnect(t *testing.T) {
 func TestDraftGuardAtomicityAndUnknownMembers(t *testing.T) {
 	s := draftService(t)
 	ctx := context.Background()
-	config, rev, err := s.Repository.GetPublishSnapshot(ctx, "default", true)
+	config, rev, err := s.Repository.PublishConfig(ctx, "default", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	original := config.DeepCopy()
+	origMihomo := encode(config.Profile.Mihomo)
+	origOxiDNS := encode(config.Profile.OxiDNS)
 	op := Operation{ProfileID: "default", BaseURL: "http://localhost", Write: true, Preview: true, Body: opBody(t, string(encode(map[string]any{"settings": map[string]any{"enabled": true, "rule_set_ids": []string{}}, "expected_config_revision": rev})))}
 	before := state(t, s)
 	raw, err := s.Execute(ctx, op)
@@ -134,9 +132,9 @@ func TestDraftGuardAtomicityAndUnknownMembers(t *testing.T) {
 	op.Body["preview_token"] = encode(p.PreviewToken)
 	// System configuration changes do not increment the profile revision; the
 	// complete input identity must still reject an otherwise current preview.
-	_, err = s.Repository.UpdateSystemTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("system_config").Set("server_domain", "https://changed.example.com")
-		return nil, nil
+	err = s.Repository.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.SystemConfig.ServerDomain = "https://changed.example.com"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -156,18 +154,22 @@ func TestDraftGuardAtomicityAndUnknownMembers(t *testing.T) {
 	if _, err = s.Execute(ctx, op); err != nil {
 		t.Fatal(err)
 	}
-	current, _, _ := s.Repository.GetPublishSnapshot(ctx, "default", true)
-	point := current.GetObject("mihomo").GetObject(RestoreKey)
-	if !jsonx.Equal(point.Value("mihomo"), original.Value("mihomo")) || !jsonx.Equal(point.Value("oxidns"), original.Value("oxidns")) {
+	current, _, _ := s.Repository.PublishConfig(ctx, "default", true)
+	savedPoint, _ := current.Profile.Mihomo.Fields.Get(RestoreKey)
+	var point map[string]json.RawMessage
+	if err := json.Unmarshal(savedPoint, &point); err != nil {
+		t.Fatal(err)
+	}
+	if !testjson.Equal(point["mihomo"], origMihomo) || !testjson.Equal(point["oxidns"], origOxiDNS) {
 		t.Fatal("recovery documents lost unknown members")
 	}
-	savedPoint := point.DeepCopy()
 	op.Body = opBody(t, `{"enabled":false,"rule_set_ids":[]}`)
 	if _, err = s.Execute(ctx, op); err != nil {
 		t.Fatal(err)
 	}
-	current, _, _ = s.Repository.GetPublishSnapshot(ctx, "default", true)
-	if !jsonx.Equal(savedPoint, current.GetObject("mihomo").Value(RestoreKey)) {
+	current, _, _ = s.Repository.PublishConfig(ctx, "default", true)
+	afterPoint, _ := current.Profile.Mihomo.Fields.Get(RestoreKey)
+	if !testjson.Equal(savedPoint, afterPoint) {
 		t.Fatal("first recovery replaced")
 	}
 }
@@ -184,9 +186,9 @@ func TestDraftSessionEvidenceAndPrivacy(t *testing.T) {
 	}
 	// Turning on the gateway initially needs no legacy context; once it is on,
 	// malformed wizard evidence cannot be mistaken for an ordinary profile.
-	_, _, err := s.Repository.UpdateProfileTransaction(context.Background(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("mihomo").Set("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))
-		return nil, nil
+	_, err := s.Repository.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":true,"rule_set_ids":[]}`))
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -318,9 +320,9 @@ func TestBackupRuntimeDoesNotInvalidateAndConcurrentSaveConflicts(t *testing.T) 
 	_ = json.Unmarshal(raw, &p)
 	op.Body["preview_token"] = encode(p.PreviewToken)
 	op.Preview = false
-	_, err = s.Repository.UpdateSystemTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("backup").Set("last_backup", "runtime-only")
-		return nil, nil
+	err = s.Repository.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		sys.Backup.Fields.Set("last_backup", json.RawMessage(`"runtime-only"`))
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -367,10 +369,14 @@ func TestWrongTypedDraftSectionsCannotBecomeEmptySnapshots(t *testing.T) {
 func TestDraftPreviewCollectsCredentialsBeforeProjection(t *testing.T) {
 	s := draftService(t)
 	ctx := context.Background()
-	_, _, err := s.Repository.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("oxidns").Set("password", "synthetic-old-password")
-		c.GetObject("oxidns").Set("note", "original")
-		return nil, nil
+	_, err := s.Repository.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		var o map[string]any
+		if err := json.Unmarshal(encode(p.OxiDNS), &o); err != nil {
+			return err
+		}
+		o["password"] = "synthetic-old-password"
+		o["note"] = "original"
+		return p.SetJSON("oxidns", encode(o))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -379,12 +385,15 @@ func TestDraftPreviewCollectsCredentialsBeforeProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repository.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		o := c.GetObject("oxidns")
-		o.Set("password", "synthetic-new-password")
-		o.Set("note", "previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword")
-		o.Set("future", jsonx.Obj("password", "synthetic-nested-password", "note", "reference synthetic-nested-password"))
-		return nil, nil
+	_, err = s.Repository.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		var o map[string]any
+		if err := json.Unmarshal(encode(p.OxiDNS), &o); err != nil {
+			return err
+		}
+		o["password"] = "synthetic-new-password"
+		o["note"] = "previous synthetic-old-password; current synthetic-new-password; encoded synthetic%2Dnew%2Dpassword"
+		o["future"] = map[string]any{"password": "synthetic-nested-password", "note": "reference synthetic-nested-password"}
+		return p.SetJSON("oxidns", encode(o))
 	})
 	if err != nil {
 		t.Fatal(err)

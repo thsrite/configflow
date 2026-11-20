@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/model"
 )
 
 type scheduled struct {
@@ -55,7 +56,7 @@ type fixture struct {
 	c          *Checker
 	clock      *lifecycletest.Clock
 	spawn      *deferred
-	cfg, agent *jsonx.Object
+	cfg, agent map[string]any
 	calls      int
 	baseline   *deploy.Bundle
 	prepare    PrepareFunc
@@ -80,8 +81,8 @@ func pack(t *testing.T, main, rules string) *deploy.Bundle {
 func newFixture(t *testing.T, change func(*Options)) *fixture {
 	t.Helper()
 	f := &fixture{t: t, renders: map[deploy.InputKey][2]string{}, clock: lifecycletest.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)), spawn: &deferred{}, ctx: context.Background()}
-	f.cfg = jsonx.Obj("profile_id", "default", "test_main", "mode: rule\nrules: []\n", "test_rule", "DOMAIN,example.test\n")
-	f.baseline = pack(t, f.cfg.GetString("test_main"), f.cfg.GetString("test_rule"))
+	f.cfg = map[string]any{"profile_id": "default", "test_main": "mode: rule\nrules: []\n", "test_rule": "DOMAIN,example.test\n"}
+	f.baseline = pack(t, f.cfg["test_main"].(string), f.cfg["test_rule"].(string))
 	fp, err := deploy.Fingerprint(f.baseline.Manifest())
 	if err != nil {
 		t.Fatal(err)
@@ -90,11 +91,17 @@ func newFixture(t *testing.T, change func(*Options)) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rawDigests := jsonx.NewObject()
+	rawDigests := map[string]any{}
 	for k, v := range digests {
-		rawDigests.Set(k, v)
+		rawDigests[k] = v
 	}
-	f.agent = jsonx.Obj("id", "agent-test", "profile_id", "default", "service_type", "mihomo", "config_version", "applied-config", "applied_content", jsonx.Obj("fingerprint", fp, "profile_id", "default", "service_type", "mihomo", "config_version", "applied-config", "deployment_id", "previous", "base_url", "https://config.example.test", "config_path", "config.yaml", "files", rawDigests))
+	f.agent = map[string]any{
+		"id": "agent-test", "profile_id": "default", "service_type": "mihomo", "config_version": "applied-config",
+		"applied_content": map[string]any{
+			"fingerprint": fp, "profile_id": "default", "service_type": "mihomo", "config_version": "applied-config",
+			"deployment_id": "previous", "base_url": "https://config.example.test", "config_path": "config.yaml", "files": rawDigests,
+		},
+	}
 	f.prepare = func(_ context.Context, _ deploy.Target, s *deploy.Source, _, _ string) (*deploy.Bundle, error) {
 		f.calls++
 		key, err := s.InputKey()
@@ -118,15 +125,38 @@ func newFixture(t *testing.T, change func(*Options)) *fixture {
 	t.Cleanup(f.c.Close)
 	return f
 }
-func (f *fixture) target() deploy.Target { return deploy.NewTarget(f.agent) }
+func (f *fixture) target() deploy.Target {
+	raw, err := json.Marshal(f.agent)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var agent model.Agent
+	if err := json.Unmarshal(raw, &agent); err != nil {
+		f.t.Fatal(err)
+	}
+	target, err := deploy.NewTypedTarget(&agent)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return target
+}
 func (f *fixture) source() *deploy.Source {
-	source := deploy.NewSource(f.cfg, nil)
+	raw, err := json.Marshal(f.cfg)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	source, err := deploy.SourceFromJSON(raw, nil)
+	if err != nil {
+		f.t.Fatal(err)
+	}
 	key, err := source.InputKey()
 	if err != nil {
 		f.t.Fatal(err)
 	}
+	mainText, _ := f.cfg["test_main"].(string)
+	ruleText, _ := f.cfg["test_rule"].(string)
 	f.renderMu.Lock()
-	f.renders[key] = [2]string{f.cfg.GetString("test_main"), f.cfg.GetString("test_rule")}
+	f.renders[key] = [2]string{mainText, ruleText}
 	f.renderMu.Unlock()
 	return source
 }

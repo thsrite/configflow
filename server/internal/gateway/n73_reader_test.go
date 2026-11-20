@@ -1,15 +1,36 @@
 package gateway
 
 import (
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
+
+func collectTextFields(value any, name string, out *[]string) {
+	switch v := value.(type) {
+	case map[string]any:
+		for k, item := range v {
+			if k == name {
+				if text, ok := item.(string); ok {
+					*out = append(*out, text)
+				}
+			}
+			collectTextFields(item, name, out)
+		}
+	case []any:
+		for _, item := range v {
+			collectTextFields(item, name, out)
+		}
+	}
+}
 
 func TestN73GatewayReaderMigration(t *testing.T) {
 	var bases, payloads []string
@@ -22,28 +43,51 @@ func TestN73GatewayReaderMigration(t *testing.T) {
 			payloads = append(payloads, stripped)
 		}
 	}
-	for _, row := range yamlxtest.Rows(t, "testdata/a19_corpus.jsonl.gz") {
-		args := row.GetObject("args")
-		if config := args.GetObject("config"); config != nil {
-			if mihomo := config.GetObject("mihomo"); mihomo != nil {
-				if source := mihomo.GetString("custom_config"); strings.TrimSpace(source) != "" {
+	file, err := os.Open("testdata/a19_corpus.jsonl.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	reader, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 1<<20), 1<<26)
+	for scanner.Scan() {
+		var row map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			t.Fatal(err)
+		}
+		args, _ := row["args"].(map[string]any)
+		if config, ok := args["config"].(map[string]any); ok {
+			if mihomo, ok := config["mihomo"].(map[string]any); ok {
+				if source, ok := mihomo["custom_config"].(string); ok && strings.TrimSpace(source) != "" {
 					bases = append(bases, source)
 				}
 			}
-			for _, source := range yamlxtest.TextFields(config, "content") {
+			var contents []string
+			collectTextFields(config, "content", &contents)
+			for _, source := range contents {
 				addPayload(source)
 			}
 		}
-		if row.GetString("fn") == "extract" {
-			addPayload(args.GetString("content"))
+		if fn, _ := row["fn"].(string); fn == "extract" {
+			if content, ok := args["content"].(string); ok {
+				addPayload(content)
+			}
 		}
-		if loader := args.GetObject("loader"); loader != nil {
-			for _, raw := range loader.All() {
+		if loader, ok := args["loader"].(map[string]any); ok {
+			for _, raw := range loader {
 				if source, ok := raw.(string); ok {
 					addPayload(source)
 				}
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
 	}
 	if len(bases) == 0 || len(payloads) == 0 {
 		t.Fatal("real gateway reader sources missing")
@@ -60,7 +104,7 @@ func TestN73GatewayRejectsUnsafeAliases(t *testing.T) {
 	}
 	for name, source := range map[string]string{"depth40": chain.String(), "self": "loop: &loop [*loop]\n"} {
 		t.Run(name, func(t *testing.T) {
-			config := NewFixtureConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", source)))
+			config := NewFixtureConfig(map[string]any{"mihomo": map[string]any{"custom_config": source}})
 			if doc, err := config.BaseDocument(); doc != nil || err == nil || err.Error() != msgBaseYAMLInvalid {
 				t.Fatalf("unsafe base document accepted or context changed: %v", err)
 			}
@@ -76,7 +120,7 @@ func TestN73GatewayRejectsUnsafeAliases(t *testing.T) {
 }
 
 func TestN73GatewayBasePreservesSharing(t *testing.T) {
-	config := NewFixtureConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", "base: &base [one, two]\nfirst: *base\nsecond: *base\n")))
+	config := NewFixtureConfig(map[string]any{"mihomo": map[string]any{"custom_config": "base: &base [one, two]\nfirst: *base\nsecond: *base\n"}})
 	n, err := config.BaseDocument()
 	if err != nil {
 		t.Fatal(err)

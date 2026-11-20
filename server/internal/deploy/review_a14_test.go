@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 )
@@ -17,12 +16,13 @@ import (
 // throttle of Python's preparation_detail; forced phases always persist.
 func TestReviewA14UnforcedProgressIsThrottled(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
-	if _, err := f.m.BeginDeployment(f.ctx, "publish-agent", "throttle"); err != nil {
+	if _, err := f.m.ReserveDeployment(f.ctx, "publish-agent", "throttle"); err != nil {
 		t.Fatal(err)
 	}
 	defer f.m.FinishDeploymentPreparation("publish-agent", "throttle")
 	message := func() string {
-		return f.agent(t).GetObject("deployments").GetObject("throttle").GetString("message")
+		d, _ := f.agent(t).Deployments.Get("throttle")
+		return textValue(d.Message)
 	}
 	clock := lifecycletest.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Clock: clock, Mode: lifecycle.ModeManual})
@@ -60,13 +60,13 @@ func TestWireKeepsTheSingleSetupSessionReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	restore := routersplit.SetProfileSessions(func(context.Context, *repo.Repository, string) ([]*jsonx.Object, error) {
+	restore := routersplit.SetSessionReader(func(context.Context, *repo.Repository, string) ([]routersplit.Session, error) {
 		calls++
 		return nil, nil
 	})
 	t.Cleanup(restore)
 	Wire()
-	if _, err = routersplit.LegacyContext(ctx, r, "default"); err != nil {
+	if _, err = routersplit.ReadContext(ctx, r, "default"); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {

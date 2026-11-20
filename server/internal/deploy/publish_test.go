@@ -3,7 +3,7 @@ package deploy
 import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"context"
 	"encoding/json"
@@ -45,9 +45,20 @@ func newPublish(t *testing.T, o agentfake.Options, wrap func(http.Handler) http.
 	n, _ := strconv.Atoi(port)
 	ctx := testContext(t)
 	r, _ := repo.GetRepository(ctx)
-	_, e := r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", o.AgentID, "name", "Synthetic", "host", host, "port", n, "token", o.Token, "service_type", o.ServiceType, "profile_id", "default", "version", "1.8.60-go", "enabled", true)})
-		return system, nil
+	e := r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		enabled := true
+		sys.Agents = []model.Agent{{
+			ID:          o.AgentID,
+			Name:        "Synthetic",
+			Host:        host,
+			Port:        model.Int(n),
+			Token:       o.Token,
+			ServiceType: o.ServiceType,
+			ProfileID:   "default",
+			Version:     "1.8.60-go",
+			Enabled:     &enabled,
+		}}
+		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -56,9 +67,20 @@ func newPublish(t *testing.T, o agentfake.Options, wrap func(http.Handler) http.
 	if e != nil {
 		t.Fatal(e)
 	}
-	cfg := jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("server_domain", "https://panel.example.com"), "nodes", []any{}, "subscriptions", []any{}, "proxy_groups", []any{}, "rule_configs", []any{}, "rule_library", []any{}, "mihomo", jsonx.Obj("custom_config", "mode: rule\n"), "mosdns", jsonx.NewObject(), "oxidns", jsonx.NewObject())
+	cfg := map[string]any{
+		"profile_id":    "default",
+		"system_config": map[string]any{"server_domain": "https://panel.example.com"},
+		"nodes":         []any{},
+		"subscriptions": []any{},
+		"proxy_groups":  []any{},
+		"rule_configs":  []any{},
+		"rule_library":  []any{},
+		"mihomo":        map[string]any{"custom_config": "mode: rule\n"},
+		"mosdns":        map[string]any{},
+		"oxidns":        map[string]any{},
+	}
 	t.Cleanup(m.Close)
-	return &publishFixture{ctx, m, fake, NewSource(cfg, nil)}
+	return &publishFixture{ctx, m, fake, testSource(t, cfg)}
 }
 func (f *publishFixture) bundle(t *testing.T, id string) *Bundle {
 	t.Helper()
@@ -78,9 +100,9 @@ func (f *publishFixture) bundle(t *testing.T, id string) *Bundle {
 	}
 	return b
 }
-func (f *publishFixture) agent(t *testing.T) *agents.Record {
+func (f *publishFixture) agent(t *testing.T) *model.Agent {
 	t.Helper()
-	a, e := f.m.GetAgentByID(f.ctx, "publish-agent", true)
+	a, e := f.m.ReadAgent(f.ctx, "publish-agent", true)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -93,7 +115,7 @@ func TestPublishBoundary(t *testing.T) {
 	if e != nil || resultView(fixtureTask(got)).Status != "verifying" {
 		t.Fatal(got, e)
 	}
-	if f.agent(t).Has("applied_content") {
+	if f.agent(t).AppliedContent != nil {
 		t.Fatal("accepted upload advanced baseline")
 	}
 	got, e = f.m.GetDeploymentModel(f.ctx, "publish-agent", "stage")
@@ -105,11 +127,11 @@ func TestPublishBoundary(t *testing.T) {
 		t.Fatal(got, e)
 	}
 	a := f.agent(t)
-	applied := a.GetObject("applied_content")
-	if applied == nil || applied.GetString("deployment_id") != "stage" || applied.GetString("config_path") != "installed.yaml" {
+	applied := a.AppliedContent
+	if applied == nil || applied.DeploymentID != "stage" || applied.ConfigPath != "installed.yaml" {
 		t.Fatal(a)
 	}
-	receipt, e := NewReceipts(f.m.Repository().DataDir()).LoadAgent(f.ctx, fixtureAgent(a), true)
+	receipt, e := NewReceipts(f.m.Repository().DataDir()).LoadAgent(f.ctx, a, true)
 	if e != nil || receipt == nil {
 		t.Fatal("receipt", e)
 	}
@@ -136,7 +158,7 @@ func TestPublishBoundary(t *testing.T) {
 	if e != nil || resultView(fixtureTask(got)).Status != "rolled_back" {
 		t.Fatal(got, e)
 	}
-	if f.agent(t).Has("applied_content") {
+	if f.agent(t).AppliedContent != nil {
 		t.Fatal("manual rollback retained baseline")
 	}
 }
@@ -146,8 +168,8 @@ func TestSubmittedBeforeNetworkAndLostResponse(t *testing.T) {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/api/deployments" {
 				a := f.agent(t)
-				v := a.GetObject("deployments").GetObject("lost")
-				if v.GetString("status") != "uploading" || !v.GetBool("submitted") || v.GetString("sha256") == "" || v.GetObject("prepared_content") == nil {
+				v, ok := a.Deployments.Get("lost")
+				if !ok || v.Status != "uploading" || v.Submitted == nil || !*v.Submitted || textValue(v.SHA256) == "" || v.PreparedContent == nil {
 					t.Error("POST before durable submitted", a)
 				}
 			}
@@ -158,14 +180,14 @@ func TestSubmittedBeforeNetworkAndLostResponse(t *testing.T) {
 	if e != nil || resultView(fixtureTask(got)).Status != "unknown" || !resultView(fixtureTask(got)).Submitted {
 		t.Fatal(got, e)
 	}
-	if f.agent(t).Has("applied_content") {
+	if f.agent(t).AppliedContent != nil {
 		t.Fatal("uncertain upload advanced baseline")
 	}
 	got, e = f.m.GetDeploymentModel(f.ctx, "publish-agent", "lost")
 	if e != nil || resultView(fixtureTask(got)).Status != "succeeded" {
 		t.Fatal(got, e)
 	}
-	if f.agent(t).GetObject("applied_content") == nil {
+	if f.agent(t).AppliedContent == nil {
 		t.Fatal("confirmed poll did not advance baseline")
 	}
 }
@@ -205,7 +227,7 @@ func TestLateUploadCannotRegressPoll(t *testing.T) {
 	if e = <-done; e != nil {
 		t.Fatal(e)
 	}
-	if f.agent(t).GetObject("latest_deployment").GetString("status") != "checking" {
+	if f.agent(t).LatestDeployment == nil || f.agent(t).LatestDeployment.Status != "checking" {
 		t.Fatal("late accepted receipt regressed confirmation")
 	}
 }
@@ -227,7 +249,7 @@ func TestPublishRefusalsAndJournalLoss(t *testing.T) {
 			if e != nil || resultView(fixtureTask(r)).Status != tc.want || resultView(fixtureTask(r)).HTTPStatus != tc.code {
 				t.Fatal(r, e)
 			}
-			if f.agent(t).Has("applied_content") {
+			if f.agent(t).AppliedContent != nil {
 				t.Fatal("failure advanced baseline")
 			}
 		})
@@ -243,11 +265,4 @@ func TestPublishRefusalsAndJournalLoss(t *testing.T) {
 	if e != nil || resultView(fixtureTask(r)).Status != "failed" || !strings.Contains(textValue(r.Message), "no record") {
 		t.Fatal(r, e)
 	}
-}
-
-func fixtureObject(v any) *jsonx.Object {
-	raw, _ := json.Marshal(v)
-	var out jsonx.Object
-	_ = json.Unmarshal(raw, &out)
-	return &out
 }

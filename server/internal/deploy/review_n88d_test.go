@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"configflow/internal/clock"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 )
@@ -32,7 +31,7 @@ func TestReviewN88dReceiptShutdownBeforeReplacement(t *testing.T) {
 				}
 				owner := NewReceipts(r.DataDir())
 				bundle := sample(t, "mihomo", 3)
-				source := NewSource(jsonx.Obj("profile_id", "profile-example"), nil)
+				source := testSource(t, map[string]any{"profile_id": "profile-example"})
 				runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 				runtime.Start(base)
 				defer runtime.Shutdown(context.Background())
@@ -86,7 +85,7 @@ func TestReviewN88dPreviewShutdownBeforePublication(t *testing.T) {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
 			c := &reviewPreviewClock{}
 			owner := NewPreviews(t.TempDir(), c)
-			in := PreviewInput{Target: NewTarget(jsonx.Obj("id", "manual", "service_type", "surge", "profile_id", "default")), Source: NewSource(jsonx.Obj("profile_id", "default"), nil), ConfigContent: "[General]\n"}
+			in := PreviewInput{Target: testTarget(t, map[string]any{"id": "manual", "service_type": "surge", "profile_id": "default"}), Source: testSource(t, map[string]any{"profile_id": "default"}), ConfigContent: "[General]\n"}
 			if _, err := owner.Save(context.Background(), in); err != nil {
 				t.Fatal(err)
 			}

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/rules"
 )
 
@@ -18,14 +18,18 @@ import (
 // block another installation's registration nor turn status reads into 500s.
 func TestWronglyTypedAgentMembersFollowPythonEquality(t *testing.T) {
 	f := newFixture(t)
-	_, err := f.s.Repository.UpdateSystemTransaction(f.ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("agents", append(c.GetList("agents"), jsonx.Obj("id", "agent_legacy", "name", "legacy", "host", "192.0.2.50", "port", "8080", "token", "synthetic-legacy-token", "service_type", "mihomo", "profile_id", "default", "latest_deployment", jsonx.Obj("deployment_id", "x", "http_status", "not-a-number"))))
-		return nil, nil
+	err := f.s.Repository.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		var legacy model.Agent
+		if err := json.Unmarshal([]byte(`{"id":"agent_legacy","name":"legacy","host":"192.0.2.50","port":"8080","token":"synthetic-legacy-token","service_type":"mihomo","profile_id":"default","latest_deployment":{"deployment_id":"x","http_status":"not-a-number"}}`), &legacy); err != nil {
+			return err
+		}
+		sys.Agents = append(sys.Agents, legacy)
+		return nil
 	})
 	must(t, err)
 	proofs := f.enroll(t) // registers both cores while the unrelated record exists
 	mihomoID := text(object(proofs["mihomo"])["id"])
-	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, jsonx.Obj("port", "8080")))
+	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, map[string]any{"port": "8080"}))
 	must(t, err)
 	view, err := f.s.Get(f.ctx, f.r.ID)
 	must(t, err)
@@ -55,10 +59,18 @@ func TestEnrollRefusesEarlierDuplicateTarget(t *testing.T) {
 	}
 	// An administrator edit can give a second record the same name and host;
 	// placing it first is the order a last-wins index cannot see.
-	_, err := f.s.Repository.UpdateSystemTransaction(f.ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		duplicate := jsonx.Obj("id", "agent_duplicate", "name", f.r.Name+"-mihomo", "host", f.r.Network.Address, "port", 9000, "token", "synthetic-duplicate-token", "service_type", "mihomo", "profile_id", "default")
-		c.Set("agents", append([]any{duplicate}, c.GetList("agents")...))
-		return nil, nil
+	err := f.s.Repository.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		duplicate := model.Agent{
+			ID:          "agent_duplicate",
+			Name:        f.r.Name + "-mihomo",
+			Host:        f.r.Network.Address,
+			Port:        9000,
+			Token:       "synthetic-duplicate-token",
+			ServiceType: "mihomo",
+			ProfileID:   "default",
+		}
+		sys.Agents = append([]model.Agent{duplicate}, sys.Agents...)
+		return nil
 	})
 	must(t, err)
 	before := document(t, f)

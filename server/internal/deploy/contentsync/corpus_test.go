@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
 )
 
 type traceAction struct {
@@ -71,7 +70,8 @@ func TestPythonCheckerHistories(t *testing.T) {
 				case "status", "diff", "sync":
 					source := f.source()
 					key, _ := source.InputKey()
-					failures[key] = f.cfg.GetBool("fail")
+					failFlag, _ := f.cfg["fail"].(bool)
+					failures[key] = failFlag
 					switch action.Op {
 					case "status":
 						result = f.c.Status(f.ctx, f.target(), source, "https://config.example.test")
@@ -89,15 +89,17 @@ func TestPythonCheckerHistories(t *testing.T) {
 				case "invalidate":
 					f.c.Invalidate()
 				case "agent", "config":
-					v, err := jsonx.Parse(action.Patch)
-					if err != nil {
+					var patch map[string]any
+					if err := json.Unmarshal(action.Patch, &patch); err != nil {
 						t.Fatal(err)
 					}
 					dst := f.cfg
 					if action.Op == "agent" {
 						dst = f.agent
 					}
-					dst.Update(v.(*jsonx.Object))
+					for k, v := range patch {
+						dst[k] = v
+					}
 				default:
 					t.Fatal(action.Op)
 				}

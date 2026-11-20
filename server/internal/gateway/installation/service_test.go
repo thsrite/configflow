@@ -27,9 +27,9 @@ import (
 	"configflow/internal/gateway/host"
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/installer"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
 )
@@ -54,16 +54,19 @@ func newFixture(t *testing.T) *fixture {
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	must(t, err)
 	ctx := repo.WithRepository(repo.WithScope(context.Background()), r)
-	_, err = r.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Synthetic", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
-		return nil, nil
+	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return json.Unmarshal([]byte(`[{"id":"n","name":"Synthetic","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`), &shared.Nodes)
 	})
 	must(t, err)
-	_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Proxy", "type", "select", "manual_nodes", []any{"n"})})
-		c.Set("rule_configs", []any{jsonx.Obj("id", "match", "itemType", "rule", "rule_type", "MATCH", "policy", "Proxy")})
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n"))
-		return nil, nil
+	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		if err := json.Unmarshal([]byte(`[{"id":"g","name":"Proxy","type":"select","manual_nodes":["n"]}]`), &p.ProxyGroups); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(`[{"id":"match","itemType":"rule","rule_type":"MATCH","policy":"Proxy"}]`), &p.RuleConfigs); err != nil {
+			return err
+		}
+		p.Mihomo.CustomConfig = "mixed-port: 7890\n"
+		return nil
 	})
 	must(t, err)
 	on := onboarding.Service{Repository: r}
@@ -131,9 +134,7 @@ func recordBytes(t *testing.T, f *fixture) []byte {
 }
 func document(t *testing.T, f *fixture) []byte {
 	t.Helper()
-	v, e := f.s.Repository.ExportAll(f.ctx, false)
-	must(t, e)
-	b, e := json.Marshal(v)
+	b, e := f.s.Repository.ExportAllJSON(f.ctx, false)
 	must(t, e)
 	return b
 }
@@ -239,7 +240,7 @@ func TestRegistrationCapabilitiesAndAtomicEnrollment(t *testing.T) {
 	// The first proof would change metadata; an invalid second proof must keep the
 	// entire registry document unchanged, proving the callback is atomic.
 	mihomoID := text(object(proofs["mihomo"])["id"])
-	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, jsonx.Obj("name", "prior-name")))
+	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, map[string]any{"name": "prior-name"}))
 	must(t, err)
 	enrollment := map[string]json.RawMessage{}
 	for _, service := range services {
@@ -378,9 +379,9 @@ func TestCrossAgentCredentialsRemovedBeforeSessionProjection(t *testing.T) {
 	f := newFixture(t)
 	f.enroll(t)
 	f.prepareRun(t)
-	_, err := f.s.Repository.UpdateSystemTransaction(f.ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetList("agents")[1].(*jsonx.Object).Set("private_metadata", jsonx.Obj("password", "synthetic-hidden-credential"))
-		return nil, nil
+	err := f.s.Repository.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		sys.Agents[1].Fields.Set("private_metadata", json.RawMessage(`{"password":"synthetic-hidden-credential"}`))
+		return nil
 	})
 	must(t, err)
 	must(t, f.s.progress(f.ctx, f.r.ID, "mihomo", raw(map[string]any{"deployment_id": "synthetic-deployment", "status": "failed", "message": "failure synthetic-hidden-credential", "error": "encoded synthetic%2Dhidden%2Dcredential"})))
@@ -656,9 +657,9 @@ func TestPublishLeaseAndRevisionGuard(t *testing.T) {
 	if !bytes.Equal(before, recordBytes(t, f)) {
 		t.Fatal("contending request reset durable task IDs")
 	}
-	_, _, err = f.s.Repository.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("description", "changed")
-		return nil, nil
+	_, err = f.s.Repository.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Description = "changed"
+		return nil
 	})
 	must(t, err)
 	_, err = f.s.Publish(f.ctx, f.r.ID, raw(map[string]any{}))
@@ -668,9 +669,9 @@ func TestReprepareReusesInstalledPairAndKeepsScript(t *testing.T) {
 	f := newFixture(t)
 	f.enroll(t)
 	old := *f.r
-	_, _, err := f.s.Repository.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("description", "reviewed revision")
-		return nil, nil
+	_, err := f.s.Repository.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Description = "reviewed revision"
+		return nil
 	})
 	must(t, err)
 	revision, err := f.s.Repository.ConfigRevision(f.ctx, "default")
@@ -716,13 +717,17 @@ func TestReviewedA21ValidationClassAndTwoLevelRedaction(t *testing.T) {
 	for _, kind := range []string{"oxidns", "mihomo"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newFixture(t)
-			_, _, err := f.s.Repository.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
+			_, err := f.s.Repository.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
 				if kind == "oxidns" {
-					c.GetObject("oxidns").Set("remote_dns", "[")
-				} else {
-					c.GetObject("mihomo").Set("custom_config", "dns: [")
+					o := object(raw(p.OxiDNS))
+					if o == nil {
+						o = map[string]json.RawMessage{}
+					}
+					o["remote_dns"] = raw("[")
+					return p.SetJSON("oxidns", raw(o))
 				}
-				return nil, nil
+				p.Mihomo.CustomConfig = "dns: ["
+				return nil
 			})
 			must(t, err)
 			revision, err := f.s.Repository.ConfigRevision(f.ctx, "default")
@@ -739,9 +744,9 @@ func TestReviewedA21ValidationClassAndTwoLevelRedaction(t *testing.T) {
 	}
 	f := newFixture(t)
 	f.enroll(t)
-	_, err := f.s.Repository.UpdateSharedTransaction(f.ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetList("nodes")[0].(*jsonx.Object).Set("password", "linux")
-		return nil, nil
+	err := f.s.Repository.UpdateShared(f.ctx, func(_ context.Context, shared *model.Shared) error {
+		shared.Nodes[0].Fields.Set("password", json.RawMessage(`"linux"`))
+		return nil
 	})
 	must(t, err)
 	view, err := f.s.Get(f.ctx, f.r.ID)
@@ -821,7 +826,7 @@ func TestPublicationWorkerKeepsRuntimeAfterDisconnectAndShutdown(t *testing.T) {
 func TestFullTUNTakeoverNeedsDistinctCapability(t *testing.T) {
 	f := newFixture(t)
 	f.enroll(t)
-	snapshot, _, err := f.s.Repository.GetPublishSnapshot(f.ctx, "default", true)
+	snapshot, _, err := f.s.Repository.PublishConfig(f.ctx, "default", true)
 	must(t, err)
 	var doc onboarding.Document
 	must(t, json.Unmarshal(raw(snapshot), &doc))
@@ -832,15 +837,11 @@ func TestFullTUNTakeoverNeedsDistinctCapability(t *testing.T) {
 	if !report.Ready {
 		t.Fatal(report.Blockers)
 	}
-	_, revision, err := f.s.Repository.UpdateProfileTransaction(f.ctx, "default", func(_ context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		for _, key := range []string{"mihomo", "oxidns"} {
-			v, e := jsonx.Parse(candidate[key])
-			if e != nil {
-				return nil, e
-			}
-			current.Set(key, v)
+	revision, err := f.s.Repository.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
+		if e := p.SetJSON("mihomo", candidate["mihomo"]); e != nil {
+			return e
 		}
-		return nil, nil
+		return p.SetJSON("oxidns", candidate["oxidns"])
 	})
 	must(t, err)
 	f.body["config_revision"] = raw(revision)
@@ -875,9 +876,9 @@ func agentEditsForTest(t testing.TB, value any) agentcore.AgentEdits {
 
 func TestNativeSystemCredentialsReachSharedRedactor(t *testing.T) {
 	f := newFixture(t)
-	_, err := f.s.Repository.UpdateSystemTransaction(f.ctx, func(_ context.Context, document *jsonx.Object) (*jsonx.Object, error) {
-		document.GetObject("system_config").Set("rule_fetch_proxy", "http://operator:synthetic-native-system-secret@proxy.example.com")
-		return nil, nil
+	err := f.s.Repository.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
+		sys.SystemConfig.RuleFetchProxy = "http://operator:synthetic-native-system-secret@proxy.example.com"
+		return nil
 	})
 	must(t, err)
 	secrets, err := f.s.secrets(f.ctx)

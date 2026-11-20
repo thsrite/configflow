@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
@@ -174,11 +173,11 @@ func TestReviewBuildDownloadsAndJSONSources(t *testing.T) {
 	}))
 	defer srv.Close()
 	corpus := decodeReviewCorpus(t, bytes.ReplaceAll(raw, []byte("@RULE_SERVER@"), []byte(srv.URL)))
-	source := jsonx.Obj("profile_id", "alpha", "system_config", jsonx.Obj("server_domain", "https://panel.example"),
-		"rule_library", []any{jsonx.Obj("id", "lib", "name", "Library", "source_type", "url", "url", srv.URL+"/missing", "behavior", "domain", "format", "text")})
+	source := map[string]any{"profile_id": "alpha", "system_config": map[string]any{"server_domain": "https://panel.example"},
+		"rule_library": []any{map[string]any{"id": "lib", "name": "Library", "source_type": "url", "url": srv.URL + "/missing", "behavior": "domain", "format": "text"}}}
 	for _, row := range corpus.Builds {
 		t.Run(row.Name, func(t *testing.T) {
-			in := BuildInput{Target: Target{ID: "agent-example", ServiceType: row.Service, ProfileID: "alpha"}, Source: NewSource(source, nil), ConfigContent: row.Main, DeploymentID: "a11-review", BaseURL: "https://panel.example"}
+			in := BuildInput{Target: Target{ID: "agent-example", ServiceType: row.Service, ProfileID: "alpha"}, Source: testSource(t, source), ConfigContent: row.Main, DeploymentID: "a11-review", BaseURL: "https://panel.example"}
 			for _, d := range row.Downloads {
 				in.RulesetDownloads = append(in.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
 			}

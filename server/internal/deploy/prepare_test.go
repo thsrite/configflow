@@ -5,7 +5,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -49,16 +48,8 @@ func TestPythonPrepare(t *testing.T) {
 	}
 	for _, row := range rows {
 		t.Run(row.Name, func(t *testing.T) {
-			cfg, e := jsonx.Parse(row.Source)
-			if e != nil {
-				t.Fatal(e)
-			}
-			record, e := jsonx.Parse(row.Agent)
-			if e != nil {
-				t.Fatal(e)
-			}
-			src := NewSource(cfg.(*jsonx.Object), nil)
-			target := NewTarget(record.(*jsonx.Object))
+			src := testSource(t, row.Source)
+			target := testTarget(t, row.Agent)
 			pull, e := GenerateAgentConfig(ctx, src, target, "https://panel.example.com")
 			if row.PullError != "" {
 				if e == nil || e.Error() != row.PullError {

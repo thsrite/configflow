@@ -14,8 +14,8 @@ import (
 
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
@@ -30,17 +30,21 @@ func testService(t *testing.T) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = r.UpdateSharedTransaction(context.Background(), func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
-		return nil, nil
+	if err = r.UpdateShared(context.Background(), func(_ context.Context, shared *model.Shared) error {
+		return json.Unmarshal([]byte(`[{"id":"n","name":"Example","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`), &shared.Nodes)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = r.UpdateProfileTransaction(context.Background(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Proxy", "type", "select", "manual_nodes", []any{"n"})})
-		c.Set("rule_configs", []any{jsonx.Obj("id", "match", "itemType", "rule", "rule_type", "MATCH", "policy", "Proxy")})
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n", "future_member", jsonx.Obj("keep", false)))
-		return nil, nil
+	if _, err = r.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+		if err := json.Unmarshal([]byte(`[{"id":"g","name":"Proxy","type":"select","manual_nodes":["n"]}]`), &p.ProxyGroups); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(`[{"id":"match","itemType":"rule","rule_type":"MATCH","policy":"Proxy"}]`), &p.RuleConfigs); err != nil {
+			return err
+		}
+		p.Mihomo.CustomConfig = "mixed-port: 7890\n"
+		p.Mihomo.Fields.Set("future_member", json.RawMessage(`{"keep":false}`))
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -51,11 +55,7 @@ func testOperation() Operation {
 }
 func stored(t *testing.T, s *Service) string {
 	t.Helper()
-	v, err := s.Repository.ExportAll(context.Background(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := jsonx.Compact(v)
+	b, err := s.Repository.ExportAllJSON(context.Background(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestPreviewAndSaveHaveSameDrafts(t *testing.T) {
 	if !preview.Ready || before != stored(t, s) || !bytes.Equal(beforeFiles, encode(files(t, s))) {
 		t.Fatalf("preview %+v", preview)
 	}
-	config, _, err := s.Repository.GetPublishSnapshot(context.Background(), "default", true)
+	config, _, err := s.Repository.PublishConfig(context.Background(), "default", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestPreviewAndSaveHaveSameDrafts(t *testing.T) {
 	if err = json.Unmarshal(raw, &saved); err != nil {
 		t.Fatal(err)
 	}
-	current, err := s.Repository.GetProfile(context.Background(), "default")
+	current, err := s.Repository.Profile(context.Background(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,19 +309,22 @@ func TestAdopterHookReceivesOneCommittedRevision(t *testing.T) {
 func TestSharedCredentialsAreCollectedBeforeProjection(t *testing.T) {
 	s := testService(t)
 	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-registration-key")
-	_, err := s.Repository.UpdateSystemTransaction(context.Background(), func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		sys := c.GetObject("system_config")
-		sys.Set("retired_rule_proxy_tokens", []any{"synthetic-retired-key"})
-		return nil, nil
+	err := s.Repository.UpdateSystem(context.Background(), func(_ context.Context, sys *model.System) error {
+		sys.SystemConfig.RetiredRuleProxyTokens = []string{"synthetic-retired-key"}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = s.Repository.UpdateProfileTransaction(context.Background(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "synthetic-retired-key", "type", "select", "manual_nodes", []any{"n"})})
-		c.Set("rule_configs", []any{jsonx.Obj("id", "match", "itemType", "rule", "rule_type", "MATCH", "policy", "synthetic-retired-key")})
-		c.GetObject("mihomo").Set("custom_config", "dns:\n  nameserver: [https://192.0.2.53/dns-query]\nsecret: synthetic-config-key\n")
-		return nil, nil
+	_, err = s.Repository.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+		if err := json.Unmarshal([]byte(`[{"id":"g","name":"synthetic-retired-key","type":"select","manual_nodes":["n"]}]`), &p.ProxyGroups); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(`[{"id":"match","itemType":"rule","rule_type":"MATCH","policy":"synthetic-retired-key"}]`), &p.RuleConfigs); err != nil {
+			return err
+		}
+		p.Mihomo.CustomConfig = "dns:\n  nameserver: [https://192.0.2.53/dns-query]\nsecret: synthetic-config-key\n"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

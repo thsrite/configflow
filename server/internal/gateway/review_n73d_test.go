@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/yamlx"
 )
 
@@ -32,7 +31,7 @@ func TestReviewN73DGatewayReaderCauses(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			source := "payload: ['IP-CIDR,192.0.2.0/24']\n" + tt.source
 			_, original := yamlx.Parse([]byte(source))
-			config := NewFixtureConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", source)))
+			config := NewFixtureConfig(map[string]any{"mihomo": map[string]any{"custom_config": source}})
 			doc, baseErr := config.BaseDocument()
 			prefixes, payloadErr := ExtractCIDRs(source, "classical")
 			if doc != nil || prefixes != nil {

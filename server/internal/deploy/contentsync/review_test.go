@@ -98,16 +98,16 @@ func TestReviewProductionCacheSpec(t *testing.T) {
 	}
 	f := newFixture(t, nil)
 	for i := 0; i < 514; i++ {
-		f.agent.Set("id", fmt.Sprintf("status-%d", i))
+		f.agent["id"] = fmt.Sprintf("status-%d", i)
 		f.status()
 		f.spawn.run(t)
 	}
 	if len(f.c.entries) != 512 || f.c.entries["status-0"] != nil || f.c.entries["status-2"] == nil {
 		t.Fatal("production 512-status LRU not enforced")
 	}
-	f.cfg.Set("test_rule", "DOMAIN,changed.example.com\n")
+	f.cfg["test_rule"] = "DOMAIN,changed.example.com\n"
 	for i := 0; i < 9; i++ {
-		f.agent.Set("id", fmt.Sprintf("detail-%d", i))
+		f.agent["id"] = fmt.Sprintf("detail-%d", i)
 		f.diff()
 		f.spawn.run(t)
 	}

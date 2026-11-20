@@ -31,8 +31,8 @@ import (
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/setupflow"
 )
 
@@ -129,16 +129,19 @@ func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[st
 	t.Setenv("AGENTS_STATIC_DIR", static)
 	must(t, os.WriteFile(filepath.Join(static, "configflow-agent-linux-amd64"), []byte("synthetic-agent-binary"), 0600))
 	ctx := s.Context()
-	_, e := s.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
-		return nil, nil
+	e := s.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		return json.Unmarshal([]byte(`[{"id":"n","name":"Example","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`), &shared.Nodes)
 	})
 	must(t, e)
-	_, _, e = s.Repo.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Proxy", "type", "select", "manual_nodes", []any{"n"})})
-		c.Set("rule_configs", []any{jsonx.Obj("id", "match", "itemType", "rule", "rule_type", "MATCH", "policy", "Proxy")})
-		c.Set("mihomo", jsonx.Obj("custom_config", "mixed-port: 7890\n"))
-		return nil, nil
+	_, e = s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		if err := json.Unmarshal([]byte(`[{"id":"g","name":"Proxy","type":"select","manual_nodes":["n"]}]`), &p.ProxyGroups); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(`[{"id":"match","itemType":"rule","rule_type":"MATCH","policy":"Proxy"}]`), &p.RuleConfigs); err != nil {
+			return err
+		}
+		p.Mihomo.CustomConfig = "mixed-port: 7890\n"
+		return nil
 	})
 	must(t, e)
 	on := onboarding.Service{Repository: s.Repo}
@@ -163,17 +166,22 @@ func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[st
 		r.Deployments[kind] = raw(map[string]string{"deployment_id": "job-" + kind, "status": "preparing"})
 	}
 	must(t, os.WriteFile(path, raw(r), 0600))
-	_, e = s.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		list := []any{}
+	e = s.Repo.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
+		var list []model.Agent
 		for _, kind := range []string{"mihomo", "oxidns"} {
-			list = append(list, jsonx.Obj("id", "synthetic-"+kind, "name", r.Name+"-"+kind, "host", r.Network.Address, "port", r.Ports[kind], "token", "synthetic-token-"+kind, "service_type", kind, "profile_id", r.ProfileID, "deployment_method", "shell", "version", "1.8.60-go", "enabled", true, "gateway_installation_id", r.ID, "created_at", "2026-01-01T00:00:00+00:00"))
+			var agent model.Agent
+			b := raw(map[string]any{"id": "synthetic-" + kind, "name": r.Name + "-" + kind, "host": r.Network.Address, "port": r.Ports[kind], "token": "synthetic-token-" + kind, "service_type": kind, "profile_id": r.ProfileID, "deployment_method": "shell", "version": "1.8.60-go", "enabled": true, "gateway_installation_id": r.ID, "created_at": "2026-01-01T00:00:00+00:00"})
+			if err := json.Unmarshal(b, &agent); err != nil {
+				return err
+			}
+			list = append(list, agent)
 		}
-		c.Set("agents", list)
-		return nil, nil
+		sys.Agents = list
+		return nil
 	})
 	must(t, e)
 	login := s.Post("/api/auth/login", httpxtest.JSON(map[string]string{"username": httpxtest.Username, "password": httpxtest.Password})).WantStatus(200)
-	token := login.Object().GetString("token")
+	token := str(obj(login.Body)["token"])
 	return s, token, r, body
 }
 func normalize(v any) any {
@@ -253,12 +261,12 @@ func TestGatewayFlaskHTTPAndDurableState(t *testing.T) {
 				t.Fatal("header mismatch", header)
 			}
 		}
-		doc, e := s.Repo.ExportAll(s.Context(), false)
+		doc, e := s.Repo.ExportAllJSON(s.Context(), false)
 		must(t, e)
 		if !published {
-			equal(t, "document", raw(doc), expected.State.Document)
+			equal(t, "document", doc, expected.State.Document)
 		} else {
-			equal(t, "stored publication evidence", publicationEvidence(t, raw(doc)), publicationEvidence(t, expected.State.Document))
+			equal(t, "stored publication evidence", publicationEvidence(t, doc), publicationEvidence(t, expected.State.Document))
 		}
 		pathFile := "gateway-installations/" + r.ID + ".json"
 		b, e := os.ReadFile(filepath.Join(s.DataDir, pathFile))
@@ -333,9 +341,9 @@ func TestGatewayFlaskHTTPAndDurableState(t *testing.T) {
 	// A real unrelated profile change makes the existing session stale before
 	// any attempted Agent operation. Both reject and retain the checkpoint.
 	py.call(t, "EDIT", "default", `{"description":"changed"}`, "")
-	_, _, e = s.Repo.UpdateProfileTransaction(s.Context(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("description", "changed")
-		return nil, nil
+	_, e = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
+		p.Description = "changed"
+		return nil
 	})
 	must(t, e)
 	check("POST", path+"/publish", `{}`, admin, pyAdmin, 409)

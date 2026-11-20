@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,7 +42,7 @@ func TestPublishChild(t *testing.T) {
 	if e != nil || !found {
 		t.Fatal(e)
 	}
-	source := NewSource(jsonx.Obj("profile_id", "default", "rule_library", []any{}, "mihomo", jsonx.NewObject()), nil)
+	source := testSource(t, map[string]any{"profile_id": "default", "rule_library": []any{}, "mihomo": map[string]any{}})
 	main := "mode: rule\n"
 	if os.Getenv("A14_CHILD_PHASE") == "preparing" {
 		main = fmt.Sprintf("mode: rule\nrules: ['GEOIP,CN,DIRECT']\ngeox-url: {mmdb: http://%s:%s/api/geo}\n", target.Host, string(target.Port))
@@ -123,7 +124,8 @@ func TestPublishProcessRecovery(t *testing.T) {
 				case <-time.After(20 * time.Second):
 					t.Fatal("child never reached phase", output.String())
 				}
-				before := f.agent(t).GetObject("deployments").GetObject("crash").DeepCopy()
+				beforeDep, _ := f.agent(t).Deployments.Get("crash")
+				before, _ := json.Marshal(beforeDep)
 				if e := cmd.Process.Signal(sig); e != nil {
 					t.Fatal(e)
 				}
@@ -132,9 +134,10 @@ func TestPublishProcessRecovery(t *testing.T) {
 				if sig == syscall.SIGTERM && e != nil {
 					t.Fatal("graceful child", e, output.String())
 				}
-				after := f.agent(t).GetObject("deployments").GetObject("crash")
-				if !jsonx.Equal(before, after) {
-					t.Fatal("shutdown wrote a false outcome", before, after)
+				afterDep, _ := f.agent(t).Deployments.Get("crash")
+				after, _ := json.Marshal(afterDep)
+				if !testjson.Equal(before, after) {
+					t.Fatal("shutdown wrote a false outcome", string(before), string(after))
 				}
 				blocked.Store(false)
 				close(release)

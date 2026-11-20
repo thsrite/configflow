@@ -183,8 +183,8 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 	if !reflect.DeepEqual(before, durableSnapshot(t, f)) {
 		t.Fatal("late accepted response committed after shutdown")
 	}
-	task := f.agent(t).GetObject("deployments").GetObject("accepted-at-stop")
-	if !task.GetBool("submitted") || task.GetString("status") != "uploading" || task.GetString("source_sha256") == "" || f.agent(t).Has("applied_content") {
+	task, ok := f.agent(t).Deployments.Get("accepted-at-stop")
+	if !ok || task.Submitted == nil || !*task.Submitted || task.Status != "uploading" || textValue(task.SourceSHA256) == "" || f.agent(t).AppliedContent != nil {
 		t.Fatal("uncertain durable submission lost", task)
 	}
 	if len(f.fake.Journal()) != 1 {
@@ -200,7 +200,7 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if last.Status != "succeeded" || !f.agent(t).Has("applied_content") {
+	if last.Status != "succeeded" || f.agent(t).AppliedContent == nil {
 		t.Fatal("restart could not resolve saved uncertain result", last)
 	}
 }

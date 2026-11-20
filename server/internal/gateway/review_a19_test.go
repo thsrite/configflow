@@ -132,11 +132,11 @@ func TestGenerateWithAliasChain(t *testing.T) {
 				b.WriteString("  l" + itoa(i) + ": &l" + itoa(i) + " [*l" + itoa(i-1) + ", *l" + itoa(i-1) + "]\n")
 			}
 			config := snapshot(true)
-			config.GetObject("mihomo").Set("custom_config", b.String())
+			config["mihomo"].(map[string]any)["custom_config"] = b.String()
 			var text string
 			var err error
 			within(t, 20*time.Second, func() {
-				text, err = convert.GenerateMihomoConfig(context.Background(), config, convert.GenerateOptions{SkipProviderPreflight: true})
+				text, err = convert.MihomoConfig(context.Background(), gateway.NewFixtureModel(config), convert.MihomoOptions{SkipProviderPreflight: true})
 			})
 			if depth == 16 {
 				if !errors.Is(err, yamlx.ErrAliasBudget) || text != "" {

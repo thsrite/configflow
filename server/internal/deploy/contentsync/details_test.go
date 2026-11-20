@@ -11,7 +11,6 @@ import (
 
 	"configflow/internal/deploy"
 	"configflow/internal/deploy/pushdiff"
-	"configflow/internal/jsonx"
 )
 
 func answerFields(t *testing.T, a Answer) map[string]json.RawMessage {
@@ -41,7 +40,7 @@ func TestSharedDetailsExpiryPagingAndSearch(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		fmt.Fprintf(&rules, "DOMAIN,new-%03d.example.test\n", i)
 	}
-	f.cfg.Set("test_rule", rules.String())
+	f.cfg["test_rule"] = rules.String()
 	f.status()
 	f.spawn.run(t)
 	a := f.diff()
@@ -72,7 +71,7 @@ func TestSharedDetailsExpiryPagingAndSearch(t *testing.T) {
 		t.Fatal(page)
 	}
 	// Input mismatch wins over version mismatch, and expiration wins over both.
-	f.cfg.Set("profile_name", "renamed")
+	f.cfg["profile_name"] = "renamed"
 	page, _ = f.c.Entries(f.ctx, f.target(), f.source(), "https://config.example.test", query)
 	if page.Reason != "changed" {
 		t.Fatal(page)
@@ -93,7 +92,7 @@ func TestDetailFailuresRetryWithoutDiscardingStatus(t *testing.T) {
 			return nil, nil
 		}
 	})
-	f.cfg.Set("test_rule", "changed")
+	f.cfg["test_rule"] = "changed"
 	f.diff()
 	f.spawn.run(t)
 	a := f.diff()
@@ -117,9 +116,9 @@ func TestDetailFailuresRetryWithoutDiscardingStatus(t *testing.T) {
 }
 func TestDetailCountByteQuotasAndSyncedCleanup(t *testing.T) {
 	f := newFixture(t, func(o *Options) { o.MaxDetails = 2; o.MaxListBytes = 1 })
-	f.cfg.Set("test_rule", "DOMAIN,changed.example.test\n")
+	f.cfg["test_rule"] = "DOMAIN,changed.example.test\n"
 	for i := 0; i < 3; i++ {
-		f.agent.Set("id", fmt.Sprintf("agent-%d", i))
+		f.agent["id"] = fmt.Sprintf("agent-%d", i)
 		f.diff()
 		f.spawn.run(t)
 		if len(f.c.details) != 1 {
@@ -129,17 +128,17 @@ func TestDetailCountByteQuotasAndSyncedCleanup(t *testing.T) {
 	// Removing the byte constraint exposes the count constraint independently.
 	f.c.opts.MaxListBytes = MaxListBytes
 	for i := 3; i < 6; i++ {
-		f.agent.Set("id", fmt.Sprintf("agent-%d", i))
+		f.agent["id"] = fmt.Sprintf("agent-%d", i)
 		f.diff()
 		f.spawn.run(t)
 	}
 	if len(f.c.details) != 2 {
 		t.Fatal("detail count")
 	}
-	f.agent.Set("id", "agent-3")
+	f.agent["id"] = "agent-3"
 	requireStatus(t, f.diff().Result, "checking", "")
 	f.spawn.run(t)
-	f.cfg.Set("test_rule", "DOMAIN,example.test\n")
+	f.cfg["test_rule"] = "DOMAIN,example.test\n"
 	f.status()
 	f.spawn.run(t)
 	if f.c.details["agent-3"] != nil {
@@ -150,7 +149,7 @@ func TestStateLRUSkipsRunningAndDetailExpiration(t *testing.T) {
 	f := newFixture(t, func(o *Options) { o.MaxEntries = 2; o.Workers = 1 })
 	f.status()
 	for _, id := range []string{"b", "c", "d"} {
-		f.agent.Set("id", id)
+		f.agent["id"] = id
 		f.status()
 	}
 	if len(f.c.entries) != 2 || f.c.entries["agent-test"] == nil {
@@ -158,12 +157,12 @@ func TestStateLRUSkipsRunningAndDetailExpiration(t *testing.T) {
 	}
 	f.spawn.run(t)
 	// Expired details of other identities are pruned when a new list is stored.
-	f.cfg.Set("test_rule", "changed")
-	f.agent.Set("id", "x")
+	f.cfg["test_rule"] = "changed"
+	f.agent["id"] = "x"
 	f.diff()
 	f.spawn.run(t)
 	f.clock.Advance(SuccessTTL)
-	f.agent.Set("id", "y")
+	f.agent["id"] = "y"
 	f.diff()
 	f.spawn.run(t)
 	if f.c.details["x"] != nil {
@@ -176,7 +175,7 @@ func TestRequestSnapshotsAndRetarget(t *testing.T) {
 	source := f.source()
 	target.Record.Name = "captured"
 	key, _ := source.InputKey()
-	f.agent.GetObject("applied_content").Set("config_path", "active.yaml")
+	f.agent["applied_content"].(map[string]any)["config_path"] = "active.yaml"
 	// Retarget is exercised using the updated baseline, without changing identity.
 	target = f.target()
 	target.Record.Name = "captured"
@@ -194,7 +193,7 @@ func TestRequestSnapshotsAndRetarget(t *testing.T) {
 	}
 	f.c.Status(f.ctx, target, source, "")
 	target.Record.Name = "caller changed"
-	f.cfg.Set("test_main", "mode: global\n")
+	f.cfg["test_main"] = "mode: global\n"
 	f.spawn.run(t)
 	if target.Record.Name != "caller changed" {
 		t.Fatal("mutated caller")
@@ -226,13 +225,13 @@ func TestInvalidInputsAndFingerprintStrictness(t *testing.T) {
 	f := newFixture(t, nil)
 	requireStatus(t, f.c.Status(f.ctx, deploy.Target{}, nil, ""), "unknown", "invalid_inputs")
 	for _, fp := range []string{"v1:" + strings.Repeat("a", 64) + "\n", "v1:" + strings.Repeat("A", 64), "", "v2:" + strings.Repeat("a", 64)} {
-		f.agent.GetObject("applied_content").Set("fingerprint", fp)
+		f.agent["applied_content"].(map[string]any)["fingerprint"] = fp
 		requireStatus(t, f.status(), "unknown", "baseline_invalid")
 	}
 	// The key includes unknown fields in the complete applied baseline.
 	f = newFixture(t, nil)
 	f.status()
 	f.spawn.run(t)
-	f.agent.GetObject("applied_content").Set("extra", jsonx.Obj("nested", 1))
+	f.agent["applied_content"].(map[string]any)["extra"] = map[string]any{"nested": 1}
 	requireStatus(t, f.status(), "checking", "")
 }

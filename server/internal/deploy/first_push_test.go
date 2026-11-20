@@ -16,7 +16,6 @@ import (
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/aggregations"
 	"configflow/internal/convert/mihomoenv"
-	"configflow/internal/jsonx"
 	"configflow/internal/provider"
 	"configflow/internal/substore"
 )
@@ -79,23 +78,30 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			defer restoreService()
 			restore := provider.SetDeliveryEnv(nil)
 			defer restore()
-			cfg := fixtureObject(f.source.config())
-			cfg.Set("subscriptions", []any{jsonx.Obj("id", "selected-sub", "name", "Feed", "url", srv.URL+"/selected", "enabled", true)})
-			group := jsonx.Obj("id", "group", "name", "Proxy", "type", "select", "subscriptions", []any{"selected-sub"})
-			cfg.Set("proxy_groups", []any{group})
-			cfg.Set("mihomo", jsonx.Obj("custom_config", "mode: rule\ndns:\n  enable: true\n  listen: 0.0.0.0:1053\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n  nameserver: [192.0.2.53]\n"))
+			rawSource, err := f.source.Raw()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cfg map[string]any
+			if err := json.Unmarshal(rawSource, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			cfg["subscriptions"] = []any{map[string]any{"id": "selected-sub", "name": "Feed", "url": srv.URL + "/selected", "enabled": true}}
+			group := map[string]any{"id": "group", "name": "Proxy", "type": "select", "subscriptions": []any{"selected-sub"}}
+			cfg["proxy_groups"] = []any{group}
+			cfg["mihomo"] = map[string]any{"custom_config": "mode: rule\ndns:\n  enable: true\n  listen: 0.0.0.0:1053\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n  nameserver: [192.0.2.53]\n"}
 			if tc.aggregation {
-				cfg.Set("subscription_aggregations", []any{jsonx.Obj("id", "aggregate", "name", "Aggregate", "enabled", true, "subscriptions", []any{"selected-sub"}, "nodes", []any{})})
-				group.Set("subscriptions", []any{})
-				group.Set("aggregations", []any{"aggregate"})
+				cfg["subscription_aggregations"] = []any{map[string]any{"id": "aggregate", "name": "Aggregate", "enabled": true, "subscriptions": []any{"selected-sub"}, "nodes": []any{}}}
+				group["subscriptions"] = []any{}
+				group["aggregations"] = []any{"aggregate"}
 			}
 			if tc.uri {
-				cfg.Set("nodes", []any{jsonx.Obj("id", "inline-node", "name", "Inline", "proxy_string", "ss://inline@192.0.2.41:8388", "enabled", true), jsonx.Obj("id", "member-node", "name", "Member", "proxy_string", "ss://member@192.0.2.42:8388", "enabled", true)})
-				group.Set("manual_nodes", []any{"inline-node"})
-				cfg.GetList("subscription_aggregations")[0].(*jsonx.Object).Set("nodes", []any{"member-node"})
+				cfg["nodes"] = []any{map[string]any{"id": "inline-node", "name": "Inline", "proxy_string": "ss://inline@192.0.2.41:8388", "enabled": true}, map[string]any{"id": "member-node", "name": "Member", "proxy_string": "ss://member@192.0.2.42:8388", "enabled": true}}
+				group["manual_nodes"] = []any{"inline-node"}
+				cfg["subscription_aggregations"].([]any)[0].(map[string]any)["nodes"] = []any{"member-node"}
 			}
 			if tc.cached {
-				pre, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), NewSource(cfg, nil), PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "warm", StoreDownloads: true})
+				pre, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), testSource(t, cfg), PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "warm", StoreDownloads: true})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -107,22 +113,22 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				mu.Unlock()
 			}
 			if tc.moved {
-				old := jsonx.Obj("id", "other-sub", "name", "Other", "url", srv.URL+"/old", "enabled", true)
-				oldCfg := cfg.DeepCopy()
-				oldCfg.Set("subscriptions", []any{old})
-				oldCfg.Set("proxy_groups", []any{jsonx.Obj("id", "g", "name", "Proxy", "type", "select", "subscriptions", []any{"other-sub"})})
-				_, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), NewSource(oldCfg, nil), PrepareOptions{BaseURL: "https://panel.example.com", StoreDownloads: true})
+				old := map[string]any{"id": "other-sub", "name": "Other", "url": srv.URL + "/old", "enabled": true}
+				oldCfg := cloneMap(t, cfg)
+				oldCfg["subscriptions"] = []any{old}
+				oldCfg["proxy_groups"] = []any{map[string]any{"id": "g", "name": "Proxy", "type": "select", "subscriptions": []any{"other-sub"}}}
+				_, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), testSource(t, oldCfg), PrepareOptions{BaseURL: "https://panel.example.com", StoreDownloads: true})
 				if e != nil {
 					t.Fatal(e)
 				}
-				old.Set("url", srv.URL+"/moved")
-				cfg.Set("subscriptions", append(cfg.GetList("subscriptions"), old))
-				group.Set("subscriptions", []any{"selected-sub", "other-sub"})
+				old["url"] = srv.URL + "/moved"
+				cfg["subscriptions"] = append(cfg["subscriptions"].([]any), old)
+				group["subscriptions"] = []any{"selected-sub", "other-sub"}
 				mu.Lock()
 				fetches = map[string]int{}
 				mu.Unlock()
 			}
-			source := NewSource(cfg, nil)
+			source := testSource(t, cfg)
 			var progressMu sync.Mutex
 			var unforced, forced []string
 			progress := Progress{

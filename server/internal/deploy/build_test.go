@@ -3,7 +3,6 @@ package deploy
 import (
 	"bytes"
 	"configflow/internal/convert"
-	"configflow/internal/jsonx"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 	"context"
@@ -84,11 +83,7 @@ func TestPythonBuild(t *testing.T) {
 	for _, row := range corpus.Rows {
 		t.Run(row.Name, func(t *testing.T) {
 			t.Parallel()
-			cfg, err := jsonx.Parse(row.Source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			src := NewSource(cfg.(*jsonx.Object), nil)
+			src := testSource(t, row.Source)
 			in := BuildInput{Target: Target{ID: "agent-example", ServiceType: row.Service, ProfileID: "alpha"}, Source: src, ConfigContent: row.Main, DeploymentID: "a11-corpus", BaseURL: "https://panel.example", LocalDNSWatchdog: row.Watchdog}
 			for _, p := range row.Providers {
 				in.ProviderDownloads = append(in.ProviderDownloads, ProviderFile{Name: p.Name, LocalPath: p.Local, Content: []byte(p.Content)})
@@ -191,7 +186,7 @@ func TestBuildSharedSourcesAndProgress(t *testing.T) {
 		calls.Store(0)
 		peak.Store(0)
 		main := yamlx.Map(yamlx.Str("plugins"), yamlx.Seq())
-		in := BuildInput{Target: Target{ID: "example", ServiceType: "mosdns", ProfileID: "alpha"}, Source: NewSource(jsonx.Obj("profile_id", "alpha"), nil)}
+		in := BuildInput{Target: Target{ID: "example", ServiceType: "mosdns", ProfileID: "alpha"}, Source: testSource(t, map[string]any{"profile_id": "alpha"})}
 		for i := range 16 {
 			p := fmt.Sprintf("rules/%d", i)
 			u := srv.URL + "/source"
@@ -232,7 +227,7 @@ func TestBuildSharedSourcesAndProgress(t *testing.T) {
 }
 
 func TestGatewayHostileProviderFailsClosed(t *testing.T) {
-	src := NewSource(jsonx.Obj("profile_id", "alpha", "mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))), nil)
+	src := testSource(t, map[string]any{"profile_id": "alpha", "mihomo": map[string]any{"linux_gateway": map[string]any{"enabled": true, "rule_set_ids": []any{}}}})
 	for _, content := range []string{"proxies: [{name: example, routing-mark: 1}]", "proxies: &loop [*loop]", aliasProvider(64)} {
 		t.Run(fmt.Sprint(len(content)), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(testContext(t), 2*time.Second)
@@ -308,7 +303,7 @@ func TestGeoPreparation(t *testing.T) {
 		_, _ = w.Write([]byte("synthetic geo bytes"))
 	}))
 	defer srv.Close()
-	src := NewSource(jsonx.Obj("profile_id", "alpha"), nil)
+	src := testSource(t, map[string]any{"profile_id": "alpha"})
 	in := BuildInput{Target: Target{ID: "example", ServiceType: "mihomo", ProfileID: "alpha"}, Source: src, ConfigContent: "rules: [GEOSITE,cn,DIRECT]\n"}
 	// The rule must be one scalar rather than a YAML flow list split at commas.
 	in.ConfigContent = fmt.Sprintf("rules: ['GEOSITE,cn,DIRECT']\ngeox-url: {geosite: '%s/geo'}\n", srv.URL)
@@ -378,15 +373,15 @@ func TestRawCacheFailureDoesNotPoisonRetry(t *testing.T) {
 }
 
 func TestUnusedSourceChangesDoNotChangeBundle(t *testing.T) {
-	source := jsonx.Obj("profile_id", "alpha", "system_config", jsonx.Obj("server_domain", "https://panel.example"), "rule_library", []any{jsonx.Obj("id", "unused", "name", "Unused", "source_type", "url", "url", "https://unused.example/rules")})
-	in := BuildInput{Target: Target{ID: "example", ProfileID: "alpha", ServiceType: "mihomo"}, Source: NewSource(source, nil), ConfigContent: "mode: rule", DeploymentID: "metadata"}
+	source := map[string]any{"profile_id": "alpha", "system_config": map[string]any{"server_domain": "https://panel.example"}, "rule_library": []any{map[string]any{"id": "unused", "name": "Unused", "source_type": "url", "url": "https://unused.example/rules"}}}
+	in := BuildInput{Target: Target{ID: "example", ProfileID: "alpha", ServiceType: "mihomo"}, Source: testSource(t, source), ConfigContent: "mode: rule", DeploymentID: "metadata"}
 	first, err := Build(testContext(t), in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	source.Set("name", "rename")
-	source.GetList("rule_library")[0].(*jsonx.Object).Set("url", "https://changed.example/rules")
-	in.Source = NewSource(source, nil)
+	source["name"] = "rename"
+	source["rule_library"].([]any)[0].(map[string]any)["url"] = "https://changed.example/rules"
+	in.Source = testSource(t, source)
 	second, err := Build(testContext(t), in)
 	if err != nil {
 		t.Fatal(err)

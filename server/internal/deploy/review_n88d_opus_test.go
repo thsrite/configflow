@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"testing"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 )
@@ -25,8 +24,8 @@ func TestReviewN88dOpusPreviewShutdownAtEachReplacement(t *testing.T) {
 			t.Run(fmt.Sprintf("write=%d/shutdown=%t", boundary, shutdown), func(t *testing.T) {
 				owner := NewPreviews(t.TempDir(), nil)
 				in := PreviewInput{
-					Target:  NewTarget(jsonx.Obj("id", "agent-example", "service_type", "mihomo", "profile_id", "profile-example")),
-					Source:  NewSource(jsonx.Obj("profile_id", "profile-example"), nil),
+					Target:  testTarget(t, map[string]any{"id": "agent-example", "service_type": "mihomo", "profile_id": "profile-example"}),
+					Source:  testSource(t, map[string]any{"profile_id": "profile-example"}),
 					Bundle:  sample(t, "mihomo", 3),
 					Members: []Target{},
 				}
@@ -97,7 +96,7 @@ func TestReviewN88dOpusRecaptureShutdownKeepsReferencedArchive(t *testing.T) {
 				t.Fatal(err)
 			}
 			owner := NewReceipts(r.DataDir())
-			source := NewSource(jsonx.Obj("profile_id", "profile-example"), nil)
+			source := testSource(t, map[string]any{"profile_id": "profile-example"})
 			first, second := sample(t, "mihomo", 3), sample(t, "mihomo", 4)
 			if err = owner.Capture(base, "agent-example", first, source, "https://panel.example.com", nil); err != nil {
 				t.Fatal(err)

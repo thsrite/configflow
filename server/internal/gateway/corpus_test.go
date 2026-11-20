@@ -17,7 +17,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/routersplit"
 	"configflow/internal/yamlx"
@@ -71,21 +70,16 @@ func args[T any](t *testing.T, row corpusRow) T {
 	return value
 }
 
-// jsonxValue parses JSON into the jsonx model (the adapter's input).
-func jsonxValue(t *testing.T, raw json.RawMessage) any {
+// jsonObject parses a JSON object into map[string]any, returning an empty map for non-objects.
+func jsonObject(t *testing.T, raw json.RawMessage) map[string]any {
 	t.Helper()
-	value, err := jsonx.Parse(raw)
-	if err != nil {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
 		t.Fatal(err)
 	}
-	return value
-}
-
-func jsonxObject(t *testing.T, raw json.RawMessage) *jsonx.Object {
-	t.Helper()
-	obj, _ := jsonxValue(t, raw).(*jsonx.Object)
+	obj, _ := value.(map[string]any)
 	if obj == nil {
-		obj = jsonx.NewObject()
+		obj = map[string]any{}
 	}
 	return obj
 }
@@ -315,8 +309,8 @@ func TestPythonCorpus(t *testing.T) {
 			}
 		case "provider_payload", "provider_yaml", "source_yaml":
 			a := args[configArgs](t, row)
-			config := jsonxObject(t, a.Config)
-			before, _ := jsonx.Compact(config)
+			config := jsonObject(t, a.Config)
+			before := mustJSON(t, config)
 			c := gateway.NewFixtureConfig(config)
 			load := loader(a.Loader, nil)
 			var err error
@@ -345,7 +339,7 @@ func TestPythonCorpus(t *testing.T) {
 			} else if mismatch {
 				fail(i, row, "Go %v, Python %s", got, row.Out)
 			}
-			if after, _ := jsonx.Compact(config); string(after) != string(before) {
+			if after := mustJSON(t, config); string(after) != string(before) {
 				fail(i, row, "configuration modified")
 			}
 		case "provider_path":
@@ -354,7 +348,7 @@ func TestPythonCorpus(t *testing.T) {
 				RuleID string          `json:"rule_id"`
 				Source bool            `json:"source"`
 			}](t, row)
-			got := gateway.NewFixtureConfig(jsonxObject(t, a.Config)).ProviderPath(a.RuleID, a.Source)
+			got := gateway.NewFixtureConfig(jsonObject(t, a.Config)).ProviderPath(a.RuleID, a.Source)
 			if !sameJSON(t, mustJSON(t, got), row.Out) {
 				fail(i, row, "Go %q, Python %s", got, row.Out)
 			}
@@ -366,7 +360,7 @@ func TestPythonCorpus(t *testing.T) {
 		case "overlap":
 			a := args[configArgs](t, row)
 			var calls []string
-			warnings, err := gateway.NewFixtureConfig(jsonxObject(t, a.Config)).DirectOverlapWarnings(ctx, loader(a.Loader, &calls))
+			warnings, err := gateway.NewFixtureConfig(jsonObject(t, a.Config)).DirectOverlapWarnings(ctx, loader(a.Loader, &calls))
 			if m := errorMismatch(err, row.Err); m != "" {
 				fail(i, row, "%s", m)
 				continue
@@ -388,7 +382,7 @@ func TestPythonCorpus(t *testing.T) {
 				Config   json.RawMessage `json:"config"`
 				Guidance bool            `json:"guidance"`
 			}](t, row)
-			state, err := gateway.NewFixtureConfig(jsonxObject(t, a.Config)).EditorState(a.Guidance)
+			state, err := gateway.NewFixtureConfig(jsonObject(t, a.Config)).EditorState(a.Guidance)
 			if m := errorMismatch(err, row.Err); m != "" {
 				fail(i, row, "%s", m)
 			} else if err == nil && !sameJSON(t, mustJSON(t, state), row.Out) {
@@ -400,7 +394,7 @@ func TestPythonCorpus(t *testing.T) {
 				IDs      []string        `json:"ids"`
 				Previous []string        `json:"previous"`
 			}](t, row)
-			err := gateway.NewFixtureConfig(jsonxObject(t, a.Config)).ValidateRuleSetIDs(a.IDs, a.Previous)
+			err := gateway.NewFixtureConfig(jsonObject(t, a.Config)).ValidateRuleSetIDs(a.IDs, a.Previous)
 			if m := errorMismatch(err, row.Err); m != "" {
 				fail(i, row, "%s", m)
 			}
@@ -409,15 +403,15 @@ func TestPythonCorpus(t *testing.T) {
 				Config json.RawMessage `json:"config"`
 				Value  json.RawMessage `json:"value"`
 			}](t, row)
-			config := jsonxObject(t, a.Config)
-			before, _ := jsonx.Compact(config)
+			config := jsonObject(t, a.Config)
+			before := mustJSON(t, config)
 			settings, err := gateway.NewFixtureConfig(config).ValidateSelection(a.Value)
 			if m := errorMismatch(err, row.Err); m != "" {
 				fail(i, row, "%s", m)
 			} else if err == nil && !sameJSON(t, mustJSON(t, settings), row.Out) {
 				fail(i, row, "Go %s, Python %s", mustJSON(t, settings), row.Out)
 			}
-			if after, _ := jsonx.Compact(config); string(after) != string(before) {
+			if after := mustJSON(t, config); string(after) != string(before) {
 				fail(i, row, "configuration modified")
 			}
 		case "apply":
@@ -428,8 +422,8 @@ func TestPythonCorpus(t *testing.T) {
 				Auth    bool            `json:"auth"`
 			}](t, row)
 			doc := node(t, a.Doc)
-			config := jsonxObject(t, a.Config)
-			before, _ := jsonx.Compact(config)
+			config := jsonObject(t, a.Config)
+			before := mustJSON(t, config)
 			restore := gateway.SetAuthEnabled(a.Auth)
 			err := gateway.NewFixtureConfig(config).Apply(doc, a.BaseURL)
 			restore()
@@ -447,7 +441,7 @@ func TestPythonCorpus(t *testing.T) {
 					fail(i, row, "Go %s\nPython %s", got, row.Out)
 				}
 			}
-			if after, _ := jsonx.Compact(config); string(after) != string(before) {
+			if after := mustJSON(t, config); string(after) != string(before) {
 				fail(i, row, "configuration modified")
 			}
 		case "generate":
@@ -456,7 +450,7 @@ func TestPythonCorpus(t *testing.T) {
 				Auth   bool            `json:"auth"`
 			}](t, row)
 			restore := gateway.SetAuthEnabled(a.Auth)
-			text, err := convert.GenerateMihomoConfig(ctx, jsonxObject(t, a.Config), convert.GenerateOptions{SkipProviderPreflight: true})
+			text, err := convert.MihomoConfig(ctx, gateway.NewFixtureModel(jsonObject(t, a.Config)), convert.MihomoOptions{SkipProviderPreflight: true})
 			restore()
 			if m := errorMismatch(err, row.Err); m != "" {
 				fail(i, row, "%s", m)
@@ -475,16 +469,16 @@ func TestPythonCorpus(t *testing.T) {
 				Auth   bool            `json:"auth"`
 			}](t, row)
 			restore := gateway.SetAuthEnabled(a.Auth)
-			downloads, err := convert.GetMihomoRulesetDownloads(ctx, jsonxObject(t, a.Config), "")
+			downloads, err := convert.MihomoRulesetDownloads(ctx, gateway.NewFixtureModel(jsonObject(t, a.Config)), "")
 			restore()
 			if m := errorMismatch(err, row.Err); m != "" {
 				fail(i, row, "%s", m)
 			} else if err == nil {
 				got := make([]any, len(downloads))
 				for j, d := range downloads {
-					got[j] = d.Object()
+					got[j] = map[string]any{"name": d.Name, "url": d.URL, "local_path": d.LocalPath}
 				}
-				encoded, _ := jsonx.Compact(got)
+				encoded := mustJSON(t, got)
 				if !sameJSON(t, encoded, row.Out) {
 					fail(i, row, "Go %s\nPython %s", encoded, row.Out)
 				}
@@ -504,8 +498,8 @@ func TestPythonCorpus(t *testing.T) {
 	}
 }
 
-func hasMalformedNodesShape(config *jsonx.Object) bool {
-	v, ok := config.Get("nodes")
+func hasMalformedNodesShape(config map[string]any) bool {
+	v, ok := config["nodes"]
 	if !ok || v == nil {
 		return false
 	}
@@ -514,7 +508,7 @@ func hasMalformedNodesShape(config *jsonx.Object) bool {
 		return true
 	}
 	for _, elem := range list {
-		if _, isObj := elem.(*jsonx.Object); !isObj {
+		if _, isObj := elem.(map[string]any); !isObj {
 			return true
 		}
 	}
@@ -531,7 +525,7 @@ func fixtureUndecodable(t *testing.T, row corpusRow) bool {
 	if json.Unmarshal(row.Args, &probe) != nil || len(probe.Config) == 0 {
 		return false
 	}
-	raw, err := json.Marshal(jsonxObject(t, probe.Config))
+	raw, err := json.Marshal(jsonObject(t, probe.Config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,5 +548,5 @@ func malformedNodesApplyRow(t *testing.T, row corpusRow) bool {
 	if json.Unmarshal(row.Args, &probe) != nil {
 		return false
 	}
-	return hasMalformedNodesShape(jsonxObject(t, probe.Config))
+	return hasMalformedNodesShape(jsonObject(t, probe.Config))
 }

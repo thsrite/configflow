@@ -4,8 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"configflow/internal/agents"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/version"
@@ -59,20 +59,19 @@ func TestPythonPrivateStoresLoad(t *testing.T) {
 	if err = json.Unmarshal(raw, &expected); err != nil {
 		t.Fatal(err)
 	}
-	agentValue, err := jsonx.Parse(expected.Agent)
-	if err != nil {
+	var agent model.Agent
+	if err = json.Unmarshal(expected.Agent, &agent); err != nil {
 		t.Fatal(err)
 	}
-	agent := agentValue.(*jsonx.Object)
 	r := NewReceipts(root)
-	receipt, err := r.LoadAgent(context.Background(), fixtureAgent(agent), true)
+	receipt, err := r.LoadAgent(context.Background(), &agent, true)
 	if err != nil || receipt == nil {
 		t.Fatal(receipt, err)
 	}
 	if bytes.Contains(receipt.Source, []byte("must-not-be-saved")) {
 		t.Fatal("agent credentials retained")
 	}
-	if stamp, ok := r.Stamp(fixtureAgent(agent)); !ok || stamp.Size == 0 {
+	if stamp, ok := r.Stamp(&agent); !ok || stamp.Size == 0 {
 		t.Fatal(stamp, ok)
 	}
 	p := NewPreviews(root, lifecycletest.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
@@ -129,20 +128,40 @@ func TestPreviewsFrozenIdentityExpiryAndQuota(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targetRecord := jsonx.Obj("id", "example", "name", "Original", "service_type", "mihomo", "profile_id", "default", "host", "192.0.2.10", "port", 8080, "token", "synthetic-token", "enabled", true)
-	_, err = repository.UpdateSystemTransaction(ctx, func(ctx context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("agents", []any{targetRecord})
-		return nil, nil
+	enabled := true
+	targetRecord := model.Agent{
+		ID:          "example",
+		Name:        "Original",
+		ServiceType: "mihomo",
+		ProfileID:   "default",
+		Host:        "192.0.2.10",
+		Port:        8080,
+		Token:       "synthetic-token",
+		Enabled:     &enabled,
+	}
+	err = repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Agents = []model.Agent{targetRecord}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, revision, err := repository.GetPublishSnapshot(ctx, "default", false)
+	config, revision, err := repository.PublishConfig(ctx, "default", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := NewSource(config, &revision)
-	target := NewTarget(targetRecord)
+	configRaw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := SourceFromJSON(configRaw, &revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := NewTypedTarget(&targetRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
 	clock := lifecycletest.NewClock(time.Now())
 	p := NewPreviews(repository.DataDir(), clock)
 	b, err := Build(ctx, BuildInput{Source: src, Target: target, ConfigContent: "mode: rule", DeploymentID: "preview-test"})
@@ -158,17 +177,21 @@ func TestPreviewsFrozenIdentityExpiryAndQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _, _ := pv.File("config.yaml")
-	config.Set("name", "management rename")
-	if src.inputDigest() != NewSource(config, nil).inputDigest() {
+	var configMap map[string]any
+	if err := json.Unmarshal(configRaw, &configMap); err != nil {
+		t.Fatal(err)
+	}
+	configMap["name"] = "management rename"
+	if src.inputDigest() != testSource(t, configMap).inputDigest() {
 		t.Fatal("metadata changed input digest")
 	}
-	config.Set("unknown_edit", true)
-	if src.inputDigest() == NewSource(config, nil).inputDigest() {
+	configMap["unknown_edit"] = true
+	if src.inputDigest() == testSource(t, configMap).inputDigest() {
 		t.Fatal("content edit not detected")
 	}
-	_, err = repository.UpdateSystemTransaction(ctx, func(ctx context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.GetList("agents")[0].(*jsonx.Object).Set("host", "192.0.2.20")
-		return nil, nil
+	err = repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Agents[0].Host = "192.0.2.20"
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -225,28 +248,32 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = repository.CreateProfile(ctx, jsonx.Obj("id", "profile-example", "name", "Example"), "")
+	_, err = repository.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "profile-example", Name: "Example"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := sample(t, "mihomo", 3)
-	source := NewSource(jsonx.Obj("profile_id", "profile-example", "future", jsonx.Obj("value", true), "agents", []any{jsonx.Obj("token", "must-not-persist")}), nil)
+	source := testSource(t, map[string]any{"profile_id": "profile-example", "future": map[string]any{"value": true}, "agents": []any{map[string]any{"token": "must-not-persist"}}})
 	shaConfig := ""
 	for _, f := range b.manifest.Files {
 		if f.Role == RoleConfig {
 			shaConfig = f.SHA256
 		}
 	}
-	agent := jsonx.Obj("id", b.manifest.AgentID, "profile_id", b.manifest.ProfileID, "service_type", "mihomo", "config_version", shaConfig, "applied_content", jsonx.Obj("deployment_id", b.manifest.DeploymentID, "profile_id", b.manifest.ProfileID, "service_type", "mihomo", "config_version", shaConfig), "latest_deployment", jsonx.Obj("deployment_id", b.manifest.DeploymentID, "status", "succeeded"))
-	_, err = repository.UpdateSystemTransaction(ctx, func(ctx context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("agents", []any{agent.DeepCopy()})
-		return nil, nil
+	agent := map[string]any{
+		"id": b.manifest.AgentID, "profile_id": b.manifest.ProfileID, "service_type": "mihomo", "config_version": shaConfig,
+		"applied_content":   map[string]any{"deployment_id": b.manifest.DeploymentID, "profile_id": b.manifest.ProfileID, "service_type": "mihomo", "config_version": shaConfig},
+		"latest_deployment": map[string]any{"deployment_id": b.manifest.DeploymentID, "status": "succeeded"},
+	}
+	err = repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Agents = []model.Agent{*fixtureAgent(agent)}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := NewReceipts(repository.DataDir())
-	if err = r.Capture(ctx, agent.GetString("id"), b, source, "https://panel.example", nil); err != nil {
+	if err = r.Capture(ctx, agent["id"].(string), b, source, "https://panel.example", nil); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := r.LoadAgent(ctx, fixtureAgent(agent), true)
@@ -273,11 +300,11 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if err != nil || !accepted {
 		t.Fatal(accepted, err)
 	}
-	current, err := m.GetAgentByID(ctx, agent.GetString("id"), true)
+	current, err := m.ReadAgent(ctx, agent["id"].(string), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.GetObject("applied_content").GetString("fingerprint") == "" {
+	if current.AppliedContent == nil || current.AppliedContent.Fingerprint == "" {
 		t.Fatal(current)
 	}
 	accepted, err = r.AdvanceContent(ctx, m, fixtureAgent(agent), source, b)
@@ -285,23 +312,23 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 		t.Fatal("stale applied pointer advanced", accepted, err)
 	}
 	// A profile-less Agent resolves to the repository's non-default-named default.
-	_, err = repository.CreateProfile(ctx, jsonx.Obj("id", "alpha", "name", "Alpha"), "")
+	_, err = repository.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "alpha", Name: "Alpha"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = repository.SetDefaultProfile(ctx, "alpha"); err != nil {
 		t.Fatal(err)
 	}
-	alias := agent.DeepCopy()
-	alias.Delete("profile_id")
-	alias.GetObject("applied_content").Set("profile_id", "alpha")
+	alias := cloneMap(t, agent)
+	delete(alias, "profile_id")
+	alias["applied_content"].(map[string]any)["profile_id"] = "alpha"
 	am := b.Manifest()
 	am.ProfileID = "alpha"
 	ab, err := Pack(am, mustContents(t, b), b.ConfigVersion(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = r.Capture(ctx, alias.GetString("id"), ab, source, "", nil); err != nil {
+	if err = r.Capture(ctx, alias["id"].(string), ab, source, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := r.LoadAgent(ctx, fixtureAgent(alias), true); err != nil || got == nil {
@@ -309,15 +336,18 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	}
 	repo.SetRepository(repository)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	proof := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: alias.GetString("id"), DeploymentID: "resolved-default", ProfileID: "alpha", ServiceType: "oxidns", SHA256: strings.Repeat("a", 64), Fingerprint: "v1:" + strings.Repeat("b", 64)}
+	proof := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: alias["id"].(string), DeploymentID: "resolved-default", ProfileID: "alpha", ServiceType: "oxidns", SHA256: strings.Repeat("a", 64), Fingerprint: "v1:" + strings.Repeat("b", 64)}
 	raw, _ := encodeJSON(proof)
-	value, _ := jsonx.Parse(raw)
-	alias.Set("service_type", "oxidns")
-	task := jsonx.Obj("deployment_id", proof.DeploymentID, "profile_id", "alpha", "service_type", "oxidns", "sha256", proof.SHA256, "prepared_content", jsonx.Obj("fingerprint", proof.Fingerprint), "oxidns_validation_receipt", value)
+	var proofMap map[string]any
+	if err := json.Unmarshal(raw, &proofMap); err != nil {
+		t.Fatal(err)
+	}
+	alias["service_type"] = "oxidns"
+	task := map[string]any{"deployment_id": proof.DeploymentID, "profile_id": "alpha", "service_type": "oxidns", "sha256": proof.SHA256, "prepared_content": map[string]any{"fingerprint": proof.Fingerprint}, "oxidns_validation_receipt": proofMap}
 	if !ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("resolved non-default-named binding proof refused")
 	}
-	value.(*jsonx.Object).Set("unexpected", true)
+	proofMap["unexpected"] = true
 	if ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("extra receipt field accepted")
 	}
@@ -369,7 +399,7 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	}))
 	defer srv.Close()
 	parts := strings.Split(strings.TrimPrefix(srv.URL, "http://"), ":")
-	source := NewSource(jsonx.Obj("profile_id", "default"), nil)
+	source := testSource(t, map[string]any{"profile_id": "default"})
 	target := Target{ID: "proof-example", ProfileID: "default", ServiceType: "oxidns"}
 	b, err := Build(ctx, BuildInput{Target: target, Source: source, ConfigContent: "plugins: []", DeploymentID: "old-candidate"})
 	if err != nil {
@@ -380,21 +410,24 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := encodeJSON(proof)
-	value, _ := jsonx.Parse(raw)
+	var proofMap map[string]any
+	if err := json.Unmarshal(raw, &proofMap); err != nil {
+		t.Fatal(err)
+	}
 	sha, _ := b.SHA256()
 	fp, _ := Fingerprint(b.manifest)
-	task := jsonx.Obj("deployment_id", b.manifest.DeploymentID, "profile_id", "default", "service_type", "oxidns", "status", "ready", "success", true, "submitted", true, "sha256", sha, "prepared_content", jsonx.Obj("fingerprint", fp), "oxidns_validation_receipt", value)
-	agent := jsonx.Obj("id", target.ID, "profile_id", "default", "service_type", "oxidns", "host", parts[0], "port", parts[1], "token", "synthetic-token", "deployments", jsonx.Obj(b.manifest.DeploymentID, task), "latest_deployment", task.DeepCopy())
+	task := map[string]any{"deployment_id": b.manifest.DeploymentID, "profile_id": "default", "service_type": "oxidns", "status": "ready", "success": true, "submitted": true, "sha256": sha, "prepared_content": map[string]any{"fingerprint": fp}, "oxidns_validation_receipt": proofMap}
+	agent := map[string]any{"id": target.ID, "profile_id": "default", "service_type": "oxidns", "host": parts[0], "port": parts[1], "token": "synthetic-token", "deployments": map[string]any{b.manifest.DeploymentID: task}, "latest_deployment": cloneMap(t, task)}
 	if !ReceiptMatches(fixtureAgent(agent), fixtureTask(task)) {
 		t.Fatal("valid proof refused")
 	}
-	task.GetObject("oxidns_validation_receipt").Set("rules_sha256", "python-era-proof")
+	proofMap["rules_sha256"] = "python-era-proof"
 	if ReceiptMatches(fixtureAgent(agent), fixtureTask(task)) {
 		t.Fatal("old validator proof accepted")
 	}
-	_, err = repository.UpdateSystemTransaction(ctx, func(ctx context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("agents", []any{agent})
-		return nil, nil
+	err = repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Agents = []model.Agent{*fixtureAgent(agent)}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -403,7 +436,7 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != "failed" || textValue(result.Message) != agents.MessageUncheckedCandidate || !jsonx.Equal(fixtureObject(result).Value("http_status"), 409) {
+	if result.Status != "failed" || textValue(result.Message) != agents.MessageUncheckedCandidate || result.HTTPStatus == nil || int(*result.HTTPStatus) != 409 {
 		t.Fatal(result)
 	}
 	callsMu.Lock()
@@ -411,8 +444,18 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	if postCalls != 0 {
 		t.Fatal("old candidate activated")
 	}
-	public := fixtureObject(PublicDeployment(fixtureTask(task)))
-	if public.Has("prepared_content") || public.Has("oxidns_validation_receipt") {
+	pubRaw, err := json.Marshal(PublicDeployment(fixtureTask(task)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var public map[string]any
+	if err := json.Unmarshal(pubRaw, &public); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasPrepared := public["prepared_content"]; hasPrepared {
+		t.Fatal("private proof exposed")
+	}
+	if _, hasReceipt := public["oxidns_validation_receipt"]; hasReceipt {
 		t.Fatal("private proof exposed")
 	}
 }
@@ -441,13 +484,13 @@ func TestFinalizeBundleUsesFrozenDeviceBytes(t *testing.T) {
 	}))
 	defer srv.Close()
 	parts := strings.Split(strings.TrimPrefix(srv.URL, "http://"), ":")
-	target := NewTarget(jsonx.Obj("id", "agent-example", "service_type", "mihomo", "host", parts[0], "port", parts[1], "token", "synthetic-token"))
+	target := testTarget(t, map[string]any{"id": "agent-example", "service_type": "mihomo", "host": parts[0], "port": parts[1], "token": "synthetic-token"})
 	b := sample(t, "mihomo", 3)
 	original, err := Fingerprint(b.manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	final, err := FinalizeBundle(ctx, m, target, b, NewSource(jsonx.NewObject(), nil))
+	final, err := FinalizeBundle(ctx, m, target, b, testSource(t, `{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +508,7 @@ func TestFinalizeBundleUsesFrozenDeviceBytes(t *testing.T) {
 }
 
 func TestIdentityUnknownFieldsAndSettingsCanonical(t *testing.T) {
-	a := NewTarget(jsonx.Obj("id", "example", "token", "synthetic-token", "port", 8080))
+	a := testTarget(t, map[string]any{"id": "example", "token": "synthetic-token", "port": 8080})
 	b := a
 	b.Record = fixtureAgent(a.Record)
 	b.Record.ConfigVersion = "heartbeat"
@@ -487,7 +530,7 @@ func TestIdentityUnknownFieldsAndSettingsCanonical(t *testing.T) {
 func TestLegacyPreviewFreezesSurgeText(t *testing.T) {
 	clock := lifecycletest.NewClock(time.Now())
 	p := NewPreviews(t.TempDir(), clock)
-	in := PreviewInput{Target: Target{ID: "surge-example", ServiceType: "surge"}, Source: NewSource(jsonx.Obj("profile_id", "default"), nil), ConfigContent: "[General]\nloglevel = info\n"}
+	in := PreviewInput{Target: Target{ID: "surge-example", ServiceType: "surge"}, Source: testSource(t, map[string]any{"profile_id": "default"}), ConfigContent: "[General]\nloglevel = info\n"}
 	pv, err := p.Save(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)

@@ -16,7 +16,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -24,7 +23,7 @@ import (
 )
 
 type testManager struct {
-	record *jsonx.Object
+	record map[string]any
 	client agents.Client
 }
 
@@ -56,15 +55,15 @@ func newBridge(t *testing.T) (*Bridge, *recordClient) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.GetObject("mihomo").Set("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))
-		return nil, nil
+	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":true,"rule_set_ids":[]}`))
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	client := &recordClient{}
-	m := &testManager{record: jsonx.Obj("id", "gw", "name", "GW", "host", "127.0.0.1", "port", 80, "token", "synthetic-token", "profile_id", "default", "service_type", "mihomo", "version", "1.8.43-go", "deployment_method", "shell", "status", "online", "last_heartbeat", time.Now().UTC().Format(time.RFC3339Nano)), client: client}
+	m := &testManager{record: map[string]any{"id": "gw", "name": "GW", "host": "127.0.0.1", "port": 80, "token": "synthetic-token", "profile_id": "default", "service_type": "mihomo", "version": "1.8.43-go", "deployment_method": "shell", "status": "online", "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano)}, client: client}
 	return &Bridge{r, m}, client
 }
 func runtimeContext(t *testing.T, stopped bool) (context.Context, context.CancelFunc) {
@@ -101,9 +100,9 @@ func TestWriteOwnersRuntimeAndDisconnect(t *testing.T) {
 						body = json.RawMessage(`{"interface":"eth0","address":"192.0.2.2","lan_cidr":"192.0.2.0/24","upstream_gateway":"192.0.2.1"}`)
 					}
 					if op == "forwarding" {
-						_, _, e := b.Repository.UpdateProfileTransaction(context.Background(), "default", func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-							c.Set("routers", jsonx.Obj("items", []any{jsonx.Obj("id", "r", "proxy_gateway_agent_id", "gw")}))
-							return nil, nil
+						_, e := b.Repository.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+							p.Routers.Items = []model.Router{{ID: "r", ProxyGatewayAgentID: "gw"}}
+							return nil
 						})
 						if e != nil {
 							t.Fatal(e)
@@ -137,7 +136,7 @@ func TestAgentRawWireAndProductionBounds(t *testing.T) {
 	_, portText, _ := net.SplitHostPort(strings.TrimPrefix(fake.URL, "http://"))
 	port, _ := strconv.Atoi(portText)
 	raw := b.Manager.(*testManager).record
-	raw.Set("port", port)
+	raw["port"] = port
 	client.call = func(ctx context.Context, r agents.Request) (*agents.Response, error) {
 		if r.Timeout != agents.Pair(3, 45) || r.MaxBody != MaxResponseBytes || !r.NoProxy || !r.NoRedirects {
 			t.Fatalf("production limits changed: %+v", r)
@@ -259,7 +258,7 @@ func FuzzGatewayForwardFilter(f *testing.F) {
 
 func TestShutdownDuringPreflightPreventsAgentWrite(t *testing.T) {
 	b, c := newBridge(t)
-	b.Manager.(*testManager).record.Set("version", "1.8.40-go")
+	b.Manager.(*testManager).record["version"] = "1.8.40-go"
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Mode: lifecycle.ModeManual, Registry: lifecycle.NewRegistry()})
 	runtime.Start(context.Background())
 	ctx := runtime.BindRequest(context.Background())
