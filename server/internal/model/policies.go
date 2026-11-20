@@ -81,6 +81,17 @@ func (r *ProxyGroup) SetJSON(member string, data json.RawMessage) error {
 // MarshalJSON preserves unknown and unchanged ProxyGroup members.
 func (r ProxyGroup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
+// MemberJSON returns one effective declared ProxyGroup member without encoding siblings.
+func (r *ProxyGroup) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	if name == "enabled" {
+		return r.raw.MemberJSON(name, r.Enabled)
+	}
+	return recordMemberJSON(r, &r.raw, name)
+}
+
 // RuleConfig is one profile rule or shared-library reference, including stored editor grouping metadata and legacy source fields.
 type RuleConfig struct {
 	ID                  string  `json:"id"`
@@ -122,3 +133,18 @@ func (r *RuleConfig) Clear(member string) error { return ClearMember(r, &r.raw, 
 
 // MarshalJSON preserves unknown and unchanged RuleConfig members.
 func (r RuleConfig) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns one effective declared RuleConfig member without encoding siblings.
+func (r *RuleConfig) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	switch name {
+	case "enabled":
+		return r.raw.MemberJSON(name, r.Enabled)
+	case "library_enabled":
+		return r.raw.MemberJSON(name, r.LibraryEnabled)
+	default:
+		return recordMemberJSON(r, &r.raw, name)
+	}
+}

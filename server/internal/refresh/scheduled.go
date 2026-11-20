@@ -378,7 +378,7 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 	}
 	var jobs []Resource
 	for _, sub := range shared.Subscriptions {
-		if !enabledResource(sub.Enabled) || sub.URL == "" {
+		if !enabledResource(&sub, sub.Enabled) || sub.URL == "" {
 			continue
 		}
 		baseline, err := SourceCacheAt(ctx, sub)
@@ -395,7 +395,7 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 		}
 	}
 	for _, rule := range shared.RuleLibrary {
-		if !urlRule(rule) || textOr(rule.URL, "") == "" || !enabledResource(rule.Enabled) {
+		if !urlRule(rule) || textOr(rule.URL, "") == "" || !enabledResource(&rule, rule.Enabled) {
 			continue
 		}
 		baseline, err := RuleCacheAt(ctx, rule)
@@ -551,4 +551,6 @@ func RunResourceNow(ctx context.Context, kind, id string) (string, error) {
 	}
 	return key, nil
 }
-func enabledResource(value *bool) bool { return value == nil || *value }
+func enabledResource(record model.SwitchMember, value *bool) bool {
+	return model.SwitchEnabled(record, "enabled", value, true)
+}

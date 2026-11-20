@@ -130,7 +130,7 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	set(doc, "subscriptions", subscriptions)
 	aggregations := L()
 	for _, item := range source.Aggregations {
-		aggregations.Content = append(aggregations.Content, M("id", item.ID, "name", item.Name, "enabled", enabled(item.Enabled), "subscriptions", strs(item.Subscriptions)))
+		aggregations.Content = append(aggregations.Content, M("id", item.ID, "name", item.Name, "enabled", model.SwitchEnabled(&item, "enabled", item.Enabled, true), "subscriptions", strs(item.Subscriptions)))
 	}
 	set(doc, "subscription_aggregations", aggregations)
 
@@ -143,25 +143,10 @@ func text(value *string, fallback string) string {
 	}
 	return *value
 }
-func enabled(value *bool) bool { return value == nil || *value }
 func ruleNode(item model.RuleConfig) *Node {
-	// A nil stored boolean can be absent or an explicit null/wrong-type value.
-	// Preserve that evidence: only an absent flag defaults to enabled.
-	var stored struct {
-		Enabled        json.RawMessage `json:"enabled"`
-		LibraryEnabled json.RawMessage `json:"library_enabled"`
-	}
-	if item.Enabled == nil || item.LibraryEnabled == nil {
-		data, _ := model.Marshal(item)
-		_ = json.Unmarshal(data, &stored)
-	}
-	flag := func(value *bool, raw json.RawMessage) bool {
-		if value != nil {
-			return *value
-		}
-		return len(raw) == 0
-	}
-	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", item.Value, "enabled", flag(item.Enabled, stored.Enabled), "library_enabled", flag(item.LibraryEnabled, stored.LibraryEnabled))
+	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", item.Value,
+		"enabled", model.SwitchEnabled(&item, "enabled", item.Enabled, true),
+		"library_enabled", model.SwitchEnabled(&item, "library_enabled", item.LibraryEnabled, true))
 	if item.LibraryRuleID != "" {
 		set(out, "library_rule_id", S(item.LibraryRuleID))
 	}
@@ -176,7 +161,7 @@ func ruleNode(item model.RuleConfig) *Node {
 	return out
 }
 func libraryNode(item model.RuleLibraryItem) *Node {
-	out := M("id", item.ID, "name", item.Name, "enabled", enabled(item.Enabled))
+	out := M("id", item.ID, "name", item.Name, "enabled", model.SwitchEnabled(&item, "enabled", item.Enabled, true))
 	for _, field := range []struct {
 		key   string
 		value *string
@@ -207,7 +192,7 @@ func groupNode(group model.ProxyGroup) (*Node, error) {
 			del(node, key)
 		}
 	}
-	set(node, "enabled", B(enabled(group.Enabled)))
+	set(node, "enabled", B(model.SwitchEnabled(&group, "enabled", group.Enabled, true)))
 	return node, nil
 }
 

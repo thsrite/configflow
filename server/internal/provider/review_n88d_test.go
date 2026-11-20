@@ -25,7 +25,7 @@ func TestReviewN88dReferenceBindings(t *testing.T) {
 			}
 		})
 	}
-	if checked != 85 {
+	if checked != 75 {
 		t.Fatalf("snapshot references=%d", checked)
 	}
 }

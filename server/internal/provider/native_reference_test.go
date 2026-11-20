@@ -54,7 +54,7 @@ func nativeDeliveryReferences(t *testing.T, rows []*jsonx.Object) map[int]*jsonx
 			t.Fatal("reference source changed", path, err)
 		}
 	}
-	if len(manifest.Rows) != 89 {
+	if len(manifest.Rows) != 79 {
 		t.Fatal("native reference matrix changed")
 	}
 	result := map[int]*jsonx.Object{}

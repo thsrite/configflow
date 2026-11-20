@@ -189,7 +189,10 @@ func (r *Agent) SetJSON(member string, data []byte) error {
 
 // MemberJSON returns an owned effective member, including original null/type
 // evidence, without encoding the rest of this Agent or its history.
-func (r *Agent) MemberJSON(member string) ([]byte, bool, error) {
+func (r *Agent) MemberJSON(member string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
 	switch member {
 	case "logging_config":
 		return r.raw.MemberJSON(member, r.LoggingConfig)

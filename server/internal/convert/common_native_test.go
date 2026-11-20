@@ -116,7 +116,7 @@ func TestCommonTypedDefaultsAndMalformedStorage(t *testing.T) {
 		{`{"rule_configs":[{"itemType":"rule","rule_type":"MATCH","enabled":false,"udp_fallback":"REJECT"},{"itemType":"rule","rule_type":"MATCH","udp_fallback":"DIRECT","ntp_direct":true}]}`, "DIRECT", "", true, 3},
 		{`{"rule_configs":"bad"}`, "", "", false, 0},
 		{`{"rule_configs":[1]}`, "", "", false, 0},
-		{`{"rule_configs":[{"itemType":"rule","rule_type":"MATCH","enabled":0,"udp_fallback":"DIRECT"}]}`, "DIRECT", "", false, 1},
+		{`{"rule_configs":[{"itemType":"rule","rule_type":"MATCH","enabled":0,"udp_fallback":"DIRECT"}]}`, "", "", false, 1},
 	} {
 		config, err := rulesConfigFromLegacy(mustJSON(t, tt.raw))
 		if err != nil {

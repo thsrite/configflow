@@ -68,7 +68,7 @@ func CaptureDelivery(profileID string, main *yamlx.Node, profile *model.Profile)
 	names := map[string]bool{}
 	if profile != nil {
 		for _, group := range profile.ProxyGroups {
-			if group.Type == "chain" && (group.Enabled == nil || *group.Enabled) {
+			if group.Type == "chain" && model.SwitchEnabled(&group, "enabled", group.Enabled, true) {
 				if group.Name == "" || model.IssueUnder(model.Issues(group), "name") {
 					return nil, &InputError{Field: "proxy_groups.name"}
 				}

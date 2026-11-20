@@ -143,7 +143,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 	}
 	names := map[string]bool{}
 	for _, sub := range config.Subscriptions {
-		if resourceEnabled(sub.Enabled) {
+		if resourceEnabled(&sub, sub.Enabled) {
 			if names[sub.Name] {
 				return nil, dre(msgChainProviderNames)
 			}
@@ -151,7 +151,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 		}
 	}
 	for _, agg := range config.Aggregations {
-		if resourceEnabled(agg.Enabled) {
+		if resourceEnabled(&agg, agg.Enabled) {
 			if names[agg.Name] {
 				return nil, dre(msgChainProviderNames)
 			}
@@ -461,7 +461,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 		return result, nil
 	}
 	for _, id := range chainOrder {
-		if resourceEnabled(chains[id].Enabled) {
+		if c := chains[id]; resourceEnabled(c, c.Enabled) {
 			if _, err := build(id); err != nil {
 				return nil, err
 			}

@@ -88,8 +88,6 @@ def replay(row, project=True):
             shared = copy.deepcopy(files['shared'])
             for key, field in [('subscriptions','interval'), ('rule_library','update_interval')]:
                 for item in shared.get(key, []):
-                    if 'enabled' in item and not isinstance(item['enabled'], bool):
-                        item.pop('enabled')  # nullable bool R5 => engine default
                     if field in item:
                         item[field] = integer(item[field], 86400)
             repo.save_shared(shared)

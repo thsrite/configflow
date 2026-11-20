@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+func notFalse(value *bool) bool { return value == nil || *value }
+
 func sourceHost(address string) string {
 	parts, err := weburl.Parse(address)
 	if err != nil {
@@ -37,7 +39,7 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 		entry := statuses.Entry(key)
 		interval := SourceInterval(sub)
 		hasURL := sub.URL != ""
-		enabled := enabledResource(sub.Enabled) && hasURL
+		enabled := notFalse(sub.Enabled) && hasURL
 		var due *time.Time
 		if enabled {
 			baseline, err := SourceCacheAt(ctx, sub)
@@ -61,7 +63,7 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 		if !hasURL {
 			hint = msgNoURL
 		}
-		if !enabledResource(sub.Enabled) {
+		if !notFalse(sub.Enabled) {
 			message = msgSubscriptionDisabled
 		}
 		seconds, _ := json.Marshal(interval)
@@ -89,7 +91,7 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 		key := RuleTaskKey(rule.ID)
 		entry := statuses.Entry(key)
 		interval := RemoteInterval(rule)
-		enabled := enabledResource(rule.Enabled)
+		enabled := notFalse(rule.Enabled)
 		var due *time.Time
 		if enabled {
 			baseline, err := RuleCacheAt(ctx, rule)

@@ -113,7 +113,7 @@ func MihomoRulesetDownloads(ctx context.Context, config *model.Config, baseURL s
 		return nil, err
 	}
 	for _, rule := range sets {
-		if !enabled(rule.Enabled) {
+		if !enabled(&rule, rule.Enabled) {
 			continue
 		}
 		for _, member := range []string{"name", "behavior"} {

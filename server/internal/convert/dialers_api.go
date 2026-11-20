@@ -709,7 +709,7 @@ func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
 // RejectUnsupportedDialers refuses topology the target client cannot represent.
 func RejectUnsupportedDialers(ctx context.Context, config *model.Config, client string, converter NodeConverter) error {
 	for _, group := range configGroups(config) {
-		if group.Type == "chain" && enabled(group.Enabled) {
+		if group.Type == "chain" && enabled(&group, group.Enabled) {
 			return fmt.Errorf(msgClientChain, client)
 		}
 	}
@@ -717,7 +717,7 @@ func RejectUnsupportedDialers(ctx context.Context, config *model.Config, client 
 		return nil
 	}
 	for _, node := range config.Nodes {
-		if !enabled(node.Enabled) {
+		if !enabled(&node, node.Enabled) {
 			continue
 		}
 		var raw *yamlx.Node

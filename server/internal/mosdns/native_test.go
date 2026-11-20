@@ -54,8 +54,19 @@ func TestTypedMosDNSR5(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output, "size: 10240") || !strings.Contains(output, "lazy_cache_ttl: 21600") {
-		t.Fatal(output)
+	if strings.Contains(output, "tag: lazy_cache") {
+		t.Fatalf("empty object cache_enabled must disable cache: %s", output)
+	}
+	enabledConfig, err := ConfigFromJSON([]byte(`{"mosdns":{"cache_size":true,"cache_lazy_ttl":1.5,"log_level":7},"rule_configs":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabledOutput, err := Generate(enabledConfig, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(enabledOutput, "size: 10240") || !strings.Contains(enabledOutput, "lazy_cache_ttl: 21600") {
+		t.Fatal(enabledOutput)
 	}
 	encoded, _ := json.Marshal(config.Profile.MosDNS)
 	if !strings.Contains(string(encoded), `"cache_size":true`) {

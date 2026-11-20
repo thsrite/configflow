@@ -70,8 +70,8 @@ for row in review["policies"]:
             if value is not None and (key != "id" or value != ""):
                 projected[key] = value
         for key in ("enabled", "library_enabled"):
-            if isinstance(source.get(key), bool):
-                projected[key] = source[key]
+            if key in source:
+                projected[key] = bool(source[key])
         rules.append(projected)
     try:
         validate_rule_policies({"rule_configs": rules}, row["names"], row["format"])

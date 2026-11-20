@@ -3,6 +3,8 @@ package rules
 import (
 	"encoding/json"
 	"strings"
+
+	"configflow/internal/model"
 )
 
 // IdentifierList formats the identifier list embedded in Chinese reorder errors.
@@ -27,40 +29,7 @@ func InvalidValueText(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
-// EnabledField reads a stored enable flag. Legacy empty JSON values disable it;
-// absent members retain the caller's default.
+// EnabledField reads a stored enable flag using the shared JSON switch rule.
 func EnabledField(raw json.RawMessage, fallback bool) bool {
-	if len(raw) == 0 {
-		return fallback
-	}
-	text := strings.TrimSpace(string(raw))
-	if text == "" {
-		return fallback
-	}
-	switch text {
-	case "null", "false", `""`, "[]", "{}":
-		return false
-	case "true":
-		return true
-	}
-	switch text[0] {
-	case '"':
-		var value string
-		return json.Unmarshal(raw, &value) != nil || value != ""
-	case '[':
-		var values []json.RawMessage
-		return json.Unmarshal(raw, &values) != nil || len(values) > 0
-	case '{':
-		var values map[string]json.RawMessage
-		return json.Unmarshal(raw, &values) != nil || len(values) > 0
-	default:
-		var n json.Number
-		if json.Unmarshal(raw, &n) == nil {
-			value, err := n.Float64()
-			if err == nil {
-				return value != 0
-			}
-		}
-	}
-	return true
+	return model.JSONSwitchEnabled(raw, fallback)
 }

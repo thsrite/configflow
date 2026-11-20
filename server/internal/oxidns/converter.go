@@ -7,6 +7,9 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
+
+	"configflow/internal/model"
+	"configflow/internal/yamlx"
 )
 
 // OxiDNS configuration generation: ordered routing, isolated probe cache and
@@ -63,9 +66,21 @@ func (p *Profile) activeItems() []*Node {
 	return out
 }
 
-// enabledOrDefault defaults an absent enable flag to true.
+// enabledOrDefault defaults an absent enable flag to true and evaluates stored
+// non-boolean values through the shared JSON switch rule.
 func enabledOrDefault(item *Node, key string) bool {
-	return !has(item, key) || (isTrue(get(item, key)))
+	if !has(item, key) {
+		return true
+	}
+	value := yamlx.Resolve(get(item, key))
+	if isBool(value) {
+		return value.Value == "true"
+	}
+	raw, err := yamlx.ToJSON(value)
+	if err != nil {
+		return false
+	}
+	return model.JSONSwitchEnabled(raw, true)
 }
 
 func suffixOf(item *Node) string {

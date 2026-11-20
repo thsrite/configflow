@@ -89,21 +89,21 @@ func newDialerScope(config *model.Config) *dialerScope {
 	}
 	for i := range config.Nodes {
 		node := &config.Nodes[i]
-		add(dialerResource{ref: Ref{"node", node.ID}, name: node.Name, enabled: enabled(node.Enabled), node: node})
+		add(dialerResource{ref: Ref{"node", node.ID}, name: node.Name, enabled: enabled(node, node.Enabled), node: node})
 	}
 	if config.Profile != nil {
 		for i := range config.Profile.ProxyGroups {
 			group := &config.Profile.ProxyGroups[i]
-			add(dialerResource{ref: Ref{"group", group.ID}, name: group.Name, enabled: enabled(group.Enabled), group: group})
+			add(dialerResource{ref: Ref{"group", group.ID}, name: group.Name, enabled: enabled(group, group.Enabled), group: group})
 		}
 	}
 	for i := range config.Subscriptions {
 		source := &config.Subscriptions[i]
-		add(dialerResource{ref: Ref{"subscription", source.ID}, name: source.Name, enabled: enabled(source.Enabled)})
+		add(dialerResource{ref: Ref{"subscription", source.ID}, name: source.Name, enabled: enabled(source, source.Enabled)})
 	}
 	for i := range config.Aggregations {
 		source := &config.Aggregations[i]
-		add(dialerResource{ref: Ref{"aggregation", source.ID}, name: source.Name, enabled: enabled(source.Enabled), aggregation: source})
+		add(dialerResource{ref: Ref{"aggregation", source.ID}, name: source.Name, enabled: enabled(source, source.Enabled), aggregation: source})
 	}
 	return s
 }
@@ -701,11 +701,11 @@ func ConfigDialers(config *model.Config) error {
 			if kind == "node" {
 				for i := range config.Nodes {
 					node := &config.Nodes[i]
-					resources = append(resources, dialerResource{ref: Ref{kind, node.ID}, name: node.Name, enabled: enabled(node.Enabled)})
+					resources = append(resources, dialerResource{ref: Ref{kind, node.ID}, name: node.Name, enabled: enabled(node, node.Enabled)})
 				}
 			} else {
 				for _, group := range configGroups(config) {
-					resources = append(resources, dialerResource{ref: Ref{kind, group.ID}, name: group.Name, enabled: enabled(group.Enabled)})
+					resources = append(resources, dialerResource{ref: Ref{kind, group.ID}, name: group.Name, enabled: enabled(&group, group.Enabled)})
 				}
 			}
 			for _, resource := range resources {

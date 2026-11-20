@@ -28,7 +28,7 @@ func clientRuleURL(rule model.RuleConfig, config *model.Config, base string) (ad
 	address = stringValue(rule.URL)
 	original = address
 	for _, lib := range config.RuleLibrary {
-		if enabled(lib.Enabled) && lib.Name == rule.Name {
+		if enabled(&lib, lib.Enabled) && lib.Name == rule.Name {
 			original = stringValue(lib.URL)
 		}
 	}
@@ -46,7 +46,7 @@ func SurgeRules(config *model.Config, base string) ([]string, error) {
 	lines := []string{"[Rule]"}
 	afterMatch := false
 	for _, rule := range RulesForOutput(config) {
-		if !enabled(rule.Enabled) || !enabled(rule.LibraryEnabled) {
+		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
 			continue
 		}
 		if err := validateClientRule(rule); err != nil {
@@ -120,7 +120,7 @@ func LoonRules(config *model.Config, base string) ([]string, []string, error) {
 	lines, remote := []string{"[Rule]"}, []string{"[Remote Rule]"}
 	final := ""
 	for _, rule := range RulesForOutput(config) {
-		if !enabled(rule.Enabled) || !enabled(rule.LibraryEnabled) {
+		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
 			continue
 		}
 		if err := validateClientRule(rule); err != nil {

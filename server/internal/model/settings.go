@@ -210,6 +210,25 @@ func (r *MosDNSSettings) Clear(member string) error { return ClearMember(r, &r.r
 // MarshalJSON preserves unknown and unchanged MosDNSSettings members.
 func (r MosDNSSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
+// MemberJSON returns one effective declared MosDNSSettings member without encoding siblings.
+func (r *MosDNSSettings) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	switch name {
+	case "log_enabled":
+		return r.raw.MemberJSON(name, r.LogEnabled)
+	case "api_enabled":
+		return r.raw.MemberJSON(name, r.APIEnabled)
+	case "cache_enabled":
+		return r.raw.MemberJSON(name, r.CacheEnabled)
+	case "cache_dump_enabled":
+		return r.raw.MemberJSON(name, r.CacheDumpEnabled)
+	default:
+		return recordMemberJSON(r, &r.raw, name)
+	}
+}
+
 // MosDNSMatch retains an editor string or editable sequence object.
 // A scalar Text is stored and displayed but ignored by generators; object
 // matches retain their string or list representation.
@@ -243,6 +262,17 @@ func (r *MosDNSMatch) UnmarshalJSON(data []byte) error {
 // Clear drops a declared member (by JSON name) when MosDNSMatch is written, even if
 // it is stored as null or with a wrong type; see ClearMember.
 func (r *MosDNSMatch) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
+// MemberJSON returns one effective declared MosDNSMatch member without encoding siblings.
+func (r *MosDNSMatch) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil || r.Text != nil {
+		return nil, false, nil
+	}
+	if name == "enabled" {
+		return r.raw.MemberJSON(name, r.Enabled)
+	}
+	return recordMemberJSON(r, &r.raw, name)
+}
 
 // MarshalJSON preserves unknown and unchanged MosDNSMatch members.
 func (r MosDNSMatch) MarshalJSON() ([]byte, error) {

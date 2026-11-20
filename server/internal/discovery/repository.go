@@ -225,7 +225,7 @@ func ruleFromModel(record model.RuleConfig) (ruleConfig, error) {
 		return ruleConfig{}, err
 	}
 	raw, err := model.Marshal(record)
-	item := ruleConfig{ID: record.ID, ItemType: record.ItemType, RuleType: record.RuleType, Value: record.Value, LibraryID: record.LibraryRuleID, Enabled: record.Enabled == nil || *record.Enabled, original: raw}
+	item := ruleConfig{ID: record.ID, ItemType: record.ItemType, RuleType: record.RuleType, Value: record.Value, LibraryID: record.LibraryRuleID, Enabled: model.SwitchEnabled(&record, "enabled", record.Enabled, true), original: raw}
 	if record.Policy != nil {
 		item.Policy = *record.Policy
 	}

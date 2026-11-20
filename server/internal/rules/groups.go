@@ -152,7 +152,9 @@ func SelectMembers(group model.ProxyGroup) GroupSelection {
 // Provider is a consumed subscription or aggregation and its name filters.
 type Provider struct{ ID, Name, Kind, Include, Exclude string }
 
-func enabledResource(value *bool) bool { return value == nil || *value }
+func enabledResource(record model.SwitchMember, value *bool) bool {
+	return model.SwitchEnabled(record, "enabled", value, true)
+}
 func selectedAggregationIDs(selection GroupSelection) []string {
 	ids := append([]string(nil), selection.Aggregations...)
 	for _, member := range selection.Members {
@@ -166,7 +168,7 @@ func groupAggregations(ids []string, catalog GroupCatalog) []model.Aggregation {
 	var result []model.Aggregation
 	for _, id := range ids {
 		for _, item := range catalog.Aggregations {
-			if item.ID == id && enabledResource(item.Enabled) {
+			if item.ID == id && enabledResource(&item, item.Enabled) {
 				result = append(result, item)
 			}
 		}
@@ -240,7 +242,7 @@ func RenderGroup(group model.ProxyGroup, catalog GroupCatalog) RenderedMembers {
 	aggregationIDs := selectedAggregationIDs(selection)
 	var aggregations []model.Aggregation
 	for _, item := range catalog.Aggregations {
-		if slices.Contains(aggregationIDs, item.ID) && enabledResource(item.Enabled) {
+		if slices.Contains(aggregationIDs, item.ID) && enabledResource(&item, item.Enabled) {
 			aggregations = append(aggregations, item)
 		}
 	}
@@ -578,7 +580,7 @@ func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *mod
 	if follow != "" {
 		found := false
 		for _, item := range catalog.Groups {
-			if item.ID == follow && enabledResource(item.Enabled) {
+			if item.ID == follow && enabledResource(&item, item.Enabled) {
 				source = item
 				found = true
 				break
@@ -607,22 +609,22 @@ func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *mod
 	}
 	available := map[string]map[string]bool{"nodes": {"DIRECT": true, "REJECT": true}, "subscriptions": {}, "aggregations": {}, "groups": {}}
 	for _, item := range catalog.Nodes {
-		if enabledResource(item.Enabled) {
+		if enabledResource(&item, item.Enabled) {
 			available["nodes"][item.ID] = true
 		}
 	}
 	for _, item := range catalog.Subscriptions {
-		if enabledResource(item.Enabled) {
+		if enabledResource(&item, item.Enabled) {
 			available["subscriptions"][item.ID] = true
 		}
 	}
 	for _, item := range catalog.Aggregations {
-		if enabledResource(item.Enabled) {
+		if enabledResource(&item, item.Enabled) {
 			available["aggregations"][item.ID] = true
 		}
 	}
 	for _, item := range catalog.Groups {
-		if enabledResource(item.Enabled) {
+		if enabledResource(&item, item.Enabled) {
 			available["groups"][item.ID] = true
 		}
 	}

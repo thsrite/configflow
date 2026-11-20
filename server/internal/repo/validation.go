@@ -72,27 +72,9 @@ func jsonString(raw json.RawMessage) (string, bool) {
 	return text, true
 }
 
-// jsonTruthy is a value's truth in the stored document's terms: absent,
-// null, false, 0, "" and empty containers are false.
+// jsonTruthy evaluates a stored JSON value's truthiness with default false.
 func jsonTruthy(raw json.RawMessage) bool {
-	raw = bytes.TrimSpace(raw)
-	switch jsonKind(raw) {
-	case 0, 'n':
-		return false
-	case 'b':
-		return string(raw) == "true"
-	case '"':
-		return string(raw) != `""`
-	case '0':
-		number, err := strconv.ParseFloat(string(raw), 64)
-		return err != nil || number != 0
-	}
-	var items []json.RawMessage
-	if json.Unmarshal(raw, &items) == nil {
-		return len(items) > 0
-	}
-	var members map[string]json.RawMessage
-	return json.Unmarshal(raw, &members) == nil && len(members) > 0
+	return model.JSONSwitchEnabled(raw, false)
 }
 
 // displayJSON is a stored scalar as message text: a string as itself,

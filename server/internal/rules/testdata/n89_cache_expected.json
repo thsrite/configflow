@@ -8110,8 +8110,8 @@
         "format": "mihomo",
         "result": ""
       },
-      "native": "规则 off2 引用了不存在或未启用的策略 'Ghost'，请修改策略引用",
-      "class": "R5"
+      "native": "",
+      "class": "unchanged"
     },
     {
       "input": {
@@ -8152,8 +8152,8 @@
         "format": "mihomo",
         "result": ""
       },
-      "native": "规则 off3 引用了不存在或未启用的策略 'Ghost'，请修改策略引用",
-      "class": "R5"
+      "native": "",
+      "class": "unchanged"
     },
     {
       "input": {
@@ -8876,8 +8876,8 @@
         "format": "surge",
         "result": ""
       },
-      "native": "规则 off2 引用了不存在或未启用的策略 'Ghost'，请修改策略引用",
-      "class": "R5"
+      "native": "",
+      "class": "unchanged"
     },
     {
       "input": {
@@ -8918,8 +8918,8 @@
         "format": "surge",
         "result": ""
       },
-      "native": "规则 off3 引用了不存在或未启用的策略 'Ghost'，请修改策略引用",
-      "class": "R5"
+      "native": "",
+      "class": "unchanged"
     },
     {
       "input": {
@@ -9642,8 +9642,8 @@
         "format": "loon",
         "result": ""
       },
-      "native": "规则 off2 引用了不存在或未启用的策略 'Ghost'，请修改策略引用",
-      "class": "R5"
+      "native": "",
+      "class": "unchanged"
     },
     {
       "input": {
@@ -9684,8 +9684,8 @@
         "format": "loon",
         "result": ""
       },
-      "native": "规则 off3 引用了不存在或未启用的策略 'Ghost'，请修改策略引用",
-      "class": "R5"
+      "native": "",
+      "class": "unchanged"
     },
     {
       "input": {

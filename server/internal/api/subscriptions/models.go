@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 )
 
 const msgFilterType = "节点筛选正则必须是字符串"
@@ -17,7 +18,7 @@ type object map[string]json.RawMessage
 func (o object) text(key string) string    { var v string; _ = json.Unmarshal(o[key], &v); return v }
 func (o object) set(key string, value any) { o[key], _ = json.Marshal(value) }
 func (o object) enabled() bool {
-	return string(o["enabled"]) != "false" && string(o["enabled"]) != "null" && string(o["enabled"]) != "0" && string(o["enabled"]) != `""`
+	return model.JSONSwitchEnabled(o["enabled"], true)
 }
 func (o object) stripDerived() {
 	for _, key := range []string{"cached_node_count", "cached_total_count", "cached_updated_at", "traffic", "traffic_at", "last_fetch"} {

@@ -131,7 +131,7 @@ func clientRemoteURL(config *model.Config, base, kind, id, target, regex, exclud
 func clientResourceName(config *model.Config, kind, id string) (string, bool, error) {
 	if kind == "subscription" {
 		for _, s := range config.Subscriptions {
-			if s.ID == id && enabled(s.Enabled) {
+			if s.ID == id && enabled(&s, s.Enabled) {
 				if err := storedText(&s, kindSubscription, id, "name"); err != nil {
 					return "", false, err
 				}
@@ -140,7 +140,7 @@ func clientResourceName(config *model.Config, kind, id string) (string, bool, er
 		}
 	} else {
 		for _, a := range config.Aggregations {
-			if a.ID == id && enabled(a.Enabled) {
+			if a.ID == id && enabled(&a, a.Enabled) {
 				if err := storedText(&a, kindAggregation, id, "name"); err != nil {
 					return "", false, err
 				}

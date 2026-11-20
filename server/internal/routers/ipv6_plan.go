@@ -187,7 +187,7 @@ func ipv6Hairpin(ctx context.Context, d *RouterOS, lan, cidr string) (string, st
 	return "", ""
 }
 func ipv6AgentEnabled(agent *model.Agent) bool {
-	return agent != nil && agent.ServiceType == "mihomo" && (agent.Enabled == nil || *agent.Enabled)
+	return agent != nil && agent.ServiceType == "mihomo" && model.SwitchEnabled(agent, "enabled", agent.Enabled, true)
 }
 func ipv6AgentHost(agent *model.Agent) string {
 	if agent == nil {

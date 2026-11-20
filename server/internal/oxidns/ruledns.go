@@ -436,7 +436,7 @@ func policyDNSRoutes(p *Profile) map[string]string {
 			return route
 		}
 		group := groups[name]
-		if group == nil || has(group, "enabled") && !(isTrue(get(group, "enabled"))) || equal(get(group, "type"), S("chain")) ||
+		if group == nil || !enabledOrDefault(group, "enabled") || equal(get(group, "type"), S("chain")) ||
 			visiting[name] || len(visiting) >= 64 {
 			return "proxy"
 		}

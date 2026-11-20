@@ -966,12 +966,12 @@ func scopeImportedDialers(profiles []importProfile) error {
 			matches := []edge{}
 			for j := range config.Nodes {
 				item := &config.Nodes[j]
-				if item.Name == target && (item.Enabled == nil || *item.Enabled) {
+				if item.Name == target && model.SwitchEnabled(item, "enabled", item.Enabled, true) {
 					matches = append(matches, edge{node, item, "node", target})
 				}
 			}
 			for _, item := range config.Profile.ProxyGroups {
-				if item.Name == target && (item.Enabled == nil || *item.Enabled) {
+				if item.Name == target && model.SwitchEnabled(&item, "enabled", item.Enabled, true) {
 					matches = append(matches, edge{node, nil, "group", target})
 				}
 			}
@@ -1011,7 +1011,7 @@ func scopeImportedDialers(profiles []importProfile) error {
 			}
 			usedNames[name] = true
 			node.Name = name
-			if node.Enabled == nil || *node.Enabled {
+			if model.SwitchEnabled(node, "enabled", node.Enabled, true) {
 				renamed[old] = name
 			}
 		}

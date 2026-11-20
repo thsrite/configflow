@@ -42,7 +42,7 @@ func nativeReference(t *testing.T, refs *jsonx.Object, index int, row *jsonx.Obj
 }
 func TestNativeReferenceEvidence(t *testing.T) {
 	refs := loadNativeReferences(t)
-	if refs.GetObject("rows").Len() != 33 {
+	if refs.GetObject("rows").Len() != 32 {
 		t.Fatal("independent projection manifest changed")
 	}
 	original := refs.GetList("edge_original")

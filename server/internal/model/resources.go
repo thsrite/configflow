@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 // ResourceRef identifies a resource by its stable kind and ID.
 type ResourceRef struct {
 	Type   string `json:"type"`
@@ -71,6 +73,17 @@ func (r *Node) Clear(member string) error { return ClearMember(r, &r.raw, member
 // MarshalJSON preserves unknown and unchanged Node members.
 func (r Node) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
+// MemberJSON returns one effective declared Node member without encoding siblings.
+func (r *Node) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	if name == "enabled" {
+		return r.raw.MemberJSON(name, r.Enabled)
+	}
+	return recordMemberJSON(r, &r.raw, name)
+}
+
 // Subscription is a stored source, excluding health/cache statistics added only to HTTP responses.
 type Subscription struct {
 	ID             string               `json:"id"`
@@ -96,6 +109,17 @@ func (r *Subscription) Clear(member string) error { return ClearMember(r, &r.raw
 
 // MarshalJSON preserves unknown and unchanged Subscription members.
 func (r Subscription) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns one effective declared Subscription member without encoding siblings.
+func (r *Subscription) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	if name == "enabled" {
+		return r.raw.MemberJSON(name, r.Enabled)
+	}
+	return recordMemberJSON(r, &r.raw, name)
+}
 
 // Aggregation selects shared subscriptions and manual nodes for a provider.
 type Aggregation struct {
@@ -124,6 +148,17 @@ func (r *Aggregation) Clear(member string) error { return ClearMember(r, &r.raw,
 // MarshalJSON preserves unknown and unchanged Aggregation members.
 func (r Aggregation) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
+// MemberJSON returns one effective declared Aggregation member without encoding siblings.
+func (r *Aggregation) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	if name == "enabled" {
+		return r.raw.MemberJSON(name, r.Enabled)
+	}
+	return recordMemberJSON(r, &r.raw, name)
+}
+
 // RuleLibraryItem is a shared rule source; source, behavior and download defaults are resolved by consumers.
 type RuleLibraryItem struct {
 	ID             string  `json:"id"`
@@ -148,3 +183,14 @@ func (r *RuleLibraryItem) Clear(member string) error { return ClearMember(r, &r.
 
 // MarshalJSON preserves unknown and unchanged RuleLibraryItem members.
 func (r RuleLibraryItem) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// MemberJSON returns one effective declared RuleLibraryItem member without encoding siblings.
+func (r *RuleLibraryItem) MemberJSON(name string) (json.RawMessage, bool, error) {
+	if r == nil {
+		return nil, false, nil
+	}
+	if name == "enabled" {
+		return r.raw.MemberJSON(name, r.Enabled)
+	}
+	return recordMemberJSON(r, &r.raw, name)
+}

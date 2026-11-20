@@ -184,7 +184,7 @@ func (s *snapshot) selected(id string) bool {
 		return false
 	}
 	for _, rule := range s.RuleConfigs {
-		if rule.LibraryRuleID == id && flag(rule.Enabled) && flag(rule.LibraryEnabled) {
+		if rule.LibraryRuleID == id && flag(&rule, "enabled", rule.Enabled) && flag(&rule, "library_enabled", rule.LibraryEnabled) {
 			return true
 		}
 	}

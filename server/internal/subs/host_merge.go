@@ -126,7 +126,9 @@ func queryFilter(query map[string][]string) nameCheck {
 		return (keep == nil || keep.Search(name)) && (drop == nil || !drop.Search(name))
 	}
 }
-func resourceEnabled(value *bool) bool { return value == nil || *value }
+func resourceEnabled(record model.SwitchMember, value *bool) bool {
+	return model.SwitchEnabled(record, "enabled", value, true)
+}
 
 type usedDomains map[string]map[string]bool
 
@@ -139,7 +141,7 @@ func usedHostDomains(main *yamlx.Node, config *model.Config, inline []HostInline
 	nodes := map[string]model.Node{}
 	aggregations := map[string]model.Aggregation{}
 	for _, sub := range config.Subscriptions {
-		if sub.ID != "" && resourceEnabled(sub.Enabled) {
+		if sub.ID != "" && resourceEnabled(&sub, sub.Enabled) {
 			subscriptions[sub.ID] = sub
 		}
 	}
@@ -237,7 +239,7 @@ func usedHostDomains(main *yamlx.Node, config *model.Config, inline []HostInline
 			continue
 		}
 		agg, ok := aggregations[source.id]
-		if !ok || !resourceEnabled(agg.Enabled) {
+		if !ok || !resourceEnabled(&agg, agg.Enabled) {
 			continue
 		}
 		if agg.RegexFilter != nil && strings.TrimSpace(*agg.RegexFilter) != "" {
@@ -258,7 +260,7 @@ func usedHostDomains(main *yamlx.Node, config *model.Config, inline []HostInline
 		}
 		for _, id := range agg.Nodes {
 			node, ok := nodes[id]
-			if !ok || !resourceEnabled(node.Enabled) {
+			if !ok || !resourceEnabled(&node, node.Enabled) {
 				continue
 			}
 			pass := true

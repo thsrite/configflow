@@ -80,7 +80,7 @@ func ClientGroupNodes(group model.ProxyGroup, config *model.Config) ([]string, e
 	if len(subscriptions) > 0 {
 		var nodes []model.Node
 		for _, node := range config.Nodes {
-			if subscriptions[node.SubscriptionID] && enabled(node.Enabled) {
+			if subscriptions[node.SubscriptionID] && enabled(&node, node.Enabled) {
 				nodes = append(nodes, node)
 			}
 		}

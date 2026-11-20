@@ -549,7 +549,8 @@ func NewMatcher(ruleConfigs []model.RuleConfig, ruleLibrary []model.RuleLibraryI
 }
 
 func ruleEnabled(item *model.RuleConfig) bool {
-	return (item.Enabled == nil || *item.Enabled) && (item.LibraryEnabled == nil || *item.LibraryEnabled)
+	return model.SwitchEnabled(item, "enabled", item.Enabled, true) &&
+		model.SwitchEnabled(item, "library_enabled", item.LibraryEnabled, true)
 }
 func ruleKind(item *model.RuleConfig) string {
 	if item.ItemType == "" {

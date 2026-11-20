@@ -267,9 +267,7 @@ func selectDialerTargets(profile *model.Profile, c catalogs, selected selection,
 				return err
 			}
 		}
-		if enabled, err := storedEnabled(node, node.Enabled); err != nil {
-			return err
-		} else if !enabled {
+		if !storedEnabled(node, node.Enabled) {
 			continue
 		}
 		target, err := nodeRawDialer(node)
@@ -461,17 +459,8 @@ func recordMembers(record any) (model.Fields, error) {
 	return members, err
 }
 
-// storedEnabled is an optional enabled member's truth: absent means enabled,
-// and a stored value of another type (e.g. 0) counts by its truth, as the
-// stored document says (the typed field reads it as absent).
-func storedEnabled(record any, enabled *bool) (bool, error) {
-	if enabled != nil {
-		return *enabled, nil
-	}
-	view, err := viewOf(record)
-	if err != nil {
-		return false, err
-	}
-	raw, present := view.get("enabled")
-	return !present || jsonTruthy(raw), nil
+// storedEnabled evaluates an optional stored enabled flag using the shared JSON
+// truthiness rule with default true.
+func storedEnabled(record model.SwitchMember, enabled *bool) bool {
+	return model.SwitchEnabled(record, "enabled", enabled, true)
 }

@@ -102,11 +102,7 @@ func enabled(item record) bool {
 	if !present {
 		return true
 	}
-	switch string(raw) {
-	case "null", "false", "0", `""`, "[]", "{}":
-		return false
-	}
-	return true
+	return model.JSONSwitchEnabled(raw, true)
 }
 func resourceConfig(ctx context.Context, id string) (record, record, error) {
 	ctx = lifecycle.Detach(ctx)

@@ -37,14 +37,20 @@ func effectiveRule(config *model.Config) *model.RuleConfig {
 	}
 	for i := range config.Profile.RuleConfigs {
 		rule := &config.Profile.RuleConfigs[i]
-		if rule.ItemType == "rule" && rule.RuleType == "MATCH" && enabled(rule.Enabled) {
+		if rule.ItemType == "rule" && rule.RuleType == "MATCH" && enabled(rule, rule.Enabled) {
 			return rule
 		}
 	}
 	return nil
 }
 
-func enabled(value *bool) bool { return value == nil || *value }
+func enabled(record model.SwitchMember, value *bool) bool {
+	return model.SwitchEnabled(record, "enabled", value, true)
+}
+
+func libraryEnabled(record model.SwitchMember, value *bool) bool {
+	return model.SwitchEnabled(record, "library_enabled", value, true)
+}
 func stringValue(value *string) string {
 	if value == nil {
 		return ""

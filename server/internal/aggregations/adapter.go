@@ -113,7 +113,7 @@ func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Co
 	if model.IssueUnder(model.Issues(&agg), "name") {
 		return nil, errors.New("aggregation name must be a string")
 	}
-	a := aggregation{resource: typedResource(agg.ID, agg.Name, agg.Enabled), Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
+	a := aggregation{resource: typedResource(&agg, agg.ID, agg.Name, agg.Enabled), Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
 	for _, issue := range model.Issues(&agg) {
 		if issue.Path == "subscriptions" {
 			return nil, errors.New("aggregation subscriptions must be an array")

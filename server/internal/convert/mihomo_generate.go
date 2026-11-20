@@ -190,7 +190,7 @@ func MihomoRuleLists(config *model.Config) ([]model.RuleConfig, []model.RuleConf
 		return rules, sets, nil
 	}
 	for _, rule := range config.Profile.RuleConfigs {
-		if !enabled(rule.Enabled) || !enabled(rule.LibraryEnabled) {
+		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
 			continue
 		}
 		switch rule.ItemType {
@@ -334,7 +334,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		}
 	}
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(group.Enabled) {
+		if !enabled(&group, group.Enabled) {
 			continue
 		}
 		source := &group
@@ -354,7 +354,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		for _, id := range stringList(source.Aggregations) {
 			selected.aggregations[id] = true
 			for _, agg := range config.Aggregations {
-				if agg.ID == id && enabled(agg.Enabled) {
+				if agg.ID == id && enabled(&agg, agg.Enabled) {
 					for _, sub := range agg.Subscriptions {
 						covered[sub] = true
 					}
@@ -379,7 +379,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		}
 	}
 	for _, group := range config.Profile.ProxyGroups {
-		if enabled(group.Enabled) {
+		if enabled(&group, group.Enabled) {
 			for _, ref := range GroupRefs(group) {
 				if ref.Kind == "node" && ref.ID != "DIRECT" && ref.ID != "REJECT" {
 					selected.nodes[ref.ID] = true
@@ -389,7 +389,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		}
 	}
 	for _, agg := range config.Aggregations {
-		if enabled(agg.Enabled) && selected.aggregations[agg.ID] {
+		if enabled(&agg, agg.Enabled) && selected.aggregations[agg.ID] {
 			for _, id := range agg.Nodes {
 				selected.aggregationRoots[id] = true
 			}
@@ -464,7 +464,7 @@ func groupDefaults(target *yamlx.Node, group model.ProxyGroup) error {
 func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironment) (*yamlx.Node, error) {
 	result := yamlx.Seq()
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(group.Enabled) {
+		if !enabled(&group, group.Enabled) {
 			continue
 		}
 		for _, member := range []string{"type", "follow_group"} {
@@ -533,7 +533,7 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 func mihomoRuleLines(config *model.Config) (*yamlx.Node, error) {
 	lines := []string{}
 	for _, rule := range RulesForOutput(config) {
-		if !enabled(rule.Enabled) || !enabled(rule.LibraryEnabled) {
+		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
 			continue
 		}
 		policy := stringValue(rule.Policy)
@@ -652,7 +652,7 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	proxies := yamlx.Seq()
 	inline := []InlineNode{}
 	for _, node := range config.Nodes {
-		if !enabled(node.Enabled) || !used[node.ID] || onlyAggregated[node.ID] {
+		if !enabled(&node, node.Enabled) || !used[node.ID] || onlyAggregated[node.ID] {
 			continue
 		}
 		converted, err := NodeProxy(ctx, node, env.Converter)
@@ -695,7 +695,7 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 		return nil
 	}
 	for _, sub := range config.Subscriptions {
-		if enabled(sub.Enabled) && selection.subscriptions[sub.ID] {
+		if enabled(&sub, sub.Enabled) && selection.subscriptions[sub.ID] {
 			if err := storedText(&sub, kindSubscription, sub.ID, "name"); err != nil {
 				return nil, err
 			}
@@ -705,7 +705,7 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 		}
 	}
 	for _, agg := range config.Aggregations {
-		if enabled(agg.Enabled) && selection.aggregations[agg.ID] {
+		if enabled(&agg, agg.Enabled) && selection.aggregations[agg.ID] {
 			if err := storedText(&agg, kindAggregation, agg.ID, "name"); err != nil {
 				return nil, err
 			}
@@ -724,7 +724,7 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	yamlx.Set(document, "proxy-groups", groups)
 	ruleProviders := yamlx.Map()
 	for _, rule := range ruleSets {
-		if !enabled(rule.Enabled) {
+		if !enabled(&rule, rule.Enabled) {
 			continue
 		}
 		for _, member := range []string{"name", "behavior"} {

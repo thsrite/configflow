@@ -172,40 +172,29 @@ type sharedItem struct {
 
 func sharedItems(shared *model.Shared, kind string) ([]sharedItem, error) {
 	var items []sharedItem
-	add := func(record any, id, name string, enabled *bool) error {
-		flag, err := storedEnabled(record, enabled)
-		items = append(items, sharedItem{id, name, flag})
-		return err
+	add := func(record model.SwitchMember, id, name string, enabled *bool) {
+		items = append(items, sharedItem{id, name, storedEnabled(record, enabled)})
 	}
-	var err error
 	switch kind {
 	case kindSubscriptions:
 		for index := range shared.Subscriptions {
 			item := &shared.Subscriptions[index]
-			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
-				return nil, err
-			}
+			add(item, item.ID, item.Name, item.Enabled)
 		}
 	case kindNodes:
 		for index := range shared.Nodes {
 			item := &shared.Nodes[index]
-			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
-				return nil, err
-			}
+			add(item, item.ID, item.Name, item.Enabled)
 		}
 	case kindAggregations:
 		for index := range shared.Aggregations {
 			item := &shared.Aggregations[index]
-			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
-				return nil, err
-			}
+			add(item, item.ID, item.Name, item.Enabled)
 		}
 	case kindRuleLibrary:
 		for index := range shared.RuleLibrary {
 			item := &shared.RuleLibrary[index]
-			if err = add(item, item.ID, item.Name, item.Enabled); err != nil {
-				return nil, err
-			}
+			add(item, item.ID, item.Name, item.Enabled)
 		}
 	}
 	return items, nil

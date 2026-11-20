@@ -51,7 +51,6 @@ def snapshot(row):
     groups=profile.get('proxy_groups',[])
     if not isinstance(groups,list) or any(not isinstance(group,dict) for group in groups):groups=[]
     for group in groups:
-        if 'enabled' in group and not isinstance(group['enabled'],bool):group.pop('enabled')
         if isinstance(group.get('name'),(int,float)) and not isinstance(group.get('name'),bool):group['name']=str(group['name'])
         if group.get('type')=='chain' and group.get('enabled',True):
             if not isinstance(group.get('name'),str) or not group['name']:raise NativeInput()

@@ -52,7 +52,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	}
 	selected, direct, aggregations, onlyAggregation := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(group.Enabled) {
+		if !enabled(&group, group.Enabled) {
 			continue
 		}
 		source, err := clientGroupSource(group, config)
@@ -83,7 +83,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 		}
 	}
 	for _, a := range config.Aggregations {
-		if enabled(a.Enabled) && aggregations[a.ID] {
+		if enabled(&a, a.Enabled) && aggregations[a.ID] {
 			for _, id := range a.Nodes {
 				if !direct[id] {
 					onlyAggregation[id] = true
@@ -94,7 +94,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	proxies := []string{"[Proxy]"}
 	var wireguard []string
 	for _, node := range config.Nodes {
-		if !enabled(node.Enabled) || !selected[node.ID] || onlyAggregation[node.ID] {
+		if !enabled(&node, node.Enabled) || !selected[node.ID] || onlyAggregation[node.ID] {
 			continue
 		}
 		line, section, err := SurgeNode(node)
@@ -114,7 +114,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	}
 	groups := []string{"[Proxy Group]"}
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(group.Enabled) {
+		if !enabled(&group, group.Enabled) {
 			continue
 		}
 		line, err := SurgeGroup(group, config, base, priorities)
@@ -128,7 +128,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	if len(groups) == 1 {
 		var names []string
 		for _, node := range config.Nodes {
-			if enabled(node.Enabled) {
+			if enabled(&node, node.Enabled) {
 				names = append(names, node.Name)
 			}
 		}
@@ -231,7 +231,7 @@ func LoonConfig(ctx context.Context, config *model.Config, base string) (string,
 		byID[group.ID] = group
 	}
 	for _, group := range all {
-		if !enabled(group.Enabled) {
+		if !enabled(&group, group.Enabled) {
 			continue
 		}
 		result, err := effectiveClientGroup(group, config)
@@ -254,7 +254,7 @@ func LoonConfig(ctx context.Context, config *model.Config, base string) (string,
 	nodeNames := map[string]string{}
 	var orderedNames []string
 	for _, node := range config.Nodes {
-		if !enabled(node.Enabled) || !used[node.ID] {
+		if !enabled(&node, node.Enabled) || !used[node.ID] {
 			continue
 		}
 		line, err := LoonNode(node)
