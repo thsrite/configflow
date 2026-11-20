@@ -35,7 +35,7 @@ type Service struct {
 	Repository *repo.Repository
 	Manager    *agents.Manager
 	Spawner    lockx.Spawner
-	Render     func(installer.GatewayOptions) (string, error)
+	Render     func(installer.GatewayInstallOptions) (string, error)
 }
 
 func (s *Service) now(ctx context.Context) time.Time { return lifecycle.ClockFrom(ctx).Now() }
@@ -289,9 +289,9 @@ func (s *Service) Create(ctx context.Context, body json.RawMessage) (json.RawMes
 	}
 	render := s.Render
 	if render == nil {
-		render = installer.GenerateGatewayInstallScript
+		render = installer.RenderGatewayInstall
 	}
-	r.Script, err = render(installer.GatewayOptions{ServerURL: origin, AgentName: name, AgentIP: network.Address, BinaryDownloadURL: origin + "/api/agents/download", MihomoAgentPort: ports["mihomo"], OxidnsAgentPort: ports["oxidns"], EnrollmentURL: origin + "/api/agents/gateway-installations/" + id + "/enroll", EnrollmentToken: token, InstallationID: id, FullTun: r.Takeover == "full_tun"})
+	r.Script, err = render(installer.GatewayInstallOptions{ServerURL: origin, AgentName: name, AgentIP: network.Address, BinaryDownloadURL: origin + "/api/agents/download", MihomoAgentPort: ports["mihomo"], OxidnsAgentPort: ports["oxidns"], EnrollmentURL: origin + "/api/agents/gateway-installations/" + id + "/enroll", EnrollmentToken: token, InstallationID: id, FullTun: r.Takeover == "full_tun"})
 	if err != nil {
 		return nil, publicOwnerError(err)
 	}

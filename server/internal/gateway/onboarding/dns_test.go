@@ -115,7 +115,7 @@ except GatewayOnboardingError as e: json.dump({'blocked':True,'message':str(e)},
 	if err != nil {
 		t.Fatal(err)
 	}
-	native, err := fromLegacy(profile)
+	native, err := modelDocument(profile)
 	if err != nil {
 		t.Fatal(err)
 	}

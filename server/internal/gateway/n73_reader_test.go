@@ -60,7 +60,7 @@ func TestN73GatewayRejectsUnsafeAliases(t *testing.T) {
 	}
 	for name, source := range map[string]string{"depth40": chain.String(), "self": "loop: &loop [*loop]\n"} {
 		t.Run(name, func(t *testing.T) {
-			config := NewConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", source)))
+			config := NewFixtureConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", source)))
 			if doc, err := config.BaseDocument(); doc != nil || err == nil || err.Error() != msgBaseYAMLInvalid {
 				t.Fatalf("unsafe base document accepted or context changed: %v", err)
 			}
@@ -76,7 +76,7 @@ func TestN73GatewayRejectsUnsafeAliases(t *testing.T) {
 }
 
 func TestN73GatewayBasePreservesSharing(t *testing.T) {
-	config := NewConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", "base: &base [one, two]\nfirst: *base\nsecond: *base\n")))
+	config := NewFixtureConfig(jsonx.Obj("mihomo", jsonx.Obj("custom_config", "base: &base [one, two]\nfirst: *base\nsecond: *base\n")))
 	n, err := config.BaseDocument()
 	if err != nil {
 		t.Fatal(err)

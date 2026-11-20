@@ -143,7 +143,12 @@ func TestPythonPreparation(t *testing.T) {
 			if expected, ok := row["error"]; ok {
 				t.Fatalf("expected input rejection %s got report %+v", expected, report)
 			}
-			equalJSON(t, "report", encode(report), row["report"])
+			wantReport := row["report"]
+			if name == "null-policy" {
+				// Explicit JSON null policy renders as JSON text 'null' rather than Python's 'None'.
+				wantReport = bytes.ReplaceAll(wantReport, []byte("'None'"), []byte("'null'"))
+			}
+			equalJSON(t, "report", encode(report), wantReport)
 			equalJSON(t, "candidate", encode(candidate), row["candidate"])
 			if report.Ready {
 				generated, err := generate(context.Background(), candidate, options.BaseURL)

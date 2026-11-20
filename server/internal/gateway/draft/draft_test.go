@@ -16,6 +16,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
@@ -292,13 +293,13 @@ func TestShutdownBeforeRepositoryCommitRefusesDraft(t *testing.T) {
 	ctx := runtime.BindRequest(context.Background())
 	before := state(t, s)
 	hooks := gateway.Hooks()
-	apply := hooks.ApplyLinuxGateway
-	hooks.ApplyLinuxGateway = func(m, c *jsonx.Object, base string) error {
+	apply := hooks.ApplyGateway
+	hooks.ApplyGateway = func(m *yamlx.Node, c *model.Config, base string) error {
 		err := apply(m, c, base)
 		runtime.Shutdown(context.Background())
 		return err
 	}
-	t.Cleanup(convert.RegisterMihomoHooks(hooks))
+	t.Cleanup(convert.SetMihomoIntegrations(hooks))
 	if _, err = s.Execute(ctx, op); !errors.Is(err, context.Canceled) || before != state(t, s) {
 		t.Fatal("shutdown during transaction committed", err)
 	}

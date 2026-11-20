@@ -290,7 +290,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	if err != nil {
 		return err
 	}
-	settings, err := gateway.SettingsOf(stored)
+	settings, err := gateway.SettingsOf(gatewayModelConfig(stored))
 	if err != nil {
 		return err
 	}
@@ -435,7 +435,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 		return err
 	}
 	if record.Goal == "gateway" {
-		editor, err := gateway.NewConfig(candidate).EditorState(false)
+		editor, err := gateway.NewConfig(gatewayModelConfig(candidate)).EditorState(false)
 		if err != nil {
 			return err
 		}
@@ -596,4 +596,10 @@ func equalJSONValue(a, b json.RawMessage) bool {
 	}
 	y, err := jsonx.Parse(b)
 	return err == nil && jsonx.Equal(x, y)
+}
+
+func gatewayModelConfig(obj *jsonx.Object) *model.Config {
+	raw, _ := jsonx.Compact(obj)
+	cfg, _ := model.DecodeConfig(raw)
+	return cfg
 }

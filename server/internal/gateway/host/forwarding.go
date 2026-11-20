@@ -8,7 +8,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -23,19 +22,18 @@ type RouterRef struct {
 }
 
 // ProxyRouters returns this profile's routers linked to the Agent.
-func ProxyRouters(config *jsonx.Object, id string) []RouterRef {
+func ProxyRouters(config *model.Config, id string) []RouterRef {
 	out := []RouterRef{}
 	if id == "" {
 		return out
 	}
-	for _, raw := range config.GetObject("routers").GetList("items") {
-		r, ok := raw.(*jsonx.Object)
-		if ok && r.GetString("proxy_gateway_agent_id") == id {
-			name := r.GetString("name")
+	for _, r := range config.Profile.Routers.Items {
+		if routerText(&r, "proxy_gateway_agent_id") == id {
+			name := routerText(&r, "name")
 			if name == "" {
-				name = r.GetString("id")
+				name = routerText(&r, "id")
 			}
-			out = append(out, RouterRef{ID: r.GetString("id"), Name: name})
+			out = append(out, RouterRef{ID: routerText(&r, "id"), Name: name})
 		}
 	}
 	return out
@@ -49,28 +47,20 @@ type LinkedAgent struct {
 
 // ProxyGatewaysAllProfiles follows links across profiles, without changing binding.
 func (b *Bridge) ProxyGatewaysAllProfiles(ctx context.Context) ([]LinkedAgent, error) {
-	profiles, err := b.Repository.ListProfiles(ctx)
+	profiles, err := b.Repository.ListProfileRecords(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := []LinkedAgent{}
 	positions := map[string]int{}
-	for _, raw := range profiles {
-		p, ok := raw.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		id := p.GetString("id")
-		config, err := b.Repository.GetCompatConfig(ctx, id, repo.ResourceRoots{})
+	for _, p := range profiles {
+		id := p.ID
+		config, err := b.Repository.Config(ctx, id, repo.ResourceRoots{})
 		if err != nil {
 			return nil, err
 		}
-		for _, raw := range config.GetObject("routers").GetList("items") {
-			r, ok := raw.(*jsonx.Object)
-			if !ok {
-				continue
-			}
-			aid := r.GetString("proxy_gateway_agent_id")
+		for _, r := range config.Profile.Routers.Items {
+			aid := routerText(&r, "proxy_gateway_agent_id")
 			if aid == "" {
 				continue
 			}
@@ -80,17 +70,18 @@ func (b *Bridge) ProxyGatewaysAllProfiles(ctx context.Context) ([]LinkedAgent, e
 				positions[aid] = pos
 				out = append(out, LinkedAgent{aid, []RouterRef{}})
 			}
-			name := r.GetString("name")
+			name := routerText(&r, "name")
 			if name == "" {
-				name = r.GetString("id")
+				name = routerText(&r, "id")
 			}
-			pn := p.GetString("name")
+			pn := p.Name
 			if pn == "" {
 				pn = id
 			}
-			out[pos].Routers = append(out[pos].Routers, RouterRef{r.GetString("id"), name, id, pn})
+			out[pos].Routers = append(out[pos].Routers, RouterRef{routerText(&r, "id"), name, id, pn})
 		}
 	}
+
 	return out, nil
 }
 
@@ -180,7 +171,7 @@ func statusEntry(id string, a *model.Agent, refs []RouterRef, status Reply) Forw
 	}
 	return entry(id, a, refs, "needs_persist", message, status, true)
 }
-func precheck(a *model.Agent, raw *jsonx.Object) (string, string) {
+func precheck(a *model.Agent, raw *model.Agent) (string, string) {
 	if a == nil {
 		return "missing", msgLinkedMissing
 	}
@@ -190,7 +181,7 @@ func precheck(a *model.Agent, raw *jsonx.Object) (string, string) {
 	if a.DeploymentMethod == "docker" {
 		return "docker", msgLinkedDocker
 	}
-	if !agents.IsOnline(raw, nil) {
+	if raw == nil || !agents.FreshHeartbeat(raw.LastHeartbeat, nil) || raw.Status != "online" {
 		return "offline", msgOffline
 	}
 	if !Supports(a, ForwardingVersion) {
@@ -260,4 +251,16 @@ func (b *Bridge) PersistForwarding(ctx context.Context, id string, refs []Router
 	status := Reply{"supported": json.RawMessage(`true`), "ipv4_forwarding": data["ipv4_forwarding"], "managed": data["managed"]}
 	put(data, "gateway", statusEntry(id, a, refs, status))
 	return data, nil
+}
+
+func routerText(router *model.Router, key string) string {
+	raw, _, err := router.MemberJSON(key)
+	if err != nil {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		return ""
+	}
+	return text
 }

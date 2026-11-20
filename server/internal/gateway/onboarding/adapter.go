@@ -13,7 +13,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
@@ -21,70 +20,53 @@ import (
 	"configflow/internal/routersplit"
 	"configflow/internal/rules"
 	"configflow/internal/setupflow"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
-func fromLegacy(raw *jsonx.Object) (Document, error) {
-	b, err := jsonx.Compact(raw)
+func modelDocument(record json.Marshaler) (Document, error) {
+	raw, err := record.MarshalJSON()
 	if err != nil {
 		return nil, err
 	}
-	return object(b), nil
+	return object(raw), nil
 }
-func legacy(config Document) (*jsonx.Object, error) {
-	v, err := jsonx.Parse(encode(config))
-	if err != nil {
-		return nil, err
-	}
-	o, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("onboarding: profile is not an object")
-	}
-	return o, nil
-}
+func nativeConfig(config Document) (*model.Config, error) { return model.DecodeConfig(encode(config)) }
 func gatewayConfig(config Document) (*gateway.Config, error) {
-	v, err := legacy(config)
+	v, err := nativeConfig(config)
 	if err != nil {
 		return nil, err
 	}
 	return gateway.NewConfig(v), nil
 }
 func generate(ctx context.Context, config Document, baseURL string) (*yamlx.Node, error) {
-	raw, err := legacy(config)
+	raw, err := nativeConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	data, err := convert.GenerateMihomoConfig(ctx, raw, convert.GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+	data, err := convert.MihomoConfig(ctx, raw, convert.MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true})
 	if err != nil {
 		return nil, err
 	}
 	return yamlx.Parse([]byte(data))
 }
-func defaultMihomo() (*yamlx.Node, error) { return yamlbridge.Encode(convert.DefaultMihomoTemplate()) }
+func defaultMihomo() (*yamlx.Node, error) { return convert.MihomoTemplate(), nil }
 func fullTun(config, candidate Document, ids []string) error {
-	raw, err := legacy(config)
+	raw, err := nativeConfig(config)
 	if err != nil {
 		return err
 	}
 	gw := gateway.NewConfig(raw)
-	previous := []string{}
-	for _, v := range routersplit.RouteRuleSetIDs(raw) {
-		if id, ok := v.(string); ok {
-			previous = append(previous, id)
-		}
-	}
+	previous := routersplit.ProfileRuleIDs(raw.Profile)
 	if err = gw.ValidateRuleSetIDs(ids, previous); err != nil {
 		return err
 	}
-	_, marker := routersplit.ReadMarker(raw)
+	_, marker := routersplit.ReadMarkerProfile(raw.Profile)
 	native := Document{"version": encode(1), "takeover": encode("full_tun"), "origin": encode("setup")}
 	if marker != nil {
-		b, err := jsonx.Compact(marker)
-		if err != nil {
-			return err
+		data, present := raw.Profile.Mihomo.Fields.Get(routersplit.MarkerKey)
+		if present {
+			native = object(data)
 		}
-		native = object(b)
 	}
 	native["route_rule_set_ids"] = encode(ids)
 	mihomo := object(candidate["mihomo"])
@@ -93,7 +75,7 @@ func fullTun(config, candidate Document, ids []string) error {
 	}
 	mihomo["linux_gateway"] = encode(gateway.Settings{Enabled: false, RuleSetIDs: []string{}})
 	mihomo[routersplit.MarkerKey] = encode(native)
-	source, err := routersplit.FullTunBaseYAML(stringValue(mihomo["custom_config"]))
+	source, err := routersplit.FullTunYAML(stringValue(mihomo["custom_config"]))
 	if err != nil {
 		return err
 	}
@@ -102,20 +84,20 @@ func fullTun(config, candidate Document, ids []string) error {
 	return nil
 }
 func markerState(config Document) (string, error) {
-	v, err := legacy(config)
+	v, err := nativeConfig(config)
 	if err != nil {
 		return "", err
 	}
-	state, _ := routersplit.ReadMarker(v)
+	state, _ := routersplit.ReadMarkerProfile(v.Profile)
 	return state, nil
 }
-func fullTunDocument(document *yamlx.Node) bool { return routersplit.IsFullTunDocument(document) }
+func fullTunDocument(document *yamlx.Node) bool { return routersplit.FullTunShape(document) }
 func takeover(ctx context.Context, r *repo.Repository, id string, config Document) (string, error) {
-	raw, err := legacy(config)
+	raw, err := nativeConfig(config)
 	if err != nil {
 		return "", err
 	}
-	state, _ := routersplit.ReadMarker(raw)
+	state, _ := routersplit.ReadMarkerProfile(raw.Profile)
 	switch state {
 	case routersplit.StateValid:
 		return "full_tun", nil
@@ -127,20 +109,20 @@ func takeover(ctx context.Context, r *repo.Repository, id string, config Documen
 		return "", err
 	}
 	if settings.Enabled {
-		state, err := routersplit.RouterSplitState(ctx, r, id, raw, nil)
+		state, err := readSplitState(ctx, r, id, raw.Profile)
 		if err != nil {
 			return "", err
 		}
-		if state.Value("mode") == "legacy" {
+		if state.Mode != nil && *state.Mode == "legacy" {
 			return "legacy", nil
 		}
 		return "selective", nil
 	}
-	evidence, err := routersplit.LegacyContext(ctx, r, id)
+	evidence, err := routersplit.ReadContext(ctx, r, id)
 	if err != nil {
 		return "", err
 	}
-	if evidence.Value("session_goal") == "router" && !jsonx.Truthy(evidence.Value("session_completed")) {
+	if evidence.SessionGoal != nil && *evidence.SessionGoal == "router" && !evidence.SessionCompleted {
 		return "full_tun", nil
 	}
 	return "selective", nil
@@ -239,16 +221,11 @@ func pendingSetup(ctx context.Context, r *repo.Repository, id string) bool {
 	return false
 }
 func routeIDs(config Document) ([]string, error) {
-	raw, err := legacy(config)
+	raw, err := nativeConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	ids := []string{}
-	for _, v := range routersplit.RouteRuleSetIDs(raw) {
-		if id, ok := v.(string); ok {
-			ids = append(ids, id)
-		}
-	}
+	ids := routersplit.ProfileRuleIDs(raw.Profile)
 	return ids, nil
 }
 func errorsYAML(err error) bool {
@@ -277,13 +254,19 @@ func validationMessage(err error) (string, bool) {
 	}
 	var gw *gateway.Error
 	var strategy *rules.StrategyReferenceError
+	var base *convert.BaseSettingsError
 	var tier *convert.EasyTierSettingsError
-	if errors.As(err, &gw) || errors.As(err, &strategy) || errors.As(err, &tier) || errorsYAML(err) {
+	if errors.As(err, &gw) || errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &tier) || errorsYAML(err) {
 		return err.Error(), true
 	}
-	// The generator's pre-N9 error identity is adapted only at this boundary.
-	if convert.PyErrorClass(err) == "ValueError" {
-		return err.Error(), true
-	}
+
 	return "", false
+}
+
+func readSplitState(ctx context.Context, r *repo.Repository, id string, p *model.Profile) (routersplit.SplitState, error) {
+	evidence, err := routersplit.ReadContext(ctx, r, id)
+	if err != nil {
+		return routersplit.SplitState{}, err
+	}
+	return routersplit.ProfileState(p, evidence)
 }

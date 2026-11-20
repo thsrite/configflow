@@ -20,7 +20,7 @@ func nativeProfile(t *testing.T, edit func(document *yamlx.Node)) (Document, str
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, err := fromLegacy(raw)
+	config, err := modelDocument(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestAssertReadyClassifiesValidationErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, err := fromLegacy(raw)
+	saved, err := modelDocument(raw)
 	if err != nil {
 		t.Fatal(err)
 	}

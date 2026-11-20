@@ -28,8 +28,11 @@ type testManager struct {
 	client agents.Client
 }
 
-func (m *testManager) GetAgentByID(context.Context, string, bool) (*jsonx.Object, error) {
-	return m.record, nil
+func (m *testManager) ReadAgent(context.Context, string, bool) (*model.Agent, error) {
+	raw, _ := json.Marshal(m.record)
+	var out model.Agent
+	err := json.Unmarshal(raw, &out)
+	return &out, err
 }
 func (m *testManager) Client() agents.Client { return m.client }
 
@@ -91,7 +94,7 @@ func TestWriteOwnersRuntimeAndDisconnect(t *testing.T) {
 				case "persist":
 					_, err = b.PersistForwarding(ctx, "gw", []RouterRef{{ID: "r"}})
 				case "raw":
-					_, err = b.Request(ctx, b.Manager.(*testManager).record, "remove", "POST", json.RawMessage(`{}`))
+					_, err = b.Request(ctx, fixtureAgent(b.Manager.(*testManager).record), "remove", "POST", json.RawMessage(`{}`))
 				default:
 					body := json.RawMessage(`{}`)
 					if op == "apply" {
@@ -147,7 +150,7 @@ func TestAgentRawWireAndProductionBounds(t *testing.T) {
 		if method == "POST" {
 			body = json.RawMessage(`{}`)
 		}
-		if _, err := b.Request(context.Background(), raw, op, method, body); err != nil {
+		if _, err := b.Request(context.Background(), fixtureAgent(raw), op, method, body); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -321,5 +324,22 @@ func TestPublicationRefusalsKeepGatewayErrorAndCause(t *testing.T) {
 	var monitorErr *monitor.Error
 	if !errors.As(err, &gatewayErr) || !errors.As(err, &monitorErr) {
 		t.Fatal("publication transport refusal lost chain", err)
+	}
+}
+
+func fixtureAgent(value any) *model.Agent {
+	raw, _ := json.Marshal(value)
+	var out model.Agent
+	_ = json.Unmarshal(raw, &out)
+	return &out
+}
+
+func TestRouterLinkRequiresOriginalStringIdentity(t *testing.T) {
+	config, err := model.DecodeConfig([]byte(`{"routers":{"items":[{"id":"synthetic","proxy_gateway_agent_id":1}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ProxyRouters(config, "1")) != 0 {
+		t.Fatal("numeric router link acquired string Agent identity")
 	}
 }

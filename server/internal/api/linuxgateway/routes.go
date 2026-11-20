@@ -99,7 +99,19 @@ func provider(c *httpx.Ctx) (*httpx.Response, error) {
 	if !validation.Valid {
 		return httpx.Message(401, false, validation.Message), nil
 	}
-	gw := gateway.NewConfig(config)
+	repository, err := repo.GetRepository(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	profileID, err := repo.ResolveProfileID(c.Context(), c.Param("profile_id"))
+	if err != nil {
+		return nil, err
+	}
+	native, err := repository.Config(c.Context(), profileID, nil)
+	if err != nil {
+		return nil, err
+	}
+	gw := gateway.NewConfig(native)
 	var content string
 	if strings.Contains(c.Request.URL.Path, "/linux-gateway/source/") {
 		content, err = gw.SourceYAML(c.Context(), c.Param("rule_id"), nil)

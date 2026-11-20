@@ -3,11 +3,10 @@ package gateway_test
 import (
 	"context"
 	"errors"
-	"math/big"
 	"net/netip"
 	"os"
 	"path/filepath"
-	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,6 +17,7 @@ import (
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 	"configflow/internal/testjson"
+	"configflow/internal/yamlx"
 )
 
 // snapshot is test_linux_gateway.py's snapshot(): one selected inline rule set.
@@ -49,14 +49,14 @@ func TestDefaultContentReader(t *testing.T) {
 	source.Set("url", "https://rules.example/ip.txt")
 	source.Delete("content")
 
-	if _, err := gateway.NewConfig(config).ProviderPayload(ctx, "r", nil); !errors.Is(err, gateway.ErrRulesetContentUnavailable) {
+	if _, err := gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil); !errors.Is(err, gateway.ErrRulesetContentUnavailable) {
 		t.Fatalf("without a reader: %v", err)
 	}
 	var calls int
-	t.Cleanup(gateway.SetRulesetContent(func(_ context.Context, item, library, cfg *jsonx.Object) (string, error) {
+	t.Cleanup(gateway.SetRuleSourceReader(func(_ context.Context, item model.RuleConfig, library *model.RuleLibraryItem, cfg *rulefetch.SourceConfig) (string, error) {
 		calls++
-		if item.GetString("id") != "r" || library.GetString("id") != "lib" || cfg != config {
-			t.Errorf("reader arguments: %v %v", item, library)
+		if item.ID != "r" || library == nil || library.ID != "lib" || cfg == nil || cfg.Settings.ServerDomain != "https://config.example" {
+			t.Errorf("reader arguments: %+v %+v %+v", item, library, cfg)
 		}
 		return "", nil
 	}))
@@ -72,21 +72,21 @@ func TestDefaultContentReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	source.Set("name", "Renamed source")
-	payload, err := gateway.NewConfig(config).ProviderPayload(ctx, "r", nil)
+	payload, err := gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil)
 	if err != nil || len(payload) != 0 {
 		t.Fatalf("empty cached source: %v %v", payload, err)
 	}
 	if err := os.Remove(filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, source)))); err != nil {
 		t.Fatal(err)
 	}
-	_, err = gateway.NewConfig(config).ProviderPayload(ctx, "r", nil)
+	_, err = gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil)
 	var gwErr *gateway.Error
 	if !errors.As(err, &gwErr) || !strings.Contains(gwErr.Message, "无法读取") {
 		t.Fatalf("missing cache: %v", err)
 	}
 	// The overlap check treats an empty remote set as unreadable, without the
 	// cache requirement.
-	warnings, err := gateway.NewConfig(config).DirectOverlapWarnings(ctx, nil)
+	warnings, err := gateway.NewFixtureConfig(config).DirectOverlapWarnings(ctx, nil)
 	if err != nil || len(warnings) != 1 || !strings.HasPrefix(warnings[0], "未能读取「Renamed source」") {
 		t.Fatalf("overlap: %q %v", warnings, err)
 	}
@@ -95,56 +95,72 @@ func TestDefaultContentReader(t *testing.T) {
 	}
 }
 
-// TestApplyKeepsUntouchedValues checks the jsonx boundary: values the patch
-// does not replace come back as they were (number forms, timestamps, big
+// TestApplyKeepsUntouchedValues checks the YAML node boundary: values the patch
+// does not replace keep their original form (number forms, timestamps, big
 // integers), and a disabled gateway leaves the document untouched.
 func TestApplyKeepsUntouchedValues(t *testing.T) {
-	big, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
-	stamp := "2024-01-02 03:04:05"
-	proxies := []any{jsonx.Obj("name", "p", "port", jsonx.Int(80), "ratio", jsonx.Float(1.0),
-		"big", jsonx.BigInt(big), "when", stamp, "raw", []byte("x"), "none", nil, "中文", "值")}
-	tun := jsonx.Obj("mtu", jsonx.Int(1400), "route-address", []any{"198.18.0.0/16"})
-	build := func() *jsonx.Object {
-		return jsonx.Obj("mixed-port", jsonx.Int(7890), "proxies", proxies, "tun", tun,
-			"rule-providers", jsonx.Obj("Proxy IPs", jsonx.Obj("type", "http", "interval", jsonx.Int(86400))))
+	rawDoc := `mixed-port: 7890
+proxies:
+  - name: p
+    port: 80
+    ratio: 1.0
+    big: 123456789012345678901234567890
+    when: "2024-01-02 03:04:05"
+    none: null
+    中文: 值
+tun:
+  mtu: 1400
+  route-address:
+    - 198.18.0.0/16
+rule-providers:
+  Proxy IPs:
+    type: http
+    interval: 86400
+`
+	build := func() *yamlx.Node {
+		n, err := yamlx.Parse([]byte(rawDoc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
 	}
 
 	off := build()
-	before, _ := jsonx.Compact(off)
-	if err := gateway.ApplyJSONX(off, snapshot(false), ""); err != nil {
+	before, _ := yamlx.Marshal(off)
+	if err := gateway.NewFixtureConfig(snapshot(false)).Apply(off, ""); err != nil {
 		t.Fatal(err)
 	}
-	if after, _ := jsonx.Compact(off); string(after) != string(before) || off.Value("tun") != tun {
+	if after, _ := yamlx.Marshal(off); string(after) != string(before) {
 		t.Fatalf("disabled gateway changed the document: %s", after)
 	}
 
 	on := build()
-	if err := gateway.ApplyJSONX(on, snapshot(true), ""); err != nil {
+	if err := gateway.NewFixtureConfig(snapshot(true)).Apply(on, ""); err != nil {
 		t.Fatal(err)
 	}
-	got := on.GetList("proxies")[0].(*jsonx.Object)
-	want := proxies[0].(*jsonx.Object)
-	for _, key := range want.Keys() {
-		if !reflect.DeepEqual(got.Value(key), want.Value(key)) {
-			t.Errorf("proxies.0.%s = %#v, want %#v", key, got.Value(key), want.Value(key))
+	proxy := yamlx.Get(on, "proxies").Content[0]
+	for k, want := range map[string]string{"name": "p", "port": "80", "ratio": "1.0", "big": "123456789012345678901234567890", "when": "2024-01-02 03:04:05", "中文": "值"} {
+		if got := yamlx.Get(proxy, k); got == nil || got.Value != want {
+			t.Errorf("proxies.0.%s = %v, want %q", k, got, want)
 		}
 	}
-	if _, isFloat := got.Value("ratio").(jsonx.Number); !isFloat || !got.Value("ratio").(jsonx.Number).IsFloat() {
-		t.Errorf("ratio lost its float form: %#v", got.Value("ratio"))
+	if ratio := yamlx.Get(proxy, "ratio"); ratio == nil || ratio.ShortTag() != "!!float" {
+		t.Errorf("ratio lost its float form: %#v", ratio)
 	}
-	if tun.Has("route-address-set") || !tun.Has("route-address") {
-		t.Errorf("the input TUN object was modified: %v", tun)
-	}
-	newTun := on.GetObject("tun")
-	if newTun.Has("route-address") || newTun.GetInt("mtu") != 1400 {
+	newTun := yamlx.Get(on, "tun")
+	if yamlx.Get(newTun, "route-address") != nil || yamlx.Get(newTun, "mtu").Value != "1400" {
 		t.Errorf("patched TUN: %v", newTun)
 	}
-	original := on.GetObject("rule-providers").GetObject("Proxy IPs")
-	if original.GetInt("interval") != gateway.RefreshInterval || original.GetString("format") != "yaml" ||
-		!strings.HasPrefix(original.GetString("url"), "https://config.example/api/profiles/home/linux-gateway/source/r?token=") {
+	original := yamlx.Get(yamlx.Get(on, "rule-providers"), "Proxy IPs")
+	if yamlx.Get(original, "interval").Value != strconv.Itoa(gateway.RefreshInterval) || yamlx.Get(original, "format").Value != "yaml" ||
+		!strings.HasPrefix(yamlx.Get(original, "url").Value, "https://config.example/api/profiles/home/linux-gateway/source/r?token=") {
 		t.Errorf("original provider not re-pointed: %v", original)
 	}
-	if keys := on.Keys(); strings.Join(keys, ",") != "mixed-port,proxies,tun,rule-providers,ipv6,mode,dns,"+gateway.MarkerKey {
+	var keys []string
+	for k := range yamlx.Pairs(on) {
+		keys = append(keys, k)
+	}
+	if strings.Join(keys, ",") != "mixed-port,proxies,tun,rule-providers,ipv6,mode,dns,"+gateway.MarkerKey {
 		t.Errorf("key order %v", keys)
 	}
 }
@@ -248,7 +264,7 @@ func TestHooks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			enabled, err := hooks.GatewayEnabled(tt.config)
+			enabled, err := hooks.GatewayEnabled(gateway.NewFixtureModel(tt.config))
 			if enabled != tt.enabled || (err != nil) != tt.wantErr {
 				t.Fatalf("got %v, %v", enabled, err)
 			}
@@ -256,12 +272,9 @@ func TestHooks(t *testing.T) {
 	}
 }
 
-func TestN811RuleReaderPrecedence(t *testing.T) {
-	legacyCalls, typedCalls := 0, 0
-	t.Cleanup(gateway.SetRulesetContent(func(context.Context, *jsonx.Object, *jsonx.Object, *jsonx.Object) (string, error) {
-		legacyCalls++
-		return "192.0.2.0/24", nil
-	}))
+func TestN811RuleReaderRestoreFailsClosed(t *testing.T) {
+	typedCalls := 0
+	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	restore := gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		typedCalls++
 		if item.ID != "r" || library == nil || library.ID != "lib" || config.Settings.ServerDomain != "https://config.example" {
@@ -274,19 +287,16 @@ func TestN811RuleReaderPrecedence(t *testing.T) {
 	source.Set("source_type", "url")
 	source.Set("url", "https://example.com/rules")
 	source.Delete("content")
-	config := gateway.NewConfig(raw)
+	config := gateway.NewFixtureConfig(raw)
 	if _, err := config.ProviderPayload(t.Context(), "r", nil); err != nil {
 		t.Fatal(err)
 	}
-	if typedCalls != 1 || legacyCalls != 0 {
-		t.Fatalf("readers called typed=%d legacy=%d", typedCalls, legacyCalls)
+	if typedCalls != 1 {
+		t.Fatalf("readers called typed=%d", typedCalls)
 	}
 	restore()
-	if _, err := config.ProviderPayload(t.Context(), "r", nil); err != nil {
-		t.Fatal(err)
-	}
-	if typedCalls != 1 || legacyCalls != 1 {
-		t.Fatalf("restore called typed=%d legacy=%d", typedCalls, legacyCalls)
+	if _, err := config.ProviderPayload(t.Context(), "r", nil); !errors.Is(err, gateway.ErrRulesetContentUnavailable) {
+		t.Fatalf("after restore expected ErrRulesetContentUnavailable, got %v", err)
 	}
 }
 
@@ -307,7 +317,7 @@ func TestN811ReaderProjectionExcludesUnconsumedContent(t *testing.T) {
 		}
 		return "198.51.100.0/24", nil
 	}))
-	if _, err := gateway.NewConfig(raw).ProviderPayload(t.Context(), "r", nil); err != nil {
+	if _, err := gateway.NewFixtureConfig(raw).ProviderPayload(t.Context(), "r", nil); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
@@ -362,7 +372,7 @@ func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testin
 		return string(data), err
 	}))
 
-	payload, err := gateway.NewConfig(raw).ProviderPayload(ctx, "r", nil)
+	payload, err := gateway.NewFixtureConfig(raw).ProviderPayload(ctx, "r", nil)
 	if err != nil {
 		t.Fatalf("ProviderPayload failed format inference on cached YAML: %v", err)
 	}

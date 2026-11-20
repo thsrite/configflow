@@ -124,9 +124,12 @@ func compareError(want *jsonx.Object, got error) string {
 		return "Python raised " + encode(want) + ", Go returned no error"
 	}
 	class := "?"
+	var native interface{ ErrorClass() string }
 	var classed interface{ PythonClass() string }
 	if errors.As(got, &classed) {
 		class = classed.PythonClass()
+	} else if errors.As(got, &native) {
+		class = native.ErrorClass()
 	}
 	var problems []string
 	if class != want.GetString("class") {

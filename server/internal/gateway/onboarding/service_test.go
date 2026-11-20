@@ -159,7 +159,7 @@ func TestPreviewAndSaveHaveSameDrafts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	native, err := fromLegacy(config)
+	native, err := modelDocument(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestPreviewAndSaveHaveSameDrafts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, err := fromLegacy(current)
+	actual, err := modelDocument(current)
 	if err != nil {
 		t.Fatal(err)
 	}

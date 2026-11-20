@@ -155,7 +155,7 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 	}
 	a := pair[service]
 	did := taskOf(r.Deployments[service]).DeploymentID
-	reservation, err := s.Manager.BeginDeployment(ctx, a.ID, did)
+	reservation, err := s.Manager.ReserveDeployment(ctx, a.ID, did)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +190,11 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := deploy.PrepareContent(ctx, s.Manager, deploy.NewTarget(a.record), source, deploy.PrepareOptions{BaseURL: r.ServerURL, DeploymentID: did, StoreDownloads: true})
+	target, err := deploy.NewTypedTarget(a.record)
+	if err != nil {
+		return nil, err
+	}
+	prepared, err := deploy.PrepareContent(ctx, s.Manager, target, source, deploy.PrepareOptions{BaseURL: r.ServerURL, DeploymentID: did, StoreDownloads: true})
 	if err != nil {
 		return nil, err
 	}

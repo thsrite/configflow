@@ -441,7 +441,7 @@ func (s *Service) described(ctx context.Context, record *Record) (json.RawMessag
 		if err != nil {
 			return nil, err
 		}
-		settings, err := gateway.SettingsOf(profile)
+		settings, err := gateway.SettingsOf(gatewayModelConfig(profile))
 		if err == nil {
 			state, _ := routersplit.ReadMarker(profile)
 			fields["legacy_takeover"], _ = json.Marshal(state == routersplit.StateAbsent && settings.Enabled)

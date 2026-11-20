@@ -377,6 +377,6 @@ func findRouter(config json.RawMessage, id string) (*routers.Router, error) {
 var _ lockx.Spawner = lifecycle.DefaultSpawner{}
 
 func gatewayRuleIDs(config *jsonx.Object) ([]string, error) {
-	settings, err := gateway.SettingsOf(config)
+	settings, err := gateway.SettingsOf(gatewayModelConfig(config))
 	return settings.RuleSetIDs, err
 }

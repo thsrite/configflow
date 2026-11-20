@@ -3,7 +3,7 @@ package gateway
 import (
 	"strings"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/weburl"
 )
 
@@ -45,9 +45,10 @@ type Rule struct {
 	sourceType, content               member
 	policy                            member
 	enabled, libraryEnabled           flag
-	// ruleType and value are str() of rule_type/value of a single rule.
+	// ruleType and value are display text of rule_type/value of a single rule.
 	ruleType, value string
-	raw             *jsonx.Object
+	ruleRecord      model.RuleConfig
+	libraryRecord   *model.RuleLibraryItem
 }
 
 // ID is the entry's id ("" when it has none).
@@ -88,7 +89,7 @@ func isMRS(r *Rule) bool {
 	return strings.HasSuffix(strings.ToLower(path), ".mrs")
 }
 
-// Config is the part of a profile configuration (repo's compat view: the
+// Config is the part of a profile configuration (repo's resolved view: the
 // profile plus shared rule library and system settings) that the gateway
 // reads. Build it with NewConfig; it is not modified afterwards.
 type Config struct {
@@ -100,7 +101,11 @@ type Config struct {
 	library      []*Rule
 	settings     Settings
 	settingsErr  error
-	raw          *jsonx.Object
+	profile      *model.Profile
+	system       model.SystemConfig
+	nodesSlice   []model.Node
+	rawLibrary   []model.RuleLibraryItem
+	hasLibrary   bool
 }
 
 // Settings is the profile's gateway setting (gateway_settings): an *Error

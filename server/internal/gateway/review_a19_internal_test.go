@@ -5,12 +5,14 @@ package gateway
 // TUN filter keys the corpus does not use.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"configflow/internal/jsonx"
+	"configflow/internal/yamlx"
 )
 
 func TestContentLimits(t *testing.T) {
@@ -43,22 +45,35 @@ func TestContentLimits(t *testing.T) {
 	}
 }
 
+func fixtureNode(t *testing.T, v any) *yamlx.Node {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := yamlx.FromJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func TestTUNFilterKeysRefused(t *testing.T) {
-	config := jsonx.Obj("profile_id", "home",
-		"mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{})))
+	config := NewFixtureConfig(jsonx.Obj("profile_id", "home",
+		"mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))))
 	for _, key := range tunFilterKeys {
 		t.Run(key, func(t *testing.T) {
 			for _, value := range []any{[]any{"x"}, "x", jsonx.Int(1)} {
-				doc := jsonx.Obj("tun", jsonx.Obj("enable", true, key, value))
-				err := ApplyJSONX(doc, config, "")
+				doc := fixtureNode(t, jsonx.Obj("tun", jsonx.Obj("enable", true, key, value)))
+				err := config.Apply(doc, "")
 				var gwErr *Error
 				if !errors.As(err, &gwErr) || gwErr.Message != fmt.Sprintf(fmtTunFilter, key) {
 					t.Fatalf("%v: %v", value, err)
 				}
 			}
 			for _, value := range []any{[]any{}, "", jsonx.Int(0), nil, false} {
-				doc := jsonx.Obj("tun", jsonx.Obj(key, value))
-				if err := ApplyJSONX(doc, config, ""); err != nil {
+				doc := fixtureNode(t, jsonx.Obj("tun", jsonx.Obj(key, value)))
+				if err := config.Apply(doc, ""); err != nil {
 					t.Fatalf("unset %v refused: %v", value, err)
 				}
 			}
@@ -70,8 +85,8 @@ func TestTUNFilterKeysRefused(t *testing.T) {
 // section, a truthy scalar is refused (expected values from
 // apply_linux_gateway on the test server).
 func TestScalarSections(t *testing.T) {
-	config := jsonx.Obj("profile_id", "home",
-		"mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{})))
+	config := NewFixtureConfig(jsonx.Obj("profile_id", "home",
+		"mihomo", jsonx.Obj("linux_gateway", jsonx.Obj("enabled", true, "rule_set_ids", []any{}))))
 	values := []struct {
 		value  any
 		truthy bool
@@ -85,14 +100,14 @@ func TestScalarSections(t *testing.T) {
 			want = msgDNSNotObject
 		}
 		for _, v := range values {
-			doc := jsonx.Obj(key, v.value)
-			err := ApplyJSONX(doc, config, "")
+			doc := fixtureNode(t, jsonx.Obj(key, v.value))
+			err := config.Apply(doc, "")
 			var gwErr *Error
 			switch {
 			case v.truthy && (!errors.As(err, &gwErr) || gwErr.Message != want):
 				t.Errorf("%s: %v: %v, want %q", key, v.value, err, want)
-			case !v.truthy && (err != nil || !doc.GetObject("tun").GetBool("enable") ||
-				doc.GetObject("dns").GetString("fake-ip-range") != DefaultFakeIPRange):
+			case !v.truthy && (err != nil || yamlx.Get(yamlx.Get(doc, "tun"), "enable").Value != "true" ||
+				yamlx.Get(yamlx.Get(doc, "dns"), "fake-ip-range").Value != DefaultFakeIPRange):
 				t.Errorf("%s: %v: %v %v", key, v.value, err, doc)
 			}
 		}

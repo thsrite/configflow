@@ -18,10 +18,8 @@
 // points (A20), onboard or install gateways (A21/A22), or decide router
 // split takeovers (internal/routersplit; Apply only calls its generation
 // check). Rule contents that are not inline come from a ContentLoader or,
-// by default, from the hook set with SetRulesetContent (config C32).
+// by default, from the hook set with SetRuleSourceReader (config C32).
 //
-// The Mihomo documents it edits are *yaml.Node trees. The profile
-// configuration and the generated document still arrive as jsonx values from
-// repo and convert; adapter.go is the only file that touches jsonx (N8 moves
-// it to typed records).
+// The Mihomo documents it edits are *yaml.Node trees, and profile
+// configurations arrive as typed *model.Config views.
 package gateway

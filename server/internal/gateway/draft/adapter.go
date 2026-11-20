@@ -14,8 +14,8 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/host"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
@@ -29,51 +29,41 @@ type Service struct {
 	Host       *host.Bridge
 }
 
-func fromLegacy(raw *jsonx.Object) (document, error) {
-	b, e := jsonx.Compact(raw)
-	if e != nil {
-		return nil, e
+func modelDocument(record json.Marshaler) (document, error) {
+	raw, err := record.MarshalJSON()
+	if err != nil {
+		return nil, err
 	}
-	return fields(b), nil
+	return fields(raw), nil
 }
-func legacy(config document) (*jsonx.Object, error) {
-	v, e := jsonx.Parse(encode(config))
-	if e != nil {
-		return nil, e
-	}
-	o, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, errors.New("gateway draft: expected object")
-	}
-	return o, nil
-}
+func nativeConfig(config document) (*model.Config, error) { return model.DecodeConfig(encode(config)) }
 func selection(config document, value json.RawMessage) (gateway.Settings, error) {
-	raw, e := legacy(config)
+	raw, e := nativeConfig(config)
 	if e != nil {
 		return gateway.Settings{}, e
 	}
 	return gateway.NewConfig(raw).ValidateSelection(value)
 }
 func settings(config document) (gateway.Settings, error) {
-	raw, e := legacy(config)
+	raw, e := nativeConfig(config)
 	if e != nil {
 		return gateway.Settings{}, e
 	}
 	return gateway.SettingsOf(raw)
 }
 func generate(ctx context.Context, config document, baseURL string) (*yamlx.Node, error) {
-	raw, e := legacy(config)
+	raw, e := nativeConfig(config)
 	if e != nil {
 		return nil, e
 	}
-	text, e := convert.GenerateMihomoConfig(ctx, raw, convert.GenerateOptions{BaseURL: baseURL, SkipProviderPreflight: true})
+	text, e := convert.MihomoConfig(ctx, raw, convert.MihomoOptions{BaseURL: baseURL, SkipProviderPreflight: true})
 	if e != nil {
 		return nil, e
 	}
 	return yamlx.Parse([]byte(text))
 }
 func overlaps(ctx context.Context, config document) ([]string, error) {
-	raw, e := legacy(config)
+	raw, e := nativeConfig(config)
 	if e != nil {
 		return nil, e
 	}
@@ -197,8 +187,8 @@ func sanitizedText(text string, seeds redact.Secrets) string {
 	return out
 }
 
-func (s *Service) guard(legacyContext *jsonx.Object, current, candidate document, restore bool, forwarding func() (string, error)) error {
-	raw, err := legacy(current)
+func (s *Service) guard(legacyContext *routersplit.Context, current, candidate document, restore bool, forwarding func() (string, error)) error {
+	raw, err := nativeConfig(current)
 	if err != nil {
 		return err
 	}
@@ -206,7 +196,7 @@ func (s *Service) guard(legacyContext *jsonx.Object, current, candidate document
 	if err != nil {
 		return err
 	}
-	needs, err := routersplit.NeedsContext(raw)
+	needs, err := needsContext(raw)
 	if err != nil {
 		return err
 	}
@@ -215,13 +205,16 @@ func (s *Service) guard(legacyContext *jsonx.Object, current, candidate document
 	}
 	contextValue := legacyContext
 	if contextValue == nil {
-		contextValue = jsonx.NewObject()
+		contextValue = &routersplit.Context{}
 	}
-	modeValue, err := routersplit.ModeFromContext(raw, contextValue)
+	modeValue, err := routersplit.ProfileState(raw.Profile, contextValue)
 	if err != nil {
 		return err
 	}
-	mode, _ := modeValue.(string)
+	mode := ""
+	if modeValue.Mode != nil {
+		mode = *modeValue.Mode
+	}
 	splitError := func(message, code string) error { return routersplit.NewRouterSplitError(message, code, 409) }
 	if mode == "invalid" {
 		return splitError(routersplit.Messages[routersplit.CodeInvalid], routersplit.CodeInvalid)
@@ -231,8 +224,8 @@ func (s *Service) guard(legacyContext *jsonx.Object, current, candidate document
 			message := routersplit.FullTunNoRestorePoint
 			if p := point(current); p != nil {
 				message = routersplit.Messages[routersplit.CodeRestoreBlocked]
-				snapshot, _ := legacy(document{"mihomo": encode(p.Mihomo), "oxidns": encode(p.OxiDNS)})
-				full, err := routersplit.BaseIsFullTun(snapshot)
+				snapshot, _ := nativeConfig(document{"mihomo": encode(p.Mihomo), "oxidns": encode(p.OxiDNS)})
+				full, err := baseFullTun(snapshot)
 				if err != nil {
 					return err
 				}
@@ -253,18 +246,18 @@ func (s *Service) guard(legacyContext *jsonx.Object, current, candidate document
 	if legacyContext == nil || after.Enabled || !before.Enabled {
 		return nil
 	}
-	source, err := routersplit.LegacySource(raw, legacyContext)
+	source, err := routersplit.LegacyProfileSource(raw.Profile, legacyContext)
 	if err != nil {
 		return err
 	}
-	if source == nil {
+	if source == "" {
 		return nil
 	}
-	target, err := legacy(candidate)
+	target, err := nativeConfig(candidate)
 	if err != nil {
 		return err
 	}
-	full, err := routersplit.BaseIsFullTun(target)
+	full, err := baseFullTun(target)
 	if err != nil {
 		return err
 	}
@@ -293,21 +286,21 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	raw, revision, err := s.Repository.GetPublishSnapshot(ctx, op.ProfileID, true)
+	raw, revision, err := s.Repository.PublishConfig(ctx, op.ProfileID, true)
 	if err != nil {
 		return nil, err
 	}
-	config, err := fromLegacy(raw)
+	config, err := modelDocument(raw)
 	if err != nil {
 		return nil, err
 	}
-	var legacyContext *jsonx.Object
-	needs, err := routersplit.NeedsContext(raw)
+	var legacyContext *routersplit.Context
+	needs, err := needsContext(raw)
 	if err != nil {
 		return nil, err
 	}
 	if needs {
-		legacyContext, err = routersplit.LegacyContext(ctx, s.Repository, op.ProfileID)
+		legacyContext, err = routersplit.ReadContext(ctx, s.Repository, op.ProfileID)
 		if err != nil {
 			return nil, err
 		}
@@ -322,18 +315,11 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 			if !io {
 				return "", invalid(msgConcurrent)
 			}
-			ids, err := routersplit.LegacyGatewayAgentIDs(raw, legacyContext)
+			ids, err := routersplit.LegacyAgentIDs(raw.Profile, legacyContext)
 			if err != nil {
 				return "", err
 			}
-			agentIDs := []string{}
-			for _, v := range ids {
-				id, ok := v.(string)
-				if !ok {
-					return "", invalid(msgConcurrent)
-				}
-				agentIDs = append(agentIDs, id)
-			}
+			agentIDs := ids
 			if s.Host == nil {
 				return "", invalid(msgConcurrent)
 			}
@@ -382,58 +368,57 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		_, revision, err = s.Repository.UpdateProfileTransaction(ctx, op.ProfileID, func(tx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+		_, revision, err = s.Repository.CommitConfig(ctx, op.ProfileID, func(tx context.Context, current *model.Config) error {
 			if err := ctx.Err(); err != nil {
-				return nil, err
+				return err
 			}
-			native, err := fromLegacy(current)
+			native, err := modelDocument(current)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			rev, err := s.Repository.ConfigRevision(tx, op.ProfileID)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			_, hasRevision := op.Body["expected_config_revision"]
 			_, hasToken := op.Body["preview_token"]
 			guarded := op.Restore || hasRevision || hasToken
 			if guarded {
 				if err = checkRevision(op.Body, rev); err != nil {
-					return nil, err
+					return err
 				}
 			}
 			candidate, err := makeCandidate(native, false)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if guarded {
 				p, err := preview(tx, native, candidate, rev, op.Restore, op.BaseURL)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if err = checkPreview(op.Body, p); err != nil {
-					return nil, err
+					return err
 				}
 			}
 			if !op.Restore {
 				if err = remember(native, candidate); err != nil {
-					return nil, err
+					return err
 				}
 			}
 			for _, key := range []string{"mihomo", "oxidns"} {
 				if value, ok := candidate[key]; ok {
-					v, err := jsonx.Parse(value)
+					err := current.Profile.SetJSON(key, value)
 					if err != nil {
-						return nil, err
+						return err
 					}
-					current.Set(key, v)
 				}
 			}
-			committed, err = fromLegacy(current)
+			committed, err = modelDocument(current)
 			if err == nil {
 				err = ctx.Err()
 			}
-			return nil, err
+			return err
 		})
 		if err != nil {
 			return nil, err
@@ -441,7 +426,7 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		repo.ResetConfigContext(ctx)
 		config = committed
 	}
-	current, err := legacy(config)
+	current, err := nativeConfig(config)
 	if err != nil {
 		return nil, err
 	}
@@ -453,12 +438,12 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 	out["config_revision"] = encode(revision)
 	out["restore_point"] = encode(summary(config))
 	if legacyContext == nil {
-		needs, err := routersplit.NeedsContext(current)
+		needs, err := needsContext(current)
 		if err != nil {
 			return nil, err
 		}
 		if needs {
-			legacyContext, err = routersplit.LegacyContext(ctx, s.Repository, op.ProfileID)
+			legacyContext, err = routersplit.ReadContext(ctx, s.Repository, op.ProfileID)
 			if err != nil {
 				return nil, err
 			}
@@ -466,9 +451,9 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 	}
 	contextValue := legacyContext
 	if contextValue == nil {
-		contextValue = jsonx.NewObject()
+		contextValue = &routersplit.Context{}
 	}
-	state, err := routersplit.RouterSplitState(ctx, s.Repository, op.ProfileID, current, contextValue)
+	state, err := routersplit.ProfileState(current.Profile, contextValue)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +462,7 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		Source  any `json:"source"`
 		Issues  any `json:"issues"`
 		RuleIDs any `json:"route_rule_set_ids"`
-	}{state.Value("mode"), state.Value("source"), state.Value("issues"), routersplit.RouteRuleSetIDs(current)})
+	}{state.Mode, state.Source, state.Issues, routersplit.ProfileRuleIDs(current.Profile)})
 	if op.Write {
 		out["success"] = encode(true)
 		out["publish_guard"] = encode(struct {
@@ -487,4 +472,12 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		}{op.ProfileID, "mihomo", revision})
 	}
 	return json.Marshal(out)
+}
+
+func needsContext(config *model.Config) (bool, error) {
+	state, _ := routersplit.ReadMarkerProfile(config.Profile)
+	return state == routersplit.StateAbsent && routersplit.GatewayEnabled(config.Profile), nil
+}
+func baseFullTun(config *model.Config) (bool, error) {
+	return routersplit.BaseFullTun(config.Profile), nil
 }

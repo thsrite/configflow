@@ -72,9 +72,9 @@ func newFixture(t *testing.T) *fixture {
 	m, err := agents.New(ctx, r)
 	must(t, err)
 	t.Cleanup(m.Close)
-	s := &Service{Repository: r, Manager: m, Render: func(o installer.GatewayOptions) (string, error) {
+	s := &Service{Repository: r, Manager: m, Render: func(o installer.GatewayInstallOptions) (string, error) {
 		o.AgentChecksums = map[string]string{"linux-amd64": strings.Repeat("a", 64)}
-		return installer.GenerateGatewayInstallScript(o)
+		return installer.RenderGatewayInstall(o)
 	}}
 	revision, err := r.ConfigRevision(ctx, "default")
 	must(t, err)
@@ -424,7 +424,7 @@ func TestRuntimeWriteOwnersShutdownAndDisconnect(t *testing.T) {
 				}
 			} else {
 				original := f.s.Render
-				f.s.Render = func(o installer.GatewayOptions) (string, error) {
+				f.s.Render = func(o installer.GatewayInstallOptions) (string, error) {
 					if strings.HasPrefix(stage, "shutdown") {
 						runtime.Shutdown(context.Background())
 					} else {
@@ -871,4 +871,22 @@ func agentEditsForTest(t testing.TB, value any) agentcore.AgentEdits {
 		t.Fatal(err)
 	}
 	return edits
+}
+
+func TestNativeSystemCredentialsReachSharedRedactor(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.s.Repository.UpdateSystemTransaction(f.ctx, func(_ context.Context, document *jsonx.Object) (*jsonx.Object, error) {
+		document.GetObject("system_config").Set("rule_fetch_proxy", "http://operator:synthetic-native-system-secret@proxy.example.com")
+		return nil, nil
+	})
+	must(t, err)
+	secrets, err := f.s.secrets(f.ctx)
+	must(t, err)
+	found := false
+	for _, value := range secrets {
+		found = found || value == "http://operator:synthetic-native-system-secret@proxy.example.com"
+	}
+	if !found {
+		t.Fatal("typed system credential bypassed shared redactor")
+	}
 }

@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"configflow/internal/model"
@@ -58,8 +60,8 @@ func ValidatePolicies(configs []model.RuleConfig, availableNames []string, forma
 		if kind == "ruleset" {
 			fallback = defaultPolicy
 		}
-		policy := valueOr(rule.Policy, fallback)
-		if _, found := available[policy]; !found {
+		policy, validType := rulePolicy(&rule, fallback)
+		if !validType || !containsPolicy(available, policy) {
 			id := rule.ID
 			if id == "" {
 				id = rule.Name
@@ -68,4 +70,31 @@ func ValidatePolicies(configs []model.RuleConfig, availableNames []string, forma
 		}
 	}
 	return nil
+}
+
+func containsPolicy(available map[string]struct{}, name string) bool {
+	_, found := available[name]
+	return found
+}
+
+// rulePolicy distinguishes an absent policy key (which takes fallback) from an
+// explicit JSON null or non-string value (which is always invalid and formatted
+// as its JSON literal in the Chinese diagnostic).
+func rulePolicy(rule *model.RuleConfig, fallback string) (policy string, validType bool) {
+	if raw, err := rule.MarshalJSON(); err == nil {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil {
+			value, present := fields["policy"]
+			if !present {
+				return fallback, true
+			}
+			trimmed := bytes.TrimSpace(value)
+			var text string
+			if len(trimmed) > 0 && trimmed[0] == '"' && json.Unmarshal(trimmed, &text) == nil {
+				return text, true
+			}
+			return string(trimmed), false
+		}
+	}
+	return valueOr(rule.Policy, fallback), true
 }

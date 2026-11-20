@@ -8,7 +8,6 @@ import (
 	"math"
 
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -51,11 +50,11 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		return nil, err
 	}
 	adopter := currentAdopter()
-	raw, revision, err := s.Repository.GetPublishSnapshot(ctx, op.ProfileID, true)
+	raw, revision, err := s.Repository.PublishConfig(ctx, op.ProfileID, true)
 	if err != nil {
 		return nil, err
 	}
-	config, err := fromLegacy(raw)
+	config, err := modelDocument(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -65,15 +64,15 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		}
 		return nil, ErrSetupUnavailable
 	}
-	var before *jsonx.Object
+	var before *model.Profile
 	var beforeNative Document
 	modeSource := config
 	if op.Write && !op.Preview {
-		before, err = s.Repository.GetProfile(ctx, op.ProfileID)
+		before, err = s.Repository.Profile(ctx, op.ProfileID)
 		if err != nil {
 			return nil, err
 		}
-		beforeNative, err = fromLegacy(before)
+		beforeNative, err = modelDocument(before)
 		if err != nil {
 			return nil, err
 		}
@@ -123,69 +122,68 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	saved, revision, err := s.Repository.UpdateProfileTransaction(ctx, op.ProfileID, func(tx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
+	saved, revision, err := s.Repository.CommitConfig(ctx, op.ProfileID, func(tx context.Context, current *model.Config) error {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		now, err := fromLegacy(current)
+		now, err := modelDocument(current)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		rev, err := s.Repository.ConfigRevision(tx, op.ProfileID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !revisionMatches(object(op.Body)["expected_config_revision"], rev) {
-			return nil, repo.NewInUse(msgStale, nil)
+			return repo.NewInUse(msgStale, nil)
 		}
 		marker, err := markerState(now)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		gw, err := gatewayConfig(now)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		settings, err := gw.Settings()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if marker != beforeMarker || mode == "full_tun" && marker == "absent" && settings.Enabled {
-			return nil, repo.NewInUse(msgTakeoverChanged, nil)
+			return repo.NewInUse(msgTakeoverChanged, nil)
 		}
 		form, err = ParseRequest(op.Body)
 		if err != nil {
-			return nil, safeError(err, now)
+			return safeError(err, now)
 		}
 		candidate, report, err = Prepare(tx, now, form, options)
 		if err != nil {
-			return nil, safeError(err, now)
+			return safeError(err, now)
 		}
 		if !report.Ready {
 			data, err := sanitize(encode(report), now)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if err = jsondecode.Unmarshal(data, &report); err != nil {
-				return nil, err
+				return err
 			}
-			return nil, &Blocked{report}
+			return &Blocked{report}
 		}
-		patch, err := legacy(Document{"mihomo": candidate["mihomo"], "oxidns": candidate["oxidns"]})
-		if err != nil {
-			return nil, err
+		if err := tx.Err(); err != nil {
+			return err
 		}
-		if err = ctx.Err(); err != nil {
-			return nil, err
+		for _, key := range []string{"mihomo", "oxidns"} {
+			if err := current.Profile.SetJSON(key, candidate[key]); err != nil {
+				return err
+			}
 		}
-		current.Set("mihomo", patch.Value("mihomo"))
-		current.Set("oxidns", patch.Value("oxidns"))
-		return nil, nil
+		return tx.Err()
 	})
 	if err != nil {
 		return nil, err
 	}
-	afterNative, err := fromLegacy(saved)
+	afterNative, err := modelDocument(saved)
 	if err != nil {
 		return nil, err
 	}

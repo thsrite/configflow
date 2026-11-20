@@ -19,11 +19,10 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/installer"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 )
 
@@ -39,12 +38,12 @@ type agent struct {
 	InstallationID   string                     `json:"gateway_installation_id"`
 	Latest           task                       `json:"latest_deployment"`
 	Deployments      map[string]json.RawMessage `json:"deployments"`
-	record           *agents.Record
+	record           *model.Agent
 	usable           bool
 	public           json.RawMessage
 }
 
-func decodeAgent(r *agents.Record) (*agent, error) {
+func decodeAgent(r *model.Agent) (*agent, error) {
 	if r == nil {
 		return nil, nil
 	}
@@ -63,9 +62,16 @@ func decodeAgent(r *agents.Record) (*agent, error) {
 		}
 	}
 	now := time.Now()
-	p["status"] = raw(agents.OnlineStatus(r, &now))
+	status := o["status"]
+	if !agents.FreshHeartbeat(r.LastHeartbeat, &now) {
+		status = raw("offline")
+	}
+	if len(status) == 0 {
+		status = raw(nil)
+	}
+	p["status"] = status
 	a.public = raw(p)
-	a.usable = agents.IsUsable(r, &now)
+	a.usable = string(o["enabled"]) != "false" && text(status) == "online"
 	return &a, nil
 }
 
@@ -91,20 +97,20 @@ func port(b json.RawMessage) int {
 	return int(f)
 }
 func (s *Service) agent(ctx context.Context, id string) (*agent, error) {
-	r, err := s.Manager.GetAgentByID(ctx, id, true)
+	r, err := s.Manager.ReadAgent(ctx, id, true)
 	if err != nil {
 		return nil, err
 	}
 	return decodeAgent(r)
 }
 func (s *Service) allAgents(ctx context.Context) ([]*agent, error) {
-	rr, err := s.Manager.Agents(ctx, true)
+	rr, err := s.Manager.ReadAgents(ctx, true, nil)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*agent, 0, len(rr))
-	for _, r := range rr {
-		a, e := decodeAgent(r)
+	for i := range rr {
+		a, e := decodeAgent(&rr[i])
 		if e != nil {
 			return nil, e
 		}
@@ -114,33 +120,26 @@ func (s *Service) allAgents(ctx context.Context) ([]*agent, error) {
 }
 func validateProfile(profile string) error { return repo.ValidateProfileID(profile) }
 func (s *Service) checkPorts(ctx context.Context, profile string, ports map[string]int) error {
-	p, err := s.Repository.GetProfile(ctx, profile)
+	p, err := s.Repository.Profile(ctx, profile)
 	if err != nil {
 		return err
 	}
-	text := p.GetObject("mihomo").GetString("custom_config")
-	document := convert.DefaultMihomoTemplate()
+	text := p.Mihomo.CustomConfig
+	document := convert.MihomoTemplate()
 	if strings.TrimSpace(text) != "" {
 		n, e := yamlx.Parse([]byte(text))
 		if e != nil {
 			return nil
 		}
-		v, e := yamlbridge.Value(n)
-		if e != nil {
-			return e
-		}
-		document, _ = v.(*jsonx.Object)
+		document = n
 	}
 	if document == nil {
 		return nil
 	}
-	owners, err := convert.MihomoListenPorts(document)
-	if err != nil {
-		return err
-	}
+	owners := convert.ListenPorts(document)
 	for _, service := range services {
 		for _, o := range owners {
-			if o.Port.String() == fmt.Sprint(ports[service]) {
+			if o.Port == int64(ports[service]) {
 				return failure(fmt.Sprintf(msgPortConflict, service, ports[service], o.Owner), 400)
 			}
 		}
@@ -148,22 +147,17 @@ func (s *Service) checkPorts(ctx context.Context, profile string, ports map[stri
 	return nil
 }
 func (s *Service) setDomain(ctx context.Context, origin string) error {
-	_, err := s.Repository.UpdateSystemTransaction(ctx, func(ctx context.Context, current *jsonx.Object) (*jsonx.Object, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	err := s.Repository.UpdateSystem(ctx, func(tx context.Context, current *model.System) error {
+		if err := tx.Err(); err != nil {
+			return err
 		}
-		sc := current.GetObject("system_config")
-		if sc == nil {
-			sc = jsonx.NewObject()
-			current.Set("system_config", sc)
-		}
-		sc.Set("server_domain", origin)
-		return nil, nil
+		current.SystemConfig.ServerDomain = origin
+		return tx.Err()
 	})
 	return err
 }
 func (s *Service) savedSnapshot(ctx context.Context, r *Record) (*deploy.Source, string, error) {
-	snapshot, revision, err := s.Repository.GetPublishSnapshot(ctx, r.ProfileID, true)
+	snapshot, revision, err := s.Repository.PublishConfig(ctx, r.ProfileID, true)
 	if err != nil {
 		return nil, "", err
 	}
@@ -171,7 +165,7 @@ func (s *Service) savedSnapshot(ctx context.Context, r *Record) (*deploy.Source,
 		return nil, "", failure(msgSavedChanged, 409)
 	}
 	mode := "selective"
-	if routersplit.IsFullTun(snapshot) {
+	if takeoverFullTun(snapshot.Profile) {
 		mode = "full_tun"
 	}
 	if r.Takeover != "" && r.Takeover != mode {
@@ -192,11 +186,12 @@ func (s *Service) savedSnapshot(ctx context.Context, r *Record) (*deploy.Source,
 	if _, err = onboarding.AssertReady(ctx, config, options); err != nil {
 		return nil, "", s.safeError(ctx, publicOwnerError(err))
 	}
-	configured := strings.TrimRight(strings.TrimSpace(snapshot.GetObject("system_config").GetString("server_domain")), "/")
+	configured := strings.TrimRight(strings.TrimSpace(snapshot.SystemConfig.ServerDomain), "/")
 	if configured != "" && configured != r.ServerURL {
 		return nil, "", &Error{Message: fmt.Sprintf(msgDomainMismatch, configured, r.ServerURL), Status: 409, Code: "server_url_mismatch"}
 	}
-	return deploy.NewSource(snapshot, &revision), mode, nil
+	source, err := deploy.SourceFromJSON(b, &revision)
+	return source, mode, err
 }
 func publicOwnerError(err error) error {
 	if err == nil {
@@ -218,11 +213,15 @@ func publicOwnerError(err error) error {
 }
 func (s *Service) secrets(ctx context.Context) (redact.Secrets, error) {
 	ctx = repo.WithRepository(ctx, s.Repository)
-	system, err := s.Repository.GetSystem(ctx)
+	system, err := s.Repository.System(ctx)
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := redact.ExternalPayloadSecrets(ctx, system.GetObject("system_config"))
+	settings, err := system.SystemConfig.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	secrets, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(settings))
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +232,7 @@ func (s *Service) diagnosticSecrets(ctx context.Context) (redact.Secrets, error)
 	if err != nil {
 		return nil, err
 	}
-	document, err := s.Repository.ExportAll(ctx, false)
+	document, err := s.Repository.ExportAllJSON(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -256,98 +255,85 @@ func (s *Service) safeError(ctx context.Context, err error) error {
 	cp.Message = safe
 	return &cp
 }
-func toLegacy(data json.RawMessage) (*agents.Record, error) {
-	v, err := jsonx.Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	o, ok := v.(*jsonx.Object)
-	if !ok {
-		return nil, failure(msgParams, 400)
-	}
-	return o, nil
-}
-func encodeResult(result any) (json.RawMessage, error) { return json.Marshal(result) }
+func encodeResult(result *model.Deployment) (json.RawMessage, error) { return json.Marshal(result) }
 
 func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.RawMessage) (map[string]string, error) {
 	ids := map[string]string{}
-	_, err := s.Manager.UpdateAgents(ctx, r.ProfileID, func(ctx context.Context, records *[]any) (any, error) {
+	err := s.Manager.EditAgents(ctx, r.ProfileID, func(ctx context.Context, records *[]model.Agent) error {
 		type binding struct {
-			record  *jsonx.Object
+			record  *model.Agent
 			service string
 		}
 		found := []binding{}
-		index := map[string]*jsonx.Object{}
+		index := map[string]*model.Agent{}
 		// Python refuses when any other Agent holds the target, so keep every
 		// holder: a last-wins index misses a duplicate listed before the proof.
 		targets := map[[2]string][]string{}
-		for _, item := range *records {
-			a, _ := item.(*jsonx.Object)
-			if a != nil {
-				index[a.GetString("id")] = a
-				key := [2]string{a.GetString("name"), a.GetString("host")}
-				targets[key] = append(targets[key], a.GetString("id"))
+		for i := range *records {
+			a := &(*records)[i]
+			{
+				index[strictAgent(a).ID] = a
+				key := [2]string{strictAgent(a).Name, strictAgent(a).Host}
+				targets[key] = append(targets[key], strictAgent(a).ID)
 			}
 		}
 		for _, service := range services {
 			proof := object(proofs[service])
 			if len(proof) != 2 || proof["id"] == nil || proof["token"] == nil {
-				return nil, failure(msgProof, 401)
+				return failure(msgProof, 401)
 			}
 			var id, token string
 			if json.Unmarshal(proof["id"], &id) != nil || json.Unmarshal(proof["token"], &token) != nil || id == "" || token == "" {
-				return nil, failure(msgProof, 401)
+				return failure(msgProof, 401)
 			}
 			a := index[id]
-			if a == nil || !agents.ConstantTimeASCIIEqual(token, a.GetString("token")) {
-				return nil, failure(msgProofFailed, 401)
+			if a == nil || !agents.ConstantTimeASCIIEqual(token, strictAgent(a).Token) {
+				return failure(msgProofFailed, 401)
 			}
-			if a.GetString("service_type") != service || a.GetString("deployment_method") != "shell" {
-				return nil, failure(msgShell, 409)
+			if strictAgent(a).ServiceType != service || strictAgent(a).DeploymentMethod != "shell" {
+				return failure(msgShell, 409)
 			}
 			if bound := r.AgentIDs[service]; bound != "" && bound != id {
-				return nil, failure(msgBound, 409)
+				return failure(msgBound, 409)
 			}
 			if registered := r.Registered[service]; registered != "" && registered != id {
-				return nil, failure(msgRegistration, 409)
+				return failure(msgRegistration, 409)
 			}
 			expectedName := r.Name + "-" + service
-			changed := a.GetString("name") != expectedName || a.GetString("host") != r.Network.Address || !jsonx.Equal(a.Value("port"), jsonx.Int(int64(r.Ports[service]))) || a.GetString("profile_id") != r.ProfileID
+			changed := strictAgent(a).Name != expectedName || strictAgent(a).Host != r.Network.Address || strictAgent(a).Port != r.Ports[service] || strictAgent(a).ProfileID != r.ProfileID
 			if r.AgentIDs[service] != "" && changed {
-				return nil, failure(msgBoundMetadata, 409)
+				return failure(msgBoundMetadata, 409)
 			}
 			for _, other := range targets[[2]string{expectedName, r.Network.Address}] {
 				if other != id {
-					return nil, failure(msgDuplicate, 409)
+					return failure(msgDuplicate, 409)
 				}
 			}
 			if changed {
-				busy := agents.UpgradeBusy(a) || agents.DNSFollowBusy(*records, id)
-				for _, value := range a.GetObject("deployments").All() {
-					d, _ := value.(*jsonx.Object)
-					status := d.GetString("status")
-					if status != "succeeded" && status != "failed" && status != "rolled_back" {
+				busy := agents.UpgradeInProgress(a) || agents.DNSFollowInProgress(*records, id)
+				for id, d := range a.Deployments.All() {
+					if a.Deployments.EntryValid(id) && d.Status != "succeeded" && d.Status != "failed" && d.Status != "rolled_back" {
 						busy = true
 					}
 				}
 				if busy {
-					return nil, failure(msgBusy, 409)
+					return failure(msgBusy, 409)
 				}
 			}
 			ids[service] = id
 			found = append(found, binding{a, service})
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		for _, b := range found {
 			a := b.record
-			a.Set("name", r.Name+"-"+b.service)
-			a.Set("host", r.Network.Address)
-			a.Set("port", jsonx.Int(int64(r.Ports[b.service])))
-			a.Set("profile_id", r.ProfileID)
+			a.Name = r.Name + "-" + b.service
+			a.Host = r.Network.Address
+			a.Port = model.Int(r.Ports[b.service])
+			a.ProfileID = r.ProfileID
 		}
-		return nil, nil
+		return ctx.Err()
 	})
 	return ids, err
 }
@@ -380,12 +366,12 @@ func (s *Service) safeMetadata(ctx context.Context, value json.RawMessage) (json
 	return json.Marshal(redact.SanitizeWithSecrets(fields, system, true))
 }
 func (s *Service) deployment(ctx context.Context, id, did string, activate bool) (json.RawMessage, error) {
-	var result *agents.Result
+	var result *model.Deployment
 	var err error
 	if activate {
-		result, err = s.Manager.ActivateDeployment(ctx, id, did)
+		result, err = s.Manager.ActivateDeploymentModel(ctx, id, did)
 	} else {
-		result, err = s.Manager.GetDeployment(ctx, id, did)
+		result, err = s.Manager.GetDeploymentModel(ctx, id, did)
 	}
 	if err != nil {
 		return nil, err
@@ -393,7 +379,11 @@ func (s *Service) deployment(ctx context.Context, id, did string, activate bool)
 	return encodeResult(result)
 }
 func (s *Service) recordFailed(ctx context.Context, id, did string) (json.RawMessage, error) {
-	result, err := s.Manager.RecordDeployment(ctx, id, did, jsonx.Obj("success", false, "status", "failed", "message", msgPrepareFailed), agents.RecordOptions{})
+	update, err := agents.DecodeDeploymentUpdate(raw(map[string]any{"success": false, "status": "failed", "message": msgPrepareFailed}))
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.Manager.RecordDeploymentModel(ctx, id, did, update, agents.RecordOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -406,4 +396,16 @@ func (s *Service) safeMetadataText(ctx context.Context, value json.RawMessage) (
 		return nil, err
 	}
 	return redact.SanitizeCredentials(value, secrets), nil
+}
+
+func strictAgent(a *model.Agent) agent {
+	if a == nil {
+		return agent{}
+	}
+	data, _ := model.Marshal(a)
+	return agentFields(object(data))
+}
+func takeoverFullTun(p *model.Profile) bool {
+	state, _ := routersplit.ReadMarkerProfile(p)
+	return state == routersplit.StateValid
 }

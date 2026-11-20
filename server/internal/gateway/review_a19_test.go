@@ -11,8 +11,6 @@ import (
 
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
-	"configflow/internal/yamlbridge"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -34,17 +32,8 @@ func within(t *testing.T, limit time.Duration, fn func()) {
 	}
 }
 
-// sharedChain is a value whose level i is a list holding level i-1 twice:
+// sharedNodeChain is a node whose level i is a list holding level i-1 twice:
 // 2^depth paths through `depth` containers, like a YAML alias chain.
-func sharedChain(depth int, leaf any) any {
-	v := leaf
-	for i := 0; i < depth; i++ {
-		v = []any{v, v}
-	}
-	return v
-}
-
-// sharedNodeChain is sharedChain as yaml.Node values sharing their children.
 func sharedNodeChain(depth int, leaf *yaml.Node) *yaml.Node {
 	n := leaf
 	for i := 0; i < depth; i++ {
@@ -106,51 +95,27 @@ func TestRoutingMarkPathGraphs(t *testing.T) {
 			}
 		})
 	}
-	t.Run("jsonx shared chain", func(t *testing.T) {
-		value := sharedChain(64, jsonx.Obj("name", "p", "routing-mark", jsonx.Int(5)))
-		var got string
-		within(t, 10*time.Second, func() { got = gateway.RoutingMarkPathJSONX(value, "节点") })
-		if want := "节点" + strings.Repeat(".0", 64) + ".routing-mark"; got != want {
-			t.Fatalf("got %q, want %q", got, want)
-		}
-	})
 }
 
-// F1: shared containers stay shared through the jsonx boundary (one node per
-// container, one rebuilt value per node), as Python's dicts stay shared.
+// F1: Apply preserves shared YAML alias anchors on untouched sections and on
+// preserved TUN fields.
 func TestSharedContainersStayShared(t *testing.T) {
-	n := gateway.JSONXNode(sharedChain(3, jsonx.Obj("a", "b")))
-	if n.Content[0] != n.Content[1] || n.Content[0].Content[0] != n.Content[0].Content[1] {
-		t.Fatal("a shared list became separate nodes")
-	}
-	names := []any{"a", "b", "c"}
-	n = gateway.JSONXNode([]any{names, names[:2]})
-	if len(n.Content[0].Content) != 3 || len(n.Content[1].Content) != 2 {
-		t.Fatal("a list and its prefix were merged")
-	}
-
 	root, err := yamlx.Parse([]byte("mixed-port: 7890\n" +
 		"x-shared: {l0: &l0 [a, b], l1: &l1 [*l0, *l0]}\n" +
 		"tun: {mtu: 1400, include: &t [x], again: *t}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := yamlbridge.Value(root)
-	if err != nil {
+	if err := gateway.NewFixtureConfig(snapshot(true)).Apply(root, ""); err != nil {
 		t.Fatal(err)
 	}
-	doc := loaded.(*jsonx.Object)
-	if err := gateway.ApplyJSONX(doc, snapshot(true), ""); err != nil {
-		t.Fatal(err)
-	}
-	l1 := doc.GetObject("x-shared").GetList("l1")
-	a, b := l1[0].([]any), l1[1].([]any)
-	if &a[0] != &b[0] {
+	l1 := yamlx.Resolve(yamlx.Get(yamlx.Get(root, "x-shared"), "l1"))
+	if l1 == nil || len(l1.Content) != 2 || yamlx.Resolve(l1.Content[0]) != yamlx.Resolve(l1.Content[1]) {
 		t.Error("x-shared.l1 lost its shared list")
 	}
-	tun := doc.GetObject("tun")
-	include, again := tun.GetList("include"), tun.GetList("again")
-	if len(include) != 1 || &include[0] != &again[0] || !tun.GetBool("auto-redirect") {
+	tun := yamlx.Get(root, "tun")
+	include, again := yamlx.Resolve(yamlx.Get(tun, "include")), yamlx.Resolve(yamlx.Get(tun, "again"))
+	if include == nil || include != again || len(include.Content) != 1 || yamlx.Get(tun, "auto-redirect").Value != "true" {
 		t.Errorf("patched TUN: %v", tun)
 	}
 }
@@ -182,19 +147,19 @@ func TestGenerateWithAliasChain(t *testing.T) {
 			} else if len(text) > 64<<10 || !strings.Contains(text, "route-address-set") || !strings.Contains(text, "*id") {
 				t.Fatalf("generated %d bytes (aliases expanded?)", len(text))
 			}
-			state, err := gateway.NewConfig(config).EditorState(false)
+			state, err := gateway.NewFixtureConfig(config).EditorState(false)
 			if depth == 16 {
 				if err != nil || state.FakeIPRange != "" || len(state.Warnings) == 0 || !strings.Contains(strings.Join(state.Warnings, "\n"), gateway.BaseYAMLInvalidMessage) {
 					t.Fatalf("unsafe editor graph did not report its base YAML warning: %+v %v", state, err)
 				}
-				if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err == nil {
+				if _, err := gateway.NewFixtureConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err == nil {
 					t.Fatal("unsafe base graph enabled the gateway")
 				}
 			} else {
 				if err != nil || state.FakeIPRange != "198.18.0.0/16" {
 					t.Fatalf("editor: %+v %v", state, err)
 				}
-				if _, err := gateway.NewConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err != nil {
+				if _, err := gateway.NewFixtureConfig(config).ValidateSelection([]byte(`{"enabled": true, "rule_set_ids": ["r"]}`)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -212,7 +177,7 @@ func itoa(i int) string {
 
 // F2: Apply never reports success for a document it did not patch.
 func TestApplyDocumentShapes(t *testing.T) {
-	c := gateway.NewConfig(snapshot(true))
+	c := gateway.NewFixtureConfig(snapshot(true))
 	wrapped := parseNode(t, "mixed-port: 7890\n")
 	if err := c.Apply(wrapped, ""); err != nil {
 		t.Fatal(err)
@@ -227,7 +192,7 @@ func TestApplyDocumentShapes(t *testing.T) {
 			t.Errorf("Apply(%v) = %v, want a caller error", doc, err)
 		}
 	}
-	if err := gateway.NewConfig(snapshot(false)).Apply(yamlx.Seq(), ""); err != nil {
+	if err := gateway.NewFixtureConfig(snapshot(false)).Apply(yamlx.Seq(), ""); err != nil {
 		t.Fatalf("disabled gateway: %v", err)
 	}
 }

@@ -17,7 +17,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/netipx"
@@ -36,7 +35,7 @@ const (
 
 // Manager supplies registered identities and the shared bounded Agent client.
 type Manager interface {
-	GetAgentByID(context.Context, string, bool) (*jsonx.Object, error)
+	ReadAgent(context.Context, string, bool) (*model.Agent, error)
 	Client() agents.Client
 }
 
@@ -73,20 +72,9 @@ func Supports(a *model.Agent, minimum string) bool {
 	return false
 }
 
-func (b *Bridge) agent(ctx context.Context, id string) (*model.Agent, *jsonx.Object, error) {
-	raw, err := b.Manager.GetAgentByID(ctx, id, true)
-	if err != nil || raw == nil {
-		return nil, raw, err
-	}
-	data, err := jsonx.Compact(raw)
-	if err != nil {
-		return nil, nil, err
-	}
-	var a model.Agent
-	if err = json.Unmarshal(data, &a); err != nil {
-		return nil, nil, err
-	}
-	return &a, raw, nil
+func (b *Bridge) agent(ctx context.Context, id string) (*model.Agent, *model.Agent, error) {
+	a, err := b.Manager.ReadAgent(ctx, id, true)
+	return a, a, err
 }
 
 func checkAgent(a *model.Agent) error {
@@ -137,7 +125,7 @@ func recordKept(a *model.Agent, s Reply) bool {
 
 // Request performs one whitelisted, bounded exchange. Transport diagnostics are
 // never returned; device error text passes the shared credential sanitizer.
-func (b *Bridge) Request(ctx context.Context, raw *jsonx.Object, operation, method string, payload json.RawMessage) (Reply, error) {
+func (b *Bridge) Request(ctx context.Context, raw *model.Agent, operation, method string, payload json.RawMessage) (Reply, error) {
 	if method != "GET" {
 		ctx = lifecycle.Detach(ctx)
 	}
@@ -147,14 +135,14 @@ func (b *Bridge) Request(ctx context.Context, raw *jsonx.Object, operation, meth
 	if allowed[operation] != method {
 		return nil, fail("NOT_ALLOWED", 404, msgNotAllowed)
 	}
-	if raw.GetString("token") == "" {
+	if raw.Token == "" {
 		return nil, fail("AGENT_UNREACHABLE", 502, unreachable(operation))
 	}
-	origin, err := monitor.AgentOrigin(raw)
+	origin, err := monitor.Origin(raw)
 	if err != nil {
 		return nil, fail("AGENT_UNREACHABLE", 502, unreachable(operation))
 	}
-	header := http.Header{"Authorization": {"Bearer " + raw.GetString("token")}, "Accept": {"application/json"}}
+	header := http.Header{"Authorization": {"Bearer " + raw.Token}, "Accept": {"application/json"}}
 	if payload != nil {
 		header.Set("Content-Type", "application/json")
 	}
@@ -190,7 +178,7 @@ func (b *Bridge) Request(ctx context.Context, raw *jsonx.Object, operation, meth
 	}
 	// The raw API has extensible status fields. Use the common redactor rather
 	// than introducing a second credential grammar at this boundary.
-	safe := redact.SanitizeCredentials(json.RawMessage(response.Body), redact.NewSecrets([]string{raw.GetString("token")}))
+	safe := redact.SanitizeCredentials(json.RawMessage(response.Body), redact.NewSecrets([]string{raw.Token}))
 	if result = object(safe); result == nil {
 		return nil, fail("INVALID_RESPONSE", 502, msgShape)
 	}
@@ -280,8 +268,8 @@ func ParseSpec(raw json.RawMessage) (Spec, error) {
 	return s, nil
 }
 
-func (b *Bridge) mode(ctx context.Context, id string, config *jsonx.Object) (string, error) {
-	marker, _ := routersplit.ReadMarker(config)
+func (b *Bridge) mode(ctx context.Context, id string, config *model.Config) (string, error) {
+	marker, _ := routersplit.ReadMarkerProfile(config.Profile)
 	if marker != "absent" {
 		if marker == "valid" {
 			return "full_tun", nil
@@ -291,25 +279,25 @@ func (b *Bridge) mode(ctx context.Context, id string, config *jsonx.Object) (str
 	if !gateway.NewConfig(config).Enabled() {
 		return "", nil
 	}
-	legacy, err := routersplit.LegacyContext(ctx, b.Repository, id)
+	legacy, err := routersplit.ReadContext(ctx, b.Repository, id)
 	if err != nil {
 		return "", err
 	}
-	mode, err := routersplit.ModeFromContext(config, legacy)
+	mode, err := routersplit.ProfileState(config.Profile, legacy)
 	if err != nil {
 		return "", err
 	}
-	m, _ := mode.(string)
+	m := ""
+	if mode.Mode != nil {
+		m = *mode.Mode
+	}
 	if m == "" {
-		full, err := routersplit.BaseIsFullTun(config)
+		full := routersplit.BaseFullTun(config.Profile)
+		source, err := routersplit.LegacyProfileSource(config.Profile, legacy)
 		if err != nil {
 			return "", err
 		}
-		source, err := routersplit.LegacySource(config, legacy)
-		if err != nil {
-			return "", err
-		}
-		if full && source != nil {
+		if full && source != "" {
 			m = "legacy_full_tun"
 		}
 	}
@@ -344,7 +332,7 @@ func (b *Bridge) Call(ctx context.Context, id, operation, method, profileID stri
 	var payload json.RawMessage
 	mode := ""
 	if operation == "apply" || operation == "remove" || operation == "forwarding" {
-		config, err := b.Repository.GetCompatConfig(ctx, profileID, repo.ResourceRoots{})
+		config, err := b.Repository.Config(ctx, profileID, repo.ResourceRoots{})
 		if err != nil {
 			return nil, err
 		}
@@ -398,7 +386,7 @@ func (b *Bridge) Call(ctx context.Context, id, operation, method, profileID stri
 func emptyBody(raw json.RawMessage) bool {
 	return len(raw) == 0 || string(raw) == "null" || len(object(raw)) == 0 && strings.TrimSpace(string(raw)) == "{}"
 }
-func (b *Bridge) guard(ctx context.Context, a *model.Agent, raw, config *jsonx.Object, op, profile, mode string, body json.RawMessage) (json.RawMessage, string, error) {
+func (b *Bridge) guard(ctx context.Context, a *model.Agent, raw *model.Agent, config *model.Config, op, profile, mode string, body json.RawMessage) (json.RawMessage, string, error) {
 	invalid := func(message string) (json.RawMessage, string, error) {
 		return nil, mode, fail("INVALID_REQUEST", 400, message)
 	}
@@ -478,7 +466,7 @@ func upgradeNeeded(a *model.Agent, status Reply) bool {
 	f := object(status["ipv4_forwarding"])
 	return f == nil || string(f["supported"]) == "false" && yes(status["supported"]) && !Supports(a, StandaloneVersion)
 }
-func (b *Bridge) requireLayout(ctx context.Context, a *model.Agent, raw *jsonx.Object) error {
+func (b *Bridge) requireLayout(ctx context.Context, a *model.Agent, raw *model.Agent) error {
 	if Supports(a, StandaloneVersion) {
 		return nil
 	}

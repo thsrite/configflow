@@ -72,10 +72,7 @@ func (s *Source) ProfileID() string {
 	return id
 }
 func (s *Source) gateway() *gateway.Config {
-	raw, _ := s.Raw()
-	var config jsonx.Object
-	_ = json.Unmarshal(raw, &config)
-	return gateway.NewConfig(&config)
+	return gateway.NewConfig(s.config())
 }
 
 // NewTarget captures the Agent fields needed by the publishing chain.

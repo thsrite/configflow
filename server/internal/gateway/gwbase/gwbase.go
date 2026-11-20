@@ -19,8 +19,8 @@ func (e *LinuxGatewayError) Error() string { return e.Message }
 // Unwrap exposes the original validation failure, including YAML diagnostics.
 func (e *LinuxGatewayError) Unwrap() error { return e.Cause }
 
-// PythonClass is the Python exception class name.
-func (e *LinuxGatewayError) PythonClass() string { return "LinuxGatewayError" }
+// ErrorClass preserves the public diagnostic class label.
+func (e *LinuxGatewayError) ErrorClass() string { return "LinuxGatewayError" }
 
 // TUNFilterKeys is linux_gateway.TUN_FILTER_KEYS: the Mihomo TUN keys that
 // let some connections bypass the TUN. The order matters (messages list the
