@@ -10,6 +10,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/configgen"
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -38,7 +39,17 @@ func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := auth.ValidateSystemTokenOrJWT(c, nil)
+	var system model.System
+	rawSystem, err := json.Marshal(struct {
+		SystemConfig any `json:"system_config"`
+	}{config.Value("system_config")})
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(rawSystem, &system); err != nil {
+		return nil, err
+	}
+	result, err := auth.ValidateSystemTokenOrJWT(c, &system)
 	if err != nil {
 		return nil, err
 	}

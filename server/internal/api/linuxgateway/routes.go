@@ -13,6 +13,7 @@ import (
 	"configflow/internal/gateway/draft"
 	"configflow/internal/gateway/host"
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 	"configflow/internal/setupflow"
@@ -81,7 +82,17 @@ func provider(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	validation, err := auth.ValidateSystemTokenOrJWT(c, nil)
+	var system model.System
+	rawSystem, err := json.Marshal(struct {
+		SystemConfig any `json:"system_config"`
+	}{config.Value("system_config")})
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(rawSystem, &system); err != nil {
+		return nil, err
+	}
+	validation, err := auth.ValidateSystemTokenOrJWT(c, &system)
 	if err != nil {
 		return nil, err
 	}

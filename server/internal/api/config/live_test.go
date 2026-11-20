@@ -2,11 +2,17 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"configflow/internal/api/linuxgateway"
 	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/httpx"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 func TestLiveConfigProfileAndAuthentication(t *testing.T) {
@@ -57,5 +63,62 @@ func TestLoonFilenamePercentEncoding(t *testing.T) {
 	response.WantStatus(200)
 	if got := response.Header.Get("Content-Disposition"); got != "inline; filename*=UTF-8''Phone%20%40%20Home%20%2B%20Office.lcf" {
 		t.Fatalf("Loon filename %q", got)
+	}
+}
+
+func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) {
+	mihomoenv.Wire()
+	tests := []struct {
+		name           string
+		path           string
+		expectedStatus int
+	}{
+		{"live config", "/api/config/loon", 200},
+		{"linux gateway provider", "/api/custom-config/linux-gateway/rules/missing", 200},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, candidate := range []struct {
+				label, query string
+				wantStatus   int
+			}{
+				{"snapshot token succeeds", "token-before-rotation", tt.expectedStatus},
+				{"rotated db token rejected for stale snapshot", "token-after-rotation", 401},
+			} {
+				t.Run(candidate.label, func(t *testing.T) {
+					var s *httpxtest.Server
+					rotated := false
+					s = httpxtest.New(t, httpxtest.Options{
+						Register: httpxtest.Routes(Register, linuxgateway.Register),
+						Setup: func(app *httpx.App) {
+							app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
+								if rotated {
+									return nil, nil
+								}
+								if _, err := repo.GetConfig(c.Context(), c.ProfileID); err != nil {
+									return nil, err
+								}
+								rotated = true
+								if err := s.Repo.UpdateSystem(context.Background(), func(_ context.Context, sys *model.System) error {
+									return sys.SystemConfig.SetJSON("config_token", json.RawMessage(`"token-after-rotation"`))
+								}); err != nil {
+									return nil, err
+								}
+								return nil, nil
+							})
+						},
+					})
+					if err := s.Repo.UpdateSystem(context.Background(), func(_ context.Context, sys *model.System) error {
+						return sys.SystemConfig.SetJSON("config_token", json.RawMessage(`"token-before-rotation"`))
+					}); err != nil {
+						t.Fatal(err)
+					}
+					s.Get(tt.path + "?token=" + candidate.query).WantStatus(candidate.wantStatus)
+					// Subsequent requests observe the rotated token from the new snapshot.
+					s.Get(tt.path + "?token=token-after-rotation").WantStatus(tt.expectedStatus)
+					s.Get(tt.path + "?token=token-before-rotation").WantStatus(401)
+				})
+			}
+		})
 	}
 }
