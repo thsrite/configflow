@@ -370,14 +370,29 @@ func installHooks() {
 // RuleResult is the Agent rule-update envelope for an HA publication.
 type RuleResult struct {
 	Success       bool                        `json:"success"`
-	Task          monitor.RuleTask            `json:"task"`
+	Task          RuleTask                    `json:"task"`
 	HAPublication *model.HAPublicationSummary `json:"ha_publication,omitempty"`
 }
 
+// RuleTask is the pair rule-update task. A failed task always carries code and
+// message, including an empty journal message, as in oxidns_ha_publish.rules.
+type RuleTask struct {
+	ID            string  `json:"id"`
+	Status        string  `json:"status"`
+	Phase         string  `json:"phase"`
+	Downloaded    int64   `json:"downloaded"`
+	DownloadTotal int64   `json:"download_total"`
+	Reloaded      int64   `json:"reloaded"`
+	ReloadTotal   int64   `json:"reload_total"`
+	Code          string  `json:"code,omitempty"`
+	Message       *string `json:"message,omitempty"`
+}
+
 func rulesResult(id, status, phase string, j *model.HAJournal) *RuleResult {
-	result := &RuleResult{Success: true, Task: monitor.RuleTask{ID: id, Status: status, Phase: phase}}
-	if status == "failed" {
-		result.Task.Code, result.Task.Message = "RULE_UPDATE_FAILED", j.Message
+	result := &RuleResult{Success: true, Task: RuleTask{ID: id, Status: status, Phase: phase}}
+	if status == "failed" && j != nil {
+		message := j.Message
+		result.Task.Code, result.Task.Message = "RULE_UPDATE_FAILED", &message
 	}
 	if j != nil {
 		result.HAPublication = summary(j)

@@ -236,7 +236,8 @@ func (w *worker) run(ctx context.Context, id string) error {
 			return e
 		}
 		record, e = s.m.ReadAgent(ctx, id, false)
-		if e != nil {
+		if e != nil || record == nil {
+			// A deleted Agent has nothing left to synchronize.
 			return e
 		}
 		a = record
