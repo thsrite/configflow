@@ -946,7 +946,7 @@ func scopeImportedDialers(profiles []importProfile) error {
 		}
 		for i := range config.Nodes {
 			node := &config.Nodes[i]
-			if node.Enabled != nil && !*node.Enabled {
+			if !model.SwitchEnabled(node, "enabled", node.Enabled, true) {
 				continue
 			}
 			raw, err := convert.NodeDialer(*node)

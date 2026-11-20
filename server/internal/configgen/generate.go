@@ -4,6 +4,7 @@
 package configgen
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -222,6 +223,23 @@ func materialize(ctx context.Context, config *model.Config, out Output, engine E
 	return result, nil
 }
 
+func coreAgentOf(agent *model.Agent) subs.CoreAgent {
+	core := subs.CoreAgent{
+		ID:               agent.ID,
+		Name:             agent.Name,
+		ProfileID:        agent.ProfileID,
+		DiscoveryEnabled: agent.DomainDiscoveryEnabled,
+	}
+	if agent.ServiceType != "" {
+		serviceType := agent.ServiceType
+		core.ServiceType = &serviceType
+	} else if raw, present, err := agent.MemberJSON("service_type"); err == nil && present && bytes.Equal(bytes.TrimSpace(raw), []byte(`""`)) {
+		empty := ""
+		core.ServiceType = &empty
+	}
+	return core
+}
+
 func outdatedAgents(ctx context.Context, id string) ([]subs.CoreReport, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -230,15 +248,8 @@ func outdatedAgents(ctx context.Context, id string) ([]subs.CoreReport, error) {
 	var list []subs.CoreAgent
 	if err := r.View(ctx, func(doc *model.Document) error {
 		list = make([]subs.CoreAgent, 0, len(doc.System.Agents))
-		for _, agent := range doc.System.Agents {
-			raw, err := model.Marshal(agent)
-			if err != nil {
-				continue
-			}
-			var core subs.CoreAgent
-			if json.Unmarshal(raw, &core) == nil {
-				list = append(list, core)
-			}
+		for i := range doc.System.Agents {
+			list = append(list, coreAgentOf(&doc.System.Agents[i]))
 		}
 		return nil
 	}); err != nil {
