@@ -195,10 +195,10 @@ func newFixture(t *testing.T, o Options, targetOptions agentfake.Options) *fixtu
 		t.Fatal(e)
 	}
 	result, e := deploy.Publish(ctx, m, "target", p.Bundle, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
-	if e == nil && result.GetString("status") == "verifying" {
-		result, e = m.GetDeployment(ctx, "target", "target-baseline")
+	if e == nil && result.Status == "verifying" {
+		result, e = m.GetDeploymentModel(ctx, "target", "target-baseline")
 	}
-	if e != nil || result.GetString("status") != "succeeded" {
+	if e != nil || result.Status != "succeeded" {
 		t.Fatal("baseline publication", result, e)
 	}
 	f.publishSource(t, "source-before-binding")
@@ -219,10 +219,10 @@ func (f *fixture) publishSource(t *testing.T, id string) {
 		t.Fatal(e)
 	}
 	r, e := deploy.Publish(f.ctx, f.m, "source", b, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
-	if e == nil && r.GetString("status") == "verifying" {
-		r, e = f.m.GetDeployment(f.ctx, "source", id)
+	if e == nil && r.Status == "verifying" {
+		r, e = f.m.GetDeploymentModel(f.ctx, "source", id)
 	}
-	if e != nil || r.GetString("status") != "succeeded" {
+	if e != nil || r.Status != "succeeded" {
 		t.Fatal("source publication", r, e)
 	}
 }

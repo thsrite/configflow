@@ -35,7 +35,7 @@ func TestPublishDuringFirstEnableAnswersPythonConflict(t *testing.T) {
 			if e != nil {
 				t.Fatalf("push during enable must be Python's 409 conflict, got error %v", e)
 			}
-			if r.GetBool("success") || r.GetInt("http_status") != 409 || r.GetString("message") != "DNS 主备正在同步，请等待两台发布完成" || r.GetObject("ha_publication").GetString("id") != out.Publication.ID {
+			if r.Success || (r.HTTPStatus == nil || *r.HTTPStatus != 409) || *r.Message != "DNS 主备正在同步，请等待两台发布完成" || r.HAPublication.ID != out.Publication.ID {
 				t.Fatalf("conflict answer: %v", r)
 			}
 		})

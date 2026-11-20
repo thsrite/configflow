@@ -65,14 +65,14 @@ func TestPythonPrivateStoresLoad(t *testing.T) {
 	}
 	agent := agentValue.(*jsonx.Object)
 	r := NewReceipts(root)
-	receipt, err := r.Load(context.Background(), agent, true)
+	receipt, err := r.LoadAgent(context.Background(), fixtureAgent(agent), true)
 	if err != nil || receipt == nil {
 		t.Fatal(receipt, err)
 	}
 	if bytes.Contains(receipt.Source, []byte("must-not-be-saved")) {
 		t.Fatal("agent credentials retained")
 	}
-	if stamp, ok := r.Stamp(agent); !ok || stamp.Size == 0 {
+	if stamp, ok := r.Stamp(fixtureAgent(agent)); !ok || stamp.Size == 0 {
 		t.Fatal(stamp, ok)
 	}
 	p := NewPreviews(root, lifecycletest.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
@@ -249,7 +249,7 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if err = r.Capture(ctx, agent.GetString("id"), b, source, "https://panel.example", nil); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := r.Load(ctx, agent, true)
+	loaded, err := r.LoadAgent(ctx, fixtureAgent(agent), true)
 	if err != nil || loaded == nil {
 		t.Fatal(loaded, err)
 	}
@@ -269,7 +269,7 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := r.AdvanceContent(ctx, m, agent, source, updated)
+	accepted, err := r.AdvanceContent(ctx, m, fixtureAgent(agent), source, updated)
 	if err != nil || !accepted {
 		t.Fatal(accepted, err)
 	}
@@ -280,7 +280,7 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if current.GetObject("applied_content").GetString("fingerprint") == "" {
 		t.Fatal(current)
 	}
-	accepted, err = r.AdvanceContent(ctx, m, agent, source, b)
+	accepted, err = r.AdvanceContent(ctx, m, fixtureAgent(agent), source, b)
 	if err != nil || accepted {
 		t.Fatal("stale applied pointer advanced", accepted, err)
 	}
@@ -304,7 +304,7 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if err = r.Capture(ctx, alias.GetString("id"), ab, source, "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := r.Load(ctx, alias, true); err != nil || got == nil {
+	if got, err := r.LoadAgent(ctx, fixtureAgent(alias), true); err != nil || got == nil {
 		t.Fatal("resolved default receipt rejected", got, err)
 	}
 	repo.SetRepository(repository)
@@ -314,11 +314,11 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	value, _ := jsonx.Parse(raw)
 	alias.Set("service_type", "oxidns")
 	task := jsonx.Obj("deployment_id", proof.DeploymentID, "profile_id", "alpha", "service_type", "oxidns", "sha256", proof.SHA256, "prepared_content", jsonx.Obj("fingerprint", proof.Fingerprint), "oxidns_validation_receipt", value)
-	if !ReceiptMatches(alias, task) {
+	if !ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("resolved non-default-named binding proof refused")
 	}
 	value.(*jsonx.Object).Set("unexpected", true)
-	if ReceiptMatches(alias, task) {
+	if ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("extra receipt field accepted")
 	}
 
@@ -385,11 +385,11 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	fp, _ := Fingerprint(b.manifest)
 	task := jsonx.Obj("deployment_id", b.manifest.DeploymentID, "profile_id", "default", "service_type", "oxidns", "status", "ready", "success", true, "submitted", true, "sha256", sha, "prepared_content", jsonx.Obj("fingerprint", fp), "oxidns_validation_receipt", value)
 	agent := jsonx.Obj("id", target.ID, "profile_id", "default", "service_type", "oxidns", "host", parts[0], "port", parts[1], "token", "synthetic-token", "deployments", jsonx.Obj(b.manifest.DeploymentID, task), "latest_deployment", task.DeepCopy())
-	if !ReceiptMatches(agent, task) {
+	if !ReceiptMatches(fixtureAgent(agent), fixtureTask(task)) {
 		t.Fatal("valid proof refused")
 	}
 	task.GetObject("oxidns_validation_receipt").Set("rules_sha256", "python-era-proof")
-	if ReceiptMatches(agent, task) {
+	if ReceiptMatches(fixtureAgent(agent), fixtureTask(task)) {
 		t.Fatal("old validator proof accepted")
 	}
 	_, err = repository.UpdateSystemTransaction(ctx, func(ctx context.Context, s *jsonx.Object) (*jsonx.Object, error) {
@@ -399,11 +399,11 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := m.ActivateDeployment(ctx, target.ID, b.manifest.DeploymentID)
+	result, err := m.ActivateCandidateModel(ctx, target.ID, b.manifest.DeploymentID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.GetString("status") != "failed" || result.GetString("message") != agents.MessageUncheckedCandidate || !jsonx.Equal(result.Value("http_status"), 409) {
+	if result.Status != "failed" || textValue(result.Message) != agents.MessageUncheckedCandidate || !jsonx.Equal(fixtureObject(result).Value("http_status"), 409) {
 		t.Fatal(result)
 	}
 	callsMu.Lock()
@@ -411,7 +411,7 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	if postCalls != 0 {
 		t.Fatal("old candidate activated")
 	}
-	public := PublicDeployment(task)
+	public := fixtureObject(PublicDeployment(fixtureTask(task)))
 	if public.Has("prepared_content") || public.Has("oxidns_validation_receipt") {
 		t.Fatal("private proof exposed")
 	}
@@ -467,12 +467,12 @@ func TestFinalizeBundleUsesFrozenDeviceBytes(t *testing.T) {
 func TestIdentityUnknownFieldsAndSettingsCanonical(t *testing.T) {
 	a := NewTarget(jsonx.Obj("id", "example", "token", "synthetic-token", "port", 8080))
 	b := a
-	b.Record = a.Record.DeepCopy()
-	b.Record.Set("config_version", "heartbeat")
+	b.Record = fixtureAgent(a.Record)
+	b.Record.ConfigVersion = "heartbeat"
 	if !bytes.Equal(AgentIdentity(a), AgentIdentity(b)) {
 		t.Fatal("heartbeat changed target identity")
 	}
-	b.Record.Set("token", "rotated-token")
+	b.Record.Token = "rotated-token"
 	if bytes.Equal(AgentIdentity(a), AgentIdentity(b)) {
 		t.Fatal("rotation ignored")
 	}

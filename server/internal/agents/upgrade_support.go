@@ -5,6 +5,7 @@ package agents
 
 import (
 	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/taskstatus"
 )
 
@@ -36,3 +37,11 @@ func ISOTimestamp(value string) (float64, bool) {
 
 // DNSFollowBusy reports whether a live follow publication owns this Agent.
 func DNSFollowBusy(records []any, agentID string) bool { return dnsFollowBusy(records, agentID) }
+
+// UpgradeInProgress reports the native upgrade owner's active reservation.
+func UpgradeInProgress(a *model.Agent) bool { return upgradeBusyModel(a) }
+
+// DNSFollowInProgress reports whether a native follow job owns this Agent.
+func DNSFollowInProgress(records []model.Agent, id string) bool {
+	return dnsFollowBusyModel(records, id)
+}

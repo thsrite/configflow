@@ -34,31 +34,32 @@ import (
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
+	"gopkg.in/yaml.v3"
 )
 
-// Source is an immutable profile snapshot until the typed repository lands.
+// Source owns an immutable raw snapshot and its shared typed model view.
 type Source struct {
-	legacy      *jsonx.Object
+	members     model.Fields
 	revision    *int64
 	inputOnce   sync.Once
 	inputKey    InputKey
 	inputErr    error
-	modelOnce   sync.Once
 	modelConfig *model.Config
-	modelErr    error
 }
 
 // NewSource captures a legacy profile and its optional revision.
 func NewSource(config *jsonx.Object, revision *int64) *Source {
-	s := &Source{}
-	if config != nil {
-		s.legacy = config.DeepCopy()
+	if config == nil {
+		source := &Source{}
+		if revision != nil {
+			value := *revision
+			source.revision = &value
+		}
+		return source
 	}
-	if revision != nil {
-		r := *revision
-		s.revision = &r
-	}
-	return s
+	raw, _ := model.Marshal(config)
+	source, _ := SourceFromJSON(raw, revision)
+	return source
 }
 
 // ProfileID returns the snapshot's resolved profile identifier.
@@ -66,13 +67,15 @@ func (s *Source) ProfileID() string {
 	if s == nil {
 		return ""
 	}
-	return s.legacy.GetString("profile_id")
+	var id string
+	_ = json.Unmarshal(s.Member("profile_id"), &id)
+	return id
 }
 func (s *Source) gateway() *gateway.Config {
-	if s == nil {
-		return gateway.NewConfig(nil)
-	}
-	return gateway.NewConfig(s.legacy)
+	raw, _ := s.Raw()
+	var config jsonx.Object
+	_ = json.Unmarshal(raw, &config)
+	return gateway.NewConfig(&config)
 }
 
 // NewTarget captures the Agent fields needed by the publishing chain.
@@ -80,33 +83,39 @@ func NewTarget(record *jsonx.Object) Target {
 	if record == nil {
 		return Target{}
 	}
-	r := record.DeepCopy()
-	port, _ := json.Marshal(r.Value("port"))
-	return Target{ID: r.GetString("id"), Name: r.GetString("name"), ProfileID: r.GetString("profile_id"), ServiceType: r.GetString("service_type"), DeploymentMethod: r.GetString("deployment_method"), Version: r.GetString("version"), Host: r.GetString("host"), Port: port, Token: r.GetString("token"), DomainDiscovery: r.GetBool("domain_discovery_enabled"), Record: r}
+	raw, _ := model.Marshal(record)
+	var agent model.Agent
+	_ = json.Unmarshal(raw, &agent)
+	target, _ := NewTypedTarget(&agent)
+	return target
 }
 
-func (s *Source) config() *jsonx.Object {
-	if s == nil || s.legacy == nil {
-		return jsonx.NewObject()
+func (s *Source) config() *model.Config {
+	if s == nil || s.modelConfig == nil {
+		return &model.Config{Profile: &model.Profile{}}
 	}
-	return s.legacy
+	return s.modelConfig
 }
 func (s *Source) serverDomain(fallback string) string {
-	domain := s.config().GetObject("system_config").GetString("server_domain")
-	if domain == "" {
+	raw, _, err := s.config().SystemConfig.MemberJSON("server_domain")
+	var domain string
+	if err != nil || json.Unmarshal(raw, &domain) != nil || domain == "" {
 		return fallback
 	}
 	return domain
 }
-func (s *Source) internal(rawURL, baseURL string) bool {
-	cfg := s.config().DeepCopy()
-	settings := cfg.GetObject("system_config")
-	if settings == nil {
-		settings = jsonx.NewObject()
-		cfg.Set("system_config", settings)
+func (s *Source) ruleConfig() *rulefetch.SourceConfig {
+	c := s.config()
+	var sets []model.RuleConfig
+	if raw, present := c.Profile.Fields.Get("rule_sets"); present {
+		_ = json.Unmarshal(raw, &sets)
 	}
-	settings.Set("server_domain", s.serverDomain(baseURL))
-	return rulefetch.IsInternalRuleURL(rawURL, cfg, "")
+	return &rulefetch.SourceConfig{Settings: c.SystemConfig, Library: c.RuleLibrary, Rules: c.Profile.RuleConfigs, RuleSets: sets}
+}
+func (s *Source) internal(rawURL, baseURL string) bool {
+	cfg := *s.ruleConfig()
+	cfg.Settings.ServerDomain = s.serverDomain(baseURL)
+	return rulefetch.InternalURLUnchecked(rawURL, &cfg, "")
 }
 func (s *Source) profilePath(suffix string) string {
 	if id := s.ProfileID(); id != "" {
@@ -116,17 +125,13 @@ func (s *Source) profilePath(suffix string) string {
 }
 func (s *Source) library() []RuleRef {
 	out := []RuleRef{}
-	for _, value := range s.config().GetList("rule_library") {
-		item, ok := value.(*jsonx.Object)
-		if !ok {
-			continue
-		}
-		out = append(out, RuleRef{ID: item.GetString("id"), Name: item.GetString("name"), URL: item.GetString("url"), SourceType: item.GetString("source_type"), Content: item.GetString("content"), Behavior: item.GetString("behavior"), Format: item.GetString("format")})
+	for _, item := range s.config().RuleLibrary {
+		out = append(out, RuleRef{ID: item.ID, Name: item.Name, URL: textValue(item.URL), SourceType: textValue(item.SourceType), Content: textValue(item.Content), Behavior: textValue(item.Behavior), Format: textValue(item.Format)})
 	}
 	return out
 }
 func (s *Source) requestRule(ctx context.Context, rawURL string) (*rulefetch.Response, error) {
-	return rulefetch.RequestRule(ctx, rawURL, rulefetch.Request{Config: s.config(), MaxBytes: MaxFileBytes, Stream: true, ConnectTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second})
+	return rulefetch.Download(ctx, rawURL, rulefetch.DownloadRequest{Config: s.ruleConfig(), MaxBytes: MaxFileBytes, Stream: true, ConnectTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second})
 }
 
 // ruleRead is a declared remote source read through the shared refresh cache.
@@ -138,19 +143,30 @@ type ruleRead struct {
 }
 
 func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared *RuleRef, fetch func(context.Context, string) ([]byte, error)) (ruleRead, error) {
-	cfg := s.config()
-	rule, err := rulefetch.ResolveRemoteRuleSource(rawURL, cfg, sourceID)
+	cfg := s.ruleConfig()
+	rule, err := rulefetch.ResolveSource(rawURL, cfg, sourceID)
 	if err != nil {
 		return ruleRead{declared: true}, err
 	}
 	if rule == nil && declared != nil {
-		rule = jsonx.Obj("name", declared.Name, "behavior", declared.Behavior, "format", declared.Format, "source_type", "url", "url", rawURL)
+		rule = &model.RuleConfig{Name: declared.Name, Behavior: ptr(declared.Behavior), Format: ptr(declared.Format), SourceType: ptr("url"), URL: ptr(rawURL)}
 	}
-	if rule == nil || rule.GetOr("source_type", "url") != "url" {
+	if rule == nil || rule.SourceType != nil && *rule.SourceType != "url" {
 		return ruleRead{}, nil
 	}
-	value, stale, err := refresh.ReadRuleSource(ctx, rule, refresh.RuleOptions{Config: cfg, Fetch: func(u string) (any, error) { return fetch(ctx, u) }})
-	return ruleRead{data: value, stale: stale, name: rule.GetString("name"), declared: true}, err
+	raw, err := model.Marshal(rule)
+	if err != nil {
+		return ruleRead{}, err
+	}
+	var library model.RuleLibraryItem
+	if err = json.Unmarshal(raw, &library); err != nil {
+		return ruleRead{}, err
+	}
+	value, stale, err := refresh.ReadRemote(ctx, library, refresh.RuleReadOptions{Config: cfg, Fetch: func(ctx context.Context, u string) (rulefetch.Content, error) {
+		data, err := fetch(ctx, u)
+		return rulefetch.Content{Data: data}, err
+	}})
+	return ruleRead{data: value, stale: stale, name: rule.Name, declared: true}, err
 }
 
 // SourceError renders the provider's native error and one-based positions.
@@ -186,19 +202,19 @@ func Wire() {
 }
 
 func (s *Source) normalize(value []byte, rule RuleRef) ([]byte, error) {
-	r := jsonx.Obj("id", rule.ID, "name", rule.Name, "url", rule.URL, "source_type", rule.SourceType, "behavior", defaultBehavior(rule.Behavior), "format", rule.Format)
-	format, err := convert.RulesetFormat(r, s.config(), "")
+	r := model.RuleConfig{ID: rule.ID, Name: rule.Name, URL: ptr(rule.URL), SourceType: ptr(rule.SourceType), Behavior: ptr(defaultBehavior(rule.Behavior)), Format: ptr(rule.Format)}
+	format, err := convert.RuleFormat(r, s.config(), "")
 	if err != nil {
 		return nil, err
 	}
-	text, warnings, err := rulefetch.NormalizeMihomoRuleset(string(value), defaultBehavior(rule.Behavior), format)
+	text, warnings, err := rulefetch.NormalizeRuleset(string(value), defaultBehavior(rule.Behavior), format)
 	if len(warnings) > 0 {
 		logger.Warningf("Mihomo provider %s: %d unconverted lines", rule.Name, len(warnings))
 	}
 	return []byte(text), err
 }
 func (s *Source) validateRemote(value []byte, rule RuleRef) error {
-	return rulefetch.ValidateRemoteRuleContent(value, jsonx.Obj("name", rule.Name, "url", rule.URL, "source_type", "url", "behavior", rule.Behavior, "format", rule.Format), jsonx.NewObject(), rule.Format)
+	return rulefetch.ValidateRemote(rulefetch.Content{Data: value}, model.RuleConfig{Name: rule.Name, URL: ptr(rule.URL), SourceType: ptr("url"), Behavior: ptr(rule.Behavior), Format: ptr(rule.Format)}, nil, rule.Format)
 }
 func (s *Source) unavailable(paths []string) []string {
 	profile, err := s.dnsProfile()
@@ -222,9 +238,9 @@ func resolvedBuildProfile(ctx context.Context, src *Source, t Target) (string, e
 }
 
 func (s *Source) snapshotJSON() (json.RawMessage, error) {
-	cfg := s.config().DeepCopy()
+	cfg := s.members
 	cfg.Delete("agents")
-	return encodeJSON(cfg)
+	return cfg.MarshalJSON()
 }
 func (s *Source) inputDigest() string { return s.contentDigest() }
 
@@ -259,15 +275,15 @@ type receiptAgentView struct {
 	Applied       appliedView `json:"applied_content"`
 }
 
-func receiptAgentRaw(agent *agents.Record) receiptAgentView {
+func receiptAgentRaw(agent *model.Agent) receiptAgentView {
 	var view receiptAgentView
-	raw, err := encodeJSON(agent)
+	raw, err := model.Marshal(agent)
 	if err == nil {
 		_ = jsondecode.Unmarshal(raw, &view)
 	}
 	return view
 }
-func receiptAgent(ctx context.Context, agent *agents.Record) (receiptAgentView, error) {
+func receiptAgent(ctx context.Context, agent *model.Agent) (receiptAgentView, error) {
 	view := receiptAgentRaw(agent)
 	if view.ProfileID == "" {
 		r, err := repo.GetRepository(ctx)
@@ -282,119 +298,156 @@ func receiptAgent(ctx context.Context, agent *agents.Record) (receiptAgentView, 
 	return view, nil
 }
 func retainedReceipts(ctx context.Context, r *repo.Repository, agentID, deploymentID string) (map[string]bool, error) {
-	system, err := r.GetSystem(ctx)
-	if err != nil {
-		return nil, err
-	}
 	retained := map[string]bool{digest([]byte(deploymentID)): true, digest(nil): true}
-	for _, value := range system.GetList("agents") {
-		agent, ok := value.(*jsonx.Object)
-		if !ok || agent.GetString("id") != agentID {
-			continue
-		}
-		if id := agent.GetObject("applied_content").GetString("deployment_id"); id != "" {
-			retained[digest([]byte(id))] = true
-		}
-		tasks := agent.GetObject("deployments")
-		if tasks != nil {
-			for id, value := range tasks.All() {
-				state, ok := value.(*jsonx.Object)
-				if ok && !finished(state.GetString("status")) {
+	err := r.ViewAgents(ctx, func(records []model.Agent) error {
+		for i := range records {
+			agent := &records[i]
+			if !agents.AgentMatchesID(agent, agentID) {
+				continue
+			}
+			if agent.AppliedContent != nil && agent.AppliedContent.DeploymentID != "" {
+				retained[digest([]byte(agent.AppliedContent.DeploymentID))] = true
+			}
+			for id, state := range agent.Deployments.All() {
+				if agent.Deployments.EntryValid(id) && !finished(state.Status) {
 					retained[digest([]byte(id))] = true
 				}
 			}
+			break
 		}
-		break
-	}
-	return retained, nil
+		return nil
+	})
+	return retained, err
 }
 func finished(status string) bool {
 	return status == "succeeded" || status == "failed" || status == "rolled_back"
 }
-func advanceApplied(ctx context.Context, m *agents.Manager, agent *agents.Record, fingerprint string, files map[string]string) (bool, error) {
+func advanceApplied(ctx context.Context, m *agents.Manager, agent *model.Agent, fingerprint string, files map[string]string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 	accepted := false
-	expected := agent.Value("applied_content")
-	id := agent.GetString("id")
-	if id == "" || expected == nil {
+	if agent == nil || agent.ID == "" || agent.AppliedContent == nil {
 		return false, nil
 	}
-	fileMap := jsonx.NewObject()
-	for p, sha := range files {
-		fileMap.Set(p, sha)
+	expected, _, err := agent.MemberJSON("applied_content")
+	if err != nil {
+		return false, err
 	}
-	_, err := m.Repository().UpdateSystemTransaction(ctx, func(ctx context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	err = m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		if err := tx.Err(); err != nil {
+			return err
 		}
-		for _, value := range system.GetList("agents") {
-			current, ok := value.(*jsonx.Object)
-			if !ok || current.GetString("id") != id {
+		for i := range *records {
+			current := &(*records)[i]
+			if !agents.AgentMatchesID(current, agent.ID) {
 				continue
 			}
-			applied := current.GetObject("applied_content")
-			if applied == nil || !jsonx.Equal(applied, expected) {
-				return nil, nil
+			applied := current.AppliedContent
+			raw, _, err := current.MemberJSON("applied_content")
+			if err != nil {
+				return err
 			}
-			latest := current.GetObject("latest_deployment")
-			if latest != nil && !finished(latest.GetString("status")) {
-				return nil, nil
+			if applied == nil || !equalJSON(raw, expected) {
+				return nil
 			}
-			applied.Set("fingerprint", fingerprint)
-			applied.Set("files", fileMap.DeepCopy())
-			deploymentID := applied.GetString("deployment_id")
-			for _, state := range []*jsonx.Object{current.GetObject("deployments").GetObject(deploymentID), latest} {
-				if state != nil && state.GetString("deployment_id") == deploymentID {
-					if prepared := state.GetObject("prepared_content"); prepared != nil {
-						prepared.Set("fingerprint", fingerprint)
-						prepared.Set("files", fileMap.DeepCopy())
-					}
+			latest := current.LatestDeployment
+			if latest != nil && !finished(latest.Status) {
+				return nil
+			}
+			fileMap := model.Map[string]{}
+			for path, sha := range files {
+				fileMap.Set(path, sha)
+			}
+			applied.Fingerprint, applied.Files = fingerprint, &fileMap
+			update := func(state *model.Deployment) {
+				if state != nil && state.DeploymentID == applied.DeploymentID && state.PreparedContent != nil {
+					state.PreparedContent.Fingerprint, state.PreparedContent.Files = fingerprint, &fileMap
 				}
 			}
+			if state, ok := current.Deployments.Get(applied.DeploymentID); ok {
+				update(&state)
+				current.Deployments.Set(applied.DeploymentID, state)
+			}
+			update(latest)
 			accepted = true
 			break
 		}
-		return nil, nil
+		return tx.Err()
 	})
 	return accepted, err
 }
-func receiptMatches(agent, state *agents.Record) bool {
-	if agent == nil || state == nil || agent.GetString("id") == "" || agent.GetString("service_type") != "oxidns" || state.GetString("service_type") != "oxidns" {
+
+func receiptMatches(agent *model.Agent, state *model.Deployment) bool {
+	if agent == nil || state == nil {
 		return false
 	}
 	view, err := receiptAgent(context.Background(), agent)
+	if err != nil || view.ID == "" || view.ServiceType != "oxidns" {
+		return false
+	}
+	// Activation proof uses original JSON string identities, never R5 display projections.
+	var candidate struct {
+		ProfileID    string `json:"profile_id"`
+		ServiceType  string `json:"service_type"`
+		DeploymentID string `json:"deployment_id"`
+		SHA256       string `json:"sha256"`
+		Prepared     struct {
+			Fingerprint string `json:"fingerprint"`
+		} `json:"prepared_content"`
+	}
+	raw, err := model.Marshal(state)
+	if err != nil || jsondecode.Unmarshal(raw, &candidate) != nil {
+		return false
+	}
+	if candidate.ServiceType != "oxidns" || candidate.ProfileID == "" || candidate.ProfileID != view.ProfileID || candidate.DeploymentID == "" || candidate.SHA256 == "" || candidate.Prepared.Fingerprint == "" {
+		return false
+	}
+	expected := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: view.ID, DeploymentID: candidate.DeploymentID, ProfileID: candidate.ProfileID, ServiceType: "oxidns", SHA256: candidate.SHA256, Fingerprint: candidate.Prepared.Fingerprint}
+	raw, err = encodeJSON(expected)
 	if err != nil {
 		return false
 	}
-	profile := state.GetString("profile_id")
-	sha := state.GetString("sha256")
-	fingerprint := state.GetObject("prepared_content").GetString("fingerprint")
-	id := state.GetString("deployment_id")
-	if profile == "" || profile != view.ProfileID || id == "" || sha == "" || fingerprint == "" {
-		return false
-	}
-	expected := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: view.ID, DeploymentID: id, ProfileID: profile, ServiceType: "oxidns", SHA256: sha, Fingerprint: fingerprint}
-	raw, err := encodeJSON(expected)
-	if err != nil {
-		return false
-	}
-	proof, err := jsonx.Parse(raw)
-	return err == nil && jsonx.Equal(proof, state.Value("oxidns_validation_receipt"))
+	proof, _, err := state.MemberJSON("oxidns_validation_receipt")
+	return err == nil && equalJSON(raw, proof)
 }
-func publicDeployment(record *agents.Record) *agents.Record {
+
+func publicDeployment(record *model.Deployment) *model.Deployment {
 	if record == nil {
 		return nil
 	}
-	secrets := redact.CollectCredentials(record, nil)
-	out := record.DeepCopy()
-	if public := out.GetObject("ha_publication"); public != nil && public.Len() > 0 {
-		out = agents.HAAggregate(out, public)
+	raw, err := model.Marshal(record)
+	if err != nil {
+		return nil
 	}
-	out.Delete("prepared_content")
-	out.Delete("oxidns_validation_receipt")
-	return agents.SanitizePublicMetadata(agents.PublicDeploymentMessages(out), secrets)
+	secrets := redact.CollectCredentials(json.RawMessage(raw), nil)
+	var out model.Deployment
+	if json.Unmarshal(raw, &out) != nil {
+		return nil
+	}
+	if out.HAPublication != nil {
+		outPtr, err := agents.HAAggregateModel(&out, out.HAPublication)
+		if err != nil {
+			return nil
+		}
+		out = *outPtr
+	}
+	if out.Clear("prepared_content") != nil || out.Clear("oxidns_validation_receipt") != nil {
+		return nil
+	}
+	localized, err := agents.PublicDeploymentMessagesModel(&out)
+	if err != nil {
+		return nil
+	}
+	raw, err = model.Marshal(localized)
+	if err != nil {
+		return nil
+	}
+	raw = redact.SanitizeCredentials(json.RawMessage(raw), secrets)
+	if json.Unmarshal(raw, &out) != nil {
+		return nil
+	}
+	return &out
 }
 
 // AgentIdentity freezes fields that affect target adaptation, including the
@@ -402,27 +455,26 @@ func publicDeployment(record *agents.Record) *agents.Record {
 func AgentIdentity(t Target) []byte {
 	record := t.Record
 	if record == nil {
-		record = jsonx.Obj("id", t.ID, "profile_id", t.ProfileID, "service_type", t.ServiceType, "host", t.Host, "token", t.Token, "version", t.Version, "deployment_method", t.DeploymentMethod, "domain_discovery_enabled", t.DomainDiscovery)
+		record = &model.Agent{ID: t.ID, ProfileID: t.ProfileID, ServiceType: t.ServiceType, Host: t.Host, Token: t.Token, Version: t.Version, DeploymentMethod: t.DeploymentMethod, DomainDiscoveryEnabled: &t.DomainDiscovery}
 		if len(t.Port) > 0 {
-			if port, err := jsonx.Parse(t.Port); err == nil {
-				record.Set("port", port)
-			}
+			_ = record.SetJSON("port", t.Port)
 		}
 	}
-	identity := jsonx.NewObject()
+	identity := map[string]json.RawMessage{}
 	for _, key := range []string{"id", "profile_id", "service_type", "host", "port", "token", "enabled", "version", "deployment_method", "domain_discovery_enabled", "oxidns_ha"} {
-		identity.Set(key, record.Value(key))
-	}
-	core := ""
-	if record.GetBool("domain_discovery_enabled") {
-		if store, err := trafficstore.Get(context.Background()); err == nil {
-			core = subs.ReportedCoreVersion(record, store.StatusOf)
+		raw, _, err := record.MemberJSON(key)
+		if err != nil {
+			return nil
 		}
+		if len(raw) == 0 {
+			raw = []byte("null")
+		}
+		identity[key] = raw
 	}
-	if core == "" {
-		identity.Set("core_version", nil)
-	} else {
-		identity.Set("core_version", core)
+	core := reportedCore(context.Background(), Target{Record: record})
+	identity["core_version"] = json.RawMessage("null")
+	if core != "" {
+		identity["core_version"], _ = json.Marshal(core)
 	}
 	raw, err := encodeJSON(identity)
 	if err != nil {
@@ -435,22 +487,28 @@ func AgentIdentity(t Target) []byte {
 	return canonical
 }
 func previewSnapshot(ctx context.Context, m *agents.Manager, profileID string) (*Source, int64, error) {
-	config, revision, err := m.Repository().GetPublishSnapshot(ctx, profileID, false)
+	config, revision, err := m.Repository().PublishConfig(ctx, profileID, false)
 	if err != nil {
 		return nil, 0, err
 	}
-	return NewSource(config, &revision), revision, nil
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, 0, err
+	}
+	source, err := SourceFromJSON(raw, &revision)
+	return source, revision, err
 }
 func previewTarget(ctx context.Context, m *agents.Manager, id string) (Target, bool, error) {
-	agent, err := m.GetAgentByID(ctx, id, false)
+	agent, err := m.ReadAgent(ctx, id, false)
 	if err != nil || agent == nil {
 		return Target{}, false, err
 	}
-	return NewTarget(agent), true, nil
+	target, err := NewTypedTarget(agent)
+	return target, err == nil, err
 }
 func queryCapabilities(ctx context.Context, m *agents.Manager, t Target) (Capabilities, error) {
 	timeout := agents.Seconds(5)
-	response, err := m.DeploymentRequest(ctx, t.Record, "GET", "capabilities", nil, nil, &timeout)
+	response, err := m.DeploymentRequestModel(ctx, t.Record, "GET", "capabilities", nil, nil, &timeout)
 	if err != nil {
 		return Capabilities{}, err
 	}
@@ -472,14 +530,20 @@ func finalPreview(ctx context.Context, m *agents.Manager, t Target, content stri
 		return "", err
 	}
 	timeout := agents.Seconds(30)
-	response, err := m.DeploymentRequest(ctx, t.Record, "POST", "config/final-preview", http.Header{"Content-Type": []string{"application/json"}}, body, &timeout)
+	response, err := m.DeploymentRequestModel(ctx, t.Record, "POST", "config/final-preview", http.Header{"Content-Type": []string{"application/json"}}, body, &timeout)
 	if err != nil {
 		return "", err
 	}
-	value, ok := response.Value("content").(string)
-	success, successOK := response.Value("success").(bool)
+	raw, present, failure := response.MemberJSON("content")
+	var value string
+	ok := present && failure == nil && json.Unmarshal(raw, &value) == nil
+	success := response.Success
+	successOK := true
 	if !successOK || !success || !ok {
-		message := response.GetString("message")
+		message := ""
+		if response.Message != nil {
+			message = *response.Message
+		}
 		if message == "" {
 			message = msgFinalPreviewFailed
 		}
@@ -489,7 +553,7 @@ func finalPreview(ctx context.Context, m *agents.Manager, t Target, content stri
 }
 
 func (s *Source) githubSource(rawURL string) string {
-	candidates, err := rulefetch.GithubDownloadCandidates(rawURL, s.config(), "")
+	candidates, err := rulefetch.DownloadCandidates(rawURL, s.ruleConfig(), "")
 	if err == nil && len(candidates) > 0 {
 		return candidates[0].URL
 	}
@@ -501,9 +565,9 @@ func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) 
 	var err error
 	switch t.ServiceType {
 	case "", "mihomo":
-		text, err = convert.GenerateMihomoConfig(ctx, s.config(), convert.GenerateOptions{BaseURL: base, RegionProbe: t.DomainDiscovery, MihomoCoreVersion: reportedCore(ctx, t), ForAgent: true})
+		text, err = convert.MihomoConfig(ctx, s.config(), convert.MihomoOptions{BaseURL: base, RegionProbe: t.DomainDiscovery, CoreVersion: coreVersionJSON(ctx, t), ForAgent: true})
 	case "mosdns":
-		text, err = mosdns.GenerateMosDNSConfig(s.config(), base)
+		text, err = mosdns.Generate(s.config(), base)
 	case "oxidns":
 		profile, e := s.dnsProfile()
 		if e != nil {
@@ -511,7 +575,7 @@ func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) 
 		}
 		text, err = oxidns.Generate(profile, base)
 	case "surge":
-		text, err = convert.GenerateSurgeConfig(ctx, s.config(), base)
+		text, err = convert.SurgeConfig(ctx, s.config(), base)
 	default:
 		return AgentConfig{}, preparation("Unsupported service type: " + t.ServiceType)
 	}
@@ -520,18 +584,32 @@ func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) 
 	return AgentConfig{Content: text, MD5: hash, Version: hash[:8], ServiceType: t.ServiceType}, err
 }
 func reportedCore(ctx context.Context, t Target) string {
-	store, err := trafficstore.Get(ctx)
+	if t.Record == nil {
+		return ""
+	}
+	store, err := trafficstore.GetNative(ctx)
 	if err != nil {
 		return ""
 	}
-	return subs.ReportedCoreVersion(t.Record, store.StatusOf)
+	raw, err := model.Marshal(t.Record)
+	if err != nil {
+		return ""
+	}
+	var agent subs.CoreAgent
+	if json.Unmarshal(raw, &agent) != nil {
+		return ""
+	}
+	return subs.AgentCoreVersion(agent, func(id string) subs.CoreStatus {
+		status, _ := subs.DecodeCoreStatus(store.StatusJSON(id))
+		return status
+	})
 }
 func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source, o PrepareOptions) (*Prepared, error) {
 	if s == nil {
 		return nil, preparation("Missing profile snapshot")
 	}
 	cfg := s.config()
-	p := &Prepared{Providers: []*provider.Rendered{}, ProviderDownloads: []ProviderFile{}, CustomFiles: []CustomFile{}, RulesetDownloads: []convert.Download{}}
+	p := &Prepared{Providers: []*provider.Artifact{}, ProviderDownloads: []ProviderFile{}, CustomFiles: []CustomFile{}, RulesetDownloads: []convert.Download{}}
 	service := t.ServiceType
 	if service == "" {
 		service = "mihomo"
@@ -542,7 +620,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				return nil, err
 			}
 		}
-		marker, _ := routersplit.ReadMarker(cfg)
+		marker, _ := routersplit.ReadMarkerProfile(cfg.Profile)
 		if marker != "absent" && t.DeploymentMethod != "docker" && !gateway.SupportsForwarding(t.Version) {
 			return nil, preparation(fmt.Sprintf(msgForwardingUpgrade, gateway.ForwardingMinAgentVersion))
 		}
@@ -553,11 +631,11 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 	var err error
 	switch service {
 	case "mihomo":
-		conversions := convert.NewConversionResults()
-		report := jsonx.NewObject()
-		generate := func(reuse bool) (*jsonx.Object, error) {
+		conversions := &convert.Conversions{}
+		report := &convert.GenerationReport{}
+		generate := func(reuse bool) (*yamlx.Node, error) {
 			var e error
-			p.ConfigContent, e = convert.GenerateMihomoConfig(convert.WithNodeConversions(ctx, conversions, reuse), cfg, convert.GenerateOptions{BaseURL: o.BaseURL, SyncLANHosts: true, SkipProviderPreflight: true, RegionProbe: t.DomainDiscovery, MihomoCoreVersion: reportedCore(ctx, t), Report: report, ForAgent: true})
+			p.ConfigContent, e = convert.MihomoConfig(convert.WithConversions(ctx, conversions, reuse), cfg, convert.MihomoOptions{BaseURL: o.BaseURL, SyncLANHosts: true, SkipProviderPreflight: true, RegionProbe: t.DomainDiscovery, CoreVersion: coreVersionJSON(ctx, t), Report: report, ForAgent: true})
 			if e != nil {
 				return nil, e
 			}
@@ -565,20 +643,12 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			if e != nil {
 				return nil, generatedFailure(e, p.ConfigContent, "Mihomo")
 			}
-			raw, e := yamlx.ToJSON(node)
-			if e != nil {
-				return nil, e
-			}
-			v, e := jsonx.Parse(raw)
-			if e != nil {
-				return nil, e
-			}
-			main, ok := v.(*jsonx.Object)
-			if !ok {
+			if node == nil || yamlx.Resolve(node).Kind != yaml.MappingNode {
 				return nil, preparation("Generated Mihomo configuration must be an object")
 			}
-			return main, nil
+			return node, nil
 		}
+
 		main, e := generate(false)
 		if e != nil {
 			return nil, e
@@ -586,8 +656,8 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 		publicationHooks.RLock()
 		guards := publicationHooks.guards
 		publicationHooks.RUnlock()
-		if routersplit.IsFullTun(cfg) {
-			if e = routersplit.RequireFullTunGenerated(main); e != nil {
+		if isFullTun(cfg.Profile) {
+			if e = routersplit.RequireDocument(main); e != nil {
 				return nil, e
 			}
 			if t.DeploymentMethod != "docker" {
@@ -598,13 +668,13 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 					return nil, e
 				}
 			}
-		} else if t.DeploymentMethod != "docker" && !main.GetObject(routersplit.GatewayMarker).GetBool("enabled") && gateway.SupportsGateway(t.Version) {
-			source, e := routersplit.PublishLegacySource(ctx, m.Repository(), t.ProfileID, cfg, t.ID)
+		} else if t.DeploymentMethod != "docker" && !isTrue(yamlx.Get(yamlx.Get(main, routersplit.GatewayMarker), "enabled")) && gateway.SupportsGateway(t.Version) {
+			source, e := routersplit.PublishSource(ctx, m.Repository(), t.ProfileID, cfg.Profile, t.ID)
 			if e != nil {
 				return nil, e
 			}
-			if source != nil {
-				used, e := routersplit.GatewayWasUsed(cfg, t.Record, source)
+			if source != "" {
+				used, e := routersplit.WasGatewayUsed(cfg.Profile, t.Record, source)
 				if e != nil {
 					return nil, e
 				}
@@ -618,12 +688,12 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				}
 			}
 		}
-		downloads, e := convert.GetMihomoProviderDownloads(ctx, cfg, o.BaseURL, main)
+		downloads, e := convert.MihomoProviderDownloads(ctx, cfg, o.BaseURL, main)
 		if e != nil {
 			return nil, e
 		}
 		if len(downloads) > 0 {
-			opts := provider.BundleOptions{RenderAll: true, Progress: func(message string, force bool) {
+			opts := provider.DeliveryOptions{RenderAll: true, Progress: func(message string, force bool) {
 				if !force && o.Progress.Message != nil {
 					o.Progress.Message(message)
 				} else if o.Progress.Phase != nil {
@@ -631,15 +701,19 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				}
 			}}
 			if o.PreferCached {
-				opts.SubscriptionFetch = func(ctx context.Context, id, url string) (*substore.SubscriptionResult, error) {
-					return substore.Default().Client.GetSubscriptionProxiesYAML(ctx, id, url, "", substore.FetchOptions{PreferCached: true})
+				opts.SubscriptionFetch = func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
+					result, err := substore.Default().Client.Fetch(ctx, id, url, "", substore.FetchOptions{PreferCached: true})
+					if err != nil || result == nil {
+						return nil, err
+					}
+					return &refresh.SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: refreshTraffic(result.Traffic)}, nil
 				}
 			}
-			p.Providers, e = provider.PrepareProviderBundle(convert.WithNodeConversions(ctx, conversions, false), cfg, main, opts)
+			p.Providers, e = provider.PrepareBundle(convert.WithConversions(ctx, conversions, false), cfg, main, opts)
 			if e != nil {
 				return nil, e
 			}
-			updates := map[string]provider.CacheUpdate{}
+			updates := map[string]provider.CacheWrite{}
 			order := []string{}
 			for _, v := range p.Providers {
 				for _, u := range v.CacheUpdates {
@@ -653,11 +727,11 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
 				}
-				list := []provider.CacheUpdate{}
+				list := []provider.CacheWrite{}
 				for _, id := range order {
 					list = append(list, updates[id])
 				}
-				if e = provider.CommitCacheUpdates(ctx, list); e != nil {
+				if e = provider.CommitWrites(ctx, list); e != nil {
 					return nil, e
 				}
 				if o.Progress.Phase != nil {
@@ -667,65 +741,70 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				if e != nil {
 					return nil, e
 				}
-				opts.SubscriptionFetch = func(context.Context, string, string) (*substore.SubscriptionResult, error) {
+				opts.SubscriptionFetch = func(context.Context, string, string) (*refresh.SourceResult, error) {
 					return nil, errors.New(msgAlreadyFetched)
 				}
 				opts.Progress = nil
-				p.Providers, e = provider.PrepareProviderBundle(convert.WithNodeConversions(ctx, conversions, true), cfg, main, opts)
+				p.Providers, e = provider.PrepareBundle(convert.WithConversions(ctx, conversions, true), cfg, main, opts)
 				if e != nil {
 					return nil, e
 				}
 			}
 			for _, v := range p.Providers {
-				path, ok := v.LocalPath.(string)
-				if !ok {
-					return nil, preparation("Invalid deployment file path")
-				}
+				path := v.LocalPath
 				p.ProviderDownloads = append(p.ProviderDownloads, ProviderFile{Name: v.Name, LocalPath: path, URL: v.URL, Content: []byte(v.Content)})
 			}
 		}
 		if s.gateway().Enabled() {
-			for name, value := range main.GetObject("rule-providers").All() {
-				r, ok := value.(*jsonx.Object)
-				if ok && r.GetString("type") == "http" && r.GetString("url") != "" {
-					p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: name, URL: r.Value("url"), LocalPath: r.Value("path"), Behavior: r.GetString("behavior"), Format: r.GetString("format")})
+			providers := yamlx.Resolve(yamlx.Get(main, "rule-providers"))
+			if providers != nil && providers.Kind == yaml.MappingNode {
+				for i := 0; i < len(providers.Content); i += 2 {
+					n := providers.Content[i+1]
+					if nodeText(yamlx.Get(n, "type")) == "http" && nodeText(yamlx.Get(n, "url")) != "" {
+						p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: providers.Content[i].Value, URL: nodeText(yamlx.Get(n, "url")), LocalPath: nodeText(yamlx.Get(n, "path")), Behavior: nodeText(yamlx.Get(n, "behavior")), Format: nodeText(yamlx.Get(n, "format"))})
+					}
 				}
 			}
 		} else {
-			p.RulesetDownloads, e = convert.GetMihomoRulesetDownloads(ctx, cfg, o.BaseURL)
+			ds, e := convert.MihomoRulesetDownloads(ctx, cfg, o.BaseURL)
 			if e != nil {
 				return nil, e
 			}
+			for _, d := range ds {
+				p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
+			}
 		}
-		p.SubscriptionHosts, _ = encodeJSON(report.Value("subscription_hosts"))
-		p.SubscriptionDialers, _ = encodeJSON(report.Value("subscription_dialers"))
+		if report.SubscriptionHosts != nil {
+			p.SubscriptionHosts, _ = yamlx.ToJSON(report.SubscriptionHosts)
+		} else {
+			p.SubscriptionHosts = []byte("null")
+		}
+		if report.SubscriptionDialers != nil {
+			p.SubscriptionDialers, _ = yamlx.ToJSON(report.SubscriptionDialers)
+		} else {
+			p.SubscriptionDialers = []byte("null")
+		}
+
 	case "mosdns":
-		p.ConfigContent, err = mosdns.GenerateMosDNSConfig(cfg, o.BaseURL)
+		p.ConfigContent, err = mosdns.Generate(cfg, o.BaseURL)
 		if err != nil {
 			return nil, err
 		}
-		ds, e := mosdns.GetMosDNSRulesetDownloads(cfg, o.BaseURL)
+		ds, e := mosdns.Downloads(cfg, o.BaseURL)
 		if e != nil {
 			return nil, e
 		}
 		for _, v := range ds {
-			r, ok := v.(*jsonx.Object)
-			if !ok {
-				return nil, preparation("Invalid rule download")
-			}
-			p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: r.GetString("name"), URL: r.Value("url"), LocalPath: r.Value("local_path"), Behavior: r.GetString("behavior")})
+			p.RulesetDownloads = append(p.RulesetDownloads, convert.Download{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: v.Behavior})
 		}
-		fs, e := mosdns.GetMosDNSCustomFiles(cfg)
+		fs, e := mosdns.CustomFiles(cfg)
 		if e != nil {
 			return nil, e
 		}
 		for _, v := range fs {
-			r, ok := v.(*jsonx.Object)
-			if !ok {
-				return nil, preparation("Invalid custom file")
-			}
-			p.CustomFiles = append(p.CustomFiles, CustomFile{Path: r.GetString("path"), Name: r.GetString("name"), Content: []byte(r.GetString("content")), Native: r.GetBool("native")})
+			p.CustomFiles = append(p.CustomFiles, CustomFile{Path: v.Path, Content: []byte(v.Content)})
 		}
+
 	case "oxidns":
 		profile, e := s.dnsProfile()
 		if e != nil {
@@ -777,53 +856,70 @@ func preparationFailure(err error) bool {
 	var remote *rulefetch.RemoteRuleValidationError
 	var agent *agents.ValueError
 	var archive *mosdns.ArchiveError
-	var py *convert.PyError
 	var rs *routersplit.ValidationError
-	return errors.Is(err, setupflow.ErrInvalidSession) || errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || repo.IsValueError(err) || (errors.As(err, &py) && py.Class == "ValueError") || errors.As(err, &rs)
+	return errors.Is(err, setupflow.ErrInvalidSession) || errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || repo.IsValueError(err) || errors.As(err, &rs)
 }
 
 // Raw returns an owned JSON snapshot, without exposing mutable legacy documents.
-func (s *Source) Raw() (json.RawMessage, error) { return encodeJSON(s.config()) }
+func (s *Source) Raw() (json.RawMessage, error) {
+	if s == nil {
+		return nil, fmt.Errorf("missing captured configuration")
+	}
+	return s.members.MarshalJSON()
+}
 
-// Member returns an owned raw top-level source member (null when absent).
+// Member returns an owned source member, or null for an absent member.
 func (s *Source) Member(key string) json.RawMessage {
-	b, _ := encodeJSON(s.config().Value(key))
-	return b
-}
-
-// WithMember returns a new source with one top-level member replaced.
-func (s *Source) WithMember(key string, raw json.RawMessage) (*Source, error) {
-	v, e := jsonx.Parse(raw)
-	if e != nil {
-		return nil, e
+	if s == nil {
+		return []byte("null")
 	}
-	cfg := s.config().DeepCopy()
-	cfg.Set(key, v)
-	return NewSource(cfg, s.revision), nil
-}
-
-// SourceFromJSON decodes an owned immutable source, including preview snapshots.
-func SourceFromJSON(raw json.RawMessage, revision *int64) (*Source, error) {
-	v, e := jsonx.Parse(raw)
-	if e != nil {
-		return nil, e
-	}
-	cfg, ok := v.(*jsonx.Object)
+	raw, ok := s.members.Get(key)
 	if !ok {
+		return []byte("null")
+	}
+	return raw
+}
+
+// WithMember captures a new snapshot with one raw member replaced.
+func (s *Source) WithMember(key string, raw json.RawMessage) (*Source, error) {
+	members := s.members
+	if err := members.Set(key, raw); err != nil {
+		return nil, err
+	}
+	data, err := members.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	return SourceFromJSON(data, s.revision)
+}
+
+// SourceFromJSON owns the raw snapshot and its decoded model view.
+func SourceFromJSON(raw json.RawMessage, revision *int64) (*Source, error) {
+	var members model.Fields
+	if err := json.Unmarshal(raw, &members); err != nil {
 		return nil, preparation("Profile snapshot must be an object")
 	}
-	return NewSource(cfg, revision), nil
+	config, err := model.DecodeConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	source := &Source{members: members, modelConfig: config}
+	if revision != nil {
+		value := *revision
+		source.revision = &value
+	}
+	return source, nil
 }
 
 // CanonicalDigest hashes native canonical JSON (D2); it is shared by consumers.
 func CanonicalDigest(raw json.RawMessage) string { return SettingsDigest(raw) }
 
 func targetByID(ctx context.Context, m *agents.Manager, id string) (Target, bool, error) {
-	a, e := m.GetAgentByID(ctx, id, true)
+	a, e := m.ReadAgent(ctx, id, true)
 	if e != nil || a == nil {
 		return Target{}, false, e
 	}
-	t := NewTarget(a)
+	t, e := NewTypedTarget(a)
 	if t.ProfileID == "" {
 		t.ProfileID, e = m.Repository().DefaultProfileID(ctx)
 	}
@@ -848,121 +944,145 @@ type taskView struct {
 	SourceSHA256   string `json:"source_sha256"`
 }
 
-func resultView(r *agents.Result) taskView {
+func resultView(r *model.Deployment) taskView {
 	var v taskView
-	b, _ := encodeJSON(r)
+	b, _ := model.Marshal(r)
 	_ = jsondecode.Unmarshal(b, &v)
 	return v
 }
 func taskViewOf(t Target, id string) (taskView, bool) {
-	r := t.Record.GetObject("deployments").GetObject(id)
+	r := taskResult(t, id)
 	return resultView(r), r != nil
 }
-func taskResult(t Target, id string) *agents.Result {
-	r := t.Record.GetObject("deployments").GetObject(id)
-	if r == nil {
+func taskResult(t Target, id string) *model.Deployment {
+	if t.Record == nil || !t.Record.Deployments.EntryValid(id) {
 		return nil
 	}
-	return r.DeepCopy()
+	r, ok := t.Record.Deployments.Get(id)
+	if !ok {
+		return nil
+	}
+	return &r
 }
-func result(success bool, status, message string, httpStatus int) *agents.Result {
-	r := jsonx.Obj("success", success)
+func result(success bool, status, message string, httpStatus int) *model.Deployment {
+	body := map[string]any{"success": success}
 	if status != "" {
-		r.Set("status", status)
+		body["status"] = status
 	}
 	if message != "" {
-		r.Set("message", message)
+		body["message"] = message
 	}
 	if httpStatus != 0 {
-		r.Set("http_status", httpStatus)
+		body["http_status"] = httpStatus
 	}
-	return r
+	raw, _ := encodeJSON(body)
+	var out model.Deployment
+	_ = json.Unmarshal(raw, &out)
+	return &out
 }
-func resultWithID(r *agents.Result, id string) *agents.Result {
-	r = r.DeepCopy()
-	r.Set("deployment_id", id)
-	return r
+func resultWithID(r *model.Deployment, id string) *model.Deployment {
+	return resultField(r, "deployment_id", id)
 }
-func resultField(r *agents.Result, key string, value any) *agents.Result {
-	r = r.DeepCopy()
-	r.Set(key, value)
-	return r
+func resultField(r *model.Deployment, key string, value any) *model.Deployment {
+	raw, _ := model.Marshal(r)
+	var fields model.Fields
+	_ = json.Unmarshal(raw, &fields)
+	encoded, _ := model.Marshal(value)
+	fields.Set(key, encoded)
+	raw, _ = model.Marshal(fields)
+	var out model.Deployment
+	_ = json.Unmarshal(raw, &out)
+	return &out
 }
-func recordUpdate(ctx context.Context, m *agents.Manager, agentID, id string, u Update, o agents.RecordOptions) (*agents.Result, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+func recordUpdate(ctx context.Context, m *agents.Manager, agentID, id string, u Update, o agents.RecordOptions) (*model.Deployment, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	r := jsonx.NewObject()
+	patch := map[string]any{}
 	for key, p := range map[string]*string{"status": u.Status, "message": u.Message, "error": u.Error, "error_details": u.ErrorDetails, "failed_stage": u.FailedStage, "sha256": u.SHA256, "source_sha256": u.SourceSHA256, "config_version": u.ConfigVersion} {
 		if p != nil {
-			r.Set(key, *p)
+			patch[key] = *p
 		}
 	}
 	for key, p := range map[string]*bool{"success": u.Success, "submitted": u.Submitted, "manual_rollback": u.ManualRollback} {
 		if p != nil {
-			r.Set(key, *p)
+			patch[key] = *p
 		}
 	}
 	if u.HTTPStatus != 0 {
-		r.Set("http_status", u.HTTPStatus)
+		patch["http_status"] = u.HTTPStatus
 	}
 	if u.ConfigRevision != nil {
 		if u.ConfigRevision.Null {
-			r.Set("config_revision", nil)
+			patch["config_revision"] = nil
 		} else {
-			r.Set("config_revision", jsonx.Int(u.ConfigRevision.Value))
+			patch["config_revision"] = u.ConfigRevision.Value
 		}
 	}
-	return m.RecordDeployment(ctx, agentID, id, r, o)
+	raw, err := encodeJSON(patch)
+	if err != nil {
+		return nil, err
+	}
+	update, err := agents.DecodeDeploymentUpdate(raw)
+	if err != nil {
+		return nil, err
+	}
+	return m.RecordDeploymentModel(ctx, agentID, id, update, o)
 }
-func normalizeUpload(r *agents.Result) *agents.Result {
-	r = r.DeepCopy()
-	if r.GetInt("http_status") != 0 {
-		r.SetDefault("status", "failed")
-	} else if _, ok := r.Value("status").(string); !ok {
-		return result(true, "unknown", msgUploadAccepted, 0)
+func normalizeUpload(r *model.Deployment) *model.Deployment {
+	if r.HTTPStatus != nil && *r.HTTPStatus != 0 {
+		if r.Status == "" {
+			return resultField(r, "status", "failed")
+		}
+	} else {
+		raw, present, err := r.MemberJSON("status")
+		var text string
+		if err != nil || !present || json.Unmarshal(raw, &text) != nil {
+			return result(true, "unknown", msgUploadAccepted, 0)
+		}
 	}
 	return r
 }
 func pairRequired(t Target) bool {
-	return t.Record.GetObject("oxidns_ha").GetBool("enabled") || agents.HAActive(t.Record)
+	return agents.HAEnabledModel(t.Record) || agents.HAActiveModel(t.Record)
 }
-func legacyPush(ctx context.Context, m *agents.Manager, id, content string, o PushInput) (*agents.Result, error) {
-	extra := jsonx.NewObject()
+func legacyPush(ctx context.Context, m *agents.Manager, id, content string, o PushInput) (*model.Deployment, error) {
+	extra := model.Fields{}
 	if o.RestartAfterUpdate {
-		extra.Set("restart_after_update", true)
+		_ = extra.Set("restart_after_update", []byte("true"))
 	}
-	var revision any
+	revision := json.RawMessage("null")
 	if o.Publish.ConfigRevision != nil && !o.Publish.ConfigRevision.Null {
-		revision = o.Publish.ConfigRevision.Value
+		revision, _ = json.Marshal(o.Publish.ConfigRevision.Value)
 	}
-	return m.PushLegacyConfig(ctx, id, content, agents.PushConfig{Extra: extra, ConfigRevision: revision, ExpectedProfileID: o.ExpectedProfileID, ExpectedServiceType: o.ExpectedServiceType})
+	raw, err := m.PushLegacyConfigModel(ctx, id, content, agents.LegacyConfigOptions{Extra: extra, Revision: revision, ExpectedProfileID: o.ExpectedProfileID, ExpectedServiceType: o.ExpectedServiceType})
+	if err != nil {
+		return nil, err
+	}
+	var out model.Deployment
+	err = json.Unmarshal(raw, &out)
+	return &out, err
 }
-func uploadRecord(ctx context.Context, m *agents.Manager, agentID, id string, r *agents.Result) (*agents.Result, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+func uploadRecord(ctx context.Context, m *agents.Manager, agentID, id string, r *model.Deployment) (*model.Deployment, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return m.RecordDeployment(ctx, agentID, id, r, agents.RecordOptions{UploadReceipt: true})
+	raw, err := model.Marshal(r)
+	if err != nil {
+		return nil, err
+	}
+	update, err := agents.DecodeDeploymentUpdate(raw)
+	if err != nil {
+		return nil, err
+	}
+	return m.RecordDeploymentModel(ctx, agentID, id, update, agents.RecordOptions{UploadReceipt: true})
 }
 
 // InternalRuleURL reports whether a URL is a callback into this source snapshot.
 // Rule synchronization uses the same classification as materialization.
 func (s *Source) InternalRuleURL(rawURL, baseURL string) bool { return s.internal(rawURL, baseURL) }
 
-func (s *Source) dnsProfile() (*oxidns.Profile, error) {
-	selected := jsonx.NewObject()
-	config := s.config()
-	for _, key := range []string{"oxidns", "mosdns", "rule_configs", "rules", "rule_sets", "proxy_groups", "device_notes", "profile_id", "system_config", "rule_library", "agents", "nodes", "subscriptions", "subscription_aggregations"} {
-		if value, ok := config.Get(key); ok {
-			selected.Set(key, value)
-		}
-	}
-	data, err := jsonx.Compact(selected)
-	if err != nil {
-		return nil, err
-	}
-	return oxidns.ProfileFromJSON(data)
-}
+func (s *Source) dnsProfile() (*oxidns.Profile, error) { return oxidns.NewTypedProfile(s.config()) }
 
 // NewTypedTarget captures a typed Agent for the remaining deploy consumers.
 // Only this compatibility edge transcodes it; Agent owners keep the model.
@@ -974,38 +1094,70 @@ func NewTypedTarget(record *model.Agent) (Target, error) {
 	if err != nil {
 		return Target{}, err
 	}
-	value, err := jsonx.Parse(data)
+	var owned model.Agent
+	if err = json.Unmarshal(data, &owned); err != nil {
+		return Target{}, err
+	}
+	port, _, err := owned.MemberJSON("port")
 	if err != nil {
 		return Target{}, err
 	}
-	raw, ok := value.(*jsonx.Object)
-	if !ok {
-		return Target{}, fmt.Errorf("invalid Agent target")
+	target := Target{Port: port, Record: &owned}
+	// Captured identities/capabilities retain the original string/bool token types.
+	for _, field := range []struct {
+		key         string
+		destination *string
+	}{
+		{"id", &target.ID}, {"name", &target.Name}, {"profile_id", &target.ProfileID}, {"service_type", &target.ServiceType}, {"deployment_method", &target.DeploymentMethod}, {"version", &target.Version}, {"host", &target.Host}, {"token", &target.Token},
+	} {
+		raw, _, err := owned.MemberJSON(field.key)
+		if err != nil {
+			return Target{}, err
+		}
+		_ = json.Unmarshal(raw, field.destination)
 	}
-	port, _, err := record.MemberJSON("port")
+	raw, _, err := owned.MemberJSON("domain_discovery_enabled")
 	if err != nil {
 		return Target{}, err
 	}
-	return Target{ID: record.ID, Name: record.Name, ProfileID: record.ProfileID, ServiceType: record.ServiceType, DeploymentMethod: record.DeploymentMethod, Version: record.Version, Host: record.Host, Port: port, Token: record.Token, DomainDiscovery: record.DomainDiscoveryEnabled != nil && *record.DomainDiscoveryEnabled, Record: raw}, nil
+	_ = json.Unmarshal(raw, &target.DomainDiscovery)
+	return target, nil
 }
 
 // ViewConfig reads the cached typed view of an immutable captured snapshot.
 // fn must neither modify nor retain the model. The snapshot is decoded once,
 // rather than once per generator/Agent operation on the same Source.
 func (s *Source) ViewConfig(fn func(*model.Config) error) error {
-	if s == nil {
+	if s == nil || s.modelConfig == nil {
 		return fmt.Errorf("missing captured configuration")
 	}
-	s.modelOnce.Do(func() {
-		raw, err := s.Raw()
-		if err != nil {
-			s.modelErr = err
-			return
-		}
-		s.modelConfig, s.modelErr = model.DecodeConfig(raw)
-	})
-	if s.modelErr != nil {
-		return s.modelErr
-	}
 	return fn(s.modelConfig)
+}
+func coreVersionJSON(ctx context.Context, t Target) json.RawMessage {
+	raw, _ := json.Marshal(reportedCore(ctx, t))
+	return raw
+}
+func isFullTun(profile *model.Profile) bool {
+	state, _ := routersplit.ReadMarkerProfile(profile)
+	return state == routersplit.StateValid
+}
+
+func textValue(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+func nodeText(n *yamlx.Node) string {
+	n = yamlx.Resolve(n)
+	if n == nil {
+		return ""
+	}
+	return n.Value
+}
+func refreshTraffic(t *substore.Traffic) *refresh.Traffic {
+	if t == nil {
+		return nil
+	}
+	return &refresh.Traffic{Upload: t.Upload, Download: t.Download, Total: t.Total, Expire: t.Expire, Fields: t.Fields, Raw: t.Raw}
 }

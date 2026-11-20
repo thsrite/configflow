@@ -15,7 +15,6 @@ import (
 	"configflow/internal/devicenotes"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
@@ -177,17 +176,25 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 		if status == "" {
 			status = "offline"
 		}
-		var deployment *jsonx.Object
+		var deployment *model.Deployment
 		if raw := agent.GetObject("latest_deployment"); raw != nil {
-			deployment = deploy.PublicDeployment(raw)
+			data, err := json.Marshal(raw)
+			if err != nil {
+				return nil, nil, err
+			}
+			var task model.Deployment
+			if err = json.Unmarshal(data, &task); err != nil {
+				return nil, nil, err
+			}
+			deployment = deploy.PublicDeployment(&task)
 		}
 		data, err := json.Marshal(struct {
-			ID         string        `json:"id"`
-			Name       string        `json:"name"`
-			Host       string        `json:"host"`
-			Status     string        `json:"status"`
-			HA         any           `json:"oxidns_ha"`
-			Deployment *jsonx.Object `json:"deployment"`
+			ID         string            `json:"id"`
+			Name       string            `json:"name"`
+			Host       string            `json:"host"`
+			Status     string            `json:"status"`
+			HA         any               `json:"oxidns_ha"`
+			Deployment *model.Deployment `json:"deployment"`
 		}{agent.GetString("id"), name, agent.GetString("host"), status, agent.Value("oxidns_ha"), deployment})
 		if err != nil {
 			return cfg, nil, err

@@ -24,7 +24,6 @@ var publicationHooks struct {
 	sync.RWMutex
 	nativePair func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*model.Deployment, bool, error)
 	guards     GatewayGuards
-	pair       func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*agents.Result, bool, error)
 	ipv6       func(context.Context, *agents.Manager, string, string, *Source) error
 }
 
@@ -35,15 +34,6 @@ func SetGatewayGuards(g GatewayGuards) func() {
 	publicationHooks.guards = g
 	publicationHooks.Unlock()
 	return func() { publicationHooks.Lock(); publicationHooks.guards = old; publicationHooks.Unlock() }
-}
-
-// SetPairPublisher installs the optional HA publisher and returns a restore function.
-func SetPairPublisher(fn func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*agents.Result, bool, error)) func() {
-	publicationHooks.Lock()
-	old := publicationHooks.pair
-	publicationHooks.pair = fn
-	publicationHooks.Unlock()
-	return func() { publicationHooks.Lock(); publicationHooks.pair = old; publicationHooks.Unlock() }
 }
 
 // SetIPv6Enroll installs publication enrollment and returns a restore function.

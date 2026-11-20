@@ -249,3 +249,12 @@ func (m *Manager) SetTrafficHistory(ctx context.Context, agentID string, enabled
 	}
 	return agentObject(record)
 }
+
+func nativeTestLegacyObject(t *testing.T, raw string) *jsonx.Object {
+	t.Helper()
+	var out jsonx.Object
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatal(err)
+	}
+	return &out
+}

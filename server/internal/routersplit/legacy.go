@@ -365,3 +365,28 @@ func RouterSplitState(ctx context.Context, r *repo.Repository, id string, config
 	}
 	return legacyOutput(state), nil
 }
+
+// PublishSource reads session evidence for an unmarked publishing profile.
+func PublishSource(ctx context.Context, r *repo.Repository, id string, profile *model.Profile, agentID string) (string, error) {
+	state, _ := ReadMarkerProfile(profile)
+	if state != StateAbsent || id == "" {
+		return "", nil
+	}
+	c, err := sessionContext(ctx, r, id)
+	if err != nil {
+		return "", err
+	}
+	if agentID == "" {
+		return "", identityError(messageTopologyIdentity)
+	}
+	c.MihomoAgentIDs = []string{agentID}
+	return LegacyProfileSource(profile, c)
+}
+
+// WasGatewayUsed recognizes setup purpose and the retained installation proof.
+func WasGatewayUsed(profile *model.Profile, agent *model.Agent, source string) (bool, error) {
+	if source == "setup" || profile.Mihomo.Fields.Has(gwbase.RestoreKey) {
+		return true, nil
+	}
+	return agent != nil && agent.GatewayInstallationID != nil && *agent.GatewayInstallationID != "", nil
+}

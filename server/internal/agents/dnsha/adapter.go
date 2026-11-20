@@ -515,12 +515,3 @@ func sameHAIdentity(left, right *model.HAIdentity) bool {
 	a.Port, b.Port = l, r
 	return equal(&a, &b)
 }
-
-func resultModel(r *agents.Result) (model.Deployment, error) {
-	var d model.Deployment
-	raw, err := json.Marshal(r)
-	if err == nil {
-		err = json.Unmarshal(raw, &d)
-	}
-	return d, err
-}

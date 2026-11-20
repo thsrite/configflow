@@ -90,18 +90,18 @@ func TestPublishBoundary(t *testing.T) {
 	f := newPublish(t, agentfake.Options{ConfigPath: "installed.yaml"}, nil)
 	b := f.bundle(t, "stage")
 	got, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: false, SourceSnapshot: f.source, BaseURL: "https://panel.example.com", ConfigRevision: &Revision{Value: 7}})
-	if e != nil || resultView(got).Status != "verifying" {
+	if e != nil || resultView(fixtureTask(got)).Status != "verifying" {
 		t.Fatal(got, e)
 	}
 	if f.agent(t).Has("applied_content") {
 		t.Fatal("accepted upload advanced baseline")
 	}
-	got, e = f.m.GetDeployment(f.ctx, "publish-agent", "stage")
-	if e != nil || resultView(got).Status != "ready" {
+	got, e = f.m.GetDeploymentModel(f.ctx, "publish-agent", "stage")
+	if e != nil || resultView(fixtureTask(got)).Status != "ready" {
 		t.Fatal(got, e)
 	}
-	got, e = f.m.ActivateDeployment(f.ctx, "publish-agent", "stage")
-	if e != nil || resultView(got).Status != "succeeded" {
+	got, e = f.m.ActivateCandidateModel(f.ctx, "publish-agent", "stage")
+	if e != nil || resultView(fixtureTask(got)).Status != "succeeded" {
 		t.Fatal(got, e)
 	}
 	a := f.agent(t)
@@ -109,7 +109,7 @@ func TestPublishBoundary(t *testing.T) {
 	if applied == nil || applied.GetString("deployment_id") != "stage" || applied.GetString("config_path") != "installed.yaml" {
 		t.Fatal(a)
 	}
-	receipt, e := NewReceipts(f.m.Repository().DataDir()).Load(f.ctx, a, true)
+	receipt, e := NewReceipts(f.m.Repository().DataDir()).LoadAgent(f.ctx, fixtureAgent(a), true)
 	if e != nil || receipt == nil {
 		t.Fatal("receipt", e)
 	}
@@ -132,8 +132,8 @@ func TestPublishBoundary(t *testing.T) {
 	if uploads != 1 {
 		t.Fatal("upload count", uploads)
 	}
-	got, e = f.m.RollbackDeployment(f.ctx, "publish-agent", "stage")
-	if e != nil || resultView(got).Status != "rolled_back" {
+	got, e = f.m.RollbackDeploymentModel(f.ctx, "publish-agent", "stage")
+	if e != nil || resultView(fixtureTask(got)).Status != "rolled_back" {
 		t.Fatal(got, e)
 	}
 	if f.agent(t).Has("applied_content") {
@@ -155,14 +155,14 @@ func TestSubmittedBeforeNetworkAndLostResponse(t *testing.T) {
 		})
 	})
 	got, e := PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "lost"), PublishOptions{Activate: true})
-	if e != nil || resultView(got).Status != "unknown" || !resultView(got).Submitted {
+	if e != nil || resultView(fixtureTask(got)).Status != "unknown" || !resultView(fixtureTask(got)).Submitted {
 		t.Fatal(got, e)
 	}
 	if f.agent(t).Has("applied_content") {
 		t.Fatal("uncertain upload advanced baseline")
 	}
-	got, e = f.m.GetDeployment(f.ctx, "publish-agent", "lost")
-	if e != nil || resultView(got).Status != "succeeded" {
+	got, e = f.m.GetDeploymentModel(f.ctx, "publish-agent", "lost")
+	if e != nil || resultView(fixtureTask(got)).Status != "succeeded" {
 		t.Fatal(got, e)
 	}
 	if f.agent(t).GetObject("applied_content") == nil {
@@ -197,8 +197,8 @@ func TestLateUploadCannotRegressPoll(t *testing.T) {
 		done <- e
 	}()
 	<-arrived
-	got, e := f.m.GetDeployment(f.ctx, "publish-agent", "late")
-	if e != nil || resultView(got).Status != "checking" {
+	got, e := f.m.GetDeploymentModel(f.ctx, "publish-agent", "late")
+	if e != nil || resultView(fixtureTask(got)).Status != "checking" {
 		t.Fatal(got, e)
 	}
 	close(release)
@@ -224,7 +224,7 @@ func TestPublishRefusalsAndJournalLoss(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newPublish(t, agentfake.Options{Capabilities: tc.caps, Script: tc.fault}, nil)
 			r, e := PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "refuse"), PublishOptions{})
-			if e != nil || resultView(r).Status != tc.want || resultView(r).HTTPStatus != tc.code {
+			if e != nil || resultView(fixtureTask(r)).Status != tc.want || resultView(fixtureTask(r)).HTTPStatus != tc.code {
 				t.Fatal(r, e)
 			}
 			if f.agent(t).Has("applied_content") {
@@ -239,8 +239,15 @@ func TestPublishRefusalsAndJournalLoss(t *testing.T) {
 		t.Fatal(e)
 	}
 	f.fake.Restart(true)
-	r, e := f.m.GetDeployment(f.ctx, "publish-agent", "restart")
-	if e != nil || resultView(r).Status != "failed" || !strings.Contains(r.GetString("message"), "no record") {
+	r, e := f.m.GetDeploymentModel(f.ctx, "publish-agent", "restart")
+	if e != nil || resultView(fixtureTask(r)).Status != "failed" || !strings.Contains(textValue(r.Message), "no record") {
 		t.Fatal(r, e)
 	}
+}
+
+func fixtureObject(v any) *jsonx.Object {
+	raw, _ := json.Marshal(v)
+	var out jsonx.Object
+	_ = json.Unmarshal(raw, &out)
+	return &out
 }

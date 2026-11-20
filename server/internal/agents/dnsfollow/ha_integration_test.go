@@ -84,15 +84,15 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 		t.Fatal(e)
 	}
 	for range 4 {
-		if published.GetString("status") == "succeeded" {
+		if published.Status == "succeeded" {
 			break
 		}
-		published, e = f.m.GetDeploymentDirect(f.ctx, "target", "target-ha-baseline")
+		published, e = f.m.ReadDeploymentModel(f.ctx, "target", "target-ha-baseline")
 		if e != nil {
 			t.Fatal(e)
 		}
 	}
-	if published.GetString("status") != "succeeded" {
+	if published.Status != "succeeded" {
 		t.Fatal(published)
 	}
 	// Establish the same actual baseline on the peer before adding HA ownership.
@@ -110,15 +110,15 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 		t.Fatal(e)
 	}
 	for range 4 {
-		if result.GetString("status") == "succeeded" {
+		if result.Status == "succeeded" {
 			break
 		}
-		result, e = f.m.GetDeploymentDirect(f.ctx, "standby", "standby-baseline")
+		result, e = f.m.ReadDeploymentModel(f.ctx, "standby", "standby-baseline")
 		if e != nil {
 			t.Fatal(e)
 		}
 	}
-	if result.GetString("status") != "succeeded" {
+	if result.Status != "succeeded" {
 		t.Fatal(result)
 	}
 	segment := agentfake.NewSegment("target")

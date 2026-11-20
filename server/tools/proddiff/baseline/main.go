@@ -104,14 +104,14 @@ func run() (resultErr error) {
 		if applied.Len() == 0 {
 			continue
 		}
-		receipt, err := receipts.Load(ctx, record, true)
+		target := deploy.NewTarget(record)
+		receipt, err := receipts.LoadAgent(ctx, target.Record, true)
 		if err != nil {
 			return err
 		}
 		if receipt == nil {
 			return errors.New("historical applied baseline has no readable receipt")
 		}
-		target := deploy.NewTarget(record)
 		cfg, err := repository.GetCompatConfig(ctx, applied.GetString("profile_id"), nil)
 		if err != nil {
 			return err

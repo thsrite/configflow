@@ -20,7 +20,7 @@ type PrepareOptions struct {
 type Prepared struct {
 	Bundle                                 *Bundle
 	ConfigContent                          string
-	Providers                              []*provider.Rendered
+	Providers                              []*provider.Artifact
 	SubscriptionHosts, SubscriptionDialers json.RawMessage
 	ProviderDownloads                      []ProviderFile
 	RulesetDownloads                       []convert.Download

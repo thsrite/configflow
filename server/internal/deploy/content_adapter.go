@@ -3,7 +3,7 @@ package deploy
 import (
 	"bytes"
 	"configflow/internal/jsondecode"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,7 +16,7 @@ type InputKey struct{ sum [32]byte }
 // InputKey identifies every generation input except Python's top-level metadata.
 // A Source is immutable, so its projection is computed once and shared safely.
 func (s *Source) InputKey() (InputKey, error) {
-	if s == nil || s.legacy == nil {
+	if s == nil || s.modelConfig == nil {
 		return InputKey{}, fmt.Errorf("missing content source")
 	}
 	s.inputOnce.Do(func() { s.inputKey, s.inputErr = s.projectedInputKey(false) })
@@ -26,10 +26,10 @@ func (s *Source) InputKey() (InputKey, error) {
 // projectedInputKey keeps the two Python projections in one adapter: preview
 // additionally ignores profile_name, while content_sync must include it.
 func (s *Source) projectedInputKey(preview bool) (InputKey, error) {
-	if s == nil || s.legacy == nil {
+	if s == nil || s.modelConfig == nil {
 		return InputKey{}, fmt.Errorf("missing content source")
 	}
-	cfg := s.config().DeepCopy()
+	cfg := s.members
 	for _, key := range []string{"agents", "backup", "_revision", "updated_at", "created_at", "name", "description"} {
 		cfg.Delete(key)
 	}
@@ -54,13 +54,23 @@ func ContentInputKey(t Target, s *Source, baseURL string) (InputKey, error) {
 	if err != nil {
 		return InputKey{}, err
 	}
-	identity := map[string]any{}
+	identity := map[string]json.RawMessage{}
 	for _, k := range []string{"id", "profile_id", "service_type", "config_version", "applied_content"} {
-		identity[k] = t.Record.Value(k)
+		raw := json.RawMessage("null")
+		if t.Record != nil {
+			raw, _, err = t.Record.MemberJSON(k)
+			if err != nil {
+				return InputKey{}, err
+			}
+		}
+		if len(raw) == 0 {
+			raw = []byte("null")
+		}
+		identity[k] = raw
 	}
 	raw, err := encodeJSON(struct {
-		Agent   map[string]any `json:"agent"`
-		BaseURL string         `json:"base_url"`
+		Agent   map[string]json.RawMessage `json:"agent"`
+		BaseURL string                     `json:"base_url"`
 	}{identity, baseURL})
 	if err != nil {
 		return InputKey{}, fmt.Errorf("content identity: %w", err)
@@ -102,23 +112,27 @@ func ContentView(t Target) (ContentState, error) {
 	if t.Record == nil {
 		return result, fmt.Errorf("missing content target")
 	}
-	tasks := []*jsonx.Object{}
-	if value := t.Record.Value("deployments"); value != nil {
-		deployments, ok := value.(*jsonx.Object)
-		if !ok {
+	tasks := []model.Deployment{}
+	rawHistory, present, err := t.Record.MemberJSON("deployments")
+	if err != nil {
+		return result, err
+	}
+	if present && string(rawHistory) != "null" {
+		var history model.Map[model.Deployment]
+		if json.Unmarshal(rawHistory, &history) != nil {
 			return result, fmt.Errorf("invalid deployment history")
 		}
-		for _, value := range deployments.Values() {
-			if task, ok := value.(*jsonx.Object); ok {
+		for id, task := range history.All() {
+			if history.EntryValid(id) {
 				tasks = append(tasks, task)
 			}
 		}
 	}
-	if latest, ok := t.Record.Value("latest_deployment").(*jsonx.Object); ok {
-		tasks = append(tasks, latest)
+	if latest := t.Record.LatestDeployment; latest != nil {
+		tasks = append(tasks, *latest)
 	}
 	for _, task := range tasks {
-		switch task.GetString("status") {
+		switch task.Status {
 		case "succeeded":
 			result.PreviouslyPushed = true
 		case "failed", "rolled_back":
@@ -130,9 +144,16 @@ func ContentView(t Target) (ContentState, error) {
 	if result.Pending {
 		return result, nil
 	}
-	projection := map[string]any{}
+	projection := map[string]json.RawMessage{}
 	for _, k := range []string{"config_version", "config_revision", "applied_content"} {
-		projection[k] = t.Record.Value(k)
+		raw, _, err := t.Record.MemberJSON(k)
+		if err != nil {
+			return result, err
+		}
+		if len(raw) == 0 {
+			raw = []byte("null")
+		}
+		projection[k] = raw
 	}
 	raw, err := encodeJSON(projection)
 	if err != nil {
@@ -167,7 +188,10 @@ func emptyJSON(raw []byte) bool {
 func SnapshotTarget(t Target) Target {
 	copy := t
 	if t.Record != nil {
-		copy.Record = t.Record.DeepCopy()
+		raw, _ := model.Marshal(t.Record)
+		var owned model.Agent
+		_ = json.Unmarshal(raw, &owned)
+		copy.Record = &owned
 	}
 	return copy
 }
@@ -183,15 +207,15 @@ func (s *Source) contentDigest() string {
 // MatchesProfile checks the optional explicit binding on the captured source.
 // A missing key inherits the target profile; an explicit null/empty key does not.
 func (s *Source) MatchesProfile(profile string) bool {
-	if s == nil || s.legacy == nil {
+	if s == nil || s.modelConfig == nil {
 		return false
 	}
-	value, present := s.legacy.Get("profile_id")
+	value, present := s.members.Get("profile_id")
 	if !present {
 		return true
 	}
-	id, valid := value.(string)
-	return valid && id == profile
+	var id string
+	return json.Unmarshal(value, &id) == nil && id == profile
 }
 
 // HasAppliedContent reports whether a target carries a nonempty applied value,
@@ -200,6 +224,6 @@ func HasAppliedContent(t Target) bool {
 	if t.Record == nil {
 		return false
 	}
-	raw, err := encodeJSON(t.Record.Value("applied_content"))
+	raw, _, err := t.Record.MemberJSON("applied_content")
 	return err == nil && !emptyJSON(raw)
 }

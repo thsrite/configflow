@@ -68,7 +68,6 @@ retired-import internal/agents/failure_states_test.go:configflow/internal/jsonx
 retired-import internal/agents/fixture_test.go:configflow/internal/jsonx
 retired-import internal/agents/ha.go:configflow/internal/jsonx
 retired-import internal/agents/helpers_test.go:configflow/internal/jsonx
-retired-import internal/agents/hooks.go:configflow/internal/jsonx
 retired-import internal/agents/ipv6/review_a23_test.go:configflow/internal/jsonx
 retired-import internal/agents/ipv6/service_test.go:configflow/internal/jsonx
 retired-import internal/agents/ipv6/verification_test.go:configflow/internal/jsonx
@@ -357,7 +356,6 @@ retired-import internal/convert/surge_loon_ported_test.go:configflow/internal/js
 retired-import internal/convert/yaml_writer_test.go:configflow/internal/jsonx
 retired-import internal/deploy/adapter.go:configflow/internal/jsonx
 retired-import internal/deploy/build_test.go:configflow/internal/jsonx
-retired-import internal/deploy/content_adapter.go:configflow/internal/jsonx
 retired-import internal/deploy/content_adapter_test.go:configflow/internal/jsonx
 retired-import internal/deploy/contentsync/checker_test.go:configflow/internal/jsonx
 retired-import internal/deploy/contentsync/corpus_test.go:configflow/internal/jsonx
@@ -365,7 +363,6 @@ retired-import internal/deploy/contentsync/details_test.go:configflow/internal/j
 retired-import internal/deploy/contentsync/fixtures_adapter_test.go:configflow/internal/jsonx
 retired-import internal/deploy/crash_test.go:configflow/internal/jsonx
 retired-import internal/deploy/first_push_test.go:configflow/internal/jsonx
-retired-import internal/deploy/orchestrate_adapter.go:configflow/internal/jsonx
 retired-import internal/deploy/prepare_test.go:configflow/internal/jsonx
 retired-import internal/deploy/private_projection_test.go:configflow/internal/jsonx
 retired-import internal/deploy/publish_edges_test.go:configflow/internal/jsonx
@@ -745,7 +742,6 @@ retired-symbol internal/convert/mihomo_generate_py.go:pyError
 retired-symbol internal/convert/mihomo_generate_py.go:raise
 retired-symbol internal/convert/pyhelpers.go:pyError
 retired-symbol internal/convert/pyhelpers.go:pyTruthy
-retired-symbol internal/deploy/adapter.go:PyError
 retired-symbol internal/gateway/gwbase/gwbase.go:PythonClass
 retired-symbol internal/gateway/onboarding/adapter.go:PyErrorClass
 retired-symbol internal/httpx/ctx.go:PyParseInt

@@ -281,7 +281,9 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 			if e != nil {
 				return e
 			}
-			result, e = resultModel(r)
+			if r != nil {
+				result = *r
+			}
 			if e != nil {
 				return e
 			}

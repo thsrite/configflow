@@ -3,7 +3,6 @@
 package deploy
 
 import (
-	"configflow/internal/agents"
 	"configflow/internal/convert"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
@@ -56,7 +55,7 @@ type Target struct {
 	Port                                                              json.RawMessage
 	Token                                                             string
 	DomainDiscovery                                                   bool
-	Record                                                            *agents.Record
+	Record                                                            *model.Agent
 }
 
 // PreparedContent is the comparison baseline kept in an Agent record.

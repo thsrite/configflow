@@ -11,7 +11,7 @@ import (
 func TestDeploymentCollectsCredentialsBeforePrivateProjection(t *testing.T) {
 	record := jsonx.Obj("deployment_id", "synthetic", "status", "failed", "message", "synthetic-proof-key-991", "error_details", "synthetic-proof-password-992", "name", "operator", "prepared_content", jsonx.Obj("api_key", "synthetic-proof-key-991"), "oxidns_validation_receipt", jsonx.Obj("password", "synthetic-proof-password-992"))
 	before := record.DeepCopy()
-	public := publicDeployment(record)
+	public := fixtureObject(publicDeployment(fixtureTask(record)))
 	raw, err := json.Marshal(public)
 	if err != nil {
 		t.Fatal(err)

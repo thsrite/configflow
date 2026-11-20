@@ -96,9 +96,9 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 			_, e := recordUpdate(ctx, f.m, "publish-agent", "closed", Update{Status: ptr("uploading"), Submitted: ptr(true)}, agents.RecordOptions{})
 			return e
 		}},
-		{"activate", func() error { _, e := f.m.ActivateDeployment(ctx, "publish-agent", "closed"); return e }},
-		{"rollback", func() error { _, e := f.m.RollbackDeployment(ctx, "publish-agent", "closed"); return e }},
-		{"recover", func() error { _, e := f.m.RecoverDeployment(ctx, "publish-agent", "closed"); return e }},
+		{"activate", func() error { _, e := f.m.ActivateCandidateModel(ctx, "publish-agent", "closed"); return e }},
+		{"rollback", func() error { _, e := f.m.RollbackDeploymentModel(ctx, "publish-agent", "closed"); return e }},
+		{"recover", func() error { _, e := f.m.RecoverDeploymentModel(ctx, "publish-agent", "closed"); return e }},
 		{"receipt", func() error {
 			return NewReceipts(f.m.Repository().DataDir()).Capture(ctx, "publish-agent", b, f.source, "https://panel.example.com", nil)
 		}},
@@ -192,15 +192,15 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 	}
 	lifecycle.Start(f.ctx)
 	defer lifecycle.Stop(8 * time.Second)
-	var last *agents.Result
+	var last *model.Deployment
 	var err error
 	for i := 0; i < 4; i++ {
-		last, err = f.m.GetDeployment(lifecycle.BindRequest(f.ctx), "publish-agent", "accepted-at-stop")
+		last, err = f.m.GetDeploymentModel(lifecycle.BindRequest(f.ctx), "publish-agent", "accepted-at-stop")
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	if last.GetString("status") != "succeeded" || !f.agent(t).Has("applied_content") {
+	if last.Status != "succeeded" || !f.agent(t).Has("applied_content") {
 		t.Fatal("restart could not resolve saved uncertain result", last)
 	}
 }
@@ -214,7 +214,7 @@ func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) 
 	cancel()
 	b := f.bundle(t, "disconnected-runtime")
 	answer, err := PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{Activate: true, SourceSnapshot: f.source, BaseURL: "https://panel.example.com"})
-	if err != nil || !resultView(answer).Submitted {
+	if err != nil || !resultView(fixtureTask(answer)).Submitted {
 		t.Fatal(answer, err)
 	}
 	target := mustTarget(t, f)
@@ -238,7 +238,7 @@ func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
 	startGlobalPublishRuntime(t, f.ctx)
 	nativeCalls, legacyCalls := 0, 0
-	restoreLegacy := SetPairPublisher(func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*agents.Result, bool, error) {
+	restoreLegacy := SetPairPublication(func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*model.Deployment, bool, error) {
 		legacyCalls++
 		return nil, true, nil
 	})
@@ -257,7 +257,7 @@ func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
 	request, disconnect := context.WithCancel(bound)
 	disconnect()
 	result, err := Publish(request, f.m, "publish-agent", nil, PublishOptions{})
-	if err != nil || result.GetString("deployment_id") != "native-owner" || nativeCalls != 1 || legacyCalls != 0 {
+	if err != nil || result.DeploymentID != "native-owner" || nativeCalls != 1 || legacyCalls != 0 {
 		t.Fatal("native owner did not run once", result, err, nativeCalls, legacyCalls)
 	}
 	lifecycle.Stop(8 * time.Second)

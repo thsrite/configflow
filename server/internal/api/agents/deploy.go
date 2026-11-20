@@ -5,6 +5,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"encoding/json"
@@ -104,16 +105,16 @@ func deploymentAction(action string) httpx.HandlerFunc {
 		if e != nil {
 			return nil, e
 		}
-		var result *core.Result
+		var result *model.Deployment
 		switch action {
 		case "poll":
-			result, e = m.GetDeployment(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
+			result, e = m.GetDeploymentModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		case "activate":
-			result, e = m.ActivateDeployment(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
+			result, e = m.ActivateCandidateModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		case "rollback":
-			result, e = m.RollbackDeployment(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
+			result, e = m.RollbackDeploymentModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		case "recover":
-			result, e = m.RecoverDeployment(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
+			result, e = m.RecoverDeploymentModel(c.Context(), c.Param("agent_id"), c.Param("deployment_id"))
 		}
 		if e != nil {
 			if response, handled := deviceResponseFailure(e); handled {

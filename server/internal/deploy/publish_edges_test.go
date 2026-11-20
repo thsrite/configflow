@@ -26,7 +26,7 @@ func TestFinalResourceRetryUsesContentIdentity(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		r, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: false})
-		if e != nil || resultView(r).HTTPStatus == 409 {
+		if e != nil || resultView(fixtureTask(r)).HTTPStatus == 409 {
 			t.Fatal("identical frozen candidate was rejected", r, e)
 		}
 	}
@@ -66,23 +66,23 @@ func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
 	f := newPublish(t, agentfake.Options{ServiceType: "oxidns"}, nil)
 	b := f.bundle(t, "checked")
 	r, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{SourceSnapshot: f.source})
-	if e != nil || resultView(r).Status != "verifying" {
+	if e != nil || resultView(fixtureTask(r)).Status != "verifying" {
 		t.Fatal(r, e)
 	}
 	a := f.agent(t)
 	state := a.GetObject("deployments").GetObject("checked")
-	if !ReceiptMatches(a, state) {
+	if !ReceiptMatches(fixtureAgent(a), fixtureTask(state)) {
 		t.Fatal("trusted validation receipt missing")
 	}
 	if a.Has("applied_content") {
 		t.Fatal("staging advanced baseline")
 	}
-	_, e = f.m.GetDeployment(f.ctx, "publish-agent", "checked")
+	_, e = f.m.GetDeploymentModel(f.ctx, "publish-agent", "checked")
 	if e != nil {
 		t.Fatal(e)
 	}
-	r, e = f.m.ActivateDeployment(f.ctx, "publish-agent", "checked")
-	if e != nil || resultView(r).Status != "succeeded" {
+	r, e = f.m.ActivateCandidateModel(f.ctx, "publish-agent", "checked")
+	if e != nil || resultView(fixtureTask(r)).Status != "succeeded" {
 		t.Fatal(r, e)
 	}
 	if f.agent(t).GetObject("applied_content").GetString("deployed_config_sha256") == "" {
@@ -112,5 +112,14 @@ func TestPairGateUsesAuthoritativeActiveJournal(t *testing.T) {
 				t.Fatal(got, tc.want)
 			}
 		})
+	}
+}
+
+func TestReceiptValidationRejectsDisplayProjection(t *testing.T) {
+	proof := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: "synthetic", DeploymentID: "candidate", ProfileID: "1", ServiceType: "oxidns", SHA256: "synthetic-sha", Fingerprint: "synthetic-fingerprint"}
+	state := fixtureTask(map[string]any{"profile_id": 1, "service_type": "oxidns", "deployment_id": "candidate", "sha256": "synthetic-sha", "prepared_content": map[string]string{"fingerprint": "synthetic-fingerprint"}, "oxidns_validation_receipt": proof})
+	agent := fixtureAgent(map[string]string{"id": "synthetic", "profile_id": "1", "service_type": "oxidns"})
+	if ReceiptMatches(agent, state) {
+		t.Fatal("numeric profile identity acquired string receipt proof")
 	}
 }

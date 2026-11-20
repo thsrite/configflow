@@ -13,7 +13,6 @@ import (
 	"sort"
 	"sync"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 )
 
@@ -63,7 +62,7 @@ type Hooks struct {
 	// ReceiptMatches is oxidns_validation_receipt.receipt_matches (#28),
 	// checked before an OxiDNS candidate is activated. Default: false (fail
 	// closed: activation is refused and the task fails as unchecked).
-	ReceiptMatches func(agent, state *jsonx.Object) bool
+	ReceiptMatches func(*model.Agent, *model.Deployment) bool
 
 	// HAServiceOperation, HADeployment and HAActivate are
 	// oxidns_ha_publish.service_operation / deployment / activate (#29).

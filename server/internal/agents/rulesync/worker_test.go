@@ -296,7 +296,7 @@ func TestWorkerDebounceVerifiedRefreshAndIdle(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	receipt, e := f.s.receipts.Load(f.ctx, record, true)
+	receipt, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(record), true)
 	if e != nil || receipt == nil {
 		t.Fatal(receipt, e)
 	}
@@ -353,7 +353,7 @@ func TestWorkerRejectsUnverifiedSnapshotAndBacksOff(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	receipt, e := f.s.receipts.Load(f.ctx, r, false)
+	receipt, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(r), false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -449,7 +449,7 @@ func TestStructurePublicationPinsNonRuleConfiguration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	receipt, e := f.s.receipts.Load(f.ctx, record, true)
+	receipt, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(record), true)
 	if e != nil || receipt == nil {
 		t.Fatal(receipt, e)
 	}
@@ -565,7 +565,7 @@ func TestRuleSyncRuntimeDuringDeviceIO(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				baseline, e := f.s.receipts.Load(f.ctx, r, false)
+				baseline, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(r), false)
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -614,7 +614,7 @@ func TestEditDuringRefreshIsNotAcknowledged(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	baseline, e := f.s.receipts.Load(f.ctx, r, false)
+	baseline, e := f.s.receipts.LoadAgent(f.ctx, fixtureReceiptAgent(r), false)
 	if e != nil {
 		t.Fatal(e)
 	}

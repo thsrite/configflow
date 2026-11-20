@@ -174,29 +174,29 @@ func TestRequestSnapshotsAndRetarget(t *testing.T) {
 	f := newFixture(t, nil)
 	target := f.target()
 	source := f.source()
-	target.Record.Set("name", "captured")
+	target.Record.Name = "captured"
 	key, _ := source.InputKey()
 	f.agent.GetObject("applied_content").Set("config_path", "active.yaml")
 	// Retarget is exercised using the updated baseline, without changing identity.
 	target = f.target()
-	target.Record.Set("name", "captured")
+	target.Record.Name = "captured"
 	base := f.prepare
 	f.prepare = func(ctx context.Context, tgt deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
-		if tgt.Record.GetString("name") != "captured" {
+		if tgt.Record.Name != "captured" {
 			t.Error("target not copied")
 		}
 		got, _ := s.InputKey()
 		if got != key {
 			t.Error("source not captured")
 		}
-		tgt.Record.Set("name", "worker changed")
+		tgt.Record.Name = "worker changed"
 		return base(ctx, tgt, s, url, id)
 	}
 	f.c.Status(f.ctx, target, source, "")
-	target.Record.Set("name", "caller changed")
+	target.Record.Name = "caller changed"
 	f.cfg.Set("test_main", "mode: global\n")
 	f.spawn.run(t)
-	if target.Record.GetString("name") != "caller changed" {
+	if target.Record.Name != "caller changed" {
 		t.Fatal("mutated caller")
 	}
 	requireStatus(t, f.c.Status(f.ctx, f.target(), source, ""), "synced", "")

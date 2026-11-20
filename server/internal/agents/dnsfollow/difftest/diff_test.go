@@ -217,10 +217,10 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 			}
 		}
 		r, e := deploy.Publish(ctx, m, id, bundle, deploy.PublishOptions{Activate: true, ConfigRevision: &deploy.Revision{Value: rev}, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
-		if e == nil && r.GetString("status") == "verifying" {
-			r, e = m.GetDeployment(ctx, id, ident)
+		if e == nil && r.Status == "verifying" {
+			r, e = m.GetDeploymentModel(ctx, id, ident)
 		}
-		if e != nil || r.GetString("status") != "succeeded" {
+		if e != nil || r.Status != "succeeded" {
 			t.Fatal(r, e)
 		}
 	}

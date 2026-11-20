@@ -60,7 +60,7 @@ func (p *contentPool) checker(m *core.Manager) *contentsync.Checker {
 	c := contentsync.New(contentsync.Options{Prepare: func(ctx context.Context, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
 		return prepareContent(repo.WithRepository(ctx, m.Repository()), t, s, url, id)
 	}, LoadReceipt: func(ctx context.Context, t deploy.Target) (*deploy.Receipt, error) {
-		return receipts.Load(ctx, t.Record, true)
+		return receipts.LoadAgent(ctx, t.Record, true)
 	}, DefaultProfileID: m.Repository().DefaultProfileID})
 	unregister := p.dispatcher.Register(c)
 	if !m.OnClose(func() {

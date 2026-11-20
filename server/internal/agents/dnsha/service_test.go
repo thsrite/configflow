@@ -217,7 +217,10 @@ func (f *fixture) publish(t *testing.T, id, did string, activate bool) *agents.R
 	if e != nil {
 		t.Fatal(e)
 	}
-	return result
+	raw, _ := json.Marshal(result)
+	var legacy agents.Result
+	_ = json.Unmarshal(raw, &legacy)
+	return &legacy
 }
 func (f *fixture) drain(t *testing.T, rounds int) *model.HAPublicationSummary {
 	t.Helper()

@@ -79,7 +79,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			defer restoreService()
 			restore := provider.SetDeliveryEnv(nil)
 			defer restore()
-			cfg := f.source.config().DeepCopy()
+			cfg := fixtureObject(f.source.config())
 			cfg.Set("subscriptions", []any{jsonx.Obj("id", "selected-sub", "name", "Feed", "url", srv.URL+"/selected", "enabled", true)})
 			group := jsonx.Obj("id", "group", "name", "Proxy", "type", "select", "subscriptions", []any{"selected-sub"})
 			cfg.Set("proxy_groups", []any{group})
@@ -99,7 +99,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				if e = provider.CommitProviderBundle(f.ctx, "default", pre.Providers); e != nil {
+				if e = provider.CommitArtifacts(f.ctx, "default", pre.Providers); e != nil {
 					t.Fatal(e)
 				}
 				mu.Lock()
@@ -154,7 +154,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			if e = provider.CommitProviderBundle(f.ctx, "default", p.Providers); e != nil {
+			if e = provider.CommitArtifacts(f.ctx, "default", p.Providers); e != nil {
 				t.Fatal(e)
 			}
 			cache, e := substore.LoadSubscriptionCache(f.ctx, "selected-sub")

@@ -267,7 +267,7 @@ func toLegacy(data json.RawMessage) (*agents.Record, error) {
 	}
 	return o, nil
 }
-func encodeResult(result *agents.Result) (json.RawMessage, error) { return json.Marshal(result) }
+func encodeResult(result any) (json.RawMessage, error) { return json.Marshal(result) }
 
 func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.RawMessage) (map[string]string, error) {
 	ids := map[string]string{}

@@ -29,15 +29,7 @@ func (m *Manager) candidateReceiptMatches(a *model.Agent, state *model.Deploymen
 	if hook == nil {
 		return false, nil
 	}
-	agent, err := agentObject(a)
-	if err != nil {
-		return false, err
-	}
-	record, err := deploymentObject(state)
-	if err != nil {
-		return false, err
-	}
-	return hook(agent, record), nil
+	return hook(a, state), nil
 }
 func (m *Manager) checkpointCandidate(ctx context.Context, agentID, id string, prepared *model.PreparedContent) error {
 	hook := currentHooks().PublicationCheckpoint

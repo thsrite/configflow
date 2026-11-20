@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/agents"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
@@ -44,7 +45,7 @@ func rejected(status int, message string) Response {
 }
 
 // DeploymentResponse translates protocol task state into the action route's HTTP status.
-func DeploymentResponse(r *agents.Result) Response {
+func DeploymentResponse(r *model.Deployment) Response {
 	v := resultView(r)
 	code := v.HTTPStatus
 	if code == 0 {
@@ -151,7 +152,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			}
 		}
 		if _, has := taskViewOf(t, generated.DeploymentID); has {
-			answer, e := m.GetDeployment(ctx, id, generated.DeploymentID)
+			answer, e := m.GetDeploymentModel(ctx, id, generated.DeploymentID)
 			if e != nil {
 				return fail(e)
 			}
@@ -253,7 +254,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			if restart {
 				var v any = map[string]any{"success": true, "message": msgSelfRestart}
 				if !self {
-					v, e = m.RestartAgentService(ctx, id)
+					v, e = m.RunServiceOperation(ctx, id, agents.RestartService, nil, nil)
 					if e != nil {
 						return fail(e)
 					}
@@ -292,7 +293,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			return fail(err)
 		}
 	}
-	reservation, err := m.BeginDeployment(ctx, id, did)
+	reservation, err := m.ReserveDeployment(ctx, id, did)
 	if err != nil {
 		return fail(err)
 	}
@@ -305,7 +306,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		return Response{Status: code, Body: PublicDeployment(reservation)}
 	}
 	if reserved.Existing {
-		answer, e := m.GetDeployment(ctx, id, did)
+		answer, e := m.GetDeploymentModel(ctx, id, did)
 		if e != nil {
 			return fail(e)
 		}
@@ -343,7 +344,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		if ctx.Err() != nil {
 			return Response{Err: ctx.Err()}
 		}
-		if err = provider.CommitProviderBundle(ctx, t.ProfileID, prepared.Providers); err != nil {
+		if err = provider.CommitArtifacts(ctx, t.ProfileID, prepared.Providers); err != nil {
 			return fail(err)
 		}
 	}
@@ -400,15 +401,19 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r Generate
 			}
 			return nil
 		}
-		pair, e := m.HAPair(ctx, id)
+		pair, e := m.ReadHAPair(ctx, id)
 		if e != nil {
 			return fail(e)
 		}
 		members := []Target{t}
 		if len(pair) > 0 {
 			members = nil
-			for _, member := range pair {
-				members = append(members, NewTarget(member))
+			for i := range pair {
+				target, e := NewTypedTarget(&pair[i])
+				if e != nil {
+					return fail(e)
+				}
+				members = append(members, target)
 			}
 		}
 		src, revision, e := publishSource(ctx, m, t.ProfileID, true)
@@ -524,7 +529,7 @@ func rawRevision(raw []byte) (int64, bool) {
 }
 
 // DeploymentPollResponse returns terminal failures as successfully retrieved tasks.
-func DeploymentPollResponse(r *agents.Result) Response {
+func DeploymentPollResponse(r *model.Deployment) Response {
 	v := resultView(r)
 	code := v.HTTPStatus
 	if code == 0 || httpTerminal(v.Status) {

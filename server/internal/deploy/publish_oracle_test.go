@@ -67,13 +67,13 @@ func TestPythonPublishTranscripts(t *testing.T) {
 				case "publish":
 					result, e = PublishDirect(goSide.ctx, goSide.m, "publish-agent", b, PublishOptions{Activate: tc.activate, ConfigRevision: &Revision{Value: 7}, SourceSnapshot: goSide.source, BaseURL: "https://panel.example.com"})
 				case "poll":
-					result, e = goSide.m.GetDeployment(goSide.ctx, "publish-agent", "oracle")
+					result, e = goSide.m.GetDeploymentModel(goSide.ctx, "publish-agent", "oracle")
 				case "activate":
-					result, e = goSide.m.ActivateDeployment(goSide.ctx, "publish-agent", "oracle")
+					result, e = goSide.m.ActivateCandidateModel(goSide.ctx, "publish-agent", "oracle")
 				case "rollback":
-					result, e = goSide.m.RollbackDeployment(goSide.ctx, "publish-agent", "oracle")
+					result, e = goSide.m.RollbackDeploymentModel(goSide.ctx, "publish-agent", "oracle")
 				case "recover":
-					result, e = goSide.m.RecoverDeployment(goSide.ctx, "publish-agent", "oracle")
+					result, e = goSide.m.RecoverDeploymentModel(goSide.ctx, "publish-agent", "oracle")
 				}
 				if e != nil {
 					t.Fatal(e)

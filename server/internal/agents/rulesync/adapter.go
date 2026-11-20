@@ -288,7 +288,7 @@ func refreshProvider(ctx context.Context, m *agents.Manager, id, name string) er
 	_, err := monitor.CallPanel(ctx, monitor.TypedFromAgents(m), id, "providers/rule", "PUT", [][2]string{{"name", name}}, nil, "")
 	return err
 }
-func resultStatus(r *agents.Result) string { return r.GetString("status") }
+func resultStatus(r *model.Deployment) string { return r.Status }
 func beginPublication(ctx context.Context, m *agents.Manager, id, deploymentID string) (bool, error) {
 	r, e := m.ReserveDeployment(ctx, id, deploymentID)
 	if e != nil {
@@ -472,19 +472,7 @@ func (task *nativeTask) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// Receipt stamp/content entry points still belong to deploy's W6 migration.
-// NewTypedTarget is the existing owner codec; no caller codec is introduced.
-func receiptStamp(store *deploy.Receipts, a *model.Agent) (deploy.Stamp, bool) {
-	target, err := deploy.NewTypedTarget(a)
-	if err != nil {
-		return deploy.Stamp{}, false
-	}
-	return store.Stamp(target.Record)
-}
+func receiptStamp(store *deploy.Receipts, a *model.Agent) (deploy.Stamp, bool) { return store.Stamp(a) }
 func advanceReceiptContent(ctx context.Context, store *deploy.Receipts, m *agents.Manager, a *model.Agent, source *deploy.Source, bundle *deploy.Bundle) (bool, error) {
-	target, err := deploy.NewTypedTarget(a)
-	if err != nil {
-		return false, err
-	}
-	return store.AdvanceContent(ctx, m, target.Record, source, bundle)
+	return store.AdvanceContent(ctx, m, a, source, bundle)
 }
