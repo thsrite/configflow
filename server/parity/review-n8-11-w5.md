@@ -71,4 +71,14 @@ ok  	configflow/internal/api/profiles	6.575s
 ok  	configflow/internal/api/config/difftest	120.981s
 ```
 
-完整预检结果见交回报告。
+交回前完整预检（提交 a254866da）：
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt sync && ssh sunbroke@192.168.0.64 'bash /tmp/preflight.sh .paseo__worktrees__302rx1dg__go-opus-review-n8-11-w5 -p 6'
+```
+
+```text
+== vet
+== full non-race tests (-p 6)
+PREFLIGHT PASS
+```
