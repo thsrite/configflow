@@ -3,7 +3,6 @@ package httpx_test
 import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 	"testing"
 )
 
@@ -34,8 +33,8 @@ func TestAuditBindingExactMembers(t *testing.T) {
 		}
 	})})
 	for _, path := range []string{"/api/exact", "/api/silent"} {
-		srv.Post(path, httpxtest.Body([]byte(`{"ID":"spoofed"}`), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("id", "", "child", jsonx.Obj("enabled", false)))
-		srv.Post(path, httpxtest.Body([]byte(`{"id":"proven","ID":42}`), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("id", "proven", "child", jsonx.Obj("enabled", false)))
-		srv.Post(path, httpxtest.Body([]byte(`{"id":"proven","ID":"spoofed","child":{"ENABLED":true}}`), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("id", "proven", "child", jsonx.Obj("enabled", false)))
+		wantJSON(t, srv.Post(path, httpxtest.Body([]byte(`{"ID":"spoofed"}`), "application/json")).WantStatus(200), map[string]any{"id": "", "child": map[string]any{"enabled": false}})
+		wantJSON(t, srv.Post(path, httpxtest.Body([]byte(`{"id":"proven","ID":42}`), "application/json")).WantStatus(200), map[string]any{"id": "proven", "child": map[string]any{"enabled": false}})
+		wantJSON(t, srv.Post(path, httpxtest.Body([]byte(`{"id":"proven","ID":"spoofed","child":{"ENABLED":true}}`), "application/json")).WantStatus(200), map[string]any{"id": "proven", "child": map[string]any{"enabled": false}})
 	}
 }

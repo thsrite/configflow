@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -30,14 +30,12 @@ func TestBackupTaskUsesStoredConfigurationAndRuntimeAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-			settings, _ := json.Marshal(fixtureSettings(server))
-			value, err := jsonx.Parse(settings)
+			settings, err := json.Marshal(fixtureSettings(server))
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-				system.Set("backup", value)
-				return nil, nil
+			err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+				return system.SetJSON("backup", settings)
 			})
 			if err != nil {
 				t.Fatal(err)

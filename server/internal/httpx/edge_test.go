@@ -3,17 +3,19 @@ package httpx_test
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // test_http_server.py::test_proxy_headers_auth_mcp_upload_and_file_responses
@@ -31,11 +33,11 @@ func TestFileResponsesHeadRangeAndUploads(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			return httpx.JSON(jsonx.Obj("size", len(data))), nil
+			return httpx.JSON(map[string]any{"size": len(data)}), nil
 		})
 		r.GET("/static/headers", "test.headers", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(jsonx.Obj("host", c.HeaderDefault("X-Forwarded-Host", ""),
-				"scheme", c.HeaderDefault("X-Forwarded-Proto", ""), "forwarded", c.HeaderDefault("X-Forwarded-For", ""))), nil
+			return httpx.JSON(map[string]any{"host": c.HeaderDefault("X-Forwarded-Host", ""),
+				"scheme": c.HeaderDefault("X-Forwarded-Proto", ""), "forwarded": c.HeaderDefault("X-Forwarded-For", "")}), nil
 		})
 	})})
 	base := srv.URL()
@@ -85,7 +87,7 @@ func TestFileResponsesHeadRangeAndUploads(t *testing.T) {
 	}
 }
 
-func itoa(n int) string { return jsonx.Int(int64(n)).String() }
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func TestFileOnDiskIsConditional(t *testing.T) {
 	dir := t.TempDir()
@@ -131,13 +133,13 @@ func edgeFixture(t *testing.T) (*httpx.Edge, string) {
 func echoRoutes(r *httpx.Router) {
 	r.Handle([]string{"GET", "POST"}, "/api/echo", "test.echo", func(c *httpx.Ctx) (*httpx.Response, error) {
 		data, _ := c.Data()
-		return httpx.JSON(jsonx.Obj("real_ip", c.HeaderDefault("X-Real-IP", ""), "xff", c.HeaderDefault("X-Forwarded-For", ""),
-			"host", c.Host(), "fhost", c.HeaderDefault("X-Forwarded-Host", ""), "remote", c.RemoteAddr(), "size", len(data),
-			"url_root", c.URLRoot())), nil
+		return httpx.JSON(map[string]any{"real_ip": c.HeaderDefault("X-Real-IP", ""), "xff": c.HeaderDefault("X-Forwarded-For", ""),
+			"host": c.Host(), "fhost": c.HeaderDefault("X-Forwarded-Host", ""), "remote": c.RemoteAddr(), "size": len(data),
+			"url_root": c.URLRoot()}), nil
 	})
 	r.POST("/api/oxidns/settings", "oxidns.oxidns_settings", func(c *httpx.Ctx) (*httpx.Response, error) {
 		data, _ := c.Data()
-		return httpx.JSON(jsonx.Obj("size", len(data))), nil
+		return httpx.JSON(map[string]any{"size": len(data)}), nil
 	})
 }
 
@@ -186,11 +188,9 @@ func TestEdgeServesTheFrontendLikeNginx(t *testing.T) {
 func TestEdgeProxyHeadersAndBodyLimits(t *testing.T) {
 	edge, _ := edgeFixture(t)
 	w := edgeDo(edge, "GET", "/api/echo", nil, map[string]string{"X-Forwarded-For": "203.0.113.1", "X-Real-IP": "spoofed"})
-	var got any
-	got, _ = jsonx.Parse(w.Body.Bytes())
-	want := jsonx.Obj("real_ip", "198.51.100.7", "xff", "203.0.113.1, 198.51.100.7", "host", "config.example",
-		"fhost", "config.example", "remote", "127.0.0.1", "size", 0, "url_root", "http://config.example/")
-	if !jsonx.Equal(got, want) {
+	want := map[string]any{"real_ip": "198.51.100.7", "xff": "203.0.113.1, 198.51.100.7", "host": "config.example",
+		"fhost": "config.example", "remote": "127.0.0.1", "size": 0, "url_root": "http://config.example/"}
+	if !testjson.Equal(json.RawMessage(w.Body.Bytes()), want) {
 		t.Fatal(w.Body.String())
 	}
 	big := bytes.Repeat([]byte("x"), httpx.DefaultBodyLimit+1)

@@ -12,7 +12,6 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
 )
 
 // O9 round 1: the Edge replaces nginx. Static files must never be served
@@ -45,10 +44,10 @@ func TestO9EdgeStaticNeverLeavesRoot(t *testing.T) {
 func TestO9GateDotSegmentsAfterPublicPrefixStayProtected(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.GET("/api/o9/secret", "test.o9_secret", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(jsonx.Obj("secret", "o9-protected")), nil
+			return httpx.JSON(map[string]any{"secret": "o9-protected"}), nil
 		})
 		r.GET("/api/o9/files/<path:name>", "test.o9_files", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(jsonx.Obj("secret", "o9-protected")), nil
+			return httpx.JSON(map[string]any{"secret": "o9-protected"}), nil
 		})
 	})})
 	if !auth.IsAuthEnabled() {

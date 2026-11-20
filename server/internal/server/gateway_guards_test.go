@@ -15,8 +15,9 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/gateway"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // gatewayAgent is a loopback Mihomo Agent that reports a Linux gateway
@@ -46,7 +47,7 @@ func (g *gatewayAgent) calls() []string {
 	return append([]string(nil), g.paths...)
 }
 
-func newGatewayGuardFixture(t *testing.T, config *jsonx.Object) (context.Context, *agents.Manager, *gatewayAgent) {
+func newGatewayGuardFixture(t *testing.T, config json.RawMessage) (context.Context, *agents.Manager, *gatewayAgent) {
 	t.Helper()
 	fake := &gatewayAgent{status: `{"managed":{"active":true}}`}
 	srv := httptest.NewServer(fake)
@@ -59,13 +60,17 @@ func newGatewayGuardFixture(t *testing.T, config *jsonx.Object) (context.Context
 	}
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
 	if config != nil {
-		if _, _, err = r.UpdateProfileFields(ctx, "default", config, nil); err != nil {
+		if _, _, err = r.SaveProfileFieldsJSON(ctx, "default", config, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "gw", "name", "GW", "host", host, "port", n, "token", "synthetic-guard-token", "profile_id", "default", "service_type", "mihomo", "version", "1.8.60-go", "deployment_method", "shell", "enabled", true)})
-		return system, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{testjson.Decode[model.Agent](t, map[string]any{
+			"id": "gw", "name": "GW", "host": host, "port": n, "token": "synthetic-guard-token",
+			"profile_id": "default", "service_type": "mihomo", "version": "1.8.60-go",
+			"deployment_method": "shell", "enabled": true,
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -115,8 +120,18 @@ func TestGatewayGuardsRefuseUnsafePublication(t *testing.T) {
 // host whose gateway record would turn forwarding off stops before any upload.
 func TestNewAppGatewayGuardBlocksFullTunPublication(t *testing.T) {
 	NewApp()
-	marker := jsonx.Obj("version", 1, "takeover", "full_tun", "route_rule_set_ids", []any{}, "origin", "setup")
-	ctx, m, fake := newGatewayGuardFixture(t, jsonx.Obj("mihomo", jsonx.Obj("custom_config", "mode: rule\ntun:\n  enable: true\n  stack: mixed\n  auto-route: true\n  auto-redirect: true\n  auto-detect-interface: true\n  dns-hijack: ['any:53', 'tcp://any:53']\n", "router_split", marker), "nodes", []any{}, "subscriptions", []any{}, "proxy_groups", []any{}, "rule_configs", []any{}))
+	marker := map[string]any{"version": 1, "takeover": "full_tun", "route_rule_set_ids": []any{}, "origin": "setup"}
+	cfg, err := json.Marshal(map[string]any{
+		"mihomo":        map[string]any{"custom_config": "mode: rule\ntun:\n  enable: true\n  stack: mixed\n  auto-route: true\n  auto-redirect: true\n  auto-detect-interface: true\n  dns-hijack: ['any:53', 'tcp://any:53']\n", "router_split": marker},
+		"nodes":         []any{},
+		"subscriptions": []any{},
+		"proxy_groups":  []any{},
+		"rule_configs":  []any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, m, fake := newGatewayGuardFixture(t, cfg)
 	response := deploy.PushConfig(ctx, m, "gw", deploy.PushRequest{Body: []byte(`{"deployment_id":"guarded"}`), Scheme: "https", Host: "panel.example.com"})
 	if response.Err != nil {
 		t.Fatal(response.Err)

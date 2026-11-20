@@ -14,7 +14,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
@@ -70,11 +70,11 @@ func TestBoundedCollectionDetachesCancellationAndDoesNotMutate(t *testing.T) {
 		t.Fatal("caller document mutated")
 	}
 	// A dry generator must leave the entire repository unchanged.
-	shared, err := srv.Repo.GetShared(srv.Context())
+	shared, err := srv.Repo.Shared(srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shared.GetList("subscriptions")) != 0 {
+	if len(shared.Subscriptions) != 0 {
 		t.Fatal("dry generator committed sources")
 	}
 }
@@ -109,8 +109,11 @@ func TestOneOpaqueMaterializationForMainAndAggregation(t *testing.T) {
 	}
 	env.RandomHex = func() string { return "00000001" }
 	t.Cleanup(substore.SetDefault(substore.NewService(env)))
-	config := jsonx.Obj("profile_id", "default", "system_config", jsonx.Obj("config_token", "synthetic"), "nodes", []any{jsonx.Obj("id", "relay", "name", "relay", "type", "http", "server", "relay.test", "port", 80), jsonx.Obj("id", "exit", "name", "Exit", "type", "http", "proxy_string", "opaque://exit")}, "subscriptions", []any{}, "subscription_aggregations", []any{jsonx.Obj("id", "a", "name", "Aggregate", "nodes", []any{"exit"}, "subscriptions", []any{})}, "proxy_groups", []any{jsonx.Obj("id", "g", "name", "Entry", "type", "select", "manual_nodes", []any{"relay"}, "aggregations", []any{"a"})}, "rule_configs", []any{})
-	main, err := convert.GenerateMihomoConfig(srv.Context(), config, convert.GenerateOptions{})
+	config, err := model.DecodeConfig([]byte(`{"profile_id":"default","system_config":{"config_token":"synthetic"},"nodes":[{"id":"relay","name":"relay","type":"http","server":"relay.test","port":80},{"id":"exit","name":"Exit","type":"http","proxy_string":"opaque://exit"}],"subscriptions":[],"subscription_aggregations":[{"id":"a","name":"Aggregate","nodes":["exit"],"subscriptions":[]}],"proxy_groups":[{"id":"g","name":"Entry","type":"select","manual_nodes":["relay"],"aggregations":["a"]}],"rule_configs":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	main, err := convert.MihomoConfig(srv.Context(), config, convert.MihomoOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"configflow/internal/importer"
-	"configflow/internal/jsonx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -37,20 +36,21 @@ rules: ['RULE-SET,../../outside,Pool', 'MATCH,Pool']
 	if err != nil {
 		t.Fatal(err)
 	}
-	build := func(context.Context, *jsonx.Object) (*jsonx.Object, error) {
+	build := func(context.Context, *model.Shared) (*repo.ClientProfileImport, error) {
 		result, err := importer.Build(plan, importer.Shared{}, importer.BuildOptions{})
 		if err != nil {
 			return nil, err
 		}
 		for _, item := range result.Shared.RuleLibrary {
-			filename := rules.CacheFilename(testjson.Decode[model.RuleConfig](t, repositoryObject(t, item)))
+			filename := rules.CacheFilename(testjson.Decode[model.RuleConfig](t, item))
 			if !filepath.IsLocal(filename) {
 				t.Fatal("imported rule name escapes cache directory")
 			}
 		}
-		return repositoryObject(t, result), nil
+		decoded := testjson.Decode[repo.ClientProfileImport](t, result)
+		return &decoded, nil
 	}
-	_, err = r.ImportClientProfile(context.Background(), jsonx.Obj("id", "safe", "name", "Imported"), build)
+	_, err = r.ImportClientProfileRecord(context.Background(), repo.ProfileCreation{ID: "safe", Name: "Imported"}, build)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ rules: ['RULE-SET,../../outside,Pool', 'MATCH,Pool']
 		t.Fatal(err)
 	}
 	for _, id := range []string{"../outside", "..", "/absolute", "a/b", "a\\b"} {
-		if _, err := r.ImportClientProfile(context.Background(), jsonx.Obj("id", id, "name", "Unsafe"), build); err == nil {
+		if _, err := r.ImportClientProfileRecord(context.Background(), repo.ProfileCreation{ID: id, Name: "Unsafe"}, build); err == nil {
 			t.Fatalf("unsafe profile ID accepted: %q", id)
 		}
 	}

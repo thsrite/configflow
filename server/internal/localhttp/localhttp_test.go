@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/weburl"
 )
 
@@ -148,7 +147,7 @@ func TestPrefixParamsExplicitAuthAndHeadArePreserved(t *testing.T) {
 
 func TestBodiesUseNativeJSONEncoding(t *testing.T) {
 	newFixture(t)
-	response, err := Do(context.Background(), Request{Method: "post", URL: "http://config.test/api/inspect", HasJSON: true, JSON: jsonx.Obj("name", "例子")})
+	response, err := Do(context.Background(), Request{Method: "post", URL: "http://config.test/api/inspect", HasJSON: true, JSON: map[string]string{"name": "例子"}})
 	if err != nil {
 		t.Fatal(err)
 	}

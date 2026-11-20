@@ -9,8 +9,9 @@ import (
 	"testing"
 
 	"configflow/internal/deploy"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func TestBaselineWorkerIsolation(t *testing.T) {
@@ -39,27 +40,34 @@ func TestBaselineWorkerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := json.Marshal(digests)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files, err := jsonx.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	agent := jsonx.Obj("id", m.AgentID, "profile_id", m.ProfileID, "service_type", m.ServiceType, "config_version", old.ConfigVersion(), "version", "1.8.60-go", "deployment_method", "docker", "applied_content", jsonx.Obj("deployment_id", m.DeploymentID, "profile_id", m.ProfileID, "service_type", m.ServiceType, "config_path", m.ConfigPath, "config_version", old.ConfigVersion(), "fingerprint", fingerprint, "files", files))
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, s *jsonx.Object) (*jsonx.Object, error) {
-		s.Set("agents", []any{agent})
-		return s, nil
+	agent := testjson.Decode[model.Agent](t, map[string]any{
+		"id": m.AgentID, "profile_id": m.ProfileID, "service_type": m.ServiceType, "config_version": old.ConfigVersion(),
+		"version": "1.8.60-go", "deployment_method": "docker",
+		"applied_content": map[string]any{
+			"deployment_id": m.DeploymentID, "profile_id": m.ProfileID, "service_type": m.ServiceType,
+			"config_path": m.ConfigPath, "config_version": old.ConfigVersion(), "fingerprint": fingerprint, "files": digests,
+		},
+	})
+	err = r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Agents = []model.Agent{agent}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := r.GetCompatConfig(ctx, m.ProfileID, nil)
+	cfg, err := r.Config(ctx, m.ProfileID, repo.ResourceRoots{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = deploy.NewReceipts(data).Capture(ctx, m.AgentID, old, deploy.NewSource(cfg, nil), "https://panel.example.com", nil); err != nil {
+	rawCfg, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := deploy.SourceFromJSON(rawCfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = deploy.NewReceipts(data).Capture(ctx, m.AgentID, old, source, "https://panel.example.com", nil); err != nil {
 		t.Fatal(err)
 	}
 	before, err := r.Store().Load()
@@ -82,7 +90,7 @@ func TestBaselineWorkerIsolation(t *testing.T) {
 	var result struct {
 		Converted int `json:"converted"`
 	}
-	raw, err = os.ReadFile(filepath.Join(proofDir, "summary.json"))
+	raw, err := os.ReadFile(filepath.Join(proofDir, "summary.json"))
 	if err != nil || json.Unmarshal(raw, &result) != nil || result.Converted != 1 {
 		t.Fatal("missing conversion evidence", string(raw), err)
 	}

@@ -1,60 +1,74 @@
 package redact
 
 import (
+	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // TestPublicMetadataCredentials checks opt-in redaction and known registration keys.
 func TestPublicMetadataCredentials(t *testing.T) {
 	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-env-registration")
-	input := jsonx.Obj("id", "device", "message", "old synthetic-registration",
-		"registration_key", "synthetic-registration", "password", "synthetic-password",
-		"future", jsonx.Obj("keep", true, "literal", `ordinary \u2028 text`),
-		"journal", []any{jsonx.Obj("url", "https://operator:synthetic-userinfo@example.com/path", "api_key", "synthetic-api")},
-		"encoded", "synthetic%2Dregistration")
-	input.Set("header", "Bearer synthetic-auth")
-	input.Set("legacy_error", "old synthetic-env-registration")
-	before := input.DeepCopy()
-	public := legacyRedacted(t, SanitizeCredentials(input, nil))
-	text, err := jsonx.Compact(public)
+	input := map[string]any{
+		"id": "device", "message": "old synthetic-registration",
+		"registration_key": "synthetic-registration", "password": "synthetic-password",
+		"future":       map[string]any{"keep": true, "literal": `ordinary \u2028 text`},
+		"journal":      []any{map[string]any{"url": "https://operator:synthetic-userinfo@example.com/path", "api_key": "synthetic-api"}},
+		"encoded":      "synthetic%2Dregistration",
+		"header":       "Bearer synthetic-auth",
+		"legacy_error": "old synthetic-env-registration",
+	}
+	before, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(text), "synthetic") {
-		t.Fatalf("credential escaped: %s", text)
+	publicBytes := SanitizeCredentials(input, nil)
+	public := parseRedactedObject(t, publicBytes)
+	if strings.Contains(string(publicBytes), "synthetic") {
+		t.Fatalf("credential escaped: %s", publicBytes)
 	}
-	if !jsonx.Equal(before, input) || !jsonx.Equal(public.GetObject("future"), input.GetObject("future")) {
+	if !testjson.Equal(json.RawMessage(before), input) || !testjson.Equal(public["future"], input["future"]) {
 		t.Fatal("source or unrelated public metadata changed")
 	}
-	if again := legacyRedacted(t, SanitizeCredentials(public, nil)); !jsonx.Equal(again, public) {
+	if again := parseRedactedObject(t, SanitizeCredentials(public, nil)); !testjson.Equal(again, public) {
 		t.Fatal("public redaction is not idempotent")
 	}
 	// Credential-key policy is opt-in, leaving configuration/data redaction intact.
-	if original := legacyRedacted(t, encodedPublic(SanitizeWithSecrets(input, nil, false))); original.GetString("password") != "synthetic-password" {
+	if original := parseRedactedObject(t, encodedPublic(SanitizeWithSecrets(input, nil, false))); original["password"] != "synthetic-password" {
 		t.Fatal("global token redactor changed credential policy")
 	}
 }
 
-func legacyRedacted(t *testing.T, data []byte) *jsonx.Object {
+func parseRedactedObject(t *testing.T, data []byte) map[string]any {
 	t.Helper()
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var out map[string]any
+	if err := dec.Decode(&out); err != nil {
 		t.Fatal(err)
 	}
-	out, ok := value.(*jsonx.Object)
-	if !ok {
-		t.Fatalf("redacted root %T", value)
+	if out == nil {
+		t.Fatalf("redacted root null")
 	}
 	return out
 }
 
+type testLegacyNumber string
+
+func (n testLegacyNumber) Float64() float64 {
+	v, _ := strconv.ParseFloat(string(n), 64)
+	return v
+}
+
+func (n testLegacyNumber) MarshalJSON() ([]byte, error) { return []byte(n), nil }
+
 func TestLegacyNumericRedactionPreservesNativeJSONLiterals(t *testing.T) {
 	for _, literal := range []string{"1e400", "-1e400", "1e-400", strings.Repeat("9", 4301), "NaN", "Infinity", "-Infinity"} {
-		input := jsonx.Obj("counter", jsonx.Number(literal), "ordinary", "kept")
+		input := map[string]any{"counter": testLegacyNumber(literal), "ordinary": "kept"}
 		data := SanitizeCredentials(input, nil)
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(data, &fields); err != nil {

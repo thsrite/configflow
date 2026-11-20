@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // python runs testdata/crosscheck.py and returns the JSON it wrote.
-func python(t *testing.T, command, target string) *jsonx.Object {
+func python(t *testing.T, command, target string) *testDoc {
 	t.Helper()
 	interpreter, repo := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
 	if interpreter == "" || repo == "" {
@@ -39,12 +39,12 @@ func python(t *testing.T, command, target string) *jsonx.Object {
 	if text, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("crosscheck.py %s: %v\n%s", command, err, text)
 	}
-	value := must(jsonx.Parse(must(os.ReadFile(output))(t)))(t)
-	return value.(*jsonx.Object)
+	value := must(parseOrderedJSON(must(os.ReadFile(output))(t)))(t)
+	return value.(*testDoc)
 }
 
 // goDump reads the same tables and pragmas as dump() in crosscheck.py.
-func goDump(t *testing.T, path string) *jsonx.Object {
+func goDump(t *testing.T, path string) *testDoc {
 	t.Helper()
 	connection := must(connect(path, false, time.Second))(t)
 	defer connection.close()
@@ -67,11 +67,11 @@ func goDump(t *testing.T, path string) *jsonx.Object {
 		}
 		return result
 	}
-	pragmas := jsonx.NewObject()
+	pragmas := newTestDoc()
 	for _, name := range []string{"application_id", "journal_mode", "user_version", "encoding", "auto_vacuum"} {
 		pragmas.Set(name, table("PRAGMA "+name, 1)[0].([]any)[0])
 	}
-	return jsonx.Obj(
+	return testObj(
 		"meta", table("SELECT key, value FROM meta ORDER BY key", 2),
 		"sections", table("SELECT scope, owner, position FROM sections ORDER BY scope, owner", 3),
 		"fields", table("SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope, owner, field", 6),
@@ -82,9 +82,9 @@ func goDump(t *testing.T, path string) *jsonx.Object {
 
 // sameTables compares the row dumps; with masked set, the values that are
 // random or a timestamp (store_id, commit_id, created_at) are left out.
-func sameTables(t *testing.T, what string, got, want *jsonx.Object, masked bool) {
+func sameTables(t *testing.T, what string, got, want *testDoc, masked bool) {
 	t.Helper()
-	meta := func(dump *jsonx.Object) string {
+	meta := func(dump *testDoc) string {
 		var rows []any
 		for _, row := range dump.GetList("meta") {
 			key := row.([]any)[0]
@@ -117,12 +117,12 @@ func copyTo(t *testing.T, source, target string) string {
 	return target
 }
 
-func parseObject(t *testing.T, text any) *jsonx.Object {
+func parseObject(t *testing.T, text any) *testDoc {
 	t.Helper()
 	if text == nil {
 		return nil
 	}
-	return must(jsonx.ParseString(text.(string)))(t).(*jsonx.Object)
+	return must(parseOrderedJSON([]byte(text.(string))))(t).(*testDoc)
 }
 
 func TestCrossCheckPython(t *testing.T) {
@@ -141,7 +141,7 @@ func TestCrossCheckPython(t *testing.T) {
 		t.Fatalf("document read by Go differs\n  go %s\n  py %s", got, pythonDump.GetString("document"))
 	}
 	head := pythonDump.GetList("head")
-	if entry.Head.StoreID != head[0] || !jsonx.Equal(entry.Head.Generation, head[1]) || entry.Head.CommitID != head[2] || entry.Size != pythonDump.GetInt("size") {
+	if entry.Head.StoreID != head[0] || !testjson.Equal(entry.Head.Generation, head[1]) || entry.Head.CommitID != head[2] || entry.Size != pythonDump.GetInt("size") {
 		t.Fatalf("head %v size %d, Python %s size %d", entry.Head, entry.Size, compact(t, head), pythonDump.GetInt("size"))
 	}
 	sameTables(t, "Go's view of the Python database", goDump(t, target.Path()), pythonDump, false)
@@ -150,7 +150,7 @@ func TestCrossCheckPython(t *testing.T) {
 	replay := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(2))
 	var current legacyEntry
 	for i, item := range created.GetList("steps") {
-		step := item.(*jsonx.Object)
+		step := item.(*testDoc)
 		document, meta := parseObject(t, step.Value("document")), parseObject(t, step.Value("meta"))
 		committed := true
 		if i == 0 {
@@ -191,22 +191,22 @@ func TestCrossCheckPython(t *testing.T) {
 
 	// 4. Go commits to the Python database; Python checks and reads it.
 	document := entry.Document.DeepCopy()
-	document.GetObject("shared").Set("go_was_here", []any{jsonx.Float(2.5), jsonx.Int(1 << 62), "日本語 ✓", nil, jsonx.Obj("z", 1, "a", jsonx.Float(1e21))})
+	document.GetObject("shared").Set("go_was_here", []any{2.5, int64(1 << 62), "日本語 ✓", nil, testObj("z", 1, "a", 1e21)})
 	document.GetObject("profiles").Delete("alpha")
-	document.GetObject("profiles").Set("made_by_go", jsonx.Obj("id", "made_by_go", "name", "Go", "_revision", 0))
+	document.GetObject("profiles").Set("made_by_go", testObj("id", "made_by_go", "name", "Go", "_revision", 0))
 	document.Set("go_root", true)
-	entry = mustCommit(t, target, entry, document, jsonx.Obj("go_meta", jsonx.Obj("at", "now")))
+	entry = mustCommit(t, target, entry, document, testObj("go_meta", testObj("at", "now")))
 	afterGo := python(t, "dump", target.Path())
 	if afterGo.GetString("document") != compact(t, document) {
 		t.Fatalf("Python reads another document after a Go commit\n  py %s\n  go %s", afterGo.GetString("document"), compact(t, document))
 	}
 	sameTables(t, "after a Go commit", goDump(t, target.Path()), afterGo, false)
-	if generation := afterGo.GetList("head")[1]; !jsonx.Equal(generation, entry.Head.Generation) || afterGo.GetList("head")[2] != entry.Head.CommitID {
+	if generation := afterGo.GetList("head")[1]; !testjson.Equal(generation, entry.Head.Generation) || afterGo.GetList("head")[2] != entry.Head.CommitID {
 		t.Fatalf("head after a Go commit: %s", compact(t, afterGo.Value("head")))
 	}
 	revisions := 0
 	for _, row := range afterGo.GetList("fields") {
-		if jsonx.Equal(row.([]any)[5], entry.Head.Generation) {
+		if testjson.Equal(row.([]any)[5], entry.Head.Generation) {
 			revisions++
 		}
 	}
@@ -223,7 +223,7 @@ func TestCrossCheckPython(t *testing.T) {
 	if compact(t, final.Document) != afterPython.GetString("document") || final.Head.Generation != entry.Head.Generation+1 {
 		t.Fatalf("after a Python commit: %v", final.Head)
 	}
-	if list := final.Document.GetObject("shared").GetList("python_was_here"); compact(t, list) != `[1.5,"🚀",{"generation":`+string(jsonx.Int(entry.Head.Generation))+`}]` {
+	if list := final.Document.GetObject("shared").GetList("python_was_here"); compact(t, list) != `[1.5,"🚀",{"generation":`+formatInt64(entry.Head.Generation)+`}]` {
 		t.Fatal(compact(t, list))
 	}
 	if _, _, err := target.Commit(entry, document, nil); !errors.Is(err, ErrConflict) {
@@ -245,7 +245,7 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 	directory := t.TempDir()
 	count := 0
 	for _, item := range scenarios.GetObject("scenarios").GetList("items") {
-		scenario := item.(*jsonx.Object)
+		scenario := item.(*testDoc)
 		name := scenario.GetString("name")
 		count++
 		path := filepath.Join(directory, name+".sqlite3")
@@ -262,7 +262,7 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				execSQL(t, path, jsonx.Strings(setup.([]any))...)
+				execSQL(t, path, toStrings(setup.([]any))...)
 			}
 		}
 		target := legacyNew(path, seconds(scenario.GetFloat("timeout")))
@@ -272,7 +272,7 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 			if want.Value("type") == nil {
 				if err != nil {
 					t.Errorf("%s/%s: Go fails with %v, Python succeeds", name, operation, err)
-				} else if !jsonx.Equal(value, want.Value("value")) {
+				} else if !testjson.Equal(value, want.Value("value")) {
 					t.Errorf("%s/%s:\n  go %s\n  py %s", name, operation, compact(t, value), compact(t, want.Value("value")))
 				}
 				return
@@ -316,11 +316,11 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 		err = nil
 		if entry, err = target.Load(); err == nil {
 			document := entry.Document.Clone()
-			document.Set("added_by_commit", []any{jsonx.Int(1), "例"})
+			document.Set("added_by_commit", []any{int64(1), "例"})
 			var next legacyEntry
 			var committed bool
 			if next, committed, err = target.Commit(entry, document, nil); err == nil && committed {
-				committedValue = []any{jsonx.Int(next.Head.Generation), compact(t, next.Document), jsonx.Int(next.Size)}
+				committedValue = []any{next.Head.Generation, compact(t, next.Document), next.Size}
 			}
 		}
 		compare("commit", committedValue, err)
@@ -460,7 +460,7 @@ func TestCrossCheckPythonOddDocuments(t *testing.T) {
 		target := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(2))
 		var entry legacyEntry
 		for number, raw := range item.([]any) {
-			step := raw.(*jsonx.Object)
+			step := raw.(*testDoc)
 			name := "sequence " + strconv.Itoa(index) + " step " + strconv.Itoa(number)
 			document := parseObject(t, step.GetString("document"))
 			committed := true
@@ -480,7 +480,7 @@ func TestCrossCheckPythonOddDocuments(t *testing.T) {
 			if committed != step.GetBool("committed") {
 				t.Errorf("%s: committed %v, Python %v", name, committed, step.GetBool("committed"))
 			}
-			for what, value := range map[string]*jsonx.Object{"entry": entry.Document, "loaded": loaded.Document} {
+			for what, value := range map[string]*testDoc{"entry": entry.Document, "loaded": loaded.Document} {
 				if got := compact(t, value); got != step.GetString(what) {
 					t.Errorf("%s: %s\n  go %s\n  py %s", name, what, got, step.GetString(what))
 				}

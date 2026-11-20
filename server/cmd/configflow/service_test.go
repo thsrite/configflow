@@ -23,13 +23,14 @@ import (
 	"configflow/internal/agents/metrics"
 	"configflow/internal/httpx"
 	"configflow/internal/instance"
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 func TestServiceProcess(t *testing.T) {
@@ -180,17 +181,19 @@ func startService(t *testing.T, mode string) *serviceProcess {
 		t.Fatal(err)
 	}
 	// Start from the empty native test repository, never the production template.
-	_, err = r.UpdateSharedTransaction(context.Background(), func(_ context.Context, shared *jsonx.Object) (*jsonx.Object, error) {
-		shared.Set("subscriptions", []any{})
-		shared.Set("rule_library", []any{})
-		return nil, nil
+	err = r.UpdateShared(context.Background(), func(_ context.Context, shared *model.Shared) error {
+		shared.Subscriptions = []model.Subscription{}
+		shared.RuleLibrary = []model.RuleLibraryItem{}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("agents", []any{jsonx.Obj("id", "edge", "name", "Synthetic", "service_type", "mihomo", "profile_id", "default", "host", "example.com", "port", 80)})
-		return nil, nil
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{testjson.Decode[model.Agent](t, map[string]any{
+			"id": "edge", "name": "Synthetic", "service_type": "mihomo", "profile_id": "default", "host": "example.com", "port": 80,
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

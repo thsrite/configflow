@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"configflow/internal/jsonx"
 )
 
 // Stored invalid UTF-8 is corrupt data, reported without its contents.
@@ -28,7 +26,7 @@ func TestInvalidUTF8TextIsCorrupt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			target := newStore(t)
-			must(target.Create(sampleDocument(t), jsonx.Obj("migration", "seed")))(t)
+			must(target.Create(sampleDocument(t), testObj("migration", "seed")))(t)
 			execSQL(t, target.Path(), tt.statement)
 			check := func(err error, want bool) {
 				t.Helper()
@@ -135,7 +133,7 @@ func TestConcurrentCommitsFromOneBase(t *testing.T) {
 	for i := range writers {
 		go func() {
 			document := base.Document.Clone()
-			document.Set("writer", jsonx.Int(i))
+			document.Set("writer", i)
 			_, committed, err := target.Commit(base, document, nil)
 			if err == nil && !committed {
 				err = errors.New("not committed")
@@ -167,7 +165,7 @@ func TestOpenAndPermissionFailures(t *testing.T) {
 	}
 	directory := t.TempDir()
 	path := filepath.Join(directory, Filename)
-	must(legacyNew(path, seconds(1)).Create(jsonx.Obj("a", 1), nil))(t)
+	must(legacyNew(path, seconds(1)).Create(testObj("a", 1), nil))(t)
 	if err := os.Chmod(path, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +185,7 @@ func TestOpenAndPermissionFailures(t *testing.T) {
 	}
 	readonly := legacyNew(path, seconds(1))
 	entry := must(readonly.Load())(t)
-	_, _, err = readonly.Commit(entry, jsonx.Obj("a", 2), nil)
+	_, _, err = readonly.Commit(entry, testObj("a", 2), nil)
 	assertKind(t, "read-only commit", err, ErrStorage, "配置数据库访问失败：attempt to write a readonly database")
 	assertKind(t, "read-only check", readonly.Check(), ErrSQLite, "")
 }

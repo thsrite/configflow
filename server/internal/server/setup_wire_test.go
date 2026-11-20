@@ -14,8 +14,9 @@ import (
 	apisetup "configflow/internal/api/setup"
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/setup"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -38,20 +39,33 @@ func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
 	// no-op DNS/adoption callbacks are installed by this success control.
 	NewApp()
 	ctx := srv.Context()
-	_, err := srv.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Synthetic", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-password")})
-		return nil, nil
+	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+		c.Nodes = []model.Node{testjson.Decode[model.Node](t, map[string]any{
+			"id": "n", "name": "Synthetic", "type": "ss", "server": "192.0.2.2", "port": 443,
+			"cipher": "aes-128-gcm", "password": "synthetic-node-password",
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv.Post("/api/setup/"+id+"/source", httpxtest.JSON(map[string]any{"node_ids": []string{"n"}}), admin).WantStatus(200)
 	srv.Post(path, httpxtest.JSON(body), admin).WantStatus(200)
-	profile, err := srv.Repo.GetProfile(ctx, profileID)
+	profile, err := srv.Repo.Profile(ctx, profileID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	node, err := yamlx.Parse([]byte(profile.GetObject("mihomo").GetString("custom_config")))
+	rawProfile, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedProfile, err := testjson.Parse(rawProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	customConfigVal, _ := testjson.Path(parsedProfile, "mihomo", "custom_config")
+	customConfig, _ := customConfigVal.(string)
+	node, err := yamlx.Parse([]byte(customConfig))
 	if err != nil || yamlx.Get(yamlx.Get(node, "dns"), "nameserver") == nil {
 		t.Fatal("real DNS leaf did not fill nameservers", err)
 	}
@@ -69,17 +83,17 @@ func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
 	// LevelSetupSession owner after A21 releases repo L3.
 	form := map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.54/dns-query"}
 	route := "/api/profiles/" + profileID + "/gateway-onboarding"
-	previous := profile.GetInt("_revision")
+	previous := int64(profile.Revision)
 	srv.Post(route, httpxtest.JSON(form), admin).WantStatus(200)
-	profile, err = srv.Repo.GetProfile(ctx, profileID)
-	if err != nil || profile.GetInt("_revision") != previous+1 {
+	profile, err = srv.Repo.Profile(ctx, profileID)
+	if err != nil || int64(profile.Revision) != previous+1 {
 		t.Fatal("embedded write did not advance once", err)
 	}
 	adopted := readSession()
 	if bytes.Equal(adopted, oldSession) {
 		t.Fatal("server did not register the real adoption owner")
 	}
-	raw, err := jsonx.Compact(profile)
+	raw, err := json.Marshal(profile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,8 +115,8 @@ func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
 	// Python advances revision even for an identical save; it remains a +1
 	// write and the real owner must run again.
 	srv.Post(route, httpxtest.JSON(form), admin).WantStatus(200)
-	again, err := srv.Repo.GetProfile(ctx, profileID)
-	if err != nil || again.GetInt("_revision") != previous+2 || bytes.Equal(adopted, readSession()) {
+	again, err := srv.Repo.Profile(ctx, profileID)
+	if err != nil || int64(again.Revision) != previous+2 || bytes.Equal(adopted, readSession()) {
 		t.Fatal("repeated save did not advance/adopt exactly once", err)
 	}
 	if record.DigestVersion == nil || *record.DigestVersion != 1 {

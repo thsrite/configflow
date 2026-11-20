@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -106,9 +106,8 @@ func TestReadsDisabledAndFailedCommitsDoNotSchedule(t *testing.T) {
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	ctx := repo.WithRepository(context.Background(), r)
-	_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.GetObject("mihomo").Set("custom_config", "mode: rule")
-		return nil, nil
+	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
+		return profile.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mode: rule"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -117,21 +116,20 @@ func TestReadsDisabledAndFailedCommitsDoNotSchedule(t *testing.T) {
 	if uploads != 0 {
 		t.Fatal("disabled backup scheduled")
 	}
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("backup", jsonx.Obj("auto_backup", true))
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		return system.SetJSON("backup", json.RawMessage(`{"auto_backup":true}`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitWorker(t, worker)
 	count := uploads
-	if _, err := r.ExportAll(ctx, false); err != nil {
+	if _, err := r.ExportAllJSON(ctx, false); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, profile *jsonx.Object) (*jsonx.Object, error) {
-		profile.GetObject("mihomo").Set("custom_config", "not committed")
-		return nil, errors.New("synthetic save failure")
+	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
+		_ = profile.SetJSON("mihomo", json.RawMessage(`{"custom_config":"not committed"}`))
+		return errors.New("synthetic save failure")
 	})
 	if err == nil {
 		t.Fatal("failed commit succeeded")

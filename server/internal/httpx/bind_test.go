@@ -10,8 +10,15 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
+
+func wantJSON(t *testing.T, res *httpxtest.Result, want any) {
+	t.Helper()
+	if diff := testjson.Diff(json.RawMessage(res.Body), want); diff != "" {
+		t.Fatalf("body %s\n%s", res.Body, diff)
+	}
+}
 
 func TestBindingHTTPMediaSyntaxAndFields(t *testing.T) {
 	type dto struct {
@@ -37,20 +44,20 @@ func TestBindingHTTPMediaSyntaxAndFields(t *testing.T) {
 		})
 	})})
 	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "application/merge-patch+json", "APPLICATION/JSON"} {
-		srv.Post("/api/bind", httpxtest.Body([]byte(`{"n":6e1,"extra":9007199254740993123456789}`), ct)).WantStatus(200).WantJSON(jsonx.Obj("n", jsonx.Number("6e1"), "extra", jsonx.Number("9007199254740993123456789")))
+		wantJSON(t, srv.Post("/api/bind", httpxtest.Body([]byte(`{"n":6e1,"extra":9007199254740993123456789}`), ct)).WantStatus(200), map[string]any{"n": json.Number("6e1"), "extra": json.Number("9007199254740993123456789")})
 	}
 	for _, body := range []string{"", " ", `{"n":`, "{} {}", `{"n":NaN}`, `{"n":Infinity}`, `{"n":-Infinity}`, strings.Repeat("[", 10001) + strings.Repeat("]", 10001)} {
-		srv.Post("/api/bind", httpxtest.Body([]byte(body), "application/json")).WantStatus(400).WantJSON(jsonx.Obj("success", false, "message", httpx.DescBadRequest))
-		srv.Post("/api/silent", httpxtest.Body([]byte(body), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("ok", false, "value", jsonx.Obj("n", nil, "extra", nil)))
+		wantJSON(t, srv.Post("/api/bind", httpxtest.Body([]byte(body), "application/json")).WantStatus(400), map[string]any{"success": false, "message": httpx.DescBadRequest})
+		wantJSON(t, srv.Post("/api/silent", httpxtest.Body([]byte(body), "application/json")).WantStatus(200), map[string]any{"ok": false, "value": map[string]any{"n": nil, "extra": nil}})
 	}
 	for _, ct := range []string{"", "text/plain", "text/json", "application/jsonp"} {
 		srv.Post("/api/bind", httpxtest.Body([]byte(`{}`), ct)).WantStatus(415)
-		srv.Post("/api/silent", httpxtest.Body([]byte(`{}`), ct)).WantJSON(jsonx.Obj("ok", false, "value", jsonx.Obj("n", nil, "extra", nil)))
+		wantJSON(t, srv.Post("/api/silent", httpxtest.Body([]byte(`{}`), ct)), map[string]any{"ok": false, "value": map[string]any{"n": nil, "extra": nil}})
 	}
 	for _, body := range [][]byte{[]byte("\xef\xbb\xbf{\"n\":60}"), {0xff, 0xfe, '{', 0, '"', 0, 'n', 0, '"', 0, ':', 0, '6', 0, '0', 0, '}', 0}} {
-		srv.Post("/api/bind", httpxtest.Body(body, "application/json")).WantStatus(200).WantJSON(jsonx.Obj("n", 60, "extra", nil))
+		wantJSON(t, srv.Post("/api/bind", httpxtest.Body(body, "application/json")).WantStatus(200), map[string]any{"n": 60, "extra": nil})
 	}
-	srv.Post("/api/silent", httpxtest.Body([]byte(`{}`), "application/json")).WantJSON(jsonx.Obj("ok", true, "value", jsonx.Obj("n", nil, "extra", nil)))
+	wantJSON(t, srv.Post("/api/silent", httpxtest.Body([]byte(`{}`), "application/json")), map[string]any{"ok": true, "value": map[string]any{"n": nil, "extra": nil}})
 }
 
 func TestBindingNestedDuplicatesReplaceWholeValues(t *testing.T) {
@@ -74,7 +81,7 @@ func TestBindingNestedDuplicatesReplaceWholeValues(t *testing.T) {
 		})
 	})})
 	body := `{"object":{"a":1,"b":2},"object":{"a":3,"a":4},"array":[1,2],"array":[3],"scalar":1,"scalar":2,"raw":{"x":{"a":1},"x":[2],"x":3}}`
-	srv.Post("/api/bind", httpxtest.Body([]byte(body), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("object", jsonx.Obj("a", 4, "b", 0), "array", []any{3}, "scalar", 2, "raw", jsonx.Obj("x", 3)))
+	wantJSON(t, srv.Post("/api/bind", httpxtest.Body([]byte(body), "application/json")).WantStatus(200), map[string]any{"object": map[string]any{"a": 4, "b": 0}, "array": []any{3}, "scalar": 2, "raw": map[string]any{"x": 3}})
 }
 
 func TestBoundNumberPreservesFormsAndNativeParsing(t *testing.T) {
@@ -151,7 +158,7 @@ func TestBindingAndNonFiniteResponseUseSeparatePolicies(t *testing.T) {
 			return httpx.JSON(map[string]any{"n": v.N, "missing": math.NaN()}), nil
 		})
 	})})
-	srv.Post("/api/bind", httpxtest.Body([]byte(`{"n":1e400}`), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("n", jsonx.Number("1e400"), "missing", nil))
+	wantJSON(t, srv.Post("/api/bind", httpxtest.Body([]byte(`{"n":1e400}`), "application/json")).WantStatus(200), map[string]any{"n": json.Number("1e400"), "missing": nil})
 }
 
 func TestBindingRetainsScalarLexemesAfterNativeTokens(t *testing.T) {
@@ -168,6 +175,6 @@ func TestBindingRetainsScalarLexemesAfterNativeTokens(t *testing.T) {
 	})})
 	for _, literal := range []string{"6e1", "60.00", `"\u0036\ud800"`, "true", "null"} {
 		source := `{"前缀":"中","n" : ` + literal + `}`
-		srv.Post("/api/bind", httpxtest.Body([]byte(source), "application/json")).WantStatus(200).WantJSON(jsonx.Obj("raw", literal))
+		wantJSON(t, srv.Post("/api/bind", httpxtest.Body([]byte(source), "application/json")).WantStatus(200), map[string]any{"raw": literal})
 	}
 }

@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -20,10 +21,11 @@ import (
 	"time"
 	"weak"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func TestCredentialVariantsNeverReachDiagnostics(t *testing.T) {
@@ -112,9 +114,9 @@ func TestDisabledCommitNeverStartsOrReschedulesWorker(t *testing.T) {
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	update := func(enabled bool) {
 		t.Helper()
-		_, err := r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-			system.Set("backup", jsonx.Obj("auto_backup", enabled))
-			return nil, nil
+		raw, _ := json.Marshal(map[string]any{"auto_backup": enabled})
+		err := r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+			return system.SetJSON("backup", raw)
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -233,17 +235,21 @@ func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
 	worker := testWorker(t, 10*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
 		settings := fixtureSettings(remote)
 		settings.Auto = true
-		raw, _ := json.Marshal(settings)
-		backup, err := jsonx.Parse(raw)
+		raw, err := json.Marshal(settings)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		system.Set("backup", backup)
-		system.Set("agents", []any{jsonx.Obj("id", "a", "name", "Agent", "host", "example.com", "profile_id", "default", "agent_service", "mihomo", "enabled", true, "token", "synthetic-agent-token")})
-		return nil, nil
+		if err := system.SetJSON("backup", raw); err != nil {
+			return err
+		}
+		system.Agents = []model.Agent{testjson.Decode[model.Agent](t, map[string]any{
+			"id": "a", "name": "Agent", "host": "example.com", "profile_id": "default",
+			"agent_service": "mihomo", "enabled": true, "token": "synthetic-agent-token",
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -258,17 +264,28 @@ func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
 		value      any
 		wantUpload bool
 	}{
-		{"version", "synthetic-v2", false}, {"status", "online", false}, {"applied_content", jsonx.Obj("digest", "synthetic"), false},
+		{"version", "synthetic-v2", false}, {"status", "online", false}, {"applied_content", map[string]any{"digest": "synthetic"}, false},
 		{"name", "Renamed", true}, {"host", "other.example.com", true}, {"enabled", false, true},
-		{"logging_config", jsonx.Obj("enabled", true), true}, {"rule_sync_state", jsonx.Obj("result", "saved"), true},
-		{"dns_follow", jsonx.Obj("enabled", true), true}, {"oxidns_ha", jsonx.Obj("enabled", true), true},
+		{"logging_config", map[string]any{"enabled": true}, true}, {"rule_sync_state", map[string]any{"result": "saved"}, true},
+		{"dns_follow", map[string]any{"enabled": true}, true}, {"oxidns_ha", map[string]any{"enabled": true}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
 			before := uploads()
-			_, err := r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-				system.GetList("agents")[0].(*jsonx.Object).Set(tt.field, tt.value)
-				return nil, nil
+			err := r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
+				raw, err := json.Marshal(system.Agents[0])
+				if err != nil {
+					return err
+				}
+				dec := json.NewDecoder(bytes.NewReader(raw))
+				dec.UseNumber()
+				var agentMap map[string]any
+				if err := dec.Decode(&agentMap); err != nil {
+					return err
+				}
+				agentMap[tt.field] = tt.value
+				system.Agents[0] = testjson.Decode[model.Agent](t, agentMap)
+				return nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -298,17 +315,15 @@ func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
 	registerHook(worker)
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	// Seed a legacy/imported setting directly, bypassing the newly secured form.
-	_, err = r.UpdateSystemTransaction(context.Background(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
+	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
 		settings := fixtureSettings(remote)
 		settings.Auto = true
 		settings.Path = "/%2E%2E/ordinary/"
-		data, _ := json.Marshal(settings)
-		value, err := jsonx.Parse(data)
+		data, err := json.Marshal(settings)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		system.Set("backup", value)
-		return nil, nil
+		return system.SetJSON("backup", data)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -328,8 +343,19 @@ func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
 	if count != 0 {
 		t.Fatal("stored unsafe path reached WebDAV")
 	}
-	saved, err := r.GetSystem(context.Background())
-	if err != nil || saved.GetObject("backup").GetString("webdav_path") != "/%2E%2E/ordinary/" {
+	saved, err := r.System(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedRaw, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedSaved, err := testjson.Parse(savedRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := testjson.Path(parsedSaved, "backup", "webdav_path"); got != "/%2E%2E/ordinary/" {
 		t.Fatal("failed backup rolled back/rewrote committed configuration")
 	}
 }

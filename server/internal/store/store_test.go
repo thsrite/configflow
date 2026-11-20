@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 const sampleJSON = `{
@@ -34,13 +34,13 @@ const sampleJSON = `{
   "future_root_key": {"kept": true}
 }`
 
-func sampleDocument(t testing.TB) *jsonx.Object {
+func sampleDocument(t testing.TB) *testDoc {
 	t.Helper()
-	value, err := jsonx.ParseString(sampleJSON)
+	value, err := parseOrderedJSON([]byte(sampleJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return value.(*jsonx.Object)
+	return value.(*testDoc)
 }
 
 func seconds(value float64) func() time.Duration {
@@ -54,7 +54,7 @@ func newStore(t testing.TB) *legacyStore {
 
 func compact(t testing.TB, value any) string {
 	t.Helper()
-	text, err := jsonx.Compact(value)
+	text, err := marshalCompact(value)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func must[T any](value T, err error) func(testing.TB) T {
 	}
 }
 
-func mustCommit(t testing.TB, target *legacyStore, base legacyEntry, document, meta *jsonx.Object) legacyEntry {
+func mustCommit(t testing.TB, target *legacyStore, base legacyEntry, document, meta *testDoc) legacyEntry {
 	t.Helper()
 	entry, committed, err := target.Commit(base, document, meta)
 	if err != nil || !committed {
@@ -135,8 +135,8 @@ func TestRowsRoundTripPreservesOrderUnicodeAndExtraKeys(t *testing.T) {
 	if !reflect.DeepEqual(loaded.GetObject("profiles").Keys(), []string{"zeta", "default"}) {
 		t.Fatal(loaded.GetObject("profiles").Keys())
 	}
-	if !reflect.DeepEqual(jsonx.Path(loaded, "profiles", "default").(*jsonx.Object).Keys(),
-		jsonx.Path(document, "profiles", "default").(*jsonx.Object).Keys()) {
+	if !reflect.DeepEqual(loaded.GetObject("profiles").GetObject("default").Keys(),
+		document.GetObject("profiles").GetObject("default").Keys()) {
 		t.Fatal("field order of a profile changed")
 	}
 }
@@ -148,8 +148,8 @@ func TestDocumentIsByteIdenticalAfterReopening(t *testing.T) {
 	entry := must(target.Create(sampleDocument(t), nil))(t)
 	document := entry.Document.DeepCopy()
 	profiles := document.GetObject("profiles")
-	profiles.Set("second", jsonx.Obj("id", "second", "name", "第二个", "description", "desc", "_revision", 0))
-	profiles.Set("alpha", jsonx.Obj("id", "alpha", "name", "Alpha", "_revision", 0))
+	profiles.Set("second", testObj("id", "second", "name", "第二个", "description", "desc", "_revision", 0))
+	profiles.Set("alpha", testObj("id", "alpha", "name", "Alpha", "_revision", 0))
 	entry = mustCommit(t, target, entry, document, nil)
 	document = entry.Document.DeepCopy()
 	second := document.GetObject("profiles").GetObject("second")
@@ -157,9 +157,9 @@ func TestDocumentIsByteIdenticalAfterReopening(t *testing.T) {
 	second.Set("_revision", 1)
 	entry = mustCommit(t, target, entry, document, nil)
 
-	exported := must(jsonx.Indent2(entry.Document))(t)
+	exported := must(marshalIndent2(entry.Document))(t)
 	reopened := must(legacyNew(target.Path(), seconds(1)).Load())(t)
-	if again := must(jsonx.Indent2(reopened.Document))(t); string(again) != string(exported) || string(again) != string(must(jsonx.Indent2(document))(t)) {
+	if again := must(marshalIndent2(reopened.Document))(t); string(again) != string(exported) || string(again) != string(must(marshalIndent2(document))(t)) {
 		t.Fatalf("%s", again)
 	}
 	if !reflect.DeepEqual(reopened.Document.GetObject("profiles").Keys(), []string{"zeta", "default", "second", "alpha"}) {
@@ -240,7 +240,7 @@ func TestCommitWritesOnlyChangedRows(t *testing.T) {
 			t.Errorf("%v has revision %d", key, field.revision)
 		}
 	}
-	if !jsonx.Equal(entry.Document, document) || compact(t, entry.Document) != compact(t, document) {
+	if !testjson.Equal(entry.Document, document) || compact(t, entry.Document) != compact(t, document) {
 		t.Fatal(compact(t, entry.Document))
 	}
 
@@ -272,13 +272,13 @@ func TestEmptyDiffAndMetaOnlyCommitDoNotBumpGeneration(t *testing.T) {
 	if _, committed, err := target.Commit(base, sampleDocument(t), nil); committed || err != nil {
 		t.Fatal(committed, err)
 	}
-	if _, committed, err := target.Commit(base, sampleDocument(t), jsonx.NewObject()); committed || err != nil {
+	if _, committed, err := target.Commit(base, sampleDocument(t), newTestDoc()); committed || err != nil {
 		t.Fatal(committed, err)
 	}
 	if must(target.Fingerprint())(t) != before {
 		t.Fatal("an empty commit wrote something")
 	}
-	entry := mustCommit(t, target, base, sampleDocument(t), jsonx.Obj("note", jsonx.Obj("kept", 1)))
+	entry := mustCommit(t, target, base, sampleDocument(t), testObj("note", testObj("kept", 1)))
 	if entry.Head != base.Head {
 		t.Fatal(entry.Head, base.Head)
 	}
@@ -299,7 +299,7 @@ func TestReorderingProfilesIsAChange(t *testing.T) {
 	base := must(target.Create(sampleDocument(t), nil))(t)
 	document := sampleDocument(t)
 	profiles := document.GetObject("profiles")
-	document.Set("profiles", jsonx.Obj("default", profiles.Value("default"), "zeta", profiles.Value("zeta")))
+	document.Set("profiles", testObj("default", profiles.Value("default"), "zeta", profiles.Value("zeta")))
 	mustCommit(t, target, base, document, nil)
 	if keys := must(target.Load())(t).Document.GetObject("profiles").Keys(); !reflect.DeepEqual(keys, []string{"default", "zeta"}) {
 		t.Fatal(keys)
@@ -338,7 +338,7 @@ func TestDocumentShapeErrors(t *testing.T) {
 	}
 	target := newStore(t)
 	for text, want := range cases {
-		document := must(jsonx.ParseString(text))(t).(*jsonx.Object)
+		document := must(parseOrderedJSON([]byte(text)))(t).(*testDoc)
 		if _, err := target.Create(document, nil); !errors.Is(err, ErrDocument) || err.Error() != want {
 			t.Errorf("%s: %v", text, err)
 		}
@@ -375,7 +375,7 @@ func TestFingerprintIsStableAcrossReadsAndChangesOnWrite(t *testing.T) {
 
 func TestNewDatabaseMeta(t *testing.T) {
 	target := newStore(t)
-	entry := must(target.Create(sampleDocument(t), jsonx.Obj("migration", jsonx.Obj("source", "defaults"), "generation", 1)))(t)
+	entry := must(target.Create(sampleDocument(t), testObj("migration", testObj("source", "defaults"), "generation", 1)))(t)
 	hex32 := regexp.MustCompile(`^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$`)
 	if !hex32.MatchString(entry.Head.StoreID) || !hex32.MatchString(entry.Head.CommitID) || entry.Head.StoreID == entry.Head.CommitID {
 		t.Fatal(entry.Head)
@@ -500,7 +500,7 @@ func TestBeforeCommitHook(t *testing.T) {
 
 	injected := errors.New("injected write failure")
 	target.BeforeCommit = func() error { return injected }
-	if _, committed, err := target.Commit(base, document, jsonx.Obj("note", 1)); err != injected || committed {
+	if _, committed, err := target.Commit(base, document, testObj("note", 1)); err != injected || committed {
 		t.Fatal(committed, err)
 	}
 	if must(target.Fingerprint())(t) != before {
@@ -571,7 +571,7 @@ func TestPreserveCorruptThenInstall(t *testing.T) {
 	if err := os.WriteFile(target.Path()+"-journal", []byte("hot journal"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	temporary, entry, err := target.BuildTemporary(sampleDocument(t), jsonx.Obj("recovered_from", jsonx.Obj("source", "config.json")))
+	temporary, entry, err := target.BuildTemporary(sampleDocument(t), testObj("recovered_from", testObj("source", "config.json")))
 	if err != nil {
 		t.Fatal(err)
 	}

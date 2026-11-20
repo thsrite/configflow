@@ -18,8 +18,9 @@ import (
 	"configflow/internal/gateway/host"
 	"configflow/internal/gateway/installation"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/setup"
+	"configflow/internal/testjson"
 )
 
 func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
@@ -34,9 +35,12 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	// no installation evidence; the production wire must replace this 503.
 	srv.Post("/api/setup/"+id+"/abandon", httpxtest.JSON(map[string]bool{"dry_run": true}), admin).WantStatus(503)
 	NewApp()
-	_, err := srv.Repo.UpdateSharedTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		c.Set("nodes", []any{jsonx.Obj("id", "n", "name", "Example", "type", "ss", "server", "192.0.2.2", "port", 443, "cipher", "aes-128-gcm", "password", "synthetic-node-secret")})
-		return nil, nil
+	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+		c.Nodes = []model.Node{testjson.Decode[model.Node](t, map[string]any{
+			"id": "n", "name": "Example", "type": "ss", "server": "192.0.2.2", "port": 443,
+			"cipher": "aes-128-gcm", "password": "synthetic-node-secret",
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -80,13 +84,13 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		for _, v := range c.GetList("agents") {
-			a := v.(*jsonx.Object)
-			kind := a.GetString("service_type")
-			a.Set("latest_deployment", jsonx.Obj("deployment_id", "synthetic-"+kind, "status", "succeeded"))
+	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, c *model.System) error {
+		for i := range c.Agents {
+			kind := c.Agents[i].ServiceType
+			dep := testjson.Decode[model.Deployment](t, map[string]any{"deployment_id": "synthetic-" + kind, "status": "succeeded"})
+			c.Agents[i].LatestDeployment = &dep
 		}
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -128,11 +132,11 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	}
 	// The same latest session now becomes unusable after a manager restart,
 	// despite persisted status fields. Freshness is owned by A01.
-	_, err = srv.Repo.UpdateSystemTransaction(ctx, func(_ context.Context, c *jsonx.Object) (*jsonx.Object, error) {
-		for _, v := range c.GetList("agents") {
-			v.(*jsonx.Object).Set("last_heartbeat", "2020-01-01T00:00:00+00:00")
+	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, c *model.System) error {
+		for i := range c.Agents {
+			c.Agents[i].LastHeartbeat = "2020-01-01T00:00:00+00:00"
 		}
-		return nil, nil
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

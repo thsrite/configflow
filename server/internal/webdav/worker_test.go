@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func testWorker(t *testing.T, delay time.Duration, upload UploadFunc) *Worker {
@@ -160,28 +161,43 @@ func TestCommitHookRunsOutsideLockAndUploadFailureCannotRollback(t *testing.T) {
 		_ = worker.Close(ctx)
 	})
 	ctx := repo.WithRepository(context.Background(), r)
-	_, err = r.UpdateSystemTransaction(ctx, func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		system.Set("backup", jsonx.Obj("webdav_url", server.URL, "webdav_username", "fixture-user", "webdav_password", "fixture-secret", "webdav_path", "/one/two/", "auto_backup", true))
-		return nil, nil
+	backupRaw, err := json.Marshal(map[string]any{
+		"webdav_url": server.URL, "webdav_username": "fixture-user", "webdav_password": "fixture-secret",
+		"webdav_path": "/one/two/", "auto_backup": true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("mihomo").Set("custom_config", "saved despite upload failure")
-		return nil, nil
+	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		return system.SetJSON("backup", backupRaw)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("mihomo", json.RawMessage(`{"custom_config":"saved despite upload failure"}`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitWorker(t, worker)
-	profile, err := r.GetProfile(ctx, "default")
-	if err != nil || profile.GetObject("mihomo").GetString("custom_config") != "saved despite upload failure" {
+	profile, err := r.Profile(ctx, "default")
+	if err != nil {
 		t.Fatalf("committed state changed: %v", err)
 	}
-	_, _, err = r.UpdateProfileTransaction(ctx, "default", func(_ context.Context, p *jsonx.Object) (*jsonx.Object, error) {
-		p.GetObject("mihomo").Set("custom_config", "next saved")
-		return nil, nil
+	profileRaw, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatalf("committed state changed: %v", err)
+	}
+	parsedProfile, err := testjson.Parse(profileRaw)
+	if err != nil {
+		t.Fatalf("committed state changed: %v", err)
+	}
+	if got, _ := testjson.Path(parsedProfile, "mihomo", "custom_config"); got != "saved despite upload failure" {
+		t.Fatalf("committed state changed: %v", got)
+	}
+	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+		return p.SetJSON("mihomo", json.RawMessage(`{"custom_config":"next saved"}`))
 	})
 	if err != nil {
 		t.Fatal(err)

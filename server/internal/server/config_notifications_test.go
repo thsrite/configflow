@@ -1,22 +1,31 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/taskstatus"
+	"configflow/internal/testjson"
 )
 
 func TestConfigFindingsFailedReceiptsCreateNotificationsBeforeAllTaskSlotsExist(t *testing.T) {
 	NewApp()
 	srv := httpxtest.New(t, httpxtest.Options{})
 	ctx := srv.Context()
-	_, err := srv.Repo.SaveShared(ctx, jsonx.Obj("subscriptions", []any{jsonx.Obj("id", "backoff", "name", "Synthetic", "url", "https://feed.example/sub", "interval", 60, "enabled", true), jsonx.Obj("id", "due", "name", "Due", "url", "https://feed.example/due", "interval", 60)}), nil)
+	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+		shared.Subscriptions = []model.Subscription{
+			testjson.Decode[model.Subscription](t, map[string]any{"id": "backoff", "name": "Synthetic", "url": "https://feed.example/sub", "interval": 60, "enabled": true}),
+			testjson.Decode[model.Subscription](t, map[string]any{"id": "due", "name": "Due", "url": "https://feed.example/due", "interval": 60}),
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,12 +46,18 @@ func TestConfigFindingsFailedReceiptsCreateNotificationsBeforeAllTaskSlotsExist(
 	if err != nil {
 		t.Fatalf("notification missing: %v", err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var doc struct {
+		Items map[string]struct {
+			State        string `json:"state"`
+			FailureCount int64  `json:"failure_count"`
+			Message      string `json:"message"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	item := value.(*jsonx.Object).GetObject("items").GetObject("task:subscription:backoff")
-	if item.GetString("state") != "pending" || item.GetInt("failure_count") != 3 || item.GetString("message") != "上游返回 HTTP 403" {
+	item := doc.Items["task:subscription:backoff"]
+	if item.State != "pending" || item.FailureCount != 3 || item.Message != "上游返回 HTTP 403" {
 		t.Fatalf("missing failed/backoff notification: %s", data)
 	}
 }

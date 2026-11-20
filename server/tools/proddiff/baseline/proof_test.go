@@ -10,7 +10,8 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/deploy/pushdiff"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -77,13 +78,27 @@ func TestOriginalPythonBaselineRequiresOnePublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := jsonx.Obj("id", m.AgentID, "profile_id", m.ProfileID, "service_type", m.ServiceType, "config_version", old.ConfigVersion(), "applied_content", jsonx.Obj("deployment_id", m.DeploymentID, "profile_id", m.ProfileID, "service_type", m.ServiceType, "config_path", m.ConfigPath, "config_version", old.ConfigVersion(), "fingerprint", evidence.OldFingerprint))
-	source := deploy.NewSource(jsonx.Obj("profile_id", m.ProfileID), nil)
+	agentRecord := testjson.Decode[model.Agent](t, map[string]any{
+		"id": m.AgentID, "profile_id": m.ProfileID, "service_type": m.ServiceType, "config_version": old.ConfigVersion(),
+		"applied_content": map[string]any{
+			"deployment_id": m.DeploymentID, "profile_id": m.ProfileID, "service_type": m.ServiceType,
+			"config_path": m.ConfigPath, "config_version": old.ConfigVersion(), "fingerprint": evidence.OldFingerprint,
+		},
+	})
+	rawSource, err := json.Marshal(map[string]any{"profile_id": m.ProfileID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := deploy.SourceFromJSON(rawSource, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	checker := contentsync.New(contentsync.Options{Prepare: func(context.Context, deploy.Target, *deploy.Source, string, string) (*deploy.Bundle, error) {
 		return next, nil
 	}})
 	defer checker.Close()
-	if result := checker.CompareNow(context.Background(), deploy.NewTarget(record), source, "https://panel.example.com"); result.Status != "changed" {
+	target := deploy.Target{ID: m.AgentID, ProfileID: m.ProfileID, ServiceType: m.ServiceType, Record: &agentRecord}
+	if result := checker.CompareNow(context.Background(), target, source, "https://panel.example.com"); result.Status != "changed" {
 		t.Fatal("old Python baseline must show changed", result)
 	}
 	diff, err := pushdiff.Build(pushdiff.AppliedView{ServiceType: m.ServiceType, Files: digests}, next, &deploy.Receipt{Manifest: m, Bundle: old}, nil)

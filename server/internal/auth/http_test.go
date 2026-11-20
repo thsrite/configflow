@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -8,15 +9,22 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
+
+func wantJSON(t *testing.T, res *httpxtest.Result, want any) {
+	t.Helper()
+	if diff := testjson.Diff(json.RawMessage(res.Body), want); diff != "" {
+		t.Fatalf("body %s\n%s", res.Body, diff)
+	}
+}
 
 // protectedRoutes adds a require_auth route on a public path, so that
 // require_auth itself (not the global gate) answers, as in the Python tests
 // that build a bare Flask app.
 func protectedRoutes(r *httpx.Router) {
 	r.GET("/static/protected", "test.protected", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		return httpx.JSON(jsonx.Obj("success", true)), nil
+		return httpx.JSON(map[string]any{"success": true}), nil
 	}))
 }
 
@@ -49,8 +57,8 @@ func TestRequireAuthRejectsMalformedBearer(t *testing.T) {
 // test_login_messages.py::test_wrong_credentials_return_chinese_and_still_reject_login
 func TestWrongCredentialsReturnChineseAndStillRejectLogin(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
-	res := srv.Post("/api/auth/login", httpxtest.JSON(jsonx.Obj("username", "upgrade-admin", "password", "wrong")))
-	res.WantStatus(401).WantJSON(jsonx.Obj("success", false, "message", "用户名或密码错误，请重新输入。"))
+	res := srv.Post("/api/auth/login", httpxtest.JSON(map[string]any{"username": "upgrade-admin", "password": "wrong"}))
+	wantJSON(t, res.WantStatus(401), map[string]any{"success": false, "message": "用户名或密码错误，请重新输入。"})
 }
 
 // test_login_messages.py::test_login_validation_and_missing_session_messages_are_chinese
@@ -80,7 +88,7 @@ func TestJWTFailureCodesAndOriginalDiagnosticsArePreserved(t *testing.T) {
 	if res.Object().GetString("error") != "token_expired" || !strings.Contains(res.Object().GetString("message"), "登录已过期") {
 		t.Fatal(res.Text())
 	}
-	forged, _ := auth.EncodeHS256(jsonx.Obj("username", "admin"), "other-secret")
+	forged, _ := auth.EncodeHS256(map[string]any{"username": "admin"}, "other-secret")
 	res = srv.Get("/static/protected", httpxtest.Bearer(forged)).WantStatus(401)
 	message := res.Object().GetString("message")
 	if res.Object().GetString("error") != "token_invalid" || !strings.Contains(message, "登录凭据无效") ||
@@ -121,37 +129,37 @@ func TestPublicPathRules(t *testing.T) {
 func TestGateExemptsEndpointsByName(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.POST("/api/agents/<agent_id>/heartbeat", "agents.agent_heartbeat", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(jsonx.Obj("agent", c.Param("agent_id"))), nil
+			return httpx.JSON(map[string]any{"agent": c.Param("agent_id")}), nil
 		})
 		r.POST("/api/agents/<agent_id>/other", "agents.other", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(jsonx.Obj("ok", true)), nil
+			return httpx.JSON(map[string]any{"ok": true}), nil
 		})
 	})})
-	srv.Post("/api/agents/a1/heartbeat").WantStatus(200).WantJSON(jsonx.Obj("agent", "a1"))
+	wantJSON(t, srv.Post("/api/agents/a1/heartbeat").WantStatus(200), map[string]any{"agent": "a1"})
 	srv.Post("/api/agents/a1/other").WantStatus(401)
 }
 
 func TestAuthDisabledLetsEverythingThroughAndLoginIsRefused(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(protectedRoutes)})
 	srv.Get("/static/protected", httpxtest.Header("Authorization", "Bearer garbage")).WantStatus(200)
-	srv.Get("/api/auth/status").WantJSON(jsonx.Obj("authEnabled", false))
-	srv.Post("/api/auth/login", httpxtest.JSON(jsonx.Obj("username", "a", "password", "b"))).
-		WantStatus(400).WantJSON(jsonx.Obj("success", false, "message", "当前未开启登录验证。"))
+	wantJSON(t, srv.Get("/api/auth/status"), map[string]any{"authEnabled": false})
+	wantJSON(t, srv.Post("/api/auth/login", httpxtest.JSON(map[string]any{"username": "a", "password": "b"})).
+		WantStatus(400), map[string]any{"success": false, "message": "当前未开启登录验证。"})
 }
 
 func TestLoginBindingErrorsUseClientStatuses(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
 	// N8-6 fixes Python's caught 500 responses to 400/415. The HTTP
 	// differential separately asserts Python's full old body and this envelope.
-	srv.Post("/api/auth/login", httpxtest.Body([]byte(`{"username":`), "application/json")).WantStatus(400).
-		WantJSON(jsonx.Obj("success", false, "message", httpx.DescBadRequest))
+	wantJSON(t, srv.Post("/api/auth/login", httpxtest.Body([]byte(`{"username":`), "application/json")).WantStatus(400),
+		map[string]any{"success": false, "message": httpx.DescBadRequest})
 	res := srv.Post("/api/auth/login", httpxtest.Body([]byte(`{}`), "text/plain")).WantStatus(415)
 	if got := res.Object().GetString("message"); got != "Did not attempt to load JSON data because the request Content-Type was not 'application/json'." {
 		t.Fatal(got)
 	}
-	srv.Post("/api/auth/login", httpxtest.JSON([]any{1})).WantStatus(400).
-		WantJSON(jsonx.Obj("success", false, "message", httpx.DescBadRequest))
-	ok := srv.Post("/api/auth/login", httpxtest.JSON(jsonx.Obj("username", httpxtest.Username, "password", httpxtest.Password)))
+	wantJSON(t, srv.Post("/api/auth/login", httpxtest.JSON([]any{1})).WantStatus(400),
+		map[string]any{"success": false, "message": httpx.DescBadRequest})
+	ok := srv.Post("/api/auth/login", httpxtest.JSON(map[string]any{"username": httpxtest.Username, "password": httpxtest.Password}))
 	body := ok.WantStatus(200).Object()
 	if body.GetString("username") != httpxtest.Username || body.GetInt("expiresIn") != 86400 || body.GetString("token") == "" {
 		t.Fatal(ok.Text())
@@ -162,12 +170,12 @@ func TestLoginBindingErrorsUseClientStatuses(t *testing.T) {
 // error dict (Python cannot tell them apart).
 func TestClaimsWithErrorKeyAreRejected(t *testing.T) {
 	srv := protectedServer(t)
-	token, _ := auth.EncodeHS256(jsonx.Obj("error", "expired"), auth.Current().SecretKey)
+	token, _ := auth.EncodeHS256(map[string]any{"error": "expired"}, auth.Current().SecretKey)
 	res := srv.Get("/static/protected", httpxtest.Bearer(token)).WantStatus(401)
 	if res.Object().GetString("error") != "token_expired" {
 		t.Fatal(res.Text())
 	}
-	empty, _ := auth.EncodeHS256(jsonx.NewObject(), auth.Current().SecretKey)
+	empty, _ := auth.EncodeHS256(map[string]any{}, auth.Current().SecretKey)
 	res = srv.Get("/static/protected", httpxtest.Bearer(empty)).WantStatus(401)
 	if res.Object().GetString("message") != "登录已失效，请重新登录。" {
 		t.Fatal(res.Text())

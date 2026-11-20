@@ -2,12 +2,14 @@ package netipx
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"net/netip"
 	"os"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // TestCorpus compares with CPython 3.11.17's ipaddress (testdata/gen_corpus.py)
@@ -29,21 +31,22 @@ func TestCorpus(t *testing.T) {
 	scanner.Buffer(make([]byte, 1<<20), 1<<26)
 	counts, differ := map[string]int{}, 0
 	for scanner.Scan() {
-		value, err := jsonx.Parse(scanner.Bytes())
-		if err != nil {
+		raw := scanner.Bytes()
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		var row map[string]any
+		if err := dec.Decode(&row); err != nil {
 			t.Fatal(err)
 		}
-		row := value.(*jsonx.Object)
-		kind := row.GetString("k")
+		kind, _ := row["k"].(string)
 		counts[kind]++
 		got, want := evaluate(t, row)
-		if !jsonx.Equal(got, want) {
+		if !testjson.Equal(got, want) {
 			differ++
 			if differ <= 30 {
-				g, _ := jsonx.Compact(got)
-				w, _ := jsonx.Compact(want)
-				in, _ := jsonx.Compact(row)
-				t.Errorf("%s\n got  %s\n want %s", in, g, w)
+				g, _ := json.Marshal(got)
+				w, _ := json.Marshal(want)
+				t.Errorf("%s\n got  %s\n want %s", raw, g, w)
 			}
 		}
 	}
@@ -81,57 +84,71 @@ func family(a netip.Addr) int {
 }
 
 // evaluate returns (got, want) for one row.
-func evaluate(t *testing.T, row *jsonx.Object) (any, any) {
-	want := row.Value("out")
-	switch row.GetString("k") {
+func evaluate(t *testing.T, row map[string]any) (any, any) {
+	want := row["out"]
+	kind, _ := row["k"].(string)
+	switch kind {
 	case "addr":
 		var w any
-		if o, ok := want.(*jsonx.Object); ok {
-			w = jsonx.Obj("s", o.Value("s"), "v", o.Value("v"))
-			if o.GetInt("v") == 4 {
-				w.(*jsonx.Object).Update(jsonx.Obj("loop", o.Value("loop"), "mc", o.Value("mc"), "unspec", o.Value("unspec")))
+		if o, ok := want.(map[string]any); ok {
+			wm := map[string]any{"s": o["s"], "v": o["v"]}
+			if v, ok := o["v"].(json.Number); ok && v == "4" {
+				wm["loop"] = o["loop"]
+				wm["mc"] = o["mc"]
+				wm["unspec"] = o["unspec"]
 			}
+			w = wm
 		}
-		a, err := netip.ParseAddr(row.GetString("in"))
+		in, _ := row["in"].(string)
+		a, err := netip.ParseAddr(in)
 		if err != nil {
 			return nil, w
 		}
-		got := jsonx.Obj("s", a.String(), "v", family(a))
+		got := map[string]any{"s": a.String(), "v": family(a)}
 		if a.Is4() {
-			got.Update(jsonx.Obj("loop", a.IsLoopback(), "mc", a.IsMulticast(), "unspec", a.IsUnspecified()))
+			got["loop"] = a.IsLoopback()
+			got["mc"] = a.IsMulticast()
+			got["unspec"] = a.IsUnspecified()
 		}
 		return got, w
 	case "net":
-		n, ok := ParseNetwork(row.GetString("in"), row.GetBool("strict"))
+		in, _ := row["in"].(string)
+		strict, _ := row["strict"].(bool)
+		n, ok := ParseNetwork(in, strict)
 		if !ok {
 			return nil, want
 		}
-		return jsonx.Obj("s", n.String(), "v", family(n.Addr()), "p", n.Bits(), "bcast", Broadcast(n).String(),
-			"priv", IsPrivate(n), "glob", IsGlobal(n)), want
+		return map[string]any{"s": n.String(), "v": family(n.Addr()), "p": n.Bits(), "bcast": Broadcast(n).String(),
+			"priv": IsPrivate(n), "glob": IsGlobal(n)}, want
 	case "v4net":
-		n, ok := ParseNetwork4(row.GetString("in"), false)
+		in, _ := row["in"].(string)
+		n, ok := ParseNetwork4(in, false)
 		if !ok {
 			return nil, want
 		}
 		return n.String(), want
 	case "collapse":
-		out, err := Collapse(parseList(t, row.GetList("in")))
+		in, _ := row["in"].([]any)
+		out, err := Collapse(parseList(t, in))
 		if err != nil {
-			if _, ok := want.(*jsonx.Object); ok {
+			if _, ok := want.(map[string]any); ok {
 				return want, want // rejected on both sides (TypeError text not chased)
 			}
-			return jsonx.Obj("err", err.Error()), want
+			return map[string]any{"err": err.Error()}, want
 		}
 		return texts(out), want
 	case "sort":
-		list := parseList(t, row.GetList("in"))
+		in, _ := row["in"].([]any)
+		list := parseList(t, in)
 		SortPrefixes(list)
 		return texts(list), want
 	case "subnet":
-		a, _ := ParseNetwork(row.GetString("a"), true)
-		b, _ := ParseNetwork(row.GetString("b"), true)
+		aStr, _ := row["a"].(string)
+		bStr, _ := row["b"].(string)
+		a, _ := ParseNetwork(aStr, true)
+		b, _ := ParseNetwork(bStr, true)
 		return b.Bits() <= a.Bits() && b.Contains(a.Addr()), want
 	}
-	t.Fatalf("unknown kind %q", row.GetString("k"))
+	t.Fatalf("unknown kind %q", kind)
 	return nil, nil
 }

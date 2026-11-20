@@ -8,8 +8,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-
-	"configflow/internal/jsonx"
 )
 
 // TestBackupWriteFailureMessage: when writing the backup fails (here: the
@@ -20,7 +18,7 @@ import (
 func TestBackupWriteFailureMessage(t *testing.T) {
 	directory := t.TempDir()
 	target := legacyNew(filepath.Join(directory, "big.sqlite3"), seconds(1))
-	must(target.Create(jsonx.Obj("system", jsonx.Obj("blob", strings.Repeat("x", 200000))), nil))(t)
+	must(target.Create(testObj("system", testObj("blob", strings.Repeat("x", 200000))), nil))(t)
 	signal.Ignore(syscall.SIGXFSZ)
 	defer signal.Reset(syscall.SIGXFSZ)
 	var limit syscall.Rlimit

@@ -8,14 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 // Ported from backend/test_domain_status_cache.py (the json_store tests); the
 // Python monkeypatching of os.replace becomes the afterReplace hook.
 
-func sample() *jsonx.Object {
-	return jsonx.Obj("status", jsonx.Obj("value", "running", "name", "例子 é"), "days", jsonx.NewObject(), "n", []any{1, jsonx.Float(2.5)})
+func sample() *testjson.Object {
+	return testjson.Obj(
+		testjson.Field{Key: "status", Value: testjson.Obj(testjson.Field{Key: "value", Value: "running"}, testjson.Field{Key: "name", Value: "例子 é"})},
+		testjson.Field{Key: "days", Value: map[string]any{}},
+		testjson.Field{Key: "n", Value: []any{1, 2.5}},
+	)
 }
 
 func TestWriteBytesEqualPythonsAndReadBack(t *testing.T) {
@@ -33,7 +37,7 @@ func TestWriteBytesEqualPythonsAndReadBack(t *testing.T) {
 	if string(data) != want {
 		t.Errorf("got %q", data)
 	}
-	if !jsonx.Equal(readObject(store, "a"), sample()) {
+	if !testjson.Equal(readObject(store, "a"), sample()) {
 		t.Error("read back differs")
 	}
 	if _, err := os.Stat(store.Path("a") + ".tmp"); !os.IsNotExist(err) {
@@ -43,11 +47,11 @@ func TestWriteBytesEqualPythonsAndReadBack(t *testing.T) {
 
 func TestOtherStoresKeepCloseBeforeReplaceWithoutSignature(t *testing.T) {
 	store := New(t.TempDir())
-	sig, err := store.Write("a", jsonx.Obj("hosts", jsonx.Obj("example.test", jsonx.Obj("value", "unchanged"))), false)
+	sig, err := store.Write("a", map[string]any{"hosts": map[string]any{"example.test": map[string]any{"value": "unchanged"}}}, false)
 	if sig != nil || err != nil {
 		t.Fatalf("%v %v", sig, err)
 	}
-	if got := readObject(store, "a").GetObject("hosts").GetObject("example.test").GetString("value"); got != "unchanged" {
+	if got, _ := testjson.Path(readObject(store, "a"), "hosts", "example.test", "value"); got != "unchanged" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -75,7 +79,7 @@ func TestMissingAndDamagedFilesReadAsNil(t *testing.T) {
 	if err := os.WriteFile(store.Path("ok"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := readObject(store, "ok"); got == nil || got.Len() != 0 {
+	if got := readObject(store, "ok"); got == nil || len(got) != 0 {
 		t.Errorf("ok: %v", got)
 	}
 }
@@ -125,7 +129,7 @@ func TestExternalReplacementDuringVerifiedWriteDoesNotChangeWrittenIdentity(t *t
 	if sig == nil || *sig == signatureOf(info) {
 		t.Errorf("signature must describe the old inode: %v vs %v", sig, signatureOf(info))
 	}
-	if got := readObject(store, "a").GetObject("status").GetString("value"); got != "unreachable" {
+	if got, _ := testjson.Path(readObject(store, "a"), "status", "value"); got != "unreachable" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -155,7 +159,7 @@ func TestExternalInPlaceEditDuringVerifiedWriteIsNotSigned(t *testing.T) {
 		if sig != nil {
 			t.Errorf("preserveMtime=%v: an edited file got a signature", preserveMtime)
 		}
-		if got := readObject(store, "a").GetObject("status").GetString("value"); got == "running" {
+		if got, _ := testjson.Path(readObject(store, "a"), "status", "value"); got == "running" {
 			t.Errorf("edit not applied: %q", got)
 		}
 	}
@@ -169,13 +173,13 @@ func TestWriteFailureLeavesTheOldFile(t *testing.T) {
 	if _, err := store.Write("a", map[string]any{"x": math.NaN()}, false); err == nil {
 		t.Fatal("a non-JSON value was written")
 	}
-	if !jsonx.Equal(readObject(store, "a"), sample()) {
+	if !testjson.Equal(readObject(store, "a"), sample()) {
 		t.Error("the old file changed")
 	}
 }
 
-func readObject(s *Store, id string) *jsonx.Object {
-	var value *jsonx.Object
+func readObject(s *Store, id string) map[string]any {
+	var value map[string]any
 	if !s.Read(id, &value) {
 		return nil
 	}

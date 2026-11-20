@@ -7,63 +7,68 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
-type pyjwtCase struct {
-	name, token string
-	result      *jsonx.Object
+type pyjwtResult struct {
+	OK      bool            `json:"ok"`
+	Claims  json.RawMessage `json:"claims"`
+	Message string          `json:"message"`
+	Crash   string          `json:"crash"`
+	Expired bool            `json:"expired"`
 }
 
-func loadPyJWT(t *testing.T) (*jsonx.Object, []pyjwtCase) {
+type pyjwtCase struct {
+	Name   string      `json:"name"`
+	Token  string      `json:"token"`
+	Result pyjwtResult `json:"result"`
+}
+
+type pyjwtDoc struct {
+	Secret string      `json:"secret"`
+	Cases  []pyjwtCase `json:"cases"`
+}
+
+func loadPyJWT(t *testing.T) pyjwtDoc {
 	t.Helper()
 	data, err := os.ReadFile("testdata/pyjwt_cases.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := jsonx.Parse(data)
-	if err != nil {
+	var doc pyjwtDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	doc := value.(*jsonx.Object)
-	var cases []pyjwtCase
-	for _, item := range doc.GetList("cases") {
-		o := item.(*jsonx.Object)
-		cases = append(cases, pyjwtCase{o.GetString("name"), o.GetString("token"), o.GetObject("result")})
-	}
-	return doc, cases
+	return doc
 }
 
 // Every token PyJWT 2.8.0 decoded (or refused) decodes the same way here,
 // with the same error text.
 func TestDecodeMatchesPyJWT(t *testing.T) {
-	doc, cases := loadPyJWT(t)
-	secret := doc.GetString("secret")
+	doc := loadPyJWT(t)
 	now := time.Now()
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			claims, err := DecodeHS256(c.token, secret, now)
-			if c.name == "junk_chars" {
+	for _, c := range doc.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			claims, err := DecodeHS256(c.Token, doc.Secret, now)
+			if c.Name == "junk_chars" {
 				if err == nil {
 					t.Fatal("native must reject junk token")
 				}
 				return
 			}
-			if c.result.GetBool("ok") {
+			if c.Result.OK {
 				if err != nil {
 					t.Fatalf("PyJWT accepted, Go refused: %v", err)
 				}
-				raw, _ := json.Marshal(claims)
-				native, _ := jsonx.Parse(raw)
-				if !jsonx.Equal(native, c.result.Value("claims")) {
-					t.Fatalf("claims %v, want %v", jsonx.Repr(claims), jsonx.Repr(c.result.Value("claims")))
+				if diff := testjson.Diff(claims, c.Result.Claims); diff != "" {
+					t.Fatalf("claims mismatch:\n%s", diff)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatalf("PyJWT refused (%s), Go accepted", c.result.GetString("message"))
+				t.Fatalf("PyJWT refused (%s), Go accepted", c.Result.Message)
 			}
-			if crash := c.result.GetString("crash"); crash != "" {
+			if crash := c.Result.Crash; crash != "" {
 				if _, ok := err.(*ClaimTypeError); !ok {
 					t.Fatalf("want an uncaught %s, got %v", crash, err)
 				}
@@ -73,9 +78,9 @@ func TestDecodeMatchesPyJWT(t *testing.T) {
 			if !ok {
 				t.Fatalf("want TokenError, got %T %v", err, err)
 			}
-			if (c.name != "header_bad_json" && c.name != "payload_bad_json" && te.Message != c.result.GetString("message")) || te.Expired != c.result.GetBool("expired") {
+			if (c.Name != "header_bad_json" && c.Name != "payload_bad_json" && te.Message != c.Result.Message) || te.Expired != c.Result.Expired {
 				t.Fatalf("got %q expired=%v, want %q expired=%v", te.Message, te.Expired,
-					c.result.GetString("message"), c.result.GetBool("expired"))
+					c.Result.Message, c.Result.Expired)
 			}
 		})
 	}

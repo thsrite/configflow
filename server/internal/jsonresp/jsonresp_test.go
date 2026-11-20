@@ -4,15 +4,15 @@ import (
 	"encoding/json"
 	"testing"
 
-	"configflow/internal/jsonx"
+	"configflow/internal/testjson"
 )
 
 func TestEncodeMixedNativeAndLegacyValues(t *testing.T) {
 	value := struct {
-		Name   string          `json:"name"`
-		Legacy *jsonx.Object   `json:"legacy"`
-		Raw    json.RawMessage `json:"raw"`
-	}{"中文<&>", jsonx.Obj("z", jsonx.Number("6e1"), "a", true), json.RawMessage(`{"value":"<&>"}`)}
+		Name   string           `json:"name"`
+		Legacy *testjson.Object `json:"legacy"`
+		Raw    json.RawMessage  `json:"raw"`
+	}{"中文<&>", testjson.Obj(testjson.Field{Key: "z", Value: json.Number("6e1")}, testjson.Field{Key: "a", Value: true}), json.RawMessage(`{"value":"<&>"}`)}
 	data, err := Encode(value)
 	if err != nil {
 		t.Fatal(err)

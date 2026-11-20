@@ -2,6 +2,7 @@ package httpx_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -9,8 +10,9 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/jsonx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 // setSecrets stores a rule proxy token and an Agent token, the credentials
@@ -21,12 +23,13 @@ func setSecrets(t *testing.T, srv *httpxtest.Server, ruleProxy []string, agentTo
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = srv.Repo.UpdateSystemTransaction(srv.Context(), func(_ context.Context, system *jsonx.Object) (*jsonx.Object, error) {
-		settings := system.GetObject("system_config")
-		settings.Set("rule_proxy_token", ruleProxy[0])
-		settings.Set("retired_rule_proxy_tokens", jsonx.ListOf(ruleProxy[1:]))
-		system.Set("agents", []any{jsonx.Obj("id", "a1", "name", "agent", "token", agentToken, "profile_id", profileID)})
-		return nil, nil
+	err = srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
+		system.SystemConfig.RuleProxyToken = ruleProxy[0]
+		system.SystemConfig.RetiredRuleProxyTokens = append([]string(nil), ruleProxy[1:]...)
+		system.Agents = []model.Agent{testjson.Decode[model.Agent](t, map[string]any{
+			"id": "a1", "name": "agent", "token": agentToken, "profile_id": profileID,
+		})}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -55,13 +58,16 @@ func TestLargeResponseEncodesOnceAndKeepsRedaction(t *testing.T) {
 	build := func() any {
 		items := []any{}
 		for i := 0; i < 2000; i++ {
-			items = append(items, jsonx.Obj("name", "例子.test", "secret_url", "https://host/private%252Dsecret",
-				"agent-secret", "agent-secret", "rule_proxy_token", "hidden"))
+			items = append(items, map[string]any{"name": "例子.test", "secret_url": "https://host/private%252Dsecret",
+				"agent-secret": "agent-secret", "rule_proxy_token": "hidden"})
 		}
-		return jsonx.Obj("items", items)
+		return map[string]any{"items": items}
 	}
 	shared := build()
-	original := jsonx.DeepCopy(shared)
+	original, err := json.Marshal(shared)
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := jsonServer(t, func() any { return shared }, nil)
 	normal := srv.Get("/static/ordinary").WantStatus(200)
 	single := srv.Get("/static/single").WantStatus(200)
@@ -72,11 +78,16 @@ func TestLargeResponseEncodesOnceAndKeepsRedaction(t *testing.T) {
 		single.Header.Get("Content-Length") != normal.Header.Get("Content-Length") {
 		t.Fatal("headers differ")
 	}
-	first := single.Object().GetList("items")[0]
-	if !jsonx.Equal(first, jsonx.Obj("name", "例子.test", "secret_url", "[REDACTED]", "[REDACTED]", "[REDACTED]")) {
-		t.Fatal(jsonx.Repr(first))
+	var parsed struct {
+		Items []json.RawMessage `json:"items"`
 	}
-	if !jsonx.Equal(shared, original) {
+	if err := json.Unmarshal(single.Body, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if diff := testjson.Diff(parsed.Items[0], map[string]any{"name": "例子.test", "secret_url": "[REDACTED]", "[REDACTED]": "[REDACTED]"}); diff != "" {
+		t.Fatal(diff)
+	}
+	if !testjson.Equal(shared, json.RawMessage(original)) {
 		t.Fatal("payload was modified")
 	}
 	if !strings.HasPrefix(single.Text(), "{\"items\":[{\"[REDACTED]\":\"[REDACTED]\",\"name\":\"例子") {
@@ -87,8 +98,8 @@ func TestLargeResponseEncodesOnceAndKeepsRedaction(t *testing.T) {
 // test_json_response.py::test_non_native_encoder_values_and_scalars_keep_wire_behavior
 // (the Python-only types cannot exist in the jsonx model).
 func TestScalarsKeepWireBehavior(t *testing.T) {
-	for _, payload := range []any{nil, "private-secret", []any{}, jsonx.NewObject(),
-		jsonx.Obj("values", []any{nil, true, false, 0, -3, jsonx.Float(1.5)})} {
+	for _, payload := range []any{nil, "private-secret", []any{}, map[string]any{},
+		map[string]any{"values": []any{nil, true, false, 0, -3, 1.5}}} {
 		srv := jsonServer(t, func() any { return payload }, nil)
 		single, ordinary := srv.Get("/static/single"), srv.Get("/static/ordinary")
 		if string(single.Body) != string(ordinary.Body) {
@@ -108,7 +119,7 @@ func TestScalarsKeepWireBehavior(t *testing.T) {
 // test_json_response.py::test_deep_json_keeps_global_depth_redaction
 func TestDeepJSONKeepsGlobalDepthRedaction(t *testing.T) {
 	build := func() any {
-		var payload any = jsonx.Obj("value", "private-secret")
+		var payload any = map[string]any{"value": "private-secret"}
 		for i := 0; i < 150; i++ {
 			payload = []any{payload}
 		}
@@ -128,8 +139,8 @@ func TestDeepJSONKeepsGlobalDepthRedaction(t *testing.T) {
 // (Flask's default provider sorts keys; Go has only that mode).
 func TestRedactedKeyCollisionsPreserveEncoderOrder(t *testing.T) {
 	build := func() any {
-		return jsonx.Obj("private-secret-z", 1, "private-secret-a", 2, "[REDACTED]", 3,
-			"nested", []any{jsonx.Obj("agent-secret-z", 4, "agent-secret-a", 5)})
+		return map[string]any{"private-secret-z": 1, "private-secret-a": 2, "[REDACTED]": 3,
+			"nested": []any{map[string]any{"agent-secret-z": 4, "agent-secret-a": 5}}}
 	}
 	srv := jsonServer(t, build, nil)
 	single := srv.Get("/static/single").Text()
@@ -144,30 +155,30 @@ func TestRedactedKeyCollisionsPreserveEncoderOrder(t *testing.T) {
 
 // test_json_response.py::test_body_changed_after_encoding_is_sanitized_again
 func TestBodyChangedAfterEncodingIsSanitizedAgain(t *testing.T) {
-	srv := jsonServer(t, func() any { return jsonx.Obj("value", "safe") }, func(app *httpx.App) {
+	srv := jsonServer(t, func() any { return map[string]any{"value": "safe"} }, func(app *httpx.App) {
 		app.AfterRequest(func(c *httpx.Ctx, r *httpx.Response) {
 			if c.Path() == "/static/single" {
 				r.SetBody([]byte(`{"value": "agent-secret"}`))
 			}
 		})
 	})
-	srv.Get("/static/single").WantJSON(jsonx.Obj("value", "[REDACTED]"))
+	wantJSON(t, srv.Get("/static/single"), map[string]any{"value": "[REDACTED]"})
 }
 
 // test_json_response.py::test_rotated_credentials_in_same_request_do_not_skip_redaction
 func TestRotatedCredentialsInSameRequestDoNotSkipRedaction(t *testing.T) {
 	var srv *httpxtest.Server
-	srv = jsonServer(t, func() any { return jsonx.Obj("value", "new-private-secret") }, func(app *httpx.App) {
+	srv = jsonServer(t, func() any { return map[string]any{"value": "new-private-secret"} }, func(app *httpx.App) {
 		app.AfterRequest(func(c *httpx.Ctx, r *httpx.Response) {
 			setSecrets(t, srv, []string{"private-secret", "new-private-secret"}, "agent-secret")
 		})
 	})
-	srv.Get("/static/single").WantJSON(jsonx.Obj("value", "[REDACTED]"))
+	wantJSON(t, srv.Get("/static/single"), map[string]any{"value": "[REDACTED]"})
 }
 
 // test_json_response.py::test_client_marker_cannot_disable_redaction
 func TestClientMarkerCannotDisableRedaction(t *testing.T) {
-	srv := jsonServer(t, func() any { return jsonx.Obj("_configflow_sanitized_json", true, "value", "agent-secret") }, nil)
+	srv := jsonServer(t, func() any { return map[string]any{"_configflow_sanitized_json": true, "value": "agent-secret"} }, nil)
 	res := srv.Get("/static/ordinary", httpxtest.Header("X-ConfigFlow-Sanitized", "true"))
 	if res.Object().GetString("value") != "[REDACTED]" {
 		t.Fatal(res.Text())
@@ -203,24 +214,24 @@ func TestRuleFetchProxyWhitelistKeepsTheProxyForItsEndpoint(t *testing.T) {
 	route := func(endpoint string) func(*httpx.Router) {
 		return func(r *httpx.Router) {
 			r.GET("/static/"+endpoint, endpoint, func(c *httpx.Ctx) (*httpx.Response, error) {
-				return httpx.JSON(jsonx.Obj("rule_fetch_proxy", proxy, "other", proxy)), nil
+				return httpx.JSON(map[string]any{"rule_fetch_proxy": proxy, "other": proxy}), nil
 			})
 		}
 	}
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(route("settings.handle_rule_fetch_proxy"), route("test.other"))})
 	setSecrets(t, srv, []string{"private-secret"}, "agent-secret")
-	srv.Get("/static/settings.handle_rule_fetch_proxy").WantJSON(jsonx.Obj("rule_fetch_proxy", proxy, "other", "[REDACTED]"))
-	srv.Get("/static/test.other").WantJSON(jsonx.Obj("other", "[REDACTED]"))
+	wantJSON(t, srv.Get("/static/settings.handle_rule_fetch_proxy"), map[string]any{"rule_fetch_proxy": proxy, "other": "[REDACTED]"})
+	wantJSON(t, srv.Get("/static/test.other"), map[string]any{"other": "[REDACTED]"})
 }
 
 func routerServer(t *testing.T, auth bool) *httpxtest.Server {
 	ok := func(name string) httpx.HandlerFunc {
 		return func(c *httpx.Ctx) (*httpx.Response, error) {
-			params := jsonx.NewObject()
+			params := map[string]string{}
 			for key, value := range c.Params() {
-				params.Set(key, value)
+				params[key] = value
 			}
-			return httpx.JSON(jsonx.Obj("route", name, "params", params, "method", c.Method())), nil
+			return httpx.JSON(map[string]any{"route": name, "params": params, "method": c.Method()}), nil
 		}
 	}
 	return httpxtest.New(t, httpxtest.Options{Auth: auth, Register: httpxtest.Routes(func(r *httpx.Router) {
@@ -232,7 +243,7 @@ func routerServer(t *testing.T, auth bool) *httpxtest.Server {
 		r.GET("/api/profiles/<profile_id>/stuff", "profiles.stuff", ok("stuff"))
 		r.GET("/api/scoped", "scoped.view", ok("scoped"))
 		r.GET("/api/conflict", "scoped.conflict", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return nil, repo.NewInUse("in use", []any{jsonx.Obj("kind", "x")})
+			return nil, repo.NewInUse("in use", []any{map[string]any{"kind": "x"}})
 		})
 		r.GET("/api/panic", "scoped.panic", func(c *httpx.Ctx) (*httpx.Response, error) { panic("boom") })
 		r.GET("/api/none", "scoped.none", func(c *httpx.Ctx) (*httpx.Response, error) { return nil, nil })
@@ -242,10 +253,10 @@ func routerServer(t *testing.T, auth bool) *httpxtest.Server {
 
 func TestRoutingPrefersStaticSegmentsAndMatchesPaths(t *testing.T) {
 	srv := routerServer(t, false)
-	srv.Get("/api/agents/register").WantJSON(jsonx.Obj("route", "static", "params", jsonx.NewObject(), "method", "GET"))
-	srv.Get("/api/agents/a1").WantJSON(jsonx.Obj("route", "item", "params", jsonx.Obj("agent_id", "a1"), "method", "GET"))
-	srv.Post("/api/agents/a1/mihomo/proxies/GLOBAL/delay").WantJSON(jsonx.Obj("route", "panel",
-		"params", jsonx.Obj("agent_id", "a1", "resource", "proxies/GLOBAL/delay"), "method", "POST"))
+	wantJSON(t, srv.Get("/api/agents/register"), map[string]any{"route": "static", "params": map[string]any{}, "method": "GET"})
+	wantJSON(t, srv.Get("/api/agents/a1"), map[string]any{"route": "item", "params": map[string]any{"agent_id": "a1"}, "method": "GET"})
+	wantJSON(t, srv.Post("/api/agents/a1/mihomo/proxies/GLOBAL/delay"), map[string]any{"route": "panel",
+		"params": map[string]any{"agent_id": "a1", "resource": "proxies/GLOBAL/delay"}, "method": "POST"})
 	srv.Get("/api/agents/a%2Fb").WantStatus(404) // decoded slash: two segments, as in Werkzeug
 	srv.Get("/api/agents/").WantStatus(404)
 }
@@ -286,7 +297,7 @@ func TestUnauthenticatedUnknownPathsGet401BeforeRouting(t *testing.T) {
 func TestAuthenticationRunsBeforeProfileContext(t *testing.T) {
 	srv := routerServer(t, true)
 	res := srv.Get("/api/scoped", httpxtest.Header("X-ConfigFlow-Profile", "missing")).WantStatus(401)
-	res.WantJSON(jsonx.Obj("success", false, "message", "请先登录后再操作。"))
+	wantJSON(t, res, map[string]any{"success": false, "message": "请先登录后再操作。"})
 	srv.Get("/api/scoped", httpxtest.Query("profile", "bad id!")).WantStatus(401)
 	srv.Get("/api/scoped").WantStatus(401)
 	admin := srv.Login()
@@ -303,8 +314,8 @@ func TestAuthenticationRunsBeforeProfileContext(t *testing.T) {
 
 func TestErrorHandlersAndInternalErrors(t *testing.T) {
 	srv := routerServer(t, false)
-	srv.Get("/api/conflict").WantStatus(409).WantJSON(jsonx.Obj("success", false, "message", "in use",
-		"usages", []any{jsonx.Obj("kind", "x")}))
+	wantJSON(t, srv.Get("/api/conflict").WantStatus(409), map[string]any{"success": false, "message": "in use",
+		"usages": []any{map[string]any{"kind": "x"}}})
 	for _, path := range []string{"/api/panic", "/api/none", "/api/fail"} {
 		res := srv.Get(path).WantStatus(500)
 		if res.Object().GetBool("success") || res.Object().GetString("message") != httpx.DescInternal {
@@ -367,11 +378,11 @@ func TestJSONRequestParsing(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.POST("/static/echo", "test.echo", func(c *httpx.Ctx) (*httpx.Response, error) {
 			got, gotErr = c.JSON()
-			return httpx.JSON(jsonx.Obj("silent", c.JSONSilent())), nil
+			return httpx.JSON(map[string]any{"silent": c.JSONSilent()}), nil
 		})
 	})})
 	srv.Post("/static/echo", httpxtest.Body([]byte("\xef\xbb\xbf{\"a\": 1}"), "application/json"))
-	if gotErr != nil || !jsonx.Equal(got, jsonx.Obj("a", 1)) {
+	if gotErr != nil || !testjson.Equal(got, map[string]any{"a": 1}) {
 		t.Fatalf("BOM: %v %v", got, gotErr)
 	}
 	srv.Post("/static/echo", httpxtest.Body([]byte(`{"a": 1}`), "application/merge-patch+json"))
@@ -389,7 +400,7 @@ func TestJSONRequestParsing(t *testing.T) {
 	}
 	utf16 := []byte{0xff, 0xfe, '{', 0, '}', 0}
 	srv.Post("/static/echo", httpxtest.Body(utf16, "application/json"))
-	if gotErr != nil || !jsonx.Equal(got, jsonx.NewObject()) {
+	if gotErr != nil || !testjson.Equal(got, map[string]any{}) {
 		t.Fatalf("utf-16: %v %v", got, gotErr)
 	}
 }
