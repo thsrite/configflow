@@ -135,9 +135,13 @@ func readCustom(ctx context.Context, id, engine string) (map[string]any, error) 
 	if err = json.Unmarshal(raw, &fields); err != nil {
 		return nil, err
 	}
+	// Profiles may omit an engine section (loon is not required on import);
+	// the handlers' setdefault reads such a profile as empty settings.
 	var settings map[string]json.RawMessage
-	if err = json.Unmarshal(fields[engine], &settings); err != nil {
-		return nil, err
+	if section, present := fields[engine]; present {
+		if err = json.Unmarshal(section, &settings); err != nil {
+			return nil, err
+		}
 	}
 	out := map[string]any{"config": ""}
 	if raw, ok := settings["custom_config"]; ok {

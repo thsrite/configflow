@@ -4,6 +4,7 @@
 package profiles
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -135,9 +136,11 @@ func Register(r *httpx.Router) {
 			if err != nil {
 				return nil, err
 			}
+			// A non-list or non-string agent_ids is passed as no IDs: RebindProfiles
+			// validates source, target and "same profile" first, as Python does.
 			var ids []string
 			if len(body["agent_ids"]) == 0 || body["agent_ids"][0] != '[' || json.Unmarshal(body["agent_ids"], &ids) != nil {
-				return nil, repo.NewValidationError(msgReviewedIDs)
+				ids = nil
 			}
 			return manager.RebindProfiles(ctx, c.Param("profile_id"), target, ids)
 		})
@@ -216,7 +219,10 @@ func reply(out any, err error, status int) (*httpx.Response, error) {
 func objectBody(c *httpx.Ctx, fallback bool) (map[string]json.RawMessage, error) {
 	var raw json.RawMessage
 	valid := c.BindSilent(&raw)
-	if !valid && fallback && c.IsJSON() {
+	// Malformed or non-finite JSON is a 400 (N8-11 W5 ruling). DELETE reads only
+	// an optional new_default: an empty body sent with a JSON Content-Type keeps
+	// Flask's silent {} fallback, as generic clients send that header everywhere.
+	if !valid && fallback && c.IsJSON() && !(c.Method() == "DELETE" && emptyBody(c)) {
 		if err := c.Bind(&raw); err != nil {
 			return nil, err
 		}
@@ -243,6 +249,10 @@ func objectBody(c *httpx.Ctx, fallback bool) (map[string]json.RawMessage, error)
 		return nil, &httpx.HTTPError{Code: status, Description: msgObject}
 	}
 	return out, nil
+}
+func emptyBody(c *httpx.Ctx) bool {
+	data, err := c.Data()
+	return err == nil && len(bytes.TrimSpace(data)) == 0
 }
 func emptyInput(raw json.RawMessage) bool {
 	switch string(raw) {

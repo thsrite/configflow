@@ -2383,6 +2383,7 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 
 - 协调者 2026-11-20 裁定：新建、克隆、导入客户端配置的 `description` 只接受字符串；省略或 null 仍为空说明。数字、布尔值、数组和对象返回 400「配置名称和说明必须是字符串，名称不能为空」。Python 原来把非字符串转换成 Python 文本后存储；Go 不仿真该文本。三个入口分别用真实 Flask 差分固定 Python 201 / Go 400，确认 Go 无写入；正常文本和 metadata PUT 仍严格对齐。
 - 同日裁定：profiles 的 create/PUT/clone 在 JSON Content-Type 下收到非法 JSON 或 NaN/Infinity，统一用 `httpx.Bind` 的原生 400；保留有效 null/false/0/空数组的原空值替代。新差分固定各入口原状态和 Go 完整错误体、拒绝后存储不变。不接纳非标准 JSON 数字。
+  （W5 复核 M2 补登）`DELETE /api/profiles/<id>` 同样适用：非法 JSON 与 NaN 返回 400 且不删除（Flask 分别为静默按 {} 删除、500）；但 JSON Content-Type 下的**空请求体**仍按 Flask 静默回退为 {} 并正常删除。见 `TestReviewN811W5DeleteProfileBody`。
 - 路由器发布确认的非标准 NaN/Infinity 也在读取确认 JSON 时由 Bind 拒绝为 400，避免把无效 JSON 当作空 fingerprint 进入业务分支；缺失确认体和合法但无 fingerprint 的输入仍沿原业务分支。真实 Flask 差分固定 Python 500 / Go 400、两侧存储不变。
 - settings 的文本裁剪改用 Go `strings.TrimSpace`，不再模拟 Python 额外认作空白的 U+001C–U+001F；普通空格、Unicode 空白和前端输入不受影响，属于既有 native 字符分类裁定。
 - settings 的错型文本仍返回原 500，内部诊断改为 `setting must be a string`，不再构造 Python AttributeError 文本；中文消息和所有状态/持久化结果不变。差分仅对这项明确的非中文内部文本分别断言双方完整 envelope，不放宽其他错误。
