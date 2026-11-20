@@ -6,6 +6,7 @@ package monitor
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -178,22 +179,26 @@ func TestCacheStatusMappingAndPythonErrors(t *testing.T) {
 }
 
 func TestValidRequestTagsEnforcesBoundsAndUniqueness(t *testing.T) {
-	many := make([]string, 65)
-	for i := range many {
-		many[i] = "tag"
+	atLimit := make([]string, CacheMaxTags)
+	for i := range atLimit {
+		atLimit[i] = fmt.Sprintf("tag-%d", i)
 	}
+	overLimit := append(append([]string(nil), atLimit...), fmt.Sprintf("tag-%d", CacheMaxTags))
 	for _, tc := range []struct {
+		name string
 		tags []string
 		ok   bool
 	}{
-		{[]string{"a", "b"}, true},
-		{[]string{"a", "a"}, false},
-		{[]string{}, false},
-		{many, false},
-		{[]string{"_bad"}, false},
+		{"two-valid", []string{"a", "b"}, true},
+		{"at-limit-unique", atLimit, true},
+		{"over-limit-unique", overLimit, false},
+		{"duplicate", []string{"a", "a"}, false},
+		{"empty", []string{}, false},
+		{"nil", nil, false},
+		{"bad-prefix", []string{"_bad"}, false},
 	} {
 		if got := validTags(tc.tags, true); got != tc.ok {
-			t.Fatal(tc, got)
+			t.Fatalf("%s: got %v want %v", tc.name, got, tc.ok)
 		}
 	}
 }

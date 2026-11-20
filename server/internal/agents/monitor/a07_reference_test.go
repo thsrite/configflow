@@ -139,11 +139,11 @@ func nonLatin1Token(c map[string]any) bool {
 	return false
 }
 
-func compareCall(t *testing.T, label string, c map[string]any, result any, err error, client *replyClient) {
+func compareCall(t *testing.T, label string, c map[string]any, result any, err error, client *replyClient) bool {
 	t.Helper()
 	if nonLatin1Token(c) {
 		wantMonitorError(t, err, "AGENT_UNREACHABLE", 502)
-		return
+		return false
 	}
 	// N8-11: machine query numbers are ASCII. Keep the frozen Python rows as
 	// evidence and assert the approved refusal before comparing other rows.
@@ -152,7 +152,7 @@ func compareCall(t *testing.T, label string, c map[string]any, result any, err e
 		if len(client.calls) != 0 {
 			t.Fatal("invalid numeric query reached device")
 		}
-		return
+		return false
 	}
 	got := outcomeOf(result, err)
 	gotVal, perr := testjson.Parse(mustMarshal(t, got))
@@ -163,12 +163,16 @@ func compareCall(t *testing.T, label string, c map[string]any, result any, err e
 		if diff := diffRefVal(t, seenOf(client), normalizeSeen(t, asStr(c["seen"]))); diff != "" {
 			t.Fatalf("native refusal request changed: %s", diff)
 		}
-		return
+		return false
 	}
 	// N8-11: CPython's 4300-digit int_max_str_digits cap is retired; native
 	// CallPanel preserves valid 4301-digit RFC 8259 integer literals intact.
 	if reply := asList(c["reply"]); len(reply) == 2 && asInt64(reply[0]) == 200 {
 		if decoded, dErr := base64.StdEncoding.DecodeString(asStr(reply[1])); dErr == nil && string(decoded) == `{"n": `+strings.Repeat("1", 4301)+`}` {
+			origWant := parseJSONMap(t, []byte(asStr(c["outcome"])))
+			if asStr(origWant["error"]) != "INVALID_RESPONSE" || asInt64(origWant["status"]) != 502 {
+				t.Fatalf("%s: 4301-digit row original expectation drifted: %s", label, asStr(c["outcome"]))
+			}
 			want := `{"ok":{"success":true,"data":{"n":` + strings.Repeat("1", 4301) + `}}}`
 			if diff := diffRefJSON(t, got, want); diff != "" {
 				t.Errorf("%s native 4301-digit reply: %s", label, diff)
@@ -176,7 +180,7 @@ func compareCall(t *testing.T, label string, c map[string]any, result any, err e
 			if diff := diffRefVal(t, seenOf(client), normalizeSeen(t, asStr(c["seen"]))); diff != "" {
 				t.Errorf("%s seen: %s", label, diff)
 			}
-			return
+			return true
 		}
 	}
 	wantMap := parseJSONMap(t, []byte(asStr(c["outcome"])))
@@ -190,6 +194,7 @@ func compareCall(t *testing.T, label string, c map[string]any, result any, err e
 	if diff := diffRefVal(t, seenOf(client), normalizeSeen(t, asStr(c["seen"]))); diff != "" {
 		t.Errorf("%s seen: %s", label, diff)
 	}
+	return false
 }
 
 func pairsOf(list []any) [][2]string {
@@ -232,7 +237,7 @@ func callCacheCorpus(ctx context.Context, m Registry, id, method string, value a
 		}
 		var ok bool
 		tags, ok = stringSliceOf(value)
-		if !ok || !validTags(tags, true) {
+		if !ok {
 			return nil, CacheFail("INVALID_REQUEST", 400)
 		}
 	}
@@ -260,6 +265,7 @@ func callRuleUpdateCorpus(ctx context.Context, m Registry, id, method string, va
 
 func TestReferencePanelCalls(t *testing.T) {
 	ref := loadA07(t, "panel")
+	matched4301 := 0
 	for i, item := range asList(ref["panel"]) {
 		c := asMap(item)
 		client := caseClient(c)
@@ -269,7 +275,12 @@ func TestReferencePanelCalls(t *testing.T) {
 			body = mustMarshal(t, c["body"])
 		}
 		result, err := CallPanel(ctx, m, id, asStr(c["resource"]), asStr(c["method"]), pairsOf(asList(c["args"])), body, "")
-		compareCall(t, fmt.Sprintf("i=%d resource=%v args=%v", i, c["resource"], c["args"]), c, result, err, client)
+		if compareCall(t, fmt.Sprintf("i=%d resource=%v args=%v", i, c["resource"], c["args"]), c, result, err, client) {
+			matched4301++
+		}
+	}
+	if matched4301 != 1 {
+		t.Fatalf("expected 1 native 4301-digit panel row, matched %d", matched4301)
 	}
 }
 

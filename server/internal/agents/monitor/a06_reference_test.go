@@ -317,6 +317,7 @@ func TestReferenceAgentAnswers(t *testing.T) {
 		"id": "oxi", "host": "127.0.0.1", "port": 8082, "token": "tok",
 		"service_type": "oxidns", "version": "1.8.14-go",
 	})
+	matched4301 := 0
 	for _, c := range cases(ref, "responses") {
 		body := decodeHex(asStr(c["body"]))
 		status := asInt64(c["status"])
@@ -339,6 +340,11 @@ func TestReferenceAgentAnswers(t *testing.T) {
 		// N8-11: CPython's 4300-digit int_max_str_digits cap is retired; Go's
 		// native JSON decoder accepts valid 4301-digit RFC 8259 integer literals.
 		if status == 200 && string(body) == `{"x": `+strings.Repeat("1", 4301)+`}` {
+			origWant := parseJSONMap(t, []byte(asStr(c["result"])))
+			if asStr(origWant["error"]) != "INVALID_RESPONSE" || asInt64(origWant["status"]) != 502 {
+				t.Fatalf("4301-digit row original expectation drifted: %s", asStr(c["result"]))
+			}
+			matched4301++
 			if diff := diffRefJSON(t, result, `{"data":{"x":`+strings.Repeat("1", 4301)+`}}`); diff != "" {
 				t.Errorf("native 4301-digit response: %s", diff)
 			}
@@ -347,6 +353,9 @@ func TestReferenceAgentAnswers(t *testing.T) {
 		if diff := diffRefJSON(t, result, asStr(c["result"])); diff != "" {
 			t.Errorf("%d %q: %s", status, body, diff)
 		}
+	}
+	if matched4301 != 1 {
+		t.Fatalf("expected 1 native 4301-digit response row, matched %d", matched4301)
 	}
 }
 

@@ -617,6 +617,10 @@ func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) 
 			return recordedOutcome(nil, err)
 		}
 		opts, _ := args[2].(map[string]any)
+		beforeCfg, err := json.Marshal(cfg)
+		if err != nil {
+			w.t.Fatal(err)
+		}
 		beforeMain := yamlx.CopyGraph(mainNode)
 		var prepared map[string]*Artifact
 		if p := mapObj(opts, "prepared"); p != nil {
@@ -649,8 +653,12 @@ func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) 
 			bundleOpts.Progress = func(message string, force bool) { progress = append(progress, []any{message, force}) }
 		}
 		bundle, err := PrepareBundle(ctx, cfg, mainNode, bundleOpts)
-		if !yamlx.Equal(beforeMain, mainNode) {
-			w.t.Errorf("bundle modified its main graph (%s)", mapStr(w.row, "test"))
+		afterCfg, marshalErr := json.Marshal(cfg)
+		if marshalErr != nil {
+			w.t.Fatal(marshalErr)
+		}
+		if !testjson.Equal(json.RawMessage(beforeCfg), json.RawMessage(afterCfg)) || !yamlx.Equal(beforeMain, mainNode) {
+			w.t.Errorf("bundle modified its arguments (%s)", mapStr(w.row, "test"))
 		}
 		if wantProgress := mapList(w.row, "progress"); !testjson.Equal(wantProgress, progress) && !(len(wantProgress) == 0 && len(progress) == 0) {
 			w.t.Errorf("progress (%s)%s", mapStr(w.row, "test"), diffText(wantProgress, progress))
