@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"configflow/internal/httpx"
@@ -31,7 +32,10 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 		}
 	}
 	settings := &config.SystemConfig
-	configToken := settings.ConfigToken
+	configToken, malformedToken, err := storedConfigToken(settings)
+	if err != nil {
+		return ValidateResult{}, err
+	}
 	tokens := []string{settings.RuleProxyToken}
 	// Imported credentials may contain malformed neighbours. Decode each retired
 	// capability independently so a valid internal token never becomes public.
@@ -64,7 +68,7 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 	if internalMatch != 0 {
 		return ValidateResult{Message: invalidOrMissingMsg}, nil
 	}
-	if !IsAuthEnabled() && configToken == "" && !model.IssueUnder(model.Issues(settings), "config_token") {
+	if !IsAuthEnabled() && configToken == "" && !malformedToken {
 		return ValidateResult{Valid: true}, nil
 	}
 	if hasBearer {
@@ -80,4 +84,23 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 		return ValidateResult{Valid: true}, nil
 	}
 	return ValidateResult{Message: invalidOrMissingMsg}, nil
+}
+
+// storedConfigToken returns the configured public credential. Only a stored
+// JSON string (or null/absence, meaning unconfigured) is a credential; any
+// other stored type, including numbers that the model's scalar rules would
+// read as text, is a damaged credential that fails closed.
+func storedConfigToken(settings *model.SystemConfig) (token string, malformed bool, err error) {
+	raw, present, err := settings.MemberJSON("config_token")
+	if err != nil {
+		return "", false, err
+	}
+	raw = bytes.TrimSpace(raw)
+	switch {
+	case !present || len(raw) == 0 || string(raw) == "null":
+		return "", false, nil
+	case raw[0] != '"':
+		return "", true, nil
+	}
+	return settings.ConfigToken, false, nil
 }

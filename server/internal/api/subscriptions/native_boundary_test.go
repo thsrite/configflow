@@ -3,6 +3,7 @@ package subscriptions_test
 import (
 	"context"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -66,23 +67,39 @@ func TestNativeRetiredCapabilityRemainsPrivateWithMalformedSibling(t *testing.T)
 }
 
 func TestNativeMalformedConfigTokenFailsClosed(t *testing.T) {
-	for _, raw := range []string{"false", "0", "[]", "{}"} {
-		t.Run(raw, func(t *testing.T) {
+	const route = "/api/profiles/default/subscriptions/missing/proxies"
+	tests := []struct {
+		name, stored, token string
+		want                int
+	}{
+		// Non-string stored credentials fail closed, even when the request
+		// carries their text form and login is disabled.
+		{"false", "false", "false", 401},
+		{"true", "true", "true", 401},
+		{"zero", "0", "0", 401},
+		{"number", "12345", "12345", 401},
+		{"list", "[]", "[]", 401},
+		{"object", "{}", "{}", 401},
+		{"zero without token", "0", "", 401},
+		// Controls: a stored string is a credential, an empty one is unconfigured.
+		{"string", `"12345"`, "12345", 404},
+		{"string wrong token", `"12345"`, "54321", 401},
+		{"empty string", `""`, "", 404},
+		{"null", "null", "", 404},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
 			if err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
-				return system.SystemConfig.SetJSON("config_token", []byte(raw))
+				return system.SystemConfig.SetJSON("config_token", []byte(tc.stored))
 			}); err != nil {
 				t.Fatal(err)
 			}
-			srv.Get("/api/profiles/default/subscriptions/missing/proxies").WantStatus(401)
-			// An empty string is an unconfigured credential. With login disabled,
-			// authentication admits it and the missing resource returns 404.
-			if err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
-				return system.SystemConfig.SetJSON("config_token", []byte(`""`))
-			}); err != nil {
-				t.Fatal(err)
+			path := route
+			if tc.token != "" {
+				path += "?token=" + url.QueryEscape(tc.token)
 			}
-			srv.Get("/api/profiles/default/subscriptions/missing/proxies").WantStatus(404)
+			srv.Get(path).WantStatus(tc.want)
 		})
 	}
 }
