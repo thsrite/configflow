@@ -45,8 +45,8 @@ func rowKeyNames(keys map[modelRowKey]bool) []string {
 
 // TestSectionWritesStoredRoundTrip is the N8-5b storage differential: the
 // typed section writes and the legacy writers built on them change exactly
-// the rows they own, keep unknown members, stored nulls, wrong-typed bytes
-// and number text of untouched data, refuse without writing, and the real
+// the rows they own (after the first Go write has stored every row in Go's
+// encoding), refuse without writing, and the real
 // Python ProfileRepository opens every Go-written database with the same
 // document (CONFIGFLOW_PY/CONFIGFLOW_REPO).
 func TestSectionWritesStoredRoundTrip(t *testing.T) {
@@ -145,6 +145,22 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 		t.Fatalf("fixture: %v %v", written, err)
 	}
 	audit(t, "audit")
+	// The first Go write stores every row in Go's encoding and drops the rows
+	// no record declares (O18 T1a); the values of declared members stay.
+	_, fixtureRows := storedRows(t, r)
+	noError(t, r.Update(bg, func(context.Context, *model.Document) error { return nil }))
+	_, normalized := storedRows(t, r)
+	for _, key := range []modelRowKey{shared("n85_shared"), profile(p, "n85_profile")} {
+		if _, kept := normalized[key]; kept {
+			t.Fatalf("undeclared row %v kept", key)
+		}
+	}
+	for key, value := range fixtureRows {
+		if after, ok := normalized[key]; ok {
+			wantJSONEqual(t, json.RawMessage(after), json.RawMessage(value))
+		}
+	}
+	audit(t, "audit")
 
 	step(t, "typed UpdateProfile", []modelRowKey{profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at")}, func() error {
 		_, err := r.UpdateProfile(bg, p, func(_ context.Context, profile *model.Profile) error {
@@ -227,15 +243,8 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 	})
 
 	_, rows := storedRows(t, r)
-	for key, want := range map[modelRowKey]string{
-		shared("n85_shared"):           ` {"keep":"é"} `,
-		profile(p, "n85_profile"):      `{"nested":[null,true]}`,
-		profile("copy", "n85_profile"): `{"nested":[null,true]}`,
-	} {
-		if rows[key] != want {
-			t.Fatalf("%v = %s", key, rows[key])
-		}
-	}
+	// Records not yet migrated (nodes, subscriptions, groups, Mihomo settings)
+	// keep their unknown members.
 	for key, part := range map[modelRowKey]string{
 		shared("nodes"):            `"remark":7,"n85":{"z":1.0}`,
 		shared("subscriptions"):    `"description":"\u00e9","n85":null`,

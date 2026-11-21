@@ -237,7 +237,7 @@ func o10t2Cases() []string {
 			add(name+"/fields-set", o10t2Outcome(nil, fields.Set("x", deep)))
 			_ = fields.Set("y", json.RawMessage(`[`+string(deep)+`]`))
 			add(name+"/fields-direct", o10t2Outcome(fields.MarshalJSON()))
-			profile := Profile{Fields: fields}
+			profile := Profile{}
 			config := Config{Profile: &profile, Agents: []Agent{agent}, HasAgents: dup}
 			add(name+"/config-direct", o10t2Outcome(config.MarshalJSON()))
 			lines := TextLines{Lines: []string{string(deep)}}

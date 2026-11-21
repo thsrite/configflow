@@ -23,8 +23,8 @@ func BenchmarkBatch9SyncSources(b *testing.B) {
 				}
 				ctx := repo.WithRepository(context.Background(), db)
 				if err := db.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {
-					data, _ := json.Marshal(strings.Repeat("x", padding))
-					return s.Fields.Set("unrelated", data)
+					s.Subscriptions = append(s.Subscriptions, model.Subscription{ID: "padding", Name: strings.Repeat("x", padding)})
+					return nil
 				}); err != nil {
 					b.Fatal(err)
 				}

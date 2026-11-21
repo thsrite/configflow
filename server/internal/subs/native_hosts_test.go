@@ -157,7 +157,7 @@ func hostsGenerationFixture(n, unrelated int) (*yamlx.Node, *model.Config, *Host
 	config := &model.Config{Profile: &model.Profile{}, Subscriptions: []model.Subscription{{ID: "source", Name: "Air"}}}
 	if unrelated > 0 {
 		data, _ := json.Marshal(strings.Repeat("x", unrelated))
-		_ = config.Profile.Fields.Set("unrelated", data)
+		_ = config.Profile.SetJSON("description", data)
 	}
 	main := yamlx.Map(yamlx.Str("proxy-providers"), yamlx.Map(yamlx.Str("Air"), yamlx.Map(yamlx.Str("url"), yamlx.Str("https://panel.example/api/subscriptions/source/proxies"))))
 	index := &HostIndex{Entries: yamlx.Map(), Nodes: map[string][]string{}, Total: n}

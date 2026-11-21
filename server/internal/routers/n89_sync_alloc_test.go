@@ -47,8 +47,8 @@ func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment b
 	// A legacy GetShared/JSON bridge in each cache miss would copy this unrelated
 	// shared extension once per selected rule. The typed View path must not.
 	err := db.UpdateShared(context.Background(), func(_ context.Context, s *model.Shared) error {
-		raw, _ := json.Marshal(strings.Repeat("x", padding))
-		return s.Fields.Set("unrelated", raw)
+		s.Subscriptions = append(s.Subscriptions, model.Subscription{ID: "padding", Name: strings.Repeat("x", padding)})
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)

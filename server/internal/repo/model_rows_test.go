@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"slices"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,46 +21,44 @@ func modelRowFixture(t *testing.T) *store.Document {
 	data := must(os.ReadFile("../store/testdata/raw_rows.json"))(t)
 	var doc store.Document
 	noError(t, json.Unmarshal(data, &doc))
+	// The store fixture also has rows no model record declares; the model
+	// drops those (TestModelRowsUnknownMembersAndNullSwitch), so they are left
+	// out here.
+	declared := func(fields []store.Field, names ...string) []store.Field {
+		var kept []store.Field
+		for _, field := range fields {
+			if !slices.Contains(names, field.Name) {
+				kept = append(kept, field)
+			}
+		}
+		return kept
+	}
+	doc.Root = declared(doc.Root, "future")
+	doc.Order = slices.DeleteFunc(doc.Order, func(name string) bool { return name == "future" })
+	doc.System.Fields = declared(doc.System.Fields, "future")
+	doc.Shared.Fields = declared(doc.Shared.Fields, "unknown")
+	for i := range doc.Profiles {
+		doc.Profiles[i].Fields = declared(doc.Profiles[i].Fields, "future")
+	}
 	// These bytes are outside JSON value tokens, but inside stored row values.
-	doc.Root[1].Value = append(append([]byte(" \n"), doc.Root[1].Value...), []byte("\t ")...)
+	doc.Root[0].Value = append(append([]byte(" \n"), doc.Root[0].Value...), []byte("\t ")...)
 	doc.Profiles[0].Fields[1].Value = json.RawMessage(" \n\"Example\"\t")
 	return &doc
 }
 
+// modelRowKey names one stored row.
+type modelRowKey struct{ scope, owner, name string }
+
+// assertModelRows requires that got and want hold the same values for every
+// declared member (O18 T1a: rows are compared by value; Go writes its own
+// encoding, member order and whitespace, so bytes are not compared).
 func assertModelRows(t *testing.T, got, want *store.Document) {
 	t.Helper()
-	if strings.Join(got.Order, "\x00") != strings.Join(want.Order, "\x00") {
-		t.Fatal("root order differs")
-	}
-	fields := func(a, b []store.Field) {
-		t.Helper()
-		if len(a) != len(b) {
-			t.Fatal("field count differs")
-		}
-		for i := range a {
-			if a[i].Name != b[i].Name || !bytes.Equal(a[i].Value, b[i].Value) {
-				t.Fatal("row name/order/bytes differ")
-			}
-		}
-	}
-	fields(got.Root, want.Root)
-	for _, pair := range [][2]*store.Section{{got.System, want.System}, {got.Shared, want.Shared}} {
-		if (pair[0] == nil) != (pair[1] == nil) {
-			t.Fatal("section presence differs")
-		}
-		if pair[0] != nil {
-			fields(pair[0].Fields, pair[1].Fields)
-		}
-	}
-	if len(got.Profiles) != len(want.Profiles) {
-		t.Fatal("profile count differs")
-	}
-	for i := range got.Profiles {
-		if got.Profiles[i].ID != want.Profiles[i].ID {
-			t.Fatal("profile order differs")
-		}
-		fields(got.Profiles[i].Fields, want.Profiles[i].Fields)
-	}
+	a, _, err := decodeModelRows(got)
+	noError(t, err)
+	b, _, err := decodeModelRows(want)
+	noError(t, err)
+	wantJSONEqual(t, must(model.Marshal(a))(t), must(model.Marshal(b))(t))
 }
 
 func setStoreField(fields *[]store.Field, name string, value json.RawMessage) {
@@ -80,7 +79,7 @@ func cloneStoreDoc(t *testing.T, doc *store.Document) *store.Document {
 	return &out
 }
 
-func TestModelRowsByteRoundTripAndTypedEdits(t *testing.T) {
+func TestModelRowsRoundTripAndTypedEdits(t *testing.T) {
 	original := modelRowFixture(t)
 	document, issues, err := decodeModelRows(original)
 	noError(t, err)
@@ -91,35 +90,84 @@ func TestModelRowsByteRoundTripAndTypedEdits(t *testing.T) {
 	assertModelRows(t, encoded, original)
 	target := store.New(filepath.Join(t.TempDir(), store.Filename), LockTimeout)
 	base := must(target.Create(original, nil))(t)
+	// The first Go write rewrites rows in Go's encoding, with the same values.
+	base, _, err = target.Commit(base, encoded, nil)
+	noError(t, err)
+	assertModelRows(t, base.Document, original)
+	document, _, err = decodeModelRows(base.Document)
+	noError(t, err)
+	encoded = must(encodeModelRows(document, base.Document))(t)
 	before := must(target.Fingerprint())(t)
-	next, changed, err := target.Commit(base, encoded, nil)
-	if err != nil || changed {
+	if _, changed, err := target.Commit(base, encoded, nil); err != nil || changed {
 		t.Fatalf("no-op commit: %v %v", changed, err)
 	}
 	if must(target.Fingerprint())(t) != before {
 		t.Fatal("no-op wrote rows")
 	}
 	document.Profiles[0].Name = "Renamed"
-	encoded = must(encodeModelRows(document, original))(t)
-	oldName := original.Profiles[0].Fields[1].Value
-	original.Profiles[0].Fields[1].Value = json.RawMessage(`"Renamed"`)
-	assertModelRows(t, encoded, original)
-	original.Profiles[0].Fields[1].Value = oldName
-	next, changed, err = target.Commit(base, encoded, nil)
-	if err != nil || !changed || next.Head.Generation != base.Head.Generation+1 {
-		t.Fatalf("typed rename: %v %v", changed, err)
+	encoded = must(encodeModelRows(document, base.Document))(t)
+	changed := changedModelRowKeys(base.Document, encoded)
+	if len(changed) != 1 || !changed[modelRowKey{"profile", base.Document.Profiles[0].ID, "name"}] {
+		t.Fatalf("typed rename changed %v", changed)
+	}
+	next, written, err := target.Commit(base, encoded, nil)
+	if err != nil || !written || next.Head.Generation != base.Head.Generation+1 {
+		t.Fatalf("typed rename: %v %v", written, err)
 	}
 	if document.Profiles[0].Name != "Renamed" {
 		t.Fatal("encode mutated caller")
 	}
 }
 
+// Rows a record does not declare are dropped on load with an IssueUnknown and
+// deleted by the next write; null *bool members read as false.
+func TestModelRowsUnknownMembersAndNullSwitch(t *testing.T) {
+	original := modelRowFixture(t)
+	original.Root = append(original.Root, store.Field{Name: "n18_root", Value: json.RawMessage(`{"x":1}`)})
+	original.Order = append(original.Order, "n18_root")
+	original.Shared.Fields = append(original.Shared.Fields, store.Field{Name: "n18_shared", Value: json.RawMessage(`1`)})
+	original.Profiles[0].Fields = append(original.Profiles[0].Fields, store.Field{Name: "n18_profile", Value: json.RawMessage(`"secret-value"`)})
+	document, issues, err := decodeModelRows(original)
+	noError(t, err)
+	want := []model.FieldIssue{{Path: "n18_root", Kind: model.IssueUnknown}, {Path: "shared.n18_shared", Kind: model.IssueUnknown}, {Path: "profiles[0].n18_profile", Kind: model.IssueUnknown}}
+	if fmt.Sprint(issues) != fmt.Sprint(want) {
+		t.Fatalf("issues=%v want %v", issues, want)
+	}
+	encoded := must(encodeModelRows(document, original))(t)
+	changed := changedModelRowKeys(original, encoded)
+	for _, key := range []modelRowKey{{"root", "", "n18_root"}, {"shared", "", "n18_shared"}, {"profile", original.Profiles[0].ID, "n18_profile"}} {
+		if !changed[key] {
+			t.Fatalf("unknown row %v kept", key)
+		}
+	}
+	if slices.Contains(encoded.Order, "n18_root") {
+		t.Fatal("unknown root member kept in order")
+	}
+
+	type switches struct {
+		Enabled *bool  `json:"enabled"`
+		Other   *bool  `json:"other"`
+		Count   int64  `json:"count"`
+		Name    string `json:"name"`
+	}
+	var value switches
+	found, err := model.DecodeStored([]byte(`{"enabled":null,"count":"60","name":7,"unknown":1}`), &value, "x")
+	noError(t, err)
+	if value.Enabled == nil || *value.Enabled || value.Other != nil || value.Count != 60 || value.Name != "7" {
+		t.Fatalf("decoded %+v", value)
+	}
+	if fmt.Sprint(found) != fmt.Sprint([]model.FieldIssue{{Path: "x.unknown", Kind: model.IssueUnknown}}) {
+		t.Fatalf("issues %v", found)
+	}
+}
+
 // N8-5 split stored-data load validation from write validation (design n7-n8,
-// N8-5 prerequisite note). A stored value that fails the business rules no
-// longer prevents loading: the typed model reads it under R5, the stored bytes
-// survive reads and unrelated rows, the write that repairs it passes, and other
-// writes are refused with the validation message until then.
-func TestModelR5StoredValuesLoadWriteValidationRepairs(t *testing.T) {
+// N8-5 prerequisite note); O18 T1a reads wrong-typed stored values leniently.
+// A stored value never prevents loading: Python's number notations read as
+// their value, anything else as the zero value with a load warning. The first
+// write stores the typed value; a value that still fails the business rules
+// refuses unrelated writes with the validation message until it is repaired.
+func TestModelStoredValuesLoadLenientlyAndWriteTyped(t *testing.T) {
 	noopProfile := func(context.Context, *model.Profile) error { return nil }
 	noopShared := func(context.Context, *model.Shared) error { return nil }
 	fixed := "fixed"
@@ -130,23 +178,25 @@ func TestModelR5StoredValuesLoadWriteValidationRepairs(t *testing.T) {
 		typedName         string
 		// unrelated is the error of a write elsewhere ("" = it commits).
 		unrelated string
-		repair    func(r *Repository) error
+		// stored is the stored value after the unrelated write.
+		stored string
+		repair func(r *Repository) error
 		// repaired is the stored value after the repairing write.
 		repaired string
 	}{
-		{"string revision", "_revision", `"60"`, false, 60, "默认配置", "配置修订号无效",
+		{"string revision", "_revision", `"60"`, false, 60, "默认配置", "", `60`,
 			func(r *Repository) error { _, err := r.UpdateProfile(bg, "default", noopProfile); return err }, `61`},
-		{"integral float revision", "_revision", `60.0`, false, 60, "默认配置", "",
+		{"integral float revision", "_revision", `60.0`, false, 60, "默认配置", "", `60`,
 			func(r *Repository) error { _, err := r.UpdateProfile(bg, "default", noopProfile); return err }, `61`},
-		// 60.5 is not an integer (R8): it reads as 0, so the repair stores 1.
-		{"fractional revision", "_revision", `60.5`, true, 0, "默认配置", "配置修订号无效",
+		// 60.5 is not an integer: it reads as 0, so the repair stores 1.
+		{"fractional revision", "_revision", `60.5`, true, 0, "默认配置", "", `0`,
 			func(r *Repository) error { _, err := r.UpdateProfile(bg, "default", noopProfile); return err }, `1`},
-		{"numeric name", "name", `7`, false, 0, "7", "配置名称不能为空",
+		{"numeric name", "name", `7`, false, 0, "7", "", `"7"`,
 			func(r *Repository) error {
 				_, err := r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &fixed})
 				return err
 			}, `"fixed"`},
-		{"empty name", "name", `""`, false, 0, "", "配置名称不能为空",
+		{"empty name", "name", `""`, false, 0, "", "配置名称不能为空", `""`,
 			func(r *Repository) error {
 				_, err := r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &fixed})
 				return err
@@ -179,13 +229,11 @@ func TestModelR5StoredValuesLoadWriteValidationRepairs(t *testing.T) {
 			if err != nil || !changed {
 				t.Fatalf("fixture commit: %v %v", changed, err)
 			}
-			typed, issues, err := decodeModelRows(entry.Document)
+			_, issues, err := decodeModelRows(entry.Document)
 			noError(t, err)
 			if (len(issues) > 0) != tt.wantIssues {
 				t.Fatalf("issues=%v", issues)
 			}
-			encoded := must(encodeModelRows(typed, entry.Document))(t)
-			assertModelRows(t, encoded, entry.Document)
 
 			reopened := must(Open(r.DataDir(), Options{}))(t)
 			reopened.SetViewGuard(func() { t.Error("View callback modified the snapshot") })
@@ -202,8 +250,8 @@ func TestModelR5StoredValuesLoadWriteValidationRepairs(t *testing.T) {
 			} else if err == nil || !strings.Contains(err.Error(), tt.unrelated) {
 				t.Fatalf("unrelated write: %v", err)
 			}
-			if got := storedValue(t, reopened, tt.field); got != tt.text {
-				t.Fatalf("stored value changed by an unrelated write: %s", got)
+			if got := storedValue(t, reopened, tt.field); got != tt.stored {
+				t.Fatalf("stored value after an unrelated write: %s", got)
 			}
 			noError(t, tt.repair(reopened))
 			if got := storedValue(t, reopened, tt.field); got != tt.repaired {
@@ -223,9 +271,32 @@ func TestModelIssuesLoggedOncePerRevision(t *testing.T) {
 		r := newRepo(t)
 		r.cacheMaxBytes = 0
 		r.dropCache()
+		base := must(r.store.Load())(t)
+		rows := cloneStoreDoc(t, base.Document)
+		for i := range rows.Profiles {
+			setStoreField(&rows.Profiles[i].Fields, "description", json.RawMessage(`{"password":"`+secret+`"}`))
+			setStoreField(&rows.Profiles[i].Fields, "future_member", json.RawMessage(`"`+secret+`"`))
+		}
+		_, _, err := r.store.Commit(base, rows, nil)
+		noError(t, err)
+		r.dropCache()
+		for range 5 {
+			_, err := r.Profile(bg, "default")
+			noError(t, err)
+		}
+		// Repair the description so the next head has no type issue.
 		noError(t, r.Update(bg, func(_ context.Context, document *model.Document) error {
-			return profileByKey(document, "default").SetJSON("description", json.RawMessage(`{"password":"`+secret+`"}`))
+			profileByKey(document, "default").Description = "repaired"
+			return nil
 		}))
+		base = must(r.store.Load())(t)
+		rows = cloneStoreDoc(t, base.Document)
+		for i := range rows.Profiles {
+			setStoreField(&rows.Profiles[i].Fields, "description", json.RawMessage(`{"password":"`+secret+`"}`))
+		}
+		_, _, err = r.store.Commit(base, rows, nil)
+		noError(t, err)
+		r.dropCache()
 		for range 5 {
 			_, err := r.Profile(bg, "default")
 			noError(t, err)
@@ -249,6 +320,11 @@ func TestModelIssuesLoggedOncePerRevision(t *testing.T) {
 	marker := fmt.Sprintf(msgModelFieldIssue, "profiles[0].description", model.IssueType)
 	if bytes.Count(output, []byte(marker)) != 2 {
 		t.Fatalf("expected one issue per head:\n%s", output)
+	}
+	// Unknown members are summarized once per head by path pattern and count.
+	unknown := fmt.Sprintf(msgModelUnknownMember, "profiles[].future_member", 1)
+	if bytes.Count(output, []byte(unknown)) != 1 {
+		t.Fatalf("expected one unknown-member summary:\n%s", output)
 	}
 	if bytes.Contains(output, []byte(secret)) || bytes.Contains(output, []byte("password")) {
 		t.Fatal("stored value leaked into diagnostic")

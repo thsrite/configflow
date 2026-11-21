@@ -199,7 +199,7 @@ func DecodeDocument(data []byte) (*Document, []FieldIssue, error) {
 	if err := validJSON(data); err != nil {
 		return nil, nil, err
 	}
-	dec := jsontext.NewDecoder(bytes.NewReader(data))
+	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowInvalidUTF8(true))
 	if dec.PeekKind() != '{' {
 		return nil, nil, fmt.Errorf("%w: document must be an object", ErrType)
 	}
@@ -254,7 +254,7 @@ func DecodeDocument(data []byte) (*Document, []FieldIssue, error) {
 }
 
 func decodeProfiles(data []byte) ([]*Profile, error) {
-	dec := jsontext.NewDecoder(bytes.NewReader(data))
+	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowInvalidUTF8(true))
 	if dec.PeekKind() != '{' {
 		return nil, &MemberTypeError{Record: "document", Member: "profiles", Value: bytes.Clone(data), Err: ErrType}
 	}
@@ -267,6 +267,7 @@ func decodeProfiles(data []byte) ([]*Profile, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrJSON, err)
 		}
+		key := token.String()
 		value, err := dec.ReadValue()
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrJSON, err)
@@ -275,7 +276,7 @@ func decodeProfiles(data []byte) ([]*Profile, error) {
 		if err := decodeSection("profile", value, (*profileWire)(profile)); err != nil {
 			return nil, err
 		}
-		profile.SetStoredKey(token.String())
+		profile.SetStoredKey(key)
 		profiles = append(profiles, profile)
 	}
 	return profiles, nil
@@ -284,7 +285,7 @@ func decodeProfiles(data []byte) ([]*Profile, error) {
 // decodeSection strictly decodes one section object member by member, so a
 // type mismatch names the member it belongs to.
 func decodeSection(record string, data []byte, target any) error {
-	dec := jsontext.NewDecoder(bytes.NewReader(data))
+	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowInvalidUTF8(true))
 	if dec.PeekKind() != '{' {
 		return &MemberTypeError{Record: "document", Member: record, Value: bytes.Clone(data), Err: ErrType}
 	}
@@ -297,18 +298,19 @@ func decodeSection(record string, data []byte, target any) error {
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrJSON, err)
 		}
+		name := token.String()
 		value, err := dec.ReadValue()
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrJSON, err)
 		}
-		field, known := fields[token.String()]
+		field, known := fields[name]
 		if !known {
 			continue
 		}
 		destination := plainFieldValue(target, field)
 		decoded := newValue(field.typ)
 		if err := jsonv2.Unmarshal(value, decoded.Interface(), strictOptions); err != nil {
-			return memberError(record, token.String(), value, err)
+			return memberError(record, name, value, err)
 		}
 		destination.Set(decoded.Elem())
 	}

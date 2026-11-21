@@ -84,7 +84,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 			return payload, nil
 		},
 		RedactOxidnsJSON:   func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
-		RedactRoutersJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`"routers-redacted"`), nil },
+		RedactRoutersJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"items":[],"redacted":true}`), nil },
 		RedactEasytierJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`"easytier-redacted"`), nil },
 	}})
 	result := parseJSONObj(t, must(r.ExportAllJSON(bg, true))(t))
@@ -113,7 +113,8 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 	mihomo := profile.GetObject("mihomo")
 	wantJSONEqual(t, mihomo, json.RawMessage(`{"custom_config": "", "easytier": "easytier-redacted"}`))
 	wantJSONEqual(t, profile.Value("oxidns"), "oxidns-redacted")
-	wantJSONEqual(t, profile.Value("routers"), "routers-redacted")
+	// Routers is a typed record: the hook returns an object (O18 T1a).
+	wantJSONEqual(t, profile.Value("routers"), json.RawMessage(`{"items":[],"redacted":true}`))
 	wantJSONEqual(t, profile.GetObject("loon").Value("custom_config"), "")
 	// The stored document is untouched.
 	if must(r.System(bg))(t).SystemConfig.RuleProxyToken == "" {

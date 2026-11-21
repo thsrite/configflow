@@ -3,10 +3,11 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	"configflow/internal/yamlx"
@@ -227,31 +228,54 @@ func TestReviewN83NumberListsRejectStrings(t *testing.T) {
 // form copies the record (unknown members included) and assigns a new ID; the
 // copy must become its own section rather than inheriting the source's key.
 func TestReviewN83CopiedProfileUsesItsNewID(t *testing.T) {
-	source := `{"profiles":{"p":{"id":"p","name":"A","future":{"k":1}},"q":{"id":7,"name":"B"}}}`
+	source := `{"schema_version":5,"system":{},"shared":{},"profiles":{"p":{"id":"p","name":"A"},"q":{"id":"other","name":"B"}}}`
 	document, issues, err := DecodeDocument([]byte(source))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || document.Profiles[1].ID != "7" {
+	if len(issues) != 0 || document.Profiles[1].ID != "other" || document.Profiles[1].Key() != "q" {
 		t.Fatalf("issues=%v", issues)
 	}
 	clone := *document.Profiles[0]
 	clone.ID = "copy"
 	clone.Name = "A copy"
 	document.Profiles = append(document.Profiles, &clone)
-	encoded, err := Marshal(document)
-	if err != nil {
-		t.Fatal(err)
+	owners := func() []string {
+		t.Helper()
+		encoded, err := Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var root struct {
+			Profiles jsontext.Value `json:"profiles"`
+		}
+		if err := jsonv2.Unmarshal(encoded, &root); err != nil {
+			t.Fatal(err)
+		}
+		dec := jsontext.NewDecoder(bytes.NewReader(root.Profiles))
+		var keys []string
+		if _, err := dec.ReadToken(); err != nil {
+			t.Fatal(err)
+		}
+		for dec.PeekKind() != '}' {
+			key, err := dec.ReadToken()
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys = append(keys, key.String())
+			if err := dec.SkipValue(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return keys
 	}
-	want := `{"profiles":{"p":{"id":"p","name":"A","future":{"k":1}},"q":{"id":7,"name":"B"},"copy":{"id":"copy","name":"A copy","future":{"k":1}}}}`
-	if string(encoded) != want {
-		t.Fatalf("got %s", encoded)
+	if got := owners(); !slices.Equal(got, []string{"p", "q", "copy"}) {
+		t.Fatalf("owners %v", got)
 	}
-	// An untouched malformed id still keeps its original section key.
+	// An untouched mismatching id keeps its stored section key.
 	document.Profiles[1].Name = "B2"
-	encoded, err = Marshal(document)
-	if err != nil || !strings.Contains(string(encoded), `"q":{"id":7,"name":"B2"}`) {
-		t.Fatalf("owner of malformed id lost: %v %s", err, encoded)
+	if got := owners(); !slices.Equal(got, []string{"p", "q", "copy"}) {
+		t.Fatalf("owner of mismatching id lost: %v", got)
 	}
 	// Two records claiming the same section are rejected, never merged.
 	twin := *document.Profiles[0]

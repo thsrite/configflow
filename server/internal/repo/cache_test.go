@@ -85,7 +85,7 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 	// shallow copies, so top-level changes stay with the caller.
 	borrowedShared := must(r.Shared(bg))(t)
 	borrowedShared.Nodes = nil
-	noError(t, borrowedShared.Fields.Set("surprise", json.RawMessage(`[]`)))
+	borrowedShared.Revision = 99
 	borrowedProfile := must(r.Profile(bg, "default"))(t)
 	borrowedProfile.Name = "Changed"
 	borrowedProfile.ProxyGroups = append(borrowedProfile.ProxyGroups, model.ProxyGroup{ID: "extra"})

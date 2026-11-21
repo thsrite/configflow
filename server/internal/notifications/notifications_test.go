@@ -543,7 +543,7 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 		t.Fatal("empty")
 	}
 	_, err := f.srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, cfg *model.Profile) error {
-		cfg.Fields.Set("custom_notification_test", json.RawMessage(`"changed"`))
+		_ = cfg.Loon.Fields.Set("custom_notification_test", json.RawMessage(`"changed"`))
 		return nil
 	})
 	if err != nil {

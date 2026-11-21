@@ -19,7 +19,7 @@ func agentViewRepo(t *testing.T) *Repository {
 	r.dropCache()
 	if err := r.Update(t.Context(), func(_ context.Context, document *model.Document) error {
 		document.System.Agents = []model.Agent{{ID: "device", Name: "committed", ProfileID: "default", Host: "192.0.2.40", Port: 8080, Token: "synthetic-token", ServiceType: "mihomo"}}
-		return document.Profiles[0].Fields.Set("unrelated", []byte(`"`+strings.Repeat("x", 4096)+`"`))
+		return document.Profiles[0].SetJSON("description", []byte(`"`+strings.Repeat("x", 4096)+`"`))
 	}); err != nil {
 		t.Fatal(err)
 	}

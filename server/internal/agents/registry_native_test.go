@@ -113,7 +113,7 @@ func newHeartbeatBenchmark(b *testing.B, unused int) (*Manager, context.Context)
 	err = r.Update(ctx, func(_ context.Context, d *model.Document) error {
 		d.System.Agents = []model.Agent{{ID: "device", ProfileID: profile, Version: "1.0.0", ConfigVersion: "0", LastHeartbeat: "2000-01-01T00:00:00"}}
 		if unused != 0 {
-			return d.Profiles[0].Fields.Set("unused", json.RawMessage(`"`+strings.Repeat("x", unused)+`"`))
+			return d.Profiles[0].SetJSON("description", json.RawMessage(`"`+strings.Repeat("x", unused)+`"`))
 		}
 		return nil
 	})

@@ -135,7 +135,7 @@ func ClientProfileReplayIssue(config *JObj, target string) string {
 		return "profile record"
 	}
 	for _, key := range []string{"rules", "rule_sets"} {
-		if raw, present := profile.Fields.Get(key); present {
+		if raw, present := profile.LegacyRuleList(key); present {
 			var items []model.RuleConfig
 			if json.Unmarshal(raw, &items) != nil {
 				return "profile." + key + " array"

@@ -78,7 +78,7 @@ func BenchmarkTypedMosDNSUnrelatedFields(b *testing.B) {
 	for _, size := range []int{0, 1 << 20} {
 		b.Run(string(rune('0'+size/(1<<20))), func(b *testing.B) {
 			config := &model.Config{Profile: &model.Profile{}}
-			if err := config.Profile.Fields.Set("unused", json.RawMessage(`"`+strings.Repeat("x", size)+`"`)); err != nil {
+			if err := config.Profile.SetJSON("description", json.RawMessage(`"`+strings.Repeat("x", size)+`"`)); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()

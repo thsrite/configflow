@@ -87,7 +87,11 @@ func n85Files(t *testing.T, directory string) map[string]string {
 	return files
 }
 
-func TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites(t *testing.T) {
+// O18 T1a: wrong-typed stored settings read as their zero value (with a load
+// warning), so the document passes validation and startup token maintenance
+// stores the repaired settings once; the next start writes nothing and no
+// other file changes.
+func TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup(t *testing.T) {
 	tests := []struct {
 		name, settings string
 		invalidName    bool
@@ -95,7 +99,7 @@ func TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites(t *testing.T) {
 		{"null settings", `null`, false},
 		{"numeric settings", `7`, false},
 		{"string settings", `"malformed"`, false},
-		{"invalid name and missing token", `{}`, true},
+		{"numeric name and missing token", `{}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,25 +123,24 @@ func TestReviewN85InvalidStoredValuesDoNotTriggerStartupWrites(t *testing.T) {
 			rows, files := xcFingerprint(t, r.store), n85Files(t, r.DataDir())
 			opened, err := Open(r.DataDir(), Options{})
 			noError(t, err)
-			// Compare all DB tables and the complete non-database file tree.
-			if !reflect.DeepEqual(xcFingerprint(t, r.store), rows) || !reflect.DeepEqual(n85Files(t, r.DataDir()), files) {
-				t.Fatal("loading changed the database or files")
-			}
-			_, err = opened.System(bg)
-			noError(t, err)
-			noError(t, opened.Update(bg, func(_ context.Context, d *model.Document) error {
-				if tt.invalidName {
-					profileByKey(d, DefaultProfileID).Name = "repaired"
-				} else {
-					d.System.SystemConfig.RuleProxyToken = "synthetic-rule-token"
-				}
-				return nil
-			}))
 			if reflect.DeepEqual(xcFingerprint(t, r.store), rows) {
-				t.Fatal("repair did not commit")
+				t.Fatal("startup did not store the repaired settings")
 			}
 			if !reflect.DeepEqual(n85Files(t, r.DataDir()), files) {
-				t.Fatal("repair changed unrelated files")
+				t.Fatal("startup changed unrelated files")
+			}
+			settings := must(opened.SystemConfig(bg))(t)
+			if settings.RuleProxyToken == "" || settings.ConfigToken == "" {
+				t.Fatal("tokens not generated")
+			}
+			if tt.invalidName && must(opened.Profile(bg, DefaultProfileID))(t).Name != "7" {
+				t.Fatal("numeric name not read as text")
+			}
+			rows = xcFingerprint(t, r.store)
+			_, err = Open(r.DataDir(), Options{})
+			noError(t, err)
+			if !reflect.DeepEqual(xcFingerprint(t, r.store), rows) {
+				t.Fatal("second start wrote")
 			}
 		})
 	}

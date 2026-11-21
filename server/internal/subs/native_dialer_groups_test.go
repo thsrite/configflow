@@ -20,7 +20,7 @@ func groupGenerationFixture(n, unrelated int) (*yamlx.Node, *model.Config, map[s
 	caches := map[string]*SubscriptionCache{}
 	if unrelated > 0 {
 		raw, _ := json.Marshal(strings.Repeat("x", unrelated))
-		_ = config.Profile.Fields.Set("unrelated", raw)
+		_ = config.Profile.SetJSON("description", raw)
 	}
 	for i := 0; i < n; i++ {
 		id, name := strconv.Itoa(i), fmt.Sprintf("Air %d", i)

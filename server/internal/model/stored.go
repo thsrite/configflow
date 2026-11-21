@@ -263,6 +263,7 @@ func DecodeStored(data []byte, v any, prefix string) ([]FieldIssue, error) {
 		}
 		return nil, err
 	}
+	clipSlices(target.Elem())
 	issues := sink.issues
 	if hasPlain(sink.root) {
 		unknown, err := unknownMembers(data, sink.root, prefix)
@@ -446,6 +447,7 @@ func decodeMember(record string, rec any, member string, data []byte) error {
 	if err := jsonv2.Unmarshal(data, target.Interface(), strictOptions); err != nil {
 		return &MemberTypeError{Record: record, Member: member, Value: bytes.Clone(data), Err: err}
 	}
+	clipSlices(target.Elem())
 	value.FieldByIndex(field.index).Set(target.Elem())
 	return nil
 }
@@ -550,3 +552,41 @@ func EncodeMembers(rec any) ([]StoredMember, error) {
 	}
 	return members, nil
 }
+
+// clipSlices gives every slice decoded by encoding/json/v2 (lists of plain
+// records and their members) a capacity equal to its length. Snapshots lend
+// shallow copies of records (repo, "Borrowed reads"): an append by one
+// borrower must reallocate instead of writing a backing array that another
+// borrower reads. Records that decode themselves already allocate exactly.
+func clipSlices(value reflect.Value) {
+	switch value.Kind() {
+	case reflect.Pointer:
+		if !value.IsNil() {
+			clipSlices(value.Elem())
+		}
+	case reflect.Slice:
+		if value.Cap() > value.Len() && value.CanSet() {
+			exact := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+			reflect.Copy(exact, value)
+			value.Set(exact)
+		}
+		if hasPlain(value.Type().Elem()) {
+			for i := 0; i < value.Len(); i++ {
+				clipSlices(value.Index(i))
+			}
+		}
+	case reflect.Struct:
+		if isPlain(value.Type()) {
+			for i := 0; i < value.NumField(); i++ {
+				if value.Type().Field(i).IsExported() {
+					clipSlices(value.Field(i))
+				}
+			}
+		}
+	}
+}
+
+// ValidJSON reports whether data is one valid JSON value without duplicate
+// object member names at any depth (ErrJSON otherwise). Storage uses it for
+// rows no record declares, which are dropped but must not be corrupt.
+func ValidJSON(data []byte) error { return validJSON(data) }

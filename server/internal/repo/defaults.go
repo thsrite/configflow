@@ -120,9 +120,19 @@ func (r *Repository) profileDefaultsJSON() (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	var fields model.Fields
-	if err := fields.UnmarshalJSON(raw); err != nil {
+	var all, fields model.Fields
+	if err := all.UnmarshalJSON(raw); err != nil {
 		return nil, err
+	}
+	// Profile records always write their metadata members (O18 T1a); the
+	// defaults are settings only, so an empty id or name never overrides the
+	// metadata of the profile they are applied to.
+	for key, value := range all.All() {
+		if IsProfileField(key) {
+			if err := fields.Set(key, value); err != nil {
+				return nil, err
+			}
+		}
 	}
 	for _, key := range SharedFields {
 		if err := fields.Set(key, []byte(`[]`)); err != nil {
@@ -202,6 +212,16 @@ func configSettingsJSON(config *model.Config) (json.RawMessage, error) {
 		return nil, err
 	}
 	fields.Delete("profile_id")
+	// Profile records always write their metadata (O18 T1a); empty metadata
+	// is not a setting and must not replace the target profile's.
+	for _, key := range []string{"id", "name", "description", "created_at", "updated_at"} {
+		if value, present := fields.Get(key); present && string(value) == `""` {
+			fields.Delete(key)
+		}
+	}
+	if value, present := fields.Get("_revision"); present && string(value) == `0` {
+		fields.Delete("_revision")
+	}
 	if backup, present := fields.Get("backup"); present {
 		var settings model.Fields
 		if jsonKind(backup) == '{' && settings.UnmarshalJSON(backup) == nil && settings.Len() == 0 {

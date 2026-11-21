@@ -138,6 +138,22 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatal("initial model encode failed")
 		}
 		assertModelRows(t, rows, before)
+		// The first Go write stores the rows in Go's encoding with the same
+		// values (O18 T1a); after that a decode/encode round trip is a no-op.
+		if next, changed, err := target.Commit(entry, rows, nil); err != nil {
+			t.Fatal("normalizing commit failed")
+		} else if changed {
+			entry = next
+		}
+		assertModelRows(t, entry.Document, before)
+		typed, _, err = decodeModelRows(entry.Document)
+		if err != nil {
+			t.Fatal("model decode after normalizing failed")
+		}
+		rows, err = encodeModelRows(typed, entry.Document)
+		if err != nil {
+			t.Fatal("model encode after normalizing failed")
+		}
 		fingerprint, err := target.Fingerprint()
 		if err != nil {
 			t.Fatal("initial fingerprint failed")
@@ -195,7 +211,7 @@ func TestStoredRoundTrip(t *testing.T) {
 			}
 			for key := range changed {
 				if !permit[key] {
-					t.Fatalf("%s changed an unrelated row", label)
+					t.Fatalf("%s changed an unrelated row %v", label, key)
 				}
 			}
 			next, written, err := target.Commit(entry, rows, nil)
@@ -229,27 +245,12 @@ func TestStoredRoundTrip(t *testing.T) {
 		}
 		profileKey := func(name string) modelRowKey { return modelRowKey{"profile", owner, name} }
 		marker := json.RawMessage(` { "z":1.0,"a":"\u4f8b <>&","nested": { "future": true } } `)
-		commit("unknown root", []modelRowKey{{"root", "", "n8_unknown"}}, func(d *model.Document) {
-			if d.Root.Set("n8_unknown", marker) != nil {
-				t.Fatal("root unknown set failed")
-			}
-		})
 		commit("unknown system", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
 			fields := roundTripFields(t, must(model.Marshal(d.System.Backup))(t))
 			if fields.Set("n8_unknown", marker) != nil {
 				t.Fatal("backup unknown set failed")
 			}
 			d.System.Backup = roundTripDecode[model.Backup](t, fields)
-		})
-		commit("unknown shared", []modelRowKey{{"shared", "", "n8_unknown"}}, func(d *model.Document) {
-			if d.Shared.Fields.Set("n8_unknown", marker) != nil {
-				t.Fatal("shared unknown set failed")
-			}
-		})
-		commit("unknown profile", []modelRowKey{profileKey("n8_unknown")}, func(d *model.Document) {
-			if d.Profiles[0].Fields.Set("n8_unknown", marker) != nil {
-				t.Fatal("profile unknown set failed")
-			}
 		})
 		commit("profile rename", []modelRowKey{profileKey("name")}, func(d *model.Document) { d.Profiles[0].Name = "N8 round-trip profile" })
 		commit("group add", []modelRowKey{profileKey("proxy_groups")}, func(d *model.Document) {
@@ -351,8 +352,8 @@ func TestStoredRoundTrip(t *testing.T) {
 			records[len(records)-1], records[len(records)-2] = records[len(records)-2], records[len(records)-1]
 			d.Profiles[0].RuleConfigs = roundTripDecode[[]model.RuleConfig](t, records)
 		})
-		// R5 for each skeleton record type: wrong description type and bool revisions
-		// are retained; current legacy validation intentionally permits these cases.
+		// Wrong-typed stored members of each plain record read as zero values
+		// with an issue each.
 		commit("profile R5", []modelRowKey{profileKey("description")}, func(d *model.Document) { d.Profiles[0].Description = "will replace via raw fixture" })
 		// Inject raw wrong types through the store only, then exercise unrelated typed edits.
 		injected := cloneStoreDoc(t, entry.Document)
@@ -373,7 +374,9 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatal("R5 skeleton fallback failed")
 		}
 		assertModelRows(t, must(encodeModelRows(fallback, entry.Document))(t), entry.Document)
-		commit("R5 unrelated edit", []modelRowKey{profileKey("name")}, func(d *model.Document) { d.Profiles[0].Name = "N8 R5 retained" })
+		// The next write stores the typed (zero) values of the wrong-typed rows.
+		commit("R5 unrelated edit", []modelRowKey{profileKey("name"), profileKey("description"), {"system", "", "_revision"}, {"shared", "", "_revision"}},
+			func(d *model.Document) { d.Profiles[0].Name = "N8 R5 repaired" })
 		audit("audit-edit")
 		afterPython, err := target.Load()
 		if err != nil {
@@ -391,7 +394,7 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatal("model read after Python edit failed")
 		}
 		assertModelRows(t, must(encodeModelRows(reloaded, afterPython.Document))(t), afterPython.Document)
-		t.Logf("rows=%d profiles=%d: byte/no-op, typed edits, unknowns/R5 and Python↔Go passed", len(before.Root)+len(before.System.Fields)+len(before.Shared.Fields)+func() int {
+		t.Logf("rows=%d profiles=%d: value round trip/no-op, typed edits, lenient types and Python↔Go passed", len(before.Root)+len(before.System.Fields)+len(before.Shared.Fields)+func() int {
 			n := 0
 			for _, p := range before.Profiles {
 				n += len(p.Fields)

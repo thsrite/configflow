@@ -46,7 +46,6 @@ func TestN83ReviewCopiedProfileWritesOnlyNewRows(t *testing.T) {
 	noError(t, err)
 	clone := *document.Profiles[0]
 	clone.ID = "copy-of-" + document.Profiles[0].ID
-	noError(t, clone.Fields.Set("future_member", json.RawMessage(`{"kept":true}`)))
 	document.Profiles = append(document.Profiles, &clone)
 	encoded := must(encodeModelRows(document, original))(t)
 	if len(encoded.Profiles) != len(original.Profiles)+1 {

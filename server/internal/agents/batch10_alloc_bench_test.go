@@ -34,7 +34,7 @@ func BenchmarkBatch10Heartbeat(b *testing.B) {
 			}
 			err = r.Update(ctx, func(_ context.Context, d *model.Document) error {
 				d.System.Agents = []model.Agent{{ID: "device", ProfileID: profile, Version: "1.0.0", ConfigVersion: "0", LastHeartbeat: "2000-01-01T00:00:00"}}
-				return d.Profiles[0].Fields.Set("unused", json.RawMessage(`"`+strings.Repeat("x", size.n)+`"`))
+				return d.Profiles[0].SetJSON("description", json.RawMessage(`"`+strings.Repeat("x", size.n)+`"`))
 			})
 			if err != nil {
 				b.Fatal(err)

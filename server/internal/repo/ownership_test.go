@@ -105,13 +105,13 @@ func setOwnershipMarker(r *Repository, ctx context.Context, value string) error 
 		return err
 	}
 	return r.Update(ctx, func(_ context.Context, document *model.Document) error {
-		return document.Shared.Fields.Set("marker", raw)
+		return document.System.SystemConfig.Fields.Set("marker", raw)
 	})
 }
 
 func readOwnershipMarker(t *testing.T, r *Repository, ctx context.Context) string {
 	t.Helper()
-	raw, ok := must(r.Shared(ctx))(t).Fields.Get("marker")
+	raw, ok := must(r.SystemConfig(ctx))(t).Fields.Get("marker")
 	if !ok {
 		return ""
 	}

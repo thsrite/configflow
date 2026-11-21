@@ -3,7 +3,6 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -527,8 +526,17 @@ func (r *Repository) importOldProfile(document *model.Document, source importPro
 	if err := fields.UnmarshalJSON(profileRaw); err != nil {
 		return err
 	}
-	for _, key := range append(slices.Clone(ProfileFields), "created_at", "updated_at", "_revision") {
+	for _, key := range ProfileFields {
 		if raw, present := fields.Get(key); present {
+			if err := profile.SetJSON(key, raw); err != nil {
+				return err
+			}
+		}
+	}
+	// The decoded profile always has its metadata members; only metadata the
+	// source carries replaces the new record's.
+	for _, key := range []string{"created_at", "updated_at", "_revision"} {
+		if raw, present := source.fields.Get(key); present {
 			if err := profile.SetJSON(key, raw); err != nil {
 				return err
 			}

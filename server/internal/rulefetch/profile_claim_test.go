@@ -44,7 +44,7 @@ func TestStoredProfileLocalCacheOwnership(t *testing.T) {
 					if err != nil {
 						return err
 					}
-					return p.Fields.Set("rule_sets", data)
+					return p.SetJSON("rule_sets", data)
 				}
 				p.RuleConfigs = []model.RuleConfig{current}
 				return nil

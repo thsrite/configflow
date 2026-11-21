@@ -20,7 +20,7 @@ func aggregationDeliveryFixture(count, unrelated int) (model.Aggregation, *model
 		agg.Nodes = append(agg.Nodes, id)
 	}
 	if unrelated > 0 {
-		_ = config.Profile.Fields.Set("unrelated", []byte(`"`+strings.Repeat("x", unrelated)+`"`))
+		_ = config.Profile.SetJSON("description", []byte(`"`+strings.Repeat("x", unrelated)+`"`))
 	}
 	main := yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(), yamlx.Str("proxy-groups"), yamlx.Seq())
 	return agg, config, main

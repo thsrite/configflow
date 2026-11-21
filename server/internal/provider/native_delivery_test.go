@@ -33,7 +33,7 @@ func deliveryFixture(count, unrelated int) (*model.Config, *yamlx.Node, Delivery
 	main := yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(), yamlx.Str("proxy-groups"), yamlx.Seq(), yamlx.Str("proxy-providers"), definitions)
 	if unrelated > 0 {
 		value := []byte(`"` + strings.Repeat("x", unrelated) + `"`)
-		_ = config.Profile.Fields.Set("unrelated", value)
+		_ = config.Profile.SetJSON("description", value)
 		yamlx.Set(main, "unrelated", yamlx.Str(strings.Repeat("y", unrelated)))
 	}
 	return config, main, options

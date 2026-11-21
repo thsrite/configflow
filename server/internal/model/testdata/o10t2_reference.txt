@@ -901,7 +901,7 @@ depth/9995/false/go-map	err:model: invalid JSON
 depth/9995/false/map-direct	ok:162653e310beb6f38183e0f1
 depth/9995/false/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/9995/false/fields-direct	ok:2a5cf590f21b849896dd1214
-depth/9995/false/config-direct	ok:c2ab5e03d5759ff44cc58f50
+depth/9995/false/config-direct	ok:009bf3f1bc2aea686f98411a
 depth/9995/false/textlines	ok:792703bf8001775accbd6c74
 depth/9995/false/reversed-direct	err:model: invalid JSON: duplicate member
 depth/9995/false/reversed-list	err:model: invalid JSON: duplicate member
@@ -927,7 +927,7 @@ depth/9996/false/go-map	err:model: invalid JSON
 depth/9996/false/map-direct	ok:e4e0fe0f2f27344ccc2b6d55
 depth/9996/false/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/9996/false/fields-direct	ok:a4c5dad7127b19090c7bed60
-depth/9996/false/config-direct	ok:ee31b3d07fe7aeda5c95810c
+depth/9996/false/config-direct	ok:009bf3f1bc2aea686f98411a
 depth/9996/false/textlines	ok:e783acc5964f2172bd78595d
 depth/9996/false/reversed-direct	err:model: invalid JSON: duplicate member
 depth/9996/false/reversed-list	err:model: invalid JSON: duplicate member
@@ -953,7 +953,7 @@ depth/9997/false/go-map	err:model: invalid JSON
 depth/9997/false/map-direct	ok:44423d6927fe15e9d56da337
 depth/9997/false/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/9997/false/fields-direct	ok:a8d5f5339bfd94433f7ae8b7
-depth/9997/false/config-direct	ok:f840e6cdce6bf8870c33f8e3
+depth/9997/false/config-direct	ok:009bf3f1bc2aea686f98411a
 depth/9997/false/textlines	ok:7242ae08e94c8c2e129e8427
 depth/9997/false/reversed-direct	err:model: invalid JSON: duplicate member
 depth/9997/false/reversed-list	err:model: invalid JSON: duplicate member
@@ -979,7 +979,7 @@ depth/9998/false/go-map	err:model: invalid JSON
 depth/9998/false/map-direct	err:model: invalid JSON
 depth/9998/false/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/9998/false/fields-direct	ok:3eff9869352d1610d32b8cba
-depth/9998/false/config-direct	ok:95312927339a4e97de26d469
+depth/9998/false/config-direct	ok:009bf3f1bc2aea686f98411a
 depth/9998/false/textlines	ok:93b05c0974352d314e7d640b
 depth/9998/false/reversed-direct	err:model: invalid JSON: duplicate member
 depth/9998/false/reversed-list	err:model: invalid JSON: duplicate member
@@ -1005,7 +1005,7 @@ depth/9999/false/go-map	err:model: invalid JSON
 depth/9999/false/map-direct	err:model: invalid JSON
 depth/9999/false/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/9999/false/fields-direct	err:model: invalid JSON
-depth/9999/false/config-direct	err:model: invalid JSON
+depth/9999/false/config-direct	ok:009bf3f1bc2aea686f98411a
 depth/9999/false/textlines	ok:1c6239c50ab95c75544fe172
 depth/9999/false/reversed-direct	err:model: invalid JSON: duplicate member
 depth/9999/false/reversed-list	err:model: invalid JSON: duplicate member
@@ -1018,7 +1018,7 @@ depth/9999/true/go-map	err:model: invalid JSON: duplicate member
 depth/9999/true/map-direct	err:model: invalid JSON: duplicate member
 depth/9999/true/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/9999/true/fields-direct	err:model: invalid JSON
-depth/9999/true/config-direct	err:model: invalid JSON
+depth/9999/true/config-direct	err:model: invalid JSON: duplicate member
 depth/9999/true/textlines	ok:1c6239c50ab95c75544fe172
 depth/9999/true/reversed-direct	err:model: invalid JSON: duplicate member
 depth/9999/true/reversed-list	err:model: invalid JSON: duplicate member
@@ -1031,7 +1031,7 @@ depth/10000/false/go-map	err:model: invalid JSON
 depth/10000/false/map-direct	err:model: invalid JSON
 depth/10000/false/fields-set	ok:e3b0c44298fc1c149afbf4c8
 depth/10000/false/fields-direct	err:model: invalid JSON
-depth/10000/false/config-direct	err:model: invalid JSON
+depth/10000/false/config-direct	ok:009bf3f1bc2aea686f98411a
 depth/10000/false/textlines	ok:322ae4fbca6690483c6da749
 depth/10000/false/reversed-direct	err:model: invalid JSON: duplicate member
 depth/10000/false/reversed-list	err:model: invalid JSON: duplicate member
@@ -8848,402 +8848,402 @@ agent/399/2/valid	err:model: invalid JSON: duplicate member
 agent/399/2/object	err:model: invalid JSON: duplicate member
 agent/399/2/decode	err:model: invalid JSON: duplicate member[]
 document/0/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type,system.agents[0].ipv6_verifications[1]=type]
-document/0/0/encode	ok:05b536ee815da3e7b9fe0bbf
-document/0/0/encode-direct	ok:05b536ee815da3e7b9fe0bbf
-document/0/0/config	ok:6611a902670eeecfd3c6b9eb
-document/0/0/config-direct	ok:6611a902670eeecfd3c6b9eb
+document/0/0/encode	ok:c965908f002501c5c976f70d
+document/0/0/encode-direct	ok:c965908f002501c5c976f70d
+document/0/0/config	ok:e8f09fbbc4de3647b407c83f
+document/0/0/config-direct	ok:e8f09fbbc4de3647b407c83f
 document/0/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type,system.agents[0].ipv6_verifications[1]=type]
-document/0/1/encode	ok:a087fd5a43e9809f2a7da4e6
-document/0/1/encode-direct	ok:a087fd5a43e9809f2a7da4e6
-document/0/1/config	ok:1d6955b5b3824b467a6807d7
-document/0/1/config-direct	ok:1d6955b5b3824b467a6807d7
+document/0/1/encode	ok:18ec22292b33371c31255cee
+document/0/1/encode-direct	ok:18ec22292b33371c31255cee
+document/0/1/config	ok:99d97050c20bb76324009b9f
+document/0/1/config-direct	ok:99d97050c20bb76324009b9f
 document/1/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/1/0/encode	ok:8a181da8eff1a9cabb763255
-document/1/0/encode-direct	ok:8a181da8eff1a9cabb763255
-document/1/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/1/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/1/0/encode	ok:10fb01a487574662048a1a82
+document/1/0/encode-direct	ok:10fb01a487574662048a1a82
+document/1/0/config	ok:d9046a2396e80422118d0de1
+document/1/0/config-direct	ok:d9046a2396e80422118d0de1
 document/1/1/decode	err:model: invalid JSON[]
 document/2/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/2/0/encode	ok:c37911c854ce3d70114107fd
-document/2/0/encode-direct	ok:c37911c854ce3d70114107fd
-document/2/0/config	ok:38d9662bb9ec93200b179e84
-document/2/0/config-direct	ok:38d9662bb9ec93200b179e84
+document/2/0/encode	ok:b584b8d5b43dee024632bcd3
+document/2/0/encode-direct	ok:b584b8d5b43dee024632bcd3
+document/2/0/config	ok:cb5acc99801cd1169fb240a0
+document/2/0/config-direct	ok:cb5acc99801cd1169fb240a0
 document/2/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/2/1/encode	ok:587297df000239c42d2529bd
-document/2/1/encode-direct	ok:587297df000239c42d2529bd
-document/2/1/config	ok:d485e2ffaf26a28dcbb4b778
-document/2/1/config-direct	ok:d485e2ffaf26a28dcbb4b778
+document/2/1/encode	ok:200696111363778af0730f28
+document/2/1/encode-direct	ok:200696111363778af0730f28
+document/2/1/config	ok:51a927c2f4f6e5a9d1176dac
+document/2/1/config-direct	ok:51a927c2f4f6e5a9d1176dac
 document/3/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/3/0/encode	ok:f9de4ab45848c1e36fb22bc8
-document/3/0/encode-direct	ok:f9de4ab45848c1e36fb22bc8
-document/3/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/3/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/3/0/encode	ok:9a7f4ee7894068d37f5d5753
+document/3/0/encode-direct	ok:9a7f4ee7894068d37f5d5753
+document/3/0/config	ok:d9046a2396e80422118d0de1
+document/3/0/config-direct	ok:d9046a2396e80422118d0de1
 document/3/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/3/1/encode	ok:610ca9a13a317372f13f9cb7
-document/3/1/encode-direct	ok:610ca9a13a317372f13f9cb7
-document/3/1/config	ok:ba4693a8e6f9ba373e0fe677
-document/3/1/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/3/1/encode	ok:372bb1fdc9402a6034b067ce
+document/3/1/encode-direct	ok:372bb1fdc9402a6034b067ce
+document/3/1/config	ok:d9046a2396e80422118d0de1
+document/3/1/config-direct	ok:d9046a2396e80422118d0de1
 document/4/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type]
-document/4/0/encode	ok:e6ac0350a69ab4a7e1a24624
-document/4/0/encode-direct	ok:e6ac0350a69ab4a7e1a24624
-document/4/0/config	ok:8d1ea3957189b0b9b90f247f
-document/4/0/config-direct	ok:8d1ea3957189b0b9b90f247f
+document/4/0/encode	ok:23e75defe2d70a9b5742e229
+document/4/0/encode-direct	ok:23e75defe2d70a9b5742e229
+document/4/0/config	ok:9e3e2f48a4138c8da6adfb23
+document/4/0/config-direct	ok:9e3e2f48a4138c8da6adfb23
 document/4/1/decode	err:model: invalid JSON: duplicate member[]
 document/5/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/5/0/encode	ok:bd6667e4cdcdd1698784ab67
-document/5/0/encode-direct	ok:bd6667e4cdcdd1698784ab67
-document/5/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/5/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/5/0/encode	ok:0067d0e50d98abc5921d870c
+document/5/0/encode-direct	ok:0067d0e50d98abc5921d870c
+document/5/0/config	ok:d9046a2396e80422118d0de1
+document/5/0/config-direct	ok:d9046a2396e80422118d0de1
 document/5/1/decode	err:model: invalid JSON: duplicate member[]
 document/6/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/6/0/encode	ok:2dafef87151c3412fb1f1335
-document/6/0/encode-direct	ok:2dafef87151c3412fb1f1335
-document/6/0/config	ok:9d729ea4e5b4c0b5e08b5cba
-document/6/0/config-direct	ok:9d729ea4e5b4c0b5e08b5cba
+document/6/0/encode	ok:ee9bd088e59b83fb6a44ceb2
+document/6/0/encode-direct	ok:ee9bd088e59b83fb6a44ceb2
+document/6/0/config	ok:b1b1395fa9c7f974efbfb228
+document/6/0/config-direct	ok:b1b1395fa9c7f974efbfb228
 document/6/1/decode	err:model: invalid JSON[]
 document/7/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/7/0/encode	ok:c2b28718b5f5e17565f6e635
-document/7/0/encode-direct	ok:c2b28718b5f5e17565f6e635
-document/7/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/7/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/7/0/encode	ok:ab99c53d38329b1102915293
+document/7/0/encode-direct	ok:ab99c53d38329b1102915293
+document/7/0/config	ok:d9046a2396e80422118d0de1
+document/7/0/config-direct	ok:d9046a2396e80422118d0de1
 document/7/1/decode	err:model: invalid JSON[]
 document/8/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/8/0/encode	ok:2eede899f0fa83049eea9fa2
-document/8/0/encode-direct	ok:2eede899f0fa83049eea9fa2
-document/8/0/config	ok:4110b4d338ffa0e6f1e62e1f
-document/8/0/config-direct	ok:4110b4d338ffa0e6f1e62e1f
+document/8/0/encode	ok:20e34243ebffbf7956d56898
+document/8/0/encode-direct	ok:20e34243ebffbf7956d56898
+document/8/0/config	ok:87f81852abdca5b1c4793e6e
+document/8/0/config-direct	ok:87f81852abdca5b1c4793e6e
 document/8/1/decode	err:model: invalid JSON[]
 document/9/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/9/0/encode	ok:0f835707bb24a15836e6cb70
-document/9/0/encode-direct	ok:0f835707bb24a15836e6cb70
-document/9/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/9/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/9/0/encode	ok:571c54b9b1dee73bc1e5a067
+document/9/0/encode-direct	ok:571c54b9b1dee73bc1e5a067
+document/9/0/config	ok:d9046a2396e80422118d0de1
+document/9/0/config-direct	ok:d9046a2396e80422118d0de1
 document/9/1/decode	err:model: invalid JSON[]
 document/10/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/10/0/encode	ok:b721cd1ef4c93b5839dc6137
-document/10/0/encode-direct	ok:b721cd1ef4c93b5839dc6137
-document/10/0/config	ok:3cbcebefdbea3f50dae3e566
-document/10/0/config-direct	ok:3cbcebefdbea3f50dae3e566
+document/10/0/encode	ok:146159f8018463ed87804c11
+document/10/0/encode-direct	ok:146159f8018463ed87804c11
+document/10/0/config	ok:8ff9f41949c4d54b8ac3767f
+document/10/0/config-direct	ok:8ff9f41949c4d54b8ac3767f
 document/10/1/decode	err:model: invalid JSON[]
 document/11/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/11/0/encode	ok:eef108a8ee63c08aeaa20c28
-document/11/0/encode-direct	ok:eef108a8ee63c08aeaa20c28
-document/11/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/11/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/11/0/encode	ok:f3807498bdf7a43c7ff4c1df
+document/11/0/encode-direct	ok:f3807498bdf7a43c7ff4c1df
+document/11/0/config	ok:d9046a2396e80422118d0de1
+document/11/0/config-direct	ok:d9046a2396e80422118d0de1
 document/11/1/decode	err:model: invalid JSON[]
 document/12/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/12/0/encode	ok:067b334e8bbe1ee0af677964
-document/12/0/encode-direct	ok:067b334e8bbe1ee0af677964
-document/12/0/config	ok:699fbea90bc378328c095e56
-document/12/0/config-direct	ok:699fbea90bc378328c095e56
+document/12/0/encode	ok:6176d4b2611e22db66b60d2c
+document/12/0/encode-direct	ok:6176d4b2611e22db66b60d2c
+document/12/0/config	ok:5d416029083c889252f4af89
+document/12/0/config-direct	ok:5d416029083c889252f4af89
 document/12/1/decode	err:model: invalid JSON: duplicate member[]
 document/13/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type]
-document/13/0/encode	ok:747a76e870bd241ad6367cca
-document/13/0/encode-direct	ok:747a76e870bd241ad6367cca
-document/13/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/13/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/13/0/encode	ok:1328ad0033de4f9db0f108b0
+document/13/0/encode-direct	ok:1328ad0033de4f9db0f108b0
+document/13/0/config	ok:d9046a2396e80422118d0de1
+document/13/0/config-direct	ok:d9046a2396e80422118d0de1
 document/13/1/decode	err:model: invalid JSON[]
 document/14/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/14/0/encode	ok:66ae1daa28b2cf2d60caefee
-document/14/0/encode-direct	ok:66ae1daa28b2cf2d60caefee
-document/14/0/config	ok:bf4545667a31077bc788b82d
-document/14/0/config-direct	ok:bf4545667a31077bc788b82d
+document/14/0/encode	ok:8c543090dffff013a3755b3c
+document/14/0/encode-direct	ok:8c543090dffff013a3755b3c
+document/14/0/config	ok:7a704ccfc7c85090900cc6fe
+document/14/0/config-direct	ok:7a704ccfc7c85090900cc6fe
 document/14/1/decode	err:model: invalid JSON[]
 document/15/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/15/0/encode	ok:d817a0c9872c05683d830f96
-document/15/0/encode-direct	ok:d817a0c9872c05683d830f96
-document/15/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/15/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/15/0/encode	ok:2ecc8352382f48ef24cff1cb
+document/15/0/encode-direct	ok:2ecc8352382f48ef24cff1cb
+document/15/0/config	ok:d9046a2396e80422118d0de1
+document/15/0/config-direct	ok:d9046a2396e80422118d0de1
 document/15/1/decode	err:model: invalid JSON[]
 document/16/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/16/0/encode	ok:239274a762fe900e1e7b5c7e
-document/16/0/encode-direct	ok:239274a762fe900e1e7b5c7e
-document/16/0/config	ok:e50a073a8288b76711ff2088
-document/16/0/config-direct	ok:e50a073a8288b76711ff2088
+document/16/0/encode	ok:bb31dce12c90bcd104b3528f
+document/16/0/encode-direct	ok:bb31dce12c90bcd104b3528f
+document/16/0/config	ok:a3db109faeca2c0be4291b7b
+document/16/0/config-direct	ok:a3db109faeca2c0be4291b7b
 document/16/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/16/1/encode	ok:8fd95444e65ec579715efc07
-document/16/1/encode-direct	ok:8fd95444e65ec579715efc07
-document/16/1/config	ok:32ca58e208a95096685a6545
-document/16/1/config-direct	ok:32ca58e208a95096685a6545
+document/16/1/encode	ok:55c8155306ae59d3a292dbe7
+document/16/1/encode-direct	ok:55c8155306ae59d3a292dbe7
+document/16/1/config	ok:619b53ce57e61fdabb09be87
+document/16/1/config-direct	ok:619b53ce57e61fdabb09be87
 document/17/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/17/0/encode	ok:0265843fc8be73474dafc098
-document/17/0/encode-direct	ok:0265843fc8be73474dafc098
-document/17/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/17/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/17/0/encode	ok:b5cdd69e12b50e35a80b8c42
+document/17/0/encode-direct	ok:b5cdd69e12b50e35a80b8c42
+document/17/0/config	ok:d9046a2396e80422118d0de1
+document/17/0/config-direct	ok:d9046a2396e80422118d0de1
 document/17/1/decode	err:model: invalid JSON[]
 document/18/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/18/0/encode	ok:1caa2924c920b6e675b6800b
-document/18/0/encode-direct	ok:1caa2924c920b6e675b6800b
-document/18/0/config	ok:7fc7765f917ad5d568c91948
-document/18/0/config-direct	ok:7fc7765f917ad5d568c91948
+document/18/0/encode	ok:68fff7ae6252ddf2c5ee9be6
+document/18/0/encode-direct	ok:68fff7ae6252ddf2c5ee9be6
+document/18/0/config	ok:7f4355f7ee355742ba17f0a2
+document/18/0/config-direct	ok:7f4355f7ee355742ba17f0a2
 document/18/1/decode	err:model: invalid JSON[]
 document/19/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type,system.agents[0].ipv6_verifications[1]=type]
-document/19/0/encode	ok:ddfa706cbfc8d34c807a1de6
-document/19/0/encode-direct	ok:ddfa706cbfc8d34c807a1de6
-document/19/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/19/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/19/0/encode	ok:a9eb877d702eecb43ba36793
+document/19/0/encode-direct	ok:a9eb877d702eecb43ba36793
+document/19/0/config	ok:d9046a2396e80422118d0de1
+document/19/0/config-direct	ok:d9046a2396e80422118d0de1
 document/19/1/decode	err:model: invalid JSON: duplicate member[]
 document/20/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/20/0/encode	ok:5fb9ba1f22ae1bd8aa126128
-document/20/0/encode-direct	ok:5fb9ba1f22ae1bd8aa126128
-document/20/0/config	ok:f09bcebac826944da0a3294f
-document/20/0/config-direct	ok:f09bcebac826944da0a3294f
+document/20/0/encode	ok:efb98a94b49501e6df66db2a
+document/20/0/encode-direct	ok:efb98a94b49501e6df66db2a
+document/20/0/config	ok:f792ccf74169b6c20cd4fb86
+document/20/0/config-direct	ok:f792ccf74169b6c20cd4fb86
 document/20/1/decode	err:model: invalid JSON: duplicate member[]
 document/21/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/21/0/encode	ok:1cf07605a314d77890a05419
-document/21/0/encode-direct	ok:1cf07605a314d77890a05419
-document/21/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/21/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/21/0/encode	ok:afea9e248b75bbca80be1823
+document/21/0/encode-direct	ok:afea9e248b75bbca80be1823
+document/21/0/config	ok:d9046a2396e80422118d0de1
+document/21/0/config-direct	ok:d9046a2396e80422118d0de1
 document/21/1/decode	err:model: invalid JSON[]
 document/22/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/22/0/encode	ok:05d3904a0f8e2a188406a523
-document/22/0/encode-direct	ok:05d3904a0f8e2a188406a523
-document/22/0/config	ok:4451e1c57785e675c8023813
-document/22/0/config-direct	ok:4451e1c57785e675c8023813
+document/22/0/encode	ok:f6feaf0098d89dd63c81e269
+document/22/0/encode-direct	ok:f6feaf0098d89dd63c81e269
+document/22/0/config	ok:14a2f0968c8e2a941ed0f9a5
+document/22/0/config-direct	ok:14a2f0968c8e2a941ed0f9a5
 document/22/1/decode	err:model: invalid JSON[]
 document/23/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/23/0/encode	ok:64f2ee5079826cd8558d36ad
-document/23/0/encode-direct	ok:64f2ee5079826cd8558d36ad
-document/23/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/23/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/23/0/encode	ok:a7a024c3663515337b325e58
+document/23/0/encode-direct	ok:a7a024c3663515337b325e58
+document/23/0/config	ok:d9046a2396e80422118d0de1
+document/23/0/config-direct	ok:d9046a2396e80422118d0de1
 document/23/1/decode	err:model: invalid JSON: duplicate member[]
 document/24/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/24/0/encode	ok:537cfb090e7f2dd8edde901b
-document/24/0/encode-direct	ok:537cfb090e7f2dd8edde901b
-document/24/0/config	ok:d80a2e2541c309f6e9a46140
-document/24/0/config-direct	ok:d80a2e2541c309f6e9a46140
+document/24/0/encode	ok:9436f09299c2c44c20475f05
+document/24/0/encode-direct	ok:9436f09299c2c44c20475f05
+document/24/0/config	ok:6583a42ba1a3d49ef540bba3
+document/24/0/config-direct	ok:6583a42ba1a3d49ef540bba3
 document/24/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/24/1/encode	ok:abaa4d386d1d408478ccd338
-document/24/1/encode-direct	ok:abaa4d386d1d408478ccd338
-document/24/1/config	ok:11ce381f7f8b36cc5d97ee60
-document/24/1/config-direct	ok:11ce381f7f8b36cc5d97ee60
+document/24/1/encode	ok:35fea10f4b27ee98ef5488a3
+document/24/1/encode-direct	ok:35fea10f4b27ee98ef5488a3
+document/24/1/config	ok:cf279b1091f22f9494605d3b
+document/24/1/config-direct	ok:cf279b1091f22f9494605d3b
 document/25/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/25/0/encode	ok:652ff548940ae0e833f4b6cb
-document/25/0/encode-direct	ok:652ff548940ae0e833f4b6cb
-document/25/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/25/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/25/0/encode	ok:14745adbdce1447636013392
+document/25/0/encode-direct	ok:14745adbdce1447636013392
+document/25/0/config	ok:d9046a2396e80422118d0de1
+document/25/0/config-direct	ok:d9046a2396e80422118d0de1
 document/25/1/decode	err:model: invalid JSON[]
 document/26/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/26/0/encode	ok:209f4dc1339114bab0e41ff9
-document/26/0/encode-direct	ok:209f4dc1339114bab0e41ff9
-document/26/0/config	ok:dd50b52baa5211690832b13f
-document/26/0/config-direct	ok:dd50b52baa5211690832b13f
+document/26/0/encode	ok:44228eaab59fde2e45c03742
+document/26/0/encode-direct	ok:44228eaab59fde2e45c03742
+document/26/0/config	ok:45af2b4a775bbb8a46d5c3ac
+document/26/0/config-direct	ok:45af2b4a775bbb8a46d5c3ac
 document/26/1/decode	err:model: invalid JSON[]
 document/27/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/27/0/encode	ok:9005d3944d886490b793e6f8
-document/27/0/encode-direct	ok:9005d3944d886490b793e6f8
-document/27/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/27/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/27/0/encode	ok:eb5dae403d18ffae96b5fd0c
+document/27/0/encode-direct	ok:eb5dae403d18ffae96b5fd0c
+document/27/0/config	ok:d9046a2396e80422118d0de1
+document/27/0/config-direct	ok:d9046a2396e80422118d0de1
 document/27/1/decode	err:model: invalid JSON[]
 document/28/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/28/0/encode	ok:3e403d45b45e4ab1efb5bf56
-document/28/0/encode-direct	ok:3e403d45b45e4ab1efb5bf56
-document/28/0/config	ok:eca232e009b7f901d728b6a0
-document/28/0/config-direct	ok:eca232e009b7f901d728b6a0
+document/28/0/encode	ok:2aae080819713b6d0ed1df5b
+document/28/0/encode-direct	ok:2aae080819713b6d0ed1df5b
+document/28/0/config	ok:7a7b70324195a2a62b44c689
+document/28/0/config-direct	ok:7a7b70324195a2a62b44c689
 document/28/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/28/1/encode	ok:b9549452966349a485d18ce9
-document/28/1/encode-direct	ok:b9549452966349a485d18ce9
-document/28/1/config	ok:27ec98d8f976bf3c4b94ba9d
-document/28/1/config-direct	ok:27ec98d8f976bf3c4b94ba9d
+document/28/1/encode	ok:b15b9ab72c8a112bea1d149d
+document/28/1/encode-direct	ok:b15b9ab72c8a112bea1d149d
+document/28/1/config	ok:23676cfc20e1fa3b5b4b0581
+document/28/1/config-direct	ok:23676cfc20e1fa3b5b4b0581
 document/29/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type]
-document/29/0/encode	ok:eb0262611c12a146d804407b
-document/29/0/encode-direct	ok:eb0262611c12a146d804407b
-document/29/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/29/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/29/0/encode	ok:fd9a9f30ab5e35c3920c415d
+document/29/0/encode-direct	ok:fd9a9f30ab5e35c3920c415d
+document/29/0/config	ok:d9046a2396e80422118d0de1
+document/29/0/config-direct	ok:d9046a2396e80422118d0de1
 document/29/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type]
-document/29/1/encode	ok:0f06432ede98472c40ac2b09
-document/29/1/encode-direct	ok:0f06432ede98472c40ac2b09
-document/29/1/config	ok:ba4693a8e6f9ba373e0fe677
-document/29/1/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/29/1/encode	ok:fd9a9f30ab5e35c3920c415d
+document/29/1/encode-direct	ok:fd9a9f30ab5e35c3920c415d
+document/29/1/config	ok:d9046a2396e80422118d0de1
+document/29/1/config-direct	ok:d9046a2396e80422118d0de1
 document/30/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/30/0/encode	ok:2ab1a9b63232820d4280d708
-document/30/0/encode-direct	ok:2ab1a9b63232820d4280d708
-document/30/0/config	ok:6450b1f4c9247c1fa38a163f
-document/30/0/config-direct	ok:6450b1f4c9247c1fa38a163f
+document/30/0/encode	ok:1cc99e791f37e01c661fd4bc
+document/30/0/encode-direct	ok:1cc99e791f37e01c661fd4bc
+document/30/0/config	ok:a6249db84f0fe3212b9f9101
+document/30/0/config-direct	ok:a6249db84f0fe3212b9f9101
 document/30/1/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/30/1/encode	ok:a9fea2c43e088ec2bf88fcca
-document/30/1/encode-direct	ok:a9fea2c43e088ec2bf88fcca
-document/30/1/config	ok:1d80b4f4f07c895d51f5928f
-document/30/1/config-direct	ok:1d80b4f4f07c895d51f5928f
+document/30/1/encode	ok:110c51c475e6a08d577ddeb0
+document/30/1/encode-direct	ok:110c51c475e6a08d577ddeb0
+document/30/1/config	ok:ddd404cb4346d37cd3b96d3e
+document/30/1/config-direct	ok:ddd404cb4346d37cd3b96d3e
 document/31/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/31/0/encode	ok:a5f863ac4a96746d62840d5c
-document/31/0/encode-direct	ok:a5f863ac4a96746d62840d5c
-document/31/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/31/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/31/0/encode	ok:13b6becef8c107b767ba6f54
+document/31/0/encode-direct	ok:13b6becef8c107b767ba6f54
+document/31/0/config	ok:d9046a2396e80422118d0de1
+document/31/0/config-direct	ok:d9046a2396e80422118d0de1
 document/31/1/decode	err:model: invalid JSON[]
 document/32/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/32/0/encode	ok:3fcb774d3a2c75e9f8a538ce
-document/32/0/encode-direct	ok:3fcb774d3a2c75e9f8a538ce
-document/32/0/config	ok:3ac4348fbfdd132b765a8e5a
-document/32/0/config-direct	ok:3ac4348fbfdd132b765a8e5a
+document/32/0/encode	ok:9958e866b6c8ca87456f87c4
+document/32/0/encode-direct	ok:9958e866b6c8ca87456f87c4
+document/32/0/config	ok:0c94e48272571cfe8293a471
+document/32/0/config-direct	ok:0c94e48272571cfe8293a471
 document/32/1/decode	err:model: invalid JSON[]
 document/33/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/33/0/encode	ok:0d7ebe774c400bf6ade292ea
-document/33/0/encode-direct	ok:0d7ebe774c400bf6ade292ea
-document/33/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/33/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/33/0/encode	ok:449583543ef25963793cb2e2
+document/33/0/encode-direct	ok:449583543ef25963793cb2e2
+document/33/0/config	ok:d9046a2396e80422118d0de1
+document/33/0/config-direct	ok:d9046a2396e80422118d0de1
 document/33/1/decode	err:model: invalid JSON: duplicate member[]
 document/34/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/34/0/encode	ok:18eca2e1ff946f9e79652137
-document/34/0/encode-direct	ok:18eca2e1ff946f9e79652137
-document/34/0/config	ok:78ab09a09507aa504e6a37c3
-document/34/0/config-direct	ok:78ab09a09507aa504e6a37c3
+document/34/0/encode	ok:a6ac4dcfe36c6f6a44284275
+document/34/0/encode-direct	ok:a6ac4dcfe36c6f6a44284275
+document/34/0/config	ok:fb9319c59a98a73bd76c4844
+document/34/0/config-direct	ok:fb9319c59a98a73bd76c4844
 document/34/1/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/34/1/encode	ok:18eca2e1ff946f9e79652137
-document/34/1/encode-direct	ok:18eca2e1ff946f9e79652137
-document/34/1/config	ok:78ab09a09507aa504e6a37c3
-document/34/1/config-direct	ok:78ab09a09507aa504e6a37c3
+document/34/1/encode	ok:a6ac4dcfe36c6f6a44284275
+document/34/1/encode-direct	ok:a6ac4dcfe36c6f6a44284275
+document/34/1/config	ok:fb9319c59a98a73bd76c4844
+document/34/1/config-direct	ok:fb9319c59a98a73bd76c4844
 document/35/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/35/0/encode	ok:29837f805e189bb6c833ba75
-document/35/0/encode-direct	ok:29837f805e189bb6c833ba75
-document/35/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/35/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/35/0/encode	ok:06bac1bcb67a139f1eba16b9
+document/35/0/encode-direct	ok:06bac1bcb67a139f1eba16b9
+document/35/0/config	ok:d9046a2396e80422118d0de1
+document/35/0/config-direct	ok:d9046a2396e80422118d0de1
 document/35/1/decode	err:model: invalid JSON[]
 document/36/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type]
-document/36/0/encode	ok:8a9c8a4194fcccc753ff0ba6
-document/36/0/encode-direct	ok:8a9c8a4194fcccc753ff0ba6
-document/36/0/config	ok:97395747b6c514a92e42dbad
-document/36/0/config-direct	ok:97395747b6c514a92e42dbad
+document/36/0/encode	ok:95f1f1087c7eb437988f45ec
+document/36/0/encode-direct	ok:95f1f1087c7eb437988f45ec
+document/36/0/config	ok:d8fbee36e0e6db4f83e0ed4e
+document/36/0/config-direct	ok:d8fbee36e0e6db4f83e0ed4e
 document/36/1/decode	err:model: invalid JSON: duplicate member[]
 document/37/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type]
-document/37/0/encode	ok:ae2b2ac64729e820ecdfce6f
-document/37/0/encode-direct	ok:ae2b2ac64729e820ecdfce6f
-document/37/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/37/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/37/0/encode	ok:e1f40ea72a2c9ffaf025840b
+document/37/0/encode-direct	ok:e1f40ea72a2c9ffaf025840b
+document/37/0/config	ok:d9046a2396e80422118d0de1
+document/37/0/config-direct	ok:d9046a2396e80422118d0de1
 document/37/1/decode	err:model: invalid JSON[]
 document/38/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/38/0/encode	ok:74f33a50d94eb41a108d9f7c
-document/38/0/encode-direct	ok:74f33a50d94eb41a108d9f7c
-document/38/0/config	ok:dce9e8b05fa7f9b41931ba7f
-document/38/0/config-direct	ok:dce9e8b05fa7f9b41931ba7f
+document/38/0/encode	ok:5792052f882baeb291170df3
+document/38/0/encode-direct	ok:5792052f882baeb291170df3
+document/38/0/config	ok:a9607e27886e1b7b7e6e68b8
+document/38/0/config-direct	ok:a9607e27886e1b7b7e6e68b8
 document/38/1/decode	err:model: invalid JSON[]
 document/39/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/39/0/encode	ok:e40a6dc757bb9741e181d1a8
-document/39/0/encode-direct	ok:e40a6dc757bb9741e181d1a8
-document/39/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/39/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/39/0/encode	ok:3726e5d20d392eed56bbd1ee
+document/39/0/encode-direct	ok:3726e5d20d392eed56bbd1ee
+document/39/0/config	ok:d9046a2396e80422118d0de1
+document/39/0/config-direct	ok:d9046a2396e80422118d0de1
 document/39/1/decode	err:model: invalid JSON[]
 document/40/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type,system.agents[0].ipv6_verifications[1]=type]
-document/40/0/encode	ok:8978691e49b8908bab36da9c
-document/40/0/encode-direct	ok:8978691e49b8908bab36da9c
-document/40/0/config	ok:22ff033fb9034e362260f9ca
-document/40/0/config-direct	ok:22ff033fb9034e362260f9ca
+document/40/0/encode	ok:b4245273f637f33b55e302e0
+document/40/0/encode-direct	ok:b4245273f637f33b55e302e0
+document/40/0/config	ok:f91ba164f3d00005f02aa736
+document/40/0/config-direct	ok:f91ba164f3d00005f02aa736
 document/40/1/decode	err:model: invalid JSON[]
 document/41/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/41/0/encode	ok:e24bfb3aa3d8f864cf4d155c
-document/41/0/encode-direct	ok:e24bfb3aa3d8f864cf4d155c
-document/41/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/41/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/41/0/encode	ok:77c2aa9c9c23ddb2e1fa881c
+document/41/0/encode-direct	ok:77c2aa9c9c23ddb2e1fa881c
+document/41/0/config	ok:d9046a2396e80422118d0de1
+document/41/0/config-direct	ok:d9046a2396e80422118d0de1
 document/41/1/decode	err:model: invalid JSON[]
 document/42/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/42/0/encode	ok:b72e8ec6dd8f303d6008bb7d
-document/42/0/encode-direct	ok:b72e8ec6dd8f303d6008bb7d
-document/42/0/config	ok:66c7aed0dd133bba2ebb4352
-document/42/0/config-direct	ok:66c7aed0dd133bba2ebb4352
+document/42/0/encode	ok:d7528ffd209706348bf0db9d
+document/42/0/encode-direct	ok:d7528ffd209706348bf0db9d
+document/42/0/config	ok:b0b3226db8f1e58b81c5392b
+document/42/0/config-direct	ok:b0b3226db8f1e58b81c5392b
 document/42/1/decode	err:model: invalid JSON: duplicate member[]
 document/43/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/43/0/encode	ok:85120a7558dc04eb984dece6
-document/43/0/encode-direct	ok:85120a7558dc04eb984dece6
-document/43/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/43/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/43/0/encode	ok:bbfb9bd63f76a6e3ca248488
+document/43/0/encode-direct	ok:bbfb9bd63f76a6e3ca248488
+document/43/0/config	ok:d9046a2396e80422118d0de1
+document/43/0/config-direct	ok:d9046a2396e80422118d0de1
 document/43/1/decode	err:model: invalid JSON[]
 document/44/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/44/0/encode	ok:de4e9b8a81f50efc4c9dfff7
-document/44/0/encode-direct	ok:de4e9b8a81f50efc4c9dfff7
-document/44/0/config	ok:7e8a213ccbd62cb5dd3091fa
-document/44/0/config-direct	ok:7e8a213ccbd62cb5dd3091fa
+document/44/0/encode	ok:fdd6b7d76cce431135ff2fbe
+document/44/0/encode-direct	ok:fdd6b7d76cce431135ff2fbe
+document/44/0/config	ok:0c18f358c1c3b90019a833fa
+document/44/0/config-direct	ok:0c18f358c1c3b90019a833fa
 document/44/1/decode	err:model: invalid JSON[]
 document/45/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/45/0/encode	ok:e2efc8a6e409d86e1f6d5737
-document/45/0/encode-direct	ok:e2efc8a6e409d86e1f6d5737
-document/45/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/45/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/45/0/encode	ok:4a81d3784a6c30ee225c4953
+document/45/0/encode-direct	ok:4a81d3784a6c30ee225c4953
+document/45/0/config	ok:d9046a2396e80422118d0de1
+document/45/0/config-direct	ok:d9046a2396e80422118d0de1
 document/45/1/decode	err:model: invalid JSON[]
 document/46/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/46/0/encode	ok:663843adc0c3aa1331aa92ef
-document/46/0/encode-direct	ok:663843adc0c3aa1331aa92ef
-document/46/0/config	ok:d77e55d586d5c88e42270169
-document/46/0/config-direct	ok:d77e55d586d5c88e42270169
+document/46/0/encode	ok:36336caa8a936c55515d0db5
+document/46/0/encode-direct	ok:36336caa8a936c55515d0db5
+document/46/0/config	ok:51f634b9cac88d1555b44791
+document/46/0/config-direct	ok:51f634b9cac88d1555b44791
 document/46/1/decode	err:model: invalid JSON[]
 document/47/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/47/0/encode	ok:47e6df9ed9eb2eefdfdbcd31
-document/47/0/encode-direct	ok:47e6df9ed9eb2eefdfdbcd31
-document/47/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/47/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/47/0/encode	ok:0e8a5f7b311981d0ecdb0653
+document/47/0/encode-direct	ok:0e8a5f7b311981d0ecdb0653
+document/47/0/config	ok:d9046a2396e80422118d0de1
+document/47/0/config-direct	ok:d9046a2396e80422118d0de1
 document/47/1/decode	err:model: invalid JSON[]
 document/48/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/48/0/encode	ok:97bae2cf8885c6ca98c5633b
-document/48/0/encode-direct	ok:97bae2cf8885c6ca98c5633b
-document/48/0/config	ok:69e5bc641d639b593f7532a9
-document/48/0/config-direct	ok:69e5bc641d639b593f7532a9
+document/48/0/encode	ok:751777ae30a6358e4a795028
+document/48/0/encode-direct	ok:751777ae30a6358e4a795028
+document/48/0/config	ok:fb30e2443498b0fd357c253e
+document/48/0/config-direct	ok:fb30e2443498b0fd357c253e
 document/48/1/decode	err:model: invalid JSON[]
 document/49/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/49/0/encode	ok:2873b5c2414c149fa73c465d
-document/49/0/encode-direct	ok:2873b5c2414c149fa73c465d
-document/49/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/49/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/49/0/encode	ok:255202ec647917dc0222bbcc
+document/49/0/encode-direct	ok:255202ec647917dc0222bbcc
+document/49/0/config	ok:d9046a2396e80422118d0de1
+document/49/0/config-direct	ok:d9046a2396e80422118d0de1
 document/49/1/decode	err:model: invalid JSON[]
 document/50/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type,system.agents[0].ipv6_verifications[1]=type]
-document/50/0/encode	ok:0953c1bc7215bc7f19a7d3be
-document/50/0/encode-direct	ok:0953c1bc7215bc7f19a7d3be
-document/50/0/config	ok:72133b681827bfa9719fb3fb
-document/50/0/config-direct	ok:72133b681827bfa9719fb3fb
+document/50/0/encode	ok:4cf438619e5985a611776a99
+document/50/0/encode-direct	ok:4cf438619e5985a611776a99
+document/50/0/config	ok:5396521bd2b674855eeaddf2
+document/50/0/config-direct	ok:5396521bd2b674855eeaddf2
 document/50/1/decode	err:model: invalid JSON[]
 document/51/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/51/0/encode	ok:9e1f586c2a0c9028216e9583
-document/51/0/encode-direct	ok:9e1f586c2a0c9028216e9583
-document/51/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/51/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/51/0/encode	ok:d4305040837ac5793512318c
+document/51/0/encode-direct	ok:d4305040837ac5793512318c
+document/51/0/config	ok:d9046a2396e80422118d0de1
+document/51/0/config-direct	ok:d9046a2396e80422118d0de1
 document/51/1/decode	err:model: invalid JSON: duplicate member[]
 document/52/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/52/0/encode	ok:3d00b2746d27850a2668ead7
-document/52/0/encode-direct	ok:3d00b2746d27850a2668ead7
-document/52/0/config	ok:0a04d98e3ffe8c7a30e464a1
-document/52/0/config-direct	ok:0a04d98e3ffe8c7a30e464a1
+document/52/0/encode	ok:94f12b07ea9520462f899fe0
+document/52/0/encode-direct	ok:94f12b07ea9520462f899fe0
+document/52/0/config	ok:01d913b29ae15891673d648b
+document/52/0/config-direct	ok:01d913b29ae15891673d648b
 document/52/1/decode	err:model: invalid JSON[]
 document/53/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/53/0/encode	ok:7090bce11a76e7171e9d6a30
-document/53/0/encode-direct	ok:7090bce11a76e7171e9d6a30
-document/53/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/53/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/53/0/encode	ok:71a40f8cb6d3615760b6561b
+document/53/0/encode-direct	ok:71a40f8cb6d3615760b6561b
+document/53/0/config	ok:d9046a2396e80422118d0de1
+document/53/0/config-direct	ok:d9046a2396e80422118d0de1
 document/53/1/decode	err:model: invalid JSON[]
 document/54/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type,system.agents[0].ipv6_verifications[1]=type]
-document/54/0/encode	ok:e6922e33e072d84e60768ed1
-document/54/0/encode-direct	ok:e6922e33e072d84e60768ed1
-document/54/0/config	ok:30b1e9e4364f7852c5d21faf
-document/54/0/config-direct	ok:30b1e9e4364f7852c5d21faf
+document/54/0/encode	ok:d6114d6ca0582cd32bc732e4
+document/54/0/encode-direct	ok:d6114d6ca0582cd32bc732e4
+document/54/0/config	ok:7ea3fae5b5c69361d88e224b
+document/54/0/config-direct	ok:7ea3fae5b5c69361d88e224b
 document/54/1/decode	err:model: invalid JSON: duplicate member[]
 document/55/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/55/0/encode	ok:1e58fe5522cddde6d5719608
-document/55/0/encode-direct	ok:1e58fe5522cddde6d5719608
-document/55/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/55/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/55/0/encode	ok:f1b2d33407cffb9782815c11
+document/55/0/encode-direct	ok:f1b2d33407cffb9782815c11
+document/55/0/config	ok:d9046a2396e80422118d0de1
+document/55/0/config-direct	ok:d9046a2396e80422118d0de1
 document/55/1/decode	err:model: invalid JSON[]
 document/56/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].ipv6_verifications[1]=type]
-document/56/0/encode	ok:089318753d708a731d3bff73
-document/56/0/encode-direct	ok:089318753d708a731d3bff73
-document/56/0/config	ok:444f9806d3bf5b73dae2ed0c
-document/56/0/config-direct	ok:444f9806d3bf5b73dae2ed0c
+document/56/0/encode	ok:ad28b37c19a46ca241c47979
+document/56/0/encode-direct	ok:ad28b37c19a46ca241c47979
+document/56/0/config	ok:949b2eb261b56378fce5d4ff
+document/56/0/config-direct	ok:949b2eb261b56378fce5d4ff
 document/56/1/decode	err:model: invalid JSON: duplicate member[]
 document/57/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].config_revision=type,system.agents[0].enabled=type,system.agents[0].ipv6_verifications[1]=type]
-document/57/0/encode	ok:21e3f3906cbb998795cf3ccf
-document/57/0/encode-direct	ok:21e3f3906cbb998795cf3ccf
-document/57/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/57/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/57/0/encode	ok:dda518045a91eabecf4cebed
+document/57/0/encode-direct	ok:dda518045a91eabecf4cebed
+document/57/0/config	ok:d9046a2396e80422118d0de1
+document/57/0/config-direct	ok:d9046a2396e80422118d0de1
 document/57/1/decode	err:model: invalid JSON[]
 document/58/0/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/58/0/encode	ok:ee174173b7c1e70b29f31662
-document/58/0/encode-direct	ok:ee174173b7c1e70b29f31662
-document/58/0/config	ok:f635e4c8130a21fcf22d1b8f
-document/58/0/config-direct	ok:f635e4c8130a21fcf22d1b8f
+document/58/0/encode	ok:a4357e877ab967981eaad13a
+document/58/0/encode-direct	ok:a4357e877ab967981eaad13a
+document/58/0/config	ok:f09130fedf71386e74c20372
+document/58/0/config-direct	ok:f09130fedf71386e74c20372
 document/58/1/decode	ok:e3b0c44298fc1c149afbf4c8[]
-document/58/1/encode	ok:226c3e3a3fd62e80252bc34c
-document/58/1/encode-direct	ok:226c3e3a3fd62e80252bc34c
-document/58/1/config	ok:f635e4c8130a21fcf22d1b8f
-document/58/1/config-direct	ok:f635e4c8130a21fcf22d1b8f
+document/58/1/encode	ok:a4357e877ab967981eaad13a
+document/58/1/encode-direct	ok:a4357e877ab967981eaad13a
+document/58/1/config	ok:f09130fedf71386e74c20372
+document/58/1/config-direct	ok:f09130fedf71386e74c20372
 document/59/0/decode	ok:e3b0c44298fc1c149afbf4c8[system.agents[0].enabled=type,system.agents[0].config_revision=type]
-document/59/0/encode	ok:62a8a7d9ef0aa58a6da11571
-document/59/0/encode-direct	ok:62a8a7d9ef0aa58a6da11571
-document/59/0/config	ok:ba4693a8e6f9ba373e0fe677
-document/59/0/config-direct	ok:ba4693a8e6f9ba373e0fe677
+document/59/0/encode	ok:0df560ae380ce7caba57b419
+document/59/0/encode-direct	ok:0df560ae380ce7caba57b419
+document/59/0/config	ok:d9046a2396e80422118d0de1
+document/59/0/config-direct	ok:d9046a2396e80422118d0de1
 document/59/1/decode	err:model: invalid JSON: duplicate member[]

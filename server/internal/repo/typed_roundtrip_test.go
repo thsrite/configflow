@@ -104,11 +104,6 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 		t.Fatal("no-op Update committed")
 	}
 
-	marker := json.RawMessage(` { "z":1.0,"a":"例 <>&","nested": { "future": true } } `)
-	update(t, "unknown root", []modelRowKey{{"root", "", "n8_unknown"}}, func(d *model.Document) { noError(t, d.Root.Set("n8_unknown", marker)) })
-	update(t, "unknown profile", []modelRowKey{profile("n8_unknown")}, func(d *model.Document) {
-		noError(t, defaultProfile(d).Fields.Set("n8_unknown", marker))
-	})
 	update(t, "profile rename", []modelRowKey{profile("name")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 typed" })
 	update(t, "node add", []modelRowKey{{"shared", "", "nodes"}}, func(d *model.Document) {
 		var node model.Node
@@ -163,10 +158,12 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 		}
 		return nil
 	}))
-	if issues != 2 {
+	// The profile's description is a plain record member: it reads as "" with
+	// a load issue (not kept). Backup is not yet migrated and keeps R5.
+	if issues != 1 {
 		t.Fatalf("issues %d", issues)
 	}
-	update(t, "unrelated edit keeps R5 rows", []modelRowKey{profile("name")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 R5" })
+	update(t, "unrelated edit keeps R5 rows of records not yet migrated", []modelRowKey{profile("name"), profile("description")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 R5" })
 	update(t, "same-row edit keeps null", []modelRowKey{{"system", "", "system_config"}}, func(d *model.Document) {
 		d.System.SystemConfig.DefaultProfileID = nil
 		d.System.SystemConfig.ServerDomain = "cf.example.com"
@@ -196,7 +193,7 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 		t.Fatal("clear did not drop exactly the wrong-typed member")
 	}
 
-	// Python edits the Go-written copy; Go reads it and keeps Python's bytes.
+	// Python edits the Go-written copy; Go reads it.
 	if pythonReady {
 		audit(t, "audit-edit")
 		probe := modelRowKey{"root", "", "n8_2_python_probe"}
@@ -204,10 +201,12 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 		if pythonBytes == "" {
 			t.Fatal("Python edit missing")
 		}
-		update(t, "edit after Python", []modelRowKey{profile("name")}, func(d *model.Document) { defaultProfile(d).Name = "after Python" })
-		if row(t, probe) != pythonBytes {
-			t.Fatal("Python bytes changed")
+		// Python's extra root member is not declared: Go drops it with the
+		// next write (O18 T1a).
+		update(t, "edit after Python", []modelRowKey{profile("name"), probe}, func(d *model.Document) { defaultProfile(d).Name = "after Python" })
+		if row(t, probe) != "" {
+			t.Fatal("undeclared Python member kept")
 		}
-		audit(t, "audit-final")
+		audit(t, "audit")
 	}
 }

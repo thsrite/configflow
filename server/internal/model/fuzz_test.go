@@ -135,8 +135,10 @@ func FuzzDocumentRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !json.Valid(encoded) || !bytes.Equal(encoded, data) {
-			t.Fatal("document no-op changed bytes")
+		// Plain records are written in Go's encoding (O18 T1a): the first
+		// encoding may differ from the input, later ones must be stable.
+		if !json.Valid(encoded) {
+			t.Fatal("document encoding is not JSON")
 		}
 		fuzzUniqueJSON(t, encoded)
 		again, _, err := DecodeDocument(encoded)

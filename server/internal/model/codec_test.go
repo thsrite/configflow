@@ -202,34 +202,58 @@ func TestOrderedMapAndDynamic(t *testing.T) {
 	}
 }
 
-func TestSkeletonPreservesOpaqueMembersAndDiagnostics(t *testing.T) {
-	original := []byte(`{ "schema_version":5,"system":{"agents":[{"token":"synthetic","future": { "z":1.0 }}],"_revision":true,"future_system": { "z":1.0 }},"profiles":{"second":{"id":"second","name":7,"_revision":6e1,"proxy_groups":[{"name":"example","future":{"z":1}}],"future_profile": { "n":6e1 }},"first":{}},"shared":{"nodes":[],"_revision":0,"future_shared": [ "\u4f8b",1.0 ]},"future": { "a":1 } }`)
+// Plain records (O18 T1a): whole-document input is decoded strictly and a
+// mismatch names its member; unknown members of plain records are dropped,
+// records not yet migrated keep theirs; profiles keep their order.
+func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name, source, record, member string
+	}{
+		{"system revision", `{"schema_version":5,"system":{"_revision":true},"shared":{},"profiles":{}}`, "system", "_revision"},
+		{"profile name", `{"schema_version":5,"system":{},"shared":{},"profiles":{"p":{"id":"p","name":7}}}`, "profile", "name"},
+		{"shared list", `{"schema_version":5,"system":{},"shared":{"nodes":{}},"profiles":{}}`, "shared", "nodes"},
+		{"section", `{"schema_version":5,"system":[],"shared":{},"profiles":{}}`, "document", "system"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := DecodeDocument([]byte(tt.source))
+			var typed *MemberTypeError
+			if !errors.As(err, &typed) || typed.Record != tt.record || typed.Member != tt.member || !errors.Is(err, ErrType) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+	if _, _, err := DecodeDocument([]byte(`{"schema_version":5,"system":{},"shared":{}}`)); !errors.As(err, new(*MissingSectionError)) {
+		t.Fatalf("missing section: %v", err)
+	}
+
+	original := []byte(`{ "schema_version":5,"system":{"agents":[{"token":"synthetic","future": { "z":1.0 }}],"_revision":1,"future_system": { "z":1.0 }},"profiles":{"second":{"id":"second","name":"7","_revision":6e1,"proxy_groups":[{"name":"example","future":{"z":1}}],"future_profile": { "n":6e1 }},"first":{}},"shared":{"nodes":[],"_revision":0,"future_shared": [ "\u4f8b",1.0 ]},"future": { "a":1 } }`)
 	document, issues, err := DecodeDocument(original)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.System.Revision != 0 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "7" {
-		t.Fatal("typed skeleton fallback")
-	}
-	if len(issues) != 1 || issues[0].Path != "system._revision" {
-		t.Fatalf("diagnostics=%v", issues)
+	if len(issues) != 0 || document.System.Revision != 1 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "7" {
+		t.Fatalf("typed values issues=%v", issues)
 	}
 	encoded, err := Marshal(document)
-	if err != nil || !bytes.Equal(encoded, original) {
-		t.Fatalf("document no-op: %s %v", encoded, err)
-	}
-	document.Profiles[0].Name = "renamed"
-	encoded, err = Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(encoded, []byte(`"_revision":6e1`)) || !bytes.Contains(encoded, []byte(`"token":"synthetic","future": { "z":1.0 }`)) {
-		t.Fatal("unrelated field bytes changed")
-	}
-	for _, fragment := range []string{`"future_system": { "z":1.0 }`, `"future_shared": [ "\u4f8b",1.0 ]`, `"future_profile": { "n":6e1 }`, `"future": { "a":1 }`} {
-		if !bytes.Contains(encoded, []byte(fragment)) {
-			t.Fatal("skeleton record lost an unknown member's bytes")
+	for _, fragment := range []string{"future_system", "future_shared", "future_profile", `"future":{"a":1}`} {
+		if bytes.Contains(encoded, []byte(fragment)) {
+			t.Fatalf("unknown member %s kept: %s", fragment, encoded)
 		}
+	}
+	for _, fragment := range []string{`"future":{"z":1.0}`, `"future":{"z":1}`, `"_revision":0`, `"description":""`} {
+		if !bytes.Contains(encoded, []byte(fragment)) {
+			t.Fatalf("lost %s: %s", fragment, encoded)
+		}
+	}
+	again, _, err := DecodeDocument(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repeated, err := Marshal(again); err != nil || !bytes.Equal(repeated, encoded) {
+		t.Fatalf("encoding not stable: %s", repeated)
 	}
 	document.Profiles[0], document.Profiles[1] = document.Profiles[1], document.Profiles[0]
 	encoded, err = Marshal(document)

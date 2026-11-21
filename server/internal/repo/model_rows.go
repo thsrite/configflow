@@ -44,6 +44,9 @@ func decodeModelRows(raw *store.Document) (*model.Document, []model.FieldIssue, 
 				return fmt.Errorf(msgModelRowInvalid, scope, owner, field.Name, err)
 			}
 			if !known {
+				if err := model.ValidJSON(field.Value); err != nil {
+					return fmt.Errorf(msgModelRowInvalid, scope, owner, field.Name, err)
+				}
 				found = []model.FieldIssue{{Path: path, Kind: model.IssueUnknown}}
 			}
 			issues = append(issues, found...)
@@ -53,6 +56,9 @@ func decodeModelRows(raw *store.Document) (*model.Document, []model.FieldIssue, 
 	hasVersion := false
 	for _, field := range raw.Root {
 		if field.Name != rootSchemaVersion {
+			if err := model.ValidJSON(field.Value); err != nil {
+				return nil, nil, fmt.Errorf(msgModelRowInvalid, "root", "", field.Name, err)
+			}
 			issues = append(issues, model.FieldIssue{Path: field.Name, Kind: model.IssueUnknown})
 			continue
 		}

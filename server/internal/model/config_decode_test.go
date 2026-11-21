@@ -26,7 +26,12 @@ func TestCapturedConfigOwnerRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"n":2.00`, `"future_system":1e0`, `"future_agent":4.00`, `"future_rule":3.0`} {
+	// Records not yet migrated keep their unknown members; the plain profile
+	// drops them (O18 T1a).
+	if bytes.Contains(result, []byte("future_profile")) {
+		t.Fatalf("unknown profile member kept: %s", result)
+	}
+	for _, want := range []string{`"future_system":1e0`, `"future_agent":4.00`, `"future_rule":3.0`} {
 		if !bytes.Contains(result, []byte(want)) {
 			t.Fatalf("lost evidence %s: %s", want, result)
 		}
@@ -34,9 +39,6 @@ func TestCapturedConfigOwnerRoundTrip(t *testing.T) {
 	var decoded map[string]json.RawMessage
 	if json.Unmarshal(result, &decoded) != nil {
 		t.Fatal("invalid captured JSON")
-	}
-	if err := config.Profile.Fields.Set("future_profile", []byte(`null`)); err != nil {
-		t.Fatal(err)
 	}
 	if !bytes.Contains(source, []byte(`"n":2.00`)) {
 		t.Fatal("codec changed input")

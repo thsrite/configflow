@@ -65,18 +65,10 @@ func TestSharedMemberPositionsSurviveImportAndTypedUpdates(t *testing.T) {
 				}
 			}
 			check()
-			for _, name := range []string{"future_first", "future_second"} {
-				if err := r.UpdateShared(t.Context(), func(_ context.Context, shared *model.Shared) error {
-					return shared.Fields.Set(name, json.RawMessage(`{"keep":9007199254740993}`))
-				}); err != nil {
-					t.Fatal(err)
-				}
-				want = append(want, name)
-				check()
-			}
 			// Rewriting an existing member changes its value, not its position.
 			if err := r.UpdateShared(t.Context(), func(_ context.Context, shared *model.Shared) error {
-				return shared.Fields.Set("future_first", json.RawMessage(`{"keep":42}`))
+				shared.Nodes = append(shared.Nodes, model.Node{ID: "n-position", Name: "Position", Type: "http", Server: "192.0.2.9", Port: 80})
+				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -138,8 +130,11 @@ func TestBuiltinOxidnsRowsDoNotIntroduceFormattingRewrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	value, revision = profileOxidnsRow(t, r)
-	if value != userJSON {
-		t.Fatal("user JSON formatting changed")
+	// Go stores the value in its own (compact) encoding (O18 T1a).
+	compact.Reset()
+	noError(t, json.Compact(&compact, []byte(userJSON)))
+	if value != compact.String() {
+		t.Fatalf("user JSON stored as %s", value)
 	}
 	if err := r.UpdateSystem(t.Context(), func(_ context.Context, system *model.System) error {
 		system.SystemConfig.ConfigToken = "synthetic-changed-token"

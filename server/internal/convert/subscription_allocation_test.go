@@ -25,7 +25,7 @@ func subscriptionGenerationProfile(count, unrelated int) *model.Config {
 	}
 	if unrelated > 0 {
 		raw, _ := json.Marshal(strings.Repeat("x", unrelated))
-		_ = config.Profile.Fields.Set("unrelated", raw)
+		_ = config.Profile.SetJSON("description", raw)
 	}
 	return config
 }
