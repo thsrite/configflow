@@ -3,6 +3,7 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"configflow/internal/convert"
 	"configflow/internal/jsondecode"
@@ -381,7 +382,13 @@ func copyOxiDNSAgents(records []model.Agent) ([]model.Agent, error) {
 // resolveConfig builds the Config of a profile from one document: roots
 // adds resources (nil ids: all of a kind), agents chooses how Agents are
 // included (omitted by default, narrow OxiDNS projection, or full records).
-func resolveConfig(document *model.Document, profileID string, roots ResourceRoots, agents agentProjection) (*model.Config, error) {
+//
+// With shared set the Config borrows the document (see "Borrowed reads" in
+// config_borrow.go): the profile, settings and resources are shallow copies of
+// the stored records, the rule library is the stored slice, and only the
+// hydrated rulesets get a new rule_configs slice. Otherwise every record is a
+// caller-owned deep copy (writers' working copies, PublishConfig).
+func resolveConfig(document *model.Document, profileID string, roots ResourceRoots, agents agentProjection, shared bool) (*model.Config, error) {
 	if err := ValidateProfileID(profileID); err != nil {
 		return nil, err
 	}
@@ -389,7 +396,7 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 	if stored == nil {
 		return nil, notFound(profileID)
 	}
-	profile, err := copyRecord(stored)
+	profile, err := lend(stored, shared)
 	if err != nil {
 		return nil, err
 	}
@@ -399,11 +406,25 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 		return nil, err
 	}
 	config := &model.Config{Profile: profile, ProfileID: profileID, HasAgents: agents != agentCopyNone}
-	if config.SystemConfig, err = copyValue(document.System.SystemConfig); err != nil {
-		return nil, err
-	}
-	if config.Backup, err = copyValue(document.System.Backup); err != nil {
-		return nil, err
+	if shared {
+		config.SystemConfig = document.System.SystemConfig
+		config.Backup = document.System.Backup
+		config.RuleLibrary = slices.Clip(document.Shared.RuleLibrary)
+		// Appending to a borrowed profile's lists must never write into the
+		// snapshot's spare capacity.
+		profile.ProxyGroups = slices.Clip(profile.ProxyGroups)
+		profile.RuleConfigs = slices.Clip(profile.RuleConfigs)
+		profile.Routers.Items = slices.Clip(profile.Routers.Items)
+	} else {
+		if config.SystemConfig, err = copyValue(document.System.SystemConfig); err != nil {
+			return nil, err
+		}
+		if config.Backup, err = copyValue(document.System.Backup); err != nil {
+			return nil, err
+		}
+		if config.RuleLibrary, err = copyValue(document.Shared.RuleLibrary); err != nil {
+			return nil, err
+		}
 	}
 	switch agents {
 	case agentCopyOxiDNS:
@@ -415,15 +436,12 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 			return nil, err
 		}
 	}
-	config.Subscriptions, err = pick(c.subscriptions, selected[kindSubscriptions])
+	config.Subscriptions, err = pick(c.subscriptions, selected[kindSubscriptions], shared)
 	if err == nil {
-		config.Nodes, err = pick(c.nodes, selected[kindNodes])
+		config.Nodes, err = pick(c.nodes, selected[kindNodes], shared)
 	}
 	if err == nil {
-		config.Aggregations, err = pick(c.aggregations, selected[kindAggregations])
-	}
-	if err == nil {
-		config.RuleLibrary, err = copyValue(document.Shared.RuleLibrary)
+		config.Aggregations, err = pick(c.aggregations, selected[kindAggregations], shared)
 	}
 	if err != nil {
 		return nil, err
@@ -432,6 +450,7 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 	for index := range config.RuleLibrary {
 		library[config.RuleLibrary[index].ID] = &config.RuleLibrary[index]
 	}
+	hydrated := false
 	for index := range profile.RuleConfigs {
 		rule := &profile.RuleConfigs[index]
 		if rule.ItemType != "ruleset" {
@@ -441,19 +460,27 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 		if !ok {
 			return nil, helperError(ClassKeyError, fmt.Sprintf("'%s'", rule.LibraryRuleID))
 		}
-		if *rule, err = hydratedRuleset(rule, entry, profileID); err != nil {
+		value, err := hydratedRuleset(rule, entry, profileID)
+		if err != nil {
 			return nil, err
 		}
+		if shared && !hydrated {
+			// The stored rule list is the snapshot's: hydrate a new one.
+			profile.RuleConfigs = slices.Clone(profile.RuleConfigs)
+			hydrated = true
+		}
+		profile.RuleConfigs[index] = value
 	}
 	return config, nil
 }
 
-// pick copies the selected records of a catalog in catalog order.
-func pick[T any](c catalog[T], selected *orderedSet) ([]T, error) {
+// pick returns the selected records of a catalog in catalog order, as
+// shallow copies of the stored records when shared, else deep copies.
+func pick[T any](c catalog[T], selected *orderedSet, shared bool) ([]T, error) {
 	result := []T{}
 	for _, id := range c.keys {
 		if selected.has(id) {
-			item, err := copyRecord(c.byID[id])
+			item, err := lend(c.byID[id], shared)
 			if err != nil {
 				return nil, err
 			}

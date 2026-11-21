@@ -77,10 +77,20 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 
 	sys := must(r.System(bg))(t)
 	noError(t, sys.SystemConfig.Fields.Set("surprise", json.RawMessage(`[]`)))
-	sh := must(r.Shared(bg))(t)
+	sh := must(r.CloneShared(bg))(t)
 	sh.Nodes[0].Name = "Changed"
-	prof := must(r.Profile(bg, "default"))(t)
+	prof := must(r.CloneProfile(bg, "default"))(t)
 	prof.ProxyGroups[0].Name = "Changed"
+	// Borrowed reads: the returned records and the Config's own slices are
+	// shallow copies, so top-level changes stay with the caller.
+	borrowedShared := must(r.Shared(bg))(t)
+	borrowedShared.Nodes = nil
+	noError(t, borrowedShared.Fields.Set("surprise", json.RawMessage(`[]`)))
+	borrowedProfile := must(r.Profile(bg, "default"))(t)
+	borrowedProfile.Name = "Changed"
+	borrowedProfile.ProxyGroups = append(borrowedProfile.ProxyGroups, model.ProxyGroup{ID: "extra"})
+	settings := must(r.SystemConfig(bg))(t)
+	settings.ServerDomain = "https://changed.example"
 	all := must(r.ExportAllJSON(bg, false))(t)
 	all[0] = ' '
 	exp := must(r.ExportProfileJSON(bg, "default"))(t)

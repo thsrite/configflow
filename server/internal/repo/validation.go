@@ -361,7 +361,9 @@ func validateProfileIn(d *model.Document, profile *model.Profile, catalogs map[s
 	if err := validateProfileSettings(d, profile, catalogs); err != nil {
 		return err
 	}
-	config, err := resolveConfig(d, profile.Key(), nil, agentCopyNone)
+	// The resolved view only feeds the read-only dialer check and never
+	// leaves this function, so it may borrow the document being validated.
+	config, err := resolveConfig(d, profile.Key(), nil, agentCopyNone, true)
 	if err != nil {
 		return err
 	}

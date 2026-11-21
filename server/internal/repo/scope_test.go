@@ -63,10 +63,12 @@ func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 	source := entry.Model
 	before := mustMarshalJSON(t, source)
 
+	// Config borrows the snapshot: editors change a decoded copy.
 	config := must(Config(ctx, "default"))(t)
 	baseline := mustMarshalJSON(t, config)
-	config.Profile.ProxyGroups[0].Name = "Changed"
-	_, _, err = r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, config), baseline)
+	edited := must(model.DecodeConfig(baseline))(t)
+	edited.Profile.ProxyGroups[0].Name = "Changed"
+	_, _, err = r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, edited), baseline)
 	noError(t, err)
 
 	shared := must(SharedConfig(ctx))(t)

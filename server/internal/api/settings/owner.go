@@ -30,7 +30,8 @@ func loadSystemConfig(ctx context.Context) (*systemConfigEdit, error) {
 	if err != nil {
 		return nil, err
 	}
-	settings, err := r.SystemConfig(ctx)
+	// The edit is handed to SaveSystemConfig: an explicit owned copy.
+	settings, err := r.CloneSystemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +45,8 @@ func loadBackup(ctx context.Context) (*backupEdit, error) {
 	if err != nil {
 		return nil, err
 	}
-	backup, err := r.Backup(ctx)
+	// The edit is handed to SaveBackup: an explicit owned copy.
+	backup, err := r.CloneBackup(ctx)
 	if err != nil {
 		return nil, err
 	}

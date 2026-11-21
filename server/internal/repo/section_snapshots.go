@@ -204,14 +204,15 @@ func mergeSectionMembers(keys []string, proposed, base model.Fields, current any
 	return nil
 }
 
-// SharedConfig loads an owned shared snapshot and records its immutable baseline
-// in the request Scope, retaining three-way save semantics for catalog editors.
+// SharedConfig loads an owned shared snapshot (CloneShared: catalog editors
+// modify it and hand it to SaveSharedRecord) and records its immutable
+// baseline in the request Scope, retaining three-way save semantics.
 func SharedConfig(ctx context.Context) (*model.Shared, error) {
 	repository, err := GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result, err := repository.Shared(ctx)
+	result, err := repository.CloneShared(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -50,7 +50,8 @@ func (r *Repository) ConfigRevision(ctx context.Context, profileID string) (resu
 
 // PublishConfig is GetPublishSnapshot on typed values: the resolved view of
 // a profile (full Agents only when agents is set) and its config revision, from
-// one generation. The value belongs to the caller.
+// one generation. The value is a caller-owned deep copy: publishing hands it to
+// deploy jobs that outlive the request and may adjust it.
 func (r *Repository) PublishConfig(ctx context.Context, profileID string, agents bool) (config *model.Config, revision int64, err error) {
 	projection := agentCopyNone
 	if agents {
@@ -62,7 +63,7 @@ func (r *Repository) PublishConfig(ctx context.Context, profileID string, agents
 			return err
 		}
 		revision = int64(profile.Revision) + int64(document.Shared.Revision)
-		config, err = resolveConfig(document, profileID, nil, projection)
+		config, err = resolveConfig(document, profileID, nil, projection, false)
 		return err
 	})
 	return config, revision, err
@@ -73,10 +74,11 @@ func (r *Repository) PublishConfig(ctx context.Context, profileID string, agents
 // roots, the whole rule library, and rulesets hydrated from it. Agents are
 // omitted by default so hot readers never copy deployment or IPv6 verification
 // histories; OxiDNS policy/rule-DNS callers use ConfigWithOxiDNSAgents.
-// The value belongs to the caller.
+// The value borrows the snapshot (see "Borrowed reads" in config_borrow.go):
+// only the Config and its top-level slices belong to the caller.
 func (r *Repository) Config(ctx context.Context, profileID string, roots ResourceRoots) (result *model.Config, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
-		result, err = resolveConfig(document, profileID, roots, agentCopyNone)
+	err = r.borrow(ctx, func(document *model.Document, shared bool) error {
+		result, err = resolveConfig(document, profileID, roots, agentCopyNone, shared)
 		return err
 	})
 	return result, err
@@ -85,10 +87,11 @@ func (r *Repository) Config(ctx context.Context, profileID string, roots Resourc
 // ConfigWithOxiDNSAgents returns the resolved view of a profile together with
 // only the Agent fields OxiDNS policy and rule-DNS readers inspect (id, name,
 // host, service_type, profile_id, enabled, dns_follow, rule_sync), without
-// copying deployment or IPv6 verification histories.
+// copying deployment or IPv6 verification histories. It borrows the snapshot
+// like Config; the projected Agents are the caller's own.
 func (r *Repository) ConfigWithOxiDNSAgents(ctx context.Context, profileID string, roots ResourceRoots) (result *model.Config, err error) {
-	err = r.View(ctx, func(document *model.Document) error {
-		result, err = resolveConfig(document, profileID, roots, agentCopyOxiDNS)
+	err = r.borrow(ctx, func(document *model.Document, shared bool) error {
+		result, err = resolveConfig(document, profileID, roots, agentCopyOxiDNS, shared)
 		return err
 	})
 	return result, err

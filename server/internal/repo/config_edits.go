@@ -56,7 +56,7 @@ func (r *Repository) updateConfig(ctx context.Context, profileID string, fn func
 	err := r.Update(ctx, func(ctx context.Context, document *model.Document) error {
 		var err error
 		saved, err = updateProfileIn(document, profileID, func(profile *model.Profile) error {
-			config, err := resolveConfig(document, profileID, nil, agentCopyOxiDNS)
+			config, err := resolveConfig(document, profileID, nil, agentCopyOxiDNS, false)
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func (r *Repository) updateSharedConfigs(ctx context.Context, sharedEdit func(co
 		}
 		before := map[string]*model.Config{}
 		for _, id := range selected {
-			config, err := resolveConfig(document, id, nil, agentCopyOxiDNS)
+			config, err := resolveConfig(document, id, nil, agentCopyOxiDNS, false)
 			if err != nil {
 				return err
 			}
@@ -148,7 +148,7 @@ func (r *Repository) updateSharedConfigs(ctx context.Context, sharedEdit func(co
 		}
 		for _, id := range selected {
 			saved, err := updateProfileIn(document, id, func(profile *model.Profile) error {
-				after, err := resolveConfig(document, id, nil, agentCopyOxiDNS)
+				after, err := resolveConfig(document, id, nil, agentCopyOxiDNS, false)
 				if err != nil {
 					return err
 				}
