@@ -38,6 +38,10 @@ func isOpaque(s string) bool {
 // credentials. Hosts and ports remain readable. It shares FailureText's URL
 // recognition; malformed URLs fail closed. Opaque path/query tokens are marked.
 func CredentialSpans(text string) [][2]int {
+	// Both a credential URL ("://") and bare userinfo need a ':'.
+	if !strings.Contains(text, ":") {
+		return [][2]int{}
+	}
 	var spans [][2]int
 	// FieldsFunc lacks positions; advancing through each original word retains them.
 	offset := 0

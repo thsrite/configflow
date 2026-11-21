@@ -261,6 +261,7 @@ type sanitizer struct {
 	sortKeys    bool
 	active      map[containerID]bool
 	cache       map[string]bool
+	texts       map[string]string // credential-pass results by input
 }
 
 func (s *sanitizer) visit(value any, depth int) any {
@@ -412,13 +413,34 @@ func (s *sanitizer) str(value string) string {
 		return value
 	}
 	if s.credentials {
-		if len(diag.CredentialSpans(value)) > 0 {
-			return Redacted
+		// The credential pass is a pure function of value for this sanitizer;
+		// histories repeat the same messages many times.
+		if result, ok := s.texts[value]; ok {
+			return result
 		}
-		if diag.HasCredentialText(value) {
-			value = diag.FailureText(value, nil, len(value)+128)
+		result := s.credentialStr(value)
+		if len(value) <= stringCacheMaxLength && len(s.texts) < stringCacheSize {
+			if s.texts == nil {
+				s.texts = map[string]string{}
+			}
+			s.texts[value] = result
 		}
+		return result
 	}
+	return s.secretStr(value)
+}
+
+func (s *sanitizer) credentialStr(value string) string {
+	if len(diag.CredentialSpans(value)) > 0 {
+		return Redacted
+	}
+	if diag.HasCredentialText(value) {
+		value = diag.FailureText(value, nil, len(value)+128)
+	}
+	return s.secretStr(value)
+}
+
+func (s *sanitizer) secretStr(value string) string {
 	if len(s.secrets) == 0 {
 		return value
 	}

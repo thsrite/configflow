@@ -165,6 +165,11 @@ func SecretSpans(text string) [][2]int {
 // and PEM private keys recognized by FailureText. This keeps public metadata
 // redaction on the same patterns as diagnostic redaction.
 func HasCredentialText(text string) bool {
+	// Every pattern needs one of these: secretPattern a literal ':' or '=',
+	// authPattern a b/B (Bearer/Basic only fold to ASCII), pemPattern "BEGIN".
+	if !strings.ContainsAny(text, ":=bB") {
+		return false
+	}
 	return len(SecretSpans(text)) > 0 || len(matchesAtWordStart(text, authPattern, 0)) > 0 || pemPattern.MatchString(text)
 }
 
