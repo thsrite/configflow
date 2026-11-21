@@ -2635,3 +2635,11 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   环境：`backend/agents/go-agent/integration/oxidns_ha_openrc_lab.sh`（`-tags halab`，一次性 alpine:3.24 容器，真实 OpenRC +
   keepalived，私有 Docker 网络 198.51.100.0/24）：开启→停用两轮、配置已被删除时停用、crashed 时再开启与停用。负控：修复前
   代码停用后 keepalived 仍在运行，再次开启被「虚拟 IP … 已在本机网卡上，但不是由 DNS 高可用持有」拒绝，与实验网一致。
+
+## 实验网 L2-D3 — Agent 定期刷新 Mihomo 内核版本（Agent 1.9.1-go）
+
+- 根因：域名发现采集只在连上控制器（或断开后重连）时读一次 `/version`；在两次连接轮询之间替换内核并重启，连接轮询不会失败，
+  Agent 一直上报旧版本，直到 Agent 重启。
+- 修法：连接正常时，距上次读取满 60 s（`discoveryVersionRefresh`）的下一次轮询再读一次 `/version`；断开重连时仍立即读取。
+  每分钟多一个本机 HTTP 请求，上报周期（5 分钟）内总能带上新版本。
+- 回归测试：`TestCollectorRefreshesVersionWhileConnected`（假控制器在连接不断开的情况下改版本，上报的版本随之更新）。

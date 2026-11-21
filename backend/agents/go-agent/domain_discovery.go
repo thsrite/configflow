@@ -39,6 +39,11 @@ const (
 	discoveryServerTooOld   = 30 * time.Minute
 )
 
+// discoveryVersionRefresh is how often a connected controller's /version is
+// read again: a kernel replaced and restarted between two polls never breaks
+// the connection, and its new version must still be reported.
+var discoveryVersionRefresh = time.Minute
+
 var errControllerAuth = errors.New("mihomo controller rejected the secret")
 
 // ---------- 控制接口定位 ----------
@@ -503,6 +508,7 @@ func (d *discoveryCollector) pollLoop(ctx context.Context) {
 	defer unsubscribe()
 	tracker := newConnTracker(discoveryMaxTracked)
 	connected := false
+	var versionAt time.Time
 	for {
 		var snapshot mihomoConnSnapshot
 		select {
@@ -512,9 +518,9 @@ func (d *discoveryCollector) pollLoop(ctx context.Context) {
 		}
 		switch err := snapshot.Err; {
 		case err == nil:
-			if !connected {
+			if !connected || snapshot.At.Sub(versionAt) >= discoveryVersionRefresh {
 				d.fetchVersion(ctx, snapshot.Controller)
-				connected = true
+				connected, versionAt = true, snapshot.At
 			}
 			d.setStatus("running", false)
 			finished, overflow := tracker.observe(snapshot.Conns)

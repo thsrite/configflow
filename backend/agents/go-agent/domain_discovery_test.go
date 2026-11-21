@@ -325,3 +325,48 @@ func TestAggregatorIgnoresRegionProbeTraffic(t *testing.T) {
 		t.Fatalf("probe traffic leaked into stats: %+v", items)
 	}
 }
+
+// Lab L2-D3: a kernel replaced and restarted between two polls never breaks
+// the connection; its new version must still reach the report.
+func TestCollectorRefreshesVersionWhileConnected(t *testing.T) {
+	discoveryPollInterval, discoveryVersionRefresh = 20*time.Millisecond, 100*time.Millisecond
+	defer func() { discoveryPollInterval, discoveryVersionRefresh = time.Second, time.Minute }()
+	var mu sync.Mutex
+	version := "v1.19.31"
+	mihomo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/version":
+			mu.Lock()
+			fmt.Fprintf(w, `{"meta":true,"version":%q}`, version)
+			mu.Unlock()
+		case "/connections":
+			w.Write([]byte(`{"connections":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mihomo.Close()
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(configPath, []byte("external-controller: "+strings.TrimPrefix(mihomo.URL, "http://")+"\n"), 0600)
+	collector := newDiscoveryCollector(&Config{ConfigPath: configPath, ServiceType: "mihomo"}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go collector.pollLoop(ctx)
+	waitVersion := func(want string) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			collector.mu.Lock()
+			got := collector.version
+			collector.mu.Unlock()
+			if got == want {
+				return
+			}
+		}
+		t.Fatalf("reported version never became %s", want)
+	}
+	waitVersion("v1.19.31")
+	mu.Lock()
+	version = "v1.19.32"
+	mu.Unlock()
+	waitVersion("v1.19.32")
+}
