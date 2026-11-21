@@ -92,6 +92,8 @@ func New(t testing.TB, options Options) *Server {
 	if err != nil {
 		t.Fatalf("open repository: %v", err)
 	}
+	// Borrowed configuration snapshots are re-checked when the test ends.
+	repo.EnableViewGuardForTest(t, repository)
 	config := auth.Config{SecretKey: options.SecretKey}
 	if options.Auth {
 		config.AdminUsername, config.AdminPassword = options.Username, options.Password
