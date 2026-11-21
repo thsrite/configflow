@@ -150,6 +150,9 @@ type Result struct {
 	// Wrote is set as soon as an operation is attempted, not when it is
 	// proven: a write may land before shutdown cancels its proof.
 	Wrote bool `json:"-"`
+	// Applied counts operations whose write was proven; an aborted
+	// publication records it with the plan's total (lab L5-D3).
+	Applied int `json:"-"`
 }
 
 // MarshalJSON preserves explicit empty and null feature checks independently

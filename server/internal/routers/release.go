@@ -452,6 +452,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 							done = append(done, releaseDone{current, stage.Ops[n].OpSummary(), raw, undo})
 							result.Wrote = true
 							if ok {
+								result.Applied++
 								record(stage.Ops[n].OpSummary(), "ok")
 							}
 							return

@@ -2694,3 +2694,16 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   <地址> 不在 <网段> 内。请把路由器地址改为路由器在 <网段> 中的地址，或关闭「自动配置回流」」。没有直连路由证据（iKuai、
   路由读取失败、网关不在任何直连网段）时不判断，Agent 的 apply 校验照旧保留。
 - 测试：`routers.TestReturnUpstreamOutsideGatewayNetworkBlocksPlan`（LAN 地址、WAN 地址、无直连路由、直连路由未生效）。
+
+## 实验网 L5-D3 — 关停打断路由器发布时留下中止记录（修 R12 接线缺陷）
+
+- 现象：iKuai 长批次发布中 SIGTERM，宽限期内继续写入，到期后进行中的请求被断开；重启后 `last_release` 仍是上一次成功，
+  没有中止记录。根因：发布路由在 HTTP 请求的 goroutine 里直接调用 `routers.Publish`，不是 Runtime 跟踪的任务。Runtime
+  在宽限期末取消后只等待跟踪任务（≈0.5 s），随即关闭，D-R12-3 的「中止记录」那一次本地提交来不及完成。已有的
+  `routers.StartPublish`（跟踪任务）没有接到路由上；它还用全局 `lifecycle.Spawn`，不随请求所属的 Runtime。
+- Go：发布路由改为经 `StartPublish` 运行并等待结果（HTTP 响应不变）；`StartPublish` 用 `lifecycle.SpawnerFrom(ctx)`
+  跟随请求的 Runtime。中止时 `last_release` 为 `ok:false`、时间、`failed_stage`，消息为原「服务正在停止，发布在当前操作
+  完成后中止；已完成的变更保留，请重新预览后发布」后附「（已完成 N/总数 项操作）」（N 为已由设备回复证实的操作数）。
+  重新预览照旧按设备现状接着规划剩余操作。Python 关停时直接被杀，什么都不记录。
+- 测试：`api/routers.TestR15PublishHTTPDisconnectAndShutdownAfterWrite/shutdown` 现在要求 `Shutdown` 返回时中止记录已提交
+  （改回直接调用时稳定失败）；`routers.TestAbortedReleaseRecordsProgress`。

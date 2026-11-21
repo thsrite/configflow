@@ -76,6 +76,7 @@ const (
 	messageReleaseRollbackIncomplete = "回滚未完成，请检查发布记录"
 	messageRollbackComplete          = "已按逆序撤销已完成的变更"
 	messageReleaseAborted            = "服务正在停止，发布在当前操作完成后中止；已完成的变更保留，请重新预览后发布"
+	messageReleaseAbortedProgress    = "（已完成 %d/%d 项操作）"
 	messageServerStopping            = "服务正在停止，请稍后重试"
 	messagePublishStopped            = "主路由 %s 发布中止：%s"
 	messageCaptureFailed             = "主路由 %s 自动同步基线记录失败：%s"

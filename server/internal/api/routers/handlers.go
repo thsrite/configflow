@@ -339,7 +339,14 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := core.Publish(c.Context(), core.PublishRequest{ProfileID: c.ProfileID, RouterID: r.ID, Expected: confirmation.Fingerprint, Router: r, Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}})
+	// The publication runs as a tracked Runtime owner: at shutdown the
+	// Runtime waits for it after cancelling, so an interrupted release still
+	// records its aborted last_release (lab L5-D3, D-R12-3).
+	started, err := core.StartPublish(c.Context(), core.PublishRequest{ProfileID: c.ProfileID, RouterID: r.ID, Expected: confirmation.Fingerprint, Router: r, Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}}, nil)
+	if err != nil {
+		return failure(c, cfg, err, 0, false)
+	}
+	out := <-started
 	if out.Err != nil {
 		return failure(c, cfg, out.Err, 0, false)
 	}

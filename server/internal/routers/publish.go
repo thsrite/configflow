@@ -80,7 +80,7 @@ func NewDriver(r *Router) Driver {
 // The result is delivered only after driver and both locks have been released.
 func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-chan PublishOutcome, error) {
 	out := make(chan PublishOutcome, 1)
-	err := lifecycle.Spawn(ctx, "router-publish-"+req.RouterID, func(work context.Context) {
+	err := lifecycle.SpawnerFrom(ctx).Spawn(ctx, "router-publish-"+req.RouterID, func(work context.Context) {
 		outcome := func() (result PublishOutcome) {
 			if unlock != nil {
 				defer unlock()
@@ -241,10 +241,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 			}
 			agent = req.Agents.ReturnAgent(inspection.Gateway)
 		}
-		count := 0
-		for _, stage := range plan.Stages {
-			count += len(stage.Ops)
-		}
+		count := planOps(plan)
 		releaseLogger.Infof(messagePublishStart, label, count)
 		result = Execute(work, plan, driver, agent)
 		logRelease(current, count, result)
@@ -319,7 +316,11 @@ func releasePublication(ctx context.Context, r *Router, p *Plan, result *Result,
 	if result.FailedStage != nil {
 		failed = *result.FailedStage
 	}
-	last := LastRelease{At: lifecycle.ClockFrom(ctx).Now().Local().Format("2006-01-02T15:04:05"), OK: result.OK, Fingerprint: p.Fingerprint, FailedStage: failed, Message: diag.EventMessage(strings.Join(failure, "；"), []any{r.Password})}
+	message := diag.EventMessage(strings.Join(failure, "；"), []any{r.Password})
+	if result.Aborted {
+		message += fmt.Sprintf(messageReleaseAbortedProgress, result.Applied, planOps(p))
+	}
+	last := LastRelease{At: lifecycle.ClockFrom(ctx).Now().Local().Format("2006-01-02T15:04:05"), OK: result.OK, Fingerprint: p.Fingerprint, FailedStage: failed, Message: message}
 	b, err := json.Marshal(last)
 	if err != nil {
 		return repo.RouterPublicationJSON{}, err
@@ -339,6 +340,14 @@ func releasePublication(ctx context.Context, r *Router, p *Plan, result *Result,
 
 // saveAbortedPublication is the sole R12 local commit exception. Its caller has
 // established Aborted && Wrote. No device I/O or reads enter this region.
+// planOps counts the device and Agent operations of a plan.
+func planOps(p *Plan) int {
+	count := 0
+	for _, stage := range p.Stages {
+		count += len(stage.Ops)
+	}
+	return count
+}
 func saveAbortedPublication(ctx context.Context, r *repo.Repository, profileID string, expected json.RawMessage, p repo.RouterPublicationJSON) error {
 	return r.SaveRouterPublicationJSON(ctxx.Uninterruptible(ctx), profileID, expected, p)
 }

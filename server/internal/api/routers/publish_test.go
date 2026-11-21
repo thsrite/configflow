@@ -138,6 +138,16 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 				case <-time.After(2 * time.Second):
 					t.Fatal("write HTTP ignored shutdown")
 				}
+				// Lab L5-D3: the process exits when Shutdown returns, so the
+				// aborted record must already be committed by then; only a
+				// tracked publish owner is awaited after the cancellation.
+				if mode == "shutdown" {
+					profile, _ := s.Repo.Profile(s.Context(), "default")
+					last := profile.Routers.Items[0].LastRelease
+					if last == nil || last.OK || !strings.Contains(last.Message, "（已完成 ") {
+						t.Fatalf("aborted release not recorded before shutdown returned: %+v", last)
+					}
+				}
 			}
 			calls := len(fake.Calls())
 			select {
