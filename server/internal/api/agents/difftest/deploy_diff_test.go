@@ -585,3 +585,165 @@ func comparePublicationFiles(t *testing.T, a, b string, values []map[string]stri
 		t.Fatalf("complete DATA_DIR files: %s; Python-only=%v; Go-only=%v", publishDifference("", x, y), onlyLeft, onlyRight)
 	}
 }
+
+func TestPublishEasyTierCoreVersionsAgainstFlask(t *testing.T) {
+	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
+		t.Skip("set CONFIGFLOW_DIFF=1")
+	}
+	tests := []struct {
+		name           string
+		version        string
+		wantGenStatus  int
+		wantPushStatus int
+	}{
+		{name: "alpha-100ff73", version: "alpha-100ff73", wantGenStatus: 200, wantPushStatus: 202},
+		{name: "empty", version: "", wantGenStatus: 200, wantPushStatus: 202},
+		{name: "release-v1.19.32", version: "v1.19.32", wantGenStatus: 200, wantPushStatus: 202},
+		{name: "garbage-string", version: "!!!garbage-version###", wantGenStatus: 200, wantPushStatus: 202},
+		{name: "old-v1.19.30", version: "v1.19.30", wantGenStatus: 400, wantPushStatus: 400},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			pyDir, goDir := filepath.Join(root, "python"), filepath.Join(root, "go")
+			pf := agentfake.New(agentfake.Options{AgentID: "a14-agent", Token: "a14-synthetic-token"})
+			gf := agentfake.New(agentfake.Options{AgentID: "a14-agent", Token: "a14-synthetic-token"})
+			ps, gs := httptest.NewServer(pf), httptest.NewServer(gf)
+			defer ps.Close()
+			defer gs.Close()
+			portOf := func(s *httptest.Server) int {
+				_, p, _ := net.SplitHostPort(strings.TrimPrefix(s.URL, "http://"))
+				n, _ := strconv.Atoi(p)
+				return n
+			}
+
+			publishSeed(t, pyDir, portOf(ps))
+			pr, e := repo.Open(pyDir, repo.Options{})
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e := pr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
+				return s.Agents[0].SetJSON("domain_discovery_enabled", json.RawMessage(`true`))
+			}); e != nil {
+				t.Fatal(e)
+			}
+			if _, e := pr.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+				return p.SetJSON("mihomo", json.RawMessage(`{
+					"custom_config": "mode: rule\n",
+					"easytier": {
+						"enabled": true,
+						"name": "EasyTier",
+						"apply_to": "all",
+						"routes": ["192.0.2.0/24"],
+						"options": {
+							"network-name": "lab-net",
+							"peers": ["tcp://198.51.100.10:11010"]
+						}
+					}
+				}`))
+			}); e != nil {
+				t.Fatal(e)
+			}
+			copyDir(t, pyDir, goDir)
+			gr, e := repo.Open(goDir, repo.Options{})
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e := gr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
+				return s.Agents[0].SetJSON("port", mustRawJSON(t, portOf(gs)))
+			}); e != nil {
+				t.Fatal(e)
+			}
+			if e := pr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error { return nil }); e != nil {
+				t.Fatal(e)
+			}
+
+			py, stopPy := startPythonArgs(t, pyDir, "server/internal/api/agents/difftest/testdata/publish_app.py")
+			defer stopPy()
+			goBase, stopGo := startGo(t, goDir)
+			defer stopGo()
+			pt, gt := login(t, py), login(t, goBase)
+
+			base := "/api/agents/a14-agent"
+			J := "application/json"
+			if tc.version != "" {
+				reportBody, _ := json.Marshal(map[string]any{
+					"schema":         1,
+					"status":         "running",
+					"mihomo_version": tc.version,
+					"window_start":   "2026-11-21T00:00:00Z",
+					"window_end":     "2026-11-21T00:05:00Z",
+					"ip_only_conns":  0,
+					"dropped":        0,
+					"items":          []any{},
+				})
+				req := request{
+					name:        "traffic-report",
+					method:      "POST",
+					path:        base + "/traffic-report",
+					body:        string(reportBody),
+					contentType: J,
+					headers:     map[string]string{"Authorization": "Bearer a14-synthetic-token"},
+				}
+				a, b := send(t, py, req, pt, nil), send(t, goBase, req, gt, nil)
+				if a.status != 200 || b.status != 200 {
+					t.Fatalf("traffic-report status py=%d go=%d: %s %s", a.status, b.status, a.body, b.body)
+				}
+			}
+
+			// 1) POST /generate-config
+			genReq := request{
+				name:        "generate-config",
+				method:      "POST",
+				path:        base + "/generate-config",
+				body:        `{"expected_profile_id":"default","expected_service_type":"mihomo","base_url":"https://panel.example.com"}`,
+				contentType: J,
+				admin:       true,
+			}
+			pyGen, goGen := send(t, py, genReq, pt, nil), send(t, goBase, genReq, gt, nil)
+			if pyGen.status != tc.wantGenStatus || goGen.status != tc.wantGenStatus {
+				t.Fatalf("generate-config status py=%d go=%d want=%d:\npy=%s\ngo=%s", pyGen.status, goGen.status, tc.wantGenStatus, pyGen.body, goGen.body)
+			}
+			var pyGenObj, goGenObj map[string]any
+			if err := json.Unmarshal(pyGen.body, &pyGenObj); err != nil {
+				t.Fatalf("unmarshal py generate-config: %v", err)
+			}
+			if err := json.Unmarshal(goGen.body, &goGenObj); err != nil {
+				t.Fatalf("unmarshal go generate-config: %v", err)
+			}
+			if tc.wantGenStatus == 200 {
+				pyContent, _ := pyGenObj["content"].(string)
+				goContent, _ := goGenObj["content"].(string)
+				if !strings.Contains(goContent, "type: easytier") {
+					t.Fatalf("go generated config missing easytier: %s", goContent)
+				}
+				compareGeneratedYAML(t, []byte(pyContent), []byte(goContent))
+			} else if pyGenObj["message"] != goGenObj["message"] {
+				t.Fatalf("generate-config rejection mismatch:\npy=%v\ngo=%v", pyGenObj["message"], goGenObj["message"])
+			}
+
+			// 2) POST /push-config
+			pushReq := request{
+				name:        "push-config",
+				method:      "POST",
+				path:        base + "/push-config",
+				body:        fmt.Sprintf(`{"deployment_id":"m16-%s","restart":false,"base_url":"https://panel.example.com"}`, strings.ReplaceAll(tc.name, ".", "-")),
+				contentType: J,
+				admin:       true,
+			}
+			pyPush, goPush := send(t, py, pushReq, pt, nil), send(t, goBase, pushReq, gt, nil)
+			if pyPush.status != tc.wantPushStatus || goPush.status != tc.wantPushStatus {
+				t.Fatalf("push-config status py=%d go=%d want=%d:\npy=%s\ngo=%s", pyPush.status, goPush.status, tc.wantPushStatus, pyPush.body, goPush.body)
+			}
+			if tc.wantPushStatus == 400 {
+				var pyPushObj, goPushObj map[string]any
+				_ = json.Unmarshal(pyPush.body, &pyPushObj)
+				_ = json.Unmarshal(goPush.body, &goPushObj)
+				if pyPushObj["message"] != goPushObj["message"] {
+					t.Fatalf("push-config rejection mismatch:\npy=%v\ngo=%v", pyPushObj["message"], goPushObj["message"])
+				}
+			}
+		})
+	}
+}

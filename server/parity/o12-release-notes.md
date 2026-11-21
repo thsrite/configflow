@@ -174,7 +174,7 @@
 | B65 | 订阅 hosts/DNS：VT/FF/U+001C–U+001E 不再被当成换行，含这些控制字符的 hosts 交给 YAML 报 parse_error；rule 模式 fake-ip-filter 不是列表时保留整个原配置并给 filter_not_list 提示（不再覆盖用户值）；DNS listener 端口和内核版本只认 ASCII 数字（如 `1.2.3.4:٥٣` 为 listen_unparsed）。 | [差异表 N8-9 subs native DNS 图、typed hosts](behaviour-changes.md) |
 | B66 | 机场中转（dialer）：proxies/proxy-groups/组成员不是列表时返回带字段路径的中文错误，不回显整份订阅；重复子组不再指数展开（保留 50 targets/100 members 上限）；metadata 损坏、没有可确认成员时不再生成空中转组，保留该节点 missing 提示并暂不交付（修 Python 生成空组）。 | [差异表 N8-9 subs 外部 dialer、typed 中转组生成](behaviour-changes.md) |
 | B67 | 内置 Sub-Store：非法版本文本（全角/阿拉伯数字、`2.1_0` 等）视为无有效版本；在线更新内部错误固定中文、不回显内容；关机打断更新时保留旧 VERSION 和完整备份；显式 TMPDIR/TEMP/TMP 不可用时报 RuntimeDirectoryError（含变量名、路径、中文原因），不再静默换目录启动第二份 runtime；损坏的 state 根在任何服务控制前拒绝。缓存清理把数字订阅 ID `5` 读作 `5.json`。 | [差异表 N8-9 subs/substore 缓存边界、私有 runtime 状态、在线更新、临时根目录、Agent 未知版本](behaviour-changes.md) |
-| B68 | EasyTier：Agent 上报非空但无法识别的内核版本时拒绝生成，提示「Agent 上报的内核版本无法识别：<原值>，请升级或重启 Agent」，拒绝发生在修改文档前；空/未上报仍走原 unknown 路径（影响面见 M16）。Surge/Loon 数字 node type 明确报「节点 type 必须是字符串，当前值：5」（Python 为 AttributeError）。 | [差异表 N8-9 subs 跨包调用边界收口、Agent 未知版本生成边界](behaviour-changes.md) |
+| B68 | EasyTier / 内核版本：按 O12 M16（实验网 L2 实测 `alpha-100ff73`）裁定，非空但无法识别的 Mihomo 内核版本不再拒绝生成/发布，统一按"未知"处理（与空版本走同一路径，按 Agent 限流记告警日志；全角数字如 `v１.19.30` 按 ASCII 规则同样视为未知）；已知过旧正式版（`< v1.19.31`）仍拒绝。Surge/Loon 数字 node type 明确报「节点 type 必须是字符串，当前值：5」（Python 为 AttributeError）。 | [差异表 O12 M16、N8-9 subs 跨包调用边界收口](behaviour-changes.md) |
 | B69 | 路由器：请求中的 `ip_rule_sets`/`ros_policy_rule_sets` 为 `false`/`0`/`""` 返回 400（Python 当空列表）；type/endpoint/username/password/Agent 引用必须是文本、verify_tls 必须是 bool、检查间隔必须是 JSON 整数；存储中坏选择列表在无关改名时 400 而不是写空；损坏的守卫配置若带启用开关或所有权记录，probe/routes/固定 IP/IPv6 设备操作先提示修复；routersplit 坏拓扑 409 `ROUTER_SPLIT_INVALID`；向导会话 `completed` 只认 `true`。 | [差异表 N8-9 routers / routersplit typed boundary](behaviour-changes.md) |
 | B70 | Agent 回包：部署状态/成功回包不是对象、不是 JSON、含重复键、`success` 非 bool，以及 legacy push/restart 的坏回包，统一返回结构化 502 `INVALID_RESPONSE`（如「Agent 返回的发布状态格式不正确，请检查 Agent 版本和日志。」），不写库、不改 revision；不再静默当作 pending 或裸 500。部署查询/激活/回滚要求原始 journal 的 deployment/profile/service 身份完全匹配。 | [差异表 N8-10 core-2 malformed deployment status、direct Agent protocol、traffic machine domains](behaviour-changes.md) |
 | B71 | Agent 注册/心跳：`profile_id` 只接受字符串/null/不传，其他类型 400「Invalid profile id」且不消费一次性凭据；版本非字符串、非白名单或超 64 字节 400 且凭据不消费，缺失/null 默认 1.0.0；心跳数值越界 400。存储中错型 `profile_id` 现在可以通过编辑或带 `profile_id` 的重注册直接修复（Python 报错）；traffic-report、client-notes、规则应用、device-policies 遇损坏绑定 400，不再落到默认空间。 | [差异表 N8-10 core-2 registration profile、explicit profile repairs、api/agents](behaviour-changes.md) |
@@ -480,6 +480,7 @@
 - M11 接受：#40 构建注入唯一版本（提交号），Agent 二进制与镜像同一提交构建。
 - M14 推翻建议：autoupdate 镜像**保留**，并改为也重建 Go server（维护者 2026-11-22）。
 - M15：缺失 Agent 的日志相关接口改 404，切换前修（进行中）。
+- M16（实验网 L2 实测 `alpha-100ff73`）：非空但无法识别的 Mihomo 内核版本按"未知"处理，与空版本走同一路径，按 Agent 限流记告警日志，不拒绝生成/发布；删除误导提示「请升级或重启 Agent」（已修）。
 - M17 接受：删除"退回 Python 前清理"步骤；停损 = 停止发布、修复前进，或用切换前冷备份重启 Go。
 - M18：切换**前**在界面加入域名发现流量文件损坏的恢复入口。
 - M19 接受：≥1e6 非整数浮点的指数写法不单列。

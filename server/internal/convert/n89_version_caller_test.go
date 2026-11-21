@@ -35,7 +35,11 @@ func applyNativeSubsVersion(row *corpusRow, expected *JObj) {
 	if expected == nil {
 		return
 	}
-	failure := expected.GetList("native_error")
-	row.errClass, row.errMsg = failure[0].(string), failure[1].(string)
+	if failure := expected.GetList("native_error"); len(failure) == 2 {
+		row.errClass, row.errMsg = failure[0].(string), failure[1].(string)
+	} else {
+		row.errClass, row.errMsg = "", ""
+		row.out = expected.Value("native_output")
+	}
 	row.mutated, row.hasMut = expected.Value("native_mutated"), true
 }

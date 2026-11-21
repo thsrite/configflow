@@ -19,6 +19,7 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
@@ -1096,7 +1097,14 @@ func (s *Source) ViewConfig(fn func(*model.Config) error) error {
 	return fn(s.modelConfig)
 }
 func coreVersionJSON(ctx context.Context, t Target) json.RawMessage {
-	raw, _ := json.Marshal(reportedCore(ctx, t))
+	version := reportedCore(ctx, t)
+	if version != "" {
+		if _, ok := subs.CoreVersion(version); !ok {
+			safe := redact.DiagnosticText(version, []string{t.Token}, 120)
+			subs.WarnUnrecognizedCoreVersion(t.ID, t.Name, safe, lifecycle.ClockFrom(ctx).Now())
+		}
+	}
+	raw, _ := json.Marshal(version)
 	return raw
 }
 func isFullTun(profile *model.Profile) bool {

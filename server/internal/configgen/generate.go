@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
@@ -263,8 +264,16 @@ func outdatedAgents(ctx context.Context, id string) ([]subs.CoreReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	names := make(map[string]string, len(list))
+	for _, item := range list {
+		names[item.ID] = item.Name
+	}
+	at := lifecycle.ClockFrom(ctx).Now()
 	return subs.OldCoreAgents(list, id, defaultID, func(agentID string) subs.CoreStatus {
 		status, _ := subs.DecodeCoreStatus(store.StatusJSON(agentID))
+		if version := strings.TrimSpace(status.MihomoVersion); version != "" {
+			subs.WarnUnrecognizedCoreVersion(agentID, names[agentID], version, at)
+		}
 		return status
 	}), nil
 }

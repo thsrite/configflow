@@ -1,18 +1,22 @@
 package agents
 
 import (
+	"bytes"
 	core "configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
+	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/subs"
 	"context"
 	"encoding/json"
 	"net"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,5 +137,159 @@ func TestDeployHTTPPublishPreviewAndGuards(t *testing.T) {
 		if call.Path == "/api/deployments" && call.Headers.Get("X-Activate") != "false" {
 			t.Fatal("wrong activation header")
 		}
+	}
+}
+
+func TestDeployHTTPEasyTierCoreVersions(t *testing.T) {
+	tests := []struct {
+		name           string
+		version        string
+		wantGenStatus  int
+		wantPushStatus int
+		wantWarnCount  int
+		wantWarnSubstr string
+	}{
+		{
+			name:           "alpha-100ff73",
+			version:        "alpha-100ff73",
+			wantGenStatus:  200,
+			wantPushStatus: 202,
+			wantWarnCount:  1,
+			wantWarnSubstr: "alpha-100ff73",
+		},
+		{
+			name:           "empty",
+			version:        "",
+			wantGenStatus:  200,
+			wantPushStatus: 202,
+			wantWarnCount:  0,
+		},
+		{
+			name:           "release-v1.19.32",
+			version:        "v1.19.32",
+			wantGenStatus:  200,
+			wantPushStatus: 202,
+			wantWarnCount:  0,
+		},
+		{
+			name:           "garbage-string",
+			version:        "!!!garbage-version###",
+			wantGenStatus:  200,
+			wantPushStatus: 202,
+			wantWarnCount:  1,
+			wantWarnSubstr: "!!!garbage-version###",
+		},
+		{
+			name:           "old-v1.19.30-rejected",
+			version:        "v1.19.30",
+			wantGenStatus:  400,
+			wantPushStatus: 400,
+			wantWarnCount:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			subs.ResetCoreVersionWarnState()
+			t.Cleanup(subs.ResetCoreVersionWarnState)
+
+			var logs bytes.Buffer
+			root, err := logx.Setup(logx.Config{Level: logx.Warning, Console: &logs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				root.Close()
+				_, _ = logx.Setup(logx.Config{Level: logx.LevelFromEnv(), Console: os.Stderr})
+			})
+
+			s, admin, _ := newDeployHTTP(t)
+			if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+				return system.Agents[0].SetJSON("domain_discovery_enabled", json.RawMessage(`true`))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, profile *model.Profile) error {
+				return profile.SetJSON("mihomo", json.RawMessage(`{
+					"custom_config": "mode: rule\n",
+					"easytier": {
+						"enabled": true,
+						"name": "EasyTier",
+						"apply_to": "all",
+						"routes": ["192.0.2.0/24"],
+						"options": {
+							"network-name": "lab-net",
+							"peers": ["tcp://198.51.100.10:11010"]
+						}
+					}
+				}`))
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			base := "/api/agents/publish-agent"
+			if tc.version != "" {
+				s.Post(base+"/traffic-report", httpxtest.JSON(map[string]any{
+					"schema":         1,
+					"status":         "running",
+					"mihomo_version": tc.version,
+					"window_start":   "2026-11-21T00:00:00Z",
+					"window_end":     "2026-11-21T00:05:00Z",
+					"ip_only_conns":  0,
+					"dropped":        0,
+					"items":          []any{},
+				}), httpxtest.Header("Authorization", "Bearer synthetic-publish-token")).WantStatus(200)
+			}
+
+			// 1) GET /config (Agent pull)
+			pull := s.Get(base + "/config?token=synthetic-publish-token")
+			if tc.wantGenStatus == 200 {
+				pull.WantStatus(200)
+				if !strings.Contains(mapStr(parseBodyMap(t, pull), "content"), "type: easytier") {
+					t.Fatalf("pull config missing easytier proxy: %s", pull.Text())
+				}
+			} else {
+				if pull.Status == 200 {
+					t.Fatalf("expected old core version pull failure, got 200")
+				}
+			}
+
+			// 2) POST /generate-config
+			gen := s.Post(base+"/generate-config", httpxtest.JSON(map[string]any{
+				"expected_profile_id":   "default",
+				"expected_service_type": "mihomo",
+				"base_url":              "https://panel.example.com",
+			}), admin)
+			gen.WantStatus(tc.wantGenStatus)
+			if tc.wantGenStatus == 200 {
+				content := mapStr(parseBodyMap(t, gen), "content")
+				if !strings.Contains(content, "type: easytier") {
+					t.Fatalf("generated config missing easytier proxy: %s", content)
+				}
+			} else if !strings.Contains(mapStr(parseBodyMap(t, gen), "message"), "v1.19.30") {
+				t.Fatalf("unexpected rejection message: %s", gen.Text())
+			}
+
+			// 3) POST /push-config (direct publish without generation_id, exercises prepareContent)
+			push := s.Post(base+"/push-config", httpxtest.JSON(map[string]any{
+				"deployment_id": "m16-" + strings.ReplaceAll(tc.name, ".", "-"),
+				"restart":       false,
+				"base_url":      "https://panel.example.com",
+			}), admin)
+			push.WantStatus(tc.wantPushStatus)
+			if tc.wantPushStatus == 400 && !strings.Contains(mapStr(parseBodyMap(t, push), "message"), "v1.19.30") {
+				t.Fatalf("unexpected push rejection message: %s", push.Text())
+			}
+
+			// Verify per-Agent throttled warning log across all 3 entry points.
+			logText := logs.String()
+			gotWarns := strings.Count(logText, "按未知版本处理")
+			if gotWarns != tc.wantWarnCount {
+				t.Fatalf("warning count=%d, want %d\nlogs:\n%s", gotWarns, tc.wantWarnCount, logText)
+			}
+			if tc.wantWarnSubstr != "" && !strings.Contains(logText, tc.wantWarnSubstr) {
+				t.Fatalf("warning log missing %q:\n%s", tc.wantWarnSubstr, logText)
+			}
+		})
 	}
 }

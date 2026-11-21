@@ -1,8 +1,7 @@
 {
   "sources": {
     "surge_loon_corpus": "0b83d1df81649ade20448bbf4ec4d58713c7a3d3fbf4a013b4e3fcf274f52918",
-    "review_c12": "3681e530e0930dc9d18ffc61c8ef2b6381a951a7377bbcd4979fab89a0337e68",
-    "corpus": "1f7c3c648572e11bf315f94bfd3d736c05435e14cf7e508df3d2807907792088"
+    "review_c12": "3681e530e0930dc9d18ffc61c8ef2b6381a951a7377bbcd4979fab89a0337e68"
   },
   "cases": {
     "surge_loon_corpus/24090": {
@@ -269,16 +268,20 @@
       ],
       "reason": "native explicit node type validation replaces CPython AttributeError"
     },
-    "review_c12/2121": {
-      "input_sha256": "27f1bc43eebd84a63ca000e9e61e169088f111fa97e33f8ce47e925193e0fa65",
-      "python_error": null,
-      "native_error": [
+    "review_c12/2125": {
+      "input_sha256": "99a630f41f137bfde8c7d87e4111211b70daa3c715129d3a7f8d83b6be3a86d1",
+      "python_error": [
         "EasyTierSettingsError",
-        "Agent 上报的内核版本无法识别：alpha-123，请升级或重启 Agent"
+        "设备上的 Mihomo v１.19.30 不支持 EasyTier 节点（需要 v1.19.31 或更新），请先更新内核，或在 EasyTier 设置里不再下发到 Agent"
       ],
-      "reason": "approved nonempty unrecognized Agent version fails closed",
-      "native_mutated": {},
-      "python_mutated": {
+      "native_error": null,
+      "reason": "O12 M16: ASCII core version parser treats fullwidth-digit v１.19.30 as unknown, applying EasyTier like empty version",
+      "native_output": {
+        "proxy": "EasyTier",
+        "target": "EasyTier",
+        "rules": 0
+      },
+      "native_mutated": {
         "proxies": [
           {
             "name": "EasyTier",
@@ -292,120 +295,7 @@
         "proxy-groups": [],
         "rules": []
       },
-      "python_output": {
-        "proxy": "EasyTier",
-        "target": "EasyTier",
-        "rules": 0
-      }
-    },
-    "review_c12/2125": {
-      "input_sha256": "99a630f41f137bfde8c7d87e4111211b70daa3c715129d3a7f8d83b6be3a86d1",
-      "python_error": [
-        "EasyTierSettingsError",
-        "设备上的 Mihomo v１.19.30 不支持 EasyTier 节点（需要 v1.19.31 或更新），请先更新内核，或在 EasyTier 设置里不再下发到 Agent"
-      ],
-      "native_error": [
-        "EasyTierSettingsError",
-        "Agent 上报的内核版本无法识别：v１.19.30，请升级或重启 Agent"
-      ],
-      "reason": "approved nonempty unrecognized Agent version fails closed",
-      "native_mutated": {},
       "python_mutated": {}
-    },
-    "corpus/34045": {
-      "input_sha256": "c606fffe83688eb0cbb003ac6e08f893f56712f2763c47da8a6f562da6885b37",
-      "python_error": [
-        "EasyTierSettingsError",
-        "EasyTier 节点名「EasyTier」与已有节点或策略组重名，请在 EasyTier 设置里改名"
-      ],
-      "native_error": [
-        "EasyTierSettingsError",
-        "Agent 上报的内核版本无法识别：alpha-abc，请升级或重启 Agent"
-      ],
-      "reason": "approved nonempty unrecognized Agent version fails closed",
-      "native_mutated": {
-        "proxies": [
-          {
-            "name": "EasyTier"
-          }
-        ],
-        "rules": null
-      },
-      "python_mutated": {
-        "proxies": [
-          {
-            "name": "EasyTier"
-          }
-        ],
-        "rules": null,
-        "proxy-groups": []
-      }
-    },
-    "corpus/35971": {
-      "input_sha256": "4645f88d8d2dbe6501d26d19562aee2615b6ff48f89abbd74ca285075eccb921",
-      "python_error": null,
-      "native_error": [
-        "EasyTierSettingsError",
-        "Agent 上报的内核版本无法识别：alpha-abc，请升级或重启 Agent"
-      ],
-      "reason": "approved nonempty unrecognized Agent version fails closed",
-      "native_mutated": {
-        "proxies": [
-          {
-            "name": "Relay",
-            "type": "ss"
-          }
-        ],
-        "proxy-groups": [
-          {
-            "name": "G",
-            "type": "select"
-          }
-        ],
-        "rules": [
-          "MATCH,DIRECT"
-        ],
-        "dns": {
-          "enable": true
-        }
-      },
-      "python_mutated": {
-        "proxies": [
-          {
-            "name": "Relay",
-            "type": "ss"
-          },
-          {
-            "name": "ET 1",
-            "type": "easytier",
-            "network-name": "home",
-            "network-secret": "s3cret",
-            "peers": [
-              "tcp://203.0.113.10:11010"
-            ],
-            "udp": true
-          }
-        ],
-        "proxy-groups": [
-          {
-            "name": "G",
-            "type": "select"
-          }
-        ],
-        "rules": [
-          "IP-CIDR,10.200.0.0/24,ET 1,no-resolve",
-          "IP-CIDR,10.144.144.0/24,ET 1,no-resolve",
-          "MATCH,DIRECT"
-        ],
-        "dns": {
-          "enable": true
-        }
-      },
-      "python_output": {
-        "proxy": "ET 1",
-        "target": "ET 1",
-        "rules": 2
-      }
     }
   }
 }

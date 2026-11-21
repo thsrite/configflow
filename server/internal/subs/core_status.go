@@ -1,10 +1,84 @@
 package subs
 
 import (
+	"configflow/internal/logx"
 	"configflow/internal/model"
 	"encoding/json"
 	"strings"
+	"sync"
+	"time"
 )
+
+// UnrecognizedCoreVersionWarnInterval limits unrecognized core-version warnings per Agent.
+const UnrecognizedCoreVersionWarnInterval = 10 * time.Minute
+
+const maxCoreVersionWarnEntries = 4096
+
+var (
+	coreStatusLogger = logx.Get("backend.utils.proxy_server_dns")
+	coreWarnMu       sync.Mutex
+	coreWarnLast     = map[string]time.Time{}
+)
+
+// ResetCoreVersionWarnState clears per-Agent warning throttle state for tests.
+func ResetCoreVersionWarnState() {
+	coreWarnMu.Lock()
+	coreWarnLast = map[string]time.Time{}
+	coreWarnMu.Unlock()
+}
+
+// WarnUnrecognizedCoreVersion logs a per-Agent rate-limited warning when a
+// non-empty reported Mihomo core version cannot be parsed. Callers treat
+// unrecognized versions identically to an empty/unknown version.
+func WarnUnrecognizedCoreVersion(agentID, agentName, version string, at time.Time) bool {
+	trimmed := strings.TrimSpace(version)
+	if trimmed == "" {
+		return false
+	}
+	if _, ok := CoreVersion(trimmed); ok {
+		return false
+	}
+	key := agentID
+	if key == "" {
+		key = agentName
+	}
+	coreWarnMu.Lock()
+	if last, seen := coreWarnLast[key]; seen && at.Sub(last) < UnrecognizedCoreVersionWarnInterval && at.Sub(last) >= 0 {
+		coreWarnMu.Unlock()
+		return false
+	}
+	if len(coreWarnLast) >= maxCoreVersionWarnEntries {
+		for k, last := range coreWarnLast {
+			if at.Sub(last) >= UnrecognizedCoreVersionWarnInterval || at.Sub(last) < 0 {
+				delete(coreWarnLast, k)
+			}
+		}
+		if len(coreWarnLast) >= maxCoreVersionWarnEntries {
+			coreWarnMu.Unlock()
+			return false
+		}
+	}
+	coreWarnLast[key] = at
+	coreWarnMu.Unlock()
+	label := coreAgentLabel(agentID, agentName)
+	coreStatusLogger.Warningf(msgUnrecognizedCoreVersion, label, logx.LogText(trimmed, 64))
+	return true
+}
+
+func coreAgentLabel(id, name string) string {
+	cleanID := logx.LogText(id, 64)
+	cleanName := logx.LogText(name, 64)
+	switch {
+	case cleanName != "" && cleanID != "" && cleanName != cleanID:
+		return cleanName + " (" + cleanID + ")"
+	case cleanName != "":
+		return cleanName
+	case cleanID != "":
+		return cleanID
+	default:
+		return "<unknown>"
+	}
+}
 
 // CoreAgent is the consumed discovery binding. A missing service type defaults
 // to Mihomo; an explicitly empty service type does not select a core.

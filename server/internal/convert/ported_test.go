@@ -767,17 +767,14 @@ func TestTargetScope(t *testing.T) {
 	}
 }
 
-func TestOldAgentCoreAndInvalidVersionsAreRefused(t *testing.T) {
+func TestOldAgentCoreRefusedAndUnrecognizedVersionsAccepted(t *testing.T) {
 	config := easytierConfig(t, easytierSettings("apply_to", "agent"))
 	_, err := ApplyEasyTierNode(baseDocumentNode(t), config, true, json.RawMessage(`"v1.19.30"`))
 	if err == nil || !strings.Contains(err.Error(), "v1.19.31") {
 		t.Fatal(err)
 	}
-	_, err = ApplyEasyTierNode(baseDocumentNode(t), config, true, json.RawMessage(`"alpha-abc"`))
-	if err == nil || !strings.Contains(err.Error(), "alpha-abc") {
-		t.Fatal("invalid nonempty Agent version was not refused", err)
-	}
-	for _, version := range []json.RawMessage{json.RawMessage(`"v1.19.34"`), json.RawMessage(`""`)} {
+	// O12 M16: unrecognized non-empty versions follow the unknown (empty) path.
+	for _, version := range []json.RawMessage{json.RawMessage(`"v1.19.34"`), json.RawMessage(`""`), json.RawMessage(`"alpha-abc"`)} {
 		document := baseDocumentNode(t)
 		if _, err := ApplyEasyTierNode(document, config, true, version); err != nil {
 			t.Fatal(err)

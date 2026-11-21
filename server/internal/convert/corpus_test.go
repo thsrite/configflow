@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -665,13 +664,11 @@ func goClass(err error) string {
 // unintended Python exception must be an unintended Go error (the class is
 // compared and only reported).
 func TestCorpus(t *testing.T) {
-	nativeVersions := nativeSubsVersionCases(t, "corpus")
 	rows := loadCorpus(t)
 	counts := map[string]int{}
 	typedStorage := map[string]int{}
 	classDiff := map[string]int{}
 	for i, row := range rows {
-		applyNativeSubsVersion(&row, nativeVersions.GetObject(fmt.Sprintf("corpus/%d", i)))
 		counts[row.fn]++
 		if issue := commonRowIssue(row); issue != "" {
 			typedStorage[issue]++

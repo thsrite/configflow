@@ -304,31 +304,62 @@ func easyTierRowIssue(row corpusRow) string {
 	return ""
 }
 
-func TestN89AgentVersionFailsClosedBeforeChangingDocument(t *testing.T) {
+func TestEasyTierCoreVersionPolicy(t *testing.T) {
 	var settings model.EasyTierSettings
 	if err := json.Unmarshal([]byte(`{"enabled":true,"apply_to":"all","options":{"network-name":"test","peers":["tcp://192.0.2.1:11010"]}}`), &settings); err != nil {
 		t.Fatal(err)
 	}
-	for _, test := range []struct {
-		name           string
-		version        json.RawMessage
-		agent, invalid bool
+	cfg := &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{EasyTier: &settings}}}
+	baseDoc := yamlx.Map()
+	if _, err := ApplyEasyTierNode(baseDoc, cfg, true, json.RawMessage(`""`)); err != nil {
+		t.Fatalf("empty baseline failed: %v", err)
+	}
+	wantYAML, err := yamlx.Marshal(baseDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		version   json.RawMessage
+		agent     bool
+		wantError string
 	}{
-		{"missing", nil, true, false}, {"null", json.RawMessage(`null`), true, false}, {"empty", json.RawMessage(`""`), true, false},
-		{"valid", json.RawMessage(`"v1.19.31"`), true, false}, {"fullwidth", json.RawMessage(`"v１.19.30"`), true, true},
-		{"unknown", json.RawMessage(`"unrecognized"`), true, true}, {"non-agent", json.RawMessage(`"unrecognized"`), false, false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
+		{name: "missing", version: nil, agent: true},
+		{name: "null", version: json.RawMessage(`null`), agent: true},
+		{name: "empty", version: json.RawMessage(`""`), agent: true},
+		{name: "release-v1.19.32", version: json.RawMessage(`"v1.19.32"`), agent: true},
+		{name: "release-min-v1.19.31", version: json.RawMessage(`"v1.19.31"`), agent: true},
+		{name: "alpha-100ff73", version: json.RawMessage(`"alpha-100ff73"`), agent: true},
+		{name: "garbage-string", version: json.RawMessage(`"!!!not-a-version###"`), agent: true},
+		{name: "fullwidth-unicode-digits", version: json.RawMessage(`"v１.19.30"`), agent: true},
+		{name: "non-agent-unrecognized", version: json.RawMessage(`"unrecognized"`), agent: false},
+		{name: "old-release-v1.19.30", version: json.RawMessage(`"v1.19.30"`), agent: true, wantError: fmt.Sprintf(msgETVersion, "v1.19.30")},
+		{name: "old-prefixed-version", version: json.RawMessage(`"Mihomo Meta v1.19.10 linux amd64"`), agent: true, wantError: fmt.Sprintf(msgETVersion, "Mihomo Meta v1.19.10 linux amd64")},
+		{name: "non-string-type", version: json.RawMessage(`123`), agent: true, wantError: msgETVersionType},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			document := yamlx.Map()
-			_, err := ApplyEasyTierNode(document, &model.Config{Profile: &model.Profile{Mihomo: model.MihomoSettings{EasyTier: &settings}}}, test.agent, test.version)
-			if test.invalid {
-				var version string
-				_ = json.Unmarshal(test.version, &version)
-				if err == nil || err.Error() != fmt.Sprintf(msgETAgentVersionUnknown, version) || len(document.Content) != 0 {
-					t.Fatalf("invalid Agent version changed document: %v", err)
+			res, err := ApplyEasyTierNode(document, cfg, tc.agent, tc.version)
+			if tc.wantError != "" {
+				if err == nil || err.Error() != tc.wantError || len(document.Content) != 0 {
+					t.Fatalf("got err=%v docLen=%d, want %q with untouched document", err, len(document.Content), tc.wantError)
 				}
-			} else if err != nil {
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res == nil || res.Proxy != "EasyTier" {
+				t.Fatalf("unexpected result: %+v", res)
+			}
+			gotYAML, err := yamlx.Marshal(document)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if !bytes.Equal(gotYAML, wantYAML) {
+				t.Fatalf("output differs from empty-version baseline:\ngot:\n%s\nwant:\n%s", gotYAML, wantYAML)
 			}
 		})
 	}

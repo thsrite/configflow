@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -146,8 +145,6 @@ func TestN88GenerationBytes(t *testing.T) {
 	providerPaths := providerPathReferences(t)
 	numericSpellings := numericSpellingReferences(t)
 	usedNumeric := map[int]bool{}
-	nativeVersions := nativeAgentGenerationCases(t, "mihomo_corpus")
-	usedVersions := map[int]bool{}
 	clientExceptions := readClientByteExceptions(t)
 	usedExceptions := map[int]bool{}
 	counts := map[string]int{}
@@ -159,17 +156,6 @@ func TestN88GenerationBytes(t *testing.T) {
 		entry := entries[sample.Row]
 		counts[entry.GetString("fn")]++
 		out, err := generateByteCase(t, entry)
-		if sample.Source == "mihomo_corpus.jsonl.gz" {
-			if exception := nativeVersions.GetObject(fmt.Sprintf("mihomo_corpus/%d", sample.Row)); exception != nil {
-				expected := exception.GetObject("expected").GetList("err")
-				var invalid *convert.EasyTierSettingsError
-				if exception.GetString("old_byte_sha256") != sample.SHA256 || !errors.As(err, &invalid) || err.Error() != expected[1] || out != "" {
-					t.Fatalf("invalid machine-version byte exception changed: row %d err=%v", sample.Row, err)
-				}
-				usedVersions[sample.Row] = true
-				continue
-			}
-		}
 		if err != nil {
 			t.Errorf("%s/%d: %v", sample.Source, sample.Row, err)
 			continue
@@ -206,13 +192,10 @@ func TestN88GenerationBytes(t *testing.T) {
 	if len(usedNumeric) != 20 {
 		t.Fatal("numeric spelling references not fully consumed")
 	}
-	if len(usedVersions) != 9 {
-		t.Fatalf("invalid Agent version exceptions: %d, want 9", len(usedVersions))
-	}
 	if len(usedExceptions) != len(clientExceptions) {
 		t.Fatalf("unused client byte exceptions: %d/%d", len(usedExceptions), len(clientExceptions))
 	}
-	t.Logf("original Go byte comparisons: %v; explicit client exceptions: %d; explicit invalid Agent versions: %d; unknown: 0", counts, len(usedExceptions), len(usedVersions))
+	t.Logf("original Go byte comparisons: %v; explicit client exceptions: %d; unknown: 0", counts, len(usedExceptions))
 }
 
 // The frozen baseline covers all three engines. A shortened or duplicated

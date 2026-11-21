@@ -1926,6 +1926,7 @@ world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 ar
 
 ### N8-9 subs — 跨包调用边界收口（2026-11-19）
 
+- （已被 O12 M16 撤销，见文末「O12 M16 — 无法识别的 Mihomo 内核版本按未知处理」）
 - Python bug 修复（协调者裁定）：EasyTier 的 Agent 门禁对非空但无法解析的 coreVersion
   fail-closed，固定中文消息“Agent 上报的内核版本无法识别：<原值>，请升级或重启 Agent”。
   不恢复非ASCII机器版本数字；空/未上报/null仍走既有unknown路径，非Agent路径不扩大限制。
@@ -2445,3 +2446,11 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   - `store_message`：健康时为空字符串 `""`，损坏时为中文提示（`discovery.MsgStoreDamaged`：「域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。」）。
 - 检测严格只读，复用文件签名缓存（健康复用 `statusCache`，损坏由独立的签名/日期有界 LRU `damagedCache` 记住），重复轮询只需 `stat`，不每次全量解析大文件，且不改变已批准的 fail-closed 行为（仍拒写 500、原文件字节不动）。前端之外无外部调用方依赖；用户在域名发现页直接看到该设备的告警并可点击「清除并恢复」（复用既有 `POST /api/agents/<id>/domain-discovery/clear`）。
 - Flask 对比测试显式例外：`internal/discovery/difftest` 与 `tools/proddiff` 仅在 `/api/domain-discovery/agents`、`/api/domain-discovery/domains` 200 响应上断言 Python 不含这两个键且 Go 为健康基线（`store_state == "ok"`、`store_message == ""`）后剥离这两字段，其余所有字段仍严格逐项比较；Go 报 `damaged` 时保留为差异，由人工判断是真实损坏还是误报（batch-20 复核收紧 proddiff）；`tools/configdiff/config_finding_resolutions.py` 登记同一精确例外。后端回归 `api/agents.TestDomainDiscoveryDamagedStoreStatusClearAndRecovery` 与 `trafficstore.TestInspectStatusDetectsDamageCachesSignatureAndRecovers` 覆盖完整「损坏→显示 damaged→清除→恢复 ok 并可写入」闭环。
+## O12 M16 — 无法识别的 Mihomo 内核版本按未知处理（实验网 L2 实测，2026-11-21）
+
+- 撤销 N8-9 subs「跨包调用边界收口 / Agent 未知版本生成边界」中对非空但无法识别的 Mihomo 内核版本 fail-closed（400「Agent 上报的内核版本无法识别：…，请升级或重启 Agent」）的裁定。
+- 背景（实验网 L2 实测）：Mihomo alpha 内核真实上报 `alpha-100ff73`（无 `v` 前缀、非数字版本）；开启 EasyTier 出站后，`POST /api/agents/<id>/generate-config` 与 `POST /api/agents/<id>/push-config` 均返回 400 拒绝，而正式版 `v1.19.32` 正常。
+- 协调者裁定（O12 M16）：所有按 Mihomo/内核版本开关或拒绝的功能（EasyTier 出站、`subs.ApplyDNS`、`subs.OldCoreAgents` 等）统一按同一规则处理——**非空但无法识别的内核版本视为"未知"，与空版本走同一路径**（EasyTier 假定支持并照常生成；ProxyServerDNS 不判为旧内核并附未知版本提示），不再拒绝生成或发布；通过 `subs.WarnUnrecognizedCoreVersion` 按 Agent 限流（10 分钟）记一条脱敏 Warning 日志；删除误导提示文案 `msgETAgentVersionUnknown`（「请升级或重启 Agent」）。已知可识别但低于最低要求的正式版（如 EasyTier `< v1.19.31`、ProxyServerDNS `< v1.19.20`）仍按原规则处理。
+- 测试与参照调整：
+  - 此前 N8-9 为拒绝 `alpha-*` / `unknown` 新增的 13 条 `mihomo_corpus`/`review_mihomo`、1 条 `mihomo_recorded`、3 条 `corpus`/`review_c12` 拒绝覆写全部撤销并删除对应夹具，恢复为直接匹配原始 Python 语料及原始 4548 项字节清单（`n88_generation_bytes.json` 2353 条 Mihomo 零例外全匹配）。
+  - `review_c12/2125`（输入 `v１.19.30`，含全角数字 `１`）：Python 因正则 `\d` 匹配 Unicode 全角数字将其判为旧版本拒绝；Go 保持 ASCII 机器版本解析（`subs.CoreVersion` 只认 `[0-9]`），按 O12 M16 规则将其视为无法识别/未知版本而正常应用 EasyTier，并在 `n89_subs_callers_reference.json` 中显式固定该新行为。

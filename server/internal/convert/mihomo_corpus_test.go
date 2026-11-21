@@ -552,7 +552,6 @@ func firstDiff(want, got string) string {
 // generated YAML semantics, reports, mutated profiles, download lists, base
 // settings checks and helpers must equal Python's.
 func TestMihomoCorpus(t *testing.T) {
-	nativeVersions := nativeAgentGenerationCases(t, "mihomo_corpus")
 	readers := loadMihomoReaderOracle(t)
 	rows := loadMihomoCorpus(t)
 	oracle := loadWriterOracle(t)
@@ -566,7 +565,6 @@ func TestMihomoCorpus(t *testing.T) {
 	generated := 0
 	for i, row := range rows {
 		row = readers.row(t, "mihomo_corpus.jsonl.gz", i, row)
-		row = applyNativeAgentGeneration(row, nativeVersions.GetObject(fmt.Sprintf("mihomo_corpus/%d", i)))
 		counts[row.fn]++
 		if paths := inputPatches[i]; len(paths) > 0 {
 			row = keepOriginalInput(t, row, paths)
