@@ -56,6 +56,13 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-22 (audits):** O13 completeness MERGED (65d03d17c): 0 gaps except #40 image; routes.tsv 380/380 done.
+Maintainer decision: keep the autoupdate image, make it rebuild the Go server too. Coordinator ruling: missing-Agent
+500 "Agent not found" on /api/agents/<id>/logs, /logs/sources, /config/logging → fix to 404 (Python bug) — small task,
+not yet dispatched. In flight: O9 round 2 (Opus ce1b8b0e, branch go-audit-o9r2; first finding = no response-body size
+limit in agents client / devhttp), O12 release notes (Opus f6b211e0, go-audit-o12), #40 image (Gemini 7ba2ebb9,
+go-image-40). Alloc-assertion flake fixed (6c7e754bf, test-only). Next: O10 perf, O15 architecture, O17 size (after O10).
+
 **Update 2026-11-22: N8-11 DONE — W9 MERGED, go = 7e05ccfab.** jsonx/pystr deleted, all *_legacy.go gone, legacy gate is
 hard (no allowlist). O7 review (Opus 26e12ace): 0 high/0 medium; fixes: Sub-Store finished_at plain decimal; FuzzEncode
 test accepts the approved out-of-range float refusal (1e700). Final gate: compare PASS (live 45/45), core race had one
