@@ -62,7 +62,7 @@
 | U13 | 上游 tag 等元数据含真实 U+2028/U+2029 的分流选择失配 | 自动编辑/重建此类分流时 400/409/warning，原设置保留 | **是**（仅极少数配置）：template 模式重新选择；native 完整配置按当前上游重新生成分流 | 附录 A12；[差异表 D2/C27](behaviour-changes.md) |
 | U14 | 签名密钥：未设置正式 `JWT_SECRET_KEY` 时每次启动随机生成 | 每次重启使登录会话和待确认的固定 IP token 失效 | **是**：首次启动 Go 前设置随机、≥32 字节的正式密钥并长期保存；换密钥后重新登录一次 | 附录 A13；[差异表 O9-M3 与 R6](behaviour-changes.md) |
 | U15 | Python 生成的旧安装链接失效 | 安全安装器生成器指纹变化，旧链接下载/校验失败 | **是**（要用旧链接时）：在 Go 面板重新生成，私下传递 | 附录 A15；[差异表 L1 D3、O9-H2 R4](behaviour-changes.md) |
-| U16 | Docker Agent 新装需要新 Agent 镜像（面板会自动使用配套标签） | 开启登录后首次注册要靠新入口脚本把一次性凭据写进 Agent 配置；旧镜像（Docker Hub 上旧 `latest`）不认，新装返回 403「安装命令已失效…」。Go 面板生成的 docker run / Compose / HA 命令现在使用与面板同一版本的 `config-flow-agent:<版本>`，不再是浮动 `latest` | **是**（新装/重装 Docker Agent 时）：用 Go 面板重新生成命令；手写 Compose 或改过镜像的，把镜像改成与面板相同的版本号。已注册的 Docker Agent、Shell 安装不受影响；新 Agent 镜像配旧 Python 面板也能正常安装运行 | 附录 A14；[差异表 O9-H2 发布补充](behaviour-changes.md)；[O14 P13、B.2.1](o14-switch-plan.md) |
+| U16 | Docker Agent 新装需要新 Agent 镜像（面板会自动使用配套标签） | 开启登录后首次注册要靠新入口脚本把一次性凭据写进 Agent 配置；旧镜像（Docker Hub 上旧 `latest`）不认，新装返回 403「安装命令已失效…」。Go 面板生成的 docker run / Compose / HA 命令现在使用与面板同一版本的 `config-flow-agent:<版本>`，不再是浮动 `latest` | **是**（新装/重装 Docker Agent 时）：用 Go 面板重新生成命令；手写 Compose 或改过镜像的，把镜像改成与面板相同的版本号。已注册的 Docker Agent、Shell 安装不受影响；新 Agent 镜像配旧 Python 面板也能正常安装运行。支持首次注册凭据的 Agent 版本为 1.9.0-go，1.8.61-go 及更早的 Agent 在面板上显示可更新 | 附录 A14；[差异表 O9-H2 发布补充](behaviour-changes.md)；[O14 P13、B.2.1](o14-switch-plan.md) |
 
 ## 2）行为变化
 

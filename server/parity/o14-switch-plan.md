@@ -387,6 +387,12 @@
 
 ---
 
+## 切换后的后续事项
+
+| # | 事项 | 来源 |
+|---|---|---|
+| F-1 | 「Docker Agent 更新步骤」对话框的目标镜像仍默认 `thsrite/config-flow-agent:latest`。切换后改为默认与面板配套的 `config-flow-agent:<版本>`（需要前端拿到面板注入的 `version.AgentImage`，涉及 `/api/version` 或新接口及其 Flask/proddiff 例外）。已注册 Agent 换镜像不依赖新入口，暂不阻塞切换 | 协调者裁定 2026-11-21（L2 发布阻断后续） |
+
 ## 需要维护者决定的事项
 
 | # | 事项 | 建议 |

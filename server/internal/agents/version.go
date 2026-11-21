@@ -33,8 +33,12 @@ func VersionChangelog(version string) (ChangelogEntry, bool) {
 	return ChangelogEntry{}, false
 }
 
+// latestVersion is the release GetLatestVersion reports: LatestAgentVersion,
+// except while a Flask differential pins Python's reference value.
+var latestVersion = LatestAgentVersion
+
 // GetLatestVersion is get_latest_version().
-func GetLatestVersion() string { return LatestAgentVersion }
+func GetLatestVersion() string { return latestVersion }
 
 // CompareVersions is compare_versions(version1, version2): -1, 0 or 1. The
 // "-suffix" is dropped, the dotted parts are padded with "0" and compared as
@@ -69,7 +73,7 @@ func CompareVersions(version1, version2 string) int {
 
 // HasUpdate is has_update(current_version).
 func HasUpdate(currentVersion string) bool {
-	return CompareVersions(currentVersion, LatestAgentVersion) < 0
+	return CompareVersions(currentVersion, latestVersion) < 0
 }
 
 // versionComponentNumber delegates scalar handling to the shared native codec.

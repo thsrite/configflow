@@ -444,6 +444,52 @@ def strip_discovery_store_state(route, left_body, right_body):
             right_agent.pop('store_message', None)
 
 
+# Go-only Agent release (O9-H2 publish follow-up): Python's LATEST_AGENT_VERSION
+# stays 1.8.61-go, Go ships 1.9.0-go. test_proddiff checks both against source.
+PYTHON_AGENT_LATEST = '1.8.61-go'
+GO_AGENT_LATEST = '1.9.0-go'
+
+
+def _agent_version_key(version):
+    """agents.CompareVersions for plain ASCII dotted releases; None otherwise."""
+    if not isinstance(version, str):
+        return None
+    parts = version.split('-', 1)[0].split('.')
+    if not all(part.isascii() and part.isdigit() for part in parts):
+        return None
+    return [int(part) for part in parts]
+
+
+def _between_agent_releases(version):
+    key, low, high = (_agent_version_key(v) for v in (version, PYTHON_AGENT_LATEST, GO_AGENT_LATEST))
+    if key is None:
+        return False
+    width = max(len(key), len(low), len(high))
+    key, low, high = (v + [0] * (width - len(v)) for v in (key, low, high))
+    return low <= key < high
+
+
+def pair_agent_release(route, left_body, right_body):
+    """Only the Go-only Agent release may differ: the latest-version value and
+    has_update for an Agent at least Python's latest but older than Go's."""
+    if route == '/api/agents/latest-version':
+        if (isinstance(left_body, dict) and isinstance(right_body, dict)
+                and left_body.get('version') == PYTHON_AGENT_LATEST and right_body.get('version') == GO_AGENT_LATEST):
+            right_body['version'] = PYTHON_AGENT_LATEST
+        return
+    if route == '/api/agents' and isinstance(left_body, list) and isinstance(right_body, list):
+        pairs = zip(left_body, right_body) if len(left_body) == len(right_body) else ()
+    elif route == '/api/agents/<agent_id>':
+        pairs = [(left_body, right_body)]
+    else:
+        return
+    for left, right in pairs:
+        if (isinstance(left, dict) and isinstance(right, dict) and left.get('has_update') is False
+                and right.get('has_update') is True and left.get('version') == right.get('version')
+                and _between_agent_releases(right.get('version'))):
+            right['has_update'] = False
+
+
 def same_agent_transport_target(python_message, go_message):
     """Recognize native offline-Agent exception text, retaining the target proof."""
     if not isinstance(python_message, str) or not isinstance(go_message, str):
@@ -565,6 +611,7 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
         agent_identities.normalize(a['body'], b['body'], route)
     if left[0] == right[0] == 200:
         strip_discovery_store_state(route, a['body'], b['body'])
+        pair_agent_release(route, a['body'], b['body'])
     apply_rules(rules, route, a, b)
     if len(left) > 3 and len(right) > 3:
         for name in sorted(a['header'].keys() | b['header'].keys()):

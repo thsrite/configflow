@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/installer/installertest"
 )
 
@@ -39,6 +38,11 @@ func TestScriptsMatchBackend(t *testing.T) {
 	}
 }
 
+// pythonLatestAgentVersion is backend/agents/version.py LATEST_AGENT_VERSION,
+// part of the frozen Python release fingerprint. Go-only Agent releases
+// (agents.LatestAgentVersion, 1.9.0-go and later) do not change it.
+const pythonLatestAgentVersion = "1.8.61-go"
+
 // pythonFingerprint is generator_fingerprint() over the backend tree. Paths
 // sort like PosixPath objects: component by component.
 func pythonFingerprint(t *testing.T, directory string) string {
@@ -56,7 +60,7 @@ func pythonFingerprint(t *testing.T, directory string) string {
 		return len(a) < len(b)
 	})
 	digest := sha256.New()
-	digest.Write([]byte(agents.LatestAgentVersion))
+	digest.Write([]byte(pythonLatestAgentVersion))
 	for _, path := range paths {
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() || filepath.Base(path) == "install_command_store.py" {

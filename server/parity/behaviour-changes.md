@@ -2476,3 +2476,16 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 - **兼容性（新 Agent 镜像配旧 Python 面板）**：新入口脚本在环境变量缺失时写入空的 `registration_token`/`registration_key`，
   Agent 读入后为空、注册请求按 `omitempty` 不带这两个字段，心跳的 `host` 字段只在面板声明 `reads_host` 后发送；
   因此 Python 面板看到的注册/心跳请求与旧镜像相同，老用户随 main 拉到新 latest 不受影响（实验验证见 progress/o14-switch.md）。
+
+### O9-H2 发布补充 — Agent 版本提升到 1.9.0-go（协调者裁定 2026-11-21）
+
+- `go` 分支的 Agent（`backend/agents/go-agent/upgrade.Version`）与面板 `agents.LatestAgentVersion` 改为 **1.9.0-go**，并新增版本日志条目。
+  原因：upstream/main 的 Agent 和 `go` 分支 Agent 都报 1.8.61-go，但只有后者支持一次性注册凭据/注册密钥，同号不同能力会让升级判断和排障混淆。
+  效果：Go 面板把 1.8.61-go 及更早的 Agent 显示为「可更新」，Agent 升级目标、升级事件文案（「正在提交 Agent 1.9.0-go 更新请求」等）随之变化。
+- Python 参考 `backend/agents/version.py` 不改（它的 `.py` 参与 pyref 源指纹）；版本表停在 1.8.61-go，Go 只多出 Go 专有发布。
+- 测试例外（显式、只限版本号）：
+  - `agents.TestVersionTableMatchesPython`：Python 表 = Go 表去掉 Go 专有发布（`1.9.0-go`），其余逐条比较；Python 的 LATEST 固定断言为 1.8.61-go。
+  - `api/agents/difftest`：进程内 Go 服务与种子数据/假 Agent 通过 `agents.SetLatestVersionForTest` 使用 Python 的 `LATEST_AGENT_VERSION`（从 `version.py` 读取），升级与心跳响应其余字段仍逐字节比较。
+  - `installer.TestGeneratorFingerprintMatchesReleaseInputs` 重算冻结的 Python 发布指纹时用 Python 的 1.8.61-go（Go 的 `GeneratorFingerprint` 不含 Agent 版本，未变）。
+  - `tools/configdiff` 的 T16/T25 心跳改报 1.9.0-go：两侧都判定「无需更新」，与原来报两侧最新版的语义相同。
+  - `tools/proddiff`（`pair_agent_release`）：只在 `/api/agents/latest-version`（Python 1.8.61-go ↔ Go 1.9.0-go）以及 `/api/agents`、`/api/agents/<agent_id>` 中版本相同、介于两者之间（≥1.8.61-go 且 <1.9.0-go）的 Agent 上，把 Go 的 `has_update: true` 对齐为 Python 的 `false`；其他版本、其他字段或路由照常报差异（`test_agent_release_exemption_is_exact`）。

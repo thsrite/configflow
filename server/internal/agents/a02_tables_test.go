@@ -27,7 +27,10 @@ func readBackend(t *testing.T, name string) string {
 func TestVersionTableMatchesPython(t *testing.T) {
 	source := readBackend(t, "version.py")
 	latest := regexp.MustCompile(`(?m)^LATEST_AGENT_VERSION = "([^"]*)"$`).FindStringSubmatch(source)
-	if latest == nil || latest[1] != LatestAgentVersion {
+	// Go-only Agent releases come after Python's last one (1.8.61-go); the
+	// rest of the table is still Python's, entry for entry.
+	goOnly := []string{"1.9.0-go"}
+	if latest == nil || latest[1] != "1.8.61-go" || LatestAgentVersion != goOnly[0] {
 		t.Fatalf("LATEST_AGENT_VERSION %v, Go %s", latest, LatestAgentVersion)
 	}
 	block := regexp.MustCompile(`(?s)\nVERSION_CHANGELOG = (\{.*?\n\})\n`).FindStringSubmatch(source)
@@ -40,8 +43,15 @@ func TestVersionTableMatchesPython(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VERSION_CHANGELOG is not JSON-like: %v", err)
 	}
-	fields := make([]testjson.Field, 0, len(Changelog()))
-	for _, entry := range Changelog() {
+	changelog := Changelog()
+	for i, version := range goOnly {
+		if changelog[i].Version != version {
+			t.Fatalf("Go-only release %d is %s, want %s", i, changelog[i].Version, version)
+		}
+	}
+	changelog = changelog[len(goOnly):]
+	fields := make([]testjson.Field, 0, len(changelog))
+	for _, entry := range changelog {
 		features := make([]any, len(entry.Features))
 		for i, f := range entry.Features {
 			features[i] = f

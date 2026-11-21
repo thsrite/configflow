@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
@@ -234,6 +235,7 @@ func startGo(t *testing.T, dataDir string) (string, func()) {
 // startGoWithRequestRuntime can give this test's requests an independent clock
 // without advancing or replacing the production background-loop runtime.
 func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime) (string, func()) {
+	pinPythonAgentVersion(t)
 	t.Setenv("DATA_DIR", dataDir)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	root, err := logx.Setup(logx.Config{Level: logx.Info, File: filepath.Join(dataDir, "app.log")})
@@ -997,4 +999,24 @@ func noOracleDelta(py, gor response) string {
 		return "go body " + string(text) + ", want " + string(want)
 	}
 	return ""
+}
+
+// pinPythonAgentVersion is the one explicit exception for the Agent release:
+// Go ships 1.9.0-go (first-registration credentials) while the retired Python
+// reference stops at its LATEST_AGENT_VERSION. Both servers get Python's value
+// as the upgrade target, so every other field of the upgrade and heartbeat
+// responses is still compared exactly.
+func pinPythonAgentVersion(t *testing.T) {
+	t.Helper()
+	source, err := os.ReadFile("../../../../../backend/agents/version.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`(?m)^LATEST_AGENT_VERSION = "([^"]+)"$`).FindSubmatch(source)
+	if match == nil {
+		t.Fatal("LATEST_AGENT_VERSION not found in backend/agents/version.py")
+	}
+	if python := string(match[1]); python != agents.LatestAgentVersion {
+		t.Cleanup(agents.SetLatestVersionForTest(python))
+	}
 }

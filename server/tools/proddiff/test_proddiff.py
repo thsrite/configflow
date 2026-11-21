@@ -329,6 +329,30 @@ class ComparatorTests(unittest.TestCase):
                 self.assertTrue(pd.response_diffs(py, bad, route, []))
             self.assertTrue(pd.response_diffs(py, go_ok, '/api/agents', []))
 
+    def test_agent_release_exemption_is_exact(self):
+        root = Path(__file__).resolve().parents[3]
+        python = (root / 'backend/agents/version.py').read_text()
+        go = (root / 'server/internal/agents/version_changelog.go').read_text()
+        self.assertIn(f'LATEST_AGENT_VERSION = "{pd.PYTHON_AGENT_LATEST}"', python)
+        self.assertIn(f'const LatestAgentVersion = "{pd.GO_AGENT_LATEST}"', go)
+        latest = '/api/agents/latest-version'
+        self.assertEqual([], pd.response_diffs(reply({'success': True, 'version': '1.8.61-go'}),
+                                               reply({'success': True, 'version': '1.9.0-go'}), latest, []))
+        self.assertTrue(pd.response_diffs(reply({'success': True, 'version': '1.8.61-go'}),
+                                          reply({'success': True, 'version': '1.9.1-go'}), latest, []))
+        agent = {'id': 'a1', 'version': '1.8.61-go', 'has_update': False}
+        for route, wrap in (('/api/agents', lambda x: [x]), ('/api/agents/<agent_id>', lambda x: x)):
+            self.assertEqual([], pd.response_diffs(reply(wrap(agent)), reply(wrap({**agent, 'has_update': True})), route, []))
+            for left, right in (
+                ({**agent, 'version': '1.8.60-go'}, {**agent, 'version': '1.8.60-go', 'has_update': True}),
+                ({**agent, 'version': '1.9.0-go'}, {**agent, 'version': '1.9.0-go', 'has_update': True}),
+                (agent, {**agent, 'version': '1.8.62-go', 'has_update': True}),
+                ({**agent, 'has_update': True}, agent),
+                (agent, {**agent, 'has_update': True, 'name': 'other'}),
+            ):
+                self.assertTrue(pd.response_diffs(reply(wrap(left)), reply(wrap(right)), route, []), (route, left, right))
+        self.assertTrue(pd.response_diffs(reply([agent]), reply([{**agent, 'has_update': True}]), '/api/other', []))
+
     def test_headers_are_compared(self):
         base = {'x-configflow-profile': 'one', 'etag': '"a"', 'date': 'd1', 'server': 'waitress', 'content-length': '2'}
         left = reply(b'{}', headers=base)

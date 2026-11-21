@@ -606,6 +606,7 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
 	}
+	pinPythonAgentVersion(t) // before seeding: the seed and fake Agent use the upgrade target
 	if path := os.Getenv("N810_RECORD_UPGRADES_PYTHON"); path != "" {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
@@ -776,6 +777,7 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
 	}
+	pinPythonAgentVersion(t) // before seeding: the seed and fake Agent use the upgrade target
 	lan := lanAddress(t)
 	fake, port, closed := startFakeOps(t, lan)
 	proxy := &recordingProxy{}
