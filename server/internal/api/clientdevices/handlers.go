@@ -101,6 +101,9 @@ func sanitize(ctx context.Context, config json.RawMessage, value any) (json.RawM
 		return nil, err
 	}
 	secrets, err := redact.ExternalPayloadSecrets(ctx, nil)
+	if err == nil {
+		secrets, err = redact.AgentRecordCredentials(ctx, secrets)
+	}
 	if err != nil {
 		return nil, err
 	}

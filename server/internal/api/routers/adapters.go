@@ -138,20 +138,5 @@ func allProfileSecrets(ctx context.Context, db *repo.Repository) (redact.Secrets
 		}
 		seeds = redact.CollectCredentials(json.RawMessage(data), seeds)
 	}
-	// Resolved views no longer embed the Agent registry; seed its credentials
-	// (histories included) once, as every profile view previously carried it.
-	err = db.ViewAgents(ctx, func(records []model.Agent) error {
-		for i := range records {
-			data, err := model.Marshal(records[i])
-			if err != nil {
-				return err
-			}
-			seeds = redact.CollectCredentials(json.RawMessage(data), seeds)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return seeds, nil
+	return redact.AgentRecordCredentials(ctx, seeds)
 }

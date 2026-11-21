@@ -100,6 +100,9 @@ func public(c *httpx.Ctx, cfg json.RawMessage, value any, status int, noStore bo
 	secrets, cached := publicSeeds(c)
 	if !cached {
 		secrets, err = redact.ExternalPayloadSecrets(c.Context(), nil)
+		if err == nil {
+			secrets, err = redact.AgentRecordCredentials(c.Context(), secrets)
+		}
 	}
 	if err != nil {
 		return nil, err

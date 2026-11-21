@@ -2489,3 +2489,16 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   - `installer.TestGeneratorFingerprintMatchesReleaseInputs` 重算冻结的 Python 发布指纹时用 Python 的 1.8.61-go（Go 的 `GeneratorFingerprint` 不含 Agent 版本，未变）。
   - `tools/configdiff` 的 T16/T25 心跳改报 1.9.0-go：两侧都判定「无需更新」，与原来报两侧最新版的语义相同。
   - `tools/proddiff`（`pair_agent_release`）：只在 `/api/agents/latest-version`（Python 1.8.61-go ↔ Go 1.9.0-go）以及 `/api/agents`、`/api/agents/<agent_id>` 中版本相同、介于两者之间（≥1.8.61-go 且 <1.9.0-go）的 Agent 上，把 Go 的 `has_update: true` 对齐为 Python 的 `false`；其他版本、其他字段或路由照常报差异（`test_agent_release_exemption_is_exact`）。
+
+## O10-T1 — 路由器检查摘要改用 OxiDNS Agent 投影（协调裁定：接受）
+
+- 解析后的配置视图（`repo.Config`）默认不再带 Agent。路由器检查记录的摘要与通知快照的摘要两侧同改为
+  `ConfigWithOxiDNSAgents`：只含 OxiDNS 策略/规则 DNS 读取的 8 个成员（id、name、host、service_type、
+  profile_id、enabled、dns_follow、rule_sync），不含 token 与部署/IPv6 历史。OxiDNS Agent 地址等变化仍让
+  提醒过期；部署历史、token、心跳类变化不再让它过期（Python 摘要含整条 Agent，任何 Agent 记录变化都会过期）。
+- **升级时一次性影响：** 旧版本存下的摘要是按整条 Agent 算的，升级后全部路由器检查提醒显示一次「已过期」。
+  不改任何数据，不触发发布；每台路由器重新检查一次即恢复。见 O12 发布说明 U17。
+- 路由器页、客户端设备响应与路由器诊断文本的脱敏集合保持不变：Agent 记录中的凭据类值（含部署历史）由
+  `redact.AgentRecordCredentials` 从 Agent 记录收集（仓库按存储 head 缓存，Agent 写入后重新收集），
+  不再随整份配置复制；`/api/routers` 与路由策略页的单次分配与 T1 前一致。
+  `TestO10RouterRedactionKeepsAgentRecordCredentials` 固定部署历史中的 password 仍被脱敏。

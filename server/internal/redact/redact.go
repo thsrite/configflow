@@ -64,6 +64,28 @@ func NewSecrets(lists ...[]string) Secrets {
 // Equal is frozenset equality.
 func (s Secrets) Equal(other Secrets) bool { return slices.Equal(s, other) }
 
+// AgentRecordCredentials adds the credential values of every stored Agent
+// record, histories included, to seeds. Resolved configuration views no
+// longer embed the Agent registry, so responses that collected credentials
+// from such a view read them here; the repository remembers them per
+// generation. Like the stored token reads, this read-only lookup ignores
+// request cancellation and Runtime shutdown, so an interrupted request still
+// projects a redacted response.
+func AgentRecordCredentials(ctx context.Context, seeds Secrets) (Secrets, error) {
+	ctx = context.WithoutCancel(ctx)
+	repository, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	values, err := repository.AgentRecordCredentials(ctx, func(data json.RawMessage) []string {
+		return CollectCredentials(data, nil)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return NewSecrets(seeds, values), nil
+}
+
 // ExternalPayloadSecrets is _external_payload_secrets(system_config): the
 // rule proxy and Agent tokens stored in the repository, plus the sensitive
 // string fields of systemConfig when given (nil: none).

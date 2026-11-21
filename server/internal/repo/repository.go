@@ -83,6 +83,7 @@ type Repository struct {
 	modelIssueHead    store.Head
 	modelIssueHeadSet bool
 	tokensCache       atomic.Pointer[sanitizationTokens]
+	agentCredentials  atomic.Pointer[agentCredentials]
 	// commitCount is the number of write transactions this process
 	// committed; request-scoped profile validation is invalidated by it.
 	commitCount atomic.Int64

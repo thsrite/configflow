@@ -418,6 +418,9 @@ func (s *ManagementService) safeText(ctx context.Context, profile string, r *Rou
 		return redact.Redacted
 	}
 	seeds, err := redact.ExternalPayloadSecrets(ctx, nil)
+	if err == nil {
+		seeds, err = redact.AgentRecordCredentials(ctx, seeds)
+	}
 	if err != nil {
 		return redact.Redacted
 	}

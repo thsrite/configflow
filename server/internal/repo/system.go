@@ -148,6 +148,61 @@ func (r *Repository) sanitizationTokensNow(ctx context.Context) (TokenSet, Token
 	return ruleProxy, agents, nil
 }
 
+type agentCredentials struct {
+	head   store.Head
+	values []string
+}
+
+// AgentRecordCredentials returns the credential values collect finds in each
+// encoded stored Agent record (histories included) of the current generation,
+// remembered by store head like the sanitization tokens. Inside a transaction
+// or a held snapshot the working records are read and nothing is cached.
+// collect must depend only on its input (one output redactor uses this); the
+// returned slice is shared and must not be modified.
+func (r *Repository) AgentRecordCredentials(ctx context.Context, collect func(json.RawMessage) []string) ([]string, error) {
+	gather := func(records []model.Agent) ([]string, error) {
+		var values []string
+		for i := range records {
+			data, err := model.Marshal(records[i])
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, collect(data)...)
+		}
+		return values, nil
+	}
+	if r.InTransaction(ctx) {
+		document, _, err := r.workingModel(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return gather(document.System.Agents)
+	}
+	if snapshot := r.lockedSnapshot(ctx); snapshot != nil {
+		return gather(snapshot.entry.Model.System.Agents)
+	}
+	var head store.Head
+	if err := r.store.Reading(func(connection *store.Conn) error { var err error; head, err = connection.Head(); return err }); err != nil {
+		if _, failure := r.readEntry(ctx, false); failure != nil {
+			return nil, failure
+		}
+		return nil, err
+	}
+	if cached := r.agentCredentials.Load(); cached != nil && cached.head == head {
+		return cached.values, nil
+	}
+	entry, err := r.readEntry(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	values, err := gather(entry.Model.System.Agents)
+	if err != nil {
+		return nil, err
+	}
+	r.agentCredentials.Store(&agentCredentials{head: entry.Head, values: values})
+	return values, nil
+}
+
 func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 	ruleProxy, agents := TokenSet{}, TokenSet{}
 	add := func(target TokenSet, raw json.RawMessage, present bool, err error) {
