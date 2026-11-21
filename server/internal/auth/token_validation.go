@@ -18,6 +18,7 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 		return ValidateResult{Valid: true}, nil
 	}
 	var settings *model.SystemConfig
+	damagedSettings := false
 	if config != nil {
 		settings = &config.SystemConfig
 	} else {
@@ -34,11 +35,17 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 		if err != nil {
 			return ValidateResult{}, err
 		}
+		// Stored settings that are not an object read as empty settings
+		// (O18 T1a); their token is damaged, not unconfigured.
+		if damagedSettings, err = r.SystemSettingsDamaged(ctx); err != nil {
+			return ValidateResult{}, err
+		}
 	}
 	configToken, malformedToken, err := storedConfigToken(settings)
 	if err != nil {
 		return ValidateResult{}, err
 	}
+	malformedToken = malformedToken || damagedSettings
 	tokens := []string{settings.RuleProxyToken}
 	// Imported credentials may contain malformed neighbours. Decode each retired
 	// capability independently so a valid internal token never becomes public.

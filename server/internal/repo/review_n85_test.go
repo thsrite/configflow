@@ -88,19 +88,24 @@ func n85Files(t *testing.T, directory string) map[string]string {
 	return files
 }
 
-// O18 T1a: wrong-typed stored settings read as their zero value (with a load
-// warning), so the document passes validation and startup token maintenance
-// stores the repaired settings once; the next start writes nothing and no
-// other file changes.
-func TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup(t *testing.T) {
+// O18 T1a: wrong-typed stored values read as their zero value with a load
+// warning. Settings that are not an object stay as stored (no startup write);
+// a numeric profile name reads as text, so the document is valid and startup
+// token maintenance writes once. The next start writes nothing and no other
+// file changes.
+func TestReviewN85StartupWritesOnlyRepairableStoredValues(t *testing.T) {
 	tests := []struct {
 		name, settings string
 		invalidName    bool
+		// repaired: startup token maintenance writes once. Settings that are
+		// not an object are damaged credentials and are never rewritten
+		// implicitly (SystemSettingsDamaged).
+		repaired bool
 	}{
-		{"null settings", `null`, false},
-		{"numeric settings", `7`, false},
-		{"string settings", `"malformed"`, false},
-		{"numeric name and missing token", `{}`, true},
+		{"null settings", `null`, false, false},
+		{"numeric settings", `7`, false, false},
+		{"string settings", `"malformed"`, false, false},
+		{"numeric name and missing token", `{}`, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,15 +129,18 @@ func TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup(t *testing.T) {
 			rows, files := xcFingerprint(t, r.store), n85Files(t, r.DataDir())
 			opened, err := Open(r.DataDir(), Options{})
 			noError(t, err)
-			if reflect.DeepEqual(xcFingerprint(t, r.store), rows) {
-				t.Fatal("startup did not store the repaired settings")
+			if reflect.DeepEqual(xcFingerprint(t, r.store), rows) == tt.repaired {
+				t.Fatalf("startup write=%v, want %v", !tt.repaired, tt.repaired)
 			}
 			if !reflect.DeepEqual(n85Files(t, r.DataDir()), files) {
 				t.Fatal("startup changed unrelated files")
 			}
 			settings := must(opened.SystemConfig(bg))(t)
-			if settings.RuleProxyToken == "" {
-				t.Fatal("tokens not generated")
+			if (settings.RuleProxyToken != "") != tt.repaired {
+				t.Fatal("token maintenance")
+			}
+			if damaged := must(opened.SystemSettingsDamaged(bg))(t); damaged == tt.repaired {
+				t.Fatalf("damaged=%v", damaged)
 			}
 			if tt.invalidName && must(opened.Profile(bg, DefaultProfileID))(t).Name != "7" {
 				t.Fatal("numeric name not read as text")

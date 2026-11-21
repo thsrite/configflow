@@ -104,6 +104,13 @@ func authenticate(c *httpx.Ctx) (bool, error) {
 	}); err != nil {
 		return false, err
 	}
+	damaged, err := r.SystemSettingsDamaged(c.Context())
+	if err != nil {
+		return false, err
+	}
+	if damaged {
+		return false, nil
+	}
 	bearer, _ := auth.ParseBearerToken(c.Request.Header.Get("Authorization"), true)
 	query, _ := c.Arg("token")
 	if !auth.IsTokenWithinLength(query) {

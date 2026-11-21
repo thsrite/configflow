@@ -199,6 +199,9 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			if kind == 'n' {
 				return errors.ErrUnsupported
 			}
+			if typ.Kind() == reflect.Slice && kind == '[' && selfDecoding(typ.Elem()) {
+				return decodeRecordList(dec, sink, reflect.ValueOf(v).Elem())
+			}
 			switch {
 			case typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && kind != '[',
 				typ.Kind() == reflect.Map && kind != '{',
@@ -624,4 +627,44 @@ func decodeStrict(data []byte, target any) error {
 		}
 	}
 	return jsonv2.Unmarshal(data, target, strictOptions)
+}
+
+// selfDecoding reports a type that is not yet migrated and decodes itself.
+func selfDecoding(typ reflect.Type) bool {
+	return reflect.PointerTo(typ).Implements(unmarshalerType) && !(typ.Kind() == reflect.Struct && isPlain(typ))
+}
+
+// decodeRecordList decodes a list of records that decode themselves. As for
+// any member of such a record (R5), one element it refuses (for example a
+// number where a record belongs) makes the whole list its zero value with one
+// issue: a zero element would read as an empty record that was never stored.
+func decodeRecordList(dec *jsontext.Decoder, sink *issueSink, target reflect.Value) error {
+	value, err := dec.ReadValue()
+	if err != nil {
+		return err
+	}
+	elements := jsontext.NewDecoder(bytes.NewReader(value), jsontext.AllowInvalidUTF8(true))
+	if _, err := elements.ReadToken(); err != nil {
+		return err
+	}
+	var items []reflect.Value
+	for elements.PeekKind() != ']' {
+		item, err := elements.ReadValue()
+		if err != nil {
+			return err
+		}
+		element := reflect.New(target.Type().Elem())
+		if err := element.Interface().(json.Unmarshaler).UnmarshalJSON(bytes.Clone(item)); err != nil {
+			target.SetZero()
+			sink.add(dec, IssueType)
+			return nil
+		}
+		items = append(items, element.Elem())
+	}
+	list := reflect.MakeSlice(target.Type(), len(items), len(items))
+	for i, item := range items {
+		list.Index(i).Set(item)
+	}
+	target.Set(list)
+	return nil
 }

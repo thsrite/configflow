@@ -130,9 +130,21 @@ func ClientGroupReplayIssue(value any, target string) string {
 
 // ClientProfileReplayIssue audits only fields owned by this client migration.
 func ClientProfileReplayIssue(config *JObj, target string) string {
-	profile, err := DecodeJ[model.Profile](config)
+	// The profile is stored data: lenient decoding reports the members it
+	// read as zero values (O18 T1a; the plain record keeps no issues).
+	data, err := json.Marshal(config)
 	if err != nil {
 		return "profile record"
+	}
+	var profile model.Profile
+	issues, err := model.DecodeStored(data, &profile, "")
+	if err != nil {
+		return "profile record"
+	}
+	// A stored null settings object reads as empty settings without an issue
+	// (Python failed on it).
+	if value, present := config.Get(target); present && value == nil {
+		return "profile." + target + " R5"
 	}
 	for _, key := range []string{"rules", "rule_sets"} {
 		if raw, present := profile.LegacyRuleList(key); present {
@@ -152,8 +164,8 @@ func ClientProfileReplayIssue(config *JObj, target string) string {
 			return issue
 		}
 	}
-	for _, issue := range model.Issues(profile) {
-		if model.IssueUnder([]model.FieldIssue{issue}, "rule_configs") || model.IssueUnder([]model.FieldIssue{issue}, "proxy_groups") || model.IssueUnder([]model.FieldIssue{issue}, target) {
+	for _, issue := range issues {
+		if issue.Kind != model.IssueUnknown && (model.IssueUnder([]model.FieldIssue{issue}, "rule_configs") || model.IssueUnder([]model.FieldIssue{issue}, "proxy_groups") || model.IssueUnder([]model.FieldIssue{issue}, target)) {
 			return "profile." + issue.Path + " R5"
 		}
 	}

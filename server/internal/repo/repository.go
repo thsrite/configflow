@@ -382,6 +382,11 @@ func (r *Repository) openLocked(ctx context.Context) error {
 	if err := validateDocument(entry.Model); err != nil {
 		return nil
 	}
+	// Settings that could not be read at all (O18 T1a: read as empty) are not
+	// repaired implicitly: a write would replace the damaged token.
+	if settingsDamaged(entry.Issues) {
+		return nil
+	}
 	system, err := copyRecord(&entry.Model.System)
 	if err != nil {
 		return err

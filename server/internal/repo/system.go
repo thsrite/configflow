@@ -333,3 +333,34 @@ func AgentHistoryJSON(agent model.Agent, field string) (json.RawMessage, error) 
 	raw, _, err := recordMemberJSON(agent, field)
 	return raw, err
 }
+
+// systemSettingsIssue is the load issue path of a stored system_config that
+// is not an object at all.
+const systemSettingsIssue = "system.system_config"
+
+// settingsDamaged reports whether the stored settings record itself could not
+// be read (it is not an object) and was replaced by empty settings on load.
+func settingsDamaged(issues []model.FieldIssue) bool {
+	for _, issue := range issues {
+		if issue.Path == systemSettingsIssue {
+			return true
+		}
+	}
+	return false
+}
+
+// SystemSettingsDamaged reports whether the current stored system_config is
+// not an object (O18 T1a reads it as empty settings with a load warning).
+// Credential checks treat such settings as damaged, never as "no token": a
+// damaged stored token must not become anonymous access. Inside a transaction
+// the transaction's base generation is checked.
+func (r *Repository) SystemSettingsDamaged(ctx context.Context) (bool, error) {
+	if tx := r.transactionOf(ctx); tx != nil {
+		return settingsDamaged(tx.base.Issues), nil
+	}
+	entry, err := r.readEntry(ctx, false)
+	if err != nil {
+		return false, err
+	}
+	return settingsDamaged(entry.Issues), nil
+}

@@ -320,6 +320,7 @@ func TestModelIssuesLoggedOncePerRevision(t *testing.T) {
 		}
 		noError(t, r.Update(bg, func(_ context.Context, document *model.Document) error {
 			profileByKey(document, "default").Name = "next"
+			profileByKey(document, "default").Description = "repaired again"
 			return nil
 		}))
 		for range 5 {

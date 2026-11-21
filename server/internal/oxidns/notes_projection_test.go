@@ -11,7 +11,9 @@ import (
 func TestMalformedStoredNotesOnlyRejectNotesWrites(t *testing.T) {
 	for _, tt := range []struct{ value, message string }{
 		{`null`, devicenotes.NotesMessage},
-		{`[]`, devicenotes.NotesMessage},
+		// A stored list reads as empty notes with a load warning (O18 T1a);
+		// the next notes write stores a valid object.
+		{`[]`, ""},
 		{`{"192.0.2.1":false}`, devicenotes.NameMessage},
 	} {
 		t.Run(tt.value, func(t *testing.T) {
@@ -28,6 +30,12 @@ func TestMalformedStoredNotesOnlyRejectNotesWrites(t *testing.T) {
 			}
 			rows := L(M("ip", "192.0.2.1", "name", "", "mode", "direct"))
 			_, err = SavePolicyRows(profile, profile.Settings(), rows, "")
+			if tt.message == "" {
+				if err != nil {
+					t.Fatalf("notes write refused: %v", err)
+				}
+				return
+			}
 			if message, ok := IsSettingsError(err); !ok || message != tt.message {
 				t.Fatalf("notes write accepted invalid source: %v", err)
 			}
