@@ -211,3 +211,35 @@ func TestViewGuardCatchesBorrowedMutation(t *testing.T) {
 		t.Fatal("default guard did not stop the read")
 	})
 }
+
+// TestViewGuardReplacedWhileBorrowing: allocation tests switch the guard off
+// after Open, while background loops may already borrow. Under -race the guard
+// field must not be a plain read/write.
+func TestViewGuardReplacedWhileBorrowing(t *testing.T) {
+	m := haPairManager(t, 1)
+	ctx := context.Background()
+	r := m.Repository()
+	var stop atomic.Bool
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for !stop.Load() {
+				if _, err := m.ReadAgents(ctx, false, nil); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	for round := range 50 {
+		if round%2 == 0 {
+			r.SetViewGuard(nil)
+		} else {
+			r.SetViewGuard(func() { t.Error("untouched generation reported") })
+		}
+	}
+	stop.Store(true)
+	wg.Wait()
+}

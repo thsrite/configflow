@@ -225,7 +225,7 @@ func TestAgentViewOriginalTypesCancellationAndReadGuard(t *testing.T) {
 		t.Fatal("cancelled view entered callback", err)
 	}
 	guarded := false
-	r.viewGuard = func() { guarded = true }
+	r.SetViewGuard(func() { guarded = true })
 	if err := r.ViewAgents(t.Context(), func(records []model.Agent) error { records[0].Name = "forbidden"; return nil }); err != nil || !guarded {
 		t.Fatal("read guard missed mutation", err)
 	}

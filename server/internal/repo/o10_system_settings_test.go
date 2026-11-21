@@ -75,7 +75,8 @@ func TestO10SettingsReadsMatchSystemAndSkipAgents(t *testing.T) {
 
 	// The test-only View guard encodes the whole document around every View;
 	// measure the reads themselves.
-	small.viewGuard, large.viewGuard = nil, nil
+	small.SetViewGuard(nil)
+	large.SetViewGuard(nil)
 	reads := []struct {
 		name string
 		read func(*Repository) func() error

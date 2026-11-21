@@ -94,9 +94,10 @@ type Repository struct {
 	loads, validations, metadataReads atomic.Int64
 	afterLoad                         func()
 	cacheMaxBytes                     int64
-	// viewGuard, when set, is called if a View callback modified the
-	// shared snapshot (tests set it to fail).
-	viewGuard func()
+	// viewGuard, when set, is called if a View callback or a borrower
+	// modified a shared snapshot (test binaries set it to fail). It is atomic
+	// because tests replace it while background readers may be borrowing.
+	viewGuard atomic.Pointer[func()]
 	// guardMu guards the encodings of borrowed generations (view_guard.go).
 	guardMu    sync.Mutex
 	guarded    map[any]guardedGeneration
@@ -136,7 +137,9 @@ func Open(dataDir string, options Options) (*Repository, error) {
 		lockFile:      filepath.Join(root, ".config.lock"),
 		options:       options,
 		cacheMaxBytes: DocumentCacheMaxBytes,
-		viewGuard:     testViewGuard(),
+	}
+	if guard := testViewGuard(); guard != nil {
+		r.viewGuard.Store(&guard)
 	}
 	r.store = store.New(r.dbPath, LockTimeout)
 	if err := os.MkdirAll(r.dataDir, 0o777); err != nil {

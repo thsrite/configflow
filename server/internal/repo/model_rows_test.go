@@ -188,7 +188,7 @@ func TestModelR5StoredValuesLoadWriteValidationRepairs(t *testing.T) {
 			assertModelRows(t, encoded, entry.Document)
 
 			reopened := must(Open(r.DataDir(), Options{}))(t)
-			reopened.viewGuard = func() { t.Error("View callback modified the snapshot") }
+			reopened.SetViewGuard(func() { t.Error("View callback modified the snapshot") })
 			profile := must(reopened.Profile(bg, "default"))(t)
 			if profile.Revision != tt.typedRevision && tt.field == "_revision" {
 				t.Fatalf("typed revision %d", profile.Revision)

@@ -50,7 +50,8 @@ func (r *Repository) View(ctx context.Context, fn func(document *model.Document)
 	if err != nil {
 		return err
 	}
-	if r.viewGuard == nil {
+	guard := r.currentViewGuard()
+	if guard == nil {
 		return fn(document)
 	}
 	before, err := model.Marshal(document)
@@ -60,7 +61,7 @@ func (r *Repository) View(ctx context.Context, fn func(document *model.Document)
 	result := fn(document)
 	after, err := model.Marshal(document)
 	if err != nil || string(after) != string(before) {
-		r.viewGuard()
+		guard()
 	}
 	return result
 }

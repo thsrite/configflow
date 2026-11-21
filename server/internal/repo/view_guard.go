@@ -45,9 +45,22 @@ func testViewGuard() func() {
 // a guard that panics, and allocation or timing tests may switch it off.
 func (r *Repository) SetViewGuard(guard func()) {
 	r.guardMu.Lock()
-	r.viewGuard = guard
+	if guard == nil {
+		r.viewGuard.Store(nil)
+	} else {
+		r.viewGuard.Store(&guard)
+	}
 	r.guarded, r.guardOrder = nil, nil
 	r.guardMu.Unlock()
+}
+
+// currentViewGuard returns the installed guard, or nil when checking is off
+// (always in production).
+func (r *Repository) currentViewGuard() func() {
+	if guard := r.viewGuard.Load(); guard != nil {
+		return *guard
+	}
+	return nil
 }
 
 // guardBorrow checks a published generation that is handed to a borrower.
@@ -58,13 +71,13 @@ func (r *Repository) SetViewGuard(guard func()) {
 // key identifies the generation (the address of its first element or of the
 // document); value is what is encoded.
 func (r *Repository) guardBorrow(key, value any) {
-	if r.viewGuard == nil || key == nil {
+	if key == nil || r.currentViewGuard() == nil {
 		return
 	}
 	encoded, err := model.Marshal(value)
 	r.guardMu.Lock()
 	defer r.guardMu.Unlock()
-	guard := r.viewGuard
+	guard := r.currentViewGuard()
 	if guard == nil {
 		return
 	}

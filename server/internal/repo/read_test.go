@@ -36,7 +36,7 @@ func TestViewSharesOneSnapshotPerGeneration(t *testing.T) {
 func TestViewGuardDetectsModification(t *testing.T) {
 	r := newRepo(t)
 	modified := false
-	r.viewGuard = func() { modified = true }
+	r.SetViewGuard(func() { modified = true })
 	noError(t, r.View(bg, func(d *model.Document) error {
 		profileByKey(d, DefaultProfileID).Name = "changed in place"
 		return nil

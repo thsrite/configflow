@@ -32,7 +32,8 @@ func (r *Repository) ViewAgents(ctx context.Context, fn func([]model.Agent) erro
 }
 
 func (r *Repository) visitAgents(records []model.Agent, fn func([]model.Agent) error) error {
-	if r.viewGuard == nil {
+	guard := r.currentViewGuard()
+	if guard == nil {
 		return fn(records)
 	}
 	before, err := model.Marshal(records)
@@ -42,7 +43,7 @@ func (r *Repository) visitAgents(records []model.Agent, fn func([]model.Agent) e
 	result := fn(records)
 	after, err := model.Marshal(records)
 	if err != nil || string(before) != string(after) {
-		r.viewGuard()
+		guard()
 	}
 	return result
 }

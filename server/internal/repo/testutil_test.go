@@ -25,7 +25,7 @@ func openRepo(t *testing.T, dataDir string) *Repository {
 		t.Fatalf("Open: %v", err)
 	}
 	// Every View callback in the tests is checked for read-only use.
-	r.viewGuard = func() { t.Error("a View callback modified the shared snapshot") }
+	r.SetViewGuard(func() { t.Error("a View callback modified the shared snapshot") })
 	return r
 }
 
