@@ -18,6 +18,8 @@ func modeReadFixture(tb testing.TB, size int) context.Context {
 	if err != nil {
 		tb.Fatal(err)
 	}
+	// Allocation measurements exclude the test-only view guard's encodings.
+	r.SetViewGuard(nil)
 	ctx := repo.WithRepository(context.Background(), r)
 	data, _ := json.Marshal(strings.Repeat("x", size))
 	if err := r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {

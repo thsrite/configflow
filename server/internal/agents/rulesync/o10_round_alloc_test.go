@@ -91,17 +91,28 @@ func TestO10RoundSkipsAgentHistoryAndTracksLivePresence(t *testing.T) {
 		}
 	})
 
-	// Negative control: AgentSnapshots(ctx, true) copies full histories.
-	snapSmall := o10AvgRoundBytes(t, func() error {
-		_, err := smallSvc.m.AgentSnapshots(smallCtx, true)
-		return err
-	})
-	snapLarge := o10AvgRoundBytes(t, func() error {
-		_, err := largeSvc.m.AgentSnapshots(largeCtx, true)
-		return err
-	})
+	// Negative control: deep-copying the listing with histories (the pre-R1
+	// AgentSnapshots(ctx, true)) scales with them. Borrowed reads do not.
+	fullCopy := func(ctx context.Context, svc *Service) func() error {
+		return func() error {
+			rows, err := svc.m.AgentSnapshots(ctx, true)
+			for _, row := range rows {
+				if err == nil {
+					_, err = agents.CloneAgent(row)
+				}
+			}
+			return err
+		}
+	}
+	snapSmall := o10AvgRoundBytes(t, fullCopy(smallCtx, smallSvc))
+	snapLarge := o10AvgRoundBytes(t, fullCopy(largeCtx, largeSvc))
 	if snapLarge < snapSmall+512*1024 {
-		t.Fatalf("control: AgentSnapshots(true) allocates %d bytes with 500 deployments (%d with 1); bound would not detect a full copy", snapLarge, snapSmall)
+		t.Fatalf("control: deep copy allocates %d bytes with 500 deployments (%d with 1); bound would not detect a full copy", snapLarge, snapSmall)
+	}
+	borrowSmall := o10AvgRoundBytes(t, func() error { _, err := smallSvc.m.AgentSnapshots(smallCtx, true); return err })
+	borrowLarge := o10AvgRoundBytes(t, func() error { _, err := largeSvc.m.AgentSnapshots(largeCtx, true); return err })
+	if borrowLarge > borrowSmall+64*1024 {
+		t.Fatalf("AgentSnapshots(true) allocates %d bytes with 500 deployments (%d with 1); borrowed reads must not copy histories", borrowLarge, borrowSmall)
 	}
 
 	// Live heartbeat transition is still observed and logged through Round without leaking tokens.

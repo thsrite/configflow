@@ -276,18 +276,24 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 		t.Fatalf("SnapshotItems allocation scaled with Agent history: small=%d bytes, large=%d bytes", smallBytes, largeBytes)
 	}
 
-	// Negative control: ListAgents(ctx, true) copies the full deployment history
-	// and must exceed small by >=512 KB, proving our bound catches regressions.
-	ctrlSmall := measure(func() error {
-		_, err := smallMgr.ListAgents(smallSrv.Context(), true)
-		return err
-	})
-	ctrlLarge := measure(func() error {
-		_, err := largeMgr.ListAgents(largeSrv.Context(), true)
-		return err
-	})
+	// Negative control: deep-copying the listing with histories (the pre-R1
+	// ListAgents(ctx, true)) must exceed small by >=512 KB, proving our bound
+	// catches regressions.
+	fullCopy := func(srv *httpxtest.Server, m *agents.Manager) func() error {
+		return func() error {
+			rows, err := m.ListAgents(srv.Context(), true)
+			for i := range rows {
+				if err == nil {
+					_, err = agents.CloneAgent(&rows[i])
+				}
+			}
+			return err
+		}
+	}
+	ctrlSmall := measure(fullCopy(smallSrv, smallMgr))
+	ctrlLarge := measure(fullCopy(largeSrv, largeMgr))
 	if ctrlLarge < ctrlSmall+512*1024 {
-		t.Fatalf("control: ListAgents(true) did not scale with history: small=%d large=%d", ctrlSmall, ctrlLarge)
+		t.Fatalf("control: deep copy did not scale with history: small=%d large=%d", ctrlSmall, ctrlLarge)
 	}
 
 	// Verify router signature cache invalidates on profile edit (stale flips false -> true).
