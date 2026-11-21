@@ -183,7 +183,7 @@
 
 | # | 故障场景 | 现象 | 处置 |
 |---|---|---|---|
-| F1 | 首启拒绝：旧版数据目录 | 日志「数据目录中有旧版配置文件…」，容器退出 | 数据目录未改动。说明 `configflow.sqlite3` 不在预期位置（挂载路径错）或 Python 从未完成迁移。核对挂载；若确实缺库，用最后一个 Python 版本完成迁移后再换 Go（这是数据迁移，不是回滚运行） |
+| F1 | 首启拒绝：旧版数据目录 | 日志「数据目录中有旧版配置文件…」，容器退出 | 配置数据未改动（只新建 `app.log`）。说明 `configflow.sqlite3` 不在预期位置（挂载路径错）或 Python 从未完成迁移。核对挂载；若确实缺库，用最后一个 Python 版本完成迁移后再换 Go（这是数据迁移，不是回滚运行） |
 | F2 | 首启失败：实例锁忙 / 端口占用 / DB 非普通文件 | 退出码 1，日志写明原因 | 确认旧容器已停、只有一个进程；修正挂载或端口后重启 |
 | F3 | 能启动，但某些页面 500 或数据显示不对 | 页面报错，日志有 ERROR | 停止发布；导出日志；判断是否有错误写入（对比冷备份导出）。没有写坏 → 保持运行，修 Go 后换镜像。写坏了 → F9 |
 | F4 | 登录失效、会话频繁掉线 | 重启后要重新登录 | 检查 `JWT_SECRET_KEY` 是否 ≥32 字节、是否被识别为占位值（O12-A13）；修正后重启 |
@@ -212,7 +212,8 @@
 - Go 启动时若 `DATA_DIR` 里有 `config.json`、`config.json.bak`、`system.json`、`system.json.bak` 或 `*/config.json(.bak)`，
   但没有 `configflow.sqlite3`，会拒绝启动并提示：
   「数据目录中有旧版配置文件（…），但没有 configflow.sqlite3。此版本不再迁移 SQLite 之前的旧格式：请先升级到最后一个
-  Python 版本的 ConfigFlow 并启动一次完成迁移，再升级到此版本。数据目录未改动。」（`internal/repo/repository.go:293`）
+  Python 版本的 ConfigFlow 并启动一次完成迁移，再升级到此版本。配置数据未改动。」（`internal/repo/messages.go` `msgLegacyOnlyDataDir`）
+  拒绝时只会在目录里新建日志 `app.log`（`DATA_DIR/app.log`），配置文件和数据不动；#40 复核前提示写的是「数据目录未改动」，已改。
 - 已有 `configflow.sqlite3` 的用户直接升级即可；Go 不再补做 Python 的一次性清理（managed DNS / node-test DNS 等，O12-A01）。
 - **升级指引**（写进 release notes 和 `doc/guide/install.md`）：
   1. 备份整个数据目录。
@@ -254,6 +255,25 @@
   3. release notes 单独一节说明 autoupdate 用户的行为。
 - 构建失败时的行为保持现状：继续运行镜像里已有的版本，不留下半成品。
 
+#### B.3.1 已在用 autoupdate 的用户（维护者 2026-11-22 采纳 #40 复核 M3）
+
+旧 Python autoupdate 容器运行的是**镜像里固化的旧 `auto_update.py`**，上面第 2 条的 legacy 保护只在 Go 版脚本里，对它们不起作用。
+旧脚本每次启动会安装 `main` 的 `backend/` Python 源码并重建前端；如果 Go 合入后 `backend/` 仍在，它们会继续跑冻结的 Python 后端
+配上 Go 时期的前端，接口逐步失配。因此：
+
+1. **Go 合入 `main` 的同一提交删除 `backend/` 的 Python 源码**（`backend/agents/go-agent`、`backend/node-probe` 这些 Go 组件保留）。
+   旧脚本随后安装 `backend/` 或 `backend/requirements.txt` 时失败，按原逻辑记录 `update failed` 并退回它最后一次 Python 构建，
+   不会出现半新半旧的组合，容器继续运行。
+2. 这些用户需要**重新拉取 Go 版 autoupdate 镜像**才会进入 Go。CI（`docker.yml`）现在构建并发布 autoupdate（amd64 + arm64）：
+   - 每个版本标签（含预发布）推 `<版本>-autoupdate`，例如 `2.0.0-rc.1-autoupdate`；
+   - 浮动标签 `autoupdate`（旧用户正在跟的那个）与 `latest` 同一开关：`PUBLISH_LATEST=true` 且不是预发布才移动。
+     观察期（D3）结束前它保持指向最后一次 Python 构建，旧用户不会在重启时被换成 Go；观察期后与 `latest` 一起移动。
+3. 拉取 Go 版 autoupdate 镜像后，若数据目录仍是 legacy-only，Go 版脚本跳过更新、`-check` 拒绝启动并打印 B.1 提示；
+   有 `/data/.auto-update/manifest.json`（Python 时期写的，没有 server 记录）时，Go 版脚本丢弃它并按新镜像重新构建，
+   不会把镜像自带 server 与旧构建的前端/Agent 混用（#40 复核 M2）。
+4. release notes 的 autoupdate 小节写明以上三点，以及：缓存仍在 `/data/.auto-update`（Go 工具链缓存约 1.5 GB）；
+   自定义 `CONFIGFLOW_UPDATE_REPO` 等于在容器里执行该源码，必须是可信来源。
+
 ### B.4 升级注意事项（公开 release notes 的结构）
 
 公开说明直接复用 [O12「面向公开用户的升级说明草稿」](o12-release-notes.md)，发布前补齐：
@@ -261,7 +281,10 @@
 1. 版本号、最后一个 Python 版本号、升级窗口建议。
 2. B.1 的升级路径和拒绝提示原文。
 3. B.2 的镜像变化：nginx 移除（自定义 nginx 配置的用户需改用反向代理）、CA（`REQUESTS_CA_BUNDLE` 失效）、
-   内存变量、停止宽限。
+   内存变量、停止宽限。另写两点（#40 复核 L1、L4）：
+   - **`DATA_DIR` 必须指向挂载的数据卷**（默认 `/data`）。旧 Python 镜像的 supervisord 强制后端用 `/data`，容器里另设的
+     `DATA_DIR` 实际被忽略；Go 镜像按它读写。设成别的路径会让首启看到空配置（原数据不受影响），改回 `/data` 即可。
+   - 旧数据目录被拒绝启动时，目录里只会新建日志 `app.log`，配置数据不动；提示语为「…配置数据未改动。」
 4. O12 A 类中适用于普通用户的条目（A01、A02、A03、A04、A05、A06、A07、A08、A09、A10、A11、A13、A14、A15、A16，
    以及按条件适用的 A12、A17、A18、A19）。A20 不写进公开说明（官方不支持退回 Python）。
 5. M01–M19 中维护者确认后要公开的部分（例如 M02 CORS 同源、M04 CA、M07 HA 永久离线的人工处理、M12 MCP -32603 先查询再重试、
