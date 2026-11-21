@@ -200,9 +200,18 @@ def run(args, cwd, env=None, timeout=900):
 def load_manifest():
     try:
         with open(os.path.join(STATE, 'manifest.json')) as handle:
-            return json.load(handle)
+            manifest = json.load(handle)
     except (OSError, ValueError):
         return {}
+    if not isinstance(manifest, dict):
+        return {}
+    if manifest.get('sha') and 'server' not in manifest:
+        # Written by the Python-era image: its builds never included the Go
+        # server, so reusing them would pair this image's server with a
+        # frontend/Agent from another commit. Start over from the image build.
+        log(f'ignoring build {manifest["sha"][:7]} recorded by the Python image; rebuilding for the Go server')
+        return {}
+    return manifest
 
 
 def save_manifest(manifest):

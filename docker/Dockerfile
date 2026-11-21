@@ -99,7 +99,8 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM alpine:3.24 AS sub-store
 ARG SUB_STORE_VERSION=2.42.3
 ADD --chmod=644 https://github.com/sub-store-org/Sub-Store/releases/download/${SUB_STORE_VERSION}/sub-store.bundle.js /rootfs/opt/sub-store/sub-store.bundle.js
-RUN mkdir -p /rootfs/opt/sub-store && echo "${SUB_STORE_VERSION}" > /rootfs/opt/sub-store/VERSION
+# ADD --chmod 也作用于它创建的上级目录（会变成 0644），这里恢复目录的 0755。
+RUN chmod 755 /rootfs/opt /rootfs/opt/sub-store && echo "${SUB_STORE_VERSION}" > /rootfs/opt/sub-store/VERSION
 
 # 汇总内置程序与许可证为一层：主服务或前端更新时复用，任一内置组件更新时替换。
 FROM scratch AS runtime-assets

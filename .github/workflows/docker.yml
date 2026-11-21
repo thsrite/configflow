@@ -71,6 +71,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+          # metadata-action 默认 latest=auto 会在推正式版本标签时自动加 latest，
+          # 绕过下面的 PUBLISH_LATEST 开关（O14 D3）；latest 只由下面的 raw 规则决定。
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=latest,enable=${{ vars.PUBLISH_LATEST == 'true' && !contains(github.ref_name, '-') }}

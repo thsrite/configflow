@@ -90,7 +90,7 @@ func statNS(t *testing.T, path string) (atime, mtime, ctime int64) {
 		t.Fatal(err)
 	}
 	st := info.Sys().(*syscall.Stat_t)
-	return st.Atim.Sec*1e9 + st.Atim.Nsec, st.Mtim.Sec*1e9 + st.Mtim.Nsec, st.Ctim.Sec*1e9 + st.Ctim.Nsec
+	return st.Atim.Nano(), st.Mtim.Nano(), st.Ctim.Nano()
 }
 
 func utime(t *testing.T, path string, atime, mtime int64) {
