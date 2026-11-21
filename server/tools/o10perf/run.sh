@@ -14,9 +14,14 @@ chmod 700 "$HOME/cf-prod-snapshot" "$private"
 out=${O10_OUT:-$private/o10-$(date +%Y%m%d-%H%M%S)}
 build=$(mktemp -d)
 trap 'rm -rf "$build"' EXIT
-printf '{"Replace":{"%s":"%s"}}' "$root/server/cmd/configflow/o10_pprof_overlay.go" \
-  "$root/server/tools/o10perf/pprof_overlay.go.txt" >"$build/overlay.json"
-(cd "$root/server" && go build -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow)
+if [[ -n ${O10_GO_BIN:-} ]]; then
+  # Prebuilt overlay binary (pve.sh builds it on the test server; the CT has no Go toolchain).
+  cp "$O10_GO_BIN" "$build/configflow"
+else
+  printf '{"Replace":{"%s":"%s"}}' "$root/server/cmd/configflow/o10_pprof_overlay.go" \
+    "$root/server/tools/o10perf/pprof_overlay.go.txt" >"$build/overlay.json"
+  (cd "$root/server" && go build -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow)
+fi
 echo "o10: private output $out"
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '
  set -euo pipefail
