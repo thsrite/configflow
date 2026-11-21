@@ -72,7 +72,9 @@ worktree, or `--new-workspace worktree --worktree-mode checkout-branch --branch 
 **Update 2026-11-21 (new coordinator, solarsear account; new Paseo agents use the default ~/.claude account):**
 maintainer: "要严查，这性能也太差了". Hard O10 targets (same host + snapshot, Go <= Python): idle CPU avg <= 1% (floor
 <= 0.5%), idle RSS <= 117 MB, every measured route median latency <= Python, read-route allocation in the MB range.
-Every O10 task hands back o10perf before/after numbers against these. Root-cause audit dispatched: Opus dfbabde4,
+Every O10 task hands back o10perf before/after numbers against these. Maintainer 2026-11-21 later: "go 性能应该比 python 好才对 … 肯定不正常" → switch acceptance = Go
+BETTER than Python on every idle metric and every measured route (any route slower than Python blocks the switch);
+measured on the PVE CT. Benchmark build checked: normal release build (no -race, same as Dockerfile apart from -s -w). Root-cause audit dispatched: Opus dfbabde4,
 branch go-perf-rootcause (from go-perf-t1 + cherry-picked T2) → server/parity/o10-rootcause.md: can wave A+B reach the
 targets; if not, structural change (immutable snapshot / copy-on-write repo, version-keyed caches). Wave B waits for it.
 Root cause DONE (dfbabde4, go-perf-rootcause 3b05c9bb8, server/parity/o10-rootcause.md): wave A+B CANNOT reach the
