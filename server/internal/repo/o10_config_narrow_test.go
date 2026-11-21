@@ -134,6 +134,9 @@ func TestO10ConfigDefaultOmitsAgentsAndNarrowOxiDNSProjectionSkipsHistory(t *tes
 	}
 
 	// Allocation bounds: narrow reads must not scale with Agent history size.
+	// The measurements exclude the test-only view guard's encodings.
+	small.SetViewGuard(nil)
+	large.SetViewGuard(nil)
 	reads := []struct {
 		name string
 		read func(*repo.Repository) func() error

@@ -99,6 +99,9 @@ func TestReadHAPairMatchesFullListing(t *testing.T) {
 // that cost grow with the number of unrelated Agents.
 func TestReadHAPairDoesNotCopyOtherAgents(t *testing.T) {
 	small, large := haPairManager(t, 3), haPairManager(t, 60)
+	// Allocation measurements exclude the test-only view guard's encodings.
+	small.Repository().SetViewGuard(nil)
+	large.Repository().SetViewGuard(nil)
 	ctx := context.Background()
 	measure := func(fn func() error) int64 {
 		if err := fn(); err != nil {
@@ -120,9 +123,17 @@ func TestReadHAPairDoesNotCopyOtherAgents(t *testing.T) {
 	if s, l := measure(pair(small)), measure(pair(large)); l > s+32*1024 {
 		t.Fatalf("ReadHAPair allocation grew with unrelated Agents: %d B -> %d B", s, l)
 	}
-	// Negative control: the full listing copy grows with the same Agents.
+	// Negative control: deep-copying the full listing grows with the same Agents.
 	full := func(m *Manager) func() error {
-		return func() error { _, err := readHAPairReference(ctx, m, "p1"); return err }
+		return func() error {
+			records, err := m.ReadAgents(ctx, false, nil)
+			for i := range records {
+				if err == nil {
+					_, err = CloneAgent(&records[i])
+				}
+			}
+			return err
+		}
 	}
 	if s, l := measure(full(small)), measure(full(large)); l < s+256*1024 {
 		t.Fatalf("control: full listing did not grow with Agents: %d B -> %d B", s, l)

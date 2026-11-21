@@ -98,6 +98,8 @@ func newHeartbeatBenchmark(b *testing.B, unused int) (*Manager, context.Context)
 	if err != nil {
 		b.Fatal(err)
 	}
+	// Allocation measurements exclude the test-only view guard's encodings.
+	r.SetViewGuard(nil)
 	ctx := context.Background()
 	m, err := New(ctx, r)
 	if err != nil {
