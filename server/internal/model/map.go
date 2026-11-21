@@ -85,6 +85,34 @@ func (m *Map[V]) Set(name string, value V) {
 	m.state = state
 }
 
+// SetAll is Set for every pair of entries in order, copying the state once
+// instead of once per pair. An empty sequence leaves m unchanged.
+func (m *Map[V]) SetAll(entries iter.Seq2[string, V]) {
+	var state *mapState[V]
+	var index map[string]int
+	for name, value := range entries {
+		if state == nil {
+			state = m.copyState()
+			state.null = false
+			index = make(map[string]int, len(state.entries))
+			for i, entry := range state.entries {
+				if _, seen := index[entry.name]; !seen {
+					index[entry.name] = i
+				}
+			}
+		}
+		if i, ok := index[name]; ok {
+			state.entries[i].value = value
+			continue
+		}
+		index[name] = len(state.entries)
+		state.entries = append(state.entries, mapEntry[V]{name: name, value: value})
+	}
+	if state != nil {
+		m.state = state
+	}
+}
+
 // Delete removes a key. Re-adding it appends a new member.
 func (m *Map[V]) Delete(name string) bool {
 	if m.state != nil {

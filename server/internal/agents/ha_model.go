@@ -51,22 +51,41 @@ func HAEnablingModel(record *model.Agent) bool {
 }
 
 // ReadHAPair returns an owned, reciprocal pair from one live registry view.
+// Only the two members are copied (without histories); the pair checks read
+// stored members that the live heartbeat overlay never changes.
 func (m *Manager) ReadHAPair(ctx context.Context, id string) ([]model.Agent, error) {
-	records, err := m.ReadAgents(ctx, false, nil)
-	if err != nil {
+	var pair []model.Agent
+	incomplete := false
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		record := registryAgent(records, id)
+		if !HAEnabledModel(record) {
+			return nil
+		}
+		group, peerID, valid := haPairIdentity(record)
+		peer := registryAgent(records, peerID)
+		otherGroup, otherID, otherValid := haPairIdentity(peer)
+		if !valid || !otherValid || !HAEnabledModel(peer) || group != otherGroup || otherID != id || !haProfilesMatch(record, peer) {
+			incomplete = true
+			return nil
+		}
+		for _, source := range []*model.Agent{record, peer} {
+			copied, err := copyAgent(source, false)
+			if err != nil {
+				return err
+			}
+			pair = append(pair, *copied)
+		}
+		return nil
+	})
+	switch {
+	case err != nil:
 		return nil, err
-	}
-	record := registryAgent(records, id)
-	if !HAEnabledModel(record) {
+	case incomplete:
+		return nil, ErrPairIncomplete
+	case pair == nil:
 		return nil, nil
 	}
-	group, peerID, valid := haPairIdentity(record)
-	peer := registryAgent(records, peerID)
-	otherGroup, otherID, otherValid := haPairIdentity(peer)
-	if !valid || !otherValid || !HAEnabledModel(peer) || group != otherGroup || otherID != id || !haProfilesMatch(record, peer) {
-		return nil, ErrPairIncomplete
-	}
-	return []model.Agent{*record, *peer}, nil
+	return m.runtime.overlayModels(pair), nil
 }
 
 // Pair identities are ownership evidence, not shared text coercions. Read the

@@ -521,9 +521,7 @@ func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, res
 		return err
 	}
 	file := s.readFile(agentID)
-	for host, entry := range results.All() {
-		file.Hosts.Set(host, entry)
-	}
+	file.Hosts.SetAll(results.All())
 	pruneHosts(&file.Hosts, now)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -567,6 +565,10 @@ func (s *ProbeStore) DeleteContext(ctx context.Context, agentID string) error {
 // annotated with agent_id.
 func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.Map[TimedRecord], error) {
 	var merged model.Map[TimedRecord]
+	// Collect first and build the Map once: a Set per host copies the whole
+	// Map, which made this quadratic in the number of probed hosts.
+	var order []string
+	latest := map[string]TimedRecord{}
 	for _, agentID := range agentIDs {
 		agentJSON, err := json.Marshal(agentID)
 		if err != nil {
@@ -574,15 +576,26 @@ func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.Map[TimedRe
 		}
 		hosts := store.LoadEntries(agentID, time.Time{})
 		for host, entry := range hosts.All() {
-			if previous, seen := merged.Get(host); seen && !(string(entry.CheckedAt) > string(previous.CheckedAt)) {
+			previous, seen := latest[host]
+			if seen && !(string(entry.CheckedAt) > string(previous.CheckedAt)) {
 				continue
 			}
 			copied := entry
 			if err := copied.Fields.Set("agent_id", agentJSON); err != nil {
 				return merged, fmt.Errorf("set probe agent_id: %w", err)
 			}
-			merged.Set(host, copied)
+			if !seen {
+				order = append(order, host)
+			}
+			latest[host] = copied
 		}
 	}
+	merged.SetAll(func(yield func(string, TimedRecord) bool) {
+		for _, host := range order {
+			if !yield(host, latest[host]) {
+				return
+			}
+		}
+	})
 	return merged, nil
 }
