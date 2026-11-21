@@ -77,7 +77,7 @@ func SplitRules(config *model.Config) ([]model.RuleConfig, []model.RuleConfig, e
 	}
 	var fields model.Fields
 	for _, name := range []string{"rules", "rule_sets"} {
-		if data, ok := config.Profile.Fields.Get(name); ok {
+		if data, ok := config.Profile.LegacyRuleList(name); ok {
 			if err := fields.Set(name, data); err != nil {
 				return nil, nil, err
 			}

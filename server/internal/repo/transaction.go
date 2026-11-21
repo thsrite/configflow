@@ -133,7 +133,7 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	}
 	tx := &transaction{base: base, document: document}
 	if err := fn(context.WithValue(ctx, txKey{r}, tx), tx); err != nil {
-		return err
+		return inputError(err)
 	}
 	if options.batch != nil && *options.batch {
 		ctx = ctxx.Uninterruptible(ctx)

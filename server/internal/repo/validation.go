@@ -191,20 +191,8 @@ var msgRefreshInterval = "订阅源更新间隔必须为 0（关闭自动更新�
 
 // validateDocument is _validate_document on the typed document.
 func validateDocument(d *model.Document) error {
-	version, _ := d.Root.Get("schema_version")
-	var number model.Int
-	if json.Unmarshal(version, &number) != nil || number != SchemaVersion {
+	if d.SchemaVersion != SchemaVersion {
 		return validationError(msgSchemaMismatch)
-	}
-	order := d.Order()
-	for _, section := range []string{"system", "shared", "profiles"} {
-		found := false
-		for _, name := range order {
-			found = found || name == section
-		}
-		if !found {
-			return validationError(msgSectionMissing + section)
-		}
 	}
 	system, err := viewOf(&d.System)
 	if err != nil {

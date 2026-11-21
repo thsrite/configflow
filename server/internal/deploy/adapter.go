@@ -77,7 +77,7 @@ func (s *Source) serverDomain(fallback string) string {
 func (s *Source) ruleConfig() *rulefetch.SourceConfig {
 	c := s.config()
 	var sets []model.RuleConfig
-	if raw, present := c.Profile.Fields.Get("rule_sets"); present {
+	if raw, present := c.Profile.LegacyRuleList("rule_sets"); present {
 		_ = json.Unmarshal(raw, &sets)
 	}
 	return &rulefetch.SourceConfig{Settings: c.SystemConfig, Library: c.RuleLibrary, Rules: c.Profile.RuleConfigs, RuleSets: sets}

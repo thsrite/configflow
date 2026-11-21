@@ -1,184 +1,157 @@
 package repo
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
+	"regexp"
+	"slices"
 
 	"configflow/internal/model"
 	"configflow/internal/store"
 )
 
-// Stored row envelopes belong to repo; model knows records, not SQLite/store.
-// A row the model refuses (duplicate member names, D1) is located like the
-// store's own corrupt-row diagnostics: scope/owner/field, never its value.
-func modelFields(scope, owner string, fields []store.Field) (model.Fields, error) {
-	var result model.Fields
-	for _, field := range fields {
-		if result.Has(field.Name) {
-			return model.Fields{}, fmt.Errorf("%w: duplicate stored field", model.ErrJSON)
-		}
-		if err := result.Set(field.Name, field.Value); err != nil {
-			return model.Fields{}, fmt.Errorf(msgModelRowInvalid, scope, owner, field.Name, err)
-		}
-	}
-	return result, nil
-}
+// Stored rows and plain model records (O18 T1a). Every row is decoded
+// directly into its record member with the lenient stored-data rules
+// (model.DecodeStoredMember) and every member is encoded on its own
+// (model.EncodeMembers). The store writes only rows whose text changed; rows
+// Python wrote are rewritten in Go's encoding the first time their section
+// is committed. Rows no record declares are dropped and reported once.
+
+// rootSchemaVersion is the only root row besides the sections.
+const rootSchemaVersion = "schema_version"
 
 func decodeModelRows(raw *store.Document) (*model.Document, []model.FieldIssue, error) {
 	if raw == nil {
 		return nil, nil, fmt.Errorf("decode stored model: missing document")
 	}
-	roots, err := modelFields("root", "", raw.Root)
-	if err != nil {
+	for _, section := range model.DocumentSections {
+		if !slices.Contains(raw.Order, section) {
+			return nil, nil, validationError(msgSectionMissing + section)
+		}
+	}
+	if raw.System == nil || raw.Shared == nil {
+		return nil, nil, fmt.Errorf("decode stored model: missing section")
+	}
+	document := &model.Document{}
+	var issues []model.FieldIssue
+	decode := func(record any, scope, owner, prefix string, fields []store.Field) error {
+		for _, field := range fields {
+			path := field.Name
+			if prefix != "" {
+				path = prefix + "." + field.Name
+			}
+			known, found, err := model.DecodeStoredMember(record, field.Name, field.Value, path)
+			if err != nil {
+				return fmt.Errorf(msgModelRowInvalid, scope, owner, field.Name, err)
+			}
+			if !known {
+				found = []model.FieldIssue{{Path: path, Kind: model.IssueUnknown}}
+			}
+			issues = append(issues, found...)
+		}
+		return nil
+	}
+	hasVersion := false
+	for _, field := range raw.Root {
+		if field.Name != rootSchemaVersion {
+			issues = append(issues, model.FieldIssue{Path: field.Name, Kind: model.IssueUnknown})
+			continue
+		}
+		hasVersion = true
+		found, err := model.DecodeStored(field.Value, &document.SchemaVersion, rootSchemaVersion)
+		if err != nil {
+			return nil, nil, fmt.Errorf(msgModelRowInvalid, "root", "", field.Name, err)
+		}
+		issues = append(issues, found...)
+	}
+	if !hasVersion {
+		return nil, nil, validationError(msgSchemaMismatch)
+	}
+	if err := decode(&document.System, "system", "", "system", raw.System.Fields); err != nil {
 		return nil, nil, err
 	}
-	var root model.Fields
-	for _, name := range raw.Order {
-		var value []byte
-		switch name {
-		case "system", "shared":
-			section := raw.System
-			if name == "shared" {
-				section = raw.Shared
-			}
-			if section == nil {
-				return nil, nil, fmt.Errorf("decode stored model: missing section")
-			}
-			fields, err := modelFields(name, "", section.Fields)
-			if err != nil {
-				return nil, nil, err
-			}
-			value, err = fields.MarshalJSON()
-			if err != nil {
-				return nil, nil, err
-			}
-		case "profiles":
-			var profiles model.Fields
-			for _, profile := range raw.Profiles {
-				if profiles.Has(profile.ID) {
-					return nil, nil, fmt.Errorf("%w: duplicate profile owner", model.ErrJSON)
-				}
-				fields, err := modelFields("profile", profile.ID, profile.Fields)
-				if err != nil {
-					return nil, nil, err
-				}
-				encoded, err := fields.MarshalJSON()
-				if err != nil {
-					return nil, nil, err
-				}
-				if err := profiles.Set(profile.ID, encoded); err != nil {
-					return nil, nil, err
-				}
-			}
-			value, err = profiles.MarshalJSON()
-			if err != nil {
-				return nil, nil, err
-			}
-		default:
-			var present bool
-			value, present = roots.Get(name)
-			if !present {
-				return nil, nil, fmt.Errorf("decode stored model: missing root field")
-			}
-		}
-		if root.Has(name) {
-			return nil, nil, fmt.Errorf("%w: duplicate root member", model.ErrJSON)
-		}
-		if err := root.Set(name, value); err != nil {
+	if err := decode(&document.Shared, "shared", "", "shared", raw.Shared.Fields); err != nil {
+		return nil, nil, err
+	}
+	document.Profiles = make([]*model.Profile, 0, len(raw.Profiles))
+	for i, rows := range raw.Profiles {
+		profile := &model.Profile{}
+		if err := decode(profile, "profile", rows.ID, fmt.Sprintf("profiles[%d]", i), rows.Fields); err != nil {
 			return nil, nil, err
 		}
+		profile.SetStoredKey(rows.ID)
+		document.Profiles = append(document.Profiles, profile)
 	}
-	encoded, err := root.MarshalJSON()
-	if err != nil {
-		return nil, nil, err
-	}
-	return model.DecodeDocument(encoded)
+	return document, issues, nil
 }
 
-type modelRowKey struct{ scope, owner, name string }
+// canonicalRootOrder is the root member order Go writes for a new store.
+var canonicalRootOrder = []string{rootSchemaVersion, "system", "shared", "profiles"}
 
 func encodeModelRows(document *model.Document, base *store.Document) (*store.Document, error) {
 	if document == nil {
 		return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreDocumentObject}
 	}
-	encoded, err := model.Marshal(document)
+	rows := func(record any, name string) ([]store.Field, error) {
+		members, err := model.EncodeMembers(record)
+		if err != nil {
+			return nil, &store.Error{Kind: store.ErrDocument, Message: fmt.Sprintf(msgStoreSectionObject, name), Cause: err}
+		}
+		fields := make([]store.Field, len(members))
+		for i, member := range members {
+			fields[i] = store.Field{Name: member.Name, Value: member.Value}
+		}
+		return fields, nil
+	}
+	version, err := model.Marshal(document.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
-	var root model.Fields
-	if err := root.UnmarshalJSON(encoded); err != nil {
+	// Keep the stored root order when it names the same members, so a commit
+	// does not rewrite it.
+	order := canonicalRootOrder
+	if base != nil && len(base.Order) == len(order) {
+		same := true
+		for _, name := range order {
+			same = same && slices.Contains(base.Order, name)
+		}
+		if same {
+			order = slices.Clone(base.Order)
+		}
+	}
+	result := &store.Document{Order: slices.Clone(order), Root: []store.Field{{Name: rootSchemaVersion, Value: version}}}
+	system, err := rows(&document.System, "system")
+	if err != nil {
 		return nil, err
 	}
-	previous := map[modelRowKey]json.RawMessage{}
-	keep := func(scope, owner string, fields []store.Field) {
-		for _, field := range fields {
-			previous[modelRowKey{scope, owner, field.Name}] = field.Value
-		}
+	shared, err := rows(&document.Shared, "shared")
+	if err != nil {
+		return nil, err
 	}
-	if base != nil {
-		keep("root", "", base.Root)
-		if base.System != nil {
-			keep("system", "", base.System.Fields)
+	result.System = &store.Section{Fields: system}
+	result.Shared = &store.Section{Fields: shared}
+	seen := map[string]bool{}
+	for _, profile := range document.Profiles {
+		if profile == nil {
+			return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreProfilesObject}
 		}
-		if base.Shared != nil {
-			keep("shared", "", base.Shared.Fields)
+		owner := profile.Key()
+		if seen[owner] {
+			return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreProfilesObject, Cause: fmt.Errorf("%w: duplicate profile owner", model.ErrJSON)}
 		}
-		for _, profile := range base.Profiles {
-			keep("profile", profile.ID, profile.Fields)
+		seen[owner] = true
+		fields, err := rows(profile, "profile/"+owner)
+		if err != nil {
+			return nil, &store.Error{Kind: store.ErrDocument, Message: fmt.Sprintf(msgStoreProfileObject, owner), Cause: err}
 		}
-	}
-	rows := func(data []byte, scope, owner string) ([]store.Field, error) {
-		var fields model.Fields
-		if err := fields.UnmarshalJSON(data); err != nil {
-			return nil, err
-		}
-		result := make([]store.Field, 0, fields.Len())
-		for name, value := range fields.All() {
-			// A JSON member's lexical value excludes separator whitespace. SQLite
-			// stores that value independently, including any surrounding whitespace.
-			// Retain the complete original row when its value token is unchanged.
-			if original, ok := previous[modelRowKey{scope, owner, name}]; ok && bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(value)) {
-				value = bytes.Clone(original)
-			}
-			result = append(result, store.Field{Name: name, Value: value})
-		}
-		return result, nil
-	}
-	result := &store.Document{Order: root.Keys()}
-	for name, value := range root.All() {
-		switch name {
-		case "system", "shared":
-			fields, err := rows(value, name, "")
-			if err != nil {
-				return nil, &store.Error{Kind: store.ErrDocument, Message: fmt.Sprintf(msgStoreSectionObject, name), Cause: err}
-			}
-			if name == "system" {
-				result.System = &store.Section{Fields: fields}
-			} else {
-				result.Shared = &store.Section{Fields: fields}
-			}
-		case "profiles":
-			var profiles model.Fields
-			if err := profiles.UnmarshalJSON(value); err != nil {
-				return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreProfilesObject, Cause: err}
-			}
-			for owner, profile := range profiles.All() {
-				fields, err := rows(profile, "profile", owner)
-				if err != nil {
-					return nil, &store.Error{Kind: store.ErrDocument, Message: fmt.Sprintf(msgStoreProfileObject, owner), Cause: err}
-				}
-				result.Profiles = append(result.Profiles, store.ProfileRows{ID: owner, Fields: fields})
-			}
-		default:
-			if original, ok := previous[modelRowKey{"root", "", name}]; ok && bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(value)) {
-				value = bytes.Clone(original)
-			}
-			result.Root = append(result.Root, store.Field{Name: name, Value: value})
-		}
+		result.Profiles = append(result.Profiles, store.ProfileRows{ID: owner, Fields: fields})
 	}
 	return result, nil
 }
+
+var issueIndex = regexp.MustCompile(`\[[0-9]+\]`)
+
+// issuePattern is an issue path without list indices, for summaries.
+func issuePattern(path string) string { return issueIndex.ReplaceAllString(path, "[]") }
 
 // reportModelIssues runs only at entry publication/load, never on every cache
 // hit. A bounded last-head marker also suppresses repeated warnings for an
@@ -192,9 +165,22 @@ func (r *Repository) reportModelIssues(entry storedEntry) {
 	r.modelIssueHeadSet = true
 	r.modelIssueHead = entry.Head
 	r.cacheMu.Unlock()
+	unknown := map[string]int{}
+	var patterns []string
 	for _, issue := range entry.Issues {
+		if issue.Kind == model.IssueUnknown {
+			pattern := issuePattern(issue.Path)
+			if unknown[pattern] == 0 {
+				patterns = append(patterns, pattern)
+			}
+			unknown[pattern]++
+			continue
+		}
 		if !r.agentIssuesReported(entry.Head, issue.Path) {
 			logger.Warningf(msgModelFieldIssue, issue.Path, issue.Kind)
 		}
+	}
+	for _, pattern := range patterns {
+		logger.Warningf(msgModelUnknownMember, pattern, unknown[pattern])
 	}
 }

@@ -43,7 +43,7 @@ func (r *Repository) convertImportJSON(raw json.RawMessage, resourceRemaps Resou
 	if schemaNumber(version, SchemaVersion) {
 		document, _, err := model.DecodeDocument(raw)
 		if err != nil {
-			return nil, err
+			return nil, inputError(err)
 		}
 		if err := document.System.Clear("agent_registration_sessions"); err != nil {
 			return nil, err
@@ -212,25 +212,7 @@ func (r *Repository) convertImportJSON(raw json.RawMessage, resourceRemaps Resou
 			system.Agents[i].ProfileID = DefaultProfileID
 		}
 	}
-	document, _, err := model.DecodeDocument([]byte(`{"schema_version":5,"system":{},"shared":{},"profiles":{}}`))
-	if err != nil {
-		return nil, err
-	}
-	document.System = system
-	// Establish each stored member before appending the revision. Assigning the
-	// lists only as typed fields would leave them outside the record's stored
-	// order, so SetJSON("_revision", ...) would put the revision first.
-	for _, key := range SharedFields {
-		if err := document.Shared.SetJSON(key, json.RawMessage(`[]`)); err != nil {
-			return nil, err
-		}
-	}
-	if err := document.Shared.SetJSON("_revision", []byte(`0`)); err != nil {
-		return nil, err
-	}
-	if err := document.Root.Set("schema_version", []byte(strconv.Itoa(SchemaVersion))); err != nil {
-		return nil, err
-	}
+	document := &model.Document{SchemaVersion: SchemaVersion, System: system, Profiles: []*model.Profile{}}
 	catalogs := newImportCatalogs(&document.Shared)
 	for _, source := range profiles {
 		if err := r.importOldProfile(document, source, catalogs, resourceRemaps); err != nil {

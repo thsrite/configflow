@@ -130,7 +130,7 @@ func updateProfileIn(document *model.Document, profileID string, fn func(p *mode
 	// outside ProfileFields stay as stored.
 	working.ID, working.Name, working.Description = current.ID, current.Name, current.Description
 	working.CreatedAt, working.UpdatedAt, working.Revision = current.CreatedAt, current.UpdatedAt, current.Revision
-	working.Fields = current.Fields
+	working.Rules, working.RuleSets = current.Rules, current.RuleSets
 	*current = *working
 	currentNames := groupNames(current)
 	for _, rule := range current.RuleConfigs {

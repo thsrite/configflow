@@ -121,7 +121,7 @@ func cacheSourceOwned(rule model.RuleConfig, stored []model.RuleLibraryItem, pro
 			// Old profiles can store URL rules under either legacy collection. Decode
 			// only those members, once per legacy miss, not the complete configuration.
 			for _, name := range []string{"rules", "rule_sets"} {
-				if raw, ok := profile.Fields.Get(name); ok {
+				if raw, ok := profile.LegacyRuleList(name); ok {
 					var entries []model.RuleConfig
 					if json.Unmarshal(raw, &entries) == nil {
 						records = append(records, entries...)

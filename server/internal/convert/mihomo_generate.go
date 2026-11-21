@@ -177,12 +177,12 @@ func MihomoRuleLists(config *model.Config) ([]model.RuleConfig, []model.RuleConf
 		return rules, sets, fmt.Errorf("%s", msgMihomoConfig)
 	}
 	if len(config.Profile.RuleConfigs) == 0 {
-		if raw, ok := config.Profile.Fields.Get("rules"); ok {
+		if raw, ok := config.Profile.LegacyRuleList("rules"); ok {
 			if err := decodeRuleList(raw, &rules); err != nil {
 				return nil, nil, fmt.Errorf("%s: %w", msgMihomoRules, err)
 			}
 		}
-		if raw, ok := config.Profile.Fields.Get("rule_sets"); ok {
+		if raw, ok := config.Profile.LegacyRuleList("rule_sets"); ok {
 			if err := decodeRuleList(raw, &sets); err != nil {
 				return nil, nil, fmt.Errorf("%s: %w", msgMihomoRules, err)
 			}

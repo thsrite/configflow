@@ -48,9 +48,9 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	}
 	set(doc, "rule_configs", rules)
 	for _, key := range []string{"rules", "rule_sets"} {
-		if raw, ok := profile.Fields.Get(key); ok {
+		if raw, ok := profile.LegacyRuleList(key); ok {
 			var container model.Profile
-			if err := container.Fields.Set(key, raw); err != nil {
+			if err := container.SetJSON(key, raw); err != nil {
 				return nil, err
 			}
 			rules, sets, err := mosdns.SplitRules(&model.Config{Profile: &container})
