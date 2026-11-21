@@ -620,15 +620,38 @@ func xcExecute(t *testing.T, r *Repository, op *testObj, variables map[string]an
 	case "save_system":
 		var snap, base *model.System
 		if raw := xcRawOrNil(t, arg("snapshot")); raw != nil {
+			// A typed snapshot has every member (O18 T1a). Python's partial
+			// snapshot leaves absent members as they are, which a Go caller
+			// expresses by editing the current record: overlay the given
+			// members on it.
+			if jsonKind(raw) == '{' {
+				current, err := r.System(bg)
+				if err != nil {
+					return nil, err
+				}
+				members, err := recordMembers(current)
+				if err != nil {
+					return nil, err
+				}
+				for key, value := range viewOfJSON(raw).fields.All() {
+					if err := members.Set(key, value); err != nil {
+						return nil, err
+					}
+				}
+				if raw, err = members.MarshalJSON(); err != nil {
+					return nil, err
+				}
+			}
+			// Snapshots are input: decoded strictly.
 			snap = &model.System{}
-			if err := json.Unmarshal(raw, snap); err != nil {
-				return nil, err
+			if err := model.DecodeInput("system", raw, snap); err != nil {
+				return nil, inputError(err)
 			}
 		}
 		if raw := xcRawOrNil(t, arg("baseline")); raw != nil {
 			base = &model.System{}
-			if err := json.Unmarshal(raw, base); err != nil {
-				return nil, err
+			if err := model.DecodeInput("system", raw, base); err != nil {
+				return nil, inputError(err)
 			}
 		}
 		saved, err := r.SaveSystemRecord(bg, snap, base)
@@ -873,6 +896,17 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 			continue
 		}
 		pyClass, goClass := p.GetObject("error").GetString("class"), g.GetObject("error").GetString("class")
+		// O18 T1a strict input: a string where a list belongs is "X 必须是列表";
+		// Python iterated the string's characters and reported the first one
+		// as an item without an ID. Both refuse without writing.
+		if pyClass == "ProfileValidationError" && goClass == pyClass {
+			pyMessage, goMessage := p.GetObject("error").GetString("message"), g.GetObject("error").GetString("message")
+			if label, ok := strings.CutSuffix(pyMessage, " 中每一项必须有 ID"); ok && goMessage == label+" 必须是列表" {
+				t.Logf("step %d (%s): Python iterated a string: %s; Go: %s", index, g.GetString("op"), pyMessage, goMessage)
+				g.Set("error", p.Value("error"))
+				continue
+			}
+		}
 		if !xcPythonCrash[pyClass] || (goClass != "ProfileValidationError" && goClass != "ProfileInUse") {
 			continue
 		}

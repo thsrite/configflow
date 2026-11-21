@@ -257,13 +257,15 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 	}
 	if pythonReady {
 		audit(t, "audit-edit")
-		step(t, "typed edit after Python", []modelRowKey{profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at")}, func() error {
+		// Python's extra root member is not declared: the next Go write deletes
+		// it (O18 T1a).
+		step(t, "typed edit after Python", []modelRowKey{profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at"), {"root", "", "n8_2_python_probe"}}, func() error {
 			_, err := r.UpdateProfile(bg, p, func(_ context.Context, profile *model.Profile) error {
 				profile.ProxyGroups[0].Name = "After Python"
 				return nil
 			})
 			return err
 		})
-		audit(t, "audit-final")
+		audit(t, "audit")
 	}
 }

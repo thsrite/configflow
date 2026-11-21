@@ -57,6 +57,9 @@ func (*Profile) plainRecord() {}
 // through SetJSON or DecodeDocument, which are strict.
 func (p *Profile) UnmarshalJSON(data []byte) error {
 	var decoded profileWire
+	if err := requireObject(data); err != nil {
+		return err
+	}
 	if _, err := DecodeStored(data, &decoded, ""); err != nil {
 		return err
 	}
@@ -122,6 +125,9 @@ func (*Shared) plainRecord() {}
 // through SetJSON or DecodeDocument, which are strict.
 func (s *Shared) UnmarshalJSON(data []byte) error {
 	var decoded sharedWire
+	if err := requireObject(data); err != nil {
+		return err
+	}
 	if _, err := DecodeStored(data, &decoded, ""); err != nil {
 		return err
 	}
@@ -158,6 +164,9 @@ func (*System) plainRecord() {}
 // through SetJSON or DecodeDocument, which are strict.
 func (s *System) UnmarshalJSON(data []byte) error {
 	var decoded systemWire
+	if err := requireObject(data); err != nil {
+		return err
+	}
 	if _, err := DecodeStored(data, &decoded, ""); err != nil {
 		return err
 	}
@@ -184,6 +193,16 @@ type Document struct {
 	System        System
 	Shared        Shared
 	Profiles      []*Profile
+}
+
+// requireObject refuses a record that is not a JSON object; its members are
+// decoded leniently, the record itself is not.
+func requireObject(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || data[0] != '{' {
+		return fmt.Errorf("%w: record must be an object", ErrType)
+	}
+	return nil
 }
 
 // MissingSectionError reports document input without one of the sections
@@ -284,6 +303,19 @@ func decodeProfiles(data []byte) ([]*Profile, error) {
 		profiles = append(profiles, profile)
 	}
 	return profiles, nil
+}
+
+// DecodeInput strictly decodes input for a plain record (rec is a *Profile,
+// *Shared or *System; record names it in errors): a non-object or a member of
+// the wrong type is a *MemberTypeError, unknown members are dropped.
+func DecodeInput(record string, data []byte, rec any) error {
+	if err := validJSON(data); err != nil {
+		return err
+	}
+	if !isPlainTarget(rec) {
+		return fmt.Errorf("%w: input target must be a plain record", ErrType)
+	}
+	return decodeSection(record, data, rec)
 }
 
 // decodeSection strictly decodes one section object member by member, so a

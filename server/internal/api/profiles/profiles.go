@@ -388,11 +388,17 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		var wire struct {
-			Shared  model.Shared    `json:"shared"`
+			Shared  json.RawMessage `json:"shared"`
 			Profile json.RawMessage `json:"profile"`
 		}
 		if err = json.Unmarshal(raw, &wire); err != nil {
 			return nil, repo.NewValidationError(msgImportShape)
+		}
+		var additions model.Shared
+		if len(wire.Shared) > 0 && string(wire.Shared) != "null" {
+			if err = model.DecodeInput("shared", wire.Shared, &additions); err != nil {
+				return nil, err
+			}
 		}
 		if len(wire.Profile) == 0 || string(wire.Profile) == "null" {
 			return nil, repo.NewValidationError(msgImportShape)
@@ -401,7 +407,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 		if err = details.UnmarshalJSON(raw); err != nil {
 			return nil, err
 		}
-		return &repo.ClientProfileImport{Shared: wire.Shared, Profile: wire.Profile, Details: details}, nil
+		return &repo.ClientProfileImport{Shared: additions, Profile: wire.Profile, Details: details}, nil
 	}
 	if !emptyInput(body["dry_run"]) {
 		r, err := repo.GetRepository(c.Context())

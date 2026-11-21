@@ -140,8 +140,11 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 				case "profile":
 					imp.Profile = raw
 				case "shared":
-					if err := json.Unmarshal(raw, &imp.Shared); err != nil {
+					if jsonKind(raw) != '{' {
 						return nil, validationError(msgImportResultShape)
+					}
+					if err := model.DecodeInput("shared", raw, &imp.Shared); err != nil {
+						return nil, err
 					}
 					if err := imp.Details.Set(key, raw); err != nil {
 						return nil, err
