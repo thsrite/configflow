@@ -130,11 +130,8 @@ func TestBuiltinOxidnsRowsDoNotIntroduceFormattingRewrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	value, revision = profileOxidnsRow(t, r)
-	// Go stores the value in its own (compact) encoding (O18 T1a).
-	compact.Reset()
-	noError(t, json.Compact(&compact, []byte(userJSON)))
-	if value != compact.String() {
-		t.Fatalf("user JSON stored as %s", value)
+	if value != userJSON {
+		t.Fatal("user JSON formatting changed")
 	}
 	if err := r.UpdateSystem(t.Context(), func(_ context.Context, system *model.System) error {
 		system.SystemConfig.ConfigToken = "synthetic-changed-token"

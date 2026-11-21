@@ -247,7 +247,7 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 	// keep their unknown members.
 	for key, part := range map[modelRowKey]string{
 		shared("nodes"):            `"remark":7,"n85":{"z":1.0}`,
-		shared("subscriptions"):    `"description":"é","n85":null`,
+		shared("subscriptions"):    `"description":"\u00e9","n85":null`,
 		profile(p, "proxy_groups"): `"n85":[1.50]`,
 		profile(p, "mihomo"):       `"n85":1e2`,
 	} {

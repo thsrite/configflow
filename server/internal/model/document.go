@@ -68,7 +68,7 @@ func (p *Profile) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON writes the profile's members in declaration order.
-func (p Profile) MarshalJSON() ([]byte, error) { return encodePlain((*profileWire)(&p)) }
+func (p Profile) MarshalJSON() ([]byte, error) { return marshalPlain(&p) }
 
 // Clear sets a declared member (by JSON name) to its zero value.
 func (p *Profile) Clear(member string) error { return clearMember(p, member) }
@@ -136,7 +136,7 @@ func (s *Shared) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON writes the shared members in declaration order.
-func (s Shared) MarshalJSON() ([]byte, error) { return encodePlain((*sharedWire)(&s)) }
+func (s Shared) MarshalJSON() ([]byte, error) { return marshalPlain(&s) }
 
 // Clear sets a declared member (by JSON name) to its zero value.
 func (s *Shared) Clear(member string) error { return clearMember(s, member) }
@@ -175,7 +175,7 @@ func (s *System) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON writes the system members in declaration order.
-func (s System) MarshalJSON() ([]byte, error) { return encodePlain((*systemWire)(&s)) }
+func (s System) MarshalJSON() ([]byte, error) { return marshalPlain(&s) }
 
 // Clear sets a declared member (by JSON name) to its zero value.
 func (s *System) Clear(member string) error { return clearMember(s, member) }
@@ -366,7 +366,7 @@ func memberError(record, member string, value []byte, err error) error {
 func (d Document) MarshalJSON() ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteString(`{"schema_version":`)
-	version, err := encodePlain(d.SchemaVersion)
+	version, err := scalarJSON(d.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}

@@ -503,16 +503,6 @@ func DecodeStoredMember(rec any, member string, data []byte, path string) (known
 	return true, issues, nil
 }
 
-// encodePlain writes a plain record (through an alias type without methods)
-// with encoding/json/v2. Nested records keep their own codecs.
-func encodePlain(v any) ([]byte, error) {
-	data, err := jsonv2.Marshal(v, jsonv2.Deterministic(true))
-	if err != nil {
-		return nil, fmt.Errorf("encode model record: %w", err)
-	}
-	return data, nil
-}
-
 func plainFieldsOf(target any) map[string]plainField {
 	return plainFields(reflect.TypeOf(target).Elem())
 }
@@ -535,17 +525,20 @@ type StoredMember struct {
 	Value []byte
 }
 
-// EncodeMembers writes each member of a plain record (a pointer) as its own
-// JSON value, in declaration order. omitzero members holding their zero value
-// are left out, as MarshalJSON does; the values are those MarshalJSON writes.
-func EncodeMembers(rec any) ([]StoredMember, error) {
-	value := reflect.ValueOf(rec)
-	if value.Kind() != reflect.Pointer || value.IsNil() || !isPlain(value.Type().Elem()) {
-		return nil, fmt.Errorf("%w: stored members need a plain record", ErrType)
+// memberFields lists the JSON members of a plain struct in declaration order.
+type memberField struct {
+	name     string
+	index    int
+	omitzero bool
+}
+
+var memberFieldCache sync.Map
+
+func memberFields(typ reflect.Type) []memberField {
+	if cached, ok := memberFieldCache.Load(typ); ok {
+		return cached.([]memberField)
 	}
-	value = value.Elem()
-	typ := value.Type()
-	members := make([]StoredMember, 0, typ.NumField())
+	var fields []memberField
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if !field.IsExported() {
@@ -558,17 +551,83 @@ func EncodeMembers(rec any) ([]StoredMember, error) {
 		if name == "" {
 			name = field.Name
 		}
-		current := value.Field(i)
-		if strings.Contains(","+options+",", ",omitzero,") && current.IsZero() {
+		fields = append(fields, memberField{name: name, index: i, omitzero: strings.Contains(","+options+",", ",omitzero,")})
+	}
+	actual, _ := memberFieldCache.LoadOrStore(typ, fields)
+	return actual.([]memberField)
+}
+
+// EncodeMembers writes each member of a plain record (a pointer) as its own
+// JSON value, in declaration order. omitzero members holding their zero value
+// are left out. Values use this package's encoder (encodeUnit), so records not
+// yet migrated are written by their own codecs without a second pass.
+func EncodeMembers(rec any) ([]StoredMember, error) {
+	value := reflect.ValueOf(rec)
+	if value.Kind() != reflect.Pointer || value.IsNil() || !isPlain(value.Type().Elem()) {
+		return nil, fmt.Errorf("%w: stored members need a plain record", ErrType)
+	}
+	value = value.Elem()
+	fields := memberFields(value.Type())
+	members := make([]StoredMember, 0, len(fields))
+	for _, field := range fields {
+		current := value.Field(field.index)
+		if field.omitzero && current.IsZero() {
 			continue
 		}
-		data, err := encodePlain(current.Addr().Interface())
+		data, err := encodeUnit(current.Interface())
 		if err != nil {
 			return nil, err
 		}
-		members = append(members, StoredMember{Name: name, Value: data})
+		members = append(members, StoredMember{Name: field.name, Value: data})
 	}
 	return members, nil
+}
+
+// EncodeMember is EncodeMembers for one member; present is false for an
+// omitted (omitzero) or undeclared member.
+func EncodeMember(rec any, name string) (data []byte, present bool, err error) {
+	value := reflect.ValueOf(rec)
+	if value.Kind() != reflect.Pointer || value.IsNil() || !isPlain(value.Type().Elem()) {
+		return nil, false, fmt.Errorf("%w: stored members need a plain record", ErrType)
+	}
+	value = value.Elem()
+	for _, field := range memberFields(value.Type()) {
+		if field.name != name {
+			continue
+		}
+		current := value.Field(field.index)
+		if field.omitzero && current.IsZero() {
+			return nil, false, nil
+		}
+		data, err := encodeUnit(current.Interface())
+		return data, err == nil, err
+	}
+	return nil, false, nil
+}
+
+// marshalPlain is MarshalJSON of a plain record: its members joined into one
+// object in declaration order.
+func marshalPlain(rec any) ([]byte, error) {
+	members, err := EncodeMembers(rec)
+	if err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	out.WriteByte('{')
+	for i, member := range members {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		key, err := scalarJSON(member.Name)
+		if err != nil {
+			return nil, err
+		}
+		out.Write(key)
+		out.WriteByte(':')
+		out.Write(member.Value)
+	}
+	out.WriteByte('}')
+	return out.Bytes(), nil
 }
 
 // clipSlices gives every slice decoded by encoding/json/v2 (lists of plain

@@ -181,16 +181,6 @@ func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) er
 	if base == nil || baseModel == nil {
 		return nil
 	}
-	before, err := encodeModelRows(baseModel, nil)
-	if err != nil {
-		return err
-	}
-	encoded := map[rowKey][]byte{}
-	eachRow(before, func(section rowKey, fields *[]store.Field) {
-		for _, field := range *fields {
-			encoded[rowKey{section.scope, section.owner, field.Name}] = field.Value
-		}
-	})
 	stored := map[rowKey][]byte{}
 	positions := map[rowKey]int{}
 	eachRow(base, func(section rowKey, fields *[]store.Field) {
@@ -200,13 +190,33 @@ func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) er
 			positions[key] = i
 		}
 	})
+	records := map[rowKey]any{{scope: "system"}: &baseModel.System, {scope: "shared"}: &baseModel.Shared}
+	for _, profile := range baseModel.Profiles {
+		records[rowKey{scope: "profile", owner: profile.Key()}] = profile
+	}
+	var failure error
 	eachRow(next, func(section rowKey, fields *[]store.Field) {
 		for i, field := range *fields {
 			key := rowKey{section.scope, section.owner, field.Name}
-			if old, ok := encoded[key]; ok && bytes.Equal(old, field.Value) {
-				if text, ok := stored[key]; ok {
-					(*fields)[i].Value = text
+			text, ok := stored[key]
+			if !ok || bytes.Equal(text, field.Value) {
+				continue
+			}
+			// The stored text differs from the new encoding: keep it only
+			// if the snapshot the transaction started from encodes the same.
+			var before []byte
+			present := false
+			if section.scope == "root" {
+				before, present = baseRoot(baseModel, field.Name)
+			} else if record := records[rowKey{scope: section.scope, owner: section.owner}]; record != nil {
+				var err error
+				before, present, err = model.EncodeMember(record, field.Name)
+				if err != nil && failure == nil {
+					failure = err
 				}
+			}
+			if present && bytes.Equal(before, field.Value) {
+				(*fields)[i].Value = text
 			}
 		}
 		slices.SortStableFunc(*fields, func(a, b store.Field) int {
@@ -223,7 +233,15 @@ func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) er
 			return 0
 		})
 	})
-	return nil
+	return failure
+}
+
+func baseRoot(document *model.Document, name string) ([]byte, bool) {
+	if name != rootSchemaVersion {
+		return nil, false
+	}
+	data, err := model.Marshal(document.SchemaVersion)
+	return data, err == nil
 }
 
 var issueIndex = regexp.MustCompile(`\[[0-9]+\]`)

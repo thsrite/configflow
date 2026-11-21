@@ -2735,7 +2735,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   「配置中有未声明的字段，读取时已丢弃：<路径模式>（<个数> 处）」（不含值），下一次写入删除这些行。Python 会原样带着。
   导入整份配置（v5）时根和配置空间里的未知成员同样丢弃；system 节多出的成员仍按 Python 拒绝「system 节只接受全局设置、备份与 Agent」。
   旧版 `rules`/`rule_sets` 列表是声明过的成员（生成器在没有 `rule_configs` 时仍读取），不受影响。
-  尚未迁移的嵌套记录（T1b/T1c）照旧保留自己的未知成员，但外层用 v2 写出时空白和转义会规范化（数字原文保留）。
+  尚未迁移的嵌套记录（T1b/T1c）照旧保留自己的未知成员和原字节（本步不改它们）。
 - **读存储时类型不对**：按零值读并告警（路径和类型，不含值），不再写回原错值；整数接受 `60`、`60.0`、`6e1`、`"60"`，文本接受数字原文。
   因此原来「库里 `system_config: null` / 数字 / 字符串时启动不写入」改为：读成空设置后通过校验，启动时的令牌维护写入一次修复结果，
   再次启动不写（`TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup`）。库里显式 `null` 的布尔开关读作「关」（flag-truthiness 裁定）。
