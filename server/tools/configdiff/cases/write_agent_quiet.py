@@ -44,7 +44,7 @@ def quiet(binary, recorder):
             fixture = options()
             fixture['agent_port_pairs'] = {'agent-synthetic': [left.port, right.port]}
             with profile_pair(binary, recorder, options=fixture) as pair:
-                heartbeat(pair, version='1.9.0-go', variant='T25/' + name + '/online-before-write')
+                heartbeat(pair, version='1.9.1-go', variant='T25/' + name + '/online-before-write')
                 for index, (route, path, body) in enumerate(operations):
                     last = index == len(operations) - 1
                     def check(response):

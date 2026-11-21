@@ -2643,3 +2643,12 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - 修法：连接正常时，距上次读取满 60 s（`discoveryVersionRefresh`）的下一次轮询再读一次 `/version`；断开重连时仍立即读取。
   每分钟多一个本机 HTTP 请求，上报周期（5 分钟）内总能带上新版本。
 - 回归测试：`TestCollectorRefreshesVersionWhileConnected`（假控制器在连接不断开的情况下改版本，上报的版本随之更新）。
+
+## 实验网 L2/L3/L5 Agent 修复 — Agent 版本提升到 1.9.1-go
+
+- Agent `upgrade.Version` 与面板 `agents.LatestAgentVersion` 改为 1.9.1-go，更新日志新增 1.9.1-go（L5-D1 回流兼容 nft 1.0.6、
+  L3-D1 停用 DNS 高可用确认释放 keepalived 与虚拟 IP、L2-D3 内核版本定期刷新）。1.9.0-go 及更早的 Agent 在面板上显示可更新。
+- 与 Python 比较的例外沿用 1.9.0-go 的做法（Python `version.py` 仍为 1.8.61-go）：`TestVersionTableMatchesPython` 的 Go 独有版本
+  为 1.9.1-go、1.9.0-go；difftest 仍钉住 Python 的 `LATEST_AGENT_VERSION`；configdiff T16/T25 心跳报 1.9.1-go（两侧都无更新）；
+  proddiff `pair_agent_release` 的 Go 最新版改为 1.9.1-go，`has_update` 例外范围变为 [1.8.61-go, 1.9.1-go)（`test_agent_release_exemption_is_exact`
+  增加 1.9.0-go 在范围内、1.9.1-go 不在范围内的用例）。

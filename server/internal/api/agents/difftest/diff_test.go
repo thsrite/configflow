@@ -1032,7 +1032,7 @@ func noOracleDelta(py, gor response) string {
 }
 
 // pinPythonAgentVersion is the one explicit exception for the Agent release:
-// Go ships 1.9.0-go (first-registration credentials) while the retired Python
+// Go ships its own releases (1.9.0-go and later) while the retired Python
 // reference stops at its LATEST_AGENT_VERSION. Both servers get Python's value
 // as the upgrade target, so every other field of the upgrade and heartbeat
 // responses is still compared exactly.

@@ -29,7 +29,7 @@ func TestVersionTableMatchesPython(t *testing.T) {
 	latest := regexp.MustCompile(`(?m)^LATEST_AGENT_VERSION = "([^"]*)"$`).FindStringSubmatch(source)
 	// Go-only Agent releases come after Python's last one (1.8.61-go); the
 	// rest of the table is still Python's, entry for entry.
-	goOnly := []string{"1.9.0-go"}
+	goOnly := []string{"1.9.1-go", "1.9.0-go"}
 	if latest == nil || latest[1] != "1.8.61-go" || LatestAgentVersion != goOnly[0] {
 		t.Fatalf("LATEST_AGENT_VERSION %v, Go %s", latest, LatestAgentVersion)
 	}

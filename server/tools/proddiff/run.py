@@ -445,9 +445,9 @@ def strip_discovery_store_state(route, left_body, right_body):
 
 
 # Go-only Agent release (O9-H2 publish follow-up): Python's LATEST_AGENT_VERSION
-# stays 1.8.61-go, Go ships 1.9.0-go. test_proddiff checks both against source.
+# stays 1.8.61-go, Go ships 1.9.1-go. test_proddiff checks both against source.
 PYTHON_AGENT_LATEST = '1.8.61-go'
-GO_AGENT_LATEST = '1.9.0-go'
+GO_AGENT_LATEST = '1.9.1-go'
 
 
 def _agent_version_key(version):

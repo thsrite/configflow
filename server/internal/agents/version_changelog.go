@@ -4,10 +4,11 @@
 package agents
 
 // LatestAgentVersion is LATEST_AGENT_VERSION.
-const LatestAgentVersion = "1.9.0-go"
+const LatestAgentVersion = "1.9.1-go"
 
 // versionChangelog is VERSION_CHANGELOG in its declaration order (newest first).
 var versionChangelog = []ChangelogEntry{
+	{Version: "1.9.1-go", Date: "2026-11-22", Features: []string{"自动回流支持 nftables 1.0.6（Debian 12）：之前在这类主机上启用会失败并留下无法自动清理的规则；旧版本留下的残留可直接在面板重新发布或撤销", "Alpine/OpenRC 主机停用 DNS 高可用时先停止 keepalived 再删配置，并确认 keepalived 已停止、虚拟 IP 已离开本机，否则停用失败并说明原因；keepalived 处于 crashed 状态时自动重置后再启动", "替换 Mihomo 内核后，Agent 在一分钟内上报新的内核版本，不再需要重启 Agent"}},
 	{Version: "1.9.0-go", Date: "2026-11-21", Features: []string{"支持开启登录后的首次注册授权：安装命令中的一次性注册凭据（Docker 为 AGENT_<服务>_REGISTRATION_TOKEN）或注册密钥（AGENT_REGISTRATION_KEY）随注册请求发送，注册成功后从配置中清除；旧版本无法完成开启登录后的新装注册", "Docker 镜像与面板版本配套发布，面板生成的 Docker 安装命令使用同版本镜像标签"}},
 	{Version: "1.8.61-go", Date: "2026-11-14", Features: []string{"面板核实新地址可连接后，Agent 把配置文件里失效的 agent_ip 改成新地址（只写一次）；可在面板的 Agent 菜单里手动修改地址", "运行中换 IP 后，网关模式发布不再因启动时记下的旧地址而失败"}},
 	{Version: "1.8.60-go", Date: "2026-11-14", Features: []string{"设备换 IP 后不用再手改 Agent 配置：配置里的 agent_ip 已不在本机时自动改用检测到的地址，并随心跳上报，面板核实可连接后自动更新记录"}},
