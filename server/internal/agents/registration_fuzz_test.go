@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+	"unicode/utf8"
 )
 
 func FuzzRegistrationClaimExactFields(f *testing.F) {
@@ -18,7 +19,9 @@ func FuzzRegistrationClaimExactFields(f *testing.F) {
 			t.Skip()
 		}
 		before, err := json.Marshal(raw)
-		if err != nil {
+		if err != nil || !utf8.Valid(before) {
+			// Invalid UTF-8 makes the whole claim invalid; overwriting an alias
+			// key below could remove the only invalid member and is no alias test.
 			t.Skip()
 		}
 		claim := decodeRegistrationClaim(before)
