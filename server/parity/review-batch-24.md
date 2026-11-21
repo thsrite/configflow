@@ -57,4 +57,6 @@
 
 - `gofmt -l` 无输出，`go vet ./...` 通过。
 - `go test -race -count=1 ./internal/httpx/... ./internal/auth/... ./internal/api/agents/ ./internal/taskstatus/...`：全部 ok。
-- difftest 与 preflight 结果见协调者交回消息。
+- `go test -count=1 -tags configflow_difftest ./internal/api/agents/difftest/ ./internal/api/generate/... ./internal/httpx/difftest/`：ok
+  （agents/difftest 0.1 s，Flask 对照在此环境下多半跳过，由批次门禁完整执行）。
+- `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-24 -p 8`：vet 两组标签通过，`PREFLIGHT PASS`。
