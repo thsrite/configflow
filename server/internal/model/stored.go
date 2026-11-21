@@ -513,7 +513,6 @@ func encodePlain(v any) ([]byte, error) {
 	return data, nil
 }
 
-
 func plainFieldsOf(target any) map[string]plainField {
 	return plainFields(reflect.TypeOf(target).Elem())
 }
