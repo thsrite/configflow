@@ -89,6 +89,22 @@ func (m *Manager) ReadAgent(ctx context.Context, id string, history bool) (*mode
 type Generation struct {
 	Head   store.Head
 	Shared bool
+	// the borrowed registry records of this generation (read is false for a
+	// Generation not returned by ReadAgentsAt/ReadAgentAt)
+	records []model.Agent
+	read    bool
+}
+
+// GenerationCredentials returns the credential values of every stored Agent
+// record of gen (histories included), collected from gen's own records: a
+// commit landing after the registry read cannot drop a credential the
+// borrowed records still carry. A Generation not read by this Manager falls
+// back to the repository's current generation.
+func (m *Manager) GenerationCredentials(ctx context.Context, gen Generation) (redact.Secrets, error) {
+	if !gen.read {
+		return redact.AgentRecordCredentials(ctx, nil)
+	}
+	return redact.AgentRegistryCredentials(m.repository, gen.Head, gen.Shared, gen.records)
 }
 
 // ReadAgentsAt is ReadAgents that also reports the generation it read.
@@ -109,7 +125,7 @@ func (m *Manager) ReadAgentsAt(ctx context.Context, history bool, inspect func(*
 		}
 		result = append(result, record)
 	}
-	return m.runtime.overlayModels(result), Generation{head, shared}, nil
+	return m.runtime.overlayModels(result), Generation{head, shared, records, true}, nil
 }
 
 // ReadAgentAt is ReadAgent that also reports the generation it read and the
@@ -127,9 +143,9 @@ func (m *Manager) ReadAgentAt(ctx context.Context, id string, history bool) (*mo
 		if err != nil {
 			return nil, -1, Generation{}, err
 		}
-		return &m.runtime.overlayModels([]model.Agent{record})[0], i, Generation{head, shared}, nil
+		return &m.runtime.overlayModels([]model.Agent{record})[0], i, Generation{head, shared, records, true}, nil
 	}
-	return nil, -1, Generation{head, shared}, nil
+	return nil, -1, Generation{head, shared, records, true}, nil
 }
 
 // ReadAgentByToken selects one original string token without encoding unrelated

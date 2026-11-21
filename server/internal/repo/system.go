@@ -203,6 +203,32 @@ func (r *Repository) AgentRecordCredentials(ctx context.Context, collect func(js
 	return values, nil
 }
 
+// AgentRecordCredentialsOf is AgentRecordCredentials for a registry already
+// borrowed with BorrowAgentsAt: records must be that generation's records and
+// head/shared what it reported. The values are collected from those records,
+// never from a later generation, so a projection of a borrowed record always
+// masks its own generation's credentials even when a commit lands between the
+// two reads. Shared generations reuse and refresh the per-head cache.
+func (r *Repository) AgentRecordCredentialsOf(head store.Head, shared bool, records []model.Agent, collect func(json.RawMessage) []string) ([]string, error) {
+	if shared {
+		if cached := r.agentCredentials.Load(); cached != nil && cached.head == head {
+			return cached.values, nil
+		}
+	}
+	var values []string
+	for i := range records {
+		data, err := model.Marshal(records[i])
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, collect(data)...)
+	}
+	if shared {
+		r.agentCredentials.Store(&agentCredentials{head: head, values: values})
+	}
+	return values, nil
+}
+
 func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 	ruleProxy, agents := TokenSet{}, TokenSet{}
 	add := func(target TokenSet, raw json.RawMessage, present bool, err error) {

@@ -24,7 +24,9 @@ import (
 	"unsafe"
 
 	"configflow/internal/agents/diag"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 	"configflow/internal/weburl"
 )
 
@@ -84,6 +86,19 @@ func AgentRecordCredentials(ctx context.Context, seeds Secrets) (Secrets, error)
 		return nil, err
 	}
 	return NewSecrets(seeds, values), nil
+}
+
+// AgentRegistryCredentials is AgentRecordCredentials for a registry
+// generation borrowed with repo.BorrowAgentsAt (records, head, shared as it
+// returned them): the credentials come from exactly those records.
+func AgentRegistryCredentials(repository *repo.Repository, head store.Head, shared bool, records []model.Agent) (Secrets, error) {
+	values, err := repository.AgentRecordCredentialsOf(head, shared, records, func(data json.RawMessage) []string {
+		return CollectCredentials(data, nil)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return NewSecrets(values), nil
 }
 
 // ExternalPayloadSecrets is _external_payload_secrets(system_config): the

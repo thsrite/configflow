@@ -216,3 +216,54 @@ func TestAgentViewCacheKeysLiveMembers(t *testing.T) {
 		t.Fatal("disabled cache served a projection")
 	}
 }
+
+// TestAgentViewMasksItsOwnGenerationCredentials: the registry and the stored
+// credentials used to be read from the store separately, so a commit landing
+// between the two reads projected a borrowed record with a later generation's
+// credentials. A credential only a private member carries (the token, dropped
+// from the projection, so the sanitizer cannot discover it) and that the
+// commit rotated was then no longer masked in the record's free text. The
+// credentials now come from the read generation itself.
+func TestAgentViewMasksItsOwnGenerationCredentials(t *testing.T) {
+	f := newContentHTTP(t, false, false)
+	ctx := f.s.Context()
+	const old = "old-agent-token-7f3a"
+	set := func(token, remark string) {
+		t.Helper()
+		if err := f.s.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+			token, _ := json.Marshal(token)
+			remark, _ := json.Marshal(remark)
+			if err := system.Agents[0].SetJSON("token", token); err != nil {
+				return err
+			}
+			return system.Agents[0].Fields.Set("remark", remark) // unknown member
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(old, "registered with "+old)
+	m, err := core.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, gen, err := m.ReadAgentsAt(ctx, true, nil)
+	if err != nil || len(records) != 1 {
+		t.Fatal(records, err)
+	}
+	// The commit lands after the registry read, before the credentials read.
+	set("new-agent-token-91c2", "rotated")
+	secrets, err := liveAgentSecrets(ctx, m, &contentSources{gen: gen}, &records[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, err := publicAgentView(&records[0], secrets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := public["token"]; present {
+		t.Fatal("token projected")
+	}
+	if string(public["remark"]) != `"[REDACTED]"` {
+		t.Fatalf("own generation token leaked: %s", public["remark"])
+	}
+}

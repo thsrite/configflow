@@ -85,7 +85,7 @@ func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent
 		gen = cache.gen
 	}
 	public, err := views.public(m.Repository(), gen, viewKey{index, record.ID, viewFull}, record, func() (map[string]json.RawMessage, error) {
-		secrets, err := liveAgentSecrets(ctx, cache, record)
+		secrets, err := liveAgentSecrets(ctx, m, cache, record)
 		if err != nil {
 			return nil, err
 		}
@@ -142,7 +142,7 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 		for i := range records {
 			record := &records[i]
 			public, err := views.public(repository, gen, viewKey{i, record.ID, viewSummary}, record, func() (map[string]json.RawMessage, error) {
-				secrets, err := liveAgentSecrets(ctx, request, record)
+				secrets, err := liveAgentSecrets(ctx, m, request, record)
 				if err != nil {
 					return nil, err
 				}
