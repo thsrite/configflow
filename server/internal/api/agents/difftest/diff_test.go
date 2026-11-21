@@ -91,8 +91,29 @@ func seed(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	disableRuleRefresh(t, r)
 	seedMetrics(t, dir)
 	seedTraffic(t, dir)
+}
+
+// disableRuleRefresh turns off automatic updates of the default rule library.
+// Both servers run scheduled-refresh 30 s after start; without this the test
+// compares DATA_DIR only when it finishes inside that window (a fast plain
+// run) and otherwise sees each side download the remote sources into its own
+// D2 cache names (an approved difference, see behaviour-changes D2), which
+// made the result depend on run time (-race) and on internet access.
+func disableRuleRefresh(t *testing.T, r *repo.Repository) {
+	t.Helper()
+	off := model.Int(0)
+	err := r.UpdateShared(context.Background(), func(_ context.Context, shared *model.Shared) error {
+		for i := range shared.RuleLibrary {
+			shared.RuleLibrary[i].UpdateInterval = &off
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // naiveISO is datetime.isoformat() of a local naive time.
