@@ -8,9 +8,11 @@
 // reproducible. Databases written by this package and by the Python module
 // are interchangeable: same schema, pragmas, row contents and revisions.
 //
-// A Store opens a new connection for every operation and holds no state
-// besides its path, so it may be used from several goroutines; writers are
-// serialised by the repository's lock and by SQLite itself. The package
+// A Store opens a new connection for every write, check and backup, and
+// keeps a few idle connections for reads (Reading), which see exactly what a
+// fresh connection would; it may be used from several goroutines, and Close
+// releases the idle connections. Writers are serialised by the repository's
+// lock and by SQLite itself. The package
 // never interprets field values; it only validates JSON syntax and the row envelope.
 package store
 
@@ -113,6 +115,8 @@ type Store struct {
 	// transaction (ConfigStore._apply and ._commit in the Python tests);
 	// production code leaves it nil.
 	BeforeCommit func() error
+
+	readers readers
 }
 
 // New returns the store for the database file at path. timeout is asked
@@ -131,19 +135,26 @@ func (s *Store) connect(readonly bool) (*Conn, error) {
 // Reading runs fn inside one deferred read transaction: everything fn reads
 // through the connection is consistent. SQLite failures are returned as
 // ErrStorage; errors returned by fn pass through.
+//
+// The connection may be a reused idle one (see readers); fn must not keep it.
 func (s *Store) Reading(fn func(*Conn) error) error {
-	connection, err := s.connect(false)
+	connection, err := s.reader()
 	if err != nil {
 		return translate(err)
 	}
-	defer connection.close()
+	ok := false
+	defer func() { s.release(connection, ok) }()
 	if err := connection.begin("BEGIN"); err != nil {
 		return translate(err)
 	}
 	if err := fn(connection); err != nil {
 		return translate(err)
 	}
-	return translate(connection.commit())
+	if err := connection.commit(); err != nil {
+		return translate(err)
+	}
+	ok = true
+	return nil
 }
 
 // Meta returns the raw JSON of one meta key, or nil when it is missing.
@@ -462,7 +473,10 @@ func (s *Store) BuildTemporary(document *Document, meta map[string]json.RawMessa
 	if err = s.writeTemporary(temporary, target, meta); err != nil {
 		return "", Entry{}, untranslated(err)
 	}
-	if entry, err = New(temporary, s.timeout).Load(); err != nil {
+	built := New(temporary, s.timeout)
+	entry, err = built.Load()
+	built.Close() // the file is renamed into place or removed; keep no reader on it
+	if err != nil {
 		return "", Entry{}, err
 	}
 	written, err := documentRows(entry.Document)

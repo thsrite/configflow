@@ -150,10 +150,16 @@ func Open(dataDir string, options Options) (*Repository, error) {
 	}
 	err = withLock(context.Background(), r.lockFile, r.openLocked)
 	if err != nil {
+		r.store.Close()
 		return nil, err
 	}
 	return r, nil
 }
+
+// Close releases the idle SQLite read connections the store keeps between
+// reads. The repository stays usable afterwards (reads then open a
+// connection each); the server calls it once while shutting down.
+func (r *Repository) Close() { r.store.Close() }
 
 // ResolveDataDir expands a home-directory alias and resolves the same absolute
 // path Open uses, without opening or creating a repository. The server resolves

@@ -156,8 +156,10 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 			_ = web.Close()
 		}
 	}})
-	// Store, ranking and traffic database connections are operation-scoped and
-	// closed by their owners; there is no process-wide sql.DB to close here.
+	// Ranking and traffic database connections are operation-scoped and closed
+	// by their owners; the configuration store keeps idle read connections,
+	// closed here after every request and loop has stopped.
+	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "store-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { repository.Close() }})
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "logs-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { flushLog() }})
 	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "instance-release", Phase: lifecycle.PhaseClose, Run: func(context.Context) { owner.Release() }})
 	// Registered after every package's stop-signal hook (Wire and opts.register

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -19,6 +20,12 @@ type Conn struct {
 	db            *sql.DB
 	conn          *sql.Conn
 	inTransaction bool
+
+	// file is the database file as stat'ed just before it was opened (nil
+	// when it did not exist), and timeout the busy_timeout set on it; a
+	// pooled reader is reused only while both still match (see readers).
+	file    os.FileInfo
+	timeout time.Duration
 }
 
 var background = context.Background()
@@ -36,13 +43,17 @@ func fileURI(path string, readonly bool) (string, error) {
 	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String() + mode, nil
 }
 
-// connect opens a new connection, as Python does for every operation; a
-// connection is never shared.
+// connect opens a new connection. Writers, checks and backups use one per
+// operation, as Python does for everything; Store.Reading reuses idle ones
+// (readers). A connection is never used by two operations at once.
 func connect(path string, readonly bool, timeout time.Duration) (*Conn, error) {
 	uri, err := fileURI(path, readonly)
 	if err != nil {
 		return nil, err
 	}
+	// Stat before opening: a file replaced in between is then seen as a
+	// mismatch on the next reuse, never mistaken for the one we hold.
+	file, _ := os.Stat(path)
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
 		return nil, err
@@ -53,7 +64,7 @@ func connect(path string, readonly bool, timeout time.Duration) (*Conn, error) {
 		db.Close()
 		return nil, err
 	}
-	c := &Conn{db: db, conn: conn}
+	c := &Conn{db: db, conn: conn, file: file, timeout: timeout}
 	for _, statement := range []string{
 		"PRAGMA busy_timeout=" + strconv.FormatInt(timeout.Milliseconds(), 10),
 		"PRAGMA foreign_keys=ON",

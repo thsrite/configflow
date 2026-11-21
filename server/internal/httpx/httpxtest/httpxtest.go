@@ -92,11 +92,13 @@ func New(t testing.TB, options Options) *Server {
 	if err != nil {
 		t.Fatalf("open repository: %v", err)
 	}
-	// Borrowed snapshots the guard remembers are re-checked when the test ends.
+	// Borrowed snapshots the guard remembers are re-checked when the test ends;
+	// then the idle read connections are closed.
 	t.Cleanup(func() {
 		if err := repository.CheckBorrowed(); err != nil {
 			t.Error(err)
 		}
+		repository.Close()
 	})
 	config := auth.Config{SecretKey: options.SecretKey}
 	if options.Auth {
