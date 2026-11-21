@@ -159,6 +159,9 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		if upstream == "" {
 			*blockers = append(*blockers, messageInvalidUpstream)
 		}
+		if problem := returnUpstreamProblem(upstream, gateway, state.NatContext); problem != "" {
+			*blockers = append(*blockers, problem)
+		}
 		if status.Status != "ok" {
 			*blockers = append(*blockers, fmt.Sprintf(messageReturnUnreadable, orText(status.Message, messagePlanUnknown)))
 		} else {

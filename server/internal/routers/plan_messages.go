@@ -45,6 +45,7 @@ const (
 	messageInvalidGateway         = "代理路由的下一跳不是有效 IPv4 地址，请检查关联 Agent 的主机地址"
 	messageInvalidUpstream        = "路由器地址不是 IPv4，无法确定回流规则的下一跳"
 	messageReturnUnreadable       = "无法读取 mihomo Agent 的回流规则状态：%s"
+	messageReturnUpstreamNetwork  = "回流以路由器管理地址作为下一跳，它必须在 mihomo 所在网段内：当前管理地址 %s 不在 %s 内。请把路由器地址改为路由器在 %s 中的地址，或关闭「自动配置回流」"
 	messagePlanUnknown            = "未知错误"
 	messagePolicyWithdrawConflict = "替代静态路由存在冲突，不能撤销仍在生效的来源策略，请先处理冲突"
 	messageDNSRouteConflict       = "存在代理路由冲突，请先处理冲突再下发 DHCP DNS，避免客户端获取 DNS 后无法访问代理网段"

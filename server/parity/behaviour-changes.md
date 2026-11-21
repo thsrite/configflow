@@ -2684,3 +2684,13 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   原文，用与手动「更新规则」相同的 `FailureMessage` 脱敏；`logState` 照常以 WARNING 记录「Agent <名称> 规则自动同步：<原因>」。
   状态仍是 `failed` 并按原间隔重试。其他错误（内部错误、非 HA 设备）文案不变。
 - 测试：`rulesync.TestPairRefusalReasonReachesSyncState`、`dnsha.TestPairFailureMessageHook`。
+
+## 实验网 L5-D2 — 管理地址不在 Mihomo 网段时回流计划直接阻止（修 Python 缺陷）
+
+- 现象（Python 相同）：路由器管理地址不在 Mihomo 所在网段（例如经 WAN 口管理）时，回流计划把它当下一跳，计划不阻止；
+  apply 时 Agent 报「主路由 … 不在 eth0 的网段 … 内」并逆序撤销。
+- Go：开启「自动配置回流」时，计划用已读取的路由器直连路由（主表、启用、`connect` 且 `active`）找出包含 Mihomo
+  网关地址的最长网段；管理地址不在其中 → 阻止项「回流以路由器管理地址作为下一跳，它必须在 mihomo 所在网段内：当前管理地址
+  <地址> 不在 <网段> 内。请把路由器地址改为路由器在 <网段> 中的地址，或关闭「自动配置回流」」。没有直连路由证据（iKuai、
+  路由读取失败、网关不在任何直连网段）时不判断，Agent 的 apply 校验照旧保留。
+- 测试：`routers.TestReturnUpstreamOutsideGatewayNetworkBlocksPlan`（LAN 地址、WAN 地址、无直连路由、直连路由未生效）。

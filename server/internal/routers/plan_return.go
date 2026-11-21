@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/jsondecode"
+	"configflow/internal/netipx"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -212,6 +213,39 @@ func RouterIP(endpoint string) string {
 		return ""
 	}
 	return a.String()
+}
+
+// returnUpstreamProblem refuses a management address outside the Mihomo
+// gateway's directly connected network (lab L5-D2): the Agent uses it as the
+// return next hop and rejects it at apply time when it is not on its LAN.
+// Without connected-route evidence (iKuai, unread routes, gateway not on a
+// connected network) the Agent's apply check stays the only guard.
+func returnUpstreamProblem(upstream, gateway string, ctx *NatContext) string {
+	router, ok := netipx.ParseAddr4(upstream)
+	if !ok {
+		return ""
+	}
+	next, ok := netipx.ParseAddr4(gateway)
+	if !ok || ctx == nil || !rowsOK(ctx.Routes) {
+		return ""
+	}
+	var network netip.Prefix
+	for _, row := range ctx.Routes {
+		if table := row.text("routing-table"); table != "" && table != "main" {
+			continue
+		}
+		if !row.enabled() || !row.flag("connect") || !row.flag("active") {
+			continue
+		}
+		n, ok := netipx.ParseNetwork4(row.text("dst-address"), false)
+		if ok && n.Contains(next) && (!network.IsValid() || n.Bits() > network.Bits()) {
+			network = n
+		}
+	}
+	if !network.IsValid() || network.Contains(router) {
+		return ""
+	}
+	return fmt.Sprintf(messageReturnUpstreamNetwork, router, network, network)
 }
 func returnScope(spec *ReturnSpec) string {
 	if spec.SafetyVersion == 2 {
