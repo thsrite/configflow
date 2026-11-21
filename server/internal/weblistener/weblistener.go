@@ -208,6 +208,16 @@ func (m *Manager) Port() (int, error) {
 	return port, err
 }
 
+// CheckConfig validates the selected web port and reserved internal ports
+// without binding sockets or writing files.
+func (m *Manager) CheckConfig() error {
+	port, _, err := m.selection()
+	if err != nil {
+		return err
+	}
+	return m.checkReserved(port)
+}
+
 func (m *Manager) checkReserved(port int) error {
 	backend, err := m.EnvironmentPort("CONFIGFLOW_BACKEND_PORT", 5001)
 	if err != nil {

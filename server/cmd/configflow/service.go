@@ -53,6 +53,28 @@ func shutdownGrace() (time.Duration, error) {
 	return grace, nil
 }
 
+func checkStartup(frontendDir string) error {
+	if _, err := shutdownGrace(); err != nil {
+		return err
+	}
+	dataDir, err := repo.ResolveDataDir(repo.DataDir())
+	if err != nil {
+		return err
+	}
+	if err := repo.CheckStartup(dataDir); err != nil {
+		return err
+	}
+	if _, err := server.BackendAddressFromEnv(); err != nil {
+		return err
+	}
+	if frontendDir != "" {
+		if err := (&weblistener.Manager{DataDir: dataDir}).CheckConfig(); err != nil {
+			return fmt.Errorf("[web-listener] %w", err)
+		}
+	}
+	return nil
+}
+
 func registerStartup() {
 	lifecycle.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
 		_, err := repo.PrepareConfig(ctx)

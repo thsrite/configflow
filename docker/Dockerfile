@@ -1,24 +1,53 @@
 # syntax=docker/dockerfile:1
-# ConfigFlow Dockerfile
+# ConfigFlow Dockerfile (Go server + frontend + bundled Sub-Store + Agents + node-probe)
 
 # ==============================================================================
-# Stage 1: 构建 Go Agent 二进制文件
-# 产物与目标平台无关，固定在构建机原生平台运行：多架构构建时不再经 QEMU 模拟重复编译。
+# Stage 1: 构建 Go Server 主程序（按目标平台交叉编译，不经 QEMU 模拟）
 # ==============================================================================
-# Go 1.26.11: GO-2026-6859 (net/http MaxBytesReader server crash); 1.26.10 distrusts
-# compromised intermediate CA keys in crypto/x509 (CVE-2026-111943);
-# Agent and node-probe verify TLS, so security releases need this pin and a new image.
+# Go 1.27.4 与 server/go.mod 保持一致，纯 Go 构建（modernc.org/sqlite，无需 CGO）。
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS server-builder
+
+WORKDIR /build
+ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOTOOLCHAIN=local
+
+COPY server/go.mod server/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY server/ ./
+ARG VERSION=dev
+ARG GIT_COMMIT=
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+# 每次发布注入唯一版本（包含提交号，供 /api/version 与 OxiDNS RulesFingerprint 使用）；
+# 镜像内的 Go server 与下方 Agent 二进制均来自同一次构建上下文（同一提交）。
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    mkdir -p /dist && \
+    FULL_VERSION="${VERSION}" && \
+    if [ -n "${GIT_COMMIT}" ]; then \
+      case "${FULL_VERSION}" in \
+        *"${GIT_COMMIT}"*) ;; \
+        *) FULL_VERSION="${FULL_VERSION}+${GIT_COMMIT}" ;; \
+      esac; \
+    fi && \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
+    go build -trimpath -ldflags="-s -w -X configflow/internal/version.Version=${FULL_VERSION}" \
+    -o /dist/configflow ./cmd/configflow
+
+# ==============================================================================
+# Stage 2: 构建 Go Agent 二进制文件（全平台供面板下发，构建机原生交叉编译）
+# ==============================================================================
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS go-builder
 
 WORKDIR /build
-ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOOS=linux
+ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOOS=linux GOTOOLCHAIN=local
 
-# 先复制依赖文件，利用 Docker 层缓存（go.mod/go.sum 不变则跳过 go mod download）
 COPY backend/agents/go-agent/go.mod backend/agents/go-agent/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# 再复制源码并编译（仅 Go 源码变更时才重新编译；编译缓存跨构建复用）
 COPY backend/agents/go-agent/ ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
@@ -28,57 +57,51 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w" -o /dist/configflow-agent-linux-armv7 .
 
 # ==============================================================================
-# 独立节点测速组件：仅编译目标架构，运行时不启用 TUN 或监听服务
+# Stage 3: 独立节点测速组件（按目标架构交叉编译，不启用 TUN 或监听服务）
 # ==============================================================================
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS node-probe-builder
+
 WORKDIR /build
-ENV CGO_ENABLED=0
+ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOTOOLCHAIN=local
+
 COPY backend/node-probe/go.mod backend/node-probe/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
 COPY backend/node-probe/ ./
 ARG TARGETOS
 ARG TARGETARCH
 ARG TARGETVARIANT
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    mkdir -p /dist && \
     GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
     go build -trimpath -ldflags="-s -w" -o /dist/configflow-node-probe .
 
 # ==============================================================================
-# Stage 2: 构建前端（产物为静态文件，同样只在构建机原生平台构建一次）
+# Stage 4: 构建前端（产物为平台无关静态文件，在构建机原生平台构建一次）
 # ==============================================================================
-# vite-plugin-pwa 依赖的 workbox-build 要求 node >= 20；Node 20 已结束维护、
-# 不再获得安全修复，与 CI 一致使用 24 LTS。只在构建时使用，不进入运行镜像。
+# vite-plugin-pwa 依赖的 workbox-build 要求 node >= 20；与 CI 一致使用 Node 24 LTS。
 FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# 先复制 package 文件，利用 Docker 层缓存（依赖不变则跳过 npm ci）
 COPY frontend/package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund
 
-# 再复制源码并构建（仅前端源码变更时才重新 build）
 COPY frontend/ ./
 RUN npm run build
 
 # ==============================================================================
-# Stage 3: 内置 Sub-Store 运行时（Node.js 二进制，Sub-Store 要求 node >= 22.5 的 sqlite 内建模块）
+# Stage 5: 内置 Sub-Store bundle（可在线更新到 /data/sub-store/runtime）
 # ==============================================================================
-# 固定到包含安全修复的版本：24.22.1 修复 Brotli 解码越界写入、TLS 证书 IP 校验与
-# dns.resolve 空字节等问题（https://nodejs.org/en/blog/vulnerability/october-2026-security-releases）。
-# Sub-Store 会主动拉取外部订阅，Node 安全更新需要更新这里并重新发布镜像。
-FROM node:24.22.1-bookworm-slim AS node-runtime
-
-# 准备 Node 与 Sub-Store bundle，随后与其他内置程序合并为一个运行组件层。
-FROM --platform=$BUILDPLATFORM python:3.11-slim AS sub-store
-# 内置 Sub-Store 后端版本（https://github.com/sub-store-org/Sub-Store/releases），可在线更新
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS sub-store
 ARG SUB_STORE_VERSION=2.42.3
-COPY --from=node-runtime /usr/local/bin/node /rootfs/usr/local/bin/node
 ADD --chmod=644 https://github.com/sub-store-org/Sub-Store/releases/download/${SUB_STORE_VERSION}/sub-store.bundle.js /rootfs/opt/sub-store/sub-store.bundle.js
-RUN echo "${SUB_STORE_VERSION}" > /rootfs/opt/sub-store/VERSION
+RUN mkdir -p /rootfs/opt/sub-store && echo "${SUB_STORE_VERSION}" > /rootfs/opt/sub-store/VERSION
 
-# 内置程序及许可证合为一层；应用代码更新时复用，任一程序更新时整体替换。
+# 汇总内置程序与许可证为一层：主服务或前端更新时复用，任一内置组件更新时替换。
 FROM scratch AS runtime-assets
 COPY --from=sub-store /rootfs/ /rootfs/
 COPY --from=go-builder /dist/ /rootfs/opt/configflow/static/agents/
@@ -86,90 +109,68 @@ COPY --from=node-probe-builder /dist/ /rootfs/opt/configflow/node-probe/
 COPY backend/node-probe/LICENSE backend/node-probe/NOTICE /rootfs/opt/configflow/node-probe/
 
 # ==============================================================================
-# Stage 4: 组装应用文件（后端运行源码、前端、配置与脚本），在最终镜像中只占一层
+# Stage 6: 组装应用文件（Go server、前端静态资源、配置与脚本），在最终镜像中占一层
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM python:3.11-slim AS app
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS app
 
-# 版本号参数，从 GitHub Actions 传入
-ARG VERSION=dev
+RUN apk add --no-cache python3
 
-COPY backend/ /rootfs/app/backend/
-# Keep the launcher outside auto-update's replaceable backend source directory.
-# Older cached sources still start even when they do not include startup.py.
-COPY backend/startup.py /rootfs/usr/local/bin/configflow-python-start.py
-COPY backend/utils/web_listener.py /rootfs/usr/local/bin/configflow-web-listener.py
-COPY docker/nginx.conf /rootfs/etc/nginx/configflow-nginx.conf.template
+COPY --chmod=755 --from=server-builder /dist/configflow /rootfs/usr/local/bin/configflow
+COPY --from=frontend-builder /app/frontend/dist /rootfs/usr/share/configflow/html
 COPY docker/supervisord.conf /rootfs/etc/supervisor/conf.d/supervisord.conf
-COPY --chmod=755 docker/sub-store-start.sh docker/configflow-start.sh /rootfs/usr/local/bin/
+COPY --chmod=755 docker/sub-store-start.sh docker/configflow-start.sh docker/configflow-healthcheck.sh /rootfs/usr/local/bin/
 COPY --chmod=755 docker/auto_update.py /rootfs/usr/local/bin/configflow-auto-update.py
-COPY --from=frontend-builder /app/frontend/dist /rootfs/usr/share/nginx/html
 
-# 移除测试及 Go 构建源码后再编译字节码，避免将开发文件及其缓存带入运行镜像。
-# 写入版本号；预压缩前端资源供 nginx gzip_static 直接发送。
-# Fingerprint the sources the bundled frontend/Agent came from, so auto-update
-# without a toolchain refuses commits that would mix versions. These bind mounts
-# retain the complete build inputs even though runtime source copies are pruned.
-RUN --mount=type=bind,source=frontend,target=/tmp/image-src/frontend \
+# 预压缩前端资源供 Go Edge gzip_static 直接发送；记录镜像自带各组件的源码指纹，
+# 使 autoupdate 只重建有变动的组件，且缺工具链时不混用不同版本。
+RUN --mount=type=bind,source=server,target=/tmp/image-src/server \
+    --mount=type=bind,source=frontend,target=/tmp/image-src/frontend \
     --mount=type=bind,source=backend/agents/go-agent,target=/tmp/image-src/go-agent \
     --mount=type=bind,source=backend/node-probe,target=/tmp/image-src/node-probe \
-    find /rootfs/app/backend -type f \( -name 'test_*.py' -o -name 'conftest.py' \) -delete && \
-    rm -rf /rootfs/app/backend/agents/go-agent /rootfs/app/backend/node-probe && \
-    sed -i "s/__version__ = \"dev\"/__version__ = \"${VERSION}\"/" /rootfs/app/backend/version.py && \
-    python3 -m compileall -q /rootfs/app/backend && \
-    find /rootfs/usr/share/nginx/html -type f -size +1k \
-        \( -name '*.js' -o -name '*.mjs' -o -name '*.css' -o -name '*.html' -o -name '*.svg' -o -name '*.json' -o -name '*.webmanifest' \) \
-        -exec gzip -9 -k -n {} + && \
-    mkdir -p /app && \
+    mkdir -p /app /rootfs/app && \
+    python3 /rootfs/usr/local/bin/configflow-auto-update.py --precompress /rootfs/usr/share/configflow/html && \
     python3 /rootfs/usr/local/bin/configflow-auto-update.py --record-image /tmp/image-src && \
     mv /app/.image-trees.json /rootfs/app/.image-trees.json
 
 # ==============================================================================
-# Stage 5: 最终镜像（源码部署）
-# 运行依赖、内置程序、应用各占一层；应用更新时复用依赖与程序层。
+# Stage 7: 最终运行镜像（target: runtime）
+# 无 Flask/gunicorn/nginx 与 backend/ Python 运行依赖；保留 supervisord 仅用于
+# 管理 Go server 与按需启停的内置 Sub-Store（Node 24 LTS，支持 node:sqlite）。
+# alpine:3.24 在 amd64/arm64 均提供 nodejs 24.22.3+（含 2026-10 安全修复）与 supervisor 4.3.0。
 # ==============================================================================
-FROM python:3.11-slim AS runtime
+FROM alpine:3.24 AS runtime
 
-# Supervisor 复用镜像内的 Python，避免 apt 再安装一套系统 Python。
-# 依赖清单只挂载不复制，pip 缓存保留在构建器中，不写入镜像。
-RUN --mount=type=bind,source=backend/requirements.txt,target=/tmp/requirements.txt \
-    --mount=type=cache,target=/root/.cache/pip \
-    apt-get update && \
-    apt-get install -y --no-install-recommends nginx ca-certificates libstdc++6 && \
-    rm -rf /var/lib/apt/lists/* && \
-    (groupadd -r nginx || true) && (useradd -r -g nginx -s /sbin/nologin -d /nonexistent nginx || true) && \
-    mkdir -p /app /data /var/log/supervisor /var/cache/nginx /var/log/nginx /etc/supervisor/conf.d && \
-    chown -R nginx:nginx /var/cache/nginx && \
-    rm -rf /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default /etc/nginx/conf.d/default.conf /usr/share/nginx/html/* && \
-    pip install --disable-pip-version-check -r /tmp/requirements.txt supervisor==4.3.0 && \
-    ln -s /usr/local/bin/supervisord /usr/bin/supervisord && \
-    ln -s /usr/local/bin/supervisorctl /usr/bin/supervisorctl && \
-    sha256sum /tmp/requirements.txt | cut -d' ' -f1 > /app/.image-requirements.sha256
+RUN apk add --no-cache ca-certificates tzdata supervisor nodejs && \
+    mkdir -p /app /data /var/log/supervisor /var/run /etc/supervisor/conf.d
 
 COPY --link --from=runtime-assets /rootfs/ /
 COPY --link --from=app /rootfs/ /
 
-# 保持既有运行工作目录，兼容容器内命令及部署方式。
 WORKDIR /app
 
-ENV DATA_DIR=/data TZ=Asia/Shanghai \
+ENV DATA_DIR=/data \
+    TZ=Asia/Shanghai \
+    CONFIGFLOW_FRONTEND_DIR=/usr/share/configflow/html \
     SUB_STORE_BACKEND_API_HOST=127.0.0.1 \
     SUB_STORE_BACKEND_API_PORT=3001 \
     SUB_STORE_DATA_BASE_PATH=/data/sub-store
 
 EXPOSE 80
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["/usr/local/bin/configflow-healthcheck.sh"]
+
 CMD ["/usr/local/bin/configflow-start.sh"]
 
 # ==============================================================================
-# Stage 6: 自动更新镜像（标签 autoupdate）
-# 在 runtime 基础上加入 Go 与 npm：容器启动时拉取分支最新源码，按需重建前端与
-# Agent 后运行（见 docker/auto_update.py）。默认镜像构建请指定 target: runtime。
+# Stage 8: 自动更新镜像（target: autoupdate）
+# 在 runtime 基础上加入 Go、npm 与 git：容器启动时拉取分支最新源码，按源码指纹
+# 仅重建有变动的组件（Go server、前端、Agent、node-probe）并安装；任何失败均回退。
 # ==============================================================================
-FROM golang:1.27.4-bookworm AS go-toolchain
+FROM golang:1.27.4-alpine AS go-toolchain
 
 FROM runtime AS autoupdate
 COPY --from=go-toolchain /usr/local/go /usr/local/go
-COPY --from=node-runtime /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
-RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
-    npm --version && /usr/local/go/bin/go version
+RUN apk add --no-cache npm git && \
+    npm --version && /usr/local/go/bin/go version && git --version
 ENV CONFIGFLOW_AUTO_UPDATE=1

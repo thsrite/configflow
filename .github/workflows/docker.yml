@@ -7,13 +7,15 @@ on:
     branches:
       - main
     paths:
-      - 'backend/**'
+      - 'server/**'
+      - 'backend/agents/go-agent/**'
+      - 'backend/node-probe/**'
       - 'frontend/**'
       - 'docker/Dockerfile'
-      - 'docker/nginx.conf'
       - 'docker/supervisord.conf'
       - 'docker/sub-store-start.sh'
       - 'docker/configflow-start.sh'
+      - 'docker/configflow-healthcheck.sh'
       - 'docker/auto_update.py'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
@@ -49,6 +51,7 @@ jobs:
             VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
           fi
+          echo "git_commit=$(git rev-parse --short=12 HEAD)" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -70,7 +73,7 @@ jobs:
           images: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ vars.PUBLISH_LATEST == 'true' && !contains(github.ref_name, '-') }}
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -80,10 +83,11 @@ jobs:
           target: runtime
           platforms: linux/amd64,linux/arm64
           pull: true
-          push: true
+          push: ${{ steps.meta.outputs.tags != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ steps.version.outputs.git_commit }}

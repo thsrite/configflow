@@ -32,7 +32,16 @@ import (
 func main() {
 	frontend := flag.String("frontend", os.Getenv("CONFIGFLOW_FRONTEND_DIR"),
 		"frontend build directory served on the web port (empty: API only)")
+	check := flag.Bool("check", false,
+		"validate startup configuration and data directory without starting listeners")
 	flag.Parse()
+	if *check {
+		if err := checkStartup(*frontend); err != nil {
+			reportStartupError(err)
+			os.Exit(1)
+		}
+		return
+	}
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(signals)

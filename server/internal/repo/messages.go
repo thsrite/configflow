@@ -96,6 +96,8 @@ const (
 	msgLegacyDialerTarget         = "旧配置 %s 的原始拨号目标不存在或名称不唯一：%s"
 	msgResourceObjects            = "%s 必须是资源对象数组"
 	msgResourceIDRequired         = "%s 中每一项必须有 ID"
+	msgDatabaseMustBeRegular      = "%s 必须是普通文件"
+	msgLegacyOnlyDataDir          = "数据目录中有旧版配置文件（%s），但没有 %s。此版本不再迁移 SQLite 之前的旧格式：请先升级到最后一个 Python 版本的 ConfigFlow 并启动一次完成迁移，再升级到此版本。数据目录未改动。"
 )
 
 const msgUnknownResourceType = "未知资源类型"

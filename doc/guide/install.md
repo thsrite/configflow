@@ -239,15 +239,15 @@ NAS 不同系统的按钮名称不完全相同，按功能找到对应入口即�
 
 ### 单独运行源码：各服务分别设置端口
 
-这一项用于**已经准备好源码、Python / Node 依赖和独立 Sub-Store 的开发环境**，不是只启动 Python 就完成网页安装的步骤。普通安装选择前面的 Docker 方式；开发环境继续沿用自己的账号、密钥和数据目录。
+这一项用于**已经准备好源码、Go / Node 依赖和独立 Sub-Store 的开发环境**，不是普通安装步骤。普通安装选择前面的 Docker 方式；开发环境继续沿用自己的账号、密钥和数据目录。
 
-源码方式没有镜像里的 Nginx，`CONFIGFLOW_WEB_PORT` 和网页中的监听端口管理不会替你修改 Python、前端开发服务或独立 Sub-Store。三个服务要分别启动，端口仍须互不相同且空闲，不会自动避让。
+源码开发模式如果不指定 `-frontend` / `CONFIGFLOW_FRONTEND_DIR`，Go 服务只监听后端 API 端口，不会替你修改前端开发服务或独立 Sub-Store。三个服务要分别启动，端口仍须互不相同且空闲，不会自动避让。
 
 | 服务 | 本例地址／端口 | 哪里修改 |
 | --- | --- | --- |
 | 前端开发页面 | `http://127.0.0.1:15800` | Vite 的 `--port` 或 `server.port` |
-| Python 后端 | `127.0.0.1:15801` | 启动 Python 前设置 `CONFIGFLOW_BACKEND_HOST` / `CONFIGFLOW_BACKEND_PORT` |
-| 独立 Sub-Store | `127.0.0.1:15802` | Sub-Store 自己的启动参数；Python 另用 `SUB_STORE_URL` 指向这个地址 |
+| Go 后端 | `127.0.0.1:15801` | 启动前设置 `CONFIGFLOW_BACKEND_HOST` / `CONFIGFLOW_BACKEND_PORT` |
+| 独立 Sub-Store | `127.0.0.1:15802` | Sub-Store 自己的启动参数；后端另用 `SUB_STORE_URL` 指向这个地址 |
 
 **1. 独立 Sub-Store：**沿用它原来的数据目录、工作目录及其他环境变量，在运行它的终端设置端口，并使用自己的实际 bundle 路径启动，例如：
 
@@ -259,16 +259,17 @@ node /absolute/path/to/sub-store.bundle.js
 
 若 Sub-Store 由其他容器或服务管理器运行，在那个服务中修改端口并重建／重启；不能只改 ConfigFlow 的变量。它运行在另一台设备时，`SUB_STORE_URL` 使用该服务实际可达的地址。
 
-**2. Python 后端：**在仓库根目录、已经激活的 Python 环境中运行：
+**2. Go 后端：**在仓库的 `server/` 目录运行：
 
 ```bash
+cd server
 CONFIGFLOW_BACKEND_HOST=127.0.0.1 \
 CONFIGFLOW_BACKEND_PORT=15801 \
 SUB_STORE_URL=http://127.0.0.1:15802 \
-python -m backend.app
+go run ./cmd/configflow
 ```
 
-这需要支持后端端口参数的源码版本；旧源码要先更新。`SUB_STORE_URL` 用于没有内置 bundle 的源码环境；官方镜像始终使用内置 Sub-Store，请按 Docker 示例修改内部端口。
+`SUB_STORE_URL` 用于没有内置 bundle 的源码环境；官方镜像始终使用内置 Sub-Store，请按 Docker 示例修改内部端口。
 
 **3. 前端开发服务：**先在 `frontend/vite.config.mts` 中把 `server.proxy['/api'].target` 改为 `http://127.0.0.1:15801`，其余配置保留。它原来指向 `http://localhost:5001`，不会自动读取后端端口变量。然后在另一个终端运行：
 
@@ -279,7 +280,7 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 
 在这台开发机的浏览器打开 `http://127.0.0.1:15800`。Vite 原默认 `3001` 与独立 Sub-Store 的默认端口相同，本例将三者分开；`--strictPort` 会让占用直接报错，避免访问地址悄悄变化。
 
-改端口后，要停止并重新启动对应进程，且同步调整调用方：后端变更要改 Vite 的 `/api` 代理，Sub-Store 变更要改 Python 的 `SUB_STORE_URL`。如果使用自己配置的 Nginx 等反向代理，也要同步改它的上游，不能套用 Docker 自动同步的说明。
+改端口后，要停止并重新启动对应进程，且同步调整调用方：后端变更要改 Vite 的 `/api` 代理，Sub-Store 变更要改后端的 `SUB_STORE_URL`。如果使用自己配置的 Nginx 等反向代理，也要同步改它的上游，不能套用 Docker 自动同步的说明。
 
 </template>
 
@@ -296,7 +297,7 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 | `ports`（Bridge） | `5010:80` | 访问端口冲突时，只把左边 `5010` 改成其他空闲端口 | 左边是设备对外端口，右边是容器内端口。重新创建后按新端口打开浏览器。Host 版不填写此项。 |
 | `network_mode`（Host） | `host` | 选择 Host 版时保留 | 共用宿主机网络；不是额外创建一个独立 IP。Bridge 版无需填写此项。 |
 | `CONFIGFLOW_WEB_PORT`（Host） | 本例为 `8088` | `8088` 已被占用时改成其他空闲端口 | 明确指定实际 Web 端口，优先于网页保存值；网页端口只读。重建容器后生效。 |
-| `CONFIGFLOW_BACKEND_PORT`（Host） | 本例 `15801`，未指定默认 `5001` | 后端端口被 DSM 等服务占用时 | Nginx 与后端使用相同端口；重建生效，Web 地址不变。不会自动选择空闲值。 |
+| `CONFIGFLOW_BACKEND_PORT`（Host） | 本例 `15801`，未指定默认 `5001` | 后端端口被 DSM 等服务占用时 | 内部后端监听该端口；重建生效，Web 地址不变。不会自动选择空闲值。 |
 | `CONFIGFLOW_BACKEND_HOST`（Host） | 本例 `127.0.0.1` | Docker 只支持 `127.0.0.1` / `0.0.0.0`，Host 建议保持本例 | 将后端限制在主机内部，通过 Web 入口访问；重建生效。 |
 | `SUB_STORE_BACKEND_API_PORT`（Host） | 本例 `15802`，未指定默认 `3001` | 内置 Sub-Store 的端口被占用时 | 启动、就绪检查和转换请求同步改端口；重建生效，Web 地址不变。 |
 | `volumes` | `./data:/data` | NAS 或迁移旧实例时，改成自己的实际数据目录 | 左边的文件保存在设备上，右边 `/data` 保持不变。更新时必须继续使用同一个目录。 |
@@ -308,7 +309,7 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 
 `./data` 是部署文件所在目录下面的 `data`，不是浏览器所在电脑的目录。已有实例不要随意换目录，否则会像新安装一样显示空配置。
 
-一般不需要另外设置 `CONFIGFLOW_HTTP_THREADS`（默认 `8`，允许 `1–64`，控制服务同时处理请求的数量）或 `LOG_LEVEL`（默认 `INFO`，控制日志详细程度）。`LOG_LEVEL=DEBUG` 会启用开发调试模式，不建议普通部署长期开启。修改环境变量后需重新创建容器。
+一般不需要另外设置 `LOG_LEVEL`（默认 `INFO`，控制日志详细程度）；`LOG_LEVEL=DEBUG` 会输出更详细的调试日志，不建议普通部署长期开启。Go 镜像不再使用旧 Python 版的 `CONFIGFLOW_HTTP_THREADS` 和 `CONFIGFLOW_MEMORY_TUNING` 等调优变量，默认按容器内存上限自动调节内存（可通过 `GOMEMLIMIT` 或 `CONFIGFLOW_MEMORY_LIMIT_RATIO` 覆盖）。镜像默认时区为 `Asia/Shanghai` 并已内置系统 CA 证书（`ca-certificates`、`tzdata`）；如需信任私有或自签 CA 证书，请挂载证书并设置 Go 原生环境变量 `SSL_CERT_FILE`（单个 PEM 文件）或 `SSL_CERT_DIR`（证书目录），旧 Python 版的 `REQUESTS_CA_BUNDLE` 不再生效。修改环境变量后需重新创建容器。
 
 ### JWT 密钥与固定 IP 预览确认
 
@@ -435,7 +436,9 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 
 更新前，先从「系统设置」导出全部数据；如需完整保留运行文件，再正常停服并复制**整个实际数据目录**。不要在运行中单独复制数据库文件。JSON 导出不含端口文件和监控历史，具体看 [哪些内容需要另外备份](../manual/system-settings.md#backup-scope)。
 
-更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。需要退回镜像时，应使用事先记录的旧版本及对应数据备份；不要盲目让旧版本打开已经迁移的数据。
+更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。如果原数据目录中只有 SQLite 之前的旧版配置文件（如 `config.json` 或 `system.json`）而没有 `configflow.sqlite3`，Go 镜像会拒绝启动并给出中文提示且不修改目录内容：请先使用最后一个 Python 版本启动一次完成旧格式迁移，再升级到 Go 镜像。需要退回镜像时，应使用事先记录的旧版本及对应数据备份；不要盲目让旧版本打开已经迁移的数据。
+
+如使用自动更新标签镜像（`autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本的迁移。
 
 <a id="next"></a>
 ## 下一步

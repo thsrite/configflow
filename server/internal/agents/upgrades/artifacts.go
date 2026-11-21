@@ -117,7 +117,7 @@ func signatureOf(info fs.FileInfo) signature {
 		return signature{size: info.Size(), mtime: info.ModTime().UnixNano()}
 	}
 	return signature{dev: int64(st.Dev), ino: int64(st.Ino), size: st.Size,
-		mtime: st.Mtim.Sec*1e9 + st.Mtim.Nsec, ctime: st.Ctim.Sec*1e9 + st.Ctim.Nsec}
+		mtime: st.Mtim.Nano(), ctime: st.Ctim.Nano()}
 }
 
 // ArtifactInfo is one artifact's {'sha256', 'size'}.

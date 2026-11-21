@@ -58,3 +58,7 @@ README.md
 templates/
 start.sh
 .claude/
+server/parity/
+server/design/
+server/tools/
+server/scripts/

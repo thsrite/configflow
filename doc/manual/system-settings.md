@@ -87,7 +87,7 @@ docker compose up -d
 docker compose logs --tail=100 config-flow
 ```
 
-不要把上面注释当成已自动完成备份。旧版本需要回退时，使用记录的镜像版本和与之配套的数据备份。
+不要把上面注释当成已自动完成备份。正常 `docker stop`（默认 10 秒）会等待请求排空并保存监控历史。如果从 SQLite 之前的旧版（目录中只有 `config.json` 或 `system.json`、没有 `configflow.sqlite3`）升级，必须先升级到最后一个 Python 版本并启动一次完成迁移，再切换到 Go 镜像；Go 镜像会拒绝仅有旧版文件的数据目录。旧版本需要回退时，使用记录的镜像版本和与之配套的数据备份。
 
 <a id="backup-scope"></a>
 ### 哪些内容需要另外备份
@@ -158,6 +158,8 @@ Agent 时，请填写可路由的 Agent 地址。手工设置的下载代理仍�
 `NO_PROXY` 中需要指定端口时请写 `host:port`，单独的 `:port` 不生效。
 `.example.com` 只覆盖子域；要同时直连根域，请写 `example.com`。代理地址里的用户名
 和密码如含保留字符，请使用百分号编码。不要通过设置空的小写变量来关闭大写代理。
+
+TLS 证书校验使用系统 CA 证书库（镜像内置 `ca-certificates`）。若部署环境需要信任私有或自签 CA，请通过 Go 原生环境变量 `SSL_CERT_FILE` 或 `SSL_CERT_DIR` 指定证书路径并重建容器；旧 Python 版的 `REQUESTS_CA_BUNDLE` 不再生效。
 
 ## 定时任务
 

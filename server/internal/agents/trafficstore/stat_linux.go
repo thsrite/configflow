@@ -16,7 +16,7 @@ func signatureOf(info fs.FileInfo) jsonstore.Signature {
 	st := info.Sys().(*syscall.Stat_t)
 	return jsonstore.Signature{
 		Dev: uint64(st.Dev), Ino: uint64(st.Ino), Size: st.Size,
-		MtimeNs: st.Mtim.Sec*1e9 + st.Mtim.Nsec,
-		CtimeNs: st.Ctim.Sec*1e9 + st.Ctim.Nsec,
+		MtimeNs: st.Mtim.Nano(),
+		CtimeNs: st.Ctim.Nano(),
 	}
 }

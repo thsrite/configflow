@@ -15,10 +15,8 @@ services:
     # 改为 Host：删除上面 ports 两行，取消下面一行和 environment 中四项的注释。
     # network_mode: host
     volumes:
-      # 挂载数据目录以持久化配置（不包含应用代码）
+      # 挂载数据目录以持久化配置
       - ./data:/data
-      # 挂载后端源码，方便直接修改代码调试（取消注释即可使用）
-      # - ./backend:/app/backend
     restart: unless-stopped
     environment:
       - DATA_DIR=/data

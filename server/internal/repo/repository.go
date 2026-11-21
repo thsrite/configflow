@@ -281,18 +281,49 @@ func (r *Repository) earlierDatabases() []string {
 	return result
 }
 
+func legacyOnlyError(legacy string) error {
+	return repositoryError(fmt.Sprintf(msgLegacyOnlyDataDir, legacy, DatabaseFilename))
+}
+
+// CheckStartup performs a read-only startup check of dataDir without creating
+// or modifying any files. It rejects non-regular database paths and data
+// directories that only hold pre-SQLite legacy configuration files.
+func CheckStartup(dataDir string) error {
+	resolved, err := ResolveDataDir(dataDir)
+	if err != nil {
+		return err
+	}
+	probe := &Repository{
+		dataDir:     resolved,
+		profilesDir: filepath.Join(resolved, "profiles"),
+		dbPath:      filepath.Join(resolved, DatabaseFilename),
+	}
+	info, err := os.Lstat(probe.dbPath)
+	if err == nil {
+		if !info.Mode().IsRegular() {
+			return validationError(fmt.Sprintf(msgDatabaseMustBeRegular, DatabaseFilename))
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if legacy := probe.legacyData(); legacy != "" {
+		return legacyOnlyError(legacy)
+	}
+	return nil
+}
+
 // openLocked is _open_locked: startup under .config.lock.
 func (r *Repository) openLocked(ctx context.Context) error {
 	r.store.DiscardStaleTemporaries()
 	info, err := os.Lstat(r.dbPath)
 	if err == nil && !info.Mode().IsRegular() {
-		return validationError(DatabaseFilename + " 必须是普通文件")
+		return validationError(fmt.Sprintf(msgDatabaseMustBeRegular, DatabaseFilename))
 	}
 	if err != nil {
 		if legacy := r.legacyData(); legacy != "" {
-			return repositoryError("数据目录中有旧版配置文件（" + legacy + "），但没有 " + DatabaseFilename +
-				"。此版本不再迁移 SQLite 之前的旧格式：请先升级到最后一个 Python 版本的 ConfigFlow 并启动一次完成迁移，" +
-				"再升级到此版本。数据目录未改动。")
+			return legacyOnlyError(legacy)
 		}
 		journal := r.dbPath + "-journal"
 		if pathExists(journal) {
