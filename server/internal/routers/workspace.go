@@ -142,10 +142,11 @@ func ReadWorkspace(config *model.Config, r *Router, profile, name, defaultProfil
 
 // workspaceRuleSets lists the profile's ruleset rows from their typed fields.
 // When a rule member decoded with an issue (a wrong type, kept as original
-// bytes), the original rows are decoded strictly instead, which fails the
-// read as before.
+// bytes), or a member the rows read is stored as a non-string scalar (which
+// the record decoder accepts as text without an issue), the original rows are
+// decoded strictly instead, which fails the read as before.
 func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
-	if model.IssueUnder(model.Issues(profile), "rule_configs") {
+	if model.IssueUnder(model.Issues(profile), "rule_configs") || !textRuleMembers(profile.RuleConfigs) {
 		return encodedRuleSets(profile)
 	}
 	var out []WorkspaceRule
@@ -161,6 +162,26 @@ func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
 		out = append(out, row)
 	}
 	return out, nil
+}
+
+// workspaceRuleMembers are the rule members the strict row decode reads.
+var workspaceRuleMembers = []string{"id", "itemType", "name", "policy", "library_rule_id"}
+
+// textRuleMembers reports whether every rule stores the members the rows read
+// as strings or null, the values the strict decode accepts.
+func textRuleMembers(rules []model.RuleConfig) bool {
+	for i := range rules {
+		for _, name := range workspaceRuleMembers {
+			raw, present, err := rules[i].MemberJSON(name)
+			if err != nil {
+				return false
+			}
+			if present && len(raw) > 0 && raw[0] != '"' && string(raw) != "null" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func encodedRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
