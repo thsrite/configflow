@@ -2593,3 +2593,24 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 ## L2 实验网 — 「重新恢复原配置」受理后的状态码
 
 - （L2 D1，Python bug 修正）`POST /api/agents/<id>/deployments/<dep>/recover` 被 Agent 受理后（任务变为 `rolling_back`，无设备错误码），返回 **202**，与受理手动回滚一致；Python 把它记为 `success=false`，按 `_deployment_response` 返回 500，Agent 页随即提示「无法重新恢复」并停止跟踪，而设备实际在恢复（实验网 1.8.61-go 复现）。存储的任务内容不变；被拒绝（旧 Agent 404/405、400/409）和结果未知时的状态码不变。测试：`TestDeployHTTPAcceptedRecoveryIsAccepted`。
+
+## 实验网 L5-D1 — 回流在 nftables 1.0.6（Debian 12）上可以启用，旧版本残留可认领清理（Agent 1.9.1-go）
+
+- 根因：回流给 nft 表和链写 `comment`（归属标签），写入后用 `nft -j list ruleset` 回读逐项比较。nft 1.0.6 的
+  JSON 输入会丢掉表/链 comment，JSON 输出也不列出（规则 comment 正常）；回读必然不一致，写入的路由、策略规则和
+  nft 对象留在主机上、事务停在 pending，之后计划和撤销都被「上次回流事务未完成」「无法证明旧回流资源的归属」挡住。
+  Python 时代的同一 Agent 也是如此。
+- 归属标识改为各 nft 版本都会回显的内容：链名 `cf_<token>_pre/_out`（token 为 128 位随机数，只存在本机状态文件）、
+  规则 comment `configflow-return:<token>:<用途>`、表用固定名 `configflow_return`。新 Agent 写表和链时不再带
+  comment；回流的比较忽略表/链 comment（旧版本记录下来的、带 comment 的表/链仍然匹配，升级后不触发重放）。
+  Linux 网关有自己的 1.0.6 处理（固定内核表示），仍严格比较，不受影响。
+- pending 事务不再一律拒绝：计划、发布、撤销先在 `configflow_return` 中补记带本机 token 的对象（`cf_<token>_*`
+  链、这些链里 comment 以本机标签开头的规则，以及含有这些对象或带本机标签的表）。表里有任何无法用 token 证明的
+  对象（他人链名、无标签规则、带其他标签的表、空且无标签的表），或路由表/优先级里有未记录的路由和规则，仍按原样
+  拒绝且不写任何东西。补记后发布按原事务重放、撤销按记录精确删除；记录完整的 pending（例如上一次删除命令返回成功
+  但没有生效）也允许重试，失败时保留归属记录。开机重放对 pending 仍不做任何操作。
+- 回归测试：`return_routing_pending_test.go`（假主机模拟 1.0.6 回显：启用→撤销→再启用；旧版本残留在 1.0.6/新版 nft
+  回显下先撤销或先发布都能恢复；四类无法证明的对象仍拒绝且不写入；带 comment 的旧记录升级后开机不重放）。真实内核：
+  `backend/agents/go-agent/integration/return_routing_nft_lab.sh`（`-tags nftlab`，一次性容器，默认 debian:12 =
+  nft 1.0.6，`NFT_LAB_IMAGE=debian:13` = 1.1.3）：协议 1/2 各启用→Agent 重启→撤销两轮，以及从旧版本残留先撤销/先发布
+  恢复后再启用。负控：同一测试在修复前代码上得到实验网原报错「写入后的资源内容与计划不一致；安全撤销未完成…」。

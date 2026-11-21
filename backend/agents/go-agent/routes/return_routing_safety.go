@@ -508,9 +508,37 @@ func normalizedResourceEqual(a, b map[string]interface{}) bool {
 	return err == nil && string(left) == string(right)
 }
 
+// withoutContainerComment drops the comment of an nft table or chain object
+// for return-routing comparisons. Whether it is listed depends on the nft
+// release (1.0.6 omits it), so it cannot prove or disprove return-routing
+// ownership; chain names and rule comments (listed by every release) do. The
+// Linux gateway pins the kernel representation instead and keeps comparing it.
+func withoutContainerComment(object map[string]interface{}) map[string]interface{} {
+	if len(object) != 1 {
+		return object
+	}
+	for kind, raw := range object {
+		body, ok := raw.(map[string]interface{})
+		if (kind != "table" && kind != "chain") || !ok {
+			return object
+		}
+		if _, tagged := body["comment"]; !tagged {
+			return object
+		}
+		copy := make(map[string]interface{}, len(body))
+		for key, value := range body {
+			if key != "comment" {
+				copy[key] = value
+			}
+		}
+		return map[string]interface{}{kind: copy}
+	}
+	return object
+}
+
 func consumeOwned(row map[string]interface{}, expected []map[string]interface{}, used []bool) bool {
 	for i, candidate := range expected {
-		if !used[i] && ownedResourceEqual(candidate, row) {
+		if !used[i] && ownedResourceEqual(withoutContainerComment(candidate), withoutContainerComment(row)) {
 			used[i] = true
 			return true
 		}

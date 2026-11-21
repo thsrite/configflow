@@ -50,9 +50,11 @@ func validReturnOwner(state *returnRoutingState) bool {
 			if !ok {
 				return false
 			}
-			comment, _ := body["comment"].(string)
+			comment, hasComment := body["comment"].(string)
 			if kind == "table" || kind == "chain" {
-				if comment != ownerTag(owner) {
+				// Agents before 1.9.1 tagged tables and chains; nft 1.0.6 never
+				// lists those comments, so they are optional evidence only.
+				if hasComment && comment != ownerTag(owner) {
 					return false
 				}
 			} else if kind == "rule" {
@@ -148,15 +150,20 @@ func nftMatch(left, right interface{}, op string) map[string]interface{} {
 
 // Anonymous address sets live inside the owned rule. No shared named set is
 // flushed or rewritten, and removing a rule releases only its anonymous set.
+//
+// Ownership evidence must survive every nft release's JSON listing: chains
+// carry the journal token in their names and rules carry it in their comments.
+// Tables and chains get no comment, because nft 1.0.6 (Debian 12) omits
+// table/chain comments from "nft -j list" and the readback could never match.
 func desiredReturnNFT(spec resolvedSpec, owner *returnOwnership) []map[string]interface{} {
 	tag := ownerTag(owner)
 	pre, output := "cf_"+owner.Token+"_pre", "cf_"+owner.Token+"_out"
 	objects := []map[string]interface{}{
-		nftObject("table", map[string]interface{}{"family": "inet", "name": managedReturnTable, "comment": tag}),
+		nftObject("table", map[string]interface{}{"family": "inet", "name": managedReturnTable}),
 		nftObject("chain", map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": pre,
-			"type": "filter", "hook": "prerouting", "prio": -150, "policy": "accept", "comment": tag}),
+			"type": "filter", "hook": "prerouting", "prio": -150, "policy": "accept"}),
 		nftObject("chain", map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": output,
-			"type": "route", "hook": "output", "prio": -150, "policy": "accept", "comment": tag}),
+			"type": "route", "hook": "output", "prio": -150, "policy": "accept"}),
 	}
 	addresses := []interface{}{}
 	for _, cidr := range spec.ProxyDst {
@@ -233,7 +240,7 @@ func checkedResources(spec resolvedSpec, state *returnRoutingState) (*returnReso
 func matchingResource(expected map[string]interface{}, rows []map[string]interface{}) (map[string]interface{}, error) {
 	var found map[string]interface{}
 	for _, row := range rows {
-		if normalizedResourceEqual(expected, row) {
+		if normalizedResourceEqual(withoutContainerComment(expected), withoutContainerComment(row)) {
 			if found != nil {
 				return nil, fmt.Errorf("发现重复资源，无法确认唯一归属")
 			}
@@ -596,8 +603,13 @@ func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]interf
 	if err != nil {
 		return nil, err
 	}
-	if state != nil && (!validReturnOwner(state) || state.Legacy != nil || state.Ownership.Pending) {
+	if state != nil && (!validReturnOwner(state) || state.Legacy != nil) {
 		return nil, fmt.Errorf("已有回流状态缺少有效归属或事务未完成，保留现有规则，请先人工核对")
+	}
+	if state != nil && state.Ownership.Pending {
+		if err = recoverPendingReturn(cfg, state); err != nil {
+			return nil, err
+		}
 	}
 	resources, err := checkedResources(spec, state)
 	if err != nil {
@@ -686,8 +698,13 @@ func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (map[string]interface{
 	if state == nil {
 		return map[string]interface{}{"success": true, "removed": false}, nil
 	}
-	if !validReturnOwner(state) || state.Legacy != nil || state.Ownership.Pending {
+	if !validReturnOwner(state) || state.Legacy != nil {
 		return nil, fmt.Errorf("无法证明旧回流资源的归属，已保留全部现有规则")
+	}
+	if state.Ownership.Pending {
+		if err = recoverPendingReturn(cfg, state); err != nil {
+			return nil, err
+		}
 	}
 	spec, err := validateSpec(state.Spec)
 	if err != nil {

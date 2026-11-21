@@ -22,10 +22,13 @@ type fakeHost struct {
 	readErrors                  map[string]error
 	readReplies                 map[string]string
 	failNft                     bool
-	loseRouteAddReply           bool
-	ignoreDelete                string
-	dropResourceAfterNFTAdd     string
-	nextHandle                  int
+	// nft106 lists tables and chains without their comments, like nft 1.0.6
+	// (Debian 12) does in "nft -j list ruleset".
+	nft106                  bool
+	loseRouteAddReply       bool
+	ignoreDelete            string
+	dropResourceAfterNFTAdd string
+	nextHandle              int
 }
 
 func jsonText(value interface{}) string { data, _ := json.Marshal(value); return string(data) }
@@ -87,7 +90,17 @@ func installFakeHost(t *testing.T, host *fakeHost) {
 		case "ip -j -d link show":
 			return jsonText(jsonMaps(host.vrfs)), nil
 		case "nft -j list ruleset":
-			return jsonText(map[string]interface{}{"nftables": jsonMaps(host.nft)}), nil
+			listed := jsonMaps(host.nft)
+			if host.nft106 {
+				for _, entry := range listed {
+					for _, kind := range []string{"table", "chain"} {
+						if body, ok := entry[kind].(map[string]interface{}); ok {
+							delete(body, "comment")
+						}
+					}
+				}
+			}
+			return jsonText(map[string]interface{}{"nftables": listed}), nil
 		case "nft list tables":
 			var lines []string
 			for _, entry := range host.nft {
@@ -592,13 +605,19 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 			t.Fatalf("route lacks protocol ownership: %v", route)
 		}
 	}
+	// Chains carry the token in their names, rules in their comments; the
+	// fixed-name table carries none (nft 1.0.6 does not list its comment).
 	for _, entry := range host.nft {
-		for _, raw := range entry {
+		for kind, raw := range entry {
 			object := raw.(map[string]interface{})
-			if object["name"] == "other_service" {
+			if object["name"] == "other_service" || kind == "table" {
 				continue
 			}
-			if !strings.Contains(number(object["comment"]), number(owner["token"])) {
+			evidence := number(object["comment"])
+			if kind == "chain" {
+				evidence = number(object["name"])
+			}
+			if !strings.Contains(evidence, number(owner["token"])) {
 				t.Fatalf("nft object lacks ownership token: %v", object)
 			}
 		}
@@ -939,11 +958,22 @@ func TestReturnRoutingSuccessfulDeleteWithoutEffectPreservesJournal(t *testing.T
 			if !sameJSON(before[key], after[key]) {
 				t.Fatalf("unremoved %s ownership was discarded: before=%v after=%v", kind, before[key], after[key])
 			}
-			host.mutations = nil
+			// The journal still proves every remaining object, so a retry
+			// deletes only recorded resources and keeps the evidence on failure.
 			if _, err := RemoveReturnRouting(cfg, false); err == nil {
-				t.Fatal("pending removal must not be repeated blindly")
+				t.Fatal("retry without effect must fail readback again")
 			}
-			assertNoWrites(t, host)
+			again := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+			if again["pending"] != true || !sameJSON(after[key], again[key]) {
+				t.Fatalf("failed retry discarded ownership: %v", again)
+			}
+			host.ignoreDelete = ""
+			if _, err := RemoveReturnRouting(cfg, false); err != nil {
+				t.Fatalf("retry of a recorded removal must finish: %v", err)
+			}
+			if len(host.routes) != 0 || len(host.rules) != 0 || len(host.nft) != 1 {
+				t.Fatalf("recovered removal left resources: %v %v %v", host.routes, host.rules, host.nft)
+			}
 		})
 	}
 }

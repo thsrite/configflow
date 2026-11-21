@@ -218,7 +218,14 @@ func TestReturnAllocationRefusesToMoveChangedOrUnownedState(t *testing.T) {
 	}{
 		{"legacy state", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Ownership = nil }},
 		{"legacy backup", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Legacy = &legacyBackup{} }},
-		{"pending transaction", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Ownership.Pending = true }},
+		{"pending transaction with unprovable chain", func(s *returnRoutingState, r *returnResources, _ *mihomoRouting) {
+			s.Ownership.Pending = true
+			r.NFT = append(r.NFT, map[string]interface{}{"chain": map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": "cf_ffffffffffffffffffffffffffffffff_pre"}})
+		}},
+		{"pending transaction with foreign route", func(s *returnRoutingState, r *returnResources, _ *mihomoRouting) {
+			s.Ownership.Pending = true
+			r.Routes = append(r.Routes, allocationRoute(105))
+		}},
 		{"unknown ownership version", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Ownership.Version = 2 }},
 		{"invalid token", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Ownership.Token = "not-an-owner" }},
 		{"invalid persisted spec", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Spec.SafetyVersion = 0 }},
