@@ -267,6 +267,9 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 			if !cached {
 				var cfg *model.Config
 				if cfg, err = Config(sctx, resolvedID); err == nil {
+					cfg, err = xcConfigForPython(t, sctx, r, resolvedID, cfg)
+				}
+				if err == nil {
 					raw := mustMarshalJSON(t, cfg)
 					snap = parseJSONObj(t, raw)
 					st.snapshots[resolvedID] = snap
@@ -288,6 +291,9 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 				} else {
 					var cfg *model.Config
 					if cfg, err = Config(sctx, resolvedID); err == nil {
+						cfg, err = xcConfigForPython(t, sctx, r, resolvedID, cfg)
+					}
+					if err == nil {
 						raw := mustMarshalJSON(t, cfg)
 						payload = parseJSONObj(t, raw)
 						st.baselines[resolvedID] = raw
@@ -440,12 +446,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 			}
 			var cfg *model.Config
 			if cfg, err = r.Config(sctx, resolvedID, roots); err == nil {
-				if cfg.HasAgents {
-					t.Fatal("Config included agents by default")
-				}
-				var sys *model.System
-				if sys, err = r.System(sctx); err == nil {
-					cfg.Agents, cfg.HasAgents = sys.Agents, true
+				if cfg, err = xcConfigForPython(t, sctx, r, resolvedID, cfg); err == nil {
 					result = xcObjFromRecord(t, cfg)
 				}
 			}
@@ -454,6 +455,55 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		handled = false
 	}
 	return result, err, handled
+}
+
+// xcConfigForPython returns cfg in the shape of Python's get_config /
+// get_compat_config, which always carried the Agent registry. Since O10-T1
+// repo.Config omits it (an internal API change: no route, export, backup or
+// MCP output serializes a resolved Config); the full registry read from System
+// is attached to a copy so every other member is still compared with Python.
+// Readers that need Agents use ConfigWithOxiDNSAgents; its projection is
+// checked here against the same registry: exactly the projected members, with
+// their stored bytes, and nothing else (no token or histories).
+func xcConfigForPython(t *testing.T, ctx context.Context, r *Repository, profileID string, cfg *model.Config) (*model.Config, error) {
+	t.Helper()
+	if cfg.HasAgents || cfg.Agents != nil {
+		t.Fatal("Config included agents by default")
+	}
+	sys, err := r.System(ctx)
+	if err != nil {
+		return nil, err
+	}
+	projected, err := r.ConfigWithOxiDNSAgents(ctx, profileID, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !projected.HasAgents || len(projected.Agents) != len(sys.Agents) {
+		t.Fatalf("OxiDNS projection has %d Agents, registry %d", len(projected.Agents), len(sys.Agents))
+	}
+	allowed := map[string]bool{}
+	for _, key := range oxiDNSAgentFields {
+		allowed[key] = true
+	}
+	for i := range sys.Agents {
+		stored := xcObjFromRecord(t, sys.Agents[i])
+		got := xcObjFromRecord(t, projected.Agents[i])
+		for key := range got.All() {
+			if !allowed[key] {
+				t.Fatalf("OxiDNS projection of Agent %d carries %q", i, key)
+			}
+		}
+		for _, key := range oxiDNSAgentFields {
+			want, present := stored.Get(key)
+			value, ok := got.Get(key)
+			if present != ok || string(mustMarshalJSON(t, want)) != string(mustMarshalJSON(t, value)) {
+				t.Fatalf("OxiDNS projection of Agent %d member %q = %v, registry %v", i, key, value, want)
+			}
+		}
+	}
+	out := *cfg
+	out.Agents, out.HasAgents = sys.Agents, true
+	return &out, nil
 }
 
 func TestCrossCheckC04Operations(t *testing.T) {

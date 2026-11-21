@@ -2502,3 +2502,8 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   `redact.AgentRecordCredentials` 从 Agent 记录收集（仓库按存储 head 缓存，Agent 写入后重新收集），
   不再随整份配置复制；`/api/routers` 与路由策略页的单次分配与 T1 前一致。
   `TestO10RouterRedactionKeepsAgentRecordCredentials` 固定部署历史中的 password 仍被脱敏。
+- 内部 API：`repo.Config` 的结果不再含 `agents`（Python `get_config`/`get_compat_config` 含）。没有路由、导出、备份或 MCP
+  输出序列化解析后的配置（导出走 `ExportAllJSON`/`ExportProfileJSON`，MCP 备份调用导出路由），对外无变化。
+  仓库与 Python 的交叉检查（`TestCrossCheckC04Operations` 的 `cfg_get_config`、`cfg_get_resource_config`、
+  `get_compat_config`）按新边界比较：Go 侧把 System 中的完整 Agent 注册表附到副本上再与 Python 整体比较，并逐条断言
+  `ConfigWithOxiDNSAgents` 的投影只含 8 个投影成员、字节与注册表相同（不含 token 与历史）。
