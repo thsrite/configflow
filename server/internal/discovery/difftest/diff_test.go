@@ -408,6 +408,12 @@ func TestHTTPAndStorageParity(t *testing.T) {
 				}
 				left["auto_probe"] = false
 			}
+			// Go-only M18 addition: traffic store health fields on discovery Agent entries.
+			// Assert Python omits them and Go reports healthy values on the valid seed, then
+			// compare every remaining field strictly.
+			if (q.path == "agents" || strings.HasPrefix(q.path, "domains")) && pc == 200 && gc == 200 {
+				stripHealthyStoreState(t, pv, gv)
+			}
 			// Step B #3: only the exact public error envelope changes format.
 			if !typedRootError && !httpxtest.MigratedAPIError(q.method, pc, gc, ph, gh, pb, gb) {
 				equal(t, "response", remap(pv, pyIDs), remap(gv, goIDs))
@@ -492,6 +498,35 @@ func nativeJSON(t *testing.T, v any) any {
 		t.Fatal(e)
 	}
 	return out
+}
+
+func stripHealthyStoreState(t *testing.T, pyBody, goBody any) {
+	t.Helper()
+	pyMap, pyOK := pyBody.(map[string]any)
+	goMap, goOK := goBody.(map[string]any)
+	if !pyOK || !goOK {
+		return
+	}
+	pyAgents, _ := pyMap["agents"].([]any)
+	goAgents, _ := goMap["agents"].([]any)
+	for i := 0; i < len(pyAgents) && i < len(goAgents); i++ {
+		pa, pok := pyAgents[i].(map[string]any)
+		ga, gok := goAgents[i].(map[string]any)
+		if !pok || !gok {
+			continue
+		}
+		if _, has := pa["store_state"]; has {
+			t.Fatalf("unexpected Python store_state on agent[%d]: %v", i, pa["store_state"])
+		}
+		if _, has := pa["store_message"]; has {
+			t.Fatalf("unexpected Python store_message on agent[%d]: %v", i, pa["store_message"])
+		}
+		if ga["store_state"] != "ok" || ga["store_message"] != "" {
+			t.Fatalf("Go M18 store health on healthy seed agent[%d]: store_state=%v store_message=%v", i, ga["store_state"], ga["store_message"])
+		}
+		delete(ga, "store_state")
+		delete(ga, "store_message")
+	}
 }
 
 // Canonicalize generated identities by persisted library name and reference

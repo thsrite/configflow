@@ -47,6 +47,14 @@ func (d Document) Days() map[string]Day {
 // StatusJSON returns an independent copy of the persisted metadata.
 func (d Document) StatusJSON() json.RawMessage { return member(d.fields, "status") }
 
+// StoreState reports whether the underlying traffic file is healthy or damaged.
+func (d Document) StoreState() StoreState {
+	if d.storeState == StoreStateDamaged {
+		return StoreStateDamaged
+	}
+	return StoreStateOK
+}
+
 func readableDay(raw json.RawMessage) (model.Fields, bool) {
 	day, err := object(raw)
 	if err != nil {

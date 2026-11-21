@@ -278,3 +278,113 @@ func TestNativeStoreInvalidFileMatchesCorruptDaysAndResetRecovers(t *testing.T) 
 		})
 	}
 }
+
+func TestInspectStatusDetectsDamageCachesSignatureAndRecovers(t *testing.T) {
+	at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	restoreNow := SetNow(func() time.Time { return at })
+	defer restoreNow()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"empty", ""},
+		{"truncated", "{"},
+		{"array_root", "[]"},
+		{"null_root", "null"},
+		{"bad_days", `{"status":{"value":"running"},"days":[]}`},
+		{"bad_status_type", `{"status":[],"days":{}}`},
+		{"bad_status_member", `{"status":{"value":"running","mihomo_version":123},"days":{}}`},
+		{"nonfinite", `{"status":{"value":"running"},"days":{},"broken":NaN}`},
+		{"bad_today_hosts", `{"status":{"value":"running","at":"2026-11-19T10:00:00"},"days":{"2026-11-19":{"ip_only_conns":0,"dropped":0,"hosts":[]}}}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			isolated(t)
+			s := NewNative(t.TempDir())
+			calls := trackReads(s)
+
+			// Missing file is healthy and never triggers a read.
+			snap := s.InspectStatus("a")
+			if snap.State != StoreStateOK || snap.Status != nil || len(*calls) != 0 {
+				t.Fatalf("missing file: snap=%+v reads=%v", snap, *calls)
+			}
+
+			// Healthy write warms statusCache; InspectStatus serves from cache with zero reads.
+			if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err != nil {
+				t.Fatal(err)
+			}
+			beforeReads := len(*calls)
+			snap = s.InspectStatus("a")
+			if snap.State != StoreStateOK || len(*calls) != beforeReads {
+				t.Fatalf("cached healthy inspect: snap=%+v reads=%d->%d", snap, beforeReads, len(*calls))
+			}
+
+			// Invalid incoming report must not falsely mark a healthy store damaged.
+			if _, err := s.Add(t.Context(), "a", &Report{}, &at); err == nil {
+				t.Fatal("expected error for nil counters report")
+			}
+			if snap = s.InspectStatus("a"); snap.State != StoreStateOK {
+				t.Fatalf("healthy store falsely marked damaged: %+v", snap)
+			}
+
+			// Corrupt file on disk: first inspect reads once, second reuses damagedCache with zero reads.
+			if err := os.WriteFile(s.Path("a"), []byte(tc.content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			*calls = nil
+			snap = s.InspectStatus("a")
+			if snap.State != StoreStateDamaged || len(*calls) != 1 || len(CachedPaths()) != 0 {
+				t.Fatalf("first corrupt inspect: snap=%+v reads=%v cached=%v", snap, *calls, CachedPaths())
+			}
+			snap = s.InspectStatus("a")
+			if snap.State != StoreStateDamaged || len(*calls) != 1 {
+				t.Fatalf("second corrupt inspect should hit signature cache: snap=%+v reads=%v", snap, *calls)
+			}
+			if raw, err := os.ReadFile(s.Path("a")); err != nil || string(raw) != tc.content {
+				t.Fatalf("read-only inspect modified file: %q %v", raw, err)
+			}
+			if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err == nil {
+				t.Fatal("corrupt file unexpectedly accepted write")
+			}
+
+			// Delete recovers store state to ok and allows new writes.
+			if err := s.DeleteContext(t.Context(), "a"); err != nil {
+				t.Fatal(err)
+			}
+			if snap = s.InspectStatus("a"); snap.State != StoreStateOK || snap.Status != nil {
+				t.Fatalf("post-clear inspect: %+v", snap)
+			}
+			if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err != nil {
+				t.Fatalf("post-clear add failed: %v", err)
+			}
+			if snap = s.InspectStatus("a"); snap.State != StoreStateOK || len(snap.Status) == 0 {
+				t.Fatalf("post-recovery inspect: %+v", snap)
+			}
+		})
+	}
+}
+
+func TestInspectStatusDayBucketDamageClearsNextDay(t *testing.T) {
+	isolated(t)
+	current := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	restoreNow := SetNow(func() time.Time { return current })
+	defer restoreNow()
+
+	s := NewNative(t.TempDir())
+	raw := `{"status":{"value":"running","at":"2026-11-19T10:00:00"},"days":{"2026-11-19":{"ip_only_conns":0,"dropped":0,"hosts":[]}}}`
+	if err := os.WriteFile(s.Path("a"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if snap := s.InspectStatus("a"); snap.State != StoreStateDamaged {
+		t.Fatalf("expected damaged on same day: %+v", snap)
+	}
+	current = current.AddDate(0, 0, 1)
+	if snap := s.InspectStatus("a"); snap.State != StoreStateOK {
+		t.Fatalf("expected ok after date rollover: %+v", snap)
+	}
+	if _, err := s.Add(t.Context(), "a", nativeReport(t), &current); err != nil {
+		t.Fatalf("next-day add should succeed: %v", err)
+	}
+}

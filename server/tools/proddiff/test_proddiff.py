@@ -309,6 +309,25 @@ class ComparatorTests(unittest.TestCase):
         failed = (0, '', b'', {})
         self.assertEqual([('status', 'transport-both')], pd.response_diffs(failed, failed, '/synthetic', []))
 
+    def test_discovery_store_state_exemption_is_exact(self):
+        base_agent = {'id': 'gw', 'name': 'GW', 'status': 'running', 'enabled': True}
+        for route in ('/api/domain-discovery/agents', '/api/domain-discovery/domains'):
+            py = reply({'success': True, 'agents': [dict(base_agent)]})
+            go_ok = reply({'success': True, 'agents': [{**base_agent, 'store_state': 'ok', 'store_message': ''}]})
+            go_damaged = reply({'success': True, 'agents': [{**base_agent, 'store_state': 'damaged', 'store_message': '已损坏'}]})
+            self.assertEqual([], pd.response_diffs(py, go_ok, route, []))
+            self.assertEqual([], pd.response_diffs(py, go_damaged, route, []))
+            # Invalid state/message combinations or other field drifts must still fail.
+            for bad_fields in (
+                {'store_state': 'unknown', 'store_message': ''},
+                {'store_state': 'ok', 'store_message': 'unexpected'},
+                {'store_state': 'damaged', 'store_message': ''},
+                {'store_state': 'ok', 'store_message': '', 'status': 'no_data'},
+            ):
+                bad = reply({'success': True, 'agents': [{**base_agent, **bad_fields}]})
+                self.assertTrue(pd.response_diffs(py, bad, route, []))
+            self.assertTrue(pd.response_diffs(py, go_ok, '/api/agents', []))
+
     def test_headers_are_compared(self):
         base = {'x-configflow-profile': 'one', 'etag': '"a"', 'date': 'd1', 'server': 'waitress', 'content-length': '2'}
         left = reply(b'{}', headers=base)

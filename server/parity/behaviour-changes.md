@@ -2437,3 +2437,10 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   - **保存校验**（`POST /api/nodes`、`PUT /api/nodes/<node_id>`）：拒绝 `name`/`type`/`server`/`port`、`params` 递归字符串值以及 `proxy_string` 解析出的字段中的控制字符与行分隔符（C0 U+0000–U+001F、DEL U+007F、C1 U+0080–U+009F 含 U+0085 NEL、U+2028、U+2029；合法多行 YAML `proxy_string` 的结构换行仍允许），返回 400「节点字段「<字段>」不能包含换行、回车或控制字符」且不修改存储。
   - **生成防御**（`internal/convert` `SurgeNode`/`LoonNode`/`SurgeGroup`/`SurgeConfig`/`LoonConfig`）：对存量或导入节点渲染前将 CRLF 及所有上述控制字符替换为空格，确保不输出注入行且 `[Proxy]` 与 `[Proxy Group]` 名称一致。
   - 回归与 Flask 差分：`api/nodes.TestO9R2NodeControlCharValidation`、`convert.TestO9R2ClientNodeLineInjectionDefense`、`api/subscriptions/difftest.TestO9R2NodeControlCharBoundaryAgainstFlask`、`api/config/difftest.TestO9R2ClientGenerationLineDefenseAgainstFlask`（均显式断言 Flask 放行/注入与 Go 拒绝/净化的新边界，并含正常节点严格相等负控）。
+## M18 — 域名发现流量文件损坏状态与界面恢复入口
+
+- 维护者切换前裁定（对应 `o12-release-notes.md` M18）：`GET /api/domain-discovery/agents`（以及同用 `AgentStatus` 的 `GET /api/domain-discovery/domains` 中的 `agents[]`）在 Go 侧为每个 Agent 新增两个只读字段：
+  - `store_state`：`"ok"` | `"damaged"`，表示该 Agent 的流量数据文件（`DATA_DIR/traffic/<agent_id>.json`）是否处于「损坏、写入被拒」状态。文件不存在或健康时为 `"ok"`；整文件损坏（空文件、截断、非法 JSON/UTF-8、非标准 `NaN`、顶层非对象）、`days`/`status` 错型或当日统计桶头损坏导致上报被拒时为 `"damaged"`。
+  - `store_message`：健康时为空字符串 `""`，损坏时为中文提示（`discovery.MsgStoreDamaged`：「域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。」）。
+- 检测严格只读，复用文件签名缓存（健康复用 `statusCache`，损坏由独立的签名/日期有界 LRU `damagedCache` 记住），重复轮询只需 `stat`，不每次全量解析大文件，且不改变已批准的 fail-closed 行为（仍拒写 500、原文件字节不动）。前端之外无外部调用方依赖；用户在域名发现页直接看到该设备的告警并可点击「清除并恢复」（复用既有 `POST /api/agents/<id>/domain-discovery/clear`）。
+- Flask 对比测试显式例外：`internal/discovery/difftest` 与 `tools/proddiff` 仅在 `/api/domain-discovery/agents`、`/api/domain-discovery/domains` 200 响应上断言 Python 不含这两个键且 Go 满足上述精确契约后剥离这两字段，其余所有字段仍严格逐项比较；`tools/configdiff/config_finding_resolutions.py` 登记同一精确例外。后端回归 `api/agents.TestDomainDiscoveryDamagedStoreStatusClearAndRecovery` 与 `trafficstore.TestInspectStatusDetectsDamageCachesSignatureAndRecovers` 覆盖完整「损坏→显示 damaged→清除→恢复 ok 并可写入」闭环。

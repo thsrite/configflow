@@ -264,6 +264,13 @@ def accepted_basis(item):
             and set(values) == {legacy} and values[legacy]['kind'] == 'extra-in-go'
             and values[legacy]['python'] is None and not differences({'flag': False, 'values': []}, values[legacy]['go'])):
         return DECISIONS.format(item='R058-B03')
+    if (statuses == (200, 200) and item['route'] in ('GET /api/domain-discovery/agents', 'GET /api/domain-discovery/domains')
+            and raw and all(
+                row['kind'] == 'extra-in-go' and row['python'] is None and (
+                    (re.fullmatch(r'body\.agents\[\d+\]\.store_state', row['path']) and row['go'] == 'ok')
+                    or (re.fullmatch(r'body\.agents\[\d+\]\.store_message', row['path']) and row['go'] == ''))
+                for row in raw)):
+        return '[behaviour-changes.md · M18](behaviour-changes.md#m18--域名发现流量文件损坏状态与界面恢复入口)'
     version_method = (item['variant'] == '' and statuses == (405, 405) and (item['case'], item['group'], item['route']) in {
         ('R228-F01', 'settings-sync', 'GET /api/version'), ('R012-F01', 'auth-routes', 'GET /api/auth/status')})
     unknown_api = (item['case'] == 'X06' and item['group'] == 'http-options-routing' and statuses == (404, 404)

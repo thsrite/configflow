@@ -79,11 +79,34 @@ func set(values ...string) map[string]bool {
 	return out
 }
 
+// StoreState describes whether an Agent's traffic file can accept new reports.
+type StoreState string
+
+const (
+	// StoreStateOK indicates the traffic store is healthy or not yet created.
+	StoreStateOK StoreState = "ok"
+	// StoreStateDamaged indicates the traffic file is corrupted and writes are refused.
+	StoreStateDamaged StoreState = "damaged"
+)
+
+// StatusSnapshot pairs an Agent's collection metadata with its traffic-store health.
+type StatusSnapshot struct {
+	Status json.RawMessage
+	State  StoreState
+}
+
 // ---------- status cache ----------
 
 type cacheEntry struct {
 	path      string
 	signature jsonstore.Signature
+	status    json.RawMessage
+}
+
+type damagedEntry struct {
+	path      string
+	signature jsonstore.Signature
+	dayKey    string
 	status    json.RawMessage
 }
 
@@ -95,14 +118,20 @@ var (
 	statusCache      = list.New()
 	statusIndex      = map[string]*list.Element{}
 	statusCacheLimit = defaultStatusCacheLimit
+	// damagedCache remembers damaged file signatures so status polls stay cheap
+	// without changing statusCache's cached-path contract.
+	damagedCache = list.New()
+	damagedIndex = map[string]*list.Element{}
 )
 
-// ResetCache empties the status cache (tests: the autouse fixture).
+// ResetCache empties the status and damaged-state caches (tests: the autouse fixture).
 func ResetCache() {
 	mu.Lock()
 	defer mu.Unlock()
 	statusCache = list.New()
 	statusIndex = map[string]*list.Element{}
+	damagedCache = list.New()
+	damagedIndex = map[string]*list.Element{}
 }
 
 // SetCacheLimit changes _STATUS_CACHE_LIMIT and returns the old value
@@ -130,6 +159,35 @@ func cachePop(path string) {
 	if element, ok := statusIndex[path]; ok {
 		statusCache.Remove(element)
 		delete(statusIndex, path)
+	}
+}
+
+func damagedPop(path string) {
+	if element, ok := damagedIndex[path]; ok {
+		damagedCache.Remove(element)
+		delete(damagedIndex, path)
+	}
+}
+
+func rememberDamaged(path string, signature *jsonstore.Signature, dayKey string, status json.RawMessage) {
+	damagedPop(path)
+	if signature == nil {
+		return
+	}
+	current := statusSignature(path)
+	if current == nil || *current != *signature {
+		return
+	}
+	var cached json.RawMessage
+	if cacheableStatus(status) {
+		cached = bytes.Clone(status)
+	}
+	entry := &damagedEntry{path: path, signature: *signature, dayKey: dayKey, status: cached}
+	damagedIndex[path] = damagedCache.PushBack(entry)
+	for damagedCache.Len() > statusCacheLimit {
+		oldest := damagedCache.Front()
+		damagedCache.Remove(oldest)
+		delete(damagedIndex, oldest.Value.(*damagedEntry).path)
 	}
 }
 
@@ -503,8 +561,9 @@ func (s *NativeStore) absPath(id string) string {
 
 // Document retains unknown persisted members; typed merge code opens only the records it updates.
 type Document struct {
-	fields model.Fields
-	days   model.Fields
+	fields     model.Fields
+	days       model.Fields
+	storeState StoreState
 }
 
 // MarshalJSON encodes the existing traffic file format without discarding extension members.
@@ -644,6 +703,49 @@ var now = time.Now
 // SetNow replaces the store clock for tests.
 func SetNow(fn func() time.Time) func() { old := now; now = fn; return func() { now = old } }
 
+func validateStatusFields(raw json.RawMessage) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	f, err := object(raw)
+	if err != nil {
+		return err
+	}
+	for _, key := range []string{"value", "at", "mihomo_version"} {
+		valueRaw, exists := f.Get(key)
+		if exists && string(valueRaw) != "null" {
+			var value string
+			if jsondecode.Unmarshal(valueRaw, &value) != nil {
+				return &TypeError{Message: "invalid traffic status member"}
+			}
+		}
+	}
+	return nil
+}
+
+func validateDayBucketHeader(days model.Fields, dayKey string) error {
+	rawDay, exists := days.Get(dayKey)
+	if !exists {
+		return nil
+	}
+	day, err := object(rawDay)
+	if err != nil {
+		return err
+	}
+	for _, key := range []string{"ip_only_conns", "dropped"} {
+		if value, ok := day.Get(key); ok {
+			if _, err := parseCounter(value); err != nil {
+				return err
+			}
+		}
+	}
+	hostsRaw := bytes.TrimSpace(member(day, "hosts"))
+	if len(hostsRaw) == 0 || hostsRaw[0] != '{' {
+		return &TypeError{Message: "invalid traffic collection"}
+	}
+	return nil
+}
+
 // Add merges a validated report atomically, preserving the work lifetime through file replacement.
 func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Time) (result *Status, resultErr error) {
 	defer func() {
@@ -674,33 +776,34 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	path := s.absPath(id)
+	preSig := statusSignature(path)
 	d, err := s.read(id)
 	if err != nil {
+		var te *TypeError
+		if errors.As(err, &te) {
+			rememberDamaged(path, preSig, "", nil)
+		}
 		return nil, err
 	}
 	previous := member(d.fields, "status")
-	if len(previous) > 0 && string(previous) != "null" {
-		f, err := object(previous)
-		if err != nil {
-			return nil, err
-		}
-		for _, key := range []string{"value", "at", "mihomo_version"} {
-			raw, exists := f.Get(key)
-			if exists && string(raw) != "null" {
-				var value string
-				if jsondecode.Unmarshal(raw, &value) != nil {
-					return nil, &TypeError{Message: "invalid traffic status member"}
-				}
-			}
-		}
+	if err := validateStatusFields(previous); err != nil {
+		cachePop(path)
+		rememberDamaged(path, preSig, "", nil)
+		return nil, err
+	}
+	markDayDamaged := func() {
+		cachePop(path)
+		rememberDamaged(path, preSig, dayKey, previous)
 	}
 	version := r.MihomoVersion
 	if len(version) == 0 || string(version) == "null" || string(version) == `""` {
 		version = json.RawMessage(`""`)
-		previous := member(d.fields, "status")
 		if len(previous) > 0 && string(previous) != "null" {
 			f, err := object(previous)
 			if err != nil {
+				cachePop(path)
+				rememberDamaged(path, preSig, "", nil)
 				return nil, err
 			}
 			if raw, ok := f.Get("mihomo_version"); ok {
@@ -711,16 +814,20 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	status := &Status{Value: r.Status, At: stamp, MihomoVersion: version}
 	day, err := defaultObject(d.days, dayKey, `{"ip_only_conns":0,"dropped":0,"hosts":{}}`)
 	if err != nil {
+		markDayDamaged()
 		return nil, err
 	}
 	if err = inc(&day, "ip_only_conns", r.IPOnlyConns); err != nil {
+		markDayDamaged()
 		return nil, err
 	}
 	if err = inc(&day, "dropped", r.Dropped); err != nil {
+		markDayDamaged()
 		return nil, err
 	}
 	hosts, err := readRecords(member(day, "hosts"))
 	if err != nil {
+		markDayDamaged()
 		return nil, err
 	}
 	modified := map[string]*hostMerge{}
@@ -741,6 +848,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		if host == nil {
 			host, err = openHost(hosts, item.Host, stamp)
 			if err != nil {
+				markDayDamaged()
 				return nil, err
 			}
 			modified[item.Host] = host
@@ -755,6 +863,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		for _, n := range []*big.Int{item.Counts[0], item.Counts[1]} {
 			value, err = addNumber(value, n)
 			if err != nil {
+				markDayDamaged()
 				return nil, err
 			}
 		}
@@ -771,15 +880,18 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		}
 		stats, err := readRecords(statsRaw)
 		if err != nil {
+			markDayDamaged()
 			return nil, err
 		}
 		for i, key := range countFields {
 			if err = incRecord(&stats, key, item.Counts[i]); err != nil {
+				markDayDamaged()
 				return nil, err
 			}
 		}
 		kinds, err := readRecords(recordMember(stats, "fail_kinds"))
 		if err != nil {
+			markDayDamaged()
 			return nil, err
 		}
 		for key, n := range item.FailKinds {
@@ -789,6 +901,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 			}
 			value, err = addNumber(value, n)
 			if err != nil {
+				markDayDamaged()
 				return nil, err
 			}
 			kinds.setEncoded(key, value)
@@ -818,6 +931,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		for _, key := range keys {
 			w, err := weight(recordMember(hosts, key))
 			if err != nil {
+				markDayDamaged()
 				return nil, err
 			}
 			weights[key] = w
@@ -826,6 +940,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		for _, key := range keys[MaxHostsPerDay:] {
 			hosts.delete(key)
 			if err = inc(&day, "dropped", big.NewInt(1)); err != nil {
+				markDayDamaged()
 				return nil, err
 			}
 		}
@@ -844,8 +959,8 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	if err != nil {
 		return nil, err
 	}
-	path := s.absPath(id)
 	cachePop(path)
+	damagedPop(path)
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -859,6 +974,55 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	}
 	rememberStatus(path, signature, statusRaw)
 	return status, nil
+}
+
+// InspectStatus returns bounded status metadata and read-only store health using
+// file-signature caches so repeated UI polls avoid re-parsing unchanged files.
+func (s *NativeStore) InspectStatus(id string) StatusSnapshot {
+	mu.Lock()
+	defer mu.Unlock()
+	path := s.absPath(id)
+	signature := statusSignature(path)
+	if signature == nil {
+		cachePop(path)
+		damagedPop(path)
+		return StatusSnapshot{State: StoreStateOK}
+	}
+	today := now().Format("2006-01-02")
+	if e, ok := damagedIndex[path]; ok {
+		entry := e.Value.(*damagedEntry)
+		if entry.signature == *signature && (entry.dayKey == "" || entry.dayKey == today) {
+			damagedCache.MoveToBack(e)
+			return StatusSnapshot{Status: bytes.Clone(entry.status), State: StoreStateDamaged}
+		}
+		damagedPop(path)
+	}
+	if e, ok := statusIndex[path]; ok && e.Value.(*cacheEntry).signature == *signature {
+		statusCache.MoveToBack(e)
+		return StatusSnapshot{Status: bytes.Clone(e.Value.(*cacheEntry).status), State: StoreStateOK}
+	}
+	cachePop(path)
+	d, err := s.read(id)
+	if err != nil {
+		var te *TypeError
+		if errors.As(err, &te) {
+			rememberDamaged(path, signature, "", nil)
+			return StatusSnapshot{State: StoreStateDamaged}
+		}
+		return StatusSnapshot{State: StoreStateOK}
+	}
+	statusRaw := member(d.fields, "status")
+	if validateStatusFields(statusRaw) != nil {
+		cachePop(path)
+		rememberDamaged(path, signature, "", nil)
+		return StatusSnapshot{State: StoreStateDamaged}
+	}
+	if validateDayBucketHeader(d.days, today) != nil {
+		cachePop(path)
+		rememberDamaged(path, signature, today, statusRaw)
+		return StatusSnapshot{Status: bytes.Clone(statusRaw), State: StoreStateDamaged}
+	}
+	return StatusSnapshot{Status: bytes.Clone(statusRaw), State: StoreStateOK}
 }
 
 // StatusJSON returns independent status metadata without retaining the full history.
@@ -881,22 +1045,66 @@ func (s *NativeStore) StatusJSON(id string) json.RawMessage {
 
 // LoadDocument reads and prunes the returned copy without writing the file.
 func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
-	mu.Lock()
-	d, err := s.read(id)
-	mu.Unlock()
-	if err != nil {
-		return emptyDocument()
-	}
 	current := now()
 	if at != nil {
 		current = *at
+	}
+	today := current.Format("2006-01-02")
+	path := s.absPath(id)
+
+	mu.Lock()
+	preSig := statusSignature(path)
+	priorDamaged := false
+	if preSig != nil {
+		if e, ok := damagedIndex[path]; ok {
+			entry := e.Value.(*damagedEntry)
+			if entry.signature == *preSig && (entry.dayKey == "" || entry.dayKey == today) {
+				priorDamaged = true
+			}
+		}
+	}
+	d, err := s.read(id)
+	if err != nil {
+		var te *TypeError
+		if errors.As(err, &te) {
+			rememberDamaged(path, preSig, "", nil)
+			mu.Unlock()
+			out := emptyDocument()
+			out.storeState = StoreStateDamaged
+			return out
+		}
+		mu.Unlock()
+		return emptyDocument()
+	}
+	statusRaw := member(d.fields, "status")
+	statusInvalid := validateStatusFields(statusRaw) != nil
+	if statusInvalid {
+		cachePop(path)
+		rememberDamaged(path, preSig, "", nil)
+	}
+	mu.Unlock()
+
+	d.storeState = StoreStateOK
+	if priorDamaged {
+		d.storeState = StoreStateDamaged
+	}
+	if statusInvalid {
+		d.storeState = StoreStateDamaged
+		_ = d.fields.Set("status", json.RawMessage("null"))
 	}
 	prune(&d, current)
 	for date, raw := range d.days.All() {
 		day, ok := readableDay(raw)
 		if !ok {
+			if date == today {
+				d.storeState = StoreStateDamaged
+				mu.Lock()
+				cachePop(path)
+				rememberDamaged(path, preSig, today, statusRaw)
+				mu.Unlock()
+			}
 			d.days.Delete(date)
-			warnStore(s.absPath(id), date)
+			warnStore(path, date)
 			continue
 		}
 		if err := put(&d.days, date, day); err != nil {
@@ -917,7 +1125,9 @@ func (s *NativeStore) DeleteContext(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	cachePop(s.absPath(id))
+	path := s.absPath(id)
+	cachePop(path)
+	damagedPop(path)
 	return s.files.RemoveContext(ctx, id)
 }
 

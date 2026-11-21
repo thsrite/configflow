@@ -50,9 +50,11 @@ type collectionStatus struct {
 	MihomoVersion string  `json:"mihomo_version"`
 }
 type traffic struct {
-	Status   collectionStatus      `json:"status"`
-	Days     map[string]trafficDay `json:"days"`
-	dayOrder []string
+	Status       collectionStatus      `json:"status"`
+	Days         map[string]trafficDay `json:"days"`
+	dayOrder     []string
+	storeState   string
+	storeMessage string
 }
 type trafficDay struct {
 	IPOnly    int64                  `json:"ip_only_conns"`
@@ -155,13 +157,32 @@ type AgentStatus struct {
 	Version        string  `json:"version"`
 	Supported      bool    `json:"supported"`
 	ProbeSupported bool    `json:"probe_supported"`
+	StoreState     string  `json:"store_state"`
+	StoreMessage   string  `json:"store_message"`
 }
 
-func statusOf(a Agent, s collectionStatus) AgentStatus {
+func statusOf(a Agent, data traffic) AgentStatus {
+	s := data.Status
 	if s.Value == "" {
 		s.Value = "no_data"
 	}
-	return AgentStatus{a.ID, a.Name, s.Value, s.At, s.MihomoVersion, a.Enabled, a.Version, supported(a.Version, minAgentVersion), supported(a.Version, minProbeVersion)}
+	storeState := data.storeState
+	if storeState == "" {
+		storeState = "ok"
+	}
+	return AgentStatus{
+		ID:             a.ID,
+		Name:           a.Name,
+		Status:         s.Value,
+		LastReport:     s.At,
+		MihomoVersion:  s.MihomoVersion,
+		Enabled:        a.Enabled,
+		Version:        a.Version,
+		Supported:      supported(a.Version, minAgentVersion),
+		ProbeSupported: supported(a.Version, minProbeVersion),
+		StoreState:     storeState,
+		StoreMessage:   data.storeMessage,
+	}
 }
 
 // RouteStats groups observations by Mihomo routing decision.
@@ -297,7 +318,7 @@ func summarize(reports []struct {
 	var hostConns, ipOnly int64
 	for _, r := range reports {
 		a, data := r.agent, r.data
-		out.Agents = append(out.Agents, statusOf(a, data.Status))
+		out.Agents = append(out.Agents, statusOf(a, data))
 		if agentID != "" && a.ID != agentID {
 			continue
 		}
@@ -514,7 +535,7 @@ func AgentsPayload(ctx context.Context, id string) (*AgentsView, error) {
 	}
 	out := []AgentStatus{}
 	for _, r := range rs {
-		out = append(out, statusOf(r.agent, r.data.Status))
+		out = append(out, statusOf(r.agent, r.data))
 	}
 	return &AgentsView{out, minAgentVersion, minProbeVersion}, nil
 }

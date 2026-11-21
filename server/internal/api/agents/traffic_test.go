@@ -23,6 +23,7 @@ import (
 	"configflow/internal/agents/trafficstore"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/api/domaindiscovery"
+	"configflow/internal/discovery"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/rules"
@@ -509,5 +510,85 @@ func TestReviewN810CorruptDiscoveryFileHTTPRefusalAndReset(t *testing.T) {
 		}
 		// Negative control: existing reset leaves a missing file, which must accept reports.
 		s.Post("/api/agents/gw/traffic-report", httpxtest.JSON(discoveryReport()), agentAuth(trafficToken)).WantStatus(200)
+	}
+}
+
+func TestDomainDiscoveryDamagedStoreStatusClearAndRecovery(t *testing.T) {
+	e := newTrafficEnv(t, false)
+	e.setDiscovery(t, true)
+	s := e.s
+	domaindiscovery.Register(s.App.Router)
+	path := filepath.Join(s.DataDir, "traffic", "gw.json")
+
+	agentFrom := func(route string) map[string]any {
+		t.Helper()
+		body := parseBodyMap(t, s.Get(route).WantStatus(200))
+		list, ok := body["agents"].([]any)
+		if !ok || len(list) != 1 {
+			t.Fatalf("%s agents=%v", route, body["agents"])
+		}
+		return list[0].(map[string]any)
+	}
+
+	// Healthy initial state (file missing).
+	for _, route := range []string{"/api/domain-discovery/agents", "/api/domain-discovery/domains?agent_id=gw"} {
+		agent := agentFrom(route)
+		if agent["store_state"] != "ok" || agent["store_message"] != "" {
+			t.Fatalf("initial %s: store_state=%v store_message=%v", route, agent["store_state"], agent["store_message"])
+		}
+	}
+
+	// Normal report succeeds and stays ok.
+	s.Post("/api/agents/gw/traffic-report", httpxtest.JSON(discoveryReport()), agentAuth(trafficToken)).WantStatus(200)
+	if agent := agentFrom("/api/domain-discovery/agents"); agent["store_state"] != "ok" || agent["store_message"] != "" || agent["status"] != "running" {
+		t.Fatalf("healthy after report: %v", agent)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{"truncated", "{"},
+		{"empty", ""},
+		{"bad_days", `{"status":{"value":"running"},"days":[]}`},
+		{"bad_status", `{"status":[],"days":{}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			// Fail closed: report is refused and original bytes remain untouched.
+			s.Post("/api/agents/gw/traffic-report", httpxtest.JSON(discoveryReport()), agentAuth(trafficToken)).WantStatus(500)
+			if raw, err := os.ReadFile(path); err != nil || string(raw) != tc.content {
+				t.Fatalf("refusal changed file: %q %v", raw, err)
+			}
+
+			// Both agent list and domain listing report damaged with Chinese guidance.
+			for _, route := range []string{"/api/domain-discovery/agents", "/api/domain-discovery/domains?agent_id=gw"} {
+				agent := agentFrom(route)
+				if agent["store_state"] != "damaged" || agent["store_message"] != discovery.MsgStoreDamaged {
+					t.Fatalf("damaged %s: store_state=%v store_message=%v", route, agent["store_state"], agent["store_message"])
+				}
+			}
+			if raw, err := os.ReadFile(path); err != nil || string(raw) != tc.content {
+				t.Fatalf("read-only inspection changed file: %q %v", raw, err)
+			}
+
+			// Existing clear endpoint removes the damaged file and restores ok state.
+			s.Post("/api/agents/gw/domain-discovery/clear").WantStatus(200)
+			for _, route := range []string{"/api/domain-discovery/agents", "/api/domain-discovery/domains?agent_id=gw"} {
+				agent := agentFrom(route)
+				if agent["store_state"] != "ok" || agent["store_message"] != "" {
+					t.Fatalf("post-clear %s: store_state=%v store_message=%v", route, agent["store_state"], agent["store_message"])
+				}
+			}
+
+			// Subsequent report succeeds and is observable in both endpoints.
+			s.Post("/api/agents/gw/traffic-report", httpxtest.JSON(discoveryReport()), agentAuth(trafficToken)).WantStatus(200)
+			agent := agentFrom("/api/domain-discovery/agents")
+			if agent["store_state"] != "ok" || agent["store_message"] != "" || agent["status"] != "running" || agent["last_report"] == nil {
+				t.Fatalf("post-recovery agent: %v", agent)
+			}
+		})
 	}
 }

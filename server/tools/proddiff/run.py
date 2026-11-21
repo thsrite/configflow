@@ -419,6 +419,31 @@ AGENT_COMPARISON_ROUTES = {'/api/agents', '/api/agents/<agent_id>', '/api/agents
 A18_HA_REFUSAL = 'deploy: DNS HA pair publication is not available (A18)'
 
 
+def strip_discovery_store_state(route, left_body, right_body):
+    """M18: Go-only read-only traffic-store health fields on discovery Agent entries.
+
+    Only removes store_state/store_message from Go's copy after proving Python
+    omits them and Go's values obey the exact ok/damaged contract.
+    """
+    if (route not in ('/api/domain-discovery/agents', '/api/domain-discovery/domains')
+            or not isinstance(left_body, dict) or not isinstance(right_body, dict)):
+        return
+    left_agents, right_agents = left_body.get('agents'), right_body.get('agents')
+    if not isinstance(left_agents, list) or not isinstance(right_agents, list) or len(left_agents) != len(right_agents):
+        return
+    for left_agent, right_agent in zip(left_agents, right_agents):
+        if not isinstance(left_agent, dict) or not isinstance(right_agent, dict):
+            continue
+        if 'store_state' in left_agent or 'store_message' in left_agent:
+            continue
+        state, message = right_agent.get('store_state'), right_agent.get('store_message')
+        valid = ((state == 'ok' and message == '')
+                 or (state == 'damaged' and isinstance(message, str) and bool(message)))
+        if valid:
+            right_agent.pop('store_state', None)
+            right_agent.pop('store_message', None)
+
+
 def same_agent_transport_target(python_message, go_message):
     """Recognize native offline-Agent exception text, retaining the target proof."""
     if not isinstance(python_message, str) or not isinstance(go_message, str):
@@ -538,6 +563,8 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
         a['body']['message'] = b['body']['message']
     if agent_identities is not None and route in AGENT_COMPARISON_ROUTES:
         agent_identities.normalize(a['body'], b['body'], route)
+    if left[0] == right[0] == 200:
+        strip_discovery_store_state(route, a['body'], b['body'])
     apply_rules(rules, route, a, b)
     if len(left) > 3 and len(right) > 3:
         for name in sorted(a['header'].keys() | b['header'].keys()):

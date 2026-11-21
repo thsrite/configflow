@@ -1495,6 +1495,31 @@ class Comparators(unittest.TestCase):
         approved['remaining_differences'].append({'path': 'db.extra', 'kind': 'value', 'python': 0, 'go': 1})
         self.assertEqual(annotate([approved])[0]['status'], 'open', 'approval cannot hide a later regression')
 
+    def test_m18_discovery_store_state_approval_is_exact(self):
+        from config_finding_resolutions import annotate
+        for route in ('GET /api/domain-discovery/agents', 'GET /api/domain-discovery/domains'):
+            item = {
+                'case': 'R045-S01', 'variant': '', 'route': route,
+                'group': 'discovery-reported-selectors', 'status': 'open', 'python_status': 200, 'go_status': 200,
+                'differences': [], 'remaining_differences': [
+                    {'path': 'body.agents[0].store_state', 'kind': 'extra-in-go', 'python': None, 'go': 'ok'},
+                    {'path': 'body.agents[0].store_message', 'kind': 'extra-in-go', 'python': None, 'go': ''},
+                ],
+            }
+            self.assertEqual(annotate([copy.deepcopy(item)])[0]['status'], 'accepted', route)
+            wrong_val = copy.deepcopy(item)
+            wrong_val['remaining_differences'][0]['go'] = 'damaged'
+            self.assertEqual(annotate([wrong_val])[0]['status'], 'open')
+            wrong_msg = copy.deepcopy(item)
+            wrong_msg['remaining_differences'][1]['go'] = 'unexpected'
+            self.assertEqual(annotate([wrong_msg])[0]['status'], 'open')
+            extra = copy.deepcopy(item)
+            extra['remaining_differences'].append({'path': 'body.agents[0].status', 'kind': 'value', 'python': 'running', 'go': 'no_data'})
+            self.assertEqual(annotate([extra])[0]['status'], 'open')
+            wrong_route = copy.deepcopy(item)
+            wrong_route['route'] = 'GET /api/agents'
+            self.assertEqual(annotate([wrong_route])[0]['status'], 'open')
+
     def test_surrogate_approval_keeps_exact_400_message_route_and_readonly_boundary(self):
         from config_finding_resolutions import annotate
         item = {'case': 'X04', 'variant': 'token/literal/"\\ud800"', 'route': 'POST /api/config-token',

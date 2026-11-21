@@ -1,5 +1,8 @@
 package discovery
 
+// MsgStoreDamaged explains that an Agent's traffic file is damaged and writes are paused until cleared.
+const MsgStoreDamaged = "域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。"
+
 const (
 	msgMissingProfile = "域名发现缺少配置"
 	msgStoredString   = "%s %s 的 %s 必须是字符串，当前值：%s"

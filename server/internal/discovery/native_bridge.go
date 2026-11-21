@@ -30,13 +30,24 @@ func legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error)
 		return traffic{}, err
 	}
 	var out traffic
+	var state trafficstore.StoreState
 	if full {
-		err = project(s.LoadDocument(a.ID, nil), &out)
+		doc := s.LoadDocument(a.ID, nil)
+		err = project(doc, &out)
+		state = doc.StoreState()
 	} else {
-		raw := s.StatusJSON(a.ID)
-		if len(raw) > 0 {
-			err = jsondecode.Unmarshal(raw, &out.Status)
+		snap := s.InspectStatus(a.ID)
+		state = snap.State
+		if len(snap.Status) > 0 {
+			err = jsondecode.Unmarshal(snap.Status, &out.Status)
 		}
+	}
+	if state == trafficstore.StoreStateDamaged {
+		out.storeState = string(trafficstore.StoreStateDamaged)
+		out.storeMessage = MsgStoreDamaged
+	} else {
+		out.storeState = string(trafficstore.StoreStateOK)
+		out.storeMessage = ""
 	}
 	return out, err
 }
