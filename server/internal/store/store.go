@@ -622,6 +622,7 @@ func (s *Store) Check() error {
 }
 
 func (s *Store) check() error {
+	s.closeIdle(false)
 	connection, err := s.connect(false)
 	if err != nil {
 		return err

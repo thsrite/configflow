@@ -80,10 +80,17 @@ func (s *Store) release(c *Conn, ok bool) {
 // Close closes the idle read connections and stops keeping new ones. The
 // Store stays usable: later reads open a connection each and close it.
 func (s *Store) Close() {
+	s.closeIdle(true)
+}
+
+// closeIdle closes the idle read connections; stop also ends pooling.
+// Check calls it first: changing the journal mode of a WAL database needs
+// the only open connection, which an idle reader would otherwise hold.
+func (s *Store) closeIdle(stop bool) {
 	s.readers.mu.Lock()
 	idle := s.readers.idle
 	s.readers.idle = nil
-	s.readers.closed = true
+	s.readers.closed = s.readers.closed || stop
 	s.readers.mu.Unlock()
 	for _, c := range idle {
 		c.close()
