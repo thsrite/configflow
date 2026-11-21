@@ -33,12 +33,11 @@ func TestQueryInvalidUTF8BecomesReplacementCharacter(t *testing.T) {
 	}
 }
 
-// TestHostAndURLRootFollowWerkzeug: request.host is Werkzeug 3.1's get_host
-// (default port removed, invalid characters → "") and request.url_root goes
-// through uri_to_iri (host lower-cased, port as a number, 0 dropped).
-// Expectations from Werkzeug 3.1.8 Request(environ) on the test server; the
-// install-script route falls back to url_root (found by the A08 review).
-func TestHostAndURLRootFollowWerkzeug(t *testing.T) {
+// TestHostAndURLRoot: Host drops the scheme's default port and refuses
+// invalid characters (""); URLRoot and HostURL use that host as sent (no
+// case or port normalisation, O18 C15). The install-script route falls back
+// to url_root (found by the A08 review).
+func TestHostAndURLRoot(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.GET("/api/host", "test.host", func(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Text(200, c.Host()+" "+c.URLRoot()+" "+c.HostURL()), nil
@@ -47,19 +46,19 @@ func TestHostAndURLRootFollowWerkzeug(t *testing.T) {
 	cases := [][3]string{
 		{"panel.test:5001", "panel.test:5001", "http://panel.test:5001/"},
 		{"panel.test:80", "panel.test", "http://panel.test/"},
-		{"PANEL.Test", "PANEL.Test", "http://panel.test/"},
+		{"PANEL.Test", "PANEL.Test", "http://PANEL.Test/"},
 		{"x_y.test:80", "", "http:///"},
 		{"[fd00::5]:5001", "[fd00::5]:5001", "http://[fd00::5]:5001/"},
-		{"[FD00::5]:80", "[FD00::5]", "http://[fd00::5]/"},
+		{"[FD00::5]:80", "[FD00::5]", "http://[FD00::5]/"},
 		{"h:1", "h:1", "http://h:1/"},
 		{"h:8080", "h:8080", "http://h:8080/"},
 		{"1.2.3.4:443", "1.2.3.4:443", "http://1.2.3.4:443/"},
 		{"h:80:80", "h:80", "http://h:80/"},
 		{"-.", "-.", "http://-./"},
-		{"h:0080", "h:0080", "http://h:80/"},
-		{"h:0", "h:0", "http://h/"},
+		{"h:0080", "h:0080", "http://h:0080/"},
+		{"h:0", "h:0", "http://h:0/"},
 		{"h:65535", "h:65535", "http://h:65535/"},
-		{"[::FFFF:1.2.3.4]:443", "[::FFFF:1.2.3.4]:443", "http://[::ffff:1.2.3.4]:443/"},
+		{"[::FFFF:1.2.3.4]:443", "[::FFFF:1.2.3.4]:443", "http://[::FFFF:1.2.3.4]:443/"},
 		{"h.:5", "h.:5", "http://h.:5/"},
 		{"K.test", "", "http:///"},
 		{"\xe4.test", "", "http:///"},

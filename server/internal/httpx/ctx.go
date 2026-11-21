@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -250,35 +249,10 @@ func (c *Ctx) Host() string {
 	return host
 }
 
-// currentURL is get_current_url(scheme, host) + root: uri_to_iri lower-cases
-// the host name and writes the port as a number (dropped when 0). Not
-// reproduced, as Python raises there (a 500): a port above 65535, an invalid
-// bracketed IPv6 address, and IDNA decoding of "xn--" labels (kept as is).
+// currentURL is the request's scheme, Host (see Host) and script root as a
+// URL ending in "/". The host is used as the client sent it.
 func currentURL(scheme, host, root string) string {
-	netloc := ""
-	if host != "" {
-		name, port := host, ""
-		if strings.HasPrefix(host, "[") {
-			end := strings.IndexByte(host, ']')
-			name, port = host[1:end], strings.TrimPrefix(host[end+1:], ":")
-		} else {
-			name, port, _ = strings.Cut(host, ":")
-		}
-		netloc = strings.ToLower(name) // ASCII only (validated above)
-		if strings.Contains(netloc, ":") {
-			netloc = "[" + netloc + "]"
-		}
-		if port != "" {
-			if n, err := strconv.Atoi(port); err == nil && n <= 65535 {
-				if n != 0 {
-					netloc += ":" + strconv.Itoa(n)
-				}
-			} else {
-				netloc += ":" + port
-			}
-		}
-	}
-	return scheme + "://" + netloc + root + "/"
+	return scheme + "://" + host + root + "/"
 }
 
 // HostURL is request.host_url ("http://host/").
