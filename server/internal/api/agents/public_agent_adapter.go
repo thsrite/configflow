@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"configflow/internal/agents"
@@ -39,25 +40,7 @@ func publicAgentWithCredentialsModel(record *model.Agent, secrets redact.Secrets
 		}
 	}
 	if raw, present := public["deployments"]; present && len(raw) > 0 && raw[0] == '{' {
-		var deployments map[string]json.RawMessage
-		if err = jsondecode.Unmarshal(raw, &deployments); err != nil {
-			return nil, err
-		}
-		for id, raw := range deployments {
-			if len(raw) == 0 || raw[0] != '{' {
-				deployments[id] = json.RawMessage("null")
-				continue
-			}
-			var task model.Deployment
-			if err = jsondecode.Unmarshal(raw, &task); err != nil {
-				return nil, err
-			}
-			deployments[id], err = publicDeploymentModel(&task)
-			if err != nil {
-				return nil, err
-			}
-		}
-		public["deployments"], err = json.Marshal(deployments)
+		public["deployments"], err = publicDeploymentsModel(record, raw)
 		if err != nil {
 			return nil, err
 		}
@@ -113,4 +96,68 @@ func publicDeploymentModel(record *model.Deployment) (json.RawMessage, error) {
 		return nil, err
 	}
 	return model.Marshal(localized)
+}
+
+// publicDeploymentsModel projects the deployment history (raw is its encoded
+// object) from the typed entries, instead of decoding every encoded entry
+// again. Entries that are not valid tasks keep the encoded-entry rules: a
+// non-object becomes null, an object is decoded as before. A history with a
+// repeated id uses the encoded object, whose decoding keeps the last value.
+func publicDeploymentsModel(record *model.Agent, raw json.RawMessage) (json.RawMessage, error) {
+	history := record.Deployments
+	keys := history.Keys()
+	seen := make(map[string]bool, len(keys))
+	for _, id := range keys {
+		if seen[id] {
+			return publicEncodedDeploymentsModel(raw)
+		}
+		seen[id] = true
+	}
+	deployments := make(map[string]json.RawMessage, len(keys))
+	for id, task := range history.All() {
+		if !history.EntryValid(id) {
+			entry, _, err := history.MemberJSON(id)
+			if err != nil {
+				return nil, err
+			}
+			deployments[id], err = publicEncodedDeploymentModel(entry)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		var err error
+		deployments[id], err = publicDeploymentModel(&task)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(deployments)
+}
+
+func publicEncodedDeploymentsModel(raw json.RawMessage) (json.RawMessage, error) {
+	var deployments map[string]json.RawMessage
+	if err := jsondecode.Unmarshal(raw, &deployments); err != nil {
+		return nil, err
+	}
+	for id, entry := range deployments {
+		var err error
+		deployments[id], err = publicEncodedDeploymentModel(entry)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(deployments)
+}
+
+func publicEncodedDeploymentModel(raw json.RawMessage) (json.RawMessage, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '{' {
+		return json.RawMessage("null"), nil
+	}
+	var task model.Deployment
+	if err := jsondecode.Unmarshal(raw, &task); err != nil {
+		return nil, err
+	}
+	return publicDeploymentModel(&task)
 }

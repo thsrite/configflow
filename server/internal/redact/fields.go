@@ -74,45 +74,70 @@ func (o *orderedFields) MarshalJSON() ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// decodePublic decodes a whole valid JSON value in one pass: objects become
+// orderedFields (a repeated key keeps its first position and last value),
+// arrays []any, numbers json.Number. Values nested deeper than the visitor's
+// depth limit stay json.RawMessage; the visitor redacts them without decoding.
+// Invalid JSON returns the standard decoding error.
 func decodePublic(data []byte) (any, error) {
 	data = bytes.TrimSpace(data)
 	if !json.Valid(data) {
 		var raw any
 		return nil, json.Unmarshal(data, &raw)
 	}
-	if len(data) > 0 && data[0] == '{' {
-		d := json.NewDecoder(bytes.NewReader(data))
-		_, _ = d.Token()
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	return decodeTree(d, 0)
+}
+
+// eagerDepth bounds the eager decode; deeper values are decoded on visit.
+const eagerDepth = maxDepth + 2
+
+func decodeTree(d *json.Decoder, depth int) (any, error) {
+	if depth > eagerDepth {
+		var raw json.RawMessage
+		if err := d.Decode(&raw); err != nil {
+			return nil, err
+		}
+		return raw, nil
+	}
+	token, err := d.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch token {
+	case json.Delim('{'):
 		fields := &orderedFields{}
 		for d.More() {
 			key, err := d.Token()
 			if err != nil {
 				return nil, err
 			}
-			var raw json.RawMessage
-			if err = d.Decode(&raw); err != nil {
+			value, err := decodeTree(d, depth+1)
+			if err != nil {
 				return nil, err
 			}
-			fields.Set(key.(string), raw)
+			fields.Set(key.(string), value)
 		}
-		return fields, nil
-	}
-	if len(data) > 0 && data[0] == '[' {
-		var raw []json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
+		if _, err := d.Token(); err != nil {
 			return nil, err
 		}
-		out := make([]any, len(raw))
-		for i, v := range raw {
-			out[i] = v
+		return fields, nil
+	case json.Delim('['):
+		out := []any{}
+		for d.More() {
+			value, err := decodeTree(d, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, value)
+		}
+		if _, err := d.Token(); err != nil {
+			return nil, err
 		}
 		return out, nil
 	}
-	var scalar any
-	d := json.NewDecoder(bytes.NewReader(data))
-	d.UseNumber()
-	err := d.Decode(&scalar)
-	return scalar, err
+	return token, nil
 }
 
 func encodedPublic(value any) json.RawMessage {

@@ -80,7 +80,9 @@ func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent
 		public["content_sync"], _ = json.Marshal(contentsync.Result{Status: "unknown", Reason: "profile_unavailable"})
 		return public, nil
 	}
-	target, err := deploy.NewTypedTarget(record)
+	// record is a borrowed registry record (or the caller's own); the checker
+	// snapshots the target before any background comparison.
+	target, err := deploy.BorrowedTarget(record)
 	if err != nil {
 		return nil, err
 	}

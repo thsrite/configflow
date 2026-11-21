@@ -1061,11 +1061,26 @@ func NewTypedTarget(record *model.Agent) (Target, error) {
 	if err = json.Unmarshal(data, &owned); err != nil {
 		return Target{}, err
 	}
+	return targetFor(&owned)
+}
+
+// BorrowedTarget is NewTypedTarget without the private copy: Record is record
+// itself, which must not change while the target is in use (a borrowed
+// registry record qualifies). Work that outlives the call snapshots the
+// target first (SnapshotTarget), as the content checker does.
+func BorrowedTarget(record *model.Agent) (Target, error) {
+	if record == nil {
+		return Target{}, nil
+	}
+	return targetFor(record)
+}
+
+func targetFor(owned *model.Agent) (Target, error) {
 	port, _, err := owned.MemberJSON("port")
 	if err != nil {
 		return Target{}, err
 	}
-	target := Target{Port: port, Record: &owned}
+	target := Target{Port: port, Record: owned}
 	// Captured identities/capabilities retain the original string/bool token types.
 	for _, field := range []struct {
 		key         string

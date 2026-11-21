@@ -113,19 +113,23 @@ func ContentView(t Target) (ContentState, error) {
 		return result, fmt.Errorf("missing content target")
 	}
 	tasks := []model.Deployment{}
-	rawHistory, present, err := t.Record.MemberJSON("deployments")
-	if err != nil {
-		return result, err
-	}
-	if present && string(rawHistory) != "null" {
-		var history model.Map[model.Deployment]
-		if json.Unmarshal(rawHistory, &history) != nil {
+	history := t.Record.Deployments
+	if history.Len() == 0 {
+		// Only an empty, null, absent or wrongly typed history: read its
+		// effective JSON (cheap here) to tell them apart.
+		rawHistory, present, err := t.Record.MemberJSON("deployments")
+		if err != nil {
+			return result, err
+		}
+		if present && string(rawHistory) != "null" && json.Unmarshal(rawHistory, &history) != nil {
 			return result, fmt.Errorf("invalid deployment history")
 		}
-		for id, task := range history.All() {
-			if history.EntryValid(id) {
-				tasks = append(tasks, task)
-			}
+	}
+	// A non-empty typed history is an object; its entries are read in place
+	// instead of re-decoding the encoded history (same entries, same validity).
+	for id, task := range history.All() {
+		if history.EntryValid(id) {
+			tasks = append(tasks, task)
 		}
 	}
 	if latest := t.Record.LatestDeployment; latest != nil {

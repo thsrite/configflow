@@ -140,13 +140,14 @@ func ExplainUpgradeFailure(text string) string {
 
 var upgradeFailureStatuses = map[string]bool{"failed": true, "rolled_back": true, "rollback_failed": true}
 
-// PublicDeploymentMessagesModel returns an owned localized task; storage and
-// unknown members are preserved, and event validation has one native owner.
+// PublicDeploymentMessagesModel returns a localized task for display; storage
+// and unknown members are preserved, and event validation has one native owner.
+// The result is a shallow copy of record: localized members are replaced
+// (copy-on-write), every other nested value is shared with record, so neither
+// may be changed in depth afterwards. record itself is not modified.
 func PublicDeploymentMessagesModel(record *model.Deployment) (*model.Deployment, error) {
-	result, err := copyDeployment(record)
-	if err != nil {
-		return nil, err
-	}
+	copied := *record
+	result := &copied
 	for _, key := range []string{"message", "error", "rollback_error", "rollback_message"} {
 		raw, present, err := result.MemberJSON(key)
 		if err != nil {
