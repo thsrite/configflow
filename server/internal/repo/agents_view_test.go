@@ -229,4 +229,6 @@ func TestAgentViewOriginalTypesCancellationAndReadGuard(t *testing.T) {
 	if err := r.ViewAgents(t.Context(), func(records []model.Agent) error { records[0].Name = "forbidden"; return nil }); err != nil || !guarded {
 		t.Fatal("read guard missed mutation", err)
 	}
+	// The mutation was deliberate: forget the remembered generations.
+	r.SetViewGuard(nil)
 }

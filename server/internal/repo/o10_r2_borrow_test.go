@@ -105,7 +105,13 @@ func TestO10R2BorrowedReadsRaceWithCommits(t *testing.T) {
 	for _, tt := range r2BorrowReads {
 		t.Run(tt.name, func(t *testing.T) {
 			r := r2BorrowRepo(t)
-			EnableViewGuardForTest(t, r)
+			var tripped atomic.Int64
+			r.SetViewGuard(func() { tripped.Add(1) })
+			defer func() {
+				if tripped.Load() > 0 || r.CheckBorrowed() != nil {
+					t.Error("a borrowed snapshot was modified")
+				}
+			}()
 			const readers, rounds = 4, 15
 			var stop atomic.Bool
 			var reads atomic.Int64
@@ -248,7 +254,7 @@ func TestO10R2ViewGuardCatchesModifiedBorrowedValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := r2BorrowRepo(t)
 			var tripped atomic.Int64
-			r.viewGuard = func() { tripped.Add(1) }
+			r.SetViewGuard(func() { tripped.Add(1) })
 			before := must(r.ExportAllJSON(bg, false))(t)
 			tt.modify(t, r)
 			_ = must(r.Shared(bg))(t) // the next borrowing read re-checks
@@ -258,6 +264,8 @@ func TestO10R2ViewGuardCatchesModifiedBorrowedValues(t *testing.T) {
 			if !tt.trips {
 				wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), before)
 			}
+			// Deliberate mutations: forget the remembered generations.
+			r.SetViewGuard(nil)
 		})
 	}
 }

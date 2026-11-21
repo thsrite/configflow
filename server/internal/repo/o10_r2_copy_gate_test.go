@@ -26,7 +26,7 @@ import (
 var r2OwnedCopies = map[string]string{
 	"read.go:System":                               "owned System (Agents included); proddiff tools and tests only",
 	"resolve.go:resolveConfig":                     "owned mode for writers' working copies and PublishConfig",
-	"view_guard.go:lend":                           "deep copy only for writers' working copies and Clone*",
+	"config_borrow.go:lend":                        "deep copy only for writers' working copies and Clone*",
 	"sections.go:applySharedIn":                    "write transaction working copy",
 	"sections.go:updateProfileIn":                  "write transaction working copy",
 	"sections.go:UpdateSharedAndProfiles":          "write transaction working copies",
