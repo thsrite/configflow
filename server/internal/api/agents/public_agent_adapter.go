@@ -106,8 +106,18 @@ func publicAgentView(record *model.Agent, secrets redact.Secrets) (map[string]js
 // masks: those of every stored Agent record of the current generation
 // (remembered per store head by the repository) and those in the members a
 // read lays over the stored record (heartbeat fields, liveness).
-func liveAgentSecrets(ctx context.Context, record *model.Agent) (redact.Secrets, error) {
-	stored, err := redact.AgentRecordCredentials(ctx, nil)
+// The stored credentials are read once per request (cache may be nil).
+func liveAgentSecrets(ctx context.Context, cache *contentSources, record *model.Agent) (redact.Secrets, error) {
+	var stored redact.Secrets
+	var err error
+	if cache != nil && cache.storedRead {
+		stored, err = cache.stored, cache.storedErr
+	} else {
+		stored, err = redact.AgentRecordCredentials(ctx, nil)
+		if cache != nil {
+			cache.stored, cache.storedErr, cache.storedRead = stored, err, true
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
