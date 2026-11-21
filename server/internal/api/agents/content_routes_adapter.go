@@ -25,7 +25,14 @@ type contentSnapshot struct {
 	err    error
 }
 
-func loadContentSource(ctx context.Context, m *core.Manager, record *model.Agent, cache map[string]contentSnapshot) (*deploy.Source, error) {
+// contentSources remembers the content sources of one request and, through
+// the derived view cache, of the registry generation that request read.
+type contentSources struct {
+	local map[string]contentSnapshot
+	gen   core.Generation
+}
+
+func loadContentSource(ctx context.Context, m *core.Manager, record *model.Agent, cache *contentSources) (*deploy.Source, error) {
 	profile, err := m.ResolveAgentProfile(ctx, record)
 	if err != nil {
 		return nil, err
@@ -37,23 +44,29 @@ func loadContentSource(ctx context.Context, m *core.Manager, record *model.Agent
 			return nil, err
 		}
 	}
-	if saved, ok := cache[profile]; ok {
+	if cache == nil {
+		saved := readContentSource(ctx, m, profile)
 		return saved.source, saved.err
 	}
+	if saved, ok := cache.local[profile]; ok {
+		return saved.source, saved.err
+	}
+	saved := views.source(m.Repository(), cache.gen, profile, func() contentSnapshot { return readContentSource(ctx, m, profile) })
+	cache.local[profile] = saved
+	return saved.source, saved.err
+}
+
+func readContentSource(ctx context.Context, m *core.Manager, profile string) contentSnapshot {
 	config, err := m.Repository().Config(ctx, profile, nil)
-	var source *deploy.Source
-	if err == nil {
-		raw, marshalErr := model.Marshal(config)
-		if marshalErr != nil {
-			err = marshalErr
-		} else {
-			source, err = deploy.SourceFromJSON(raw, nil)
-		}
+	if err != nil {
+		return contentSnapshot{nil, err}
 	}
-	if cache != nil {
-		cache[profile] = contentSnapshot{source, err}
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return contentSnapshot{nil, err}
 	}
-	return source, err
+	source, err := deploy.SourceFromJSON(raw, nil)
+	return contentSnapshot{source, err}
 }
 func contentOrigin(record *model.Agent) string {
 	if record.AppliedContent == nil {
@@ -61,8 +74,17 @@ func contentOrigin(record *model.Agent) string {
 	}
 	return record.AppliedContent.BaseURL
 }
-func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent, cache map[string]contentSnapshot, history bool) (map[string]json.RawMessage, error) {
-	public, err := publicAgentModel(record)
+
+// publicWithContent is the public view of a live record read from gen at
+// position index, with its content sync status.
+func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent, index int, cache *contentSources, history bool) (map[string]json.RawMessage, error) {
+	var gen core.Generation // nil cache: nothing is cached
+	if cache != nil {
+		gen = cache.gen
+	}
+	public, err := views.public(m.Repository(), gen, viewKey{index, record.ID, viewFull}, record, func() (map[string]json.RawMessage, error) {
+		return publicAgentModel(record)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -96,22 +118,14 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	summary := c.ArgDefault("summary", "") == "1"
-	var secrets []redact.Secrets
+	// Summary credentials come from the stored records, histories included.
+	// They are only read here, during this request.
+	var stored []*model.Agent
 	var inspect func(*model.Agent)
-	var inspectErr error
 	if summary {
-		inspect = func(record *model.Agent) {
-			raw, err := model.Marshal(record)
-			if err != nil {
-				inspectErr = err
-			}
-			secrets = append(secrets, redact.CollectCredentials(json.RawMessage(raw), nil))
-		}
+		inspect = func(record *model.Agent) { stored = append(stored, record) }
 	}
-	records, err := m.ReadAgents(ctx, !summary, inspect)
-	if inspectErr != nil {
-		return nil, inspectErr
-	}
+	records, gen, err := m.ReadAgentsAt(ctx, !summary, inspect)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +137,24 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 		}
 	}
+	repository := m.Repository()
 	if summary {
-		for i, record := range records {
-			public, err := publicAgentWithCredentialsModel(&record, secrets[i])
+		for i := range records {
+			record := &records[i]
+			key := viewKey{i, record.ID, viewSummary}
+			public, err := views.public(repository, gen, key, record, func() (map[string]json.RawMessage, error) {
+				secrets, err := views.seed(repository, gen, key, func() (redact.Secrets, error) {
+					raw, err := model.Marshal(stored[i])
+					if err != nil {
+						return nil, err
+					}
+					return redact.CollectCredentials(json.RawMessage(raw), nil), nil
+				})
+				if err != nil {
+					return nil, err
+				}
+				return publicAgentWithCredentialsModel(record, secrets)
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -134,9 +163,9 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.JSON(result), nil
 	}
 	history := c.ArgDefault("history", "") != "0"
-	snapshots := map[string]contentSnapshot{}
-	for _, record := range records {
-		public, err := publicWithContent(ctx, m, &record, snapshots, history)
+	sources := &contentSources{local: map[string]contentSnapshot{}, gen: gen}
+	for i := range records {
+		public, err := publicWithContent(ctx, m, &records[i], i, sources, history)
 		if err != nil {
 			return nil, err
 		}
@@ -160,14 +189,14 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(result), nil
 }
 func getContentAgent(c *httpx.Ctx, m *core.Manager) (*httpx.Response, error) {
-	record, err := m.ReadAgent(c.Context(), c.Param("agent_id"), true)
+	record, index, gen, err := m.ReadAgentAt(c.Context(), c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
 	if record == nil {
 		return httpx.Message(404, false, "Agent not found"), nil
 	}
-	public, err := publicWithContent(c.Context(), m, record, map[string]contentSnapshot{}, true)
+	public, err := publicWithContent(c.Context(), m, record, index, &contentSources{local: map[string]contentSnapshot{}, gen: gen}, true)
 	if err != nil {
 		return nil, err
 	}

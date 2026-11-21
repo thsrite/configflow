@@ -307,7 +307,7 @@ func TestContentHTTPUnavailableProfileLegacyAndPreparation(t *testing.T) {
 	if err := stale.SetJSON("profile_id", json.RawMessage(`"missing-profile"`)); err != nil {
 		t.Fatal(err)
 	}
-	public, err := publicWithContent(f.s.Context(), f.manager, stale, nil, true)
+	public, err := publicWithContent(f.s.Context(), f.manager, stale, -1, nil, true)
 	var sync contentsync.Result
 	if decodeErr := json.Unmarshal(public["content_sync"], &sync); decodeErr != nil {
 		t.Fatal(decodeErr)

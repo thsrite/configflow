@@ -60,11 +60,13 @@ func (r *Repository) cachedAgentRecords(head store.Head) ([]model.Agent, bool) {
 	return nil, false
 }
 
-func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, error) {
+func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, store.Head, error) {
 	var records []model.Agent
+	var head store.Head
 	hit := false
 	err := r.store.Reading(func(connection *store.Conn) error {
-		head, err := connection.Head()
+		var err error
+		head, err = connection.Head()
 		if err != nil {
 			return err
 		}
@@ -72,19 +74,20 @@ func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, r.agentReadFailure(ctx, err)
+		return nil, store.Head{}, r.agentReadFailure(ctx, err)
 	}
 	if hit {
-		return records, nil
+		return records, head, nil
 	}
 	// Coalesce cold registry loads. No reader callback runs under this mutex.
 	r.agentsLoadMu.Lock()
 	defer r.agentsLoadMu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, store.Head{}, err
 	}
 	err = r.store.Reading(func(connection *store.Conn) error {
-		head, err := connection.Head()
+		var err error
+		head, err = connection.Head()
 		if err != nil {
 			return err
 		}
@@ -112,9 +115,9 @@ func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, r.agentReadFailure(ctx, err)
+		return nil, store.Head{}, r.agentReadFailure(ctx, err)
 	}
-	return records, nil
+	return records, head, nil
 }
 
 // agentReadFailure retains the repository's established error classification

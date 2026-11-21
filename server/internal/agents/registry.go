@@ -13,6 +13,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 )
 
 // Borrowed records. ReadAgents, ReadAgent, ReadAgentByToken, ListAgents,
@@ -75,6 +76,56 @@ func (m *Manager) ReadAgent(ctx context.Context, id string, history bool) (*mode
 		return nil, err
 	}
 	return &m.runtime.overlayModels([]model.Agent{record})[0], nil
+}
+
+// Generation identifies the registry generation a borrowed read came from.
+// Shared is false inside a write transaction, whose working records may still
+// change: data derived from such a read must not be kept. Head is the store
+// head of a shared generation (the zero Head otherwise).
+type Generation struct {
+	Head   store.Head
+	Shared bool
+}
+
+// ReadAgentsAt is ReadAgents that also reports the generation it read.
+func (m *Manager) ReadAgentsAt(ctx context.Context, history bool, inspect func(*model.Agent)) ([]model.Agent, Generation, error) {
+	records, head, shared, err := m.repository.BorrowAgentsAt(ctx)
+	if err != nil {
+		return nil, Generation{}, err
+	}
+	result := make([]model.Agent, 0, len(records))
+	for i := range records {
+		original := &records[i]
+		if inspect != nil {
+			inspect(original)
+		}
+		record, err := readerAgent(original, history, shared)
+		if err != nil {
+			return nil, Generation{}, err
+		}
+		result = append(result, record)
+	}
+	return m.runtime.overlayModels(result), Generation{head, shared}, nil
+}
+
+// ReadAgentAt is ReadAgent that also reports the generation it read and the
+// record's position in that generation's registry (-1 when not found).
+func (m *Manager) ReadAgentAt(ctx context.Context, id string, history bool) (*model.Agent, int, Generation, error) {
+	records, head, shared, err := m.repository.BorrowAgentsAt(ctx)
+	if err != nil {
+		return nil, -1, Generation{}, err
+	}
+	for i := range records {
+		if records[i].ID != id || !agentIDProven(&records[i]) {
+			continue
+		}
+		record, err := readerAgent(&records[i], history, shared)
+		if err != nil {
+			return nil, -1, Generation{}, err
+		}
+		return &m.runtime.overlayModels([]model.Agent{record})[0], i, Generation{head, shared}, nil
+	}
+	return nil, -1, Generation{head, shared}, nil
 }
 
 // ReadAgentByToken selects one original string token without encoding unrelated
