@@ -2578,3 +2578,11 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 完整下载；`curl -C -`/`wget -c` 续传 206 且文件一致；`curl -z`/`wget -N` 得到 304。Flask 下载差分中带 Range/条件头的 33 行改为
 断言 net/http 标准结果（状态码、`Content-Range`、正文长度），其余行仍与 Flask 逐项比较；Werkzeug 条件请求的 pyref 参考
 （`TestReviewConditionalMatchesWerkzeug`）及其策略文件删除。
+
+## O18 C17 — JWT 时间声明必须是 JSON 数字
+
+维护者裁定（2026-11-22）：`iat`/`nbf`/`exp` 按 RFC 7519 NumericDate 读取：JSON 数字（允许小数，按秒比较），不再按 Python
+`int()` 接受数字字符串（`"2110020686"`）或布尔值（`true` 当 1）；`null`、数组、对象等类型错误不再是 PyJWT 漏出的 TypeError
+（500），统一为令牌无效：HTTP 401 `token_invalid`，详情 `… claim (exp) must be a number.`（原文 `must be an integer.`）。
+只影响用服务器密钥签出的畸形令牌：Go 与 PyJWT 签发的令牌都是整数时间，不受影响。`TestDecodeMatchesPyJWT` 中对应 4 行
+（`exp_string`、`exp_bad_string`、`exp_bool`、`iat_bad`）改为新期望。

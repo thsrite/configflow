@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"math"
-	"math/big"
 	"strings"
 	"time"
 
@@ -28,13 +26,6 @@ type TokenError struct {
 }
 
 func (e *TokenError) Error() string { return e.Message }
-
-// ClaimTypeError is the TypeError PyJWT lets escape when a numeric claim is
-// not a number or a string (int(None), int([])...): not an InvalidTokenError,
-// so Python's verify_token does not catch it and the request fails with 500.
-type ClaimTypeError struct{ Message string }
-
-func (e *ClaimTypeError) Error() string { return e.Message }
 
 func decodeError(message string) error { return &TokenError{Message: message} }
 
@@ -56,8 +47,8 @@ func EncodeHS256(claims any, key string) (string, error) {
 func b64(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
 
 // DecodeHS256 is jwt.decode(token, key, algorithms=["HS256"]) with leeway 0
-// at time now. It returns the claims, a *TokenError (Expired for
-// ExpiredSignatureError), or a *ClaimTypeError.
+// at time now. It returns the claims or a *TokenError (Expired for an expired
+// token).
 func DecodeHS256(token, key string, now time.Time) (*Claims, error) {
 	signingInput, cryptoSegment, ok := cutLast(token, ".")
 	if !ok {
@@ -127,43 +118,35 @@ func cutLast(s, sep string) (before, after string, ok bool) {
 	return s[:i], s[i+len(sep):], true
 }
 
-// validateClaims is PyJWT 2.8.0 _validate_claims with default options and no
-// audience or issuer: iat, nbf, exp in that order, then aud.
+// validateClaims checks iat, nbf and exp (RFC 7519 NumericDate: a JSON
+// number of seconds, fractions allowed) with leeway 0, then refuses any
+// audience. A claim that is not a JSON number makes the token invalid.
 func validateClaims(claims *Claims, now time.Time) error {
 	nowSeconds := float64(now.UnixNano()) / 1e9
 	if value := claims.IssuedAt; value != nil {
-		iat, err := claimInt(value)
-		if err != nil {
-			if errors.Is(err, errClaimValue) {
-				return decodeError("Issued At claim (iat) must be an integer.")
-			}
-			return err
+		iat, ok := numericDate(value)
+		if !ok {
+			return decodeError("Issued At claim (iat) must be a number.")
 		}
-		if compareFloat(iat, nowSeconds) > 0 {
+		if iat > nowSeconds {
 			return decodeError("The token is not yet valid (iat)")
 		}
 	}
 	if value := claims.NotBefore; value != nil {
-		nbf, err := claimInt(value)
-		if err != nil {
-			if errors.Is(err, errClaimValue) {
-				return decodeError("Not Before claim (nbf) must be an integer.")
-			}
-			return err
+		nbf, ok := numericDate(value)
+		if !ok {
+			return decodeError("Not Before claim (nbf) must be a number.")
 		}
-		if compareFloat(nbf, nowSeconds) > 0 {
+		if nbf > nowSeconds {
 			return decodeError("The token is not yet valid (nbf)")
 		}
 	}
 	if value := claims.Expires; value != nil {
-		exp, err := claimInt(value)
-		if err != nil {
-			if errors.Is(err, errClaimValue) {
-				return decodeError("Expiration Time claim (exp) must be an integer.")
-			}
-			return err
+		exp, ok := numericDate(value)
+		if !ok {
+			return decodeError("Expiration Time claim (exp) must be a number.")
 		}
-		if compareFloat(exp, nowSeconds) <= 0 {
+		if exp <= nowSeconds {
 			return &TokenError{Expired: true, Message: "Signature has expired"}
 		}
 	}
@@ -173,60 +156,19 @@ func validateClaims(claims *Claims, now time.Time) error {
 	return nil
 }
 
-var errClaimValue = errors.New("ValueError")
-
-// claimInt is Python's int(value) for a decoded claim: ValueError for text
-// that is not an integer and for NaN, TypeError (and OverflowError for
-// infinity) for the rest.
-func claimInt(raw json.RawMessage) (*big.Int, error) {
-	var value any
-	d := json.NewDecoder(bytes.NewReader(raw))
-	d.UseNumber()
-	if err := d.Decode(&value); err != nil {
-		return nil, errClaimValue
+// numericDate reads a NumericDate claim: a JSON number (not a string) that
+// fits a float64.
+func numericDate(raw json.RawMessage) (float64, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] == '"' {
+		return 0, false
 	}
-	switch v := value.(type) {
-	case bool:
-		if v {
-			return big.NewInt(1), nil
-		}
-		return big.NewInt(0), nil
-	case json.Number:
-		if !strings.ContainsAny(string(v), ".eE") {
-			n, ok := new(big.Int).SetString(v.String(), 10)
-			if ok {
-				return n, nil
-			}
-		}
-		f, _ := v.Float64()
-		if math.IsNaN(f) {
-			return nil, errClaimValue
-		}
-		if math.IsInf(f, 0) {
-			return nil, &ClaimTypeError{Message: "cannot convert float infinity to integer"}
-		}
-		n, _ := new(big.Float).SetFloat64(math.Trunc(f)).Int(nil)
-		return n, nil
-	case string:
-		n, ok := parseClaimInt(v)
-		if !ok {
-			return nil, errClaimValue
-		}
-		return n, nil
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, false
 	}
-	return nil, &ClaimTypeError{Message: "numeric JWT claim must be an integer or numeric string"}
-}
-
-func parseClaimInt(s string) (*big.Int, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, false
-	}
-	return new(big.Int).SetString(s, 10)
-}
-
-func compareFloat(n *big.Int, f float64) int {
-	return new(big.Float).SetInt(n).Cmp(big.NewFloat(f))
+	f, err := n.Float64()
+	return f, err == nil
 }
 
 // base64urlDecode accepts URL-safe JWT segments, with optional final padding.

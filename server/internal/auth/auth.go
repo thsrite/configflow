@@ -192,8 +192,8 @@ func (v Verification) detail() string {
 	return "unknown error"
 }
 
-// VerifyToken is verify_token(token). A *ClaimTypeError (PyJWT's uncaught
-// TypeError) is returned as an error: the caller lets it become a 500.
+// VerifyToken is verify_token(token): the claims, or the reason the token
+// is expired or invalid. An error other than a *TokenError is returned.
 func VerifyToken(token string) (Verification, error) {
 	claims, err := DecodeHS256(token, current.Load().SecretKey, now())
 	if err == nil {

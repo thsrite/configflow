@@ -14,7 +14,6 @@ type pyjwtResult struct {
 	OK      bool            `json:"ok"`
 	Claims  json.RawMessage `json:"claims"`
 	Message string          `json:"message"`
-	Crash   string          `json:"crash"`
 	Expired bool            `json:"expired"`
 }
 
@@ -42,13 +41,26 @@ func loadPyJWT(t *testing.T) pyjwtDoc {
 	return doc
 }
 
+// nativeNumericDate lists the PyJWT rows decided differently on purpose
+// (O18 C17): iat/nbf/exp must be JSON numbers, so a numeric string or a
+// boolean (int("…")/int(True) in PyJWT) makes the token invalid.
+var nativeNumericDate = map[string]pyjwtResult{
+	"exp_string":     {Message: "Expiration Time claim (exp) must be a number."},
+	"exp_bad_string": {Message: "Expiration Time claim (exp) must be a number."},
+	"exp_bool":       {Message: "Expiration Time claim (exp) must be a number."},
+	"iat_bad":        {Message: "Issued At claim (iat) must be a number."},
+}
+
 // Every token PyJWT 2.8.0 decoded (or refused) decodes the same way here,
-// with the same error text.
+// with the same error text, except the nativeNumericDate rows.
 func TestDecodeMatchesPyJWT(t *testing.T) {
 	doc := loadPyJWT(t)
 	now := time.Now()
 	for _, c := range doc.Cases {
 		t.Run(c.Name, func(t *testing.T) {
+			if native, ok := nativeNumericDate[c.Name]; ok {
+				c.Result = native
+			}
 			claims, err := DecodeHS256(c.Token, doc.Secret, now)
 			if c.Name == "junk_chars" {
 				if err == nil {
@@ -67,12 +79,6 @@ func TestDecodeMatchesPyJWT(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatalf("PyJWT refused (%s), Go accepted", c.Result.Message)
-			}
-			if crash := c.Result.Crash; crash != "" {
-				if _, ok := err.(*ClaimTypeError); !ok {
-					t.Fatalf("want an uncaught %s, got %v", crash, err)
-				}
-				return
 			}
 			te, ok := err.(*TokenError)
 			if !ok {
