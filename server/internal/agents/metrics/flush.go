@@ -120,11 +120,11 @@ func currentIntervalSeconds(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	s, err := r.System(ctx)
+	settings, err := r.SystemConfig(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return FlushInterval(s), nil
+	return FlushInterval(&model.System{SystemConfig: *settings}), nil
 }
 
 // SetFlushInterval updates the native setting and wakes the scheduler.

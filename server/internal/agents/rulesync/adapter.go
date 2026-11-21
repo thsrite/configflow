@@ -178,11 +178,11 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*model.Agen
 func rawJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
 
 func systemSecrets(ctx context.Context, m *agents.Manager) (redact.Secrets, error) {
-	system, err := m.Repository().System(ctx)
+	settings, err := m.Repository().SystemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := model.Marshal(&system.SystemConfig)
+	raw, err := model.Marshal(settings)
 	if err != nil {
 		return nil, err
 	}

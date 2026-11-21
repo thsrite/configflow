@@ -182,11 +182,10 @@ func backupRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*Task, err
 	if err != nil {
 		return nil, err
 	}
-	system, err := repository.System(ctx)
+	backup, err := repository.Backup(ctx)
 	if err != nil {
 		return nil, err
 	}
-	backup := system.Backup
 	configured := backup.WebDAVURL != "" && backup.WebDAVUsername != "" && backup.WebDAVPassword != ""
 	if _, present := statuses[BackupTaskKey]; !configured && !present {
 		return nil, nil

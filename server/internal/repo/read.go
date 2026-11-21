@@ -144,6 +144,30 @@ func (r *Repository) System(ctx context.Context) (*model.System, error) {
 	return result, err
 }
 
+// SystemConfig returns a caller-owned copy of the system settings record only.
+// Callers that read settings use it instead of System, which also copies every
+// Agent with its deployment and verification history.
+func (r *Repository) SystemConfig(ctx context.Context) (*model.SystemConfig, error) {
+	var result *model.SystemConfig
+	err := r.View(ctx, func(document *model.Document) error {
+		var err error
+		result, err = copyRecord(&document.System.SystemConfig)
+		return err
+	})
+	return result, err
+}
+
+// Backup returns a caller-owned copy of the backup settings record only.
+func (r *Repository) Backup(ctx context.Context) (*model.Backup, error) {
+	var result *model.Backup
+	err := r.View(ctx, func(document *model.Document) error {
+		var err error
+		result, err = copyRecord(&document.System.Backup)
+		return err
+	})
+	return result, err
+}
+
 // profileByKey finds a profile by its section key, or nil.
 func profileByKey(document *model.Document, profileID string) *model.Profile {
 	for _, profile := range document.Profiles {

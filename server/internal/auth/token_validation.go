@@ -17,7 +17,10 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 	if c.IsInternalCall() {
 		return ValidateResult{Valid: true}, nil
 	}
-	if config == nil {
+	var settings *model.SystemConfig
+	if config != nil {
+		settings = &config.SystemConfig
+	} else {
 		ctx := lifecycle.Detach(c.Context())
 		if err := ctx.Err(); err != nil {
 			return ValidateResult{}, err
@@ -26,12 +29,12 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 		if err != nil {
 			return ValidateResult{}, err
 		}
-		config, err = r.System(ctx)
+		// Only the settings record: System would copy every Agent's history.
+		settings, err = r.SystemConfig(ctx)
 		if err != nil {
 			return ValidateResult{}, err
 		}
 	}
-	settings := &config.SystemConfig
 	configToken, malformedToken, err := storedConfigToken(settings)
 	if err != nil {
 		return ValidateResult{}, err
