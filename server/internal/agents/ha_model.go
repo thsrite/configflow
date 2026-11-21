@@ -50,40 +50,31 @@ func HAEnablingModel(record *model.Agent) bool {
 	return false
 }
 
-// ReadHAPair returns an owned, reciprocal pair from one live registry view.
-// Only the two members are copied (without histories); the pair checks read
-// stored members that the live heartbeat overlay never changes.
+// ReadHAPair returns a borrowed (see "Borrowed records"), reciprocal pair from
+// one live registry generation, without histories. The pair checks read stored
+// members that the live heartbeat overlay never changes.
 func (m *Manager) ReadHAPair(ctx context.Context, id string) ([]model.Agent, error) {
-	var pair []model.Agent
-	incomplete := false
-	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
-		record := registryAgent(records, id)
-		if !HAEnabledModel(record) {
-			return nil
-		}
-		group, peerID, valid := haPairIdentity(record)
-		peer := registryAgent(records, peerID)
-		otherGroup, otherID, otherValid := haPairIdentity(peer)
-		if !valid || !otherValid || !HAEnabledModel(peer) || group != otherGroup || otherID != id || !haProfilesMatch(record, peer) {
-			incomplete = true
-			return nil
-		}
-		for _, source := range []*model.Agent{record, peer} {
-			copied, err := copyAgent(source, false)
-			if err != nil {
-				return err
-			}
-			pair = append(pair, *copied)
-		}
-		return nil
-	})
-	switch {
-	case err != nil:
+	records, shared, err := m.repository.BorrowAgents(ctx)
+	if err != nil {
 		return nil, err
-	case incomplete:
-		return nil, ErrPairIncomplete
-	case pair == nil:
+	}
+	record := registryAgent(records, id)
+	if !HAEnabledModel(record) {
 		return nil, nil
+	}
+	group, peerID, valid := haPairIdentity(record)
+	peer := registryAgent(records, peerID)
+	otherGroup, otherID, otherValid := haPairIdentity(peer)
+	if !valid || !otherValid || !HAEnabledModel(peer) || group != otherGroup || otherID != id || !haProfilesMatch(record, peer) {
+		return nil, ErrPairIncomplete
+	}
+	pair := make([]model.Agent, 0, 2)
+	for _, source := range []*model.Agent{record, peer} {
+		member, err := readerAgent(source, false, shared)
+		if err != nil {
+			return nil, err
+		}
+		pair = append(pair, member)
 	}
 	return m.runtime.overlayModels(pair), nil
 }

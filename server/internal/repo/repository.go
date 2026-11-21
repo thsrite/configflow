@@ -97,6 +97,10 @@ type Repository struct {
 	// viewGuard, when set, is called if a View callback modified the
 	// shared snapshot (tests set it to fail).
 	viewGuard func()
+	// guardMu guards the encodings of borrowed generations (view_guard.go).
+	guardMu    sync.Mutex
+	guarded    map[any]guardedGeneration
+	guardOrder []any
 
 	// The registry row has its own one-generation immutable cache. It is
 	// shared by hot Agent readers even when unrelated profiles exceed the
@@ -132,6 +136,7 @@ func Open(dataDir string, options Options) (*Repository, error) {
 		lockFile:      filepath.Join(root, ".config.lock"),
 		options:       options,
 		cacheMaxBytes: DocumentCacheMaxBytes,
+		viewGuard:     testViewGuard(),
 	}
 	r.store = store.New(r.dbPath, LockTimeout)
 	if err := os.MkdirAll(r.dataDir, 0o777); err != nil {

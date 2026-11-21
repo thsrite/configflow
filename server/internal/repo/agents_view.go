@@ -24,20 +24,8 @@ func (r *Repository) ViewAgents(ctx context.Context, fn func([]model.Agent) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if document, working, err := r.workingModel(ctx); working || err != nil {
-		if err != nil {
-			return err
-		}
-		return r.visitAgents(document.System.Agents, fn)
-	}
-	if snapshot := r.lockedSnapshot(ctx); snapshot != nil {
-		return r.visitAgents(snapshot.entry.Model.System.Agents, fn)
-	}
-	records, err := r.agentRecords(ctx)
+	records, _, err := r.BorrowAgents(ctx)
 	if err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return r.visitAgents(records, fn)

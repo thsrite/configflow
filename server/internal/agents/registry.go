@@ -15,86 +15,129 @@ import (
 	"configflow/internal/repo"
 )
 
-// ReadAgents returns caller-owned registry records, including newer live
-// heartbeats. The repository's cached model is read once; unrelated profiles
-// are never serialized or decoded here. inspect sees the original stored record
-// before the history projection and must neither mutate nor retain it.
+// Borrowed records. ReadAgents, ReadAgent, ReadAgentByToken, ListAgents,
+// AgentSnapshots, ReadHAPair and AgentPair return records borrowed from the
+// repository's immutable registry generation (repo.BorrowAgents) instead of
+// decoding a private copy of every Agent:
+//
+//   - Each returned record is a shallow copy of the stored record. The caller
+//     may reassign its top-level fields (Status, LastHeartbeat, ...), and
+//     SetJSON, Clear, Map.Set and Fields.Set are copy-on-write.
+//   - Everything reachable through pointers, Map values and nested slices is
+//     shared with every other reader and must not be modified. Copy the nested
+//     struct before changing it, or use CloneAgent.
+//   - A returned slice is the caller's own: its elements may be reassigned.
+//   - Records may be retained; they never change after they are returned.
+//   - A record handed to a write transaction, or retained and changed in depth,
+//     must be a CloneAgent copy.
+//
+// Inside a write transaction the working records may still change, so those
+// reads keep deep-copying the selected records.
+
+// ReadAgents returns borrowed registry records (see "Borrowed records"),
+// including newer live heartbeats. The repository's cached model is read once;
+// unrelated profiles are never serialized or decoded here. inspect sees the
+// original stored record before the history projection and must neither mutate
+// nor retain it.
 func (m *Manager) ReadAgents(ctx context.Context, history bool, inspect func(*model.Agent)) ([]model.Agent, error) {
-	var result []model.Agent
-	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
-		result = make([]model.Agent, 0, len(records))
-		for i := range records {
-			original := &records[i]
-			if inspect != nil {
-				inspect(original)
-			}
-			record, err := copyAgent(original, history)
-			if err != nil {
-				return err
-			}
-			result = append(result, *record)
-		}
-		return nil
-	})
+	records, shared, err := m.repository.BorrowAgents(ctx)
 	if err != nil {
 		return nil, err
+	}
+	result := make([]model.Agent, 0, len(records))
+	for i := range records {
+		original := &records[i]
+		if inspect != nil {
+			inspect(original)
+		}
+		record, err := readerAgent(original, history, shared)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, record)
 	}
 	return m.runtime.overlayModels(result), nil
 }
 
-// ReadAgent returns one caller-owned record with its live heartbeat, or nil.
-// It copies only the selected Agent, even when the registry is large.
+// ReadAgent returns one borrowed record (see "Borrowed records") with its live
+// heartbeat, or nil.
 func (m *Manager) ReadAgent(ctx context.Context, id string, history bool) (*model.Agent, error) {
-	var result *model.Agent
-	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
-		record := registryAgent(records, id)
-		if record != nil {
-			var err error
-			result, err = copyAgent(record, history)
-			return err
-		}
-		return nil
-	})
-	if err != nil || result == nil {
-		return result, err
+	records, shared, err := m.repository.BorrowAgents(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return &m.runtime.overlayModels([]model.Agent{*result})[0], nil
+	source := registryAgent(records, id)
+	if source == nil {
+		return nil, nil
+	}
+	record, err := readerAgent(source, history, shared)
+	if err != nil {
+		return nil, err
+	}
+	return &m.runtime.overlayModels([]model.Agent{record})[0], nil
 }
 
 // ReadAgentByToken selects one original string token without encoding unrelated
-// Agents or their histories. The returned Agent owns its live projection.
+// Agents or their histories. The result is borrowed (see "Borrowed records").
 func (m *Manager) ReadAgentByToken(ctx context.Context, token string) (*model.Agent, error) {
-	var result *model.Agent
-	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
-		for i := range records {
-			a := &records[i]
-			if a.Token != token {
-				continue
-			}
-			if original, valid := storedText(a.MemberJSON("token")); valid && original == token {
-				var err error
-				result, err = copyAgent(a, true)
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil || result == nil {
+	records, shared, err := m.repository.BorrowAgents(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return &m.runtime.overlayModels([]model.Agent{*result})[0], nil
+	for i := range records {
+		a := &records[i]
+		if a.Token != token {
+			continue
+		}
+		if original, valid := storedText(a.MemberJSON("token")); valid && original == token {
+			record, err := readerAgent(a, true, shared)
+			if err != nil {
+				return nil, err
+			}
+			return &m.runtime.overlayModels([]model.Agent{record})[0], nil
+		}
+	}
+	return nil, nil
+}
+
+// readerAgent is the record a reader receives: a shallow copy of a shared
+// generation, or a deep copy of a write transaction's working record.
+func readerAgent(source *model.Agent, history, shared bool) (model.Agent, error) {
+	if !shared {
+		copied, err := copyAgent(source, history)
+		if err != nil {
+			return model.Agent{}, err
+		}
+		return *copied, nil
+	}
+	return projectAgent(source, history)
+}
+
+// projectAgent is a shallow copy of source, without its histories unless
+// history is set. Raw/Fields are copy-on-write: Clear affects only the copy.
+func projectAgent(source *model.Agent, history bool) (model.Agent, error) {
+	selected := *source
+	if !history {
+		for _, field := range repo.AgentHistoryFields {
+			if err := selected.Clear(field); err != nil {
+				return model.Agent{}, err
+			}
+		}
+	}
+	return selected, nil
+}
+
+// CloneAgent returns a deep, independently owned copy of record, histories
+// included: an encode and decode of the whole record. Use it only where a
+// borrowed record is handed to a write transaction or changed in depth.
+func CloneAgent(record *model.Agent) (*model.Agent, error) {
+	return copyAgent(record, true)
 }
 
 func copyAgent(source *model.Agent, history bool) (*model.Agent, error) {
-	// Raw/Fields are copy-on-write. Clear affects this local value, never source.
-	selected := *source
-	if !history {
-		if err := selected.Clear("deployments"); err != nil {
-			return nil, err
-		}
-		if err := selected.Clear("ipv6_verifications"); err != nil {
-			return nil, err
-		}
+	selected, err := projectAgent(source, history)
+	if err != nil {
+		return nil, err
 	}
 	data, err := model.Marshal(selected)
 	if err != nil {
@@ -379,8 +422,9 @@ func AgentMatchesID(record *model.Agent, id string) bool {
 	return record != nil && record.ID == id && agentIDProven(record)
 }
 
-// ListAgents returns owned live snapshots with freshness-derived listing status.
-// ReadAgent retains the stored status for individual reads.
+// ListAgents returns borrowed live records (see "Borrowed records") with
+// freshness-derived listing status. ReadAgent retains the stored status for
+// individual reads.
 func (m *Manager) ListAgents(ctx context.Context, history bool) ([]model.Agent, error) {
 	records, err := m.ReadAgents(ctx, history, nil)
 	if err != nil {
@@ -394,7 +438,8 @@ func (m *Manager) ListAgents(ctx context.Context, history bool) ([]model.Agent, 
 	return records, nil
 }
 
-// AgentSnapshots returns owned listing records for consumers that retain pointers.
+// AgentSnapshots returns borrowed listing records (see "Borrowed records") as
+// pointers for consumers that retain them.
 func (m *Manager) AgentSnapshots(ctx context.Context, history bool) ([]*model.Agent, error) {
 	rows, err := m.ListAgents(ctx, history)
 	if err != nil {
@@ -417,7 +462,8 @@ func (m *Manager) addReportedMetrics(ctx context.Context, id string, raw json.Ra
 	return nil
 }
 
-// AgentPair returns owned reciprocal HA members for pointer-based consumers.
+// AgentPair returns borrowed reciprocal HA members (see "Borrowed records") for
+// pointer-based consumers.
 func (m *Manager) AgentPair(ctx context.Context, id string) ([]*model.Agent, error) {
 	rows, err := m.ReadHAPair(ctx, id)
 	if err != nil {
