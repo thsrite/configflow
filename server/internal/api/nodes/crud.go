@@ -106,6 +106,9 @@ func handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if _, exists := body["dialer_ref"]; exists {
 		return httpx.Message(400, false, msgSharedDialer), nil
 	}
+	if err := validateNodeLineFields(body); err != nil {
+		return httpx.Message(400, false, err.Error()), nil
+	}
 	err = mutateNodes(ctx, func(list []record) ([]record, error) { return append(list, body), nil })
 	return nativeJSON(200, struct {
 		Success bool   `json:"success"`
@@ -127,6 +130,9 @@ func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		if _, exists := body["dialer_ref"]; exists {
 			return httpx.Message(400, false, msgSharedDialer), nil
+		}
+		if err := validateNodeLineFields(body); err != nil {
+			return httpx.Message(400, false, err.Error()), nil
 		}
 	}
 	id := c.Param("node_id")

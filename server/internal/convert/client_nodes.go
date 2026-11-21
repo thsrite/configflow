@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
@@ -108,7 +109,56 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 			port = original.Value
 		}
 	}
-	return &clientNode{node.Name, strings.ToLower(node.Type), node.Server, port, options}, nil
+	return &clientNode{sanitizeClientName(node.Name), sanitizeClientField(strings.ToLower(node.Type)), sanitizeClientField(node.Server), sanitizeClientField(port), options}, nil
+}
+
+// IsClientControlRune reports whether r is a control character or Unicode line/
+// paragraph separator that can break line structure in Surge/Loon INI configs
+// (C0 U+0000..U+001F, DEL U+007F, C1 U+0080..U+009F including U+0085 NEL,
+// U+2028 Line Separator, and U+2029 Paragraph Separator).
+func IsClientControlRune(r rune) bool {
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == '\u2028' || r == '\u2029'
+}
+
+// HasClientControlChar reports whether s contains any character matched by
+// IsClientControlRune (O9 round 2 L3).
+func HasClientControlChar(s string) bool {
+	return strings.IndexFunc(s, IsClientControlRune) >= 0
+}
+
+// sanitizeClientField replaces CRLF and any control / line-breaking rune with a
+// single space so legacy stored fields cannot inject lines into Surge or Loon
+// configs. Clean strings are returned unchanged without allocation.
+func sanitizeClientField(s string) string {
+	if !HasClientControlChar(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] == '\r' && i+1 < len(s) && s[i+1] == '\n' {
+			b.WriteByte(' ')
+			i += 2
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if IsClientControlRune(r) {
+			b.WriteByte(' ')
+		} else {
+			b.WriteString(s[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// sanitizeClientName cleans control characters from a Surge/Loon node name
+// while leaving clean names byte-identical.
+func sanitizeClientName(s string) string {
+	if !HasClientControlChar(s) {
+		return s
+	}
+	return strings.TrimSpace(sanitizeClientField(s))
 }
 
 // clientProtocolType keeps enum discrimination strict while model.String owns
@@ -157,7 +207,7 @@ func clientValue(value string) string {
 }
 func firstClientList(values clientTextList) string {
 	if len(values.values) > 0 {
-		return string(values.values[0])
+		return sanitizeClientField(string(values.values[0]))
 	}
 	return ""
 }
@@ -178,7 +228,9 @@ func SurgeNode(input model.Node) (string, string, error) {
 	if n.kind == "" {
 		return "", "", nil
 	}
-	join := func(parts []string) (string, string, error) { return strings.Join(parts, ", "), "", nil }
+	join := func(parts []string) (string, string, error) {
+		return sanitizeClientField(strings.Join(parts, ", ")), "", nil
+	}
 	udp := clientFlag(o.UDP) || clientFlag(o.UDPRelay)
 	switch n.kind {
 	case "ss":
@@ -396,7 +448,10 @@ func SurgeNode(input model.Node) (string, string, error) {
 			}
 			section = append(section, "peer = ("+strings.Join(peer, ", ")+")")
 		}
-		return strings.Join(parts, ", "), strings.Join(section, "\n"), nil
+		for i := range section {
+			section[i] = sanitizeClientField(section[i])
+		}
+		return sanitizeClientField(strings.Join(parts, ", ")), strings.Join(section, "\n"), nil
 	}
 	return "", "", nil
 }
@@ -470,7 +525,7 @@ func LoonNode(input model.Node) (string, error) {
 	n, o := node, node.options
 	name := clientSanitizeName(n.name)
 	udp := "udp=" + flagText(clientFlag(o.UDP) || clientFlag(o.UDPRelay))
-	finish := func(parts []string) (string, error) { return strings.Join(parts, ","), nil }
+	finish := func(parts []string) (string, error) { return sanitizeClientField(strings.Join(parts, ",")), nil }
 	switch n.kind {
 	case "ss":
 		parts := []string{name + " = Shadowsocks", n.server, n.port, clientOption(o.Cipher, "aes-256-gcm"), clientQuote(clientOption(o.Password, ""))}
@@ -680,13 +735,13 @@ func LoonNode(input model.Node) (string, error) {
 	return "", nil
 }
 func clientSanitizeName(text string) string {
-	return strings.TrimSpace(strings.NewReplacer(",", " ", "=", " ").Replace(text))
+	return strings.TrimSpace(sanitizeClientField(strings.NewReplacer(",", " ", "=", " ").Replace(text)))
 }
 
 func clientKeepalive(values ...*clientText) string {
 	for _, value := range values {
 		if clientQuantity(value) {
-			return string(*value)
+			return sanitizeClientField(string(*value))
 		}
 	}
 	return ""

@@ -41,7 +41,9 @@ func (m *Manager) CallAgent(ctx context.Context, a *model.Agent, method, path st
 	if text, valid := storedText(portRaw, portPresent, nil); valid {
 		port = text
 	}
-	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: "http://" + host + ":" + port + path, Header: h, Body: body, Timeout: timeout, Latin1Headers: true})
+	// O9 round 2 L2: Agent protocol endpoints never redirect; refuse 3xx
+	// following so a compromised Agent cannot turn the panel into an SSRF proxy.
+	response, err := m.httpClient().Do(ctx, Request{Method: method, URL: "http://" + host + ":" + port + path, Header: h, Body: body, Timeout: timeout, NoRedirects: true, Latin1Headers: true})
 	if err != nil {
 		if !IsTransportError(err) && !errors.Is(err, ErrHeaderEncoding) {
 			err = &TransportError{Err: err}
@@ -92,13 +94,22 @@ func (m *Manager) DeploymentRequestModel(ctx context.Context, a *model.Agent, me
 			}
 			result = *failure
 		}
-		if response.StatusCode >= 400 {
+		if response.StatusCode >= 300 {
 			if err := result.SetJSON("success", []byte(`false`)); err != nil {
 				return nil, err
 			}
 			raw, _ := json.Marshal(response.StatusCode)
 			if err := result.SetJSON("http_status", raw); err != nil {
 				return nil, err
+			}
+			if response.StatusCode < 400 && originalDeploymentText(&result, "message") == "" && originalDeploymentText(&result, "error") == "" {
+				encoded, err := json.Marshal("Agent returned HTTP " + strconv.Itoa(response.StatusCode))
+				if err != nil {
+					return nil, err
+				}
+				if err := result.SetJSON("message", encoded); err != nil {
+					return nil, err
+				}
 			}
 		}
 		busy := response.StatusCode == 409 && originalDeploymentText(&result, "message") == busyMessage

@@ -35,7 +35,7 @@ func TestRawKeepalivedSpecProtocol(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if u.Host != primaryHost+":8082" || request.Header.Get("Authorization") != "Bearer synthetic-primary-token" || !request.Latin1Headers || request.NoProxy || request.NoRedirects {
+		if u.Host != primaryHost+":8082" || request.Header.Get("Authorization") != "Bearer synthetic-primary-token" || !request.Latin1Headers || request.NoProxy || !request.NoRedirects {
 			t.Fatal("HA transport policy changed")
 		}
 		if request.Method == "DELETE" {

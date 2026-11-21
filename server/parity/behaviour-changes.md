@@ -2408,3 +2408,17 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 ## N8-11 W9 — 查询参数整数（复核补登）
 
 - （W9 复核 L1）`httpx.Ctx.ArgInt` 不再经 `PyParseInt` 解析，改为原生 ASCII 十进制（`strings.TrimSpace`、可选 `+`/`-`、`0-9`）。Python `int()` 另外接受的数字间下划线（`1_000`）、非 ASCII 十进制数字（如全角 `１００`）以及 U+001C–U+001F 前后空白，现在按非法值回落到默认值。只影响 `GET /api/logs?lines=`（默认 100）与域名发现 `days`（默认 7）两个查询参数；前端只发送 ASCII 数字。与 3.3 裁定 2（机器文本/数字用原生 ASCII 规则）一致。
+
+## O9 第二轮 low — 远程调用总时长上限、禁止 Agent 重定向、客户端手工节点控制字符边界
+
+协调者裁定（2026-11-21），见 [review-o9-round2.md](review-o9-round2.md)：
+
+- **O9R2-L1（远程调用总时长上限）**：Python `requests` 只限制单次 socket 读超时，不限整次请求总耗时，慢速滴水应答方可以长期占住 goroutine 与设备锁。Go 保留单次读超时语义，同时为整次请求增加总时长上限，并继续遵守 PORTING 规则 4b（客户端断开不取消非 GET 调用）：
+  - **Agent 远程调用**（`internal/agents/client.go` `HTTPClient.Do`）：未显式指定 `Timeout.Total` 时，总时长上限为 `Connect + 5 × Read`（`TotalTimeoutMultiplier = 5`；无正超时时兜底 `DefaultTotalTimeout = 10m`）。各类现有调用对应上限：地址探测 4s→24s、状态/日志/升级控制 5s→30s、重启/卸载/旧推送 10s→60s、OxiDNS 监控 (3,12)→63s、HA 状态/目标/回流查询 15s→80–90s、发布激活/回滚/恢复 (5,30)→155s、IPv6/Linux 网关 (3,45)→228s、回流规则变更 60s→360s、Mihomo 重载 (3,70)→353s、HA 配置/快照下载 (3..5,90)→453–455s、大配置发布上传 (10,120)→610s、区域检测 120s→720s、Mihomo 核心升级 (3,200)→1003s、域名探测 200s→1200s，均远大于正常最慢操作耗时。超时返回 `*TransportError`（包装 `ErrTotalTimeout`，`Timeout() == true`），复用现有连接失败/不可达错误类与中文提示。
+  - **路由器远程调用**（`internal/devhttp/devhttp.go` `Client.Do`）：总时长上限为 `6 × timeout`（`TotalTimeoutMultiplier = 6`；`timeout <= 0` 时兜底 `10m`）。各类现有调用对应上限：RouterOS Ping 4s→24s、RouterOS REST 10s→60s、iKuai 常规 10s→60s、iKuai 大规则回滚写入 `10s + 0.003s × 条数`（如 28s→168s），均远大于正常单次设备操作耗时。超时返回 `*devhttp.Error{Class: ReadTimeout, Err: ErrTotalTimeout}`，RouterOS/iKuai 复用现有超时错误类与中文提示。
+  - 回归：`agents.TestO9R2TotalTimeout`、`agents.TestO9R2NonGETSurvivesClientDisconnect`、`devhttp.TestO9R2TotalTimeout`（均含正常多块传输负控与 Rule 4b 断线负控）。
+- **O9R2-L2（`CallAgent` 禁止跟随重定向）**：已核实 `backend/agents/go-agent` 全部正常协议端点从不返回 3xx。`agents.Manager.CallAgent` 统一设置 `NoRedirects: true`（与 monitor/gateway/rulesync/ipv6 保持一致），阻止被攻破的 Agent 通过 3xx 驱动面板发起 SSRF。Agent 返回 3xx 时按既有非 200 错误类处理（`RemoteCall` 返回 `HTTP 3xx`、`AgentRequestModel` 返回 `*RemoteError`、`DeploymentRequestModel` 将所有 `>= 300` 状态记为 `success: false` 与 `http_status: 3xx`）。回归：`agents.TestO9R2CallAgentNoRedirects`（含 200 负控）。
+- **O9R2-L3（Surge/Loon 手工节点控制字符拒绝与生成防御）**：Python 保存和生成 Surge/Loon 手工节点时不做换行/控制字符检查，节点名称、密码等字段中的 `\r`/`\n`（或分享链接 `%0A` 解码结果）可向 INI 文本注入额外 `[Rule]`/`FINAL` 等行。Go 在两处防护：
+  - **保存校验**（`POST /api/nodes`、`PUT /api/nodes/<node_id>`）：拒绝 `name`/`type`/`server`/`port`、`params` 递归字符串值以及 `proxy_string` 解析出的字段中的控制字符与行分隔符（C0 U+0000–U+001F、DEL U+007F、C1 U+0080–U+009F 含 U+0085 NEL、U+2028、U+2029；合法多行 YAML `proxy_string` 的结构换行仍允许），返回 400「节点字段「<字段>」不能包含换行、回车或控制字符」且不修改存储。
+  - **生成防御**（`internal/convert` `SurgeNode`/`LoonNode`/`SurgeGroup`/`SurgeConfig`/`LoonConfig`）：对存量或导入节点渲染前将 CRLF 及所有上述控制字符替换为空格，确保不输出注入行且 `[Proxy]` 与 `[Proxy Group]` 名称一致。
+  - 回归与 Flask 差分：`api/nodes.TestO9R2NodeControlCharValidation`、`convert.TestO9R2ClientNodeLineInjectionDefense`、`api/subscriptions/difftest.TestO9R2NodeControlCharBoundaryAgainstFlask`、`api/config/difftest.TestO9R2ClientGenerationLineDefenseAgainstFlask`（均显式断言 Flask 放行/注入与 Go 拒绝/净化的新边界，并含正常节点严格相等负控）。

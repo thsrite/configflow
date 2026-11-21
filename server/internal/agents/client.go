@@ -23,12 +23,48 @@ import (
 	"golang.org/x/net/idna"
 )
 
-// Timeout is requests' (connect, read) timeout pair. Read applies to every
-// socket read (and write), not to the whole exchange, as in requests.
+// Timeout is requests' (connect, read) timeout pair plus an optional total
+// duration cap. Read applies to every socket read (and write), as in requests;
+// Total bounds the entire exchange (when zero, derived from Connect + Read *
+// TotalTimeoutMultiplier so a slow-drip peer cannot hold a goroutine forever).
 type Timeout struct {
 	Connect time.Duration
 	Read    time.Duration
+	Total   time.Duration
 }
+
+// TotalTimeoutMultiplier derives the total duration limit of an Agent request
+// from its per-read timeout when Timeout.Total is zero (O9 round 2 L1).
+// Every normal operation (up to 200s Mihomo upgrade / domain probe, 120s large
+// deployment upload, 90s rule-sync snapshot) stays well below Connect + 5*Read.
+const TotalTimeoutMultiplier = 5
+
+// DefaultTotalTimeout bounds an Agent request when neither Connect nor Read
+// specifies a positive timeout.
+const DefaultTotalTimeout = 10 * time.Minute
+
+func (t Timeout) totalDuration() time.Duration {
+	if t.Total > 0 {
+		return t.Total
+	}
+	if t.Read > 0 {
+		return t.Connect + t.Read*TotalTimeoutMultiplier
+	}
+	if t.Connect > 0 {
+		return t.Connect * TotalTimeoutMultiplier
+	}
+	return DefaultTotalTimeout
+}
+
+type totalTimeoutError struct{}
+
+func (totalTimeoutError) Error() string   { return "agent request exceeded total duration limit" }
+func (totalTimeoutError) Timeout() bool   { return true }
+func (totalTimeoutError) Temporary() bool { return true }
+
+// ErrTotalTimeout is returned (wrapped in *TransportError) when an Agent
+// request exceeds its total duration limit (O9 round 2 L1).
+var ErrTotalTimeout error = totalTimeoutError{}
 
 // Seconds is a single-number requests timeout (both phases).
 func Seconds(n float64) Timeout {
@@ -117,21 +153,53 @@ type HTTPClient struct{}
 
 type deadlineConn struct {
 	net.Conn
-	timeout time.Duration
+	timeout  time.Duration
+	deadline time.Time
+}
+
+func (c *deadlineConn) nextDeadline() (time.Time, bool) {
+	now := time.Now()
+	if !c.deadline.IsZero() && !now.Before(c.deadline) {
+		return time.Time{}, false
+	}
+	var limit time.Time
+	if c.timeout > 0 {
+		limit = now.Add(c.timeout)
+	}
+	if !c.deadline.IsZero() && (limit.IsZero() || c.deadline.Before(limit)) {
+		limit = c.deadline
+	}
+	return limit, true
 }
 
 func (c *deadlineConn) Read(p []byte) (int, error) {
-	if c.timeout > 0 {
-		c.Conn.SetReadDeadline(time.Now().Add(c.timeout))
+	limit, ok := c.nextDeadline()
+	if !ok {
+		return 0, ErrTotalTimeout
 	}
-	return c.Conn.Read(p)
+	if !limit.IsZero() {
+		_ = c.Conn.SetReadDeadline(limit)
+	}
+	n, err := c.Conn.Read(p)
+	if err != nil && !c.deadline.IsZero() && !time.Now().Before(c.deadline) {
+		return n, ErrTotalTimeout
+	}
+	return n, err
 }
 
 func (c *deadlineConn) Write(p []byte) (int, error) {
-	if c.timeout > 0 {
-		c.Conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	limit, ok := c.nextDeadline()
+	if !ok {
+		return 0, ErrTotalTimeout
 	}
-	return c.Conn.Write(p)
+	if !limit.IsZero() {
+		_ = c.Conn.SetWriteDeadline(limit)
+	}
+	n, err := c.Conn.Write(p)
+	if err != nil && !c.deadline.IsZero() && !time.Now().Before(c.deadline) {
+		return n, ErrTotalTimeout
+	}
+	return n, err
 }
 
 // resolveHook, when set (tests only), replaces name resolution for hosts that
@@ -142,6 +210,9 @@ var resolveHook func(host string) (string, error)
 // Basic authentication, replacing the Authorization header. Host parsing
 // and name resolution use Go's standard URL and network libraries.
 func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
+	deadline := time.Now().Add(request.Timeout.totalDuration())
+	reqCtx, cancel := context.WithDeadlineCause(ctx, deadline, ErrTotalTimeout)
+	defer cancel()
 	dialer := &net.Dialer{Timeout: request.Timeout.Connect}
 	var proxy func(*http.Request) (*url.URL, error)
 	if !request.NoProxy {
@@ -177,7 +248,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 			if err != nil {
 				return nil, err
 			}
-			return &deadlineConn{Conn: conn, timeout: request.Timeout.Read}, nil
+			return &deadlineConn{Conn: conn, timeout: request.Timeout.Read, deadline: deadline}, nil
 		},
 	}
 	defer transport.CloseIdleConnections()
@@ -185,7 +256,7 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	if request.Body != nil {
 		body = bytes.NewReader(request.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, request.Method, encodeZone(request.URL), body)
+	req, err := http.NewRequestWithContext(reqCtx, request.Method, encodeZone(request.URL), body)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
@@ -222,6 +293,9 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() == nil && (errors.Is(context.Cause(reqCtx), ErrTotalTimeout) || errors.Is(err, ErrTotalTimeout)) {
+			return nil, &TransportError{Err: ErrTotalTimeout}
+		}
 		return nil, &TransportError{Err: err}
 	}
 	defer resp.Body.Close()
@@ -229,7 +303,11 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, request.MaxBody+1))
 		response := &Response{StatusCode: resp.StatusCode, Header: resp.Header, Body: data}
 		if err != nil {
-			response.BodyError = &TransportError{Err: err}
+			if ctx.Err() == nil && (errors.Is(context.Cause(reqCtx), ErrTotalTimeout) || errors.Is(err, ErrTotalTimeout)) {
+				response.BodyError = &TransportError{Err: ErrTotalTimeout}
+			} else {
+				response.BodyError = &TransportError{Err: err}
+			}
 		}
 		return response, nil
 	}
@@ -238,6 +316,9 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 	// to exhaust the panel's memory with an endless body.
 	data, err := io.ReadAll(io.LimitReader(resp.Body, DefaultMaxBody+1))
 	if err != nil {
+		if ctx.Err() == nil && (errors.Is(context.Cause(reqCtx), ErrTotalTimeout) || errors.Is(err, ErrTotalTimeout)) {
+			return nil, &TransportError{Err: ErrTotalTimeout}
+		}
 		return nil, &TransportError{Err: err}
 	}
 	if int64(len(data)) > DefaultMaxBody {

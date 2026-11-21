@@ -2,7 +2,8 @@ module agent
 
 go 1.26.0
 
-toolchain go1.26.10
+// Release toolchain pinned for the Agent and docker/Dockerfile.agent (GO-2026-6859).
+toolchain go1.26.11
 
 require gopkg.in/yaml.v3 v3.0.1
 

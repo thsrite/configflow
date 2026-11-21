@@ -170,7 +170,7 @@ func SurgeGroup(group model.ProxyGroup, config *model.Config, base string, smart
 		case "node":
 			for _, n := range config.Nodes {
 				if n.ID == ref.id {
-					members = append(members, n.Name)
+					members = append(members, sanitizeClientName(n.Name))
 					break
 				}
 			}

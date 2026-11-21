@@ -129,7 +129,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 		var names []string
 		for _, node := range config.Nodes {
 			if enabled(&node, node.Enabled) {
-				names = append(names, node.Name)
+				names = append(names, sanitizeClientName(node.Name))
 			}
 		}
 		if len(names) > 0 {

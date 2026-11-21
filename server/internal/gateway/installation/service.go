@@ -423,12 +423,11 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 			download = r.ServerURL + r.DownloadPath
 		}
 		safe["download_url"] = raw(download)
-		cmd := `set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; if command -v curl >/dev/null 2>&1; then curl -fSL ` + shellQuote(scriptURL) + ` -o "$f"; else wget -O "$f" ` + shellQuote(scriptURL) + `; fi; if [ "$(id -u)" -eq 0 ]; then sh "$f"; else sudo sh "$f"; fi`
-		safe["command"] = raw("sh -c " + shellQuote(cmd))
+		cmd := `set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; if command -v curl >/dev/null 2>&1; then curl -fSL ` + installer.ShlexQuote(scriptURL) + ` -o "$f"; else wget -O "$f" ` + installer.ShlexQuote(scriptURL) + `; fi; if [ "$(id -u)" -eq 0 ]; then sh "$f"; else sudo sh "$f"; fi`
+		safe["command"] = raw("sh -c " + installer.ShlexQuote(cmd))
 	}
 	return json.Marshal(redact.SanitizeWithSecrets(safe, secrets, true))
 }
-func shellQuote(v string) string { return "'" + strings.ReplaceAll(v, "'", `'"'"'`) + "'" }
 
 // Stored Unix seconds are rounded to the public timestamp's microsecond
 // precision; splitting avoids loss of precision from scaling the whole epoch.

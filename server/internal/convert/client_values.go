@@ -50,7 +50,7 @@ func (s clientTextList) MarshalJSON() ([]byte, error) { return json.Marshal(s.va
 func (s clientTextList) strings() []string {
 	result := make([]string, len(s.values))
 	for i, value := range s.values {
-		result[i] = string(value)
+		result[i] = sanitizeClientField(string(value))
 	}
 	return result
 }
@@ -232,13 +232,13 @@ func clientOption(value *clientText, fallback string) string {
 	if value == nil {
 		return fallback
 	}
-	return string(*value)
+	return sanitizeClientField(string(*value))
 }
 func clientFlag(value *bool) bool { return value != nil && *value }
 func firstClientText(values ...*clientText) string {
 	for _, value := range values {
 		if value != nil && *value != "" {
-			return string(*value)
+			return sanitizeClientField(string(*value))
 		}
 	}
 	return ""
@@ -251,7 +251,7 @@ func surgeALPN(options clientOptions, name string) string {
 	}
 	var scalar string
 	if json.Unmarshal(raw, &scalar) == nil {
-		return scalar
+		return sanitizeClientField(scalar)
 	}
 	var values []*string
 	if json.Unmarshal(raw, &values) == nil {
@@ -259,7 +259,7 @@ func surgeALPN(options clientOptions, name string) string {
 			return ""
 		}
 		if len(values) == 1 && values[0] != nil {
-			return *values[0]
+			return sanitizeClientField(*values[0])
 		}
 	}
 	logx.Get("backend.converters.surge").Warningf(msgSurgeALPN, name, string(raw))

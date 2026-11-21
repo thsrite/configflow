@@ -9,7 +9,8 @@
 //   - JSON bodies with non-ASCII escaped as \uXXXX, like json.dumps;
 //   - timeout as requests meant it: the connection must be set up within the
 //     timeout and every wait for data from the device may take that long
-//     again (there is no total limit);
+//     again, bounded by an overall exchange cap (timeout * TotalTimeoutMultiplier,
+//     O9 round 2 L1) so a slow-drip peer cannot hold a goroutine indefinitely;
 //   - each failure carries the requests exception class name the drivers put
 //     into their Chinese messages ("无法连接 RouterOS：ReadTimeout"). The
 //     mapping was measured with requests 2.31 / urllib3 2.8
@@ -211,6 +212,25 @@ func (c *Client) dialTLS(ctx context.Context, network, addr string) (net.Conn, e
 
 var errReadTimeout = errors.New("devhttp: the device stopped answering")
 
+// TotalTimeoutMultiplier bounds the overall duration of one device request
+// relative to its per-read timeout (O9 round 2 L1). Normal router calls
+// (RouterOS 4s ping / 10s REST, iKuai 10s normal or scaled rollback restore)
+// complete well within 6x their read timeout.
+const TotalTimeoutMultiplier = 6
+
+// DefaultTotalTimeout caps a device request when timeout <= 0.
+const DefaultTotalTimeout = 10 * time.Minute
+
+// ErrTotalTimeout is a request that exceeded its total duration cap (class ReadTimeout).
+var ErrTotalTimeout = errors.New("devhttp: total request duration exceeded")
+
+func totalTimeout(timeout time.Duration) time.Duration {
+	if timeout > 0 {
+		return timeout * TotalTimeoutMultiplier
+	}
+	return DefaultTotalTimeout
+}
+
 // MaxResponseBytes bounds one device reply. Router reads are filtered,
 // paged or scripted, so real replies stay far below it.
 const MaxResponseBytes = 128 << 20
@@ -263,11 +283,13 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 			return nil, &Error{Class: InvalidURL, Err: err} // unreachable for decoded values
 		}
 	}
-	ctx, cancel := context.WithCancelCause(context.WithValue(ctx, timeoutKey{}, timeout))
+	totalCtx, totalCancel := context.WithTimeoutCause(context.WithValue(ctx, timeoutKey{}, timeout), totalTimeout(timeout), ErrTotalTimeout)
+	defer totalCancel()
+	reqCtx, cancel := context.WithCancelCause(totalCtx)
 	defer cancel(nil)
 	dog := &watchdog{timeout: timeout, fire: func() { cancel(errReadTimeout) }}
 	defer dog.stop()
-	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+	reqCtx = httptrace.WithClientTrace(reqCtx, &httptrace.ClientTrace{
 		GotConn:      func(httptrace.GotConnInfo) { dog.kick() },
 		WroteRequest: func(httptrace.WroteRequestInfo) { dog.kick() },
 	})
@@ -275,7 +297,7 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 	if payload != nil {
 		reader = bytes.NewReader(payload)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, target.String(), reader)
+	req, err := http.NewRequestWithContext(reqCtx, method, target.String(), reader)
 	if err != nil {
 		return nil, &Error{Class: InvalidURL, Err: err}
 	}
@@ -308,7 +330,10 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 		}
 	}
 	if err != nil {
-		if context.Cause(ctx) == errReadTimeout {
+		if ctx.Err() == nil && errors.Is(context.Cause(reqCtx), ErrTotalTimeout) {
+			return nil, &Error{Class: ReadTimeout, Err: ErrTotalTimeout}
+		}
+		if context.Cause(reqCtx) == errReadTimeout {
 			return nil, &Error{Class: ReadTimeout, Err: errReadTimeout}
 		}
 		if e, ok := errors.AsType[*Error](err); ok {
@@ -321,6 +346,9 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 	var data bytes.Buffer
 	buf := make([]byte, 32*1024)
 	for {
+		if ctx.Err() == nil && errors.Is(context.Cause(reqCtx), ErrTotalTimeout) {
+			return nil, &Error{Class: ReadTimeout, Err: ErrTotalTimeout}
+		}
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
 			if int64(data.Len()+n) > MaxResponseBytes {
@@ -335,9 +363,12 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 			break
 		}
 		if err != nil {
+			if ctx.Err() == nil && errors.Is(context.Cause(reqCtx), ErrTotalTimeout) {
+				return nil, &Error{Class: ReadTimeout, Err: ErrTotalTimeout}
+			}
 			// requests: a stalled body is a ConnectionError, a broken one a
 			// ChunkedEncodingError.
-			if context.Cause(ctx) == errReadTimeout {
+			if context.Cause(reqCtx) == errReadTimeout {
 				return nil, &Error{Class: ConnectionError, Err: errReadTimeout}
 			}
 			return nil, &Error{Class: ChunkedEncodingError, Err: err}
