@@ -232,3 +232,40 @@ Python 对照用上一节的两轮（backend 在两个 commit 之间未变；同
 
 测试服务器 .32 `~/cf-prod-snapshot/runs/`：`pve-20261121-103612`（Go1）、`pve-20261121-111508`（Py1）、
 `pve-20261121-115001`（Go2）、`pve-20261121-123001`（Py2）、`pve-20261121-130509` / `pve-20261121-134110`（batch-21 Go1 / Go2）。不提交。
+
+## 结果：go 77c4c4538（R1/R2/R4/R6/R7/R10 合入后，只测 Go，一轮，2026-11-22）
+
+Python 列取本文前面同一 CT、同一快照两轮中**较快**的一轮（口径从严）。窗口统计由 idle-series.json 按 10 s 窗口计算。
+
+| 空闲 | Go | Python |
+|---|---:|---:|
+| CPU 平均 | **1.05%** | 1.45–1.57% |
+| 10 s 窗口中位 | **0.40%** | 0.6–0.8% |
+| 窗口 p10 | **0.20%** | 0.4–0.5% |
+| 窗口 p90 | 0.60% | 0.9–1.1% |
+| RSS 结束 / 最大 | **90 / 129 MB** | 117–118 MB |
+
+| 路由 | Go 延迟 ms | Go 分配 MB/次 | Py 延迟 ms |
+|---|---:|---:|---:|
+| GET /api/notifications | 30.0 | 14.5 | 60 |
+| GET /api/agents | 11.2 | 5.4 | 61 |
+| GET /api/agents?history=0 | 17.3 | 17.5 | 152 |
+| GET /api/agents?summary=1 | 3.7 | 0.5 | 7.4 |
+| GET /api/agents/<id>（最大者） | 8.1 | 3.5 | 38 |
+| GET /api/agents/<id>/rule-sync | 6.6 | 2.0 | 15 |
+| POST …/heartbeat | 2.9 | 0.3 | 5.5 |
+| GET /api/profiles | 2.4 | 0.1 | 3.1 |
+| GET /api/config/<p>/surge | 13.1 | 6.1 | 20 |
+| GET /api/config/<p>/loon | 13.5 | 6.1 | 19 |
+| GET /api/config/<p>/mosdns | 15.1 | 8.2 | 32 |
+| GET /api/config/<p>/oxidns | 31.8 | 14.6 | 64 |
+| GET /api/config/<p>/mihomo | 231 | 156 | 1005 |
+| GET …/aggregations/<agg>/provider | 295 | 179 | 1049 |
+| GET /api/routers | 3.9 | 0.6 | 10 |
+| GET /api/routers/<id>/policy | 8.1 | 3.2 | 22 |
+| GET /api/routers/<id>/policy-settings | 20.1 | 9.2 | 28 |
+| GET /api/routers/<id>/rule-sync | 3.1 | 0.5 | 10 |
+| GET /api/agents/<id>/upstream-routers | 31.7 | 30.1 | 56 |
+
+结论：这一轮所有空闲指标和全部 19 条路由都优于 Python（Agent 视图缓存默认开启）。正式验收还需：第二轮重复、
+O18 T1a–T1d 与空闲收尾合入后复测、R12（GC/RSS）后复测，以及同日重测一轮 Python。
