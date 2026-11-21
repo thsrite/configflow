@@ -20,7 +20,10 @@ const (
 	Protocol       = 1
 	SettleTime     = 10 * time.Second
 	HandoffTimeout = 30 * time.Second
-	PollInterval   = 2 * time.Second
+	// MemberLostTimeout stops an unfinished pair publication whose member
+	// connection stays unavailable this long (lab O-1).
+	MemberLostTimeout = 10 * time.Minute
+	PollInterval      = 2 * time.Second
 )
 
 // Options supplies the clock and content materializer without changing device timeouts.

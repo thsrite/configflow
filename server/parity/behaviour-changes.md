@@ -2707,3 +2707,16 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   重新预览照旧按设备现状接着规划剩余操作。Python 关停时直接被杀，什么都不记录。
 - 测试：`api/routers.TestR15PublishHTTPDisconnectAndShutdownAfterWrite/shutdown` 现在要求 `Shutdown` 返回时中止记录已提交
   （改回直接调用时稳定失败）；`routers.TestAbortedReleaseRecordsProgress`。
+
+## 实验网 O-1 — HA 配对发布中成员永久失联时 10 分钟后停止（协调裁定：方案 B）
+
+- 现象（Python 相同）：交接确认后新持有者断电，配对日志一直是 `unknown`「主备设备连接暂不可用，正在等待确认，未继续更新下一台」，
+  没有时限；后台推进几乎一直占着配对 lease，推送和停用都 409，成员不回来就永久卡死。
+- Go：配对日志新增 `unreachable_since`（Unix 秒）。推进时第一次遇到成员连接错误（传输错误或状态不可用）就记下这个时间，
+  之后任何一轮成员有应答就清除。连续 `MemberLostTimeout`（10 分钟，常量）后，先向仍可达成员查询已提交但本地未终结的子发布
+  （原主机已暂存的候选因此记为 `ready` 并撤销），再按原失败流程停止：撤销原主机的让位，选举确认最多等 `HandoffTimeout`，
+  最终 `failed`「主备设备连接中断超过 10 分钟，本次主备发布已停止；设备恢复后请完整发布一次主备配置，设备无法恢复时可以强制停用高可用」。
+  结局与成员晚归时的超时失败相同（一新一旧，DNS 不中断）。之后停用：离线成员撤销失败 → 现有 `can_force`，强制停用清除记录。
+- 不变：失联成员上已提交且结果未知的子发布仍保持 `unknown`「已提交的设备结果仍待确认」，不另加时限；两台都离线时撤销让位失败，仍保持 `unknown`。
+- 测试：`dnsha.TestLostMemberStopsPairAfterTimeout`（假时钟：10 分钟内保持 unknown 且停用被拒；超过后 failed，停用不加 force 返回 can_force，
+  加 force 成功；10 分钟内成员回来则正常 succeeded 并清除计时）。

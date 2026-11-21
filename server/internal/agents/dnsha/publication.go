@@ -424,6 +424,31 @@ func (s *Service) recovery(ctx context.Context, j *model.HAJournal) error {
 	return s.save(ctx, j)
 }
 
+// settleChildren asks each member for a submitted child that is still open
+// locally: the gate before the holder update stops the step from polling the
+// reachable member, and fail keeps unknown while any submitted result is
+// unproven. An unreachable member's child stays pending.
+func (s *Service) settleChildren(ctx context.Context, j *model.HAJournal) error {
+	if !validJournalChildren(j) {
+		return refuse(msgJournalChanged)
+	}
+	for id, did := range j.Children.All() {
+		a, e := s.get(ctx, id)
+		if e != nil {
+			return e
+		}
+		if a == nil {
+			continue
+		}
+		if d, ok := a.Deployments.Get(did); ok && yes(d.Submitted) && !childTerminal(d.Status) && d.Status != "ready" {
+			if _, e = s.poll(ctx, id, did); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
 // recoverySettled reports whether a member of a rollback_failed pair has
 // reached a final local state: rollback_failed, rolling_back, unknown and
 // pending replies still need the Agent's answer.
@@ -483,6 +508,13 @@ func (s *Service) advance(ctx context.Context, id string) (*model.HAPublicationS
 	if errors.Is(e, context.Canceled) && !agents.IsTransportError(e) {
 		return nil, e
 	}
+	if j.UnreachableSince != nil && !agents.IsTransportError(e) && !errors.Is(e, ErrStatusUnavailable) {
+		// The members answered this round: restart the lost-member clock.
+		j.UnreachableSince = nil
+		if e == nil {
+			e = s.save(held, j)
+		}
+	}
 	if e != nil {
 		var hp *HandoffPending
 		switch {
@@ -495,6 +527,20 @@ func (s *Service) advance(ctx context.Context, id string) (*model.HAPublicationS
 			j.Message = hp.Message
 			e = s.save(held, j)
 		case agents.IsTransportError(e) || errors.Is(e, ErrStatusUnavailable):
+			// A member that never answers again must not hold the pair
+			// forever (lab O-1): after MemberLostTimeout the publication
+			// fails like a late handoff timeout and the pair can be disabled.
+			now := float64(s.now().UnixNano()) / 1e9
+			if j.UnreachableSince == nil {
+				j.UnreachableSince = &now
+			}
+			if now-*j.UnreachableSince >= MemberLostTimeout.Seconds() {
+				logger.Warning("OxiDNS pair publication stopped: member connection lost")
+				if e = s.settleChildren(held, j); e == nil {
+					e = s.fail(held, j, msgMemberLost, "failed")
+				}
+				break
+			}
 			j.Status = "unknown"
 			j.Message = msgConnectionUnknown
 			e = s.save(held, j)

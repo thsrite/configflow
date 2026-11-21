@@ -87,6 +87,7 @@ const (
 	msgKeepalived            = "配置已同步，正在启用主备虚拟 IP"
 	msgSucceeded             = "主备配置与规则均已发布成功"
 	msgConnectionUnknown     = "主备设备连接暂不可用，正在等待确认，未继续更新下一台"
+	msgMemberLost            = "主备设备连接中断超过 10 分钟，本次主备发布已停止；设备恢复后请完整发布一次主备配置，设备无法恢复时可以强制停用高可用"
 	msgUnexpected            = "主备发布处理失败，请查看配置与设备状态后重试"
 	msgRecovered             = "设备回滚恢复已确认；原主备发布未完成，可重新发布"
 	msgPairUnavailable       = "主备关系不可用"

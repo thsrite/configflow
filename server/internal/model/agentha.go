@@ -194,8 +194,11 @@ type HAJournal struct {
 	Handoff           *HAHandoff        `json:"handoff"`
 	HandoffRequired   *bool             `json:"handoff_required"`
 	HandoffFailure    *HAHandoffFailure `json:"handoff_failure"`
-	Fields            Fields
-	raw               Raw
+	// UnreachableSince is when an unfinished pair first lost a member's
+	// connection (Unix seconds); progress clears it (lab O-1).
+	UnreachableSince *float64 `json:"unreachable_since"`
+	Fields           Fields
+	raw              Raw
 }
 
 // UnmarshalJSON decodes HAJournal with stored-member preservation and R5 fallback.
