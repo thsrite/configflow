@@ -98,6 +98,18 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+Lab L2–L5 DONE 2026-11-22 (Opus 7c0c4d68, branch go-audit-lab: 547662cb2 D1 recovery accepted → 202 + 13 lab-doc
+commits; reports server/parity/lab/L2–L5.md; all lab guests destroyed, CHR 7.25.1 image kept). Joins the next batch
+gate. Defects dispatched: Agent side (Opus 33089f7d, go-lab-fixes-agent): L5-D1 HIGH return routing fails on nftables
+1.0.6/Debian 12 (table/chain comments missing from `nft -j`), L3-D1 Alpine/OpenRC keepalived left holding the VIP
+after HA disable, L2-D3 stale core version, Agent → 1.9.1-go. Panel side (Opus 64fd3f0f, go-lab-fixes-panel): L3-D2
+HA pair stuck after successful re-recovery (409 forever), L3-D3 auto-sync failure reason, L5-D2 plan must reject a
+next hop outside the Mihomo subnet, L5-D3 iKuai interrupted batch abort record, O-1 design (member permanently offline
+→ pairing stuck; maybe pull a minimal admin force-abandon before the switch, M07). Not covered in L2–L5: DNS guard,
+PD guard, router reminders, batch write with link loss, IPv6 prep vs rule sync, full TUN split. Ruling: lab DoH
+resolver + DNAT for cfgt guests becomes permanent lab infrastructure (plain DNS from lab guests otherwise leaks via
+the home router hijack to production DNS); record it in the owner file. `api/agents` -race needs > 10 min (gate uses 60m).
+
 batch-23 MERGED 2026-11-21: R1 Agent borrow + R1 HR review (guard atomic, gate anti-bypass) + R2 Config borrow + R2
 HR review (gate anti-bypass, append/cap tests); gate core FULL .32 PASS, compare .64 PASS first try. R4+R7 (Opus
 967123ab, go-perf-r4): cache-off still slower than Python on the 4 Agent routes, cache-on 3–8× faster; /api/profiles
