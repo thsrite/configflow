@@ -9,11 +9,17 @@ stages ran.
 ```sh
 GATE_ONLY=core server/scripts/gate.sh -p 6 FuzzNativeRoundTrip:./internal/yamlx
 GATE_ONLY=compare server/scripts/gate.sh -p 6
+GATE_ONLY=agent server/scripts/gate.sh -p 6   # Agent module only
 # No GATE_ONLY: core followed by compare, under one slot.
 ```
 
 Core: gofmt, whole-repository vet, both lifecycle build modes (build, scoped vet,
-lifecycle tests), whole-repository race, supplied fuzz targets (60s by default).
+lifecycle tests), whole-repository race, then the Agent module
+(`backend/agents/go-agent`, a separate Go module: gofmt, vet, vet with the
+container-only `halab nftlab` tags, race with the same `-p` and test cache;
+"GATE FAIL: agent-module" / "gate: agent module PASS ..."), supplied fuzz targets
+(60s by default). `GATE_ONLY=agent` runs only the Agent module and, like compare,
+never refreshes the full-core stamp.
 Compare: observer self-checks + proddiff, every `/difftest` package, discovered synthetic live.
 All three comparison groups run even if an earlier one fails; the final status
 remains failed and logs retain results for the other groups.

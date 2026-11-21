@@ -463,6 +463,9 @@ Approved by the maintainer to cut gate time without reducing what is verified.
   Anything that touches Go product code, even one package, goes through a batch full gate.
 - Agents keep handing back with targeted evidence when the gate queue exceeds 15 minutes; the coordinator
   decides which batch a branch joins.
+- **Agent module in the gate (since 2026-11-22).** `gate.sh` core also covers `backend/agents/go-agent`
+  (separate Go module, previously never gated): gofmt, vet (plus vet-only `halab nftlab` container tags) and
+  `-race` after the server race run; `GATE_ONLY=agent` runs just that stage. See `scripts/gate.md`.
 
 ## Leaner verification (maintainer, 2026-11-18)
 

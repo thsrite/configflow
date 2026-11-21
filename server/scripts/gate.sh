@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 pflag=()
 if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
 stage=${GATE_ONLY:-all}
-case "$stage" in all|core|compare|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
+case "$stage" in all|core|agent|compare|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
 logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
 chmod 700 "$logs"
@@ -87,6 +87,25 @@ run_fuzz() (
   ((bad == 0))
 )
 
+# The Agent is its own Go module (backend/agents/go-agent); "go test ./..." in
+# server/ never reaches it. halab/nftlab tests need a disposable container
+# (backend/agents/go-agent/integration/*_lab.sh), so they are vetted only.
+agent_dir=../backend/agents/go-agent
+run_agent() (
+  local out
+  echo '== agent module (backend/agents/go-agent)'
+  cd "$agent_dir" || fail agent-module
+  out=$(gofmt -l .) || fail agent-module
+  [[ -z $out ]] || { echo "$out"; fail agent-module; }
+  go vet ./... || fail agent-module
+  go vet -tags 'halab nftlab' ./... || fail agent-module
+  go test -race "${pflag[@]}" -timeout=60m ./... >"$logs/agent-race.log" 2>&1 \
+    || { cat "$logs/agent-race.log"; fail "agent-module (see $logs/agent-race.log)"; }
+  cat "$logs/agent-race.log"
+  echo "gate: agent race cache hits=$(awk '/^ok[[:space:]]/ && /\(cached\)/' "$logs/agent-race.log" | wc -l)"
+  echo 'gate: agent module PASS (gofmt, vet, vet -tags halab nftlab, race)'
+)
+
 run_core() {
   local out tag
   echo '== gofmt'
@@ -120,6 +139,9 @@ run_core() {
   awk '/^ok[[:space:]]/ && /\(cached\)/ { print $2 }' "$logs/race.log" >"$logs/race-cached.txt"
   echo "gate: race cache hits=$(wc -l <"$logs/race-cached.txt")"
   cat "$logs/race-cached.txt"
+  # After the server race run, never alongside it: same -p, same test cache
+  # (FULL mode cleaned the shared cache above).
+  run_agent || exit 1
   if (($#)); then run_fuzz "$@" || fail fuzz; fi
   # A failed vet/build/race/fuzz never makes the next run cache-eligible.
   if ((full)); then touch "$stamp"; echo "gate: full core stamp updated: $stamp"; fi
@@ -153,6 +175,10 @@ run_compare() {
 case "$stage" in
   all) run_core "$@"; run_compare ;;
   core) run_core "$@" ;;
+  agent)
+    # Agent module only; like compare-only it never refreshes the full stamp.
+    if ((full)); then go clean -testcache || fail 'clean test cache'; fi
+    run_agent || exit 1 ;;
   compare) run_compare ;;
   proddiff) run_proddiff ;;
   difftest) run_difftest ;;
