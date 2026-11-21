@@ -37,7 +37,29 @@ func TestN811ImportExportOpaqueBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	opaque := json.RawMessage(`{ "large": 900719925474099312345678901234567890, "decimal": 1.230000e+04, "escape": "\u4e2d", "future": [null, { "x": true }] }`)
+	// An undeclared root member is dropped (O18 T1a); the settings record is
+	// not yet migrated and keeps its unknown members with their number text.
 	if err := fields.Set("future_extension", opaque); err != nil {
+		t.Fatal(err)
+	}
+	systemRaw, _ := fields.Get("system")
+	var system, settings model.Fields
+	if err := system.UnmarshalJSON(systemRaw); err != nil {
+		t.Fatal(err)
+	}
+	settingsRaw, _ := system.Get("system_config")
+	if err := settings.UnmarshalJSON(settingsRaw); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.Set("future_extension", opaque); err != nil {
+		t.Fatal(err)
+	}
+	settingsRaw, _ = settings.MarshalJSON()
+	if err := system.Set("system_config", settingsRaw); err != nil {
+		t.Fatal(err)
+	}
+	systemRaw, _ = system.MarshalJSON()
+	if err := fields.Set("system", systemRaw); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := fields.MarshalJSON()
@@ -51,8 +73,20 @@ func TestN811ImportExportOpaqueBytes(t *testing.T) {
 	if err := exported.UnmarshalJSON(exportRecord(t, r)); err != nil {
 		t.Fatal(err)
 	}
-	actual, present := exported.Get("future_extension")
-	if !present || !bytes.Equal(actual, opaque) {
+	if exported.Has("future_extension") {
+		t.Fatal("undeclared root member kept")
+	}
+	exportedSystem, _ := exported.Get("system")
+	if err := system.UnmarshalJSON(exportedSystem); err != nil {
+		t.Fatal(err)
+	}
+	settingsRaw, _ = system.Get("system_config")
+	if err := settings.UnmarshalJSON(settingsRaw); err != nil {
+		t.Fatal(err)
+	}
+	actual, present := settings.Get("future_extension")
+	// Whitespace and string escapes follow Go's encoding; number text stays.
+	if !present || !bytes.Contains(actual, []byte(`900719925474099312345678901234567890`)) || !bytes.Contains(actual, []byte(`1.230000e+04`)) {
 		t.Fatalf("opaque member changed: %s", actual)
 	}
 	// Negative control: this fixture detects a generic float64 JSON round trip.
@@ -291,9 +325,16 @@ func TestN811ExplicitMetadataRepairsNull(t *testing.T) {
 		if err := d.Profiles[0].SetJSON("description", []byte(`null`)); err != nil {
 			return err
 		}
-		return d.Profiles[0].SetJSON("_revision", []byte(`true`))
+		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+	// Input of the wrong type is refused where it is set (O18 T1a).
+	err := r.Update(ctx, func(_ context.Context, d *model.Document) error {
+		return d.Profiles[0].SetJSON("_revision", []byte(`true`))
+	})
+	if !errors.Is(err, repo.ErrValidation) || err.Error() != "配置修订号无效" {
+		t.Fatalf("wrong-typed revision: %v", err)
 	}
 	if _, err := r.CloneProfileRecord(ctx, "default", repo.ProfileCreation{ID: "clone", Name: "Clone"}); err != nil {
 		t.Fatal(err)

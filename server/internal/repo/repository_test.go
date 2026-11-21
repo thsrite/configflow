@@ -55,7 +55,8 @@ func rcPragma(t testing.TB, path, statement string) string {
 
 func rcLegacyObj(t testing.TB, hostname string) *testObj {
 	t.Helper()
-	data := parseJSONObj(t, must(model.Marshal(DefaultConfig()))(t))
+	// Settings only: the profile record always writes (empty) metadata.
+	data := parseJSONObj(t, must(configSettingsJSON(DefaultConfig()))(t))
 	extra := parseJSONObj(t, []byte(strings.ReplaceAll(`{
 		"subscriptions": [{"id": "sub", "name": "Source", "url": "https://HOST/subscription"}],
 		"nodes": [{"id": "node", "name": "Node", "server": "HOST", "type": "socks5", "port": 1080}],

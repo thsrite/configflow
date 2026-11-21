@@ -191,6 +191,22 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			}
 			return skipInvalid(dec, sink, func() { *v = 0 })
 		}),
+		// A list, object or plain record stored with another JSON kind is the
+		// zero value plus an issue; matching kinds decode normally.
+		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v any) error {
+			typ := reflect.TypeOf(v).Elem()
+			kind := dec.PeekKind()
+			if kind == 'n' {
+				return errors.ErrUnsupported
+			}
+			switch {
+			case typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && kind != '[',
+				typ.Kind() == reflect.Map && kind != '{',
+				typ.Kind() == reflect.Struct && isPlain(typ) && kind != '{':
+				return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().SetZero() })
+			}
+			return errors.ErrUnsupported
+		}),
 		// Records not yet migrated decode themselves (R5 inside); a value they
 		// refuse (not an object, for example) is zero plus an issue.
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v json.Unmarshaler) error {
@@ -444,7 +460,7 @@ func decodeMember(record string, rec any, member string, data []byte) error {
 		return err
 	}
 	target := reflect.New(field.typ)
-	if err := jsonv2.Unmarshal(data, target.Interface(), strictOptions); err != nil {
+	if err := decodeStrict(data, target.Interface()); err != nil {
 		return &MemberTypeError{Record: record, Member: member, Value: bytes.Clone(data), Err: err}
 	}
 	clipSlices(target.Elem())
@@ -590,3 +606,22 @@ func clipSlices(value reflect.Value) {
 // object member names at any depth (ErrJSON otherwise). Storage uses it for
 // rows no record declares, which are dropped but must not be corrupt.
 func ValidJSON(data []byte) error { return validJSON(data) }
+
+// decodeStrict decodes input into target (a pointer). Null is accepted only
+// where Go has a natural empty value for it: scalars and pointers. A list,
+// object or record given as null is a type mismatch, as Python's validation
+// refused it.
+func decodeStrict(data []byte, target any) error {
+	typ := reflect.TypeOf(target).Elem()
+	// Int reads Python's integer text from storage; input must be a number.
+	if typ == intType && len(bytes.TrimSpace(data)) > 0 && bytes.TrimSpace(data)[0] == '"' {
+		return fmt.Errorf("%w: integer text", ErrType)
+	}
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		switch {
+		case typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8, typ.Kind() == reflect.Map, typ.Kind() == reflect.Struct:
+			return fmt.Errorf("%w: null for %s", ErrType, typ)
+		}
+	}
+	return jsonv2.Unmarshal(data, target, strictOptions)
+}

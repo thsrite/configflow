@@ -31,6 +31,14 @@ func schemaNumber(raw json.RawMessage, want int64) bool {
 }
 
 func (r *Repository) convertImportJSON(raw json.RawMessage, resourceRemaps ResourceRemaps) (*model.Document, error) {
+	document, err := r.convertImportInput(raw, resourceRemaps)
+	if err != nil {
+		return nil, inputError(err)
+	}
+	return document, nil
+}
+
+func (r *Repository) convertImportInput(raw json.RawMessage, resourceRemaps ResourceRemaps) (*model.Document, error) {
 	if jsonKind(raw) != '{' {
 		return nil, validationError(msgImportObject)
 	}
@@ -40,6 +48,9 @@ func (r *Repository) convertImportJSON(raw json.RawMessage, resourceRemaps Resou
 	}
 	version, hasVersion := root.Get("schema_version")
 	if schemaNumber(version, SchemaVersion) {
+		if err := checkDocumentInput(raw); err != nil {
+			return nil, err
+		}
 		document, _, err := model.DecodeDocument(raw)
 		if err != nil {
 			return nil, inputError(err)
@@ -195,13 +206,13 @@ func (r *Repository) convertImportJSON(raw json.RawMessage, resourceRemaps Resou
 	if err != nil {
 		return nil, err
 	}
-	var system model.System
-	if err := json.Unmarshal(systemRaw, &system); err != nil {
-		return nil, err
-	}
-	// Validate the raw Agent list before using its R5 projection.
+	// Validate the raw Agent list before decoding it.
 	agentRaw, _ := systemFields.Get("agents")
 	if err := requireObjectList(agentRaw); err != nil {
+		return nil, err
+	}
+	var system model.System
+	if err := json.Unmarshal(systemRaw, &system); err != nil {
 		return nil, err
 	}
 	for i := range system.Agents {
@@ -542,9 +553,11 @@ func (r *Repository) importOldProfile(document *model.Document, source importPro
 			}
 		}
 	}
-	groupsRaw, _, err := recordMemberJSON(profile, "proxy_groups")
-	if err != nil {
-		return err
+	// The source's own list: the decoded profile reads a wrong-typed list as
+	// empty (O18 T1a).
+	groupsRaw, present := source.fields.Get("proxy_groups")
+	if !present {
+		groupsRaw = json.RawMessage(`[]`)
 	}
 	if err := requireObjectList(groupsRaw); err != nil {
 		return err

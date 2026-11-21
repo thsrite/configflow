@@ -20,20 +20,24 @@ func DecodeConfig(data []byte) (*Config, error) {
 	var system System
 	var id String
 	hasAgents := false
+	set := func(_ string, rec any, key string, raw []byte) error {
+		_, _, err := DecodeStoredMember(rec, key, raw, key)
+		return err
+	}
 	for key, raw := range members.All() {
 		var err error
 		switch key {
 		case "profile_id":
 			err = json.Unmarshal(raw, &id)
 		case "nodes", "subscriptions", "subscription_aggregations", "rule_library":
-			_, _, err = DecodeStoredMember(&shared, key, raw, key)
+			err = set("shared", &shared, key, raw)
 		case "system_config", "backup", "agents":
-			_, _, err = DecodeStoredMember(&system, key, raw, key)
+			err = set("system", &system, key, raw)
 			if key == "agents" {
 				hasAgents = true
 			}
 		default:
-			_, _, err = DecodeStoredMember(&profile, key, raw, key)
+			err = set("profile", &profile, key, raw)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("decode captured configuration member %s: %w", key, err)

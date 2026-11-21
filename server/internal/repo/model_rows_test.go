@@ -73,10 +73,26 @@ func setStoreField(fields *[]store.Field, name string, value json.RawMessage) {
 
 func cloneStoreDoc(t *testing.T, doc *store.Document) *store.Document {
 	t.Helper()
-	data := must(json.Marshal(doc))(t)
-	var out store.Document
-	noError(t, json.Unmarshal(data, &out))
-	return &out
+	// A structural copy keeps the row bytes exactly (encoding/json would
+	// re-escape them).
+	fields := func(in []store.Field) []store.Field {
+		out := make([]store.Field, len(in))
+		for i, field := range in {
+			out[i] = store.Field{Name: field.Name, Value: bytes.Clone(field.Value)}
+		}
+		return out
+	}
+	out := &store.Document{Order: slices.Clone(doc.Order), Root: fields(doc.Root)}
+	if doc.System != nil {
+		out.System = &store.Section{Fields: fields(doc.System.Fields)}
+	}
+	if doc.Shared != nil {
+		out.Shared = &store.Section{Fields: fields(doc.Shared.Fields)}
+	}
+	for _, profile := range doc.Profiles {
+		out.Profiles = append(out.Profiles, store.ProfileRows{ID: profile.ID, Fields: fields(profile.Fields)})
+	}
+	return out
 }
 
 func TestModelRowsRoundTripAndTypedEdits(t *testing.T) {

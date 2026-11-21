@@ -221,7 +221,7 @@ func DecodeDocument(data []byte) (*Document, []FieldIssue, error) {
 		seen[name] = true
 		switch name {
 		case "schema_version":
-			if err := decodeInput("document", value, &document.SchemaVersion); err != nil {
+			if err := decodeStrict(value, &document.SchemaVersion); err != nil {
 				return nil, nil, memberError("document", name, value, err)
 			}
 		case "system":
@@ -309,7 +309,7 @@ func decodeSection(record string, data []byte, target any) error {
 		}
 		destination := plainFieldValue(target, field)
 		decoded := newValue(field.typ)
-		if err := jsonv2.Unmarshal(value, decoded.Interface(), strictOptions); err != nil {
+		if err := decodeStrict(value, decoded.Interface()); err != nil {
 			return memberError(record, name, value, err)
 		}
 		destination.Set(decoded.Elem())

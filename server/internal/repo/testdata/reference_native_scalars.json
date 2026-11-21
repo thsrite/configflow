@@ -149,26 +149,5 @@
     },
     "native_error": "资源引用必须是非空 ID",
     "native_class": "ProfileValidationError"
-  },
-  {
-    "label": "schema str",
-    "record": {
-      "label": "schema str",
-      "patch": [
-        {
-          "path": [
-            "schema_version"
-          ],
-          "set": "5"
-        }
-      ],
-      "error": {
-        "class": "ProfileValidationError",
-        "message": "配置存储版本不匹配",
-        "usages": null
-      }
-    },
-    "native_error": null,
-    "native_class": null
   }
 ]

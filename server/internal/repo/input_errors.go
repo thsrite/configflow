@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -50,7 +51,12 @@ func memberTypeMessage(e *model.MemberTypeError) string {
 		case "routers":
 			message = "routers 参数必须是包含 items 列表的对象"
 		case "proxy_groups":
-			message = shapeMessage(validateResourceArray(raw, "proxy_groups"))
+			if raw == nil {
+				_, err := itemsOf(raw, "策略组")
+				message = shapeMessage(err)
+			} else {
+				message = shapeMessage(validateResourceArray(raw, "proxy_groups"))
+			}
 		case "rule_configs":
 			_, err := itemsOf(raw, "规则配置")
 			message = shapeMessage(err)
@@ -86,12 +92,77 @@ func memberTypeMessage(e *model.MemberTypeError) string {
 		switch e.Member {
 		case "system", "shared", "profiles":
 			message = msgSectionMissing + e.Member
+		case "profile":
+			message = msgProfileIDMismatch
 		case "schema_version":
 			message = msgSchemaMismatch
 		}
+	}
+	if e.Member == "_revision" && e.Record != "document" {
+		message = msgRevisionInvalid
 	}
 	if message == "" {
 		message = fmt.Sprintf(msgMemberType, e.Member)
 	}
 	return message
+}
+
+// requiredInputMembers are the section members Python's document validation
+// refused to miss. Typed records cannot tell a missing member from its zero
+// value, so whole-document input (imports) is checked before decoding.
+var requiredInputMembers = map[string][]string{
+	"system":  {"system_config", "backup", "agents", "_revision"},
+	"shared":  append(append([]string{}, SharedFields...), "_revision"),
+	"profile": {"name", "proxy_groups", "rule_configs", "mihomo", "surge", "mosdns", "_revision"},
+}
+
+// checkDocumentInput refuses whole-document input that misses a required
+// section member or has a system member the system section does not accept,
+// with the message Python's validation gave.
+func checkDocumentInput(raw json.RawMessage) error {
+	root := viewOfJSON(raw)
+	check := func(record string, section memberView) error {
+		for _, member := range requiredInputMembers[record] {
+			if !section.has(member) {
+				return inputError(&model.MemberTypeError{Record: record, Member: member, Err: model.ErrType})
+			}
+		}
+		return nil
+	}
+	if raw, present := root.get("system"); present && jsonKind(raw) == '{' {
+		system := viewOfJSON(raw)
+		if err := check("system", system); err != nil {
+			return err
+		}
+		for _, key := range system.fields.Keys() {
+			if !systemFields[key] {
+				return validationError("system 节只接受全局设置、备份与 Agent")
+			}
+		}
+	}
+	if raw, present := root.get("shared"); present && jsonKind(raw) == '{' {
+		if err := check("shared", viewOfJSON(raw)); err != nil {
+			return err
+		}
+	}
+	if raw, present := root.get("profiles"); present && jsonKind(raw) == '{' {
+		for _, profile := range viewOfJSON(raw).fields.All() {
+			if jsonKind(profile) != '{' {
+				continue
+			}
+			view := viewOfJSON(profile)
+			for _, key := range SharedFields {
+				if view.has(key) {
+					return validationError("独立配置不能保存共享资源副本")
+				}
+			}
+			if view.has("resource_refs") || view.has("node_dialers") {
+				return validationError("独立配置不接受资源白名单或节点拨号覆盖字段")
+			}
+			if err := check("profile", view); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

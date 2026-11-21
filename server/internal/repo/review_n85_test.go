@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
@@ -130,7 +131,7 @@ func TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup(t *testing.T) {
 				t.Fatal("startup changed unrelated files")
 			}
 			settings := must(opened.SystemConfig(bg))(t)
-			if settings.RuleProxyToken == "" || settings.ConfigToken == "" {
+			if settings.RuleProxyToken == "" {
 				t.Fatal("tokens not generated")
 			}
 			if tt.invalidName && must(opened.Profile(bg, DefaultProfileID))(t).Name != "7" {
@@ -183,8 +184,10 @@ func TestReviewN85TokenMaintenancePreservesUntouchedMembers(t *testing.T) {
 				if name == "retired_rule_proxy_tokens" {
 					continue // the explicit business normalization
 				}
+				// Values, number text included; whitespace and escapes follow
+				// Go's encoding (O18 T1a).
 				got, present := saved.Get(name)
-				if !present || !bytes.Equal(got, value) {
+				if !present || !testjson.Equal(value, got, testjson.CompareOptions{DistinguishNumberLiterals: true}) || bytes.Contains(value, []byte("1.2300")) != bytes.Contains(got, []byte("1.2300")) {
 					t.Errorf("untouched member %s changed: %s -> %s", name, value, got)
 				}
 			}

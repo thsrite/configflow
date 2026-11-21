@@ -164,6 +164,23 @@ func refBase(t *testing.T) *testObj {
 	return refLoad(t).GetObject("base").DeepCopy()
 }
 
+// decodeInputDocObj decodes a reference document the way imports do.
+func decodeInputDocObj(t *testing.T, obj *testObj) (*model.Document, error) {
+	t.Helper()
+	if obj == nil {
+		return nil, &store.Error{Kind: store.ErrDocument, Message: msgStoreDocumentObject}
+	}
+	raw := mustMarshalJSON(t, obj)
+	if err := checkDocumentInput(raw); err != nil {
+		return nil, err
+	}
+	document, _, err := model.DecodeDocument(raw)
+	if err != nil {
+		return nil, inputError(err)
+	}
+	return document, nil
+}
+
 func decodeDocObj(t *testing.T, obj *testObj) (*model.Document, error) {
 	t.Helper()
 	if obj == nil {
@@ -304,13 +321,19 @@ func TestReferenceValidateDocument(t *testing.T) {
 		"agent name bool":       "Agent true 绑定的配置不存在",
 		"aggregation name none": "聚合 null 引用了不存在的资源：gone",
 		"aggregation name list": `聚合 ["a",1] 的 nodes 只能包含资源 ID，不能设置资源覆盖`,
+		// A revision is an integer (O18 T1a, strict input): Python's bool and
+		// unbounded integers are refused like any other invalid revision.
+		"revision true": msgRevisionInvalid,
+		"revision huge": msgRevisionInvalid,
 	}
 	for _, item := range refLoad(t).GetList("validate") {
 		record := item.(*testObj)
 		document := refBase(t)
 		refPatch(t, document, record.GetList("patch"))
 		label := record.GetString("label")
-		typed, err := decodeDocObj(t, document)
+		// Documents reach validation as input (O18 T1a): stored rows are read
+		// leniently and can no longer hold wrong-typed or missing members.
+		typed, err := decodeInputDocObj(t, document)
 		if err == nil {
 			err = validateDocument(typed)
 		}
@@ -388,11 +411,32 @@ func TestReferencePruneRuleDNS(t *testing.T) {
 	t.Parallel()
 	for index, item := range refLoad(t).GetList("prune_rule_dns") {
 		values := item.([]any)
+		// Profiles are stored records: read leniently (O18 T1a). A case whose
+		// stored profile has a member of the wrong type reads it as its zero
+		// value, so only the pruning itself is checked there.
 		var record model.Profile
-		noError(t, json.Unmarshal(refRaw(t, values[0]), &record))
+		issues := 0
+		for key, raw := range viewOfJSON(refRaw(t, values[0])).fields.All() {
+			_, found, err := model.DecodeStoredMember(&record, key, raw, key)
+			noError(t, err)
+			issues += len(found)
+		}
 		noError(t, pruneProfileDNS(&record))
 		got := must(model.Marshal(&record))(t)
+		if issues > 0 {
+			continue
+		}
 		want := refRaw(t, values[1])
+		// The Go profile also writes the members it always has (O18 T1a);
+		// Python's members are compared.
+		var kept model.Fields
+		gotView := viewOfJSON(got)
+		for key := range viewOfJSON(want).fields.All() {
+			if value, ok := gotView.get(key); ok {
+				noError(t, kept.Set(key, value))
+			}
+		}
+		got = must(kept.MarshalJSON())(t)
 		if !testjson.Equal(want, json.RawMessage(got)) {
 			t.Errorf("case %d: go %s py %s", index, got, want)
 		}
