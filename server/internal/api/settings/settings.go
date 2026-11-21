@@ -111,7 +111,7 @@ func exceptionName(err error) string {
 }
 
 func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := loadSettings(c.Context())
+	config, err := loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("rule_fetch_proxy", raw); err != nil {
 		return nil, err
 	}
-	if err := saveSettings(c.Context(), config); err != nil {
+	if err := saveSystemConfig(c.Context(), config); err != nil {
 		appLogger.Error("Failed to update rule download proxy: exception_type=" + exceptionName(err))
 		return failure(500, msgProxySave), nil
 	}
@@ -164,7 +164,7 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "POST" && invalidUnicode(c) {
 		return failure(400, msgInvalidUnicode), nil
 	}
-	config, err := loadSettings(c.Context())
+	config, err := loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("server_domain", raw); err != nil {
 		return nil, err
 	}
-	if err = saveSettings(c.Context(), config); err != nil {
+	if err = saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil
 	}
 	appLogger.Info("Updated server domain")
@@ -196,7 +196,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "POST" && invalidUnicode(c) {
 		return failure(400, msgInvalidUnicode), nil
 	}
-	config, err := loadSettings(c.Context())
+	config, err := loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 		if err = config.SystemConfig.SetJSON("config_token", json.RawMessage(`""`)); err != nil {
 			return nil, err
 		}
-		if err = saveSettings(c.Context(), config); err != nil {
+		if err = saveSystemConfig(c.Context(), config); err != nil {
 			return failure(500, err.Error()), nil
 		}
 		appLogger.Info("Deleted config token")
@@ -238,7 +238,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("config_token", raw); err != nil {
 		return nil, err
 	}
-	if err = saveSettings(c.Context(), config); err != nil {
+	if err = saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil
 	}
 	appLogger.Info("Updated config token")
@@ -297,11 +297,11 @@ func backupRequestData(c *httpx.Ctx) (*settingsRequest, *httpx.Response) {
 	return &data, nil
 }
 func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := loadSettings(c.Context())
+	config, err := loadBackup(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	backup := config.Backup
+	backup := *config.Backup
 	if c.Method() == "GET" || c.Method() == "HEAD" {
 		raw, err := json.Marshal(backup)
 		if err != nil {
@@ -370,8 +370,8 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = (webdav.Settings{URL: address, Path: path}).ValidatePaths(); err != nil {
 		return failure(400, err.Error()), nil
 	}
-	config.Backup = backup
-	if err = saveSettings(c.Context(), config); err != nil {
+	*config.Backup = backup
+	if err = saveBackup(c.Context(), config); err != nil {
 		return nil, err
 	}
 	summary := strings.Join(changed, "、")
@@ -386,7 +386,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.Message(200, true, msgBackupSaved), nil
 }
 func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := loadSettings(c.Context())
+	config, err := loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("subscription_aggregation_enabled", raw); err != nil {
 		return nil, err
 	}
-	if err = saveSettings(c.Context(), config); err != nil {
+	if err = saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil
 	}
 	appLogger.Info("Updated subscription aggregation")

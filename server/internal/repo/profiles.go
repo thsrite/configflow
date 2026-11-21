@@ -49,28 +49,46 @@ func (r *Repository) ConfigRevision(ctx context.Context, profileID string) (resu
 }
 
 // PublishConfig is GetPublishSnapshot on typed values: the resolved view of
-// a profile (Agents only when agents is set) and its config revision, from
+// a profile (full Agents only when agents is set) and its config revision, from
 // one generation. The value belongs to the caller.
 func (r *Repository) PublishConfig(ctx context.Context, profileID string, agents bool) (config *model.Config, revision int64, err error) {
+	projection := agentCopyNone
+	if agents {
+		projection = agentCopyFull
+	}
 	err = r.View(ctx, func(document *model.Document) error {
 		profile, err := profileFor(document, profileID)
 		if err != nil {
 			return err
 		}
 		revision = int64(profile.Revision) + int64(document.Shared.Revision)
-		config, err = resolveConfig(document, profileID, nil, agents)
+		config, err = resolveConfig(document, profileID, nil, projection)
 		return err
 	})
 	return config, revision, err
 }
 
-// Config returns the resolved view of a profile (Python's compat config):
-// its own members, system_config, backup, the Agents, the shared resources
-// its composition selects plus roots, the whole rule library, and rulesets
-// hydrated from it. The value belongs to the caller.
+// Config returns the resolved view of a profile: its own members,
+// system_config, backup, the shared resources its composition selects plus
+// roots, the whole rule library, and rulesets hydrated from it. Agents are
+// omitted by default so hot readers never copy deployment or IPv6 verification
+// histories; OxiDNS policy/rule-DNS callers use ConfigWithOxiDNSAgents.
+// The value belongs to the caller.
 func (r *Repository) Config(ctx context.Context, profileID string, roots ResourceRoots) (result *model.Config, err error) {
 	err = r.View(ctx, func(document *model.Document) error {
-		result, err = resolveConfig(document, profileID, roots, true)
+		result, err = resolveConfig(document, profileID, roots, agentCopyNone)
+		return err
+	})
+	return result, err
+}
+
+// ConfigWithOxiDNSAgents returns the resolved view of a profile together with
+// only the Agent fields OxiDNS policy and rule-DNS readers inspect (id, name,
+// host, service_type, profile_id, enabled, dns_follow, rule_sync), without
+// copying deployment or IPv6 verification histories.
+func (r *Repository) ConfigWithOxiDNSAgents(ctx context.Context, profileID string, roots ResourceRoots) (result *model.Config, err error) {
+	err = r.View(ctx, func(document *model.Document) error {
+		result, err = resolveConfig(document, profileID, roots, agentCopyOxiDNS)
 		return err
 	})
 	return result, err

@@ -118,7 +118,7 @@ func normalizeJSON(v any) {
 }
 func configJSON(t *testing.T, r *repo.Repository) json.RawMessage {
 	t.Helper()
-	doc, err := r.Config(context.Background(), "default", nil)
+	doc, err := r.ConfigWithOxiDNSAgents(context.Background(), "default", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

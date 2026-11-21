@@ -57,16 +57,12 @@ func sharedConfig(ctx context.Context) (record, error) {
 	}
 	return native(value)
 }
-func systemConfig(ctx context.Context) (record, error) {
+func systemConfig(ctx context.Context) (*model.SystemConfig, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return record{}, err
+		return nil, err
 	}
-	value, err := r.System(ctx)
-	if err != nil {
-		return record{}, err
-	}
-	return native(value)
+	return r.SystemConfig(ctx)
 }
 func editShared(ctx context.Context, fn func(context.Context, *record) error) error {
 	if err := ctx.Err(); err != nil {
@@ -513,19 +509,15 @@ func rejectedBeforeCommit(err error) bool {
 	return errors.As(err, &f) || errors.As(err, &locked) || settings || errors.Is(err, repo.ErrValidation) || errors.Is(err, repo.ErrInUse) || errors.Is(err, repo.ErrExists) || errors.Is(err, repo.ErrNotFound)
 }
 
-func (s *Service) requestStatus(ctx context.Context, address string, system record, head bool) (int, error) {
+func (s *Service) requestStatus(ctx context.Context, address string, settings *model.SystemConfig, head bool) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	encoded, err := json.Marshal(system)
-	var settings model.System
-	if err == nil {
-		err = json.Unmarshal(encoded, &settings)
+	var sysCfg model.SystemConfig
+	if settings != nil {
+		sysCfg = *settings
 	}
-	if err != nil {
-		return 0, err
-	}
-	address, err = convert.GitHubURL(address, &model.Config{SystemConfig: settings.SystemConfig})
+	address, err := convert.GitHubURL(address, &model.Config{SystemConfig: sysCfg})
 	if err != nil {
 		return 0, err
 	}
@@ -536,7 +528,7 @@ func (s *Service) requestStatus(ctx context.Context, address string, system reco
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	response, err := s.client.Download(ctx, address, rulefetch.DownloadRequest{Config: &rulefetch.SourceConfig{Settings: settings.SystemConfig}, Method: method, ConnectTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
+	response, err := s.client.Download(ctx, address, rulefetch.DownloadRequest{Config: &rulefetch.SourceConfig{Settings: sysCfg}, Method: method, ConnectTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second})
 	if err != nil {
 		return 0, err
 	}

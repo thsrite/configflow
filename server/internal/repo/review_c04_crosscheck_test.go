@@ -440,7 +440,14 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 			}
 			var cfg *model.Config
 			if cfg, err = r.Config(sctx, resolvedID, roots); err == nil {
-				result = xcObjFromRecord(t, cfg)
+				if cfg.HasAgents {
+					t.Fatal("Config included agents by default")
+				}
+				var sys *model.System
+				if sys, err = r.System(sctx); err == nil {
+					cfg.Agents, cfg.HasAgents = sys.Agents, true
+					result = xcObjFromRecord(t, cfg)
+				}
 			}
 		}
 	default:

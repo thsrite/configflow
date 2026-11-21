@@ -488,8 +488,10 @@ func (f *fixture) seedRouter(profile string) *model.Router {
 	return &router
 }
 
+// config is the router management view (routers.ManagementService.Records)
+// that router checks digest.
 func (f *fixture) config(profile string) json.RawMessage {
-	cfg, err := f.srv.Repo.Config(f.srv.Context(), profile, nil)
+	cfg, err := f.srv.Repo.ConfigWithOxiDNSAgents(f.srv.Context(), profile, nil)
 	if err != nil {
 		f.t.Fatal(err)
 	}

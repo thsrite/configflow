@@ -37,7 +37,7 @@ func TestConfigFromMatchesSnapshot(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !bytes.Equal(left, right) || len(actual.Agents) != 1 || len(actual.RuleLibrary) != 1 || actual.SystemConfig.ConfigToken != "synthetic-config-token" || len(actual.Profile.RuleConfigs) != 1 || actual.Profile.RuleConfigs[0].Content == nil || *actual.Profile.RuleConfigs[0].Content == "" {
+		if !bytes.Equal(left, right) || actual.HasAgents || len(actual.Agents) != 0 || len(actual.RuleLibrary) != 1 || actual.SystemConfig.ConfigToken != "synthetic-config-token" || len(actual.Profile.RuleConfigs) != 1 || actual.Profile.RuleConfigs[0].Content == nil || *actual.Profile.RuleConfigs[0].Content == "" {
 			t.Fatalf("snapshot resolution differs or skipped hydration: %s", right)
 		}
 		if _, err := repo.ConfigFrom(document, "missing", nil); !errors.Is(err, repo.ErrNotFound) {

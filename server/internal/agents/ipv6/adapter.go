@@ -287,10 +287,14 @@ func (s *Service) receipt(ctx context.Context, a Document) (*deploy.Receipt, err
 
 func (s *Service) systemSecrets(ctx context.Context) (redact.Secrets, error) {
 	ctx = repo.WithRepository(ctx, s.Manager.Repository())
-	system, e := s.Manager.Repository().System(ctx)
+	settings, e := s.Manager.Repository().SystemConfig(ctx)
 	if e != nil {
 		return nil, e
 	}
-	seeds, err := redact.ExternalPayloadSecrets(ctx, system)
+	raw, e := model.Marshal(settings)
+	if e != nil {
+		return nil, e
+	}
+	seeds, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(raw))
 	return redact.NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")}), err
 }

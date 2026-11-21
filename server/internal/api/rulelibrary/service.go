@@ -179,12 +179,14 @@ func (s *Service) Reorder(ctx context.Context, body record) ([]string, error) {
 
 // ProxyDomains reads the configured GitHub forwarding domain.
 func (s *Service) ProxyDomains(ctx context.Context) (jsonValue, error) {
-	system, err := systemConfig(ctx)
+	settings, err := systemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	config := child(system, "system_config")
-	raw, ok := config.Get("github_proxy_domain")
+	raw, ok, err := settings.MemberJSON("github_proxy_domain")
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return jsonValue(`""`), nil
 	}

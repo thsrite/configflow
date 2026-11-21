@@ -27,7 +27,7 @@ var managementLogger = logx.Get("backend.routes.routers")
 
 // Records loads the resolved configuration and R5-decoded router records.
 func (s *ManagementService) Records(ctx context.Context, profile string) (json.RawMessage, []*Router, error) {
-	doc, err := s.Repo.Config(ctx, profile, repo.ResourceRoots{})
+	doc, err := s.Repo.ConfigWithOxiDNSAgents(ctx, profile, repo.ResourceRoots{})
 	if err != nil {
 		return nil, nil, err
 	}

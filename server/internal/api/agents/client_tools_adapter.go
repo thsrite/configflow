@@ -83,6 +83,17 @@ func clientConfig(ctx context.Context, id string, fresh bool) (*model.Config, er
 	}
 	return r.Config(ctx, id, roots)
 }
+func clientPolicyConfig(ctx context.Context, id string, fresh bool) (*model.Config, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var roots repo.ResourceRoots
+	if fresh {
+		roots = repo.ResourceRoots{}
+	}
+	return r.ConfigWithOxiDNSAgents(ctx, id, roots)
+}
 func freshClientDiscovery(ctx context.Context, id string) (discovery.Settings, error) {
 	config, err := clientConfig(ctx, id, true)
 	if err != nil {
@@ -295,7 +306,7 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 		if latest == nil || latest.ServiceType != "oxidns" || profile != edit.ProfileID {
 			return repo.NewInUse(msgPolicyConflict, nil)
 		}
-		config, err := clientConfig(tx, edit.ProfileID, true)
+		config, err := clientPolicyConfig(tx, edit.ProfileID, true)
 		if err != nil {
 			return err
 		}
@@ -336,7 +347,7 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 	return err
 }
 func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (any, error) {
-	config, err := clientConfig(ctx, id, false)
+	config, err := clientPolicyConfig(ctx, id, false)
 	if err != nil {
 		return nil, err
 	}

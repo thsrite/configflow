@@ -6,6 +6,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"context"
 	"encoding/json"
 	"math/big"
@@ -85,15 +86,29 @@ type TrafficQuery struct {
 
 // TrafficRetention reads the exact system_config member with the established default.
 func TrafficRetention(system *model.System) (int64, error) {
-	raw, err := json.Marshal(system)
+	if system == nil {
+		return DefaultRetention, nil
+	}
+	raw, present, err := repo.SystemMemberJSON(system, "system_config")
 	if err != nil {
 		return 0, err
 	}
-	fields, err := jsondecode.Select(raw, "system_config")
-	if err != nil {
-		return 0, err
+	if !present {
+		return DefaultRetention, nil
 	}
-	return retentionDaysJSON(fields["system_config"])
+	return retentionDaysJSON(raw)
+}
+
+// TrafficRetentionFromRepo reads the traffic retention setting from the
+// repository view without copying the Agent registry.
+func TrafficRetentionFromRepo(ctx context.Context, r *repo.Repository) (int64, error) {
+	var retention int64
+	err := r.View(ctx, func(doc *model.Document) error {
+		var err error
+		retention, err = TrafficRetention(&doc.System)
+		return err
+	})
+	return retention, err
 }
 
 // SetTrafficRetention stores a validated retention choice without losing unknown settings.

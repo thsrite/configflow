@@ -430,6 +430,76 @@ func (m *Manager) AgentPair(ctx context.Context, id string) ([]*model.Agent, err
 	return out, nil
 }
 
+// RuleSyncAgent is the narrow per-Agent view read by rule-sync scheduling and
+// presence tracking: identity, service type, sync switches, live presence
+// metadata and the credentials found in the stored record, without copying
+// deployment or IPv6 verification histories.
+type RuleSyncAgent struct {
+	ID              string
+	ServiceType     string
+	RuleSyncLibrary bool
+	RuleSyncRules   bool
+	// Credentials are collected from the stored record with histories
+	// cleared, the same members the previous owned listing copy encoded.
+	Credentials redact.Secrets
+	// CredentialsErr reports a record that could not be encoded; presence
+	// display must then be withheld.
+	CredentialsErr error
+	Presence       PresenceRecord
+}
+
+// RuleSyncAgents reads only the scheduling and presence fields of each
+// registered Agent from the cached registry view, overlaying live heartbeat
+// freshness, without decoding owned copies or encoding histories.
+func (m *Manager) RuleSyncAgents(ctx context.Context) ([]RuleSyncAgent, error) {
+	var out []RuleSyncAgent
+	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
+		live := m.runtime.liveHeartbeats(records)
+		out = make([]RuleSyncAgent, 0, len(records))
+		for i := range records {
+			a := &records[i]
+			liveHB, hasLive := live[i]
+			var library, rules bool
+			if a.RuleSync != nil {
+				library = a.RuleSync.Settings.Library != nil && *a.RuleSync.Settings.Library
+				rules = a.RuleSync.Settings.Rules != nil && *a.RuleSync.Settings.Rules
+			}
+			credentials, credentialsErr := storedCredentials(a)
+			out = append(out, RuleSyncAgent{
+				ID:              a.ID,
+				ServiceType:     a.ServiceType,
+				RuleSyncLibrary: library,
+				RuleSyncRules:   rules,
+				Credentials:     credentials,
+				CredentialsErr:  credentialsErr,
+				Presence:        presenceRecordOf(a, liveHB, hasLive, true),
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// storedCredentials collects credential values of one stored record without
+// its histories. Raw/Fields are copy-on-write: Clear affects only the local
+// value, never the cached registry record.
+func storedCredentials(source *model.Agent) (redact.Secrets, error) {
+	selected := *source
+	for _, field := range repo.AgentHistoryFields {
+		if err := selected.Clear(field); err != nil {
+			return nil, err
+		}
+	}
+	data, err := model.Marshal(selected)
+	if err != nil {
+		return nil, fmt.Errorf("encode Agent credentials: %w", err)
+	}
+	return redact.CollectCredentials(json.RawMessage(data), nil), nil
+}
+
 // AgentName returns only an original stored string name, including an explicitly
 // empty string. Stored scalar projections are not a replacement for this evidence.
 func AgentName(a *model.Agent) (string, bool) {

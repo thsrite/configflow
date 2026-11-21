@@ -94,6 +94,87 @@ func (r *Repository) SaveSystemRecord(ctx context.Context, snapshot, baseline *m
 	}
 	return copyRecord(result)
 }
+
+// SaveSystemConfig merges system_config against an optional baseline under one
+// system transaction without copying or encoding the Agent registry.
+func (r *Repository) SaveSystemConfig(ctx context.Context, snapshot, baseline *model.SystemConfig) (*model.SystemConfig, error) {
+	if snapshot == nil {
+		return nil, validationError("System config must be an object")
+	}
+	saved, err := r.saveSystemMember(ctx, "system_config", snapshot, baseline)
+	if err != nil {
+		return nil, err
+	}
+	return copyRecord(&saved.SystemConfig)
+}
+
+// SaveBackup merges backup settings against an optional baseline under one
+// system transaction without copying or encoding the Agent registry.
+func (r *Repository) SaveBackup(ctx context.Context, snapshot, baseline *model.Backup) (*model.Backup, error) {
+	if snapshot == nil {
+		return nil, validationError("Backup settings must be an object")
+	}
+	saved, err := r.saveSystemMember(ctx, "backup", snapshot, baseline)
+	if err != nil {
+		return nil, err
+	}
+	return copyRecord(&saved.Backup)
+}
+
+func (r *Repository) saveSystemMember(ctx context.Context, key string, snapshot, baseline any) (*model.System, error) {
+	ctx = ctxx.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	raw, err := model.Marshal(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	var previous json.RawMessage
+	hasBaseline := false
+	if baseline != nil {
+		encoded, err := model.Marshal(baseline)
+		if err != nil {
+			return nil, err
+		}
+		previous = encoded
+		hasBaseline = true
+	}
+	var result *model.System
+	err = r.Update(ctx, func(ctx context.Context, document *model.Document) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var err error
+		result, err = applySystemIn(document, func(current *model.System) error {
+			existing, _, err := SystemMemberJSON(current, key)
+			if err != nil {
+				return err
+			}
+			merged := json.RawMessage(raw)
+			if hasBaseline {
+				merged, _, err = MergeJSON(existing, previous, merged)
+				if err != nil {
+					return err
+				}
+			} else if jsonKind(existing) == '{' && jsonKind(merged) == '{' {
+				merged, err = mergeObjectsJSON(existing, merged)
+				if err != nil {
+					return err
+				}
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return current.SetJSON(key, merged)
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 func mergeSectionMembers(keys []string, proposed, base model.Fields, current any, set func(string, json.RawMessage) error, deep bool) error {
 	stored, err := recordMembers(current)
 	if err != nil {

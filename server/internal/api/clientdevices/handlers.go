@@ -35,7 +35,7 @@ func Register(r *httpx.Router) {
 	r.POST("/api/client-devices/fixed-ip/apply", "client_devices.apply_fixed_ip", auth.Require(h.apply))
 }
 func config(ctx context.Context, db *repo.Repository, profile string) (json.RawMessage, error) {
-	value, err := db.Config(lifecycle.Detach(ctx), profile, repo.ResourceRoots{})
+	value, err := db.ConfigWithOxiDNSAgents(lifecycle.Detach(ctx), profile, repo.ResourceRoots{})
 	if err != nil {
 		return nil, err
 	}

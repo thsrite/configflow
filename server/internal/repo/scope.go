@@ -372,11 +372,11 @@ func prepareConfig(ctx context.Context) error {
 	_, dockerErr := os.Stat("/.dockerenv")
 	_, podmanErr := os.Stat("/run/.containerenv")
 	if dockerErr != nil && podmanErr != nil && h.DefaultServerDomain != nil {
-		system, err := repository.System(ctx)
+		settings, err := repository.SystemConfig(ctx)
 		if err != nil {
 			return err
 		}
-		if trimText(system.SystemConfig.ServerDomain) == "" {
+		if trimText(settings.ServerDomain) == "" {
 			domain := h.DefaultServerDomain()
 			if err := repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 				s.SystemConfig.ServerDomain = domain

@@ -598,7 +598,9 @@ func collect(ctx context.Context, repository *repo.Repository, completedTask str
 	}
 	routers := map[string]string{}
 	for _, profileID := range order {
-		config, err := repository.Config(ctx, profileID, nil)
+		// Router checks digest the view router management reads, including the
+		// OxiDNS Agent projection its policy entries depend on.
+		config, err := repository.ConfigWithOxiDNSAgents(ctx, profileID, nil)
 		if err != nil {
 			return nil, err
 		}

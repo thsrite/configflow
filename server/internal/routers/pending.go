@@ -89,7 +89,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		if req.ProfileID != nil && profile.ID != *req.ProfileID {
 			continue
 		}
-		config, err := req.Repo.Config(ctx, profile.ID, repo.ResourceRoots{})
+		config, err := req.Repo.ConfigWithOxiDNSAgents(ctx, profile.ID, repo.ResourceRoots{})
 		if err != nil {
 			return nil, "", "", err
 		}

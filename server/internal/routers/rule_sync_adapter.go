@@ -172,7 +172,7 @@ func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, dow
 	return contents, records, nil
 }
 func syncConfig(ctx context.Context, db *repo.Repository, id string) (json.RawMessage, error) {
-	config, err := db.Config(ctx, id, repo.ResourceRoots{})
+	config, err := db.ConfigWithOxiDNSAgents(ctx, id, repo.ResourceRoots{})
 	if err != nil {
 		return nil, err
 	}

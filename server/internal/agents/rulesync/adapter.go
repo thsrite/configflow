@@ -415,6 +415,33 @@ func snapshotVersion(a *model.Agent) string {
 	return a.ConfigVersion
 }
 
+// observeRuleSyncPresence is observePresence for the narrow round view: the
+// same system and per-record credential seeds, without owned Agent copies.
+func observeRuleSyncPresence(ctx context.Context, m *agents.Manager, records []agents.RuleSyncAgent) {
+	secrets, err := systemSecrets(ctx, m)
+	presence := make([]agents.PresenceRecord, 0, len(records))
+	for i := range records {
+		if records[i].CredentialsErr != nil {
+			err = records[i].CredentialsErr
+		} else {
+			secrets = redact.NewSecrets(secrets, records[i].Credentials)
+		}
+		presence = append(presence, records[i].Presence)
+	}
+	if err != nil {
+		hidden := make([]agents.PresenceObservation, 0, len(records))
+		for _, p := range presence {
+			if !p.ValidID {
+				continue
+			}
+			hidden = append(hidden, agents.PresenceObservation{ID: p.ID, Status: p.Status, Name: redact.Redacted, LastHeartbeat: redact.Redacted})
+		}
+		agents.ObserveAgentPresence(hidden, nil)
+		return
+	}
+	agents.ObservePresenceRecords(presence, secrets)
+}
+
 // Presence uses the shared transition owner, with only its log-facing fields
 // projected and sanitized. No metrics/history or deployment graph is copied.
 func observePresence(ctx context.Context, m *agents.Manager, records []*model.Agent) {

@@ -10,37 +10,57 @@ import (
 	"configflow/internal/webdav"
 )
 
-// saveSettings owns the C06 settings commit. The HTTP layer passes its request
-// lifetime unchanged; only the owner drops disconnect cancellation. The repo
-// retains the request scope/baseline and performs the existing three-way merge.
-type settingsEdit struct {
-	*model.System
-	baseline *model.System
+// saveSystemConfig / saveBackup own the C06 settings commits. The HTTP layer
+// passes its request lifetime unchanged; only the owner drops disconnect
+// cancellation. The repo performs three-way merges on the single section without
+// copying or encoding the Agent registry.
+type systemConfigEdit struct {
+	*model.SystemConfig
+	baseline *model.SystemConfig
 }
 
-func loadSettings(ctx context.Context) (*settingsEdit, error) {
+type backupEdit struct {
+	*model.Backup
+	baseline *model.Backup
+}
+
+func loadSystemConfig(ctx context.Context) (*systemConfigEdit, error) {
 	ctx = lifecycle.Detach(ctx)
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	system, err := r.System(ctx)
+	settings, err := r.SystemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// Record provenance is immutable. Settings edits replace members; they never
-	// mutate Agent slices or pointer values shared with this baseline.
-	base := *system
-	return &settingsEdit{system, &base}, nil
+	base := *settings
+	return &systemConfigEdit{settings, &base}, nil
 }
-func settingValue(config *settingsEdit, key string, fallback json.RawMessage) json.RawMessage {
+
+func loadBackup(ctx context.Context) (*backupEdit, error) {
+	ctx = lifecycle.Detach(ctx)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	backup, err := r.Backup(ctx)
+	if err != nil {
+		return nil, err
+	}
+	base := *backup
+	return &backupEdit{backup, &base}, nil
+}
+
+func settingValue(config *systemConfigEdit, key string, fallback json.RawMessage) json.RawMessage {
 	raw, present, err := config.SystemConfig.MemberJSON(key)
 	if err != nil || !present {
 		return fallback
 	}
 	return raw
 }
-func saveSettings(ctx context.Context, config *settingsEdit) error {
+
+func saveSystemConfig(ctx context.Context, config *systemConfigEdit) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -49,7 +69,23 @@ func saveSettings(ctx context.Context, config *settingsEdit) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.SaveSystemRecord(ctx, config.System, config.baseline)
+	_, err = r.SaveSystemConfig(ctx, config.SystemConfig, config.baseline)
+	if err == nil {
+		repo.ResetConfigContext(ctx)
+	}
+	return err
+}
+
+func saveBackup(ctx context.Context, config *backupEdit) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.SaveBackup(ctx, config.Backup, config.baseline)
 	if err == nil {
 		repo.ResetConfigContext(ctx)
 	}

@@ -38,7 +38,8 @@ func changedMembers(keys []string, before, after any, set func(string, json.RawM
 }
 
 // UpdateConfig edits the resolved, hydrated configuration under one repository
-// transaction. Only changed profile settings are stored; metadata and shared
+// transaction. The view carries the OxiDNS Agent projection (see
+// ConfigWithOxiDNSAgents) for rule-DNS rebuilds, never Agent histories. Only changed profile settings are stored; metadata and shared
 // resources remain owned by their respective write APIs.
 func (r *Repository) UpdateConfig(ctx context.Context, profileID string, fn func(context.Context, *model.Config) error) error {
 	_, _, err := r.updateConfig(ctx, profileID, fn)
@@ -55,7 +56,7 @@ func (r *Repository) updateConfig(ctx context.Context, profileID string, fn func
 	err := r.Update(ctx, func(ctx context.Context, document *model.Document) error {
 		var err error
 		saved, err = updateProfileIn(document, profileID, func(profile *model.Profile) error {
-			config, err := resolveConfig(document, profileID, nil, true)
+			config, err := resolveConfig(document, profileID, nil, agentCopyOxiDNS)
 			if err != nil {
 				return err
 			}
@@ -122,7 +123,7 @@ func (r *Repository) updateSharedConfigs(ctx context.Context, sharedEdit func(co
 		}
 		before := map[string]*model.Config{}
 		for _, id := range selected {
-			config, err := resolveConfig(document, id, nil, true)
+			config, err := resolveConfig(document, id, nil, agentCopyOxiDNS)
 			if err != nil {
 				return err
 			}
@@ -147,7 +148,7 @@ func (r *Repository) updateSharedConfigs(ctx context.Context, sharedEdit func(co
 		}
 		for _, id := range selected {
 			saved, err := updateProfileIn(document, id, func(profile *model.Profile) error {
-				after, err := resolveConfig(document, id, nil, true)
+				after, err := resolveConfig(document, id, nil, agentCopyOxiDNS)
 				if err != nil {
 					return err
 				}

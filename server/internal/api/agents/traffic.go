@@ -143,11 +143,7 @@ func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *model.Age
 			since = raw
 		}
 	}
-	system, err := manager.Repository().System(c.Context())
-	if err != nil {
-		return nil, err
-	}
-	retention, err := metrics.TrafficRetention(system)
+	retention, err := metrics.TrafficRetentionFromRepo(c.Context(), manager.Repository())
 	if err != nil {
 		return nil, err
 	}

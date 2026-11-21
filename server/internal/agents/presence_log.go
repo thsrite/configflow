@@ -69,29 +69,84 @@ func ObserveAgentPresence(records []PresenceObservation, secrets redact.Secrets)
 }
 func resetPresence() { presenceMu.Lock(); presenceKnown = map[string]presence{}; presenceMu.Unlock() }
 
+// PresenceRecord holds the raw presence-relevant fields of one Agent projected
+// without copying deployment, verification or metrics histories.
+type PresenceRecord struct {
+	ID           string
+	ValidID      bool
+	Status       string
+	NameRaw      json.RawMessage
+	NameErr      error
+	HeartbeatRaw json.RawMessage
+	HeartbeatErr error
+}
+
+// ObservePresenceRecords renders and records presence transitions from narrow
+// PresenceRecord projections. Histories never enter this path.
+func ObservePresenceRecords(records []PresenceRecord, secrets redact.Secrets) {
+	observations := make([]PresenceObservation, 0, len(records))
+	for i := range records {
+		r := &records[i]
+		if !r.ValidID {
+			continue
+		}
+		observations = append(observations, PresenceObservation{
+			ID:            r.ID,
+			Status:        r.Status,
+			Name:          registryDisplay(r.NameRaw, r.NameErr, secrets),
+			LastHeartbeat: registryDisplay(r.HeartbeatRaw, r.HeartbeatErr, secrets),
+		})
+	}
+	ObserveAgentPresence(observations, secrets)
+}
+
 // ObserveRegistryPresence projects only original log metadata and sanitizes rich
 // imported values before rendering them. Histories never enter this projection.
 func ObserveRegistryPresence(records []*model.Agent, secrets redact.Secrets) {
-	observations := make([]PresenceObservation, 0, len(records))
+	projected := make([]PresenceRecord, 0, len(records))
 	for _, record := range records {
 		if record == nil {
 			continue
 		}
-		id, valid := storedText(record.MemberJSON("id"))
-		if !valid {
-			continue
-		}
-		status, _ := storedText(record.MemberJSON("status"))
-		name, present, err := record.MemberJSON("name")
-		content, contentErr := model.JSONHasContent(name)
-		if err == nil && contentErr == nil && (!present || !content) {
-			name, _, err = record.MemberJSON("id")
-		}
-		label := registryDisplay(name, err, secrets)
-		heartbeat, _, err := record.MemberJSON("last_heartbeat")
-		observations = append(observations, PresenceObservation{ID: id, Status: status, Name: label, LastHeartbeat: registryDisplay(heartbeat, err, secrets)})
+		projected = append(projected, presenceRecordOf(record, "", false, false))
 	}
-	ObserveAgentPresence(observations, secrets)
+	ObservePresenceRecords(projected, secrets)
+}
+
+func presenceRecordOf(record *model.Agent, liveHeartbeat string, hasLive, applyFreshness bool) PresenceRecord {
+	id, valid := storedText(record.MemberJSON("id"))
+	if !valid {
+		return PresenceRecord{}
+	}
+	var status string
+	var hbRaw json.RawMessage
+	var hbErr error
+	effectiveHeartbeat := record.LastHeartbeat
+	if hasLive {
+		status = "online"
+		effectiveHeartbeat = liveHeartbeat
+		hbRaw, hbErr = json.Marshal(liveHeartbeat)
+	} else {
+		status, _ = storedText(record.MemberJSON("status"))
+		hbRaw, _, hbErr = record.MemberJSON("last_heartbeat")
+	}
+	if applyFreshness && !FreshHeartbeat(effectiveHeartbeat, nil) {
+		status = "offline"
+	}
+	name, present, nameErr := record.MemberJSON("name")
+	content, contentErr := model.JSONHasContent(name)
+	if nameErr == nil && contentErr == nil && (!present || !content) {
+		name, _, nameErr = record.MemberJSON("id")
+	}
+	return PresenceRecord{
+		ID:           id,
+		ValidID:      true,
+		Status:       status,
+		NameRaw:      name,
+		NameErr:      nameErr,
+		HeartbeatRaw: hbRaw,
+		HeartbeatErr: hbErr,
+	}
 }
 func registryDisplay(raw json.RawMessage, failure error, secrets redact.Secrets) string {
 	if failure != nil {

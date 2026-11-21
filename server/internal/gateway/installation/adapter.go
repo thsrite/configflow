@@ -213,11 +213,11 @@ func publicOwnerError(err error) error {
 }
 func (s *Service) secrets(ctx context.Context) (redact.Secrets, error) {
 	ctx = repo.WithRepository(ctx, s.Repository)
-	system, err := s.Repository.System(ctx)
+	settingsModel, err := s.Repository.SystemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := system.SystemConfig.MarshalJSON()
+	settings, err := settingsModel.MarshalJSON()
 	if err != nil {
 		return nil, err
 	}

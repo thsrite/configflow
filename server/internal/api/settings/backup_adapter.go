@@ -12,7 +12,7 @@ func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *
 	if bad != nil {
 		return webdav.Settings{}, bad, nil
 	}
-	saved, err := loadSettings(c.Context())
+	saved, err := loadBackup(c.Context())
 	if err != nil {
 		return webdav.Settings{}, nil, err
 	}

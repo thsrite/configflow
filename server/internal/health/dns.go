@@ -340,24 +340,26 @@ func LoadDNSConfig(ctx context.Context) (DNSConfig, error) {
 	if err != nil {
 		return DNSConfig{}, err
 	}
-	system, err := repository.System(ctx)
-	if err != nil {
-		return DNSConfig{}, err
-	}
-	if err := checkSystemConfigRoot(system); err != nil {
-		return DNSConfig{}, err
-	}
-	saved := system.SystemConfig.NodeTestDNSConfig
-	if saved != nil && saved.Mode != "managed" {
-		rawSaved, err := model.Marshal(saved)
-		if err != nil {
-			return DNSConfig{}, err
+	var rawSaved, rawSettings []byte
+	hasSaved := false
+	if err := repository.View(ctx, func(doc *model.Document) error {
+		if err := checkSystemConfigRoot(&doc.System); err != nil {
+			return err
 		}
-		return NormalizeDNSConfigJSON(rawSaved)
-	}
-	rawSettings, err := model.Marshal(&system.SystemConfig)
-	if err != nil {
+		if saved := doc.System.SystemConfig.NodeTestDNSConfig; saved != nil && saved.Mode != "managed" {
+			var err error
+			rawSaved, err = model.Marshal(saved)
+			hasSaved = true
+			return err
+		}
+		var err error
+		rawSettings, err = model.Marshal(&doc.System.SystemConfig)
+		return err
+	}); err != nil {
 		return DNSConfig{}, err
+	}
+	if hasSaved {
+		return NormalizeDNSConfigJSON(rawSaved)
 	}
 	var settingsObj rawObject
 	if err := json.Unmarshal(rawSettings, &settingsObj); err != nil {

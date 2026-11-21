@@ -62,12 +62,13 @@ func loadProfile(ctx context.Context, id string) (record, error) {
 	if err != nil {
 		return nil, err
 	}
-	value, err := r.Config(ctx, id, nil)
+	value, err := r.ConfigWithOxiDNSAgents(ctx, id, nil)
 	if err != nil {
 		return nil, err
 	}
 	return native(value)
 }
+
 func editProfile(ctx context.Context, id string, edit func(record) error) error {
 	if err := ctx.Err(); err != nil {
 		return err

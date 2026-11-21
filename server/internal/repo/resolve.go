@@ -326,9 +326,62 @@ func nodeRawDialer(node *model.Node) (any, error) {
 	return value, nil
 }
 
+// agentProjection selects which Agent data resolveConfig copies into a Config.
+type agentProjection uint8
+
+const (
+	agentCopyNone   agentProjection = iota // omit agents (default for Config)
+	agentCopyOxiDNS                        // only OxiDNS-consumed fields (no histories or tokens)
+	agentCopyFull                          // full Agent records (explicit PublishConfig(..., true))
+)
+
+// oxiDNSAgentFields are the only Agent members OxiDNS policy and rule-DNS
+// readers inspect; deployment and IPv6 verification histories are never copied.
+var oxiDNSAgentFields = []string{
+	"id",
+	"name",
+	"host",
+	"service_type",
+	"profile_id",
+	"enabled",
+	"dns_follow",
+	"rule_sync",
+}
+
+// copyOxiDNSAgents projects only the OxiDNS-consumed members of each Agent into
+// caller-owned records without touching deployment/IPv6 histories or tokens.
+func copyOxiDNSAgents(records []model.Agent) ([]model.Agent, error) {
+	out := make([]model.Agent, 0, len(records))
+	for i := range records {
+		var projected model.Fields
+		for _, key := range oxiDNSAgentFields {
+			raw, present, err := records[i].MemberJSON(key)
+			if err != nil {
+				return nil, err
+			}
+			if present {
+				if err := projected.Set(key, raw); err != nil {
+					return nil, err
+				}
+			}
+		}
+		encoded, err := projected.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		var agent model.Agent
+		if err := jsondecode.Unmarshal(encoded, &agent); err != nil {
+			return nil, fmt.Errorf("copy OxiDNS agent: %w", err)
+		}
+		out = append(out, agent)
+	}
+	return out, nil
+}
+
 // resolveConfig builds the Config of a profile from one document: roots
-// adds resources (nil ids: all of a kind), agents includes the Agents.
-func resolveConfig(document *model.Document, profileID string, roots ResourceRoots, agents bool) (*model.Config, error) {
+// adds resources (nil ids: all of a kind), agents chooses how Agents are
+// included (omitted by default, narrow OxiDNS projection, or full records).
+func resolveConfig(document *model.Document, profileID string, roots ResourceRoots, agents agentProjection) (*model.Config, error) {
 	if err := ValidateProfileID(profileID); err != nil {
 		return nil, err
 	}
@@ -345,14 +398,19 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 	if err != nil {
 		return nil, err
 	}
-	config := &model.Config{Profile: profile, ProfileID: profileID, HasAgents: agents}
+	config := &model.Config{Profile: profile, ProfileID: profileID, HasAgents: agents != agentCopyNone}
 	if config.SystemConfig, err = copyValue(document.System.SystemConfig); err != nil {
 		return nil, err
 	}
 	if config.Backup, err = copyValue(document.System.Backup); err != nil {
 		return nil, err
 	}
-	if agents {
+	switch agents {
+	case agentCopyOxiDNS:
+		if config.Agents, err = copyOxiDNSAgents(document.System.Agents); err != nil {
+			return nil, err
+		}
+	case agentCopyFull:
 		if config.Agents, err = copyValue(document.System.Agents); err != nil {
 			return nil, err
 		}

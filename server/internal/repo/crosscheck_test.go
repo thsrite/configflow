@@ -748,6 +748,16 @@ func xcExecute(t *testing.T, r *Repository, op *testObj, variables map[string]an
 		if err != nil {
 			return nil, err
 		}
+		if cfg.HasAgents {
+			t.Fatal("Config included agents by default")
+		}
+		// Python's get_compat_config always included agents; attach system
+		// agents here solely to compare all remaining fields against the replay.
+		sys, err := r.System(bg)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Agents, cfg.HasAgents = sys.Agents, true
 		return xcObjFromRecord(t, cfg), nil
 	case "get_publish_snapshot":
 		config, revision, err := r.PublishConfig(bg, id, op.GetOr("agents", true) == true)

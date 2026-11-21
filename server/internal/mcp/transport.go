@@ -91,8 +91,17 @@ func authenticate(c *httpx.Ctx) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	sys, err := r.System(c.Context())
-	if err != nil {
+	var settings json.RawMessage
+	if err := r.View(c.Context(), func(doc *model.Document) error {
+		raw, present, err := repo.SystemMemberJSON(&doc.System, "system_config")
+		if err != nil {
+			return err
+		}
+		if present {
+			settings = raw
+		}
+		return nil
+	}); err != nil {
 		return false, err
 	}
 	bearer, _ := auth.ParseBearerToken(c.Request.Header.Get("Authorization"), true)
@@ -113,11 +122,6 @@ func authenticate(c *httpx.Ctx) (bool, error) {
 	}
 	// Credential authority must not use R5's zero fallback or numeric text:
 	// a damaged stored token must never become anonymous access or a new token.
-	system, err := model.Marshal(sys)
-	if err != nil {
-		return false, err
-	}
-	settings := asObject(system)["system_config"]
 	if !unset(settings) && bytes.TrimSpace(settings)[0] != '{' {
 		return false, nil
 	}
@@ -321,11 +325,11 @@ func publicText(ctx context.Context, payload json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sys, err := r.System(ctx)
+	sysCfg, err := r.SystemConfig(ctx)
 	if err != nil {
 		return "", err
 	}
-	settings, err := json.Marshal(sys.SystemConfig)
+	settings, err := json.Marshal(sysCfg)
 	if err != nil {
 		return "", err
 	}

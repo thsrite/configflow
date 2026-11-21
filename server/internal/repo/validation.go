@@ -361,7 +361,7 @@ func validateProfileIn(d *model.Document, profile *model.Profile, catalogs map[s
 	if err := validateProfileSettings(d, profile, catalogs); err != nil {
 		return err
 	}
-	config, err := resolveConfig(d, profile.Key(), nil, true)
+	config, err := resolveConfig(d, profile.Key(), nil, agentCopyNone)
 	if err != nil {
 		return err
 	}

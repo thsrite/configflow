@@ -261,10 +261,10 @@ func record(ctx context.Context, result taskstatus.Result) {
 	}
 }
 
-func nativeAgentIDs(system *model.System) []string {
-	ids := make([]string, 0, len(system.Agents))
-	for _, agent := range system.Agents {
-		ids = append(ids, agent.ID)
+func nativeAgentIDsFromRecords(agents []model.Agent) []string {
+	ids := make([]string, 0, len(agents))
+	for i := range agents {
+		ids = append(ids, agents[i].ID)
 	}
 	return ids
 }
@@ -298,14 +298,24 @@ func FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult
 	var failures []error
 	result := &SaveResult{}
 	manager, err := agents.Get(ctx)
-	var system *model.System
+	var agentIDs []string
+	var minimalSystem model.System
 	if err == nil {
-		system, err = manager.Repository().System(ctx)
+		err = manager.Repository().View(ctx, func(doc *model.Document) error {
+			agentIDs = nativeAgentIDsFromRecords(doc.System.Agents)
+			raw, present, memberErr := repo.SystemMemberJSON(&doc.System, "system_config")
+			if memberErr != nil {
+				return memberErr
+			}
+			if present {
+				return minimalSystem.SetJSON("system_config", raw)
+			}
+			return nil
+		})
 	}
 	if err != nil {
 		failures = append(failures, err)
 	} else {
-		agentIDs := nativeAgentIDs(system)
 		// 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
 		history, historyErr := historyContext(ctx, manager.Repository().DataDir())
 		if historyErr != nil {
@@ -326,7 +336,7 @@ func FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult
 		traffic := trafficFlush
 		trafficMu.Unlock()
 		if traffic != nil {
-			rows, err := traffic(ctx, manager, agentIDs, system)
+			rows, err := traffic(ctx, manager, agentIDs, &minimalSystem)
 			if err != nil {
 				failures = append(failures, &TrafficHistoryFlushError{err})
 			} else {
@@ -427,7 +437,11 @@ func LoadSavedHistory(ctx context.Context, manager *agents.Manager) *LoadResult 
 	if ctx.Err() != nil {
 		return nil
 	}
-	system, err := manager.Repository().System(ctx)
+	var agentIDs []string
+	err := manager.Repository().ViewAgents(ctx, func(records []model.Agent) error {
+		agentIDs = nativeAgentIDsFromRecords(records)
+		return nil
+	})
 	if err != nil {
 		flushLogger.Warningf("监控历史加载失败：%s", err)
 		return nil
@@ -436,7 +450,7 @@ func LoadSavedHistory(ctx context.Context, manager *agents.Manager) *LoadResult 
 	if err != nil {
 		return nil
 	}
-	result, err := history.LoadContext(ctx, nativeAgentIDs(system))
+	result, err := history.LoadContext(ctx, agentIDs)
 	if err != nil {
 		flushLogger.Warningf("监控历史加载失败：%s", err)
 		return nil

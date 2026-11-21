@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	"configflow/internal/ctxx"
@@ -217,6 +218,27 @@ func applySystemIn(document *model.Document, fn func(s *model.System) error) (*m
 	}
 	document.System = *proposed
 	return &document.System, nil
+}
+
+// SystemMemberJSON returns one effective non-Agent member of system (for
+// example system_config or backup) exactly as the whole record would encode it,
+// including original evidence, without encoding the Agent registry or
+// registration sessions. Those members are cleared on a shallow copy only;
+// Raw/Fields are copy-on-write, so system is never changed.
+func SystemMemberJSON(system *model.System, member string) (json.RawMessage, bool, error) {
+	if system == nil {
+		return nil, false, nil
+	}
+	if member == "agents" || member == "agent_registration_sessions" {
+		return nil, false, fmt.Errorf("%w: SystemMemberJSON does not read %s", model.ErrType, member)
+	}
+	view := *system
+	for _, skipped := range []string{"agents", "agent_registration_sessions"} {
+		if err := view.Clear(skipped); err != nil {
+			return nil, false, err
+		}
+	}
+	return recordMemberJSON(view, member)
 }
 
 // SanitizationTokens returns persisted rule proxy and Agent secrets without mutating system.

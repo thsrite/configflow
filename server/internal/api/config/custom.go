@@ -395,24 +395,27 @@ func agentContext(ctx context.Context, id string) (map[int]string, []string, err
 	if err != nil {
 		return map[int]string{}, []string{}, nil
 	}
-	system, err := r.System(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	records := []model.Agent{}
-	for _, binding := range bindings.Agents {
-		var id string
-		if json.Unmarshal(binding.ID, &id) != nil {
-			continue
-		}
-		for _, a := range system.Agents {
-			var agentID string
-			if rawID, _, err := a.MemberJSON("id"); err == nil && json.Unmarshal(rawID, &agentID) == nil && agentID == id {
-				records = append(records, a)
+	var reserved map[int]string
+	var hosts []string
+	if err := r.ViewAgents(ctx, func(all []model.Agent) error {
+		records := []model.Agent{}
+		for _, binding := range bindings.Agents {
+			var bindingID string
+			if json.Unmarshal(binding.ID, &bindingID) != nil {
+				continue
+			}
+			for i := range all {
+				var agentID string
+				if rawID, _, err := all[i].MemberJSON("id"); err == nil && json.Unmarshal(rawID, &agentID) == nil && agentID == bindingID {
+					records = append(records, all[i])
+				}
 			}
 		}
+		reserved, _, hosts = convert.AgentPorts(records)
+		return nil
+	}); err != nil {
+		return nil, nil, err
 	}
-	reserved, _, hosts := convert.AgentPorts(records)
 	return reserved, hosts, nil
 }
 

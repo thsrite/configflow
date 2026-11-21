@@ -116,11 +116,11 @@ func (s *Service) Create(ctx context.Context, raw json.RawMessage) (json.RawMess
 		if err != nil && !errors.Is(err, repo.ErrExists) {
 			return err
 		}
-		system, err := s.repository.System(held)
+		systemConfig, err := s.repository.SystemConfig(held)
 		if err != nil {
 			return err
 		}
-		if storedConfigToken(&system.SystemConfig) == "" {
+		if storedConfigToken(systemConfig) == "" {
 			secret := make([]byte, 32)
 			if _, err := rand.Read(secret); err != nil {
 				return fmt.Errorf("create configuration token: %w", err)
@@ -205,11 +205,15 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 		}
 		out.Sessions = append(out.Sessions, value)
 	}
-	system, err := s.repository.System(ctx)
-	if err != nil {
+	var noAgents, dismissed bool
+	if err := s.repository.View(ctx, func(doc *model.Document) error {
+		noAgents = len(doc.System.Agents) == 0
+		dismissed = doc.System.SystemConfig.SetupSuggestionDismissed != nil && *doc.System.SystemConfig.SetupSuggestionDismissed
+		return nil
+	}); err != nil {
 		return out, err
 	}
-	out.Suggested = len(records) == 0 && len(system.Agents) == 0 && !(system.SystemConfig.SetupSuggestionDismissed != nil && *system.SystemConfig.SetupSuggestionDismissed)
+	out.Suggested = len(records) == 0 && noAgents && !dismissed
 	for _, item := range selectableSubscriptions(shared.Subscriptions) {
 		out.Subscriptions = append(out.Subscriptions, Choice{item.ID, item.Name})
 	}

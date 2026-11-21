@@ -209,11 +209,11 @@ func (s *Service) Run(ctx context.Context, id string) error {
 
 // Round observes presence and admits at most two tracked workers in round-robin order.
 func (s *Service) Round(ctx context.Context) error {
-	records, e := s.m.AgentSnapshots(ctx, false)
+	records, e := s.m.RuleSyncAgents(ctx)
 	if e != nil {
 		return e
 	}
-	observePresence(ctx, s.m, records)
+	observeRuleSyncPresence(ctx, s.m, records)
 	s.mu.Lock()
 	for id, running := range s.pending {
 		if !running {
@@ -221,8 +221,8 @@ func (s *Service) Round(ctx context.Context) error {
 		}
 	}
 	ids := map[string]bool{}
-	for _, r := range records {
-		ids[recordID(r)] = true
+	for i := range records {
+		ids[records[i].ID] = true
 	}
 	for id := range s.comparisons {
 		if !ids[id] {
@@ -236,17 +236,21 @@ func (s *Service) Round(ctx context.Context) error {
 		return nil
 	}
 	s.cursor %= n
-	ordered := append(append([]*model.Agent{}, records[s.cursor:]...), records[:s.cursor]...)
+	ordered := make([]agents.RuleSyncAgent, 0, n)
+	ordered = append(ordered, records[s.cursor:]...)
+	ordered = append(ordered, records[:s.cursor]...)
 	s.mu.Unlock()
-	for _, r := range ordered {
-		id := recordID(r)
+	for i := range ordered {
+		r := &ordered[i]
+		id := r.ID
 		s.mu.Lock()
 		if len(s.pending) >= 2 {
 			s.mu.Unlock()
 			break
 		}
 		s.cursor = (s.cursor + 1) % n
-		eligible := !s.pending[id] && recordSupported(r) && AgentSettings(r).Any()
+		supported := r.ServiceType == "mihomo" || r.ServiceType == "oxidns"
+		eligible := !s.pending[id] && supported && (r.RuleSyncLibrary || r.RuleSyncRules)
 		if eligible {
 			s.pending[id] = true
 		}
