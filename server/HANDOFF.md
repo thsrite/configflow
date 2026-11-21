@@ -84,7 +84,12 @@ head-cached immutable snapshot, writers copy) + S2 (version-keyed derived caches
 encode); follow R1–R12 order (replaces T4/T7/T8/T9/T10-followups/T11); generator routes target <= 30 MB, no result cache;
 prod host has no THP → R12 = GC only. Tooling-only branch go-o10-tools (o10perf + report, no EXPERIMENT commits) pending.
 batch-21 = audit fix + T2 + T1 stacked on go; fresh Opus 037b7644 integrates T3 (notifications.go conflict) + HR review
-+ o10perf vs go. R1/R2 dispatch after batch-21 merges. batch-22 MERGED (go = 331c9420f): M16 + Agent image 1.9.0-go + difftest refresh-timing fix + registration fuzz
++ o10perf vs go. batch-21 MERGED 2026-11-21 (go = 0c009f67e): audit fix + T2 + T1/T6/T10 + T3/T5 + review fixes (ReadHAPair two
+records, Map.SetAll) + C04 cross-check at the T1 boundary + publish difftest holds the IPv6 scheduler (timing flake,
+negative controls). Gate: core FULL .64 PASS (race + 59 fuzz), compare .32 PASS on 3rd run. .32 o10perf (Go only):
+idle CPU 50%→1.8% (Py 0.9), RSS 294→167 MB (Py 117); notifications 25 ms, config 13–26 ms, mihomo 151, provider 234
+(all < Py); agents 267 ms, agents/<id> 171, profiles 13 (still 6–12× Py). R1 Agent borrow (Opus 86161dd6,
+go-perf-r1) and R2 Config borrow (Opus 4ec236f7, go-perf-r2) running, both told to rebase onto 0c009f67e. batch-22 MERGED (go = 331c9420f): M16 + Agent image 1.9.0-go + difftest refresh-timing fix + registration fuzz
 invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS after the fix; .64 only).
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
