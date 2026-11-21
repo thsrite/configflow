@@ -36,7 +36,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if c.Profile == nil {
 		return nil, fmt.Errorf("%w: config without profile", ErrType)
 	}
-	encoded, err := Marshal(c.Profile)
+	encoded, err := encodeUnit(c.Profile)
 	if err != nil {
 		return nil, err
 	}
@@ -45,11 +45,12 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	set := func(name string, value any) error {
-		data, err := Marshal(value)
+		data, err := encodeUnit(value)
 		if err != nil {
 			return err
 		}
-		return members.Set(name, data)
+		members.set(name, data)
+		return nil
 	}
 	type member struct {
 		name  string

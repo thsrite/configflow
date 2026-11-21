@@ -67,17 +67,23 @@ func (f *Fields) Set(name string, value json.RawMessage) error {
 	if err := validJSON(value); err != nil {
 		return err
 	}
+	f.set(name, bytes.Clone(value))
+	return nil
+}
+
+// set is Set for a caller-owned value that is valid by construction
+// (encodeUnit output); value is stored without a copy.
+func (f *Fields) set(name string, value json.RawMessage) {
 	state := f.copyState()
 	for i := range state.entries {
 		if state.entries[i].name == name {
-			state.entries[i].value = bytes.Clone(value)
+			state.entries[i].value = value
 			f.state = state
-			return nil
+			return
 		}
 	}
-	state.entries = append(state.entries, fieldEntry{name: name, value: bytes.Clone(value)})
+	state.entries = append(state.entries, fieldEntry{name: name, value: value})
 	f.state = state
-	return nil
 }
 
 // Delete removes a member. Deleting and re-adding it appends it as a new member.

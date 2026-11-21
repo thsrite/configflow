@@ -130,7 +130,7 @@ func (m *Map[V]) UnmarshalJSON(data []byte) error {
 			var zero V
 			value = zero
 		}
-		baseline, err := Marshal(value)
+		baseline, err := encodeUnit(value)
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func (m Map[V]) MarshalJSON() ([]byte, error) {
 	}
 	members := make([]jsonMember, 0, m.Len())
 	for _, entry := range m.state.entries {
-		encoded, err := Marshal(entry.value)
+		encoded, err := encodeUnit(entry.value)
 		if err != nil {
 			return nil, err
 		}

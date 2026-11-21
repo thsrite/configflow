@@ -47,7 +47,7 @@ func (m *TextLines) UnmarshalJSON(data []byte) error {
 // MarshalJSON writes the selected form; a nil list is an empty JSON array.
 func (m TextLines) MarshalJSON() ([]byte, error) {
 	if m.Text != nil {
-		return Marshal(*m.Text)
+		return encodeUnit(*m.Text)
 	}
-	return Marshal(m.Lines)
+	return encodeUnit(m.Lines)
 }

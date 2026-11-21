@@ -3,11 +3,12 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"io"
 	"reflect"
 	"sort"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -27,60 +28,19 @@ type jsonObject struct {
 	members                []jsonMember
 }
 
-// validJSON checks the complete value, UTF-8, and uniqueness at every depth.
-// Decoder.UseNumber keeps arbitrarily large numeric literals out of float64.
+// validJSON checks the complete value, UTF-8, and uniqueness at every depth in
+// one jsontext pass. Lone surrogate escapes stay valid (and compare as U+FFFD),
+// as they did with encoding/json; raw invalid UTF-8 is rejected by utf8.Valid.
+// Only a failure is classified again: malformed input is ErrJSON, anything
+// else that jsontext rejects is a duplicate member name.
 func validJSON(data []byte) error {
+	if utf8.Valid(data) && jsontext.Value(data).IsValid(jsontext.AllowInvalidUTF8(true)) {
+		return nil
+	}
 	if !utf8.Valid(data) || !json.Valid(data) {
 		return ErrJSON
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	var visit func() error
-	visit = func() error {
-		token, err := dec.Token()
-		if err != nil {
-			return fmt.Errorf("%w: token", ErrJSON)
-		}
-		delimiter, ok := token.(json.Delim)
-		if !ok {
-			return nil
-		}
-		switch delimiter {
-		case '{':
-			seen := map[string]bool{}
-			for dec.More() {
-				token, err := dec.Token()
-				if err != nil {
-					return ErrJSON
-				}
-				name, ok := token.(string)
-				if !ok || seen[name] {
-					return fmt.Errorf("%w: duplicate member", ErrJSON)
-				}
-				seen[name] = true
-				if err := visit(); err != nil {
-					return err
-				}
-			}
-		case '[':
-			for dec.More() {
-				if err := visit(); err != nil {
-					return err
-				}
-			}
-		default:
-			return ErrJSON
-		}
-		_, err = dec.Token()
-		return err
-	}
-	if err := visit(); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return ErrJSON
-	}
-	return nil
+	return fmt.Errorf("%w: duplicate member", ErrJSON)
 }
 
 func space(b byte) bool { return b == ' ' || b == '\n' || b == '\r' || b == '\t' }
@@ -91,36 +51,42 @@ func skipSpace(data []byte, offset int) int {
 	return offset
 }
 
+// parseObject validates data once and splits its top-level members, keeping
+// every whitespace fragment so unchanged members can be written back as read.
 func parseObject(data []byte) (jsonObject, error) {
 	if err := validJSON(data); err != nil {
 		return jsonObject{}, err
 	}
 	data = bytes.Clone(data)
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	token, err := dec.Token()
-	if err != nil || token != json.Delim('{') {
+	// Validated above; the decoder only reports offsets and reads the
+	// bytes.Buffer in place.
+	dec := jsontext.NewDecoder(bytes.NewBuffer(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+	if dec.PeekKind() != '{' {
 		return jsonObject{}, ErrType
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return jsonObject{}, ErrJSON
 	}
 	obj := jsonObject{data: data, opening: data[:dec.InputOffset()]}
 	previous := int(dec.InputOffset())
-	for dec.More() {
+	for {
+		if kind := dec.PeekKind(); kind == '}' {
+			break
+		} else if kind != '"' {
+			return jsonObject{}, ErrJSON
+		}
 		keyStart := skipSpace(data, previous)
 		if data[keyStart] == ',' {
 			keyStart = skipSpace(data, keyStart+1)
 		}
-		token, err := dec.Token()
+		token, err := dec.ReadToken()
 		if err != nil {
 			return jsonObject{}, ErrJSON
 		}
-		name, ok := token.(string)
-		if !ok {
-			return jsonObject{}, ErrJSON
-		}
+		name := token.String()
 		keyEnd := int(dec.InputOffset())
 		valueStart := skipSpace(data, skipSpace(data, keyEnd)+1)
-		var value json.RawMessage
-		if err := dec.Decode(&value); err != nil {
+		if _, err := dec.ReadValue(); err != nil {
 			return jsonObject{}, ErrJSON
 		}
 		end := int(dec.InputOffset())
@@ -134,7 +100,7 @@ func parseObject(data []byte) (jsonObject, error) {
 		obj.members = append(obj.members, jsonMember{name: name, key: data[keyStart:keyEnd], leading: leading, separator: data[keyEnd:valueStart], value: data[valueStart:end]})
 		previous = end
 	}
-	if _, err := dec.Token(); err != nil {
+	if _, err := dec.ReadToken(); err != nil {
 		return jsonObject{}, ErrJSON
 	}
 	closingStart := skipSpace(data, previous)
@@ -145,6 +111,44 @@ func parseObject(data []byte) (jsonObject, error) {
 		obj.closing = data[previous:]
 	}
 	return obj, nil
+}
+
+// splitArray returns the elements of a validated JSON array as subslices of
+// data, nil for null, and ErrType for any other value: what json.Unmarshal
+// into []json.RawMessage gives, without copying or scanning twice.
+func splitArray(data []byte) ([]json.RawMessage, error) {
+	dec := jsontext.NewDecoder(bytes.NewBuffer(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+	switch dec.PeekKind() {
+	case 'n':
+		return nil, nil
+	case '[':
+	default:
+		return nil, ErrType
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return nil, ErrJSON
+	}
+	items := []json.RawMessage{}
+	for {
+		switch dec.PeekKind() {
+		case ']':
+		case 0:
+			return nil, ErrJSON
+		default:
+			value, err := dec.ReadValue()
+			if err != nil {
+				return nil, ErrJSON
+			}
+			end := int(dec.InputOffset())
+			items = append(items, data[end-len(value):end:end])
+			continue
+		}
+		break
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return nil, ErrJSON
+	}
+	return items, nil
 }
 
 func objectJSON(source jsonObject, members []jsonMember) ([]byte, error) {
@@ -195,10 +199,53 @@ func objectJSON(source jsonObject, members []jsonMember) ([]byte, error) {
 	} else {
 		out.WriteByte('}')
 	}
-	if err := validJSON(out.Bytes()); err != nil {
-		return nil, err
+	if tooDeep(out.Bytes()) {
+		return nil, ErrJSON
 	}
 	return out.Bytes(), nil
+}
+
+// maxDepth is the nesting limit of encoding/json and jsontext.
+const maxDepth = 10000
+
+// tooDeep reports whether data, valid by construction except for its depth,
+// nests deeper than maxDepth. Joining valid values adds one level, so the
+// check points that used to run validJSON keep this one (it fails exactly
+// where validJSON did, with the same ErrJSON). Data shorter than 2*maxDepth+2
+// bytes cannot be that deep; longer data is scanned without allocating,
+// skipping string contents with IndexByte.
+func tooDeep(data []byte) bool {
+	if len(data) <= 2*maxDepth+1 {
+		return false
+	}
+	depth := 0
+	for i := 0; i < len(data); i++ {
+		switch data[i] {
+		case '"':
+			for {
+				next := bytes.IndexByte(data[i+1:], '"')
+				if next < 0 {
+					return false
+				}
+				i += next + 1
+				escapes := 0
+				for k := i - 1; data[k] == '\\'; k-- {
+					escapes++
+				}
+				if escapes%2 == 0 {
+					break
+				}
+			}
+		case '[', '{':
+			depth++
+			if depth > maxDepth {
+				return true
+			}
+		case ']', '}':
+			depth--
+		}
+	}
+	return false
 }
 
 func scalarJSON(v any) ([]byte, error) {
@@ -213,21 +260,62 @@ func scalarJSON(v any) ([]byte, error) {
 
 var marshalerType = reflect.TypeFor[json.Marshaler]()
 
+// modelPackage is this package's import path. Its JSON codecs build output
+// only from validated or self-encoded bytes (see encodeUnit), so their
+// MarshalJSON results need no second validation when nested.
+var modelPackage = rawType.PkgPath()
+
 // Marshal writes model records, raw JSON and containers without compacting
 // preserved fragments. New scalar values use encoding/json without HTML escapes.
 // Nil slices and zero Maps are written as [] and {} (never null), like
 // encoding/json/v2; a nil pointer or RawMessage is null.
-// The complete output must be valid UTF-8 JSON with no duplicate object keys.
+// The complete output must be valid UTF-8 JSON with no duplicate object keys;
+// it is checked once, here, on the final bytes.
 func Marshal(v any) ([]byte, error) {
-	if err := acyclic(reflect.ValueOf(v), map[visitKey]bool{}); err != nil {
-		return nil, err
-	}
-	data, err := marshalValue(reflect.ValueOf(v), map[visitKey]bool{})
+	data, err := encodeUnit(v)
 	if err != nil {
 		return nil, err
 	}
 	if err := validJSON(data); err != nil {
 		return nil, err
+	}
+	return data, nil
+}
+
+// encodeUnit is Marshal for the codec's own nested values (record members, Map
+// values, typed baselines). It returns the same bytes and errors as Marshal
+// did before O10-T2 without re-validating what is valid by construction:
+//
+//   - The cycle check runs only for types whose graph can contain a cycle.
+//   - Output of this package's codecs is trusted: they only join bytes that
+//     were validated on entry (decoded originals, Fields.Set, SetMemberJSON,
+//     Dynamic), encoding/json scalars and other trusted output, and check
+//     member names for uniqueness while joining objects.
+//   - Output of any other json.Marshaler (json.RawMessage, other packages) is
+//     foreign. A unit holding foreign bytes is validated as a whole, exactly
+//     where Marshal used to validate it, so a fragment such as `1,2` is still
+//     rejected even where it would happen to fit its surroundings.
+//
+// Code in this package must keep that invariant: a MarshalJSON here never
+// returns bytes that were not validated or built by these rules.
+func encodeUnit(v any) ([]byte, error) {
+	value := reflect.ValueOf(v)
+	if value.IsValid() && mayCycle(value.Type()) {
+		if err := acyclic(value, map[visitKey]bool{}); err != nil {
+			return nil, err
+		}
+	}
+	var e encoder
+	data, err := e.value(value)
+	if err != nil {
+		return nil, err
+	}
+	if e.foreign {
+		if err := validJSON(data); err != nil {
+			return nil, err
+		}
+	} else if tooDeep(data) {
+		return nil, ErrJSON
 	}
 	return data, nil
 }
@@ -309,7 +397,11 @@ func acyclic(v reflect.Value, active map[visitKey]bool) error {
 	return nil
 }
 
-func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
+// encoder writes one encodeUnit; foreign records that it included bytes from
+// a json.Marshaler outside this package that are not yet validated.
+type encoder struct{ foreign bool }
+
+func (e *encoder) value(v reflect.Value) ([]byte, error) {
 	if !v.IsValid() {
 		return []byte("null"), nil
 	}
@@ -317,7 +409,7 @@ func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
 		if v.IsNil() {
 			return []byte("null"), nil
 		}
-		return marshalValue(v.Elem(), active)
+		return e.value(v.Elem())
 	}
 	// A nil list is an empty list in Go; stored lists are always written as
 	// arrays (as Python did), so `var kept []T` filtered to nothing stays [].
@@ -329,14 +421,14 @@ func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
 		return []byte("null"), nil
 	}
 	if v.CanInterface() && v.Type().Implements(marshalerType) {
-		return v.Interface().(json.Marshaler).MarshalJSON()
+		return e.marshaler(v.Type(), v.Interface().(json.Marshaler))
 	}
 	if v.CanAddr() && v.Addr().CanInterface() && v.Addr().Type().Implements(marshalerType) {
-		return v.Addr().Interface().(json.Marshaler).MarshalJSON()
+		return e.marshaler(v.Type(), v.Addr().Interface().(json.Marshaler))
 	}
 	switch v.Kind() {
 	case reflect.Pointer:
-		return marshalValue(v.Elem(), active)
+		return e.value(v.Elem())
 	case reflect.Array, reflect.Slice:
 		if v.Type().Elem().Kind() == reflect.Uint8 {
 			return scalarJSON(v.Interface())
@@ -347,7 +439,7 @@ func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
 			if i > 0 {
 				out.WriteByte(',')
 			}
-			data, err := marshalValue(v.Index(i), active)
+			data, err := e.value(v.Index(i))
 			if err != nil {
 				return nil, err
 			}
@@ -361,18 +453,100 @@ func marshalValue(v reflect.Value, active map[visitKey]bool) ([]byte, error) {
 		}
 		keys := v.MapKeys()
 		sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
+		// A Go map is joined by objectJSON, which validated its result
+		// before O10-T2; keep that check point for foreign members.
+		outer := e.foreign
+		e.foreign = false
 		members := make([]jsonMember, 0, len(keys))
 		for _, key := range keys {
-			data, err := marshalValue(v.MapIndex(key), active)
+			data, err := e.value(v.MapIndex(key))
 			if err != nil {
 				return nil, err
 			}
 			members = append(members, jsonMember{name: key.String(), value: data})
 		}
-		return objectJSON(jsonObject{}, members)
+		data, err := objectJSON(jsonObject{}, members)
+		if err != nil {
+			return nil, err
+		}
+		if e.foreign {
+			if err := validJSON(data); err != nil {
+				return nil, err
+			}
+		}
+		e.foreign = outer
+		return data, nil
 	case reflect.Struct:
 		return nil, fmt.Errorf("%w: record must implement JSON codecs", ErrType)
 	default:
 		return scalarJSON(v.Interface())
 	}
+}
+
+func (e *encoder) marshaler(typ reflect.Type, m json.Marshaler) ([]byte, error) {
+	data, err := m.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ.PkgPath() != modelPackage {
+		e.foreign = true
+	}
+	return data, nil
+}
+
+// cycleTypes caches mayCycle per reflect.Type.
+var cycleTypes sync.Map
+
+// mayCycle reports whether a value of typ can reach itself along the edges
+// acyclic follows (pointers, slices, arrays, map values, exported struct
+// fields, interfaces and Map values). Without an interface or a recursive
+// type in that graph no value can form a cycle, so acyclic would pass.
+func mayCycle(typ reflect.Type) bool {
+	if cached, ok := cycleTypes.Load(typ); ok {
+		return cached.(bool)
+	}
+	result := typeMayCycle(typ, map[reflect.Type]bool{})
+	cycleTypes.Store(typ, result)
+	return result
+}
+
+var walkerType = reflect.TypeFor[interface {
+	walkValues(func(reflect.Value) error) error
+}]()
+var storedValuerType = reflect.TypeFor[interface{ storedValueType() reflect.Type }]()
+
+func typeMayCycle(typ reflect.Type, path map[reflect.Type]bool) bool {
+	if path[typ] {
+		return true
+	}
+	if cached, ok := cycleTypes.Load(typ); ok {
+		return cached.(bool)
+	}
+	path[typ] = true
+	defer delete(path, typ)
+	if typ.Kind() == reflect.Pointer {
+		return typeMayCycle(typ.Elem(), path)
+	}
+	if typ.Implements(walkerType) {
+		if !typ.Implements(storedValuerType) {
+			return true
+		}
+		return typeMayCycle(reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type }).storedValueType(), path)
+	}
+	switch typ.Kind() {
+	case reflect.Interface:
+		return true
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return typeMayCycle(typ.Elem(), path)
+	case reflect.Struct:
+		for i := 0; i < typ.NumField(); i++ {
+			if typ.Field(i).IsExported() && typeMayCycle(typ.Field(i).Type, path) {
+				return true
+			}
+		}
+	}
+	return false
 }

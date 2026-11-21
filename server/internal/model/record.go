@@ -177,7 +177,7 @@ func DecodeRecord(data []byte, rec any, raw *Raw) error {
 			} else {
 				working.Field(field.index).Set(target.Elem())
 			}
-			saved.baseline, err = Marshal(working.Field(field.index).Interface())
+			saved.baseline, err = encodeUnit(working.Field(field.index).Interface())
 			if err != nil {
 				return err
 			}
@@ -265,7 +265,7 @@ func SetMemberJSON(rec any, raw *Raw, member string, data json.RawMessage) error
 	} else {
 		destination.Set(target.Elem())
 	}
-	baseline, err := Marshal(destination.Interface())
+	baseline, err := encodeUnit(destination.Interface())
 	if err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func EncodeRecord(rec any, raw *Raw) ([]byte, error) {
 			if original.cleared && isZero(current) {
 				continue
 			}
-			encoded, err := Marshal(current.Interface())
+			encoded, err := encodeUnit(current.Interface())
 			if err != nil {
 				return nil, err
 			}
@@ -375,7 +375,7 @@ func EncodeRecord(rec any, raw *Raw) ([]byte, error) {
 		if isZero(current) {
 			continue
 		}
-		encoded, err := Marshal(current.Interface())
+		encoded, err := encodeUnit(current.Interface())
 		if err != nil {
 			return nil, err
 		}
@@ -477,7 +477,7 @@ func decodeValue(data []byte, target any) error {
 	return decodeInto(data, reflect.ValueOf(target).Elem())
 }
 
-// decodeInto decodes into an addressable destination. encoding/json accepts a
+// decodeInto decodes valid JSON into an addressable destination. encoding/json accepts a
 // quoted numeric string for json.Number, so exact-number members remain strict.
 // String and Int use the shared R5 scalar rules, also within pointers/lists.
 func decodeInto(data []byte, destination reflect.Value) error {
@@ -512,8 +512,8 @@ func decodeInto(data []byte, destination reflect.Value) error {
 		destination.Set(decoded)
 		return nil
 	case typ.Kind() == reflect.Slice && typ != rawMessageType:
-		var items []json.RawMessage
-		if err := json.Unmarshal(data, &items); err != nil {
+		items, err := splitArray(data)
+		if err != nil {
 			return err
 		}
 		if items == nil {
@@ -533,6 +533,13 @@ func decodeInto(data []byte, destination reflect.Value) error {
 		}
 		destination.Set(value)
 		return nil
+	case pointers == 0 && typ.PkgPath() == modelPackage && !bytes.Equal(text, []byte("null")):
+		// This package's decoders validate their own input. Calling one
+		// directly with the literal encoding/json would pass it skips that
+		// package's extra scan; null keeps encoding/json's own handling.
+		if decoder, ok := destination.Addr().Interface().(json.Unmarshaler); ok {
+			return decoder.UnmarshalJSON(text)
+		}
 	}
 	return json.Unmarshal(data, destination.Addr().Interface())
 }
