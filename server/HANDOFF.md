@@ -98,6 +98,13 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-26 MERGED 2026-11-22 (R4+R7 Agent public projection member-wise, credentials from the same generation (review
+M1), view cache default ON; /api/profiles = Python). batch-27 MERGED 2026-11-22 (R10 SQLite read-connection reuse,
+heartbeat CPU −46%; review M1: WAL connections are never kept, else a renamed-in file could be read through the old
+-wal). In flight: R6 routers (go-perf-r6 → batch-28, HR review Opus 9cccabce; test server: all 5 router read routes
+now faster than Python), O18 T1a model plain structs (Opus 03308f4f, go-o18-t1a; rulings: always-written members not
+omitzero; strict HTTP decode with the existing Chinese messages table, Python-unvalidated members now 400).
+
 batch-24 MERGED 2026-11-22 (O18 small cleanup T5/T6/T7 + C15a/b/c + C17 + review fix POST files skip ServeContent +
 lab D1 202 + lab docs; enrollment fuzz 1E700 test fix). batch-25 MERGED 2026-11-22 (lab defect fixes, Agent 1.9.1-go:
 L5-D1 nft 1.0.6 return routing via token-owned objects, L3-D1 keepalived stop order + VIP release check, L2-D3 core
