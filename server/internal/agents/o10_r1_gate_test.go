@@ -27,6 +27,11 @@ type deepCopySite struct {
 	key, pos string
 }
 
+// deepCopySites reports every reference to copyAgent or CloneAgent, not only
+// direct calls: a method value, a function variable or a package-level
+// initializer would otherwise hide a deep copy from the gate. References in a
+// function (including its closures) are keyed by that function; references
+// outside any function by "<package-level>".
 func deepCopySites(fset *token.FileSet, name string, data []byte) ([]deepCopySite, error) {
 	file, err := parser.ParseFile(fset, name, data, 0)
 	if err != nil {
@@ -34,24 +39,18 @@ func deepCopySites(fset *token.FileSet, name string, data []byte) ([]deepCopySit
 	}
 	var sites []deepCopySite
 	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
-			continue
+		owner := "<package-level>"
+		var root ast.Node = decl
+		if fn, ok := decl.(*ast.FuncDecl); ok {
+			if fn.Body == nil {
+				continue
+			}
+			owner, root = fn.Name.Name, fn.Body
 		}
-		ast.Inspect(fn.Body, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			var callee string
-			switch f := call.Fun.(type) {
-			case *ast.Ident:
-				callee = f.Name
-			case *ast.SelectorExpr:
-				callee = f.Sel.Name
-			}
-			if callee == "copyAgent" || callee == "CloneAgent" {
-				sites = append(sites, deepCopySite{key: name + ":" + fn.Name.Name, pos: fset.Position(call.Pos()).String()})
+		// Every identifier, including a selector's Sel, is visited once.
+		ast.Inspect(root, func(node ast.Node) bool {
+			if ident, ok := node.(*ast.Ident); ok && (ident.Name == "copyAgent" || ident.Name == "CloneAgent") {
+				sites = append(sites, deepCopySite{key: name + ":" + owner, pos: fset.Position(ident.Pos()).String()})
 			}
 			return true
 		})
@@ -123,6 +122,9 @@ func TestAgentDeepCopyBoundaryDetectsHandlers(t *testing.T) {
 		{"loop", "internal/agents/rulesync/x.go", "package x\nfunc (w *worker) run() { a, _ := agents.CloneAgent(r); _ = a }\n", []string{"internal/agents/rulesync/x.go:run"}},
 		{"private copy", "internal/agents/x.go", "package agents\nfunc read() { copyAgent(nil, true) }\n", []string{"internal/agents/x.go:read"}},
 		{"borrowed read", "internal/api/agents/y.go", "package x\nfunc Get() { m.ReadAgent(ctx, id, true) }\n", nil},
+		{"function value", "internal/api/agents/z.go", "package x\nfunc Get() { clone := agents.CloneAgent; clone(nil) }\n", []string{"internal/api/agents/z.go:Get"}},
+		{"closure", "internal/agents/x.go", "package agents\nfunc read() { f := func() { _, _ = copyAgent(nil, true) }; f() }\n", []string{"internal/agents/x.go:read"}},
+		{"package-level alias", "internal/agents/x.go", "package agents\nvar dup = copyAgent\n", []string{"internal/agents/x.go:<package-level>"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
