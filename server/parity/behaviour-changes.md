@@ -2614,3 +2614,24 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   `backend/agents/go-agent/integration/return_routing_nft_lab.sh`（`-tags nftlab`，一次性容器，默认 debian:12 =
   nft 1.0.6，`NFT_LAB_IMAGE=debian:13` = 1.1.3）：协议 1/2 各启用→Agent 重启→撤销两轮，以及从旧版本残留先撤销/先发布
   恢复后再启用。负控：同一测试在修复前代码上得到实验网原报错「写入后的资源内容与计划不一致；安全撤销未完成…」。
+
+## 实验网 L3-D1 — 停用 DNS 高可用先停 keepalived 再删配置，并确认已释放虚拟 IP（Agent 1.9.1-go）
+
+- 根因：停用时 Agent 先删 `keepalived.conf`/`configflow-oxidns.conf`，再恢复服务原状态。Alpine 的 keepalived init 脚本有
+  `required_files=$cfgfile`，配置删除后 `rc-service keepalived status/stop` 都失败，Agent 判断「没在运行」就不停止，停用
+  返回成功，keepalived 继续持有虚拟 IP。用户手工结束进程后 OpenRC 记为 `crashed`，之后开启报「keepalived 启动后未保持运行」。
+  开启失败时撤销备机走同一路径，也留下同样的残留。Python 时代同一 Agent 也是如此。
+- 停用顺序：keepalived 原本没有运行时，先停止服务（配置还在，init 脚本可用），确认停止后才改配置文件；原本在运行时仍是
+  改完配置后重启（让它丢掉 ConfigFlow 的 VRRP 实例）。开启失败的回滚同样先停止再恢复文件。systemd 与受管 Docker
+  （Supervisor）走相同顺序。
+- OpenRC：`crashed` 状态在启动、重启、停止前先 `rc-service keepalived zap`；init 脚本因缺配置无法运行时，按 init 脚本的
+  pidfile（`/run/keepalived.pid`，核对 `/proc/<pid>/comm` 为 keepalived）发送 SIGTERM，进程退出后 zap。
+- 停用必须确认释放：原本不运行的 keepalived 已停止（含服务管理器看不到、但 pidfile 仍指向的进程），且虚拟 IP 不在本机网卡上
+  （最多等 5 s）。否则返回失败并保留记录可重试：「停用 DNS 高可用前停止 keepalived 失败，配置未删除，可重试停用：…」
+  「停用 DNS 高可用后 keepalived 仍在运行（服务管理器无法停止它），虚拟 IP … 可能仍由本机持有…」
+  「停用 DNS 高可用后虚拟 IP … 仍在本机网卡上；请确认 keepalived 已停止并移除该地址后重试停用」。以前这些情况停用返回成功。
+- 回归测试：`oxidns_ha_openrc_test.go`（OpenRC 行为模型：required_files、crashed、pidfile、虚拟 IP 跟随进程；停用先停、配置
+  已删时按 pidfile 停、停不掉时失败且不删配置、虚拟 IP 残留时失败、crashed 后可再开启、回滚先停；systemd 停用先停）。真实
+  环境：`backend/agents/go-agent/integration/oxidns_ha_openrc_lab.sh`（`-tags halab`，一次性 alpine:3.24 容器，真实 OpenRC +
+  keepalived，私有 Docker 网络 198.51.100.0/24）：开启→停用两轮、配置已被删除时停用、crashed 时再开启与停用。负控：修复前
+  代码停用后 keepalived 仍在运行，再次开启被「虚拟 IP … 已在本机网卡上，但不是由 DNS 高可用持有」拒绝，与实验网一致。

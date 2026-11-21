@@ -428,7 +428,10 @@ func TestOxiDNSHAApplyIsIdempotentAndRemoveRestores(t *testing.T) {
 		t.Fatal("reapply lost ownership or original service state")
 	}
 
+	// Removal verifies that the virtual IP left the host; stopping keepalived
+	// releases it.
 	f.commands = nil
+	f.addresses = `[{"ifname":"eth0","addr_info":[{"local":"192.168.0.20","prefixlen":24}]}]`
 	removed, err := removeOxiDNSHA(f.cfg)
 	if err != nil || !removed {
 		t.Fatalf("remove: %v %v", removed, err)
