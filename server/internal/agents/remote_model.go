@@ -109,8 +109,11 @@ func (m *Manager) RemoteCall(ctx context.Context, id string, request RemoteReque
 func (m *Manager) SetLoggingModel(ctx context.Context, id string, enabled json.RawMessage, header http.Header, body []byte) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
 	result, a, err := m.RemoteCall(ctx, id, RemoteRequest{Method: http.MethodPost, Path: "/api/config/logging", Timeout: Seconds(5), Header: header, Body: body})
-	if err != nil || a == nil {
-		return result, err
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, ErrAgentNotFound
 	}
 	fields, err := remoteFields(result)
 	if err != nil {
@@ -169,7 +172,7 @@ func (m *Manager) RunDirectOperation(ctx context.Context, id string, operation D
 		return nil, err
 	}
 	if a == nil {
-		return remoteFailure(msgAgentNotFound)
+		return nil, ErrAgentNotFound
 	}
 	if operation != UpdateService && upgradeBusyModel(a) {
 		return remoteFailure(msgDeploymentUpgradeBusy)

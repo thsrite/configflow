@@ -1,5 +1,20 @@
 # Deliberate behaviour changes
 
+## O13 #2 — 不存在的 Agent 在日志、日志配置与服务操作路由返回 404（Python bug 修正）
+
+协调者批准修正 Python 遗留缺陷（2026-11-21，见 `server/parity/o13-completeness.md`「需要维护者决定」第 2 条）：以下 8 条路由在请求不存在的 `<agent_id>` 时，Python 的 `AgentManager` 返回不含 `http_status` 的 `{'success': False, 'message': 'Agent not found'}`，路由层按 `200 if result.get('success') else 500` 统一变成 HTTP 500。Go 改为返回 HTTP 404，保留原有 JSON 响应体 `{"success": false, "message": "Agent not found"}` 与响应头：
+
+- `GET /api/agents/<agent_id>/logs`
+- `GET /api/agents/<agent_id>/logs/sources`
+- `POST /api/agents/<agent_id>/logs/clear`
+- `POST /api/agents/<agent_id>/logs/validate`
+- `GET /api/agents/<agent_id>/config/logging`
+- `POST /api/agents/<agent_id>/config/logging`
+- `POST /api/agents/<agent_id>/restart`
+- `POST /api/agents/<agent_id>/uninstall`
+
+前置参数校验（例如 `logs/clear`、`logs/validate` 缺少路径返回 400「日志路径不能为空」）和已存在 Agent 返回非成功响应时的 500 行为保持不变；前端已逐处核对（`frontend/src`）未依赖 500 状态码。覆盖：`api/agents::TestMissingAgentOperationRoutesReturn404`（含已存在 Agent 返回相同文案仍保持 500 的负控）与 `api/agents/difftest::TestUpgradesDifferentialAgainstFlask`（8 条显式断言 Python 500 → Go 404，其余严格对比）。
+
 ## N8-8d — typed provider delivery and response identity
 
 - Provider快照持有只读Node图；stored group的错型enabled按共享R5读为缺省值，错型group数组

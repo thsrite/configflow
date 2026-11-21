@@ -62,6 +62,9 @@ func operation(handler func(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, e
 			response, err = handler(c, manager)
 		}
 		if err != nil {
+			if errors.Is(err, agents.ErrAgentNotFound) {
+				return failure(404, err.Error()), nil
+			}
 			if response, ok := deviceResponseFailure(err); ok {
 				return response, nil
 			}
@@ -126,8 +129,14 @@ func callOperation(c *httpx.Ctx, m *agents.Manager, method, path string, payload
 			return nil, err
 		}
 	}
-	result, _, err := m.RemoteCall(c.Context(), c.Param("agent_id"), agents.RemoteRequest{Method: method, Path: path, Timeout: agents.Seconds(5), Header: header, Body: body, LegacyLogSources: sources})
-	return result, err
+	result, agent, err := m.RemoteCall(c.Context(), c.Param("agent_id"), agents.RemoteRequest{Method: method, Path: path, Timeout: agents.Seconds(5), Header: header, Body: body, LegacyLogSources: sources})
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, agents.ErrAgentNotFound
+	}
+	return result, nil
 }
 
 func agentAddress(c *httpx.Ctx) (*httpx.Response, error) {

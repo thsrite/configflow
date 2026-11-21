@@ -8,6 +8,7 @@ package agents_test
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -421,4 +422,64 @@ func TestLatestVersionRoute(t *testing.T) {
 	wantBodyJSON(t, a.s.Get("/api/agents/latest-version", a.admin).WantStatus(200),
 		map[string]any{"success": true, "version": agents.GetLatestVersion()})
 	a.s.Get("/api/agents/latest-version").WantStatus(401)
+}
+
+type fakeOpClient struct {
+	fn func(context.Context, agents.Request) (*agents.Response, error)
+}
+
+func (f fakeOpClient) Do(ctx context.Context, req agents.Request) (*agents.Response, error) {
+	return f.fn(ctx, req)
+}
+
+func TestMissingAgentOperationRoutesReturn404(t *testing.T) {
+	// Approved Python bug fix (O13 #2): all eight operation routes return 404
+	// instead of 500 when the Agent ID does not exist, keeping the same body.
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{"logs", http.MethodGet, "/api/agents/missing/logs", nil},
+		{"log sources", http.MethodGet, "/api/agents/missing/logs/sources", nil},
+		{"log clear", http.MethodPost, "/api/agents/missing/logs/clear", map[string]any{"log_path": "/var/log/x.log"}},
+		{"log validate", http.MethodPost, "/api/agents/missing/logs/validate", map[string]any{"path": "/var/log/x.log"}},
+		{"logging config get", http.MethodGet, "/api/agents/missing/config/logging", nil},
+		{"logging config set", http.MethodPost, "/api/agents/missing/config/logging", map[string]any{"enabled": true}},
+		{"restart", http.MethodPost, "/api/agents/missing/restart", nil},
+		{"uninstall", http.MethodPost, "/api/agents/missing/uninstall", nil},
+	}
+	a := newUpgradeApp(t)
+	a.m.SetClient(fakeOpClient{fn: func(_ context.Context, req agents.Request) (*agents.Response, error) {
+		t.Fatalf("unexpected Agent call for missing agent: %s %s", req.Method, req.URL)
+		return nil, nil
+	}})
+	wantMissing := map[string]any{"success": false, "message": "Agent not found"}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := []httpxtest.Option{a.admin}
+			if tc.body != nil {
+				opts = append(opts, httpxtest.JSON(tc.body))
+			}
+			wantBodyJSON(t, a.s.Do(tc.method, tc.path, opts...).WantStatus(404), wantMissing)
+		})
+	}
+
+	// Input validation before Agent lookup retains its 400 status.
+	wantEmptyPath := map[string]any{"success": false, "message": "日志路径不能为空"}
+	wantBodyJSON(t, a.s.Post("/api/agents/missing/logs/clear", a.admin, httpxtest.JSON(map[string]any{})).WantStatus(400), wantEmptyPath)
+	wantBodyJSON(t, a.s.Post("/api/agents/missing/logs/validate", a.admin, httpxtest.JSON(map[string]any{"path": ""})).WantStatus(400), wantEmptyPath)
+
+	// Negative control: an existing Agent whose reply happens to contain the
+	// same error message still returns 500, not 404.
+	a.m.SetClient(fakeOpClient{fn: func(_ context.Context, _ agents.Request) (*agents.Response, error) {
+		return &agents.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       []byte(`{"success":false,"message":"Agent not found"}`),
+		}, nil
+	}})
+	wantBodyJSON(t, a.s.Get("/api/agents/"+a.id()+"/logs", a.admin).WantStatus(500), wantMissing)
+	wantBodyJSON(t, a.s.Post("/api/agents/"+a.id()+"/restart", a.admin).WantStatus(500), wantMissing)
 }

@@ -376,10 +376,12 @@ func upgradesRequests(lan string) []upgradesRequest {
 		get("logs string", b+"op-1/logs", "string"),
 		get("logs null", b+"op-1/logs", "null"),
 		get("log sources", b+"op-1/logs/sources", ""),
+		get("log sources missing", b+"missing/logs/sources", ""),
 		get("log sources legacy", b+"op-1/logs/sources", "404"),
 		get("log sources list", b+"op-1/logs/sources", "list"),
 		post("log clear source", b+"op-1/logs/clear", `{"source": "mihomo", "log_path": "/x"}`, J, ""),
 		post("log clear path", b+"op-1/logs/clear", `{"log_path": "/var/log/x.log"}`, J, ""),
+		post("log clear missing", b+"missing/logs/clear", `{"log_path": "/var/log/x.log"}`, J, ""),
 		post("log clear number", b+"op-1/logs/clear", `{"source": 5}`, J, ""),
 		post("log clear empty", b+"op-1/logs/clear", `{}`, J, ""),
 		post("log clear null", b+"op-1/logs/clear", `null`, J, ""),
@@ -388,11 +390,13 @@ func upgradesRequests(lan string) []upgradesRequest {
 		post("log clear bad json", b+"op-1/logs/clear", `{`, J, ""),
 		masked(post("log clear unreachable", b+"op-gone/logs/clear", `{"source": "x"}`, J, ""), "message", "error_details"),
 		post("log validate", b+"op-1/logs/validate", `{"path": "/var/log/x.log"}`, J, ""),
+		post("log validate missing", b+"missing/logs/validate", `{"path": "/var/log/x.log"}`, J, ""),
 		post("log validate empty", b+"op-1/logs/validate", `{"path": ""}`, J, ""),
 		post("log validate string body", b+"op-1/logs/validate", `"x"`, J, ""),
 		get("logging config", b+"op-1/config/logging", ""),
 		get("logging config missing", b+"missing/config/logging", ""),
 		post("logging config set", b+"op-1/config/logging", `{"enabled": false}`, J, ""),
+		post("logging config set missing", b+"missing/config/logging", `{"enabled": true}`, J, ""),
 		post("logging config default", b+"op-2/config/logging", `{}`, J, ""),
 		post("logging config odd value", b+"op-2/config/logging", `{"enabled": "x"}`, J, ""),
 		post("logging config NaN", b+"op-2/config/logging", `{"enabled": NaN}`, J, ""),
@@ -565,6 +569,39 @@ func startFakeOps(t *testing.T, lan string) (*fakeOpsAgent, int, int) {
 	return fake, port, closed
 }
 
+// Approved Python bug fix (O13 decision #2, behaviour-changes.md): Python
+// returned 500 {"success": false, "message": "Agent not found"} on these eight
+// operation routes because AgentManager omitted http_status and the route
+// wrapper returned 500 for any non-success dict. Go returns 404 with the exact
+// same body and headers.
+var missingAgent404Cases = map[string]bool{
+	"restart missing":            true,
+	"logs missing":               true,
+	"log sources missing":        true,
+	"log clear missing":          true,
+	"log validate missing":       true,
+	"logging config missing":     true,
+	"logging config set missing": true,
+	"uninstall missing":          true,
+}
+
+func compareMissingAgent404(r request, py, gor response) []string {
+	var diffs []string
+	if py.status != 500 {
+		diffs = append(diffs, fmt.Sprintf("python status: got %d, want 500 (original Python bug)", py.status))
+	}
+	if gor.status != 404 {
+		diffs = append(diffs, fmt.Sprintf("go status: got %d, want 404 (approved Python bug fix)", gor.status))
+	}
+	expected := py
+	expected.status = 404
+	diffs = append(diffs, compare(r, expected, gor)...)
+	if parsed, err := parsePythonJSON(gor.body); err != nil || !jsonEqual(parsed, oObj("success", false, "message", "Agent not found")) {
+		diffs = append(diffs, fmt.Sprintf("go body: got %s, want {\"success\":false,\"message\":\"Agent not found\"}", gor.body))
+	}
+	return diffs
+}
+
 func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on the test server")
@@ -602,6 +639,7 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	requests := upgradesRequests(lan)
 	policies := 0
 	nativePolicies := 0
+	missing404Checked := 0
 	for _, r := range requests {
 		policy := n810OperationPolicy(t, r)
 		nativePolicy := loadUpgradePolicy(t, r)
@@ -632,6 +670,10 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 		time.Sleep(r.wait)
 		goCalls := fake.take()
 		diffs := compare(r.request, py, gor)
+		if missingAgent404Cases[r.name] {
+			missing404Checked++
+			diffs = compareMissingAgent404(r.request, py, gor)
+		}
 		if policy != nil {
 			diffs = compareN810Operation(t, policy, py, gor)
 			if after := n810OperationFingerprint(t, goDir); after != before {
@@ -661,6 +703,9 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	}
 	if os.Getenv("N810_RECORD_UPGRADES_PYTHON") == "" && nativePolicies != 7 {
 		t.Fatal("not all native HTTP rows executed", nativePolicies)
+	}
+	if missing404Checked != len(missingAgent404Cases) {
+		t.Fatalf("missing-Agent 404 bug-fix cases not all executed: %d/%d", missing404Checked, len(missingAgent404Cases))
 	}
 	pyAgents, goAgents := upgradeAgents(t, pyDir), upgradeAgents(t, goDir)
 	adjustUpgradeStoredPolicy(t, pyAgents, goAgents)
