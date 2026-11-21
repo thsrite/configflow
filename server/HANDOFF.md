@@ -56,6 +56,14 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-22: N8-11 DONE — W9 MERGED, go = 7e05ccfab.** jsonx/pystr deleted, all *_legacy.go gone, legacy gate is
+hard (no allowlist). O7 review (Opus 26e12ace): 0 high/0 medium; fixes: Sub-Store finished_at plain decimal; FuzzEncode
+test accepts the approved out-of-range float refusal (1e700). Final gate: compare PASS (live 45/45), core race had one
+failure TestN89SyncPipelineAllocations (alloc delta 82,923 B > 64 KiB under -race while 81 fuzz targets ran in parallel);
+re-run 3x on idle .64 and 2x on idle .32 → PASS (deltas ±17 KB) → load noise, merged. Follow-up: make that allocation
+assertion robust under -race/load (e.g. min of N runs or skip under race) — small task.
+Next: audit phase (O9 round 2, O10, O13, O15, O17, O12), #40 image, labs L2–L6, O14. Codex back 2026-11-23 21:18.
+
 **Update 2026-11-21 (evening): batch-19 MERGED (test migration w8/w8b/w8c + coverage review), go = be137cf89.**
 Allowlist 676 → 131. Coverage review (Gemini 51ce3131) restored 4 weakened tests + fixed store test encoder (encoding/json
 escapes U+2028/2029 and encodes nil slices as null — tests comparing bytes with Python must not use it). Live stage caught
