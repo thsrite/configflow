@@ -82,7 +82,11 @@ head-cached immutable snapshot, writers copy) + S2 (version-keyed derived caches
 encode); follow R1–R12 order (replaces T4/T7/T8/T9/T10-followups/T11); generator routes target <= 30 MB, no result cache;
 prod host has no THP → R12 = GC only. Tooling-only branch go-o10-tools (o10perf + report, no EXPERIMENT commits) pending.
 batch-21 = audit fix + T2 + T1 stacked on go; fresh Opus 037b7644 integrates T3 (notifications.go conflict) + HR review
-+ o10perf vs go. R1/R2 dispatch after batch-21 merges. batch-22 = M16 + Agent image (+ fuzz test fix) gating on .64.
++ o10perf vs go. R1/R2 dispatch after batch-21 merges. batch-22 MERGED (go = 331c9420f): M16 + Agent image 1.9.0-go + difftest refresh-timing fix + registration fuzz
+invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS after the fix; .64 only).
+Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
+e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
+other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
 T1 rulings: router/client redaction keeps Agent credentials (collected once per request, narrow read); one-off stale
 router-check reminders after upgrade accepted (behaviour-changes + o12 notes). T1 sent back for that fix.
 
