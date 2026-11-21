@@ -142,13 +142,13 @@ GET	/api/config/mosdns	routes.config.get_mosdns_config	internal/api/config	done
 GET	/api/config/oxidns	routes.config.get_oxidns_config	internal/api/config	done
 POST	/api/config/reset	routes.config.reset_config	internal/api/config	done
 GET	/api/config/surge	routes.config.get_surge_config	internal/api/config	done
-GET	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings		todo
-POST	/api/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings		todo
-GET	/api/custom-config/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider		todo
-GET	/api/custom-config/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider		todo
+GET	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway/restore	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+POST	/api/custom-config/linux-gateway/restore/preview	routes.linux_gateway.linux_gateway_settings	internal/api/linuxgateway	done
+GET	/api/custom-config/linux-gateway/rules/<path:rule_id>	routes.linux_gateway.linux_gateway_rule_provider	internal/api/linuxgateway	done
+GET	/api/custom-config/linux-gateway/source/<path:rule_id>	routes.linux_gateway.linux_gateway_source_provider	internal/api/linuxgateway	done
 GET	/api/custom-config/loon	routes.config.handle_custom_loon_config	internal/api/config	done
 POST	/api/custom-config/loon	routes.config.handle_custom_loon_config	internal/api/config	done
 GET	/api/custom-config/mihomo	routes.config.handle_custom_mihomo_config	internal/api/config	done
