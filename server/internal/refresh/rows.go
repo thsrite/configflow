@@ -2,7 +2,9 @@ package refresh
 
 import (
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/rules"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/weburl"
@@ -29,20 +31,39 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 	if err != nil {
 		return nil, err
 	}
-	shared, err := r.Shared(ctx)
-	if err != nil {
+	type subView struct {
+		id       string
+		name     string
+		url      string
+		enabled  bool
+		interval model.Int
+	}
+	var subs []subView
+	if err := r.View(ctx, func(document *model.Document) error {
+		subs = make([]subView, 0, len(document.Shared.Subscriptions))
+		for _, sub := range document.Shared.Subscriptions {
+			subs = append(subs, subView{
+				id:       sub.ID,
+				name:     sub.Name,
+				url:      sub.URL,
+				enabled:  notFalse(sub.Enabled),
+				interval: SourceInterval(sub),
+			})
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	rows := make([]*tasks.Task, 0, len(shared.Subscriptions))
-	for _, sub := range shared.Subscriptions {
-		key := SourceTaskKey(sub.ID)
+	rows := make([]*tasks.Task, 0, len(subs))
+	for _, sub := range subs {
+		key := SourceTaskKey(sub.id)
 		entry := statuses.Entry(key)
-		interval := SourceInterval(sub)
-		hasURL := sub.URL != ""
-		enabled := notFalse(sub.Enabled) && hasURL
+		interval := sub.interval
+		hasURL := sub.url != ""
+		enabled := sub.enabled && hasURL
 		var due *time.Time
 		if enabled {
-			baseline, err := SourceCacheAt(ctx, sub)
+			baseline, err := sourceCacheAtID(ctx, sub.id, sub.url)
 			if err != nil {
 				return nil, err
 			}
@@ -55,20 +76,20 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 		if err != nil {
 			return nil, err
 		}
-		name := sub.Name
+		name := sub.name
 		if name == "" {
-			name = sub.ID
+			name = sub.id
 		}
 		hint, message := "", ""
 		if !hasURL {
 			hint = msgNoURL
 		}
-		if !notFalse(sub.Enabled) {
+		if !sub.enabled {
 			message = msgSubscriptionDisabled
 		}
 		seconds, _ := json.Marshal(interval)
 		link := "/subscriptions"
-		rows = append(rows, &tasks.Task{Key: key, Category: "subscription", Name: name, ResourceID: sub.ID, Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: hasURL, CanRun: hasURL, RunHint: hint, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
+		rows = append(rows, &tasks.Task{Key: key, Category: "subscription", Name: name, ResourceID: sub.id, Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: hasURL, CanRun: hasURL, RunHint: hint, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
 	}
 	return rows, nil
 }
@@ -79,25 +100,50 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 	if err != nil {
 		return nil, err
 	}
-	shared, err := r.Shared(ctx)
-	if err != nil {
+	type ruleView struct {
+		id       string
+		name     string
+		url      string
+		enabled  bool
+		interval model.Int
+		library  model.RuleConfig
+	}
+	var list []ruleView
+	if err := r.View(ctx, func(document *model.Document) error {
+		list = make([]ruleView, 0, len(document.Shared.RuleLibrary))
+		for _, rule := range document.Shared.RuleLibrary {
+			url := textOr(rule.URL, "")
+			if !urlRule(rule) || url == "" {
+				continue
+			}
+			list = append(list, ruleView{
+				id:       rule.ID,
+				name:     rule.Name,
+				url:      url,
+				enabled:  notFalse(rule.Enabled),
+				interval: RemoteInterval(rule),
+				library:  rules.LibraryRule(rule),
+			})
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	rows := make([]*tasks.Task, 0, len(shared.RuleLibrary))
-	for _, rule := range shared.RuleLibrary {
-		if !urlRule(rule) || textOr(rule.URL, "") == "" {
-			continue
-		}
-		key := RuleTaskKey(rule.ID)
+	rows := make([]*tasks.Task, 0, len(list))
+	for _, rule := range list {
+		key := RuleTaskKey(rule.id)
 		entry := statuses.Entry(key)
-		interval := RemoteInterval(rule)
-		enabled := notFalse(rule.Enabled)
+		interval := rule.interval
+		enabled := rule.enabled
 		var due *time.Time
+		var baseline *string
+		var baselineChecked bool
 		if enabled {
-			baseline, err := RuleCacheAt(ctx, rule)
+			baseline, err = ruleCacheAtLibrary(ctx, rule.library)
 			if err != nil {
 				return nil, err
 			}
+			baselineChecked = true
 			due, err = NextDue(entry, interval, baseline, nil)
 			if err != nil {
 				return nil, err
@@ -108,14 +154,18 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 			return nil, err
 		}
 		if history.CacheUpdatedAt == nil || *history.CacheUpdatedAt == "" {
-			history.CacheUpdatedAt, err = RuleCacheAt(ctx, rule)
-			if err != nil {
-				return nil, err
+			if baselineChecked {
+				history.CacheUpdatedAt = baseline
+			} else {
+				history.CacheUpdatedAt, err = ruleCacheAtLibrary(ctx, rule.library)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
-		name := rule.Name
+		name := rule.name
 		if name == "" {
-			name = rule.ID
+			name = rule.id
 		}
 		message := ""
 		if !enabled {
@@ -123,7 +173,7 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 		}
 		seconds, _ := json.Marshal(interval)
 		link := "/rule-library"
-		rows = append(rows, &tasks.Task{Key: key, Category: "rule_source", Name: name, ResourceID: rule.ID, Detail: sourceHost(textOr(rule.URL, "")), Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: true, CanRun: true, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
+		rows = append(rows, &tasks.Task{Key: key, Category: "rule_source", Name: name, ResourceID: rule.id, Detail: sourceHost(rule.url), Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: true, CanRun: true, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
 	}
 	return rows, nil
 }

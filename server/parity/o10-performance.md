@@ -190,6 +190,14 @@ Mihomo 与 provider 两端都被 Sub-Store 断连拖慢（3 个 URI 节点每次
 （`ViewAgents`），不要每个行构建器各拷贝一次。预期：`/api/notifications` 降到 < 50 ms / < 30 MB，
 空闲时每次任务状态写入的 2.5 s CPU 尖峰随之消失。
 
+> **T3 已完成（go-perf-t3）**：一次通知快照只读取一次 Agent（不带部署/IPv6 历史，与任务行共享）；
+> 凭据按 Agent 收集一次（只去掉两段历史），系统密钥按 `system_config` 敏感成员窄读取，每次快照算一次；
+> 路由器签名按存储 head 缓存；订阅缓存时间只读信封不解码节点；域名发现行不再整份加载配置。
+> 同机（.32）前后：`/api/notifications` 1181 ms / 1010 MB → 50 ms / 43 MB（全量负载，10 次）；
+> 单独测 30 次为 42 ms / 28 MB。空闲 2 分钟平均 CPU 80% → 19%，分配 23.7 → 6.0 GB/min。
+> 剩余分配主要是 `copyAgent` 与 `model.Marshal`/`validJSON`，归 T2。
+> 行为变化：Agent 任务行与 DNS 跟随行收集凭据时不再遍历部署历史（部署记录没有声明凭据字段；与 `ListAgents(history=false)` 的口径一致）。
+
 **T4 Agent 列表/详情：内容源只建一次，不经 JSON（高，中）**
 `api/agents.loadContentSource` 对每个 Agent 做 `repo.Config` → `model.Marshal` → `deploy.SourceFromJSON`。
 按配置空间缓存一次请求内的内容源，并让 `deploy` 直接接受 typed `*model.Config`（去掉 JSON 往返）；
@@ -200,6 +208,10 @@ Mihomo 与 provider 两端都被 Sub-Store 断连拖慢（3 个 URI 节点每次
 `refresh.RunRound` 每个资源 `recordStatus` → `SaveResult` → `OnRecord` → 完整通知快照（Python 同样逐条刷新，
 但单价低 60 倍）。在一轮内合并为结束时一次刷新（单个手动运行仍立即刷新）；先确认持久化 observation 的
 “首次出现时间”不因合并而改变用户可见结果。T3 做完后收益变小，可排在 T3 之后。
+
+> **T5 已完成（go-perf-t3）**：`RunRound` 内的状态回执照常立即写入，通知快照在本轮全部 worker 结束后刷新一次；
+> 空轮不刷新；手动/直接刷新仍逐条刷新。`refresh/o10_t5_coalesce_test.go` 固定首次出现时间、次数、版本、
+> 已忽略、轮中浏览器读取/忽略等语义；去掉“只刷新一次”的计数断言后，该测试在改动前代码上同样通过。
 
 **T6 其余 `repo.System` 调用点（中，小）**
 剩余整份拷贝 System 的调用：`health/dns.go`、`setup/service.go`（2 处）、`agents/metrics/flush.go`（303、430 行）、

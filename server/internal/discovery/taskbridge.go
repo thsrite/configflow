@@ -2,13 +2,14 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
-	"encoding/json"
 )
 
 func wireTasks() {
@@ -31,41 +32,57 @@ func wireTasks() {
 	})
 }
 func domainRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	profiles, err := listProfiles(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
+		return nil, err
+	}
+	type profileProbe struct {
+		id, name  string
+		autoProbe bool
+	}
+	profiles := []profileProbe{}
+	if err := r.View(ctx, func(d *model.Document) error {
+		for _, p := range d.Profiles {
+			if err := storedStrings(p, "配置", p.Key(), "id", "name"); err != nil {
+				return err
+			}
+			profiles = append(profiles, profileProbe{
+				id:        p.Key(),
+				name:      p.Name,
+				autoProbe: p.DomainDiscovery.AutoProbe != nil && *p.DomainDiscovery.AutoProbe,
+			})
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	out := []*tasks.Task{}
 	for _, p := range profiles {
-		key := "domain_discovery:" + p.ID
-		c, err := loadConfig(ctx, p.ID)
-		if err != nil {
-			return nil, err
-		}
+		key := "domain_discovery:" + p.id
 		_, exists := statuses[key]
-		if !c.Settings.AutoProbe && !exists {
+		if !p.autoProbe && !exists {
 			continue
 		}
 		e := statuses.Entry(key)
 		var due *time.Time
 		if e.LastRunAt != nil {
-			if last, ok := taskstatus.ParseTimestamp(*e.LastRunAt); ok && c.Settings.AutoProbe {
+			if last, ok := taskstatus.ParseTimestamp(*e.LastRunAt); ok && p.autoProbe {
 				due = ptr(last.Add(600 * time.Second))
 			}
 		}
 		hint := ""
-		if !c.Settings.AutoProbe {
+		if !p.autoProbe {
 			hint = msgAutoDisabled
 		}
-		name := p.Name
+		name := p.name
 		if name == "" {
-			name = p.ID
+			name = p.id
 		}
 		history, err := tasks.ProjectHistory(e)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &tasks.Task{Key: key, Category: tasks.SlotDomains, Name: msgAutoName, ResourceID: p.ID, ProfileID: ptr(p.ID), ProfileName: ptr(name), Enabled: c.Settings.AutoProbe, IntervalSeconds: json.RawMessage("600"), CanRun: c.Settings.AutoProbe, RunHint: hint, Running: tasks.IsBackground(key), NextRunAt: tasks.Timestamp(due), Link: ptr("/domain-discovery"), HistoryData: history})
+		out = append(out, &tasks.Task{Key: key, Category: tasks.SlotDomains, Name: msgAutoName, ResourceID: p.id, ProfileID: ptr(p.id), ProfileName: ptr(name), Enabled: p.autoProbe, IntervalSeconds: json.RawMessage("600"), CanRun: p.autoProbe, RunHint: hint, Running: tasks.IsBackground(key), NextRunAt: tasks.Timestamp(due), Link: ptr("/domain-discovery"), HistoryData: history})
 	}
 	return out, nil
 }

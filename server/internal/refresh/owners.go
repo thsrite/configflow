@@ -127,8 +127,9 @@ func DefaultRefreshEnv() *RefreshEnv {
 		LoadNodes: func(ctx context.Context, id string) (*NodeCache, error) {
 			return sourceCache(substore.LoadCache(ctx, id))
 		},
-		FilterNodes: subs.FilterNodes,
-		Converter:   substore.NativeConverter(),
+		LoadCacheSummary: substore.LoadCacheSummary,
+		FilterNodes:      subs.FilterNodes,
+		Converter:        substore.NativeConverter(),
 	}}
 }
 func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {

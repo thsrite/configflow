@@ -178,27 +178,14 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*model.Agen
 func rawJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
 
 func systemSecrets(ctx context.Context, m *agents.Manager) (redact.Secrets, error) {
-	settings, err := m.Repository().SystemConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := model.Marshal(settings)
-	if err != nil {
-		return nil, err
-	}
-	return redact.ExternalPayloadSecrets(ctx, json.RawMessage(raw))
+	return agents.SystemSecrets(ctx, m.Repository())
 }
 func safeText(ctx context.Context, m *agents.Manager, record *model.Agent, text string) string {
 	secrets, err := systemSecrets(ctx, m)
 	if err != nil {
 		return redact.Redacted
 	}
-
-	data, encodeErr := model.Marshal(record)
-	if encodeErr != nil {
-		return "[REDACTED]"
-	}
-	secrets = redact.CollectCredentials(json.RawMessage(data), secrets)
+	secrets = agents.CollectAgentCredentials(record, secrets)
 	return safeDisplay(text, secrets)
 }
 func logState(ctx context.Context, m *agents.Manager, record *model.Agent, status, message string) {
@@ -234,11 +221,22 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	if err != nil {
 		return nil, err
 	}
-	m, err := agents.Get(ctx)
-	if err != nil {
-		return nil, err
+	sysSecrets, sysErr, ok := agents.RowSystemSecrets(ctx)
+	if !ok {
+		m, err := agents.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		sysSecrets, sysErr = systemSecrets(ctx, m)
 	}
-	message := safeText(ctx, m, a, state.Message)
+	sanitize := func(text string) string {
+		return redact.Redacted
+	}
+	if sysErr == nil {
+		secrets := agents.RowAgentCredentials(ctx, a, sysSecrets)
+		sanitize = func(text string) string { return safeDisplay(text, secrets) }
+	}
+	message := sanitize(state.Message)
 	if enabled && state.Status == "blocked" {
 		last := "skipped"
 		history.LastStatus, history.LastError = &last, &message
@@ -257,7 +255,7 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	if name == "" {
 		name = id
 	}
-	name = safeText(ctx, m, a, name)
+	name = sanitize(name)
 	link := "/agents"
 	return &tasks.Task{Key: key, Category: "agent_rule_sync", Name: name, ResourceID: id, Enabled: enabled, ScheduleText: msgRowSchedule, RunHint: msgRowHint, Running: enabled && state.Status == "running", StateMessage: stateMessage, Link: &link, HistoryData: history}, nil
 }
@@ -446,14 +444,6 @@ func observeRuleSyncPresence(ctx context.Context, m *agents.Manager, records []a
 // projected and sanitized. No metrics/history or deployment graph is copied.
 func observePresence(ctx context.Context, m *agents.Manager, records []*model.Agent) {
 	secrets, err := systemSecrets(ctx, m)
-	for _, a := range records {
-		data, failure := model.Marshal(a)
-		if failure != nil {
-			err = failure
-		} else {
-			secrets = redact.CollectCredentials(json.RawMessage(data), secrets)
-		}
-	}
 	if err != nil {
 		hidden := make([]agents.PresenceObservation, 0, len(records))
 		for _, a := range records {
@@ -464,6 +454,9 @@ func observePresence(ctx context.Context, m *agents.Manager, records []*model.Ag
 		}
 		agents.ObserveAgentPresence(hidden, nil)
 		return
+	}
+	for _, a := range records {
+		secrets = agents.CollectAgentCredentials(a, secrets)
 	}
 	agents.ObserveRegistryPresence(records, secrets)
 }

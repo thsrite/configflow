@@ -21,6 +21,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
@@ -542,13 +543,115 @@ type collectedObservations struct {
 	observations []observation
 }
 
+type routerSignatureEntry struct {
+	head       store.Head
+	signatures map[string]string
+}
+
+var (
+	routerSigMu    sync.Mutex
+	routerSigCache = map[string]routerSignatureEntry{}
+)
+
+const routerSigCacheLimit = 16
+
+type routerReleaseView struct {
+	profileID   string
+	id          string
+	name        string
+	password    string
+	hasRelease  bool
+	releaseOK   bool
+	failedStage string
+	message     string
+	at          string
+}
+
+func routerSignatures(ctx context.Context, repository *repo.Repository, profileIDs []string) (map[string]string, error) {
+	if len(profileIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	inTx := repository.InTransaction(ctx)
+	var head store.Head
+	cacheKey := repository.DataDir()
+	if !inTx {
+		var err error
+		head, err = repository.Head(ctx)
+		if err != nil {
+			return nil, err
+		}
+		routerSigMu.Lock()
+		if cached, ok := routerSigCache[cacheKey]; ok && cached.head == head {
+			sigs := cached.signatures
+			routerSigMu.Unlock()
+			return sigs, nil
+		}
+		routerSigMu.Unlock()
+	}
+	routers := make(map[string]string, len(profileIDs))
+	for _, profileID := range profileIDs {
+		// Router checks digest the view router management reads, including the
+		// OxiDNS Agent projection its policy entries depend on.
+		config, err := repository.ConfigWithOxiDNSAgents(ctx, profileID, nil)
+		if err != nil {
+			return nil, err
+		}
+		encodedConfig, err := json.Marshal(config)
+		if err != nil {
+			return nil, err
+		}
+		for _, router := range config.Profile.Routers.Items {
+			prefix := "router:" + profileID + ":" + router.ID + ":"
+			encoded, err := json.Marshal(router)
+			if err != nil {
+				return nil, err
+			}
+			signature, err := RouterDigest(encodedConfig, encoded)
+			if err != nil {
+				return nil, err
+			}
+			routers[prefix] = signature
+		}
+	}
+	if !inTx {
+		routerSigMu.Lock()
+		if len(routerSigCache) >= routerSigCacheLimit {
+			clear(routerSigCache)
+		}
+		routerSigCache[cacheKey] = routerSignatureEntry{head: head, signatures: routers}
+		routerSigMu.Unlock()
+	}
+	return routers, nil
+}
+
 func collect(ctx context.Context, repository *repo.Repository, completedTask string, s Inputs) (*collectedObservations, error) {
+	ctx = tasks.WithSnapshotCache(ctx)
 	profiles := map[string]string{}
-	var order []string
+	var routerProfiles []string
+	var routerReleases []routerReleaseView
 	if err := repository.View(ctx, func(document *model.Document) error {
 		for _, profile := range document.Profiles {
-			profiles[profile.Key()] = profile.Name
-			order = append(order, profile.Key())
+			pid := profile.Key()
+			profiles[pid] = profile.Name
+			if len(profile.Routers.Items) > 0 {
+				routerProfiles = append(routerProfiles, pid)
+			}
+			for _, router := range profile.Routers.Items {
+				view := routerReleaseView{
+					profileID: pid,
+					id:        router.ID,
+					name:      router.Name,
+					password:  router.Password,
+				}
+				if router.LastRelease != nil {
+					view.hasRelease = true
+					view.releaseOK = router.LastRelease.OK
+					view.failedStage = stringValue(router.LastRelease.FailedStage)
+					view.message = router.LastRelease.Message
+					view.at = router.LastRelease.At
+				}
+				routerReleases = append(routerReleases, view)
+			}
 		}
 		return nil
 	}); err != nil {
@@ -596,48 +699,30 @@ func collect(ctx context.Context, repository *repo.Repository, completedTask str
 		}
 		observations = append(observations, observation{key, item})
 	}
-	routers := map[string]string{}
-	for _, profileID := range order {
-		// Router checks digest the view router management reads, including the
-		// OxiDNS Agent projection its policy entries depend on.
-		config, err := repository.ConfigWithOxiDNSAgents(ctx, profileID, nil)
-		if err != nil {
-			return nil, err
-		}
-		encodedConfig, err := json.Marshal(config)
-		if err != nil {
-			return nil, err
-		}
-		for _, router := range config.Profile.Routers.Items {
-			prefix := "router:" + profileID + ":" + router.ID + ":"
-			encoded, err := json.Marshal(router)
-			if err != nil {
-				return nil, err
-			}
-			signature, err := RouterDigest(encodedConfig, encoded)
-			if err != nil {
-				return nil, err
-			}
-			routers[prefix] = signature
-			release := router.LastRelease
-			key := prefix + "release"
-			keys[key] = true
-			state := "unknown"
-			if release == nil {
-				release = &model.RouterRelease{}
-			} else if release.OK {
+	routers, err := routerSignatures(ctx, repository, routerProfiles)
+	if err != nil {
+		return nil, err
+	}
+	for _, router := range routerReleases {
+		profileID := router.profileID
+		prefix := "router:" + profileID + ":" + router.id + ":"
+		key := prefix + "release"
+		keys[key] = true
+		state := "unknown"
+		if router.hasRelease {
+			if router.releaseOK {
 				state = "resolved"
 			} else {
 				state = "pending"
 			}
-			stage := firstText(stringValue(release.FailedStage), msgUnknown)
-			message := firstText(release.Message, fmt.Sprintf(msgReleaseFailed, stage))
-			var at json.RawMessage = json.RawMessage("null")
-			if release.At != "" {
-				at = jsonString(release.At)
-			}
-			observations = append(observations, observation{key, &Item{State: state, Source: "router-release", Scope: new("profile"), ProfileID: &profileID, Severity: new("error"), StatusLabel: new(msgPublishFailed), Title: new(firstText(router.Name, router.ID) + msgRouterPublication), Message: new(eventText(message, router.Password)), CheckedAt: at, Evidence: at, Target: Destination("/routers", msgViewPublishResult, map[string]string{"router": router.ID, "profile": profileID, "section": "report"})}})
 		}
+		stage := firstText(router.failedStage, msgUnknown)
+		message := firstText(router.message, fmt.Sprintf(msgReleaseFailed, stage))
+		var at json.RawMessage = json.RawMessage("null")
+		if router.at != "" {
+			at = jsonString(router.at)
+		}
+		observations = append(observations, observation{key, &Item{State: state, Source: "router-release", Scope: new("profile"), ProfileID: &profileID, Severity: new("error"), StatusLabel: new(msgPublishFailed), Title: new(firstText(router.name, router.id) + msgRouterPublication), Message: new(eventText(message, router.password)), CheckedAt: at, Evidence: at, Target: Destination("/routers", msgViewPublishResult, map[string]string{"router": router.id, "profile": profileID, "section": "report"})}})
 	}
 	return &collectedObservations{profiles, routers, keys, observations}, nil
 }

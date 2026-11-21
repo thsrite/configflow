@@ -348,4 +348,92 @@ func LoadCache(ctx context.Context, id string) (*Cache, error) {
 	return &cache, nil
 }
 
+// CacheSummary holds the lightweight envelope fields of a subscription node
+// cache without decoding individual nodes.
+type CacheSummary struct {
+	HasNodes  bool
+	UpdatedAt *string
+	URL       *string
+	URLBad    bool
+}
+
+// LoadCacheSummary reads only the cache envelope (whether valid node objects
+// are present, metadata.url, and updated_at) without decoding each node.
+func LoadCacheSummary(ctx context.Context, id string) (*CacheSummary, error) {
+	path, err := CachePath(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, nil
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	data, err := r.ReadSharedBytes(ctx, filepath.Join("subscribes", filepath.Base(path)))
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	if err != nil {
+		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, err))
+		return nil, nil
+	}
+	if data = bytes.TrimSpace(data); len(data) == 0 || data[0] != '{' {
+		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, msgCacheRootShape))
+		return nil, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := jsonresp.DecodeStored(data, &fields); err != nil {
+		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, err))
+		return nil, nil
+	}
+	summary := &CacheSummary{}
+	if rawNodes, ok := fields["nodes"]; ok {
+		var items []json.RawMessage
+		if json.Unmarshal(rawNodes, &items) == nil && len(items) > 0 {
+			allObjects := true
+			for _, item := range items {
+				trimmed := bytes.TrimSpace(item)
+				if len(trimmed) == 0 || trimmed[0] != '{' {
+					allObjects = false
+					break
+				}
+			}
+			summary.HasNodes = allObjects
+		}
+	}
+	if rawMeta, ok := fields["metadata"]; ok {
+		trimmed := bytes.TrimSpace(rawMeta)
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			summary.URLBad = true
+		} else {
+			var meta map[string]json.RawMessage
+			if json.Unmarshal(trimmed, &meta) != nil {
+				summary.URLBad = true
+			} else if rawURL, hasURL := meta["url"]; hasURL {
+				trimmedURL := bytes.TrimSpace(rawURL)
+				if string(trimmedURL) != "null" {
+					var address string
+					if len(trimmedURL) == 0 || trimmedURL[0] != '"' || json.Unmarshal(trimmedURL, &address) != nil {
+						summary.URLBad = true
+					} else {
+						summary.URL = &address
+					}
+				}
+			}
+		}
+	}
+	if rawUpdated, ok := fields["updated_at"]; ok {
+		trimmed := bytes.TrimSpace(rawUpdated)
+		if len(trimmed) > 0 && trimmed[0] == '"' {
+			var updated string
+			if json.Unmarshal(trimmed, &updated) == nil {
+				summary.UpdatedAt = &updated
+			}
+		}
+	}
+	return summary, nil
+}
+
 var cacheClock Clock = SystemClock

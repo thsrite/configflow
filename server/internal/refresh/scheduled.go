@@ -14,6 +14,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -77,12 +78,27 @@ func mtimeSeconds(seconds, nanos int64) int64 {
 
 // SourceCacheAt returns the node cache's time only for its current URL.
 func SourceCacheAt(ctx context.Context, sub model.Subscription) (*string, error) {
-	cache, err := refreshEnv().Sources.LoadNodes(ctx, sub.ID)
+	return sourceCacheAtID(ctx, sub.ID, sub.URL)
+}
+
+func sourceCacheAtID(ctx context.Context, id, subURL string) (*string, error) {
+	env := refreshEnv()
+	if env.Sources.LoadCacheSummary != nil {
+		summary, err := env.Sources.LoadCacheSummary(ctx, id)
+		if err != nil || summary == nil || !summary.HasNodes {
+			return nil, err
+		}
+		if summary.URLBad || summary.URL == nil || *summary.URL != subURL {
+			return nil, nil
+		}
+		return summary.UpdatedAt, nil
+	}
+	cache, err := env.Sources.LoadNodes(ctx, id)
 	if err != nil || cache == nil || len(cache.Nodes) == 0 {
 		return nil, err
 	}
 	url, malformed := cacheURL(cache)
-	if malformed || url == nil || *url != sub.URL {
+	if malformed || url == nil || *url != subURL {
 		return nil, nil
 	}
 	raw, _, err := cache.Raw.MemberJSON("updated_at", cache.UpdatedAt)
@@ -94,10 +110,14 @@ func SourceCacheAt(ctx context.Context, sub model.Subscription) (*string, error)
 
 // RuleCacheAt is the local file's refresh time without touching its mtime.
 func RuleCacheAt(ctx context.Context, rule model.RuleLibraryItem) (*string, error) {
+	return ruleCacheAtLibrary(ctx, rules.LibraryRule(rule))
+}
+
+func ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	path, err := rulefetch.CacheReadPath(ctx, rules.LibraryRule(rule), nil)
+	path, err := rulefetch.CacheReadPath(ctx, rule, nil)
 	if err != nil {
 		if repo.IsValueError(err) || isOSError(err) {
 			return nil, nil
@@ -138,6 +158,18 @@ func StoredRule(ctx context.Context, rule model.RuleLibraryItem) (bool, error) {
 func sameRuleDeclaration(a, b model.RuleLibraryItem) bool {
 	return equalStoredMembers(a, b, []string{"url", "behavior", "format", "source_type"})
 }
+
+// roundNoticeBatch coalesces the notification refresh of one scheduled round:
+// each resource's status receipt is still written immediately, but the
+// notification snapshot runs once after every worker of the round finished
+// (and released its running lock) instead of once per receipt. Direct and
+// manual refreshes have no batch and refresh notifications per receipt.
+type roundNoticeBatchKey struct{}
+
+type roundNoticeBatch struct {
+	recorded atomic.Bool
+}
+
 func recordStatus(ctx context.Context, key string, result taskstatus.Result) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -146,13 +178,22 @@ func recordStatus(ctx context.Context, key string, result taskstatus.Result) err
 	if err != nil {
 		return err
 	}
+	batch, _ := ctx.Value(roundNoticeBatchKey{}).(*roundNoticeBatch)
 	store := notifications.TaskStatus(ctx, r.DataDir())
+	if batch != nil {
+		store = taskstatus.New(r.DataDir())
+	}
 	store.Now = refreshEnv().Clock.Now
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = store.SaveResult(ctx, key, result)
-	return err
+	if _, err = store.SaveResult(ctx, key, result); err != nil {
+		return err
+	}
+	if batch != nil {
+		batch.recorded.Store(true)
+	}
+	return nil
 }
 func taskStatusOf(ctx context.Context) (*taskstatus.Store, error) {
 	r, err := repo.GetRepository(ctx)
@@ -451,6 +492,14 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	batch := &roundNoticeBatch{}
+	roundCtx := context.WithValue(ctx, roundNoticeBatchKey{}, batch)
+	flushNotices := func() {
+		// Like the per-receipt hook, this runs detached even while stopping.
+		if batch.recorded.Load() {
+			notifications.Safely(func() error { return notifications.RefreshTasks(ctx, "") })
+		}
+	}
 	type claimed struct {
 		resource Resource
 		ctx      context.Context
@@ -464,7 +513,7 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 			}
 			return 0, err
 		}
-		held, release, ok := running.TryLock(ctx, resource.key())
+		held, release, ok := running.TryLock(roundCtx, resource.key())
 		if ok {
 			jobs = append(jobs, claimed{resource, held, release})
 		}
@@ -477,6 +526,7 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 			pending.release()
 		}
 		wg.Wait()
+		flushNotices()
 		return count, ctx.Err()
 	}
 	for i, item := range jobs {
@@ -501,6 +551,7 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 		}(item)
 	}
 	wg.Wait()
+	flushNotices()
 	return count, ctx.Err()
 }
 

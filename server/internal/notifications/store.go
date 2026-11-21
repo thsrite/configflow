@@ -48,7 +48,6 @@ var errInvalidItem = errors.New(msgItemShape)
 
 // IncidentFingerprint identifies an incident using native JSON (D2 policy B).
 func IncidentFingerprint(key string, item *Item) (string, error) {
-	fields := map[string]json.RawMessage{}
 	raw, err := json.Marshal(item)
 	if err != nil {
 		return "", err
@@ -57,10 +56,15 @@ func IncidentFingerprint(key string, item *Item) (string, error) {
 	if err = json.Unmarshal(raw, &members); err != nil {
 		return "", err
 	}
+	return fingerprintFromMembers(key, item.Source, members)
+}
+
+func fingerprintFromMembers(key, source string, members map[string]json.RawMessage) (string, error) {
+	fields := make(map[string]json.RawMessage, 6)
 	keys := []string{"title", "message", "severity", "status_label", "target"}
-	if item.Source == "router-check" && strings.HasSuffix(key, ":changes") {
+	if source == "router-check" && strings.HasSuffix(key, ":changes") {
 		keys = []string{"signature"}
-	} else if item.Source == "router-check" {
+	} else if source == "router-check" {
 		keys = append(keys, "signature")
 	} else {
 		keys = append(keys, "evidence")
@@ -124,9 +128,12 @@ func transaction(ctx context.Context, dataDir string, ticket uint64, persist boo
 			return err
 		}
 	}
-	before, err := json.Marshal(data)
-	if err != nil {
-		return err
+	var before []byte
+	if persist {
+		before, err = json.Marshal(data)
+		if err != nil {
+			return err
+		}
 	}
 	migrated := newItems()
 	for key, item := range data.Items.All() {
@@ -211,7 +218,17 @@ func ObserveItem(items *Items, key string, observation *Item) error {
 		return nil
 	}
 	previous, _ := items.Get(key)
-	identity, err := IncidentFingerprint(key, observation)
+	// JSON member overlays retain the old receipt's unowned fields. State and
+	// evidence are managed by the store, not copied from an observation.
+	raw, err := json.Marshal(observation)
+	if err != nil {
+		return err
+	}
+	var patch map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &patch); err != nil {
+		return err
+	}
+	identity, err := fingerprintFromMembers(key, observation.Source, patch)
 	if err != nil {
 		return err
 	}
@@ -230,24 +247,10 @@ func ObserveItem(items *Items, key string, observation *Item) error {
 			seen = value
 		}
 	}
-	// JSON member overlays retain the old receipt's unowned fields. State and
-	// evidence are managed by the store, not copied from an observation.
-	raw, err := json.Marshal(observation)
-	if err != nil {
-		return err
-	}
-	var patch map[string]json.RawMessage
-	if err = json.Unmarshal(raw, &patch); err != nil {
-		return err
-	}
 	delete(patch, "state")
 	delete(patch, "evidence")
 	result := &Item{}
 	if previous != nil && previous.State == "pending" {
-		changed, err := IncidentFingerprint(key, previous)
-		if err != nil {
-			return err
-		}
 		baseRaw, err := json.Marshal(previous)
 		if err != nil {
 			return err
@@ -255,6 +258,24 @@ func ObserveItem(items *Items, key string, observation *Item) error {
 		var fields map[string]json.RawMessage
 		if err = json.Unmarshal(baseRaw, &fields); err != nil {
 			return err
+		}
+		changed, err := fingerprintFromMembers(key, previous.Source, fields)
+		if err != nil {
+			return err
+		}
+		sameEvidence := equalEvidence(evidence, previous.Evidence)
+		if sameEvidence && changed == identity && bytes.Equal(evidence, previous.Evidence) {
+			allMatch := true
+			for field, value := range patch {
+				if existing, exists := fields[field]; !exists || !bytes.Equal(existing, value) {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch {
+				items.Set(key, previous)
+				return nil
+			}
 		}
 		for field, value := range patch {
 			fields[field] = value
@@ -266,7 +287,7 @@ func ObserveItem(items *Items, key string, observation *Item) error {
 		if err = json.Unmarshal(data, result); err != nil {
 			return err
 		}
-		if !equalEvidence(evidence, previous.Evidence) {
+		if !sameEvidence {
 			count := new(big.Int)
 			if previous.Occurrences != nil {
 				count.Set((*big.Int)(previous.Occurrences))

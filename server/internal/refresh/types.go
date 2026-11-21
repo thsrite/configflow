@@ -59,13 +59,14 @@ func (r NodeCache) MarshalJSON() ([]byte, error)     { return model.EncodeRecord
 // SourceOwners are the existing subscription/parser/cache collaborators.
 // Every I/O callback receives the admitted owner's Runtime generation.
 type SourceOwners struct {
-	Fetch       func(context.Context, string, string, substore.FetchOptions) (*SourceResult, error)
-	ParseNodes  func(context.Context, string) ([]model.Node, error)
-	Metadata    func(context.Context, string) (json.RawMessage, json.RawMessage, error)
-	SaveNodes   func(context.Context, string, []model.Node, *SourceMetadata) (*NodeCache, error)
-	LoadNodes   func(context.Context, string) (*NodeCache, error)
-	FilterNodes func(model.Subscription, []model.Node) []model.Node
-	Converter   convert.NodeConverter
+	Fetch            func(context.Context, string, string, substore.FetchOptions) (*SourceResult, error)
+	ParseNodes       func(context.Context, string) ([]model.Node, error)
+	Metadata         func(context.Context, string) (json.RawMessage, json.RawMessage, error)
+	SaveNodes        func(context.Context, string, []model.Node, *SourceMetadata) (*NodeCache, error)
+	LoadNodes        func(context.Context, string) (*NodeCache, error)
+	LoadCacheSummary func(context.Context, string) (*substore.CacheSummary, error)
+	FilterNodes      func(model.Subscription, []model.Node) []model.Node
+	Converter        convert.NodeConverter
 }
 
 // RefreshEnv supplies native collaborators; no configuration/DTO is untyped.
