@@ -62,3 +62,10 @@ RT_HOST=sunbroke@192.168.0.64 rt sync && ssh sunbroke@192.168.0.64 'bash /tmp/pr
 #   == full non-race tests (-p 6)
 #   PREFLIGHT PASS
 ```
+
+## 补充：门禁 fuzz 失败（协调者 2026-11-21 转来）
+
+- **现象**：W9 树完整门禁中 `internal/yamlbridge` `FuzzEncode` 在输入 `"1e700"` 上失败：`YAML 标签 !!float 的标量内容无效（第 0 行）：yaml: cannot decode !!str 1e700 as a !!float`。
+- **是不是 W9 引入的**：是 W9 改测试引入的，产品行为没有变。go 基线上同一输入的结果是 `--- SKIP`。旧测试用 `jsonx.ParseString` 解码，jsonx 把 `1e700` 当成 Infinity，随后 `json.Marshal` 失败，测试就跳过了。W9 改用 `json.Number` 保留原文后，这个输入会一路走到 `Encode` 和 `Marshal`。
+- **根因**：超出 float64 的 JSON 指数（1e400 类）在 yamlx 里有已批准并登记的策略（behaviour-changes「N7 shared writer」）：`FromJSON` 保留原文，`Marshal` 用中文 `ErrPolicy` 拒绝输出，不会写出自己读不回来的 YAML。`Encode` 的 `json.Number` 分支委托给 `yamlx.FromJSON`，生成的图和原生 JSON 图一致，拒绝也是同一条策略。生产上唯一调用 `Encode` 的是 `importer`，它只传入 `*yamlx.Node`。所以不需要改产品代码，也不改成 `.inf`，那样就是在仿 Python 的 `float('1e700')`。
+- **修复**：`FuzzEncode` 改为先断言 `Encode` 的结果与 `yamlx.FromJSON` 的图 `Equal`。`Marshal` 失败时，只接受「两边都是 `ErrPolicy`」这一种情况，其余失败仍然报错。回归语料：`testdata/fuzz/FuzzEncode/c349e8dbb1ab7323`（`1e700`），另加 `w9review-range-mix`（`1e-700`、`-1e700` 和一个大整数混在一起）。两条都实际执行并 PASS。

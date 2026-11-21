@@ -309,9 +309,18 @@ func FuzzEncode(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !yamlx.Equal(want, n) {
+			t.Fatalf("encoded graph differs from the native JSON graph: %s", data)
+		}
 		out, err := yamlx.Marshal(n)
 		if err != nil {
-			t.Fatal(err)
+			// Exponents outside float64 (1e400) keep their JSON text and the
+			// shared writer refuses them with ErrPolicy (behaviour-changes
+			// "N7 shared writer"); the native graph must be refused the same way.
+			if _, wantErr := yamlx.Marshal(want); !errors.Is(err, yamlx.ErrPolicy) || !errors.Is(wantErr, yamlx.ErrPolicy) {
+				t.Fatalf("unexpected writer failure: %v (native graph: %v)", err, wantErr)
+			}
+			return
 		}
 		got, err := yamlx.Parse(out)
 		if err != nil || !yamlx.Equal(want, got) {
