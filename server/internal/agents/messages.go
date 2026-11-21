@@ -146,6 +146,9 @@ var upgradeFailureStatuses = map[string]bool{"failed": true, "rolled_back": true
 // (copy-on-write), every other nested value is shared with record, so neither
 // may be changed in depth afterwards. record itself is not modified.
 func PublicDeploymentMessagesModel(record *model.Deployment) (*model.Deployment, error) {
+	if record == nil {
+		record = new(model.Deployment)
+	}
 	copied := *record
 	result := &copied
 	for _, key := range []string{"message", "error", "rollback_error", "rollback_message"} {
@@ -172,28 +175,22 @@ func PublicDeploymentMessagesModel(record *model.Deployment) (*model.Deployment,
 				events[i].Message = new(ExplainDeployment(*events[i].Message))
 			}
 		}
-		raw, err := json.Marshal(events)
-		if err != nil {
-			return nil, err
-		}
-		if err := result.SetJSON("events", raw); err != nil {
+		if err := setPublicEvents(&result.Events, events, result.SetJSON); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
 }
 
-// PublicUpgradeStateModel produces an owned display copy without changing the
-// durable upgrade journal, including original nontext diagnostic values.
+// PublicUpgradeStateModel produces a display copy without changing the
+// durable upgrade journal, including original nontext diagnostic values. Like
+// PublicDeploymentMessagesModel it is a shallow copy: localized members are
+// replaced, other nested values are shared with state.
 func PublicUpgradeStateModel(state *model.AgentUpgrade) (*model.AgentUpgrade, error) {
-	raw, err := model.Marshal(state)
-	if err != nil {
-		return nil, err
+	if state == nil {
+		state = new(model.AgentUpgrade)
 	}
-	var result model.AgentUpgrade
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
+	result := *state
 	for _, key := range []string{"error", "message"} {
 		raw, present, err := result.MemberJSON(key)
 		if err != nil {
@@ -231,11 +228,7 @@ func PublicUpgradeStateModel(state *model.AgentUpgrade) (*model.AgentUpgrade, er
 				events[i].Message = new(ExplainUpgradeFailure(*events[i].Message))
 			}
 		}
-		raw, err := json.Marshal(events)
-		if err != nil {
-			return nil, err
-		}
-		if err := result.SetJSON("events", raw); err != nil {
+		if err := setPublicEvents(&result.Events, events, result.SetJSON); err != nil {
 			return nil, err
 		}
 	}
@@ -375,3 +368,14 @@ const (
 	msgReturnRoutingStatus = "回流规则状态"
 	msgReturnRoutingManage = "回流规则管理"
 )
+
+// setPublicEvents stores cleaned events, which CleanOperationEvents built
+// anew: a non-empty list is assigned without a JSON round trip; an empty one
+// is set as the JSON [] so that it is written as [] even over a stored null.
+func setPublicEvents(field *[]model.OperationEvent, events []model.OperationEvent, set func(string, json.RawMessage) error) error {
+	if len(events) > 0 {
+		*field = events
+		return nil
+	}
+	return set("events", json.RawMessage(`[]`))
+}

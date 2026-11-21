@@ -134,7 +134,7 @@ func publicDeploymentModel(record *model.Deployment) (json.RawMessage, error) {
 	}
 	out := *record
 	if out.HAPublication != nil && out.HAPublication.HasMembers() {
-		aggregated, err := agents.HAAggregateModel(&out, out.HAPublication)
+		aggregated, err := agents.HAAggregateView(&out, out.HAPublication)
 		if err != nil {
 			return nil, err
 		}

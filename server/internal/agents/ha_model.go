@@ -147,6 +147,24 @@ func HAAggregateModel(task *model.Deployment, public *model.HAPublicationSummary
 	if err != nil {
 		return nil, err
 	}
+	return haAggregate(result, public)
+}
+
+// HAAggregateView is HAAggregateModel for display: the result is a shallow
+// copy of task (its edits are copy-on-write), sharing every other nested value
+// with task and public, so neither may be changed in depth afterwards.
+func HAAggregateView(task *model.Deployment, public *model.HAPublicationSummary) (*model.Deployment, error) {
+	if task == nil {
+		task = new(model.Deployment)
+	}
+	if public == nil {
+		public = new(model.HAPublicationSummary)
+	}
+	copied := *task
+	return haAggregate(&copied, public)
+}
+
+func haAggregate(result *model.Deployment, public *model.HAPublicationSummary) (*model.Deployment, error) {
 	raw, err := model.Marshal(public)
 	if err != nil {
 		return nil, err
