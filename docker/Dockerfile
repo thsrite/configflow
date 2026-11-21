@@ -17,6 +17,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY server/ ./
 ARG VERSION=dev
 ARG GIT_COMMIT=
+# 与本面板同一提交构建的 Docker Agent 镜像（例如 thsrite/config-flow-agent:2.0.0-rc.1）；
+# 面板生成的 Docker Agent 命令/Compose/HA 使用它。留空（本地、分支、autoupdate 构建）时用浮动的 latest。
+ARG AGENT_IMAGE=
 ARG TARGETOS
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -33,7 +36,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       esac; \
     fi && \
     GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
-    go build -trimpath -ldflags="-s -w -X configflow/internal/version.Version=${FULL_VERSION}" \
+    go build -trimpath -ldflags="-s -w -X configflow/internal/version.Version=${FULL_VERSION} -X configflow/internal/version.AgentImage=${AGENT_IMAGE}" \
     -o /dist/configflow ./cmd/configflow
 
 # ==============================================================================

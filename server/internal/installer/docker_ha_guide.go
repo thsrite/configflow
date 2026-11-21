@@ -8,13 +8,23 @@ import (
 	"strings"
 
 	"unicode"
+
+	"configflow/internal/version"
 )
 
 // Port of backend/agents/docker_ha_guide.py: copyable Docker HA setup steps;
 // no Docker host is contacted by this module.
 
-// DockerHAImage is IMAGE.
-const DockerHAImage = "thsrite/config-flow-agent:latest"
+// DockerAgentImage is the Docker Agent image new installations use (Python's
+// IMAGE was always the floating latest tag). Release builds pair it with the
+// panel version, so a newly generated command never runs an Agent that
+// predates this panel's registration protocol.
+func DockerAgentImage() string { return version.DockerAgentImage() }
+
+// DockerHAImage is Python's IMAGE, the floating tag every Python-generated
+// command used. Legacy comparisons against Python keep it; generators call
+// DockerAgentImage.
+const DockerHAImage = version.DefaultAgentImage
 
 func enrollmentURL(e *Capability) string {
 	if e == nil {

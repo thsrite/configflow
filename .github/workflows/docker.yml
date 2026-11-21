@@ -79,6 +79,23 @@ jobs:
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=latest,enable=${{ vars.PUBLISH_LATEST == 'true' && !contains(github.ref_name, '-') }}
 
+      # 面板生成的 Docker Agent 命令/Compose/HA 使用与本次面板同一提交构建的 Agent 镜像：
+      # 版本标签（含预发布）用 docker-agent.yml 按同一 semver 规则推送的 `config-flow-agent:<版本>`；
+      # 分支/手动构建没有版本标签，沿用浮动的 `latest`。
+      - name: Pair Docker Agent image
+        id: agent_image
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          AGENT_REPO: ${{ vars.DOCKERHUB_NAMESPACE || 'thsrite' }}/config-flow-agent
+        run: |
+          tag=latest
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ -n "$VERSION" ] && grep -qxF "${REGISTRY_DOCKERHUB}/${IMAGE_NAME}:${VERSION}" <<<"$TAGS"; then
+            tag="$VERSION"
+          fi
+          echo "image=${AGENT_REPO}:${tag}" >> "$GITHUB_OUTPUT"
+          echo "Docker Agent image: ${AGENT_REPO}:${tag}"
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -95,6 +112,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             GIT_COMMIT=${{ steps.version.outputs.git_commit }}
+            AGENT_IMAGE=${{ steps.agent_image.outputs.image }}
 
       # autoupdate 镜像（target: autoupdate，容器启动时按分支源码重建 Go server/前端/Agent）。
       # 标签与 runtime 同一套 D3 规则：
@@ -128,3 +146,4 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             GIT_COMMIT=${{ steps.version.outputs.git_commit }}
+            AGENT_IMAGE=${{ steps.agent_image.outputs.image }}

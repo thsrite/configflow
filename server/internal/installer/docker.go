@@ -233,7 +233,7 @@ func dockerCompose(o DockerInstallOptions) (*composeDocument, error) {
 		}
 	}
 	logging := &composeLogging{Driver: "json-file", Options: composeLogOptions{"10m", "3"}}
-	service := &composeService{Image: yamlx.Str(DockerHAImage), ContainerName: containerName, Restart: "unless-stopped",
+	service := &composeService{Image: yamlx.Str(DockerAgentImage()), ContainerName: containerName, Restart: "unless-stopped",
 		NetworkMode: o.NetworkMode, Environment: composeEnvironment{Entries: environment}, Volumes: volumes, Logging: logging}
 	if network != nil {
 		service.NetworkMode = ""
@@ -279,7 +279,7 @@ func dockerCompose(o DockerInstallOptions) (*composeDocument, error) {
 		document.Networks = map[string]*composeNetwork{"dns-ha": network.object()}
 	} else if o.EnableDNSHA {
 		document.Services.Companion = &composeService{
-			Image: yamlx.Str(DockerHAImage), ContainerName: containerName + "-ha", Restart: "unless-stopped", NetworkMode: "host",
+			Image: yamlx.Str(DockerAgentImage()), ContainerName: containerName + "-ha", Restart: "unless-stopped", NetworkMode: "host",
 			CapAdd: []string{"NET_ADMIN", "NET_RAW"}, StopGracePeriod: "30s",
 			Environment: composeEnvironment{Entries: []string{"SERVICE_TYPE=ha-companion", "CONFIGFLOW_DNS_HA=1", "CONFIGFLOW_DNS_HA_NETWORK=host", "TZ=Asia/Shanghai"}},
 			Volumes:     []composeMount{{Short: o.DataDir + "/agent:/opt/configflow-agent:ro"}, {Short: o.DataDir + "/oxidns:/etc/oxidns:ro"}, {Short: o.DataDir + "/ha:/var/lib/configflow-ha"}, identity}, Logging: logging}
@@ -418,7 +418,7 @@ func RenderDockerRun(o DockerInstallOptions) (string, error) {
 		cmd += "\n  -e ENABLE_OXIDNS=\"true\" -e AGENT_OXIDNS_NAME=" + o.AgentName + "-oxidns -e " + shellWord("AGENT_OXIDNS_PORT="+oxidnsPort, true) + " \\"
 	}
 	cmd += "\n  " + volumesArgs
-	cmd += "\n  thsrite/config-flow-agent:latest\n"
+	cmd += "\n  " + shellWord(DockerAgentImage(), true) + "\n"
 	cmd = replaceOnce(cmd, "docker run -d", `cf_run "启动 Docker Agent" docker run -d`)
 	header, body, _ := strings.Cut(cmd, "\n")
 	return header + "\n" + cliOutputHelpers +
@@ -476,7 +476,7 @@ func generateDockerHARun(o DockerInstallOptions, port string, network *haNetwork
 	for _, kv := range env {
 		run = append(run, "-e "+quote(kv[0]+"="+kv[1]))
 	}
-	run = append(run, "thsrite/config-flow-agent:latest")
+	run = append(run, shellWord(DockerAgentImage(), true))
 	companion := ""
 	if network == nil {
 		companion = strings.Join([]string{
@@ -486,7 +486,7 @@ func generateDockerHARun(o DockerInstallOptions, port string, network *haNetwork
 			`-v "$cf_ha_data/agent:/opt/configflow-agent:ro"`,
 			`-v "$cf_ha_data/oxidns:/etc/oxidns:ro"`, `-v "$cf_ha_data/ha:/var/lib/configflow-ha"`,
 			"-e SERVICE_TYPE=ha-companion -e CONFIGFLOW_DNS_HA=1 -e CONFIGFLOW_DNS_HA_NETWORK=host",
-			"thsrite/config-flow-agent:latest",
+			shellWord(DockerAgentImage(), true),
 		}, " \\\n  ") + "\n"
 	}
 	return "#!/bin/bash\n" + cliOutputHelpers +

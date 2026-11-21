@@ -2454,3 +2454,25 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 - 测试与参照调整：
   - 此前 N8-9 为拒绝 `alpha-*` / `unknown` 新增的 13 条 `mihomo_corpus`/`review_mihomo`、1 条 `mihomo_recorded`、3 条 `corpus`/`review_c12` 拒绝覆写全部撤销并删除对应夹具，恢复为直接匹配原始 Python 语料及原始 4548 项字节清单（`n88_generation_bytes.json` 2353 条 Mihomo 零例外全匹配）。
   - `review_c12/2125`（输入 `v１.19.30`，含全角数字 `１`）：Python 因正则 `\d` 匹配 Unicode 全角数字将其判为旧版本拒绝；Go 保持 ASCII 机器版本解析（`subs.CoreVersion` 只认 `[0-9]`），按 O12 M16 规则将其视为无法识别/未知版本而正常应用 EasyTier，并在 `n89_subs_callers_reference.json` 中显式固定该新行为。
+
+
+## O9-H2 发布补充 — Docker Agent 安装使用与面板配套的镜像标签（实验网 L2 发现，2026-11-21）
+
+- **问题**：O9-H2 后，开启登录时新 Docker Agent 首次注册依赖 `AGENT_<SVC>_REGISTRATION_TOKEN` 写入 Agent 配置（新入口脚本）和 Agent 发送
+  `registration_token`（Agent 1.8.61-go）。Python 与 Go 面板此前都把生成命令写死为浮动的 `thsrite/config-flow-agent:latest`；
+  Docker Hub 上的 latest 是旧入口脚本，新装必然 403「安装命令已失效…」。已注册 Agent、Shell 安装不受影响。
+- **变化**：`docker-agent-run`、`docker-agent-compose`（含 `format=both`、HA host/macvlan 的 run 与 compose）、`docker-ha-guide`
+  未指定 `image` 时的默认值，改为 `version.DockerAgentImage()`：发布镜像构建时由 `-ldflags -X configflow/internal/version.AgentImage=`
+  注入「与面板同一提交构建」的 Agent 镜像（版本标签构建 = `<命名空间>/config-flow-agent:<semver>`，例如 `2.0.0-rc.1`）；
+  未注入（本地、`go test`、分支/手动 CI 构建、autoupdate 运行时重建）或注入值不是合法镜像引用时，仍为 `thsrite/config-flow-agent:latest`，
+  输出与 Python 逐字节一致。CI：`docker-agent.yml` 在 `v*` 标签上按与 `docker.yml` 相同的 semver 规则推 `<版本>`（含预发布，不动 latest），
+  其余触发仍只推 latest（原规则）；`docker.yml` 只在本次面板确实推送了同名 semver 标签时注入配套 Agent 镜像，否则注入 latest。
+- **前端**：Docker HA 安装向导的镜像输入默认留空（占位「与面板版本配套（默认）」），留空时不发送 `image`，由服务端选配套镜像；
+  手填时与以前一样原样发送。「Docker Agent 更新步骤」对话框仍默认 `latest`（只给已注册 Agent 换镜像，注册不依赖新入口；未改）。
+- **Flask 对比测试**：差分与 proddiff 在未注入的构建上运行，生成结果仍是 `:latest`，因此不需要也没有加宽泛忽略；
+  配套标签的行为由 `installer.TestDockerInstallersUsePairedAgentImage`（注入后只有镜像引用变化、其余字节与未注入输出相同）、
+  `installer.TestGuideDefaultsToPairedAgentImage`、`version.TestDockerAgentImage` 和前端 `docker-ha-install-guide.test.ts` 覆盖。
+  若以后差分改用注入版本构建，唯一允许的例外是镜像引用 `thsrite/config-flow-agent:latest` ↔ 注入值。
+- **兼容性（新 Agent 镜像配旧 Python 面板）**：新入口脚本在环境变量缺失时写入空的 `registration_token`/`registration_key`，
+  Agent 读入后为空、注册请求按 `omitempty` 不带这两个字段，心跳的 `host` 字段只在面板声明 `reads_host` 后发送；
+  因此 Python 面板看到的注册/心跳请求与旧镜像相同，老用户随 main 拉到新 latest 不受影响（实验验证见 progress/o14-switch.md）。

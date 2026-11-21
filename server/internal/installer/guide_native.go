@@ -163,7 +163,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	if request.InstallMethod != "script" && request.Mode != "new" {
 		return request, valueError(msgComposeNewOnly)
 	}
-	request.Image, _ = textOr(fields, "image", DockerHAImage)
+	request.Image, _ = textOr(fields, "image", DockerAgentImage())
 	if !isImageName(request.Image) {
 		return request, valueError(msgDockerImage)
 	}

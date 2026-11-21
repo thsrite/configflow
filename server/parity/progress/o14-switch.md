@@ -33,3 +33,25 @@ Go使用D2原生规则缓存摘要。旧缓存参与生成时的离线兜底，�
 只读快照或迁移写失败时仍返回已验证旧内容，下一次可写读取重试迁移；invalid receipt、
 拟议URL/behavior变更和不匹配声明均拒绝借用旧缓存。离线上游下生成不会因此丢掉有效旧规则集。
 详见 `progress/n8-9-rules.md` 的真实Runtime、离线迁移和负控验证。
+
+## L2 发布阻断：Docker Agent 镜像与面板版本配套（2026-11-21）
+
+实验网 L2 发现：Go 面板生成的 Docker Agent 命令配 Docker Hub 上旧的 `config-flow-agent:latest`（入口脚本不写
+`AGENT_<SVC>_REGISTRATION_TOKEN`）时，开启登录后新装必然 403。修复见 `go(image): pair Docker Agent image with panel version`，
+差异登记见 behaviour-changes「O9-H2 发布补充」，发布顺序见 o14-switch-plan P13、B.2.1，O12 U16。
+
+合成验证（.64，Docker 29.9.3；全部用合成名称、自建 bridge 网络 172.30.77.0/24，结束后已删除容器、网络、镜像、数据目录）：
+
+| 场景 | 面板 | Agent 镜像 | 结果 |
+|---|---|---|---|
+| 新令牌 | 当前树 Go 面板（开启登录，`-X version.AgentImage=cf-agent-pair:test`），未改动的 `docker-agent-run` 脚本 | 当前树 `Dockerfile.agent` 构建 | 命令/Compose 的镜像均为 `cf-agent-pair:test`；注册 200，Agent 在线 1.8.61-go，配置里只剩 `agent_id`/`token`（凭据已清） |
+| 过期令牌 | 同上；停面板后把该会话 `expires` 改为过去时间再启动 | 同上 | 注册 403「安装命令已失效，请在面板重新生成安装命令或设置注册密钥。」，未建 Agent |
+| L2 复现（对照） | 同上，新令牌 | Docker Hub 旧 `latest`（2026-11-14 构建，入口无 `REGISTRATION_TOKEN`） | 403 同上文案 |
+| 新镜像 + 旧 Python 面板新装 | `main`@5cd721957 Python 面板（开启登录），它生成的命令（无凭据变量）只把镜像换成新构建 | 当前树构建 | 注册 200，在线，心跳正常；Python 日志无错误 |
+| 旧镜像 → 新镜像原地升级 | 同上 Python 面板 | 先用旧 `latest` 安装上线，再用同一数据目录换新镜像重建 | 「Agent already registered」沿用原 ID，心跳成功，Python 面板显示在线 |
+
+兼容性结论：新入口脚本在变量缺失时写入空 `registration_token`/`registration_key`，Agent 发注册请求时按 `omitempty` 省略；
+心跳 `host` 只在面板声明 `reads_host` 后发送，因此旧 Python 面板看到的请求与旧镜像一致，无需修改入口脚本。
+
+附带发现（未修，交协调者）：`main` 上的 Agent 与 `go` 分支的 Agent 都报 `1.8.61-go`，但只有后者支持一次性注册凭据；
+同一版本号对应两种能力，升级判断和排障会混淆。建议发布前在 `go` 分支提升 Agent 版本号。

@@ -36,6 +36,7 @@
 | P10 | 「最后一个 Python 版本」已打标签发布（含所有迁移代码），公开用户有升级路径（见 B.1） | 待维护者决定 | git tag + 镜像标签存在 |
 | P11 | 小修复：缺失 Agent 的 logs/logs-sources/config-logging 由 500 改 404（协调者已裁定） | 未派发 | 合并进 go |
 | P12 | 切换用的镜像 = 公开发布候选镜像（同一 digest），版本号不是 `dev` | — | 启动横幅版本号 |
+| P13 | **配套 Docker Agent 镜像先于（或同时于）Go 面板镜像发布**：同一 `v*` 标签触发的 `docker-agent.yml` 已推出 `config-flow-agent:<版本>`（amd64 + arm64），且 Go 面板镜像构建时注入的 Agent 镜像就是它。Go 面板生成的 Docker 安装命令/Compose/HA 使用这个标签；标签不存在时新装 `docker pull` 失败，若误用旧 `latest`（旧入口脚本）则开启登录后首次注册 403「安装命令已失效…」（L2 发现） | CI 已改（`go(image): pair Docker Agent image with panel version`） | `docker buildx imagetools inspect thsrite/config-flow-agent:<版本>` 有两种架构；面板「添加 Agent → Docker」生成的命令镜像为 `:<版本>`；实验网新装一台 Docker Agent 注册成功 |
 
 ### A.1 切换前一天：检查与准备（不停服务）
 
@@ -87,6 +88,7 @@
 5. 主路由：导出一次配置（`/export` 文本 + 二进制备份）。iKuai 如有：导出备份。DNS HA 两台：各自复制当前 OxiDNS 与 keepalived 配置。
 
 **第 2 步：换镜像，首次启动（约 5 分钟）**
+0. 先确认 P13：`thsrite/config-flow-agent:<本次版本>` 已发布（两种架构）。不存在就不换面板镜像，等 `docker-agent.yml` 完成或手动重跑它。
 1. compose 里换成 Go 镜像（固定 digest，不用 `latest`），确认 `JWT_SECRET_KEY`、`ADMIN_*`、`DATA_DIR`、端口和代理变量不变；
    删除 Go 不再读取的 Python 调优变量（`CONFIGFLOW_HTTP_THREADS`、`CONFIGFLOW_MEMORY_TUNING`、`MALLOC_*`，O12-D03）；
    `stop_grace_period` 不小于 10 s。
@@ -237,7 +239,16 @@
 | 内存调优 | `MALLOC_ARENA_MAX` 等 | 不再读取；改为 `GOMEMLIMIT`、`CONFIGFLOW_MEMORY_LIMIT_RATIO` | 写入 release notes |
 | 关停 | supervisord 停 Flask | SIGTERM 排空默认 8 s（`CONFIGFLOW_SHUTDOWN_GRACE_SECONDS`），compose 的 `stop_grace_period` 不能小于 10 s | |
 | 版本号 | `VERSION` build-arg | 通过 ldflags 注入 `internal/version.Version`；`dev` 不得出现在发布镜像（O12-M11，A11 RulesFingerprint 依赖它） | |
-| Agent 制品 | 镜像内 `/opt/configflow/static/agents` | 同一路径；必须是本次源码重建的 Agent 二进制，Agent 镜像同时发布（O12-A14） | docker-agent.yml 同步打标签 |
+| Agent 制品 | 镜像内 `/opt/configflow/static/agents` | 同一路径；必须是本次源码重建的 Agent 二进制，Agent 镜像同时发布（O12-A14） | docker-agent.yml 在同一 `v*` 标签上推 `config-flow-agent:<版本>` |
+| Docker Agent 镜像标签 | 面板命令写死 `config-flow-agent:latest`；Agent 镜像只推 `latest`（main 推送、定时、手动） | `v*` 标签（含预发布）推 `config-flow-agent:<semver>`，不动 `latest`；`latest` 仍按原规则随 main 移动。Go 面板镜像构建时注入同一标签（`version.AgentImage`），生成的 Docker 命令/Compose/HA 用它；分支/本地/autoupdate 重建仍用 `latest` | **发布顺序：Agent 镜像必须先于或同时于面板镜像可拉取**（P13）。新 Agent 镜像配旧 Python 面板向后兼容，main 上 Agent `latest` 先变成新入口不影响 Python 用户 |
+
+### B.2.1 发布步骤中的 Agent 镜像（L2 发现后补充）
+
+1. 打 `v<版本>` 标签后，`docker.yml`（面板）与 `docker-agent.yml`（Agent）同时触发。**先等 `docker-agent.yml` 的 merge 任务成功**，
+   用 `docker buildx imagetools inspect thsrite/config-flow-agent:<版本>` 确认 amd64 + arm64 都在，再公布面板版本。
+   面板镜像先完成也不会出错，但在 Agent 标签可拉取之前，新装 Docker Agent 会因镜像不存在而失败。
+2. Agent 任务失败（例如上游镜像拉取失败）时：重跑 `docker-agent.yml`（在该标签上 `workflow_dispatch` 或重新运行失败的任务），不要改面板命令去用 `latest`。
+3. 公开说明写明：新装 Docker Agent 时请用面板生成的命令，镜像标签会自动与面板版本一致；手写 Compose 的用户把镜像改成同一版本号。
 
 ### B.3 autoupdate 镜像（维护者已决定保留）
 
