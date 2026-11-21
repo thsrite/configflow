@@ -2,6 +2,7 @@ package store
 
 import (
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -16,7 +17,9 @@ const maxIdleReaders = 2
 // change counter (and for a hot journal) whenever a transaction takes its
 // shared lock, so commits by other connections and processes are visible
 // exactly as on a fresh connection. A connection holds no lock between
-// transactions in rollback-journal mode, so idle readers never block writers.
+// transactions in rollback-journal mode, so idle readers never block writers;
+// connections that found the database in WAL mode are never kept (see
+// rollbackJournal).
 //
 // What SQLite cannot see is the file being replaced (Install renames a new
 // database over the path) or changed outside SQLite. A connection is
@@ -61,9 +64,10 @@ func sameFile(opened, current os.FileInfo) bool {
 }
 
 // release returns a connection after a read. Only a read that completed
-// (its transaction committed) is kept; anything else is closed.
+// (its transaction committed) on a database in DELETE journal mode is kept;
+// anything else is closed.
 func (s *Store) release(c *Conn, ok bool) {
-	if !ok || c.inTransaction {
+	if !ok || c.inTransaction || !c.rollbackJournal() {
 		c.close()
 		return
 	}
@@ -75,6 +79,18 @@ func (s *Store) release(c *Conn, ok bool) {
 	}
 	s.readers.idle = append(s.readers.idle, c)
 	s.readers.mu.Unlock()
+}
+
+// rollbackJournal reports whether the connection found the database in
+// DELETE journal mode, the only mode the store writes. A connection that
+// found WAL (switched by another process) is not kept idle: as long as it is
+// open, "<path>-wal" outlives every other connection, and when a new file is
+// renamed over the path, the next connection to open it applies the old
+// file's WAL frames to it and reads the old data. Closing it right away makes
+// the last connection checkpoint and remove the WAL, as before pooling.
+func (c *Conn) rollbackJournal() bool {
+	mode, err := c.strings1("PRAGMA journal_mode")
+	return err == nil && len(mode) == 1 && strings.EqualFold(mode[0], "delete")
 }
 
 // Close closes the idle read connections and stops keeping new ones. The
