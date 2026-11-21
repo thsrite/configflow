@@ -25,6 +25,12 @@ import (
 
 func newDeployHTTP(t *testing.T) (*httpxtest.Server, httpxtest.Option, *agentfake.Agent) {
 	t.Helper()
+	return newDeployHTTPWith(t, agentfake.Options{})
+}
+
+// newDeployHTTPWith is newDeployHTTP with fake Agent outcomes (identity fields are fixed).
+func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Server, httpxtest.Option, *agentfake.Agent) {
+	t.Helper()
 	lifecycle.Stop(8 * time.Second)
 	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
 		t.Fatal(e)
@@ -33,7 +39,8 @@ func newDeployHTTP(t *testing.T) (*httpxtest.Server, httpxtest.Option, *agentfak
 	t.Cleanup(func() { lifecycle.Stop(8 * time.Second) })
 	mihomoenv.Wire()
 	deploy.Wire()
-	fake := agentfake.New(agentfake.Options{AgentID: "publish-agent", Token: "synthetic-publish-token", ConfigPath: "installed.yaml"})
+	options.AgentID, options.Token, options.ConfigPath = "publish-agent", "synthetic-publish-token", "installed.yaml"
+	fake := agentfake.New(options)
 	srv := httptest.NewServer(fake)
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
@@ -289,6 +296,46 @@ func TestDeployHTTPEasyTierCoreVersions(t *testing.T) {
 			}
 			if tc.wantWarnSubstr != "" && !strings.Contains(logText, tc.wantWarnSubstr) {
 				t.Fatalf("warning log missing %q:\n%s", tc.wantWarnSubstr, logText)
+			}
+		})
+	}
+}
+
+// TestDeployHTTPAcceptedRecoveryIsAccepted is lab L2 D1: an accepted recovery
+// answers 202 (Python 500 made the Agents page report a failure while the
+// device recovered); a rejected one keeps its status code and rollback_failed.
+func TestDeployHTTPAcceptedRecoveryIsAccepted(t *testing.T) {
+	tests := []struct {
+		name        string
+		unsupported bool
+		want        int
+		wantStatus  string
+	}{
+		{"accepted", false, 202, "rolling_back"},
+		{"agent before 1.8.57", true, 404, "rollback_failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s, admin, _ := newDeployHTTPWith(t, agentfake.Options{RollbackOutcome: "rollback_failed", RecoverUnsupported: test.unsupported})
+			base := "/api/agents/publish-agent"
+			pushed := s.Post(base+"/push-config", httpxtest.JSON(map[string]any{"restart": false}), admin)
+			pushed.WantStatus(202)
+			did := mapStr(parseBodyMap(t, pushed), "deployment_id")
+			s.Post(base+"/deployments/"+did+"/activate", admin).WantStatus(200)
+			s.Post(base+"/deployments/"+did+"/rollback", admin).WantStatus(409) // the fake answers the final state at once
+			if got := mapStr(parseBodyMap(t, s.Get(base+"/deployments/"+did, admin)), "status"); got != "rollback_failed" {
+				t.Fatalf("status before recovery = %q", got)
+			}
+			recovered := s.Post(base+"/deployments/"+did+"/recover", admin)
+			recovered.WantStatus(test.want)
+			if got := mapStr(parseBodyMap(t, recovered), "status"); got != test.wantStatus {
+				t.Fatalf("recover status = %q, want %q", got, test.wantStatus)
+			}
+			if test.unsupported {
+				return
+			}
+			if got := mapStr(parseBodyMap(t, s.Get(base+"/deployments/"+did, admin)), "status"); got != "rolled_back" {
+				t.Fatalf("status after recovery = %q", got)
 			}
 		})
 	}

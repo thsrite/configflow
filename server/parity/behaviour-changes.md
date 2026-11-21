@@ -2586,3 +2586,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 （500），统一为令牌无效：HTTP 401 `token_invalid`，详情 `… claim (exp) must be a number.`（原文 `must be an integer.`）。
 只影响用服务器密钥签出的畸形令牌：Go 与 PyJWT 签发的令牌都是整数时间，不受影响。`TestDecodeMatchesPyJWT` 中对应 4 行
 （`exp_string`、`exp_bad_string`、`exp_bool`、`iat_bad`）改为新期望。
+
+## L2 实验网 — 「重新恢复原配置」受理后的状态码
+
+- （L2 D1，Python bug 修正）`POST /api/agents/<id>/deployments/<dep>/recover` 被 Agent 受理后（任务变为 `rolling_back`，无设备错误码），返回 **202**，与受理手动回滚一致；Python 把它记为 `success=false`，按 `_deployment_response` 返回 500，Agent 页随即提示「无法重新恢复」并停止跟踪，而设备实际在恢复（实验网 1.8.61-go 复现）。存储的任务内容不变；被拒绝（旧 Agent 404/405、400/409）和结果未知时的状态码不变。测试：`TestDeployHTTPAcceptedRecoveryIsAccepted`。

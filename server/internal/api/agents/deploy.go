@@ -125,7 +125,11 @@ func deploymentAction(action string) httpx.HandlerFunc {
 		if action == "poll" {
 			return deployResponse(deploy.DeploymentPollResponse(result))
 		}
-		return deployResponse(deploy.DeploymentResponse(result))
+		response := deploy.DeploymentResponse(result)
+		if action == "recover" {
+			response = acceptedRecovery(response, result)
+		}
+		return deployResponse(response)
 	}
 }
 func generatedFile(download bool) httpx.HandlerFunc {
@@ -169,4 +173,15 @@ func previewError(e error) (*httpx.Response, error) {
 		return httpx.JSONStatus(409, map[string]any{"success": false, "code": "preview_changed", "message": e.Error()}), nil
 	}
 	return nil, e
+}
+
+// acceptedRecovery answers an Agent-accepted recovery (task now rolling_back,
+// no device error code) with 202 like an accepted manual rollback. Python
+// recorded it as success=false and answered 500, so the Agents page reported
+// 「无法重新恢复」 and stopped tracking while the device was recovering (lab L2).
+func acceptedRecovery(response deploy.Response, result *model.Deployment) deploy.Response {
+	if response.Err == nil && result != nil && result.Status == "rolling_back" && response.Status == 500 {
+		response.Status = 202
+	}
+	return response
 }
