@@ -71,6 +71,8 @@ UTF-8 正确、无重复名的 JSON（深度另由第 4 条在原校验点检查
 |---|---|
 | 将来有人在 `model` 里写一个拼接未校验字节的 `MarshalJSON`，而它被当作可信 | 文档注释写明不变量；对外 `Marshal` 仍有最终校验；fuzz 目标检查“`MarshalJSON` 成功则输出合法” |
 | `jsontext` 与旧 `json.Valid`+`Decoder.Token` 在边角（孤立代理项转义、深度上限、空白）上判定不同 | `FuzzValidJSONReference` / `FuzzParseObjectReference` 以测试内保留的旧实现为参照逐字节比较 |
+| 深度上限（10000 层）在组合后被突破，而跳过的校验点不再发现 | 原校验点保留 `tooDeep`；语料含 9995–10000 层逐层越界、与重复名先后组合的用例 |
+| pyref golden 把 `model/*.go` 源码哈希计入元数据 | 按 `tools/pyref/README.md` record + check 刷新 oxidns 的 8 份 golden，只有源码摘要变化 |
 | 跳过 `acyclic` 漏掉环 | 只对类型图无接口、无递归的类型跳过——这些类型的值不可能成环；语料含切片/映射自环 |
 | 直接调用 `UnmarshalJSON` 与 `encoding/json` 的差别（null、空白、指针） | 只在非指针目标、`model` 包类型上走捷径，先去掉 JSON 空白；指针与其他类型仍走 `json.Unmarshal` |
 
