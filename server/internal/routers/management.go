@@ -25,17 +25,33 @@ type ManagementService struct {
 
 var managementLogger = logx.Get("backend.routes.routers")
 
-// Records loads the resolved configuration and R5-decoded router records.
-func (s *ManagementService) Records(ctx context.Context, profile string) (json.RawMessage, []*Router, error) {
-	doc, err := s.Repo.ConfigWithOxiDNSAgents(ctx, profile, repo.ResourceRoots{})
+// ConfigView is one generation of a profile as router routes read it.
+type ConfigView struct {
+	// Config is the resolved configuration with the OxiDNS Agent projection,
+	// borrowed from the repository snapshot: read only.
+	Config *model.Config
+	// Routers are the profile's router records, decoded with the R5 fallback.
+	Routers []*Router
+	// Credentials are the credential values redact.CollectCredentials finds
+	// in the encoded Config; responses built from this view hide them.
+	Credentials redact.Secrets
+}
+
+// Encoded returns the encoded configuration for consumers that read JSON.
+func (v *ConfigView) Encoded() (json.RawMessage, error) { return json.Marshal(v.Config) }
+
+// Records loads the resolved configuration, its credential values and its
+// R5-decoded router records, all from one generation.
+func (s *ManagementService) Records(ctx context.Context, profile string) (*ConfigView, error) {
+	config, credentials, err := redact.ConfigWithCredentials(ctx, s.Repo, profile)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	raw, err := json.Marshal(doc)
+	routers, err := storedRouters(&config.Profile.Routers)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return raw, routersOf(raw), nil
+	return &ConfigView{Config: config, Routers: routers, Credentials: credentials}, nil
 }
 func (s *ManagementService) open(r *Router) (Driver, error) {
 	if err := r.ValidateForDevice(); err != nil {
@@ -130,9 +146,9 @@ func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *
 	if err != nil {
 		return ctx, nil, nil, err
 	}
-	_, rows, err := s.Records(held, profile)
+	view, err := s.Records(held, profile)
 	if err == nil {
-		for _, r := range rows {
+		for _, r := range view.Routers {
 			if r.ID == old.ID && sameReleaseRouter(r, old) {
 				return held, release, r, nil
 			}
@@ -413,7 +429,7 @@ func (s *ManagementService) safeText(ctx context.Context, profile string, r *Rou
 	if ctx.Err() != nil {
 		return redact.Redacted
 	}
-	config, _, err := s.Records(ctx, profile)
+	credentials, err := redact.ConfigCredentials(ctx, s.Repo, profile, nil)
 	if err != nil {
 		return redact.Redacted
 	}
@@ -424,7 +440,7 @@ func (s *ManagementService) safeText(ctx context.Context, profile string, r *Rou
 	if err != nil {
 		return redact.Redacted
 	}
-	return managementSafeText(config, seeds, r, value)
+	return managementSafeText(nil, redact.NewSecrets(seeds, credentials), r, value)
 }
 func managementLogText(config json.RawMessage, seeds redact.Secrets, r *Router, value string) string {
 	return eventText(managementSafeText(config, seeds, r, value))

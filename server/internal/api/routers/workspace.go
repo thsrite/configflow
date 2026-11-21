@@ -45,7 +45,7 @@ func (h *handler) workspace(c *httpx.Ctx) (*httpx.Response, error) {
 
 // repositoryFailure maps ProfileRepositoryError, which Python policy_settings
 // catches as 400 together with the router validation errors.
-func repositoryFailure(c *httpx.Ctx, cfg json.RawMessage) func(*httpx.Response, error) (*httpx.Response, error) {
+func repositoryFailure(c *httpx.Ctx, cfg *core.ConfigView) func(*httpx.Response, error) (*httpx.Response, error) {
 	return func(response *httpx.Response, err error) (*httpx.Response, error) {
 		var stored *repo.Error
 		if !errors.As(err, &stored) {
@@ -57,7 +57,7 @@ func repositoryFailure(c *httpx.Ctx, cfg json.RawMessage) func(*httpx.Response, 
 		}{false, stored.Error()}, 400, false)
 	}
 }
-func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg json.RawMessage, r *core.Router) (*httpx.Response, error) {
+func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *core.ConfigView, r *core.Router) (*httpx.Response, error) {
 	var err error
 	if c.Method() == "PUT" {
 		body, ok := workspaceRequest(body(c))
@@ -83,7 +83,7 @@ func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg jso
 	if err != nil {
 		return nil, err
 	}
-	value, err := core.ReadWorkspace(cfg, r, c.ProfileID, name, defaultProfile, peers)
+	value, err := core.ReadWorkspace(cfg.Config, r, c.ProfileID, name, defaultProfile, peers)
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}
@@ -124,6 +124,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	view := &core.ConfigView{Credentials: redact.CollectCredentials(cfg, nil)}
 	var r *core.Router
 	for _, row := range selectedRouters(cfg) {
 		if row.ID == c.Param("router_id") {
@@ -172,11 +173,11 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 		defer d.Close()
 	}
 	if err != nil {
-		return failure(c, cfg, err, 400, false)
+		return failure(c, view, err, 400, false)
 	}
 	plan, err := core.BuildPlan(c.Context(), r, inspection, d)
 	if err != nil {
-		return failure(c, cfg, err, 400, false)
+		return failure(c, view, err, 400, false)
 	}
 	p, err := oxidns.ProfileFromJSON(cfg)
 	if err != nil {
@@ -186,14 +187,14 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	if len(targets) > 0 {
 		content, err = oxidns.Generate(p, base)
 		if err != nil {
-			return failure(c, cfg, err, 400, false)
+			return failure(c, view, err, 400, false)
 		}
 		node, err := yamlx.Parse([]byte(content))
 		if err != nil {
 			return nil, err
 		}
 		if _, err = oxidns.RequireValidDocument(node); err != nil {
-			return failure(c, cfg, err, 400, false)
+			return failure(c, view, err, 400, false)
 		}
 		encoded, err := yamlx.ToJSON(node)
 		if err != nil {
@@ -224,7 +225,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	if current != revision {
 		return httpx.Message(409, false, messagePreviewChanged), nil
 	}
-	return public(c, cfg, map[string]any{"success": true, "preview": map[string]any{"revision": expected, "profile_id": c.ProfileID, "config_revision": revision, "oxidns_revision": oxidns.Revision(p.Settings()), "router_plan": plan, "dns_content": content, "targets": selected}}, 200, true)
+	return public(c, view, map[string]any{"success": true, "preview": map[string]any{"revision": expected, "profile_id": c.ProfileID, "config_revision": revision, "oxidns_revision": oxidns.Revision(p.Settings()), "router_plan": plan, "dns_content": content, "targets": selected}}, 200, true)
 }
 
 // selectedRouters delegates to the shared R5 decoder via the management view.

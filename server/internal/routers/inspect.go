@@ -371,11 +371,29 @@ func routersOf(config json.RawMessage) []*Router {
 	var cfg struct {
 		Routers json.RawMessage `json:"routers"`
 	}
+	if jsondecode.Unmarshal(config, &cfg) != nil {
+		return nil
+	}
+	return routerRecords(cfg.Routers)
+}
+
+// storedRouters is routersOf for a profile's typed routers member. Only the
+// member is encoded, to the bytes it has inside the encoded configuration.
+func storedRouters(routers *model.Routers) ([]*Router, error) {
+	data, err := model.Marshal(routers)
+	if err != nil {
+		return nil, err
+	}
+	return routerRecords(data), nil
+}
+
+// routerRecords decodes the items of an encoded routers member like routersOf.
+func routerRecords(container json.RawMessage) []*Router {
 	var routers struct {
 		Items json.RawMessage `json:"items"`
 	}
 	var items []json.RawMessage
-	if jsondecode.Unmarshal(config, &cfg) != nil || jsondecode.Unmarshal(cfg.Routers, &routers) != nil || jsondecode.Unmarshal(routers.Items, &items) != nil {
+	if jsondecode.Unmarshal(container, &routers) != nil || jsondecode.Unmarshal(routers.Items, &items) != nil {
 		return nil
 	}
 	out := make([]*Router, 0, len(items))

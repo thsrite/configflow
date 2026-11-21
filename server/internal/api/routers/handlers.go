@@ -76,23 +76,27 @@ func stringValue(raw json.RawMessage) (string, bool) {
 	}
 	return *s, true
 }
-func selected(c *httpx.Ctx) (*core.ManagementService, json.RawMessage, *core.Router, error) {
+func selected(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
 	s, err := service(c)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	cfg, rows, err := s.Records(c.Context(), c.ProfileID)
+	cfg, err := s.Records(c.Context(), c.ProfileID)
 	if err != nil {
 		return s, nil, nil, err
 	}
-	for _, r := range rows {
+	for _, r := range cfg.Routers {
 		if r.ID == c.Param("router_id") {
 			return s, cfg, r, nil
 		}
 	}
 	return s, cfg, nil, nil
 }
-func public(c *httpx.Ctx, cfg json.RawMessage, value any, status int, noStore bool) (*httpx.Response, error) {
+
+// public projects value with the request's redaction seeds and the
+// credential values of the configuration view it was built from (cfg nil:
+// none).
+func public(c *httpx.Ctx, cfg *core.ConfigView, value any, status int, noStore bool) (*httpx.Response, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -107,14 +111,17 @@ func public(c *httpx.Ctx, cfg json.RawMessage, value any, status int, noStore bo
 	if err != nil {
 		return nil, err
 	}
-	safe := redact.SanitizeCredentials(json.RawMessage(raw), redact.CollectCredentials(cfg, secrets))
+	if cfg != nil {
+		secrets = redact.NewSecrets(secrets, cfg.Credentials)
+	}
+	safe := redact.SanitizeCredentials(json.RawMessage(raw), secrets)
 	response := httpx.JSONStatus(status, safe)
 	if noStore {
 		response.NoStore()
 	}
 	return response, nil
 }
-func failure(c *httpx.Ctx, cfg json.RawMessage, err error, status int, noStore bool) (*httpx.Response, error) {
+func failure(c *httpx.Ctx, cfg *core.ConfigView, err error, status int, noStore bool) (*httpx.Response, error) {
 	if err == nil {
 		return nil, nil
 	}
@@ -185,7 +192,7 @@ func (h *handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, rows, err := s.Records(c.Context(), c.ProfileID)
+	cfg, err := s.Records(c.Context(), c.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +206,8 @@ func (h *handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
 			Router  core.RouterView `json:"router"`
 		}{true, r.View()}, 200, false)
 	}
-	views := make([]core.RouterView, 0, len(rows))
-	for _, r := range rows {
+	views := make([]core.RouterView, 0, len(cfg.Routers))
+	for _, r := range cfg.Routers {
 		views = append(views, r.View())
 	}
 	return public(c, cfg, struct {
@@ -278,7 +285,11 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	if r == nil {
 		return notFound()
 	}
-	d, value, err := inspect(c, s.Repo, cfg, r)
+	raw, err := cfg.Encoded()
+	if err != nil {
+		return nil, err
+	}
+	d, value, err := inspect(c, s.Repo, raw, r)
 	if d != nil {
 		defer d.Close()
 	}
@@ -286,7 +297,7 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(c, cfg, err, 502, false)
 	}
 	if strings.HasSuffix(c.Request.URL.Path, "/report") {
-		recordNotice(c, cfg, r, value.Report, nil)
+		recordNotice(c, raw, r, value.Report, nil)
 		return public(c, cfg, struct {
 			Success     bool         `json:"success"`
 			Report      *core.Report `json:"report"`
@@ -297,7 +308,7 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return failure(c, cfg, err, 502, false)
 	}
-	recordNotice(c, cfg, r, value.Report, plan)
+	recordNotice(c, raw, r, value.Report, plan)
 	if plan.Empty && len(plan.Blockers) == 0 {
 		baseline, err := core.NeedsBaseline(c.Context(), c.ProfileID, r)
 		if err != nil {
@@ -559,7 +570,7 @@ func (h *handler) forwarding(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, rows, err := s.Records(c.Context(), c.ProfileID)
+	cfg, err := s.Records(c.Context(), c.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +581,7 @@ func (h *handler) forwarding(c *httpx.Ctx) (*httpx.Response, error) {
 	bridge := host.Bridge{Repository: s.Repo, Manager: m}
 	links := map[string][]host.RouterRef{}
 	ids := []string{}
-	for _, r := range rows {
+	for _, r := range cfg.Routers {
 		id := r.ProxyGatewayAgentID
 		if id == "" {
 			continue

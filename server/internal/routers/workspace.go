@@ -1,9 +1,10 @@
 package routers
 
 import (
-	"configflow/internal/jsondecode"
 	"encoding/json"
 
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 )
 
@@ -72,6 +73,14 @@ type WorkspaceRequest struct {
 
 // WorkspaceRevision omits probe-only changes and uses D2 native JSON encoding.
 func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
+	p, err := oxidns.ProfileFromJSON(config)
+	if err != nil {
+		return "", err
+	}
+	return workspaceRevision(p, r)
+}
+
+func workspaceRevision(p *oxidns.Profile, r *Router) (string, error) {
 	raw, err := releaseRouterRecord(r)
 	if err != nil {
 		return "", err
@@ -81,10 +90,6 @@ func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
 		return "", err
 	}
 	delete(fields, "last_probe")
-	p, err := oxidns.ProfileFromJSON(config)
-	if err != nil {
-		return "", err
-	}
 	data, err := json.Marshal(struct {
 		Router map[string]json.RawMessage `json:"router"`
 		Oxidns string                     `json:"oxidns"`
@@ -95,9 +100,10 @@ func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
 	return ROSPolicyDigest(data)
 }
 
-// ReadWorkspace reads policy metadata without contacting the router.
-func ReadWorkspace(config json.RawMessage, r *Router, profile, name, defaultProfile string, agents []WorkspaceAgent) (Workspace, error) {
-	p, err := oxidns.ProfileFromJSON(config)
+// ReadWorkspace reads policy metadata without contacting the router. config
+// is a borrowed resolved view and is only read.
+func ReadWorkspace(config *model.Config, r *Router, profile, name, defaultProfile string, agents []WorkspaceAgent) (Workspace, error) {
+	p, err := oxidns.NewTypedProfile(config)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -105,7 +111,7 @@ func ReadWorkspace(config json.RawMessage, r *Router, profile, name, defaultProf
 	if err != nil {
 		return Workspace{}, err
 	}
-	revision, err := WorkspaceRevision(config, r)
+	revision, err := workspaceRevision(p, r)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -123,19 +129,56 @@ func ReadWorkspace(config json.RawMessage, r *Router, profile, name, defaultProf
 			out.Gateways = append(out.Gateways, WorkspaceGateway{a.ID, n, a.Host})
 		}
 	}
+	rules, err := workspaceRuleSets(config.Profile)
+	if err != nil {
+		return Workspace{}, err
+	}
+	out.RuleSets = append(out.RuleSets, rules...)
+	return out, nil
+}
+
+// workspaceRuleSets lists the profile's ruleset rows from their typed fields.
+// When a rule member decoded with an issue (a wrong type, kept as original
+// bytes), the original rows are decoded strictly instead, which fails the
+// read as before.
+func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
+	if model.IssueUnder(model.Issues(profile), "rule_configs") {
+		return encodedRuleSets(profile)
+	}
+	var out []WorkspaceRule
+	for i := range profile.RuleConfigs {
+		rule := &profile.RuleConfigs[i]
+		if rule.ItemType != "ruleset" {
+			continue
+		}
+		row := WorkspaceRule{ID: rule.ID, Name: orText(rule.Name, rule.ID), LibraryRuleID: rule.LibraryRuleID}
+		if rule.Policy != nil {
+			row.Policy = *rule.Policy
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+func encodedRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
+	data, err := model.Marshal(profile)
+	if err != nil {
+		return nil, err
+	}
 	var doc struct {
 		Rules []struct {
 			WorkspaceRule
 			ItemType string `json:"itemType"`
 		} `json:"rule_configs"`
 	}
-	if err = jsondecode.Unmarshal(config, &doc); err != nil {
-		return Workspace{}, err
+	if err = jsondecode.Unmarshal(data, &doc); err != nil {
+		return nil, err
 	}
+	var out []WorkspaceRule
 	for _, rule := range doc.Rules {
 		if rule.ItemType == "ruleset" {
 			rule.Name = orText(rule.Name, rule.ID)
-			out.RuleSets = append(out.RuleSets, rule.WorkspaceRule)
+			out = append(out, rule.WorkspaceRule)
 		}
 	}
 	return out, nil

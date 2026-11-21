@@ -39,11 +39,11 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected, _ := json.Marshal(before.Routers.Items[0])
-	_, rows, err := (&core.ManagementService{Repo: s.Repo}).Records(s.Context(), "default")
+	records, err := (&core.ManagementService{Repo: s.Repo}).Records(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	held, release, lockErr := core.RouterJobLock(s.Context(), "default", "router-one", rows[0])
+	held, release, lockErr := core.RouterJobLock(s.Context(), "default", "router-one", records.Routers[0])
 	if lockErr != nil {
 		t.Fatal("L1 unavailable")
 	}

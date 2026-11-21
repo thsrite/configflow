@@ -80,7 +80,7 @@ func AgentRecordCredentials(ctx context.Context, seeds Secrets) (Secrets, error)
 		return nil, err
 	}
 	values, err := repository.AgentRecordCredentials(ctx, func(data json.RawMessage) []string {
-		return CollectCredentials(data, nil)
+		return collectedCredentials(data)
 	})
 	if err != nil {
 		return nil, err
@@ -100,6 +100,33 @@ func AgentRegistryCredentials(repository *repo.Repository, head store.Head, shar
 	}
 	return NewSecrets(values), nil
 }
+
+// ConfigCredentials adds to seeds the credential values CollectCredentials
+// finds in the encoded ConfigWithOxiDNSAgents view of profileID: the same set
+// as CollectCredentials(view, seeds), remembered by the repository per
+// generation and profile.
+func ConfigCredentials(ctx context.Context, repository *repo.Repository, profileID string, seeds Secrets) (Secrets, error) {
+	values, err := repository.ConfigCredentials(ctx, profileID, collectedCredentials)
+	if err != nil {
+		return nil, err
+	}
+	return CollectCredentials(nil, NewSecrets(seeds, values)), nil
+}
+
+// ConfigWithCredentials is repo ConfigWithOxiDNSAgents (borrowed, read only)
+// with the credential values CollectCredentials finds in its encoding, from
+// the same generation. Add seeds with NewSecrets; the slice is the caller's.
+func ConfigWithCredentials(ctx context.Context, repository *repo.Repository, profileID string) (*model.Config, Secrets, error) {
+	config, values, err := repository.ConfigWithCredentials(ctx, profileID, collectedCredentials)
+	if err != nil {
+		return nil, nil, err
+	}
+	return config, CollectCredentials(nil, values), nil
+}
+
+// collectedCredentials is the repository's collect callback; the discovered
+// values do not depend on seeds, so they can be remembered on their own.
+func collectedCredentials(data json.RawMessage) []string { return CollectCredentials(data, nil) }
 
 // ExternalPayloadSecrets is _external_payload_secrets(system_config): the
 // rule proxy and Agent tokens stored in the repository, plus the sensitive

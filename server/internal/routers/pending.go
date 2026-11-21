@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"configflow/internal/agents/diag"
 	"configflow/internal/lifecycle"
@@ -89,6 +90,19 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		if req.ProfileID != nil && profile.ID != *req.ProfileID {
 			continue
 		}
+		// Most profiles link no router to this Agent: their stored routers
+		// decide that without resolving and encoding the whole configuration.
+		stored, err := req.Repo.Profile(ctx, profile.ID)
+		if err != nil {
+			return nil, "", "", err
+		}
+		routers, err := storedRouters(&stored.Routers)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if !slices.ContainsFunc(routers, func(r *Router) bool { return pendingLinked(r, req.AgentID) }) {
+			continue
+		}
 		config, err := req.Repo.ConfigWithOxiDNSAgents(ctx, profile.ID, repo.ResourceRoots{})
 		if err != nil {
 			return nil, "", "", err
@@ -99,9 +113,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		}
 		linked := []json.RawMessage{}
 		for _, r := range routersOf(data) {
-			// An empty Agent ID is a missing identity, never a match against
-			// routers without a proxy gateway.
-			if req.AgentID == "" || r.LinkID("proxy_gateway_agent_id") != req.AgentID {
+			if !pendingLinked(r, req.AgentID) {
 				continue
 			}
 			original, err := releaseRouterRecord(r)
@@ -132,6 +144,13 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 	}
 	sum := sha256.Sum256(bytes)
 	return targets, profileID, hex.EncodeToString(sum[:]), nil
+}
+
+// pendingLinked reports whether r sends proxied traffic to the Agent. An empty
+// Agent ID is a missing identity, never a match against routers without a
+// proxy gateway.
+func pendingLinked(r *Router, agentID string) bool {
+	return agentID != "" && r.LinkID("proxy_gateway_agent_id") == agentID
 }
 
 // AgentRouters reuses R12's read-only inspection and preview. Shared loads are

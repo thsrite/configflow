@@ -117,26 +117,29 @@ func publishSnapshot(ctx context.Context, db *repo.Repository, id string) (json.
 }
 
 // allProfileSecrets seeds the global reminder projection from the same profile
-// scope it can display. The bounded shared redactor owns credential detection.
+// scope it can display. The bounded shared redactor owns credential detection;
+// the repository remembers each profile's values per generation. The OxiDNS
+// Agent projection a profile view adds holds a subset of the members of the
+// stored Agent records, whose credentials AgentRecordCredentials adds anyway.
 func allProfileSecrets(ctx context.Context, db *repo.Repository) (redact.Secrets, error) {
 	seeds, err := redact.ExternalPayloadSecrets(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := db.ListProfileRecords(ctx)
+	var profiles []string
+	err = db.View(ctx, func(document *model.Document) error {
+		for i := range document.Profiles {
+			profiles = append(profiles, document.Profiles[i].ID)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 	for _, profile := range profiles {
-		cfg, err := db.Config(ctx, profile.ID, repo.ResourceRoots{})
-		if err != nil {
+		if seeds, err = redact.ConfigCredentials(ctx, db, profile, seeds); err != nil {
 			return nil, err
 		}
-		data, err := json.Marshal(cfg)
-		if err != nil {
-			return nil, err
-		}
-		seeds = redact.CollectCredentials(json.RawMessage(data), seeds)
 	}
 	return redact.AgentRecordCredentials(ctx, seeds)
 }

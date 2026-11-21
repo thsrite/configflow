@@ -225,10 +225,11 @@ func TestR15PolicyReadGuardsRawRecordsBeforeDriverCreation(t *testing.T) {
 	cfg["routers"].(map[string]any)["items"].([]any)[0].(map[string]any)["rule_sync_interval"] = "first malformed value"
 	saveFixtureConfig(t, s, cfg)
 	service := core.ManagementService{Repo: s.Repo}
-	_, rows, err := service.Records(s.Context(), "default")
+	records, err := service.Records(s.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
+	rows := records.Routers
 	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
 		return current.Routers.Items[0].SetJSON("rule_sync_interval", json.RawMessage(`"second malformed value"`))
 	})

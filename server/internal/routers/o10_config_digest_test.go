@@ -31,7 +31,11 @@ func TestO10RouterDigestFollowsOxiDNSProjection(t *testing.T) {
 	routerJSON := json.RawMessage(`{"id":"r1","type":"routeros"}`)
 	digest := func() (management, snapshot string) {
 		t.Helper()
-		raw, _, err := (&ManagementService{Repo: r}).Records(ctx, "default")
+		records, err := (&ManagementService{Repo: r}).Records(ctx, "default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := records.Encoded()
 		if err != nil {
 			t.Fatal(err)
 		}
