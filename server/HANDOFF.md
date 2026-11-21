@@ -98,6 +98,15 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+O18 DONE (d58b07e27, server/parity/o18-leftover-parity.md): 33 leftover parity mechanisms (A 10 keep, B 5 legacy read,
+C 18 removable). Prod snapshot: 1 unknown member (agents[].has_update, a computed response field wrongly stored → drop),
+0 wrongly typed fields, 0 leaves whose bytes differ from typed re-encoding → model byte/order preservation protects
+nothing. Coordinator rulings (maintainer asked "直接去掉是不是更干净"): model becomes plain structs on encoding/json/v2
+(O18 T1a–T1d; replaces O10 R5); unknown members dropped with a load warning, tests reject undeclared members; lenient
+leaf decode (wrong type → zero + warning); keep insertion order for user-keyed maps and Dynamic as is; explicit
+`enabled: null` keeps meaning disabled (earlier flag-truthiness ruling) via load normalisation. Order: batch-23 (R1+R2)
+→ R4/R7 batch → T1a→T1b→T1c→T1d one at a time; small C items T5/T6/T7 in parallel now; T2 with R8; T3/T4/T8/T9 later.
+
 T1 rulings: router/client redaction keeps Agent credentials (collected once per request, narrow read); one-off stale
 router-check reminders after upgrade accepted (behaviour-changes + o12 notes). T1 sent back for that fix.
 
