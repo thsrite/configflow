@@ -2555,3 +2555,26 @@ JSON/JSONL/SQLite 文本）里出现的 7 种写法全部覆盖（带/不带微�
 原样拼成 `scheme://host/`。影响生成配置/安装脚本/规则链接里嵌入的服务器地址：只有客户端发来大写主机名或带前导零端口时才
 不同（浏览器总是发小写主机名）。规则来源「是否指向本机」的判断本来就按不区分大小写的源比较，不受影响；安装命令、部署
 指纹等没有按大小写比较服务器地址的地方。
+
+## O18 C15c — 文件响应改用 `http.ServeContent`（删除 Werkzeug 条件请求移植）
+
+维护者裁定（2026-11-22）：所有 `httpx.File` 响应（Agent 二进制下载、生成配置/产物下载、全局配置导出、部署预览文件）的
+Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.ServeContent` 处理；删除 `downloads_range.go`
+（Werkzeug `make_conditional`/`parse_range_header`/`parse_date` 移植）、`downloads_date.go` 和 `httpx` 自写的区间解析。正常
+下载（无条件头）不变。可见变化只在带这些头的请求上：
+
+- 不可满足或语法错误的 Range：416，正文是 net/http 的纯文本（`invalid range: failed to overlap` / `invalid range`），
+  可满足的另有 `Content-Range: bytes */<大小>`；原来是 JSON `{"success": false, "message": "416 Requested Range Not
+  Satisfiable: …"}`。
+- 多段 Range（`bytes=0-1,5-6`）：206 `multipart/byteranges`（原来 416）；超出 int64 的边界、带 Latin-1 空白或空格的 Range：
+  416（Werkzeug 当作 Python 大整数或去掉空白后可能给 206）。
+- 不是 HTTP 日期的 If-Modified-Since / If-Range（溢出的年份、缺星期的 RFC 2822 写法）：按标准忽略，200/完整内容
+  （原来 Agent 下载路由 500）。
+- Range 同时带命中的 If-None-Match：304；If-Range 用弱 ETag：不匹配，返回完整 200；If-Match 不匹配：412；空文件上的 Range：
+  忽略，200。
+- 304 不再带 `Accept-Ranges`；POST 下载也带 `Accept-Ranges: bytes`。
+
+已在测试服务器用真实 curl/wget 确认：安装/升级脚本的 `curl -fsSL --retry 2 -o` 与 `wget -q -T 60 -O`（Go Agent 升级同为普通 GET）
+完整下载；`curl -C -`/`wget -c` 续传 206 且文件一致；`curl -z`/`wget -N` 得到 304。Flask 下载差分中带 Range/条件头的 33 行改为
+断言 net/http 标准结果（状态码、`Content-Range`、正文长度），其余行仍与 Flask 逐项比较；Werkzeug 条件请求的 pyref 参考
+（`TestReviewConditionalMatchesWerkzeug`）及其策略文件删除。

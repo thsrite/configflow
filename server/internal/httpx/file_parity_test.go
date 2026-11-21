@@ -1,9 +1,7 @@
 package httpx_test
 
 import (
-	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -11,52 +9,40 @@ import (
 	"configflow/internal/httpx/httpxtest"
 )
 
-func TestFileRangeHeadersMatchFlask(t *testing.T) {
-	type result struct {
-		Status       int    `json:"status"`
-		AcceptRanges string `json:"accept_ranges"`
-		ContentRange string `json:"content_range"`
-		Body         string `json:"body"`
-	}
-	home, _ := os.UserHomeDir()
-	cmd := exec.Command(filepath.Join(home, "cf-test/.venv/bin/python"), "-c", `from flask import Flask,send_file
-from io import BytesIO
-import json
-app=Flask(__name__)
-@app.route('/file',methods=['GET','POST'])
-def file(): return send_file(BytesIO(b'synthetic-attachment'),as_attachment=True,download_name='fixture.bin')
-client=app.test_client()
-result=[]
-for method,headers in [('GET',{}),('HEAD',{}),('POST',{}),('GET',{'Range':'bytes=0-3'}),('POST',{'Range':'bytes=0-3'})]:
- r=client.open('/file',method=method,headers=headers)
- result.append({'status':r.status_code,'accept_ranges':r.headers.get('Accept-Ranges',''),'content_range':r.headers.get('Content-Range',''),'body':r.get_data(as_text=True)})
-print(json.dumps(result))`)
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Flask file reference: %v %s", err, raw)
-	}
-	var want []result
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatal(err)
-	}
+// TestFileRangeHeaders: file responses are served by http.ServeContent
+// (O18 C15): Accept-Ranges on every served answer, a single range as 206,
+// an unusable range as a plain-text 416.
+func TestFileRangeHeaders(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.Handle([]string{"GET", "POST"}, "/api/file", "test.file", func(*httpx.Ctx) (*httpx.Response, error) {
 			return httpx.File(httpx.FileOptions{Data: []byte("synthetic-attachment"), AsAttachment: true, DownloadName: "fixture.bin"})
 		})
 	})})
-	for i, test := range []struct {
-		method      string
-		rangeHeader bool
-	}{{"GET", false}, {"HEAD", false}, {"POST", false}, {"GET", true}, {"POST", true}} {
-		var options []httpxtest.Option
-		if test.rangeHeader {
-			options = append(options, httpxtest.Header("Range", "bytes=0-3"))
-		}
-		response := srv.Do(test.method, "/api/file", options...)
-		got := result{response.Status, response.Header.Get("Accept-Ranges"), response.Header.Get("Content-Range"), string(response.Body)}
-		if got != want[i] {
-			t.Fatalf("%s range=%v: got=%+v want=%+v", test.method, test.rangeHeader, got, want[i])
-		}
+	tests := []struct {
+		method, rangeHeader string
+		status              int
+		contentRange, body  string
+	}{
+		{"GET", "", 200, "", "synthetic-attachment"},
+		{"HEAD", "", 200, "", ""},
+		{"POST", "", 200, "", "synthetic-attachment"},
+		{"GET", "bytes=0-3", 206, "bytes 0-3/20", "synt"},
+		{"HEAD", "bytes=0-3", 206, "bytes 0-3/20", ""},
+		{"GET", "bytes=30-", 416, "bytes */20", "invalid range: failed to overlap\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.rangeHeader, func(t *testing.T) {
+			var options []httpxtest.Option
+			if tt.rangeHeader != "" {
+				options = append(options, httpxtest.Header("Range", tt.rangeHeader))
+			}
+			response := srv.Do(tt.method, "/api/file", options...)
+			acceptRanges := map[bool]string{true: "bytes", false: ""}[tt.status != 416]
+			if response.Status != tt.status || response.Header.Get("Accept-Ranges") != acceptRanges ||
+				response.Header.Get("Content-Range") != tt.contentRange || string(response.Body) != tt.body {
+				t.Fatalf("got %d %q %q %q", response.Status, response.Header.Get("Accept-Ranges"), response.Header.Get("Content-Range"), response.Body)
+			}
+		})
 	}
 }
 

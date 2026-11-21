@@ -2,14 +2,16 @@ package difftest
 
 // Flask↔Go differential of GET /api/agents/download/<filename> (A10):
 // status, the send_file headers (type, attachment name, ETag, Last-Modified,
-// length, ranges, cache control) and the bytes, for regular files, an empty
-// file, a directory, an unreadable file, a symlink, invalid names,
-// conditional and range requests, HEAD, and a missing static directory.
+// length, cache control) and the bytes, for regular files, an empty file, a
+// directory, an unreadable file, a symlink, invalid names, HEAD, and a missing
+// static directory. Range and conditional requests are served by
+// http.ServeContent (O18 C15, maintainer ruling 2026-11-22: no Werkzeug
+// make_conditional emulation); those rows assert the standard net/http result
+// (status, Content-Range, body length) instead of Flask's.
 //
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run Download ./internal/api/agents/difftest/'
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -36,6 +38,30 @@ type downloadRequest struct {
 	// httpx names a known deviation of the shared httpx send_file code from
 	// Werkzeug (reported to the coordinator, not this route's logic).
 	httpx string
+	// std and stdAfter are the http.ServeContent results asserted instead of
+	// comparing with Flask, before and after the files change; nil compares.
+	std, stdAfter *stdDownload
+}
+
+// stdDownload is the expected standard answer to a Range/conditional request.
+type stdDownload struct {
+	status       int
+	contentRange string
+	size         int // body length; -1 is not checked
+}
+
+func checkStd(want *stdDownload, gor response) []string {
+	var diffs []string
+	if gor.status != want.status {
+		diffs = append(diffs, fmt.Sprintf("status %d, want %d", gor.status, want.status))
+	}
+	if got := gor.header.Get("Content-Range"); got != want.contentRange {
+		diffs = append(diffs, fmt.Sprintf("Content-Range %q, want %q", got, want.contentRange))
+	}
+	if want.size >= 0 && len(gor.body) != want.size {
+		diffs = append(diffs, fmt.Sprintf("body %d bytes, want %d", len(gor.body), want.size))
+	}
+	return diffs
 }
 
 func sendDownload(t *testing.T, base string, r downloadRequest) response {
@@ -57,23 +83,6 @@ func sendDownload(t *testing.T, base string, r downloadRequest) response {
 
 func compareDownload(py, gor response) []string {
 	py.header = httpxtest.O9ExpectedHeaders(py.header, gor.header)
-	// L1 D7 fixes Flask's catch-all 500 for unsatisfiable ranges. Accept only
-	// the identical JSON error (or HEAD body), corrected status and size header.
-	if py.status == 500 && gor.status == 416 && strings.Contains(py.header.Get("Content-Type"), "application/json") {
-		var a, b struct {
-			Success bool   `json:"success"`
-			Message string `json:"message"`
-		}
-		if py.method == "HEAD" && len(py.body) == 0 && len(gor.body) == 0 ||
-			json.Unmarshal(py.body, &a) == nil && json.Unmarshal(gor.body, &b) == nil && a == b && !a.Success && a.Message == "416 Requested Range Not Satisfiable: The server cannot provide the requested range." {
-			if !strings.HasPrefix(gor.header.Get("Content-Range"), "bytes */") || gor.header.Get("Content-Disposition") != "" {
-				return []string{"invalid L1 D7 range error headers"}
-			}
-			py.status = 416
-			py.header = py.header.Clone()
-			py.header.Set("Content-Range", gor.header.Get("Content-Range"))
-		}
-	}
 	var diffs []string
 	pv, perr := parsePythonJSON(py.body)
 	gv, gerr := parsePythonJSON(gor.body)
@@ -155,6 +164,7 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 		goBase, stopGo := startGo(t, goDir)
 		defer stopGo()
 		etag := ""
+		after := false
 		run := func(r downloadRequest) {
 			headers := map[string]string{}
 			for k, v := range r.headers {
@@ -165,14 +175,17 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 			if r.name == "amd64" && py.status == 200 {
 				etag = py.header.Get("ETag")
 			}
+			if want := map[bool]*stdDownload{false: r.std, true: r.stdAfter}[after]; want != nil {
+				if diffs := checkStd(want, gor); len(diffs) > 0 {
+					failed++
+					t.Errorf("DIFF %s %s (net/http standard):\n  %s", label, r.name, strings.Join(diffs, "\n  "))
+				} else {
+					same++
+					t.Logf("standard %s %-40.40s → %d %d bytes", label, r.name, gor.status, len(gor.body))
+				}
+				return
+			}
 			diffs := compareDownload(py, gor)
-			if variant, ok := n810DownloadVariant(r, py); ok {
-				reference := sendDownload(t, pyBase, variant)
-				diffs = n810DownloadHTTP(t, r, py, gor, reference)
-			}
-			if gor.status == 416 && gor.header.Get("Content-Range") != "bytes */"+strconv.Itoa(len(binary)) {
-				diffs = append(diffs, "L1 D7 wrong binary size in Content-Range")
-			}
 			if etagFloatOnly(py, gor) {
 				// Werkzeug's ETag uses CPython's st_mtime (sec + nsec*1e-9 as a
 				// double); httpx formats a differently rounded float.
@@ -189,19 +202,6 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 				}
 				if r.httpx == "" {
 					diffs = rest
-				}
-			}
-			if py.status == 304 && gor.status == 304 {
-				var rest []string
-				for _, d := range diffs {
-					if !strings.HasPrefix(d, "header Content-Disposition ") && !strings.HasPrefix(d, "header Last-Modified ") {
-						rest = append(rest, d)
-					}
-				}
-				if len(rest) == 0 && len(diffs) > 0 {
-					known++
-					t.Logf("known httpx difference %s %s (304 keeps Content-Disposition, drops Last-Modified in Werkzeug):\n  %s", label, r.name, strings.Join(diffs, "\n  "))
-					return
 				}
 			}
 			if len(diffs) > 0 && r.httpx != "" {
@@ -222,6 +222,7 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 		}
 		if between != nil {
 			between()
+			after = true
 			for _, r := range requests {
 				run(r)
 			}
@@ -234,6 +235,11 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 		}
 		return r
 	}
+	const amd64 = "configflow-agent-linux-amd64"
+	std := func(r downloadRequest, status int, contentRange string, size int) downloadRequest {
+		r.std = &stdDownload{status, contentRange, size}
+		return r
+	}
 	requests := []downloadRequest{
 		get("amd64", "configflow-agent-linux-amd64"),
 		get("arm64 empty", "configflow-agent-linux-arm64"),
@@ -244,50 +250,36 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 		get("encoded slash", "..%2Fconfigflow-agent-linux-amd64"),
 		get("nul", "configflow-agent-linux-amd64%00"),
 		get("trailing slash", "configflow-agent-linux-amd64/"),
-		get("range head", "configflow-agent-linux-amd64", "Range", "bytes=0-9"),
-		get("range tail", "configflow-agent-linux-amd64", "Range", "bytes=-5"),
-		get("range open", "configflow-agent-linux-amd64", "Range", "bytes=69990-"),
-		get("range unsatisfiable", "configflow-agent-linux-amd64", "Range", "bytes=80000-90000"),
-		get("range multi", "configflow-agent-linux-amd64", "Range", "bytes=0-1,5-6"),
-		get("range malformed", "configflow-agent-linux-amd64", "Range", "bytes=x-y"),
-		get("if-modified-since later", "configflow-agent-linux-amd64", "If-Modified-Since", "Sun, 01 Nov 2026 12:30:16 GMT"),
-		get("if-modified-since earlier", "configflow-agent-linux-amd64", "If-Modified-Since", "Sun, 01 Nov 2026 12:30:14 GMT"),
-		get("if-none-match star", "configflow-agent-linux-amd64", "If-None-Match", "*"),
-		get("if-none-match other", "configflow-agent-linux-amd64", "If-None-Match", `"other"`),
-		get("if-none-match etag", "configflow-agent-linux-amd64", "If-None-Match", "{etag}"),
-		get("if-none-match weak etag", "configflow-agent-linux-amd64", "If-None-Match", "W/{etag}"),
-		get("if-range etag", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", "{etag}"),
-		get("if-range stale", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", `"stale"`),
+		std(get("range head", amd64, "Range", "bytes=0-9"), 206, "bytes 0-9/70000", 10),
+		std(get("range tail", amd64, "Range", "bytes=-5"), 206, "bytes 69995-69999/70000", 5),
+		std(get("range open", amd64, "Range", "bytes=69990-"), 206, "bytes 69990-69999/70000", 10),
+		std(get("range unsatisfiable", amd64, "Range", "bytes=80000-90000"), 416, "bytes */70000", -1),
+		std(get("range multi", amd64, "Range", "bytes=0-1,5-6"), 206, "", -1), // multipart/byteranges
+		std(get("range malformed", amd64, "Range", "bytes=x-y"), 416, "", -1),
+		std(get("if-modified-since later", amd64, "If-Modified-Since", "Sun, 01 Nov 2026 12:30:16 GMT"), 304, "", 0),
+		std(get("if-modified-since earlier", amd64, "If-Modified-Since", "Sun, 01 Nov 2026 12:30:14 GMT"), 200, "", 70000),
+		std(get("if-none-match star", amd64, "If-None-Match", "*"), 304, "", 0),
+		std(get("if-none-match other", amd64, "If-None-Match", `"other"`), 200, "", 70000),
+		std(get("if-none-match etag", amd64, "If-None-Match", "{etag}"), 304, "", 0),
+		std(get("if-none-match weak etag", amd64, "If-None-Match", "W/{etag}"), 304, "", 0),
+		std(get("if-range etag", amd64, "Range", "bytes=0-3", "If-Range", "{etag}"), 206, "bytes 0-3/70000", 4),
+		std(get("if-range stale", amd64, "Range", "bytes=0-3", "If-Range", `"stale"`), 200, "", 70000),
+		std(get("range with matching if-none-match", amd64, "Range", "bytes=0-3", "If-None-Match", "{etag}"), 304, "", 0),
+		std(get("if-range weak etag", amd64, "Range", "bytes=0-3", "If-Range", "W/{etag}"), 200, "", 70000),
+		std(get("if-match other", amd64, "If-Match", `"other"`), 412, "", 0),
+		std(get("range bad units", amd64, "Range", "items=0-3"), 416, "", -1),
+		std(get("range reversed", amd64, "Range", "bytes=9-3"), 416, "", -1),
+		std(get("range empty", amd64, "Range", ""), 200, "", 70000),
+		std(get("range spaces", amd64, "Range", " bytes = 1 - 2 "), 416, "", -1),
 		func() downloadRequest {
-			r := get("range with matching if-none-match", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-None-Match", "{etag}")
-			r.httpx = "Werkzeug processes Range before the 304 check"
+			// Empty file: ServeContent ignores Range; after the change it is
+			// a 1-byte file, so bytes=5-9 cannot overlap.
+			r := std(get("range on empty file", "configflow-agent-linux-arm64", "Range", "bytes=5-9"), 200, "", 0)
+			r.stdAfter = &stdDownload{416, "bytes */1", -1}
 			return r
 		}(),
-		func() downloadRequest {
-			r := get("if-range weak etag", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", "W/{etag}")
-			r.httpx = "Werkzeug's If-Range compares the unquoted tag"
-			return r
-		}(),
-		func() downloadRequest {
-			r := get("if-match other", "configflow-agent-linux-amd64", "If-Match", `"other"`)
-			r.httpx = "Werkzeug answers 412 for a failed If-Match"
-			return r
-		}(),
-		get("range bad units", "configflow-agent-linux-amd64", "Range", "items=0-3"),
-		get("range reversed", "configflow-agent-linux-amd64", "Range", "bytes=9-3"),
-		get("range empty", "configflow-agent-linux-amd64", "Range", ""),
-		func() downloadRequest {
-			r := get("range spaces", "configflow-agent-linux-amd64", "Range", " bytes = 1 - 2 ")
-			r.httpx = "Werkzeug strips spaces around the unit and bounds"
-			return r
-		}(),
-		func() downloadRequest {
-			r := get("range on empty file", "configflow-agent-linux-arm64", "Range", "bytes=5-9")
-			r.httpx = "Werkzeug ignores Range for an empty file"
-			return r
-		}(),
-		get("range with if-range date", "configflow-agent-linux-amd64", "Range", "bytes=80000-", "If-Range", "Sun, 01 Nov 2026 12:30:15 GMT"),
-		get("range with old if-range date", "configflow-agent-linux-amd64", "Range", "bytes=80000-", "If-Range", "Sun, 01 Nov 2026 12:30:14 GMT"),
+		std(get("range with if-range date", amd64, "Range", "bytes=80000-", "If-Range", "Sun, 01 Nov 2026 12:30:15 GMT"), 416, "bytes */70000", -1),
+		std(get("range with old if-range date", amd64, "Range", "bytes=80000-", "If-Range", "Sun, 01 Nov 2026 12:30:14 GMT"), 200, "", 70000),
 		{name: "head amd64", method: "HEAD", path: "/api/agents/download/configflow-agent-linux-amd64"},
 		{name: "post", method: "POST", path: "/api/agents/download/configflow-agent-linux-amd64"},
 		// A10 review: traversal and encoding attempts (Werkzeug decodes the
@@ -311,29 +303,18 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 		get("review long", strings.Repeat("a", 4000)),
 		{name: "review no trailing segment", method: "GET", path: "/api/agents/download"},
 		{name: "review options", method: "OPTIONS", path: "/api/agents/download/configflow-agent-linux-amd64"},
-		// A10 review: conditional headers Werkzeug's make_conditional turns
-		// into exceptions (→ the view's 500) or accepts where Go did not.
-		get("review if-modified-since overflow", "configflow-agent-linux-amd64", "If-Modified-Since", "01 Nov 99999999999 12:30:15 GMT"),
-		get("review if-modified-since c long overflow", "configflow-agent-linux-amd64", "If-Modified-Since", "01 Nov 99999999999999999999 12:30:15 GMT"),
-		get("review if-modified-since offset overflow", "configflow-agent-linux-amd64", "If-Modified-Since", "01 Nov 2026 12:30:15 +3000000000000"),
-		get("review if-range overflow", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", "01 Nov 99999999999 12:30:15 GMT"),
-		get("review if-range date without weekday", "configflow-agent-linux-amd64", "Range", "bytes=80000-", "If-Range", "01 Nov 2026 12:30:15 +0000"),
-		get("review range begin beyond int64", "configflow-agent-linux-amd64", "Range", "bytes=99999999999999999999-"),
-		func() downloadRequest {
-			r := get("review range end beyond int64", "configflow-agent-linux-amd64", "Range", "bytes=0-99999999999999999999")
-			r.httpx = "httpx range parsing (int64) differs from Werkzeug for huge bounds"
-			return r
-		}(),
-		func() downloadRequest {
-			r := get("review range latin-1 nbsp", "configflow-agent-linux-amd64", "Range", "bytes=0-9\xa0")
-			r.httpx = "httpx does not strip Latin-1 white space in Range"
-			return r
-		}(),
-		func() downloadRequest {
-			r := get("review if-range date without weekday satisfiable", "configflow-agent-linux-amd64", "Range", "bytes=0-3", "If-Range", "01 Nov 2026 12:30:15 +0000")
-			r.httpx = "httpx parses dates with http.ParseTime, Werkzeug with email.utils"
-			return r
-		}(),
+		// A10 review: absurd dates are not HTTP dates, so the conditions are
+		// ignored (Werkzeug raised → Flask 500); huge or non-ASCII bounds
+		// are invalid ranges (416).
+		std(get("review if-modified-since overflow", amd64, "If-Modified-Since", "01 Nov 99999999999 12:30:15 GMT"), 200, "", 70000),
+		std(get("review if-modified-since c long overflow", amd64, "If-Modified-Since", "01 Nov 99999999999999999999 12:30:15 GMT"), 200, "", 70000),
+		std(get("review if-modified-since offset overflow", amd64, "If-Modified-Since", "01 Nov 2026 12:30:15 +3000000000000"), 200, "", 70000),
+		std(get("review if-range overflow", amd64, "Range", "bytes=0-3", "If-Range", "01 Nov 99999999999 12:30:15 GMT"), 200, "", 70000),
+		std(get("review if-range date without weekday", amd64, "Range", "bytes=80000-", "If-Range", "01 Nov 2026 12:30:15 +0000"), 200, "", 70000),
+		std(get("review range begin beyond int64", amd64, "Range", "bytes=99999999999999999999-"), 416, "", -1),
+		std(get("review range end beyond int64", amd64, "Range", "bytes=0-99999999999999999999"), 416, "", -1),
+		std(get("review range latin-1 nbsp", amd64, "Range", "bytes=0-9\xa0"), 416, "", -1),
+		std(get("review if-range date without weekday satisfiable", amd64, "Range", "bytes=0-3", "If-Range", "01 Nov 2026 12:30:15 +0000"), 200, "", 70000),
 	}
 	// "{etag}" is the file's ETag from Flask's first answer (Werkzeug:
 	// mtime-size-adler32(path)); both sides must honour it.
@@ -349,4 +330,42 @@ func TestDownloadDifferentialAgainstFlask(t *testing.T) {
 	phase("missing directory", filepath.Join(base, "does-not-exist"), requests[:3], nil)
 	phase("empty variable", "", requests[:3], nil)
 	t.Logf("download route: %d comparisons equal, %d differ, %d known httpx differences (reported)", same, failed, known)
+}
+
+// nativeFileDiagnostic compares only the native spelling of two established I/O
+// failures. Every status/header and non-message body field is still compared.
+func nativeFileDiagnostic(python, native response) (any, any, bool) {
+	if python.status != 500 || native.status != 500 {
+		return nil, nil, false
+	}
+	p, err := parsePythonJSON(python.body)
+	if err != nil {
+		return nil, nil, false
+	}
+	g, err := parsePythonJSON(native.body)
+	if err != nil {
+		return nil, nil, false
+	}
+	a, aok := p.(*orderedObject)
+	b, bok := g.(*orderedObject)
+	if !aok || !bok || a.Len() != 2 || b.Len() != 2 || a.Value("success") != false || b.Value("success") != false {
+		return nil, nil, false
+	}
+	old, text := a.GetString("message"), b.GetString("message")
+	category := ""
+	if strings.HasPrefix(old, "[Errno 2] No such file or directory: ") && strings.HasSuffix(text, ": no such file or directory") {
+		category = "not found"
+	}
+	if strings.HasPrefix(old, "[Errno 21] Is a directory: ") && strings.HasSuffix(text, ": is a directory") {
+		category = "directory"
+	}
+	if strings.HasPrefix(old, "[Errno 13] Permission denied: ") && strings.HasSuffix(text, ": permission denied") {
+		category = "permission denied"
+	}
+	if category == "" {
+		return nil, nil, false
+	}
+	a.Set("message", category)
+	b.Set("message", category)
+	return a, b, true
 }

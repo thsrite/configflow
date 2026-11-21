@@ -20,16 +20,6 @@
     "reason": "保留真实Python HTTP/JSONL会话与Go请求、认证、状态和存储副作用对照；普通测试在显式guard处跳过。"
   },
   {
-    "id": "B-003",
-    "file": "server/internal/api/agents/a10_review_internal_test.go",
-    "function": "TestReviewConditionalMatchesWerkzeug",
-    "callee": "exec.Command",
-    "count": 1,
-    "guard": "testgolden.Spec.Run; PYREF_MODE=check|record only",
-    "kind": "record-only",
-    "reason": "纯参考计算；普通回放不调用Run，显式录制保留真实Python输出和原逐项断言。"
-  },
-  {
     "id": "B-004",
     "file": "server/internal/api/agents/client_tools_diff_test.go",
     "function": "newClientWorldSetup",

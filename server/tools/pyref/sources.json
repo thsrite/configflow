@@ -1239,28 +1239,6 @@
     ]
   },
   {
-    "package": "server/internal/api/agents",
-    "test": "TestReviewConditionalMatchesWerkzeug",
-    "sources": [
-      "backend",
-      "server/go.mod",
-      "server/go.sum",
-      "server/internal/api/agents/a10_review_internal_test.go",
-      "server/internal/api/agents/n810_download_policy_test.go",
-      "server/internal/api/agents/testdata/n810_download_policy.json",
-      "server/internal/api/agents/testdata/review_a10_conditional.py",
-      "server/internal/testgolden/fingerprint.go",
-      "server/internal/testgolden/golden.go",
-      "server/internal/testgolden/lines.go",
-      "server/internal/testgolden/sources.go"
-    ],
-    "product_symbols": [
-      "werkzeugConditionalError",
-      "werkzeugParseDate",
-      "werkzeugRangeNotSatisfiable"
-    ]
-  },
-  {
     "package": "server/internal/installer",
     "test": "TestReviewDeflateAndZipMatchPython",
     "sources": [
