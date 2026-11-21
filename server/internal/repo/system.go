@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -363,4 +364,43 @@ func (r *Repository) SystemSettingsDamaged(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return settingsDamaged(entry.Issues), nil
+}
+
+// keepDamagedSettings restores the base generation's settings in document
+// when the base settings are damaged (not an object, read as empty) and the
+// transaction changed nothing in them except what token maintenance adds. It
+// reports whether it did: such a transaction must not run token maintenance,
+// which would replace the damaged record with fresh settings whose config
+// token is empty (anonymous access). Only an explicit settings change repairs
+// damaged settings.
+func keepDamagedSettings(base, document *model.Document) (bool, error) {
+	withoutMaintenance := func(settings *model.SystemConfig) ([]byte, error) {
+		copied, err := copyRecord(settings)
+		if err != nil {
+			return nil, err
+		}
+		for _, member := range []string{"rule_proxy_token", "retired_rule_proxy_tokens"} {
+			if err := copied.Clear(member); err != nil {
+				return nil, err
+			}
+		}
+		return model.Marshal(copied)
+	}
+	before, err := withoutMaintenance(&base.System.SystemConfig)
+	if err != nil {
+		return false, err
+	}
+	after, err := withoutMaintenance(&document.System.SystemConfig)
+	if err != nil {
+		return false, err
+	}
+	if !bytes.Equal(before, after) {
+		return false, nil
+	}
+	restored, err := copyRecord(&base.System.SystemConfig)
+	if err != nil {
+		return false, err
+	}
+	document.System.SystemConfig = *restored
+	return true, nil
 }

@@ -138,8 +138,18 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	if options.batch != nil && *options.batch {
 		ctx = ctxx.Uninterruptible(ctx)
 	}
-	if _, err := ensureSystemTokens(&tx.document.System); err != nil {
-		return err
+	maintain := true
+	if settingsDamaged(base.Issues) {
+		untouched, err := keepDamagedSettings(base.Model, tx.document)
+		if err != nil {
+			return err
+		}
+		maintain = !untouched
+	}
+	if maintain {
+		if _, err := ensureSystemTokens(&tx.document.System); err != nil {
+			return err
+		}
 	}
 	if err := validateDocument(tx.document); err != nil {
 		return err
