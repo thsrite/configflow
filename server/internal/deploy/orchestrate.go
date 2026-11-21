@@ -40,6 +40,17 @@ type Response struct {
 // routeLogger is the Python route module's logger for owner-level route events.
 var routeLogger = logx.Get("backend.routes.agents")
 
+// missingAgentRestart is the restart result for an Agent deleted between the
+// publish and the follow-up restart; the bytes match the direct-operation
+// failure object ({"success":false,"message":"Agent not found"}).
+func missingAgentRestart() json.RawMessage {
+	raw, _ := json.Marshal(struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}{false, agents.ErrAgentNotFound.Error()})
+	return raw
+}
+
 func rejected(status int, message string) Response {
 	return Response{Status: status, Body: map[string]any{"success": false, "message": message}}
 }
@@ -255,6 +266,12 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 				var v any = map[string]any{"success": true, "message": msgSelfRestart}
 				if !self {
 					v, e = m.RunServiceOperation(ctx, id, agents.RestartService, nil, nil)
+					if errors.Is(e, agents.ErrAgentNotFound) {
+						// The Agent was deleted after the publish succeeded: the
+						// publish result stands and restart reports the failure,
+						// as before the 404 route fix (review batch-20 L1).
+						v, e = missingAgentRestart(), nil
+					}
 					if e != nil {
 						return fail(e)
 					}

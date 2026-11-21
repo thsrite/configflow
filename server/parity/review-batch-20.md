@@ -10,7 +10,7 @@
 |---|---|---|
 | high | 0 | — |
 | medium | 2 | 已在本分支修复并补测试（B20-M1、B20-M2） |
-| low | 3 | 记录在下表，交协调者排期 |
+| low | 3 | B20-L1 已修（B 组引入的回退）；L2、L3 记录 |
 | 范围外 | 1 | `51f743c75`（#40）改了 `jsonstore/stat_linux.go`，mosdns 的 5 个 pyref 元数据 hash 失配，预检失败；已刷新（条目零差异，见第 5 节） |
 
 除 B20-M1 收窄了 L3 已批准的保存校验（在简报授权范围内，保留了拒绝换行注入的目的），没有改变其他已批准行为。
@@ -21,7 +21,7 @@
 |---|---|---|---|---|
 | B20-M1 | **medium** | `internal/api/nodes/validate.go` | L3 的保存校验对 `params` 递归字符串值、YAML/JSON `proxy_string` 的参数值一律拒绝 `\n`/`\r`/`\t`。Mihomo 合法的多行参数（`ca-str`、内联证书或私钥 PEM 等）因此无法新建或编辑，旧数据也无法再保存（PUT 会 400）。生成侧（Surge/Loon）本身已经把这些字符折成空格，保存时的整体拒绝没有带来额外的安全收益 | **已修**：`name`/`type`/`server`/`port` 和 URI 分享链接（含 `%0A` 解码）保持严格；结构化 `params` 与 YAML/JSON `proxy_string` 的参数值允许 TAB/LF/CR，只拒绝其余 C0/DEL/C1/NEL/U+2028/U+2029。Mihomo YAML 输出不经过 Surge/Loon 的净化函数，多行值原样保留；Surge/Loon 单行文本继续由生成侧防御兜底（`convert.TestO9R2ClientNodeLineInjectionDefense` 已经覆盖 params 中的 `\r\n`）。选这个方案是因为改动最小：不需要维护“哪些 params 会拼进 Surge/Loon”的字段表，也不需要新增跳过并告警的生成路径 |
 | B20-M2 | **medium** | `tools/proddiff/run.py` `strip_discovery_store_state` | M18 的 proddiff 例外除了健康基线 `ok/""`，还会剥离 `damaged` + 非空消息。生产快照上如果 Go 把某个流量文件判为损坏（无论是真实损坏还是 Go 检测误报），差分会被静默吞掉，而误报正好会引导用户点「清除并恢复」删除数据 | **已修**：只剥离 `store_state == "ok"` 且 `store_message == ""`；`damaged` 保留为差异。`test_proddiff.py` 把 damaged 从“放过”改为“必须报差异”。configdiff 和 discovery difftest 的例外本来就只放过 `ok/""`，不用改 |
-| B20-L1 | low | `internal/deploy/orchestrate.go:257` | B 把 `RunDirectOperation` 对缺失 Agent 的返回从 `{"success":false,"message":"Agent not found"}` 结果改成 `ErrAgentNotFound` 错误。发布成功后对旧 Agent（< 1.1.0-go）补发重启时，如果 Agent 恰好在这之间被删除，现在走 `fail(e)`，返回 500「Deployment preparation failed」，原来是整体成功，`restart` 字段里带失败对象 | 窗口极窄（并发删除 + 旧版 Agent + `restart_after_update`）。建议在该调用点把 `errors.Is(e, agents.ErrAgentNotFound)` 映射回原来的 `restart` 失败对象，并补一个桩测试 |
+| B20-L1 | low | `internal/deploy/orchestrate.go:257` | B 把 `RunDirectOperation` 对缺失 Agent 的返回从 `{"success":false,"message":"Agent not found"}` 结果改成 `ErrAgentNotFound` 错误。发布成功后对旧 Agent（< 1.1.0-go）补发重启时，如果 Agent 恰好在这之间被删除，现在走 `fail(e)`，返回 500「Deployment preparation failed」，原来是整体成功，`restart` 字段里带失败对象 | **已修**（协调者要求）：该调用点把 `ErrAgentNotFound` 映射回原来的 `restart` 失败对象 `{"success":false,"message":"Agent not found"}`，整体仍为 200 成功。回归 `api/agents.TestLegacyRestartAfterAgentDeletedKeepsPublishResult`（Surge、Agent 1.0.0，假 Agent 收到 `/api/config/update` 后从注册表删除自己）；旧代码下该测试得到 500「Deployment preparation failed」 |
 | B20-L2 | low | `internal/agents/trafficstore/store.go` `InspectStatus` | 只读检测只检查当日桶头（计数器、`hosts` 类型），某个 host 条目损坏只有在一次上报失败后才会进入 `damagedCache`；之后若一次不涉及该 host 的上报写入成功，签名变化使缓存失效，状态又回到 `ok`，直到下一次涉及坏 host 的上报失败。界面可能在 `damaged`/`ok` 之间来回切换 | 检测条件是写入失败条件的子集，不会误报损坏（不会诱导误删）。可接受；如要稳定显示，可在写入成功后保留“该日该 host 损坏”的标记。不影响已批准的 fail-closed 行为 |
 | B20-L3 | low | `internal/agents/client.go` `ErrTotalTimeout` | L1 的总时长超时错误文本是英文 `agent request exceeded total duration limit`，经 `remoteConnection` 进入用户可见的诊断详情；单次读超时显示的是 Go 的 `i/o timeout` 原文。两者都不是 Python requests 的原文，Python 也没有总时长上限 | 可接受（新行为，原来也不对齐）。如需统一，可在 `messages.go` 加中文常量 |
 
@@ -88,5 +88,7 @@
    `PYREF_MODE=record` 显示唯一变化是 `PYREF source server/internal/jsonstore/stat_linux.go`（`51f743c75` 把 `Sec*1e9+Nsec` 改成 `Nano()`），
    `TestCorpus` 0 differ、`TestRecordedPythonTests` 0 differ，条目数不变；随后 `PYREF_MODE=record PYREF_ACCEPT=1` 刷新，`go test ./internal/mosdns/` → `ok`。
    重新预检：`bash /tmp/preflight.sh .paseo__worktrees__302rx1dg__go-opus-review-batch-20 -p 8` → 两组 vet 通过，`PREFLIGHT PASS`。
+
+7. B20-L1 修复（`.64`）：`gofmt -l internal/deploy internal/api/agents` 无输出，`go vet` 通过；`go test -race -count=1 -p 6 -timeout=60m ./internal/deploy/ ./internal/api/agents/`、`CONFIGFLOW_DIFF=1 go test ./internal/api/agents/difftest/`（`.32`，负载约 15）→ `ok deploy 797.8s`、`ok api/agents 1182.2s`、`ok api/agents/difftest 209.1s`。负控：临时换回 `HEAD` 的 `orchestrate.go`，新测试 `status 500, want 200`。
 
 没有运行完整门禁 `gate.sh`（按简报，由协调者在批次树上跑）。
