@@ -423,7 +423,9 @@ def strip_discovery_store_state(route, left_body, right_body):
     """M18: Go-only read-only traffic-store health fields on discovery Agent entries.
 
     Only removes store_state/store_message from Go's copy after proving Python
-    omits them and Go's values obey the exact ok/damaged contract.
+    omits them and Go reports the healthy baseline (ok / ""). A damaged state on
+    the production snapshot stays a difference: it is either real damage or a
+    false positive of the Go check, and both need a look (review batch-20).
     """
     if (route not in ('/api/domain-discovery/agents', '/api/domain-discovery/domains')
             or not isinstance(left_body, dict) or not isinstance(right_body, dict)):
@@ -437,9 +439,7 @@ def strip_discovery_store_state(route, left_body, right_body):
         if 'store_state' in left_agent or 'store_message' in left_agent:
             continue
         state, message = right_agent.get('store_state'), right_agent.get('store_message')
-        valid = ((state == 'ok' and message == '')
-                 or (state == 'damaged' and isinstance(message, str) and bool(message)))
-        if valid:
+        if state == 'ok' and message == '':
             right_agent.pop('store_state', None)
             right_agent.pop('store_message', None)
 

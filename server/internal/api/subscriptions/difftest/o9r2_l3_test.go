@@ -28,10 +28,10 @@ func TestO9R2NodeControlCharBoundaryAgainstFlask(t *testing.T) {
 			wantField: "name",
 		},
 		{
-			name:      "POST params.password with CRLF",
+			name:      "POST params.password with U+2028",
 			method:    "POST",
 			path:      "/api/nodes",
-			body:      `{"id":"bad2","name":"HK","type":"trojan","server":"192.0.2.1","port":443,"params":{"password":"pw\r\nFINAL,DIRECT"}}`,
+			body:      `{"id":"bad2","name":"HK","type":"trojan","server":"192.0.2.1","port":443,"params":{"password":"pw\u2028FINAL,DIRECT"}}`,
 			wantField: "params.password",
 		},
 		{
@@ -91,5 +91,13 @@ func TestO9R2NodeControlCharBoundaryAgainstFlask(t *testing.T) {
 		w := newWorld(t, seedGraph(t, "none", false, true), nil)
 		w.call("POST", "/api/nodes", `{"id":"clean","name":"HK 01","type":"ss","server":"192.0.2.9","port":8388,"params":{"cipher":"aes-256-gcm","password":"clean"}}`, true)
 		w.call("PUT", "/api/nodes/clean", `{"name":"HK 02","type":"ss","server":"192.0.2.9","port":8388,"params":{"cipher":"aes-256-gcm","password":"clean"}}`, true)
+	})
+
+	// Negative control: Mihomo parameter values may span lines (ca-str PEM);
+	// they save identically on Flask and Go (review batch-20).
+	t.Run("negative control: multi-line params match Flask", func(t *testing.T) {
+		w := newWorld(t, seedGraph(t, "none", false, true), nil)
+		w.call("POST", "/api/nodes", `{"id":"pem","name":"PEM 01","type":"trojan","server":"192.0.2.9","port":443,"params":{"password":"clean","ca-str":"-----BEGIN CERTIFICATE-----\nU1lOVEhFVElD\n-----END CERTIFICATE-----\n"}}`, true)
+		w.call("PUT", "/api/nodes/pem", `{"name":"PEM 02","type":"trojan","server":"192.0.2.9","port":443,"params":{"password":"pw\r\nline2","ca-str":"-----BEGIN CERTIFICATE-----\r\nU1lOVEhFVElD\r\n-----END CERTIFICATE-----"}}`, true)
 	})
 }

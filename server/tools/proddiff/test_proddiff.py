@@ -316,7 +316,8 @@ class ComparatorTests(unittest.TestCase):
             go_ok = reply({'success': True, 'agents': [{**base_agent, 'store_state': 'ok', 'store_message': ''}]})
             go_damaged = reply({'success': True, 'agents': [{**base_agent, 'store_state': 'damaged', 'store_message': '已损坏'}]})
             self.assertEqual([], pd.response_diffs(py, go_ok, route, []))
-            self.assertEqual([], pd.response_diffs(py, go_damaged, route, []))
+            # Only the healthy baseline is exempt; damaged on real data must surface.
+            self.assertTrue(pd.response_diffs(py, go_damaged, route, []))
             # Invalid state/message combinations or other field drifts must still fail.
             for bad_fields in (
                 {'store_state': 'unknown', 'store_message': ''},

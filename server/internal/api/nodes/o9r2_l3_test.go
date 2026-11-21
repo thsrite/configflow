@@ -3,6 +3,7 @@ package nodes
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"configflow/internal/httpx/httpxtest"
@@ -55,12 +56,20 @@ func TestO9R2NodeControlCharValidation(t *testing.T) {
 			wantField: "port",
 		},
 		{
-			name: "LF in params.password",
+			name: "NUL in params.password",
 			payload: map[string]any{
 				"name": "HK", "type": "trojan", "server": "192.0.2.1", "port": 443,
-				"params": map[string]any{"password": "pw\n[Rule]\nFINAL,DIRECT"},
+				"params": map[string]any{"password": "pw\x00evil"},
 			},
 			wantField: "params.password",
+		},
+		{
+			name: "ESC in nested params.reality-opts.public-key",
+			payload: map[string]any{
+				"name": "HK", "type": "vless", "server": "192.0.2.1", "port": 443,
+				"params": map[string]any{"reality-opts": map[string]any{"public-key": "key\x1b[2J"}},
+			},
+			wantField: "params.reality-opts.public-key",
 		},
 		{
 			name: "U+2028 in nested params.ws-opts.headers.Host",
@@ -94,9 +103,14 @@ func TestO9R2NodeControlCharValidation(t *testing.T) {
 			wantField: "proxy_string",
 		},
 		{
-			name:      "newline inside YAML scalar in proxy_string",
-			payload:   map[string]any{"name": "HK", "proxy_string": "type: trojan\nserver: 192.0.2.1\nport: 443\npassword: \"a\\nb\"\n"},
+			name:      "NEL inside YAML scalar in proxy_string",
+			payload:   map[string]any{"name": "HK", "proxy_string": "type: trojan\nserver: 192.0.2.1\nport: 443\npassword: \"a\\Nb\"\n"},
 			wantField: "proxy_string.password",
+		},
+		{
+			name:      "newline inside YAML name in proxy_string",
+			payload:   map[string]any{"name": "HK", "proxy_string": "name: \"a\\nb\"\ntype: trojan\nserver: 192.0.2.1\nport: 443\npassword: pw\n"},
+			wantField: "proxy_string.name",
 		},
 	}
 
@@ -162,6 +176,24 @@ func TestO9R2NodeControlCharValidation(t *testing.T) {
 			},
 		},
 		{
+			// Mihomo parameter values may span lines (ca-str, inline PEM);
+			// Surge/Loon generation folds them, so saving must not refuse them.
+			name: "multi-line params.ca-str PEM and newline in params.password",
+			payload: map[string]any{
+				"id": "ok-pem", "name": "PEM Node", "type": "trojan",
+				"server": "192.0.2.4", "port": 443,
+				"params": map[string]any{"password": "pw\nline2", "ca-str": testPEM, "sni": "pem.example.com"},
+			},
+		},
+		{
+			name: "YAML proxy_string with block-scalar ca-str and quoted newline",
+			payload: map[string]any{
+				"id":           "ok-yaml-pem",
+				"name":         "YAML PEM Node",
+				"proxy_string": "type: trojan\nserver: 192.0.2.5\nport: 443\npassword: \"a\\nb\"\nca-str: |\n  " + strings.ReplaceAll(strings.TrimSuffix(testPEM, "\n"), "\n", "\n  ") + "\n",
+			},
+		},
+		{
 			name: "valid URI proxy_string",
 			payload: map[string]any{
 				"id":           "ok-uri",
@@ -183,4 +215,28 @@ func TestO9R2NodeControlCharValidation(t *testing.T) {
 			srv.Post("/api/nodes", httpxtest.JSON(tc.payload)).WantStatus(200)
 		})
 	}
+
+	// The multi-line PEM is stored byte for byte (Mihomo output reads it as is).
+	t.Run("accept/PEM round trip", func(t *testing.T) {
+		body := srv.Get("/api/nodes").WantStatus(200).Body
+		var list []struct {
+			ID     string         `json:"id"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.Unmarshal(body, &list); err != nil {
+			t.Fatalf("decode nodes: %v\n%s", err, body)
+		}
+		for _, n := range list {
+			if n.ID == "ok-pem" {
+				if got := n.Params["ca-str"]; got != testPEM {
+					t.Fatalf("ca-str = %q, want %q", got, testPEM)
+				}
+				return
+			}
+		}
+		t.Fatalf("node ok-pem not listed:\n%s", body)
+	})
 }
+
+// testPEM is a synthetic, syntactically PEM-shaped multi-line value.
+const testPEM = "-----BEGIN CERTIFICATE-----\nU1lOVEhFVElDLVRFU1QtQ0VSVElGSUNBVEUtREFUQQ==\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=\n-----END CERTIFICATE-----\n"
