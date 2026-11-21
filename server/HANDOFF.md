@@ -98,6 +98,13 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-24 MERGED 2026-11-22 (O18 small cleanup T5/T6/T7 + C15a/b/c + C17 + review fix POST files skip ServeContent +
+lab D1 202 + lab docs; enrollment fuzz 1E700 test fix). batch-25 MERGED 2026-11-22 (lab defect fixes, Agent 1.9.1-go:
+L5-D1 nft 1.0.6 return routing via token-owned objects, L3-D1 keepalived stop order + VIP release check, L2-D3 core
+version refresh, 4 Agent routes test races, gate.sh now has an Agent module stage (gofmt/vet/race; GATE_ONLY=agent);
+panel L3-D2/L3-D3/L5-D2/L5-D3 + O-1 10-minute member-lost timeout; HR review 0 high/0 medium). Before batch-25 the
+gate never checked backend/agents/go-agent. Agent image 1.9.1-go must ship with the Go panel (P13).
+
 Lab L2–L5 DONE 2026-11-22 (Opus 7c0c4d68, branch go-audit-lab: 547662cb2 D1 recovery accepted → 202 + 13 lab-doc
 commits; reports server/parity/lab/L2–L5.md; all lab guests destroyed, CHR 7.25.1 image kept). Joins the next batch
 gate. Defects dispatched: Agent side (Opus 33089f7d, go-lab-fixes-agent): L5-D1 HIGH return routing fails on nftables
