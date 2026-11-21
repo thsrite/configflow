@@ -75,6 +75,8 @@ func (w *worker) failure(ctx context.Context, id string, cause error) error {
 		if slices.Contains([]string{"RULE_UPDATE_NOT_CONFIGURED", "RULE_UPDATE_AMBIGUOUS", "API_NOT_CONFIGURED", "CONFIG_UNSUPPORTED", "TLS_UNSUPPORTED", "CONTROLLER_UNAVAILABLE", "UPGRADE_REQUIRED", "CORE_UPDATE_UNSUPPORTED"}, monitorErr.Code) {
 			status = "blocked"
 		}
+	} else if text, ok := pairFailureMessage(ctx, w.s.m, cause); ok && text != "" {
+		message = text
 	}
 	return w.state(ctx, id, status, message, model.RuleSyncState{RetryAt: ptr(nowSeconds(w.s.now().Add(RetryAfter))), ForceRefresh: ptr(true), NativeTask: old.NativeTask, Key: old.Key})
 }

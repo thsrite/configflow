@@ -2674,3 +2674,13 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   离线 → 走原有的 pending 路径，不改存储，保持当前状态。
 - 测试：`dnsha.TestRecoveredMemberSettlesPairDeployment`（恢复成功 / 仍失败 / Agent 离线三种）、
   `TestSettledJournalPollsReopenedMember`。
+
+## 实验网 L3-D3 — HA 成员规则自动同步失败时显示原因（修 Python 缺陷）
+
+- 现象（Python 相同）：HA 成员的自动同步被配对发布拒绝（例如一新一旧时「主备配置基线不同，请先完整发布一次主备配置，
+  再自动同步规则」）时，状态只有通用的「规则自动同步失败；将稍后重试，可查看设备发布状态」，日志只有
+  「Agent rule sync failed (*dnsha.Error)」。
+- Go：dnsha 通过 `rulesync.SetPairFailureMessage` 把它的拒绝（`*dnsha.Error`）交给自动同步，状态消息改为该拒绝的中文
+  原文，用与手动「更新规则」相同的 `FailureMessage` 脱敏；`logState` 照常以 WARNING 记录「Agent <名称> 规则自动同步：<原因>」。
+  状态仍是 `failed` 并按原间隔重试。其他错误（内部错误、非 HA 设备）文案不变。
+- 测试：`rulesync.TestPairRefusalReasonReachesSyncState`、`dnsha.TestPairFailureMessageHook`。
