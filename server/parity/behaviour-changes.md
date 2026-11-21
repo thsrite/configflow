@@ -2437,6 +2437,7 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   - **保存校验**（`POST /api/nodes`、`PUT /api/nodes/<node_id>`）：拒绝 `name`/`type`/`server`/`port`、`params` 递归字符串值以及 `proxy_string` 解析出的字段中的控制字符与行分隔符（C0 U+0000–U+001F、DEL U+007F、C1 U+0080–U+009F 含 U+0085 NEL、U+2028、U+2029；合法多行 YAML `proxy_string` 的结构换行仍允许），返回 400「节点字段「<字段>」不能包含换行、回车或控制字符」且不修改存储。
   - **生成防御**（`internal/convert` `SurgeNode`/`LoonNode`/`SurgeGroup`/`SurgeConfig`/`LoonConfig`）：对存量或导入节点渲染前将 CRLF 及所有上述控制字符替换为空格，确保不输出注入行且 `[Proxy]` 与 `[Proxy Group]` 名称一致。
   - 回归与 Flask 差分：`api/nodes.TestO9R2NodeControlCharValidation`、`convert.TestO9R2ClientNodeLineInjectionDefense`、`api/subscriptions/difftest.TestO9R2NodeControlCharBoundaryAgainstFlask`、`api/config/difftest.TestO9R2ClientGenerationLineDefenseAgainstFlask`（均显式断言 Flask 放行/注入与 Go 拒绝/净化的新边界，并含正常节点严格相等负控）。
+
 ## M18 — 域名发现流量文件损坏状态与界面恢复入口
 
 - 维护者切换前裁定（对应 `o12-release-notes.md` M18）：`GET /api/domain-discovery/agents`（以及同用 `AgentStatus` 的 `GET /api/domain-discovery/domains` 中的 `agents[]`）在 Go 侧为每个 Agent 新增两个只读字段：
