@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"slices"
@@ -13,8 +14,9 @@ import (
 // directly into its record member with the lenient stored-data rules
 // (model.DecodeStoredMember) and every member is encoded on its own
 // (model.EncodeMembers). The store writes only rows whose text changed; rows
-// Python wrote are rewritten in Go's encoding the first time their section
-// is committed. Rows no record declares are dropped and reported once.
+// keep their stored text until a transaction changes their typed value
+// (keepUnchangedRows), so a commit writes exactly the rows it changed. Rows no
+// record declares are dropped and reported once; the next commit deletes them.
 
 // rootSchemaVersion is the only root row besides the sections.
 const rootSchemaVersion = "schema_version"
@@ -152,6 +154,76 @@ func encodeModelRows(document *model.Document, base *store.Document) (*store.Doc
 		result.Profiles = append(result.Profiles, store.ProfileRows{ID: owner, Fields: fields})
 	}
 	return result, nil
+}
+
+type rowKey struct{ scope, owner, name string }
+
+func eachRow(document *store.Document, visit func(key rowKey, fields *[]store.Field)) {
+	if document.System != nil {
+		visit(rowKey{scope: "system"}, &document.System.Fields)
+	}
+	if document.Shared != nil {
+		visit(rowKey{scope: "shared"}, &document.Shared.Fields)
+	}
+	for i := range document.Profiles {
+		visit(rowKey{scope: "profile", owner: document.Profiles[i].ID}, &document.Profiles[i].Fields)
+	}
+	visit(rowKey{scope: "root"}, &document.Root)
+}
+
+// keepUnchangedRows restores the stored text and position of every row whose
+// typed value the transaction did not change: baseModel is the snapshot the
+// transaction started from and base its stored rows. Comparing two Go
+// encodings of typed values (not stored text) means rows Python wrote, rows
+// with a member read leniently and rows of records not yet migrated are only
+// rewritten when their value changes. New rows follow the stored ones.
+func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) error {
+	if base == nil || baseModel == nil {
+		return nil
+	}
+	before, err := encodeModelRows(baseModel, nil)
+	if err != nil {
+		return err
+	}
+	encoded := map[rowKey][]byte{}
+	eachRow(before, func(section rowKey, fields *[]store.Field) {
+		for _, field := range *fields {
+			encoded[rowKey{section.scope, section.owner, field.Name}] = field.Value
+		}
+	})
+	stored := map[rowKey][]byte{}
+	positions := map[rowKey]int{}
+	eachRow(base, func(section rowKey, fields *[]store.Field) {
+		for i, field := range *fields {
+			key := rowKey{section.scope, section.owner, field.Name}
+			stored[key] = field.Value
+			positions[key] = i
+		}
+	})
+	eachRow(next, func(section rowKey, fields *[]store.Field) {
+		for i, field := range *fields {
+			key := rowKey{section.scope, section.owner, field.Name}
+			if old, ok := encoded[key]; ok && bytes.Equal(old, field.Value) {
+				if text, ok := stored[key]; ok {
+					(*fields)[i].Value = text
+				}
+			}
+		}
+		slices.SortStableFunc(*fields, func(a, b store.Field) int {
+			pa, oka := positions[rowKey{section.scope, section.owner, a.Name}]
+			pb, okb := positions[rowKey{section.scope, section.owner, b.Name}]
+			switch {
+			case oka && okb:
+				return pa - pb
+			case oka:
+				return -1
+			case okb:
+				return 1
+			}
+			return 0
+		})
+	})
+	return nil
 }
 
 var issueIndex = regexp.MustCompile(`\[[0-9]+\]`)

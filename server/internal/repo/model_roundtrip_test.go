@@ -374,7 +374,9 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatal("R5 skeleton fallback failed")
 		}
 		assertModelRows(t, must(encodeModelRows(fallback, entry.Document))(t), entry.Document)
-		// The next write stores the typed (zero) values of the wrong-typed rows.
+		// encodeModelRows alone writes every row in Go's encoding, so the rows
+		// read leniently are rewritten with their (zero) typed values here;
+		// repository commits keep them (keepUnchangedRows).
 		commit("R5 unrelated edit", []modelRowKey{profileKey("name"), profileKey("description"), {"system", "", "_revision"}, {"shared", "", "_revision"}},
 			func(d *model.Document) { d.Profiles[0].Name = "N8 R5 repaired" })
 		audit("audit-edit")

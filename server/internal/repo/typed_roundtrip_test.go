@@ -163,7 +163,7 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 	if issues != 1 {
 		t.Fatalf("issues %d", issues)
 	}
-	update(t, "unrelated edit keeps R5 rows of records not yet migrated", []modelRowKey{profile("name"), profile("description")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 R5" })
+	update(t, "unrelated edit keeps rows it does not change", []modelRowKey{profile("name")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 R5" })
 	update(t, "same-row edit keeps null", []modelRowKey{{"system", "", "system_config"}}, func(d *model.Document) {
 		d.System.SystemConfig.DefaultProfileID = nil
 		d.System.SystemConfig.ServerDomain = "cf.example.com"

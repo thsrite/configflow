@@ -2720,3 +2720,33 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - 不变：失联成员上已提交且结果未知的子发布仍保持 `unknown`「已提交的设备结果仍待确认」，不另加时限；两台都离线时撤销让位失败，仍保持 `unknown`。
 - 测试：`dnsha.TestLostMemberStopsPairAfterTimeout`（假时钟：10 分钟内保持 unknown 且停用被拒；超过后 failed，停用不加 force 返回 can_force，
   加 force 成功；10 分钟内成员回来则正常 succeeded 并清除计时）。
+
+## O18 T1a — 顶层记录（Document/Profile/Shared/System）改为普通结构体
+
+协调裁定（2026-11-22，Q1/Q2-A）。存储读写不再保留原字节、成员顺序和类型错误的原值；值不变。
+
+- **存储格式**：各行按 Go 的编码写出（紧凑、成员按结构体声明顺序、字符串转义按 encoding/json/v2）。Python 写的行
+  在所在记录第一次被提交时改写成 Go 格式，之后稳定；未改动的行不写。只比较值的测试改为比较解析后的值（原因：字节一致已不是目标）。
+- **始终写出的成员**：配置空间的 `id/name/description/created_at/updated_at/_revision/proxy_groups/rule_configs/mihomo/surge/mosdns`、
+  共享资源的四个列表和 `_revision`、system 的 `system_config/backup/agents/_revision` 总是写出（零值也写，例如 `_revision: 0`、
+  `description: ""`）；`loon/oxidns/domain_discovery/routers/device_notes/client_fixed_ips`、`agent_registration_sessions`、旧版
+  `rules/rule_sets` 为空时不写。旧库缺少「始终写」成员时首次写入补零值（Python 建档时本来就写这些成员）。
+- **未声明的成员**：根、system、shared、配置空间里结构体不认识的行在读取时丢弃，加载时汇总告警一次
+  「配置中有未声明的字段，读取时已丢弃：<路径模式>（<个数> 处）」（不含值），下一次写入删除这些行。Python 会原样带着。
+  导入整份配置（v5）时根和配置空间里的未知成员同样丢弃；system 节多出的成员仍按 Python 拒绝「system 节只接受全局设置、备份与 Agent」。
+  旧版 `rules`/`rule_sets` 列表是声明过的成员（生成器在没有 `rule_configs` 时仍读取），不受影响。
+  尚未迁移的嵌套记录（T1b/T1c）照旧保留自己的未知成员，但外层用 v2 写出时空白和转义会规范化（数字原文保留）。
+- **读存储时类型不对**：按零值读并告警（路径和类型，不含值），不再写回原错值；整数接受 `60`、`60.0`、`6e1`、`"60"`，文本接受数字原文。
+  因此原来「库里 `system_config: null` / 数字 / 字符串时启动不写入」改为：读成空设置后通过校验，启动时的令牌维护写入一次修复结果，
+  再次启动不写（`TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup`）。库里显式 `null` 的布尔开关读作「关」（flag-truthiness 裁定）。
+- **输入（HTTP、导入）严格解码**：`Profile/Shared/System.SetJSON` 和整份配置导入（v5）对类型不符的成员直接返回 400。
+  有 Python 文案的形状错误文案不变（例如「mosdns 参数必须是对象」「routers 参数必须是包含 items 列表的对象」「X 必须是列表」
+  「系统设置和备份设置必须是对象」「配置修订号无效」「缺少配置节：X」「配置内容与 ID 不一致」）；Python 不校验的成员类型错误
+  （例如 `description: 5`）以前照存，现在返回 400「description 类型不正确」。一个请求里有多处错误时，报错顺序可能和 Python 不同。
+  `_revision` 只接受整数：Python 接受的 `true` 和超出 int64 的整数现在返回「配置修订号无效」；字符串 `"5"` 作为 `schema_version`
+  与 Python 一致被拒（以前 Go 接受）。对象/列表成员给 `null` 视为类型不符。
+- **配置空间的旧版规则列表**：`rules/rule_sets` 不再按「未知成员」保存，而是声明为原始 JSON 成员，生成器行为不变。
+- **路由器规则缓存归属**：`rules.cacheSourceOwned` 读旧版 `rules/rule_sets` 的方式不变（改经 `Profile.LegacyRuleList`）。
+- 测试：`model.TestPlainDocumentStrictInputUnknownMembersAndOrder`、`repo.TestModelRowsUnknownMembersAndNullSwitch`、
+  `repo.TestModelStoredValuesLoadLenientlyAndWriteTyped`、`repo.TestModelIssuesLoggedOncePerRevision`（未知成员汇总告警、不含值）、
+  `repo.TestReferenceValidateDocument`（Python 校验参考经输入路径）、`repo.TestStoredRoundTrip`（含 CONFIGFLOW_SNAPSHOT 私有快照模式）。

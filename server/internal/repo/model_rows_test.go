@@ -180,9 +180,10 @@ func TestModelRowsUnknownMembersAndNullSwitch(t *testing.T) {
 // N8-5 split stored-data load validation from write validation (design n7-n8,
 // N8-5 prerequisite note); O18 T1a reads wrong-typed stored values leniently.
 // A stored value never prevents loading: Python's number notations read as
-// their value, anything else as the zero value with a load warning. The first
-// write stores the typed value; a value that still fails the business rules
-// refuses unrelated writes with the validation message until it is repaired.
+// their value, anything else as the zero value with a load warning. A write
+// that does not change the member keeps its stored text; the write that
+// changes it stores the typed value. A value that still fails the business
+// rules refuses unrelated writes with the validation message until repaired.
 func TestModelStoredValuesLoadLenientlyAndWriteTyped(t *testing.T) {
 	noopProfile := func(context.Context, *model.Profile) error { return nil }
 	noopShared := func(context.Context, *model.Shared) error { return nil }
@@ -194,20 +195,20 @@ func TestModelStoredValuesLoadLenientlyAndWriteTyped(t *testing.T) {
 		typedName         string
 		// unrelated is the error of a write elsewhere ("" = it commits).
 		unrelated string
-		// stored is the stored value after the unrelated write.
+		// stored is the stored value after the unrelated write (unchanged).
 		stored string
 		repair func(r *Repository) error
 		// repaired is the stored value after the repairing write.
 		repaired string
 	}{
-		{"string revision", "_revision", `"60"`, false, 60, "默认配置", "", `60`,
+		{"string revision", "_revision", `"60"`, false, 60, "默认配置", "", `"60"`,
 			func(r *Repository) error { _, err := r.UpdateProfile(bg, "default", noopProfile); return err }, `61`},
-		{"integral float revision", "_revision", `60.0`, false, 60, "默认配置", "", `60`,
+		{"integral float revision", "_revision", `60.0`, false, 60, "默认配置", "", `60.0`,
 			func(r *Repository) error { _, err := r.UpdateProfile(bg, "default", noopProfile); return err }, `61`},
 		// 60.5 is not an integer: it reads as 0, so the repair stores 1.
-		{"fractional revision", "_revision", `60.5`, true, 0, "默认配置", "", `0`,
+		{"fractional revision", "_revision", `60.5`, true, 0, "默认配置", "", `60.5`,
 			func(r *Repository) error { _, err := r.UpdateProfile(bg, "default", noopProfile); return err }, `1`},
-		{"numeric name", "name", `7`, false, 0, "7", "", `"7"`,
+		{"numeric name", "name", `7`, false, 0, "7", "", `7`,
 			func(r *Repository) error {
 				_, err := r.UpdateProfileMetadataRecord(bg, "default", ProfileMetadataUpdate{Name: &fixed})
 				return err

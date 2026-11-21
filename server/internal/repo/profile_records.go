@@ -313,10 +313,11 @@ func pruneProfileDNS(profile *model.Profile) error {
 }
 
 // ClientProfileImport is a prepared client import. Details keeps public import
-// diagnostics opaque; Profile contains only profile settings, Shared additions.
+// diagnostics opaque; Profile is the importer's profile object (only profile
+// settings are accepted; its members are applied as given), Shared additions.
 type ClientProfileImport struct {
 	Shared  model.Shared
-	Profile *model.Profile
+	Profile json.RawMessage
 	Details model.Fields
 }
 
@@ -404,8 +405,11 @@ func (r *Repository) ImportClientProfileRecord(ctx context.Context, input Profil
 			return err
 		}
 		if result.Profile != nil {
-			fields, err := recordMembers(result.Profile)
-			if err != nil {
+			if jsonKind(result.Profile) != '{' {
+				return validationError(msgImportResultShape)
+			}
+			var fields model.Fields
+			if err := fields.UnmarshalJSON(result.Profile); err != nil {
 				return err
 			}
 			for key, raw := range fields.All() {

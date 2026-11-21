@@ -138,11 +138,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 				raw := mustMarshalJSON(t, val)
 				switch key {
 				case "profile":
-					var p model.Profile
-					if err := json.Unmarshal(raw, &p); err != nil {
-						return nil, validationError(msgImportResultShape)
-					}
-					imp.Profile = &p
+					imp.Profile = raw
 				case "shared":
 					if err := json.Unmarshal(raw, &imp.Shared); err != nil {
 						return nil, validationError(msgImportResultShape)

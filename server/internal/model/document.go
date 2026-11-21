@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"reflect"
@@ -53,11 +52,12 @@ type profileWire Profile
 
 func (*Profile) plainRecord() {}
 
-// UnmarshalJSON strictly decodes profile input; see DecodeStoredMember for
-// stored rows.
+// UnmarshalJSON decodes stored or captured profile data leniently (see
+// DecodeStored; issues are not reported). Input from HTTP and imports goes
+// through SetJSON or DecodeDocument, which are strict.
 func (p *Profile) UnmarshalJSON(data []byte) error {
 	var decoded profileWire
-	if err := decodeInput("profile", data, &decoded); err != nil {
+	if _, err := DecodeStored(data, &decoded, ""); err != nil {
 		return err
 	}
 	*p = Profile(decoded)
@@ -117,10 +117,12 @@ type sharedWire Shared
 
 func (*Shared) plainRecord() {}
 
-// UnmarshalJSON strictly decodes shared-section input.
+// UnmarshalJSON decodes stored or captured shared data leniently (see
+// DecodeStored; issues are not reported). Input from HTTP and imports goes
+// through SetJSON or DecodeDocument, which are strict.
 func (s *Shared) UnmarshalJSON(data []byte) error {
 	var decoded sharedWire
-	if err := decodeInput("shared", data, &decoded); err != nil {
+	if _, err := DecodeStored(data, &decoded, ""); err != nil {
 		return err
 	}
 	*s = Shared(decoded)
@@ -151,10 +153,12 @@ type systemWire System
 
 func (*System) plainRecord() {}
 
-// UnmarshalJSON strictly decodes system-section input.
+// UnmarshalJSON decodes stored or captured system data leniently (see
+// DecodeStored; issues are not reported). Input from HTTP and imports goes
+// through SetJSON or DecodeDocument, which are strict.
 func (s *System) UnmarshalJSON(data []byte) error {
 	var decoded systemWire
-	if err := decodeInput("system", data, &decoded); err != nil {
+	if _, err := DecodeStored(data, &decoded, ""); err != nil {
 		return err
 	}
 	*s = System(decoded)
@@ -313,20 +317,6 @@ func decodeSection(record string, data []byte, target any) error {
 			return memberError(record, name, value, err)
 		}
 		destination.Set(decoded.Elem())
-	}
-	return nil
-}
-
-// decodeInput strictly decodes input into target and names a failing member.
-func decodeInput(record string, data []byte, target any) error {
-	if err := validJSON(data); err != nil {
-		return err
-	}
-	if isPlainTarget(target) {
-		return decodeSection(record, data, target)
-	}
-	if err := jsonv2.Unmarshal(data, target, strictOptions); err != nil {
-		return &MemberTypeError{Record: record, Value: bytes.Clone(data), Err: err}
 	}
 	return nil
 }

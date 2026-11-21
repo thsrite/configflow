@@ -388,13 +388,13 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		var wire struct {
-			Shared  model.Shared   `json:"shared"`
-			Profile *model.Profile `json:"profile"`
+			Shared  model.Shared    `json:"shared"`
+			Profile json.RawMessage `json:"profile"`
 		}
 		if err = json.Unmarshal(raw, &wire); err != nil {
 			return nil, repo.NewValidationError(msgImportShape)
 		}
-		if wire.Profile == nil {
+		if len(wire.Profile) == 0 || string(wire.Profile) == "null" {
 			return nil, repo.NewValidationError(msgImportShape)
 		}
 		var details model.Fields
