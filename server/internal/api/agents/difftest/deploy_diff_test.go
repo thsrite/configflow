@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/store"
@@ -94,9 +95,14 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	// Both servers hold the automatic IPv6 verification scheduler: activate is
+	// followed by rollback within milliseconds, and a 5 s round landing in that
+	// window on one side only wrote ipv6_verifications there (timing, seen
+	// under gate load). Enrollment itself is still compared at "stage".
+	t.Setenv("CONFIGFLOW_DIFF_HOLD_IPV6_SCHEDULER", "1")
 	py, stopPy := startPythonArgs(t, pyDir, "server/internal/api/agents/difftest/testdata/publish_app.py")
 	defer stopPy()
-	goBase, stopGo := startGo(t, goDir)
+	goBase, stopGo := startGoWith(t, goDir, nil, holdIPv6Scheduler)
 	defer stopGo()
 	pt, gt := login(t, py), login(t, goBase)
 	base := "/api/agents/a14-agent"
@@ -746,4 +752,15 @@ func TestPublishEasyTierCoreVersionsAgainstFlask(t *testing.T) {
 			}
 		})
 	}
+}
+
+// holdIPv6Scheduler replaces the IPv6 verification scheduler registered by the
+// Agent manager with a round that does nothing, before the loops start. The
+// next manager initialization registers the real scheduler again.
+func holdIPv6Scheduler() {
+	lifecycle.RegisterPeriodic(lifecycle.Periodic{
+		Name:     "ipv6-verification-scheduler",
+		Interval: func(context.Context) time.Duration { return time.Hour },
+		Round:    func(context.Context) error { return nil },
+	})
 }

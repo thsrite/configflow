@@ -256,6 +256,12 @@ func startGo(t *testing.T, dataDir string) (string, func()) {
 // startGoWithRequestRuntime can give this test's requests an independent clock
 // without advancing or replacing the production background-loop runtime.
 func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime) (string, func()) {
+	return startGoWith(t, dataDir, requestRuntime, nil)
+}
+
+// startGoWith runs beforeStart after the app is wired and the Agent manager
+// registered its loops, right before the background loops start.
+func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime, beforeStart func()) (string, func()) {
 	pinPythonAgentVersion(t)
 	t.Setenv("DATA_DIR", dataDir)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
@@ -286,6 +292,9 @@ func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lif
 	t.Cleanup(srv.Close)
 	// main starts the loops once listening and, on SIGTERM, stops the HTTP
 	// server before lifecycle.Stop runs the shutdown hooks.
+	if beforeStart != nil {
+		beforeStart()
+	}
 	lifecycle.Start(context.Background())
 	return srv.URL, func() {
 		srv.Close()
