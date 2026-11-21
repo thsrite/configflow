@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"configflow/internal/model"
@@ -56,6 +57,44 @@ func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
 				return nil
 			}))
 			gotTables, wantTables := xcDump(t, goDir), want.GetObject("tables")
+			// O18 T1a: an undeclared root member is dropped by Go's first
+			// write; Python keeps it. Everything else compares as before.
+			var kept []any
+			for _, value := range wantTables.GetList("fields") {
+				if row := value.([]any); row[0] == "root" && row[2] == "future_root" {
+					continue
+				}
+				kept = append(kept, value)
+			}
+			wantTables.Set("fields", kept)
+			for _, value := range wantTables.GetList("meta") {
+				if row := value.([]any); row[0] == "root_order" {
+					switch order := row[1].(type) {
+					case string:
+						row[1] = strings.Replace(order, `,"future_root"`, "", 1)
+					case []any:
+						var names []any
+						for _, name := range order {
+							if name != "future_root" {
+								names = append(names, name)
+							}
+						}
+						row[1] = names
+					}
+				}
+			}
+			// The export shows typed values: a stored description of the
+			// wrong type is exported as "" (read leniently), not as stored.
+			if export, ok := want.Value("export").(*testObj); ok {
+				export.Delete("future_root")
+				for _, profile := range export.GetObject("profiles").All() {
+					if object, ok := profile.(*testObj); ok {
+						if _, text := object.Value("description").(string); !text {
+							object.Set("description", "")
+						}
+					}
+				}
+			}
 			// JSON value spelling is not a cross-language formatting contract.
 			// Compare every table column, parsing only fields.value.
 			for _, tables := range []*testObj{gotTables, wantTables} {

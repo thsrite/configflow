@@ -85,6 +85,18 @@ func TestDeviceNotesBoundary(t *testing.T) {
 					var expected map[string]any
 					must(t, json.Unmarshal(scanner.Bytes(), &expected))
 					actual := run(t, op, config, name, request["rows"].(json.RawMessage))
+					// O18 T1a: the storage adapter reads stored notes of the
+					// wrong JSON type ([]) as empty notes (load warning), so a
+					// notes write stores a valid object where Python refused.
+					if op == "save" && config == `{"device_notes":[]}` {
+						if _, failed := expected["error"]; !failed {
+							t.Fatal("Python accepted the stored list; the exception is stale")
+						}
+						if _, failed := actual["error"]; failed {
+							t.Fatalf("stored list not read as empty notes: %v", actual)
+						}
+						break
+					}
 					if !reflect.DeepEqual(semantic(expected), semantic(actual)) {
 						t.Fatalf("%s", difference(expected, actual, ""))
 					}

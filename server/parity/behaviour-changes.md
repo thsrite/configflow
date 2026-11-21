@@ -2745,6 +2745,10 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   （例如 `description: 5`）以前照存，现在返回 400「description 类型不正确」。一个请求里有多处错误时，报错顺序可能和 Python 不同。
   `_revision` 只接受整数：Python 接受的 `true` 和超出 int64 的整数现在返回「配置修订号无效」；字符串 `"5"` 作为 `schema_version`
   与 Python 一致被拒（以前 Go 接受）。对象/列表成员给 `null` 视为类型不符。
+- **库里错类型的设备备注**：`device_notes` 存成列表时读作空备注（告警），保存设备备注/策略行会写入有效对象；Python 拒绝写入
+  「设备备注必须为对象，最多 2048 条。」。`null` 仍按 Python 拒绝（devicenotes/difftest、oxidns 测试已改期望）。
+- **整体损坏的系统设置**：`system_config` 不是对象时读作空设置并告警，但视为凭据损坏：MCP 和配置令牌校验拒绝访问（不当成「未设置令牌」），
+  启动时的令牌维护不改写它（`Repository.SystemSettingsDamaged`）。改写只发生在用户显式保存设置时。
 - **配置空间的旧版规则列表**：`rules/rule_sets` 不再按「未知成员」保存，而是声明为原始 JSON 成员，生成器行为不变。
 - **路由器规则缓存归属**：`rules.cacheSourceOwned` 读旧版 `rules/rule_sets` 的方式不变（改经 `Profile.LegacyRuleList`）。
 - 测试：`model.TestPlainDocumentStrictInputUnknownMembersAndOrder`、`repo.TestModelRowsUnknownMembersAndNullSwitch`、
