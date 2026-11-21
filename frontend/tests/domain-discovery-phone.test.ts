@@ -154,4 +154,31 @@ describe('domain discovery on phones', () => {
     expect(row.findAll('td')[0].text()).toContain('added.example.test')
     expect(row.get('button.domain-compact-action').text()).toContain('撤销')
   })
+
+  it('keeps damaged store alert expanded on phones with a 44px recovery action', async () => {
+    const damagedPayload = {
+      ...agents,
+      agents: [{
+        ...agents.agents[0],
+        status: 'no_data',
+        last_report: null,
+        mihomo_version: '',
+        store_state: 'damaged',
+        store_message: '域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。'
+      }]
+    }
+    const previousAdapter = api.defaults.adapter!
+    api.defaults.adapter = async config => {
+      if (config.url === '/domain-discovery/agents') return response(config, damagedPayload)
+      if (config.url === '/agents/collector/domain-discovery/clear') return response(config, { success: true })
+      return previousAdapter(config)
+    }
+    const wrapper = await render()
+    expect(wrapper.find('button[aria-controls="domain-discovery-configuration"]').exists()).toBe(false)
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('域名数据文件已损坏，上报已暂停。')
+    const recovery = alert.findAll('button').find(button => button.text().trim() === '清除并恢复')
+    expect(recovery).toBeTruthy()
+    expect(recovery!.classes()).toContain('max-sm:min-h-11')
+  })
 })

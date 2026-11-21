@@ -50,41 +50,82 @@
           <li
             v-for="agent in agents"
             :key="agent.id"
-            class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border bg-background/40 px-3 py-2.5 max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1"
+            class="flex flex-col gap-2 rounded-lg border px-3 py-2.5"
+            :class="isAgentDamaged(agent) ? 'border-destructive-accent/35 bg-background/50' : 'border-border bg-background/40'"
           >
-            <div class="min-w-0 flex-[1_1_160px] max-sm:col-start-1">
-              <p class="m-0 truncate text-[13px] font-medium text-foreground" :title="agent.name">{{ agent.name || agent.id }}</p>
-              <p class="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
-                <template v-if="!agent.supported">Agent {{ agent.version || '版本未知' }}，需要升级到 {{ minAgentVersion }}</template>
-                <template v-else-if="agent.last_report">
-                  {{ relativeTime(agent.last_report) }}上报<span v-if="agent.mihomo_version" class="font-mono"> · Mihomo {{ agent.mihomo_version }}</span>
-                  <span v-if="!agent.probe_supported"> · 升级到 {{ probeAgentVersion }} 后可主动探测</span>
-                </template>
-                <template v-else-if="agent.enabled">等待首次上报</template>
-                <template v-else>未开启</template>
-              </p>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1">
+              <div class="min-w-0 flex-[1_1_160px] max-sm:col-start-1">
+                <p class="m-0 truncate text-[13px] font-medium text-foreground" :title="agent.name">{{ agent.name || agent.id }}</p>
+                <p class="m-0 mt-0.5 text-[11.5px] text-muted-foreground">
+                  <template v-if="!agent.supported">Agent {{ agent.version || '版本未知' }}，需要升级到 {{ minAgentVersion }}</template>
+                  <template v-else-if="isAgentDamaged(agent)">
+                    <template v-if="agent.last_report">
+                      {{ relativeTime(agent.last_report) }}上报<span v-if="agent.mihomo_version" class="font-mono"> · Mihomo {{ agent.mihomo_version }}</span>
+                    </template>
+                    <template v-else>数据文件已损坏</template>
+                  </template>
+                  <template v-else-if="agent.last_report">
+                    {{ relativeTime(agent.last_report) }}上报<span v-if="agent.mihomo_version" class="font-mono"> · Mihomo {{ agent.mihomo_version }}</span>
+                    <span v-if="!agent.probe_supported"> · 升级到 {{ probeAgentVersion }} 后可主动探测</span>
+                  </template>
+                  <template v-else-if="agent.enabled">等待首次上报</template>
+                  <template v-else>未开启</template>
+                </p>
+              </div>
+              <StatusDot
+                v-if="isAgentDamaged(agent)"
+                class="max-sm:col-start-1"
+                tone="danger"
+                :label="agent.enabled ? '上报已暂停' : '数据已损坏'"
+              />
+              <StatusDot
+                v-else-if="agent.enabled"
+                class="max-sm:col-start-1"
+                :tone="statusTone(agent.status)"
+                :label="STATUS_LABELS[agent.status] || agent.status"
+              />
+              <div class="flex items-center gap-1 max-sm:col-start-2 max-sm:row-span-2 max-sm:row-start-1">
+                <Button
+                  v-if="agent.last_report && !isAgentDamaged(agent)"
+                  variant="ghost"
+                  size="icon"
+                  class="size-8"
+                  :aria-label="`清除 ${agent.name} 已采集的数据`"
+                  title="清除已采集的数据"
+                  @click="clearAgent(agent)"
+                >
+                  <Eraser class="size-3.5" />
+                </Button>
+                <label class="flex cursor-pointer items-center justify-center max-md:min-h-11 max-md:min-w-11">
+                  <Switch
+                    :model-value="agent.enabled"
+                    :disabled="togglingAgent === agent.id || (!agent.supported && !agent.enabled)"
+                    :aria-label="`${agent.enabled ? '关闭' : '开启'} ${agent.name} 的域名发现`"
+                    @update:model-value="value => toggleAgent(agent, Boolean(value))"
+                  />
+                </label>
+              </div>
             </div>
-            <StatusDot v-if="agent.enabled" class="max-sm:col-start-1" :tone="statusTone(agent.status)" :label="STATUS_LABELS[agent.status] || agent.status" />
-            <div class="flex items-center gap-1 max-sm:col-start-2 max-sm:row-span-2 max-sm:row-start-1">
+            <div
+              v-if="isAgentDamaged(agent)"
+              role="alert"
+              class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border border-destructive-accent/30 bg-destructive-soft/60 px-3 py-2 text-[12px] leading-relaxed max-sm:flex-col max-sm:items-start"
+            >
+              <div class="flex min-w-0 flex-1 items-start gap-2">
+                <TriangleAlert class="mt-0.5 size-4 shrink-0 text-destructive-accent" aria-hidden="true" />
+                <p class="m-0 min-w-0 text-foreground">{{ agent.store_message || DEFAULT_DAMAGED_MESSAGE }}</p>
+              </div>
               <Button
-                v-if="agent.last_report"
-                variant="ghost"
-                size="icon"
-                class="size-8"
-                :aria-label="`清除 ${agent.name} 已采集的数据`"
-                title="清除已采集的数据"
+                variant="outline"
+                size="sm"
+                class="shrink-0 border-destructive-accent/40 text-destructive-accent hover:bg-destructive-soft max-sm:ml-6 max-sm:min-h-11"
+                :disabled="clearingAgent === agent.id"
                 @click="clearAgent(agent)"
               >
-                <Eraser class="size-3.5" />
+                <Loader2 v-if="clearingAgent === agent.id" class="size-3.5 animate-spin" />
+                <Eraser v-else class="size-3.5" />
+                清除并恢复
               </Button>
-              <label class="flex cursor-pointer items-center justify-center max-md:min-h-11 max-md:min-w-11">
-                <Switch
-                  :model-value="agent.enabled"
-                  :disabled="togglingAgent === agent.id || (!agent.supported && !agent.enabled)"
-                  :aria-label="`${agent.enabled ? '关闭' : '开启'} ${agent.name} 的域名发现`"
-                  @update:model-value="value => toggleAgent(agent, Boolean(value))"
-                />
-              </label>
             </div>
           </li>
         </ul>
@@ -530,6 +571,7 @@ import { stripTrailingPunctuation } from '@/lib/text'
 type Target = 'direct' | 'proxy'
 type View = 'uncovered' | 'failing' | 'all' | 'ignored' | 'history' | 'region'
 type Tag = 'uncovered' | 'failing' | 'pending' | 'ignored'
+type StoreState = 'ok' | 'damaged'
 
 interface AgentInfo {
   id: string
@@ -541,6 +583,8 @@ interface AgentInfo {
   supported: boolean
   probe_supported: boolean
   version: string
+  store_state?: StoreState
+  store_message?: string
 }
 
 interface PathStats {
@@ -691,6 +735,7 @@ const VERDICT_LABELS: Record<string, string> = {
   incomplete: '探测不完整'
 }
 const PROBE_POLL_MS = 1500
+const DEFAULT_DAMAGED_MESSAGE = '域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。'
 const FAIL_KIND_LABELS: Record<string, string> = {
   timeout: '超时', reset: '重置', refused: '拒绝', eof: '断开', dns: '解析', other: '其他'
 }
@@ -739,6 +784,8 @@ const expanded = ref(new Set<string>())
 const applying = ref(false)
 const savingSettings = ref(false)
 const togglingAgent = ref('')
+const clearingAgent = ref('')
+const isAgentDamaged = (agent: AgentInfo) => agent.store_state === 'damaged'
 const initDialogVisible = ref(false)
 const initProxyPolicy = ref('')
 const initializing = ref(false)
@@ -805,7 +852,7 @@ const configurationOpen = ref(false)
 const configurationReady = computed(() => {
   const current = settings.value
   if (!agentsLoaded.value || agentsError.value || settingsError.value || !current || !enabledAgents.value.length) return false
-  if (agents.value.some(agent => !agent.supported || !agent.probe_supported)) return false
+  if (agents.value.some(agent => !agent.supported || !agent.probe_supported || isAgentDamaged(agent))) return false
   if (enabledAgents.value.some(agent => agent.status !== 'running' || !agent.last_report)) return false
   if (TARGETS.some(target => !current[target]?.active || current[target]?.problem)) return false
   return Boolean(current.probe_path)
@@ -956,7 +1003,7 @@ const loadDomains = (): Promise<void> => {
   return request
 }
 
-const waitingForReport = () => agents.value.some(agent => agent.enabled && agent.supported && !agent.last_report)
+const waitingForReport = () => agents.value.some(agent => agent.enabled && agent.supported && !agent.last_report && !isAgentDamaged(agent))
 
 const scheduleAgentPoll = () => {
   if (agentTimer) clearTimeout(agentTimer)
@@ -1190,13 +1237,27 @@ const toggleAgent = async (agent: AgentInfo, enabled: boolean) => {
 }
 
 const clearAgent = async (agent: AgentInfo) => {
-  if (!(await confirmDanger(`清除 ${agent.name} 已采集的域名数据？此操作不可撤销。`))) return
+  const damaged = isAgentDamaged(agent)
+  const label = agent.name || agent.id
+  const confirmed = damaged
+    ? await confirmDanger(
+        `清除 ${label} 损坏的域名数据文件并恢复采集？该设备已采集的历史域名数据将丢失，此操作不可撤销；清除后下次上报即可重新采集。`,
+        { title: '清除损坏的域名数据', confirmText: '清除并恢复' }
+      )
+    : await confirmDanger(`清除 ${label} 已采集的域名数据？此操作不可撤销。`)
+  if (!confirmed) return
+  clearingAgent.value = agent.id
   try {
     await api.post(`/agents/${agent.id}/domain-discovery/clear`)
-    notify.success('已清除')
+    notify.success(
+      damaged ? '已清除损坏的数据文件' : '已清除',
+      damaged ? '下次周期上报即可恢复采集。' : undefined
+    )
     await Promise.all([refreshDomainsAfterChange(), loadAgents()])
   } catch (error) {
     notify.error(errorMessage(error, '清除失败'))
+  } finally {
+    clearingAgent.value = ''
   }
 }
 
