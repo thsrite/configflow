@@ -27,6 +27,10 @@ import (
 //   - Everything reachable through pointers, Map values and nested slices is
 //     shared with every other reader and must not be modified. Copy the nested
 //     struct before changing it, or use CloneAgent.
+//   - The same holds for values taken out of a borrowed record: a Deployment
+//     from Deployments (or LatestDeployment, ReadDeploymentModel) is a struct
+//     copy whose Events, PreparedContent and HAPublication are still shared;
+//     SetJSON/Clear on that copy are copy-on-write, in-place edits are not.
 //   - A returned slice is the caller's own: its elements may be reassigned.
 //   - Records may be retained; they never change after they are returned.
 //   - A record handed to a write transaction, or retained and changed in depth,

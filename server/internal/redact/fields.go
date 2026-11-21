@@ -160,10 +160,26 @@ func fieldValue(value any, key string) any {
 	case map[string]any:
 		return v[key]
 	case json.RawMessage:
-		parsed, err := decodePublic(v)
-		if err == nil {
-			return fieldValue(parsed, key)
+		// One member is read: decode the top level only.
+		data := bytes.TrimSpace(v)
+		if len(data) == 0 || data[0] != '{' || !json.Valid(data) {
+			return nil
 		}
+		parsed := &orderedFields{}
+		d := json.NewDecoder(bytes.NewReader(data))
+		_, _ = d.Token()
+		for d.More() {
+			name, err := d.Token()
+			if err != nil {
+				return nil
+			}
+			var raw json.RawMessage
+			if err := d.Decode(&raw); err != nil {
+				return nil
+			}
+			parsed.Set(name.(string), raw)
+		}
+		return fieldValue(parsed, key)
 	}
 	return nil
 }
