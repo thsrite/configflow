@@ -2661,3 +2661,16 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   修法：锁释放前对 `serviceOperationHandoff` 做一次 atomic 写，拿到锁后做一次 atomic 读，进程内的锁交接因此有 happens-before 关系；跨进程仍由 flock 排序。
 - `forwardFilterStatus` 的检查 goroutine 在启动后才读取可替换的 `forwardFilterInspect`；检查挂起时它比调用方活得久，会在测试恢复该变量后才读到
   （`TestForwardFilterIsBoundedWhenInspectionHangs`）。修法：启动 goroutine 前先取出函数值。生产中这两个变量不会被改写，无行为变化。
+
+## 实验网 L3-D2 — HA 成员「重新恢复」后配对发布能收敛（修 Python 缺陷）
+
+- 现象（Python 相同）：配对发布 `rollback_failed` 后在 Agent 页点「重新恢复」，设备恢复成功，但成员任务存成
+  `rolling_back`；配对日志的恢复检查只对 `rollback_failed` 的成员向 Agent 查询，面板 GET 又走配对汇总，于是任务
+  永远停在 `rolling_back`/`rollback_failed`，这台之后的发布一直 409「这台 Agent 还有未结束的发布…」。
+- Go：配对日志处于 `rollback_failed` 时，GET 和后台推进对每个未终结（`rollback_failed`、`rolling_back`、`unknown`
+  或 pending）的成员都调用 `ReadDeploymentModel` 向 Agent 查询并记录；全部终结后配对日志变为
+  `failed`「设备回滚恢复已确认；原主备发布未完成，可重新发布」（`msgRecovered`，原有文案），之后可再发布。配对日志已是 `succeeded`/`failed` 而成员任务仍未终结时，
+  配对 GET 同样先向 Agent 查询再汇总。恢复仍失败 → 成员记录 `rollback_failed`，可再次「重新恢复」；Agent
+  离线 → 走原有的 pending 路径，不改存储，保持当前状态。
+- 测试：`dnsha.TestRecoveredMemberSettlesPairDeployment`（恢复成功 / 仍失败 / Agent 离线三种）、
+  `TestSettledJournalPollsReopenedMember`。

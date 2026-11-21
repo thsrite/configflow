@@ -404,13 +404,16 @@ func (s *Service) recovery(ctx context.Context, j *model.HAJournal) error {
 		if a != nil {
 			d, _ = a.Deployments.Get(did)
 		}
-		if d.Status == "rollback_failed" {
+		// A member recovered from the Agents page is stored as rolling_back
+		// (or unknown) until the Agent is asked again; ask for every member
+		// that is not settled yet so the recovery outcome reaches the journal.
+		if !recoverySettled(d) {
 			d, e = s.poll(ctx, id, did)
 			if e != nil {
 				return e
 			}
 		}
-		if (d.Status != "succeeded" && d.Status != "failed" && d.Status != "rolled_back") || pending(d) {
+		if !recoverySettled(d) {
 			resolved = false
 		}
 	}
@@ -419,6 +422,13 @@ func (s *Service) recovery(ctx context.Context, j *model.HAJournal) error {
 		j.Message = msgRecovered
 	}
 	return s.save(ctx, j)
+}
+
+// recoverySettled reports whether a member of a rollback_failed pair has
+// reached a final local state: rollback_failed, rolling_back, unknown and
+// pending replies still need the Agent's answer.
+func recoverySettled(d model.Deployment) bool {
+	return (d.Status == "succeeded" || d.Status == "failed" || d.Status == "rolled_back") && !pending(d)
 }
 func skipped(j *model.HAJournal) bool {
 	return j == nil || j.Status == "succeeded" || j.Status == "failed" || j.Status == "ready"

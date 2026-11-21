@@ -219,6 +219,16 @@ func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool
 			ID string `json:"deployment_id"`
 		}{did}), &d)
 	}
+	// A settled journal no longer polls its members, but a member recovered
+	// from the Agents page afterwards is still open locally; ask its Agent so
+	// the recovery outcome is recorded and later publications are not refused.
+	if ok && j != nil && (j.Status == "succeeded" || j.Status == "failed") && !recoverySettled(d) {
+		r, e := s.poll(ctx, id, did)
+		if e != nil {
+			return nil, e
+		}
+		d = r
+	}
 	return aggregate(&d, summary(j)), nil
 }
 
