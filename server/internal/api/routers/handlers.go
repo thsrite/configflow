@@ -3,6 +3,7 @@
 package routers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -77,11 +78,20 @@ func stringValue(raw json.RawMessage) (string, bool) {
 	return *s, true
 }
 func selected(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
+	return selectedFrom(c, (*core.ManagementService).Records)
+}
+
+// selectedConfig is selected with the resolved configuration in the view.
+func selectedConfig(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
+	return selectedFrom(c, (*core.ManagementService).ConfigRecords)
+}
+
+func selectedFrom(c *httpx.Ctx, read func(*core.ManagementService, context.Context, string) (*core.ConfigView, error)) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
 	s, err := service(c)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	cfg, err := s.Records(c.Context(), c.ProfileID)
+	cfg, err := read(s, c.Context(), c.ProfileID)
 	if err != nil {
 		return s, nil, nil, err
 	}
@@ -278,7 +288,7 @@ func stamp(c *httpx.Ctx) string {
 	return lifecycle.ClockFrom(c.Context()).Now().Local().Format("2006-01-02T15:04:05")
 }
 func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+	s, cfg, r, err := selectedConfig(c)
 	if err != nil {
 		return nil, err
 	}

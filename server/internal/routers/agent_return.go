@@ -27,6 +27,8 @@ type AgentSource interface {
 type ManagerAgentSource struct{ Manager *agents.Manager }
 
 // Agent reads the registry/liveness view once and decodes its native fields.
+// The view is a shallow copy of the borrowed record: read only below the top
+// level, like the record itself.
 func (s ManagerAgentSource) Agent(ctx context.Context, id string) (*GatewayAgent, error) {
 	if id == "" {
 		return nil, nil
@@ -35,19 +37,41 @@ func (s ManagerAgentSource) Agent(ctx context.Context, id string) (*GatewayAgent
 	if err != nil || record == nil {
 		return nil, err
 	}
-	b, err := json.Marshal(record)
+	dns, err := dnsAgentOf(record)
 	if err != nil {
 		return nil, err
 	}
-	var view model.Agent
+	view := *record
+	return &GatewayAgent{&view, record, dns}, nil
+}
+
+// dnsAgentMembers are the members DNSAgent decodes.
+var dnsAgentMembers = []string{"id", "host", "service_type", "status", "oxidns_ha", "oxidns_ha_state", "oxidns_ha_publication"}
+
+// dnsAgentOf decodes the DNS projection from only the members it reads, with
+// the same strict decoder (and errors) as decoding the encoded record.
+func dnsAgentOf(record *model.Agent) (*DNSAgent, error) {
+	var members model.Fields
+	for _, name := range dnsAgentMembers {
+		raw, present, err := record.MemberJSON(name)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			if err = members.Set(name, raw); err != nil {
+				return nil, err
+			}
+		}
+	}
+	data, err := members.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
 	var dns DNSAgent
-	if err = json.Unmarshal(b, &view); err != nil {
+	if err = jsondecode.Unmarshal(data, &dns); err != nil {
 		return nil, err
 	}
-	if err = jsondecode.Unmarshal(b, &dns); err != nil {
-		return nil, err
-	}
-	return &GatewayAgent{&view, record, &dns}, nil
+	return &dns, nil
 }
 
 // ReturnAgent constructs the A01 client for the same inspected Agent record.

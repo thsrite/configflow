@@ -28,21 +28,43 @@ var managementLogger = logx.Get("backend.routes.routers")
 // ConfigView is one generation of a profile as router routes read it.
 type ConfigView struct {
 	// Config is the resolved configuration with the OxiDNS Agent projection,
-	// borrowed from the repository snapshot: read only.
+	// borrowed from the repository snapshot (read only). Only ConfigRecords
+	// sets it.
 	Config *model.Config
 	// Routers are the profile's router records, decoded with the R5 fallback.
 	Routers []*Router
 	// Credentials are the credential values redact.CollectCredentials finds
-	// in the encoded Config; responses built from this view hide them.
+	// in the encoded resolved configuration; responses built from this view
+	// hide them.
 	Credentials redact.Secrets
 }
 
-// Encoded returns the encoded configuration for consumers that read JSON.
-func (v *ConfigView) Encoded() (json.RawMessage, error) { return json.Marshal(v.Config) }
+// Encoded returns the encoded configuration of a ConfigRecords view.
+func (v *ConfigView) Encoded() (json.RawMessage, error) {
+	if v.Config == nil {
+		return nil, errors.New("router config view without configuration")
+	}
+	return json.Marshal(v.Config)
+}
 
-// Records loads the resolved configuration, its credential values and its
-// R5-decoded router records, all from one generation.
+// Records loads a profile's R5-decoded router records and the credential
+// values of its resolved configuration, from one generation. The repository
+// remembers the values per generation, so this resolves nothing when cached.
 func (s *ManagementService) Records(ctx context.Context, profile string) (*ConfigView, error) {
+	stored, credentials, err := redact.ProfileWithCredentials(ctx, s.Repo, profile)
+	if err != nil {
+		return nil, err
+	}
+	routers, err := storedRouters(&stored.Routers)
+	if err != nil {
+		return nil, err
+	}
+	return &ConfigView{Routers: routers, Credentials: credentials}, nil
+}
+
+// ConfigRecords is Records with the resolved configuration of the same
+// generation, for readers of the whole configuration.
+func (s *ManagementService) ConfigRecords(ctx context.Context, profile string) (*ConfigView, error) {
 	config, credentials, err := redact.ConfigWithCredentials(ctx, s.Repo, profile)
 	if err != nil {
 		return nil, err

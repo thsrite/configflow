@@ -30,7 +30,7 @@ func workspaceRequest(raw json.RawMessage) (core.WorkspaceRequest, bool) {
 	return core.WorkspaceRequest{Revision: revision, NamesRevision: names, Router: values["router"], Policies: values["policies"], BaseURL: base}, true
 }
 func (h *handler) workspace(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+	s, cfg, r, err := selectedConfig(c)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *co
 		if err = s.SavePolicyWorkspace(c.Context(), c.ProfileID, r, body); err != nil {
 			return failure(c, cfg, err, 0, false)
 		}
-		_, cfg, r, err = selected(c)
+		_, cfg, r, err = selectedConfig(c)
 		if err != nil {
 			return nil, err
 		}

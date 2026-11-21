@@ -76,6 +76,16 @@ func TestO10R6ConfigCredentialsMatchEncodedView(t *testing.T) {
 				if data, err := json.Marshal(view); err != nil || string(data) != encoded {
 					t.Fatalf("ConfigWithCredentials view differs from ConfigWithOxiDNSAgents: %v", err)
 				}
+				profile, values, err := ProfileWithCredentials(ctx, r, "default")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := NewSecrets(seeds, values); !got.Equal(expected) {
+					t.Fatalf("ProfileWithCredentials = %v, want %v", got, expected)
+				}
+				if len(profile.Routers.Items) != len(items) {
+					t.Fatalf("profile routers = %d, want %d", len(profile.Routers.Items), len(items))
+				}
 			}
 			if !slices.Contains(expected, tt.password) {
 				t.Fatalf("expected set %v does not follow the commit", expected)
@@ -119,6 +129,10 @@ func TestO10R6ConfigCredentialsMatchEncodedView(t *testing.T) {
 	t.Run("unknown profile", func(t *testing.T) {
 		if _, err := ConfigCredentials(ctx, r, "missing", seeds); err == nil {
 			t.Fatal("unknown profile returned no error")
+		}
+		_, _, want := ConfigWithCredentials(ctx, r, "missing")
+		if _, _, err := ProfileWithCredentials(ctx, r, "missing"); err == nil || want == nil || err.Error() != want.Error() {
+			t.Fatalf("ProfileWithCredentials error %v, want %v", err, want)
 		}
 	})
 }

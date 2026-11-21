@@ -11,7 +11,7 @@ import (
 )
 
 // TestO10RouterDigestFollowsOxiDNSProjection checks that router check receipts
-// (built from Records) and the notification snapshot digest the same view, that
+// (built from ConfigRecords) and the notification snapshot digest the same view, that
 // the digest ignores Agent deployment history, and that it still changes when an
 // OxiDNS Agent member read by policy entries changes.
 func TestO10RouterDigestFollowsOxiDNSProjection(t *testing.T) {
@@ -31,7 +31,7 @@ func TestO10RouterDigestFollowsOxiDNSProjection(t *testing.T) {
 	routerJSON := json.RawMessage(`{"id":"r1","type":"routeros"}`)
 	digest := func() (management, snapshot string) {
 		t.Helper()
-		records, err := (&ManagementService{Repo: r}).Records(ctx, "default")
+		records, err := (&ManagementService{Repo: r}).ConfigRecords(ctx, "default")
 		if err != nil {
 			t.Fatal(err)
 		}

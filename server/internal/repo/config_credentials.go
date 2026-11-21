@@ -47,6 +47,27 @@ func (r *Repository) ConfigWithCredentials(ctx context.Context, profileID string
 	return result, values, err
 }
 
+// ProfileWithCredentials is ConfigCredentials together with the stored
+// profile of the same generation, borrowed like Profile. A cached generation
+// resolves nothing; errors are those of ConfigWithCredentials.
+func (r *Repository) ProfileWithCredentials(ctx context.Context, profileID string, collect func(json.RawMessage) []string) (result *model.Profile, values []string, err error) {
+	err = r.borrow(ctx, func(document *model.Document, shared bool) error {
+		if err := ValidateProfileID(profileID); err != nil {
+			return err
+		}
+		stored := profileByKey(document, profileID)
+		if stored == nil {
+			return notFound(profileID)
+		}
+		if values, err = r.configCredentials(document, shared, profileID, nil, collect); err != nil {
+			return err
+		}
+		result, err = lend(stored, shared)
+		return err
+	})
+	return result, values, err
+}
+
 // configCredentials looks up or collects the values for one profile of
 // document; config is the already resolved view, or nil.
 func (r *Repository) configCredentials(document *model.Document, shared bool, profileID string, config *model.Config, collect func(json.RawMessage) []string) ([]string, error) {

@@ -77,10 +77,12 @@ func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return workspaceRevision(p, r)
+	return workspaceRevision(oxidns.Revision(p.Settings()), r)
 }
 
-func workspaceRevision(p *oxidns.Profile, r *Router) (string, error) {
+// workspaceRevision digests the router record with the OxiDNS settings
+// revision oxidnsRevision.
+func workspaceRevision(oxidnsRevision string, r *Router) (string, error) {
 	raw, err := releaseRouterRecord(r)
 	if err != nil {
 		return "", err
@@ -93,7 +95,7 @@ func workspaceRevision(p *oxidns.Profile, r *Router) (string, error) {
 	data, err := json.Marshal(struct {
 		Router map[string]json.RawMessage `json:"router"`
 		Oxidns string                     `json:"oxidns"`
-	}{fields, oxidns.Revision(p.Settings())})
+	}{fields, oxidnsRevision})
 	if err != nil {
 		return "", err
 	}
@@ -111,7 +113,8 @@ func ReadWorkspace(config *model.Config, r *Router, profile, name, defaultProfil
 	if err != nil {
 		return Workspace{}, err
 	}
-	revision, err := workspaceRevision(p, r)
+	settingsRevision := oxidns.Revision(p.Settings())
+	revision, err := workspaceRevision(settingsRevision, r)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -119,7 +122,7 @@ func ReadWorkspace(config *model.Config, r *Router, profile, name, defaultProfil
 	if err != nil {
 		return Workspace{}, err
 	}
-	out := Workspace{ProfileID: profile, ProfileName: name, Revision: revision, NamesRevision: names, Router: r.View(), Sources: WorkspaceSources{policies, oxidns.ToJSON(policies.Policies)}, SourceAgents: []WorkspacePeer{}, Gateways: []WorkspaceGateway{}, RuleSets: []WorkspaceRule{}, OxidnsRevision: oxidns.Revision(p.Settings())}
+	out := Workspace{ProfileID: profile, ProfileName: name, Revision: revision, NamesRevision: names, Router: r.View(), Sources: WorkspaceSources{policies, oxidns.ToJSON(policies.Policies)}, SourceAgents: []WorkspacePeer{}, Gateways: []WorkspaceGateway{}, RuleSets: []WorkspaceRule{}, OxidnsRevision: settingsRevision}
 	for _, a := range agents {
 		n := orText(a.Name, a.ID)
 		if a.ServiceType == "oxidns" && orText(a.ProfileID, defaultProfile) == profile {

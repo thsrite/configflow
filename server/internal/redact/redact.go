@@ -124,6 +124,16 @@ func ConfigWithCredentials(ctx context.Context, repository *repo.Repository, pro
 	return config, CollectCredentials(nil, values), nil
 }
 
+// ProfileWithCredentials is ConfigWithCredentials with the borrowed stored
+// profile in place of the resolved view, for readers of profile members only.
+func ProfileWithCredentials(ctx context.Context, repository *repo.Repository, profileID string) (*model.Profile, Secrets, error) {
+	profile, values, err := repository.ProfileWithCredentials(ctx, profileID, collectedCredentials)
+	if err != nil {
+		return nil, nil, err
+	}
+	return profile, CollectCredentials(nil, values), nil
+}
+
 // collectedCredentials is the repository's collect callback; the discovered
 // values do not depend on seeds, so they can be remembered on their own.
 func collectedCredentials(data json.RawMessage) []string { return CollectCredentials(data, nil) }
