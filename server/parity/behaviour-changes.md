@@ -2572,7 +2572,10 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   （原来 Agent 下载路由 500）。
 - Range 同时带命中的 If-None-Match：304；If-Range 用弱 ETag：不匹配，返回完整 200；If-Match 不匹配：412；空文件上的 Range：
   忽略，200。
-- 304 不再带 `Accept-Ranges`；POST 下载也带 `Accept-Ranges: bytes`。
+- 304 不再带 `Accept-Ranges`。
+- 只有 GET/HEAD 的 200 文件响应交给 `ServeContent`（batch-24 复核补充）：POST 路由返回的文件（生成配置下载）照旧
+  整份返回，不带 `Accept-Ranges`，忽略 Range / If-None-Match / If-Match（否则 `If-None-Match: *` 或不匹配的 If-Match
+  会让 POST 得到 412、Range 得到 206；RFC 9110 只为 GET 定义 Range）。与 Python 原行为一致。
 
 已在测试服务器用真实 curl/wget 确认：安装/升级脚本的 `curl -fsSL --retry 2 -o` 与 `wget -q -T 60 -O`（Go Agent 升级同为普通 GET）
 完整下载；`curl -C -`/`wget -c` 续传 206 且文件一致；`curl -z`/`wget -N` 得到 304。Flask 下载差分中带 Range/条件头的 33 行改为

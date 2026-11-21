@@ -112,7 +112,10 @@ func TestPublicPathRules(t *testing.T) {
 		"/api/profiles/p1/mosdns/rule-proxy", "/api/profiles/p1/subscriptions/s/proxies",
 		"/api/profiles/p1/rule-library/content/r"}
 	private := []string{"/api/config/-bad/mihomo", "/api/config/alpha/mihomo/x", "/api/configx", "/api/auth/statusx",
-		"/api/profiles/p1/subscriptions/s/proxies/x", "/mcpx", "/api/config/alpha/mihomo\n", "/api/config/alpha/mihomo\n\n"}
+		"/api/profiles/p1/subscriptions/s/proxies/x", "/mcpx", "/api/config/alpha/mihomo\n", "/api/config/alpha/mihomo\n\n",
+		"/api/config/alpha/mihomo/", "/API/config/alpha/mihomo", "/api/Config/alpha/mihomo", "/api//config/alpha/mihomo",
+		"/api/config/alpha/loon/a/b", "/api/config/alpha/loon/../../settings", "/api/config/../mihomo",
+		"/api/profiles/p1/rules/local/x/y", "/api/profiles/p1/aggregations/a/provider/"}
 	for _, path := range public {
 		if !auth.IsPublicPath(path) {
 			t.Errorf("%q should be public", path)
@@ -121,6 +124,37 @@ func TestPublicPathRules(t *testing.T) {
 	for _, path := range private {
 		if auth.IsPublicPath(path) {
 			t.Errorf("%q should not be public", path)
+		}
+	}
+}
+
+// O18 C15a review: spellings that reach a private route through a public
+// prefix or pattern (dot segments, encoded slashes and newlines, doubled
+// slashes, case, trailing slash) still need a login. The router never
+// resolves ".." and redirects "//" before dispatch, so none of them may
+// answer the private handler without a token.
+func TestGateHasNoPublicPathBypass(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(func(r *httpx.Router) {
+		r.GET("/api/private", "test.private", func(*httpx.Ctx) (*httpx.Response, error) {
+			return httpx.JSON(map[string]any{"leaked": true}), nil
+		})
+		r.GET("/api/private/<path:rest>", "test.private_rest", func(*httpx.Ctx) (*httpx.Response, error) {
+			return httpx.JSON(map[string]any{"leaked": true}), nil
+		})
+	})})
+	srv.Get("/api/private").WantStatus(401)
+	for _, path := range []string{
+		"/static/../api/private", "/assets/../api/private", "/mcp/../api/private", "/static/%2E%2E/api/private",
+		"/api/rules/local/..%2F..%2Fprivate", "/api/config/alpha/loon/..%2F..%2F..%2Fapi%2Fprivate",
+		"/static//api/private", "/api//private", "/API/private", "/api/private/", "/api/private%0A",
+		"/api/private/x/../../../static/x", "/api/private/%2E%2E/%2E%2E/static/x",
+	} {
+		res := srv.Get(path)
+		if strings.Contains(string(res.Body), "leaked") {
+			t.Errorf("%s: private handler answered without login (%d)", path, res.Status)
+		}
+		if res.Status == 200 {
+			t.Errorf("%s: status 200 without login", path)
 		}
 	}
 }

@@ -43,7 +43,10 @@ func writeResponse(w http.ResponseWriter, req *http.Request, r *Response) {
 
 // writeFile sends a file response with http.ServeContent, which handles
 // HEAD, Range (206/416), If-Range, If-None-Match and If-Modified-Since
-// against the ETag and Last-Modified headers already set by File.
+// against the ETag and Last-Modified headers already set by File. Only GET
+// and HEAD 200 answers go through it: a file returned by a POST route (a
+// generated download) or with another status is sent whole, without range
+// or precondition handling (RFC 9110 defines Range for GET only).
 func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 	f := r.file
 	h := w.Header()
@@ -70,7 +73,7 @@ func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 	} else {
 		content = bytes.NewReader(f.data)
 	}
-	if r.Status != http.StatusOK {
+	if r.Status != http.StatusOK || (req.Method != http.MethodGet && req.Method != http.MethodHead) {
 		h.Set("Content-Length", strconv.FormatInt(f.size, 10))
 		w.WriteHeader(r.Status)
 		if req.Method != "HEAD" {
