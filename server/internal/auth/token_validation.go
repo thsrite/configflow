@@ -17,29 +17,32 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 	if c.IsInternalCall() {
 		return ValidateResult{Valid: true}, nil
 	}
+	ctx := lifecycle.Detach(c.Context())
+	if err := ctx.Err(); err != nil {
+		return ValidateResult{}, err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return ValidateResult{}, err
+	}
 	var settings *model.SystemConfig
-	damagedSettings := false
 	if config != nil {
 		settings = &config.SystemConfig
 	} else {
-		ctx := lifecycle.Detach(c.Context())
-		if err := ctx.Err(); err != nil {
-			return ValidateResult{}, err
-		}
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return ValidateResult{}, err
-		}
 		// Only the settings record: System would copy every Agent's history.
 		settings, err = r.SystemConfig(ctx)
 		if err != nil {
 			return ValidateResult{}, err
 		}
-		// Stored settings that are not an object read as empty settings
-		// (O18 T1a); their token is damaged, not unconfigured.
-		if damagedSettings, err = r.SystemSettingsDamaged(ctx); err != nil {
-			return ValidateResult{}, err
-		}
+	}
+	// Stored settings that are not an object read as empty settings (O18
+	// T1a); their token is damaged, not unconfigured. Also checked when the
+	// caller passes its own snapshot (live configs, Linux gateway providers):
+	// damaged settings are only repaired by an explicit settings save, so a
+	// generation read in between holds settings a user chose.
+	damagedSettings, err := r.SystemSettingsDamaged(ctx)
+	if err != nil {
+		return ValidateResult{}, err
 	}
 	configToken, malformedToken, err := storedConfigToken(settings)
 	if err != nil {
