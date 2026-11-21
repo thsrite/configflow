@@ -85,7 +85,7 @@ snapshot: Go idle CPU 34.9% vs Python 0.9%, idle RSS 289 vs 117 MB, /api/notific
   encoder reuse, T11 per-route allocation guard from tools/o10perf, then T9 GC/memory policy; then re-run O10.
 
 **Other in flight:**
-- M16 unknown core version (Opus f2f8fb58, branch go-fix-m16, 8a283871f): non-empty unrecognized Mihomo version (e.g.
+- M16 unknown core version — DONE (Opus f2f8fb58 finished), branch go-fix-m16 @8a283871f, based on go 448c52dcf (needs `git rebase go` onto batch-20 before batching; mosdns pyref source metadata re-recorded, entries unchanged; its own gate run: compare PASS, race PASS after pyref refresh). Batch it with the Agent-image branch: non-empty unrecognized Mihomo version (e.g.
   `alpha-100ff73`) = unknown like empty, throttled warning, no 400. Lab-confirmed bug.
 - Agent image pairing (Opus 99c38a83, branch go-agent-image-sync, 2 commits + 18 dirty): panel embeds paired
   config-flow-agent:<version> tag (version.AgentImage), CI docker-agent.yml publishes version tags; new entrypoint is
