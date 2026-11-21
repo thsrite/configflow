@@ -69,6 +69,15 @@ relaunching Gemini in a worktree kill its old `agy` process (`ps ax | grep agy`,
 From an agent session `paseo run --cwd` is ignored — use `--workspace <wks_id>` (from get_agent_status) to continue in a
 worktree, or `--new-workspace worktree --worktree-mode checkout-branch --branch <b>` for a new one.
 
+**Update 2026-11-21 (new coordinator, solarsear account; new Paseo agents use the default ~/.claude account):**
+maintainer: "要严查，这性能也太差了". Hard O10 targets (same host + snapshot, Go <= Python): idle CPU avg <= 1% (floor
+<= 0.5%), idle RSS <= 117 MB, every measured route median latency <= Python, read-route allocation in the MB range.
+Every O10 task hands back o10perf before/after numbers against these. Root-cause audit dispatched: Opus dfbabde4,
+branch go-perf-rootcause (from go-perf-t1 + cherry-picked T2) → server/parity/o10-rootcause.md: can wave A+B reach the
+targets; if not, structural change (immutable snapshot / copy-on-write repo, version-keyed caches). Wave B waits for it.
+T1 rulings: router/client redaction keeps Agent credentials (collected once per request, narrow read); one-off stale
+router-check reminders after upgrade accepted (behaviour-changes + o12 notes). T1 sent back for that fix.
+
 **BLOCKER for the switch = performance (O10, server/parity/o10-performance.md on go-audit-o10 / go-perf-t2):** prod
 snapshot: Go idle CPU 34.9% vs Python 0.9%, idle RSS 289 vs 117 MB, /api/notifications ×60, /api/agents ×26, generation
 ×10–15. Cause: whole-data copies. Do not switch until wave A+B are merged and O10 is re-measured below Python.
