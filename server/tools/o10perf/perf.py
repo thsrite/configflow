@@ -310,6 +310,8 @@ def main():
     parser.add_argument('--iterations', type=int, default=10)
     parser.add_argument('--servers', default='go,python')
     parser.add_argument('--idle-only', action='store_true')
+    parser.add_argument('--idle-profile-start', type=int, default=120,
+                        help='Go only: seconds into the idle window at which the idle CPU profile starts')
     parser.add_argument('--only', default='', help='comma list of label substrings to keep (load phase)')
     parser.add_argument('--route-profile-seconds', type=int, default=0,
                         help='Go only: per route label, loop requests for N s under a CPU profile + allocs diff')
@@ -339,7 +341,7 @@ def main():
             if 'go' in servers and idle_seconds >= 600:
                 go = servers['go']
                 profile_thread = threading.Thread(target=go.fetch, args=(
-                    f'/debug/pprof/profile?seconds={int(idle_seconds - 300)}', out / 'go-idle-cpu.pprof'), daemon=True)
+                    f'/debug/pprof/profile?seconds={int(idle_seconds - args.idle_profile_start - 180)}', out / 'go-idle-cpu.pprof'), daemon=True)
             start = time.monotonic()
             started_profile = False
             while time.monotonic() - start < idle_seconds:
@@ -347,7 +349,7 @@ def main():
                     sample = server.sample()
                     sample['t'] = round(time.monotonic() - start, 1)
                     series[kind].append(sample)
-                if profile_thread and not started_profile and time.monotonic() - start >= 120:
+                if profile_thread and not started_profile and time.monotonic() - start >= args.idle_profile_start:
                     servers['go'].fetch('/debug/pprof/allocs', out / 'go-idle-start-allocs.pprof')
                     profile_thread.start()
                     started_profile = True
