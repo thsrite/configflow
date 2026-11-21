@@ -16,7 +16,9 @@ import (
 //   - the returned top-level value (the *model.Config, *model.Profile,
 //     *model.Shared, … and the Config's resource slices) is the caller's own
 //     shallow copy: assigning its fields, Set/SetJSON/Clear on it and
-//     appending to its top-level slices are safe;
+//     appending to its top-level slices are safe. Appending never writes into
+//     the snapshot because the model decoder allocates every slice with
+//     exactly its length (TestO10R2SnapshotSlicesHaveNoSpareCapacity);
 //   - everything reachable through it (slice elements of the stored records,
 //     pointer targets, nested records) belongs to the snapshot and must never
 //     be modified in place. Clone a slice (slices.Clone) or record (the

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,8 +22,9 @@ func r2BorrowRepo(t *testing.T) *Repository {
 	r := newRepo(t)
 	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
 		for member, value := range map[string]string{
-			"subscriptions":             `[{"id": "s", "name": "Sub", "url": "https://sub.example.com/a"}]`,
-			"nodes":                     `[{"id": "n", "name": "Node", "subscription_id": "s"}]`,
+			"subscriptions": `[{"id": "s", "name": "Sub", "url": "https://sub.example.com/a"}]`,
+			"nodes": `[{"id": "n", "name": "Node", "subscription_id": "s"},
+				{"id": "n2", "name": "Spare node A"}, {"id": "n3", "name": "Spare node B"}]`,
 			"subscription_aggregations": `[{"id": "a", "name": "Agg", "nodes": ["n"]}]`,
 			"rule_library":              `[{"id": "r", "name": "Rule", "url": "https://rules.example.com/r.list"}]`,
 		} {
@@ -33,13 +35,18 @@ func r2BorrowRepo(t *testing.T) *Repository {
 		return nil
 	}))
 	_, _, err := r.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{
-		"proxy_groups": [{"id": "g", "name": "Group", "type": "select", "manual_nodes": ["n"], "aggregations": ["a"]}],
+		"proxy_groups": [{"id": "g", "name": "Group", "type": "select", "manual_nodes": ["n"], "aggregations": ["a"]},
+			{"id": "g2", "name": "Spare group A", "type": "select", "manual_nodes": ["n2"]},
+			{"id": "g3", "name": "Spare group B", "type": "select", "manual_nodes": ["n3"]}],
 		"rule_configs": [{"id": "rule", "itemType": "ruleset", "library_rule_id": "r", "policy": "g"},
 			{"id": "final", "itemType": "rule", "rule_type": "MATCH", "policy": "DIRECT"}],
 		"routers": {"items": [{"id": "rt", "name": "Router", "type": "routeros", "host": "192.0.2.1"}]}}`), nil)
 	noError(t, err)
 	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
 		system.SystemConfig.ServerDomain = "https://panel.example.com"
+		defaultID := "default"
+		system.SystemConfig.DefaultProfileID = &defaultID
+		system.SystemConfig.NodeTestDNS = []string{"192.0.2.53", "198.51.100.53", "192.0.2.54"}
 		path := "/backup"
 		system.Backup.WebDAVPath = &path
 		return nil
@@ -227,11 +234,13 @@ func TestO10R2ViewGuardCatchesModifiedBorrowedValues(t *testing.T) {
 			must(r.Shared(bg))(t).Nodes[0].Name = "Changed"
 		}, true},
 		{"SystemConfig pointer", func(t *testing.T, r *Repository) {
-			settings := must(r.SystemConfig(bg))(t)
-			if settings.DefaultProfileID == nil {
-				t.Skip("no stored default profile id")
-			}
-			*settings.DefaultProfileID = "changed"
+			*must(r.SystemConfig(bg))(t).DefaultProfileID = "changed"
+		}, true},
+		{"SystemConfig slice element", func(t *testing.T, r *Repository) {
+			must(r.SystemConfig(bg))(t).NodeTestDNS[0] = "192.0.2.99"
+		}, true},
+		{"Config settings slice element", func(t *testing.T, r *Repository) {
+			must(r.Config(bg, "default", nil))(t).SystemConfig.NodeTestDNS[0] = "192.0.2.99"
 		}, true},
 		{"Backup pointer", func(t *testing.T, r *Repository) {
 			*must(r.Backup(bg))(t).WebDAVPath = "/changed"
@@ -280,4 +289,108 @@ func TestO10R2ValidationDoesNotModifyTheDocument(t *testing.T) {
 	if after := mustMarshalJSON(t, document); !bytes.Equal(after, before) {
 		t.Fatalf("validation changed the document:\n%s\n%s", before, after)
 	}
+}
+
+// r2SliceFields returns the slices of *value reachable without following a
+// pointer, slice element or map: its exported slice fields and those of its
+// exported struct-valued fields, recursively.
+func r2SliceFields(value any) []reflect.Value {
+	var out []reflect.Value
+	var walk func(reflect.Value)
+	walk = func(v reflect.Value) {
+		for i := range v.NumField() {
+			if !v.Type().Field(i).IsExported() {
+				continue
+			}
+			switch field := v.Field(i); field.Kind() {
+			case reflect.Slice:
+				out = append(out, field)
+			case reflect.Struct:
+				walk(field)
+			}
+		}
+	}
+	walk(reflect.ValueOf(value).Elem())
+	return out
+}
+
+// TestO10R2SnapshotSlicesHaveNoSpareCapacity pins the invariant that makes
+// appending to a lent record's slices safe: the model decoder allocates every
+// slice of the snapshot (also inside struct-valued members, e.g.
+// Profile.Routers.Items, and inside slice elements) with capacity equal to its
+// length, so an append by one borrower always reallocates and never writes a
+// backing array another borrower reads. If a decoder change breaks this, lend
+// must clip the slices it hands out.
+func TestO10R2SnapshotSlicesHaveNoSpareCapacity(t *testing.T) {
+	r := r2BorrowRepo(t)
+	document := must(r.readEntry(bg, false))(t).Model
+	stored := profileByKey(document, "default")
+	values := map[string]any{
+		"Shared":       &document.Shared,
+		"Profile":      stored,
+		"SystemConfig": &document.System.SystemConfig,
+		"Backup":       &document.System.Backup,
+		"Aggregation":  &document.Shared.Aggregations[0],
+		"Router":       &stored.Routers.Items[0],
+	}
+	checked := 0
+	for name, value := range values {
+		for _, field := range r2SliceFields(value) {
+			if field.Len() > 0 {
+				checked++
+			}
+			if field.Cap() != field.Len() {
+				t.Errorf("%s: a snapshot slice has spare capacity (len %d, cap %d)", name, field.Len(), field.Cap())
+			}
+		}
+	}
+	for _, group := range stored.ProxyGroups {
+		if group.ManualNodes != nil && cap(*group.ManualNodes) != len(*group.ManualNodes) {
+			t.Errorf("group %s: manual_nodes has spare capacity", group.ID)
+		}
+	}
+	if checked < 6 {
+		t.Fatalf("only %d non-empty snapshot slices checked; the fixture does not exercise the invariant", checked)
+	}
+}
+
+// TestO10R2ConcurrentAppendsToLentSlices runs borrowers that append to the
+// slices of their shallow copies concurrently (the -race run detects a
+// shared backing array) and checks that each sees only its own element.
+func TestO10R2ConcurrentAppendsToLentSlices(t *testing.T) {
+	r := r2BorrowRepo(t)
+	var wg sync.WaitGroup
+	for worker := range 4 {
+		wg.Go(func() {
+			id := fmt.Sprintf("worker-%d", worker)
+			for range 50 {
+				shared, err := r.Shared(bg)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				nodes := append(shared.Nodes, model.Node{ID: id})
+				profile, err := r.Profile(bg, "default")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				groups := append(profile.ProxyGroups, model.ProxyGroup{ID: id})
+				config, err := r.Config(bg, "default", nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				dns := append(config.SystemConfig.NodeTestDNS, id)
+				library := append(config.RuleLibrary, model.RuleLibraryItem{ID: id})
+				members := append(config.Aggregations[0].Nodes, id)
+				if nodes[len(nodes)-1].ID != id || groups[len(groups)-1].ID != id || dns[len(dns)-1] != id ||
+					library[len(library)-1].ID != id || members[len(members)-1] != id {
+					t.Errorf("%s: another borrower's append is visible", id)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
