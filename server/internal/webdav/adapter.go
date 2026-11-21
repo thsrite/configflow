@@ -152,6 +152,9 @@ func registerHook(worker *Worker) {
 				logger.Warning(msgScheduleFailed)
 			}
 		}()
+		if autoBackupOff(current) {
+			return
+		}
 		before, err := json.Marshal(previous)
 		if err != nil {
 			logger.Warning(msgScheduleFailed)
@@ -171,6 +174,14 @@ func registerHook(worker *Worker) {
 			worker.Schedule(repositorySource{r})
 		}
 	}}})
+}
+
+// autoBackupOff reports a committed generation whose automatic backup switch is
+// stored as false. Like Python, such a commit schedules nothing, so the two
+// complete documents are not encoded and compared. A missing, null or
+// mistyped switch keeps the comparison; the worker reads the settings again.
+func autoBackupOff(current *model.Document) bool {
+	return current != nil && current.System.Backup.AutoBackup != nil && !*current.System.Backup.AutoBackup
 }
 
 // WaitIdle waits for automatic backups and their receipt/notification callbacks.
