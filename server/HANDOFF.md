@@ -74,7 +74,10 @@ maintainer: "要严查，这性能也太差了". Hard O10 targets (same host + s
 <= 0.5%), idle RSS <= 117 MB, every measured route median latency <= Python, read-route allocation in the MB range.
 Every O10 task hands back o10perf before/after numbers against these. Maintainer 2026-11-21 later: "go 性能应该比 python 好才对 … 肯定不正常" → switch acceptance = Go
 BETTER than Python on every idle metric and every measured route (any route slower than Python blocks the switch);
-measured on the PVE CT. Benchmark build checked: normal release build (no -race, same as Dockerfile apart from -s -w). Root-cause audit dispatched: Opus dfbabde4,
+measured on the PVE CT. Raised again (maintainer: "go 的性能不应该只比 python 好这么点吧"): every measured
+route median <= 1/3 of Python (or <= 5 ms where Python itself is < 15 ms), read routes allocating <= 5 MB/request
+(generators <= 30 MB), idle CPU avg <= 0.3% (1/3 of Python), idle RSS <= 80 MB, after-load RSS <= 100 MB.
+Benchmark build checked: normal release build (no -race, same as Dockerfile apart from -s -w). Root-cause audit dispatched: Opus dfbabde4,
 branch go-perf-rootcause (from go-perf-t1 + cherry-picked T2) → server/parity/o10-rootcause.md: can wave A+B reach the
 targets; if not, structural change (immutable snapshot / copy-on-write repo, version-keyed caches). Wave B waits for it.
 Root cause DONE (dfbabde4, go-perf-rootcause 3b05c9bb8, server/parity/o10-rootcause.md): wave A+B CANNOT reach the
