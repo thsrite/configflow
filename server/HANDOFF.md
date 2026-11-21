@@ -54,6 +54,65 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | 19338c67-c336-40c7-98a9-b4532a66af68 | C19/C20 Surge/Loon adversarial review | wks_0d8cd06808daac1f, branch `go-review-c19c20` |
 | 3112fbeb-e43a-4d16-ad1a-bc88670b1099 | C37 domain discovery port | wks_0dcc037efd16c502, branch `go-port-c37` |
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
+## >>> CURRENT STATE — 2026-11-21 ~15:40 (coordinator 711a60b5 → next coordinator; READ THIS FIRST) <<<
+
+**go = 0e46c07a0 (pushed).** N8-11 DONE. Merged since 11-20: batch-17..20 (W3–W9, test migration, O9 round 2 + low fixes,
+404 for missing Agent, M18 damaged-store UI, #40 Go release image + autoupdate + CI), docs O12 release notes, O13
+completeness (0 gaps), O14 switch plan, O15 ARCHITECTURE.md, all with maintainer rulings recorded inside those docs.
+
+**Models / quota (2026-11-21):** Codex quota out until **2026-11-23 21:18**; Gemini (antigravity) out ~97 h (until ~11-25).
+Maintainer: Codex/Gemini work goes to **Opus** meanwhile (claude/claude-opus-5-5, thinking medium, bypassPermissions).
+Switch execution back to Codex when it returns. Opus sometimes hits the 5-h limit (re-prompt after reset) or a
+false-positive safeguard error (start a fresh session in the same workspace with a short neutral brief).
+**Paseo restarted 3× on 11-21**: agents go "closed"; re-prompt each with "会话中断，请恢复…先看工作区". Before
+relaunching Gemini in a worktree kill its old `agy` process (`ps ax | grep agy`, match `--add-dir <worktree>`).
+From an agent session `paseo run --cwd` is ignored — use `--workspace <wks_id>` (from get_agent_status) to continue in a
+worktree, or `--new-workspace worktree --worktree-mode checkout-branch --branch <b>` for a new one.
+
+**BLOCKER for the switch = performance (O10, server/parity/o10-performance.md on go-audit-o10 / go-perf-t2):** prod
+snapshot: Go idle CPU 34.9% vs Python 0.9%, idle RSS 289 vs 117 MB, /api/notifications ×60, /api/agents ×26, generation
+×10–15. Cause: whole-data copies. Do not switch until wave A+B are merged and O10 is re-measured below Python.
+- Wave A (all based on go-audit-o10 3987d26e0, which itself has a small product fix SystemConfig/Backup narrow readers):
+  * T2 model.Marshal single validation — DONE, branch go-perf-t2 (4 commits, 601ab1025): allocations halved
+    (86→43 GB), /api/agents 681→319 MB, rule-sync 61→7.8 MB. Opus-authored; needs a fresh Opus HR review.
+  * T1/T6/T10 repo narrow reads — Opus 3542fcfa (took over from Gemini), branch go-perf-t1 (59d240aab, 2 commits).
+  * T3/T5 notifications — Opus b4740fcd (fresh session after safeguard error), branch go-perf-t3 (17 dirty files).
+  * When all three hand back: one fresh Opus review of T1+T2+T3 (HR: repo/model core), stack as batch-21 on go,
+    full gate (core on one host, preflight+compare on the other; drivers in ~/.cache/*-compare-run/driver.sh on .64),
+    note T2 changes model/*.go → oxidns pyref source metadata must be refreshed (entries unchanged) after stacking.
+- Wave B (dispatch after wave A merges): T4 agents list/detail typed content source (no per-Agent JSON round trip),
+  T7 "encode whole record to read one field" sweep (rules.rulePolicy, convert.validateRuleIdentities first), T8 YAML
+  encoder reuse, T11 per-route allocation guard from tools/o10perf, then T9 GC/memory policy; then re-run O10.
+
+**Other in flight:**
+- M16 unknown core version (Opus f2f8fb58, branch go-fix-m16, 8a283871f): non-empty unrecognized Mihomo version (e.g.
+  `alpha-100ff73`) = unknown like empty, throttled warning, no 400. Lab-confirmed bug.
+- Agent image pairing (Opus 99c38a83, branch go-agent-image-sync, 2 commits + 18 dirty): panel embeds paired
+  config-flow-agent:<version> tag (version.AgentImage), CI docker-agent.yml publishes version tags; new entrypoint is
+  backward compatible with the Python panel (lab-verified). Now doing: bump Agent version to 1.9.0-go, re-shoot HA
+  wizard screenshot. Deferred to after switch: "Docker Agent 更新步骤" dialog default tag. O14 precondition P13: Agent
+  image must ship before/with the Go panel (L2 found old latest image → every new Docker Agent 403).
+- Lab O16 (Opus 7c0c4d68, branch go-audit-lab, 4 commits): L2 P1–P11 PASS, D1 fixed (recovery accepted → 202), D4 =
+  the Agent image issue above, M16 measured (P12). Then L3 → L4 → L5 (CHR 7.25.1 download from download.mikrotik.com
+  approved with SHA256 check). L6 = 24 h soak with prod snapshot copy (maintainer approved D9) + switch rehearsal;
+  plan: start the soak early and run it in parallel (8 h + forced daily tasks is the fallback if it ends up last).
+  Lab branch commits (product fixes like D1) must go through a batch gate before merging.
+- After wave B: O17 code-size audit, final O10 re-measure, L6, then the maintainer picks the switch window (D1).
+
+**Maintainer rulings 2026-11-21/22 (also in the docs):** autoupdate image kept and rebuilds the Go server (+ CI publishes
+`<version>-autoupdate`; floating `autoupdate`/`latest` move only after the observation period; Go merge to main deletes
+backend/ Python in the same commit); O12 M01–M19 and O14 D1–D14 decided (see o12-release-notes.md / o14-switch-plan.md
+tails): notably D3 new major version + prerelease tags, latest untouched ~7 days; D4 panel image amd64+arm64 only;
+D5 keep auto-sync ON at first start; D8 TZ Asia/Shanghai; M18 UI before switch (done); M07 HA force-disable after switch;
+M08 all of L2–L6 before switching.
+Coordinator rulings today: missing Agent → 404 (done); O9 r2 lows L1/L2/L3/L4/L6 fixed, L5 unchanged; L3 node control
+chars: name/type/server/port/URI strict, multi-line params (PEM) allowed.
+
+**Running agents to re-route on takeover (send each one MCP prompt with notifyOnFinish:true):** 7c0c4d68 (lab),
+3542fcfa (T1), b4740fcd (T3), f2f8fb58 (M16), 99c38a83 (Agent image). Gate recipe: see "Gate recipe used today" in the
+2026-11-19 section below; preflight script /tmp/preflight.sh on both hosts logs to ~/.cache/rt-tmp/preflight-<dir>.log;
+never pin everything to .32 — check /proc/loadavg first.
+
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
 **Update 2026-11-22 (evening): O10 found Go SLOWER than Python** (prod snapshot, .32): idle CPU 34.9% vs 0.9%, idle RSS
