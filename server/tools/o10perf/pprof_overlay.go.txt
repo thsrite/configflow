@@ -1,0 +1,33 @@
+// O10 measurement only. run.sh adds this file to package main with
+// `go build -overlay`; it is never part of the source tree or a product build.
+
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	_ "net/http/pprof" // registers /debug/pprof on http.DefaultServeMux
+	"os"
+	"runtime"
+)
+
+func init() {
+	address := os.Getenv("O10_PPROF_ADDR")
+	if address == "" {
+		return
+	}
+	http.HandleFunc("/debug/o10/memstats", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("gc") == "1" {
+			runtime.GC()
+		}
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_alloc": m.TotalAlloc, "mallocs": m.Mallocs, "heap_alloc": m.HeapAlloc,
+			"heap_inuse": m.HeapInuse, "heap_idle": m.HeapIdle, "heap_released": m.HeapReleased,
+			"heap_sys": m.HeapSys, "stack_inuse": m.StackInuse, "sys": m.Sys, "num_gc": m.NumGC,
+			"goroutines": runtime.NumGoroutine(), "pause_total_ns": m.PauseTotalNs,
+		})
+	})
+	go func() { _ = http.ListenAndServe(address, nil) }()
+}
