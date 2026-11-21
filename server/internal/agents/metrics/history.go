@@ -49,9 +49,6 @@ import (
 	"configflow/internal/taskstatus"
 )
 
-// fromISOFormat is datetime.fromisoformat (naive texts read as UTC).
-var fromISOFormat = taskstatus.FromISOFormat
-
 var isValidUTF8 = utf8.Valid
 
 var historyLogger = logx.Get("backend.agents.metrics_history")
@@ -270,20 +267,12 @@ func (h *History) prune(agentID string) []point {
 
 // ---- 启动加载与迁移 ---------------------------------------------------------
 
-// parseNaiveISO is datetime.fromisoformat(value) for a naive text; aware
-// texts give aware=true (Python then fails to compare them with the naive
-// cutoff: TypeError, and the line is skipped).
+// parseNaiveISO parses a stored timestamp; naive texts are read as UTC, and
+// aware texts give aware=true (they cannot be compared with the naive cutoff,
+// so the line is skipped).
 func parseNaiveISO(value string) (t time.Time, aware bool, ok bool) {
-	parsed, ok := fromISOFormat(value)
-	if !ok {
-		return time.Time{}, false, false
-	}
-	_, withOffset := fromISOFormat(value + "+00:00")
-	_, dateOnly := fromISOFormat(value + "T00:00:00+00:00")
-	if !withOffset && !dateOnly {
-		return parsed, true, true
-	}
-	return parsed, false, true
+	parsed, naive, ok := taskstatus.ParseISO(value)
+	return parsed, !naive, ok
 }
 
 // blankSpace is str.isspace() for one character.

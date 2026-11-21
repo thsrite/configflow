@@ -371,7 +371,7 @@ func replayRecordedRows(t *testing.T, rows []map[string]any, template string) {
 			counts["skipped: monkeypatched collaborator"]++
 			continue
 		}
-		now, ok := taskstatus.FromISOFormat(mapStr(row, "now"))
+		now, _, ok := taskstatus.ParseISO(mapStr(row, "now"))
 		if !ok {
 			t.Fatalf("row %d: now %q", i, mapStr(row, "now"))
 		}

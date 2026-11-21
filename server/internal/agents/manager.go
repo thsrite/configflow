@@ -90,7 +90,7 @@ func FreshHeartbeat(text string, now *time.Time) bool {
 		if now != nil {
 			current = *now
 		}
-		wall, _ := taskstatus.FromISOFormat(text) // the naive fields, read as UTC
+		wall, _, _ := taskstatus.ParseISO(text) // the naive fields, read as UTC
 		elapsed = wallMicros(current.In(localZone)) - wallMicros(wall)
 	} else {
 		if now != nil {

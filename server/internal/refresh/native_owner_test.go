@@ -144,7 +144,7 @@ func TestTypedCacheEvidenceNeverClaimsNumericURLOrTimestamp(t *testing.T) {
 			t.Fatal("R5 fallback accepted ownership", raw)
 		}
 	}
-	if !fresh("20261101", 86400) {
+	if !fresh("2026-11-01", 86400) {
 		t.Fatal("numeric timestamp negative control is not otherwise parseable")
 	}
 	for _, raw := range []string{`{"text":5,"fetched_at":"2026-11-01T00:00:00Z"}`, `{"text":"proxies: []","fetched_at":20261101}`} {

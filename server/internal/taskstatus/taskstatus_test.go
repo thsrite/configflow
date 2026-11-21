@@ -1,7 +1,6 @@
 package taskstatus
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"os"
@@ -192,38 +191,42 @@ func TestParseTime(t *testing.T) {
 	}
 }
 
-func TestFromISOFormatMatchesPython(t *testing.T) {
-	file, err := os.Open("testdata/corpus.jsonl")
-	if err != nil {
-		t.Fatal(err)
+func TestParseISO(t *testing.T) {
+	plus8 := time.FixedZone("", 8*3600)
+	tests := []struct {
+		in    string
+		want  time.Time
+		naive bool
+	}{
+		{"2026-11-14T12:34:56", time.Date(2026, 11, 14, 12, 34, 56, 0, time.UTC), true},
+		{"2026-11-14T12:34:56.123456", time.Date(2026, 11, 14, 12, 34, 56, 123456000, time.UTC), true},
+		{"2026-11-14T12:34:56.123456Z", time.Date(2026, 11, 14, 12, 34, 56, 123456000, time.UTC), false},
+		{"2026-11-14T12:34:56Z", time.Date(2026, 11, 14, 12, 34, 56, 0, time.UTC), false},
+		{"2026-11-14T12:34:56.5+08:00", time.Date(2026, 11, 14, 12, 34, 56, 500000000, plus8), false},
+		{"2026-11-14T12:34:56+00:00", time.Date(2026, 11, 14, 12, 34, 56, 0, time.UTC), false},
+		{"2026-11-14T12:34:56-05:30", time.Date(2026, 11, 14, 12, 34, 56, 0, time.FixedZone("", -19800)), false},
+		{"2026-11-14T12:34:56.123456789Z", time.Date(2026, 11, 14, 12, 34, 56, 123456789, time.UTC), false},
+		{"2026-11-14T12:34:56+08:05:43", time.Date(2026, 11, 14, 12, 34, 56, 0, time.FixedZone("", 8*3600+5*60+43)), false},
+		{"2026-11-14", time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC), true},
 	}
-	defer file.Close()
-	accepted, rejected := 0, 0
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		var line struct {
-			In string `json:"in"`
-			Us *int64 `json:"us"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
-			t.Fatal(err)
-		}
-		got, ok := ParseTimestamp(line.In)
-		switch {
-		case line.Us == nil && ok:
-			t.Errorf("%q: Python rejects it, Go gave %v", line.In, got)
-		case line.Us != nil && !ok:
-			t.Errorf("%q: Python gives %d µs, Go rejects it", line.In, *line.Us)
-		case line.Us != nil && got.UnixMicro() != *line.Us:
-			t.Errorf("%q: got %d µs, Python %d", line.In, got.UnixMicro(), *line.Us)
-		case line.Us == nil:
-			rejected++
-		default:
-			accepted++
-		}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, naive, ok := ParseISO(tt.in)
+			if !ok || !got.Equal(tt.want) || naive != tt.naive {
+				t.Fatalf("got %v naive=%v ok=%v, want %v naive=%v", got, naive, ok, tt.want, tt.naive)
+			}
+			_, gotOffset := got.Zone()
+			_, wantOffset := tt.want.Zone()
+			if gotOffset != wantOffset || (wantOffset == 0 && got.Location() != time.UTC) {
+				t.Fatalf("zone %v, want %v", got.Location(), tt.want.Location())
+			}
+		})
 	}
-	t.Logf("identical to Python: %d accepted, %d rejected", accepted, rejected)
-	if accepted < 100 || rejected < 100 {
-		t.Fatalf("corpus too one-sided: %d/%d", accepted, rejected)
+	for _, bad := range []string{"", "garbage", "2026-11-14T12:34", "2026-11-14 12:34:56", "20261114T123456Z",
+		"2026-W46-5", "2026-11-31T00:00:00", "2026-11-14T24:00:00", "2026-11-14T12:34:56+24:00",
+		"2026-11-14T12:34:56ZZ", "2026-11-14T12:34:56Z\n", "2026-11-14T12:34:56 +08:00"} {
+		if _, _, ok := ParseISO(bad); ok {
+			t.Errorf("%q parsed", bad)
+		}
 	}
 }

@@ -18,7 +18,7 @@ func ISOTimestamp(value string) (float64, bool) {
 		return 0, false
 	}
 	if naive {
-		wall, _ := taskstatus.FromISOFormat(value)
+		wall, _, _ := taskstatus.ParseISO(value)
 		if !localTimestampRange(wall, localZone) {
 			return 0, false
 		}

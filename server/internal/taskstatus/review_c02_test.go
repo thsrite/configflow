@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/taskstatus/isoformtest"
 	"configflow/internal/testjson"
 )
 
@@ -128,28 +129,31 @@ func TestReviewRecordCountersLikePython(t *testing.T) {
 
 // Regression (review C02, reported by the C15 port): parse_time keeps the
 // parsed UTC offset (Python's aware datetime keeps its tzinfo), naive and
-// zero offsets are UTC.
+// zero offsets are UTC. Rows outside the stored grammar are skipped.
 func TestReviewParseTimeKeepsOffset(t *testing.T) {
 	_, times := loadReview(t)
+	checked := 0
 	for _, row := range times {
+		if !isoformtest.Stored(row.In) {
+			continue
+		}
+		checked++
 		got, ok := ParseTimestamp(row.In)
 		if !ok {
 			t.Errorf("%q: not parsed", row.In)
 			continue
 		}
-		name, offset := got.Zone()
-		if int(row.Offset) != offset || name != row.TZName {
-			t.Errorf("%q: zone %s %d, want %s %v", row.In, name, offset, row.TZName, row.Offset)
+		if _, offset := got.Zone(); int(row.Offset) != offset {
+			t.Errorf("%q: offset %d, want %v", row.In, offset, row.Offset)
 		}
-		iso := got.Format("2006-01-02T15:04:05")
-		// A sub-second offset cannot be a time.Location offset (accepted
-		// difference): the instant and the name are right, the wall clock is
-		// a fraction of a second off.
-		if row.Offset == float64(int(row.Offset)) && !strings.HasPrefix(row.ISO, iso) {
+		if row.Offset == 0 && got.Location() != time.UTC {
+			t.Errorf("%q: zero offset in %v, want UTC", row.In, got.Location())
+		}
+		if iso := got.Format("2006-01-02T15:04:05"); !strings.HasPrefix(row.ISO, iso) {
 			t.Errorf("%q: wall clock %s, want %s", row.In, iso, row.ISO)
 		}
-		if instant, err := time.Parse("2006-01-02T15:04:05.999999-07:00", row.ISO); err == nil && !instant.Equal(got) {
-			t.Errorf("%q: instant %s, want %s", row.In, got, row.ISO)
-		}
+	}
+	if checked < 6 {
+		t.Fatalf("only %d review rows in the stored grammar", checked)
 	}
 }

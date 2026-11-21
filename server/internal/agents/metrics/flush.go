@@ -166,22 +166,10 @@ func SetFlushInterval(ctx context.Context, seconds int64) error {
 // IsRunning is is_running().
 func IsRunning() bool { return running.Load() }
 
-// parseTimeKeepingOffset is task_status.parse_time keeping the parsed
-// offset (Python returns base + interval in base's zone).
+// parseTimeKeepingOffset reads a receipt time keeping its offset, so the
+// next due time is shown in the zone of the last run.
 func parseTimeKeepingOffset(value string) (time.Time, bool) {
-	t, ok := taskstatus.ParseTimestamp(value)
-	if !ok {
-		return t, false
-	}
-	text := strings.ReplaceAll(value, "Z", "+00:00")
-	// The offset begins at the last '+' or '-' after the date part.
-	if index := strings.LastIndexAny(text, "+-"); index > 10 {
-		if wall, ok := taskstatus.FromISOFormat(text[:index]); ok {
-			offset := int(wall.Sub(t) / time.Second)
-			return t.In(time.FixedZone("", offset)), true
-		}
-	}
-	return t, true
+	return taskstatus.ParseTimestamp(value)
 }
 
 // NextFlushAt is next_run_at(entry, interval): the due time of the next

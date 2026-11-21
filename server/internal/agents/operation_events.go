@@ -6,7 +6,6 @@ package agents
 import (
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -40,7 +39,7 @@ func NormalizeEventTime(text string) (string, bool) {
 	if utf8.RuneCountInString(text) > 64 {
 		return "", false
 	}
-	moment, naive, ok := fromISO(strings.ReplaceAll(text, "Z", "+00:00"))
+	moment, naive, ok := fromISO(text)
 	if !ok || naive {
 		return "", false
 	}

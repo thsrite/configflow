@@ -37,13 +37,11 @@ func utcNowZ() string   { return strings.TrimSuffix(utcNowISO(), "+00:00") + "Z"
 // fromISO uses the shared accepted ISO grammar. Naive registry timestamps are
 // local wall times; aware values retain their instant and offset.
 func fromISO(value string) (moment time.Time, naive bool, ok bool) {
-	parsed, ok := taskstatus.FromISOFormat(value)
+	parsed, naive, ok := taskstatus.ParseISO(value)
 	if !ok {
 		return time.Time{}, false, false
 	}
-	_, offsetAppended := taskstatus.FromISOFormat(value + "+00:00")
-	_, dateOnly := taskstatus.FromISOFormat(value + "T00:00:00+00:00")
-	if !offsetAppended && !dateOnly {
+	if !naive {
 		return parsed, false, true
 	}
 	return resolveLocalWall(parsed, localZone), true, true

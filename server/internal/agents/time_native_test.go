@@ -55,7 +55,7 @@ print(json.dumps([[zone,text,datetime.datetime.fromisoformat(text).replace(tzinf
 		if err != nil {
 			t.Fatal(err)
 		}
-		wall, valid := taskstatus.FromISOFormat(text)
+		wall, _, valid := taskstatus.ParseISO(text)
 		if !valid {
 			t.Fatal("invalid fixture", text)
 		}

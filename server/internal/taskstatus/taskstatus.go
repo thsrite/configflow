@@ -15,7 +15,6 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -65,10 +64,8 @@ func (s *Store) nowISO() string { return s.now().UTC().Format("2006-01-02T15:04:
 
 // ParseTimestamp reads an ISO timestamp, treating naive timestamps as UTC.
 func ParseTimestamp(text string) (time.Time, bool) {
-	if text == "" {
-		return time.Time{}, false
-	}
-	return FromISOFormat(strings.ReplaceAll(text, "Z", "+00:00"))
+	t, _, ok := ParseISO(text)
+	return t, ok
 }
 
 func (s *Store) path() string { return filepath.Join(s.DataDir, Filename) }

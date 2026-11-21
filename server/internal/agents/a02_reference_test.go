@@ -20,6 +20,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
+	"configflow/internal/taskstatus/isoformtest"
 	"configflow/internal/testjson"
 )
 
@@ -132,6 +133,9 @@ func TestReferenceEventTime(t *testing.T) {
 			continue
 		}
 		text, isStr := c.Value.(string)
+		if isStr && c.Want != nil && !isoformtest.Stored(text) {
+			continue // a CPython-only ISO spelling Python accepted (no longer chased)
+		}
 		var got string
 		var ok bool
 		if isStr {
@@ -202,6 +206,13 @@ func TestReferenceDNSReportFields(t *testing.T) {
 		}
 		if err := json.Unmarshal(raw, &c); err != nil {
 			t.Fatal(err)
+		}
+		var stamp, kept struct {
+			CheckedAt *string `json:"dns_checked_at"`
+		}
+		_ = json.Unmarshal(c.Want, &kept)
+		if json.Unmarshal(c.Payload, &stamp) == nil && stamp.CheckedAt != nil && kept.CheckedAt != nil && !isoformtest.Stored(*stamp.CheckedAt) {
+			continue // a CPython-only ISO spelling (no longer chased)
 		}
 		var dep model.Deployment
 		var report DNSReport

@@ -2515,3 +2515,14 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
 - 只有存储 id 与映射键不一致时两者才不同。这种文档过不了校验（`validateStored` 对每个配置空间要求
   `profile.ID == Key()`，否则 `msgProfileIDMismatch`），所以已提交的快照里不存在；`repo` 包外也没有对
   `Profile`/`Config` 的结果调用 `Key()`（遍历 `document.Profiles` 的调用方不受影响）。路由、JSON、存储均无变化。
+
+## O18 T5 — 存储时间戳改用 `time.Parse`（删除 CPython `fromisoformat` 移植）
+
+`taskstatus.ParseISO` 只读 ConfigFlow 实际写出的时间戳写法：`YYYY-MM-DD`、`YYYY-MM-DDTHH:MM:SS`（可带小数秒），
+以及带 `Z` / `±HH:MM` / `±HH:MM:SS` 时区的同样写法；时区偏移满一天的拒绝（同 Python）。生产快照（2026-11-16，DATA_DIR 全部
+JSON/JSONL/SQLite 文本）里出现的 7 种写法全部覆盖（带/不带微秒 × 无时区/`Z`/`+HH:MM`，加纯日期）；Go Agent 上报用
+`RFC3339`/`RFC3339Nano`，也在其中。不再接受 CPython 3.11 `fromisoformat` 额外接受的周日期（`2026-W46-5`）、基本格式
+（`20261114T120000`）、空格或任意字符分隔、只到时或分（`T12`、`T12:34`）、亚秒偏移等：ConfigFlow 从不写这些，
+只可能来自手改数据；遇到时按「时间无效」处理（与原来对坏时间戳的处理相同）。解析出的时区不再带 Python
+`tzname()` 名称（`UTC+08:00`），只保留偏移；所有输出只用偏移，API 无变化。对照测试中这些写法的行改为跳过
+（`isoformtest.Stored`），其余行不变。

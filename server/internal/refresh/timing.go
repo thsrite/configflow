@@ -6,8 +6,6 @@ import (
 	"context"
 	"errors"
 	"math/big"
-	"regexp"
-	"strings"
 	"time"
 )
 
@@ -16,21 +14,9 @@ var ErrScheduleTime = errors.New("refresh due time is outside years 1..9999")
 
 // ErrFailureCount rejects a task receipt with an invalid retry counter.
 var ErrFailureCount = errors.New("invalid refresh failure counter")
-var stampOffset = regexp.MustCompile(`^[+-][0-9]{2}(:?[0-9]{2}(:?[0-9]{2}([.,][0-9]+)?)?)?$`)
 
-func parseStamp(text string) (time.Time, bool) {
-	instant, ok := taskstatus.ParseTimestamp(text)
-	if !ok {
-		return time.Time{}, false
-	}
-	text = strings.ReplaceAll(text, "Z", "+00:00")
-	if i := strings.LastIndexAny(text, "+-"); i >= 7 && stampOffset.MatchString(text[i:]) {
-		if local, ok := taskstatus.FromISOFormat(text[:i]); ok {
-			return instant.In(time.FixedZone("", int(local.Sub(instant)/time.Second))), true
-		}
-	}
-	return instant, true
-}
+// parseStamp reads a receipt time keeping its offset (naive texts as UTC).
+func parseStamp(text string) (time.Time, bool) { return taskstatus.ParseTimestamp(text) }
 
 // NextDue uses a typed receipt, retained cache baseline and bounded retry
 // backoff. It never writes a receipt or advances a cache timestamp.
