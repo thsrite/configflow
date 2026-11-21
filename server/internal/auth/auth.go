@@ -284,11 +284,10 @@ var publicEndpoints = map[string]bool{
 }
 
 var profilePublicPatterns = []*regexp.Regexp{
-	// Python's re.match with "$", which also matches before a final newline.
-	regexp.MustCompile(`^/api/config/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:mihomo|surge|loon|mosdns|oxidns)\n?\z`),
-	regexp.MustCompile(`^/api/config/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/loon/[^/]+\n?\z`),
-	regexp.MustCompile(`^/api/profiles/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/mosdns/rule-proxy\n?\z`),
-	regexp.MustCompile(`^/api/profiles/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:subscriptions/[^/]+/proxies|aggregations/[^/]+/provider|rules/local/[^/]+|rule-library/content/[^/]+)\n?\z`),
+	regexp.MustCompile(`^/api/config/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:mihomo|surge|loon|mosdns|oxidns)\z`),
+	regexp.MustCompile(`^/api/config/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/loon/[^/]+\z`),
+	regexp.MustCompile(`^/api/profiles/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/mosdns/rule-proxy\z`),
+	regexp.MustCompile(`^/api/profiles/[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:subscriptions/[^/]+/proxies|aggregations/[^/]+/provider|rules/local/[^/]+|rule-library/content/[^/]+)\z`),
 }
 
 // IsPublicPath reports whether the gate lets a path through without a JWT.

@@ -110,9 +110,9 @@ func TestPublicPathRules(t *testing.T) {
 	public := []string{"/api/auth/status", "/api/config/mihomo", "/api/version", "/", "/mcp", "/mcp/x",
 		"/api/rule-library/content/abc", "/api/config/alpha/surge", "/api/config/alpha/loon/x",
 		"/api/profiles/p1/mosdns/rule-proxy", "/api/profiles/p1/subscriptions/s/proxies",
-		"/api/profiles/p1/rule-library/content/r", "/api/config/alpha/mihomo\n"}
+		"/api/profiles/p1/rule-library/content/r"}
 	private := []string{"/api/config/-bad/mihomo", "/api/config/alpha/mihomo/x", "/api/configx", "/api/auth/statusx",
-		"/api/profiles/p1/subscriptions/s/proxies/x", "/mcpx", "/api/config/alpha/mihomo\n\n"}
+		"/api/profiles/p1/subscriptions/s/proxies/x", "/mcpx", "/api/config/alpha/mihomo\n", "/api/config/alpha/mihomo\n\n"}
 	for _, path := range public {
 		if !auth.IsPublicPath(path) {
 			t.Errorf("%q should be public", path)

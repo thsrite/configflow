@@ -2540,3 +2540,10 @@ JSON/JSONL/SQLite 文本）里出现的 7 种写法全部覆盖（带/不带微�
   `passThroughUA` 时才把请求 UA 转给上游，ConfigFlow 创建的临时订阅不设此项；下载地址里总带 target，不靠 UA 猜平台。
   Sub-Store 请求体本来就是 `jsonresp.Encode`。
 - 对照测试改为按 JSON 值比较 Agent 请求体（`wireBody`/`wireCalls`/`requestData`），冻结的 Python 记录不动。
+
+## O18 C15a — 公开路径白名单不再接受末尾换行
+
+维护者裁定（2026-11-22）：配置/规则订阅类公开路径（`/api/config/<id>/<客户端>`、`/api/config/<id>/loon/<名>`、
+`/api/profiles/<id>/mosdns/rule-proxy`、订阅/聚合/本地规则/规则库内容）改为用 `\z` 精确匹配，不再模仿 Python
+`re.match` 加 `$` 允许末尾一个 `\n` 的怪癖。末尾带 `%0A` 的这类路径不再免登录：开启登录时由 404 变为 401
+（`{"success": false, "message": ...}` 的未登录响应）；正常路径不受影响。
