@@ -98,6 +98,14 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+Maintainer 2026-11-21 (agreed): after O18 C items → O17 widened to a full "idiomatic Go" review: Python-shaped structure
+and flow (5 s full-recompute polling instead of change-driven work, whole-document storage with histories inside Agent
+records, functions split 1:1 like Python) and unlabelled ports the O18 keyword search missed; native Go, no Python
+behaviour copied. New switch precondition (add to O14): every test that runs real Python (pyref recordings, Flask/Python
+differentials, configdiff, gate live/compare stages) must be converted to checked-in golden data or pure Go tests
+BEFORE backend/ is deleted at the main merge, or the gate stops checking anything. O18 A-class (10) items are
+boundary content with negligible cost (no perf impact); kept.
+
 PVE benchmark CT DONE (e44edb00): CT 240 cf-o10-perf 10.97.0.140 on PVE .6 (i3-N305, 2 cores/2 GB, link_down + nft
 table inet o10ct + lo-only netns; stopped, kept; owner /root/cf-gwip-lab/o10-owner.json). Rerun from a worktree:
 `RT_HOST=sunbroke@192.168.0.32 rt -- bash server/tools/o10perf/pve.sh run --servers go` (then `--servers python`; one
