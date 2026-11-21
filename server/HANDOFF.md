@@ -56,6 +56,17 @@ the hand-back. If no notification arrives within ~3 h, check status once more.
 | e46d698f-6345-41b9-8a38-06d61b6622d3 | config black-box difftest, Step A coverage matrix (→ Opus O6 review) | wks_223d2a53f6e7abbb, branch `go-difftest-config` |
 ## >>> CURRENT STATE — 2026-11-19 night (coordinator 2f0cdf04 → next coordinator; READ THIS FIRST) <<<
 
+**Update 2026-11-22 (evening): O10 found Go SLOWER than Python** (prod snapshot, .32): idle CPU 34.9% vs 0.9%, idle RSS
+289 MB (live heap 17 MB) vs 117 MB, /api/notifications ×60, /api/agents ×26, config generation ×10–15. Cause: whole-data
+copies (model.Marshal re-validates per nesting level = 39% of allocations; repo.Config copies all Agents + histories;
+repo.System full copy for small reads; per-Agent config encode/decode; notification snapshot encodes Agents per row).
+Branch go-audit-o10 (3987d26e0, not merged: small product fix SystemConfig/Backup narrow readers). Wave A (based on
+go-audit-o10): T2 model.Marshal single validation (Opus e1916289, go-perf-t2), T1/T6/T10 repo narrow reads (Gemini
+6215652c, go-perf-t1, needs Opus HR review), T3/T5 notifications (Gemini 30a80fd1, go-perf-t3). Wave B: T4 agents
+list/detail, T7, T8, T11 per-route allocation guard, then T9 GC policy. Switch blocked on O10 targets.
+Batch-20 (O9 r2 + 404 + M18 + #40) under Opus review c10bf766. Lab L2–L5 Opus 7c0c4d68 (CHR 7.25.1 download approved).
+O12/O14 maintainer rulings recorded in those docs. Paseo restarted once on 2026-11-22: agents re-prompted.
+
 **Update 2026-11-22 (audits):** O13 completeness MERGED (65d03d17c): 0 gaps except #40 image; routes.tsv 380/380 done.
 Maintainer decision: keep the autoupdate image, make it rebuild the Go server too. Coordinator ruling: missing-Agent
 500 "Agent not found" on /api/agents/<id>/logs, /logs/sources, /config/logging → fix to 404 (Python bug) — small task,
