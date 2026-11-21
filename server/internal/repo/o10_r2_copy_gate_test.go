@@ -46,7 +46,8 @@ var r2OwnedCopies = map[string]string{
 	"repository.go:openLocked":                     "startup token initialisation edits a system copy",
 }
 
-// r2OwnedReadNames are the repository reads that return a deep copy.
+// r2OwnedReadNames are the repository reads that return a deep copy. System
+// is a common name, so only its calls with arguments count (see r2CopySites).
 var r2OwnedReadNames = map[string]bool{
 	"CloneShared": true, "CloneProfile": true, "CloneSystemConfig": true, "CloneBackup": true,
 	"PublishConfig": true,
@@ -72,97 +73,108 @@ var r2OwnedReads = map[string]string{
 	"internal/setup/completion.go:checkInstallation":         "setup completion fingerprint of the published profile",
 	"internal/setup/completion.go:finish":                    "setup completion fingerprint of the published profile",
 	"internal/setup/prepare.go:prepare":                      "setup preparation builds an edit from the published profile",
+	"tools/proddiff/baseline/main.go:run":                    "offline proddiff tool: owned System with Agents",
+	"tools/proddiff/generator/main.go:generate":              "offline proddiff tool: owned System with Agents",
+	"tools/proddiff/generator/bundle.go:deploymentBundle":    "offline proddiff tool: owned System with Agents",
 }
 
 type r2CopySite struct{ key, pos string }
 
-// r2CopySites lists the calls to names in file, keyed by "file:function".
-func r2CopySites(fset *token.FileSet, file *ast.File, prefix string, match func(*ast.CallExpr) bool) []r2CopySite {
+// r2CopySites lists every reference to a deep-copy name in a source file,
+// keyed by "prefix:function", not only direct calls: a function value, a
+// method value or a package-level alias would otherwise hide a deep copy from
+// the gate. References in a function (including its closures) are keyed by
+// that function; references outside any function by "<package-level>".
+// Inside package repo the names are copyRecord and copyValue; elsewhere the
+// owned reads of r2OwnedReadNames and calls of a method System with arguments
+// (Repository.System; a bare "System" also names fields and types).
+func r2CopySites(fset *token.FileSet, name string, data []byte, inRepo bool) ([]r2CopySite, error) {
+	file, err := parser.ParseFile(fset, name, data, 0)
+	if err != nil {
+		return nil, err
+	}
+	prefix := name
+	if inRepo {
+		prefix = filepath.Base(name)
+	}
 	var sites []r2CopySite
 	for _, declaration := range file.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
-			continue
+		owner := "<package-level>"
+		var root ast.Node = declaration
+		if function, ok := declaration.(*ast.FuncDecl); ok {
+			if function.Body == nil {
+				continue
+			}
+			owner, root = function.Name.Name, function.Body
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			if call, ok := node.(*ast.CallExpr); ok && match(call) {
-				sites = append(sites, r2CopySite{prefix + ":" + function.Name.Name, fset.Position(call.Pos()).String()})
+		key := prefix + ":" + owner
+		if key == "read.go:copyRecord" || key == "resolve.go:copyValue" {
+			continue // the helpers themselves
+		}
+		ast.Inspect(root, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.Ident:
+				if inRepo && (node.Name == "copyRecord" || node.Name == "copyValue") || !inRepo && r2OwnedReadNames[node.Name] {
+					sites = append(sites, r2CopySite{key, fset.Position(node.Pos()).String()})
+				}
+			case *ast.CallExpr:
+				if selector, ok := node.Fun.(*ast.SelectorExpr); ok && !inRepo && selector.Sel.Name == "System" && len(node.Args) > 0 {
+					sites = append(sites, r2CopySite{key, fset.Position(node.Pos()).String()})
+				}
 			}
 			return true
 		})
 	}
-	return sites
-}
-
-func r2CalledName(call *ast.CallExpr) string {
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		return fun.Name
-	case *ast.SelectorExpr:
-		return fun.Sel.Name
-	case *ast.IndexExpr:
-		if ident, ok := fun.X.(*ast.Ident); ok {
-			return ident.Name
-		}
-	}
-	return ""
+	return sites, nil
 }
 
 func TestO10R2DeepCopiesAreExplicit(t *testing.T) {
 	root := filepath.Join("..", "..")
 	used := map[string]bool{}
 	fset := token.NewFileSet()
-	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return err
-		}
-		name, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		name = filepath.ToSlash(name)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		file, err := parser.ParseFile(fset, path, data, 0)
-		if err != nil {
-			return err
-		}
-		inRepo := filepath.ToSlash(filepath.Dir(name)) == "internal/repo"
-		var sites []r2CopySite
-		var allowed map[string]string
-		if inRepo {
-			allowed = r2OwnedCopies
-			sites = r2CopySites(fset, file, filepath.Base(name), func(call *ast.CallExpr) bool {
-				called := r2CalledName(call)
-				return called == "copyRecord" || called == "copyValue"
-			})
-			// The helpers themselves.
-			kept := sites[:0]
+	for _, top := range []string{"internal", "cmd", "tools"} {
+		err := filepath.WalkDir(filepath.Join(root, top), func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "testdata" || entry.Name() == "vendor" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			name, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			name = filepath.ToSlash(name)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			inRepo := filepath.ToSlash(filepath.Dir(name)) == "internal/repo"
+			sites, err := r2CopySites(fset, name, data, inRepo)
+			if err != nil {
+				return err
+			}
+			allowed := r2OwnedReads
+			if inRepo {
+				allowed = r2OwnedCopies
+			}
 			for _, site := range sites {
-				if site.key != "read.go:copyRecord" && site.key != "resolve.go:copyValue" {
-					kept = append(kept, site)
+				used[site.key] = true
+				if _, ok := allowed[site.key]; !ok {
+					t.Errorf("%s: deep copy in %s; borrow the snapshot (Config, Shared, Profile, …) or add a reasoned exemption", site.pos, site.key)
 				}
 			}
-			sites = kept
-		} else {
-			allowed = r2OwnedReads
-			sites = r2CopySites(fset, file, name, func(call *ast.CallExpr) bool {
-				selector, ok := call.Fun.(*ast.SelectorExpr)
-				return ok && r2OwnedReadNames[selector.Sel.Name]
-			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, site := range sites {
-			used[site.key] = true
-			if _, ok := allowed[site.key]; !ok {
-				t.Errorf("%s: deep copy in %s; borrow the snapshot (Config, Shared, Profile, …) or add a reasoned exemption", site.pos, site.key)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	for _, list := range []map[string]string{r2OwnedCopies, r2OwnedReads} {
 		for key, reason := range list {
@@ -170,5 +182,46 @@ func TestO10R2DeepCopiesAreExplicit(t *testing.T) {
 				t.Errorf("empty or stale deep-copy exemption: %s", key)
 			}
 		}
+	}
+}
+
+// TestO10R2DeepCopyGateDetectsIndirectUse is the gate's self-test: function
+// values, method values, closures and package-level aliases count.
+func TestO10R2DeepCopyGateDetectsIndirectUse(t *testing.T) {
+	tests := []struct {
+		name, file, src string
+		inRepo          bool
+		want            []string
+	}{
+		{"api call", "internal/api/x/x.go", "package x\nfunc Get() { r.CloneShared(ctx) }\n", false, []string{"internal/api/x/x.go:Get"}},
+		{"method value", "internal/api/x/x.go", "package x\nfunc Get() { clone := r.PublishConfig; clone(ctx, id, false) }\n", false, []string{"internal/api/x/x.go:Get"}},
+		{"closure", "internal/api/x/x.go", "package x\nfunc Get() { f := func() { r.CloneProfile(ctx, id) }; f() }\n", false, []string{"internal/api/x/x.go:Get"}},
+		{"package-level alias", "internal/api/x/x.go", "package x\nvar clone = (*repo.Repository).CloneBackup\n", false, []string{"internal/api/x/x.go:<package-level>"}},
+		{"System call", "internal/api/x/x.go", "package x\nfunc Get() { r.System(ctx) }\n", false, []string{"internal/api/x/x.go:Get"}},
+		{"System field", "internal/api/x/x.go", "package x\nfunc Get() { _ = document.System; _ = model.System{} }\n", false, nil},
+		{"borrowed read", "internal/api/x/x.go", "package x\nfunc Get() { r.Config(ctx, id, nil); r.Shared(ctx) }\n", false, nil},
+		{"repo function value", "internal/repo/x.go", "package repo\nfunc read() { dup := copyRecord[model.Shared]; dup(nil) }\n", true, []string{"x.go:read"}},
+		{"repo package-level alias", "internal/repo/x.go", "package repo\nvar dup = copyValue[model.Backup]\n", true, []string{"x.go:<package-level>"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sites, err := r2CopySites(token.NewFileSet(), tt.file, []byte(tt.src), tt.inRepo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, site := range sites {
+				got = append(got, site.key)
+				if _, ok := r2OwnedReads[site.key]; ok {
+					t.Errorf("%s unexpectedly exempt", site.key)
+				}
+				if _, ok := r2OwnedCopies[site.key]; ok {
+					t.Errorf("%s unexpectedly exempt", site.key)
+				}
+			}
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Fatalf("sites = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
