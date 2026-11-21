@@ -54,8 +54,7 @@ type Request struct {
 	URL    string
 	Params []Param
 	Header http.Header
-	// JSON is the json= body (encoded like requests: json.dumps, ASCII);
-	// nil = no body.
+	// JSON is the request body, sent as application/json; nil = no body.
 	JSON    json.RawMessage
 	Timeout Timeout
 	// Proxy is proxies={'http': p, 'https': p}; "" = the environment's
@@ -272,9 +271,8 @@ type HTTPClient interface {
 	Do(ctx context.Context, req *Request) (*Response, error)
 }
 
-// RequestsClient is the production HTTPClient, shaped after the requests
-// library the Python panel used: default headers (python-requests User-Agent
-// unless given, gzip/deflate), up to 30 redirects, the proxy from the
+// RequestsClient is the production HTTPClient: default headers (a ConfigFlow
+// User-Agent unless given, gzip/deflate), up to 30 redirects, the proxy from the
 // environment (weburl.FromEnvironment, per hop) unless an explicit proxy is
 // given, per-read timeouts, the URL normalised by weburl.Prepare.
 type RequestsClient struct{}
@@ -386,7 +384,7 @@ func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, erro
 	if err != nil {
 		return nil, &RequestError{Class: "InvalidURL", Message: err.Error(), Err: err}
 	}
-	req.Header.Set("User-Agent", "python-requests/2.31.0")
+	req.Header.Set("User-Agent", "ConfigFlow")
 	req.Header.Set("Accept-Encoding", "gzip, deflate")
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Connection", "keep-alive")

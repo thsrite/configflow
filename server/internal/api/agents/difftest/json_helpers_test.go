@@ -14,6 +14,8 @@ import (
 	"unicode"
 	utf16enc "unicode/utf16"
 	"unicode/utf8"
+
+	"configflow/internal/jsonresp"
 )
 
 type orderedField struct {
@@ -802,4 +804,39 @@ func pyStringRepr(s string) string {
 	}
 	b.WriteByte(quote)
 	return b.String()
+}
+
+// wireBody is an Agent request body for comparison: JSON bodies by value in
+// canonical form (the Agent parses them; Python's json.dumps spacing and
+// ASCII escapes are not part of the wire contract), other bodies as sent.
+func wireBody(body []byte) string {
+	if canonical, err := jsonresp.Canonical(body); err == nil && json.Valid(body) {
+		return string(canonical)
+	}
+	return string(body)
+}
+
+// wireCalls applies wireBody to the trailing body=%q field of recorded
+// fake-Agent call lines, so frozen traces compare by body value.
+func wireCalls(value any) any {
+	list, ok := value.([]any)
+	if !ok {
+		return value
+	}
+	out := make([]any, len(list))
+	for i, item := range list {
+		out[i] = item
+		line, ok := item.(string)
+		if !ok {
+			continue
+		}
+		at := strings.LastIndex(line, " body=")
+		if at < 0 {
+			continue
+		}
+		if body, err := strconv.Unquote(line[at+len(" body="):]); err == nil {
+			out[i] = line[:at] + " body=" + strconv.Quote(wireBody([]byte(body)))
+		}
+	}
+	return out
 }

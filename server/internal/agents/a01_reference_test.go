@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"configflow/internal/model"
+	"configflow/internal/testjson"
 )
 
 type a01Reference struct {
@@ -255,7 +256,7 @@ func TestReferenceJSONBodiesRefuseNaN(t *testing.T) {
 			continue
 		}
 		got := seen()
-		if err != nil || len(got) != 1 || got[0].body != want.Body || got[0].contentType != want.ContentType {
+		if err != nil || len(got) != 1 || !testjson.Equal(json.RawMessage(want.Body), json.RawMessage(got[0].body)) || got[0].contentType != want.ContentType {
 			t.Errorf("%s: %v %v %+v, Python %+v", name, result, err, got, want)
 		}
 	}

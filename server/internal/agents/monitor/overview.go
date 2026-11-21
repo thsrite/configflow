@@ -1,12 +1,14 @@
 package monitor
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
@@ -376,15 +378,30 @@ func nativeStateError(err error) error {
 	return err
 }
 
+// digestIdentity hashes identity values as compact JSON with non-ASCII
+// characters (and DEL) written as lowercase \uXXXX escapes. The digest is the
+// public upstream row id and the target identity, so this spelling is fixed:
+// changing it would change every id derived from non-ASCII names.
 func digestIdentity(parts []json.RawMessage) (string, error) {
-	encoded, err := jsonresp.EncodeDevice(parts)
+	encoded, err := jsonresp.Encode(parts)
 	if err != nil {
 		return "", err
 	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, encoded); err != nil {
-		return "", err
+	if !utf8.Valid(encoded) {
+		return "", errors.New("identity JSON must be UTF-8")
 	}
-	digest := sha256.Sum256(compact.Bytes())
+	ascii := make([]byte, 0, len(encoded))
+	for _, r := range string(encoded) {
+		switch {
+		case r < 0x7f:
+			ascii = append(ascii, byte(r))
+		case r <= 0xffff:
+			ascii = fmt.Appendf(ascii, `\u%04x`, r)
+		default:
+			high, low := utf16.EncodeRune(r)
+			ascii = fmt.Appendf(ascii, `\u%04x\u%04x`, high, low)
+		}
+	}
+	digest := sha256.Sum256(ascii)
 	return hex.EncodeToString(digest[:]), nil
 }

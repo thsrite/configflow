@@ -266,7 +266,7 @@ func panelPayload(resource, method string, body json.RawMessage) (json.RawMessag
 	if key == "name" && (value == "" || runeLen(value) > PanelMaxNameLength) || key == "mode" && !contains(panelModes, value) {
 		return nil, panelFail("INVALID_REQUEST", 400, message)
 	}
-	return jsonresp.EncodeDevice(fields)
+	return jsonresp.Encode(fields)
 }
 
 func slimProxyJSON(raw json.RawMessage) json.RawMessage {

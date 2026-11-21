@@ -128,7 +128,7 @@ func requestModel(ctx context.Context, m *agents.Manager, a *model.Agent, method
 	header := http.Header{"Authorization": {"Bearer " + token}}
 	var body []byte
 	if payload != nil {
-		body, err = jsonresp.EncodeDevice(payload)
+		body, err = jsonresp.Encode(payload)
 		if err != nil {
 			return nil, err
 		}

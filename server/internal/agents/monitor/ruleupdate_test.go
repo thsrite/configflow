@@ -202,7 +202,7 @@ func TestTargetedPathsRequireNewAgentAndAreSentAsAList(t *testing.T) {
 	if err != nil || status != 202 || result.Task.Status != "running" {
 		t.Fatal(result, err)
 	}
-	if string(client.calls[0].req.Body) != `{"paths": ["rules/a.txt", "rules/b.txt"]}` {
+	if string(client.calls[0].req.Body) != `{"paths":["rules/a.txt","rules/b.txt"]}` {
 		t.Fatal(string(client.calls[0].req.Body))
 	}
 }

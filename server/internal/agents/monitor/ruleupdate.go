@@ -196,7 +196,7 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 		header.Set("Content-Type", "application/json")
 		body = []byte("{}")
 		if paths != nil {
-			body, err = jsonresp.EncodeDevice(struct {
+			body, err = jsonresp.Encode(struct {
 				Paths []string `json:"paths"`
 			}{paths})
 			if err != nil {

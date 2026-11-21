@@ -89,7 +89,7 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	phase := f.phase
 	f.log = append(f.log, fmt.Sprintf("%s %s %s ?%s auth=%q type=%q body=%q", host, r.Method, r.URL.EscapedPath(),
-		r.URL.RawQuery, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), hexID.ReplaceAllString(string(body), "<id>")))
+		r.URL.RawQuery, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), hexID.ReplaceAllString(wireBody(body), "<id>")))
 	f.mu.Unlock()
 	send := func(status int, v any) {
 		data, _ := encodeDefaultJSON(v)
@@ -132,7 +132,7 @@ func (f *fakeOpsAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/api/logs/sources":
 		send(200, oObj("success", true, "sources", []any{oObj("id", "mihomo", "label", "Mihomo")}))
 	case path == "/api/logs/clear" || path == "/api/logs/validate":
-		send(200, oObj("success", true, "echo", string(body)))
+		send(200, oObj("success", true, "echo", wireBody(body)))
 	case path == "/api/config/logging":
 		send(200, oObj("success", true, "enabled", true))
 	case path == "/api/restart":

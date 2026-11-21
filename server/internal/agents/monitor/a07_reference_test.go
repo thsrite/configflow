@@ -83,7 +83,7 @@ func seenOf(client *replyClient) []any {
 		r := c.req
 		var data any
 		if r.Body != nil {
-			data = string(r.Body)
+			data = requestData(string(r.Body))
 		}
 		headers := map[string]any{}
 		for _, key := range []string{"Authorization", "Accept", "Content-Type"} {
@@ -102,12 +102,25 @@ func seenOf(client *replyClient) []any {
 	return out
 }
 
+// requestData compares JSON request bodies by value: the Agent parses them,
+// so Python's json.dumps spacing and ASCII escapes are not part of the wire
+// contract. Non-JSON bodies stay text.
+func requestData(body string) any {
+	if json.Valid([]byte(body)) {
+		return json.RawMessage(body)
+	}
+	return body
+}
+
 func normalizeSeen(t *testing.T, text string) any {
 	t.Helper()
 	value := parseJSONVal(t, []byte(text))
 	for _, item := range asList(value) {
 		o := asMap(item)
 		o["url"] = lowerOrigin(asStr(o["url"]))
+		if data, ok := o["data"].(string); ok {
+			o["data"] = requestData(data)
+		}
 	}
 	parsed, err := testjson.Parse(mustMarshal(t, value))
 	if err != nil {

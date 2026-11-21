@@ -113,7 +113,7 @@ func hasJSONContent(raw json.RawMessage) bool {
 	return err == nil && present
 }
 func deviceJSON(payload any) (http.Header, []byte, error) {
-	body, err := jsonresp.EncodeDevice(payload)
+	body, err := jsonresp.Encode(payload)
 	if err != nil {
 		return nil, nil, err
 	}

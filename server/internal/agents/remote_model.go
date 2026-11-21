@@ -358,7 +358,7 @@ func (m *Manager) PushLegacyConfigModel(ctx context.Context, id, content string,
 			return nil, err
 		}
 	}
-	body, err := jsonresp.EncodeDeviceUTF8(payload)
+	body, err := jsonresp.Encode(payload)
 	if err != nil {
 		return nil, err
 	}

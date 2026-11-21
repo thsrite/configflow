@@ -247,7 +247,7 @@ func TestN810NativeWireBytesAndOriginalIdentity(t *testing.T) {
 	}{"1.0", "job"}); err != nil {
 		t.Fatal(err)
 	}
-	want := []recorded{{"GET", "/api/upgrade-info", "Bearer synthetic-token", "", ""}, {"POST", "/api/update", "Bearer synthetic-token", "application/json", `{"version": "1.0", "update_id": "job"}`}}
+	want := []recorded{{"GET", "/api/upgrade-info", "Bearer synthetic-token", "", ""}, {"POST", "/api/update", "Bearer synthetic-token", "application/json", `{"version":"1.0","update_id":"job"}`}}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("wire %v; want %v", got, want)
 	}

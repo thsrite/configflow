@@ -2526,3 +2526,17 @@ JSON/JSONL/SQLite 文本）里出现的 7 种写法全部覆盖（带/不带微�
 只可能来自手改数据；遇到时按「时间无效」处理（与原来对坏时间戳的处理相同）。解析出的时区不再带 Python
 `tzname()` 名称（`UTC+08:00`），只保留偏移；所有输出只用偏移，API 无变化。对照测试中这些写法的行改为跳过
 （`isoformtest.Stored`），其余行不变。
+
+## O18 T6 — Agent / Sub-Store 请求体不再模仿 `requests` 的 `json=`
+
+- 发给 Go Agent 的 JSON 请求体改为 `encoding/json` 紧凑 UTF-8（不转义 HTML），不再是 Python `json.dumps` 的 ASCII 转义加
+  `", "`/`": "` 分隔；删除 `jsonresp.EncodeDevice`/`EncodeDeviceUTF8`。Go Agent 用 `encoding/json` 解析请求体，不对请求体签名、
+  不算哈希（再查 `backend/agents/go-agent`：仅对本地配置文件和自身状态算 sha256），旧版 `/api/config/update` 仍带
+  `charset=utf-8`。值、成员顺序、大整数原样不变；NaN/Infinity 仍在发送前拒绝。请求体变短，不会触到 Agent 的体积上限。
+- OxiDNS 上游行 `id` 与目标身份摘要（`monitor.digestIdentity`）是 API 值，保持原拼写（紧凑 JSON + 非 ASCII 转小写 `\uXXXX`）不变，
+  只是不再借用 `EncodeDevice`。
+- Sub-Store 客户端默认 `User-Agent` 由 `python-requests/2.31.0` 改为 `ConfigFlow`（显式带 UA 的请求不变：直连订阅仍是
+  `clash.meta`）。默认 UA 只到达本机 Sub-Store 和 Sub-Store 包下载（GitHub/镜像）。Sub-Store 2.44.7 只有订阅开启
+  `passThroughUA` 时才把请求 UA 转给上游，ConfigFlow 创建的临时订阅不设此项；下载地址里总带 target，不靠 UA 猜平台。
+  Sub-Store 请求体本来就是 `jsonresp.Encode`。
+- 对照测试改为按 JSON 值比较 Agent 请求体（`wireBody`/`wireCalls`/`requestData`），冻结的 Python 记录不动。

@@ -18,11 +18,11 @@ func TestNativeMonitorHTTPWireBytes(t *testing.T) {
 		status                                      int
 	}{
 		{"cache-list", "GET", "/api/oxidns/cache", "", "", `{"success":true,"caches":[]}`, 200},
-		{"cache-flush", "POST", "/api/oxidns/cache/flush", "application/json", `{"tags": ["cache"]}`, `{"success":true,"flushed":["cache"]}`, 200},
+		{"cache-flush", "POST", "/api/oxidns/cache/flush", "application/json", `{"tags":["cache"]}`, `{"success":true,"flushed":["cache"]}`, 200},
 		{"rule-get", "GET", "/api/oxidns/rules/update", "", "", `{"success":true,"task":{"id":"rule-1","status":"running","phase":"downloading","downloaded":0,"download_total":1,"reloaded":0,"reload_total":1}}`, 202},
-		{"rule-paths", "POST", "/api/oxidns/rules/update", "application/json", `{"paths": ["rules/\u4e2d.json"]}`, `{"success":true,"task":{"id":"rule-1","status":"running","phase":"downloading","downloaded":0,"download_total":1,"reloaded":0,"reload_total":1}}`, 202},
+		{"rule-paths", "POST", "/api/oxidns/rules/update", "application/json", `{"paths":["rules/中.json"]}`, `{"success":true,"task":{"id":"rule-1","status":"running","phase":"downloading","downloaded":0,"download_total":1,"reloaded":0,"reload_total":1}}`, 202},
 		{"panel-delay", "GET", "/api/mihomo/proxies/A%2FB/delay?url=https%3A%2F%2Fexample.test%2Fprobe&timeout=5000", "", "", `{"delay":5}`, 200},
-		{"panel-selector", "PUT", "/api/mihomo/proxies/A%2FB", "application/json", `{"name": "\u4e2d"}`, `{}`, 200},
+		{"panel-selector", "PUT", "/api/mihomo/proxies/A%2FB", "application/json", `{"name":"中"}`, `{}`, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			received := make(chan struct{}, 1)

@@ -115,7 +115,7 @@ func TestPanelRouteRequiresAdminAuthAndForwardsName(t *testing.T) {
 	if r.Header.Get("Cache-Control") != "no-store" {
 		t.Fatal(r.Header)
 	}
-	if c := fake.calls()[0]; !strings.HasSuffix(c.path, "/api/mihomo/proxies/%E8%8A%82%E7%82%B9%2FA") || c.body != `{"name": "HK"}` {
+	if c := fake.calls()[0]; !strings.HasSuffix(c.path, "/api/mihomo/proxies/%E8%8A%82%E7%82%B9%2FA") || c.body != `{"name":"HK"}` {
 		t.Fatal(c)
 	}
 	r = wantBodyJSON(t, s.Get("/api/agents/gw/mihomo/restart", admin).WantStatus(404), map[string]any{
@@ -156,7 +156,7 @@ func TestPanelRouteBodyIsReadOnlyForPutAndPatch(t *testing.T) {
 	// POST bodies are never read or forwarded.
 	s.Post("/api/agents/gw/mihomo/upgrade", httpxtest.JSON(map[string]any{"path": "/tmp/x"}), admin).WantStatus(200)
 	calls := fake.calls()
-	if len(calls) != 2 || calls[0].body != `{"mode": "rule"}` || calls[1].body != "" || calls[1].method != "POST" {
+	if len(calls) != 2 || calls[0].body != `{"mode":"rule"}` || calls[1].body != "" || calls[1].method != "POST" {
 		t.Fatal(calls)
 	}
 	wantBodyJSON(t, s.Get("/api/agents/missing/mihomo/version", admin).WantStatus(404), map[string]any{
@@ -178,7 +178,7 @@ func TestCacheRouteRequiresAdminAndPassesOnlyThePathAgent(t *testing.T) {
 		t.Fatal(r.Header)
 	}
 	wantBodyJSON(t, r, map[string]any{"success": true, "flushed": []any{"probe"}})
-	if c := fake.calls()[0]; c.method != "POST" || c.path != "/api/oxidns/cache/flush" || c.body != `{"tags": ["probe"]}` ||
+	if c := fake.calls()[0]; c.method != "POST" || c.path != "/api/oxidns/cache/flush" || c.body != `{"tags":["probe"]}` ||
 		c.authorization != "Bearer "+dnsToken {
 		t.Fatal(c)
 	}

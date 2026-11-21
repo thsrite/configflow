@@ -14,7 +14,7 @@ import (
 
 func TestNativeFeatureRequestsKeepRawWireContract(t *testing.T) {
 	const payload = `{"value":"中文","n":9007199254740993}`
-	const wire = `{"value": "\u4e2d\u6587", "n": 9007199254740993}`
+	const wire = payload // compact UTF-8; the exact large integer survives
 	tests := []struct {
 		name, method, path, body string
 		timeout                  Timeout

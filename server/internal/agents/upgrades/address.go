@@ -518,7 +518,7 @@ func ChangeModel(ctx context.Context, m *agents.Manager, a *model.Agent, value s
 	}
 	written := false
 	if chosen == "agent" {
-		body, e := jsonresp.EncodeDevice(struct {
+		body, e := jsonresp.Encode(struct {
 			Host string `json:"host"`
 		}{host})
 		if e != nil {

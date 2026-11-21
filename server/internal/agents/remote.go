@@ -25,12 +25,11 @@ func EncodeHeaderLatin1(value string) (string, error) {
 	return encoded, nil
 }
 
-// jsonBody is requests' json= encoding (json.dumps, ASCII, ", " separators)
-// with its Content-Type. Like requests 2.31 (allow_nan=False), NaN and
-// infinities are refused before anything is sent with InvalidJSONError, a
-// RequestException: a *TransportError.
+// jsonBody encodes an Agent request body with its Content-Type. Values that
+// cannot be encoded (NaN, infinities) are refused before anything is sent,
+// as a *TransportError.
 func jsonBody(value any) (http.Header, []byte, error) {
-	body, err := jsonresp.EncodeDevice(value)
+	body, err := jsonresp.Encode(value)
 	if err != nil {
 		return nil, nil, &TransportError{Err: errors.New(msgInvalidDevicePayload)}
 	}

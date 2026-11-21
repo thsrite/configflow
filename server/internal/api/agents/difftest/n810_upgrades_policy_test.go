@@ -103,14 +103,14 @@ func compareUpgradePolicy(t *testing.T, r upgradesRequest, row *orderedObject, p
 	if parsed, err := parsePythonJSON(py.body); err == nil {
 		pyBody = maskJSON(parsed, r.mask)
 	}
-	if py.status != int(original.GetInt("python_status")) || py.header.Get("Content-Type") != original.GetString("python_type") || !jsonEqual(pyBody, original.Value("python_body")) || !jsonEqual(oList(pyCalls), original.Value("python_calls")) {
+	if py.status != int(original.GetInt("python_status")) || py.header.Get("Content-Type") != original.GetString("python_type") || !jsonEqual(pyBody, original.Value("python_body")) || !jsonEqual(wireCalls(oList(pyCalls)), wireCalls(original.Value("python_calls"))) {
 		differences = append(differences, "original Python HTTP boundary changed")
 	}
 	goBody, err := parsePythonJSON(goResponse.body)
 	if err != nil || goResponse.status != int(native.GetInt("status")) || goResponse.header.Get("Content-Type") != native.GetString("type") || !jsonEqual(maskJSON(goBody, r.mask), native.Value("body")) {
 		differences = append(differences, fmt.Sprintf("native HTTP boundary differs: %d %s", goResponse.status, goResponse.body))
 	}
-	if !jsonEqual(oList(goCalls), native.Value("calls")) {
+	if !jsonEqual(wireCalls(oList(goCalls)), wireCalls(native.Value("calls"))) {
 		differences = append(differences, fmt.Sprintf("native request trace differs: %q", goCalls))
 	}
 	for _, header := range []string{"Cache-Control", "X-ConfigFlow-Profile"} {

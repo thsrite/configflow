@@ -65,7 +65,7 @@ func (f *fakePanelAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	phase := f.phase
 	f.log = append(f.log, fmt.Sprintf("%s %s ?%s auth=%q accept=%q type=%q body=%q", r.Method, r.URL.EscapedPath(),
-		r.URL.RawQuery, r.Header.Get("Authorization"), r.Header.Get("Accept"), r.Header.Get("Content-Type"), body))
+		r.URL.RawQuery, r.Header.Get("Authorization"), r.Header.Get("Accept"), r.Header.Get("Content-Type"), wireBody(body)))
 	f.mu.Unlock()
 	send := func(status int, v any) {
 		data, _ := encodeDefaultJSON(v)

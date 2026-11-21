@@ -121,7 +121,7 @@ func TestForwardsNamedResourcesAsSingleEncodedSegment(t *testing.T) {
 	if c.req.Method != "PUT" || c.url != "http://127.0.0.1:8080/api/mihomo/proxies/%E8%8A%82%E7%82%B9%2F%E9%A6%99%E6%B8%AF%2001" {
 		t.Fatal(c.req.Method, c.url)
 	}
-	if string(c.req.Body) != `{"name": "HK"}` || c.header["Authorization"] != "Bearer agent-private-token" ||
+	if string(c.req.Body) != `{"name":"HK"}` || c.header["Authorization"] != "Bearer agent-private-token" ||
 		!c.req.NoRedirects || !c.req.NoProxy || c.header["Content-Type"] != "application/json" {
 		t.Fatal(string(c.req.Body), c.header, c.req)
 	}
@@ -162,7 +162,7 @@ func TestRejectsOperationsOutsideThePanel(t *testing.T) {
 func TestModeSwitchOnlySendsMode(t *testing.T) {
 	m, client := panelManager(t, nil)
 	mustPanel(t, m, "configs", "PATCH", nil, map[string]any{"mode": "global"})
-	if string(client.calls[0].req.Body) != `{"mode": "global"}` {
+	if string(client.calls[0].req.Body) != `{"mode":"global"}` {
 		t.Fatal(string(client.calls[0].req.Body))
 	}
 }

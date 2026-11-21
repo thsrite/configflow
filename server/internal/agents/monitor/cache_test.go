@@ -64,7 +64,7 @@ func TestListAndFlushReachOnlyTheNamedAgent(t *testing.T) {
 			t.Fatal(c)
 		}
 	}
-	if client.calls[0].req.Body != nil || string(client.calls[1].req.Body) != `{"tags": ["probe"]}` ||
+	if client.calls[0].req.Body != nil || string(client.calls[1].req.Body) != `{"tags":["probe"]}` ||
 		client.calls[1].header["Content-Type"] != "application/json" || client.calls[0].header["Content-Type"] != "" {
 		t.Fatal(client.calls)
 	}

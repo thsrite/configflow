@@ -136,7 +136,7 @@ func CallCache(ctx context.Context, m Registry, agentID, method string, tags []s
 	if method == "POST" {
 		path += "/flush"
 		header.Set("Content-Type", "application/json")
-		body, err = jsonresp.EncodeDevice(struct {
+		body, err = jsonresp.Encode(struct {
 			Tags []string `json:"tags"`
 		}{tags})
 		if err != nil {

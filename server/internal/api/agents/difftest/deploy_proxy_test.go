@@ -1,7 +1,6 @@
 package difftest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -88,10 +87,10 @@ func TestPublishLegacyProxyAgainstFlask(t *testing.T) {
 		t.Fatalf("unexpected Agent calls %d/%d", len(first), len(all))
 	}
 	a, b := all[0], all[1]
-	if a.Method != "POST" || a.Path != "/api/config/update" || a.Method != b.Method || a.Path != b.Path || !bytes.Equal(a.Body, b.Body) {
+	if a.Method != "POST" || a.Path != "/api/config/update" || a.Method != b.Method || a.Path != b.Path || wireBody(a.Body) != wireBody(b.Body) {
 		t.Fatal("legacy Agent raw request differs")
 	}
-	for _, header := range []string{"Authorization", "Content-Type", "Content-Length"} {
+	for _, header := range []string{"Authorization", "Content-Type"} {
 		if a.Headers.Get(header) != b.Headers.Get(header) {
 			t.Fatal("Agent raw header", header)
 		}

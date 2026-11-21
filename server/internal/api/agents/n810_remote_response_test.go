@@ -72,7 +72,7 @@ func TestN810MalformedLoggingReplyIsStructured502WithoutWrite(t *testing.T) {
 				t.Fatal("device transport failed", attempt.err)
 			}
 			request := <-seen
-			if request.method != http.MethodPost || request.path != "/api/config/logging" || request.authorization != "Bearer synthetic-publish-token" || request.contentType != "application/json" || !bytes.Equal(request.body, []byte(`{"enabled": true}`)) {
+			if request.method != http.MethodPost || request.path != "/api/config/logging" || request.authorization != "Bearer synthetic-publish-token" || request.contentType != "application/json" || !bytes.Equal(request.body, []byte(`{"enabled":true}`)) {
 				t.Fatalf("raw device request changed: %+v", request)
 			}
 		})
