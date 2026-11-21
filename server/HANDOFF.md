@@ -75,6 +75,14 @@ maintainer: "要严查，这性能也太差了". Hard O10 targets (same host + s
 Every O10 task hands back o10perf before/after numbers against these. Root-cause audit dispatched: Opus dfbabde4,
 branch go-perf-rootcause (from go-perf-t1 + cherry-picked T2) → server/parity/o10-rootcause.md: can wave A+B reach the
 targets; if not, structural change (immutable snapshot / copy-on-write repo, version-keyed caches). Wave B waits for it.
+Root cause DONE (dfbabde4, go-perf-rootcause 3b05c9bb8, server/parity/o10-rootcause.md): wave A+B CANNOT reach the
+targets with the current data model (deep-copy reads; Agent histories 304 of 442 KB; encode→generic-decode projections;
+model decode 147 B/B from per-member baseline at record.go:180). Coordinator rulings: adopt S1 (readers borrow the
+head-cached immutable snapshot, writers copy) + S2 (version-keyed derived caches) + S3 (lazy decode baseline, streaming
+encode); follow R1–R12 order (replaces T4/T7/T8/T9/T10-followups/T11); generator routes target <= 30 MB, no result cache;
+prod host has no THP → R12 = GC only. Tooling-only branch go-o10-tools (o10perf + report, no EXPERIMENT commits) pending.
+batch-21 = audit fix + T2 + T1 stacked on go; fresh Opus 037b7644 integrates T3 (notifications.go conflict) + HR review
++ o10perf vs go. R1/R2 dispatch after batch-21 merges. batch-22 = M16 + Agent image (+ fuzz test fix) gating on .64.
 T1 rulings: router/client redaction keeps Agent credentials (collected once per request, narrow read); one-off stale
 router-check reminders after upgrade accepted (behaviour-changes + o12 notes). T1 sent back for that fix.
 
