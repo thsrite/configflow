@@ -219,7 +219,7 @@ func VersionNewer(candidate, current string) bool {
 }
 
 // readVersionFile is _read_version_file: VERSION stripped, "" when it
-// cannot be read; undecodable text is UnicodeDecodeError, as in Python.
+// cannot be read; text that is not UTF-8 is ErrVersionEncoding.
 func readVersionFile(directory string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(directory, "VERSION"))
 	if err != nil {

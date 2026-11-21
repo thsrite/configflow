@@ -17,7 +17,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -31,9 +30,9 @@ var Arches = []string{"linux-amd64", "linux-arm64", "linux-armv7"}
 
 // ArtifactDirectory is artifact_directory(): $AGENTS_STATIC_DIR (default
 // /opt/configflow/static/agents) when it exists, else backend/static/agents
-// next to the program. Like Path.exists() of Python 3.11, a stat failure
-// other than "missing" (ENOENT, ENOTDIR, EBADF, ELOOP), e.g. EACCES below a
-// directory without search permission, is an error.
+// next to the program. A stat failure other than "missing" (see
+// missingPath), e.g. EACCES below a directory without search permission, is
+// an error.
 func ArtifactDirectory(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -55,42 +54,26 @@ func ArtifactDirectory(ctx context.Context) (string, error) {
 	return resource.FromEnv().Backend("static/agents"), nil
 }
 
-// ignoredStatError is pathlib's _ignore_error: the errors Path.exists() and
-// Path.is_file() of Python 3.11 read as "no such file"; every other OSError
-// is raised. An embedded NUL (ValueError in Python, EINVAL here) is also
-// "no such file".
-func ignoredStatError(err error) bool {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		switch errno {
-		case syscall.ENOENT, syscall.ENOTDIR, syscall.EBADF, syscall.ELOOP, syscall.EINVAL:
-			return true
-		}
-	}
-	return false
+// missingPath reports stat errors that mean nothing is there: the path does
+// not exist, a parent is not a directory, a symlink loop, or an invalid name
+// (an embedded NUL). Other errors are real failures.
+func missingPath(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) ||
+		errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EINVAL)
 }
 
-// pathExists is Path.exists() (symlinks followed).
+// pathExists reports whether path exists (symlinks followed).
 func pathExists(ctx context.Context, path string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 	if _, err := os.Stat(path); err != nil {
-		if ignoredStatError(err) {
+		if missingPath(err) {
 			return false, nil
 		}
 		return false, err
 	}
 	return true, nil
-}
-
-// joinPath is Path(directory) / name without cleaning ".." (as pathlib).
-func joinPath(directory, name string) string {
-	trimmed := strings.TrimRight(directory, "/")
-	if trimmed == "" && strings.HasPrefix(directory, "/") {
-		return "/" + name
-	}
-	return trimmed + "/" + name
 }
 
 // Limits of upgrades.py; variables so tests can lower them as the Python
@@ -230,15 +213,15 @@ func readArtifact(ctx context.Context, path string, expected signature) (*Artifa
 	return &ArtifactInfo{SHA256: hex.EncodeToString(digest.Sum(nil)), Size: size}, nil
 }
 
-// isFile is Path.is_file() of Python 3.11: a regular file (symlinks
-// followed); "missing" errors are false, other stat errors are raised.
+// isFile reports a regular file (symlinks followed); missing paths are
+// false, other stat errors are returned.
 func isFile(ctx context.Context, path string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		if ignoredStatError(err) {
+		if missingPath(err) {
 			return false, nil
 		}
 		return false, err
@@ -312,7 +295,7 @@ func artifactMetadata(ctx context.Context, path string) (*ArtifactInfo, error) {
 
 // ArtifactsModel returns {arch: {'sha256', 'size'}} for every usable
 // executable, in Arches order. Each call returns new objects. Errors are
-// the OSError Python raises (unreadable file, ErrArtifactChanged).
+// file errors (unreadable file) or ErrArtifactChanged.
 func ArtifactsModel(ctx context.Context) (model.Map[model.UpgradeArtifact], error) {
 	ctx = lifecycle.Detach(ctx)
 	var result model.Map[model.UpgradeArtifact]
@@ -325,7 +308,7 @@ func ArtifactsModel(ctx context.Context) (model.Map[model.UpgradeArtifact], erro
 		if err != nil {
 			return result, err
 		}
-		metadata, err := artifactMetadata(ctx, joinPath(directory, "configflow-agent-"+arch))
+		metadata, err := artifactMetadata(ctx, filepath.Join(directory, "configflow-agent-"+arch))
 		if err != nil {
 			return result, err
 		}

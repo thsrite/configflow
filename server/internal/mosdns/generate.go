@@ -7,13 +7,11 @@ import (
 )
 
 // UnsupportedYAMLError reports a custom MosDNS base configuration
-// (mosdns.custom_config) or an upstream definition with a loaded YAML value
-// the jsonx model cannot hold that Python would copy into the generated
-// configuration: a collection that contains itself through an alias, or a
-// !!set/!!omap/!!pairs value. Python writes such values with yaml.Dumper;
-// the Go server refuses instead of writing other bytes. Values only in
-// sections Python drops do not matter; mappings with keys that are not
-// strings are written like PyYAML.
+// (mosdns.custom_config) or an upstream definition the YAML facade refuses
+// to load: a collection that contains itself through an alias, an alias
+// expansion over budget, or another facade policy violation (duplicate keys,
+// several documents). Other YAML values, including !!set/!!omap and
+// non-string keys, are kept as nodes and written back as YAML.
 type UnsupportedYAMLError struct {
 	Msg   string
 	cause error
