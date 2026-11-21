@@ -478,18 +478,10 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	}
 	link := "/agents"
 	row := &tasks.Task{Key: key, Category: "dns_follow", Name: label, ResourceID: id, Enabled: enabled, ScheduleText: msgSchedule, CanRun: enabled && status == "failed", RunHint: hint, Running: running(status), Link: &link, StateMessage: stateMessage, HistoryData: history}
-	secrets, ok := agents.RowAgentSecrets(ctx)
-	if !ok {
-		m, err := agents.Get(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := m.Repository().ViewAgents(ctx, func(rows []model.Agent) error {
-			secrets = agents.CollectAllAgentCredentials(rows, nil)
-			return nil
-		}); err != nil {
-			return nil, err
-		}
+	// Every stored Agent record's credentials, histories included, as before O10.
+	secrets, err := agents.RowAgentSecrets(ctx)
+	if err != nil {
+		return nil, err
 	}
 	data, err := json.Marshal(row)
 	if err != nil {

@@ -233,8 +233,12 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 		return redact.Redacted
 	}
 	if sysErr == nil {
-		secrets := agents.RowAgentCredentials(ctx, a, sysSecrets)
-		sanitize = func(text string) string { return safeDisplay(text, secrets) }
+		// Every stored Agent record's credentials, histories included: a
+		// superset of this record's own, which the row collected before O10.
+		if agentSecrets, err := agents.RowAgentSecrets(ctx); err == nil {
+			secrets := redact.NewSecrets(sysSecrets, agentSecrets)
+			sanitize = func(text string) string { return safeDisplay(text, secrets) }
+		}
 	}
 	message := sanitize(state.Message)
 	if enabled && state.Status == "blocked" {

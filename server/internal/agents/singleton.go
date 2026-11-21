@@ -9,6 +9,7 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/notifications"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -108,8 +109,11 @@ func agentRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 		return nil, err
 	}
 	// Credentials and system secrets are read once per pass, not per row.
+	// Agent credentials come from the stored records with their histories,
+	// as the rows collected them before O10; the read is cached per store head.
+	agentSecrets, agentsErr := redact.AgentRecordCredentials(ctx, nil)
 	sysSecrets, sysErr := SystemSecrets(ctx, manager.repository)
-	rowCtx := withRowSecrets(ctx, records, sysSecrets, sysErr)
+	rowCtx := withRowSecrets(ctx, agentSecrets, agentsErr, sysSecrets, sysErr)
 	rows := []*tasks.Task{}
 	for i := range records {
 		agent := &records[i]

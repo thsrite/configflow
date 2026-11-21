@@ -21,15 +21,6 @@ func CollectAgentCredentials(record *model.Agent, seeds redact.Secrets) redact.S
 	return collectAgentInto(record, secrets)
 }
 
-// CollectAllAgentCredentials is CollectAgentCredentials over every record.
-func CollectAllAgentCredentials(records []model.Agent, seeds redact.Secrets) redact.Secrets {
-	secrets := redact.NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")})
-	for i := range records {
-		secrets = collectAgentInto(&records[i], secrets)
-	}
-	return secrets
-}
-
 func collectAgentInto(record *model.Agent, secrets redact.Secrets) redact.Secrets {
 	if record == nil {
 		return secrets
@@ -77,52 +68,32 @@ type rowSecretsKey struct{}
 
 type rowSecrets struct {
 	agents    redact.Secrets
-	perAgent  map[*model.Agent]redact.Secrets
+	agentsErr error
 	system    redact.Secrets
 	systemErr error
 }
 
-// withRowSecrets attaches the credentials of records (each collected once)
-// and the system secrets to ctx for one task-row projection pass, so row
-// builders neither re-read Agents and system settings nor re-encode a record.
-// Credential discovery does not depend on its seeds, so the union of the
-// per-record sets equals one collection seeded with the others.
-func withRowSecrets(ctx context.Context, records []model.Agent, systemSecrets redact.Secrets, systemErr error) context.Context {
-	perAgent := make(map[*model.Agent]redact.Secrets, len(records))
-	lists := make([][]string, 0, len(records))
-	for i := range records {
-		secrets := CollectAgentCredentials(&records[i], nil)
-		perAgent[&records[i]] = secrets
-		lists = append(lists, secrets)
-	}
+// withRowSecrets attaches the stored Agent record credentials and the system
+// secrets to ctx for one task-row projection pass, so row builders neither
+// re-read Agents and system settings nor re-encode a record.
+func withRowSecrets(ctx context.Context, agentSecrets redact.Secrets, agentsErr error, systemSecrets redact.Secrets, systemErr error) context.Context {
 	return context.WithValue(ctx, rowSecretsKey{}, &rowSecrets{
-		agents:    redact.NewSecrets(lists...),
-		perAgent:  perAgent,
+		agents:    agentSecrets,
+		agentsErr: agentsErr,
 		system:    systemSecrets,
 		systemErr: systemErr,
 	})
 }
 
-// RowAgentCredentials returns record's credentials joined with seeds. Within
-// a task-row pass it reuses the pass's collection for that record; otherwise
-// it collects them (CollectAgentCredentials).
-func RowAgentCredentials(ctx context.Context, record *model.Agent, seeds redact.Secrets) redact.Secrets {
+// RowAgentSecrets returns the credential values of every stored Agent record,
+// deployment and IPv6 verification histories included, as task rows collected
+// them before O10 (redact.AgentRecordCredentials, remembered per store head).
+// Within a task-row pass it reuses the pass's single read.
+func RowAgentSecrets(ctx context.Context) (redact.Secrets, error) {
 	if s, ok := ctx.Value(rowSecretsKey{}).(*rowSecrets); ok && s != nil {
-		if own, ok := s.perAgent[record]; ok {
-			return redact.NewSecrets(seeds, own)
-		}
+		return s.agents, s.agentsErr
 	}
-	return CollectAgentCredentials(record, seeds)
-}
-
-// RowAgentSecrets returns the pre-collected credentials of all Agents for the
-// current task-row pass, when present.
-func RowAgentSecrets(ctx context.Context) (redact.Secrets, bool) {
-	s, ok := ctx.Value(rowSecretsKey{}).(*rowSecrets)
-	if !ok || s == nil {
-		return nil, false
-	}
-	return s.agents, true
+	return redact.AgentRecordCredentials(ctx, nil)
 }
 
 // RowSystemSecrets returns the pre-collected system secrets for the current

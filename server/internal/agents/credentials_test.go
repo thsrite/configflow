@@ -145,34 +145,3 @@ func TestSystemSecretsMatchesExternalPayloadSecrets(t *testing.T) {
 		t.Fatalf("SystemSecrets mismatch: got=%v want=%v", got, want)
 	}
 }
-
-func TestRowCredentialsEqualSeededCollection(t *testing.T) {
-	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-reg-key")
-	first := buildHistoryAgent(t, 2)
-	second := *buildHistoryAgent(t, 1)
-	if err := second.SetJSON("token", json.RawMessage(`"synthetic-second-token"`)); err != nil {
-		t.Fatal(err)
-	}
-	records := []model.Agent{*first, second}
-	seeds := redact.NewSecrets([]string{"synthetic-system-secret"})
-	ctx := withRowSecrets(context.Background(), records, seeds, nil)
-	tests := []struct {
-		name   string
-		record *model.Agent
-	}{
-		{"pass record", &records[1]},
-		{"record outside the pass", first},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := RowAgentCredentials(ctx, tt.record, seeds)
-			if want := CollectAgentCredentials(tt.record, seeds); !got.Equal(want) {
-				t.Fatalf("got %v, want %v", got, want)
-			}
-		})
-	}
-	all, ok := RowAgentSecrets(ctx)
-	if want := CollectAllAgentCredentials(records, nil); !ok || !all.Equal(want) {
-		t.Fatalf("all Agents: got %v (%v), want %v", all, ok, want)
-	}
-}

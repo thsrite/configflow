@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -41,6 +42,9 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 			"service_type":  "mihomo",
 			"created_at":    "2026-01-01T00:00:00Z",
 			"message":       fmt.Sprintf("synthetic deployment %04d padding-0123456789abcdef0123456789abcdef", i),
+			// A credential stored only in the history: task rows must still
+			// redact it (they collected full records before O10).
+			"password": "synthetic-history-secret",
 			"events": []map[string]any{
 				{"at": "2026-01-01T00:00:00Z", "status": "succeeded", "message": "synthetic event 0123456789abcdef0123456789abcdef"},
 			},
@@ -60,7 +64,7 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 			"settings": map[string]any{"library": true, "rules": false},
 			"state": map[string]any{
 				"status":  "failed",
-				"message": "alice failed with synthetic-mihomo-token and http://alice:synthetic-proxy-pass@proxy.example.com:8080",
+				"message": "alice failed with synthetic-mihomo-token synthetic-history-secret and http://alice:synthetic-proxy-pass@proxy.example.com:8080",
 			},
 		},
 		"deployments": deps,
@@ -80,7 +84,7 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 		"dns_follow":   map[string]any{"source_agent_id": "agent-mihomo", "upstream_tag": "main"},
 		"dns_follow_state": map[string]any{
 			"status":  "failed",
-			"message": "alice follow error synthetic-mihomo-token synthetic-job-secret",
+			"message": "alice follow error synthetic-mihomo-token synthetic-job-secret synthetic-history-secret",
 		},
 		"dns_follow_job": map[string]any{
 			"binding_id": "b1",
@@ -208,13 +212,24 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 		t.Fatal(err)
 	}
 	text := string(encoded)
-	for _, secret := range []string{"synthetic-mihomo-token", "synthetic-oxidns-token", "synthetic-proxy-pass", "synthetic-job-secret", "synthetic-router-pass"} {
+	for _, secret := range []string{"synthetic-mihomo-token", "synthetic-oxidns-token", "synthetic-proxy-pass", "synthetic-job-secret", "synthetic-router-pass", "synthetic-history-secret"} {
 		if strings.Contains(text, secret) {
 			t.Fatalf("notification snapshot leaked secret %q: %s", secret, text)
 		}
 	}
 	if !strings.Contains(text, "alice") {
 		t.Fatalf("notification snapshot hid username alice: %s", text)
+	}
+	// Negative control: the history-only credential is not in a history-free
+	// collection, so the check above depends on the full-record read.
+	listed, err := largeMgr.ListAgents(largeSrv.Context(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range listed {
+		if slices.Contains(agents.CollectAgentCredentials(&listed[i], nil), "synthetic-history-secret") {
+			t.Fatal("control: history-free collection found the history-only credential")
+		}
 	}
 	// Verify both agent task incidents and subscription incident are present.
 	byID := map[string]*notifications.Item{}
@@ -273,7 +288,7 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 	}
 
 	// Verify router signature cache invalidates on profile edit (stale flips false -> true).
-	cfg, err := largeSrv.Repo.Config(largeSrv.Context(), "default", nil)
+	cfg, err := largeSrv.Repo.ConfigWithOxiDNSAgents(largeSrv.Context(), "default", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
