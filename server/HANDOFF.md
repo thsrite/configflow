@@ -98,6 +98,13 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-23 MERGED 2026-11-21: R1 Agent borrow + R1 HR review (guard atomic, gate anti-bypass) + R2 Config borrow + R2
+HR review (gate anti-bypass, append/cap tests); gate core FULL .32 PASS, compare .64 PASS first try. R4+R7 (Opus
+967123ab, go-perf-r4): cache-off still slower than Python on the 4 Agent routes, cache-on 3–8× faster; /api/profiles
+= Python. Ruling: cache default ON (CONFIGFLOW_AGENT_VIEW_CACHE=0 disables); R4 rebases on go and removes remaining
+direct-path waste (content source from borrowed Config, summary credential seed from the head cache, member-wise
+projection), re-measure both columns; revisit keeping the cache after O18 T1.
+
 Maintainer 2026-11-21 (agreed): after O18 C items → O17 widened to a full "idiomatic Go" review: Python-shaped structure
 and flow (5 s full-recompute polling instead of change-driven work, whole-document storage with histories inside Agent
 records, functions split 1:1 like Python) and unlabelled ports the O18 keyword search missed; native Go, no Python
