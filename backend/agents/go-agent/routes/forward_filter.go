@@ -127,7 +127,10 @@ func forwardFilterStatus(cfg *Config) netfilter.Result {
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 	done := make(chan netfilter.Result, 1)
-	go func() { done <- forwardFilterInspect(ctx, target) }()
+	// Read the replaceable inspector now: the goroutine may outlive this call
+	// (a hung inspection) and must not read the variable afterwards.
+	inspect := forwardFilterInspect
+	go func() { done <- inspect(ctx, target) }()
 	var result netfilter.Result
 	select {
 	case result = <-done:

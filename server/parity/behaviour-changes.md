@@ -2652,3 +2652,12 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   为 1.9.1-go、1.9.0-go；difftest 仍钉住 Python 的 `LATEST_AGENT_VERSION`；configdiff T16/T25 心跳报 1.9.1-go（两侧都无更新）；
   proddiff `pair_agent_release` 的 Go 最新版改为 1.9.1-go，`has_update` 例外范围变为 [1.8.61-go, 1.9.1-go)（`test_agent_release_exemption_is_exact`
   增加 1.9.0-go 在范围内、1.9.1-go 不在范围内的用例）。
+
+## Agent routes 包 -race 下 4 个已有数据竞争（测试同步，对外无变化）
+
+- 部署/恢复的后台任务持有服务操作锁（`operation.lock` 的 flock），测试用「能重新拿到锁」判断任务已结束，随后恢复被替换的全局函数。flock 是系统调用，
+  在 Go 内存模型里不构成同步，race 检测器因此报告任务读取与测试清理写入之间的竞争
+  （`TestGatewayMihomoPublishReloadsSameHostOxiDNS`、`TestUnchangedFilesAreLinkedNotCopiedAndDirectoriesSyncOnce`、`TestChangedOwnerOrModeStillReplacesFile`）。
+  修法：锁释放前对 `serviceOperationHandoff` 做一次 atomic 写，拿到锁后做一次 atomic 读，进程内的锁交接因此有 happens-before 关系；跨进程仍由 flock 排序。
+- `forwardFilterStatus` 的检查 goroutine 在启动后才读取可替换的 `forwardFilterInspect`；检查挂起时它比调用方活得久，会在测试恢复该变量后才读到
+  （`TestForwardFilterIsBoundedWhenInspectionHangs`）。修法：启动 goroutine 前先取出函数值。生产中这两个变量不会被改写，无行为变化。

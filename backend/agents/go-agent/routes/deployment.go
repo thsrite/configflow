@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -139,8 +140,20 @@ func acquireServiceOperation(cfg *Config, updating bool) (func(), error) {
 		unix.Close(fd)
 		return nil, errDeploymentBusy
 	}
-	return func() { unix.Flock(fd, unix.LOCK_UN); unix.Close(fd) }, nil
+	serviceOperationHandoff.Load()
+	return func() {
+		serviceOperationHandoff.Add(1)
+		unix.Flock(fd, unix.LOCK_UN)
+		unix.Close(fd)
+	}, nil
 }
+
+// serviceOperationHandoff orders service operations inside this process. The
+// flock orders them across processes, but a system call is no synchronization
+// in the Go memory model: without this atomic store (release) and load (after
+// acquire), what a detached worker did before releasing the lock would not
+// happen-before the next holder, and the race detector reports it.
+var serviceOperationHandoff atomic.Uint64
 
 // waitServiceOperation retries only lock contention. Brief holders such as the
 // DNS watchdog tick on the same schedule as other periodic work and must not
