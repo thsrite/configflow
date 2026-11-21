@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
@@ -514,4 +515,22 @@ func sameHAIdentity(left, right *model.HAIdentity) bool {
 	}
 	a.Port, b.Port = l, r
 	return equal(&a, &b)
+}
+
+// ownJournal returns an independently owned copy of a journal read from the
+// registry. Agent reads borrow the shared registry generation, and the
+// publication state machine changes its journal in place before saving it.
+func ownJournal(j *model.HAJournal) (*model.HAJournal, error) {
+	if j == nil {
+		return nil, nil
+	}
+	data, err := model.Marshal(j)
+	if err != nil {
+		return nil, fmt.Errorf("copy HA journal: %w", err)
+	}
+	var owned model.HAJournal
+	if err := json.Unmarshal(data, &owned); err != nil {
+		return nil, fmt.Errorf("copy HA journal: %w", err)
+	}
+	return &owned, nil
 }

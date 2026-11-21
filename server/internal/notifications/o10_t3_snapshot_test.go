@@ -260,6 +260,9 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 		return (after.TotalAlloc - before.TotalAlloc) / 10
 	}
 
+	// // Allocation measurements exclude the test-only view guard's encodings.
+	smallSrv.Repo.SetViewGuard(nil)
+	largeSrv.Repo.SetViewGuard(nil)
 	smallBytes := measure(func() error {
 		_, err := notifications.SnapshotItems(smallSrv.Context(), "")
 		return err

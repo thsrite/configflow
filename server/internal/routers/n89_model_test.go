@@ -39,6 +39,8 @@ func BenchmarkRouterProjection(b *testing.B) {
 		for _, padding := range []int{0, 1 << 20} {
 			b.Run(fmt.Sprintf("routers%d/padding%d", n, padding), func(b *testing.B) {
 				db := projectionRepository(b, n, padding)
+				// Allocation measurements exclude the test-only view guard's encodings.
+				db.SetViewGuard(nil)
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
@@ -58,6 +60,8 @@ func TestN89RouterProjectionAllocations(t *testing.T) {
 	for _, n := range []int{1, 16} {
 		measure := func(padding int) int64 {
 			db := projectionRepository(t, n, padding)
+			// Allocation measurements exclude the test-only view guard's encodings.
+			db.SetViewGuard(nil)
 			result := testing.Benchmark(func(b *testing.B) {
 				for b.Loop() {
 					if _, err := routerProfiles(context.Background(), db); err != nil {

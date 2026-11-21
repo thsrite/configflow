@@ -3,6 +3,7 @@ package repo
 import (
 	"bytes"
 	"fmt"
+	"runtime/debug"
 	"testing"
 
 	"configflow/internal/model"
@@ -26,7 +27,7 @@ type guardedGeneration struct {
 // a reader that modified a shared snapshot fails the test loudly, whichever
 // package or goroutine it runs in. Production repositories have no guard.
 func defaultViewGuard() {
-	logger.Errorf("%v", ErrSnapshotMutated)
+	logger.Errorf("%v\n%s", ErrSnapshotMutated, debug.Stack())
 	panic(ErrSnapshotMutated)
 }
 
@@ -69,6 +70,7 @@ func (r *Repository) guardBorrow(key, value any) {
 	}
 	if seen, ok := r.guarded[key]; ok {
 		if err != nil || !bytes.Equal(seen.encoded, encoded) {
+			logger.Errorf("%v: %s", ErrSnapshotMutated, mutationContext(seen.encoded, encoded))
 			guard()
 		}
 		return
@@ -91,6 +93,7 @@ func (r *Repository) guardBorrow(key, value any) {
 			continue
 		}
 		if now, err := model.Marshal(retired.value); err != nil || !bytes.Equal(now, retired.encoded) {
+			logger.Errorf("%v: %s", ErrSnapshotMutated, mutationContext(retired.encoded, now))
 			guard()
 		}
 	}
@@ -112,4 +115,18 @@ func (r *Repository) CheckBorrowed() error {
 		}
 	}
 	return nil
+}
+
+// mutationContext shows where a guarded encoding first changed, so a test
+// failure names the modified member. Test repositories hold synthetic data.
+func mutationContext(before, after []byte) string {
+	at := 0
+	for at < len(before) && at < len(after) && before[at] == after[at] {
+		at++
+	}
+	window := func(data []byte) string {
+		start, end := max(at-160, 0), min(at+80, len(data))
+		return string(data[start:end])
+	}
+	return fmt.Sprintf("first difference at byte %d\nbefore: …%s…\nafter:  …%s…", at, window(before), window(after))
 }

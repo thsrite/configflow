@@ -42,6 +42,8 @@ type syncAllocationFixture struct {
 func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment bool) syncAllocationFixture {
 	t.Helper()
 	db := projectionRepository(t, 0, 0)
+	// // Allocation measurements exclude the test-only view guard's encodings.
+	db.SetViewGuard(nil)
 	// A legacy GetShared/JSON bridge in each cache miss would copy this unrelated
 	// shared extension once per selected rule. The typed View path must not.
 	err := db.UpdateShared(context.Background(), func(_ context.Context, s *model.Shared) error {

@@ -259,7 +259,11 @@ func (s *Service) ActivatePair(ctx context.Context, id, did string) (out *model.
 			if a == nil || a.OxiDNSHAPublication == nil || a.OxiDNSHAPublication.ID != j.ID {
 				return refuse(msgJournalChanged)
 			}
-			j = a.OxiDNSHAPublication
+			// The activation below changes the journal in place before saving
+			// it; the read returned the registry's shared generation.
+			if j, e = ownJournal(a.OxiDNSHAPublication); e != nil {
+				return e
+			}
 			if j.Status == "succeeded" {
 				out, e = s.deployment(held, id, did, false)
 				return e

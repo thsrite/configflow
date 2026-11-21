@@ -454,6 +454,11 @@ func (s *Service) advance(ctx context.Context, id string) (*model.HAPublicationS
 	if skipped(j) {
 		return summary(j), nil
 	}
+	// The state machine below changes the journal in place before saving it;
+	// the read returned the registry's shared generation.
+	if j, e = ownJournal(j); e != nil {
+		return nil, e
+	}
 	if j.Status == "rollback_failed" {
 		e = s.recovery(held, j)
 	} else {

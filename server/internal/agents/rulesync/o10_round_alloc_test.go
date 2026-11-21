@@ -65,6 +65,9 @@ func o10AvgRoundBytes(t *testing.T, run func() error) uint64 {
 func TestO10RoundSkipsAgentHistoryAndTracksLivePresence(t *testing.T) {
 	smallCtx, smallSvc := o10RuleSyncFixture(t, 1)
 	largeCtx, largeSvc := o10RuleSyncFixture(t, 500)
+	// // Allocation measurements exclude the test-only view guard's encodings.
+	smallSvc.m.Repository().SetViewGuard(nil)
+	largeSvc.m.Repository().SetViewGuard(nil)
 
 	t.Run("RuleSyncAgents/history", func(t *testing.T) {
 		smallBytes := o10AvgRoundBytes(t, func() error {

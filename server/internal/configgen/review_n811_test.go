@@ -96,6 +96,8 @@ func TestReviewN811OutdatedAgentsSkipAgentHistory(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// // Allocation measurements exclude the test-only view guard's encodings.
+		r.SetViewGuard(nil)
 		ctx := repo.WithScope(repo.WithRepository(t.Context(), r))
 		if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 			system.Agents = []model.Agent{reviewN811AgentRecord(t, "agent-1", deployments)}
