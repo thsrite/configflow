@@ -70,7 +70,7 @@ From an agent session `paseo run --cwd` is ignored — use `--workspace <wks_id>
 worktree, or `--new-workspace worktree --worktree-mode checkout-branch --branch <b>` for a new one.
 
 **Update 2026-11-21 (new coordinator, solarsear account; new Paseo agents use the default ~/.claude account):**
-maintainer: "要严查，这性能也太差了". Hard O10 targets (same host + snapshot, Go <= Python): idle CPU avg <= 1% (floor
+maintainer: "要严查，这性能也太差了". Hard O10 targets (same host + snapshot, Go <= Python; SUPERSEDED for idle CPU by the PVE ruling below): idle CPU avg <= 1% (floor
 <= 0.5%), idle RSS <= 117 MB, every measured route median latency <= Python, read-route allocation in the MB range.
 Every O10 task hands back o10perf before/after numbers against these. Maintainer 2026-11-21 later: "go 性能应该比 python 好才对 … 肯定不正常" → switch acceptance = Go
 BETTER than Python on every idle metric and every measured route (any route slower than Python blocks the switch);
@@ -98,6 +98,15 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+PVE benchmark CT DONE (e44edb00): CT 240 cf-o10-perf 10.97.0.140 on PVE .6 (i3-N305, 2 cores/2 GB, link_down + nft
+table inet o10ct + lo-only netns; stopped, kept; owner /root/cf-gwip-lab/o10-owner.json). Rerun from a worktree:
+`RT_HOST=sunbroke@192.168.0.32 rt -- bash server/tools/o10perf/pve.sh run --servers go` (then `--servers python`; one
+after the other, ~40 min each). Baseline server/parity/o10-pve-baseline.md: batch-21 idle CPU avg 1.9% vs Py 1.5%,
+RSS 92 vs 117 MB; slower routes summary=1 7–9×, agent detail 5–7×, profiles 4–6×, router policy 4–5×. Test-server
+allocation numbers match the CT; latency/CPU only relative. Ruling: the absolute idle targets are dropped (Python
+itself is 1.5% here) → acceptance = same CT, same snapshot, Go <= Python on idle avg, 10 s window median and p10,
+RSS, and every route.
+
 O18 DONE (d58b07e27, server/parity/o18-leftover-parity.md): 33 leftover parity mechanisms (A 10 keep, B 5 legacy read,
 C 18 removable). Prod snapshot: 1 unknown member (agents[].has_update, a computed response field wrongly stored → drop),
 0 wrongly typed fields, 0 leaves whose bytes differ from typed re-encoding → model byte/order preservation protects
