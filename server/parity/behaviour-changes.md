@@ -2507,3 +2507,11 @@ Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存�
   仓库与 Python 的交叉检查（`TestCrossCheckC04Operations` 的 `cfg_get_config`、`cfg_get_resource_config`、
   `get_compat_config`）按新边界比较：Go 侧把 System 中的完整 Agent 注册表附到副本上再与 Python 整体比较，并逐条断言
   `ConfigWithOxiDNSAgents` 的投影只含 8 个投影成员、字节与注册表相同（不含 token 与历史）。
+
+## O10-R2 — 借用读返回的 Profile 保留存储键（内部 API，对外无变化）
+
+- `repo.Profile`、`repo.Config` 等改为借用快照后，返回的 `*model.Profile` 是存储记录的浅拷贝，保留存储节键：
+  `Key()` 返回 `profiles` 映射里的键。原实现经编码再解码得到副本，副本没有存储键，`Key()` 回落到 `id` 成员。
+- 只有存储 id 与映射键不一致时两者才不同。这种文档过不了校验（`validateStored` 对每个配置空间要求
+  `profile.ID == Key()`，否则 `msgProfileIDMismatch`），所以已提交的快照里不存在；`repo` 包外也没有对
+  `Profile`/`Config` 的结果调用 `Key()`（遍历 `document.Profiles` 的调用方不受影响）。路由、JSON、存储均无变化。
