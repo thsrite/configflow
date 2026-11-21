@@ -3,7 +3,7 @@
 // has prepared frontend/node_modules. No installed Agent or real config is used.
 // Example: rt --back doc/img/guide -- node scripts/docs/capture-guide.mjs
 // PLAYWRIGHT_MODULE may point to another server-side Playwright installation.
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { createServer as tcpServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,8 @@ const webPort = Number(process.env.DOCS_WEB_PORT || 15671)
 const apiPort = Number(process.env.DOCS_API_PORT || 15672)
 const python = process.env.DOCS_PYTHON || '/home/sunbroke/cf-test/.venv/bin/python'
 const playwrightPath = process.env.PLAYWRIGHT_MODULE
+// CAPTURE_ONLY=name[,name] re-captures just those images and updates their report entries.
+const only = new Set((process.env.CAPTURE_ONLY || '').split(',').map(name => name.trim()).filter(Boolean))
 const output = resolve(root, 'doc/img/guide')
 const temporary = await mkdtemp(join(tmpdir(), 'configflow-docs-'))
 const captures = []
@@ -60,6 +62,12 @@ app.run(host='0.0.0.0', port=int(os.environ['DOCS_API_PORT']), debug=False, use_
   backend.stdout.on('data', chunk => { backendLog += chunk })
   backend.stderr.on('data', chunk => { backendLog += chunk })
   await waitFor(`http://127.0.0.1:${apiPort}/api/auth/status`)
+  // The SQLite-era backend ignores the legacy config.json above; set the demo address through the API.
+  const domain = await fetch(`http://127.0.0.1:${apiPort}/api/server-domain`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_domain: 'http://192.168.1.10:5010' }),
+  })
+  if (!domain.ok) throw new Error(`server-domain: ${domain.status} ${await domain.text()}`)
   const { createServer } = await import(pathToFileURL(resolve(root, 'frontend/node_modules/vite/dist/node/index.js')))
   vite = await createServer({
     root: resolve(root, 'frontend'), configFile: resolve(root, 'frontend/vite.config.mts'),
@@ -79,6 +87,7 @@ app.run(host='0.0.0.0', port=int(os.environ['DOCS_API_PORT']), debug=False, use_
   await page.addInitScript(() => { localStorage.setItem('configflow-theme', 'light') })
   const base = `http://127.0.0.1:${webPort}`
   async function capture(name, scene, locator) {
+    if (only.size && !only.has(name)) return
     await page.evaluate(() => document.fonts.ready)
     await page.evaluate(() => document.activeElement?.blur())
     await page.waitForTimeout(350)
@@ -144,10 +153,20 @@ app.run(host='0.0.0.0', port=int(os.environ['DOCS_API_PORT']), debug=False, use_
   await page.locator('#agent-name').fill('demo-dns-a')
   await page.locator('#agent-port').fill('18082')
   await capture('oxidns-shell-ha-prepare', 'Shell OxiDNS HA：准备安装，安装核心默认勾选', dialog)
-  await writeFile(join(output, 'capture-report.json'), JSON.stringify({
-    capturedAt: new Date().toISOString(), source: '当前仓库真实 Vue 前端 + Flask API',
-    mock: false, captures, browserErrors,
-  }, null, 2) + '\n')
+  let report = { capturedAt: new Date().toISOString(), source: '当前仓库真实 Vue 前端 + Flask API',
+    mock: false, captures, browserErrors }
+  if (only.size) {
+    const missing = [...only].filter(name => !captures.some(item => item.file === `${name}.jpg`))
+    if (missing.length) throw new Error(`CAPTURE_ONLY names not captured: ${missing.join(', ')}`)
+    report = JSON.parse(await readFile(join(output, 'capture-report.json'), 'utf8'))
+    const at = new Date().toISOString()
+    report.captures = report.captures.map(item => {
+      const fresh = captures.find(entry => entry.file === item.file)
+      return fresh ? { ...fresh, recapturedAt: at } : item
+    })
+    report.browserErrors = [...(report.browserErrors || []), ...browserErrors]
+  }
+  await writeFile(join(output, 'capture-report.json'), JSON.stringify(report, null, 2) + '\n')
   if (browserErrors.length) throw new Error(`Browser errors: ${browserErrors.join('; ')}`)
 } catch (error) {
   console.error(backendLog.slice(-4000))

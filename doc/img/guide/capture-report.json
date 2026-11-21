@@ -111,7 +111,8 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。",
+      "recapturedAt": "2026-11-21T08:18:31.864Z"
     },
     {
       "file": "oxidns-docker-ha-host.jpg",

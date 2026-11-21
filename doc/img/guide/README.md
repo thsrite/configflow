@@ -55,6 +55,8 @@ rt --no-sync -- /tmp/configflow-guide-browser/node_modules/.bin/playwright insta
 rt --no-sync -e PLAYWRIGHT_MODULE=/tmp/configflow-guide-browser/node_modules/playwright/index.mjs --back doc/img/guide -- node scripts/docs/capture-guide.mjs
 ```
 
+只重拍部分图片时加 `-e CAPTURE_ONLY=名称[,名称]`（不含 `.jpg`），脚本只写这些图片，并在 `capture-report.json` 中替换对应条目、记 `recapturedAt`。2026-11-21 `oxidns-docker-ha-prepare.jpg` 按此重拍（镜像输入框改为默认留空、与面板版本配套）。
+
 第一条命令同步代码并准备共用依赖；后续命令不再同步，避免把本机的依赖软链接覆盖到远端。Playwright 安装在测试服务器的独立临时目录，不修改项目依赖；`1.64.1` 是本批图片实际使用的版本。脚本优先使用 `PLAYWRIGHT_MODULE`，未指定时尝试加载当前项目可解析的 `playwright`。Python 使用测试服务器的共用环境，也可通过 `DOCS_PYTHON` 指定路径。
 
 不再需要这套截图依赖时，可在测试服务器删除本次创建的独立目录：
