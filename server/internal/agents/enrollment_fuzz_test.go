@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -46,9 +47,11 @@ func FuzzRegistrationInputOwnershipBoundary(f *testing.F) {
 			if aErr != nil || bErr != nil || aPresent != bPresent {
 				t.Fatal("presence changed")
 			}
-			if !aPresent {
+			if !aPresent || bytes.Equal(a, b) {
 				continue
 			}
+			// Out-of-range numbers (1E700) do not decode into any; equal bytes
+			// above already prove those unchanged.
 			var left, right any
 			if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil || !reflect.DeepEqual(left, right) {
 				t.Fatalf("field=%s changed from %s to %s", key, a, b)
