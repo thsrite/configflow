@@ -97,9 +97,20 @@ append、`Fields.Set`/`SetJSON`。`dnsAgentMembers` 与 `DNSAgent` 的 7 个 jso
 
 ## 提交
 
-- `a197c79c7` M1 修复 + 复核测试（redact、routers）
+- `1dc29e4e7` M1 修复 + 复核测试（redact、routers）
 - 本报告单独提交
 
 ## 验证
 
-见交回消息（.64，rebase 到 go 之后）。
+.64：
+```
+（rebase 前，1dc29e4e7 的同内容树）
+gofmt -l . → 无输出；go vet ./... → VET-OK
+go test -race -count=1 -p 6 redact routers api/routers repo api/agents
+  ok redact 18.8s / routers 427.9s / api/routers 36.5s / repo 212.1s / api/agents 286.0s
+CONFIGFLOW_DIFF=1 go test -tags configflow_difftest api/agents/difftest httpx/difftest api/oxidns/difftest
+  ok 222.8s / 19.5s / 7.1s
+（rebase 到 go@1ada5e9db 之后）
+go test -race -count=1 -run TestO10R6 ./internal/redact ./internal/routers → ok / ok
+/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-28 x 6 → PREFLIGHT PASS
+```
