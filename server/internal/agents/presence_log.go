@@ -17,57 +17,74 @@ var presenceLogger = logx.Get("backend.agents.presence_log")
 // PresenceObservation contains only the selected log-facing registry metadata.
 // No metrics, history or captured configuration belongs in this DTO.
 type PresenceObservation struct{ ID, Status, Name, LastHeartbeat string }
-type presence struct{ status, name, heartbeat string }
 
 var (
-	presenceMu    sync.Mutex
-	presenceKnown = map[string]presence{}
+	presenceMu sync.Mutex
+	// presenceKnown maps each followed Agent to its last status ("online" or
+	// "offline"). Display values are rendered only for a logged transition and
+	// never retained.
+	presenceKnown = map[string]string{}
 )
 
-// ObserveAgentPresence logs transitions after sanitizing each display string.
-// Only sanitized display values are retained in the process-local state.
+// ObserveAgentPresence logs transitions after sanitizing the display strings of
+// the transitioning records. Only statuses are retained in process-local state.
 func ObserveAgentPresence(records []PresenceObservation, secrets redact.Secrets) {
+	observePresence(len(records), func(i int) (string, string) { return records[i].ID, records[i].Status },
+		func(i int) (string, string) {
+			return presenceDisplay(records[i].ID, records[i].Name, records[i].LastHeartbeat, secrets)
+		})
+}
+
+func presenceDisplay(id, name, heartbeat string, secrets redact.Secrets) (string, string) {
+	if name == "" {
+		name = id
+	}
+	return redact.DiagnosticText(name, secrets, 120), redact.DiagnosticText(heartbeat, secrets, 32)
+}
+
+// observePresence follows n records (identity and raw status from record) and
+// logs each status change. render runs only for a record whose transition is
+// logged: an idle scan compares statuses and renders nothing. A repeated ID
+// keeps its last followed record, as before.
+func observePresence(n int, record func(i int) (id, status string), render func(i int) (name, heartbeat string)) {
 	presenceMu.Lock()
 	defer presenceMu.Unlock()
-	current := make(map[string]presence, len(records))
-	order := make([]string, 0, len(records))
-	for _, record := range records {
-		if record.ID == "" {
+	current := make(map[string]string, n)
+	latest := make(map[string]int, n)
+	order := make([]string, 0, n)
+	for i := range n {
+		id, status := record(i)
+		if id == "" {
 			continue
 		}
-		status := "offline"
-		if record.Status == "online" {
-			status = "online"
+		if status != "online" {
+			status = "offline"
 		}
-		if _, known := presenceKnown[record.ID]; status != "online" && !known {
+		if _, known := presenceKnown[id]; status != "online" && !known {
 			continue
 		}
-		name := record.Name
-		if name == "" {
-			name = record.ID
+		if _, seen := current[id]; !seen {
+			order = append(order, id)
 		}
-		name = redact.DiagnosticText(name, secrets, 120)
-		heartbeat := redact.DiagnosticText(record.LastHeartbeat, secrets, 32)
-		if _, seen := current[record.ID]; !seen {
-			order = append(order, record.ID)
-		}
-		current[record.ID] = presence{status, name, heartbeat}
+		current[id] = status
+		latest[id] = i
 	}
 	for _, id := range order {
-		item := current[id]
+		status := current[id]
 		previous, known := presenceKnown[id]
-		if !known || previous.status == item.status {
+		if !known || previous == status {
 			continue
 		}
-		if item.status == "online" {
-			presenceLogger.Infof(msgPresenceOnline, logx.LogText(item.name, 120))
+		name, heartbeat := render(latest[id])
+		if status == "online" {
+			presenceLogger.Infof(msgPresenceOnline, logx.LogText(name, 120))
 		} else {
-			presenceLogger.Warningf(msgPresenceOffline, logx.LogText(item.name, 120), logx.LogText(item.heartbeat, 32))
+			presenceLogger.Warningf(msgPresenceOffline, logx.LogText(name, 120), logx.LogText(heartbeat, 32))
 		}
 	}
 	presenceKnown = current
 }
-func resetPresence() { presenceMu.Lock(); presenceKnown = map[string]presence{}; presenceMu.Unlock() }
+func resetPresence() { presenceMu.Lock(); presenceKnown = map[string]string{}; presenceMu.Unlock() }
 
 // PresenceRecord holds the raw presence-relevant fields of one Agent projected
 // without copying deployment, verification or metrics histories.
@@ -81,23 +98,38 @@ type PresenceRecord struct {
 	HeartbeatErr error
 }
 
+// PresenceSecrets returns the credentials a presence line must mask. It is
+// called at most once per observation, and only when a transition is logged.
+// An error hides the name and heartbeat of every logged line.
+type PresenceSecrets func() (redact.Secrets, error)
+
 // ObservePresenceRecords renders and records presence transitions from narrow
-// PresenceRecord projections. Histories never enter this path.
-func ObservePresenceRecords(records []PresenceRecord, secrets redact.Secrets) {
-	observations := make([]PresenceObservation, 0, len(records))
-	for i := range records {
-		r := &records[i]
-		if !r.ValidID {
-			continue
+// PresenceRecord projections. Histories never enter this path, and secrets is
+// consulted only when a line is written.
+func ObservePresenceRecords(records []PresenceRecord, secrets PresenceSecrets) {
+	var (
+		loaded bool
+		values redact.Secrets
+		failed bool
+	)
+	observePresence(len(records), func(i int) (string, string) {
+		if !records[i].ValidID {
+			return "", ""
 		}
-		observations = append(observations, PresenceObservation{
-			ID:            r.ID,
-			Status:        r.Status,
-			Name:          registryDisplay(r.NameRaw, r.NameErr, secrets),
-			LastHeartbeat: registryDisplay(r.HeartbeatRaw, r.HeartbeatErr, secrets),
-		})
-	}
-	ObserveAgentPresence(observations, secrets)
+		return records[i].ID, records[i].Status
+	}, func(i int) (string, string) {
+		if !loaded {
+			loaded = true
+			var err error
+			values, err = secrets()
+			failed = err != nil
+		}
+		r := &records[i]
+		if failed {
+			return presenceDisplay(r.ID, redact.Redacted, redact.Redacted, nil)
+		}
+		return presenceDisplay(r.ID, registryDisplay(r.NameRaw, r.NameErr, values), registryDisplay(r.HeartbeatRaw, r.HeartbeatErr, values), values)
+	})
 }
 
 // ObserveRegistryPresence projects only original log metadata and sanitizes rich
@@ -110,7 +142,7 @@ func ObserveRegistryPresence(records []*model.Agent, secrets redact.Secrets) {
 		}
 		projected = append(projected, presenceRecordOf(record, "", false, false))
 	}
-	ObservePresenceRecords(projected, secrets)
+	ObservePresenceRecords(projected, func() (redact.Secrets, error) { return secrets, nil })
 }
 
 func presenceRecordOf(record *model.Agent, liveHeartbeat string, hasLive, applyFreshness bool) PresenceRecord {

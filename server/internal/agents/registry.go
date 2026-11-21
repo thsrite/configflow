@@ -548,54 +548,65 @@ func (m *Manager) AgentPair(ctx context.Context, id string) ([]*model.Agent, err
 }
 
 // RuleSyncAgent is the narrow per-Agent view read by rule-sync scheduling and
-// presence tracking: identity, service type, sync switches, live presence
-// metadata and the credentials found in the stored record, without copying
-// deployment or IPv6 verification histories.
+// presence tracking: identity, service type, sync switches and live presence
+// metadata, without copying deployment or IPv6 verification histories.
 type RuleSyncAgent struct {
 	ID              string
 	ServiceType     string
 	RuleSyncLibrary bool
 	RuleSyncRules   bool
-	// Credentials are collected from the stored record with histories
-	// cleared, the same members the previous owned listing copy encoded.
-	Credentials redact.Secrets
-	// CredentialsErr reports a record that could not be encoded; presence
-	// display must then be withheld.
-	CredentialsErr error
-	Presence       PresenceRecord
+	Presence        PresenceRecord
+	// record is the immutable published generation's record (see
+	// BorrowAgents); credentials are collected from it only on demand.
+	record *model.Agent
+	// credentials/credentialsErr are filled eagerly when the registry was
+	// read inside a write transaction, whose working records may change.
+	credentials    redact.Secrets
+	credentialsErr error
+}
+
+// Credentials returns the credential values found in the stored record with
+// histories cleared, the same members the previous owned listing copy encoded.
+// It encodes the record, so callers ask only when a presence line is written.
+// An error means the record could not be encoded and display must be withheld.
+func (a *RuleSyncAgent) Credentials() (redact.Secrets, error) {
+	if a.record != nil {
+		return storedCredentials(a.record)
+	}
+	return a.credentials, a.credentialsErr
 }
 
 // RuleSyncAgents reads only the scheduling and presence fields of each
-// registered Agent from the cached registry view, overlaying live heartbeat
-// freshness, without decoding owned copies or encoding histories.
+// registered Agent from the borrowed registry generation, overlaying live
+// heartbeat freshness, without decoding owned copies or encoding records.
 func (m *Manager) RuleSyncAgents(ctx context.Context) ([]RuleSyncAgent, error) {
-	var out []RuleSyncAgent
-	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
-		live := m.runtime.liveHeartbeats(records)
-		out = make([]RuleSyncAgent, 0, len(records))
-		for i := range records {
-			a := &records[i]
-			liveHB, hasLive := live[i]
-			var library, rules bool
-			if a.RuleSync != nil {
-				library = a.RuleSync.Settings.Library != nil && *a.RuleSync.Settings.Library
-				rules = a.RuleSync.Settings.Rules != nil && *a.RuleSync.Settings.Rules
-			}
-			credentials, credentialsErr := storedCredentials(a)
-			out = append(out, RuleSyncAgent{
-				ID:              a.ID,
-				ServiceType:     a.ServiceType,
-				RuleSyncLibrary: library,
-				RuleSyncRules:   rules,
-				Credentials:     credentials,
-				CredentialsErr:  credentialsErr,
-				Presence:        presenceRecordOf(a, liveHB, hasLive, true),
-			})
-		}
-		return nil
-	})
+	records, shared, err := m.repository.BorrowAgents(ctx)
 	if err != nil {
 		return nil, err
+	}
+	live := m.runtime.liveHeartbeats(records)
+	out := make([]RuleSyncAgent, 0, len(records))
+	for i := range records {
+		a := &records[i]
+		liveHB, hasLive := live[i]
+		var library, rules bool
+		if a.RuleSync != nil {
+			library = a.RuleSync.Settings.Library != nil && *a.RuleSync.Settings.Library
+			rules = a.RuleSync.Settings.Rules != nil && *a.RuleSync.Settings.Rules
+		}
+		row := RuleSyncAgent{
+			ID:              a.ID,
+			ServiceType:     a.ServiceType,
+			RuleSyncLibrary: library,
+			RuleSyncRules:   rules,
+			Presence:        presenceRecordOf(a, liveHB, hasLive, true),
+		}
+		if shared {
+			row.record = a
+		} else {
+			row.credentials, row.credentialsErr = storedCredentials(a)
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }

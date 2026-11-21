@@ -419,29 +419,27 @@ func snapshotVersion(a *model.Agent) string {
 
 // observeRuleSyncPresence is observePresence for the narrow round view: the
 // same system and per-record credential seeds, without owned Agent copies.
+// The seeds are collected only when a transition is logged; an idle round
+// compares statuses and encodes nothing.
 func observeRuleSyncPresence(ctx context.Context, m *agents.Manager, records []agents.RuleSyncAgent) {
-	secrets, err := systemSecrets(ctx, m)
 	presence := make([]agents.PresenceRecord, 0, len(records))
 	for i := range records {
-		if records[i].CredentialsErr != nil {
-			err = records[i].CredentialsErr
-		} else {
-			secrets = redact.NewSecrets(secrets, records[i].Credentials)
-		}
 		presence = append(presence, records[i].Presence)
 	}
-	if err != nil {
-		hidden := make([]agents.PresenceObservation, 0, len(records))
-		for _, p := range presence {
-			if !p.ValidID {
-				continue
-			}
-			hidden = append(hidden, agents.PresenceObservation{ID: p.ID, Status: p.Status, Name: redact.Redacted, LastHeartbeat: redact.Redacted})
+	agents.ObservePresenceRecords(presence, func() (redact.Secrets, error) {
+		secrets, err := systemSecrets(ctx, m)
+		if err != nil {
+			return nil, err
 		}
-		agents.ObserveAgentPresence(hidden, nil)
-		return
-	}
-	agents.ObservePresenceRecords(presence, secrets)
+		for i := range records {
+			credentials, err := records[i].Credentials()
+			if err != nil {
+				return nil, err
+			}
+			secrets = redact.NewSecrets(secrets, credentials)
+		}
+		return secrets, nil
+	})
 }
 
 // Presence uses the shared transition owner, with only its log-facing fields
