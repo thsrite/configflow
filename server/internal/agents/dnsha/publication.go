@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/rulesync"
@@ -535,7 +536,12 @@ func (s *Service) advance(ctx context.Context, id string) (*model.HAPublicationS
 				j.UnreachableSince = &now
 			}
 			if now-*j.UnreachableSince >= MemberLostTimeout.Seconds() {
-				logger.Warning("OxiDNS pair publication stopped: member connection lost")
+				// Rounds keep retrying while the failure cannot settle (the
+				// lost member's child is unproven, or both members are
+				// offline); log the stop once, not every PollInterval.
+				if !strings.HasPrefix(j.Message, msgMemberLost) && (j.HandoffFailure == nil || j.HandoffFailure.Message != msgMemberLost) {
+					logger.Warning("OxiDNS pair publication stopped: member connection lost")
+				}
 				if e = s.settleChildren(held, j); e == nil {
 					e = s.fail(held, j, msgMemberLost, "failed")
 				}
