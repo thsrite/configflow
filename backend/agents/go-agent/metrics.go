@@ -28,18 +28,18 @@ type CPUMetrics struct {
 
 // MemoryMetrics 内存监控数据
 type MemoryMetrics struct {
-	Total       uint64  `json:"total"`         // 总内存 (bytes)
-	Used        uint64  `json:"used"`          // 已用内存 (bytes)
-	Available   uint64  `json:"available"`     // 可用内存 (bytes)
-	UsedPercent float64 `json:"used_percent"`  // 使用率百分比
+	Total       uint64  `json:"total"`        // 总内存 (bytes)
+	Used        uint64  `json:"used"`         // 已用内存 (bytes)
+	Available   uint64  `json:"available"`    // 可用内存 (bytes)
+	UsedPercent float64 `json:"used_percent"` // 使用率百分比
 }
 
 // DiskMetrics 磁盘监控数据
 type DiskMetrics struct {
-	Total       uint64  `json:"total"`         // 总容量 (bytes)
-	Used        uint64  `json:"used"`          // 已用容量 (bytes)
-	Free        uint64  `json:"free"`          // 可用容量 (bytes)
-	UsedPercent float64 `json:"used_percent"`  // 使用率百分比
+	Total       uint64  `json:"total"`        // 总容量 (bytes)
+	Used        uint64  `json:"used"`         // 已用容量 (bytes)
+	Free        uint64  `json:"free"`         // 可用容量 (bytes)
+	UsedPercent float64 `json:"used_percent"` // 使用率百分比
 }
 
 // NetworkMetrics 网络监控数据

@@ -704,4 +704,3 @@ func TestOxiDNSRankingsReturnMoreRowsOnRequest(t *testing.T) {
 		t.Fatalf("eleven rows for eleven: %v", err)
 	}
 }
-
