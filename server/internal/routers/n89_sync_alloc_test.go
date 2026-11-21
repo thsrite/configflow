@@ -13,6 +13,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -101,36 +103,85 @@ func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment b
 	}
 	return out
 }
-func measureSyncPipeline(t testing.TB, fixture syncAllocationFixture) testing.BenchmarkResult {
+
+type syncAllocationStats struct {
+	bytesPerOp  int64
+	allocsPerOp int64
+}
+
+// measureSyncAllocations measures per-operation heap allocations over a fixed
+// iteration count instead of testing.Benchmark's wall-clock loop. Under -race
+// and CPU contention, wall-clock benchmarking can collapse to very small b.N
+// and amplify one-off pool/goroutine allocations from sql.Open. Pinning
+// GOMAXPROCS(1), pausing GC during the short measurement window so small and
+// large fixtures do not evict sync.Pool at different live-heap thresholds, and
+// taking the minimum across samples keeps the floor stable without hiding real
+// per-source copies.
+func measureSyncAllocations(t testing.TB, samples, runs int, fn func()) syncAllocationStats {
 	t.Helper()
-	return testing.Benchmark(func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			_, records, err := loadSyncSources(fixture.ctx, fixture.config, fixture.router, fixture.download)
-			if err != nil || len(records) != len(fixture.router.IPRuleSets) {
-				b.Fatal("pipeline failed", err)
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	var best syncAllocationStats
+	for i := range samples {
+		runtime.GC()
+		runtime.Gosched()
+		cur := func() syncAllocationStats {
+			prevGC := debug.SetGCPercent(-1)
+			defer debug.SetGCPercent(prevGC)
+			// Re-warm sync.Pool caches cleared by GC before reading MemStats.
+			fn()
+			runtime.Gosched()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			for range runs {
+				fn()
 			}
+			runtime.ReadMemStats(&after)
+			return syncAllocationStats{
+				bytesPerOp:  int64(after.TotalAlloc-before.TotalAlloc) / int64(runs),
+				allocsPerOp: int64(after.Mallocs-before.Mallocs) / int64(runs),
+			}
+		}()
+		if i == 0 || cur.bytesPerOp < best.bytesPerOp {
+			best = cur
+		}
+	}
+	runtime.GC()
+	return best
+}
+
+func measureSyncPipeline(t testing.TB, fixture syncAllocationFixture, samples, runs int) syncAllocationStats {
+	t.Helper()
+	return measureSyncAllocations(t, samples, runs, func() {
+		_, records, err := loadSyncSources(fixture.ctx, fixture.config, fixture.router, fixture.download)
+		if err != nil || len(records) != len(fixture.router.IPRuleSets) {
+			t.Fatal("pipeline failed", err)
 		}
 	})
 }
 
 func TestN89SyncPipelineAllocations(t *testing.T) {
+	// With 1 MiB unrelated padding, copying it even once per call adds >= 1 MiB
+	// (>= 16 MiB at rules=16). A 256 KiB delta ceiling still catches a single
+	// copy by 4x while leaving room above residual SQLite/race jitter on the
+	// ~2.1 MiB rules=16 baseline.
+	const cacheDeltaBudget = 256 << 10
 	for _, n := range []int{1, 16} {
-		small := measureSyncPipeline(t, syncAllocationInput(t, n, 0, false, false))
-		large := measureSyncPipeline(t, syncAllocationInput(t, n, 1<<20, false, false))
-		t.Logf("cache rules=%d padding=0/1MiB B/op=%d/%d allocs/op=%d/%d", n, small.AllocedBytesPerOp(), large.AllocedBytesPerOp(), small.AllocsPerOp(), large.AllocsPerOp())
-		if delta := large.AllocedBytesPerOp() - small.AllocedBytesPerOp(); delta > 64<<10 {
-			t.Fatalf("unrelated shared/config copied per source: %d", delta)
+		small := measureSyncPipeline(t, syncAllocationInput(t, n, 0, false, false), 3, 2)
+		large := measureSyncPipeline(t, syncAllocationInput(t, n, 1<<20, false, false), 3, 2)
+		delta := large.bytesPerOp - small.bytesPerOp
+		t.Logf("cache rules=%d padding=0/1MiB B/op=%d/%d delta=%d allocs/op=%d/%d", n, small.bytesPerOp, large.bytesPerOp, delta, small.allocsPerOp, large.allocsPerOp)
+		if delta > cacheDeltaBudget {
+			t.Fatalf("unrelated shared/config copied per source: delta=%d (max %d)", delta, cacheDeltaBudget)
 		}
 	}
 	const budget = 6 << 20
-	nativeSmall := measureSyncPipeline(t, syncAllocationInput(t, 16, 0, true, false))
-	nativeLarge := measureSyncPipeline(t, syncAllocationInput(t, 16, 256<<10, true, false))
-	brokenSmall := measureSyncPipeline(t, syncAllocationInput(t, 16, 0, true, true))
-	brokenLarge := measureSyncPipeline(t, syncAllocationInput(t, 16, 256<<10, true, true))
-	nativeDelta := nativeLarge.AllocedBytesPerOp() - nativeSmall.AllocedBytesPerOp()
-	brokenDelta := brokenLarge.AllocedBytesPerOp() - brokenSmall.AllocedBytesPerOp()
-	t.Logf("download rules=16 native B/op=%d/%d delta=%d; environment-hidden B/op=%d/%d delta=%d", nativeSmall.AllocedBytesPerOp(), nativeLarge.AllocedBytesPerOp(), nativeDelta, brokenSmall.AllocedBytesPerOp(), brokenLarge.AllocedBytesPerOp(), brokenDelta)
+	nativeSmall := measureSyncPipeline(t, syncAllocationInput(t, 16, 0, true, false), 2, 2)
+	nativeLarge := measureSyncPipeline(t, syncAllocationInput(t, 16, 256<<10, true, false), 2, 2)
+	brokenSmall := measureSyncPipeline(t, syncAllocationInput(t, 16, 0, true, true), 2, 1)
+	brokenLarge := measureSyncPipeline(t, syncAllocationInput(t, 16, 256<<10, true, true), 2, 1)
+	nativeDelta := nativeLarge.bytesPerOp - nativeSmall.bytesPerOp
+	brokenDelta := brokenLarge.bytesPerOp - brokenSmall.bytesPerOp
+	t.Logf("download rules=16 native B/op=%d/%d delta=%d; environment-hidden B/op=%d/%d delta=%d", nativeSmall.bytesPerOp, nativeLarge.bytesPerOp, nativeDelta, brokenSmall.bytesPerOp, brokenLarge.bytesPerOp, brokenDelta)
 	if nativeDelta > budget {
 		t.Fatalf("native pipeline repeatedly decodes config: delta=%d", nativeDelta)
 	}
@@ -219,7 +270,7 @@ func TestN89SyncCachePeekDoesNotMigrate(t *testing.T) {
 }
 
 func TestN89SyncWritePipelineAllocations(t *testing.T) {
-	measure := func(padding int) testing.BenchmarkResult {
+	measure := func(padding int) syncAllocationStats {
 		f := syncAllocationInput(t, 16, padding, true, false)
 		sources, err := selectedSyncSources(f.config, f.router)
 		if err != nil {
@@ -232,18 +283,15 @@ func TestN89SyncWritePipelineAllocations(t *testing.T) {
 		if err = writeSyncSources(f.ctx, sources, contents, f.config); err != nil {
 			t.Fatal(err)
 		}
-		return testing.Benchmark(func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if err := writeSyncSources(f.ctx, sources, contents, f.config); err != nil {
-					b.Fatal(err)
-				}
+		return measureSyncAllocations(t, 2, 2, func() {
+			if err := writeSyncSources(f.ctx, sources, contents, f.config); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
 	small, large := measure(0), measure(256<<10)
-	delta := large.AllocedBytesPerOp() - small.AllocedBytesPerOp()
-	t.Logf("write rules=16 B/op=%d/%d delta=%d allocs/op=%d/%d", small.AllocedBytesPerOp(), large.AllocedBytesPerOp(), delta, small.AllocsPerOp(), large.AllocsPerOp())
+	delta := large.bytesPerOp - small.bytesPerOp
+	t.Logf("write rules=16 B/op=%d/%d delta=%d allocs/op=%d/%d", small.bytesPerOp, large.bytesPerOp, delta, small.allocsPerOp, large.allocsPerOp)
 	if delta > 6<<20 {
 		t.Fatalf("write loop repeatedly decoded settings: delta=%d", delta)
 	}
