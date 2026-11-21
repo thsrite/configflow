@@ -473,8 +473,21 @@ func AgentBindingRecord(agent model.Agent) (AgentBinding, error) {
 	return agentBindingFields(fields), nil
 }
 func agentBindingFields(fields model.Fields) AgentBinding {
-	get := func(key string, fallback json.RawMessage) json.RawMessage {
+	binding, _ := agentBinding(func(key string) (json.RawMessage, bool, error) {
 		raw, present := fields.Get(key)
+		return raw, present, nil
+	})
+	return binding
+}
+
+// agentBinding projects one Agent object read through member.
+func agentBinding(member func(string) (json.RawMessage, bool, error)) (AgentBinding, error) {
+	var failure error
+	get := func(key string, fallback json.RawMessage) json.RawMessage {
+		raw, present, err := member(key)
+		if err != nil && failure == nil {
+			failure = err
+		}
 		if !present {
 			return fallback
 		}
@@ -489,9 +502,56 @@ func agentBindingFields(fields model.Fields) AgentBinding {
 	if !jsonTruthy(service) {
 		service = []byte(`"mihomo"`)
 	}
-	return AgentBinding{id, name, get("host", []byte(`""`)), get("port", []byte(`null`)), service}
+	return AgentBinding{id, name, get("host", []byte(`""`)), get("port", []byte(`null`)), service}, failure
 }
+
+// agentProfileBinding is the profile an Agent object read through member is
+// bound to (the default profile when it names none); ok is false for a
+// non-string profile_id, which binds nowhere.
+func agentProfileBinding(document *model.Document, member func(string) (json.RawMessage, bool, error)) (string, bool, error) {
+	id := defaultProfileIn(document)
+	raw, present, err := member("profile_id")
+	if err != nil {
+		return "", false, err
+	}
+	if present && jsonTruthy(raw) {
+		text, ok := jsonString(raw)
+		if !ok {
+			return "", false, nil
+		}
+		id = text
+	}
+	return id, true, nil
+}
+
+// agentBindingRecords groups the Agents by bound profile. Typed registry
+// records are read member by member (scalars only); the encoded registry is
+// read only when there are no typed records (absent, empty or invalid list).
 func agentBindingRecords(document *model.Document) (map[string][]AgentBinding, error) {
+	agents := document.System.Agents
+	if len(agents) == 0 {
+		return encodedAgentBindingRecords(document)
+	}
+	result := map[string][]AgentBinding{}
+	for i := range agents {
+		member := agents[i].MemberJSON
+		id, ok, err := agentProfileBinding(document, member)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		binding, err := agentBinding(member)
+		if err != nil {
+			return nil, err
+		}
+		result[id] = append(result[id], binding)
+	}
+	return result, nil
+}
+
+func encodedAgentBindingRecords(document *model.Document) (map[string][]AgentBinding, error) {
 	fields, err := recordMembers(&document.System)
 	if err != nil {
 		return nil, err
@@ -512,15 +572,22 @@ func agentBindingRecords(document *model.Document) (map[string][]AgentBinding, e
 		if err := fields.UnmarshalJSON(raw); err != nil {
 			return nil, err
 		}
-		id := defaultProfileIn(document)
-		if raw, present := fields.Get("profile_id"); present && jsonTruthy(raw) {
-			text, ok := jsonString(raw)
-			if !ok {
-				continue
-			}
-			id = text
+		member := func(key string) (json.RawMessage, bool, error) {
+			raw, present := fields.Get(key)
+			return raw, present, nil
 		}
-		result[id] = append(result[id], agentBindingFields(fields))
+		id, ok, err := agentProfileBinding(document, member)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		binding, err := agentBinding(member)
+		if err != nil {
+			return nil, err
+		}
+		result[id] = append(result[id], binding)
 	}
 	return result, nil
 }
