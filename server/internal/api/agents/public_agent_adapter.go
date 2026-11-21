@@ -2,7 +2,10 @@ package agents
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"reflect"
+	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
@@ -10,68 +13,119 @@ import (
 	"configflow/internal/redact"
 )
 
-// publicAgentModel projects caller-owned native records through one redaction
-// boundary. Credentials are captured before private task trees are removed.
+// publicAgentModel projects one record through the redaction boundary, with
+// the credentials collected from the record itself (histories included).
 func publicAgentModel(record *model.Agent) (map[string]json.RawMessage, error) {
-	return publicAgentWithCredentialsModel(record, nil)
-}
-
-func publicAgentWithCredentialsModel(record *model.Agent, secrets redact.Secrets) (map[string]json.RawMessage, error) {
 	raw, err := model.Marshal(record)
 	if err != nil {
 		return nil, err
 	}
-	secrets = redact.CollectCredentials(json.RawMessage(raw), secrets)
-	var public map[string]json.RawMessage
-	if err = jsondecode.Unmarshal(raw, &public); err != nil {
-		return nil, err
-	}
-	for _, key := range []string{"token", "applied_content", "dns_follow_job"} {
-		delete(public, key)
-	}
-	if record.OxiDNSHAPublication != nil && record.OxiDNSHAPublication.HasMembers() {
-		summary, err := agents.HASummaryModel(record.OxiDNSHAPublication)
-		if err != nil {
-			return nil, err
-		}
-		public["oxidns_ha_publication"], err = model.Marshal(summary)
-		if err != nil {
-			return nil, err
+	return publicAgentView(record, redact.CollectCredentials(json.RawMessage(raw), nil))
+}
+
+// agentMemberNames are the declared members of a stored Agent record.
+var agentMemberNames = func() []string {
+	var names []string
+	typ := reflect.TypeFor[model.Agent]()
+	for i := range typ.NumField() {
+		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		if name != "" && name != "-" {
+			names = append(names, name)
 		}
 	}
-	if raw, present := public["deployments"]; present && len(raw) > 0 && raw[0] == '{' {
-		public["deployments"], err = publicDeploymentsModel(record, raw)
+	return names
+}()
+
+// privateAgentMembers never leave the server.
+var privateAgentMembers = map[string]bool{"token": true, "applied_content": true, "dns_follow_job": true}
+
+// publicAgentView is the public projection of record, built member by member:
+// private members are dropped, task histories and states are projected from
+// their typed values, every other member is copied as encoded. secrets must
+// hold every credential found in record (callers pass the registry's
+// per-generation credentials plus the live members' own). SanitizeCredentials
+// then masks credential fields, credential-bearing text and those secrets.
+func publicAgentView(record *model.Agent, secrets redact.Secrets) (map[string]json.RawMessage, error) {
+	public := make(map[string]json.RawMessage, len(agentMemberNames)+record.Fields.Len())
+	for _, name := range agentMemberNames {
+		if privateAgentMembers[name] {
+			continue
+		}
+		var err error
+		switch {
+		case name == "deployments" && record.Deployments.Len() > 0:
+			public[name], err = publicDeploymentsModel(record, nil)
+		case name == "latest_deployment" && record.LatestDeployment != nil:
+			public[name], err = publicDeploymentModel(record.LatestDeployment)
+		case name == "latest_upgrade" && record.LatestUpgrade != nil:
+			var state *model.AgentUpgrade
+			if state, err = agents.PublicUpgradeStateModel(record.LatestUpgrade); err == nil {
+				public[name], err = model.Marshal(state)
+			}
+		case name == "oxidns_ha_publication" && record.OxiDNSHAPublication != nil && record.OxiDNSHAPublication.HasMembers():
+			var summary *model.HAPublicationSummary
+			if summary, err = agents.HASummaryModel(record.OxiDNSHAPublication); err == nil {
+				public[name], err = model.Marshal(summary)
+			}
+		default:
+			raw, present, memberErr := record.MemberJSON(name)
+			if memberErr != nil || !present {
+				err = memberErr
+				break
+			}
+			// An empty, null or wrongly typed history: the encoded rules.
+			if name == "deployments" && len(raw) > 0 && raw[0] == '{' {
+				raw, err = publicDeploymentsModel(record, raw)
+			}
+			public[name] = raw
+		}
 		if err != nil {
 			return nil, err
 		}
 	}
-	if record.LatestDeployment != nil {
-		public["latest_deployment"], err = publicDeploymentModel(record.LatestDeployment)
-		if err != nil {
-			return nil, err
+	for name, raw := range record.Fields.All() {
+		if !privateAgentMembers[name] {
+			public[name] = raw
 		}
 	}
-	if record.LatestUpgrade != nil {
-		state, err := agents.PublicUpgradeStateModel(record.LatestUpgrade)
-		if err != nil {
-			return nil, err
-		}
-		public["latest_upgrade"], err = model.Marshal(state)
-		if err != nil {
-			return nil, err
-		}
+	payload := make(map[string]any, len(public))
+	for name, raw := range public {
+		payload[name] = raw
 	}
 	// SanitizeCredentials owns all secret discovery and text redaction. The HTTP
 	// writer may perform its independent stored-secret pass afterwards.
-	publicRaw, err := json.Marshal(public)
+	sanitized := redact.SanitizeCredentials(payload, secrets)
+	var result map[string]json.RawMessage
+	if err := jsondecode.Unmarshal(sanitized, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// liveAgentSecrets are the credentials a public view of the live record
+// masks: those of every stored Agent record of the current generation
+// (remembered per store head by the repository) and those in the members a
+// read lays over the stored record (heartbeat fields, liveness).
+func liveAgentSecrets(ctx context.Context, record *model.Agent) (redact.Secrets, error) {
+	stored, err := redact.AgentRecordCredentials(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	sanitized := redact.SanitizeCredentials(json.RawMessage(publicRaw), secrets)
-	if err = jsondecode.Unmarshal(sanitized, &public); err != nil {
+	live := make(map[string]json.RawMessage, len(liveMembers))
+	for _, name := range liveMembers {
+		raw, present, err := record.MemberJSON(name)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			live[name] = raw
+		}
+	}
+	data, err := json.Marshal(live)
+	if err != nil {
 		return nil, err
 	}
-	return public, nil
+	return redact.CollectCredentials(json.RawMessage(data), stored), nil
 }
 
 func publicDeploymentModel(record *model.Deployment) (json.RawMessage, error) {
@@ -99,7 +153,7 @@ func publicDeploymentModel(record *model.Deployment) (json.RawMessage, error) {
 }
 
 // publicDeploymentsModel projects the deployment history (raw is its encoded
-// object) from the typed entries, instead of decoding every encoded entry
+// object, or nil to encode it only when needed) from the typed entries, instead of decoding every encoded entry
 // again. Entries that are not valid tasks keep the encoded-entry rules: a
 // non-object becomes null, an object is decoded as before. A history with a
 // repeated id uses the encoded object, whose decoding keeps the last value.
@@ -109,6 +163,12 @@ func publicDeploymentsModel(record *model.Agent, raw json.RawMessage) (json.RawM
 	seen := make(map[string]bool, len(keys))
 	for _, id := range keys {
 		if seen[id] {
+			if raw == nil {
+				var err error
+				if raw, _, err = record.MemberJSON("deployments"); err != nil {
+					return nil, err
+				}
+			}
 			return publicEncodedDeploymentsModel(raw)
 		}
 		seen[id] = true

@@ -853,6 +853,30 @@ func (s *Source) WithMember(key string, raw json.RawMessage) (*Source, error) {
 	return SourceFromJSON(data, s.revision)
 }
 
+// SourceFromConfig captures a resolved configuration without decoding it
+// again: the typed view is config itself, the raw snapshot its encoding.
+// config must not change afterwards; a borrowed repository Config (an
+// immutable committed snapshot) or a caller-owned copy qualifies.
+func SourceFromConfig(config *model.Config, revision *int64) (*Source, error) {
+	if config == nil {
+		return nil, preparation("Missing profile snapshot")
+	}
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	var members model.Fields
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return nil, preparation("Profile snapshot must be an object")
+	}
+	source := &Source{members: members, modelConfig: config}
+	if revision != nil {
+		value := *revision
+		source.revision = &value
+	}
+	return source, nil
+}
+
 // SourceFromJSON owns the raw snapshot and its decoded model view.
 func SourceFromJSON(raw json.RawMessage, revision *int64) (*Source, error) {
 	var members model.Fields

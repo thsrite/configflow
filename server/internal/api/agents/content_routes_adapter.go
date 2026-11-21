@@ -61,11 +61,9 @@ func readContentSource(ctx context.Context, m *core.Manager, profile string) con
 	if err != nil {
 		return contentSnapshot{nil, err}
 	}
-	raw, err := model.Marshal(config)
-	if err != nil {
-		return contentSnapshot{nil, err}
-	}
-	source, err := deploy.SourceFromJSON(raw, nil)
+	// The borrowed Config is an immutable snapshot: the source keeps it as its
+	// typed view instead of encoding and decoding it again.
+	source, err := deploy.SourceFromConfig(config, nil)
 	return contentSnapshot{source, err}
 }
 func contentOrigin(record *model.Agent) string {
@@ -83,7 +81,11 @@ func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent
 		gen = cache.gen
 	}
 	public, err := views.public(m.Repository(), gen, viewKey{index, record.ID, viewFull}, record, func() (map[string]json.RawMessage, error) {
-		return publicAgentModel(record)
+		secrets, err := liveAgentSecrets(ctx, record)
+		if err != nil {
+			return nil, err
+		}
+		return publicAgentView(record, secrets)
 	})
 	if err != nil {
 		return nil, err
@@ -118,14 +120,7 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	summary := c.ArgDefault("summary", "") == "1"
-	// Summary credentials come from the stored records, histories included.
-	// They are only read here, during this request.
-	var stored []*model.Agent
-	var inspect func(*model.Agent)
-	if summary {
-		inspect = func(record *model.Agent) { stored = append(stored, record) }
-	}
-	records, gen, err := m.ReadAgentsAt(ctx, !summary, inspect)
+	records, gen, err := m.ReadAgentsAt(ctx, !summary, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -141,19 +136,12 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	if summary {
 		for i := range records {
 			record := &records[i]
-			key := viewKey{i, record.ID, viewSummary}
-			public, err := views.public(repository, gen, key, record, func() (map[string]json.RawMessage, error) {
-				secrets, err := views.seed(repository, gen, key, func() (redact.Secrets, error) {
-					raw, err := model.Marshal(stored[i])
-					if err != nil {
-						return nil, err
-					}
-					return redact.CollectCredentials(json.RawMessage(raw), nil), nil
-				})
+			public, err := views.public(repository, gen, viewKey{i, record.ID, viewSummary}, record, func() (map[string]json.RawMessage, error) {
+				secrets, err := liveAgentSecrets(ctx, record)
 				if err != nil {
 					return nil, err
 				}
-				return publicAgentWithCredentialsModel(record, secrets)
+				return publicAgentView(record, secrets)
 			})
 			if err != nil {
 				return nil, err

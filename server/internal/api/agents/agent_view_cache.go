@@ -2,13 +2,14 @@ package agents
 
 // Derived Agent view cache (O10-R4).
 //
-// The public Agent projection collects credentials over the whole stored record
-// (histories included), projects it and sanitizes it; that encodes every
-// record in full. The direct computation is kept as the definition and as the
-// path taken whenever the cache is off. An entry is derived only from:
+// The direct computation (publicAgentView, content sources from the borrowed
+// Config) still encodes each record's members and histories for every read.
+// It stays the definition and the path taken whenever the cache is off; the
+// cache only adds reuse. An entry is derived only from:
 //
 //   - the stored registry generation (store head) and the record's position
-//     and id in it,
+//     and id in it; the credentials masked are the generation's stored Agent
+//     credentials plus those in the live members,
 //   - the members a read lays over the stored record (heartbeat runtime fields,
 //     last_heartbeat and status, including the offline decision made at read
 //     time), fingerprinted on every read,
@@ -34,7 +35,6 @@ import (
 
 	core "configflow/internal/agents"
 	"configflow/internal/model"
-	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/store"
 )
@@ -46,7 +46,7 @@ type viewMode uint8
 
 const (
 	viewFull    viewMode = iota // credentials from the live record, histories included
-	viewSummary                 // history-free record, credentials from the stored record
+	viewSummary                 // history-free record
 )
 
 type viewKey struct {
@@ -68,7 +68,6 @@ type agentViews struct {
 	head       store.Head
 	env        string
 	entries    map[viewKey]viewEntry
-	seeds      map[viewKey]redact.Secrets
 	sources    map[string]contentSnapshot
 }
 
@@ -92,7 +91,7 @@ func (v *agentViews) reset() {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.repository, v.head, v.env = nil, store.Head{}, ""
-	v.entries, v.seeds, v.sources = nil, nil, nil
+	v.entries, v.sources = nil, nil
 }
 
 // generation selects the maps of (repository, head) under v.mu, starting a new
@@ -105,7 +104,6 @@ func (v *agentViews) generation(repository *repo.Repository, gen core.Generation
 	if v.repository != repository || v.head != gen.Head || v.env != env || v.entries == nil {
 		v.repository, v.head, v.env = repository, gen.Head, env
 		v.entries = map[viewKey]viewEntry{}
-		v.seeds = map[viewKey]redact.Secrets{}
 		v.sources = map[string]contentSnapshot{}
 	}
 	return true
@@ -170,29 +168,6 @@ func (v *agentViews) public(repository *repo.Repository, gen core.Generation, ke
 	}
 	v.mu.Unlock()
 	return public, nil
-}
-
-// seed returns compute()'s credentials of the stored record at key.
-func (v *agentViews) seed(repository *repo.Repository, gen core.Generation, key viewKey,
-	compute func() (redact.Secrets, error)) (redact.Secrets, error) {
-	v.mu.Lock()
-	if v.generation(repository, gen) {
-		if secrets, ok := v.seeds[key]; ok {
-			v.mu.Unlock()
-			return secrets, nil
-		}
-	}
-	v.mu.Unlock()
-	secrets, err := compute()
-	if err != nil {
-		return nil, err
-	}
-	v.mu.Lock()
-	if v.generation(repository, gen) {
-		v.seeds[key] = secrets
-	}
-	v.mu.Unlock()
-	return secrets, nil
 }
 
 // source returns the content source of profile for the generation. Only
