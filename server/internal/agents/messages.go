@@ -365,6 +365,9 @@ const (
 
 const msgAgentHostInvalid = "Agent 主机名不是有效的国际化域名"
 
+// msgAgentResponseTooLarge is a reply above DefaultMaxBody (O9 round 2).
+const msgAgentResponseTooLarge = "Agent 响应超过 64 MiB 上限，已中止读取"
+
 const (
 	msgDomainProbe         = "域名探测"
 	msgRegionCheck         = "区域检测"

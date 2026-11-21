@@ -211,6 +211,13 @@ func (c *Client) dialTLS(ctx context.Context, network, addr string) (net.Conn, e
 
 var errReadTimeout = errors.New("devhttp: the device stopped answering")
 
+// MaxResponseBytes bounds one device reply. Router reads are filtered,
+// paged or scripted, so real replies stay far below it.
+const MaxResponseBytes = 128 << 20
+
+// ErrResponseTooLarge is a reply above MaxResponseBytes (class ConnectionError).
+var ErrResponseTooLarge = errors.New("devhttp: the device reply exceeds the size limit")
+
 // watchdog cancels the request when the device sends nothing for timeout.
 type watchdog struct {
 	mu      sync.Mutex
@@ -316,6 +323,11 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, body any, timeou
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			if int64(data.Len()+n) > MaxResponseBytes {
+				// O9 round 2: a device (or whatever answers at its address)
+				// must not be able to exhaust the panel's memory.
+				return nil, &Error{Class: ConnectionError, Err: ErrResponseTooLarge}
+			}
 			data.Write(buf[:n])
 			dog.kick()
 		}

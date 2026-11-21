@@ -233,12 +233,26 @@ func (HTTPClient) Do(ctx context.Context, request Request) (*Response, error) {
 		}
 		return response, nil
 	}
-	data, err := io.ReadAll(resp.Body)
+	// Without an explicit bound every reply is still capped (O9 round 2): a
+	// compromised Agent or whatever its address now points to must not be able
+	// to exhaust the panel's memory with an endless body.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, DefaultMaxBody+1))
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
+	if int64(len(data)) > DefaultMaxBody {
+		return nil, &TransportError{Err: ErrResponseTooLarge}
+	}
 	return &Response{StatusCode: resp.StatusCode, Header: resp.Header, Body: data}, nil
 }
+
+// DefaultMaxBody bounds replies of requests without their own MaxBody. It is
+// four times the largest explicit bound (the 16 MiB Mihomo panel proxy).
+const DefaultMaxBody = 64 << 20
+
+// ErrResponseTooLarge is an Agent reply above DefaultMaxBody; it is a
+// TransportError, so callers report it like any other failed connection.
+var ErrResponseTooLarge = errors.New(msgAgentResponseTooLarge)
 
 var (
 	clientMu      sync.RWMutex
