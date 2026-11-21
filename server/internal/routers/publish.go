@@ -338,8 +338,6 @@ func releasePublication(ctx context.Context, r *Router, p *Plan, result *Result,
 	return out, nil
 }
 
-// saveAbortedPublication is the sole R12 local commit exception. Its caller has
-// established Aborted && Wrote. No device I/O or reads enter this region.
 // planOps counts the device and Agent operations of a plan.
 func planOps(p *Plan) int {
 	count := 0
@@ -348,6 +346,9 @@ func planOps(p *Plan) int {
 	}
 	return count
 }
+
+// saveAbortedPublication is the sole R12 local commit exception. Its caller has
+// established Aborted && Wrote. No device I/O or reads enter this region.
 func saveAbortedPublication(ctx context.Context, r *repo.Repository, profileID string, expected json.RawMessage, p repo.RouterPublicationJSON) error {
 	return r.SaveRouterPublicationJSON(ctxx.Uninterruptible(ctx), profileID, expected, p)
 }
