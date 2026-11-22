@@ -801,8 +801,9 @@ func TestCorpus(t *testing.T) {
 	}
 	t.Logf("%d corpus rows %v; %d native/structural comparisons, %d not expressible, %d differ, %d pending (non-text rule_proxy_token)", len(rows), counts,
 		accepted, unsupported, failures, pendingToken)
-	if pendingToken != 351 {
-		t.Errorf("pending non-text rule_proxy_token rows = %d, want 351 (update the hand-back note when the token is read strictly)", pendingToken)
+	// The token is read strictly (stored:"secret"): no row is pending.
+	if pendingToken != 0 {
+		t.Errorf("pending non-text rule_proxy_token rows = %d, want 0", pendingToken)
 	}
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
