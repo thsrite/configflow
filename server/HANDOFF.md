@@ -98,6 +98,12 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+2026-11-23 07:00 in flight: batch-38 (T1c) gate FAILED (proddiff new=87 = API/export fields missing because T1c made
+them omitzero — API must match Python, only storage may omit; fuzz: invalid UTF-8 readable but not writable) → 01478e15
+fixing. Started in parallel: O18 T2/T3/T4 (Opus 9ce3ad9c, go-o18-rest on batch-38), O18 T8 metrics/rankings (Opus
+d867b0b9, go-o18-t8 on batch-38), R13 non-heap 57 MB + R12 GC advice (Opus 1ac3f712, go-perf-r13), proddiff comparator
+in Go (Opus 70b59345, go-proddiff-go). Next: T1d after T1c merges, then O17.
+
 batch-34 MERGED 2026-11-23 (R11 per-route allocation ceilings + whole-record encode source gate (EncodeMember with a
 constant member name allowed), R8 subscription node cache keyed by file identity, R9 YAML single encoder + rule
 member reads; mihomo 164→40 MB/request, provider 187→46 MB; review: reuse-table memory caps, cacheTexts per subscription,
