@@ -19,10 +19,16 @@ import (
 //go:embed data/tldextract-5.1.2-snapshot.dat
 var tldSnapshot string
 
+// suffixTrie holds both of tldextract's tries (with and without the private
+// domains section) in one tree: a node is part of the public-only trie when
+// a public rule passes through it. Leaves keep a nil map, so the whole list
+// costs about a third of two separate tries (O10-R13).
 type suffixTrie struct {
 	matches map[string]*suffixTrie
-	end     bool
-	private bool
+	// public: some public rule passes through or ends at this node.
+	public bool
+	// endPublic/endPrivate: a public/private rule ends here.
+	endPublic, endPrivate bool
 }
 
 func (t *suffixTrie) add(suffix string, private bool) {
@@ -31,22 +37,45 @@ func (t *suffixTrie) add(suffix string, private bool) {
 	for i := len(labels) - 1; i >= 0; i-- {
 		next := node.matches[labels[i]]
 		if next == nil {
-			next = &suffixTrie{matches: map[string]*suffixTrie{}}
+			if node.matches == nil {
+				node.matches = map[string]*suffixTrie{}
+			}
+			next = &suffixTrie{}
 			node.matches[labels[i]] = next
 		}
 		node = next
+		if !private {
+			node.public = true
+		}
 	}
-	node.end = true
-	node.private = private
+	if private {
+		node.endPrivate = true
+	} else {
+		node.endPublic = true
+	}
+}
+
+// child is the node for label below t in the trie with or without the
+// private section.
+func (t *suffixTrie) child(label string, includePrivate bool) (*suffixTrie, bool) {
+	next, ok := t.matches[label]
+	if !ok || (!includePrivate && !next.public) {
+		return nil, false
+	}
+	return next, true
+}
+
+// end reports whether a rule of the selected trie ends at t.
+func (t *suffixTrie) end(includePrivate bool) bool {
+	return t.endPublic || (includePrivate && t.endPrivate)
 }
 
 // PUBLIC_SUFFIX_RE of tldextract.suffix_list (\w is Unicode in Python).
 var publicSuffixRE = regexp.MustCompile(`(?m)^([.*!]*[\p{L}\p{N}_]\S*)`)
 
 var (
-	suffixOnce        sync.Once
-	suffixTrieInclPSL *suffixTrie
-	suffixTrieExclPSL *suffixTrie
+	suffixOnce sync.Once
+	suffixRoot *suffixTrie
 )
 
 func loadSuffixTries() {
@@ -59,14 +88,12 @@ func loadSuffixTries() {
 		return out
 	}
 	publicTLDs, privateTLDs := find(public), find(private)
-	suffixTrieInclPSL = &suffixTrie{matches: map[string]*suffixTrie{}}
-	suffixTrieExclPSL = &suffixTrie{matches: map[string]*suffixTrie{}}
+	suffixRoot = &suffixTrie{}
 	for _, s := range publicTLDs {
-		suffixTrieInclPSL.add(s, false)
-		suffixTrieExclPSL.add(s, false)
+		suffixRoot.add(s, false)
 	}
 	for _, s := range privateTLDs {
-		suffixTrieInclPSL.add(s, true)
+		suffixRoot.add(s, true)
 	}
 }
 
@@ -173,24 +200,21 @@ func punycodeDecode(s string) (string, bool) {
 
 // suffixIndex is _PublicSuffixListTLDExtractor.suffix_index.
 func suffixIndex(labels []string, includePrivate bool) int {
-	node := suffixTrieExclPSL
-	if includePrivate {
-		node = suffixTrieInclPSL
-	}
+	node := suffixRoot
 	i := len(labels)
 	j := i
 	for k := len(labels) - 1; k >= 0; k-- {
 		decoded := decodePunycode(labels[k])
-		if next, ok := node.matches[decoded]; ok {
+		if next, ok := node.child(decoded, includePrivate); ok {
 			j--
 			node = next
-			if node.end {
+			if node.end(includePrivate) {
 				i = j
 			}
 			continue
 		}
-		if _, wildcard := node.matches["*"]; wildcard {
-			if _, exception := node.matches["!"+decoded]; exception {
+		if _, wildcard := node.child("*", includePrivate); wildcard {
+			if _, exception := node.child("!"+decoded, includePrivate); exception {
 				return j
 			}
 			return j - 1
