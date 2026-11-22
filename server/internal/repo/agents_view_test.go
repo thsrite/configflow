@@ -207,9 +207,9 @@ func TestAgentViewOriginalTypesCancellationAndReadGuard(t *testing.T) {
 	}
 	if err := r.ViewAgents(t.Context(), func(records []model.Agent) error {
 		// Stored values read leniently (O18 T1b): integer text is a number,
-		// a number is text, a switch keeps its truth value ("false" is truthy),
-		// unknown members drop.
-		for _, tt := range []struct{ member, want string }{{"port", `8080`}, {"token", `"7"`}, {"enabled", `true`}} {
+		// a number is text, the Agent's enabled switch (a device-write gate,
+		// O18 T1b review) of another type is off, unknown members drop.
+		for _, tt := range []struct{ member, want string }{{"port", `8080`}, {"token", `"7"`}, {"enabled", `false`}} {
 			raw, present, err := model.EncodeMember(&records[0], tt.member)
 			if err != nil || !present || string(raw) != tt.want {
 				t.Fatal(tt.member, string(raw), err)

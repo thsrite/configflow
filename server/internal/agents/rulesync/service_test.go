@@ -448,9 +448,10 @@ func TestAgentSettingsStrictBooleans(t *testing.T) {
 		want Settings
 	}{
 		{"strict booleans", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":false}}}`, Settings{Library: true}},
-		// A stored switch of another type keeps its truth value (O18 T1b
-		// flag-truthiness); Python's rule sync compared with "is True".
-		{"historical wrong type", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":"true"}}}`, Settings{Library: true, Rules: true}},
+		// A rule-sync switch of another type is off (device-write gate, O18
+		// T1b review), as Python's "is True" compared it.
+		{"historical wrong type", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":"true"}}}`, Settings{Library: true}},
+		{"truthy number", `{"id":"device","rule_sync":{"settings":{"library":1,"rules":"yes"}}}`, Settings{}},
 		{"null", `{"id":"device","rule_sync":{"settings":{"library":null,"rules":null}}}`, Settings{}},
 	}
 	for _, tt := range tests {

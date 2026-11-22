@@ -51,6 +51,9 @@ type plainRecord interface{ plainRecord() }
 type issueSink struct {
 	root   reflect.Type
 	prefix string
+	// gate: the root value itself is a device-write gate member
+	// (DecodeStoredMember of a stored:"gate" field).
+	gate   bool
 	issues []FieldIssue
 }
 
@@ -159,12 +162,13 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				return skipInvalid(dec, sink, func() { *v = false })
 			}
 			// A switch stored with another type keeps its truth value (the
-			// flag-truthiness ruling: 1 and "yes" are on, 0, "" and [] off).
+			// flag-truthiness ruling: 1 and "yes" are on, 0, "" and [] off),
+			// except a device-write gate, which is off (see gateTag).
 			value, err := dec.ReadValue()
 			if err != nil {
 				return err
 			}
-			*v = JSONSwitchEnabled(value, false)
+			*v = !writeGate(sink, dec.StackPointer()) && JSONSwitchEnabled(value, false)
 			sink.add(dec, IssueType)
 			return nil
 		}),
@@ -215,8 +219,12 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			if typ.Kind() == reflect.Slice && kind == '[' && selfDecoding(typ.Elem()) {
 				return decodeRecordList(dec, sink, reflect.ValueOf(v).Elem())
 			}
-			// A record behind a pointer stored with another kind is nil.
+			// A record behind a pointer stored with another kind is nil, or an
+			// empty record when its presence must fail closed (failClosed).
 			if typ.Kind() == reflect.Pointer && typ.Elem().Kind() == reflect.Struct && isPlain(typ.Elem()) && kind != '{' {
+				if typ.Implements(failClosedType) {
+					return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().Set(reflect.New(typ.Elem())) })
+				}
 				return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().SetZero() })
 			}
 			switch {
@@ -252,6 +260,51 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 		}),
 	)
 }
+
+// gateTag marks a stored switch that makes the panel write to a device or
+// push automatically (rule sync, HA activation, DNS follow retry, ...). Such a
+// switch stored with another JSON type than a boolean reads as off (plus an
+// issue) instead of by its truth value: damaged data must not start device
+// writes the user never turned on (O18 T1b review ruling).
+const gateTag = "gate"
+
+// writeGate reports whether the member at pointer (from the decoder's root
+// type) is a struct field tagged stored:"gate".
+func writeGate(sink *issueSink, pointer jsontext.Pointer) bool {
+	typ, gate := sink.root, sink.gate
+	for token := range pointer.Tokens() {
+		for typ != nil && typ.Kind() == reflect.Pointer {
+			typ = typ.Elem()
+		}
+		gate = false
+		switch {
+		case typ == nil:
+			return false
+		case orderedElem(typ) != nil:
+			typ = orderedElem(typ)
+		case typ.Kind() == reflect.Struct:
+			field, ok := plainFields(typ)[token]
+			if !ok {
+				return false
+			}
+			gate = typ.FieldByIndex(field.index).Tag.Get("stored") == gateTag
+			typ = field.typ
+		case typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array || typ.Kind() == reflect.Map:
+			typ = typ.Elem()
+		default:
+			return false
+		}
+	}
+	return gate
+}
+
+// failClosed marks a record whose stored presence locks something (the
+// OxiDNS HA publication journal locks its pair). Stored with another JSON
+// kind than an object it reads as an empty record, not as absent, so damaged
+// data keeps the lock (O18 T1b review).
+type failClosed interface{ failClosed() }
+
+var failClosedType = reflect.TypeFor[failClosed]()
 
 // skipInvalid consumes a value of the wrong type. Null is the zero value
 // without an issue, like encoding/json.
@@ -294,11 +347,16 @@ func storedInt(dec *jsontext.Decoder, sink *issueSink, set func(int64)) error {
 // records are dropped and reported as IssueUnknown; issues of records that are
 // not yet migrated are included.
 func DecodeStored(data []byte, v any, prefix string) ([]FieldIssue, error) {
+	return decodeStored(data, v, prefix, false)
+}
+
+// decodeStored is DecodeStored; gate means v is a device-write gate member.
+func decodeStored(data []byte, v any, prefix string, gate bool) ([]FieldIssue, error) {
 	target := reflect.ValueOf(v)
 	if target.Kind() != reflect.Pointer || target.IsNil() {
 		return nil, fmt.Errorf("%w: stored target must be a non-nil pointer", ErrType)
 	}
-	sink := &issueSink{root: target.Type().Elem(), prefix: prefix}
+	sink := &issueSink{root: target.Type().Elem(), prefix: prefix, gate: gate}
 	if err := jsonv2.Unmarshal(data, v, jsonv2.WithUnmarshalers(storedUnmarshalers(sink)), jsontext.AllowInvalidUTF8(true)); err != nil {
 		var syntax *jsontext.SyntacticError
 		if errors.As(err, &syntax) {
@@ -541,7 +599,8 @@ func DecodeStoredMember(rec any, member string, data []byte, path string) (known
 		return false, nil, nil
 	}
 	target := reflect.New(field.typ)
-	issues, err = DecodeStored(data, target.Interface(), path)
+	tag := value.Type().Elem().FieldByIndex(field.index).Tag.Get("stored")
+	issues, err = decodeStored(data, target.Interface(), path, tag == gateTag)
 	if err != nil {
 		return true, nil, err
 	}

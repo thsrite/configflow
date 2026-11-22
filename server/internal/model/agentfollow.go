@@ -25,7 +25,7 @@ type DNSFollowState struct {
 	SourceDeploymentID *string          `json:"source_deployment_id,omitzero"`
 	TargetDeploymentID *string          `json:"target_deployment_id,omitzero"`
 	Attempt            *Int             `json:"attempt,omitzero"`
-	RetryRequested     *bool            `json:"retry_requested,omitzero"`
+	RetryRequested     *bool            `json:"retry_requested,omitzero" stored:"gate"`
 	Address            *string          `json:"address,omitzero"`
 	DraftSynced        *bool            `json:"draft_synced,omitzero"`
 }

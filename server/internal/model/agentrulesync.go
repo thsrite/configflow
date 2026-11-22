@@ -4,8 +4,8 @@ import ()
 
 // RuleSyncSettings selects library refresh and device-rule refresh independently.
 type RuleSyncSettings struct {
-	Library *bool `json:"library,omitzero"`
-	Rules   *bool `json:"rules,omitzero"`
+	Library *bool `json:"library,omitzero" stored:"gate"`
+	Rules   *bool `json:"rules,omitzero" stored:"gate"`
 }
 
 // AgentRuleSync holds explicit rule-sync settings and the last durable worker state.
@@ -23,7 +23,7 @@ type RuleSyncState struct {
 	Key          *string  `json:"key,omitzero"`
 	NoticedAt    *float64 `json:"noticed_at,omitzero"`
 	RetryAt      *float64 `json:"retry_at,omitzero"`
-	ForceRefresh *bool    `json:"force_refresh,omitzero"`
+	ForceRefresh *bool    `json:"force_refresh,omitzero" stored:"gate"`
 	NativeTask   *string  `json:"native_task,omitzero"`
 }
 

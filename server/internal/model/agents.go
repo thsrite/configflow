@@ -15,7 +15,7 @@ type Agent struct {
 	ServiceType              string                        `json:"service_type,omitzero"`
 	ProfileID                string                        `json:"profile_id,omitzero"`
 	DeploymentMethod         string                        `json:"deployment_method,omitzero"`
-	Enabled                  *bool                         `json:"enabled,omitzero"`
+	Enabled                  *bool                         `json:"enabled,omitzero" stored:"gate"`
 	CreatedAt                string                        `json:"created_at,omitzero"`
 	UpdatedAt                *string                       `json:"updated_at,omitzero"`
 	Status                   string                        `json:"status,omitzero"`
@@ -26,8 +26,8 @@ type Agent struct {
 	PushedAt                 *string                       `json:"pushed_at,omitzero"`
 	GatewayInstallationID    *string                       `json:"gateway_installation_id,omitzero"`
 	DockerHAInstallationID   *string                       `json:"docker_ha_installation_id,omitzero"`
-	DomainDiscoveryEnabled   *bool                         `json:"domain_discovery_enabled,omitzero"`
-	TrafficHistoryEnabled    *bool                         `json:"traffic_history_enabled,omitzero"`
+	DomainDiscoveryEnabled   *bool                         `json:"domain_discovery_enabled,omitzero" stored:"gate"`
+	TrafficHistoryEnabled    *bool                         `json:"traffic_history_enabled,omitzero" stored:"gate"`
 	TrafficHistorySince      *string                       `json:"traffic_history_since,omitzero"`
 	Deployments              OrderedMap[Deployment]        `json:"deployments,omitzero"`
 	LatestDeployment         *Deployment                   `json:"latest_deployment,omitzero"`

@@ -32,9 +32,9 @@ func TestTypedRegistryOwnsCopies(t *testing.T) {
 	if err != nil || light == nil {
 		t.Fatal(light, err)
 	}
-	// Stored values read leniently (O18 T1b): "8080" is the port, the text
-	// "false" is a truthy switch.
-	if light.Port != 8080 || light.Enabled == nil || !*light.Enabled || light.Deployments.Len() != 0 || light.IPv6Verifications.Len() != 0 {
+	// Stored values read leniently (O18 T1b): "8080" is the port; the text
+	// "false" in the Agent's enabled switch (a device-write gate) is off.
+	if light.Port != 8080 || light.Enabled == nil || *light.Enabled || light.Deployments.Len() != 0 || light.IPv6Verifications.Len() != 0 {
 		t.Fatal("typed light projection", light)
 	}
 	before, err := e.m.ReadAgent(e.ctx, id, true)

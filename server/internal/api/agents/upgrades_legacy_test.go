@@ -210,7 +210,9 @@ func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := parseBodyMap(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{})).WantStatus(200))
-	if result["domain_discovery_enabled"] != true || result["traffic_history_enabled"] != true {
+	// Both are device-write gates (O18 T1b review): stored with another type
+	// than a boolean they read as off, and the heartbeat reports them off.
+	if result["domain_discovery_enabled"] != false || result["traffic_history_enabled"] != false {
 		t.Fatal("typed snapshot changed existing heartbeat preferences", result)
 	}
 }

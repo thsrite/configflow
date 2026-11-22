@@ -6,7 +6,7 @@ import (
 
 // HASettings holds an explicit DNS HA member configuration.
 type HASettings struct {
-	Enabled *bool  `json:"enabled,omitzero"`
+	Enabled *bool  `json:"enabled,omitzero" stored:"gate"`
 	GroupID string `json:"group_id,omitzero"`
 	PeerID  string `json:"peer_id,omitzero"`
 	VIP     string `json:"vip,omitzero"`
@@ -82,7 +82,7 @@ type HAJournal struct {
 	Phase             string                 `json:"phase,omitzero"`
 	Message           string                 `json:"message,omitzero"`
 	ActiveAgentID     *string                `json:"active_agent_id"`
-	Activate          *bool                  `json:"activate,omitzero"`
+	Activate          *bool                  `json:"activate,omitzero" stored:"gate"`
 	Order             []string               `json:"order,omitzero"`
 	Enable            *HAEnable              `json:"enable,omitzero"`
 	UpdatedAt         Int                    `json:"updated_at,omitzero"`
@@ -270,6 +270,9 @@ func (*HAJournal) plainRecord() {}
 func (r *HAJournal) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAJournalWire)(r)) }
 
 func (r *HAJournal) plainWire() any { return (*hAJournalWire)(r) }
+
+// failClosed: a stored journal of another JSON kind still locks the pair.
+func (*HAJournal) failClosed() {}
 
 // MarshalJSON writes the HAJournal members in declaration order.
 func (r HAJournal) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }

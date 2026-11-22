@@ -2803,9 +2803,18 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   （`1`、`"yes"`、`"false"` 为开，`0`、`""`、`[]`、`null` 为关），对象/列表成员类型不对读作缺失；均告警一次。
   以前 Go 保留原值并在多处把“原 JSON 类型不对”当作损坏证据（拒绝匹配身份、拒绝发布、报“记录损坏”），这些判断全部去掉：
   例如数字 ID/令牌/配置空间、数字端口文本、损坏的 HA 发布日志/升级记录/部署回执不再触发 Go 自有的拒绝文案，而按读出的值处理。
-  已知与 Python 不同的点（生产快照中均为 0 例）：规则同步 `settings.library/rules` 存成非布尔值时按真值（Python 用 `is True`）；
-  `oxidns_ha_publication.enable` 存成任意对象（含 `{}`）都视为启用意图并锁定配对；库里存在的 `oxidns_ha_publication`
-  只要状态不是终态（含 `{}`、`status` 类型不对或为 `null`）都视为进行中、锁定配对（fail closed，Python 把空日志当作没有）。
+  **例外（HR 复核裁定）：会触发设备写入或自动推送的开关**存成非布尔值时一律读作「关」并告警，不按真值：
+  Agent 的 `enabled`、`domain_discovery_enabled`、`traffic_history_enabled`，`rule_sync.settings.library/rules`
+  （含 HA 发布日志里的 `rule_sync_settings`），`rule_sync.state.force_refresh`，`dns_follow_state.retry_requested`，
+  `oxidns_ha.enabled`，`oxidns_ha_publication.activate`（模型里以 `stored:"gate"` 标注）。与 Python 相比：`library/rules`、
+  `oxidns_ha.enabled` 与 Python 的 `is True` 一致；Agent `enabled` 存成 `"yes"`/`1` 时 Python 多处按真值为开、少数处只认 `False`，
+  Go 为关（停止对该设备的自动推送）；其余几个 Python 按真值，Go 为关。部署记录里的状态标记（`manual_rollback`、`success`、
+  `pending` 等）与 HA 交接状态（`handoff_required`、`handoff.confirmed/released`）不是写入开关，仍按真值（`handoff_required`
+  取真更保守）。`oxidns_ha.enabled` 读作关同时意味着该 Agent 不再按「HA 已开启」锁定编辑（与 Python 一致）。
+  其余已知与 Python 不同的点（生产快照中均为 0 例）：`oxidns_ha_publication.enable` 存成任意对象（含 `{}`）都视为启用意图并锁定配对
+  （恢复发布时 keepalived 意图会按对端与 VIP 重新校验，残缺意图不会写设备）；库里存在的 `oxidns_ha_publication`
+  只要状态不是终态（含 `{}`、`status` 类型不对或为 `null`）都视为进行中、锁定配对；存成非对象（文本、数字、列表）时读作空日志，
+  同样锁定（fail closed，Python 把空日志当作没有、非对象直接报错）。
 - **输入**：Agent 编辑（`PUT /api/agents/<id>`）严格解码，类型不符返回「`<成员> 类型不正确`」（以前照存原值）；注册请求、部署回执、
   心跳宽松解码（上报值类型不符读作零值）；三者都拒绝重复成员名。心跳上报 `version`/`config_version` 为空串视为未上报；
   上报 `service_status`/`system_metrics` 为 `null` 视为未上报（不覆盖上一次的值）。
