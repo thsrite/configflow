@@ -77,7 +77,7 @@ type RuleConfig struct {
 	UniqueID            string  `json:"uniqueId,omitzero"`
 	Name                string  `json:"name,omitzero"`
 	URL                 *string `json:"url,omitzero"`
-	Behavior            *string `json:"behavior,omitzero"`
+	Behavior            *string `json:"behavior,omitzero" null:"empty"` // null is not the default (see RuleLibraryItem)
 	Content             *string `json:"content,omitzero"`
 	SourceType          *string `json:"source_type,omitzero"`
 	Format              *string `json:"format,omitzero"`

@@ -84,11 +84,13 @@ type Aggregation struct {
 
 // RuleLibraryItem is a shared rule source; source, behavior and download defaults are resolved by consumers.
 type RuleLibraryItem struct {
-	ID             string  `json:"id,omitzero"`
-	Name           string  `json:"name,omitzero"`
-	Enabled        *bool   `json:"enabled,omitzero"`
-	SourceType     *string `json:"source_type,omitzero"`
-	Behavior       *string `json:"behavior,omitzero"`
+	ID         string  `json:"id,omitzero"`
+	Name       string  `json:"name,omitzero"`
+	Enabled    *bool   `json:"enabled,omitzero"`
+	SourceType *string `json:"source_type,omitzero"`
+	// Behavior stored as null is the empty behavior, not the default
+	// "domain": Python's get('behavior', 'domain') returned None for it.
+	Behavior       *string `json:"behavior,omitzero" null:"empty"`
 	Format         *string `json:"format,omitzero"`
 	URL            *string `json:"url,omitzero"`
 	Content        *string `json:"content,omitzero"`

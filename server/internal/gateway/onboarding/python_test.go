@@ -127,7 +127,13 @@ func TestPythonPreparation(t *testing.T) {
 			} else if err != nil {
 				t.Errorf("state: %v", err)
 			} else {
-				equalJSON(t, "state", encode(state), row["state"])
+				wantState := row["state"]
+				if name == "null-policy" {
+					// The null policy is the empty reference (O18 T1c).
+					wantState = bytes.ReplaceAll(wantState, []byte(`"policy":null`), []byte(`"policy":""`))
+					wantState = bytes.ReplaceAll(wantState, []byte(`"policy": null`), []byte(`"policy": ""`))
+				}
+				equalJSON(t, "state", encode(state), wantState)
 			}
 			form, err := ParseRequest(row["body"])
 			if err != nil {
@@ -145,8 +151,10 @@ func TestPythonPreparation(t *testing.T) {
 			}
 			wantReport := row["report"]
 			if name == "null-policy" {
-				// Explicit JSON null policy renders as JSON text 'null' rather than Python's 'None'.
-				wantReport = bytes.ReplaceAll(wantReport, []byte("'None'"), []byte("'null'"))
+				// A rule policy stored as null is the empty reference (O18
+				// T1c, null:"empty"): still refused, named '' where Python
+				// printed None.
+				wantReport = bytes.ReplaceAll(wantReport, []byte("'None'"), []byte("''"))
 			}
 			equalJSON(t, "report", encode(report), wantReport)
 			equalJSON(t, "candidate", encode(candidate), row["candidate"])
