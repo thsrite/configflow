@@ -151,9 +151,33 @@ func inspectionCommand(containerName, image string) (string, error) {
 		}
 		command += "docker inspect --format 'Name={{.Name}} Image={{.Config.Image}} Network={{.HostConfig.NetworkMode}}' " + q(name) + "\n" +
 			`docker inspect --format '{{range .Mounts}}{{printf "%s | %s | %s | %s | rw=%t\n" .Type .Name .Source .Destination .RW}}{{end}}' ` + q(name) + "\n" +
-			joinQuoted(agentCommand(image, "ha-inspect", "--volumes-from", name+":ro")) + "\n"
+			"if " + haAgentReady(image) + "; then\n  " +
+			joinQuoted(agentCommand(image, "ha-inspect", "--volumes-from", name+":ro")) + "\nelse\n  printf '%s\\n' " + q(haAgentTooOld) + " >&2\nfi\n"
 	}
 	return command, nil
+}
+
+// haAgentMinimum is the first Agent release with the configflow-agent ha-*
+// subcommands. Older binaries ignore an unknown positional argument and start
+// as a long-running Agent (hanging the script, or failing with an unrelated
+// error), so the generated commands first ask the image for its version:
+// -version exits at once on every Go Agent and an unknown flag fails fast.
+const haAgentMinimum = "1.9.2-go"
+
+// haAgentTooOld is shown when the selected image predates haAgentMinimum,
+// typically a stale local copy of a floating tag.
+const haAgentTooOld = "所选 Agent 镜像缺少 Docker 高可用命令（需要 " + haAgentMinimum + " 或更新）；请先用 docker pull 拉取该镜像的新版本后重试。"
+
+// haAgentReady is a shell condition: the image's configflow-agent reports
+// haAgentMinimum or newer (major.minor.patch compared numerically).
+func haAgentReady(image string) string {
+	return `printf '%s\n' "$(docker run --rm --network none --entrypoint configflow-agent ` + q(image) +
+		` -version 2>/dev/null)" | awk -F '[.-]' 'NR == 1 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && ($1 > 1 || $1 == 1 && ($2 > 9 || $2 == 9 && $3 >= 2)) { ok = 1 } END { exit !ok }'`
+}
+
+// haAgentCheck stops the script when the image lacks the ha-* subcommands.
+func haAgentCheck(image string) string {
+	return haAgentReady(image) + " || " + haFail(haAgentTooOld) + "\n"
 }
 
 // agentCommand runs one Docker HA subcommand of the Agent image in a
@@ -398,6 +422,7 @@ func newInstallNative(params GuideOptions, request GuideRequest, enrollment *Cap
 		script += "  " + joinQuoted(append(args, name)) + "\nfi\n"
 	}
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
+	script += haAgentCheck(image)
 	if params.NetworkMode == "host" {
 		script += haPortCheck(image)
 	}
@@ -554,6 +579,7 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 	checkCommand := `docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent ` +
 		q(image) + " ha-migration-check " + joinQuoted([]string{oldAgent, params.ServerURL, port.String()})
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
+	script += haAgentCheck(image)
 	script += "cf_runtime_env=$(" + checkCommand + ")\n"
 	script += "[ ! -e " + q(haDir) + " ] && [ ! -L " + q(haDir) + " ] || " + haFail("请选择全新 HA 目录，不能复用已有 HA 状态") + "\n"
 	script += "mkdir -p -- " + q(installPathParent(backup)) + "\nmkdir -- \"$cf_backup\"\n"

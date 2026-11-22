@@ -360,12 +360,13 @@ func firstCall(calls [][]string, name string) int {
 	return -1
 }
 
-// withoutMigrationCheck drops the read-only migration check: a network-less
-// docker run of the target image with the old volumes mounted read-only.
+// withoutMigrationCheck drops the read-only migration check (a network-less
+// docker run of the target image with the old volumes mounted read-only) and
+// the image's version probe before it.
 func withoutMigrationCheck(calls [][]string) [][]string {
 	var out [][]string
 	for _, c := range calls {
-		if c[0] == "run" && slices.Contains(c, "ha-migration-check") && slices.Contains(c, "--rm") && slices.Contains(c, "none") {
+		if c[0] == "run" && (slices.Contains(c, "ha-migration-check") || slices.Contains(c, "-version")) && slices.Contains(c, "--rm") && slices.Contains(c, "none") {
 			continue
 		}
 		out = append(out, c)
@@ -430,7 +431,7 @@ func TestFailedNewContainerCanRollbackWithoutExecIntoIt(t *testing.T) {
 }
 
 func TestUnsupportedMigrationAbortsBeforeStopOrDataChange(t *testing.T) {
-	for _, change := range [][]any{{"mount_count", 3}, {"reject_existing", true}} {
+	for _, change := range [][]any{{"mount_count", 3}, {"reject_existing", true}, {"old_agent", true}} {
 		tmp := t.TempDir()
 		data := guideParams(t, tmp, "migrate", "bind")
 		host := fakeHost(t, tmp, data, change...)
@@ -477,7 +478,8 @@ func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 	// after the image is present.
 	check := `docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent ` +
 		q(mapStr(data, "image")) + " ha-migration-check " + joinQuoted([]string{mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082"}) + ")\n"
-	pull := "docker image inspect " + q(mapStr(data, "image")) + " >/dev/null 2>&1 || docker pull " + q(mapStr(data, "image")) + "\ncf_runtime_env=$(" + check
+	pull := "docker image inspect " + q(mapStr(data, "image")) + " >/dev/null 2>&1 || docker pull " + q(mapStr(data, "image")) + "\n" +
+		haAgentCheck(mapStr(data, "image")) + "cf_runtime_env=$(" + check
 	contains(t, script, pull)
 	notContains(t, script, "python")
 	original := filepath.Join(tmp, "old-agent")

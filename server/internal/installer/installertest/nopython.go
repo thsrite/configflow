@@ -49,12 +49,21 @@ func LegacyBundleBootstrap() string {
 // word is one shlex.quote()d shell word.
 const word = `(?:'(?:[^']|'"'"')*'|[A-Za-z0-9_@%+=:,./-]+)`
 
+// agentProbe is the version condition the generated commands run before an
+// ha-* subcommand (installer.haAgentReady); group 1 is the image.
+const agentProbe = `printf '%s\\n' "\$\(docker run --rm --network none --entrypoint configflow-agent (` + word + `) -version 2>/dev/null\)" \| ` +
+	`awk -F '\[\.-\]' 'NR == 1 && \$1 ~ /\^\[0-9\]\+\$/ && \$2 ~ /\^\[0-9\]\+\$/ && \$3 ~ /\^\[0-9\]\+\$/ && \(\$1 > 1 \|\| \$1 == 1 && \(\$2 > 9 \|\| \$2 == 9 && \$3 >= 2\)\) \{ ok = 1 \} END \{ exit !ok \}'`
+
 var (
-	inspectRun  = regexp.MustCompile(`docker run --rm --network none --volumes-from (` + word + `) --entrypoint configflow-agent ` + word + ` ha-inspect\n`)
-	proofRun    = regexp.MustCompile(`docker run --rm --network none --mount (` + word + `) --entrypoint configflow-agent (` + word + `) ha-enroll-check `)
-	enrollRun   = regexp.MustCompile(`docker run --rm -i ((?:` + word + ` )+?)--mount (` + word + `) --entrypoint configflow-agent (` + word + `) ha-enroll <<'CF_DOCKER_HA_ENROLL'\n([^\n]*)\nCF_DOCKER_HA_ENROLL\n`)
-	migrationRe = regexp.MustCompile(`(docker image inspect ` + word + ` >/dev/null 2>&1 \|\| docker pull ` + word + `\n)cf_runtime_env=\$\(docker inspect --format '\{\{json \.Config\.Env\}\}' "\$cf_old_id" \| docker run --rm -i --network none --volumes-from "\$cf_old_id:ro" --entrypoint configflow-agent ` + word + ` ha-migration-check ([^\n]*)\)\n`)
-	entrypoint  = regexp.MustCompile(`(\n[ ]*)- configflow-agent\n([ ]*)- ha-bootstrap\n`)
+	// probeCheck is the stand-alone probe line of the install and migration
+	// scripts; probeInspect wraps the inspection run (group 2).
+	probeCheck   = regexp.MustCompile(agentProbe + ` \|\| \{ printf "%s\\n" ` + word + ` >&2; exit 1; \}\n`)
+	probeInspect = regexp.MustCompile(`if ` + agentProbe + `; then\n  (docker run [^\n]* ha-inspect\n)else\n  printf '%s\\n' ` + word + ` >&2\nfi\n`)
+	inspectRun   = regexp.MustCompile(`docker run --rm --network none --volumes-from (` + word + `) --entrypoint configflow-agent (` + word + `) ha-inspect\n`)
+	proofRun     = regexp.MustCompile(`docker run --rm --network none --mount (` + word + `) --entrypoint configflow-agent (` + word + `) ha-enroll-check `)
+	enrollRun    = regexp.MustCompile(`docker run --rm -i ((?:` + word + ` )+?)--mount (` + word + `) --entrypoint configflow-agent (` + word + `) ha-enroll <<'CF_DOCKER_HA_ENROLL'\n([^\n]*)\nCF_DOCKER_HA_ENROLL\n`)
+	migrationRe  = regexp.MustCompile(`(docker image inspect (` + word + `) >/dev/null 2>&1 \|\| docker pull ` + word + `\n)cf_runtime_env=\$\(docker inspect --format '\{\{json \.Config\.Env\}\}' "\$cf_old_id" \| docker run --rm -i --network none --volumes-from "\$cf_old_id:ro" --entrypoint configflow-agent (` + word + `) ha-migration-check ([^\n]*)\)\n`)
+	entrypoint   = regexp.MustCompile(`(\n[ ]*)- configflow-agent\n([ ]*)- ha-bootstrap\n`)
 )
 
 // bundleFiles are the literal prepare.sh changes of the bundle without
@@ -90,9 +99,27 @@ func NoPythonBaseline(text string) string {
 	if err != nil {
 		panic(err)
 	}
+	// The version probe is new text: it is removed only where it guards the
+	// same image as the subcommand run it precedes.
+	text = probeInspect.ReplaceAllStringFunc(text, func(match string) string {
+		m := probeInspect.FindStringSubmatch(match)
+		if run := inspectRun.FindStringSubmatch(m[2]); run == nil || run[2] != m[1] {
+			return match
+		}
+		return m[2]
+	})
 	text = inspectRun.ReplaceAllStringFunc(text, func(match string) string {
-		name := strings.TrimSuffix(unquote(inspectRun.FindStringSubmatch(match)[1]), ":ro")
+		name, ok := strings.CutSuffix(unquote(inspectRun.FindStringSubmatch(match)[1]), ":ro")
+		if !ok {
+			return match // a writable mount is a real difference
+		}
 		return "docker exec " + shellWord(name) + " python3 -c " + shellWord(texts.Inspect) + "\n"
+	})
+	text = probeCheck.ReplaceAllStringFunc(text, func(match string) string {
+		if image := probeCheck.FindStringSubmatch(match)[1]; strings.Contains(text, "docker pull "+image+"\n"+match) {
+			return ""
+		}
+		return match
 	})
 	text = proofRun.ReplaceAllString(text, "docker run --rm --network none --entrypoint python3 --mount $1 $2 -c "+
 		strings.ReplaceAll(shellWord(texts.EnrollmentProof), "$", "$$")+" ")
@@ -103,8 +130,11 @@ func NoPythonBaseline(text string) string {
 	})
 	text = migrationRe.ReplaceAllStringFunc(text, func(match string) string {
 		m := migrationRe.FindStringSubmatch(match)
+		if m[2] != m[3] {
+			return match // the check must run the pulled image
+		}
 		return `cf_runtime_env=$(docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker exec -i "$cf_old_id" python3 -c ` +
-			shellWord(texts.MigrationCheck) + " " + m[2] + ")\n" + m[1]
+			shellWord(texts.MigrationCheck) + " " + m[4] + ")\n" + m[1]
 	})
 	text = entrypoint.ReplaceAllString(text, "$1- python3\n$2- /run/configflow-compose/bootstrap.py\n")
 	for _, change := range bundleFiles {

@@ -1289,6 +1289,15 @@ func guideDockerStub(c *stubCall) {
 		save()
 	case "cp":
 	case "run":
+		if c.has("-version") {
+			// The ha-* capability probe of the selected Agent image.
+			if truthy("old_agent") {
+				c.println("1.8.61-go")
+			} else {
+				c.println("1.9.2-go")
+			}
+			c.exit(0)
+		}
 		if c.has("ha-migration-check") {
 			// The migration check of the old container, run by the target image.
 			io.Copy(io.Discard, os.Stdin)

@@ -2844,9 +2844,15 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
     （原为在旧容器里 `docker exec … python3 -c`）；原容器环境仍来自 stdin 的 `.Config.Env`；拉取目标镜像移到检查之前。
   - 只读检查：`docker run --rm --network none --volumes-from NAME:ro --entrypoint configflow-agent IMAGE ha-inspect`；
     `action=inspect` 时 IMAGE 为面板配套镜像（`DockerAgentImage()`），生成迁移时为所选镜像。
+- 镜像版本探测（batch-35 复核补充）：安装脚本、迁移脚本在 `docker image inspect || docker pull` 之后、只读检查在 `ha-inspect` 之前，
+  先运行 `docker run --rm --network none --entrypoint configflow-agent IMAGE -version` 并要求 ≥ 1.9.2-go，否则提示
+  `所选 Agent 镜像缺少 Docker 高可用命令（需要 1.9.2-go 或更新）；请先用 docker pull 拉取该镜像的新版本后重试。` 并停止（只读检查只提示）。
+  原因：旧 Agent 会把未知的 `ha-*` 位置参数忽略后作为常驻 Agent 启动（迁移/只读检查挂住，安装脚本报无关错误）；浮动标签在本机已有旧副本时
+  `inspect || pull` 不会更新它。`-version` 在所有 Go Agent 上立即退出，更早的版本因未知参数立即失败。Python 形式无此行，比较时由
+  `NoPythonBaseline` 去掉（仅当探测的镜像就是紧接着拉取/运行的镜像）。
 - 修正的 Python 缺陷（只影响异常输入）：
   - bootstrap 读安装文件加 `O_NONBLOCK`：命名管道不再卡住启动，按“不是普通文件”拒绝；`setup` 非 UTF-8 不再抛异常，按未准备拒绝。
-  - 迁移检查：stdin 不是 JSON、原配置缺失/损坏/不是对象时给中文提示（原为 Python 回溯）；`heartbeat_interval` 等设置为
+  - 迁移检查：stdin 为 `null` 或数组后还有内容时与 Python 一样拒绝（`无法读取原容器环境配置`）；stdin 不是 JSON、原配置缺失/损坏/不是对象时给中文提示（原为 Python 回溯）；`heartbeat_interval` 等设置为
     null/布尔/数组/对象时拒绝（`原 Agent 运行设置格式无效…`，原样输出 `None`/`True` 会写坏环境文件）；数字按 JSON 原文输出。
   - ha-enroll：登记响应非对象、错误响应的 `message` 非字符串、写身份文件失败时给中文提示（原为 Python 回溯）；
     设置不完整时 `安装命令参数无效；请回到引导重新生成。`。

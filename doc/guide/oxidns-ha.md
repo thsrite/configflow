@@ -305,7 +305,7 @@ Host + macvlan：先按一种模式为第一台生成并保存文件，再切换
 
 自动迁移时，先运行“只读检查命令”，从输出核对：旧容器精确名称、原 Agent **完整名称**、原 Agent 身份挂载、原 OxiDNS 数据挂载。挂载如果是“宿主目录”，填原绝对路径；如果是“Docker 数据卷”，填原卷名。默认表单选“宿主目录”，不要在不确认的情况下沿用。HA 持久目录和迁移备份目录均需另填持久绝对路径。
 
-只读检查和迁移脚本读取原 Agent 配置时，用所选的新 Agent 镜像（1.9.2-go 或更新）起一个不联网的临时容器，只读挂载旧容器的数据卷后执行 `configflow-agent ha-inspect` / `ha-migration-check`，不在旧容器里运行任何程序，所以旧镜像版本不影响检查。迁移脚本会先拉取新镜像再做这一步，主机需要能拉取所选镜像。
+只读检查和迁移脚本读取原 Agent 配置时，用所选的新 Agent 镜像（1.9.2-go 或更新）起一个不联网的临时容器，只读挂载旧容器的数据卷后执行 `configflow-agent ha-inspect` / `ha-migration-check`，不在旧容器里运行任何程序，所以旧镜像版本不影响检查。迁移脚本先确保本机有所选镜像（本机没有时拉取），再做这一步。本机已有同名但早于 1.9.2-go 的镜像（例如旧的 `latest`）时，脚本和只读检查会提示“所选 Agent 镜像缺少 Docker 高可用命令”并停止，不做任何改动；先 `docker pull` 该镜像再重试。
 
 迁移脚本会停止并备份旧容器、保留旧容器再重建。这台 DNS 会暂停，所以要先安排临时可用 DNS。执行的是“安装或迁移容器”脚本；展开的 Compose 只是供核对，不能跳过迁移脚本直接启动。失败时使用页面生成的“迁移失败时回滚”命令，恢复后验证原 Agent 和 DNS。
 
@@ -453,7 +453,7 @@ Agent 页的 DNS 高可用一行显示“等待设备恢复后自动完成发布
 - Shell Agent 可从卡片的“更新”发起在线更新；更新 Agent 不等于升级 OxiDNS 核心。先完成当前发布，再一次处理一端。
 - Docker 的“更新”打开操作说明，网页不直接重建容器。沿用原 Compose 项目或原启动参数、身份和全部挂载。先更新未持有 VIP 的核心容器，确认它恢复，再处理另一台。Host 的 HA 辅助容器要保持运行。
 - 更改 Docker HA 结构、网络模式、身份目录等，按前面的[迁移步骤](#migration)操作；普通拉取镜像不会给旧 bridge 容器补齐 HA 环境。
-- 备用安装脚本的首次登记、重复执行核对和 53 端口检查由 Agent 程序完成（`configflow-agent ha-enroll` / `ha-enroll-check` / `ha-port-check`，Agent 1.9.2-go 起），需要 1.9.2-go 或更新的镜像。通过接口生成的 Compose 安装包（`install_method=compose`，页面不提供）从 1.9.2-go 起不再包含 `bootstrap.py`，主容器以 `configflow-agent ha-bootstrap` 启动。之前用旧安装包或旧脚本部署的实例照常拉取新镜像升级，不需要重新生成：旧 `compose.yaml` 仍执行持久目录里保存的 `bootstrap.py`，镜像继续自带它需要的运行环境。
+- 备用安装脚本的首次登记、重复执行核对和 53 端口检查由 Agent 程序完成（`configflow-agent ha-enroll` / `ha-enroll-check` / `ha-port-check`，Agent 1.9.2-go 起），需要 1.9.2-go 或更新的镜像；镜像过旧时脚本在改动前停止并给出上面的提示。通过接口生成的 Compose 安装包（`install_method=compose`，页面不提供）从 1.9.2-go 起不再包含 `bootstrap.py`，主容器以 `configflow-agent ha-bootstrap` 启动。之前用旧安装包或旧脚本部署的实例照常拉取新镜像升级，不需要重新生成：旧 `compose.yaml` 仍执行持久目录里保存的 `bootstrap.py`，镜像继续自带它需要的运行环境。
 
 ### 停用或更换 VIP、对端、配置空间
 

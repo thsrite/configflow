@@ -35,6 +35,14 @@ func TestNoPythonBaselineRestoresHistoricalHelpers(t *testing.T) {
 			"    entrypoint:\n      - configflow-agent\n      - ha-bootstrap\n    command: []\n",
 			"    entrypoint:\n      - python3\n      - /run/configflow-compose/bootstrap.py\n    command: []\n"},
 		{"prepare", "for cf_file in enrollment.json; do\n", "for cf_file in bootstrap.py enrollment.json; do\n"},
+		{"probed inspect",
+			"if " + probe("repo/agent:1") + "; then\n  docker run --rm --network none --volumes-from 'old name:ro' --entrypoint configflow-agent repo/agent:1 ha-inspect\nelse\n  printf '%s\\n' '旧' >&2\nfi\n",
+			"docker exec 'old name' python3 -c " + shellWord(texts.Inspect) + "\n"},
+		{"probed migration",
+			"docker image inspect repo/agent:1 >/dev/null 2>&1 || docker pull repo/agent:1\n" + probe("repo/agent:1") + ` || { printf "%s\n" '旧' >&2; exit 1; }` + "\n" +
+				`cf_runtime_env=$(docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent repo/agent:1 ha-migration-check dns-old 'http://x/(a)' 8082)` + "\n",
+			`cf_runtime_env=$(docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker exec -i "$cf_old_id" python3 -c ` + shellWord(texts.MigrationCheck) + ` dns-old 'http://x/(a)' 8082)` + "\n" +
+				"docker image inspect repo/agent:1 >/dev/null 2>&1 || docker pull repo/agent:1\n"},
 		{"unrelated", "docker run --rm --network host --entrypoint configflow-agent img ha-port-check || return 1\n",
 			"docker run --rm --network host --entrypoint configflow-agent img ha-port-check || return 1\n"},
 	}
@@ -46,6 +54,45 @@ func TestNoPythonBaselineRestoresHistoricalHelpers(t *testing.T) {
 			}
 			if again := NoPythonBaseline(got); again != got {
 				t.Fatalf("not idempotent:\n%q", again)
+			}
+		})
+	}
+}
+
+// probe is installer.haAgentReady(image).
+func probe(image string) string {
+	return `printf '%s\n' "$(docker run --rm --network none --entrypoint configflow-agent ` + image +
+		` -version 2>/dev/null)" | awk -F '[.-]' 'NR == 1 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && ($1 > 1 || $1 == 1 && ($2 > 9 || $2 == 9 && $3 >= 2)) { ok = 1 } END { exit !ok }'`
+}
+
+// TestNoPythonBaselineKeepsRealDifferences is the negative control: text that
+// differs from the approved new form in a way that matters is not rewritten,
+// so the comparison with Python still reports it.
+func TestNoPythonBaselineKeepsRealDifferences(t *testing.T) {
+	pull := "docker image inspect repo/agent:1 >/dev/null 2>&1 || docker pull repo/agent:1\n"
+	check := func(image string) string {
+		return `cf_runtime_env=$(docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent ` +
+			image + " ha-migration-check dns-old http://x 8082)\n"
+	}
+	tests := []struct{ name, text string }{
+		{"writable inspection mount", "docker run --rm --network none --volumes-from old --entrypoint configflow-agent repo/agent:1 ha-inspect\n"},
+		{"inspection with network", "docker run --rm --network host --volumes-from old:ro --entrypoint configflow-agent repo/agent:1 ha-inspect\n"},
+		{"probe of another image", "if " + probe("repo/agent:0") + "; then\n  docker run --rm --network none --volumes-from old:ro --entrypoint configflow-agent repo/agent:1 ha-inspect\nelse\n  printf '%s\\n' x >&2\nfi\n"},
+		{"check runs another image", pull + check("repo/agent:0")},
+		{"writable migration mount", pull + strings.Replace(check("repo/agent:1"), `:ro"`, `"`, 1)},
+		{"probe not after the pull", probe("repo/agent:1") + ` || { printf "%s\n" x >&2; exit 1; }` + "\n"},
+		{"probe after another pull", "docker pull repo/agent:0\n" + probe("repo/agent:1") + ` || { printf "%s\n" x >&2; exit 1; }` + "\n"},
+		{"proof with network", "docker run --rm --network host --mount type=bind,src=/d,dst=/opt/configflow-agent,readonly --entrypoint configflow-agent repo/agent:1 ha-enroll-check http://x\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := NoPythonBaseline(test.text)
+			kept := !strings.Contains(got, "python3")
+			if strings.Contains(test.name, "probe") {
+				kept = strings.Contains(got, "-version") // the probe text stays and still differs from Python
+			}
+			if !kept {
+				t.Fatalf("real difference rewritten away:\n%q", got)
 			}
 		})
 	}
