@@ -1094,6 +1094,35 @@ class GoModeTests(unittest.TestCase):
         self.assertTrue(pd.response_diffs(reply({'success': True, 'agents': [{'id': 'a'}]}), reply(store),
                                           '/api/domain-discovery/agents', []))
 
+    def test_registration_token_is_masked_exactly(self):
+        token_a, token_b = 'a' * 43, 'b-_' + 'c' * 40
+        for route, template in (
+            ('/api/agents/install-script', 'cfg = {{\n  "registration_token": "{}"\n}}\n'),
+            ('/api/agents/docker-agent-compose', 'services:\n  agent:\n    environment:\n      - AGENT_MIHOMO_REGISTRATION_TOKEN={}\n'),
+            ('/api/agents/docker-agent-run', "docker run \\\n  -e 'AGENT_OXIDNS_REGISTRATION_TOKEN={}' \\\n"),
+        ):
+            with self.subTest(route=route):
+                left, right = (reply(template.format(t).encode(), 'text/plain; charset=utf-8') for t in (token_a, token_b))
+                self.assertEqual([], pd.response_diffs(left, right, route, []))
+                # Any other change, a token of another length, or the same body on another route still differs.
+                self.assertTrue(pd.response_diffs(left, reply(right[2] + b'# extra\n', right[1]), route, []))
+                short = reply(template.format(token_b[:42]).encode(), right[1])
+                self.assertTrue(pd.response_diffs(left, short, route, []))
+                self.assertTrue(pd.response_diffs(left, right, '/api/rules/local/<name>', []))
+
+    def test_mode_scoped_normalization_rules(self):
+        rows = [['GET', '/api/notifications']]
+        rule = {'route': '/api/notifications', 'path': 'items[].version', 'tolerance': 600, 'reason': 'r'}
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(pd, 'PARITY', Path(temporary)):
+            path = Path(temporary) / 'proddiff-normalize.json'
+            path.write_text(json.dumps([dict(rule, mode='go'), dict(rule, path='checked_at')]))
+            self.assertEqual(2, len(pd.load_rules(rows)))
+            with mock.patch.object(pd, 'MODE', 'python'):
+                self.assertEqual(['checked_at'], [r['path'] for r in pd.load_rules(rows)])
+            path.write_text(json.dumps([dict(rule, mode='base')]))
+            with self.assertRaises(RuntimeError):
+                pd.load_rules(rows)
+
     def test_parse_failure_names_the_baseline_side(self):
         self.assertIn(('body', 'parse-base'), pd.response_diffs(reply(b'{', JSON), reply({}), '/api/x', []))
         self.assertIn(('body', 'parse-go'), pd.response_diffs(reply({}), reply(b'{', JSON), '/api/x', []))

@@ -546,7 +546,25 @@ def same_agent_transport_target(python_message, go_message):
 def response_diffs(left, right, route, rules, agent_identities=None, artifact_proofs=None):
     if MODE == 'python':
         left, right = python_reference_deltas(left, right, route)
+    else:
+        left, right = (go_registration_token(reply, route) for reply in (left, right))
     return compared_diffs(left, right, route, rules, agent_identities, artifact_proofs)
+
+
+INSTALLER_ROUTES = ('/api/agents/install-script', '/api/agents/core-install-script',
+                    '/api/agents/docker-agent-compose', '/api/agents/docker-agent-run')
+REGISTRATION_TOKEN = re.compile(r'(_REGISTRATION_TOKEN=|"registration_token": ")[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])')
+
+
+def go_registration_token(reply, route):
+    """Go-vs-Go: each process mints its own O9-H2 bootstrap token; only that exact field is masked."""
+    if route not in INSTALLER_ROUTES or reply[0] != 200 or not reply[1].startswith(('text/plain', 'text/yaml')):
+        return reply
+    try:
+        body = reply[2].decode('utf-8')
+    except UnicodeError:
+        return reply
+    return (reply[0], reply[1], REGISTRATION_TOKEN.sub(r'\1<registration-token>', body).encode('utf-8'), *reply[3:])
 
 
 def python_reference_deltas(left, right, route):
@@ -837,7 +855,7 @@ def digest_tree(root):
 PY_DISABLED_THREADS = {'dns-follow', 'oxidns-ha-publish', 'ipv6-verification-scheduler', 'agent-rule-sync-loop',
                        'metrics-history-flush', 'oxidns-ranking-history', 'domain-discovery-auto',
                        'scheduled-refresh', 'router-rule-sync', 'sub-store-idle'}
-RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered', 'timestamp_format'}
+RULE_FIELDS = {'route', 'path', 'reason', 'pattern', 'tolerance', 'bracket', 'unordered', 'timestamp_format', 'mode'}
 PD1_GENERATED_ROUTES = {prefix + '/' + service
                         for prefix in ('/api/generate', '/api/profiles/<profile_id>/generate')
                         for service in ('mihomo', 'surge', 'loon')}
@@ -915,11 +933,14 @@ def load_rules(rows):
                          and type(rule.get('tolerance')) is int and rule['tolerance'] == 120)
             else:
                 valid = False
+        # "mode" limits a rule to one reference: Go-vs-Go-only runtime identities never loosen python mode.
+        if rule.get('mode', MODE) not in MODES:
+            valid = False
         if not valid:
             raise RuntimeError('normalization requires an exact route/path and reason')
         if 'pattern' in rule:
             re.compile(rule['pattern'])
-    return rules
+    return [rule for rule in rules if rule.get('mode', MODE) == MODE]
 
 
 def phase(case):

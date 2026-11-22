@@ -178,5 +178,19 @@
     "tolerance": 120,
     "timestamp_format": "request-clock",
     "reason": "R16 stamps a new router snapshot from its collection request clock; cache hits retain that origin. Compare close independent capture times with exact second/offset format, while cached/stale/error and all device evidence remain strict. Discovery comparisons run serially to align cold/hit transitions."
+  },
+  {
+    "route": "/api/notifications",
+    "path": "items[].first_seen_at",
+    "tolerance": 600,
+    "mode": "go",
+    "reason": "Go-vs-Go only: an incident first detected during the run is stamped by each process at its own detection time (version = first_seen_at); stored incidents keep their snapshot stamps, which differ far beyond 600 s if changed."
+  },
+  {
+    "route": "/api/notifications",
+    "path": "items[].version",
+    "tolerance": 600,
+    "mode": "go",
+    "reason": "Go-vs-Go only: an incident first detected during the run is stamped by each process at its own detection time (version = first_seen_at); stored incidents keep their snapshot stamps, which differ far beyond 600 s if changed."
   }
 ]
