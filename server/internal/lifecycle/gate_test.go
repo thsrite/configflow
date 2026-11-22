@@ -24,6 +24,13 @@ var joinedGo = map[string]string{
 	"internal/health/latency.go:runLatencyTestsLocked":                  "All conversion workers join through wg.Wait before measurement or persistence.",
 	"internal/refresh/scheduled.go:RunRound":                            "All claimed workers join through wg.Wait, including the stopping branches.",
 	"internal/rulefetch/transport.go:timeoutBody.Read":                  "Each read joins done; timeout closes the body and still consumes done before returning.",
+	"tools/proddiff/comparator/run.go:comparisonResults":                "Offline test tool: the eight comparison workers join through wg.Wait before any result is used.",
+	"tools/proddiff/comparator/main.go:runCommandLine":                  "Offline test tool: the signal watcher is joined via watcher before returning; on a signal it cleans up and exits the process.",
+}
+
+// File locks outside internal/repo and internal/instance, each with its owner.
+var fileLocks = map[string]string{
+	"tools/proddiff/comparator/run.go:lockRuns": "Offline test tool: a shared lock over private proddiff run directories; the first exclusive holder removes copies of killed runs.",
 }
 
 // These are non-periodic I/O/clock primitives or deliberately wall-clock fault
@@ -113,7 +120,8 @@ func concurrencyAllowed(site concurrencySite) bool {
 	case "go":
 		return filepath.ToSlash(filepath.Dir(file)) == "internal/lifecycle" || joinedGo[site.key] != ""
 	case "flock":
-		return filepath.ToSlash(filepath.Dir(file)) == "internal/repo" || filepath.ToSlash(filepath.Dir(file)) == "internal/instance"
+		return filepath.ToSlash(filepath.Dir(file)) == "internal/repo" || filepath.ToSlash(filepath.Dir(file)) == "internal/instance" ||
+			fileLocks[site.key] != ""
 	case "wall-time":
 		return wallTime[site.key] != ""
 	}
@@ -162,7 +170,7 @@ func TestConcurrencyFacadeBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, list := range []map[string]string{joinedGo, wallTime} {
+	for _, list := range []map[string]string{joinedGo, wallTime, fileLocks} {
 		for key, reason := range list {
 			if strings.TrimSpace(reason) == "" || !used[key] {
 				t.Errorf("empty or stale concurrency exemption: %s", key)

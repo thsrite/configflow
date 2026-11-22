@@ -21,6 +21,8 @@ func (p *fakeProcess) Exited() bool {
 	return p.killed
 }
 
+func (p *fakeProcess) Wait() {}
+
 func (p *fakeProcess) Kill() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

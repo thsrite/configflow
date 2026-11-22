@@ -76,12 +76,23 @@ func runCommandLine(root string, cmp *comparator, args []string) int {
 	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	finished := make(chan struct{})
+	watcher := make(chan struct{})
 	go func() {
-		<-signals
-		r.stopProcesses()
-		r.removeCopies()
-		r.fail(errInterrupted)
-		os.Exit(2)
+		defer close(watcher)
+		select {
+		case <-signals:
+			r.stopProcesses()
+			r.removeCopies()
+			r.fail(errInterrupted)
+			os.Exit(2)
+		case <-finished:
+		}
+	}()
+	defer func() {
+		signal.Stop(signals)
+		close(finished)
+		<-watcher
 	}()
 	code, err := r.main(args)
 	if err != nil {

@@ -18,6 +18,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"configflow/internal/clock"
 )
 
 // Framework failures; details go only to the private error.txt.
@@ -38,18 +40,41 @@ var (
 type process interface {
 	Exited() bool
 	Kill()
+	Wait()
 }
 
 type osProcess struct {
 	cmd  *exec.Cmd
+	log  *os.File
 	mu   sync.Mutex
 	done bool
 }
 
-func (p *osProcess) Exited() bool {
+// reap collects the child's exit status; block waits for it.
+func (p *osProcess) reap(block bool) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.done {
+		return true
+	}
+	options := syscall.WNOHANG
+	if block {
+		options = 0
+	}
+	var status syscall.WaitStatus
+	pid, err := syscall.Wait4(p.cmd.Process.Pid, &status, options, nil)
+	if pid == p.cmd.Process.Pid || err != nil && !errors.Is(err, syscall.EINTR) {
+		p.done = true
+		p.log.Close()
+	}
 	return p.done
+}
+
+func (p *osProcess) Exited() bool { return p.reap(false) }
+
+func (p *osProcess) Wait() {
+	for !p.reap(true) {
+	}
 }
 
 func (p *osProcess) Kill() {
@@ -72,15 +97,7 @@ func launch(command, env []string, logPath string) (process, error) {
 		log.Close()
 		return nil, fmt.Errorf("start server: %w", err)
 	}
-	p := &osProcess{cmd: cmd}
-	go func() {
-		_ = cmd.Wait()
-		log.Close()
-		p.mu.Lock()
-		p.done = true
-		p.mu.Unlock()
-	}()
-	return p, nil
+	return &osProcess{cmd: cmd, log: log}, nil
 }
 
 // run holds one comparison run and its replaceable process/network boundaries.
@@ -117,7 +134,7 @@ func newRun(root string) *run {
 	r := &run{root: root, parity: filepath.Join(root, "server/parity"), stdout: os.Stdout, getenv: os.Getenv,
 		send: send, launch: launch, runCommand: runCommand, copySnapshot: copySnapshot,
 		assertNoEgress: assertNoEgress, readOnly: readOnlyMount, digest: digestTree, lockRuns: lockRuns,
-		loadAvg: loadAvg, sleep: time.Sleep, enumerate: enumerate, document: document}
+		loadAvg: loadAvg, sleep: clockSleep, enumerate: enumerate, document: document}
 	home, _ := os.UserHomeDir()
 	r.private = filepath.Join(home, "cf-prod-snapshot/runs")
 	r.selfCheck = func(real reply, samples map[string]reply) ([]string, error) { return r.cmp.selfCheck(real, samples) }
@@ -132,10 +149,15 @@ func (r *run) stopProcesses() {
 		p.Kill()
 	}
 	for _, p := range r.processes {
-		for i := 0; i < 500 && !p.Exited(); i++ {
-			time.Sleep(10 * time.Millisecond)
-		}
+		p.Wait()
 	}
+}
+
+// clockSleep pauses between startup probes on the shared real clock.
+func clockSleep(d time.Duration) {
+	timer := clock.Real{}.NewTimer(d)
+	defer timer.Stop()
+	<-timer.C()
 }
 
 func loadAvg() string {
