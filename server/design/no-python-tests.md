@@ -1,6 +1,8 @@
 # 测试去 Python 化方案（切换前置条件）
 
-> **Maintainer decision 2026-11-22: option B (frozen Python reference), not the full freeze below.** At the switch
+> **SUPERSEDED the same day — final maintainer decision 2026-11-22: option C.** Before the switch, one last full gate with all Python comparisons runs on the switch candidate tree; the switch commit then deletes backend/ together with every Python-dependent test and gate stage (list = WP0 inventory). After the switch the gate is core race + Agent module + fuzz + frontend + proddiff Go-vs-Go (WP9); pure Go tests stay. No Python checkout is kept for tests.
+>
+> (Earlier the same day:) **option B (frozen Python reference), not the full freeze below.** At the switch
 > main still deletes backend/ in the merge commit; the last Python tree is kept as tag `python-final`, checked out on
 > the test servers (outside the repo), and every Python-dependent test/gate stage reads Python from that checkout
 > (CONFIGFLOW_REPO / PYTHONPATH point there) instead of the working tree. Python never changes again, so live runs
