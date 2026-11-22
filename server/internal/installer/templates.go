@@ -9,7 +9,8 @@ import (
 	"unicode"
 )
 
-// scriptFiles is backend/agents/scripts/*.sh (copied; see TestScriptsMatchBackend).
+// scriptFiles holds the installer shell templates (originally copied from the
+// Python tree's backend/agents/scripts; this embedded copy is now the source).
 //
 //go:embed scripts/*.sh
 var scriptFiles embed.FS

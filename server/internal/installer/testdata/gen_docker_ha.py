@@ -269,7 +269,7 @@ both(block(evidence(ipv4=(0, '$(touch /tmp/should-not-exist)<script>alert(1)</sc
 both(block(evidence(ipv4=(0, '2: enp3s0 inet 192.168.10.20/24 scope global enp3s0\n3: docker0 inet 172.17.0.1/16 scope global docker0\n'))))
 both(block(evidence(ipv4=(0, ''.join(f'{n+1}: eth{n} inet 192.168.10.{n+1}/24 scope global eth{n}\n' for n in range(10))))))
 both(block(evidence(ipv4=(0, f'2: {"eth<script>" + chr(27) + "[31m" + "x" * 100} inet 192.168.10.20/24 scope global interface\n'))))
-synology = Path('backend/testdata/docker_ha_preflight_synology_reconstructed.txt').read_text()
+synology = Path('server/internal/installer/testdata/docker_ha_preflight_synology_reconstructed.txt').read_text()
 both(synology)
 both('\n'.join(line + '\\' for line in synology.splitlines()) + '\n')
 for separator in [' ', '   ', '\t ', ' \t']:

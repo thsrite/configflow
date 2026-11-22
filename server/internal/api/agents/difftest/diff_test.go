@@ -1031,6 +1031,10 @@ func noOracleDelta(py, gor response) string {
 	return ""
 }
 
+// pythonLatestAgentVersion is the retired Python reference's final
+// LATEST_AGENT_VERSION (backend/agents/version.py stops there).
+const pythonLatestAgentVersion = "1.8.61-go"
+
 // pinPythonAgentVersion is the one explicit exception for the Agent release:
 // Go ships its own releases (1.9.0-go and later) while the retired Python
 // reference stops at its LATEST_AGENT_VERSION. Both servers get Python's value
@@ -1038,15 +1042,7 @@ func noOracleDelta(py, gor response) string {
 // responses is still compared exactly.
 func pinPythonAgentVersion(t *testing.T) {
 	t.Helper()
-	source, err := os.ReadFile("../../../../../backend/agents/version.py")
-	if err != nil {
-		t.Fatal(err)
-	}
-	match := regexp.MustCompile(`(?m)^LATEST_AGENT_VERSION = "([^"]+)"$`).FindSubmatch(source)
-	if match == nil {
-		t.Fatal("LATEST_AGENT_VERSION not found in backend/agents/version.py")
-	}
-	if python := string(match[1]); python != agents.LatestAgentVersion {
-		t.Cleanup(agents.SetLatestVersionForTest(python))
+	if pythonLatestAgentVersion != agents.LatestAgentVersion {
+		t.Cleanup(agents.SetLatestVersionForTest(pythonLatestAgentVersion))
 	}
 }

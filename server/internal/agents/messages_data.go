@@ -1,4 +1,5 @@
-// Code generated from backend/agents/deployment_messages.py and upgrade_messages.py by a one-off script; DO NOT EDIT.
+// The tables below were generated once from the Python deployment_messages.py and
+// upgrade_messages.py; they are now maintained here.
 
 package agents
 

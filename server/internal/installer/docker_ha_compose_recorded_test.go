@@ -183,22 +183,3 @@ func TestComposeCorpusMatchesPython(t *testing.T) {
 	}
 	t.Logf("A10 corpus: %d cases, %v, %d differ", len(rows), counts, failed)
 }
-
-// TestComposeBootstrapMatchesPython: the generated text constants equal the
-// raw BOOTSTRAP literal of backend/agents/docker_ha_compose.py.
-func TestComposeBootstrapMatchesPython(t *testing.T) {
-	source, err := os.ReadFile("../../../backend/agents/docker_ha_compose.py")
-	if err != nil {
-		t.Skip("backend source not available:", err)
-	}
-	_, rest, found := strings.Cut(string(source), "BOOTSTRAP = r'''")
-	literal, _, closed := strings.Cut(rest, "'''")
-	if !found || !closed || literal != composeBootstrap {
-		t.Fatal("composeBootstrap differs from BOOTSTRAP; rerun testdata/gen_compose_text.py")
-	}
-	for i, block := range composePrepareBlocks {
-		if !strings.Contains(string(source), "r'''"+block+"'''") {
-			t.Errorf("prepare block %d differs from docker_ha_compose.py; rerun testdata/gen_compose_text.py", i)
-		}
-	}
-}

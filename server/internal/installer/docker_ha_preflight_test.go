@@ -427,7 +427,7 @@ func TestIPv4ReportCleansControlAndMarkupAndLimitsInterfaceName(t *testing.T) {
 }
 
 func TestSynologySanitizedReconstructedCopyPreservesActionableChecks(t *testing.T) {
-	data, err := os.ReadFile("../../../backend/testdata/docker_ha_preflight_synology_reconstructed.txt")
+	data, err := os.ReadFile("testdata/docker_ha_preflight_synology_reconstructed.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,20 +609,5 @@ func TestCollectorSerializesEmptyFailedFieldsWithExplicitSentinel(t *testing.T) 
 	contains(t, result.stdout, "CFHA1\tipv4\t127\t-\n")
 	if reportItem(t, report(t, result.stdout), "ipv4")["status"] != "unknown" {
 		t.Fatal(result.stdout)
-	}
-}
-
-// TestPreflightCollectorMatchesPython keeps the embedded collector equal to
-// docker_ha_preflight.collector_script().
-func TestPreflightCollectorMatchesPython(t *testing.T) {
-	source, err := os.ReadFile("../../../backend/agents/docker_ha_preflight.py")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
-	start := strings.Index(text, `return r"""`) + len(`return r"""`)
-	end := strings.Index(text[start:], `"""`)
-	if CollectorScript() != text[start:start+end] {
-		t.Fatal("collector script differs from backend/agents/docker_ha_preflight.py")
 	}
 }

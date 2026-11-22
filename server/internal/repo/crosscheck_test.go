@@ -301,17 +301,6 @@ func xcCopyTree(t *testing.T, source, target string) {
 	}))
 }
 
-func TestConfigTemplateMatchesBackend(t *testing.T) {
-	repo := os.Getenv("CONFIGFLOW_REPO")
-	if repo == "" {
-		t.Skip("CONFIGFLOW_REPO is not set")
-	}
-	backend := must(os.ReadFile(filepath.Join(repo, "backend", "config_template.json")))(t)
-	if !bytes.Equal(backend, configTemplate) {
-		t.Fatal("server/internal/repo/config_template.json differs from backend/config_template.json")
-	}
-}
-
 func TestCrossCheckFreshInit(t *testing.T) {
 	for _, mode := range []string{"factories", "plain"} {
 		t.Run(mode, func(t *testing.T) {

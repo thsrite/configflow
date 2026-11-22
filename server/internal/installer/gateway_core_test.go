@@ -942,7 +942,7 @@ func withGatewayDependencyDelta(t *testing.T, expected string) string {
 }
 
 func TestSelectiveGatewayScriptIsByteIdenticalToThePreviousRelease(t *testing.T) {
-	expected := withGatewayDependencyDelta(t, backendTestdata(t, "gateway_install_selective_0ef9e89.sh"))
+	expected := withGatewayDependencyDelta(t, releaseBaseline(t, "gateway_install_selective_0ef9e89.sh"))
 	if got := withoutReviewedInstallerDeltas(t, ok(gatewayGenerate(nil)), false); got != expected {
 		t.Fatalf("selective gateway script differs from the baseline (%d vs %d bytes)", len(got), len(expected))
 	}
@@ -950,7 +950,7 @@ func TestSelectiveGatewayScriptIsByteIdenticalToThePreviousRelease(t *testing.T)
 }
 
 func TestOrdinaryAIOScriptIsThePreviousReleasePlusIntentionalForwardingContextDelta(t *testing.T) {
-	expected := backendTestdata(t, "go_aio_install_0ef9e89.sh")
+	expected := releaseBaseline(t, "go_aio_install_0ef9e89.sh")
 	for _, p := range deltas(t).OrdinaryAIOForwardingDeltas {
 		require(t, strings.Count(expected, p[0]) == 1, "delta %q", p[0])
 		expected = strings.Replace(expected, p[0], p[1], 1)

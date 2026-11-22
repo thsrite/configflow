@@ -90,7 +90,7 @@ func TestAIOThatPersistsForwardingTellsTheEnvironmentCheck(t *testing.T) {
 }
 
 func TestCoreOnlyInstallerIsInstallCoresShUnchanged(t *testing.T) {
-	expected := WithInstallOutput(readFile(t, filepath.Join("..", "..", "..", "backend", "agents", "scripts", "install-cores.sh")))
+	expected := WithInstallOutput(script("install-cores.sh"))
 	if ok(GenerateCoreInstallScript(false)) != expected {
 		t.Fatal("core installer differs from install-cores.sh")
 	}

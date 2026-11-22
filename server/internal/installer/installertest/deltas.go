@@ -42,7 +42,6 @@ var load = sync.OnceValues(func() (deltaSet, error) {
 		set.rendered = append(set.rendered, d)
 	}
 	set.rendered = append(set.rendered, set.Wrapper...)
-	sort.SliceStable(set.Deltas, func(i, j int) bool { return len(set.Deltas[i].After) > len(set.Deltas[j].After) })
 	sort.SliceStable(set.rendered, func(i, j int) bool { return len(set.rendered[i].After) > len(set.rendered[j].After) })
 	return set, nil
 })
@@ -53,35 +52,20 @@ func RollbackModule() (string, error) {
 	return set.Module, err
 }
 
-// TemplateBaseline reverses only the approved changes to one shell template.
-func TemplateBaseline(file, text string) (string, error) {
-	return baseline(file, BootstrapBaseline(text), false)
-}
-
 // PythonBaseline reverses the approved D3 additions in fully rendered scripts.
 // All other bytes remain available for strict Python-reference comparisons.
 func PythonBaseline(text string) (string, error) {
-	return baseline("", BootstrapBaseline(text), true)
-}
-
-func baseline(file, text string, rendered bool) (string, error) {
+	text = BootstrapBaseline(text)
 	set, err := load()
 	if err != nil {
 		return "", err
 	}
-	changes := set.Deltas
-	if rendered {
-		if !strings.Contains(text, set.Module) {
-			return text, nil
-		}
-		changes = set.rendered
+	if !strings.Contains(text, set.Module) {
+		return text, nil
 	}
 	// The single-script addition includes the whole shared helper; remove it
 	// before smaller additions that may also occur inside that helper.
-	for _, d := range changes {
-		if file != "" && d.File != file {
-			continue
-		}
+	for _, d := range set.rendered {
 		text = strings.ReplaceAll(text, d.After, d.Before)
 	}
 	return text, nil

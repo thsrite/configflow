@@ -51,10 +51,11 @@ func deltas(t *testing.T) *reviewedDeltas {
 	return loadedDeltas
 }
 
-// backendTestdata is backend/testdata/<name> (the Python baselines).
-func backendTestdata(t *testing.T, name string) string {
+// releaseBaseline is testdata/<name>: a script recorded from the previous
+// (Python) installer release.
+func releaseBaseline(t *testing.T, name string) string {
 	t.Helper()
-	return readFile(t, filepath.Join("..", "..", "..", "backend", "testdata", name))
+	return readFile(t, filepath.Join("testdata", name))
 }
 
 const unifiedCleanupPattern = `BINARY_TMP=""\nRESTART_PREVIOUS_AGENT=0\n.*?\ntrap \'exit 143\' TERM\n(?=\n# Shared by the native single-Agent)`

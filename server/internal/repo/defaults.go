@@ -8,9 +8,8 @@ import (
 	"configflow/internal/model"
 )
 
-// configTemplate is a copy of backend/config_template.json, the first-start
-// template (go:embed cannot reach outside the package directory;
-// TestConfigTemplateMatchesBackend keeps the copy identical).
+// configTemplate is the first-start template (originally a copy of the Python
+// tree's backend/config_template.json; this embedded copy is now the source).
 //
 //go:embed config_template.json
 var configTemplate []byte

@@ -401,11 +401,11 @@ S ≈ 半天到 1 天，M ≈ 2–4 天，L ≈ 1 周以上（一个 agent 的�
 | `internal/tasks/difftest` | 0 | 10 | Python 进程失败 | 10 个（除 Go 负控外全部） |
 | `internal/webdav/difftest` | 0 | 9 | Python 进程失败 | 9 个（除 Go 负控外全部） |
 
-`routers` 的 43 个顶层测试在 core 环境共有 1 313 个子测试失败；`api/agents/difftest` 的 19 个失败里有 3 个是读 `backend/agents/version.py`（交给 WP3，见 A.6）。
+`routers` 的 43 个顶层测试在 core 环境共有 1 313 个子测试失败；`api/agents/difftest` 的 19 个失败里有 3 个是读 `backend/agents/version.py`（WP3 已改成常量，见 A.6）。
 
 ### A.4 skip 和「静默变绿」
 
-- **只隐藏 backend（解释器还在）**：新增的 skip 只有 1 个，`installer.TestComposeBootstrapMatchesPython`（读不到 `docker_ha_compose.py` 就 skip；交给 WP3 删除）。
+- **只隐藏 backend（解释器还在）**：新增的 skip 只有 1 个，`installer.TestComposeBootstrapMatchesPython`（读不到 `docker_ha_compose.py` 就 skip；WP3 已删除）。
   其余依赖 backend 的测试都会失败，不会悄悄通过。
 - **同时没有解释器**（以后服务器删掉 venv 或系统 python3 的情况）：新增 **111 个顶层 skip、491 个子测试 skip**，core 和 compare 环境相同：
   - `installer` 101 个：用系统 python3 写的「远端主机命令」桩（`python3 is required for the Python stub commands`），
@@ -505,9 +505,9 @@ S ≈ 半天到 1 天，M ≈ 2–4 天，L ≈ 1 周以上（一个 agent 的�
 这些不会因为删 backend 而失败，但同样属于「测试依赖 Python」，WP4/WP7/WP8 要一起处理（冻结成 fixture 或改成纯 Go 断言），
 否则 WP11 的「零 Python 调用」审计过不了。
 
-### A.6 读 backend 非 Python 文件的测试（交给 WP3）
+### A.6 读 backend 非 Python 文件的测试（WP3 已处理）
 
-A.1 保留了 `backend/` 的非 Python 文件，所以下面这些在 WP0 里没有失败，但切换时删掉整个 `backend/`（go-agent、node-probe 除外）就会失败。WP3 的处理方案：
+A.1 保留了 `backend/` 的非 Python 文件，所以下面这些在 WP0 里没有失败，但切换时删掉整个 `backend/`（go-agent、node-probe 除外）就会失败。WP3 的处理（在删掉整个 `backend/`、只留 `agents/go-agent` 的副本里验证过，这些测试都通过）：
 
 | 测试 | 读的文件 | 处理 |
 |---|---|---|
