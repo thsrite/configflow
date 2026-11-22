@@ -101,7 +101,7 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 	resolved := must(r.Config(bg, "default", nil))(t)
 	resolved.Nodes[0].Name = "Changed"
 	resolved.Profile.RuleConfigs = append([]model.RuleConfig(nil), resolved.Profile.RuleConfigs...)
-	resolved.Profile.RuleConfigs[0].Remark = "Changed"
+	resolved.Profile.RuleConfigs[0].Remark = new("Changed")
 	usages := must(r.ResourceUsage(bg, "nodes", "n"))(t)
 	// The aggregation's name is stored with a wrong type: usages read it under
 	// R5 (zero value, so the id is shown) instead of passing the object on.

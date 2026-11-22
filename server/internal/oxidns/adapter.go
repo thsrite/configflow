@@ -142,7 +142,7 @@ func text(value *string, fallback string) string {
 	return *value
 }
 func ruleNode(item model.RuleConfig) *Node {
-	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", item.Value,
+	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", model.TextValue(item.Value),
 		"enabled", model.Flag(item.Enabled, true),
 		"library_enabled", model.Flag(item.LibraryEnabled, true))
 	if item.LibraryRuleID != "" {

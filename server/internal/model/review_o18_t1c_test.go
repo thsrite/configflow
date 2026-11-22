@@ -40,3 +40,45 @@ func TestReviewO18T1cInvalidUTF8KeptValuesAreWritable(t *testing.T) {
 	}
 }
 
+// HR O18 T1c (gate proddiff): members the API and the configuration export
+// echo keep their presence, so "" / {} stay as stored and a missing member
+// stays missing (Python returned the stored dict).
+func TestReviewO18T1cEchoedMembersKeepPresence(t *testing.T) {
+	tests := []struct {
+		name string
+		rec  func() any
+		data []string
+	}{
+		{"rule", func() any { return &RuleConfig{} }, []string{`{"id":"r","value":"","remark":"","group_name":""}`, `{"id":"r"}`}},
+		{"node", func() any { return &Node{} }, []string{`{"name":"n","remark":""}`, `{"name":"n"}`}},
+		{"rule set", func() any { return &RuleLibraryItem{} }, []string{`{"id":"s","remark":""}`, `{"id":"s"}`}},
+		{"aggregation", func() any { return &Aggregation{} }, []string{`{"id":"a","description":""}`, `{"id":"a"}`}},
+		{"subscription", func() any { return &Subscription{} }, []string{`{"id":"s","description":""}`, `{"id":"s"}`}},
+		{"domain discovery", func() any { return &DomainDiscovery{} }, []string{`{"regional_rulesets":{}}`, `{}`}},
+	}
+	for _, tt := range tests {
+		for _, data := range tt.data {
+			t.Run(tt.name+data, func(t *testing.T) {
+				rec := tt.rec()
+				if _, err := DecodeStored([]byte(data), rec, ""); err != nil {
+					t.Fatal(err)
+				}
+				if out, err := Marshal(rec); err != nil || string(out) != data {
+					t.Fatalf("%s written as %s (%v)", data, out, err)
+				}
+			})
+		}
+	}
+	// A profile row without client_fixed_ips stays without it; a stored {}
+	// stays {}.
+	for _, data := range []string{`{}`, `{"client_fixed_ips":{}}`} {
+		var profile Profile
+		if _, err := DecodeStored([]byte(data), &profile, ""); err != nil {
+			t.Fatal(err)
+		}
+		out, err := Marshal(&profile)
+		if err != nil || bytes.Contains(out, []byte("client_fixed_ips")) != (data != `{}`) {
+			t.Fatalf("%s: %s %v", data, out, err)
+		}
+	}
+}

@@ -252,7 +252,7 @@ func TestO10R2ViewGuardCatchesModifiedBorrowedValues(t *testing.T) {
 			config.Profile.ProxyGroups = append(config.Profile.ProxyGroups, model.ProxyGroup{ID: "new"})
 			config.SystemConfig.ServerDomain = "https://changed.example.com"
 			config.Profile.RuleConfigs = append([]model.RuleConfig(nil), config.Profile.RuleConfigs...)
-			config.Profile.RuleConfigs[0].Remark = "custom"
+			config.Profile.RuleConfigs[0].Remark = new("custom")
 			shared := must(r.Shared(bg))(t)
 			shared.Nodes = append(shared.Nodes, model.Node{ID: "new"})
 			noError(t, shared.SetJSON("nodes", json.RawMessage(`[]`)))

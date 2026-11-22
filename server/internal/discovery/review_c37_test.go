@@ -181,7 +181,7 @@ func TestReviewProductionMatcherLimitsAndRelease(t *testing.T) {
 	t.Cleanup(bounded.Clear)
 	enabled := true
 	policy := "DIRECT"
-	config := rules.MatcherInput{Rules: []model.RuleConfig{{ID: "rule", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: "example.com", Policy: &policy, Enabled: &enabled}}}
+	config := rules.MatcherInput{Rules: []model.RuleConfig{{ID: "rule", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: new("example.com"), Policy: &policy, Enabled: &enabled}}}
 	refs := []weak.Pointer[rules.Cached]{}
 	for profile := range 60 {
 		func() {

@@ -63,7 +63,7 @@ func TestN89LowerChainsOwnsOnlyChangedRecords(t *testing.T) {
 	if err := generated.SetJSON("manual_nodes", json.RawMessage(`[]`)); err != nil {
 		t.Fatal(err)
 	}
-	runtime.Nodes[4].Remark = "owned"
+	runtime.Nodes[4].Remark = new("owned")
 	after, err := model.Marshal(config)
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("lowering or editing runtime changed input", err)

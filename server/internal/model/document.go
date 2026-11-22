@@ -38,7 +38,7 @@ type Profile struct {
 	Routers         Routers         `json:"routers"`
 	DomainDiscovery DomainDiscovery `json:"domain_discovery"`
 	DeviceNotes     DeviceNotes     `json:"device_notes"`
-	ClientFixedIPs  ClientFixedIPs  `json:"client_fixed_ips"`
+	ClientFixedIPs  *ClientFixedIPs `json:"client_fixed_ips,omitzero"`
 	// Rules and RuleSets are the rule lists of profiles written before
 	// rule_configs existed, kept as stored JSON. Generators read them only
 	// while RuleConfigs is empty; see LegacyRuleList.

@@ -38,7 +38,7 @@ func TestStructurePublicationIgnoresStoredForceRefresh(t *testing.T) {
 	_, e := f.s.m.Repository().UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
 		for i := range p.RuleConfigs {
 			if p.RuleConfigs[i].ID == "single" {
-				p.RuleConfigs[i].Value = "new-inline.example.com"
+				p.RuleConfigs[i].Value = new("new-inline.example.com")
 			}
 		}
 		return nil
@@ -136,7 +136,7 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 	_, e := f.s.m.Repository().UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
 		for i := range p.RuleConfigs {
 			if p.RuleConfigs[i].ID == "single" {
-				p.RuleConfigs[i].Value = "new-inline.example.com"
+				p.RuleConfigs[i].Value = new("new-inline.example.com")
 			}
 		}
 		return nil

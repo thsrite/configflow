@@ -265,7 +265,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	}
 	rules := []model.RuleConfig{}
 	for i, cidr := range []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"} {
-		rules = append(rules, model.RuleConfig{ID: fmt.Sprintf("setup_lan_%d", i), ItemType: "rule", RuleType: "IP-CIDR", Value: cidr, Policy: pointer("DIRECT"), NoResolve: pointer(true), Enabled: pointer(true)})
+		rules = append(rules, model.RuleConfig{ID: fmt.Sprintf("setup_lan_%d", i), ItemType: "rule", RuleType: "IP-CIDR", Value: pointer(cidr), Policy: pointer("DIRECT"), NoResolve: pointer(true), Enabled: pointer(true)})
 	}
 	choices := []ruleChoice{}
 	for _, item := range resolved {

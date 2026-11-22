@@ -39,7 +39,7 @@ type Node struct {
 	ProxyString      *string      `json:"proxy_string,omitzero"`
 	Params           Dynamic      `json:"params,omitzero"`
 	Enabled          *bool        `json:"enabled,omitzero"`
-	Remark           string       `json:"remark,omitzero"`
+	Remark           *string      `json:"remark,omitzero"`
 	SubscriptionID   string       `json:"subscription_id,omitzero"`
 	SubscriptionName string       `json:"subscription_name,omitzero"`
 	DialerRef        *ResourceRef `json:"dialer_ref,omitzero"`
@@ -62,7 +62,7 @@ type Subscription struct {
 	Enabled        *bool                `json:"enabled,omitzero"`
 	Interval       *Int                 `json:"interval,omitzero" input:"strict"`
 	RegexFilter    *string              `json:"regex_filter,omitzero"`
-	Description    string               `json:"description,omitzero"`
+	Description    *string              `json:"description,omitzero"`
 	HealthCheck    *ProviderHealthCheck `json:"health_check,omitzero"`
 	HealthCheckURL *string              `json:"health_check_url,omitzero"`
 }
@@ -71,7 +71,7 @@ type Subscription struct {
 type Aggregation struct {
 	ID             string               `json:"id,omitzero"`
 	Name           string               `json:"name,omitzero"`
-	Description    string               `json:"description,omitzero"`
+	Description    *string              `json:"description,omitzero"`
 	Enabled        *bool                `json:"enabled,omitzero"`
 	Subscriptions  []string             `json:"subscriptions,omitzero" input:"strict"`
 	Nodes          []string             `json:"nodes,omitzero" input:"strict"`
@@ -94,6 +94,7 @@ type RuleLibraryItem struct {
 	Format         *string `json:"format,omitzero"`
 	URL            *string `json:"url,omitzero"`
 	Content        *string `json:"content,omitzero"`
+	Remark         *string `json:"remark,omitzero"`
 	UpdateInterval *Int    `json:"update_interval,omitzero"`
 	// Policy and Target are never valid on a library item (the target policy
 	// belongs to the rule configuration); they are declared so validation can

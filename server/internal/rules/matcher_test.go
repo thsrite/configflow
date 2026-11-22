@@ -385,9 +385,9 @@ func linearMatch(configs []model.RuleConfig, contents map[string]string, query s
 		}
 		switch kind {
 		case "rule":
-			if MatchQuery(query, item.RuleType, item.Value) {
+			if MatchQuery(query, item.RuleType, model.TextValue(item.Value)) {
 				return &Hit{
-					RuleName: item.RuleType + " 规则", RuleType: "rule", MatchedLine: item.RuleType + "," + item.Value,
+					RuleName: item.RuleType + " 规则", RuleType: "rule", MatchedLine: item.RuleType + "," + model.TextValue(item.Value),
 					Policy: policy, Source: "直接配置的规则", Priority: priority + 1,
 					RuleID: idPtr, ItemType: "rule", Behavior: "classical",
 				}
@@ -487,9 +487,9 @@ func TestEarliestLineWinsOverSpecificityOrRuleType(t *testing.T) {
 func TestConfigurationPriorityAndLazyLoadingAreUnchanged(t *testing.T) {
 	library := model.RuleLibraryItem{ID: "lib", Behavior: strp("domain")}
 	configs := []model.RuleConfig{
-		{ID: "disabled", RuleType: "DOMAIN", Value: "example.com", Enabled: boolp(false)},
+		{ID: "disabled", RuleType: "DOMAIN", Value: new("example.com"), Enabled: boolp(false)},
 		ruleset("disabled-lib", "library_enabled", false),
-		{ID: "direct", RuleType: "DOMAIN", Value: "direct.test"},
+		{ID: "direct", RuleType: "DOMAIN", Value: new("direct.test")},
 		ruleset("first", "library_rule_id", "lib", "policy", "first-policy", "behavior", "domain"),
 		ruleset("last", "policy", "last-policy"),
 	}
@@ -527,7 +527,7 @@ func TestDirectRulesRetainQueryClassificationAndRegexSemantics(t *testing.T) {
 		{"IP", "192.0.2.1", "www.example.com"}, {"REGEX", `^\\D+$`, "123"}, {"REGEX", `^\\D+$`, "abc"}, {"REGEX", "[", "abc"},
 	}
 	for _, c := range cases {
-		configs := []model.RuleConfig{{ID: "direct", RuleType: c[0], Value: c[1]}}
+		configs := []model.RuleConfig{{ID: "direct", RuleType: c[0], Value: new(c[1])}}
 		subject := NewMatcher(configs, nil, func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
 			t.Error("unexpected ruleset load")
 			return "", nil
@@ -559,7 +559,7 @@ func TestShuffledRulesAndQueriesMatchLinearReference(t *testing.T) {
 		rng := rand.New(rand.NewSource(seed))
 		rules := append([]string(nil), base...)
 		rng.Shuffle(len(rules), func(i, j int) { rules[i], rules[j] = rules[j], rules[i] })
-		configs := []model.RuleConfig{ruleset("a"), {ID: "direct", RuleType: "DOMAIN-SUFFIX", Value: "test"}, ruleset("b")}
+		configs := []model.RuleConfig{ruleset("a"), {ID: "direct", RuleType: "DOMAIN-SUFFIX", Value: new("test")}, ruleset("b")}
 		contents := map[string]string{"a": strings.Join(rules[:10], "\n"), "b": strings.Join(rules[10:], "\n")}
 		subject := NewMatcher(configs, nil, textOf(contents), nil, nil)
 		var queries []string
@@ -634,7 +634,7 @@ func TestFailedRulesetLoadIsCachedAndLaterRulesCanMatch(t *testing.T) {
 	loader := &countingLoader{content: func(*model.RuleConfig, *model.RuleLibraryItem) (string, error) {
 		return "", errors.New("missing cache")
 	}}
-	subject := NewMatcher([]model.RuleConfig{ruleset("set"), {ID: "fallback", RuleType: "DOMAIN", Value: "example.com"}}, nil, loader.load, nil, nil)
+	subject := NewMatcher([]model.RuleConfig{ruleset("set"), {ID: "fallback", RuleType: "DOMAIN", Value: new("example.com")}}, nil, loader.load, nil, nil)
 	for i := 0; i < 2; i++ {
 		if got := hitRuleID(subject.Match("example.com")); got != "fallback" {
 			t.Fatalf("rule_id = %v", got)

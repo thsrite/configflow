@@ -67,7 +67,7 @@ func assertCacheReferenceInput(t *testing.T, expected cacheExpectedRow, rule any
 func TestNativeMatcherOwnsHitCopy(t *testing.T) {
 	cache := NewCache(CacheOptions{RulesDir: func() string { return t.TempDir() }})
 	t.Cleanup(cache.Clear)
-	matcher := cache.LocalMatcher(MatcherInput{Rules: []model.RuleConfig{{ID: "r", RuleType: "DOMAIN-SUFFIX", Value: "example.com"}}}, "p")
+	matcher := cache.LocalMatcher(MatcherInput{Rules: []model.RuleConfig{{ID: "r", RuleType: "DOMAIN-SUFFIX", Value: new("example.com")}}}, "p")
 	first := matcher.Match("example.com")
 	if first == nil {
 		t.Fatal("missing hit")

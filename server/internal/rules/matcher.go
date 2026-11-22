@@ -671,7 +671,7 @@ func (m *Matcher) Match(query string) *Hit {
 		policy := valueOr(item.Policy, "DIRECT")
 		switch ruleKind(item) {
 		case "rule":
-			ruleType, ruleValue := item.RuleType, item.Value
+			ruleType, ruleValue := item.RuleType, valueOr(item.Value, "")
 			matched := false
 			if isIP {
 				matched = matchAddr(ip, ruleType, ruleValue)

@@ -318,7 +318,7 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 		if !ok {
 			policy = stringJSON("DIRECT")
 		}
-		rows[i] = scanRow{ID: item.ID, Name: item.Name, Kind: defaultText(raw, "itemType", "rule"), Type: item.RuleType, Value: item.Value, Policy: policy, Enabled: rawFlag(raw, "enabled", true) && rawFlag(raw, "library_enabled", true)}
+		rows[i] = scanRow{ID: item.ID, Name: item.Name, Kind: defaultText(raw, "itemType", "rule"), Type: item.RuleType, Value: model.TextValue(item.Value), Policy: policy, Enabled: rawFlag(raw, "enabled", true) && rawFlag(raw, "library_enabled", true)}
 		if _, ok := raw["name"]; !ok {
 			rows[i].Name = msgRuleset
 		}

@@ -46,8 +46,10 @@ func (s *Settings) UnmarshalJSON(b []byte) error {
 	if record.RegionProbePort != nil {
 		p.RegionPort = int(*record.RegionProbePort)
 	}
-	for key, value := range record.RegionalRulesets.All() {
-		p.RegionalRulesets[key] = value
+	if record.RegionalRulesets != nil {
+		for key, value := range record.RegionalRulesets.All() {
+			p.RegionalRulesets[key] = value
+		}
 	}
 	for key, value := range record.WebsiteNotes.All() {
 		p.WebsiteNotes[key] = value

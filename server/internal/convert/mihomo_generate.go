@@ -506,9 +506,9 @@ func mihomoRuleLines(config *model.Config) (*yamlx.Node, error) {
 			case rule.RuleType == "MATCH":
 				lines = append(lines, "MATCH,"+policy)
 			case rule.RuleType == "RULE-SET":
-				lines = append(lines, "RULE-SET,"+rule.Value+","+policy)
+				lines = append(lines, "RULE-SET,"+stringValue(rule.Value)+","+policy)
 			default:
-				value := rule.Value
+				value := stringValue(rule.Value)
 				logic := slices.Contains(LogicTypes, rule.RuleType)
 				if logic && rule.NoResolve != nil && *rule.NoResolve {
 					value = ApplyNoResolveToLogicRule(value)

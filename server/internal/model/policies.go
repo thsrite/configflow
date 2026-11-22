@@ -61,13 +61,13 @@ type RuleConfig struct {
 	Enabled             *bool   `json:"enabled,omitzero"`
 	LibraryRuleID       string  `json:"library_rule_id,omitzero"`
 	RuleType            string  `json:"rule_type,omitzero"`
-	Value               string  `json:"value,omitzero"`
+	Value               *string `json:"value,omitzero"`
 	Policy              *string `json:"policy,omitzero" null:"empty" text:"strict"`
 	NoResolve           *bool   `json:"no_resolve,omitzero"`
 	UDPFallback         *string `json:"udp_fallback,omitzero"`
 	NTPDirect           *bool   `json:"ntp_direct,omitzero"`
-	Remark              string  `json:"remark,omitzero"`
-	GroupName           string  `json:"group_name,omitzero"`
+	Remark              *string `json:"remark,omitzero"`
+	GroupName           *string `json:"group_name,omitzero"`
 	GroupID             string  `json:"groupId,omitzero"`
 	GroupLabel          string  `json:"groupLabel,omitzero"`
 	GroupPolicy         string  `json:"groupPolicy,omitzero"`

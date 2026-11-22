@@ -177,17 +177,17 @@ func (r MosDNSMatch) MarshalJSON() ([]byte, error) {
 
 // DomainDiscovery holds profile discovery choices, user-keyed notes and applied-rule history.
 type DomainDiscovery struct {
-	DirectRuleset          *string            `json:"direct_ruleset,omitzero"`
-	ProxyRuleset           *string            `json:"proxy_ruleset,omitzero"`
-	Ignored                []string           `json:"ignored,omitzero"`
-	AutoProbe              *bool              `json:"auto_probe,omitzero"`
-	AutoApply              *bool              `json:"auto_apply,omitzero" stored:"gate"`
-	AutoApplyMinConfidence *Int               `json:"auto_apply_min_confidence,omitzero"`
-	History                []DiscoveryHistory `json:"history,omitzero"`
-	RegionCheckEnabled     *bool              `json:"region_check_enabled,omitzero"`
-	RegionProbePort        *Int               `json:"region_probe_port,omitzero"`
-	RegionalRulesets       OrderedMap[string] `json:"regional_rulesets,omitzero"`
-	WebsiteNotes           OrderedMap[string] `json:"website_notes,omitzero"`
+	DirectRuleset          *string             `json:"direct_ruleset,omitzero"`
+	ProxyRuleset           *string             `json:"proxy_ruleset,omitzero"`
+	Ignored                []string            `json:"ignored,omitzero"`
+	AutoProbe              *bool               `json:"auto_probe,omitzero"`
+	AutoApply              *bool               `json:"auto_apply,omitzero" stored:"gate"`
+	AutoApplyMinConfidence *Int                `json:"auto_apply_min_confidence,omitzero"`
+	History                []DiscoveryHistory  `json:"history,omitzero"`
+	RegionCheckEnabled     *bool               `json:"region_check_enabled,omitzero"`
+	RegionProbePort        *Int                `json:"region_probe_port,omitzero"`
+	RegionalRulesets       *OrderedMap[string] `json:"regional_rulesets,omitzero"`
+	WebsiteNotes           OrderedMap[string]  `json:"website_notes,omitzero"`
 }
 
 // DiscoveryHistory records one applied discovery result and its optional

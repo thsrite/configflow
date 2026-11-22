@@ -23,7 +23,7 @@ func TestBatch6R5RuleIdentityValidationPreservesStorage(t *testing.T) {
 	}
 	// Model decoding remains lossless; rejection belongs to generation only.
 	var rule model.RuleConfig
-	if err := json.Unmarshal([]byte(`{"value":5}`), &rule); err != nil || rule.Value != "5" {
+	if err := json.Unmarshal([]byte(`{"value":5}`), &rule); err != nil || model.TextValue(rule.Value) != "5" {
 		t.Fatalf("shared scalar decode: %+v %v", rule, err)
 	}
 }

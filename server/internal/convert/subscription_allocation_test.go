@@ -21,7 +21,7 @@ func subscriptionGenerationProfile(count, unrelated int) *model.Config {
 	config.Nodes = append(config.Nodes, model.Node{ID: "relay", Name: "Relay", Type: "http", Server: "192.0.2.2", Port: model.IntPtr(443)})
 	config.Profile.ProxyGroups = []model.ProxyGroup{{ID: "exit", Name: "Exit", Type: "select", ManualNodes: &ids}, {ID: "chain", Name: "Chain", Type: "chain", Chain: &model.ProxyChain{Entry: model.ResourceRef{Type: "node", ID: "relay"}, Exit: model.ResourceRef{Type: "group", ID: "exit"}}}}
 	for i := 0; i < 512; i++ {
-		config.Profile.RuleConfigs = append(config.Profile.RuleConfigs, model.RuleConfig{ID: fmt.Sprint(i), ItemType: "rule", RuleType: "DOMAIN", Value: fmt.Sprintf("d%d.example", i), Policy: new("DIRECT")})
+		config.Profile.RuleConfigs = append(config.Profile.RuleConfigs, model.RuleConfig{ID: fmt.Sprint(i), ItemType: "rule", RuleType: "DOMAIN", Value: new(fmt.Sprintf("d%d.example", i)), Policy: new("DIRECT")})
 	}
 	if unrelated > 0 {
 		raw, _ := json.Marshal(strings.Repeat("x", unrelated))

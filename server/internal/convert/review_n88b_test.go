@@ -81,7 +81,7 @@ func TestN88bReviewNumericRuleValueGenerates(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"rule_configs":[{"id":"port","itemType":"rule","rule_type":"DST-PORT","value":443,"policy":"DIRECT"}]}`), &profile); err != nil {
 		t.Fatal(err)
 	}
-	if profile.RuleConfigs[0].Value != "443" {
+	if model.TextValue(profile.RuleConfigs[0].Value) != "443" {
 		t.Fatal("shared scalar text not used")
 	}
 	output, err := MihomoConfig(context.Background(), &model.Config{Profile: &profile}, MihomoOptions{SkipProviderPreflight: true})

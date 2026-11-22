@@ -189,7 +189,7 @@ func libraryFromModel(record model.RuleLibraryItem) (libraryItem, error) {
 }
 func ruleFromModel(record model.RuleConfig) (ruleConfig, error) {
 	raw, err := model.Marshal(record)
-	item := ruleConfig{ID: record.ID, ItemType: record.ItemType, RuleType: record.RuleType, Value: record.Value, LibraryID: record.LibraryRuleID, Enabled: model.Flag(record.Enabled, true), original: raw}
+	item := ruleConfig{ID: record.ID, ItemType: record.ItemType, RuleType: record.RuleType, Value: model.TextValue(record.Value), LibraryID: record.LibraryRuleID, Enabled: model.Flag(record.Enabled, true), original: raw}
 	if record.Policy != nil {
 		item.Policy = *record.Policy
 	}

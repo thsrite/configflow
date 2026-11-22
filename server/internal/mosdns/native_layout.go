@@ -151,7 +151,7 @@ func SingleRuleBatches(config *model.Config) ([]RuleBatch, error) {
 			previous = ""
 			continue
 		}
-		part, value := "", item.Value
+		part, value := "", model.TextValue(item.Value)
 		if prefix, ok := clashDomainPrefix(item.RuleType); ok {
 			part = PartDomain
 			value = prefix + ":" + value

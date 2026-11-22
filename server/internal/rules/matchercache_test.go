@@ -64,7 +64,7 @@ func newFixture(t *testing.T, tune func(*CacheOptions)) *cacheFixture {
 	t.Cleanup(f.cache.Clear)
 	f.config = MatcherInput{
 		Rules: []model.RuleConfig{
-			{ID: "first", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: "first.example", Policy: strp("DIRECT")},
+			{ID: "first", ItemType: "rule", RuleType: "DOMAIN-SUFFIX", Value: new("first.example"), Policy: strp("DIRECT")},
 			{ID: "set", ItemType: "ruleset", LibraryRuleID: "lib", Name: "domains", Policy: strp("PROXY")},
 		},
 		Library: []model.RuleLibraryItem{
@@ -682,7 +682,7 @@ func TestConcurrentCacheAccess(t *testing.T) {
 			for i := 0; i < 200; i++ {
 				config := cloneInput(f.config)
 				if i%3 == 0 {
-					config.Rules[0].Value = "edit.example"
+					config.Rules[0].Value = new("edit.example")
 				}
 				matcher := f.matcher(config, []string{"a", "b", "c"}[(worker+i)%3])
 				if matcher.Match("matched.example") == nil && matcher.Match("file.example") == nil {

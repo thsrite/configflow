@@ -107,7 +107,7 @@ func RuleComment(rule model.RuleConfig) string {
 	if rule.ItemType == "ruleset" {
 		line = "RULE-SET," + rule.Name + "," + stringValue(rule.Policy)
 	} else {
-		line = rule.RuleType + "," + rule.Value + "," + stringValue(rule.Policy)
+		line = rule.RuleType + "," + stringValue(rule.Value) + "," + stringValue(rule.Policy)
 	}
 	return "# " + AfterMatchNote + ": " + line
 }

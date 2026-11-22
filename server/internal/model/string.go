@@ -33,3 +33,11 @@ func (s *String) UnmarshalJSON(data []byte) error {
 	*s = String(text)
 	return nil
 }
+
+// TextValue is the text of an optional text member ("" when absent).
+func TextValue(text *string) string {
+	if text == nil {
+		return ""
+	}
+	return *text
+}

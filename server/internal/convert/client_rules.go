@@ -39,7 +39,7 @@ func SurgeRules(config *model.Config, base string) ([]string, error) {
 		policy := stringValue(rule.Policy)
 		switch rule.ItemType {
 		case "rule":
-			typ, value := rule.RuleType, rule.Value
+			typ, value := rule.RuleType, stringValue(rule.Value)
 			switch {
 			case typ == "MATCH":
 				lines = append(lines, "FINAL,"+policy)
@@ -114,7 +114,7 @@ func LoonRules(config *model.Config, base string) ([]string, []string, error) {
 		policy := stringValue(rule.Policy)
 		switch rule.ItemType {
 		case "rule":
-			typ, value := rule.RuleType, rule.Value
+			typ, value := rule.RuleType, stringValue(rule.Value)
 			if typ == "MATCH" {
 				final = "FINAL," + policy
 				continue
