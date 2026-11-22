@@ -43,7 +43,7 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
 作者「difftest 全过」未覆盖带 `CONFIGFLOW_PY` 的 model 包。修复只改测试：比较时忽略源里没有、Go 补写的 `0`/`[]`（不忽略 `false`，以免掩盖默认开的开关），
 精确审计从 Go 编码形态开始（同 `TestTypesPythonRoundTrip`）。
 
-**M3（未改，供裁定）生产路径上 `validateIdentity` 已基本恒通过，N89 身份测试只覆盖测试路径**
+**M3（第二轮按裁定修复，见文末）生产路径上 `validateIdentity` 已基本恒通过，N89 身份测试只覆盖测试路径**
 `routers.Router.UnmarshalJSON` 把 `source` 设为原始字节，`TestN89StoredIdentityCannotOpenDevice` 经它通过；生产的 `routerFromModel` 设的是类型化编码，
 于是库里 `username/password/endpoint/type: 12` 读作文本 `"12"` 并用于连接设备，`true/[]/{}` 读作 `""`。这符合 T1c「文本接受数字原文」裁定，
 不放宽安全（空用户名/密码只会登录失败，ID 为空另有拒绝），所以未改；但测试对生产是空过的。若要恢复「凭据/身份非文本即拒绝」，
@@ -94,3 +94,26 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
 - pyref（.32）：model 源码（plain_switch.go/routers.go/stored.go 是声明的来源）改动后 mosdns/oxidns/routersplit `PYREF_MODE=check` 报元数据变化；
   `record` 后逐个解压比对 16 个文件，只有 `metadata` 键变化（non-metadata 0），再 `check`：mosdns 63.3 s、oxidns 87.3 s、routersplit 3.8 s ok。
 - 负向对照（.32）：去掉 `keepDamagedConfigToken` 调用、去掉 `stored:"selection"`、守卫开关真值判断恒 false → 三条复核测试全部失败。
+
+## 第二轮（协调裁定 M3 + installer pyref check）
+
+- **M3（d22016161）**：路由器 `id/type/endpoint/username/password` 标 `stored:"restrict" null:"damaged"`（非文本与 `null` 都读作 `DamagedText` + 告警），
+  `proxy_gateway_agent_id/dns_agent_id` 标 `stored:"restrict"`（`null` 仍为未关联）。`validateIdentity` 拒绝 `DamagedText`（「字段类型无效」原文案），
+  routersplit `topologyRouter` 把它当无效身份/无关联；写回保持损坏。`TestN89StoredIdentityCannotOpenDevice` 改走生产路径
+  （`model.DecodeStored` + `routerFromModel`，并写回再读一次），35 个子用例。负向对照：去掉标签 → 33 个子用例失败（其余为可选关联 null，本应放行）。
+  随之调整：`repo.TestReferenceRouterCommitGuard` 的 endpoint null/数字两例（损坏地址单独取任务锁，比 Python 多一把锁，偏保守）；
+  `gateway/host.TestRouterLinkStoredIdentity` 数字关联不再关联（与 Python 一致）。
+- **installer `PYREF_MODE=check`（b2686ccaa）**：batch-37 的 TestMain 存根分发让 A10 deflate golden 的保守可达集覆盖了存根与安装器测试夹具。
+  - `testgolden` 审计：直接调用、只含 `O_WRONLY`（不含 `O_RDONLY/O_RDWR`）标志的 `os.OpenFile` 不算夹具读取（存根追加事件日志）；单测覆盖允许/拒绝各形态。
+  - 新增 `testgolden.ReadFileOutside/ReadDirOutside`：只读仓库之外的路径（临时根），仓库内路径（含经链接）拒绝；存根的读文件/列目录改用它们。
+  - `sources.json`：该 golden 声明 TestMain 可达的 28 个来源（安装器测试夹具、installertest、yamlx），删去 go 上已不存在的 product symbol `composeBootstrap`。
+  - golden 重录：只有 `metadata` 变化（解压比对）。
+- **pyref（20b2c362f）**：mosdns 5、oxidns 8、routersplit 3 个文件重录，只有 `metadata` 变化。
+
+### 第二轮验证（树 20b2c362f + gateway/host 测试调整）
+- `gofmt` 无输出；`go vet ./...` 与带 tag vet：VET-OK（.32）。
+- `-race`（.32，`-timeout 60m -p 6`）：model 7.5 s、routers 658.1 s、routersplit 34.7 s、repo 304.8 s、testgolden 10.2 s、installer 537.1 s、api/routers 41.2 s、
+  setup 36.6 s、clients 27.9 s、agents/ipv6 21.5 s、agents/dnsha 322.3 s、gateway/... 全部 ok（gateway/host 首轮只有上述数字关联用例按旧期望失败，改后 .64 `-race` ok 5.4 s）；无 DATA RACE。
+- difftest（.64，真 Python）：routers 302.0 s、routersplit、model、api/config/difftest 60.6 s ok。
+- `PYREF_MODE=check`（.64）：installer 129.5 s、mosdns 55.5 s、oxidns 69.8 s、routersplit 3.2 s ok。
+- `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-38 x 6`（.64）：`PREFLIGHT PASS`。

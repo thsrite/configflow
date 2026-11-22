@@ -3009,7 +3009,9 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   设备管理按「字段类型无效」拒绝，写回时损坏保持（HR 复核：读作空选择会在下次发布时撤掉全部路由/策略；O18 T1c 前按原值拒绝）。`null` 仍是没有选择。
 - **config_token 损坏时保存其它设置**：非文本的 `config_token` 在保存服务器地址等其它设置时原样保留（HR 复核：以前会被省略，损坏证据消失、登录关闭时变成匿名访问），
   只有设置新令牌才修复；`DELETE /api/config-token` 不修复（与 T1c 前相同）。
-- **路由器 ID**：库里存成非文本（数字）读作空，路由器按无效身份拒绝（Python「主路由分流的拓扑身份必须是非空文本」），不会把 1 和 "1" 当成同一台。
+- **路由器连接身份**（协调裁定 M3）：`id`、`type`、`endpoint`、`username`、`password` 存成非文本（含数字、`null`）、两个 Agent 关联存成非文本（`null` 除外）时
+  读作损坏标记（`stored:"restrict"`）+ 告警，设备管理按「字段类型无效」拒绝，主路由分流不把它当拓扑身份，写回保持损坏；不会把 1 和 "1" 当成同一台，
+  数字 Agent 关联也不再关联到 Agent "1"（Python `1 == "1"` 同样不关联）。损坏地址的路由器发布时单独取任务锁（Python 把 null/5 与 ""/"5/" 合并为同一连接）。
 - **凭据列表**：`retired_rule_proxy_tokens` 只保留文本元素，其余丢弃并告警。
 - **MosDNS 自定义匹配**：对象形里类型不对、未声明的成员有加载告警。
 - 删除了依赖 `model.Issues`、在普通记录上永不触发的检查（convert `storedText`/`validateRuleIdentities`/`clientProtocolType`、
