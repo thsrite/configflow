@@ -474,7 +474,7 @@ func AgentBindingRecord(agent model.Agent) (AgentBinding, error) {
 }
 
 // agentBinding projects one Agent's public identity: the name falls back to
-// the ID, the service type to mihomo.
+// the ID, the service type to mihomo, a missing port is null.
 func agentBinding(a *model.Agent) (AgentBinding, error) {
 	id, err := json.Marshal(a.ID)
 	if err != nil {
@@ -490,9 +490,13 @@ func agentBinding(a *model.Agent) (AgentBinding, error) {
 	if err != nil {
 		return AgentBinding{}, err
 	}
-	port, err := json.Marshal(int64(a.Port))
-	if err != nil {
-		return AgentBinding{}, err
+	// A missing port (zero: no Agent is stored with port 0) is null, as
+	// Python's agent.get('port') returned.
+	port := json.RawMessage(`null`)
+	if a.Port != 0 {
+		if port, err = json.Marshal(int64(a.Port)); err != nil {
+			return AgentBinding{}, err
+		}
 	}
 	service := json.RawMessage(`"mihomo"`)
 	if a.ServiceType != "" {
