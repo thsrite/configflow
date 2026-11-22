@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -384,10 +385,15 @@ func writeIdentity(path, value, owner string) error {
 // RunCompact verifies or claims the installation and enrolls the Agent.
 func RunCompact(ctx context.Context, settings CompactSettings, paths CompactPaths, client *http.Client, out io.Writer) error {
 	enrollment, err := PrepareCompact(settings, paths)
-	if err != nil {
-		return err
+	if err == nil {
+		err = enrollAgent(ctx, paths.AgentDir, enrollment, client, out, composeFlavor)
 	}
-	if err := enrollAgent(ctx, paths.AgentDir, enrollment, client, out, composeFlavor); err != nil {
+	// The compact installation words an unreadable file for its mounts.
+	var refusal *Failure
+	if errors.As(err, &refusal) && refusal.Message == msgFileUnreadable {
+		return fail(msgCompactUnreadable)
+	}
+	if err != nil {
 		return err
 	}
 	fmt.Fprintln(out, msgCompactStarting)

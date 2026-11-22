@@ -64,6 +64,10 @@ func readRegular(path string, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, fail(msgFileUnreadable)
 	}
+	if info.IsDir() {
+		// The former scripts could not open a directory as a file at all.
+		return nil, fail(msgFileUnreadable)
+	}
 	if !info.Mode().IsRegular() {
 		return nil, fail(msgFileNotRegular)
 	}

@@ -245,7 +245,8 @@ func TestBootstrapRefusals(t *testing.T) {
 		{"settings directory", func(t *testing.T, p BootstrapPaths, _ string) {
 			os.Remove(p.Settings)
 			os.Mkdir(p.Settings, 0o700)
-		}, msgFileNotRegular},
+		}, msgFileUnreadable}, // Python could not open a directory as a file
+
 		{"settings fifo", func(t *testing.T, p BootstrapPaths, _ string) {
 			os.Remove(p.Settings)
 			if err := syscall.Mkfifo(p.Settings, 0o600); err != nil {

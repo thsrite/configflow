@@ -191,8 +191,13 @@ func readyIdentity(paths CompanionPaths, record map[string]any) ([]byte, error) 
 
 // isInteger reports a JSON integer (not a boolean or a float) equal to want.
 func isInteger(value any, want int) bool {
-	number, ok := value.(json.Number)
-	return ok && integerText.MatchString(string(number)) && string(number) == strconv.Itoa(want)
+	switch v := value.(type) {
+	case int:
+		return v == want
+	case json.Number:
+		return integerText.MatchString(string(v)) && string(v) == strconv.Itoa(want)
+	}
+	return false
 }
 
 // readCompanionRegular is the companion's regular-file read: no final

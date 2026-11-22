@@ -154,10 +154,6 @@ func runCompact(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	if err == nil {
 		err = RunCompact(ctx, settings, DefaultCompactPaths, BundleClient(), stdout)
 	}
-	var refusal *Failure
-	if errors.As(err, &refusal) && refusal.Message == msgFileUnreadable {
-		err = fail(msgCompactUnreadable)
-	}
 	if err = ioFailure(err, msgCompactIO); err != nil {
 		return report("ha-compact", err, stderr)
 	}
