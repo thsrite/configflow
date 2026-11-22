@@ -91,7 +91,7 @@ func recordedClass(err error) string {
 	case errors.Is(err, check.ErrMissingHealthCheck):
 		return "KeyError"
 	}
-	if repo.IsValueError(err) {
+	if errors.Is(err, repo.ErrRejected) {
 		return "ValueError"
 	}
 	return fmt.Sprintf("%T", err)

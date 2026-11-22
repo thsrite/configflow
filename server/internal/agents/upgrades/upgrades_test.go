@@ -127,7 +127,7 @@ func ErrorClass(err error) string {
 	if errors.Is(err, agents.ErrAgentEndpoint) {
 		return "EndpointError"
 	}
-	if errors.Is(err, ErrInvalidReport) || IsValueError(err) {
+	if errors.Is(err, ErrInvalidReport) || IsRefused(err) {
 		return "ValueError"
 	}
 	return ""
@@ -142,7 +142,7 @@ func respond(payload any, status int) *agents.Response { return AgentResponse(pa
 
 func wantValueError(t *testing.T, err error, fragment string) {
 	t.Helper()
-	if err == nil || !IsValueError(err) || !strings.Contains(err.Error(), fragment) {
+	if err == nil || !IsRefused(err) || !strings.Contains(err.Error(), fragment) {
 		t.Fatalf("want ValueError %q, got %v", fragment, err)
 	}
 }

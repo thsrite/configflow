@@ -16,7 +16,7 @@ import (
 // IsUserError identifies refusals Python exposes as a conflict.
 func IsUserError(err error) bool {
 	var e *Error
-	return errors.As(err, &e) || deploy.IsPreparationFailure(err) || repo.IsValueError(err)
+	return errors.As(err, &e) || deploy.IsPreparationFailure(err) || errors.Is(err, repo.ErrRejected)
 }
 
 func (s *Service) leased(ctx context.Context, fn func(context.Context) error) error {

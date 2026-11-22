@@ -43,7 +43,7 @@ func isOSOrValueError(err error) bool {
 	var syntaxErr *json.SyntaxError
 	return errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &syntaxErr) ||
 		errors.Is(err, notifications.ErrInvalidStore) || errors.Is(err, tasks.ErrIncomplete) || errors.Is(err, tasks.ErrInvalidHistory) ||
-		repo.IsValueError(err) || errors.Is(err, notifications.ErrSourceUnavailable)
+		errors.Is(err, repo.ErrRejected) || errors.Is(err, notifications.ErrSourceUnavailable)
 }
 
 func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {

@@ -222,7 +222,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if agents.IsTransportError(err) || IsValueError(err) {
+		if agents.IsTransportError(err) || IsRefused(err) {
 			return nil, valueError(msgCannotConnect)
 		}
 		return nil, err
@@ -439,7 +439,7 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 	}
 	if afterRecovery {
 		saved, e := saveModel(ctx, m, agentID, id, upgradePatch{Status: "rolled_back"}, false)
-		if e == nil || !IsValueError(e) {
+		if e == nil || !IsRefused(e) {
 			return saved, e
 		}
 	}
@@ -472,7 +472,7 @@ func pollAgentModel(ctx context.Context, m *agents.Manager, a *model.Agent, agen
 		if ctx.Err() != nil {
 			return nil, true, ctx.Err()
 		}
-		if agents.IsTransportError(err) || IsValueError(err) || errors.Is(err, agents.ErrInvalidAgentReply) {
+		if agents.IsTransportError(err) || IsRefused(err) || errors.Is(err, agents.ErrInvalidAgentReply) {
 			return nil, false, nil
 		}
 		return nil, true, err

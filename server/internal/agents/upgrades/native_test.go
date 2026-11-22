@@ -123,7 +123,7 @@ func TestN810PythonBugBoundary(t *testing.T) {
 					}
 				}
 				_, err := StartModel(e.ctx, e.m, e.ident)
-				if !IsValueError(err) || err.Error() != msgArtifactsNotReady {
+				if !IsRefused(err) || err.Error() != msgArtifactsNotReady {
 					t.Fatal("missing architecture not refused", err)
 				}
 			}

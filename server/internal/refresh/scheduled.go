@@ -12,6 +12,7 @@ import (
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
 	"context"
+	"errors"
 	"math"
 	"os"
 	"sync"
@@ -120,7 +121,7 @@ func ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, er
 	}
 	path, err := rulefetch.CacheReadPath(ctx, rule, nil)
 	if err != nil {
-		if repo.IsValueError(err) || isOSError(err) {
+		if errors.Is(err, repo.ErrRejected) || isOSError(err) {
 			return nil, nil
 		}
 		return nil, err

@@ -406,9 +406,9 @@ func xcErrorClass(err error) string {
 		}
 		return "ProfileRepositoryError"
 	}
-	var helper *HelperError
-	if errors.As(err, &helper) {
-		return helper.Class
+	var missing *MissingError
+	if errors.As(err, &missing) {
+		return "KeyError"
 	}
 	if errors.Is(err, store.ErrStorage) {
 		return "ConfigStorageError"

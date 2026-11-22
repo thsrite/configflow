@@ -165,7 +165,7 @@ func compareOutcome(entry map[string]any, got any, err error) (string, string) {
 			if class != "EnrollmentError" || message != ee.Message || status != ee.Status {
 				return "error", fmt.Sprintf("python %s %q %d, go EnrollmentError %q %d", class, message, status, ee.Message, ee.Status)
 			}
-		case errors.As(err, &ve) || repo.IsValueError(err):
+		case errors.As(err, &ve) || errors.Is(err, repo.ErrRejected):
 			if !isValue || class == "EnrollmentError" || message != err.Error() {
 				return "error", fmt.Sprintf("python %s %q, go ValueError %q", class, message, err.Error())
 			}

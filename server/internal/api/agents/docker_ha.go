@@ -63,11 +63,11 @@ func dockerHABody(c *httpx.Ctx, allowCheck bool) (json.RawMessage, error) {
 	return json.Marshal(object)
 }
 
-// isPythonValueError reports whether `except ValueError` catches err.
-func isPythonValueError(err error) bool {
+// isRefusal reports whether err refuses the request (answered with 400).
+func isRefusal(err error) bool {
 	var ve *installer.ValueError
 	var conflict *agents.DeploymentConflict
-	return errors.As(err, &ve) || errors.As(err, &conflict) || repo.IsValueError(err)
+	return errors.As(err, &ve) || errors.As(err, &conflict) || errors.Is(err, repo.ErrRejected)
 }
 
 // dockerHARespond is _respond(callback).
@@ -79,7 +79,7 @@ func dockerHARespond(callback func() (any, error)) (*httpx.Response, error) {
 		switch {
 		case errors.As(err, &enrollment):
 			result, status = map[string]any{"success": false, "message": enrollment.Message}, enrollment.Status
-		case isPythonValueError(err):
+		case isRefusal(err):
 			result, status = map[string]any{"success": false, "message": err.Error()}, 400
 		default:
 			return nil, err

@@ -189,7 +189,7 @@ func selectResources(profile *model.Profile, c catalogs, roots ResourceRoots) (s
 	for _, kind := range sortedRootKinds(roots) {
 		ids := roots[kind]
 		if selected[kind] == nil {
-			return nil, helperError(ClassKeyError, fmt.Sprintf("%q", kind))
+			return nil, &MissingError{Kind: ErrUnknownRootKind, Key: kind}
 		}
 		if ids == nil {
 			ids = c.keys(kind)
@@ -446,7 +446,7 @@ func resolveConfig(document *model.Document, profileID string, roots ResourceRoo
 		}
 		entry, ok := library[rule.LibraryRuleID]
 		if !ok {
-			return nil, helperError(ClassKeyError, fmt.Sprintf("'%s'", rule.LibraryRuleID))
+			return nil, &MissingError{Kind: ErrMissingLibraryRule, Key: rule.LibraryRuleID}
 		}
 		value, err := hydratedRuleset(rule, entry, profileID)
 		if err != nil {

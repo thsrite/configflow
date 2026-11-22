@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -442,7 +443,7 @@ func (s *Service) finalize(ctx context.Context, target *agent, st model.DNSFollo
 		if !IsUserError(e) {
 			return e
 		}
-		if e.Error() != msgDraftEdited && !repo.IsValueError(e) {
+		if e.Error() != msgDraftEdited && !errors.Is(e, repo.ErrRejected) {
 			return e
 		}
 		warning = e.Error()

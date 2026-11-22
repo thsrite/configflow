@@ -2,6 +2,7 @@ package repo
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -24,6 +25,16 @@ var (
 	ErrNodeDeletionChanged = errors.New("node deletion changed")
 	// ErrRuleLibraryCreationUncertain is RuleLibraryCreationUncertain.
 	ErrRuleLibraryCreationUncertain = errors.New("rule library creation uncertain")
+	// ErrRejected matches every error that refuses the caller's value or
+	// change: ErrValidation, ErrExists and ErrInUse (with
+	// ErrNodeDeletionChanged). Callers answer it as a client error.
+	ErrRejected = errors.New("profile change rejected")
+	// ErrUnknownRootKind is a ResourceRoots kind the configuration does not
+	// have (a caller bug); the error is a *MissingError.
+	ErrUnknownRootKind = errors.New("unknown resource root kind")
+	// ErrMissingLibraryRule is a ruleset rule whose rule library entry does
+	// not exist; the error is a *MissingError.
+	ErrMissingLibraryRule = errors.New("rule library entry missing")
 )
 
 // Error is a repository exception. Error() is Python's str(exc): the message,
@@ -91,25 +102,17 @@ func writePyHex(b *strings.Builder, prefix byte, r rune, width int) {
 
 func (e *Error) Unwrap() error { return e.Cause }
 
-// Is reports class membership like isinstance: every Error is an
-// ErrRepository, a NodeDeletionChanged is also an ErrInUse.
+// Is reports membership: every Error is an ErrRepository, a
+// NodeDeletionChanged is also an ErrInUse, and validation, exists and in-use
+// errors are ErrRejected.
 func (e *Error) Is(target error) bool {
-	if target == e.Kind || target == ErrRepository {
+	switch target {
+	case e.Kind, ErrRepository:
 		return true
-	}
-	return target == ErrInUse && e.Kind == ErrNodeDeletionChanged
-}
-
-// IsValueError reports whether Python code catching ValueError would catch
-// err: validation, exists and in-use errors, and helper ValueErrors.
-func IsValueError(err error) bool {
-	var e *Error
-	if errors.As(err, &e) {
+	case ErrInUse:
+		return e.Kind == ErrNodeDeletionChanged
+	case ErrRejected:
 		return e.Kind == ErrValidation || e.Kind == ErrExists || e.Kind == ErrInUse || e.Kind == ErrNodeDeletionChanged
-	}
-	var h *HelperError
-	if errors.As(err, &h) {
-		return h.Class == ClassValueError || h.Class == ClassDialerReference || h.Class == ClassOxidnsSettings
 	}
 	return false
 }
@@ -153,44 +156,19 @@ func NewInUse(message string, usages []any) *Error {
 // NewValidationError builds a ProfileValidationError.
 func NewValidationError(message string) *Error { return validationError(message) }
 
-// Classes of HelperError.
-const (
-	ClassValueError      = "ValueError"
-	ClassDialerReference = "DialerReferenceError" // a StrategyReferenceError, a ValueError
-	ClassOxidnsSettings  = "OxidnsSettingsError"  // a ValueError
-	ClassTypeError       = "TypeError"
-	ClassKeyError        = "KeyError"
-	ClassAttributeError  = "AttributeError"
-)
-
-// HelperError is an exception raised by one of the validation helpers the
-// repository calls (dialer references, health checks, OxiDNS settings ...).
-// Class is the Python exception class; the repository converts the classes
-// its Python counterpart catches and passes the others through unchanged.
-//
-// ClassTypeError, ClassKeyError and ClassAttributeError stand for the
-// unintended exceptions Python raises on malformed values the helper does
-// not check itself; their messages are not Python's.
-type HelperError struct {
-	Class   string
-	Message string
+// MissingError reports a key the configuration does not have. Kind is
+// ErrUnknownRootKind or ErrMissingLibraryRule; Error() is the quoted key.
+type MissingError struct {
+	Kind error
+	Key  string
 }
 
-func (e *HelperError) Error() string { return e.Message }
-
-func helperError(class, message string) *HelperError {
-	return &HelperError{Class: class, Message: message}
-}
-
-func isHelperClass(err error, classes ...string) bool {
-	var h *HelperError
-	if !errors.As(err, &h) {
-		return false
+func (e *MissingError) Error() string {
+	if e.Kind == ErrUnknownRootKind {
+		return strconv.Quote(e.Key)
 	}
-	for _, class := range classes {
-		if h.Class == class {
-			return true
-		}
-	}
-	return false
+	return "'" + e.Key + "'"
 }
+
+// Is reports whether target is the error's Kind.
+func (e *MissingError) Is(target error) bool { return target == e.Kind }

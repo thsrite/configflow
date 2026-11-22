@@ -72,7 +72,7 @@ func refuse(m string) error    { return &Error{Message: m} }
 // IsUserError identifies errors mapped to the HA route's 409 response.
 func IsUserError(err error) bool {
 	var e *Error
-	return errors.As(err, &e) || deploy.IsPreparationFailure(err) || repo.IsValueError(err) || errors.Is(err, agents.ErrPairIncomplete)
+	return errors.As(err, &e) || deploy.IsPreparationFailure(err) || errors.Is(err, repo.ErrRejected) || errors.Is(err, agents.ErrPairIncomplete)
 }
 
 // HandoffPending keeps the reservation until an uncertain device state is proved.

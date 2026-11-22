@@ -64,7 +64,7 @@ func verifyNativeRemoteReference(t *testing.T, e *env, name, body string, status
 			t.Fatalf("original Python result changed: %s: %s", name, diff)
 		}
 		if strings.HasPrefix(name, "logging_existing_") {
-			if row.Class != "TypeError" || !repo.IsValueError(err) {
+			if row.Class != "TypeError" || !errors.Is(err, repo.ErrRejected) {
 				t.Fatalf("stored logging shape was not refused: %v", err)
 			}
 		} else if !errors.Is(err, ErrInvalidAgentReply) {

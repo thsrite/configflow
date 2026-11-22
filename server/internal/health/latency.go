@@ -71,7 +71,7 @@ func isValueError(err error) bool {
 	if errors.As(err, &ve) {
 		return true
 	}
-	return repo.IsValueError(err)
+	return errors.Is(err, repo.ErrRejected)
 }
 
 // ResolveSettings resolves ProbeSettings from environment variables and saved DNS config.

@@ -265,7 +265,7 @@ func setTrafficHistoryError(err error) *httpx.Response {
 		return failure(400, valueError.Message)
 	case errors.As(err, &conflict):
 		return failure(400, conflict.Message)
-	case repo.IsValueError(err):
+	case errors.Is(err, repo.ErrRejected):
 		return failure(400, err.Error())
 	}
 	return nil
@@ -306,7 +306,7 @@ func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
 		if errors.As(err, &valueError) {
 			return failure(400, valueError.Message), nil
 		}
-		if repo.IsValueError(err) {
+		if errors.Is(err, repo.ErrRejected) {
 			// `except ValueError` also catches the repository's
 			// ProfileValidationError / ProfileInUse / ProfileExists.
 			return failure(400, err.Error()), nil

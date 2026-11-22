@@ -342,7 +342,7 @@ func updateAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	result, err := upgrades.StartModel(ctx, manager, c.Param("agent_id"))
 	if err != nil {
-		if upgrades.IsValueError(err) {
+		if upgrades.IsRefused(err) {
 			return failure(409, agents.UpgradeErrorMessage(err.Error())), nil
 		}
 		return nil, err
@@ -398,7 +398,7 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	return auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		state, err := upgrades.PollModel(ctx, manager, agentID)
 		if err != nil {
-			if upgrades.IsValueError(err) {
+			if upgrades.IsRefused(err) {
 				return failure(404, agents.UpgradeErrorMessage(err.Error())), nil
 			}
 			return nil, err
@@ -437,7 +437,7 @@ func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	state, err := upgrades.ReportLegacyJSON(ctx, manager, agentID, payload)
 	if err != nil {
-		if errors.Is(err, upgrades.ErrInvalidReport) || upgrades.IsValueError(err) {
+		if errors.Is(err, upgrades.ErrInvalidReport) || upgrades.IsRefused(err) {
 			return failure(400, "Agent 上报的更新结果格式无效。"), nil
 		}
 		return nil, err
