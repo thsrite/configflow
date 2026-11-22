@@ -15,6 +15,8 @@
 #      old compose keeps working; switching its entrypoint line to
 #      `configflow-agent ha-bootstrap` also accepts the existing installation,
 #      also on an image without python3.
+#   C  the version probe of the generated scripts refuses the old Agent image
+#      (which would start as a normal Agent) and accepts the new one.
 #
 # Usage, from the repository root on the test server:
 #   server/parity/lab/no-python-compose-lab.sh OLD_TREE
@@ -190,9 +192,39 @@ scenario_b() {
   compose b down
 }
 
+# C (batch-35 review): the version probe the panel puts before ha-* runs.
+# An Agent before 1.9.2-go ignores the ha-* operand and starts as a normal
+# Agent, so the generated probe must refuse that image and accept the new one.
+scenario_c() {
+  say "C: generated Agent image version probe (old image refused, new accepted)"
+  image old agent-old no
+  start_panel configflow
+  local tag line out
+  out=$("${docker[@]}" run --rm --network none --entrypoint configflow-agent cf-nopy-agent:old ha-inspect 2>&1 || true)
+  grep -qF 'Using config file' <<<"$out" || fail "C: old Agent did not start as a normal Agent: $out"
+  echo "old Agent given ha-inspect starts normally: $(grep -m1 -F 'Using config file' <<<"$out")"
+  for tag in old nopy; do
+    mkdir -p "$lab/c-$tag"
+    jq -n --arg url "http://127.0.0.1:$port" --arg data "$lab/c-$tag/data" --arg id "$lab/host-id" --arg image "cf-nopy-agent:$tag" \
+      '{action: "generate", mode: "new", install_method: "script", server_url: $url, agent_name: "labc", agent_ip: "192.0.2.10",
+        oxidns_port: 18082, data_dir: $data, network_mode: "host", ha_host_id_path: $id, image: $image}' > "$lab/c-$tag/request.json"
+    curl -fsS -H 'Content-Type: application/json' --data @"$lab/c-$tag/request.json" "http://127.0.0.1:$port/api/agents/docker-oxidns-ha-guide" \
+      > "$lab/c-$tag/guide.json" || { cat "$lab/c-$tag/guide.json" >&2; fail "C: guide $tag"; }
+    line=$(jq -r .install_command "$lab/c-$tag/guide.json" | grep -m1 -F -- ' -version 2>/dev/null)" | awk ') || fail "C: no probe in the $tag script"
+    if sudo bash -c "set -euo pipefail; PATH=/usr/bin:/bin; $line"; then
+      [ "$tag" = nopy ] || fail "C: probe accepted the old image"
+    else
+      [ "$tag" = old ] || fail "C: probe refused the new image"
+    fi
+    echo "probe on cf-nopy-agent:$tag behaves as expected"
+  done
+  stop_panel
+}
+
 reset_lab
 build
 image nopy agent-new no
 scenario_a
 scenario_b
-say "LAB PASS: A (new bundle, no python3) and B (upgrade from the bootstrap.py bundle)"
+scenario_c
+say "LAB PASS: A (new bundle, no python3), B (upgrade from the bootstrap.py bundle), C (image version probe)"

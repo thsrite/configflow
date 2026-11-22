@@ -2857,6 +2857,8 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   - ha-enroll：登记响应非对象、错误响应的 `message` 非字符串、写身份文件失败时给中文提示（原为 Python 回溯）；
     设置不完整时 `安装命令参数无效；请回到引导重新生成。`。
   - ha-port-check 直接 bind（无 SO_REUSEADDR、不 listen），与原 Python 相同。
+  - ha-enroll 的重定向（Go 标准客户端）：301/302/303 与 Python 一样改为 GET，但跨主机时去掉 `Authorization`（Python urllib 会带到任何主机）；
+    307/308 重发 POST、仅同主机保留 `Authorization`（Python 对 POST 的 307/308 报 HTTPError）。ha-bootstrap 照旧不跟随重定向、不走代理。
 - 镜像：Dockerfile.agent 暂保留 python3——supervisord 本身、`docker-compose-install.py` / `docker-compose-compact.py`（精简 Compose）、
   入口脚本内联 Python 仍需要它（见 `progress/no-python-product.md` 盘点）。旧 Compose 安装包部署（entrypoint 为
   `python3 /run/configflow-compose/bootstrap.py`）升级镜像后照常运行。
