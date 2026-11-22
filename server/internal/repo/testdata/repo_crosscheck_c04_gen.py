@@ -37,10 +37,13 @@ op('save_router_publication', id='work', expected=dict(router, id='missing'), fi
 op('save_router_publication', id='work', expected=dict(router, name='whatever'),
    fields={'manifest': {'rules': [1], 'note': '中'}, 'dns_guard': {}, 'last_release': None, 'ipv6_routes': {'x': True}})
 op('get_profile', id='work', save='work_after_pub')
-op('save_router_publication', id='work', expected=router, fields={'ipv6_routes': 0, 'last_release': {'at': 1}})
+# last_release is a complete publication result (O18 T1c: the plain record
+# refuses a number in at and always writes at/ok/fingerprint/message); the
+# step checks the wrong-typed ipv6_routes field.
+op('save_router_publication', id='work', expected=router, fields={'ipv6_routes': 0, 'last_release': {'at': '1', 'ok': False, 'fingerprint': '', 'message': ''}})
 op('save_router_publication', id='work', expected=router, fields={})
 op('save_router_settings', id='work', expected=r2, replacement=None)
-published = dict(r2, ros_policy_state={'rules': [1], 'note': '中'}, last_release={'at': 1})
+published = dict(r2, ros_policy_state={'rules': [1], 'note': '中'}, last_release={'at': '1', 'ok': False, 'fingerprint': '', 'message': ''})
 op('save_router_settings', id='work', expected=published, replacement=dict(published, password='new'))
 published = dict(published, password='new')
 op('save_router_settings', id='work', expected=published, replacement={k: v for k, v in published.items() if k != 'ros_policy_state'})
@@ -219,8 +222,11 @@ op('cfg_get_config', id='work')
 op('cfg_reset')
 op('cfg_save_config', config={'mihomo': {'custom_config': 'no baseline'}, '_revision': 0}, id='work')
 op('export_all', save='ex')
+# Retired tokens are text: an import is input and refuses a number in the
+# list (O18 T1a/T1c strict input); the step checks that the current token
+# leaves the retired list.
 op('import_all', data={'$var': 'ex', 'patch': [{'path': ['system', 'system_config', 'rule_proxy_token'], 'set': 'imported'},
-                                               {'path': ['system', 'system_config', 'retired_rule_proxy_tokens'], 'set': ['old1', 'imported', 7]}]})
+                                               {'path': ['system', 'system_config', 'retired_rule_proxy_tokens'], 'set': ['old1', 'imported']}]})
 op('get_system_settings')
 op('import_all', data={'$var': 'ex', 'patch': [{'path': ['system', 'system_config', 'rule_proxy_token'], 'set': 'ct2'},
                                                {'path': ['system', 'system_config', 'config_token'], 'set': 'ct2'}]})

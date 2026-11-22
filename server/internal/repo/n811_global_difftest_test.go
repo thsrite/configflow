@@ -3,6 +3,7 @@ package repo_test
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/testjson"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -162,7 +163,9 @@ func TestN811GlobalFlaskBoundaries(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					if !reflect.DeepEqual(normalizeGlobalAnswer(actual, ""), normalizeGlobalAnswer(expected.Body, "")) {
+					// Exports show plain records (O18 T1c): empty optional
+					// members are compared as absent on both sides.
+					if !reflect.DeepEqual(testjson.WithoutEmptyMembers(normalizeGlobalAnswer(actual, "")), testjson.WithoutEmptyMembers(normalizeGlobalAnswer(expected.Body, ""))) {
 						t.Fatalf("%s response differs: Go=%v Flask=%v", path, actual, expected.Body)
 					}
 				}

@@ -148,6 +148,9 @@ func (r *Repository) convertImportInput(raw json.RawMessage, resourceRemaps Reso
 		if err != nil {
 			return nil, err
 		}
+		if merged, err = objectOrderEntriesOnly(merged); err != nil {
+			return nil, err
+		}
 		config, err := model.DecodeConfig(merged)
 		if err != nil {
 			return nil, err
@@ -1086,4 +1089,72 @@ func copyImportResource(resource importResource) (importResource, error) {
 	default:
 		return nil, fmt.Errorf("copy import resource: unsupported record %T", resource)
 	}
+}
+
+// objectOrderEntriesOnly drops proxies_order entries that are not objects
+// from a legacy profile's groups before it is decoded, as Python's upgrade
+// did first: the plain group reads an order holding such an entry as no order
+// (elements:"all"), which would lose the valid entries the upgrade keeps.
+func objectOrderEntriesOnly(profile json.RawMessage) (json.RawMessage, error) {
+	var fields model.Fields
+	if err := fields.UnmarshalJSON(profile); err != nil {
+		return nil, err
+	}
+	groupsRaw, present := fields.Get("proxy_groups")
+	if !present || jsonKind(groupsRaw) != '[' {
+		return profile, nil
+	}
+	var groups []json.RawMessage
+	if err := json.Unmarshal(groupsRaw, &groups); err != nil {
+		return nil, err
+	}
+	changed := false
+	for i, groupRaw := range groups {
+		if jsonKind(groupRaw) != '{' {
+			continue
+		}
+		var group model.Fields
+		if err := group.UnmarshalJSON(groupRaw); err != nil {
+			return nil, err
+		}
+		orderRaw, present := group.Get("proxies_order")
+		if !present || jsonKind(orderRaw) != '[' {
+			continue
+		}
+		var order []json.RawMessage
+		if err := json.Unmarshal(orderRaw, &order); err != nil {
+			return nil, err
+		}
+		kept := make([]json.RawMessage, 0, len(order))
+		for _, entry := range order {
+			if jsonKind(entry) == '{' {
+				kept = append(kept, entry)
+			}
+		}
+		if len(kept) == len(order) {
+			continue
+		}
+		encoded, err := json.Marshal(kept)
+		if err != nil {
+			return nil, err
+		}
+		if err := group.Set("proxies_order", encoded); err != nil {
+			return nil, err
+		}
+		if groups[i], err = group.MarshalJSON(); err != nil {
+			return nil, err
+		}
+		changed = true
+	}
+	if !changed {
+		return profile, nil
+	}
+	encoded, err := json.Marshal(groups)
+	if err != nil {
+		return nil, err
+	}
+	if err := fields.Set("proxy_groups", encoded); err != nil {
+		return nil, err
+	}
+	return fields.MarshalJSON()
 }

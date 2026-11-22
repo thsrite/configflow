@@ -87,6 +87,17 @@ func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
 			// wrong type is exported as "" (read leniently), not as stored.
 			if export, ok := want.Value("export").(*testObj); ok {
 				export.Delete("future_root")
+				// Members no plain record declares are dropped (O18 T1c).
+				if config := export.GetObject("system").GetObject("system_config"); config != nil {
+					config.Delete("future_setting")
+				}
+				// auto_backup starts automatic pushes: stored with another
+				// type it reads as off (O18 T1c gate ruling).
+				if backup := export.GetObject("system").GetObject("backup"); backup != nil {
+					if _, flag := backup.Value("auto_backup").(bool); !flag && backup.Has("auto_backup") {
+						backup.Set("auto_backup", false)
+					}
+				}
 				for _, profile := range export.GetObject("profiles").All() {
 					if object, ok := profile.(*testObj); ok {
 						if _, text := object.Value("description").(string); !text {
@@ -101,6 +112,37 @@ func TestReviewN85PythonFullStorageDifferential(t *testing.T) {
 				for _, value := range tables.GetList("fields") {
 					row := value.([]any)
 					row[4] = parseJSONVal(t, []byte(row[4].(string)))
+				}
+			}
+			// A backup row Go rewrote holds auto_backup as read: another
+			// type is off (O18 T1c gate ruling).
+			// Members no plain record declares are dropped when Go rewrites
+			// the row (O18 T1c); an unchanged row keeps its stored bytes.
+			for _, tables := range []*testObj{gotTables, wantTables} {
+				for _, value := range tables.GetList("fields") {
+					row := value.([]any)
+					if config, ok := row[4].(*testObj); ok && row[0] == "system" && row[2] == "system_config" {
+						config.Delete("future_setting")
+					}
+				}
+			}
+			for _, value := range wantTables.GetList("fields") {
+				row := value.([]any)
+				if row[0] != "system" || row[2] != "backup" {
+					continue
+				}
+				for _, got := range gotTables.GetList("fields") {
+					goRow := got.([]any)
+					if goRow[0] != "system" || goRow[2] != "backup" {
+						continue
+					}
+					backup, ok := row[4].(*testObj)
+					goBackup, goOK := goRow[4].(*testObj)
+					if ok && goOK && goBackup.Value("auto_backup") == false {
+						if _, flag := backup.Value("auto_backup").(bool); !flag && backup.Has("auto_backup") {
+							backup.Set("auto_backup", false)
+						}
+					}
 				}
 			}
 			xcSame(t, "all database tables", gotTables, wantTables)

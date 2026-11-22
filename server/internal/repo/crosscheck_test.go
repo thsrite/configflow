@@ -11,6 +11,8 @@ package repo
 
 import (
 	"bytes"
+	"configflow/internal/model/modeltest"
+	"configflow/internal/testjson"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -186,6 +188,9 @@ func xcText(t testing.TB, value any) string {
 	decoder.UseNumber()
 	noError(t, decoder.Decode(&native))
 	native = xcNativeRecords(t, native)
+	// Plain records (O18 T1a–T1c) leave empty optional members out where
+	// Python wrote "", null, {} or []: both sides compare without them.
+	native = testjson.WithoutEmptyMembers(native)
 	return xcMask(string(must(json.Marshal(native))(t)))
 }
 
@@ -275,8 +280,8 @@ func xcSame(t *testing.T, label string, goValue, pyValue any) {
 	for i := 0; i < len(a) && i < len(b); i++ {
 		if a[i] != b[i] {
 			from := max(0, i-6)
-			t.Errorf("%s differs at line %d:\n  go: %s\n  py: %s\ncontext (go):\n%s", label, i+1, a[i], b[i],
-				strings.Join(a[from:i+1], "\n"))
+			t.Errorf("%s differs at line %d:\n  go: %s\n  py: %s\ncontext (go):\n%s\ncontext (py):\n%s", label, i+1, a[i], b[i],
+				strings.Join(a[from:min(len(a), i+4)], "\n"), strings.Join(b[from:min(len(b), i+4)], "\n"))
 			return
 		}
 	}
@@ -597,7 +602,18 @@ func xcExecute(t *testing.T, r *Repository, op *testObj, variables map[string]an
 		return xcObjFromRecord(t, saved), nil
 	case "update_system_transaction":
 		if err := r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
-			return xcApplyRecordPatch(t, system, systemSections, system.SetJSON, op.Value("patch"))
+			// Python's transaction stores what it is given; a section that
+			// is an object but holds members of the wrong type is written
+			// as stored data (O18 T1c), as if an older version had left it.
+			set := func(key string, raw json.RawMessage) error {
+				err := system.SetJSON(key, raw)
+				var memberType *model.MemberTypeError
+				if errors.As(err, &memberType) && jsonKind(raw) == '{' {
+					return model.SetStoredMember(system, key, raw)
+				}
+				return err
+			}
+			return xcApplyRecordPatch(t, system, systemSections, set, op.Value("patch"))
 		}); err != nil {
 			return nil, err
 		}
@@ -623,6 +639,21 @@ func xcExecute(t *testing.T, r *Repository, op *testObj, variables map[string]an
 					return nil, err
 				}
 				for key, value := range viewOfJSON(raw).fields.All() {
+					// Python's _deep_merge: an object member is merged
+					// into the current one (a plain record writes every
+					// always-written member, so replacing it would reset
+					// the ones the snapshot left out).
+					if existing, present := members.Get(key); present && jsonKind(value) == '{' && jsonKind(existing) == '{' {
+						merged := viewOfJSON(existing).fields
+						for name, member := range viewOfJSON(value).fields.All() {
+							if err := merged.Set(name, member); err != nil {
+								return nil, err
+							}
+						}
+						if value, err = merged.MarshalJSON(); err != nil {
+							return nil, err
+						}
+					}
 					if err := members.Set(key, value); err != nil {
 						return nil, err
 					}
@@ -911,6 +942,13 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	// record does not declare; Python's records show them as Go stores them.
 	if changed := xcStoredAgents(t, python); changed > 0 {
 		t.Logf("O18 T1b: %d stored Agent values in the Python records normalized to the Go codec", changed)
+	}
+	// O18 T1c (accepted): members no plain record declares are dropped on
+	// read; Python's records leave out the ones Go's records do not have.
+	for i := range python {
+		if i < len(golang) {
+			python[i] = xcAlignPlain(t, python[i], golang[i])
+		}
 	}
 	// Random values are numbered in order of first appearance over the
 	// whole run, so the records are compared cumulatively: the whole run at
@@ -1236,4 +1274,152 @@ func xcFiniteJSON(value any) any {
 		return out
 	}
 	return value
+}
+
+// xcAlignPlain is modeltest.AlignResponse on one step record: Python's
+// members that Go's record lacks and no plain record declares are left out.
+func xcAlignPlain(t *testing.T, python, golang any) any {
+	t.Helper()
+	decode := func(value any) any {
+		var out any
+		decoder := json.NewDecoder(bytes.NewReader(mustMarshalJSON(t, value)))
+		decoder.UseNumber() // keep big integers exact
+		noError(t, decoder.Decode(&out))
+		return out
+	}
+	decodeText := func(text string) (any, bool) {
+		var out any
+		decoder := json.NewDecoder(strings.NewReader(text))
+		decoder.UseNumber()
+		return out, decoder.Decode(&out) == nil
+	}
+	p, g := decode(python), decode(golang)
+	// Stored rows ([scope, owner, field, position, value text, counter])
+	// carry their value as JSON text: align it with Go's row of the same
+	// scope, owner and field.
+	goRows := map[string]any{}
+	var collect func(any)
+	collect = func(v any) {
+		switch x := v.(type) {
+		case []any:
+			if len(x) == 6 {
+				if text, ok := x[4].(string); ok {
+					if value, ok := decodeText(text); ok {
+						goRows[fmt.Sprint(x[0], "|", x[1], "|", x[2])] = value
+					}
+				}
+			}
+			for _, item := range x {
+				collect(item)
+			}
+		case map[string]any:
+			for _, item := range x {
+				collect(item)
+			}
+		}
+	}
+	collect(g)
+	var rewrite func(any)
+	rewrite = func(v any) {
+		switch x := v.(type) {
+		case []any:
+			if len(x) == 6 {
+				if text, ok := x[4].(string); ok {
+					if value, ok := decodeText(text); ok {
+						if other, found := goRows[fmt.Sprint(x[0], "|", x[1], "|", x[2])]; found {
+							aligned := modeltest.AlignResponse(value, other)
+							xcAlignSwitches(aligned, other)
+							x[4] = string(mustMarshalJSON(t, aligned))
+						}
+					}
+				}
+			}
+			for _, item := range x {
+				rewrite(item)
+			}
+		case map[string]any:
+			for _, item := range x {
+				rewrite(item)
+			}
+		}
+	}
+	rewrite(p)
+	aligned := modeltest.AlignResponse(p, g)
+	xcRestoreRandomKeys(aligned, p, g)
+	xcAlignSwitches(aligned, g)
+	return parseJSONVal(t, mustMarshalJSON(t, aligned))
+}
+
+// xcRestoreRandomKeys puts back the members AlignResponse left out whose
+// name holds a random value (a generated profile ID): Go's record has the
+// same member under another random name, so it is user data, not an
+// undeclared member. It is aligned with Go's member of the same masked name.
+func xcRestoreRandomKeys(aligned, python, golang any) {
+	a, ok := aligned.(map[string]any)
+	p, pok := python.(map[string]any)
+	if !ok || !pok {
+		if al, ok := aligned.([]any); ok {
+			pl, _ := python.([]any)
+			gl, _ := golang.([]any)
+			for i := range al {
+				if i < len(pl) {
+					var other any
+					if i < len(gl) {
+						other = gl[i]
+					}
+					xcRestoreRandomKeys(al[i], pl[i], other)
+				}
+			}
+		}
+		return
+	}
+	g, _ := golang.(map[string]any)
+	for key, value := range p {
+		if kept, present := a[key]; present {
+			xcRestoreRandomKeys(kept, value, g[key])
+			continue
+		}
+		masked := xcMask(key)
+		if masked == key {
+			continue
+		}
+		var other any
+		for goKey, goValue := range g {
+			if _, inPython := p[goKey]; !inPython && xcMask(goKey) == masked {
+				other = goValue
+				break
+			}
+		}
+		restored := modeltest.AlignResponse(value, other)
+		xcRestoreRandomKeys(restored, value, other)
+		a[key] = restored
+	}
+}
+
+// xcAlignSwitches: a stored switch of another JSON type than a boolean reads
+// by its truth value, or as off for a switch that starts device writes (O18
+// T1b/T1c rulings); where Go's record holds a boolean and Python's the stored
+// value, Python's side takes Go's reading.
+func xcAlignSwitches(python, golang any) {
+	switch p := python.(type) {
+	case map[string]any:
+		g, _ := golang.(map[string]any)
+		for key, item := range p {
+			other, present := g[key]
+			if flag, isBool := other.(bool); present && isBool {
+				if _, pythonBool := item.(bool); !pythonBool && item != nil {
+					p[key] = flag
+					continue
+				}
+			}
+			xcAlignSwitches(item, other)
+		}
+	case []any:
+		g, _ := golang.([]any)
+		for i, item := range p {
+			if i < len(g) {
+				xcAlignSwitches(item, g[i])
+			}
+		}
+	}
 }

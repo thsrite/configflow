@@ -381,7 +381,10 @@
   "fields": {
    "ipv6_routes": 0,
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   }
  },
@@ -433,7 +436,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   },
   "replacement": {
@@ -452,7 +458,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   }
  },
@@ -475,7 +484,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   },
   "replacement": {
@@ -488,7 +500,10 @@
    "verify_tls": false,
    "extra": "保留",
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   }
  },
@@ -511,7 +526,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   },
   "replacement": {
@@ -530,7 +548,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   }
  },
@@ -553,7 +574,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   },
   "replacement": {
@@ -572,7 +596,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   }
  },
@@ -595,7 +622,10 @@
     "note": "中"
    },
    "last_release": {
-    "at": 1
+    "at": "1",
+    "ok": false,
+    "fingerprint": "",
+    "message": ""
    }
   },
   "replacement": null
@@ -2248,8 +2278,7 @@
      ],
      "set": [
       "old1",
-      "imported",
-      7
+      "imported"
      ]
     }
    ]
