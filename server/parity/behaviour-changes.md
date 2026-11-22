@@ -2995,8 +2995,8 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   以前 Go 对嵌套列表（例如策略组 `proxies_order`、路由器 `items`、域名发现 `history`）按 R5 整列读作缺失，下一次写入会丢掉整列；
   Python 的读者跳过这类元素，生成器遇到时直接报错。
 - **路由器守卫设置**（`dns_guard`、`ipv6_pd_guard`）：开启的守卫里有成员类型不对（例如 `bypass` 不是列表），或守卫本身是非对象的真值，
-  整份原样保留（`Stored`），设备管理按「已保存的守卫设置无效」拒绝（失败即关，与以前相同，以前靠原值证据）；守卫开关本身类型不对按裁定读作关，
-  这时不保留、可以撤下。守卫里的未声明成员照常丢弃。作为输入（路由器设置保存）严格解码，不会整份保留。
+  整份原样保留（`Stored`），设备管理按「已保存的守卫设置无效」拒绝（失败即关，与以前相同，以前靠原值证据）；守卫开关本身类型不对时，
+  Python 按真值为开的（`"x"`、`1`）同样整份保留并拒绝设备管理（HR 复核：读作关会在下次发布时撤下守卫），为假的（`0`、`""`）读作关、可以撤下。守卫里的未声明成员照常丢弃。作为输入（路由器设置保存）严格解码，不会整份保留。
 - **策略组 `proxies_order`**：列表里有非对象元素时整列读作没有排序（`elements:"all"`），与 Python `managed_members` 相同；
   旧版（v4）整份导入在解码前先按 Python 升级逻辑去掉非对象项，保留其余排序项；
   其它记录列表只丢坏元素。Agent 部署的 `dns_checks` 坏元素读作空检测（`elements:"keep"`），报告照旧追加「DNS 报告完整性」。
@@ -3005,6 +3005,10 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - **节点 `dialer_ref`**：库里存成非对象读作空引用（`ResourceRef` failClosed），生成时按「dialer_ref 必须为 …」拒绝，不会当成直连。
 - **规则集 behavior 存成 null**：读作空 behavior（`null:"empty"`），不套默认 `domain`（Python `get('behavior','domain')` 对 null 返回 None），
   例如 Linux 网关准备时这样的规则集不算可接管的域名规则集。
+- **路由器规则集选择**（`ip_rule_sets`、`ros_policy_rule_sets`）：库里存成非列表（`null` 除外）时读作只含损坏标记的列表（`stored:"selection"`），
+  设备管理按「字段类型无效」拒绝，写回时损坏保持（HR 复核：读作空选择会在下次发布时撤掉全部路由/策略；O18 T1c 前按原值拒绝）。`null` 仍是没有选择。
+- **config_token 损坏时保存其它设置**：非文本的 `config_token` 在保存服务器地址等其它设置时原样保留（HR 复核：以前会被省略，损坏证据消失、登录关闭时变成匿名访问），
+  只有设置新令牌才修复；`DELETE /api/config-token` 不修复（与 T1c 前相同）。
 - **路由器 ID**：库里存成非文本（数字）读作空，路由器按无效身份拒绝（Python「主路由分流的拓扑身份必须是非空文本」），不会把 1 和 "1" 当成同一台。
 - **凭据列表**：`retired_rule_proxy_tokens` 只保留文本元素，其余丢弃并告警。
 - **MosDNS 自定义匹配**：对象形里类型不对、未声明的成员有加载告警。
@@ -3037,4 +3041,5 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   不再当作数字，按未设置用默认 300 s（Python `float()` 接受 Unicode 数字）。
 - 数据目录和文件路径的解析改为普通的逐段解析（Lstat/Readlink，链接先于其后的 `..` 展开，不存在的部分原样保留、悬空链接跟随到目标，
   与以前结果相同）；符号链接环超过 40 层报 `resolve …: too many links`（以前照搬 CPython 的环检测和「Symlink loop from '…'」文本），仍按内部错误处理。
+- 路径中读不到的部分（不存在、不是目录、无权限）原样保留（HR 复核：C10 初版对非「不存在」的错误直接报错，与以前不同）。
 - `~`/`~name` 用 `os.UserHomeDir` / `user.Lookup` 展开；无法确定主目录时的错误文本改为 Go 的错误（以前照搬「Could not determine home directory.」）。
