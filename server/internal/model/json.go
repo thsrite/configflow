@@ -271,6 +271,19 @@ var modelPackage = rawType.PkgPath()
 // encoding/json/v2; a nil pointer or RawMessage is null.
 // The complete output must be valid UTF-8 JSON with no duplicate object keys;
 // it is checked once, here, on the final bytes.
+// validUTF8 replaces invalid UTF-8 with U+FFFD. Lenient reads accept it
+// (jsontext.AllowInvalidUTF8) and string leaves read it as U+FFFD; values a
+// plain record keeps as stored JSON (damaged manifests and guards, node
+// protocol parameters, raw members) are read the same way, so what can be
+// read can be written. In a value that decoded, invalid UTF-8 can only occur
+// inside strings.
+func validUTF8(data []byte) []byte {
+	if utf8.Valid(data) {
+		return data
+	}
+	return bytes.ToValidUTF8(data, []byte("\uFFFD"))
+}
+
 func Marshal(v any) ([]byte, error) {
 	data, err := encodeUnit(v)
 	if err != nil {

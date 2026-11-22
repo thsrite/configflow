@@ -70,10 +70,11 @@ func isInnerKeeper(v any) bool {
 // the record decides whether issues inside it keep the stored value.
 func decodeManifest(dec *jsontext.Decoder, sink *issueSink, target reflect.Value, keeper damagedKeeper) error {
 	path := pointerPath(sink.root, sink.prefix, dec.StackPointer())
-	raw, err := dec.ReadValue()
+	value, err := dec.ReadValue()
 	if err != nil {
 		return err
 	}
+	raw := jsontext.Value(validUTF8(value))
 	inner, isInner := keeper.(innerKeeper)
 	kind := IssueType
 	if raw.Kind() == '{' {
@@ -322,7 +323,7 @@ func decodeStrictInput(dec *jsontext.Decoder, v strictInputer) error {
 			unknown = len(issues) > 0
 		}
 		if unknown {
-			keeper.keepDamaged(value)
+			keeper.keepDamaged(validUTF8(value))
 			return nil
 		}
 	}
@@ -397,7 +398,7 @@ func appendInlineMembers(value reflect.Value, members []StoredMember) ([]StoredM
 		if err != nil {
 			return nil, fmt.Errorf("%w: inline members: %v", ErrJSON, err)
 		}
-		members = append(members, StoredMember{Name: name, Value: bytes.Clone(item)})
+		members = append(members, StoredMember{Name: name, Value: validUTF8(bytes.Clone(item))})
 	}
 	return members, nil
 }

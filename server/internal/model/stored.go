@@ -129,6 +129,16 @@ func plainFields(typ reflect.Type) map[string]plainField {
 // storedUnmarshalers are the lenient leaf rules for stored data.
 func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 	return jsonv2.JoinUnmarshalers(
+		// A member kept as raw JSON reads invalid UTF-8 as U+FFFD, like a
+		// string leaf, so it can be written again (validUTF8).
+		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *json.RawMessage) error {
+			value, err := dec.ReadValue()
+			if err != nil {
+				return err
+			}
+			*v = bytes.Clone(validUTF8(value))
+			return nil
+		}),
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *DeviceNotes) error {
 			return decodeStoredNotes(dec, sink, v)
 		}),
