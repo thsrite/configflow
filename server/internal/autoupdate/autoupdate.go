@@ -55,8 +55,10 @@ type Config struct {
 	ImageCopy    string // the image's own artifacts, restored when no build is usable
 	ImageTrees   string // source fingerprints of the bundled components
 	GoProxy      string
-	// GoBinary is the Go toolchain ("" = /usr/local/go/bin/go or PATH).
+	// GoBinary is the Go toolchain ("" = BundledGo when it exists, else PATH).
 	GoBinary string
+	// BundledGo is the image's toolchain path (/usr/local/go/bin/go).
+	BundledGo string
 	// Machine is uname -m ("" = the running kernel's).
 	Machine string
 	// GitHubAPI and Codeload are the GitHub endpoints (tests replace them).
@@ -88,6 +90,7 @@ func FromEnv() Config {
 		NodeProbe:  "/opt/configflow/node-probe",
 		ImageCopy:  "/app/.image",
 		ImageTrees: "/app/.image-trees.json",
+		BundledGo:  "/usr/local/go/bin/go",
 		GoProxy:    getenv("GOPROXY", "https://goproxy.cn,direct"),
 		GitHubAPI:  "https://api.github.com",
 		Codeload:   "https://codeload.github.com",
@@ -159,8 +162,10 @@ func (u *Updater) findGo() string {
 	if u.cfg.GoBinary != "" {
 		return u.cfg.GoBinary
 	}
-	if _, err := os.Stat("/usr/local/go/bin/go"); err == nil {
-		return "/usr/local/go/bin/go"
+	if u.cfg.BundledGo != "" {
+		if _, err := os.Stat(u.cfg.BundledGo); err == nil {
+			return u.cfg.BundledGo
+		}
 	}
 	path, _ := u.cfg.LookPath("go")
 	return path

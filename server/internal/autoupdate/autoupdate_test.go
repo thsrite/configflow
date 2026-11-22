@@ -285,7 +285,7 @@ func TestChangedProbeWithoutCompilerRefusesMixedVersions(t *testing.T) {
 	w.cfg.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	u := New(w.cfg)
 	if u.findGo() != "" {
-		t.Skip("/usr/local/go exists on this host")
+		t.Fatalf("toolchain found: %s", u.findGo())
 	}
 	m := &Manifest{}
 	if err := u.buildNodeProbe(context.Background(), source, m); err != nil || m.NodeProbe != nil {
@@ -481,9 +481,6 @@ func git(t *testing.T, dir string, args ...string) string {
 // reuse, refuse to mix versions without a toolchain, keep the last good
 // build on a failed build, and fall back when the source is unreachable.
 func TestRunFromGitSource(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not installed")
-	}
 	w := newWorld(t)
 	repo := filepath.Join(w.base, "repo")
 	sourceTree(t, repo)
