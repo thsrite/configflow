@@ -273,7 +273,8 @@ describe('Docker installation choices', () => {
   it('generates Mihomo + OxiDNS AIO commands while retaining standalone MosDNS and existing Agents', async () => {
     const existing = agent()
     const { wrapper } = await render(existing)
-    vi.mocked(api.get).mockImplementation(async path => ({ data: path.endsWith('compose') ? 'generated-compose' : 'generated-run' }) as any)
+    // One authenticated request returns both outputs so they share one bootstrap proof (de2f440d2).
+    vi.mocked(api.get).mockImplementation(async path => ({ data: path === '/agents/docker-agent-compose' ? { compose: 'generated-compose', run: 'generated-run' } : 'unexpected' }) as any)
     const click = async (selector: string) => {
       const element = document.querySelector<HTMLElement>(selector)
       expect(element).not.toBeNull()
@@ -309,12 +310,11 @@ describe('Docker installation choices', () => {
     port('OxiDNS Agent 端口')!.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     await generate()
-    for (const endpoint of ['/agents/docker-agent-compose', '/agents/docker-agent-run']) {
-      expect(api.get).toHaveBeenCalledWith(endpoint, { params: expect.objectContaining({
-        enable_mihomo: true, enable_oxidns: true, enable_mosdns: false,
-        mihomo_port: 8080, oxidns_port: 8182, data_dir: './aio_data'
-      }) })
-    }
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
+      format: 'both', enable_mihomo: true, enable_oxidns: true, enable_mosdns: false,
+      mihomo_port: 8080, oxidns_port: 8182, data_dir: './aio_data'
+    }) })
     expect(Array.from(dialog.querySelectorAll('textarea')).map(input => input.value))
       .toEqual(expect.arrayContaining(['generated-compose', 'generated-run']))
     vi.mocked(api.get).mockClear()
@@ -322,12 +322,11 @@ describe('Docker installation choices', () => {
     expect(port('MosDNS Agent 端口')?.value).toBe('8081')
     expect(port('OxiDNS Agent 端口')).toBeUndefined()
     await generate()
-    for (const endpoint of ['/agents/docker-agent-compose', '/agents/docker-agent-run']) {
-      expect(api.get).toHaveBeenCalledWith(endpoint, { params: expect.objectContaining({
-        enable_mihomo: false, enable_oxidns: false, enable_mosdns: true,
-        mosdns_port: 8081, data_dir: './mosdns_data'
-      }) })
-    }
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
+      format: 'both', enable_mihomo: false, enable_oxidns: false, enable_mosdns: true,
+      mosdns_port: 8081, data_dir: './mosdns_data'
+    }) })
     expect(api.post).not.toHaveBeenCalled()
     expect(api.put).not.toHaveBeenCalled()
     expect(api.delete).not.toHaveBeenCalled()
