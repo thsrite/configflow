@@ -54,5 +54,4 @@ EXIT=1
 - `gate.sh` / `proddiff.sh` 默认改成 `PRODDIFF_MODE=go PRODDIFF_COMPARATOR=go`，去掉两个开关的 python 分支。
 - 删除 `run.py`、`generators.py`、`artifact_policy.py`、`content_policy.py`、`provider_policy.py`、
   `flask_worker.py`、`python_generators.py`、`test_proddiff.py`、`test_artifact_policy.py`、`crosscheck.py`、
-  `baseline/`、`server/tools/requirements-tools.txt`、`parity/proddiff-baseline.txt`，以及 `security_headers.py`
-  （只被 run.py 的 Python 模式使用）。
+  `baseline/`、`server/tools/requirements-tools.txt`、`parity/proddiff-baseline.txt`，`security_headers.py` 只剩 configdiff 使用，随 configdiff 退役一起删除。
