@@ -14,15 +14,17 @@
 > rehearsal that hides the working-tree backend/ to prove nothing reads it.
 
 
-2026-11-22，基线 `go@44424c19f`。只读盘点加方案，没有改产品代码，没有跑测试。
-数字来自静态扫描（grep/AST 名称）和 `parity/gate-env-coverage.md`（2026-11-20 运行时清单），
-WP0 会用一次「隐藏 backend 的真实运行」把它们核实成准确清单。
+2026-11-22，基线 `go@44424c19f`。只读盘点加方案，没有改产品代码。
+最初的数字来自静态扫描（grep/AST 名称）和 `parity/gate-env-coverage.md`（2026-11-20 运行时清单）；
+WP0 已在 2026-11-22 用「隐藏 backend 的真实运行」（`go@b85aa02f0`）核实，文中的数字已换成运行结果，完整清单见**附录 A**。
 
 ## 结论（先看这里）
 
-1. **影响面很大，但大部分有现成办法。** 依赖真实 Python 的东西分成 8 类，大约 **72 个 Go 包、约 145 个测试文件**，
-   外加门禁的 difftest/live 两个阶段和 proddiff/configdiff/routerdiff 三个工具。backend/ 一删，
-   门禁会出现三种情况：大面积失败（调用 Python 失败）、**静默变绿**（缺解释器就 skip 的测试），
+1. **影响面很大，但大部分有现成办法。** 依赖真实 Python 的东西分成 8 类。WP0 实测（附录 A）：隐藏 backend 的 Python 文件后，
+   全量测试有 **54 个包、318 个顶层测试（2 062 个子测试）失败**（core 环境 19 个包 94 个，其余只在 compare 环境出现）；
+   另有 9 个包调用 Python 但不依赖 backend（PyJWT、PyYAML、webdav3、标准库 json/sqlite3，以及 installer 用系统 python3 模拟远端主机），
+   删掉 venv 时才会出问题。外加门禁的 difftest/live 两个阶段和 proddiff/configdiff/routerdiff 三个工具。backend/ 一删，
+   门禁会出现三种情况：大面积失败（调用 Python 失败）、**静默变绿**（缺解释器就 skip 的测试，实测见附录 A.4），
    或者测试根本没被选中（compare 阶段整体起不来）。
 2. **核心做法：用「双方都跑过一次」的结果冻结期望值。** 在 Python 还在的时候，用 record 模式跑一次差分：
    Python 和 Go 都跑、比较通过以后，才把**归一化后的 Go 观察结果**（响应、写入后的 DB 行和文件）
@@ -32,8 +34,9 @@ WP0 会用一次「隐藏 backend 的真实运行」把它们核实成准确清�
 3. **分类处理：**
    - (a) **已有 pyref golden（4 个包 17 个文件、7.9 MB）**、以及约 177 MB 已提交的 Python 生成语料：数据本身已经自包含，
      只要去掉 backend 源码和 venv 的指纹校验、录制入口和 `PYREF_INPUT_FINGERPRINT`。工作量 S。
-   - (b) **Flask/Python 差分改成冻结回放**：24 个 difftest 包 197 个顶层测试；15 个普通包 42 个 live 测试；
-     约 27 个包里直接 `exec` Python 的参考调用（routers 设备写入边界最重要）。这是主要工作量。
+   - (b) **Flask/Python 差分改成冻结回放**：24 个 difftest 包 214 个顶层测试（190 个需要 Python，24 个是 Go 负控）；
+     15 个普通包 44 个 live 顶层测试 + 2 个 Python 子例（34 个依赖 backend）；
+     core 环境里 21 个包直接 `exec` Python，其中 13 个依赖 backend（routers 设备写入边界最重要）。这是主要工作量。
    - (c) **建议删除**：Python 与 Go 同时运行的锁和并发互测、Go 写入后让 Python 读的方向、PyYAML 读 Go 产出的 YAML、
      WebDAV TLS 的 Python 预言机、「Go 副本必须等于 backend 文件」的同步检查、源码指纹。切换后不会再有 Python 进程
      和 Go 共用数据，也不回滚，这些保护对象已经不存在了。（详见第 3 节）
@@ -62,7 +65,7 @@ WP0 会用一次「隐藏 backend 的真实运行」把它们核实成准确清�
 |---|---|---|---|
 | core: gofmt/vet/build tags | 静态检查 | 无 | 不变 |
 | core: pyref 指纹 | `go run ./tools/pyref -fingerprint`：给 backend/ 源码和 venv METADATA 算哈希，导出 `PYREF_INPUT_FINGERPRINT` | 读 backend/ 和 venv 文件（不执行 Python） | 哈希变了，**所有 pyref golden 报「Python 参考已变化」** |
-| core: `go test -race ./...` | 全量测试 | 约 27 个包的测试用固定路径 `~/cf-test/.venv/bin/python` 加 `PYTHONPATH=.` 调 backend 函数；routers 等包缺解释器就 skip | 解释器还在但 `import backend` 失败 → 大量失败；如果以后 venv 被删 → **静默 skip** |
+| core: `go test -race ./...` | 全量测试 | 21 个包会启动 Python 进程（实测每次全量约 7 900 个，其中 installer 的系统 python3 桩约 6 500 个、routers 1 324 个），13 个包用固定路径 `~/cf-test/.venv/bin/python` 加 `PYTHONPATH=.` 调 backend 函数；另有 6 个包读 backend 文件或核对源码哈希；routers 等包缺解释器就 skip | 解释器还在但 `import backend` 失败 → 大量失败；如果以后 venv 被删 → **静默 skip** |
 | core: Agent 模块 | `backend/agents/go-agent` 的 gofmt/vet/race | 无（静态扫描没发现 Python 调用） | 切换计划保留 `backend/agents/go-agent`、`backend/node-probe`，路径不变 |
 | compare: proddiff | Flask 和 Go 都在断网命名空间里加载生产快照副本，比较所有 GET 和生成器输出 | 启动 Flask（`flask_worker.py`）和 Python 生成器（`python_generators.py`），比较器 `run.py` 本身也是 Python | 起不来 |
 | compare: difftest | `gate-live.py --difftest`：24 个 `/difftest` 包，非 race | 每个包自己 `python -m backend.app` 启动 Flask | 起不来；而且 `gate-live.py` 预检要求能 `import flask, requests, yaml, webdav3.client` |
@@ -82,9 +85,9 @@ WP0 会用一次「隐藏 backend 的真实运行」把它们核实成准确清�
 |---|---|---|---|---|---|
 | A | pyref golden：`mosdns`(5)、`oxidns`(8)、`routersplit`(3)、`installer`(1) 的 `testdata/pyref/*.json[.gz]`；`tools/pyref/sources.json` 登记 23 组 | 17 个文件，7.9 MB（其中 mosdns `TestCorpus` 6.8 MB） | 正常运行不启动 Python，但元数据里存了 backend 源码哈希和 venv 依赖哈希，每次运行都会核对 | 生成、格式 | (a) 去指纹 |
 | B | 其他已提交的 Python 生成语料：`*_recorded_test.go`、`corpus_test.go`、`*_reference_test.go` 读取的 `testdata/*.json(l).gz`；生成它们的 `testdata/*.py` 有 254 个 | testdata 共 544 个文件 177 MB；其中大部分是 Python 录制或语料 | 回放不需要 Python；少数测试顺带核对 backend 文件的 SHA（例如 `provider/native_reference_test.go` 核对 `backend/utils/provider_delivery.py`），生成脚本 import backend | 生成、API、格式 | (a) 删 SHA 核对，生成脚本归档 |
-| C | difftest：24 个包 | 197 个顶层测试（其中 api/agents 29、subscriptions 24、rulelibrary 20、config 19、rules 19、aggregations 13、tasks 11、linuxgateway 10、webdav 9、httpx 8、oxidns 8，其余 13 个包共 27） | 每个包自己启动 Flask（`python -m backend.app`），部分包还用 `python -c "from backend… import …"` 调内部函数；一部分是不需要 Python 的 Go 负控 | API、存储（写入后 DB 行和文件）、生成 | (b) 冻结回放 |
-| D | synthetic live 普通测试：15 个包 | 42 个顶层测试 + 2 个 Python 专用子例（`repo/store.TestStoredRoundTrip` 的 python 分支） | `CONFIGFLOW_DIFF=1` 时调用 Python；没设就只跑 Go 部分，或者 skip | 存储（repo 9、store 5、model 2）、Agent 协议（agents、dnsha、ipv6、rulesync）、API（api/agents、api/ipv6）、生成（gateway） | (b)，其中一部分 (c) |
-| E | core 里固定解释器的参考调用：routers（R04–R17 边界、routerfake、addresslists、natlist、r07）、clients、api/routers、setup、model、store/raw、repo/reference、auth JWT、notifications、jsonstore、taskstatus、weblistener、agents/metrics、trafficstore、health(+check)、gateway dnsloop、configexport、configgen zip、deploy publish oracle、provider corpus、refresh corpus、tasks history、api/stats、api/clientdevices | 27 个包、58 个文件；routers 一个包约 26 个文件、按名称约 65 个测试 | `exec ~/cf-test/.venv/bin/python -c "from backend… import …"`，或运行 `testdata/*.py` 里 import backend 的 helper；**有一部分缺解释器就 `t.Skip`** | 设备（routers，最重要）、存储、API、生成 | (b)，少数 (c) |
+| C | difftest：24 个包 | 214 个顶层测试，隐藏 backend 后 190 个失败、24 个 Go 负控照常通过（按包「总数/失败」：api/agents 30/19、config 29/29、subscriptions 28/25、rulelibrary 21/20、rules 19/19、aggregations 13/12、tasks 11/10、linuxgateway 10/9、httpx 9/8、webdav 9/9、oxidns 8/8，其余 13 个包 27/22） | 每个包自己启动 Flask（`python -m backend.app`），部分包还用 `python -c "from backend… import …"` 调内部函数；一部分是不需要 Python 的 Go 负控 | API、存储（写入后 DB 行和文件）、生成 | (b) 冻结回放 |
+| D | synthetic live 普通测试：15 个包 | 44 个顶层测试 + 2 个 Python 专用子例（`repo/store.TestStoredRoundTrip` 的 python 分支），门禁计为 46 项；隐藏 backend 后 34 个失败，10 个通过（7 个只用 PyYAML/webdav3/requests/标准库，`repo.TestConfigTemplateMatchesBackend` 读的是非 .py 文件，`testgolden` 负控用假解释器） | `CONFIGFLOW_DIFF=1` 时调用 Python；没设就只跑 Go 部分，或者 skip | 存储（repo 13、store 6、model 2）、Agent 协议（agents、dnsha、ipv6、rulesync）、API（api/agents、api/ipv6）、生成（gateway） | (b)，其中一部分 (c) |
+| E | core 里固定解释器的参考调用：routers（R04–R17 边界、routerfake、addresslists、natlist、r07）、clients、api/routers、setup、model、store/raw、repo/reference、auth JWT、notifications、jsonstore、taskstatus、weblistener、agents/metrics、trafficstore、health(+check)、gateway dnsloop、configexport、configgen zip、deploy publish oracle、provider corpus、refresh corpus、tasks history、api/stats、api/clientdevices | 实测 core 环境 13 个包、72 个顶层测试依赖 backend（routers 43 个顶层、1 313 个子测试；api/routers 8；setup 7；clients 4；其余 9 个包各 1–2）；routers 每次全量启动 1 324 个 Python 进程 | `exec ~/cf-test/.venv/bin/python -c "from backend… import …"`，或运行 `testdata/*.py` 里 import backend 的 helper；**有一部分缺解释器就 `t.Skip`** | 设备（routers，最重要）、存储、API、生成 | (b)，少数 (c) |
 | F | 读 backend/ 文件的同步检查和 fixture | 约 15 个文件：`installer/templates_test.go`（scripts 必须等于 `backend/agents/scripts/*.sh`，外加 Python 指纹）、`repo/crosscheck_test.go`（config_template.json 相同）、`agents/a02_tables_test.go`（version.py）、`api/agents/difftest/diff_test.go`（LATEST_AGENT_VERSION）、`installer/docker_ha_*`（compose/preflight.py 相同）、`installer/deltas_test.go` 和 `gateway_core_test.go`（`backend/testdata/*.sh`）、`oxidns/review_s_test.go`（`backend/schemas/oxidns`） | 读文件，不执行 | 「Go 副本没有跟 Python 漂移」；fixture | (c) 删除同步检查，fixture 搬进 server testdata |
 | G | 只针对 PyYAML / Python 库行为的测试 | `yamlx` 3 个（PyYAML 能读 Go 写的 YAML）+ `yamlx/yamlxtest` 语料 28 MB + `tools/yaml*oracle`；`webdav.TestTLSVerificationMatchesPythonDefault`；`installer` 的 Python stub helper（用系统 python3） | 真实 PyYAML 或 webdav3 | 格式、Python 库默认行为 | (c) 或改成纯 Go 断言 |
 | H | testgolden / pyref 工具自身 | `testgolden` 13 个测试（含假解释器负控）、`tools/pyref` 8 个、`tools/gatediscover` 4 个、`scripts/test-gate-*.py` | 自测 | 工具正确性 | 跟着改造 |
@@ -129,19 +132,21 @@ WP0 会用一次「隐藏 backend 的真实运行」把它们核实成准确清�
 254 个 `testdata/*.py` 生成脚本已经跑不了了：建议删除，每个 testdata 目录留一行来源说明
 （「由 Python <commit> 的 <脚本> 生成，脚本在切换时删除，见 git 历史」）。语料原样保留。
 
-**C 类（difftest 197 个）→ (b)**
+**C 类（difftest 214 个，190 个需要 Python）→ (b)**
 按 2.1 包一层。比较器、归一化规则、批准差异的处理都不动。只读不写的负控（不需要 Python 的 Go-only 测试）照常跑。
 `TestInstallerFuzzAgainstFlask` 录 200 个固定种子，外加 Go 性质 fuzz。
 HEAD 只读、非有限数绑定这类「预期差异」测试本来就断言 Go 的行为，回放时直接和 golden 比。
 
-**D 类（live 42 个）**
-- 存储兼容（repo 9、store 5、model 2）：只留 **Python 写 → Go 读** 这一个方向，做法是冻结一组 Python 写出的
+**D 类（live 44 个 + 2 个子例）**
+- 存储兼容（repo 13、store 6、model 2）：只留 **Python 写 → Go 读** 这一个方向，做法是冻结一组 Python 写出的
   SQLite 和数据目录 fixture（各种历史布局、旧版数据目录、python-written-rows、committed-python-fixture 已经有了）。
   这是切换后**最重要**的一项保护，因为真实用户带着 Python 写的数据升级。
   其余方向见 (c)。
 - Agent 协议、API、生成（agents、dnsha、ipv6、rulesync、api/agents、api/ipv6、gateway、server、webdav 之外的）→ 2.1 回放。
-- 当前有 2 个 live 测试是红的（`rulesync.TestProjectionAgainstPython`、`gateway/onboarding.TestPythonPreparation`，
-  2026-11-20 的结果），必须先修绿才能录。
+- 更正：本文初稿说「有 2 个 live 测试是红的（`rulesync.TestProjectionAgainstPython`、`gateway/onboarding.TestPythonPreparation`）」，
+  那是 `parity/gate-env-coverage.md` 里 2026-11-20 的结果。WP0 核实：两者现在都通过（含 `falsy-enabled/*` 和 `null-policy` 子例），
+  最近的门禁（2026-11-22 .64）`LIVE PASS 46/46`（44 个顶层 + 2 个子例）、`DIFF PASS 214`；用真实 Python 单独跑这两个测试也通过。
+  录制前不需要先修。
 
 **E 类（core 参考调用）→ (b)**
 大多数是「给输入，调一次 Python 函数，比较输出」，正好对应 `Reference.Call` / `NewLines`，改起来很机械。
@@ -212,7 +217,7 @@ routers 是重点：R04–R17 的边界语料（RouterOS/iKuai 计划、写入�
 合计新增约 **40–70 MB**。仓库已经有 177 MB testdata，可以接受，但要求：一律 gzip；相同响应去重；不放生产数据（只用合成数据，
 和现有规则一致）。每次录制完都要再跑一次 `PYREF_MODE=check` 确认没有差异。
 
-录制顺序：先修绿 D 类那 2 个红测试；所有包在同一棵树上录（切换候选树）；录完提交一个独立的 `go(golden): freeze Python references at <commit>` 提交，
+录制顺序：所有包在同一棵树上录（切换候选树）；录完提交一个独立的 `go(golden): freeze Python references at <commit>` 提交，
 打标签 `python-final-goldens`。
 
 ## 3. 风险，以及 golden 的更新流程
@@ -247,16 +252,16 @@ S ≈ 半天到 1 天，M ≈ 2–4 天，L ≈ 1 周以上（一个 agent 的�
 
 | WP | 内容 | 大小 | 依赖 | 完成时间 |
 |---|---|---|---|---|
-| WP0 | **运行时盘点**：在测试服务器的 rt 副本里把 backend/ 的 Python 文件挪走（保留 go-agent、node-probe），跑一次全量非 race `go test -json ./...`，用 strace 记录 Python exec；产出准确的失败、skip、exec 清单，替换本文的估计数 | S | 无 | 立即 |
+| WP0 | **（已完成 2026-11-22，见附录 A）运行时盘点**：在测试服务器的 rt 副本里把 backend/ 的 Python 文件挪走（保留 go-agent、node-probe），跑一次全量非 race `go test -json ./...`，用 strace 记录 Python exec；产出准确的失败、skip、exec 清单，替换本文的估计数 | S | 无 | 立即 |
 | WP1 | testgolden 冻结模式：record 时 Python/Go 都跑、比较通过才写入 Go 侧；增量存储状态；`frozen` 元数据；可读差异工具；`scripts/freeze-record.sh`（difftest/live/core 三组）；负控（比较失败不写入、未消费录制失败、ACCEPT 在门禁里失败） | M | WP0 | 切换前 4 周 |
 | WP2 | A/B 类去指纹：testgolden 指纹和 cacheGuard、pyref `-fingerprint`/`-test`、sources.json 登记、provider/installer 的 SHA 核对；生成脚本删除，留来源说明 | S | WP1（frozen 元数据格式） | 切换前 3 周 |
 | WP3 | F 类：删同步检查，把 `backend/testdata` 等 fixture 搬进 server | S | 无 | 切换前 3 周 |
-| WP4 | 存储兼容：Python 写出的 fixture 冻结（repo、store、model、setup）；删掉并发互测和 Go→Python 方向；修 D 类 2 个红测试中属于这里的部分 | M | WP1 | 切换前 3 周 |
+| WP4 | 存储兼容：Python 写出的 fixture 冻结（repo、store、model、setup）；删掉并发互测和 Go→Python 方向 | M | WP1 | 切换前 3 周 |
 | WP5 | routers / clients / api/routers 边界冻结回放（E 类重点，设备写入） | L | WP1 | 切换前 2 周 |
 | WP6a | difftest：`api/agents`（29）+ `agents/dnsfollow`、`agents/dnsha`、`gateway/installation`、`api/gatewayonboarding`（含 fuzz 固定种子） | L | WP1 | 切换前 2 周 |
 | WP6b | difftest：config、subscriptions、aggregations、rules、rulelibrary（95） | L | WP1 | 切换前 2 周 |
 | WP6c | difftest：其余 14 个包（httpx、tasks、webdav、linuxgateway、oxidns、discovery、mosdns、refresh、substore、subs、health、provider、mcp、devicenotes，共 66） | M | WP1 | 切换前 2 周 |
-| WP7 | D 类其余 live 测试 + E 类非 routers 的一次性参考调用（setup、model、auth、notifications、jsonstore、taskstatus、weblistener、metrics、trafficstore、health、gateway、configexport、deploy、provider、refresh、tasks、api/stats、api/clientdevices）；修 `rulesync.TestProjectionAgainstPython`、`gateway/onboarding.TestPythonPreparation` | M | WP1 | 切换前 2 周 |
+| WP7 | D 类其余 live 测试 + E 类非 routers 的一次性参考调用（setup、model、auth、notifications、jsonstore、taskstatus、weblistener、metrics、trafficstore、health、gateway、configexport、deploy、provider、refresh、tasks、api/stats、api/clientdevices） | M | WP1 | 切换前 2 周 |
 | WP8 | G 类：yamlx 写出方向删除、读取方向冻结；WebDAV TLS 改纯 Go；installer stub 改 shell（可延后） | S | WP1 | 切换前 2 周 |
 | WP9 | proddiff 改「Go 基线 vs Go 候选」：第二个 Go 进程代替 Flask，Go generator 代替 Python generator，工具 venv 和 `requirements-tools.txt`，删 `--a13-proof`；先在 Python 还在时同时跑两种模式，确认 Go-vs-Go 模式能抓到故意注入的差异 | M | 无 | 切换前 2 周 |
 | WP10 | configdiff / routerdiff：在候选树上最后跑一次并归档；核对 configdiff 已关闭的发现都有 Go 回归测试，缺的补上；然后删除工具 | M | WP6 大部分完成 | 切换前 1 周 |
@@ -293,3 +298,231 @@ S ≈ 半天到 1 天，M ≈ 2–4 天，L ≈ 1 周以上（一个 agent 的�
 
 如果切换日提前，可以先砍掉的：WP8 的 installer stub 改写、WP9 的比较器 Go 化（本来就是切换后的可选项）、WP10 里补测试的部分
 （改成切换后补，先把 configdiff 结果归档）。**不能砍的**：WP4（用户数据兼容）、WP5（设备写入）、WP6（API 边界）、WP11 的无 Python 审计。
+
+## 附录 A：WP0 运行时盘点（2026-11-22）
+
+### A.1 怎么跑的
+
+- 代码：`go@b85aa02f0`（本文初稿的提交，Go 代码与 `44424c19f` 相同）。
+- 「隐藏 backend」：在测试服务器上复制一份 rt 副本，删掉 `backend/` 下全部 589 个 `.py`（保留 `backend/agents/go-agent`、`backend/node-probe`）；
+  `backend/` 里另有 28 个非 Python 文件（`testdata/`、`agents/scripts/*.sh`、`schemas/oxidns`、`config_template.json` 等）**保留**，
+  它们的依赖由 WP3 处理（见 A.6）。本机仓库没有改动。
+- 记录 Python exec：没有用 strace（`strace -f` 跟踪整棵 `go test` 时在 core 阶段因 `PTRACE_LISTEN: EIO` 崩溃，把 go test 一起带走）。
+  改成在私有 mount 命名空间（`unshare -m`）里，用一个记日志的 bash 包装脚本 bind-mount 覆盖两个真实解释器
+  （venv 的 `cpython-3.11.x/bin/python3.11` 和系统 `/usr/bin/python3.14`）。每次启动记录时间、所属 `*.test` 进程的包目录和 argv，再 `exec` 真实解释器。
+  不影响服务器上的其他进程。
+- 每种情况跑两遍全量非 race 测试：
+  - **core 环境**：`go test -json -count=1 -p 8 ./...`，带 `PYREF_INPUT_FINGERPRINT`（和门禁 core 一样，不设 `CONFIGFLOW_DIFF`）。
+  - **compare 环境**：同样的命令，加上 `gate-live.py` 设置的环境（`CONFIGFLOW_DIFF=1`、`CONFIGFLOW_PY/REPO/DIFF_PYTHON/YAML_PYTHON`），
+    一次覆盖 24 个 difftest 包、全部 live 测试和其余普通测试。
+  - 另外用 `-tags configflow_difftest` 跑了 `./cmd/configflow ./internal/lifecycle`（只有它们有带这个标签的测试文件）：
+    隐藏 backend 后 45 个顶层测试全部通过，没有 Python exec。
+- 三种情况：**基线**（backend 在，.32）、**隐藏 backend**（.64）、**隐藏 backend 且没有解释器**（venv 的 `bin/` 换成空目录，系统 python3 去掉执行权限，.32）。
+
+### A.2 汇总
+
+| 情况 | 环境 | 包（通过/失败/无测试） | 顶层测试（通过/失败/skip） | 全部测试含子测试（失败/skip） | 耗时 |
+|---|---|---|---|---|---|
+| 基线 | core | 136 / 0 / 13 | 4 302 / 0 / 193 | 0 / 486 | 7.5 分钟 |
+| 基线 | compare | 135 / 1 / 13 | 4 481 / 1 / 13 | 2 / 21 | 9 分钟 |
+| 隐藏 backend | core | 117 / 19 / 13 | 4 207 / 94 / 194 | 1 445 / 487 | 5.5 分钟 |
+| 隐藏 backend | compare | 82 / 54 / 13 | 4 163 / 318 / 14 | 2 380 / 22 | **33 分钟** |
+| 隐藏 backend + 无解释器 | core | — | 4 097 / 94 / 304 | 558 / 1 088 | 4 分钟 |
+| 隐藏 backend + 无解释器 | compare | — | 4 045 / 326 / 124 | 1 180 / 623 | 3.5 分钟 |
+
+- 基线 compare 环境那 1 个失败是 `installer.TestForwardingToolsInstallOnlyNeededPackagesAndSkipSecondRun/pacman/ln`
+  （「Agent 安装缺少工具：ln」），和 Python 无关；门禁只在 core 阶段跑 installer，不在 compare 环境跑它。
+- core 环境的 193 个 skip 在基线里就有（缺 `CONFIGFLOW_DIFF` 等环境变量），compare 环境的 13 个 skip 也是（私有快照、容器测试、录制开关）。
+- **隐藏 backend 后的失败（compare 环境包含 core 环境的全部失败）：54 个包、318 个顶层测试、2 062 个失败子测试。**
+  按原因：Python 进程失败（`import backend` 失败或 Flask 起不来）293 个；pyref 指纹不符 16 个（mosdns 5、oxidns 7、routersplit 3、installer 1）；
+  读 backend 文件失败 8 个（agents 2、provider 2、installer 1、api/agents/difftest 3）；backend 源码哈希不符 1 个（installer）。
+- 按类别：difftest 24 个包 190 个（共 214 个，24 个 Go 负控照常通过）；其余 30 个包 128 个，其中 core 环境 19 个包 94 个，
+  另外 34 个是 live 测试（只在设了 `CONFIGFLOW_DIFF` 时调用 Python）。
+- **difftest 失败得很慢**：Flask 进程已经退出，测试还要等到启动超时。`mosdns/difftest` 1 895 秒（基线 22 秒）、
+  `api/agents/difftest` 1 804 秒（基线 164 秒）、`substore/difftest` 541 秒（基线 8 秒）、`httpx/difftest` 183 秒（基线 7 秒）。
+  WP11 的「隐藏 backend 预演」如果在转换完成前跑，要先让 Flask 启动器发现子进程退出就立即失败。
+
+### A.3 失败清单（隐藏 backend，按包）
+
+| 包 | core 环境 | compare 环境 | 原因 | 失败的顶层测试（括号内为失败子测试数；* = 只在 compare 环境失败） |
+|---|---:|---:|---|---|
+| `internal/agents` | 2 | 2 | 读 backend 文件 | `TestMessageTablesMatchPython`, `TestVersionTableMatchesPython` |
+| `internal/agents/dnsha` | 0 | 2 | Python 进程失败 | `TestManualPairRulesForcesUnchangedLibraryMaterialization`*, `TestValidationAgainstPython`* |
+| `internal/agents/ipv6` | 0 | 3 | Python 进程失败 | `TestAgentTransportAgainstPython`*, `TestConfigurationAndTargetsPython`*, `TestTupleEvidenceAgainstPython`* |
+| `internal/agents/metrics` | 1 | 1 | Python 进程失败 | `TestPythonLoadsAndSavesNativeNullFilesButLegacyMathFails` |
+| `internal/agents/rulesync` | 0 | 3 | Python 进程失败 | `TestIsolationAgainstPython`*, `TestProjectionAgainstPython`*, `TestSnapshotAgainstPython`* |
+| `internal/agents/trafficstore` | 1 | 1 | Python 进程失败 | `TestTrafficFilesInteroperateWithPython` |
+| `internal/api/agents` | 0 | 3 | Python 进程失败 | `TestA24FlaskBoundaries`*, `TestPublicAgentPython`*, `TestReviewA24TargetsIgnoreUnrelatedLegacySettings`* |
+| `internal/api/clientdevices` | 2 | 2 | Python 进程失败 | `TestR17FlaskHTTPAndStoredState`, `TestReviewR17ValidationOrderMatchesFlask` |
+| `internal/api/ipv6` | 0 | 1 | Python 进程失败 | `TestRoutesAgainstFlask`* |
+| `internal/api/routers` | 8 | 8 | Python 进程失败 | `TestN89NativeRequestBoundary`(7), `TestR15FlaskForwardingSuccessAndFailure`, `TestR15FlaskHTTPAndStoredState`, `TestR15FlaskManualRuleSyncAcceptedAndSettled`, `TestR15FlaskWorkspaceSourcesAndDNSPreview`, `TestR15MalformedProbePersistsOnlyProbe`(2), `TestR15RealFlaskRoutePriorities`, `TestReviewR15ProbeRedirectKeepsManagementOrigin` |
+| `internal/clients` | 4 | 4 | Python 进程失败 | `TestFlaskDeviceWritesAndStoredState`, `TestFlaskDiscoveryRealDrivers`(12), `TestFlaskPartialDiscovery`, `TestFlaskPolicyRefusalStillAllowsRename` |
+| `internal/configexport` | 1 | 1 | Python 进程失败 | `TestOxiDNSRedactionMatchesPython` |
+| `internal/deploy` | 1 | 1 | Python 进程失败 | `TestPythonPublishTranscripts`(11) |
+| `internal/gateway` | 1 | 1 | Python 进程失败 | `TestDNSLoopMatchesPython` |
+| `internal/gateway/installation` | 0 | 1 | Python 进程失败 | `TestPythonPublicationStateAndGeneratedArtifacts`(3)* |
+| `internal/gateway/onboarding` | 0 | 2 | Python 进程失败 | `TestPythonPreparation`*, `TestRealDNSLoopPreparation`(3)* |
+| `internal/health/check` | 1 | 1 | Python 进程失败 | `TestNativeProbeAndRegionFilesInteroperateWithPython` |
+| `internal/installer` | 3 | 3 | backend 源码哈希、pyref 指纹、读 backend 文件 | `TestGeneratorFingerprintMatchesReleaseInputs`, `TestPreflightCollectorMatchesPython`, `TestReviewDeflateAndZipMatchPython` |
+| `internal/model` | 0 | 1 | Python 进程失败 | `TestHRPythonWriters`* |
+| `internal/mosdns` | 5 | 5 | pyref 指纹 | `TestCorpus`, `TestN73SharedUpstreamMetadataMatchesPython`, `TestNativeRuleTextAgainstPython`, `TestRecordedPythonTests`, `TestReviewUnholdableYAMLOutsideTheOutputMatchesPython` |
+| `internal/notifications` | 1 | 1 | Python 进程失败 | `TestNativeNotificationRollbackNullOccurrence` |
+| `internal/oxidns` | 7 | 7 | pyref 指纹 | `TestBoundaryGenerationCorpus`, `TestBoundaryGenerationRecorded`, `TestBoundaryRoutingCorpus`, `TestC05ReviewRecordedNormalization`, `TestC05ReviewSettingsReferences`(2), `TestC29ArchivePythonBoundary`, `TestStoredLegacySettingsAgainstPython` |
+| `internal/provider` | 2 | 2 | backend 源码哈希 | `TestCorpus`, `TestReviewN88dReferenceBindings` |
+| `internal/repo` | 0 | 12 | Python 进程失败 | `TestCrossCheckC04Operations`*, `TestCrossCheckFreshInit`(2)*, `TestCrossCheckInterchange`*, `TestCrossCheckLockExcludesPythonAndGo`*, `TestCrossCheckOperations`*, `TestCrossCheckPythonWriterKilledBeforeCommit`*, `TestN811GlobalFlaskBoundaries`(2)*, `TestReviewN85PythonFullStorageDifferential`*, `TestSectionWritesStoredRoundTrip`*, `TestStoredRoundTrip`(3)*, `TestTypedUpdateStoredRoundTrip`*, `TestWriteFromAnotherProcessIsSeen`* |
+| `internal/routers` | 43 | 43 | Python 进程失败 | `TestAddressListBoundary`(24), `TestAddressWriteBoundary`(31), `TestIkuaiBoundaryCorpus`(307), `TestNATListFailureBoundary`(24), `TestNATListHelperBoundary`(44), `TestNATListPlanBoundary`(135), `TestNATListReadHelpersBoundary`(9), `TestNATListRemovalBoundary`(14), `TestNATListVerifyBoundary`(10), `TestNATListWriteBoundary`(30), `TestNATRestoreFaultBoundary`(5), `TestR05StepBPythonBugEvidence`, `TestR06PythonBoundary`(172), `TestR07RangeKeysMatchPython`(4), `TestR08PythonBoundary`(99), `TestR09ForeignHijackCommentBlocksPublish`(4), `TestR09ForwardHintPython`(31), `TestR09ProductionTimeoutAndRawWire`, `TestR09PythonBoundary`(45), `TestR09SharedEvaluatorPython`, `TestR09TableLocalIDsSurviveRestore`, `TestR10IPv6AddressMathPython`, `TestR10PolicyPythonBoundary`, `TestR10PythonBoundary`(68), `TestR10ReviewLostDeleteDeviceMatchesPython`, `TestR10ReviewPolicyPythonProbes`, `TestR10ReviewPythonProbes`(23), `TestR10SettingsAndYAMLBytesPython`, `TestR11PythonBoundary`(80), `TestR11ReviewPythonProbes`(8), `TestR11TemplateBytes`(3), `TestR12AdvisoryWholePlansPython`(5), `TestR12FullInspectionStagesPython`(9), `TestR12PolicyReplacementPython`(5), `TestR12PythonWholePlanAndExecution`(22), `TestR13SummariesPython`, `TestR14ClassifyPython`, `TestR14DeltaPython`(11), `TestR14IPv6DeltaPython`(5), `TestR14ServicePython`(4), `TestR17RealPythonVendorBoundaries`(15), `TestRouterFakePythonScriptHelpers`(9), `TestRouterOSBoundaryCorpus`(58) |
+| `internal/routersplit` | 3 | 3 | pyref 指纹 | `TestCorpus`, `TestEdgeCorpus`, `TestRecordedPythonTests` |
+| `internal/server` | 0 | 1 | Python 进程失败 | `TestSetupServerOwnerRegistrationRemovesUnavailable`* |
+| `internal/setup` | 7 | 7 | Python 进程失败 | `TestCoreFingerprintMatchesPython`, `TestHandwrittenRuleEqualityMatchesPython`, `TestMihomoBaseChangesMatchPython`(2), `TestOwnedDigestUsesNativeEncoding`, `TestPrepareFieldsMatchRealPythonAndRetainOwnership`(2), `TestSetupCatalogOptionsMatchPython`, `TestTemplateStrategyMatchesPython` |
+| `internal/store` | 0 | 5 | Python 进程失败 | `TestCrossCheckPython`*, `TestCrossCheckPythonConcurrentCommits`(3)*, `TestCrossCheckPythonErrors`*, `TestCrossCheckPythonOddDocuments`*, `TestStoredRoundTrip`(2)* |
+| `internal/tasks` | 1 | 1 | Python 进程失败 | `TestHistoryCountersAgainstPython` |
+| `internal/agents/dnsfollow/difftest` | 0 | 1 | Python 进程失败 | `TestPythonRoutesAndArtifacts`* |
+| `internal/agents/dnsha/difftest` | 0 | 1 | Python 进程失败 | `TestHAHTTPAgainstFlask`(12)* |
+| `internal/api/agents/difftest` | 0 | 19 | Python 进程失败、读 backend 文件 | 19 个（除 Go 负控外全部） |
+| `internal/api/aggregations/difftest` | 0 | 12 | Python 进程失败 | 12 个（除 Go 负控外全部） |
+| `internal/api/config/difftest` | 0 | 29 | Python 进程失败 | 29 个（除 Go 负控外全部） |
+| `internal/api/gatewayonboarding/difftest` | 0 | 3 | Python 进程失败 | `TestFlaskAdoptionRevisionCondition`(2)*, `TestFlaskHEADExpectedReadOnlyDifference`*, `TestFlaskHTTP`(16)* |
+| `internal/api/linuxgateway/difftest` | 0 | 9 | Python 进程失败 | 9 个（除 Go 负控外全部） |
+| `internal/api/oxidns/difftest` | 0 | 8 | Python 进程失败 | 8 个（除 Go 负控外全部） |
+| `internal/api/rulelibrary/difftest` | 0 | 20 | Python 进程失败 | 20 个（除 Go 负控外全部） |
+| `internal/api/rules/difftest` | 0 | 19 | Python 进程失败 | 19 个（除 Go 负控外全部） |
+| `internal/api/subscriptions/difftest` | 0 | 25 | Python 进程失败 | 25 个（除 Go 负控外全部） |
+| `internal/devicenotes/difftest` | 0 | 1 | Python 进程失败 | `TestDeviceNotesBoundary`(90)* |
+| `internal/discovery/difftest` | 0 | 3 | Python 进程失败 | `TestCFG06DuplicateTargetDifference`(2)*, `TestHTTPAndStorageParity`*, `TestNativeNonFiniteRequestDifferences`* |
+| `internal/gateway/installation/difftest` | 0 | 1 | Python 进程失败 | `TestGatewayFlaskHTTPAndDurableState`* |
+| `internal/health/difftest` | 0 | 1 | Python 进程失败 | `TestDifferentialLatencyRoutes`* |
+| `internal/httpx/difftest` | 0 | 8 | Python 进程失败 | 8 个（除 Go 负控外全部） |
+| `internal/mcp/difftest` | 0 | 1 | Python 进程失败 | `TestRealFlaskHTTP`(39)* |
+| `internal/mosdns/difftest` | 0 | 2 | Python 进程失败 | `TestDifferentialMosDNSRoutes`*, `TestMosDNSNativeRequestDifferences`(20)* |
+| `internal/provider/difftest` | 0 | 1 | Python 进程失败 | `TestSlowProviderParity`(4)* |
+| `internal/refresh/difftest` | 0 | 1 | Python 进程失败 | `TestDifferentialTaskRoutes`* |
+| `internal/subs/difftest` | 0 | 2 | Python 进程失败 | `TestChainProviderCaptureGroups`*, `TestPublicRelinkTransactionalHTTPBoundary`* |
+| `internal/substore/difftest` | 0 | 4 | Python 进程失败 | `TestDifferentialBundledSubStore`*, `TestDifferentialExternalSubStore`*, `TestDifferentialReviewLoopbackProxy`*, `TestDifferentialReviewMalformedState`(3)* |
+| `internal/tasks/difftest` | 0 | 10 | Python 进程失败 | 10 个（除 Go 负控外全部） |
+| `internal/webdav/difftest` | 0 | 9 | Python 进程失败 | 9 个（除 Go 负控外全部） |
+
+`routers` 的 43 个顶层测试在 core 环境共有 1 313 个子测试失败；`api/agents/difftest` 的 19 个失败里有 3 个是读 `backend/agents/version.py`（交给 WP3，见 A.6）。
+
+### A.4 skip 和「静默变绿」
+
+- **只隐藏 backend（解释器还在）**：新增的 skip 只有 1 个，`installer.TestComposeBootstrapMatchesPython`（读不到 `docker_ha_compose.py` 就 skip；交给 WP3 删除）。
+  其余依赖 backend 的测试都会失败，不会悄悄通过。
+- **同时没有解释器**（以后服务器删掉 venv 或系统 python3 的情况）：新增 **111 个顶层 skip、491 个子测试 skip**，core 和 compare 环境相同：
+  - `installer` 101 个：用系统 python3 写的「远端主机命令」桩（`python3 is required for the Python stub commands`），
+    覆盖安装脚本的大部分行为测试。删掉系统 python3，安装器测试就基本空跑了。**WP8 的「installer stub 改 shell」不能延到切换以后**，
+    或者至少要保证测试服务器保留系统 python3，并把这个 skip 改成失败。
+  - `routers` 7 个顶层 skip（`TestAddressListBoundary`、`TestIkuaiBoundaryCorpus`、`TestNATListPlanBoundary`、`TestNATListWriteBoundary`、
+    `TestR07RangeKeysMatchPython`、`TestRouterFakePythonScriptHelpers`、`TestRouterOSBoundaryCorpus`），
+    另有 **7 个顶层测试报告 PASS、但 137 个子测试全部 skip**（`TestAddressWriteBoundary`、`TestNATListFailureBoundary`、`TestNATListHelperBoundary`、
+    `TestNATListReadHelpersBoundary`、`TestNATListRemovalBoundary`、`TestNATListVerifyBoundary`、`TestNATRestoreFaultBoundary`，都经过 `runR07Boundary`）。
+    门禁 core 阶段不检查 skip，这 7 个会直接显示为绿色。
+  - `yamlx` 3 个（PyYAML 读取测试）。
+
+### A.5 Python 进程清单（基线：backend 在，所有测试通过）
+
+一次全量运行启动的 Python 进程：core 环境 **7 934 个，21 个包**；compare 环境 **8 636 个，58 个包**。
+其中 installer 的系统 python3 桩约 6 520 个（有 1 753 个在脱离测试进程的子进程树里，按工作目录算到 installer），routers 1 324 个。
+很多 difftest 包按测试启动一个长期运行的 Flask 进程，所以进程数小不代表依赖小。
+「隐藏 backend 后」一列是该包在 compare 环境的结果：「包通过」表示它的 Python 调用不依赖 backend；「包失败」可能另有原因（例如 `agents` 失败在读 `version.py`，它的 43 个 requests 调用并不依赖 backend，见下表）。
+
+| 包 | core 环境进程数 | compare 环境进程数 | 解释器 | 隐藏 backend 后 |
+|---|---:|---:|---|---|
+| `internal/agents` | – | 43 | venv | 包失败 |
+| `internal/agents/dnsha` | – | 2 | venv | 包失败 |
+| `internal/agents/ipv6` | – | 3 | venv | 包失败 |
+| `internal/agents/metrics` | 2 | 2 | venv | 包失败 |
+| `internal/agents/rulesync` | – | 3 | venv | 包失败 |
+| `internal/agents/trafficstore` | 1 | 1 | venv | 包失败 |
+| `internal/api/agents` | – | 3 | venv | 包失败 |
+| `internal/api/clientdevices` | 2 | 2 | venv | 包失败 |
+| `internal/api/ipv6` | – | 1 | venv | 包失败 |
+| `internal/api/routers` | 15 | 15 | venv | 包失败 |
+| `internal/api/stats` | 2 | 2 | 系统 python3 | 包通过 |
+| `internal/auth` | 2 | 2 | venv | 包通过 |
+| `internal/clients` | 23 | 23 | venv | 包失败 |
+| `internal/configexport` | 1 | 1 | venv | 包失败 |
+| `internal/configgen` | 1 | 1 | venv | 包通过 |
+| `internal/deploy` | 11 | 11 | venv | 包失败 |
+| `internal/gateway` | 1 | 1 | venv | 包失败 |
+| `internal/gateway/installation` | – | 3 | venv | 包失败 |
+| `internal/gateway/onboarding` | – | 4 | venv | 包失败 |
+| `internal/health/check` | 1 | 1 | venv | 包失败 |
+| `internal/installer` | 6521 | 6520 | 系统 python3 | 包失败 |
+| `internal/jsonstore` | 1 | 1 | venv | 包通过 |
+| `internal/model` | – | 5 | venv | 包失败 |
+| `internal/notifications` | 3 | 3 | venv、系统 python3 | 包失败 |
+| `internal/repo` | – | 103 | venv | 包失败 |
+| `internal/routers` | 1324 | 1324 | venv | 包失败 |
+| `internal/server` | – | 1 | venv | 包失败 |
+| `internal/setup` | 16 | 16 | venv | 包失败 |
+| `internal/store` | – | 18 | venv | 包失败 |
+| `internal/tasks` | 1 | 1 | venv | 包失败 |
+| `internal/taskstatus` | 2 | 2 | 系统 python3 | 包通过 |
+| `internal/webdav` | – | 1 | venv | 包通过 |
+| `internal/weblistener` | 1 | 1 | 系统 python3 | 包通过 |
+| `internal/yamlx` | 3 | 3 | venv | 包通过 |
+| `internal/agents/dnsfollow/difftest` | – | 8 | venv | 包失败 |
+| `internal/agents/dnsha/difftest` | – | 12 | venv | 包失败 |
+| `internal/api/agents/difftest` | – | 25 | venv | 包失败 |
+| `internal/api/aggregations/difftest` | – | 37 | venv | 包失败 |
+| `internal/api/config/difftest` | – | 87 | venv | 包失败 |
+| `internal/api/gatewayonboarding/difftest` | – | 22 | venv | 包失败 |
+| `internal/api/linuxgateway/difftest` | – | 13 | venv | 包失败 |
+| `internal/api/oxidns/difftest` | – | 8 | venv | 包失败 |
+| `internal/api/rulelibrary/difftest` | – | 22 | venv | 包失败 |
+| `internal/api/rules/difftest` | – | 60 | venv | 包失败 |
+| `internal/api/subscriptions/difftest` | – | 130 | venv | 包失败 |
+| `internal/devicenotes/difftest` | – | 1 | venv | 包失败 |
+| `internal/discovery/difftest` | – | 8 | venv | 包失败 |
+| `internal/gateway/installation/difftest` | – | 1 | venv | 包失败 |
+| `internal/health/difftest` | – | 1 | venv | 包失败 |
+| `internal/httpx/difftest` | – | 8 | venv | 包失败 |
+| `internal/mcp/difftest` | – | 1 | venv | 包失败 |
+| `internal/mosdns/difftest` | – | 22 | venv | 包失败 |
+| `internal/provider/difftest` | – | 4 | venv | 包失败 |
+| `internal/refresh/difftest` | – | 2 | venv | 包失败 |
+| `internal/subs/difftest` | – | 2 | venv | 包失败 |
+| `internal/substore/difftest` | – | 7 | venv | 包失败 |
+| `internal/tasks/difftest` | – | 12 | venv、系统 python3 | 包失败 |
+| `internal/webdav/difftest` | – | 20 | venv | 包失败 |
+
+**调用 Python 但不依赖 backend 的测试**（隐藏 backend 后仍通过；删掉 venv 或系统 python3 才会受影响）：
+
+| 包 | 测试 | 用到的 Python |
+|---|---|---|
+| `installer` | 约 100 个安装脚本行为测试 | 系统 python3 写的远端主机命令桩（见 A.4） |
+| `auth` | `TestNativeJWTInteroperatesWithPython` | venv 的 PyJWT |
+| `yamlx` | `TestNativeAmbiguousStringsReadByPyYAML` 等 3 个（live） | venv 的 PyYAML（`testdata/native_reference.py`） |
+| `webdav` | `TestTLSVerificationMatchesPythonDefault`（live） | venv 的 webdav3 |
+| `agents` | `TestProxyDifferentialAgainstRequests`、`TestLocalWallZoneTransitionsAgainstPython`（live） | venv 的 requests、标准库 zoneinfo |
+| `model` | `TestTypesPythonRoundTrip`（live） | 标准库（`testdata/types_interchange.py`） |
+| `store` | `TestIdleReaderHoldsNoLockAcrossProcesses`（live） | 标准库 sqlite3 |
+| `clients` | `TestR17TokenBothDirections` | 标准库（`testdata/r17_token_reference.py`） |
+| `api/stats`、`taskstatus`、`weblistener` | `TestNativeHistoryInterchangeAndExactCounters`、`TestNativeStatusFileInterchange`、`TestNativeListenerFileInterchange` | 系统 python3 标准库 json（Python 读写数据文件的互通） |
+| `jsonstore` | `TestFilesRoundTripBothDirections` | 标准库 json |
+| `configgen` | `TestZIPExternalAttributesMatchPython` | 标准库 zipfile |
+
+这些不会因为删 backend 而失败，但同样属于「测试依赖 Python」，WP4/WP7/WP8 要一起处理（冻结成 fixture 或改成纯 Go 断言），
+否则 WP11 的「零 Python 调用」审计过不了。
+
+### A.6 读 backend 非 Python 文件的测试（交给 WP3）
+
+A.1 保留了 `backend/` 的非 Python 文件，所以下面这些在 WP0 里没有失败，但切换时删掉整个 `backend/`（go-agent、node-probe 除外）就会失败。WP3 的处理方案：
+
+| 测试 | 读的文件 | 处理 |
+|---|---|---|
+| `installer.TestScriptsMatchBackend` | `backend/agents/scripts/*.sh` | 删除同步检查；其中「回滚模块等于批准的增量」那部分保留为 `TestRollbackModuleMatchesApprovedDelta` |
+| `installer.TestGeneratorFingerprintMatchesReleaseInputs` | backend 安装器源码（重算旧指纹） | 去掉重算旧指纹那一步；保留由冻结旧指纹和内嵌脚本推出 `GeneratorFingerprint` 的检查 |
+| `installer.TestPreflightCollectorMatchesPython` | `backend/agents/docker_ha_preflight.py` | 删除 |
+| `installer.TestComposeBootstrapMatchesPython` | `backend/agents/docker_ha_compose.py` | 删除（原来缺文件就 skip） |
+| `installer.TestSynologySanitizedReconstructedCopyPreservesActionableChecks` | `backend/testdata/docker_ha_preflight_synology_reconstructed.txt` | fixture 复制到 `internal/installer/testdata/` |
+| `installer.TestSelectiveGatewayScriptIsByteIdenticalToThePreviousRelease`、`TestOrdinaryAIOScriptIsThePreviousReleasePlusIntentionalForwardingContextDelta` | `backend/testdata/{gateway_install_selective,go_aio_install}_0ef9e89.sh` | fixture 复制到 `internal/installer/testdata/` |
+| `installer.TestCoreOnlyInstallerIsInstallCoresShUnchanged` | `backend/agents/scripts/install-cores.sh` | 改读内嵌的 `scripts/install-cores.sh`（两者逐字节相同） |
+| `agents.TestVersionTableMatchesPython`、`TestMessageTablesMatchPython` | `backend/agents/{version,deployment_messages,upgrade_messages}.py` | 删除（Go 自身的不变量已由 `pure_test.go` 覆盖）；一次性生成脚本 `gen_changelog.py`、`gen_messages.py` 一并删除 |
+| `repo.TestConfigTemplateMatchesBackend` | `backend/config_template.json` | 删除 |
+| `oxidns.TestReviewEmbeddedSchemas` | `backend/schemas/oxidns/*.json` | 去掉「内嵌 schema 等于 backend 副本」的比较，保留「schema 已内嵌、不依赖 `CONFIGFLOW_ROOT`」 |
+| `api/agents/difftest` 的 `pinPythonAgentVersion` | `backend/agents/version.py` | 改成常量 `pythonLatestAgentVersion = "1.8.61-go"`（Python 的最终版本号） |
+
+backend 里的三个 fixture 是**复制**不是移动：Python pytest（`backend/test_docker_ha_preflight.py`、`test_gateway_core_install.py`）还在用，
+backend 那份跟着切换一起删除。不在 WP3 范围、留给 WP2 的：`provider` 对 `backend/utils/provider_delivery.py` 的 SHA 核对、pyref 指纹。
+测试读取 `backend/agents/go-agent/...` 的（`agents/pure_test.go`、`installer/standalone_forwarding_test.go`、`native_aio_test.go`）不受影响，切换后路径不变。
