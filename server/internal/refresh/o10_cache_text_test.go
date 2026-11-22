@@ -29,18 +29,31 @@ func TestO10CacheTextOnlyForSharedStructuredRecords(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			memo.store(tt.env, tt.cache, "proxies: []\n")
-			got, ok := memo.lookup(tt.env, tt.cache)
+			memo.store(tt.env, "sub", tt.cache, "proxies: []\n")
+			got, ok := memo.lookup(tt.env, "sub", tt.cache)
 			if ok != tt.usable || (ok && got != "proxies: []\n") {
 				t.Fatalf("lookup = %q, %v; want usable %v", got, ok, tt.usable)
 			}
 		})
 	}
-	// The table is bounded.
-	for range 3 {
-		memo.store(shared, &NodeCache{}, "x")
+	// A changed file (a new shared record) replaces the subscription's entry
+	// instead of keeping the superseded record alive, and its text is not
+	// served for the new record.
+	replaced := &cacheTextMemo{limit: 2}
+	first, second := &NodeCache{}, &NodeCache{}
+	replaced.store(shared, "sub", first, "old")
+	if _, ok := replaced.lookup(shared, "sub", second); ok {
+		t.Fatal("text of a superseded record served for the new one")
 	}
-	if len(memo.texts) > 2 {
-		t.Fatalf("%d texts kept", len(memo.texts))
+	replaced.store(shared, "sub", second, "new")
+	if got, ok := replaced.lookup(shared, "sub", second); !ok || got != "new" || len(replaced.texts) != 1 {
+		t.Fatalf("lookup = %q, %v with %d entries", got, ok, len(replaced.texts))
+	}
+	// The table is bounded.
+	for _, id := range []string{"a", "b", "c"} {
+		replaced.store(shared, id, &NodeCache{}, "x")
+	}
+	if len(replaced.texts) > 2 {
+		t.Fatalf("%d texts kept", len(replaced.texts))
 	}
 }

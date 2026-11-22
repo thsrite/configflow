@@ -235,7 +235,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 			}
 			return nil, &rules.StrategyReferenceError{Message: fmt.Sprintf(msgNoManualCache, name)}
 		}
-		if text, ok := cacheTexts.lookup(env, cache); ok {
+		if text, ok := cacheTexts.lookup(env, sub.ID, cache); ok {
 			return makeResult(text, "cache", nil, ""), nil
 		}
 		if err := convert.ConfigShapes(&model.Config{Profile: &model.Profile{}, Nodes: cache.Nodes}, false); err != nil {
@@ -263,7 +263,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 			return nil, err
 		}
 		text := string(data)
-		cacheTexts.store(env, cache, text)
+		cacheTexts.store(env, sub.ID, cache, text)
 		return makeResult(text, "cache", nil, ""), nil
 	}
 
