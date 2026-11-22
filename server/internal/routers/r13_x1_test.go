@@ -18,9 +18,10 @@ func TestX1RouterDecodeFallsBackPerMember(t *testing.T) {
 		t.Fatal("malformed member failed the record:", e)
 	}
 	// O18 T1c: ip_rule_sets [1] reads the number as its text but the router
-	// keeps identities only (idList); dns_guard.enabled is switch:"off", so
-	// "yes" reads as a disabled guard; the undeclared member is dropped.
-	if r.ID != "synthetic" || r.Name != "kept" || r.ProxyGatewayAgentID != "gateway" || r.RuleSyncInterval != 60 || !r.VerifyTLS || r.DNSGuard == nil || r.DNSGuard.Enabled {
+	// keeps identities only (idList); dns_guard.enabled "yes" (on in Python)
+	// keeps the guard whole and unprojected (HR O18 T1c: device management
+	// refuses it); the undeclared member is dropped.
+	if r.ID != "synthetic" || r.Name != "kept" || r.ProxyGatewayAgentID != "gateway" || r.RuleSyncInterval != 60 || !r.VerifyTLS || r.DNSGuard != nil || r.ValidateForDevice() == nil {
 		t.Fatalf("fallback %+v %+v", r.RouterSettings, r.DNSGuard)
 	}
 	if _, kept := r.Extra["future"]; kept {

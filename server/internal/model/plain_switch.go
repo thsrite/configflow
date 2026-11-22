@@ -41,9 +41,10 @@ type damagedKeeper interface{ keepDamaged(raw []byte) }
 
 // innerKeeper is a damagedKeeper that also keeps its stored value when a
 // member inside it reads with an issue and the decoded record says so
-// (router guard settings: an enabled guard with a malformed member).
+// (router guard settings: an enabled guard with a malformed member). raw is
+// the stored object.
 type innerKeeper interface {
-	keepOnIssues(issues []FieldIssue) bool
+	keepOnIssues(issues []FieldIssue, raw []byte) bool
 }
 
 func hasTypeIssue(issues []FieldIssue) bool {
@@ -91,7 +92,7 @@ func decodeManifest(dec *jsontext.Decoder, sink *issueSink, target reflect.Value
 			sink.issues = append(sink.issues, child.issues...)
 			switch {
 			case isInner:
-				if len(child.issues) > 0 && inner.keepOnIssues(child.issues) {
+				if len(child.issues) > 0 && inner.keepOnIssues(child.issues, raw) {
 					keeper.keepDamaged(raw)
 				}
 			case hasTypeIssue(child.issues):

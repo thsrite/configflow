@@ -90,13 +90,14 @@ func TestN89StoredRouterReadsWrongTypesLeniently(t *testing.T) {
 	if err := json.Unmarshal(source, &r); err != nil {
 		t.Fatal(err)
 	}
-	// verify_tls is switch:"on" (wrong type reads as on); dns_guard.enabled is
-	// switch:"off" (wrong type reads as off); 1.5 is not an interval.
-	if r.Name != "" || !r.VerifyTLS || r.RuleSyncInterval != 60 || r.DNSGuard == nil || r.DNSGuard.Enabled || r.DNSGuard.Failover {
+	// verify_tls is switch:"on" (wrong type reads as on); dns_guard.enabled
+	// "bad" is on in Python, so the guard is kept whole and not projected
+	// (HR O18 T1c); 1.5 is not an interval.
+	if r.Name != "" || !r.VerifyTLS || r.RuleSyncInterval != 60 || r.DNSGuard != nil || r.ValidateForDevice() == nil {
 		t.Fatalf("wrong runtime defaults: %+v %+v", r.RouterSettings, r.DNSGuard)
 	}
 	unchanged, err := r.MarshalJSON()
-	if err != nil || bytes.Contains(unchanged, []byte("9223372036854775808123")) || bytes.Contains(unchanged, []byte(`"bad"`)) {
+	if err != nil || bytes.Contains(unchanged, []byte(`"custom"`)) || bytes.Contains(unchanged, []byte(`"verify_tls":"bad"`)) || !bytes.Contains(unchanged, []byte(`"dns_guard":{"enabled":"bad","failover":false,"unknown":9223372036854775808123}`)) {
 		t.Fatalf("undeclared or wrong-typed value written back: %s %v", unchanged, err)
 	}
 	r.Username = "changed"
@@ -233,7 +234,9 @@ func TestN89MalformedActiveGuardBlocksDeviceAccess(t *testing.T) {
 		// Accepted: a disabled guard (switch:"off" reads a wrong type as off)
 		// with a malformed list may be withdrawn using its stored state.
 		{`{"dns_guard":{"enabled":false,"bypass":"x"},"dns_guard_state":{"resources":[]}}`, false},
-		{`{"ipv6_pd_guard":{"enabled":"x"},"ipv6_pd_guard_state":{"resources":[]}}`, false},
+		// HR O18 T1c: a switch Python read as on ("x") keeps the guard whole
+		// and blocks device management (TestReviewO18T1cDamagedGuardSwitchFailsClosed).
+		{`{"ipv6_pd_guard":{"enabled":"x"},"ipv6_pd_guard_state":{"resources":[]}}`, true},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			var r Router

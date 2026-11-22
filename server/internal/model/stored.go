@@ -338,6 +338,11 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				}
 				return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().SetZero() })
 			}
+			// A device selection list stored as another JSON kind stays
+			// damaged instead of reading as an empty selection (selectionTag).
+			if typ == stringListType && kind != '[' && storedTag(sink, dec.StackPointer()) == selectionTag {
+				return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().Set(reflect.ValueOf([]string{DamagedText})) })
+			}
 			switch {
 			case orderedElem(typ) != nil && kind != '{',
 				typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && kind != '[',
@@ -391,6 +396,16 @@ const secretTag = "secret"
 // matches nothing and is refused (O18 T1b review); it is written back as
 // that text, so the damage stays.
 const restrictTag = "restrict"
+
+// selectionTag marks a stored list of IDs that selects what the panel
+// writes to a device (a router's rule-set selections). Stored as another JSON
+// kind than a list (null aside: no selection) it reads as [DamagedText]
+// instead of an empty selection, which would withdraw everything the
+// selection put on the device at the next publication; consumers refuse the
+// damaged ID (HR O18 T1c). Written back as that list, the damage stays.
+const selectionTag = "selection"
+
+var stringListType = reflect.TypeFor[[]string]()
 
 // DamagedText is the value of a stored:"restrict" member whose stored JSON
 // type was not a string. Consumers refuse it explicitly; it is not a valid

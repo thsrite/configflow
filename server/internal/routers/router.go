@@ -235,7 +235,7 @@ func idList(raw json.RawMessage) ([]string, bool) {
 	}
 	out := []string{}
 	for _, item := range items {
-		if *item == "" {
+		if *item == "" || *item == model.DamagedText {
 			return nil, false
 		} else if !slices.Contains(out, *item) {
 			out = append(out, *item)

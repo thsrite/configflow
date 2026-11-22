@@ -31,9 +31,9 @@ type Router struct {
 	VerifyTLS           *bool             `json:"verify_tls,omitzero" switch:"on"`
 	ProxyGatewayAgentID string            `json:"proxy_gateway_agent_id"`
 	DNSAgentID          string            `json:"dns_agent_id"`
-	IPRuleSets          []string          `json:"ip_rule_sets"`
+	IPRuleSets          []string          `json:"ip_rule_sets" stored:"selection"`
 	ManageReturnRouting *bool             `json:"manage_return_routing,omitzero" stored:"gate"`
-	ROSPolicyRuleSets   []string          `json:"ros_policy_rule_sets"`
+	ROSPolicyRuleSets   []string          `json:"ros_policy_rule_sets" stored:"selection"`
 	AutoRuleSync        *bool             `json:"auto_rule_sync,omitzero" stored:"gate"`
 	RuleSyncInterval    *Int              `json:"rule_sync_interval,omitzero"`
 	DNSGuard            *RouterDNSGuard   `json:"dns_guard,omitzero"`
@@ -71,19 +71,35 @@ type RouterPDGuard struct {
 
 func (r *RouterDNSGuard) keepDamaged(raw []byte) { *r = RouterDNSGuard{Stored: bytes.Clone(raw)} }
 
-func (r *RouterDNSGuard) keepOnIssues(issues []FieldIssue) bool {
-	return enabledGuardIssue(r.Enabled, issues)
+func (r *RouterDNSGuard) keepOnIssues(issues []FieldIssue, raw []byte) bool {
+	return enabledGuardIssue(r.Enabled, issues, raw)
 }
 
 func (r *RouterPDGuard) keepDamaged(raw []byte) { *r = RouterPDGuard{Stored: bytes.Clone(raw)} }
 
-func (r *RouterPDGuard) keepOnIssues(issues []FieldIssue) bool {
-	return enabledGuardIssue(r.Enabled, issues)
+func (r *RouterPDGuard) keepOnIssues(issues []FieldIssue, raw []byte) bool {
+	return enabledGuardIssue(r.Enabled, issues, raw)
 }
 
-// enabledGuardIssue reports an enabled guard with an issue on another member
-// than its switch (a switch of the wrong type reads as off: nothing to keep).
-func enabledGuardIssue(enabled *bool, issues []FieldIssue) bool {
+// enabledGuardIssue reports a guard to keep whole: an enabled guard with an
+// issue on another member, or a guard whose switch is stored with another
+// type that Python read as on ("yes", 1). The switch is a device-write gate
+// and reads as off, but for a guard off means withdrawing it from the device
+// on the next publication: a damaged switch must not remove a guard Python
+// kept, so device management refuses it (fail closed, as before O18 T1c). A
+// falsy switch of another type (0, "") is off in Python too.
+func enabledGuardIssue(enabled *bool, issues []FieldIssue, raw []byte) bool {
+	for _, issue := range issues {
+		if issue.Kind == IssueType && (issue.Path == "enabled" || strings.HasSuffix(issue.Path, ".enabled")) {
+			var guard struct {
+				Enabled json.RawMessage `json:"enabled"`
+			}
+			if json.Unmarshal(raw, &guard) != nil {
+				return true
+			}
+			return JSONSwitchEnabled(guard.Enabled, false)
+		}
+	}
 	if enabled == nil || !*enabled {
 		return false
 	}
