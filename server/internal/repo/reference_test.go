@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode"
 
 	"configflow/internal/model"
 	"configflow/internal/store"
@@ -288,6 +289,11 @@ func TestReferenceLockTimeout(t *testing.T) {
 		f, err := values[1].(json.Number).Float64()
 		noError(t, err)
 		want := secondsDuration(f)
+		// O18 C10: the timeout is a plain decimal (strconv.ParseFloat);
+		// Python's float() also read Unicode digits such as full-width ones.
+		if text, ok := values[0].(string); ok && strings.ContainsFunc(text, func(r rune) bool { return r > 127 && unicode.IsDigit(r) }) {
+			want = secondsDuration(DefaultLockTimeoutSeconds)
+		}
 		if got := LockTimeout(); got != want {
 			t.Errorf("%v: go %v, py %v", values[0], got, want)
 		}

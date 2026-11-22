@@ -3,17 +3,17 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode"
 
 	"configflow/internal/lockx"
 )
@@ -27,78 +27,21 @@ const (
 	LockPollInterval          = 50 * time.Millisecond
 )
 
-// LockTimeout is ProfileRepository._lock_timeout_seconds(): the value of
-// CONFIGFLOW_LOCK_TIMEOUT_SECONDS clamped to 0.1–3600 s, 300 s when it is
-// unset, not a number or not finite. It is read on every use.
+// LockTimeout is the value of CONFIGFLOW_LOCK_TIMEOUT_SECONDS (a decimal
+// number, surrounding white space allowed) clamped to 0.1–3600 s, 300 s when
+// it is unset, not a number or not finite. It is read on every use.
 func LockTimeout() time.Duration {
 	raw, ok := os.LookupEnv(LockTimeoutEnv)
 	if !ok {
 		return secondsDuration(DefaultLockTimeoutSeconds)
 	}
-	timeout, ok := pythonFloat(raw)
-	if !ok || math.IsNaN(timeout) || math.IsInf(timeout, 0) {
+	text := strings.TrimSpace(raw)
+	timeout, err := strconv.ParseFloat(text, 64)
+	// Decimal only: ParseFloat also reads hexadecimal floats.
+	if err != nil || strings.ContainsAny(text, "xXpP") || math.IsNaN(timeout) || math.IsInf(timeout, 0) {
 		return secondsDuration(DefaultLockTimeoutSeconds)
 	}
 	return secondsDuration(math.Min(MaxLockTimeoutSeconds, math.Max(MinLockTimeoutSeconds, timeout)))
-}
-
-// pythonFloatSyntax is the grammar of CPython's float(str) after the
-// whitespace strip: decimal digits with single underscores between them, an
-// optional fraction and exponent, or inf/infinity/nan (no hexadecimal).
-var pythonFloatSyntax = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*(?:\.(?:[0-9](?:_?[0-9])*)?)?|\.[0-9](?:_?[0-9])*)(?:[eE][+-]?[0-9](?:_?[0-9])*)?|(?i:inf|infinity|nan))$`)
-
-// pythonFloat is float(text) for a str: like CPython's PyFloat_FromString,
-// Unicode white space becomes a space and Unicode decimal digits (full-width,
-// Arabic-Indic, ...) become ASCII digits before ASCII white space is
-// stripped and the number is parsed. ok is false where Python raises
-// ValueError.
-func pythonFloat(text string) (float64, bool) {
-	var ascii strings.Builder
-	for _, r := range text {
-		switch {
-		case r < 127:
-			ascii.WriteRune(r)
-		case pythonUnicodeSpace(r):
-			ascii.WriteByte(' ')
-		default:
-			digit, ok := unicodeDecimal(r)
-			if !ok {
-				return 0, false
-			}
-			ascii.WriteByte(byte('0' + digit))
-		}
-	}
-	number := strings.Trim(ascii.String(), " \t\n\r\v\f")
-	if !pythonFloatSyntax.MatchString(number) {
-		return 0, false
-	}
-	value, err := strconv.ParseFloat(strings.ReplaceAll(number, "_", ""), 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return 0, false
-	}
-	return value, true
-}
-
-// pythonUnicodeSpace is Py_UNICODE_ISSPACE for characters from U+007F up.
-func pythonUnicodeSpace(r rune) bool {
-	switch r {
-	case 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000:
-		return true
-	}
-	return r >= 0x2000 && r <= 0x200a
-}
-
-// unicodeDecimal is Py_UNICODE_TODECIMAL: the value of a character of
-// category Nd. Every Nd run in Unicode is made of whole 0–9 sequences.
-func unicodeDecimal(r rune) (int, bool) {
-	if !unicode.Is(unicode.Nd, r) {
-		return 0, false
-	}
-	start := r
-	for unicode.Is(unicode.Nd, start-1) {
-		start--
-	}
-	return int(r-start) % 10, true
 }
 
 func secondsDuration(seconds float64) time.Duration {
@@ -274,88 +217,68 @@ func (r *Repository) withProfileOperation(ctx context.Context, id string, fn fun
 	return fn(held)
 }
 
-// resolvePath is pathlib.Path.resolve() (non-strict) without its symlink
-// loop check; see resolve.
+// resolvePath is resolve for callers that only need a lock or map key: on
+// an error (a symlink loop) it falls back to the cleaned absolute path.
 func resolvePath(path string) string {
-	resolved, _ := realpath(path)
+	resolved, err := resolve(path)
+	if err != nil {
+		absolute, _ := filepath.Abs(path)
+		return filepath.Clean(absolute)
+	}
 	return resolved
 }
 
-// resolve is pathlib.Path.resolve() of CPython 3.11 (non-strict): absolute,
-// symbolic links followed for as long as the path exists, "." and ".."
-// removed after the links before them were followed. A symlink loop is
-// Python's RuntimeError("Symlink loop from '<path>'").
+// resolve returns path absolute with its symbolic links followed
+// (filepath.EvalSymlinks). A path that does not exist yet resolves its
+// longest existing prefix and keeps the rest as given (cleaned), so a file
+// about to be created resolves like its directory; a dangling link resolves
+// to its target. A symlink loop or another read error is returned.
 func resolve(path string) (string, error) {
-	resolved, _ := realpath(path)
-	if _, err := os.Stat(resolved); errors.Is(err, syscall.ELOOP) {
-		return "", errors.New("Symlink loop from " + pyQuote(resolved))
-	}
-	return resolved, nil
+	return resolveLinks(path, path, 0)
 }
 
-// realpath is posixpath.realpath(path, strict=False) of CPython 3.11 for an
-// absolute path (a relative one is made absolute first): a link seen again
-// while it is being resolved ends the walk at that link, with the rest of
-// the path appended unresolved (ok is then false).
-func realpath(path string) (resolved string, ok bool) {
-	if !filepath.IsAbs(path) {
-		if absolute, err := filepath.Abs(path); err == nil {
-			path = absolute
-		}
-	}
-	resolved, ok = joinRealpath("/", path, map[string]*string{})
-	return filepath.Clean(resolved), ok
-}
+// maxDanglingLinks bounds dangling links followed by resolve (a loop of
+// dangling links never ends otherwise).
+const maxDanglingLinks = 40
 
-func joinRealpath(path, rest string, seen map[string]*string) (string, bool) {
-	if strings.HasPrefix(rest, "/") {
-		path, rest = "/", rest[1:]
+func resolveLinks(original, path string, depth int) (string, error) {
+	if depth > maxDanglingLinks {
+		return "", fmt.Errorf("resolve %s: too many links", original)
 	}
-	for rest != "" {
-		var name string
-		name, rest, _ = strings.Cut(rest, "/")
-		switch name {
-		case "", ".":
-			continue
-		case "..":
-			path = filepath.Dir(path)
-			continue
-		}
-		newpath := filepath.Join(path, name)
-		info, err := os.Lstat(newpath)
-		if err != nil || info.Mode()&os.ModeSymlink == 0 {
-			path = newpath
-			continue
-		}
-		if cached, found := seen[newpath]; found {
-			if cached != nil {
-				path = *cached
-				continue
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", original, err)
+	}
+	existing, rest := absolute, ""
+	for {
+		info, err := os.Lstat(existing)
+		if err == nil {
+			resolved, err := filepath.EvalSymlinks(existing)
+			if err == nil {
+				return filepath.Join(resolved, rest), nil
 			}
-			// The symlink is not resolved, so this is a symlink loop.
-			return joinRest(newpath, rest), false
+			if info.Mode()&os.ModeSymlink != 0 && errors.Is(err, fs.ErrNotExist) {
+				target, err := os.Readlink(existing)
+				if err != nil {
+					return "", fmt.Errorf("resolve %s: %w", original, err)
+				}
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(filepath.Dir(existing), target)
+				}
+				return resolveLinks(original, filepath.Join(target, rest), depth+1)
+			}
+			return "", fmt.Errorf("resolve %s: %w", original, err)
 		}
-		target, err := os.Readlink(newpath)
-		if err != nil {
-			path = newpath
-			continue
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("resolve %s: %w", original, err)
 		}
-		seen[newpath] = nil
-		resolved, ok := joinRealpath(path, target, seen)
-		if !ok {
-			return joinRest(resolved, rest), false
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return absolute, nil
 		}
-		path = resolved
-		seen[newpath] = &resolved
+		rest = filepath.Join(filepath.Base(existing), rest)
+		existing = parent
 	}
-	return path, true
-}
-
-func joinRest(path, rest string) string {
-	if rest == "" {
-		return path
-	}
-	return path + "/" + rest
 }
 
 // isRelativeTo is Path.relative_to() succeeding: child is root or below it.

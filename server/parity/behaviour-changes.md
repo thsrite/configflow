@@ -3030,3 +3030,11 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - 测试：difftest 的存储比较经 `modeltest.StateThroughModel`/`RowThroughModel` 和 `testjson.WithoutEmptyMembers`（未声明成员、空可选成员两边都不比）；
   需要库里脏数据的夹具改用 `repotest.WriteRow` 直接写行（普通记录的 SetJSON 会拒绝）；Python 参考里输入为错类型/null/未声明成员的行作为已接受差异，
   各处注释说明；pyref 只重录 metadata（条目逐字节相同）。
+
+## O18 C10 — 锁超时与数据目录路径改用标准库（随 T1c）
+
+- `CONFIGFLOW_LOCK_TIMEOUT_SECONDS` 用 `strconv.ParseFloat` 读（去首尾空白，接受数字下划线），全角/阿拉伯-印度等非 ASCII 数字和十六进制浮点
+  不再当作数字，按未设置用默认 300 s（Python `float()` 接受 Unicode 数字）。
+- 数据目录和文件路径的解析改用 `filepath.Abs` + `filepath.EvalSymlinks`：不存在的尾部原样保留、悬空链接跟随到目标（与以前相同）；
+  符号链接环的错误文本改为 Go 的 `resolve …: too many links` 类（以前照搬 Python「Symlink loop from '…'」），仍按内部错误处理。
+- `~`/`~name` 用 `os.UserHomeDir` / `user.Lookup` 展开；无法确定主目录时的错误文本改为 Go 的错误（以前照搬「Could not determine home directory.」）。

@@ -24,6 +24,9 @@ func TestLockTimeoutParsing(t *testing.T) {
 		"abc": 300 * time.Second, "nan": 300 * time.Second, "inf": 300 * time.Second, "": 300 * time.Second,
 		"0": 100 * time.Millisecond, "0.05": 100 * time.Millisecond, "-3": 100 * time.Millisecond,
 		"5": 5 * time.Second, " 2.5 ": 2500 * time.Millisecond, "99999": 3600 * time.Second,
+		// O18 C10: strconv.ParseFloat, not CPython float(): full-width
+		// digits are not numbers; digit underscores are, as in Python.
+		"５": 300 * time.Second, "1_0": 10 * time.Second, "0x1p3": 300 * time.Second,
 	} {
 		t.Setenv(LockTimeoutEnv, value)
 		if got := LockTimeout(); got != want {

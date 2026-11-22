@@ -29,7 +29,9 @@ func c03ProfileWithLink(t *testing.T, target string) (*Repository, string) {
 func TestDeleteProfileThroughSymlinkLoopFailsLikePython(t *testing.T) {
 	r, link := c03ProfileWithLink(t, "p2")
 	err := r.DeleteProfile(bg, "p2", "")
-	if err == nil || err.Error() != "Symlink loop from '"+link+"'" {
+	// O18 C10: filepath.EvalSymlinks reports the loop (Python's text was
+	// "Symlink loop from ..."); it is still an internal error.
+	if err == nil || !strings.Contains(err.Error(), "resolve ") || !strings.Contains(err.Error(), filepath.Base(link)) {
 		t.Fatalf("got %v", err)
 	}
 	if _, isRepo := err.(*Error); isRepo {
@@ -98,38 +100,38 @@ func TestNonObjectMosdnsIsRefusedBeforeRuleReferences(t *testing.T) {
 	wantError(t, err, ErrValidation, "mosdns 参数必须是对象")
 }
 
-// CPython 3.11 posixpath.realpath: a loop stops at the first link seen
-// again, with the rest of the path appended unresolved.
-func TestRealpathSymlinkLoopStopsAtFirstRepeatedLink(t *testing.T) {
+// resolve follows links (also before ".."), keeps a missing tail and
+// reports a symlink loop (O18 C10: filepath.EvalSymlinks).
+func TestResolveFollowsLinksAndKeepsMissingTail(t *testing.T) {
 	directory := resolvePath(t.TempDir())
 	noError(t, os.Symlink("b", filepath.Join(directory, "a")))
 	noError(t, os.Symlink("a", filepath.Join(directory, "b")))
-	got, ok := realpath(filepath.Join(directory, "a", "x"))
-	if ok || got != filepath.Join(directory, "a", "x") {
-		t.Fatalf("got %q %v", got, ok)
+	if _, err := resolve(filepath.Join(directory, "a")); err == nil {
+		t.Fatal("symlink loop resolved")
 	}
-	if _, err := resolve(filepath.Join(directory, "a")); err == nil ||
-		!strings.HasPrefix(err.Error(), "Symlink loop from '") {
-		t.Fatalf("resolve: %v", err)
+	noError(t, os.Mkdir(filepath.Join(directory, "real"), 0o700))
+	noError(t, os.Symlink("real", filepath.Join(directory, "l")))
+	if got := must(resolve(filepath.Join(directory, "l", "new", "file")))(t); got != filepath.Join(directory, "real", "new", "file") {
+		t.Fatalf("missing tail: %q", got)
 	}
-	noError(t, os.Symlink("../"+filepath.Base(directory)+"/c", filepath.Join(directory, "l")))
-	if got := resolvePath(filepath.Join(directory, "l", "..", "d")); got != filepath.Join(directory, "d") {
+	noError(t, os.Symlink("../"+filepath.Base(directory)+"/real", filepath.Join(directory, "up")))
+	if got := resolvePath(filepath.Join(directory, "up", "..", "d")); got != filepath.Join(directory, "d") {
 		t.Fatalf("dotdot after link: %q", got)
 	}
 }
 
-// Path(data_dir).expanduser(): "~" is $HOME, "~name" the user's home, an
-// unknown user is RuntimeError("Could not determine home directory.").
-func TestDataDirExpandUserLikePython(t *testing.T) {
+// expandUser: "~" is the home directory, "~name" that user's, an unknown
+// user is an error (O18 C10: os.UserHomeDir, user.Lookup).
+func TestDataDirExpandUser(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home+"/")
+	t.Setenv("HOME", home)
 	for input, want := range map[string]string{"~": home, "~/a//b": home + "/a/b", "x~": "x~", "~root/d": "/root/d"} {
 		if got := must(expandUser(input))(t); got != want {
 			t.Errorf("%q: %q, want %q", input, got, want)
 		}
 	}
-	if _, err := expandUser("~no-such-user-c03/x"); err == nil || err.Error() != "Could not determine home directory." {
-		t.Fatalf("unknown user: %v", err)
+	if _, err := expandUser("~no-such-user-c03/x"); err == nil {
+		t.Fatal("unknown user expanded")
 	}
 	r := must(Open("~/data", Options{}))(t)
 	if r.DataDir() != filepath.Join(resolvePath(home), "data") {

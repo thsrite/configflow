@@ -174,31 +174,25 @@ func ResolveDataDir(path string) (string, error) {
 	return resolve(expanded)
 }
 
-// expandUser is Path.expanduser() of CPython 3.11: "~" is $HOME (or the
-// password database entry of the current user), "~name" that user's home
-// directory; when it cannot be determined Python raises RuntimeError.
+// expandUser replaces a leading "~" with the current user's home directory
+// (os.UserHomeDir) and "~name" with that user's home directory.
 func expandUser(path string) (string, error) {
 	if !strings.HasPrefix(path, "~") {
 		return path, nil
 	}
 	name, rest, _ := strings.Cut(path[1:], "/")
-	home, found := "", false
 	if name == "" {
-		if value, ok := os.LookupEnv("HOME"); ok {
-			home, found = value, true
-		} else if current, err := user.Current(); err == nil {
-			home, found = current.HomeDir, true
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("expand %s: %w", path, err)
 		}
-	} else if account, err := user.Lookup(name); err == nil {
-		home, found = account.HomeDir, true
+		return filepath.Join(home, rest), nil
 	}
-	if home = strings.TrimRight(home, "/"); home == "" {
-		home = "/"
+	account, err := user.Lookup(name)
+	if err != nil {
+		return "", fmt.Errorf("expand %s: %w", path, err)
 	}
-	if !found || strings.HasPrefix(home, "~") {
-		return "", errors.New("Could not determine home directory.")
-	}
-	return filepath.Join(home, rest), nil
+	return filepath.Join(account.HomeDir, rest), nil
 }
 
 // OpenDefault opens the application's repository, as common/config.py's
