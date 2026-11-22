@@ -340,6 +340,62 @@ func settingsDamaged(issues []model.FieldIssue) bool {
 	return false
 }
 
+// configTokenIssue is the load issue path of a stored config_token that is
+// not text (read as no token; SystemSettingsDamaged).
+const configTokenIssue = systemSettingsIssue + ".config_token"
+
+// keepDamagedConfigToken keeps a stored config_token that is not text when a
+// write rewrites system_config without setting a token (HR O18 T1c). The
+// record reads such a token as empty, so writing the record as read (a server
+// domain save, token maintenance with other changes) would drop it: the
+// damage evidence would be gone and an empty token is anonymous access when
+// login is off, where Python kept the stored value (which never matched a
+// request). Only setting a token repairs it; clearing one (DELETE) leaves the
+// damaged value, as it did before O18 T1c.
+func keepDamagedConfigToken(next, base *store.Document, issues []model.FieldIssue, document *model.Document) error {
+	if next == nil || base == nil || next.System == nil || base.System == nil || document.System.SystemConfig.ConfigToken != "" ||
+		!slices.ContainsFunc(issues, func(issue model.FieldIssue) bool { return issue.Path == configTokenIssue }) {
+		return nil
+	}
+	var stored json.RawMessage
+	for _, field := range base.System.Fields {
+		if field.Name == "system_config" {
+			stored = field.Value
+		}
+	}
+	var members map[string]json.RawMessage
+	if json.Unmarshal(stored, &members) != nil {
+		return nil
+	}
+	damaged, ok := members["config_token"]
+	if !ok {
+		return nil
+	}
+	for i, field := range next.System.Fields {
+		if field.Name != "system_config" || bytes.Equal(field.Value, stored) {
+			continue
+		}
+		var written map[string]json.RawMessage
+		if err := json.Unmarshal(field.Value, &written); err != nil {
+			return fmt.Errorf("keep damaged config token: %w", err)
+		}
+		if _, present := written["config_token"]; present {
+			continue
+		}
+		value := bytes.TrimSpace(field.Value)
+		var out bytes.Buffer
+		out.Write(value[:len(value)-1])
+		if len(written) > 0 {
+			out.WriteByte(',')
+		}
+		out.WriteString(`"config_token":`)
+		out.Write(damaged)
+		out.WriteByte('}')
+		next.System.Fields[i].Value = out.Bytes()
+	}
+	return nil
+}
+
 // SystemSettingsDamaged reports whether the current stored system_config is
 // not an object (O18 T1a reads it as empty settings with a load warning) or
 // its config_token is not text (O18 T1c reads it as no token).

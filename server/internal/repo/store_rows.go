@@ -39,6 +39,9 @@ func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc *mod
 	if err := keepUnchangedRows(raw, base.Entry.Document, base.Model); err != nil {
 		return storedEntry{}, false, err
 	}
+	if err := keepDamagedConfigToken(raw, base.Entry.Document, base.Issues, doc); err != nil {
+		return storedEntry{}, false, err
+	}
 	extra := meta
 	entry, changed, err := r.store.CommitContext(ctx, base.Entry, raw, extra)
 	if err != nil || !changed {
