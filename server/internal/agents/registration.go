@@ -135,9 +135,11 @@ func (m *Manager) matchesRegistrationClaim(ctx context.Context, system *model.Sy
 	return err == nil
 }
 
-// admissionSessionIdentity requires a complete stored capability.
+// admissionSessionIdentity requires a complete stored capability. A host
+// stored with another type (model.DamagedText) makes the session unusable
+// instead of unrestricted (O18 T1b review).
 func admissionSessionIdentity(session model.AgentRegistrationSession) bool {
-	return session.Hash != "" && session.Port != 0 && session.Expires != 0
+	return session.Hash != "" && session.Port != 0 && session.Expires != 0 && session.Host != model.DamagedText
 }
 
 // admitRegistrationClaim changes only the caller's system working copy. Its

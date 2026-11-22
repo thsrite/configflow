@@ -140,20 +140,30 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				return nil
 			case '0':
 				// Python stored numbers in text members; keep their literal,
-				// except in credentials (see secretTag).
+				// except in credentials and restrictions (see secretTag).
 				value, err := dec.ReadValue()
 				if err != nil {
 					return err
 				}
-				if storedTag(sink, dec.StackPointer()) == secretTag {
+				switch storedTag(sink, dec.StackPointer()) {
+				case secretTag:
 					*v = ""
 					sink.add(dec, IssueType)
-				} else {
+				case restrictTag:
+					*v = DamagedText
+					sink.add(dec, IssueType)
+				default:
 					*v = string(value)
 				}
 				return nil
 			}
-			return skipInvalid(dec, sink, func() { *v = "" })
+			kind := dec.PeekKind()
+			return skipInvalid(dec, sink, func() {
+				*v = ""
+				if kind != 'n' && storedTag(sink, dec.StackPointer()) == restrictTag {
+					*v = DamagedText
+				}
+			})
 		}),
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *bool) error {
 			switch dec.PeekKind() {
@@ -279,6 +289,18 @@ const gateTag = "gate"
 // included, reads as empty plus an issue, so it never authenticates and the
 // panel sends no request with it (O18 T1b review).
 const secretTag = "secret"
+
+// restrictTag marks stored text that restricts something when present and
+// allows anything when empty (a registration session's host). A value of
+// another JSON type than a string (null aside) reads as DamagedText, which
+// matches nothing and is refused (O18 T1b review); it is written back as
+// that text, so the damage stays.
+const restrictTag = "restrict"
+
+// DamagedText is the value of a stored:"restrict" member whose stored JSON
+// type was not a string. Consumers refuse it explicitly; it is not a valid
+// host or name.
+const DamagedText = "\x00damaged"
 
 // storedTag returns the stored tag of the struct field at pointer (from the
 // decoder's root type; the root's own tag when pointer is empty).

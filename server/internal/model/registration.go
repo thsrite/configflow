@@ -8,7 +8,7 @@ import ()
 type AgentRegistrationSession struct {
 	Hash             string `json:"hash,omitzero" stored:"secret"`
 	Name             string `json:"name,omitzero"`
-	Host             string `json:"host,omitzero"`
+	Host             string `json:"host,omitzero" stored:"restrict"`
 	Port             Int    `json:"port,omitzero"`
 	ServiceType      string `json:"service_type,omitzero"`
 	DeploymentMethod string `json:"deployment_method,omitzero"`

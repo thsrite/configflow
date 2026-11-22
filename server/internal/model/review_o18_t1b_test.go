@@ -194,3 +194,40 @@ func TestReviewO18T1bCredentialsOfAnotherTypeAreEmpty(t *testing.T) {
 		t.Errorf("text system tokens changed: %+v %v", plain, err)
 	}
 }
+
+// HR O18 T1b L2: a registration session host of another JSON type reads as
+// DamagedText (refused by admission), and stays damaged when written back;
+// a missing or null host is no restriction.
+func TestReviewO18T1bDamagedSessionHost(t *testing.T) {
+	for _, value := range []string{`5`, `{}`, `true`, `["h"]`} {
+		var session AgentRegistrationSession
+		if _, err := DecodeStored([]byte(`{"hash":"h","host":`+value+`,"port":9090}`), &session, ""); err != nil {
+			t.Fatal(err)
+		}
+		if session.Host != DamagedText {
+			t.Errorf("host %s = %q, want DamagedText", value, session.Host)
+		}
+		data, err := Marshal(session)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var again AgentRegistrationSession
+		if _, err := DecodeStored(data, &again, ""); err != nil || again.Host != DamagedText {
+			t.Errorf("host %s after a rewrite = %q (%s), want DamagedText", value, again.Host, data)
+		}
+	}
+	for _, value := range []string{`null`, `"192.0.2.5"`} {
+		var session AgentRegistrationSession
+		if _, err := DecodeStored([]byte(`{"host":`+value+`}`), &session, ""); err != nil {
+			t.Fatal(err)
+		}
+		if session.Host == DamagedText {
+			t.Errorf("host %s reads as damaged", value)
+		}
+	}
+	// The members of other records are not restrictions.
+	var a Agent
+	if _, err := DecodeStored([]byte(`{"host":{}}`), &a, ""); err != nil || a.Host != "" {
+		t.Errorf("Agent host {} = %q, want empty", a.Host)
+	}
+}
