@@ -98,6 +98,12 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-37 MERGED 2026-11-23 (Agent image without Python: s6-overlay behind svc interface, docker-config/ha-compact/
+ha-compose/ha-companion-check/ha-companion-serve subcommands, supervisorctl/python3 shims, service_manager "s6" with
+"supervisor" synonym, Agent 1.9.3-go; review: restored 1/2/3 s backoff before FATAL, keepalived process-group cleanup,
+HA disable requires STOPPED/FATAL, companion socket not stealable). Both images are now free of Python and supervisord.
+T1c (O18) handed back → HR review 01478e15 (batch-38).
+
 batch-36 MERGED 2026-11-23 (panel image without Python: Go server supervises Sub-Store (process group, backoff,
 idle stop, redacted logs), tini PID 1, cmd/configflow-autoupdate replaces auto_update.py; review: services joined after
 after-drain hooks, stronger Sub-Store log redaction, placeholder subscription address = not configured (no retries,
