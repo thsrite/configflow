@@ -76,7 +76,10 @@
 
 ## 验证命令
 
-见交回报告（gofmt、`go vet ./...`、受影响包 `-race`、`/tmp/preflight.sh`）。前端无改动（`git diff go -- frontend` 为空）。
+在 .64 上运行：`gofmt -l .` 无输出；受影响包 `go test -race -count=1 ./internal/substore/ ./internal/lifecycle/...
+./internal/api/settings/ ./internal/autoupdate/ ./cmd/configflow/ ./cmd/configflow-autoupdate/` 全部 ok；`/tmp/preflight.sh`
+（两组 tag 的 vet + 完整非 race 测试，-p 8）结果为 PREFLIGHT PASS（第一次因 skipaudit 拦下 autoupdate 测试里“缺工具就跳过”而失败，修复后通过）。
+前端没有改动（`git diff go -- frontend` 为空）。
 
 ## 提交
 
@@ -85,3 +88,4 @@
 - `9c1fcbcdf` go(docker): panel image without Python or supervisord
 - `3d2282028` go(docker): autoupdate image smoke test against a local git source
 - `037544178` go(docs): panel image without Python: process model, Sub-Store logs, SpawnService
+- `9c7495497` go(autoupdate): no tool-missing skips; bundled Go path is configuration
