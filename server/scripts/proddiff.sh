@@ -8,12 +8,17 @@
 #                                   configflow binary and proddiff generator replace Flask and the
 #                                   Python generators. The comparator then runs from a backend-free
 #                                   tools venv (server/tools/requirements-tools.txt).
+#   PRODDIFF_COMPARATOR=python (default) | go
+#                                   go (requires PRODDIFF_MODE=go) runs the Go comparator
+#                                   (server/tools/proddiff/comparator) instead of run.py: no Python
+#                                   and no tools venv at all.
 set -euo pipefail
 umask 077
 root=$(cd "$(dirname "$0")/../.." && pwd)
 mode=${PRODDIFF_MODE:-python}
+comparator=${PRODDIFF_COMPARATOR:-python}
 if [[ ${1:-} == --help ]]; then
- printf '%s\n' 'Usage: [PRODDIFF_MODE=go PRODDIFF_BASE_TREE=<dir>] rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline]'
+ printf '%s\n' 'Usage: [PRODDIFF_MODE=go PRODDIFF_BASE_TREE=<dir> [PRODDIFF_COMPARATOR=go]] rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline]'
  exit 0
 fi
 snapshot=$HOME/cf-prod-snapshot/20261116/data
@@ -24,12 +29,18 @@ for option in "$@"; do
   *) printf '%s\n' 'Unknown option'; exit 2 ;;
  esac
 done
+case $comparator in
+ python) ;;
+ go) [[ $mode == go ]] || { printf '%s\n' 'PRODDIFF_COMPARATOR=go needs PRODDIFF_MODE=go'; exit 2; } ;;
+ *) printf '%s\n' 'PRODDIFF_COMPARATOR must be python or go'; exit 2 ;;
+esac
 case $mode in
  python) python=${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python} ;;
  go)
   [[ -n ${PRODDIFF_BASE_TREE:-} && -d ${PRODDIFF_BASE_TREE}/server ]] \
    || { printf '%s\n' 'PRODDIFF_MODE=go needs PRODDIFF_BASE_TREE=<baseline source tree with server/>'; exit 2; }
   base_tree=$(realpath "$PRODDIFF_BASE_TREE")
+  if [[ $comparator == go ]]; then python=; else
   # Comparator-only venv: stdlib + PyYAML, no Flask and no backend requirements.
   tools=${PRODDIFF_TOOLS_VENV:-$HOME/cf-tools/.venv}
   requirements=$root/server/tools/requirements-tools.txt
@@ -45,6 +56,7 @@ case $mode in
    fi
   ) 9>"$tools.lock"
   python=$tools/bin/python
+  fi
   ;;
  *) printf '%s\n' 'PRODDIFF_MODE must be python or go'; exit 2 ;;
 esac
@@ -58,6 +70,10 @@ trap 'rm -rf "$build"' EXIT
 (cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
 if [[ $mode == python ]]; then
  (cd "$root/server" && go build -o "$build/baseline" ./tools/proddiff/baseline)
+fi
+if [[ $comparator == go ]]; then
+ (cd "$root/server" && go build -o "$build/comparator" ./tools/proddiff/comparator)
+ python=$build/comparator runner=run
 fi
 export PRODDIFF_MODE=$mode
 if [[ $mode == go ]]; then

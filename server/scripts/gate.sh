@@ -13,6 +13,13 @@ case "$proddiff_mode" in
   go) [[ -d ${PRODDIFF_BASE_TREE:-}/server ]] || { echo 'PRODDIFF_MODE=go needs PRODDIFF_BASE_TREE=<baseline tree>' >&2; exit 2; } ;;
   *) echo "Unknown PRODDIFF_MODE: $proddiff_mode" >&2; exit 2 ;;
 esac
+# proddiff comparator: python run.py (default until the switch) or the Go comparator (Go mode only).
+proddiff_comparator=${PRODDIFF_COMPARATOR:-python}
+case "$proddiff_comparator" in
+  python) ;;
+  go) [[ $proddiff_mode == go ]] || { echo 'PRODDIFF_COMPARATOR=go needs PRODDIFF_MODE=go' >&2; exit 2; } ;;
+  *) echo "Unknown PRODDIFF_COMPARATOR: $proddiff_comparator" >&2; exit 2 ;;
+esac
 logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
 chmod 700 "$logs"
@@ -158,8 +165,8 @@ run_proddiff() {
   go test -tags configflow_proddiff -count=1 -run '^TestProddiff(Content|WaitsForFreshProvider)' \
     ./internal/api/agents ./cmd/configflow >"$logs/observer.log" 2>&1 \
     || { cat "$logs/observer.log"; fail 'proddiff observer self-checks'; }
-  echo "== proddiff (live; no response cache) mode=$proddiff_mode"
-  (cd .. && PRODDIFF_MODE=$proddiff_mode server/scripts/proddiff.sh) >"$logs/proddiff.log" 2>&1 \
+  echo "== proddiff (live; no response cache) mode=$proddiff_mode comparator=$proddiff_comparator"
+  (cd .. && PRODDIFF_MODE=$proddiff_mode PRODDIFF_COMPARATOR=$proddiff_comparator server/scripts/proddiff.sh) >"$logs/proddiff.log" 2>&1 \
     || { tail -30 "$logs/proddiff.log"; fail proddiff; }
   tail -30 "$logs/proddiff.log"
 }
