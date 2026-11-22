@@ -11,16 +11,25 @@ import (
 // times (rendering, bundle preparation, validation), and parsing a few hundred
 // proxies allocates tens of MB. A result depends only on the text; errors are
 // not remembered. Callers get their own copies unless they only read.
+//
+// A parsed graph keeps about 20 bytes of heap per byte of text (measured on
+// a 0.5 MB, 2000-proxy text), so the tables are bounded by that estimate of
+// what they keep alive, not by the length of their keys.
+
+// parsedRetainedPerByte estimates the heap a parsed proxy list keeps per byte
+// of its text (text key included).
+const parsedRetainedPerByte = 20
 
 // parsedProviders keeps readProviderNodes' validated proxy lists.
-var parsedProviders = parsedMemo{limitBytes: 8 << 20, limitEntries: 32}
+var parsedProviders = parsedMemo{limitBytes: 32 << 20, limitEntries: 32}
 
 // parsedSubscriptions keeps ParseNodes' normalized proxies, each its own graph.
-var parsedSubscriptions = parsedMemo{limitBytes: 8 << 20, limitEntries: 32}
+var parsedSubscriptions = parsedMemo{limitBytes: 32 << 20, limitEntries: 32}
 
 type parsedMemo struct {
-	mu                       sync.Mutex
-	entries                  map[string][]*yamlx.Node
+	mu      sync.Mutex
+	entries map[string][]*yamlx.Node
+	// bytes and limitBytes are estimated retained heap, not text length.
 	bytes                    int
 	limitBytes, limitEntries int
 }
@@ -66,7 +75,8 @@ func (m *parsedMemo) storeEach(text string, nodes []*yamlx.Node) {
 }
 
 func (m *parsedMemo) keep(text string, nodes []*yamlx.Node) {
-	if len(text) > m.limitBytes/4 {
+	cost := len(text) * parsedRetainedPerByte
+	if cost > m.limitBytes/2 {
 		return
 	}
 	m.mu.Lock()
@@ -74,11 +84,11 @@ func (m *parsedMemo) keep(text string, nodes []*yamlx.Node) {
 	if _, ok := m.entries[text]; ok {
 		return
 	}
-	if m.entries == nil || len(m.entries) >= m.limitEntries || m.bytes+len(text) > m.limitBytes {
+	if m.entries == nil || len(m.entries) >= m.limitEntries || m.bytes+cost > m.limitBytes {
 		m.entries, m.bytes = map[string][]*yamlx.Node{}, 0
 	}
 	m.entries[text] = nodes
-	m.bytes += len(text)
+	m.bytes += cost
 }
 
 // copyNodes copies the list as one graph (nil and empty lists stay as they are).

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"strings"
 	"testing"
 
 	"configflow/internal/yamlx"
@@ -54,5 +55,21 @@ func TestO10ParsedProvidersAreCopies(t *testing.T) {
 	}
 	if empty, err = ParseNodes("proxies: []\n", "Feed", ""); err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("remembered empty list: %#v %v", empty, err)
+	}
+}
+
+// The tables are bounded by the heap they are estimated to keep alive
+// (parsedRetainedPerByte per byte of text), not by the length of the texts.
+func TestO10ParsedMemoBoundedByRetainedEstimate(t *testing.T) {
+	memo := &parsedMemo{limitBytes: 50 * parsedRetainedPerByte, limitEntries: 32}
+	memo.keep(strings.Repeat("x", 26), nil) // above half the budget
+	if len(memo.entries) != 0 {
+		t.Fatal("an entry above half the budget was kept")
+	}
+	for i, text := range []string{"a" + strings.Repeat("-", 19), "b" + strings.Repeat("-", 19), "c" + strings.Repeat("-", 19)} {
+		memo.keep(text, nil)
+		if want := []int{1, 2, 1}[i]; len(memo.entries) != want || memo.bytes != want*20*parsedRetainedPerByte {
+			t.Fatalf("after %d: %d entries, %d estimated bytes", i+1, len(memo.entries), memo.bytes)
+		}
 	}
 }
