@@ -98,6 +98,11 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+Maintainer 2026-11-22: do the cleanups BEFORE the switch (not after). Order: now T1b (3fc755ef) ∥ T1c (Opus 0cb0740a,
+go-o18-t1c) ∥ R11 allocation caps + R8 + R9 (Opus 027298ea, go-perf-r11); next T1d, remaining O18 C items (T2/T3/T4/T8),
+R13 non-heap 57 MB, proddiff comparator in Go; then O17 idiomatic review; then R12 GC; then final PVE acceptance and
+L6 soak on the final code (soak must run on the code that ships); then switch. Codex back 11-23 21:18 → executors.
+
 Maintainer 2026-11-22 FINAL: OPTION C — last full Python-comparison gate on the switch candidate, then the switch commit deletes backend/ AND all Python-dependent tests/gate stages (WP0 inventory = delete list); afterwards gate = core race + Agent + fuzz + frontend + proddiff Go-vs-Go. (Superseded: OPTION B tag `python-final` keeps the last Python tree, test
 servers check it out outside the repo, all Python-dependent tests/gate stages read it there; main still deletes
 backend/ at the merge. WP1/WP2/WP4–WP8/WP10/WP13 dropped before the switch (convert per package later if needed).
