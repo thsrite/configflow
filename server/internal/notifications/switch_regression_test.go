@@ -23,8 +23,10 @@ func TestTaskIncidentAgentEnabledSwitchTruthiness(t *testing.T) {
 		{"empty_string", `""`, false},
 		{"empty_array", `[]`, false},
 		{"empty_object", `{}`, false},
-		{"one", "1", true},
-		{"yes", `"yes"`, true},
+		// The Agent's enabled switch is a device-write gate (O18 T1b
+		// review): another type than a boolean is off.
+		{"one", "1", false},
+		{"yes", `"yes"`, false},
 		{"true", "true", true},
 	}
 	for _, tc := range cases {

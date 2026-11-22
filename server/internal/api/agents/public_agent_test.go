@@ -10,7 +10,61 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"configflow/internal/model"
 )
+
+// storedAgentForPython returns text as Go stores the Agent record, with empty
+// HA summaries aligned (alignEmptyHASummaries).
+func storedAgentForPython(t *testing.T, text string) []byte {
+	t.Helper()
+	var stored model.Agent
+	if err := json.Unmarshal([]byte(text), &stored); err != nil {
+		t.Fatal(err)
+	}
+	data, err := model.Marshal(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	alignEmptyHASummaries(record)
+	data, err = json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// alignEmptyHASummaries replaces an HA journal or deployment HA summary that
+// holds only active_agent_id:null (Go always writes it) by {}: Python reads a
+// non-empty summary as a publication and requires its status.
+func alignEmptyHASummaries(record any) {
+	object, _ := record.(map[string]any)
+	align := func(holder map[string]any, key string) {
+		if summary, ok := holder[key].(map[string]any); ok && len(summary) == 1 {
+			if value, present := summary["active_agent_id"]; present && value == nil {
+				holder[key] = map[string]any{}
+			}
+		}
+	}
+	if object == nil {
+		return
+	}
+	align(object, "oxidns_ha_publication")
+	if latest, ok := object["latest_deployment"].(map[string]any); ok {
+		align(latest, "ha_publication")
+	}
+	if deployments, ok := object["deployments"].(map[string]any); ok {
+		for _, deployment := range deployments {
+			if deployment, ok := deployment.(map[string]any); ok {
+				align(deployment, "ha_publication")
+			}
+		}
+	}
+}
 
 // TestPublicAgentPython compares public records with the real Python implementation.
 func TestPublicAgentPython(t *testing.T) {
@@ -65,7 +119,11 @@ func TestPublicAgentPython(t *testing.T) {
 	for i, text := range cases {
 		for _, unread := range []bool{false, true} {
 			record := parseJSONMap(t, []byte(text))
-			request := map[string]any{"record": json.RawMessage(text)}
+			// Python projects the record as Go stores it (O18 T1b, accepted):
+			// undeclared members, nulls and values of another type are
+			// dropped on load, and an empty HA summary is written with its
+			// always-present active_agent_id (aligned to {} on both sides).
+			request := map[string]any{"record": json.RawMessage(storedAgentForPython(t, text))}
 			if unread {
 				request["unread"] = []string{"deployments", "latest_deployment", "verification_runs"}
 				for _, key := range []string{"deployments", "latest_deployment", "verification_runs"} {
@@ -91,6 +149,7 @@ func TestPublicAgentPython(t *testing.T) {
 			if err := json.Unmarshal(scanner.Bytes(), &w); err != nil {
 				t.Fatal(err)
 			}
+			alignEmptyHASummaries(g)
 			if !reflect.DeepEqual(g, w) {
 				t.Fatalf("case %d unread=%v: got %s want %s", i, unread, got, scanner.Bytes())
 			}

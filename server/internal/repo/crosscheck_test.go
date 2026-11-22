@@ -907,6 +907,11 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 			g.GetObject("error").GetString("message"))
 		g.Set("error", p.Value("error"))
 	}
+	// O18 T1b (accepted): stored Agents read leniently and drop what their
+	// record does not declare; Python's records show them as Go stores them.
+	if changed := xcStoredAgents(t, python); changed > 0 {
+		t.Logf("O18 T1b: %d stored Agent values in the Python records normalized to the Go codec", changed)
+	}
 	// Random values are numbered in order of first appearance over the
 	// whole run, so the records are compared cumulatively: the whole run at
 	// once, and step by step only to locate a difference.
@@ -932,6 +937,124 @@ func xcOperationsFile(t *testing.T, file string) (goDir, pyDir string) {
 	}
 	xcSame(t, "layout", goLayout, pyLayout)
 	return goDir, pyDir
+}
+
+// xcStoredAgents rewrites every stored Agent in Python's records (the agents
+// of a system record, the agents row text and get_agents results) as Go
+// stores it: O18 T1b
+// drops undeclared members, nulls, empty text and values of another type on
+// load (accepted). Only what the Go codec cannot represent is removed, so a
+// difference in what Go writes still shows. It returns how many Agents
+// changed.
+func xcStoredAgents(t *testing.T, v any) int {
+	t.Helper()
+	_, changed := xcStoredAgentsIn(t, v, false)
+	// get_agents returns the stored Agent list itself.
+	if records, ok := v.([]any); ok {
+		for _, record := range records {
+			if record, ok := record.(*testObj); ok && record.GetString("op") == "get_agents" {
+				if next, n := xcStoredAgentsIn(t, record.Value("result"), true); n > 0 {
+					record.Set("result", next)
+					changed += n
+				}
+			}
+		}
+	}
+	return changed
+}
+
+func xcStoredAgentsIn(t *testing.T, v any, agents bool) (any, int) {
+	t.Helper()
+	if agents {
+		list, ok := v.([]any)
+		if !ok {
+			return v, 0
+		}
+		changed := 0
+		for i, item := range list {
+			// History members a read left out are marked "<not read>" on both
+			// sides; they are kept as they are.
+			unread := map[string]any{}
+			if object, ok := item.(*testObj); ok {
+				object = object.DeepCopy()
+				for key, member := range object.All() {
+					if text, ok := member.(string); ok && text == "<not read>" {
+						unread[key] = member
+					}
+				}
+				for key := range unread {
+					object.Delete(key)
+				}
+				item = object
+			}
+			before := mustMarshalJSON(t, item)
+			var stored model.Agent
+			if json.Unmarshal(before, &stored) != nil {
+				continue
+			}
+			after, err := model.Marshal(stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var x, y any
+			noError(t, json.Unmarshal(before, &x))
+			noError(t, json.Unmarshal(after, &y))
+			if !reflect.DeepEqual(x, y) {
+				next := parseJSONVal(t, after)
+				if object, ok := next.(*testObj); ok {
+					for key, member := range unread {
+						object.Set(key, member)
+					}
+				}
+				list[i] = next
+				changed++
+			}
+		}
+		return list, changed
+	}
+	changed := 0
+	switch value := v.(type) {
+	case *testObj:
+		// Stored Agents are the agents of a system record (binding views
+		// also have an "agents" list).
+		system := value.Has("system_config")
+		for key, member := range value.All() {
+			next, n := xcStoredAgentsIn(t, member, system && key == "agents")
+			if n > 0 {
+				value.Set(key, next)
+				changed += n
+			}
+		}
+	case map[string]any:
+		_, system := value["system_config"]
+		for key, member := range value {
+			next, n := xcStoredAgentsIn(t, member, system && key == "agents")
+			if n > 0 {
+				value[key] = next
+				changed += n
+			}
+		}
+	case []any:
+		// A fields row: scope, owner, field, position, value text, counter.
+		if len(value) == 6 && value[2] == "agents" {
+			if text, ok := value[4].(string); ok && json.Valid([]byte(text)) {
+				decoded := parseJSONVal(t, []byte(text))
+				if next, n := xcStoredAgentsIn(t, decoded, true); n > 0 {
+					value[4] = string(mustMarshalJSON(t, next))
+					return value, n
+				}
+				return value, 0
+			}
+		}
+		for i, item := range value {
+			next, n := xcStoredAgentsIn(t, item, false)
+			if n > 0 {
+				value[i] = next
+				changed += n
+			}
+		}
+	}
+	return v, changed
 }
 
 func TestCrossCheckOperations(t *testing.T) {
