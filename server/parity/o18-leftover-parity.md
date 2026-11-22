@@ -41,6 +41,20 @@
 依赖：T1a → T1b/T1c（可以并行）→ T1d。T1 和 O10 的 R1/R2（读方借用快照）冲突面很大，**建议 T1a 先于 R1/R2 落地**，
 或者 R1/R2 先做「借用」，T1 再换类型（借用 API 不受影响）。T2–T9 相互独立。
 
+**T2–T4 完成情况（2026-11-23，分支 go-o18-rest）：**
+
+- T2：batch-34（R8/R9）没有改 `configDigest`。现在 `repo.ConfigAt` 返回解析配置时的已提交 head，
+  订阅/聚合 provider 下载把它交给 `provider.Serve`；合并键是 (head, 配置空间, 种类, 资源 id, format/regex/exclude_regex)。
+  在写事务里读到的工作副本没有 head，单独渲染、不合并。
+- T3：`jsondecode` 改为 `encoding/json/v2` + `json.DefaultOptionsV1()` + `MatchCaseInsensitiveNames(false)`，
+  删掉按类型反射重写成员的实现（396 → 211 行，Select 不变）。重复成员仍取最后一个完整值：只有 jsontext 报告重复时，
+  才用每次调用的 v2 unmarshaler 把发往普通结构体/map 的对象缩成最后一组成员；自定义 codec 和 `json.RawMessage`
+  照旧收到原始字节（model.Fields 和 Agent 协议照旧拒绝重复）。**没有改成 v2 默认的「拒绝重复」**：那会让现在接受的
+  请求变成 400。唯一差异：畸形 struct 标签不再按 v1 的「前缀 + 大小写不敏感」读取（代码库里没有）。
+- T4：`HelperError` 和类名字符串删除；仍在产生的两处 KeyError 换成 `*MissingError{Kind: ErrUnknownRootKind/ErrMissingLibraryRule}`（文本不变）。
+  `repo.IsValueError` 换成哨兵 `repo.ErrRejected` + `errors.Is`（16 处），`upgrades.IsValueError` → `IsRefused`，
+  `isPythonValueError` → `isRefusal`。状态码与中文文案不变。（`installer.ValueError`/`agents.ValueError` 类型名未动。）
+
 ---
 
 ## 1. 方法
