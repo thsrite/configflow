@@ -22,7 +22,7 @@ func TestAutoBackupOffSkipsOnlyAnExplicitFalse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var document model.Document
-			if err := json.Unmarshal([]byte(`{"system":{"backup":`+tt.backup+`}}`), &document); err != nil {
+			if err := json.Unmarshal([]byte(`{"profiles":{},"shared":{},"system":{"backup":`+tt.backup+`}}`), &document); err != nil {
 				t.Fatal(err)
 			}
 			if got := autoBackupOff(&document); got != tt.off {
