@@ -16,11 +16,9 @@ func HAActiveModel(record *model.Agent) bool {
 	if record == nil || record.OxiDNSHAPublication == nil {
 		return false
 	}
-	// An empty journal was never an operation. Unknown nonempty journals remain
-	// active and fail closed, rather than relying on zero decoded identities.
-	if !record.OxiDNSHAPublication.HasMembers() {
-		return false
-	}
+	// Any stored journal that is not finished is active and fails closed: a
+	// journal whose values had another type reads as zero values (O18 T1b) and
+	// must not unlock the pair.
 	switch record.OxiDNSHAPublication.Status {
 	case "succeeded", "failed", "rollback_failed":
 		return false

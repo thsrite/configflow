@@ -204,8 +204,11 @@ func TestReviewRuleUpdateHAActiveFollowsPython(t *testing.T) {
 			// journal reads as missing (accepted).
 			continue
 		}
-		if strings.Contains(label, "null") {
-			continue // accepted O18 T1b difference: a null member is a missing one
+		if strings.Contains(label, "null") || strings.TrimSpace(label) == "{}" {
+			// Accepted O18 T1b differences: a null member is a missing one, and
+			// any stored journal that is not finished fails closed (Python
+			// treated an empty journal as none).
+			continue
 		}
 		if want["exception"] == "RuntimeError" { // reached the Agent request
 			if client.count() != 1 {
