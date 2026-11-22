@@ -12,11 +12,8 @@ on:
       - 'backend/node-probe/**'
       - 'frontend/**'
       - 'docker/Dockerfile'
-      - 'docker/supervisord.conf'
-      - 'docker/sub-store-start.sh'
       - 'docker/configflow-start.sh'
       - 'docker/configflow-healthcheck.sh'
-      - 'docker/auto_update.py'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
 

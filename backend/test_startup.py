@@ -187,16 +187,6 @@ def test_real_exec_preserves_pid_and_exit_status_without_double_app_start(tmp_pa
     }
 
 
-def test_supervisor_only_routes_the_app_through_startup():
-    config = configparser.ConfigParser(interpolation=None)
-    config.read(Path(__file__).resolve().parents[1] / 'docker' / 'supervisord.conf')
-    assert config['program:flask']['command'] == 'python /usr/local/bin/configflow-python-start.py'
-    assert config['program:nginx']['command'] == '/usr/sbin/nginx -g "daemon off;"'
-    assert config['program:sub-store']['command'] == '/usr/local/bin/sub-store-start.sh'
-    for section in config.values():
-        assert 'MALLOC_' not in section.get('environment', '')
-        assert 'GLIBC_TUNABLES' not in section.get('environment', '')
-
 
 def test_image_installs_launcher_outside_the_replaceable_sources():
     dockerfile = (Path(__file__).resolve().parents[1] / 'docker' / 'Dockerfile').read_text()

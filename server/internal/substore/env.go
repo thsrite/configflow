@@ -241,8 +241,8 @@ func isFile(path string) bool {
 // image exists.
 func (e *Env) IsBuiltinAvailable() bool { return isFile(filepath.Join(e.BuiltinDir(), SubStoreAsset)) }
 
-// ActiveBundle is active_bundle(): (directory, version) chosen like
-// sub-store-start.sh — the online update when it is newer than the image's.
+// ActiveBundle is active_bundle(): (directory, version) of the bundle the
+// supervisor runs — the online update when it is newer than the image's.
 func (e *Env) ActiveBundle() (string, string, error) {
 	builtin := e.BuiltinDir()
 	builtinVersion, err := readVersionFile(builtin)

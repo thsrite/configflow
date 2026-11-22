@@ -5,6 +5,7 @@
 # Stage 1: 构建 Go Server 主程序（按目标平台交叉编译，不经 QEMU 模拟）
 # ==============================================================================
 # Go 1.27.4 与 server/go.mod 保持一致，纯 Go 构建（modernc.org/sqlite，无需 CGO）。
+# configflow-autoupdate 额外按构建机平台编译一份（/native），供下方构建阶段预压缩前端、记录源码指纹。
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS server-builder
 
 WORKDIR /build
@@ -27,7 +28,7 @@ ARG TARGETVARIANT
 # 镜像内的 Go server 与下方 Agent 二进制均来自同一次构建上下文（同一提交）。
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    mkdir -p /dist && \
+    mkdir -p /dist /native && \
     FULL_VERSION="${VERSION}" && \
     if [ -n "${GIT_COMMIT}" ]; then \
       case "${FULL_VERSION}" in \
@@ -37,7 +38,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     fi && \
     GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
     go build -trimpath -ldflags="-s -w -X configflow/internal/version.Version=${FULL_VERSION} -X configflow/internal/version.AgentImage=${AGENT_IMAGE}" \
-    -o /dist/configflow ./cmd/configflow
+    -o /dist/configflow ./cmd/configflow && \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
+    go build -trimpath -ldflags="-s -w" -o /dist/configflow-autoupdate ./cmd/configflow-autoupdate && \
+    go build -trimpath -ldflags="-s -w" -o /native/configflow-autoupdate ./cmd/configflow-autoupdate
 
 # ==============================================================================
 # Stage 2: 构建 Go Agent 二进制文件（全平台供面板下发，构建机原生交叉编译）
@@ -117,35 +121,31 @@ COPY backend/node-probe/LICENSE backend/node-probe/NOTICE /rootfs/opt/configflow
 # ==============================================================================
 FROM --platform=$BUILDPLATFORM alpine:3.24 AS app
 
-RUN apk add --no-cache python3
-
-COPY --chmod=755 --from=server-builder /dist/configflow /rootfs/usr/local/bin/configflow
+COPY --chmod=755 --from=server-builder /dist/configflow /dist/configflow-autoupdate /rootfs/usr/local/bin/
 COPY --from=frontend-builder /app/frontend/dist /rootfs/usr/share/configflow/html
-COPY docker/supervisord.conf /rootfs/etc/supervisor/conf.d/supervisord.conf
-COPY --chmod=755 docker/sub-store-start.sh docker/configflow-start.sh docker/configflow-healthcheck.sh /rootfs/usr/local/bin/
-COPY --chmod=755 docker/auto_update.py /rootfs/usr/local/bin/configflow-auto-update.py
+COPY --chmod=755 docker/configflow-start.sh docker/configflow-healthcheck.sh /rootfs/usr/local/bin/
 
 # 预压缩前端资源供 Go Edge gzip_static 直接发送；记录镜像自带各组件的源码指纹，
 # 使 autoupdate 只重建有变动的组件，且缺工具链时不混用不同版本。
-RUN --mount=type=bind,source=server,target=/tmp/image-src/server \
+RUN --mount=type=bind,from=server-builder,source=/native,target=/tmp/native \
+    --mount=type=bind,source=server,target=/tmp/image-src/server \
     --mount=type=bind,source=frontend,target=/tmp/image-src/frontend \
     --mount=type=bind,source=backend/agents/go-agent,target=/tmp/image-src/go-agent \
     --mount=type=bind,source=backend/node-probe,target=/tmp/image-src/node-probe \
-    mkdir -p /app /rootfs/app && \
-    python3 /rootfs/usr/local/bin/configflow-auto-update.py --precompress /rootfs/usr/share/configflow/html && \
-    python3 /rootfs/usr/local/bin/configflow-auto-update.py --record-image /tmp/image-src && \
-    mv /app/.image-trees.json /rootfs/app/.image-trees.json
+    mkdir -p /rootfs/app && \
+    /tmp/native/configflow-autoupdate --precompress /rootfs/usr/share/configflow/html && \
+    /tmp/native/configflow-autoupdate --record-image /tmp/image-src /rootfs/app/.image-trees.json
 
 # ==============================================================================
 # Stage 7: 最终运行镜像（target: runtime）
-# 无 Flask/gunicorn/nginx 与 backend/ Python 运行依赖；保留 supervisord 仅用于
-# 管理 Go server 与按需启停的内置 Sub-Store（Node 24 LTS，支持 node:sqlite）。
-# alpine:3.24 在 amd64/arm64 均提供 nodejs 24.22.3+（含 2026-10 安全修复）与 supervisor 4.3.0。
+# 镜像内没有 Python。tini 作 1 号进程（回收孤儿进程、转发停止信号），Go server 自己
+# 托管按需启停的内置 Sub-Store（Node 24 LTS，支持 node:sqlite）子进程。
+# alpine:3.24 在 amd64/arm64 均提供 nodejs 24.22.3+（含 2026-10 安全修复）。
 # ==============================================================================
 FROM alpine:3.24 AS runtime
 
-RUN apk add --no-cache ca-certificates tzdata supervisor nodejs && \
-    mkdir -p /app /data /var/log/supervisor /var/run /etc/supervisor/conf.d
+RUN apk add --no-cache ca-certificates tzdata tini nodejs && \
+    mkdir -p /app /data
 
 COPY --link --from=runtime-assets /rootfs/ /
 COPY --link --from=app /rootfs/ /
@@ -164,6 +164,9 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/usr/local/bin/configflow-healthcheck.sh"]
 
+# -g：docker stop 的 SIGTERM 发给整个前台进程组（启动时的 autoupdate 构建也一起停）；
+# Sub-Store 在自己的进程组里，由 Go server 在请求收尾后停止。
+ENTRYPOINT ["/sbin/tini", "-g", "--"]
 CMD ["/usr/local/bin/configflow-start.sh"]
 
 # ==============================================================================
