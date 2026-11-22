@@ -178,7 +178,7 @@ func TestBootstrapHandsOverToEntrypoint(t *testing.T) {
 	cmd := testCommand(t, "-test.run=^TestBootstrapHandsOverToEntrypoint$")
 	cmd.Env = append(os.Environ(), "DOCKERHA_HANDOVER_CHILD=1", "SETTINGS="+paths.Settings, "SETUP="+paths.Setup, "AGENT="+paths.AgentDir, "ENTRY="+entry)
 	output, err := cmd.CombinedOutput()
-	want := msgIdentitySaved + "\nENTRYPOINT /usr/bin/supervisord -c /etc/supervisor/supervisord.conf\n"
+	want := msgIdentitySaved + "\nENTRYPOINT /init\n"
 	if err != nil || string(output) != want {
 		t.Fatalf("%q %v", output, err)
 	}

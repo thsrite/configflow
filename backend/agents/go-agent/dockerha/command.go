@@ -1,9 +1,11 @@
 // Package dockerha implements the one-shot commands that the panel's Docker
-// OxiDNS HA guide, migration script and Compose bundle run inside the Agent
-// image: first enrollment and its proofs, the migration check of an old
-// single-OxiDNS container, the read-only inspection and the host DNS port
-// probe. It does not render those scripts (the panel does) and never starts
-// services itself; ha-bootstrap hands over to the image entrypoint.
+// OxiDNS HA guide, migration script and Compose installations run inside the
+// Agent image: first enrollment and its proofs, the compact and direct
+// Compose installation checks (ha-compact, ha-compose), the HA companion's
+// mount and identity check, the migration check of an old single-OxiDNS
+// container, the read-only inspection and the host DNS port probe. It does
+// not render those scripts (the panel does) and never starts services
+// itself; the entry commands hand over to the image entrypoint.
 package dockerha
 
 import (
@@ -13,6 +15,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
+	"strings"
 	"syscall"
 )
 
@@ -20,6 +24,7 @@ import (
 var Commands = map[string]bool{
 	"ha-bootstrap": true, "ha-enroll": true, "ha-enroll-check": true,
 	"ha-migration-check": true, "ha-inspect": true, "ha-port-check": true,
+	"ha-compose": true, "ha-compact": true, "ha-companion-check": true,
 }
 
 const (
@@ -29,12 +34,25 @@ const (
 	dnsPort           = 53
 )
 
-// entrypointArgs start the image's normal service path after ha-bootstrap.
-var entrypointArgs = []string{"/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"}
+// entrypointArgs start the image's normal service path (s6-overlay) after
+// ha-bootstrap, ha-compose run and ha-compact.
+var entrypointArgs = []string{"/init"}
 
 // Run executes one subcommand and returns the process exit code. Refusals
 // are printed to stderr; status lines to stdout.
 func Run(ctx context.Context, name string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	switch name {
+	case "ha-compose":
+		return runDirect(ctx, args, stdout, stderr)
+	case "ha-compact":
+		return runCompact(ctx, args, stdout, stderr)
+	case "ha-companion-check":
+		if len(args) != 0 {
+			fmt.Fprintln(stderr, msgUsage)
+			return 2
+		}
+		return report(name, CheckCompanion(ctx, DefaultCompanionPaths, os.Getenv), stderr)
+	}
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	agentDir := flags.String("agent-dir", defaultAgentDir, "Agent persistent directory")
@@ -59,7 +77,7 @@ func Run(ctx context.Context, name string, args []string, stdin io.Reader, stdou
 	case "ha-bootstrap":
 		paths.AgentDir = *agentDir
 		if err = Bootstrap(ctx, paths, BundleClient(), stdout); err == nil {
-			return handOver(entrypoint, stderr)
+			return handOver(entrypoint, entrypointArgs, os.Environ(), stderr)
 		}
 	case "ha-enroll":
 		err = Enroll(ctx, *agentDir, stdin, EnrollClient(), stdout)
@@ -73,6 +91,12 @@ func Run(ctx context.Context, name string, args []string, stdin io.Reader, stdou
 	case "ha-port-check":
 		err = CheckPort(dnsPort)
 	}
+	return report(name, err, stderr)
+}
+
+// report prints a refusal verbatim (other errors with the command name) and
+// returns the exit code.
+func report(name string, err error, stderr io.Writer) int {
 	if err == nil {
 		return 0
 	}
@@ -85,13 +109,74 @@ func Run(ctx context.Context, name string, args []string, stdin io.Reader, stdou
 	return 1
 }
 
-// handOver replaces this process with the image entrypoint, keeping the
-// environment, exactly like the container's default command.
-func handOver(entrypoint string, stderr io.Writer) int {
-	argv := append([]string{entrypoint}, entrypointArgs...)
-	err := syscall.Exec(entrypoint, argv, os.Environ())
-	fmt.Fprintf(stderr, "ha-bootstrap: start %s: %v\n", entrypoint, err)
+// handOver replaces this process with the image entrypoint.
+func handOver(entrypoint string, args, environ []string, stderr io.Writer) int {
+	argv := append([]string{entrypoint}, args...)
+	err := syscall.Exec(entrypoint, argv, environ)
+	fmt.Fprintf(stderr, "start %s: %v\n", entrypoint, err)
 	return 1
+}
+
+// ioFailure turns an unexpected error into the installation's I/O refusal,
+// as the former scripts did for every OSError.
+func ioFailure(err error, message string) error {
+	var refusal *Failure
+	if err == nil || errors.As(err, &refusal) {
+		return err
+	}
+	return fail(message)
+}
+
+// runDirect is `ha-compose prepare|run` (compose_direct installations).
+func runDirect(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	settings, err := directSettings(os.Getenv("CONFIGFLOW_COMPOSE_INSTALL"))
+	if err != nil {
+		return report("ha-compose", err, stderr)
+	}
+	switch {
+	case len(args) == 1 && args[0] == "prepare":
+		return report("ha-compose", ioFailure(PrepareDirect(settings, DefaultDirectPaths, stdout), msgDirectIO), stderr)
+	case len(args) == 1 && args[0] == "run":
+		err := ioFailure(RunDirect(ctx, settings, DefaultDirectPaths, BundleClient(), stdout), msgDirectIO)
+		if err != nil {
+			return report("ha-compose", err, stderr)
+		}
+		// This does not remove the short-lived value from docker inspect.
+		return handOver(defaultEntrypoint, entrypointArgs, withoutVariables(os.Environ(), "CONFIGFLOW_COMPOSE_INSTALL"), stderr)
+	}
+	return report("ha-compose", fail(msgDirectAction), stderr)
+}
+
+// runCompact is `ha-compact [COMMAND...]` (compose_compact installations);
+// COMMAND defaults to the image's service supervisor.
+func runCompact(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	settings, err := compactSettings(os.LookupEnv)
+	if err == nil {
+		err = RunCompact(ctx, settings, DefaultCompactPaths, BundleClient(), stdout)
+	}
+	var refusal *Failure
+	if errors.As(err, &refusal) && refusal.Message == msgFileUnreadable {
+		err = fail(msgCompactUnreadable)
+	}
+	if err = ioFailure(err, msgCompactIO); err != nil {
+		return report("ha-compact", err, stderr)
+	}
+	command := args
+	if len(command) == 0 {
+		command = entrypointArgs
+	}
+	return handOver(defaultEntrypoint, command, CompactEnvironment(os.Environ(), settings.Network), stderr)
+}
+
+func withoutVariables(environ []string, names ...string) []string {
+	var out []string
+	for _, entry := range environ {
+		key, _, _ := strings.Cut(entry, "=")
+		if !slices.Contains(names, key) {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // CheckPort binds UDP and TCP 0.0.0.0:port (without SO_REUSEADDR and

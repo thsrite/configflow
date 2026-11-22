@@ -2,6 +2,7 @@ package dockerha
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -149,15 +150,15 @@ func encodeFields(fields []field) ([]byte, error) {
 // same directory. Without replace the publication is exclusive (a hard link
 // never overwrites an unexpected identity or symlink); with replace it is an
 // atomic rename. The directory is synced afterwards.
-func writeJSON(path string, fields []field, replace bool) error {
+func writeJSON(path, prefix string, fields []field, replace bool) error {
 	data, err := encodeFields(fields)
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", filepath.Base(path), err)
 	}
 	dir := filepath.Dir(path)
-	temp, err := os.CreateTemp(dir, ".compose-enroll-")
+	temp, err := createTemp(dir, prefix)
 	if err != nil {
-		return fmt.Errorf("create temporary file: %w", err)
+		return err
 	}
 	name := temp.Name()
 	defer os.Remove(name)
@@ -209,4 +210,35 @@ func sameValue(a, b any) bool {
 	left, err1 := json.Marshal(a)
 	right, err2 := json.Marshal(b)
 	return err1 == nil && err2 == nil && bytes.Equal(left, right)
+}
+
+// tempAlphabet and the 8-character suffix are the temporary file names an
+// installation recognises as its own interrupted writes.
+const tempAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789_"
+
+// ownerTempPrefix names temporary files of the installation owner.
+func ownerTempPrefix(owner string) string { return ".compose-write-" + owner + "-" }
+
+// createTemp exclusively creates prefix + 8 random [a-z0-9_] characters in
+// dir with mode 0600.
+func createTemp(dir, prefix string) (*os.File, error) {
+	for attempt := 0; attempt < 100; attempt++ {
+		var random [8]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			return nil, fmt.Errorf("random name: %w", err)
+		}
+		name := []byte(prefix)
+		for _, b := range random {
+			name = append(name, tempAlphabet[int(b)%len(tempAlphabet)])
+		}
+		file, err := os.OpenFile(filepath.Join(dir, string(name)), os.O_RDWR|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("create temporary file: %w", err)
+		}
+		return file, nil
+	}
+	return nil, fmt.Errorf("create temporary file in %s: names exhausted", dir)
 }

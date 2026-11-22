@@ -105,17 +105,55 @@ func bootstrap(ctx context.Context, paths BootstrapPaths, client *http.Client, o
 	if strings.TrimSpace(string(setup)) != owner {
 		return fail(msgNotPrepared)
 	}
-	if info, err := os.Lstat(paths.AgentDir); err != nil || !info.IsDir() {
+	return enrollAgent(ctx, paths.AgentDir, settings, client, out, bundleFlavor)
+}
+
+// flavor holds what differs between the Compose bundle (bootstrap.py) and
+// the Compose installations (docker-compose-install.py and the compact
+// Compose): the regeneration hint in messages and the temporary file names.
+type flavor struct {
+	ownerInvalid, urlInvalid, tokenInvalid, rejected string
+	// ownerTemp names temporary files after the installation owner, so an
+	// interrupted write is recognised as this installation's residue.
+	ownerTemp bool
+}
+
+var bundleFlavor = flavor{ownerInvalid: msgOwnerInvalid, urlInvalid: msgURLInvalid, tokenInvalid: msgTokenInvalid, rejected: msgEnrollRejected}
+
+var composeFlavor = flavor{ownerInvalid: msgComposeOwnerInvalid, urlInvalid: msgComposeURLInvalid,
+	tokenInvalid: msgComposeTokenInvalid, rejected: msgComposeEnrollRejected, ownerTemp: true}
+
+func (f flavor) write(path string, fields []field, replace bool) error {
+	prefix := ".compose-enroll-"
+	if f.ownerTemp {
+		for _, member := range fields {
+			if owner, ok := member.value.(string); member.key == "owner" && ok && ownerPattern.MatchString(owner) {
+				prefix = ownerTempPrefix(owner)
+			}
+		}
+	}
+	return writeJSON(path, prefix, fields, replace)
+}
+
+// enrollAgent confirms the persisted Agent identity of agentDir (offline
+// restart) or performs the one scoped enrollment of settings (owner, url,
+// token) and saves the identity, all under the enrollment lock.
+func enrollAgent(ctx context.Context, agentDir string, settings map[string]any, client *http.Client, out io.Writer, fl flavor) error {
+	owner, _ := settings["owner"].(string)
+	if !ownerPattern.MatchString(owner) {
+		return fail(fl.ownerInvalid)
+	}
+	if info, err := os.Lstat(agentDir); err != nil || !info.IsDir() {
 		return fail(msgAgentDirInvalid)
 	}
-	lock, err := openLock(filepath.Join(paths.AgentDir, bundleLock))
+	lock, err := openLock(filepath.Join(agentDir, bundleLock))
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
 
-	configPath := filepath.Join(paths.AgentDir, agentConfig)
-	markerPath := filepath.Join(paths.AgentDir, bundleMarker)
+	configPath := filepath.Join(agentDir, agentConfig)
+	markerPath := filepath.Join(agentDir, bundleMarker)
 	var receipt map[string]any
 	if present(markerPath) {
 		if receipt, err = readInstallJSON(markerPath); err != nil {
@@ -145,19 +183,19 @@ func bootstrap(ctx context.Context, paths BootstrapPaths, client *http.Client, o
 	}
 	if len(receipt) == 0 {
 		// Reserve ownership before the HTTP request; retries retain its scope.
-		if err := writeJSON(markerPath, []field{{"owner", owner}, {"url", settings["url"]}}, false); err != nil {
+		if err := fl.write(markerPath, []field{{"owner", owner}, {"url", settings["url"]}}, false); err != nil {
 			return err
 		}
 	}
 	url, _ := settings["url"].(string)
 	if !bundleURLPattern.MatchString(url) || hasSpace(url) {
-		return fail(msgURLInvalid)
+		return fail(fl.urlInvalid)
 	}
 	token, _ := settings["token"].(string)
 	if !bundleTokenFormat.MatchString(token) {
-		return fail(msgTokenInvalid)
+		return fail(fl.tokenInvalid)
 	}
-	identity, err := enrollOnce(ctx, client, url, token)
+	identity, err := enrollOnce(ctx, client, url, token, fl.rejected)
 	if err != nil {
 		return err
 	}
@@ -168,10 +206,10 @@ func bootstrap(ctx context.Context, paths BootstrapPaths, client *http.Client, o
 	if len(receipt) > 0 && receipt["identity_digest"] != nil && !sameValue(receipt["identity_digest"], digest) {
 		return fail(msgDifferentServer)
 	}
-	if err := writeJSON(markerPath, []field{{"owner", owner}, {"url", url}, {"identity_digest", digest}}, true); err != nil {
+	if err := fl.write(markerPath, []field{{"owner", owner}, {"url", url}, {"identity_digest", digest}}, true); err != nil {
 		return err
 	}
-	if err := writeJSON(configPath, []field{{"agent_id", identity["agent_id"]}, {"token", identity["token"]}}, false); err != nil {
+	if err := fl.write(configPath, []field{{"agent_id", identity["agent_id"]}, {"token", identity["token"]}}, false); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, msgIdentitySaved)
@@ -217,7 +255,7 @@ func BundleClient() *http.Client {
 
 // enrollOnce posts {} with the bearer capability and returns the identity
 // object of a successful answer.
-func enrollOnce(ctx context.Context, client *http.Client, url, token string) (map[string]any, error) {
+func enrollOnce(ctx context.Context, client *http.Client, url, token, rejected string) (map[string]any, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
 	if err != nil {
 		return nil, fail(msgEnrollIncomplete)
@@ -230,7 +268,7 @@ func enrollOnce(ctx context.Context, client *http.Client, url, token string) (ma
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return nil, fail(fmt.Sprintf(msgEnrollRejected, response.StatusCode))
+		return nil, fail(fmt.Sprintf(rejected, response.StatusCode))
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
