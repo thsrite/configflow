@@ -72,12 +72,10 @@ pyref 13 个文件只重录 metadata（逐个解压比对，只有 `metadata` �
   逐项看安全相关字段，改写后的值都是 fail closed 或与 Python 语义相同：损坏的 `token`（对象/列表）→ 删除 → 空令牌不鉴权通过
   （`ReadAgentByToken` 要求非空）、`CallAgent` 不发请求；gate 开关 → `false`；非对象 HA 日志 → `{}`（仍锁定）；
   `latest_upgrade.status`/部署 `status` 错类型 → `""`，不算忙（Python `in (...)` 同样为假）。未知成员丢弃是已认可的裁定。
-- **L2 注册会话 `host` 错类型读作空 = 不限主机。** `admitRegistrationClaim` 里 `session.Host != "" && …`；会话是 Go 自己写的一次性凭据、
-  有 TTL、还要求凭据摘要匹配，实际只有手改库才会出现。如要收紧可把 `Host` 改成 `*string`，留给 T1c 一并处理。
-- **L3 数字令牌。** 库里 `token: 7` 读作 `"7"`，`Bearer 7` 可以通过心跳鉴权（Python 用 `==` 比较不会相等）。Python 生成的令牌都是文本，
-  只有手改库才会出现，且攻击者仍需知道该值；已在 behaviour-changes 中由作者列出（数字令牌）。
-- **L4 `dns_follow_state` 存成非对象读作没有**，DNS 联动的「准备中/发布中」忙锁随之消失（Python 遇非对象抛异常）。
-  该锁只防并发重复发布，不涉及跨设备安全；不改，必要时同样实现 `failClosed`。
+- **L2 注册会话 `host` 错类型读作空 = 不限主机（协调要求修，已修，见补充）。**
+- **L3 数字令牌可以鉴权（协调要求修，已修，见补充）。** 库里 `token: 7` 读作 `"7"`，`Bearer 7` 可以通过心跳鉴权；
+  复核时还发现 `system_config.rule_proxy_token`/退役列表同样会把数字读成文本，`mosdns.authorized` 会接受。
+- **L4 `dns_follow_state` 存成非对象读作没有，忙锁消失（协调要求修，已修，见补充）。**
 - **L5 `DeploymentReply` 透传设备回复的未声明成员**（capabilities、content、listener 等）：与改前（`model.Fields` 保留未知成员）及 Python 相同；
   诊断文本成员（message/error/…/failed_stage）照旧经 `DiagnosticText` 脱敏，DNS 报告经 `SanitizeDNSReport`，HTTP 出口还有 token 脱敏。
   不进存储（`recordDeploymentReply` 只写类型化成员）。不是回归。
@@ -87,6 +85,25 @@ pyref 13 个文件只重录 metadata（逐个解压比对，只有 `metadata` �
 - **L7 Agent `enabled` 列为 gate 是本复核的判断。** 它是对该设备一切自动推送的总开关，所以按裁定处理；代价是库里 `"yes"`/`1`
   会让 Agent 显示为停用（Python 多数位置按真值为启用）。若协调认为它不属于「写入开关」，去掉 `agents.go` 里 `Enabled` 的
   `stored:"gate"` 标签并恢复 4 处测试期望即可。
+
+## 补充（协调第二轮：L2/L3/L4 按 fail closed 修，L7 认可）
+
+- **L3（f005e858f）**：`stored:"secret"` 标签——存成非字符串（含数字）的凭据读作空 + 类型告警，不读成数字原文。覆盖 Agent `token`、
+  注册会话 `hash`，以及仍是 R5 记录的 `system_config.config_token/rule_proxy_token/retired_rule_proxy_tokens`
+  （`DecodeRecord` 认同一标签：标量判无效、保留原字节；退役列表只去掉非文本元素）。空 Agent 令牌：`ReadAgentByToken` 要求非空、
+  `CallAgent` 不发请求；`config_token` 鉴权本来就按原值判损坏（`storedConfigToken`）；规则代理令牌读空后 `mosdns.authorized` 不接受
+  `token=8`。其它鉴权字符串检查：网关安装会话 `token` 是严格解码（数字 → 解码失败 → 会话无效，且空令牌被拒）；注册密钥来自环境变量，不在库里；
+  路由器/WebDAV 密码是对外设备凭据、不用于面板鉴权。
+- **L2（b09cc4627）**：`stored:"restrict"` 标签——会话 `host` 存成非字符串（`null` 除外）读作 `model.DamagedText`（原样写回，损坏保持），
+  `admissionSessionIdentity` 拒绝它；即使声明的 host 恰好等于该文本也拒绝。缺失/`null` 仍是不限主机。
+- **L4（bd1ab4d4c）**：`DNSFollowState` 实现 `failClosed`（非对象读作空状态），新增 `Busy()`：`preparing`/`publishing` 或没有
+  `status`（损坏）都算忙；`null`/缺失不算。用于 Agent 编辑锁（`dnsFollowBusyModel`）、部署预留（`followOwnsDeployment`/
+  `followUsesSource`）和联动绑定修改（`mutable`）。为避免没有绑定时锁死，「停用 DNS 联动」只拒绝真正运行中的状态，作为显式修复出口；
+  联动轮询对已绑定的目标照常重新计算状态。
+- **负向对照**：去掉 `secret` 标签 → 凭据测试失败（`"7"`、`"7.0"`、系统令牌 `"7"/"8"`）；去掉 `restrict` 标签与准入检查 →
+  `model.TestReviewO18T1bDamagedSessionHost`、`agents.TestReviewO18T1bDamagedSessionHostRefused` 失败；`Busy()` 去掉空状态分支 →
+  model/agents/dnsfollow 三条 L4 测试失败。
+- **L7**：Agent `enabled` 作为 gate 已获认可，保留。
 
 ## 逐项结论
 
@@ -133,3 +150,14 @@ pyref 13 个文件只重录 metadata（逐个解压比对，只有 `metadata` �
   `PREFLIGHT PASS`。
 - 负向对照：`writeGate` 恒 false / 关掉 `failClosed` → 两条 model 复核测试失败、旧 o10t2 语料 0 差异；撤掉 `port:null` → CrossCheck
   Operations 与 C04 在 `list_profiles` 失败。
+
+### 第二轮验证（L2–L4，树 c10cb3451）
+
+- `gofmt`/`go vet ./...`/带 tag vet：VET-OK（.32）。
+- `-race`（.32）：model 10.6 s、agents 476.3 s、agents/dnsfollow 512.4 s、agents/dnsha 448.1 s、api/agents 455.6 s、auth 6.9 s、
+  mosdns 310.0 s、mcp 9.2 s、setup 60.3 s、deploy 337.0 s ok；repo 首轮只有 `TestAgentViewOriginalTypesCancellationAndReadGuard`
+  按旧期望（数字 token 读作 `"7"`）失败，改期望（c10cb3451）后 repo 292.3 s ok。
+- difftest（.64，真 Python）：api/agents、api/agents/difftest、agents/dnsfollow(+difftest)、api/config/difftest、model、auth、mosdns ok，
+  repo 同上一条测试（已改）。
+- pyref：mosdns/oxidns 重录后 `PYREF_MODE=check` ok，13 个文件只有 `metadata` 变化（2e7d24e07）。
+- `/tmp/preflight.sh … x 6`（.64）：`PREFLIGHT PASS`。
