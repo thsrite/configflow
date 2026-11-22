@@ -98,6 +98,14 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-35 MERGED 2026-11-23 (Docker HA bootstrap/migration/inspect/port-check → Agent subcommands, Agent 1.9.2-go,
+image version probe before use; gate PASS first try). Follow-up noted: installer TestReviewDeflateAndZipMatchPython fails
+only under PYREF_MODE=check (unaudited fixture read from batch-33 ca7702e28); replay mode unaffected.
+Agent image no-Python (1827341a) rulings: s6-overlay v3.2.3.2; service_manager new value "s6", "supervisor" read as
+synonym (Python-era stored HA/dns_follow data + not-yet-updated Docker Agents), removal next major; stdout/stderr merged
+per service; HA companion via ha-companion-serve control socket, same image required; supervisorctl/python3 shell shims
+for old panels/deployments only (removal next major). Binary (systemd/OpenRC) installs untouched.
+
 batch-32 MERGED 2026-11-22 (O18 T1b + review: device-write switches of another type read off, damaged HA journal
 stays locked, L2/L3/L4 fail closed, proddiff baseline migration patches raw bytes; 26 approved missing-in-go lines).
 batch-34 (R11+R8+R9) rebased on T1b: preflight caught T1b's model.EncodeMember(agent,…) calls in the new R11 source
