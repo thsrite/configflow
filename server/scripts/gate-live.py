@@ -19,6 +19,25 @@ MANIFEST = {
 }
 
 
+
+def webdav_oracle_executed(trace):
+    """True when strace shows the WebDAV TLS oracle execve returning 0.
+
+    Under strace -f a busy process prints the call as `<unfinished ...>` and its
+    result later as `<... execve resumed>) = 0` on another line of the same pid.
+    """
+    pending = set()
+    for line in trace.splitlines():
+        pid = line.split(" ", 1)[0]
+        if 'execve(' in line and 'from webdav3.client import Client' in line and 'TLS_REJECTED' in line:
+            if line.rstrip().endswith('<unfinished ...>'):
+                pending.add(pid)
+            elif '= 0' in line:
+                return True
+        elif pid in pending and 'execve resumed>' in line and '= 0' in line:
+            return True
+    return False
+
 def checked_manifest(discovery, mode):
     """Reject omitted environment-bearing packages before executing Go tests."""
     covered = set(discovery["diff"]) | set(discovery["live"])
@@ -57,11 +76,7 @@ def validate(events, trace, manifest=None, webdav=True):
             key = (package, test)
             if not {"run", "pass"} <= seen.get(key, set()):
                 problems.append(f"missing run/pass: {'/'.join(key)}")
-    if webdav and not any(
-        'execve(' in line and '= 0' in line and
-        'from webdav3.client import Client' in line and 'TLS_REJECTED' in line
-        for line in trace.splitlines()
-    ):
+    if webdav and not webdav_oracle_executed(trace):
         problems.append("missing executed WebDAV Python TLS oracle")
     if problems:
         raise RuntimeError("\n".join(problems))
