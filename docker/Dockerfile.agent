@@ -91,7 +91,7 @@ RUN { sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/
 COPY --link --from=rootfs / /
 
 ENV SERVER_URL="" AGENT_IP="" HEARTBEAT_INTERVAL="30" TZ=Asia/Shanghai \
-    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 S6_VERBOSITY=1
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 S6_VERBOSITY=1 S6_KILL_GRACETIME=1000
 
 EXPOSE 8080 8081 8082 53/tcp 53/udp 1053/tcp 1053/udp 7890 7891 7892 9090 9199
 
