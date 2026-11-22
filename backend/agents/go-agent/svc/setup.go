@@ -138,10 +138,11 @@ func resetDir(dir string) error {
 
 func writeLongrun(layout Layout, spec Spec, defined map[string]bool) error {
 	files := map[string]string{
-		"type":         "longrun\n",
-		"run":          "#!/bin/sh\nexec " + CommandDir + "/with-contenv " + Binary + " svc-exec " + spec.Name + "\n",
-		"finish":       "#!/bin/sh\nexec " + Binary + " svc-finish " + spec.Name + "\n",
-		"timeout-kill": strconv.FormatInt(spec.StopTimeout.Milliseconds(), 10) + "\n",
+		"type":           "longrun\n",
+		"run":            "#!/bin/sh\nexec " + CommandDir + "/with-contenv " + Binary + " svc-exec " + spec.Name + "\n",
+		"finish":         "#!/bin/sh\nexec " + Binary + " svc-finish " + spec.Name + "\n",
+		"timeout-kill":   strconv.FormatInt(spec.StopTimeout.Milliseconds(), 10) + "\n",
+		"timeout-finish": strconv.FormatInt(finishTimeout.Milliseconds(), 10) + "\n",
 	}
 	var after []string
 	for _, name := range spec.After {

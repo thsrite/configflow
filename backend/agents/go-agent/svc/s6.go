@@ -43,6 +43,7 @@ func startedFile(dir, name string) string  { return filepath.Join(dir, name+".st
 func failuresFile(dir, name string) string { return filepath.Join(dir, name+".failures") }
 func fatalFile(dir, name string) string    { return filepath.Join(dir, name+".fatal") }
 func argvFile(dir, name string) string     { return filepath.Join(dir, name+".argv") }
+func pidFile(dir, name string) string      { return filepath.Join(dir, name+".pid") }
 
 func (m *S6) serviceDir(name string) (string, Spec, error) {
 	spec, ok := Specs[name]
@@ -130,8 +131,10 @@ func (m *S6) Start(ctx context.Context, name string) error {
 	if err := m.svc(ctx, "-u", dir); err != nil {
 		return err
 	}
+	// Every attempt, Finish's growing backoff (1+2+…+StartRetries s) and margin.
 	attempts := time.Duration(spec.StartRetries + 1)
-	limit := attempts*(spec.StartSecs+2*time.Second) + 5*time.Second
+	backoff := time.Duration(spec.StartRetries*(spec.StartRetries+1)/2) * time.Second
+	limit := attempts*(spec.StartSecs+2*time.Second) + backoff + 5*time.Second
 	return m.wait(ctx, name, limit, func(s Status) (bool, error) {
 		switch s.State {
 		case StateRunning:

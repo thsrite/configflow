@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -244,7 +245,7 @@ func TestControlCommand(t *testing.T) {
 }
 
 func TestFinishReproducesStartRetries(t *testing.T) {
-	now := time.Unix(1_700_000_000, 0)
+	start := time.Unix(1_700_000_000, 0)
 	tests := []struct {
 		name      string
 		wanted    string
@@ -253,24 +254,27 @@ func TestFinishReproducesStartRetries(t *testing.T) {
 		code      int
 		failAfter string // failures file afterwards ("" = absent)
 		fatal     bool
+		backoff   time.Duration // Supervisor: 1, 2, 3 s after the 1st, 2nd, 3rd failed start
 	}{
-		{"requested stop", "false", time.Second, "2", 0, "2", false},
-		{"crash after start period", "true", 10 * time.Second, "2", 0, "", false},
-		{"first quick exit", "true", time.Second, "", 0, "1", false},
-		{"third quick exit", "true", time.Second, "2", 0, "3", false},
-		{"fourth quick exit is fatal", "true", time.Second, "3", finishPermanent, "", true},
-		{"no start record counts as quick", "true", -1, "", 0, "1", false},
+		{"requested stop", "false", time.Second, "2", 0, "2", false, 0},
+		{"crash after start period", "true", 10 * time.Second, "2", 0, "", false, 0},
+		{"first quick exit", "true", time.Second, "", 0, "1", false, time.Second},
+		{"third quick exit", "true", time.Second, "2", 0, "3", false, 3 * time.Second},
+		{"fourth quick exit is fatal", "true", time.Second, "3", finishPermanent, "", true, 0},
+		{"no start record counts as quick", "true", -1, "", 0, "1", false, time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
+			now := start
 			if tt.uptime >= 0 {
 				os.WriteFile(startedFile(dir, "mihomo"), []byte(fmt.Sprint(now.Add(-tt.uptime).UnixMilli())), 0o600)
 			}
 			if tt.failures != "" {
 				os.WriteFile(failuresFile(dir, "mihomo"), []byte(tt.failures), 0o600)
 			}
-			f := &Finisher{StateDir: dir, CommandDir: "/command", Now: func() time.Time { return now },
+			f := &Finisher{StateDir: dir, CommandDir: "/command", ProcDir: t.TempDir(), Now: func() time.Time { return now },
+				Sleep: func(d time.Duration) { now = now.Add(d) },
 				Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
 					if filepath.Base(name) != "s6-svstat" || args[1] != "wantedup" {
 						t.Fatalf("unexpected call %s %v", name, args)
@@ -287,8 +291,93 @@ func TestFinishReproducesStartRetries(t *testing.T) {
 			if _, err := os.Stat(fatalFile(dir, "mihomo")); (err == nil) != tt.fatal {
 				t.Errorf("fatal marker present=%t, want %t", err == nil, tt.fatal)
 			}
+			if waited := now.Sub(start); waited != tt.backoff {
+				t.Errorf("backoff %v, want %v", waited, tt.backoff)
+			}
 		})
 	}
+}
+
+func TestFinishBackoffEndsOnStop(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Unix(1_700_000_000, 0)
+	now := start
+	os.WriteFile(failuresFile(dir, "oxidns"), []byte("2"), 0o600)
+	calls := 0
+	f := &Finisher{StateDir: dir, CommandDir: "/command", ProcDir: t.TempDir(), Now: func() time.Time { return now },
+		Sleep: func(d time.Duration) { now = now.Add(d) },
+		Run: func(context.Context, string, ...string) ([]byte, error) {
+			calls++
+			// Wanted up at the exit; a stop arrives during the second step.
+			return []byte(fmt.Sprint(calls < 3)), nil
+		}}
+	if code := f.Finish(context.Background(), "oxidns", "/run/service/oxidns"); code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	if waited := now.Sub(start); waited != 2*backoffPoll {
+		t.Fatalf("waited %v after the stop, want %v", waited, 2*backoffPoll)
+	}
+}
+
+// writeProc adds /proc/<pid>/stat with the given command and process group.
+func writeProc(t *testing.T, proc string, pid int, command string, group int) {
+	t.Helper()
+	dir := filepath.Join(proc, fmt.Sprint(pid))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stat := fmt.Sprintf("%d (%s) S 1 %d %d 0 -1\n", pid, command, group, group)
+	if err := os.WriteFile(filepath.Join(dir, "stat"), []byte(stat), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFinishEndsKeepalivedGroup(t *testing.T) {
+	tests := []struct {
+		name    string
+		obeys   bool // leftover exits on SIGTERM
+		signals []string
+	}{
+		{"leftover exits on TERM", true, []string{"301 terminated"}},
+		{"leftover ignores TERM", false, []string{"301 terminated", "301 killed"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, proc := t.TempDir(), t.TempDir()
+			os.WriteFile(pidFile(state, Keepalived), []byte("300"), 0o600)
+			writeProc(t, proc, 301, "keepalived", 300)   // VRRP child left behind
+			writeProc(t, proc, 302, "sh", 300)           // not keepalived: untouched
+			writeProc(t, proc, 303, "keepalived", 999)   // another group: untouched
+			writeProc(t, proc, 304, "keepa) lived", 300) // odd name is parsed, not matched
+			now := time.Unix(1_700_000_000, 0)
+			var signals []string
+			f := &Finisher{StateDir: state, CommandDir: "/command", ProcDir: proc, Now: func() time.Time { return now },
+				Sleep: func(d time.Duration) { now = now.Add(d) },
+				Run:   func(context.Context, string, ...string) ([]byte, error) { return []byte("false"), nil },
+				Kill: func(pid int, signal syscall.Signal) error {
+					if len(signals) > 0 && signals[len(signals)-1] == fmt.Sprintf("%d %v", pid, signal) {
+						return nil
+					}
+					signals = append(signals, fmt.Sprintf("%d %v", pid, signal))
+					if tt.obeys {
+						os.RemoveAll(filepath.Join(proc, fmt.Sprint(pid)))
+					}
+					return nil
+				}}
+			if code := f.Finish(context.Background(), Keepalived, "/run/service/"+Keepalived); code != 0 {
+				t.Fatalf("code %d", code)
+			}
+			if !reflect.DeepEqual(signals, tt.signals) {
+				t.Fatalf("signals %v, want %v", signals, tt.signals)
+			}
+		})
+	}
+	// Programs without KillGroup are never scanned.
+	f := &Finisher{StateDir: t.TempDir(), CommandDir: "/command", ProcDir: "/nonexistent", Now: time.Now, Sleep: func(time.Duration) {},
+		Run:  func(context.Context, string, ...string) ([]byte, error) { return []byte("false"), nil },
+		Kill: func(int, syscall.Signal) error { t.Fatal("signalled a non-keepalived group"); return nil }}
+	os.WriteFile(pidFile(f.StateDir, "agent-oxidns"), []byte("300"), 0o600)
+	f.Finish(context.Background(), "agent-oxidns", "/run/service/agent-oxidns")
 }
 
 func TestProgramOverride(t *testing.T) {
@@ -373,6 +462,7 @@ func TestSetupMainOxiDNSMacvlan(t *testing.T) {
 		"agent-oxidns/dependencies.d/oxidns":     "644 ",
 		"agent-oxidns/timeout-kill":              "644 10000\n",
 		Keepalived + "/timeout-kill":             "644 15000\n",
+		Keepalived + "/timeout-finish":           "644 15000\n",
 		"ha-release/type":                        "644 oneshot\n",
 		"ha-release/down":                        "644 /usr/local/bin/configflow-agent svc stop configflow-keepalived\n",
 		"ha-release/dependencies.d/agent-oxidns": "644 ",
@@ -533,6 +623,10 @@ func TestListenReplacesOnlyStaleSockets(t *testing.T) {
 	second, err := Listen(path)
 	if err != nil {
 		t.Fatalf("stale socket not replaced: %v", err)
+	}
+	// A live socket (another companion on the same HA volume) is kept.
+	if _, err := Listen(path); err == nil {
+		t.Fatal("a live socket was taken over")
 	}
 	second.Close()
 	regular := filepath.Join(dir, "file")

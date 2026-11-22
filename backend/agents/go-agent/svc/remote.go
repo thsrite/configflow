@@ -109,6 +109,12 @@ func Listen(path string) (net.Listener, error) {
 		if info.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("%s exists and is not a socket", path)
 		}
+		// A second companion on the same HA volume must not take over the
+		// socket: the first one's keepalived would no longer be reachable.
+		if conn, err := net.DialTimeout("unix", path, time.Second); err == nil {
+			conn.Close()
+			return nil, fmt.Errorf("%s is served by another running companion", path)
+		}
 		if err := os.Remove(path); err != nil {
 			return nil, fmt.Errorf("remove stale socket: %w", err)
 		}

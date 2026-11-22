@@ -25,6 +25,9 @@ type Spec struct {
 	Logged bool
 	// After lists programs that start before this one and stop after it.
 	After []string
+	// KillGroup ends what the program leaves in its process group when it
+	// exits (Supervisor's stopasgroup/killasgroup).
+	KillGroup bool
 }
 
 // Image paths.
@@ -85,7 +88,7 @@ var Specs = map[string]Spec{
 		Argv: []string{"/usr/sbin/keepalived", "-P", "--dont-fork", "--log-console",
 			"--use-file=/var/lib/configflow-ha/keepalived.conf", "--pid=/run/configflow-ha.pid",
 			"--vrrp_pid=/run/configflow-ha-vrrp.pid"},
-		StartSecs: time.Second, StartRetries: 3, StopTimeout: 15 * time.Second},
+		StartSecs: time.Second, StartRetries: 3, StopTimeout: 15 * time.Second, KillGroup: true},
 	CompanionServ: {Name: CompanionServ, Argv: []string{Binary, CompanionServ},
 		StartSecs: time.Second, StartRetries: 3, StopTimeout: 5 * time.Second},
 }

@@ -198,6 +198,8 @@ scenario_A() {
   ! ex $c configflow-agent svc restart oxidns 2>"$lab/a-fatal.err" || fail "A: broken config started"
   t1=$(date +%s)
   grep -q '多次很快退出' "$lab/a-fatal.err" || fail "A: FATAL message"
+  # Supervisor waited 1, 2, 3 s between the four attempts.
+  [ $((t1 - t0)) -ge 6 ] || fail "A: FATAL after $((t1 - t0)) s, faster than Supervisor's 1+2+3 s backoff"
   [ "$(svc_state $c oxidns)" = FATAL ] || fail "A: not FATAL"
   sleep 3
   [ "$(svc_state $c oxidns)" = FATAL ] && ! ex $c pidof oxidns >/dev/null || fail "A: FATAL program restarted"
@@ -327,6 +329,12 @@ scenario_D() {
   wait_state $c configflow-keepalived RUNNING
   wait_vip $c 198.51.100.100
   ok "kill -9 keepalived ($before) restarted as $(svc_pid $c configflow-keepalived), VIP back"
+  # The killed parent's VRRP child must not outlive it (Supervisor killasgroup;
+  # svc-finish ends leftovers of keepalived's process group).
+  local groups
+  groups=$(ex $c sh -c 'for p in $(pidof keepalived); do cut -d" " -f5 /proc/$p/stat; done | sort -u')
+  [ "$groups" = "$(svc_pid $c configflow-keepalived)" ] || { ex $c ps -o pid,ppid,pgid,args >&2; fail "D: keepalived processes outside the current group: $groups"; }
+  ok "no keepalived process of the killed instance left (one process group)"
   no_zombies $c
   local mark
   mark=$("${docker[@]}" logs $c 2>&1 | wc -l)
