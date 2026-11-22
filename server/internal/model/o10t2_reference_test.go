@@ -10,7 +10,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -192,8 +191,8 @@ func o10t2Cases() []string {
 		add("logging-marshal/"+key, o10t2Outcome(Marshal(logging)))
 		add("logging-direct/"+key, o10t2Outcome(logging.MarshalJSON()))
 		var deployment Deployment
-		err := SetMemberJSON(&deployment, &deployment.raw, "health", json.RawMessage(value))
-		add("deployment-set-health/"+key, o10t2Outcome(nil, err)+o10t2Issues(deployment.raw.Issues()))
+		err := SetStoredMember(&deployment, "health", json.RawMessage(value))
+		add("deployment-set-health/"+key, o10t2Outcome(nil, err))
 		add("deployment-health/"+key, o10t2Outcome(Marshal(deployment)))
 		deployment.Health = json.RawMessage(value)
 		add("deployment-health-assign/"+key, o10t2Outcome(deployment.MarshalJSON()))
@@ -204,8 +203,8 @@ func o10t2Cases() []string {
 		add("agent-nested-health-direct/"+key, o10t2Outcome(agent.MarshalJSON()))
 		add("agent-list/"+key, o10t2Outcome(Marshal([]Agent{agent, {ID: "b"}})))
 		var decodedAgent Agent
-		err = DecodeRecord([]byte(`{"id":"a","deployments":{"d":`+value+`},"latest_deployment":`+value+`}`), &decodedAgent, &decodedAgent.raw)
-		add("agent-decode-nested/"+key, o10t2Outcome(nil, err)+o10t2Issues(valueIssues(reflect.ValueOf(&decodedAgent), "")))
+		issues, err := DecodeStored([]byte(`{"id":"a","deployments":{"d":`+value+`},"latest_deployment":`+value+`}`), &decodedAgent, "")
+		add("agent-decode-nested/"+key, o10t2Outcome(nil, err)+o10t2Issues(issues))
 		if err == nil {
 			add("agent-decode-nested-encode/"+key, o10t2Outcome(Marshal(decodedAgent)))
 		}
@@ -230,7 +229,7 @@ func o10t2Cases() []string {
 			add(name+"/list", o10t2Outcome(Marshal([]Agent{agent})))
 			add(name+"/list-list", o10t2Outcome(Marshal([][]Agent{{agent}})))
 			add(name+"/go-map", o10t2Outcome(Marshal(map[string]any{"a": []Agent{agent}, "b": json.RawMessage(`1,2`)})))
-			var agents Map[Agent]
+			var agents OrderedMap[Agent]
 			agents.Set("a", agent)
 			add(name+"/map-direct", o10t2Outcome(agents.MarshalJSON()))
 			var fields Fields
@@ -276,8 +275,11 @@ func o10t2Cases() []string {
 			add(name+"/valid", o10t2Outcome(nil, validJSON([]byte(input))))
 			add(name+"/object", o10t2Object([]byte(input)))
 			var agent Agent
-			err := DecodeRecord([]byte(input), &agent, &agent.raw)
-			add(name+"/decode", o10t2Outcome(nil, err)+o10t2Issues(valueIssues(reflect.ValueOf(&agent), "")))
+			issues, err := DecodeStored([]byte(input), &agent, "")
+			if err == nil && requireObject([]byte(input)) != nil {
+				err = ErrType
+			}
+			add(name+"/decode", o10t2Outcome(nil, err)+o10t2Issues(issues))
 			if err != nil {
 				continue
 			}
@@ -286,8 +288,8 @@ func o10t2Cases() []string {
 			value := o10t2Values[r.IntN(len(o10t2Values))]
 			member := []string{"name", "port", "deployments", "latest_deployment", "logging_config", "future", "ipv6_verifications", "enabled"}[r.IntN(8)]
 			edited := agent
-			err = SetMemberJSON(&edited, &edited.raw, member, json.RawMessage(value))
-			add(name+"/set-"+member, o10t2Outcome(nil, err)+o10t2Issues(valueIssues(reflect.ValueOf(&edited), "")))
+			err = SetStoredMember(&edited, member, json.RawMessage(value))
+			add(name+"/set-"+member, o10t2Outcome(nil, err))
 			if err == nil {
 				add(name+"/set-encode", o10t2Outcome(Marshal(edited)))
 			}
@@ -305,11 +307,11 @@ func o10t2Cases() []string {
 			add(name+"/edit-encode", o10t2Outcome(Marshal(edited)))
 			add(name+"/edit-list", o10t2Outcome(Marshal([]Agent{edited, agent})))
 			if r.IntN(2) == 0 {
-				_ = edited.Clear("deployments")
+				_ = ZeroMember(&edited, "deployments")
 				add(name+"/clear-encode", o10t2Outcome(edited.MarshalJSON()))
 			}
-			var deployments Map[Deployment]
-			if data, ok, _ := agent.raw.MemberJSON("deployments", agent.Deployments); ok {
+			var deployments OrderedMap[Deployment]
+			if data, ok, _ := EncodeMember(&agent, "deployments"); ok {
 				add(name+"/map-decode", o10t2Outcome(nil, json.Unmarshal(data, &deployments)))
 				add(name+"/map-encode", o10t2Outcome(Marshal(deployments)))
 			}
@@ -394,7 +396,7 @@ func TestO10T2ReferenceCorpus(t *testing.T) {
 	if !ok || !invalid || !duplicate || !cyclic || !typ {
 		t.Fatalf("corpus lacks an outcome class: ok=%v invalid=%v duplicate=%v cyclic=%v type=%v", ok, invalid, duplicate, cyclic, typ)
 	}
-	if !bytes.Contains([]byte(strings.Join(got, "\n")), []byte("deployments[")) {
+	if !bytes.Contains([]byte(strings.Join(got, "\n")), []byte("deployments{*}")) {
 		t.Fatal("corpus lacks nested FieldIssues")
 	}
 }

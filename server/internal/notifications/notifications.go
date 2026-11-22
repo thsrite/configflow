@@ -172,7 +172,7 @@ func TaskIncident(task *tasks.Task, agents map[string]model.Agent, profiles map[
 	if task.NotificationsEnabled != nil {
 		enabled = *task.NotificationsEnabled
 	}
-	enabled = enabled && model.SwitchEnabled(&agent, "enabled", agent.Enabled, true)
+	enabled = enabled && agent.IsEnabled()
 	status := stringValue(history.LastStatus)
 	manual := category == "router_rule_sync" && task.StateMessage != "" && !task.Running
 	problem := status == "failed" || (status == "skipped" && stringValue(history.LastError) != "") || manual
@@ -276,7 +276,7 @@ func AgentIncident(ctx context.Context, agent *model.Agent, repository *repo.Rep
 	if record.Status == "succeeded" || (record.Status == "rolled_back" && record.ManualRollback != nil && *record.ManualRollback) {
 		state = "resolved"
 	}
-	if !model.SwitchEnabled(agent, "enabled", agent.Enabled, true) || profile != agentProfile {
+	if !agent.IsEnabled() || profile != agentProfile {
 		state = "inactive"
 	}
 	service := firstText(record.ServiceType, agent.ServiceType)

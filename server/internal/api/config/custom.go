@@ -405,8 +405,7 @@ func agentContext(ctx context.Context, id string) (map[int]string, []string, err
 				continue
 			}
 			for i := range all {
-				var agentID string
-				if rawID, _, err := all[i].MemberJSON("id"); err == nil && json.Unmarshal(rawID, &agentID) == nil && agentID == bindingID {
+				if all[i].ID != "" && all[i].ID == bindingID {
 					records = append(records, all[i])
 				}
 			}

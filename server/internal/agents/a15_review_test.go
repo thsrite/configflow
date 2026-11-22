@@ -142,7 +142,7 @@ func TestA15ReviewCallRaisesLikePython(t *testing.T) {
 		wantMessage(name+" cjk token", "'latin-1' codec can't encode characters in position 7-8: ordinal not in range(256)", call)
 	}
 	for _, key := range []string{"token", "port", "host"} {
-		set(func(agent *model.Agent) { _ = agent.Clear(key) })
+		set(func(agent *model.Agent) { _ = model.ZeroMember(&agent, key) })
 		for name, call := range operations {
 			wantMessage(name+" without "+key, "'"+key+"'", call)
 		}

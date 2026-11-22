@@ -126,7 +126,7 @@ func readOverviewSnapshot(ctx context.Context, m Registry, a *model.Agent, dashb
 func TargetIdentity(a *model.Agent) (string, error) {
 	identity := make([]json.RawMessage, 0, 5)
 	for _, key := range []string{"id", "host", "port", "token", "service_type"} {
-		raw, present, err := a.MemberJSON(key)
+		raw, present, err := model.EncodeMember(a, key)
 		if err != nil {
 			return "", err
 		}
@@ -179,14 +179,14 @@ type PublicAgentSummary struct {
 }
 
 func publicAgent(a *model.Agent) PublicAgentSummary {
-	read := func(key string) json.RawMessage {
-		raw, present, err := a.MemberJSON(key)
-		if err != nil || !present {
+	read := func(value string) json.RawMessage {
+		raw, err := json.Marshal(value)
+		if err != nil {
 			return []byte("null")
 		}
 		return raw
 	}
-	return PublicAgentSummary{read("id"), read("name"), read("host"), read("profile_id"), read("version"), read("status")}
+	return PublicAgentSummary{read(a.ID), read(a.Name), read(a.Host), read(a.ProfileID), read(a.Version), read(a.Status)}
 }
 
 // PublicUpstream identifies one series without upstream credentials or query text.

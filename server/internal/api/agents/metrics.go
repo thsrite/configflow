@@ -82,7 +82,7 @@ func getAgentMetrics(c *httpx.Ctx) (*httpx.Response, error) {
 	if response != nil {
 		return response, nil
 	}
-	value, present, err := agent.MemberJSON("system_metrics")
+	value, present, err := model.EncodeMember(agent, "system_metrics")
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}

@@ -8,7 +8,6 @@ package monitor
 // each file against the deployed download list themselves.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -129,40 +128,14 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 	if agent == nil {
 		return nil, 0, RuleUpdateFail("AGENT_NOT_FOUND", 404)
 	}
-	if originalText(agent.MemberJSON("service_type")) != "oxidns" {
+	if agent.ServiceType != "oxidns" {
 		return nil, 0, RuleUpdateFail("WRONG_SERVICE", 400)
 	}
 	if !modelVersionAtLeast(agent, RuleUpdateMinAgentVersion) {
 		return nil, 0, RuleUpdateFail("UPGRADE_REQUIRED", 409)
 	}
-	raw, present, err := agent.MemberJSON("oxidns_ha")
-	var ha model.Fields
-	if err != nil {
-		return nil, 0, err
-	}
-	// A malformed stored HA config is neither an unpaired device nor authority
-	// to send an unguarded write. Keep it an explicit native validation refusal.
-	if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) && jsondecode.Unmarshal(raw, &ha) != nil {
-		return nil, 0, errors.New(msgHAConfigDamaged)
-	}
-	if method == "POST" {
-		journal, present, err := agent.MemberJSON(agents.HAField)
-		if err != nil {
-			return nil, 0, err
-		}
-		if present && !bytes.Equal(bytes.TrimSpace(journal), []byte("null")) {
-			var fields model.Fields
-			if jsondecode.Unmarshal(journal, &fields) != nil {
-				return nil, 0, errors.New(msgHAPublicationDamaged)
-			}
-			status, _ := fields.Get("status")
-			if len(status) > 0 && (status[0] == '[' || status[0] == '{') {
-				return nil, 0, errors.New(msgHAPublicationDamaged)
-			}
-		}
-	}
 	paired := agents.HAEnabledModel(agent)
-	if method == "POST" && agents.HAActiveModel(agent) && !(paired && agent.OxiDNSHAPublication != nil && originalText(agent.OxiDNSHAPublication.MemberJSON("kind")) == "rules") {
+	if method == "POST" && agents.HAActiveModel(agent) && !(paired && agent.OxiDNSHAPublication != nil && agent.OxiDNSHAPublication.Kind != nil && *agent.OxiDNSHAPublication.Kind == "rules") {
 		return nil, 0, NewError("SERVICE_BUSY", 409, msgHARulesBusy)
 	}
 	if paired {
@@ -183,7 +156,8 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 	if err != nil {
 		return nil, 0, err
 	}
-	token, valid := originalString(agent.MemberJSON("token"))
+	token := agent.Token
+	valid := token != ""
 	if !valid {
 		return nil, 0, RuleUpdateFail("AGENT_UNREACHABLE", 0)
 	}
@@ -242,7 +216,7 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 	if status != 200 && status != 202 || !present || !success {
 		return nil, 0, RuleUpdateFail("INVALID_RESPONSE", 0)
 	}
-	raw, _ = answer.Get("task")
+	raw, _ := answer.Get("task")
 	task, err := decodeRuleTask(raw)
 	if err != nil {
 		return nil, 0, err

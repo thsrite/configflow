@@ -93,14 +93,7 @@ func (m *Manager) RebindProfiles(ctx context.Context, source, target string, exp
 		ids := make(map[string]bool)
 		for i := range *records {
 			a := &(*records)[i]
-			raw, present, err := a.MemberJSON("profile_id")
-			if err != nil {
-				return err
-			}
-			profile, valid := storedText(raw, present, nil)
-			if !valid && !storedAbsent(raw, present, nil) {
-				continue
-			}
+			profile := a.ProfileID
 			if profile == "" {
 				profile = defaultID
 			}
@@ -137,29 +130,22 @@ func (m *Manager) RebindProfiles(ctx context.Context, source, target string, exp
 		result.Agents = make([]AgentBindingIdentity, 0, len(bound))
 		for _, a := range bound {
 			view := AgentBindingIdentity{ID: a.ID}
-			for _, field := range []struct {
-				name, fallback string
-				destination    *json.RawMessage
-			}{
-				{"name", `null`, &view.Name}, {"host", `""`, &view.Host}, {"port", `null`, &view.Port}, {"service_type", `"mihomo"`, &view.ServiceType},
-			} {
-				raw, present, err := a.MemberJSON(field.name)
-				if err != nil {
-					return err
-				}
-				if !present {
-					raw = json.RawMessage(field.fallback)
-				}
-				if field.name == "name" && (storedAbsent(raw, true, nil) || a.Name == "") {
-					raw, err = json.Marshal(a.ID)
-					if err != nil {
-						return err
-					}
-				}
-				if field.name == "service_type" && (storedAbsent(raw, true, nil) || a.ServiceType == "") {
-					raw = json.RawMessage(`"mihomo"`)
-				}
-				*field.destination = raw
+			label := a.Name
+			if label == "" {
+				label = a.ID
+			}
+			var err error
+			if view.Name, err = json.Marshal(label); err != nil {
+				return err
+			}
+			if view.Host, err = json.Marshal(a.Host); err != nil {
+				return err
+			}
+			if view.Port, err = json.Marshal(int64(a.Port)); err != nil {
+				return err
+			}
+			if view.ServiceType, err = json.Marshal(agentService(a)); err != nil {
+				return err
 			}
 			result.Agents = append(result.Agents, view)
 			a.ProfileID, a.UpdatedAt = target, new(nowISO())

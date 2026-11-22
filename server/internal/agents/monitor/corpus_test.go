@@ -285,15 +285,12 @@ func setAgentField(a *model.Agent, key string, value any) {
 	if err != nil {
 		panic(err)
 	}
-	if err := a.SetJSON(key, raw); err != nil {
-		if fErr := a.Fields.Set(key, raw); fErr != nil {
-			panic(err)
-		}
-	}
+	// Members the record does not declare are dropped, as on load.
+	_ = model.SetStoredMember(&a, key, raw)
 }
 
 func deleteAgentField(a *model.Agent, key string) {
-	if err := a.Clear(key); err != nil {
+	if err := model.ZeroMember(&a, key); err != nil {
 		panic(err)
 	}
 }

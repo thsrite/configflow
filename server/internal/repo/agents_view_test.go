@@ -149,7 +149,8 @@ func TestAgentViewUsesWorkingAndPinnedSnapshotsWithoutPublishingThem(t *testing.
 func TestAgentViewRetainsOneOversizedRegistryGeneration(t *testing.T) {
 	r := agentViewRepo(t)
 	if err := r.UpdateSystem(t.Context(), func(_ context.Context, system *model.System) error {
-		return system.Agents[0].Fields.Set("unrelated", json.RawMessage(`"`+strings.Repeat("x", 4096)+`"`))
+		system.Agents[0].LoggingConfig = &model.AgentLoggingConfig{Enabled: json.RawMessage(`"` + strings.Repeat("x", 4096) + `"`)}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -205,8 +206,11 @@ func TestAgentViewOriginalTypesCancellationAndReadGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := r.ViewAgents(t.Context(), func(records []model.Agent) error {
-		for _, tt := range []struct{ member, want string }{{"port", `"8080"`}, {"token", `7`}, {"enabled", `"false"`}, {"future", `{"x":2.00}`}} {
-			raw, present, err := records[0].MemberJSON(tt.member)
+		// Stored values read leniently (O18 T1b): integer text is a number,
+		// a number is text, a switch keeps its truth value ("false" is truthy),
+		// unknown members drop.
+		for _, tt := range []struct{ member, want string }{{"port", `8080`}, {"token", `"7"`}, {"enabled", `true`}} {
+			raw, present, err := model.EncodeMember(&records[0], tt.member)
 			if err != nil || !present || string(raw) != tt.want {
 				t.Fatal(tt.member, string(raw), err)
 			}

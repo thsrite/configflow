@@ -16,7 +16,7 @@ import (
 	"configflow/internal/repo"
 )
 
-func TestTypedRegistryOwnsCopiesAndPreservesEvidence(t *testing.T) {
+func TestTypedRegistryOwnsCopies(t *testing.T) {
 	e, id := setupRuntime(t)
 	original := []byte(`{"future":{"x":2.00},"enabled":"false","port":"8080","deployments":{"old":{"deployment_id":"old","status":"succeeded","future":3e0}},"ipv6_verifications":{"old":{"status":"passed"}}}`)
 	var imported model.Agent
@@ -32,28 +32,19 @@ func TestTypedRegistryOwnsCopiesAndPreservesEvidence(t *testing.T) {
 	if err != nil || light == nil {
 		t.Fatal(light, err)
 	}
-	if light.Port != 8080 || light.Enabled != nil || light.Deployments.Len() != 0 || light.IPv6Verifications.Len() != 0 {
+	// Stored values read leniently (O18 T1b): "8080" is the port, the text
+	// "false" is a truthy switch.
+	if light.Port != 8080 || light.Enabled == nil || !*light.Enabled || light.Deployments.Len() != 0 || light.IPv6Verifications.Len() != 0 {
 		t.Fatal("typed light projection", light)
 	}
 	before, err := e.m.ReadAgent(e.ctx, id, true)
 	if err != nil || before.Deployments.Len() != 1 {
 		t.Fatal(before, err)
 	}
-	data, _ := model.Marshal(before)
-	if !bytes.Contains(data, []byte(`"enabled":"false"`)) || !bytes.Contains(data, []byte(`"x":2.00`)) || !bytes.Contains(data, []byte(`"future":3e0`)) {
-		t.Fatalf("lost stored evidence: %s", data)
-	}
 	before.Deployments.Set("new", model.Deployment{DeploymentID: "new"})
-	if err := light.Fields.Set("future", []byte(`null`)); err != nil {
-		t.Fatal(err)
-	}
 	reread, err := e.m.ReadAgent(e.ctx, id, true)
 	if err != nil || reread.Deployments.Len() != 1 {
 		t.Fatal("shared registry mutated", reread, err)
-	}
-	future, _, _ := reread.MemberJSON("future")
-	if string(future) != `{"x":2.00}` {
-		t.Fatalf("shared raw mutated: %s", future)
 	}
 }
 
@@ -205,7 +196,7 @@ func FuzzTypedRuntimeProjection(f *testing.F) {
 			checkPresence(&journal)
 			journal.Enable = nil
 			checkPresence(&journal)
-			if err := journal.Clear("enable"); err != nil {
+			if err := model.ZeroMember(&journal, "enable"); err != nil {
 				t.Fatal(err)
 			}
 			checkPresence(&journal)
@@ -222,25 +213,12 @@ func FuzzTypedRuntimeProjection(f *testing.F) {
 		if err != nil || !bytes.Equal(before, after) {
 			t.Fatal("runtime changed source evidence", err)
 		}
-		_ = records[0].SetJSON("version", []byte(`"mutated"`))
+		_ = model.SetStoredMember(&records[0], "version", []byte(`"mutated"`))
 		after, err = model.Marshal(source)
 		if err != nil || !bytes.Equal(before, after) {
 			t.Fatal("runtime copy aliases source", err)
 		}
 	})
-}
-
-func TestTypedRegistryNumericIDIsNotAnIdentityProof(t *testing.T) {
-	var malformed model.Agent
-	if err := json.Unmarshal([]byte(`{"id":7,"version":"1.0.0"}`), &malformed); err != nil {
-		t.Fatal(err)
-	}
-	if registryAgent([]model.Agent{malformed}, "7") != nil {
-		t.Fatal("stored numeric id became an identity proof")
-	}
-	if registryAgent([]model.Agent{{ID: "7"}}, "7") == nil {
-		t.Fatal("native string identity refused")
-	}
 }
 
 func TestTypedRegistryShutdownAtCommitPoint(t *testing.T) {
@@ -297,7 +275,8 @@ func TestTypedHeartbeatFailureLogUsesCredentialOwner(t *testing.T) {
 	err := e.m.EditAgents(e.ctx, "", func(_ context.Context, rows *[]model.Agent) error {
 		record := registryAgent(*rows, id)
 		record.Name = "operator"
-		return record.Fields.Set("future_proof", []byte(`{"password":"synthetic-private-proof","username":"operator"}`))
+		record.LoggingConfig = &model.AgentLoggingConfig{Enabled: json.RawMessage(`{"password":"synthetic-private-proof","username":"operator"}`)}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -321,71 +300,6 @@ func TestTypedHeartbeatFailureLogUsesCredentialOwner(t *testing.T) {
 	output := string(data)
 	if strings.Contains(output, secret) || !strings.Contains(output, "operator") || !strings.Contains(output, "[REDACTED]") {
 		t.Fatalf("unsafe or over-redacted warning: %s", output)
-	}
-}
-
-func TestTypedAutomationEnabledR5Rows(t *testing.T) {
-	tests := []struct {
-		input   string
-		enabled bool
-	}{
-		{`{}`, true},
-		{`{"enabled":true}`, true},
-		{`{"enabled":false}`, false},
-		{`{"enabled":null}`, false},
-		{`{"enabled":0}`, false},
-		{`{"enabled":1}`, false},
-		{`{"enabled":"false"}`, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			var record model.Agent
-			if err := json.Unmarshal([]byte(tt.input), &record); err != nil {
-				t.Fatal(err)
-			}
-			if got := AgentEnabledModel(&record); got != tt.enabled {
-				t.Fatalf("input=%s enabled=%v want=%v", tt.input, got, tt.enabled)
-			}
-			after, err := model.Marshal(record)
-			if err != nil || string(after) != tt.input {
-				t.Fatalf("read rewrote row: %s %v", after, err)
-			}
-		})
-	}
-}
-
-func TestTypedHAAuthoritativeJournalShapes(t *testing.T) {
-	tests := []struct {
-		raw    string
-		active bool
-	}{
-		{`{}`, false},
-		{`{"oxidns_ha_publication":null}`, false},
-		{`{"oxidns_ha_publication":{}}`, false},
-		{`{"oxidns_ha_publication":{"future":"operation"}}`, true},
-		{`{"oxidns_ha_publication":{"status":"preparing"}}`, true},
-		{`{"oxidns_ha_publication":{"status":"ready"}}`, true},
-		{`{"oxidns_ha_publication":{"status":"succeeded"}}`, false},
-		{`{"oxidns_ha_publication":{"status":"failed"}}`, false},
-		{`{"oxidns_ha_publication":{"status":"rollback_failed"}}`, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.raw, func(t *testing.T) {
-			var record model.Agent
-			if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
-				t.Fatal(err)
-			}
-			if got := HAActiveModel(&record); got != tt.active {
-				t.Fatalf("journal=%s active=%v want=%v", tt.raw, got, tt.active)
-			}
-		})
-	}
-	var nullID model.Agent
-	if err := json.Unmarshal([]byte(`{"id":null}`), &nullID); err != nil {
-		t.Fatal(err)
-	}
-	if agentIDProven(&nullID) {
-		t.Fatal("null became text identity evidence")
 	}
 }
 
@@ -427,58 +341,15 @@ func TestTypedRuntimeLegacyImportHonorsSourceGeneration(t *testing.T) {
 	}
 }
 
-func TestTypedHAPairRequiresOriginalStringEvidence(t *testing.T) {
-	for _, tt := range []struct {
-		raw   string
-		valid bool
-	}{
-		{`{"oxidns_ha":{"group_id":"group","peer_id":"peer"}}`, true},
-		{`{"oxidns_ha":{"group_id":7,"peer_id":"peer"}}`, false},
-		{`{"oxidns_ha":{"group_id":null,"peer_id":"peer"}}`, false},
-		{`{"oxidns_ha":{"group_id":"group","peer_id":7}}`, false},
-		{`{"oxidns_ha":{"group_id":"","peer_id":"peer"}}`, false},
-	} {
-		var record model.Agent
-		if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
-			t.Fatal(err)
-		}
-		_, _, valid := haPairIdentity(&record)
-		if valid != tt.valid {
-			t.Fatalf("pair evidence=%s valid=%v want=%v", tt.raw, valid, tt.valid)
-		}
-	}
-	for _, tt := range []struct {
-		left, right string
-		match       bool
-	}{
-		{`{}`, `{"profile_id":null}`, true},
-		{`{"profile_id":"default"}`, `{"profile_id":"default"}`, true},
-		{`{"profile_id":""}`, `{"profile_id":null}`, false},
-		{`{"profile_id":7}`, `{"profile_id":7}`, false},
-		{`{"profile_id":7}`, `{"profile_id":"7"}`, false},
-	} {
-		var left, right model.Agent
-		if err := json.Unmarshal([]byte(tt.left), &left); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal([]byte(tt.right), &right); err != nil {
-			t.Fatal(err)
-		}
-		if got := haProfilesMatch(&left, &right); got != tt.match {
-			t.Fatalf("profile evidence=%s/%s match=%v want=%v", tt.left, tt.right, got, tt.match)
-		}
-	}
-}
-
 func TestTypedHAEnablePresenceAndAllocationBound(t *testing.T) {
 	for _, tt := range []struct {
 		raw      string
 		enabling bool
 	}{
 		{`{"oxidns_ha_publication":{"status":"ready","enable":null}}`, false},
-		{`{"oxidns_ha_publication":{"status":"ready","enable":{}}}`, false},
+		{`{"oxidns_ha_publication":{"status":"ready","enable":{}}}`, true},
 		{`{"oxidns_ha_publication":{"status":"ready","enable":{"peer_id":null}}}`, true},
-		{`{"oxidns_ha_publication":{"status":"ready","enable":7}}`, true},
+		{`{"oxidns_ha_publication":{"status":"ready","enable":7}}`, false},
 		{`{"oxidns_ha_publication":{"status":"succeeded","enable":{"peer_id":"peer"}}}`, false},
 	} {
 		var record model.Agent
@@ -491,9 +362,6 @@ func TestTypedHAEnablePresenceAndAllocationBound(t *testing.T) {
 	}
 	measure := func(unused int) testing.BenchmarkResult {
 		intent := &model.HAEnable{}
-		if err := intent.Fields.Set("captured_source", []byte(`"`+strings.Repeat("x", unused)+`"`)); err != nil {
-			t.Fatal(err)
-		}
 		record := &model.Agent{OxiDNSHAPublication: &model.HAJournal{Status: "ready", Enable: intent}}
 		return testing.Benchmark(func(b *testing.B) {
 			b.ReportAllocs()
@@ -521,9 +389,6 @@ func BenchmarkTypedHAGuardsUnrelatedPayload(b *testing.B) {
 	}{{"empty", 0}, {"2MiB", 2 << 20}} {
 		b.Run(size.name, func(b *testing.B) {
 			intent := &model.HAEnable{}
-			if err := intent.Fields.Set("captured_source", []byte(`"`+strings.Repeat("x", size.n)+`"`)); err != nil {
-				b.Fatal(err)
-			}
 			record := &model.Agent{OxiDNSHAPublication: &model.HAJournal{Status: "ready", Enable: intent}}
 			if !HAActiveModel(record) || !HAEnablingModel(record) {
 				b.Fatal("lost active intent")

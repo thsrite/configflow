@@ -16,7 +16,7 @@ import (
 
 func (e *env) begin(id string) *model.Deployment {
 	e.t.Helper()
-	return must[*model.Deployment](e.t)(e.m.ReserveDeployment(e.ctx, e.id(), id))
+	return replyJournal(e.t)(e.m.ReserveDeployment(e.ctx, e.id(), id))
 }
 
 func (e *env) record(id string, updates map[string]any, options ...RecordOptions) *model.Deployment {
@@ -63,7 +63,7 @@ func TestPreparationInterruptionAndProfileBinding(t *testing.T) {
 		t.Fatalf("after release %v", got)
 	}
 	e.createProfile("other")
-	must[*model.Deployment](t)(restarted.ReserveDeployment(e.ctx, e.id(), "bound"))
+	replyJournal(t)(restarted.ReserveDeployment(e.ctx, e.id(), "bound"))
 	e.editSystem(func(system *model.System) { e.firstAgent(system).ProfileID = "other" })
 	if got := httpStatusOf(must[*model.Deployment](t)(restarted.GetDeploymentModel(e.ctx, e.id(), "bound"))); got != 409 {
 		t.Fatalf("get %v", got)
@@ -258,7 +258,7 @@ func TestPostRetriesOnlyExactBusyWithIdenticalArchiveAndIdentity(t *testing.T) {
 		})
 		body := []byte("archive-original-bytes")
 		header := map[string][]string{"X-Deployment-Id": {"same-id"}, "X-Content-Sha256": {"same-sha"}}
-		result := must[*model.Deployment](t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", suffix, header, body, nil))
+		result := replyJournal(t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", suffix, header, body, nil))
 		if result.Status != "verifying" || len(calls) != 2 || len(sleeps) != 1 || sleeps[0] < 0.0999 || sleeps[0] > 0.1001 {
 			t.Fatalf("%s: %+v calls %d sleeps %v", suffix, result, len(calls), sleeps)
 		}
@@ -276,11 +276,11 @@ func TestBusyRetriesBoundedOtherConflictsAndNetworkErrorsNeverRetried(t *testing
 		calls++
 		return reply(map[string]any{"message": busyMessage}, 409), nil
 	})
-	if got := httpStatusOf(must[*model.Deployment](t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments", nil, nil, nil))); got != 409 || calls != 21 {
+	if got := httpStatusOf(replyJournal(t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments", nil, nil, nil))); got != 409 || calls != 21 {
 		t.Fatalf("busy: %v after %d calls", got, calls)
 	}
 	calls = 0
-	must[*model.Deployment](t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "restart", nil, nil, nil))
+	replyJournal(t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "restart", nil, nil, nil))
 	if calls != 1 {
 		t.Fatalf("restart retried %d", calls)
 	}
@@ -289,7 +289,7 @@ func TestBusyRetriesBoundedOtherConflictsAndNetworkErrorsNeverRetried(t *testing
 		calls++
 		return reply(map[string]any{"message": "deployment ID already belongs to different content"}, 409), nil
 	})
-	must[*model.Deployment](t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments", nil, nil, nil))
+	replyJournal(t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments", nil, nil, nil))
 	if calls != 1 {
 		t.Fatalf("conflict retried %d", calls)
 	}
@@ -314,7 +314,7 @@ func TestManualRollbackReservesBeforePostAndInvalidatesAppliedBaseline(t *testin
 	e := newEnv(t)
 	id := successfulDeployment(e, "manual-test")
 	e.editSystem(func(system *model.System) {
-		_ = e.firstAgent(system).SetJSON("applied_content", []byte(`{"fingerprint":"current"}`))
+		_ = model.SetStoredMember(e.firstAgent(system), "applied_content", []byte(`{"fingerprint":"current"}`))
 	})
 	e.fake.set(func(req Request) (*Response, error) {
 		if !strings.HasSuffix(req.URL, "/deployments/"+id+"/rollback") {
@@ -427,9 +427,9 @@ func TestManualRollbackOwnershipAndOperationGuards(t *testing.T) {
 			case "profile":
 				saved.ProfileID = "another-profile"
 			case "latest":
-				_ = saved.SetJSON("latest_deployment", []byte(`{"deployment_id":"another-deployment"}`))
+				_ = model.SetStoredMember(&saved, "latest_deployment", []byte(`{"deployment_id":"another-deployment"}`))
 			case "upgrade":
-				_ = saved.SetJSON("latest_upgrade", []byte(`{"status":"installing"}`))
+				_ = model.SetStoredMember(&saved, "latest_upgrade", []byte(`{"status":"installing"}`))
 			default:
 				d, _ := saved.Deployments.Get(id)
 				d.Status = "failed"

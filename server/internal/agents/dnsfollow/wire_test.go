@@ -35,7 +35,7 @@ func TestC07RunnerAndManagerOwnerLifecycle(t *testing.T) {
 	if runner == nil {
 		t.Fatal("C07 DNS follow runner missing")
 	}
-	f.editAgent(t, "target", func(a *model.Agent) { _ = a.SetJSON("dns_follow_state", []byte(`{"status":"failed"}`)) })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = model.SetStoredMember(&a, "dns_follow_state", []byte(`{"status":"failed"}`)) })
 	if err := runner(f.ctx, "dns_follow", "target"); err != nil {
 		t.Fatal(err)
 	}

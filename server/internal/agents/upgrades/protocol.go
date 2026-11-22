@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"configflow/internal/agents"
@@ -27,19 +28,10 @@ func originalString(raw []byte, present bool, err error) (string, bool) {
 	}
 	return text, true
 }
-func optionalObject(r *model.Agent, key string) (model.Fields, error) {
-	raw, present, err := r.MemberJSON(key)
-	if err != nil {
-		return model.Fields{}, err
-	}
-	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return model.Fields{}, nil
-	}
-	var fields model.Fields
-	if jsondecode.Unmarshal(raw, &fields) != nil {
-		return fields, &CorruptStateError{Field: key}
-	}
-	return fields, nil
+
+// portJSON is the Agent's port as a JSON number.
+func portJSON(a *model.Agent) json.RawMessage {
+	return json.RawMessage(strconv.FormatInt(int64(a.Port), 10))
 }
 func fieldString(fields model.Fields, key string) (string, bool) {
 	raw, ok := fields.Get(key)
@@ -119,14 +111,13 @@ func requestModel(ctx context.Context, m *agents.Manager, a *model.Agent, method
 	if a == nil {
 		return nil, agents.ErrAgentEndpoint
 	}
-	host, hOK := originalString(a.MemberJSON("host"))
-	token, tOK := originalString(a.MemberJSON("token"))
-	port, present, err := a.MemberJSON("port")
-	if !hOK || !tOK || !present || err != nil {
+	host, token, port := a.Host, a.Token, portJSON(a)
+	if host == "" || token == "" {
 		return nil, agents.ErrAgentEndpoint
 	}
 	header := http.Header{"Authorization": {"Bearer " + token}}
 	var body []byte
+	var err error
 	if payload != nil {
 		body, err = jsonresp.Encode(payload)
 		if err != nil {
@@ -147,64 +138,46 @@ func requestModel(ctx context.Context, m *agents.Manager, a *model.Agent, method
 	return response, err
 }
 func agentSecrets(a *model.Agent) redact.Secrets {
-	token, _ := originalString(a.MemberJSON("token"))
+	token, _ := a.Token, true
 	return redact.NewSecrets([]string{token})
 }
 func heartbeatAfterModel(a *model.Agent, moment float64) (bool, error) {
-	raw, present, err := a.MemberJSON("last_heartbeat")
-	if err != nil {
-		return false, err
-	}
-	if !present {
+	if a.LastHeartbeat == "" {
 		return false, nil
 	}
-	text, ok := originalString(raw, true, nil)
-	if !ok {
-		return false, &CorruptStateError{Field: "last_heartbeat"}
-	}
-	ts, valid := agents.ISOTimestamp(text)
+	ts, valid := agents.ISOTimestamp(a.LastHeartbeat)
 	return valid && ts > moment, nil
 }
 
 func agentLabel(a *model.Agent) string {
-	name, _ := originalString(a.MemberJSON("name"))
+	name, _ := a.Name, true
 	if name == "" {
-		name, _ = originalString(a.MemberJSON("id"))
+		name, _ = a.ID, true
 	}
 	return name
 }
 func findModel(records []model.Agent, id string) (*model.Agent, error) {
 	for i := range records {
-		if text, ok := originalString(records[i].MemberJSON("id")); ok && text == id {
+		if text, ok := records[i].ID, true; ok && text == id {
 			return &records[i], nil
 		}
 	}
 	return nil, valueError("Agent not found")
 }
 func activeHA(a *model.Agent) (bool, error) {
-	fields, err := optionalObject(a, agents.HAField)
-	if err != nil || fields.Len() == 0 {
-		return false, err
+	job := a.OxiDNSHAPublication
+	if !job.HasMembers() {
+		return false, nil
 	}
-	status, ok := fieldString(fields, "status")
-	if !ok {
+	status := job.Status
+	if status == "" {
 		return false, &CorruptStateError{Field: agents.HAField + ".status"}
 	}
 	return status != "succeeded" && status != "failed" && status != "rollback_failed", nil
 }
 func memberHA(a *model.Agent) (bool, error) {
-	fields, err := optionalObject(a, "oxidns_ha")
-	if err != nil {
-		return false, err
-	}
-	if raw, present := fields.Get("enabled"); present {
-		switch string(bytes.TrimSpace(raw)) {
-		case "true":
-			return true, nil
-		case "false", "null":
-		default:
-			return false, &CorruptStateError{Field: "oxidns_ha.enabled"}
-		}
+	if a.OxiDNSHA != nil && a.OxiDNSHA.Enabled != nil && *a.OxiDNSHA.Enabled {
+		return true, nil
 	}
 	return activeHA(a)
 }

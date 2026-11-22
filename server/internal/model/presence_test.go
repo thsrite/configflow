@@ -5,41 +5,38 @@ import (
 	"testing"
 )
 
-func TestHARecordPresenceMatchesNativeEncoding(t *testing.T) {
-	for _, raw := range []string{`{}`, `{"enable":null}`, `{"enable":{}}`, `{"enable":{"peer_id":"peer"}}`, `{"enable":7}`, `{"status":null}`, `{"status":0}`, `{"updated_at":0}`, `{"future":{"source":"opaque"}}`} {
-		t.Run(raw, func(t *testing.T) {
+// TestHARecordPresence: HasMembers reports a journal holding any value; a
+// zero journal (decoded from {}, null members, wrong types or unknown
+// members) has none.
+func TestHARecordPresence(t *testing.T) {
+	for _, tt := range []struct {
+		raw     string
+		members bool
+	}{
+		{`{}`, false}, {`{"enable":null}`, false}, {`{"enable":{}}`, true}, {`{"enable":{"peer_id":"peer"}}`, true},
+		{`{"enable":7}`, false}, {`{"status":null}`, false}, {`{"status":0}`, true}, {`{"updated_at":0}`, false},
+		{`{"future":{"source":"opaque"}}`, false},
+	} {
+		t.Run(tt.raw, func(t *testing.T) {
 			var record HAJournal
-			if err := json.Unmarshal([]byte(raw), &record); err != nil {
+			if err := json.Unmarshal([]byte(tt.raw), &record); err != nil {
 				t.Fatal(err)
 			}
-			check := func() {
-				data, err := Marshal(record)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var fields map[string]json.RawMessage
-				if err = json.Unmarshal(data, &fields); err != nil {
-					t.Fatal(err)
-				}
-				if record.HasMembers() != (len(fields) > 0) {
-					t.Fatalf("presence mismatch: %s", data)
-				}
+			if record.HasMembers() != tt.members {
+				t.Fatalf("HasMembers = %v, want %v", record.HasMembers(), tt.members)
 			}
-			check()
-			record.Enable = nil
-			check()
 			for _, key := range []string{"status", "enable", "updated_at"} {
-				if err := record.Clear(key); err != nil {
+				if err := ZeroMember(&record, key); err != nil {
 					t.Fatal(err)
 				}
 			}
-			record.Fields.Delete("future")
-			check()
 			if record.HasMembers() {
 				t.Fatal("cleared record still has members")
 			}
 			record.Status = "preparing"
-			check()
+			if !record.HasMembers() {
+				t.Fatal("record with a status has no members")
+			}
 		})
 	}
 }

@@ -1,9 +1,7 @@
 package agents
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 
 	"configflow/internal/model"
 )
@@ -31,23 +29,15 @@ func HAActiveModel(record *model.Agent) bool {
 	}
 }
 
-// HAEnablingModel preserves the distinction between an empty enable object and
-// a nonempty enabling intent, without walking captured configuration payloads.
+// HAEnablingModel reports an active pair journal that carries an enabling
+// intent, without walking captured configuration payloads.
 func HAEnablingModel(record *model.Agent) bool {
 	if !HAActiveModel(record) {
 		return false
 	}
 	job := record.OxiDNSHAPublication
-	if job.Enable != nil {
-		return job.Enable.HasMembers()
-	}
-	// A malformed stored intent cannot authorize edits to a reserved pair.
-	for _, issue := range model.Issues(job) {
-		if issue.Path == "enable" {
-			return true
-		}
-	}
-	return false
+	// Any stored enable object is an enabling intent: it locks the pair.
+	return job.Enable != nil
 }
 
 // ReadHAPair returns a borrowed (see "Borrowed records"), reciprocal pair from
@@ -88,29 +78,12 @@ func haPairIdentity(record *model.Agent) (group, peer string, valid bool) {
 	if record.OxiDNSHA == nil {
 		return "", "", false
 	}
-	group, groupOK := storedText(record.OxiDNSHA.MemberJSON("group_id"))
-	peer, peerOK := storedText(record.OxiDNSHA.MemberJSON("peer_id"))
-	return group, peer, groupOK && peerOK && group != "" && peer != ""
+	group, peer = record.OxiDNSHA.GroupID, record.OxiDNSHA.PeerID
+	return group, peer, group != "" && peer != ""
 }
 
 func haProfilesMatch(left, right *model.Agent) bool {
-	read := func(record *model.Agent) (*string, bool) {
-		raw, present, err := record.MemberJSON("profile_id")
-		if err != nil {
-			return nil, false
-		}
-		if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return nil, true
-		}
-		var profile string
-		if json.Unmarshal(raw, &profile) != nil {
-			return nil, false
-		}
-		return &profile, true
-	}
-	a, aOK := read(left)
-	b, bOK := read(right)
-	return aOK && bOK && (a == nil && b == nil || a != nil && b != nil && *a == *b)
+	return left.ProfileID == right.ProfileID
 }
 
 // HASummaryModel selects only public journal members, without visiting captured
@@ -120,17 +93,16 @@ func HASummaryModel(job *model.HAJournal) (*model.HAPublicationSummary, error) {
 	if job == nil {
 		return &result, nil
 	}
-	for _, key := range []string{"id", "status", "phase", "message", "owner_agent_id", "owner_deployment_id", "active_agent_id", "members", "updated_at", "warnings", "routers", "auto_complete"} {
-		raw, present, err := job.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if present {
-			if err := result.SetJSON(key, raw); err != nil {
-				return nil, err
-			}
-		}
+	selected := model.HAPublicationSummary{
+		ID: job.ID, Status: job.Status, Phase: job.Phase, Message: job.Message, OwnerAgentID: job.OwnerAgentID,
+		OwnerDeploymentID: job.OwnerDeploymentID, ActiveAgentID: job.ActiveAgentID, Members: job.Members,
+		UpdatedAt: job.UpdatedAt, Warnings: job.Warnings, Routers: job.Routers, AutoComplete: job.AutoComplete,
 	}
+	owned, err := model.Clone(selected)
+	if err != nil {
+		return nil, err
+	}
+	result = owned
 	return &result, nil
 }
 
@@ -165,26 +137,14 @@ func HAAggregateView(task *model.Deployment, public *model.HAPublicationSummary)
 }
 
 func haAggregate(result *model.Deployment, public *model.HAPublicationSummary) (*model.Deployment, error) {
-	raw, err := model.Marshal(public)
+	summary, err := model.Clone(public)
 	if err != nil {
 		return nil, err
 	}
-	edit := editDeployment(result).raw("ha_publication", raw)
-	status := ""
-	for _, key := range []string{"status", "message"} {
-		raw, present, err := public.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if !present {
-			raw = json.RawMessage(`null`)
-		}
-		edit.raw(key, raw)
-		if key == "status" {
-			status, _ = storedText(raw, present, nil)
-		}
-	}
-	return edit.flag("success", status != "failed" && status != "rollback_failed").remove("http_status", "pending").result()
+	result.HAPublication = summary
+	result.Status = public.Status
+	result.Message = new(public.Message)
+	return editDeployment(result).flag("success", public.Status != "failed" && public.Status != "rollback_failed").remove("http_status", "pending").result()
 }
 
 func haOperationConflict(a *model.Agent) (*model.Deployment, error) {
@@ -202,8 +162,8 @@ func ownsHAChild(a *model.Agent, id string) bool {
 	if a == nil || a.OxiDNSHAPublication == nil {
 		return false
 	}
-	child, valid := storedText(a.OxiDNSHAPublication.Children.MemberJSON(a.ID))
-	return valid && child == id
+	child, ok := a.OxiDNSHAPublication.Children.Get(a.ID)
+	return ok && child == id
 }
 
 func (m *Manager) defaultHADeploymentModel(ctx context.Context, agentID, id string) (*model.Deployment, error) {

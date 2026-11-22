@@ -122,7 +122,7 @@ func TestMemberJSONScalarFastPathRetainsEvidence(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, name := range []string{"version", "enabled"} {
-					got, present, err := record.MemberJSON(name)
+					got, present, err := EncodeMember(&record, name)
 					want, exists := expected[name]
 					if err != nil || present != exists || string(got) != string(want) {
 						t.Fatalf("%s=%s/%v want %s/%v err=%v", name, got, present, want, exists, err)
@@ -136,10 +136,10 @@ func TestMemberJSONScalarFastPathRetainsEvidence(t *testing.T) {
 			record.Version = ""
 			record.Enabled = nil
 			check()
-			if err := record.Clear("version"); err != nil {
+			if err := ZeroMember(&record, "version"); err != nil {
 				t.Fatal(err)
 			}
-			if err := record.Clear("enabled"); err != nil {
+			if err := ZeroMember(&record, "enabled"); err != nil {
 				t.Fatal(err)
 			}
 			check()

@@ -113,13 +113,14 @@ func CallCache(ctx context.Context, m Registry, agentID, method string, tags []s
 	if agent == nil {
 		return nil, CacheFail("AGENT_NOT_FOUND", 404)
 	}
-	if originalText(agent.MemberJSON("service_type")) != "oxidns" {
+	if agent.ServiceType != "oxidns" {
 		return nil, CacheFail("WRONG_SERVICE", 400)
 	}
 	if !modelVersionAtLeast(agent, CacheMinAgentVersion) {
 		return nil, CacheFail("UPGRADE_REQUIRED", 409)
 	}
-	token, valid := originalString(agent.MemberJSON("token"))
+	token := agent.Token
+	valid := token != ""
 	if !valid {
 		return nil, agents.ErrAgentEndpoint
 	}

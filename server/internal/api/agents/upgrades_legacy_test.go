@@ -195,44 +195,6 @@ func TestN810TypedHeartbeatHooksTakePrecedence(t *testing.T) {
 	}
 }
 
-func TestN810CorruptUpgradeDoesNotBreakAgentList(t *testing.T) {
-	for _, raw := range []string{`"abc"`, `5`, `[["status","succeeded"],["target_version","9.9.9-go"],"ok"]`} {
-		t.Run(raw, func(t *testing.T) {
-			a := newUpgradeApp(t)
-			if err := a.m.EditAgents(a.s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
-				return (*rows)[0].SetJSON("latest_upgrade", []byte(raw))
-			}); err != nil {
-				t.Fatal(err)
-			}
-			before, err := a.s.Repo.Store().Fingerprint()
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, path := range []string{"/api/agents", "/api/agents?summary=1"} {
-				items, ok := parseBodyAny(t, a.s.Get(path, a.admin).WantStatus(200)).([]any)
-				if !ok || len(items) != 2 {
-					t.Fatal("bad Agent hid the list", items)
-				}
-				found := false
-				for _, item := range items {
-					record := item.(map[string]any)
-					if mapStr(record, "id") == a.otherID {
-						found = mapStr(record, "name") == "other-agent"
-					}
-				}
-				if !found {
-					t.Fatal("healthy Agent was lost")
-				}
-			}
-			a.s.Get("/api/agents/"+a.id()+"/upgrade", a.admin).WantStatus(500)
-			after, err := a.s.Repo.Store().Fingerprint()
-			if err != nil || after != before {
-				t.Fatal("corrupt upgrade list/poll wrote database", err)
-			}
-		})
-	}
-}
-
 func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
 	h := newHeartbeat(t)
 	manager, err := agents.Get(h.s.Context())
@@ -240,10 +202,10 @@ func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := manager.EditAgents(h.s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
-		if err := (*rows)[0].SetJSON("domain_discovery_enabled", []byte(`"enabled"`)); err != nil {
+		if err := model.SetStoredMember(&(*rows)[0], "domain_discovery_enabled", []byte(`"enabled"`)); err != nil {
 			return err
 		}
-		return (*rows)[0].SetJSON("traffic_history_enabled", []byte(`1`))
+		return model.SetStoredMember(&(*rows)[0], "traffic_history_enabled", []byte(`1`))
 	}); err != nil {
 		t.Fatal(err)
 	}

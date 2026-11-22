@@ -1,7 +1,6 @@
 package agents
 
 import (
-	"bytes"
 	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
@@ -157,10 +156,7 @@ func (m *Manager) ReadAgentByToken(ctx context.Context, token string) (*model.Ag
 	}
 	for i := range records {
 		a := &records[i]
-		if a.Token != token {
-			continue
-		}
-		if original, valid := storedText(a.MemberJSON("token")); valid && original == token {
+		if a.Token != "" && a.Token == token {
 			record, err := readerAgent(a, true, shared)
 			if err != nil {
 				return nil, err
@@ -189,11 +185,7 @@ func readerAgent(source *model.Agent, history, shared bool) (model.Agent, error)
 func projectAgent(source *model.Agent, history bool) (model.Agent, error) {
 	selected := *source
 	if !history {
-		for _, field := range repo.AgentHistoryFields {
-			if err := selected.Clear(field); err != nil {
-				return model.Agent{}, err
-			}
-		}
+		selected.DropHistory()
 	}
 	return selected, nil
 }
@@ -289,14 +281,9 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 	}
 	mark := m.runtime.Mark()
 	var source *heartbeatSource
-	// Reported values are compared with the stored JSON, like Python's
-	// heartbeat[key] != agent.get(key): a numeric, null or missing stored
-	// member differs from reported text even when its projection matches.
-	type storedMember struct {
-		raw     json.RawMessage
-		present bool
-	}
-	stored := map[string]storedMember{}
+	// Reported values are compared with the stored values, like Python's
+	// heartbeat[key] != agent.get(key).
+	stored := map[string]string{}
 	err := m.repository.ViewAgents(ctx, func(records []model.Agent) error {
 		record := registryAgent(records, id)
 		if record == nil {
@@ -306,13 +293,7 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 		if err != nil {
 			return err
 		}
-		for _, key := range []string{"version", "config_version"} {
-			raw, present, err := record.MemberJSON(key)
-			if err != nil {
-				return err
-			}
-			stored[key] = storedMember{raw, present}
-		}
+		stored["version"], stored["config_version"] = record.Version, record.ConfigVersion
 		source = &heartbeatSource{record.ID, record.Name, record.LastHeartbeat, fields}
 		return nil
 	})
@@ -336,7 +317,8 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 		key string
 		raw json.RawMessage
 	}{{"version", payload.Version}, {"config_version", payload.ConfigVersion}} {
-		if item.raw != nil && !sameStoredJSON(stored[item.key].raw, stored[item.key].present, item.raw) {
+		var reported string
+		if item.raw != nil && json.Unmarshal(item.raw, &reported) == nil && reported != stored[item.key] {
 			changes[item.key] = item.raw
 		}
 	}
@@ -348,7 +330,7 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 				return errNothingToSave
 			}
 			for key, data := range changes {
-				if err := record.SetJSON(key, data); err != nil {
+				if _, _, err := model.DecodeStoredMember(record, key, data, key); err != nil {
 					return err
 				}
 			}
@@ -370,36 +352,8 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 	return true, nil
 }
 
-// sameStoredJSON compares a reported member with the original stored member.
-// Strings compare by value; other JSON compares by its exact token.
-func sameStoredJSON(stored json.RawMessage, present bool, reported json.RawMessage) bool {
-	if !present {
-		return bytes.Equal(bytes.TrimSpace(reported), []byte("null"))
-	}
-	// Exact tokens are equal without allocating decoded string copies. Escaped
-	// spellings still fall through to the value comparison below.
-	if bytes.Equal(bytes.TrimSpace(stored), bytes.TrimSpace(reported)) {
-		return true
-	}
-	left, leftOK := storedText(stored, true, nil)
-	right, rightOK := storedText(reported, true, nil)
-	if leftOK || rightOK {
-		return leftOK && rightOK && left == right
-	}
-	return bytes.Equal(bytes.TrimSpace(stored), bytes.TrimSpace(reported))
-}
-
-// agentIDProven is an identity check, not stored scalar coercion. R5/text
-// fallback cannot turn an originally numeric identifier into authentication.
-func agentIDProven(record *model.Agent) bool {
-	raw, present, err := record.MemberJSON("id")
-	if err != nil || !present {
-		return false
-	}
-	var original string
-	raw = bytes.TrimSpace(raw)
-	return len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &original) == nil && original == record.ID
-}
+// agentIDProven reports a registry record with an identity.
+func agentIDProven(record *model.Agent) bool { return record.ID != "" }
 
 func (m *Manager) logMetricsFailure(ctx context.Context, id, name string, failure error) {
 	if name == "" {
@@ -435,18 +389,9 @@ func (m *Manager) logMetricsFailure(ctx context.Context, id, name string, failur
 	logger.Warningf(msgMetricsHistoryFailure, logx.LogText(view.Name, 120), logx.LogText(view.Error, DetailLimit))
 }
 
-// AgentEnabledModel defaults an omitted automation switch to on. An explicit
-// null or R5 fallback is off; it must not reactivate an imported disabled node.
-func AgentEnabledModel(record *model.Agent) bool {
-	if record == nil {
-		return false
-	}
-	if record.Enabled != nil {
-		return *record.Enabled
-	}
-	_, present, err := record.MemberJSON("enabled")
-	return err == nil && !present
-}
+// AgentEnabledModel reports the automation switch: an omitted switch is on,
+// an explicit null or false is off.
+func AgentEnabledModel(record *model.Agent) bool { return record != nil && record.IsEnabled() }
 
 // ResolveAgentProfile resolves an optional original string binding. Stored
 // scalar projections cannot select configuration or establish task ownership.
@@ -468,7 +413,7 @@ func (m *Manager) saveReportedModels(ctx context.Context, changes map[string]mod
 				continue
 			}
 			for key, raw := range patch.All() {
-				if err := a.SetJSON(key, raw); err != nil {
+				if _, _, err := model.DecodeStoredMember(a, key, raw, key); err != nil {
 					return err
 				}
 			}
@@ -616,11 +561,7 @@ func (m *Manager) RuleSyncAgents(ctx context.Context) ([]RuleSyncAgent, error) {
 // value, never the cached registry record.
 func storedCredentials(source *model.Agent) (redact.Secrets, error) {
 	selected := *source
-	for _, field := range repo.AgentHistoryFields {
-		if err := selected.Clear(field); err != nil {
-			return nil, err
-		}
-	}
+	selected.DropHistory()
 	data, err := model.Marshal(selected)
 	if err != nil {
 		return nil, fmt.Errorf("encode Agent credentials: %w", err)
@@ -628,11 +569,10 @@ func storedCredentials(source *model.Agent) (redact.Secrets, error) {
 	return redact.CollectCredentials(json.RawMessage(data), nil), nil
 }
 
-// AgentName returns only an original stored string name, including an explicitly
-// empty string. Stored scalar projections are not a replacement for this evidence.
+// AgentName returns the stored name; ok is false for an Agent without one.
 func AgentName(a *model.Agent) (string, bool) {
-	if a == nil {
+	if a == nil || a.Name == "" {
 		return "", false
 	}
-	return storedText(a.MemberJSON("name"))
+	return a.Name, true
 }

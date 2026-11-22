@@ -35,77 +35,133 @@ var deploymentUpdateFields = []string{
 type DeploymentUpdate struct {
 	record  model.Deployment
 	present map[string]bool
+	// status is the reported status as received, for the shape check.
+	status json.RawMessage
 }
 
-// DecodeDeploymentUpdate selects exact remote protocol keys through the shared
-// model codec. Original status tokens remain available for structural checks.
+// DecodeDeploymentUpdate selects the remote protocol keys of a reply object.
+// Values decode leniently (a value of the wrong type is its zero value).
 func DecodeDeploymentUpdate(data json.RawMessage) (DeploymentUpdate, error) {
-	var members model.Fields
 	result := DeploymentUpdate{present: make(map[string]bool)}
+	var members model.OrderedMap[json.RawMessage]
+	if err := requireJSONObject(data); err != nil {
+		return result, err
+	}
 	if err := json.Unmarshal(data, &members); err != nil {
 		return result, err
 	}
 	for _, key := range append(append([]string(nil), deploymentUpdateFields...), "updated_at", "dns_checks", "dns_checked_at") {
-		if raw, present := members.Get(key); present {
-			if err := result.record.SetJSON(key, raw); err != nil {
-				return DeploymentUpdate{}, err
-			}
-			result.present[key] = true
+		raw, present := members.Get(key)
+		if !present {
+			continue
+		}
+		if _, _, err := model.DecodeStoredMember(&result.record, key, raw, key); err != nil {
+			return DeploymentUpdate{}, err
+		}
+		result.present[key] = true
+		if key == "status" {
+			result.status = raw
 		}
 	}
 	return result, nil
 }
 
-func deploymentFlagTrue(state *model.Deployment, name string) bool {
-	raw, present, err := state.MemberJSON(name)
-	var flag *bool
-	return err == nil && present && json.Unmarshal(raw, &flag) == nil && flag != nil && *flag
+// requireJSONObject refuses JSON that is not an object.
+func requireJSONObject(data []byte) error {
+	if err := model.ValidJSON(data); err != nil {
+		return err
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || data[0] != '{' {
+		return model.ErrType
+	}
+	return nil
 }
 
-func inactiveDeploymentFlag(state *model.Deployment, name string) bool {
-	raw, present, err := state.MemberJSON(name)
-	if err != nil {
-		return false
-	}
-	if storedAbsent(raw, present, nil) {
-		return true
-	}
-	var flag *bool
-	return json.Unmarshal(raw, &flag) == nil && flag != nil && !*flag
-}
-
-func noDeploymentHTTPFailure(state *model.Deployment) bool {
-	raw, present, err := state.MemberJSON("http_status")
-	if err != nil {
-		return false
-	}
-	if storedAbsent(raw, present, nil) {
-		return true
-	}
-	var number *float64
-	var code model.Int
-	return json.Unmarshal(raw, &number) == nil && number != nil && json.Unmarshal(raw, &code) == nil && code == 0
-}
+func flagSet(flag *bool) bool { return flag != nil && *flag }
 
 func receiptTerminalModel(status string) bool {
 	return deploymentTerminalModel(status) || status == "rollback_failed"
 }
 
 func agentDiagnosticSecrets(a *model.Agent) redact.Secrets {
-	if token, valid := storedText(a.MemberJSON("token")); valid {
-		return redact.NewSecrets([]string{token})
+	if a != nil && a.Token != "" {
+		return redact.NewSecrets([]string{a.Token})
 	}
 	return nil
-}
-
-func originalDeploymentText(state *model.Deployment, key string) string {
-	text, _ := storedText(state.MemberJSON(key))
-	return text
 }
 
 func nonscalarStatus(raw json.RawMessage) bool {
 	raw = bytes.TrimSpace(raw)
 	return len(raw) > 0 && (raw[0] == '[' || raw[0] == '{')
+}
+
+// sameText compares two optional text members; missing equals missing only.
+func sameText(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+// clearDeploymentMember drops one optional journal member.
+func clearDeploymentMember(state *model.Deployment, key string) {
+	switch key {
+	case "message":
+		state.Message = nil
+	case "error":
+		state.Error = nil
+	case "error_details":
+		state.ErrorDetails = nil
+	case "failed_stage":
+		state.FailedStage = nil
+	case "rollback_error":
+		state.RollbackError = nil
+	case "rollback_error_details":
+		state.RollbackErrorDetails = nil
+	case "http_status":
+		state.HTTPStatus = nil
+	}
+}
+
+// copyReportedMember copies one reported protocol member into the journal.
+func copyReportedMember(state, patch *model.Deployment, key string) {
+	switch key {
+	case "status":
+		state.Status = patch.Status
+	case "message":
+		state.Message = patch.Message
+	case "error":
+		state.Error = patch.Error
+	case "error_details":
+		state.ErrorDetails = patch.ErrorDetails
+	case "failed_stage":
+		state.FailedStage = patch.FailedStage
+	case "rollback_error":
+		state.RollbackError = patch.RollbackError
+	case "rollback_error_details":
+		state.RollbackErrorDetails = patch.RollbackErrorDetails
+	case "config_version":
+		state.ConfigVersion = patch.ConfigVersion
+	case "config_revision":
+		state.ConfigRevision = patch.ConfigRevision
+	case "success":
+		state.Success = patch.Success
+	case "sha256":
+		state.SHA256 = patch.SHA256
+	case "submitted":
+		state.Submitted = patch.Submitted
+	case "previous_running":
+		state.PreviousRunning = patch.PreviousRunning
+	case "health":
+		state.Health = bytes.Clone(patch.Health)
+	case "http_status":
+		state.HTTPStatus = patch.HTTPStatus
+	case "manual_rollback":
+		state.ManualRollback = patch.ManualRollback
+	case "source_sha256":
+		state.SourceSHA256 = patch.SourceSHA256
+	}
 }
 
 // applyDeploymentUpdate is shared by the durable transaction and the read-only
@@ -114,210 +170,141 @@ func (m *Manager) applyDeploymentUpdate(ctx context.Context, a *model.Agent, id 
 	if options.OnlyUnsubmitted && !preparationUnsubmitted(state) {
 		return false, nil
 	}
-	before, beforePresent, err := state.MemberJSON("status")
-	if err != nil {
-		return false, err
-	}
-	status := originalDeploymentText(state, "status")
-	incoming := originalDeploymentText(&patch.record, "status")
+	before := state.Status
+	status := state.Status
+	incoming := patch.record.Status
 	if options.UploadReceipt && !receiptTerminalModel(incoming) && status != "preparing" && status != "uploading" && status != "receiving" {
 		return false, nil
 	}
 	if options.ActivationReceipt && !receiptTerminalModel(incoming) && status != "ready" && status != "unknown" {
 		return false, nil
 	}
-	if !inactiveDeploymentFlag(state, "manual_rollback") && !deploymentFlagTrue(&patch.record, "manual_rollback") {
+	if flagSet(state.ManualRollback) && !flagSet(patch.record.ManualRollback) {
 		return false, nil
 	}
 	if patch.present["status"] {
-		raw, _, err := patch.record.MemberJSON("status")
-		if err != nil {
-			return false, err
-		}
-		if deploymentTerminalModel(status) && !sameStoredJSON(before, beforePresent, raw) {
+		if deploymentTerminalModel(status) && incoming != status {
 			return false, nil
 		}
-		if nonscalarStatus(raw) {
+		if nonscalarStatus(patch.status) {
 			return false, ErrInvalidDeploymentStatus
 		}
 	}
-	reportedAt, hasReported := NormalizeEventTime(originalDeploymentText(&patch.record, "updated_at"))
+	reportedAt, hasReported := NormalizeEventTime(textOf(patch.record.UpdatedAt))
 	if hasReported {
-		previous := originalDeploymentText(state, "agent_updated_at")
+		previous := textOf(state.AgentUpdatedAt)
 		if previous != "" && reportedAt < previous {
 			return false, nil
 		}
 	}
-	if incoming != "" && incoming != "unknown" && noDeploymentHTTPFailure(&patch.record) {
+	noHTTPFailure := patch.record.HTTPStatus == nil || *patch.record.HTTPStatus == 0
+	if incoming != "" && incoming != "unknown" && noHTTPFailure {
 		if status == "unknown" {
 			for _, key := range []string{"error_details", "rollback_error_details"} {
 				if !patch.present[key] {
-					if err := state.Clear(key); err != nil {
-						return false, err
-					}
+					clearDeploymentMember(state, key)
 				}
 			}
 		}
-		if err := state.Clear("http_status"); err != nil {
-			return false, err
-		}
+		clearDeploymentMember(state, "http_status")
 		if !patch.present["message"] {
-			if err := state.Clear("message"); err != nil {
-				return false, err
-			}
+			clearDeploymentMember(state, "message")
 		}
 	}
-	for _, pair := range [][2]string{{"error", "error_details"}, {"rollback_error", "rollback_error_details"}} {
-		if patch.present[pair[0]] && !patch.present[pair[1]] {
-			raw, _, err := patch.record.MemberJSON(pair[0])
-			if err != nil {
-				return false, err
-			}
-			old, present, err := state.MemberJSON(pair[0])
-			if err != nil {
-				return false, err
-			}
-			if !sameStoredJSON(old, present, raw) {
-				if err := state.Clear(pair[1]); err != nil {
-					return false, err
-				}
-			}
-		}
+	if patch.present["error"] && !patch.present["error_details"] && !sameText(state.Error, patch.record.Error) {
+		clearDeploymentMember(state, "error_details")
+	}
+	if patch.present["rollback_error"] && !patch.present["rollback_error_details"] && !sameText(state.RollbackError, patch.record.RollbackError) {
+		clearDeploymentMember(state, "rollback_error_details")
 	}
 	secrets := agentDiagnosticSecrets(a)
 	for _, key := range deploymentUpdateFields {
 		if !patch.present[key] {
 			continue
 		}
-		raw, _, err := patch.record.MemberJSON(key)
-		if err != nil {
-			return false, err
-		}
-		switch key {
-		case "message", "error", "error_details", "rollback_error", "rollback_error_details":
-			text, _ := storedText(raw, true, nil)
-			raw, err = json.Marshal(redact.DiagnosticText(text, secrets, 0))
-			if err != nil {
-				return false, err
-			}
-		}
-		if err := state.SetJSON(key, raw); err != nil {
-			return false, err
+		copyReportedMember(state, &patch.record, key)
+	}
+	// Reported diagnostics are stored redacted; a reported null is "".
+	for _, text := range []struct {
+		key   string
+		field **string
+	}{{"message", &state.Message}, {"error", &state.Error}, {"error_details", &state.ErrorDetails}, {"rollback_error", &state.RollbackError}, {"rollback_error_details", &state.RollbackErrorDetails}} {
+		if patch.present[text.key] {
+			*text.field = new(redact.DiagnosticText(textOf(*text.field), secrets, 0))
 		}
 	}
 	report, err := SanitizeDNSReport(&patch.record, secrets)
 	if err != nil {
 		return false, err
 	}
-	if err := applyDNSReport(state, report); err != nil {
-		return false, err
-	}
+	applyDNSReport(state, report)
 	if incoming == "ready" || incoming == "succeeded" {
 		for _, key := range []string{"error", "error_details", "failed_stage", "rollback_error", "rollback_error_details"} {
 			if !patch.present[key] {
-				if err := state.Clear(key); err != nil {
-					return false, err
-				}
+				clearDeploymentMember(state, key)
 			}
 		}
 	}
-	if incoming == "rolled_back" && originalDeploymentText(&patch.record, "rollback_error") == "" {
-		for _, key := range []string{"rollback_error", "rollback_error_details"} {
-			if err := state.Clear(key); err != nil {
-				return false, err
-			}
-		}
+	if incoming == "rolled_back" && textOf(patch.record.RollbackError) == "" {
+		clearDeploymentMember(state, "rollback_error")
+		clearDeploymentMember(state, "rollback_error_details")
 	}
 	state.UpdatedAt = new(nowISO())
 	if hasReported {
 		state.AgentUpdatedAt = new(reportedAt)
 	}
-	message := originalDeploymentText(state, "message")
+	message := textOf(state.Message)
 	if message == "" {
-		message = originalDeploymentText(state, "error")
+		message = textOf(state.Error)
 	}
-	current := originalDeploymentText(state, "status")
+	current := state.Status
 	state.Events = AppendOperationEvent(state.Events, current, message, "", secrets)
-	stateID, stateIDOK := storedText(state.MemberJSON("deployment_id"))
-	latestID, latestIDOK := "", false
-	if a.LatestDeployment != nil {
-		latestID, latestIDOK = storedText(a.LatestDeployment.MemberJSON("deployment_id"))
-	}
-	isLatest := stateIDOK && latestIDOK && stateID == id && latestID == id
+	isLatest := state.DeploymentID == id && a.LatestDeployment != nil && a.LatestDeployment.DeploymentID == id
 	if current == "succeeded" && isLatest {
 		profile, profileErr := m.agentProfileID(ctx, a)
 		if profileErr != nil && !errors.Is(profileErr, repo.ErrValidation) {
 			return false, profileErr
 		}
-		owner, ownerOK := storedText(state.MemberJSON("profile_id"))
-		service, serviceOK := storedText(a.MemberJSON("service_type"))
-		stateService, stateServiceOK := storedText(state.MemberJSON("service_type"))
-		if _, present, err := state.MemberJSON("service_type"); err != nil {
-			return false, err
-		} else if !present {
-			stateService, stateServiceOK = service, serviceOK
+		service := a.ServiceType
+		stateService := state.ServiceType
+		if stateService == "" {
+			stateService = service
 		}
-		if profileErr == nil && ownerOK && owner == profile && serviceOK && stateServiceOK && service == stateService {
-			version, present, err := state.MemberJSON("config_version")
-			if err != nil {
-				return false, err
+		if profileErr == nil && state.ProfileID != "" && state.ProfileID == profile && service == stateService {
+			version := a.ConfigVersion
+			if state.ConfigVersion != nil {
+				version = *state.ConfigVersion
+			} else if version == "" {
+				version = "0"
 			}
-			if !present {
-				version, present, err = a.MemberJSON("config_version")
-				if err != nil {
-					return false, err
-				}
-			}
-			if !present {
-				version = json.RawMessage(`"0"`)
-			}
-			if err := a.SetJSON("config_version", version); err != nil {
-				return false, err
-			}
+			a.ConfigVersion = version
 			a.PushedAt = new(utcNowZ())
-			if revision, present, err := state.MemberJSON("config_revision"); err != nil {
-				return false, err
-			} else if present && !storedAbsent(revision, true, nil) {
-				if err := a.SetJSON("config_revision", revision); err != nil {
-					return false, err
-				}
+			if state.ConfigRevision != nil {
+				a.ConfigRevision = new(*state.ConfigRevision)
 			}
-			if state.PreparedContent != nil {
-				raw, err := model.Marshal(state.PreparedContent)
-				if err != nil {
-					return false, err
+			if prepared := state.PreparedContent; prepared != nil {
+				applied := &model.AppliedContent{
+					Fingerprint: prepared.Fingerprint, ProfileID: prepared.ProfileID, ServiceType: prepared.ServiceType,
+					ConfigPath: prepared.ConfigPath, BaseURL: prepared.BaseURL, DeployedConfigSHA256: prepared.DeployedConfigSHA256,
+					SettingsDigest: prepared.SettingsDigest, ConfigVersion: version, DeploymentID: id,
 				}
-				var applied model.AppliedContent
-				if err := json.Unmarshal(raw, &applied); err != nil {
-					return false, err
+				if prepared.Files != nil {
+					files := *prepared.Files
+					applied.Files = &files
 				}
-				if err := applied.SetJSON("config_version", version); err != nil {
-					return false, err
-				}
-				applied.DeploymentID = id
-				a.AppliedContent = &applied
-			} else if err := a.Clear("applied_content"); err != nil {
-				return false, err
+				a.AppliedContent = applied
+			} else {
+				a.AppliedContent = nil
 			}
 		}
 	}
-	if deploymentFlagTrue(state, "manual_rollback") && current == "rolled_back" && isLatest {
-		version, valid := storedText(state.MemberJSON("config_version"))
-		if !valid || version == "" {
+	if flagSet(state.ManualRollback) && current == "rolled_back" && isLatest {
+		version := textOf(state.ConfigVersion)
+		if version == "" {
 			version = "0"
 		}
-		raw, err := json.Marshal(version)
-		if err != nil {
-			return false, err
-		}
-		if err := a.SetJSON("config_version", raw); err != nil {
-			return false, err
-		}
-		for _, key := range []string{"applied_content", "config_revision", "pushed_at"} {
-			if err := a.Clear(key); err != nil {
-				return false, err
-			}
-		}
+		a.ConfigVersion = version
+		a.AppliedContent, a.ConfigRevision, a.PushedAt = nil, nil, nil
 	}
 	if isLatest {
 		a.LatestDeployment, err = copyDeployment(state)
@@ -325,19 +312,15 @@ func (m *Manager) applyDeploymentUpdate(ctx context.Context, a *model.Agent, id 
 			return false, err
 		}
 	}
-	after, present, err := state.MemberJSON("status")
-	if err != nil {
-		return false, err
-	}
 	_, known := deploymentResults[current]
-	return known && !sameStoredJSON(before, beforePresent, after) && present, nil
+	return known && before != current && current != "", nil
 }
 
 func (m *Manager) completeTypedPublication(ctx context.Context, agentID, id string, state *model.Deployment) error {
-	if originalDeploymentText(state, "service_type") != "oxidns" {
+	if state.ServiceType != "oxidns" {
 		return nil
 	}
-	return m.publicationComplete(ctx, agentID, id, originalDeploymentText(state, "status"))
+	return m.publicationComplete(ctx, agentID, id, state.Status)
 }
 
 // RecordDeploymentModel applies only remote-observable fields in one typed
@@ -366,7 +349,7 @@ func (m *Manager) RecordDeploymentModel(ctx context.Context, agentID, id string,
 			return err
 		}
 		state, present := a.Deployments.Get(id)
-		if !present || !a.Deployments.EntryValid(id) {
+		if !present {
 			var err error
 			result, err = deploymentFailure(msgDeploymentNotFound, 404)
 			return err
@@ -399,11 +382,11 @@ func (m *Manager) RecordDeploymentModel(ctx context.Context, agentID, id string,
 	}
 	notifications.Safely(func() error { return notifications.SaveAgent(ctx, current, m.repository) })
 	if finished {
-		status := originalDeploymentText(result, "status")
+		status := result.Status
 		outcome := deploymentResults[status]
 		detail := ""
-		for _, key := range []string{"error", "rollback_error", "message"} {
-			if text := originalDeploymentText(result, key); text != "" {
+		for _, text := range []string{textOf(result.Error), textOf(result.RollbackError), textOf(result.Message)} {
+			if text != "" {
 				detail = redact.DiagnosticText(text, nil, 300)
 				break
 			}
@@ -421,17 +404,14 @@ func (m *Manager) RecordDeploymentModel(ctx context.Context, agentID, id string,
 }
 
 func deploymentProbe(a *model.Agent, id string, state *model.Deployment) (*model.Agent, error) {
-	var result model.Agent
-	for _, key := range []string{"id", "name", "token", "profile_id", "service_type", "config_version", "config_revision", "pushed_at", "applied_content", "latest_deployment"} {
-		raw, present, err := a.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if present {
-			if err := result.SetJSON(key, raw); err != nil {
-				return nil, err
-			}
-		}
+	result := model.Agent{
+		ID: a.ID, Name: a.Name, Token: a.Token, ProfileID: a.ProfileID, ServiceType: a.ServiceType,
+		ConfigVersion: a.ConfigVersion, ConfigRevision: a.ConfigRevision, PushedAt: a.PushedAt,
+		AppliedContent: a.AppliedContent, LatestDeployment: a.LatestDeployment,
+	}
+	result, err := model.Clone(result)
+	if err != nil {
+		return nil, err
 	}
 	task, err := copyDeployment(state)
 	if err != nil {
@@ -449,7 +429,7 @@ func (m *Manager) previewUnchangedDeployment(ctx context.Context, agentID, id st
 			return nil
 		}
 		state, present := a.Deployments.Get(id)
-		if !present || !a.Deployments.EntryValid(id) {
+		if !present {
 			return nil
 		}
 		var err error
@@ -471,32 +451,14 @@ func (m *Manager) previewUnchangedDeployment(ctx context.Context, agentID, id st
 	if _, err := m.applyDeploymentUpdate(ctx, probe, id, &state, patch, options); err != nil {
 		return nil
 	}
-	if raw, present, err := original.MemberJSON("updated_at"); err != nil {
-		return nil
-	} else if present {
-		if state.SetJSON("updated_at", raw) != nil {
-			return nil
-		}
-	} else if state.Clear("updated_at") != nil {
-		return nil
-	}
+	state.UpdatedAt = original.UpdatedAt
 	probe.Deployments.Set(id, state)
 	var baseline model.Agent
 	if json.Unmarshal(before, &baseline) != nil {
 		return nil
 	}
 	if probe.LatestDeployment != nil && baseline.LatestDeployment != nil {
-		raw, present, err := baseline.LatestDeployment.MemberJSON("updated_at")
-		if err != nil {
-			return nil
-		}
-		if present {
-			if probe.LatestDeployment.SetJSON("updated_at", raw) != nil {
-				return nil
-			}
-		} else if probe.LatestDeployment.Clear("updated_at") != nil {
-			return nil
-		}
+		probe.LatestDeployment.UpdatedAt = baseline.LatestDeployment.UpdatedAt
 	}
 	after, err := model.Marshal(probe)
 	if err == nil && bytes.Equal(before, after) {

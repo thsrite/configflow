@@ -131,9 +131,7 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	result := make([]map[string]json.RawMessage, 0, len(records))
 	for i := range records {
 		if !core.FreshHeartbeat(records[i].LastHeartbeat, nil) {
-			if err := records[i].SetJSON("status", json.RawMessage(`"offline"`)); err != nil {
-				return nil, err
-			}
+			records[i].Status = "offline"
 		}
 	}
 	repository := m.Repository()
@@ -237,7 +235,7 @@ func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	service := record.ServiceType
-	if _, ok, _ := record.MemberJSON("service_type"); !ok {
+	if service == "" {
 		service = "mihomo"
 	}
 	body["service_type"], _ = json.Marshal(service)
@@ -305,7 +303,7 @@ func agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func rawAgentMember(record *model.Agent, key string) json.RawMessage {
-	raw, present, err := record.MemberJSON(key)
+	raw, present, err := model.EncodeMember(record, key)
 	if err != nil || !present {
 		return json.RawMessage("null")
 	}

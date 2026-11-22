@@ -188,6 +188,11 @@ func normalize(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, b := range x {
+			if m, empty := b.(map[string]any); b == nil || empty && len(m) == 0 && k == "deployments" {
+				// A stored null or empty history is a missing member since O18 T1b.
+				delete(x, k)
+				continue
+			}
 			if k == "updated_at" || k == "created_at" || k == "last_heartbeat" {
 				x[k] = "@time"
 			} else {
@@ -431,8 +436,21 @@ func firstDifference(a, b any, path string) string {
 					return d
 				}
 			}
-			return path + " (additional key)"
+			for k := range y {
+				if _, ok := x[k]; !ok {
+					return path + "." + k + " (additional key)"
+				}
+			}
 		}
 	}
-	return path
+	if x, ok := a.([]any); ok {
+		if y, ok := b.([]any); ok && len(x) == len(y) {
+			for i := range x {
+				if d := firstDifference(x[i], y[i], fmt.Sprintf("%s[%d]", path, i)); d != "" {
+					return d
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("%s (%v vs %v)", path, a, b)
 }

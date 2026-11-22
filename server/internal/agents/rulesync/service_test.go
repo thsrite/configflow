@@ -159,7 +159,7 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 	ctx, s := fixtureService(t)
 	e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		sys.Agents[0].ServiceType = "oxidns"
-		if err := sys.Agents[0].SetJSON("oxidns_ha", []byte(`{"enabled":true,"peer_id":"peer","group_id":"group","role":"primary"}`)); err != nil {
+		if err := model.SetStoredMember(&sys.Agents[0], "oxidns_ha", []byte(`{"enabled":true,"peer_id":"peer","group_id":"group","role":"primary"}`)); err != nil {
 			return err
 		}
 		raw, err := json.Marshal(sys.Agents[0])
@@ -171,7 +171,7 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 			return err
 		}
 		b.ID = "peer"
-		if err := b.SetJSON("oxidns_ha", []byte(`{"enabled":true,"peer_id":"device","group_id":"group","role":"secondary"}`)); err != nil {
+		if err := model.SetStoredMember(&b, "oxidns_ha", []byte(`{"enabled":true,"peer_id":"device","group_id":"group","role":"secondary"}`)); err != nil {
 			return err
 		}
 		sys.Agents = append(sys.Agents, b)
@@ -196,7 +196,7 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 	}
 
 	e = s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
-		return sys.Agents[0].SetJSON(agents.HAField, []byte(`{"status":"preparing","enable":{"peer_id":"peer"}}`))
+		return model.SetStoredMember(&sys.Agents[0], agents.HAField, []byte(`{"status":"preparing","enable":{"peer_id":"peer"}}`))
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -216,7 +216,7 @@ func TestHASettingsPairAtomicity(t *testing.T) {
 		t.Fatal("enable race overwrote settings")
 	}
 	e = s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
-		return sys.Agents[0].Clear(agents.HAField)
+		return model.ZeroMember(&sys.Agents[0], agents.HAField)
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -294,7 +294,7 @@ func TestTaskRowAndPinnedWithheld(t *testing.T) {
 func TestRoundAdmissionRotationAndDrain(t *testing.T) {
 	ctx, s := fixtureService(t)
 	e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
-		if err := sys.Agents[0].SetJSON("rule_sync", []byte(`{"settings":{"library":true,"rules":false}}`)); err != nil {
+		if err := model.SetStoredMember(&sys.Agents[0], "rule_sync", []byte(`{"settings":{"library":true,"rules":false}}`)); err != nil {
 			return err
 		}
 		raw, err := json.Marshal(sys.Agents[0])
@@ -387,7 +387,8 @@ func TestPresenceUsesSharedCredentialRedaction(t *testing.T) {
 	observePresence(ctx, s.m, []*model.Agent{nested})
 	nested.Status = "offline"
 	observePresence(ctx, s.m, []*model.Agent{nested})
-	if output := logs.String(); !strings.Contains(output, "已离线") || !strings.Contains(output, "alice") || strings.Contains(output, "synthetic-rule-token") {
+	// A name that is not text reads as missing (O18 T1b): the label is the ID.
+	if output := logs.String(); !strings.Contains(output, "已离线") || !strings.Contains(output, "a16-nested-presence") || strings.Contains(output, "synthetic-rule-token") {
 		t.Fatal("nested presence metadata was lost or leaked", output)
 	}
 	nested.Status = "online"
@@ -447,7 +448,9 @@ func TestAgentSettingsStrictBooleans(t *testing.T) {
 		want Settings
 	}{
 		{"strict booleans", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":false}}}`, Settings{Library: true}},
-		{"historical wrong type", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":"true"}}}`, Settings{Library: true}},
+		// A stored switch of another type keeps its truth value (O18 T1b
+		// flag-truthiness); Python's rule sync compared with "is True".
+		{"historical wrong type", `{"id":"device","rule_sync":{"settings":{"library":true,"rules":"true"}}}`, Settings{Library: true, Rules: true}},
 		{"null", `{"id":"device","rule_sync":{"settings":{"library":null,"rules":null}}}`, Settings{}},
 	}
 	for _, tt := range tests {

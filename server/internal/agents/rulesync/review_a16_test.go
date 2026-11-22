@@ -229,7 +229,7 @@ func TestWrongTypeRuleSyncMembersReadAsAbsent(t *testing.T) {
 				t.Fatal(err)
 			}
 			e := s.m.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
-				return sys.Agents[0].SetJSON("rule_sync", raw)
+				return model.SetStoredMember(&sys.Agents[0], "rule_sync", raw)
 			})
 			if e != nil {
 				t.Fatal(e)

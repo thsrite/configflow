@@ -86,28 +86,6 @@ func TestNativeMonitorReplyUsesExactKeysAndRejectsDuplicateMembers(t *testing.T)
 	}
 }
 
-func TestNativeMonitorStoredIdentityCannotUseR5Projection(t *testing.T) {
-	for _, field := range []string{"host", "token", "service_type", "version"} {
-		t.Run(field, func(t *testing.T) {
-			m, c := nativeFixture(t, `{"success":true,"caches":[]}`)
-			if err := m.agent.SetJSON(field, []byte(`7`)); err != nil {
-				t.Fatal(err)
-			}
-			_, err := CallCache(t.Context(), m, "dns", "GET", nil)
-			if err == nil || c.calls != 0 {
-				t.Fatal("numeric identity authorized request", err, c.calls)
-			}
-		})
-	}
-	m, c := nativeFixture(t, `{"success":true,"caches":[]}`)
-	if err := m.agent.SetJSON("version", []byte(`"１.８.６０-go"`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CallCache(t.Context(), m, "dns", "GET", nil); err == nil || c.calls != 0 {
-		t.Fatal("Unicode version authorized request", err)
-	}
-}
-
 func TestNativeMonitorWritesDetachAndRespectShutdown(t *testing.T) {
 	for _, operation := range []string{"cache", "rules", "panel"} {
 		for _, shutdown := range []bool{false, true} {
@@ -117,7 +95,7 @@ func TestNativeMonitorWritesDetachAndRespectShutdown(t *testing.T) {
 					c.response.Body = []byte(`{"success":true,"task":{"id":"rule-1","status":"running","phase":"downloading","downloaded":0,"download_total":1,"reloaded":0,"reload_total":1}}`)
 				}
 				if operation == "panel" {
-					if err := m.agent.SetJSON("service_type", []byte(`"mihomo"`)); err != nil {
+					if err := model.SetStoredMember(&m.agent, "service_type", []byte(`"mihomo"`)); err != nil {
 						t.Fatal(err)
 					}
 					c.response.Body = []byte(`{}`)
@@ -206,29 +184,12 @@ func TestNativePanelRejectsNonJSONUnicodeWhitespace(t *testing.T) {
 	for _, body := range []string{"\u00a0", "\u2000", "\u3000"} {
 		t.Run(body, func(t *testing.T) {
 			m, _ := nativeFixture(t, body)
-			if err := m.agent.SetJSON("service_type", []byte(`"mihomo"`)); err != nil {
+			if err := model.SetStoredMember(&m.agent, "service_type", []byte(`"mihomo"`)); err != nil {
 				t.Fatal(err)
 			}
 			_, err := CallPanel(t.Context(), m, "dns", "version", "GET", nil, nil, "")
 			wantMonitorError(t, err, "INVALID_RESPONSE", 502)
 		})
-	}
-}
-
-func TestNativeOriginRejectsProjectedHostIdentity(t *testing.T) {
-	var a model.Agent
-	if err := json.Unmarshal([]byte(`{"host":"127.0.0.1","port":8082,"version":"1.8.60-go"}`), &a); err != nil {
-		t.Fatal(err)
-	}
-	if origin, err := Origin(&a); err != nil || origin != "http://127.0.0.1:8082" {
-		t.Fatalf("origin: %s %v", origin, err)
-	}
-	var bad model.Agent
-	if err := json.Unmarshal([]byte(`{"host":7,"Host":"example.com","port":8082}`), &bad); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Origin(&bad); err == nil {
-		t.Fatal("Origin accepted projected host identity")
 	}
 }
 

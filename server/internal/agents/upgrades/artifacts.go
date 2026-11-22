@@ -296,9 +296,9 @@ func artifactMetadata(ctx context.Context, path string) (*ArtifactInfo, error) {
 // ArtifactsModel returns {arch: {'sha256', 'size'}} for every usable
 // executable, in Arches order. Each call returns new objects. Errors are
 // file errors (unreadable file) or ErrArtifactChanged.
-func ArtifactsModel(ctx context.Context) (model.Map[model.UpgradeArtifact], error) {
+func ArtifactsModel(ctx context.Context) (model.OrderedMap[model.UpgradeArtifact], error) {
 	ctx = lifecycle.Detach(ctx)
-	var result model.Map[model.UpgradeArtifact]
+	var result model.OrderedMap[model.UpgradeArtifact]
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}

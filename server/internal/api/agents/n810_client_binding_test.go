@@ -1,22 +1,13 @@
 package agents
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/store"
 )
 
@@ -81,84 +72,6 @@ func clientCollectedFiles(t *testing.T, s *httpxtest.Server) map[string]string {
 		}
 	}
 	return out
-}
-func TestN810ClientCorruptBindingNeverFallsBackToDefault(t *testing.T) {
-	s := a24Fixture(t)
-	admin := s.Login()
-	var calls atomic.Int64
-	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true}`))
-	}))
-	defer device.Close()
-	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
-		port := model.Int(device.Listener.Addr().(*net.TCPAddr).Port)
-		for i := range system.Agents {
-			system.Agents[i].Port = port
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"m", "d"} {
-		corruptClientBinding(t, s, id)
-	}
-	before, err := s.Repo.Store().Fingerprint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	files := clientCollectedFiles(t, s)
-	for _, test := range []struct{ method, path, body string }{
-		{"GET", "m/client-notes", ""},
-		{"PUT", "m/client-notes", `{"profile_id":"default","ip":"192.0.2.5","name":"must not land","previous_name":""}`},
-		{"POST", "m/mihomo/rule-targets/apply", `{"profile_id":"default","ruleset_id":"domains","target":"direct","value":"new.example","rule_type":"DOMAIN"}`},
-		{"GET", "d/oxidns/device-policies", ""},
-		{"PUT", "d/oxidns/device-policies", `{"profile_id":"default","revision":"ignored","notes_revision":"ignored","policies":[]}`},
-	} {
-		var response *httpxtest.Result
-		path := "/api/agents/" + test.path
-		switch test.method {
-		case "GET":
-			response = s.Get(path, admin)
-		case "PUT":
-			response = s.Put(path, admin, httpxtest.Body([]byte(test.body), "application/json"))
-		case "POST":
-			response = s.Post(path, admin, httpxtest.Body([]byte(test.body), "application/json"))
-		}
-		response.WantStatus(400)
-		if response.Header.Get("Cache-Control") != "no-store" || mapStr(parseBodyMap(t, response), "message") != "Invalid profile id" {
-			t.Fatal("stored binding guard lost error", test.path, response)
-		}
-	}
-	// These calls enter the write owners directly, proving the transaction's
-	// re-read cannot be bypassed by a previously captured valid profile.
-	for name, run := range map[string]func(context.Context) error{
-		"note": func(ctx context.Context) error {
-			return (clientTools{}).SaveNote(ctx, "m", noteEdit{ProfileID: "office", IP: "192.0.2.5", Name: "new", Previous: "旧电脑"})
-		},
-		"policy": func(ctx context.Context) error {
-			return (clientTools{}).SavePolicies(ctx, "d", policyEdit{ProfileID: "office"})
-		},
-		"rule": func(ctx context.Context) error {
-			_, err := (clientTools{}).ApplyConnection(ctx, "m", connectionEdit{ProfileID: "office", RulesetID: "domains", Target: "direct", Value: json.RawMessage(`"new.example"`), RuleType: "DOMAIN"})
-			return err
-		},
-	} {
-		if err := run(s.Context()); !errors.Is(err, repo.ErrValidation) {
-			t.Fatalf("%s transaction did not reject stored binding: %v", name, err)
-		}
-	}
-	if after, err := s.Repo.Store().Fingerprint(); err != nil || after != before {
-		t.Fatal("corrupt binding wrote a profile (including default)", err)
-	}
-	if !reflect.DeepEqual(files, clientCollectedFiles(t, s)) {
-		t.Fatal("corrupt binding wrote collected/cache files")
-	}
-	if calls.Load() != 0 {
-		t.Fatal("corrupt binding contacted Agent", calls.Load())
-	}
-	s.Get("/api/agents?summary=1", admin).WantStatus(200)
 }
 func TestN810PolicyPeersSkipCorruptBinding(t *testing.T) {
 	s := a24Fixture(t)

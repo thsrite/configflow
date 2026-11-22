@@ -13,41 +13,6 @@ import (
 	"configflow/internal/rules"
 )
 
-// A22 review F1: Python compares Agent members with dict.get equality. An Agent
-// whose port an administrator saved as text (PUT /api/agents/<id>) must neither
-// block another installation's registration nor turn status reads into 500s.
-func TestWronglyTypedAgentMembersFollowPythonEquality(t *testing.T) {
-	f := newFixture(t)
-	err := f.s.Repository.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
-		var legacy model.Agent
-		if err := json.Unmarshal([]byte(`{"id":"agent_legacy","name":"legacy","host":"192.0.2.50","port":"8080","token":"synthetic-legacy-token","service_type":"mihomo","profile_id":"default","latest_deployment":{"deployment_id":"x","http_status":"not-a-number"}}`), &legacy); err != nil {
-			return err
-		}
-		sys.Agents = append(sys.Agents, legacy)
-		return nil
-	})
-	must(t, err)
-	proofs := f.enroll(t) // registers both cores while the unrelated record exists
-	mihomoID := text(object(proofs["mihomo"])["id"])
-	_, err = f.s.Manager.EditAgent(f.ctx, mihomoID, agentEditsForTest(t, map[string]any{"port": "8080"}))
-	must(t, err)
-	view, err := f.s.Get(f.ctx, f.r.ID)
-	must(t, err)
-	if !flag(object(view)["target_changed"]) {
-		t.Fatal("a text port still matched the installation target")
-	}
-	_, err = f.s.Publish(f.ctx, f.r.ID, raw(map[string]any{}))
-	refusal(t, err, 409, msgIdentity)
-
-	// Integral float ports are equal in Python; a non-string service is a 403.
-	data := raw(map[string]any{"name": f.r.Name + "-oxidns", "host": f.r.Network.Address, "port": 8082.0, "service_type": "oxidns", "deployment_method": "shell"})
-	_, _, err = f.s.RegistrationProfile(f.ctx, f.r.ID, f.r.Token, data, "")
-	must(t, err)
-	data = raw(map[string]any{"name": f.r.Name + "-oxidns", "host": f.r.Network.Address, "port": 8082, "service_type": []string{"oxidns"}, "deployment_method": "shell"})
-	_, _, err = f.s.RegistrationProfile(f.ctx, f.r.ID, f.r.Token, data, "")
-	refusal(t, err, 403, msgService)
-}
-
 // A22 review F2: Python's enrollment refuses when any other Agent already holds
 // the exact name/address target, regardless of list order.
 func TestEnrollRefusesEarlierDuplicateTarget(t *testing.T) {

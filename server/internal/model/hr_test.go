@@ -56,11 +56,10 @@ func TestAgentJournalPreservation(t *testing.T) {
 	if agent.RuleSync.State.NativeTask == nil || *agent.RuleSync.State.NativeTask != "native-example" {
 		t.Fatal("native task ID lost")
 	}
-	// Loaded null followed by nil is deliberately unchanged, not a clear command.
-	agent.ConfigRevision = nil
+	// A stored null is a missing member (O18 T1b); unknown members are dropped.
 	out, err := Marshal(agent)
-	if err != nil || !bytes.Equal(out, source) {
-		t.Fatal("null or journal changed on read")
+	if err != nil || bytes.Contains(out, []byte("null")) || bytes.Contains(out, []byte("future")) {
+		t.Fatalf("null or unknown member written: %s", out)
 	}
 	task, _ := agent.Deployments.Get("task-example")
 	task.Status = "unknown"
@@ -69,7 +68,7 @@ func TestAgentJournalPreservation(t *testing.T) {
 	if err != nil {
 		t.Fatal("task edit failed")
 	}
-	_, before := fuzzMembers(t, source)
+	_, before := fuzzMembers(t, out)
 	_, after := fuzzMembers(t, changed)
 	for key, value := range before {
 		if key != "deployments" && !bytes.Equal(value, after[key]) {
@@ -89,11 +88,11 @@ func TestAgentJournalPreservation(t *testing.T) {
 
 func TestAgentJournalIssuesHideIdentifiers(t *testing.T) {
 	var agent Agent
-	if agent.UnmarshalJSON([]byte(`{"deployments":{"private-task":{"submitted":"synthetic-secret","config_revision":true}},"oxidns_ha_publication":{"identities":{"private-agent":{"port":false}}}}`)) != nil {
+	issues, err := DecodeStored([]byte(`{"deployments":{"private-task":{"submitted":"synthetic-secret","config_revision":true}},"oxidns_ha_publication":{"identities":{"private-agent":{"port":false}}}}`), &agent, "agents[0]")
+	if err != nil {
 		t.Fatal("decode failed")
 	}
-	issues := valueIssues(reflect.ValueOf(&agent), "agents[0]")
-	for _, want := range []FieldIssue{{"agents[0].deployments[0].submitted", IssueType}, {"agents[0].deployments[0].config_revision", IssueType}, {"agents[0].oxidns_ha_publication.identities[0].port", IssueType}} {
+	for _, want := range []FieldIssue{{"agents[0].deployments{*}.submitted", IssueType}, {"agents[0].deployments{*}.config_revision", IssueType}, {"agents[0].oxidns_ha_publication.identities{*}.port", IssueType}} {
 		if !slices.Contains(issues, want) {
 			t.Fatalf("missing schema issue: %v", issues)
 		}

@@ -31,8 +31,9 @@ func TestReviewB10HeartbeatMembersMatchExactNames(t *testing.T) {
 			name:    "folded metric component",
 			payload: `{"system_metrics":{"CPU":{"usage_percent":1},"memory":false,"Disk":null}}`,
 			want: map[string]string{
-				"system_metrics": `{"CPU":{"usage_percent":1},"memory":false,"Disk":null}`,
-				"cpu":            "", "memory": `false`, "disk": "",
+				// Undeclared and wrongly typed members are dropped (O18 T1b).
+				"system_metrics": `{}`,
+				"cpu":            "", "memory": "", "disk": "",
 			},
 		},
 		{
@@ -56,7 +57,7 @@ func TestReviewB10HeartbeatMembersMatchExactNames(t *testing.T) {
 				t.Fatal(err)
 			}
 			for member, want := range tt.want {
-				raw, present, err := current.MemberJSON(member)
+				raw, present, err := model.EncodeMember(&current, member)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -95,9 +96,12 @@ func TestReviewB10PublicHeartbeatBytesMatchModelPath(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			member, present, err := agent.MemberJSON(key)
-			if err != nil || !present {
-				t.Fatalf("%s=%s: member err=%v present=%v", key, value, err, present)
+			member, present, err := model.EncodeMember(&agent, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !present {
+				member = nil
 			}
 			var field json.RawMessage
 			switch key {

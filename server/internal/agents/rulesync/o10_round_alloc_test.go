@@ -148,7 +148,9 @@ func TestO10RoundSkipsAgentHistoryAndTracksLivePresence(t *testing.T) {
 	if !strings.Contains(out, "已离线") {
 		t.Fatalf("expected offline presence transition log, got: %s", out)
 	}
-	for _, secret := range []string{"synthetic-agent-token", "synthetic-nested-pass"} {
+	// The undeclared "future" member is dropped on load (O18 T1b), so its
+	// password is no credential any more.
+	for _, secret := range []string{"synthetic-agent-token"} {
 		if strings.Contains(out, secret) {
 			t.Fatalf("presence log leaked %q: %s", secret, out)
 		}

@@ -19,7 +19,7 @@ func TestNativeProtocolDecodersReadOnlyExactKeys(t *testing.T) {
 		t.Fatal("alias changed edits", edits, err)
 	}
 	patch, err := DecodeDeploymentUpdate(json.RawMessage(`{"status":"checking","Status":"succeeded","success":false,"Success":true,"profile_id":"forged"}`))
-	if err != nil || patch.record.Status != "checking" || patch.record.Success || patch.record.ProfileID != "" {
+	if err != nil || patch.record.Status != "checking" || flagSet(patch.record.Success) || patch.record.ProfileID != "" {
 		t.Fatal("alias or proof entered update", patch, err)
 	}
 }

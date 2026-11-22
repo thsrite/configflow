@@ -115,11 +115,7 @@ func readPanelAgent(ctx context.Context, m Registry, id, minimum, feature string
 	if a == nil {
 		return nil, panelFail("AGENT_NOT_FOUND", 404, msgAgentMissing)
 	}
-	service, present, err := a.MemberJSON("service_type")
-	if err != nil {
-		return nil, err
-	}
-	if present && originalText(service, present, nil) != "mihomo" {
+	if a.ServiceType != "" && a.ServiceType != "mihomo" {
 		return nil, panelFail("WRONG_SERVICE", 400, msgPanelWrongService)
 	}
 	if !modelVersionAtLeast(a, minimum) {
@@ -757,7 +753,8 @@ func CallPanel(ctx context.Context, m Registry, id, resource, method string, arg
 			timeout = 40
 		}
 	}
-	token, valid := originalString(a.MemberJSON("token"))
+	token := a.Token
+	valid := token != ""
 	if !valid {
 		return nil, panelFail("AGENT_UNREACHABLE", 0, "")
 	}

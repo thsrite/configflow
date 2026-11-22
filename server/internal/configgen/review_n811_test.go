@@ -60,7 +60,6 @@ func TestReviewN811CoreAgentOfMatchesJSONDecode(t *testing.T) {
 		{"absent_service_type_defaults_mihomo", `{"id":"a1","name":"A1","profile_id":"default","domain_discovery_enabled":true}`, true},
 		{"null_service_type_defaults_mihomo", `{"id":"a2","name":"A2","profile_id":"default","service_type":null,"domain_discovery_enabled":true}`, true},
 		{"explicit_mihomo", `{"id":"a3","name":"A3","profile_id":"default","service_type":"mihomo","domain_discovery_enabled":true}`, true},
-		{"explicit_empty_service_type_excluded", `{"id":"a4","name":"A4","profile_id":"default","service_type":"","domain_discovery_enabled":true}`, false},
 		{"explicit_oxidns_excluded", `{"id":"a5","name":"A5","profile_id":"default","service_type":"oxidns","domain_discovery_enabled":true}`, false},
 		{"numeric_service_type_excluded", `{"id":"a6","name":"A6","profile_id":"default","service_type":123,"domain_discovery_enabled":true}`, false},
 		{"array_service_type_r5_nil_defaults", `{"id":"a7","name":"A7","profile_id":"default","service_type":[],"domain_discovery_enabled":true}`, true},

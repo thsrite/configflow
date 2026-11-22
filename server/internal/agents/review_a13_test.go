@@ -34,13 +34,13 @@ func withHistory(t *testing.T, m *Manager, id string) {
 				return err
 			}
 			ipv6Raw := json.RawMessage(`{"release-4":{"status":"ok"}}`)
-			if err := (*list)[i].SetJSON("deployments", depRaw); err != nil {
+			if err := model.SetStoredMember(&(*list)[i], "deployments", depRaw); err != nil {
 				return err
 			}
-			if err := (*list)[i].SetJSON("latest_deployment", latestRaw); err != nil {
+			if err := model.SetStoredMember(&(*list)[i], "latest_deployment", latestRaw); err != nil {
 				return err
 			}
-			return (*list)[i].SetJSON("ipv6_verifications", ipv6Raw)
+			return model.SetStoredMember(&(*list)[i], "ipv6_verifications", ipv6Raw)
 		}
 		return nil
 	})
@@ -63,10 +63,6 @@ func TestReviewInspectionKeepsRuntimeOverlay(t *testing.T) {
 	})
 	if err != nil || seen != len(light) || len(light) == 0 {
 		t.Fatal("Manager inspection lost records")
-	}
-	cpuRaw, cpuOK, err := light[0].MemberJSON("cpu")
-	if err != nil || !cpuOK || string(cpuRaw) != "12.5" {
-		t.Fatalf("inspection changed runtime cpu overlay: %s %v %v", cpuRaw, cpuOK, err)
 	}
 	if light[0].Deployments.Len() != 0 || light[0].Version != "9.9.9-go" || !FreshHeartbeat(light[0].LastHeartbeat, nil) {
 		t.Fatal("inspection changed runtime overlay or copied history")

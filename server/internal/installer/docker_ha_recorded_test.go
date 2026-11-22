@@ -482,7 +482,26 @@ func (m *recordedManager) EditAgents(ctx context.Context, profileID string, edit
 	if err != nil {
 		return err
 	}
-	if want, have := canonical(m.record["after"]), canonical(afterAny); want != have {
+	// Agent records are plain structs (O18 T1b): Python's stored nulls and
+	// empty texts are missing members, so Python's result is compared after
+	// the same decoding.
+	pythonAfter, err := json.Marshal(m.record["after"])
+	if err != nil {
+		return err
+	}
+	var expected []model.Agent
+	if err := jsondecode.Unmarshal(pythonAfter, &expected); err != nil {
+		return err
+	}
+	rawExpected, err := model.Marshal(expected)
+	if err != nil {
+		return err
+	}
+	expectedAny, err := parseJSONAny(rawExpected)
+	if err != nil {
+		return err
+	}
+	if want, have := canonical(expectedAny), canonical(afterAny); want != have {
 		m.problem = "agents after the update: " + recordedDifference(want, have)
 	}
 	if pyErr := mapList(m.record, "err"); pyErr != nil {

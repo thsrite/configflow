@@ -19,7 +19,7 @@ func TestHistoricalHAPairReadDoesNotReconcile(t *testing.T) {
 					"id": "pair", "status": status, "message": "synthetic pair status",
 					"children": map[string]any{e.id(): "history"},
 				})
-				if err := e.firstAgent(system).SetJSON(HAField, raw); err != nil {
+				if err := model.SetStoredMember(e.firstAgent(system), HAField, raw); err != nil {
 					t.Fatal(err)
 				}
 			})

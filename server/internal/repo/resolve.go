@@ -336,47 +336,35 @@ const (
 	agentCopyFull                          // full Agent records (explicit PublishConfig(..., true))
 )
 
-// oxiDNSAgentFields are the only Agent members OxiDNS policy and rule-DNS
-// readers inspect; deployment and IPv6 verification histories are never copied.
-var oxiDNSAgentFields = []string{
-	"id",
-	"name",
-	"host",
-	"service_type",
-	"profile_id",
-	"enabled",
-	"dns_follow",
-	"rule_sync",
-}
-
-// copyOxiDNSAgents projects only the OxiDNS-consumed members of each Agent into
-// caller-owned records without touching deployment/IPv6 histories or tokens.
+// copyOxiDNSAgents projects only the members OxiDNS policy and rule-DNS
+// readers inspect (identity, service, profile, enabled, dns_follow,
+// rule_sync) into caller-owned records; deployment and IPv6 verification
+// histories and tokens are never copied.
 func copyOxiDNSAgents(records []model.Agent) ([]model.Agent, error) {
 	out := make([]model.Agent, 0, len(records))
 	for i := range records {
-		var projected model.Fields
-		for _, key := range oxiDNSAgentFields {
-			raw, present, err := records[i].MemberJSON(key)
-			if err != nil {
-				return nil, err
-			}
-			if present {
-				if err := projected.Set(key, raw); err != nil {
-					return nil, err
-				}
-			}
+		source := &records[i]
+		agent := model.Agent{
+			ID: source.ID, Name: source.Name, Host: source.Host, ServiceType: source.ServiceType,
+			ProfileID: source.ProfileID, Enabled: cloneBool(source.Enabled),
 		}
-		encoded, err := projected.MarshalJSON()
-		if err != nil {
-			return nil, err
+		var err error
+		if agent.DNSFollow, err = model.Clone(source.DNSFollow); err != nil {
+			return nil, fmt.Errorf("copy OxiDNS agent: %w", err)
 		}
-		var agent model.Agent
-		if err := jsondecode.Unmarshal(encoded, &agent); err != nil {
+		if agent.RuleSync, err = model.Clone(source.RuleSync); err != nil {
 			return nil, fmt.Errorf("copy OxiDNS agent: %w", err)
 		}
 		out = append(out, agent)
 	}
 	return out, nil
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	return new(*value)
 }
 
 // resolveConfig builds the Config of a profile from one document: roots

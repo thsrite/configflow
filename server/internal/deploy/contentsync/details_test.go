@@ -228,10 +228,13 @@ func TestInvalidInputsAndFingerprintStrictness(t *testing.T) {
 		f.agent["applied_content"].(map[string]any)["fingerprint"] = fp
 		requireStatus(t, f.status(), "unknown", "baseline_invalid")
 	}
-	// The key includes unknown fields in the complete applied baseline.
+	// The key includes every member of the applied baseline; members the
+	// record does not declare are dropped on load (O18 T1b) and change nothing.
 	f = newFixture(t, nil)
 	f.status()
 	f.spawn.run(t)
 	f.agent["applied_content"].(map[string]any)["extra"] = map[string]any{"nested": 1}
+	requireStatus(t, f.status(), "synced", "")
+	f.agent["applied_content"].(map[string]any)["base_url"] = "https://changed.example"
 	requireStatus(t, f.status(), "checking", "")
 }

@@ -419,7 +419,7 @@ func heartbeatFeature(agent *model.Agent, field string) bool {
 	if agent == nil || agent.ServiceType != "mihomo" {
 		return false
 	}
-	raw, present, err := agent.MemberJSON(field)
+	raw, present, err := model.EncodeMember(agent, field)
 	if err != nil || !present {
 		return false
 	}
@@ -465,7 +465,7 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	// The address is not part of the stored heartbeat; it only tells the panel
 	// where the Agent now is.
 	reported := data.Host
-	data.Clear("host")
+	data.Host = ""
 	ok, err := manager.ObserveHeartbeat(ctx, agentID, &data)
 	if err != nil {
 		return nil, err

@@ -24,13 +24,13 @@ func TestReviewN810ReregistrationKeepsOnlyPythonMembers(t *testing.T) {
 			{"service_status", `"running"`},
 			{"gateway_installation_id", `""`},
 			{"config_version", `"7"`},
-			{"rule_sync", `{"enabled":true}`},
+			{"rule_sync", `{"settings":{"library":true}}`},
 		} {
-			if err := a.SetJSON(tt.name, []byte(tt.raw)); err != nil {
+			if err := model.SetStoredMember(&a, tt.name, []byte(tt.raw)); err != nil {
 				return err
 			}
 		}
-		return a.Fields.Set("future", []byte(`{"number":2.00}`))
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -57,13 +57,13 @@ func TestReviewN810ReregistrationKeepsOnlyPythonMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"docker_ha_installation_id", "node_test_dns_endpoints", "service_status", "gateway_installation_id", "future"} {
-		raw, present, err := stored.MemberJSON(name)
+		raw, present, err := model.EncodeMember(&stored, name)
 		if err != nil || present {
 			t.Errorf("re-registration kept %s=%s err=%v; Python drops it", name, raw, err)
 		}
 	}
-	for _, tt := range []struct{ name, raw string }{{"config_version", `"7"`}, {"rule_sync", `{"enabled":true}`}} {
-		raw, present, err := stored.MemberJSON(tt.name)
+	for _, tt := range []struct{ name, raw string }{{"config_version", `"7"`}, {"rule_sync", `{"settings":{"library":true}}`}} {
+		raw, present, err := model.EncodeMember(&stored, tt.name)
 		if err != nil || !present || !bytes.Equal(raw, []byte(tt.raw)) {
 			t.Errorf("re-registration lost %s: %s %v %v", tt.name, raw, present, err)
 		}

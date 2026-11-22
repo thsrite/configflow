@@ -206,6 +206,11 @@ func TestReferenceAgentURLs(t *testing.T) {
 				t.Logf("%s: Go-native resolver does not reinterpret this IPv4 spelling", name)
 				continue
 			}
+			if kind != "int" || host == "" {
+				// Accepted (O18 T1b): a registered port that is not an
+				// integer reads as its integer value or as no port.
+				continue
+			}
 			if strings.Contains(host, "%") && !strings.Contains(host, ":") && outcome == "connection_error" {
 				// Accepted (N2): net/url refuses a percent-encoded host name
 				// ("%31%32%37.0.0.1") that requests decoded.
@@ -298,6 +303,9 @@ func TestReferenceRecordDeploymentStatuses(t *testing.T) {
 		if err := json.Unmarshal(rowRaw, &c); err != nil {
 			t.Fatal(err)
 		}
+		if !jsonText(c.Status) && string(c.Status) != "null" {
+			continue // accepted O18 T1b difference: a reported status that is not text
+		}
 		e.editSystem(func(system *model.System) {
 			var a model.Agent
 			rawAgent := mustJSON(t, map[string]any{
@@ -334,14 +342,14 @@ func TestReferenceRecordDeploymentStatuses(t *testing.T) {
 			if err != nil {
 				t.Errorf("row %d: %v", index, err)
 			} else {
-				gotStatus, _, _ := result.MemberJSON("status")
+				gotStatus, _, _ := model.EncodeMember(&result, "status")
 				if diff := diffJSONValues(t, c.ResultStatus, gotStatus); diff != "" {
 					t.Errorf("row %d result_status: %s", index, diff)
 				}
 			}
 		}
 		savedDep, _ := e.stored("a").Deployments.Get("d")
-		savedStatus, _, _ := savedDep.MemberJSON("status")
+		savedStatus, _, _ := model.EncodeMember(&savedDep, "status")
 		if diff := diffJSONValues(t, c.SavedStatus, savedStatus); diff != "" {
 			t.Errorf("row %d saved_status: %s", index, diff)
 		}

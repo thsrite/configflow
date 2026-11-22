@@ -67,6 +67,9 @@ func pointerPath(typ reflect.Type, prefix string, pointer jsontext.Pointer) stri
 			typ = typ.Elem()
 		}
 		switch {
+		case typ != nil && orderedElem(typ) != nil:
+			path += "{*}"
+			typ = orderedElem(typ)
 		case typ != nil && typ.Kind() == reflect.Struct:
 			field, ok := plainFields(typ)[token]
 			if !ok {
@@ -152,8 +155,18 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				}
 				*v = token.Bool()
 				return nil
+			case 'n':
+				return skipInvalid(dec, sink, func() { *v = false })
 			}
-			return skipInvalid(dec, sink, func() { *v = false })
+			// A switch stored with another type keeps its truth value (the
+			// flag-truthiness ruling: 1 and "yes" are on, 0, "" and [] off).
+			value, err := dec.ReadValue()
+			if err != nil {
+				return err
+			}
+			*v = JSONSwitchEnabled(value, false)
+			sink.add(dec, IssueType)
+			return nil
 		}),
 		// A stored null switch reads as off: Python's get(key, True) returns
 		// None, which is falsy (the flag-truthiness ruling).
@@ -202,8 +215,13 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			if typ.Kind() == reflect.Slice && kind == '[' && selfDecoding(typ.Elem()) {
 				return decodeRecordList(dec, sink, reflect.ValueOf(v).Elem())
 			}
+			// A record behind a pointer stored with another kind is nil.
+			if typ.Kind() == reflect.Pointer && typ.Elem().Kind() == reflect.Struct && isPlain(typ.Elem()) && kind != '{' {
+				return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().SetZero() })
+			}
 			switch {
-			case typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && kind != '[',
+			case orderedElem(typ) != nil && kind != '{',
+				typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && kind != '[',
 				typ.Kind() == reflect.Map && kind != '{',
 				typ.Kind() == reflect.Struct && isPlain(typ) && kind != '{':
 				return skipInvalid(dec, sink, func() { reflect.ValueOf(v).Elem().SetZero() })
@@ -213,7 +231,13 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 		// Records not yet migrated decode themselves (R5 inside); a value they
 		// refuse (not an object, for example) is zero plus an issue.
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v json.Unmarshaler) error {
+			if wired, ok := v.(plainWirer); ok {
+				return decodeWire(dec, v, wired)
+			}
 			if _, plain := v.(plainRecord); plain {
+				return errors.ErrUnsupported
+			}
+			if _, from := v.(jsonv2.UnmarshalerFrom); from {
 				return errors.ErrUnsupported
 			}
 			value, err := dec.ReadValue()
@@ -370,6 +394,9 @@ func typeHasPlain(typ reflect.Type, seen map[reflect.Type]bool) bool {
 		}
 		return typeHasPlain(typ.Elem(), seen)
 	case reflect.Struct:
+		if elem := orderedElem(typ); elem != nil {
+			return typeHasPlain(elem, seen)
+		}
 		return isPlain(typ)
 	}
 	return false
@@ -393,7 +420,7 @@ func walkUnknown(dec *jsontext.Decoder, typ reflect.Type, path string, issues *[
 	}
 	kind := dec.PeekKind()
 	switch {
-	case kind == '{' && typ.Kind() == reflect.Struct:
+	case kind == '{' && typ.Kind() == reflect.Struct && orderedElem(typ) == nil:
 		fields := plainFields(typ)
 		if _, err := dec.ReadToken(); err != nil {
 			return err
@@ -418,7 +445,11 @@ func walkUnknown(dec *jsontext.Decoder, typ reflect.Type, path string, issues *[
 		}
 		_, err := dec.ReadToken()
 		return err
-	case kind == '{' && typ.Kind() == reflect.Map:
+	case kind == '{' && (typ.Kind() == reflect.Map || orderedElem(typ) != nil):
+		elem := orderedElem(typ)
+		if elem == nil {
+			elem = typ.Elem()
+		}
 		if _, err := dec.ReadToken(); err != nil {
 			return err
 		}
@@ -426,7 +457,7 @@ func walkUnknown(dec *jsontext.Decoder, typ reflect.Type, path string, issues *[
 			if _, err := dec.ReadToken(); err != nil {
 				return err
 			}
-			if err := walkUnknown(dec, typ.Elem(), path+"{*}", issues); err != nil {
+			if err := walkUnknown(dec, elem, path+"{*}", issues); err != nil {
 				return err
 			}
 		}
@@ -449,7 +480,22 @@ func walkUnknown(dec *jsontext.Decoder, typ reflect.Type, path string, issues *[
 
 // strictOptions decode input from HTTP and imports: exact member names,
 // unknown members dropped (records do not keep them), no leaf leniency.
+// Nested plain records (Agent and its journals) decode themselves with the
+// stored-data rules: input carries them whole, as Python-written exports do.
 var strictOptions = jsontext.AllowInvalidUTF8(true)
+
+// plainWirer is a plain record nested in another: plainWire returns the
+// record as its method-free wire type, so its members decode with the
+// options of the enclosing decoder (lenient issues for storage, strict for
+// input) instead of the record's own lenient UnmarshalJSON.
+type plainWirer interface{ plainWire() any }
+
+// decodeWire replaces v (a pointer to a plain record) by decoding the next
+// value into its wire view; null is the zero record.
+func decodeWire(dec *jsontext.Decoder, v any, wired plainWirer) error {
+	reflect.ValueOf(v).Elem().SetZero()
+	return jsonv2.UnmarshalDecode(dec, wired.plainWire())
+}
 
 // decodeMember strictly decodes data into a declared member of a plain
 // record. A type mismatch is a MemberTypeError; the field is not modified.
@@ -571,7 +617,7 @@ func EncodeMembers(rec any) ([]StoredMember, error) {
 	members := make([]StoredMember, 0, len(fields))
 	for _, field := range fields {
 		current := value.Field(field.index)
-		if field.omitzero && current.IsZero() {
+		if field.omitzero && omitted(current) {
 			continue
 		}
 		data, err := encodeUnit(current.Interface())
@@ -585,8 +631,8 @@ func EncodeMembers(rec any) ([]StoredMember, error) {
 
 // EncodeMember is EncodeMembers for one member; present is false for an
 // omitted (omitzero) or undeclared member.
-func EncodeMember(rec any, name string) (data []byte, present bool, err error) {
-	value := reflect.ValueOf(rec)
+func EncodeMember(rec any, name string) (data json.RawMessage, present bool, err error) {
+	value := plainPointer(reflect.ValueOf(rec))
 	if value.Kind() != reflect.Pointer || value.IsNil() || !isPlain(value.Type().Elem()) {
 		return nil, false, fmt.Errorf("%w: stored members need a plain record", ErrType)
 	}
@@ -596,7 +642,7 @@ func EncodeMember(rec any, name string) (data []byte, present bool, err error) {
 			continue
 		}
 		current := value.Field(field.index)
-		if field.omitzero && current.IsZero() {
+		if field.omitzero && omitted(current) {
 			return nil, false, nil
 		}
 		data, err := encodeUnit(current.Interface())
@@ -725,4 +771,68 @@ func decodeRecordList(dec *jsontext.Decoder, sink *issueSink, target reflect.Val
 	}
 	target.Set(list)
 	return nil
+}
+
+// omitted reports a zero value for omitzero: its IsZero method if it has one
+// (OrderedMap), otherwise the Go zero value.
+func omitted(value reflect.Value) bool {
+	if orderedElem(value.Type()) != nil {
+		return value.Field(0).Len() == 0
+	}
+	return value.IsZero()
+}
+
+// decodePlain decodes stored or captured data into a plain record's wire type
+// (the record without its methods) leniently; issues are not reported. The
+// record must be a JSON object.
+func decodePlain[W any](data []byte, out *W) error {
+	if err := requireObject(data); err != nil {
+		return err
+	}
+	var decoded W
+	if _, err := DecodeStored(data, &decoded, ""); err != nil {
+		return err
+	}
+	*out = decoded
+	return nil
+}
+
+// DecodeInputMember strictly decodes input data into a declared member of a
+// plain record (rec is a pointer; record names it in errors). A value of
+// another JSON type is a *MemberTypeError and leaves the record unchanged.
+func DecodeInputMember(record string, rec any, member string, data []byte) error {
+	return decodeMember(record, rec, member, data)
+}
+
+// plainPointer follows a pointer to a pointer of a plain record.
+func plainPointer(value reflect.Value) reflect.Value {
+	for value.Kind() == reflect.Pointer && !value.IsNil() && value.Elem().Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+	return value
+}
+
+// SetStoredMember decodes data into a declared member of a plain record (rec
+// is a pointer, or a pointer to one) with the stored-data rules: a value of
+// the wrong type becomes the zero value.
+func SetStoredMember(rec any, member string, data []byte) error {
+	target := plainPointer(reflect.ValueOf(rec))
+	if !target.IsValid() || target.Kind() != reflect.Pointer || target.IsNil() {
+		return fmt.Errorf("%w: stored member target must be a plain record", ErrType)
+	}
+	known, _, err := DecodeStoredMember(target.Interface(), member, data, member)
+	if err == nil && !known {
+		err = fmt.Errorf("%w: set of an undeclared member %q", ErrType, member)
+	}
+	return err
+}
+
+// ZeroMember sets a declared member of a plain record (rec is a pointer, or a
+// pointer to one) to its zero value.
+func ZeroMember(rec any, member string) error {
+	target := plainPointer(reflect.ValueOf(rec))
+	if !target.IsValid() || target.Kind() != reflect.Pointer || target.IsNil() || !isPlain(target.Type().Elem()) {
+		return fmt.Errorf("%w: zero member target must be a plain record", ErrType)
+	}
+	return clearMember(target.Interface(), member)
 }

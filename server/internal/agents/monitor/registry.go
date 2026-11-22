@@ -42,7 +42,7 @@ func originalText(raw json.RawMessage, present bool, err error) string {
 }
 
 func modelVersionAtLeast(agent *model.Agent, minimum string) bool {
-	version, valid := originalString(agent.MemberJSON("version"))
+	version, valid := agent.Version, true
 	if !valid {
 		return false
 	}
@@ -60,7 +60,7 @@ func Origin(agent *model.Agent) (string, error) {
 	if agent == nil {
 		return "", unreachable()
 	}
-	host := originalText(agent.MemberJSON("host"))
+	host := agent.Host
 	if host == "" || strings.ContainsAny(host, "/?#@\\") {
 		return "", unreachable()
 	}
@@ -73,12 +73,11 @@ func Origin(agent *model.Agent) (string, error) {
 	} else if !hostnameRE.MatchString(host) {
 		return "", unreachable()
 	}
-	raw, present, err := agent.MemberJSON("port")
-	var port *int64
-	if err != nil || !present || jsondecode.Unmarshal(raw, &port) != nil || port == nil || *port < 1 || *port > 65535 {
+	port := int64(agent.Port)
+	if port < 1 || port > 65535 {
 		return "", unreachable()
 	}
-	return "http://" + host + ":" + strconv.FormatInt(int64(*port), 10), nil
+	return "http://" + host + ":" + strconv.FormatInt(port, 10), nil
 }
 
 func monitorHeaders(token string) (http.Header, error) {

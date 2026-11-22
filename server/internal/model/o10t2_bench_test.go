@@ -29,7 +29,7 @@ func BenchmarkO10T2AgentList(b *testing.B) {
 		}
 		builder.WriteString(`},"ipv6_verifications":{"v":{"status":"ok","checks":[{"id":"c","ok":true}]}}}`)
 		var agent Agent
-		if err := DecodeRecord([]byte(builder.String()), &agent, &agent.raw); err != nil {
+		if err := json.Unmarshal([]byte(builder.String()), &agent); err != nil {
 			b.Fatal(err)
 		}
 		agents = append(agents, agent)

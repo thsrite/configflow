@@ -7,7 +7,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -136,54 +135,9 @@ func (m *Manager) matchesRegistrationClaim(ctx context.Context, system *model.Sy
 	return err == nil
 }
 
-// admissionSessionIdentity validates original stored proof token types. Shared
-// text coercion must not turn numeric identity members into a capability.
+// admissionSessionIdentity requires a complete stored capability.
 func admissionSessionIdentity(session model.AgentRegistrationSession) bool {
-	for _, key := range []string{"hash", "name", "host", "service_type", "deployment_method", "profile_id"} {
-		raw, present, err := session.MemberJSON(key)
-		if err != nil {
-			return false
-		}
-		if !present {
-			if key == "hash" {
-				return false
-			}
-			continue
-		}
-		var text *string
-		if json.Unmarshal(raw, &text) != nil || text == nil {
-			return false
-		}
-		if key == "hash" && (*text == "" || *text != session.Hash) {
-			return false
-		}
-	}
-	for _, key := range []string{"port", "expires"} {
-		raw, present, err := session.MemberJSON(key)
-		if err != nil || !present {
-			return false
-		}
-		var value *model.Int
-		if json.Unmarshal(raw, &value) != nil || value == nil {
-			return false
-		}
-	}
-	return true
-}
-
-// registrationSessionPortMatches requires a JSON number at the stored proof
-// boundary. model.Int's compatibility string decode is not ownership evidence.
-func registrationSessionPortMatches(session model.AgentRegistrationSession, port model.Int) bool {
-	raw, present, err := session.MemberJSON("port")
-	if err != nil || !present {
-		return false
-	}
-	var number *float64
-	if json.Unmarshal(raw, &number) != nil || number == nil {
-		return false
-	}
-	var stored model.Int
-	return json.Unmarshal(raw, &stored) == nil && stored == port
+	return session.Hash != "" && session.Port != 0 && session.Expires != 0
 }
 
 // admitRegistrationClaim changes only the caller's system working copy. Its
@@ -209,7 +163,7 @@ func (m *Manager) admitRegistrationClaim(ctx context.Context, system *model.Syst
 		if subtle.ConstantTimeCompare([]byte(digest), []byte(session.Hash)) != 1 {
 			continue
 		}
-		if admission.Credential == "" || claim.invalid || !admissionSessionIdentity(session) || !registrationSessionPortMatches(session, claim.Port) || session.Name != claim.Name ||
+		if admission.Credential == "" || claim.invalid || !admissionSessionIdentity(session) || session.Name != claim.Name ||
 			session.ServiceType != claim.ServiceType || session.DeploymentMethod != claim.DeploymentMethod || session.Port != claim.Port ||
 			session.Host != "" && session.Host != host || claim.ProfileID != "" && claim.ProfileID != session.ProfileID {
 			if admission.AllowNew {

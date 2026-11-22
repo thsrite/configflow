@@ -548,10 +548,10 @@ func TestHeartbeatKeepsThePublicationHistory(t *testing.T) {
 		for _, key := range []string{"release-0", "release-1", "release-2", "release-3", "release-4"} {
 			deployments[key] = map[string]any{"deployment_id": key, "status": "succeeded"}
 		}
-		if err := (*list)[0].SetJSON("deployments", mustRawJSON(t, deployments)); err != nil {
+		if err := model.SetStoredMember(&(*list)[0], "deployments", mustRawJSON(t, deployments)); err != nil {
 			return err
 		}
-		return (*list)[0].SetJSON("ipv6_verifications", mustRawJSON(t, map[string]any{"release-4": map[string]any{"status": "ok"}}))
+		return model.SetStoredMember(&(*list)[0], "ipv6_verifications", mustRawJSON(t, map[string]any{"release-4": map[string]any{"status": "ok"}}))
 	}); err != nil {
 		t.Fatal(err)
 	}

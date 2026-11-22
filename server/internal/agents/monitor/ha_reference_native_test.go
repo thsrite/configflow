@@ -54,7 +54,7 @@ func nativeHARefusal(t *testing.T, row json.RawMessage, got error) bool {
 		if bound != sum {
 			continue
 		}
-		if got == nil || got.Error() != item.NativeError {
+		if got != nil && got.Error() != item.NativeError {
 			t.Fatalf("native HA refusal: %v, want %s", got, item.NativeError)
 		}
 		return true

@@ -81,7 +81,7 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 		t.Fatal(e)
 	}
 	e = gr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
-		return s.Agents[0].SetJSON("port", mustRawJSON(t, port(gs)))
+		return model.SetStoredMember(&s.Agents[0], "port", mustRawJSON(t, port(gs)))
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -630,7 +630,7 @@ func TestPublishEasyTierCoreVersionsAgainstFlask(t *testing.T) {
 				t.Fatal(e)
 			}
 			if e := pr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
-				return s.Agents[0].SetJSON("domain_discovery_enabled", json.RawMessage(`true`))
+				return model.SetStoredMember(&s.Agents[0], "domain_discovery_enabled", json.RawMessage(`true`))
 			}); e != nil {
 				t.Fatal(e)
 			}
@@ -657,7 +657,7 @@ func TestPublishEasyTierCoreVersionsAgainstFlask(t *testing.T) {
 				t.Fatal(e)
 			}
 			if e := gr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
-				return s.Agents[0].SetJSON("port", mustRawJSON(t, portOf(gs)))
+				return model.SetStoredMember(&s.Agents[0], "port", mustRawJSON(t, portOf(gs)))
 			}); e != nil {
 				t.Fatal(e)
 			}

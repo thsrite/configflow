@@ -104,12 +104,12 @@ func FollowModel(ctx context.Context, m *agents.Manager, a *model.Agent, reporte
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	id, ok := originalString(a.MemberJSON("id"))
+	id, ok := a.ID, true
 	if !ok || id == "" {
 		return agents.ErrAgentEndpoint
 	}
 	host := Usable(reportedHost)
-	old, _ := originalString(a.MemberJSON("host"))
+	old, _ := a.Host, true
 	if host == "" || host == old {
 		addressMu.Lock()
 		pending := reported[id]
@@ -162,7 +162,7 @@ func ConfirmedModel(a *model.Agent, reportedHost string) string {
 		return ""
 	}
 	host := Usable(reportedHost)
-	old, ok := originalString(a.MemberJSON("host"))
+	old, ok := a.Host, true
 	if ok && host != "" && host == old {
 		return host
 	}
@@ -172,11 +172,7 @@ func addressRequest(ctx context.Context, m *agents.Manager, a *model.Agent, host
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	token, ok := originalString(a.MemberJSON("token"))
-	port, present, err := a.MemberJSON("port")
-	if !ok || !present || err != nil {
-		return nil, agents.ErrAgentEndpoint
-	}
+	token, port := a.Token, portJSON(a)
 	header := http.Header{"Authorization": {"Bearer " + token}}
 	if len(body) > 0 {
 		header.Set("Content-Type", "application/json")
@@ -241,7 +237,7 @@ func followInBackground(ctx context.Context, m *agents.Manager, id, host string)
 	}
 }
 func sameNamedAtModel(ctx context.Context, m *agents.Manager, a *model.Agent, id, host string) (bool, error) {
-	name, valid := originalString(a.MemberJSON("name"))
+	name, valid := a.Name, true
 	if !valid {
 		return false, agents.ErrAgentEndpoint
 	}
@@ -250,9 +246,9 @@ func sameNamedAtModel(ctx context.Context, m *agents.Manager, a *model.Agent, id
 		return false, err
 	}
 	for i := range rows {
-		otherID, idOK := originalString(rows[i].MemberJSON("id"))
-		otherName, nOK := originalString(rows[i].MemberJSON("name"))
-		otherHost, hOK := originalString(rows[i].MemberJSON("host"))
+		otherID, idOK := rows[i].ID, true
+		otherName, nOK := rows[i].Name, true
+		otherHost, hOK := rows[i].Host, true
 		if idOK && nOK && hOK && otherID != id && otherName == name && otherHost == host {
 			return true, nil
 		}
@@ -286,7 +282,7 @@ func followModel(ctx context.Context, m *agents.Manager, id, host string) error 
 	if a == nil {
 		return nil
 	}
-	old, _ := originalString(a.MemberJSON("host"))
+	old, _ := a.Host, true
 	if old == host {
 		return nil
 	}
@@ -312,7 +308,7 @@ func followModel(ctx context.Context, m *agents.Manager, id, host string) error 
 	}
 	if !ok {
 		addressLog.Warning(fmt.Sprintf(msgFollowUnreachable, label, old, host))
-		port, _, _ := a.MemberJSON("port")
+		port := portJSON(a)
 		report(ctx, m, a, host, msgUnreachableUnchanged, fmt.Sprintf(msgFollowHelp, host, rawText(port), old))
 		return nil
 	}
@@ -376,7 +372,7 @@ func addressMode(a *model.Agent, status int, info model.Fields) (string, string)
 	if status == 200 && hasContent(configured) {
 		return "env", EnvEdit
 	}
-	method, _ := originalString(a.MemberJSON("deployment_method"))
+	method, _ := a.DeploymentMethod, true
 	if method == "docker" {
 		return "record", msgDockerAddress
 	}
@@ -406,11 +402,8 @@ func DescribeModel(ctx context.Context, m *agents.Manager, a *model.Agent) (*Add
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	host, _ := originalString(a.MemberJSON("host"))
-	port, _, _ := a.MemberJSON("port")
-	if len(port) == 0 {
-		port = []byte("null")
-	}
+	host, _ := a.Host, true
+	port := portJSON(a)
 	result := &AddressDescription{Host: host, Port: port, Addresses: []string{}}
 	member, err := memberHA(a)
 	if err != nil {
@@ -473,11 +466,11 @@ func ChangeModel(ctx context.Context, m *agents.Manager, a *model.Agent, value s
 	if host == "" {
 		return refusalModel(msgEnterIPv4), 400, nil
 	}
-	id, ok := originalString(a.MemberJSON("id"))
+	id, ok := a.ID, true
 	if !ok || id == "" {
 		return nil, 0, agents.ErrAgentEndpoint
 	}
-	old, _ := originalString(a.MemberJSON("host"))
+	old, _ := a.Host, true
 	label := agentLabel(a)
 	member, err := memberHA(a)
 	if err != nil {
@@ -504,8 +497,7 @@ func ChangeModel(ctx context.Context, m *agents.Manager, a *model.Agent, value s
 			status = 0
 		}
 	}
-	raw, _, _ := a.MemberJSON("port")
-	port := rawText(raw)
+	port := rawText(portJSON(a))
 	if status == 0 {
 		return refusalModel(fmt.Sprintf(msgNewUnreachable, host, port)), 502, nil
 	}

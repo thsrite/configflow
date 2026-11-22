@@ -2,6 +2,7 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/model"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -37,13 +38,13 @@ func FuzzRegistrationInputOwnershipBoundary(f *testing.F) {
 			t.Fatal("unknown fields changed identity", err)
 		}
 		for _, key := range []string{"token", "gateway_installation_id"} {
-			if raw, present, err := other.record.MemberJSON(key); err != nil || present {
+			if raw, present, err := model.EncodeMember(&other.record, key); err != nil || present {
 				t.Fatalf("request crossed ownership boundary: %s=%s err=%v", key, raw, err)
 			}
 		}
 		for _, key := range []string{"name", "host", "port", "profile_id", "service_type", "deployment_method", "version"} {
-			a, aPresent, aErr := input.record.MemberJSON(key)
-			b, bPresent, bErr := other.record.MemberJSON(key)
+			a, aPresent, aErr := model.EncodeMember(&input.record, key)
+			b, bPresent, bErr := model.EncodeMember(&other.record, key)
 			if aErr != nil || bErr != nil || aPresent != bPresent {
 				t.Fatal("presence changed")
 			}

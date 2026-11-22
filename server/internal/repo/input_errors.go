@@ -139,6 +139,13 @@ func checkDocumentInput(raw json.RawMessage) error {
 				return validationError(msgSystemMembers)
 			}
 		}
+		// Agent records decode leniently; their identities are checked on
+		// the input as Python's validation did (an ID must be text).
+		if agents, present := system.get("agents"); present {
+			if _, err := itemsOf(agents, "Agent"); err != nil {
+				return err
+			}
+		}
 	}
 	if raw, present := root.get("shared"); present && jsonKind(raw) == '{' {
 		if err := check("shared", viewOfJSON(raw)); err != nil {

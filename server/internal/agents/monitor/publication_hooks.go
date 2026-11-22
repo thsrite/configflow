@@ -29,7 +29,7 @@ func CheckpointStatistics(ctx context.Context, m Registry, id, deploymentID, exp
 	if err != nil {
 		return err
 	}
-	if a == nil || originalText(a.MemberJSON("service_type")) != "oxidns" {
+	if a == nil || a.ServiceType != "oxidns" {
 		return nil
 	}
 	err = checkpointStatistics(ctx, m, id, deploymentID, expectedRevision)
@@ -107,17 +107,8 @@ func checkpointStatistics(ctx context.Context, m Registry, id, deploymentID, exp
 	return compareDashboardState(ctx, m, store, id, previous.Generation, &next, func(held context.Context) error { return verifyNativePublication(held, m, id, digest, pending) })
 }
 func storedDeploymentStatus(a *model.Agent, id string) (string, error) {
-	if err := storedObject(a.MemberJSON("deployments")); err != nil {
-		return "", err
-	}
-	task, known := a.Deployments.Get(id)
-	if !known {
-		return "", nil
-	}
-	if !a.Deployments.EntryValid(id) {
-		return "", &StateError{msgPublicationDamaged}
-	}
-	return originalText(task.MemberJSON("status")), nil
+	task, _ := a.Deployments.Get(id)
+	return task.Status, nil
 }
 func verifyNativePublication(ctx context.Context, m Registry, id, digest string, pending *PendingPublication) error {
 	if err := verifyNativeTarget(ctx, m, id, digest); err != nil {
@@ -134,7 +125,7 @@ func verifyNativePublication(ctx context.Context, m Registry, id, digest string,
 	if task == nil {
 		return ErrStateConflict
 	}
-	status := originalText(task.MemberJSON("status"))
+	status := task.Status
 	if status != "uploading" && status != "ready" {
 		return ErrStateConflict
 	}
@@ -154,7 +145,7 @@ func CompleteStatistics(ctx context.Context, m Registry, id, deploymentID, statu
 	if err != nil {
 		return err
 	}
-	if a == nil || originalText(a.MemberJSON("service_type")) != "oxidns" {
+	if a == nil || a.ServiceType != "oxidns" {
 		return nil
 	}
 	err = completeStatistics(ctx, m, a, id, deploymentID)

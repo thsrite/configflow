@@ -327,7 +327,7 @@ func cachedRankings(ctx context.Context, m Registry, a *model.Agent, params quer
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	id := rankingCacheIdentity{m.DataDir(), originalText(a.MemberJSON("id"))}
+	id := rankingCacheIdentity{m.DataDir(), a.ID}
 	selected, _ := params.get("recorder")
 	encoded, _ := json.Marshal(recorders)
 	key := rankingCacheKey{selected, string(encoded), state.Generation, state.InstanceID, state.SourceRevision, state.RuntimeRevision}
@@ -390,7 +390,7 @@ func storedRankings(ctx context.Context, m Registry, a *model.Agent, recorder, r
 	}
 	since -= floorMod(since, HistoryHour)
 	until := now - floorMod(now, HistoryHour) + HistoryHour
-	stored, err := queryHistory(ctx, getHistory(m.DataDir()), originalText(a.MemberJSON("id")), recorder, since, until)
+	stored, err := queryHistory(ctx, getHistory(m.DataDir()), a.ID, recorder, since, until)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +450,7 @@ func overviewRanking(ctx context.Context, m Registry, a *model.Agent, params que
 			} else {
 				stored := false
 				if contains(recorders, selected) {
-					stored, err = hasHistory(ctx, getHistory(m.DataDir()), originalText(a.MemberJSON("id")), selected)
+					stored, err = hasHistory(ctx, getHistory(m.DataDir()), a.ID, selected)
 					if err != nil {
 						return nil, err
 					}

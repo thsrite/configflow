@@ -213,10 +213,10 @@ func TestIssuesSeparateFallbackFromEmptyProof(t *testing.T) {
 	}
 
 	var agent Agent
-	if agent.UnmarshalJSON([]byte(`{"deployments":{"private-task":"synthetic"},"applied_content":{"files":false}}`)) != nil {
+	issues, err := DecodeStored([]byte(`{"deployments":{"private-task":"synthetic"},"applied_content":{"files":false}}`), &agent, "")
+	if err != nil {
 		t.Fatal("agent decode failed")
 	}
-	issues := Issues(agent)
 	if !IssueUnder(issues, "deployments") || !IssueUnder(issues, "applied_content") || IssueUnder(issues, "applied") {
 		t.Fatalf("agent issues = %v", issues)
 	}
@@ -231,12 +231,12 @@ func TestIssuesSeparateFallbackFromEmptyProof(t *testing.T) {
 func TestHRReviewMembers(t *testing.T) {
 	var verification IPv6Verification
 	if verification.UnmarshalJSON([]byte(`{"status":"error","error_code":"CLIENT_UNAVAILABLE"}`)) != nil ||
-		verification.ErrorCode == nil || *verification.ErrorCode != "CLIENT_UNAVAILABLE" || verification.Fields.Len() != 0 {
+		verification.ErrorCode == nil || *verification.ErrorCode != "CLIENT_UNAVAILABLE" {
 		t.Fatal("verification error code is not typed")
 	}
 	var manifest DeploymentManifest
 	if manifest.UnmarshalJSON([]byte(`{"protocol_version":1,"final_config":true}`)) != nil ||
-		manifest.FinalConfig == nil || !*manifest.FinalConfig || manifest.Fields.Len() != 0 {
+		manifest.FinalConfig == nil || !*manifest.FinalConfig {
 		t.Fatal("final configuration marker is not typed")
 	}
 	tests := []struct {

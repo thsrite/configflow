@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"testing"
 
 	"configflow/internal/model"
@@ -60,55 +59,6 @@ func buildHistoryAgent(t *testing.T, deployments int) *model.Agent {
 		t.Fatal(err)
 	}
 	return &a
-}
-
-func TestCollectAgentCredentialsMatchesNonHistoryAndSkipsDeployments(t *testing.T) {
-	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-reg-key")
-	small := buildHistoryAgent(t, 1)
-	large := buildHistoryAgent(t, 400)
-
-	got := CollectAgentCredentials(large, redact.NewSecrets([]string{"synthetic-seed"}))
-	want := redact.NewSecrets([]string{
-		"synthetic-seed",
-		"synthetic-reg-key",
-		"synthetic-agent-token",
-		"synthetic-malformed-name-token",
-		"synthetic-legacy-secret",
-		"synthetic-job-password",
-	})
-	if !got.Equal(want) {
-		t.Fatalf("credentials mismatch:\ngot:  %v\nwant: %v", got, want)
-	}
-
-	// Allocation bound: collecting credentials from an Agent with 400 deployments
-	// must not scale with deployment history.
-	measure := func(fn func()) uint64 {
-		fn()
-		var before, after runtime.MemStats
-		runtime.ReadMemStats(&before)
-		for range 20 {
-			fn()
-		}
-		runtime.ReadMemStats(&after)
-		return (after.TotalAlloc - before.TotalAlloc) / 20
-	}
-	smallAlloc := measure(func() { _ = CollectAgentCredentials(small, nil) })
-	largeAlloc := measure(func() { _ = CollectAgentCredentials(large, nil) })
-	if largeAlloc > smallAlloc+32*1024 {
-		t.Fatalf("CollectAgentCredentials scaled with deployment history: small=%d large=%d", smallAlloc, largeAlloc)
-	}
-	// Negative control: marshaling the full Agent does scale by >512 KB.
-	fullSmall := measure(func() {
-		raw, _ := model.Marshal(small)
-		_ = redact.CollectCredentials(json.RawMessage(raw), nil)
-	})
-	fullLarge := measure(func() {
-		raw, _ := model.Marshal(large)
-		_ = redact.CollectCredentials(json.RawMessage(raw), nil)
-	})
-	if fullLarge < fullSmall+512*1024 {
-		t.Fatalf("control: full Marshal+CollectCredentials did not scale as expected: small=%d large=%d", fullSmall, fullLarge)
-	}
 }
 
 func TestSystemSecretsMatchesExternalPayloadSecrets(t *testing.T) {

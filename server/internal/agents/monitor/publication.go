@@ -1,13 +1,10 @@
 package monitor
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 
-	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
@@ -38,96 +35,31 @@ func newDashboardState(snapshot *SnapshotIdentity, core *CoreStatus, observation
 		InstanceID: core.InstanceID, SourceRevision: snapshot.SourceRevision, RuntimeRevision: snapshot.RuntimeRevision, Baseline: observations}
 }
 
-func storedObject(raw json.RawMessage, present bool, err error) error {
-	if err != nil {
-		return err
-	}
-	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return nil
-	}
-	var fields model.Fields
-	if jsondecode.Unmarshal(raw, &fields) != nil {
-		return &StateError{msgPublicationDamaged}
-	}
-	return nil
-}
-
 // errStatusDamaged is returned by statePublication for a non-string status.
 // AdvanceState reports it only after the PublicationPending ordering check.
 var errStatusDamaged = &StateError{msgPublicationDamaged}
-
-// storedStatus reads an optional original status string; null is absent.
-func storedStatus(raw json.RawMessage, present bool, err error) (string, error) {
-	if err != nil {
-		return "", err
-	}
-	if !present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return "", nil
-	}
-	status, valid := originalString(raw, present, nil)
-	if !valid {
-		return "", errStatusDamaged
-	}
-	return status, nil
-}
 
 func statePublication(agent *model.Agent, pending *PendingPublication) (*model.Deployment, error) {
 	if agent == nil {
 		return nil, nil
 	}
-	if err := storedObject(agent.MemberJSON("deployments")); err != nil {
-		return nil, err
-	}
 	task, exists := agent.Deployments.Get(pending.DeploymentID)
-	if exists && !agent.Deployments.EntryValid(pending.DeploymentID) {
-		return nil, &StateError{msgPublicationDamaged}
-	}
-	if err := storedObject(agent.MemberJSON("latest_deployment")); err != nil {
-		return nil, err
-	}
 	latest := agent.LatestDeployment
 	if !exists || latest == nil {
 		return nil, nil
 	}
-	profile, present := originalString(agent.MemberJSON("profile_id"))
-	raw, stored, err := agent.MemberJSON("profile_id")
-	if err != nil {
-		return nil, err
-	}
-	if !stored || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || present && profile == "" {
+	profile := agent.ProfileID
+	if profile == "" {
 		profile = "default"
-	} else if !present {
-		return nil, &StateError{msgPublicationDamaged}
 	}
-	for _, member := range []struct {
-		record *model.Deployment
-		name   string
-	}{{latest, "deployment_id"}, {&task, "profile_id"}, {&task, "service_type"}} {
-		raw, present, err := member.record.MemberJSON(member.name)
-		if err != nil {
-			return nil, err
-		}
-		if present {
-			if _, valid := originalString(raw, present, nil); !valid {
-				return nil, &StateError{msgPublicationDamaged}
-			}
-		}
-	}
-	latestID := originalText(latest.MemberJSON("deployment_id"))
-	// A damaged status cannot decide that the checkpoint was superseded: its
-	// zero projection would discard the pending period without proof.
-	status, err := storedStatus(task.MemberJSON("status"))
-	if err != nil {
-		return nil, err
-	}
+	latestID := latest.DeploymentID
+	status := task.Status
 	latestStatus := ""
 	if latestID != pending.DeploymentID && (status == "succeeded" || status == "rolled_back") {
-		if latestStatus, err = storedStatus(latest.MemberJSON("status")); err != nil {
-			return nil, err
-		}
+		latestStatus = latest.Status
 	}
 	superseded := latestID != pending.DeploymentID && !((status == "succeeded" || status == "rolled_back") && (latestStatus == "preparing" || latestStatus == "uploading" || latestStatus == "ready"))
-	if superseded || originalText(task.MemberJSON("service_type")) != "oxidns" || originalText(task.MemberJSON("profile_id")) != profile {
+	if superseded || task.ServiceType != "oxidns" || task.ProfileID != profile {
 		return nil, nil
 	}
 	return &task, nil
@@ -167,17 +99,7 @@ func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *Co
 		}
 		status := ""
 		if task != nil {
-			raw, present, err := task.MemberJSON("status")
-			if err != nil {
-				return nil, err
-			}
-			if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-				var valid bool
-				status, valid = originalString(raw, present, nil)
-				if !valid {
-					return nil, &StateError{msgPublicationDamaged}
-				}
-			}
+			status = task.Status
 		}
 		if status != "" && !terminal[status] {
 			if reason != "" {
@@ -191,18 +113,6 @@ func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *Co
 			expected = pending.ExpectedRevision
 		case "rolled_back":
 			expected = previous.SourceRevision
-		}
-		if task != nil {
-			raw, present, err := task.MemberJSON("manual_rollback")
-			if err != nil {
-				return nil, err
-			}
-			if present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-				var flag *bool
-				if jsondecode.Unmarshal(raw, &flag) != nil || flag == nil {
-					return nil, &StateError{msgPublicationDamaged}
-				}
-			}
 		}
 		manualRollback := task != nil && task.ManualRollback != nil && *task.ManualRollback
 		if reason != "" && expected != "" && expected == snapshot.SourceRevision && !manualRollback {

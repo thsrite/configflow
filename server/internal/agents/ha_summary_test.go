@@ -1,7 +1,6 @@
 package agents
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -10,9 +9,6 @@ import (
 
 func TestTypedHASummaryOwnsOnlyPublicMembers(t *testing.T) {
 	job := &model.HAJournal{ID: "pair", Status: "ready", Message: "ready", Members: []model.HAMember{{AgentID: "member", Name: "original"}}, Enable: &model.HAEnable{}}
-	if err := job.Enable.Fields.Set("captured_source", json.RawMessage(`{"private":"synthetic-hidden"}`)); err != nil {
-		t.Fatal(err)
-	}
 	summary, err := HASummaryModel(job)
 	if err != nil {
 		t.Fatal(err)
@@ -40,13 +36,6 @@ func TestTypedHASummaryAllocationIgnoresCapturedSource(t *testing.T) {
 	measure := func(size int) testing.BenchmarkResult {
 		return testing.Benchmark(func(b *testing.B) {
 			job := &model.HAJournal{ID: "pair", Status: "ready", Message: "ready", Enable: &model.HAEnable{}}
-			raw := json.RawMessage(`"` + strings.Repeat("x", size) + `"`)
-			if err := job.Enable.Fields.Set("captured_source", raw); err != nil {
-				b.Fatal(err)
-			}
-			if err := job.Fields.Set("private_source", raw); err != nil {
-				b.Fatal(err)
-			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {

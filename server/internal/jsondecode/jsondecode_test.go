@@ -1,7 +1,6 @@
 package jsondecode_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -61,8 +60,9 @@ func TestCustomModelPolicyAndProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(raw, got) {
-		t.Fatalf("provenance changed: %s", got)
+	// Agent records are plain (O18 T1b): the case alias is dropped.
+	if string(got) != `{"version":"ok"}` {
+		t.Fatalf("record changed: %s", got)
 	}
 	if err := jsondecode.Unmarshal([]byte(`{"version":"a","version":"b"}`), &a); err == nil {
 		t.Fatal("model duplicate policy bypassed")

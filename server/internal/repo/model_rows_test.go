@@ -99,7 +99,8 @@ func TestModelRowsRoundTripAndTypedEdits(t *testing.T) {
 	original := modelRowFixture(t)
 	document, issues, err := decodeModelRows(original)
 	noError(t, err)
-	if len(issues) != 0 {
+	agentUnknown := []model.FieldIssue{{Path: "system.agents[0].future", Kind: model.IssueUnknown}, {Path: "system.agents[0].malformed", Kind: model.IssueUnknown}}
+	if fmt.Sprint(issues) != fmt.Sprint(agentUnknown) {
 		t.Fatalf("unexpected issues=%v", issues)
 	}
 	encoded := must(encodeModelRows(document, original))(t)
@@ -145,7 +146,7 @@ func TestModelRowsUnknownMembersAndNullSwitch(t *testing.T) {
 	original.Profiles[0].Fields = append(original.Profiles[0].Fields, store.Field{Name: "n18_profile", Value: json.RawMessage(`"secret-value"`)})
 	document, issues, err := decodeModelRows(original)
 	noError(t, err)
-	want := []model.FieldIssue{{Path: "n18_root", Kind: model.IssueUnknown}, {Path: "shared.n18_shared", Kind: model.IssueUnknown}, {Path: "profiles[0].n18_profile", Kind: model.IssueUnknown}}
+	want := []model.FieldIssue{{Path: "n18_root", Kind: model.IssueUnknown}, {Path: "system.agents[0].future", Kind: model.IssueUnknown}, {Path: "system.agents[0].malformed", Kind: model.IssueUnknown}, {Path: "shared.n18_shared", Kind: model.IssueUnknown}, {Path: "profiles[0].n18_profile", Kind: model.IssueUnknown}}
 	if fmt.Sprint(issues) != fmt.Sprint(want) {
 		t.Fatalf("issues=%v want %v", issues, want)
 	}

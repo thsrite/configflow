@@ -17,15 +17,14 @@ func CleanOperationEvents(events []model.OperationEvent, secrets redact.Secrets,
 	}
 	for i := range events {
 		source := &events[i]
-		status, statusOK := storedText(source.MemberJSON("status"))
-		timestamp, timeOK := storedText(source.MemberJSON("at"))
-		at, validTime := NormalizeEventTime(timestamp)
-		if !statusOK || !timeOK || !validTime || !statusPattern.MatchString(status) || statuses != nil && !statuses[status] {
+		status := source.Status
+		at, validTime := NormalizeEventTime(source.At)
+		if !validTime || !statusPattern.MatchString(status) || statuses != nil && !statuses[status] {
 			continue
 		}
 		event := model.OperationEvent{At: at, Status: status}
-		if text, valid := storedText(source.MemberJSON("message")); valid {
-			if message := redact.EventText(text, secrets); message != "" {
+		if source.Message != nil {
+			if message := redact.EventText(*source.Message, secrets); message != "" {
 				event.Message = new(message)
 			}
 		}

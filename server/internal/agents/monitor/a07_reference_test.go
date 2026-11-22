@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -152,8 +153,64 @@ func nonLatin1Token(c map[string]any) bool {
 	return false
 }
 
+var agentDeclared = func() map[string]bool {
+	out := map[string]bool{}
+	typ := reflect.TypeFor[model.Agent]()
+	for i := range typ.NumField() {
+		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		out[name] = true
+	}
+	return out
+}()
+
+// nonCanonicalAgent reports a corpus Agent with a member of another type
+// than the record declares: since O18 T1b such values read as their text or
+// as missing members instead of being refused (accepted difference).
+func nonCanonicalAgent(c map[string]any) bool {
+	agentMap := asMap(c["agent"])
+	data, err := json.Marshal(agentMap)
+	if err != nil {
+		return false
+	}
+	var agent model.Agent
+	if json.Unmarshal(data, &agent) != nil {
+		return true
+	}
+	for key, value := range agentMap {
+		if value == nil {
+			if agentDeclared[key] {
+				return true // a stored null is a missing member
+			}
+			continue
+		}
+		original, err := json.Marshal(value)
+		if err != nil {
+			return true
+		}
+		encoded, present, err := model.EncodeMember(&agent, key)
+		if err != nil {
+			return true
+		}
+		if !present {
+			// Empty text, zero and members the record does not declare.
+			if _, declared := agentDeclared[key]; declared {
+				return true
+			}
+			continue
+		}
+		var left, right any
+		if json.Unmarshal(original, &left) != nil || json.Unmarshal(encoded, &right) != nil || !reflect.DeepEqual(left, right) {
+			return true
+		}
+	}
+	return false
+}
+
 func compareCall(t *testing.T, label string, c map[string]any, result any, err error, client *replyClient) bool {
 	t.Helper()
+	if nonCanonicalAgent(c) {
+		return false
+	}
 	if nonLatin1Token(c) {
 		wantMonitorError(t, err, "AGENT_UNREACHABLE", 502)
 		return false

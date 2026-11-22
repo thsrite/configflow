@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -156,7 +157,7 @@ func (e *env) system() *model.System {
 func (e *env) stored(id string) *model.Agent {
 	sys := e.system()
 	for i := range sys.Agents {
-		if text, ok := storedText(sys.Agents[i].MemberJSON("id")); ok && text == id {
+		if text, ok := storedText(model.EncodeMember(&sys.Agents[i], "id")); ok && text == id {
 			return &sys.Agents[i]
 		}
 	}
@@ -322,21 +323,29 @@ func cloneRuntimeFields(f runtimeFields) runtimeFields {
 	return out
 }
 
-func memberPresent(a interface {
-	MemberJSON(string) (json.RawMessage, bool, error)
-}, name string) bool {
-	_, present, err := a.MemberJSON(name)
-	return err == nil && present
-}
-
-func memberVal(t testing.TB, a interface {
-	MemberJSON(string) (json.RawMessage, bool, error)
-}, name string) (any, bool) {
-	t.Helper()
-	raw, present, err := a.MemberJSON(name)
-	if err != nil {
+// memberJSON reads one member of a record as written: a DeploymentReply
+// member as received, a plain record member as encoded.
+func memberJSON(t testing.TB, a any, name string) (json.RawMessage, bool) {
+	if reply, ok := a.(interface {
+		MemberJSON(string) (json.RawMessage, bool)
+	}); ok {
+		return reply.MemberJSON(name)
+	}
+	raw, present, err := model.EncodeMember(a, name)
+	if err != nil && t != nil {
 		t.Fatal(err)
 	}
+	return raw, present
+}
+
+func memberPresent(a any, name string) bool {
+	_, present := memberJSON(nil, a, name)
+	return present
+}
+
+func memberVal(t testing.TB, a any, name string) (any, bool) {
+	t.Helper()
+	raw, present := memberJSON(t, a, name)
 	if !present {
 		return nil, false
 	}
@@ -347,6 +356,30 @@ func memberVal(t testing.TB, a interface {
 		t.Fatal(err)
 	}
 	return v, true
+}
+
+// storedText reads a JSON string member.
+func storedText(raw json.RawMessage, present bool, err error) (string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
+		return "", false
+	}
+	var text string
+	return text, json.Unmarshal(raw, &text) == nil
+}
+
+// deploymentFlagTrue reports a journal flag member that is true.
+func deploymentFlagTrue(d any, name string) bool {
+	raw, present := memberJSON(nil, d, name)
+	var flag *bool
+	return present && json.Unmarshal(raw, &flag) == nil && flag != nil && *flag
+}
+
+// originalDeploymentText reads a journal text member.
+func originalDeploymentText(d any, name string) string {
+	raw, present := memberJSON(nil, d, name)
+	text, _ := storedText(raw, present, nil)
+	return text
 }
 
 func runtimeEntriesCount(s *RuntimeState) int {
@@ -377,4 +410,53 @@ func setRuntimeEntry(s *RuntimeState, id string, entry heartbeatEntry) {
 		LastHeartbeat: entry.LastHeartbeat,
 		Fields:        cloneRuntimeFields(entry.Fields),
 	}
+}
+
+// replyJournal is the typed journal view of a deployment response.
+func replyJournal(t testing.TB) func(*DeploymentReply, error) *model.Deployment {
+	return func(reply *DeploymentReply, err error) *model.Deployment {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reply == nil {
+			return nil
+		}
+		return &reply.Deployment
+	}
+}
+
+// nonTextMember reports whether raw holds, at any depth, one of the named
+// members with a value that is neither text nor null. Python reference rows
+// with such values are an accepted O18 T1b difference: Agent records read a
+// number as its text and other types as the zero value.
+func nonTextMember(raw json.RawMessage, names ...string) bool {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	var walk func(any) bool
+	walk = func(v any) bool {
+		switch v := v.(type) {
+		case map[string]any:
+			for key, member := range v {
+				if slices.Contains(names, key) {
+					if _, text := member.(string); !text && member != nil {
+						return true
+					}
+				}
+				if walk(member) {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range v {
+				if walk(item) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(value)
 }

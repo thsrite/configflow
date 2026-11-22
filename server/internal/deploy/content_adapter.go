@@ -58,7 +58,7 @@ func ContentInputKey(t Target, s *Source, baseURL string) (InputKey, error) {
 	for _, k := range []string{"id", "profile_id", "service_type", "config_version", "applied_content"} {
 		raw := json.RawMessage("null")
 		if t.Record != nil {
-			raw, _, err = t.Record.MemberJSON(k)
+			raw, _, err = model.EncodeMember(t.Record, k)
 			if err != nil {
 				return InputKey{}, err
 			}
@@ -113,24 +113,8 @@ func ContentView(t Target) (ContentState, error) {
 		return result, fmt.Errorf("missing content target")
 	}
 	tasks := []model.Deployment{}
-	history := t.Record.Deployments
-	if history.Len() == 0 {
-		// Only an empty, null, absent or wrongly typed history: read its
-		// effective JSON (cheap here) to tell them apart.
-		rawHistory, present, err := t.Record.MemberJSON("deployments")
-		if err != nil {
-			return result, err
-		}
-		if present && string(rawHistory) != "null" && json.Unmarshal(rawHistory, &history) != nil {
-			return result, fmt.Errorf("invalid deployment history")
-		}
-	}
-	// A non-empty typed history is an object; its entries are read in place
-	// instead of re-decoding the encoded history (same entries, same validity).
-	for id, task := range history.All() {
-		if history.EntryValid(id) {
-			tasks = append(tasks, task)
-		}
+	for _, task := range t.Record.Deployments.All() {
+		tasks = append(tasks, task)
 	}
 	if latest := t.Record.LatestDeployment; latest != nil {
 		tasks = append(tasks, *latest)
@@ -150,7 +134,7 @@ func ContentView(t Target) (ContentState, error) {
 	}
 	projection := map[string]json.RawMessage{}
 	for _, k := range []string{"config_version", "config_revision", "applied_content"} {
-		raw, _, err := t.Record.MemberJSON(k)
+		raw, _, err := model.EncodeMember(t.Record, k)
 		if err != nil {
 			return result, err
 		}
@@ -228,6 +212,6 @@ func HasAppliedContent(t Target) bool {
 	if t.Record == nil {
 		return false
 	}
-	raw, _, err := t.Record.MemberJSON("applied_content")
+	raw, _, err := model.EncodeMember(t.Record, "applied_content")
 	return err == nil && !emptyJSON(raw)
 }

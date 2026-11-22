@@ -125,7 +125,9 @@ func TestIdleReconciliationDoesNotCommit(t *testing.T) {
 	}
 }
 func TestMalformedHandoffFlagsCannotBypassVIPGate(t *testing.T) {
-	for _, field := range []string{"handoff_required", "released"} {
+	// A handoff_required flag of another type keeps its truth value (O18 T1b,
+	// as Python's job.get('handoff_required')), so only released is malformed.
+	for _, field := range []string{"released"} {
 		t.Run(field, func(t *testing.T) {
 			f := fixtureNew(t, Options{}, true, nil)
 			f.publish(t, "primary", "corrupt-proof", true)
@@ -159,7 +161,7 @@ func TestMalformedHandoffFlagsCannotBypassVIPGate(t *testing.T) {
 					if err != nil {
 						return err
 					}
-					if err := sys.Agents[i].SetJSON("oxidns_ha_publication", updated); err != nil {
+					if err := model.SetStoredMember(&sys.Agents[i], "oxidns_ha_publication", updated); err != nil {
 						return err
 					}
 				}

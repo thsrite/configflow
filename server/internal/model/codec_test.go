@@ -244,7 +244,7 @@ func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
 		}
 	}
 	// Records not yet migrated keep their own member bytes.
-	for _, fragment := range []string{`"future": { "z":1.0 }`, `"future":{"z":1}`, `"_revision":0`, `"description":""`} {
+	for _, fragment := range []string{`"future":{"z":1}`, `"_revision":0`, `"description":""`} {
 		if !bytes.Contains(encoded, []byte(fragment)) {
 			t.Fatalf("lost %s: %s", fragment, encoded)
 		}

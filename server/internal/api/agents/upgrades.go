@@ -196,11 +196,11 @@ func getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	// agent.get('status', 'unknown'): only a missing member defaults; a stored
 	// null stays null.
-	status, present, err := agent.MemberJSON("status")
+	status, err := json.Marshal(agent.Status)
 	if err != nil {
 		return nil, err
 	}
-	if !present {
+	if agent.Status == "" {
 		status = []byte(`"unknown"`)
 	}
 	return httpx.JSON(map[string]any{"success": true, "status": json.RawMessage(status)}), nil
@@ -366,10 +366,8 @@ func agentTokenMatches(c *httpx.Ctx, agent *model.Agent) bool {
 	}
 	header, present := c.Header("Authorization")
 	provided, ok := auth.ParseBearerToken(header, present)
-	raw, present, err := agent.MemberJSON("token")
-	var token string
-	valid := err == nil && present && len(raw) > 0 && raw[0] == '"' && jsondecode.Unmarshal(raw, &token) == nil
-	return valid && ok && provided != "" && agents.ConstantTimeASCIIEqual(provided, token)
+	token := agent.Token
+	return token != "" && ok && provided != "" && agents.ConstantTimeASCIIEqual(provided, token)
 }
 
 func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
@@ -388,7 +386,7 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 		if _, err := upgrades.StoredState(agent); err != nil {
 			return nil, err
 		}
-		state, present, err := agent.MemberJSON("latest_upgrade")
+		state, present, err := model.EncodeMember(agent, "latest_upgrade")
 		if err != nil {
 			return nil, err
 		}

@@ -7,9 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -138,52 +135,6 @@ func TestN810PythonBugBoundary(t *testing.T) {
 	}
 }
 
-func TestN810CorruptGuardsRefuseWithoutWriteAndRecover(t *testing.T) {
-	tests := []struct {
-		field string
-		raw   string
-	}{
-		{"latest_upgrade", `false`}, {"latest_upgrade", `[]`}, {"latest_upgrade", `"broken"`},
-		{"latest_deployment", `0`}, {agents.HAField, `[]`}, {agents.HAField, `{"status":false}`},
-	}
-	for _, test := range tests {
-		t.Run(test.field+test.raw, func(t *testing.T) {
-			e := newUpgradeEnv(t)
-			e.updateMap(map[string]any{test.field: json.RawMessage(test.raw)})
-			t.Cleanup(SetRequestForTest(func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error) {
-				return AgentResponse(nil, 404), nil
-			}))
-			before, err := e.repo.Store().Fingerprint()
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = StartModel(e.ctx, e.m, e.ident)
-			var damaged *CorruptStateError
-			if !errors.As(err, &damaged) {
-				t.Fatal("damaged guard accepted", err)
-			}
-			after, err := e.repo.Store().Fingerprint()
-			if err != nil || after != before {
-				t.Fatal("damaged guard was overwritten", err)
-			}
-			// Simulate the documented offline repair: delete precisely the corrupt member.
-			if err := e.m.EditAgents(e.ctx, "", func(_ context.Context, rows *[]model.Agent) error { return (*rows)[0].Clear(test.field) }); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(SetRequestForTest(func(_ context.Context, _ *model.Agent, method, path string, _ []byte) (*agents.Response, error) {
-				if method == "GET" {
-					return AgentResponse(nil, 404), nil
-				}
-				return AgentResponse(map[string]any{}, 202), nil
-			}))
-			state, err := StartModel(e.ctx, e.m, e.ident)
-			if err != nil || state.Status != "queued" {
-				t.Fatal("explicit repair did not restore upgrade", state, err)
-			}
-		})
-	}
-}
-
 func TestN810NativeShutdownAndDisconnect(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(fmt.Sprint(shutdown), func(t *testing.T) {
@@ -223,44 +174,6 @@ func TestN810NativeShutdownAndDisconnect(t *testing.T) {
 				t.Fatal("disconnect interrupted durable update", state, err)
 			}
 		})
-	}
-}
-
-func TestN810NativeWireBytesAndOriginalIdentity(t *testing.T) {
-	e := newUpgradeEnv(t)
-	var got []recorded
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		got = append(got, recorded{r.Method, r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), string(body)})
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{}`)
-	}))
-	defer srv.Close()
-	host, port, _ := strings.Cut(strings.TrimPrefix(srv.URL, "http://"), ":")
-	a := agentModelForTest(t, map[string]any{"host": host, "port": mustPort(t, port), "token": "synthetic-token"})
-	if _, err := requestModel(e.ctx, e.m, a, "GET", "/api/upgrade-info", nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := requestModel(e.ctx, e.m, a, "POST", "/api/update", struct {
-		Version string `json:"version"`
-		ID      string `json:"update_id"`
-	}{"1.0", "job"}); err != nil {
-		t.Fatal(err)
-	}
-	want := []recorded{{"GET", "/api/upgrade-info", "Bearer synthetic-token", "", ""}, {"POST", "/api/update", "Bearer synthetic-token", "application/json", `{"version":"1.0","update_id":"job"}`}}
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("wire %v; want %v", got, want)
-	}
-	for _, raw := range []string{`7`, `null`, `false`} {
-		if err := a.SetJSON("token", []byte(raw)); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := requestModel(e.ctx, e.m, a, "GET", "/api/update", nil); !errors.Is(err, agents.ErrAgentEndpoint) {
-			t.Fatal("coerced stored credential", err)
-		}
-	}
-	if len(got) != 2 {
-		t.Fatal("invalid credential sent request")
 	}
 }
 
@@ -360,36 +273,5 @@ func TestN810ArtifactShutdownDoesNotPublishDigest(t *testing.T) {
 	readHook = nil
 	if result, err := ArtifactsModel(context.Background()); err != nil || result.Len() != 1 || cacheLen() != 1 {
 		t.Fatal("artifact retry did not recover", result.Len(), err)
-	}
-}
-
-func TestN810DamagedHAFlagCannotUnlockAddressChange(t *testing.T) {
-	e := newUpgradeEnv(t)
-	e.updateMap(map[string]any{"oxidns_ha": map[string]any{"enabled": 1}})
-	a := nativeAgent(t, e)
-	t.Cleanup(SetAskForTest(func(*model.Agent, string, string, []byte) (int, model.Fields) {
-		t.Fatal("damaged HA guard contacted device")
-		return 0, model.Fields{}
-	}))
-	before, err := e.repo.Store().Fingerprint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = ChangeModel(e.ctx, e.m, a, "192.0.2.11")
-	var corrupt *CorruptStateError
-	if !errors.As(err, &corrupt) || corrupt.Field != "oxidns_ha.enabled" {
-		t.Fatal("R5 HA flag unlocked edit", err)
-	}
-	after, err := e.repo.Store().Fingerprint()
-	if err != nil || before != after {
-		t.Fatal("damaged HA guard was overwritten", err)
-	}
-	if err := e.m.EditAgents(e.ctx, "", func(_ context.Context, rows *[]model.Agent) error { return (*rows)[0].Clear("oxidns_ha") }); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(SetAskForTest(func(*model.Agent, string, string, []byte) (int, model.Fields) { return 200, model.Fields{} }))
-	result, status, err := ChangeModel(e.ctx, e.m, nativeAgent(t, e), "192.0.2.11")
-	if err != nil || status != 200 || !result.Success {
-		t.Fatal("explicit HA repair did not restore address edit", result, status, err)
 	}
 }

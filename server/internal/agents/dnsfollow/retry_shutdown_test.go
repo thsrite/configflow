@@ -16,8 +16,8 @@ func TestShutdownBetweenRetryCommitsRetainsCompleteWaitingState(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
 	f.editAgent(t, "target", func(a *model.Agent) {
-		_ = a.SetJSON("dns_follow_state", []byte(`{"status":"failed"}`))
-		_ = a.SetJSON("dns_follow_job", []byte(`{"binding_id":"old-private-job"}`))
+		_ = model.SetStoredMember(&a, "dns_follow_state", []byte(`{"status":"failed"}`))
+		_ = model.SetStoredMember(&a, "dns_follow_job", []byte(`{"binding_id":"old-private-job"}`))
 	})
 	startRuntime(t, f.ctx)
 	ctx := lifecycle.BindRequest(f.ctx)

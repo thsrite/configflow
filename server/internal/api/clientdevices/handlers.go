@@ -58,7 +58,7 @@ func profile(c *httpx.Ctx, db *repo.Repository, m *agents.Manager, byAgent bool)
 		if agent == nil || agent.ServiceType != "oxidns" {
 			return "", httpx.Message(404, false, messageAgentMissing).NoStore(), nil
 		}
-		raw, _, readErr := agent.MemberJSON("profile_id")
+		raw, _, readErr := model.EncodeMember(agent, "profile_id")
 		if readErr != nil {
 			return "", nil, readErr
 		}
@@ -209,7 +209,7 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 		if agent.LatestDeployment != nil {
 			deployment = deploy.PublicDeployment(agent.LatestDeployment)
 		}
-		ha, ok, err := agent.MemberJSON("oxidns_ha")
+		ha, ok, err := model.EncodeMember(agent, "oxidns_ha")
 		if err != nil {
 			return cfg, nil, err
 		}
@@ -380,7 +380,7 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	hosts := []string{}
 	for _, agent := range all {
-		raw, _, readErr := agent.MemberJSON("profile_id")
+		raw, _, readErr := model.EncodeMember(&agent, "profile_id")
 		if readErr != nil {
 			return nil, readErr
 		}
@@ -390,7 +390,7 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 			bound = def
 		}
 		if bound == id {
-			raw, _, readErr = agent.MemberJSON("host")
+			raw, _, readErr = model.EncodeMember(&agent, "host")
 			if readErr != nil {
 				return nil, readErr
 			}
@@ -406,7 +406,7 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil || agent == nil {
 			return ""
 		}
-		raw, _, readErr := agent.MemberJSON("host")
+		raw, _, readErr := model.EncodeMember(agent, "host")
 		if readErr != nil {
 			return ""
 		}
@@ -491,7 +491,7 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func storedAgentString(agent *model.Agent, key string) (string, error) {
-	raw, _, err := agent.MemberJSON(key)
+	raw, _, err := model.EncodeMember(agent, key)
 	if err != nil {
 		return "", err
 	}

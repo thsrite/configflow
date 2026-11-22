@@ -2782,3 +2782,33 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   `TestAutoCompleteDoesNotStart`（停用过 / 手动发布成功过 / 两台都离线 / 只有原持有者在线，后两者带恢复后会补的对照）、
   `TestAutoCompleteBlockedContent`（payload 损坏 / 过期 / Agent 不支持，blocked 后不再发布）、`TestAutoCompleteFailureIsNotRetried`、
   `TestAutoCompleteOncePerLoss`、`TestAutoCompletePublishesInterruptedContent`；前端 `agent-ha-publication`、`agent-dns-ha` 各加一组。
+
+## O18 T1b — Agent、部署、HA、IPv6 校验、规则同步、DNS 联动记录改为普通结构体
+
+协调任务 O18 T1b（2026-11-22），沿用 T1a 裁定（宽松读存储、严格输入、未知成员丢弃并告警、只写值变了的行、`enabled:null` 读作关）。
+
+- **存储格式**：`system.agents` 各记录及其嵌套记录（部署历史、最近部署/升级、应用内容、规则同步、DNS 联动、OxiDNS HA 配置/状态/发布日志、
+  IPv6 校验、旧版节点测速 DNS 端点、运行指标）按 Go 编码写出：成员按结构体声明顺序；**文本、列表、对象和指针成员为空时不写**
+  （Python 写的 `null`、`""`、`{}`、`[]` 首次改写后变为缺失；读取方对 null/缺失一律同等处理）。零值有含义的数字照写：
+  升级记录的 `started_at/updated_at`、HA 交接的 `confirmations`、DNS 联动的 `upstream_index`、升级产物的 `size`。
+  与 T1a 的 Q1（Python 建档总写的成员始终写出）不同：Agent 记录同时是 API 响应的投影，补写空文本会让 `/api/agents` 等多出空成员，
+  而 Python 建档时这些成员本就非空。`deployments{*}.success` 改为可选（Python 部分历史条目没有它）。
+- **用户数据作键的对象保持插入顺序**：`deployments`、`ipv6_verifications`、`children`、`identities`、`artifacts`、`files`
+  改用 `model.OrderedMap`（插入序、写时复制，没有原字节）。
+- **未声明的成员丢弃**：例如 `agents[].has_update`（Python 接口给响应算出的字段，被误写进存储）、旧扩展字段、嵌套记录里的未知键；
+  加载时汇总告警一次（路径模式，不含值）。随之：(1) 存在未知成员里的口令不再被收集为凭据（这些成员本身已不在）；
+  (2) 设备回复里的未声明成员仍原样返回给前端（`agents.DeploymentReply` 保留回复的全部成员），部署发布结果的
+  `restart/file_count/provider_count/rule_count`、预留结果的 `existing` 照旧输出。
+- **库里类型不对的值**：文本成员接受数字原文（`7` 读作 `"7"`），整数接受 `"8080"`、`8080.0`，开关按 flag-truthiness 取真值
+  （`1`、`"yes"`、`"false"` 为开，`0`、`""`、`[]`、`null` 为关），对象/列表成员类型不对读作缺失；均告警一次。
+  以前 Go 保留原值并在多处把“原 JSON 类型不对”当作损坏证据（拒绝匹配身份、拒绝发布、报“记录损坏”），这些判断全部去掉：
+  例如数字 ID/令牌/配置空间、数字端口文本、损坏的 HA 发布日志/升级记录/部署回执不再触发 Go 自有的拒绝文案，而按读出的值处理。
+  已知与 Python 不同的点（生产快照中均为 0 例）：规则同步 `settings.library/rules` 存成非布尔值时按真值（Python 用 `is True`）；
+  `oxidns_ha_publication.enable` 存成任意对象（含 `{}`）都视为启用意图并锁定配对；`status:null` 之类的空日志视为不存在。
+- **输入**：Agent 编辑（`PUT /api/agents/<id>`）严格解码，类型不符返回「`<成员> 类型不正确`」（以前照存原值）；注册请求、部署回执、
+  心跳宽松解码（上报值类型不符读作零值）；三者都拒绝重复成员名。心跳上报 `version`/`config_version` 为空串视为未上报；
+  上报 `service_status`/`system_metrics` 为 `null` 视为未上报（不覆盖上一次的值）。
+- **空文本即缺失**：`name:""` 的 Agent 在名称展示处回退为 ID（Python 显示空串）；`service_type:""` 视为未设置（默认 mihomo）；
+  令牌为空的 Agent 不发请求（`ErrAgentEndpoint`）。
+- 测试：删除只验证“原值证据 / R5 / 大小写别名证明”的用例；Python 参考对照里输入为错类型、null 或空文本 Agent 成员的行
+  作为已接受差异跳过（各处注释说明）；pyref 只重录 metadata（条目逐字节相同）；o10t2 参考语料只有 Agent/部署/含 Agent 文档行变化。

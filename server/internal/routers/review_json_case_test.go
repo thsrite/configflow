@@ -32,6 +32,13 @@ func TestReviewStoredConnectionCredentials(t *testing.T) {
 				t.Fatal("stored credential changed")
 			}
 			encoded, err := model.Marshal(tc.dst)
+			if _, plain := tc.dst.(*model.Agent); plain {
+				// Agent records are plain (O18 T1b): the case alias is dropped.
+				if err != nil || string(encoded) != `{"id":"agent-review","token":"synthetic-token"}` {
+					t.Fatalf("stored record changed: %s (%v)", encoded, err)
+				}
+				return
+			}
 			if err != nil || string(encoded) != tc.raw {
 				t.Fatalf("stored record changed (%v)", err)
 			}

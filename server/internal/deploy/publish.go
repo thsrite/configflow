@@ -115,7 +115,7 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 			return nil, e
 		}
 		if !resultView(reservation).Success {
-			return reservation, nil
+			return &reservation.Deployment, nil
 		}
 	}
 	defer m.FinishDeploymentPreparation(id, did)
@@ -353,11 +353,11 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 		return nil, ctx.Err()
 	}
 	timeout := agents.Pair(10, 120)
-	answer, err = m.DeploymentRequestModel(ctx, t.Record, "POST", "deployments", http.Header{"Content-Type": {"application/gzip"}, "X-Deployment-ID": {did}, "X-Content-SHA256": {sha}, "X-Activate": {strconv.FormatBool(o.Activate)}}, archive, &timeout)
+	reply, err := m.DeploymentRequestModel(ctx, t.Record, "POST", "deployments", http.Header{"Content-Type": {"application/gzip"}, "X-Deployment-ID": {did}, "X-Content-SHA256": {sha}, "X-Activate": {strconv.FormatBool(o.Activate)}}, archive, &timeout)
 	if err != nil {
 		return nil, err
 	}
-	return uploadRecord(ctx, m, id, did, normalizeUpload(answer))
+	return uploadRecord(ctx, m, id, did, normalizeUpload(reply))
 }
 func ptr[T any](value T) *T { return &value }
 func withoutResources(b *Bundle) (*Bundle, error) {

@@ -16,7 +16,7 @@ func (s *RuntimeState) overlayModels(records []model.Agent) []model.Agent {
 		for i, key := range RuntimeFields {
 			raw := entry.Fields[i]
 			if raw != nil {
-				_ = record.SetJSON(key, raw)
+				_, _, _ = model.DecodeStoredMember(record, key, raw, key)
 			}
 		}
 		record.LastHeartbeat = entry.LastHeartbeat

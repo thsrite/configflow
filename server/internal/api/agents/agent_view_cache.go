@@ -116,7 +116,7 @@ func liveFingerprint(record *model.Agent) ([sha256.Size]byte, error) {
 	h := sha256.New()
 	var size [8]byte
 	for _, name := range liveMembers {
-		raw, present, err := record.MemberJSON(name)
+		raw, present, err := model.EncodeMember(record, name)
 		if err != nil {
 			return [sha256.Size]byte{}, err
 		}

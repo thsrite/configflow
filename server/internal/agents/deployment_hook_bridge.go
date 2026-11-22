@@ -4,7 +4,6 @@ package agents
 // in deployment_actions.go.
 import (
 	"context"
-	"encoding/json"
 
 	"configflow/internal/model"
 )
@@ -27,14 +26,8 @@ func (m *Manager) checkpointCandidate(ctx context.Context, agentID, id string, p
 	}
 	var sha any
 	if prepared != nil {
-		raw, present, err := prepared.MemberJSON("deployed_config_sha256")
-		if err != nil {
-			return err
-		}
-		if present {
-			if err := json.Unmarshal(raw, &sha); err != nil {
-				return err
-			}
+		if prepared.DeployedConfigSHA256 != nil {
+			sha = *prepared.DeployedConfigSHA256
 		}
 	}
 	return hook(ctx, m, agentID, id, sha)

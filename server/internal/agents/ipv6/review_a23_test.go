@@ -22,10 +22,10 @@ func TestEnrollKeepsDeploymentHistoryOrder(t *testing.T) {
 			if sys.Agents[i].ID != "source" {
 				continue
 			}
-			if err := sys.Agents[i].SetJSON("deployments", []byte(`{"z-older":{"deployment_id":"z-older","status":"succeeded"},"m-middle":{"deployment_id":"m-middle","status":"succeeded"},"a-newest":{"deployment_id":"a-newest","status":"succeeded"}}`)); err != nil {
+			if err := model.SetStoredMember(&sys.Agents[i], "deployments", []byte(`{"z-older":{"deployment_id":"z-older","status":"succeeded"},"m-middle":{"deployment_id":"m-middle","status":"succeeded"},"a-newest":{"deployment_id":"a-newest","status":"succeeded"}}`)); err != nil {
 				return err
 			}
-			if err := sys.Agents[i].SetJSON("latest_deployment", []byte(`{"deployment_id":"a-newest","status":"preparing"}`)); err != nil {
+			if err := model.SetStoredMember(&sys.Agents[i], "latest_deployment", []byte(`{"deployment_id":"a-newest","status":"preparing"}`)); err != nil {
 				return err
 			}
 		}

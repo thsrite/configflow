@@ -170,10 +170,10 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if err := sys.Agents[i].SetJSON("oxidns_ha", haRaw); err != nil {
+			if err := model.SetStoredMember(&sys.Agents[i], "oxidns_ha", haRaw); err != nil {
 				return err
 			}
-			if err := sys.Agents[i].SetJSON("oxidns_ha_state", []byte(`{"status":"succeeded","error":""}`)); err != nil {
+			if err := model.SetStoredMember(&sys.Agents[i], "oxidns_ha_state", []byte(`{"status":"succeeded","error":""}`)); err != nil {
 				return err
 			}
 		}

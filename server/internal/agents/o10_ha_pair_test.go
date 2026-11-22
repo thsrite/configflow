@@ -55,7 +55,7 @@ func haPairManager(t *testing.T, others int) *Manager {
 	for i := range others {
 		unrelated := *buildHistoryAgent(t, 2)
 		unrelated.ID = fmt.Sprintf("bulk-%d", i)
-		if err := unrelated.SetJSON("id", json.RawMessage(fmt.Sprintf(`"bulk-%d"`, i))); err != nil {
+		if err := model.SetStoredMember(&unrelated, "id", json.RawMessage(fmt.Sprintf(`"bulk-%d"`, i))); err != nil {
 			t.Fatal(err)
 		}
 		list = append(list, unrelated)

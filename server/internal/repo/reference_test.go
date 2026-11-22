@@ -314,11 +314,13 @@ func TestReferenceValidateDocument(t *testing.T) {
 	// stored integer, so Go accepts the revision 1.0 that Python refused.
 	acceptedByGo := map[string]bool{"revision float": true}
 	// A name that is not a string appears in messages as its JSON text
-	// (Python printed its repr); one representative per kind of value.
+	// (Python printed its repr); one representative per kind of value. Agent
+	// records read leniently (O18 T1b): a name that is not text is empty, so
+	// the message names the Agent by its ID.
 	goMessages := map[string]string{
-		"agent name none":       "Agent null 绑定的配置不存在",
-		"agent name dict":       `Agent {"a":[1,"x"]} 绑定的配置不存在`,
-		"agent name bool":       "Agent true 绑定的配置不存在",
+		"agent name none":       "Agent a1 绑定的配置不存在",
+		"agent name dict":       "Agent a1 绑定的配置不存在",
+		"agent name bool":       "Agent a1 绑定的配置不存在",
 		"aggregation name none": "聚合 null 引用了不存在的资源：gone",
 		"aggregation name list": `聚合 ["a",1] 的 nodes 只能包含资源 ID，不能设置资源覆盖`,
 		// A revision is an integer (O18 T1a, strict input): Python's bool and

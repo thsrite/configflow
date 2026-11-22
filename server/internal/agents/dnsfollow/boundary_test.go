@@ -15,7 +15,6 @@ import (
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
 	"configflow/internal/model"
-	"configflow/internal/yamlx"
 )
 
 func (f *fixture) editAgent(t *testing.T, id string, edit func(*model.Agent)) {
@@ -165,14 +164,14 @@ func TestBusyOwnerAcrossManagersPrecedesValidation(t *testing.T) {
 
 func TestNetworkAndHASelection(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
-	f.editAgent(t, "target", func(a *model.Agent) { _ = a.SetJSON("oxidns_ha", []byte(`{"enabled":true}`)) })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = model.SetStoredMember(&a, "oxidns_ha", []byte(`{"enabled":true}`)) })
 	_, err := f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"auto"}`))
 	wantRefusal(t, err, msgHANetwork)
 	_, err = f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"network","address":"2001:db8::7"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.editAgent(t, "target", func(a *model.Agent) { _ = a.Clear("oxidns_ha") })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = model.ZeroMember(&a, "oxidns_ha") })
 	f.publishSource(t, "source-next")
 	if err = f.s.Tick(f.ctx); err != nil {
 		t.Fatal(err)
@@ -306,8 +305,8 @@ func TestRetryNullSourceAndPrivateProjection(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
 	f.editAgent(t, "target", func(a *model.Agent) {
-		_ = a.SetJSON("dns_follow_state", []byte(`{"status":"failed","message":"synthetic-target-token https://user:secret@dns.example/a?token=credential","events":[]}`))
-		_ = a.SetJSON("dns_follow_job", []byte(`{"candidate_settings":{"token":"synthetic-private-job"}}`))
+		_ = model.SetStoredMember(&a, "dns_follow_state", []byte(`{"status":"failed","message":"synthetic-target-token https://user:secret@dns.example/a?token=credential","events":[]}`))
+		_ = model.SetStoredMember(&a, "dns_follow_job", []byte(`{"candidate_settings":{"token":"synthetic-private-job"}}`))
 	})
 	view, err := f.s.Options(f.ctx, "target")
 	if err != nil {
@@ -324,7 +323,7 @@ func TestRetryNullSourceAndPrivateProjection(t *testing.T) {
 	b, _ = json.Marshal(out.State)
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(b, &fields)
-	if string(fields["source_deployment_id"]) != "null" || value(out.State.Attempt) != 1 || f.agent(t).DNSFollowJob != nil {
+	if out.State.SourceDeploymentID != nil || value(out.State.Attempt) != 1 || f.agent(t).DNSFollowJob != nil {
 		t.Fatal(string(b))
 	}
 	rec := f.target.record()
@@ -405,25 +404,5 @@ func TestCancelledContextDoesNotEnterOwner(t *testing.T) {
 	}
 	if err = f.s.run(f.ctx, nil, nil, nil, model.Deployment{}); err == nil {
 		t.Fatal("missing target accepted")
-	}
-}
-
-func TestStoredIndexFallbackIsNeverUpstreamZeroEvidence(t *testing.T) {
-	doc, err := yamlx.Parse([]byte(nativeDraft))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range []string{`{"upstream_tag":"forward_remote","upstream_index":"0"}`, `{"upstream_tag":"forward_remote","upstream_index":null}`, `{"upstream_tag":"forward_remote"}`} {
-		var b model.DNSFollowBinding
-		if err := json.Unmarshal([]byte(raw), &b); err != nil {
-			t.Fatal(err)
-		}
-		_, err := boundEntry(doc, &b)
-		wantRefusal(t, err, msgRemoved)
-	}
-	var b model.DNSFollowBinding
-	_ = json.Unmarshal([]byte(`{"upstream_tag":"forward_remote","upstream_index":0}`), &b)
-	if _, err := boundEntry(doc, &b); err != nil {
-		t.Fatal("genuine zero rejected", err)
 	}
 }

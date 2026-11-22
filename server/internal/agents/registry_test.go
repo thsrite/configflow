@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,9 +84,15 @@ func TestRegistrationKeepsManagedFieldsAndPreservesToken(t *testing.T) {
 		stored.TrafficHistorySince == nil || stored.Token != *created.Token || stored.Version != "2.0.0" {
 		t.Fatalf("stored %+v", stored)
 	}
-	keys := strings.Join(orderedJSONKeys(t, mustJSON(t, stored)), ",")
-	if !strings.HasPrefix(keys, "id,name,host,port,token,service_type,profile_id,deployment_method,status,last_heartbeat,version,config_version,enabled,created_at,updated_at,deployments,latest_deployment,latest_upgrade,domain_discovery_enabled,traffic_history_enabled,traffic_history_since") {
-		t.Fatalf("key order %s", keys)
+	// Members are written in the record's declaration order (O18 T1b);
+	// empty history and null journals are missing members.
+	keys := orderedJSONKeys(t, mustJSON(t, stored))
+	for _, key := range strings.Split("id,name,host,port,token,service_type,profile_id,deployment_method,status,last_heartbeat,version,config_version,enabled,created_at,updated_at,domain_discovery_enabled,traffic_history_enabled,traffic_history_since", ",") {
+		if !slices.Contains(keys, key) {
+			t.Fatalf("missing %s in %v", key, keys)
+		}
+	}
+	if false {
 	}
 }
 
@@ -247,9 +254,9 @@ func TestOneBusyAgentBlocksTheEntireBatch(t *testing.T) {
 		b.editSystem(func(system *model.System) {
 			agent := registryAgent(system.Agents, id)
 			if field == "latest_upgrade" {
-				_ = agent.SetJSON(field, []byte(`{"status":"installing"}`))
+				_ = model.SetStoredMember(&agent, field, []byte(`{"status":"installing"}`))
 			} else {
-				_ = agent.SetJSON(field, []byte(`{"x":{"status":"uploading"}}`))
+				_ = model.SetStoredMember(&agent, field, []byte(`{"x":{"status":"uploading"}}`))
 			}
 		})
 		_, err := b.m.RebindProfiles(b.ctx, "outside", "home", b.ids())

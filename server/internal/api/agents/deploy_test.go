@@ -212,7 +212,7 @@ func TestDeployHTTPEasyTierCoreVersions(t *testing.T) {
 
 			s, admin, _ := newDeployHTTP(t)
 			if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
-				return system.Agents[0].SetJSON("domain_discovery_enabled", json.RawMessage(`true`))
+				return model.SetStoredMember(&system.Agents[0], "domain_discovery_enabled", json.RawMessage(`true`))
 			}); err != nil {
 				t.Fatal(err)
 			}

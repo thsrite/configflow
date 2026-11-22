@@ -320,7 +320,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		if code == 0 {
 			code = 409
 		}
-		return Response{Status: code, Body: PublicDeployment(reservation)}
+		return Response{Status: code, Body: PublicDeployment(&reservation.Deployment)}
 	}
 	if reserved.Existing {
 		answer, e := m.GetDeploymentModel(ctx, id, did)

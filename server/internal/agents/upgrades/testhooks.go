@@ -17,7 +17,7 @@ func SetRequestForTest(fn func(context.Context, *model.Agent, string, string, []
 }
 
 // SetArtifactsForTest replaces the native artifact catalog.
-func SetArtifactsForTest(fn func(context.Context) (model.Map[model.UpgradeArtifact], error)) func() {
+func SetArtifactsForTest(fn func(context.Context) (model.OrderedMap[model.UpgradeArtifact], error)) func() {
 	prev := artifactsFunc
 	artifactsFunc = fn
 	return func() { artifactsFunc = prev }

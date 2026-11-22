@@ -102,7 +102,7 @@ func run() (resultErr error) {
 		if applied == nil {
 			continue
 		}
-		appliedRaw, _, err := record.MemberJSON("applied_content")
+		appliedRaw, _, err := model.EncodeMember(record, "applied_content")
 		if err != nil {
 			return err
 		}
@@ -228,19 +228,13 @@ func run() (resultErr error) {
 		if err != nil {
 			return err
 		}
-		fileMap := model.Map[string]{}
+		fileMap := model.OrderedMap[string]{}
 		for path, sha := range digests {
 			fileMap.Set(path, sha)
 		}
 		applied.Files = &fileMap
 		if _, has := appliedFields["deployed_config_sha256"]; has {
-			shaRaw, err := json.Marshal(next.Comparison().SHA256)
-			if err != nil {
-				return err
-			}
-			if err := applied.SetJSON("deployed_config_sha256", shaRaw); err != nil {
-				return err
-			}
+			applied.DeployedConfigSHA256 = new(next.Comparison().SHA256)
 		}
 		plans = append(plans, plan{agentFolder, after, metadata, hash(after)})
 	}

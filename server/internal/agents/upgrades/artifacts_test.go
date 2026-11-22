@@ -51,7 +51,7 @@ func artifactInfo(content []byte) map[string]any {
 	return map[string]any{"sha256": hex.EncodeToString(sum[:]), "size": len(content)}
 }
 
-func mustArtifacts(t *testing.T) model.Map[model.UpgradeArtifact] {
+func mustArtifacts(t *testing.T) model.OrderedMap[model.UpgradeArtifact] {
 	t.Helper()
 	result, err := ArtifactsModel(context.Background())
 	if err != nil {
@@ -377,7 +377,7 @@ func TestConcurrentRequestsShareOneCompleteDigest(t *testing.T) {
 			t.Error("not released")
 		}
 	}
-	results := make([]model.Map[model.UpgradeArtifact], 8)
+	results := make([]model.OrderedMap[model.UpgradeArtifact], 8)
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Add(1)

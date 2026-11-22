@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -363,6 +364,11 @@ func normalize(t *testing.T, value any, kind string) any {
 			point := len(path) == 6 && path[0] == "state" && path[1] == "document" && path[2] == "profiles" && path[4] == "mihomo" && path[5] == "linux_gateway_restore_point" || len(path) == 3 && path[0] == "sql-mihomo" && path[2] == "linux_gateway_restore_point"
 			rootBody := len(path) == 1 && path[0] == "body"
 			for key, item := range x {
+				if item == nil && (slices.Contains(path, "agents") || key == "version") {
+					// A stored null Agent member is a missing one since O18 T1b.
+					delete(x, key)
+					continue
+				}
 				if profileMeta && (key == "created_at" || key == "updated_at") || (summary || point) && key == "created_at" {
 					x[key] = timestamp(item)
 					continue

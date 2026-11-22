@@ -252,8 +252,9 @@ func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 		}
 	}
 	for i := range system.Agents {
-		raw, present, err := system.Agents[i].MemberJSON("token")
-		add(agents, raw, present, err)
+		if token := system.Agents[i].Token; token != "" {
+			agents[token] = struct{}{}
+		}
 	}
 	return ruleProxy, agents
 }

@@ -18,7 +18,7 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 		t.Fatal(ok, err)
 	}
 	// Editing the input and a diagnostic copy cannot mutate the live snapshot.
-	if err := payload.SetJSON("system_metrics", []byte(`{"cpu":{"usage_percent":99}}`)); err != nil {
+	if err := model.SetStoredMember(&payload, "system_metrics", []byte(`{"cpu":{"usage_percent":99}}`)); err != nil {
 		t.Fatal(err)
 	}
 	copied, ok := runtimeEntryCopy(e.m.Runtime(), id)
@@ -35,11 +35,13 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct{ name, want string }{
-		{"version", `"1.0.0"`}, {"service_status", `null`}, {"system_metrics", sample},
-		{"cpu", `{"usage_percent":1e0}`}, {"memory", `false`}, {"network", `null`},
+		{"version", `"1.0.0"`}, {"service_status", ``}, {"system_metrics", `{"cpu":{"usage_percent":1}}`},
+		{"cpu", `{"usage_percent":1}`}, {"memory", ``}, {"network", ``},
 	} {
-		raw, present, err := current.MemberJSON(tt.name)
-		if err != nil || !present || string(raw) != tt.want {
+		// Stored values read leniently (O18 T1b): null and values of another
+		// type are missing members.
+		raw, present, err := model.EncodeMember(&current, tt.name)
+		if err != nil || present != (tt.want != "") || string(raw) != tt.want {
 			t.Fatalf("%s=%s present=%v err=%v; want %s", tt.name, raw, present, err, tt.want)
 		}
 	}
@@ -48,7 +50,7 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 	}
 	// Null is a reported value, and does not erase the previous CPU component.
 	nullPayload := &model.Agent{}
-	if err := nullPayload.SetJSON("system_metrics", []byte(`null`)); err != nil {
+	if err := model.SetStoredMember(&nullPayload, "system_metrics", []byte(`null`)); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := e.m.ObserveHeartbeat(e.ctx, id, nullPayload); err != nil || !ok {
@@ -58,12 +60,13 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, present, err := current.MemberJSON("system_metrics")
-	if err != nil || !present || string(raw) != "null" {
-		t.Fatalf("null sample lost: %s %v %v", raw, present, err)
+	// A null sample is no report (O18 T1b) and keeps the previous one.
+	raw, present, err := model.EncodeMember(&current, "system_metrics")
+	if err != nil || !present || string(raw) != `{"cpu":{"usage_percent":1}}` {
+		t.Fatalf("null sample replaced the report: %s %v %v", raw, present, err)
 	}
-	raw, present, err = current.MemberJSON("cpu")
-	if err != nil || !present || string(raw) != `{"usage_percent":1e0}` {
+	raw, present, err = model.EncodeMember(&current, "cpu")
+	if err != nil || !present || string(raw) != `{"usage_percent":1}` {
 		t.Fatalf("partial sample erased CPU: %s %v %v", raw, present, err)
 	}
 }

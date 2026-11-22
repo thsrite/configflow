@@ -266,7 +266,7 @@ func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
 	}{
 		{"version", "synthetic-v2", false}, {"status", "online", false}, {"applied_content", map[string]any{"digest": "synthetic"}, false},
 		{"name", "Renamed", true}, {"host", "other.example.com", true}, {"enabled", false, true},
-		{"logging_config", map[string]any{"enabled": true}, true}, {"rule_sync_state", map[string]any{"result": "saved"}, true},
+		{"logging_config", map[string]any{"enabled": true}, true}, {"rule_sync", map[string]any{"settings": map[string]any{"library": true}}, true},
 		{"dns_follow", map[string]any{"enabled": true}, true}, {"oxidns_ha", map[string]any{"enabled": true}, true},
 	}
 	for _, tt := range tests {

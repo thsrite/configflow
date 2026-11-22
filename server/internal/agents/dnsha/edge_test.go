@@ -43,8 +43,7 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 	f := fixtureNew(t, Options{}, false, nil)
 	e := f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
 		for i := range sys.Agents {
-			_ = sys.Agents[i].Fields.Set("future_agent", json.RawMessage(`{"opaque":true}`))
-			_ = sys.Agents[i].SetJSON("port", []byte(`8082`))
+			_ = model.SetStoredMember(&sys.Agents[i], "port", []byte(`8082`))
 		}
 		return nil
 	})
@@ -57,7 +56,7 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 	}
 	e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
 		for i := range sys.Agents {
-			_ = sys.Agents[i].SetJSON("port", []byte(`8082.0`))
+			_ = model.SetStoredMember(&sys.Agents[i], "port", []byte(`8082.0`))
 		}
 		return nil
 	})
@@ -70,7 +69,7 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 	}
 	e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
 		for i := range sys.Agents {
-			_ = sys.Agents[i].SetJSON("port", []byte(`8082`))
+			_ = model.SetStoredMember(&sys.Agents[i], "port", []byte(`8082`))
 		}
 		return nil
 	})
@@ -86,14 +85,8 @@ func TestMemberIdentityComparisonAndUnknownFields(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		extra, _ := a.Fields.Get("future_agent")
-		if string(extra) != `{"opaque":true}` {
-			t.Fatal("unknown member lost", string(extra))
-		}
-		jRaw, _ := json.Marshal(a.OxiDNSHAPublication)
-		j := parseObject(jRaw)
-		if value, ok := j["active_agent_id"]; !ok || string(value) != "null" {
-			t.Fatal("completion lost explicit active_agent_id:null", string(jRaw))
+		if a.OxiDNSHAPublication.ActiveAgentID != nil {
+			t.Fatal("completion set an active Agent", *a.OxiDNSHAPublication.ActiveAgentID)
 		}
 	}
 }
@@ -180,7 +173,6 @@ func TestPayloadResumeKeepsPythonPresenceAndUnknownFields(t *testing.T) {
 	if e = json.Unmarshal(journalBytes(j), &copy); e != nil {
 		t.Fatal(e)
 	}
-	_ = copy.Fields.Set("future_journal", json.RawMessage(`{"opaque":true}`))
 	if e = f.s.save(f.ctx, &copy); e != nil {
 		t.Fatal(e)
 	}
@@ -190,11 +182,6 @@ func TestPayloadResumeKeepsPythonPresenceAndUnknownFields(t *testing.T) {
 	last := f.drain(t, 12)
 	if last.Status != "succeeded" {
 		t.Fatalf("resume %s", last.Message)
-	}
-	a, _ = f.s.get(f.ctx, "primary")
-	extra, _ := a.OxiDNSHAPublication.Fields.Get("future_journal")
-	if string(extra) != `{"opaque":true}` {
-		t.Fatal("journal extra lost")
 	}
 }
 func TestFinalGenerationRequiresMatchingPeerAndPinsBothIdentities(t *testing.T) {

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"configflow/internal/model"
 	"context"
 	"io"
 	"net"
@@ -42,10 +43,10 @@ func TestNativeMonitorHTTPWireBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := m.agent.SetJSON("host", []byte(strconv.Quote(host))); err != nil {
+			if err := model.SetStoredMember(&m.agent, "host", []byte(strconv.Quote(host))); err != nil {
 				t.Fatal(err)
 			}
-			if err := m.agent.SetJSON("port", []byte(port)); err != nil {
+			if err := model.SetStoredMember(&m.agent, "port", []byte(port)); err != nil {
 				t.Fatal(err)
 			}
 			m.client = agents.HTTPClient{}
@@ -59,7 +60,7 @@ func TestNativeMonitorHTTPWireBytes(t *testing.T) {
 			case "rule-paths":
 				_, _, err = CallRuleUpdate(context.Background(), m, "dns", "POST", []string{"rules/中.json"})
 			default:
-				if e := m.agent.SetJSON("service_type", []byte(`"mihomo"`)); e != nil {
+				if e := model.SetStoredMember(&m.agent, "service_type", []byte(`"mihomo"`)); e != nil {
 					t.Fatal(e)
 				}
 				if tc.name == "panel-delay" {

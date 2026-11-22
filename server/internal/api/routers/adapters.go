@@ -65,27 +65,7 @@ func workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, s
 			row.ID = ""
 		}
 		row.Name, _ = agents.AgentName(&a)
-		// Display/connection strings require original string tokens, not R5 numeric projections.
-		value, _, err := a.MemberJSON("profile_id")
-		if err != nil {
-			return nil, "", err
-		}
-		_ = json.Unmarshal(value, &row.ProfileID)
-		value, _, err = a.MemberJSON("host")
-		if err != nil {
-			return nil, "", err
-		}
-		_ = json.Unmarshal(value, &row.Host)
-		value, _, err = a.MemberJSON("status")
-		if err != nil {
-			return nil, "", err
-		}
-		_ = json.Unmarshal(value, &row.Status)
-		value, _, err = a.MemberJSON("service_type")
-		if err != nil {
-			return nil, "", err
-		}
-		_ = json.Unmarshal(value, &row.ServiceType)
+		row.ProfileID, row.Host, row.Status, row.ServiceType = a.ProfileID, a.Host, a.Status, a.ServiceType
 		if row.ProfileID == "" {
 			row.ProfileID = defaultProfile
 		}

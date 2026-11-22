@@ -7,7 +7,6 @@ package agents
 import (
 	"configflow/internal/model"
 	"configflow/internal/redact"
-	"encoding/json"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"regexp"
@@ -151,33 +150,19 @@ func PublicDeploymentMessagesModel(record *model.Deployment) (*model.Deployment,
 	}
 	copied := *record
 	result := &copied
-	for _, key := range []string{"message", "error", "rollback_error", "rollback_message"} {
-		raw, present, err := result.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if text, valid := storedText(raw, present, nil); valid {
-			encoded, err := json.Marshal(ExplainDeployment(text))
-			if err != nil {
-				return nil, err
-			}
-			if err := result.SetJSON(key, encoded); err != nil {
-				return nil, err
-			}
+	for _, field := range []**string{&result.Message, &result.Error, &result.RollbackError, &result.RollbackMessage} {
+		if *field != nil {
+			*field = new(ExplainDeployment(**field))
 		}
 	}
-	if _, present, err := result.MemberJSON("events"); err != nil {
-		return nil, err
-	} else if present {
+	if result.Events != nil {
 		events := CleanOperationEvents(result.Events, nil, nil)
 		for i := range events {
 			if events[i].Message != nil && *events[i].Message != "" {
 				events[i].Message = new(ExplainDeployment(*events[i].Message))
 			}
 		}
-		if err := setPublicEvents(&result.Events, events, result.SetJSON); err != nil {
-			return nil, err
-		}
+		result.Events = events
 	}
 	return result, nil
 }
@@ -191,46 +176,27 @@ func PublicUpgradeStateModel(state *model.AgentUpgrade) (*model.AgentUpgrade, er
 		state = new(model.AgentUpgrade)
 	}
 	result := *state
-	for _, key := range []string{"error", "message"} {
-		raw, present, err := result.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if !present {
+	for _, field := range []struct {
+		value   **string
+		failure bool
+	}{{&result.Error, true}, {&result.Message, false}} {
+		if *field.value == nil || **field.value == "" {
 			continue
 		}
-		content, err := model.JSONHasContent(raw)
-		if err != nil {
-			return nil, err
-		}
-		if !content {
-			continue
-		}
-		text, _ := storedText(raw, true, nil)
-		text = redact.DiagnosticText(text, nil, 0)
-		if key == "error" {
+		text := redact.DiagnosticText(**field.value, nil, 0)
+		if field.failure {
 			text = ExplainUpgradeFailure(text)
 		}
-		encoded, err := json.Marshal(text)
-		if err != nil {
-			return nil, err
-		}
-		if err := result.SetJSON(key, encoded); err != nil {
-			return nil, err
-		}
+		*field.value = new(text)
 	}
-	if _, present, err := result.MemberJSON("events"); err != nil {
-		return nil, err
-	} else if present {
+	if result.Events != nil {
 		events := CleanOperationEvents(result.Events, nil, nil)
 		for i := range events {
 			if upgradeFailureStatuses[events[i].Status] && events[i].Message != nil && *events[i].Message != "" {
 				events[i].Message = new(ExplainUpgradeFailure(*events[i].Message))
 			}
 		}
-		if err := setPublicEvents(&result.Events, events, result.SetJSON); err != nil {
-			return nil, err
-		}
+		result.Events = events
 	}
 	return &result, nil
 }
@@ -372,10 +338,6 @@ const (
 // setPublicEvents stores cleaned events, which CleanOperationEvents built
 // anew: a non-empty list is assigned without a JSON round trip; an empty one
 // is set as the JSON [] so that it is written as [] even over a stored null.
-func setPublicEvents(field *[]model.OperationEvent, events []model.OperationEvent, set func(string, json.RawMessage) error) error {
-	if len(events) > 0 {
-		*field = events
-		return nil
-	}
-	return set("events", json.RawMessage(`[]`))
-}
+
+// msgMemberType reports an input member of the wrong JSON type.
+const msgMemberType = "%s 类型不正确"

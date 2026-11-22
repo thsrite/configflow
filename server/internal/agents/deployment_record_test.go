@@ -10,61 +10,6 @@ import (
 	"configflow/internal/model"
 )
 
-func TestTypedDeploymentCompletionCannotUseProjectedOwnership(t *testing.T) {
-	for _, tt := range []struct {
-		field, raw string
-		accepted   bool
-	}{
-		{"profile_id", `"7"`, true}, {"profile_id", `7`, false},
-		{"deployment_id", `"7"`, true}, {"deployment_id", `7`, false},
-	} {
-		t.Run(tt.field+"_"+tt.raw, func(t *testing.T) {
-			e := newEnv(t)
-			e.createProfile("7")
-			if err := e.m.EditAgents(e.ctx, "7", func(_ context.Context, records *[]model.Agent) error {
-				registryAgent(*records, e.id()).ProfileID = "7"
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-			e.begin("7")
-			defer e.finish("7")
-			if err := e.m.EditAgents(e.ctx, "", func(_ context.Context, records *[]model.Agent) error {
-				a := registryAgent(*records, e.id())
-				state, _ := a.Deployments.Get("7")
-				if err := state.SetJSON(tt.field, []byte(tt.raw)); err != nil {
-					return err
-				}
-				a.Deployments.Set("7", state)
-				return nil
-			}); err != nil {
-				t.Fatal(err)
-			}
-			patch, err := DecodeDeploymentUpdate([]byte(`{"status":"succeeded","success":true,"config_version":"confirmed","profile_id":"forged","service_type":"forged","deployment_id":"forged"}`))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := e.m.RecordDeploymentModel(e.ctx, e.id(), "7", patch, RecordOptions{}); err != nil {
-				t.Fatal(err)
-			}
-			a, err := e.m.ReadAgent(e.ctx, e.id(), true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if (a.ConfigVersion == "confirmed") != tt.accepted {
-				t.Fatalf("field=%s raw=%s version=%q", tt.field, tt.raw, a.ConfigVersion)
-			}
-			if a.ProfileID != "7" || a.ServiceType != "mihomo" {
-				t.Fatal("upstream replaced Agent identity")
-			}
-			state, _ := a.Deployments.Get("7")
-			if raw, _, err := state.MemberJSON(tt.field); err != nil || string(raw) != tt.raw {
-				t.Fatal("upstream replaced stored task identity", string(raw), err)
-			}
-		})
-	}
-}
-
 func newRecordPreviewBenchmark(b *testing.B, unused int) (*Manager, context.Context, DeploymentUpdate) {
 	b.Helper()
 	m, ctx := newHeartbeatBenchmark(b, unused)
@@ -72,16 +17,7 @@ func newRecordPreviewBenchmark(b *testing.B, unused int) (*Manager, context.Cont
 		a := registryAgent(*records, "device")
 		a.Name, a.Host, a.Port, a.Token, a.ServiceType = "device", "192.0.2.40", 8080, "synthetic-device-token", "mihomo"
 		a.OxiDNSHAPublication = &model.HAJournal{Status: "succeeded"}
-		if err := a.OxiDNSHAPublication.Fields.Set("captured_source", []byte(`"`+strings.Repeat("x", unused)+`"`)); err != nil {
-			return err
-		}
-		if err := a.Fields.Set("unrelated", []byte(`"`+strings.Repeat("y", unused)+`"`)); err != nil {
-			return err
-		}
 		other := model.Agent{ID: "other", ProfileID: a.ProfileID, Name: "other", Host: "192.0.2.41", Port: 8080, Token: "synthetic-other-token", ServiceType: "mihomo"}
-		if err := other.Fields.Set("unrelated", []byte(`"`+strings.Repeat("z", unused)+`"`)); err != nil {
-			return err
-		}
 		*records = append(*records, other)
 		return nil
 	}); err != nil {

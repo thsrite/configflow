@@ -480,6 +480,7 @@ func xcConfigForPython(t *testing.T, ctx context.Context, r *Repository, profile
 	if !projected.HasAgents || len(projected.Agents) != len(sys.Agents) {
 		t.Fatalf("OxiDNS projection has %d Agents, registry %d", len(projected.Agents), len(sys.Agents))
 	}
+	oxiDNSAgentFields := []string{"id", "name", "host", "service_type", "profile_id", "enabled", "dns_follow", "rule_sync"}
 	allowed := map[string]bool{}
 	for _, key := range oxiDNSAgentFields {
 		allowed[key] = true

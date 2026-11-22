@@ -3,14 +3,12 @@
 package upgrades
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
@@ -57,80 +55,24 @@ type upgradePatch struct {
 }
 
 func readState(a *model.Agent) (*model.AgentUpgrade, error) {
-	fields, err := optionalObject(a, "latest_upgrade")
-	if err != nil {
-		return nil, err
-	}
-	if fields.Len() == 0 {
+	if !a.LatestUpgrade.HasMembers() {
 		return nil, nil
 	}
-	if a.LatestUpgrade == nil {
-		return nil, &CorruptStateError{Field: "latest_upgrade"}
-	}
 	state := *a.LatestUpgrade
-	for _, key := range []string{"update_id", "agent_id", "target_version", "previous_version", "agent_updated_at"} {
-		raw, present, e := state.MemberJSON(key)
-		if e != nil {
-			return nil, e
-		}
-		if present && string(raw) != "null" {
-			if _, ok := originalString(raw, true, nil); !ok {
-				return nil, &CorruptStateError{Field: "latest_upgrade." + key}
-			}
-		}
-	}
-	for _, key := range []string{"started_at", "recovery_reported_at"} {
-		if _, _, err := stateNumber(&state, key, false); err != nil {
-			return nil, err
-		}
-	}
-	if raw, present, e := state.MemberJSON("protocol"); e != nil {
-		return nil, e
-	} else if present && string(raw) != "null" {
-		if _, err := stateProtocol(&state); err != nil {
-			return nil, err
-		}
-	}
-	if _, ok := originalString(state.MemberJSON("status")); !ok {
-		return nil, &CorruptStateError{Field: "latest_upgrade.status"}
-	}
 	return &state, nil
 }
 func stateID(state *model.AgentUpgrade) (string, error) {
-	id, ok := originalString(state.MemberJSON("update_id"))
+	id, ok := state.UpdateID, true
 	if !ok || id == "" {
 		return "", &CorruptStateError{Field: "latest_upgrade.update_id"}
 	}
 	return id, nil
 }
-func stateNumber(state *model.AgentUpgrade, key string, required bool) (float64, bool, error) {
-	raw, present, err := state.MemberJSON(key)
-	if err != nil {
-		return 0, false, err
-	}
-	raw = bytes.TrimSpace(raw)
-	if !present || string(raw) == "null" {
-		if required {
-			return 0, false, &CorruptStateError{Field: "latest_upgrade." + key}
-		}
-		return 0, false, nil
-	}
-	var n float64
-	if jsondecode.Unmarshal(raw, &n) != nil || math.IsNaN(n) || math.IsInf(n, 0) {
-		return 0, false, &CorruptStateError{Field: "latest_upgrade." + key}
-	}
-	return n, true, nil
-}
 func stateProtocol(state *model.AgentUpgrade) (model.Int, error) {
-	raw, present, err := state.MemberJSON("protocol")
-	if err != nil {
-		return 0, err
-	}
-	var n model.Int
-	if !present || len(raw) == 0 || raw[0] == '"' || jsondecode.Unmarshal(raw, &n) != nil {
+	if state.Protocol == 0 {
 		return 0, &CorruptStateError{Field: "latest_upgrade.protocol"}
 	}
-	return n, nil
+	return state.Protocol, nil
 }
 
 func saveModel(ctx context.Context, m *agents.Manager, agentID, updateID string, patch upgradePatch, onlyQueued bool) (*model.AgentUpgrade, error) {
@@ -173,18 +115,8 @@ func saveModel(ctx context.Context, m *agents.Manager, agentID, updateID string,
 			reportedAt, _ = agents.EventTime(*patch.AgentUpdatedAt)
 		}
 		if reportedAt != "" {
-			raw, present, e := state.MemberJSON("agent_updated_at")
-			if e != nil {
-				return e
-			}
-			if present && string(raw) != "null" {
-				previous, valid := originalString(raw, true, nil)
-				if !valid {
-					return &CorruptStateError{Field: "latest_upgrade.agent_updated_at"}
-				}
-				if reportedAt < previous {
-					return tx.Err()
-				}
+			if previous := state.AgentUpdatedAt; previous != nil && reportedAt < *previous {
+				return tx.Err()
 			}
 		}
 		secrets := agentSecrets(a)
@@ -193,9 +125,7 @@ func saveModel(ctx context.Context, m *agents.Manager, agentID, updateID string,
 		if patch.Status != "" {
 			state.Status = patch.Status
 			if patch.Message == nil {
-				if err := state.Clear("message"); err != nil {
-					return err
-				}
+				state.Message = nil
 			}
 		}
 		if patch.Error != nil {
@@ -283,7 +213,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 	if a == nil {
 		return nil, valueError("Agent not found")
 	}
-	method, _ := originalString(a.MemberJSON("deployment_method"))
+	method, _ := a.DeploymentMethod, true
 	if method == "docker" {
 		return nil, valueError(msgDockerUpgrade)
 	}
@@ -347,16 +277,9 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		}
 	}
 	target := agents.GetLatestVersion()
-	previous, present := originalString(a.MemberJSON("version"))
+	previous, present := a.Version, true
 	if !validVersion(target) || present && previous != "" && !validVersion(previous) {
 		return nil, agents.ErrInvalidAgentReply
-	}
-	// A registration may store an explicit null version (Python: agent.get('version', '')
-	// is None and the update proceeds); only a present non-null non-string is damaged.
-	if raw, exists, e := a.MemberJSON("version"); e != nil {
-		return nil, e
-	} else if exists && !present && string(bytes.TrimSpace(raw)) != "null" {
-		return nil, &CorruptStateError{Field: "version"}
 	}
 	id, err := updateIDSource()
 	if err != nil {
@@ -374,11 +297,6 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		message += "（" + info.Architecture + "）"
 	}
 	state := &model.AgentUpgrade{UpdateID: id, TargetVersion: target, PreviousVersion: previous, Status: "queued", AgentID: agentID, StartedAt: now(), UpdatedAt: now(), Protocol: protocol, Artifacts: available, Message: &message, Events: agents.AppendOperationEvent(nil, "queued", message, "", nil)}
-	// Explicit empty previous_version remains part of the persisted protocol contract.
-	rawPrevious, _ := json.Marshal(previous)
-	if err := state.SetJSON("previous_version", rawPrevious); err != nil {
-		return nil, err
-	}
 	err = m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
 		current, err := findModel(*records, agentID)
 		if err != nil {
@@ -418,13 +336,9 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		if prior != nil && (!Terminal[prior.Status] || prior.Status == "rollback_failed") {
 			return valueError(msgUpgradeBusy)
 		}
-		deployment, err := optionalObject(current, "latest_deployment")
-		if err != nil {
-			return err
-		}
-		if deployment.Len() > 0 {
-			status, ok := fieldString(deployment, "status")
-			if !ok {
+		if deployment := current.LatestDeployment; deployment.HasMembers() {
+			status := deployment.Status
+			if status == "" {
 				return &CorruptStateError{Field: "latest_deployment.status"}
 			}
 			if !terminalNotRollbackFailed[status] {
@@ -501,8 +415,8 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 	if err != nil {
 		return nil, err
 	}
-	previous, pOK := originalString(state.MemberJSON("previous_version"))
-	target, tOK := originalString(state.MemberJSON("target_version"))
+	previous, pOK := state.PreviousVersion, true
+	target, tOK := state.TargetVersion, true
 	if !pOK || !tOK || previous != "" && !validVersion(previous) || !validVersion(target) {
 		return nil, &CorruptStateError{Field: "latest_upgrade.version"}
 	}
@@ -510,11 +424,11 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 	if err != nil {
 		return nil, err
 	}
-	recovery, present, err := stateNumber(state, "recovery_reported_at", false)
-	if err != nil {
-		return nil, err
+	recovery, present := 0.0, state.RecoveryReportedAt != nil
+	if present {
+		recovery = *state.RecoveryReportedAt
 	}
-	version, versionOK := originalString(a.MemberJSON("version"))
+	version, versionOK := a.Version, true
 	afterRecovery := false
 	if present && recovery != 0 && versionOK && version == previous {
 		var e error
@@ -533,10 +447,7 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 	if done || err != nil {
 		return result, err
 	}
-	started, _, err := stateNumber(state, "started_at", true)
-	if err != nil {
-		return nil, err
-	}
+	started := state.StartedAt
 	deadline := started + 600
 	if now() > deadline {
 		afterDeadline := false

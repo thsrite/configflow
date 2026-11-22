@@ -9,30 +9,6 @@ import (
 	"configflow/internal/redact"
 )
 
-func TestTypedEventsBindEachOriginalToken(t *testing.T) {
-	for _, tt := range []struct{ raw, want string }{
-		{`{"at":"2026-01-01T00:00:00Z","status":"ready","message":7}`, `[{"at":"2026-01-01T00:00:00.000000Z","status":"ready"}]`},
-		{`{"at":"2026-01-01T00:00:00Z","status":7}`, `[]`},
-		{`{"at":null,"status":"ready"}`, `[]`},
-		{`{"at":"2026-01-01T00:00:00Z","status":"ready","message":"token=synthetic-secret"}`, `[{"at":"2026-01-01T00:00:00.000000Z","status":"ready","message":"token=[REDACTED]"}]`},
-		{`{"at":"2026-01-01T00:00:00Z","status":"ready","message":"fetch https://example.com/config?token=synthetic-secret"}`, `[{"at":"2026-01-01T00:00:00.000000Z","status":"ready","message":"fetch [下载地址已隐藏]"}]`},
-	} {
-		var event model.OperationEvent
-		if err := json.Unmarshal([]byte(tt.raw), &event); err != nil {
-			t.Fatal(err)
-		}
-		before, _ := json.Marshal(event)
-		got, err := json.Marshal(CleanOperationEvents([]model.OperationEvent{event}, nil, nil))
-		if err != nil || string(got) != tt.want {
-			t.Fatalf("input=%s got=%s want=%s err=%v", tt.raw, got, tt.want, err)
-		}
-		after, _ := json.Marshal(event)
-		if !bytes.Equal(before, after) {
-			t.Fatal("source event mutated")
-		}
-	}
-}
-
 func TestEventWindowCountsInvalidEntries(t *testing.T) {
 	var event model.OperationEvent
 	if err := json.Unmarshal([]byte(`{"at":"2026-01-01T00:00:00Z","status":"ready","future":1e400}`), &event); err != nil {

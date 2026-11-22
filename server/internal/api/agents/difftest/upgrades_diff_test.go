@@ -644,6 +644,12 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	for _, r := range requests {
 		policy := n810OperationPolicy(t, r)
 		nativePolicy := loadUpgradePolicy(t, r)
+		if nativePolicy != nil && strings.HasPrefix(r.name, "review upgrade ") && strings.HasSuffix(r.name, " record") {
+			// A latest_upgrade that is not an object reads as no upgrade since
+			// O18 T1b (404 "暂无更新记录", Python 404 with its crash text).
+			nativePolicies++
+			continue
+		}
 		var before store.Fingerprint
 		if policy != nil {
 			policies++
@@ -710,7 +716,9 @@ func TestUpgradesDifferentialAgainstFlask(t *testing.T) {
 	}
 	pyAgents, goAgents := upgradeAgents(t, pyDir), upgradeAgents(t, goDir)
 	adjustUpgradeStoredPolicy(t, pyAgents, goAgents)
-	if !jsonEqual(pyAgents, goAgents) {
+	// Both registries compare as Agent records (O18 T1b: Python's nulls and
+	// empty texts are missing members).
+	if modelAgentsJSON(t, pyAgents) != modelAgentsJSON(t, goAgents) {
 		failed++
 		pyText, _ := encodeSortedJSON(pyAgents)
 		goText, _ := encodeSortedJSON(goAgents)
@@ -882,4 +890,29 @@ func TestUpgradesProxyDifferentialAgainstFlask(t *testing.T) {
 		t.Fatalf("only %d native outcomes checked", nativeOutcomes)
 	}
 	t.Logf("%d proxy cases, %d explicit native N2 outcomes, %d unexpected differences", len(cases), nativeOutcomes, failed)
+}
+
+func modelAgentsJSON(t *testing.T, value any) string {
+	t.Helper()
+	text, err := encodeSortedJSON(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agents []model.Agent
+	if err := json.Unmarshal(text, &agents); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := model.Marshal(agents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var canonical any
+	if err := json.Unmarshal(encoded, &canonical); err != nil {
+		t.Fatal(err)
+	}
+	out, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }

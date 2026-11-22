@@ -44,7 +44,7 @@ func TestReviewC34BindingCredentials(t *testing.T) {
 	}
 	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		system.Agents[0].Name = "password=synthetic-binding-error"
-		return system.Agents[0].SetJSON("latest_upgrade", json.RawMessage(`{"status":"installing"}`))
+		return model.SetStoredMember(&system.Agents[0], "latest_upgrade", json.RawMessage(`{"status":"installing"}`))
 	})
 	if err != nil {
 		t.Fatal(err)

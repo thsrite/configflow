@@ -1,25 +1,33 @@
 package model
 
+import ()
+
 // AgentRegistrationSession is a Go-native one-use installation capability.
 // Only the SHA-256 digest is persisted; successful registration deletes it in
 // the same transaction that creates the Agent.
 type AgentRegistrationSession struct {
-	Hash             string `json:"hash"`
-	Name             string `json:"name"`
-	Host             string `json:"host"`
-	Port             Int    `json:"port"`
-	ServiceType      string `json:"service_type"`
-	DeploymentMethod string `json:"deployment_method"`
-	ProfileID        string `json:"profile_id"`
-	Expires          Int    `json:"expires"`
-	Fields           Fields
-	raw              Raw
+	Hash             string `json:"hash,omitzero"`
+	Name             string `json:"name,omitzero"`
+	Host             string `json:"host,omitzero"`
+	Port             Int    `json:"port,omitzero"`
+	ServiceType      string `json:"service_type,omitzero"`
+	DeploymentMethod string `json:"deployment_method,omitzero"`
+	ProfileID        string `json:"profile_id,omitzero"`
+	Expires          Int    `json:"expires,omitzero"`
 }
 
-// UnmarshalJSON decodes a stored capability with the shared field-preservation codec.
-func (s *AgentRegistrationSession) UnmarshalJSON(data []byte) error {
-	return DecodeRecord(data, s, &s.raw)
+// Plain-record codecs (O18 T1b); see plainCodec.
+
+type agentRegistrationSessionWire AgentRegistrationSession
+
+func (*AgentRegistrationSession) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured AgentRegistrationSession data leniently (DecodeStored).
+func (r *AgentRegistrationSession) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*agentRegistrationSessionWire)(r))
 }
 
-// MarshalJSON preserves unknown capability metadata.
-func (s AgentRegistrationSession) MarshalJSON() ([]byte, error) { return EncodeRecord(&s, &s.raw) }
+func (r *AgentRegistrationSession) plainWire() any { return (*agentRegistrationSessionWire)(r) }
+
+// MarshalJSON writes the AgentRegistrationSession members in declaration order.
+func (r AgentRegistrationSession) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }

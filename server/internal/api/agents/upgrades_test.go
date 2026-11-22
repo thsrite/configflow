@@ -83,7 +83,7 @@ func (a *upgradeApp) setUpgrade(state map[string]any) {
 	if err := a.m.EditAgents(a.s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
 		for i := range *rows {
 			if (*rows)[i].ID == a.agentID {
-				return (*rows)[i].SetJSON("latest_upgrade", mustRawJSON(a.t, state))
+				return model.SetStoredMember(&(*rows)[i], "latest_upgrade", mustRawJSON(a.t, state))
 			}
 		}
 		return nil

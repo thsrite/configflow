@@ -105,7 +105,7 @@ type runtimeFields [7]json.RawMessage
 func runtimeProjection(source *model.Agent) (runtimeFields, error) {
 	var result runtimeFields
 	for i, key := range RuntimeFields {
-		raw, present, err := source.MemberJSON(key)
+		raw, present, err := model.EncodeMember(source, key)
 		if err != nil {
 			return result, err
 		}
@@ -128,27 +128,32 @@ type heartbeatPayload struct {
 	SystemMetrics json.RawMessage `json:"system_metrics,omitempty"`
 }
 
+// reportedHeartbeat selects the reported members of a heartbeat. An empty
+// version or config version counts as not reported.
 func reportedHeartbeat(payload *model.Agent) (heartbeatPayload, error) {
 	var result heartbeatPayload
 	if payload == nil {
 		return result, nil
 	}
-	for _, item := range []struct {
-		name   string
-		target *json.RawMessage
-	}{
-		{"version", &result.Version}, {"config_version", &result.ConfigVersion},
-		{"service_status", &result.ServiceStatus}, {"system_metrics", &result.SystemMetrics},
-	} {
-		raw, present, err := payload.MemberJSON(item.name)
-		if err != nil {
-			return result, err
-		}
-		if present {
-			*item.target = raw
+	var err error
+	encode := func(target *json.RawMessage, value any) {
+		if err == nil {
+			*target, err = model.Marshal(value)
 		}
 	}
-	return result, nil
+	if payload.Version != "" {
+		encode(&result.Version, payload.Version)
+	}
+	if payload.ConfigVersion != "" {
+		encode(&result.ConfigVersion, payload.ConfigVersion)
+	}
+	if payload.ServiceStatus != nil {
+		encode(&result.ServiceStatus, *payload.ServiceStatus)
+	}
+	if payload.SystemMetrics != nil {
+		encode(&result.SystemMetrics, payload.SystemMetrics)
+	}
+	return result, err
 }
 
 // Mark is taken before the repository lookup, preventing deletion races.
@@ -529,14 +534,12 @@ func importLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	versions := map[string]model.Fields{}
 	for _, id := range ids {
 		row := current[id]
-		raw, present, err := row.fields.MemberJSON("version")
-		if _, ok := storedText(raw, present, err); ok {
-			a := agents[id]
-			old, exists, e := a.MemberJSON("version")
-			if e != nil {
-				return e
+		if version := row.fields.Version; version != "" && version != agents[id].Version {
+			raw, err := json.Marshal(version)
+			if err != nil {
+				return err
 			}
-			if !sameStoredJSON(old, exists, raw) {
+			{
 				var patch model.Fields
 				if err := patch.Set("version", raw); err != nil {
 					return err

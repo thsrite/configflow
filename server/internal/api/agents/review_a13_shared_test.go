@@ -13,7 +13,9 @@ import (
 
 // TestReviewA13ProjectionCredentialReferences checks references across public subrecords.
 func TestReviewA13ProjectionCredentialReferences(t *testing.T) {
-	for _, field := range []string{"journal", "oxidns_ha_publication"} {
+	// Undeclared members (the history's api_key) are dropped on load (O18
+	// T1b); a dropped journal member carries no credential.
+	for _, field := range []string{"journal"} {
 		t.Run(field, func(t *testing.T) {
 			record := map[string]any{
 				"id":          "device",

@@ -137,7 +137,7 @@ func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 		fired = true
 		// A new Mihomo publication reserves right after the draft commit.
 		f.editAgent(t, "source", func(a *model.Agent) {
-			_ = a.SetJSON("latest_deployment", []byte(`{"deployment_id":"source-newer","status":"preparing"}`))
+			_ = model.SetStoredMember(&a, "latest_deployment", []byte(`{"deployment_id":"source-newer","status":"preparing"}`))
 		})
 	}}})
 	defer repo.SetHooks(previous)
@@ -171,16 +171,17 @@ func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 
 // Python labels Agent call failures with agent.get("name", "Agent") and
 // selectable sources with agent.get("name", agent["id"]): a record without a
-// name says "Agent", and a stored empty name stays empty in the options.
+// name says "Agent". A stored empty name is a missing one (O18 T1b), so the
+// option falls back to the ID.
 func TestDeviceAndSourceNamesFollowStoredRecord(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
-	f.editAgent(t, "target", func(a *model.Agent) { _ = a.Clear("name") })
+	f.editAgent(t, "target", func(a *model.Agent) { _ = model.ZeroMember(&a, "name") })
 	f.editAgent(t, "source", func(a *model.Agent) { a.Name = "" })
 	view, err := f.s.Options(f.ctx, "target")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Sources) != 1 || view.Sources[0].ID != "source" || view.Sources[0].Name != "" {
+	if len(view.Sources) != 1 || view.Sources[0].ID != "source" || view.Sources[0].Name != "source" {
 		t.Fatalf("sources %+v", view.Sources)
 	}
 	f.target.server.Close()
@@ -233,14 +234,14 @@ func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 		name string
 		edit func(*model.Agent)
 	}{
-		{"missing", func(a *model.Agent) { _ = a.DNSFollowJob.Clear("candidate_settings") }},
+		{"missing", func(a *model.Agent) { _ = model.ZeroMember(&a.DNSFollowJob, "candidate_settings") }},
 		{"null", func(a *model.Agent) {
 			raw, _ := json.Marshal(a.DNSFollowJob)
 			var m map[string]any
 			_ = json.Unmarshal(raw, &m)
 			m["candidate_settings"] = nil
 			b, _ := json.Marshal(m)
-			_ = a.SetJSON("dns_follow_job", b)
+			_ = model.SetStoredMember(&a, "dns_follow_job", b)
 		}},
 		{"text", func(a *model.Agent) {
 			raw, _ := json.Marshal(a.DNSFollowJob)
@@ -248,7 +249,7 @@ func TestCorruptJobCandidateNeverReplacesDraft(t *testing.T) {
 			_ = json.Unmarshal(raw, &m)
 			m["candidate_settings"] = "synthetic"
 			b, _ := json.Marshal(m)
-			_ = a.SetJSON("dns_follow_job", b)
+			_ = model.SetStoredMember(&a, "dns_follow_job", b)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

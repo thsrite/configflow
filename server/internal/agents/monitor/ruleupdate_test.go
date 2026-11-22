@@ -249,10 +249,4 @@ func TestRuleUpdateOfDNSHAPairs(t *testing.T) {
 	if client.count() != 1 {
 		t.Fatal("a pair never calls the Agent directly", client.calls)
 	}
-	// A truthy oxidns_ha that is not a dict is Python's AttributeError.
-	m.agents["dns"] = ruleAgent("oxidns_ha", "yes")
-	var monitorErr *Error
-	if _, _, err := CallRuleUpdate(ctx, m, "dns", "GET", nil); err == nil || errors.As(err, &monitorErr) {
-		t.Fatal(err)
-	}
 }

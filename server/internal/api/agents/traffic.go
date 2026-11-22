@@ -135,7 +135,7 @@ func trafficHistoryState(c *httpx.Ctx, manager *agents.Manager, agent *model.Age
 	enabled := heartbeatFeature(agent, "traffic_history_enabled")
 	since := json.RawMessage("null")
 	if enabled {
-		raw, present, err := agent.MemberJSON("traffic_history_since")
+		raw, present, err := model.EncodeMember(agent, "traffic_history_since")
 		if err != nil {
 			return nil, err
 		}
@@ -166,11 +166,7 @@ func mihomoAgentOrError(c *httpx.Ctx, manager *agents.Manager) (*model.Agent, *h
 	}
 	// agent.get('service_type', 'mihomo'): a missing member is mihomo; null or
 	// a wrong type (R5 fallback "") is not.
-	_, present, err := agent.MemberJSON("service_type")
-	if err != nil {
-		return nil, nil, err
-	}
-	if present && agent.ServiceType != "mihomo" {
+	if agent.ServiceType != "" && agent.ServiceType != "mihomo" {
 		return nil, failure(400, "流量记录只支持 mihomo Agent"), nil
 	}
 	return agent, nil, nil

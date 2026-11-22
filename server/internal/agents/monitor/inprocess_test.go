@@ -162,7 +162,7 @@ func TestConfigurationVerificationRemainsLockedThroughLeafCAS(t *testing.T) {
 				err := manager.EditAgents(ctx, "", func(_ context.Context, values *[]model.Agent) error {
 					agent := &(*values)[0]
 					if kind == "target" {
-						return agent.SetJSON("host", []byte(`"192.0.2.24"`))
+						return model.SetStoredMember(&agent, "host", []byte(`"192.0.2.24"`))
 					}
 					d, _ := agent.Deployments.Get("publish-one")
 					d.Status = "failed"

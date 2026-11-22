@@ -97,7 +97,7 @@ func CollectAgentHistory(ctx context.Context, m Registry, store *RankingStore, a
 		starts = append(starts, start)
 	}
 	stored := 0
-	agentID, valid := originalString(agent.MemberJSON("id"))
+	agentID, valid := agent.ID, true
 	if !valid || agentID == "" {
 		return 0, ErrSlotIncomplete
 	}
@@ -133,7 +133,7 @@ func CollectAgentHistory(ctx context.Context, m Registry, store *RankingStore, a
 					reason = monitorErr.Code
 				}
 				// The device is busy or away: try again next round.
-				name = redact.DiagnosticText(name, redact.Secrets{originalText(agent.MemberJSON("token"))}, 128)
+				name = redact.DiagnosticText(name, redact.Secrets{agent.Token}, 128)
 				rankingLogger.Infof(msgRankingUnavailable, name, reason)
 				return stored, nil
 			}
@@ -168,7 +168,7 @@ func historyUsable(m RoundRegistry, a *model.Agent) bool {
 	if codec, ok := m.(interface{ historyUsable(*model.Agent) bool }); ok {
 		return codec.historyUsable(a)
 	}
-	return agents.AgentEnabledModel(a) && originalText(a.MemberJSON("status")) == "online" && agents.FreshHeartbeat(originalText(a.MemberJSON("last_heartbeat")), nil)
+	return agents.AgentEnabledModel(a) && a.Status == "online" && agents.FreshHeartbeat(a.LastHeartbeat, nil)
 }
 func historyRecorders(ctx context.Context, m RoundRegistry, a *model.Agent) ([]string, error) {
 	if codec, ok := m.(interface {
@@ -207,23 +207,14 @@ func CollectHistoryRound(ctx context.Context, m RoundRegistry, store *RankingSto
 		if rankingStopping(ctx) {
 			return ctx.Err()
 		}
-		if originalText(agent.MemberJSON("service_type")) != "oxidns" {
+		if agent.ServiceType != "oxidns" {
 			continue
-		}
-		raw, present, err := agent.MemberJSON("version")
-		if err != nil {
-			return err
-		}
-		if present && string(raw) != "null" {
-			if _, valid := originalString(raw, present, nil); !valid {
-				return errors.New("stored Agent version must be a string")
-			}
 		}
 		supported := modelVersionAtLeast(agent, HistoryAgentVersion)
 		if !supported || !historyUsable(m, agent) {
 			continue
 		}
-		if caught, ok := store.CaughtUp(originalText(agent.MemberJSON("id"))); ok && caught == end {
+		if caught, ok := store.CaughtUp(agent.ID); ok && caught == end {
 			continue // nothing new until the next slot ends: no request at all
 		}
 		recorders, err := historyRecorders(ctx, m, agent)
@@ -240,7 +231,7 @@ func CollectHistoryRound(ctx context.Context, m RoundRegistry, store *RankingSto
 	}
 	ids := make([]string, len(list))
 	for i := range list {
-		ids[i] = originalText(list[i].MemberJSON("id"))
+		ids[i] = list[i].ID
 	}
 	return store.MaintainContext(ctx, ids, now)
 }

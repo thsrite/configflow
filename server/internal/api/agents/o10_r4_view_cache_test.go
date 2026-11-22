@@ -112,7 +112,7 @@ func TestAgentViewCacheFollowsEveryInput(t *testing.T) {
 
 	// Agent write.
 	if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
-		return system.Agents[0].SetJSON("name", json.RawMessage(`"Renamed"`))
+		return model.SetStoredMember(&system.Agents[0], "name", json.RawMessage(`"Renamed"`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -178,11 +178,11 @@ func TestAgentViewCacheKeysLiveMembers(t *testing.T) {
 		t.Fatalf("hit recomputed: %d", calls)
 	}
 	offline := record
-	if err := offline.SetJSON("status", json.RawMessage(`"offline"`)); err != nil {
+	if err := model.SetStoredMember(&offline, "status", json.RawMessage(`"offline"`)); err != nil {
 		t.Fatal(err)
 	}
 	metrics := record
-	if err := metrics.SetJSON("cpu", json.RawMessage(`{"usage_percent":1}`)); err != nil {
+	if err := model.SetStoredMember(&metrics, "cpu", json.RawMessage(`{"usage_percent":1}`)); err != nil {
 		t.Fatal(err)
 	}
 	beat := record
@@ -233,10 +233,10 @@ func TestAgentViewMasksItsOwnGenerationCredentials(t *testing.T) {
 		if err := f.s.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 			token, _ := json.Marshal(token)
 			remark, _ := json.Marshal(remark)
-			if err := system.Agents[0].SetJSON("token", token); err != nil {
+			if err := model.SetStoredMember(&system.Agents[0], "token", token); err != nil {
 				return err
 			}
-			return system.Agents[0].Fields.Set("remark", remark) // unknown member
+			return model.SetStoredMember(&system.Agents[0], "name", remark)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -263,7 +263,7 @@ func TestAgentViewMasksItsOwnGenerationCredentials(t *testing.T) {
 	if _, present := public["token"]; present {
 		t.Fatal("token projected")
 	}
-	if string(public["remark"]) != `"[REDACTED]"` {
-		t.Fatalf("own generation token leaked: %s", public["remark"])
+	if strings.Contains(string(public["name"]), old) {
+		t.Fatalf("own generation token leaked: %s", public["name"])
 	}
 }

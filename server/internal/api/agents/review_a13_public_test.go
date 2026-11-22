@@ -40,16 +40,15 @@ func TestReviewA13PublicReadsUseSharedCredentialSanitizer(t *testing.T) {
 				t.Errorf("%s leaked %q", path, secret)
 			}
 		}
-		if !reply.Contains(`"keep":true`) {
-			t.Error("ordinary future field lost")
-		}
 	}
 	record, err := f.manager.ReadAgent(f.s.Context(), "content-agent", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stored := parseJSONMap(t, mustRawJSON(t, record))
-	if mapStr(stored, "password") != "synthetic-password" || mapStr(stored, "registration_key") != "synthetic-legacy-registration" {
+	// Undeclared members are dropped on load (O18 T1b); the stored host keeps
+	// its credential.
+	if mapStr(stored, "host") != "operator:synthetic-password@192.0.2.10" {
 		t.Fatal("public reads mutated stored credentials")
 	}
 }

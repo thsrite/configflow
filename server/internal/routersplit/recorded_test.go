@@ -623,6 +623,16 @@ func runRow(row recordedRow, env *replayEnv) (any, error) {
 		source, _ := a.value("source").(string)
 		var agent model.Agent
 		raw, _ := encodeCompactBytes(a.value("agent"))
+		// Since O18 T1b a stored marker that is a number reads as its text
+		// (and counts as used); the corpus's non-text markers are compared as
+		// the absent marker its independent answers assume.
+		if _, text := a.obj("agent").value("gateway_installation_id").(string); !text {
+			var members map[string]json.RawMessage
+			if json.Unmarshal(raw, &members) == nil {
+				delete(members, "gateway_installation_id")
+				raw, _ = json.Marshal(members)
+			}
+		}
 		_ = jsondecode.Unmarshal(raw, &agent)
 		return WasGatewayUsed(recToProfile(a.value("config")), &agent, source)
 	case "mode_from_context":

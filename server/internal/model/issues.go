@@ -37,7 +37,7 @@ func Issues(value any) []FieldIssue {
 func IssueUnder(issues []FieldIssue, path string) bool {
 	for _, issue := range issues {
 		rest, found := strings.CutPrefix(issue.Path, path)
-		if found && (rest == "" || rest[0] == '.' || rest[0] == '[') {
+		if found && (rest == "" || rest[0] == '.' || rest[0] == '[' || rest[0] == '{') {
 			return true
 		}
 	}

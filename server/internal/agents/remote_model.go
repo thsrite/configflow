@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -14,7 +15,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 )
 
 // RemoteRequest carries already encoded device bytes. Header/body ownership and
@@ -61,8 +61,11 @@ func remoteFlag(fields model.Fields, name string) (bool, error) {
 	return *flag, nil
 }
 func remoteText(fields model.Fields, name string) string {
-	raw, present := fields.Get(name)
-	text, _ := storedText(raw, present, nil)
+	raw, _ := fields.Get(name)
+	var text string
+	if jsonText(raw) && json.Unmarshal(raw, &text) != nil {
+		return ""
+	}
 	return text
 }
 
@@ -131,22 +134,11 @@ func (m *Manager) SetLoggingModel(ctx context.Context, id string, enabled json.R
 		if current == nil {
 			return nil
 		}
-		raw, present, err := current.MemberJSON("logging_config")
-		if err != nil {
+		if err := model.ValidJSON(enabled); err != nil {
 			return err
 		}
-		var config model.Fields
-		if present && json.Unmarshal(raw, &config) != nil {
-			return repo.NewValidationError(msgLoggingConfigShape)
-		}
-		if err := config.Set("enabled", enabled); err != nil {
-			return err
-		}
-		raw, err = json.Marshal(config)
-		if err != nil {
-			return err
-		}
-		return current.SetJSON("logging_config", raw)
+		current.LoggingConfig = &model.AgentLoggingConfig{Enabled: bytes.Clone(enabled)}
+		return tx.Err()
 	})
 	return result, err
 }
@@ -307,16 +299,8 @@ func (m *Manager) PushLegacyConfigModel(ctx context.Context, id, content string,
 	if a == nil {
 		return remoteFailure(msgAgentNotFound)
 	}
-	service, present, err := a.MemberJSON("service_type")
-	if err != nil {
-		return nil, err
-	}
-	serviceName, valid := storedText(service, present, nil)
-	if !present {
-		serviceName = "mihomo"
-		valid = true
-	}
-	mismatch := !valid
+	serviceName := agentService(a)
+	mismatch := false
 	if options.ExpectedProfileID != nil {
 		profile, err := m.ResolveAgentProfile(ctx, a)
 		if err != nil {
@@ -400,7 +384,9 @@ func (m *Manager) PushLegacyConfigModel(ctx context.Context, id, content string,
 		current.ConfigVersion = version[:8]
 		current.PushedAt = new(utcNowZ())
 		if len(options.Revision) > 0 && string(options.Revision) != "null" {
-			return current.SetJSON("config_revision", options.Revision)
+			if _, _, err := model.DecodeStoredMember(current, "config_revision", options.Revision, "config_revision"); err != nil {
+				return err
+			}
 		}
 		return tx.Err()
 	})
@@ -417,13 +403,8 @@ func (m *Manager) remotePayloadError(ctx context.Context, id string, payloadErr 
 	if err != nil {
 		return err
 	}
-	if a != nil {
-		_, hostOK := storedText(a.MemberJSON("host"))
-		_, tokenOK := storedText(a.MemberJSON("token"))
-		_, portOK, err := a.MemberJSON("port")
-		if !hostOK || !tokenOK || !portOK || err != nil {
-			return ErrAgentEndpoint
-		}
+	if a != nil && (a.Host == "" || a.Token == "" || a.Port == 0) {
+		return ErrAgentEndpoint
 	}
 	return payloadErr
 }

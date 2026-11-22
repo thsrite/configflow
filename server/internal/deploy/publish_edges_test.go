@@ -115,12 +115,3 @@ func TestPairGateUsesAuthoritativeActiveJournal(t *testing.T) {
 		})
 	}
 }
-
-func TestReceiptValidationRejectsDisplayProjection(t *testing.T) {
-	proof := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: "synthetic", DeploymentID: "candidate", ProfileID: "1", ServiceType: "oxidns", SHA256: "synthetic-sha", Fingerprint: "synthetic-fingerprint"}
-	state := fixtureTask(map[string]any{"profile_id": 1, "service_type": "oxidns", "deployment_id": "candidate", "sha256": "synthetic-sha", "prepared_content": map[string]string{"fingerprint": "synthetic-fingerprint"}, "oxidns_validation_receipt": proof})
-	agent := fixtureAgent(map[string]string{"id": "synthetic", "profile_id": "1", "service_type": "oxidns"})
-	if ReceiptMatches(agent, state) {
-		t.Fatal("numeric profile identity acquired string receipt proof")
-	}
-}

@@ -271,7 +271,7 @@ func retainedReceipts(ctx context.Context, r *repo.Repository, agentID, deployme
 				retained[digest([]byte(agent.AppliedContent.DeploymentID))] = true
 			}
 			for id, state := range agent.Deployments.All() {
-				if agent.Deployments.EntryValid(id) && !finished(state.Status) {
+				if !finished(state.Status) {
 					retained[digest([]byte(id))] = true
 				}
 			}
@@ -292,7 +292,7 @@ func advanceApplied(ctx context.Context, m *agents.Manager, agent *model.Agent, 
 	if agent == nil || agent.ID == "" || agent.AppliedContent == nil {
 		return false, nil
 	}
-	expected, _, err := agent.MemberJSON("applied_content")
+	expected, _, err := model.EncodeMember(agent, "applied_content")
 	if err != nil {
 		return false, err
 	}
@@ -306,7 +306,7 @@ func advanceApplied(ctx context.Context, m *agents.Manager, agent *model.Agent, 
 				continue
 			}
 			applied := current.AppliedContent
-			raw, _, err := current.MemberJSON("applied_content")
+			raw, _, err := model.EncodeMember(current, "applied_content")
 			if err != nil {
 				return err
 			}
@@ -317,7 +317,7 @@ func advanceApplied(ctx context.Context, m *agents.Manager, agent *model.Agent, 
 			if latest != nil && !finished(latest.Status) {
 				return nil
 			}
-			fileMap := model.Map[string]{}
+			fileMap := model.OrderedMap[string]{}
 			for path, sha := range files {
 				fileMap.Set(path, sha)
 			}
@@ -370,7 +370,10 @@ func receiptMatches(agent *model.Agent, state *model.Deployment) bool {
 	if err != nil {
 		return false
 	}
-	proof, _, err := state.MemberJSON("oxidns_validation_receipt")
+	if state.OxiDNSValidationReceipt == nil {
+		return false
+	}
+	proof, err := model.Marshal(state.OxiDNSValidationReceipt)
 	return err == nil && equalJSON(raw, proof)
 }
 
@@ -394,9 +397,7 @@ func publicDeployment(record *model.Deployment) *model.Deployment {
 		}
 		out = *outPtr
 	}
-	if out.Clear("prepared_content") != nil || out.Clear("oxidns_validation_receipt") != nil {
-		return nil
-	}
+	out.PreparedContent, out.OxiDNSValidationReceipt = nil, nil
 	localized, err := agents.PublicDeploymentMessagesModel(&out)
 	if err != nil {
 		return nil
@@ -419,12 +420,12 @@ func AgentIdentity(t Target) []byte {
 	if record == nil {
 		record = &model.Agent{ID: t.ID, ProfileID: t.ProfileID, ServiceType: t.ServiceType, Host: t.Host, Token: t.Token, Version: t.Version, DeploymentMethod: t.DeploymentMethod, DomainDiscoveryEnabled: &t.DomainDiscovery}
 		if len(t.Port) > 0 {
-			_ = record.SetJSON("port", t.Port)
+			_, _, _ = model.DecodeStoredMember(record, "port", t.Port, "port")
 		}
 	}
 	identity := map[string]json.RawMessage{}
 	for _, key := range []string{"id", "profile_id", "service_type", "host", "port", "token", "enabled", "version", "deployment_method", "domain_discovery_enabled", "oxidns_ha"} {
-		raw, _, err := record.MemberJSON(key)
+		raw, _, err := model.EncodeMember(record, key)
 		if err != nil {
 			return nil
 		}
@@ -496,10 +497,10 @@ func finalPreview(ctx context.Context, m *agents.Manager, t Target, content stri
 	if err != nil {
 		return "", err
 	}
-	raw, present, failure := response.MemberJSON("content")
+	raw, present := response.MemberJSON("content")
 	var value string
-	ok := present && failure == nil && json.Unmarshal(raw, &value) == nil
-	success := response.Success
+	ok := present && json.Unmarshal(raw, &value) == nil
+	success := response.Success != nil && *response.Success
 	successOK := true
 	if !successOK || !success || !ok {
 		message := ""
@@ -931,7 +932,8 @@ type taskView struct {
 	SourceSHA256   string `json:"source_sha256"`
 }
 
-func resultView(r *model.Deployment) taskView {
+// resultView reads a deployment response (a journal or an Agent reply).
+func resultView(r json.Marshaler) taskView {
 	var v taskView
 	b, _ := model.Marshal(r)
 	_ = jsondecode.Unmarshal(b, &v)
@@ -942,7 +944,7 @@ func taskViewOf(t Target, id string) (taskView, bool) {
 	return resultView(r), r != nil
 }
 func taskResult(t Target, id string) *model.Deployment {
-	if t.Record == nil || !t.Record.Deployments.EntryValid(id) {
+	if t.Record == nil {
 		return nil
 	}
 	r, ok := t.Record.Deployments.Get(id)
@@ -971,15 +973,15 @@ func resultWithID(r *model.Deployment, id string) *model.Deployment {
 	return resultField(r, "deployment_id", id)
 }
 func resultField(r *model.Deployment, key string, value any) *model.Deployment {
-	raw, _ := model.Marshal(r)
-	var fields model.Fields
-	_ = json.Unmarshal(raw, &fields)
-	encoded, _ := model.Marshal(value)
-	fields.Set(key, encoded)
-	raw, _ = model.Marshal(fields)
-	var out model.Deployment
-	_ = json.Unmarshal(raw, &out)
-	return &out
+	out, err := model.Clone(r)
+	if err != nil || out == nil {
+		out = &model.Deployment{}
+	}
+	encoded, err := model.Marshal(value)
+	if err == nil {
+		_ = model.SetStoredMember(out, key, encoded)
+	}
+	return out
 }
 func recordUpdate(ctx context.Context, m *agents.Manager, agentID, id string, u Update, o agents.RecordOptions) (*model.Deployment, error) {
 	if err := ctx.Err(); err != nil {
@@ -1016,15 +1018,16 @@ func recordUpdate(ctx context.Context, m *agents.Manager, agentID, id string, u 
 	}
 	return m.RecordDeploymentModel(ctx, agentID, id, update, o)
 }
-func normalizeUpload(r *model.Deployment) *model.Deployment {
+func normalizeUpload(reply *agents.DeploymentReply) *model.Deployment {
+	r := &reply.Deployment
 	if r.HTTPStatus != nil && *r.HTTPStatus != 0 {
 		if r.Status == "" {
 			return resultField(r, "status", "failed")
 		}
 	} else {
-		raw, present, err := r.MemberJSON("status")
+		raw, present := reply.MemberJSON("status")
 		var text string
-		if err != nil || !present || json.Unmarshal(raw, &text) != nil {
+		if !present || json.Unmarshal(raw, &text) != nil {
 			return result(true, "unknown", msgUploadAccepted, 0)
 		}
 	}
@@ -1100,7 +1103,7 @@ func BorrowedTarget(record *model.Agent) (Target, error) {
 }
 
 func targetFor(owned *model.Agent) (Target, error) {
-	port, _, err := owned.MemberJSON("port")
+	port, _, err := model.EncodeMember(owned, "port")
 	if err != nil {
 		return Target{}, err
 	}
@@ -1112,13 +1115,13 @@ func targetFor(owned *model.Agent) (Target, error) {
 	}{
 		{"id", &target.ID}, {"name", &target.Name}, {"profile_id", &target.ProfileID}, {"service_type", &target.ServiceType}, {"deployment_method", &target.DeploymentMethod}, {"version", &target.Version}, {"host", &target.Host}, {"token", &target.Token},
 	} {
-		raw, _, err := owned.MemberJSON(field.key)
+		raw, _, err := model.EncodeMember(owned, field.key)
 		if err != nil {
 			return Target{}, err
 		}
 		_ = json.Unmarshal(raw, field.destination)
 	}
-	raw, _, err := owned.MemberJSON("domain_discovery_enabled")
+	raw, _, err := model.EncodeMember(owned, "domain_discovery_enabled")
 	if err != nil {
 		return Target{}, err
 	}

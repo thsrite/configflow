@@ -98,24 +98,3 @@ func TestNativeFeatureWritesFollowRuntimeLifetime(t *testing.T) {
 		t.Fatal("shutdown sent device write", err, calls)
 	}
 }
-
-func TestAgentNameKeepsOriginalStringEvidence(t *testing.T) {
-	for _, tc := range []struct {
-		raw, name string
-		present   bool
-	}{
-		{`{"name":"edge"}`, "edge", true}, {`{"name":""}`, "", true},
-		{`{}`, "", false}, {`{"name":null}`, "", false}, {`{"name":42}`, "", false}, {`{"name":{"label":"edge"}}`, "", false},
-	} {
-		t.Run(tc.raw, func(t *testing.T) {
-			var a model.Agent
-			if err := json.Unmarshal([]byte(tc.raw), &a); err != nil {
-				t.Fatal(err)
-			}
-			name, present := AgentName(&a)
-			if name != tc.name || present != tc.present {
-				t.Fatal("stored name evidence lost", name, present)
-			}
-		})
-	}
-}

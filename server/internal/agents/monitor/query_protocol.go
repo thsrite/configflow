@@ -29,7 +29,7 @@ func readDNSAgent(ctx context.Context, m Registry, id, minimum string, history b
 	if a == nil {
 		return nil, NewError("AGENT_NOT_FOUND", 404, msgAgentMissing)
 	}
-	if originalText(a.MemberJSON("service_type")) != "oxidns" {
+	if a.ServiceType != "oxidns" {
 		return nil, NewError("WRONG_SERVICE", 400, msgDNSWrongService)
 	}
 	if !modelVersionAtLeast(a, minimum) {
@@ -46,7 +46,8 @@ func monitorRequest(ctx context.Context, m Registry, a *model.Agent, endpoint st
 	if err != nil {
 		return fields, err
 	}
-	token, valid := originalString(a.MemberJSON("token"))
+	token := a.Token
+	valid := token != ""
 	if !valid {
 		return fields, unreachable()
 	}

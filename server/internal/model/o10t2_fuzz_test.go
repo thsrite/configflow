@@ -190,7 +190,7 @@ func normalizeRaw(items []json.RawMessage) []string {
 }
 
 // FuzzMarshalOutputValid decodes fuzzed Agents, applies edits that reach
-// every encoder path (records, Map, Fields, foreign RawMessage, clears) and
+// every encoder path (records, OrderedMap, foreign RawMessage, clears) and
 // checks that every successful encoding is complete, duplicate-free JSON and
 // that Marshal and a direct MarshalJSON call agree byte for byte.
 func FuzzMarshalOutputValid(f *testing.F) {
@@ -199,7 +199,7 @@ func FuzzMarshalOutputValid(f *testing.F) {
 	f.Add([]byte(` { "name" : "例", "rule_sync":{"settings":{"enabled":true}} } `), []byte(`{"a":1,"a":2}`), uint8(6))
 	f.Fuzz(func(t *testing.T, data, value []byte, edit uint8) {
 		var agent Agent
-		if DecodeRecord(data, &agent, &agent.raw) != nil {
+		if requireObject(data) != nil || json.Unmarshal(data, &agent) != nil {
 			return
 		}
 		check := func(label string, record Agent) {
@@ -226,9 +226,9 @@ func FuzzMarshalOutputValid(f *testing.F) {
 		case 0:
 			edited.Name = string(value)
 		case 1:
-			_ = SetMemberJSON(&edited, &edited.raw, "future", value)
+			_ = SetStoredMember(&edited, "future", value)
 		case 2:
-			_ = SetMemberJSON(&edited, &edited.raw, "deployments", value)
+			_ = SetStoredMember(&edited, "deployments", value)
 		case 3:
 			deployment, _ := edited.Deployments.Get("d")
 			deployment.Health = value
@@ -236,12 +236,12 @@ func FuzzMarshalOutputValid(f *testing.F) {
 		case 4:
 			edited.LoggingConfig = &AgentLoggingConfig{Enabled: value}
 		case 5:
-			_ = edited.Fields.Set("extra", value)
+			_ = SetStoredMember(&edited, "logging_config", value)
 		case 6:
-			_ = edited.Clear("deployments")
+			_ = ZeroMember(&edited, "deployments")
 			edited.LatestDeployment = &Deployment{Health: value}
 		case 7:
-			_ = SetMemberJSON(&edited, &edited.raw, "ipv6_verifications", value)
+			_ = SetStoredMember(&edited, "ipv6_verifications", value)
 		}
 		check("edited", edited)
 	})

@@ -96,7 +96,7 @@ func TestHeartbeatWithKnownVersionWritesNothingAndIsVisibleThroughTheManager(t *
 			t.Fatalf("current %+v", current)
 		}
 		for _, key := range metricFields {
-			raw, present, _ := current.MemberJSON(key)
+			raw, present, _ := model.EncodeMember(&current, key)
 			if !present || diffJSONValues(t, wantMetrics[key], parseJSONVal(t, raw)) != "" {
 				t.Fatalf("%s %s", key, raw)
 			}
@@ -127,7 +127,7 @@ func TestReturnedAgentsAreCopiesOfTheRememberedState(t *testing.T) {
 	e, id := setupRuntime(t)
 	e.beat(id, map[string]any{"system_metrics": testMetricsMap()})
 	copied := e.get(id)
-	copied.SystemMetrics.CPU.UsagePercent = 99
+	copied.SystemMetrics.CPU.UsagePercent = "99"
 	if diffJSONValues(t, testMetricsMap(), e.get(id).SystemMetrics) != "" {
 		t.Fatal("shared state")
 	}

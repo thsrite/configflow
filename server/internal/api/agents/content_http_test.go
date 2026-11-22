@@ -208,13 +208,13 @@ func TestContentHTTPHistorySummaryAndPending(t *testing.T) {
 	}
 	if err := f.s.Repo.UpdateSystem(f.s.Context(), func(_ context.Context, system *model.System) error {
 		a := &system.Agents[0]
-		raw, _, err := a.MemberJSON("deployments")
+		raw, _, err := model.EncodeMember(&a, "deployments")
 		if err != nil {
 			return err
 		}
 		deps := parseJSONMap(t, raw)
 		deps["next"] = map[string]any{"status": "ready"}
-		return a.SetJSON("deployments", mustRawJSON(t, deps))
+		return model.SetStoredMember(&a, "deployments", mustRawJSON(t, deps))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestContentHTTPUnavailableProfileLegacyAndPreparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stale.SetJSON("profile_id", json.RawMessage(`"missing-profile"`)); err != nil {
+	if err := model.SetStoredMember(&stale, "profile_id", json.RawMessage(`"missing-profile"`)); err != nil {
 		t.Fatal(err)
 	}
 	public, err := publicWithContent(f.s.Context(), f.manager, stale, -1, nil, true)
@@ -318,7 +318,7 @@ func TestContentHTTPUnavailableProfileLegacyAndPreparation(t *testing.T) {
 	f.get("/api/agents?history=0").WantStatus(200)
 	mutate(func(a *model.Agent) error {
 		a.ProfileID = "default"
-		return a.Clear("applied_content")
+		return model.ZeroMember(&a, "applied_content")
 	})
 	wantBodyJSON(t, f.get("/api/agents/content-agent/push-diff").WantStatus(200), map[string]any{"status": "unknown", "reason": "baseline_missing", "service_type": "mihomo"})
 }

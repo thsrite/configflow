@@ -128,10 +128,5 @@ func WasGatewayUsed(profile *model.Profile, agent *model.Agent, source string) (
 	if agent == nil {
 		return false, nil
 	}
-	raw, ok, err := agent.MemberJSON("gateway_installation_id")
-	if err != nil || !ok {
-		return false, nil
-	}
-	var proof string
-	return json.Unmarshal(raw, &proof) == nil && proof != "", nil
+	return agent.GatewayInstallationID != nil && *agent.GatewayInstallationID != "", nil
 }

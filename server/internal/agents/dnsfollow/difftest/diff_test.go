@@ -351,6 +351,12 @@ func normalize(t *testing.T, v any) any {
 			return
 		}
 		s := raw.(map[string]any)
+		// A null deployment ID is a missing member since O18 T1b.
+		for _, key := range []string{"source_deployment_id", "target_deployment_id"} {
+			if value, present := s[key]; present && value == nil {
+				delete(s, key)
+			}
+		}
 		if x, ok := s["updated_at"].(string); ok {
 			if _, err := time.Parse(time.RFC3339Nano, x); err != nil {
 				t.Fatal(x)

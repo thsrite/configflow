@@ -48,7 +48,7 @@ func TestPublishLegacyProxyAgainstFlask(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = repository.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
-		return system.Agents[0].SetJSON("service_type", []byte(`"surge"`))
+		return model.SetStoredMember(&system.Agents[0], "service_type", []byte(`"surge"`))
 	})
 	if err != nil {
 		t.Fatal(err)

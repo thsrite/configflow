@@ -146,30 +146,25 @@ func ObserveRegistryPresence(records []*model.Agent, secrets redact.Secrets) {
 }
 
 func presenceRecordOf(record *model.Agent, liveHeartbeat string, hasLive, applyFreshness bool) PresenceRecord {
-	id, valid := storedText(record.MemberJSON("id"))
-	if !valid {
+	id := record.ID
+	if id == "" {
 		return PresenceRecord{}
 	}
-	var status string
-	var hbRaw json.RawMessage
-	var hbErr error
+	status := record.Status
 	effectiveHeartbeat := record.LastHeartbeat
 	if hasLive {
 		status = "online"
 		effectiveHeartbeat = liveHeartbeat
-		hbRaw, hbErr = json.Marshal(liveHeartbeat)
-	} else {
-		status, _ = storedText(record.MemberJSON("status"))
-		hbRaw, _, hbErr = record.MemberJSON("last_heartbeat")
 	}
 	if applyFreshness && !FreshHeartbeat(effectiveHeartbeat, nil) {
 		status = "offline"
 	}
-	name, present, nameErr := record.MemberJSON("name")
-	content, contentErr := model.JSONHasContent(name)
-	if nameErr == nil && contentErr == nil && (!present || !content) {
-		name, _, nameErr = record.MemberJSON("id")
+	hbRaw, hbErr := json.Marshal(effectiveHeartbeat)
+	label := record.Name
+	if label == "" {
+		label = id
 	}
+	name, nameErr := json.Marshal(label)
 	return PresenceRecord{
 		ID:           id,
 		ValidID:      true,

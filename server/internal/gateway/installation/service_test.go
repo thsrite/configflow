@@ -380,7 +380,7 @@ func TestCrossAgentCredentialsRemovedBeforeSessionProjection(t *testing.T) {
 	f.enroll(t)
 	f.prepareRun(t)
 	err := f.s.Repository.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
-		sys.Agents[1].Fields.Set("private_metadata", json.RawMessage(`{"password":"synthetic-hidden-credential"}`))
+		sys.Agents[1].LoggingConfig = &model.AgentLoggingConfig{Enabled: json.RawMessage(`{"password":"synthetic-hidden-credential"}`)}
 		return nil
 	})
 	must(t, err)

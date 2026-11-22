@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,52 +12,87 @@ import (
 	"configflow/internal/redact"
 )
 
-// deploymentEdit keeps error handling explicit when editing a few known journal
-// fields. Every value crosses the shared record codec; this is not a scalar parser.
+// deploymentEdit changes a few known journal members in a chain.
 type deploymentEdit struct {
 	state *model.Deployment
 	err   error
 }
 
 func editDeployment(state *model.Deployment) *deploymentEdit { return &deploymentEdit{state: state} }
-func (e *deploymentEdit) raw(key string, raw json.RawMessage) *deploymentEdit {
-	if e.err == nil {
-		e.err = e.state.SetJSON(key, raw)
+func (e *deploymentEdit) text(key, value string) *deploymentEdit {
+	switch key {
+	case "status":
+		e.state.Status = value
+	case "message":
+		e.state.Message = new(value)
+	case "error":
+		e.state.Error = new(value)
+	case "error_details":
+		e.state.ErrorDetails = new(value)
+	case "rollback_error":
+		e.state.RollbackError = new(value)
+	case "failed_stage":
+		e.state.FailedStage = new(value)
+	case "updated_at":
+		e.state.UpdatedAt = new(value)
+	case "rollback_message":
+		e.state.RollbackMessage = new(value)
+	case "rollback_error_details":
+		e.state.RollbackErrorDetails = new(value)
+	default:
+		e.fail(key)
 	}
 	return e
 }
-func (e *deploymentEdit) text(key, value string) *deploymentEdit {
-	raw, err := json.Marshal(value)
-	if e.err == nil {
-		e.err = err
-	}
-	return e.raw(key, raw)
-}
 func (e *deploymentEdit) flag(key string, value bool) *deploymentEdit {
-	if value {
-		return e.raw(key, []byte(`true`))
+	switch key {
+	case "success":
+		e.state.Success = new(value)
+	case "pending":
+		e.state.Pending = new(value)
+	case "manual_rollback":
+		e.state.ManualRollback = new(value)
+	case "submitted":
+		e.state.Submitted = new(value)
+	case "rollback_rejected":
+		e.state.RollbackRejected = new(value)
+	default:
+		e.fail(key)
 	}
-	return e.raw(key, []byte(`false`))
+	return e
 }
 func (e *deploymentEdit) code(value int) *deploymentEdit {
-	raw, err := json.Marshal(value)
-	if e.err == nil {
-		e.err = err
-	}
-	return e.raw("http_status", raw)
+	e.state.HTTPStatus = new(model.Int(value))
+	return e
 }
 func (e *deploymentEdit) remove(keys ...string) *deploymentEdit {
 	for _, key := range keys {
-		if e.err == nil {
-			e.err = e.state.Clear(key)
+		switch key {
+		case "manual_rollback":
+			e.state.ManualRollback = nil
+		case "rollback_rejected":
+			e.state.RollbackRejected = nil
+		case "pending":
+			e.state.Pending = nil
+		case "rollback_message":
+			e.state.RollbackMessage = nil
+		case "message", "error", "error_details", "failed_stage", "rollback_error", "rollback_error_details", "http_status":
+			clearDeploymentMember(e.state, key)
+		default:
+			e.fail(key)
 		}
 	}
 	return e
 }
+func (e *deploymentEdit) fail(key string) {
+	if e.err == nil {
+		e.err = fmt.Errorf("edit of an unexpected deployment member %q", key)
+	}
+}
 func (e *deploymentEdit) result() (*model.Deployment, error) { return e.state, e.err }
 
 func deploymentOf(a *model.Agent, id string) *model.Deployment {
-	if a == nil || !a.Deployments.EntryValid(id) {
+	if a == nil {
 		return nil
 	}
 	task, present := a.Deployments.Get(id)
@@ -66,60 +102,45 @@ func deploymentOf(a *model.Agent, id string) *model.Deployment {
 	return &task
 }
 func deploymentHasHTTPFailure(d *model.Deployment) bool {
-	return d != nil && !noDeploymentHTTPFailure(d)
+	return d != nil && d.HTTPStatus != nil && *d.HTTPStatus != 0
 }
 func deploymentHTTPIn(d *model.Deployment, codes ...int) bool {
-	if d == nil {
-		return false
-	}
-	raw, present, err := d.MemberJSON("http_status")
-	var value *float64
-	if err != nil || !present || json.Unmarshal(raw, &value) != nil || value == nil {
+	if d == nil || d.HTTPStatus == nil {
 		return false
 	}
 	for _, code := range codes {
-		if *value == float64(code) {
+		if int64(*d.HTTPStatus) == int64(code) {
 			return true
 		}
 	}
 	return false
 }
-func originalService(a *model.Agent) (string, bool) {
-	if a == nil {
-		return "", false
+
+// agentService is the Agent's service type; a missing one is mihomo.
+func agentService(a *model.Agent) string {
+	if a.ServiceType == "" {
+		return "mihomo"
 	}
-	raw, present, err := a.MemberJSON("service_type")
-	if err == nil && !present {
-		return "mihomo", true
-	}
-	return storedText(raw, present, err)
+	return a.ServiceType
 }
 func deploymentServiceMatches(a *model.Agent, d *model.Deployment, optional bool) bool {
-	service, valid := originalService(a)
-	if !valid {
+	if a == nil {
 		return false
 	}
-	raw, present, err := d.MemberJSON("service_type")
-	if optional && !present && err == nil {
+	if optional && d.ServiceType == "" {
 		return true
 	}
-	expected, valid := storedText(raw, present, err)
-	return valid && service == expected
+	return agentService(a) == d.ServiceType
 }
 func deploymentTaskIDMatches(d *model.Deployment, id string) bool {
-	if d == nil {
-		return false
-	}
-	original, valid := storedText(d.MemberJSON("deployment_id"))
-	return valid && original == id
+	return d != nil && d.DeploymentID != "" && d.DeploymentID == id
 }
 func (m *Manager) deploymentProfileMatches(ctx context.Context, a *model.Agent, d *model.Deployment) (bool, error) {
 	profile, err := m.agentProfileID(ctx, a)
 	if err != nil {
 		return false, err
 	}
-	original, valid := storedText(d.MemberJSON("profile_id"))
-	return valid && original == profile, nil
+	return d.ProfileID != "" && d.ProfileID == profile, nil
 }
 func saveDeploymentTask(a *model.Agent, id string, state *model.Deployment) error {
 	a.Deployments.Set(id, *state)
@@ -183,7 +204,7 @@ func (m *Manager) ReadDeploymentModel(ctx context.Context, agentID, id string) (
 	if !deploymentTaskIDMatches(state, id) {
 		return deploymentFailure(msgDeploymentIdentity, 409)
 	}
-	if deploymentTerminalModel(originalDeploymentText(state, "status")) {
+	if deploymentTerminalModel(state.Status) {
 		return state, nil
 	}
 	if !deploymentServiceMatches(a, state, false) {
@@ -204,7 +225,7 @@ func (m *Manager) ReadDeploymentModel(ctx context.Context, agentID, id string) (
 		if again := deploymentOf(a, id); again != nil {
 			state = again
 		}
-		if deploymentTerminalModel(originalDeploymentText(state, "status")) {
+		if deploymentTerminalModel(state.Status) {
 			return state, nil
 		}
 		if preparationUnsubmitted(state) {
@@ -227,8 +248,8 @@ func (m *Manager) ReadDeploymentModel(ctx context.Context, agentID, id string) (
 	if err != nil {
 		return nil, err
 	}
-	if deploymentFlagTrue(state, "manual_rollback") && originalDeploymentText(result, "status") == "succeeded" && !deploymentFlagTrue(result, "manual_rollback") {
-		if originalDeploymentText(state, "status") != "unknown" && rollbackKeys.Held([3]string{m.repository.DataDir(), agentID, id}) {
+	if flagSet(state.ManualRollback) && result.Status == "succeeded" && !flagSet(result.ManualRollback) {
+		if state.Status != "unknown" && rollbackKeys.Held([3]string{m.repository.DataDir(), agentID, id}) {
 			return pendingDeployment(state, msgRollbackAwaiting)
 		}
 		result, err = m.DeploymentRequestModel(ctx, a, http.MethodPost, "deployments/"+id+"/rollback", nil, nil, nil)
@@ -238,13 +259,13 @@ func (m *Manager) ReadDeploymentModel(ctx context.Context, agentID, id string) (
 		if err != nil {
 			return nil, err
 		}
-		busy := deploymentHTTPIn(result, 409) && originalDeploymentText(result, "message") == busyMessage
-		if deploymentHTTPIn(result, 400, 404, 405, 409) && !busy {
+		busy := deploymentHTTPIn(&result.Deployment, 409) && textOf(result.Message) == busyMessage
+		if deploymentHTTPIn(&result.Deployment, 400, 404, 405, 409) && !busy {
 			return m.cancelManualRollbackModel(ctx, agentID, id, result)
 		}
 	}
-	if deploymentHTTPIn(result, 404) {
-		if deploymentFlagTrue(state, "manual_rollback") {
+	if deploymentHTTPIn(&result.Deployment, 404) {
+		if flagSet(state.ManualRollback) {
 			return pendingDeployment(state, msgRollbackJournalMissing)
 		}
 		if !uploadInFlight {
@@ -258,12 +279,11 @@ func (m *Manager) ReadDeploymentModel(ctx context.Context, agentID, id string) (
 		}
 		return m.recordDeploymentOutcome(ctx, agentID, id, deploymentOutcome{Success: false, Status: "failed", Message: msgDeploymentRemoteMissing}, RecordOptions{})
 	}
-	if deploymentHasHTTPFailure(result) {
+	if deploymentHasHTTPFailure(&result.Deployment) {
 		return pending()
 	}
-	if _, valid := storedText(result.MemberJSON("status")); !valid {
-		raw, _, err := result.MemberJSON("status")
-		if err != nil || nonscalarStatus(raw) {
+	if raw, _ := result.MemberJSON("status"); !jsonText(raw) {
+		if nonscalarStatus(raw) {
 			return nil, ErrInvalidDeploymentStatus
 		}
 		return pending()
@@ -299,14 +319,14 @@ func (m *Manager) ActivateCandidateModel(ctx context.Context, agentID, id string
 	if !matches || !deploymentServiceMatches(a, state, false) || !deploymentTaskIDMatches(state, id) {
 		return editDeployment(state).flag("success", false).code(409).text("message", msgDeploymentOwnerChanged).result()
 	}
-	service, _ := originalService(a)
-	status := originalDeploymentText(state, "status")
+	service := agentService(a)
+	status := state.Status
 	if service == "oxidns" {
 		if status == "succeeded" {
 			return state, nil
 		}
 		if status == "ready" {
-			if deploymentFlagTrue(state, "pending") {
+			if flagSet(state.Pending) {
 				return editDeployment(state).flag("success", false).code(409).text("message", msgCandidatePending).result()
 			}
 			checked, err := m.candidateReceiptMatches(a, state)
@@ -333,8 +353,8 @@ func (m *Manager) ActivateCandidateModel(ctx context.Context, agentID, id string
 	if err != nil {
 		return nil, err
 	}
-	if deploymentHasHTTPFailure(result) {
-		return result, nil
+	if deploymentHasHTTPFailure(&result.Deployment) {
+		return &result.Deployment, nil
 	}
 	return m.recordDeploymentReply(ctx, agentID, id, result, RecordOptions{ActivationReceipt: true})
 }
@@ -349,15 +369,8 @@ func (m *Manager) failUncheckedCandidate(ctx context.Context, agentID, id string
 			result, err = deploymentFailure(msgDeploymentNotFound, 404)
 			return err
 		}
-		old, present, err := task.MemberJSON("sha256")
-		if err != nil {
-			return err
-		}
-		expected, _, err := observed.MemberJSON("sha256")
-		if err != nil {
-			return err
-		}
-		if originalDeploymentText(task, "status") != "ready" || !sameStoredJSON(old, present, expected) {
+		if task.Status != "ready" || !sameText(task.SHA256, observed.SHA256) {
+			var err error
 			result, err = editDeployment(task).flag("success", false).code(409).text("message", msgCandidateChanged).result()
 			return err
 		}
@@ -369,6 +382,7 @@ func (m *Manager) failUncheckedCandidate(ctx context.Context, agentID, id string
 		if err := saveDeploymentTask(a, id, task); err != nil {
 			return err
 		}
+		var err error
 		result, err = copyDeployment(task)
 		return err
 	})
@@ -426,12 +440,12 @@ func (m *Manager) RollbackDeploymentModel(ctx context.Context, agentID, id strin
 		if !matches || !deploymentServiceMatches(a, task, true) || !deploymentTaskIDMatches(a.LatestDeployment, id) || !deploymentTaskIDMatches(task, id) {
 			return fail(msgRollbackLatest, 409)
 		}
-		if deploymentFlagTrue(task, "manual_rollback") {
+		if flagSet(task.ManualRollback) {
 			reserved = true
 			state, err = copyDeployment(task)
 			return err
 		}
-		if originalDeploymentText(task, "status") != "succeeded" {
+		if task.Status != "succeeded" {
 			return fail(msgRollbackSuccessful, 409)
 		}
 		edit := editDeployment(task).text("status", "rolling_back").flag("manual_rollback", true).flag("success", true).flag("submitted", true)
@@ -466,13 +480,13 @@ func (m *Manager) RollbackDeploymentModel(ctx context.Context, agentID, id strin
 	if err != nil {
 		return nil, err
 	}
-	if deploymentHTTPIn(result, 400, 404, 405, 409) {
+	if deploymentHTTPIn(&result.Deployment, 400, 404, 405, 409) {
 		if _, err := m.cancelManualRollbackModel(ctx, agentID, id, result); err != nil {
 			return nil, err
 		}
-		return result, nil
+		return &result.Deployment, nil
 	}
-	if deploymentHasHTTPFailure(result) {
+	if deploymentHasHTTPFailure(&result.Deployment) {
 		return unknown()
 	}
 	return m.recordDeploymentReply(ctx, agentID, id, result, RecordOptions{})
@@ -481,15 +495,7 @@ func hasHAPublication(task *model.Deployment) bool {
 	if task == nil {
 		return false
 	}
-	raw, present, err := task.MemberJSON("ha_publication")
-	if storedAbsent(raw, present, err) {
-		return false
-	}
-	if task.HAPublication != nil {
-		return task.HAPublication.HasMembers()
-	}
-	// A malformed stored pair marker must not authorize a member-only rollback.
-	return true
+	return task.HAPublication.HasMembers()
 }
 func rollbackRejection(message string) (*model.Deployment, error) {
 	state, err := deploymentFailure(message, 409)
@@ -527,7 +533,7 @@ func (m *Manager) RecoverDeploymentModel(ctx context.Context, agentID, id string
 		if !deploymentTaskIDMatches(task, id) {
 			return fail(msgDeploymentIdentity, 409)
 		}
-		if originalDeploymentText(task, "status") != "rollback_failed" {
+		if task.Status != "rollback_failed" {
 			return fail(msgRecoveryRequired, 409)
 		}
 		var err error
@@ -567,21 +573,18 @@ func (m *Manager) RecoverDeploymentModel(ctx context.Context, agentID, id string
 	if err != nil {
 		return nil, err
 	}
-	if deploymentHTTPIn(result, 404, 405) {
-		service, _ := originalService(a)
-		if service == "" {
-			service = "oxidns"
-		}
-		return m.restoreRollbackFailedModel(ctx, agentID, id, fmt.Sprintf(msgRecoveryUnsupported, service), result, previous)
+	if deploymentHTTPIn(&result.Deployment, 404, 405) {
+		service := agentService(a)
+		return m.restoreRollbackFailedModel(ctx, agentID, id, fmt.Sprintf(msgRecoveryUnsupported, service), &result.Deployment, previous)
 	}
-	if deploymentHTTPIn(result, 400, 409) {
-		message := originalDeploymentText(result, "message")
+	if deploymentHTTPIn(&result.Deployment, 400, 409) {
+		message := textOf(result.Message)
 		if message == "" {
 			message = msgRecoveryRejected
 		}
-		return m.restoreRollbackFailedModel(ctx, agentID, id, message, result, previous)
+		return m.restoreRollbackFailedModel(ctx, agentID, id, message, &result.Deployment, previous)
 	}
-	if deploymentHasHTTPFailure(result) {
+	if deploymentHasHTTPFailure(&result.Deployment) {
 		return unknown()
 	}
 	return m.recordDeploymentOutcome(ctx, agentID, id, deploymentOutcome{Success: false, Status: "rolling_back", Message: ""}, RecordOptions{})
@@ -597,17 +600,14 @@ func (m *Manager) restoreRollbackFailedModel(ctx context.Context, agentID, id, m
 			result, err = deploymentFailure(msgDeploymentNotFound, 404)
 			return err
 		}
-		status := originalDeploymentText(task, "status")
+		status := task.Status
 		if status == "rolling_back" || status == "unknown" {
 			edit := editDeployment(task)
-			for _, key := range []string{"rollback_error", "rollback_error_details"} {
-				raw, present, err := previous.MemberJSON(key)
-				if err != nil {
-					return err
-				}
-				if present {
-					edit.raw(key, raw)
-				}
+			if previous.RollbackError != nil {
+				task.RollbackError = new(*previous.RollbackError)
+			}
+			if previous.RollbackErrorDetails != nil {
+				task.RollbackErrorDetails = new(*previous.RollbackErrorDetails)
 			}
 			safe := redact.DiagnosticText(message, agentDiagnosticSecrets(a), 0)
 			edit.text("status", "rollback_failed").flag("success", false).text("message", safe).text("updated_at", nowISO())
@@ -633,7 +633,7 @@ func (m *Manager) restoreRollbackFailedModel(ctx context.Context, agentID, id, m
 	})
 	return result, err
 }
-func (m *Manager) cancelManualRollbackModel(ctx context.Context, agentID, id string, rejection *model.Deployment) (*model.Deployment, error) {
+func (m *Manager) cancelManualRollbackModel(ctx context.Context, agentID, id string, rejection *DeploymentReply) (*model.Deployment, error) {
 	var result *model.Deployment
 	err := m.EditAgents(ctx, "", func(_ context.Context, records *[]model.Agent) error {
 		a := registryAgent(*records, agentID)
@@ -643,17 +643,17 @@ func (m *Manager) cancelManualRollbackModel(ctx context.Context, agentID, id str
 			result, err = deploymentFailure(msgDeploymentNotFound, 404)
 			return err
 		}
-		status := originalDeploymentText(task, "status")
-		if (status == "rolling_back" || status == "unknown") && deploymentFlagTrue(task, "manual_rollback") {
-			message := originalDeploymentText(rejection, "message")
-			if _, present, _ := rejection.MemberJSON("message"); !present {
+		status := task.Status
+		if (status == "rolling_back" || status == "unknown") && flagSet(task.ManualRollback) {
+			message := textOf(rejection.Message)
+			if _, present := rejection.MemberJSON("message"); !present {
 				message = msgRollbackRejected
 			}
 			edit := editDeployment(task).text("status", "succeeded").flag("success", true).flag("rollback_rejected", true).text("rollback_message", redact.DiagnosticText(message, agentDiagnosticSecrets(a), 0)).text("updated_at", nowISO())
 			task.Events = AppendOperationEvent(task.Events, "succeeded", msgRollbackNotRun, "", agentDiagnosticSecrets(a))
-			details := originalDeploymentText(rejection, "rollback_error_details")
+			details := textOf(rejection.RollbackErrorDetails)
 			if details == "" {
-				details = originalDeploymentText(rejection, "error_details")
+				details = textOf(rejection.ErrorDetails)
 			}
 			edit.remove("rollback_error")
 			if details != "" {
@@ -674,4 +674,10 @@ func (m *Manager) cancelManualRollbackModel(ctx context.Context, agentID, id str
 		return err
 	})
 	return result, err
+}
+
+// jsonText reports a JSON string value.
+func jsonText(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	return len(raw) > 0 && raw[0] == '"'
 }

@@ -1,8 +1,11 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"slices"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -11,44 +14,104 @@ import (
 	"configflow/internal/repo"
 )
 
-// AgentEdits carries only editable registry members. The shared model retains
-// explicit nulls and R5 imported values; presence is independent of Go zeroes.
+// AgentEdits carries only editable registry members, strictly decoded.
 type AgentEdits struct {
 	record  model.Agent
 	members []string
 }
 
 // DecodeAgentEdits selects exact protocol keys and ignores all other fields.
+// A member of the wrong JSON type is a validation error.
 func DecodeAgentEdits(data json.RawMessage) (AgentEdits, error) {
-	var members model.Fields
 	var edits AgentEdits
+	if err := requireJSONObject(data); err != nil {
+		return edits, err
+	}
+	var members model.OrderedMap[json.RawMessage]
 	if err := json.Unmarshal(data, &members); err != nil {
 		return edits, err
 	}
 	for _, name := range editableFields {
-		if value, present := members.Get(name); present {
-			if err := edits.record.SetJSON(name, value); err != nil {
-				return AgentEdits{}, err
-			}
-			edits.members = append(edits.members, name)
+		value, present := members.Get(name)
+		if !present {
+			continue
 		}
-	}
-	if raw, present, err := edits.record.MemberJSON("profile_id"); err != nil {
-		return AgentEdits{}, err
-	} else if present {
-		profile, valid := storedText(raw, true, nil)
-		if !valid {
+		if name == "profile_id" && (len(bytes.TrimSpace(value)) == 0 || bytes.TrimSpace(value)[0] != '"') {
 			return AgentEdits{}, repo.NewValidationError("Invalid profile id")
 		}
-		if err := repo.ValidateProfileID(profile); err != nil {
+		if err := model.DecodeInputMember("agent", &edits.record, name, value); err != nil {
+			return AgentEdits{}, repo.NewValidationError(fmt.Sprintf(msgMemberType, name))
+		}
+		edits.members = append(edits.members, name)
+	}
+	if edits.has("profile_id") {
+		if err := repo.ValidateProfileID(edits.record.ProfileID); err != nil {
 			return AgentEdits{}, err
 		}
 	}
 	return edits, nil
 }
 
+func (e AgentEdits) has(name string) bool { return slices.Contains(e.members, name) }
+
+// changes reports whether the edits change one of the guarded members.
+func (e AgentEdits) changes(a *model.Agent) bool {
+	for _, name := range guardedFields {
+		if !e.has(name) {
+			continue
+		}
+		var same bool
+		switch name {
+		case "host":
+			same = e.record.Host == a.Host
+		case "port":
+			same = e.record.Port == a.Port
+		case "enabled":
+			same = sameFlag(e.record.Enabled, a.Enabled)
+		case "service_type":
+			same = e.record.ServiceType == a.ServiceType
+		case "profile_id":
+			same = e.record.ProfileID == a.ProfileID
+		}
+		if !same {
+			return true
+		}
+	}
+	return false
+}
+
+// apply copies the edited members into a.
+func (e AgentEdits) apply(a *model.Agent) {
+	for _, name := range e.members {
+		switch name {
+		case "name":
+			a.Name = e.record.Name
+		case "host":
+			a.Host = e.record.Host
+		case "port":
+			a.Port = e.record.Port
+		case "enabled":
+			// An explicit null switch is off (flag-truthiness ruling).
+			a.Enabled = e.record.Enabled
+			if a.Enabled == nil {
+				a.Enabled = new(false)
+			}
+		case "service_type":
+			a.ServiceType = e.record.ServiceType
+		case "profile_id":
+			a.ProfileID = e.record.ProfileID
+		}
+	}
+}
+
+func sameFlag(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
 // EditAgent applies reviewed editable fields in one typed registry transaction.
-// Stored identity members are checked from original JSON, not R5 projections.
 func (m *Manager) EditAgent(ctx context.Context, id string, edits AgentEdits) (bool, error) {
 	updated := false
 	err := m.EditAgents(ctx, edits.record.ProfileID, func(tx context.Context, records *[]model.Agent) error {
@@ -59,39 +122,20 @@ func (m *Manager) EditAgent(ctx context.Context, id string, edits AgentEdits) (b
 		if upgradeBusyModel(a) {
 			return &DeploymentConflict{Message: msgAgentEditingUpgrade}
 		}
-		changed := false
-		for _, name := range guardedFields {
-			raw, present, err := edits.record.MemberJSON(name)
-			if err != nil {
-				return err
-			}
-			if present && !sameAgentMember(a, name, raw) {
-				changed = true
-			}
-		}
+		changed := edits.changes(a)
 		if dnsFollowBusyModel(*records, id) && changed {
 			return &DeploymentConflict{Message: msgAgentEditingDNSFollow}
 		}
 		if (HAEnabledModel(a) || HAActiveModel(a)) && changed {
 			return &DeploymentConflict{Message: OxidnsHALocked}
 		}
-		if _, present, err := edits.record.MemberJSON("profile_id"); err != nil {
-			return err
-		} else if present && unfinishedDeploymentModel(a) {
+		if edits.has("profile_id") && unfinishedDeploymentModel(a) {
 			current, err := m.agentProfileID(tx, a)
 			if err != nil || current != edits.record.ProfileID {
 				return &DeploymentConflict{Message: msgAgentEditingDeployment}
 			}
 		}
-		for _, name := range edits.members {
-			raw, _, err := edits.record.MemberJSON(name)
-			if err != nil {
-				return err
-			}
-			if err := a.SetJSON(name, raw); err != nil {
-				return err
-			}
-		}
+		edits.apply(a)
 		a.UpdatedAt = new(nowISO())
 		updated = true
 		return tx.Err()
@@ -99,29 +143,12 @@ func (m *Manager) EditAgent(ctx context.Context, id string, edits AgentEdits) (b
 	return updated && err == nil, err
 }
 
-// agentProfileID uses the default only for an absent, null or empty binding.
-// An R5 projection cannot authorize moving a deployment owned by another type.
+// agentProfileID uses the default only for an absent or empty binding.
 func (m *Manager) agentProfileID(ctx context.Context, a *model.Agent) (string, error) {
-	profile, err := agentProfileBinding(a)
-	if err != nil {
-		return "", err
-	}
-	if profile == "" {
+	if a.ProfileID == "" {
 		return m.defaultProfileID(ctx)
 	}
-	return profile, nil
-}
-
-func agentProfileBinding(a *model.Agent) (string, error) {
-	raw, present, err := a.MemberJSON("profile_id")
-	if err != nil {
-		return "", err
-	}
-	profile, valid := storedText(raw, present, nil)
-	if !valid && !storedAbsent(raw, present, nil) {
-		return "", repo.NewValidationError("Invalid profile id")
-	}
-	return profile, nil
+	return a.ProfileID, nil
 }
 
 // ResolveAgentProfiles resolves optional bindings with one default lookup for
@@ -131,12 +158,10 @@ func (m *Manager) ResolveAgentProfiles(ctx context.Context, rows []model.Agent) 
 	var fallback string
 	loaded := false
 	for i := range rows {
-		profile, err := agentProfileBinding(&rows[i])
-		if err != nil {
-			return nil, err
-		}
+		profile := rows[i].ProfileID
 		if profile == "" {
 			if !loaded {
+				var err error
 				fallback, err = m.defaultProfileID(ctx)
 				if err != nil {
 					return nil, err
@@ -148,26 +173,6 @@ func (m *Manager) ResolveAgentProfiles(ctx context.Context, rows []model.Agent) 
 		result[i] = profile
 	}
 	return result, ctx.Err()
-}
-
-// sameAgentMember compares protocol scalars with their stored type evidence.
-// Integral numeric port notation is equivalent; a quoted number or bool is not.
-func sameAgentMember(a *model.Agent, name string, reported json.RawMessage) bool {
-	stored, present, err := a.MemberJSON(name)
-	if err != nil {
-		return false
-	}
-	if name != "port" || !present {
-		return sameStoredJSON(stored, present, reported)
-	}
-	var left, right *float64
-	if json.Unmarshal(stored, &left) == nil && json.Unmarshal(reported, &right) == nil && left != nil && right != nil {
-		var l, r model.Int
-		if json.Unmarshal(stored, &l) == nil && json.Unmarshal(reported, &r) == nil {
-			return l == r
-		}
-	}
-	return sameStoredJSON(stored, true, reported)
 }
 
 func deploymentTerminalModel(status string) bool {
@@ -183,12 +188,7 @@ func upgradeBusyModel(a *model.Agent) bool {
 	if a == nil {
 		return false
 	}
-	if a.LatestUpgrade != nil {
-		return a.LatestUpgrade.HasMembers() && !deploymentTerminalModel(a.LatestUpgrade.Status)
-	}
-	// Malformed operation evidence must never unlock edits. Null is no task.
-	raw, present, err := a.MemberJSON("latest_upgrade")
-	return err != nil || !storedAbsent(raw, present, nil)
+	return a.LatestUpgrade.HasMembers() && !deploymentTerminalModel(a.LatestUpgrade.Status)
 }
 
 func unfinishedDeploymentModel(a *model.Agent) bool {
@@ -209,15 +209,7 @@ func dnsFollowBusyModel(records []model.Agent, id string) bool {
 		if a.ID == id && agentIDProven(a) {
 			return true
 		}
-		raw, present, err := a.MemberJSON("dns_follow")
-		if err != nil || !present {
-			continue
-		}
-		var members map[string]json.RawMessage
-		if json.Unmarshal(raw, &members) != nil {
-			continue
-		}
-		if source, valid := storedText(members["source_agent_id"], members["source_agent_id"] != nil, nil); valid && source == id {
+		if a.DNSFollow != nil && a.DNSFollow.SourceAgentID != "" && a.DNSFollow.SourceAgentID == id {
 			return true
 		}
 	}
@@ -243,42 +235,22 @@ func (m *Manager) setAgentSwitch(ctx context.Context, id string, enabled, traffi
 		if a == nil {
 			return nil
 		}
-		service, valid := storedText(a.MemberJSON("service_type"))
-		if enabled && (!valid || service != "mihomo") {
+		if enabled && a.ServiceType != "mihomo" {
 			if traffic {
 				return &ValueError{Message: msgTrafficHistoryMihomo}
 			}
 			return &ValueError{Message: msgDomainDiscoveryMihomo}
 		}
-		flag, err := json.Marshal(enabled)
-		if err != nil {
-			return err
-		}
 		if traffic {
 			if enabled && (a.TrafficHistoryEnabled == nil || !*a.TrafficHistoryEnabled) {
-				since, err := json.Marshal(utcNowISO())
-				if err != nil {
-					return err
-				}
-				if err := a.SetJSON("traffic_history_since", since); err != nil {
-					return err
-				}
+				a.TrafficHistorySince = new(utcNowISO())
 			}
-			if err := a.SetJSON("traffic_history_enabled", flag); err != nil {
-				return err
-			}
+			a.TrafficHistoryEnabled = new(enabled)
 		} else {
-			if err := a.SetJSON("domain_discovery_enabled", flag); err != nil {
-				return err
-			}
+			a.DomainDiscoveryEnabled = new(enabled)
 		}
-		updated, err := json.Marshal(nowISO())
-		if err != nil {
-			return err
-		}
-		if err := a.SetJSON("updated_at", updated); err != nil {
-			return err
-		}
+		a.UpdatedAt = new(nowISO())
+		var err error
 		result, err = copyAgent(a, true)
 		return err
 	})

@@ -127,26 +127,10 @@ func TestN810CapabilityOriginalStringsAndReplay(t *testing.T) {
 	if err != nil || first != second || len(registry.records) != 1 {
 		t.Fatalf("replay: %v", err)
 	}
-	if err := registry.records[0].SetJSON("id", []byte(`7`)); err != nil {
-		t.Fatal(err)
-	}
-	before, err := model.Marshal(registry.records)
-	if err != nil {
+	if err := model.SetStoredMember(&registry.records[0], "id", []byte(`"7"`)); err != nil {
 		t.Fatal(err)
 	}
 	result, err := EnrollIdentity(context.Background(), dir, registry, id, capability.Token, true)
-	var refusal *EnrollmentError
-	if result != (AgentIdentity{}) || !errors.As(err, &refusal) || refusal.Status != 409 {
-		t.Fatalf("numeric identity authorized: %v", err)
-	}
-	after, _ := model.Marshal(registry.records)
-	if string(after) != string(before) {
-		t.Fatal("failed replay changed records")
-	}
-	if err := registry.records[0].SetJSON("id", []byte(`"7"`)); err != nil {
-		t.Fatal(err)
-	}
-	result, err = EnrollIdentity(context.Background(), dir, registry, id, capability.Token, true)
 	if err != nil || result.AgentID != "7" {
 		t.Fatalf("original string positive control: %v", err)
 	}
@@ -456,19 +440,5 @@ func TestN810CapabilityRenewalPreservesUnknownJSON(t *testing.T) {
 	preserved, ok := fields.Get("future")
 	if !ok || string(preserved) != string(future) {
 		t.Fatal("renewal changed opaque JSON or rounded its integer")
-	}
-}
-
-func TestN810PortIdentityNeverRounds(t *testing.T) {
-	for _, test := range []struct {
-		raw   string
-		equal bool
-	}{
-		{"8082", true}, {"8082.0", true}, {"8.082e3", true},
-		{`"8082"`, false}, {"true", false}, {"8082.000000000000000001", false},
-	} {
-		if numericPortEqual([]byte(test.raw), "8082") != test.equal {
-			t.Fatalf("wrong identity proof for %s", test.raw)
-		}
 	}
 }

@@ -1,371 +1,347 @@
 package model
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // HASettings holds an explicit DNS HA member configuration.
 type HASettings struct {
-	Enabled *bool  `json:"enabled"`
-	GroupID string `json:"group_id"`
-	PeerID  string `json:"peer_id"`
-	VIP     string `json:"vip"`
-	VRID    Int    `json:"vrid"`
-	Role    string `json:"role"`
-	Fields  Fields
-	raw     Raw
+	Enabled *bool  `json:"enabled,omitzero"`
+	GroupID string `json:"group_id,omitzero"`
+	PeerID  string `json:"peer_id,omitzero"`
+	VIP     string `json:"vip,omitzero"`
+	VRID    Int    `json:"vrid,omitzero"`
+	Role    string `json:"role,omitzero"`
 }
-
-// UnmarshalJSON decodes HASettings with stored-member preservation and R5 fallback.
-func (r *HASettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HASettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HASettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HASettings members.
-func (r HASettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAState holds the latest HA setup outcome; UpdatedAt is an integral epoch.
 type HAState struct {
-	Status    string   `json:"status"`
-	Error     *string  `json:"error"`
-	UpdatedAt Int      `json:"updated_at"`
-	Members   []string `json:"members"`
-	Fields    Fields
-	raw       Raw
+	Status    string   `json:"status,omitzero"`
+	Error     *string  `json:"error,omitzero"`
+	UpdatedAt Int      `json:"updated_at,omitzero"`
+	Members   []string `json:"members,omitzero"`
 }
-
-// UnmarshalJSON decodes HAState with stored-member preservation and R5 fallback.
-func (r *HAState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAState is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAState members.
-func (r HAState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAMember is one publication member outcome.
 type HAMember struct {
-	AgentID      string `json:"agent_id"`
-	Name         string `json:"name"`
-	DeploymentID string `json:"deployment_id"`
-	Status       string `json:"status"`
-	Fields       Fields
-	raw          Raw
+	AgentID      string `json:"agent_id,omitzero"`
+	Name         string `json:"name,omitzero"`
+	DeploymentID string `json:"deployment_id,omitzero"`
+	Status       string `json:"status,omitzero"`
 }
-
-// UnmarshalJSON decodes HAMember with stored-member preservation and R5 fallback.
-func (r *HAMember) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAMember is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAMember) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAMember members.
-func (r HAMember) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAIdentity pins a child target identity for restart-safe ownership checks.
 type HAIdentity struct {
-	Host        string `json:"host"`
-	Port        Int    `json:"port"`
-	ProfileID   string `json:"profile_id"`
-	ServiceType string `json:"service_type"`
-	Enabled     *bool  `json:"enabled"`
-	Fields      Fields
-	raw         Raw
+	Host        string `json:"host,omitzero"`
+	Port        Int    `json:"port,omitzero"`
+	ProfileID   string `json:"profile_id,omitzero"`
+	ServiceType string `json:"service_type,omitzero"`
+	Enabled     *bool  `json:"enabled,omitzero"`
 }
-
-// UnmarshalJSON decodes HAIdentity with stored-member preservation and R5 fallback.
-func (r *HAIdentity) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAIdentity is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAIdentity) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAIdentity members.
-func (r HAIdentity) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAEnable is the keepalived enable request retained by a publication.
 type HAEnable struct {
-	PeerID string `json:"peer_id"`
-	VIP    string `json:"vip"`
-	VRID   Int    `json:"vrid"`
-	Fields Fields
-	raw    Raw
-}
-
-// UnmarshalJSON decodes HAEnable with stored-member preservation and R5 fallback.
-func (r *HAEnable) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAEnable is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAEnable) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAEnable members.
-func (r HAEnable) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// HasMembers reports effective JSON object presence without encoding payloads.
-func (r *HAEnable) HasMembers() bool {
-	return r != nil && recordHasMembers(r, &r.raw)
+	PeerID string `json:"peer_id,omitzero"`
+	VIP    string `json:"vip,omitzero"`
+	VRID   Int    `json:"vrid,omitzero"`
 }
 
 // HARouter identifies a router affected by a publication.
 type HARouter struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ProfileID string `json:"profile_id"`
-	Fields    Fields
-	raw       Raw
+	ID        string `json:"id,omitzero"`
+	Name      string `json:"name,omitzero"`
+	ProfileID string `json:"profile_id,omitzero"`
 }
-
-// UnmarshalJSON decodes HARouter with stored-member preservation and R5 fallback.
-func (r *HARouter) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HARouter is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HARouter) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HARouter members.
-func (r HARouter) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAHandoff retains the release handshake rather than inferring it from the active member.
 type HAHandoff struct {
-	OperationID   string   `json:"operation_id"`
-	SourceAgentID string   `json:"source_agent_id"`
-	TargetAgentID string   `json:"target_agent_id"`
-	RequestedAt   float64  `json:"requested_at"`
-	Confirmed     *bool    `json:"confirmed"`
-	Released      *bool    `json:"released"`
+	OperationID   string   `json:"operation_id,omitzero"`
+	SourceAgentID string   `json:"source_agent_id,omitzero"`
+	TargetAgentID string   `json:"target_agent_id,omitzero"`
+	RequestedAt   float64  `json:"requested_at,omitzero"`
+	Confirmed     *bool    `json:"confirmed,omitzero"`
+	Released      *bool    `json:"released,omitzero"`
 	Confirmations Int      `json:"confirmations"`
-	ReleasedAt    *float64 `json:"released_at"`
-	Fields        Fields
-	raw           Raw
+	ReleasedAt    *float64 `json:"released_at,omitzero"`
 }
-
-// UnmarshalJSON decodes HAHandoff with stored-member preservation and R5 fallback.
-func (r *HAHandoff) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAHandoff is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAHandoff) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAHandoff members.
-func (r HAHandoff) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAHandoffFailure holds the persisted failure to finish a handoff.
 type HAHandoffFailure struct {
-	Message string `json:"message"`
-	Status  string `json:"status"`
-	Fields  Fields
-	raw     Raw
+	Message string `json:"message,omitzero"`
+	Status  string `json:"status,omitzero"`
 }
-
-// UnmarshalJSON decodes HAHandoffFailure with stored-member preservation and R5 fallback.
-func (r *HAHandoffFailure) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAHandoffFailure is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAHandoffFailure) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAHandoffFailure members.
-func (r HAHandoffFailure) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAJournal owns a multi-member publication; optional booleans retain presence-sensitive recovery decisions.
 type HAJournal struct {
-	ID                string            `json:"id"`
-	OwnerAgentID      string            `json:"owner_agent_id"`
-	OwnerDeploymentID string            `json:"owner_deployment_id"`
-	Children          Map[string]       `json:"children"`
-	Identities        Map[HAIdentity]   `json:"identities"`
-	Status            string            `json:"status"`
-	Phase             string            `json:"phase"`
-	Message           string            `json:"message"`
-	ActiveAgentID     *string           `json:"active_agent_id"`
-	Activate          *bool             `json:"activate"`
-	Order             []string          `json:"order"`
-	Enable            *HAEnable         `json:"enable"`
-	UpdatedAt         Int               `json:"updated_at"`
-	HandoffProtocol   *Int              `json:"handoff_protocol"`
-	Warnings          []string          `json:"warnings"`
-	Routers           []HARouter        `json:"routers"`
-	RuleSyncSettings  *RuleSyncSettings `json:"rule_sync_settings"`
-	Kind              *string           `json:"kind"`
-	Members           []HAMember        `json:"members"`
-	Handoff           *HAHandoff        `json:"handoff"`
-	HandoffRequired   *bool             `json:"handoff_required"`
-	HandoffFailure    *HAHandoffFailure `json:"handoff_failure"`
+	ID                string                 `json:"id,omitzero"`
+	OwnerAgentID      string                 `json:"owner_agent_id,omitzero"`
+	OwnerDeploymentID string                 `json:"owner_deployment_id,omitzero"`
+	Children          OrderedMap[string]     `json:"children,omitzero"`
+	Identities        OrderedMap[HAIdentity] `json:"identities,omitzero"`
+	Status            string                 `json:"status,omitzero"`
+	Phase             string                 `json:"phase,omitzero"`
+	Message           string                 `json:"message,omitzero"`
+	ActiveAgentID     *string                `json:"active_agent_id"`
+	Activate          *bool                  `json:"activate,omitzero"`
+	Order             []string               `json:"order,omitzero"`
+	Enable            *HAEnable              `json:"enable,omitzero"`
+	UpdatedAt         Int                    `json:"updated_at,omitzero"`
+	HandoffProtocol   *Int                   `json:"handoff_protocol,omitzero"`
+	Warnings          []string               `json:"warnings,omitzero"`
+	Routers           []HARouter             `json:"routers,omitzero"`
+	RuleSyncSettings  *RuleSyncSettings      `json:"rule_sync_settings,omitzero"`
+	Kind              *string                `json:"kind,omitzero"`
+	Members           []HAMember             `json:"members,omitzero"`
+	Handoff           *HAHandoff             `json:"handoff,omitzero"`
+	HandoffRequired   *bool                  `json:"handoff_required,omitzero"`
+	HandoffFailure    *HAHandoffFailure      `json:"handoff_failure,omitzero"`
 	// UnreachableSince is when an unfinished pair first lost a member's
 	// connection (Unix seconds); progress clears it (lab O-1).
-	UnreachableSince *float64 `json:"unreachable_since"`
+	UnreachableSince *float64 `json:"unreachable_since,omitzero"`
 	// AutoComplete is the public automatic-completion state: on a pair
 	// stopped by a lost member (waiting/running/blocked) or on the
 	// publication that completes it (attempt).
-	AutoComplete *HAAutoComplete `json:"auto_complete"`
+	AutoComplete *HAAutoComplete `json:"auto_complete,omitzero"`
 	// AutoCompleteWatch is the private recovery evidence for AutoComplete.
-	AutoCompleteWatch *HAAutoCompleteWatch `json:"auto_complete_watch"`
-	Fields            Fields
-	raw               Raw
+	AutoCompleteWatch *HAAutoCompleteWatch `json:"auto_complete_watch,omitzero"`
 }
 
 // HAAutoComplete is the automatic completion state shown with a pair publication.
 type HAAutoComplete struct {
 	// Status is waiting, running or blocked on a stopped pair; empty on the
 	// completing publication, which sets Attempt.
-	Status  string `json:"status"`
-	Message string `json:"message"`
-	Attempt bool   `json:"attempt"`
-	Fields  Fields
-	raw     Raw
+	Status  string `json:"status,omitzero"`
+	Message string `json:"message,omitzero"`
+	Attempt bool   `json:"attempt,omitzero"`
 }
-
-// UnmarshalJSON decodes HAAutoComplete with stored-member preservation and R5 fallback.
-func (r *HAAutoComplete) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAAutoComplete is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAAutoComplete) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAAutoComplete members.
-func (r HAAutoComplete) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAAutoCompleteWatch records which members were lost, when the publication
 // stopped and the heartbeats observed since, so a restart keeps the decision.
 type HAAutoCompleteWatch struct {
-	Lost       []string    `json:"lost"`
-	StoppedAt  float64     `json:"stopped_at"`
-	Heartbeats Map[string] `json:"heartbeats"`
-	Healthy    Map[Int]    `json:"healthy"`
-	Fields     Fields
-	raw        Raw
-}
-
-// UnmarshalJSON decodes HAAutoCompleteWatch with stored-member preservation and R5 fallback.
-func (r *HAAutoCompleteWatch) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAAutoCompleteWatch is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAAutoCompleteWatch) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAAutoCompleteWatch members.
-func (r HAAutoCompleteWatch) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// UnmarshalJSON decodes HAJournal with stored-member preservation and R5 fallback.
-func (r *HAJournal) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAJournal is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAJournal) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAJournal members.
-func (r HAJournal) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// HasMembers reports effective JSON object presence without encoding payloads.
-func (r *HAJournal) HasMembers() bool {
-	return r != nil && recordHasMembers(r, &r.raw)
+	Lost       []string           `json:"lost,omitzero"`
+	StoppedAt  float64            `json:"stopped_at,omitzero"`
+	Heartbeats OrderedMap[string] `json:"heartbeats,omitzero"`
+	Healthy    OrderedMap[Int]    `json:"healthy,omitzero"`
 }
 
 // HAPublicationSummary is the task projection of a journal, with no child or source graph.
 type HAPublicationSummary struct {
-	ID                string     `json:"id"`
-	OwnerAgentID      string     `json:"owner_agent_id"`
-	OwnerDeploymentID string     `json:"owner_deployment_id"`
-	Status            string     `json:"status"`
-	Phase             string     `json:"phase"`
-	Message           string     `json:"message"`
+	ID                string     `json:"id,omitzero"`
+	OwnerAgentID      string     `json:"owner_agent_id,omitzero"`
+	OwnerDeploymentID string     `json:"owner_deployment_id,omitzero"`
+	Status            string     `json:"status,omitzero"`
+	Phase             string     `json:"phase,omitzero"`
+	Message           string     `json:"message,omitzero"`
 	ActiveAgentID     *string    `json:"active_agent_id"`
-	UpdatedAt         Int        `json:"updated_at"`
-	Warnings          []string   `json:"warnings"`
-	Routers           []HARouter `json:"routers"`
-	Members           []HAMember `json:"members"`
+	UpdatedAt         Int        `json:"updated_at,omitzero"`
+	Warnings          []string   `json:"warnings,omitzero"`
+	Routers           []HARouter `json:"routers,omitzero"`
+	Members           []HAMember `json:"members,omitzero"`
 	// AutoComplete is the journal's automatic-completion state, when any.
-	AutoComplete *HAAutoComplete `json:"auto_complete"`
-	Fields       Fields
-	raw          Raw
+	AutoComplete *HAAutoComplete `json:"auto_complete,omitzero"`
 }
-
-// UnmarshalJSON decodes HAPublicationSummary with stored-member preservation and R5 fallback.
-func (r *HAPublicationSummary) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HAPublicationSummary is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAPublicationSummary) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HAPublicationSummary members.
-func (r HAPublicationSummary) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HABundle is the external payload metadata for an archive kept by the existing file store.
 type HABundle struct {
-	Manifest         DeploymentManifest `json:"manifest"`
-	SHA256           string             `json:"sha256"`
-	ConfigVersion    string             `json:"config_version"`
-	ComparisonConfig *DeploymentFile    `json:"comparison_config"`
-	Fields           Fields
-	raw              Raw
+	Manifest         DeploymentManifest `json:"manifest,omitzero"`
+	SHA256           string             `json:"sha256,omitzero"`
+	ConfigVersion    string             `json:"config_version,omitzero"`
+	ComparisonConfig *DeploymentFile    `json:"comparison_config,omitzero"`
 }
-
-// UnmarshalJSON decodes HABundle with stored-member preservation and R5 fallback.
-func (r *HABundle) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when HABundle is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HABundle) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged HABundle members.
-func (r HABundle) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // HAPayload is the fixed external envelope; captured source configurations remain opaque.
 type HAPayload struct {
-	ID             string          `json:"id"`
-	BaseURL        string          `json:"base_url"`
-	ConfigRevision *Int            `json:"config_revision"`
-	SourceSnapshot json.RawMessage `json:"source_snapshot"`
-	ResourceConfig json.RawMessage `json:"resource_config"`
-	Bundle         *HABundle       `json:"bundle"`
-	Fields         Fields
-	raw            Raw
+	ID             string          `json:"id,omitzero"`
+	BaseURL        string          `json:"base_url,omitzero"`
+	ConfigRevision *Int            `json:"config_revision,omitzero"`
+	SourceSnapshot json.RawMessage `json:"source_snapshot,omitzero"`
+	ResourceConfig json.RawMessage `json:"resource_config,omitzero"`
+	Bundle         *HABundle       `json:"bundle,omitzero"`
 }
 
-// UnmarshalJSON decodes HAPayload with stored-member preservation and R5 fallback.
-func (r *HAPayload) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+// Plain-record codecs (O18 T1b); see plainCodec.
 
-// Clear drops a declared member (by JSON name) when HAPayload is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *HAPayload) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+type hASettingsWire HASettings
 
-// MarshalJSON preserves unknown and unchanged HAPayload members.
-func (r HAPayload) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+func (*HASettings) plainRecord() {}
 
-// MemberJSON returns one effective HA identity member by its exact stored key.
-func (r *HASettings) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+// UnmarshalJSON decodes stored or captured HASettings data leniently (DecodeStored).
+func (r *HASettings) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hASettingsWire)(r)) }
+
+func (r *HASettings) plainWire() any { return (*hASettingsWire)(r) }
+
+// MarshalJSON writes the HASettings members in declaration order.
+func (r HASettings) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAStateWire HAState
+
+func (*HAState) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAState data leniently (DecodeStored).
+func (r *HAState) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAStateWire)(r)) }
+
+func (r *HAState) plainWire() any { return (*hAStateWire)(r) }
+
+// MarshalJSON writes the HAState members in declaration order.
+func (r HAState) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAMemberWire HAMember
+
+func (*HAMember) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAMember data leniently (DecodeStored).
+func (r *HAMember) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAMemberWire)(r)) }
+
+func (r *HAMember) plainWire() any { return (*hAMemberWire)(r) }
+
+// MarshalJSON writes the HAMember members in declaration order.
+func (r HAMember) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAIdentityWire HAIdentity
+
+func (*HAIdentity) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAIdentity data leniently (DecodeStored).
+func (r *HAIdentity) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAIdentityWire)(r)) }
+
+func (r *HAIdentity) plainWire() any { return (*hAIdentityWire)(r) }
+
+// MarshalJSON writes the HAIdentity members in declaration order.
+func (r HAIdentity) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAEnableWire HAEnable
+
+func (*HAEnable) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAEnable data leniently (DecodeStored).
+func (r *HAEnable) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAEnableWire)(r)) }
+
+func (r *HAEnable) plainWire() any { return (*hAEnableWire)(r) }
+
+// MarshalJSON writes the HAEnable members in declaration order.
+func (r HAEnable) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+// HasMembers reports whether HAEnable holds any value.
+func (r *HAEnable) HasMembers() bool { return r != nil && hasMembers(r) }
+
+type hARouterWire HARouter
+
+func (*HARouter) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HARouter data leniently (DecodeStored).
+func (r *HARouter) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hARouterWire)(r)) }
+
+func (r *HARouter) plainWire() any { return (*hARouterWire)(r) }
+
+// MarshalJSON writes the HARouter members in declaration order.
+func (r HARouter) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAHandoffWire HAHandoff
+
+func (*HAHandoff) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAHandoff data leniently (DecodeStored).
+func (r *HAHandoff) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAHandoffWire)(r)) }
+
+func (r *HAHandoff) plainWire() any { return (*hAHandoffWire)(r) }
+
+// MarshalJSON writes the HAHandoff members in declaration order.
+func (r HAHandoff) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAHandoffFailureWire HAHandoffFailure
+
+func (*HAHandoffFailure) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAHandoffFailure data leniently (DecodeStored).
+func (r *HAHandoffFailure) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*hAHandoffFailureWire)(r))
 }
 
-// MemberJSON returns one publication member without encoding captured payloads.
-func (r *HAJournal) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+func (r *HAHandoffFailure) plainWire() any { return (*hAHandoffFailureWire)(r) }
+
+// MarshalJSON writes the HAHandoffFailure members in declaration order.
+func (r HAHandoffFailure) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAJournalWire HAJournal
+
+func (*HAJournal) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAJournal data leniently (DecodeStored).
+func (r *HAJournal) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAJournalWire)(r)) }
+
+func (r *HAJournal) plainWire() any { return (*hAJournalWire)(r) }
+
+// MarshalJSON writes the HAJournal members in declaration order.
+func (r HAJournal) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+// HasMembers reports whether HAJournal holds any value.
+func (r *HAJournal) HasMembers() bool { return r != nil && hasMembers(r) }
+
+type hAAutoCompleteWire HAAutoComplete
+
+func (*HAAutoComplete) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAAutoComplete data leniently (DecodeStored).
+func (r *HAAutoComplete) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*hAAutoCompleteWire)(r))
 }
 
-// SetJSON replaces one public HA summary member through the shared codec.
-func (r *HAPublicationSummary) SetJSON(name string, value json.RawMessage) error {
-	return SetMemberJSON(r, &r.raw, name, value)
+func (r *HAAutoComplete) plainWire() any { return (*hAAutoCompleteWire)(r) }
+
+// MarshalJSON writes the HAAutoComplete members in declaration order.
+func (r HAAutoComplete) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAAutoCompleteWatchWire HAAutoCompleteWatch
+
+func (*HAAutoCompleteWatch) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAAutoCompleteWatch data leniently (DecodeStored).
+func (r *HAAutoCompleteWatch) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*hAAutoCompleteWatchWire)(r))
 }
 
-// HasMembers reports effective JSON object presence without encoding payloads.
-func (r *HAPublicationSummary) HasMembers() bool {
-	return r != nil && recordHasMembers(r, &r.raw)
+func (r *HAAutoCompleteWatch) plainWire() any { return (*hAAutoCompleteWatchWire)(r) }
+
+// MarshalJSON writes the HAAutoCompleteWatch members in declaration order.
+func (r HAAutoCompleteWatch) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAPublicationSummaryWire HAPublicationSummary
+
+func (*HAPublicationSummary) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAPublicationSummary data leniently (DecodeStored).
+func (r *HAPublicationSummary) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*hAPublicationSummaryWire)(r))
 }
 
-// MemberJSON returns one original summary member without encoding its siblings.
-func (r *HAPublicationSummary) MemberJSON(member string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, member)
-}
+func (r *HAPublicationSummary) plainWire() any { return (*hAPublicationSummaryWire)(r) }
 
-// MemberJSON reads one original HA identity field without scalar projection.
-func (r *HAIdentity) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
-}
+// MarshalJSON writes the HAPublicationSummary members in declaration order.
+func (r HAPublicationSummary) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
 
-// MemberJSON reads one original HA enable field without scalar projection.
-func (r *HAEnable) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
-}
+// HasMembers reports whether HAPublicationSummary holds any value.
+func (r *HAPublicationSummary) HasMembers() bool { return r != nil && hasMembers(r) }
+
+type hABundleWire HABundle
+
+func (*HABundle) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HABundle data leniently (DecodeStored).
+func (r *HABundle) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hABundleWire)(r)) }
+
+func (r *HABundle) plainWire() any { return (*hABundleWire)(r) }
+
+// MarshalJSON writes the HABundle members in declaration order.
+func (r HABundle) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type hAPayloadWire HAPayload
+
+func (*HAPayload) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured HAPayload data leniently (DecodeStored).
+func (r *HAPayload) UnmarshalJSON(data []byte) error { return decodePlain(data, (*hAPayloadWire)(r)) }
+
+func (r *HAPayload) plainWire() any { return (*hAPayloadWire)(r) }
+
+// MarshalJSON writes the HAPayload members in declaration order.
+func (r HAPayload) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }

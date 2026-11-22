@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"configflow/internal/model"
 	"encoding/json"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestN810ManualRegistrationUsesSharedVersionValidation(t *testing.T) {
 	if len(state.Agents) != 1 || state.Agents[0].Version != "1.0.0" {
 		t.Fatal("manual version default changed")
 	}
-	raw, present, err := state.Agents[0].MemberJSON("version")
+	raw, present, err := model.EncodeMember(&state.Agents[0], "version")
 	if err != nil || !present || string(raw) != string(json.RawMessage(`"1.0.0"`)) {
 		t.Fatal("version retained wrong original type")
 	}

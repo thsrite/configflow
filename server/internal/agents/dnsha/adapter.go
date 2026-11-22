@@ -2,7 +2,6 @@ package dnsha
 
 // Native registry/repository collaborators and typed HA result envelopes.
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,38 +27,18 @@ func modelAgent(a *model.Agent) (*agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	var fields model.Fields
-	for _, key := range []string{"host", "port", "profile_id", "service_type", "enabled"} {
-		data, present, err := a.MemberJSON(key)
-		if err != nil {
-			return nil, err
-		}
-		if !present {
-			data = []byte("null")
-		}
-		if err = fields.Set(key, data); err != nil {
-			return nil, err
-		}
+	identity := model.HAIdentity{Host: a.Host, Port: a.Port, ProfileID: a.ProfileID, ServiceType: a.ServiceType}
+	if a.Enabled != nil {
+		identity.Enabled = new(*a.Enabled)
 	}
-	data, err := fields.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	var identity model.HAIdentity
-	if err = json.Unmarshal(data, &identity); err != nil {
-		return nil, err
-	}
-	ha, _, err := a.MemberJSON("oxidns_ha")
+	ha, _, err := model.EncodeMember(a, "oxidns_ha")
 	if err != nil {
 		return nil, err
 	}
 	if ha == nil {
 		ha = []byte("null")
 	}
-	_, hasState, err := a.MemberJSON("oxidns_ha_state")
-	if err != nil {
-		return nil, err
-	}
+	hasState := a.OxiDNSHAState != nil
 	return &agent{Agent: a, target: target, identity: identity, haRaw: ha, enabled: agents.AgentEnabledModel(a), hasHAState: hasState}, nil
 }
 func (s *Service) all(ctx context.Context) ([]*agent, error) {
@@ -133,11 +112,7 @@ func (s *Service) update(ctx context.Context, fn func([]*agent) error) error {
 			record.OxiDNSHA, record.OxiDNSHAState, record.OxiDNSHAPublication = a.OxiDNSHA, a.OxiDNSHAState, a.OxiDNSHAPublication
 			record.RuleSync, record.Deployments, record.LatestDeployment = a.RuleSync, a.Deployments, a.LatestDeployment
 			if a.dropHA {
-				for _, key := range owned[:3] {
-					if err := record.Clear(key); err != nil {
-						return err
-					}
-				}
+				record.OxiDNSHA, record.OxiDNSHAState, record.OxiDNSHAPublication = nil, nil, nil
 			}
 		}
 		return tx.Err()
@@ -223,12 +198,10 @@ func (s *Service) activateChild(ctx context.Context, id, did string) (model.Depl
 }
 func (s *Service) beginChildren(ctx context.Context, j *model.HAJournal) error {
 	for _, id := range j.Children.Keys() {
-		raw, present, err := j.Children.MemberJSON(id)
-		var child *string
-		if err != nil || !present || json.Unmarshal(raw, &child) != nil || child == nil || *child == "" {
+		did, _ := j.Children.Get(id)
+		if did == "" {
 			return refuse(msgJournalChanged)
 		}
-		did := *child
 		if e := ctx.Err(); e != nil {
 			return e
 		}
@@ -237,7 +210,7 @@ func (s *Service) beginChildren(ctx context.Context, j *model.HAJournal) error {
 			return e
 		}
 		s.m.FinishDeploymentPreparation(id, did)
-		if !r.Success {
+		if r.Success == nil || !*r.Success {
 			m := ""
 			if r.Message != nil {
 				m = *r.Message
@@ -282,10 +255,8 @@ func conflict(a *agent) *model.Deployment {
 	return result
 }
 func rejection(message string) *model.Deployment {
-	result := &model.Deployment{HTTPStatus: ptr(model.Int(409)), Message: &message}
-	// Presence of false is part of the response contract; the literal is valid JSON.
-	_ = result.SetJSON("success", []byte(`false`))
-	return result
+	// success is always written, so false is part of the response.
+	return &model.Deployment{Success: new(false), HTTPStatus: ptr(model.Int(409)), Message: &message}
 }
 func (s *Service) capabilities(ctx context.Context, a *agent) (json.RawMessage, error) {
 	if e := ctx.Err(); e != nil {
@@ -423,34 +394,27 @@ func journalChildID(j *model.HAJournal, id string) (string, bool) {
 	if j == nil {
 		return "", false
 	}
-	raw, present, err := j.Children.MemberJSON(id)
-	var text *string
-	if err != nil || !present || json.Unmarshal(raw, &text) != nil || text == nil || *text == "" {
-		return "", false
-	}
-	return *text, true
+	child, _ := j.Children.Get(id)
+	return child, child != ""
 }
 func journalID(j *model.HAJournal) string {
 	if j == nil {
 		return ""
 	}
-	raw, present, err := j.MemberJSON("id")
-	var id *string
-	if err != nil || !present || json.Unmarshal(raw, &id) != nil || id == nil {
-		return ""
-	}
-	return *id
+	return j.ID
 }
 func journalText(j *model.HAJournal, name string) (string, bool) {
 	if j == nil {
 		return "", false
 	}
-	raw, present, err := j.MemberJSON(name)
-	var text *string
-	if err != nil || !present || json.Unmarshal(raw, &text) != nil || text == nil || *text == "" {
-		return "", false
+	text := ""
+	switch name {
+	case "owner_agent_id":
+		text = j.OwnerAgentID
+	case "owner_deployment_id":
+		text = j.OwnerDeploymentID
 	}
-	return *text, true
+	return text, text != ""
 }
 func validJournalChildren(j *model.HAJournal) bool {
 	if j == nil || journalID(j) == "" || j.Children.Len() != 2 {
@@ -468,65 +432,26 @@ func validJournalChildren(j *model.HAJournal) bool {
 		return false
 	}
 	if j.Enable != nil {
-		raw, present, err := j.Enable.MemberJSON("peer_id")
-		var peer *string
-		if err != nil || !present || json.Unmarshal(raw, &peer) != nil || peer == nil || *peer == owner {
+		peer := j.Enable.PeerID
+		if peer == "" || peer == owner {
 			return false
 		}
-		if _, valid := journalChildID(j, *peer); !valid {
+		if _, valid := journalChildID(j, peer); !valid {
 			return false
 		}
 	}
 	return true
 }
 func validHAIdentity(identity *model.HAIdentity) bool {
-	if identity == nil {
-		return false
-	}
-	for _, name := range []string{"host", "service_type", "profile_id"} {
-		raw, present, err := identity.MemberJSON(name)
-		if err != nil {
-			return false
-		}
-		var text *string
-		if present && json.Unmarshal(raw, &text) != nil {
-			return false
-		}
-		if name != "profile_id" && (text == nil || *text == "") {
-			return false
-		}
-	}
-	return true
+	return identity != nil && identity.Host != "" && identity.ServiceType != ""
 }
 
-// sameHAIdentity keeps original token types except equivalent integral numeric
-// port notation (8082 / 8082.0). Quoted numbers and booleans never gain that proof.
+// sameHAIdentity compares two pair identities.
 func sameHAIdentity(left, right *model.HAIdentity) bool {
 	if !validHAIdentity(left) || !validHAIdentity(right) {
 		return false
 	}
-	lraw, lp, le := left.MemberJSON("port")
-	rraw, rp, re := right.MemberJSON("port")
-	numeric := func(raw json.RawMessage, present bool, err error) (model.Int, bool) {
-		raw = bytes.TrimSpace(raw)
-		if err != nil || !present || len(raw) == 0 || (raw[0] != '-' && (raw[0] < '0' || raw[0] > '9')) {
-			return 0, false
-		}
-		var number model.Int
-		err = json.Unmarshal(raw, &number)
-		return number, err == nil
-	}
-	l, lOK := numeric(lraw, lp, le)
-	r, rOK := numeric(rraw, rp, re)
-	if !lOK || !rOK || l != r {
-		return equal(left, right)
-	}
-	a, b := *left, *right
-	if a.Clear("port") != nil || b.Clear("port") != nil {
-		return false
-	}
-	a.Port, b.Port = l, r
-	return equal(&a, &b)
+	return equal(left, right)
 }
 
 // ownJournal returns an independently owned copy of a journal read from the
@@ -536,13 +461,9 @@ func ownJournal(j *model.HAJournal) (*model.HAJournal, error) {
 	if j == nil {
 		return nil, nil
 	}
-	data, err := model.Marshal(j)
+	owned, err := model.Clone(j)
 	if err != nil {
 		return nil, fmt.Errorf("copy HA journal: %w", err)
 	}
-	var owned model.HAJournal
-	if err := json.Unmarshal(data, &owned); err != nil {
-		return nil, fmt.Errorf("copy HA journal: %w", err)
-	}
-	return &owned, nil
+	return owned, nil
 }

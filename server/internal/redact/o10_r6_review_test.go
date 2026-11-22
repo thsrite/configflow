@@ -110,19 +110,21 @@ func TestO10R6ReviewPublicSecretsMatchEncodedView(t *testing.T) {
 	// An Agent record: its token reaches the set through the stored Agent
 	// credentials, the nested key through the OxiDNS projection of every view.
 	setAgent(t, "synthetic-agent-token-1", "synthetic-agent-key-1")
-	both := []string{"synthetic-agent-token-1", "synthetic-agent-key-1"}
+	// The undeclared rule_sync member is dropped on load (O18 T1b); only the
+	// token remains a credential.
+	both := []string{"synthetic-agent-token-1"}
 	check(t, map[string][]string{"default": both, "second": both}, nil)
 	setAgent(t, "synthetic-agent-token-2", "synthetic-agent-key-2")
-	both = []string{"synthetic-agent-token-2", "synthetic-agent-key-2"}
-	old := []string{"synthetic-agent-token-1", "synthetic-agent-key-1"}
+	both = []string{"synthetic-agent-token-2"}
+	old := []string{"synthetic-agent-token-1"}
 	check(t, map[string][]string{"default": both, "second": both}, map[string][]string{"default": old, "second": old})
 	// The projection's own credentials, without the stored Agent seeds.
 	got, err := ConfigCredentials(ctx, r, "second", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(got, "synthetic-agent-key-2") || slices.Contains(got, "synthetic-agent-token-2") {
-		t.Fatalf("projection credentials %v: want the rule_sync key and no token", got)
+	if slices.Contains(got, "synthetic-agent-key-2") || slices.Contains(got, "synthetic-agent-token-2") {
+		t.Fatalf("projection credentials %v: want neither the dropped key nor the token", got)
 	}
 }
 

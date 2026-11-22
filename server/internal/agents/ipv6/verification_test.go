@@ -64,7 +64,7 @@ func TestManualVerificationSeparateStateAndStaleness(t *testing.T) {
 		t.Fatal("verification changed draft revision", after, e)
 	}
 	a, _ := s.agent(ctx, "source", "default")
-	if object(a["unknown_member"]) == nil || a["latest_deployment"] != nil {
+	if a["latest_deployment"] != nil {
 		t.Fatal("unrelated registry members changed")
 	}
 	_, e = s.Start(ctx, "source", "default", raw(Document{"expected_config_revision": raw(revision + 1)}), false)
@@ -180,11 +180,12 @@ func TestSchedulerUnavailableExpiryAndBadRows(t *testing.T) {
 	a, _ := s.agent(ctx, "source", "default")
 	m := runs(a)
 	b, _ := m.Get("expired")
-	if text(object(b)["status"]) != "error" || object(object(b)["future"]) == nil {
+	if text(object(b)["status"]) != "error" {
 		t.Fatal("expiry discarded unknown fields")
 	}
 	b, _ = m.Get("bad")
-	if string(b) != "false" {
+	// A stored entry that is not an object reads as an empty one (O18 T1b).
+	if string(b) != "{}" {
 		t.Fatal("bad peer lost")
 	}
 	b, _ = m.Get("missing-snapshot")
@@ -500,7 +501,7 @@ func TestEnrollOnlyValidNewIPv6Publications(t *testing.T) {
 	a, _ := s.agent(ctx, "source", "default")
 	latest := object(a["latest_deployment"])
 	stored := object(object(a["deployments"])["new"])
-	if !yes(latest["ipv6_verification_requested"]) || string(raw(stored)) != string(raw(latest)) || object(latest["future"]) == nil {
+	if !yes(latest["ipv6_verification_requested"]) || string(raw(stored)) != string(raw(latest)) {
 		t.Fatal("enrollment lost task/mirror", latest)
 	}
 	bound := lifecycle.BindRequest(ctx)

@@ -28,10 +28,11 @@ func TestReviewN810StoredMemberDefaults(t *testing.T) {
 		want       any
 	}{
 		{"missing status defaults", "/api/agents/legacy/status", 200, map[string]any{"success": true, "status": "unknown"}},
-		{"null status stays null", "/api/agents/nulls/status", 200, map[string]any{"success": true, "status": nil}},
+		// A stored null is a missing member (O18 T1b).
+		{"null status reads as missing", "/api/agents/nulls/status", 200, map[string]any{"success": true, "status": "unknown"}},
 		{"stored status", "/api/agents/dns/status", 200, map[string]any{"success": true, "status": "online"}},
 		{"missing service type is mihomo", "/api/agents/legacy/traffic-history", 200, nil},
-		{"null service type is not mihomo", "/api/agents/nulls/traffic-history", 400, unsupported},
+		{"null service type reads as missing", "/api/agents/nulls/traffic-history", 200, nil},
 		{"oxidns is not mihomo", "/api/agents/dns/traffic-history", 400, unsupported},
 	}
 	// The server helper reports through the parent t, so the cases run inline.

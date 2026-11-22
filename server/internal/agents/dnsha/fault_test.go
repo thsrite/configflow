@@ -383,7 +383,7 @@ func TestIdentityChangeAndPayloadTamperFailClosed(t *testing.T) {
 				e = f.r.UpdateSystem(f.ctx, func(_ context.Context, sys *model.System) error {
 					for i := range sys.Agents {
 						if sys.Agents[i].ID == "secondary" {
-							sys.Agents[i].Clear("host")
+							model.ZeroMember(&sys.Agents[i], "host")
 						}
 					}
 					return nil

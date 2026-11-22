@@ -39,11 +39,11 @@ func modelAgentWithProfile(a *model.Agent, profile string) (*agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	binding, _, err := a.MemberJSON("dns_follow")
+	binding, _, err := model.EncodeMember(a, "dns_follow")
 	if err != nil {
 		return nil, err
 	}
-	state, _, err := a.MemberJSON("dns_follow_state")
+	state, _, err := model.EncodeMember(a, "dns_follow_state")
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +132,13 @@ func (s *Service) update(ctx context.Context, fn func(context.Context, []*agent)
 				drop bool
 			}{{"dns_follow", a.dropBinding}, {"dns_follow_state", a.dropState}, {"dns_follow_job", a.dropJob}} {
 				if member.drop {
-					if err := record.Clear(member.key); err != nil {
-						return err
+					switch member.key {
+					case "dns_follow":
+						record.DNSFollow = nil
+					case "dns_follow_state":
+						record.DNSFollowState = nil
+					case "dns_follow_job":
+						record.DNSFollowJob = nil
 					}
 				}
 			}
@@ -185,7 +190,7 @@ func (s *Service) reserve(ctx context.Context, a *agent, id string) error {
 	if err != nil {
 		return err
 	}
-	if record == nil || !record.Success || deploymentExisting(record) {
+	if record == nil || record.Success == nil || !*record.Success || deploymentExisting(record) {
 		message := msgReserved
 		if record != nil && record.Message != nil && *record.Message != "" {
 			message = *record.Message
@@ -194,13 +199,13 @@ func (s *Service) reserve(ctx context.Context, a *agent, id string) error {
 	}
 	return nil
 }
-func deploymentExisting(record *model.Deployment) bool {
+func deploymentExisting(record *agents.DeploymentReply) bool {
 	if record == nil {
 		return false
 	}
-	raw, present, err := record.MemberJSON("existing")
+	raw, present := record.MemberJSON("existing")
 	var flag bool
-	return err == nil && present && json.Unmarshal(raw, &flag) == nil && flag
+	return present && json.Unmarshal(raw, &flag) == nil && flag
 }
 func (s *Service) failPreparation(ctx context.Context, a *agent, id, message string) error {
 	patch, err := json.Marshal(struct {
@@ -437,7 +442,7 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	}
 	id := a.ID
 	key := "dns_follow:" + id
-	raw, _, err := a.MemberJSON("dns_follow")
+	raw, _, err := model.EncodeMember(a, "dns_follow")
 	if err != nil {
 		return nil, err
 	}

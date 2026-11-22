@@ -52,7 +52,12 @@ func (s *Service) findings(ctx context.Context, a, report Document, all []Docume
 			out = append(out, v.message)
 		}
 	}
-	if string(report["client_fingerprint"]) != string(clientFingerprint(a, all)) {
+	// A stored null fingerprint (no client) is a missing member (O18 T1b).
+	stored := report["client_fingerprint"]
+	if len(stored) == 0 {
+		stored = raw(nil)
+	}
+	if string(stored) != string(clientFingerprint(a, all)) {
 		out = append(out, msgChangedClient)
 	}
 	if text(report["deployment_id"]) == "" {

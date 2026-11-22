@@ -163,7 +163,7 @@ func TestOldAgentIsReportedUnsupportedAndRetentionIsValidated(t *testing.T) {
 	e := newTrafficEnv(t, false)
 	s := e.s
 	if err := e.manager.EditAgents(s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
-		return (*rows)[0].SetJSON("version", []byte(`"1.8.50-go"`))
+		return model.SetStoredMember(&(*rows)[0], "version", []byte(`"1.8.50-go"`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -219,10 +219,10 @@ func TestAgentsCanReportWhenPanelLoginIsEnabled(t *testing.T) {
 	e := newTrafficEnv(t, true)
 	s := e.s
 	if err := e.manager.EditAgents(s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
-		if err := (*rows)[0].SetJSON("version", []byte(`"1.8.52-go"`)); err != nil {
+		if err := model.SetStoredMember(&(*rows)[0], "version", []byte(`"1.8.52-go"`)); err != nil {
 			return err
 		}
-		return (*rows)[0].SetJSON("traffic_history_enabled", []byte(`true`))
+		return model.SetStoredMember(&(*rows)[0], "traffic_history_enabled", []byte(`true`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestTrafficReportKeepsThePublicationHistory(t *testing.T) {
 		for _, key := range []string{"release-0", "release-1", "release-2", "release-3", "release-4"} {
 			deployments[key] = map[string]any{"deployment_id": key, "status": "succeeded"}
 		}
-		return (*rows)[0].SetJSON("deployments", mustRawJSON(t, deployments))
+		return model.SetStoredMember(&(*rows)[0], "deployments", mustRawJSON(t, deployments))
 	}); err != nil {
 		t.Fatal(err)
 	}

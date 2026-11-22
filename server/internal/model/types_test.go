@@ -40,47 +40,6 @@ func storedRecordTypes() []reflect.Type {
 		reflect.TypeFor[RouterSyncDesired](),
 		reflect.TypeFor[RouterCIDR](),
 		reflect.TypeFor[RouterSyncNAT](),
-		reflect.TypeFor[Agent](),
-		reflect.TypeFor[AgentMetrics](),
-		reflect.TypeFor[AgentCPU](),
-		reflect.TypeFor[AgentMemory](),
-		reflect.TypeFor[AgentDisk](),
-		reflect.TypeFor[AgentNetwork](),
-		reflect.TypeFor[LegacyDNSEndpoint](),
-		reflect.TypeFor[OperationEvent](),
-		reflect.TypeFor[Deployment](),
-		reflect.TypeFor[DeploymentDNSCheck](),
-		reflect.TypeFor[PreparedContent](),
-		reflect.TypeFor[AppliedContent](),
-		reflect.TypeFor[OxiDNSValidationReceipt](),
-		reflect.TypeFor[AgentUpgrade](),
-		reflect.TypeFor[UpgradeArtifact](),
-		reflect.TypeFor[IPv6VerificationSettings](),
-		reflect.TypeFor[IPv6Verification](),
-		reflect.TypeFor[IPv6VerificationCheck](),
-		reflect.TypeFor[DeploymentFile](),
-		reflect.TypeFor[DeploymentManifest](),
-		reflect.TypeFor[AgentRuleSyncReceipt](),
-		reflect.TypeFor[RuleSyncSettings](),
-		reflect.TypeFor[AgentRuleSync](),
-		reflect.TypeFor[RuleSyncState](),
-		reflect.TypeFor[DNSFollowBinding](),
-		reflect.TypeFor[DNSFollowState](),
-		reflect.TypeFor[DNSFollowJob](),
-		reflect.TypeFor[HASettings](),
-		reflect.TypeFor[HAState](),
-		reflect.TypeFor[HAMember](),
-		reflect.TypeFor[HAIdentity](),
-		reflect.TypeFor[HAEnable](),
-		reflect.TypeFor[HARouter](),
-		reflect.TypeFor[HAHandoff](),
-		reflect.TypeFor[HAHandoffFailure](),
-		reflect.TypeFor[HAAutoComplete](),
-		reflect.TypeFor[HAAutoCompleteWatch](),
-		reflect.TypeFor[HAJournal](),
-		reflect.TypeFor[HAPublicationSummary](),
-		reflect.TypeFor[HABundle](),
-		reflect.TypeFor[HAPayload](),
 		reflect.TypeFor[SystemConfig](),
 		reflect.TypeFor[NodeTestDNSConfig](),
 		reflect.TypeFor[ManagedDNSBinding](),
@@ -153,6 +112,9 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		}
 		return append(append([]byte(`[`), typeJSON(typ.Elem(), false)...), ']')
 	case reflect.Struct:
+		if elem := orderedElem(typ); elem != nil {
+			return append(append([]byte(`{ "synthetic.example.com": `), typeJSON(elem, changed)...), '}')
+		}
 		if container, ok := reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type }); ok {
 			return append(append([]byte(`{ "synthetic.example.com": `), typeJSON(container.storedValueType(), changed)...), '}')
 		}
@@ -171,6 +133,93 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		return append(out, []byte(` } `)...)
 	}
 	panic("missing synthetic fixture type")
+}
+
+// plainAgentRecordTypes are the O18 T1b plain records.
+func plainAgentRecordTypes() []reflect.Type {
+	return []reflect.Type{
+		reflect.TypeFor[Agent](),
+		reflect.TypeFor[AgentMetrics](),
+		reflect.TypeFor[AgentCPU](),
+		reflect.TypeFor[AgentMemory](),
+		reflect.TypeFor[AgentDisk](),
+		reflect.TypeFor[AgentNetwork](),
+		reflect.TypeFor[LegacyDNSEndpoint](),
+		reflect.TypeFor[OperationEvent](),
+		reflect.TypeFor[Deployment](),
+		reflect.TypeFor[DeploymentDNSCheck](),
+		reflect.TypeFor[PreparedContent](),
+		reflect.TypeFor[AppliedContent](),
+		reflect.TypeFor[OxiDNSValidationReceipt](),
+		reflect.TypeFor[AgentUpgrade](),
+		reflect.TypeFor[UpgradeArtifact](),
+		reflect.TypeFor[IPv6VerificationSettings](),
+		reflect.TypeFor[IPv6Verification](),
+		reflect.TypeFor[IPv6VerificationCheck](),
+		reflect.TypeFor[DeploymentFile](),
+		reflect.TypeFor[DeploymentManifest](),
+		reflect.TypeFor[AgentRuleSyncReceipt](),
+		reflect.TypeFor[RuleSyncSettings](),
+		reflect.TypeFor[AgentRuleSync](),
+		reflect.TypeFor[RuleSyncState](),
+		reflect.TypeFor[DNSFollowBinding](),
+		reflect.TypeFor[DNSFollowState](),
+		reflect.TypeFor[DNSFollowJob](),
+		reflect.TypeFor[HASettings](),
+		reflect.TypeFor[HAState](),
+		reflect.TypeFor[HAMember](),
+		reflect.TypeFor[HAIdentity](),
+		reflect.TypeFor[HAEnable](),
+		reflect.TypeFor[HARouter](),
+		reflect.TypeFor[HAHandoff](),
+		reflect.TypeFor[HAHandoffFailure](),
+		reflect.TypeFor[HAJournal](),
+		reflect.TypeFor[HAAutoComplete](),
+		reflect.TypeFor[HAAutoCompleteWatch](),
+		reflect.TypeFor[HAPublicationSummary](),
+		reflect.TypeFor[HABundle](),
+		reflect.TypeFor[HAPayload](),
+	}
+}
+
+// TestPlainAgentRecordsRoundTrip: every T1b record decodes a synthetic stored
+// object (all members set, plus an unknown member), drops the unknown member
+// with an issue, and encodes to JSON that decodes to the same value.
+func TestPlainAgentRecordsRoundTrip(t *testing.T) {
+	for _, typ := range plainAgentRecordTypes() {
+		t.Run(typ.Name(), func(t *testing.T) {
+			first := reflect.New(typ)
+			issues, err := DecodeStored(typeJSON(typ, false), first.Interface(), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			unknown := 0
+			for _, issue := range issues {
+				if issue.Kind != IssueUnknown {
+					t.Fatalf("valid member rejected: %v", issue)
+				}
+				unknown++
+			}
+			if unknown == 0 {
+				t.Fatal("unknown member not reported")
+			}
+			encoded, err := Marshal(first.Interface())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(encoded, []byte(`"future"`)) {
+				t.Fatalf("unknown member written: %s", encoded)
+			}
+			second := reflect.New(typ)
+			if _, err := DecodeStored(encoded, second.Interface(), ""); err != nil {
+				t.Fatal(err)
+			}
+			again, err := Marshal(second.Interface())
+			if err != nil || !bytes.Equal(encoded, again) {
+				t.Fatalf("round trip changed value:\n%s\n%s", encoded, again)
+			}
+		})
+	}
 }
 
 func TestStoredTypes(t *testing.T) {

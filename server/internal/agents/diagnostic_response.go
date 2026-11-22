@@ -31,8 +31,8 @@ func ResponseFailureModel(response *Response, fallback string, secrets redact.Se
 			}
 		}
 	}
-	if originalDeploymentText(result, "message") == "" {
-		message := originalDeploymentText(result, "error")
+	if textOf(result.Message) == "" {
+		message := textOf(result.Error)
 		if message == "" {
 			message = redact.DiagnosticText(fallback, secrets, 0)
 		}

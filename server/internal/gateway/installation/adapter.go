@@ -255,7 +255,7 @@ func (s *Service) safeError(ctx context.Context, err error) error {
 	cp.Message = safe
 	return &cp
 }
-func encodeResult(result *model.Deployment) (json.RawMessage, error) { return json.Marshal(result) }
+func encodeResult(result json.Marshaler) (json.RawMessage, error) { return json.Marshal(result) }
 
 func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.RawMessage) (map[string]string, error) {
 	ids := map[string]string{}
@@ -311,8 +311,8 @@ func (s *Service) bind(ctx context.Context, r *Record, proofs map[string]json.Ra
 			}
 			if changed {
 				busy := agents.UpgradeInProgress(a) || agents.DNSFollowInProgress(*records, id)
-				for id, d := range a.Deployments.All() {
-					if a.Deployments.EntryValid(id) && d.Status != "succeeded" && d.Status != "failed" && d.Status != "rolled_back" {
+				for _, d := range a.Deployments.All() {
+					if d.Status != "succeeded" && d.Status != "failed" && d.Status != "rolled_back" {
 						busy = true
 					}
 				}

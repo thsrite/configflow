@@ -39,7 +39,7 @@ func publicAgentEncodedModel(record *model.Agent, secrets redact.Secrets) (map[s
 		}
 	}
 	if raw, present := public["deployments"]; present && len(raw) > 0 && raw[0] == '{' {
-		public["deployments"], err = publicDeploymentsModel(record, raw)
+		public["deployments"], err = publicDeploymentsModel(record)
 		if err != nil {
 			return nil, err
 		}

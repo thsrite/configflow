@@ -49,8 +49,8 @@ func newUpgradeEnv(t *testing.T) *upgradeEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(SetArtifactsForTest(func(context.Context) (model.Map[model.UpgradeArtifact], error) {
-		var out model.Map[model.UpgradeArtifact]
+	t.Cleanup(SetArtifactsForTest(func(context.Context) (model.OrderedMap[model.UpgradeArtifact], error) {
+		var out model.OrderedMap[model.UpgradeArtifact]
 		for _, arch := range Arches {
 			out.Set(arch, model.UpgradeArtifact{SHA256: strings.Repeat("a", 64), Size: 100})
 		}
@@ -68,7 +68,7 @@ func (e *upgradeEnv) updateMap(fields map[string]any) {
 			if err != nil {
 				return err
 			}
-			if err := (*list)[0].SetJSON(k, raw); err != nil {
+			if err := model.SetStoredMember(&(*list)[0], k, raw); err != nil {
 				return err
 			}
 		}

@@ -25,11 +25,8 @@ func collectAgentInto(record *model.Agent, secrets redact.Secrets) redact.Secret
 	if record == nil {
 		return secrets
 	}
-	// Raw/Fields are copy-on-write: Clear changes this local value only.
 	selected := *record
-	if selected.Clear("deployments") != nil || selected.Clear("ipv6_verifications") != nil {
-		return redact.NewSecrets(secrets, []string{record.Token})
-	}
+	selected.Deployments, selected.IPv6Verifications = model.OrderedMap[model.Deployment]{}, model.OrderedMap[model.IPv6Verification]{}
 	raw, err := model.Marshal(selected)
 	if err != nil {
 		return redact.NewSecrets(secrets, []string{record.Token})

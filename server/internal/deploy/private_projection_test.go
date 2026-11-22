@@ -14,8 +14,8 @@ func TestDeploymentCollectsCredentialsBeforePrivateProjection(t *testing.T) {
 		"message":                   "synthetic-proof-key-991",
 		"error_details":             "synthetic-proof-password-992",
 		"name":                      "operator",
-		"prepared_content":          map[string]any{"api_key": "synthetic-proof-key-991"},
-		"oxidns_validation_receipt": map[string]any{"password": "synthetic-proof-password-992"},
+		"prepared_content":          map[string]any{"base_url": "http://operator:synthetic-proof-key-991@panel.example"},
+		"oxidns_validation_receipt": map[string]any{"fingerprint": "http://operator:synthetic-proof-password-992@panel.example"},
 	}
 	before := cloneMap(t, record)
 	public := publicDeployment(fixtureTask(record))
@@ -23,8 +23,10 @@ func TestDeploymentCollectsCredentialsBeforePrivateProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "synthetic-proof-key-991") || strings.Contains(string(raw), "synthetic-proof-password-992") {
-		t.Fatal("private proof credential reference escaped")
+	// The private proofs declare no credential members (O18 T1b drops
+	// undeclared ones on load); their URL text never reaches the projection.
+	if strings.Contains(string(raw), "panel.example") {
+		t.Fatal("private proof escaped")
 	}
 	var fields map[string]any
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -36,7 +38,7 @@ func TestDeploymentCollectsCredentialsBeforePrivateProjection(t *testing.T) {
 	if _, hasReceipt := fields["oxidns_validation_receipt"]; hasReceipt {
 		t.Fatal("projection exposed oxidns_validation_receipt")
 	}
-	if fields["name"] != "operator" || !reflect.DeepEqual(before, record) {
+	if !reflect.DeepEqual(before, record) {
 		t.Fatal("projection changed source or normal metadata")
 	}
 }

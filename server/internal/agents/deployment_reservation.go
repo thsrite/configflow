@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"configflow/internal/lifecycle"
@@ -10,24 +9,17 @@ import (
 )
 
 func copyDeployment(state *model.Deployment) (*model.Deployment, error) {
-	raw, err := model.Marshal(state)
+	result, err := model.Clone(state)
 	if err != nil {
 		return nil, fmt.Errorf("copy deployment: %w", err)
 	}
-	var result model.Deployment
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("copy deployment: %w", err)
-	}
-	return &result, nil
+	return result, nil
 }
 
 func deploymentFailure(message string, status int) (*model.Deployment, error) {
-	result := &model.Deployment{Message: new(message)}
+	result := &model.Deployment{Success: new(false), Message: new(message)}
 	if status != 0 {
 		result.HTTPStatus = new(model.Int(status))
-	}
-	if err := result.SetJSON("success", []byte(`false`)); err != nil {
-		return nil, err
 	}
 	return result, nil
 }
@@ -37,8 +29,7 @@ func haDeploymentConflict(a *model.Agent, id string) (*model.Deployment, error) 
 		return nil, nil
 	}
 	job := a.OxiDNSHAPublication
-	child, valid := storedText(job.Children.MemberJSON(a.ID))
-	if valid && child == id {
+	if child, ok := job.Children.Get(a.ID); ok && child == id {
 		return nil, nil
 	}
 	result, err := deploymentFailure(msgHAConflict, 409)
@@ -59,17 +50,8 @@ func followOwnsDeployment(a *model.Agent, id string) bool {
 	if a.DNSFollowState.Status != "preparing" && a.DNSFollowState.Status != "publishing" {
 		return true
 	}
-	// The reserved child ID is evidence, not a projected stored scalar.
-	raw, present, err := a.MemberJSON("dns_follow_state")
-	if err != nil || !present {
-		return false
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil {
-		return false
-	}
-	child, valid := storedText(members["target_deployment_id"], members["target_deployment_id"] != nil, nil)
-	return valid && child == id
+	child := a.DNSFollowState.TargetDeploymentID
+	return child != nil && *child == id
 }
 
 func followUsesSource(a *model.Agent, id string) bool {
@@ -79,23 +61,13 @@ func followUsesSource(a *model.Agent, id string) bool {
 	if a.DNSFollow == nil {
 		return false
 	}
-	// Only this small binding is read, never the Agent's histories or config.
-	raw, present, err := a.MemberJSON("dns_follow")
-	if err != nil || !present {
-		return false
-	}
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil {
-		return false
-	}
-	source, valid := storedText(members["source_agent_id"], members["source_agent_id"] != nil, nil)
-	return valid && source == id
+	return a.DNSFollow.SourceAgentID != "" && a.DNSFollow.SourceAgentID == id
 }
 
 // ReserveDeployment persists a profile-bound preparing task and owns the shared
 // preparation lease. Validation precedes lease admission; a commit failure or
 // shutdown releases only this reservation's physical lease.
-func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*model.Deployment, error) {
+func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*DeploymentReply, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -112,6 +84,7 @@ func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*m
 		}
 	}()
 	var result *model.Deployment
+	existing := false
 	startedLabel := ""
 	started := false
 	err := m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
@@ -143,30 +116,17 @@ func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*m
 		if upgradeBusyModel(a) {
 			return fail(msgDeploymentUpgradeBusy, 409)
 		}
-		if existing, present := a.Deployments.Get(id); present && a.Deployments.EntryValid(id) {
-			result, err = copyDeployment(&existing)
-			if err != nil {
-				return err
-			}
-			return result.Fields.Set("existing", []byte(`true`))
+		if task, present := a.Deployments.Get(id); present {
+			result, err = copyDeployment(&task)
+			existing = true
+			return err
 		}
 		for _, task := range a.Deployments.All() {
 			if !deploymentTerminalModel(task.Status) {
 				if err := fail(msgDeploymentUnfinished, 409); err != nil {
 					return err
 				}
-				for _, key := range []string{"deployment_id", "status"} {
-					raw, present, err := task.MemberJSON(key)
-					if err != nil {
-						return err
-					}
-					if !present {
-						raw = json.RawMessage(`null`)
-					}
-					if err := result.SetJSON(key, raw); err != nil {
-						return err
-					}
-				}
+				result.DeploymentID, result.Status = task.DeploymentID, task.Status
 				return nil
 			}
 		}
@@ -174,31 +134,9 @@ func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*m
 		if err != nil {
 			return err
 		}
-		service, serviceOK := storedText(a.MemberJSON("service_type"))
-		if !serviceOK {
-			if _, present, err := a.MemberJSON("service_type"); err != nil {
-				return err
-			} else if present {
-				return &ValueError{Message: msgPreparationOwnershipChanged}
-			}
-			service = "mihomo"
-		}
-		wire := struct {
-			Success     bool                   `json:"success"`
-			ID          string                 `json:"deployment_id"`
-			Status      string                 `json:"status"`
-			ProfileID   string                 `json:"profile_id"`
-			ServiceType string                 `json:"service_type"`
-			CreatedAt   string                 `json:"created_at"`
-			Events      []model.OperationEvent `json:"events"`
-		}{true, id, "preparing", profile, service, nowISO(), AppendOperationEvent(nil, "preparing", "", "", nil)}
-		raw, err := json.Marshal(wire)
-		if err != nil {
-			return err
-		}
-		var task model.Deployment
-		if err := json.Unmarshal(raw, &task); err != nil {
-			return err
+		task := model.Deployment{
+			Success: new(true), DeploymentID: id, Status: "preparing", ProfileID: profile, ServiceType: agentService(a),
+			CreatedAt: nowISO(), Events: AppendOperationEvent(nil, "preparing", "", "", nil),
 		}
 		_, release, acquired := preparationLocks.TryLock(tx, [3]string{m.repository.DataDir(), agentID, id})
 		if !acquired {
@@ -211,9 +149,7 @@ func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*m
 		for key, previous := range a.Deployments.All() {
 			if previous.PreparedContent != nil {
 				prepared := *previous.PreparedContent
-				if err := prepared.Clear("files"); err != nil {
-					return err
-				}
+				prepared.Files = nil
 				previous.PreparedContent = &prepared
 				a.Deployments.Set(key, previous)
 			}
@@ -251,5 +187,14 @@ func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*m
 		keep = true
 		logger.Infof(msgDeploymentStarted, startedLabel, prefix(id, 12))
 	}
-	return result, nil
+	reply, err := journalReply(result)
+	if err != nil {
+		return nil, err
+	}
+	if existing {
+		if err := reply.Set("existing", true); err != nil {
+			return nil, err
+		}
+	}
+	return reply, nil
 }

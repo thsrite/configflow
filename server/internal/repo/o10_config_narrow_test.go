@@ -113,13 +113,15 @@ func TestO10ConfigDefaultOmitsAgentsAndNarrowOxiDNSProjectionSkipsHistory(t *tes
 		}
 	}
 	// Second agent preserves numeric name, explicit null enabled, and omits absent dns_follow/rule_sync.
-	if nameRaw, present, err := second.MemberJSON("name"); err != nil || !present || string(nameRaw) != "42" {
-		t.Fatalf("numeric name token not preserved: present=%v raw=%s err=%v", present, nameRaw, err)
+	// Stored values read leniently (O18 T1b): a numeric name is its text, an
+	// explicit null switch is off.
+	if nameRaw, present, err := model.EncodeMember(&second, "name"); err != nil || !present || string(nameRaw) != `"42"` {
+		t.Fatalf("numeric name not read as text: present=%v raw=%s err=%v", present, nameRaw, err)
 	}
-	if enabledRaw, present, err := second.MemberJSON("enabled"); err != nil || !present || string(enabledRaw) != "null" {
-		t.Fatalf("explicit null enabled not preserved: present=%v raw=%s err=%v", present, enabledRaw, err)
+	if enabledRaw, present, err := model.EncodeMember(&second, "enabled"); err != nil || !present || string(enabledRaw) != "false" {
+		t.Fatalf("explicit null enabled not read as off: present=%v raw=%s err=%v", present, enabledRaw, err)
 	}
-	if _, present, err := second.MemberJSON("dns_follow"); err != nil || present {
+	if _, present, err := model.EncodeMember(&second, "dns_follow"); err != nil || present {
 		t.Fatalf("absent dns_follow must remain absent: present=%v err=%v", present, err)
 	}
 

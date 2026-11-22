@@ -53,7 +53,7 @@ var dnsAgentMembers = []string{"id", "host", "service_type", "status", "oxidns_h
 func dnsAgentOf(record *model.Agent) (*DNSAgent, error) {
 	var members model.Fields
 	for _, name := range dnsAgentMembers {
-		raw, present, err := record.MemberJSON(name)
+		raw, present, err := model.EncodeMember(record, name)
 		if err != nil {
 			return nil, err
 		}

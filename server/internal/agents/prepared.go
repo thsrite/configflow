@@ -1,7 +1,6 @@
 package agents
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 
@@ -17,21 +16,21 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 		return ctx.Err()
 	}
 	var proof model.PreparedContent
-	if err := json.Unmarshal(prepared, &proof); err != nil {
+	issues, err := model.DecodeStored(prepared, &proof, "")
+	if err != nil {
 		return err
 	}
-	profileID, profileOK := storedText(proof.MemberJSON("profile_id"))
-	serviceType, serviceOK := storedText(proof.MemberJSON("service_type"))
-	if !profileOK || !serviceOK || profileID == "" || serviceType == "" || len(model.Issues(&proof)) != 0 {
+	if proof.ProfileID == "" || proof.ServiceType == "" || hasTypeIssue(issues) {
 		return &ValueError{Message: msgPreparationOwnershipChanged}
 	}
 	var validation *model.OxiDNSValidationReceipt
 	if len(receipt) > 0 {
 		validation = new(model.OxiDNSValidationReceipt)
-		if err := json.Unmarshal(receipt, validation); err != nil {
+		issues, err := model.DecodeStored(receipt, validation, "")
+		if err != nil {
 			return err
 		}
-		if len(model.Issues(validation)) != 0 {
+		if hasTypeIssue(issues) {
 			return &ValueError{Message: msgInvalidValidationReceipt}
 		}
 	}
@@ -44,12 +43,7 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 		if !ok {
 			return &ValueError{Message: msgPreparationOwnershipChanged}
 		}
-		// Stored identities are ownership evidence: an originally numeric or
-		// null member must not match through its model text projection.
-		profile, profileOK := storedText(a.MemberJSON("profile_id"))
-		if !profileOK && !storedAbsent(a.MemberJSON("profile_id")) {
-			return &ValueError{Message: msgPreparationOwnershipChanged}
-		}
+		profile := a.ProfileID
 		if profile == "" {
 			var err error
 			profile, err = m.defaultProfileID(tx)
@@ -57,10 +51,7 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 				return err
 			}
 		}
-		stateProfile, stateOK := storedText(state.MemberJSON("profile_id"))
-		service, serviceOK := storedText(a.MemberJSON("service_type"))
-		status, statusOK := storedText(state.MemberJSON("status"))
-		if !stateOK || !serviceOK || !statusOK || stateProfile != proof.ProfileID || profile != proof.ProfileID || service != proof.ServiceType || !preparationUnsubmitted(&state) || status != "preparing" {
+		if state.ProfileID != proof.ProfileID || profile != proof.ProfileID || a.ServiceType != proof.ServiceType || !preparationUnsubmitted(&state) || state.Status != "preparing" {
 			return &ValueError{Message: msgPreparationOwnershipChanged}
 		}
 		if err := tx.Err(); err != nil {
@@ -75,31 +66,17 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 	})
 }
 
-// storedText accepts only an original JSON string member.
-func storedText(raw json.RawMessage, present bool, err error) (string, bool) {
-	raw = bytes.TrimSpace(raw)
-	if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
-		return "", false
+// hasTypeIssue reports a value of the wrong type in server-built evidence.
+func hasTypeIssue(issues []model.FieldIssue) bool {
+	for _, issue := range issues {
+		if issue.Kind == model.IssueType {
+			return true
+		}
 	}
-	var text string
-	return text, json.Unmarshal(raw, &text) == nil
+	return false
 }
 
-// storedAbsent reports a missing or explicit null member.
-func storedAbsent(raw json.RawMessage, present bool, err error) bool {
-	return err == nil && (!present || bytes.Equal(bytes.TrimSpace(raw), []byte("null")))
-}
-
-// preparationUnsubmitted accepts only absent/null or an original JSON false.
-// A wrong-shaped R5 zero cannot authorize replacing server-owned evidence.
+// preparationUnsubmitted reports a deployment not yet submitted to the Agent.
 func preparationUnsubmitted(state *model.Deployment) bool {
-	raw, present, err := state.MemberJSON("submitted")
-	if err != nil {
-		return false
-	}
-	if storedAbsent(raw, present, nil) {
-		return true
-	}
-	var submitted *bool
-	return json.Unmarshal(raw, &submitted) == nil && submitted != nil && !*submitted
+	return state.Submitted == nil || !*state.Submitted
 }

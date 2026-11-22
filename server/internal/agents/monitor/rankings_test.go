@@ -262,7 +262,7 @@ func query1(t *testing.T, store *RankingStore, agentID, recorder string, since, 
 func installFakeAgents(t *testing.T, fakes map[string]*fakeAgent) {
 	t.Helper()
 	useAgent(t, func(ctx context.Context, m Registry, agent *model.Agent, endpoint string, params query, minVersion string) (model.Fields, error) {
-		id := originalText(agent.MemberJSON("id"))
+		id := agent.ID
 		fake := fakes[id]
 		if fake == nil {
 			return model.Fields{}, fmt.Errorf("unexpected test Agent %q", id)
@@ -757,7 +757,7 @@ func (m *roundManager) historyUsable(a *model.Agent) bool {
 	if m.usableFn != nil {
 		return m.usableFn(a)
 	}
-	return agents.AgentEnabledModel(a) && originalText(a.MemberJSON("status")) == "online" && agents.FreshHeartbeat(originalText(a.MemberJSON("last_heartbeat")), nil)
+	return agents.AgentEnabledModel(a) && a.Status == "online" && agents.FreshHeartbeat(a.LastHeartbeat, nil)
 }
 
 func (m *roundManager) historyRecorders(ctx context.Context, a *model.Agent) ([]string, error) {
@@ -791,7 +791,7 @@ func TestACollectionRoundCoversUsableNewOxidnsDevicesOnly(t *testing.T) {
 		},
 		recorders: func(*model.Agent) ([]string, error) { return []string{"records"}, nil },
 		collectFn: func(_ *RankingStore, agent *model.Agent, _ []string, _ *int64) error {
-			seen = append(seen, originalText(agent.MemberJSON("id")))
+			seen = append(seen, agent.ID)
 			return nil
 		},
 		usableFn: func(agent *model.Agent) bool { return agent.Enabled == nil || *agent.Enabled },
@@ -992,15 +992,5 @@ func TestSlotRankingRejectsUnexpectedAnswers(t *testing.T) {
 	}
 	if got := query1(t, store, "dns", "records", 0, t0+2*rDay); got.Slots != 1 || got.BlockedSlots != 0 {
 		t.Fatal(got)
-	}
-}
-
-func TestCollectRoundAttributeErrorOfANonTextVersion(t *testing.T) {
-	m := &roundManager{
-		fakeManager: &fakeManager{dataDir: t.TempDir()},
-		list:        []*model.Agent{mustAgentMap(map[string]any{"id": "x", "service_type": "oxidns", "version": 5})},
-	}
-	if err := CollectHistoryRound(ctx, m, NewRankingStore(m.dataDir), i64(t0)); err == nil {
-		t.Fatal("a non-str version is an AttributeError in supported()")
 	}
 }

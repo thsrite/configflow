@@ -296,7 +296,7 @@ func beginPublication(ctx context.Context, m *agents.Manager, id, deploymentID s
 	if e != nil {
 		return false, e
 	}
-	return r != nil && r.Success, nil
+	return r != nil && r.Success != nil && *r.Success, nil
 }
 func failUnsubmitted(ctx context.Context, m *agents.Manager, id, deploymentID string) error {
 	if e := ctx.Err(); e != nil {
@@ -337,27 +337,15 @@ func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([
 			if !agents.AgentMatchesID(a, a.ID) || !agents.AgentEnabledModel(a) {
 				continue
 			}
-			raw, present, err := a.MemberJSON("profile_id")
-			if err != nil {
-				return err
-			}
-			var binding *string
-			if present && json.Unmarshal(raw, &binding) != nil {
-				continue
-			}
 			id := defaultID
-			if binding != nil && *binding != "" {
-				id = *binding
+			if a.ProfileID != "" {
+				id = a.ProfileID
 			}
 			if id != profileID {
 				continue
 			}
 			view := *a
-			for _, field := range repo.AgentHistoryFields {
-				if err := view.Clear(field); err != nil {
-					return err
-				}
-			}
+			view.DropHistory()
 			data, err := model.Marshal(view)
 			if err != nil {
 				return err

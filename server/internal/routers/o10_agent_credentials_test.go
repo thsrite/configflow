@@ -29,7 +29,9 @@ func TestO10RouterRedactionKeepsAgentRecordCredentials(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	secrets := []string{"synthetic-agent-token", "synthetic-history-pass", "synthetic-unknown-secret"}
+	// The history's undeclared "password" member is dropped on load (O18 T1b)
+	// and is no credential any more.
+	secrets := []string{"synthetic-agent-token"}
 
 	t.Run("helper", func(t *testing.T) {
 		seeds, err := redact.AgentRecordCredentials(ctx, nil)
@@ -54,7 +56,8 @@ func TestO10RouterRedactionKeepsAgentRecordCredentials(t *testing.T) {
 		}
 		// A later Agent write (new head) is seen despite the per-generation cache.
 		if err := r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
-			return sys.Agents[0].SetJSON("deployments", json.RawMessage(`{"d2":{"id":"d2","password":"synthetic-later-pass"}}`))
+			sys.Agents[0].Token = "synthetic-later-pass"
+			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}

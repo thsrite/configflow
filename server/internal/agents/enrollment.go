@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -26,18 +27,19 @@ var machineVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63
 // ValidMachineVersion accepts the shared ASCII Agent version grammar.
 func ValidMachineVersion(text string) bool { return machineVersionPattern.MatchString(text) }
 
-func normalizeRegistrationVersion(record *model.Agent) error {
-	raw, present, err := record.MemberJSON("version")
-	if err != nil {
-		return err
+// normalizeRegistrationVersion applies the default version to a reported
+// null and refuses a version that is not valid machine text.
+func normalizeRegistrationVersion(input *RegistrationInput) error {
+	raw := bytes.TrimSpace(input.version)
+	if len(raw) == 0 || string(raw) == "null" {
+		input.record.Version = "1.0.0"
+		return nil
 	}
-	if !present || string(raw) == "null" {
-		return record.SetJSON("version", json.RawMessage(`"1.0.0"`))
-	}
-	text, valid := storedText(raw, present, nil)
-	if !valid || !ValidMachineVersion(text) {
+	var text string
+	if raw[0] != '"' || json.Unmarshal(raw, &text) != nil || !ValidMachineVersion(text) {
 		return ErrRegistrationVersion
 	}
+	input.record.Version = text
 	return nil
 }
 
@@ -47,19 +49,27 @@ type RegistrationInput struct {
 	record  model.Agent
 	claim   registrationClaim
 	profile string
+	// version is the reported version as received; deploymentMethod reports
+	// whether the request named a deployment method.
+	version          json.RawMessage
+	deploymentMethod bool
 }
 
-// DecodeRegistrationInput decodes one registration request without interpreting
-// unknown/case-alias keys as protocol fields. Profile bindings require text.
+// DecodeRegistrationInput decodes one registration request. Members other
+// than the identity and version are ignored; identity members must have
+// their JSON types, profile bindings require text.
 func DecodeRegistrationInput(data json.RawMessage) (RegistrationInput, error) {
 	input := RegistrationInput{claim: decodeRegistrationClaim(data)}
-	var members model.Fields
+	if err := requireJSONObject(data); err != nil {
+		return input, err
+	}
+	var members model.OrderedMap[json.RawMessage]
 	if err := json.Unmarshal(data, &members); err != nil {
 		return input, err
 	}
 	for _, field := range []struct{ name, fallback string }{
 		{"name", `"Unnamed Agent"`}, {"host", `""`}, {"port", `8080`},
-		{"service_type", `"mihomo"`}, {"profile_id", `null`}, {"deployment_method", ``}, {"version", `"1.0.0"`},
+		{"service_type", `"mihomo"`}, {"deployment_method", ``},
 	} {
 		raw, present := members.Get(field.name)
 		if !present {
@@ -68,17 +78,21 @@ func DecodeRegistrationInput(data json.RawMessage) (RegistrationInput, error) {
 		if len(raw) == 0 {
 			continue
 		}
-		if err := input.record.SetJSON(field.name, raw); err != nil {
+		// Agents report these members; a value of another type reads as
+		// stored data does (its zero value), as the record kept it before.
+		if _, _, err := model.DecodeStoredMember(&input.record, field.name, raw, field.name); err != nil {
 			return input, err
 		}
+		input.deploymentMethod = input.deploymentMethod || field.name == "deployment_method"
 	}
-	raw, present, err := input.record.MemberJSON("profile_id")
-	if err != nil {
-		return input, err
+	input.version = json.RawMessage(`"1.0.0"`)
+	if raw, present := members.Get("version"); present {
+		input.version = raw
 	}
-	if !storedAbsent(raw, present, nil) {
-		profile, valid := storedText(raw, present, nil)
-		if !valid {
+	_ = json.Unmarshal(input.version, &input.record.Version)
+	if raw, present := members.Get("profile_id"); present && string(bytes.TrimSpace(raw)) != "null" {
+		var profile string
+		if bytes.TrimSpace(raw)[0] != '"' || json.Unmarshal(raw, &profile) != nil {
 			return input, ErrRegistrationProfileType
 		}
 		input.profile = profile
@@ -120,20 +134,16 @@ func (m *Manager) RegisterIdentity(ctx context.Context, input RegistrationInput,
 	ctx = lifecycle.Detach(ctx)
 	result := RegistrationResult{}
 	err := m.editRegistry(ctx, input.profile, func(tx context.Context, system *model.System) error {
-		name, nameOK := storedText(input.record.MemberJSON("name"))
-		host, hostOK := storedText(input.record.MemberJSON("host"))
 		for i := range system.Agents {
 			a := &system.Agents[i]
-			storedName, storedNameOK := storedText(a.MemberJSON("name"))
-			storedHost, storedHostOK := storedText(a.MemberJSON("host"))
-			if !nameOK || !hostOK || !storedNameOK || !storedHostOK || name != storedName || host != storedHost || !agentIDProven(a) {
+			if input.record.Name != a.Name || input.record.Host != a.Host || !agentIDProven(a) {
 				continue
 			}
 			return m.refreshRegistration(tx, system, a, input, options, &result)
 		}
 		profile := input.profile
 		if admission := options.Authorization; admission != nil {
-			bound, err := m.admitRegistrationClaim(tx, system, input.claim, *admission, func() error { return normalizeRegistrationVersion(&input.record) })
+			bound, err := m.admitRegistrationClaim(tx, system, input.claim, *admission, func() error { return normalizeRegistrationVersion(&input) })
 			if err != nil {
 				return err
 			}
@@ -142,7 +152,7 @@ func (m *Manager) RegisterIdentity(ctx context.Context, input RegistrationInput,
 			}
 		}
 		if options.Authorization == nil {
-			if err := normalizeRegistrationVersion(&input.record); err != nil {
+			if err := normalizeRegistrationVersion(&input); err != nil {
 				return err
 			}
 		}
@@ -160,11 +170,7 @@ func (m *Manager) RegisterIdentity(ctx context.Context, input RegistrationInput,
 		id := fmt.Sprintf("agent_%d_%s", clock().UnixMilli(), hex.EncodeToString(entropy[:3]))
 		token := base64.RawURLEncoding.EncodeToString(entropy[3:])
 		a := model.Agent{}
-		// Stable field order also makes stored diffs readable. SetJSON records
-		// explicit zero/null fields instead of relying on Go's zero omission.
-		if err := setRegistrationMembers(&a, &input.record, id, token, profile, false); err != nil {
-			return err
-		}
+		setRegistrationMembers(&a, &input, id, token, profile, false)
 		if options.InstallationID != "" {
 			a.GatewayInstallationID = new(options.InstallationID)
 		}
@@ -176,26 +182,22 @@ func (m *Manager) RegisterIdentity(ctx context.Context, input RegistrationInput,
 }
 
 func (m *Manager) refreshRegistration(ctx context.Context, system *model.System, a *model.Agent, input RegistrationInput, options RegistrationOptions, result *RegistrationResult) error {
-	marker, markerOK := storedText(a.MemberJSON("gateway_installation_id"))
-	owned := options.ReplayInstallation && options.InstallationID != "" && markerOK && marker == options.InstallationID
-	storedToken, tokenOK := storedText(a.MemberJSON("token"))
+	marker := ""
+	if a.GatewayInstallationID != nil {
+		marker = *a.GatewayInstallationID
+	}
+	owned := options.ReplayInstallation && options.InstallationID != "" && marker == options.InstallationID
+	storedToken := a.Token
 	offered := options.ExistingToken
+	reported := &input.record
 	if owned {
-		for _, key := range []string{"name", "host", "port", "service_type", "deployment_method", "profile_id"} {
-			raw, present, err := input.record.MemberJSON(key)
-			if err != nil {
-				return err
-			}
-			if !present {
-				raw = json.RawMessage(`null`)
-			}
-			if !sameAgentMember(a, key, raw) {
-				return &DeploymentConflict{Message: installationIdentityChanged}
-			}
+		if reported.Name != a.Name || reported.Host != a.Host || reported.Port != a.Port || reported.ServiceType != a.ServiceType ||
+			reported.DeploymentMethod != a.DeploymentMethod || input.profile != a.ProfileID {
+			return &DeploymentConflict{Message: installationIdentityChanged}
 		}
 		offered = storedToken
 	}
-	if !tokenOK || !tokenMatches(offered, storedToken) {
+	if !tokenMatches(offered, storedToken) {
 		if admission := options.Authorization; admission != nil && !admission.AllowNew && !m.matchesRegistrationClaim(ctx, system, input.claim, *admission) {
 			return ErrRegistrationAuthorization
 		}
@@ -204,26 +206,17 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 	if admission := options.Authorization; admission != nil && admission.Credential != "" {
 		optional := *admission
 		optional.AllowNew = true
-		if _, err := m.admitRegistrationClaim(ctx, system, input.claim, optional, func() error { return normalizeRegistrationVersion(&input.record) }); err != nil {
+		if _, err := m.admitRegistrationClaim(ctx, system, input.claim, optional, func() error { return normalizeRegistrationVersion(&input) }); err != nil {
 			return err
 		}
 	}
 	if admission := options.Authorization; admission == nil || admission.Credential == "" {
-		if err := normalizeRegistrationVersion(&input.record); err != nil {
+		if err := normalizeRegistrationVersion(&input); err != nil {
 			return err
 		}
 	}
-	if options.InstallationID != "" && markerOK && marker == options.InstallationID {
-		raw, present, err := input.record.MemberJSON("profile_id")
-		if err != nil {
-			return err
-		}
-		if !present {
-			raw = json.RawMessage(`null`)
-		}
-		if !sameAgentMember(a, "profile_id", raw) {
-			return &DeploymentConflict{Message: msgInstallationProfileChanged}
-		}
+	if options.InstallationID != "" && marker == options.InstallationID && input.profile != a.ProfileID {
+		return &DeploymentConflict{Message: msgInstallationProfileChanged}
 	}
 	profile := input.profile
 	current, profileErr := m.agentProfileID(ctx, a)
@@ -235,17 +228,7 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 	} else if (profileErr != nil || profile != current) && (upgradeBusyModel(a) || unfinishedDeploymentModel(a)) {
 		return &DeploymentConflict{Message: msgRegistrationDeploymentBusy}
 	}
-	changes := false
-	for _, key := range []string{"service_type", "port", "profile_id"} {
-		if key == "profile_id" && input.profile == "" {
-			continue
-		}
-		raw, _, err := input.record.MemberJSON(key)
-		if err != nil {
-			return err
-		}
-		changes = changes || !sameAgentMember(a, key, raw)
-	}
+	changes := reported.ServiceType != a.ServiceType || reported.Port != a.Port || input.profile != "" && input.profile != a.ProfileID
 	if changes && dnsFollowBusyModel(system.Agents, a.ID) {
 		return &DeploymentConflict{Message: msgRegistrationDNSFollowBusy}
 	}
@@ -255,9 +238,7 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 	if input.profile != "" {
 		profile = input.profile
 	}
-	if err := setRegistrationMembers(a, &input.record, a.ID, storedToken, profile, true); err != nil {
-		return err
-	}
+	setRegistrationMembers(a, &input, a.ID, storedToken, profile, true)
 	*result = RegistrationResult{ID: a.ID, Status: "online"}
 	if owned {
 		result.Token = new(storedToken)
@@ -265,97 +246,62 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 	return ctx.Err()
 }
 
-func setRegistrationMembers(a, input *model.Agent, id, token, profile string, refresh bool) error {
+// setRegistrationMembers rebuilds a registered Agent from register_agent's
+// fixed member list. On a refresh the panel-owned members listed below are
+// kept; every other member (Docker HA enrollment marker, runtime metrics) is
+// dropped as in Python: a retained enrollment marker would let that
+// installation credential replay this Agent's token after the device itself
+// registered.
+func setRegistrationMembers(a *model.Agent, input *RegistrationInput, id, token, profile string, refresh bool) {
 	original := *a
-	*a = model.Agent{}
-	for _, field := range []struct {
-		name     string
-		fallback any
-		input    bool
-	}{
-		{"id", id, false}, {"name", nil, true}, {"host", nil, true}, {"port", nil, true},
-		{"token", token, false}, {"service_type", nil, true}, {"profile_id", profile, false},
-		{"deployment_method", "unknown", true}, {"status", "online", false}, {"last_heartbeat", nowISO(), false},
-		{"version", nil, true}, {"config_version", "0", false}, {"enabled", true, false}, {"created_at", nowISO(), false},
-	} {
-		var raw json.RawMessage
-		if refresh && (field.name == "config_version" || field.name == "created_at") {
-			var err error
-			raw, _, err = original.MemberJSON(field.name)
-			if err != nil {
-				return err
-			}
-		}
-		if field.input {
-			var present bool
-			var err error
-			raw, present, err = input.MemberJSON(field.name)
-			if err != nil {
-				return err
-			}
-			if !present && refresh && field.name == "deployment_method" {
-				raw, _, err = original.MemberJSON(field.name)
-				if err != nil {
-					return err
-				}
-			}
-		}
-		if len(raw) == 0 {
-			var err error
-			raw, err = json.Marshal(field.fallback)
-			if err != nil {
-				return err
-			}
-		}
-		if err := a.SetJSON(field.name, raw); err != nil {
-			return err
+	reported := &input.record
+	now := nowISO()
+	next := model.Agent{
+		ID: id, Name: reported.Name, Host: reported.Host, Port: reported.Port, Token: token, ServiceType: reported.ServiceType,
+		ProfileID: profile, DeploymentMethod: reported.DeploymentMethod, Status: "online", LastHeartbeat: now,
+		Version: reported.Version, ConfigVersion: "0", Enabled: new(true), CreatedAt: now,
+	}
+	if !input.deploymentMethod {
+		next.DeploymentMethod = "unknown"
+		if refresh && original.DeploymentMethod != "" {
+			next.DeploymentMethod = original.DeploymentMethod
 		}
 	}
 	if !refresh {
-		return nil
+		*a = next
+		return
 	}
-	updated, err := json.Marshal(nowISO())
-	if err != nil {
-		return err
+	if original.ConfigVersion != "" {
+		next.ConfigVersion = original.ConfigVersion
 	}
-	if err := a.SetJSON("updated_at", updated); err != nil {
-		return err
+	if original.CreatedAt != "" {
+		next.CreatedAt = original.CreatedAt
 	}
-	// Rebuild the record from register_agent's fixed member list. Members
-	// outside it (Docker HA enrollment marker, runtime metrics, unknown
-	// extensions) are dropped as in Python: a retained enrollment marker would
-	// let that installation credential replay this Agent's token after the
-	// device itself registered. No nested history or R5 token is reconstructed
-	// from its typed zero value.
-	for _, field := range []struct{ name, fallback string }{
-		{"deployments", `{}`}, {"latest_deployment", `null`}, {"latest_upgrade", `null`}, {"domain_discovery_enabled", `false`},
-		{"traffic_history_enabled", ``}, {"traffic_history_since", ``}, {"config_revision", ``}, {"pushed_at", ``}, {"applied_content", ``},
-		{"dns_follow", ``}, {"dns_follow_state", ``}, {"dns_follow_job", ``}, {"rule_sync", ``},
-		{"oxidns_ha", ``}, {"oxidns_ha_state", ``}, {"oxidns_ha_publication", ``}, {"ipv6_verification_settings", ``}, {"ipv6_verifications", ``},
-		{"gateway_installation_id", ``},
-	} {
-		raw, present, err := original.MemberJSON(field.name)
-		if err != nil {
-			return err
-		}
-		if !present {
-			raw = json.RawMessage(field.fallback)
-		}
-		if field.name == "gateway_installation_id" && len(raw) > 0 {
-			// Python keeps the trusted installation marker only when truthy.
-			keep, err := model.JSONHasContent(raw)
-			if err != nil {
-				return err
-			}
-			if !keep {
-				continue
-			}
-		}
-		if len(raw) > 0 {
-			if err := a.SetJSON(field.name, raw); err != nil {
-				return err
-			}
-		}
+	next.UpdatedAt = new(nowISO())
+	next.Deployments = original.Deployments
+	next.LatestDeployment = original.LatestDeployment
+	next.LatestUpgrade = original.LatestUpgrade
+	next.DomainDiscoveryEnabled = original.DomainDiscoveryEnabled
+	if next.DomainDiscoveryEnabled == nil {
+		next.DomainDiscoveryEnabled = new(false)
 	}
-	return nil
+	next.TrafficHistoryEnabled = original.TrafficHistoryEnabled
+	next.TrafficHistorySince = original.TrafficHistorySince
+	next.ConfigRevision = original.ConfigRevision
+	next.PushedAt = original.PushedAt
+	next.AppliedContent = original.AppliedContent
+	next.DNSFollow = original.DNSFollow
+	next.DNSFollowState = original.DNSFollowState
+	next.DNSFollowJob = original.DNSFollowJob
+	next.RuleSync = original.RuleSync
+	next.OxiDNSHA = original.OxiDNSHA
+	next.OxiDNSHAState = original.OxiDNSHAState
+	next.OxiDNSHAPublication = original.OxiDNSHAPublication
+	next.IPv6VerificationSettings = original.IPv6VerificationSettings
+	next.IPv6Verifications = original.IPv6Verifications
+	// Python keeps the trusted installation marker only when it is truthy.
+	if original.GatewayInstallationID != nil && *original.GatewayInstallationID != "" {
+		next.GatewayInstallationID = original.GatewayInstallationID
+	}
+	*a = next
 }

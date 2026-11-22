@@ -212,7 +212,9 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 		t.Fatal(err)
 	}
 	text := string(encoded)
-	for _, secret := range []string{"synthetic-mihomo-token", "synthetic-oxidns-token", "synthetic-proxy-pass", "synthetic-job-secret", "synthetic-router-pass", "synthetic-history-secret"} {
+	// Members the records do not declare ("password" in the history and the
+	// job) are dropped on load (O18 T1b), so they are no credentials any more.
+	for _, secret := range []string{"synthetic-mihomo-token", "synthetic-oxidns-token", "synthetic-proxy-pass", "synthetic-router-pass"} {
 		if strings.Contains(text, secret) {
 			t.Fatalf("notification snapshot leaked secret %q: %s", secret, text)
 		}

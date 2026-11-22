@@ -64,18 +64,8 @@ func TestSourceKeepsLegacyRuleSetProjection(t *testing.T) {
 	}
 }
 
-func TestTargetKeepsOriginalIdentityAndCapabilityTypes(t *testing.T) {
-	target, err := NewTypedTarget(fixtureAgent(map[string]any{"id": 123, "name": 20, "profile_id": 456, "host": 789, "token": 100, "version": 1.9, "service_type": 30, "deployment_method": 40, "domain_discovery_enabled": "true"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if target.ID != "" || target.Name != "" || target.ProfileID != "" || target.Host != "" || target.Token != "" || target.Version != "" || target.ServiceType != "" || target.DeploymentMethod != "" || target.DomainDiscovery {
-		t.Fatal("stored display projections became captured identity/capability")
-	}
-}
-
 func TestResultFieldPreservesExtraSummaryCounts(t *testing.T) {
-	base := &model.Deployment{Success: true, DeploymentID: "dep-1", Status: "ready"}
+	base := &model.Deployment{Success: new(true), DeploymentID: "dep-1", Status: "ready"}
 	out := resultField(base, "profile_id", "default")
 	out = resultField(out, "file_count", 3)
 	out = resultField(out, "provider_count", 1)

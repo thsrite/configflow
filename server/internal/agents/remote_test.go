@@ -123,25 +123,18 @@ func TestSetLoggingConfigLikePython(t *testing.T) {
 		diffJSONValues(t, map[string]any{"enabled": true}, e.stored(id).LoggingConfig) != "" {
 		t.Fatalf("failure %s", got)
 	}
-	for _, c := range []struct {
-		existing string
-		name     string
-		want     string
-	}{
-		{"null", "logging_existing_none", "'NoneType' object does not support item assignment"},
-		{"[1]", "logging_existing_list", "list indices must be integers or slices, not str"},
-	} {
+	// A stored logging config that is not an object reads as none (O18 T1b);
+	// a successful switch replaces it.
+	for _, existing := range []string{"null", "[1]"} {
 		e.editSystem(func(system *model.System) {
-			_ = e.firstAgent(system).SetJSON("logging_config", json.RawMessage(c.existing))
+			_ = model.SetStoredMember(e.firstAgent(system), "logging_config", json.RawMessage(existing))
 		})
 		e.fake.set(raw(`{"success": true}`, 200))
-		before := remoteReferenceHead(t, e)
-		_, err := setLogging(false)
-		if verifyNativeRemoteReference(t, e, c.name, `{"success": true}`, 200, c.want, err, before) {
-			continue
+		if _, err := setLogging(false); err != nil {
+			t.Fatalf("existing %s: %v", existing, err)
 		}
-		if err == nil || err.Error() != c.want {
-			t.Errorf("existing %s: %v", c.existing, err)
+		if diffJSONValues(t, map[string]any{"enabled": false}, e.stored(id).LoggingConfig) != "" {
+			t.Fatalf("existing %s: switch not stored", existing)
 		}
 	}
 }

@@ -44,7 +44,7 @@ func TestReviewA14UnexpectedPushFailureIsLoggedAndRecorded(t *testing.T) {
 	t.Cleanup(func() { _, _ = logx.Setup(logx.Config{Level: logx.Info, Console: io.Discard}) })
 	// Until A18 registers the pair publisher an HA member fails closed (500).
 	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
-		return system.Agents[0].SetJSON("oxidns_ha", json.RawMessage(`{"enabled":true}`))
+		return model.SetStoredMember(&system.Agents[0], "oxidns_ha", json.RawMessage(`{"enabled":true}`))
 	}); err != nil {
 		t.Fatal(err)
 	}

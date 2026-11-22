@@ -4,7 +4,6 @@
 package configgen
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -234,9 +233,6 @@ func coreAgentOf(agent *model.Agent) subs.CoreAgent {
 	if agent.ServiceType != "" {
 		serviceType := agent.ServiceType
 		core.ServiceType = &serviceType
-	} else if raw, present, err := agent.MemberJSON("service_type"); err == nil && present && bytes.Equal(bytes.TrimSpace(raw), []byte(`""`)) {
-		empty := ""
-		core.ServiceType = &empty
 	}
 	return core
 }

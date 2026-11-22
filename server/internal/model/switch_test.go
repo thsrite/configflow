@@ -87,10 +87,6 @@ func TestSwitchEnabledRecordAndTypedOverride(t *testing.T) {
 		})
 	}
 
-	var nilAgent *Agent
-	if !SwitchEnabled(nilAgent, "enabled", nil, true) {
-		t.Fatal("nil typed record pointer must use defaultValue")
-	}
 	if SwitchEnabled(nil, "enabled", nil, false) {
 		t.Fatal("nil interface must use defaultValue")
 	}

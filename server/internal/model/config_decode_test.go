@@ -31,7 +31,7 @@ func TestCapturedConfigOwnerRoundTrip(t *testing.T) {
 	if bytes.Contains(result, []byte("future_profile")) {
 		t.Fatalf("unknown profile member kept: %s", result)
 	}
-	for _, want := range []string{`"future_system":1e0`, `"future_agent":4.00`, `"future_rule":3.0`} {
+	for _, want := range []string{`"future_system":1e0`, `"future_rule":3.0`} {
 		if !bytes.Contains(result, []byte(want)) {
 			t.Fatalf("lost evidence %s: %s", want, result)
 		}

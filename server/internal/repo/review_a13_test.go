@@ -16,7 +16,7 @@ func TestReviewAgentViewSnapshotSurvivesCommit(t *testing.T) {
 	r := newRepo(t)
 	profile := must(r.DefaultProfileID(bg))(t)
 	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
-		return system.SetJSON("agents", []byte(`[{"id":"synthetic","profile_id":"`+profile+`","password":"old-key","journal":"old-key"}]`))
+		return system.SetJSON("agents", []byte(`[{"id":"synthetic","profile_id":"`+profile+`","token":"old-key","name":"old-key"}]`))
 	}))
 	inspected, proceed := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -39,7 +39,7 @@ func TestReviewAgentViewSnapshotSurvivesCommit(t *testing.T) {
 			if err := json.Unmarshal(raw, &fields); err != nil {
 				return err
 			}
-			key = fields["password"]
+			key = fields["token"]
 			close(inspected)
 			<-proceed
 			rawAfter, err := model.Marshal(records[0])
@@ -50,7 +50,7 @@ func TestReviewAgentViewSnapshotSurvivesCommit(t *testing.T) {
 			if err := json.Unmarshal(rawAfter, &after); err != nil {
 				return err
 			}
-			journal = after["journal"]
+			journal = after["name"]
 			return nil
 		})
 		done <- result{key, journal, err}
@@ -63,7 +63,7 @@ func TestReviewAgentViewSnapshotSurvivesCommit(t *testing.T) {
 	committed := make(chan error, 1)
 	go func() {
 		committed <- r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
-			return system.SetJSON("agents", []byte(`[{"id":"synthetic","profile_id":"`+profile+`","password":"new-key","journal":"new-key"}]`))
+			return system.SetJSON("agents", []byte(`[{"id":"synthetic","profile_id":"`+profile+`","token":"new-key","name":"new-key"}]`))
 		})
 	}()
 	select {
@@ -87,7 +87,7 @@ func TestReviewAgentViewSnapshotSurvivesCommit(t *testing.T) {
 		if err := json.Unmarshal(raw, &fields); err != nil {
 			return err
 		}
-		latest = fields["journal"]
+		latest = fields["name"]
 		return nil
 	}))
 	if latest != "new-key" {

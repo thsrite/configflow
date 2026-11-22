@@ -40,7 +40,7 @@ func commitRound(ctx context.Context, m *Manager, round int) error {
 		}
 		bulk := registryAgent(*records, "bulk-0")
 		state, _ := bulk.Deployments.Get("dep-0000")
-		if err := state.SetJSON("message", json.RawMessage(fmt.Sprintf(`"round %d"`, round))); err != nil {
+		if err := model.SetStoredMember(&state, "message", json.RawMessage(fmt.Sprintf(`"round %d"`, round))); err != nil {
 			return err
 		}
 		bulk.Deployments.Set("dep-0000", state)
@@ -122,7 +122,7 @@ func TestBorrowedReadsAreCallerShallowCopies(t *testing.T) {
 		t.Fatal(a, err)
 	}
 	a.Status, a.Name = "offline", "changed"
-	if err := a.SetJSON("host", json.RawMessage(`"198.51.100.7"`)); err != nil {
+	if err := model.SetStoredMember(&a, "host", json.RawMessage(`"198.51.100.7"`)); err != nil {
 		t.Fatal(err)
 	}
 	list, err := m.ListAgents(ctx, true)

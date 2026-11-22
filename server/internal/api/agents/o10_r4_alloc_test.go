@@ -23,7 +23,7 @@ func TestO10AgentViewCacheAllocations(t *testing.T) {
 				"events": []any{map[string]any{"at": "2026-01-01T00:00:00", "status": "failed", "message": "timeout"}},
 			}
 		}
-		return system.Agents[0].SetJSON("deployments", mustRawJSON(t, history))
+		return model.SetStoredMember(&system.Agents[0], "deployments", mustRawJSON(t, history))
 	}); err != nil {
 		t.Fatal(err)
 	}

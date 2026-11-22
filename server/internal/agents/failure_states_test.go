@@ -166,7 +166,7 @@ func TestDeploymentBusyRetryIsUnchangedByDiagnosticSanitization(t *testing.T) {
 		calls++
 		return answers[calls-1], nil
 	})
-	result := must[*model.Deployment](t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments/id/rollback", nil, nil, nil))
+	result := replyJournal(t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments/id/rollback", nil, nil, nil))
 	if diff := diffJSONValues(t, map[string]any{"success": true, "status": "rolling_back", "manual_rollback": true}, result); diff != "" || calls != 2 {
 		t.Fatalf("result %s calls %d", diff, calls)
 	}
@@ -240,7 +240,7 @@ func TestSupersededHistoryKeepsFingerprintButNotPerFileDigests(t *testing.T) {
 		e.editSystem(func(system *model.System) {
 			agent := registryAgent(system.Agents, e.id())
 			d, _ := agent.Deployments.Get(id)
-			_ = d.SetJSON("prepared_content", mustJSON(t, prepared))
+			_ = model.SetStoredMember(&d, "prepared_content", mustJSON(t, prepared))
 			agent.Deployments.Set(id, d)
 		})
 		e.record(id, map[string]any{"status": "succeeded", "config_version": id})
@@ -293,7 +293,7 @@ func TestDNSReportIsBoundedFilteredAndRedactedAtEachBoundary(t *testing.T) {
 			}
 		} else {
 			e.fake.set(always(raw, 409))
-			result = must[*model.Deployment](t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments/safe-report/activate", nil, nil, nil))
+			result = replyJournal(t)(e.m.DeploymentRequestModel(e.ctx, e.agent, "POST", "deployments/safe-report/activate", nil, nil, nil))
 			if httpStatusOf(result) != 409 {
 				t.Fatalf("http_status %v", httpStatusOf(result))
 			}

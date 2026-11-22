@@ -347,9 +347,15 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if !ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("resolved non-default-named binding proof refused")
 	}
+	// A stored receipt member the record does not declare is dropped on
+	// load (O18 T1b); the declared proof still decides.
 	proofMap["unexpected"] = true
+	if !ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
+		t.Fatal("undeclared receipt member changed the proof")
+	}
+	proofMap["sha256"] = strings.Repeat("c", 64)
 	if ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
-		t.Fatal("extra receipt field accepted")
+		t.Fatal("changed receipt accepted")
 	}
 
 }

@@ -364,40 +364,28 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		expected := map[string]string{"name": session.name, "host": session.host, "profile_id": session.profileID, "service_type": "oxidns", "deployment_method": "docker"}
+		portNumber := port.Num().Int64()
 		for i := range *records {
 			a := &(*records)[i]
-			marker, ok := originalAgentText(a, "docker_ha_installation_id")
-			if !ok || marker != sessionID {
+			if a.DockerHAInstallationID == nil || *a.DockerHAInstallationID != sessionID {
 				continue
 			}
-			for key, value := range expected {
-				original, ok := originalAgentText(a, key)
-				if !ok || original != value {
-					return enrollmentError(msgInstallationChanged, 409)
-				}
-			}
-			raw, present, err := a.MemberJSON("port")
-			if err != nil || !present || !numericPortEqual(raw, session.port) {
+			if a.Name != session.name || a.Host != session.host || a.ProfileID != session.profileID ||
+				a.ServiceType != "oxidns" || a.DeploymentMethod != "docker" || int64(a.Port) != portNumber {
 				return enrollmentError(msgInstallationChanged, 409)
 			}
-			id, idOK := originalAgentText(a, "id")
-			credential, tokenOK := originalAgentText(a, "token")
-			if !idOK || !tokenOK || id == "" || credential == "" {
+			if a.ID == "" || a.Token == "" {
 				return enrollmentError(msgInstallationChanged, 409)
 			}
-			result = AgentIdentity{AgentID: id, Token: credential}
+			result = AgentIdentity{AgentID: a.ID, Token: a.Token}
 			return tx.Err()
 		}
 		for i := range *records {
 			a := &(*records)[i]
-			name, nameOK := originalAgentText(a, "name")
-			host, hostOK := originalAgentText(a, "host")
-			if nameOK && hostOK && name == session.name && host == session.host {
+			if a.Name == session.name && a.Host == session.host {
 				return enrollmentError(msgInstallationCollision, 409)
 			}
 		}
-		a := model.Agent{}
 		suffix, err := uuid4Hex()
 		if err != nil {
 			return err
@@ -407,22 +395,11 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 			return err
 		}
 		id := "agent_" + suffix
-		for _, field := range []struct {
-			key   string
-			value any
-		}{
-			{"name", session.name}, {"host", session.host}, {"port", session.port}, {"profile_id", session.profileID},
-			{"service_type", "oxidns"}, {"deployment_method", "docker"}, {"id", id}, {"token", credential},
-			{"docker_ha_installation_id", sessionID}, {"enabled", true}, {"status", "offline"}, {"last_heartbeat", ""},
-			{"version", "unknown"}, {"config_version", "0"}, {"created_at", naiveISO(enrollmentLocalNow())},
-		} {
-			raw, err := json.Marshal(field.value)
-			if err != nil {
-				return err
-			}
-			if err := a.SetJSON(field.key, raw); err != nil {
-				return err
-			}
+		a := model.Agent{
+			Name: session.name, Host: session.host, Port: model.Int(portNumber), ProfileID: session.profileID,
+			ServiceType: "oxidns", DeploymentMethod: "docker", ID: id, Token: credential,
+			DockerHAInstallationID: new(sessionID), Enabled: new(true), Status: "offline", LastHeartbeat: "",
+			Version: "unknown", ConfigVersion: "0", CreatedAt: naiveISO(enrollmentLocalNow()),
 		}
 		*records = append(*records, a)
 		result = AgentIdentity{AgentID: id, Token: credential}
@@ -432,30 +409,4 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 		return AgentIdentity{}, err
 	}
 	return result, nil
-}
-
-func originalAgentText(a *model.Agent, key string) (string, bool) {
-	raw, present, err := a.MemberJSON(key)
-	if err != nil || !present || len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '"' {
-		return "", false
-	}
-	var text string
-	if jsondecode.Unmarshal(raw, &text) != nil {
-		return "", false
-	}
-	return text, true
-}
-
-func numericPortEqual(raw json.RawMessage, want json.Number) bool {
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || raw[0] == '"' || raw[0] == 't' || raw[0] == 'f' || raw[0] == 'n' {
-		return false
-	}
-	var number json.Number
-	if jsondecode.Unmarshal(raw, &number) != nil {
-		return false
-	}
-	got, valid := new(big.Rat).SetString(number.String())
-	expected, wantValid := new(big.Rat).SetString(want.String())
-	return valid && wantValid && got.Cmp(expected) == 0
 }

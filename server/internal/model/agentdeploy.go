@@ -1,402 +1,395 @@
 package model
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // OperationEvent is one stored operation event; ordering and retention belong to consumers.
 type OperationEvent struct {
-	At      string  `json:"at"`
-	Status  string  `json:"status"`
-	Message *string `json:"message"`
-	Fields  Fields
-	raw     Raw
+	At      string  `json:"at,omitzero"`
+	Status  string  `json:"status,omitzero"`
+	Message *string `json:"message,omitzero"`
 }
-
-// UnmarshalJSON decodes OperationEvent with stored-member preservation and R5 fallback.
-func (r *OperationEvent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when OperationEvent is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *OperationEvent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged OperationEvent members.
-func (r OperationEvent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // Deployment is the panel deployment journal, distinct from the remote Agent on-disk journal.
 type Deployment struct {
-	Success                   bool                     `json:"success"`
-	DeploymentID              string                   `json:"deployment_id"`
-	Status                    string                   `json:"status"`
-	ProfileID                 string                   `json:"profile_id"`
-	ServiceType               string                   `json:"service_type"`
-	CreatedAt                 string                   `json:"created_at"`
-	UpdatedAt                 *string                  `json:"updated_at"`
-	AgentUpdatedAt            *string                  `json:"agent_updated_at"`
-	Events                    []OperationEvent         `json:"events"`
-	Message                   *string                  `json:"message"`
-	Error                     *string                  `json:"error"`
-	ErrorDetails              *string                  `json:"error_details"`
-	FailedStage               *string                  `json:"failed_stage"`
-	RollbackError             *string                  `json:"rollback_error"`
-	RollbackErrorDetails      *string                  `json:"rollback_error_details"`
-	ConfigVersion             *string                  `json:"config_version"`
-	ConfigRevision            *Int                     `json:"config_revision"`
-	SHA256                    *string                  `json:"sha256"`
-	SourceSHA256              *string                  `json:"source_sha256"`
-	Submitted                 *bool                    `json:"submitted"`
-	PreviousRunning           *bool                    `json:"previous_running"`
-	Health                    json.RawMessage          `json:"health"`
-	Pending                   *bool                    `json:"pending"`
-	HTTPStatus                *Int                     `json:"http_status"`
-	ManualRollback            *bool                    `json:"manual_rollback"`
-	RollbackRejected          *bool                    `json:"rollback_rejected"`
-	RollbackMessage           *string                  `json:"rollback_message"`
-	DNSChecks                 []DeploymentDNSCheck     `json:"dns_checks"`
-	DNSCheckedAt              *string                  `json:"dns_checked_at"`
-	PreparedContent           *PreparedContent         `json:"prepared_content"`
-	OxiDNSValidationReceipt   *OxiDNSValidationReceipt `json:"oxidns_validation_receipt"`
-	HAPublication             *HAPublicationSummary    `json:"ha_publication"`
-	IPv6VerificationRequested *bool                    `json:"ipv6_verification_requested"`
-	Fields                    Fields
-	raw                       Raw
+	Success                   *bool                    `json:"success,omitzero"`
+	DeploymentID              string                   `json:"deployment_id,omitzero"`
+	Status                    string                   `json:"status,omitzero"`
+	ProfileID                 string                   `json:"profile_id,omitzero"`
+	ServiceType               string                   `json:"service_type,omitzero"`
+	CreatedAt                 string                   `json:"created_at,omitzero"`
+	UpdatedAt                 *string                  `json:"updated_at,omitzero"`
+	AgentUpdatedAt            *string                  `json:"agent_updated_at,omitzero"`
+	Events                    []OperationEvent         `json:"events,omitzero"`
+	Message                   *string                  `json:"message,omitzero"`
+	Error                     *string                  `json:"error,omitzero"`
+	ErrorDetails              *string                  `json:"error_details,omitzero"`
+	FailedStage               *string                  `json:"failed_stage,omitzero"`
+	RollbackError             *string                  `json:"rollback_error,omitzero"`
+	RollbackErrorDetails      *string                  `json:"rollback_error_details,omitzero"`
+	ConfigVersion             *string                  `json:"config_version,omitzero"`
+	ConfigRevision            *Int                     `json:"config_revision,omitzero"`
+	SHA256                    *string                  `json:"sha256,omitzero"`
+	SourceSHA256              *string                  `json:"source_sha256,omitzero"`
+	Submitted                 *bool                    `json:"submitted,omitzero"`
+	PreviousRunning           *bool                    `json:"previous_running,omitzero"`
+	Health                    json.RawMessage          `json:"health,omitzero"`
+	Pending                   *bool                    `json:"pending,omitzero"`
+	HTTPStatus                *Int                     `json:"http_status,omitzero"`
+	ManualRollback            *bool                    `json:"manual_rollback,omitzero"`
+	RollbackRejected          *bool                    `json:"rollback_rejected,omitzero"`
+	RollbackMessage           *string                  `json:"rollback_message,omitzero"`
+	DNSChecks                 []DeploymentDNSCheck     `json:"dns_checks,omitzero"`
+	DNSCheckedAt              *string                  `json:"dns_checked_at,omitzero"`
+	PreparedContent           *PreparedContent         `json:"prepared_content,omitzero"`
+	OxiDNSValidationReceipt   *OxiDNSValidationReceipt `json:"oxidns_validation_receipt,omitzero"`
+	HAPublication             *HAPublicationSummary    `json:"ha_publication,omitzero"`
+	IPv6VerificationRequested *bool                    `json:"ipv6_verification_requested,omitzero"`
+	// Restart, FileCount, ProviderCount and RuleCount are response-only
+	// members of a publish result; journals in storage never hold them.
+	Restart       json.RawMessage `json:"restart,omitzero"`
+	FileCount     *Int            `json:"file_count,omitzero"`
+	ProviderCount *Int            `json:"provider_count,omitzero"`
+	RuleCount     *Int            `json:"rule_count,omitzero"`
 }
-
-// UnmarshalJSON decodes Deployment with stored-member preservation and R5 fallback.
-func (r *Deployment) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when Deployment is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *Deployment) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged Deployment members.
-func (r Deployment) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DeploymentDNSCheck is a persisted bounded DNS report item.
 type DeploymentDNSCheck struct {
-	Name    string  `json:"name"`
-	Level   string  `json:"level"`
-	Message string  `json:"message"`
-	Fix     *string `json:"fix"`
-	Fields  Fields
-	raw     Raw
+	Name    string  `json:"name,omitzero"`
+	Level   string  `json:"level,omitzero"`
+	Message string  `json:"message,omitzero"`
+	Fix     *string `json:"fix,omitzero"`
 }
-
-// UnmarshalJSON decodes DeploymentDNSCheck with stored-member preservation and R5 fallback.
-func (r *DeploymentDNSCheck) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DeploymentDNSCheck is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DeploymentDNSCheck) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DeploymentDNSCheck members.
-func (r DeploymentDNSCheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // PreparedContent records immutable prepared content identities without recalculating them.
 type PreparedContent struct {
-	Fingerprint          string       `json:"fingerprint"`
-	ProfileID            string       `json:"profile_id"`
-	ServiceType          string       `json:"service_type"`
-	ConfigPath           string       `json:"config_path"`
-	BaseURL              string       `json:"base_url"`
-	Files                *Map[string] `json:"files"`
-	DeployedConfigSHA256 *string      `json:"deployed_config_sha256"`
-	SettingsDigest       *string      `json:"settings_digest"`
-	Fields               Fields
-	raw                  Raw
+	Fingerprint          string              `json:"fingerprint,omitzero"`
+	ProfileID            string              `json:"profile_id,omitzero"`
+	ServiceType          string              `json:"service_type,omitzero"`
+	ConfigPath           string              `json:"config_path,omitzero"`
+	BaseURL              string              `json:"base_url,omitzero"`
+	Files                *OrderedMap[string] `json:"files,omitzero"`
+	DeployedConfigSHA256 *string             `json:"deployed_config_sha256,omitzero"`
+	SettingsDigest       *string             `json:"settings_digest,omitzero"`
 }
-
-// UnmarshalJSON decodes PreparedContent with stored-member preservation and R5 fallback.
-func (r *PreparedContent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when PreparedContent is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *PreparedContent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged PreparedContent members.
-func (r PreparedContent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // AppliedContent is the confirmed current content pointer, not an inferred deployment outcome.
 type AppliedContent struct {
-	Fingerprint          string       `json:"fingerprint"`
-	ProfileID            string       `json:"profile_id"`
-	ServiceType          string       `json:"service_type"`
-	ConfigPath           string       `json:"config_path"`
-	BaseURL              string       `json:"base_url"`
-	Files                *Map[string] `json:"files"`
-	DeployedConfigSHA256 *string      `json:"deployed_config_sha256"`
-	SettingsDigest       *string      `json:"settings_digest"`
-	ConfigVersion        string       `json:"config_version"`
-	DeploymentID         string       `json:"deployment_id"`
-	Fields               Fields
-	raw                  Raw
+	Fingerprint          string              `json:"fingerprint,omitzero"`
+	ProfileID            string              `json:"profile_id,omitzero"`
+	ServiceType          string              `json:"service_type,omitzero"`
+	ConfigPath           string              `json:"config_path,omitzero"`
+	BaseURL              string              `json:"base_url,omitzero"`
+	Files                *OrderedMap[string] `json:"files,omitzero"`
+	DeployedConfigSHA256 *string             `json:"deployed_config_sha256,omitzero"`
+	SettingsDigest       *string             `json:"settings_digest,omitzero"`
+	ConfigVersion        string              `json:"config_version,omitzero"`
+	DeploymentID         string              `json:"deployment_id,omitzero"`
 }
-
-// UnmarshalJSON decodes AppliedContent with stored-member preservation and R5 fallback.
-func (r *AppliedContent) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when AppliedContent is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *AppliedContent) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged AppliedContent members.
-func (r AppliedContent) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // OxiDNSValidationReceipt holds server-issued activation evidence; decoding does not validate or mint a receipt.
 type OxiDNSValidationReceipt struct {
-	Version      Int    `json:"version"`
-	RulesSHA256  string `json:"rules_sha256"`
-	AgentID      string `json:"agent_id"`
-	DeploymentID string `json:"deployment_id"`
-	ProfileID    string `json:"profile_id"`
-	ServiceType  string `json:"service_type"`
-	SHA256       string `json:"sha256"`
-	Fingerprint  string `json:"fingerprint"`
-	Fields       Fields
-	raw          Raw
+	Version      Int    `json:"version,omitzero"`
+	RulesSHA256  string `json:"rules_sha256,omitzero"`
+	AgentID      string `json:"agent_id,omitzero"`
+	DeploymentID string `json:"deployment_id,omitzero"`
+	ProfileID    string `json:"profile_id,omitzero"`
+	ServiceType  string `json:"service_type,omitzero"`
+	SHA256       string `json:"sha256,omitzero"`
+	Fingerprint  string `json:"fingerprint,omitzero"`
 }
-
-// UnmarshalJSON decodes OxiDNSValidationReceipt with stored-member preservation and R5 fallback.
-func (r *OxiDNSValidationReceipt) UnmarshalJSON(data []byte) error {
-	return DecodeRecord(data, r, &r.raw)
-}
-
-// Clear drops a declared member (by JSON name) when OxiDNSValidationReceipt is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *OxiDNSValidationReceipt) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged OxiDNSValidationReceipt members.
-func (r OxiDNSValidationReceipt) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // AgentUpgrade is the durable latest upgrade, owned by UpdateID.
 type AgentUpgrade struct {
-	UpdateID           string               `json:"update_id"`
-	TargetVersion      string               `json:"target_version"`
-	PreviousVersion    string               `json:"previous_version"`
-	Status             string               `json:"status"`
-	AgentID            string               `json:"agent_id"`
-	StartedAt          float64              `json:"started_at"`
-	UpdatedAt          float64              `json:"updated_at"`
-	Protocol           Int                  `json:"protocol"`
-	Artifacts          Map[UpgradeArtifact] `json:"artifacts"`
-	Events             []OperationEvent     `json:"events"`
-	Message            *string              `json:"message"`
-	Error              *string              `json:"error"`
-	AgentUpdatedAt     *string              `json:"agent_updated_at"`
-	RecoveryReportedAt *float64             `json:"recovery_reported_at"`
-	Fields             Fields
-	raw                Raw
+	UpdateID           string                      `json:"update_id,omitzero"`
+	TargetVersion      string                      `json:"target_version,omitzero"`
+	PreviousVersion    string                      `json:"previous_version,omitzero"`
+	Status             string                      `json:"status,omitzero"`
+	AgentID            string                      `json:"agent_id,omitzero"`
+	StartedAt          float64                     `json:"started_at"`
+	UpdatedAt          float64                     `json:"updated_at"`
+	Protocol           Int                         `json:"protocol,omitzero"`
+	Artifacts          OrderedMap[UpgradeArtifact] `json:"artifacts,omitzero"`
+	Events             []OperationEvent            `json:"events,omitzero"`
+	Message            *string                     `json:"message,omitzero"`
+	Error              *string                     `json:"error,omitzero"`
+	AgentUpdatedAt     *string                     `json:"agent_updated_at,omitzero"`
+	RecoveryReportedAt *float64                    `json:"recovery_reported_at,omitzero"`
 }
-
-// UnmarshalJSON decodes AgentUpgrade with stored-member preservation and R5 fallback.
-func (r *AgentUpgrade) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when AgentUpgrade is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *AgentUpgrade) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged AgentUpgrade members.
-func (r AgentUpgrade) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// HasMembers reports effective upgrade journal presence without encoding artifacts.
-func (r *AgentUpgrade) HasMembers() bool { return r != nil && recordHasMembers(r, &r.raw) }
 
 // UpgradeArtifact identifies an upgrade artifact without accessing its file.
 type UpgradeArtifact struct {
-	SHA256 string `json:"sha256"`
+	SHA256 string `json:"sha256,omitzero"`
 	Size   Int    `json:"size"`
-	Fields Fields
-	raw    Raw
 }
-
-// UnmarshalJSON decodes UpgradeArtifact with stored-member preservation and R5 fallback.
-func (r *UpgradeArtifact) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when UpgradeArtifact is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *UpgradeArtifact) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged UpgradeArtifact members.
-func (r UpgradeArtifact) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6VerificationSettings selects the client and URL used by readiness checks.
 type IPv6VerificationSettings struct {
-	ClientAgentID string `json:"client_agent_id"`
-	TestURL       string `json:"test_url"`
-	Fields        Fields
-	raw           Raw
+	ClientAgentID string `json:"client_agent_id,omitzero"`
+	TestURL       string `json:"test_url,omitzero"`
 }
-
-// UnmarshalJSON decodes IPv6VerificationSettings with stored-member preservation and R5 fallback.
-func (r *IPv6VerificationSettings) UnmarshalJSON(data []byte) error {
-	return DecodeRecord(data, r, &r.raw)
-}
-
-// Clear drops a declared member (by JSON name) when IPv6VerificationSettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6VerificationSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6VerificationSettings members.
-func (r IPv6VerificationSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6Verification retains a readiness result and the identities against which it was checked.
 type IPv6Verification struct {
-	Status              string                  `json:"status"`
-	Scope               string                  `json:"scope"`
-	Checks              []IPv6VerificationCheck `json:"checks"`
-	StartedAt           string                  `json:"started_at"`
-	StartedEpoch        float64                 `json:"started_epoch"`
-	RunID               string                  `json:"run_id"`
-	ProfileID           string                  `json:"profile_id"`
-	ConfigRevision      *Int                    `json:"config_revision"`
-	DeploymentID        *string                 `json:"deployment_id"`
-	SettingsFingerprint string                  `json:"settings_fingerprint"`
-	TargetFingerprint   string                  `json:"target_fingerprint"`
-	AppliedFingerprint  string                  `json:"applied_fingerprint"`
-	ClientFingerprint   *string                 `json:"client_fingerprint"`
-	Message             *string                 `json:"message"`
-	CheckedAt           *string                 `json:"checked_at"`
-	ErrorCode           *string                 `json:"error_code"`
-	Fields              Fields
-	raw                 Raw
+	Status              string                  `json:"status,omitzero"`
+	Scope               string                  `json:"scope,omitzero"`
+	Checks              []IPv6VerificationCheck `json:"checks,omitzero"`
+	StartedAt           string                  `json:"started_at,omitzero"`
+	StartedEpoch        float64                 `json:"started_epoch,omitzero"`
+	RunID               string                  `json:"run_id,omitzero"`
+	ProfileID           string                  `json:"profile_id,omitzero"`
+	ConfigRevision      *Int                    `json:"config_revision,omitzero"`
+	DeploymentID        *string                 `json:"deployment_id,omitzero"`
+	SettingsFingerprint string                  `json:"settings_fingerprint,omitzero"`
+	TargetFingerprint   string                  `json:"target_fingerprint,omitzero"`
+	AppliedFingerprint  string                  `json:"applied_fingerprint,omitzero"`
+	ClientFingerprint   *string                 `json:"client_fingerprint,omitzero"`
+	Message             *string                 `json:"message,omitzero"`
+	CheckedAt           *string                 `json:"checked_at,omitzero"`
+	ErrorCode           *string                 `json:"error_code,omitzero"`
 }
-
-// UnmarshalJSON decodes IPv6Verification with stored-member preservation and R5 fallback.
-func (r *IPv6Verification) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when IPv6Verification is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6Verification) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6Verification members.
-func (r IPv6Verification) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6VerificationCheck is one stored readiness check.
 type IPv6VerificationCheck struct {
-	ID      string   `json:"id"`
-	Label   string   `json:"label"`
-	Status  string   `json:"status"`
-	Message string   `json:"message"`
-	Details []string `json:"details"`
-	Scope   *string  `json:"scope"`
-	Fields  Fields
-	raw     Raw
+	ID      string   `json:"id,omitzero"`
+	Label   string   `json:"label,omitzero"`
+	Status  string   `json:"status,omitzero"`
+	Message string   `json:"message,omitzero"`
+	Details []string `json:"details,omitzero"`
+	Scope   *string  `json:"scope,omitzero"`
 }
-
-// UnmarshalJSON decodes IPv6VerificationCheck with stored-member preservation and R5 fallback.
-func (r *IPv6VerificationCheck) UnmarshalJSON(data []byte) error {
-	return DecodeRecord(data, r, &r.raw)
-}
-
-// Clear drops a declared member (by JSON name) when IPv6VerificationCheck is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6VerificationCheck) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6VerificationCheck members.
-func (r IPv6VerificationCheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DeploymentFile describes one immutable archive entry; paths and digests are opaque to the codec.
 type DeploymentFile struct {
-	Path   string  `json:"path"`
-	Size   Int     `json:"size"`
-	SHA256 string  `json:"sha256"`
-	Role   string  `json:"role"`
-	Name   *string `json:"name"`
-	Fields Fields
-	raw    Raw
+	Path   string  `json:"path,omitzero"`
+	Size   Int     `json:"size,omitzero"`
+	SHA256 string  `json:"sha256,omitzero"`
+	Role   string  `json:"role,omitzero"`
+	Name   *string `json:"name,omitzero"`
 }
-
-// UnmarshalJSON decodes DeploymentFile with stored-member preservation and R5 fallback.
-func (r *DeploymentFile) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DeploymentFile is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DeploymentFile) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DeploymentFile members.
-func (r DeploymentFile) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DeploymentManifest is a stored manifest counterpart independent of runtime deploy DTOs.
 type DeploymentManifest struct {
-	ProtocolVersion Int              `json:"protocol_version"`
-	DeploymentID    string           `json:"deployment_id"`
-	AgentID         string           `json:"agent_id"`
-	ProfileID       string           `json:"profile_id"`
-	ServiceType     string           `json:"service_type"`
-	ConfigPath      string           `json:"config_path"`
-	Files           []DeploymentFile `json:"files"`
-	ReloadOnly      *bool            `json:"reload_only"`
-	FinalConfig     *bool            `json:"final_config"`
-	Fields          Fields
-	raw             Raw
+	ProtocolVersion Int              `json:"protocol_version,omitzero"`
+	DeploymentID    string           `json:"deployment_id,omitzero"`
+	AgentID         string           `json:"agent_id,omitzero"`
+	ProfileID       string           `json:"profile_id,omitzero"`
+	ServiceType     string           `json:"service_type,omitzero"`
+	ConfigPath      string           `json:"config_path,omitzero"`
+	Files           []DeploymentFile `json:"files,omitzero"`
+	ReloadOnly      *bool            `json:"reload_only,omitzero"`
+	FinalConfig     *bool            `json:"final_config,omitzero"`
 }
-
-// UnmarshalJSON decodes DeploymentManifest with stored-member preservation and R5 fallback.
-func (r *DeploymentManifest) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DeploymentManifest is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DeploymentManifest) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DeploymentManifest members.
-func (r DeploymentManifest) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // AgentRuleSyncReceipt is the fixed external rule-sync envelope; Source is a captured configuration, not a live model graph.
 type AgentRuleSyncReceipt struct {
-	Source           json.RawMessage    `json:"source"`
-	Manifest         DeploymentManifest `json:"manifest"`
-	SHA256           string             `json:"sha256"`
-	ConfigVersion    string             `json:"config_version"`
-	BaseURL          string             `json:"base_url"`
-	ComparisonConfig *DeploymentFile    `json:"comparison_config"`
-	Fields           Fields
-	raw              Raw
+	Source           json.RawMessage    `json:"source,omitzero"`
+	Manifest         DeploymentManifest `json:"manifest,omitzero"`
+	SHA256           string             `json:"sha256,omitzero"`
+	ConfigVersion    string             `json:"config_version,omitzero"`
+	BaseURL          string             `json:"base_url,omitzero"`
+	ComparisonConfig *DeploymentFile    `json:"comparison_config,omitzero"`
 }
 
-// UnmarshalJSON decodes AgentRuleSyncReceipt with stored-member preservation and R5 fallback.
-func (r *AgentRuleSyncReceipt) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+// Plain-record codecs (O18 T1b); see plainCodec.
 
-// Clear drops a declared member (by JSON name) when AgentRuleSyncReceipt is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *AgentRuleSyncReceipt) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+type operationEventWire OperationEvent
 
-// MarshalJSON preserves unknown and unchanged AgentRuleSyncReceipt members.
-func (r AgentRuleSyncReceipt) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+func (*OperationEvent) plainRecord() {}
 
-// MemberJSON returns an owned effective event member, retaining original types.
-func (r *OperationEvent) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+// UnmarshalJSON decodes stored or captured OperationEvent data leniently (DecodeStored).
+func (r *OperationEvent) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*operationEventWire)(r))
 }
 
-// MemberJSON returns one effective deployment member without encoding its artifacts.
-func (r *Deployment) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+func (r *OperationEvent) plainWire() any { return (*operationEventWire)(r) }
+
+// MarshalJSON writes the OperationEvent members in declaration order.
+func (r OperationEvent) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type deploymentWire Deployment
+
+func (*Deployment) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured Deployment data leniently (DecodeStored).
+func (r *Deployment) UnmarshalJSON(data []byte) error { return decodePlain(data, (*deploymentWire)(r)) }
+
+func (r *Deployment) plainWire() any { return (*deploymentWire)(r) }
+
+// MarshalJSON writes the Deployment members in declaration order.
+func (r Deployment) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type deploymentDNSCheckWire DeploymentDNSCheck
+
+func (*DeploymentDNSCheck) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured DeploymentDNSCheck data leniently (DecodeStored).
+func (r *DeploymentDNSCheck) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*deploymentDNSCheckWire)(r))
 }
 
-// SetJSON replaces one deployment member using the shared stored-record codec.
-func (r *Deployment) SetJSON(name string, value json.RawMessage) error {
-	return SetMemberJSON(r, &r.raw, name, value)
+func (r *DeploymentDNSCheck) plainWire() any { return (*deploymentDNSCheckWire)(r) }
+
+// MarshalJSON writes the DeploymentDNSCheck members in declaration order.
+func (r DeploymentDNSCheck) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type preparedContentWire PreparedContent
+
+func (*PreparedContent) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured PreparedContent data leniently (DecodeStored).
+func (r *PreparedContent) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*preparedContentWire)(r))
 }
 
-// MemberJSON returns one original DNS report member without encoding extensions.
-func (r *DeploymentDNSCheck) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+func (r *PreparedContent) plainWire() any { return (*preparedContentWire)(r) }
+
+// MarshalJSON writes the PreparedContent members in declaration order.
+func (r PreparedContent) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type appliedContentWire AppliedContent
+
+func (*AppliedContent) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured AppliedContent data leniently (DecodeStored).
+func (r *AppliedContent) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*appliedContentWire)(r))
 }
 
-// MemberJSON returns one effective prepared-content proof member by exact key.
-func (r *PreparedContent) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+func (r *AppliedContent) plainWire() any { return (*appliedContentWire)(r) }
+
+// MarshalJSON writes the AppliedContent members in declaration order.
+func (r AppliedContent) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type oxiDNSValidationReceiptWire OxiDNSValidationReceipt
+
+func (*OxiDNSValidationReceipt) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured OxiDNSValidationReceipt data leniently (DecodeStored).
+func (r *OxiDNSValidationReceipt) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*oxiDNSValidationReceiptWire)(r))
 }
 
-// SetJSON replaces one applied baseline member through the shared codec.
-func (r *AppliedContent) SetJSON(name string, value json.RawMessage) error {
-	return SetMemberJSON(r, &r.raw, name, value)
+func (r *OxiDNSValidationReceipt) plainWire() any { return (*oxiDNSValidationReceiptWire)(r) }
+
+// MarshalJSON writes the OxiDNSValidationReceipt members in declaration order.
+func (r OxiDNSValidationReceipt) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type agentUpgradeWire AgentUpgrade
+
+func (*AgentUpgrade) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured AgentUpgrade data leniently (DecodeStored).
+func (r *AgentUpgrade) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*agentUpgradeWire)(r))
 }
 
-// MemberJSON reads an effective upgrade member without projecting its token type.
-func (r *AgentUpgrade) MemberJSON(name string) (json.RawMessage, bool, error) {
-	return recordMemberJSON(r, &r.raw, name)
+func (r *AgentUpgrade) plainWire() any { return (*agentUpgradeWire)(r) }
+
+// MarshalJSON writes the AgentUpgrade members in declaration order.
+func (r AgentUpgrade) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+// HasMembers reports whether AgentUpgrade holds any value.
+func (r *AgentUpgrade) HasMembers() bool { return r != nil && hasMembers(r) }
+
+type upgradeArtifactWire UpgradeArtifact
+
+func (*UpgradeArtifact) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured UpgradeArtifact data leniently (DecodeStored).
+func (r *UpgradeArtifact) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*upgradeArtifactWire)(r))
 }
 
-// SetJSON applies an explicit JSON value to a declared upgrade member.
-func (r *AgentUpgrade) SetJSON(name string, data json.RawMessage) error {
-	return SetMemberJSON(r, &r.raw, name, data)
+func (r *UpgradeArtifact) plainWire() any { return (*upgradeArtifactWire)(r) }
+
+// MarshalJSON writes the UpgradeArtifact members in declaration order.
+func (r UpgradeArtifact) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type iPv6VerificationSettingsWire IPv6VerificationSettings
+
+func (*IPv6VerificationSettings) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured IPv6VerificationSettings data leniently (DecodeStored).
+func (r *IPv6VerificationSettings) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*iPv6VerificationSettingsWire)(r))
 }
+
+func (r *IPv6VerificationSettings) plainWire() any { return (*iPv6VerificationSettingsWire)(r) }
+
+// MarshalJSON writes the IPv6VerificationSettings members in declaration order.
+func (r IPv6VerificationSettings) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type iPv6VerificationWire IPv6Verification
+
+func (*IPv6Verification) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured IPv6Verification data leniently (DecodeStored).
+func (r *IPv6Verification) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*iPv6VerificationWire)(r))
+}
+
+func (r *IPv6Verification) plainWire() any { return (*iPv6VerificationWire)(r) }
+
+// MarshalJSON writes the IPv6Verification members in declaration order.
+func (r IPv6Verification) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type iPv6VerificationCheckWire IPv6VerificationCheck
+
+func (*IPv6VerificationCheck) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured IPv6VerificationCheck data leniently (DecodeStored).
+func (r *IPv6VerificationCheck) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*iPv6VerificationCheckWire)(r))
+}
+
+func (r *IPv6VerificationCheck) plainWire() any { return (*iPv6VerificationCheckWire)(r) }
+
+// MarshalJSON writes the IPv6VerificationCheck members in declaration order.
+func (r IPv6VerificationCheck) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type deploymentFileWire DeploymentFile
+
+func (*DeploymentFile) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured DeploymentFile data leniently (DecodeStored).
+func (r *DeploymentFile) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*deploymentFileWire)(r))
+}
+
+func (r *DeploymentFile) plainWire() any { return (*deploymentFileWire)(r) }
+
+// MarshalJSON writes the DeploymentFile members in declaration order.
+func (r DeploymentFile) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type deploymentManifestWire DeploymentManifest
+
+func (*DeploymentManifest) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured DeploymentManifest data leniently (DecodeStored).
+func (r *DeploymentManifest) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*deploymentManifestWire)(r))
+}
+
+func (r *DeploymentManifest) plainWire() any { return (*deploymentManifestWire)(r) }
+
+// MarshalJSON writes the DeploymentManifest members in declaration order.
+func (r DeploymentManifest) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+type agentRuleSyncReceiptWire AgentRuleSyncReceipt
+
+func (*AgentRuleSyncReceipt) plainRecord() {}
+
+// UnmarshalJSON decodes stored or captured AgentRuleSyncReceipt data leniently (DecodeStored).
+func (r *AgentRuleSyncReceipt) UnmarshalJSON(data []byte) error {
+	return decodePlain(data, (*agentRuleSyncReceiptWire)(r))
+}
+
+func (r *AgentRuleSyncReceipt) plainWire() any { return (*agentRuleSyncReceiptWire)(r) }
+
+// MarshalJSON writes the AgentRuleSyncReceipt members in declaration order.
+func (r AgentRuleSyncReceipt) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
+
+// HasMembers reports whether Deployment holds any value.
+func (r *Deployment) HasMembers() bool { return r != nil && hasMembers(r) }

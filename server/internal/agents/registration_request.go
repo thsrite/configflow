@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"configflow/internal/model"
@@ -26,7 +27,7 @@ func decodeRegistrationClaim(raw json.RawMessage) registrationClaim {
 		}
 		var text *string
 		if json.Unmarshal(value, &text) != nil || text == nil {
-			if field.name != "profile_id" || !storedAbsent(value, present, nil) {
+			if field.name != "profile_id" || string(bytes.TrimSpace(value)) != "null" {
 				claim.invalid = true
 			}
 			continue
