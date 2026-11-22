@@ -98,6 +98,14 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-33 MERGED 2026-11-22 18:0x (no-Python WP0 inventory + WP3 fixtures into server + pyref replay without
+source hashes + installer stubs in Go (6 tests still run the product's own Docker-HA bootstrap.py / migration check
+under python3) + internal/skipaudit (no new interpreter/tool skips; 91 allowed, list must be empty after the switch)
++ WP9 proddiff Go-vs-Go mode (default still python)). Open question to maintainer: port the shipped Docker-HA
+bootstrap.py + migration check to a Go Agent subcommand (drops python3 from the Agent image).
+In flight after the 15:48–17:00 quota stop (re-prompted 18:0x): T1c author 0cb0740a, T1c tests A 7205d959 / B 878b0757,
+R11+R8+R9 027298ea, T1b review fixes bc2b479d (batch-32: L2/L3/L4 fail closed still to do).
+
 Maintainer 2026-11-22: do the cleanups BEFORE the switch (not after). Order: now T1b (3fc755ef) ∥ T1c (Opus 0cb0740a,
 go-o18-t1c) ∥ R11 allocation caps + R8 + R9 (Opus 027298ea, go-perf-r11); next T1d, remaining O18 C items (T2/T3/T4/T8),
 R13 non-heap 57 MB, proddiff comparator in Go; then O17 idiomatic review; then R12 GC; then final PVE acceptance and
