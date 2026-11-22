@@ -111,10 +111,8 @@ func WriteAgentConfig(c AgentConfig, env Environment) error {
 	return replaceFile(c.Path, data)
 }
 
-// ServiceManager is the service_manager value of every Docker Agent. The
-// string predates s6 and is kept: the Agent, the HA journal and peer
-// configurations compare it, and it means "the image's process supervisor".
-const ServiceManager = "supervisor"
+// ServiceManager is the service_manager value of every Docker Agent.
+const ServiceManager = svc.ContainerManager
 
 // integer accepts an optionally signed decimal surrounded by whitespace.
 func integer(text string) (int, error) {

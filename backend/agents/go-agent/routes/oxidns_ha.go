@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"agent/svc"
 )
 
 const oxidnsHAProtocol = 1
@@ -170,10 +172,13 @@ func loadHAState(cfg *Config) (*haState, error) {
 			return nil, fmt.Errorf("DNS 高可用状态的文件摘要无效，保留现有 keepalived 配置")
 		}
 	}
-	if (state.Service.Manager != "systemd" && state.Service.Manager != "openrc" && state.Service.Manager != "supervisor") || state.Service.Unit != haServiceUnit {
+	// Journals written before 1.9.3-go record the container manager as
+	// "supervisor"; the next save records "s6".
+	state.Service.Manager = svc.NormalizeManager(state.Service.Manager)
+	if (state.Service.Manager != "systemd" && state.Service.Manager != "openrc" && state.Service.Manager != svc.ContainerManager) || state.Service.Unit != haServiceUnit {
 		return nil, fmt.Errorf("DNS 高可用状态的服务记录无效，保留现有 keepalived 配置")
 	}
-	if state.Service.Manager == "supervisor" && !haDigestPattern.MatchString(state.ContainerHostID) {
+	if state.Service.Manager == svc.ContainerManager && !haDigestPattern.MatchString(state.ContainerHostID) {
 		return nil, fmt.Errorf("容器 HA 状态缺少有效的宿主归属信息")
 	}
 	return &state, nil
@@ -225,7 +230,7 @@ func haPlatform(cfg *Config) error {
 	if cfg == nil || cfg.ServiceType != "oxidns" {
 		return fmt.Errorf("DNS 高可用只能在 OxiDNS Agent 上配置")
 	}
-	if cfg.ServiceManager == "supervisor" {
+	if cfg.ServiceManager == svc.ContainerManager {
 		environment := haEnvironment(cfg)
 		if !environment.Ready {
 			return fmt.Errorf("%s", strings.Join(environment.Blockers, "；"))
@@ -410,12 +415,12 @@ func haPreflight(cfg *Config, spec OxiDNSHASpec, state *haState) ([]string, stri
 		}
 	}
 	add(haPlatform(cfg))
-	if cfg != nil && cfg.ServiceManager == "supervisor" {
+	if cfg != nil && cfg.ServiceManager == svc.ContainerManager {
 		environment := haEnvironment(cfg)
 		if spec.SelfIP != cfg.AgentIP {
 			add(fmt.Errorf("HA 本机地址必须与容器固定 AGENT_IP 一致"))
 		}
-		if state != nil && (state.Service.Manager != "supervisor" || state.ContainerHostID != environment.HostID) {
+		if state != nil && (state.Service.Manager != svc.ContainerManager || state.ContainerHostID != environment.HostID) {
 			add(fmt.Errorf("HA 记录属于其他宿主或安装方式，已保留原记录，请先确认并停用"))
 		}
 	}
@@ -604,7 +609,7 @@ func ReapplyOxiDNSHA(cfg *Config) {
 	if cfg == nil || cfg.ServiceType != "oxidns" || cfg.AgentConfigFile == "" {
 		return
 	}
-	if cfg.ServiceManager == "supervisor" && haDockerOptIn() {
+	if cfg.ServiceManager == svc.ContainerManager && haDockerOptIn() {
 		// A companion can be recreated long after the application started.
 		// Only an owned active journal may restart its one managed program.
 		go func() {

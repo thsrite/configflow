@@ -117,11 +117,11 @@ func TestLogSourcesOpenRCOutputLog(t *testing.T) {
 }
 
 func TestLogSourcesDockerImage(t *testing.T) {
-	dir := stubLogEnvironment(t, "supervisor", nil)
+	dir := stubLogEnvironment(t, "s6", nil)
 	current := filepath.Join(dir, "container", "mihomo", "current")
 	os.MkdirAll(filepath.Dir(current), 0o755)
 	os.WriteFile(current, []byte("out and err\n"), 0o644)
-	cfg := &Config{ServiceType: "mihomo", ServiceManager: "supervisor", ServiceUnit: "mihomo", ConfigPath: filepath.Join(dir, "config.yaml")}
+	cfg := &Config{ServiceType: "mihomo", ServiceManager: "s6", ServiceUnit: "mihomo", ConfigPath: filepath.Join(dir, "config.yaml")}
 	sources := ResolveLogSources(cfg)
 	if core := sourceByID(t, sources, "core"); core.Path != current || core.Kind != "file" || !core.Clearable {
 		t.Fatalf("core = %+v", core)
@@ -135,7 +135,7 @@ func TestLogSourcesDockerImage(t *testing.T) {
 		t.Fatalf("docker agent = %+v", agent)
 	}
 	// Before the core first writes, the source names where it will appear.
-	cfg = &Config{ServiceType: "oxidns", ServiceManager: "supervisor", ServiceUnit: "oxidns", ConfigPath: filepath.Join(dir, "config.yaml")}
+	cfg = &Config{ServiceType: "oxidns", ServiceManager: "s6", ServiceUnit: "oxidns", ConfigPath: filepath.Join(dir, "config.yaml")}
 	if core := sourceByID(t, ResolveLogSources(cfg), "core"); core.Kind != "unavailable" || core.Path != filepath.Join(dir, "container", "oxidns", "current") {
 		t.Fatalf("missing oxidns log = %+v", core)
 	}

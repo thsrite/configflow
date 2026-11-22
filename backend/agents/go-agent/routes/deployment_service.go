@@ -30,7 +30,7 @@ func validateServiceLifecycle(cfg *Config) error {
 		return fmt.Errorf("unsupported service type")
 	}
 	switch cfg.ServiceManager {
-	case "supervisor", "systemd", "openrc":
+	case svc.ContainerManager, "systemd", "openrc":
 		if cfg.ServiceUnit == "" {
 			return fmt.Errorf("service_unit is required")
 		}
@@ -56,7 +56,7 @@ func serviceCommand(cfg *Config, action string) ([]byte, error) {
 		cmd = exec.CommandContext(ctx, "systemctl", a, cfg.ServiceUnit)
 	case "openrc":
 		cmd = exec.CommandContext(ctx, "rc-service", cfg.ServiceUnit, action)
-	case "supervisor":
+	case svc.ContainerManager:
 		return containerCommand(ctx, cfg.ServiceUnit, action)
 	case "command":
 		value := cfg.StatusCommand
@@ -75,7 +75,7 @@ func serviceCommand(cfg *Config, action string) ([]byte, error) {
 }
 
 // containerServices controls the programs of the Docker image (service
-// manager "supervisor", which names the image's process supervisor, now s6).
+// manager "s6").
 var containerServices svc.Manager = svc.NewS6()
 
 // containerCommand runs a service action through containerServices and
@@ -98,7 +98,7 @@ func serviceRunning(cfg *Config) (bool, error) {
 	if e := validateServiceLifecycle(cfg); e != nil {
 		return false, e
 	}
-	if cfg.ServiceManager == "supervisor" {
+	if cfg.ServiceManager == svc.ContainerManager {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		status, e := containerServices.Status(ctx, cfg.ServiceUnit)

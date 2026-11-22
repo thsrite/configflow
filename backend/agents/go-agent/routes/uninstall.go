@@ -98,7 +98,7 @@ func UninstallHandler(cfg *Config) http.HandlerFunc {
 			}
 
 			// 4. 删除服务文件和停止服务
-			if initSystem == "supervisor" {
+			if initSystem == svc.ContainerManager {
 				// Docker 镜像：停止核心，最后停止 Agent 自己（s6 不再拉起）
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				for _, program := range []string{cfg.ServiceName, "agent-" + cfg.ServiceName} {
@@ -142,7 +142,7 @@ func UninstallHandler(cfg *Config) http.HandlerFunc {
 func detectInitSystem() string {
 	// Docker 镜像（s6 管理 Agent 与核心）
 	if svc.InImage() {
-		return "supervisor"
+		return svc.ContainerManager
 	}
 
 	// 检查 systemctl 是否存在

@@ -1,7 +1,7 @@
 # Agent 镜像去掉 Python（nopy-agent-image）
 
-分支 `go-nopy-agent-image`（基于 batch-35 的 84bd921f2）。盘点见 `no-python-product.md` 第 7–11 项，设计决定由协调者确认（2026-11-22）：
-`service_manager` 保留 `"supervisor"` 协议值；核心日志 stdout/stderr 合并；host 模式辅助容器用 `ha-companion-serve` 控制套接字；
+分支 `go-nopy-agent-image`（基于 batch-35 的 84bd921f2）。盘点见 `no-python-product.md` 第 7–11 项，设计决定由协调者确认（2026-11-22；第 1 点 2026-11-23 由维护者改为下述做法）：
+`service_manager` 新写入一律 `"s6"`，读到旧值 `"supervisor"` 当同义词（下个大版本删除）；核心日志 stdout/stderr 合并；host 模式辅助容器用 `ha-companion-serve` 控制套接字；
 旧面板脚本/旧部署用 `supervisorctl`、`python3` 过渡兼容脚本（下一个大版本删除）；startsecs/startretries 用 finish 脚本复现。
 
 状态：**完成**，Agent 1.9.3-go。行为变化写在 `behaviour-changes.md` 末节；文档 `doc/guide/oxidns-ha.md`、`doc/manual/agents.md#logs`。
@@ -13,7 +13,7 @@ s6 定义由 `configflow-agent docker-config` 在每次容器启动时从 `svc.S
 
 | 程序 | 启动命令 | 开机启动 | 自动重启 / startsecs / startretries | 停止信号与等待 | 环境、用户 | 日志与轮转 |
 |---|---|---|---|---|---|---|
-| `agent-mihomo` / `agent-mosdns` / `agent-oxidns` | 旧：`configflow-agent -config=/opt/configflow-agent/config-<核心>.json`；新：相同 | 旧：入口脚本 sed 改 `autostart`；新：启用的核心连同其 Agent 写进 user bundle | 旧：autorestart=true，默认 startsecs=1、startretries=3；新：s6 总是拉起，finish 复现 1 秒/3 次后 FATAL | 旧：TERM，默认 10 秒后 KILL；新：TERM，`timeout-kill` 10000 | 旧：继承 supervisord（容器环境），root；新：`with-contenv`（容器环境；ha-compact 已去掉 INSTALL_KEY），root | 旧/新：容器标准输出（docker logs） |
+| `agent-mihomo` / `agent-mosdns` / `agent-oxidns`（`service_manager`：旧 `"supervisor"` → 新 `"s6"`） | 旧：`configflow-agent -config=/opt/configflow-agent/config-<核心>.json`；新：相同 | 旧：入口脚本 sed 改 `autostart`；新：启用的核心连同其 Agent 写进 user bundle | 旧：autorestart=true，默认 startsecs=1、startretries=3；新：s6 总是拉起，finish 复现 1 秒/3 次后 FATAL | 旧：TERM，默认 10 秒后 KILL；新：TERM，`timeout-kill` 10000 | 旧：继承 supervisord（容器环境），root；新：`with-contenv`（容器环境；ha-compact 已去掉 INSTALL_KEY），root | 旧/新：容器标准输出（docker logs） |
 | `mihomo` | 旧：`mihomo -d /etc/mihomo`，单服务模式由 PYSUPERVISOR 改为 `-d <目录> -f <配置>`；新：`svc.CoreArgv` 写入 `/run/configflow-svc/mihomo.argv`（JSON 数组，路径可含空格和 `%`），AIO 用默认 | 同上 | 旧：startsecs=3、startretries=3；新：相同（finish） | 旧：TERM/10 秒；新：TERM/`timeout-kill` 10000 | 同上 | 旧：`/var/log/supervisor/mihomo.log` 与 `.err.log` 各 10MB×3；新：stdout+stderr 合并 → `mihomo-log`（s6-log `n3 s10485760`）→ `/var/log/configflow/mihomo/current` |
 | `mosdns` | 旧：`mosdns start -c <配置> -d <目录>`（单服务模式改写）；新：同上，argv 文件 | 同上 | 3 秒 / 3 次 | TERM / 10 秒 | 同上 | 旧：stdout 走 Supervisor AUTO 子日志，stderr `/etc/mosdns/mosdns.err.log` 10MB×3（在数据卷里）；新：合并 → `/var/log/configflow/mosdns/current` 10MB×3 |
 | `oxidns` | 旧：`oxidns start -c <配置> -d <目录>`；新：同上 | 同上 | 3 秒 / 3 次 | TERM / 10 秒 | 同上 | 旧：`/var/log/supervisor/oxidns.log`、`.err.log` 10MB×3；新：合并 → `/var/log/configflow/oxidns/current` |
@@ -75,8 +75,10 @@ RUNNING / STARTING（启动期内）/ BACKOFF（等待重启）/ STOPPING / STOP
 - 实验 `server/parity/lab/nopy-agent-image-lab.sh ~/.cache/nopy-base`（A B C、D E、F G H、F2 G2 分批）→ 每批 `LAB PASS`。
 - rebase 到 go@2c592d7d7 后，与验证时的树只差 `server/HANDOFF.md`。
 
-### 待确认
+### service_manager 改为 "s6"（2026-11-23）
 
-- HANDOFF（go@2c592d7d7）记录的裁定是 `service_manager` 改新值 `"s6"`、`"supervisor"` 作同义词；协调者对设计提问的回复是“全部按推荐”
-  （保留 `"supervisor"`）。本分支按回复实现；若要改为 `"s6"`，改动面：`docker-config` 写 `"s6"`，Agent 里约 20 处比较改为
-  “容器管理器”判断（同时接受两种值），HA 记录 `Service.Manager` 与 dns_follow 对端比较按同义处理，测试相应增加两种值的用例。
+- `svc.ContainerManager = "s6"`、`svc.LegacyContainerManager = "supervisor"`（只读同义词）；载入 Agent 配置、HA journal、dns_follow 对端配置时
+  `NormalizeManager`，其余比较只认 `"s6"`；`docker-config` 写 `"s6"`；init 检测返回 `"s6"`；`upgrade.Config.Docker()` 两种都认。
+- 测试：旧 journal 恢复 + 新 journal 写 `"s6"`（host、macvlan）、旧配置读/存、dns_follow 旧对端、upgrade Docker 判断、`svc.NormalizeManager`。
+- 实验 D2：旧镜像开启 macvlan HA（journal `"supervisor"`），同一数据卷换新镜像，Agent 恢复 keepalived、VIP 在、配置为 `"s6"`，DELETE 正常。
+- 全套实验 `A B C D D2 E F F2 G G2 H` → `LAB PASS`。

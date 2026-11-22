@@ -47,7 +47,7 @@ func TestAIOForwardingStandaloneLayoutRecognition(t *testing.T) {
 		{"AIO unit", func(f *aioFixture) { f.cfg.AgentServiceUnit = "configflow-agent-mihomo" }},
 		{"native AIO flag", func(f *aioFixture) { f.cfg.NativeAIO = true }},
 		{"command manager", func(f *aioFixture) { f.cfg.ServiceManager = "command" }},
-		{"supervisor manager", func(f *aioFixture) { f.cfg.ServiceManager = "supervisor" }},
+		{"supervisor manager", func(f *aioFixture) { f.cfg.ServiceManager = "s6" }},
 		{"mixed layout directory", func(f *aioFixture) { os.Mkdir(filepath.Join(aioAgentRoot, "mihomo"), 0755) }},
 		{"mixed layout file", func(f *aioFixture) { os.WriteFile(filepath.Join(aioAgentRoot, "mihomo"), nil, 0644) }},
 	} {

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+
+	"agent/svc"
 )
 
 const Version = "1.9.3-go"
@@ -34,7 +36,7 @@ func ReadConfig(path string) (*Config, error) {
 func (c *Config) String(key string) string { value, _ := c.Values[key].(string); return value }
 func (c *Config) Port() int                { value, _ := c.Values["agent_port"].(float64); return int(value) }
 func (c *Config) Docker() bool {
-	return c.String("deployment_method") == "docker" || c.String("service_manager") == "supervisor" || strings.Contains(c.String("restart_command"), "supervisorctl")
+	return c.String("deployment_method") == "docker" || svc.IsContainerManager(c.String("service_manager")) || strings.Contains(c.String("restart_command"), "supervisorctl")
 }
 func (c *Config) AgentUnit() string {
 	if value := c.String("agent_service_unit"); value != "" {

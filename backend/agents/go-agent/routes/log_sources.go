@@ -203,7 +203,7 @@ func serviceLogSources(manager, unit, idPrefix, label string) []LogSource {
 		}
 	case "openrc":
 		stdout, stderr = openrcOutputs(unit)
-	case "supervisor":
+	case svc.ContainerManager:
 		// Docker image: cores log through s6-log (stdout and stderr in one
 		// file); the Agent and keepalived write to the container output.
 		stdout = logContainerFile(unit)
@@ -236,7 +236,7 @@ func trimUnit(unit string) string {
 
 func coreServiceManager(cfg *Config) string {
 	switch cfg.ServiceManager {
-	case "systemd", "openrc", "supervisor":
+	case "systemd", "openrc", svc.ContainerManager:
 		return cfg.ServiceManager
 	}
 	return logDetectInitSystem()
@@ -256,7 +256,7 @@ func agentLogSources(cfg *Config) []LogSource {
 	unit := trimUnit(cfg.AgentServiceUnit)
 	if unit == "" {
 		unit = "configflow-agent"
-		if manager == "supervisor" {
+		if manager == svc.ContainerManager {
 			unit = "agent-" + cfg.ServiceType
 		}
 	}

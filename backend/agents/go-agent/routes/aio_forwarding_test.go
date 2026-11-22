@@ -633,7 +633,7 @@ func TestAIOForwardingStatusMatrix(t *testing.T) {
 			gatewayGeteuid = func() int { return 1000 }
 		}, map[string]interface{}{"supported": false}},
 		{"container", "systemd", func(t *testing.T, f *aioFixture) {
-			f.cfg.ServiceManager = "supervisor"
+			f.cfg.ServiceManager = "s6"
 		}, map[string]interface{}{"supported": false}},
 	} {
 		for _, layout := range aioLayouts {

@@ -21,6 +21,8 @@
 #   D  macvlan Docker HA through the Agent API: keepalived started by the
 #      Agent, VIP present, kill -9 restart, docker stop releases keepalived
 #      first, restart recovers from the journal, DELETE stops it
+#   D2 HA enabled on the base image (journal says "supervisor"), container
+#      recreated with the new image: recovered from the legacy journal
 #   E  host-mode Docker HA (shared sandbox netns) with the companion: control
 #      socket, keepalived started/stopped in the companion by the Agent
 #   F  compact Compose (macvlan): first install + offline restart on the new
@@ -41,7 +43,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 base=$(cd "$1" && pwd)
 shift
-scenarios=${*:-A B C D E F F2 G G2 H}
+scenarios=${*:-A B C D D2 E F F2 G G2 H}
 lab=${LAB_DIR:-$HOME/.cache/cf-nopy-image-lab}
 port=${LAB_PORT:-25831}
 docker=(sudo docker)
@@ -347,6 +349,42 @@ scenario_D() {
   wait_state $c configflow-keepalived STOPPED
   ! vip_present $c 198.51.100.100 || fail "D: VIP left after removal"
   ok "DELETE: keepalived stopped, VIP released"
+  stop_check $c 30
+}
+
+# D2: HA journal written by the previous image ("supervisor") recovered by
+# the new image's Agent after the container is recreated on the same volumes.
+scenario_D2() {
+  say "D2: macvlan HA enabled on the base image, container recreated with the new image"
+  local c=cfn-d2 d=$lab/d2
+  preset_identity "$d/agent" oxidns
+  sudo mkdir -p "$d/oxidns" "$d/ha"
+  run_d2() {
+    "${docker[@]}" run -d --name $c --network $net --ip 198.51.100.23 --cap-add NET_ADMIN --cap-add NET_RAW \
+      -e SERVICE_TYPE=oxidns -e SERVER_URL=http://192.0.2.1:9 -e AGENT_NAME=lab-d2 -e AGENT_IP=198.51.100.23 \
+      -e CONFIGFLOW_DNS_HA=1 -e CONFIGFLOW_DNS_HA_NETWORK=macvlan --stop-timeout 30 \
+      -v "$d/agent:/opt/configflow-agent" -v "$d/oxidns:/etc/oxidns" -v "$d/ha:/var/lib/configflow-ha" \
+      --mount "type=bind,src=$lab/host-id,dst=/run/configflow-host-machine-id,readonly" "$1" >/dev/null
+  }
+  run_d2 cf-nopy-agent:base
+  local i
+  for i in $(seq 100); do api $c GET /api/oxidns-ha 2>/dev/null | jq -e '.environment.ready == true' >/dev/null 2>&1 && break; sleep 0.3; done
+  api $c PUT /api/oxidns-ha -H 'Content-Type: application/json' --data "$(ha_spec 198.51.100.23 198.51.100.24 198.51.100.102)" > "$lab/d2-apply.json" \
+    || fail "D2: apply on the base image"
+  for i in $(seq 100); do ex $c supervisorctl -c /etc/supervisor/supervisord.conf status configflow-keepalived 2>/dev/null | grep -q RUNNING && break; sleep 0.2; done
+  wait_vip $c 198.51.100.102
+  sudo jq -e '.service.manager == "supervisor"' "$d/agent/oxidns-ha.json" >/dev/null || { sudo cat "$d/agent/oxidns-ha.json" >&2; fail "D2: base journal"; }
+  ok "base image (Supervisor, Python) enabled HA; journal records service.manager \"supervisor\""
+  "${docker[@]}" rm -f $c >/dev/null
+  run_d2 cf-nopy-agent:new
+  wait_state $c configflow-keepalived RUNNING 60
+  wait_vip $c 198.51.100.102
+  ex $c grep -q '"service_manager": "s6"' /opt/configflow-agent/config-oxidns.json || fail "D2: new config value"
+  api $c GET /api/oxidns-ha | jq -e '.managed.active == true and .runtime.keepalived_running == true' >/dev/null || { api $c GET /api/oxidns-ha >&2; fail "D2: status after upgrade"; }
+  ok "new image: legacy journal accepted, Agent recovered keepalived under s6, VIP held; config now says \"s6\""
+  api $c DELETE /api/oxidns-ha | jq -e '.success == true' >/dev/null || fail "D2: remove"
+  wait_state $c configflow-keepalived STOPPED
+  ok "DELETE after upgrade: keepalived stopped"
   stop_check $c 30
 }
 

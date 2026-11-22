@@ -39,7 +39,7 @@ func newHAContainerFixture(t *testing.T, mode string) *haContainerFixture {
 	t.Setenv("CONFIGFLOW_DNS_HA", "1")
 	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", mode)
 	t.Setenv("CONFIGFLOW_DNS_HA_IDENTITY", "")
-	f.cfg.ServiceManager, f.cfg.AgentIP = "supervisor", f.spec.SelfIP
+	f.cfg.ServiceManager, f.cfg.AgentIP = "s6", f.spec.SelfIP
 	oldRead, oldStat, oldPeer := haEnvironmentRead, haEnvironmentStat, haCompanionPeerCheck
 	t.Cleanup(func() { haEnvironmentRead, haEnvironmentStat, haCompanionPeerCheck = oldRead, oldStat, oldPeer })
 	for _, path := range []string{filepath.Dir(f.cfg.AgentConfigFile), filepath.Dir(f.cfg.ConfigPath), haKeepalivedDir} {
@@ -98,7 +98,7 @@ func (f *haContainerFixture) setEvidence(t *testing.T, evidence haCompanionEvide
 
 func TestHADockerNotOptedInDoesNotProbeEnvironment(t *testing.T) {
 	f := newHAFixture(t)
-	f.cfg.ServiceManager = "supervisor"
+	f.cfg.ServiceManager = "s6"
 	t.Setenv("CONFIGFLOW_DNS_HA", "")
 	previous := haEnvironmentRead
 	t.Cleanup(func() { haEnvironmentRead = previous })
@@ -211,7 +211,7 @@ func TestHADockerApplyHandoffRecoveryAndDisableStayOwned(t *testing.T) {
 				t.Fatal(err)
 			}
 			state := mustHAState(t, f.cfg)
-			if state.Service.Manager != "supervisor" || state.ContainerHostID != haHostIdentity(haHostIDPath) {
+			if state.Service.Manager != "s6" || state.ContainerHostID != haHostIdentity(haHostIDPath) {
 				t.Fatalf("ownership not retained: %+v", state)
 			}
 			if err := changeHAHandoff(f.cfg, "publish-1", false); err != nil {
@@ -369,5 +369,53 @@ func TestHAContainerControlsTheRightKeepalived(t *testing.T) {
 	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", "macvlan")
 	if haContainerManager() != containerServices {
 		t.Fatal("macvlan mode must control this container's keepalived")
+	}
+}
+
+// Journals written by images before 1.9.3-go record the container manager
+// as "supervisor" (also what Docker Agents still on such an image write).
+// They are recovered like new ones, and the next save records "s6".
+func TestHAContainerRecoversLegacySupervisorJournal(t *testing.T) {
+	for _, mode := range []string{"host", "macvlan"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newHAContainerFixture(t, mode)
+			if err := applyOxiDNSHA(f.cfg, f.spec); err != nil {
+				t.Fatal(err)
+			}
+			path, err := haJournalPath(f.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			data, _ := os.ReadFile(path)
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			if manager := raw["service"].(map[string]any)["manager"]; manager != "s6" {
+				t.Fatalf("new journal records %v, want s6", manager)
+			}
+			raw["service"].(map[string]any)["manager"] = "supervisor"
+			data, _ = json.Marshal(raw)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			state := mustHAState(t, f.cfg)
+			if state.Service.Manager != "s6" {
+				t.Fatalf("legacy journal read as %q", state.Service.Manager)
+			}
+			if err := haContainerOwnership(f.cfg, state, haEnvironment(f.cfg)); err != nil {
+				t.Fatalf("legacy journal refused: %v", err)
+			}
+			f.running, f.commands = false, nil
+			if err := reconcileOxiDNSHA(f.cfg); err != nil || !f.running || len(f.commands) != 1 {
+				t.Fatalf("legacy journal not recovered: %v %v", err, f.commands)
+			}
+			// A config written before 1.9.3-go is read as the same manager.
+			legacy := *f.cfg
+			legacy.ServiceManager = "supervisor"
+			if err := haContainerOwnership(&legacy, state, haEnvironment(f.cfg)); err == nil {
+				t.Fatal("an unnormalized legacy value must not reach the comparisons")
+			}
+		})
 	}
 }

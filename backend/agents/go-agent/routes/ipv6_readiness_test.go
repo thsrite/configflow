@@ -478,7 +478,7 @@ func TestIPv6PrepareUnsupportedPlatformDoesNotCreateOperationFiles(t *testing.T)
 			f := newIPv6Fixture(t)
 			switch scenario {
 			case "container":
-				f.cfg.ServiceManager = "supervisor"
+				f.cfg.ServiceManager = "s6"
 			case "non-root":
 				gatewayGeteuid = func() int { return 1000 }
 			case "non-linux":

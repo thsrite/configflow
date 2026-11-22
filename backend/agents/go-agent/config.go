@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"agent/svc"
 )
 
 // Config 结构体完整定义了 agent 的所有配置项
@@ -76,6 +78,8 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.HeartbeatInterval == 0 {
 		cfg.HeartbeatInterval = 30 // 设置默认心跳间隔
 	}
+	// Images before 1.9.3-go wrote "supervisor"; the next Save writes "s6".
+	cfg.ServiceManager = svc.NormalizeManager(cfg.ServiceManager)
 
 	cfg.filePath = path
 	return &cfg, nil

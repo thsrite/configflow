@@ -64,7 +64,7 @@ func TestWriteAgentConfig(t *testing.T) {
 			"server_url": "http://192.0.2.10:5010", "agent_name": "dns-a", "agent_host": "0.0.0.0", "agent_port": 8082.0,
 			"agent_ip": "192.0.2.21", "service_type": "oxidns", "deployment_method": "docker", "service_name": "oxidns",
 			"config_path": "/etc/oxidns/config.yaml", "restart_command": "/usr/local/bin/configflow-agent svc restart oxidns",
-			"service_manager": "supervisor", "service_unit": "oxidns", "service_binary": "/usr/local/bin/oxidns",
+			"service_manager": "s6", "service_unit": "oxidns", "service_binary": "/usr/local/bin/oxidns",
 			"health_url": "", "health_dns_address": "127.0.0.1:53", "health_dns_name": "example.com",
 			"deployment_health_timeout": 30.0, "heartbeat_interval": 30.0,
 			"registration_token": "one-use", "registration_key": "key-1"},

@@ -541,3 +541,21 @@ func TestListenReplacesOnlyStaleSockets(t *testing.T) {
 		t.Fatal("a regular file was replaced")
 	}
 }
+
+func TestManagerValues(t *testing.T) {
+	tests := []struct {
+		in, normal string
+		container  bool
+	}{
+		{"s6", "s6", true},
+		{"supervisor", "s6", true},
+		{"systemd", "systemd", false},
+		{"openrc", "openrc", false},
+		{"", "", false},
+	}
+	for _, tt := range tests {
+		if got := NormalizeManager(tt.in); got != tt.normal || IsContainerManager(tt.in) != tt.container {
+			t.Errorf("%q: %q %t", tt.in, got, IsContainerManager(tt.in))
+		}
+	}
+}

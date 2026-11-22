@@ -271,7 +271,7 @@ func TestOxiDNSHAPreviewBlockers(t *testing.T) {
 			os.WriteFile(haMainConfigPath(), []byte(haBlockBegin+"\ninclude x\n"), 0644)
 		}, []string{"标记不完整"}},
 		{"not-root", func(_ *testing.T, _ *haFixture, _ *OxiDNSHASpec) { haGeteuid = func() int { return 1000 } }, []string{"root 权限"}},
-		{"container", func(_ *testing.T, f *haFixture, _ *OxiDNSHASpec) { f.cfg.ServiceManager = "supervisor" }, []string{"未显式启用 DNS 高可用"}},
+		{"container", func(_ *testing.T, f *haFixture, _ *OxiDNSHASpec) { f.cfg.ServiceManager = "s6" }, []string{"未显式启用 DNS 高可用"}},
 		{"not-linux", func(_ *testing.T, _ *haFixture, _ *OxiDNSHASpec) { haOS = "darwin" }, []string{"仅支持 Linux"}},
 		{"unsafe-script-path", func(_ *testing.T, _ *haFixture, _ *OxiDNSHASpec) {
 			haExecutable = func() (string, error) { return "/opt/it's/agent", nil }

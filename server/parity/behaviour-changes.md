@@ -2903,8 +2903,16 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - **进程管理**：`docker/Dockerfile.agent` 不再安装 `supervisor`、`python3`、`py3-pip`、`setuptools`；PID 1 为 s6-overlay 3.2.3.2
   （noarch + x86_64/aarch64，SHA256 写死）。入口仍是 `/entrypoint.sh`，准备完后 `exec /init`；默认 CMD 为 `/init`，旧容器/Compose 里
   显式写的 `/usr/bin/supervisord …` 会被入口换成 `/init`。服务对照表见 `progress/nopy-agent-image.md`。
-  - `config-<核心>.json` 的 `service_manager` 仍为 `"supervisor"`（协议值，含义改为“镜像内的进程管理器”，HA 记录和对端配置比较它，
-    不做迁移）；`restart_command` 改为 `/usr/local/bin/configflow-agent svc restart <核心>`。
+  - `service_manager` 新值 **`"s6"`**：入口写入的 `config-<核心>.json`、Agent 新写的 HA journal（`service.manager`）、
+    `configflow-agent` 保存配置、心跳与诊断里出现的都是 `"s6"`；`restart_command` 改为 `/usr/local/bin/configflow-agent svc restart <核心>`。
+    读取时把旧值 `"supervisor"` 当作同义词（`svc.NormalizeManager`，在载入 Agent 配置、HA journal、同机对端配置时换成 `"s6"`），
+    HA journal / dns_follow 的比对与恢复照常工作，不做专门的数据迁移（下一次保存即写 `"s6"`）。保留同义词的原因：
+    (1) Python 面板时代写下的 HA journal / dns_follow 相关状态存的是 `"supervisor"`（HA journal 在 Agent 的持久目录里），切换后照样被读取；
+    (2) 切换后尚未换新镜像的 Docker Agent（1.8.x-go / 1.9.x-go，镜像里仍是 supervisord）继续写 `"supervisor"`。
+    同义词只为读旧数据存在，**计划在下一个大版本删除**。测试：`TestHAContainerRecoversLegacySupervisorJournal`（旧 journal 恢复、
+    新 journal 写 `"s6"`）、`TestLoadConfigNormalizesLegacyContainerManager`（旧配置读作 `"s6"` 并保存为 `"s6"`）、dns_follow
+    `legacy-manager` 对端、`upgrade.TestDockerRecognizesBothContainerManagers`；实验 D2：旧镜像开启 HA（journal 为 `"supervisor"`），
+    同一数据卷换新镜像后 Agent 恢复 keepalived。
   - startsecs/startretries 由 finish 脚本（`configflow-agent svc-finish`）复现：启动后 3 秒（Agent/keepalived 1 秒）内退出算启动失败，
     连续 3 次重试仍失败（共 4 次）即 FATAL、不再拉起；手动 start/restart 清零。与 Supervisor 的差别：重试间隔固定约 1 秒
     （Supervisor 为递增的 1、2、3 秒），实验中 FATAL 约 5 秒出现。

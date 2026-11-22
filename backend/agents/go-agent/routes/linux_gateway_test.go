@@ -196,7 +196,7 @@ func TestLinuxGatewayApplyRequiresOptInProfileAndMatchingNetwork(t *testing.T) {
 		{"disabled", func(f *gatewayFixture) { f.writeConfig(t, false) }},
 		{"platform", func(f *gatewayFixture) { gatewayOS = "darwin" }},
 		{"oxidns", func(f *gatewayFixture) { f.cfg.ServiceType = "oxidns" }},
-		{"docker", func(f *gatewayFixture) { f.cfg.ServiceManager = "supervisor" }},
+		{"docker", func(f *gatewayFixture) { f.cfg.ServiceManager = "s6" }},
 		{"address", func(f *gatewayFixture) { f.spec.Address = "192.168.1.3" }},
 		{"default route", func(f *gatewayFixture) { f.routes = `[{"dev":"eth0","gateway":"192.168.1.254"}]` }},
 	} {

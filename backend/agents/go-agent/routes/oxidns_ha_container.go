@@ -312,7 +312,7 @@ func haContainerInterface(cfg *Config, macvlan bool) (string, error) {
 
 func haEnvironment(cfg *Config) haEnvironmentInfo {
 	result := haEnvironmentInfo{Kind: "native", Ready: true, HostIDSource: "file", Blockers: []string{}}
-	if cfg == nil || cfg.ServiceManager != "supervisor" {
+	if cfg == nil || cfg.ServiceManager != svc.ContainerManager {
 		result.HostBootID = haBootIdentity(haNativeBootIDPath)
 		result.HostID = haHostIdentity("/etc/machine-id")
 		if result.HostID == "" {
@@ -408,12 +408,12 @@ func haEnvironment(cfg *Config) haEnvironmentInfo {
 // Both directions matter: a native journal copied into Docker must not invoke
 // host service commands, and a container journal cannot run as a native pair.
 func haContainerOwnership(cfg *Config, state *haState, environment haEnvironmentInfo) error {
-	container := cfg != nil && cfg.ServiceManager == "supervisor"
+	container := cfg != nil && cfg.ServiceManager == svc.ContainerManager
 	if container && !environment.Ready {
 		return fmt.Errorf("%s", strings.Join(environment.Blockers, "；"))
 	}
-	if state != nil && (container || state.Service.Manager == "supervisor") &&
-		(!container || state.Service.Manager != "supervisor" || state.ContainerHostID != environment.HostID) {
+	if state != nil && (container || state.Service.Manager == svc.ContainerManager) &&
+		(!container || state.Service.Manager != svc.ContainerManager || state.ContainerHostID != environment.HostID) {
 		return fmt.Errorf("HA 状态属于其他宿主或安装方式，已保留记录且未自动恢复")
 	}
 	return nil

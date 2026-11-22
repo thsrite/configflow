@@ -470,7 +470,7 @@ func haVerifyReleased(state *haState) error {
 
 func haServiceRunning(manager string) bool {
 	switch manager {
-	case "supervisor":
+	case svc.ContainerManager:
 		return haContainerState() == string(svc.StateRunning)
 	case "systemd":
 		_, err := haRun("systemctl", "is-active", "--quiet", haServiceUnit)
@@ -484,7 +484,7 @@ func haServiceRunning(manager string) bool {
 
 func haServiceEnabled(manager string) bool {
 	switch manager {
-	case "supervisor":
+	case svc.ContainerManager:
 		// The managed journal, rather than boot autostart, drives recovery.
 		return haContainerState() != ""
 	case "systemd":
@@ -508,7 +508,7 @@ func haServiceEnabled(manager string) bool {
 func haServiceAction(manager, action string) error {
 	var err error
 	switch manager {
-	case "supervisor":
+	case svc.ContainerManager:
 		if action == "enable" || action == "disable" {
 			return nil
 		}
@@ -663,7 +663,7 @@ func applyOxiDNSHA(cfg *Config, spec OxiDNSHASpec) error {
 	manager := cfg.ServiceManager
 	wasRunning, wasEnabled := haServiceRunning(manager), haServiceEnabled(manager)
 	state := &haState{Version: 1, Spec: spec, Interface: iface, CIDR: cidr, Service: haService{Manager: manager, Unit: haServiceUnit, WasEnabled: wasEnabled, WasRunning: wasRunning}}
-	if cfg.ServiceManager == "supervisor" {
+	if cfg.ServiceManager == svc.ContainerManager {
 		state.ContainerHostID = haEnvironment(cfg).HostID
 	}
 	if previous != nil {

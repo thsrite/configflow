@@ -58,7 +58,7 @@ Shell 命令安装的仍是 Go 单二进制。发布运行时不需要安装 Pyt
 
 使用项目的 [AIO Compose 示例](../../../../docker/docker-compose-aio.yml)，或 Agent 管理生成的 Compose 配置；也可参考 [Mihomo 单服务示例](../../../../docker/docker-compose-mihomo.yaml) 和 [MosDNS 单服务示例](../../../../docker/docker-compose-mosdns.yaml)。需要已安装 Docker，使用 Compose 文件时还需 Docker Compose。
 
-Docker 镜像包含 Go Agent、Mihomo/MosDNS/OxiDNS 核心、Supervisor 和其现有 Python 运行环境，不需要为事务发布额外安装软件包。入口直接按配置启动 Supervisor；存在未完成部署时，Agent 只读检查并记录提示，不会执行自动恢复或阻止其他核心启动。已有事务的服务目录会保留现场，不用默认配置覆盖缺失的受管配置。
+Docker 镜像包含 Go Agent、Mihomo/MosDNS/OxiDNS 核心和 s6-overlay（Agent 1.9.3-go 起不含 Python），不需要为事务发布额外安装软件包。入口按配置生成 s6 服务后启动 s6；存在未完成部署时，Agent 只读检查并记录提示，不会执行自动恢复或阻止其他核心启动。已有事务的服务目录会保留现场，不用默认配置覆盖缺失的受管配置。
 
 保留完整服务目录和 Agent 身份目录：
 
@@ -112,7 +112,7 @@ Agent 1.8.17-go 起，发布记录中的 `error_details` 和 `rollback_error_det
 
 - systemd Agent 日志：`journalctl -u configflow-agent --no-pager -n 100`。
 - OpenRC Agent 日志：`/var/log/configflow-agent.log`。
-- Docker 日志：`docker compose logs --tail=100`；同时检查容器内 Supervisor 核心日志。
+- Docker 日志：`docker compose logs --tail=100`；核心日志在容器内 `/var/log/configflow/<核心>/current`。
 - 发布状态：前端查询，或通过 ConfigFlow 的 `GET /api/agents/<agent_id>/deployments/<发布ID>` 获取。
 
 普通 Agent 启动只读检查部署记录，发现未完成或损坏的事务时记录提示并继续提供状态、日志查询 API；不会停止核心、改写文件或自动回滚。核心按自身服务配置启动，是否可用取决于磁盘上的实际配置。未解决事务仍会阻止新的发布、服务重启、Agent 更新和卸载。
@@ -138,10 +138,10 @@ sudo /usr/local/bin/configflow-agent -config /opt/configflow-agent/config-mosdns
 4. Docker 在修复持久化目录或部署设置后，停止对应 Agent 并显式恢复。下面以 MosDNS 为例，将 `容器名` 替换为实际容器名；Mihomo 使用 `agent-mihomo` 和 `config-mihomo.json`，OxiDNS 使用 `agent-oxidns` 和 `config-oxidns.json`：
 
    ```sh
-   docker exec 容器名 supervisorctl -c /etc/supervisor/supervisord.conf stop agent-mosdns
+   docker exec 容器名 configflow-agent svc stop agent-mosdns
    docker exec 容器名 /usr/local/bin/configflow-agent -config /opt/configflow-agent/config-mosdns.json -recover-and-exit
    # 上一条恢复命令成功后再启动 Agent。
-   docker exec 容器名 supervisorctl -c /etc/supervisor/supervisord.conf start agent-mosdns
+   docker exec 容器名 configflow-agent svc start agent-mosdns
    ```
 5. 在前端点击“查询恢复状态”，确认恢复结果和核心实际可用性后再发布。
 

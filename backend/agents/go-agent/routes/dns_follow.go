@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"agent/svc"
 )
 
 // A DNS follow summary is deliberately smaller than a configuration download:
@@ -227,12 +230,15 @@ func sameNamespaceDNSPeer(cfg *Config, read func(string) ([]byte, error)) (strin
 			return "", unavailable
 		}
 		peerPath = "/opt/configflow-agent/mihomo/config.json"
-	} else if cfg.AgentConfigFile != "/opt/configflow-agent/config-oxidns.json" || cfg.ServiceManager != "supervisor" || cfg.ServiceUnit != "oxidns" {
+	} else if cfg.AgentConfigFile != "/opt/configflow-agent/config-oxidns.json" || cfg.ServiceManager != svc.ContainerManager || cfg.ServiceUnit != "oxidns" {
 		return "", unavailable
 	}
 	data, err := read(peerPath)
 	var peer Config
-	if err != nil || json.Unmarshal(data, &peer) != nil || peer.ServiceType != "mihomo" ||
+	err = errors.Join(err, json.Unmarshal(data, &peer))
+	// A peer configuration written before 1.9.3-go says "supervisor".
+	peer.ServiceManager = svc.NormalizeManager(peer.ServiceManager)
+	if err != nil || peer.ServiceType != "mihomo" ||
 		peer.AgentID == "" || peer.AgentID == cfg.AgentID || !filepath.IsAbs(peer.ConfigPath) ||
 		peer.ConfigPath == cfg.ConfigPath || peer.ServerURL != cfg.ServerURL {
 		return "", unavailable
@@ -242,7 +248,7 @@ func sameNamespaceDNSPeer(cfg *Config, read func(string) ([]byte, error)) (strin
 		if _, err := nativeAIOInstallationFor(&peer); err != nil || peer.ServiceManager != cfg.ServiceManager {
 			return "", unavailable
 		}
-	} else if peer.NativeAIO || peer.ServiceManager != "supervisor" || peer.ServiceUnit != "mihomo" {
+	} else if peer.NativeAIO || peer.ServiceManager != svc.ContainerManager || peer.ServiceUnit != "mihomo" {
 		return "", unavailable
 	}
 	return peer.AgentID, nil

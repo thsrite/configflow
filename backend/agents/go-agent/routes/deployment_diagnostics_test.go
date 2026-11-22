@@ -379,7 +379,7 @@ func TestContainerServiceStates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.state), func(t *testing.T) {
 			cfg := testDeploymentConfig(t)
-			cfg.ServiceManager, cfg.ServiceUnit = "supervisor", "test-core"
+			cfg.ServiceManager, cfg.ServiceUnit = "s6", "test-core"
 			useFakeContainer(t, map[string]svc.State{"test-core": tt.state})
 			running, err := serviceRunning(cfg)
 			if running != tt.running || !errors.Is(err, tt.err) {
@@ -388,7 +388,7 @@ func TestContainerServiceStates(t *testing.T) {
 		})
 	}
 	cfg := testDeploymentConfig(t)
-	cfg.ServiceManager, cfg.ServiceUnit = "supervisor", "test-core"
+	cfg.ServiceManager, cfg.ServiceUnit = "s6", "test-core"
 	fake := useFakeContainer(t, map[string]svc.State{"test-core": svc.StateRunning})
 	if err := stopService(cfg); err != nil || fake.states["test-core"] != svc.StateStopped {
 		t.Fatalf("stop: %v %v", err, fake.states)

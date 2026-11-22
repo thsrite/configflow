@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 
 	"agent/routes"
+
+	"agent/svc"
 )
 
 // Set once the server's heartbeat reply says it reads "host". An older server
@@ -57,7 +59,7 @@ func hostHasAddress(value string) (present, known bool) {
 // A container's AGENT_IP is its operator's statement and is never second-guessed.
 func (c *Config) effectiveAgentIP() string {
 	value := c.configuredAgentIP()
-	if value == "" || c.ServiceManager == "supervisor" {
+	if value == "" || c.ServiceManager == svc.ContainerManager {
 		return value
 	}
 	present, known := hostHasAddress(value)
@@ -76,7 +78,7 @@ func (c *Config) effectiveAgentIP() string {
 // heartbeatHost is the address the server should use to reach this Agent, or
 // "" to leave the server's record alone.
 func (c *Config) heartbeatHost() string {
-	if c.ServiceManager == "supervisor" {
+	if c.ServiceManager == svc.ContainerManager {
 		// Inside a bridge container the local address is not reachable from
 		// the LAN; only an explicit AGENT_IP is worth reporting.
 		return c.configuredAgentIP()
@@ -123,7 +125,7 @@ func (c *Config) setAgentIP(value string) error {
 // host has it. An install that never pinned an address stays automatic.
 func (c *Config) adoptConfirmedHost(confirmed string) {
 	confirmed = strings.TrimSpace(confirmed)
-	if confirmed == "" || c.ServiceManager == "supervisor" {
+	if confirmed == "" || c.ServiceManager == svc.ContainerManager {
 		return
 	}
 	configured := c.configuredAgentIP()
@@ -170,7 +172,7 @@ func (c *Config) localAgentAddresses() ([]string, error) {
 // so it is reported but cannot be written here.
 func agentAddressHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		supervised := cfg.ServiceManager == "supervisor"
+		supervised := cfg.ServiceManager == svc.ContainerManager
 		switch r.Method {
 		case http.MethodGet:
 			addresses, err := cfg.localAgentAddresses()

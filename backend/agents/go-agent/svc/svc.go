@@ -84,3 +84,28 @@ func Do(ctx context.Context, m Manager, action, name string) error {
 	}
 	return fmt.Errorf("unsupported action %q", action)
 }
+
+// ContainerManager is the service_manager value of programs supervised by
+// the Agent Docker image (s6).
+const ContainerManager = "s6"
+
+// LegacyContainerManager is the value images before 1.9.3-go wrote while
+// Supervisor ran the programs. It is only read, as a synonym of
+// ContainerManager: HA journals and Agent configurations written by those
+// images, and Docker Agents not yet moved to the new image, still carry it.
+// Planned for removal in the next major release.
+const LegacyContainerManager = "supervisor"
+
+// NormalizeManager maps the legacy container value to ContainerManager and
+// returns every other value unchanged.
+func NormalizeManager(manager string) string {
+	if manager == LegacyContainerManager {
+		return ContainerManager
+	}
+	return manager
+}
+
+// IsContainerManager reports a container-supervised value, new or legacy.
+func IsContainerManager(manager string) bool {
+	return NormalizeManager(manager) == ContainerManager
+}

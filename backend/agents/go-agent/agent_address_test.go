@@ -76,10 +76,10 @@ func TestUnreadableInterfacesKeepTheConfiguredAddress(t *testing.T) {
 
 func TestContainerReportsOnlyItsExplicitAddress(t *testing.T) {
 	withInterfaces(t, "172.17.0.2")
-	if got := (&Config{ServiceManager: "supervisor"}).heartbeatHost(); got != "" {
+	if got := (&Config{ServiceManager: "s6"}).heartbeatHost(); got != "" {
 		t.Fatalf("bridge container reported %q", got)
 	}
-	cfg := &Config{AgentIP: "192.0.2.21", ServiceManager: "supervisor"}
+	cfg := &Config{AgentIP: "192.0.2.21", ServiceManager: "s6"}
 	if cfg.heartbeatHost() != "192.0.2.21" || cfg.effectiveAgentIP() != "192.0.2.21" {
 		t.Fatal("explicit AGENT_IP of a container must be kept")
 	}
@@ -182,7 +182,7 @@ func TestConfirmedAddressIsNotWrittenWhenNothingWasPinnedOrInAContainer(t *testi
 	if got, _ := storedAgentIP(t, automatic); got != "" {
 		t.Fatalf("automatic install was pinned to %q", got)
 	}
-	container := addressConfig(t, "192.0.2.2", "supervisor")
+	container := addressConfig(t, "192.0.2.2", "s6")
 	container.adoptConfirmedHost("192.0.2.11")
 	if got, _ := storedAgentIP(t, container); got != "192.0.2.2" {
 		t.Fatalf("container AGENT_IP replaced by %q", got)
@@ -280,7 +280,7 @@ func TestAddressEndpointDoesNotWriteAContainersAddress(t *testing.T) {
 	previous := detectAllLocalIPv4
 	detectAllLocalIPv4 = func() ([]string, error) { return []string{"192.0.2.11"}, nil }
 	t.Cleanup(func() { detectAllLocalIPv4 = previous })
-	cfg := addressConfig(t, "192.0.2.2", "supervisor")
+	cfg := addressConfig(t, "192.0.2.2", "s6")
 	if code, info := addressRequest(t, cfg, http.MethodGet, ""); code != 200 || info["writable"] != false || info["configured"] != "192.0.2.2" {
 		t.Fatalf("GET %d %v", code, info)
 	}
