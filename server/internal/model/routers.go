@@ -19,7 +19,10 @@ type Routers struct {
 
 // Router is the stored connection and publication record; defaults and public projections belong to consumers.
 type Router struct {
-	ID                  string            `json:"id"`
+	// ID is a topology identity: stored as anything but text (a number) it
+	// reads as empty and the router is refused, as Python refused it; two
+	// routers stored as 1 and "1" must not become the same router.
+	ID                  string            `json:"id" text:"strict"`
 	Name                string            `json:"name,omitzero"`
 	Type                string            `json:"type"`
 	Endpoint            string            `json:"endpoint"`

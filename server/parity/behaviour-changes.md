@@ -3002,6 +3002,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - **删除/清理数量类设置**：`backup.keep_latest/keep_daily`、`traffic_history_retention_days` 只认整数字面量，数字文本、`1.0`、布尔等读作缺失
   （用默认值，宁可多留）+ 告警。订阅缓存孤儿清理在库里订阅列表有类型告警（非列表、元素非对象、id 非文本）时不删任何文件（失败即关）。
 - **节点 `dialer_ref`**：库里存成非对象读作空引用（`ResourceRef` failClosed），生成时按「dialer_ref 必须为 …」拒绝，不会当成直连。
+- **路由器 ID**：库里存成非文本（数字）读作空，路由器按无效身份拒绝（Python「主路由分流的拓扑身份必须是非空文本」），不会把 1 和 "1" 当成同一台。
 - **凭据列表**：`retired_rule_proxy_tokens` 只保留文本元素，其余丢弃并告警。
 - **MosDNS 自定义匹配**：对象形里类型不对、未声明的成员有加载告警。
 - 删除了依赖 `model.Issues`、在普通记录上永不触发的检查（convert `storedText`/`validateRuleIdentities`/`clientProtocolType`、
