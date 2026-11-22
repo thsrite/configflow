@@ -207,7 +207,7 @@ Host 宿主机 A 用 `192.168.1.21`；独立宿主机 B 用 `192.168.1.12`，B �
 
 使用备用安装脚本时，脚本会在 Docker 宿主机的网络空间检查 UDP/TCP 53 是否可用；
 已有本次安装且正在运行的容器可安全续装，不会把它自己的监听误当成外部占用。
-启动后还会等待 OxiDNS 在 Supervisor 中正常运行，FATAL、退出或等待超时都会报错。
+启动后还会等待 OxiDNS 在容器里正常运行（`configflow-agent svc status oxidns`），FATAL、退出或等待超时都会报错。
 出现这些错误时先检查端口和容器日志；容器处于运行状态并不代表 DNS 已正常工作。
 
 ### Docker Host 端：默认推荐
@@ -453,7 +453,8 @@ Agent 页的 DNS 高可用一行显示“等待设备恢复后自动完成发布
 - Shell Agent 可从卡片的“更新”发起在线更新；更新 Agent 不等于升级 OxiDNS 核心。先完成当前发布，再一次处理一端。
 - Docker 的“更新”打开操作说明，网页不直接重建容器。沿用原 Compose 项目或原启动参数、身份和全部挂载。先更新未持有 VIP 的核心容器，确认它恢复，再处理另一台。Host 的 HA 辅助容器要保持运行。
 - 更改 Docker HA 结构、网络模式、身份目录等，按前面的[迁移步骤](#migration)操作；普通拉取镜像不会给旧 bridge 容器补齐 HA 环境。
-- 备用安装脚本的首次登记、重复执行核对和 53 端口检查由 Agent 程序完成（`configflow-agent ha-enroll` / `ha-enroll-check` / `ha-port-check`，Agent 1.9.2-go 起），需要 1.9.2-go 或更新的镜像；镜像过旧时脚本在改动前停止并给出上面的提示。通过接口生成的 Compose 安装包（`install_method=compose`，页面不提供）从 1.9.2-go 起不再包含 `bootstrap.py`，主容器以 `configflow-agent ha-bootstrap` 启动。之前用旧安装包或旧脚本部署的实例照常拉取新镜像升级，不需要重新生成：旧 `compose.yaml` 仍执行持久目录里保存的 `bootstrap.py`，镜像继续自带它需要的运行环境。
+- 备用安装脚本的首次登记、重复执行核对和 53 端口检查由 Agent 程序完成（`configflow-agent ha-enroll` / `ha-enroll-check` / `ha-port-check`，Agent 1.9.2-go 起），需要 1.9.2-go 或更新的镜像；镜像过旧时脚本在改动前停止并给出上面的提示。通过接口生成的 Compose 安装包（`install_method=compose`，页面不提供）从 1.9.2-go 起不再包含 `bootstrap.py`，主容器以 `configflow-agent ha-bootstrap` 启动。之前用旧安装包或旧脚本部署的实例照常拉取新镜像升级，不需要重新生成：旧 `compose.yaml` 仍执行持久目录里保存的 `bootstrap.py`。
+- Agent 1.9.3-go 起镜像不再包含 Python，进程管理由 Supervisor 换成 s6-overlay；备用安装脚本需要 1.9.3-go 或更新的镜像。已部署的实例照常拉取新镜像、按原 Compose 重建即可：精简 Compose 不需要任何改动；旧 Compose 安装包（`python3 …/bootstrap.py`）和旧 `compose_direct`（`python3 …/docker-compose-install.py`）由镜像里过渡用的 `python3` 兼容脚本转给 `configflow-agent ha-bootstrap` / `ha-compose`，计划在下一个大版本删除，届时请在面板重新生成 Compose。Host 模式的 HA 辅助容器要和主容器使用同一镜像一起重建。
 
 ### 停用或更换 VIP、对端、配置空间
 

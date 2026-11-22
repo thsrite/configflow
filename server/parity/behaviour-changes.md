@@ -2897,3 +2897,60 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   `python3 /run/configflow-compose/bootstrap.py`）升级镜像后照常运行。
 - 版本：Agent `upgrade.Version` 与面板 `LatestAgentVersion` 改为 1.9.2-go；Python 比较例外沿用（proddiff
   `GO_AGENT_LATEST`、`has_update` 例外范围 [1.8.61-go, 1.9.2-go)，configdiff T16/T25 心跳 1.9.2-go）。
+
+## Agent 镜像去掉 Python：Supervisor 换成 s6-overlay — Agent 版本提升到 1.9.3-go
+
+- **进程管理**：`docker/Dockerfile.agent` 不再安装 `supervisor`、`python3`、`py3-pip`、`setuptools`；PID 1 为 s6-overlay 3.2.3.2
+  （noarch + x86_64/aarch64，SHA256 写死）。入口仍是 `/entrypoint.sh`，准备完后 `exec /init`；默认 CMD 为 `/init`，旧容器/Compose 里
+  显式写的 `/usr/bin/supervisord …` 会被入口换成 `/init`。服务对照表见 `progress/nopy-agent-image.md`。
+  - `config-<核心>.json` 的 `service_manager` 仍为 `"supervisor"`（协议值，含义改为“镜像内的进程管理器”，HA 记录和对端配置比较它，
+    不做迁移）；`restart_command` 改为 `/usr/local/bin/configflow-agent svc restart <核心>`。
+  - startsecs/startretries 由 finish 脚本（`configflow-agent svc-finish`）复现：启动后 3 秒（Agent/keepalived 1 秒）内退出算启动失败，
+    连续 3 次重试仍失败（共 4 次）即 FATAL、不再拉起；手动 start/restart 清零。与 Supervisor 的差别：重试间隔固定约 1 秒
+    （Supervisor 为递增的 1、2、3 秒），实验中 FATAL 约 5 秒出现。
+  - 停止：SIGTERM 后等待（Agent/核心 10 秒、keepalived 15 秒）再 SIGKILL，与原 stopwaitsecs 相同；容器停止顺序由 s6-rc 依赖还原
+    原 priority（macvlan HA：keepalived → Agent → 核心；其余：Agent → 核心）。s6-overlay 收尾等待 `S6_KILL_GRACETIME=1000`，
+    普通容器 `docker stop` 约 1.2 秒。
+  - Agent 代码通过 `svc.Manager` 接口控制程序（`backend/agents/go-agent/svc`）：部署启停/状态、心跳服务状态、重启命令、卸载、
+    Docker HA keepalived。状态沿用 Supervisor 词汇（RUNNING/STARTING/BACKOFF/STOPPING/STOPPED/FATAL）；停止已停止的程序不再报错
+    （原来依赖 `NOT_RUNNING` 文本放行）；重启命令失败时不再回退执行 start（新命令对未运行的程序直接启动）。
+  - `GET /api/logs/sources` 不再有 `supervisord`（Supervisor 日志）来源。
+- **日志**：Docker 镜像里 Mihomo/MosDNS/OxiDNS 的标准输出与错误输出**合并**写入 `/var/log/configflow/<核心>/current`
+  （s6-log，10 MB × 3 个轮转文件，与原 maxbytes/backups 相同）。原来分开的 `/var/log/supervisor/<核心>.log` 与 `.err.log`、
+  MosDNS 写在数据卷里的 `/etc/mosdns/mosdns.err.log` 不再生成（旧文件保留不删，不再作为首选来源）；页面日志对 Docker 核心不再单独
+  显示“错误输出”来源，`/api/logs` 的 `error_logs` 为空。Agent 自己与 keepalived 的输出照旧在 `docker logs`。文档见
+  `doc/manual/agents.md#logs`。
+- **入口脚本的内嵌 Python 改为 Agent 子命令**：`configflow-agent docker-config agent|services|companion`（原 PYCONFIG、PYSUPERVISOR、
+  supervisor autostart 改写）、`ha-companion-check`（原 PYCOMPANION）、`ha-compact`（原 `docker-compose-compact.py`）、
+  `ha-compose prepare|run`（原 `docker-compose-install.py`）。消息、记录文件、字段、临时文件名（`.compose-write-<owner>-xxxxxxxx`）、
+  owner 摘要（binding 的规范形式：键排序、紧凑分隔、非 ASCII 转义）与原脚本相同；`dockerha/pyref_test.go`（构建标签 pyref）
+  在同一夹具上对照原脚本（消息与文件一致，双方装的实例互相能启动）。
+- **辅助容器（host 模式）控制方式**：原来主 Agent 用 `supervisorctl -s unix://…/supervisor.sock` 控制辅助容器的 Supervisor；
+  现在辅助容器由 s6 运行 `configflow-agent ha-companion-serve`，在共享 HA 卷上监听 `/var/lib/configflow-ha/run/control.sock`
+  （root 0600，只接受 keepalived 的 status/start/stop/restart），主 Agent 用同一接口的 Remote 实现。对端检查（SO_PEERCRED，独立
+  PID 命名空间）不变，只是路径从 `supervisor.sock` 改为 `control.sock`。新旧镜像混用（新 Agent + 旧辅助容器或反之）时 HA 环境
+  显示未就绪，用同一镜像重建两个容器即可。环境检查的提示由“受管 keepalived Supervisor 程序尚未就绪”改为“受管 keepalived 程序尚未就绪”。
+- **面板生成内容**（已批准差异，比较时由 `installertest.NoPythonBaseline` 还原）：
+  - 备用安装脚本的启动检查改为 `docker exec ID configflow-agent svc status oxidns`（原 `supervisorctl -c … status oxidns`），
+    输出格式不变；因此镜像版本探测要求 ≥ **1.9.3-go**（提示文案中的版本号随之变化）。
+  - `compose_direct`：init 与 agent 的 entrypoint 改为 `[configflow-agent, ha-compose, prepare|run]`
+    （原 `[python3, /usr/local/lib/configflow/docker-compose-install.py, …]`），init 去掉 `PYTHONDONTWRITEBYTECODE`。
+  - 精简 Compose 生成内容不变（它只靠 `SERVICE_TYPE`，入口在镜像里）。
+- **过渡用兼容脚本**（只为旧面板生成的脚本和已部署的旧安装存在，**计划在下一个大版本删除**）：
+  - `/usr/bin/supervisorctl`：只支持 `supervisorctl [-c 配置文件] status|start|stop|restart <程序名>`，转调
+    `configflow-agent svc`；其余用法用中文报错并给出替代命令，退出码 2。用于旧面板生成的启动检查脚本配新镜像。
+  - `/usr/bin/python3`：只认 `python3 /usr/local/lib/configflow/docker-compose-install.py prepare|run`（旧 compose_direct）与
+    `python3 /run/configflow-compose/bootstrap.py`（1.9.2-go 之前的 Compose 安装包），分别转 `configflow-agent ha-compose …` /
+    `ha-bootstrap`；其余一律中文报错、退出码 2。镜像里没有任何 Python 解释器或包。
+- **修正的 Python 缺陷 / 差异**（只影响异常输入）：
+  - 期望文件却遇到目录时，所有 `ha-*` 读取统一报“安装文件不存在、不可读…”（原脚本 `os.fdopen` 打不开目录，同样落到这条；
+    1.9.2-go 的 Go 版本曾报“不是普通文件”，已改回与原脚本一致）。
+  - `ha-compose` 的设置 `protocol` 只接受整数 1（原 Python 因 `True == 1`、`1.0 == 1` 也接受）；精简 Compose 记录的 `protocol`
+    同样只接受整数 2。面板只写整数。
+  - 精简 Compose 的 `SERVER_URL` 由 `net/url` 解析：端口段不是数字等 Python `urlsplit` 不检查的畸形地址现在直接拒绝（同一条提示）。
+  - 精简 Compose 完成初始化时重写的记录只保留已知字段的固定顺序（原脚本保留手工加入的其他字段及其顺序）；读取方都按键取值。
+  - 辅助容器检查、`ha-compose`/`ha-compact` 遇到原脚本会抛 Python 回溯的系统错误时，给出命令名加错误原因（或原脚本兜底的中文提示）。
+  - Docker 卸载：原来删除 Supervisor 程序配置并 `reread/update`；现在 s6 停止核心与 Agent（不再拉起）。容器重启后入口会重新生成服务
+    （与原来容器层里的配置已被删除的效果不同）；面板的卸载流程随后会删除容器。
+- 版本：Agent `upgrade.Version` 与面板 `LatestAgentVersion` 为 1.9.3-go；Python 比较例外沿用（proddiff `GO_AGENT_LATEST`、
+  `has_update` 例外范围 [1.8.61-go, 1.9.3-go)，configdiff T16/T25 心跳 1.9.3-go）。

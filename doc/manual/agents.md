@@ -376,7 +376,9 @@ OxiDNS HA 一次只更新一端，先处理未持有 VIP 的核心容器，确�
 | 清空 | 会删除所选日志文件里的全部内容，不能恢复；排查资料需要保留时先另存。系统 journald 日志和不可读来源不能在这里清空。 |
 | 关闭 | 关对话框，服务仍继续运行并记录日志。 |
 
-Alpine 等 OpenRC 系统不会自己轮转核心的运行日志（systemd 写入 journald，Docker 由 Supervisor 轮转）。Agent 1.8.58-go 起每 10 分钟检查一次，文件超过 16 MB 时只保留最新的 1 MB；Agent 自己的日志超过 4 MB 时保留最新的 256 KB。需要更长的历史请自行配置 logrotate。
+Docker 镜像（Agent 1.9.3-go 起）里核心的标准输出和错误输出合并写入 `/var/log/configflow/<核心>/current`，由 s6-log 按 10 MB × 3 个文件轮转，日志来源里不再单独列出“错误输出”；Agent 自己的输出在宿主机用 `docker logs` 查看。
+
+Alpine 等 OpenRC 系统不会自己轮转核心的运行日志（systemd 写入 journald，Docker 镜像由 s6-log 轮转）。Agent 1.8.58-go 起每 10 分钟检查一次，文件超过 16 MB 时只保留最新的 1 MB；Agent 自己的日志超过 4 MB 时保留最新的 256 KB。需要更长的历史请自行配置 logrotate。
 
 不要用“清空”修复报错：它只删记录，不处理原因。看到“请求成功但结果待确认”时，先保留发布编号和日志，方便与原任务对照。
 
