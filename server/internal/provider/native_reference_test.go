@@ -30,10 +30,8 @@ func nativeDeliveryReferences(t *testing.T, rows []map[string]any) map[int]map[s
 		t.Fatal(err)
 	}
 	var manifest struct {
-		ArchiveSHA  string `json:"archive_sha256"`
-		RecorderSHA string `json:"recorder_sha256"`
-		PythonSHA   string `json:"python_owner_sha256"`
-		Rows        map[string]struct {
+		ArchiveSHA string `json:"archive_sha256"`
+		Rows       map[string]struct {
 			Input, Original, Expected json.RawMessage
 			Reason                    string
 		} `json:"rows"`
@@ -48,12 +46,8 @@ func nativeDeliveryReferences(t *testing.T, rows []map[string]any) map[int]map[s
 	if fmt.Sprintf("%x", sha256.Sum256(archive)) != manifest.ArchiveSHA {
 		t.Fatal("original provider archive changed")
 	}
-	for path, expected := range map[string]string{"testdata/n88d_reference.py": manifest.RecorderSHA, "../../../backend/utils/provider_delivery.py": manifest.PythonSHA} {
-		data, err := os.ReadFile(path)
-		if err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != expected {
-			t.Fatal("reference source changed", path, err)
-		}
-	}
+	// The recorded rows are replayed as committed; the recorder script and the
+	// Python owner module are no longer hashed (the Python reference is retired).
 	if len(manifest.Rows) != 79 {
 		t.Fatal("native reference matrix changed")
 	}

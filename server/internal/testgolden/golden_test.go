@@ -45,6 +45,8 @@ func TestCheckDetectsChangesWithoutWriting(t *testing.T) {
 		t.Fatal("check overwrote golden")
 	}
 }
+
+// TestSourceHashDetectsChanges guards the digests record/check modes compare.
 func TestSourceHashDetectsChanges(t *testing.T) {
 	if digest([]byte("backend-a")) == digest([]byte("backend-b")) {
 		t.Fatal("source hash collision")
@@ -147,10 +149,9 @@ func TestRecordingAndReplayNegativeControls(t *testing.T) {
 		if err = os.WriteFile(path, []byte("changed"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		text := run("", "", "input", "unreachable", "answer", false)
-		if !strings.Contains(text, "Python 参考已变化，请重新录制") {
-			t.Fatalf("declared %s mutation did not invalidate golden", name)
-		}
+		// Replay reads only the committed golden: harness edits no longer
+		// invalidate it (the Python reference is retired).
+		run("", "", "input", "unreachable", "answer", true)
 		if err = os.WriteFile(path, []byte("original"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -174,21 +175,30 @@ func TestRecordingAndReplayNegativeControls(t *testing.T) {
 	if !strings.Contains(text, "Python 参考已变化，请重新录制") {
 		t.Fatal("input drift did not fail")
 	}
+	// Replay ignores recorded source and venv hashes, and needs neither the
+	// source tree nor a venv.
 	if err = os.WriteFile(source, []byte("changed"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	text = run("", "", "input", "answer", "answer", false)
-	if !strings.Contains(text, "Python 参考已变化，请重新录制") {
-		t.Fatal("source drift did not fail")
+	if err = os.RemoveAll(filepath.Join(dir, "venv")); err != nil {
+		t.Fatal(err)
 	}
-	if err = os.WriteFile(source, []byte("original"), 0600); err != nil {
+	run("", "", "input", "unreachable", "answer", true)
+	if err = os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	run("", "", "input", "unreachable", "answer", true)
+	// Explicit check mode still compares hashed metadata and reports the drift.
+	if err = os.WriteFile(source, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(metadataPath), 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.WriteFile(metadataPath, []byte("Name: example\nVersion: 2\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	text = run("", "", "input", "answer", "answer", false)
-	if !strings.Contains(text, "Python 参考已变化，请重新录制") {
-		t.Fatal("venv drift did not fail")
+	if text := run("check", "", "input", "answer", "answer", false); !strings.Contains(text, "PYREF source") {
+		t.Fatal("check mode did not report source drift", text)
 	}
 }

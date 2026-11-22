@@ -1,5 +1,11 @@
 // Package testgolden records independent reference outputs and replays them without
 // starting the reference runtime. Recording is opt-in and updates require acceptance.
+//
+// Ordinary replay reads only the committed golden: it keys entries by exact
+// input and requires every recorded input to be consumed, but it no longer
+// compares the recorded source and venv hashes (the Python reference is
+// retired; see server/design/no-python-tests.md). Record and check modes still
+// hash sources and dependencies into the metadata they compare and write.
 package testgolden
 
 import (
@@ -171,14 +177,12 @@ func sourceMetadata(spec Spec) (metadata, error) {
 	return metadata{files, dep, digest(spec.Input)}, err
 }
 
-// New loads and validates a golden. PYREF_MODE=check reruns the real oracle and
-// reports differences without writing; record additionally permits updates only
-// with PYREF_ACCEPT=1. Failed tests never write golden files.
+// New loads and validates a golden. Ordinary replay reads only the committed
+// file. PYREF_MODE=check reruns the real oracle and reports differences without
+// writing; record additionally permits updates only with PYREF_ACCEPT=1. Failed
+// tests never write golden files.
 func New(t *testing.T, spec Spec) *Reference {
 	t.Helper()
-	if err := cacheGuard(); err != nil {
-		t.Fatal(err)
-	}
 	if spec.Name == "" {
 		spec.Name = t.Name()
 	}
@@ -190,9 +194,15 @@ func New(t *testing.T, spec Spec) *Reference {
 	if mode != "" && mode != "check" && mode != "record" {
 		t.Fatalf("unknown PYREF_MODE %q", mode)
 	}
-	meta, err := sourceMetadata(spec)
-	if err != nil {
-		t.Fatal(err)
+	var meta metadata
+	if mode != "" {
+		if err := cacheGuard(); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if meta, err = sourceMetadata(spec); err != nil {
+			t.Fatal(err)
+		}
 	}
 	suffix := ".json"
 	if spec.Compress {
@@ -221,11 +231,6 @@ func New(t *testing.T, spec Spec) *Reference {
 		}
 	} else if !os.IsNotExist(err) || mode == "" {
 		t.Fatalf("%s: %v; Python 参考已变化，请重新录制", r.path, err)
-	}
-	before, _ := json.Marshal(r.old.Metadata)
-	after, _ := json.Marshal(meta)
-	if mode == "" && !bytes.Equal(before, after) {
-		t.Fatalf("%s: Python 参考已变化，请重新录制 (source/input/venv hash mismatch)", r.path)
 	}
 	t.Cleanup(func() { r.finish(t) })
 	return r

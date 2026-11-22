@@ -598,7 +598,7 @@ WP3 已删除的 6 个不再列出。
 随上面的测试一起删；它们用到的 `xcPython`、`pythonSQLite`、`pythonTypes` 等 helper 没有调用方以后也删。
 `routers` 里附录 A.4 列出的 14 个边界测试（R04/R05/R07，缺解释器时 7 个 skip、7 个显示通过但子测试全 skip）也在上表里，删前确认 `routerfake` 的纯 Go 测试仍覆盖写入顺序和回滚。
 
-### B.3 需要维护者定一下：已提交的 Python 录制回放（推荐保留，去掉指纹）
+### B.3 已提交的 Python 录制回放：保留（维护者 2026-11-22 裁定，已去掉哈希核对）
 
 下面这些测试运行时**不启动 Python**，只读已提交的 golden（`testdata/pyref/*.json.gz`，7.9 MB），隐藏 backend 后失败的原因只是元数据里核对 backend 源码和 venv 的哈希
 （provider 是核对 `backend/utils/provider_delivery.py` 的 SHA）。数据本身是自包含的。
@@ -611,9 +611,9 @@ WP3 已删除的 6 个不再列出。
 | `internal/provider` | 2 | `TestCorpus`, `TestReviewN88dReferenceBindings` |
 | `internal/routersplit` | 3 | `TestCorpus`, `TestEdgeCorpus`, `TestRecordedPythonTests` |
 
-推荐：保留，切换提交里把哈希核对改成跳过（`testgolden` 的 `Fingerprint`/`cacheGuard`/`dependencies`、provider 的 `PythonSHA`），成本很小，
+已做（切换前就生效）：`testgolden` 的普通回放只读已提交的 golden，不再算 backend 源码和 venv 哈希、不再要求 `PYREF_INPUT_FINGERPRINT`（精确输入作键、每条录制必须被用到这两条保留；`PYREF_MODE=record/check` 仍然记录和比较哈希）；provider 不再核对录制脚本和 `provider_delivery.py` 的 SHA。在没有 `backend/`、没有 venv 的副本里，这 18 个测试全部通过。切换提交里再删掉 record/check 模式和 `tools/pyref` 的指纹入口。原推荐理由：成本很小，
 保住生成器和格式的大语料覆盖（mosdns `TestCorpus` 一个就 6.8 MB）。以后有意改行为时直接从 Go 重录、人审 diff。
-不保留就整组删除，连同 `testdata/pyref/`。同理，不依赖 Python 运行的 `*_recorded_test.go` / `corpus_test.go`（附录 A 里隐藏 backend 后照常通过）属于纯 Go 测试，保留。
+同理，不依赖 Python 运行的 `*_recorded_test.go` / `corpus_test.go`（附录 A 里隐藏 backend 后照常通过）属于纯 Go 测试，保留。
 
 ### B.4 删除后 `gate.sh` 剩下的阶段
 
