@@ -161,3 +161,19 @@ pyref 13 个文件只重录 metadata（逐个解压比对，只有 `metadata` �
   repo 同上一条测试（已改）。
 - pyref：mosdns/oxidns 重录后 `PYREF_MODE=check` ok，13 个文件只有 `metadata` 变化（2e7d24e07）。
 - `/tmp/preflight.sh … x 6`（.64）：`PREFLIGHT PASS`。
+
+## 门禁三处失败（第三轮）
+
+- **fuzz FuzzDeploymentRouteBinding（630c258b6）**：T1b 引入（go 上判定按原值语义通过）。判定函数仍按原 JSON 判断，任务里出现的
+  `service_type:""` 被当成「有值且不匹配」；按已批准的 T1b 编解码，空文本即缺失、数字读作原文、Agent 缺失服务为 mihomo，
+  可选时与缺失同样接受。产品保持（Go 写的任务都带服务，路由绑定另核对部署 ID 与配置空间），改判定函数，失败输入留作语料。
+  `-fuzz` 60 s（.32）：907 102 次执行，PASS。
+- **substore TestDifferentialReviewLoopbackProxy（de1d51f38）**：与 T1b 无关（substore 两边相同；go 与 batch-32 在 .32/.64 单跑、整包跑均通过）。
+  负载高时 Python 服务的后台请求（`python-requests` UA）晚到，被计入 Go 阶段的代理记录。Go 阶段只排除带 Python UA 的请求；
+  Go 的 Sub-Store 客户端固定发 `ConfigFlow`。负向对照：让 Go 对回环也走 `HTTP_PROXY` → 测试失败。
+- **proddiff 基线迁移（d95dabcf4、9292f11c2）**：T1b 引入。迁移工具原先整条重编码 Agent 写 `agents-after.json`，T1b 编解码会丢 null 和未声明成员，
+  驱动程序因此看到「格式身份」以外的变化。改为从存储读原始 `agents` 行，只替换已转换的 `applied_content` 的
+  `fingerprint/files/deployed_config_sha256`，其余字节原样（`patch_test.go` 覆盖 null、空文本、未声明成员与行/记录不一致）。
+  迁移通过后 proddiff 报 26 条新差异，均为 `missing-in-go`：快照中值全为 null 的 `config_revision/client_fingerprint/deployment_id/
+  target_deployment_id`，以及丢弃的 `has_update`——即 behaviour-changes O18 T1b 已认可的差异，按精确路由/路径逐条登记到
+  `proddiff-baseline.txt`（不改比较规则、不用通配）。`GATE_ONLY=proddiff gate.sh -p 6`（.32）：`baseline: new=0 stale=0`，`GATE STAGE PASS: proddiff`。
