@@ -562,6 +562,7 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 // sameStoredValue compares a Go-written record with its stored source as
 // values: members holding "", null or {} count as absent and, for a private
 // snapshot, undeclared members (reported as issues on read) are ignored.
+// Always-written zero members Go adds are ignored (dropAlwaysWrittenZeros).
 func sameStoredValue(t *testing.T, encoded, source []byte, private bool) bool {
 	t.Helper()
 	decode := func(data []byte) any {
@@ -577,7 +578,47 @@ func sameStoredValue(t *testing.T, encoded, source []byte, private bool) bool {
 	if private {
 		dropUndeclared(want, got)
 	}
+	dropAlwaysWrittenZeros(want, got)
 	return testjson.Equal(want, got)
+}
+
+// dropAlwaysWrittenZeros removes from got the object members want lacks
+// whose value is 0 or [] (members Go always writes with their zero value,
+// e.g. dns_follow.upstream_index, O18 T1b). false is not dropped: a switch
+// written false where storage had none could change a default-on reading.
+func dropAlwaysWrittenZeros(want, got any) {
+	switch g := got.(type) {
+	case map[string]any:
+		w, _ := want.(map[string]any)
+		for key, item := range g {
+			other, ok := w[key]
+			if !ok {
+				if object, isObject := item.(map[string]any); isObject {
+					dropAlwaysWrittenZeros(nil, object)
+				}
+				if list, isList := item.([]any); item == json.Number("0") || isList && len(list) == 0 {
+					delete(g, key)
+				}
+				continue
+			}
+			dropAlwaysWrittenZeros(other, item)
+		}
+		// A member left empty by the removal is an absent member.
+		for key, item := range g {
+			if object, ok := item.(map[string]any); ok && len(object) == 0 {
+				if _, ok := w[key]; !ok {
+					delete(g, key)
+				}
+			}
+		}
+	case []any:
+		w, _ := want.([]any)
+		for i := range g {
+			if i < len(w) {
+				dropAlwaysWrittenZeros(w[i], g[i])
+			}
+		}
+	}
 }
 
 // dropUndeclared removes members of want that got lacks at the same object

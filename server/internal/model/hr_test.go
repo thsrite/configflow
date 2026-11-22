@@ -137,6 +137,21 @@ func TestHRPythonWriters(t *testing.T) {
 		}
 		assertStoredTree(t, row.Value, reflect.ValueOf(target), counts)
 	}
+	// The boundary starts from the Go-written form (as TestTypesPythonRoundTrip
+	// does): plain records drop the nulls the Python writers leave and write
+	// always-written members (dns_follow.upstream_index, O18 T1b), which the
+	// exact Python audit would otherwise report.
+	for i, row := range rows {
+		value := reflect.New(map[string]reflect.Type{"Agent": reflect.TypeFor[Agent](), "Router": reflect.TypeFor[Router](), "RouterRuleSyncReceipt": reflect.TypeFor[RouterRuleSyncReceipt]()}[row.Name])
+		if _, err := DecodeStored(row.Value, value.Interface(), ""); err != nil {
+			t.Fatal("Python HR decode failed")
+		}
+		encoded, err := Marshal(value.Interface())
+		if err != nil {
+			t.Fatal("Go HR encode failed")
+		}
+		rows[i].Value = encoded
+	}
 	runTypesInterchange(t, rows, false)
 }
 
