@@ -207,13 +207,17 @@ func TestAgentViewOriginalTypesCancellationAndReadGuard(t *testing.T) {
 	}
 	if err := r.ViewAgents(t.Context(), func(records []model.Agent) error {
 		// Stored values read leniently (O18 T1b): integer text is a number,
-		// a number is text, the Agent's enabled switch (a device-write gate,
-		// O18 T1b review) of another type is off, unknown members drop.
-		for _, tt := range []struct{ member, want string }{{"port", `8080`}, {"token", `"7"`}, {"enabled", `false`}} {
+		// the Agent's enabled switch (a device-write gate) of another type
+		// is off, a numeric token (a credential) is empty, unknown members
+		// drop (O18 T1b review).
+		for _, tt := range []struct{ member, want string }{{"port", `8080`}, {"enabled", `false`}} {
 			raw, present, err := model.EncodeMember(&records[0], tt.member)
 			if err != nil || !present || string(raw) != tt.want {
 				t.Fatal(tt.member, string(raw), err)
 			}
+		}
+		if records[0].Token != "" {
+			t.Fatalf("numeric token read as %q, want empty", records[0].Token)
 		}
 		return nil
 	}); err != nil {
