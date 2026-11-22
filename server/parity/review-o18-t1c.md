@@ -139,3 +139,19 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
 - `PYREF_MODE=check`：installer 138.5 s、mosdns 67.8 s、oxidns 95.7 s、routersplit 4.0 s ok。
 - server R11：`ok configflow/internal/server 2.787s`。
 - `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-38 x 6`（.64）：`PREFLIGHT PASS`。
+
+## 第四轮：门禁 proddiff（new=87）与两个 fuzz 失败
+
+- **proddiff（e74e8b048）**：87 条几乎全是 `missing-in-go`——T1c 把接口与导出会原样回显的成员定为 omitzero 的非指针文本，存储里的 `""`/`{}` 被当成缺失。
+  按「存在性」修：规则 `value/remark/group_name`、节点 `remark`、订阅/聚合 `description`、域名发现 `regional_rulesets` 改为指针（`""`/`{}` 与缺失区分，与 Python 回显的存储字典相同）；
+  规则仓库的 `remark` 原先未声明、读取时被丢弃（`/api/rule-sets` 缺字段），现声明为指针；`client_fixed_ips`（导出 `extra-in-go`：旧库缺行时 Go 总写）改为按存在性保留，
+  新建配置空间仍写 `{}`。没有登记任何已接受差异。`GATE_ONLY=proddiff gate.sh -p 6`（.32）：`baseline: new=0 stale=0`，`GATE STAGE PASS: proddiff`。
+  `oxidns/adapter.go` 把规则 value 放进 `any` 构造的节点，指针会变成「unsupported Go value」——用字段改名逐轮编译列出全部生产引用点，确认这是唯一的 `any` 上下文，已改用 `model.TextValue`。
+  前端对这些字段都是 `item.remark || ''` 式读取，不依赖存在；修复后与 Python 一致。
+  负向对照：`RuleConfig.Remark` 改回 omitzero 文本 → `TestReviewO18T1cEchoedMembersKeepPresence` 失败（`remark:""` 被省略）。
+- **fuzz（2f7970228）**：宽松读用 `AllowInvalidUTF8` 接受非法 UTF-8，字符串叶子读作 U+FFFD，但「原样保留」的值（损坏的清单/守卫、`json.RawMessage` 成员、节点协议参数）
+  保留了原始字节，编码器拒绝 → 能读不能写。改为读取这些值时同样替换为 U+FFFD（`validUTF8`），只影响原本就无法写出的输入。失败输入加入
+  `testdata/fuzz/FuzzStoredTypes`、`FuzzTypedNodeProxy` 语料，另有 `TestReviewO18T1cInvalidUTF8KeptValuesAreWritable`（三种值，写出后再读稳定）。
+  负向对照：去掉三处 `validUTF8` → 该测试三个子用例全部失败。
+- o10t2 参考语料重录：变化来自上述两处（原先 `err:model: invalid JSON` 的原始值用例变为 ok；含 `client_fixed_ips`/空文本成员的文档用例哈希变化）。
+- pyref 重录（4094fae6a）：保留的输入 0 条输出变化；mosdns `TestCorpus` 1101 条、N73 1 条输入改为带存在性的存储形态（新增条目由真 Python 录制，`PYREF_MODE=check` 通过）。

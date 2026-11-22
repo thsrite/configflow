@@ -2976,8 +2976,10 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   策略组、规则、Mihomo/Surge/Loon/MosDNS/EasyTier 设置、域名发现、设备备注、固定 IP。
 - **始终写 / 可选**：Python 建档或归一化总写的成员始终写（例如路由器 `id/type/endpoint/username/password/两个 agent id/两个规则集列表`、
   发布结果 `at/ok/fingerprint/message`、`system_config.server_domain/github_proxy_domain/rule_fetch_proxy`、MosDNS 的规则列表与 DNS 文本、
-  域名发现历史的 `verdict/confidence/recheck`），其余为空时不写。配置空间的 `loon/domain_discovery/routers/device_notes/client_fixed_ips`
-  改为始终写（Python `_empty_profile` 总写；T1a 曾定为空时不写）；旧库缺这些行时，值不变就不补行（行的「存在」也按值是否改变保留）。
+  域名发现历史的 `verdict/confidence/recheck`），其余为空时不写。配置空间的 `loon/domain_discovery/routers/device_notes`
+  改为始终写（Python `_empty_profile` 总写；T1a 曾定为空时不写），`client_fixed_ips` 按存在性保留（新建配置空间写 `{}`，旧库缺行时接口与导出也不出现，与 Python 相同）；
+  接口和导出会原样回显的文本/对象成员保留存在性（指针，空文本 `""`/`{}` 与缺失区分）：规则 `value/remark/group_name`、节点 `remark`、
+  规则仓库 `remark`（新增声明）、订阅/聚合 `description`、域名发现 `regional_rulesets`（门禁 proddiff，HR 复核第四轮）；旧库缺这些行时，值不变就不补行（行的「存在」也按值是否改变保留）。
   库里存的空历史条目 `{}` 读出后带上这些始终写的空成员（接口返回空文本/`null`，Python 原样返回 `{}`）。
 - **未声明成员丢弃**：上述记录里不认识的成员读取时丢弃并汇总告警。例外（裁定 A）：节点的扁平协议参数（`cipher`、`uuid`、`ws-opts` 等）
   是协议参数而不是未知成员，保存在 `Node.ProtocolParams`（有序、写时复制、Clone 深拷贝），导出脱敏和节点测速照旧遍历；
@@ -3002,6 +3004,8 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   其它记录列表只丢坏元素。Agent 部署的 `dns_checks` 坏元素读作空检测（`elements:"keep"`），报告照旧追加「DNS 报告完整性」。
 - **删除/清理数量类设置**：`backup.keep_latest/keep_daily`、`traffic_history_retention_days` 只认整数字面量，数字文本、`1.0`、布尔等读作缺失
   （用默认值，宁可多留）+ 告警。订阅缓存孤儿清理在库里订阅列表有类型告警（非列表、元素非对象、id 非文本）时不删任何文件（失败即关）。
+- **非法 UTF-8**：宽松读接受（字符串叶子读作 U+FFFD）；原样保留的值（损坏的所有权清单、节点协议参数、原始 JSON 成员）写出时同样替换为 U+FFFD，
+  能读就能写（门禁 fuzz，HR 复核第四轮）。
 - **节点 `dialer_ref`**：库里存成非对象读作空引用（`ResourceRef` failClosed），生成时按「dialer_ref 必须为 …」拒绝，不会当成直连。
 - **规则集 behavior 存成 null**：读作空 behavior（`null:"empty"`），不套默认 `domain`（Python `get('behavior','domain')` 对 null 返回 None），
   例如 Linux 网关准备时这样的规则集不算可接管的域名规则集。
