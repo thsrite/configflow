@@ -6,6 +6,13 @@ pflag=()
 if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
 stage=${GATE_ONLY:-all}
 case "$stage" in all|core|agent|compare|proddiff|difftest|frontend) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
+# proddiff reference: python (default until WP11) or go (Go baseline tree vs this tree).
+proddiff_mode=${PRODDIFF_MODE:-python}
+case "$proddiff_mode" in
+  python) ;;
+  go) [[ -d ${PRODDIFF_BASE_TREE:-}/server ]] || { echo 'PRODDIFF_MODE=go needs PRODDIFF_BASE_TREE=<baseline tree>' >&2; exit 2; } ;;
+  *) echo "Unknown PRODDIFF_MODE: $proddiff_mode" >&2; exit 2 ;;
+esac
 logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
 chmod 700 "$logs"
@@ -151,8 +158,8 @@ run_proddiff() {
   go test -tags configflow_proddiff -count=1 -run '^TestProddiff(Content|WaitsForFreshProvider)' \
     ./internal/api/agents ./cmd/configflow >"$logs/observer.log" 2>&1 \
     || { cat "$logs/observer.log"; fail 'proddiff observer self-checks'; }
-  echo '== proddiff (live; no response cache)'
-  (cd .. && server/scripts/proddiff.sh) >"$logs/proddiff.log" 2>&1 \
+  echo "== proddiff (live; no response cache) mode=$proddiff_mode"
+  (cd .. && PRODDIFF_MODE=$proddiff_mode server/scripts/proddiff.sh) >"$logs/proddiff.log" 2>&1 \
     || { tail -30 "$logs/proddiff.log"; fail proddiff; }
   tail -30 "$logs/proddiff.log"
 }

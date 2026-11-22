@@ -77,7 +77,7 @@ class RoutingTests(unittest.TestCase):
         scripts = self.server / "scripts"
         scripts.mkdir(parents=True)
         shutil.copy(SOURCE, scripts / "gate.sh")
-        (scripts / "proddiff.sh").write_text('#!/bin/bash\necho "proddiff $*"\n')
+        (scripts / "proddiff.sh").write_text('#!/bin/bash\necho "proddiff mode=${PRODDIFF_MODE:-unset} base=${PRODDIFF_BASE_TREE:-} $*"\n')
         (scripts / "proddiff.sh").chmod(0o755)
         (scripts / "gate-live.py").write_text('import os, sys\nprint("synthetic live fake", *sys.argv[1:])\nsys.exit(1 if os.getenv("FAIL_DIFF") and "--difftest" in sys.argv else 0)\n')
         (self.server / "tools/pyref").mkdir(parents=True)
@@ -101,7 +101,7 @@ class RoutingTests(unittest.TestCase):
                         GATE_LOGS=str(self.root / "logs"), CONFIGFLOW_DIFF_PYTHON=shutil.which("python3"))
         for key in ("GATE_ONLY", "GATE_FULL", "GATE_SLOTS", "FAIL_RACE", "EMPTY_FINGERPRINT",
                     "GATE_FUZZ_JOBS", "GATE_FUZZ_PARALLEL", "GATE_FUZZTIME", "FAIL_FUZZ", "FAIL_DIFF",
-                    "FAIL_FRONTEND", "FAIL_TYPECHECK"):
+                    "FAIL_FRONTEND", "FAIL_TYPECHECK", "PRODDIFF_MODE", "PRODDIFF_BASE_TREE"):
             self.env.pop(key, None)
 
     def run_gate(self, targets=(), **env):
@@ -237,6 +237,23 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("gate: frontend PASS", default.stdout)
         core = self.run_gate(GATE_ONLY="core")
         self.assertNotIn("== frontend", core.stdout)
+
+    def test_proddiff_mode_defaults_to_python_and_go_needs_a_base_tree(self):
+        default = self.run_gate(GATE_ONLY="proddiff")
+        self.assertEqual(default.returncode, 0, default.stdout + default.stderr)
+        self.assertIn("mode=python", default.stdout)
+        self.assertIn("proddiff mode=python base=", default.stdout)
+        for env in ({"PRODDIFF_MODE": "typo"}, {"PRODDIFF_MODE": "go"},
+                    {"PRODDIFF_MODE": "go", "PRODDIFF_BASE_TREE": str(self.root / "missing")}):
+            with self.subTest(env=env):
+                result = self.run_gate(GATE_ONLY="proddiff", **env)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertNotIn("== proddiff", result.stdout)
+        base = self.root / "base"
+        (base / "server").mkdir(parents=True)
+        go = self.run_gate(GATE_ONLY="proddiff", PRODDIFF_MODE="go", PRODDIFF_BASE_TREE=str(base))
+        self.assertEqual(go.returncode, 0, go.stdout + go.stderr)
+        self.assertIn(f"proddiff mode=go base={base}", go.stdout)
 
     def test_invalid_stage_fails_before_work(self):
         result = self.run_gate(GATE_ONLY="typo")

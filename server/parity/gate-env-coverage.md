@@ -369,7 +369,7 @@ DIFF 保护的 live 路径在 core 通常 skip 或不执行，不能用 core 的
 |---|---|
 | repo.TestN82ReviewPrivateRepositoryInterchange；model.TestTypesPrivateSnapshot、TestHRSnapshotSchema | 默认 gate 未执行；需 CONFIGFLOW_SNAPSHOT。自动发现记录 3 个精确排除及理由；这不是 synthetic Python 前提，不能造空目录冒充执行。proddiff 不调用它们 |
 | repo/store.TestStoredRoundTrip 的 private-snapshot 子例 | 默认 synthetic compare 明确排除；合成和 Python 互通部分必跑。普通 proddiff 不替代此私人数据审计 |
-| api/agents.TestRealPreparationProof / CONFIGFLOW_A13_PROOF | 默认 skip；专用 `proddiff.sh --a13-proof` 准备 namespace 和 fixture，非普通 synthetic compare |
+| ~~api/agents.TestRealPreparationProof / CONFIGFLOW_A13_PROOF~~ | 2026-11-22 WP9 删除（连同 `proddiff.sh --a13-proof`/`--a18-proof`）：只为 Python 准备函数存在，A14 接线后延期条目已全部消失 |
 | installer.TestL1CompactMountsWithRealCompose、TestL1HAStartupWithRealSocketsAndSupervisor、TestL1RollbackWithRealInitManagers、TestL1ReviewFailureInjectionWithRealInitManagers、TestL1HAVerificationWithRealDNSClients / CONFIGFLOW_L1_CONTAINERS | 默认 skip；独立 Docker/Compose/init 作业，未全局强开 |
 | deploy.TestWriteServerArchives / CONFIGFLOW_WRITE_ARCHIVES；go-agent/routes.TestServerArchive / CONFIGFLOW_SERVER_ARCHIVES | 导出入口默认 skip；消费端属于另一个 module。需独立合成归档 conformance 链 |
 | installer.TestWriteShellcheckSample / INSTALLER_SAMPLE_DIR | 默认 skip；产物导出入口，需接 shellcheck 作业，不能把只导出当成校验成功 |

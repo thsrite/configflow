@@ -37,6 +37,11 @@ or `GATE FAIL: frontend (typecheck|vitest, see <log>)` with the failing test
 lines. Before this stage no gate ran the frontend (a stale vitest test stayed
 red on `go` from 2026-11-19 to 2026-11-22).
 Legacy `GATE_ONLY=proddiff` and `difftest` keep their narrow meaning.
+proddiff reference (WP9): `PRODDIFF_MODE=python` (default until WP11) compares Flask + Python
+generators with this tree; `PRODDIFF_MODE=go PRODDIFF_BASE_TREE=<tree with server/>` compares the
+baseline tree's Go binary and generator with this tree (`parity/proddiff-baseline-go.txt`, backend-free
+tools venv from `tools/requirements-tools.txt`). An unknown mode or a missing base tree exits 2 before
+any work. See `tools/proddiff/README.md`.
 
 ## Fuzz temporary space and concurrency
 

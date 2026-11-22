@@ -1,0 +1,1 @@
+# Route template	key path	difference type	reason (Go baseline vs Go candidate; entries marked open must be triaged before commit)

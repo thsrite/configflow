@@ -1,0 +1,4 @@
+# Comparator-only Python dependencies for test tools (proddiff run.py in PRODDIFF_MODE=go).
+# Independent of backend/requirements.txt: no Flask, no backend imports. proddiff.sh builds
+# ~/cf-tools/.venv from this file on the test server and rebuilds it when the file changes.
+PyYAML==6.0.1

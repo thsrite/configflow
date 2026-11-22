@@ -69,20 +69,24 @@ def inventory(doc, implemented):
     return jobs, coverage
 
 
-def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compare):
+def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compare,
+                reference='python', reference_command=None):
+    """Run the reference generator (left: Python or the Go baseline) and the Go candidate."""
+    if reference_command is None:
+        reference_command = [sys.executable, 'server/tools/proddiff/python_generators.py']
     jobs, coverage = inventory(doc, implemented)
     manifest = report / 'generator-jobs.json'
     manifest.write_text(json.dumps(jobs))
     outputs = []
     import shutil
-    for label in ('python', 'go'):
+    for label in (reference, 'go'):
         data = copies_parent / ('generator-' + label)
         shutil.copytree(snapshot, data)
         output = report / ('generator-' + label + '.jsonl')
         env = dict(os.environ, DATA_DIR=str(data), LOG_FILE=str(report / ('generator-' + label + '.log')),
                    LOG_LEVEL='ERROR', SUB_STORE_BUILTIN_DIR='/nonexistent',
                    CONFIGFLOW_BACKEND_HOST='127.0.0.1', CONFIGFLOW_BACKEND_PORT='5001')
-        command = [sys.executable, 'server/tools/proddiff/python_generators.py'] if label == 'python' else [str(binary)]
+        command = reference_command if label == reference else [str(binary)]
         with (report / ('generator-' + label + '.log')).open('wb') as log:
             subprocess.run(command + [str(manifest), str(output)], env=env, stdout=log, stderr=log,
                            check=True, timeout=600)
@@ -97,7 +101,7 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
         row = coverage[key]
         row['compared'] = row.get('compared', 0) + 1
         if left['status'] != 'ok' or right['status'] != 'ok':
-            row['python-error'] = row.get('python-error', 0) + (left['status'] != 'ok')
+            row[reference + '-error'] = row.get(reference + '-error', 0) + (left['status'] != 'ok')
             row['go-error'] = row.get('go-error', 0) + (right['status'] != 'ok')
             if left['status'] == right['status']:
                 row['both-error'] += 1
@@ -105,7 +109,7 @@ def run_workers(snapshot, copies_parent, report, binary, doc, implemented, compa
                 if left['error'] != right['error']:
                     found.add((key, 'error.message', 'value'))
             else:
-                found.add((key, 'status', 'generation-error-go' if right['status'] != 'ok' else 'generation-error-python'))
+                found.add((key, 'status', 'generation-error-go' if right['status'] != 'ok' else 'generation-error-' + reference))
             continue
         row['success'] += 1
         mime = {'yaml': 'text/yaml', 'json': 'application/json', 'text': 'text/plain'}[job['format']]

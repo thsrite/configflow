@@ -41,15 +41,50 @@ PARAM = re.compile(r'<(?:[^:>]+:)?([^>]+)>')
 BASE_URL = 'http://127.0.0.1:5001'
 READONLY_POST = json.loads((PARITY / 'proddiff-readonly-post.json').read_text())
 PRIVATE_REPORT = None
+# Two reference modes while backend/ still exists (no-python-tests.md WP9):
+#   python: Flask + Python generators (left) vs Go candidate (right);
+#   go:     Go baseline binary + its generator (left) vs Go candidate (right).
+# Difference kinds keep their names ("missing-in-go" = missing in the candidate);
+# only the left-side label in parse/generation/transport counters follows the mode.
+MODES = {'python': 'python', 'go': 'base'}
+MODE = os.environ.get('PRODDIFF_MODE', 'python')
+if MODE not in MODES:
+    raise SystemExit('PRODDIFF_MODE must be python or go')
+LEFT = MODES[MODE]
+IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9-]*')
+GO_LITERAL = re.compile(r'"([A-Za-z_][A-Za-z_0-9-]*)"|\b(?:json|yaml):"([A-Za-z_][A-Za-z_0-9-]*)')
+
+
+def python_source_keys(root):
+    keys = set()
+    for source in (root / 'backend').rglob('*.py'):
+        try:
+            tree = ast.parse(source.read_text())
+        except (SyntaxError, UnicodeError):
+            continue
+        keys.update(node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)
+                    and isinstance(node.value, str) and IDENTIFIER.fullmatch(node.value))
+    return keys
+
+
+def go_source_keys(root):
+    """String literals and json/yaml tags of non-test Go sources under server/."""
+    keys = set()
+    for source in (root / 'server').rglob('*.go'):
+        if source.name.endswith('_test.go') or 'testdata' in source.parts:
+            continue
+        try:
+            body = source.read_text()
+        except UnicodeError:
+            continue
+        for match in GO_LITERAL.finditer(body):
+            keys.add(match[1] or match[2])
+    return keys
+
+
 # A key is public only if it is a literal schema identifier in the reference source.
 KEYS = {'<key>', '<file>', 'status', 'Content-Type', 'body', 'content', 'config'}
-for source in (ROOT / 'backend').rglob('*.py'):
-    try:
-        tree = ast.parse(source.read_text())
-    except (SyntaxError, UnicodeError):
-        continue
-    KEYS.update(node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)
-                and isinstance(node.value, str) and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9-]*', node.value))
+KEYS.update(python_source_keys(ROOT) if MODE == 'python' else go_source_keys(ROOT))
 
 
 def safe_key(key):
@@ -509,6 +544,13 @@ def same_agent_transport_target(python_message, go_message):
 
 
 def response_diffs(left, right, route, rules, agent_identities=None, artifact_proofs=None):
+    if MODE == 'python':
+        left, right = python_reference_deltas(left, right, route)
+    return compared_diffs(left, right, route, rules, agent_identities, artifact_proofs)
+
+
+def python_reference_deltas(left, right, route):
+    """Approved Flask→Go transport deltas; Go-vs-Go mode compares both sides raw."""
     if approved_c07_readiness(left, right, route):
         # Compare the approved availability contract instead of exposing a
         # partial task list. Keep both original content types and headers.
@@ -525,6 +567,10 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
         headers = dict(left[3])
         del headers['content-disposition']
         left = (*left[:3], headers)
+    return left, right
+
+
+def compared_diffs(left, right, route, rules, agent_identities, artifact_proofs):
     out = []
     if (left[0] == 0) != (right[0] == 0):
         return [('status', 'transport-one-sided')]
@@ -538,7 +584,7 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
     if left[0] == 0 or right[0] == 0:
         return out
     values = []
-    for label, reply in (('python', left), ('go', right)):
+    for label, reply in ((LEFT, left), ('go', right)):
         try:
             values.append(parsed(reply[2], reply[1], route))
         except (ValueError, UnicodeError, yaml.YAMLError, zipfile.BadZipFile):
@@ -592,7 +638,7 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
     # explicitly does not chase requests vs net/http internal exception text.
     # Only this route, a failed 400 envelope and the same proven target qualify;
     # an A18 refusal or any Chinese/user error still differs normally.
-    if (route == '/api/agents/<agent_id>/generate-config' and left[0] == right[0] == 400
+    if (MODE == 'python' and route == '/api/agents/<agent_id>/generate-config' and left[0] == right[0] == 400
             and isinstance(a['body'], dict) and isinstance(b['body'], dict)
             and a['body'].get('success') is False and b['body'].get('success') is False
             and same_agent_transport_target(a['body'].get('message'), b['body'].get('message'))):
@@ -601,7 +647,7 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
     # Only that exact refusal on an otherwise identical failed 400 envelope gets
     # its own difference type, so the deferred baseline row cannot hide any other
     # generate-config message difference; it turns stale once A18 lands.
-    if (route == '/api/agents/<agent_id>/generate-config' and left[0] == right[0] == 400
+    if (MODE == 'python' and route == '/api/agents/<agent_id>/generate-config' and left[0] == right[0] == 400
             and isinstance(a['body'], dict) and isinstance(b['body'], dict)
             and a['body'].get('success') is False and b['body'].get('success') is False
             and b['body'].get('message') == A18_HA_REFUSAL and a['body'].get('message') != A18_HA_REFUSAL):
@@ -609,7 +655,7 @@ def response_diffs(left, right, route, rules, agent_identities=None, artifact_pr
         a['body']['message'] = b['body']['message']
     if agent_identities is not None and route in AGENT_COMPARISON_ROUTES:
         agent_identities.normalize(a['body'], b['body'], route)
-    if left[0] == right[0] == 200:
+    if MODE == 'python' and left[0] == right[0] == 200:
         strip_discovery_store_state(route, a['body'], b['body'])
         pair_agent_release(route, a['body'], b['body'])
     apply_rules(rules, route, a, b)
@@ -997,6 +1043,13 @@ def migrate_baselines(go_copy, report):
         raise RuntimeError('baseline migration changed database revision metadata')
 
 
+def left_disabled_background(report, left_routes):
+    if MODE == 'python':
+        return len((report / 'python-loops.txt').read_text().splitlines())
+    loops = set(Path(str(left_routes) + '.loops').read_text().split())
+    return len(loops - set(Path(str(left_routes) + '.startups').read_text().split()))
+
+
 def main():
     global PRIVATE_REPORT
     load_start = Path('/proc/loadavg').read_text().strip()
@@ -1021,27 +1074,34 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='copies-', dir=report) as temporary, contextlib.ExitStack() as cleanup:
             cleanup.callback(stop_processes, processes)
-            copies = [Path(temporary) / name for name in ('python', 'go')]
+            copies = [Path(temporary) / name for name in (LEFT, 'go')]
             for data in copies:
                 shutil.copytree(snapshot, data)
-            migrate_baselines(copies[1], report)
+            if MODE == 'python':
+                # Python-written receipts → Go format; both Go sides read the same raw copy.
+                migrate_baselines(copies[1], report)
             doc = document(copies[0])
             if not doc['profiles']:
                 raise RuntimeError('snapshot has no profiles')
+            left_routes = report / (LEFT + '-routes.tsv')
             for index, data in enumerate(copies):
                 env = dict(os.environ, DATA_DIR=str(data), LOG_FILE=str(data / 'app.log'), LOG_LEVEL='ERROR',
                            ADMIN_USERNAME='proddiff-admin', ADMIN_PASSWORD='proddiff-test-password',
                            JWT_SECRET_KEY='proddiff-test-only-shared-secret-0123456789', CONFIGFLOW_BACKEND_HOST='127.0.0.1',
                            CONFIGFLOW_BACKEND_PORT=str(15001 + index), CONFIGFLOW_FRONTEND_DIR='',
-                           SUB_STORE_BUILTIN_DIR='/nonexistent', PRODDIFF_ROUTES=str(report / 'go-routes.tsv'),
-                           PRODDIFF_PY_ROUTES=str(report / 'python-routes.tsv'),
-                           PRODDIFF_PY_LOOPS=str(report / 'python-loops.txt'),
-                           PRODDIFF_PY_THREADS=str(report / 'python-threads.txt'))
-                command = [sys.executable, 'server/tools/proddiff/flask_worker.py'] if index == 0 else [str(binary)]
-                with (report / ('python.log' if index == 0 else 'go.log')).open('wb') as log:
+                           SUB_STORE_BUILTIN_DIR='/nonexistent',
+                           PRODDIFF_ROUTES=str(left_routes if index == 0 and MODE == 'go' else report / 'go-routes.tsv'))
+                if MODE == 'python':
+                    env.update(PRODDIFF_PY_ROUTES=str(left_routes),
+                               PRODDIFF_PY_LOOPS=str(report / 'python-loops.txt'),
+                               PRODDIFF_PY_THREADS=str(report / 'python-threads.txt'))
+                    command = [sys.executable, 'server/tools/proddiff/flask_worker.py'] if index == 0 else [str(binary)]
+                else:
+                    command = [os.environ['PRODDIFF_BASE_BINARY'] if index == 0 else str(binary)]
+                with (report / (LEFT + '.log' if index == 0 else 'go.log')).open('wb') as log:
                     processes.append(subprocess.Popen(command, env=env, stdout=log, stderr=log, start_new_session=True))
             tokens = []
-            ready = [None, report / 'go-routes.tsv.ready']
+            ready = [None if MODE == 'python' else Path(str(left_routes) + '.ready'), report / 'go-routes.tsv.ready']
             for index in range(2):
                 for _ in range(450):
                     if processes[index].poll() is not None:
@@ -1059,15 +1119,23 @@ def main():
                 tokens.append(json.loads(login[2])['token'])
             implemented = set(tuple(line.split('\t')) for line in (report / 'go-routes.tsv').read_text().splitlines())
             known = {(row[0], row[1]) for row in rows}
-            python_routes = set(tuple(line.split('\t')) for line in (report / 'python-routes.tsv').read_text().splitlines())
+            left_implemented = set(tuple(line.split('\t')) for line in left_routes.read_text().splitlines())
             # A route registered under another template would be silently reported as not implemented.
             unmapped = {'UNMAPPED-GO-ROUTE\t' + ' '.join(route) for route in implemented - known}
-            unmapped |= {'UNMAPPED-PYTHON-ROUTE\t' + ' '.join(route) for route in python_routes - known}
+            unmapped |= {'UNMAPPED-' + LEFT.upper() + '-ROUTE\t' + ' '.join(route) for route in left_implemented - known}
+            candidate_only = set()
+            if MODE == 'go':
+                # Routes the baseline lacks cannot be compared; routes the candidate lost
+                # drop out of coverage and fail as coverage regressions.
+                candidate_only = implemented - left_implemented
+                implemented &= left_implemented
             go_loops = set((report / 'go-routes.tsv.loops').read_text().split())
             go_startups = set((report / 'go-routes.tsv.startups').read_text().split())
+            left_command = ([sys.executable, 'server/tools/proddiff/python_generators.py'] if MODE == 'python'
+                            else [os.environ['PRODDIFF_BASE_GENERATOR']])
             found, generator_coverage, generator_samples = run_workers(
                 snapshot, Path(temporary), report, Path(os.environ['PRODDIFF_GENERATOR']),
-                doc, implemented, response_diffs)
+                doc, implemented, response_diffs, LEFT, left_command)
             real = scrub(send(15002, 'GET', '/api/auth/status', tokens[1]), copies[1])
             counts = collections.Counter()
             coverage, failures = {}, collections.Counter()
@@ -1087,7 +1155,7 @@ def main():
                 started = time.monotonic()
                 reply = send(15001 + index, method, path, tokens[index], body,
                              timeout=timeout, transport_error=errors.append)
-                event = {'side': ('python', 'go')[index], 'method': method, 'route': route,
+                event = {'side': (LEFT, 'go')[index], 'method': method, 'route': route,
                          'timeout_seconds': timeout, 'elapsed_seconds': time.monotonic() - started,
                          'status': reply[0]}
                 if errors:
@@ -1116,7 +1184,7 @@ def main():
                 yield from comparison_results(all_cases, compare)
 
             json_sample = None
-            transport_retries = {'python': 0, 'go': 0}
+            transport_retries = {LEFT: 0, 'go': 0}
             with (report / 'responses.jsonl').open('w') as responses:
                 for case, left, right, retries, transport in results():
                     method, route, path, body, no_data = case
@@ -1131,7 +1199,7 @@ def main():
                         transport_retries[label] += transport[index]
                     counts['bracket-rescued'] += int(retries > 0)
                     responses.write(json.dumps({'method': method, 'route': route, 'path': path,
-                                                'python': [left[0], left[1], left[2].decode('utf-8', errors='replace'), left[3]],
+                                                LEFT: [left[0], left[1], left[2].decode('utf-8', errors='replace'), left[3]],
                                                 'go': [right[0], right[1], right[2].decode('utf-8', errors='replace'), right[3]]}, ensure_ascii=False) + '\n')
                     counts['compared'] += 1
                     if 200 <= right[0] < 300:
@@ -1163,7 +1231,7 @@ def main():
                                 identity += '?' + urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get('profile_id', [''])[0]
                             http_successes[generator_key].add(identity)
                             row['success'] = len(http_successes[generator_key])
-                    for label, reply in (('python', left), ('go', right)):
+                    for label, reply in ((LEFT, left), ('go', right)):
                         if reply[0] == 0 or re.search(rb'ConnectionError|Network is unreachable|No route to host|Connection refused|Failed to establish|connect: network|dial tcp|timed out', reply[2], re.I):
                             failures[label + '-connection-failed'] += 1
                     if left[0] == 0 or right[0] == 0:
@@ -1180,7 +1248,7 @@ def main():
             if started_threads & PY_DISABLED_THREADS:
                 raise RuntimeError('a disabled Python background loop started')
             coverage.update(generator_coverage)
-            baseline_path = PARITY / 'proddiff-baseline.txt'
+            baseline_path = PARITY / ('proddiff-baseline.txt' if MODE == 'python' else 'proddiff-baseline-go.txt')
             baseline = set()
             for line in baseline_path.read_text().splitlines():
                 if line and not line.startswith('#'):
@@ -1223,10 +1291,11 @@ def main():
             summary = {'GET_routes_compared': sum(key.startswith('GET ') and row.get('compared', 0) > 0 for key, row in http_rows.items()),
                        'GET_routes_error_branch_only': sum(key.startswith('GET ') and 0 < row.get('compared', 0) <= row.get('no-snapshot-parameter', 0) for key, row in http_rows.items()),
                        'GET_Go_not_implemented': sum(key.startswith('GET ') and row.get('Go 尚未实现', 0) > 0 for key, row in http_rows.items()),
-                       'python_disabled_background': len((report / 'python-loops.txt').read_text().splitlines()),
+                       'mode': MODE,
+                       LEFT + '_disabled_background': left_disabled_background(report, left_routes),
                        'go_disabled_background': len(go_loops - go_startups),
                        'go_startup_once': sorted(go_startups),
-                       'python_threads_started': len(started_threads - {''}),
+                       'candidate_only_routes': len(candidate_only),
                        'unique_differences_by_domain_type': dict(sorted(unique_counts.items())),
                        'no_snapshot_parameter_cases': sum(row.get('no-snapshot-parameter', 0) for row in http_rows.values()),
                        'GET_routes_total': sum(row[0] == 'GET' for row in rows),
@@ -1238,6 +1307,8 @@ def main():
                        'loadavg': {'start': load_start, 'end': Path('/proc/loadavg').read_text().strip()},
                        'coverage_regressions': len(lost_coverage), 'unmapped_routes': len(unmapped),
                        'unique_differences': len(found), 'new': len(new), 'stale': len(stale), 'self_check': 'PASS'}
+            if MODE == 'python':
+                summary['python_threads_started'] = len(started_threads - {''})
             (report / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2))
             (report / 'coverage.json').write_text(json.dumps(coverage, ensure_ascii=False, indent=2))
             phase2 = [

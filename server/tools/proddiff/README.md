@@ -12,12 +12,41 @@ rt -- server/scripts/proddiff.sh ~/cf-prod-snapshot/20261116/data
 退出码：0 表示没有新增差异和覆盖回退；1 表示发现回归；2 表示运行环境或框架失败。
 基线差异消失时打印 `stale` 并令检查失败，必须删除过期条目后重跑；门禁要求 `new=0 stale=0`。
 
-`rt -- server/scripts/proddiff.sh --a13-proof` 在同样的只读、断网命名空间中，使用真实 Python
-准备函数产出的候选 bundle 验证 A13 的 24 条 A14 延期差异。先逐条证明原 20 项与新增 4 项
-（list 三条 content_sync.checked_at、detail 一条）不接线时都能复现，再向
-Go Checker 注入经过归档完整性校验的真实候选，比较同一批路由的完整响应。独立生成的时间和版本号
-单独检查格式、一一对应和缓存稳定性；标准 proddiff 的比较规则保持不变。真实数据只留在服务器的
-私有临时目录，不提交语料，不输出响应值。
+`--a13-proof` 和 `--a18-proof` 已删除（WP9）：两者都启动 Flask 或真实 Python 准备函数，A14/A18
+接线后对应的延期条目已经全部消失。历史结果见 `parity/PROGRESS-agents.md` 和 `parity/proddiff-findings.md`。
+
+## 两种参考模式（WP9，`server/design/no-python-tests.md`）
+
+| 模式 | 左侧（参考） | 右侧 | 基线文件 |
+|---|---|---|---|
+| `PRODDIFF_MODE=python`（默认，WP11 前） | Flask（`flask_worker.py`）+ Python 生成器（`python_generators.py`） | 本树 Go | `parity/proddiff-baseline.txt` |
+| `PRODDIFF_MODE=go` | 基线树构建的 Go `configflow`（`configflow_proddiff` tag）+ 基线树的 `tools/proddiff/generator` | 本树 Go | `parity/proddiff-baseline-go.txt` |
+
+```bash
+# 基线树：任意含 server/ 的源码目录（上一个发布 tag 或上一次通过门禁的 go），例如 rt 同步过去的 worktree
+RT_HOST=sunbroke@192.168.0.64 rt -e PRODDIFF_MODE=go -e PRODDIFF_BASE_TREE=$HOME/rt/<基线树> -- server/scripts/proddiff.sh
+# 门禁同样只认这两个变量（默认仍是 python，WP11 再切）
+GATE_ONLY=proddiff PRODDIFF_MODE=go PRODDIFF_BASE_TREE=... server/scripts/gate.sh
+```
+
+Go 模式下：
+
+- 两个 Go 进程各自加载同一快照的一份**原样**副本（不做 A14 的 Python→Go 收据格式迁移，那只用于 Python
+  参考），分别写自己的路由清单（`base-routes.tsv` / `go-routes.tsv`），两边都等启动工作完成（`.ready`）才比较。
+- 只比较两边都注册的路由。候选新增、基线没有的路由不比较，计入 `candidate_only_routes`；
+  候选删掉的路由从覆盖中消失，按覆盖回退失败。覆盖文件（`proddiff-coverage.txt`、
+  `proddiff-generator-coverage.json`）两种模式共用。
+- 只为 Flask→Go 存在的已批准差异全部不生效：O9 安全头和安装脚本 token 差量、L1 回滚差量、C07 未就绪响应、
+  Agent 版本号配对、离线 Agent 传输错误文本、A18 拒绝、M18 store_state。两边都是 Go，原样比较。
+  时间戳、随机身份等运行时字段仍按 `proddiff-normalize.json` 和配对规则处理。
+- 差异类型名不变（`missing-in-go` = 候选缺少）；解析、生成失败和传输计数里的左侧标签是 `base`
+  （如 `parse-base`、`generation-error-base`）。
+- 比较器本身仍是 Python（标准库 + PyYAML），在独立的工具 venv（默认 `~/cf-tools/.venv`，
+  `PRODDIFF_TOOLS_VENV` 可改）中运行，由 `server/tools/requirements-tools.txt` 建立，文件变化时自动重建；
+  不装 Flask、不装 backend 依赖，命名空间内也不把仓库根放进 `PYTHONPATH`。公开键名单从 Go 源码
+  （非测试 `.go` 的字符串字面量和 json/yaml tag）提取，不读 `backend/`。
+- 负向对照（2026-11-22，WP9 交付）：在候选树里临时改一个响应字段、一个存储写入，Go 模式都报 `new>0`；
+  结果见 `parity/progress/nopy-wp9.md`。
 
 仅在 Go `configflow_proddiff` 构建和 Flask 测试启动器中，Agent list/detail 的 content_sync
 以及 push-diff 会等实际 Checker 不再返回 checking 后再交给比较器。等待上限 120 秒，

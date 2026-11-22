@@ -1,46 +1,69 @@
 #!/usr/bin/env bash
 # Builds may use the network; snapshot readers and both servers never do.
+#
+# Modes (no-python-tests.md WP9):
+#   PRODDIFF_MODE=python (default)  Flask + Python generators vs the Go candidate (this tree).
+#   PRODDIFF_MODE=go                Go baseline vs the Go candidate. PRODDIFF_BASE_TREE names the
+#                                   baseline source tree (a checkout containing server/); its
+#                                   configflow binary and proddiff generator replace Flask and the
+#                                   Python generators. The comparator then runs from a backend-free
+#                                   tools venv (server/tools/requirements-tools.txt).
 set -euo pipefail
 umask 077
 root=$(cd "$(dirname "$0")/../.." && pwd)
-python=${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}
+mode=${PRODDIFF_MODE:-python}
 if [[ ${1:-} == --help ]]; then
- printf '%s\n' 'Usage: rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline | --a13-proof | --a18-proof]'
+ printf '%s\n' 'Usage: [PRODDIFF_MODE=go PRODDIFF_BASE_TREE=<dir>] rt -- server/scripts/proddiff.sh [snapshot-data-directory] [--record-baseline]'
  exit 0
 fi
 snapshot=$HOME/cf-prod-snapshot/20261116/data
 if (($#)) && [[ $1 != --* ]]; then snapshot=$1; shift; fi
-a13proof=0
-a18proof=0
 for option in "$@"; do
  case $option in
   --record-baseline) ;;
-  --a13-proof) a13proof=1 ;;
-  --a18-proof) a18proof=1 ;;
   *) printf '%s\n' 'Unknown option'; exit 2 ;;
  esac
 done
+case $mode in
+ python) python=${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python} ;;
+ go)
+  [[ -n ${PRODDIFF_BASE_TREE:-} && -d ${PRODDIFF_BASE_TREE}/server ]] \
+   || { printf '%s\n' 'PRODDIFF_MODE=go needs PRODDIFF_BASE_TREE=<baseline source tree with server/>'; exit 2; }
+  base_tree=$(realpath "$PRODDIFF_BASE_TREE")
+  # Comparator-only venv: stdlib + PyYAML, no Flask and no backend requirements.
+  tools=${PRODDIFF_TOOLS_VENV:-$HOME/cf-tools/.venv}
+  requirements=$root/server/tools/requirements-tools.txt
+  stamp=$(sha256sum "$requirements" | cut -d' ' -f1)
+  mkdir -p "$(dirname "$tools")"
+  (
+   flock 9
+   if [[ ! -x $tools/bin/python || $(cat "$tools/.requirements-sha256" 2>/dev/null) != "$stamp" ]]; then
+    rm -rf "$tools"
+    uv venv -q --python 3.11 "$tools"
+    uv pip install -q --python "$tools/bin/python" -r "$requirements"
+    printf '%s\n' "$stamp" >"$tools/.requirements-sha256"
+   fi
+  ) 9>"$tools.lock"
+  python=$tools/bin/python
+  ;;
+ *) printf '%s\n' 'PRODDIFF_MODE must be python or go'; exit 2 ;;
+esac
 runner=server/tools/proddiff/run.py
-if ((a13proof)); then
- [[ $# == 1 ]] || { printf '%s\n' '--a13-proof cannot record a baseline'; exit 2; }
- runner=server/tools/proddiff/a13_proof.py
- shift
-fi
-if ((a18proof)); then
- [[ $# == 1 ]] || { printf '%s\n' '--a18-proof cannot record a baseline'; exit 2; }
- runner=server/tools/proddiff/a18_proof.py
- shift
-fi
 snapshot=$(realpath "$snapshot")
 private=$HOME/cf-prod-snapshot
 mkdir -p "$private/runs"
 chmod 700 "$private" "$private/runs"
 build=$(mktemp -d)
 trap 'rm -rf "$build"' EXIT
-if ((a13proof)); then
- (cd "$root/server" && go test -c -o "$build/configflow" ./internal/api/agents)
-else
- (cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator && go build -o "$build/baseline" ./tools/proddiff/baseline)
+(cd "$root/server" && go build -tags configflow_proddiff -o "$build/configflow" ./cmd/configflow && go build -o "$build/generator" ./tools/proddiff/generator)
+if [[ $mode == python ]]; then
+ (cd "$root/server" && go build -o "$build/baseline" ./tools/proddiff/baseline)
+fi
+export PRODDIFF_MODE=$mode
+if [[ $mode == go ]]; then
+ mkdir "$build/base"
+ (cd "$base_tree/server" && go build -tags configflow_proddiff -o "$build/base/configflow" ./cmd/configflow && go build -o "$build/base/generator" ./tools/proddiff/generator)
+ export PRODDIFF_BASE_BINARY=$build/base/configflow PRODDIFF_BASE_GENERATOR=$build/base/generator
 fi
 # Mount namespace makes the source itself read-only, including to descendants.
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '
@@ -63,7 +86,9 @@ unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-p
  mount --bind "$1" "$1"
  mount -o remount,bind,ro "$1"
  cd "$2"
- export PYTHONPATH="$2" PYTHONDONTWRITEBYTECODE=1
+ export PYTHONDONTWRITEBYTECODE=1
+ # Go-vs-Go comparator must not be able to import backend/: only python mode gets the repo root.
+ if [[ $PRODDIFF_MODE == python ]]; then export PYTHONPATH="$2"; else unset PYTHONPATH; fi
  export PRODDIFF_GENERATOR="$(dirname "$4")/generator"
  export PRODDIFF_BASELINE_TOOL="$(dirname "$4")/baseline"
  exec "$3" "$5" "$1" "$4" "${@:6}"

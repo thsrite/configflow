@@ -20,6 +20,14 @@ pd = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pd)
 
 JSON = 'application/json'
+REPO = Path(__file__).resolve().parents[3]
+try:
+    import flask  # noqa: F401  Flask launcher policy only exists in python mode.
+    FLASK = True
+except ImportError:
+    FLASK = False
+# The Go-vs-Go comparator runs from server/tools/requirements-tools.txt (no Flask, no backend/).
+PYTHON_REFERENCE = FLASK and (REPO / 'backend').is_dir()
 
 
 def reply(body, content_type=JSON, status=200, headers=None):
@@ -329,6 +337,7 @@ class ComparatorTests(unittest.TestCase):
                 self.assertTrue(pd.response_diffs(py, bad, route, []))
             self.assertTrue(pd.response_diffs(py, go_ok, '/api/agents', []))
 
+    @unittest.skipUnless(PYTHON_REFERENCE, 'python-mode reference source not installed')
     def test_agent_release_exemption_is_exact(self):
         root = Path(__file__).resolve().parents[3]
         python = (root / 'backend/agents/version.py').read_text()
@@ -894,22 +903,6 @@ class AggregationInventoryTests(unittest.TestCase):
 
 
 class BaselineExitTests(unittest.TestCase):
-    def test_a13_deferrals_are_exact_or_removed_together_by_a14(self):
-        rows = [line.split('\t', 3) for line in (pd.PARITY / 'proddiff-baseline.txt').read_text().splitlines()
-                if 'deferred → A14' in line and line.split('\t', 1)[0] in
-                {'GET ' + route for route in pd.AGENT_COMPARISON_ROUTES}]
-        if not rows:
-            return  # A14 removes all twenty-four after wiring real preparation.
-        self.assertEqual(24, len(rows))
-        fixture = Path(__file__).parents[2] / 'internal/api/agents/content_proof_test.go'
-        approved = fixture.read_text().split('const a13DeferredFields = `', 1)[1].split('`', 1)[0]
-        expected = {('GET ' + route, path, kind) for route, path, kind in
-                    (line.split('\t') for line in approved.splitlines())}
-        self.assertEqual(expected, {tuple(row[:3]) for row in rows})
-        for row in rows:
-            self.assertNotIn('*', row[0] + row[1])
-            self.assertEqual('deferred → A14：PrepareFunc 未接线，接线后必须消失', row[3])
-
     def test_real_main_rejects_stale_but_accepts_matching_and_recorded_baselines(self):
         # Exercise main's actual baseline/report/exit path. Only process and
         # network boundaries are replaced; all data belongs to this temp tree.
@@ -991,6 +984,7 @@ class BaselineExitTests(unittest.TestCase):
                     self.assertIn('body.value', path.read_text())
 
 
+@unittest.skipUnless(FLASK, 'Flask launcher policy is python-mode only')
 class ContentObserverTests(unittest.TestCase):
     def content_app(self, delay, endpoint, shape, timeout=1):
         from flask import Flask
@@ -1071,6 +1065,161 @@ class C33EditorRevisionTests(unittest.TestCase):
             with self.subTest(changed=changed):
                 self.assertTrue(pd.response_diffs(reply(source), reply(changed), route, selected))
         self.assertTrue(pd.response_diffs(reply(source), reply(target), '/api/rule-library', selected))
+
+
+
+class GoModeTests(unittest.TestCase):
+    """PRODDIFF_MODE=go: Go baseline (left) vs Go candidate (right), no Python reference."""
+
+    def setUp(self):
+        for name, value in (('MODE', 'go'), ('LEFT', 'base')):
+            patch = mock.patch.object(pd, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_python_reference_deltas_do_not_apply(self):
+        # Python mode accepts the Flask-CORS → Go security-header delta; Go-vs-Go must not.
+        source = {'access-control-allow-origin': '*', 'vary': 'Origin, Accept-Encoding'}
+        target = {'vary': 'Accept-Encoding', 'x-content-type-options': 'nosniff'}
+        left = reply(b'rule text', 'text/plain; charset=utf-8', headers=source)
+        right = reply(left[2], left[1], headers=target)
+        found = pd.response_diffs(left, right, '/api/rules/local/<name>', [])
+        self.assertIn(('header.Access-Control-Allow-Origin', 'missing-in-go'), found)
+        self.assertEqual([], pd.response_diffs(right, right, '/api/rules/local/<name>', []))
+        # The Go-only Agent release pairing is a Python-mode exemption as well.
+        latest = '/api/agents/latest-version'
+        self.assertTrue(pd.response_diffs(reply({'success': True, 'version': pd.PYTHON_AGENT_LATEST}),
+                                          reply({'success': True, 'version': pd.GO_AGENT_LATEST}), latest, []))
+        store = {'success': True, 'agents': [{'id': 'a', 'store_state': 'ok', 'store_message': ''}]}
+        self.assertTrue(pd.response_diffs(reply({'success': True, 'agents': [{'id': 'a'}]}), reply(store),
+                                          '/api/domain-discovery/agents', []))
+
+    def test_parse_failure_names_the_baseline_side(self):
+        self.assertIn(('body', 'parse-base'), pd.response_diffs(reply(b'{', JSON), reply({}), '/api/x', []))
+        self.assertIn(('body', 'parse-go'), pd.response_diffs(reply({}), reply(b'{', JSON), '/api/x', []))
+
+    def test_go_source_keys_read_literals_and_tags_but_not_tests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / 'server/internal/x'
+            (package / 'testdata').mkdir(parents=True)
+            (package / 'x.go').write_text('package x\ntype T struct {\n\tA int `json:"alpha_key,omitempty" yaml:"yaml-key"`\n}\n'
+                                          'var m = map[string]int{"literal_key": 1, "not a key": 2}\n')
+            (package / 'x_test.go').write_text('package x\nvar t = "test_only_key"\n')
+            (package / 'testdata/fixture.go').write_text('package x\nvar f = "fixture_key"\n')
+            keys = pd.go_source_keys(root)
+        self.assertLessEqual({'alpha_key', 'yaml-key', 'literal_key'}, keys)
+        self.assertFalse({'not a key', 'test_only_key', 'fixture_key'} & keys)
+
+    def test_generator_workers_run_the_baseline_generator(self):
+        from generators import run_workers
+        jobs = [{'index': 0, 'kind': 'mihomo', 'format': 'yaml'}, {'index': 1, 'kind': 'surge', 'format': 'text'}]
+        coverage = {'GENERATOR mihomo': {'success': 0, 'both-error': 0}, 'GENERATOR surge': {'success': 0, 'both-error': 0}}
+        commands = []
+
+        def worker(command, *, env, **_kwargs):
+            commands.append(command[:-2])
+            base = command[0] == '/synthetic/base-generator'
+            rows = [{'index': 0, 'status': 'ok', 'content': 'port: 1\n' if base else 'port: 2\n'},
+                    {'index': 1, 'status': 'ok' if base else 'error', 'content': 'x\n', 'error': 'boom'}]
+            Path(command[-1]).write_text(''.join(json.dumps(row) + '\n' for row in rows))
+
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch('generators.inventory', return_value=(jobs, coverage)), \
+                mock.patch('generators.subprocess.run', side_effect=worker), \
+                mock.patch('shutil.copytree'):
+            root = Path(temporary)
+            found, rows, _ = run_workers(root / 'snapshot', root, root, Path('/synthetic/candidate-generator'), {}, set(),
+                                         pd.response_diffs, 'base', ['/synthetic/base-generator'])
+        self.assertEqual([['/synthetic/base-generator'], ['/synthetic/candidate-generator']], commands)
+        self.assertIn(('GENERATOR mihomo', 'body.port', 'value'), found)
+        self.assertIn(('GENERATOR surge', 'status', 'generation-error-go'), found)
+        self.assertEqual(0, rows['GENERATOR surge'].get('base-error'))
+        self.assertEqual(1, rows['GENERATOR surge'].get('go-error'))
+
+    def run_main(self, candidate_value, extra_python_baseline=()):
+        """Drive main() with process/network boundaries replaced; returns (exit, summary, launches, workers)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot, parity = root / 'snapshot', root / 'parity'
+            snapshot.mkdir()
+            parity.mkdir()
+            (root / 'cf-prod-snapshot/runs').mkdir(parents=True)
+            (parity / 'routes.tsv').write_text('GET\t/api/synthetic\nGET\t/api/candidate-only\n')
+            (parity / 'proddiff-coverage.txt').write_text('GET /api/synthetic\n')
+            (parity / 'proddiff-generator-coverage.json').write_text('{}')
+            (parity / 'proddiff-baseline-go.txt').write_text('# header\n')
+            # Python-mode entries must be ignored (they would all be stale here).
+            (parity / 'proddiff-baseline.txt').write_text(''.join('\t'.join(row) + '\tPython delta\n'
+                                                                  for row in extra_python_baseline))
+            launches = []
+
+            def launch(command, *, env, **_kwargs):
+                launches.append((command, env['PRODDIFF_ROUTES']))
+                base = command == ['/synthetic/base-configflow']
+                manifest = 'GET\t/api/synthetic\n' + ('' if base else 'GET\t/api/candidate-only\n')
+                Path(env['PRODDIFF_ROUTES']).write_text(manifest)
+                for suffix in ('.ready', '.loops', '.startups'):
+                    Path(env['PRODDIFF_ROUTES'] + suffix).write_text('')
+                return mock.Mock(poll=lambda: None)
+
+            def send(port, method, path, *_args, **_kwargs):
+                if method == 'POST':
+                    return reply({'token': 'synthetic-login'})
+                return reply({'value': 1 if port == 15001 else candidate_value})
+
+            workers = mock.Mock(return_value=(set(), {}, {}))
+            argv = ['run.py', str(snapshot), '/synthetic/candidate-configflow']
+            with contextlib.ExitStack() as patches:
+                for patch in (
+                    mock.patch.object(pd, 'PARITY', parity),
+                    mock.patch.object(pd, 'PRIVATE_REPORT', None),
+                    mock.patch.object(pd.Path, 'home', return_value=root),
+                    mock.patch.object(pd, 'assert_no_egress'),
+                    mock.patch.object(pd, 'digest_tree', return_value='immutable'),
+                    mock.patch.object(pd, 'lock_runs'),
+                    mock.patch.object(pd, 'load_rules', return_value=[]),
+                    mock.patch.object(pd, 'document', return_value={'profiles': {'default': {}}}),
+                    mock.patch.object(pd, 'migrate_baselines', side_effect=AssertionError('python-only migration')),
+                    mock.patch.object(pd, 'run_workers', workers),
+                    mock.patch.object(pd, 'cases', return_value=[('GET', '/api/synthetic', '/api/synthetic', None, False),
+                                                                ('GET', '/api/candidate-only', '/api/candidate-only', None, False)]),
+                    mock.patch.object(pd, 'self_check', return_value={}),
+                    mock.patch.object(pd, 'stop_processes'),
+                    mock.patch.object(pd.os, 'statvfs', return_value=SimpleNamespace(f_flag=os.ST_RDONLY)),
+                    mock.patch.object(pd.subprocess, 'Popen', side_effect=launch),
+                    mock.patch.object(pd.signal, 'signal'),
+                    mock.patch.object(pd, 'send', side_effect=send),
+                    mock.patch.object(pd.sys, 'argv', argv),
+                    mock.patch.dict(pd.os.environ, PRODDIFF_GENERATOR='/synthetic/generator',
+                                    PRODDIFF_BASE_BINARY='/synthetic/base-configflow',
+                                    PRODDIFF_BASE_GENERATOR='/synthetic/base-generator'),
+                    mock.patch('sys.stdout', new_callable=io.StringIO),
+                ):
+                    patches.enter_context(patch)
+                status = pd.main()
+            summary = json.loads(next((root / 'cf-prod-snapshot/runs').glob('run-*/summary.json')).read_text())
+            responses = next((root / 'cf-prod-snapshot/runs').glob('run-*/responses.jsonl')).read_text()
+        return status, summary, launches, workers, responses
+
+    def test_main_compares_two_go_processes_and_catches_injected_change(self):
+        stale_python = {('GET /api/synthetic', 'body.python', 'missing-in-go')}
+        status, summary, launches, workers, responses = self.run_main(1, stale_python)
+        self.assertEqual(0, status)
+        self.assertEqual(['/synthetic/base-configflow'], launches[0][0])
+        self.assertTrue(launches[0][1].endswith('/base-routes.tsv'))
+        self.assertEqual(['/synthetic/candidate-configflow'], launches[1][0])
+        self.assertTrue(launches[1][1].endswith('/go-routes.tsv'))
+        args = workers.call_args.args
+        self.assertEqual(('base', ['/synthetic/base-generator']), args[-2:])
+        self.assertEqual({('GET', '/api/synthetic')}, args[5])
+        self.assertEqual(('go', 0, 0, 1, 0), (summary['mode'], summary['new'], summary['stale'],
+                                              summary['candidate_only_routes'], summary['coverage_regressions']))
+        self.assertNotIn('python_threads_started', summary)
+        self.assertIn('"base": [200', responses)
+        # Negative control: one changed candidate field is a new difference.
+        status, summary, *_ = self.run_main(2)
+        self.assertEqual((1, 1), (status, summary['new']))
 
 
 
