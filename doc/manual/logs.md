@@ -2,7 +2,7 @@
 
 [文档首页](../README.md)
 
-入口：**系统 → 日志**。日志是面板做过哪些事、在哪里出错的文字记录。这里显示 ConfigFlow 服务端日志；Mihomo、OxiDNS 或 Agent 自己的运行日志，要到对应面板或 Agent 卡片查看。
+入口：**系统 → 日志**。日志是面板做过哪些事、在哪里出错的文字记录。这里显示 ConfigFlow 服务端日志，也包括内置 Sub-Store 的输出（来源 `sub-store`）；Mihomo、OxiDNS 或 Agent 自己的运行日志，要到对应面板或 Agent 卡片查看。
 
 ## 推荐的排查步骤
 

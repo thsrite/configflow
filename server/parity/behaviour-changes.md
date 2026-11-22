@@ -1,5 +1,27 @@
 # Deliberate behaviour changes
 
+## nopy-panel-image — 面板镜像去掉 Python 与 supervisord（2026-11-23）
+
+维护者同意先试（`server/parity/progress/nopy-panel-image.md`）。与旧镜像（supervisord 管 Go server + 按需启停的 Sub-Store，
+`auto_update.py`）相比，对外可见的差异：
+
+- **进程模型**：1 号进程是 tini（`-g`），启动脚本 exec Go 服务；Go 服务自己启动/停止 Sub-Store 子进程（独立进程组）。
+  Go 服务退出时容器随之退出，由 Docker 重启策略重新拉起（旧镜像由 supervisord 原地重启 Go 服务，容器不退出）。
+- **Sub-Store 崩溃重启**：意外退出后按 1 s、2 s、4 s…最长 30 s 退避重启，稳定运行 30 s 后退避复位，不会像 supervisord
+  `startretries=3` 那样进入 FATAL 后不再拉起；退避期间状态词为 `BACKOFF`，「启动」不会跳过退避。停止：SIGTERM 发给整个
+  进程组，5 s 后 SIGKILL（与原 `stopwaitsecs=5`、`killasgroup` 相同）。
+- **关停顺序**：`docker stop` 时 Sub-Store 在面板请求收尾（drain）之后才停止（旧镜像 supervisord 先停 Go 服务再停 Sub-Store，结果相同）。
+- **Sub-Store 输出**：写进服务日志（`app.log`，日志页可见，来源 `sub-store`，stdout 为 INFO、stderr 为 WARNING），URL 经
+  `weburl.SafeForLog` 脱敏；旧镜像只进容器标准输出。容器标准输出里仍能看到（logx 同时写控制台），但行格式带时间与来源前缀。
+- **进程控制失败的文案**：`无法管理内置 Sub-Store，请检查容器服务状态` 只在没有进程控制器或面板正在关停时出现；启动/停止失败
+  （例如找不到 `node`）一律为 `Sub-Store 服务操作失败，请检查容器日志`，详细原因写日志。在线更新后重启失败的回滚文案里，
+  `exception_type` 为 Go 错误类型（以前是 supervisorctl 输出包装的 `errors.errorString`）。
+- **autoupdate**：`configflow-autoupdate`（Go）与 `auto_update.py` 行为一致，源码指纹逐字节相同（旧容器的构建缓存继续复用）。
+  差异：日志行改为 logx 格式（`… - auto-update - INFO - …`，原为 `[auto-update] …`）；预压缩用 Go 的 gzip（同为 level 9、
+  无文件名、mtime 0，字节与 Python zlib 输出不同，内容相同）；源码包解压按 tarfile `data` 过滤规则实现（拒绝越界路径/链接与设备文件，
+  去掉 setuid/setgid/sticky 与组/其他写权限）；在「源不可达 / 已是最新」分支里安装记录的构建失败时，回退到镜像自带版本（Python 会抛异常，
+  由启动脚本吞掉后继续用当前文件）。
+
 ## O13 #2 — 不存在的 Agent 在日志、日志配置与服务操作路由返回 404（Python bug 修正）
 
 协调者批准修正 Python 遗留缺陷（2026-11-21，见 `server/parity/o13-completeness.md`「需要维护者决定」第 2 条）：以下 8 条路由在请求不存在的 `<agent_id>` 时，Python 的 `AgentManager` 返回不含 `http_status` 的 `{'success': False, 'message': 'Agent not found'}`，路由层按 `200 if result.get('success') else 500` 统一变成 HTTP 500。Go 改为返回 HTTP 404，保留原有 JSON 响应体 `{"success": false, "message": "Agent not found"}` 与响应头：

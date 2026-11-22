@@ -40,8 +40,9 @@ Go 服务是单个二进制 `cmd/configflow`，取代 Flask + waitress + nginx �
 - **node-probe**（`backend/node-probe` 编译出的独立 worker）：节点测速子进程，由 `internal/health` 调用。
 - **网络设备**：RouterOS REST / iKuai，经 `internal/devhttp`（不走代理、不跟随重定向、可按设备关闭 TLS 校验）。
 
-> 发布镜像（`docker/Dockerfile` + supervisord）目前仍启动 Flask；切换到 Go 服务器的镜像/entrypoint 是
-> packages #40，进行中。镜像内自动更新会改为同时重建 Go 服务。
+> 发布镜像（`docker/Dockerfile`）没有 Python：tini 是 1 号进程，`configflow-start.sh` 先按需运行
+> `configflow-autoupdate`（autoupdate 镜像），再 exec Go 服务；Go 服务用 `substore.Supervisor` 自己托管
+> Sub-Store 子进程（按需启停、崩溃退避重启、关停时在请求收尾后停止，`lifecycle.SpawnService`）。
 
 ### 1.2 数据目录
 

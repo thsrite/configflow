@@ -344,6 +344,8 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 
 内置 Sub-Store 是转换订阅用的程序，默认按需启动，空闲约 5 分钟后休眠。首次转换需要等待启动；看到“休眠中”不代表故障。Docker 镜像无需另装 Sub-Store，也无需对外开放其内部端口（默认 `3001`，本页 Host 示例为 `15802`）。
 
+镜像里只有 ConfigFlow 服务和它管理的 Sub-Store 两个常驻程序，不含 Python。Sub-Store 意外退出时会自动拉起；ConfigFlow 服务本身退出时容器随之停止，由 Docker 的重启策略（本页示例为 `unless-stopped`）重新启动，所以不要去掉 `restart` 设置。
+
 <a id="network"></a>
 ## 选择网络方式和修改端口
 
@@ -438,7 +440,7 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 
 更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。如果原数据目录中只有 SQLite 之前的旧版配置文件（如 `config.json` 或 `system.json`）而没有 `configflow.sqlite3`，Go 镜像会拒绝启动并给出中文提示，不会改动其中的配置数据（只会新建日志文件 `app.log`）：请先使用最后一个 Python 版本启动一次完成旧格式迁移，再升级到 Go 镜像。需要退回镜像时，应使用事先记录的旧版本及对应数据备份；不要盲目让旧版本打开已经迁移的数据。
 
-如使用自动更新标签镜像（`autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本的迁移。
+如使用自动更新标签镜像（`autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`（旧版镜像留下的构建可以继续沿用，换到本版镜像不会因此全部重建）。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本的迁移。
 
 <a id="next"></a>
 ## 下一步
