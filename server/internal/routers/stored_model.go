@@ -119,7 +119,7 @@ func (r *Router) validateIdentity() error {
 			if (name == "proxy_gateway_agent_id" || name == "dns_agent_id") && string(raw) == "null" {
 				continue
 			}
-			if _, valid := requestString(raw); !valid {
+			if text, valid := requestString(raw); !valid || text == model.DamagedText {
 				return invalid(messageRouterFieldType)
 			}
 		}

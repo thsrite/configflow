@@ -118,6 +118,9 @@ func TestN89StoredRouterReadsWrongTypesLeniently(t *testing.T) {
 	}
 }
 
+// TestN89StoredIdentityCannotOpenDevice: a connection identity stored as
+// anything but text (null too, except for the optional Agent links) refuses
+// device management.
 func TestN89StoredIdentityCannotOpenDevice(t *testing.T) {
 	for _, field := range []string{"id", "type", "endpoint", "username", "password", "proxy_gateway_agent_id", "dns_agent_id"} {
 		for _, value := range []string{`12`, `true`, `[]`, `{}`, `null`} {
@@ -126,17 +129,27 @@ func TestN89StoredIdentityCannotOpenDevice(t *testing.T) {
 				fields := map[string]json.RawMessage{"id": json.RawMessage(`"r"`), "type": json.RawMessage(`"routeros"`), "endpoint": json.RawMessage(`"http://192.0.2.1"`)}
 				fields[field] = json.RawMessage(value)
 				raw, _ := json.Marshal(fields)
-				var r Router
-				if err := json.Unmarshal(raw, &r); err != nil {
-					t.Fatal(err)
-				}
-				err := r.ValidateForDevice()
-				if optionalNull {
-					if err != nil {
-						t.Fatal("null optional link rejected", err)
+				// Production path (HR O18 T1c, M3 ruling): the plain record
+				// read with the stored-data rules and projected by
+				// routerFromModel, then written back once (an unrelated
+				// router write) and read again: the damage stays.
+				for round := 0; round < 2; round++ {
+					var stored model.Router
+					if _, err := model.DecodeStored(raw, &stored, ""); err != nil {
+						t.Fatal(err)
 					}
-				} else if err == nil {
-					t.Fatal("invalid identity allowed device access")
+					r := routerFromModel(stored)
+					err := r.ValidateForDevice()
+					if optionalNull {
+						if err != nil {
+							t.Fatal("null optional link rejected", err)
+						}
+					} else if err == nil || err.Error() != messageRouterFieldType {
+						t.Fatalf("round %d: invalid identity allowed device access: %v", round, err)
+					}
+					if raw, err = model.Marshal(&stored); err != nil {
+						t.Fatal(err)
+					}
 				}
 			})
 		}

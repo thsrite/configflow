@@ -190,6 +190,18 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				return nil
 			}
 			kind := dec.PeekKind()
+			// A required restriction (null:"damaged", a router's connection
+			// identity) stored as null is damaged too, not unrestricted.
+			if kind == 'n' && storedTag(sink, dec.StackPointer()) == restrictTag {
+				if field, ok := leafField(sink.root, dec.StackPointer()); ok && field.Tag.Get("null") == "damaged" {
+					if err := dec.SkipValue(); err != nil {
+						return err
+					}
+					*v = DamagedText
+					sink.add(dec, IssueType)
+					return nil
+				}
+			}
 			return skipInvalid(dec, sink, func() {
 				*v = ""
 				if kind != 'n' && storedTag(sink, dec.StackPointer()) == restrictTag {

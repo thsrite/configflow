@@ -19,18 +19,21 @@ type Routers struct {
 
 // Router is the stored connection and publication record; defaults and public projections belong to consumers.
 type Router struct {
-	// ID is a topology identity: stored as anything but text (a number) it
-	// reads as empty and the router is refused, as Python refused it; two
-	// routers stored as 1 and "1" must not become the same router.
-	ID                  string            `json:"id" text:"strict"`
+	// The connection identity (ID, type, endpoint, credentials, Agent links)
+	// stored as anything but text reads as DamagedText (stored:"restrict";
+	// null too for the required members, null:"damaged") and the router is
+	// refused for device management, as Python and the pre-O18 T1c Go
+	// refused it; written back, the damage stays (HR O18 T1c, M3 ruling).
+	// Two routers stored as 1 and "1" do not become the same router.
+	ID                  string            `json:"id" stored:"restrict" null:"damaged"`
 	Name                string            `json:"name,omitzero"`
-	Type                string            `json:"type"`
-	Endpoint            string            `json:"endpoint"`
-	Username            string            `json:"username"`
-	Password            string            `json:"password"`
+	Type                string            `json:"type" stored:"restrict" null:"damaged"`
+	Endpoint            string            `json:"endpoint" stored:"restrict" null:"damaged"`
+	Username            string            `json:"username" stored:"restrict" null:"damaged"`
+	Password            string            `json:"password" stored:"restrict" null:"damaged"`
 	VerifyTLS           *bool             `json:"verify_tls,omitzero" switch:"on"`
-	ProxyGatewayAgentID string            `json:"proxy_gateway_agent_id"`
-	DNSAgentID          string            `json:"dns_agent_id"`
+	ProxyGatewayAgentID string            `json:"proxy_gateway_agent_id" stored:"restrict"`
+	DNSAgentID          string            `json:"dns_agent_id" stored:"restrict"`
 	IPRuleSets          []string          `json:"ip_rule_sets" stored:"selection"`
 	ManageReturnRouting *bool             `json:"manage_return_routing,omitzero" stored:"gate"`
 	ROSPolicyRuleSets   []string          `json:"ros_policy_rule_sets" stored:"selection"`

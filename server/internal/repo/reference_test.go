@@ -542,6 +542,13 @@ func TestReferenceRouterCommitGuard(t *testing.T) {
 		SetHooks(previousHooks)
 		refOutcome(t, label, record, nil, err)
 		wantCalls := refText(t, record.Value("calls"))
+		// HR O18 T1c (M3 ruling): a router endpoint stored as null or a
+		// number reads as model.DamagedText, a connection of its own, so the
+		// damaged router takes its own job lock (one more lock than Python,
+		// which folded null into "" and 5 into "5/").
+		if label == "endpoint none" || label == "endpoint int" {
+			wantCalls = `[["default","rt1"],["default","rt2"]]`
+		}
 		if left, right := refText(t, calls), wantCalls; left != right {
 			t.Errorf("%s: job lock calls differ\n  go: %s\n  py: %s", label, left, right)
 		}

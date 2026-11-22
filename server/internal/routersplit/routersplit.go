@@ -388,10 +388,11 @@ func topologyRouter(r model.Router) (id, link string, validID bool) {
 		return "", "", false
 	}
 	var identity, connection *string
-	if json.Unmarshal(fields["proxy_gateway_agent_id"], &connection) != nil || connection == nil {
+	// A damaged stored identity or link (model.DamagedText) is not text.
+	if json.Unmarshal(fields["proxy_gateway_agent_id"], &connection) != nil || connection == nil || *connection == model.DamagedText {
 		return "", "", false
 	}
-	if json.Unmarshal(fields["id"], &identity) == nil && identity != nil && *identity != "" {
+	if json.Unmarshal(fields["id"], &identity) == nil && identity != nil && *identity != "" && *identity != model.DamagedText {
 		id, validID = *identity, true
 	}
 	return id, *connection, validID
