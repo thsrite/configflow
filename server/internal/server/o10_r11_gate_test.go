@@ -63,6 +63,10 @@ var o10WholeEncodeAllowed = map[string]string{
 	"internal/api/agents/client_binding.go:warnClientPeer": "rate-limited warning log (once per Agent and interval)",
 	"internal/routers/inspect.go:inspectionDNS":            "manual router inspection, only when the DNS Agent has no typed DNS settings",
 	"internal/agents/rulesync/adapter.go:profileAgents":    "history-free Agent view (repo.AgentHistoryFields cleared) for rule-sync hooks",
+	// Member-by-member reads over lists that are not constant literals.
+	"internal/api/agents/agent_view_cache.go:liveFingerprint":      "one EncodeMember per live member (core.RuntimeFields + last_heartbeat/status), not the stored history",
+	"internal/api/agents/public_agent_adapter.go:liveAgentSecrets": "one EncodeMember per live member (liveMembers), for the credentials they carry",
+	"internal/api/agents/public_agent_adapter.go:publicAgentView":  "debt: public Agent projection copies every non-private member one by one (histories projected from typed values)",
 	// Generic JSON helpers (native, stored, same, raw) taking `any`.
 	"internal/api/rulelibrary/adapter.go:editWithProfiles":    "write transaction: rule library edit through the generic JSON helper",
 	"internal/api/rulelibrary/adapter.go:editSystem":          "write transaction through the generic JSON helper",
@@ -133,6 +137,198 @@ var o10InterfaceReaders = map[string]bool{
 	"configflow/internal/model.Issues":         true,
 	"configflow/internal/model.IssueUnder":     true,
 	"configflow/internal/model.SwitchEnabled":  true,
+}
+
+// o10MemberReaders read one member of a record named by their second
+// argument (model.EncodeMember encodes only that field). They count as a
+// member read only when the name is fixed (see o10FixedNames): a computed
+// name could walk every member.
+var o10MemberReaders = map[string]bool{
+	"configflow/internal/model.EncodeMember": true,
+}
+
+func o10MemberRead(info *types.Info, fixed *o10FixedNames, call *ast.CallExpr) bool {
+	fn := o10CalledFunc(info, call.Fun)
+	if fn == nil || !o10MemberReaders[fn.FullName()] || len(call.Args) < 2 {
+		return false
+	}
+	return fixed.fixed(info, call.Args[1])
+}
+
+// o10FixedNames are the string variables of one package that only ever hold
+// constants: range variables over a literal list of constants (inline, or a
+// package-level variable initialised with one and never assigned), and
+// parameters of unexported functions that every call in the package passes a
+// constant for (the function never used as a value).
+type o10FixedNames struct{ vars map[*types.Var]bool }
+
+func (f *o10FixedNames) fixed(info *types.Info, e ast.Expr) bool {
+	e = ast.Unparen(e)
+	if tv, ok := info.Types[e]; ok && tv.Value != nil {
+		return true
+	}
+	ident, ok := e.(*ast.Ident)
+	if !ok || f == nil {
+		return false
+	}
+	v, ok := info.Uses[ident].(*types.Var)
+	return ok && f.vars[v]
+}
+
+func o10FixedNamesOf(files []*ast.File, info *types.Info) *o10FixedNames {
+	assigned := map[*types.Var]bool{}
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			var lhs []ast.Expr
+			switch n := node.(type) {
+			case *ast.AssignStmt:
+				lhs = n.Lhs
+			case *ast.IncDecStmt:
+				lhs = []ast.Expr{n.X}
+			case *ast.UnaryExpr: // &v lets anything change v
+				if n.Op == token.AND {
+					lhs = []ast.Expr{n.X}
+				}
+			}
+			for _, l := range lhs {
+				if ident, ok := ast.Unparen(l).(*ast.Ident); ok {
+					if v, ok := info.Uses[ident].(*types.Var); ok {
+						assigned[v] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	constList := func(e ast.Expr) bool {
+		lit, ok := ast.Unparen(e).(*ast.CompositeLit)
+		if !ok {
+			return false
+		}
+		for _, elt := range lit.Elts {
+			if tv, ok := info.Types[elt]; !ok || tv.Value == nil {
+				return false
+			}
+		}
+		return true
+	}
+	lists := map[*types.Var]bool{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs := spec.(*ast.ValueSpec)
+				for i, name := range vs.Names {
+					if v, ok := info.Defs[name].(*types.Var); ok && i < len(vs.Values) && constList(vs.Values[i]) && !assigned[v] {
+						lists[v] = true
+					}
+				}
+			}
+		}
+	}
+	f := &o10FixedNames{vars: map[*types.Var]bool{}}
+	// Range variables over constant lists.
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			r, ok := node.(*ast.RangeStmt)
+			if !ok || r.Tok != token.DEFINE {
+				return true
+			}
+			over := constList(r.X)
+			if ident, ok := ast.Unparen(r.X).(*ast.Ident); ok {
+				if v, ok := info.Uses[ident].(*types.Var); ok && lists[v] {
+					over = true
+				}
+			}
+			if value, ok := r.Value.(*ast.Ident); ok && over {
+				if v, ok := info.Defs[value].(*types.Var); ok && !assigned[v] {
+					f.vars[v] = true
+				}
+			}
+			return true
+		})
+	}
+	// Parameters every call passes a constant for.
+	called := map[*ast.Ident]bool{}
+	notFixed := map[*types.Var]bool{}
+	candidates := map[*types.Var]bool{}
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := ast.Unparen(call.Fun).(*ast.Ident)
+			if !ok {
+				return true
+			}
+			fn, ok := info.Uses[ident].(*types.Func)
+			if !ok || fn.Exported() || fn.Pkg() == nil {
+				return true
+			}
+			called[ident] = true
+			params := fn.Type().(*types.Signature).Params()
+			for i := range params.Len() {
+				p := params.At(i)
+				candidates[p] = true
+				if i >= len(call.Args) || call.Ellipsis.IsValid() {
+					notFixed[p] = true
+					continue
+				}
+				if tv, ok := info.Types[call.Args[i]]; !ok || tv.Value == nil {
+					notFixed[p] = true
+				}
+			}
+			return true
+		})
+	}
+	escaped := map[*types.Func]bool{}
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if ident, ok := node.(*ast.Ident); ok && !called[ident] {
+				if fn, ok := info.Uses[ident].(*types.Func); ok {
+					escaped[fn] = true
+				}
+			}
+			return true
+		})
+	}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv != nil {
+				continue
+			}
+			fn, ok := info.Defs[fd.Name].(*types.Func)
+			if !ok || escaped[fn] {
+				continue
+			}
+			params := fn.Type().(*types.Signature).Params()
+			for i := range params.Len() {
+				if p := params.At(i); candidates[p] && !notFixed[p] && !assigned[p] {
+					f.vars[p] = true
+				}
+			}
+		}
+	}
+	return f
+}
+
+func o10CalledFunc(info *types.Info, fun ast.Expr) *types.Func {
+	var ident *ast.Ident
+	switch f := ast.Unparen(fun).(type) {
+	case *ast.Ident:
+		ident = f
+	case *ast.SelectorExpr:
+		ident = f.Sel
+	default:
+		return nil
+	}
+	fn, _ := info.Uses[ident].(*types.Func)
+	return fn
 }
 
 func o10InterfaceReader(info *types.Info, fun ast.Expr) bool {
@@ -265,7 +461,7 @@ type o10EncodeSite struct{ key, pos, what string }
 // o10EncodeSites reports the gated encodes in one type-checked file. Sites
 // in a function (closures included) are keyed by that function, others by
 // "<package-level>".
-func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *types.Info) []o10EncodeSite {
+func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *types.Info, fixed *o10FixedNames) []o10EncodeSite {
 	var sites []o10EncodeSite
 	for _, decl := range file.Decls {
 		owner := "<package-level>"
@@ -329,7 +525,7 @@ func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *type
 				return true
 			}
 			sig, ok := types.Unalias(info.TypeOf(call.Fun)).Underlying().(*types.Signature)
-			if !ok || o10InterfaceReader(info, call.Fun) {
+			if !ok || o10InterfaceReader(info, call.Fun) || o10MemberRead(info, fixed, call) {
 				return true
 			}
 			for i, arg := range call.Args {
@@ -463,13 +659,14 @@ func TestO10WholeRecordEncodeBoundary(t *testing.T) {
 			files = append(files, file)
 			names = append(names, filepath.ToSlash(rel))
 		}
-		info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Uses: map[*ast.Ident]types.Object{}}
+		info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
 		if _, err := (&types.Config{Importer: imp}).Check(p.ImportPath, fset, files, info); err != nil {
 			t.Fatalf("type-check %s: %v", p.ImportPath, err)
 		}
+		fixed := o10FixedNamesOf(files, info)
 		checked++
 		for i, file := range files {
-			for _, site := range o10EncodeSites(fset, names[i], file, info) {
+			for _, site := range o10EncodeSites(fset, names[i], file, info, fixed) {
 				used[site.key] = true
 				if _, ok := o10WholeEncodeAllowed[site.key]; !ok {
 					t.Errorf("%s: %s in %s; read the members the route needs or use a generation-cached projection (O10 R11), or add a reasoned exemption", site.pos, site.what, site.key)
@@ -500,6 +697,7 @@ type Agent struct{ ID string }
 type Node struct{ Name string }
 func (Config) MarshalJSON() ([]byte, error) { return nil, nil }
 func Marshal(v any) ([]byte, error) { return nil, nil }
+func EncodeMember(rec any, name string) ([]byte, bool, error) { return nil, false, nil }
 `
 	tests := []struct {
 		name, src string
@@ -522,6 +720,17 @@ func Marshal(v any) ([]byte, error) { return nil, nil }
 		{"interface conversion", "func Get(c *model.Config) { model.Marshal(any(c)) }", []string{"Get"}},
 		{"wrapper to helper", "func helper(v any) { _ = v }\nfunc Get(a model.Agent) { helper([]any{a}) }", []string{"Get"}},
 		{"method value", "func Get(c model.Config) { f := c.MarshalJSON; f() }", []string{"Get"}},
+		{"member by constant name", "func Get(a *model.Agent) { model.EncodeMember(a, \"id\") }", nil},
+		{"member by named constant", "const field = \"id\"\nfunc Get(a *model.Agent) { model.EncodeMember(a, field) }", nil},
+		{"member by computed name", "func Get(a *model.Agent, name string) { model.EncodeMember(a, name) }", []string{"Get"}},
+		{"member over an inline constant list", "func Get(a *model.Agent) { for _, k := range []string{\"id\", \"host\"} { model.EncodeMember(a, k) } }", nil},
+		{"member over a constant package list", "var keys = []string{\"id\", \"host\"}\nfunc Get(a *model.Agent) { for _, k := range keys { model.EncodeMember(a, k) } }", nil},
+		{"member over a reassigned list", "var keys = []string{\"id\"}\nfunc Set(more []string) { keys = more }\nfunc Get(a *model.Agent) { for _, k := range keys { model.EncodeMember(a, k) } }", []string{"Get"}},
+		{"member over a computed list", "func Get(a *model.Agent, keys []string) { for _, k := range keys { model.EncodeMember(a, k) } }", []string{"Get"}},
+		{"helper always called with constants", "func member(a *model.Agent, k string) { model.EncodeMember(a, k) }\nfunc Get(a *model.Agent) { member(a, \"id\"); member(a, \"host\") }", nil},
+		{"helper called with a variable", "func member(a *model.Agent, k string) { model.EncodeMember(a, k) }\nfunc Get(a *model.Agent, k string) { member(a, \"id\"); member(a, k) }", []string{"member"}},
+		{"helper used as a value", "func member(a *model.Agent, k string) { model.EncodeMember(a, k) }\nvar hook = member\nfunc Get(a *model.Agent) { member(a, \"id\") }", []string{"member"}},
+		{"member reader still sees whole encode", "func Get(a *model.Agent) { model.EncodeMember(a, \"id\"); model.Marshal(a) }", []string{"Get"}},
 		{"decode target", "func Get(c *model.Config) { json.Unmarshal(nil, c) }", nil},
 		{"members in a map", "func Get(c *model.Config) { json.Marshal(map[string]any{\"name\": c.Name}) }", nil},
 		{"unexported field", "type holder struct{ c *model.Config; N int }\nfunc Get(c *model.Config) { json.Marshal(holder{c: c}) }", nil},
@@ -546,7 +755,7 @@ func Marshal(v any) ([]byte, error) { return nil, nil }
 				t.Fatal(err)
 			}
 			std := importer.Default()
-			info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Uses: map[*ast.Ident]types.Object{}}
+			info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
 			conf := types.Config{Importer: importerFunc(func(path string) (*types.Package, error) {
 				if path == "configflow/internal/model" {
 					return modelPkg, nil
@@ -557,7 +766,7 @@ func Marshal(v any) ([]byte, error) { return nil, nil }
 				t.Fatal(err)
 			}
 			var got []string
-			for _, site := range o10EncodeSites(fset, "x.go", file, info) {
+			for _, site := range o10EncodeSites(fset, "x.go", file, info, o10FixedNamesOf([]*ast.File{file}, info)) {
 				owner := strings.TrimPrefix(site.key, "x.go:")
 				if owner == "<package-level>" && strings.Contains(site.what, "model.Marshal") {
 					continue // the probe's own `var _ = model.Marshal`
