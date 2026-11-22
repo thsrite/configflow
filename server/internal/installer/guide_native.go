@@ -332,7 +332,7 @@ func renderGuide(request GuideRequest, enrollment *Capability) (*GuideResult, er
 		result.PreflightReport = report
 		return result, err
 	case "inspect":
-		command, err := inspectionCommand(request.ContainerName)
+		command, err := inspectionCommand(request.ContainerName, DockerAgentImage())
 		result.InspectionCommand = &command
 		return result, err
 	case "verify":
@@ -377,7 +377,7 @@ func renderGuide(request GuideRequest, enrollment *Capability) (*GuideResult, er
 	if request.Mode == "migrate" {
 		name = request.ContainerName
 	}
-	inspection, err := inspectionCommand(name)
+	inspection, err := inspectionCommand(name, request.Image)
 	if err != nil {
 		return nil, err
 	}

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/installer/installertest"
 	"configflow/internal/testgolden"
 )
 
@@ -81,10 +82,10 @@ func reviewDeflateInputs(random int) [][]byte {
 		dir := "/srv/" + strings.Repeat("数据$`'\"", size/8+1)[:size]
 		var b strings.Builder
 		for i := 0; i < 40; i++ {
-			b.WriteString(composePrepareBlocks[i%5])
+			b.WriteString(installertest.NoPythonBaseline(composePrepareBlocks[i%5]))
 			b.WriteString("cf_data=" + shlexQuote(dir) + "\n")
 		}
-		b.WriteString(composeBootstrap)
+		b.WriteString(installertest.LegacyBundleBootstrap())
 		add([]byte(b.String()))
 	}
 	// Seeded random compositions of literals, copies and runs.
@@ -278,10 +279,13 @@ func TestReviewBundlePrepareKeepsMetacharactersLiteral(t *testing.T) {
 			}
 		}
 		data := mapStr(body, "data_dir")
-		for _, name := range []string{"agent", "oxidns", "ha", ".ha-compose/setup", ".ha-compose/bootstrap.py", ".ha-compose/enrollment.json"} {
+		for _, name := range []string{"agent", "oxidns", "ha", ".ha-compose/setup", ".ha-compose/enrollment.json"} {
 			if _, err := os.Stat(filepath.Join(data, name)); err != nil {
 				t.Fatalf("in_data=%v: %s: %v", inData, name, err)
 			}
+		}
+		if _, err := os.Lstat(filepath.Join(data, ".ha-compose/bootstrap.py")); !os.IsNotExist(err) {
+			t.Fatalf("in_data=%v: bootstrap.py prepared: %v", inData, err)
 		}
 		if content, err := os.ReadFile(identity); err != nil || len(strings.TrimSpace(string(content))) != 32 {
 			t.Fatalf("identity %q %v", content, err)

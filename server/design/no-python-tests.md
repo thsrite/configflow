@@ -551,7 +551,7 @@ backend 那份跟着切换一起删除。不在 WP3 范围、留给 WP2 的：`p
 | `internal/skipaudit/allowed.txt` | 白名单里的 91 条都随上面的测试删除，切换后必须为空（门禁会报「stale entry」提示删除） |
 | `internal/testgolden` | 录制模式、`PYREF_*`、源码和 venv 指纹、假解释器负控（`TestRecordingAndReplayNegativeControls` 等）；B.3 的回放如果保留，只留「读 golden + 每条录制都被用到」 |
 | 根目录 | `scripts/test-backend.sh`，`AGENTS.md` 测试节，`.github/workflows/checks.yml` 的 pytest 分片（换成 Go 任务，切换计划 #40） |
-| 测试服务器 | `~/cf-test/.venv` 退役。installer 的远端主机命令桩已改成 Go（2026-11-22，`internal/installer/stub_test.go`），不再需要系统 python3；只剩 6 个测试执行**产品自带**的 Python（Docker HA 的 `bootstrap.py` 和迁移检查，在 Agent 镜像里由 python3 运行），缺 python3 时失败而不是 skip。这 6 个要么保留并要求测试服务器有 python3，要么等产品把这两段改成 Go 后改写 |
+| 测试服务器 | `~/cf-test/.venv` 退役。installer 的远端主机命令桩已改成 Go（2026-11-22，`internal/installer/stub_test.go`），不再需要系统 python3；原先执行**产品自带** Python 的 6 个测试（Docker HA 的 `bootstrap.py` 和迁移检查）已改为直接运行 Go Agent 子命令 `configflow-agent ha-bootstrap` / `ha-migration-check`（2026-11-22，Agent 1.9.2-go），installer 包不再需要任何 python3 |
 
 ### B.2 普通包里要删的测试（34 个包、126 个顶层测试）
 

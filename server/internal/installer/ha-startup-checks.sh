@@ -2,18 +2,7 @@
 # L1 D5: probe the Docker daemon's network namespace, then verify the core
 # process rather than treating a running supervisor container as a healthy DNS.
 cf_check_dns_port() {
-  docker run --rm --network host --entrypoint python3 "$1" -c 'import socket
-sockets=[]
-try:
-    for kind in (socket.SOCK_DGRAM, socket.SOCK_STREAM):
-        sock=socket.socket(socket.AF_INET, kind)
-        sockets.append(sock)
-        sock.bind(("0.0.0.0", 53))
-except OSError:
-    raise SystemExit("宿主机的 UDP/TCP 53 端口不可用；请先排查端口占用，再重试安装。")
-finally:
-    for sock in sockets: sock.close()
-' || return 1
+  docker run --rm --network host --entrypoint configflow-agent "$1" ha-port-check || return 1
 }
 
 cf_wait_oxidns() {

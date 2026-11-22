@@ -138,8 +138,11 @@ func identityCommand(value string) (string, error) {
 		`printf "%s\n" "宿主身份文件已创建；同一宿主所有实例沿用此文件，不要复制到第二台宿主。"` + "\n", nil
 }
 
-// InspectionCommand is inspection_command(container_name).
-func inspectionCommand(containerName string) (string, error) {
+// InspectionCommand is inspection_command(container_name): the host
+// collector, then the old container's name, image, mounts and Agent identity
+// fields (never its credentials). The fields are read by the target Agent
+// image from the old container's volumes, so the old image needs no helper.
+func inspectionCommand(containerName, image string) (string, error) {
 	command := CollectorScript()
 	if containerName != "" {
 		name, err := guideName(containerName, "原容器名")
@@ -148,11 +151,17 @@ func inspectionCommand(containerName string) (string, error) {
 		}
 		command += "docker inspect --format 'Name={{.Name}} Image={{.Config.Image}} Network={{.HostConfig.NetworkMode}}' " + q(name) + "\n" +
 			`docker inspect --format '{{range .Mounts}}{{printf "%s | %s | %s | %s | rw=%t\n" .Type .Name .Source .Destination .RW}}{{end}}' ` + q(name) + "\n" +
-			"docker exec " + q(name) + " python3 -c " + q(
-			`import json; c=json.load(open("/opt/configflow-agent/config-oxidns.json")); `+
-				`print(json.dumps({k:c.get(k) for k in ("agent_name","agent_port","service_type","config_path")},ensure_ascii=False))`) + "\n"
+			joinQuoted(agentCommand(image, "ha-inspect", "--volumes-from", name+":ro")) + "\n"
 	}
 	return command, nil
+}
+
+// agentCommand runs one Docker HA subcommand of the Agent image in a
+// temporary, network-less container with the given extra docker run
+// arguments (mounts).
+func agentCommand(image, subcommand string, runArgs ...string) []string {
+	args := append([]string{"docker", "run", "--rm", "--network", "none"}, runArgs...)
+	return append(args, "--entrypoint", "configflow-agent", image, subcommand)
 }
 
 func haDaemonCheck() string {
@@ -306,21 +315,6 @@ cf_owned_container() {
 }
 `
 
-const enrollmentProof = `import json, sys
-from pathlib import Path
-root=Path('/opt/configflow-agent')
-path=root/'config-oxidns.json'; marker=root/'.docker-ha-installation.json'
-if path.is_symlink() or marker.is_symlink() or not path.is_file() or not marker.is_file():
-    sys.exit('本次安装的身份文件或标记缺失；请保留数据并检查，拒绝覆盖')
-try:
-    config=json.loads(path.read_text()); setup=json.loads(marker.read_text())
-except Exception:
-    sys.exit('本次安装的身份文件不可读，拒绝覆盖')
-if setup.get('url') != sys.argv[1] or any(not isinstance(config.get(k),str) or not config[k] or config[k]=='[REDACTED]' for k in ('agent_id','token')):
-    sys.exit('本次安装的身份与标记不匹配，拒绝继续')
-print('已核对本次安装的本地身份；保留原凭据并继续启动。')
-`
-
 func joinQuoted(args []string) string {
 	words := make([]string, len(args))
 	for i, a := range args {
@@ -420,8 +414,7 @@ func newInstallNative(params GuideOptions, request GuideRequest, enrollment *Cap
 		}
 		script += `if [ -z "$cf_main_id" ]; then` + "\n" + bootstrap + "\nelse\n"
 		proofMount, _ := mountArg(bindMount(data+"/agent", "/opt/configflow-agent", true, false))
-		args := []string{"docker", "run", "--rm", "--network", "none", "--entrypoint", "python3", "--mount", proofMount,
-			image, "-c", enrollmentProof, enrollment.URL}
+		args := append(agentCommand(image, "ha-enroll-check", "--mount", proofMount), enrollment.URL)
 		script += "  " + joinQuoted(args) + "\nfi\n"
 	} else {
 		script += `[ ! -e "$cf_data/agent/config-oxidns.json" ] || ` + haFail("缺少本次注册凭据；请在页面重新生成安装命令") + "\n"
@@ -454,39 +447,6 @@ func newInstallNative(params GuideOptions, request GuideRequest, enrollment *Cap
 	}
 	return text, script, nil
 }
-
-const migrationCheck = `import json, os, pathlib, re, sys
-environment=json.load(sys.stdin)
-if not isinstance(environment,list): sys.exit('无法读取原容器环境配置')
-original={}
-for item in environment:
-    if not isinstance(item,str) or '=' not in item: sys.exit('原环境变量格式不支持自动迁移')
-    key,value=item.split('=',1)
-    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',key) or any(c in value for c in ('\n','\r','\x00')):
-        sys.exit('原环境变量含多行值或无效名称，请保留原 Compose 手动迁移')
-    original[key]=value
-c=json.load(open('/opt/configflow-agent/config-oxidns.json'))
-expected_name, expected_server, expected_port=sys.argv[1:]
-if (c.get('agent_name') != expected_name or c.get('server_url') != expected_server or str(c.get('agent_port')) != expected_port
-    or c.get('service_type') != 'oxidns' or c.get('config_path') != '/etc/oxidns/config.yaml'):
-    sys.exit('原 Agent 名称、服务器地址、端口或配置路径不匹配；未执行迁移')
-if (os.environ.get('CONFIGFLOW_DNS_HA') == '1' or any(pathlib.Path('/opt/configflow-agent', name).exists() for name in ('oxidns-ha.json','oxidns-ha-handoff.json'))):
-    sys.exit('原容器已有 HA 配置；请先在现有高可用设置中迁移虚拟 IP、停用并确认清理后再迁移，勿删除记录')
-if any(os.environ.get(key,'false').lower() == 'true' for key in ('ENABLE_MIHOMO','ENABLE_MOSDNS')):
-    sys.exit('仅支持单独运行 OxiDNS 的容器')
-if os.environ.get('SERVICE_TYPE','') not in ('', 'oxidns'):
-    sys.exit('原容器不是单 OxiDNS 服务，请沿用原 Compose 手动调整')
-if c.get('health_url'):
-    sys.exit('原 Agent 使用自定义 HTTP 健康检查，请沿用原 Compose 手动迁移')
-settings={'HEARTBEAT_INTERVAL':c.get('heartbeat_interval',30), 'DEPLOYMENT_HEALTH_TIMEOUT':c.get('deployment_health_timeout',30),
-          'AGENT_HOST':c.get('agent_host','0.0.0.0'), 'OXIDNS_HEALTH_DNS_ADDRESS':c.get('health_dns_address',''),
-          'OXIDNS_HEALTH_DNS_NAME':c.get('health_dns_name',''), 'TZ':os.environ.get('TZ','Asia/Shanghai')}
-original.update(settings)
-for key,value in original.items():
-    value=str(value)
-    if '\n' in value or '\r' in value or '\x00' in value: sys.exit('原运行设置含多行值，请沿用原 Compose 手动迁移')
-    print(key+'='+value)
-`
 
 // migration is _migration(params, request): compose, install and rollback.
 func migrationNative(params GuideOptions, request GuideRequest) (string, string, string, error) {
@@ -589,10 +549,12 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 		script += `[ "$(docker inspect --format ` + q(format) + ` "$cf_old_id")" = "$(docker image inspect --format ` + q(format) + ` "$cf_old_image")" ] || ` + haFail("原容器有自定义启动命令，请保留原 Compose 手动调整，不执行自动迁移") + "\n"
 	}
 	port := params.OxidnsPort
-	checkCommand := `docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker exec -i "$cf_old_id" python3 -c ` + q(migrationCheck) + " " +
-		joinQuoted([]string{oldAgent, params.ServerURL, port.String()})
-	script += "cf_runtime_env=$(" + checkCommand + ")\n"
+	// The target image checks the old container's environment (stdin) and its
+	// volumes (read-only), so the old image needs no helper program.
+	checkCommand := `docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent ` +
+		q(image) + " ha-migration-check " + joinQuoted([]string{oldAgent, params.ServerURL, port.String()})
 	script += "docker image inspect " + q(image) + " >/dev/null 2>&1 || docker pull " + q(image) + "\n"
+	script += "cf_runtime_env=$(" + checkCommand + ")\n"
 	script += "[ ! -e " + q(haDir) + " ] && [ ! -L " + q(haDir) + " ] || " + haFail("请选择全新 HA 目录，不能复用已有 HA 状态") + "\n"
 	script += "mkdir -p -- " + q(installPathParent(backup)) + "\nmkdir -- \"$cf_backup\"\n"
 	script += `printf "%s\n" "$cf_old_id" > "$cf_backup/old-id"` + "\n" + `printf "%s\n" "$cf_runtime_env" > "$cf_backup/runtime.env"` + "\n"

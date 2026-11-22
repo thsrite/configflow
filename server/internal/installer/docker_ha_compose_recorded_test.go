@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"configflow/internal/installer/installertest"
 )
 
 func readComposeLines(t *testing.T, path string) []map[string]any {
@@ -91,6 +93,17 @@ func replayGenerator(row map[string]any, digestBundle bool) (string, string) {
 	}
 	if err != nil {
 		return "differ", fmt.Sprintf("python answered, go error %v", err)
+	}
+	if fn == "generate_bundle" {
+		// Approved delta: the bundle runs configflow-agent ha-bootstrap
+		// instead of shipping bootstrap.py (Agent 1.9.2-go).
+		text = installertest.NoPythonBaseline(text)
+		info = cloneMap(info)
+		encoded, err := installertest.NoPythonBundle(mapStr(info, "content_base64"))
+		if err != nil {
+			return "differ", "bundle baseline: " + err.Error()
+		}
+		info["content_base64"] = encoded
 	}
 	out := mapList(row, "out")
 	if value, present, oracleErr := writerExpected(fn, row["args"]); oracleErr != nil {

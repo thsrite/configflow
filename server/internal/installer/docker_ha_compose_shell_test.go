@@ -3,8 +3,9 @@ package installer
 // Hand-ported shell/runtime scenarios of backend/test_docker_ha_compose.py
 // (module A10): the Go-rendered bundle is unpacked, its prepare.sh runs with
 // bash against a fake docker (a Go stub that refuses every mutating
-// operation), and its product-shipped bootstrap.py runs with python3 against a
-// loopback enrollment origin. Everything stays in temp directories.
+// operation), and the agent service's first step (configflow-agent
+// ha-bootstrap, built from backend/agents/go-agent) runs against a loopback
+// enrollment origin. Everything stays in temp directories.
 
 import (
 	"archive/zip"
@@ -146,8 +147,12 @@ func composeBootstrapFiles(t *testing.T, dir string, e *Enrollment) (files, data
 // composeExecuteBootstrap is execute_bootstrap(files, data, setup).
 func composeExecuteBootstrap(t *testing.T, files, data, setup string) runResult {
 	t.Helper()
-	runner := "import runpy,sys; m=runpy.run_path(sys.argv[1]); m['bootstrap'](*sys.argv[2:]); print('ENTRYPOINT_ALLOWED')"
-	cmd := exec.Command(productPython(t), "-c", runner, filepath.Join(files, "bootstrap.py"), filepath.Join(files, "enrollment.json"), data, setup)
+	// A stand-in entrypoint prints ENTRYPOINT_ALLOWED when the service may start.
+	entry := filepath.Join(filepath.Dir(setup), "entrypoint.sh")
+	if err := os.WriteFile(entry, []byte("#!/bin/sh\necho ENTRYPOINT_ALLOWED\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(agentBinary(t), "ha-bootstrap", "-settings", filepath.Join(files, "enrollment.json"), "-agent-dir", data, "-setup", setup, "-entrypoint", entry)
 	cmd.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -213,8 +218,13 @@ func TestBundleBootstrapFirstEnrollmentThenExpiredOfflineRestart(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(data, "config-oxidns.json")); string(got) != string(updated) {
 		t.Fatalf("identity changed: %s", got)
 	}
-	if !strings.Contains(composeBootstrap, "os.execv('/entrypoint.sh', ['/entrypoint.sh', '/usr/bin/supervisord', '-c', '/etc/supervisor/supervisord.conf'])") {
-		t.Fatal("entrypoint exec missing")
+	compose := loadCompose(t, mapStr(composeGuide(t, composeParams(dir), composeCapability(origin.url)), "compose"))
+	if entrypoint := mapList(jsonPath(compose, "services", "agent").(map[string]any), "entrypoint"); len(entrypoint) != 2 ||
+		entrypoint[0] != "configflow-agent" || entrypoint[1] != "ha-bootstrap" {
+		t.Fatalf("agent entrypoint %v", entrypoint)
+	}
+	if _, err := os.Stat(filepath.Join(files, "bootstrap.py")); !os.IsNotExist(err) {
+		t.Fatalf("bundle still ships bootstrap.py: %v", err)
 	}
 }
 

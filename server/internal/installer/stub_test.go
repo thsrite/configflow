@@ -31,7 +31,11 @@ func TestMain(m *testing.M) {
 	if name := os.Getenv(stubEnv); name != "" {
 		os.Exit(runStub(name, os.Getenv(stubArgv0Env), os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if agentBuild.dir != "" {
+		os.RemoveAll(agentBuild.dir)
+	}
+	os.Exit(code)
 }
 
 // stubScript returns an executable /bin/sh wrapper that runs the named Go stub
@@ -1264,13 +1268,7 @@ func guideDockerStub(c *stubCall) {
 			c.println("oxidns RUNNING pid 123, uptime 0:00:10")
 			c.exit(0)
 		}
-		if c.has("-i") {
-			io.Copy(io.Discard, os.Stdin)
-		}
-		if truthy("reject_existing") {
-			c.exit(1)
-		}
-		c.println("HEARTBEAT_INTERVAL=42\nDEPLOYMENT_HEALTH_TIMEOUT=30\nAGENT_HOST=0.0.0.0")
+		c.fail("unexpected fake Docker exec: %q", args)
 	case "update":
 		_, item := lookup(args[len(args)-1])
 		for _, a := range args {
@@ -1291,6 +1289,15 @@ func guideDockerStub(c *stubCall) {
 		save()
 	case "cp":
 	case "run":
+		if c.has("ha-migration-check") {
+			// The migration check of the old container, run by the target image.
+			io.Copy(io.Discard, os.Stdin)
+			if truthy("reject_existing") {
+				c.exit(1)
+			}
+			c.println("HEARTBEAT_INTERVAL=42\nDEPLOYMENT_HEALTH_TIMEOUT=30\nAGENT_HOST=0.0.0.0")
+			c.exit(0)
+		}
 		// Probe only; no installation state is changed.
 		if c.has("--network") && c.after("--network") == "host" && c.has("--rm") && truthy("port_busy") {
 			c.eprintln("宿主机的 UDP/TCP 53 端口不可用")

@@ -660,13 +660,13 @@ func IdentityCommand(value any) (string, error) {
 // InspectionCommand renders read-only Docker inspection.
 func InspectionCommand(value any) (string, error) {
 	if !isTruthyValue(value) {
-		return inspectionCommand("")
+		return inspectionCommand("", DockerAgentImage())
 	}
 	text, ok := value.(string)
 	if !ok {
 		return "", valueError(msgOriginalContainerName)
 	}
-	return inspectionCommand(text)
+	return inspectionCommand(text, DockerAgentImage())
 }
 
 func legacyGuideInputs(params, request map[string]any, method string) (GuideOptions, GuideRequest, error) {

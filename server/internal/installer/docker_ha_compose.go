@@ -1,9 +1,9 @@
 package installer
 
-// Port of backend/agents/docker_ha_compose.py (module A10): the
-// self-contained, new-install-only Compose package (compose.yaml,
-// prepare.sh, bootstrap.py, enrollment.json, README.txt in a zip) using a
-// scoped enrollment. The literal script/README text lives in the generated
+// The self-contained, new-install-only Compose package (compose.yaml,
+// prepare.sh, enrollment.json, README.txt in a zip) using a scoped
+// enrollment; the agent service starts with `configflow-agent ha-bootstrap`
+// from the Agent image. The literal script/README text lives in
 // docker_ha_compose_text.go.
 
 import (
@@ -93,7 +93,8 @@ func composePrepare(params GuideOptions, request GuideRequest, owner, project st
 }
 
 // composeManagedParts are the data_dir children the host identity file may
-// not alias (generate_bundle).
+// not alias (generate_bundle). bootstrap.py stays reserved: bundles before
+// Agent 1.9.2-go kept it in .ha-compose and the data root.
 var composeManagedParts = []string{"agent", "oxidns", "ha", ".ha-compose", ".ha-install",
 	"compose.yaml", "prepare.sh", "bootstrap.py", "enrollment.json", "README.txt"}
 
@@ -139,7 +140,7 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 				volumes = append(volumes, bindMount("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
 			}
 			volumes = append(volumes, bindMount(state, "/run/configflow-compose", true, false))
-			service.Entrypoint = []string{"python3", "/run/configflow-compose/bootstrap.py"}
+			service.Entrypoint = []string{"configflow-agent", "ha-bootstrap"}
 			empty := []string{}
 			service.Command = &empty
 		}
@@ -170,7 +171,6 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 	archive, err := composeArchive([]zipEntry{
 		{"compose.yaml", []byte(content), 0o600},
 		{"prepare.sh", []byte(prepare), 0o700},
-		{"bootstrap.py", []byte(composeBootstrap), 0o600},
 		{"enrollment.json", append(settingsJSON, '\n'), 0o600},
 		{"README.txt", []byte(readme), 0o600},
 	})

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -171,7 +172,8 @@ func TestInspectionIsAvailableBeforeFullFormAndNeverDumpsCredentials(t *testing.
 	contains(t, generic, "docker compose version")
 	named := mapStr(mustGuide(t, map[string]any{"action": "inspect", "container_name": "existing"}, nil), "inspection_command")
 	contains(t, named, ".Mounts")
-	contains(t, named, "agent_name")
+	contains(t, named, "--volumes-from existing:ro --entrypoint configflow-agent "+q(DockerAgentImage())+" ha-inspect\n")
+	notContains(t, named, "python")
 	for _, secret := range []string{".Config.Env", `"token"`, `"agent_id"`} {
 		notContains(t, named, secret)
 	}
@@ -239,7 +241,7 @@ func TestMigrationComposeReusesExactMountAndAgentIdentity(t *testing.T) {
 			notContains(t, install, "./oxidns_data")
 			notContains(t, install+rollback, "docker rm")
 			notContains(t, install+rollback, "down -v")
-			for _, s := range []string{"docker rename", "docker cp", "oxidns-ha.json", "自定义启动命令"} {
+			for _, s := range []string{"docker rename", "docker cp", " ha-migration-check ", "自定义启动命令"} {
 				contains(t, install, s)
 			}
 			want := []any{map[string]any{"path": mapStr(data, "backup_dir") + "/runtime.env", "format": "raw"}}
@@ -358,6 +360,19 @@ func firstCall(calls [][]string, name string) int {
 	return -1
 }
 
+// withoutMigrationCheck drops the read-only migration check: a network-less
+// docker run of the target image with the old volumes mounted read-only.
+func withoutMigrationCheck(calls [][]string) [][]string {
+	var out [][]string
+	for _, c := range calls {
+		if c[0] == "run" && slices.Contains(c, "ha-migration-check") && slices.Contains(c, "--rm") && slices.Contains(c, "none") {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 func anyCall(calls [][]string, names ...string) bool {
 	for _, c := range calls {
 		for _, n := range names {
@@ -378,6 +393,7 @@ func TestMigrationAndRollbackUseCapturedIDsAndRestoreRestartPolicy(t *testing.T)
 		t.Fatal(result.stderr)
 	}
 	calls := eventCalls(t, host.events)
+	calls = withoutMigrationCheck(calls)
 	stop, backup, rename, start := firstCall(calls, "stop"), firstCall(calls, "cp"), firstCall(calls, "rename"), firstCall(calls, "run")
 	if !(stop >= 0 && stop < backup && backup < rename && rename < start) {
 		t.Fatalf("order %d %d %d %d", stop, backup, rename, start)
@@ -422,7 +438,7 @@ func TestUnsupportedMigrationAbortsBeforeStopOrDataChange(t *testing.T) {
 		if runCommand(t, mapStr(guide, "install_command"), tmp, host.env...).code == 0 {
 			t.Fatalf("%v: install succeeded", change)
 		}
-		if anyCall(eventCalls(t, host.events), "stop", "update", "rename", "cp", "run") {
+		if anyCall(withoutMigrationCheck(eventCalls(t, host.events)), "stop", "update", "rename", "cp", "run") {
 			t.Fatalf("%v: changing call made", change)
 		}
 		if _, err := os.Stat(mapStr(data, "backup_dir")); err == nil {
@@ -457,9 +473,13 @@ func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 	tmp := t.TempDir()
 	data := guideParams(t, tmp, "migrate", "bind")
 	script := mapStr(mustGuide(t, data, nil), "install_command")
-	// shlex.split(script) yields the check program as one word: the quoted
-	// migrationCheck text.
-	contains(t, script, " python3 -c "+q(migrationCheck)+" ")
+	// The target image checks the old container's environment and volumes
+	// after the image is present.
+	check := `docker inspect --format '{{json .Config.Env}}' "$cf_old_id" | docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent ` +
+		q(mapStr(data, "image")) + " ha-migration-check " + joinQuoted([]string{mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082"}) + ")\n"
+	pull := "docker image inspect " + q(mapStr(data, "image")) + " >/dev/null 2>&1 || docker pull " + q(mapStr(data, "image")) + "\ncf_runtime_env=$(" + check
+	contains(t, script, pull)
+	notContains(t, script, "python")
 	original := filepath.Join(tmp, "old-agent")
 	os.MkdirAll(original, 0o755)
 	writeJSONFile(t, filepath.Join(original, "config-oxidns.json"), map[string]any{
@@ -470,10 +490,8 @@ func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 		"config_path":        "/etc/oxidns/config.yaml",
 		"heartbeat_interval": 42,
 	})
-	source := strings.ReplaceAll(migrationCheck, "/opt/configflow-agent", original)
-	cmd := exec.Command(productPython(t), "-c", source, mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082")
+	cmd := exec.Command(agentBinary(t), "ha-migration-check", "-agent-dir", original, mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082")
 	cmd.Stdin = strings.NewReader(`["HTTPS_PROXY=http://private-user:private$password@proxy:8080", "TZ=UTC"]`)
-	cmd.Env = append(os.Environ(), "TZ=UTC")
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {

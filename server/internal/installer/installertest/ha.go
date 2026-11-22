@@ -45,7 +45,13 @@ func shellWord(s string) string {
 // GuideBaseline reverses fixed approved HA script additions only. Compose and
 // every other field remain strict; the image and container name come from that
 // same answer's unmodified Compose document, rather than a loose regexp.
+// The Agent 1.9.2-go subcommands are first mapped back to the historical
+// Python helpers (NoPythonBaseline).
 func GuideBaseline(data []byte) ([]byte, error) {
+	data, err := noPythonGuide(data)
+	if err != nil {
+		return nil, err
+	}
 	var answer map[string]json.RawMessage
 	if err := json.Unmarshal(data, &answer); err != nil {
 		return nil, err

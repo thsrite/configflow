@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -127,18 +129,40 @@ func notContains(t *testing.T, haystack, needle string) {
 	}
 }
 
-// productPython returns python3 for the few tests that execute Python code the
-// product itself ships (the Docker HA bootstrap and migration check run by
-// python3 inside the Agent image). It fails rather than skips when python3 is
-// missing; the fake host commands of every other test are Go stubs
-// (stub_test.go) and need no interpreter.
-func productPython(t *testing.T) string {
+// agentBinary builds the Go Agent (backend/agents/go-agent) once per test
+// binary and returns its path: the Docker HA tests run the shipped
+// configflow-agent ha-* subcommands exactly as the generated commands do.
+// A missing Go toolchain fails the tests; it never skips them.
+func agentBinary(t *testing.T) string {
 	t.Helper()
-	path, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatalf("python3 is required to execute product-shipped Python on the test server: %v", err)
+	agentBuild.once.Do(func() {
+		dir, err := os.MkdirTemp("", "configflow-agent-")
+		if err != nil {
+			agentBuild.err = err
+			return
+		}
+		agentBuild.dir = dir
+		path := filepath.Join(dir, "configflow-agent")
+		cmd := exec.Command("go", "build", "-o", path, ".")
+		cmd.Dir = filepath.Join("..", "..", "..", "backend", "agents", "go-agent")
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			agentBuild.err = fmt.Errorf("go build agent: %w: %s", err, output)
+			return
+		}
+		agentBuild.path = path
+	})
+	if agentBuild.err != nil {
+		t.Fatal(agentBuild.err)
 	}
-	return path
+	return agentBuild.path
+}
+
+// agentBuild is the per-binary Agent build; TestMain removes its directory.
+var agentBuild struct {
+	once      sync.Once
+	dir, path string
+	err       error
 }
 
 // ok returns a rendered value, panicking (failing the test) on an error.
