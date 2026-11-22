@@ -14,6 +14,7 @@ package difftest
 //	rt -- bash -lc 'cd server && CONFIGFLOW_DIFF=1 go test -count=1 -v -run DockerHA ./internal/api/agents/difftest/'
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"math"
@@ -26,6 +27,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"configflow/internal/installer/installertest"
 )
 
 var (
@@ -239,8 +242,19 @@ func compareHA(t *testing.T, name string, py, gor response, same, failed *int, m
 		pyNorm.body, _ = encodeResponseJSON(po)
 		t.Log("EXPECTED invalid IPv6 URL: native net/url diagnostic")
 	}
+	if gor.status == 200 && bytes.Contains(gor.body, []byte(" ha-inspect")) {
+		// Approved delta (Agent 1.9.2-go): the inspection reads the old
+		// container's Agent fields with configflow-agent ha-inspect.
+		baseline, err := installertest.GuideBaseline(gor.body)
+		if err != nil {
+			*failed++
+			t.Errorf("%s: no-python baseline: %v", name, err)
+			return
+		}
+		gorNorm.body = baseline
+	}
 	pyNorm.body, _ = normalizeHA(pyNorm.body)
-	gorNorm.body, _ = normalizeHA(gor.body)
+	gorNorm.body, _ = normalizeHA(gorNorm.body)
 	// N7-3c: guide Compose is generated configuration. Only an independently
 	// parsed equal document may replace its byte layout for the JSON check;
 	// scripts, fields, statuses, headers and installation files remain strict.
