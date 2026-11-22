@@ -1311,6 +1311,7 @@
       "server/internal/yamlx/native_hash.go",
       "server/internal/yamlx/native_json.go",
       "server/internal/yamlx/native_node.go",
+      "server/internal/yamlx/native_probe.go",
       "server/internal/yamlx/native_validate.go",
       "server/internal/yamlx/native_writer_graph.go",
       "server/internal/yamlx/source.go"
