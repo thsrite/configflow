@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -62,6 +63,21 @@ var o10WholeEncodeAllowed = map[string]string{
 	"internal/api/agents/client_binding.go:warnClientPeer": "rate-limited warning log (once per Agent and interval)",
 	"internal/routers/inspect.go:inspectionDNS":            "manual router inspection, only when the DNS Agent has no typed DNS settings",
 	"internal/agents/rulesync/adapter.go:profileAgents":    "history-free Agent view (repo.AgentHistoryFields cleared) for rule-sync hooks",
+	// Generic JSON helpers (native, stored, same, raw) taking `any`.
+	"internal/api/rulelibrary/adapter.go:editWithProfiles":    "write transaction: rule library edit through the generic JSON helper",
+	"internal/api/rulelibrary/adapter.go:editSystem":          "write transaction through the generic JSON helper",
+	"internal/api/rulelibrary/adapter.go:editShared":          "write transaction through the generic JSON helper",
+	"internal/api/rules/compose_adapter.go:editSharedProfile": "write transaction through the generic JSON helper",
+	"internal/api/rules/adapter.go:editProfile":               "write transaction through the generic JSON helper",
+	"internal/api/proxygroups/adapter.go:edit":                "write transaction through the generic JSON helper",
+	"internal/api/proxygroups/adapter.go:relink":              "write transaction through the generic JSON helper",
+	"internal/api/ipv6/routes.go:operation":                   "IPv6 check compares two publish snapshots (rare, operator action)",
+	"internal/agents/ipv6/service.go:Host":                    "debt: IPv6 host check sends the Agent as a generic document",
+	"internal/api/aggregations/adapter.go:resourceConfig":     "debt: aggregation preview/count read the generic configuration (the provider download does not)",
+	"internal/api/rules/adapter.go:loadProfile":               "debt: rules page reads the generic configuration",
+	"internal/api/rulelibrary/adapter.go:sharedConfig":        "debt: rule library page reads the generic shared record",
+	"internal/api/proxygroups/adapter.go:sharedConfig":        "debt: proxy groups page reads the generic shared record",
+	"internal/api/proxygroups/adapter.go:load":                "debt: proxy groups page reads the generic configuration",
 	// Debt: read paths still encoding whole records.
 	"internal/agents/dnsfollow/adapter.go:secrets":                     "debt: DNS-follow credential collection per Agent (whole record)",
 	"internal/agents/ipv6/adapter.go:agentDocument":                    "debt: IPv6 verification reads the Agent as a generic document",
@@ -100,6 +116,30 @@ var o10Encoders = map[string]bool{
 	"(*encoding/json.Encoder).Encode":                true,
 	"encoding/json/v2.Marshal":                       true,
 	// Not gated: model.EncodeMember (one member), yamlx.Marshal (YAML nodes).
+}
+
+// o10InterfaceReaders take a record as an interface value without encoding
+// it: decoding into it, or reading its provenance.
+var o10InterfaceReaders = map[string]bool{
+	"encoding/json.Unmarshal":                  true,
+	"configflow/internal/jsondecode.Unmarshal": true,
+	"configflow/internal/model.Issues":         true,
+	"configflow/internal/model.IssueUnder":     true,
+	"configflow/internal/model.SwitchEnabled":  true,
+}
+
+func o10InterfaceReader(info *types.Info, fun ast.Expr) bool {
+	var ident *ast.Ident
+	switch f := ast.Unparen(fun).(type) {
+	case *ast.Ident:
+		ident = f
+	case *ast.SelectorExpr:
+		ident = f.Sel
+	default:
+		return false
+	}
+	fn, ok := info.Uses[ident].(*types.Func)
+	return ok && o10InterfaceReaders[fn.FullName()]
 }
 
 // o10WholeRecords are the record types whose whole encode is gated.
@@ -151,6 +191,7 @@ func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *type
 			owner, root = fn.Name.Name, fn.Body
 		}
 		called := map[*ast.Ident]bool{}
+		encoded := map[*ast.CallExpr]bool{}
 		ast.Inspect(root, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
@@ -185,7 +226,45 @@ func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *type
 				return true
 			}
 			if t := info.TypeOf(call.Args[0]); t != nil && o10WholeRecord(t) {
+				encoded[call] = true
 				sites = append(sites, o10EncodeSite{name + ":" + owner, fset.Position(call.Pos()).String(), full + " of " + t.String()})
+			}
+			return true
+		})
+		// A whole record handed to any function as an interface value (a
+		// generic helper like `stored(value any, …)`) is reported too: the
+		// gate cannot see what the helper does with it.
+		ast.Inspect(root, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || encoded[call] {
+				return true
+			}
+			if tv, ok := info.Types[call.Fun]; !ok || tv.IsType() {
+				return true
+			}
+			sig, ok := types.Unalias(info.TypeOf(call.Fun)).Underlying().(*types.Signature)
+			if !ok || o10InterfaceReader(info, call.Fun) {
+				return true
+			}
+			for i, arg := range call.Args {
+				var param types.Type
+				switch {
+				case sig.Variadic() && i >= sig.Params().Len()-1:
+					last := sig.Params().At(sig.Params().Len() - 1).Type()
+					if call.Ellipsis.IsValid() {
+						param = last
+					} else if slice, ok := last.(*types.Slice); ok {
+						param = slice.Elem()
+					}
+				case i < sig.Params().Len():
+					param = sig.Params().At(i).Type()
+				}
+				if param == nil || !types.IsInterface(param) {
+					continue
+				}
+				if t := info.TypeOf(arg); t != nil && !types.IsInterface(t) && o10WholeRecord(t) {
+					sites = append(sites, o10EncodeSite{name + ":" + owner, fset.Position(arg.Pos()).String(), t.String() + " passed as an interface value to " + types.ExprString(call.Fun)})
+				}
 			}
 			return true
 		})
@@ -341,6 +420,9 @@ func Marshal(v any) ([]byte, error) { return nil, nil }
 		{"package-level value", "var enc = json.Marshal", []string{"<package-level>"}},
 		{"alias type", "type cfg = model.Config\nfunc Get(c *cfg) { model.Marshal(c) }", []string{"Get"}},
 		{"named slice", "type agents []model.Agent\nfunc Get(a agents) { model.Marshal([]model.Agent(a)) }", []string{"Get"}},
+		{"generic helper", "func helper(v any) { _ = v }\nfunc Get(c *model.Config) { helper(c) }", []string{"Get"}},
+		{"variadic helper", "func helper(vs ...any) { _ = vs }\nfunc Get(a model.Agent) { helper(1, a) }", []string{"Get"}},
+		{"decode target", "func Get(c *model.Config) { json.Unmarshal(nil, c) }", nil},
 		{"member", "func Get(c *model.Config) { model.Marshal(c.Name) }", nil},
 		{"small record", "func Get(n model.Node) { model.Marshal(n) }", nil},
 	}
@@ -377,7 +459,9 @@ func Marshal(v any) ([]byte, error) { return nil, nil }
 				if owner == "<package-level>" && strings.Contains(site.what, "model.Marshal") {
 					continue // the probe's own `var _ = model.Marshal`
 				}
-				got = append(got, owner)
+				if !slices.Contains(got, owner) { // one site may match two rules
+					got = append(got, owner)
+				}
 			}
 			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
 				t.Fatalf("sites = %v, want %v", got, tt.want)

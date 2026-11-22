@@ -12,7 +12,8 @@ import (
 // tools/o10perf (19 routes, the heartbeat included) runs on the synthetic
 // fixture of o10_r11_fixture_test.go; the bytes allocated per request must
 // stay under the route's ceiling. A ceiling is about 1.5 times the value
-// measured when it was set (go test on the test server), with a floor of
+// measured when it was set (go test on the test server; generator routes and
+// notifications re-measured after O10 R8/R9), with a floor of
 // 0.3 MB, so an accidental whole-record copy or encode (one deep copy of a
 // Config or of the Agent list costs several MB here) fails the test. -race
 // allocates up to about twice as much, so it has its own columns. Lower a
@@ -22,23 +23,23 @@ var o10RouteCeilings = []struct {
 	measured, ceiling         float64 // MB per request, normal build
 	measuredRace, ceilingRace float64 // MB per request, -race build (the gate's core run)
 }{
-	{"GET /api/config/<profile>/mihomo", 29.14, 44, 42.78, 65},
-	{"GET /api/config/<profile>/surge", 3.62, 5.5, 5.07, 7.7},
-	{"GET /api/config/<profile>/loon", 3.77, 5.7, 5.22, 7.9},
-	{"GET /api/config/<profile>/mosdns", 5.74, 8.7, 6.58, 9.9},
-	{"GET /api/config/<profile>/oxidns", 3.93, 5.9, 4.63, 7},
-	{"GET /api/profiles/<profile>/aggregations/<agg>/provider", 144.4, 217, 186.6, 280},
+	{"GET /api/config/<profile>/mihomo", 9.21, 13.9, 13.54, 21},
+	{"GET /api/config/<profile>/surge", 2.59, 3.9, 3.79, 5.7},
+	{"GET /api/config/<profile>/loon", 2.74, 4.2, 3.91, 5.9},
+	{"GET /api/config/<profile>/mosdns", 5.03, 7.6, 5.85, 8.8},
+	{"GET /api/config/<profile>/oxidns", 3.68, 5.6, 4.44, 6.7},
+	{"GET /api/profiles/<profile>/aggregations/<agg>/provider", 30.43, 46, 39.91, 60},
 	{"GET /api/agents?summary=1", 0.18, 0.3, 0.24, 0.4},
 	{"GET /api/agents?history=0", 0.41, 0.7, 0.55, 0.9},
 	{"GET /api/agents", 4.6, 6.9, 6.05, 9.1},
-	{"GET /api/notifications", 4.24, 6.4, 8.19, 12.3},
+	{"GET /api/notifications", 2.37, 3.6, 5.61, 8.5},
 	{"GET /api/profiles", 0.11, 0.3, 0.26, 0.4},
 	{"GET /api/agents/<id>", 1.51, 2.3, 1.87, 2.9},
 	{"GET /api/agents/<id>/rule-sync", 0.15, 0.3, 0.2, 0.4},
 	{"POST /api/agents/<id>/heartbeat", 0.26, 0.4, 0.38, 0.6},
 	{"GET /api/routers", 0.17, 0.3, 0.36, 0.6},
 	{"GET /api/routers/<id>/policy", 0.76, 1.2, 1.3, 2},
-	{"GET /api/routers/<id>/policy-settings", 5.85, 8.8, 7.92, 11.9},
+	{"GET /api/routers/<id>/policy-settings", 5.53, 8.3, 7.39, 11.1},
 	{"GET /api/routers/<id>/rule-sync", 0.15, 0.3, 0.27, 0.5},
 	{"GET /api/agents/<id>/upstream-routers", 0.28, 0.5, 0.45, 0.7},
 }
