@@ -98,6 +98,17 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-32 MERGED 2026-11-22 (O18 T1b + review: device-write switches of another type read off, damaged HA journal
+stays locked, L2/L3/L4 fail closed, proddiff baseline migration patches raw bytes; 26 approved missing-in-go lines).
+batch-34 (R11+R8+R9) rebased on T1b: preflight caught T1b's model.EncodeMember(agent,…) calls in the new R11 source
+gate → reviewer 65827eb7 fixing. batch-35 (Docker HA bootstrap/migration → Agent subcommands, Agent 1.9.2-go; review:
+image version probe before use, NoPythonBaseline no longer hides real diffs) → reviewer 490f3caa rebasing on go.
+Maintainer 2026-11-22 (try): remove ALL Python from images — panel image: Go server hosts Sub-Store itself + tini,
+auto_update.py → Go (Opus 6739449c, go-nopy-panel-image); Agent image: supervisord → s6-overlay behind a swappable
+interface, entrypoint inline Python + compact Compose scripts → Agent subcommands, no python3 (Opus 1827341a,
+go-nopy-agent-image, stacked on batch-35). Real HA/process checks in L6. Agent-self-supervision considered, not chosen
+(maintenance of process edge cases).
+
 batch-33 MERGED 2026-11-22 18:0x (no-Python WP0 inventory + WP3 fixtures into server + pyref replay without
 source hashes + installer stubs in Go (6 tests still run the product's own Docker-HA bootstrap.py / migration check
 under python3) + internal/skipaudit (no new interpreter/tool skips; 91 allowed, list must be empty after the switch)
