@@ -37,6 +37,7 @@ type generation struct {
 	started, requested, draining, closed bool
 	admit                                bool
 	active, runners                      int
+	services                             int
 	drivers                              map[string]bool
 	startups                             map[string]bool
 }
@@ -55,7 +56,7 @@ type Runtime struct {
 	drain     func(context.Context) error
 	current   *generation
 	busy      map[string]bool
-	pending   int // active work and loop drivers across every generation
+	pending   int // active work, services and loop drivers across every generation
 }
 
 // NewRuntime constructs an independent runtime without starting background work.
@@ -373,6 +374,65 @@ func (r *Runtime) Spawn(ctx context.Context, name string, fn func(context.Contex
 	return nil
 }
 
+// SpawnService starts a tracked long-running owner, such as the supervisor of
+// a child process. Unlike Spawn it does not hold the shutdown drain open, so
+// what it serves stays available while requests and jobs drain: its context
+// is cancelled together with the jobs (when the drain ends, grace−2s at the
+// latest), and Shutdown waits for it, bounded by the overall grace, before the
+// after-drain hooks run. Admission follows Spawn.
+func (r *Runtime) SpawnService(ctx context.Context, name string, fn func(context.Context)) error {
+	r.mu.Lock()
+	if origin, ok := ctx.Value(generationKey{}).(*generation); ok && origin.runtime == r && (origin.closed || origin != r.current) {
+		r.mu.Unlock()
+		return ErrStopping
+	}
+	g := r.generation(context.Background())
+	if !g.admit || g.closed {
+		r.mu.Unlock()
+		return ErrStopping
+	}
+	g.services++
+	r.pending++
+	r.notify(g)
+	r.mu.Unlock()
+	work, finish := r.workContext(ctx, g, true)
+	go func() {
+		emitEvent(r.clock.Now(), name, "service-start")
+		defer func() {
+			if recover() != nil {
+				logger.Errorf(msgTaskPanic, name)
+			}
+			finish()
+			emitEvent(r.clock.Now(), name, "service-end")
+			r.mu.Lock()
+			g.services--
+			r.pending--
+			r.notify(g)
+			r.mu.Unlock()
+		}()
+		fn(work)
+	}()
+	return nil
+}
+
+// waitServices waits until the generation's services have returned.
+func (r *Runtime) waitServices(ctx context.Context, g *generation) error {
+	for {
+		r.mu.Lock()
+		done := g.services == 0
+		changed := g.changed
+		r.mu.Unlock()
+		if done {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
 // Stopping returns this generation's shutdown signal. Job contexts keep their
 // original generation's signal even when the Runtime is later restarted.
 func (r *Runtime) Stopping(ctx context.Context) <-chan struct{} {
@@ -522,6 +582,9 @@ func (r *Runtime) Shutdown(ctx context.Context) {
 		logger.Warning(msgShutdownTimeout)
 	}
 	stopCancel()
+	if err := r.waitServices(overall, g); err != nil {
+		logger.Warning(msgServiceTimeout)
+	}
 	for _, phase := range []Phase{PhaseAfterDrain, PhaseClose} {
 		for _, h := range hooks {
 			if h.Phase == phase {

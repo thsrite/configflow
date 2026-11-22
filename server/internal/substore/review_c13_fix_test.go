@@ -140,14 +140,6 @@ func TestReviewCommandOutputIsStrictUTF8(t *testing.T) {
 	if !errors.Is(err, ErrCommandEncoding) {
 		t.Fatalf("%v (%s)", err, pythonClass(err))
 	}
-	h := newHarness(t, harnessOptions{builtin: true})
-	rt := h.service.Runtime
-	rt.env.Commands = commandFunc(func([]string) (CommandResult, error) {
-		return CommandResult{}, ErrCommandEncoding
-	})
-	if _, err := rt.runCommand(context.Background(), "status"); IsRuntimeUnavailable(err) || !errors.Is(err, ErrCommandEncoding) {
-		t.Fatalf("%v", err)
-	}
 }
 
 // TestReviewMakedirsNativeErrors retains file safety and actual errno classification.

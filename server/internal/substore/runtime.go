@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -296,8 +296,8 @@ func (r *Runtime) wait(ctx context.Context, d time.Duration) error {
 
 func (r *Runtime) monotonic() float64 { return r.env.Clock.Monotonic() }
 
-// runCommand is _command(action): supervisorctl for the sub-store program.
-// status returns the state word; other actions their output.
+// runCommand is _command(action): status returns the state word, start and
+// stop control the supervised process.
 func (r *Runtime) runCommand(ctx context.Context, action string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -305,28 +305,32 @@ func (r *Runtime) runCommand(ctx context.Context, action string) (string, error)
 	if r.command != nil {
 		return r.command(ctx, action)
 	}
-	result, err := r.env.Commands.Run(ctx, []string{"supervisorctl", "-c", SupervisorConfig, action, SubStoreProgram},
-		20*time.Second)
+	process := r.env.Process
+	if process == nil {
+		return "", unavailable(msgManageUnavailable)
+	}
+	var err error
+	switch action {
+	case "status":
+		return string(process.Status()), nil
+	case "start":
+		err = process.Start(ctx)
+	case "stop":
+		err = process.Stop(ctx)
+	default:
+		return "", fmt.Errorf("unknown Sub-Store action %q", action)
+	}
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
+	if errors.Is(err, ErrProcessUnavailable) {
+		return "", unavailable(msgManageUnavailable)
+	}
 	if err != nil {
-		var path *os.PathError
-		var command *exec.Error
-		if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &path) || errors.As(err, &command) {
-			return "", unavailable(msgManageUnavailable)
-		}
-		return "", err
+		runtimeLog.Warningf(msgProcessActionFailed, action, err)
+		return "", unavailable(msgProcessFailed)
 	}
-	if action == "status" {
-		parts := strings.Fields(result.Stdout)
-		if len(parts) >= 2 && parts[0] == SubStoreProgram {
-			return parts[1], nil
-		}
-	} else if result.ReturnCode == 0 {
-		return result.Stdout, nil
-	}
-	return "", unavailable("Sub-Store 服务操作失败，请检查容器日志")
+	return "", nil
 }
 
 // isReady is _ready(): the bundled Sub-Store answers its version.
@@ -384,7 +388,7 @@ func (r *Runtime) ensureRunning(ctx context.Context) error {
 				return err
 			}
 		}
-		return unavailable("Sub-Store 启动后未就绪，请稍后重试或检查容器日志")
+		return unavailable(msgStartNotReady)
 	}()
 	var u *RuntimeUnavailable
 	if errors.As(err, &u) {

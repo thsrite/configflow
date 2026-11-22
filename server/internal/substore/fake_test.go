@@ -200,7 +200,8 @@ func serveText(text string, header map[string]string) func(http.ResponseWriter, 
 	}
 }
 
-// fakeCommands emulates supervisorctl (driving the fake Sub-Store) and node.
+// fakeCommands emulates the supervised Sub-Store process (driving the fake
+// Sub-Store) and node.
 type fakeCommands struct {
 	mu         sync.Mutex
 	store      *fakeSubStore
@@ -210,55 +211,74 @@ type fakeCommands struct {
 	restarts   int
 	runVersion string // version a started process reports
 	// onRestart decides what a restart does (nil: run runVersion).
-	onRestart func(n int) (CommandResult, error)
-	// fail makes every supervisorctl call fail like an OSError.
+	onRestart func(n int) error
+	// fail makes every process call fail.
 	fail      error
 	checkCode int
+}
+
+func (c *fakeCommands) record(argv ...string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls = append(c.calls, argv)
+	return c.fail
+}
+
+// Status implements Process.
+func (c *fakeCommands) Status() ProcessState {
+	c.record("process", "status")
+	if c.store.running() {
+		return ProcessRunning
+	}
+	return ProcessStopped
+}
+
+// Start implements Process.
+func (c *fakeCommands) Start(context.Context) error {
+	if err := c.record("process", "start"); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.starts++
+	c.mu.Unlock()
+	c.store.setVersion(c.runVersion)
+	return nil
+}
+
+// Stop implements Process.
+func (c *fakeCommands) Stop(context.Context) error {
+	if err := c.record("process", "stop"); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.stops++
+	c.mu.Unlock()
+	c.store.setVersion("")
+	return nil
+}
+
+// Restart implements Process.
+func (c *fakeCommands) Restart(context.Context) error {
+	if err := c.record("process", "restart"); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.restarts++
+	n := c.restarts
+	onRestart := c.onRestart
+	c.mu.Unlock()
+	if onRestart != nil {
+		return onRestart(n)
+	}
+	c.store.setVersion(c.runVersion)
+	return nil
 }
 
 func (c *fakeCommands) Run(_ context.Context, argv []string, _ time.Duration) (CommandResult, error) {
 	c.mu.Lock()
 	c.calls = append(c.calls, append([]string(nil), argv...))
 	c.mu.Unlock()
-	switch argv[0] {
-	case "supervisorctl":
-		c.mu.Lock()
-		fail := c.fail
-		c.mu.Unlock()
-		if fail != nil {
-			return CommandResult{}, fail
-		}
-		switch argv[3] {
-		case "status":
-			if c.store.running() {
-				return CommandResult{Stdout: "sub-store                        RUNNING   pid 7, uptime 0:00:05\n"}, nil
-			}
-			return CommandResult{Stdout: "sub-store                        STOPPED   Not started\n", ReturnCode: 3}, nil
-		case "start":
-			c.mu.Lock()
-			c.starts++
-			c.mu.Unlock()
-			c.store.setVersion(c.runVersion)
-			return CommandResult{Stdout: "sub-store: started\n"}, nil
-		case "stop":
-			c.mu.Lock()
-			c.stops++
-			c.mu.Unlock()
-			c.store.setVersion("")
-			return CommandResult{Stdout: "sub-store: stopped\n"}, nil
-		case "restart":
-			c.mu.Lock()
-			c.restarts++
-			n := c.restarts
-			onRestart := c.onRestart
-			c.mu.Unlock()
-			if onRestart != nil {
-				return onRestart(n)
-			}
-			c.store.setVersion(c.runVersion)
-			return CommandResult{Stdout: "sub-store: stopped\nsub-store: started\n"}, nil
-		}
-	case "node":
+	if argv[0] == "node" {
 		if argv[1] == "--version" {
 			return CommandResult{Stdout: "v26.0.0\n"}, nil
 		}
@@ -380,6 +400,7 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 		DataDir:  func() string { return h.data },
 		HTTP:     RequestsClient{},
 		Commands: h.commands,
+		Process:  h.commands,
 		Clock:    clock,
 		RandomHex: func() string {
 			h.envMu.Lock()

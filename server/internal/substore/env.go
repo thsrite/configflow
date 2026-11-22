@@ -31,7 +31,6 @@ const (
 	SubStoreAsset      = "sub-store.bundle.js"
 	SubStoreProgram    = "sub-store"
 	DefaultBuiltinDir  = "/opt/sub-store"
-	SupervisorConfig   = "/etc/supervisor/conf.d/supervisord.conf"
 	defaultPortSetting = "3001"
 )
 
@@ -70,11 +69,8 @@ type CommandResult struct {
 }
 
 // CommandRunner executes a bounded external command; a non-zero exit is a result.
-//
-// The process control of the bundled Sub-Store goes through this interface
-// only: `supervisorctl -c SupervisorConfig <status|start|stop|restart>
-// sub-store` and `node --version` / `node --check <file>`. The image
-// (package #40) installs its own runner when it replaces supervisord.
+// It runs `node --version` and `node --check <file>`; the Sub-Store process
+// itself is controlled through Env.Process.
 type CommandRunner interface {
 	Run(ctx context.Context, argv []string, timeout time.Duration) (CommandResult, error)
 }
@@ -133,15 +129,19 @@ type Env struct {
 	DataDir   func() string
 	HTTP      HTTPClient
 	Commands  CommandRunner
-	Clock     Clock
+	// Process controls the bundled Sub-Store process (nil: not manageable).
+	Process Process
+	Clock   Clock
 	// RandomHex is uuid.uuid4().hex[:8].
 	RandomHex func() string
 }
 
 // NewEnv returns the production environment.
 func NewEnv() *Env {
-	return &Env{LookupEnv: os.LookupEnv, DataDir: repo.DataDir, HTTP: RequestsClient{}, Commands: ExecRunner{},
+	env := &Env{LookupEnv: os.LookupEnv, DataDir: repo.DataDir, HTTP: RequestsClient{}, Commands: ExecRunner{},
 		Clock: SystemClock, RandomHex: randomHex}
+	env.Process = NewSupervisor(env)
+	return env
 }
 
 func randomHex() string {

@@ -2,7 +2,7 @@ package substore
 
 // Port of backend/test_dependencies.py (version choice, base URL, online
 // update). Python patched requests/subprocess/_restart_sub_store/
-// _wait_for_version; here GitHub is a loopback server, supervisorctl and
+// _wait_for_version; here GitHub is a loopback server, the Sub-Store process and
 // node are a fake CommandRunner and the waits run on a fake clock against
 // the fake Sub-Store.
 
@@ -266,13 +266,13 @@ func TestUpdateRollsBackWhenNewVersionDoesNotStart(t *testing.T) {
 	dh.writeRuntime("2.40.5")
 	content := []byte("broken bundle")
 	dh.serve(content)
-	dh.commands.onRestart = func(n int) (CommandResult, error) {
+	dh.commands.onRestart = func(n int) error {
 		if n == 1 {
 			dh.store.setVersion("")
 		} else {
 			dh.store.setVersion("2.40.5")
 		}
-		return CommandResult{}, nil
+		return nil
 	}
 	dh.run(dh.releaseFor(content, "2.41.0"))
 	state := dh.d.UpdateSnapshot()
@@ -322,12 +322,12 @@ func TestUpdateRestoresPreviousBundleWhenRestartRaises(t *testing.T) {
 	dh.writeRuntime("2.40.5")
 	content := []byte("new bundle")
 	dh.serve(content)
-	dh.commands.onRestart = func(n int) (CommandResult, error) {
+	dh.commands.onRestart = func(n int) error {
 		if n == 1 {
-			return CommandResult{Stderr: "restart failed\n", ReturnCode: 1}, nil
+			return errors.New("restart failed")
 		}
 		dh.store.setVersion("2.40.5")
-		return CommandResult{}, nil
+		return nil
 	}
 	dh.run(dh.releaseFor(content, "2.41.0"))
 	if dh.commands.restarts != 2 {
@@ -368,7 +368,7 @@ func TestUpdateFailureMessages(t *testing.T) {
 		dh := newDepsHarness(t)
 		dh.setenv("SUB_STORE_BACKEND_API_PORT", dh.store.port())
 		dh.serve([]byte("x"))
-		dh.commands.onRestart = func(int) (CommandResult, error) { dh.store.setVersion(""); return CommandResult{}, nil }
+		dh.commands.onRestart = func(int) error { dh.store.setVersion(""); return nil }
 		dh.run(dh.releaseFor([]byte("x"), "2.41.0"))
 		if m := dh.d.UpdateSnapshot().Message; m != "更新失败：Sub-Store 2.41.0 启动后未就绪；回滚未完成，请检查容器日志" {
 			t.Fatalf("message %s", m)

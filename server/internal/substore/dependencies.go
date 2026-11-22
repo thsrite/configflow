@@ -268,27 +268,21 @@ func (d *Dependencies) List(ctx context.Context, forceCheck bool) ([]*Dependency
 	return []*DependencyStatus{value}, nil
 }
 
-// restartSubStore is _restart_sub_store.
+// restartSubStore is _restart_sub_store: the supervised process restarts
+// on the newly installed bundle.
 func (d *Dependencies) restartSubStore(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	result, err := d.env.Commands.Run(ctx, []string{"supervisorctl", "-c", SupervisorConfig, "restart", SubStoreProgram},
-		60*time.Second)
-	if err != nil {
+	if d.env.Process == nil {
+		return errors.New(msgManageUnavailable)
+	}
+	restartCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	if err := d.env.Process.Restart(restartCtx); err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if result.ReturnCode != 0 {
-		message := strings.TrimSpace(result.Stdout + result.Stderr)
-		if message == "" {
-			message = "supervisorctl restart 失败"
-		}
-		return errors.New(message)
-	}
-	return nil
+	return ctx.Err()
 }
 
 // waitForVersion is _wait_for_version(expected, timeout): poll the bundled

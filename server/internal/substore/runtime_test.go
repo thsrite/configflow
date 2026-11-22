@@ -3,13 +3,14 @@ package substore
 // Port of backend/test_sub_store_runtime.py (lifecycle regressions: no
 // idle shutdown during work, polling or updates). Python patched _ready and
 // _command; here the runtime talks to a fake Sub-Store through the real
-// client and supervisorctl is a fake CommandRunner driving it.
+// client and a fake Process drives it.
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -414,43 +415,38 @@ func TestDefaultRoot(t *testing.T) {
 	}
 }
 
-// The supervisorctl protocol of _command.
+// _command drives the process controller: status words, start/stop, and
+// the user-facing messages for an unmanageable or failing process.
 func TestCommandProtocol(t *testing.T) {
 	h, rt, _ := lifecycleService(t)
 	ctx := context.Background()
 	if status := must[string](t)(rt.runCommand(ctx, "status")); status != "STOPPED" {
 		t.Fatalf("status %q", status)
 	}
-	if out := must[string](t)(rt.runCommand(ctx, "start")); out != "sub-store: started\n" {
-		t.Fatalf("start %q", out)
+	if _, err := rt.runCommand(ctx, "start"); err != nil {
+		t.Fatal(err)
 	}
-	want := []string{"supervisorctl", "-c", "/etc/supervisor/conf.d/supervisord.conf", "start", "sub-store"}
-	if got := h.commands.calls[len(h.commands.calls)-1]; !slices.Equal(got, want) {
-		t.Fatalf("argv %v", got)
+	if got := h.commands.calls[len(h.commands.calls)-1]; !slices.Equal(got, []string{"process", "start"}) {
+		t.Fatalf("calls %v", got)
+	}
+	if status := must[string](t)(rt.runCommand(ctx, "status")); status != "RUNNING" {
+		t.Fatalf("status %q", status)
+	}
+	h.commands.fail = fmt.Errorf("start: %w", ErrProcessUnavailable)
+	if _, err := rt.runCommand(ctx, "stop"); err == nil || err.Error() != msgManageUnavailable {
+		t.Fatalf("err %v", err)
 	}
 	h.commands.fail = os.ErrNotExist
-	if _, err := rt.runCommand(ctx, "status"); err == nil || err.Error() != "无法管理内置 Sub-Store，请检查容器服务状态" {
-		t.Fatalf("err %v", err)
-	}
-	h.commands.fail = context.DeadlineExceeded
-	if _, err := rt.runCommand(ctx, "stop"); err == nil || err.Error() != "无法管理内置 Sub-Store，请检查容器服务状态" {
-		t.Fatalf("err %v", err)
-	}
-	h.commands.fail = nil
-	rt.env.Commands = commandFunc(func(argv []string) (CommandResult, error) {
-		return CommandResult{Stdout: "garbage\n", ReturnCode: 1}, nil
-	})
-	for _, action := range []string{"status", "start"} {
-		if _, err := rt.runCommand(ctx, action); err == nil || err.Error() != "Sub-Store 服务操作失败，请检查容器日志" {
+	for _, action := range []string{"start", "stop"} {
+		if _, err := rt.runCommand(ctx, action); !IsRuntimeUnavailable(err) || err.Error() != "Sub-Store 服务操作失败，请检查容器日志" {
 			t.Fatalf("%s err %v", action, err)
 		}
 	}
-}
-
-type commandFunc func(argv []string) (CommandResult, error)
-
-func (f commandFunc) Run(_ context.Context, argv []string, _ time.Duration) (CommandResult, error) {
-	return f(argv)
+	h.commands.fail = nil
+	rt.env.Process = nil
+	if _, err := rt.runCommand(ctx, "status"); err == nil || err.Error() != "无法管理内置 Sub-Store，请检查容器服务状态" {
+		t.Fatalf("err %v", err)
+	}
 }
 
 // A Sub-Store that never becomes ready fails after 20 s with Python's message.

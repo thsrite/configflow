@@ -20,15 +20,17 @@ import (
 
 const modePath = "/api/settings/dependencies/sub-store/mode"
 
-// commands emulates supervisorctl and node for the bundled Sub-Store.
+// commands emulates node and the supervised process of the bundled Sub-Store.
 type commands struct{}
 
 func (commands) Run(_ context.Context, argv []string, _ time.Duration) (substore.CommandResult, error) {
-	if argv[0] == "node" {
-		return substore.CommandResult{Stdout: "v26.0.0\n"}, nil
-	}
-	return substore.CommandResult{Stdout: "sub-store RUNNING pid 1\n"}, nil
+	return substore.CommandResult{Stdout: "v26.0.0\n"}, nil
 }
+
+func (commands) Status() substore.ProcessState { return substore.ProcessRunning }
+func (commands) Start(context.Context) error   { return nil }
+func (commands) Stop(context.Context) error    { return nil }
+func (commands) Restart(context.Context) error { return nil }
 
 // subStoreWorld installs a service with a bundled Sub-Store answering on
 // loopback (version 2.40.0) and a GitHub API answering latestRelease.
@@ -55,6 +57,7 @@ func subStoreWorld(t *testing.T, builtin bool, latestRelease string) *substore.S
 	env.LookupEnv = func(key string) (string, bool) { v, ok := vars[key]; return v, ok }
 	env.DataDir = func() string { return filepath.Join(base, "data") }
 	env.Commands = commands{}
+	env.Process = commands{}
 	service := substore.NewService(env)
 	service.Runtime.Directory = filepath.Join(base, "runtime")
 	service.Dependencies.LatestReleaseURL = github.URL + "/repos/sub-store-org/Sub-Store/releases/latest"

@@ -78,3 +78,16 @@ const (
 const msgRuntimeDirectoryReadOnly = "目录位于只读文件系统"
 
 const msgResponseTooLarge = "订阅或 Sub-Store 响应内容超过 64 MiB 上限"
+
+const (
+	msgProcessStarted     = "Sub-Store 已启动（pid %d）：%s"
+	msgProcessSpawnFailed = "Sub-Store 启动失败：%v"
+	msgProcessExited      = "Sub-Store 进程（pid %d）意外退出：%s；%v 后重启"
+	msgProcessStopped     = "Sub-Store 已停止（pid %d）"
+)
+
+const (
+	msgProcessFailed       = "Sub-Store 服务操作失败，请检查容器日志"
+	msgProcessActionFailed = "Sub-Store %s 失败：%v"
+	msgStartNotReady       = "Sub-Store 启动后未就绪，请稍后重试或检查容器日志"
+)

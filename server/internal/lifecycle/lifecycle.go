@@ -98,6 +98,14 @@ func Spawn(ctx context.Context, name string, fn func(context.Context)) error {
 	return defaultRuntime.Spawn(ctx, name, fn)
 }
 
+// SpawnService starts a tracked long-running owner on the configured default
+// runtime; see (*Runtime).SpawnService.
+func SpawnService(ctx context.Context, name string, fn func(context.Context)) error {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	return defaultRuntime.SpawnService(ctx, name, fn)
+}
+
 // Stopping returns ctx's original generation signal, or the current default's.
 func Stopping(ctx context.Context) <-chan struct{} { return currentRuntime().Stopping(ctx) }
 
