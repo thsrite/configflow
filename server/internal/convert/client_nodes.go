@@ -96,17 +96,19 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 	port := fmt.Sprint(int64(node.Port))
 	// Valid number spellings are retained under R2; invalid fields use R5 zero.
 	if !model.IssueUnder(model.Issues(node), "port") {
-		data, err := model.Marshal(node)
+		// Only the port member is read back (O10 R9).
+		raw, present, err := node.MemberJSON("port")
 		if err != nil {
 			return nil, err
 		}
-		record, err := yamlx.FromJSON(data)
-		if err != nil {
-			return nil, err
-		}
-		original := yamlx.Get(record, "port")
-		if original != nil && (original.ShortTag() == "!!int" || original.ShortTag() == "!!float") {
-			port = original.Value
+		if present {
+			original, err := yamlx.FromJSON(raw)
+			if err != nil {
+				return nil, err
+			}
+			if original.ShortTag() == "!!int" || original.ShortTag() == "!!float" {
+				port = original.Value
+			}
 		}
 	}
 	return &clientNode{sanitizeClientName(node.Name), sanitizeClientField(strings.ToLower(node.Type)), sanitizeClientField(node.Server), sanitizeClientField(port), options}, nil
@@ -164,15 +166,10 @@ func sanitizeClientName(s string) string {
 // clientProtocolType keeps enum discrimination strict while model.String owns
 // lossless text for names, addresses and protocol options. Null is absent.
 func clientProtocolType(node model.Node) error {
-	data, err := model.Marshal(node)
+	raw, present, err := node.MemberJSON("type")
 	if err != nil {
 		return err
 	}
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(data, &members); err != nil {
-		return err
-	}
-	raw, present := members["type"]
 	if !present || string(raw) == "null" {
 		return nil
 	}

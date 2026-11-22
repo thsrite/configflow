@@ -124,18 +124,31 @@ func identityString(raw json.RawMessage, field string) error {
 	return nil
 }
 
+// recordMembers reads the named members that are present, one at a time.
+func recordMembers(member func(string) (json.RawMessage, bool, error), names ...string) (map[string]json.RawMessage, error) {
+	members := make(map[string]json.RawMessage, len(names))
+	for _, name := range names {
+		raw, present, err := member(name)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			members[name] = raw
+		}
+	}
+	return members, nil
+}
+
 // ConfigShapes validates metadata needed by node and topology generation.
 func ConfigShapes(config *model.Config, requireIDs bool) error {
 	if config == nil {
 		return nil
 	}
-	for _, node := range config.Nodes {
-		data, err := node.MarshalJSON()
+	// Only the members checked here are encoded, never a whole record (O10 R9).
+	for i := range config.Nodes {
+		node := &config.Nodes[i]
+		members, err := recordMembers(node.MemberJSON, "id", "params", "proxy_string")
 		if err != nil {
-			return err
-		}
-		var members map[string]json.RawMessage
-		if err = json.Unmarshal(data, &members); err != nil {
 			return err
 		}
 		_, hasID := members["id"]
@@ -159,12 +172,8 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		}
 	}
 	for _, group := range configGroups(config) {
-		data, err := group.MarshalJSON()
+		members, err := recordMembers(group.MemberJSON, "id", "type", "manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use", "proxies_order")
 		if err != nil {
-			return err
-		}
-		var members map[string]json.RawMessage
-		if err = json.Unmarshal(data, &members); err != nil {
 			return err
 		}
 		_, hasID := members["id"]

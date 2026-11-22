@@ -57,10 +57,7 @@ func CacheFilename(rule model.RuleConfig) string {
 	if identity == "" {
 		// An explicitly stored empty ID remains an identity; an absent or
 		// null ID uses the name. Invalid typed IDs follow R5.
-		data, _ := model.Marshal(rule)
-		var members map[string]json.RawMessage
-		_ = json.Unmarshal(data, &members)
-		raw, present := members["id"]
+		raw, present, _ := rule.MemberJSON("id")
 		if !present || string(raw) == "null" || model.IssueUnder(model.Issues(rule), "id") {
 			namespace, text = "by-name", rule.Name
 		}
@@ -359,10 +356,7 @@ func SameSourceDeclaration(a, b model.RuleConfig) bool {
 }
 func originalMemberEqual(a, b model.RuleConfig, field string) bool {
 	member := func(rule model.RuleConfig) json.RawMessage {
-		data, _ := model.Marshal(rule)
-		var fields map[string]json.RawMessage
-		_ = json.Unmarshal(data, &fields)
-		value := fields[field]
+		value, _, _ := rule.MemberJSON(field)
 		if string(value) == "null" {
 			return nil
 		}

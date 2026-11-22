@@ -1,7 +1,6 @@
 package convert
 
 import (
-	"configflow/internal/jsondecode"
 	"container/list"
 	"context"
 	"encoding/json"
@@ -426,18 +425,13 @@ func NodeProxy(ctx context.Context, node model.Node, converter NodeConverter) (*
 	}
 	// A proxy_string owns its protocol type. Only the stored-node path uses
 	// Node.Type, whose original JSON must remain a string discriminator.
-	data, err := model.Marshal(node)
+	// Only the type and port members are read back, not the whole node (O10 R9).
+	rawType, present, err := node.MemberJSON("type")
 	if err != nil {
 		return nil, err
 	}
-	var metadata struct {
-		Type json.RawMessage `json:"type"`
-	}
-	if err := jsondecode.Unmarshal(data, &metadata); err != nil {
-		return nil, err
-	}
-	if metadata.Type != nil {
-		if err := identityString(metadata.Type, msgNodeTypeField); err != nil {
+	if present {
+		if err := identityString(rawType, msgNodeTypeField); err != nil {
 			return nil, err
 		}
 	}
@@ -457,12 +451,18 @@ func NodeProxy(ctx context.Context, node model.Node, converter NodeConverter) (*
 	// Quoted integers are accepted on read but generated as integer scalars.
 	port := yamlx.Int(int64(node.Port))
 	if !model.IssueUnder(model.Issues(node), "port") {
-		record, err := yamlx.FromJSON(data)
+		rawPort, present, err := node.MemberJSON("port")
 		if err != nil {
 			return nil, err
 		}
-		if original := yamlx.Get(record, "port"); original != nil && (original.ShortTag() == "!!int" || original.ShortTag() == "!!float") {
-			port = original
+		if present {
+			original, err := yamlx.FromJSON(rawPort)
+			if err != nil {
+				return nil, err
+			}
+			if original.ShortTag() == "!!int" || original.ShortTag() == "!!float" {
+				port = original
+			}
 		}
 	}
 	proxy := yamlx.Map(yamlx.Str("name"), yamlx.Str(node.Name), yamlx.Str("type"), yamlx.Str(kind), yamlx.Str("server"), yamlx.Str(node.Server), yamlx.Str("port"), port)

@@ -81,20 +81,17 @@ func containsPolicy(available map[string]struct{}, name string) bool {
 // explicit JSON null or non-string value (which is always invalid and formatted
 // as its JSON literal in the Chinese diagnostic).
 func rulePolicy(rule *model.RuleConfig, fallback string) (policy string, validType bool) {
-	if raw, err := rule.MarshalJSON(); err == nil {
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) == nil {
-			value, present := fields["policy"]
-			if !present {
-				return fallback, true
-			}
-			trimmed := bytes.TrimSpace(value)
-			var text string
-			if len(trimmed) > 0 && trimmed[0] == '"' && json.Unmarshal(trimmed, &text) == nil {
-				return text, true
-			}
-			return string(trimmed), false
+	// Only the policy member is encoded, not the whole rule (O10 R9).
+	if value, present, err := rule.MemberJSON("policy"); err == nil {
+		if !present {
+			return fallback, true
 		}
+		trimmed := bytes.TrimSpace(value)
+		var text string
+		if len(trimmed) > 0 && trimmed[0] == '"' && json.Unmarshal(trimmed, &text) == nil {
+			return text, true
+		}
+		return string(trimmed), false
 	}
 	return valueOr(rule.Policy, fallback), true
 }

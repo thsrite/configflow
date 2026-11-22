@@ -409,26 +409,33 @@ func orderedRoots(config *model.Config, selection *mihomoSelection) []string {
 	return result
 }
 func groupEngineOptions(target *yamlx.Node, group model.ProxyGroup) error {
-	raw, err := model.Marshal(group)
-	if err != nil {
-		return err
-	}
-	source, err := yamlx.FromJSON(raw)
-	if err != nil {
-		return err
-	}
 	invalid := map[string]bool{}
 	for _, issue := range model.Issues(&group) {
 		invalid[issue.Path] = true
 	}
+	// Each option is read as its own member, not from a whole-group encode (O10 R9).
 	for _, key := range []string{"url", "interval", "tolerance", "lazy", "strategy", "timeout", "max-failed-times", "expected-status", "disable-udp", "hidden", "icon", "exclude-filter", "exclude-type"} {
-		if !invalid[key] {
-			if value := yamlx.Get(source, key); value != nil {
-				yamlx.Set(target, key, value)
-			}
+		if invalid[key] {
+			continue
+		}
+		value, err := groupMember(&group, key)
+		if err != nil {
+			return err
+		}
+		if value != nil {
+			yamlx.Set(target, key, value)
 		}
 	}
 	return nil
+}
+
+// groupMember is a group's stored member as a YAML node, or nil when absent.
+func groupMember(group *model.ProxyGroup, key string) (*yamlx.Node, error) {
+	raw, present, err := group.MemberJSON(key)
+	if err != nil || !present {
+		return nil, err
+	}
+	return yamlx.FromJSON(raw)
 }
 func groupDefaults(target *yamlx.Node, group model.ProxyGroup) error {
 	if stringValue(group.URL) != "" {
@@ -437,15 +444,11 @@ func groupDefaults(target *yamlx.Node, group model.ProxyGroup) error {
 	if group.Interval != nil && *group.Interval != 0 {
 		// A followed group may omit interval. In that case the local stored
 		// override survives with its YAML scalar type, including quoted text.
-		raw, err := model.Marshal(group)
+		interval, err := groupMember(&group, "interval")
 		if err != nil {
 			return err
 		}
-		source, err := yamlx.FromJSON(raw)
-		if err != nil {
-			return err
-		}
-		yamlx.Set(target, "interval", yamlx.Get(source, "interval"))
+		yamlx.Set(target, "interval", interval)
 	}
 	if group.Type == "url-test" {
 		yamlx.Set(target, "tolerance", yamlx.Int(100))

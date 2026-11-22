@@ -78,16 +78,23 @@ func RuleFormat(rule model.RuleConfig, library []model.RuleLibraryItem, sourceUR
 	}
 	var found *model.RuleLibraryItem
 	if index >= 0 {
-		data, err := model.Marshal(library[index])
-		if err != nil {
-			return "", err
-		}
-		var members map[string]json.RawMessage
-		if err := json.Unmarshal(data, &members); err != nil {
-			return "", err
-		}
-		if len(members) != 0 {
-			found = &library[index]
+		// A matched non-empty id or name is a stored member, so the record
+		// is not empty; only a match on empty names needs the encoding.
+		item := &library[index]
+		if item.ID != "" || item.Name != "" {
+			found = item
+		} else {
+			data, err := model.Marshal(item)
+			if err != nil {
+				return "", err
+			}
+			var members map[string]json.RawMessage
+			if err := json.Unmarshal(data, &members); err != nil {
+				return "", err
+			}
+			if len(members) != 0 {
+				found = item
+			}
 		}
 	}
 	if found != nil && validFormat(text(found.Format)) {
