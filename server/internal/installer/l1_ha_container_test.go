@@ -9,10 +9,12 @@ import (
 	"testing"
 )
 
-// l1HAImage is a minimal Agent-like image: the real Agent binary for
+// l1HAImage is a minimal Agent-like test image: the real Agent binary for
 // ha-port-check, behind a wrapper whose `svc status oxidns` reports the state
 // written to /srv/l1/state (the s6 states themselves are covered by the
-// image lab), and socat to occupy TCP/UDP 53.
+// image lab), socat to occupy TCP/UDP 53, and the DNS clients plus the
+// python3 DNS responder fixture of the D6 verification test (test tooling,
+// not the product image).
 func l1HAImage(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -22,8 +24,8 @@ func l1HAImage(t *testing.T) string {
 	}
 	writeFile(t, filepath.Join(dir, "configflow-agent.real"), string(binary), 0o755)
 	writeFile(t, filepath.Join(dir, "configflow-agent"), "#!/bin/sh\nif [ \"$*\" = 'svc status oxidns' ]; then cat /srv/l1/state; grep -q RUNNING /srv/l1/state; exit $?; fi\nexec /usr/local/bin/configflow-agent.real \"$@\"\n", 0o755)
-	writeFile(t, filepath.Join(dir, "Dockerfile"), "FROM alpine:3\nRUN apk add --no-cache socat\nCOPY configflow-agent configflow-agent.real /usr/local/bin/\nENTRYPOINT [\"/bin/sleep\",\"infinity\"]\n", 0o644)
-	const image = "configflow-l1-ha-checks:2"
+	writeFile(t, filepath.Join(dir, "Dockerfile"), "FROM alpine:3\nRUN apk add --no-cache socat python3 iproute2 bind-tools\nCOPY configflow-agent configflow-agent.real /usr/local/bin/\nENTRYPOINT [\"/bin/sleep\",\"infinity\"]\n", 0o644)
+	const image = "configflow-l1-ha-checks:3"
 	if out, err := l1Docker(t, "build", "-t", image, dir); err != nil {
 		t.Fatalf("build: %v: %s", err, out)
 	}
@@ -68,12 +70,13 @@ func TestL1HAStartupWithRealSockets(t *testing.T) {
 				return
 			}
 			listeners := map[string]string{"tcp": "TCP4-LISTEN:53,reuseaddr", "udp": "UDP4-RECV:53"}
+			flags := map[string]string{"tcp": "-lnt", "udp": "-lnu"}
 			for _, kind := range []string{"free", "udp", "tcp"} {
 				if kind != "free" {
-					if out, err := l1Docker(t, "exec", "-d", name, "socat", listeners[kind], "-"); err != nil {
+					if out, err := l1Docker(t, "exec", "-d", name, "socat", "-u", listeners[kind], "/dev/null"); err != nil {
 						t.Fatalf("occupy %s53: %v %s", kind, err, out)
 					}
-					if out, err := l1Docker(t, "exec", name, "sh", "-c", "i=0; until netstat -ln 2>/dev/null | grep -q ':53 '; do i=$((i+1)); [ $i -lt 50 ] || exit 1; sleep 0.1; done"); err != nil {
+					if out, err := l1Docker(t, "exec", name, "sh", "-c", "i=0; until netstat "+flags[kind]+" 2>/dev/null | grep -q ':53 '; do i=$((i+1)); [ $i -lt 50 ] || exit 1; sleep 0.1; done"); err != nil {
 						t.Fatalf("%s53 listener: %v %s", kind, err, out)
 					}
 				}
@@ -83,7 +86,7 @@ func TestL1HAStartupWithRealSockets(t *testing.T) {
 				}
 				if kind != "free" {
 					contains(t, r.stderr, "53 端口不可用")
-					if out, err := l1Docker(t, "exec", name, "sh", "-c", "pkill socat; i=0; while netstat -ln 2>/dev/null | grep -q ':53 '; do i=$((i+1)); [ $i -lt 50 ] || exit 1; sleep 0.1; done"); err != nil {
+					if out, err := l1Docker(t, "exec", name, "sh", "-c", "pkill socat; i=0; while netstat "+flags[kind]+" 2>/dev/null | grep -q ':53 '; do i=$((i+1)); [ $i -lt 50 ] || exit 1; sleep 0.1; done"); err != nil {
 						t.Fatalf("release socket: %v %s", err, out)
 					}
 				}
