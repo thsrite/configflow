@@ -120,7 +120,7 @@ func HASummaryModel(job *model.HAJournal) (*model.HAPublicationSummary, error) {
 	if job == nil {
 		return &result, nil
 	}
-	for _, key := range []string{"id", "status", "phase", "message", "owner_agent_id", "owner_deployment_id", "active_agent_id", "members", "updated_at", "warnings", "routers"} {
+	for _, key := range []string{"id", "status", "phase", "message", "owner_agent_id", "owner_deployment_id", "active_agent_id", "members", "updated_at", "warnings", "routers", "auto_complete"} {
 		raw, present, err := job.MemberJSON(key)
 		if err != nil {
 			return nil, err

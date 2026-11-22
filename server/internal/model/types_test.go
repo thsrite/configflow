@@ -75,6 +75,8 @@ func storedRecordTypes() []reflect.Type {
 		reflect.TypeFor[HARouter](),
 		reflect.TypeFor[HAHandoff](),
 		reflect.TypeFor[HAHandoffFailure](),
+		reflect.TypeFor[HAAutoComplete](),
+		reflect.TypeFor[HAAutoCompleteWatch](),
 		reflect.TypeFor[HAJournal](),
 		reflect.TypeFor[HAPublicationSummary](),
 		reflect.TypeFor[HABundle](),

@@ -2757,3 +2757,28 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - 测试：`model.TestPlainDocumentStrictInputUnknownMembersAndOrder`、`repo.TestModelRowsUnknownMembersAndNullSwitch`、
   `repo.TestModelStoredValuesLoadLenientlyAndWriteTyped`、`repo.TestModelIssuesLoggedOncePerRevision`（未知成员汇总告警、不含值）、
   `repo.TestReferenceValidateDocument`（Python 校验参考经输入路径）、`repo.TestStoredRoundTrip`（含 CONFIGFLOW_SNAPSHOT 私有快照模式）。
+
+## O-1 后续 — 失联超时停止的主备发布在成员恢复后自动补完（新功能，Python 无）
+
+- 失联超时（`MemberLostTimeout`）停止时，配对日志记下失联成员和停止时间（`auto_complete_watch`），公开状态
+  `auto_complete: {status: "waiting", message: "等待设备恢复后自动完成发布"}`，停止消息改为「主备设备连接中断超过 10 分钟，
+  本次主备发布已停止；设备恢复后会自动完成本次主备发布。设备无法恢复时可以强制停用高可用」。开启 HA 的配对日志不自动补完，
+  仍用原文案「…设备恢复后请完整发布一次主备配置…」。
+- 触发（全部满足）：每个失联成员连续两次新心跳都健康（在线、`service_status` 为 running、能读 HA runtime）；两台都在线，
+  另一台 runtime 可读；拿得到配对 lease（没有其他配对发布或停用）；日志仍是这条等待中的 `failed` 日志（停用 HA 会删除日志，
+  任何新的手动主备发布会取代它——包括之后失败的手动发布，用户已有更新的发布意图）。心跳证据保存在日志里，面板重启后继续计数。
+  后台 HA 循环在有等待项时不进入空闲（心跳不是存储提交）；只在出现新心跳时读 runtime。
+- 补发：读取被中断日志保存的 payload 与 bundle，换新的部署 ID（`childBundle`），用原 source snapshot / resource /
+  revision / BaseURL / activate，经正常 `PublishPair` 流程（先备机、健康确认、交接、再原主机）。新日志 `auto_complete.attempt=true`，
+  发布记录和卡片显示「自动补完」。面板当前的新改动不参与，仍为待发布。与规则自动同步开关无关。
+- 不补（`auto_complete.status = "blocked"`，消息「无法自动完成本次主备发布：<原因>；请手动完整发布一次主备配置」）：payload 不可读或
+  摘要不符、停止超过 `AutoCompleteMaxAge`（24 小时）、任一成员 capabilities 缺 `oxidns_ha_protocols`（非 reload-only 还要
+  `oxidns_ha_handoff_protocols`）、成员身份或配对关系变化、`PublishPair` 在预约前拒绝（例如 reload-only 内容要求基线相同）。
+- 只试一次：补完日志是普通日志，失败就停在 `failed`，不再重试；它若再次失联超时，会重新进入等待并在恢复后再补一次
+  （每次「失联超时→恢复」最多一次）。
+- 前端：Agent 页 DNS 高可用行在等待时显示「等待设备恢复后自动完成发布」（警告色），开始补完时「正在自动完成主备发布」并轮询到新
+  发布出现；无法补完时写明原因；补完发布带「自动补完」标记，成功后卡片仍显示这次结果。文档 `doc/guide/oxidns-ha.md#member-lost`。
+- 测试：`dnsha.TestAutoCompleteAfterRecovery`（一次心跳不补、重启后的新 owner 用持久证据补完、补完后不再发布）、
+  `TestAutoCompleteDoesNotStart`（停用过 / 手动发布成功过 / 两台都离线 / 只有原持有者在线，后两者带恢复后会补的对照）、
+  `TestAutoCompleteBlockedContent`（payload 损坏 / 过期 / Agent 不支持，blocked 后不再发布）、`TestAutoCompleteFailureIsNotRetried`、
+  `TestAutoCompleteOncePerLoss`、`TestAutoCompletePublishesInterruptedContent`；前端 `agent-ha-publication`、`agent-dns-ha` 各加一组。

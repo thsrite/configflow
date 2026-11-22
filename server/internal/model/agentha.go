@@ -197,9 +197,57 @@ type HAJournal struct {
 	// UnreachableSince is when an unfinished pair first lost a member's
 	// connection (Unix seconds); progress clears it (lab O-1).
 	UnreachableSince *float64 `json:"unreachable_since"`
-	Fields           Fields
-	raw              Raw
+	// AutoComplete is the public automatic-completion state: on a pair
+	// stopped by a lost member (waiting/running/blocked) or on the
+	// publication that completes it (attempt).
+	AutoComplete *HAAutoComplete `json:"auto_complete"`
+	// AutoCompleteWatch is the private recovery evidence for AutoComplete.
+	AutoCompleteWatch *HAAutoCompleteWatch `json:"auto_complete_watch"`
+	Fields            Fields
+	raw               Raw
 }
+
+// HAAutoComplete is the automatic completion state shown with a pair publication.
+type HAAutoComplete struct {
+	// Status is waiting, running or blocked on a stopped pair; empty on the
+	// completing publication, which sets Attempt.
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Attempt bool   `json:"attempt"`
+	Fields  Fields
+	raw     Raw
+}
+
+// UnmarshalJSON decodes HAAutoComplete with stored-member preservation and R5 fallback.
+func (r *HAAutoComplete) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HAAutoComplete is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAAutoComplete) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
+// MarshalJSON preserves unknown and unchanged HAAutoComplete members.
+func (r HAAutoComplete) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+
+// HAAutoCompleteWatch records which members were lost, when the publication
+// stopped and the heartbeats observed since, so a restart keeps the decision.
+type HAAutoCompleteWatch struct {
+	Lost       []string    `json:"lost"`
+	StoppedAt  float64     `json:"stopped_at"`
+	Heartbeats Map[string] `json:"heartbeats"`
+	Healthy    Map[Int]    `json:"healthy"`
+	Fields     Fields
+	raw        Raw
+}
+
+// UnmarshalJSON decodes HAAutoCompleteWatch with stored-member preservation and R5 fallback.
+func (r *HAAutoCompleteWatch) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+
+// Clear drops a declared member (by JSON name) when HAAutoCompleteWatch is written, even if
+// it is stored as null or with a wrong type; see ClearMember.
+func (r *HAAutoCompleteWatch) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+
+// MarshalJSON preserves unknown and unchanged HAAutoCompleteWatch members.
+func (r HAAutoCompleteWatch) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // UnmarshalJSON decodes HAJournal with stored-member preservation and R5 fallback.
 func (r *HAJournal) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
@@ -229,8 +277,10 @@ type HAPublicationSummary struct {
 	Warnings          []string   `json:"warnings"`
 	Routers           []HARouter `json:"routers"`
 	Members           []HAMember `json:"members"`
-	Fields            Fields
-	raw               Raw
+	// AutoComplete is the journal's automatic-completion state, when any.
+	AutoComplete *HAAutoComplete `json:"auto_complete"`
+	Fields       Fields
+	raw          Raw
 }
 
 // UnmarshalJSON decodes HAPublicationSummary with stored-member preservation and R5 fallback.

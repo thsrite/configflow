@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/rulesync"
@@ -539,11 +538,15 @@ func (s *Service) advance(ctx context.Context, id string) (*model.HAPublicationS
 				// Rounds keep retrying while the failure cannot settle (the
 				// lost member's child is unproven, or both members are
 				// offline); log the stop once, not every PollInterval.
-				if !strings.HasPrefix(j.Message, msgMemberLost) && (j.HandoffFailure == nil || j.HandoffFailure.Message != msgMemberLost) {
+				if !lostStop(j) {
 					logger.Warning("OxiDNS pair publication stopped: member connection lost")
 				}
+				var msg string
+				if msg, e = s.markLost(held, j); e != nil {
+					break
+				}
 				if e = s.settleChildren(held, j); e == nil {
-					e = s.fail(held, j, msgMemberLost, "failed")
+					e = s.fail(held, j, msg, "failed")
 				}
 				break
 			}
@@ -581,6 +584,16 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	seen := []string{}
 	for _, a := range list {
 		j := a.OxiDNSHAPublication
+		if j != nil && awaitingCompletion(j) && !slices.Contains(seen, j.ID) {
+			// A stopped pair waiting for its lost member keeps the loop
+			// awake: heartbeats are not repository commits.
+			seen = append(seen, j.ID)
+			s.rounds.Done(s.m.Repository(), head, false)
+			if e = s.AutoComplete(ctx, a.ID); e != nil {
+				return e
+			}
+			continue
+		}
 		if j == nil || (!active(a) && j.Status != "rollback_failed") || j.Status == "ready" || slices.Contains(seen, j.ID) {
 			continue
 		}
