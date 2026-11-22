@@ -50,12 +50,20 @@ func FuzzRegistrationInputOwnershipBoundary(f *testing.F) {
 			if !aPresent || bytes.Equal(a, b) {
 				continue
 			}
-			// Out-of-range numbers (1E700) do not decode into any; equal bytes
-			// above already prove those unchanged.
-			var left, right any
-			if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil || !reflect.DeepEqual(left, right) {
+			// UseNumber keeps out-of-range numbers (1E700) comparable as text.
+			left, lErr := decodeNumbers(a)
+			right, rErr := decodeNumbers(b)
+			if lErr != nil || rErr != nil || !reflect.DeepEqual(left, right) {
 				t.Fatalf("field=%s changed from %s to %s", key, a, b)
 			}
 		}
 	})
+}
+
+func decodeNumbers(data []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	err := decoder.Decode(&value)
+	return value, err
 }
