@@ -98,6 +98,11 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+Maintainer approved 2026-11-22: HA pair publish stopped by the 10-minute member-lost timeout is auto-completed when
+the member returns (same content as the interrupted publish, not the latest config; independent of the rule
+auto-sync switch; one attempt; UI "等待设备恢复后自动完成发布", history tag "自动补完"). Opus 64fd3f0f, branch
+go-ha-auto-complete. Real-device check of this goes into L6 (no separate lab rebuild).
+
 batch-28 MERGED 2026-11-22 (R6 router read routes: generation-keyed config credentials in repo, Records reads the
 stored profile without hydrating, member-wise DNS Agent source; review M1 wrongly typed rule members fall back to the
 strict decode). Running: O18 T1a (03308f4f), idle CPU wrap-up (Opus b72b8975, go-perf-idle).
