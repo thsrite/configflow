@@ -346,18 +346,19 @@ class ComparatorTests(unittest.TestCase):
         self.assertIn(f'const LatestAgentVersion = "{pd.GO_AGENT_LATEST}"', go)
         latest = '/api/agents/latest-version'
         self.assertEqual([], pd.response_diffs(reply({'success': True, 'version': '1.8.61-go'}),
-                                               reply({'success': True, 'version': '1.9.1-go'}), latest, []))
-        for wrong in ('1.9.0-go', '1.9.2-go'):
+                                               reply({'success': True, 'version': '1.9.2-go'}), latest, []))
+        for wrong in ('1.9.1-go', '1.9.3-go'):
             self.assertTrue(pd.response_diffs(reply({'success': True, 'version': '1.8.61-go'}),
                                               reply({'success': True, 'version': wrong}), latest, []))
         agent = {'id': 'a1', 'version': '1.8.61-go', 'has_update': False}
         for route, wrap in (('/api/agents', lambda x: [x]), ('/api/agents/<agent_id>', lambda x: x)):
             self.assertEqual([], pd.response_diffs(reply(wrap(agent)), reply(wrap({**agent, 'has_update': True})), route, []))
-            between = {**agent, 'version': '1.9.0-go'}
-            self.assertEqual([], pd.response_diffs(reply(wrap(between)), reply(wrap({**between, 'has_update': True})), route, []))
+            for version in ('1.9.0-go', '1.9.1-go'):
+                between = {**agent, 'version': version}
+                self.assertEqual([], pd.response_diffs(reply(wrap(between)), reply(wrap({**between, 'has_update': True})), route, []))
             for left, right in (
                 ({**agent, 'version': '1.8.60-go'}, {**agent, 'version': '1.8.60-go', 'has_update': True}),
-                ({**agent, 'version': '1.9.1-go'}, {**agent, 'version': '1.9.1-go', 'has_update': True}),
+                ({**agent, 'version': '1.9.2-go'}, {**agent, 'version': '1.9.2-go', 'has_update': True}),
                 (agent, {**agent, 'version': '1.8.62-go', 'has_update': True}),
                 ({**agent, 'has_update': True}, agent),
                 (agent, {**agent, 'has_update': True, 'name': 'other'}),

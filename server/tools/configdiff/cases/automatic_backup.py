@@ -179,7 +179,7 @@ def coalesced(binary, recorder):
             writes=True, variant='no-op-does-not-schedule')
         pair.request('T16', DOMAIN, body=json_body({'new_domain': ''}), expect=400, writes=True,
             variant='rejected-transaction-does-not-schedule')
-        heartbeat(pair, version='1.9.1-go', variant='T16/runtime-only-must-not-schedule')
+        heartbeat(pair, version='1.9.2-go', variant='T16/runtime-only-must-not-schedule')
         time.sleep(3)
         quiet = [fake.snapshot() for fake in fakes]
         proof = [differences(a, b, 'automatic-backup.no-op-failure-runtime-only') for a, b in zip(before, quiet)]

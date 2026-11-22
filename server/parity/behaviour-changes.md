@@ -2828,3 +2828,31 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   令牌为空的 Agent 不发请求（`ErrAgentEndpoint`）。
 - 测试：删除只验证“原值证据 / R5 / 大小写别名证明”的用例；Python 参考对照里输入为错类型、null 或空文本 Agent 成员的行
   作为已接受差异跳过（各处注释说明）；pyref 只重录 metadata（条目逐字节相同）；o10t2 参考语料只有 Agent/部署/含 Agent 文档行变化。
+
+## 去掉产品里面板生成、在 Agent 镜像里运行的 Python — Agent 版本提升到 1.9.2-go
+
+- 新增 Agent 子命令（`backend/agents/go-agent/dockerha`）：`configflow-agent ha-bootstrap`（Compose 安装包首次登记/离线重启，替代
+  `bootstrap.py`）、`ha-enroll`（备用安装脚本首次登记，设置经 stdin 传入）、`ha-enroll-check`（重复执行时核对本地身份）、
+  `ha-migration-check`（旧单 OxiDNS 容器迁移检查）、`ha-inspect`（只读检查）、`ha-port-check`（宿主机 UDP/TCP 53 检查）。
+  中文提示、文件名/权限/字段顺序、退出码与原 Python 一致。
+- 生成内容变化（已批准差异，比较时由 `installertest.NoPythonBaseline` / `NoPythonBundle` 还原为 Python 形式）：
+  - Compose 安装包（`install_method=compose`）不再含 `bootstrap.py`；`agent.entrypoint` 为 `[configflow-agent, ha-bootstrap]`；
+    `prepare.sh` 不再检查/复制 `bootstrap.py`（`composeManagedParts` 仍保留该名字，旧安装目录不受影响）。
+  - 备用安装脚本：`docker run … --entrypoint configflow-agent IMAGE ha-enroll` + JSON heredoc；重复执行 `… ha-enroll-check URL`；
+    53 端口检查 `--entrypoint configflow-agent "$1" ha-port-check`。
+  - 迁移脚本：检查改为 `docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent IMAGE ha-migration-check …`
+    （原为在旧容器里 `docker exec … python3 -c`）；原容器环境仍来自 stdin 的 `.Config.Env`；拉取目标镜像移到检查之前。
+  - 只读检查：`docker run --rm --network none --volumes-from NAME:ro --entrypoint configflow-agent IMAGE ha-inspect`；
+    `action=inspect` 时 IMAGE 为面板配套镜像（`DockerAgentImage()`），生成迁移时为所选镜像。
+- 修正的 Python 缺陷（只影响异常输入）：
+  - bootstrap 读安装文件加 `O_NONBLOCK`：命名管道不再卡住启动，按“不是普通文件”拒绝；`setup` 非 UTF-8 不再抛异常，按未准备拒绝。
+  - 迁移检查：stdin 不是 JSON、原配置缺失/损坏/不是对象时给中文提示（原为 Python 回溯）；`heartbeat_interval` 等设置为
+    null/布尔/数组/对象时拒绝（`原 Agent 运行设置格式无效…`，原样输出 `None`/`True` 会写坏环境文件）；数字按 JSON 原文输出。
+  - ha-enroll：登记响应非对象、错误响应的 `message` 非字符串、写身份文件失败时给中文提示（原为 Python 回溯）；
+    设置不完整时 `安装命令参数无效；请回到引导重新生成。`。
+  - ha-port-check 直接 bind（无 SO_REUSEADDR、不 listen），与原 Python 相同。
+- 镜像：Dockerfile.agent 暂保留 python3——supervisord 本身、`docker-compose-install.py` / `docker-compose-compact.py`（精简 Compose）、
+  入口脚本内联 Python 仍需要它（见 `progress/no-python-product.md` 盘点）。旧 Compose 安装包部署（entrypoint 为
+  `python3 /run/configflow-compose/bootstrap.py`）升级镜像后照常运行。
+- 版本：Agent `upgrade.Version` 与面板 `LatestAgentVersion` 改为 1.9.2-go；Python 比较例外沿用（proddiff
+  `GO_AGENT_LATEST`、`has_update` 例外范围 [1.8.61-go, 1.9.2-go)，configdiff T16/T25 心跳 1.9.2-go）。
