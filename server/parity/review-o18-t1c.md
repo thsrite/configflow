@@ -78,7 +78,8 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
 - 054f2e41f go(repo): O18 T1c review: a settings save keeps a damaged config_token until a token is set（H1）
 - b3a7840ea go(repo): O18 C10 review: an unreadable path component is kept as given, as before C10（L1）
 - 812c605c9 go(model): O18 T1c review: real-Python HR writer check accepts Agent always-written zeros…（M2）
-- 本报告与 behaviour-changes 补充单独提交
+- 4c7f899b7 本报告与 behaviour-changes 补充
+- pyref 元数据重录（mosdns 5、oxidns 8、routersplit 3 个文件）单独提交
 
 ## 验证
 
@@ -90,4 +91,6 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
   mosdns/difftest、devicenotes/difftest、webdav/difftest、mcp/difftest、discovery/difftest、api/aggregations/difftest、substore/difftest 全部 ok；
   model 首轮 `TestHRPythonWriters` 失败（M2，作者树已失败），修后 `ok configflow/internal/model 0.720s`。
 - `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-38 x 6`（.64，树 812c605c9）：`PREFLIGHT PASS`。
+- pyref（.32）：model 源码（plain_switch.go/routers.go/stored.go 是声明的来源）改动后 mosdns/oxidns/routersplit `PYREF_MODE=check` 报元数据变化；
+  `record` 后逐个解压比对 16 个文件，只有 `metadata` 键变化（non-metadata 0），再 `check`：mosdns 63.3 s、oxidns 87.3 s、routersplit 3.8 s ok。
 - 负向对照（.32）：去掉 `keepDamagedConfigToken` 调用、去掉 `stored:"selection"`、守卫开关真值判断恒 false → 三条复核测试全部失败。
