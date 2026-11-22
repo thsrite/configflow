@@ -18,3 +18,29 @@ GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.checks[0].det
 GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.checks[0].details[0]	value	D2 Go-native digest（协调者批准）：旧报告的首个失效原因由旧摘要迁移决定，原报告保留，需重新验收；不扩大到其他 checks/字段
 GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.message	value	D2 Go-native digest（协调者批准）：旧报告一次性失效提示追加摘要变化；新 native 报告无变更时保持有效
 GET /api/notifications	body.items	length	D2 Go-native digest（协调者批准）：旧 dismissed 通知因 native fingerprint 一次性重新出现；同一 native 事件再次忽略后不重现，现有项字段仍严格对照
+GET /api/agents	body[0].deployments.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents	body[0].ipv6_verifications.<key>.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents	body[0].ipv6_verifications.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents	body[0].ipv6_verifications.manual.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents	body[0].ipv6_verifications.manual.deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents	body[1].deployments.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents	body[1].dns_follow_state.target_deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.deployments.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.dns_follow_state.target_deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.has_update	missing-in-go	O18 T1b：未声明成员 has_update（Python 接口算出后误写进存储）读取时丢弃，见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.ipv6_verifications.<key>.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.ipv6_verifications.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.ipv6_verifications.manual.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>	body.ipv6_verifications.manual.deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>/deployments/<deployment_id>	body.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>/dns-follow	body.state.target_deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[0].deployments.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[0].has_update	missing-in-go	O18 T1b：未声明成员 has_update（Python 接口算出后误写进存储）读取时丢弃，见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[0].ipv6_verifications.<key>.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[0].ipv6_verifications.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[0].ipv6_verifications.manual.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[0].ipv6_verifications.manual.deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[1].deployments.<key>.config_revision	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.system.agents[1].dns_follow_state.target_deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
