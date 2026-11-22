@@ -63,9 +63,10 @@ func beginCommitBatch(ctx context.Context, started *bool) error {
 // system section bump that section's Revision themselves. A nil error from fn
 // commits after validation; any error discards the working copy.
 //
-// Writing follows the codec rules of model: untouched members keep their
-// stored bytes (also null and wrong-typed values), assigned values replace
-// them, and only Clear (Python's pop) removes a stored member.
+// Writing is row-wise (O18 T1a, keepUnchangedRows): a row whose typed value
+// the transaction did not change keeps its stored text (also a value read
+// leniently), a changed value is written in Go's encoding, an omitzero member
+// set to its zero value is deleted and undeclared rows are dropped.
 func (r *Repository) Update(ctx context.Context, fn func(ctx context.Context, d *model.Document) error) error {
 	ctx = ctxx.Detach(ctx)
 	return r.transact(ctx, writeOptions{}, func(ctx context.Context, tx *transaction) error {

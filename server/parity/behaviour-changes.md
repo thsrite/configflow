@@ -2749,6 +2749,9 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   「设备备注必须为对象，最多 2048 条。」。`null` 仍按 Python 拒绝（devicenotes/difftest、oxidns 测试已改期望）。
 - **整体损坏的系统设置**：`system_config` 不是对象时读作空设置并告警，但视为凭据损坏：MCP 和配置令牌校验拒绝访问（不当成「未设置令牌」），
   启动时的令牌维护不改写它（`Repository.SystemSettingsDamaged`）。改写只发生在用户显式保存设置时。
+  HR 复核补充：配置令牌校验对调用方自带快照的入口（实时配置 `/api/config/...`、Linux 网关 provider）同样检查；
+  无关写入（改配置空间、Agent 等 system 写入）不再借令牌维护把损坏设置改写成空令牌的新对象
+  （`repo.TestReviewO18T1aUnrelatedWriteKeepsDamagedSettings`、`auth.TestSystemTokenRefusesDamagedSettingsFromCallerSnapshot`）。
 - **配置空间的旧版规则列表**：`rules/rule_sets` 不再按「未知成员」保存，而是声明为原始 JSON 成员，生成器行为不变。
 - **路由器规则缓存归属**：`rules.cacheSourceOwned` 读旧版 `rules/rule_sets` 的方式不变（改经 `Profile.LegacyRuleList`）。
 - 测试：`model.TestPlainDocumentStrictInputUnknownMembersAndOrder`、`repo.TestModelRowsUnknownMembersAndNullSwitch`、
