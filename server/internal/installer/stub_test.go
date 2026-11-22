@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"configflow/internal/testgolden"
 )
 
 const (
@@ -153,7 +155,7 @@ func (c *stubCall) logJSON(path string, value any) {
 }
 
 func (c *stubCall) read(path string) string {
-	data, err := os.ReadFile(path)
+	data, err := testgolden.ReadFileOutside(path)
 	if err != nil {
 		c.fail("%v", err)
 	}
@@ -381,7 +383,7 @@ func corePackageStub(c *stubCall) {
 		c.write(zone, "TZif")
 	}
 	unavailable := filepath.Join(os.Getenv("FIXTURE"), "unavailable-commands")
-	entries, err := os.ReadDir(unavailable)
+	entries, err := testgolden.ReadDirOutside(unavailable)
 	if err != nil {
 		c.fail("%v", err)
 	}
@@ -717,7 +719,7 @@ func dependencyPackageStub(c *stubCall) {
 		"sysctl": {procps}, "cmp": {"diffutils"}, "nft": {"nftables"}, "ss": {"iproute2", "iproute"},
 		"tar": {"tar"}, "gzip": {"gzip"}}
 	unavailable := os.Getenv("TEST_UNAVAILABLE")
-	entries, err := os.ReadDir(unavailable)
+	entries, err := testgolden.ReadDirOutside(unavailable)
 	if err != nil {
 		c.fail("%v", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -132,6 +133,47 @@ func ReadFile(t testing.TB, path string) ([]byte, error) {
 		return nil, err
 	}
 	return os.ReadFile(path)
+}
+
+// ReadFileOutside reads a file that must lie outside the repository (a
+// temporary root a test process built, for example in a helper process that
+// has no *testing.T). A path inside the repository, also through a symbolic
+// link, is refused: repository fixtures go through Open/ReadFile.
+func ReadFileOutside(path string) ([]byte, error) {
+	if err := checkOutside(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+}
+
+// ReadDirOutside lists a directory under the same rule as ReadFileOutside.
+func ReadDirOutside(path string) ([]os.DirEntry, error) {
+	if err := checkOutside(path); err != nil {
+		return nil, err
+	}
+	return os.ReadDir(path)
+}
+
+// checkOutside refuses a path inside the repository. The repository is the
+// one this package was compiled from (helper processes may run in any working
+// directory), or the one around the working directory.
+func checkOutside(path string) error {
+	var roots []string
+	if _, file, _, ok := runtime.Caller(0); ok && filepath.IsAbs(file) {
+		roots = append(roots, filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(file)))))
+	}
+	if root, err := Root(); err == nil {
+		roots = append(roots, root)
+	}
+	if len(roots) == 0 {
+		return fmt.Errorf("pyref: repository root not found for %s", path)
+	}
+	for _, root := range roots {
+		if err := declaredRead(root, sourceSet{}, path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func checkFixtureRead(t testing.TB, path string) error {
@@ -287,6 +329,38 @@ func indexSourceDecls(file *sourceFile, index map[string][]sourceDecl) {
 			}
 		}
 	}
+}
+
+// writeOnlyFlags reports an os.OpenFile flag expression made only of os
+// flags that include O_WRONLY and neither O_RDONLY nor O_RDWR.
+func writeOnlyFlags(file *sourceFile, flags ast.Expr) bool {
+	write, only := false, true
+	ast.Inspect(flags, func(n ast.Node) bool {
+		switch value := n.(type) {
+		case *ast.BinaryExpr:
+			if value.Op != token.OR {
+				only = false
+			}
+		case *ast.SelectorExpr:
+			owner, ok := value.X.(*ast.Ident)
+			if !ok || sourceImport(file, owner) != "os" || !strings.HasPrefix(value.Sel.Name, "O_") {
+				only = false
+				return false
+			}
+			switch value.Sel.Name {
+			case "O_WRONLY":
+				write = true
+			case "O_RDONLY", "O_RDWR":
+				only = false
+			}
+			return false
+		case nil, *ast.Ident, *ast.ParenExpr:
+		default:
+			only = false
+		}
+		return true
+	})
+	return write && only
 }
 
 func productSymbol(node ast.Node, name string) string {
@@ -581,8 +655,21 @@ func (e *sourceEngine) required(set sourceSet) ([]string, error) {
 			return err
 		}
 		var failure error
+		// os.OpenFile called directly with write-only flags (a log the test
+		// appends to) reads no fixture.
+		writeOnly := map[*ast.SelectorExpr]bool{}
 		ast.Inspect(decl.node, func(n ast.Node) bool {
 			if failure != nil {
+				return false
+			}
+			if call, ok := n.(*ast.CallExpr); ok {
+				if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "OpenFile" && len(call.Args) == 3 {
+					if owner, ok := selector.X.(*ast.Ident); ok && sourceImport(decl.file, owner) == "os" && writeOnlyFlags(decl.file, call.Args[1]) {
+						writeOnly[selector] = true
+					}
+				}
+			}
+			if selector, ok := n.(*ast.SelectorExpr); ok && writeOnly[selector] {
 				return false
 			}
 			if selector, ok := n.(*ast.SelectorExpr); ok {

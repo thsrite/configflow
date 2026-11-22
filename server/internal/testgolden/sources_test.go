@@ -132,6 +132,28 @@ func newInputHelper(t *testing.T){ read:=alias.ReadFile; read("input.fixture") }
 	if err := newSourceEngine(root).audit(set); err == nil || !strings.Contains(err.Error(), "unaudited fixture read") {
 		t.Fatal("function-value raw file read bypassed fixture guard", err)
 	}
+	// A direct write-only open (a log appended to) reads no fixture; any
+	// readable flag is still a fixture read.
+	for _, tc := range []struct {
+		flags string
+		read  bool
+	}{
+		{"alias.O_APPEND|alias.O_WRONLY|alias.O_CREATE", false},
+		{"alias.O_APPEND|alias.O_RDWR", true},
+		{"alias.O_WRONLY|alias.O_RDONLY", true},
+		{"alias.O_APPEND", true},
+		{"mode", true},
+	} {
+		writeSourceFixture(t, root, set.Package+"/new_helper_test.go", `package example
+import ("testing"; alias "os")
+var mode = alias.O_WRONLY
+func newInputHelper(t *testing.T){ f, _ := alias.OpenFile("input.fixture", `+tc.flags+`, 0o644); f.Close() }
+`)
+		err := newSourceEngine(root).audit(set)
+		if flagged := err != nil && strings.Contains(err.Error(), "unaudited fixture read"); flagged != tc.read {
+			t.Fatalf("OpenFile(%s): flagged=%v (%v)", tc.flags, flagged, err)
+		}
+	}
 }
 
 func TestDeclaredReadRejectsDynamicAndSymlinkAliases(t *testing.T) {
@@ -214,5 +236,39 @@ func helper(t *testing.T) { h.NewInputHelper() }
 `)
 	if err := newSourceEngine(root).audit(set); err == nil || !strings.Contains(err.Error(), "unclassified imported product member") {
 		t.Fatal("new helper hidden behind an existing product import", err)
+	}
+}
+
+// ReadFileOutside/ReadDirOutside read temporary roots only: a repository
+// file, directly or through a link from a temporary directory, is refused.
+func TestReadOutsideRefusesRepositoryFiles(t *testing.T) {
+	root, err := Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "log")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := ReadFileOutside(file); err != nil || string(data) != "x" {
+		t.Fatalf("temporary file: %q %v", data, err)
+	}
+	if entries, err := ReadDirOutside(dir); err != nil || len(entries) != 1 {
+		t.Fatalf("temporary dir: %v %v", entries, err)
+	}
+	inside := filepath.Join(root, "server", "go.mod")
+	if _, err := ReadFileOutside(inside); err == nil {
+		t.Fatal("repository file read")
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(inside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFileOutside(link); err == nil {
+		t.Fatal("repository file read through a link")
+	}
+	if _, err := ReadDirOutside(filepath.Join(root, "server")); err == nil {
+		t.Fatal("repository directory listed")
 	}
 }
