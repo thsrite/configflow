@@ -82,3 +82,9 @@ RUNNING / STARTING（启动期内）/ BACKOFF（等待重启）/ STOPPING / STOP
 - 测试：旧 journal 恢复 + 新 journal 写 `"s6"`（host、macvlan）、旧配置读/存、dns_follow 旧对端、upgrade Docker 判断、`svc.NormalizeManager`。
 - 实验 D2：旧镜像开启 macvlan HA（journal `"supervisor"`），同一数据卷换新镜像，Agent 恢复 keepalived、VIP 在、配置为 `"s6"`，DELETE 正常。
 - 全套实验 `A B C D D2 E F F2 G G2 H` → `LAB PASS`。
+- 验证（.32，2026-11-23，改为 "s6" 之后）：`GATE_ONLY=agent server/scripts/gate.sh -p 6` → `GATE STAGE PASS: agent`；
+  `go test -race ./internal/installer/...` → ok 487.5 s；`/tmp/preflight.sh` → `PREFLIGHT PASS`；全套实验 → `LAB PASS: A B C D D2 E F F2 G G2 H`。
+- 二进制安装路径（systemd / OpenRC 服务管理实现）：`go test -race -v -run 'OpenRC|Openrc|Systemd|Native|Shell|Upgrade|Migration|Worker|Lifecycle|ServiceManager|InitSystem' . ./routes ./upgrade`
+  → 64 PASS、0 FAIL（含 TestOpenRCStopWaitsForCoreThatExitsAfterStopGivesUp、TestOpenRCStartZapsCrashedService、TestOxiDNSHASystemdRemoveStopsBeforeDeletingConfig、
+  TestLogSourcesSystemdJournal 等）。相对 go，systemd/OpenRC 的产品代码分支没有改动；测试里只删去了 `TestServiceManagerExitCodesStillRecognizedWithDiagnostics` 的 supervisor 分支
+  （由 `TestContainerServiceStates` 覆盖）并换了日志桩变量名，systemd/OpenRC 用例原样。
