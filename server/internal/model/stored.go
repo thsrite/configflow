@@ -946,6 +946,7 @@ func selfDecoding(typ reflect.Type) bool {
 // number where a record belongs) makes the whole list its zero value with one
 // issue: a zero element would read as an empty record that was never stored.
 func decodeRecordList(dec *jsontext.Decoder, sink *issueSink, target reflect.Value) error {
+	path := pointerPath(sink.root, sink.prefix, dec.StackPointer())
 	value, err := dec.ReadValue()
 	if err != nil {
 		return err
@@ -965,6 +966,9 @@ func decodeRecordList(dec *jsontext.Decoder, sink *issueSink, target reflect.Val
 			target.SetZero()
 			sink.add(dec, IssueType)
 			return nil
+		}
+		if issuer, ok := element.Interface().(storedIssuer); ok {
+			sink.issues = append(sink.issues, issuer.storedIssues(item, fmt.Sprintf("%s[%d]", path, len(items)))...)
 		}
 		items = append(items, element.Elem())
 	}
@@ -1050,4 +1054,11 @@ func literalInt(sink *issueSink, dec *jsontext.Decoder, value jsontext.Value) bo
 		return true
 	}
 	return value.Kind() == '0' && !bytes.ContainsAny(value, ".eE")
+}
+
+// storedIssuer is a self-decoding record that reports the load issues of a
+// stored value it read leniently (wrong-typed and undeclared members), with
+// paths under prefix.
+type storedIssuer interface {
+	storedIssues(raw []byte, prefix string) []FieldIssue
 }

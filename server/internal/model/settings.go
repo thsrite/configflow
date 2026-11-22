@@ -155,6 +155,18 @@ func (r *MosDNSMatch) UnmarshalJSON(data []byte) error {
 	return decodePlain(data, (*mosDNSMatchWire)(r))
 }
 
+// storedIssues reports the object form's members of the wrong type and the
+// members it does not declare (the text form has none).
+func (r *MosDNSMatch) storedIssues(raw []byte, prefix string) []FieldIssue {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var wire mosDNSMatchWire
+	issues, _ := DecodeStored(raw, &wire, prefix)
+	return issues
+}
+
 // MarshalJSON writes the scalar text form or the object members.
 func (r MosDNSMatch) MarshalJSON() ([]byte, error) {
 	if r.Text != nil {
