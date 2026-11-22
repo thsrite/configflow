@@ -199,7 +199,7 @@ func validateDocument(d *model.Document) error {
 		return err
 	}
 	if system.kind("system_config") != '{' {
-		return validationError("系统设置和备份设置必须是对象")
+		return validationError(msgSystemSectionsObject)
 	}
 	settings, err := viewOf(&d.System.SystemConfig)
 	if err != nil {
@@ -213,11 +213,11 @@ func validateDocument(d *model.Document) error {
 	}
 	for _, key := range system.fields.Keys() {
 		if !systemFields[key] {
-			return validationError("system 节只接受全局设置、备份与 Agent")
+			return validationError(msgSystemMembers)
 		}
 	}
 	if system.kind("backup") != '{' {
-		return validationError("系统设置和备份设置必须是对象")
+		return validationError(msgSystemSectionsObject)
 	}
 	agentsRaw, _ := system.get("agents")
 	agents, err := itemsOf(agentsRaw, "Agent")
@@ -371,14 +371,14 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 	}
 	for _, key := range SharedFields {
 		if view.has(key) {
-			return validationError("独立配置不能保存共享资源副本")
+			return validationError(msgProfileSharedCopies)
 		}
 	}
 	if raw, _ := view.get("name"); !nonBlank(raw) {
-		return validationError("配置名称不能为空")
+		return validationError(msgProfileNameEmpty)
 	}
 	if view.has("resource_refs") || view.has("node_dialers") {
-		return validationError("独立配置不接受资源白名单或节点拨号覆盖字段")
+		return validationError(msgProfileImportOverrides)
 	}
 	if err := checkProfileShapes(profile); err != nil {
 		return err
@@ -394,7 +394,7 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 		return err
 	}
 	groupsRaw, _ = view.get("proxy_groups")
-	groups, err := itemsOf(groupsRaw, "策略组")
+	groups, err := itemsOf(groupsRaw, labelProxyGroups)
 	if err != nil {
 		return err
 	}
@@ -500,7 +500,7 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 		}
 	}
 	rulesRaw, _ := view.get("rule_configs")
-	rules, err := itemsOf(rulesRaw, "规则配置")
+	rules, err := itemsOf(rulesRaw, labelRuleConfigs)
 	if err != nil {
 		return err
 	}
@@ -521,12 +521,12 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 	}
 	for _, engine := range []string{"mihomo", "surge", "mosdns"} {
 		if view.kind(engine) != '{' {
-			return validationError(engine + " 参数必须是对象")
+			return validationError(fmt.Sprintf(msgMemberObject, engine))
 		}
 	}
 	for _, member := range []string{"loon", "domain_discovery"} {
 		if view.has(member) && view.kind(member) != '{' {
-			return validationError(member + " 参数必须是对象")
+			return validationError(fmt.Sprintf(msgMemberObject, member))
 		}
 	}
 	notes, ok := view.get("device_notes")
@@ -546,11 +546,11 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 	if view.has("routers") {
 		routers := viewOfJSON(mustGet(view, "routers"))
 		if view.kind("routers") != '{' || (routers.has("items") && routers.kind("items") != '[') {
-			return validationError("routers 参数必须是包含 items 列表的对象")
+			return validationError(msgRoutersShape)
 		}
 	}
 	if view.has("oxidns") && view.kind("oxidns") != '{' {
-		return validationError("oxidns 参数必须是对象")
+		return validationError(fmt.Sprintf(msgMemberObject, "oxidns"))
 	}
 	for _, engine := range [][2]string{{"mosdns", "MosDNS"}, {"oxidns", "OxiDNS"}} {
 		settings := viewOfJSON(mustGet(view, engine[0]))
@@ -651,7 +651,7 @@ func nonBlank(raw json.RawMessage) bool {
 // chain references, member id lists, the legacy source and proxies_order,
 // with Python's messages; selectResources then checks what they reference.
 func checkGroupReferenceShapes(raw json.RawMessage) error {
-	groups, err := itemsOf(raw, "策略组")
+	groups, err := itemsOf(raw, labelProxyGroups)
 	if err != nil {
 		return err
 	}

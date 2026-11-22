@@ -47,18 +47,18 @@ func memberTypeMessage(e *model.MemberTypeError) string {
 	case "profile":
 		switch e.Member {
 		case "mihomo", "surge", "mosdns", "loon", "domain_discovery", "oxidns":
-			message = e.Member + " 参数必须是对象"
+			message = fmt.Sprintf(msgMemberObject, e.Member)
 		case "routers":
-			message = "routers 参数必须是包含 items 列表的对象"
+			message = msgRoutersShape
 		case "proxy_groups":
 			if raw == nil {
-				_, err := itemsOf(raw, "策略组")
+				_, err := itemsOf(raw, labelProxyGroups)
 				message = shapeMessage(err)
 			} else {
 				message = shapeMessage(validateResourceArray(raw, "proxy_groups"))
 			}
 		case "rule_configs":
-			_, err := itemsOf(raw, "规则配置")
+			_, err := itemsOf(raw, labelRuleConfigs)
 			message = shapeMessage(err)
 		case "device_notes":
 			if _, err := devicenotes.Parse(raw); err != nil {
@@ -68,7 +68,7 @@ func memberTypeMessage(e *model.MemberTypeError) string {
 			message = routerdoc.ValidateBindings(raw)
 		case "name":
 			if !nonBlank(raw) {
-				message = "配置名称不能为空"
+				message = msgProfileNameEmpty
 			}
 		case "id":
 			message = msgProfileIDMismatch
@@ -83,7 +83,7 @@ func memberTypeMessage(e *model.MemberTypeError) string {
 	case "system":
 		switch e.Member {
 		case "system_config", "backup":
-			message = "系统设置和备份设置必须是对象"
+			message = msgSystemSectionsObject
 		case "agents":
 			_, err := itemsOf(raw, "Agent")
 			message = shapeMessage(err)
@@ -136,7 +136,7 @@ func checkDocumentInput(raw json.RawMessage) error {
 		}
 		for _, key := range system.fields.Keys() {
 			if !systemFields[key] {
-				return validationError("system 节只接受全局设置、备份与 Agent")
+				return validationError(msgSystemMembers)
 			}
 		}
 	}
@@ -153,11 +153,11 @@ func checkDocumentInput(raw json.RawMessage) error {
 			view := viewOfJSON(profile)
 			for _, key := range SharedFields {
 				if view.has(key) {
-					return validationError("独立配置不能保存共享资源副本")
+					return validationError(msgProfileSharedCopies)
 				}
 			}
 			if view.has("resource_refs") || view.has("node_dialers") {
-				return validationError("独立配置不接受资源白名单或节点拨号覆盖字段")
+				return validationError(msgProfileImportOverrides)
 			}
 			if err := check("profile", view); err != nil {
 				return err

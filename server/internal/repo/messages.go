@@ -21,6 +21,16 @@ const (
 	msgDefaultProfileRequired = "必须保留默认配置"
 	msgProfileIDMismatch      = "配置内容与 ID 不一致"
 	msgRevisionInvalid        = "配置修订号无效"
+	// Section member shapes (validateDocument and strict input, O18 T1a).
+	msgMemberObject           = "%s 参数必须是对象"
+	msgRoutersShape           = "routers 参数必须是包含 items 列表的对象"
+	msgSystemSectionsObject   = "系统设置和备份设置必须是对象"
+	msgSystemMembers          = "system 节只接受全局设置、备份与 Agent"
+	msgProfileSharedCopies    = "独立配置不能保存共享资源副本"
+	msgProfileImportOverrides = "独立配置不接受资源白名单或节点拨号覆盖字段"
+	// List labels in itemsOf messages.
+	labelProxyGroups = "策略组"
+	labelRuleConfigs = "规则配置"
 )
 
 // msgCommittedHookSkipped is logged when the committed document cannot be
