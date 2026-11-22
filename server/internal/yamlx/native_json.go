@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -189,10 +190,64 @@ func writeJSONNode(b *bytes.Buffer, n *Node) error {
 	return nil
 }
 
+// writeJSONString writes s as encoding/json does with SetEscapeHTML(false):
+// quote, backslash and control characters escaped (\b, \f, \n, \r, \t
+// short, the rest as \u00XX), U+2028/U+2029 escaped, each invalid UTF-8
+// byte replaced by U+FFFD. It no longer builds a json.Encoder per string
+// (O10 R9); TestWriteJSONString and FuzzWriteJSONString check it against
+// encoding/json.
 func writeJSONString(b *bytes.Buffer, s string) {
-	e := json.NewEncoder(b)
-	e.SetEscapeHTML(false)
-	// encoding/json cannot fail when writing a string to bytes.Buffer.
-	_ = e.Encode(s)
-	b.Truncate(b.Len() - 1)
+	const hex = "0123456789abcdef"
+	b.WriteByte('"')
+	start := 0
+	for i := 0; i < len(s); {
+		if c := s[i]; c < utf8.RuneSelf {
+			if c >= 0x20 && c != '"' && c != '\\' {
+				i++
+				continue
+			}
+			b.WriteString(s[start:i])
+			switch c {
+			case '"', '\\':
+				b.WriteByte('\\')
+				b.WriteByte(c)
+			case '\n':
+				b.WriteString(`\n`)
+			case '\r':
+				b.WriteString(`\r`)
+			case '\t':
+				b.WriteString(`\t`)
+			case '\b':
+				b.WriteString(`\b`)
+			case '\f':
+				b.WriteString(`\f`)
+			default:
+				b.WriteString(`\u00`)
+				b.WriteByte(hex[c>>4])
+				b.WriteByte(hex[c&0xf])
+			}
+			i++
+			start = i
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteString(s[start:i])
+			b.WriteRune(utf8.RuneError)
+			i += size
+			start = i
+			continue
+		}
+		if r == '\u2028' || r == '\u2029' {
+			b.WriteString(s[start:i])
+			b.WriteString(`\u202`)
+			b.WriteByte(hex[r&0xf])
+			i += size
+			start = i
+			continue
+		}
+		i += size
+	}
+	b.WriteString(s[start:])
+	b.WriteByte('"')
 }

@@ -82,8 +82,7 @@ func Decode(n *Node, v any) (err error) {
 // LF line endings and no line wrapping. Node annotations and aliases survive.
 func Marshal(v any) (data []byte, err error) {
 	defer nativeRecovery(&err)
-	// encode returns a private graph, so preparation may change it in place.
-	n, err := encode(v)
+	n, owned, err := encodeGraph(v)
 	if err != nil {
 		var policy *SyntaxError
 		if errors.Is(err, ErrPolicy) && errors.As(err, &policy) && strings.HasPrefix(policy.Problem, "yamlx: ") {
@@ -94,12 +93,19 @@ func Marshal(v any) (data []byte, err error) {
 	if err := checkMarshalBindings(n); err != nil {
 		return nil, err
 	}
-	prepareStrings(n, map[*Node]bool{}, false)
-	// Preparation can make an implicit tag explicit (e.g. a JSON float
-	// outside yaml.v3's range). Validate those output tags without repeating
-	// the alias expansion budget; preparation changes presentation only.
-	if err := checkGraph(n, map[*Node]bool{}, map[*Node]bool{}); err != nil {
-		return nil, err
+	// Preparation is planned first; most graphs need no change, and then the
+	// caller's graph is written as it is, without a copy (O10 R9).
+	plan := preparePlan{seen: map[*Node]bool{}}
+	plan.visit(n, false)
+	if len(plan.changes) > 0 {
+		n = plan.apply(n, owned)
+		// Preparation can make an implicit tag explicit (e.g. a JSON float
+		// outside yaml.v3's range). Validate those output tags without
+		// repeating the alias expansion budget; preparation changes
+		// presentation only. An unchanged graph was validated by encodeGraph.
+		if err := checkGraph(n, map[*Node]bool{}, map[*Node]bool{}); err != nil {
+			return nil, err
+		}
 	}
 	var b bytes.Buffer
 	e := yaml.NewEncoder(&b)
@@ -122,8 +128,18 @@ func Encode(v any) (n *Node, err error) {
 
 // encode is Encode without the panic boundary. Only caller-owned node input
 // is copied: a typed value's node is built here and already private.
-func encode(v any) (n *Node, err error) {
-	owned := false
+func encode(v any) (*Node, error) {
+	n, owned, err := encodeGraph(v)
+	if err != nil || owned {
+		return n, err
+	}
+	return copyGraph(n, map[*Node]*Node{}), nil
+}
+
+// encodeGraph is encode without the copy: owned reports whether the
+// validated graph was built here (else nodes below the root are the
+// caller's and must not be changed).
+func encodeGraph(v any) (n *Node, owned bool, err error) {
 	switch x := v.(type) {
 	case *Node:
 		n = x
@@ -132,7 +148,7 @@ func encode(v any) (n *Node, err error) {
 	default:
 		n = new(Node)
 		if err := n.Encode(v); err != nil {
-			return nil, fmt.Errorf("encode YAML node: %w", err)
+			return nil, false, fmt.Errorf("encode YAML node: %w", err)
 		}
 		owned = true
 	}
@@ -140,15 +156,12 @@ func encode(v any) (n *Node, err error) {
 		n, owned = Null(), true
 	}
 	if err := validateNode(n); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if n.Kind == yaml.DocumentNode {
 		n = contentNode(n)
 	}
-	if owned {
-		return n, nil
-	}
-	return copyGraph(n, map[*Node]*Node{}), nil
+	return n, owned, nil
 }
 
 func contentNode(doc *Node) *Node {
@@ -203,11 +216,94 @@ func copyGraph(n *Node, memo map[*Node]*Node) *Node {
 	return &c
 }
 
-func prepareStrings(n *Node, seen map[*Node]bool, flow bool) {
-	if n == nil || seen[n] {
+// prepared are the node members output preparation may change.
+type prepared struct {
+	value, tag, headComment, lineComment string
+	style                                yaml.Style
+}
+
+func preparedOf(n *Node) prepared {
+	return prepared{n.Value, n.Tag, n.HeadComment, n.LineComment, n.Style}
+}
+
+// preparePlan records the output preparation of a graph as changes per node
+// instead of applying them, so an unchanged graph needs no copy. A node is
+// visited once, in the context (block or flow) it is first reached in.
+type preparePlan struct {
+	seen    map[*Node]bool
+	changes map[*Node]prepared
+}
+
+func (p *preparePlan) current(n *Node) prepared {
+	if f, ok := p.changes[n]; ok {
+		return f
+	}
+	return preparedOf(n)
+}
+
+func (p *preparePlan) set(n *Node, f prepared) {
+	if f == preparedOf(n) {
+		delete(p.changes, n)
 		return
 	}
-	seen[n] = true
+	if p.changes == nil {
+		p.changes = map[*Node]prepared{}
+	}
+	p.changes[n] = f
+}
+
+func (p *preparePlan) visit(n *Node, flow bool) {
+	if n == nil || p.seen[n] {
+		return
+	}
+	p.seen[n] = true
+	// w is the node as preparation leaves it; children are not copied.
+	w := *n
+	f := p.current(n)
+	w.Value, w.Tag, w.HeadComment, w.LineComment, w.Style = f.value, f.tag, f.headComment, f.lineComment, f.style
+	prepareNode(&w, flow)
+	p.set(n, preparedOf(&w))
+	if n.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := n.Content[i]
+			if key.Kind == yaml.SequenceNode || key.Kind == yaml.MappingNode {
+				// yaml.v3 can write a collection key's line comment before its
+				// colon, producing invalid YAML. Keep the note above the pair.
+				k := p.current(key)
+				k.headComment = joinComment(k.headComment, k.lineComment)
+				k.lineComment = ""
+				p.set(key, k)
+			}
+		}
+	}
+	for _, c := range n.Content {
+		p.visit(c, flow || w.Style&yaml.FlowStyle != 0)
+	}
+	p.visit(n.Alias, flow)
+}
+
+// apply returns the graph with the planned changes: in place when the graph
+// is owned, else on a copy.
+func (p *preparePlan) apply(n *Node, owned bool) *Node {
+	target := func(orig *Node) *Node { return orig }
+	if !owned {
+		memo := map[*Node]*Node{}
+		n = copyGraph(n, memo)
+		target = func(orig *Node) *Node { return memo[orig] }
+	}
+	for orig, f := range p.changes {
+		// Every planned node is reachable from n, so the copy has it.
+		t := target(orig)
+		if t == nil {
+			continue
+		}
+		t.Value, t.Tag, t.HeadComment, t.LineComment, t.Style = f.value, f.tag, f.headComment, f.lineComment, f.style
+	}
+	return n
+}
+
+// prepareNode is the output preparation of one node's own members.
+func prepareNode(n *Node, flow bool) {
 	// yaml.v3 quotes an empty scalar in key position, which would change an
 	// implicit empty null key into a string. Spell its null value explicitly.
 	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == "" {
@@ -217,17 +313,6 @@ func prepareStrings(n *Node, seen map[*Node]bool, flow bool) {
 	// continuation lines. Literal style writes the actual value without refolding.
 	if n.Kind == yaml.ScalarNode && n.Style&yaml.FoldedStyle != 0 {
 		n.Style = n.Style&^yaml.FoldedStyle | yaml.LiteralStyle
-	}
-	if n.Kind == yaml.MappingNode {
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			key := n.Content[i]
-			if key.Kind == yaml.SequenceNode || key.Kind == yaml.MappingNode {
-				// yaml.v3 can write a collection key's line comment before its
-				// colon, producing invalid YAML. Keep the note above the pair.
-				key.HeadComment = joinComment(key.HeadComment, key.LineComment)
-				key.LineComment = ""
-			}
-		}
 	}
 	// yaml.v3's resolver does not know `<<`, while its parser reads every plain
 	// `<<` as a merge key. Its encoder therefore spells a merge key `!!merge <<`
@@ -255,10 +340,6 @@ func prepareStrings(n *Node, seen map[*Node]bool, flow bool) {
 			n.Style |= yaml.DoubleQuotedStyle
 		}
 	}
-	for _, c := range n.Content {
-		prepareStrings(c, seen, flow || n.Style&yaml.FlowStyle != 0)
-	}
-	prepareStrings(n.Alias, seen, flow)
 }
 
 var timeType = reflect.TypeFor[time.Time]()
