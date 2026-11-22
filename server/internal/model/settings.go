@@ -169,7 +169,7 @@ type DomainDiscovery struct {
 	ProxyRuleset           *string            `json:"proxy_ruleset,omitzero"`
 	Ignored                []string           `json:"ignored,omitzero"`
 	AutoProbe              *bool              `json:"auto_probe,omitzero"`
-	AutoApply              *bool              `json:"auto_apply,omitzero" switch:"off"`
+	AutoApply              *bool              `json:"auto_apply,omitzero" stored:"gate"`
 	AutoApplyMinConfidence *Int               `json:"auto_apply_min_confidence,omitzero"`
 	History                []DiscoveryHistory `json:"history,omitzero"`
 	RegionCheckEnabled     *bool              `json:"region_check_enabled,omitzero"`

@@ -13,7 +13,7 @@ import (
 )
 
 // Switch members whose JSON type is wrong (or null) in storage normally keep
-// their Python truth value (T1b). A member tagged switch:"off" makes a
+// their Python truth value (T1b). A member tagged stored:"gate" makes a
 // publication write to a device or push automatically (coordinator ruling,
 // O18 T1c): a wrong type reads as off. A member tagged switch:"on" is a safety
 // default Python read as `is not False` (verify_tls): a wrong type or null
@@ -26,10 +26,10 @@ func (s *issueSink) switchDefault(dec *jsontext.Decoder) (value, tagged bool) {
 	if !ok {
 		return false, false
 	}
-	switch field.Tag.Get("switch") {
-	case "off":
+	switch {
+	case field.Tag.Get("stored") == gateTag:
 		return false, true
-	case "on":
+	case field.Tag.Get("switch") == "on":
 		return true, true
 	}
 	return false, false
@@ -94,21 +94,21 @@ func decodeManifest(dec *jsontext.Decoder, sink *issueSink, target reflect.Value
 	return nil
 }
 
-// strictText reports a text member tagged text:"strict" (a credential):
+// strictText reports a text member tagged stored:"secret" or text:"strict"
 // a number stored there is a wrong type, not text, so it fails closed.
-// An element of a text list tagged text:"strict" (retired credentials) is
+// An element of a text list tagged stored:"secret" (retired credentials) is
 // strict too.
 func (s *issueSink) strictText(dec *jsontext.Decoder) bool {
 	pointer := dec.StackPointer()
 	if field, ok := leafField(s.root, pointer); ok {
-		return field.Tag.Get("text") == "strict"
+		return strictTextTag(field.Tag)
 	}
 	parent, last := pointer.Parent(), pointer.LastToken()
 	if _, err := strconv.Atoi(last); err != nil || parent == pointer {
 		return false
 	}
 	field, ok := leafField(s.root, parent)
-	return ok && field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.String && field.Tag.Get("text") == "strict"
+	return ok && field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.String && strictTextTag(field.Tag)
 }
 
 // leafField is the struct field a JSON pointer ends at, following plain
@@ -455,4 +455,11 @@ func nullText(dec *jsontext.Decoder, sink *issueSink, v **string) error {
 		*v = &empty
 	}
 	return nil
+}
+
+// strictTextTag reports text that must be stored as text: a credential
+// (stored:"secret") or text whose number spelling must not become a value
+// (text:"strict": the panel's domain, the backup URL, a rule's policy).
+func strictTextTag(tag reflect.StructTag) bool {
+	return tag.Get("stored") == secretTag || tag.Get("text") == "strict"
 }

@@ -5,9 +5,9 @@ type SystemConfig struct {
 	ServerDomain                   string             `json:"server_domain" text:"strict"`
 	GitHubProxyDomain              string             `json:"github_proxy_domain"`
 	RuleFetchProxy                 string             `json:"rule_fetch_proxy"`
-	ConfigToken                    string             `json:"config_token,omitzero" text:"strict" stored:"secret"`
-	RuleProxyToken                 string             `json:"rule_proxy_token,omitzero" text:"strict" stored:"secret"`
-	RetiredRuleProxyTokens         []string           `json:"retired_rule_proxy_tokens,omitzero" text:"strict" stored:"secret"`
+	ConfigToken                    string             `json:"config_token,omitzero" stored:"secret"`
+	RuleProxyToken                 string             `json:"rule_proxy_token,omitzero" stored:"secret"`
+	RetiredRuleProxyTokens         []string           `json:"retired_rule_proxy_tokens,omitzero" stored:"secret"`
 	DefaultProfileID               *string            `json:"default_profile_id,omitzero"`
 	SubscriptionAggregationEnabled *bool              `json:"subscription_aggregation_enabled,omitzero"`
 	SubStoreMode                   *string            `json:"sub_store_mode,omitzero"`
@@ -45,7 +45,7 @@ type Backup struct {
 	WebDAVUsername string  `json:"webdav_username,omitzero"`
 	WebDAVPassword string  `json:"webdav_password,omitzero"`
 	WebDAVPath     *string `json:"webdav_path,omitzero"`
-	AutoBackup     *bool   `json:"auto_backup,omitzero" switch:"off"`
+	AutoBackup     *bool   `json:"auto_backup,omitzero" stored:"gate"`
 	KeepLatest     *Int    `json:"keep_latest,omitzero" int:"literal"`
 	KeepDaily      *Int    `json:"keep_daily,omitzero" int:"literal"`
 }

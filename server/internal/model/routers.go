@@ -10,7 +10,7 @@ import (
 // the stored-data rules and written member by member. The members Python's
 // router normalization always writes are always written; the others are
 // omitzero. Switches that make a publication write to the device read as off
-// when stored with a wrong type (switch:"off").
+// when stored with a wrong type (stored:"gate").
 
 // Routers is the profile-scoped router collection.
 type Routers struct {
@@ -29,9 +29,9 @@ type Router struct {
 	ProxyGatewayAgentID string            `json:"proxy_gateway_agent_id"`
 	DNSAgentID          string            `json:"dns_agent_id"`
 	IPRuleSets          []string          `json:"ip_rule_sets"`
-	ManageReturnRouting *bool             `json:"manage_return_routing,omitzero" switch:"off"`
+	ManageReturnRouting *bool             `json:"manage_return_routing,omitzero" stored:"gate"`
 	ROSPolicyRuleSets   []string          `json:"ros_policy_rule_sets"`
-	AutoRuleSync        *bool             `json:"auto_rule_sync,omitzero" switch:"off"`
+	AutoRuleSync        *bool             `json:"auto_rule_sync,omitzero" stored:"gate"`
 	RuleSyncInterval    *Int              `json:"rule_sync_interval,omitzero"`
 	DNSGuard            *RouterDNSGuard   `json:"dns_guard,omitzero"`
 	IPv6PDGuard         *RouterPDGuard    `json:"ipv6_pd_guard,omitzero"`
@@ -50,7 +50,7 @@ type Router struct {
 // so device management refuses it (fail closed) and writes keep it for the
 // settings owner to repair.
 type RouterDNSGuard struct {
-	Enabled  *bool    `json:"enabled,omitzero" switch:"off"`
+	Enabled  *bool    `json:"enabled,omitzero" stored:"gate"`
 	BlockDoT *bool    `json:"block_dot,omitzero"`
 	Failover *bool    `json:"failover,omitzero"`
 	Bypass   []string `json:"bypass,omitzero"`
@@ -61,7 +61,7 @@ type RouterDNSGuard struct {
 // RouterPDGuard holds the explicit IPv6 prefix-delegation guard switch, kept
 // whole when damaged like RouterDNSGuard.
 type RouterPDGuard struct {
-	Enabled *bool `json:"enabled,omitzero" switch:"off"`
+	Enabled *bool `json:"enabled,omitzero" stored:"gate"`
 	// Stored keeps a damaged stored guard; see damagedKeeper.
 	Stored json.RawMessage `json:"-"`
 }
