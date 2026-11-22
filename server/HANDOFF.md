@@ -98,6 +98,13 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-29 MERGED 2026-11-22 (idle wrap-up: presence credentials on demand, webdav auto_backup=false skips the diff,
+o10perf idlestats; enrollment fuzz UseNumber). batch-30 MERGED 2026-11-22 (O18 T1a: Document/Profile/Shared/System
+plain structs + per-row codec, lenient stored reads, strict input with existing messages, unknown members dropped,
+changed-rows-only writes; HR review H1 damaged system_config no longer rewritten by token upkeep, H2 two token
+checks honour SystemSettingsDamaged, M1 clip strict-decoded slices; model cold load 45→28 ms, write 8.8→5.3 ms).
+T1b (Opus 3fc755ef) next; T1c after T1b lands.
+
 Maintainer approved 2026-11-22: HA pair publish stopped by the 10-minute member-lost timeout is auto-completed when
 the member returns (same content as the interrupted publish, not the latest config; independent of the rule
 auto-sync switch; one attempt; UI "等待设备恢复后自动完成发布", history tag "自动补完"). Opus 64fd3f0f, branch
