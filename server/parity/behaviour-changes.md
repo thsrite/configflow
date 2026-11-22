@@ -2914,8 +2914,12 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
     `legacy-manager` 对端、`upgrade.TestDockerRecognizesBothContainerManagers`；实验 D2：旧镜像开启 HA（journal 为 `"supervisor"`），
     同一数据卷换新镜像后 Agent 恢复 keepalived。
   - startsecs/startretries 由 finish 脚本（`configflow-agent svc-finish`）复现：启动后 3 秒（Agent/keepalived 1 秒）内退出算启动失败，
-    连续 3 次重试仍失败（共 4 次）即 FATAL、不再拉起；手动 start/restart 清零。与 Supervisor 的差别：重试间隔固定约 1 秒
-    （Supervisor 为递增的 1、2、3 秒），实验中 FATAL 约 5 秒出现。
+    连续 3 次重试仍失败（共 4 次）即 FATAL、不再拉起；手动 start/restart 清零。重试间隔与 Supervisor 相同，依次 1、2、3 秒
+    （finish 里等待，期间收到停止即结束；`timeout-finish` 15 秒），实验中坏配置约 10 秒 FATAL（batch-37 复核前为固定约 1 秒、约 5 秒）。
+  - keepalived 退出后，finish 结束它留在自己进程组里的 keepalived 进程（先 SIGTERM，3 秒后 SIGKILL，只认名为 keepalived 的进程），
+    对应原 `stopasgroup/killasgroup`：父进程被 SIGKILL 时 VRRP 子进程不会残留并继续持有 VIP。
+  - Docker HA 停用/回滚：keepalived 状态为 STARTING/BACKOFF/STOPPING 或读不到时一律先停止（s6 会自行拉起这些状态的程序），
+    只有 STOPPED/FATAL 才算已停；原 Supervisor 时代同样只认 RUNNING，属顺带修正。
   - 停止：SIGTERM 后等待（Agent/核心 10 秒、keepalived 15 秒）再 SIGKILL，与原 stopwaitsecs 相同；容器停止顺序由 s6-rc 依赖还原
     原 priority（macvlan HA：keepalived → Agent → 核心；其余：Agent → 核心）。s6-overlay 收尾等待 `S6_KILL_GRACETIME=1000`，
     普通容器 `docker stop` 约 1.2 秒。
@@ -2935,7 +2939,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   在同一夹具上对照原脚本（消息与文件一致，双方装的实例互相能启动）。
 - **辅助容器（host 模式）控制方式**：原来主 Agent 用 `supervisorctl -s unix://…/supervisor.sock` 控制辅助容器的 Supervisor；
   现在辅助容器由 s6 运行 `configflow-agent ha-companion-serve`，在共享 HA 卷上监听 `/var/lib/configflow-ha/run/control.sock`
-  （root 0600，只接受 keepalived 的 status/start/stop/restart），主 Agent 用同一接口的 Remote 实现。对端检查（SO_PEERCRED，独立
+  （root 0600，只接受 keepalived 的 status/start/stop/restart；已有另一个辅助容器在服务同一套接字时拒绝接管），主 Agent 用同一接口的 Remote 实现。对端检查（SO_PEERCRED，独立
   PID 命名空间）不变，只是路径从 `supervisor.sock` 改为 `control.sock`。新旧镜像混用（新 Agent + 旧辅助容器或反之）时 HA 环境
   显示未就绪，用同一镜像重建两个容器即可。环境检查的提示由“受管 keepalived Supervisor 程序尚未就绪”改为“受管 keepalived 程序尚未就绪”。
 - **面板生成内容**（已批准差异，比较时由 `installertest.NoPythonBaseline` 还原）：
