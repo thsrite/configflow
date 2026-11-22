@@ -399,18 +399,41 @@ func runtimeRoot(dataDir string) string {
 type requestLog struct {
 	mu      sync.Mutex
 	entries []string
+	// python marks entries sent by Python's requests (its default
+	// User-Agent); Go's Sub-Store client always sends "ConfigFlow".
+	python []bool
 }
 
 func (l *requestLog) record(r *http.Request) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.entries = append(l.entries, r.Method+" "+r.RequestURI+" host="+r.Host+" proxy-auth="+r.Header.Get("Proxy-Authorization")+" auth="+r.Header.Get("Authorization"))
+	l.python = append(l.python, strings.HasPrefix(r.Header.Get("User-Agent"), "python-requests/"))
 }
 func (l *requestLog) take() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	entries := l.entries
-	l.entries = nil
+	l.entries, l.python = nil, nil
+	return entries
+}
+
+// takeWithoutPython is take without the requests Python's requests sent: a
+// background request of the Python server can arrive late, while the Go side
+// is observed (seen once in a loaded gate run).
+func (l *requestLog) takeWithoutPython(t *testing.T) []string {
+	t.Helper()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entries := []string{}
+	for i, entry := range l.entries {
+		if l.python[i] {
+			t.Logf("ignored a late Python request: %s", entry)
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	l.entries, l.python = nil, nil
 	return entries
 }
 
@@ -448,7 +471,12 @@ func TestDifferentialReviewLoopbackProxy(t *testing.T) {
 	observe := func(want int) func(*testing.T, string) {
 		return func(t *testing.T, side string) {
 			t.Helper()
-			proxied, origin := seen.take(), direct.take()
+			var proxied, origin []string
+			if side == "go" {
+				proxied, origin = seen.takeWithoutPython(t), direct.takeWithoutPython(t)
+			} else {
+				proxied, origin = seen.take(), direct.take()
+			}
 			wantProxy, wantDirect := []string{}, []string{}
 			if want != 0 {
 				if side == "python" {
