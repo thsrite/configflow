@@ -35,7 +35,7 @@ RUNNING / STARTING（启动期内）/ BACKOFF（等待重启）/ STOPPING / STOP
 - Agent 里所有 `supervisorctl` 调用改走 `svc`：`routes/deployment_service.go`、`oxidns_ha_container.go`、`oxidns_ha_resources.go`、
   `logs.go`、`log_sources.go`、`restart.go`、`uninstall.go`、`update.go`、`system.go`。删除 `supervisord.conf`、`supervisor/*.conf`。
 - 镜像：`docker/Dockerfile.agent`（s6-overlay、无 Python）、入口脚本、辅助容器入口、`docker/compat/{supervisorctl,python3}`；删除
-  `docker/docker-compose-{compact,install}.py`、`docker/supervisor-ha-companion.conf`。面板镜像的 `docker/supervisord.conf` 未动（盘点第 12 项）。
+  `docker/docker-compose-{compact,install}.py`、`docker/supervisor-ha-companion.conf`。面板镜像的 `docker/supervisord.conf` 不在本任务范围（盘点第 12 项，已由 batch-36 改为 tini 后删除）。
 - 面板：`ha-startup-checks.sh` 用 `configflow-agent svc status oxidns`，探测最低版本 1.9.3-go；`compose_direct` 入口 `configflow-agent ha-compose`；
   `NoPythonBaseline` 还原这两处；`l1-ha-deltas.json`、L1 容器测试（真实 Agent 二进制）、O9 入口测试（真实 docker-config）。
 - 版本 1.9.3-go（照 9d4a3cdcb / c1459430c）：`upgrade.Version`、`LatestAgentVersion` + 更新日志、pure_test、proddiff、configdiff。
