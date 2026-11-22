@@ -1,0 +1,19 @@
+#!/bin/sh
+# 兼容脚本：Agent 镜像已用 s6 取代 Supervisor（Agent 1.9.3-go）。
+# 只为旧面板生成的安装/检查脚本过渡（例如 `supervisorctl -c … status oxidns`），
+# 计划在下一个大版本删除。只支持 [-c 配置文件] status|start|stop|restart <程序名>，
+# 转调 configflow-agent svc；其余用法报错并说明替代命令。
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -c) [ "$#" -ge 2 ] || break; shift 2 ;;
+        -c*) shift ;;
+        *) break ;;
+    esac
+done
+if [ "$#" -eq 2 ]; then
+    case "$1" in
+        status|start|stop|restart) exec /usr/local/bin/configflow-agent svc "$1" "$2" ;;
+    esac
+fi
+echo "此镜像已不含 Supervisor，supervisorctl 只是过渡用的兼容脚本，仅支持「supervisorctl [-c 配置文件] status|start|stop|restart <程序名>」。请改用：configflow-agent svc status|start|stop|restart <程序名>（程序名：agent-oxidns、oxidns、mihomo、mosdns、configflow-keepalived 等）。" >&2
+exit 2

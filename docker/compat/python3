@@ -1,0 +1,14 @@
+#!/bin/sh
+# 兼容脚本：Agent 镜像已不含 Python（Agent 1.9.3-go）。
+# 只为已部署的旧 Compose 安装过渡，计划在下一个大版本删除：
+#   python3 /usr/local/lib/configflow/docker-compose-install.py prepare|run  → configflow-agent ha-compose prepare|run
+#   python3 /run/configflow-compose/bootstrap.py                            → configflow-agent ha-bootstrap
+# 其余用法一律报错并说明怎么做。
+case "$#:$1:${2:-}" in
+    2:/usr/local/lib/configflow/docker-compose-install.py:prepare|2:/usr/local/lib/configflow/docker-compose-install.py:run)
+        exec /usr/local/bin/configflow-agent ha-compose "$2" ;;
+    1:/run/configflow-compose/bootstrap.py:)
+        exec /usr/local/bin/configflow-agent ha-bootstrap ;;
+esac
+echo "此镜像已不含 Python；python3 只是让旧 Compose 安装继续启动的兼容脚本，不能运行其他程序。旧安装的入口会自动转为 configflow-agent ha-compose / ha-bootstrap；如需修改，请在面板重新生成 Compose，或把入口改成 configflow-agent 对应子命令。" >&2
+exit 2

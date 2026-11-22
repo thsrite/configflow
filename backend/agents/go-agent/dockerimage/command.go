@@ -21,7 +21,7 @@ var cores = map[string]bool{"mihomo": true, "mosdns": true, "oxidns": true}
 
 // Run executes docker-config and returns the exit code.
 //
-//	docker-config agent SERVICE NAME PORT CONFIG_PATH
+//	docker-config agent [-dir AGENT_DIR] SERVICE NAME PORT CONFIG_PATH
 //	docker-config services [-macvlan-ha] CORE[=CONFIG_PATH] ...
 //	docker-config companion
 func Run(args []string, env Environment, stderr io.Writer) int {
@@ -36,12 +36,19 @@ func run(args []string, env Environment, layout svc.Layout, agentDir string, std
 	var err error
 	switch args[0] {
 	case "agent":
-		if len(args) != 5 || !cores[args[1]] {
+		flags := flag.NewFlagSet("agent", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		dir := flags.String("dir", agentDir, "Agent directory holding config-<service>.json")
+		if flags.Parse(args[1:]) != nil {
+			return 2
+		}
+		operands := flags.Args()
+		if len(operands) != 4 || !cores[operands[0]] {
 			fmt.Fprintln(stderr, msgUsage)
 			return 2
 		}
-		err = WriteAgentConfig(AgentConfig{Path: filepath.Join(agentDir, "config-"+args[1]+".json"),
-			Service: args[1], Name: args[2], Port: args[3], ConfigPath: args[4]}, env)
+		err = WriteAgentConfig(AgentConfig{Path: filepath.Join(*dir, "config-"+operands[0]+".json"),
+			Service: operands[0], Name: operands[1], Port: operands[2], ConfigPath: operands[3]}, env)
 	case "services":
 		flags := flag.NewFlagSet("services", flag.ContinueOnError)
 		flags.SetOutput(stderr)

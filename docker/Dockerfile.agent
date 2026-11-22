@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ConfigFlow Agent Dockerfile (统一镜像)
-# 包含 Agent + Mihomo + MosDNS，通过环境变量控制启用的服务
+# 包含 Agent + Mihomo + MosDNS + OxiDNS，通过环境变量控制启用的服务；s6-overlay 是 PID 1
 #
 # 使用方式:
 #   Mihomo 模式: SERVICE_TYPE=mihomo
@@ -30,6 +30,27 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags="-s -w" -o /configflow-agent .
 
 # ==============================================================================
+# Stage: s6-overlay（进程管理，PID 1）。固定版本并校验 SHA256；在构建机原生平台下载解包
+# ==============================================================================
+FROM --platform=$BUILDPLATFORM alpine:latest AS s6-overlay
+ARG TARGETARCH
+ARG S6_OVERLAY_VERSION=3.2.3.2
+RUN set -eu; \
+    case "$TARGETARCH" in \
+        amd64) arch=x86_64; sum=e6befcc96a437a3831386ecfc51808c5d3e939dc5fe3c02ae9284599e8aa2408 ;; \
+        arm64) arch=aarch64; sum=b17f17a82e7a515c682a91edaf2ffdabb73f891981b6c1fd712115693a2f8b4c ;; \
+        *) echo "s6-overlay: unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    base="https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}"; \
+    cd /tmp; \
+    wget -q "$base/s6-overlay-noarch.tar.xz" "$base/s6-overlay-${arch}.tar.xz"; \
+    printf '%s  %s\n' 5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12 s6-overlay-noarch.tar.xz \
+        "$sum" "s6-overlay-${arch}.tar.xz" | sha256sum -c -; \
+    mkdir /out; \
+    tar -C /out -Jxpf s6-overlay-noarch.tar.xz; \
+    tar -C /out -Jxpf "s6-overlay-${arch}.tar.xz"
+
+# ==============================================================================
 # Stage: 服务二进制来源
 # ==============================================================================
 FROM metacubex/mihomo:latest AS mihomo-bin
@@ -44,16 +65,15 @@ COPY --chmod=755 --from=mosdns-bin /usr/bin/mosdns /usr/local/bin/mosdns
 COPY --chmod=755 --from=oxidns-bin /usr/local/bin/oxidns /usr/local/bin/oxidns
 COPY --from=oxidns-bin /etc/oxidns/webui /usr/share/oxidns/webui
 COPY --from=oxidns-bin /usr/share/licenses/oxidns/LICENSE /usr/share/licenses/oxidns/LICENSE
-COPY backend/agents/go-agent/supervisord.conf /etc/supervisor/supervisord.conf
-COPY backend/agents/go-agent/supervisor/ /etc/supervisor/conf.d/
+COPY --from=s6-overlay /out/ /
 COPY --chmod=755 docker/docker-agent-entrypoint-service.sh /entrypoint.sh
-COPY --chmod=644 docker/docker-compose-install.py /usr/local/lib/configflow/docker-compose-install.py
-COPY --chmod=644 docker/docker-compose-compact.py /usr/local/lib/configflow/docker-compose-compact.py
 COPY --chmod=755 docker/docker-ha-companion-entrypoint.sh /ha-companion-entrypoint.sh
-COPY docker/supervisor-ha-companion.conf /etc/supervisor/ha-companion.conf
+# 只为旧面板生成的脚本和旧部署过渡，计划在下一个大版本删除（见 behaviour-changes）
+COPY --chmod=755 docker/compat/supervisorctl /usr/bin/supervisorctl
+COPY --chmod=755 docker/compat/python3 /usr/bin/python3
 
 # ==============================================================================
-# Final: 统一镜像（Agent + Mihomo + MosDNS）
+# Final: 统一镜像（Agent + Mihomo + MosDNS + OxiDNS，s6-overlay 管理进程，不含 Python）
 # 系统包层在前、二进制层在后：上游核心或 Agent 更新时不再重装系统包
 # ==============================================================================
 FROM alpine:latest
@@ -63,17 +83,17 @@ FROM alpine:latest
 RUN { sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && apk update; } || \
     { echo "镜像源不可用，回退官方源" && \
       sed -i 's/mirrors.tuna.tsinghua.edu.cn/dl-cdn.alpinelinux.org/g' /etc/apk/repositories && apk update; } && \
-    apk add --no-cache ca-certificates tzdata su-exec supervisor python3 py3-pip bash keepalived iproute2 && \
-    pip3 install --no-cache-dir --disable-pip-version-check --break-system-packages "setuptools<81" && \
+    apk add --no-cache ca-certificates tzdata su-exec bash keepalived iproute2 && \
     rm -rf /var/cache/apk/* && \
-    mkdir -p /etc/mihomo /etc/mosdns /etc/oxidns/state /etc/supervisor/conf.d /var/log/supervisor /run && \
-    chmod -R 755 /etc/mihomo && chmod -R 775 /etc/mosdns && chmod -R 777 /var/log/supervisor /run
+    mkdir -p /etc/mihomo /etc/mosdns /etc/oxidns/state /var/log/configflow /run && \
+    chmod -R 755 /etc/mihomo && chmod -R 775 /etc/mosdns
 
 COPY --link --from=rootfs / /
 
-ENV SERVER_URL="" AGENT_IP="" HEARTBEAT_INTERVAL="30" TZ=Asia/Shanghai
+ENV SERVER_URL="" AGENT_IP="" HEARTBEAT_INTERVAL="30" TZ=Asia/Shanghai \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 S6_VERBOSITY=1
 
 EXPOSE 8080 8081 8082 53/tcp 53/udp 1053/tcp 1053/udp 7890 7891 7892 9090 9199
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+CMD ["/init"]
