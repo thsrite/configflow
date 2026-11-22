@@ -98,6 +98,11 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-36 MERGED 2026-11-23 (panel image without Python: Go server supervises Sub-Store (process group, backoff,
+idle stop, redacted logs), tini PID 1, cmd/configflow-autoupdate replaces auto_update.py; review: services joined after
+after-drain hooks, stronger Sub-Store log redaction, placeholder subscription address = not configured (no retries,
+Sub-Store stays asleep)). batch-37 (Agent image s6) under review 127f4d82; batch-34 (R11) waits on 65827eb7.
+
 batch-35 MERGED 2026-11-23 (Docker HA bootstrap/migration/inspect/port-check → Agent subcommands, Agent 1.9.2-go,
 image version probe before use; gate PASS first try). Follow-up noted: installer TestReviewDeflateAndZipMatchPython fails
 only under PYREF_MODE=check (unaudited fixture read from batch-33 ca7702e28); replay mode unaffected.
