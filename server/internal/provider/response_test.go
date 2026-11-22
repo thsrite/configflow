@@ -17,6 +17,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 	"configflow/internal/testjson"
 )
 
@@ -41,11 +42,8 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 			}
 			f.mu.Unlock()
 			profile := c.ArgDefault("profile", "alpha")
-			config := []byte(`{"v":1}`)
-			if kind == "subscription" {
-				config = []byte(`{}`)
-			}
-			return serveProviderJSON(c, kind, map[string]string{"aggregation": "agg-1", "subscription": "feed"}[kind], profile, config, render)
+			head := &store.Head{StoreID: "serve-fixture", Generation: 1}
+			return Serve(c, kind, map[string]string{"aggregation": "agg-1", "subscription": "feed"}[kind], profile, head, render)
 		})
 	})})
 	ctx := f.srv.Context()

@@ -234,7 +234,7 @@ func preview(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func download(c *httpx.Ctx) (*httpx.Response, error) {
-	config, agg, err := providerResource(c.Context(), c.Param("agg_id"))
+	config, agg, head, err := providerResource(c.Context(), c.Param("agg_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func download(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(400, false, err.Error()), nil
 	}
 	format, _ := c.Arg("format")
-	return serve(c, config, c.Param("agg_id"), func(ctx context.Context) (*httpx.Response, error) {
+	return serve(c, config, head, c.Param("agg_id"), func(ctx context.Context) (*httpx.Response, error) {
 		result, err := generation.GenerateConfig(ctx, *agg, config, generation.Options{Persist: true, Format: format})
 		if err != nil {
 			return renderFailure(err), nil

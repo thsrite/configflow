@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"configflow/internal/model"
+	"configflow/internal/store"
 )
 
 // Borrowed reads (O10-R2, design o10-rootcause §2 S1).
@@ -47,18 +48,34 @@ func (r *Repository) borrowsSnapshot(ctx context.Context) bool {
 // is a shared immutable snapshot (true) or a writer's working copy (false),
 // which a borrowing read must copy from.
 func (r *Repository) borrow(ctx context.Context, fn func(document *model.Document, shared bool) error) error {
+	_, err := r.borrowAt(ctx, fn)
+	return err
+}
+
+// borrowAt is borrow that also returns the committed head of the document
+// fn read; head is nil when fn read a writer's working copy, which has no
+// head yet.
+func (r *Repository) borrowAt(ctx context.Context, fn func(document *model.Document, shared bool) error) (*store.Head, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	shared := r.borrowsSnapshot(ctx)
-	document, err := r.viewDocument(ctx)
+	document, working, err := r.workingModel(ctx)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	var head *store.Head
+	if !working {
+		entry, err := r.readEntry(ctx, false)
+		if err != nil {
+			return nil, err
+		}
+		document, head = entry.Model, &entry.Head
 	}
 	if shared {
 		r.guardBorrow(document, document)
 	}
-	return fn(document, shared)
+	return head, fn(document, shared)
 }
 
 // lend returns a shallow copy of a snapshot record for a borrowing read, or a

@@ -2,27 +2,24 @@ package provider
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"configflow/internal/clock"
 	"configflow/internal/faultprobe"
 	"configflow/internal/httpx"
-	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
-	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/store"
 )
 
 var responseLog = logx.Get("backend.utils.provider_response")
@@ -62,8 +59,26 @@ func currentResponseSeconds() float64 {
 	return responseSeconds
 }
 
+// flightKey identifies one shared render: the provider, its request filters
+// and the committed configuration it renders (head). A render of a working
+// copy (no head) gets a unique solo number and is never shared.
 type flightKey struct {
-	kind, profileID, itemID, format, regex, excludeRegex, digest string
+	kind, profileID, itemID, format, regex, excludeRegex string
+	head                                                 store.Head
+	solo                                                 uint64
+}
+
+// soloRenders numbers renders that must not join another flight.
+var soloRenders atomic.Uint64
+
+func newFlightKey(kind, profileID, itemID, format, regex, excludeRegex string, head *store.Head) flightKey {
+	key := flightKey{kind: kind, profileID: profileID, itemID: itemID, format: format, regex: regex, excludeRegex: excludeRegex}
+	if head != nil {
+		key.head = *head
+	} else {
+		key.solo = soloRenders.Add(1)
+	}
+	return key
 }
 
 // rendered response shared by every request waiting on one flight; each
@@ -135,45 +150,22 @@ func mimetype(header http.Header) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-// configDigest is sha256(json.dumps(config_data, sort_keys=True,
-// default=str)).hexdigest() (only used as part of the flight key).
-func configDigest(configData json.RawMessage) (string, error) {
-	text, err := jsonresp.Canonical(configData)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(text)
-	return hex.EncodeToString(sum[:]), nil
-}
-
-// Serve shares response rendering for a typed resolved configuration.
-func Serve(c *httpx.Ctx, kind, itemID, profileID string, config *model.Config, render Render) (*httpx.Response, error) {
-	data, err := model.Marshal(config)
-	if err != nil {
-		return nil, err
-	}
-	return serveProviderJSON(c, kind, itemID, profileID, data, render)
-}
-
-// ServeProvider is serve_provider(kind, item_id, profile_id, config_data,
-// render): render's response, or the last good content once the client
-// would time out. Rendering runs in a shared single flight per provider,
-// format, filters and configuration on a pool of PoolWorkers. Only the
-// Mihomo format (no ?format=) falls back; a successful text/yaml render of
-// it is stored as the new last good content.
+// Serve is serve_provider(kind, item_id, profile_id, config_data, render):
+// render's response, or the last good content once the client would time
+// out. head is the committed head the caller resolved the configuration from
+// (repo.ConfigAt); requests for the same provider, format and filters at the
+// same head share one render on a pool of PoolWorkers. A nil head (working
+// copy) renders alone. Only the Mihomo format (no ?format=) falls back; a
+// successful text/yaml render of it is stored as the new last good content.
 //
 // Call after authentication and existence checks: the fallback must never
 // answer a request that would otherwise be rejected.
-func serveProviderJSON(c *httpx.Ctx, kind, itemID, profileID string, configData json.RawMessage, render Render) (*httpx.Response, error) {
+func Serve(c *httpx.Ctx, kind, itemID, profileID string, head *store.Head, render Render) (*httpx.Response, error) {
 	format, _ := c.Arg("format")
 	fallback := format == ""
 	regex, _ := c.Arg("regex")
 	exclude, _ := c.Arg("exclude_regex")
-	digest, err := configDigest(configData)
-	if err != nil {
-		return nil, err
-	}
-	key := flightKey{kind, profileID, itemID, format, regex, exclude, digest}
+	key := newFlightKey(kind, profileID, itemID, format, regex, exclude, head)
 	renderCtx := lifecycle.Detach(c.Context())
 	if err := renderCtx.Err(); err != nil {
 		return nil, err

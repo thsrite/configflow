@@ -11,8 +11,8 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/model"
 	"configflow/internal/provider"
+	"configflow/internal/store"
 )
 
 func TestProddiffWaitsForFreshProvider(t *testing.T) {
@@ -27,7 +27,7 @@ func TestProddiffWaitsForFreshProvider(t *testing.T) {
 	defer unblock()
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.GET("/provider", "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return provider.Serve(c, "aggregation", "synthetic", "default", &model.Config{Profile: &model.Profile{ID: "manifest"}}, func(context.Context) (*httpx.Response, error) {
+			return provider.Serve(c, "aggregation", "synthetic", "default", &store.Head{StoreID: "manifest"}, func(context.Context) (*httpx.Response, error) {
 				close(started)
 				<-release
 				return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte("proxies: [{name: Fresh}]\n")), nil

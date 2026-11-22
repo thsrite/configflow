@@ -20,6 +20,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/store"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
@@ -308,6 +309,7 @@ func referenceError(err error) bool  { var e *rules.StrategyReferenceError; retu
 
 type delivery struct {
 	config    *model.Config
+	head      *store.Head // committed head config was resolved from (provider flight key)
 	main      *yamlx.Node
 	snapshot  *provider.DeliverySnapshot
 	profileID string
@@ -331,12 +333,12 @@ func resource(ctx context.Context, id *string) (*delivery, []object, error) {
 	if id != nil {
 		roots["subscriptions"] = []string{*id}
 	}
-	config, err := r.Config(ctx, profileID, roots)
+	config, head, err := r.ConfigAt(ctx, profileID, roots)
 	if err != nil {
 		return nil, nil, err
 	}
 	list, err := objects(config.Subscriptions)
-	return &delivery{config: config, profileID: profileID}, list, err
+	return &delivery{config: config, head: head, profileID: profileID}, list, err
 }
 func (d *delivery) capture(ctx context.Context) error {
 	main, err := convert.MihomoDocument(ctx, d.config, convert.MihomoOptions{SkipProviderPreflight: true})
@@ -567,7 +569,7 @@ func (d *delivery) chainedContent(ctx context.Context, sub object, format string
 	return content, nil
 }
 func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*httpx.Response, error) {
-	return provider.Serve(c, "subscription", id, d.profileID, d.config, render)
+	return provider.Serve(c, "subscription", id, d.profileID, d.head, render)
 }
 func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
 	ctx = lifecycle.Detach(ctx)

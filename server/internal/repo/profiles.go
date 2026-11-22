@@ -11,6 +11,7 @@ import (
 
 	"configflow/internal/ctxx"
 	"configflow/internal/model"
+	"configflow/internal/store"
 )
 
 var metadataKeys = []string{"id", "name", "description", "created_at", "updated_at"}
@@ -82,6 +83,20 @@ func (r *Repository) Config(ctx context.Context, profileID string, roots Resourc
 		return err
 	})
 	return result, err
+}
+
+// ConfigAt is Config together with the committed head it was resolved from:
+// two reads with equal heads resolve the same configuration. head is nil
+// inside a write transaction or section updater (a working copy has no head).
+func (r *Repository) ConfigAt(ctx context.Context, profileID string, roots ResourceRoots) (result *model.Config, head *store.Head, err error) {
+	head, err = r.borrowAt(ctx, func(document *model.Document, shared bool) error {
+		result, err = resolveConfig(document, profileID, roots, agentCopyNone, shared)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return result, head, nil
 }
 
 // ConfigWithOxiDNSAgents returns the resolved view of a profile together with

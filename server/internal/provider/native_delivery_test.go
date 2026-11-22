@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/store"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
@@ -140,29 +140,27 @@ func TestN88dRunFlightShutdownAfterCallback(t *testing.T) {
 		t.Fatal("shutdown published last-good", err)
 	}
 }
-func TestN88dFlightDigestUsesNativeCanonicalJSON(t *testing.T) {
-	raw := []byte(`{"z":9007199254740993,"a":"中文&"}`)
-	got, err := configDigest(raw)
-	if err != nil {
-		t.Fatal(err)
+func TestFlightKeyFollowsCommittedHead(t *testing.T) {
+	head := &store.Head{StoreID: "s", Generation: 3, CommitID: "c3"}
+	same := *head
+	next := &store.Head{StoreID: "s", Generation: 4, CommitID: "c4"}
+	key := func(head *store.Head) flightKey { return newFlightKey("aggregation", "alpha", "a", "", "", "", head) }
+	tests := []struct {
+		name  string
+		a, b  flightKey
+		share bool
+	}{
+		{"same head shares", key(head), key(&same), true},
+		{"new commit renders anew", key(head), key(next), false},
+		{"other filter renders anew", key(head), newFlightKey("aggregation", "alpha", "a", "", "x", "", head), false},
+		{"working copy never shares", key(nil), key(nil), false},
 	}
-	// Independent exact D2 framing, including unescaped Unicode/HTML.
-	expected := sha256.Sum256([]byte(`{"a":"中文&","z":9007199254740993}`))
-	if got != fmt.Sprintf("%x", expected) {
-		t.Fatalf("digest %s", got)
-	}
-	reordered, err := configDigest([]byte(`{ "a":"中文&", "z":9007199254740993 }`))
-	if err != nil || reordered != got {
-		t.Fatal("object member order fragmented flight", err)
-	}
-	for _, raw := range []string{`{"a":"中文&","z":"9007199254740993"}`, `{"a":"中文&","z":9007199254740994}`} {
-		other, err := configDigest([]byte(raw))
-		if err != nil || other == got {
-			t.Fatal("identity collision", err)
-		}
-	}
-	if _, err := configDigest([]byte(`{} {}`)); err == nil {
-		t.Fatal("invalid identity accepted")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.a == tt.b; got != tt.share {
+				t.Fatalf("shared = %v, want %v", got, tt.share)
+			}
+		})
 	}
 }
 func FuzzN88dDelivery(f *testing.F) {

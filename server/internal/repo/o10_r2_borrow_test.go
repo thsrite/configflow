@@ -60,6 +60,10 @@ var r2BorrowReads = []struct {
 	read func(context.Context, *Repository) (any, error)
 }{
 	{"Config", func(ctx context.Context, r *Repository) (any, error) { return r.Config(ctx, "default", nil) }},
+	{"ConfigAt", func(ctx context.Context, r *Repository) (any, error) {
+		config, _, err := r.ConfigAt(ctx, "default", nil)
+		return config, err
+	}},
 	{"ConfigRoots", func(ctx context.Context, r *Repository) (any, error) {
 		return r.Config(ctx, "default", ResourceRoots{})
 	}},
@@ -394,4 +398,36 @@ func TestO10R2ConcurrentAppendsToLentSlices(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// TestConfigAtHead: ConfigAt reports the committed head it resolved from; a
+// commit changes it, and a writer's working copy has none.
+func TestConfigAtHead(t *testing.T) {
+	r := r2BorrowRepo(t)
+	_, first, err := r.ConfigAt(bg, "default", nil)
+	noError(t, err)
+	if first == nil {
+		t.Fatal("committed read without head")
+	}
+	_, again, err := r.ConfigAt(bg, "default", nil)
+	noError(t, err)
+	if again == nil || *again != *first {
+		t.Fatalf("unchanged repository head %v, want %v", again, first)
+	}
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.SystemConfig.ServerDomain = "https://other.example.com"
+		return nil
+	}))
+	_, next, err := r.ConfigAt(bg, "default", nil)
+	noError(t, err)
+	if next == nil || *next == *first {
+		t.Fatalf("head %v after a commit, was %v", next, first)
+	}
+	noError(t, r.Update(bg, func(ctx context.Context, _ *model.Document) error {
+		_, working, err := r.ConfigAt(ctx, "default", nil)
+		if err == nil && working != nil {
+			t.Errorf("working copy read has head %v", working)
+		}
+		return err
+	}))
 }

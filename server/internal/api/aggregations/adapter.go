@@ -23,6 +23,7 @@ import (
 	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/store"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
@@ -136,33 +137,34 @@ func resourceConfig(ctx context.Context, id string) (record, record, error) {
 // configuration borrowed from the repository snapshot and the aggregation,
 // without converting the configuration to generic JSON and back (O10 R9).
 // The configuration has the members the provider owner reads (the same ones
-// serve and aggregations.Generate used to rebuild from that JSON).
-func providerResource(ctx context.Context, id string) (*model.Config, *model.Aggregation, error) {
+// serve and aggregations.Generate used to rebuild from that JSON). head is the
+// committed head it was resolved from (the provider flight key).
+func providerResource(ctx context.Context, id string) (*model.Config, *model.Aggregation, *store.Head, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	profileID, err := repo.ResolveProfileID(ctx, "")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	value, err := r.Config(ctx, profileID, repo.ResourceRoots{"subscription_aggregations": []string{id}})
+	value, head, err := r.ConfigAt(ctx, profileID, repo.ResourceRoots{"subscription_aggregations": []string{id}})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	config := &model.Config{Profile: value.Profile, ProfileID: value.ProfileID, SystemConfig: value.SystemConfig, Backup: value.Backup,
 		Subscriptions: value.Subscriptions, Nodes: value.Nodes, Aggregations: value.Aggregations, RuleLibrary: value.RuleLibrary}
 	for i := range value.Aggregations {
 		if value.Aggregations[i].ID == id {
 			agg := value.Aggregations[i]
-			return config, &agg, nil
+			return config, &agg, head, nil
 		}
 	}
-	return config, nil, nil
+	return config, nil, head, nil
 }
 
 // aggregationEnabled is enabled() of a typed aggregation's stored member.
@@ -204,8 +206,8 @@ func render(ctx context.Context, agg, config record, format string) (*generation
 	}
 	return generation.Generate(ctx, a, c, generation.Options{Persist: true, Format: format})
 }
-func serve(c *httpx.Ctx, config *model.Config, id string, render provider.Render) (*httpx.Response, error) {
-	return provider.Serve(c, "aggregation", id, config.ProfileID, config, render)
+func serve(c *httpx.Ctx, config *model.Config, head *store.Head, id string, render provider.Render) (*httpx.Response, error) {
+	return provider.Serve(c, "aggregation", id, config.ProfileID, head, render)
 }
 func requestedFilters(c *httpx.Ctx) (*[2]string, error) { return provider.RequestedFilters(c) }
 func alternative(format string, proxies []proxy, filters *[2]string) (string, error) {
