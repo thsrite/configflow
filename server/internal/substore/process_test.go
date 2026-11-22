@@ -165,7 +165,7 @@ func TestSupervisorStartStopAndLogs(t *testing.T) {
 	}
 	text := logs.text()
 	for _, want := range []string{
-		"sub-store - INFO - Sub-Store fetching https://example.com/sub?token=%5BREDACTED%5D now",
+		"sub-store - INFO - Sub-Store fetching https://example.com/[REDACTED] now",
 		"sub-store - WARNING - fake warning from serve",
 		fmt.Sprintf("Sub-Store 已启动（pid %d）", starts[0].pid),
 		fmt.Sprintf("Sub-Store 已停止（pid %d）", starts[0].pid),
@@ -355,5 +355,40 @@ func TestSupervisorCommandUsesActiveBundle(t *testing.T) {
 	argv, _ = NewSupervisor(env).command(context.Background())
 	if argv[1] != filepath.Join(builtin, SubStoreAsset) {
 		t.Fatalf("argv %v", argv)
+	}
+}
+
+func TestRedactProcessLine(t *testing.T) {
+	tests := []struct {
+		name, line, want string
+		secrets          []string
+	}{
+		{"query token", "GET https://sub.example.com/api/v1/client/subscribe?token=q1secret done",
+			"GET https://sub.example.com/[REDACTED] done", []string{"q1secret", "subscribe"}},
+		{"path token", "Downloading https://sub.example.com/link/p4thsecret?clash=1",
+			"Downloading https://sub.example.com/[REDACTED]", []string{"p4thsecret"}},
+		{"userinfo", "from http://alice:pw9secret@198.51.100.7:8080/", "from http://198.51.100.7:8080/", []string{"pw9secret", "alice"}},
+		{"fragment", "url https://sub.example.com/#fr4gsecret", "url https://sub.example.com/", []string{"fr4gsecret"}},
+		{"host only", "base https://sub.example.com", "base https://sub.example.com", nil},
+		{"proxy uri", "Failed to parse line: ss://YWVzLTI1Ni1nY206c2VjcmV0@192.0.2.11:8388#node",
+			"Failed to parse line: ss://[REDACTED]", []string{"YWVz", "192.0.2.11"}},
+		{"vmess", `bad vmess://eyJ1dWlkIjoieCJ9 x`, "bad vmess://[REDACTED] x", []string{"eyJ1"}},
+		{"surge line", "node = trojan, 192.0.2.12, 443, password=tr0jansecret, sni=example.com",
+			"node = trojan, 192.0.2.12, 443, password=[REDACTED], sni=example.com", []string{"tr0jansecret"}},
+		{"json", `{"name":"n","uuid":"0b5e2c0e-uuid-secret","port":443}`, `{"name":"n","uuid":"[REDACTED]","port":443}`, []string{"uuid-secret"}},
+		{"plain", "Sub-Store backend listening on 3001", "Sub-Store backend listening on 3001", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactProcessLine(tt.line)
+			if got != tt.want {
+				t.Errorf("redactProcessLine(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+			for _, secret := range tt.secrets {
+				if strings.Contains(got, secret) {
+					t.Errorf("%q leaks %q", got, secret)
+				}
+			}
+		})
 	}
 }

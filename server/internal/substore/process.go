@@ -56,6 +56,7 @@ const (
 	defaultBackoffMax   = 30 * time.Second
 	defaultStableAfter  = 30 * time.Second
 	maxLogLine          = 4096
+	logRedacted         = "[REDACTED]"
 )
 
 var processLog = logx.Get("sub-store")
@@ -248,10 +249,14 @@ func (s *Supervisor) supervise(work context.Context, run *supervision, first cha
 	defer unhook()
 	clk := s.clock(work)
 	cmd, err := s.spawn(work, run.stopCtx)
-	first <- err
 	if err != nil {
+		// Stopped before the caller learns of the failure, so its retry
+		// starts a new period instead of finding this one still set.
+		s.finish(run)
+		first <- err
 		return
 	}
+	first <- nil
 	s.setState(run, ProcessStarting, cmd, clk.Now())
 	backoff := durationOr(s.BackoffMin, defaultBackoffMin)
 	for {
@@ -329,7 +334,40 @@ type lineLogger struct {
 	buf   []byte
 }
 
-var logURL = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>]+`)
+var (
+	logURL = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>]+`)
+	// logSecret matches key=value / "key": "value" pairs whose value is a
+	// credential (Surge/Loon proxy lines, JSON node dumps).
+	logSecret = regexp.MustCompile(`(?i)(\b(?:password|passwd|uuid|psk|token|auth-str|auth|private-key|pre-shared-key|obfs-password|secret)"?\s*[=:]\s*"?)[^"',\s}&]+`)
+)
+
+// redactProcessLine makes a line of Sub-Store output log-safe. Unlike the
+// server's own URLs, these are mostly subscription addresses and proxy URIs:
+// an http(s) URL keeps only its scheme and host (airports put the token in
+// the path as often as in the query), any other URL (ss://, vmess://, …)
+// keeps only its scheme, and credential key/value pairs lose their values.
+func redactProcessLine(text string) string {
+	text = logURL.ReplaceAllStringFunc(text, func(raw string) string {
+		scheme, _, _ := strings.Cut(raw, "://")
+		if lower := strings.ToLower(scheme); lower != "http" && lower != "https" {
+			return scheme + "://" + logRedacted
+		}
+		// SafeForLog drops the user information and the fragment first.
+		safeScheme, rest, ok := strings.Cut(weburl.SafeForLog(raw), "://")
+		if !ok {
+			return weburl.SafeForLog(raw)
+		}
+		host, tail := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			host, tail = rest[:i], rest[i:]
+		}
+		if strings.Trim(tail, "/") == "" {
+			return safeScheme + "://" + host + tail
+		}
+		return safeScheme + "://" + host + "/" + logRedacted
+	})
+	return logSecret.ReplaceAllString(text, "${1}"+logRedacted)
+}
 
 func (l *lineLogger) Write(p []byte) (int, error) {
 	l.mu.Lock()
@@ -358,5 +396,5 @@ func (l *lineLogger) emit(line []byte) {
 		return
 	}
 	text = strings.ToValidUTF8(text, "�")
-	processLog.Log(l.level, logURL.ReplaceAllStringFunc(text, weburl.SafeForLog))
+	processLog.Log(l.level, redactProcessLine(text))
 }
