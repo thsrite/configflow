@@ -3,6 +3,7 @@ package dockerha
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -60,9 +61,14 @@ func CheckMigration(check MigrationCheck, env io.Reader, out io.Writer) error {
 	if err != nil || len(raw) > environmentLimit {
 		return fail(msgMigrationEnvironment)
 	}
+	// One JSON array and nothing else: null (a container without any
+	// environment) or trailing data is refused like any other non-list.
 	var items []any
 	decoder := json.NewDecoder(bytes.NewReader(bytes.TrimSpace(raw)))
-	if decoder.Decode(&items) != nil || decoder.More() {
+	if decoder.Decode(&items) != nil || items == nil {
+		return fail(msgMigrationEnvironment)
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return fail(msgMigrationEnvironment)
 	}
 	original := orderedEnv{values: map[string]string{}}

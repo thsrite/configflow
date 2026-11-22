@@ -60,6 +60,9 @@ func TestMigrationRefusals(t *testing.T) {
 	}{
 		{"env not json", oldConfig(""), `nope`, "", msgMigrationEnvironment},
 		{"env not list", oldConfig(""), `{"A": "b"}`, "", msgMigrationEnvironment},
+		{"env null", oldConfig(""), "null\n", "", msgMigrationEnvironment},
+		{"env trailing bracket", oldConfig(""), `[] ]`, "", msgMigrationEnvironment},
+		{"env trailing value", oldConfig(""), `[] []`, "", msgMigrationEnvironment},
 		{"env item not string", oldConfig(""), `[1]`, "", msgEnvFormat},
 		{"env item without equals", oldConfig(""), `["PATH"]`, "", msgEnvFormat},
 		{"env invalid name", oldConfig(""), `["1A=b"]`, "", msgEnvName},
