@@ -131,6 +131,49 @@ func resourceConfig(ctx context.Context, id string) (record, record, error) {
 	}
 	return config, find(items, id), nil
 }
+
+// providerResource is resourceConfig for the provider download: the typed
+// configuration borrowed from the repository snapshot and the aggregation,
+// without converting the configuration to generic JSON and back (O10 R9).
+// The configuration has the members the provider owner reads (the same ones
+// serve and aggregations.Generate used to rebuild from that JSON).
+func providerResource(ctx context.Context, id string) (*model.Config, *model.Aggregation, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	profileID, err := repo.ResolveProfileID(ctx, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	value, err := r.Config(ctx, profileID, repo.ResourceRoots{"subscription_aggregations": []string{id}})
+	if err != nil {
+		return nil, nil, err
+	}
+	config := &model.Config{Profile: value.Profile, ProfileID: value.ProfileID, SystemConfig: value.SystemConfig, Backup: value.Backup,
+		Subscriptions: value.Subscriptions, Nodes: value.Nodes, Aggregations: value.Aggregations, RuleLibrary: value.RuleLibrary}
+	for i := range value.Aggregations {
+		if value.Aggregations[i].ID == id {
+			agg := value.Aggregations[i]
+			return config, &agg, nil
+		}
+	}
+	return config, nil, nil
+}
+
+// aggregationEnabled is enabled() of a typed aggregation's stored member.
+func aggregationEnabled(agg *model.Aggregation) (bool, error) {
+	raw, present, err := agg.MemberJSON("enabled")
+	if err != nil || !present {
+		return true, err
+	}
+	return model.JSONSwitchEnabled(raw, true), nil
+}
+
 func resourceUsage(ctx context.Context, id string) (*httpx.Response, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -161,22 +204,8 @@ func render(ctx context.Context, agg, config record, format string) (*generation
 	}
 	return generation.Generate(ctx, a, c, generation.Options{Persist: true, Format: format})
 }
-func serve(c *httpx.Ctx, config record, id string, render provider.Render) (*httpx.Response, error) {
-	// The response owner hashes the captured native config JSON directly.
-	var profile model.Profile
-	if err := stored(config, &profile); err != nil {
-		return nil, err
-	}
-	var shared model.Shared
-	if err := stored(config, &shared); err != nil {
-		return nil, err
-	}
-	var system model.System
-	if err := stored(config, &system); err != nil {
-		return nil, err
-	}
-	typed := &model.Config{Profile: &profile, ProfileID: config.text("profile_id"), SystemConfig: system.SystemConfig, Backup: system.Backup, Subscriptions: shared.Subscriptions, Nodes: shared.Nodes, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary}
-	return provider.Serve(c, "aggregation", id, config.text("profile_id"), typed, render)
+func serve(c *httpx.Ctx, config *model.Config, id string, render provider.Render) (*httpx.Response, error) {
+	return provider.Serve(c, "aggregation", id, config.ProfileID, config, render)
 }
 func requestedFilters(c *httpx.Ctx) (*[2]string, error) { return provider.RequestedFilters(c) }
 func alternative(format string, proxies []proxy, filters *[2]string) (string, error) {

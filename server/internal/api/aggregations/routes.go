@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	generation "configflow/internal/aggregations"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/repo"
@@ -233,7 +234,7 @@ func preview(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func download(c *httpx.Ctx) (*httpx.Response, error) {
-	config, agg, err := resourceConfig(c.Context(), c.Param("agg_id"))
+	config, agg, err := providerResource(c.Context(), c.Param("agg_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +244,9 @@ func download(c *httpx.Ctx) (*httpx.Response, error) {
 	if agg == nil {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
-	if !enabled(agg) {
+	if on, err := aggregationEnabled(agg); err != nil {
+		return nil, err
+	} else if !on {
 		return httpx.Message(403, false, "Aggregation is disabled"), nil
 	}
 	filters, err := requestedFilters(c)
@@ -252,7 +255,7 @@ func download(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	format, _ := c.Arg("format")
 	return serve(c, config, c.Param("agg_id"), func(ctx context.Context) (*httpx.Response, error) {
-		result, err := render(ctx, agg, config, format)
+		result, err := generation.GenerateConfig(ctx, *agg, config, generation.Options{Persist: true, Format: format})
 		if err != nil {
 			return renderFailure(err), nil
 		}
