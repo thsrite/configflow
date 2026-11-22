@@ -31,6 +31,7 @@ var r2OwnedCopies = map[string]string{
 	"sections.go:updateProfileIn":                  "write transaction working copy",
 	"sections.go:UpdateSharedAndProfiles":          "write transaction working copies",
 	"system.go:applySystemIn":                      "write transaction working copy",
+	"system.go:keepDamagedSettings":                "write transaction with damaged settings only (rare); restores the base settings in the working copy",
 	"config_edits.go:updateSharedConfigs":          "write transaction working copies",
 	"profile_records.go:CreateProfileRecord":       "write: copies a profile into a new one",
 	"profile_records.go:ImportClientProfileRecord": "write result handed to the caller",
