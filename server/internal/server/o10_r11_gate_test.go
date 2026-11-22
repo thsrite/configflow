@@ -328,7 +328,7 @@ func TestO10WholeRecordEncodeBoundary(t *testing.T) {
 		t.Skip("type-checks the API and loop packages")
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go command not available")
+		t.Fatalf("the gate needs the go command for export data: %v", err)
 	}
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
