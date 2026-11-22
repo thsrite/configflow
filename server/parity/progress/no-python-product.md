@@ -61,6 +61,11 @@
 
 见交回报告的提问。
 
-## 3. 验证
+## 3. 验证（2026-11-22，全部在 192.168.0.32；.64 磁盘已满未用）
 
-见交回报告（命令与最后几行）。容器实验脚本：`server/parity/lab/no-python-compose-lab.sh`。
+- Agent 模块：`gofmt -l` 无输出、`go vet ./...`、`go test -race ./...` 全过；`GATE_ONLY=agent server/scripts/gate.sh -p 6` → `GATE STAGE PASS: agent`（dockerha 2.2 s）。
+- `go test -race -timeout=60m ./internal/installer/` ok 491.9 s；`./internal/installer/installertest` ok；`./internal/api/agents/...` ok 494.5 s；`./internal/agents/` ok 502.8 s。
+- Flask 差分（CONFIGFLOW_DIFF=1）：`TestDockerHADifferentialAgainstFlask` → 239 comparisons equal, 0 differ；`TestInstallerDifferentialAgainstFlask` 通过。
+- `server/tools/proddiff/test_proddiff.py` 67 passed。`tools/pyref` 审计通过（登记 B-035）。
+- `/tmp/preflight.sh`（vet 两组 tag + 全量非 race）→ `PREFLIGHT PASS`。
+- 容器实验 `server/parity/lab/no-python-compose-lab.sh ~/.cache/cf-nopy-old`（旧树 = go@c02c189f7）→ `LAB PASS`：A 新安装包/无 python3 镜像（准备两次、首次登记、停面板离线重启、运行中再准备）；B 旧 bootstrap.py 安装包 → 升级镜像照常、改两行入口用 ha-bootstrap、无 python3 镜像照常。
