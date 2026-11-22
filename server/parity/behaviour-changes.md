@@ -3007,7 +3007,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - 删除了依赖 `model.Issues`、在普通记录上永不触发的检查（convert `storedText`/`validateRuleIdentities`/`clientProtocolType`、
   discovery `storedStrings`、rulesetfmt/rules/provider 的错类型分支）；仍用旧编解码的局部记录（节点测速、刷新回执、订阅缓存等）保留。
 - **路由器所有权清单**（`ros_policy_state`、`dns_guard_state`、`ipv6_fakeip_state`、`ipv6_routes_state`、`ipv6_pd_guard_state`）：
-  库里类型不对或带未声明成员的清单整份原样保留，守卫按 Python 真值判断（失败即关），不按普通记录丢成员。
+  库里类型不对、带未声明成员或内部成员类型不对（如 `resources:"x"`）的清单整份原样保留，守卫按 Python 真值判断（失败即关），不按普通记录丢成员。
 - **凭据文本**：`rule_proxy_token`、`retired_rule_proxy_tokens` 的元素也只认文本（非文本读作空），数字不会成为规则代理凭据。
 - **解析出的节点**（proxy_string、订阅代理列表、VMess 链接）：`type`/`server` 不是文本（数字按文本）时，客户端生成按 Python 拒绝该节点
   （单节点报「节点 … server 类型不正确」，代理列表里的节点跳过并告警），不再生成空 server 行；VMess 链接的 `add` 证据经
