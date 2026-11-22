@@ -60,3 +60,23 @@ RUNNING / STARTING（启动期内）/ BACKOFF（等待重启）/ STOPPING / STOP
 | Python 差分 | `go test -tags pyref -run Pyref ./dockerha`（原脚本在同一夹具）：compact 10 场景 + 互相启动、direct 6 场景，消息与文件一致 |
 
 真机（两台不同宿主）HA 切换留给 L6。
+
+### 验证命令与结果（2026-11-23，全部在 192.168.0.32；开跑前 `df -h ~`：.32 剩 171G，.64 剩 161G）
+
+- `GATE_ONLY=agent server/scripts/gate.sh -p 6` → `GATE STAGE PASS: agent`（gofmt、vet、vet -tags halab nftlab、race；routes 214.7 s、svc 1.1 s、dockerha 5.5 s）。
+- `go test -race -count=1 -timeout=60m ./internal/installer/... ./internal/api/agents/... ./internal/agents/` → installer ok 575.2 s，installertest ok，
+  api/agents ok 445.9 s，api/agents/difftest ok，agents ok 443.2 s；`gofmt -l`、`go vet ./...`、`go vet -tags configflow_proddiff,configflow_difftest` 无输出。
+- `CONFIGFLOW_DIFF=1 go test -run 'TestDockerHADifferentialAgainstFlask|TestInstallerDifferentialAgainstFlask' ./internal/api/agents/difftest/`
+  → docker HA routes 239 comparisons equal, 0 differ；installer routes 293 comparisons equal, 0 differ。
+- `CONFIGFLOW_L1_CONTAINERS=1 go test -run TestL1HA ./internal/installer/` → ok（真实 UDP/TCP 53 占用/空闲、RUNNING/FATAL 启动检查、真实 DNS 客户端）。
+- `python -m pytest server/tools/proddiff/test_proddiff.py` → 67 passed。
+- `PYREF_SCRIPTS=… go test -tags pyref -run Pyref ./dockerha`（原 docker-compose-*.py）→ ok。
+- `/tmp/preflight.sh <rt 目录>`（vet 两组 tag + 全量非 race）→ `PREFLIGHT PASS`。
+- 实验 `server/parity/lab/nopy-agent-image-lab.sh ~/.cache/nopy-base`（A B C、D E、F G H、F2 G2 分批）→ 每批 `LAB PASS`。
+- rebase 到 go@2c592d7d7 后，与验证时的树只差 `server/HANDOFF.md`。
+
+### 待确认
+
+- HANDOFF（go@2c592d7d7）记录的裁定是 `service_manager` 改新值 `"s6"`、`"supervisor"` 作同义词；协调者对设计提问的回复是“全部按推荐”
+  （保留 `"supervisor"`）。本分支按回复实现；若要改为 `"s6"`，改动面：`docker-config` 写 `"s6"`，Agent 里约 20 处比较改为
+  “容器管理器”判断（同时接受两种值），HA 记录 `Service.Manager` 与 dns_follow 对端比较按同义处理，测试相应增加两种值的用例。
