@@ -29,6 +29,8 @@ type haContainerFixture struct {
 	links           string
 	peerError       error
 	helperAvailable bool
+	// state, when set, is the keepalived state Status reports.
+	state svc.State
 }
 
 func newHAContainerFixture(t *testing.T, mode string) *haContainerFixture {
@@ -337,10 +339,46 @@ func (k *haFakeKeepalived) Status(_ context.Context, name string) (svc.Status, e
 	if err := k.check(name); err != nil {
 		return svc.Status{}, err
 	}
+	if k.f.state != "" {
+		return svc.Status{Name: name, State: k.f.state}, nil
+	}
 	if k.f.running {
 		return svc.Status{Name: name, State: svc.StateRunning, PID: 10}, nil
 	}
 	return svc.Status{Name: name, State: svc.StateStopped}, nil
+}
+
+func TestHAContainerStopsKeepalivedUnlessDown(t *testing.T) {
+	tests := []struct {
+		state     svc.State
+		available bool
+		stops     bool
+		fails     bool
+	}{
+		{svc.StateRunning, true, true, false},
+		// s6 would bring these up again after the journal is gone.
+		{svc.StateStarting, true, true, false},
+		{svc.StateBackoff, true, true, false},
+		{svc.StateStopping, true, true, false},
+		{svc.StateStopped, true, false, false},
+		{svc.StateFatal, true, false, false},
+		// An unreadable state is never taken as stopped.
+		{"", false, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.state)+fmt.Sprint(tt.available), func(t *testing.T) {
+			f := newHAContainerFixture(t, "host")
+			f.state, f.helperAvailable = tt.state, tt.available
+			err := haStopService(svc.ContainerManager)
+			stopped := len(f.commands) == 1 && f.commands[0] == "companion stop "+svc.Keepalived
+			if stopped != tt.stops || (err != nil) != tt.fails {
+				t.Fatalf("commands %v, err %v; want stop=%t fail=%t", f.commands, err, tt.stops, tt.fails)
+			}
+			if alive := haDaemonAlive(svc.ContainerManager); alive != (tt.stops || tt.fails) {
+				t.Fatalf("alive %t", alive)
+			}
+		})
+	}
 }
 
 func TestHAContainerControlsTheRightKeepalived(t *testing.T) {

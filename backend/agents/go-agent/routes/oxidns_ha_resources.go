@@ -390,9 +390,18 @@ func haOpenRCCrashed() bool {
 
 // haDaemonAlive reports a keepalived daemon the service manager may not see:
 // on OpenRC the status command fails once keepalived.conf is gone, while the
-// daemon keeps running and holding the virtual IP.
+// daemon keeps running and holding the virtual IP. In the Docker image s6
+// brings a STARTING or BACKOFF keepalived up again by itself, so only STOPPED
+// and FATAL count as down; an unreadable state counts as alive.
 func haDaemonAlive(manager string) bool {
-	return haServiceRunning(manager) || (manager == "openrc" && haOpenRCPID() != 0)
+	switch manager {
+	case "openrc":
+		return haServiceRunning(manager) || haOpenRCPID() != 0
+	case svc.ContainerManager:
+		state := svc.State(haContainerState())
+		return state != svc.StateStopped && state != svc.StateFatal
+	}
+	return haServiceRunning(manager)
 }
 
 // haStopOpenRC stops keepalived through OpenRC, resetting a crashed state, and
@@ -436,6 +445,12 @@ func haStopService(manager string) error {
 			return nil
 		}
 		return haStopOpenRC()
+	}
+	if manager == svc.ContainerManager {
+		if !haDaemonAlive(manager) {
+			return nil
+		}
+		return haServiceAction(manager, "stop")
 	}
 	if !haServiceRunning(manager) {
 		return nil
