@@ -69,6 +69,11 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		typ = typ.Elem()
 	}
 	switch typ {
+	case reflect.TypeFor[Number]():
+		if changed {
+			return []byte(`8`)
+		}
+		return []byte(`7`)
 	case reflect.TypeFor[json.RawMessage]():
 		if changed {
 			return []byte(`{"changed":true}`)

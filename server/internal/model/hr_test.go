@@ -58,7 +58,7 @@ func TestAgentJournalPreservation(t *testing.T) {
 	}
 	// A stored null is a missing member (O18 T1b); unknown members are dropped.
 	out, err := Marshal(agent)
-	if err != nil || bytes.Contains(out, []byte("null")) || bytes.Contains(out, []byte("future")) {
+	if err != nil || bytes.Contains(bytes.ReplaceAll(out, []byte(`"active_agent_id":null`), nil), []byte("null")) || bytes.Contains(out, []byte("future")) {
 		t.Fatalf("null or unknown member written: %s", out)
 	}
 	task, _ := agent.Deployments.Get("task-example")

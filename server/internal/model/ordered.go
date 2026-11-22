@@ -237,12 +237,12 @@ func Clone[T any](v T) (T, error) {
 	return out, nil
 }
 
-// hasMembers reports whether a plain record (a pointer) would write any
-// member, without encoding it.
+// hasMembers reports whether a plain record (a pointer) holds any value,
+// without encoding it.
 func hasMembers(rec any) bool {
 	value := reflect.ValueOf(rec).Elem()
 	for _, field := range memberFields(value.Type()) {
-		if !field.omitzero || !omitted(value.Field(field.index)) {
+		if !omitted(value.Field(field.index)) {
 			return true
 		}
 	}

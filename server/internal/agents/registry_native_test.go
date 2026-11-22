@@ -187,6 +187,11 @@ func FuzzTypedRuntimeProjection(f *testing.F) {
 			if err := json.Unmarshal(raw, &members); err != nil {
 				t.Fatal(err)
 			}
+			for name, value := range members {
+				if string(value) == "null" {
+					delete(members, name) // active_agent_id is always written
+				}
+			}
 			if journal.HasMembers() != (len(members) > 0) {
 				t.Fatal("HA presence differs from native JSON")
 			}

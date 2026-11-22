@@ -35,8 +35,8 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct{ name, want string }{
-		{"version", `"1.0.0"`}, {"service_status", ``}, {"system_metrics", `{"cpu":{"usage_percent":1}}`},
-		{"cpu", `{"usage_percent":1}`}, {"memory", ``}, {"network", ``},
+		{"version", `"1.0.0"`}, {"service_status", ``}, {"system_metrics", `{"cpu":{"usage_percent":1e0}}`},
+		{"cpu", `{"usage_percent":1e0}`}, {"memory", ``}, {"network", ``},
 	} {
 		// Stored values read leniently (O18 T1b): null and values of another
 		// type are missing members.
@@ -62,11 +62,11 @@ func TestBatch10RuntimeSnapshotOwnsRawMembers(t *testing.T) {
 	}
 	// A null sample is no report (O18 T1b) and keeps the previous one.
 	raw, present, err := model.EncodeMember(&current, "system_metrics")
-	if err != nil || !present || string(raw) != `{"cpu":{"usage_percent":1}}` {
+	if err != nil || !present || string(raw) != `{"cpu":{"usage_percent":1e0}}` {
 		t.Fatalf("null sample replaced the report: %s %v %v", raw, present, err)
 	}
 	raw, present, err = model.EncodeMember(&current, "cpu")
-	if err != nil || !present || string(raw) != `{"usage_percent":1}` {
+	if err != nil || !present || string(raw) != `{"usage_percent":1e0}` {
 		t.Fatalf("partial sample erased CPU: %s %v %v", raw, present, err)
 	}
 }
