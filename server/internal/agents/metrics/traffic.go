@@ -29,17 +29,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -51,7 +50,7 @@ import (
 	"configflow/internal/rules"
 	"encoding/json"
 
-	"modernc.org/sqlite"
+	_ "modernc.org/sqlite" // database/sql driver "sqlite"
 )
 
 var trafficLogger = logx.Get("backend.agents.traffic_history")
@@ -433,7 +432,7 @@ func (n counter) exact() *big.Float {
 	return new(big.Float).SetInt(n.toBig())
 }
 
-// cmp compares exactly, as Python compares int and float.
+// cmp compares exactly, also between integer and float counters.
 func (n counter) cmp(v counter) int {
 	// Finite manually edited REAL inputs can overflow while aggregating. NaN
 	// has no numeric order: put missing totals after numeric totals, then use
@@ -464,46 +463,38 @@ func (n counter) cmp(v counter) int {
 	return n.toBig().Cmp(v.toBig())
 }
 
-// sqlValue is the value bound to a statement; a Python int beyond int64
-// raised OverflowError when converted to an SQLite INTEGER, a float is
-// bound as a REAL.
+// sqlValue is the value bound to a statement: an integer beyond int64 or a
+// non-finite float cannot be stored (errCounterRange); a float is bound as a
+// REAL.
 func (n counter) sqlValue() (any, error) {
 	if n.isFloat {
 		if math.IsNaN(n.f) || math.IsInf(n.f, 0) {
-			return nil, &OverflowError{Message: "non-finite traffic counter"}
+			return nil, errCounterRange
 		}
 		return n.f, nil
 	}
 	if n.big != nil {
 		if !n.big.IsInt64() {
-			return nil, &OverflowError{Message: "Python int too large to convert to SQLite INTEGER"}
+			return nil, errCounterRange
 		}
 		return n.big.Int64(), nil
 	}
 	return n.small, nil
 }
 
-// counterFromSQL is the Python value sqlite3 returns for a counter column:
-// INTEGER → int, REAL → float. Anything else (only a hand-edited file) made
-// the Python arithmetic fail with TypeError.
+// counterFromSQL reads a counter column: INTEGER and finite REAL values are
+// counters; anything else (only a hand-edited file) is errCounterInvalid.
 func counterFromSQL(value any) (counter, error) {
 	switch v := value.(type) {
 	case int64:
 		return counter{small: v}, nil
 	case float64:
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return counter{}, &TypeError{Message: "non-finite traffic counter"}
+			return counter{}, errCounterInvalid
 		}
 		return counter{isFloat: true, f: v}, nil
 	}
-	name := "NoneType"
-	switch value.(type) {
-	case string:
-		name = "str"
-	case []byte:
-		name = "bytes"
-	}
-	return counter{}, &TypeError{Message: "unsupported operand type(s) for +: 'int' and '" + name + "'"}
+	return counter{}, errCounterInvalid
 }
 
 func tripleFromSQL(up, down, conns any) (triple, error) {
@@ -653,15 +644,26 @@ func (h *TrafficHistory) PendingCount() int {
 	return len(h.usage) + len(h.targets)
 }
 
-// trafficConn is one SQLite connection (Python opened one per operation,
-// autocommit mode with explicit BEGIN IMMEDIATE).
+// trafficConn is one SQLite connection (one per operation); tx is the open
+// transaction of a change, if any.
 type trafficConn struct {
-	db            *sql.DB
-	conn          *sql.Conn
-	inTransaction bool
+	db   *sql.DB
+	conn *sql.Conn
+	tx   *sql.Tx
 }
 
 var bg = context.Background()
+
+// querier is the open transaction, or the connection outside one.
+func (c *trafficConn) querier() interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+} {
+	if c.tx != nil {
+		return c.tx
+	}
+	return c.conn
+}
 
 func (c *trafficConn) exec(statement string, args ...any) (int64, error) {
 	return c.execContext(bg, statement, args...)
@@ -670,47 +672,82 @@ func (c *trafficConn) execContext(ctx context.Context, statement string, args ..
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	result, err := c.conn.ExecContext(ctx, statement, args...)
+	result, err := c.querier().ExecContext(ctx, statement, args...)
 	if err != nil {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
-		return 0, sqliteText(err)
+		return 0, err
 	}
 	n, _ := result.RowsAffected()
 	return n, nil
 }
+
+// beginContext starts a transaction (BEGIN IMMEDIATE: the connection is
+// opened with _txlock=immediate, so writers queue on busy_timeout instead of
+// failing on a lock upgrade).
 func (c *trafficConn) beginContext(ctx context.Context) error {
-	if _, err := c.execContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.inTransaction = true
+	tx, err := c.conn.BeginTx(ctx, nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("begin traffic transaction: %w", err)
+	}
+	c.tx = tx
 	return nil
 }
+
 func (c *trafficConn) commitContext(ctx context.Context) error {
-	if _, err := c.execContext(ctx, "COMMIT"); err != nil {
+	tx := c.tx
+	c.tx = nil
+	if err := ctx.Err(); err != nil {
+		tx.Rollback()
 		return err
 	}
-	c.inTransaction = false
+	if err := tx.Commit(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("commit traffic transaction: %w", err)
+	}
 	return nil
 }
-func (c *trafficConn) rollbackContext(ctx context.Context) error {
-	if !c.inTransaction {
-		return nil
+
+// rollbackContext ends an open transaction without saving it. Its error is
+// not reported: the caller already returns the error that caused it, and
+// closing the connection discards whatever is still open.
+func (c *trafficConn) rollbackContext(context.Context) error {
+	if c.tx != nil {
+		_ = c.tx.Rollback()
+		c.tx = nil
 	}
-	c.inTransaction = false
-	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	_, err := c.execContext(cleanup, "ROLLBACK")
-	if err != nil && err.Error() == noTransaction {
-		return nil
-	}
-	return err
+	return nil
 }
 
-const noTransaction = "cannot rollback - no transaction is active"
+// inTransaction runs body in one transaction: committed when body succeeds,
+// rolled back otherwise.
+func (c *trafficConn) inTransaction(ctx context.Context, body func() error) error {
+	if err := c.beginContext(ctx); err != nil {
+		return err
+	}
+	if err := body(); err != nil {
+		c.rollbackContext(ctx)
+		return err
+	}
+	return c.commitContext(ctx)
+}
 
-func (c *trafficConn) close() { c.conn.Close(); c.db.Close() }
+func (c *trafficConn) close() {
+	if c.tx != nil {
+		_ = c.tx.Rollback()
+	}
+	c.conn.Close()
+	c.db.Close()
+}
 func (c *trafficConn) query(statement string, args []any, scan func(*sql.Rows) error) error {
 	return c.queryContext(bg, statement, args, scan)
 }
@@ -718,86 +755,24 @@ func (c *trafficConn) queryContext(ctx context.Context, statement string, args [
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	rows, err := c.conn.QueryContext(ctx, statement, args...)
+	rows, err := c.querier().QueryContext(ctx, statement, args...)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return sqliteText(err)
+		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		if err := scan(rows); err != nil {
-			return sqliteText(err)
+			return err
 		}
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return sqliteText(rows.Err())
+	return rows.Err()
 }
-
-var sqliteCodeSuffix = regexp.MustCompile(` \(\d+\)$`)
-
-// SQLiteError carries the text of str(sqlite3.Error) (sqlite3_errmsg).
-type SQLiteError struct {
-	Message string
-	Cause   error
-}
-
-func (e *SQLiteError) Error() string { return e.Message }
-func (e *SQLiteError) Unwrap() error { return e.Cause }
-
-// sqliteText gives a driver error the text of str(sqlite3.Error): the
-// driver writes "errstr: errmsg (code)".
-func sqliteText(err error) error {
-	var target *sqlite.Error
-	if err == nil || !errors.As(err, &target) {
-		return err
-	}
-	message := strings.TrimSuffix(target.Error(), " (SQLITE_BUSY)")
-	message = sqliteCodeSuffix.ReplaceAllString(message, "")
-	if _, detail, found := strings.Cut(message, ": "); found {
-		message = detail
-	}
-	return &SQLiteError{Message: message, Cause: err}
-}
-
-// makedirs is os.makedirs(path, exist_ok=True) with Python's OSError text.
-func makedirs(path string) error {
-	if info, err := os.Stat(path); err == nil {
-		if info.IsDir() {
-			return nil
-		}
-		return &OSError{Errno: syscall.EEXIST, Path: path}
-	}
-	if err := os.MkdirAll(path, 0o777); err != nil {
-		var pathErr *os.PathError
-		if errors.As(err, &pathErr) {
-			if errno, ok := pathErr.Err.(syscall.Errno); ok {
-				return &OSError{Errno: errno, Path: pathErr.Path}
-			}
-		}
-		return err
-	}
-	return nil
-}
-
-// OSError is str(OSError): "[Errno 17] File exists: '/data/metrics'".
-type OSError struct {
-	Errno syscall.Errno
-	Path  string
-}
-
-func (e *OSError) Error() string {
-	text := e.Errno.Error()
-	if text != "" {
-		text = strings.ToUpper(text[:1]) + text[1:]
-	}
-	return "[Errno " + strconv.Itoa(int(e.Errno)) + "] " + text + ": " + "'" + strings.ReplaceAll(e.Path, "'", "\\'") + "'"
-}
-
-func (e *OSError) Unwrap() error { return e.Errno }
 
 // connect is _connect(): create the directory, open the file (journal mode
 // DELETE like the configuration database: no -wal file in backups or the
@@ -810,23 +785,23 @@ func (h *TrafficHistory) connectContext(ctx context.Context) (*trafficConn, erro
 	if h.connectHook != nil {
 		return h.connectHook()
 	}
-	if err := makedirs(h.DataDir); err != nil {
+	if err := os.MkdirAll(h.DataDir, 0o777); err != nil {
 		return nil, err
 	}
 	absolute, err := filepath.Abs(h.Path)
 	if err != nil {
 		return nil, err
 	}
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String()
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute), RawQuery: "_txlock=immediate"}).String()
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
-		return nil, sqliteText(err)
+		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		db.Close()
-		return nil, sqliteText(err)
+		return nil, err
 	}
 	c := &trafficConn{db: db, conn: conn}
 	statements := append([]string{"PRAGMA busy_timeout=" + strconv.Itoa(trafficTimeoutMs), "PRAGMA journal_mode=DELETE"}, trafficSchema...)
@@ -858,43 +833,25 @@ func migrateLegacy(ctx context.Context, c *trafficConn) error {
 	if err != nil || len(legacy) == 0 {
 		return err
 	}
-	if err := c.beginContext(ctx); err != nil {
-		return err
-	}
-	for _, migration := range legacyMigrations {
-		if !legacy[migration.table] {
-			continue
+	err = c.inTransaction(ctx, func() error {
+		for _, migration := range legacyMigrations {
+			if !legacy[migration.table] {
+				continue
+			}
+			if _, err := c.execContext(ctx, migration.statement); err != nil {
+				return err
+			}
+			if _, err := c.execContext(ctx, "DROP TABLE "+migration.table); err != nil {
+				return err
+			}
 		}
-		if _, err := c.execContext(ctx, migration.statement); err != nil {
-			return c.rollbackAlwaysContext(ctx, err)
-		}
-		if _, err := c.execContext(ctx, "DROP TABLE "+migration.table); err != nil {
-			return c.rollbackAlwaysContext(ctx, err)
-		}
-	}
-	if err := c.commitContext(ctx); err != nil {
-		return c.rollbackAlwaysContext(ctx, err)
-	}
-	trafficLogger.Info("流量记录已迁移为按链路保存")
-	return nil
-}
-
-// rollbackAlways is the unconditional `connection.execute('ROLLBACK')` of
-// _migrate_legacy and _delete_agents (`except BaseException: ROLLBACK;
-// raise`): when the ROLLBACK itself fails, its error is the one raised.
-func (c *trafficConn) rollbackAlways(cause error) error { return c.rollbackAlwaysContext(bg, cause) }
-func (c *trafficConn) rollbackAlwaysContext(ctx context.Context, cause error) error {
-	c.inTransaction = false
-	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	_, err := c.execContext(cleanup, "ROLLBACK")
-	if ctx.Err() != nil {
-		return errors.Join(ctx.Err(), cause, err)
-	}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	return cause
+	trafficLogger.Info("流量记录已迁移为按链路保存")
+	return nil
 }
 
 func fileExists(path string) bool {
@@ -968,49 +925,41 @@ func (h *TrafficHistory) save(ctx context.Context, usage map[usageKey]*triple, t
 		return TrafficFlushResult{}, err
 	}
 	defer c.close()
-	result, err := func() (TrafficFlushResult, error) {
-		var result TrafficFlushResult
-		if err := c.beginContext(ctx); err != nil {
-			return result, err
-		}
+	var result TrafficFlushResult
+	err = c.inTransaction(ctx, func() error {
 		statement := usageUpsert(Hour)
 		for key, values := range usage {
 			up, down, conns, err := sqlTriple(values)
 			if err != nil {
-				return result, err
+				return err
 			}
 			if err := c.upsertContext(ctx, statement, key.agent, key.bucket, key.source, key.chain, up, down, conns); err != nil {
-				return result, err
+				return err
 			}
 		}
 		statement = targetUpsert(Hour)
 		for key, values := range targets {
 			up, down, conns, err := sqlTriple(values)
 			if err != nil {
-				return result, err
+				return err
 			}
 			if err := c.upsertContext(ctx, statement, key.agent, key.bucket, key.source, key.target, key.chain, up, down, conns); err != nil {
-				return result, err
+				return err
 			}
 		}
 		compacted, err := compact(ctx, c, now)
 		if err != nil {
-			return result, err
+			return err
 		}
 		pruned, err := pruneRows(ctx, c, now-float64(retention)*Day)
 		if err != nil {
-			return result, err
+			return err
 		}
-		if err := c.commitContext(ctx); err != nil {
-			return result, err
-		}
-		return TrafficFlushResult{Compacted: compacted, Pruned: pruned}, nil
-	}()
+		result = TrafficFlushResult{Compacted: compacted, Pruned: pruned}
+		return nil
+	})
 	if err != nil {
-		if rollbackErr := c.rollbackContext(ctx); rollbackErr != nil {
-			return result, rollbackErr
-		}
-		return result, err
+		return TrafficFlushResult{}, err
 	}
 	return result, nil
 }
@@ -1225,20 +1174,16 @@ func pruneRows(ctx context.Context, c *trafficConn, cutoff float64) (int64, erro
 
 // deleteAgents is _delete_agents(connection, agent_ids).
 func deleteAgents(ctx context.Context, c *trafficConn, agentIDs []string) error {
-	if err := c.beginContext(ctx); err != nil {
-		return err
-	}
-	for _, agentID := range agentIDs {
-		for _, statement := range []string{"DELETE FROM traffic_usage WHERE agent_id = ?", "DELETE FROM traffic_targets WHERE agent_id = ?"} {
-			if _, err := c.execContext(ctx, statement, agentID); err != nil {
-				return c.rollbackAlwaysContext(ctx, err)
+	return c.inTransaction(ctx, func() error {
+		for _, agentID := range agentIDs {
+			for _, statement := range []string{"DELETE FROM traffic_usage WHERE agent_id = ?", "DELETE FROM traffic_targets WHERE agent_id = ?"} {
+				if _, err := c.execContext(ctx, statement, agentID); err != nil {
+					return err
+				}
 			}
 		}
-	}
-	if err := c.commitContext(ctx); err != nil {
-		return c.rollbackAlwaysContext(ctx, err)
-	}
-	return nil
+		return nil
+	})
 }
 
 // Delete is delete(agent_id): forget the Agent's increments and rows.
@@ -1472,8 +1417,12 @@ func rowsOf(a *aggregate, limit int) []TrafficRow {
 	return out
 }
 
-// isoUTC is datetime.fromtimestamp(ts, timezone.utc).isoformat()
-// (microseconds rounded half to even, as CPython does).
+// isoUTC formats a Unix time in seconds as UTC ISO 8601 with microseconds
+// ("+00:00" suffix). The fraction is rounded to the nearest microsecond with
+// ties to even: the trend points are whole seconds, but the "start" of a
+// query is now minus the range, whose fraction can be an exact tie (for
+// example 1/128 s = 7812.5 µs); ties to even keeps the values the API has
+// always returned.
 func isoUTC(ts float64) string {
 	whole, frac := math.Modf(ts)
 	us := math.RoundToEven(frac * 1e6)

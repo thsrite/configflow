@@ -47,7 +47,7 @@ func retentionDaysJSON(raw json.RawMessage) (int64, error) {
 	}
 	var fields model.Fields
 	if jsondecode.Unmarshal(raw, &fields) != nil {
-		return 0, &AttributeError{Message: msgTrafficSettingsShape}
+		return 0, ErrTrafficSettingsShape
 	}
 	value, present := fields.Get(RetentionSetting)
 	if !present {

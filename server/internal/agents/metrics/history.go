@@ -91,12 +91,8 @@ type FlushError struct{ Message string }
 
 func (e *FlushError) Error() string { return e.Message }
 
-// strerror is the C library's strerror(errno), which Python puts in
-// OSError.strerror: Go's texts are glibc's with a lower-case first letter.
-func strerror(errno syscall.Errno) string {
-	if errno == syscall.ESTALE {
-		return "Stale file handle"
-	}
+// errnoReason is the system error text with a capital first letter.
+func errnoReason(errno syscall.Errno) string {
 	text := errno.Error()
 	if text == "" {
 		return ""
@@ -112,7 +108,7 @@ func DescribeOSError(err error) string {
 		if text, ok := errnoText[errno]; ok {
 			return text
 		}
-		if text := strerror(errno); text != "" {
+		if text := errnoReason(errno); text != "" {
 			return text
 		}
 	}
@@ -207,34 +203,23 @@ func isoformat(t time.Time) string {
 	return text
 }
 
-// OverflowError is Python's OverflowError (its text is str(error)).
-type OverflowError struct{ Message string }
+// ErrHoursOutOfRange is returned for a query window whose start is not a
+// representable date (before year 1 or after year 9999).
+var ErrHoursOutOfRange = errors.New(msgHoursOutOfRange)
 
-func (e *OverflowError) Error() string { return e.Message }
+// maxWindowHours bounds |hours| well beyond any valid window (10,000 years)
+// so that the date arithmetic below cannot overflow.
+var maxWindowHours = big.NewInt(10000 * 366 * 24)
 
-const maxDeltaDays = 999999999
-
-var (
-	bigHour   = big.NewInt(3600)
-	bigDay    = big.NewInt(86400)
-	bigMaxInt = big.NewInt(1<<31 - 1)
-	bigMinInt = big.NewInt(-1 << 31)
-)
-
-// cutoff is _cutoff(hours): datetime.now() - timedelta(hours=hours), with
-// Python's OverflowErrors for a huge hours value.
+// cutoff is the start of a window of hours hours ending now.
 func cutoff(hours *big.Int) (time.Time, error) {
-	seconds := new(big.Int).Mul(hours, bigHour)
-	days, rest := new(big.Int).DivMod(seconds, bigDay, new(big.Int))
-	if days.Cmp(bigMaxInt) > 0 || days.Cmp(bigMinInt) < 0 {
-		return time.Time{}, &OverflowError{"Python int too large to convert to C int"}
+	if new(big.Int).Abs(hours).Cmp(maxWindowHours) > 0 {
+		return time.Time{}, ErrHoursOutOfRange
 	}
-	if d := days.Int64(); d > maxDeltaDays || d < -maxDeltaDays {
-		return time.Time{}, &OverflowError{fmt.Sprintf("days=%d; must have magnitude <= %d", d, maxDeltaDays)}
-	}
-	result := naiveNow().AddDate(0, 0, -int(days.Int64())).Add(-time.Duration(rest.Int64()) * time.Second)
+	h := hours.Int64()
+	result := naiveNow().AddDate(0, 0, -int(h/24)).Add(-time.Duration(h%24) * time.Hour)
 	if result.Year() < 1 || result.Year() > 9999 {
-		return time.Time{}, &OverflowError{"date value out of range"}
+		return time.Time{}, ErrHoursOutOfRange
 	}
 	return result, nil
 }
@@ -369,10 +354,9 @@ func (h *History) readFileState(agentID string, limit time.Time) ([]point, int, 
 // legacyFormatError is a ValueError (json or UTF-8) of _read_legacy.
 type legacyFormatError struct{ error }
 
-// TypeError reports an invalid metrics value.
-type TypeError struct{ Message string }
-
-func (e *TypeError) Error() string { return e.Message }
+// ErrSavedMetricsShape is returned by Load for an old whole-JSON file whose
+// "metrics" member is not an array.
+var ErrSavedMetricsShape = errors.New(msgSavedMetricsArray)
 
 func (h *History) readLegacy(agentID string, limit time.Time) ([]point, error) {
 	data, err := os.ReadFile(h.legacyFile(agentID))
@@ -393,7 +377,7 @@ func (h *History) readLegacy(agentID string, limit time.Time) ([]point, error) {
 		raw = bytes.TrimSpace(raw)
 		if len(raw) > 0 && raw[0] != '{' && raw[0] != '"' {
 			if len(raw) == 0 || raw[0] != '[' {
-				return nil, &TypeError{Message: msgSavedMetricsArray}
+				return nil, ErrSavedMetricsShape
 			}
 			if err := json.Unmarshal(raw, &items); err != nil {
 				return nil, legacyFormatError{err}
@@ -427,8 +411,8 @@ type LoadResult struct {
 // its loops start; Python loaded before serving) are kept after the loaded
 // ones instead of being replaced.
 //
-// The error is the TypeError Python's load() raised for an old file whose
-// "metrics" is not iterable (load_history logs it and gives up).
+// The error is ErrSavedMetricsShape for an old file whose "metrics" is not
+// an array (the caller logs it and gives up).
 func (h *History) Load(ids []string) (LoadResult, error) {
 	return h.LoadContext(context.Background(), ids)
 }
@@ -515,8 +499,7 @@ func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResul
 		} else {
 			points, err = h.readLegacy(agentID, limit)
 			if err != nil {
-				var typeError *TypeError
-				if errors.As(err, &typeError) {
+				if errors.Is(err, ErrSavedMetricsShape) {
 					h.flushMu.Unlock()
 					return result, err
 				}
@@ -580,7 +563,7 @@ func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResul
 
 // GetMetrics is get_metrics(agent_id, hours): the points of the last hours
 // hours (nil: every point kept), each a fresh parse of its line. The error
-// is Python's OverflowError for an hours value timedelta cannot hold.
+// is ErrHoursOutOfRange for a window that starts outside years 1–9999.
 func (h *History) Samples(agentID string, hours *big.Int) ([]json.RawMessage, error) {
 	h.mu.Lock()
 	points := h.prune(agentID)

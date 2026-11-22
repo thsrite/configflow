@@ -30,7 +30,7 @@ func (c *trafficConn) upsertContext(ctx context.Context, statement string, args 
 		return err
 	}
 	if n != 1 {
-		return &TypeError{Message: "invalid stored traffic counter"}
+		return errCounterInvalid
 	}
 	return nil
 }
@@ -45,7 +45,7 @@ func validateGroupedCounters(rows *sql.Rows, row []any) error {
 		return err
 	}
 	if valid != 1 {
-		return &TypeError{Message: "invalid stored traffic counter"}
+		return errCounterInvalid
 	}
 	_, err := tripleFromSQL(row[len(row)-3], row[len(row)-2], row[len(row)-1])
 	return err

@@ -209,6 +209,11 @@ func isoUTC(t time.Time) string {
 	return text + "+00:00"
 }
 
+// fromTimestampMS converts an Agent's collected_at_ms through float seconds,
+// rounding to the nearest microsecond with ties to even. For current times
+// this equals time.UnixMilli; for far-future values the Agent may report (up
+// to year 9999) the float step shows in the microseconds, and the dashboard
+// keeps the collected_at text it has always returned for them.
 func fromTimestampMS(ms int64) time.Time {
 	seconds := float64(ms) / 1000
 	whole, frac := math.Modf(seconds)

@@ -97,18 +97,9 @@ func pointsText(points []point) [][]string {
 	return out
 }
 
+// pyErrorText describes a native error; no reference row expects one (the
+// Python exception rows are covered by the native expectations above).
 func pyErrorText(err error) string {
-	var typeError *TypeError
-	var overflow *OverflowError
-	var attribute *AttributeError
-	switch {
-	case errors.As(err, &typeError):
-		return "TypeError: " + typeError.Message
-	case errors.As(err, &overflow):
-		return "OverflowError: " + overflow.Message
-	case errors.As(err, &attribute):
-		return "AttributeError: " + attribute.Message
-	}
 	return fmt.Sprintf("%T: %v", err, err)
 }
 

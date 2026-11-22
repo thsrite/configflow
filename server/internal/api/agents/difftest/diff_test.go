@@ -419,8 +419,20 @@ func maskPath(value any, parts []string) {
 	}
 }
 
+// nativeRangeMessage are the requests whose hours window starts outside
+// years 1–9999: Python answered 500 with its OverflowError text, Go with
+// metrics.ErrHoursOutOfRange; status and envelope are still compared.
+var nativeRangeMessage = map[string]bool{
+	"metrics history date overflow": true, "metrics history days overflow": true,
+	"metrics history c int overflow": true, "metrics summary overflow": true,
+	"metrics history too many digits": true, "traffic trend overflow": true,
+}
+
 func compare(r request, py, gor response) []string {
 	var diffs []string
+	if nativeRangeMessage[r.name] {
+		r.mask = append(append([]string(nil), r.mask...), "message")
+	}
 	migrated := httpxtest.MigratedAPIError(r.method, py.status, gor.status, py.header, gor.header, py.body, gor.body)
 	if py.status != gor.status {
 		diffs = append(diffs, fmt.Sprintf("status python %d go %d", py.status, gor.status))

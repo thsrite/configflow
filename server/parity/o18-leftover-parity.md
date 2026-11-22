@@ -206,3 +206,17 @@
 ```bash
 RT_HOST=sunbroke@192.168.0.32 rt -e O18_DB=<私有副本路径> -- bash -lc 'go test -count=1 -run TestO18Probe -v ./internal/repo'
 ```
+
+## 5. T8 结果（C11，2026-11-23）
+
+- `monitor/rankings.go`：去掉模拟 `sqlite3` 隐式事务的 `rankConn.inTx`；改动数据的操作（存槽、整理）用 `database/sql` 显式事务
+  （`_txlock=immediate`），只读操作不开事务。
+- `metrics/traffic.go`：手写 `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` 换成 `sql.Tx`；删掉 `SQLiteError`（`sqlite3_errmsg` 文本）、
+  `OSError`/`makedirs`（`[Errno N] …` 文本）、「cannot rollback」文本匹配和「ROLLBACK 失败顶替原错误」；计数溢出/无效改成哨兵错误
+  （中文常量）。`metrics/history.go`：去掉 `OverflowError` 的三种 Python 文本，时间窗越界统一为 `ErrHoursOutOfRange`（仍是 500）；
+  `strerror` 的 ESTALE 特例删除；`TypeError`/`AttributeError` 换成哨兵错误（中文文案不变）。
+- 舍入：`isoUTC`（流量查询的 `start`）和 `fromTimestampMS`（看板的 `collected_at`）对外可见，半偶舍入在 1/128 s 之类的平局
+  或远期毫秒值上与常规舍入结果不同，按「保留对外数值」保留 `math.RoundToEven`，注释改为说明原因。
+- naive/aware 时间：只有手改文件才会出现带时区的时间戳，跳过它们是存储读取规则，不改。
+- 生产快照私有副本往返：改动前后同一组操作（查询全部聚合、保存、+8 天整理/裁剪、保留、删除；排行查询、整理、存槽、重复存槽）
+  的结果哈希和行数完全一致，`integrity_check` 正常。

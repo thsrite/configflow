@@ -10,3 +10,9 @@ const msgFlushInterval = "保存间隔只能是 5、10、30 或 60 分钟"
 const msgFlushTask = "监控历史保存"
 const msgFlushDetail = "Agent 系统监控（CPU、内存、网速） · Mihomo 流量记录"
 const msgCorruptMetric = "监控历史字段损坏，已跳过："
+
+const msgHoursOutOfRange = "查询时长超出可表示的日期范围"
+
+const msgTrafficCounterRange = "流量计数超出可保存的范围"
+
+const msgTrafficCounterInvalid = "流量记录里有无效的计数"

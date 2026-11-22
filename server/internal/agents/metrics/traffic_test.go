@@ -337,7 +337,7 @@ func TestTablesFrom1851AreMigratedToChains(t *testing.T) {
 func TestFailedFlushKeepsTheDataForTheNextRun(t *testing.T) {
 	h := NewTrafficHistory(filepath.Join(t.TempDir(), "metrics"))
 	_ = h.AddTraffic(context.Background(), "a1", cleanAt(t, trafficReport([]any{usage(func(u *usageItem) { u.down = 7 })}, nil, 2)))
-	restore := h.SetBrokenConnect(&SQLiteError{Message: "disk I/O error"})
+	restore := h.SetBrokenConnect(errors.New("disk I/O error"))
 	if _, err := h.Flush(DefaultRetention, at(trafficNOW)); err == nil || err.Error() != "disk I/O error" {
 		t.Fatalf("err %v", err)
 	}
@@ -464,7 +464,7 @@ func TestFlushTaskReportsTrafficFailure(t *testing.T) {
 	wireTrafficForTest(t)
 	history := TrafficForManager(manager)
 	_ = history.AddTraffic(ctx, "agent_1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
-	defer history.SetBrokenConnect(&SQLiteError{Message: "database is locked"})()
+	defer history.SetBrokenConnect(errors.New("database is locked"))()
 	defer SetTrafficNow(func() float64 { return trafficNOW })()
 	_, err := FlushNow(ctx, "manual", false)
 	if err == nil || err.Error() != "流量记录：database is locked" {

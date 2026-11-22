@@ -131,10 +131,10 @@ func SetTrafficRetention(ctx context.Context, m *agents.Manager, days int64) (in
 		}
 		member, exists := fields["system_config"]
 		if exists && !bytes.Equal(bytes.TrimSpace(member), []byte("null")) && (len(bytes.TrimSpace(member)) == 0 || bytes.TrimSpace(member)[0] != '{') {
-			return &AttributeError{Message: msgTrafficSettingsShape}
+			return ErrTrafficSettingsShape
 		}
 		if exists && bytes.Equal(bytes.TrimSpace(member), []byte("null")) {
-			return &AttributeError{Message: msgTrafficSettingsShape}
+			return ErrTrafficSettingsShape
 		}
 		if err := ctx.Err(); err != nil {
 			return err

@@ -146,7 +146,7 @@ func SetFlushInterval(ctx context.Context, seconds int64) error {
 			return err
 		}
 		if v, exists := f["system_config"]; exists && (len(v) == 0 || v[0] != '{') {
-			return &AttributeError{Message: msgTrafficSettingsShape}
+			return ErrTrafficSettingsShape
 		}
 		if err := ctx.Err(); err != nil {
 			return err

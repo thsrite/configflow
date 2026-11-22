@@ -12,6 +12,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/testjson"
+
+	"modernc.org/sqlite"
 )
 
 type a05Reference struct {
@@ -38,9 +41,6 @@ type a05Reference struct {
 		Stored string          `json:"stored"`
 	} `json:"store_cap"`
 	StoreHosts map[string]bool `json:"store_hosts"`
-	Rollback   struct {
-		Message string `json:"message"`
-	} `json:"rollback_without_transaction"`
 }
 
 func loadA05Reference(t *testing.T) a05Reference {
@@ -188,28 +188,49 @@ func tablesOf(t *testing.T, path string) map[string]any {
 	}
 }
 
+// a05Error is the error class of a failed call. The reference also records
+// Python's exception text, which the native errors do not repeat; only the
+// class is compared (see sameA05).
+func a05Error(err error) map[string]any {
+	return map[string]any{"error": pyErrorName(err)}
+}
+
 func a05FlushResult(result TrafficFlushResult, err error) any {
 	if err != nil {
-		return map[string]any{"error": pyErrorName(err), "message": err.Error()}
+		return a05Error(err)
 	}
 	return map[string]any{"rows": result.Rows, "compacted": result.Compacted, "pruned": result.Pruned}
 }
 
 func a05QueryResult(result *TrafficQuery, err error) any {
 	if err != nil {
-		return map[string]any{"error": pyErrorName(err), "message": err.Error()}
+		return a05Error(err)
 	}
 	return result
 }
 
+// pyErrorName maps a native error to the Python class the reference
+// recorded for the same failure.
 func pyErrorName(err error) string {
-	switch err.(type) {
-	case *OverflowError:
+	var driver *sqlite.Error
+	switch {
+	case errors.Is(err, errCounterRange):
 		return "OverflowError"
-	case *SQLiteError:
+	case errors.As(err, &driver):
 		return "OperationalError"
 	}
 	return "?"
+}
+
+// withoutMessage drops the Python exception text of an error reference.
+func withoutMessage(ref json.RawMessage) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(ref, &fields) != nil || fields["error"] == nil {
+		return ref
+	}
+	delete(fields, "message")
+	out, _ := json.Marshal(fields)
+	return out
 }
 
 func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
@@ -220,8 +241,9 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 	big := int64(1)<<62 - 1
 	check := func(name string, got any) {
 		t.Helper()
-		if !sameJSON(ref[name], got) {
-			t.Errorf("%s: %s", name, testjson.Diff(ref[name], got, testjson.CompareOptions{DistinguishNumberLiterals: true}))
+		want := withoutMessage(ref[name])
+		if !sameJSON(want, got) {
+			t.Errorf("%s: %s", name, testjson.Diff(want, got, testjson.CompareOptions{DistinguishNumberLiterals: true}))
 		}
 	}
 	at := func(offset float64) *float64 { v := now + offset; return &v }
@@ -435,24 +457,5 @@ func TestA05ReferenceStoreHosts(t *testing.T) {
 		if got := len(cleaned.Items) == 1; got != want {
 			t.Errorf("host %q accepted = %v, Python %v", host, got, want)
 		}
-	}
-}
-
-func TestA05ReferenceRollbackWithoutTransaction(t *testing.T) {
-	ref := loadA05Reference(t).Rollback
-	h := NewTrafficHistory(t.TempDir())
-	c, err := h.connect()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.close()
-	// _delete_agents / _migrate_legacy: an unconditional ROLLBACK raises.
-	if err := c.rollbackAlways(nil); err == nil || err.Error() != ref.Message {
-		t.Errorf("unconditional ROLLBACK = %v, Python %s", err, ref.Message)
-	}
-	// flush: `if connection.in_transaction` — SQLite rolled back by itself.
-	c.inTransaction = true
-	if err := c.rollback(); err != nil {
-		t.Errorf("ROLLBACK after SQLite ended the transaction = %v, Python skips it", err)
 	}
 }

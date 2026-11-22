@@ -15,16 +15,16 @@ package monitor
 // or a pause the slots the core still keeps are filled in, newest first, at
 // most SLOTS_PER_ROUND per round.
 //
-// SQLite as Python's sqlite3 module (3.11, legacy transaction control) uses
-// it: one connection per operation with a 30 s busy timeout, journal mode
-// WAL, the schema statements on every open, an implicit BEGIN before the
-// first INSERT/UPDATE/DELETE, COMMIT when the `with connection:` block ends
-// and ROLLBACK when it raises.
+// SQLite access: one connection per operation with a 30 s busy timeout and
+// journal mode WAL; the schema statements run on every open. Operations that
+// change data run in one explicit transaction (BEGIN IMMEDIATE), committed
+// when the body succeeds and rolled back otherwise; reads run without one.
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -181,15 +181,24 @@ func (s *RankingStore) exists() bool {
 	return err == nil
 }
 
-// rankConn is one sqlite3 connection with Python's implicit transactions.
+// rankQuerier is what the store helpers run statements on: the connection
+// for reads, the transaction for changes.
+type rankQuerier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// rankConn is one SQLite connection, with the transaction of a change.
 type rankConn struct {
 	ctx  context.Context
 	db   *sql.DB
 	conn *sql.Conn
-	inTx bool
+	q    rankQuerier
 }
 
-// connect is _connect().
+// connectContext opens the file and makes sure the tables exist.
 func (s *RankingStore) connectContext(ctx context.Context) (*rankConn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -201,7 +210,7 @@ func (s *RankingStore) connectContext(ctx context.Context) (*rankConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String()
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute), RawQuery: "_txlock=immediate"}).String()
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
 		return nil, err
@@ -212,7 +221,7 @@ func (s *RankingStore) connectContext(ctx context.Context) (*rankConn, error) {
 		db.Close()
 		return nil, err
 	}
-	c := &rankConn{db: db, conn: conn, ctx: ctx}
+	c := &rankConn{db: db, conn: conn, ctx: ctx, q: conn}
 	statements := append([]string{"PRAGMA busy_timeout=" + strconv.Itoa(rankingTimeoutMs), "PRAGMA journal_mode=WAL"}, rankingSchema...)
 	for _, statement := range statements {
 		if _, err := c.conn.ExecContext(c.ctx, statement); err != nil {
@@ -228,16 +237,9 @@ func (c *rankConn) close() {
 	c.db.Close()
 }
 
-// write runs an INSERT/UPDATE/DELETE, beginning the implicit transaction
-// first; returns the cursor's rowcount.
+// write runs an INSERT/UPDATE/DELETE and returns the number of rows changed.
 func (c *rankConn) write(statement string, args ...any) (int64, error) {
-	if !c.inTx {
-		if _, err := c.conn.ExecContext(c.ctx, "BEGIN"); err != nil {
-			return 0, err
-		}
-		c.inTx = true
-	}
-	result, err := c.conn.ExecContext(c.ctx, statement, args...)
+	result, err := c.q.ExecContext(c.ctx, statement, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -245,18 +247,12 @@ func (c *rankConn) write(statement string, args ...any) (int64, error) {
 	return n, nil
 }
 
-// writeMany is executemany: the transaction begins even without rows.
+// writeMany runs one prepared statement for every row.
 func (c *rankConn) writeMany(statement string, rows [][]any) error {
-	if !c.inTx {
-		if _, err := c.conn.ExecContext(c.ctx, "BEGIN"); err != nil {
-			return err
-		}
-		c.inTx = true
-	}
 	if len(rows) == 0 {
 		return nil
 	}
-	stmt, err := c.conn.PrepareContext(c.ctx, statement)
+	stmt, err := c.q.PrepareContext(c.ctx, statement)
 	if err != nil {
 		return err
 	}
@@ -270,7 +266,7 @@ func (c *rankConn) writeMany(statement string, rows [][]any) error {
 }
 
 func (c *rankConn) query(statement string, args []any, scan func(*sql.Rows) error) error {
-	rows, err := c.conn.QueryContext(c.ctx, statement, args...)
+	rows, err := c.q.QueryContext(c.ctx, statement, args...)
 	if err != nil {
 		return err
 	}
@@ -283,28 +279,43 @@ func (c *rankConn) query(statement string, args []any, scan func(*sql.Rows) erro
 	return rows.Err()
 }
 
-// with is `with self._connect() as connection:`: body, then COMMIT when a
-// transaction is open, ROLLBACK when the body failed; the connection is
-// closed afterwards.
+func (c *rankConn) queryRow(statement string, args ...any) *sql.Row {
+	return c.q.QueryRowContext(c.ctx, statement, args...)
+}
+
+// readContext runs body on a fresh connection without a transaction.
+func (s *RankingStore) readContext(ctx context.Context, body func(c *rankConn) error) error {
+	c, err := s.connectContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.close()
+	return body(c)
+}
+
+// withContext runs body in one transaction on a fresh connection: committed
+// when body succeeds and ctx is still live, rolled back otherwise.
 func (s *RankingStore) withContext(ctx context.Context, body func(c *rankConn) error) error {
 	c, err := s.connectContext(ctx)
 	if err != nil {
 		return err
 	}
 	defer c.close()
+	tx, err := c.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin ranking transaction: %w", err)
+	}
+	// Rollback after Commit is a no-op (sql.ErrTxDone).
+	defer tx.Rollback()
+	c.q = tx
 	if err := body(c); err != nil {
-		if c.inTx {
-			c.conn.ExecContext(context.Background(), "ROLLBACK")
-		}
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if c.inTx {
-		if _, err := c.conn.ExecContext(c.ctx, "COMMIT"); err != nil {
-			return err
-		}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit ranking transaction: %w", err)
 	}
 	return nil
 }
@@ -328,7 +339,7 @@ func (s *RankingStore) FetchedContext(ctx context.Context, agentID, recorder str
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	err := s.withContext(ctx, func(c *rankConn) error {
+	err := s.readContext(ctx, func(c *rankConn) error {
 		return c.query("SELECT start FROM ranking_slots WHERE agent_id = ? AND recorder = ? AND start BETWEEN ? AND ?",
 			[]any{agentID, recorder, lo, hi}, func(rows *sql.Rows) error {
 				var start int64
@@ -485,7 +496,7 @@ func (s *RankingStore) MaintainContext(ctx context.Context, agentIDs []string, n
 			return err
 		}
 		var changes int64
-		if err := c.conn.QueryRowContext(c.ctx, "SELECT total_changes()").Scan(&changes); err != nil {
+		if err := c.queryRow("SELECT total_changes()").Scan(&changes); err != nil {
 			return err
 		}
 		if changes != 0 {
@@ -511,7 +522,7 @@ func nullInt(v sql.NullInt64) int64 {
 func mergeDay(c *rankConn, agentID, recorder string, day int64) error {
 	hours := []any{agentID, recorder, HistoryHour, day, day + HistoryDay}
 	var totals [5]sql.NullInt64
-	if err := c.conn.QueryRowContext(c.ctx,
+	if err := c.queryRow(
 		"SELECT SUM(records), SUM(blocked_records), SUM(blocked_slots), SUM(slots), SUM(partial_slots)"+
 			" FROM ranking_periods WHERE agent_id = ? AND recorder = ? AND seconds = ? AND start >= ? AND start < ?",
 		hours...).Scan(&totals[0], &totals[1], &totals[2], &totals[3], &totals[4]); err != nil {
@@ -612,7 +623,7 @@ func (s *RankingStore) HasAnyContext(ctx context.Context, agentID, recorder stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	found := false
-	err := s.withContext(ctx, func(c *rankConn) error {
+	err := s.readContext(ctx, func(c *rankConn) error {
 		return c.query("SELECT 1 FROM ranking_slots WHERE agent_id = ? AND recorder = ? LIMIT 1", []any{agentID, recorder},
 			func(*sql.Rows) error { found = true; return nil })
 	})
@@ -689,9 +700,9 @@ func (s *RankingStore) queryContext(ctx context.Context, agentID, recorder strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var answer *HistoryAnswer
-	err := s.withContext(ctx, func(c *rankConn) error {
+	err := s.readContext(ctx, func(c *rankConn) error {
 		var totals [7]sql.NullInt64
-		if err := c.conn.QueryRowContext(c.ctx,
+		if err := c.queryRow(
 			"SELECT SUM(records), SUM(blocked_records), SUM(blocked_slots), SUM(slots), SUM(partial_slots),"+
 				" MIN(start), MAX(start + seconds) FROM ranking_periods WHERE "+where+" AND slots > 0", args...).Scan(
 			&totals[0], &totals[1], &totals[2], &totals[3], &totals[4], &totals[5], &totals[6]); err != nil {
@@ -702,12 +713,12 @@ func (s *RankingStore) queryContext(ctx context.Context, agentID, recorder strin
 			return nil
 		}
 		var lastSlot, firstSlot sql.NullInt64
-		if err := c.conn.QueryRowContext(c.ctx,
+		if err := c.queryRow(
 			"SELECT MAX(start) FROM ranking_slots WHERE agent_id = ? AND recorder = ? AND start >= ? AND start < ?",
 			args...).Scan(&lastSlot); err != nil {
 			return err
 		}
-		if err := c.conn.QueryRowContext(c.ctx,
+		if err := c.queryRow(
 			"SELECT MIN(start) FROM ranking_slots WHERE agent_id = ? AND recorder = ? AND start >= ? AND start < ?",
 			args...).Scan(&firstSlot); err != nil {
 			return err

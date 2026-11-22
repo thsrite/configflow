@@ -539,7 +539,8 @@ func TestAddMetricsOfANonObjectFailsLikePython(t *testing.T) {
 	wantEqual(t, "disk", disk, map[string]any{})
 }
 
-// DescribeOSError gives Python's describe_os_error texts.
+// DescribeOSError gives the Chinese reasons for disk problems and the
+// capitalized system text otherwise.
 func TestDescribeOSError(t *testing.T) {
 	for err, want := range map[error]string{
 		&os.PathError{Err: syscall.ENOSPC}: "磁盘空间不足", &os.PathError{Err: syscall.EDQUOT}: "超出磁盘配额",

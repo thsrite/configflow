@@ -161,23 +161,15 @@ func TestMetricsRoutesServeTheLatestHistoryAndSummary(t *testing.T) {
 	}
 }
 
-// Python's timedelta raises OverflowError for hours it cannot hold; the
-// routes answer 500 with its text.
+// A window that starts outside years 1–9999 is answered with 500 and
+// metrics.ErrHoursOutOfRange (Python answered 500 with its OverflowError text).
 func TestMetricsRoutesAnswerOverflowAs500(t *testing.T) {
 	s, _, admin := metricsServer(t)
-	for hours, message := range map[string]string{
-		"10000000000":                 "date value out of range",
-		"1000000000000":               "Python int too large to convert to C int",
-		"24000000000":                 "days=1000000000; must have magnitude <= 999999999",
-		"-10000000000":                "date value out of range",
-		"17760000":                    "date value out of range",
-		"51539607552":                 "Python int too large to convert to C int",
-		"23999999976":                 "date value out of range",
-		"1" + strings.Repeat("0", 30): "Python int too large to convert to C int",
-	} {
+	for _, hours := range []string{"10000000000", "1000000000000", "24000000000", "-10000000000", "17760000",
+		"51539607552", "23999999976", "1" + strings.Repeat("0", 30)} {
 		for _, path := range []string{"/metrics/history", "/metrics/summary"} {
 			wantBodyJSON(t, s.Get("/api/agents/agent_1"+path+"?hours="+hours, admin).WantStatus(500),
-				map[string]any{"message": message, "success": false})
+				map[string]any{"message": metrics.ErrHoursOutOfRange.Error(), "success": false})
 		}
 	}
 	// In range: an empty window.
