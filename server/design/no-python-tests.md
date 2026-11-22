@@ -192,6 +192,8 @@ routers 是重点：R04–R17 的边界语料（RouterOS/iKuai 计划、写入�
   快照一刷新，旧缓存就没意义了。
 - 比较器 `run.py` 暂时还是 Python 脚本（只用标准库和 PyYAML，不需要 Flask 和 backend）。在测试服务器上保留一个
   不依赖 backend 的最小工具 venv（新建 `server/tools/requirements-tools.txt`）。改写成 Go 放到切换以后做，可选。
+  （更新 2026-11-23：已在切换前完成，`tools/proddiff/comparator`，`PRODDIFF_COMPARATOR=go`；
+  见 `parity/progress/nopy-proddiff-go.md`。切换时把默认改成 go 并删除 run.py 等 Python 文件。）
 - `--a13-proof` 依赖真实 Python 准备函数：A14 接线后那 24 条已经消失，切换时删除。
 
 **configdiff**（约 10 666 个 case，Python harness，用 Python 备份导入器建 seed 库）

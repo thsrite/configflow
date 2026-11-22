@@ -41,10 +41,21 @@ Go 模式下：
   时间戳、随机身份等运行时字段仍按 `proddiff-normalize.json` 和配对规则处理。
 - 差异类型名不变（`missing-in-go` = 候选缺少）；解析、生成失败和传输计数里的左侧标签是 `base`
   （如 `parse-base`、`generation-error-base`）。
-- 比较器本身仍是 Python（标准库 + PyYAML），在独立的工具 venv（默认 `~/cf-tools/.venv`，
-  `PRODDIFF_TOOLS_VENV` 可改）中运行，由 `server/tools/requirements-tools.txt` 建立，文件变化时自动重建；
-  不装 Flask、不装 backend 依赖，命名空间内也不把仓库根放进 `PYTHONPATH`。公开键名单从 Go 源码
-  （非测试 `.go` 的字符串字面量和 json/yaml tag）提取，不读 `backend/`。
+- 比较器有两个实现，用 `PRODDIFF_COMPARATOR` 选（gate.sh 同名开关，默认 `python`，切换前再改默认）：
+  - `python`：`run.py`（标准库 + PyYAML），在独立的工具 venv（默认 `~/cf-tools/.venv`，
+    `PRODDIFF_TOOLS_VENV` 可改）中运行，由 `server/tools/requirements-tools.txt` 建立，文件变化时自动重建；
+    不装 Flask、不装 backend 依赖，命名空间内也不把仓库根放进 `PYTHONPATH`。
+  - `go`（只能配 `PRODDIFF_MODE=go`）：`tools/proddiff/comparator`，proddiff.sh 现场构建，不需要任何
+    Python 和工具 venv。比较语义、归一化规则、基线/覆盖文件格式、23 项自检、报告文件和退出码与
+    `run.py` 的 Go 模式相同（对照结果见 `parity/progress/nopy-proddiff-go.md`）。
+  公开键名单都从 Go 源码（非测试 `.go` 的字符串字面量和 json/yaml tag）提取，不读 `backend/`。
+- Go 比较器与 run.py 的已知实现差别（都不影响当前快照上的结果，同输入对照 0 条不一致）：YAML 用服务端
+  自己的 yamlx/yaml.v3 读取（YAML 1.2 core schema；PyYAML 的 1.1 隐式类型如 `yes`/`on`、日期、六十进制
+  不再转换；核心 schema 以外的 tag 如 `!!omap` 直接算解析失败），这正是切换后真实消费方的读法；
+  同一小写名有多个大小写写法的公开头名，按规范 MIME 写法确定性选择（run.py 依赖集合遍历顺序）；
+  `PRODDIFF_CORPUS=1` 时额外在私有目录写 `corpus.jsonl`（回复原文，只用于对照，不取回）。
+- 同输入对照工具 `crosscheck.py`（切换时与 run.py 一起删除）：`comparator crosscheck` 与
+  `crosscheck.py diff` 读同一份语料逐条比较，`crosscheck.py mutate` 生成带种子的变异语料。
 - 负向对照（2026-11-22，WP9 交付）：在候选树里临时改一个响应字段、一个存储写入，Go 模式都报 `new>0`；
   结果见 `parity/progress/nopy-wp9.md`。
 
