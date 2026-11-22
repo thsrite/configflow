@@ -1,5 +1,17 @@
 # 测试去 Python 化方案（切换前置条件）
 
+> **Maintainer decision 2026-11-22: option B (frozen Python reference), not the full freeze below.** At the switch
+> main still deletes backend/ in the merge commit; the last Python tree is kept as tag `python-final`, checked out on
+> the test servers (outside the repo), and every Python-dependent test/gate stage reads Python from that checkout
+> (CONFIGFLOW_REPO / PYTHONPATH point there) instead of the working tree. Python never changes again, so live runs
+> against it equal replaying recordings. Kept from the plan: WP0 inventory, WP3 fixtures into server/, WP9 proddiff
+> Go-vs-Go. Dropped before the switch: WP1 freeze mechanism and the per-package conversions (WP2, WP4–WP8, WP10,
+> WP13); after the switch, packages whose approved-difference lists grow too large are converted to pure Go tests or
+> replay one by one (user-data compatibility, device writes and API boundary first), the rest deleted when obsolete.
+> New small work: point tests/gate at the frozen checkout, a setup script for both servers, and a GATE_NOPY-style
+> rehearsal that hides the working-tree backend/ to prove nothing reads it.
+
+
 2026-11-22，基线 `go@44424c19f`。只读盘点加方案，没有改产品代码，没有跑测试。
 数字来自静态扫描（grep/AST 名称）和 `parity/gate-env-coverage.md`（2026-11-20 运行时清单），
 WP0 会用一次「隐藏 backend 的真实运行」把它们核实成准确清单。

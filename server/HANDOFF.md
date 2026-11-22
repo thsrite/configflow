@@ -98,6 +98,9 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+Maintainer 2026-11-22 chose OPTION B for tests after the switch: tag `python-final` keeps the last Python tree, test
+servers check it out outside the repo, all Python-dependent tests/gate stages read it there; main still deletes
+backend/ at the merge. WP1/WP2/WP4–WP8/WP10/WP13 dropped before the switch (convert per package later if needed).
 No-Python tests plan DONE (b85aa02f0, server/design/no-python-tests.md): ~72 packages / ~145 test files + difftest/
 live stages + proddiff/configdiff/routerdiff depend on Python. Approach: extend testgolden with a freeze mode (record
 runs Python and Go, writes the Go-side observation only after they agree); 16 work packages WP0–WP13; final recording
