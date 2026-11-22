@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"configflow/internal/agents"
+	"configflow/internal/model"
 )
 
 // confirmedHandoff advances a pair publication until the VIP handoff to the
@@ -15,10 +16,13 @@ import (
 func confirmedHandoff(t *testing.T, f *fixture) {
 	t.Helper()
 	f.publish(t, "primary", "member-lost", true)
+	var last *model.HAPublicationSummary
 	for range 12 {
-		if _, e := f.s.Advance(f.ctx, "primary"); e != nil {
+		out, e := f.s.Advance(f.ctx, "primary")
+		if e != nil {
 			t.Fatal(e)
 		}
+		last = out
 		a, e := f.s.get(f.ctx, "primary")
 		if e != nil {
 			t.Fatal(e)
@@ -32,6 +36,12 @@ func confirmedHandoff(t *testing.T, f *fixture) {
 			})
 			return
 		}
+	}
+	// Name the state the pair stopped in: a storage failure (e.g. a full
+	// test disk) fails the publication and would otherwise look like a
+	// handoff that never progressed.
+	if last != nil {
+		t.Fatalf("handoff never confirmed: %s/%s %s", last.Status, last.Phase, last.Message)
 	}
 	t.Fatal("handoff never confirmed")
 }
