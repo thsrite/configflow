@@ -526,3 +526,106 @@ A.1 保留了 `backend/` 的非 Python 文件，所以下面这些在 WP0 里没
 backend 里的三个 fixture 是**复制**不是移动：Python pytest（`backend/test_docker_ha_preflight.py`、`test_gateway_core_install.py`）还在用，
 backend 那份跟着切换一起删除。不在 WP3 范围、留给 WP2 的：`provider` 对 `backend/utils/provider_delivery.py` 的 SHA 核对、pyref 指纹。
 测试读取 `backend/agents/go-agent/...` 的（`agents/pure_test.go`、`installer/standalone_forwarding_test.go`、`native_aio_test.go`）不受影响，切换后路径不变。
+
+
+## 附录 B：切换提交的删除清单（方案 C，2026-11-22）
+
+方案 C：切换前在切换候选树上最后跑一次带全部 Python 对比的完整门禁；切换提交删掉 `backend/`，同时删掉下面所有依赖 Python 的测试和门禁阶段。
+纯 Go 测试保留。清单来自附录 A 的运行结果（隐藏 backend 后失败的、调用 Python 的、缺解释器就 skip 的），加上静态查到的工具和脚本。
+**删除时的规则**：一个测试如果除了和 Python 比，还断言了 Go 自己的行为（很多 `*Boundary`、`*Flask*` 测试都是先跑 Go 再比 Python），
+优先只删 Python 那一半、留下 Go 断言；整段只剩 Python 调用的才整个删。下面按「整个测试」列，删除时逐个看。
+
+### B.1 仓库里删除的目录和文件
+
+| 删除 | 内容 |
+|---|---|
+| `backend/`（保留 `backend/agents/go-agent/`、`backend/node-probe/`） | 589 个 `.py`，以及 `backend/testdata/`、`backend/agents/scripts/`、`backend/schemas/`、`config_template.json`、`requirements.txt`、`conftest.py` 等。WP3 之后 Go 测试不再读这些非 Python 文件（附录 A.6） |
+| 24 个 `*/difftest` 包整个删除 | `agents/dnsfollow`、`agents/dnsha`、`api/{agents,aggregations,config,gatewayonboarding,linuxgateway,oxidns,rulelibrary,rules,subscriptions}`、`devicenotes`、`discovery`、`gateway/installation`、`health`、`httpx`、`mcp`、`mosdns`、`provider`、`refresh`、`subs`、`substore`、`tasks`、`webdav`；共 214 个顶层测试，其中 24 个 Go 负控只为校验比较器，比较器删了它们也没用了 |
+| 普通包里的 Python 参考脚本 `server/internal/**/testdata/*.py` | 约 250 个（routers 24、installer 20、oxidns 19、convert 15 …）。生成已提交语料的脚本（`gen_*.py`、`*_record.py`）也删，语料本身保留；每个 testdata 目录留一行来源说明 |
+| `server/tools/configdiff/`、`server/tools/routerdiff/` | Python harness（configdiff 207 个 `.py`、routerdiff 83 个）；切换前最后一次结果归档到 `parity/` |
+| `server/tools/yamlreaderoracle/`、`yamlwriteroracle/`、`yamldiagnosticoracle/`、`server/tools/gatediscover/` | PyYAML 预言机；gatediscover 只为发现引用 `CONFIGFLOW_DIFF/PY/REPO/YAML_PYTHON` 的测试 |
+| `server/tools/pyref/` | 源码/venv 指纹和录制入口（B.3 的回放测试如果保留，只留一个「测试里不许再调用 Python」的 AST 审计，可以改名放进 core） |
+| `server/tools/proddiff/` 的 Python 侧 | `flask_worker.py`、`python_generators.py`、`a13_proof.py`、`a18_proof.py`（`--a13-proof`）；由 WP9 换成第二个 Go 进程和 Go generator。比较器 `run.py`、`*_policy.py` 只用标准库和 PyYAML 的部分可以先留着（WP9 决定） |
+| `server/tools/o10perf/perf.py` 的 `--servers python` | 性能对照的 Python 一侧 |
+| `server/scripts/` | `gate-live.py`、`gate-test-exec.sh`（strace 包装）、`test-gate-live.py`、`review-n8-2-startup.py`；`a20/r08/r10/r11-mutation-gate.py` 是一次性的变异门禁，跟着删；`test-gate-routing.py` 去掉 difftest/live 的路由用例 |
+| `internal/testgolden` | 录制模式、`PYREF_*`、源码和 venv 指纹、假解释器负控（`TestRecordingAndReplayNegativeControls` 等）；B.3 的回放如果保留，只留「读 golden + 每条录制都被用到」 |
+| 根目录 | `scripts/test-backend.sh`，`AGENTS.md` 测试节，`.github/workflows/checks.yml` 的 pytest 分片（换成 Go 任务，切换计划 #40） |
+| 测试服务器 | `~/cf-test/.venv` 退役。**系统 python3 暂时保留**：installer 的 101 个行为测试用它写远端主机命令桩（附录 A.4），不是 Python 对比，属于纯 Go 测试的一部分；要么切换前改成 shell 桩，要么在 AGENT-BRIEF 写明测试服务器必须有 python3，并把「缺 python3 就 skip」改成失败 |
+
+### B.2 普通包里要删的测试（34 个包、126 个顶层测试）
+
+core 环境调用 backend 的测试、live 测试（`CONFIGFLOW_DIFF=1` 才跑 Python 的），以及调用 Python 但不依赖 backend 的测试（标 †，附录 A.5）。
+WP3 已删除的 6 个不再列出。
+
+| 包 | 个数 | 测试 |
+|---|---:|---|
+| `internal/agents` | 2 | `TestProxyDifferentialAgainstRequests`†, `TestLocalWallZoneTransitionsAgainstPython`† |
+| `internal/agents/dnsha` | 2 | `TestManualPairRulesForcesUnchangedLibraryMaterialization`, `TestValidationAgainstPython` |
+| `internal/agents/ipv6` | 3 | `TestAgentTransportAgainstPython`, `TestConfigurationAndTargetsPython`, `TestTupleEvidenceAgainstPython` |
+| `internal/agents/metrics` | 1 | `TestPythonLoadsAndSavesNativeNullFilesButLegacyMathFails` |
+| `internal/agents/rulesync` | 3 | `TestIsolationAgainstPython`, `TestProjectionAgainstPython`, `TestSnapshotAgainstPython` |
+| `internal/agents/trafficstore` | 1 | `TestTrafficFilesInteroperateWithPython` |
+| `internal/api/agents` | 4 | `TestA24FlaskBoundaries`, `TestPublicAgentPython`, `TestReviewA24TargetsIgnoreUnrelatedLegacySettings`, `TestRealPreparationProof`† |
+| `internal/api/clientdevices` | 2 | `TestR17FlaskHTTPAndStoredState`, `TestReviewR17ValidationOrderMatchesFlask` |
+| `internal/api/ipv6` | 1 | `TestRoutesAgainstFlask` |
+| `internal/api/routers` | 8 | `TestN89NativeRequestBoundary`, `TestR15FlaskForwardingSuccessAndFailure`, `TestR15FlaskHTTPAndStoredState`, `TestR15FlaskManualRuleSyncAcceptedAndSettled`, `TestR15FlaskWorkspaceSourcesAndDNSPreview`, `TestR15MalformedProbePersistsOnlyProbe`, `TestR15RealFlaskRoutePriorities`, `TestReviewR15ProbeRedirectKeepsManagementOrigin` |
+| `internal/api/stats` | 1 | `TestNativeHistoryInterchangeAndExactCounters`† |
+| `internal/auth` | 1 | `TestNativeJWTInteroperatesWithPython`† |
+| `internal/clients` | 5 | `TestFlaskDeviceWritesAndStoredState`, `TestFlaskDiscoveryRealDrivers`, `TestFlaskPartialDiscovery`, `TestFlaskPolicyRefusalStillAllowsRename`, `TestR17TokenBothDirections`† |
+| `internal/configexport` | 1 | `TestOxiDNSRedactionMatchesPython` |
+| `internal/configgen` | 1 | `TestZIPExternalAttributesMatchPython`† |
+| `internal/deploy` | 1 | `TestPythonPublishTranscripts` |
+| `internal/gateway` | 1 | `TestDNSLoopMatchesPython` |
+| `internal/gateway/installation` | 1 | `TestPythonPublicationStateAndGeneratedArtifacts` |
+| `internal/gateway/onboarding` | 2 | `TestPythonPreparation`, `TestRealDNSLoopPreparation` |
+| `internal/health/check` | 1 | `TestNativeProbeAndRegionFilesInteroperateWithPython` |
+| `internal/jsonstore` | 1 | `TestFilesRoundTripBothDirections`† |
+| `internal/model` | 4 | `TestHRPythonWriters`, `TestTypesPythonRoundTrip`†, `TestHRSnapshotSchema`†, `TestTypesPrivateSnapshot`† |
+| `internal/notifications` | 1 | `TestNativeNotificationRollbackNullOccurrence` |
+| `internal/repo` | 13 | `TestCrossCheckC04Operations`, `TestCrossCheckFreshInit`, `TestCrossCheckInterchange`, `TestCrossCheckLockExcludesPythonAndGo`, `TestCrossCheckOperations`, `TestCrossCheckPythonWriterKilledBeforeCommit`, `TestN811GlobalFlaskBoundaries`, `TestReviewN85PythonFullStorageDifferential`, `TestSectionWritesStoredRoundTrip`, `TestStoredRoundTrip`, `TestTypedUpdateStoredRoundTrip`, `TestWriteFromAnotherProcessIsSeen`, `TestN82ReviewPrivateRepositoryInterchange`† |
+| `internal/routers` | 43 | `TestAddressListBoundary`, `TestAddressWriteBoundary`, `TestIkuaiBoundaryCorpus`, `TestNATListFailureBoundary`, `TestNATListHelperBoundary`, `TestNATListPlanBoundary`, `TestNATListReadHelpersBoundary`, `TestNATListRemovalBoundary`, `TestNATListVerifyBoundary`, `TestNATListWriteBoundary`, `TestNATRestoreFaultBoundary`, `TestR05StepBPythonBugEvidence`, `TestR06PythonBoundary`, `TestR07RangeKeysMatchPython`, `TestR08PythonBoundary`, `TestR09ForeignHijackCommentBlocksPublish`, `TestR09ForwardHintPython`, `TestR09ProductionTimeoutAndRawWire`, `TestR09PythonBoundary`, `TestR09SharedEvaluatorPython`, `TestR09TableLocalIDsSurviveRestore`, `TestR10IPv6AddressMathPython`, `TestR10PolicyPythonBoundary`, `TestR10PythonBoundary`, `TestR10ReviewLostDeleteDeviceMatchesPython`, `TestR10ReviewPolicyPythonProbes`, `TestR10ReviewPythonProbes`, `TestR10SettingsAndYAMLBytesPython`, `TestR11PythonBoundary`, `TestR11ReviewPythonProbes`, `TestR11TemplateBytes`, `TestR12AdvisoryWholePlansPython`, `TestR12FullInspectionStagesPython`, `TestR12PolicyReplacementPython`, `TestR12PythonWholePlanAndExecution`, `TestR13SummariesPython`, `TestR14ClassifyPython`, `TestR14DeltaPython`, `TestR14IPv6DeltaPython`, `TestR14ServicePython`, `TestR17RealPythonVendorBoundaries`, `TestRouterFakePythonScriptHelpers`, `TestRouterOSBoundaryCorpus` |
+| `internal/server` | 1 | `TestSetupServerOwnerRegistrationRemovesUnavailable` |
+| `internal/setup` | 7 | `TestCoreFingerprintMatchesPython`, `TestHandwrittenRuleEqualityMatchesPython`, `TestMihomoBaseChangesMatchPython`, `TestOwnedDigestUsesNativeEncoding`, `TestPrepareFieldsMatchRealPythonAndRetainOwnership`, `TestSetupCatalogOptionsMatchPython`, `TestTemplateStrategyMatchesPython` |
+| `internal/store` | 6 | `TestCrossCheckPython`, `TestCrossCheckPythonConcurrentCommits`, `TestCrossCheckPythonErrors`, `TestCrossCheckPythonOddDocuments`, `TestStoredRoundTrip`, `TestIdleReaderHoldsNoLockAcrossProcesses`† |
+| `internal/tasks` | 1 | `TestHistoryCountersAgainstPython` |
+| `internal/taskstatus` | 1 | `TestNativeStatusFileInterchange`† |
+| `internal/testgolden` | 1 | `TestRecordingAndReplayNegativeControls`† |
+| `internal/webdav` | 1 | `TestTLSVerificationMatchesPythonDefault`† |
+| `internal/weblistener` | 1 | `TestNativeListenerFileInterchange`† |
+| `internal/yamlx` | 3 | `TestNativeAmbiguousStringsReadByPyYAML`†, `TestNativeDocumentedPyYAMLDifferences`†, `TestNativeSyntheticPyYAML`† |
+
+另外：`internal/repo`、`internal/store` 里专门测「Python 和 Go 同时操作同一个库」的锁和并发互测，`gateway/onboarding`、`setup`、`server` 共用的 Python 小函数调用，
+随上面的测试一起删；它们用到的 `xcPython`、`pythonSQLite`、`pythonTypes` 等 helper 没有调用方以后也删。
+`routers` 里附录 A.4 列出的 14 个边界测试（R04/R05/R07，缺解释器时 7 个 skip、7 个显示通过但子测试全 skip）也在上表里，删前确认 `routerfake` 的纯 Go 测试仍覆盖写入顺序和回滚。
+
+### B.3 需要维护者定一下：已提交的 Python 录制回放（推荐保留，去掉指纹）
+
+下面这些测试运行时**不启动 Python**，只读已提交的 golden（`testdata/pyref/*.json.gz`，7.9 MB），隐藏 backend 后失败的原因只是元数据里核对 backend 源码和 venv 的哈希
+（provider 是核对 `backend/utils/provider_delivery.py` 的 SHA）。数据本身是自包含的。
+
+| 包 | 个数 | 测试 |
+|---|---:|---|
+| `internal/installer` | 1 | `TestReviewDeflateAndZipMatchPython` |
+| `internal/mosdns` | 5 | `TestCorpus`, `TestN73SharedUpstreamMetadataMatchesPython`, `TestNativeRuleTextAgainstPython`, `TestRecordedPythonTests`, `TestReviewUnholdableYAMLOutsideTheOutputMatchesPython` |
+| `internal/oxidns` | 7 | `TestBoundaryGenerationCorpus`, `TestBoundaryGenerationRecorded`, `TestBoundaryRoutingCorpus`, `TestC05ReviewRecordedNormalization`, `TestC05ReviewSettingsReferences`, `TestC29ArchivePythonBoundary`, `TestStoredLegacySettingsAgainstPython` |
+| `internal/provider` | 2 | `TestCorpus`, `TestReviewN88dReferenceBindings` |
+| `internal/routersplit` | 3 | `TestCorpus`, `TestEdgeCorpus`, `TestRecordedPythonTests` |
+
+推荐：保留，切换提交里把哈希核对改成跳过（`testgolden` 的 `Fingerprint`/`cacheGuard`/`dependencies`、provider 的 `PythonSHA`），成本很小，
+保住生成器和格式的大语料覆盖（mosdns `TestCorpus` 一个就 6.8 MB）。以后有意改行为时直接从 Go 重录、人审 diff。
+不保留就整组删除，连同 `testdata/pyref/`。同理，不依赖 Python 运行的 `*_recorded_test.go` / `corpus_test.go`（附录 A 里隐藏 backend 后照常通过）属于纯 Go 测试，保留。
+
+### B.4 删除后 `gate.sh` 剩下的阶段
+
+| 阶段 | 内容 | 相对现在 |
+|---|---|---|
+| core: gofmt / vet / build tags | `gofmt -l`、`go vet ./...`、`configflow_proddiff`/`configflow_difftest` 标签构建 | 不变（`configflow_difftest` 标签只剩 `cmd/configflow` 的故障注入清单，是否改名见 WP9/WP11） |
+| core: `go test -race ./...` | 全部纯 Go 测试 | 去掉 pyref 指纹步骤，不再导出 `PYREF_INPUT_FINGERPRINT`；不再需要 `-count=1`，测试缓存可以命中 |
+| core: Agent 模块 | `backend/agents/go-agent` 的 gofmt / vet / race | 不变 |
+| fuzz | 命令行给的 fuzz 目标，各 60 秒 | 不变 |
+| compare: frontend | vue-tsc + vitest | 不变 |
+| compare: proddiff | **Go 基线 vs Go 候选**（WP9），同一份离线生产快照，new=0、stale=0、覆盖不倒退 | Flask 和 Python generator 换成第二个 Go 进程和 Go generator |
+| ~~compare: difftest~~ | — | 删除（连同 `gate-live.py --difftest`） |
+| ~~compare: synthetic live~~ | — | 删除（连同 `gate-live.py`、strace 依赖） |
+
+`GATE_ONLY` 的取值去掉 `difftest`，`compare` = proddiff + frontend。WP9（proddiff Go-vs-Go）必须在切换提交之前合入，否则切换后 proddiff 没法跑。
