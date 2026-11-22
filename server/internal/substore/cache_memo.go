@@ -7,7 +7,7 @@ import (
 	"sync"
 	"syscall"
 
-	"configflow/internal/model"
+	"configflow/internal/subs"
 )
 
 // Decoded node caches are kept per cache file and reused while the file is
@@ -104,15 +104,7 @@ func cloneCache(c *Cache) *Cache {
 	}
 	out := *c
 	out.Count = clonePointer(c.Count)
-	if c.Nodes != nil {
-		out.Nodes = make([]model.Node, len(c.Nodes))
-		for i, node := range c.Nodes {
-			node.ProxyString = clonePointer(node.ProxyString)
-			node.Enabled = clonePointer(node.Enabled)
-			node.DialerRef = clonePointer(node.DialerRef)
-			out.Nodes[i] = node
-		}
-	}
+	out.Nodes = subs.CloneNodes(c.Nodes)
 	if c.Metadata != nil {
 		metadata := *c.Metadata
 		if metadata.Traffic != nil {

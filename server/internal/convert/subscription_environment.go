@@ -2,7 +2,6 @@ package convert
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"configflow/internal/health/check"
@@ -98,11 +97,11 @@ func bindSubscriptionEnvironment(env *MihomoEnvironment) {
 			if len(data) == 0 || string(data) == "null" {
 				return nil, nil
 			}
-			var cache subs.SubscriptionCache
-			if err := json.Unmarshal(data, &cache); err != nil {
+			cache, err := decodedSubscriptionCache(data)
+			if err != nil {
 				return nil, err
 			}
-			index, err := subs.NewHostIndex(&cache)
+			index, err := subs.NewHostIndex(cache)
 			if err != nil {
 				return nil, err
 			}
@@ -154,11 +153,7 @@ func bindSubscriptionEnvironment(env *MihomoEnvironment) {
 				if len(data) == 0 || string(data) == "null" {
 					return nil, nil
 				}
-				var cache subs.SubscriptionCache
-				if err := json.Unmarshal(data, &cache); err != nil {
-					return nil, err
-				}
-				return &cache, nil
+				return decodedSubscriptionCache(data)
 			}
 		}
 		report, err := subs.AddGroups(ctx, document, config, inputs)

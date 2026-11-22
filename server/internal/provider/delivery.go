@@ -251,6 +251,23 @@ func ValidateProxyNodes(proxies []*yamlx.Node) error {
 	return nil
 }
 func readProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
+	return readProviderNodesFor(text, name, path, kind, sourceLabel, true)
+}
+
+// readProviderNodesFor is readProviderNodes; with own=false the nodes may be
+// shared with other readers and must not be modified.
+func readProviderNodesFor(text, name, path, kind, sourceLabel string, own bool) ([]*yamlx.Node, error) {
+	if nodes, ok := parsedProviders.lookup(text, own); ok {
+		return nodes, nil
+	}
+	nodes, err := parseProviderNodes(text, name, path, kind, sourceLabel)
+	if err == nil {
+		parsedProviders.store(text, nodes)
+	}
+	return nodes, err
+}
+
+func parseProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
 	data, err := yamlx.Parse([]byte(text))
 	wrap := func(err, errorCause error) error {
 		return providerContext(providerSourceError(err, errorCause, text, sourceLabel), name, path, kind)
@@ -283,7 +300,11 @@ func readProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Nod
 
 // ParseNodes validates source metadata before applying shared engine normalization.
 func ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
-	nodes, err := readProviderNodes(text, name, path, msgSubscription, msgSubscriptionSource)
+	if nodes, ok := parsedSubscriptions.lookupEach(text); ok {
+		return nodes, nil
+	}
+	// Each node is copied by Encode below, so the parsed list may be shared.
+	nodes, err := readProviderNodesFor(text, name, path, msgSubscription, msgSubscriptionSource, false)
 	if err != nil {
 		return nil, err
 	}
@@ -297,6 +318,7 @@ func ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
 		convert.FixProxyNode(owned)
 		result = append(result, owned)
 	}
+	parsedSubscriptions.storeEach(text, result)
 	return result, nil
 }
 
@@ -897,7 +919,8 @@ func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, 
 				continue
 			}
 			path := memberText(yamlx.Get(definitions, result.Name), "path")
-			nodes, err := readProviderNodes(result.Content, result.Name, path, msgNodeSource, msgPreparedSource)
+			// Only read here, so the parsed nodes may be shared.
+			nodes, err := readProviderNodesFor(result.Content, result.Name, path, msgNodeSource, msgPreparedSource, false)
 			if err != nil {
 				return nil, err
 			}

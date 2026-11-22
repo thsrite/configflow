@@ -235,6 +235,9 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 			}
 			return nil, &rules.StrategyReferenceError{Message: fmt.Sprintf(msgNoManualCache, name)}
 		}
+		if text, ok := cacheTexts.lookup(env, cache); ok {
+			return makeResult(text, "cache", nil, ""), nil
+		}
 		if err := convert.ConfigShapes(&model.Config{Profile: &model.Profile{}, Nodes: cache.Nodes}, false); err != nil {
 			return nil, &SourceValidationError{Message: err.Error(), Cause: err, CacheShape: true}
 		}
@@ -259,7 +262,9 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 		if err != nil {
 			return nil, err
 		}
-		return makeResult(string(data), "cache", nil, ""), nil
+		text := string(data)
+		cacheTexts.store(env, cache, text)
+		return makeResult(text, "cache", nil, ""), nil
 	}
 
 	if data, err := readSharedData(ctx, DownloadCachePath(sub.URL)); err == nil {

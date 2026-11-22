@@ -93,7 +93,7 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 			proxies, err = provider.ParseNodes(fetched.Text, source.Name, "")
 		}
 		if err == nil {
-			nodes, err = substore.ProxyNodes(proxies)
+			nodes, err = sourceNodes(fetched.Text, proxies)
 		}
 		if err == nil {
 			for i := range nodes {
