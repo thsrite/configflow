@@ -97,7 +97,7 @@
     "count": 1,
     "guard": "native shell/generated script under isolated t.TempDir fixtures",
     "kind": "product-script",
-    "reason": "执行被测生成bootstrap.py及其Python运行环境；断言注册请求、容器文件和失败处理，不能换成参考答案。"
+    "reason": "执行Compose安装包agent服务的第一步configflow-agent ha-bootstrap（agentBinary构建的真实Go Agent）；断言注册请求、容器文件和失败处理，不启动Python。"
   },
   {
     "id": "B-012",
@@ -117,7 +117,7 @@
     "count": 1,
     "guard": "native shell/generated script under isolated t.TempDir fixtures",
     "kind": "product-script",
-    "reason": "执行产品migrationCheck Python片段，验证旧环境变量迁移和秘密不回显。"
+    "reason": "执行真实Go Agent的ha-migration-check，验证旧环境变量迁移和秘密不回显；不启动Python。"
   },
   {
     "id": "B-014",
@@ -157,7 +157,7 @@
     "count": 1,
     "guard": "native shell/generated script under isolated t.TempDir fixtures",
     "kind": "product-script",
-    "reason": "执行被测渲染shell；Python可能是已登记产品bootstrap或fakeHost依赖stub，保留真实脚本控制流。"
+    "reason": "执行被测渲染shell；远端主机命令是Go stub（stub_test.go），保留真实脚本控制流，不启动Python。"
   },
   {
     "id": "B-018",
@@ -438,5 +438,15 @@
     "guard": "CONFIGFLOW_DIFF=1 explicit live Flask HTTP and storage differential",
     "kind": "differential",
     "reason": "Copies the synthetic Go seed tree, starts the real Flask JSONL oracle and compares global-route HTTP responses and persisted state, including router ownership conflicts. Ordinary tests skip before either process constructor; cleanup closes stdin and waits for the oracle."
+  },
+  {
+    "id": "B-035",
+    "file": "server/internal/installer/harness_test.go",
+    "function": "agentBinary",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "go build of backend/agents/go-agent into a per-binary temp directory removed by TestMain",
+    "kind": "go-subprocess",
+    "reason": "每个测试二进制构建一次真实Go Agent，供Docker HA测试运行configflow-agent ha-*子命令；不启动Python。"
   }
 ]
