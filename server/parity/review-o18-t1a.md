@@ -42,10 +42,10 @@ T1b 迁移嵌套记录后存储路径也会经 v2，届时这条测试才有意�
 
 ### 低（未改，记录）
 
-- L1 `input_errors.go` 的 `memberTypeMessage` 有散写的中文字面量（「参数必须是对象」「routers 参数必须是…」「配置名称不能为空」），
-  AGENTS.md 要求放 `messages.go` 常量；文案与 Python 一致，建议 T1b 顺手收拢。
-- L2 HTTP 严格输入的 400「X 类型不正确」（`msgMemberType`）没有路由级测试，只有 model 层 `MemberTypeError` 与 `配置修订号无效` 一处；
-  建议补一个代表用例（例如配置空间保存 `description: 5`）。
+- L1 （已改，9ba989ad3）`input_errors.go` 与 `validateDocument` 共用的中文提示改为 `messages.go` 常量，文案不变。
+- L2 （已补，0392a83d6）路由级测试：`api/config.TestImportRefusesWrongTypedMembers`（整份导入，`description`/`created_at`/
+  `agent_registration_sessions` → 「X 类型不正确」）、`api/profiles.TestProfileImportRefusesWrongTypedMembers`（配置空间导入，
+  Python 形状文案）；两者都确认未写入。负向对照：`decodeStrict` 换成宽松存储解码时 7/7 返回 200。
 - L3 宽松读的列表（一个元素被拒 → 整列零值）在用户随后添加元素时整列被新值替换，原错值丢失。与 R5 原行为相同，已在行为变更里体现，不是回归。
 - L4 未声明成员守卫 `TestPlainRecordsDeclareEveryStoredMember` 只能从 Python 参考文档里抓「Go 漏声明」（负向对照：把
   `client_fixed_ips` 标签改名后守卫在 `python reference.profiles[]` 报错）；「新库导出」那一半对漏声明天然空过（Go 不会写出未声明成员）。
