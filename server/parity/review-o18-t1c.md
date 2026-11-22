@@ -155,3 +155,14 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
   负向对照：去掉三处 `validUTF8` → 该测试三个子用例全部失败。
 - o10t2 参考语料重录：变化来自上述两处（原先 `err:model: invalid JSON` 的原始值用例变为 ok；含 `client_fixed_ips`/空文本成员的文档用例哈希变化）。
 - pyref 重录（4094fae6a）：保留的输入 0 条输出变化；mosdns `TestCorpus` 1101 条、N73 1 条输入改为带存在性的存储形态（新增条目由真 Python 录制，`PYREF_MODE=check` 通过）。
+- 验证时 `FuzzStoredTypes` 又找到一处（T1c 既有）：域名发现复查 `suggest_remove` 始终写 `null`，再读时按开关规则变成 `false`，往返不稳定。
+  改为 `null:"keep"`（null 仍是未知，写回 null；读取方 `nil` 与 `false` 同义），输入留作语料 `review-o18-t1c-recheck-null-switch`。
+
+### 第四轮验证
+- `GATE_ONLY=proddiff gate.sh -p 6`（.32，末端树）：`baseline: new=0 stale=0`，`GATE STAGE PASS: proddiff`。
+- fuzz 120 s（.32）：`FuzzStoredTypes`（修复后）PASS、`FuzzTypedNodeProxy` PASS。
+- `-race`（.32/.64）：model、convert 898.3 s、rules、discovery、mosdns 340.8 s、oxidns 1074.9 s、setup、repo 394.6 s、api/rules、api/aggregations、api/nodes、
+  api/subscriptions、api/rulelibrary、clients、api/clientdevices、subs 216.0 s、agents/rulesync 全部 ok，无 DATA RACE。
+- difftest（.64，真 Python）：repo、model、convert、rules、api/config、api/rules、api/aggregations、api/subscriptions、api/rulelibrary、httpx、mosdns、discovery 全部 ok。
+- `PYREF_MODE=check`：installer、mosdns、oxidns、routersplit ok。
+- `/tmp/preflight.sh … x 6`（.64，末端树）：`PREFLIGHT PASS`。
