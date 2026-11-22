@@ -82,7 +82,8 @@ func Decode(n *Node, v any) (err error) {
 // LF line endings and no line wrapping. Node annotations and aliases survive.
 func Marshal(v any) (data []byte, err error) {
 	defer nativeRecovery(&err)
-	n, err := Encode(v)
+	// encode returns a private graph, so preparation may change it in place.
+	n, err := encode(v)
 	if err != nil {
 		var policy *SyntaxError
 		if errors.Is(err, ErrPolicy) && errors.As(err, &policy) && strings.HasPrefix(policy.Problem, "yamlx: ") {
@@ -93,7 +94,6 @@ func Marshal(v any) (data []byte, err error) {
 	if err := checkMarshalBindings(n); err != nil {
 		return nil, err
 	}
-	n = copyGraph(n, map[*Node]*Node{})
 	prepareStrings(n, map[*Node]bool{}, false)
 	// Preparation can make an implicit tag explicit (e.g. a JSON float
 	// outside yaml.v3's range). Validate those output tags without repeating
@@ -117,6 +117,13 @@ func Marshal(v any) (data []byte, err error) {
 // is copied without losing anchors or aliases; document wrappers are removed.
 func Encode(v any) (n *Node, err error) {
 	defer nativeRecovery(&err)
+	return encode(v)
+}
+
+// encode is Encode without the panic boundary. Only caller-owned node input
+// is copied: a typed value's node is built here and already private.
+func encode(v any) (n *Node, err error) {
+	owned := false
 	switch x := v.(type) {
 	case *Node:
 		n = x
@@ -127,15 +134,19 @@ func Encode(v any) (n *Node, err error) {
 		if err := n.Encode(v); err != nil {
 			return nil, fmt.Errorf("encode YAML node: %w", err)
 		}
+		owned = true
 	}
 	if n == nil {
-		n = Null()
+		n, owned = Null(), true
 	}
 	if err := validateNode(n); err != nil {
 		return nil, err
 	}
 	if n.Kind == yaml.DocumentNode {
 		n = contentNode(n)
+	}
+	if owned {
+		return n, nil
 	}
 	return copyGraph(n, map[*Node]*Node{}), nil
 }
@@ -240,10 +251,8 @@ func prepareStrings(n *Node, seen map[*Node]bool, flow bool) {
 	// Ask that encoder for the style instead of introducing another resolver.
 	if n.Kind == yaml.ScalarNode && n.ShortTag() == "!!str" && n.Style&(yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) == 0 {
 		s := n.Value
-		if len(s) > 0 && (strings.ContainsRune("yYnNoO", rune(s[0])) || strings.Contains(s, ":")) {
-			if data, err := yaml.Marshal(s); err == nil && len(data) > 0 && data[0] == '"' {
-				n.Style |= yaml.DoubleQuotedStyle
-			}
+		if len(s) > 0 && (strings.ContainsRune("yYnNoO", rune(s[0])) || strings.Contains(s, ":")) && stringNeedsQuotes(s) {
+			n.Style |= yaml.DoubleQuotedStyle
 		}
 	}
 	for _, c := range n.Content {
@@ -378,18 +387,45 @@ func preserveScalarTag(n *Node, flow bool) {
 		return
 	}
 	n.Style &^= yaml.SingleQuotedStyle | yaml.DoubleQuotedStyle | yaml.LiteralStyle | yaml.FoldedStyle
-	probe := *n
-	probe.Anchor, probe.HeadComment, probe.LineComment, probe.FootComment = "", "", "", ""
+	if plainLosesTag(n.Tag, n.Value, flow) {
+		n.Style |= yaml.TaggedStyle
+	}
+}
+
+// plainLosesTag probes yaml.v3: does the scalar (tag, value), written without
+// its tag in block or flow context, read back with another tag?
+func plainLosesTag(tag, value string, flow bool) bool {
+	key := scalarProbe{tag: tag, value: value, flow: flow}
+	if lost, ok := probes.get(key); ok {
+		return lost
+	}
+	probe := Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
 	wrapper := Seq(&probe)
 	if flow {
 		wrapper.Style = yaml.FlowStyle
 	}
 	data, err := yaml.Marshal(wrapper)
 	if err != nil {
-		return
+		// Not a decision: the caller keeps the plain style (as before).
+		return false
 	}
 	var doc Node
-	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) != 1 || len(doc.Content[0].Content) != 1 || doc.Content[0].Content[0].ShortTag() != n.ShortTag() {
-		n.Style |= yaml.TaggedStyle
+	lost := yaml.Unmarshal(data, &doc) != nil || len(doc.Content) != 1 || len(doc.Content[0].Content) != 1 || doc.Content[0].Content[0].ShortTag() != probe.ShortTag()
+	probes.put(key, lost)
+	return lost
+}
+
+// stringNeedsQuotes asks yaml.v3's string encoder whether it double-quotes s
+// (YAML 1.1 booleans, sexagesimal numbers, …), which the Node encoder skips.
+func stringNeedsQuotes(s string) bool {
+	key := scalarProbe{value: s, str: true}
+	if quoted, ok := probes.get(key); ok {
+		return quoted
 	}
+	data, err := yaml.Marshal(s)
+	quoted := err == nil && len(data) > 0 && data[0] == '"'
+	if err == nil {
+		probes.put(key, quoted)
+	}
+	return quoted
 }
