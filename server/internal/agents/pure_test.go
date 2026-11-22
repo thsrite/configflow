@@ -292,7 +292,7 @@ func TestLatestAgentVersionHasChangelogEntry(t *testing.T) {
 }
 
 func TestExistingAgentsCanUpdate(t *testing.T) {
-	for _, version := range []string{"1.8.47-go", "1.8.48-go", "1.8.49-go", "1.8.50-go", "1.8.51-go", "1.8.61-go", "1.9.0-go", "1.9.1-go"} {
+	for _, version := range []string{"1.8.47-go", "1.8.48-go", "1.8.49-go", "1.8.50-go", "1.8.51-go", "1.8.61-go", "1.9.0-go", "1.9.1-go", "1.9.2-go"} {
 		if !HasUpdate(version) {
 			t.Fatal(version)
 		}

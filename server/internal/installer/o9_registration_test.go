@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// Exercise the real Docker entrypoint's JSON writer, including its restart
-// branch; comparing only generated environment text cannot prove this handoff.
+// Exercise the real Docker entrypoint's JSON writer (the Agent's docker-config
+// subcommand), including its restart branch; comparing only generated
+// environment text cannot prove this handoff.
 func TestO9DockerEntrypointCarriesBootstrapProofUntilDurableToken(t *testing.T) {
 	source, err := os.ReadFile("../../../docker/docker-agent-entrypoint-service.sh")
 	if err != nil {
@@ -19,10 +20,15 @@ func TestO9DockerEntrypointCarriesBootstrapProofUntilDurableToken(t *testing.T) 
 	if !found {
 		t.Fatal("entrypoint config writer missing")
 	}
-	function, _, found = strings.Cut(function, "\nconfigure_supervisor_core() {")
+	function, _, found = strings.Cut(function, "\n# --- 启用一个核心")
 	if !found {
 		t.Fatal("entrypoint writer boundary missing")
 	}
+	// The writer is the Agent's docker-config subcommand (no Python).
+	if !strings.Contains(function, "/usr/local/bin/configflow-agent docker-config agent") {
+		t.Fatal("entrypoint writer no longer calls configflow-agent docker-config")
+	}
+	function = strings.ReplaceAll(function, "/usr/local/bin/configflow-agent", shlexQuote(agentBinary(t)))
 	dir := t.TempDir()
 	agentDir := filepath.Join(dir, "agent")
 	if err := os.MkdirAll(agentDir, 0700); err != nil {

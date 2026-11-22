@@ -94,6 +94,11 @@ func replayGenerator(row map[string]any, digestBundle bool) (string, string) {
 	if err != nil {
 		return "differ", fmt.Sprintf("python answered, go error %v", err)
 	}
+	if fn == "generate_direct" {
+		// Approved delta: configflow-agent ha-compose instead of the image's
+		// docker-compose-install.py (Agent 1.9.3-go).
+		text = installertest.NoPythonBaseline(text)
+	}
 	if fn == "generate_bundle" {
 		// Approved delta: the bundle runs configflow-agent ha-bootstrap
 		// instead of shipping bootstrap.py (Agent 1.9.2-go).

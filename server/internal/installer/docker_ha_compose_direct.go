@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	// ComposeRuntime is the installation entry point shipped in the image.
-	ComposeRuntime = "/usr/local/lib/configflow/docker-compose-install.py"
+	// ComposeRuntime is the Agent subcommand (Agent 1.9.3-go) that prepares
+	// the data root (init container) and verifies and enrolls the Agent
+	// container. Before 1.9.3-go it was python3 docker-compose-install.py.
+	ComposeRuntime = "ha-compose"
 	// ComposeIdentityVolume is shared by installations on the same Docker host.
 	ComposeIdentityVolume = "configflow-ha-host-identity"
 )
@@ -85,7 +87,7 @@ func generateDirectNative(params GuideOptions, request GuideRequest, enrollment 
 			if host {
 				service.Volumes = append(service.Volumes, bindMount("/proc/1/ns/net", "/run/configflow-host-netns", true, false))
 			}
-			service.Entrypoint = []string{"python3", ComposeRuntime, "run"}
+			service.Entrypoint = []string{"configflow-agent", ComposeRuntime, "run"}
 			service.Command = &empty
 			agentSettings := settings
 			agentSettings.Token = new(enrollmentToken(enrollment))
@@ -103,9 +105,9 @@ func generateDirectNative(params GuideOptions, request GuideRequest, enrollment 
 	if err != nil {
 		return "", nil, err
 	}
-	compose.Services.Init = &composeService{Image: imageNode(request), Entrypoint: []string{"python3", ComposeRuntime, "prepare"}, Command: &empty,
+	compose.Services.Init = &composeService{Image: imageNode(request), Entrypoint: []string{"configflow-agent", ComposeRuntime, "prepare"}, Command: &empty,
 		Restart: "no", NetworkMode: "none", ReadOnly: true, User: "0:0", CapDrop: []string{"ALL"}, CapAdd: []string{"DAC_OVERRIDE", "FOWNER"}, SecurityOpt: []string{"no-new-privileges:true"},
-		Environment: composeEnvironment{Entries: []string{"CONFIGFLOW_COMPOSE_INSTALL=" + string(initSettings), "PYTHONDONTWRITEBYTECODE=1"}, Mapping: true},
+		Environment: composeEnvironment{Entries: []string{"CONFIGFLOW_COMPOSE_INSTALL=" + string(initSettings)}, Mapping: true},
 		Volumes:     []composeMount{bindMount(data, "/configflow-data", false, true), identityMount(false)}, Labels: map[string]string{ComposeLabel: owner}, Logging: &composeLogging{Driver: "json-file", Options: composeLogOptions{"5m", "2"}}}
 	if identityMode == "docker-volume" {
 		compose.Volumes = map[string]composeNamedVolume{"host-identity": {Name: ComposeIdentityVolume, Driver: "local"}}

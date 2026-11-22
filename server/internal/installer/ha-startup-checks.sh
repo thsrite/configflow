@@ -1,6 +1,6 @@
 
 # L1 D5: probe the Docker daemon's network namespace, then verify the core
-# process rather than treating a running supervisor container as a healthy DNS.
+# process rather than treating a running container as a healthy DNS.
 cf_check_dns_port() {
   docker run --rm --network host --entrypoint configflow-agent "$1" ha-port-check || return 1
 }
@@ -11,7 +11,7 @@ cf_wait_oxidns() {
   [ "${#cf_health_id}" -eq 64 ] || return 1
   cf_health_attempt=0
   while [ "$cf_health_attempt" -lt 30 ]; do
-    cf_health_status=$(docker exec "$cf_health_id" supervisorctl -c /etc/supervisor/supervisord.conf status oxidns 2>/dev/null || true)
+    cf_health_status=$(docker exec "$cf_health_id" configflow-agent svc status oxidns 2>/dev/null || true)
     case "$cf_health_status" in
       'oxidns '*RUNNING*) return 0 ;;
       'oxidns '*FATAL*|'oxidns '*EXITED*|'oxidns '*STOPPED*) printf '%s\n' 'OxiDNS 未正常运行，未确认安装成功；请检查容器日志和 53 端口。' >&2; return 1 ;;

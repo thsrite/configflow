@@ -16,11 +16,12 @@ func TestHAAgentReadyComparesVersions(t *testing.T) {
 		code         int
 		want         bool
 	}{
-		{"minimum", "1.9.2-go", 0, true},
+		{"minimum", "1.9.3-go", 0, true},
 		{"newer patch", "1.9.10-go", 0, true},
 		{"newer minor", "1.10.0-go", 0, true},
 		{"newer major", "2.0.0-go", 0, true},
-		{"previous release", "1.9.1-go", 0, false},
+		{"previous release (Supervisor image)", "1.9.2-go", 0, false},
+		{"older patch", "1.9.1-go", 0, false},
 		{"old minor", "1.8.61-go", 0, false},
 		{"unknown flag (Agent before -version)", "", 2, false},
 		{"no configflow-agent in image", "", 127, false},

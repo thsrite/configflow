@@ -4,10 +4,11 @@
 package agents
 
 // LatestAgentVersion is LATEST_AGENT_VERSION.
-const LatestAgentVersion = "1.9.2-go"
+const LatestAgentVersion = "1.9.3-go"
 
 // versionChangelog is VERSION_CHANGELOG in its declaration order (newest first).
 var versionChangelog = []ChangelogEntry{
+	{Version: "1.9.3-go", Date: "2026-11-23", Features: []string{"Docker Agent 镜像不再包含 Python：进程管理由 Supervisor 换成 s6-overlay，容器启动准备、精简 Compose 与 HA 辅助容器检查改由 Agent 程序（configflow-agent docker-config、ha-compact、ha-compose、ha-companion-check）完成", "Docker 镜像中核心的标准输出与错误输出合并写入 /var/log/configflow/<核心>/current（10MB×3 轮转），日志页不再单独显示「错误输出」", "已部署的旧 Compose 安装升级镜像后照常启动；旧面板脚本用到的 supervisorctl、python3 由过渡用兼容脚本转调 Agent 子命令"}},
 	{Version: "1.9.2-go", Date: "2026-11-22", Features: []string{"Docker DNS 高可用的首次登记、重复执行核对、53 端口检查、旧容器迁移检查与只读检查改由 Agent 程序（configflow-agent ha-*）完成，不再在镜像里运行 Python 脚本", "新生成的 Docker 高可用 Compose 安装包不再包含 bootstrap.py，主容器以 configflow-agent ha-bootstrap 启动；已用旧安装包部署的实例升级镜像后照常启动"}},
 	{Version: "1.9.1-go", Date: "2026-11-22", Features: []string{"自动回流支持 nftables 1.0.6（Debian 12）：之前在这类主机上启用会失败并留下无法自动清理的规则；旧版本留下的残留可直接在面板重新发布或撤销", "Alpine/OpenRC 主机停用 DNS 高可用时先停止 keepalived 再删配置，并确认 keepalived 已停止、虚拟 IP 已离开本机，否则停用失败并说明原因；keepalived 处于 crashed 状态时自动重置后再启动", "替换 Mihomo 内核后，Agent 在一分钟内上报新的内核版本，不再需要重启 Agent"}},
 	{Version: "1.9.0-go", Date: "2026-11-21", Features: []string{"支持开启登录后的首次注册授权：安装命令中的一次性注册凭据（Docker 为 AGENT_<服务>_REGISTRATION_TOKEN）或注册密钥（AGENT_REGISTRATION_KEY）随注册请求发送，注册成功后从配置中清除；旧版本无法完成开启登录后的新装注册", "Docker 镜像与面板版本配套发布，面板生成的 Docker 安装命令使用同版本镜像标签"}},

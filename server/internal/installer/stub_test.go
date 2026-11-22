@@ -1260,7 +1260,7 @@ func guideDockerStub(c *stubCall) {
 			c.println("{}")
 		}
 	case "exec":
-		if c.has("supervisorctl") && len(args) >= 2 && args[len(args)-2] == "status" && args[len(args)-1] == "oxidns" {
+		if len(args) >= 4 && strings.Join(args[len(args)-4:], " ") == "configflow-agent svc status oxidns" {
 			if truthy("fatal") {
 				c.println("oxidns FATAL")
 				c.exit(3)
@@ -1294,7 +1294,7 @@ func guideDockerStub(c *stubCall) {
 			if truthy("old_agent") {
 				c.println("1.8.61-go")
 			} else {
-				c.println("1.9.2-go")
+				c.println("1.9.3-go")
 			}
 			c.exit(0)
 		}

@@ -162,7 +162,10 @@ func inspectionCommand(containerName, image string) (string, error) {
 // as a long-running Agent (hanging the script, or failing with an unrelated
 // error), so the generated commands first ask the image for its version:
 // -version exits at once on every Go Agent and an unknown flag fails fast.
-const haAgentMinimum = "1.9.2-go"
+//
+// 1.9.3-go: the startup check reads the core state with configflow-agent svc
+// (s6 replaced Supervisor in the image).
+const haAgentMinimum = "1.9.3-go"
 
 // haAgentTooOld is shown when the selected image predates haAgentMinimum,
 // typically a stale local copy of a floating tag.
@@ -172,7 +175,7 @@ const haAgentTooOld = "所选 Agent 镜像缺少 Docker 高可用命令（需要
 // haAgentMinimum or newer (major.minor.patch compared numerically).
 func haAgentReady(image string) string {
 	return `printf '%s\n' "$(docker run --rm --network none --entrypoint configflow-agent ` + q(image) +
-		` -version 2>/dev/null)" | awk -F '[.-]' 'NR == 1 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && ($1 > 1 || $1 == 1 && ($2 > 9 || $2 == 9 && $3 >= 2)) { ok = 1 } END { exit !ok }'`
+		` -version 2>/dev/null)" | awk -F '[.-]' 'NR == 1 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && ($1 > 1 || $1 == 1 && ($2 > 9 || $2 == 9 && $3 >= 3)) { ok = 1 } END { exit !ok }'`
 }
 
 // haAgentCheck stops the script when the image lacks the ha-* subcommands.

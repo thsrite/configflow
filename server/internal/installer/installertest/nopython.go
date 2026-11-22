@@ -52,7 +52,7 @@ const word = `(?:'(?:[^']|'"'"')*'|[A-Za-z0-9_@%+=:,./-]+)`
 // agentProbe is the version condition the generated commands run before an
 // ha-* subcommand (installer.haAgentReady); group 1 is the image.
 const agentProbe = `printf '%s\\n' "\$\(docker run --rm --network none --entrypoint configflow-agent (` + word + `) -version 2>/dev/null\)" \| ` +
-	`awk -F '\[\.-\]' 'NR == 1 && \$1 ~ /\^\[0-9\]\+\$/ && \$2 ~ /\^\[0-9\]\+\$/ && \$3 ~ /\^\[0-9\]\+\$/ && \(\$1 > 1 \|\| \$1 == 1 && \(\$2 > 9 \|\| \$2 == 9 && \$3 >= 2\)\) \{ ok = 1 \} END \{ exit !ok \}'`
+	`awk -F '\[\.-\]' 'NR == 1 && \$1 ~ /\^\[0-9\]\+\$/ && \$2 ~ /\^\[0-9\]\+\$/ && \$3 ~ /\^\[0-9\]\+\$/ && \(\$1 > 1 \|\| \$1 == 1 && \(\$2 > 9 \|\| \$2 == 9 && \$3 >= [23]\)\) \{ ok = 1 \} END \{ exit !ok \}'`
 
 var (
 	// probeCheck is the stand-alone probe line of the install and migration
@@ -64,7 +64,32 @@ var (
 	enrollRun    = regexp.MustCompile(`docker run --rm -i ((?:` + word + ` )+?)--mount (` + word + `) --entrypoint configflow-agent (` + word + `) ha-enroll <<'CF_DOCKER_HA_ENROLL'\n([^\n]*)\nCF_DOCKER_HA_ENROLL\n`)
 	migrationRe  = regexp.MustCompile(`(docker image inspect (` + word + `) >/dev/null 2>&1 \|\| docker pull ` + word + `\n)cf_runtime_env=\$\(docker inspect --format '\{\{json \.Config\.Env\}\}' "\$cf_old_id" \| docker run --rm -i --network none --volumes-from "\$cf_old_id:ro" --entrypoint configflow-agent (` + word + `) ha-migration-check ([^\n]*)\)\n`)
 	entrypoint   = regexp.MustCompile(`(\n[ ]*)- configflow-agent\n([ ]*)- ha-bootstrap\n`)
+	// Compose installations without the bundle (Agent 1.9.3-go): the init and
+	// Agent containers run configflow-agent ha-compose instead of the image's
+	// docker-compose-install.py, and the init container lost its Python-only
+	// PYTHONDONTWRITEBYTECODE (restored after the init settings, which carry
+	// no token).
+	directEntrypoint = regexp.MustCompile(`(\n[ ]*)- configflow-agent\n([ ]*)- ha-compose\n([ ]*)- (prepare|run)\n`)
+	directPrepare    = regexp.MustCompile(`\n[ ]*- configflow-agent\n[ ]*- ha-compose\n[ ]*- prepare\n`)
 )
+
+// restoreInitBytecodeFlag puts PYTHONDONTWRITEBYTECODE back into the direct
+// Compose's init container: after the last CONFIGFLOW_COMPOSE_INSTALL line
+// before the init entry point, with the same indentation.
+func restoreInitBytecodeFlag(text string) string {
+	entry := directPrepare.FindStringIndex(text)
+	if entry == nil {
+		return text
+	}
+	key := strings.LastIndex(text[:entry[0]], "CONFIGFLOW_COMPOSE_INSTALL: ")
+	start := strings.LastIndex(text[:max(key, 0)], "\n") + 1
+	end := strings.Index(text[max(key, 0):], "\n")
+	if key < 0 || end < 0 || strings.TrimLeft(text[start:key], " ") != "" {
+		return text
+	}
+	end += key + 1
+	return text[:end] + text[start:key] + "PYTHONDONTWRITEBYTECODE: '1'\n" + text[end:]
+}
 
 // bundleFiles are the literal prepare.sh changes of the bundle without
 // bootstrap.py, new text first.
@@ -88,7 +113,8 @@ func pythonLiteral(text string) string {
 }
 
 // NoPythonBaseline rewrites Docker HA text generated since Agent 1.9.2-go
-// (configflow-agent ha-* subcommands, bundle without bootstrap.py) back into
+// (configflow-agent ha-* subcommands, bundle without bootstrap.py; since
+// 1.9.3-go also the direct Compose's ha-compose entry points) back into
 // the historical form that ran Python helpers in the Agent image. Every other
 // byte is unchanged and historical text passes through as is.
 func NoPythonBaseline(text string) string {
@@ -137,6 +163,10 @@ func NoPythonBaseline(text string) string {
 			shellWord(texts.MigrationCheck) + " " + m[4] + ")\n" + m[1]
 	})
 	text = entrypoint.ReplaceAllString(text, "$1- python3\n$2- /run/configflow-compose/bootstrap.py\n")
+	if directEntrypoint.MatchString(text) {
+		text = restoreInitBytecodeFlag(text)
+		text = directEntrypoint.ReplaceAllString(text, "$1- python3\n$2- /usr/local/lib/configflow/docker-compose-install.py\n$3- $4\n")
+	}
 	for _, change := range bundleFiles {
 		text = strings.ReplaceAll(text, change[0], change[1])
 	}
