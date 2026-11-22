@@ -78,80 +78,12 @@ func isWordByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
 }
 
-const coreServiceBody = `name = os.path.basename(sys.argv[0])
-args = sys.argv[1:]
-with open(os.environ['EVENTS'], 'a') as log: log.write(name + ' ' + ' '.join(args) + '\n')
-if args[0] == 'show':
-    print('12345' if '--property=MainPID' in args else ('loaded' if os.environ.get('EXISTING_SERVICE') == args[1] else 'not-found'))
-    raise SystemExit(0)
-action = args[0] if name != 'rc-service' else args[1]
-service = args[-1] if name == 'systemctl' else (args[0] if name == 'rc-service' else args[1])
-if name == 'systemctl' and service == 'systemd-resolved':
-    if action == 'is-active':
-        raise SystemExit(0 if os.environ.get('RESOLVED_ACTIVE') else 3)
-    if action == 'restart':
-        # The stub listener is gone once the drop-in disables it.
-        root = os.environ['ROOT']
-        if os.path.exists(os.path.join(root, 'etc/systemd/resolved.conf.d/configflow.conf')):
-            for network in ('tcp', 'udp', 'tcp6', 'udp6'):
-                path = os.path.join(root, 'proc/net', network)
-                lines = open(path).read().splitlines(True)
-                open(path, 'w').write(''.join(line for line in lines if '3500007F:0035' not in line and '3600007F:0035' not in line))
-    raise SystemExit(0)
-if os.environ.get('FAIL_SERVICE') == action + ':' + service or os.environ.get('FAIL_ROLLBACK') == action + ':' + service:
-    if name == 'rc-service' and action == 'start':
-        with open(os.path.join(os.environ['ROOT'], 'etc', service, service + '.log'), 'w') as log:
-            log.write('core startup error: fixture failure\n')
-    raise SystemExit(38)
-if name != 'rc-update' and service == 'mihomo':
-    from pathlib import Path
-    import shutil
-    root = Path(os.environ['ROOT'])
-    interface = root / 'sys/class/net/configflow-tun'
-    fdinfo = root / 'proc/12345/fdinfo'
-    if action == 'start':
-        counter = root / 'run/mihomo-start-count'
-        count = int(counter.read_text()) + 1 if counter.exists() else 1
-        counter.write_text(str(count))
-        if count > 1 and os.environ.get('FAIL_FALLBACK_START'): raise SystemExit(38)
-        (root / 'run/mihomo.pid').write_text('12345')
-        enabled = 'tun:\n  enable: true\n' in (root / 'etc/mihomo/config.yaml').read_text()
-        if enabled and not os.environ.get('NO_TUN_INTERFACE') and not os.environ.get('LATE_TUN_READY'):
-            interface.mkdir(parents=True, exist_ok=True)
-            (interface / 'tun_flags').write_text(os.environ.get('TUN_FLAGS', '0x1001') + '\n')
-            (interface / 'flags').write_text(os.environ.get('TUN_LINK_FLAGS', '0x1001') + '\n')
-            fdinfo.mkdir(parents=True, exist_ok=True)
-            (fdinfo / '8').write_text('iff:\t' + os.environ.get('TUN_OWNER_DEVICE', 'configflow-tun') + '\n')
-    elif action == 'stop':
-        shutil.rmtree(interface, ignore_errors=True)
-        shutil.rmtree(fdinfo, ignore_errors=True)
-`
-
-const corePackageBody = `from pathlib import Path
-import shutil
-name = os.path.basename(sys.argv[0])
-with open(os.environ['EVENTS'], 'a') as log:
-    log.write('package ' + name + ' ' + ' '.join(sys.argv[1:]) + ' DEBIAN_FRONTEND=' + os.environ.get('DEBIAN_FRONTEND', '') + '\n')
-updating = sys.argv[1:] == ['update']
-if os.environ.get('FAIL_PACKAGE') == ('update' if updating else 'install'): raise SystemExit(41)
-if updating or os.environ.get('PACKAGE_NO_COMMANDS'): raise SystemExit(0)
-commands = Path(os.environ['PATH'])
-if 'tzdata' in sys.argv or 'timezone' in sys.argv:
-    zone = Path(os.environ['ROOT']) / 'usr/share/zoneinfo/Asia/Shanghai'
-    zone.parent.mkdir(parents=True, exist_ok=True)
-    zone.write_text('TZif')
-for executable in (Path(os.environ['FIXTURE']) / 'unavailable-commands').iterdir():
-    # Restore the real fixture command only after a successful fake transaction.
-    shutil.move(str(executable), commands / executable.name)
-`
-
 // newCoreHarness is harness(tmp_path, manager, **options).
 func newCoreHarness(t *testing.T, o coreOpts) *coreHarness {
 	if o.manager == "" {
 		o.manager = "systemd"
 	}
 	tmp := t.TempDir()
-	python := pythonExe(t)
 	root := filepath.Join(tmp, "root")
 	commands := filepath.Join(tmp, "commands")
 	os.MkdirAll(commands, 0o755)
@@ -197,15 +129,7 @@ func newCoreHarness(t *testing.T, o coreOpts) *coreHarness {
 		writeFile(t, filepath.Join(root, "usr/share/zoneinfo/Asia/Shanghai"), "TZif", 0o644)
 	}
 	events := writeFile(t, filepath.Join(tmp, "events"), "", 0o644)
-	fakeCore := []byte("#!" + python + ` -S
-import os, sys
-from pathlib import Path
-name = 'mihomo' if '-t' in sys.argv else 'oxidns'
-with open(os.environ['EVENTS'], 'a') as log: log.write('validate ' + name + '\n')
-config = Path(sys.argv[sys.argv.index('-f' if name == 'mihomo' else '-c') + 1])
-assert config.is_file()
-if os.environ.get('FAIL_VALIDATE') == name: raise SystemExit(29)
-`)
+	fakeCore := []byte(stubScript(t, "core-validate", ""))
 	var mihomo, oxidns bytes.Buffer
 	gz := gzip.NewWriter(&mihomo)
 	gz.Write(fakeCore)
@@ -248,41 +172,17 @@ if [ -n "${LATE_TUN_READY-}" ] && [ "$1" = 1 ]; then
     fi
 fi
 `,
-		"stat": "#!/bin/sh\nprintf '%s\\n' \"${DEVICE_NUMBER-a:c8}\"\n",
-		"curl": `import shutil
-with open(os.environ['EVENTS'], 'a') as log: log.write('download ' + sys.argv[-1] + '\n')
-if os.environ.get('FAIL_DOWNLOAD'): raise SystemExit(22)
-source = 'mihomo.gz' if 'MetaCubeX' in sys.argv[-1] else 'oxidns.tar.gz'
-shutil.copyfile(os.path.join(os.environ['FIXTURE'], source), sys.argv[sys.argv.index('--output') + 1])
-if os.environ.get('BAD_CHECKSUM') == source:
-    with open(sys.argv[sys.argv.index('--output') + 1], 'ab') as file: file.write(b'bad')
-`,
-		"sha256sum": `import hashlib
-if sys.argv[1] == '-c':
-    for line in open(sys.argv[2]):
-        digest, file = line.rstrip().split('  ', 1)
-        if hashlib.sha256(open(file, 'rb').read()).hexdigest() != digest:
-            print(file + ': FAILED'); raise SystemExit(1)
-        print(file + ': OK')
-else:
-    for file in sys.argv[1:]: print(hashlib.sha256(open(file, 'rb').read()).hexdigest() + '  ' + file)
-`,
+		"stat":      "#!/bin/sh\nprintf '%s\\n' \"${DEVICE_NUMBER-a:c8}\"\n",
+		"curl":      stubScript(t, "core-download", ""),
+		"sha256sum": stubScript(t, "sha256sum", ""),
 	}
 	if o.manager == "systemd" {
-		bodies["systemctl"] = coreServiceBody
+		bodies["systemctl"] = stubScript(t, "core-service", "")
 	} else {
-		bodies["rc-service"] = coreServiceBody
-		bodies["rc-update"] = coreServiceBody
+		bodies["rc-service"] = stubScript(t, "core-service", "")
+		bodies["rc-update"] = stubScript(t, "core-service", "")
 	}
-	bodies["dig"] = `with open(os.environ['EVENTS'], 'a') as log: log.write('dig ' + ' '.join(sys.argv[1:]) + '\n')
-if os.environ.get('FAIL_DIG') == 'exit': raise SystemExit(9)
-if os.environ.get('FAIL_DIG') == 'servfail':
-    print(';; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 17')
-    print(';; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0')
-else:
-    print(';; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 17')
-    print(';; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0')
-`
+	bodies["dig"] = stubScript(t, "core-dig", "")
 	if o.noStat {
 		delete(bodies, "stat")
 	}
@@ -290,19 +190,16 @@ else:
 		delete(bodies, "dig")
 	}
 	if o.downloadTool == "wget" {
-		bodies["wget"] = strings.ReplaceAll(bodies["curl"], "'--output'", "'-O'")
+		bodies["wget"] = bodies["curl"] // the stub reads -O when invoked as wget
 		delete(bodies, "curl")
 	}
 	if o.packageManager != "" {
-		bodies[o.packageManager] = corePackageBody
+		bodies[o.packageManager] = stubScript(t, "core-package", "")
 	}
 	for _, name := range []string{"sysctl", "ip", "iptables", "nft", "modprobe", "pct"} {
-		bodies[name] = "with open(os.environ['EVENTS'], 'a') as log: log.write('FORBIDDEN ' + os.path.basename(sys.argv[0]) + '\\n')\nraise SystemExit(99)"
+		bodies[name] = stubScript(t, "core-forbidden", "")
 	}
 	for name, body := range bodies {
-		if !strings.HasPrefix(body, "#!") {
-			body = "#!" + python + " -S\nimport os, sys\n" + body + "\n"
-		}
 		writeFile(t, filepath.Join(commands, name), body, 0o755)
 	}
 	for _, name := range []string{"awk", "cat", "chmod", "cp", "gzip", "mkdir", "mktemp", "mv", "rm", "rmdir", "sed", "sleep", "tail", "tar", "sh"} {

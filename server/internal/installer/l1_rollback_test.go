@@ -24,48 +24,6 @@ func TestL1PreRollbackInstallerLinkIsStale(t *testing.T) {
 	}
 }
 
-const l1ManagerMock = `
-import hashlib, json, os, sys
-from pathlib import Path
-args=sys.argv[1:]; command=Path(sys.argv[0]).name
-path=Path(os.environ['L1_MANAGER_STATE']); state=json.loads(path.read_text())
-with open(os.environ['EVENTS'],'a') as out: out.write(command+' '+' '.join(args)+'\n')
-def save(): path.write_text(json.dumps(state))
-if command=='systemctl':
-    action=args[0]
-    if action=='show': print('loaded'); sys.exit(0)
-    if action=='daemon-reload': sys.exit(0)
-    name=args[-1]
-elif command=='rc-service': name,action=args[:2]
-else:
-    action=args[0]
-    if action=='-u': sys.exit(0)
-    name=args[1]
-if name not in state['services']: sys.exit(0)
-item=state['services'][name]
-if action=='is-active' or action=='status': sys.exit(0 if item['active'] else 3)
-if action=='is-enabled':
-    print('enabled' if item['enabled'] else 'disabled'); sys.exit(0 if item['enabled'] else 1)
-if action in ('enable','add','disable','del'):
-    item['enabled']=action in ('enable','add')
-    if command=='rc-update':
-        link=Path(os.environ['L1_ETC'])/'runlevels/default'/name
-        link.parent.mkdir(parents=True,exist_ok=True)
-        if link.is_symlink() or link.exists(): link.unlink()
-        if item['enabled']: link.symlink_to(Path(os.environ['L1_ETC'])/'init.d'/name)
-    save(); sys.exit(0)
-if action=='stop': item['active']=False; save(); sys.exit(0)
-if action=='start':
-    binary=Path(item['binary']); config=Path(item['config'])
-    if not binary.exists() or not config.exists(): sys.exit(4)
-    if name==os.environ['L1_FAIL_UNIT'] and b'L1_CANDIDATE' in binary.read_bytes():
-        item['active']=False; state['candidate_failed']=True; save(); sys.exit(49)
-    state['starts'].append({'unit':name,'binary':hashlib.sha256(binary.read_bytes()).hexdigest(),
-        'config':hashlib.sha256(config.read_bytes()).hexdigest()})
-    item['active']=True; save(); sys.exit(0)
-sys.exit('unhandled manager operation '+repr(args))
-`
-
 type l1Service struct {
 	Binary  string `json:"binary"`
 	Config  string `json:"config"`
@@ -106,7 +64,7 @@ func l1SeedManager(t *testing.T, tmp, etc, manager, fail string, services map[st
 		}
 	}
 	for _, command := range commands {
-		writeFile(t, filepath.Join(tmp, "commands", command), "#!"+pythonExe(t)+" -S\n"+l1ManagerMock, 0o755)
+		writeFile(t, filepath.Join(tmp, "commands", command), stubScript(t, "l1-manager", ""), 0o755)
 	}
 	return []string{"L1_MANAGER_STATE=" + state, "L1_ETC=" + etc, "L1_FAIL_UNIT=" + fail}, state
 }

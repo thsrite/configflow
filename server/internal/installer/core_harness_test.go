@@ -144,7 +144,6 @@ func newSingleHarness(t *testing.T, s singleSetup) *singleHarness {
 		s.manager = "systemd"
 	}
 	tmp := t.TempDir()
-	python := pythonExe(t)
 	source := ok(singleGenerated(s.service, func(o *AgentInstallOptions) {
 		o.InstallCore = s.installCore
 		if s.mutate != nil {
@@ -187,20 +186,7 @@ func newSingleHarness(t *testing.T, s singleSetup) *singleHarness {
 	}
 	writeFile(t, unit, "# existing core service\n", 0o755)
 	commands := filepath.Join(tmp, "commands")
-	agent := writeFile(t, filepath.Join(tmp, "fake-agent"), "#!"+python+`
-import json, os, sys
-args = sys.argv[1:]
-with open(os.environ['EVENTS'], 'a') as log:
-    log.write('agent ' + ' '.join(args) + '\n')
-if args in (['-h'], ['-version']):
-    raise SystemExit(0)
-cfg = json.load(open(args[args.index('-config') + 1]))
-assert cfg['service_manager'] == os.environ['TEST_MANAGER']
-if '-check-environment' in args and os.environ.get('VERBOSE_ENVIRONMENT') == 'yes':
-    print('verbose-environment-detail-for-log-only')
-if '-check-deployments' in args and os.environ.get('PENDING_DEPLOYMENT') == 'yes':
-    print('2026/10/18 12:00:00 Deployment check requires attention: pending publication; inspect its journal', file=sys.stderr)
-`, 0o755)
+	agent := writeFile(t, filepath.Join(tmp, "fake-agent"), stubScript(t, "single-agent", ""), 0o755)
 	managerBody := `printf '%s %s\n' "$(basename "$0")" "$*" >> "$EVENTS"
 case "$*" in *--property=LoadState*) printf '%s\n' "${CORE_LOAD_STATE:-loaded}" ;; esac
 `

@@ -2,8 +2,8 @@ package installer
 
 // Hand-ported shell/runtime scenarios of backend/test_docker_ha_compose.py
 // (module A10): the Go-rendered bundle is unpacked, its prepare.sh runs with
-// bash against the same fake docker (a Python stub that refuses every
-// mutating operation), and its bootstrap.py runs with python3 against a
+// bash against a fake docker (a Go stub that refuses every mutating
+// operation), and its product-shipped bootstrap.py runs with python3 against a
 // loopback enrollment origin. Everything stays in temp directories.
 
 import (
@@ -24,38 +24,6 @@ import (
 )
 
 var composeTestToken = strings.Repeat("t", 43)
-
-// composeFakeDocker is FAKE_DOCKER of test_docker_ha_compose.py.
-const composeFakeDocker = `#!/usr/bin/env python3
-import json,os,re,sys
-from pathlib import Path
-args=sys.argv[1:]; state=json.loads(Path(os.environ['CF_COMPOSE_STATE']).read_text())
-with open(os.environ['CF_COMPOSE_EVENTS'],'a') as stream: stream.write(json.dumps(args)+'\n')
-if args[:2]==['context','show']: print('default')
-elif args[:2]==['context','inspect']: print(state.get('endpoint','unix:///var/run/docker.sock'))
-elif args[0]=='info':
-    fmt=args[-1]; print('linux' if '.OSType' in fmt else '[]' if '.SecurityOptions' in fmt else 'Arch Linux 6.18')
-elif args[:2]==['compose','version']: print(state.get('version','2.20.1'))
-elif args[:2]==['container','inspect']:
-    item=state.get('containers',{}).get(args[-1]);
-    if item is None: sys.exit(1)
-    fmt=args[args.index('--format')+1] if '--format' in args else ''
-    if '.Labels' in fmt: print(item['labels'].get(re.search(r'Labels "([^"]+)"',fmt)[1],''))
-    elif '.Mounts' in fmt:
-        target=re.search(r'\.Destination "([^"]+)"',fmt)[1]
-        mount=next((m for m in item['volumes'] if m['target']==target),None)
-        print('bind|'+mount['source']+'|'+str(not mount.get('read_only',False)).lower() if mount else '')
-    else: print('{}')
-elif args[:2]==['network','inspect']:
-    item=state.get('networks',{}).get(args[-1]);
-    if item is None: sys.exit(1)
-    fmt=args[args.index('--format')+1] if '--format' in args else ''
-    print(item['driver'] if '.Driver' in fmt else item['driver_opts']['parent'] if '.Options' in fmt else
-          item['labels'].get(re.search(r'Labels "([^"]+)"',fmt)[1],'') if '.Labels' in fmt else
-          '1' if 'len .IPAM' in fmt else item['ipam']['config'][0]['subnet'] if '.Subnet' in fmt else
-          item['ipam']['config'][0].get('gateway','') if '.Gateway' in fmt else '{}')
-else: sys.exit('unexpected mutating Docker operation '+repr(args))
-`
 
 func composeParams(dir string, changes ...any) map[string]any {
 	identity := filepath.Join(dir, "host-id")
@@ -179,7 +147,7 @@ func composeBootstrapFiles(t *testing.T, dir string, e *Enrollment) (files, data
 func composeExecuteBootstrap(t *testing.T, files, data, setup string) runResult {
 	t.Helper()
 	runner := "import runpy,sys; m=runpy.run_path(sys.argv[1]); m['bootstrap'](*sys.argv[2:]); print('ENTRYPOINT_ALLOWED')"
-	cmd := exec.Command(pythonExe(t), "-c", runner, filepath.Join(files, "bootstrap.py"), filepath.Join(files, "enrollment.json"), data, setup)
+	cmd := exec.Command(productPython(t), "-c", runner, filepath.Join(files, "bootstrap.py"), filepath.Join(files, "enrollment.json"), data, setup)
 	cmd.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -377,7 +345,7 @@ func composePreparation(t *testing.T, dir string, body map[string]any, e *Enroll
 	}
 	files := composeUnpack(t, composeGuide(t, body, e), destination)
 	bin := filepath.Join(dir, "bin")
-	writeFile(t, filepath.Join(bin, "docker"), composeFakeDocker, 0o755)
+	writeFile(t, filepath.Join(bin, "docker"), stubScript(t, "compose-docker", ""), 0o755)
 	state := writeFile(t, filepath.Join(dir, "docker-state.json"), "{}", 0o644)
 	events := filepath.Join(dir, "docker-events")
 	env := []string{"PATH=" + bin + ":" + os.Getenv("PATH"), "CF_COMPOSE_STATE=" + state, "CF_COMPOSE_EVENTS=" + events,

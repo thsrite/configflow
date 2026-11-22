@@ -150,12 +150,10 @@ func TestMacvlanGeneratorRejectsMismatchedAddressing(t *testing.T) {
 }
 
 func TestGeneratedRunExecutesLiteralArgumentsAndStartsOnlyExpectedServices(t *testing.T) {
-	python := pythonExe(t)
 	for _, mode := range []string{"host", "macvlan"} {
 		tmp := t.TempDir()
 		identity := writeFile(t, filepath.Join(tmp, "host identity"), "unique-test-host\n", 0o644)
-		writeFile(t, filepath.Join(tmp, "docker"), "#!"+python+"\nimport json, os, sys\n"+
-			"with open(os.environ[\"DOCKER_EVENTS\"], \"a\") as output: output.write(json.dumps(sys.argv[1:]) + \"\\n\")\n", 0o755)
+		writeFile(t, filepath.Join(tmp, "docker"), stubScript(t, "docker-log", ""), 0o755)
 		events := filepath.Join(tmp, "events")
 		marker := filepath.Join(tmp, "must-not-execute")
 		url := `https://config.test/"$(touch ` + marker + `)`

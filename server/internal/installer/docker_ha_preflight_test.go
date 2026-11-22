@@ -234,30 +234,11 @@ func TestPastedShellAndHTMLAreNeverExecuted(t *testing.T) {
 	notContains(t, string(data), "<script>")
 }
 
-const preflightDocker = `#!/usr/bin/env python3
-import json,os,sys
-args=sys.argv[1:]
-if os.environ.get('CF_TEST_DOCKER_EVENTS'):
-    with open(os.environ['CF_TEST_DOCKER_EVENTS'],'a') as output: output.write(json.dumps(args)+'\n')
-if args[:2]==['context','show']: print('default')
-elif args[:2]==['context','inspect']: print('ssh://private-user:secret@remote' if args[2]=='remote-context' else 'unix:///var/run/docker.sock')
-elif args[0]=='version':
-    if os.environ.get('CF_TEST_DAEMON_FAIL'): print('Cannot connect to the Docker daemon',file=sys.stderr);sys.exit(1)
-    print('{"client":"29.9.2","server":"29.9.2"}')
-elif args[0]=='compose': print('2.30.3')
-elif args[0]=='info':
-    if os.environ.get('CF_TEST_DAEMON_FAIL'): sys.exit(1)
-    fmt=args[-1]
-    print('linux' if fmt=='{{.OSType}}' else '["name=seccomp"]' if '.SecurityOptions' in fmt else '{"os":"Arch Linux","kernel":"6.18.3"}')
-else: sys.exit(2)
-`
-
 // collectorEnv is collector_env(tmp_path): environment entries for the stub
 // commands (added to os.Environ()).
 func collectorEnv(t *testing.T, tmp string) []string {
 	t.Helper()
-	pythonExe(t)
-	writeFile(t, filepath.Join(tmp, "docker"), preflightDocker, 0o755)
+	writeFile(t, filepath.Join(tmp, "docker"), stubScript(t, "preflight-docker", ""), 0o755)
 	writeFile(t, filepath.Join(tmp, "ip"), "#!/bin/sh\nprintf \"%s\\n\" \"2: eth0    inet 192.168.10.20/24 scope global eth0\"\n", 0o755)
 	writeFile(t, filepath.Join(tmp, "ss"), "#!/bin/sh\nexit 0\n", 0o755)
 	writeFile(t, filepath.Join(tmp, "systemd-detect-virt"), "#!/bin/sh\nexit 1\n", 0o755)

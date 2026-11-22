@@ -296,19 +296,7 @@ case "${0##*/}:$*" in
         ;;
 esac
 `
-	sysctlMock := "#!" + pythonExe(t) + ` -S
-import os, sys
-from pathlib import Path
-args = sys.argv[1:]
-with open(os.environ['EVENTS'], 'a') as log:
-    log.write('sysctl ' + ' '.join(args) + '\n')
-if args not in (['-q', '-w', 'net.ipv4.ip_forward=0'], ['-q', '-w', 'net.ipv4.ip_forward=1']):
-    raise SystemExit('Unexpected sysctl command in isolated installer test: ' + repr(args))
-if os.environ.get('FAIL_SYSCTL_WRITES') == 'yes':
-    print('sysctl: permission denied on key net.ipv4.ip_forward', file=sys.stderr)
-    raise SystemExit(50)
-Path(os.environ['FORWARD_PROC']).write_text(args[-1].rsplit('=', 1)[1] + '\n')
-`
+	sysctlMock := stubScript(t, "standalone-sysctl", "")
 	mocks := map[string]string{"id": "printf '0\\n'\n", "uname": "case \"${1:-}\" in -s) echo Linux ;; *) echo x86_64 ;; esac\n",
 		"wget": "cp \"$FAKE_AGENT\" \"$3\"\n", "sysctl": sysctlMock, "sleep": "exit 0\n"}
 	if s.manager == "systemd" {

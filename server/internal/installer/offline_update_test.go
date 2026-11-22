@@ -18,7 +18,6 @@ type updateHarness struct {
 }
 
 func newUpdateHarness(t *testing.T, tmp string) updateHarness {
-	python := pythonExe(t)
 	pkg := filepath.Join(tmp, "package")
 	agentRoot := filepath.Join(tmp, "agents")
 	agent := filepath.Join(agentRoot, "mihomo")
@@ -47,19 +46,7 @@ func newUpdateHarness(t *testing.T, tmp string) updateHarness {
 	source = strings.ReplaceAll(strings.ReplaceAll(source, "/opt/configflow-agent", agentRoot), "/proc/", proc+"/")
 	updater := writeFile(t, filepath.Join(pkg, "update-agent.sh"), source, 0o644)
 	writeFile(t, filepath.Join(pkg, "cli-output.sh"), CLIOutputHelpers, 0o644)
-	candidateText := "#!" + python + `
-import os, sys
-if '-version' in sys.argv:
-    print('1.8.31-go')
-elif '-check-environment' in sys.argv:
-    print('FULL-ENVIRONMENT-EVIDENCE: interface Meta belongs to PID 42')
-    os.write(3, '[通过] TUN：Meta · 已确认核心持有\n'.encode())
-    if os.environ.get('ENVIRONMENT_FAIL'):
-        print('environment-specific-failure', file=sys.stderr)
-        sys.exit(7)
-else:
-    print('FULL-DEPLOYMENT-EVIDENCE: no pending journals')
-`
+	candidateText := stubScript(t, "update-candidate", "1.8.31-go")
 	candidate := writeFile(t, filepath.Join(pkg, "configflow-agent-linux-amd64"), candidateText, 0o755)
 	writeFile(t, filepath.Join(pkg, "VERSION"), "1.8.31-go\n", 0o644)
 	sum := sha256.Sum256([]byte(candidateText))
@@ -77,34 +64,7 @@ printf '{"status":"ok"}\n' `,
 	} {
 		writeFile(t, filepath.Join(commands, name), "#!/bin/sh\n"+body+"\n", 0o755)
 	}
-	writeFile(t, filepath.Join(commands, "systemctl"), "#!"+python+`
-import json, os, pathlib, sys
-state_path=pathlib.Path(os.environ['STATE'])
-state=json.loads(state_path.read_text())
-args=sys.argv[1:]
-unit=next((a for a in args if a.endswith('.service')), '')
-agent_unit='configflow-agent-mihomo.service'
-if args[0] in ('stop','start','restart'):
-    with open(os.environ['EVENTS'],'a') as out: out.write(' '.join(args)+'\n')
-    assert unit==agent_unit, 'core lifecycle was invoked'
-    if args[0]=='start' and os.environ.get('START_FAIL') and '1.8.31-go' in pathlib.Path('`+binary+`').read_text():
-        print('start-specific-failure',file=sys.stderr)
-        sys.exit(1)
-    state['running']=args[0]!='stop'
-    if args[0]=='stop' and os.environ.get('CORE_CHANGED'): state['core_pid']=43
-    state_path.write_text(json.dumps(state))
-    print('RAW-SERVICE-DIAGNOSTIC: '+args[0])
-elif args[0]=='is-active':
-    sys.exit(0 if unit!=agent_unit or state['running'] else 3)
-elif args[0]=='show':
-    prop=next(a.split('=',1)[1] for a in args if a.startswith('--property='))
-    values={'LoadState':'loaded','ExecStart':'{ path=`+binary+` ; argv[]=`+binary+` -config `+agentConfigPath+` ; ignore_errors=no ; }',
-             'ControlGroup':'/system.slice/'+unit,
-             'MainPID':str((84 if state['running'] else 0) if unit==agent_unit else state['core_pid'])}
-    if os.environ.get('UNKNOWN_HOOK'): values['ExecStop']='custom-hook'
-    print(values.get(prop,''))
-else: raise AssertionError(args)
-`, 0o755)
+	writeFile(t, filepath.Join(commands, "systemctl"), stubScript(t, "update-systemctl", "", "UPDATE_BINARY="+binary, "UPDATE_AGENT_CONFIG="+agentConfigPath), 0o755)
 	drop := append(append([]string{}, reportEnvDrop...), "CONFIGFLOW_REPORT_FD", "CONFIGFLOW_REPORT_NESTED")
 	var env []string
 	for _, kv := range os.Environ() {

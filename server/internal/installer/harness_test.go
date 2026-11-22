@@ -127,16 +127,18 @@ func notContains(t *testing.T, haystack, needle string) {
 	}
 }
 
-// pythonExe is sys.executable for Python stub commands.
-func pythonExe(t *testing.T) string {
+// productPython returns python3 for the few tests that execute Python code the
+// product itself ships (the Docker HA bootstrap and migration check run by
+// python3 inside the Agent image). It fails rather than skips when python3 is
+// missing; the fake host commands of every other test are Go stubs
+// (stub_test.go) and need no interpreter.
+func productPython(t *testing.T) string {
 	t.Helper()
-	for _, name := range []string{"python3", "python"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path
-		}
+	path, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatalf("python3 is required to execute product-shipped Python on the test server: %v", err)
 	}
-	t.Skip("python3 is required for the Python stub commands")
-	return ""
+	return path
 }
 
 // ok returns a rendered value, panicking (failing the test) on an error.

@@ -75,7 +75,6 @@ func (h *haHarness) path(rel string) string { return filepath.Join(h.root, rel) 
 // newHAHarness is preparation_harness(tmp_path, manager, init).
 func newHAHarness(t *testing.T, manager, init string) *haHarness {
 	tmp := t.TempDir()
-	python := pythonExe(t)
 	root := filepath.Join(tmp, "root")
 	commands := filepath.Join(tmp, "commands")
 	os.MkdirAll(commands, 0o755)
@@ -92,40 +91,8 @@ func newHAHarness(t *testing.T, manager, init string) *haHarness {
 	writeFile(t, filepath.Join(commands, "sleep"), "#!/bin/sh\nexit 0\n", 0o755)
 	writeFile(t, filepath.Join(commands, "wget"), "#!/bin/sh\nexit 0\n", 0o755)
 	writeFile(t, filepath.Join(commands, "ip"), "#!/bin/sh\nexit 2\n", 0o755)
-	writeFile(t, filepath.Join(commands, "systemctl"), "#!"+python+` -S
-import json, os, sys
-from pathlib import Path
-root=Path(os.environ['HA_ROOT']); args=sys.argv[1:]
-with open(os.environ['HA_EVENTS'],'a') as log: log.write(json.dumps(['systemctl',args])+'\n')
-mask=root/'run/systemd/system/keepalived.service'; state=root/'state'
-if args[0]=='show':
- print('masked' if mask.is_symlink() else 'loaded' if (state/'unit').exists() else 'not-found')
-elif args[0]=='is-active': raise SystemExit(0 if (state/'active').exists() else 3)
-elif args[0]=='is-enabled': print('enabled' if (state/'enabled').exists() else 'disabled'); raise SystemExit(0 if (state/'enabled').exists() else 1)
-elif args[0]=='mask':
- mask.symlink_to('/dev/null')
- if os.environ.get('MASK_PARTIAL_FAILURE'): raise SystemExit(8)
-elif args[0]=='disable': (state/'enabled').unlink(missing_ok=True)
-`, 0o755)
-	writeFile(t, filepath.Join(commands, manager), "#!"+python+` -S
-import json, os, sys
-from pathlib import Path
-root=Path(os.environ['HA_ROOT']); commands=Path(os.environ['HA_COMMANDS']); args=sys.argv[1:]
-with open(os.environ['HA_EVENTS'],'a') as log: log.write(json.dumps([Path(sys.argv[0]).name,args])+'\n')
-if args==['update']: raise SystemExit(0)
-if os.environ.get('FAIL_PACKAGE')=='before': raise SystemExit(43)
-if 'keepalived' in args:
- p=commands/'keepalived'; p.write_text('#!/bin/sh\nexit 0\n'); p.chmod(0o755)
- (root/'state/unit').touch()
- (root/'state/enabled').touch()
- (root/'etc/keepalived/keepalived.conf').write_text('vrrp_instance SAMPLE { virtual_router_id 51 }\n')
- if Path(sys.argv[0]).name!='apk' and not (root/'run/systemd/system/keepalived.service').is_symlink(): (root/'state/unexpected-start').touch()
- if os.environ.get('FAIL_PACKAGE')=='after-keepalived': raise SystemExit(44)
-if 'keepalived-openrc' in args:
- p=root/'etc/init.d/keepalived'; p.write_text('#!/bin/sh\n'); p.chmod(0o755)
-if 'iproute' in args or 'iproute2' in args:
- p=commands/'ip'; p.write_text('#!/bin/sh\nprintf "[]\\n"\n'); p.chmod(0o755)
-`, 0o755)
+	writeFile(t, filepath.Join(commands, "systemctl"), stubScript(t, "ha-systemctl", ""), 0o755)
+	writeFile(t, filepath.Join(commands, manager), stubScript(t, "ha-package", ""), 0o755)
 	source := "set -eu\ncf_step() { :; }; cf_step_done() { :; }; cf_fact() { :; }; cf_ui() { printf \"%s\\n\" \"$*\"; }\n"
 	source += AgentInstallDependencies + "\n" + strings.ReplaceAll(dnsHAPreparation, "{agent_port}", "8082")
 	source += "\nINIT_SYSTEM=" + init + "\nAGENT_DIR=" + shlexQuote(filepath.Join(root, "opt/configflow-agent")) +

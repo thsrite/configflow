@@ -62,29 +62,7 @@ func isolateDependencies(t *testing.T, tmp string, e env, missing []string, pack
 		}
 	}
 	if packageManager != "" {
-		writeFile(t, filepath.Join(commands, packageManager), "#!"+pythonExe(t)+` -S
-import json, os, sys
-from pathlib import Path
-with open(os.environ['PACKAGE_EVENTS'], 'a') as log:
-    log.write(json.dumps([Path(sys.argv[0]).name, sys.argv[1:], os.environ.get('DEBIAN_FRONTEND')]) + '\n')
-updating = sys.argv[1:] == ['update']
-if os.environ.get('EVENTS'):
-    with open(os.environ['EVENTS'], 'a') as log:
-        log.write(('package-update' if updating else 'package-install') + '\n')
-if os.environ.get('FAIL_PACKAGE') == ('update' if updating else 'install'): raise SystemExit(41)
-if updating or os.environ.get('PACKAGE_NO_COMMANDS'): raise SystemExit(0)
-if 'tzdata' in sys.argv or 'timezone' in sys.argv:
-    zone = Path(os.environ['TZDIR']) / 'Asia/Shanghai'
-    zone.parent.mkdir(parents=True, exist_ok=True)
-    zone.write_text('TZif')
-for executable in Path(os.environ['TEST_UNAVAILABLE']).iterdir():
-    packages = {'awk': ['gawk'], 'grep': ['grep'], 'sed': ['sed'], 'wget': ['curl'],
-                'sysctl': ['procps-ng' if Path(sys.argv[0]).name in ('pacman', 'dnf', 'yum') else 'procps'],
-                'cmp': ['diffutils'], 'nft': ['nftables'], 'ss': ['iproute2', 'iproute'],
-                'tar': ['tar'], 'gzip': ['gzip']}.get(executable.name, ['coreutils'])
-    if any(package in sys.argv[1:] for package in packages):
-        executable.rename(Path(os.environ['TEST_COMMANDS']) / executable.name)
-`, 0o755)
+		writeFile(t, filepath.Join(commands, packageManager), stubScript(t, "dependency-package", ""), 0o755)
 	}
 	events := writeFile(t, filepath.Join(tmp, "packages"), "", 0o644)
 	zoneinfo := filepath.Join(tmp, "zoneinfo")

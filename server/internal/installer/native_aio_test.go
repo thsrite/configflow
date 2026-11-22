@@ -134,53 +134,6 @@ func (h aioHarness) eventsText() string {
 	return string(data)
 }
 
-func fakeAgentSource(python string) string {
-	return "#!" + python + ` -S
-import json, os, sys
-args = sys.argv[1:]
-if args in (['-h'], ['-version']):
-    raise SystemExit(0)
-cfg = json.load(open(args[args.index('-config') + 1]))
-with open(os.environ['EVENTS'], 'a') as log:
-    log.write('agent ' + cfg['service_type'] + ' ' + args[-1] + ' ' + args[1] + '\n')
-if '-prepare-tun' in args:
-    assert cfg['service_type'] == 'mihomo', 'Only the Mihomo candidate prepares TUN'
-    candidate = args[args.index('-config') + 1]
-    assert '.aio-install.' in candidate and candidate.endswith('/mihomo-config.json')
-    with open(os.environ['EVENTS'], 'a') as log:
-        log.write('prepare-tun:' + cfg['service_type'] + ':' + candidate + '\n')
-    if os.environ.get('TUN_PREPARE_FAIL') == 'yes':
-        print('TUN 自动准备失败：请检查容器设备和 CAP_NET_ADMIN 权限。', file=sys.stderr)
-        raise SystemExit(51)
-    raise SystemExit(0)
-if '-check-environment' in args:
-    if os.environ.get('VERBOSE_ENVIRONMENT') == 'yes':
-        print('verbose-environment-detail-for-log-only')
-    assert '-environment-peer-config' in args, 'AIO must inspect both services together'
-    peer_path = args[args.index('-environment-peer-config') + 1]
-    peer = json.load(open(peer_path))
-    assert peer['service_type'] == 'oxidns'
-    assert peer['service_manager'] in ('systemd', 'openrc')
-    assert cfg['service_manager'] == peer['service_manager']
-    assert cfg['agent_port'] != peer['agent_port']
-    previous = open(os.environ['EVENTS']).read()
-    assert 'agent mihomo -validate-service' in previous
-    assert 'agent oxidns -validate-service' in previous
-    with open(os.environ['EVENTS'], 'a') as log:
-        log.write('environment peer oxidns ' + peer_path + '\n')
-    if os.environ.get('FAIL_ENVIRONMENT') == 'yes':
-        print('IPv4 转发未开启；修复建议：确认网关用途后配置持久化转发。', file=sys.stderr)
-        raise SystemExit(48)
-if cfg['service_type'] == os.environ.get('FAIL_VALIDATION') and '-validate-service' in args:
-    raise SystemExit(46)
-if cfg['service_type'] == os.environ.get('FAIL_JOURNAL') and '-require-clean-deployments' in args:
-    raise SystemExit(47)
-if cfg['service_type'] == os.environ.get('FAIL_JOURNAL_AFTER_STOP') and '-require-clean-deployments' in args:
-    if 'stop' in open(os.environ['EVENTS']).read():
-        raise SystemExit(47)
-`
-}
-
 const aioManagerMock = `printf '%s %s\n' "${0##*/}" "$*" >> "$EVENTS"
 case "$*" in
     *--property=LoadState*) printf 'loaded\n' ;;
@@ -209,31 +162,6 @@ case "${0##*/}:$*" in
 esac
 `
 
-func sysctlMock(python string) string {
-	return "#!" + python + ` -S
-import os, sys
-from pathlib import Path
-args = sys.argv[1:]
-with open(os.environ['EVENTS'], 'a') as log:
-    log.write('sysctl ' + ' '.join(args) + '\n')
-current = Path(os.environ['FORWARD_PROC'])
-if args in (['-n', 'net.ipv4.ip_forward'], ['net.ipv4.ip_forward']):
-    value = current.read_text().strip()
-    print(value if '-n' in args else 'net.ipv4.ip_forward = ' + value)
-    raise SystemExit(0)
-if args not in (['-q', '-w', 'net.ipv4.ip_forward=0'], ['-q', '-w', 'net.ipv4.ip_forward=1']):
-    raise SystemExit('Unexpected sysctl command in isolated installer test: ' + repr(args))
-value = args[-1].rsplit('=', 1)[1]
-if os.environ.get('FAIL_SYSCTL_WRITES') == 'yes' or (value == '1' and os.environ.get('FAIL_SYSCTL_ENABLE') == 'yes'):
-    print('sysctl: permission denied on key net.ipv4.ip_forward', file=sys.stderr)
-    raise SystemExit(50)
-if os.environ.get('SYSCTL_WRITE_NO_EFFECT') != 'yes':
-    current.write_text(value + '\n')
-if value == '1' and os.environ.get('DELETE_FORWARD_CONFIG_ON_ENABLE') == 'yes':
-    Path(os.environ['FORWARD_CONFIG']).unlink(missing_ok=True)
-`
-}
-
 // newAIOHarness is harness(tmp_path, manager, existing, **options).
 func newAIOHarness(t *testing.T, manager string, existing bool, mutate func(*AIOInstallOptions)) aioHarness {
 	return newAIOHarnessSource(t, manager, existing, ok(aioGenerated(t, mutate)))
@@ -242,7 +170,6 @@ func newAIOHarness(t *testing.T, manager string, existing bool, mutate func(*AIO
 // newAIOHarnessSource is harness() with aio.generated patched to return source.
 func newAIOHarnessSource(t *testing.T, manager string, existing bool, source string) aioHarness {
 	tmp := t.TempDir()
-	python := pythonExe(t)
 	if runtime.GOOS == "darwin" {
 		source = strings.ReplaceAll(source, "sed -i ", "sed -i '' ")
 	}
@@ -265,12 +192,12 @@ func newAIOHarnessSource(t *testing.T, manager string, existing bool, source str
 	installer := writeFile(t, filepath.Join(tmp, "install.sh"), source, 0o644)
 	commands := filepath.Join(tmp, "commands")
 	writeFile(t, filepath.Join(tmp, "ip_forward"), "0\n", 0o644)
-	agentSource := fakeAgentSource(python)
+	agentSource := stubScript(t, "aio-agent", "")
 	agent := writeFile(t, filepath.Join(tmp, "fake-agent"), agentSource, 0o755)
 	mocks := map[string]string{
 		"id": "printf '0\\n'\n", "uname": "printf 'x86_64\\n'\n",
 		"wget": "cp \"$FAKE_AGENT\" \"$3\"\n", "mihomo": "exit 0\n", "oxidns": "exit 0\n",
-		"sysctl":   sysctlMock(python),
+		"sysctl":   stubScript(t, "aio-sysctl", ""),
 		"modprobe": "printf \"forbidden-modprobe %s\\n\" \"$*\" >> \"$EVENTS\"\nexit 97\n",
 		"mknod":    "printf \"forbidden-mknod %s\\n\" \"$*\" >> \"$EVENTS\"\nexit 97\n",
 		"sleep":    "exit 0\n",

@@ -280,74 +280,6 @@ func TestAllGeneratedCommandsAreBashSyntaxAndComposeInterpolationSafe(t *testing
 	}
 }
 
-const fakeDocker = `#!/usr/bin/env python3
-import json, os, sys
-from pathlib import Path
-args=sys.argv[1:]; path=Path(os.environ['FAKE_STATE']); state=json.loads(path.read_text())
-with open(os.environ['FAKE_EVENTS'],'a') as out: out.write(json.dumps(args)+'\n')
-def save(): path.write_text(json.dumps(state))
-def lookup(value):
-    for ident, c in state['containers'].items():
-        if value in (ident,c['name']): return ident,c
-    sys.exit(1)
-if args[0]=='info': print('linux' if '.OSType' in args[-1] else '[]')
-elif args[0]=='image': print('[]' if '.Config.' in ' '.join(args) else '{}')
-elif args[0]=='network':
-    if args[1]=='create':
-        state['network']={'name':args[-1], 'owner':args[args.index('--label')+1].split('=',1)[1],
-                          'parent':args[args.index('--opt')+1].split('=',1)[1], 'subnet':args[args.index('--subnet')+1],
-                          'gateway':args[args.index('--gateway')+1] if '--gateway' in args else ''};save();print('network-id')
-    elif not state.get('network'): sys.exit(1)
-    elif '--format' in args:
-        fmt=args[args.index('--format')+1];net=state['network']
-        print('macvlan' if '.Driver' in fmt else net['parent'] if '.Options' in fmt else net['owner'] if '.Labels' in fmt
-              else '1' if 'len ' in fmt else net['subnet'] if '.Subnet' in fmt else net['gateway'])
-    else: print('{}')
-elif args[0] in ('inspect','container'):
-    if args[0]=='container': args=args[1:]
-    ident,c=lookup(args[-1]); fmt=args[args.index('--format')+1] if '--format' in args else ''
-    if '.Id' in fmt: print(ident)
-    elif '.Name' in fmt and '.Type' not in fmt and '.RestartPolicy' not in fmt: print('/'+c['name'])
-    elif '.State.Running' in fmt: print(str(c.get('running',False)).lower())
-    elif 'len .Mounts' in fmt: print(state.get('mount_count',2))
-    elif '.Type' in fmt:
-        m=state['agent_mount' if '/opt/configflow-agent' in fmt else 'core_mount']
-        print(m['type']+'|'+m['source']+'|true')
-    elif '.Config.Labels' in fmt: print(c.get('owner',''))
-    elif '.Config.' in fmt: print('[]')
-    elif '.Image' in fmt: print('original-image')
-    elif '.RestartPolicy' in fmt: print('always:0')
-    else: print('{}')
-elif args[0]=='exec':
-    if 'supervisorctl' in args and args[-2:]==['status','oxidns']:
-        print('oxidns FATAL' if state.get('fatal') else 'oxidns RUNNING pid 123, uptime 0:00:10');sys.exit(3 if state.get('fatal') else 0)
-    if '-i' in args: sys.stdin.read()
-    if state.get('reject_existing'): sys.exit(1)
-    print('HEARTBEAT_INTERVAL=42\nDEPLOYMENT_HEALTH_TIMEOUT=30\nAGENT_HOST=0.0.0.0')
-elif args[0]=='update':
-    _,c=lookup(args[-1]); c['restart']=next(x.split('=',1)[1] for x in args if x.startswith('--restart=')); save()
-elif args[0] in ('start','stop'):
-    ident,c=lookup(args[-1]); c['running']=args[0]=='start';save();print(ident)
-elif args[0]=='rename':
-    _,c=lookup(args[1]);c['name']=args[2];save()
-elif args[0]=='cp': pass
-elif args[0]=='run':
-	# Probe only; no installation state is changed.
-    if '--network' in args and args[args.index('--network')+1]=='host' and '--rm' in args and state.get('port_busy'):
-        print('宿主机的 UDP/TCP 53 端口不可用',file=sys.stderr);sys.exit(1)
-    if '--rm' in args: sys.exit(1 if state.get('ha_journal') else 0)
-    name=args[args.index('--name')+1]; ident=('b' if name.endswith('-ha') else 'c')*64
-    if state.get('fail_before_main') and not name.endswith('-ha'):
-        if '--cidfile' in args: Path(args[args.index('--cidfile')+1]).write_text('')
-        sys.exit(123)
-    state['containers'][ident]={'name':name,'running':True, 'owner':args[args.index('--label')+1].split('=',1)[1] if '--label' in args else ''};save()
-    if '--cidfile' in args: Path(args[args.index('--cidfile')+1]).write_text(ident+'\n')
-    if state.get('fail_main') and not name.endswith('-ha'):
-        state['containers'][ident]['running']=False;save();sys.exit(123)
-    print(ident)
-else: sys.exit('unexpected fake Docker command: '+repr(args))
-`
-
 type fakeHostEnv struct {
 	state, events string
 	env           []string
@@ -356,8 +288,7 @@ type fakeHostEnv struct {
 // fakeHost is fake_host(tmp_path, data, **changes).
 func fakeHost(t *testing.T, tmp string, data map[string]any, changes ...any) fakeHostEnv {
 	t.Helper()
-	pythonExe(t)
-	writeFile(t, filepath.Join(tmp, "docker"), fakeDocker, 0o755)
+	writeFile(t, filepath.Join(tmp, "docker"), stubScript(t, "guide-docker", ""), 0o755)
 	state := map[string]any{
 		"containers": map[string]any{
 			strings.Repeat("a", 64): map[string]any{"name": data["container_name"], "running": true},
@@ -540,7 +471,7 @@ func TestMigrationPreservesOldEnvironmentWithoutEchoingSecrets(t *testing.T) {
 		"heartbeat_interval": 42,
 	})
 	source := strings.ReplaceAll(migrationCheck, "/opt/configflow-agent", original)
-	cmd := exec.Command(pythonExe(t), "-c", source, mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082")
+	cmd := exec.Command(productPython(t), "-c", source, mapStr(data, "existing_agent_name"), mapStr(data, "server_url"), "8082")
 	cmd.Stdin = strings.NewReader(`["HTTPS_PROXY=http://private-user:private$password@proxy:8080", "TZ=UTC"]`)
 	cmd.Env = append(os.Environ(), "TZ=UTC")
 	var stdout, stderr strings.Builder

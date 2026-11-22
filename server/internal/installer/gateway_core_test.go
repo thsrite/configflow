@@ -110,39 +110,13 @@ func newGatewayHost(t *testing.T, o hostOpts) *gatewayHost {
 		o.architecture = "x86_64"
 	}
 	tmp := t.TempDir()
-	python := pythonExe(t)
 	events := filepath.Join(tmp, "events")
 	assets := filepath.Join(tmp, "assets")
 	commands := filepath.Join(tmp, "commands")
 	os.MkdirAll(assets, 0o755)
 	os.MkdirAll(commands, 0o755)
-	shebang := "#!" + python + " -S\n"
-	core := shebang + `import os,sys
-from pathlib import Path
-kind=Path(sys.argv[0]).name
-args=sys.argv[1:]
-if '-v' in args:
- version=os.environ.get('EXISTING_MIHOMO_VERSION','v1.19.32') if '/usr/local/bin/' in sys.argv[0] else 'v1.19.32'
- print('Mihomo Meta '+version+' linux amd64'); raise SystemExit()
-if '--version' in args: print('oxidns 1.6.1'); raise SystemExit()
-with open(os.environ['EVENTS'],'a') as f: f.write('core-check '+kind+' '+' '.join(args)+'\n')
-if os.environ.get('FAIL_CHECK') == kind: raise SystemExit(41)
-if '-f' in args: p=args[args.index('-f')+1]
-else: p=args[args.index('-c')+1]
-assert Path(p).is_file()
-`
-	agent := shebang + `import json,os,sys
-args=sys.argv[1:]
-if args == ['-h']: raise SystemExit()
-if args == ['-version']: print(os.environ.get('AGENT_VERSION','1.8.25-go')); raise SystemExit()
-cfg=json.load(open(args[args.index('-config')+1]))
-with open(os.environ['EVENTS'],'a') as f: f.write('agent-check '+cfg['service_type']+' '+args[-1]+'\n')
-if '-prepare-tun' in args:
- with open(os.environ['EVENTS'],'a') as f: f.write('prepare-tun:'+cfg['service_type']+' '+' '.join(args[2:])+'\n')
- if os.environ.get('FULL_TUN') != 'yes': raise SystemExit('Gateway installation must not prepare TUN')
- raise SystemExit()
-if cfg['service_type'] == os.environ.get('FAIL_AGENT_CHECK'): raise SystemExit(42)
-`
+	core := stubScript(t, "gateway-core", "")
+	agent := stubScript(t, "gateway-agent", "")
 	writeFile(t, filepath.Join(assets, "agent"), agent, 0o644)
 	var mihomo, oxidns bytes.Buffer
 	gz := gzip.NewWriter(&mihomo)
@@ -199,61 +173,11 @@ if cfg['service_type'] == os.environ.get('FAIL_AGENT_CHECK'): raise SystemExit(4
 	writeFile(t, filepath.Join(tmp, "agent-process"), "PPid:\tmissing\n", 0o644)
 	writeFile(t, filepath.Join(tmp, "active"), "", 0o644)
 	writeFile(t, filepath.Join(tmp, "zoneinfo/Asia/Shanghai"), "TZif", 0o644)
-	managerCode := shebang + `import json,os,sys
-from pathlib import Path
-root=Path(os.environ['FAKE_ROOT']); name=Path(sys.argv[0]).name; args=sys.argv[1:]
-with open(os.environ['EVENTS'],'a') as f: f.write(name+' '+' '.join(args)+'\n')
-active=set((root/'active').read_text().split())
-service=args[1] if name=='systemctl' and len(args)>1 else (args[0] if args else '')
-if service.endswith('.service'): service=service[:-8]
-if name=='systemctl' and args[0]=='show':
- if '--property=LoadState' in args: print('loaded' if (root/'etc/systemd/system'/f'{service}.service').exists() else 'not-found')
- else:
-  text=(root/'etc/systemd/system'/f'{service}.service').read_text()
-  command=[l[10:] for l in text.splitlines() if l.startswith('ExecStart=')][0]
-  print('{ path='+command.split()[0]+' ; argv[]='+command+' ; }')
- raise SystemExit()
-if (name=='systemctl' and args[0]=='is-active'):
- service=args[-1]; raise SystemExit(0 if service in active else 3)
-action=args[0] if name=='systemctl' else (args[1] if len(args)>1 else '')
-if name=='rc-service' and action=='status': raise SystemExit(0 if service in active else 3)
-if action=='start':
- if os.environ.get('FAIL_START')==service: raise SystemExit(43)
- active.add(service); (root/'active').write_text(' '.join(sorted(active)))
- if service.startswith('configflow-agent-'):
-  kind=service.removeprefix('configflow-agent-'); p=root/'opt/configflow-agent'/kind/'config.json'
-  cfg=json.loads(p.read_text()); cfg.update(agent_id='registered-'+kind,token='agent-token-'+kind)
-  p.write_text(json.dumps(cfg,indent=2))
-if action=='stop':
- active.discard(service); (root/'active').write_text(' '.join(sorted(active)))
-if name=='systemctl' and action=='restart' and service=='systemd-resolved' and (root/'etc/systemd/resolved.conf.d/configflow.conf').exists():
- (root/'resolved-stub-off').write_text('')
-`
-	curl := shebang + `import json,os,shutil,sys
-from pathlib import Path
-args=sys.argv[1:]; url=args[-1]; out=Path(args[args.index('-o')+1]); assets=Path(os.environ['ASSETS'])
-with open(os.environ['EVENTS'],'a') as f: f.write('download '+url+'\n')
-if '--data-binary' in args:
- body=Path(args[args.index('--data-binary')+1][1:]); headers=Path(args[args.index('-H')+1][1:])
- data=json.loads(body.read_text()); assert data['agents']['mihomo']['token']=='agent-token-mihomo'; assert data['agents']['oxidns']['id']=='registered-oxidns'
- assert headers.read_text().startswith('Authorization: Bearer session-token-')
- out.write_text('{"success":true}'); raise SystemExit()
-if os.environ.get('FAIL_GITHUB') == 'yes' and 'github.com/' in url: raise SystemExit(45)
-if 'mihomo-linux-' in url: src=assets/'mihomo.gz'
-elif 'oxidns-' in url: src=assets/'oxidns.tar.gz'
-else: src=assets/'agent'
-if os.environ.get('FAIL_DOWNLOAD')==src.name: raise SystemExit(44)
-shutil.copyfile(src,out)
-if os.environ.get('CORRUPT')==src.name: out.write_bytes(b'bad checksum')
-`
+	managerCode := stubScript(t, "gateway-manager", "")
+	curl := stubScript(t, "gateway-curl", "")
 	sysctl := "#!/bin/sh\nprintf \"forbidden-sysctl %s\\n\" \"$*\" >> \"$EVENTS\"\nexit 98\n"
 	if o.fullTun {
-		sysctl = shebang + `import os,sys
-args=sys.argv[1:]
-with open(os.environ['EVENTS'],'a') as f: f.write('sysctl '+' '.join(args)+'\n')
-assert args[:2]==['-q','-w'] and args[2] in ('net.ipv4.ip_forward=0','net.ipv4.ip_forward=1'), args
-open(os.environ['FAKE_ROOT']+'/ip_forward','w').write(args[2][-1]+'\n')
-`
+		sysctl = stubScript(t, "gateway-sysctl", "")
 	}
 	mocks := map[string]string{
 		"id":    "#!/bin/sh\necho 0\n",
@@ -397,22 +321,11 @@ func withoutHostTools(t *testing.T, tmp string, hidden []string) string {
 
 // gatewayPackageManager is gateway_package_manager(tmp_path, name, fail).
 func gatewayPackageManager(t *testing.T, tmp, name string, fail bool) {
-	failText := "False"
+	failValue := "0"
 	if fail {
-		failText = "True"
+		failValue = "1"
 	}
-	writeFile(t, filepath.Join(tmp, "commands", name), "#!"+pythonExe(t)+` -S
-import os,sys
-from pathlib import Path
-with open(os.environ['EVENTS'],'a') as f: f.write(Path(sys.argv[0]).name+' '+' '.join(sys.argv[1:])+'\n')
-if sys.argv[1:]==['update']: raise SystemExit()
-if `+failText+`: raise SystemExit(1)
-pending=Path(os.environ['FAKE_ROOT'])/'pending'
-for package,tools in {'nftables': ['nft'], 'iproute2': ['ss', 'ip'], 'iproute': ['ss', 'ip']}.items():
-    if package in sys.argv[1:]:
-        for tool in tools:
-            if (pending/tool).exists(): (pending/tool).rename(Path(os.environ['FAKE_ROOT'])/'commands'/tool)
-`, 0o755)
+	writeFile(t, filepath.Join(tmp, "commands", name), stubScript(t, "gateway-package", "", "GATEWAY_PACKAGE_FAIL="+failValue), 0o755)
 }
 
 // allOutput is all_output(result): terminal output plus the full log.

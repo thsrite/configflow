@@ -23,8 +23,6 @@ func shellFunction(t *testing.T, filename, name string) string {
 	return match
 }
 
-const checkEnvironmentMarker = "if '-check-environment' in args:\n"
-
 func TestMissingForwardingPrerequisiteFailsBeforeStoppingAgents(t *testing.T) {
 	for _, manager := range []string{"systemd", "openrc"} {
 		for _, tool := range []string{"sysctl", "cmp", "ln"} {
@@ -34,11 +32,7 @@ func TestMissingForwardingPrerequisiteFailsBeforeStoppingAgents(t *testing.T) {
 				h := newAIOHarness(t, manager, true, nil)
 				e, _ := isolateDependencies(t, h.tmp, env(h.env), nil, "", true)
 				e = e.with("MISSING_TOOL_READY="+h.path("missing-tool-ready"), "MISSING_TOOL="+tool)
-				agent := e.get("FAKE_AGENT")
-				source := readFile(t, agent)
-				require(t, strings.Contains(source, checkEnvironmentMarker), "marker")
-				writeFile(t, agent, strings.Replace(source, checkEnvironmentMarker,
-					checkEnvironmentMarker+"    open(os.environ['MISSING_TOOL_READY'], 'w').close()\n", 1), 0o755)
+				// The aio-agent stub creates MISSING_TOOL_READY when -check-environment runs.
 				before := snapshotFiles(t, h.path("agent"), h.units)
 				override := `command() {
     if [ -f "$MISSING_TOOL_READY" ] && [ "$#" -eq 2 ] && [ "$1" = -v ] && [ "$2" = "$MISSING_TOOL" ]; then
@@ -136,18 +130,11 @@ func TestForwardingSummaryOnlyReplacesResolvedWarningAndPreservesLog(t *testing.
 func TestSuccessfulAIOInstallDoesNotRepeatResolvedForwardingWarning(t *testing.T) {
 	managers(t, func(t *testing.T, manager string) {
 		h := newAIOHarness(t, manager, true, nil)
-		agent := h.path("fake-agent")
 		resolved := "[提醒] IPv4 转发：当前 net.ipv4.ip_forward=0；作为网关时需开启。"
 		unrelated := "[提醒] DNS 检查：仍需核对客户端入口。"
 		risk := "[提醒] IPv4 转发持久化：其他配置或服务可能覆盖。"
-		source := readFile(t, agent)
-		require(t, strings.Contains(source, checkEnvironmentMarker), "marker")
-		prints := ""
-		for _, message := range []string{resolved, unrelated, risk} {
-			prints += "    print('" + message + "')\n" // repr() of these quote-free strings
-		}
-		writeFile(t, agent, strings.Replace(source, checkEnvironmentMarker, checkEnvironmentMarker+prints, 1), 0o755)
-		r := h.run(t, "1")
+		// The aio-agent stub prints AIO_AGENT_CHECK_PRINTS during -check-environment.
+		r := h.run(t, "1", "AIO_AGENT_CHECK_PRINTS="+strings.Join([]string{resolved, unrelated, risk}, "\n"))
 		if r.code != 0 {
 			t.Fatal(r.stdout + r.stderr)
 		}
