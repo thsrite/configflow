@@ -2998,6 +2998,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   整份原样保留（`Stored`），设备管理按「已保存的守卫设置无效」拒绝（失败即关，与以前相同，以前靠原值证据）；守卫开关本身类型不对按裁定读作关，
   这时不保留、可以撤下。守卫里的未声明成员照常丢弃。作为输入（路由器设置保存）严格解码，不会整份保留。
 - **策略组 `proxies_order`**：列表里有非对象元素时整列读作没有排序（`elements:"all"`），与 Python `managed_members` 相同；
+  旧版（v4）整份导入在解码前先按 Python 升级逻辑去掉非对象项，保留其余排序项；
   其它记录列表只丢坏元素。Agent 部署的 `dns_checks` 坏元素读作空检测（`elements:"keep"`），报告照旧追加「DNS 报告完整性」。
 - **删除/清理数量类设置**：`backup.keep_latest/keep_daily`、`traffic_history_retention_days` 只认整数字面量，数字文本、`1.0`、布尔等读作缺失
   （用默认值，宁可多留）+ 告警。订阅缓存孤儿清理在库里订阅列表有类型告警（非列表、元素非对象、id 非文本）时不删任何文件（失败即关）。
