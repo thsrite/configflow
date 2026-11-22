@@ -5,6 +5,7 @@ import (
 	"agent/dockerha"
 	"agent/preflight"
 	"agent/routes"
+	"agent/svc"
 	"agent/upgrade"
 	"context"
 	"flag"
@@ -23,6 +24,11 @@ func runAgent() int {
 	// before any Agent flag parsing, configuration or logging.
 	if len(os.Args) > 1 && dockerha.Commands[os.Args[1]] {
 		return dockerha.Run(context.Background(), os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Stderr)
+	}
+	// Process control inside the Docker image (s6 run/finish scripts, the
+	// HA companion socket, configflow-agent svc status ...).
+	if len(os.Args) > 1 && svc.Commands[os.Args[1]] {
+		return svc.Run(context.Background(), os.Args[1], os.Args[2:], os.Stdout, os.Stderr)
 	}
 	// 使用命令行参数指定配置文件路径
 	// Go的flag包支持单横线(-)和双横线(--)两种格式的参数
