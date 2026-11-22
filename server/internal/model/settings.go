@@ -209,7 +209,7 @@ type DiscoveryHistory struct {
 type DiscoveryRecheck struct {
 	At            string  `json:"at"`
 	Verdict       *string `json:"verdict"`
-	SuggestRemove *bool   `json:"suggest_remove"`
+	SuggestRemove *bool   `json:"suggest_remove" null:"keep"`
 	Reason        string  `json:"reason"`
 }
 

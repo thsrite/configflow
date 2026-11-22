@@ -254,6 +254,13 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			if _, err := dec.ReadToken(); err != nil {
 				return err
 			}
+			// An always-written tri-state (null:"keep", a recheck's
+			// suggest_remove) keeps null as unknown, so it is written back
+			// as null.
+			if field, ok := leafField(sink.root, dec.StackPointer()); ok && field.Tag.Get("null") == "keep" {
+				*v = nil
+				return nil
+			}
 			off := false
 			if on, ok := sink.switchDefault(dec); ok && on {
 				off = true
