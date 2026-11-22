@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -268,11 +267,11 @@ func resolveFrom(base, rest string, links *int) (string, error) {
 			continue
 		}
 		next := filepath.Join(base, name)
+		// A component that cannot be read (missing, not a directory, no
+		// permission) is kept as given, as before C10 (realpath non-strict);
+		// the caller's own file operation reports the problem.
 		info, err := os.Lstat(next)
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return "", err
-			}
 			base = next
 			continue
 		}
