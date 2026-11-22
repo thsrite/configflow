@@ -1,10 +1,12 @@
 package convert
 
 import (
+	"bytes"
 	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -147,7 +149,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 	// Only the members checked here are encoded, never a whole record (O10 R9).
 	for i := range config.Nodes {
 		node := &config.Nodes[i]
-		members, err := recordMembers(node.MemberJSON, "id", "params", "proxy_string")
+		members, err := recordMembers(node.MemberJSON, "id", "proxy_string")
 		if err != nil {
 			return err
 		}
@@ -158,9 +160,14 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		if strings.TrimSpace(node.Name) == "" {
 			return fmt.Errorf(msgResourceField, "name")
 		}
-		if raw, present := members["params"]; present {
-			var params map[string]json.RawMessage
-			if json.Unmarshal(raw, &params) != nil || params == nil {
+		// params is a Dynamic: valid JSON, present as a member exactly when it
+		// is not zero. Look at its first byte instead of encoding it.
+		if !reflect.ValueOf(node.Params).IsZero() {
+			raw, err := node.Params.MarshalJSON()
+			if err != nil {
+				return err
+			}
+			if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' {
 				return errors.New(msgNodeParamsObject)
 			}
 		}
