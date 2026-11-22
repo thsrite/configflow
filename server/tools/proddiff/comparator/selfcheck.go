@@ -15,9 +15,23 @@ var (
 	errSelfCheckFailed = errors.New("differential mutation self-check failed")
 )
 
-// selfCheck mutates real Go outputs and requires the production comparator
-// to report each exact change. It returns the passed check names in order.
+// compareFunc compares two replies of the self-check route.
+type compareFunc func(left, right reply) []diff
+
+// selfCheck runs the checks with the production comparator.
 func (c *comparator) selfCheck(real reply, samples map[string]reply) ([]string, error) {
+	return selfCheck(real, samples, func(left, right reply) []diff {
+		found, err := c.responseDiffs(left, right, "/self-check", nil, nil, nil)
+		if err != nil {
+			return []diff{{"self-check", "error"}}
+		}
+		return found
+	}, c.keys)
+}
+
+// selfCheck mutates real Go outputs and requires compare to report each
+// exact change. It returns the passed check names in order.
+func selfCheck(real reply, samples map[string]reply, compare compareFunc, keys *keySet) ([]string, error) {
 	for _, required := range []string{"yaml", "text", "headers", "http-json"} {
 		if _, ok := samples[required]; !ok {
 			return nil, fmt.Errorf("%w: %s", errSelfCheckSample, required)
@@ -30,13 +44,6 @@ func (c *comparator) selfCheck(real reply, samples map[string]reply) ([]string, 
 			names = append(names, name)
 		}
 		results[name] = ok
-	}
-	compare := func(left, right reply) []diff {
-		found, err := c.responseDiffs(left, right, "/self-check", nil, nil, nil)
-		if err != nil {
-			return []diff{{"self-check", "error"}}
-		}
-		return found
 	}
 	detects := func(name string, left, right reply, expected diff) {
 		found := false
@@ -71,9 +78,9 @@ func (c *comparator) selfCheck(real reply, samples map[string]reply) ([]string, 
 	sort.Strings(headerNames)
 	name := headerNames[0]
 	changed := withHeaders(sample, func(h map[string]string) { h[name] += "-self-check" })
-	detects("header-value", sample, changed, diff{"header." + c.keys.safeHeader(name), "value"})
+	detects("header-value", sample, changed, diff{"header." + keys.safeHeader(name), "value"})
 	dropped := withHeaders(sample, func(h map[string]string) { delete(h, name) })
-	detects("header-missing", sample, dropped, diff{"header." + c.keys.safeHeader(name), "missing-in-go"})
+	detects("header-missing", sample, dropped, diff{"header." + keys.safeHeader(name), "missing-in-go"})
 
 	// Deep JSON traversal: synthetic seven-level control document.
 	good := bodyReply(200, "application/json", []byte(`{"data":{"profiles":[{"config":{"dns":{"upstreams":[{"port":53}]}}}]}}`))
@@ -124,16 +131,16 @@ func (c *comparator) selfCheck(real reply, samples map[string]reply) ([]string, 
 	leaf := leaves[len(leaves)-1]
 	mutated := deepCopy(original)
 	setAt(mutated, leaf.keys, bump(leaf.value))
-	detects("json-real-leaf", jsonSample, encode(mutated), diff{c.shown(original, leaf.keys), kind(leaf.value, bump(leaf.value))})
+	detects("json-real-leaf", jsonSample, encode(mutated), diff{shown(keys, original, leaf.keys), kind(leaf.value, bump(leaf.value))})
 	object := objects[len(objects)-1]
 	objectMap := object.value.(*Map)
 	first := objectMap.keys[0]
 	mutated = deepCopy(original)
 	locate(mutated, object.keys).(*Map).Delete(first)
-	detects("json-missing-key", jsonSample, encode(mutated), diff{c.shown(original, append(append([]any{}, object.keys...), first)), "missing-in-go"})
+	detects("json-missing-key", jsonSample, encode(mutated), diff{shown(keys, original, append(append([]any{}, object.keys...), first)), "missing-in-go"})
 	mutated = deepCopy(original)
 	locate(mutated, object.keys).(*Map).Set("self_check_extra", "")
-	detects("json-extra-key", jsonSample, encode(mutated), diff{c.shown(original, object.keys) + "." + c.keys.safeKey("self_check_extra"), "extra-in-go"})
+	detects("json-extra-key", jsonSample, encode(mutated), diff{shown(keys, original, object.keys) + "." + keys.safeKey("self_check_extra"), "extra-in-go"})
 	mutated = deepCopy(original)
 	firstValue, _ := objectMap.Get(first)
 	var replacement any
@@ -141,14 +148,14 @@ func (c *comparator) selfCheck(real reply, samples map[string]reply) ([]string, 
 		replacement = ""
 	}
 	locate(mutated, object.keys).(*Map).Set(first, replacement)
-	detects("json-null-vs-value", jsonSample, encode(mutated), diff{c.shown(original, append(append([]any{}, object.keys...), first)), "type"})
+	detects("json-null-vs-value", jsonSample, encode(mutated), diff{shown(keys, original, append(append([]any{}, object.keys...), first)), "type"})
 	if len(lists) > 0 {
 		list := lists[0]
 		mutated = deepCopy(original)
 		moved := locate(mutated, list.keys).([]any)
 		moved[0], moved[1] = moved[1], moved[0]
 		found := compare(jsonSample, encode(mutated))
-		prefix := c.shown(original, list.keys) + "["
+		prefix := shown(keys, original, list.keys) + "["
 		ok := len(found) > 0
 		for _, d := range found {
 			if !strings.HasPrefix(d.Path, prefix) {
@@ -197,7 +204,7 @@ func (c *comparator) selfCheck(real reply, samples map[string]reply) ([]string, 
 		yamlLeaf := yamlLeaves[0]
 		changedYAML := deepCopy(loaded)
 		setAt(changedYAML, yamlLeaf.keys, bump(yamlLeaf.value))
-		detects("yaml-leaf", yamlSample, yamlReply(changedYAML, false), diff{c.shown(loaded, yamlLeaf.keys), kind(yamlLeaf.value, bump(yamlLeaf.value))})
+		detects("yaml-leaf", yamlSample, yamlReply(changedYAML, false), diff{shown(keys, loaded, yamlLeaf.keys), kind(yamlLeaf.value, bump(yamlLeaf.value))})
 		single := newMap()
 		single.Set(loadedMap.keys[0], nil)
 		extra, err := dumpYAML(single, false)
@@ -295,17 +302,17 @@ func setAt(root any, keys []any, value any) {
 }
 
 // shown builds the schema-safe path the comparator prints for keys.
-func (c *comparator) shown(doc any, keys []any) string {
+func shown(k *keySet, doc any, keys []any) string {
 	path := "body"
-	for _, k := range keys {
+	for _, key := range keys {
 		if list, ok := doc.([]any); ok {
-			i := k.(int)
+			i := key.(int)
 			path += fmt.Sprintf("[%d]", i)
 			doc = list[i]
 			continue
 		}
-		path += "." + c.keys.safeKey(k)
-		doc, _ = doc.(*Map).Get(k)
+		path += "." + k.safeKey(key)
+		doc, _ = doc.(*Map).Get(key)
 	}
 	return path
 }
