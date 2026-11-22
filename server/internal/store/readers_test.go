@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -131,8 +132,14 @@ func TestBuildTemporaryKeepsNoReader(t *testing.T) {
 
 // Concurrent readers and a writer: every read sees a committed head, and
 // each reader's generations never go backwards.
+//
+// The lock wait is long: eight readers in a tight loop wait for every commit's
+// EXTRA fsyncs, which on a loaded test server (load 30+, other fsyncs) took
+// longer than newStore's 2.5 s busy_timeout and failed reads with "database is
+// locked" equally with pooling disabled (HR O18 T1a). Lock timeouts are not
+// what this test checks.
 func TestPooledReadsRaceWithCommits(t *testing.T) {
-	target := newStore(t)
+	target := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(60))
 	entry := must(target.Create(sampleDocument(t), nil))(t)
 	const commits = 20
 	done := make(chan struct{})
