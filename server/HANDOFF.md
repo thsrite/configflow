@@ -98,6 +98,14 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+No-Python tests plan DONE (b85aa02f0, server/design/no-python-tests.md): ~72 packages / ~145 test files + difftest/
+live stages + proddiff/configdiff/routerdiff depend on Python. Approach: extend testgolden with a freeze mode (record
+runs Python and Go, writes the Go-side observation only after they agree); 16 work packages WP0–WP13; final recording
+on the switch candidate tree at T−1 week (tag python-final-goldens); gate afterwards: compare = proddiff Go-vs-Go +
+frontend, replay tests in core race, "no Python" audit. Running now: WP0 runtime inventory + WP3 move fixtures
+(Opus 62179ccd, go-nopy-wp0-wp3), WP9 proddiff Go-vs-Go (Opus 1e7554cf, go-nopy-wp9). WP1 freeze mechanism next.
+O14 precondition to add: all WPs done + two consecutive GATE_NOPY=1 gates before the switch.
+
 batch-31 MERGED 2026-11-22 (HA auto-complete after member-lost timeout + review M1 re-check the journal under the
 reserving lease; stale Docker AIO frontend test fixed; gate.sh now runs the FRONTEND (vue-tsc + vitest) in compare,
 GATE_ONLY=frontend; test-gate-routing repaired; gate-live accepts strace-split execve for the WebDAV TLS oracle).
