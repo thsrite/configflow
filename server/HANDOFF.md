@@ -98,6 +98,11 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-31 MERGED 2026-11-22 (HA auto-complete after member-lost timeout + review M1 re-check the journal under the
+reserving lease; stale Docker AIO frontend test fixed; gate.sh now runs the FRONTEND (vue-tsc + vitest) in compare,
+GATE_ONLY=frontend; test-gate-routing repaired; gate-live accepts strace-split execve for the WebDAV TLS oracle).
+Before batch-31 the gate never ran frontend tests (a frontend failure sat on go since 11-19).
+
 batch-29 MERGED 2026-11-22 (idle wrap-up: presence credentials on demand, webdav auto_backup=false skips the diff,
 o10perf idlestats; enrollment fuzz UseNumber). batch-30 MERGED 2026-11-22 (O18 T1a: Document/Profile/Shared/System
 plain structs + per-row codec, lenient stored reads, strict input with existing messages, unknown members dropped,
