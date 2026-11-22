@@ -96,6 +96,7 @@ func run() (resultErr error) {
 	records := system.Agents
 	receipts := deploy.NewReceipts(data)
 	plans := []plan{}
+	migrated := map[int]bool{}
 	for i := range records {
 		record := &records[i]
 		applied := record.AppliedContent
@@ -237,6 +238,7 @@ func run() (resultErr error) {
 			applied.DeployedConfigSHA256 = new(next.Comparison().SHA256)
 		}
 		plans = append(plans, plan{agentFolder, after, metadata, hash(after)})
+		migrated[i] = true
 	}
 	// Apply only after every independent proof succeeded. The driver patches the
 	// single raw agents row without changing revision/generation metadata.
@@ -248,7 +250,23 @@ func run() (resultErr error) {
 			return err
 		}
 	}
-	if err = writeJSON(filepath.Join(proofDir, "agents-after.json"), records); err != nil {
+	loaded, err := repository.Store().Load()
+	if err != nil {
+		return err
+	}
+	var stored []byte
+	if loaded.Document.System != nil {
+		for _, field := range loaded.Document.System.Fields {
+			if field.Name == "agents" {
+				stored = field.Value
+			}
+		}
+	}
+	after, err := patchedAgents(stored, records, migrated)
+	if err != nil {
+		return err
+	}
+	if err = privateWrite(filepath.Join(proofDir, "agents-after.json"), after); err != nil {
 		return err
 	}
 	return writeJSON(filepath.Join(proofDir, "summary.json"), struct {
@@ -256,6 +274,64 @@ func run() (resultErr error) {
 		Proof     string `json:"proof"`
 	}{len(plans), "yamlx.Equal and exact non-main bytes"})
 }
+
+// patchedAgents returns the stored agents row (raw, as read from the store)
+// with only the private format identity of each converted
+// Agent's applied_content replaced: fingerprint, files and, when stored,
+// deployed_config_sha256. Every other byte of the row stays as stored, so the
+// typed record codec (which drops nulls and undeclared members, O18 T1b)
+// never rewrites the rest of the row.
+func patchedAgents(raw []byte, records []model.Agent, migrated map[int]bool) ([]byte, error) {
+	var rows []json.RawMessage
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("stored agents row: %w", err)
+	}
+	if len(rows) != len(records) {
+		return nil, errors.New("stored agents row does not match the decoded Agents")
+	}
+	for i := range rows {
+		if !migrated[i] {
+			continue
+		}
+		var agent model.OrderedMap[json.RawMessage]
+		if err := json.Unmarshal(rows[i], &agent); err != nil {
+			return nil, err
+		}
+		var id string
+		if member, ok := agent.Get("id"); !ok || json.Unmarshal(member, &id) != nil || id != records[i].ID {
+			return nil, errors.New("stored agents row order does not match the decoded Agents")
+		}
+		member, _ := agent.Get("applied_content")
+		var stored model.OrderedMap[json.RawMessage]
+		if err := json.Unmarshal(member, &stored); err != nil {
+			return nil, err
+		}
+		applied := records[i].AppliedContent
+		for _, name := range []string{"fingerprint", "files", "deployed_config_sha256"} {
+			if _, present := stored.Get(name); !present && name == "deployed_config_sha256" {
+				continue
+			}
+			value, present, err := model.EncodeMember(applied, name)
+			if err != nil {
+				return nil, err
+			}
+			if !present {
+				return nil, fmt.Errorf("converted applied_content lacks %s", name)
+			}
+			stored.Set(name, value)
+		}
+		encoded, err := json.Marshal(stored)
+		if err != nil {
+			return nil, err
+		}
+		agent.Set("applied_content", encoded)
+		if rows[i], err = json.Marshal(agent); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(rows)
+}
+
 func main() {
 	if err := run(); err != nil {
 		logx.Get("proddiff.baseline").Error("isolated baseline format migration failed; inspect private proofs")
