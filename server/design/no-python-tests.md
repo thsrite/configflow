@@ -548,9 +548,10 @@ backend 那份跟着切换一起删除。不在 WP3 范围、留给 WP2 的：`p
 | `server/tools/proddiff/` 的 Python 侧 | `flask_worker.py`、`python_generators.py`、`a13_proof.py`、`a18_proof.py`（`--a13-proof`）；由 WP9 换成第二个 Go 进程和 Go generator。比较器 `run.py`、`*_policy.py` 只用标准库和 PyYAML 的部分可以先留着（WP9 决定） |
 | `server/tools/o10perf/perf.py` 的 `--servers python` | 性能对照的 Python 一侧 |
 | `server/scripts/` | `gate-live.py`、`gate-test-exec.sh`（strace 包装）、`test-gate-live.py`、`review-n8-2-startup.py`；`a20/r08/r10/r11-mutation-gate.py` 是一次性的变异门禁，跟着删；`test-gate-routing.py` 去掉 difftest/live 的路由用例 |
+| `internal/skipaudit/allowed.txt` | 白名单里的 91 条都随上面的测试删除，切换后必须为空（门禁会报「stale entry」提示删除） |
 | `internal/testgolden` | 录制模式、`PYREF_*`、源码和 venv 指纹、假解释器负控（`TestRecordingAndReplayNegativeControls` 等）；B.3 的回放如果保留，只留「读 golden + 每条录制都被用到」 |
 | 根目录 | `scripts/test-backend.sh`，`AGENTS.md` 测试节，`.github/workflows/checks.yml` 的 pytest 分片（换成 Go 任务，切换计划 #40） |
-| 测试服务器 | `~/cf-test/.venv` 退役。**系统 python3 暂时保留**：installer 的 101 个行为测试用它写远端主机命令桩（附录 A.4），不是 Python 对比，属于纯 Go 测试的一部分；要么切换前改成 shell 桩，要么在 AGENT-BRIEF 写明测试服务器必须有 python3，并把「缺 python3 就 skip」改成失败 |
+| 测试服务器 | `~/cf-test/.venv` 退役。installer 的远端主机命令桩已改成 Go（2026-11-22，`internal/installer/stub_test.go`），不再需要系统 python3；只剩 6 个测试执行**产品自带**的 Python（Docker HA 的 `bootstrap.py` 和迁移检查，在 Agent 镜像里由 python3 运行），缺 python3 时失败而不是 skip。这 6 个要么保留并要求测试服务器有 python3，要么等产品把这两段改成 Go 后改写 |
 
 ### B.2 普通包里要删的测试（34 个包、126 个顶层测试）
 
@@ -620,7 +621,7 @@ WP3 已删除的 6 个不再列出。
 | 阶段 | 内容 | 相对现在 |
 |---|---|---|
 | core: gofmt / vet / build tags | `gofmt -l`、`go vet ./...`、`configflow_proddiff`/`configflow_difftest` 标签构建 | 不变（`configflow_difftest` 标签只剩 `cmd/configflow` 的故障注入清单，是否改名见 WP9/WP11） |
-| core: `go test -race ./...` | 全部纯 Go 测试 | 去掉 pyref 指纹步骤，不再导出 `PYREF_INPUT_FINGERPRINT`；不再需要 `-count=1`，测试缓存可以命中 |
+| core: `go test -race ./...` | 全部纯 Go 测试，含 `internal/skipaudit`：任何测试在缺解释器或缺工具时 skip 都判失败（白名单为空） | 去掉 pyref 指纹步骤，不再导出 `PYREF_INPUT_FINGERPRINT`；不再需要 `-count=1`，测试缓存可以命中 |
 | core: Agent 模块 | `backend/agents/go-agent` 的 gofmt / vet / race | 不变 |
 | fuzz | 命令行给的 fuzz 目标，各 60 秒 | 不变 |
 | compare: frontend | vue-tsc + vitest | 不变 |

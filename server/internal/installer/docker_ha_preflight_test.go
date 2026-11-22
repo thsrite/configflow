@@ -324,7 +324,7 @@ func TestCollectorWithoutEncodingToolsNeverEmitsFalseCompleteBlock(t *testing.T)
 	}
 	cmd := exec.Command("/bin/bash")
 	if _, err := os.Stat("/bin/bash"); err != nil {
-		t.Skip("/bin/bash is required")
+		t.Fatalf("/bin/bash is required on the test server: %v", err)
 	}
 	cmd.Stdin = strings.NewReader(CollectorScript())
 	cmd.Env = env

@@ -66,7 +66,7 @@ func bashPath(t *testing.T) string {
 	t.Helper()
 	path, err := exec.LookPath("bash")
 	if err != nil {
-		t.Skip("bash is required")
+		t.Fatalf("bash is required on the test server: %v", err)
 	}
 	return path
 }
