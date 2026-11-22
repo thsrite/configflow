@@ -21,7 +21,7 @@
     URL 经 `weburl.SafeForLog` 脱敏。
   - 监督 goroutine 走 `lifecycle.SpawnService`（新增，见下），不是裸 `go`。
 - `internal/lifecycle`：新增 `SpawnService`（Runtime 方法 + 默认 runtime 函数）。与 `Spawn` 同样的准入；**不计入 drain 和
-  `WaitIdle`**，上下文随 jobs 一起在 drain 结束时取消，Shutdown 在 after-drain 钩子之前等它结束（受总 grace 约束）。
+  `WaitIdle`**，上下文随 jobs 一起在 drain 结束时取消，Shutdown 在 after-drain 钩子之前等它结束（受总 grace 约束）。（batch-36 复核改为：after-drain 钩子之后、close 钩子之前等，最多到 grace−0.5 s。）
   这样 `docker stop` 时 Sub-Store 能服务完正在收尾的请求再停，和旧 supervisord（先停 configflow、后停 sub-store）一致，
   而且空闲面板关停不必等满 6 s。`o3-concurrency.md` 已补说明。
 

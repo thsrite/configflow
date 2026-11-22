@@ -378,8 +378,9 @@ func (r *Runtime) Spawn(ctx context.Context, name string, fn func(context.Contex
 // a child process. Unlike Spawn it does not hold the shutdown drain open, so
 // what it serves stays available while requests and jobs drain: its context
 // is cancelled together with the jobs (when the drain ends, grace−2s at the
-// latest), and Shutdown waits for it, bounded by the overall grace, before the
-// after-drain hooks run. Admission follows Spawn.
+// latest), and Shutdown waits for it after the after-drain hooks and before
+// the close hooks, until 0.5 s before the overall grace ends. Admission
+// follows Spawn.
 func (r *Runtime) SpawnService(ctx context.Context, name string, fn func(context.Context)) error {
 	r.mu.Lock()
 	if origin, ok := ctx.Value(generationKey{}).(*generation); ok && origin.runtime == r && (origin.closed || origin != r.current) {
@@ -582,10 +583,18 @@ func (r *Runtime) Shutdown(ctx context.Context) {
 		logger.Warning(msgShutdownTimeout)
 	}
 	stopCancel()
-	if err := r.waitServices(overall, g); err != nil {
-		logger.Warning(msgServiceTimeout)
-	}
 	for _, phase := range []Phase{PhaseAfterDrain, PhaseClose} {
+		if phase == PhaseClose {
+			// Services were cancelled with the jobs. They are joined after the
+			// after-drain hooks (a slow child-process stop must not take the
+			// final metrics flush's budget) and keep the last 0.5 s of the grace
+			// for the close hooks.
+			servicesCtx, stopServices := r.clockContext(overall, start.Add(r.grace-500*time.Millisecond).Sub(r.clock.Now()))
+			if err := r.waitServices(servicesCtx, g); err != nil {
+				logger.Warning(msgServiceTimeout)
+			}
+			stopServices()
+		}
 		for _, h := range hooks {
 			if h.Phase == phase {
 				r.hook(overall, h)

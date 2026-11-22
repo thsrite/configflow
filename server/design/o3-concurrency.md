@@ -540,8 +540,9 @@ remain unchanged; ordinary publication commits remain cancellable.
 **Clarified in nopy-panel-image (2026-11-23):** `SpawnService(ctx, name, fn)` (Runtime method and
 default-runtime function) is for an owner that must outlive the drain, such as the supervisor of a child
 process. Admission is Spawn's; it is not counted by the drain or `WaitIdle`; its context is cancelled together
-with the jobs, and Shutdown waits for it (bounded by the overall grace) before the after-drain hooks. Use
-Spawn for work that should finish before shutdown proceeds.
+with the jobs, and Shutdown waits for it after the after-drain hooks and before the close hooks, until 0.5 s
+before the overall grace ends (batch-36 review: waiting before the after-drain hooks let a slow child stop take
+the final metrics flush's budget). Use Spawn for work that should finish before shutdown proceeds.
 
 ### 2.4 Mapping table (every Python loop/lock → Go construct)
 
@@ -665,8 +666,8 @@ and syncs were killed. Go keeps both flushes and does better within the containe
 | 0 | `http.Server.Shutdown` for web and API (listeners close; in-flight handlers continue) — concurrently with the drain. |
 | ≤ grace−2 s | Drain: wait for in-flight handlers, rounds and spawned jobs. Spawn still works for handlers that are finishing. |
 | grace−2 s | Cancel every job/round context (device ops stop at their next ctx check — Python's kill, but later and cleaner); wait ≤0.5 s. |
-| then | Wait for services (`SpawnService`, e.g. the Sub-Store supervisor), cancelled with the jobs; they are not part of the drain, so Sub-Store keeps serving draining requests. Bounded by the overall grace. |
 | then | `PhaseAfterDrain` hooks: metrics flush #2 (`record_idle=false`), WebDAV worker close (no new upload; an in-flight upload is cancelled). |
+| then | Wait for services (`SpawnService`, e.g. the Sub-Store supervisor), cancelled with the jobs; they are not part of the drain, so Sub-Store keeps serving draining requests. Bounded by grace−0.5 s so the close hooks keep their time. |
 | then | `PhaseClose` hooks: close SQLite handles, flush logx, release the instance lock; exit 0. |
 
 `grace` = `CONFIGFLOW_SHUTDOWN_GRACE_SECONDS` (default 8, so the whole sequence fits Docker's default 10 s; the panel image has no

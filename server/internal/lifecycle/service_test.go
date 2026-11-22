@@ -10,7 +10,7 @@ import (
 )
 
 // A service does not hold the drain open, keeps running while the drain
-// lasts, is cancelled afterwards and is joined before after-drain hooks.
+// lasts, is cancelled afterwards and is joined before the close hooks.
 func TestSpawnServiceOutlivesDrainAndIsJoined(t *testing.T) {
 	registry := lifecycle.NewRegistry()
 	order := make(chan string, 8)
@@ -21,6 +21,7 @@ func TestSpawnServiceOutlivesDrainAndIsJoined(t *testing.T) {
 		return nil
 	}})
 	registry.RegisterShutdown(lifecycle.ShutdownHook{Name: "after", Phase: lifecycle.PhaseAfterDrain, Run: func(context.Context) { order <- "after-drain" }})
+	registry.RegisterShutdown(lifecycle.ShutdownHook{Name: "close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { order <- "close" }})
 	runner.Start(context.Background())
 	running := make(chan struct{})
 	if err := runner.SpawnService(context.Background(), "svc", func(ctx context.Context) {
@@ -51,14 +52,18 @@ func TestSpawnServiceOutlivesDrainAndIsJoined(t *testing.T) {
 	for event := range order {
 		got = append(got, event)
 	}
-	want := []string{"drain", "service-cancelled-after-drain", "service-done", "after-drain"}
-	if len(got) != len(want) {
+	at := map[string]int{}
+	for i, event := range got {
+		at[event] = i
+	}
+	if len(got) != 5 || got[0] != "drain" || got[4] != "close" {
 		t.Fatalf("order %v", got)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("order %v, want %v", got, want)
-		}
+	if _, early := at["service-cancelled-early"]; early {
+		t.Fatalf("service cancelled before the drain ended: %v", got)
+	}
+	if at["service-cancelled-after-drain"] > at["service-done"] || at["after-drain"] > at["close"] {
+		t.Fatalf("order %v", got)
 	}
 	if err := runner.SpawnService(context.Background(), "late", func(context.Context) {}); !errors.Is(err, lifecycle.ErrStopping) {
 		t.Fatalf("spawn after shutdown: %v", err)
@@ -78,5 +83,32 @@ func TestSpawnServiceBoundedByGrace(t *testing.T) {
 	runner.Shutdown(context.Background())
 	if elapsed := time.Since(begin); elapsed > 2*time.Second {
 		t.Fatalf("shutdown took %v", elapsed)
+	}
+}
+
+// A service that ignores cancellation neither takes the after-drain hooks'
+// budget nor the close hooks' last 0.5 s.
+func TestSpawnServiceDoesNotStarveHooks(t *testing.T) {
+	registry := lifecycle.NewRegistry()
+	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: registry, Grace: 1500 * time.Millisecond})
+	hooks := make(chan error, 2)
+	registry.RegisterShutdown(lifecycle.ShutdownHook{Name: "after", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { hooks <- ctx.Err() }})
+	registry.RegisterShutdown(lifecycle.ShutdownHook{Name: "close", Phase: lifecycle.PhaseClose, Run: func(ctx context.Context) { hooks <- ctx.Err() }})
+	runner.Start(context.Background())
+	release := make(chan struct{})
+	defer close(release)
+	if err := runner.SpawnService(context.Background(), "stuck", func(context.Context) { <-release }); err != nil {
+		t.Fatal(err)
+	}
+	runner.Shutdown(context.Background())
+	for _, phase := range []string{"after-drain", "close"} {
+		select {
+		case err := <-hooks:
+			if err != nil {
+				t.Fatalf("%s hook ran with %v", phase, err)
+			}
+		default:
+			t.Fatalf("%s hook did not run", phase)
+		}
 	}
 }
