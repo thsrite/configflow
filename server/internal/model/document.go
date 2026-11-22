@@ -348,6 +348,7 @@ func decodeSection(record string, data []byte, target any) error {
 		if err := decodeStrict(value, decoded.Interface()); err != nil {
 			return memberError(record, name, value, err)
 		}
+		clipSlices(decoded.Elem())
 		destination.Set(decoded.Elem())
 	}
 	return nil
