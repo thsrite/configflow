@@ -7,9 +7,9 @@ type SystemConfig struct {
 	ServerDomain                   string             `json:"server_domain"`
 	GitHubProxyDomain              string             `json:"github_proxy_domain"`
 	RuleFetchProxy                 string             `json:"rule_fetch_proxy"`
-	ConfigToken                    string             `json:"config_token"`
-	RuleProxyToken                 string             `json:"rule_proxy_token"`
-	RetiredRuleProxyTokens         []string           `json:"retired_rule_proxy_tokens"`
+	ConfigToken                    string             `json:"config_token" stored:"secret"`
+	RuleProxyToken                 string             `json:"rule_proxy_token" stored:"secret"`
+	RetiredRuleProxyTokens         []string           `json:"retired_rule_proxy_tokens" stored:"secret"`
 	DefaultProfileID               *string            `json:"default_profile_id"`
 	SubscriptionAggregationEnabled *bool              `json:"subscription_aggregation_enabled"`
 	SubStoreMode                   *string            `json:"sub_store_mode"`

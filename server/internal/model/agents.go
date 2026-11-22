@@ -11,7 +11,7 @@ type Agent struct {
 	Name                     string                        `json:"name,omitzero"`
 	Host                     string                        `json:"host,omitzero"`
 	Port                     Int                           `json:"port,omitzero"`
-	Token                    string                        `json:"token,omitzero"`
+	Token                    string                        `json:"token,omitzero" stored:"secret"`
 	ServiceType              string                        `json:"service_type,omitzero"`
 	ProfileID                string                        `json:"profile_id,omitzero"`
 	DeploymentMethod         string                        `json:"deployment_method,omitzero"`

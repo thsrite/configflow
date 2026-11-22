@@ -6,7 +6,7 @@ import ()
 // Only the SHA-256 digest is persisted; successful registration deletes it in
 // the same transaction that creates the Agent.
 type AgentRegistrationSession struct {
-	Hash             string `json:"hash,omitzero"`
+	Hash             string `json:"hash,omitzero" stored:"secret"`
 	Name             string `json:"name,omitzero"`
 	Host             string `json:"host,omitzero"`
 	Port             Int    `json:"port,omitzero"`

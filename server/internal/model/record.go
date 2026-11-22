@@ -170,7 +170,16 @@ func DecodeRecord(data []byte, rec any, raw *Raw) error {
 		if field, known := schema.byName[member.name]; known {
 			saved.known = true
 			target := reflect.New(working.Field(field.index).Type())
-			err := decodeValue(member.value, target.Interface())
+			value, secretOK := member.value, true
+			if destination.Type().Field(field.index).Tag.Get("stored") == secretTag {
+				value, secretOK = secretMember(member.value)
+			}
+			err := decodeValue(value, target.Interface())
+			if err == nil && !secretOK {
+				// The usable part decoded (text elements of a credential
+				// list); report the dropped part once.
+				state.issues = append(state.issues, FieldIssue{member.name, IssueType})
+			}
 			if err != nil {
 				saved.invalid = true
 				state.issues = append(state.issues, FieldIssue{member.name, IssueType})
@@ -192,6 +201,42 @@ func DecodeRecord(data []byte, rec any, raw *Raw) error {
 	destination.Set(working)
 	*raw = state
 	return nil
+}
+
+// secretMember returns the usable part of a stored credential member
+// (stored:"secret"): a string or null as it is, a list without its non-string
+// elements. ok is false when something was dropped; a value of another type is
+// then returned as is, so it fails to decode and the member reads as empty
+// (no credential), never as the text of a number (O18 T1b review).
+func secretMember(raw json.RawMessage) (value json.RawMessage, ok bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return raw, true
+	}
+	switch trimmed[0] {
+	case '"', 'n':
+		return raw, true
+	case '[':
+		var elements []json.RawMessage
+		if json.Unmarshal(trimmed, &elements) != nil {
+			return raw, false
+		}
+		kept := make([]json.RawMessage, 0, len(elements))
+		for _, element := range elements {
+			if element := bytes.TrimSpace(element); len(element) > 0 && element[0] == '"' {
+				kept = append(kept, element)
+			}
+		}
+		if len(kept) == len(elements) {
+			return raw, true
+		}
+		filtered, err := json.Marshal(kept)
+		if err != nil {
+			return raw, false
+		}
+		return filtered, false
+	}
+	return []byte(`{}`), false
 }
 
 // ClearMember records the explicit intent to drop a declared member of rec

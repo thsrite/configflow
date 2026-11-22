@@ -51,9 +51,9 @@ type plainRecord interface{ plainRecord() }
 type issueSink struct {
 	root   reflect.Type
 	prefix string
-	// gate: the root value itself is a device-write gate member
-	// (DecodeStoredMember of a stored:"gate" field).
-	gate   bool
+	// tag: the stored tag of the root value itself (DecodeStoredMember of
+	// a tagged field); see storedTag.
+	tag    string
 	issues []FieldIssue
 }
 
@@ -139,12 +139,18 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				*v = token.String()
 				return nil
 			case '0':
-				// Python stored numbers in text members; keep their literal.
+				// Python stored numbers in text members; keep their literal,
+				// except in credentials (see secretTag).
 				value, err := dec.ReadValue()
 				if err != nil {
 					return err
 				}
-				*v = string(value)
+				if storedTag(sink, dec.StackPointer()) == secretTag {
+					*v = ""
+					sink.add(dec, IssueType)
+				} else {
+					*v = string(value)
+				}
 				return nil
 			}
 			return skipInvalid(dec, sink, func() { *v = "" })
@@ -168,7 +174,7 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			if err != nil {
 				return err
 			}
-			*v = !writeGate(sink, dec.StackPointer()) && JSONSwitchEnabled(value, false)
+			*v = storedTag(sink, dec.StackPointer()) != gateTag && JSONSwitchEnabled(value, false)
 			sink.add(dec, IssueType)
 			return nil
 		}),
@@ -268,34 +274,40 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 // writes the user never turned on (O18 T1b review ruling).
 const gateTag = "gate"
 
-// writeGate reports whether the member at pointer (from the decoder's root
-// type) is a struct field tagged stored:"gate".
-func writeGate(sink *issueSink, pointer jsontext.Pointer) bool {
-	typ, gate := sink.root, sink.gate
+// secretTag marks a stored credential (an Agent token, a registration
+// credential digest): a value of another JSON type than a string, numbers
+// included, reads as empty plus an issue, so it never authenticates and the
+// panel sends no request with it (O18 T1b review).
+const secretTag = "secret"
+
+// storedTag returns the stored tag of the struct field at pointer (from the
+// decoder's root type; the root's own tag when pointer is empty).
+func storedTag(sink *issueSink, pointer jsontext.Pointer) string {
+	typ, tag := sink.root, sink.tag
 	for token := range pointer.Tokens() {
 		for typ != nil && typ.Kind() == reflect.Pointer {
 			typ = typ.Elem()
 		}
-		gate = false
+		tag = ""
 		switch {
 		case typ == nil:
-			return false
+			return ""
 		case orderedElem(typ) != nil:
 			typ = orderedElem(typ)
 		case typ.Kind() == reflect.Struct:
 			field, ok := plainFields(typ)[token]
 			if !ok {
-				return false
+				return ""
 			}
-			gate = typ.FieldByIndex(field.index).Tag.Get("stored") == gateTag
+			tag = typ.FieldByIndex(field.index).Tag.Get("stored")
 			typ = field.typ
 		case typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array || typ.Kind() == reflect.Map:
 			typ = typ.Elem()
 		default:
-			return false
+			return ""
 		}
 	}
-	return gate
+	return tag
 }
 
 // failClosed marks a record whose stored presence locks something (the
@@ -347,16 +359,16 @@ func storedInt(dec *jsontext.Decoder, sink *issueSink, set func(int64)) error {
 // records are dropped and reported as IssueUnknown; issues of records that are
 // not yet migrated are included.
 func DecodeStored(data []byte, v any, prefix string) ([]FieldIssue, error) {
-	return decodeStored(data, v, prefix, false)
+	return decodeStored(data, v, prefix, "")
 }
 
-// decodeStored is DecodeStored; gate means v is a device-write gate member.
-func decodeStored(data []byte, v any, prefix string, gate bool) ([]FieldIssue, error) {
+// decodeStored is DecodeStored; tag is the stored tag of v's own field.
+func decodeStored(data []byte, v any, prefix string, tag string) ([]FieldIssue, error) {
 	target := reflect.ValueOf(v)
 	if target.Kind() != reflect.Pointer || target.IsNil() {
 		return nil, fmt.Errorf("%w: stored target must be a non-nil pointer", ErrType)
 	}
-	sink := &issueSink{root: target.Type().Elem(), prefix: prefix, gate: gate}
+	sink := &issueSink{root: target.Type().Elem(), prefix: prefix, tag: tag}
 	if err := jsonv2.Unmarshal(data, v, jsonv2.WithUnmarshalers(storedUnmarshalers(sink)), jsontext.AllowInvalidUTF8(true)); err != nil {
 		var syntax *jsontext.SyntacticError
 		if errors.As(err, &syntax) {
@@ -600,7 +612,7 @@ func DecodeStoredMember(rec any, member string, data []byte, path string) (known
 	}
 	target := reflect.New(field.typ)
 	tag := value.Type().Elem().FieldByIndex(field.index).Tag.Get("stored")
-	issues, err = decodeStored(data, target.Interface(), path, tag == gateTag)
+	issues, err = decodeStored(data, target.Interface(), path, tag)
 	if err != nil {
 		return true, nil, err
 	}

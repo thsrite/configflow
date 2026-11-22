@@ -120,19 +120,20 @@ func TestReviewO18T1bWriteGatesOfAnotherTypeReadOff(t *testing.T) {
 
 // HR O18 T1b: a stored oxidns_ha_publication of another JSON kind than an
 // object is an empty (unfinished) journal, not absent: it keeps the pair
-// locked like {} does. Other records of another kind stay absent.
+// locked like {} does (dns_follow_state too, L4). Other records of another
+// kind stay absent.
 func TestReviewO18T1bDamagedHAJournalFailsClosed(t *testing.T) {
 	for _, value := range []string{`"applying"`, `1`, `true`, `[]`, `["x"]`} {
 		var a Agent
-		issues, err := DecodeStored([]byte(`{"id":"a","oxidns_ha_publication":`+value+`,"oxidns_ha":`+value+`,"dns_follow_state":`+value+`}`), &a, "")
+		issues, err := DecodeStored([]byte(`{"id":"a","oxidns_ha_publication":`+value+`,"oxidns_ha":`+value+`,"dns_follow":`+value+`}`), &a, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if a.OxiDNSHAPublication == nil || a.OxiDNSHAPublication.Status != "" {
 			t.Errorf("journal %s = %+v, want an empty journal", value, a.OxiDNSHAPublication)
 		}
-		if a.OxiDNSHA != nil || a.DNSFollowState != nil {
-			t.Errorf("other records %s: %+v %+v, want absent", value, a.OxiDNSHA, a.DNSFollowState)
+		if a.OxiDNSHA != nil || a.DNSFollow != nil {
+			t.Errorf("other records %s: %+v %+v, want absent", value, a.OxiDNSHA, a.DNSFollow)
 		}
 		if !slices.Contains(issues, FieldIssue{Path: "oxidns_ha_publication", Kind: IssueType}) {
 			t.Errorf("journal %s: no type issue: %v", value, issues)
@@ -144,5 +145,52 @@ func TestReviewO18T1bDamagedHAJournalFailsClosed(t *testing.T) {
 	}
 	if a.OxiDNSHAPublication != nil {
 		t.Errorf("null journal = %+v, want absent", a.OxiDNSHAPublication)
+	}
+}
+
+// HR O18 T1b L3: a stored credential of another JSON type than a string
+// (numbers included) reads as empty, never as the number's text, and is
+// reported. Text credentials are unchanged.
+func TestReviewO18T1bCredentialsOfAnotherTypeAreEmpty(t *testing.T) {
+	for _, value := range []string{`7`, `7.0`, `true`, `{}`, `["t"]`} {
+		var a Agent
+		issues, err := DecodeStored([]byte(`{"id":"a","token":`+value+`}`), &a, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Token != "" || !slices.Contains(issues, FieldIssue{Path: "token", Kind: IssueType}) {
+			t.Errorf("Agent token %s = %q (issues %v), want empty plus an issue", value, a.Token, issues)
+		}
+		var session AgentRegistrationSession
+		if _, err := DecodeStored([]byte(`{"hash":`+value+`}`), &session, ""); err != nil {
+			t.Fatal(err)
+		}
+		if session.Hash != "" {
+			t.Errorf("session hash %s = %q, want empty", value, session.Hash)
+		}
+		var single Agent
+		if err := SetStoredMember(&single, "token", []byte(value)); err != nil || single.Token != "" {
+			t.Errorf("single token %s = %q, %v", value, single.Token, err)
+		}
+	}
+	var a Agent
+	if _, err := DecodeStored([]byte(`{"token":"t-1","name":7}`), &a, ""); err != nil || a.Token != "t-1" || a.Name != "7" {
+		t.Errorf("text token / number name: %q %q %v", a.Token, a.Name, err)
+	}
+
+	var settings SystemConfig
+	if err := settings.UnmarshalJSON([]byte(`{"config_token":7,"rule_proxy_token":8,"retired_rule_proxy_tokens":[9,"old",{}],"server_domain":"https://example.com"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if settings.ConfigToken != "" || settings.RuleProxyToken != "" || !slices.Equal(settings.RetiredRuleProxyTokens, []string{"old"}) || settings.ServerDomain != "https://example.com" {
+		t.Errorf("system tokens %q %q %q", settings.ConfigToken, settings.RuleProxyToken, settings.RetiredRuleProxyTokens)
+	}
+	if issues := Issues(&settings); len(issues) != 3 {
+		t.Errorf("system token issues %v, want 3", issues)
+	}
+	var plain SystemConfig
+	if err := plain.UnmarshalJSON([]byte(`{"config_token":"c","rule_proxy_token":"r","retired_rule_proxy_tokens":["o"]}`)); err != nil ||
+		plain.ConfigToken != "c" || plain.RuleProxyToken != "r" || !slices.Equal(plain.RetiredRuleProxyTokens, []string{"o"}) {
+		t.Errorf("text system tokens changed: %+v %v", plain, err)
 	}
 }
