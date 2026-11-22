@@ -3,6 +3,7 @@ package agents
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"encoding/json"
 	"errors"
@@ -338,8 +339,10 @@ func (w *clientWorld) call(method, path string, body any, status int, authorizat
 	if got.Header.Get("Cache-Control") != answer.Cache {
 		w.t.Fatalf("cache header: %s != %s", got.Header.Get("Cache-Control"), answer.Cache)
 	}
-	state := a24Normalized(a24State(w.t, w.s))
-	expected := a24Normalized(answer.State)
+	// Stored state as the plain records hold it (O18 T1c): undeclared and
+	// empty optional members are not compared.
+	state := a24Normalized(modeltest.StateThroughModel(a24State(w.t, w.s)))
+	expected := a24Normalized(modeltest.StateThroughModel(answer.State))
 	if !reflect.DeepEqual(state, expected) {
 		w.t.Fatalf("%s %s state: %s", method, path, a24Difference(expected, state, "state"))
 	}

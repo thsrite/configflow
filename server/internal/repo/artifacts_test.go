@@ -85,7 +85,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 		},
 		RedactOxidnsJSON:   func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
 		RedactRoutersJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"items":[],"redacted":true}`), nil },
-		RedactEasytierJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`"easytier-redacted"`), nil },
+		RedactEasytierJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"name":"easytier-redacted"}`), nil },
 	}})
 	result := parseJSONObj(t, must(r.ExportAllJSON(bg, true))(t))
 	system := result.GetObject("system")
@@ -111,10 +111,11 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 		[]any{"[REDACTED]", "[REDACTED]", map[string]any{}, "N"})
 	profile := result.GetObject("profiles").GetObject("default")
 	mihomo := profile.GetObject("mihomo")
-	wantJSONEqual(t, mihomo, json.RawMessage(`{"custom_config": "", "easytier": "easytier-redacted"}`))
+	wantJSONEqual(t, mihomo, json.RawMessage(`{"custom_config": "", "easytier": {"name": "easytier-redacted", "options": {}}}`))
 	wantJSONEqual(t, profile.Value("oxidns"), "oxidns-redacted")
-	// Routers is a typed record: the hook returns an object (O18 T1a).
-	wantJSONEqual(t, profile.Value("routers"), json.RawMessage(`{"items":[],"redacted":true}`))
+	// Routers is a plain record: the hook returns an object (O18 T1a) whose
+	// undeclared members are dropped (O18 T1c).
+	wantJSONEqual(t, profile.Value("routers"), json.RawMessage(`{"items":[]}`))
 	wantJSONEqual(t, profile.GetObject("loon").Value("custom_config"), "")
 	// The stored document is untouched.
 	if must(r.System(bg))(t).SystemConfig.RuleProxyToken == "" {

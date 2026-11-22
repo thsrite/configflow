@@ -185,7 +185,8 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 				case "token":
 					got, want = settingsCfg["config_token"], "after-token"
 				case "delete-token":
-					got, want = settingsCfg["config_token"], ""
+					// An empty optional setting is not written (O18 T1c).
+					got, want = settingsCfg["config_token"], nil
 				case "aggregation":
 					got, want = settingsCfg["subscription_aggregation_enabled"], true
 				case "backup-config":

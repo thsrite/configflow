@@ -153,45 +153,37 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 	issues := 0
 	noError(t, r.View(bg, func(d *model.Document) error {
 		issues = len(model.Issues(d))
-		if d.System.Backup.AutoBackup != nil || defaultProfile(d).Description != "" || d.System.SystemConfig.DefaultProfileID != nil {
+		// auto_backup pushes on its own: a wrong type reads as off (O18 T1c).
+		if model.Flag(d.System.Backup.AutoBackup, false) || defaultProfile(d).Description != "" || d.System.SystemConfig.DefaultProfileID != nil {
 			t.Fatal("R5/null fallback values")
 		}
 		return nil
 	}))
-	// The profile's description is a plain record member: it reads as "" with
-	// a load issue (not kept). Backup is not yet migrated and keeps R5.
-	if issues != 1 {
+	// Plain records report load issues when decoded (logged by the
+	// repository), not through model.Issues (O18 T1c).
+	if issues != 0 {
 		t.Fatalf("issues %d", issues)
 	}
 	update(t, "unrelated edit keeps rows it does not change", []modelRowKey{profile("name")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 R5" })
-	update(t, "same-row edit keeps null", []modelRowKey{{"system", "", "system_config"}}, func(d *model.Document) {
+	// A row a typed edit changes is written in Go's form (O18 T1c): a stored
+	// null, a wrong-typed value and number text are not kept.
+	update(t, "same-row edit writes the typed values", []modelRowKey{{"system", "", "system_config"}}, func(d *model.Document) {
 		d.System.SystemConfig.DefaultProfileID = nil
 		d.System.SystemConfig.ServerDomain = "cf.example.com"
 	})
-	if got := row(t, modelRowKey{"system", "", "system_config"}); !strings.Contains(got, `"default_profile_id":null`) {
-		t.Fatal("stored null lost")
+	if got := row(t, modelRowKey{"system", "", "system_config"}); strings.Contains(got, "default_profile_id") {
+		t.Fatal("stored null kept")
 	}
-	update(t, "same-row edit keeps wrong type and number text", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
-		d.System.Backup.AutoBackup = nil
+	update(t, "same-row edit writes wrong type as read", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
 		d.System.Backup.WebDAVPath = new(string)
 		*d.System.Backup.WebDAVPath = "/n85"
 	})
-	if got := row(t, modelRowKey{"system", "", "backup"}); !strings.Contains(got, `"auto_backup":"yes"`) || !strings.Contains(got, `"keep_daily":1.0`) {
-		t.Fatal("wrong-typed bytes or number text lost")
+	// keep_daily 1.0 is not an integer literal: it reads as absent (the
+	// default retention, as in Python) and is not written (int:"literal").
+	if got := row(t, modelRowKey{"system", "", "backup"}); !strings.Contains(got, `"auto_backup":false`) || strings.Contains(got, `"keep_daily"`) || strings.Contains(got, `1.0`) {
+		t.Fatal("backup row not written in Go's form: " + got)
 	}
 	update(t, "description replace", []modelRowKey{profile("description")}, func(d *model.Document) { defaultProfile(d).Description = "replaced" })
-	update(t, "clear null", []modelRowKey{{"system", "", "system_config"}}, func(d *model.Document) {
-		noError(t, d.System.SystemConfig.Clear("default_profile_id"))
-	})
-	update(t, "clear wrong type", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
-		noError(t, d.System.Backup.Clear("auto_backup"))
-	})
-	if got := row(t, modelRowKey{"system", "", "system_config"}); strings.Contains(got, "default_profile_id") {
-		t.Fatal("clear kept the null member")
-	}
-	if got := row(t, modelRowKey{"system", "", "backup"}); strings.Contains(got, "auto_backup") || !strings.Contains(got, `"keep_daily":1.0`) {
-		t.Fatal("clear did not drop exactly the wrong-typed member")
-	}
 
 	// Python edits the Go-written copy; Go reads it.
 	if pythonReady {

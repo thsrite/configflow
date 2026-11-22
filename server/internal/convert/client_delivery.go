@@ -40,7 +40,25 @@ func ClientProxyText(proxies []*yamlx.Node, decode ClientNodeDecoder, target str
 	if decode == nil {
 		return "", &HookMissingError{Hook: "proxies_to_nodes", Provider: "substore"}
 	}
-	nodes, err := decode(proxies)
+	// A proxy whose type or server is not text is skipped like any failing
+	// node (Python failed on it); the typed node would read it as empty.
+	valid := make([]*yamlx.Node, 0, len(proxies))
+	for _, proxy := range proxies {
+		name := ""
+		if value := yamlx.Get(proxy, "name"); value != nil {
+			name = value.Value
+		}
+		if err := parsedNodeText(proxy, name, "type", "server"); err != nil {
+			if target == "surge" {
+				surgeLog.Warningf(msgSurgeNodeFailure, name, err)
+			} else {
+				loonLog.Warningf(msgLoonNodeFailure, name, err)
+			}
+			continue
+		}
+		valid = append(valid, proxy)
+	}
+	nodes, err := decode(valid)
 	if err != nil {
 		return "", err
 	}
@@ -80,7 +98,7 @@ func ClientGroupNodes(group model.ProxyGroup, config *model.Config) ([]string, e
 	if len(subscriptions) > 0 {
 		var nodes []model.Node
 		for _, node := range config.Nodes {
-			if subscriptions[node.SubscriptionID] && enabled(&node, node.Enabled) {
+			if subscriptions[node.SubscriptionID] && enabled(node.Enabled) {
 				nodes = append(nodes, node)
 			}
 		}

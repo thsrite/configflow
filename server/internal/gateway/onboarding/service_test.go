@@ -43,7 +43,7 @@ func testService(t *testing.T) *Service {
 			return err
 		}
 		p.Mihomo.CustomConfig = "mixed-port: 7890\n"
-		p.Mihomo.Fields.Set("future_member", json.RawMessage(`{"keep":false}`))
+		markerSet(&p.Loon.CustomConfig, json.RawMessage(`{"keep":false}`))
 		return nil
 	}); err != nil {
 		t.Fatal(err)

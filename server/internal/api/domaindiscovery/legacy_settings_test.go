@@ -29,8 +29,12 @@ func TestConfigFindingsPreserveLegacyDiscoveryExtension(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, ok := testjson.Path(parsed, "synthetic_legacy_extension")
-	if !ok || !testjson.Equal(extension, got) {
-		t.Fatal("unknown persisted settings lost")
+	// Undeclared settings members are dropped (O18 T1c); the edit applies.
+	if _, ok := testjson.Path(parsed, "synthetic_legacy_extension"); ok {
+		t.Fatal("undeclared settings member kept")
+	}
+	_ = extension
+	if got, ok := testjson.Path(parsed, "auto_probe"); !ok || got != true {
+		t.Fatal("settings edit lost")
 	}
 }

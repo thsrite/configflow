@@ -28,14 +28,14 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 	subsByID := map[string]model.Subscription{}
 	for i := range subscriptions {
 		source := &subscriptions[i]
-		if resourceEnabled(source, source.Enabled) {
+		if resourceEnabled(source.Enabled) {
 			subsByID[source.ID] = *source
 		}
 	}
 	nodesByID := map[string]model.Node{}
 	for i := range manual {
 		node := &manual[i]
-		if resourceEnabled(node, node.Enabled) {
+		if resourceEnabled(node.Enabled) {
 			nodesByID[node.ID] = *node
 		}
 	}
@@ -87,7 +87,7 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 			}
 			for i := range nodes {
 				node := &nodes[i]
-				if !resourceEnabled(node, node.Enabled) {
+				if !resourceEnabled(node.Enabled) {
 					continue
 				}
 				usable, err := convert.NodeProxy(ctx, *node, substore.NativeConverter())

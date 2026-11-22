@@ -7,10 +7,24 @@ import (
 	"testing"
 )
 
+// rawRule is a record on the legacy Raw codec, which plain records (O18
+// T1c) no longer use; it keeps the codec's member evidence tested until T1d
+// removes the codec.
+type rawRule struct {
+	URL     *string `json:"url"`
+	Content *string `json:"content"`
+	Fields  Fields
+	raw     Raw
+}
+
+func (r *rawRule) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+func (r rawRule) MarshalJSON() ([]byte, error)     { return EncodeRecord(&r, &r.raw) }
+func (r *rawRule) Clear(member string) error       { return ClearMember(r, &r.raw, member) }
+
 func TestMemberJSONMatchesRecordEvidence(t *testing.T) {
 	for _, source := range []string{`{}`, `{"url":null}`, `{"url":false}`, `{"url":0}`, `{"url":"https://example.com/\\u4e2d"}`} {
 		t.Run(source, func(t *testing.T) {
-			var rule RuleConfig
+			var rule rawRule
 			if err := json.Unmarshal([]byte(source), &rule); err != nil {
 				t.Fatal(err)
 			}
@@ -38,7 +52,7 @@ func TestMemberJSONMatchesRecordEvidence(t *testing.T) {
 			check()
 		})
 	}
-	var rule RuleConfig
+	var rule rawRule
 	_ = json.Unmarshal([]byte(`{"url":false}`), &rule)
 	if _, _, err := rule.raw.MemberJSON("url", 0); !errors.Is(err, ErrType) {
 		t.Fatal("wrong typed field accepted")
@@ -54,7 +68,7 @@ func BenchmarkMemberJSONUnrelatedPayload(b *testing.B) {
 	for _, size := range []int{0, 1 << 20} {
 		b.Run(strings.Repeat("x", size/(1<<20)+1), func(b *testing.B) {
 			raw, _ := json.Marshal(map[string]string{"url": "https://example.com/rules", "content": strings.Repeat("x", size)})
-			var rule RuleConfig
+			var rule rawRule
 			_ = json.Unmarshal(raw, &rule)
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -76,7 +90,7 @@ func FuzzMemberJSONEvidence(f *testing.F) {
 		if len(data) > 1<<20 {
 			t.Skip()
 		}
-		var rule RuleConfig
+		var rule rawRule
 		if json.Unmarshal(data, &rule) != nil {
 			return
 		}

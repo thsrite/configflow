@@ -243,18 +243,19 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 	})
 
 	_, rows := storedRows(t, r)
-	// Records not yet migrated (nodes, subscriptions, groups, Mihomo settings)
-	// keep their unknown members.
+	// Plain records (O18 T1c): a node keeps its protocol parameters as
+	// stored, a number in a text member is its text, and the other records
+	// drop undeclared members.
 	for key, part := range map[modelRowKey]string{
-		shared("nodes"):            `"remark":7,"n85":{"z":1.0}`,
-		shared("subscriptions"):    `"description":"\u00e9","n85":null`,
-		profile(p, "proxy_groups"): `"n85":[1.50]`,
-		profile(p, "mihomo"):       `"n85":1e2`,
+		shared("nodes"):         `"remark":"7","n85":{"z":1.0}`,
+		shared("subscriptions"): `"description":"é"`,
 	} {
 		if !strings.Contains(rows[key], part) {
 			t.Fatalf("%v lost %s: %s", key, part, rows[key])
 		}
 	}
+	// Rows whose value did not change keep their stored text, undeclared
+	// members included, until a write changes them (O18 T1a/T1c).
 	if pythonReady {
 		audit(t, "audit-edit")
 		// Python's extra root member is not declared: the next Go write deletes

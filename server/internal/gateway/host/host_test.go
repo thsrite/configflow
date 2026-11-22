@@ -56,7 +56,7 @@ func newBridge(t *testing.T) (*Bridge, *recordClient) {
 	}
 	ctx := context.Background()
 	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
-		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":true,"rule_set_ids":[]}`))
+		p.Mihomo.LinuxGateway.UnmarshalJSON(json.RawMessage(`{"enabled":true,"rule_set_ids":[]}`))
 		return nil
 	})
 	if err != nil {
@@ -333,12 +333,31 @@ func fixtureAgent(value any) *model.Agent {
 	return &out
 }
 
-func TestRouterLinkRequiresOriginalStringIdentity(t *testing.T) {
-	config, err := model.DecodeConfig([]byte(`{"routers":{"items":[{"id":"synthetic","proxy_gateway_agent_id":1}]}}`))
-	if err != nil {
-		t.Fatal(err)
+// TestRouterLinkStoredIdentity: router records are plain (O18 T1c), so a
+// stored number in proxy_gateway_agent_id reads as its literal text and links
+// the Agent with that ID (accepted difference; R5 kept the number and refused
+// the link). Values of another kind read as no link.
+func TestRouterLinkStoredIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		stored string
+		want   int
+	}{
+		{"text", `"1"`, 1},
+		{"number reads as its text", `1`, 1},
+		{"boolean", `true`, 0},
+		{"object", `{"id":"1"}`, 0},
+		{"null", `null`, 0},
 	}
-	if len(ProxyRouters(config, "1")) != 0 {
-		t.Fatal("numeric router link acquired string Agent identity")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config, err := model.DecodeConfig([]byte(`{"routers":{"items":[{"id":"synthetic","proxy_gateway_agent_id":` + tt.stored + `}]}}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(ProxyRouters(config, "1")); got != tt.want {
+				t.Fatalf("linked routers = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

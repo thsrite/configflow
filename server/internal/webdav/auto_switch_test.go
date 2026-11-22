@@ -16,13 +16,15 @@ func TestAutoBackupOffSkipsOnlyAnExplicitFalse(t *testing.T) {
 		{"false", `{"auto_backup":false}`, true},
 		{"true", `{"auto_backup":true}`, false},
 		{"missing", `{}`, false},
-		{"null", `{"auto_backup":null}`, false},
-		{"mistyped keeps the comparison", `{"auto_backup":"yes"}`, false},
+		// Automatic backups push on their own: a stored null or a wrong type
+		// reads as off (O18 T1c ruling), where Python skipped only false.
+		{"null", `{"auto_backup":null}`, true},
+		{"mistyped is off", `{"auto_backup":"yes"}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var document model.Document
-			if err := json.Unmarshal([]byte(`{"profiles":{},"shared":{},"system":{"backup":`+tt.backup+`}}`), &document); err != nil {
+			if err := json.Unmarshal([]byte(tt.backup), &document.System.Backup); err != nil {
 				t.Fatal(err)
 			}
 			if got := autoBackupOff(&document); got != tt.off {

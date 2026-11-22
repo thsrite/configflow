@@ -131,20 +131,21 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 	repo.ResetConfigContext(ctx)
 	return nil
 }
+
+// validateContent checks the request as sent (O18 T1c: the rule record
+// cannot hold members of the wrong JSON type).
 func validateContent(item record, old *record) error {
-	rule, err := ruleRecord(item)
+	raw, err := item.MarshalJSON()
 	if err != nil {
 		return err
 	}
-	var previous *model.RuleConfig
+	var previous json.RawMessage
 	if old != nil {
-		value, err := ruleRecord(*old)
-		if err != nil {
+		if previous, err = old.MarshalJSON(); err != nil {
 			return err
 		}
-		previous = &value
 	}
-	return rulefetch.ValidateContent(rule, previous)
+	return rulefetch.ValidateContentJSON(raw, previous)
 }
 func (s *Service) readSource(ctx context.Context, item record) ([]byte, error) {
 	rule, err := ruleRecord(item)

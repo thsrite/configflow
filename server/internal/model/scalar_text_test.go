@@ -12,7 +12,7 @@ func TestGenericNumericTextAndQuotedIntegers(t *testing.T) {
 		Password String `json:"password"`
 		Port     Int    `json:"port"`
 	}
-	if err := json.Unmarshal([]byte(`{"password":123,"port":"443"}`), &protocol); err != nil || protocol.Password != "123" || protocol.Port != 443 {
+	if err := json.Unmarshal([]byte(`{"password":123,"port":"443"}`), &protocol); err != nil || protocol.Password != "123" || int64(protocol.Port) != 443 {
 		t.Fatalf("protocol codec values lost: %+v %v", protocol, err)
 	}
 	var router Router
@@ -34,7 +34,7 @@ func TestGenericNumericTextAndQuotedIntegers(t *testing.T) {
 		t.Fatalf("map scalar decoding diverged: %q %t", value, ok)
 	}
 	var node Node
-	if err := json.Unmarshal([]byte(`{"port":"443"}`), &node); err != nil || node.Port != 443 || IssueUnder(Issues(node), "port") {
+	if err := json.Unmarshal([]byte(`{"port":"443"}`), &node); err != nil || IntValue(node.Port) != 443 || IssueUnder(Issues(node), "port") {
 		t.Fatalf("quoted node port lost: %v %v", node.Port, err)
 	}
 }

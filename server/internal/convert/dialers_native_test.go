@@ -59,6 +59,10 @@ func TestTypedDialerMalformedValues(t *testing.T) {
 	for _, tt := range []struct{ source, message string }{
 		{`{"nodes":[{"id":"n","name":"N","params":[]}]}`, msgNodeParamsObject},
 		{`{"nodes":[{"id":"n","name":"N","dialer_ref":{"type":"node"}}]}`, msgDialerRef},
+		// A stored dialer_ref of another JSON kind reads as the empty
+		// reference (fail closed), never as "no dialer" (O18 T1c).
+		{`{"nodes":[{"id":"n","name":"N","dialer_ref":"relay"}]}`, msgDialerRef},
+		{`{"nodes":[{"id":"n","name":"N","dialer_ref":[]}]}`, msgDialerRef},
 		{`{"nodes":[{"id":"n","name":"N","params":{"dialer-proxy":5}}]}`, msgRawDialerName},
 		{`{"nodes":[{"id":"n","name":"N","dialer_ref":{"type":"node","id":"missing"}}]}`, msgDialerRefMissing},
 		{`{"proxy_groups":[{"id":"g","name":"G","manual_nodes":[false]}]}`, fmt.Sprintf(msgGroupStringList, "manual_nodes")},
@@ -152,15 +156,6 @@ func TestTypedTopologyTargetDiagnostic(t *testing.T) {
 	}
 }
 
-func TestTypedMalformedStoredReference(t *testing.T) {
-	config := typedDialerConfig(t, `{"nodes":[{"id":"a","name":"A","dialer_ref":"b"},{"id":"b","name":"B"}]}`)
-	if err := ConfigDialers(config); err == nil || err.Error() != fmt.Sprintf(msgStoredDialerRef, `"b"`) {
-		t.Fatalf("malformed stable reference silently removed: %v", err)
-	}
-	if _, err := ResolveNodeDialer(config, config.Nodes[0]); err == nil || err.Error() != fmt.Sprintf(msgStoredDialerRef, `"b"`) {
-		t.Fatalf("malformed reference resolved as absent: %v", err)
-	}
-}
 func FuzzTypedDialerGraph(f *testing.F) {
 	for _, source := range []string{`{}`, `{"nodes":[{"id":"a","name":"A","dialer_ref":{"type":"node","id":"b"}},{"id":"b","name":"B","dialer_ref":{"type":"node","id":"a"}}]}`, `{"nodes":[{"id":"a","name":"A"}],"proxy_groups":[{"id":"g","name":"G","manual_nodes":["a"]}]}`} {
 		f.Add([]byte(source))

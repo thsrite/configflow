@@ -269,11 +269,17 @@ func TestMihomoEnvProviderInterval(t *testing.T) {
 	if v, err := interval(model.MihomoSettings{ProviderUpdateInterval: &zero}); err != nil || v != 0 {
 		t.Fatalf("zero: %d %v", v, err)
 	}
+	// A stored interval that is not an integer reads as missing (plain
+	// records, O18 T1c), so the default applies; Python refused it.
 	var bad model.MihomoSettings
 	if err := json.Unmarshal([]byte(`{"provider_update_interval":"bad"}`), &bad); err != nil {
 		t.Fatal(err)
 	}
-	_, err := interval(bad)
+	if v, err := interval(bad); err != nil || v != refresh.DefaultProviderInterval {
+		t.Fatalf("unreadable stored interval: %d %v", v, err)
+	}
+	short := model.Int(30)
+	_, err := interval(model.MihomoSettings{ProviderUpdateInterval: &short})
 	if err == nil || err.Error() != "Mihomo 订阅同步间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数" {
 		t.Fatalf("invalid: %v", err)
 	}

@@ -59,7 +59,7 @@ func TestN89NativeProxyRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 1 || nodes[0].Name != "5" || nodes[0].Server != "123" || nodes[0].Port != 443 || nodes[0].Type != "ss" {
+	if len(nodes) != 1 || nodes[0].Name != "5" || nodes[0].Server != "123" || model.IntValue(nodes[0].Port) != 443 || nodes[0].Type != "ss" {
 		t.Fatalf("nodes %#v", nodes)
 	}
 	params, err := nodes[0].Params.Node()

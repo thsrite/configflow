@@ -108,7 +108,7 @@ func commitMarker(ctx context.Context, r *repo.Repository, marker string) error 
 		return err
 	}
 	return r.UpdateSystem(ctx, func(_ context.Context, current *model.System) error {
-		return current.SystemConfig.Fields.Set("o3_commit_marker", raw)
+		return markerSet(&current.SystemConfig.GitHubProxyDomain, raw)
 	})
 }
 
@@ -286,7 +286,7 @@ func TestO36cRepoOwnerRuntimeMatrix(t *testing.T) {
 					if point == "updater" {
 						stop()
 					}
-					return current.SystemConfig.Fields.Set("o3_commit_marker", json.RawMessage(`"runtime-matrix"`))
+					return markerSet(&current.SystemConfig.GitHubProxyDomain, json.RawMessage(`"runtime-matrix"`))
 				})
 				after, afterFiles := commitState(t, r)
 				if shutdown {

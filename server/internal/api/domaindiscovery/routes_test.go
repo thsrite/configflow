@@ -63,7 +63,8 @@ func TestCancelledHTTPWritesFinishAndPreserveUnknownFields(t *testing.T) {
 	if err = json.Unmarshal(b, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved["auto_probe"] != true || saved["future_setting"].(map[string]any)["keep"] != true || saved["website_notes"].(map[string]any)["example.com"] != "kept" || saved["history"].([]any)[0].(map[string]any)["future_history"] != true {
+	// Undeclared members are dropped (O18 T1c); the writes still finish.
+	if saved["auto_probe"] != true || saved["future_setting"] != nil || saved["website_notes"].(map[string]any)["example.com"] != "kept" || saved["history"].([]any)[0].(map[string]any)["value"] != "old.example.net" {
 		t.Fatalf("lost persisted fields: %s", b)
 	}
 }

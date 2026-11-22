@@ -10,14 +10,15 @@ import (
 
 func TestReviewLegacyBackupCredentials(t *testing.T) {
 	// Python settings.py writes these exact names. Missing retention/path fields
-	// are normal for older documents; extensions stay in the stored model.
+	// are normal for older documents. Backup is a plain record (O18 T1c): the
+	// undeclared extension is dropped, the credentials are kept.
 	raw := []byte(`{ "webdav_url":"https://backup.example.com", "webdav_username":"old-user", "webdav_password":"synthetic-旧密码", "extension":{"Password":"opaque"} }`)
 	var stored model.Backup
 	if err := jsondecode.Unmarshal(raw, &stored); err != nil {
 		t.Fatal(err)
 	}
 	encoded, err := model.Marshal(&stored)
-	if err != nil || !bytes.Equal(encoded, raw) {
+	if err != nil || !bytes.Equal(encoded, []byte(`{"webdav_url":"https://backup.example.com","webdav_username":"old-user","webdav_password":"synthetic-旧密码"}`)) {
 		t.Fatalf("stored backup changed: %s (%v)", encoded, err)
 	}
 	var settings Settings

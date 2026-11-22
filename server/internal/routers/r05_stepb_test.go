@@ -222,7 +222,13 @@ func stepBSaveFailedProbe(t *testing.T, failure *routers.RouterError) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revision != before+1 || len(rows) != 2 || !testjson.Equal(replacement, rows[0]) || !testjson.Equal(otherRaw, rows[1]) {
+	// The neighbour is compared as the plain record read from its stored text
+	// (O18 T1c: Go's encoding with always-written members, not the source bytes).
+	var other model.Router
+	if err := json.Unmarshal(otherRaw, &other); err != nil {
+		t.Fatal(err)
+	}
+	if revision != before+1 || len(rows) != 2 || !testjson.Equal(replacement, rows[0]) || !testjson.Equal(other, rows[1]) {
 		t.Fatal("failed probe not saved in isolation", actual)
 	}
 }

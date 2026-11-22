@@ -167,45 +167,51 @@ func TestHRSnapshotSchema(t *testing.T) {
 }
 
 // TestIssuesSeparateFallbackFromEmptyProof is the type-level guard of the
-// N8-4f clarification: outside the package an R5 fallback zero value can be
-// told apart from a stored empty or absent proof.
+// N8-4f clarification: a lenient zero value read from a wrong-typed stored
+// manifest can be told apart from a stored empty or absent proof. Since O18
+// T1c the evidence is the read's issue list (DecodeStored), not Issues() on
+// the record (plain records keep no stored provenance).
 func TestIssuesSeparateFallbackFromEmptyProof(t *testing.T) {
 	tests := []struct {
 		name, source, path string
 		want               bool
+		// nestedPath: the issue is inside a manifest decoded on its own; its
+		// path lacks the manifest prefix (gap reported to the T1c author).
+		nestedPath bool
 	}{
-		{"absent manifest", `{}`, "ros_policy_state", false},
-		{"null manifest", `{"ros_policy_state":null}`, "ros_policy_state", false},
-		{"wrong manifest type", `{"ros_policy_state":"synthetic"}`, "ros_policy_state", true},
-		{"empty resources", `{"ros_policy_state":{"resources":[]}}`, "ros_policy_state", false},
-		{"wrong resources type", `{"ros_policy_state":{"resources":"synthetic"}}`, "ros_policy_state", true},
-		{"numeric resource id text", `{"dns_guard_state":{"resources":[{"id":7}]}}`, "dns_guard_state", false},
-		{"wrong resource id", `{"dns_guard_state":{"resources":[{"id":false}]}}`, "dns_guard_state", true},
-		{"wrong pd proof role", `{"ipv6_pd_guard_state":{"resources":[{"role":false}]}}`, "ipv6_pd_guard_state", true},
-		{"settings are not the manifest", `{"ipv6_pd_guard":{"enabled":"yes"}}`, "ipv6_pd_guard_state", false},
-		{"settings issue", `{"ipv6_pd_guard":{"enabled":"yes"}}`, "ipv6_pd_guard", true},
+		{"absent manifest", `{}`, "ros_policy_state", false, false},
+		{"null manifest", `{"ros_policy_state":null}`, "ros_policy_state", false, false},
+		{"wrong manifest type", `{"ros_policy_state":"synthetic"}`, "ros_policy_state", true, false},
+		{"empty resources", `{"ros_policy_state":{"resources":[]}}`, "ros_policy_state", false, false},
+		{"wrong resources type", `{"ros_policy_state":{"resources":"synthetic"}}`, "ros_policy_state", true, true},
+		{"numeric resource id text", `{"dns_guard_state":{"resources":[{"id":7}]}}`, "dns_guard_state", false, false},
+		{"wrong resource id", `{"dns_guard_state":{"resources":[{"id":false}]}}`, "dns_guard_state", true, true},
+		{"wrong pd proof role", `{"ipv6_pd_guard_state":{"resources":[{"role":false}]}}`, "ipv6_pd_guard_state", true, true},
+		{"settings are not the manifest", `{"ipv6_pd_guard":{"enabled":"yes"}}`, "ipv6_pd_guard_state", false, false},
+		{"settings issue", `{"ipv6_pd_guard":{"enabled":"yes"}}`, "ipv6_pd_guard", true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var router Router
-			if err := router.UnmarshalJSON([]byte(tt.source)); err != nil {
+			issues, err := DecodeStored([]byte(tt.source), &router, "")
+			if err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			if got := IssueUnder(Issues(&router), tt.path); got != tt.want {
-				t.Fatalf("IssueUnder(%q) = %v, want %v; issues %v", tt.path, got, tt.want, Issues(router))
-			}
-			if got := IssueUnder(Issues(router), tt.path); got != tt.want {
-				t.Fatal("value and pointer views disagree")
+			if got := IssueUnder(issues, tt.path); got != tt.want {
+				t.Fatalf("IssueUnder(%q) = %v, want %v; issues %v", tt.path, got, tt.want, issues)
 			}
 		})
 	}
 
+	// A manifest stored with another JSON type is kept whole (fail closed);
+	// records built in Go have no stored issues.
 	var router Router
-	if router.UnmarshalJSON([]byte(`{"ros_policy_state":{"spec":{},"resources":[{"id":"*1"},{"id":false}]}}`)) != nil {
-		t.Fatal("decode failed")
+	issues, err := DecodeStored([]byte(`{"ros_policy_state":"synthetic"}`), &router, "")
+	if err != nil || router.ROSPolicyState == nil || string(router.ROSPolicyState.Stored) != `"synthetic"` {
+		t.Fatalf("damaged manifest not kept: %v %+v", err, router.ROSPolicyState)
 	}
-	if got := Issues(router.ROSPolicyState); !slices.Equal(got, []FieldIssue{{"resources[1].id", IssueType}}) {
-		t.Fatalf("subtree issues = %v", got)
+	if !slices.Equal(issues, []FieldIssue{{"ros_policy_state", IssueType}}) {
+		t.Fatalf("issues = %v", issues)
 	}
 	built := Router{ROSPolicyState: &ROSPolicyState{}}
 	if len(Issues(built)) != 0 {
@@ -213,7 +219,7 @@ func TestIssuesSeparateFallbackFromEmptyProof(t *testing.T) {
 	}
 
 	var agent Agent
-	issues, err := DecodeStored([]byte(`{"deployments":{"private-task":"synthetic"},"applied_content":{"files":false}}`), &agent, "")
+	issues, err = DecodeStored([]byte(`{"deployments":{"private-task":"synthetic"},"applied_content":{"files":false}}`), &agent, "")
 	if err != nil {
 		t.Fatal("agent decode failed")
 	}

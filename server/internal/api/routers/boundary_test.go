@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	"configflow/internal/testjson"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -271,6 +272,21 @@ func compareBoundary(t *testing.T, left, right any) {
 		t.Fatal(boundaryDifference(a, b, "$"))
 	}
 }
+
+// compareStoredBoundary compares stored records. Plain records leave out
+// optional members holding "" or null (O18 T1c), where Python wrote them on
+// some paths and not on others; such members compare as absent.
+func compareStoredBoundary(t *testing.T, left, right any) {
+	t.Helper()
+	rawA, _ := json.Marshal(left)
+	rawB, _ := json.Marshal(right)
+	var a, b any
+	if json.Unmarshal(rawA, &a) != nil || json.Unmarshal(rawB, &b) != nil {
+		t.Fatal("bad comparison JSON")
+	}
+	compareBoundary(t, testjson.WithoutEmptyMembers(a), testjson.WithoutEmptyMembers(b))
+}
+
 func boundaryFiles(t *testing.T, dir string) map[string]any {
 	t.Helper()
 	out := map[string]any{}
@@ -409,17 +425,17 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 			if err != nil {
 				t.Fatal(err)
 			}
-			compareBoundary(t, stored, oracle.Stored[i])
+			compareStoredBoundary(t, stored, oracle.Stored[i])
 			system, err := s.Repo.System(s.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
-			compareBoundary(t, system, oracle.Systems[i])
+			compareStoredBoundary(t, system, oracle.Systems[i])
 			shared, err := s.Repo.Shared(s.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
-			compareBoundary(t, shared, oracle.Shared[i])
+			compareStoredBoundary(t, shared, oracle.Shared[i])
 			expectedFiles := map[string]any{}
 			for name, content := range oracle.Files[i] {
 				var value any

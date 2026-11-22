@@ -23,11 +23,8 @@ func TestTypedEasyTierValidation(t *testing.T) {
 		{`{"routes":[1]}`, msgETRoutes},
 	} {
 		t.Run(tt.input, func(t *testing.T) {
-			var input model.EasyTierSettings
-			if err := json.Unmarshal([]byte(tt.input), &input); err != nil {
-				t.Fatal(err)
-			}
-			_, err := NormalizeEasyTier(&input)
+			// Input is validated as sent (O18 T1c).
+			_, err := NormalizeEasyTierJSON(json.RawMessage(tt.input))
 			if err == nil || !strings.Contains(err.Error(), tt.message) {
 				t.Fatalf("want validation %q: %v", tt.message, err)
 			}
@@ -79,7 +76,10 @@ func TestTypedEasyTierNetworksAndRedaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := model.Marshal(redacted)
-	if string(data) != `{"options":{"network-secret":"[REDACTED]","local-private-key":"[REDACTED]","future":"keep"}}` {
+	// Plain records (O18 T1c): the number secret reads as its text and is
+	// redacted, the false key reads as missing, the undeclared option is
+	// dropped (R5 kept all three as stored).
+	if string(data) != `{"options":{"network-secret":"[REDACTED]"}}` {
 		t.Fatalf("secret shape: %s", data)
 	}
 	if EasyTierGroupName(nil) != msgETKeepSuffix {

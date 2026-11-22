@@ -58,6 +58,7 @@ var o10WholeEncodeAllowed = map[string]string{
 	"internal/routers/management.go:replaceManagementRouter":        "router write transaction",
 	"internal/routers/management.go:replaceManagementRawRouter":     "router write transaction",
 	"internal/routers/management_repo.go:managementTransaction":     "router write transaction (legacy JSON boundary)",
+	"internal/api/mosdns/mosdns.go:requestSettings":                 "strict input decode of the request body into an empty profile's mosdns member (no stored record is encoded)",
 	// Rare paths.
 	"internal/agents/dnsfollow/adapter.go:FailureMessage":  "error path only: credentials of every Agent before a refusal is shown",
 	"internal/api/agents/client_binding.go:warnClientPeer": "rate-limited warning log (once per Agent and interval)",
@@ -93,7 +94,6 @@ var o10WholeEncodeAllowed = map[string]string{
 	"internal/routers/management.go:Encoded":                           "debt: manual router inspection reads the generic configuration",
 	"internal/routers/pending.go:pendingTargets":                       "debt: upstream-routers pending check (O10 route, under its ceiling)",
 	"internal/routers/rule_sync_adapter.go:syncConfig":                 "debt: router rule sync reads the generic configuration",
-	"internal/routers/workspace.go:encodedRuleSets":                    "debt: policy-settings workspace reads the generic profile (O10 route, under its ceiling)",
 }
 
 // o10LoopPackages are the packages that register background loops

@@ -88,6 +88,18 @@ func TestC34ObjectFieldValues(t *testing.T) {
 	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
 		for _, value := range []any{nil, false, 0, []any{}, map[string]any{}, true, 3} {
 			r := post("/api/custom-config/"+engine, map[string]any{"config": value})
+			if value != nil && engine != "oxidns" {
+				// A custom config that is not text is refused (O18 T1c, strict
+				// input of the plain settings records); Python stored it.
+				r.Headers = map[string]string{"Authorization": w.token, "Content-Type": "application/json"}
+				before := sendGo(t, w.srv, request{Method: "GET", Path: "/api/custom-config/" + engine, Headers: r.Headers})
+				got := sendGo(t, w.srv, r)
+				if got.Status != 400 {
+					t.Fatalf("%s %v: Go status %d, want 400", engine, value, got.Status)
+				}
+				compare(t, "refused custom config keeps storage", got.State, before.State)
+				continue
+			}
 			if number, ok := value.(int); !ok || number != 0 || engine == "oxidns" {
 				w.check(r)
 				continue

@@ -23,9 +23,6 @@ func ClientNodeReplayIssue(value any, target string) string {
 	if issues := model.Issues(node); len(issues) > 0 {
 		return "node." + issues[0].Path + " R5"
 	}
-	if node.ProxyString == nil && clientProtocolType(node) != nil {
-		return "node.type discriminator"
-	}
 	for _, field := range []string{"name", "type", "server", "port", "params"} {
 		if raw, present := object.Get(field); present && raw == nil {
 			return "node." + field + " null absent"

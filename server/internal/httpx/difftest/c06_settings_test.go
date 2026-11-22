@@ -7,11 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
 	"configflow/internal/api/settings"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model/modeltest"
+	"configflow/internal/repo/repotest"
+	"configflow/internal/testjson"
 )
 
 type settingsCase struct {
@@ -129,6 +133,12 @@ func normalizedSettingsState(t *testing.T, raw json.RawMessage) any {
 			if len(x) >= 5 && (x[2] == "updated_at" || x[2] == "created_at") {
 				x[4] = "<timestamp>"
 			}
+			if len(x) >= 5 {
+				scope, scoped := x[0].(string)
+				if field, ok := x[2].(string); ok && scoped {
+					x[4] = storedRowThroughModel(scope, field, x[4])
+				}
+			}
 			for i, item := range x {
 				x[i] = normalize(item)
 			}
@@ -136,6 +146,22 @@ func normalizedSettingsState(t *testing.T, raw json.RawMessage) any {
 		return v
 	}
 	return normalize(value)
+}
+
+// storedRowThroughModel reads a stored row value as the plain records hold
+// it (O18 T1c): undeclared and empty optional members are left out and stored
+// values read with the stored-data rules. Go stores the subscription
+// aggregation switch as its truth value where Python kept the request value;
+// Python read it with truthiness and a missing value as off, so off is
+// compared as absent.
+func storedRowThroughModel(scope, field string, value any) any {
+	value = testjson.WithoutEmptyMembers(modeltest.RowThroughModel(scope, field, value))
+	if config, ok := value.(map[string]any); ok && scope == "system" && field == "system_config" {
+		if config["subscription_aggregation_enabled"] == false {
+			delete(config, "subscription_aggregation_enabled")
+		}
+	}
+	return value
 }
 
 func TestC06SettingsFlaskStorageBoundary(t *testing.T) {
@@ -229,16 +255,9 @@ func runSettingsBoundary(t *testing.T, cases []settingsCase) {
 		worlds = append(worlds, s)
 		cases[i].Seed = s.DataDir
 		if len(cases[i].storedBackup) > 0 {
-			system, err := s.Repo.System(s.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = system.SetJSON("backup", cases[i].storedBackup); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.Repo.SaveSystemRecord(s.Context(), system, nil); err != nil {
-				t.Fatal(err)
-			}
+			// The stored backup keeps values of the wrong type, as a hand
+			// edit could; the plain record refuses them as input.
+			repotest.WriteRow(t, s.Repo.DatabasePath(), "system", "", "backup", cases[i].storedBackup)
 		}
 	}
 	output := c06Python(t, `
@@ -322,21 +341,37 @@ json.dump(finite_json(answers), sys.stdout, ensure_ascii=False, allow_nan=False)
 				}
 				return
 			}
-			if tc.Difference == "stored-backup-url-type" {
-				var actual, expected, stored map[string]json.RawMessage
-				if err := json.Unmarshal(response.Body, &actual); err != nil {
-					t.Fatal(err)
-				}
+			if tc.Difference == "stored-backup-types" {
+				// Python echoed stored values of the wrong type; Go reads
+				// them with the stored-data rules (O18 T1c): a URL that is
+				// not text is empty, numbers are text, null is absent (the
+				// default path, empty text), auto_backup that is not a
+				// boolean is off (coordinator ruling: switches that trigger
+				// writes). Retention falls back to the default on both.
+				var expected map[string]any
 				if err := json.Unmarshal(want.Body, &expected); err != nil {
 					t.Fatal(err)
 				}
-				if err := json.Unmarshal(tc.storedBackup, &stored); err != nil {
-					t.Fatal(err)
+				for key, value := range expected {
+					switch v := value.(type) {
+					case float64:
+						if key == "webdav_url" {
+							expected[key] = ""
+						} else if key != "keep_latest" && key != "keep_daily" {
+							expected[key] = strconv.FormatFloat(v, 'f', -1, 64)
+						}
+					case nil:
+						expected[key] = ""
+						if key == "webdav_path" {
+							expected[key] = "/config-flow-backup/"
+						}
+					}
+					if key == "auto_backup" {
+						if _, ok := value.(bool); !ok {
+							expected[key] = false
+						}
+					}
 				}
-				if string(actual["webdav_url"]) != `""` || string(expected["webdav_url"]) != string(stored["webdav_url"]) {
-					t.Fatalf("preexisting non-string URI policy changed: Go=%s Python=%s", response.Body, want.Body)
-				}
-				expected["webdav_url"] = json.RawMessage(`""`)
 				var err error
 				want.Body, err = json.Marshal(expected)
 				if err != nil {
@@ -406,12 +441,42 @@ json.dump(finite_json(answers), sys.stdout, ensure_ascii=False, allow_nan=False)
 			if !reflect.DeepEqual(normalizedSettingsState(t, before), normalizedSettingsState(t, want.Before)) {
 				t.Fatal("different baseline")
 			}
-			if !reflect.DeepEqual(normalizedSettingsState(t, after), normalizedSettingsState(t, want.After)) {
-				t.Fatalf("complete DB/files differ: %s", settingsDifference(normalizedSettingsState(t, after), normalizedSettingsState(t, want.After), "state"))
+			goAfter, pyAfter := normalizedSettingsState(t, after), normalizedSettingsState(t, want.After)
+			if tc.Name == "delete token" {
+				// Without a saved token Python still rewrote system_config
+				// with config_token "" (a new revision); the plain record
+				// leaves the empty token out, so the value is unchanged and
+				// Go keeps the row (O18 T1c). Values are still compared.
+				sameRevision(goAfter, pyAfter, "system", "system_config")
+			}
+			if !reflect.DeepEqual(goAfter, pyAfter) {
+				t.Fatalf("complete DB/files differ: %s", settingsDifference(goAfter, pyAfter, "state"))
 			}
 		})
 	}
 	t.Logf("%d C06 Flask request/SQLite/file comparisons", len(cases))
+}
+
+// sameRevision copies the revision of one fields row from want to got.
+func sameRevision(got, want any, scope, field string) {
+	rows := func(state any) []any {
+		tables, _ := state.(map[string]any)["tables"].(map[string]any)
+		list, _ := tables["fields"].([]any)
+		return list
+	}
+	revisions := map[string]any{}
+	for _, row := range rows(want) {
+		if cells, ok := row.([]any); ok && len(cells) >= 6 && cells[0] == scope && cells[2] == field {
+			revisions[fmt.Sprint(cells[1])] = cells[5]
+		}
+	}
+	for _, row := range rows(got) {
+		if cells, ok := row.([]any); ok && len(cells) >= 6 && cells[0] == scope && cells[2] == field {
+			if revision, ok := revisions[fmt.Sprint(cells[1])]; ok {
+				cells[5] = revision
+			}
+		}
+	}
 }
 
 func settingsDifference(got, want any, path string) string {
@@ -483,7 +548,7 @@ func TestN811W5StoredBackupTypes(t *testing.T) {
 	} {
 		difference := ""
 		if strings.Contains(seed, `"webdav_url":`) {
-			difference = "stored-backup-url-type"
+			difference = "stored-backup-types"
 		}
 		cases = append(cases, settingsCase{Name: seed, Method: "GET", Path: "/api/backup/config", Difference: difference, storedBackup: json.RawMessage(seed)})
 	}

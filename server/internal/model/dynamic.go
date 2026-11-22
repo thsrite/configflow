@@ -53,3 +53,9 @@ func (d *Dynamic) SetNode(node *yamlx.Node) error {
 	}
 	return d.UnmarshalJSON(data)
 }
+
+// JSON returns an independent copy of the stored JSON, nil for a zero Dynamic.
+func (d Dynamic) JSON() json.RawMessage { return bytes.Clone(d.raw) }
+
+// IsZero reports a Dynamic that holds no value (omitzero leaves it out).
+func (d Dynamic) IsZero() bool { return d.raw == nil }

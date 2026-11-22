@@ -145,10 +145,7 @@ func ChainProviders(config *model.Config, main *yamlx.Node) (failure error) {
 		}
 	}
 	for _, source := range groupList(config) {
-		dialer, err := opaqueGroupRef(source, "_chain_dialer")
-		if err != nil {
-			return err
-		}
+		dialer := source.ChainDialer
 		if dialer == nil {
 			continue
 		}
@@ -169,7 +166,7 @@ func ChainProviders(config *model.Config, main *yamlx.Node) (failure error) {
 			patterns = strings.Split(filterValue, "`")
 		}
 		originals := model.Map[chainOriginal]{}
-		if data, present := source.Fields.Get("_chain_original_candidates"); present {
+		if data := source.ChainOriginalCandidates.JSON(); data != nil {
 			if err := json.Unmarshal(data, &originals); err != nil {
 				return err
 			}

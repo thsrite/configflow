@@ -152,8 +152,8 @@ func SelectMembers(group model.ProxyGroup) GroupSelection {
 // Provider is a consumed subscription or aggregation and its name filters.
 type Provider struct{ ID, Name, Kind, Include, Exclude string }
 
-func enabledResource(record model.SwitchMember, value *bool) bool {
-	return model.SwitchEnabled(record, "enabled", value, true)
+func enabledResource(value *bool) bool {
+	return model.Flag(value, true)
 }
 func selectedAggregationIDs(selection GroupSelection) []string {
 	ids := append([]string(nil), selection.Aggregations...)
@@ -168,7 +168,7 @@ func groupAggregations(ids []string, catalog GroupCatalog) []model.Aggregation {
 	var result []model.Aggregation
 	for _, id := range ids {
 		for _, item := range catalog.Aggregations {
-			if item.ID == id && enabledResource(&item, item.Enabled) {
+			if item.ID == id && enabledResource(item.Enabled) {
 				result = append(result, item)
 			}
 		}
@@ -242,7 +242,7 @@ func RenderGroup(group model.ProxyGroup, catalog GroupCatalog) RenderedMembers {
 	aggregationIDs := selectedAggregationIDs(selection)
 	var aggregations []model.Aggregation
 	for _, item := range catalog.Aggregations {
-		if slices.Contains(aggregationIDs, item.ID) && enabledResource(&item, item.Enabled) {
+		if slices.Contains(aggregationIDs, item.ID) && enabledResource(item.Enabled) {
 			aggregations = append(aggregations, item)
 		}
 	}
@@ -312,11 +312,19 @@ func equalMembers(a, b map[string]json.RawMessage, fields []string) bool {
 // CheckFilters validates edited filter types, grandfathering only unchanged
 // stored values. Raw evidence is inspected without converting to dynamic values.
 func CheckFilters(group model.ProxyGroup, original *model.ProxyGroup) error {
-	members := recordMembers(group)
 	var before map[string]json.RawMessage
 	if original != nil {
 		before = recordMembers(*original)
 	}
+	return CheckFilterMembers(recordMembers(group), before)
+}
+
+// CheckFilterMembers is CheckFilters on a group's members as JSON. Requests
+// pass their own members: a plain group record cannot hold a filter of the
+// wrong type (O18 T1c), so the request is checked before it is decoded.
+// before are the stored group's members (nil for a new group): an unchanged
+// stored value is grandfathered.
+func CheckFilterMembers(members, before map[string]json.RawMessage) error {
 	for _, field := range FilterFields {
 		raw := members[field]
 		if len(raw) == 0 || string(raw) == "null" {
@@ -324,7 +332,7 @@ func CheckFilters(group model.ProxyGroup, original *model.ProxyGroup) error {
 		}
 		var value string
 		if json.Unmarshal(raw, &value) != nil {
-			if original == nil || len(before[field]) == 0 || !bytes.Equal(before[field], raw) {
+			if before == nil || len(before[field]) == 0 || !bytes.Equal(before[field], raw) {
 				return candidateError(msgFilterType, field)
 			}
 			continue
@@ -554,10 +562,19 @@ func nodeText(node *yamlx.Node) string {
 // CheckCandidates validates the final merged group under the write owner's
 // transaction. Malformed source arrays cannot gain validity through R5 fallback.
 func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *model.ProxyGroup) error {
+	var before map[string]json.RawMessage
+	if original != nil {
+		before = recordMembers(*original)
+	}
+	return CheckCandidateMembers(group, recordMembers(group), catalog, original, before)
+}
+
+// CheckCandidateMembers is CheckCandidates with the group's members as JSON
+// (a request's own members; see CheckFilterMembers).
+func CheckCandidateMembers(group model.ProxyGroup, members map[string]json.RawMessage, catalog GroupCatalog, original *model.ProxyGroup, before map[string]json.RawMessage) error {
 	if group.Type == "chain" {
 		return nil
 	}
-	members := recordMembers(group)
 	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies", "proxies_order"} {
 		if raw, present := members[field]; present {
 			var list []json.RawMessage
@@ -572,7 +589,7 @@ func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *mod
 			return candidateError(msgFollowID)
 		}
 	}
-	if err := CheckFilters(group, original); err != nil {
+	if err := CheckFilterMembers(members, before); err != nil {
 		return err
 	}
 	source := group
@@ -580,7 +597,7 @@ func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *mod
 	if follow != "" {
 		found := false
 		for _, item := range catalog.Groups {
-			if item.ID == follow && enabledResource(&item, item.Enabled) {
+			if item.ID == follow && enabledResource(item.Enabled) {
 				source = item
 				found = true
 				break
@@ -591,7 +608,12 @@ func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *mod
 		}
 	}
 	selection := SelectMembers(source)
-	sourceMembers := recordMembers(source)
+	// The request's own members when the group is its own source: the plain
+	// record already dropped what Python's shape checks refuse (O18 T1c).
+	sourceMembers := members
+	if follow != "" {
+		sourceMembers = recordMembers(source)
+	}
 	// Requests require string IDs even when a stored codec can read number text.
 	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies"} {
 		if raw, present := sourceMembers[field]; present {
@@ -609,22 +631,22 @@ func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *mod
 	}
 	available := map[string]map[string]bool{"nodes": {"DIRECT": true, "REJECT": true}, "subscriptions": {}, "aggregations": {}, "groups": {}}
 	for _, item := range catalog.Nodes {
-		if enabledResource(&item, item.Enabled) {
+		if enabledResource(item.Enabled) {
 			available["nodes"][item.ID] = true
 		}
 	}
 	for _, item := range catalog.Subscriptions {
-		if enabledResource(&item, item.Enabled) {
+		if enabledResource(item.Enabled) {
 			available["subscriptions"][item.ID] = true
 		}
 	}
 	for _, item := range catalog.Aggregations {
-		if enabledResource(&item, item.Enabled) {
+		if enabledResource(item.Enabled) {
 			available["aggregations"][item.ID] = true
 		}
 	}
 	for _, item := range catalog.Groups {
-		if enabledResource(&item, item.Enabled) {
+		if enabledResource(item.Enabled) {
 			available["groups"][item.ID] = true
 		}
 	}
@@ -701,7 +723,11 @@ func MergeGroup(original model.ProxyGroup, patch model.Fields) (model.ProxyGroup
 	if err := json.Unmarshal(data, &requested); err != nil {
 		return zero, err
 	}
-	if err := CheckFilters(requested, nil); err != nil {
+	patchMembers := map[string]json.RawMessage{}
+	for field, value := range patch.All() {
+		patchMembers[field] = value
+	}
+	if err := CheckFilterMembers(patchMembers, nil); err != nil {
 		return zero, err
 	}
 	var deletes []string

@@ -75,7 +75,9 @@ func TestN89NumericCacheIDReference(t *testing.T) {
 		}
 	}
 	previous := getShared
-	getShared = func(context.Context, *repo.Repository) (*model.Shared, error) { return &shared, nil }
+	getShared = func(context.Context, *repo.Repository) (*model.Shared, []model.FieldIssue, error) {
+		return &shared, nil, nil
+	}
 	t.Cleanup(func() { getShared = previous })
 	removed, err := PruneOrphanCaches(ctx)
 	if err != nil {

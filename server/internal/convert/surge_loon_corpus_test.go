@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 	"testing"
 
 	"configflow/internal/convert"
 	"configflow/internal/model"
 	"configflow/internal/substore"
+	"configflow/internal/testjson/modeldirt"
 	"configflow/internal/yamlx"
 )
 
@@ -270,6 +273,8 @@ func TestSurgeLoonCorpus(t *testing.T) {
 	typedStorage := map[string]int{}
 	generated := map[string]int{}
 	failures := 0
+	o18Accepted := map[string]int{}
+	defer func() { t.Logf("accepted O18 T1c differences: %v", o18Accepted) }()
 	index := readClientClassifications(t, "surge_loon_corpus.jsonl.gz", clientIndexPath)
 	var classifications []clientClassification
 	usedIndex := map[int]bool{}
@@ -332,6 +337,14 @@ func TestSurgeLoonCorpus(t *testing.T) {
 			continue
 		}
 		if msg := runSurgeLoonRow(t, row); msg != "" {
+			if dirt := clientRowDirt(entry); len(dirt) > 0 {
+				// Accepted O18 T1c difference: the stored profile, node,
+				// group or subscription proxy holds dirty data that plain
+				// records read differently (port 1.5 or null reads as 0,
+				// a number in a text member as its text, null as missing).
+				o18Accepted[row.fn+" "+strings.Join(dirt, "+")]++
+				continue
+			}
 			failures++
 			if failures <= 25 {
 				t.Errorf("row %d (%s): %s\n  args %s", i, row.fn, msg, truncate(encode(entry.Value("args")), 600))
@@ -354,6 +367,53 @@ func TestSurgeLoonCorpus(t *testing.T) {
 	if failures > 0 {
 		t.Errorf("%d of %d rows differ", failures, len(rows))
 	}
+}
+
+// clientRowDirt returns the O18 T1c dirt kinds (without empty text) of a
+// Surge/Loon corpus row's stored input: the profile of a generated
+// configuration or of build_rules/group rows, a node, a group, or the
+// subscription proxies read as nodes.
+func clientRowDirt(entry *convert.JObj) []string {
+	args := entry.GetList("args")
+	kinds := map[string]bool{}
+	add := func(list []string) {
+		for _, kind := range list {
+			if kind != modeldirt.DirtEmptyText {
+				kinds[kind] = true
+			}
+		}
+	}
+	of := func(value any, sample any) {
+		data, err := convert.CompactJ(value)
+		if err == nil {
+			add(modeldirt.Of(data, sample))
+		}
+	}
+	switch entry.GetString("fn") {
+	case "surge", "loon":
+		add(convert.O18StoredDirt(entry.GetObject("args").GetObject("profile")))
+	case "node_surge", "node_loon":
+		of(args[0], model.Node{})
+	case "group_surge", "group_nodes", "group_loon":
+		of(args[0], model.ProxyGroup{})
+		if len(args) > 1 {
+			if profile, ok := args[1].(*convert.JObj); ok {
+				add(convert.O18StoredDirt(profile))
+			}
+		}
+	case "build_rules":
+		if profile, ok := args[0].(*convert.JObj); ok {
+			add(convert.O18StoredDirt(profile))
+		}
+	case "proxies_surge", "proxies_loon":
+		of(args[0], []model.Node{})
+	}
+	out := make([]string, 0, len(kinds))
+	for kind := range kinds {
+		out = append(out, kind)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func truncate(s string, n int) string {

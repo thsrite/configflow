@@ -227,9 +227,16 @@ func TestReviewN85TokenMaintenancePreservesUntouchedMembers(t *testing.T) {
 					noError(t, saved.UnmarshalJSON(field.Value))
 				}
 			}
+			// Token maintenance rewrites the settings row in Go's form (O18
+			// T1c): a null, wrong-typed or undeclared member is not kept.
+			for _, name := range []string{"default_profile_id", "node_test_dns", "future"} {
+				if got, present := saved.Get(name); present {
+					t.Errorf("dropped member %s kept: %s", name, got)
+				}
+			}
 			for name, value := range original.All() {
-				if name == "retired_rule_proxy_tokens" {
-					continue // the explicit business normalization
+				if name == "retired_rule_proxy_tokens" || name == "default_profile_id" || name == "node_test_dns" || name == "future" {
+					continue // the explicit business normalization, or dropped above
 				}
 				// Values, number text included; whitespace and escapes follow
 				// Go's encoding (O18 T1a).

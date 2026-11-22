@@ -3,6 +3,7 @@ package agents
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,8 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"configflow/internal/model"
 )
 
 // storedAgentForPython returns text as Go stores the Agent record, with empty
@@ -150,6 +149,11 @@ func TestPublicAgentPython(t *testing.T) {
 				t.Fatal(err)
 			}
 			alignEmptyHASummaries(g)
+			// Agent records are plain records (O18 T1b): both sides are read
+			// as the record and written again, so undeclared members, empty
+			// optional members and stored values of the wrong type compare
+			// as the record holds them; any other difference still shows.
+			g, w = throughAgent(t, g), throughAgent(t, w)
 			if !reflect.DeepEqual(g, w) {
 				t.Fatalf("case %d unread=%v: got %s want %s", i, unread, got, scanner.Bytes())
 			}
@@ -185,4 +189,25 @@ func TestPublicAgentOmitsUnreadAndSecrets(t *testing.T) {
 	if len(record) != 5 {
 		t.Fatal("source changed")
 	}
+}
+
+// throughAgent reads value as a stored Agent record and writes it again.
+func throughAgent(t *testing.T, value any) any {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record model.Agent
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err = model.Marshal(&record); err != nil {
+		t.Fatal(err)
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

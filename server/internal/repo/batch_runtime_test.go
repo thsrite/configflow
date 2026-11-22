@@ -65,7 +65,7 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 		if err := json.Unmarshal(documentRaw, &doc); err != nil {
 			t.Fatal(err)
 		}
-		doc["system"].(map[string]any)["system_config"].(map[string]any)["o3_commit_marker"] = "after-import"
+		doc["system"].(map[string]any)["system_config"].(map[string]any)["github_proxy_domain"] = `"after-import"`
 		updatedRaw, err := json.Marshal(doc)
 		if err != nil {
 			t.Fatal(err)
@@ -83,7 +83,7 @@ func batchFixture(t *testing.T, r *repo.Repository, base context.Context, kind s
 					t.Fatal(err)
 				}
 				var marker string
-				if raw, ok := system.SystemConfig.Fields.Get("o3_commit_marker"); ok {
+				if raw, ok := markerGet(json.RawMessage(system.SystemConfig.GitHubProxyDomain)); ok {
 					_ = json.Unmarshal(raw, &marker)
 				}
 				if (kind == "reset" && marker != "") || (kind == "import" && marker != "after-import") {

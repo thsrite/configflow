@@ -1,29 +1,5 @@
 [
   {
-    "label": "node name int",
-    "record": {
-      "label": "node name int",
-      "patch": [
-        {
-          "path": [
-            "shared",
-            "nodes",
-            0,
-            "name"
-          ],
-          "set": 5
-        }
-      ],
-      "error": {
-        "class": "ProfileValidationError",
-        "message": "资源 name 必须是非空字符串",
-        "usages": null
-      }
-    },
-    "native_error": null,
-    "native_class": null
-  },
-  {
     "label": "node subscription zero",
     "record": {
       "label": "node subscription zero",
@@ -40,58 +16,8 @@
       ],
       "result": null
     },
-    "native_error": "配置 默认配置: 引用的共享资源不存在：subscriptions/0",
-    "native_class": "ProfileInUse"
-  },
-  {
-    "label": "group name int",
-    "record": {
-      "label": "group name int",
-      "patch": [
-        {
-          "path": [
-            "profiles",
-            "default",
-            "proxy_groups"
-          ],
-          "append": {
-            "id": "pg9",
-            "name": 5
-          }
-        }
-      ],
-      "error": {
-        "class": "ProfileValidationError",
-        "message": "资源 name 必须是非空字符串",
-        "usages": null
-      }
-    },
-    "native_error": "策略组名称必须非空",
+    "native_error": "nodes 类型不正确",
     "native_class": "ProfileValidationError"
-  },
-  {
-    "label": "node proxy_string int",
-    "record": {
-      "label": "node proxy_string int",
-      "patch": [
-        {
-          "path": [
-            "shared",
-            "nodes",
-            0,
-            "proxy_string"
-          ],
-          "set": 5
-        }
-      ],
-      "error": {
-        "class": "ProfileValidationError",
-        "message": "节点 proxy_string 必须是字符串",
-        "usages": null
-      }
-    },
-    "native_error": null,
-    "native_class": null
   },
   {
     "label": "group manual int",

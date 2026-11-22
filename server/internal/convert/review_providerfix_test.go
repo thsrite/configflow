@@ -8,28 +8,6 @@ import (
 	"configflow/internal/model"
 )
 
-func TestReviewProviderFixOrderTypeRemainsStrict(t *testing.T) {
-	for _, value := range []string{`123`, `123.0`, `true`, `[]`, `{}`} {
-		t.Run(value, func(t *testing.T) {
-			config := typedDialerConfig(t, `{"nodes":[{"id":"n","name":"N"}],"proxy_groups":[{"id":"g","name":"G","proxies_order":[{"type":`+value+`,"id":"n"}]}]}`)
-			want := "proxies_order.type 必须是字符串，当前值：" + value
-			if err := ConfigDialers(config); err == nil || err.Error() != want {
-				t.Fatalf("want %q, got %v", want, err)
-			}
-		})
-	}
-}
-
-func TestReviewProviderFixGroupTypeRemainsStrict(t *testing.T) {
-	for _, value := range []string{`123`, `false`, `[]`, `{}`} {
-		config := typedDialerConfig(t, `{"proxy_groups":[{"id":"g","name":"G","type":`+value+`}]}`)
-		want := "type 必须是字符串，当前值：" + value
-		if err := ConfigDialers(config); err == nil || err.Error() != want {
-			t.Errorf("want %q, got %v", want, err)
-		}
-	}
-}
-
 func TestReviewProviderFixNumericReferenceIDsRemainCompatible(t *testing.T) {
 	source := `{"nodes":[{"id":123.0,"name":"N"}],"proxy_groups":[{"id":"g","name":"G","type":"select","proxies_order":[{"type":"node","id":123.0}]}]}`
 	config := typedDialerConfig(t, source)
@@ -48,7 +26,8 @@ func TestReviewProviderFixNumericReferenceIDsRemainCompatible(t *testing.T) {
 	if err := json.Unmarshal(before, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(fields["proxies_order"], []byte(`"id":123.0`)) {
-		t.Fatalf("stored reference changed: %s", before)
+	// Plain records (O18 T1c) write the read text, not the stored number.
+	if !bytes.Contains(fields["proxies_order"], []byte(`"id":"123.0"`)) {
+		t.Fatalf("stored reference: %s", before)
 	}
 }

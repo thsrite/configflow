@@ -74,7 +74,6 @@ const (
 	msgGroupSourceMissing       = "拨号策略组来源不存在或未启用"
 	msgGroupEmpty               = "拨号策略组不能为空"
 	msgDialerRef                = "dialer_ref 必须为 {type: node|group, id: 非空字符串}"
-	msgStoredDialerRef          = "dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值：%s"
 	msgRawDialerName            = "原始 dialer-proxy 必须是非空名称"
 	msgRawDialerMissing         = "原始 dialer-proxy '%s' 不存在、未启用或名称不唯一，请改用稳定引用"
 	msgChainFollow              = "跟随模式不能引用代理链，请使用策略组引用"

@@ -40,7 +40,7 @@ type Deployment struct {
 	ManualRollback            *bool                    `json:"manual_rollback,omitzero"`
 	RollbackRejected          *bool                    `json:"rollback_rejected,omitzero"`
 	RollbackMessage           *string                  `json:"rollback_message,omitzero"`
-	DNSChecks                 []DeploymentDNSCheck     `json:"dns_checks,omitzero"`
+	DNSChecks                 []DeploymentDNSCheck     `json:"dns_checks,omitzero" elements:"keep"`
 	DNSCheckedAt              *string                  `json:"dns_checked_at,omitzero"`
 	PreparedContent           *PreparedContent         `json:"prepared_content,omitzero"`
 	OxiDNSValidationReceipt   *OxiDNSValidationReceipt `json:"oxidns_validation_receipt,omitzero"`

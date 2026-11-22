@@ -148,8 +148,10 @@ func TestReviewTypedSettingsDefaultsAndLegacyNumber(t *testing.T) {
 				t.Fatalf("read-time defaults rejected persisted settings: %v", err)
 			}
 			settings.normalize()
-			if strings.Contains(raw, "auto_probe") && (settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || len(settings.RegionalRulesets) != 0 || len(settings.WebsiteNotes) != 0) {
-				t.Fatal("R5 stored bool defaults changed")
+			// O18 T1c: auto_probe 1 keeps its truth value (Python truthiness);
+			// auto_apply is switch:"off"; [] and {} are off; wrong-typed maps are empty.
+			if strings.Contains(raw, "auto_probe") && (!settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || len(settings.RegionalRulesets) != 0 || len(settings.WebsiteNotes) != 0) {
+				t.Fatalf("lenient stored switch defaults changed: %+v", settings)
 			}
 			if strings.Contains(raw, "80.0") && settings.Confidence != 80 {
 				t.Fatal("lost supported confidence")

@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bytes"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,7 +44,7 @@ func TestAbandonDryRunDeletionAndRetainedInstallation(t *testing.T) {
 			if err != nil {
 				t.Fatal("abandon did not suppress prompt", err)
 			}
-			dismissedRaw, _, _ := system.SystemConfig.MemberJSON("setup_suggestion_dismissed")
+			dismissedRaw, _, _ := model.EncodeMember(&system.SystemConfig, "setup_suggestion_dismissed")
 			if string(dismissedRaw) != "true" {
 				t.Fatalf("abandon did not suppress prompt: %s", dismissedRaw)
 			}

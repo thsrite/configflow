@@ -102,13 +102,19 @@ func TestStoredHealthUsesSharedNumbersWhileRequestsStayStrict(t *testing.T) {
 			t.Fatalf("request accepted non-integer token: %s", spelling)
 		}
 	}
+	// O18 T1c: a stored member of another type reads leniently (lazy 1 keeps
+	// its truth value, the others read as absent, so the default applies)
+	// instead of being kept as an invalid R5 value; requests stay strict.
 	for _, raw := range []string{`{"lazy":1}`, `{"interval":true}`, `{"interval":null}`, `{"url":false}`} {
 		var provider model.ProviderHealthCheck
 		if err := json.Unmarshal([]byte(raw), &provider); err != nil {
 			t.Fatal(err)
 		}
-		if err := ValidateProviderHealth(&provider); err == nil {
-			t.Fatalf("R5 zero became valid setting: %s", raw)
+		if err := ValidateProviderHealth(&provider); err != nil {
+			t.Fatalf("lenient stored %s rejected: %v", raw, err)
+		}
+		if err := ValidateHealthJSON([]byte(raw), true); err == nil {
+			t.Fatalf("request accepted %s", raw)
 		}
 	}
 }

@@ -232,23 +232,12 @@ func (r *Repository) AgentRecordCredentialsOf(head store.Head, shared bool, reco
 
 func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 	ruleProxy, agents := TokenSet{}, TokenSet{}
-	add := func(target TokenSet, raw json.RawMessage, present bool, err error) {
-		if err != nil || !present {
-			return
-		}
-		var value *string
-		if json.Unmarshal(raw, &value) == nil && value != nil && *value != "" {
-			target[*value] = struct{}{}
-		}
+	if token := system.SystemConfig.RuleProxyToken; token != "" {
+		ruleProxy[token] = struct{}{}
 	}
-	raw, present, err := system.SystemConfig.MemberJSON("rule_proxy_token")
-	add(ruleProxy, raw, present, err)
-	if raw, present, err := system.SystemConfig.MemberJSON("retired_rule_proxy_tokens"); err == nil && present {
-		var values []json.RawMessage
-		if json.Unmarshal(raw, &values) == nil {
-			for _, raw := range values {
-				add(ruleProxy, raw, true, nil)
-			}
+	for _, token := range system.SystemConfig.RetiredRuleProxyTokens {
+		if token != "" {
+			ruleProxy[token] = struct{}{}
 		}
 	}
 	for i := range system.Agents {
@@ -344,7 +333,7 @@ const systemSettingsIssue = "system.system_config"
 // be read (it is not an object) and was replaced by empty settings on load.
 func settingsDamaged(issues []model.FieldIssue) bool {
 	for _, issue := range issues {
-		if issue.Path == systemSettingsIssue {
+		if issue.Path == systemSettingsIssue || issue.Path == systemSettingsIssue+".config_token" {
 			return true
 		}
 	}
@@ -352,7 +341,8 @@ func settingsDamaged(issues []model.FieldIssue) bool {
 }
 
 // SystemSettingsDamaged reports whether the current stored system_config is
-// not an object (O18 T1a reads it as empty settings with a load warning).
+// not an object (O18 T1a reads it as empty settings with a load warning) or
+// its config_token is not text (O18 T1c reads it as no token).
 // Credential checks treat such settings as damaged, never as "no token": a
 // damaged stored token must not become anonymous access. Inside a transaction
 // the transaction's base generation is checked.
@@ -365,6 +355,21 @@ func (r *Repository) SystemSettingsDamaged(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return settingsDamaged(entry.Issues), nil
+}
+
+// StoredIssues returns the load issues of the current stored generation
+// (paths such as "shared.subscriptions[2]"; no values). Callers that would
+// delete data on what a damaged row reads as (for example no subscriptions)
+// check them and fail closed. Inside a transaction the base generation is used.
+func (r *Repository) StoredIssues(ctx context.Context) ([]model.FieldIssue, error) {
+	if tx := r.transactionOf(ctx); tx != nil {
+		return slices.Clone(tx.base.Issues), nil
+	}
+	entry, err := r.readEntry(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(entry.Issues), nil
 }
 
 // keepDamagedSettings restores the base generation's settings in document

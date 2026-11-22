@@ -105,13 +105,13 @@ func setOwnershipMarker(r *Repository, ctx context.Context, value string) error 
 		return err
 	}
 	return r.Update(ctx, func(_ context.Context, document *model.Document) error {
-		return document.System.SystemConfig.Fields.Set("marker", raw)
+		return markerSet(&document.System.SystemConfig.GitHubProxyDomain, raw)
 	})
 }
 
 func readOwnershipMarker(t *testing.T, r *Repository, ctx context.Context) string {
 	t.Helper()
-	raw, ok := must(r.SystemConfig(ctx))(t).Fields.Get("marker")
+	raw, ok := markerGet(json.RawMessage(must(r.SystemConfig(ctx))(t).GitHubProxyDomain))
 	if !ok {
 		return ""
 	}

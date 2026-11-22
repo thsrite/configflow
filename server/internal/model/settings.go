@@ -3,173 +3,102 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	"fmt"
 )
 
-// MihomoSettings stores the editable YAML text and profile-level provider/EasyTier settings; text is parsed only by consumers.
+// Profile engine settings are plain records (O18 T1c). Members the default
+// profile template always wrote are always written; the others are omitzero.
+
+// MihomoSettings stores the editable YAML text and profile-level provider,
+// EasyTier and gateway settings; text is parsed only by consumers. RouterSplit,
+// LinuxGateway and LinuxGatewayRestorePoint are schema-free objects owned by
+// the router-split and Linux gateway features.
 type MihomoSettings struct {
-	CustomConfig           string            `json:"custom_config"`
-	ProviderUpdateInterval *Int              `json:"provider_update_interval"`
-	EasyTier               *EasyTierSettings `json:"easytier"`
-	Fields                 Fields
-	raw                    Raw
+	CustomConfig             string            `json:"custom_config"`
+	ProviderUpdateInterval   *Int              `json:"provider_update_interval,omitzero"`
+	EasyTier                 *EasyTierSettings `json:"easytier,omitzero"`
+	RouterSplit              Dynamic           `json:"router_split,omitzero"`
+	LinuxGateway             Dynamic           `json:"linux_gateway,omitzero"`
+	LinuxGatewayRestorePoint Dynamic           `json:"linux_gateway_restore_point,omitzero"`
 }
-
-// UnmarshalJSON decodes MihomoSettings with stored-member preservation and R5 fallback.
-func (r *MihomoSettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when MihomoSettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *MihomoSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged MihomoSettings members.
-func (r MihomoSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // SurgeSettings stores the editable client text and explicit smart-group choices.
 type SurgeSettings struct {
 	CustomConfig string            `json:"custom_config"`
-	SmartGroups  []SurgeSmartGroup `json:"smart_groups"`
-	Fields       Fields
-	raw          Raw
+	SmartGroups  []SurgeSmartGroup `json:"smart_groups,omitzero"`
 }
-
-// UnmarshalJSON decodes SurgeSettings with stored-member preservation and R5 fallback.
-func (r *SurgeSettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when SurgeSettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *SurgeSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged SurgeSettings members.
-func (r SurgeSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // SurgeSmartGroup selects a policy group and its client priority expression.
 type SurgeSmartGroup struct {
 	GroupID        string `json:"group_id"`
-	PolicyPriority string `json:"policy_priority"`
-	Fields         Fields
-	raw            Raw
+	PolicyPriority string `json:"policy_priority,omitzero"`
 }
-
-// UnmarshalJSON decodes SurgeSmartGroup with stored-member preservation and R5 fallback.
-func (r *SurgeSmartGroup) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when SurgeSmartGroup is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *SurgeSmartGroup) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged SurgeSmartGroup members.
-func (r SurgeSmartGroup) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // LoonSettings stores the editable Loon client text.
 type LoonSettings struct {
 	CustomConfig string `json:"custom_config"`
-	Fields       Fields
-	raw          Raw
 }
-
-// UnmarshalJSON decodes LoonSettings with stored-member preservation and R5 fallback.
-func (r *LoonSettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when LoonSettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *LoonSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged LoonSettings members.
-func (r LoonSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // EasyTierSettings holds the profile overlay settings without applying defaults during decoding.
 type EasyTierSettings struct {
-	Enabled   *bool              `json:"enabled"`
-	Name      *string            `json:"name"`
-	ApplyTo   *string            `json:"apply_to"`
-	Routes    []string           `json:"routes"`
-	MagicDNS  *bool              `json:"magic_dns"`
-	Keepalive *EasyTierKeepalive `json:"keepalive"`
+	Enabled   *bool              `json:"enabled,omitzero"`
+	Name      *string            `json:"name,omitzero"`
+	ApplyTo   *string            `json:"apply_to,omitzero"`
+	Routes    []string           `json:"routes,omitzero"`
+	MagicDNS  *bool              `json:"magic_dns,omitzero"`
+	Keepalive *EasyTierKeepalive `json:"keepalive,omitzero"`
 	Options   EasyTierOptions    `json:"options"`
-	Fields    Fields
-	raw       Raw
 }
-
-// UnmarshalJSON decodes EasyTierSettings with stored-member preservation and R5 fallback.
-func (r *EasyTierSettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when EasyTierSettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *EasyTierSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged EasyTierSettings members.
-func (r EasyTierSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // EasyTierKeepalive holds the optional overlay health request.
 type EasyTierKeepalive struct {
-	Enabled  *bool  `json:"enabled"`
+	Enabled  *bool  `json:"enabled,omitzero"`
 	URL      string `json:"url"`
-	Interval *Int   `json:"interval"`
-	Fields   Fields
-	raw      Raw
+	Interval *Int   `json:"interval,omitzero"`
 }
 
-// UnmarshalJSON decodes EasyTierKeepalive with stored-member preservation and R5 fallback.
-func (r *EasyTierKeepalive) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when EasyTierKeepalive is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *EasyTierKeepalive) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged EasyTierKeepalive members.
-func (r EasyTierKeepalive) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// EasyTierOptions declares every option accepted by Python mihomo_easytier.FIELDS; future keys remain in Raw.
+// EasyTierOptions declares every option accepted by Python mihomo_easytier.FIELDS.
 type EasyTierOptions struct {
-	NetworkName         string   `json:"network-name"`
-	NetworkSecret       string   `json:"network-secret"`
-	Hostname            string   `json:"hostname"`
-	IPv4                string   `json:"ipv4"`
-	DHCP                *bool    `json:"dhcp"`
-	Peers               []string `json:"peers"`
-	SecureMode          *bool    `json:"secure-mode"`
-	LocalPrivateKey     string   `json:"local-private-key"`
-	LocalPublicKey      string   `json:"local-public-key"`
-	Listeners           []string `json:"listeners"`
-	NoListener          *bool    `json:"no-listener"`
-	MappedListeners     []string `json:"mapped-listeners"`
-	ExitNodes           []string `json:"exit-nodes"`
-	ProxyNetworks       []string `json:"proxy-networks"`
-	InstanceName        string   `json:"instance-name"`
-	StateDir            string   `json:"state-dir"`
-	UDP                 *bool    `json:"udp"`
-	AcceptDNS           *bool    `json:"accept-dns"`
-	EnableExitNode      *bool    `json:"enable-exit-node"`
-	EnableEncryption    *bool    `json:"enable-encryption"`
-	EncryptionAlgorithm string   `json:"encryption-algorithm"`
-	PrivateMode         *bool    `json:"private-mode"`
-	LatencyFirst        *bool    `json:"latency-first"`
-	DisableP2P          *bool    `json:"disable-p2p"`
-	EnableKCPProxy      *bool    `json:"enable-kcp-proxy"`
-	DisableKCPInput     *bool    `json:"disable-kcp-input"`
-	EnableQUICProxy     *bool    `json:"enable-quic-proxy"`
-	DisableQUICInput    *bool    `json:"disable-quic-input"`
-	MTU                 *Int     `json:"mtu"`
-	TLDDNSZone          string   `json:"tld-dns-zone"`
-	DialerProxy         string   `json:"dialer-proxy"`
-	InterfaceName       string   `json:"interface-name"`
-	RoutingMark         *Int     `json:"routing-mark"`
-	IPVersion           *string  `json:"ip-version"`
-	Fields              Fields
-	raw                 Raw
+	NetworkName         string   `json:"network-name,omitzero"`
+	NetworkSecret       string   `json:"network-secret,omitzero"`
+	Hostname            string   `json:"hostname,omitzero"`
+	IPv4                string   `json:"ipv4,omitzero"`
+	DHCP                *bool    `json:"dhcp,omitzero"`
+	Peers               []string `json:"peers,omitzero"`
+	SecureMode          *bool    `json:"secure-mode,omitzero"`
+	LocalPrivateKey     string   `json:"local-private-key,omitzero"`
+	LocalPublicKey      string   `json:"local-public-key,omitzero"`
+	Listeners           []string `json:"listeners,omitzero"`
+	NoListener          *bool    `json:"no-listener,omitzero"`
+	MappedListeners     []string `json:"mapped-listeners,omitzero"`
+	ExitNodes           []string `json:"exit-nodes,omitzero"`
+	ProxyNetworks       []string `json:"proxy-networks,omitzero"`
+	InstanceName        string   `json:"instance-name,omitzero"`
+	StateDir            string   `json:"state-dir,omitzero"`
+	UDP                 *bool    `json:"udp,omitzero"`
+	AcceptDNS           *bool    `json:"accept-dns,omitzero"`
+	EnableExitNode      *bool    `json:"enable-exit-node,omitzero"`
+	EnableEncryption    *bool    `json:"enable-encryption,omitzero"`
+	EncryptionAlgorithm string   `json:"encryption-algorithm,omitzero"`
+	PrivateMode         *bool    `json:"private-mode,omitzero"`
+	LatencyFirst        *bool    `json:"latency-first,omitzero"`
+	DisableP2P          *bool    `json:"disable-p2p,omitzero"`
+	EnableKCPProxy      *bool    `json:"enable-kcp-proxy,omitzero"`
+	DisableKCPInput     *bool    `json:"disable-kcp-input,omitzero"`
+	EnableQUICProxy     *bool    `json:"enable-quic-proxy,omitzero"`
+	DisableQUICInput    *bool    `json:"disable-quic-input,omitzero"`
+	MTU                 *Int     `json:"mtu,omitzero"`
+	TLDDNSZone          string   `json:"tld-dns-zone,omitzero"`
+	DialerProxy         string   `json:"dialer-proxy,omitzero"`
+	InterfaceName       string   `json:"interface-name,omitzero"`
+	RoutingMark         *Int     `json:"routing-mark,omitzero"`
+	IPVersion           *string  `json:"ip-version,omitzero"`
 }
 
-// UnmarshalJSON decodes EasyTierOptions with stored-member preservation and R5 fallback.
-func (r *EasyTierOptions) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when EasyTierOptions is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *EasyTierOptions) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged EasyTierOptions members.
-func (r EasyTierOptions) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// MosDNSSettings stores editor settings and raw YAML text without parsing or normalizing a draft.
+// MosDNSSettings stores editor settings and raw YAML text without parsing or
+// normalizing a draft. The cache numbers are int:"text": Python's editor read
+// them with int(), so input may give them as ASCII decimal text.
 type MosDNSSettings struct {
 	CustomConfig        string        `json:"custom_config"`
 	DirectRulesets      []string      `json:"direct_rulesets"`
@@ -177,142 +106,81 @@ type MosDNSSettings struct {
 	DirectRules         []string      `json:"direct_rules"`
 	ProxyRules          []string      `json:"proxy_rules"`
 	CustomMatches       []MosDNSMatch `json:"custom_matches"`
-	CustomMatchPosition *string       `json:"custom_match_position"`
+	CustomMatchPosition *string       `json:"custom_match_position,omitzero"`
 	LocalDNS            string        `json:"local_dns"`
 	RemoteDNS           string        `json:"remote_dns"`
 	FallbackDNS         string        `json:"fallback_dns"`
-	DefaultForward      *string       `json:"default_forward"`
+	DefaultForward      *string       `json:"default_forward,omitzero"`
 	CustomHosts         string        `json:"custom_hosts"`
-	LogEnabled          *bool         `json:"log_enabled"`
-	LogLevel            *string       `json:"log_level"`
-	LogFile             *string       `json:"log_file"`
-	APIEnabled          *bool         `json:"api_enabled"`
-	APIAddress          *string       `json:"api_address"`
-	APIAddr             *string       `json:"api_addr"`
-	ListenAddress       *string       `json:"listen_address"`
-	CacheEnabled        *bool         `json:"cache_enabled"`
-	CacheSize           *Int          `json:"cache_size"`
-	CacheLazyTTL        *Int          `json:"cache_lazy_ttl"`
-	CacheDumpEnabled    *bool         `json:"cache_dump_enabled"`
-	CacheDumpFile       *string       `json:"cache_dump_file"`
-	CacheDumpInterval   *Int          `json:"cache_dump_interval"`
-	Fields              Fields
-	raw                 Raw
+	LogEnabled          *bool         `json:"log_enabled,omitzero"`
+	LogLevel            *string       `json:"log_level,omitzero"`
+	LogFile             *string       `json:"log_file,omitzero"`
+	APIEnabled          *bool         `json:"api_enabled,omitzero"`
+	APIAddress          *string       `json:"api_address,omitzero"`
+	APIAddr             *string       `json:"api_addr,omitzero"`
+	ListenAddress       *string       `json:"listen_address,omitzero"`
+	CacheEnabled        *bool         `json:"cache_enabled,omitzero"`
+	CacheSize           *Int          `json:"cache_size,omitzero" int:"text"`
+	CacheLazyTTL        *Int          `json:"cache_lazy_ttl,omitzero" int:"text"`
+	CacheDumpEnabled    *bool         `json:"cache_dump_enabled,omitzero"`
+	CacheDumpFile       *string       `json:"cache_dump_file,omitzero"`
+	CacheDumpInterval   *Int          `json:"cache_dump_interval,omitzero" int:"text"`
 }
 
-// UnmarshalJSON decodes MosDNSSettings with stored-member preservation and R5 fallback.
-func (r *MosDNSSettings) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when MosDNSSettings is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *MosDNSSettings) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged MosDNSSettings members.
-func (r MosDNSSettings) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// MemberJSON returns one effective declared MosDNSSettings member without encoding siblings.
-func (r *MosDNSSettings) MemberJSON(name string) (json.RawMessage, bool, error) {
-	if r == nil {
-		return nil, false, nil
-	}
-	switch name {
-	case "log_enabled":
-		return r.raw.MemberJSON(name, r.LogEnabled)
-	case "api_enabled":
-		return r.raw.MemberJSON(name, r.APIEnabled)
-	case "cache_enabled":
-		return r.raw.MemberJSON(name, r.CacheEnabled)
-	case "cache_dump_enabled":
-		return r.raw.MemberJSON(name, r.CacheDumpEnabled)
-	default:
-		return recordMemberJSON(r, &r.raw, name)
-	}
-}
-
-// MosDNSMatch retains an editor string or editable sequence object.
-// A scalar Text is stored and displayed but ignored by generators; object
-// matches retain their string or list representation.
+// MosDNSMatch is an editor match: an object, or the legacy scalar text form
+// (Text != nil) that is stored and displayed but ignored by generators. It
+// decodes itself because a stored string is a valid value, not a wrong type.
 type MosDNSMatch struct {
 	// Text retains the legacy scalar form for the editor; generators ignore it.
-	Text         *string `json:"-"`
-	textSource   json.RawMessage
-	textOriginal string
-	ID           string    `json:"id"`
-	Enabled      *bool     `json:"enabled"`
-	Matches      TextLines `json:"matches"`
-	Exec         string    `json:"exec"`
-	Fields       Fields
-	raw          Raw
+	Text    *string   `json:"-"`
+	ID      string    `json:"id"`
+	Enabled *bool     `json:"enabled,omitzero"`
+	Matches TextLines `json:"matches"`
+	Exec    string    `json:"exec"`
 }
 
-// UnmarshalJSON decodes MosDNSMatch with stored-member preservation and R5 fallback.
+type mosDNSMatchWire MosDNSMatch
+
+// UnmarshalJSON decodes the scalar text form or, leniently, the object form.
 func (r *MosDNSMatch) UnmarshalJSON(data []byte) error {
 	text := bytes.TrimSpace(data)
 	if len(text) > 0 && text[0] == '"' {
 		var value string
-		if err := json.Unmarshal(data, &value); err != nil {
+		if err := json.Unmarshal(text, &value); err != nil {
 			return err
 		}
-		*r = MosDNSMatch{Text: &value, textSource: bytes.Clone(data), textOriginal: value}
+		*r = MosDNSMatch{Text: &value}
 		return nil
 	}
-	return DecodeRecord(data, r, &r.raw)
+	return decodePlain(data, (*mosDNSMatchWire)(r))
 }
 
-// Clear drops a declared member (by JSON name) when MosDNSMatch is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *MosDNSMatch) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MemberJSON returns one effective declared MosDNSMatch member without encoding siblings.
-func (r *MosDNSMatch) MemberJSON(name string) (json.RawMessage, bool, error) {
-	if r == nil || r.Text != nil {
-		return nil, false, nil
-	}
-	if name == "enabled" {
-		return r.raw.MemberJSON(name, r.Enabled)
-	}
-	return recordMemberJSON(r, &r.raw, name)
-}
-
-// MarshalJSON preserves unknown and unchanged MosDNSMatch members.
+// MarshalJSON writes the scalar text form or the object members.
 func (r MosDNSMatch) MarshalJSON() ([]byte, error) {
 	if r.Text != nil {
-		if *r.Text == r.textOriginal && r.textSource != nil {
-			return bytes.Clone(r.textSource), nil
-		}
-		return json.Marshal(*r.Text)
+		return encodeUnit(*r.Text)
 	}
-	return EncodeRecord(&r, &r.raw)
+	return marshalPlain((*mosDNSMatchWire)(&r))
 }
 
 // DomainDiscovery holds profile discovery choices, user-keyed notes and applied-rule history.
 type DomainDiscovery struct {
-	DirectRuleset          *string            `json:"direct_ruleset"`
-	ProxyRuleset           *string            `json:"proxy_ruleset"`
-	Ignored                []string           `json:"ignored"`
-	AutoProbe              *bool              `json:"auto_probe"`
-	AutoApply              *bool              `json:"auto_apply"`
-	AutoApplyMinConfidence *Int               `json:"auto_apply_min_confidence"`
-	History                []DiscoveryHistory `json:"history"`
-	RegionCheckEnabled     *bool              `json:"region_check_enabled"`
-	RegionProbePort        *Int               `json:"region_probe_port"`
-	RegionalRulesets       Map[string]        `json:"regional_rulesets"`
-	WebsiteNotes           Map[string]        `json:"website_notes"`
-	Fields                 Fields
-	raw                    Raw
+	DirectRuleset          *string            `json:"direct_ruleset,omitzero"`
+	ProxyRuleset           *string            `json:"proxy_ruleset,omitzero"`
+	Ignored                []string           `json:"ignored,omitzero"`
+	AutoProbe              *bool              `json:"auto_probe,omitzero"`
+	AutoApply              *bool              `json:"auto_apply,omitzero" switch:"off"`
+	AutoApplyMinConfidence *Int               `json:"auto_apply_min_confidence,omitzero"`
+	History                []DiscoveryHistory `json:"history,omitzero"`
+	RegionCheckEnabled     *bool              `json:"region_check_enabled,omitzero"`
+	RegionProbePort        *Int               `json:"region_probe_port,omitzero"`
+	RegionalRulesets       OrderedMap[string] `json:"regional_rulesets,omitzero"`
+	WebsiteNotes           OrderedMap[string] `json:"website_notes,omitzero"`
 }
 
-// UnmarshalJSON decodes DomainDiscovery with stored-member preservation and R5 fallback.
-func (r *DomainDiscovery) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DomainDiscovery is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DomainDiscovery) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DomainDiscovery members.
-func (r DomainDiscovery) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
-// DiscoveryHistory records one applied discovery result and its optional recheck.
+// DiscoveryHistory records one applied discovery result and its optional
+// recheck. Python wrote verdict, confidence and recheck on every entry (null
+// when unknown), so they are always written.
 type DiscoveryHistory struct {
 	Value      string            `json:"value"`
 	RuleType   string            `json:"rule_type"`
@@ -323,19 +191,7 @@ type DiscoveryHistory struct {
 	Verdict    *string           `json:"verdict"`
 	Confidence *Int              `json:"confidence"`
 	Recheck    *DiscoveryRecheck `json:"recheck"`
-	Fields     Fields
-	raw        Raw
 }
-
-// UnmarshalJSON decodes DiscoveryHistory with stored-member preservation and R5 fallback.
-func (r *DiscoveryHistory) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DiscoveryHistory is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DiscoveryHistory) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DiscoveryHistory members.
-func (r DiscoveryHistory) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DiscoveryRecheck records a periodic check of an applied discovery rule.
 type DiscoveryRecheck struct {
@@ -343,19 +199,7 @@ type DiscoveryRecheck struct {
 	Verdict       *string `json:"verdict"`
 	SuggestRemove *bool   `json:"suggest_remove"`
 	Reason        string  `json:"reason"`
-	Fields        Fields
-	raw           Raw
 }
-
-// UnmarshalJSON decodes DiscoveryRecheck with stored-member preservation and R5 fallback.
-func (r *DiscoveryRecheck) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DiscoveryRecheck is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DiscoveryRecheck) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DiscoveryRecheck members.
-func (r DiscoveryRecheck) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // ClientFixedIP is a tracked DHCP reservation keyed by client IP, with ownership text kept unchanged.
 type ClientFixedIP struct {
@@ -365,25 +209,110 @@ type ClientFixedIP struct {
 	IP        string  `json:"ip"`
 	MAC       string  `json:"mac"`
 	Comment   string  `json:"comment"`
-	Server    *string `json:"server"`
-	Interface *string `json:"interface"`
-	Gateway   *string `json:"gateway"`
-	Fields    Fields
-	raw       Raw
+	Server    *string `json:"server,omitzero"`
+	Interface *string `json:"interface,omitzero"`
+	Gateway   *string `json:"gateway,omitzero"`
 }
 
-// UnmarshalJSON decodes ClientFixedIP with stored-member preservation and R5 fallback.
-func (r *ClientFixedIP) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when ClientFixedIP is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *ClientFixedIP) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged ClientFixedIP members.
-func (r ClientFixedIP) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
-
 // DeviceNotes maps client address/range text to display names in stored order.
-type DeviceNotes = Map[string]
+// Null and NonTextName mark stored notes that Python refused to extend
+// (stored as null; a name that is not text, read as absent). Reads ignore
+// them; a notes write refuses such notes with Python's message instead of
+// replacing them. Stored notes of another JSON type (a list) read as empty
+// notes, not damaged (O18 T1a).
+type DeviceNotes struct {
+	OrderedMap[string]
+	Null        bool
+	NonTextName bool
+}
+
+// MarshalJSON writes the notes in order.
+func (n DeviceNotes) MarshalJSON() ([]byte, error) { return n.OrderedMap.MarshalJSON() }
+
+// IsZero reports empty notes.
+func (n DeviceNotes) IsZero() bool { return n.OrderedMap.IsZero() }
+
+// UnmarshalJSON decodes stored notes leniently (see decodeStoredNotes).
+func (n *DeviceNotes) UnmarshalJSON(data []byte) error {
+	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowInvalidUTF8(true))
+	return decodeStoredNotes(dec, &issueSink{}, n)
+}
+
+// UnmarshalJSONFrom decodes notes given as input: an object of text names
+// only (null or another value is a type error).
+func (n *DeviceNotes) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	if dec.PeekKind() != '{' {
+		return fmt.Errorf("%w: device notes must be an object", ErrType)
+	}
+	var notes DeviceNotes
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+	for dec.PeekKind() != '}' {
+		key, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		name := key.String()
+		if dec.PeekKind() != '"' {
+			return fmt.Errorf("%w: device note %q must be text", ErrType, name)
+		}
+		value, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		notes.Set(name, value.String())
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+	*n = notes
+	return nil
+}
+
+// decodeStoredNotes reads stored notes: null is empty notes marked Null, a
+// name that is not text is left out and marked NonTextName, another JSON kind
+// is empty notes; each with an issue.
+func decodeStoredNotes(dec *jsontext.Decoder, sink *issueSink, n *DeviceNotes) error {
+	*n = DeviceNotes{}
+	switch dec.PeekKind() {
+	case 'n':
+		if _, err := dec.ReadToken(); err != nil {
+			return err
+		}
+		n.Null = true
+		sink.add(dec, IssueType)
+		return nil
+	case '{':
+	default:
+		return skipInvalid(dec, sink, func() {})
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+	for dec.PeekKind() != '}' {
+		key, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		name := key.String() // the token is voided by the next read
+		if dec.PeekKind() != '"' {
+			if err := dec.SkipValue(); err != nil {
+				return err
+			}
+			n.NonTextName = true
+			sink.add(dec, IssueType)
+			continue
+		}
+		value, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		n.Set(name, value.String())
+	}
+	_, err := dec.ReadToken()
+	return err
+}
 
 // ClientFixedIPs maps client IPv4 text to tracked reservations in stored order.
-type ClientFixedIPs = Map[ClientFixedIP]
+type ClientFixedIPs = OrderedMap[ClientFixedIP]

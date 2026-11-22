@@ -37,9 +37,11 @@ func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 			if _, e := l.db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "legacy", Name: "Synthetic legacy"}, ""); e != nil {
 				t.Fatal(e)
 			}
-			if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "legacy", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
-				t.Fatal("repository rejects the malformed record:", e)
+			if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "legacy", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}}), nil); e != nil {
+				t.Fatal(e)
 			}
+			// Input is strict (O18 T1c): the malformed record is a stored row.
+			seedStoredRow(t, l.db, "profile", "legacy", "routers", string(mustPolicyJSON(map[string]any{"items": []any{bad}})))
 			out, e := AgentRouters(t.Context(), l.request(t))
 			if e != nil {
 				t.Fatal("one malformed router record hid every reminder:", e)

@@ -31,7 +31,9 @@ func TestReviewSettingsLogsDoNotEchoValues(t *testing.T) {
 			t.Cleanup(func() { _, _ = logx.Setup(logx.Config{Console: io.Discard}) })
 			const value = "https://operator:synthetic-log-secret@panel.example.com/?token=synthetic-query-secret\nforged-log-entry"
 			s.Post(tc.path, httpxtest.JSON(map[string]any{tc.requestKey: value})).WantStatus(200)
-			if asString(asMap(systemMap(t, s)["system_config"])[tc.storedKey]) != value {
+			// The aggregation switch is stored as its truth value (O18 T1c).
+			stored := asMap(systemMap(t, s)["system_config"])[tc.storedKey]
+			if tc.storedKey == "subscription_aggregation_enabled" && stored != true || tc.storedKey != "subscription_aggregation_enabled" && asString(stored) != value {
 				t.Fatal("logging protection changed the stored setting")
 			}
 			if !strings.Contains(logs.String(), tc.event) {

@@ -108,6 +108,10 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Python's cache node always has a port (proxy.get("port", 0)).
+		if source.Port == nil {
+			source.Port = model.IntPtr(0)
+		}
 		portJSON, err := jsonresp.Encode(source.Port)
 		if err != nil {
 			return nil, err

@@ -2966,3 +2966,63 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
     （与原来容器层里的配置已被删除的效果不同）；面板的卸载流程随后会删除容器。
 - 版本：Agent `upgrade.Version` 与面板 `LatestAgentVersion` 为 1.9.3-go；Python 比较例外沿用（proddiff `GO_AGENT_LATEST`、
   `has_update` 例外范围 [1.8.61-go, 1.9.3-go)，configdiff T16/T25 心跳 1.9.3-go）。
+
+## O18 T1c — 路由器、设置、资源、策略记录改为普通结构体
+
+协调任务 O18 T1c（2026-11-22），沿用 T1a/T1b 裁定（宽松读存储、严格输入、未知成员丢弃并告警、只写值变了的行）。
+另有本步裁定：会触发设备写入或自动推送的开关类型不对时按「关」+ 告警，其余开关保留 truthiness；节点扁平协议参数选 A。
+
+- **范围**：`routers`（路由器、探测/发布结果、所有权清单、规则同步）、`system_config`、`backup`、订阅/节点/聚合/规则仓库、
+  策略组、规则、Mihomo/Surge/Loon/MosDNS/EasyTier 设置、域名发现、设备备注、固定 IP。
+- **始终写 / 可选**：Python 建档或归一化总写的成员始终写（例如路由器 `id/type/endpoint/username/password/两个 agent id/两个规则集列表`、
+  发布结果 `at/ok/fingerprint/message`、`system_config.server_domain/github_proxy_domain/rule_fetch_proxy`、MosDNS 的规则列表与 DNS 文本、
+  域名发现历史的 `verdict/confidence/recheck`），其余为空时不写。配置空间的 `loon/domain_discovery/routers/device_notes/client_fixed_ips`
+  改为始终写（Python `_empty_profile` 总写；T1a 曾定为空时不写）；旧库缺这些行时，值不变就不补行（行的「存在」也按值是否改变保留）。
+  库里存的空历史条目 `{}` 读出后带上这些始终写的空成员（接口返回空文本/`null`，Python 原样返回 `{}`）。
+- **未声明成员丢弃**：上述记录里不认识的成员读取时丢弃并汇总告警。例外（裁定 A）：节点的扁平协议参数（`cipher`、`uuid`、`ws-opts` 等）
+  是协议参数而不是未知成员，保存在 `Node.ProtocolParams`（有序、写时复制、Clone 深拷贝），导出脱敏和节点测速照旧遍历；
+  其它记录的守卫测试照旧拒绝未声明成员。`MihomoSettings` 声明 `router_split`、`linux_gateway`、`linux_gateway_restore_point`（无结构对象）；
+  策略组声明生成期成员 `_chain_dialer`、`_chain_original_candidates`，节点声明 `_proxy_chain_id`。
+- **库里类型不对的值**：文本接受数字原文，但 `server_domain`、`config_token`、`backup.webdav_url` 不接受（读作空 + 告警；
+  `config_token` 非文本时 `SystemSettingsDamaged` 认作凭据损坏，失败即关）。开关：`manage_return_routing`、`auto_rule_sync`、
+  `dns_guard.enabled`、`ipv6_pd_guard.enabled`、`domain_discovery.auto_apply`、`backup.auto_backup` 类型不对或 `null` 读作关；
+  `verify_tls` 读作开；其余开关按真值（例如 `auto_probe: 1` 为开，与 Python 一致，以前 Go 按 R5 读作关）。
+  备份保留数 `keep_latest/keep_daily` 只接受整数字面量，`1.0`、`"3"` 读作缺失、用默认 30（与 Python 相同）。
+  `GET /api/backup/config` 对库里的 `null` 用户名/路径返回空文本/默认路径，数字返回文本（Python 原样回显）。
+  规则的 `policy` 存成 `null` 或非文本时读作空引用：生成时按 Python 拒绝，不回退到 `PROXY`。
+  设备备注存成 `null` 或备注名不是文本时，读取照常（读作空/略过该条），写备注仍按 Python 拒绝（`DeviceNotes.Null`/`NonTextName`，裁定）。
+- **列表里的非对象元素**：任何层级的记录列表里，非对象元素丢弃（`null` 静默，其它告警），其余元素保留。
+  以前 Go 对嵌套列表（例如策略组 `proxies_order`、路由器 `items`、域名发现 `history`）按 R5 整列读作缺失，下一次写入会丢掉整列；
+  Python 的读者跳过这类元素，生成器遇到时直接报错。
+- **路由器守卫设置**（`dns_guard`、`ipv6_pd_guard`）：开启的守卫里有成员类型不对（例如 `bypass` 不是列表），或守卫本身是非对象的真值，
+  整份原样保留（`Stored`），设备管理按「已保存的守卫设置无效」拒绝（失败即关，与以前相同，以前靠原值证据）；守卫开关本身类型不对按裁定读作关，
+  这时不保留、可以撤下。守卫里的未声明成员照常丢弃。作为输入（路由器设置保存）严格解码，不会整份保留。
+- **策略组 `proxies_order`**：列表里有非对象元素时整列读作没有排序（`elements:"all"`），与 Python `managed_members` 相同；
+  其它记录列表只丢坏元素。Agent 部署的 `dns_checks` 坏元素读作空检测（`elements:"keep"`），报告照旧追加「DNS 报告完整性」。
+- **删除/清理数量类设置**：`backup.keep_latest/keep_daily`、`traffic_history_retention_days` 只认整数字面量，数字文本、`1.0`、布尔等读作缺失
+  （用默认值，宁可多留）+ 告警。订阅缓存孤儿清理在库里订阅列表有类型告警（非列表、元素非对象、id 非文本）时不删任何文件（失败即关）。
+- **节点 `dialer_ref`**：库里存成非对象读作空引用（`ResourceRef` failClosed），生成时按「dialer_ref 必须为 …」拒绝，不会当成直连。
+- **凭据列表**：`retired_rule_proxy_tokens` 只保留文本元素，其余丢弃并告警。
+- **MosDNS 自定义匹配**：对象形里类型不对、未声明的成员有加载告警。
+- 删除了依赖 `model.Issues`、在普通记录上永不触发的检查（convert `storedText`/`validateRuleIdentities`/`clientProtocolType`、
+  discovery `storedStrings`、rulesetfmt/rules/provider 的错类型分支）；仍用旧编解码的局部记录（节点测速、刷新回执、订阅缓存等）保留。
+- **路由器所有权清单**（`ros_policy_state`、`dns_guard_state`、`ipv6_fakeip_state`、`ipv6_routes_state`、`ipv6_pd_guard_state`）：
+  库里类型不对或带未声明成员的清单整份原样保留，守卫按 Python 真值判断（失败即关），不按普通记录丢成员。
+- **凭据文本**：`rule_proxy_token`、`retired_rule_proxy_tokens` 的元素也只认文本（非文本读作空），数字不会成为规则代理凭据。
+- **解析出的节点**（proxy_string、订阅代理列表、VMess 链接）：`type`/`server` 不是文本（数字按文本）时，客户端生成按 Python 拒绝该节点
+  （单节点报「节点 … server 类型不正确」，代理列表里的节点跳过并告警），不再生成空 server 行；VMess 链接的 `add` 证据经
+  `subs.ParsedProxy.WrongText` 带出。
+- **EasyTier 设置输入**：在请求原始 JSON 上校验（`convert.NormalizeEasyTierJSON`），类型不对、未知参数照旧按 Python 文案拒绝；
+  库里已存的设置按存储规则读。
+- **节点端口**：节点的 `port` 可选（库里有就保留存在性）；订阅缓存解析出的节点总带 `port`（缺失写 0，与 Python `proxies_to_nodes` 相同）。
+- **输入严格解码**：嵌套记录作为输入时逐成员严格解码；整数只接受整数字面量（MosDNS 缓存数字是 Python `int()` 读的，仍接受 `"128"` 这样的十进制文本）；
+  健康检查成员、策略组 id 列表、订阅 `interval` 给 `null` 拒绝；代理链和健康检查对象有未声明成员时拒绝（Python 同样拒绝）。
+  被拒输入按 Python 的校验顺序出原文案（`repo/input_errors.go`）；一个请求里多处错误时报错顺序可能不同。
+  MosDNS 设置接口以前对类型不对的成员读作缺失后保存，现在按「MosDNS 设置字段类型无效」拒绝（Python 对非整数文本同样报错）。
+  聚合目录写入（新建/编辑）严格解码：名称为数字等返回 400。自定义配置文本不是字符串时在解析前返回 400（`<引擎> 类型不正确`）。
+  策略组候选校验对自身为来源的请求检查请求自己的成员（`proxies_order` 项必须恰为 type/id，文案「排序项必须包含且仅包含 type 和 id」）。
+  订阅聚合开关保存为真值（Python 保存请求原值，读取按真值，效果相同）。
+- **路由器设置保存的 CAS**：`SaveRouterSettingsJSON` 把调用方快照按普通记录解码后比较值，不比较原字节或成员存在性。
+- 测试：difftest 的存储比较经 `modeltest.StateThroughModel`/`RowThroughModel` 和 `testjson.WithoutEmptyMembers`（未声明成员、空可选成员两边都不比）；
+  需要库里脏数据的夹具改用 `repotest.WriteRow` 直接写行（普通记录的 SetJSON 会拒绝）；Python 参考里输入为错类型/null/未声明成员的行作为已接受差异，
+  各处注释说明；pyref 只重录 metadata（条目逐字节相同）。

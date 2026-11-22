@@ -190,7 +190,7 @@ func MihomoRuleLists(config *model.Config) ([]model.RuleConfig, []model.RuleConf
 		return rules, sets, nil
 	}
 	for _, rule := range config.Profile.RuleConfigs {
-		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
+		if !enabled(rule.Enabled) || !libraryEnabled(rule.LibraryEnabled) {
 			continue
 		}
 		switch rule.ItemType {
@@ -218,30 +218,6 @@ func decodeRuleList(data json.RawMessage, output *[]model.RuleConfig) error {
 		*output = append(*output, rule)
 	}
 	return nil
-}
-
-// storedRecord lists the stored records whose text members storedText checks.
-type storedRecord interface {
-	model.Subscription | model.Aggregation | model.ProxyGroup | model.RuleConfig | model.Node
-}
-
-// storedText rejects a wrong-typed stored member that becomes generated text.
-// R5 reads it as "", which would silently emit an empty provider key (out of
-// step with the group's stored `use` entry, colliding with other such
-// providers) or a broken rule line; the error carries the stored value.
-func storedText[T storedRecord](record *T, kind, id, member string) error {
-	if !model.IssueUnder(model.Issues(record), member) {
-		return nil
-	}
-	data, err := model.Marshal(record)
-	if err != nil {
-		return err
-	}
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(data, &members); err != nil {
-		return err
-	}
-	return fmt.Errorf(msgMihomoStoredText, kind, id, member, members[member])
 }
 
 func providerHealthNode(check *model.ProviderHealthCheck, address *string, env MihomoEnvironment) (*yamlx.Node, error) {
@@ -321,20 +297,17 @@ type mihomoSelection struct{ nodes, subscriptions, aggregations, direct, aggrega
 func mihomoUsed(config *model.Config) *mihomoSelection {
 	selected := &mihomoSelection{map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}}
 	for _, node := range config.Nodes {
-		if fieldString(node.Fields, "_proxy_chain_id") != "" {
+		if node.ProxyChainID != "" {
 			selected.nodes[node.ID] = true
 		}
 	}
 	for _, group := range config.Profile.ProxyGroups {
-		if raw, ok := group.Fields.Get("_chain_dialer"); ok {
-			var ref model.ResourceRef
-			if json.Unmarshal(raw, &ref) == nil && ref.Type == "node" {
-				selected.nodes[ref.ID] = true
-			}
+		if ref := group.ChainDialer; ref != nil && ref.Type == "node" {
+			selected.nodes[ref.ID] = true
 		}
 	}
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(&group, group.Enabled) {
+		if !enabled(group.Enabled) {
 			continue
 		}
 		source := &group
@@ -354,7 +327,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		for _, id := range stringList(source.Aggregations) {
 			selected.aggregations[id] = true
 			for _, agg := range config.Aggregations {
-				if agg.ID == id && enabled(&agg, agg.Enabled) {
+				if agg.ID == id && enabled(agg.Enabled) {
 					for _, sub := range agg.Subscriptions {
 						covered[sub] = true
 					}
@@ -379,7 +352,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		}
 	}
 	for _, group := range config.Profile.ProxyGroups {
-		if enabled(&group, group.Enabled) {
+		if enabled(group.Enabled) {
 			for _, ref := range GroupRefs(group) {
 				if ref.Kind == "node" && ref.ID != "DIRECT" && ref.ID != "REJECT" {
 					selected.nodes[ref.ID] = true
@@ -389,7 +362,7 @@ func mihomoUsed(config *model.Config) *mihomoSelection {
 		}
 	}
 	for _, agg := range config.Aggregations {
-		if enabled(&agg, agg.Enabled) && selected.aggregations[agg.ID] {
+		if enabled(agg.Enabled) && selected.aggregations[agg.ID] {
 			for _, id := range agg.Nodes {
 				selected.aggregationRoots[id] = true
 			}
@@ -409,15 +382,8 @@ func orderedRoots(config *model.Config, selection *mihomoSelection) []string {
 	return result
 }
 func groupEngineOptions(target *yamlx.Node, group model.ProxyGroup) error {
-	invalid := map[string]bool{}
-	for _, issue := range model.Issues(&group) {
-		invalid[issue.Path] = true
-	}
 	// Each option is read as its own member, not from a whole-group encode (O10 R9).
 	for _, key := range []string{"url", "interval", "tolerance", "lazy", "strategy", "timeout", "max-failed-times", "expected-status", "disable-udp", "hidden", "icon", "exclude-filter", "exclude-type"} {
-		if invalid[key] {
-			continue
-		}
 		value, err := groupMember(&group, key)
 		if err != nil {
 			return err
@@ -431,7 +397,7 @@ func groupEngineOptions(target *yamlx.Node, group model.ProxyGroup) error {
 
 // groupMember is a group's stored member as a YAML node, or nil when absent.
 func groupMember(group *model.ProxyGroup, key string) (*yamlx.Node, error) {
-	raw, present, err := group.MemberJSON(key)
+	raw, present, err := model.EncodeMember(group, key)
 	if err != nil || !present {
 		return nil, err
 	}
@@ -467,13 +433,8 @@ func groupDefaults(target *yamlx.Node, group model.ProxyGroup) error {
 func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironment) (*yamlx.Node, error) {
 	result := yamlx.Seq()
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(&group, group.Enabled) {
+		if !enabled(group.Enabled) {
 			continue
-		}
-		for _, member := range []string{"type", "follow_group"} {
-			if err := storedText(&group, kindGroup, group.ID, member); err != nil {
-				return nil, err
-			}
 		}
 		target := yamlx.Map(yamlx.Str("name"), yamlx.Str(group.Name), yamlx.Str("type"), yamlx.Str(group.Type))
 		settings := &group
@@ -481,9 +442,6 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 			settings = followed(config.Profile.ProxyGroups, id)
 			if settings == nil {
 				continue
-			}
-			if err := storedText(settings, kindGroup, settings.ID, "type"); err != nil {
-				return nil, err
 			}
 			yamlx.Set(target, "type", yamlx.Str(settings.Type))
 		}
@@ -514,7 +472,7 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 	if len(result.Content) == 0 {
 		chained := false
 		for _, node := range config.Nodes {
-			if fieldString(node.Fields, "_proxy_chain_id") != "" {
+			if node.ProxyChainID != "" {
 				chained = true
 				break
 			}
@@ -536,19 +494,13 @@ func mihomoGroups(config *model.Config, proxies *yamlx.Node, env MihomoEnvironme
 func mihomoRuleLines(config *model.Config) (*yamlx.Node, error) {
 	lines := []string{}
 	for _, rule := range RulesForOutput(config) {
-		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
+		if !enabled(rule.Enabled) || !libraryEnabled(rule.LibraryEnabled) {
 			continue
 		}
 		policy := stringValue(rule.Policy)
 		switch rule.ItemType {
 		case "rule":
-			if err := storedText(&rule, kindRule, rule.ID, "rule_type"); err != nil {
-				return nil, err
-			}
 			if rule.RuleType != "MATCH" {
-				if err := storedText(&rule, kindRule, rule.ID, "value"); err != nil {
-					return nil, err
-				}
 			}
 			switch {
 			case rule.RuleType == "MATCH":
@@ -568,9 +520,6 @@ func mihomoRuleLines(config *model.Config) (*yamlx.Node, error) {
 				lines = append(lines, line)
 			}
 		case "ruleset":
-			if err := storedText(&rule, kindRuleSet, rule.ID, "name"); err != nil {
-				return nil, err
-			}
 			if rule.Policy == nil {
 				policy = "PROXY"
 			}
@@ -592,9 +541,6 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	ctx = EnsureConversions(ctx)
 	if logical == nil || logical.Profile == nil {
 		return nil, fmt.Errorf("%s", msgMihomoConfig)
-	}
-	if err := validateRuleIdentities(logical.Profile.RuleConfigs); err != nil {
-		return nil, err
 	}
 	env := CurrentMihomoEnvironment()
 	if err := env.CheckGeneration(); err != nil {
@@ -655,7 +601,7 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	proxies := yamlx.Seq()
 	inline := []InlineNode{}
 	for _, node := range config.Nodes {
-		if !enabled(&node, node.Enabled) || !used[node.ID] || onlyAggregated[node.ID] {
+		if !enabled(node.Enabled) || !used[node.ID] || onlyAggregated[node.ID] {
 			continue
 		}
 		converted, err := NodeProxy(ctx, node, env.Converter)
@@ -698,20 +644,14 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 		return nil
 	}
 	for _, sub := range config.Subscriptions {
-		if enabled(&sub, sub.Enabled) && selection.subscriptions[sub.ID] {
-			if err := storedText(&sub, kindSubscription, sub.ID, "name"); err != nil {
-				return nil, err
-			}
+		if enabled(sub.Enabled) && selection.subscriptions[sub.ID] {
 			if err := provider(sub.Name, "/subscriptions/"+sub.ID+"/proxies", sub.HealthCheck, sub.HealthCheckURL); err != nil {
 				return nil, err
 			}
 		}
 	}
 	for _, agg := range config.Aggregations {
-		if enabled(&agg, agg.Enabled) && selection.aggregations[agg.ID] {
-			if err := storedText(&agg, kindAggregation, agg.ID, "name"); err != nil {
-				return nil, err
-			}
+		if enabled(agg.Enabled) && selection.aggregations[agg.ID] {
 			if err := provider(agg.Name, "/aggregations/"+agg.ID+"/provider", agg.HealthCheck, agg.HealthCheckURL); err != nil {
 				return nil, err
 			}
@@ -727,13 +667,8 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	yamlx.Set(document, "proxy-groups", groups)
 	ruleProviders := yamlx.Map()
 	for _, rule := range ruleSets {
-		if !enabled(&rule, rule.Enabled) {
+		if !enabled(rule.Enabled) {
 			continue
-		}
-		for _, member := range []string{"name", "behavior"} {
-			if err := storedText(&rule, kindRuleSet, rule.ID, member); err != nil {
-				return nil, err
-			}
 		}
 		url, original, err := ruleDownloadURL(config, rule, baseURL)
 		if err != nil {

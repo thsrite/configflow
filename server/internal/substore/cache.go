@@ -109,7 +109,15 @@ func DeleteSubscriptionCache(ctx context.Context, id string) (bool, error) {
 	return removed, nil
 }
 
-var getShared = func(ctx context.Context, r *repo.Repository) (*model.Shared, error) { return r.Shared(ctx) }
+// getShared reads the shared resources with the load issues of their rows.
+var getShared = func(ctx context.Context, r *repo.Repository) (*model.Shared, []model.FieldIssue, error) {
+	shared, err := r.Shared(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	issues, err := r.StoredIssues(ctx)
+	return shared, issues, err
+}
 
 // PruneOrphanCaches uses one typed shared snapshot before deleting any orphan.
 func PruneOrphanCaches(ctx context.Context) ([]string, error) {
@@ -121,18 +129,21 @@ func PruneOrphanCaches(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	shared, err := getShared(ctx, r)
+	shared, issues, err := getShared(ctx, r)
 	if err != nil {
 		cacheLog.Warning(fmt.Sprintf(msgCachePrune, err))
 		return []string{}, nil
 	}
-	if shared == nil || shared.Subscriptions == nil || model.IssueUnder(model.Issues(shared), "subscriptions") {
+	// A stored subscription list that read with a type issue (not a list, an
+	// element that is not an object, an ID of another type) is not proof of
+	// which caches are orphans: nothing is deleted (fail closed).
+	if shared == nil || shared.Subscriptions == nil || typeIssueUnder(issues, "shared.subscriptions") {
 		cacheLog.Warning(msgCacheSubscriptionsShape)
 		return []string{}, nil
 	}
 	keep := map[string]bool{}
 	for _, sub := range shared.Subscriptions {
-		if sub.ID == "" || model.IssueUnder(model.Issues(sub), "id") {
+		if sub.ID == "" {
 			cacheLog.Warning(fmt.Sprintf(msgCachePrune, msgCacheSubscriptionID))
 			return []string{}, nil
 		}
@@ -526,3 +537,14 @@ func readCacheSummary(ctx context.Context, id, path string) (*CacheSummary, erro
 }
 
 var cacheClock Clock = SystemClock
+
+// typeIssueUnder reports a type issue at path or below it (undeclared members
+// are dropped harmlessly and do not count).
+func typeIssueUnder(issues []model.FieldIssue, path string) bool {
+	for _, issue := range issues {
+		if issue.Kind == model.IssueType && model.IssueUnder([]model.FieldIssue{issue}, path) {
+			return true
+		}
+	}
+	return false
+}

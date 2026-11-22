@@ -143,13 +143,13 @@ func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
 	if err != nil {
 		return value, err
 	}
-	if err = json.Unmarshal(data, &value); err != nil {
-		return value, repo.NewValidationError(SettingsObjectMessage)
-	}
-	if len(model.Issues(value)) > 0 {
+	// The settings are a plain record (O18 T1c): input is decoded strictly,
+	// so a member of the wrong type is refused instead of read as absent.
+	var profile model.Profile
+	if err = model.DecodeInputMember("profile", &profile, "mosdns", data); err != nil {
 		return value, repo.NewValidationError(SettingsFieldTypeMessage)
 	}
-	return value, nil
+	return profile.MosDNS, nil
 }
 func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {

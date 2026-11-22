@@ -37,8 +37,8 @@ type ruleLists struct {
 
 func (r *ruleLists) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.raw) }
 
-func flag(record model.SwitchMember, name string, value *bool) bool {
-	return model.SwitchEnabled(record, name, value, true)
+func flag(value *bool) bool {
+	return model.Flag(value, true)
 }
 func textValue(value *string, fallback string) string {
 	if value == nil {
@@ -62,7 +62,7 @@ func SplitRules(config *model.Config) ([]model.RuleConfig, []model.RuleConfig, e
 		return rules, sets, nil
 	}
 	for _, item := range config.Profile.RuleConfigs {
-		if !flag(&item, "enabled", item.Enabled) || !flag(&item, "library_enabled", item.LibraryEnabled) {
+		if !flag(item.Enabled) || !flag(item.LibraryEnabled) {
 			continue
 		}
 		switch item.ItemType {
@@ -147,7 +147,7 @@ func SingleRuleBatches(config *model.Config) ([]RuleBatch, error) {
 	counts := map[string]int{}
 	previous := ""
 	for _, item := range entries {
-		if (item.ItemType != "rule" && !(legacy && item.ItemType == "")) || !flag(&item, "enabled", item.Enabled) || !flag(&item, "library_enabled", item.LibraryEnabled) || (!direct[item.ID] && !proxy[item.ID]) {
+		if (item.ItemType != "rule" && !(legacy && item.ItemType == "")) || !flag(item.Enabled) || !flag(item.LibraryEnabled) || (!direct[item.ID] && !proxy[item.ID]) {
 			previous = ""
 			continue
 		}
@@ -333,7 +333,7 @@ func MatchEntries(matches []model.MosDNSMatch) []*yamlx.Node {
 		if item.Text != nil {
 			continue
 		}
-		if !flag(&item, "enabled", item.Enabled) {
+		if !flag(item.Enabled) {
 			continue
 		}
 		action := strings.TrimSpace(item.Exec)

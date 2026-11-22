@@ -206,7 +206,7 @@ func validateDocument(d *model.Document) error {
 		return err
 	}
 	if kind := settings.kind("default_profile_id"); kind != 0 && kind != 'n' && kind != '"' {
-		return validationError("默认配置空间 ID 必须是字符串")
+		return validationError(msgDefaultProfileIDText)
 	}
 	if profileByKey(d, defaultProfileIn(d)) == nil {
 		return validationError(msgDefaultProfileRequired)
@@ -256,18 +256,18 @@ func validateDocument(d *model.Document) error {
 	for _, id := range catalogs[kindNodes].ids {
 		node := catalogs[kindNodes].byID[id]
 		if node.has("dialer_ref") {
-			return validationError("共享节点不能保存拨号引用，请在策略组中创建代理链")
+			return validationError(msgNodeDialerRef)
 		}
 		if raw, _ := node.get("subscription_id"); jsonTruthy(raw) {
 			if subscription, ok := jsonString(raw); !ok || !catalogs[kindSubscriptions].has(subscription) {
-				return validationError("节点引用的订阅不存在")
+				return validationError(msgNodeSubscriptionMissing)
 			}
 		}
 	}
 	library := catalogs[kindRuleLibrary]
 	for _, id := range library.ids {
 		if library.byID[id].has("policy") || library.byID[id].has("target") {
-			return validationError("规则仓库不包含目标策略，请在规则配置中设置")
+			return validationError(msgLibraryPolicy)
 		}
 	}
 	names := map[string]bool{}
@@ -275,7 +275,7 @@ func validateDocument(d *model.Document) error {
 		raw, _ := library.byID[id].get("name")
 		name, ok := jsonString(raw)
 		if !ok || name == "" || names[name] {
-			return validationError("共享规则仓库名称必须非空且唯一")
+			return validationError(msgLibraryNames)
 		}
 		names[name] = true
 	}
@@ -403,7 +403,7 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 		raw, _ := groups.byID[id].get("name")
 		name, ok := jsonString(raw)
 		if !ok || name == "" {
-			return validationError("策略组名称必须非空")
+			return validationError(msgGroupNameEmpty)
 		}
 		groupNames[name] = true
 	}
@@ -469,11 +469,11 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 		if raw, ok := group.get("proxies_order"); ok {
 			var entries []json.RawMessage
 			if jsonKind(raw) != '[' || json.Unmarshal(raw, &entries) != nil {
-				return validationError("策略组排序必须是数组")
+				return validationError(msgGroupOrderArray)
 			}
 			for _, entry := range entries {
 				if jsonKind(entry) != '{' {
-					return validationError("策略组排序项必须是 type/id 对象")
+					return validationError(msgGroupOrderEntry)
 				}
 				item := viewOfJSON(entry)
 				kindRaw, _ := item.get("type")
@@ -509,7 +509,7 @@ func validateProfileSettings(d *model.Document, profile *model.Profile, catalogs
 		kindRaw, _ := rule.get("itemType")
 		itemType, _ := jsonString(kindRaw)
 		if itemType != "rule" && itemType != "ruleset" {
-			return validationError("规则类型必须为 rule 或 ruleset")
+			return validationError(msgRuleItemType)
 		}
 		if itemType == "ruleset" {
 			libraryRaw, _ := rule.get("library_rule_id")
@@ -697,11 +697,11 @@ func checkGroupReferenceShapes(raw json.RawMessage) error {
 		if raw, ok := group.get("proxies_order"); ok {
 			var entries []json.RawMessage
 			if jsonKind(raw) != '[' || json.Unmarshal(raw, &entries) != nil {
-				return validationError("策略组排序必须是数组")
+				return validationError(msgGroupOrderArray)
 			}
 			for _, entry := range entries {
 				if jsonKind(entry) != '{' {
-					return validationError("策略组排序项必须是 type/id 对象")
+					return validationError(msgGroupOrderEntry)
 				}
 				item := viewOfJSON(entry)
 				typeRaw, _ := item.get("type")

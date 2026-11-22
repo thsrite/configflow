@@ -18,7 +18,8 @@ type Profile struct {
 	doc             *Node
 	source          *model.Config
 	notesChanged    func(*Node)
-	notesInvalid    bool
+	notesNull       bool
+	notesNonText    bool
 	presenceMu      sync.Mutex
 	presenceVersion uint64
 	presence        nativeIPResolver
@@ -86,12 +87,8 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	set(doc, "proxy_groups", groups)
 	selectors := profile.MosDNS
 	set(doc, "mosdns", M("direct_rulesets", strs(selectors.DirectRulesets), "proxy_rulesets", strs(selectors.ProxyRulesets), "direct_rules", strs(selectors.DirectRules), "proxy_rules", strs(selectors.ProxyRules)))
-	notesInvalid := false
-	for _, issue := range model.Issues(profile) {
-		if issue.Path == "device_notes" {
-			notesInvalid = true
-		}
-	}
+	// Stored notes Python refused to extend (null, a name that is not text).
+	notesNull, notesNonText := profile.DeviceNotes.Null, profile.DeviceNotes.NonTextName
 	notesJSON, err := profile.DeviceNotes.MarshalJSON()
 	if err != nil {
 		return nil, err
@@ -131,11 +128,11 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 	set(doc, "subscriptions", subscriptions)
 	aggregations := L()
 	for _, item := range source.Aggregations {
-		aggregations.Content = append(aggregations.Content, M("id", item.ID, "name", item.Name, "enabled", model.SwitchEnabled(&item, "enabled", item.Enabled, true), "subscriptions", strs(item.Subscriptions)))
+		aggregations.Content = append(aggregations.Content, M("id", item.ID, "name", item.Name, "enabled", model.Flag(item.Enabled, true), "subscriptions", strs(item.Subscriptions)))
 	}
 	set(doc, "subscription_aggregations", aggregations)
 
-	return &Profile{doc: doc, source: source, issues: issues, notesInvalid: notesInvalid}, nil
+	return &Profile{doc: doc, source: source, issues: issues, notesNull: notesNull, notesNonText: notesNonText}, nil
 }
 
 func text(value *string, fallback string) string {
@@ -146,8 +143,8 @@ func text(value *string, fallback string) string {
 }
 func ruleNode(item model.RuleConfig) *Node {
 	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", item.Value,
-		"enabled", model.SwitchEnabled(&item, "enabled", item.Enabled, true),
-		"library_enabled", model.SwitchEnabled(&item, "library_enabled", item.LibraryEnabled, true))
+		"enabled", model.Flag(item.Enabled, true),
+		"library_enabled", model.Flag(item.LibraryEnabled, true))
 	if item.LibraryRuleID != "" {
 		set(out, "library_rule_id", S(item.LibraryRuleID))
 	}
@@ -162,7 +159,7 @@ func ruleNode(item model.RuleConfig) *Node {
 	return out
 }
 func libraryNode(item model.RuleLibraryItem) *Node {
-	out := M("id", item.ID, "name", item.Name, "enabled", model.SwitchEnabled(&item, "enabled", item.Enabled, true))
+	out := M("id", item.ID, "name", item.Name, "enabled", model.Flag(item.Enabled, true))
 	for _, field := range []struct {
 		key   string
 		value *string
@@ -178,7 +175,7 @@ func groupNode(group model.ProxyGroup) (*Node, error) {
 	// values have already passed the shared R5 decoder; private Raw is omitted.
 	type groupDTO model.ProxyGroup
 	value := groupDTO(group)
-	value.Fields = model.Fields{}
+	value.ChainDialer, value.ChainOriginalCandidates = nil, model.Dynamic{}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -187,13 +184,12 @@ func groupNode(group model.ProxyGroup) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	del(node, "Fields")
 	for _, key := range keys(node) {
 		if isNone(get(node, key)) {
 			del(node, key)
 		}
 	}
-	set(node, "enabled", B(model.SwitchEnabled(&group, "enabled", group.Enabled, true)))
+	set(node, "enabled", B(model.Flag(group.Enabled, true)))
 	return node, nil
 }
 

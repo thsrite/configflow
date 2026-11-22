@@ -28,7 +28,9 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model/modeltest"
 	"configflow/internal/repo"
+	"configflow/internal/testjson"
 )
 
 func python() string {
@@ -221,6 +223,26 @@ func state(t *testing.T, r *repo.Repository, dir string) any {
 	files["cache"] = cache
 	return map[string]any{"profile": map[string]any{"domain_discovery": pn["domain_discovery"], "rule_configs": pn["rule_configs"]}, "library": sn["rule_library"], "files": files}
 }
+
+// storedThroughModel reads both stored states as the plain records hold them
+// (O18 T1c): members no record declares and empty optional members are left
+// out, values of the wrong type read with the stored-data rules.
+func storedThroughModel(state any) any {
+	m, ok := state.(map[string]any)
+	if !ok {
+		return state
+	}
+	out := map[string]any{"files": m["files"]}
+	if profile, ok := m["profile"].(map[string]any); ok {
+		out["profile"] = map[string]any{
+			"domain_discovery": modeltest.RowThroughModel("profile", "domain_discovery", profile["domain_discovery"]),
+			"rule_configs":     modeltest.RowThroughModel("profile", "rule_configs", profile["rule_configs"]),
+		}
+	}
+	out["library"] = modeltest.RowThroughModel("shared", "rule_library", m["library"])
+	return testjson.WithoutEmptyMembers(out)
+}
+
 func waitJob(t *testing.T, base string, j any, query string) any {
 	t.Helper()
 	m := j.(map[string]any)
@@ -335,7 +357,6 @@ func TestHTTPAndStorageParity(t *testing.T) {
 		{"PUT", "settings", `{"direct_ruleset":false,"proxy_ruleset":0}`}, {"PUT", "settings", `{"direct_ruleset":{},"proxy_ruleset":[]}`},
 	}
 	pyIDs, goIDs := map[string]string{}, map[string]string{}
-	storedSettingsChanged := false
 	for i, q := range rs {
 		t.Run(fmt.Sprintf("%02d_%s_%s", i, q.method, q.path), func(t *testing.T) {
 			path := "/api/domain-discovery/" + q.path
@@ -378,35 +399,18 @@ func TestHTTPAndStorageParity(t *testing.T) {
 				gs := state(t, r, goDir)
 				pyIDs = identities(ps)
 				goIDs = identities(gs)
-				if q.method == "PUT" && q.path == "settings" && gc == 200 {
-					storedSettingsChanged = true
-				}
-				if storedSettingsChanged {
-					// The seed deliberately stores auto_probe: 1. Native R5
-					// decodes it as false; Python persists its truthy true.
-					left := ps.(map[string]any)["profile"].(map[string]any)["domain_discovery"].(map[string]any)
-					right := gs.(map[string]any)["profile"].(map[string]any)["domain_discovery"].(map[string]any)
-					if left["auto_probe"] != true || right["auto_probe"] != false {
-						t.Fatalf("explicit R5 auto_probe storage: Python=%v Go=%v", left["auto_probe"], right["auto_probe"])
-					}
-					left["auto_probe"] = false
-				}
-				equal(t, "storage", remap(ps, pyIDs), remap(gs, goIDs))
+				equal(t, "storage", remap(storedThroughModel(ps), pyIDs), remap(storedThroughModel(gs), goIDs))
 			}
 			if q.path == "history" {
 				// The history endpoint wraps the same stored entries in items.
+				// A plain history entry writes its always-written members
+				// even when the stored entry lacked them (O18 T1c), so empty
+				// members are left out on both sides.
 				for _, v := range []any{pv, gv} {
 					if m, ok := v.(map[string]any); ok {
-						m["items"] = normalized(m["items"], "history")
+						m["items"] = normalized(testjson.WithoutEmptyMembers(m["items"]), "history")
 					}
 				}
-			}
-			if (q.path == "settings" || q.path == "rulesets/init") && pc == 200 && gc == 200 {
-				left, right := pv.(map[string]any), gv.(map[string]any)
-				if left["auto_probe"] != true || right["auto_probe"] != false {
-					t.Fatalf("explicit R5 auto_probe response: Python=%v Go=%v", left["auto_probe"], right["auto_probe"])
-				}
-				left["auto_probe"] = false
 			}
 			// Go-only M18 addition: traffic store health fields on discovery Agent entries.
 			// Assert Python omits them and Go reports healthy values on the valid seed, then

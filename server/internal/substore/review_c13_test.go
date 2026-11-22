@@ -123,6 +123,12 @@ func TestReviewParseProxiesFromYAML(t *testing.T) {
 				}
 			}
 			if expected := native[fmt.Sprintf("review/%s/%d", fn, i)]; expected != nil {
+				if out, ok := expected["output"]; ok && fn == "proxies_to_nodes" {
+					// Stored form of plain Node records (storedNodesForm); a
+					// port that is not a number ("x") reads as 0 and is left
+					// out (accepted O18 T1c difference: wrong-typed member).
+					expected = map[string]any{"output": storedNodesForm(t, out)}
+				}
 				checkOutcome(t, label, expected, got, err, true)
 				continue
 			}
@@ -130,6 +136,10 @@ func TestReviewParseProxiesFromYAML(t *testing.T) {
 				if err == nil || !errors.Is(err, yamlx.ErrType) {
 					t.Errorf("%s: Go %v %v, want a TypeError", label, got, err)
 				}
+				continue
+			}
+			if fn == "proxies_to_nodes" {
+				assertNativeReaderCaseAs(t, oracle, fmt.Sprintf("substore/review/%s/%d", fn, i), got, err, storedNodesForm)
 				continue
 			}
 			assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/review/%s/%d", fn, i), got, err)

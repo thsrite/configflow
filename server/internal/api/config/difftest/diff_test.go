@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -439,9 +440,17 @@ func (w *world) check(r request) answer {
 		}
 	}
 	if !internalDiagnostic {
-		compare(w.t, "body", goAnswer.Body, py.Body)
+		goBody, pyBody := goAnswer.Body, py.Body
+		if strings.HasPrefix(r.Path, "/api/config/export") {
+			// An export is a stored document: compared as the plain records
+			// hold it (O18 T1c).
+			goBody, pyBody = modeltest.StateThroughModel(map[string]any{"document": goBody}), modeltest.StateThroughModel(map[string]any{"document": pyBody})
+		} else {
+			pyBody = modeltest.AlignResponse(pyBody, goBody)
+		}
+		compare(w.t, "body", goBody, pyBody)
 	}
-	compare(w.t, "stored state", goAnswer.State, py.State)
+	compare(w.t, "stored state", modeltest.StateThroughModel(goAnswer.State), modeltest.StateThroughModel(py.State))
 	return goAnswer
 }
 func body(value any) *string  { data, _ := json.Marshal(value); text := string(data); return &text }

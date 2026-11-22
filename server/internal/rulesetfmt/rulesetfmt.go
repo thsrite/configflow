@@ -47,21 +47,12 @@ func HasYAMLPayload(content string) bool {
 	return false
 }
 
-// LibraryIndex returns the first matching declaration or -1. It validates
-// reference metadata only as far as the first match, including an empty record.
+// LibraryIndex returns the first matching declaration or -1. Rules and
+// library items are plain records (O18 T1c): identities of the wrong type
+// were read as empty text and match nothing.
 func LibraryIndex(rule model.RuleConfig, library []model.RuleLibraryItem) (int, error) {
-	if len(library) > 0 && model.IssueUnder(model.Issues(rule), "library_rule_id") {
-		return -1, ErrReferenceIDType
-	}
 	for i := range library {
 		item := &library[i]
-		if rule.LibraryRuleID != "" {
-			if model.IssueUnder(model.Issues(item), "id") {
-				return -1, ErrReferenceIDType
-			}
-		} else if model.IssueUnder(model.Issues(item), "name") || model.IssueUnder(model.Issues(rule), "name") {
-			return -1, ErrReferenceNameType
-		}
 		if rule.LibraryRuleID != "" && item.ID == rule.LibraryRuleID || rule.LibraryRuleID == "" && item.Name == rule.Name {
 			return i, nil
 		}
@@ -115,26 +106,12 @@ func RuleFormat(rule model.RuleConfig, library []model.RuleLibraryItem, sourceUR
 	}
 	address := ""
 	if found != nil {
-		if model.IssueUnder(model.Issues(found), "url") {
-			data, err := model.Marshal(found)
-			if err != nil {
-				return "", err
-			}
-			return "text", invalidURL(data)
-		}
 		address = text(found.URL)
 	}
 	if address == "" {
 		address = sourceURL
 	}
 	if address == "" {
-		if model.IssueUnder(model.Issues(rule), "url") {
-			data, err := model.Marshal(rule)
-			if err != nil {
-				return "", err
-			}
-			return "text", invalidURL(data)
-		}
 		address = text(rule.URL)
 	}
 	if parsed, err := weburl.Parse(address); err == nil {

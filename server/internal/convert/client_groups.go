@@ -12,20 +12,12 @@ func clientGroupSource(group model.ProxyGroup, config *model.Config) (*model.Pro
 	if config == nil {
 		return nil, fmt.Errorf("%s", msgClientConfig)
 	}
-	for _, member := range []string{"name", "type", "follow_group"} {
-		if err := storedText(&group, kindGroup, group.ID, member); err != nil {
-			return nil, err
-		}
-	}
 	if stringValue(group.FollowGroup) == "" {
 		return &group, nil
 	}
 	source := followed(configGroups(config), *group.FollowGroup)
 	if source == nil {
 		return nil, nil
-	}
-	if err := storedText(source, kindGroup, source.ID, "type"); err != nil {
-		return nil, err
 	}
 	return source, nil
 }
@@ -131,19 +123,13 @@ func clientRemoteURL(config *model.Config, base, kind, id, target, regex, exclud
 func clientResourceName(config *model.Config, kind, id string) (string, bool, error) {
 	if kind == "subscription" {
 		for _, s := range config.Subscriptions {
-			if s.ID == id && enabled(&s, s.Enabled) {
-				if err := storedText(&s, kindSubscription, id, "name"); err != nil {
-					return "", false, err
-				}
+			if s.ID == id && enabled(s.Enabled) {
 				return s.Name, true, nil
 			}
 		}
 	} else {
 		for _, a := range config.Aggregations {
-			if a.ID == id && enabled(&a, a.Enabled) {
-				if err := storedText(&a, kindAggregation, id, "name"); err != nil {
-					return "", false, err
-				}
+			if a.ID == id && enabled(a.Enabled) {
 				return a.Name, true, nil
 			}
 		}
@@ -176,9 +162,6 @@ func SurgeGroup(group model.ProxyGroup, config *model.Config, base string, smart
 			}
 		case "strategy":
 			if g := followed(configGroups(config), ref.id); g != nil {
-				if err := storedText(g, kindGroup, g.ID, "name"); err != nil {
-					return "", err
-				}
 				members = append(members, g.Name)
 			}
 		}
@@ -238,11 +221,6 @@ func SurgeGroup(group model.ProxyGroup, config *model.Config, base string, smart
 
 // LoonGroup renders a policy group whose members have already been resolved.
 func LoonGroup(group model.ProxyGroup, members []string) (string, error) {
-	for _, member := range []string{"name", "type"} {
-		if err := storedText(&group, kindGroup, group.ID, member); err != nil {
-			return "", err
-		}
-	}
 	if len(members) == 0 {
 		return "", nil
 	}

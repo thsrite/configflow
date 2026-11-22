@@ -77,8 +77,9 @@ func TestCoreRegistrationAndProfileIsolation(t *testing.T) {
 		if entry.ID == "rule_1" {
 			raw, _ := json.Marshal(entry)
 			parsed, _ := testjson.Parse(raw)
-			if keep, _ := testjson.Path(parsed, "future", "keep"); keep != true {
-				t.Fatal("future data lost")
+			// Undeclared rule members are dropped (O18 T1c).
+			if _, kept := testjson.Path(parsed, "future", "keep"); kept {
+				t.Fatal("undeclared rule member kept")
 			}
 		}
 	}

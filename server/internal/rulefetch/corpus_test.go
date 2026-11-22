@@ -376,13 +376,15 @@ func runValidateRemote(value any, ruleObj, configObj *orderedObj, format string)
 }
 
 func runValidateDomain(ruleObj, prevObj *orderedObj) error {
-	typed := decodeRuleObj(ruleObj)
-	var before *model.RuleConfig
-	if prevObj != nil && prevObj.len() > 0 {
-		v := decodeRuleObj(prevObj)
-		before = &v
+	raw := json.RawMessage(`{}`)
+	if ruleObj != nil {
+		raw = json.RawMessage(encode(ruleObj))
 	}
-	return ValidateContent(typed, before)
+	var before json.RawMessage
+	if prevObj != nil && prevObj.len() > 0 {
+		before = json.RawMessage(encode(prevObj))
+	}
+	return ValidateContentJSON(raw, before)
 }
 
 func runPageIdentity(result *orderedObj, host string, checkedAt any) PageInfo {

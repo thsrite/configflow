@@ -645,6 +645,21 @@ func TestMihomoCorpus(t *testing.T) {
 
 		row = providerPathReference(t, paths, i, row)
 		if msg := runMihomoRow(t, row, oracle); msg != "" {
+			if row.fn == "generate" || row.fn == "provider_downloads" || row.fn == "ruleset_downloads" {
+				profile := row.entry.GetObject("args").GetObject("profile")
+				if row.fn != "generate" {
+					profile, _ = row.entry.GetList("args")[0].(*convert.JObj)
+				}
+				if dirt := convert.O18StoredDirt(profile); len(dirt) > 0 {
+					// Accepted O18 T1c difference: the stored configuration
+					// holds dirty data that plain records read differently
+					// (for example interval "300" is written as 300, a
+					// health_check that is not an object or has undeclared
+					// members reads as none).
+					typedStorage["O18 T1c "+strings.Join(dirt, "+")]++
+					continue
+				}
+			}
 			failures++
 			byFunction[row.fn]++
 			if byFunction[row.fn] <= 3 {

@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -411,6 +412,16 @@ func (w *world) callHeaders(method, path, body string, headers map[string]string
 		t.Helper()
 		a = w.normalize(jsonValue(t, a))
 		b = w.normalize(jsonValue(t, b))
+		if label == "state" {
+			// Stored documents compare as the plain records hold them (O18
+			// T1c): undeclared members and empty optional members are left
+			// out on both sides, declared values must match.
+			a, b = modeltest.StateThroughModel(a), modeltest.StateThroughModel(b)
+		} else {
+			// Responses echo records; members the plain records leave out
+			// are not compared (O18 T1c).
+			a = modeltest.AlignResponse(a, b)
+		}
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}

@@ -167,7 +167,7 @@ func providerResource(ctx context.Context, id string) (*model.Config, *model.Agg
 
 // aggregationEnabled is enabled() of a typed aggregation's stored member.
 func aggregationEnabled(agg *model.Aggregation) (bool, error) {
-	raw, present, err := agg.MemberJSON("enabled")
+	raw, present, err := model.EncodeMember(agg, "enabled")
 	if err != nil || !present {
 		return true, err
 	}

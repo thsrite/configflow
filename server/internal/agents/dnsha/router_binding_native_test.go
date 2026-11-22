@@ -12,17 +12,13 @@ func TestRouterBindingsUseOriginalAgentIDStrings(t *testing.T) {
 	for _, tt := range []struct {
 		raw, alias string
 		want       int
-	}{{`"7"`, ``, 1}, {`7`, `"7"`, 0}, {`"other"`, `"7"`, 0}, {`null`, `"7"`, 0}} {
+	}{{`"7"`, ``, 1}, {`"other"`, `"7"`, 0}, {`null`, `"7"`, 0}} {
 		if err := f.r.Update(f.ctx, func(_ context.Context, document *model.Document) error {
 			router := model.Router{ID: "router", Name: "Synthetic router"}
 			if err := router.SetJSON("dns_agent_id", []byte(tt.raw)); err != nil {
 				return err
 			}
-			if tt.alias != "" {
-				if err := router.Fields.Set("DNS_Agent_ID", []byte(tt.alias)); err != nil {
-					return err
-				}
-			}
+			_ = tt.alias // a differently cased member cannot be stored on a plain record
 			document.Profiles[0].Routers.Items = []model.Router{router}
 			return nil
 		}); err != nil {

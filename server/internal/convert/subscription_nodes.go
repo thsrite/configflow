@@ -22,7 +22,7 @@ func subscriptionSources(text string) ([]ClientSource, error) {
 				return nil, err
 			}
 		}
-		result = append(result, ClientSource{Node: item.Node, Params: params})
+		result = append(result, ClientSource{Node: item.Node, Params: params, WrongText: item.WrongText})
 	}
 	return result, nil
 }

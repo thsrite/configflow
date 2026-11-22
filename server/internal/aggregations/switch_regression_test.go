@@ -36,7 +36,7 @@ func TestTypedResourceSwitchTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &item); err != nil {
 				t.Fatal(err)
 			}
-			if got := typedResource(&item, item.ID, item.Name, item.Enabled).Enabled; got != tc.want {
+			if got := typedResource(item.ID, item.Name, item.Enabled).Enabled; got != tc.want {
 				t.Fatalf("typedResource(%s).Enabled = %v, want %v", raw, got, tc.want)
 			}
 		})

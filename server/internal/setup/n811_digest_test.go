@@ -2,7 +2,7 @@ package setup
 
 import (
 	"configflow/internal/model"
-	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -66,11 +66,19 @@ func TestOldWizardDigestConflictCanRecover(t *testing.T) {
 
 func TestWizardCreatesStringCredentialFromInvalidStoredScalar(t *testing.T) {
 	r, ctx := setupRepository(t)
-	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
-		return system.SystemConfig.SetJSON("config_token", []byte("123"))
-	}); err != nil {
+	// Writers refuse a credential that is not text (O18 T1c); the store holds
+	// it as a damaged database would.
+	db, err := sql.Open("sqlite", r.DatabasePath())
+	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`UPDATE fields SET value='{"config_token":123}', revision=revision+1 WHERE scope='system' AND owner='' AND field='system_config'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
 	service, err := New(r)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +90,7 @@ func TestWizardCreatesStringCredentialFromInvalidStoredScalar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _, err := system.SystemConfig.MemberJSON("config_token")
+	raw, _, err := model.EncodeMember(&system.SystemConfig, "config_token")
 	var token string
 	if err != nil || json.Unmarshal(raw, &token) != nil || len(token) < 16 {
 		t.Fatal("invalid scalar became a credential", err)

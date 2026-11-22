@@ -29,6 +29,10 @@ func TestParserCorpus(t *testing.T) {
 				wantRaw = expected.Output
 			}
 			gotRaw := parsedListJSON(t, ParseList(row.In.(string)))
+			if !testjson.Equal(wantRaw, gotRaw) && o18T1cSameParsed(wantRaw, gotRaw) {
+				counts["O18 T1c 接受: empty server/port omitted"]++
+				continue
+			}
 			if !testjson.Equal(wantRaw, gotRaw) {
 				t.Fatalf("row %d parse_uri_list(%q)\n got  %s\n want %s", i, row.In, gotRaw, wantRaw)
 			}

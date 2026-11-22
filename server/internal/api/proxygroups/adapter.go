@@ -152,18 +152,47 @@ func validate(ctx context.Context, group, profile object, original *object) erro
 	if err != nil {
 		return err
 	}
-	return shared.CheckCandidates(g, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: p.Profile.ProxyGroups}, old)
+	// The request's own members are checked: the group record cannot hold a
+	// member of the wrong type (O18 T1c).
+	members := map[string]json.RawMessage{}
+	for key, value := range group.All() {
+		members[key] = value
+	}
+	var before map[string]json.RawMessage
+	if original != nil {
+		before = map[string]json.RawMessage{}
+		for key, value := range original.All() {
+			before[key] = value
+		}
+	}
+	return shared.CheckCandidateMembers(g, members, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: p.Profile.ProxyGroups}, old, before)
 }
 func merge(original, patch object) (object, error) {
 	group, err := groupRecord(original)
 	if err != nil {
 		return object{}, err
 	}
-	result, err := shared.MergeGroup(group, patch)
-	if err != nil {
+	if _, err := shared.MergeGroup(group, patch); err != nil {
 		return object{}, err
 	}
-	return native(result)
+	// The merged group keeps the request's values as sent, so validation sees
+	// a member of the wrong type before the group record decodes it.
+	merged := original
+	var deletes []string
+	if raw, present := patch.Get("delete_fields"); present {
+		_ = json.Unmarshal(raw, &deletes)
+	}
+	for field, value := range patch.All() {
+		if field != "delete_fields" {
+			if err := merged.Set(field, value); err != nil {
+				return object{}, err
+			}
+		}
+	}
+	for _, field := range deletes {
+		merged.Delete(field)
+	}
+	return merged, nil
 }
 func enabled(o object) bool { return flag(o, "enabled", true) }
 func incoming(profile object, id string) (bool, error) {

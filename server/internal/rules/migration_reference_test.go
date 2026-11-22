@@ -1,10 +1,12 @@
 package rules
 
 import (
-	"configflow/internal/model"
 	"encoding/json"
 	"os"
 	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/testjson/modeldirt"
 )
 
 func TestHistoricalMigrationFilenameReference(t *testing.T) {
@@ -19,6 +21,7 @@ func TestHistoricalMigrationFilenameReference(t *testing.T) {
 	if json.Unmarshal(data, &rows) != nil || len(rows) != 6 {
 		t.Fatal("independent migration evidence missing")
 	}
+	accepted := 0
 	for _, row := range rows {
 		var rule model.RuleConfig
 		if err := json.Unmarshal([]byte(row.Input), &rule); err != nil {
@@ -26,7 +29,14 @@ func TestHistoricalMigrationFilenameReference(t *testing.T) {
 		}
 		name, ok := LegacyCacheFilename(rule)
 		if !ok || name != row.Filename {
-			t.Fatalf("historical address got %q/%v want %q", name, ok, row.Filename)
+			if !modeldirt.HasDirt([]byte(row.Input), model.RuleConfig{}, modeldirt.DirtEmptyText, modeldirt.DirtNull) {
+				t.Fatalf("historical address got %q/%v want %q", name, ok, row.Filename)
+			}
+			// Accepted O18 T1c difference: the old key hashed the stored
+			// members, and a plain record cannot keep "id": "" (or null)
+			// apart from a missing ID, so such a rule's old cache file is
+			// not found and the source is fetched again.
+			accepted++
 		}
 		// Equivalent spelling is ownership evidence; numeric coercions are not.
 		var canonical model.RuleConfig
@@ -43,5 +53,9 @@ func TestHistoricalMigrationFilenameReference(t *testing.T) {
 		if !SameSourceDeclaration(rule, canonical) {
 			t.Fatal("escaped string lost current ownership")
 		}
+	}
+	// Exactly the rows with "id": "" and with "id"/"behavior": null.
+	if accepted != 2 {
+		t.Fatalf("%d rows differ only by \"\"/null presence, want 2", accepted)
 	}
 }

@@ -7,28 +7,11 @@ import (
 	"configflow/internal/model"
 )
 
-func validateClientRule(rule model.RuleConfig) error {
-	kind := kindRule
-	members := []string{"rule_type", "value", "policy"}
-	if rule.RuleType == "MATCH" {
-		members = []string{"rule_type", "policy"}
-	}
-	if rule.ItemType == "ruleset" {
-		kind = kindRuleSet
-		members = []string{"name", "behavior", "policy"}
-	}
-	for _, member := range members {
-		if err := storedText(&rule, kind, rule.ID, member); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 func clientRuleURL(rule model.RuleConfig, config *model.Config, base string) (address, original string) {
 	address = stringValue(rule.URL)
 	original = address
 	for _, lib := range config.RuleLibrary {
-		if enabled(&lib, lib.Enabled) && lib.Name == rule.Name {
+		if enabled(lib.Enabled) && lib.Name == rule.Name {
 			original = stringValue(lib.URL)
 		}
 	}
@@ -46,11 +29,8 @@ func SurgeRules(config *model.Config, base string) ([]string, error) {
 	lines := []string{"[Rule]"}
 	afterMatch := false
 	for _, rule := range RulesForOutput(config) {
-		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
+		if !enabled(rule.Enabled) || !libraryEnabled(rule.LibraryEnabled) {
 			continue
-		}
-		if err := validateClientRule(rule); err != nil {
-			return nil, err
 		}
 		if afterMatch {
 			lines = append(lines, RuleComment(rule))
@@ -120,11 +100,8 @@ func LoonRules(config *model.Config, base string) ([]string, []string, error) {
 	lines, remote := []string{"[Rule]"}, []string{"[Remote Rule]"}
 	final := ""
 	for _, rule := range RulesForOutput(config) {
-		if !enabled(&rule, rule.Enabled) || !libraryEnabled(&rule, rule.LibraryEnabled) {
+		if !enabled(rule.Enabled) || !libraryEnabled(rule.LibraryEnabled) {
 			continue
-		}
-		if err := validateClientRule(rule); err != nil {
-			return nil, nil, err
 		}
 		if final != "" {
 			if rule.ItemType == "ruleset" {

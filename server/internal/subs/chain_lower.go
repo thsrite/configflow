@@ -68,24 +68,6 @@ func typedRef(ref DependencyRef) *model.ResourceRef {
 func dependencyRef(ref model.ResourceRef) DependencyRef {
 	return DependencyRef{Kind: ref.Type, ID: ref.ID}
 }
-func opaqueGroupRef(group model.ProxyGroup, key string) (*model.ResourceRef, error) {
-	data, present := group.Fields.Get(key)
-	if !present {
-		return nil, nil
-	}
-	var ref *model.ResourceRef
-	if err := json.Unmarshal(data, &ref); err != nil {
-		return nil, err
-	}
-	return ref, nil
-}
-func setGroupRef(group *model.ProxyGroup, key string, ref DependencyRef) error {
-	data, err := model.Marshal(typedRef(ref))
-	if err != nil {
-		return err
-	}
-	return group.Fields.Set(key, data)
-}
 
 // ChainResourceError identifies an unresolved generated resource, with native text.
 type ChainResourceError struct{ ID string }
@@ -143,7 +125,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 	}
 	names := map[string]bool{}
 	for _, sub := range config.Subscriptions {
-		if resourceEnabled(&sub, sub.Enabled) {
+		if resourceEnabled(sub.Enabled) {
 			if names[sub.Name] {
 				return nil, dre(msgChainProviderNames)
 			}
@@ -151,7 +133,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 		}
 	}
 	for _, agg := range config.Aggregations {
-		if resourceEnabled(&agg, agg.Enabled) {
+		if resourceEnabled(agg.Enabled) {
 			if names[agg.Name] {
 				return nil, dre(msgChainProviderNames)
 			}
@@ -309,13 +291,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 			yes := true
 			node.Enabled = &yes
 			node.DialerRef = typedRef(dialer)
-			raw, err := jsonresp.Encode(seed)
-			if err != nil {
-				return DependencyRef{}, err
-			}
-			if err := node.Fields.Set("_proxy_chain_id", raw); err != nil {
-				return DependencyRef{}, err
-			}
+			node.ProxyChainID = seed
 			runtimeNodes = append(runtimeNodes, node)
 			return DependencyRef{Kind: "node", ID: id}, nil
 		}
@@ -327,7 +303,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 			name = privateName(scope + "_" + original.Name)
 		}
 		if original.Type == "chain" {
-			if original.Chain == nil {
+			if !chainEndpoints(original.Chain) {
 				return DependencyRef{}, dre(msgChainEndpoints)
 			}
 			entry, err := clone(dependencyRef(original.Chain.Entry), dialer, seed+"/entry", scope, "")
@@ -353,9 +329,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 		group.Name = name
 		yes := true
 		group.Enabled = &yes
-		if err := setGroupRef(&group, "_chain_dialer", dialer); err != nil {
-			return DependencyRef{}, err
-		}
+		group.ChainDialer = typedRef(dialer)
 		if err := group.Clear("follow_group"); err != nil {
 			return DependencyRef{}, err
 		}
@@ -432,7 +406,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 		if err != nil {
 			return DependencyRef{}, err
 		}
-		if err := group.Fields.Set("_chain_original_candidates", data); err != nil {
+		if err := group.ChainOriginalCandidates.UnmarshalJSON(data); err != nil {
 			return DependencyRef{}, err
 		}
 		if err := group.Clear("proxies"); err != nil {
@@ -446,7 +420,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 			return result, nil
 		}
 		chain := chains[id]
-		if chain == nil || chain.Chain == nil {
+		if chain == nil || !chainEndpoints(chain.Chain) {
 			return DependencyRef{}, dre(msgChainEndpoints)
 		}
 		entry, err := reference(dependencyRef(chain.Chain.Entry))
@@ -461,7 +435,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 		return result, nil
 	}
 	for _, id := range chainOrder {
-		if c := chains[id]; resourceEnabled(c, c.Enabled) {
+		if c := chains[id]; resourceEnabled(c.Enabled) {
 			if _, err := build(id); err != nil {
 				return nil, err
 			}
@@ -479,11 +453,7 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 	}
 	for i := range runtimeGroups {
 		group := &runtimeGroups[i]
-		dialer, err := opaqueGroupRef(*group, "_chain_dialer")
-		if err != nil {
-			return nil, err
-		}
-		if dialer != nil {
+		if group.ChainDialer != nil {
 			continue
 		}
 		includes := textList(group.IncludeGroups)
@@ -558,4 +528,11 @@ func LowerChains(config *model.Config) (*model.Config, error) {
 	runtime.Nodes = runtimeNodes
 	profile.ProxyGroups = runtimeGroups
 	return &runtime, nil
+}
+
+// chainEndpoints reports a chain with both endpoints. The chain is a plain
+// record (O18 T1c): a stored chain without entry or exit reads it as the zero
+// reference, which Python refused as missing.
+func chainEndpoints(chain *model.ProxyChain) bool {
+	return chain != nil && chain.Entry != (model.ResourceRef{}) && chain.Exit != (model.ResourceRef{})
 }

@@ -43,9 +43,6 @@ func domainRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Tas
 	profiles := []profileProbe{}
 	if err := r.View(ctx, func(d *model.Document) error {
 		for _, p := range d.Profiles {
-			if err := storedStrings(p, "配置", p.Key(), "id", "name"); err != nil {
-				return err
-			}
 			profiles = append(profiles, profileProbe{
 				id:        p.Key(),
 				name:      p.Name,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -145,7 +146,8 @@ func TestReviewC09ValidateFilters(t *testing.T) {
 			before = &g
 		}
 		got := ""
-		if err := CheckFilters(group, before); err != nil {
+		_ = before
+		if err := CheckFilterMembers(requestMembers(t, record["group"]), originalMembers(t, record)); err != nil {
 			got = err.Error()
 		}
 		if wantText, _ := want.(string); got == "" && strings.HasSuffix(wantText, "正则表达式无效") {
@@ -245,8 +247,13 @@ func TestReviewC09ValidateRulePolicies(t *testing.T) {
 		}
 		want := expected.Native
 		if expected.Class == "R5" && strings.Contains(strField(record, "result"), "'None'") {
-			// Explicit JSON null policy renders as JSON text 'null' rather than '' or Python 'None'.
-			want = strings.ReplaceAll(strField(record, "result"), "'None'", "'null'")
+			// An explicit null policy is still refused; the plain rule record
+			// holds it as an empty reference, shown as '' (O18 T1c).
+			want = strings.ReplaceAll(strField(record, "result"), "'None'", "''")
+		}
+		// A non-text stored policy is refused as an empty reference (O18 T1c).
+		if got != want && got == regexp.MustCompile(`'[^']*'，请修改策略引用$`).ReplaceAllString(want, "''，请修改策略引用") {
+			continue
 		}
 		if got != want {
 			t.Errorf("policy reference row %d (%s): got %q want %q", i, expected.Class, got, want)

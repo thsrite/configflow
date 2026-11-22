@@ -13,9 +13,6 @@ func clientPreflight(ctx context.Context, config *model.Config, target string) e
 	if config == nil || config.Profile == nil {
 		return fmt.Errorf("%s", msgClientConfig)
 	}
-	if err := validateRuleIdentities(config.Profile.RuleConfigs); err != nil {
-		return err
-	}
 	if err := ConfigDialers(config); err != nil {
 		return &DialerReferenceError{Message: err.Error(), cause: err}
 	}
@@ -52,7 +49,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	}
 	selected, direct, aggregations, onlyAggregation := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(&group, group.Enabled) {
+		if !enabled(group.Enabled) {
 			continue
 		}
 		source, err := clientGroupSource(group, config)
@@ -83,7 +80,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 		}
 	}
 	for _, a := range config.Aggregations {
-		if enabled(&a, a.Enabled) && aggregations[a.ID] {
+		if enabled(a.Enabled) && aggregations[a.ID] {
 			for _, id := range a.Nodes {
 				if !direct[id] {
 					onlyAggregation[id] = true
@@ -94,7 +91,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	proxies := []string{"[Proxy]"}
 	var wireguard []string
 	for _, node := range config.Nodes {
-		if !enabled(&node, node.Enabled) || !selected[node.ID] || onlyAggregation[node.ID] {
+		if !enabled(node.Enabled) || !selected[node.ID] || onlyAggregation[node.ID] {
 			continue
 		}
 		line, section, err := SurgeNode(node)
@@ -114,7 +111,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	}
 	groups := []string{"[Proxy Group]"}
 	for _, group := range config.Profile.ProxyGroups {
-		if !enabled(&group, group.Enabled) {
+		if !enabled(group.Enabled) {
 			continue
 		}
 		line, err := SurgeGroup(group, config, base, priorities)
@@ -128,7 +125,7 @@ func SurgeConfig(ctx context.Context, config *model.Config, base string) (string
 	if len(groups) == 1 {
 		var names []string
 		for _, node := range config.Nodes {
-			if enabled(&node, node.Enabled) {
+			if enabled(node.Enabled) {
 				names = append(names, sanitizeClientName(node.Name))
 			}
 		}
@@ -231,7 +228,7 @@ func LoonConfig(ctx context.Context, config *model.Config, base string) (string,
 		byID[group.ID] = group
 	}
 	for _, group := range all {
-		if !enabled(&group, group.Enabled) {
+		if !enabled(group.Enabled) {
 			continue
 		}
 		result, err := effectiveClientGroup(group, config)
@@ -254,7 +251,7 @@ func LoonConfig(ctx context.Context, config *model.Config, base string) (string,
 	nodeNames := map[string]string{}
 	var orderedNames []string
 	for _, node := range config.Nodes {
-		if !enabled(&node, node.Enabled) || !used[node.ID] {
+		if !enabled(node.Enabled) || !used[node.ID] {
 			continue
 		}
 		line, err := LoonNode(node)
@@ -317,10 +314,7 @@ func LoonConfig(ctx context.Context, config *model.Config, base string) (string,
 					members = append(members, clientLoonMember{name: name})
 				}
 			case "strategy":
-				if target, ok := byID[ref.id]; ok && ref.id != group.ID {
-					if err := storedText(&target, kindGroup, target.ID, "name"); err != nil {
-						return "", err
-					}
+				if _, ok := byID[ref.id]; ok && ref.id != group.ID {
 					members = append(members, clientLoonMember{ref: ref.id, isRef: true})
 				}
 			}

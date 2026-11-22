@@ -312,7 +312,7 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw, ok, err := system.SystemConfig.MemberJSON("sub_store_mode")
+		raw, ok, err := model.EncodeMember(&system.SystemConfig, "sub_store_mode")
 		if err != nil {
 			t.Fatal(err)
 		}

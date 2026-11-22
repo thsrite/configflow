@@ -16,7 +16,7 @@ func aggregationDeliveryFixture(count, unrelated int) (model.Aggregation, *model
 	agg := model.Aggregation{ID: "agg", Name: "Aggregate"}
 	for i := 0; i < count; i++ {
 		id := fmt.Sprintf("n%d", i)
-		config.Nodes = append(config.Nodes, model.Node{ID: id, Name: fmt.Sprintf("Node%d", i), Type: "http", Server: "example.com", Port: 80})
+		config.Nodes = append(config.Nodes, model.Node{ID: id, Name: fmt.Sprintf("Node%d", i), Type: "http", Server: "example.com", Port: model.IntPtr(80)})
 		agg.Nodes = append(agg.Nodes, id)
 	}
 	if unrelated > 0 {

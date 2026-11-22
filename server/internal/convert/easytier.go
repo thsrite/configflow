@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -284,9 +285,10 @@ func easyTierDefault(node *yamlx.Node, key string, fallback *yamlx.Node) *yamlx.
 	return value
 }
 
-// NormalizeEasyTier validates a typed stored overlay and returns canonical settings.
-// Raw member evidence is checked at this validation boundary rather than silently
-// passing a malformed stored option through to the generated configuration.
+// NormalizeEasyTier validates a typed stored overlay and returns canonical
+// settings. The record is a plain record (O18 T1c): stored values of the wrong
+// type were already read leniently, so input is validated with
+// NormalizeEasyTierJSON on the request's own JSON.
 func NormalizeEasyTier(settings *model.EasyTierSettings) (*model.EasyTierSettings, error) {
 	if settings == nil {
 		return DefaultEasyTier(), nil
@@ -295,6 +297,27 @@ func NormalizeEasyTier(settings *model.EasyTierSettings) (*model.EasyTierSetting
 	if err != nil {
 		return nil, err
 	}
+	return normalizeEasyTierNode(input)
+}
+
+// NormalizeEasyTierJSON validates EasyTier settings as sent (Python's checks
+// on the request's members and their JSON types) and returns canonical
+// settings; null is the default settings.
+func NormalizeEasyTierJSON(raw json.RawMessage) (*model.EasyTierSettings, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return DefaultEasyTier(), nil
+	}
+	input, err := yamlx.FromJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	if input.ShortTag() != "!!map" {
+		return nil, errors.New(msgETSettingsObject)
+	}
+	return normalizeEasyTierNode(input)
+}
+
+func normalizeEasyTierNode(input *yamlx.Node) (*model.EasyTierSettings, error) {
 	enabled, err := easyTierBool(yamlx.Get(input, "enabled"), "enabled", false)
 	if err != nil {
 		return nil, err

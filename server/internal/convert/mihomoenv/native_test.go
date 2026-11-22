@@ -26,7 +26,7 @@ func TestN89NativeEnvironmentPreservesShutdownAndCacheRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), repository)
-	if _, err := substore.SaveCache(ctx, "source", []model.Node{{Name: "Node", Type: "http", Server: "192.0.2.1", Port: 443}}, nil); err != nil {
+	if _, err := substore.SaveCache(ctx, "source", []model.Node{{Name: "Node", Type: "http", Server: "192.0.2.1", Port: model.IntPtr(443)}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	data, err := env.LoadSubscriptionCache(ctx, "source")
@@ -34,7 +34,7 @@ func TestN89NativeEnvironmentPreservesShutdownAndCacheRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	var cache substore.Cache
-	if err := json.Unmarshal(data, &cache); err != nil || len(cache.Nodes) != 1 || cache.Nodes[0].Port != 443 || cache.Nodes[0].Name != "Node" {
+	if err := json.Unmarshal(data, &cache); err != nil || len(cache.Nodes) != 1 || model.IntValue(cache.Nodes[0].Port) != 443 || cache.Nodes[0].Name != "Node" {
 		t.Fatalf("native cache %s %v", data, err)
 	}
 }

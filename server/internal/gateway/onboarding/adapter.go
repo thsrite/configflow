@@ -63,8 +63,7 @@ func fullTun(config, candidate Document, ids []string) error {
 	_, marker := routersplit.ReadMarkerProfile(raw.Profile)
 	native := Document{"version": encode(1), "takeover": encode("full_tun"), "origin": encode("setup")}
 	if marker != nil {
-		data, present := raw.Profile.Mihomo.Fields.Get(routersplit.MarkerKey)
-		if present {
+		if data := raw.Profile.Mihomo.RouterSplit.JSON(); data != nil {
 			native = object(data)
 		}
 	}

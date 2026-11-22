@@ -134,8 +134,13 @@ func TestN89AirportTypeCompatibilityAndNumericNames(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"id":"group","name":"Group","type":5}`), &group); err != nil {
 		t.Fatal(err)
 	}
-	if err := ops.Validate(&model.Config{Profile: &model.Profile{ProxyGroups: []model.ProxyGroup{group}}}); err == nil || !strings.Contains(err.Error(), "type 必须是字符串") {
-		t.Fatalf("stored type compatibility leaked %v", err)
+	// O18 T1c: a stored number type reads as its text ("5"), no longer kept
+	// as the R5 value that failed with "type 必须是字符串" (accepted lenient read).
+	if group.Type != "5" {
+		t.Fatalf("stored numeric type read as %q", group.Type)
+	}
+	if err := ops.Validate(&model.Config{Profile: &model.Profile{ProxyGroups: []model.ProxyGroup{group}}}); err != nil && strings.Contains(err.Error(), "type 必须是字符串") {
+		t.Fatalf("lenient stored type still rejected as R5 value: %v", err)
 	}
 }
 func TestN89DialerSubgroupTraversalIsBounded(t *testing.T) {

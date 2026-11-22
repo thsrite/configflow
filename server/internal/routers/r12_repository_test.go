@@ -37,6 +37,8 @@ func TestR12ReturnCleanupUsesExplicitProfilePair(t *testing.T) {
 func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 	r := r10Router()
 	r.Endpoint = "http://192.0.2.1"
+	// O18 T1c: an undeclared member and a null manifest are not stored (the
+	// test used to check they survive publication writes unchanged).
 	r.Extra["future"] = json.RawMessage(`{"large":9007199254740993,"keep":null}`)
 	r.Extra["dns_guard_state"] = json.RawMessage(`null`)
 	db := r12Repository(t, r, "{}")
@@ -47,8 +49,9 @@ func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 		t.Fatal(e)
 	}
 	_, stored, one := r12Config(t, db)
-	if !jsonEqual(stored.Extra["ipv6_fakeip_state"], proof) || string(stored.Extra["dns_guard_state"]) != "null" || one.Revision != before.Revision+1 {
-		t.Fatal("replace or untouched/null lost")
+	// The proof has an undeclared member, so it is kept whole as stored.
+	if !jsonEqual(stored.Extra["ipv6_fakeip_state"], proof) || stored.Extra["dns_guard_state"] != nil || one.Revision != before.Revision+1 {
+		t.Fatal("replace lost or null manifest stored")
 	}
 	if e := db.SaveRouterPublicationJSON(t.Context(), "default", expected, repo.RouterPublicationJSON{LastRelease: repo.JSONUpdate{Set: true, Value: json.RawMessage(`{"ok":false,"message":"synthetic"}`)}}); e != nil {
 		t.Fatal(e)
@@ -61,8 +64,8 @@ func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 		t.Fatal(e)
 	}
 	_, stored, three := r12Config(t, db)
-	if _, present := stored.Extra["ipv6_fakeip_state"]; present || three.Revision != two.Revision+1 || !jsonEqual(stored.Extra["future"], r.Extra["future"]) {
-		t.Fatal("explicit clear or unknown field lost")
+	if _, present := stored.Extra["ipv6_fakeip_state"]; present || three.Revision != two.Revision+1 || stored.Extra["future"] != nil {
+		t.Fatal("explicit clear lost or undeclared member stored")
 	}
 	stale := *r
 	stale.Endpoint = "http://192.0.2.9"

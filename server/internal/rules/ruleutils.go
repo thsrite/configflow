@@ -57,8 +57,8 @@ func CacheFilename(rule model.RuleConfig) string {
 	if identity == "" {
 		// An explicitly stored empty ID remains an identity; an absent or
 		// null ID uses the name. Invalid typed IDs follow R5.
-		raw, present, _ := rule.MemberJSON("id")
-		if !present || string(raw) == "null" || model.IssueUnder(model.Issues(rule), "id") {
+		raw, present, _ := model.EncodeMember(&rule, "id")
+		if !present || string(raw) == "null" {
 			namespace, text = "by-name", rule.Name
 		}
 	}
@@ -252,11 +252,6 @@ func LibraryRule(item model.RuleLibraryItem) model.RuleConfig {
 // for one-time migration. Writers always use CacheFilename. Stored invalid
 // declaration types are never eligible to claim an older file.
 func LegacyCacheFilename(rule model.RuleConfig) (string, bool) {
-	for _, field := range []string{"id", "library_rule_id", "url", "behavior", "format", "source_type"} {
-		if model.IssueUnder(model.Issues(rule), field) {
-			return "", false
-		}
-	}
 	if valueOr(rule.SourceType, "url") != "url" || valueOr(rule.URL, "") == "" {
 		return "", false
 	}
@@ -356,7 +351,7 @@ func SameSourceDeclaration(a, b model.RuleConfig) bool {
 }
 func originalMemberEqual(a, b model.RuleConfig, field string) bool {
 	member := func(rule model.RuleConfig) json.RawMessage {
-		value, _, _ := rule.MemberJSON(field)
+		value, _, _ := model.EncodeMember(&rule, field)
 		if string(value) == "null" {
 			return nil
 		}

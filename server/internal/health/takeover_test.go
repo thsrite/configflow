@@ -68,7 +68,7 @@ func TestConversionPanicsDoNotStrandBatchOrPublishPanicText(t *testing.T) {
 	ctx := repo.WithRepository(context.Background(), repository)
 	if err := repository.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		for i := 0; i < MaxNodes; i++ {
-			shared.Nodes = append(shared.Nodes, model.Node{ID: fmt.Sprintf("n%d", i), Name: fmt.Sprintf("Synthetic %d", i), Type: "http", Server: "example.test", Port: 80})
+			shared.Nodes = append(shared.Nodes, model.Node{ID: fmt.Sprintf("n%d", i), Name: fmt.Sprintf("Synthetic %d", i), Type: "http", Server: "example.test", Port: model.IntPtr(80)})
 		}
 		return nil
 	}); err != nil {

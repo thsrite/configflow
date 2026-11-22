@@ -36,7 +36,16 @@ func (r *Repository) SaveRouterSettingsJSON(ctx context.Context, profileID strin
 			return err
 		}
 		current, found := records.values[key]
-		if !valid || !found || !sameStoredObject(current, old) {
+		// The caller's snapshot compares by value as the plain router record
+		// holds it (O18 T1c: members it leaves out or writes as zero).
+		expectedView := old
+		var snapshot model.Router
+		if json.Unmarshal(expected, &snapshot) == nil {
+			if encoded, err := model.Marshal(&snapshot); err == nil {
+				expectedView = viewOfJSON(encoded)
+			}
+		}
+		if !valid || !found || !sameStoredObject(current, expectedView) {
 			return inUse(msgRouterSettingsChanged)
 		}
 

@@ -43,7 +43,7 @@ func TestReviewC10References(t *testing.T) {
 	native := nativeParserExpectations(t)
 	hostsNative := nativeHostsExpectations(t)
 	dialersNative := nativeDialersExpectations(t)
-	compared, unrepresentable, known, acceptedUTF8 := 0, 0, 0, 0
+	compared, unrepresentable, known, acceptedUTF8, acceptedEmpty := 0, 0, 0, 0, 0
 	for i, row := range rows {
 		wantRaw := row.OutRaw
 		if expected, changed := changedNativeCase(t, oracle, fmt.Sprintf("subs/review_c10/%d", i)); changed {
@@ -125,12 +125,16 @@ func TestReviewC10References(t *testing.T) {
 			t.Errorf("row %d %s(%q): Go error %v, Python %s", i, row.Fn, in, err, wantRaw)
 			continue
 		}
+		if !testjson.Equal(wantRaw, got) && o18T1cSameParsed(wantRaw, got) {
+			acceptedEmpty++ // O18 T1c: empty server/port omitted
+			continue
+		}
 		if !testjson.Equal(wantRaw, got) {
 			t.Errorf("row %d %s(%q)\n got  %s\n want %s", i, row.Fn, in, compact(t, got), wantRaw)
 		}
 	}
-	t.Logf("%d rows compared, %d unrepresentable in JSON skipped, %d known yamlx differences, %d accepted invalid-UTF-8 SNI rows",
-		compared, unrepresentable, known, acceptedUTF8)
+	t.Logf("%d rows compared, %d unrepresentable in JSON skipped, %d known yamlx differences, %d accepted invalid-UTF-8 SNI rows, %d O18 T1c 接受 (empty server/port omitted)",
+		compared, unrepresentable, known, acceptedUTF8, acceptedEmpty)
 	if known != 0 {
 		t.Errorf("%d known yamlx rows, want 0", known)
 	}

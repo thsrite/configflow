@@ -14,7 +14,11 @@ import (
 // always wrote when it created a section are always written, so a stored
 // zero value ("_revision": 0, "description": "") stays present; members that
 // may be absent are omitzero. Unknown members are not kept: storage reports
-// them once on load (DecodeStored), input decoding drops them.
+// them once on load (DecodeStored), input decoding drops them. Python's empty
+// profile wrote every profile section, so loon, domain_discovery, routers,
+// device_notes and client_fixed_ips are always written (O18 T1c); a section
+// row an older profile lacks stays absent while its value is unchanged (repo,
+// keepUnchangedRows).
 
 // Profile holds typed profile settings and router publication records.
 type Profile struct {
@@ -28,13 +32,13 @@ type Profile struct {
 	RuleConfigs     []RuleConfig    `json:"rule_configs"`
 	Mihomo          MihomoSettings  `json:"mihomo"`
 	Surge           SurgeSettings   `json:"surge"`
-	Loon            LoonSettings    `json:"loon,omitzero"`
+	Loon            LoonSettings    `json:"loon"`
 	MosDNS          MosDNSSettings  `json:"mosdns"`
 	OxiDNS          Dynamic         `json:"oxidns,omitzero"`
-	Routers         Routers         `json:"routers,omitzero"`
-	DomainDiscovery DomainDiscovery `json:"domain_discovery,omitzero"`
-	DeviceNotes     DeviceNotes     `json:"device_notes,omitzero"`
-	ClientFixedIPs  ClientFixedIPs  `json:"client_fixed_ips,omitzero"`
+	Routers         Routers         `json:"routers"`
+	DomainDiscovery DomainDiscovery `json:"domain_discovery"`
+	DeviceNotes     DeviceNotes     `json:"device_notes"`
+	ClientFixedIPs  ClientFixedIPs  `json:"client_fixed_ips"`
 	// Rules and RuleSets are the rule lists of profiles written before
 	// rule_configs existed, kept as stored JSON. Generators read them only
 	// while RuleConfigs is empty; see LegacyRuleList.

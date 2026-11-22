@@ -42,13 +42,23 @@ func TestTypedGenerationUsesConsumedFields(t *testing.T) {
 		t.Fatal("generation mutated source")
 	}
 }
-func TestTypedMosDNSR5(t *testing.T) {
+
+// TestTypedMosDNSStoredValuesOfAnotherType: mosdns settings are plain
+// records (O18 T1c). A stored cache size that is not an integer (true, 1.5)
+// reads as missing, so generation uses the defaults; a stored switch of
+// another type keeps its truth value ({} is off). Wrong-typed members are not
+// written back (R5 kept their original values).
+func TestTypedMosDNSStoredValuesOfAnotherType(t *testing.T) {
 	config, err := ConfigFromJSON([]byte(`{"mosdns":{"cache_size":true,"cache_lazy_ttl":1.5,"cache_enabled":{},"log_level":7},"rule_configs":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Profile.MosDNS.CacheSize != nil || config.Profile.MosDNS.CacheLazyTTL != nil || config.Profile.MosDNS.CacheEnabled != nil {
-		t.Fatal("shared R5 fallback not applied")
+	settings := config.Profile.MosDNS
+	if settings.CacheSize != nil || settings.CacheLazyTTL != nil {
+		t.Fatalf("wrong-typed integers must read as missing: %v %v", settings.CacheSize, settings.CacheLazyTTL)
+	}
+	if settings.CacheEnabled != nil && *settings.CacheEnabled {
+		t.Fatal("cache_enabled {} must read as off")
 	}
 	output, err := Generate(config, "")
 	if err != nil {
@@ -69,8 +79,8 @@ func TestTypedMosDNSR5(t *testing.T) {
 		t.Fatal(enabledOutput)
 	}
 	encoded, _ := json.Marshal(config.Profile.MosDNS)
-	if !strings.Contains(string(encoded), `"cache_size":true`) {
-		t.Fatal("consumption changed storage", string(encoded))
+	if strings.Contains(string(encoded), `"cache_size"`) || strings.Contains(string(encoded), `"cache_lazy_ttl"`) {
+		t.Fatal("wrong-typed members must not be written back", string(encoded))
 	}
 }
 

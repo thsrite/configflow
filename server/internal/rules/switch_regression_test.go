@@ -53,7 +53,7 @@ func TestSwitchTruthinessRegression(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &node); err != nil {
 				t.Fatal(err)
 			}
-			if got := enabledResource(&node, node.Enabled); got != tc.want {
+			if got := enabledResource(node.Enabled); got != tc.want {
 				t.Fatalf("enabledResource(%s) = %v, want %v", raw, got, tc.want)
 			}
 			var rawField json.RawMessage

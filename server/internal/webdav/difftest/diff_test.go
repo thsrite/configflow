@@ -29,6 +29,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/repo/repotest"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/webdav"
@@ -223,11 +224,8 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	pd, gd := newDAV(t), newDAV(t)
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: jwtSecret, Register: httpxtest.Routes(settings.Register)})
 	ctx := srv.Context()
+	backup := map[string]any{"webdav_url": "<DAV>", "webdav_username": "fixture-user", "webdav_password": "fixture-password", "webdav_path": "/backups/", "auto_backup": false}
 	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
-		backup := map[string]any{"webdav_url": "<DAV>", "webdav_username": "fixture-user", "webdav_password": "fixture-password", "webdav_path": "/backups/", "auto_backup": false}
-		for k, v := range retention {
-			backup[k] = v
-		}
 		raw, err := json.Marshal(backup)
 		if err != nil {
 			return err
@@ -240,6 +238,18 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(retention) > 0 {
+		for k, v := range retention {
+			backup[k] = v
+		}
+		raw, err := json.Marshal(backup)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Saved retention may hold hand-edited values of the wrong type,
+		// which the plain record refuses as input: the row is written directly.
+		repotest.WriteRow(t, srv.Repo.DatabasePath(), "system", "", "backup", raw)
 	}
 	pyDir := t.TempDir()
 	if out, err := exec.Command("cp", "-a", srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {

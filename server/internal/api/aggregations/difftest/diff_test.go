@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"encoding/json"
 	"errors"
@@ -359,7 +360,9 @@ func (w *world) callNativeProviderSyntax(method, path, body string, authenticate
 	return w.callComparing(method, path, body, authenticated, true)
 }
 
-func (w *world) callComparing(method, path, body string, authenticated, nativeSyntax bool) answer {
+// exchange sends one request to Flask and to Go and returns both answers
+// (the Go body decoded) without comparing them.
+func (w *world) exchange(method, path, body string, authenticated bool) (answer, *httpxtest.Result, any) {
 	t := w.t
 	t.Helper()
 	headers := map[string]string{}
@@ -420,6 +423,13 @@ func (w *world) callComparing(method, path, body string, authenticated, nativeSy
 	if err != nil {
 		t.Fatalf("decode Go: %v %s", err, got.Body)
 	}
+	return py, got, gb
+}
+
+func (w *world) callComparing(method, path, body string, authenticated, nativeSyntax bool) answer {
+	t := w.t
+	t.Helper()
+	py, got, gb := w.exchange(method, path, body, authenticated)
 	// Named Python bugs: scalar selectors are iterated as character IDs; a
 	// corrupt non-array cache can become a successful partial provider. Require
 	// exact native rejection and keep comparing every stored effect.
@@ -428,21 +438,45 @@ func (w *world) callComparing(method, path, body string, authenticated, nativeSy
 		var args struct {
 			Aggregation struct{ Subscriptions json.RawMessage }
 		}
-		if json.Unmarshal([]byte(body), &args) == nil && (string(args.Aggregation.Subscriptions) == `"s"` || w.control.CorruptCache) && py.Status == 200 {
+		decoded := json.Unmarshal([]byte(body), &args) == nil
+		selector := bytes.TrimSpace(args.Aggregation.Subscriptions)
+		scalar := decoded && len(selector) > 0 && selector[0] != '[' && string(selector) != "null"
+		if scalar {
+			// The aggregation is a plain record (O18 T1c): a selector of the
+			// wrong type reads as no selection, where Python iterated the
+			// text's characters as IDs (C31 Python bug) or failed on another
+			// scalar.
+			expectedRejection = true
+			var result struct {
+				SubscriptionNodeCounts map[string]int `json:"subscription_node_counts"`
+			}
+			if got.Status != 200 || json.Unmarshal(got.Body, &result) != nil || len(result.SubscriptionNodeCounts) != 0 {
+				t.Errorf("scalar selector read as no selection: %d %s", got.Status, got.Body)
+			}
+			t.Log("EXPECTED C31 Python bug: scalar subscription selector reads as no selection; storage still compared")
+		} else if w.control.CorruptCache && py.Status == 200 {
 			expectedRejection = true
 			if got.Status != 500 || string(got.Body) != `{"message":"聚合操作失败","success":false}` {
-				t.Errorf("scalar selector rejection: %d %s", got.Status, got.Body)
+				t.Errorf("corrupt cache rejection: %d %s", got.Status, got.Body)
 			}
-			t.Log("EXPECTED C31 Python bug: scalar subscription selector rejected; storage still compared")
+			t.Log("EXPECTED C31 Python bug: corrupt cache rejected; storage still compared")
 		}
 	}
 	if got.Status != py.Status && !expectedRejection {
-		t.Errorf("%s %s status Python=%d Go=%d body=%s", method, path, py.Status, got.Status, got.Body)
+		t.Errorf("%s %s status Python=%d Go=%d body=%s request=%.300s", method, path, py.Status, got.Status, got.Body, body)
 	}
 	compare := func(label string, a, b any) {
 		t.Helper()
 		a = normalize(jsonValue(a))
 		b = normalize(jsonValue(b))
+		if label == "state" {
+			// Stored documents compare as the plain records hold them (O18 T1c).
+			a, b = modeltest.StateThroughModel(a), modeltest.StateThroughModel(b)
+		} else {
+			// Responses echo records; members the plain records leave out are
+			// not compared (O18 T1c).
+			a = modeltest.AlignResponse(a, b)
+		}
 
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
@@ -451,6 +485,7 @@ func (w *world) callComparing(method, path, body string, authenticated, nativeSy
 	if !expectedRejection {
 		expectedBody := py.Body
 		if nativeSyntax {
+			var err error
 			expectedBody, err = nativeProviderSyntaxBody(method, path, w.control.Sources["s"], py, got.Status)
 			if err != nil {
 				t.Fatal(err)
@@ -531,7 +566,7 @@ func firstDifference(a, b any, path string) string {
 		}
 		for k := range w {
 			if _, ok := v[k]; !ok {
-				return path + "." + k + " extra in Go"
+				return path + "." + k + fmt.Sprintf(" extra in Go (Go %v; Python %v)", w[k], v)
 			}
 		}
 	case []any:

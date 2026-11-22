@@ -9,8 +9,8 @@ import (
 )
 
 // Review C28 #1: hand-edited values of another JSON type (a numeric
-// library_rule_id on some rule, enabled: null) no longer make the archive
-// or the rule proxy refuse; they compare like Python's == and truthiness.
+// library_rule_id on some rule, enabled: null) do not make the archive or the
+// rule proxy refuse: numbers read as their text, switches by truthiness.
 func TestReviewSnapshotToleratesOtherJSONTypes(t *testing.T) {
 	ctx, _ := testRepo(t, nil)
 	config := map[string]any{
@@ -44,7 +44,13 @@ func TestReviewSnapshotToleratesOtherJSONTypes(t *testing.T) {
 	if err := files("/api/profiles/office/rule-library/content/inline"); err != nil {
 		t.Fatalf("selected inline rule: %v", err)
 	}
-	for _, id := range []string{"off", "zero", "7"} {
+	// A numeric library_rule_id and library id read as their text (plain
+	// records, O18 T1c), so the rule "7" is in the snapshot (accepted O18
+	// T1c difference; R5 kept the numbers apart from the path's text).
+	if err := files("/api/profiles/office/rule-library/content/7"); err != nil {
+		t.Fatalf("numeric IDs read as text: %v", err)
+	}
+	for _, id := range []string{"off", "zero"} {
 		var archive *ArchiveError
 		if err := files("/api/profiles/office/rule-library/content/" + id); !errors.As(err, &archive) ||
 			archive.Message != "规则“r”准备失败：规则不在当前配置快照中" {

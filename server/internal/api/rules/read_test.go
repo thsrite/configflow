@@ -337,7 +337,9 @@ func TestReviewN811DuplicateScanPreservesNullPolicy(t *testing.T) {
 		t.Fatalf("unexpected duplicate groups: %s", out.Body)
 	}
 	nullGroup, defaultGroup := result.Duplicates[0], result.Duplicates[1]
-	if nullGroup.Value != "nullpolicy.example" || !nullGroup.Conflict || string(nullGroup.Occurrences[0].Policy) != "null" {
+	// An explicit null policy is an empty reference in the plain rule record
+	// (O18 T1c): it still conflicts and never reads as the DIRECT default.
+	if nullGroup.Value != "nullpolicy.example" || !nullGroup.Conflict || string(nullGroup.Occurrences[0].Policy) != `""` {
 		t.Fatalf("explicit null policy lost: %+v", nullGroup)
 	}
 	if defaultGroup.Value != "defaultpolicy.example" || defaultGroup.Conflict || string(defaultGroup.Occurrences[0].Policy) != `"DIRECT"` {

@@ -67,12 +67,10 @@ func (s *Source) config() *model.Config {
 	return s.modelConfig
 }
 func (s *Source) serverDomain(fallback string) string {
-	raw, _, err := s.config().SystemConfig.MemberJSON("server_domain")
-	var domain string
-	if err != nil || json.Unmarshal(raw, &domain) != nil || domain == "" {
-		return fallback
+	if domain := s.config().SystemConfig.ServerDomain; domain != "" {
+		return domain
 	}
-	return domain
+	return fallback
 }
 func (s *Source) ruleConfig() *rulefetch.SourceConfig {
 	c := s.config()

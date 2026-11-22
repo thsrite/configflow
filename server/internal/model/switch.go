@@ -99,3 +99,12 @@ func jsonNumberIsZero(raw []byte) bool {
 	}
 	return digits > 0
 }
+
+// Flag reads an optional stored switch: nil (absent) is fallback. A stored
+// null or wrong type was already resolved when the record was decoded.
+func Flag(current *bool, fallback bool) bool {
+	if current == nil {
+		return fallback
+	}
+	return *current
+}

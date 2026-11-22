@@ -2,6 +2,7 @@ package clients
 
 import (
 	"bytes"
+	"configflow/internal/testjson"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -85,6 +86,11 @@ func equalJSON(t *testing.T, label string, a, b json.RawMessage) {
 	var av, bv any
 	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
 		t.Fatalf("invalid %s: %s / %s", label, a, b)
+	}
+	if label != "response" && label != "SQLite rows" {
+		// Stored state: plain records leave out optional members holding "",
+		// null, {} or [] (O18 T1c).
+		av, bv = testjson.WithoutEmptyMembers(av), testjson.WithoutEmptyMembers(bv)
 	}
 	normalizeJSON(av)
 	normalizeJSON(bv)

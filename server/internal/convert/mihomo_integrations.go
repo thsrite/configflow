@@ -55,9 +55,9 @@ func gatewaySetting(config *model.Config) (present, marker bool) {
 	if config == nil || config.Profile == nil {
 		return false, false
 	}
-	raw, ok := config.Profile.Mihomo.Fields.Get("linux_gateway")
-	present = ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
-	marker = config.Profile.Mihomo.Fields.Has("router_split")
+	raw := config.Profile.Mihomo.LinuxGateway.JSON()
+	present = raw != nil && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+	marker = !config.Profile.Mihomo.RouterSplit.IsZero()
 	return
 }
 func gatewayActive(config *model.Config) (bool, error) {

@@ -4,6 +4,7 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"encoding/json"
 	"errors"
@@ -100,7 +101,9 @@ func TestPublicRelinkTransactionalHTTPBoundary(t *testing.T) {
 				sameYAML(t, actual.Source, tc.Expected)
 				return
 			}
-			if actual.Status != want.Status || actual.Body.Success != want.Body.Success || !reflect.DeepEqual(actual.Body.Changed, want.Body.Changed) || actual.Committed != want.Committed || !reflect.DeepEqual(actual.Groups, want.Groups) {
+			// Undeclared group members are dropped by the plain records (O18 T1c).
+			wantGroups := alignGroups(want.Groups, actual.Groups)
+			if actual.Status != want.Status || actual.Body.Success != want.Body.Success || !reflect.DeepEqual(actual.Body.Changed, want.Body.Changed) || actual.Committed != want.Committed || !reflect.DeepEqual(actual.Groups, wantGroups) {
 				t.Fatalf("boundary mismatch: python %+v Go %+v", want, actual)
 			}
 			if tc.Difference == "parse-diagnostic" {
@@ -257,4 +260,23 @@ func pythonRelinkOutcomes(t *testing.T, cases []editCase) []editOutcome {
 		t.Fatal("truncated Python results")
 	}
 	return outcomes
+}
+
+func alignGroups(python, goGroups []map[string]any) []map[string]any {
+	var p, g []any
+	for _, group := range python {
+		p = append(p, map[string]any(group))
+	}
+	for _, group := range goGroups {
+		g = append(g, map[string]any(group))
+	}
+	aligned, _ := modeltest.AlignResponseFor(p, g, model.ProxyGroup{}, model.ResourceRef{}, model.ProxyChain{}).([]any)
+	out := make([]map[string]any, 0, len(aligned))
+	for _, group := range aligned {
+		out = append(out, group.(map[string]any))
+	}
+	if python == nil {
+		return nil
+	}
+	return out
 }

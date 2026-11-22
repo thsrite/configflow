@@ -25,7 +25,7 @@ func modeReadFixture(tb testing.TB, size int) context.Context {
 	if err := r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		mode := "always"
 		sys.SystemConfig.SubStoreMode = &mode
-		return sys.SystemConfig.Fields.Set("n89-unrelated", data)
+		return markerSet(&sys.SystemConfig.GitHubProxyDomain, data)
 	}); err != nil {
 		tb.Fatal(err)
 	}

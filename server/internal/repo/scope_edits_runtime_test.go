@@ -18,7 +18,7 @@ func mihomoMarker(t *testing.T, cfg *model.Config) string {
 		t.Fatal(err)
 	}
 	var m struct {
-		Marker string `json:"marker"`
+		Marker string `json:"custom_config"`
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 							t.Fatal(err)
 						}
 						if err := r.UpdateConfig(bg, id, func(_ context.Context, config *model.Config) error {
-							return config.Profile.SetJSON("mihomo", []byte(`{"marker":"external"}`))
+							return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"external"}`))
 						}); err != nil {
 							t.Fatal(err)
 						}
@@ -76,7 +76,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 						errTx = repo.UpdateSharedConfigs(request, func(_ context.Context, shared *model.Shared) error {
 							return shared.SetJSON("rule_library", []byte(`[]`))
 						}, func(_ context.Context, _ string, _, after *model.Config) error {
-							return after.Profile.SetJSON("mihomo", []byte(`{"marker":"ok"}`))
+							return after.Profile.SetJSON("mihomo", []byte(`{"custom_config":"ok"}`))
 						}, nil)
 					} else {
 						profileArg := "default"
@@ -85,7 +85,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 							profileArg = "bad/profile"
 						}
 						errTx = repo.UpdateConfig(request, profileArg, func(_ context.Context, config *model.Config) error {
-							return config.Profile.SetJSON("mihomo", []byte(`{"marker":"ok"}`))
+							return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"ok"}`))
 						})
 					}
 					afterHead, err := r.Head(bg)
@@ -154,7 +154,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 		}
 		// Single-profile UpdateConfig must preserve Scope's shared record baseline.
 		if err := repo.UpdateConfig(ctx, "default", func(_ context.Context, config *model.Config) error {
-			return config.Profile.SetJSON("mihomo", []byte(`{"marker":"one"}`))
+			return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"one"}`))
 		}); err != nil {
 			t.Fatal(err)
 		}

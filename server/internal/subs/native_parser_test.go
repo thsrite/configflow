@@ -98,11 +98,11 @@ func nativeParserExpectations(t *testing.T) map[string]nativeParserCase {
 
 func TestN89NativeParserRecords(t *testing.T) {
 	parsed := ParseList(`trojan://password@example.com:443#A`)
-	if len(parsed) != 1 || parsed[0].Raw != nil || parsed[0].Node.Name != "A" || parsed[0].Node.Port != 443 {
+	if len(parsed) != 1 || parsed[0].Raw != nil || parsed[0].Node.Name != "A" || model.IntValue(parsed[0].Node.Port) != 443 {
 		t.Fatalf("parsed %#v", parsed)
 	}
 	raw := ParseList(`{name: 5, type: ss, server: 123, port: "443", password: 123, future: [true, 9007199254740993]}`)
-	if len(raw) != 1 || raw[0].Raw == nil || raw[0].Node.Name != "5" || raw[0].Node.Server != "123" || raw[0].Node.Port != 443 {
+	if len(raw) != 1 || raw[0].Raw == nil || raw[0].Node.Name != "5" || raw[0].Node.Server != "123" || model.IntValue(raw[0].Node.Port) != 443 {
 		t.Fatalf("raw %#v", raw)
 	}
 	field := yamlx.Get(raw[0].Raw, "password")
@@ -133,8 +133,10 @@ func TestN89RawProxyNumericTokensRemainLossless(t *testing.T) {
 	if err != nil || string(data) != `{"name":"x","port":1e400,"future":9007199254740993123456789}` {
 		t.Fatalf("tokens %s %v", data, err)
 	}
-	if values[0].Node.Port != 0 || !model.IssueUnder(model.Issues(&values[0].Node), "port") {
-		t.Fatal("typed overflow lost its issue")
+	// O18 T1c: the overflowing port reads as no port; the raw token above is
+	// the lossless record (the typed R5 issue no longer exists).
+	if values[0].Node.Port != nil {
+		t.Fatal("typed overflow became a port")
 	}
 	values = ParseList(`{"name":"x","v":NaN}`)
 	if len(values) != 1 || values[0].Raw == nil {

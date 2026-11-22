@@ -48,7 +48,7 @@ func Downloads(config *model.Config, baseURL string) ([]Download, error) {
 	selected := idSet(append(append([]string{}, settings.DirectRulesets...), settings.ProxyRulesets...))
 	for _, id := range layout.order {
 		item, exists := layout.sets[id]
-		if !exists || !selected[id] || !flag(&item, "enabled", item.Enabled) {
+		if !exists || !selected[id] || !flag(item.Enabled) {
 			continue
 		}
 		files, err := RuleFiles(config, effectiveOrigin(config, baseURL), item, layout.stems[id])
@@ -121,10 +121,10 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 		}
 	}
 	root := yamlx.Map()
-	if flag(&s, "log_enabled", s.LogEnabled) {
+	if flag(s.LogEnabled) {
 		yamlx.Set(root, "log", yamlx.Map(yamlx.Str("level"), yamlx.Str(textValue(s.LogLevel, "info")), yamlx.Str("file"), yamlx.Str(textValue(s.LogFile, "./mosdns.log"))))
 	}
-	if flag(&s, "api_enabled", s.APIEnabled) {
+	if flag(s.APIEnabled) {
 		yamlx.Set(root, "api", yamlx.Map(yamlx.Str("http"), yamlx.Str(textValue(s.APIAddress, "0.0.0.0:8338"))))
 	}
 	plugins := yamlx.Seq()
@@ -134,7 +134,7 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 	directSets, proxySets := idSet(s.DirectRulesets), idSet(s.ProxyRulesets)
 	for _, id := range layout.order {
 		item, exists := layout.sets[id]
-		if !exists || (!directSets[id] && !proxySets[id]) || !flag(&item, "enabled", item.Enabled) {
+		if !exists || (!directSets[id] && !proxySets[id]) || !flag(item.Enabled) {
 			continue
 		}
 		files, err := RuleFiles(config, effectiveOrigin(config, baseURL), item, layout.stems[id])
@@ -152,9 +152,9 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 			add(tag, kind, yamlx.Map(yamlx.Str("files"), stringList(file.LocalPath)))
 		}
 	}
-	if flag(&s, "cache_enabled", s.CacheEnabled) {
+	if flag(s.CacheEnabled) {
 		args := yamlx.Map(yamlx.Str("size"), yamlx.Int(settingInt(s.CacheSize, 10240)), yamlx.Str("lazy_cache_ttl"), yamlx.Int(settingInt(s.CacheLazyTTL, 21600)))
-		if flag(&s, "cache_dump_enabled", s.CacheDumpEnabled) {
+		if flag(s.CacheDumpEnabled) {
 			interval := settingInt(s.CacheDumpInterval, 300)
 			if interval <= 0 {
 				interval = 300
@@ -206,7 +206,7 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 	add("proxy_dns", "fallback", yamlx.Map(yamlx.Str("primary"), yamlx.Str("remote_dns"), yamlx.Str("secondary"), yamlx.Str("remote_dns_fallback"), yamlx.Str("threshold"), yamlx.Int(500), yamlx.Str("always_standby"), yamlx.Bool(false)))
 	add("proxy_dns_seq", "sequence", yamlx.Seq(instruction("$proxy_dns"), instruction("accept")))
 	china := yamlx.Seq()
-	if flag(&s, "cache_enabled", s.CacheEnabled) {
+	if flag(s.CacheEnabled) {
 		china.Content = append(china.Content, instruction("$lazy_cache"), condition("has_resp", "accept"))
 	}
 	china.Content = append(china.Content, instruction("query_summary forward_local"), instruction("$forward_local"), condition("!has_resp", "reject 3"))
@@ -245,7 +245,7 @@ func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
 		}
 	}
 	for _, item := range config.Profile.RuleConfigs {
-		if item.ID == "" || !flag(&item, "enabled", item.Enabled) || !flag(&item, "library_enabled", item.LibraryEnabled) {
+		if item.ID == "" || !flag(item.Enabled) || !flag(item.LibraryEnabled) {
 			continue
 		}
 		switch item.ItemType {

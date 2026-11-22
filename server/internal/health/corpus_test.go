@@ -262,7 +262,7 @@ func TestReferenceCorpus(t *testing.T) {
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	failures := 0
-	classified := map[string]int{}
+	classified, accepted := map[string]int{}, map[string]int{}
 	native := nativeExpectations(t, "testdata/corpus.json")
 	storeDir := t.TempDir()
 	probeStore, regionStore := check.NewProbeStore(storeDir), check.NewRegionStore(storeDir)
@@ -468,6 +468,10 @@ func TestReferenceCorpus(t *testing.T) {
 				if hasNFKCDelimiterAuthority(args) {
 					continue
 				}
+				if fn == "provider_health_check" && o18T1cDirtyHealthCheck(rawArg(0)) {
+					accepted["provider_health_check: stored health_check with an undeclared or wrong-typed member reads leniently"]++
+					continue
+				}
 				failures++
 				t.Errorf("row %d %s: want %s %q, got %s", i, label, class, mapStr(row, "message"), encode(out))
 				continue
@@ -502,7 +506,22 @@ func TestReferenceCorpus(t *testing.T) {
 	if nativeCount != len(native) {
 		t.Errorf("typed reference entries exercised=%d, want %d", nativeCount, len(native))
 	}
-	t.Logf("%d rows, %d differences, classified=%v", len(corpus.Rows), failures, classified)
+	t.Logf("%d rows, %d differences, classified=%v, O18 T1c 接受=%v", len(corpus.Rows), failures, classified, accepted)
+}
+
+// o18T1cDirtyHealthCheck reports a subscription whose stored health_check has
+// members ProviderHealthCheck does not declare or values of another type.
+// Since O18 T1c stored records read leniently (undeclared members dropped,
+// lazy 0 reads as false), where Python's provider_health_check raised
+// ValueError; health_check input is still strict (accepted difference).
+func o18T1cDirtyHealthCheck(source json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(source, &fields) != nil || fields["health_check"] == nil {
+		return false
+	}
+	var overlay model.ProviderHealthCheck
+	issues, err := model.DecodeStored(fields["health_check"], &overlay, "")
+	return err == nil && len(issues) > 0
 }
 
 func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, now time.Time) error {

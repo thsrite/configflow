@@ -202,9 +202,10 @@ func TestOrderedMapAndDynamic(t *testing.T) {
 	}
 }
 
-// Plain records (O18 T1a): whole-document input is decoded strictly and a
-// mismatch names its member; unknown members of plain records are dropped,
-// records not yet migrated keep theirs; profiles keep their order.
+// Plain records (O18 T1a–T1c): whole-document input is decoded strictly and a
+// mismatch names its member; unknown members are dropped at every level (the
+// nested agent and proxy-group records are plain since T1b/T1c); always-written
+// members stay; profiles keep their order.
 func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
 	for _, tt := range []struct {
 		name, source, record, member string
@@ -238,13 +239,12 @@ func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"future_system", "future_shared", "future_profile", `"future":{"a":1}`} {
+	for _, fragment := range []string{"future_system", "future_shared", "future_profile", `"future"`} {
 		if bytes.Contains(encoded, []byte(fragment)) {
 			t.Fatalf("unknown member %s kept: %s", fragment, encoded)
 		}
 	}
-	// Records not yet migrated keep their own member bytes.
-	for _, fragment := range []string{`"future":{"z":1}`, `"_revision":0`, `"description":""`} {
+	for _, fragment := range []string{`"_revision":0`, `"description":""`, `"proxy_groups":[{"name":"example"}]`} {
 		if !bytes.Contains(encoded, []byte(fragment)) {
 			t.Fatalf("lost %s: %s", fragment, encoded)
 		}

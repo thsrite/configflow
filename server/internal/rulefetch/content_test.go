@@ -854,13 +854,11 @@ func TestRuleSyntaxThroughRulesetContent(t *testing.T) {
 			t.Errorf("%v", c)
 		}
 		rule := model.RuleConfig{SourceType: strp("content"), Behavior: c.behavior, Format: c.format, Content: strp("")}
+		err := ValidateContent(rule, nil)
 		if c.behavior == nil {
-			rule = model.RuleConfig{}
-			if err := json.Unmarshal([]byte(`{"source_type":"content","behavior":null,"format":"text","content":""}`), &rule); err != nil {
-				t.Fatal(err)
-			}
+			err = ValidateContentJSON([]byte(`{"source_type":"content","behavior":null,"format":"text","content":""}`), nil)
 		}
-		if !errors.Is(ValidateContent(rule, nil), repo.ErrValidation) {
+		if !errors.Is(err, repo.ErrValidation) {
 			t.Errorf("save %v", c)
 		}
 	}
@@ -906,13 +904,11 @@ func TestRuleSyntaxThroughRulesetContent(t *testing.T) {
 	// test_invalid_source_types_are_rejected
 	for _, st := range []*string{strp("inline"), strp("unknown"), nil} {
 		rule := model.RuleConfig{SourceType: st, Behavior: strp("domain"), Content: strp("example.test")}
+		err := ValidateContent(rule, nil)
 		if st == nil {
-			rule = model.RuleConfig{}
-			if err := json.Unmarshal([]byte(`{"source_type":null,"behavior":"domain","content":"example.test"}`), &rule); err != nil {
-				t.Fatal(err)
-			}
+			err = ValidateContentJSON([]byte(`{"source_type":null,"behavior":"domain","content":"example.test"}`), nil)
 		}
-		if !errors.Is(ValidateContent(rule, nil), repo.ErrValidation) {
+		if !errors.Is(err, repo.ErrValidation) {
 			t.Errorf("%v", st)
 		}
 	}

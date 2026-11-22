@@ -59,11 +59,14 @@ func jobUpdate(r *repo.Repository, ctx context.Context, change string, connectio
 	if change != "delete" {
 		updated := connection
 		if change == "manifest" {
-			var state model.ROSPolicyState
-			if err := json.Unmarshal([]byte(`{"owner":"configflow:synthetic","resources":[]}`), &state); err != nil {
+			// The synthetic owner marker is not a declared manifest member; as a
+			// stored router member the manifest is kept whole (O18 T1c), the
+			// same as through SaveRouterPublicationJSON.
+			var holder model.Router
+			if err := json.Unmarshal([]byte(`{"ros_policy_state":{"owner":"configflow:synthetic","resources":[]}}`), &holder); err != nil {
 				return err
 			}
-			updated.ROSPolicyState = &state
+			updated.ROSPolicyState = holder.ROSPolicyState
 		} else {
 			updated.Password = "synthetic-replacement"
 		}

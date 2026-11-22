@@ -313,12 +313,15 @@ func TestRestoredOlderDatabaseIsNeverServedFromCache(t *testing.T) {
 		t.Helper()
 		raw := mustMarshalJSON(t, value)
 		noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
-			return system.SystemConfig.Fields.Set(key, raw)
+			if key == "other" {
+				return markerSet(&system.SystemConfig.ServerDomain, raw)
+			}
+			return markerSet(&system.SystemConfig.GitHubProxyDomain, raw)
 		}))
 	}
 	marker := func(repository *Repository) any {
 		t.Helper()
-		raw, ok := must(repository.System(bg))(t).SystemConfig.Fields.Get("marker")
+		raw, ok := markerGet(json.RawMessage(must(repository.System(bg))(t).SystemConfig.GitHubProxyDomain))
 		if !ok {
 			return nil
 		}
@@ -341,8 +344,7 @@ func TestRestoredOlderDatabaseIsNeverServedFromCache(t *testing.T) {
 	wantJSONEqual(t, marker(other), "post2")
 	mark("other", 1)
 	settings := must(openRepo(t, r.DataDir()).System(bg))(t).SystemConfig
-	rawMarker, _ := settings.Fields.Get("marker")
-	rawOther, _ := settings.Fields.Get("other")
+	rawMarker, rawOther := json.RawMessage(settings.GitHubProxyDomain), json.RawMessage(settings.ServerDomain)
 	wantJSONEqual(t, rawMarker, "post2")
 	wantJSONEqual(t, rawOther, 1)
 }

@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -475,6 +476,16 @@ func (w *world) callHeaders(method, path, body, goBody string, headers map[strin
 		t.Helper()
 		a = w.normalize(jsonValue(t, a))
 		b = w.normalize(jsonValue(t, b))
+		if label == "state" {
+			// Stored documents compare as the plain records hold them (O18
+			// T1c): undeclared members and empty optional members are left
+			// out on both sides, declared values must match.
+			a, b = modeltest.StateThroughModel(a), modeltest.StateThroughModel(b)
+		} else {
+			// Responses echo records; members the plain records leave out
+			// are not compared (O18 T1c).
+			a = modeltest.AlignResponseFor(a, b, model.RuleLibraryItem{}, model.ProxyGroup{}, model.RuleConfig{}, model.ResourceRef{}, model.ProxyChain{})
+		}
 		if label == "body" && (method == "GET" || method == "PUT") && strings.HasSuffix(path, "/draft-content") && py.Status == 200 && got.Status == 200 {
 			// D2 changes only the ephemeral revision. Separate route tests prove
 			// each side is stable, invalidates old tokens, and rejects races.

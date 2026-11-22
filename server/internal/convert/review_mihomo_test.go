@@ -11,7 +11,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/rulesetfmt"
 	"configflow/internal/yamlx"
 )
 
@@ -65,12 +64,9 @@ func TestMihomoReviewEmptyLibraryURLUsesRuleFormat(t *testing.T) {
 			)
 			cfg := mustDecodeConfig(t, config)
 			doc, err := convert.MihomoDocument(context.Background(), cfg, convert.MihomoOptions{SkipProviderPreflight: true})
-			if test.url != nil && test.name != "empty" && test.name != "zero" {
-				if !errors.Is(err, rulesetfmt.ErrURLType) {
-					t.Fatalf("want native URL type validation, got %v", err)
-				}
-				return
-			}
+			// A library URL of another kind (false, [], {}) reads as missing
+			// (plain records, O18 T1c), like null: the rule's own URL format
+			// applies (R5 refused it with rulesetfmt.ErrURLType).
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -122,6 +118,13 @@ func TestMihomoReviewBoundaryReferences(t *testing.T) {
 			if entry.GetString("fn") != "generate" {
 				if args := entry.GetList("args"); len(args) > 0 {
 					profile, _ = args[0].(*convert.JObj)
+				}
+			}
+			if settings := profile.GetObject("mihomo"); settings != nil {
+				if _, isBool := settings.Value("provider_update_interval").(bool); isBool {
+					// Accepted O18 T1c difference: a stored boolean interval
+					// reads as missing (default), Python refused True.
+					return
 				}
 			}
 			if convert.MihomoReplayIssue(profile) == "R8 quoted provider interval" {

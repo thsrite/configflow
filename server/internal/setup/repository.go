@@ -32,6 +32,6 @@ func updateShared(ctx context.Context, r *repo.Repository, update func(*model.Sh
 
 // resourceEnabled evaluates a stored resource switch with the shared JSON
 // truthiness rule, defaulting to enabled when absent.
-func resourceEnabled(item model.SwitchMember, flag *bool) bool {
-	return model.SwitchEnabled(item, "enabled", flag, true)
+func resourceEnabled(flag *bool) bool {
+	return model.Flag(flag, true)
 }

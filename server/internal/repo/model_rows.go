@@ -177,6 +177,12 @@ func eachRow(document *store.Document, visit func(key rowKey, fields *[]store.Fi
 // encodings of typed values (not stored text) means rows Python wrote, rows
 // with a member read leniently and rows of records not yet migrated are only
 // rewritten when their value changes. New rows follow the stored ones.
+//
+// Presence follows the same rule (O18 T1c): a declared member stored with a
+// value its record omits when written (an empty section, "" in an optional
+// member) keeps its row while the omission is unchanged, and a member the
+// record writes but storage lacks gets no row while its value is unchanged.
+// Rows of undeclared members are still dropped.
 func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) error {
 	if base == nil || baseModel == nil {
 		return nil
@@ -195,7 +201,51 @@ func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) er
 		records[rowKey{scope: "profile", owner: profile.Key()}] = profile
 	}
 	var failure error
+	baseMember := func(section rowKey, name string) ([]byte, bool) {
+		if section.scope == "root" {
+			return baseRoot(baseModel, name)
+		}
+		record := records[rowKey{scope: section.scope, owner: section.owner}]
+		if record == nil {
+			return nil, false
+		}
+		before, present, err := model.EncodeMember(record, name)
+		if err != nil && failure == nil {
+			failure = err
+		}
+		return before, present
+	}
 	eachRow(next, func(section rowKey, fields *[]store.Field) {
+		written := map[string]bool{}
+		kept := (*fields)[:0]
+		for _, field := range *fields {
+			written[field.Name] = true
+			key := rowKey{section.scope, section.owner, field.Name}
+			if _, ok := stored[key]; ok || section.scope == "root" || records[rowKey{scope: section.scope, owner: section.owner}] == nil {
+				kept = append(kept, field)
+				continue
+			}
+			if before, present := baseMember(section, field.Name); present && bytes.Equal(before, field.Value) {
+				continue // absent in storage and unchanged: no new row
+			}
+			kept = append(kept, field)
+		}
+		*fields = kept
+		if record := records[rowKey{scope: section.scope, owner: section.owner}]; record != nil && section.scope != "root" {
+			eachRow(base, func(other rowKey, old *[]store.Field) {
+				if other != section {
+					return
+				}
+				for _, field := range *old {
+					if written[field.Name] || !model.Declares(record, field.Name) {
+						continue
+					}
+					if _, present := baseMember(section, field.Name); !present {
+						*fields = append(*fields, field) // omitted before and after: keep the stored row
+					}
+				}
+			})
+		}
 		for i, field := range *fields {
 			key := rowKey{section.scope, section.owner, field.Name}
 			text, ok := stored[key]
@@ -204,18 +254,7 @@ func keepUnchangedRows(next, base *store.Document, baseModel *model.Document) er
 			}
 			// The stored text differs from the new encoding: keep it only
 			// if the snapshot the transaction started from encodes the same.
-			var before []byte
-			present := false
-			if section.scope == "root" {
-				before, present = baseRoot(baseModel, field.Name)
-			} else if record := records[rowKey{scope: section.scope, owner: section.owner}]; record != nil {
-				var err error
-				before, present, err = model.EncodeMember(record, field.Name)
-				if err != nil && failure == nil {
-					failure = err
-				}
-			}
-			if present && bytes.Equal(before, field.Value) {
+			if before, present := baseMember(section, field.Name); present && bytes.Equal(before, field.Value) {
 				(*fields)[i].Value = text
 			}
 		}

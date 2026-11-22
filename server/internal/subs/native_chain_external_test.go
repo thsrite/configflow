@@ -19,9 +19,9 @@ func chainFixture(count, unrelated int) *model.Config {
 	for i := 0; i < count; i++ {
 		id := fmt.Sprintf("node-%d", i)
 		ids = append(ids, id)
-		config.Nodes = append(config.Nodes, model.Node{ID: id, Name: id, Type: "http", Server: "192.0.2.1", Port: 443})
+		config.Nodes = append(config.Nodes, model.Node{ID: id, Name: id, Type: "http", Server: "192.0.2.1", Port: model.IntPtr(443)})
 	}
-	config.Nodes = append(config.Nodes, model.Node{ID: "relay", Name: "Relay", Type: "http", Server: "192.0.2.2", Port: 443})
+	config.Nodes = append(config.Nodes, model.Node{ID: "relay", Name: "Relay", Type: "http", Server: "192.0.2.2", Port: model.IntPtr(443)})
 	config.Profile.ProxyGroups = []model.ProxyGroup{
 		{ID: "exit", Name: "Exit", Type: "select", ManualNodes: &ids},
 		{ID: "chain", Name: "Chain", Type: "chain", Chain: &model.ProxyChain{Entry: model.ResourceRef{Type: "node", ID: "relay"}, Exit: model.ResourceRef{Type: "group", ID: "exit"}}},
@@ -63,7 +63,7 @@ func TestN89LowerChainsOwnsOnlyChangedRecords(t *testing.T) {
 	if err := generated.SetJSON("manual_nodes", json.RawMessage(`[]`)); err != nil {
 		t.Fatal(err)
 	}
-	_ = runtime.Nodes[4].Fields.Set("owned", json.RawMessage(`true`))
+	runtime.Nodes[4].Remark = "owned"
 	after, err := model.Marshal(config)
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatal("lowering or editing runtime changed input", err)
@@ -106,9 +106,7 @@ func BenchmarkN89ChainGeneration(b *testing.B) {
 func TestN89ChainProviderFailureKeepsOnlySuccessfulPrefix(t *testing.T) {
 	config := chainFixture(0, 0)
 	group := model.ProxyGroup{ID: "generated", Name: "Generated", Type: "select"}
-	if err := group.Fields.Set("_chain_dialer", json.RawMessage(`{"type":"node","id":"relay"}`)); err != nil {
-		t.Fatal(err)
-	}
+	group.ChainDialer = &model.ResourceRef{Type: "node", ID: "relay"}
 	config.Profile.ProxyGroups = []model.ProxyGroup{group}
 	original := yamlx.Map(yamlx.Str("type"), yamlx.Str("http"), yamlx.Str("url"), yamlx.Str("https://sub.example/feed"))
 	main := yamlx.Map(yamlx.Str("proxy-providers"), yamlx.Map(yamlx.Str("Air"), original), yamlx.Str("proxy-groups"), yamlx.Seq(yamlx.Map(yamlx.Str("name"), yamlx.Str("Generated"), yamlx.Str("use"), yamlx.Seq(yamlx.Str("Air"), yamlx.Str("Missing")))))

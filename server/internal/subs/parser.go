@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"strconv"
 	"strings"
@@ -19,6 +20,16 @@ import (
 type ParsedProxy struct {
 	Node model.Node
 	Raw  *yamlx.Node
+	// WrongText names a URI member that should be text but was not (a VMess
+	// "add" given as a list): the typed Node reads it as empty, so client
+	// generation refuses the node with this value as Python did.
+	WrongText *WrongText
+}
+
+// WrongText is a parsed member of the wrong JSON type and its value.
+type WrongText struct {
+	Member string
+	Value  json.RawMessage
 }
 
 // ParseList reads subscription share links and structured engine objects.
@@ -65,7 +76,12 @@ func ParseList(content string) []ParsedProxy {
 		case strings.HasPrefix(line, "ssr://"):
 			node, err = parseSSR(line)
 		case strings.HasPrefix(line, "vmess://"):
-			node, err = parseVMessNode(line)
+			var wrong *WrongText
+			node, wrong, err = parseVMessNode(line)
+			if err == nil && node != nil && wrong != nil {
+				result = append(result, ParsedProxy{Node: *node, WrongText: wrong})
+				continue
+			}
 		case strings.HasPrefix(line, "vless://"):
 			node, err = parseVlessNode(line)
 		case strings.HasPrefix(line, "trojan://"):
@@ -310,18 +326,18 @@ func wireValue(raw json.RawMessage, fallback *yamlx.Node) (*yamlx.Node, error) {
 	}
 	return yamlx.FromJSON(raw)
 }
-func parseVMessNode(uri string) (*model.Node, error) {
+func parseVMessNode(uri string) (*model.Node, *WrongText, error) {
 	decoded, err := decodeSubscriptionText(strings.TrimPrefix(uri, "vmess://"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	payload := bytes.TrimSpace([]byte(decoded))
 	if len(payload) == 0 || payload[0] != '{' {
-		return nil, errShareLink
+		return nil, nil, errShareLink
 	}
 	var wire vmessWire
 	if err := jsondecode.Unmarshal(payload, &wire); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(wire.Port) == 0 {
 		wire.Port = json.RawMessage("0")
@@ -331,14 +347,14 @@ func parseVMessNode(uri string) (*model.Node, error) {
 	}
 	projected, err := jsonresp.Encode(wire)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var source vmessFields
 	if err := json.Unmarshal(projected, &source); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if issues := model.Issues(&source); model.IssueUnder(issues, "port") || model.IssueUnder(issues, "aid") {
-		return nil, errShareLink
+		return nil, nil, errShareLink
 	}
 	params := yamlx.Map()
 	for _, field := range []struct {
@@ -350,7 +366,7 @@ func parseVMessNode(uri string) (*model.Node, error) {
 	} {
 		value, err := wireValue(field.raw, field.fallback)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		yamlx.Set(params, field.key, value)
 	}
@@ -360,7 +376,7 @@ func parseVMessNode(uri string) (*model.Node, error) {
 		yamlx.Str("cipher"), yamlx.Get(params, "cipher"), yamlx.Str("network"), yamlx.Get(params, "network"))
 	tls, err := wireValue(wire.TLS, yamlx.Str(""))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	yamlx.Set(ordered, "tls", yamlx.Bool(tls.Kind == yaml.ScalarNode && tls.ShortTag() == "!!str" && tls.Value == "tls"))
 	ws := yamlx.Map()
@@ -368,18 +384,18 @@ func parseVMessNode(uri string) (*model.Node, error) {
 	if network.Kind == yaml.ScalarNode && network.ShortTag() == "!!str" && network.Value == "ws" {
 		path, err := wireValue(wire.Path, yamlx.Str("/"))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		host, err := wireValue(wire.Host, yamlx.Str(""))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		ws = yamlx.Map(yamlx.Str("path"), path, yamlx.Str("headers"), yamlx.Map(yamlx.Str("Host"), host))
 	}
 	yamlx.Set(ordered, "ws-opts", ws)
 	var dynamic model.Dynamic
 	if err := dynamic.SetNode(ordered); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Preserve original type evidence for declared Node text fields, so client
 	// validation can fail closed with the stored value and caller's owner ID.
@@ -389,18 +405,17 @@ func parseVMessNode(uri string) (*model.Node, error) {
 	}
 	name, err := jsonresp.Encode(nameText)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	server, err := jsonresp.Encode(source.Server)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	issues := model.Issues(&source)
-	if model.IssueUnder(issues, "ps") {
-		name = wire.Name
-	}
-	if model.IssueUnder(issues, "add") {
-		server = wire.Server
+	// A server that is not text (or a number, read as its text) is kept as
+	// evidence; the typed Node reads it as empty.
+	var wrong *WrongText
+	if kind := jsontext.Value(bytes.TrimSpace(wire.Server)).Kind(); len(wire.Server) > 0 && kind != '"' && kind != '0' {
+		wrong = &WrongText{Member: "server", Value: bytes.Clone(bytes.TrimSpace(wire.Server))}
 	}
 	data, err := jsonresp.Encode(struct {
 		Name   json.RawMessage `json:"name"`
@@ -410,13 +425,13 @@ func parseVMessNode(uri string) (*model.Node, error) {
 		Params model.Dynamic   `json:"params"`
 	}{name, "vmess", server, source.Port, dynamic})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var node model.Node
 	if err := json.Unmarshal(data, &node); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &node, nil
+	return &node, wrong, nil
 }
 
 type queryOptions map[string][]string

@@ -41,7 +41,7 @@ func TestFlagSwitchTruthiness(t *testing.T) {
 				if key == "library_enabled" {
 					current = rule.LibraryEnabled
 				}
-				if got := flag(&rule, key, current); got != tc.want {
+				if got := flag(current); got != tc.want {
 					t.Fatalf("flag(%s, %q) = %v, want %v", raw, key, got, tc.want)
 				}
 			})
@@ -57,7 +57,7 @@ func TestFlagSwitchTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 				t.Fatal(err)
 			}
-			if got := flag(&settings, "cache_enabled", settings.CacheEnabled); got != tc.want {
+			if got := flag(settings.CacheEnabled); got != tc.want {
 				t.Fatalf("flag(%s, cache_enabled) = %v, want %v", raw, got, tc.want)
 			}
 		})

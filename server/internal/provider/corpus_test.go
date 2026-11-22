@@ -309,6 +309,19 @@ func configFromMap(value map[string]any) (*model.Config, error) {
 	if err := decodeJSON(catFields, &catalog); err != nil {
 		return nil, err
 	}
+	// gen.py's fake aggregation provider reads a fixture-only member that the
+	// plain Aggregation record does not declare; keep it beside the record.
+	if items, ok := value["subscription_aggregations"].([]any); ok {
+		for _, item := range items {
+			if fields, ok := item.(map[string]any); ok {
+				if content, ok := fields["fake_content"].(string); ok {
+					if id, ok := fields["id"].(string); ok {
+						fakeContents.Store(id, content)
+					}
+				}
+			}
+		}
+	}
 	return &model.Config{
 		Profile:       &profile,
 		ProfileID:     catalog.ProfileID,
@@ -609,7 +622,7 @@ func TestCorpus(t *testing.T) {
 }
 
 // knownDifference names accepted differences (documented in PROGRESS C17).
-func knownDifference(kind string, input any) string {
+func knownDifference(_ string, _ any) string {
 	return ""
 }
 
@@ -643,6 +656,9 @@ func snapshotRow(in map[string]any) map[string]any {
 	}
 	return map[string]any{"output": out}
 }
+
+// fakeContents holds the fixture-only fake_content of aggregations by id.
+var fakeContents sync.Map
 
 // scenario is gen.py's Scenario: a fresh repository with seeded caches,
 // fake fetchers keyed "id|url" and the fake aggregation provider.
@@ -742,10 +758,8 @@ func (s *scenario) fakeAggregation(ctx context.Context, agg model.Aggregation, c
 		))
 	}
 	var content string
-	if rawFake, ok := agg.Fields.Get("fake_content"); ok {
-		if err := json.Unmarshal(rawFake, &content); err != nil {
-			return nil, err
-		}
+	if fake, ok := fakeContents.Load(agg.ID); ok {
+		content = fake.(string)
 	} else {
 		data, err := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(proxies...)))
 		if err != nil {

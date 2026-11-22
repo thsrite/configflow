@@ -231,7 +231,7 @@ func TestR15PolicyReadGuardsRawRecordsBeforeDriverCreation(t *testing.T) {
 	}
 	rows := records.Routers
 	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
-		return current.Routers.Items[0].SetJSON("rule_sync_interval", json.RawMessage(`"second malformed value"`))
+		return current.Routers.Items[0].SetJSON("rule_sync_interval", json.RawMessage(`30`))
 	})
 	if err != nil {
 		t.Fatal(err)

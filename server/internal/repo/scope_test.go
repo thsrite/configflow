@@ -53,8 +53,9 @@ func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 		if err := shared.SetJSON("nodes", []byte(`[{"id": "n", "name": "Node"}]`)); err != nil {
 			return err
 		}
-		return shared.SetJSON("rule_library", []byte(`[{"id": "r", "name": "Rule", "enabled": {"custom": []}}]`))
+		return nil
 	}))
+	storeSharedRows(t, r, map[string]string{"rule_library": `[{"id": "r", "name": "Rule", "enabled": {"custom": []}}]`})
 	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{
 		"proxy_groups": [{"id": "g", "name": "Group", "type": "select", "manual_nodes": ["n"]}],
 		"rule_configs": [{"id": "rule", "itemType": "ruleset", "library_rule_id": "r"}]}`), nil)

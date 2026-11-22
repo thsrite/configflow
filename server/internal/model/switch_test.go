@@ -75,13 +75,13 @@ func TestSwitchEnabledRecordAndTypedOverride(t *testing.T) {
 			if err := json.Unmarshal([]byte(tc.raw), &rule); err != nil {
 				t.Fatal(err)
 			}
-			if got := SwitchEnabled(&rule, "enabled", rule.Enabled, true); got != tc.want {
+			if got := Flag(rule.Enabled, true); got != tc.want {
 				t.Fatalf("SwitchEnabled(%s) = %v, want %v", tc.raw, got, tc.want)
 			}
 			// Typed edit overrides stored raw value.
 			override := !tc.want
 			rule.Enabled = &override
-			if got := SwitchEnabled(&rule, "enabled", rule.Enabled, true); got != override {
+			if got := Flag(rule.Enabled, true); got != override {
 				t.Fatalf("after typed override got %v, want %v", got, override)
 			}
 		})

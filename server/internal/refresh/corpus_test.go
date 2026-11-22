@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math"
 	"math/big"
 	"os"
@@ -570,10 +571,60 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 			got = outcome(value, err)
 		}
 		want := expected(nativeOutputs[callIndex].(map[string]any))
+		if label == "rows" {
+			want = storedSwitchTruth(t, want, got, mapObj(files, "shared"))
+		}
 		if !yamlxtest.EqualJSON(got, want) {
-			t.Errorf("scenario %s / %s:\n  got  %s\n  want %s", name, label, compactJSON(got), compactJSON(want))
+			t.Errorf("scenario %s / %s: %s\n  got  %s\n  want %s", name, label, testjson.Diff(want, got), compactJSON(got), compactJSON(want))
 		}
 	}
+}
+
+// storedSwitchTruth handles, in the expected task rows, a subscription or
+// rule source stored with a non-boolean enabled member. Accepted O18 T1c
+// difference: plain records read such a switch by flag truthiness (enabled: 0
+// is off, so the task is disabled and has no next run) where Python tested
+// "is not False" (on). For those rows the Go row is checked to carry the
+// truth value and then stands in for Python's; every other row is compared
+// unchanged.
+func storedSwitchTruth(t *testing.T, want, got map[string]any, shared map[string]any) map[string]any {
+	t.Helper()
+	rows, ok := want["output"].([]any)
+	gotRows, gotOK := got["output"].([]any)
+	if !ok || !gotOK || len(rows) != len(gotRows) {
+		return want
+	}
+	stored := map[string]any{}
+	for category, list := range map[string]string{"subscription": "subscriptions", "rule_source": "rule_library"} {
+		for _, item := range mapList(shared, list) {
+			record, _ := item.(map[string]any)
+			if value, present := record["enabled"]; present && value != nil {
+				if _, isBool := value.(bool); !isBool {
+					stored[category+":"+mapStr(record, "id")] = value
+				}
+			}
+		}
+	}
+	if len(stored) == 0 {
+		return want
+	}
+	out := make([]any, len(rows))
+	for i, item := range rows {
+		row, _ := item.(map[string]any)
+		gotRow, _ := gotRows[i].(map[string]any)
+		value, dirty := stored[mapStr(row, "key")]
+		if !dirty || mapStr(gotRow, "key") != mapStr(row, "key") {
+			out[i] = item
+			continue
+		}
+		if enabled, _ := gotRow["enabled"].(bool); enabled != pyTruthy(value) {
+			t.Errorf("task %s: enabled %v, want the stored switch's truth value", mapStr(row, "key"), gotRow["enabled"])
+		}
+		out[i] = gotRow
+	}
+	patched := maps.Clone(want)
+	patched["output"] = out
+	return patched
 }
 
 func readHealth(t *testing.T, r *repo.Repository) any {

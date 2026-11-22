@@ -37,7 +37,7 @@ func TestStoredEnabledSwitchTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &node); err != nil {
 				t.Fatal(err)
 			}
-			if got := storedEnabled(&node, node.Enabled); got != tc.want {
+			if got := storedEnabled(node.Enabled); got != tc.want {
 				t.Fatalf("storedEnabled(%s) = %v, want %v", raw, got, tc.want)
 			}
 		})

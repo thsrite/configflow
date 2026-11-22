@@ -31,6 +31,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/repo/repotest"
 	"configflow/internal/server"
 	"configflow/internal/substore"
 )
@@ -112,6 +113,9 @@ func seed(t *testing.T, dir, base string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The rules keep hand-edited values of the wrong type, which the plain
+	// records refuse as input: the row is written directly.
+	var stored json.RawMessage
 	if _, err := r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
 		raw, err := json.Marshal(profile.RuleConfigs)
 		if err != nil {
@@ -131,14 +135,12 @@ func seed(t *testing.T, dir, base string) {
 			"policy": "DIRECT", "enabled": nil},
 			map[string]any{"id": "odd", "itemType": "rule", "rule_type": "DOMAIN", "value": "odd.test", "policy": "DIRECT",
 				"library_rule_id": 7, "enabled": "yes"})
-		merged, err := json.Marshal(configs)
-		if err != nil {
-			return err
-		}
-		return profile.SetJSON("rule_configs", merged)
+		stored, err = json.Marshal(configs)
+		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
+	repotest.WriteRow(t, r.DatabasePath(), "profile", "default", "rule_configs", stored)
 }
 
 func startPython(t *testing.T, dataDir string) string {

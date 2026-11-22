@@ -2,6 +2,7 @@ package subscriptions_test
 
 import (
 	"context"
+	"database/sql"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -57,12 +58,7 @@ func TestNativeResourceRequestsRejectNonfiniteBeforeEffects(t *testing.T) {
 
 func TestNativeRetiredCapabilityRemainsPrivateWithMalformedSibling(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
-	err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
-		return system.SystemConfig.SetJSON("retired_rule_proxy_tokens", []byte(`["synthetic-retired-capability",42]`))
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	storeSettings(t, srv.Repo.DatabasePath(), `{"retired_rule_proxy_tokens":["synthetic-retired-capability",42]}`)
 	srv.Get("/api/profiles/default/subscriptions/missing/proxies?token=synthetic-retired-capability").WantStatus(401)
 }
 
@@ -90,11 +86,9 @@ func TestNativeMalformedConfigTokenFailsClosed(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
-			if err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, system *model.System) error {
-				return system.SystemConfig.SetJSON("config_token", []byte(tc.stored))
-			}); err != nil {
-				t.Fatal(err)
-			}
+			// Stored as a Python-era or damaged store holds it (O18 T1c:
+			// writers refuse a credential that is not text).
+			storeSettings(t, srv.Repo.DatabasePath(), `{"config_token":`+tc.stored+`}`)
 			path := route
 			if tc.token != "" {
 				path += "?token=" + url.QueryEscape(tc.token)
@@ -155,5 +149,21 @@ func TestSubscriptionWritesKeepRuntimeThroughPreflight(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// storeSettings writes system_config as given.
+func storeSettings(t *testing.T, path, settings string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("UPDATE fields SET value=?, revision=revision+1 WHERE scope='system' AND owner='' AND field='system_config'", settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'"); err != nil {
+		t.Fatal(err)
 	}
 }

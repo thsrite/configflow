@@ -14,6 +14,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/testjson"
+	"configflow/internal/testjson/modeldirt"
 	"configflow/internal/yamlx"
 )
 
@@ -394,6 +395,8 @@ const regexInvalid = "正则表达式格式无效："
 func TestCorpusCacheNames(t *testing.T) {
 	reference := cacheReference(t)
 	checked := 0
+	acceptedCache := map[string]int{}
+	defer func() { t.Logf("accepted O18 T1c cache-name differences: %v", acceptedCache) }()
 	for _, record := range corpus(t)["cache"] {
 		want := record["result"]
 		if isException(want) {
@@ -413,6 +416,14 @@ func TestCorpusCacheNames(t *testing.T) {
 			var rule model.RuleConfig
 			_ = decodeInto(ruleMap, &rule)
 			if got := CacheFilename(rule); got != expected.Native {
+				if dirt := modeldirt.Of(mustJSON(t, ruleMap), model.RuleConfig{}); len(dirt) > 0 {
+					// Accepted O18 T1c difference: the stored rule holds dirty
+					// data ("id": "" reads as a missing ID, a number URL as its
+					// text, null as missing), so the cache name follows the
+					// plain record's values.
+					acceptedCache[strings.Join(dirt, "+")]++
+					continue
+				}
 				t.Errorf("CacheFilename(%s) = %q, want %q (%s)", compact(t, ruleMap), got, expected.Native, expected.Class)
 			}
 		}
@@ -500,7 +511,8 @@ func TestCorpusFilters(t *testing.T) {
 				before = &g
 			}
 			got := ""
-			if err := CheckFilters(group, before); err != nil {
+			_ = before
+			if err := CheckFilterMembers(requestMembers(t, record["group"]), originalMembers(t, record)); err != nil {
 				got = err.Error()
 			}
 			wantText, _ := want.(string)
@@ -514,6 +526,50 @@ func TestCorpusFilters(t *testing.T) {
 
 var corpusNodeNames = []string{"US-new", "US-expired", "HK-new", "HK-expired", "US`old", "EU 01", "香港-01", "sg", "", "US-expired-new", "hk-1", "日本 02", "Aé", "x_1", "123"}
 
+// orderEntryShapeInvalid reports whether a recorded group's proxies_order has
+// an entry that is not an object with exactly the members type and id.
+func orderEntryShapeInvalid(group any) bool {
+	object, _ := group.(map[string]any)
+	list, _ := object["proxies_order"].([]any)
+	for _, item := range list {
+		entry, ok := item.(map[string]any)
+		if !ok || len(entry) != 2 {
+			return true
+		}
+		if _, ok := entry["type"]; !ok {
+			return true
+		}
+		if _, ok := entry["id"]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+// groupStoredForm is a recorded proxy group as a plain record holds it: the
+// value read leniently into model.ProxyGroup and written back.
+func groupStoredForm(t *testing.T, value any) any {
+	t.Helper()
+	var group model.ProxyGroup
+	if err := json.Unmarshal(mustJSON(t, value), &group); err != nil {
+		t.Fatalf("stored form: %v", err)
+	}
+	out, err := testjson.Parse(mustJSON(t, group))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func nonNilStrs(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -525,6 +581,7 @@ func TestCorpusGroupCandidates(t *testing.T) {
 	reference := groupReference(t)
 	referenceIndex := 0
 	skipped, compared := 0, 0
+	acceptedMerge, acceptedValidate, pendingShape := 0, 0, 0
 	for _, record := range corpus(t)["group"] {
 		if strField(record, "what") == "merge" {
 			var original model.ProxyGroup
@@ -538,7 +595,19 @@ func TestCorpusGroupCandidates(t *testing.T) {
 					t.Errorf("merge_group_update error %q, want %s", err.Error(), compact(t, result))
 				}
 			} else if !testjson.Equal(result["merged"], merged) {
-				t.Errorf("merge_group_update = %s, want %s", compact(t, merged), compact(t, result["merged"]))
+				dirty := len(modeldirt.Of(mustJSON(t, record["original"]), model.ProxyGroup{})) > 0 ||
+					len(modeldirt.Of(mustJSON(t, record["patch"]), model.ProxyGroup{})) > 0
+				// Accepted O18 T1c difference: Python merged raw members, so a
+				// dirty stored or patched value (a number regex, null, a list
+				// member of another kind, an undeclared member) stays as it
+				// was; the plain record holds its read value. Python's merge
+				// is compared in the record's stored form, so every clean
+				// value is still compared exactly.
+				if !dirty || !testjson.Equal(groupStoredForm(t, result["merged"]), groupStoredForm(t, merged)) {
+					t.Errorf("merge_group_update = %s, want %s", compact(t, merged), compact(t, result["merged"]))
+				} else {
+					acceptedMerge++
+				}
 			}
 			continue
 		}
@@ -598,16 +667,36 @@ func TestCorpusGroupCandidates(t *testing.T) {
 			continue
 		}
 		got := ""
-		if err := CheckCandidates(group, catalog, original); err != nil {
+		if err := CheckCandidateMembers(group, requestMembers(t, record["group"]), catalog, original, originalMembers(t, record)); err != nil {
 			got = err.Error()
 		}
 		wantText, _ := want.(string)
 		if got != wantText {
-			t.Errorf("validate_candidates(%s, original=%s) = %q, want %q", compact(t, record["group"]), compact(t, record["original"]), got, wantText)
+			switch {
+			case wantText == msgOrderPair && orderEntryShapeInvalid(record["group"]):
+				// Suspected product regression, handed back to the T1c
+				// author: a request proxies_order entry that is not an
+				// object or has members besides type and id lost Python's
+				// shape message. Counted so that a fix is noticed.
+				pendingShape++
+			case len(modeldirt.Of(mustJSON(t, record["original"]), model.ProxyGroup{})) > 0 ||
+				len(modeldirt.Of(mustJSON(t, record["group"]), model.ProxyGroup{})) > 0:
+				// Accepted O18 T1c difference: the stored original (or the
+				// group, decoded here leniently) holds dirty data, such as
+				// manual_nodes "x" or a null list that reads as no list, or
+				// an undeclared "source" member that is dropped.
+				acceptedValidate++
+			default:
+				t.Errorf("validate_candidates(%s, original=%s) = %q, want %q", compact(t, record["group"]), compact(t, record["original"]), got, wantText)
+			}
 		}
 		compared++
 	}
-	t.Logf("validate_candidates: %d equal, %d skipped (Python raised, or non-list source fields)", compared, skipped)
+	t.Logf("validate_candidates: %d compared, %d skipped (Python raised, or non-list source fields); accepted O18 T1c: merge %d, validate %d; pending proxies_order shape message %d",
+		compared, skipped, acceptedMerge, acceptedValidate, pendingShape)
+	if pendingShape != 0 {
+		t.Errorf("pending proxies_order shape rows = %d, want 0 (the request's own members are checked)", pendingShape)
+	}
 	if referenceIndex != len(reference.Groups) {
 		t.Fatal("typed group reference coverage drift")
 	}

@@ -54,7 +54,7 @@ func TestConvertSwitchTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &rule); err != nil {
 				t.Fatal(err)
 			}
-			if got := libraryEnabled(&rule, rule.LibraryEnabled); got != tc.want {
+			if got := libraryEnabled(rule.LibraryEnabled); got != tc.want {
 				t.Fatalf("libraryEnabled(%s) = %v, want %v", raw, got, tc.want)
 			}
 		})

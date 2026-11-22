@@ -281,7 +281,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize bool) (
 				return nil, err
 			}
 		}
-		profile.Mihomo.Fields.Delete("linux_gateway_restore_point")
+		profile.Mihomo.LinuxGatewayRestorePoint = model.Dynamic{}
 		if raw, present, err := recordMemberJSON(profile.Mihomo, "easytier"); err != nil {
 			return nil, err
 		} else if present {

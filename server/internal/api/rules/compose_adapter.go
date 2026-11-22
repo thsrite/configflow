@@ -27,11 +27,11 @@ func prepareLibrary(raw json.RawMessage) (record, error) {
 	}
 	library["name"] = stringJSON(strings.TrimSpace(name))
 	library["enabled"] = boolJSON(notFalse(library["enabled"]))
-	value, err := ruleRecord(library)
+	sent, err := json.Marshal(library)
 	if err != nil {
 		return nil, err
 	}
-	if err := rulefetch.ValidateContent(value, nil); err != nil {
+	if err := rulefetch.ValidateContentJSON(sent, nil); err != nil {
 		return nil, err
 	}
 	if defaultText(library, "source_type", "url") == "url" {

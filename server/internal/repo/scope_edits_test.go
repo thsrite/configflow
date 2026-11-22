@@ -24,7 +24,7 @@ func TestScopedRecordTransactions(t *testing.T) {
 					t.Fatal(err)
 				}
 				var mihomo struct {
-					Marker string `json:"marker"`
+					Marker string `json:"custom_config"`
 				}
 				if err := json.Unmarshal(raw, &mihomo); err != nil {
 					t.Fatal(err)
@@ -36,7 +36,7 @@ func TestScopedRecordTransactions(t *testing.T) {
 					t.Fatal(got)
 				}
 				if err := r.UpdateConfig(bg, id, func(_ context.Context, config *model.Config) error {
-					return config.Profile.SetJSON("mihomo", []byte(`{"marker":"external"}`))
+					return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"external"}`))
 				}); err != nil {
 					t.Fatal(err)
 				}
@@ -45,7 +45,7 @@ func TestScopedRecordTransactions(t *testing.T) {
 			cached := scope.configs["default"]
 			stop := errors.New("reject edit")
 			edit := func(_ context.Context, config *model.Config) error {
-				if err := config.Profile.SetJSON("mihomo", []byte(`{"marker":"edited"}`)); err != nil {
+				if err := config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"edited"}`)); err != nil {
 					return err
 				}
 				if kind == "single-failure" || kind == "shared-failure" {

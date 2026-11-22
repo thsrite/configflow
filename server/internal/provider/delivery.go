@@ -68,8 +68,8 @@ func CaptureDelivery(profileID string, main *yamlx.Node, profile *model.Profile)
 	names := map[string]bool{}
 	if profile != nil {
 		for _, group := range profile.ProxyGroups {
-			if group.Type == "chain" && model.SwitchEnabled(&group, "enabled", group.Enabled, true) {
-				if group.Name == "" || model.IssueUnder(model.Issues(group), "name") {
+			if group.Type == "chain" && model.Flag(group.Enabled, true) {
+				if group.Name == "" {
 					return nil, &InputError{Field: "proxy_groups.name"}
 				}
 				names[group.Name] = true
@@ -328,7 +328,7 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if sub.ID == "" || model.IssueUnder(model.Issues(sub), "id") {
+	if sub.ID == "" {
 		return nil, &InputError{Field: "subscription.id"}
 	}
 	cache, err := substore.LoadCache(ctx, sub.ID)
@@ -402,7 +402,7 @@ func PrepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 	return result, err
 }
 func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
-	if sub.ID == "" || model.IssueUnder(model.Issues(sub), "id") {
+	if sub.ID == "" {
 		return nil, &InputError{Field: "subscription.id"}
 	}
 	env := currentDeliveryEnv()

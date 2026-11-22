@@ -275,17 +275,13 @@ func (s *Service) routersUsing(ctx context.Context, ids []string) ([]model.HARou
 		for i := range document.Profiles {
 			profile := document.Profiles[i]
 			for _, router := range profile.Routers.Items {
-				raw, present, err := router.MemberJSON("dns_agent_id")
-				if err != nil {
-					return err
-				}
-				var id *string
-				if !present || json.Unmarshal(raw, &id) != nil || id == nil {
+				id := router.DNSAgentID
+				if id == "" {
 					continue
 				}
 				match := false
 				for _, target := range ids {
-					if *id == target {
+					if id == target {
 						match = true
 						break
 					}

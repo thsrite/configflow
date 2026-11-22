@@ -146,7 +146,13 @@ func seedSharedRaw(t *testing.T, r *repo.Repository, rawJSON string) context.Con
 	return ctx
 }
 
-func TestWrongTypedCandidateIdentitiesFailWithOffendingValue(t *testing.T) {
+// TestWrongTypedCandidateIdentitiesReadLeniently (O18 T1c; was
+// TestWrongTypedCandidateIdentitiesFailWithOffendingValue): shared resources
+// and cached nodes are plain records, so stored identities of the wrong type
+// read with the stored-data rules (a number as its text, anything else as
+// empty) instead of failing the whole latency run with Python's ValueError;
+// the subscription cache is a data file and still fails with it.
+func TestWrongTypedCandidateIdentitiesReadLeniently(t *testing.T) {
 	tests := []struct {
 		name      string
 		sharedRaw string
@@ -227,13 +233,16 @@ func TestWrongTypedCandidateIdentitiesFailWithOffendingValue(t *testing.T) {
 			defer restore()
 
 			_, err = CollectCandidateNodes(ctx)
-			var ve *ValueError
-			if !errors.As(err, &ve) || ve.Message != tt.want {
-				t.Fatalf("CollectCandidateNodes: want ValueError %q, got %v", tt.want, err)
+			if tt.cacheRaw != "" {
+				// The subscription cache is a data file, checked as read.
+				var ve *ValueError
+				if !errors.As(err, &ve) || ve.Message != tt.want {
+					t.Fatalf("CollectCandidateNodes: want ValueError %q, got %v", tt.want, err)
+				}
+				return
 			}
-			_, err = RunLatencyTests(ctx, nil, nil)
-			if !errors.As(err, &ve) || ve.Message != tt.want {
-				t.Fatalf("RunLatencyTests: want ValueError %q, got %v", tt.want, err)
+			if err != nil {
+				t.Fatalf("CollectCandidateNodes: Python's %q is no longer raised, got %v", tt.want, err)
 			}
 		})
 	}
@@ -329,7 +338,7 @@ func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
 	// Seed SystemConfig with an extra unknown member and verify SaveDNSConfigJSON preserves it.
 	err = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		sys.SystemConfig.ServerDomain = "panel.example.test"
-		return sys.SystemConfig.Fields.Set("custom_extra", json.RawMessage(`"kept"`))
+		return markerSet(&sys.SystemConfig.GitHubProxyDomain, json.RawMessage(`"kept"`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -343,7 +352,7 @@ func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	extra, hasExtra := sysAfter.SystemConfig.Fields.Get("custom_extra")
+	extra, hasExtra := markerGet(json.RawMessage(sysAfter.SystemConfig.GitHubProxyDomain))
 	if sysAfter.SystemConfig.ServerDomain != "panel.example.test" || !hasExtra || string(extra) != `"kept"` {
 		t.Fatalf("SaveDNSConfigJSON clobbered SystemConfig fields: domain=%q extra=%s", sysAfter.SystemConfig.ServerDomain, extra)
 	}

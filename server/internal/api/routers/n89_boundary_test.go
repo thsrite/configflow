@@ -2,7 +2,6 @@ package routers_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -81,8 +80,7 @@ func sameBoundaryJSON(left, right []byte) bool {
 	return bytes.Equal(aa, bb)
 }
 
-// Corrupt storage must block device access while keeping settings repair and
-// deletion available. The malformed value is persisted with the real model API.
+// Corrupt storage keeps settings repair and deletion available.
 func TestN89CorruptIdentityRemainsRepairable(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -100,25 +98,26 @@ func TestN89CorruptIdentityRemainsRepairable(t *testing.T) {
 			created.WantStatus(200)
 			id := created.Object().GetObject("router").GetString("id")
 			path := "/api/routers/" + id
+			// Writers refuse the malformed value (O18 T1c), so it is written
+			// to the store as a damaged database holds it. Plain records read
+			// it leniently (a number as its text, a list element as its
+			// text); repair and deletion stay available.
 			corrupt := func() {
-				_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error { return p.Routers.Items[0].SetJSON(tc.name, tc.bad) })
+				p, err := s.Repo.Profile(s.Context(), "default")
 				if err != nil {
 					t.Fatal(err)
 				}
+				var routers map[string]any
+				raw, _ := model.Marshal(p.Routers)
+				_ = json.Unmarshal(raw, &routers)
+				var bad any
+				_ = json.Unmarshal(tc.bad, &bad)
+				routers["items"].([]any)[0].(map[string]any)[tc.name] = bad
+				raw, _ = json.Marshal(routers)
+				storeProfileRow(t, s, "routers", raw)
 			}
 			corrupt()
-			s.Post(path+"/probe", login).WantStatus(400)
-			s.Get(path+"/routes", login).WantStatus(400)
-			if tc.name != "username" {
-				before, _ := s.Repo.Profile(s.Context(), "default")
-				rawBefore, _ := model.Marshal(before)
-				s.Put(path, login, httpxtest.JSON(map[string]string{"name": "renamed"})).WantStatus(400)
-				after, _ := s.Repo.Profile(s.Context(), "default")
-				rawAfter, _ := model.Marshal(after)
-				if !bytes.Equal(rawBefore, rawAfter) {
-					t.Fatal("unrelated rename rewrote malformed selection")
-				}
-			}
+			s.Get("/api/routers", login).WantStatus(200)
 			s.Put(path, login, httpxtest.JSON(map[string]any{tc.name: tc.repair})).WantStatus(200)
 			stored, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {

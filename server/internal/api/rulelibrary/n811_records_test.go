@@ -44,10 +44,10 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 		return subscriptions, backup
 	}
 	beforeSubscriptions, beforeBackup := read()
-	for _, raw := range [][]byte{beforeSubscriptions, beforeBackup} {
-		if !bytes.Contains(raw, []byte("<")) || !bytes.Contains(raw, []byte("1e+02")) {
-			t.Fatalf("fixture lost original text: %s", raw)
-		}
+	// Undeclared members are dropped by the plain records (O18 T1c); the
+	// declared values must stay unchanged by edits of other sections.
+	if bytes.Contains(beforeSubscriptions, []byte("opaque")) || bytes.Contains(beforeBackup, []byte("opaque")) {
+		t.Fatalf("undeclared member kept: %s %s", beforeSubscriptions, beforeBackup)
 	}
 	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
 		return put(catalog, "rule_library", []record{recordJSON(t, `{"id":"record","name":"Record","source_type":"content","content":"+.records.example\n","behavior":"domain","format":"text"}`)})

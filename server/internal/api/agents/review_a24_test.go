@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"errors"
@@ -121,14 +122,15 @@ func TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials(t *testing.T) {
 // TestReviewA24TargetsIgnoreUnrelatedLegacySettings checks normalized legacy settings.
 func TestReviewA24TargetsIgnoreUnrelatedLegacySettings(t *testing.T) {
 	w := newClientWorldSetup(t, func(s *httpxtest.Server) {
-		if _, err := s.Repo.UpdateProfile(s.Context(), "office", func(_ context.Context, profile *model.Profile) error {
-			settings := parseJSONMap(t, mustRawJSON(t, profile.DomainDiscovery))
-			settings["history"] = []any{"old entry", nil}
-			settings["region_probe_port"] = "17999"
-			return profile.SetJSON("domain_discovery", mustRawJSON(t, settings))
-		}); err != nil {
+		profile, err := s.Repo.Profile(s.Context(), "office")
+		if err != nil {
 			t.Fatal(err)
 		}
+		settings := parseJSONMap(t, mustRawJSON(t, profile.DomainDiscovery))
+		settings["history"] = []any{"old entry", nil}
+		settings["region_probe_port"] = "17999"
+		// Hand-edited legacy values the plain record refuses as input.
+		repotest.WriteRow(t, s.Repo.DatabasePath(), "profile", "office", "domain_discovery", mustRawJSON(t, settings))
 	})
 	w.call("GET", "/api/agents/m/mihomo/rule-targets", nil, 200, "admin")
 }

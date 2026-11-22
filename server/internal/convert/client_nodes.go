@@ -1,6 +1,7 @@
 package convert
 
 import (
+	"configflow/internal/subs"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 type ClientSource struct {
 	Node   model.Node
 	Params *yamlx.Node
+	// WrongText is a parsed URI member of the wrong JSON type (subs.WrongText).
+	WrongText *subs.WrongText
 }
 
 // ClientCollaborators are temporary typed boundaries to N8-9 subs/rules.
@@ -46,9 +49,6 @@ type clientNode struct {
 
 func resolveClientNode(input model.Node) (*clientNode, error) {
 	node := input
-	if err := clientNodeText(input, "name"); err != nil {
-		return nil, err
-	}
 	var params *yamlx.Node
 	var err error
 	if input.ProxyString != nil {
@@ -77,27 +77,30 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 		if input.ID != "" {
 			node.ID = input.ID
 		}
+		// The parsed proxy is text the user gave, not a stored record: its
+		// members are checked as parsed (the typed node already read a value
+		// of the wrong type as empty).
+		if wrong := nodes[0].WrongText; wrong != nil {
+			return nil, fmt.Errorf(msgMihomoStoredText, kindNode, node.ID, wrong.Member, wrong.Value)
+		}
+		if err := parsedNodeText(params, node.ID, "type", "server"); err != nil {
+			return nil, err
+		}
 	} else {
 		params, err = node.Params.Node()
 		if err != nil {
 			return nil, err
 		}
 	}
-	if err := clientNodeText(node, "type", "server"); err != nil {
-		return nil, err
-	}
-	if err := clientProtocolType(node); err != nil {
-		return nil, err
-	}
 	options, err := decodeClientOptions(params)
 	if err != nil {
 		return nil, err
 	}
-	port := fmt.Sprint(int64(node.Port))
+	port := fmt.Sprint(model.IntValue(node.Port))
 	// Valid number spellings are retained under R2; invalid fields use R5 zero.
 	if !model.IssueUnder(model.Issues(node), "port") {
 		// Only the port member is read back (O10 R9).
-		raw, present, err := node.MemberJSON("port")
+		raw, present, err := model.EncodeMember(&node, "port")
 		if err != nil {
 			return nil, err
 		}
@@ -161,22 +164,6 @@ func sanitizeClientName(s string) string {
 		return s
 	}
 	return strings.TrimSpace(sanitizeClientField(s))
-}
-
-// clientProtocolType keeps enum discrimination strict while model.String owns
-// lossless text for names, addresses and protocol options. Null is absent.
-func clientProtocolType(node model.Node) error {
-	raw, present, err := node.MemberJSON("type")
-	if err != nil {
-		return err
-	}
-	if !present || string(raw) == "null" {
-		return nil
-	}
-	if err := identityString(raw, "type"); err != nil {
-		return fmt.Errorf(msgMihomoStoredText, kindNode, node.ID, "type", raw)
-	}
-	return nil
 }
 
 func clientQuantity(value *clientText) bool {
@@ -744,11 +731,23 @@ func clientKeepalive(values ...*clientText) string {
 	return ""
 }
 
-func clientNodeText(node model.Node, members ...string) error {
+// parsedNodeText refuses a parsed proxy whose member is present but neither
+// text nor a number (numbers read as their text), as Python refused it.
+func parsedNodeText(params *yamlx.Node, id string, members ...string) error {
 	for _, member := range members {
-		if err := storedText(&node, kindNode, node.ID, member); err != nil {
+		value := yamlx.Get(params, member)
+		if value == nil {
+			continue
+		}
+		switch value.ShortTag() {
+		case "!!str", "!!int", "!!float":
+			continue
+		}
+		raw, err := yamlx.ToJSON(value)
+		if err != nil {
 			return err
 		}
+		return fmt.Errorf(msgMihomoStoredText, kindNode, id, member, raw)
 	}
 	return nil
 }

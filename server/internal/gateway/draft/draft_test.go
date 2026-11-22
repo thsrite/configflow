@@ -34,8 +34,8 @@ func draftService(t *testing.T) *Service {
 	}
 	_, err = r.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
 		p.Mihomo.CustomConfig = "mixed-port: 7890\n"
-		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":false,"rule_set_ids":[]}`))
-		p.Mihomo.Fields.Set("future", json.RawMessage(`[{"nested":null}]`))
+		p.Mihomo.LinuxGateway.UnmarshalJSON(json.RawMessage(`{"enabled":false,"rule_set_ids":[]}`))
+		markerSet(&p.Loon.CustomConfig, json.RawMessage(`[{"nested":null}]`))
 		return p.SetJSON("oxidns", json.RawMessage(`{"custom_config":"plugins: []\n","extra":7}`))
 	})
 	if err != nil {
@@ -155,7 +155,7 @@ func TestDraftGuardAtomicityAndUnknownMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, _, _ := s.Repository.PublishConfig(ctx, "default", true)
-	savedPoint, _ := current.Profile.Mihomo.Fields.Get(RestoreKey)
+	savedPoint, _ := markerGet(current.Profile.Mihomo.LinuxGatewayRestorePoint.JSON())
 	var point map[string]json.RawMessage
 	if err := json.Unmarshal(savedPoint, &point); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestDraftGuardAtomicityAndUnknownMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, _, _ = s.Repository.PublishConfig(ctx, "default", true)
-	afterPoint, _ := current.Profile.Mihomo.Fields.Get(RestoreKey)
+	afterPoint, _ := markerGet(current.Profile.Mihomo.LinuxGatewayRestorePoint.JSON())
 	if !testjson.Equal(savedPoint, afterPoint) {
 		t.Fatal("first recovery replaced")
 	}
@@ -187,7 +187,7 @@ func TestDraftSessionEvidenceAndPrivacy(t *testing.T) {
 	// Turning on the gateway initially needs no legacy context; once it is on,
 	// malformed wizard evidence cannot be mistaken for an ordinary profile.
 	_, err := s.Repository.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
-		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":true,"rule_set_ids":[]}`))
+		p.Mihomo.LinuxGateway.UnmarshalJSON(json.RawMessage(`{"enabled":true,"rule_set_ids":[]}`))
 		return nil
 	})
 	if err != nil {
@@ -321,7 +321,7 @@ func TestBackupRuntimeDoesNotInvalidateAndConcurrentSaveConflicts(t *testing.T) 
 	op.Body["preview_token"] = encode(p.PreviewToken)
 	op.Preview = false
 	err = s.Repository.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
-		sys.Backup.Fields.Set("last_backup", json.RawMessage(`"runtime-only"`))
+		markerSet(&sys.Backup.WebDAVURL, json.RawMessage(`"runtime-only"`))
 		return nil
 	})
 	if err != nil {

@@ -67,8 +67,8 @@ func SettingsOf(config *model.Config) (Settings, error) {
 	if config == nil || config.Profile == nil {
 		return NormalizeSettings(nil)
 	}
-	raw, present := config.Profile.Mihomo.Fields.Get("linux_gateway")
-	if !present {
+	raw := config.Profile.Mihomo.LinuxGateway.JSON()
+	if raw == nil {
 		return NormalizeSettings(nil)
 	}
 	return NormalizeSettings(raw)
@@ -201,7 +201,7 @@ func (c *Config) withSettings(s Settings) *Config {
 		Enabled    bool     `json:"enabled"`
 		RuleSetIDs []string `json:"rule_set_ids"`
 	}{Enabled: s.Enabled, RuleSetIDs: append([]string{}, s.RuleSetIDs...)})
-	_ = cloned.Mihomo.Fields.Set("linux_gateway", payload)
+	_ = cloned.Mihomo.LinuxGateway.UnmarshalJSON(payload)
 	next.profile = &cloned
 	return &next
 }

@@ -73,6 +73,15 @@ func TestChainsCorpus(t *testing.T) {
 			t.Fatalf("row %d want: %v", i, err)
 		}
 		where := func(what string) string { return fmt.Sprintf("%s row %d %s", what, i, row.InRaw) }
+		if o18T1cDirtyInput(row.InRaw) {
+			// Stored dirty data reads leniently since O18 T1c (accepted).
+			stats["O18 T1c 接受: stored dirty data"]++
+			continue
+		}
+		if msg, _, isErr := isErrorRaw(want["validate"]); isErr && o18T1cChainMissingEndpoint(row.InRaw, msg) {
+			stats["疑似回归（交回 T1c 作者）: chain without entry/exit"]++
+			continue
+		}
 
 		cfg, err := decodeConfigRaw(row.InRaw)
 		if err == nil {

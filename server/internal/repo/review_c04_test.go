@@ -81,7 +81,8 @@ func TestSaveRouterWithNonStringExpectedID(t *testing.T) {
 	}
 	// A non-string id on a profile that does not exist: the profile is looked up first.
 	wantError(t, r.SaveRouterSettingsJSON(bg, "ghost", withID(5), nil), ErrNotFound, "ghost")
-	wantJSONEqual(t, must(r.Profile(bg, "default"))(t).Routers.Items[0], router)
+	// Compared as the plain router record holds it (O18 T1c).
+	wantJSONEqual(t, must(r.Profile(bg, "default"))(t).Routers.Items[0], decodeJSON[model.Router](t, string(router)))
 }
 
 // ImportClientProfileRecord: a nil result from the builder is refused and

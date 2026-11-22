@@ -106,8 +106,9 @@ func TestGroupMutationReferencesAndUnknowns(t *testing.T) {
 	}
 	groupRaw, _ := json.Marshal(p.ProxyGroups[0])
 	groupParsed, _ := testjson.Parse(groupRaw)
-	keepVal, _ := testjson.Path(groupParsed, "future", "keep")
-	if keepVal != true || p.RuleConfigs[0].Policy == nil || *p.RuleConfigs[0].Policy != "Renamed" {
+	// Undeclared group members are dropped (O18 T1c).
+	_, kept := testjson.Path(groupParsed, "future", "keep")
+	if kept || p.RuleConfigs[0].Policy == nil || *p.RuleConfigs[0].Policy != "Renamed" {
 		t.Fatal("rename lost unknown data or policy reference")
 	}
 	s.Post("/api/proxy-groups/reorder", auth, httpxtest.JSON(map[string]any{"groups": []any{map[string]any{"id": "select", "name": "display value"}}})).WantStatus(200)

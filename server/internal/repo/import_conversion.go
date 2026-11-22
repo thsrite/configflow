@@ -703,7 +703,9 @@ func (r *Repository) importOldProfile(document *model.Document, source importPro
 			return err
 		}
 		if !present {
-			return validationError(msgLegacyRuleName)
+			// An empty or null name is not written by the plain library
+			// record (O18 T1c); Python keyed it as None.
+			raw = json.RawMessage("null")
 		}
 		var item model.RuleLibraryItem
 		if err := json.Unmarshal(catalogs.records[kindRuleLibrary][remaps[kindRuleLibrary][original.ID]], &item); err != nil {
@@ -949,7 +951,7 @@ func scopeImportedDialers(profiles []importProfile) error {
 		}
 		for i := range config.Nodes {
 			node := &config.Nodes[i]
-			if !model.SwitchEnabled(node, "enabled", node.Enabled, true) {
+			if !model.Flag(node.Enabled, true) {
 				continue
 			}
 			raw, err := convert.NodeDialer(*node)
@@ -969,12 +971,12 @@ func scopeImportedDialers(profiles []importProfile) error {
 			matches := []edge{}
 			for j := range config.Nodes {
 				item := &config.Nodes[j]
-				if item.Name == target && model.SwitchEnabled(item, "enabled", item.Enabled, true) {
+				if item.Name == target && model.Flag(item.Enabled, true) {
 					matches = append(matches, edge{node, item, "node", target})
 				}
 			}
 			for _, item := range config.Profile.ProxyGroups {
-				if item.Name == target && model.SwitchEnabled(&item, "enabled", item.Enabled, true) {
+				if item.Name == target && model.Flag(item.Enabled, true) {
 					matches = append(matches, edge{node, nil, "group", target})
 				}
 			}
@@ -1014,7 +1016,7 @@ func scopeImportedDialers(profiles []importProfile) error {
 			}
 			usedNames[name] = true
 			node.Name = name
-			if model.SwitchEnabled(node, "enabled", node.Enabled, true) {
+			if model.Flag(node.Enabled, true) {
 				renamed[old] = name
 			}
 		}

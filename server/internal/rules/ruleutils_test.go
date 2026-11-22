@@ -161,14 +161,23 @@ func TestRuleCacheReadPathLegacyNameCaches(t *testing.T) {
 	}
 }
 
-func TestLegacyIdentityCacheDoesNotTreatR5CoercionAsOwnership(t *testing.T) {
+// TestLegacyIdentityCacheStoredNumberURL: library items are plain records
+// (O18 T1c), so a URL stored as the number 5 reads as the text "5" and is the
+// same declaration as a proposed "5"; the old identity cache is reused. R5
+// kept the number and refused that ownership (accepted O18 T1c difference).
+func TestLegacyIdentityCacheStoredNumberURL(t *testing.T) {
 	root := t.TempDir()
 	var current model.RuleLibraryItem
 	_ = jsondecode.Unmarshal([]byte(`{"id":"r","name":"Synthetic","url":5,"source_type":"url","behavior":"domain"}`), &current)
 	var proposed model.RuleConfig
 	_ = jsondecode.Unmarshal([]byte(`{"id":"r","name":"Synthetic","url":"5","source_type":"url","behavior":"domain"}`), &proposed)
 	old := writeCache(t, root, "by-id/"+hexOf("r")+".list", "old.example")
-	if got := CacheReadPath(proposed, []model.RuleLibraryItem{current}, []model.RuleLibraryItem{current}, root); got == old {
-		t.Fatal("R5-equivalent URL claimed old identity bytes")
+	if got := CacheReadPath(proposed, []model.RuleLibraryItem{current}, []model.RuleLibraryItem{current}, root); got != old {
+		t.Fatalf("stored number URL: read path %q, want the identity cache %q", got, old)
+	}
+	var changed model.RuleConfig
+	_ = jsondecode.Unmarshal([]byte(`{"id":"r","name":"Synthetic","url":"6","source_type":"url","behavior":"domain"}`), &changed)
+	if got := CacheReadPath(changed, []model.RuleLibraryItem{current}, []model.RuleLibraryItem{current}, root); got == old {
+		t.Fatal("a different URL claimed the old identity cache")
 	}
 }

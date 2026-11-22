@@ -909,8 +909,3 @@ func BuildProviderHealthForTest(record model.Subscription) (*yamlx.Node, error) 
 	}
 	return providerHealthNode(record.HealthCheck, record.HealthCheckURL, env)
 }
-
-// ValidateGenerationRulesForTest exposes validateRuleIdentities on decoded rule_configs.
-func ValidateGenerationRulesForTest(rules []model.RuleConfig) error {
-	return validateRuleIdentities(rules)
-}

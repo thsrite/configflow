@@ -3,7 +3,9 @@ package routers_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -33,15 +35,48 @@ func saveFixtureConfig(t *testing.T, s *httpxtest.Server, cfg any) {
 	if err = json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
+	stored := map[string]json.RawMessage{}
 	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
 		for key, value := range fields {
 			if err := current.SetJSON(key, value); err != nil {
-				return err
+				// Malformed stored records are input no writer accepts
+				// (O18 T1c); the fixture writes them to the store as a
+				// Python-era database would hold them.
+				var typed *model.MemberTypeError
+				if !errors.As(err, &typed) {
+					return err
+				}
+				stored[key] = value
 			}
 		}
 		return nil
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range stored {
+		storeProfileRow(t, s, key, value)
+	}
+}
+
+// storeProfileRow writes one row of the default profile as given.
+func storeProfileRow(t *testing.T, s *httpxtest.Server, key string, value json.RawMessage) {
+	t.Helper()
+	db, err := sql.Open("sqlite", s.Repo.DatabasePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	result, err := db.Exec("UPDATE fields SET value=?, revision=revision+1 WHERE scope='profile' AND owner='default' AND field=?", string(value), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		if _, err := db.Exec("INSERT INTO fields(scope, owner, field, position, value, revision) VALUES('profile', 'default', ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM fields WHERE scope='profile' AND owner='default'), ?, 1)", key, string(value)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'"); err != nil {
 		t.Fatal(err)
 	}
 }

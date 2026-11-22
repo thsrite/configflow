@@ -78,7 +78,7 @@ func IPTargets(library []model.RuleLibraryItem, deps IPDeps) ([]IPTarget, error)
 				targets = []string{"proxy"}
 			}
 		}
-		result = append(result, IPTarget{ID: info.ID, Name: info.Name, Behavior: info.Behavior, Active: len(effective) > 0 && enabledResource(&item, item.Enabled), Targets: targets})
+		result = append(result, IPTarget{ID: info.ID, Name: info.Name, Behavior: info.Behavior, Active: len(effective) > 0 && enabledResource(item.Enabled), Targets: targets})
 	}
 	return result, nil
 }

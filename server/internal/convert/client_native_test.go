@@ -184,28 +184,6 @@ func TestTypedClientR5Families(t *testing.T) {
 	}
 }
 
-func TestTypedClientWrongTextRejected(t *testing.T) {
-	for _, field := range []string{"name", "type", "server"} {
-		t.Run(field, func(t *testing.T) {
-			source := `{"id":"n","name":"N","type":"http","server":"example.com","port":80}`
-			source = strings.Replace(source, `"`+field+`":"`+map[string]string{"name": "N", "type": "http", "server": "example.com"}[field]+`"`, `"`+field+`":[]`, 1)
-			var node model.Node
-			if err := json.Unmarshal([]byte(source), &node); err != nil {
-				t.Fatal(err)
-			}
-			line, section, err := SurgeNode(node)
-			want := fmt.Sprintf(msgMihomoStoredText, kindNode, "n", field, "[]")
-			if line != "" || section != "" || err == nil || err.Error() != want {
-				t.Fatal(line, section, err)
-			}
-			line, err = LoonNode(node)
-			if line != "" || err == nil || err.Error() != want {
-				t.Fatal(line, err)
-			}
-		})
-	}
-}
-
 func TestTypedClientQuantityKeepsExtremeNonzero(t *testing.T) {
 	for _, text := range []string{"1e1000000000", "1e-1000000000", "1e999999999999999999999999", "1e-400"} {
 		value := clientText(text)
@@ -312,7 +290,7 @@ func TestTypedClientSurgeBuiltinsAreNotManualNodes(t *testing.T) {
 	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{ValidateRules: func(*model.Config, []string, string) error { return nil }}))
 	for _, id := range []string{"DIRECT", "REJECT"} {
 		t.Run(id, func(t *testing.T) {
-			config := &model.Config{Profile: &model.Profile{ProxyGroups: []model.ProxyGroup{{ID: "g", Name: "G", Type: "select", ManualNodes: &[]string{id}, ProxiesOrder: &[]model.ResourceRef{{Type: "node", ID: id}}}}}, Nodes: []model.Node{{ID: id, Name: "N", Type: "http", Server: "example.com", Port: 80}}}
+			config := &model.Config{Profile: &model.Profile{ProxyGroups: []model.ProxyGroup{{ID: "g", Name: "G", Type: "select", ManualNodes: &[]string{id}, ProxiesOrder: &[]model.ResourceRef{{Type: "node", ID: id}}}}}, Nodes: []model.Node{{ID: id, Name: "N", Type: "http", Server: "example.com", Port: model.IntPtr(80)}}}
 			out, err := SurgeConfig(context.Background(), config, "")
 			if err != nil || strings.Contains(out, "N = http") || !strings.Contains(out, "G = select, "+id) {
 				t.Fatal(out, err)

@@ -85,30 +85,33 @@ func TestValidatePoliciesExplicitNullAndNonString(t *testing.T) {
 			raw:       `{"id":"proxy","itemType":"ruleset","policy":null}`,
 			available: []string{"PROXY", "null"},
 			format:    "mihomo",
-			wantErr:   "规则 proxy 引用了不存在或未启用的策略 'null'，请修改策略引用",
+			wantErr:   "规则 proxy 引用了不存在或未启用的策略 ''，请修改策略引用",
 		},
 		{
 			name:      "explicit null rule policy renders null",
 			raw:       `{"id":"r2","itemType":"rule","policy":null}`,
 			available: []string{"null"},
 			format:    "mihomo",
-			wantErr:   "规则 r2 引用了不存在或未启用的策略 'null'，请修改策略引用",
+			wantErr:   "规则 r2 引用了不存在或未启用的策略 ''，请修改策略引用",
 		},
 		{
 			name:      "explicit numeric policy rejected even if string name exists",
 			raw:       `{"id":"num","itemType":"rule","policy":5}`,
 			available: []string{"5"},
 			format:    "mihomo",
-			wantErr:   "规则 num 引用了不存在或未启用的策略 '5'，请修改策略引用",
+			wantErr:   "规则 num 引用了不存在或未启用的策略 ''，请修改策略引用",
 		},
 		{
 			name:      "explicit boolean policy renders JSON text",
 			raw:       `{"id":"flag","itemType":"ruleset","policy":true}`,
 			available: []string{"PROXY", "true"},
 			format:    "mihomo",
-			wantErr:   "规则 flag 引用了不存在或未启用的策略 'true'，请修改策略引用",
+			wantErr:   "规则 flag 引用了不存在或未启用的策略 ''，请修改策略引用",
 		},
 	}
+	// A policy stored as null or with another JSON type is still refused
+	// (O18 T1c): the plain rule record holds it as an empty reference, shown
+	// as ''.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var rule model.RuleConfig

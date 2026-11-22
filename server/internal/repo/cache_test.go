@@ -64,11 +64,12 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 		if err := shared.SetJSON("nodes", json.RawMessage(`[{"id": "n", "name": "Node"}]`)); err != nil {
 			return err
 		}
-		if err := shared.SetJSON("subscription_aggregations", json.RawMessage(`[{"id": "a", "name": {"display": ["Aggregate"]}, "nodes": ["n"]}]`)); err != nil {
-			return err
-		}
-		return shared.SetJSON("rule_library", json.RawMessage(`[{"id": "r", "name": "Rule", "enabled": {"custom": []}}]`))
+		return nil
 	}))
+	storeSharedRows(t, r, map[string]string{
+		"subscription_aggregations": `[{"id": "a", "name": {"display": ["Aggregate"]}, "nodes": ["n"]}]`,
+		"rule_library":              `[{"id": "r", "name": "Rule", "enabled": {"custom": []}}]`,
+	})
 	_, _, err := r.SaveProfileFieldsJSON(bg, "default", json.RawMessage(`{
 		"proxy_groups": [{"id": "g", "name": "Group", "type": "select", "manual_nodes": ["n"]}],
 		"rule_configs": [{"id": "rule", "itemType": "ruleset", "library_rule_id": "r"}]}`), nil)
@@ -76,7 +77,7 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 	before := must(r.ExportAllJSON(bg, false))(t)
 
 	sys := must(r.System(bg))(t)
-	noError(t, sys.SystemConfig.Fields.Set("surprise", json.RawMessage(`[]`)))
+	noError(t, markerSet(&sys.SystemConfig.GitHubProxyDomain, json.RawMessage(`[]`)))
 	sh := must(r.CloneShared(bg))(t)
 	sh.Nodes[0].Name = "Changed"
 	prof := must(r.CloneProfile(bg, "default"))(t)
@@ -99,7 +100,8 @@ func TestPublicResultsCannotMutateCachedDocument(t *testing.T) {
 	list[0].Name = "Changed"
 	resolved := must(r.Config(bg, "default", nil))(t)
 	resolved.Nodes[0].Name = "Changed"
-	noError(t, resolved.Profile.RuleConfigs[0].Fields.Set("library_enabled", json.RawMessage(`{"custom":["Changed"]}`)))
+	resolved.Profile.RuleConfigs = append([]model.RuleConfig(nil), resolved.Profile.RuleConfigs...)
+	resolved.Profile.RuleConfigs[0].Remark = "Changed"
 	usages := must(r.ResourceUsage(bg, "nodes", "n"))(t)
 	// The aggregation's name is stored with a wrong type: usages read it under
 	// R5 (zero value, so the id is shown) instead of passing the object on.
@@ -205,7 +207,7 @@ func TestInvalidWriteAndCallbackFailureDoNotPoisonCache(t *testing.T) {
 
 	failure := errors.New("callback failed")
 	err = r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
-		if setErr := system.SystemConfig.Fields.Set("should_not_persist", json.RawMessage(`true`)); setErr != nil {
+		if setErr := markerSet(&system.SystemConfig.GitHubProxyDomain, json.RawMessage(`true`)); setErr != nil {
 			return setErr
 		}
 		return failure
@@ -272,14 +274,14 @@ func TestSeparateRepositoryCachesObserveConcurrentCommits(t *testing.T) {
 			for range 5 {
 				err := repository.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
 					var count int64
-					if raw, ok := system.SystemConfig.Fields.Get("counter"); ok {
+					if raw, ok := markerGet(json.RawMessage(system.SystemConfig.GitHubProxyDomain)); ok {
 						_ = json.Unmarshal(raw, &count)
 					}
 					raw, err := json.Marshal(count + 1)
 					if err != nil {
 						return err
 					}
-					return system.SystemConfig.Fields.Set("counter", raw)
+					return markerSet(&system.SystemConfig.GitHubProxyDomain, raw)
 				})
 				if err == nil {
 					_, err = repository.System(bg)
@@ -296,7 +298,7 @@ func TestSeparateRepositoryCachesObserveConcurrentCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, repo := range []*Repository{r, other} {
-		raw, _ := must(repo.System(bg))(t).SystemConfig.Fields.Get("counter")
+		raw, _ := markerGet(json.RawMessage(must(repo.System(bg))(t).SystemConfig.GitHubProxyDomain))
 		wantJSONEqual(t, raw, 10)
 	}
 }

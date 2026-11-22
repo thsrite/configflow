@@ -37,7 +37,7 @@ func subscriptionRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tas
 	var rows []*tasks.Task
 	for _, sub := range shared.Subscriptions {
 		key := "subscription:" + sub.ID
-		enabled := model.SwitchEnabled(&sub, "enabled", sub.Enabled, true) && strings.TrimSpace(sub.URL) != ""
+		enabled := model.Flag(sub.Enabled, true) && strings.TrimSpace(sub.URL) != ""
 		history, err := tasks.ProjectHistory(statuses.Entry(key))
 		if err != nil {
 			return nil, err
@@ -543,7 +543,7 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 		t.Fatal("empty")
 	}
 	_, err := f.srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, cfg *model.Profile) error {
-		_ = cfg.Loon.Fields.Set("custom_notification_test", json.RawMessage(`"changed"`))
+		_ = markerSet(&cfg.Loon.CustomConfig, json.RawMessage(`"changed"`))
 		return nil
 	})
 	if err != nil {

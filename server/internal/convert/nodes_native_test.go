@@ -64,7 +64,7 @@ func TestMihomoQuotedPort(t *testing.T) {
 	for _, literal := range []string{`"443"`, `"00443"`} {
 		t.Run(literal, func(t *testing.T) {
 			var node model.Node
-			if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":`+literal+`}`), &node); err != nil || node.Port != 443 || model.IssueUnder(model.Issues(node), "port") {
+			if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":`+literal+`}`), &node); err != nil || model.IntValue(node.Port) != 443 || model.IssueUnder(model.Issues(node), "port") {
 				t.Fatalf("port lost during typed decode: %d %v", node.Port, err)
 			}
 			before, err := model.Marshal(node)
@@ -364,7 +364,9 @@ func TestNativeNodeR2AndOverlayOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := yamlx.ToJSON(proxy)
-	if err != nil || string(data) != `{"name":"inner","type":"http","server":"example.com","port":80.0,"password":"0o17"}` {
+	// The stored port 80.0 reads as 80 and is written as such (plain
+	// records, O18 T1c; R2 kept the stored spelling).
+	if err != nil || string(data) != `{"name":"inner","type":"http","server":"example.com","port":80,"password":"0o17"}` {
 		t.Fatalf("%s %v", data, err)
 	}
 }

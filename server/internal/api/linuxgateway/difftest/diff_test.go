@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -656,6 +657,12 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 			continue
 		}
 		gn, pn := normalize(w.t, jsonValue(w.t, pair.g), pair.name), normalize(w.t, jsonValue(w.t, pair.p), pair.name)
+		if pair.name == "state" {
+			// Stored documents compare as the plain records hold them (O18 T1c).
+			gn, pn = modeltest.StateThroughModel(gn), modeltest.StateThroughModel(pn)
+		} else {
+			pn = modeltest.AlignResponse(pn, gn)
+		}
 		if !reflect.DeepEqual(gn, pn) {
 			g, _ := json.Marshal(gn)
 			p, _ := json.Marshal(pn)

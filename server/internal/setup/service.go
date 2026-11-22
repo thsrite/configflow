@@ -120,7 +120,7 @@ func (s *Service) Create(ctx context.Context, raw json.RawMessage) (json.RawMess
 		if err != nil {
 			return err
 		}
-		if storedConfigToken(systemConfig) == "" {
+		if systemConfig.ConfigToken == "" {
 			secret := make([]byte, 32)
 			if _, err := rand.Read(secret); err != nil {
 				return fmt.Errorf("create configuration token: %w", err)
@@ -132,7 +132,7 @@ func (s *Service) Create(ctx context.Context, raw json.RawMessage) (json.RawMess
 				if err := commit.Err(); err != nil {
 					return err
 				}
-				if storedConfigToken(&current.SystemConfig) == "" {
+				if current.SystemConfig.ConfigToken == "" {
 					current.SystemConfig.ConfigToken = base64.RawURLEncoding.EncodeToString(secret)
 				}
 				return commit.Err()
@@ -219,7 +219,7 @@ func (s *Service) Index(ctx context.Context) (Index, error) {
 	}
 	for i := range shared.Nodes {
 		item := &shared.Nodes[i]
-		if resourceEnabled(item, item.Enabled) {
+		if resourceEnabled(item.Enabled) {
 			out.Nodes = append(out.Nodes, Choice{item.ID, item.Name})
 		}
 	}
@@ -525,17 +525,4 @@ func (s *Service) profileSummary(ctx context.Context, record *Record) (defaultSu
 		}
 	}
 	return out, nil
-}
-
-// storedConfigToken requires the credential's original string token.
-func storedConfigToken(settings *model.SystemConfig) string {
-	raw, _, err := settings.MemberJSON("config_token")
-	if err != nil {
-		return ""
-	}
-	var token string
-	if json.Unmarshal(raw, &token) != nil {
-		return ""
-	}
-	return token
 }

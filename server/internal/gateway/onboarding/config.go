@@ -65,28 +65,28 @@ func readConfig(config Document) (model.Profile, model.Shared, error) {
 	}
 
 	if err == nil {
-		setSwitch := func(record model.SwitchMember, key string, target **bool) {
-			enabled := model.SwitchEnabled(record, key, *target, true)
+		setSwitch := func(target **bool) {
+			enabled := model.Flag(*target, true)
 			*target = &enabled
 		}
 		for i := range profile.RuleConfigs {
-			setSwitch(&profile.RuleConfigs[i], "enabled", &profile.RuleConfigs[i].Enabled)
-			setSwitch(&profile.RuleConfigs[i], "library_enabled", &profile.RuleConfigs[i].LibraryEnabled)
+			setSwitch(&profile.RuleConfigs[i].Enabled)
+			setSwitch(&profile.RuleConfigs[i].LibraryEnabled)
 		}
 		for i := range profile.ProxyGroups {
-			setSwitch(&profile.ProxyGroups[i], "enabled", &profile.ProxyGroups[i].Enabled)
+			setSwitch(&profile.ProxyGroups[i].Enabled)
 		}
 		for i := range shared.RuleLibrary {
-			setSwitch(&shared.RuleLibrary[i], "enabled", &shared.RuleLibrary[i].Enabled)
+			setSwitch(&shared.RuleLibrary[i].Enabled)
 		}
 		for i := range shared.Nodes {
-			setSwitch(&shared.Nodes[i], "enabled", &shared.Nodes[i].Enabled)
+			setSwitch(&shared.Nodes[i].Enabled)
 		}
 		for i := range shared.Subscriptions {
-			setSwitch(&shared.Subscriptions[i], "enabled", &shared.Subscriptions[i].Enabled)
+			setSwitch(&shared.Subscriptions[i].Enabled)
 		}
 		for i := range shared.Aggregations {
-			setSwitch(&shared.Aggregations[i], "enabled", &shared.Aggregations[i].Enabled)
+			setSwitch(&shared.Aggregations[i].Enabled)
 		}
 	}
 	return profile, shared, err

@@ -2,6 +2,7 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"encoding/json"
 	"testing"
 
@@ -126,5 +127,5 @@ func TestN811W5ClientImportShape(t *testing.T) {
 		}
 		return out
 	}
-	compare(t, "client import stored document and files", normalizeGroup(got.State), normalizeGroup(py.State))
+	compare(t, "client import stored document and files", modeltest.StateThroughModel(normalizeGroup(got.State)), modeltest.StateThroughModel(normalizeGroup(py.State)))
 }

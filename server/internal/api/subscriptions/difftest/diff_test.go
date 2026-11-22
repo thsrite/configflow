@@ -4,6 +4,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -405,6 +406,14 @@ func (w *world) callWithNativeBody(method, path, body string, authenticated bool
 		t.Helper()
 		a = normalize(jsonValue(a))
 		b = normalize(jsonValue(b))
+		if label == "state" {
+			// Stored documents compare as the plain records hold them (O18 T1c).
+			a, b = modeltest.StateThroughModel(a), modeltest.StateThroughModel(b)
+		} else {
+			// Responses echo records; members the plain records leave out are
+			// not compared (O18 T1c).
+			a = modeltest.AlignResponse(a, b)
+		}
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s %s %s: %s", method, path, label, firstDifference(a, b, ""))
 		}

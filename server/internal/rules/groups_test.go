@@ -164,7 +164,7 @@ func TestValidateCandidatesRejectsEmptyAndUnknownSources(t *testing.T) {
 		{`{"id":"x","type":"select","manual_nodes":["n1","DIRECT"],"proxies_order":[{"type":"node","id":"n1"}]}`, "排序必须包含所有手动节点和引用策略组"},
 	}
 	for _, c := range cases {
-		err := CheckCandidates(parseGroup(t, c.raw), catalog, nil)
+		err := CheckCandidateMembers(parseGroup(t, c.raw), requestMembers(t, json.RawMessage(c.raw)), catalog, nil, nil)
 		if err == nil || err.Error() != c.want {
 			t.Errorf("%s: err = %v, want %q", c.raw, err, c.want)
 		}
@@ -254,4 +254,26 @@ func TestLowerGroupProviderFiltersScopesExclusionsToProviders(t *testing.T) {
 	if len(providers.Content)/2 != 2 {
 		t.Errorf("providers count = %d", len(providers.Content)/2)
 	}
+}
+
+// requestMembers is a request group's members as JSON: requests are checked
+// before the plain group record decodes them (O18 T1c).
+func requestMembers(t *testing.T, value any) map[string]json.RawMessage {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := map[string]json.RawMessage{}
+	_ = json.Unmarshal(data, &members)
+	return members
+}
+
+// originalMembers is a corpus record's stored group members, nil without one.
+func originalMembers(t *testing.T, record map[string]any) map[string]json.RawMessage {
+	t.Helper()
+	if record["original"] == nil {
+		return nil
+	}
+	return requestMembers(t, record["original"])
 }

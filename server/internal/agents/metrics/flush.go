@@ -105,15 +105,11 @@ func allowedInterval(value int64) bool {
 
 // FlushInterval reads the exact stored setting, retaining the established default.
 func FlushInterval(system *model.System) int64 {
-	raw, _, err := system.SystemConfig.MemberJSON(Setting)
-	if err != nil {
+	stored := system.SystemConfig.MetricsHistoryFlushInterval
+	if stored == nil || !allowedInterval(int64(*stored)) {
 		return DefaultInterval
 	}
-	value, ok := integerJSON(raw)
-	if !ok || !value.IsInt64() || !allowedInterval(value.Int64()) {
-		return DefaultInterval
-	}
-	return value.Int64()
+	return int64(*stored)
 }
 func currentIntervalSeconds(ctx context.Context) (int64, error) {
 	r, err := repo.GetRepository(ctx)

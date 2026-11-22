@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"configflow/internal/model"
+	"configflow/internal/testjson/modeldirt"
 	"configflow/internal/yamlx"
 )
 
@@ -64,6 +65,10 @@ func MihomoReplayIssue(profile *JObj) string {
 	return ""
 }
 
+// TestNativeMihomoStoredMemberFallbacks checks the values stored members of
+// another type read as. Plain records (O18 T1c) keep no stored original and
+// write the read value, so the R5 diagnostics and the byte-for-byte
+// round-trip check were removed; "compatible" names the readable ones.
 func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 	cases := []struct {
 		source, path string
@@ -86,10 +91,6 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 			}
 			if err := json.Unmarshal([]byte(tt.source), &shared); err != nil {
 				t.Fatal(err)
-			}
-			issues := append(model.Issues(profile), model.Issues(shared)...)
-			if model.IssueUnder(issues, tt.path) == tt.compatible {
-				t.Fatalf("shared scalar compatibility=%v diagnostics=%v", tt.compatible, issues)
 			}
 			switch tt.path {
 			case "mihomo.custom_config":
@@ -121,21 +122,6 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 					t.Fatal("quoted probe port not decoded")
 				}
 			}
-			raw, err := model.Marshal(profile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var original, roundtrip map[string]json.RawMessage
-			json.Unmarshal([]byte(tt.source), &original)
-			json.Unmarshal(raw, &roundtrip)
-			for key, value := range original {
-				if key == "subscriptions" || key == "subscription_aggregations" {
-					continue
-				}
-				if string(value) != string(roundtrip[key]) {
-					t.Fatalf("stored field %s rewritten: %s", key, raw)
-				}
-			}
 		})
 	}
 	var agent model.Agent
@@ -146,6 +132,29 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 	if ports[8080] != fmt.Sprintf(msgBaseAgentPort, "Mihomo", "agent") {
 		t.Fatal(ports)
 	}
+}
+
+// O18StoredDirt returns the O18 T1c dirt kinds (testjson/modeldirt) of a
+// recorded configuration, without empty text: values plain records read
+// differently from Python on purpose (a number in a text member as its text,
+// "300" in an integer member as 300, null as missing, an undeclared member
+// dropped, a value of another kind as zero). Corpora use it to accept a row
+// that differs from Python only when its input holds such data.
+func O18StoredDirt(profile *JObj) []string {
+	if profile == nil {
+		return nil
+	}
+	data, err := CompactJ(profile)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, kind := range modeldirt.Config(data) {
+		if kind != modeldirt.DirtEmptyText {
+			out = append(out, kind)
+		}
+	}
+	return out
 }
 
 // NativeBaseControllerMessage exposes the shared message to archived boundary tests.
@@ -172,7 +181,9 @@ func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
 	for _, group := range yamlx.Get(doc, "proxy-groups").Content {
 		if yamlx.Get(group, "name").Value == "G" {
 			interval := yamlx.Get(group, "interval")
-			found = interval != nil && interval.ShortTag() == "!!str" && interval.Value == "300"
+			// A quoted stored interval reads as 300 and is written as a
+			// number (plain records, O18 T1c; Python copied the text).
+			found = interval != nil && interval.ShortTag() == "!!int" && interval.Value == "300"
 		}
 	}
 	if !found {
@@ -201,7 +212,8 @@ func TestMihomoFollowKeepsLocalQuotedInterval(t *testing.T) {
 		t.Fatalf("groups: %v", groups)
 	}
 	interval := yamlx.Get(groups.Content[0], "interval")
-	if interval == nil || interval.ShortTag() != "!!str" || interval.Value != "300" {
+	// The quoted stored interval is written as a number (O18 T1c).
+	if interval == nil || interval.ShortTag() != "!!int" || interval.Value != "300" {
 		t.Fatalf("interval: %v", interval)
 	}
 }

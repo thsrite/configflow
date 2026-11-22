@@ -1,7 +1,6 @@
 package agents
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -40,17 +39,11 @@ func collectAgentInto(record *model.Agent, secrets redact.Secrets) redact.Secret
 func SystemSecrets(ctx context.Context, r *repo.Repository) (redact.Secrets, error) {
 	fields := map[string]any{}
 	if err := r.View(ctx, func(document *model.Document) error {
-		for field := range redact.SensitiveSystemConfigFields {
-			raw, present, err := document.System.SystemConfig.MemberJSON(field)
-			if err != nil {
-				return err
-			}
-			trimmed := bytes.TrimSpace(raw)
-			if !present || len(trimmed) == 0 || trimmed[0] != '"' {
-				continue
-			}
-			var text string
-			if json.Unmarshal(trimmed, &text) == nil && text != "" {
+		// Only the text members are payload secrets (the retired token list
+		// is not), as before.
+		settings := &document.System.SystemConfig
+		for field, text := range map[string]string{"rule_proxy_token": settings.RuleProxyToken, "rule_fetch_proxy": settings.RuleFetchProxy} {
+			if redact.SensitiveSystemConfigFields[field] && text != "" {
 				fields[field] = text
 			}
 		}

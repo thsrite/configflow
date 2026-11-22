@@ -2,7 +2,6 @@ package convert
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -37,19 +36,19 @@ func effectiveRule(config *model.Config) *model.RuleConfig {
 	}
 	for i := range config.Profile.RuleConfigs {
 		rule := &config.Profile.RuleConfigs[i]
-		if rule.ItemType == "rule" && rule.RuleType == "MATCH" && enabled(rule, rule.Enabled) {
+		if rule.ItemType == "rule" && rule.RuleType == "MATCH" && enabled(rule.Enabled) {
 			return rule
 		}
 	}
 	return nil
 }
 
-func enabled(record model.SwitchMember, value *bool) bool {
-	return model.SwitchEnabled(record, "enabled", value, true)
+func enabled(value *bool) bool {
+	return model.Flag(value, true)
 }
 
-func libraryEnabled(record model.SwitchMember, value *bool) bool {
-	return model.SwitchEnabled(record, "library_enabled", value, true)
+func libraryEnabled(value *bool) bool {
+	return model.Flag(value, true)
 }
 func stringValue(value *string) string {
 	if value == nil {
@@ -100,30 +99,6 @@ func RulesForOutput(config *model.Config) []model.RuleConfig {
 		result = append(result, config.Profile.RuleConfigs...)
 	}
 	return result
-}
-
-// validateRuleIdentities checks retained types before configuration generation.
-// Number-to-text compatibility is for scalar data, not rule identity fields.
-func validateRuleIdentities(rules []model.RuleConfig) error {
-	for i := range rules {
-		rule := &rules[i]
-		// Two members are read; the rule is not encoded whole (O10 R9).
-		for _, field := range []struct{ key, label string }{{"rule_type", msgRuleTypeField}, {"value", msgRuleValueField}} {
-			raw, present, err := rule.MemberJSON(field.key)
-			if err != nil {
-				return err
-			}
-			if present {
-				if err := identityString(raw, field.label); err != nil {
-					if rule.ID != "" {
-						return fmt.Errorf(msgMihomoStoredText, kindRule, rule.ID, field.key, raw)
-					}
-					return err
-				}
-			}
-		}
-	}
-	return nil
 }
 
 // RuleComment renders the explanatory comment for a rule after MATCH.

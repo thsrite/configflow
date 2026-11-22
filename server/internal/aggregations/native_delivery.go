@@ -32,16 +32,16 @@ type typedDelivery struct {
 }
 
 func (d *typedDelivery) catalogs() ([]subscription, []node) { return d.subscriptions, d.nodes }
-func typedResource(record model.SwitchMember, id, name string, enabled *bool) resource {
-	return resource{ID: id, Name: name, Enabled: model.SwitchEnabled(record, "enabled", enabled, true)}
+func typedResource(id, name string, enabled *bool) resource {
+	return resource{ID: id, Name: name, Enabled: model.Flag(enabled, true)}
 }
 func typedNode(value model.Node) node {
-	return node{resource: typedResource(&value, value.ID, value.Name, value.Enabled), SubscriptionID: value.SubscriptionID, typed: &value}
+	return node{resource: typedResource(value.ID, value.Name, value.Enabled), SubscriptionID: value.SubscriptionID, typed: &value}
 }
 func newTypedDelivery(config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot) *typedDelivery {
 	d := &typedDelivery{config: config, main: main, snapshot: snapshot, sources: map[string]model.Subscription{}}
 	for _, sub := range config.Subscriptions {
-		d.subscriptions = append(d.subscriptions, subscription{resource: typedResource(&sub, sub.ID, sub.Name, sub.Enabled), URL: sub.URL})
+		d.subscriptions = append(d.subscriptions, subscription{resource: typedResource(sub.ID, sub.Name, sub.Enabled), URL: sub.URL})
 		d.sources[sub.ID] = sub
 	}
 	for _, value := range config.Nodes {
@@ -277,7 +277,7 @@ func RenderProvider(ctx context.Context, agg model.Aggregation, config *model.Co
 		}
 	}
 	d := newTypedDelivery(config, main, snapshot)
-	r := typedResource(&agg, agg.ID, agg.Name, agg.Enabled)
+	r := typedResource(agg.ID, agg.Name, agg.Enabled)
 	a := aggregation{resource: r, Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
 	if agg.RegexFilter != nil {
 		a.Regex, err = json.Marshal(*agg.RegexFilter)

@@ -184,7 +184,11 @@ func TestPythonCorpus(t *testing.T) {
 			checkOutcome(t, fmt.Sprintf("native/corpus/%d", i), expected, got, err, true)
 			continue
 		}
-		if row.fn == "is_yaml_response" || row.fn == "parse_proxies_from_yaml" || row.fn == "proxies_to_nodes" {
+		if row.fn == "proxies_to_nodes" {
+			assertNativeReaderCaseAs(t, oracle, fmt.Sprintf("substore/corpus/%d", i), got, err, storedNodesForm)
+			continue
+		}
+		if row.fn == "is_yaml_response" || row.fn == "parse_proxies_from_yaml" {
 			assertNativeReaderCase(t, oracle, fmt.Sprintf("substore/corpus/%d", i), got, err)
 			continue
 		}

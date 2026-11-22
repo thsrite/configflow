@@ -34,7 +34,7 @@ func TestResourceEnabledFollowsJSONTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &sub); err != nil {
 				t.Fatalf("unmarshal subscription: %v", err)
 			}
-			if got := resourceEnabled(&sub, sub.Enabled); got != tc.want {
+			if got := resourceEnabled(sub.Enabled); got != tc.want {
 				t.Fatalf("resourceEnabled = %v, want %v", got, tc.want)
 			}
 			selectable := selectableSubscriptions([]model.Subscription{sub})
@@ -49,7 +49,7 @@ func TestResourceEnabledFollowsJSONTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &node); err != nil {
 				t.Fatalf("unmarshal node: %v", err)
 			}
-			if got := resourceEnabled(&node, node.Enabled); got != tc.want {
+			if got := resourceEnabled(node.Enabled); got != tc.want {
 				t.Fatalf("resourceEnabled = %v, want %v", got, tc.want)
 			}
 		})
@@ -60,7 +60,7 @@ func TestResourceEnabledFollowsJSONTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &item); err != nil {
 				t.Fatalf("unmarshal rule library item: %v", err)
 			}
-			if got := resourceEnabled(&item, item.Enabled); got != tc.want {
+			if got := resourceEnabled(item.Enabled); got != tc.want {
 				t.Fatalf("resourceEnabled = %v, want %v", got, tc.want)
 			}
 			if got := supported(item); got != tc.want {

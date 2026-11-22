@@ -131,16 +131,22 @@ func TestO10R6ReviewPublicSecretsMatchEncodedView(t *testing.T) {
 // TestO10R6ReviewCredentialsBelongToTheirRecords races readers of
 // ConfigWithCredentials/ProfileWithCredentials with commits that rotate a
 // router credential: every reader must get the values of exactly the view (or
-// stored profile) it was handed, never another generation's.
+// stored profile) it was handed, never another generation's. The rotated
+// credential is the router password (plain records keep no undeclared
+// members, O18 T1c).
 func TestO10R6ReviewCredentialsBelongToTheirRecords(t *testing.T) {
 	r, err := repo.OpenDefault(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
+	// A password change replaces the connection: the publication lock is free.
+	defer repo.SetHooks(repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: func(context.Context, string, string, model.Router) (func(), bool) {
+		return func() {}, true
+	}}}))
 	rotate := func(i int) error {
 		_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
-			return p.SetJSON("routers", json.RawMessage(fmt.Sprintf(`{"items":[{"id":"r1","type":"routeros","endpoint":"http://192.0.2.1","username":"admin","password":"synthetic-fixed-password","api_key":"synthetic-rot-%d"}]}`, i)))
+			return p.SetJSON("routers", json.RawMessage(fmt.Sprintf(`{"items":[{"id":"r1","type":"routeros","endpoint":"http://192.0.2.1","username":"admin","password":"synthetic-rot-%d"}]}`, i)))
 		})
 		return err
 	}
@@ -187,7 +193,7 @@ func TestO10R6ReviewCredentialsBelongToTheirRecords(t *testing.T) {
 					errs <- err
 					return
 				}
-				raw, _, err := profile.Routers.Items[0].MemberJSON("api_key")
+				raw, _, err := model.EncodeMember(&profile.Routers.Items[0], "password")
 				if err != nil {
 					errs <- err
 					return

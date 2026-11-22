@@ -79,18 +79,25 @@ func TestN89RouterProjectionAllocations(t *testing.T) {
 	}
 }
 
-func TestN89StoredRouterPreservesWrongTypesAndOpaqueFields(t *testing.T) {
+// TestN89StoredRouterReadsWrongTypesLeniently (O18 T1c; was
+// TestN89StoredRouterPreservesWrongTypesAndOpaqueFields, which kept the stored
+// bytes and wrong-typed values): wrong-typed stored settings read as their
+// runtime defaults or by the switch rule, undeclared members are dropped, and
+// an edit changes only the edited member of the Go encoding.
+func TestN89StoredRouterReadsWrongTypesLeniently(t *testing.T) {
 	source := []byte(`{"id":"r","name":true,"type":"routeros","endpoint":"http://192.0.2.1","username":"operator","password":"opaque", "verify_tls":"bad","rule_sync_interval":1.5,"dns_guard":{"enabled":"bad","failover":false,"unknown":9223372036854775808123},"custom":9223372036854775808123}`)
 	var r Router
 	if err := json.Unmarshal(source, &r); err != nil {
 		t.Fatal(err)
 	}
-	if r.Name != "" || !r.VerifyTLS || r.RuleSyncInterval != 60 || r.DNSGuard != nil {
-		t.Fatalf("wrong runtime defaults: %#v", r)
+	// verify_tls is switch:"on" (wrong type reads as on); dns_guard.enabled is
+	// switch:"off" (wrong type reads as off); 1.5 is not an interval.
+	if r.Name != "" || !r.VerifyTLS || r.RuleSyncInterval != 60 || r.DNSGuard == nil || r.DNSGuard.Enabled || r.DNSGuard.Failover {
+		t.Fatalf("wrong runtime defaults: %+v %+v", r.RouterSettings, r.DNSGuard)
 	}
 	unchanged, err := r.MarshalJSON()
-	if err != nil || !bytes.Equal(unchanged, source) {
-		t.Fatalf("unchanged record lost provenance: %s %v", unchanged, err)
+	if err != nil || bytes.Contains(unchanged, []byte("9223372036854775808123")) || bytes.Contains(unchanged, []byte(`"bad"`)) {
+		t.Fatalf("undeclared or wrong-typed value written back: %s %v", unchanged, err)
 	}
 	r.Username = "changed"
 	changed, err := r.MarshalJSON()
@@ -98,12 +105,15 @@ func TestN89StoredRouterPreservesWrongTypesAndOpaqueFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	var old, next map[string]json.RawMessage
-	_ = json.Unmarshal(source, &old)
+	_ = json.Unmarshal(unchanged, &old)
 	_ = json.Unmarshal(changed, &next)
 	for key, value := range old {
 		if key != "username" && !bytes.Equal(value, next[key]) {
 			t.Fatalf("unrelated stored member %s changed: %s -> %s", key, value, next[key])
 		}
+	}
+	if string(next["username"]) != `"changed"` {
+		t.Fatalf("edit not written: %s", changed)
 	}
 }
 
@@ -163,6 +173,11 @@ func FuzzN89StoredRouter(f *testing.F) {
 	})
 }
 
+// TestN89UnknownEditsAndStateRemoval (O18 T1c): Extra keeps only the
+// declared device-state members. Editing or adding an undeclared member is
+// dropped on write (it used to be written back with the opaque members);
+// editing or removing a declared state member is written; the shared stored
+// record is not mutated.
 func TestN89UnknownEditsAndStateRemoval(t *testing.T) {
 	source := []byte(`{"id":"r","future":1,"last_probe":{"ok":true},"opaque":9223372036854775808123}`)
 	for _, tc := range []struct {
@@ -171,13 +186,18 @@ func TestN89UnknownEditsAndStateRemoval(t *testing.T) {
 		key  string
 		want string
 	}{
-		{"modify", func(r *Router) { r.Extra["future"] = json.RawMessage(`2`) }, "future", `2`},
-		{"add", func(r *Router) { r.Extra["new_field"] = json.RawMessage(`{"x":true}`) }, "new_field", `{"x":true}`},
+		{"modify-undeclared", func(r *Router) { r.Extra["future"] = json.RawMessage(`2`) }, "future", ""},
+		{"add-undeclared", func(r *Router) { r.Extra["new_field"] = json.RawMessage(`{"x":true}`) }, "new_field", ""},
+		{"modify-state", func(r *Router) { r.Extra["last_probe"] = json.RawMessage(`{"at":"t","ok":false}`) }, "last_probe", `{"at":"t","ok":false}`},
 		{"drop-state", func(r *Router) { delete(r.Extra, "last_probe") }, "last_probe", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var r Router
 			if err := json.Unmarshal(source, &r); err != nil {
+				t.Fatal(err)
+			}
+			before, err := model.Marshal(r.stored)
+			if err != nil {
 				t.Fatal(err)
 			}
 			tc.edit(&r)
@@ -187,30 +207,48 @@ func TestN89UnknownEditsAndStateRemoval(t *testing.T) {
 			}
 			var fields map[string]json.RawMessage
 			_ = json.Unmarshal(out, &fields)
-			if string(fields[tc.key]) != tc.want || string(fields["opaque"]) != `9223372036854775808123` {
+			if string(fields[tc.key]) != tc.want || fields["opaque"] != nil {
 				t.Fatalf("bad edit: %s", out)
 			}
 			unchanged, err := model.Marshal(r.stored)
-			if err != nil || !bytes.Equal(unchanged, source) {
-				t.Fatal("edit mutated shared provenance")
+			if err != nil || !bytes.Equal(unchanged, before) {
+				t.Fatal("edit mutated the shared stored record")
 			}
 		})
 	}
 }
 
+// TestN89MalformedActiveGuardBlocksDeviceAccess: a guard whose stored settings
+// have the wrong type must not authorize device management.
 func TestN89MalformedActiveGuardBlocksDeviceAccess(t *testing.T) {
-	for _, raw := range []string{
-		`{"dns_guard":{"enabled":true,"bypass":"x"}}`,
-		`{"dns_guard":{"enabled":false,"bypass":"x"},"dns_guard_state":{"resources":[]}}`,
-		`{"ipv6_pd_guard":{"enabled":"x"},"ipv6_pd_guard_state":{"resources":[]}}`,
+	for _, tc := range []struct {
+		raw     string
+		blocked bool // false: accepted O18 T1c semantics (see below)
+	}{
+		// Suspected regression handed back to the T1c author: an enabled guard
+		// whose bypass list has the wrong type now reads as an enabled guard
+		// with no bypass (ValidateForDevice checks model.Issues, which is
+		// always empty for plain records).
+		{`{"dns_guard":{"enabled":true,"bypass":"x"}}`, true},
+		// Accepted: a disabled guard (switch:"off" reads a wrong type as off)
+		// with a malformed list may be withdrawn using its stored state.
+		{`{"dns_guard":{"enabled":false,"bypass":"x"},"dns_guard_state":{"resources":[]}}`, false},
+		{`{"ipv6_pd_guard":{"enabled":"x"},"ipv6_pd_guard_state":{"resources":[]}}`, false},
 	} {
-		t.Run(raw, func(t *testing.T) {
+		t.Run(tc.raw, func(t *testing.T) {
 			var r Router
-			if err := json.Unmarshal([]byte(raw), &r); err != nil {
+			if err := json.Unmarshal([]byte(tc.raw), &r); err != nil {
 				t.Fatal(err)
 			}
-			if err := r.ValidateForDevice(); err == nil || err.Error() != messageStoredGuardInvalid {
-				t.Fatalf("malformed guard could be withdrawn: %v", err)
+			err := r.ValidateForDevice()
+			if !tc.blocked {
+				if err != nil {
+					t.Fatalf("disabled guard blocked: %v", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != messageStoredGuardInvalid {
+				t.Fatalf("malformed enabled guard not blocked: %v", err)
 			}
 		})
 	}

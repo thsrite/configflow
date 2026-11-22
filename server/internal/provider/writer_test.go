@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
 )
@@ -112,6 +113,17 @@ func providerWriterFilesEqual(want, got map[string]any) bool {
 		}
 		a, aok := value.(string)
 		b, bok := actual.(string)
+		if aok && bok && strings.HasSuffix(name, ".json") {
+			// Cached nodes are plain Node records (O18 T1c): members are
+			// written in declaration order (id first), Python appended id
+			// last. Readers parse the file, so the value is compared.
+			wantValue, errA := testjson.Parse([]byte(a))
+			gotValue, errB := testjson.Parse([]byte(b))
+			if errA != nil || errB != nil || !testjson.Equal(wantValue, gotValue) {
+				return false
+			}
+			continue
+		}
 		if !aok || !bok || !strings.Contains(name, "/providers/") || !strings.HasSuffix(name, ".yaml") || !providerWriterYAMLEqual(a, b) {
 			return false
 		}
@@ -150,7 +162,8 @@ func TestProviderWriterFileComparison(t *testing.T) {
 		equal bool
 	}{
 		{"format", map[string]any{name: "proxies:\n  - name: A\n", "state.json": "{\"x\":1}"}, true},
-		{"storage-bytes", map[string]any{name: "proxies: [{name: A}]", "state.json": "{\"x\": 1}"}, false},
+		{"storage-order", map[string]any{name: "proxies: [{name: A}]", "state.json": "{\"x\": 1}"}, true},
+		{"storage-value", map[string]any{name: "proxies: [{name: A}]", "state.json": "{\"x\": 2}"}, false},
 		{"value", map[string]any{name: "proxies: [{name: B}]", "state.json": "{\"x\":1}"}, false},
 		{"missing", map[string]any{name: "proxies: [{name: A}]"}, false},
 	} {

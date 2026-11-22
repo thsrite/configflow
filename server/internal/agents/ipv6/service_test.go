@@ -63,7 +63,7 @@ func fixture(t *testing.T) (*Service, context.Context) {
 	}
 	_, e = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
 		p.Mihomo.CustomConfig = "ipv6: true\ndns: {ipv6: false}\n"
-		p.Mihomo.Fields.Set("linux_gateway", json.RawMessage(`{"enabled":true}`))
+		p.Mihomo.LinuxGateway.UnmarshalJSON(json.RawMessage(`{"enabled":true}`))
 		return nil
 	})
 	if e != nil {

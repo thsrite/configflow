@@ -131,9 +131,6 @@ func (h *HistoryEntry) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &record); err != nil {
 		return err
 	}
-	if err := storedStrings(record, "发现记录", record.RulesetID, "value", "rule_type", "target", "ruleset_id", "source", "applied_at"); err != nil {
-		return err
-	}
 	*h = HistoryEntry{Value: record.Value, RuleType: record.RuleType, Target: record.Target, RulesetID: record.RulesetID, Source: record.Source, AppliedAt: record.AppliedAt, Verdict: record.Verdict}
 	if record.Confidence != nil {
 		h.Confidence = ptr(int(*record.Confidence))

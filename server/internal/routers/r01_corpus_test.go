@@ -36,6 +36,7 @@ func TestR01Corpus(t *testing.T) {
 	independent := loadR01NativeExpected(t)
 	rowIndex := 0
 	counts, differ, internal := map[string]int{}, 0, map[string]int{}
+	differBy := map[string]int{}
 	for scanner.Scan() {
 		var row struct {
 			Fn  string          `json:"fn"`
@@ -77,10 +78,17 @@ func TestR01Corpus(t *testing.T) {
 					ok = true
 					internal["normalize: list/dict text field (Python repr)"]++
 				}
+				if !ok {
+					if category := o18T1cAccepted(t, got, row.Out); category != "" {
+						ok = true
+						internal["O18 T1c 接受: "+row.Fn+": "+category]++
+					}
+				}
 			}
 		}
 		if !ok {
 			differ++
+			differBy[row.Fn]++
 			if differ <= 25 {
 				g, _ := json.Marshal(got)
 				t.Errorf("%s(%s)\n got  %s %v\n want %s %v", row.Fn, row.In, g, gotErr, row.Out, row.Err)
@@ -92,6 +100,9 @@ func TestR01Corpus(t *testing.T) {
 	}
 	if len(independent) > 0 {
 		t.Fatal("stale independent expectations")
+	}
+	if differ > 0 {
+		t.Logf("differ by fn: %v", differBy)
 	}
 	t.Logf("rows %v; %d differ; Python-internal exceptions where Go also rejects: %v", counts, differ, internal)
 }

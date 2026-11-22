@@ -530,7 +530,7 @@ func TestCoreUpdateCheckFollowsTheCoresOwnChannelAndComparison(t *testing.T) {
 		if r.url != CoreVersionURLs[tc.channel] || !r.request.Stream || r.request.MaxBytes != 256 {
 			t.Fatal(r)
 		}
-		if r.request.Config == nil || len(r.request.Config.Library) != 0 || len(r.request.Config.Rules) != 0 || r.request.Config.Settings.Fields.Has("backup") {
+		if r.request.Config == nil || len(r.request.Config.Library) != 0 || len(r.request.Config.Rules) != 0 {
 			t.Fatal("unrelated settings leaked", r.request.Config)
 		}
 		if r.request.ConnectTimeout != 5*time.Second || r.request.ReadTimeout != 10*time.Second {

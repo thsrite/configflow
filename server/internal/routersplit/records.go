@@ -1,7 +1,6 @@
 package routersplit
 
 import (
-	"configflow/internal/gateway/gwbase"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
@@ -122,7 +121,7 @@ func PublishSource(ctx context.Context, r *repo.Repository, id string, profile *
 
 // WasGatewayUsed recognizes setup purpose and the retained installation proof.
 func WasGatewayUsed(profile *model.Profile, agent *model.Agent, source string) (bool, error) {
-	if source == "setup" || (profile != nil && profile.Mihomo.Fields.Has(gwbase.RestoreKey)) {
+	if source == "setup" || (profile != nil && !profile.Mihomo.LinuxGatewayRestorePoint.IsZero()) {
 		return true, nil
 	}
 	if agent == nil {

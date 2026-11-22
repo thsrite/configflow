@@ -567,19 +567,41 @@ func domainEntries(content string, asYAML bool) ([]entry, error) {
 	return entries, nil
 }
 
-// ValidateDomainContent is validate_domain_content(rule, previous); previous
-// nil is None.
-// ValidateContent validates an edited declaration and keeps unchanged stored
-// legacy values readable. Request shape validation belongs to the HTTP owner.
+// ValidateContent validates an edited declaration (validate_domain_content);
+// previous nil is a new one. Unchanged stored legacy values stay readable.
 func ValidateContent(rule model.RuleConfig, previous *model.RuleConfig) error {
-	if previous != nil && sameContent(rule, *previous) {
-		return nil
+	raw, err := model.Marshal(rule)
+	if err != nil {
+		return err
 	}
-	// These members originate at an editor write boundary. Model R5 preserves
-	// malformed stored bytes, but does not authorize a new null/container enum.
-	data, _ := model.Marshal(rule)
+	var previousRaw json.RawMessage
+	if previous != nil {
+		if previousRaw, err = model.Marshal(previous); err != nil {
+			return err
+		}
+	}
+	return ValidateContentJSON(raw, previousRaw)
+}
+
+// ValidateContentJSON is ValidateContent on the declaration as JSON. Editors
+// pass their request: the plain rule record cannot hold a source, behavior,
+// format or content of the wrong JSON type (O18 T1c), so those members are
+// checked as sent, with Python's messages. previous is the stored declaration
+// (nil for a new one); its unchanged members are grandfathered.
+func ValidateContentJSON(raw, previous json.RawMessage) error {
+	var rule model.RuleConfig
+	if err := json.Unmarshal(raw, &rule); err != nil {
+		return err
+	}
 	var members map[string]json.RawMessage
-	_ = json.Unmarshal(data, &members)
+	_ = json.Unmarshal(raw, &members)
+	if previous != nil {
+		var before map[string]json.RawMessage
+		_ = json.Unmarshal(previous, &before)
+		if sameContentMembers(members, before) {
+			return nil
+		}
+	}
 	for _, field := range []string{"source_type", "behavior", "format"} {
 		raw, present := members[field]
 		if !present || (field == "format" && string(raw) == "null") {
@@ -625,17 +647,19 @@ func ValidateContent(rule model.RuleConfig, previous *model.RuleConfig) error {
 	}
 	return nil
 }
-func sameContent(a, b model.RuleConfig) bool {
-	// Compare original stored members as raw JSON so an unchanged wrong-typed
-	// field may be grandfathered, but a different wrong value never is.
-	fields := []string{"source_type", "behavior", "content", "format"}
-	left, _ := model.Marshal(a)
-	right, _ := model.Marshal(b)
-	var x, y map[string]json.RawMessage
-	_ = json.Unmarshal(left, &x)
-	_ = json.Unmarshal(right, &y)
-	for _, field := range fields {
-		if !bytes.Equal(x[field], y[field]) {
+
+// sameContentMembers compares the content members as sent, so an unchanged
+// wrong-typed stored value is grandfathered but a different one never is.
+func sameContentMembers(x, y map[string]json.RawMessage) bool {
+	for _, field := range []string{"source_type", "behavior", "content", "format"} {
+		left, right := x[field], y[field]
+		if string(left) == "null" {
+			left = nil
+		}
+		if string(right) == "null" {
+			right = nil
+		}
+		if !bytes.Equal(left, right) {
 			return false
 		}
 	}

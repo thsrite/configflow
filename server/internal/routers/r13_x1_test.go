@@ -17,11 +17,14 @@ func TestX1RouterDecodeFallsBackPerMember(t *testing.T) {
 	if e := json.Unmarshal(data, &r); e != nil {
 		t.Fatal("malformed member failed the record:", e)
 	}
-	if r.ID != "synthetic" || r.Name != "kept" || r.ProxyGatewayAgentID != "gateway" || r.RuleSyncInterval != 60 || !r.VerifyTLS || len(r.IPRuleSets) != 0 || r.DNSGuard != nil {
-		t.Fatalf("fallback %+v", r.RouterSettings)
+	// O18 T1c: ip_rule_sets [1] reads the number as its text but the router
+	// keeps identities only (idList); dns_guard.enabled is switch:"off", so
+	// "yes" reads as a disabled guard; the undeclared member is dropped.
+	if r.ID != "synthetic" || r.Name != "kept" || r.ProxyGatewayAgentID != "gateway" || r.RuleSyncInterval != 60 || !r.VerifyTLS || r.DNSGuard == nil || r.DNSGuard.Enabled {
+		t.Fatalf("fallback %+v %+v", r.RouterSettings, r.DNSGuard)
 	}
-	if string(r.Extra["future"]) != `{"keep":true}` {
-		t.Fatal("unknown member lost", r.Extra)
+	if _, kept := r.Extra["future"]; kept {
+		t.Fatal("undeclared member kept", r.Extra)
 	}
 	stored, e := releaseRouterRecord(&r)
 	if e != nil || string(stored) != string(data) {
@@ -69,9 +72,8 @@ func TestX1PublishWithMalformedNeighbour(t *testing.T) {
 		t.Fatal(e)
 	}
 	neighbour["id"], neighbour["name"], neighbour["rule_sync_interval"], neighbour["proxy_gateway_agent_id"] = "neighbour", "synthetic neighbour", "sixty", ""
-	if _, _, e = db.SaveProfileFieldsJSON(t.Context(), "default", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []any{json.RawMessage(good), neighbour}}}), nil); e != nil {
-		t.Fatal(e)
-	}
+	// Input is strict (O18 T1c), so the malformed neighbour is seeded as a stored row.
+	seedStoredRow(t, db, "profile", "default", "routers", string(mustPolicyJSON(map[string]any{"items": []any{json.RawMessage(good), neighbour}})))
 	outcome := Publish(t.Context(), req)
 	if outcome.Err != nil || outcome.Result == nil || !outcome.Result.OK {
 		t.Fatalf("publish failed beside a malformed record: %+v", outcome)
@@ -98,9 +100,7 @@ func TestX1ReturnCleanupWithMalformedProfile(t *testing.T) {
 		t.Fatal(e)
 	}
 	bad := map[string]any{"id": "bad", "name": "synthetic legacy owner", "type": "routeros", "endpoint": "http://192.0.2.9", "manage_return_routing": true, "proxy_gateway_agent_id": "gateway", "rule_sync_interval": "sixty"}
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "legacy", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []any{bad}}}), nil); e != nil {
-		t.Fatal(e)
-	}
+	seedStoredRow(t, db, "profile", "legacy", "routers", string(mustPolicyJSON(map[string]any{"items": []any{bad}})))
 	a := r12Gateway()
 	a.Status = "online"
 	status := r12SafeStatus()

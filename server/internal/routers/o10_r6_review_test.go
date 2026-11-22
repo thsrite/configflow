@@ -3,7 +3,6 @@ package routers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"configflow/internal/jsondecode"
@@ -28,11 +27,9 @@ func TestO10R6ReviewStoredRoutersMatchEncodedConfig(t *testing.T) {
 		{"id":"r2","type":"routeros","endpoint":"http://192.0.2.2","rule_sync_interval":"not a number","port":"bad","last_probe":{"ok":true,"message":"<ok>"}},
 		{"id":"r3","type":"ikuai","name":"& escaped","endpoint":"http://192.0.2.3"}
 	]}`
-	if _, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
-		return p.SetJSON("routers", json.RawMessage(items))
-	}); err != nil {
-		t.Fatal(err)
-	}
+	// Input is strict (O18 T1c): records with wrong-typed and undeclared
+	// members are seeded as the stored row.
+	seedStoredRow(t, r, "profile", "default", "routers", items)
 	config, err := r.ConfigWithOxiDNSAgents(ctx, "default", repo.ResourceRoots{})
 	if err != nil {
 		t.Fatal(err)
@@ -94,8 +91,8 @@ func TestO10R6ReviewStoredRoutersMatchEncodedConfig(t *testing.T) {
 
 // TestO10R6ReviewWorkspaceRuleSetsMatchEncoded compares the typed ruleset rows
 // of policy-settings with the strict decode of the encoded resolved view that
-// R6 replaced, including hydrated library values and wrong-typed members (which
-// must still fail the read).
+// R6 replaced, including hydrated library values and wrong-typed members
+// (since O18 T1c read leniently in both).
 func TestO10R6ReviewWorkspaceRuleSetsMatchEncoded(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
@@ -125,15 +122,12 @@ func TestO10R6ReviewWorkspaceRuleSetsMatchEncoded(t *testing.T) {
 			}
 			if err := r.UpdateSharedAndProfiles(ctx, func(_ context.Context, s *model.Shared, profiles []*model.Profile) error {
 				s.RuleLibrary = append(s.RuleLibrary, library...)
-				for _, p := range profiles {
-					if p.Key() == "second" {
-						return p.SetJSON("rule_configs", json.RawMessage(tt.rules))
-					}
-				}
-				return errors.New("no second profile")
+				return nil
 			}); err != nil {
 				t.Fatalf("not storable: %v", err)
 			}
+			// Input is strict (O18 T1c): wrong-typed rule rows are seeded as stored.
+			seedStoredRow(t, r, "profile", "second", "rule_configs", tt.rules)
 			config, err := r.ConfigWithOxiDNSAgents(ctx, "second", repo.ResourceRoots{})
 			if err != nil {
 				t.Fatal(err)

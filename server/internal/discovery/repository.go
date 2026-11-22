@@ -49,9 +49,6 @@ func configFromModel(view *model.Config) (config, error) {
 		c.Rules = append(c.Rules, item)
 	}
 	for _, group := range view.Profile.ProxyGroups {
-		if err := storedStrings(group, "策略组", group.ID, "id", "name"); err != nil {
-			return c, err
-		}
 		c.Groups = append(c.Groups, policyGroup{Name: group.Name})
 	}
 	c.Mihomo.Custom = view.Profile.Mihomo.CustomConfig
@@ -138,9 +135,6 @@ func listProfiles(ctx context.Context) ([]profile, error) {
 	out := []profile{}
 	err = r.View(ctx, func(d *model.Document) error {
 		for _, p := range d.Profiles {
-			if err := storedStrings(p, "配置", p.Key(), "id", "name"); err != nil {
-				return err
-			}
 			out = append(out, profile{p.Key(), p.Name})
 		}
 		return nil
@@ -163,9 +157,6 @@ func profileAgents(ctx context.Context, id string) ([]Agent, error) {
 	}
 	out := []Agent{}
 	for _, a := range records {
-		if err := storedStrings(a, "Agent", a.ID, "profile_id", "service_type"); err != nil {
-			return nil, err
-		}
 		profileID := a.ProfileID
 		if profileID == "" {
 			profileID = def
@@ -173,36 +164,12 @@ func profileAgents(ctx context.Context, id string) ([]Agent, error) {
 		if profileID != id || a.ServiceType != "mihomo" {
 			continue
 		}
-		if err := storedStrings(a, "Agent", a.ID, "id", "name", "profile_id", "service_type"); err != nil {
-			return nil, err
-		}
 		out = append(out, Agent{ID: a.ID, Name: a.Name, ProfileID: profileID, ServiceType: a.ServiceType, Enabled: a.DomainDiscoveryEnabled != nil && *a.DomainDiscoveryEnabled, Version: a.Version, Heartbeat: a.LastHeartbeat})
 	}
 	return out, nil
 }
 
-func storedStrings[T any](record T, resource, id string, fields ...string) error {
-	issues := model.Issues(record)
-	for _, field := range fields {
-		if !model.IssueUnder(issues, field) {
-			continue
-		}
-		data, err := model.Marshal(record)
-		if err != nil {
-			return err
-		}
-		var raw map[string]json.RawMessage
-		if err = json.Unmarshal(data, &raw); err != nil {
-			return err
-		}
-		return invalid(fmt.Sprintf(msgStoredString, resource, id, field, raw[field]))
-	}
-	return nil
-}
 func libraryFromModel(record model.RuleLibraryItem) (libraryItem, error) {
-	if err := storedStrings(record, "规则库", record.ID, "id", "name", "source_type", "behavior", "content"); err != nil {
-		return libraryItem{}, err
-	}
 	raw, err := model.Marshal(record)
 	if err != nil {
 		return libraryItem{}, err
@@ -221,11 +188,8 @@ func libraryFromModel(record model.RuleLibraryItem) (libraryItem, error) {
 	return item, nil
 }
 func ruleFromModel(record model.RuleConfig) (ruleConfig, error) {
-	if err := storedStrings(record, "规则", record.ID, "id", "itemType", "rule_type", "value", "library_rule_id", "policy"); err != nil {
-		return ruleConfig{}, err
-	}
 	raw, err := model.Marshal(record)
-	item := ruleConfig{ID: record.ID, ItemType: record.ItemType, RuleType: record.RuleType, Value: record.Value, LibraryID: record.LibraryRuleID, Enabled: model.SwitchEnabled(&record, "enabled", record.Enabled, true), original: raw}
+	item := ruleConfig{ID: record.ID, ItemType: record.ItemType, RuleType: record.RuleType, Value: record.Value, LibraryID: record.LibraryRuleID, Enabled: model.Flag(record.Enabled, true), original: raw}
 	if record.Policy != nil {
 		item.Policy = *record.Policy
 	}

@@ -1,7 +1,6 @@
 package routers
 
 import (
-	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"context"
@@ -24,7 +23,7 @@ func routerFromModel(v model.Router) Router {
 	if v.AutoRuleSync != nil {
 		r.AutoRuleSync = *v.AutoRuleSync
 	}
-	if v.DNSGuard != nil {
+	if v.DNSGuard != nil && v.DNSGuard.Stored == nil {
 		g := DefaultDNSGuard()
 		if v.DNSGuard.Enabled != nil {
 			g.Enabled = *v.DNSGuard.Enabled
@@ -40,7 +39,7 @@ func routerFromModel(v model.Router) Router {
 		}
 		r.DNSGuard = &g
 	}
-	if v.IPv6PDGuard != nil {
+	if v.IPv6PDGuard != nil && v.IPv6PDGuard.Stored == nil {
 		g := PDGuard{}
 		if v.IPv6PDGuard.Enabled != nil {
 			g.Enabled = *v.IPv6PDGuard.Enabled
@@ -68,15 +67,9 @@ func routerFromModel(v model.Router) Router {
 			r.RosPolicyRuleSets = nil
 		}
 	}
-	// A partially invalid guard cannot authorize device management. The stored
-	// record still preserves every nested field for repair by the settings owner.
-	issues := model.Issues(v)
-	if model.IssueUnder(issues, "dns_guard") {
-		r.DNSGuard = nil
-	}
-	if model.IssueUnder(issues, "ipv6_pd_guard") {
-		r.IPv6PDGuard = nil
-	}
+	// A damaged guard (kept whole by the model, Stored) cannot authorize
+	// device management and is not projected; the stored record keeps it for
+	// repair by the settings owner.
 
 	for _, key := range append([]string{"id", "password"}, EditableFields...) {
 		delete(r.Extra, key)
@@ -165,18 +158,11 @@ func (r *Router) ValidateForDevice() error {
 	if r.stored == nil {
 		return nil
 	}
-	issues := model.Issues(r.stored)
-	for _, guard := range []struct{ setting, state string }{{"dns_guard", "dns_guard_state"}, {"ipv6_pd_guard", "ipv6_pd_guard_state"}} {
-		if !model.IssueUnder(issues, guard.setting) {
-			continue
-		}
-		var fields map[string]json.RawMessage
-		_ = json.Unmarshal(r.source, &fields)
-		var switches struct {
-			Enabled bool `json:"enabled"`
-		}
-		_ = jsondecode.Unmarshal(fields[guard.setting], &switches)
-		if switches.Enabled || hasStoredState(r.Extra[guard.state]) {
+	// The model keeps an enabled guard with a malformed member, or a guard of
+	// another JSON type, whole (Stored). A falsy value is no guard, as in
+	// Python (`or {}`); anything else is unknown settings: fail closed.
+	for _, stored := range []json.RawMessage{dnsGuardStored(r.stored.DNSGuard), pdGuardStored(r.stored.IPv6PDGuard)} {
+		if stored != nil && hasStoredState(stored) {
 			return invalid(messageStoredGuardInvalid)
 		}
 	}
@@ -207,4 +193,18 @@ func (r *Router) LinkID(member string) string {
 	}
 	text, _ := requestString(fields[member])
 	return text
+}
+
+func dnsGuardStored(g *model.RouterDNSGuard) json.RawMessage {
+	if g == nil {
+		return nil
+	}
+	return g.Stored
+}
+
+func pdGuardStored(g *model.RouterPDGuard) json.RawMessage {
+	if g == nil {
+		return nil
+	}
+	return g.Stored
 }

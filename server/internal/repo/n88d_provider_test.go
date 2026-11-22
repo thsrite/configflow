@@ -47,7 +47,7 @@ func TestN88dCommitRuntimeAndLeafLocks(t *testing.T) {
 				bundle := []*provider.Artifact{{Content: "proxies: []", AggregationID: "agg"}}
 				if kind == "cache" {
 					bundle[0].AggregationID = ""
-					bundle[0].CacheUpdates = []provider.CacheWrite{{SubID: "s", Nodes: []model.Node{{Name: "Node", Type: "http", Server: "example.com", Port: 80}}}}
+					bundle[0].CacheUpdates = []provider.CacheWrite{{SubID: "s", Nodes: []model.Node{{Name: "Node", Type: "http", Server: "example.com", Port: model.IntPtr(80)}}}}
 				}
 				done := make(chan error, 1)
 				go func() { done <- provider.CommitArtifacts(request, "default", bundle) }()

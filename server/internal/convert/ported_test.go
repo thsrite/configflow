@@ -837,11 +837,13 @@ func TestInvalidSettingsAreRefused(t *testing.T) {
 	} {
 		value := easytierSettings()
 		tc.change(value)
-		s, err := DecodeJ[model.EasyTierSettings](value)
+		// Input is validated as sent (O18 T1c: the plain record would drop
+		// the undeclared option and read wrong types as absent).
+		raw, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = NormalizeEasyTier(&s)
+		_, err = NormalizeEasyTierJSON(raw)
 		if err == nil || !strings.Contains(err.Error(), tc.text) {
 			t.Fatalf("%s: %v", tc.text, err)
 		}

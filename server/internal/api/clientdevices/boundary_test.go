@@ -2,6 +2,7 @@ package clientdevices_test
 
 import (
 	"bytes"
+	"configflow/internal/testjson"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -211,7 +212,14 @@ func compareStored(t *testing.T, left, right json.RawMessage) {
 		}
 		delete(fields, "updated_at")
 	}
+	// Plain records leave out optional members holding "", null, {} or []
+	// (O18 T1c), where Python wrote them on some paths only.
+	var av, bv any
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
+	_ = json.Unmarshal(x, &av)
+	_ = json.Unmarshal(y, &bv)
+	x, _ = json.Marshal(testjson.WithoutEmptyMembers(av))
+	y, _ = json.Marshal(testjson.WithoutEmptyMembers(bv))
 	compareOracle(t, "stored profile", x, y)
 }

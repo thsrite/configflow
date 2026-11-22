@@ -130,9 +130,13 @@ func TestLowerProviderCopyRejectsAliasExplosion(t *testing.T) {
 	}
 }
 
+// TestTypedGroupDeleteFieldsUsesExplicitRemoval: delete_fields removes the
+// named members and leaves the input group unchanged. Groups are plain
+// records (O18 T1c): a wrong-typed stored member reads as its zero value and
+// an undeclared one is dropped, so there are no opaque bytes to keep.
 func TestTypedGroupDeleteFieldsUsesExplicitRemoval(t *testing.T) {
 	var group model.ProxyGroup
-	if err := json.Unmarshal([]byte(`{"id":"g","url":null,"interval":false,"extension":{"v":1e2}}`), &group); err != nil {
+	if err := json.Unmarshal([]byte(`{"id":"g","name":"G","url":"https://probe.example.com","interval":300}`), &group); err != nil {
 		t.Fatal(err)
 	}
 	var patch model.Fields
@@ -142,12 +146,12 @@ func TestTypedGroupDeleteFieldsUsesExplicitRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := model.Marshal(merged)
-	if string(data) != `{"id":"g","extension":{"v":1e2}}` {
-		t.Fatalf("lost opaque bytes/deletion: %s", data)
+	if string(data) != `{"id":"g","name":"G"}` {
+		t.Fatalf("deletion: %s", data)
 	}
 	old, _ := model.Marshal(group)
-	if string(old) != `{"id":"g","url":null,"interval":false,"extension":{"v":1e2}}` {
-		t.Fatal("mutated input")
+	if string(old) != `{"id":"g","name":"G","url":"https://probe.example.com","interval":300}` {
+		t.Fatalf("mutated input: %s", old)
 	}
 }
 

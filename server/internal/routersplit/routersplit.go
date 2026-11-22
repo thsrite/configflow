@@ -82,8 +82,8 @@ func ReadMarkerProfile(p *model.Profile) (string, *Marker) {
 	if p == nil {
 		return StateAbsent, nil
 	}
-	raw, present := p.Mihomo.Fields.Get(MarkerKey)
-	if !present {
+	raw := p.Mihomo.RouterSplit.JSON()
+	if raw == nil {
 		return StateAbsent, nil
 	}
 	var fields map[string]json.RawMessage
@@ -114,7 +114,7 @@ func GatewayEnabled(p *model.Profile) bool {
 	if p == nil {
 		return false
 	}
-	raw, _ := p.Mihomo.Fields.Get("linux_gateway")
+	raw := p.Mihomo.LinuxGateway.JSON()
 	var settings struct {
 		Enabled bool `json:"enabled"`
 		Raw     model.Raw

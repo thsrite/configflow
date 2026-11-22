@@ -745,8 +745,7 @@ func TestReviewedA21ValidationClassAndTwoLevelRedaction(t *testing.T) {
 	f := newFixture(t)
 	f.enroll(t)
 	err := f.s.Repository.UpdateShared(f.ctx, func(_ context.Context, shared *model.Shared) error {
-		shared.Nodes[0].Fields.Set("password", json.RawMessage(`"linux"`))
-		return nil
+		return shared.Nodes[0].Params.UnmarshalJSON([]byte(`{"password":"linux"}`))
 	})
 	must(t, err)
 	view, err := f.s.Get(f.ctx, f.r.ID)

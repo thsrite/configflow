@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -229,6 +231,11 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (jso
 		})
 		return nil, err
 	}
+	// The settings record holds custom config text only (O18 T1c): any other
+	// JSON value is refused as the record would refuse it, before parsing.
+	if text := bytes.TrimSpace(body.Config); len(text) > 0 && text[0] != '"' && string(text) != "null" {
+		return nil, repo.InputError(&model.MemberTypeError{Record: "profile", Member: engine, Value: body.Config, Err: model.ErrType})
+	}
 	config, err := r.Config(ctx, id, repo.ResourceRoots{})
 	if err != nil {
 		return nil, err
@@ -305,11 +312,12 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (jso
 			}
 		}
 		if len(body.EasyTier) > 0 {
-			var input *model.EasyTierSettings
-			if err = json.Unmarshal(body.EasyTier, &input); err != nil {
+			// Validated on the request's own JSON: the plain record would
+			// read members of the wrong type as absent (O18 T1c).
+			if kind := jsontext.Value(bytes.TrimSpace(body.EasyTier)).Kind(); kind != '{' && kind != 'n' {
 				return nil, reject(fmt.Sprintf(msgEasyTier, "settings object expected"))
 			}
-			normalized, err := convert.NormalizeEasyTier(input)
+			normalized, err := convert.NormalizeEasyTierJSON(body.EasyTier)
 			if err != nil {
 				return nil, reject(fmt.Sprintf(msgEasyTier, err))
 			}

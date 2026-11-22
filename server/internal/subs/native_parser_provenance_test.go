@@ -8,18 +8,24 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func TestN89VMessRetainsTypeEvidenceAndOpenParameterTokens(t *testing.T) {
+// TestN89VMessReadsTypedViewAndOpenParameterTokens (O18 T1c; was
+// TestN89VMessRetainsTypeEvidenceAndOpenParameterTokens): the typed node view
+// reads leniently (a list address is no server); the R5 type evidence on the
+// node (model.Issues) no longer exists; the parse result carries the
+// wrong-typed server as WrongText. Open parameter tokens stay exact.
+func TestN89VMessReadsTypedViewAndOpenParameterTokens(t *testing.T) {
 	source := base64.StdEncoding.EncodeToString([]byte(`{"ps":5,"add":[],"port":"443","id":123,"scy":null,"net":"ws","path":null}`))
 	parsed := ParseList("vmess://" + source)
 	if len(parsed) != 1 {
 		t.Fatal("missing VMess node")
 	}
 	node := parsed[0].Node
-	if node.Name != "5" || node.Server != "" || node.Port != 443 {
+	if node.Name != "5" || node.Server != "" || model.IntValue(node.Port) != 443 {
 		t.Fatalf("typed view %#v", node)
 	}
-	if !model.IssueUnder(model.Issues(&node), "server") {
-		t.Fatal("consumed server type evidence was discarded")
+	// The list address is kept as evidence so client generation refuses it.
+	if wrong := parsed[0].WrongText; wrong == nil || wrong.Member != "server" || string(wrong.Value) != "[]" {
+		t.Fatalf("wrong-typed server evidence %#v", parsed[0].WrongText)
 	}
 	params, err := node.Params.Node()
 	if err != nil {

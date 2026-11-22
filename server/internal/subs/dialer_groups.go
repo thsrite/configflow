@@ -170,7 +170,7 @@ func AddGroups(ctx context.Context, main *yamlx.Node, config *model.Config, inpu
 	caches := map[string]*SubscriptionCache{}
 	var order []string
 	for _, id := range emitted {
-		if sub := subscriptions[id]; resourceEnabled(&sub, sub.Enabled) {
+		if sub := subscriptions[id]; resourceEnabled(sub.Enabled) {
 			if inputs.LoadCache == nil {
 				return nil, &CollaborationError{Operation: "subscription dialer cache"}
 			}

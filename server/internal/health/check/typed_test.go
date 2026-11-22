@@ -242,8 +242,16 @@ func TestValidateModelRecords(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"interval":"bad"}`), &invalidHC); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateProviderHealth(&invalidHC); err == nil || err.Error() != fmt.Sprintf(msgHealthIntRange, "interval", 1, 86400) {
-		t.Fatalf("expected interval range error on R5-preserved raw JSON, got %v", err)
+	// O18 T1c: the stored wrong-typed interval reads as absent (default), so
+	// the record validates; the same request body is still rejected.
+	if invalidHC.Interval != nil {
+		t.Fatalf("wrong-typed stored interval kept: %v", *invalidHC.Interval)
+	}
+	if err := ValidateProviderHealth(&invalidHC); err != nil {
+		t.Fatalf("lenient stored interval rejected: %v", err)
+	}
+	if err := ValidateHealthJSON([]byte(`{"interval":"bad"}`), true); err == nil {
+		t.Fatal("request accepted a text interval")
 	}
 
 	var group model.ProxyGroup

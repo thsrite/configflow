@@ -756,7 +756,7 @@ func runBoundaryRows(t *testing.T, file string, rows <-chan row) {
 		// Python crashed (TypeError, AttributeError, IndexError, ...) on
 		// malformed input that Go handles; and values a document cannot hold
 		// (YAML sets/timestamps/non-string keys) that Go refuses.
-		if r.Err != nil && !settingsClasses[r.Err[0]] && err == nil || r.Unholdable != nil && errors.Is(err, errUnsupportedYAML) || unicodeEdge(r) || nativeBoundaryDifference(r, args, got, err) {
+		if r.Err != nil && !settingsClasses[r.Err[0]] && err == nil || r.Unholdable != nil && errors.Is(err, errUnsupportedYAML) || unicodeEdge(r) || nativeBoundaryDifference(r, args, got, err) || ruleRecordDirt(r.Args) {
 			s.accepted++
 			if os.Getenv("OXIDNS_ACCEPTED") != "" {
 				args := ""
@@ -853,6 +853,86 @@ func unicodeEdge(r row) bool {
 
 // nativeBoundaryDifference checks deliberate native-library changes against the
 // complete result, rather than waiving every row containing an unrelated Unicode name.
+// ruleRecordDirt reports whether a rule or rule library record in the
+// arguments (under rule_configs, rule_library, rules or rule_sets) holds, in
+// a member declared as text, a number, null or a value of another kind.
+// Accepted O18 T1c difference: plain records read these as text or as missing
+// (url: 5 is the URL "5", behavior/rule_type null is missing), where Python
+// kept the raw value (refusing it, or printing None). Empty text alone does
+// not count. (Kept local: a helper package would become a pyref source.)
+func ruleRecordDirt(args []json.RawMessage) bool {
+	textMembers := func(typ reflect.Type) map[string]bool {
+		out := map[string]bool{}
+		for i := 0; i < typ.NumField(); i++ {
+			field := typ.Field(i)
+			ft := field.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() != reflect.String || ft.PkgPath() != "" {
+				continue
+			}
+			if name, _, _ := strings.Cut(field.Tag.Get("json"), ","); name != "" && name != "-" {
+				out[name] = true
+			}
+		}
+		return out
+	}
+	ruleText := textMembers(reflect.TypeFor[model.RuleConfig]())
+	libraryText := textMembers(reflect.TypeFor[model.RuleLibraryItem]())
+	dirtyList := func(raw json.RawMessage, text map[string]bool) bool {
+		var items []map[string]json.RawMessage
+		if json.Unmarshal(raw, &items) != nil {
+			return false
+		}
+		for _, item := range items {
+			for name, value := range item {
+				if text[name] && len(value) > 0 && value[0] != '"' {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	var visit func(json.RawMessage) bool
+	visit = func(raw json.RawMessage) bool {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(raw, &object) == nil {
+			for key, value := range object {
+				switch key {
+				case "rule_configs", "rules", "rule_sets":
+					if dirtyList(value, ruleText) {
+						return true
+					}
+				case "rule_library":
+					if dirtyList(value, libraryText) {
+						return true
+					}
+				}
+				if visit(value) {
+					return true
+				}
+			}
+			return false
+		}
+		var list []json.RawMessage
+		if json.Unmarshal(raw, &list) == nil {
+			for _, item := range list {
+				if visit(item) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, arg := range args {
+		if visit(arg) {
+			return true
+		}
+	}
+	return false
+}
+
 func nativeBoundaryDifference(r row, args []*Node, got *Node, err error) bool {
 	// The editor now supports YAML merges, which Python's NativeLoader refused.
 	if len(r.Err) > 1 && strings.HasSuffix(r.Err[1], " YAML 语法无效") {

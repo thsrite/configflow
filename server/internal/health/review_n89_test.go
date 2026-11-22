@@ -78,7 +78,7 @@ func TestReviewN89RealWorkerLifetimeControlsPersistence(t *testing.T) {
 				}
 				base := repo.WithRepository(context.Background(), r)
 				if err := r.UpdateShared(base, func(_ context.Context, shared *model.Shared) error {
-					shared.Nodes = []model.Node{{ID: "synthetic", Name: "Synthetic", Type: "http", Server: "example.test", Port: 80}}
+					shared.Nodes = []model.Node{{ID: "synthetic", Name: "Synthetic", Type: "http", Server: "example.test", Port: model.IntPtr(80)}}
 					return nil
 				}); err != nil {
 					t.Fatal(err)

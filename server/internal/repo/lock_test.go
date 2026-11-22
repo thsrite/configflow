@@ -87,14 +87,14 @@ func TestNestedWriteIsRefusedAndReadsSeeWorkingCopy(t *testing.T) {
 		wantError(t, err, ErrInUse, "不能在配置事务中再次开启写事务")
 		err = r.UpdateShared(ctx, func(context.Context, *model.Shared) error { return nil })
 		wantError(t, err, ErrInUse, "不能在配置事务中再次开启写事务")
-		return system.SystemConfig.Fields.Set("marker", json.RawMessage(`"working"`))
+		return markerSet(&system.SystemConfig.GitHubProxyDomain, json.RawMessage(`"working"`))
 	})
 	noError(t, err)
 
 	_, err = r.UpdateProfile(bg, "default", func(ctx context.Context, current *model.Profile) error {
 		// The working copy is the transaction's document; edits made by the
 		// updater to its snapshot are applied after it returns.
-		raw, _ := must(r.System(ctx))(t).SystemConfig.Fields.Get("marker")
+		raw, _ := markerGet(json.RawMessage(must(r.System(ctx))(t).SystemConfig.GitHubProxyDomain))
 		if string(raw) != `"working"` {
 			t.Fatalf("marker %s", raw)
 		}
@@ -154,14 +154,14 @@ func TestConcurrentWritersAreSerialized(t *testing.T) {
 			for range rounds {
 				_, err := r.UpdateProfile(bg, "default", func(_ context.Context, current *model.Profile) error {
 					var count int64
-					if raw, ok := current.Mihomo.Fields.Get("counter"); ok {
+					if raw, ok := markerGet(json.RawMessage(current.Loon.CustomConfig)); ok {
 						_ = json.Unmarshal(raw, &count)
 					}
 					raw, err := json.Marshal(count + 1)
 					if err != nil {
 						return err
 					}
-					return current.Mihomo.Fields.Set("counter", raw)
+					return markerSet(&current.Loon.CustomConfig, raw)
 				})
 				if err != nil {
 					failures <- err
@@ -176,7 +176,7 @@ func TestConcurrentWritersAreSerialized(t *testing.T) {
 	}
 	profile := must(r.Profile(bg, "default"))(t)
 	var counter int64
-	if raw, ok := profile.Mihomo.Fields.Get("counter"); ok {
+	if raw, ok := markerGet(json.RawMessage(profile.Loon.CustomConfig)); ok {
 		noError(t, json.Unmarshal(raw, &counter))
 	}
 	if counter != writers*rounds {

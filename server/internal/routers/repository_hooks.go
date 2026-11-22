@@ -14,7 +14,7 @@ func jobLockHook(ctx context.Context, profileID, routerID string, router model.R
 }
 
 func routerStoredText(router *model.Router, key string) string {
-	raw, _, err := router.MemberJSON(key)
+	raw, _, err := model.EncodeMember(router, key)
 	if err != nil {
 		return ""
 	}

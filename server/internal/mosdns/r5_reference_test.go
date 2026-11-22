@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"configflow/internal/model"
@@ -23,7 +24,8 @@ func projectR5Record(original *mosObj, native reflect.Value) *mosObj {
 		if !member.IsExported() {
 			continue
 		}
-		key := member.Tag.Get("json")
+		// Plain records (O18 T1c) tag optional members ",omitzero".
+		key, _, _ := strings.Cut(member.Tag.Get("json"), ",")
 		if key == "" || key == "-" {
 			continue
 		}
@@ -265,6 +267,12 @@ func nativeR5Outcome(t *testing.T, oracle *goldenOracle, row *mosObj, got any, a
 		return false
 	}
 	want := answer.Value("out")
+	if fn == "split" {
+		// Rules are plain records: compare in their stored form (rows_test.go).
+		wantForm, wok := splitStoredForm(want)
+		gotForm, gok := splitStoredForm(got)
+		return wok && gok && yamlxtest.EqualJSON(gotForm, wantForm)
+	}
 	if fn == "generate" {
 		a, aok := got.(string)
 		b, bok := want.(string)
@@ -293,8 +301,10 @@ func TestR5ReferenceProjectionStaysNarrow(t *testing.T) {
 	if config.GetObject("mosdns").Has("cache_size") {
 		t.Fatal("invalid optional integer value reached reference")
 	}
-	if got, ok := config.GetObject("mosdns").Get("cache_enabled"); !ok || got != "false" {
-		t.Fatalf("unified boolean switch should be preserved for reference, got (%v, %v)", got, ok)
+	// A switch of another type reaches the reference as its truth value (O18
+	// T1c flag truthiness; Python reads "false" as true too).
+	if got, ok := config.GetObject("mosdns").Get("cache_enabled"); !ok || got != true {
+		t.Fatalf("unified boolean switch should reach the reference as its truth value, got (%v, %v)", got, ok)
 	}
 	normal := []any{mosKV("mosdns", mosKV("cache_size", mosInt(128)))}
 	if _, changed = r5Arguments("generate", normal); changed {

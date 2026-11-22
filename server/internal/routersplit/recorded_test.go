@@ -524,7 +524,7 @@ func runRow(row recordedRow, env *replayEnv) (any, error) {
 		if marker == nil {
 			return []any{state, nil}, nil
 		}
-		raw, _ := p.Mihomo.Fields.Get(MarkerKey)
+		raw := p.Mihomo.RouterSplit.JSON()
 		parsed, _ := parseRec(raw)
 		out := parsed.(*recObj)
 		out.set("route_rule_set_ids", recStrings(marker.RouteRuleSetIDs))

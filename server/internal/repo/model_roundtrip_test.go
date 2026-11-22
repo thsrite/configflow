@@ -245,12 +245,12 @@ func TestStoredRoundTrip(t *testing.T) {
 		}
 		profileKey := func(name string) modelRowKey { return modelRowKey{"profile", owner, name} }
 		marker := json.RawMessage(` { "z":1.0,"a":"\u4f8b <>&","nested": { "future": true } } `)
-		commit("unknown system", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
-			fields := roundTripFields(t, must(model.Marshal(d.System.Backup))(t))
-			if fields.Set("n8_unknown", marker) != nil {
-				t.Fatal("backup unknown set failed")
-			}
-			d.System.Backup = roundTripDecode[model.Backup](t, fields)
+		// Plain records drop undeclared members (O18 T1c): a declared
+		// backup member changes the row instead.
+		_ = marker
+		commit("backup member", []modelRowKey{{"system", "", "backup"}}, func(d *model.Document) {
+			path := "/n8-round-trip/"
+			d.System.Backup.WebDAVPath = &path
 		})
 		commit("profile rename", []modelRowKey{profileKey("name")}, func(d *model.Document) { d.Profiles[0].Name = "N8 round-trip profile" })
 		commit("group add", []modelRowKey{profileKey("proxy_groups")}, func(d *model.Document) {

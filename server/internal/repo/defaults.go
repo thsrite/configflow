@@ -125,9 +125,15 @@ func (r *Repository) profileDefaultsJSON() (json.RawMessage, error) {
 	}
 	// Profile records always write their metadata members (O18 T1a); the
 	// defaults are settings only, so an empty id or name never overrides the
-	// metadata of the profile they are applied to.
+	// metadata of the profile they are applied to. Profile sections are
+	// always written too (O18 T1c), but Python's legacy defaults hold only the
+	// default configuration's sections plus surge, loon and routers.
+	var configured model.Fields
+	if err := configured.UnmarshalJSON(defaultConfigJSON()); err != nil {
+		return nil, err
+	}
 	for key, value := range all.All() {
-		if IsProfileField(key) {
+		if IsProfileField(key) && (configured.Has(key) || key == "surge" || key == "loon" || key == "routers") {
 			if err := fields.Set(key, value); err != nil {
 				return nil, err
 			}
@@ -148,6 +154,19 @@ func (r *Repository) profileDefaultsJSON() (json.RawMessage, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	// Sections Python's legacy defaults lack stay out of the override too.
+	var overrides model.Fields
+	if err := overrides.UnmarshalJSON(override); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"domain_discovery", "device_notes", "client_fixed_ips"} {
+		if raw, ok := overrides.Get(key); ok && !configured.Has(key) && string(raw) == "{}" {
+			overrides.Delete(key)
+		}
+	}
+	if override, err = overrides.MarshalJSON(); err != nil {
+		return nil, err
 	}
 	return mergeObjectsJSON(base, override)
 }

@@ -320,7 +320,7 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 		}
 	}
 	system, _ := srv.Repo.System(ctx)
-	if _, ok, _ := system.SystemConfig.MemberJSON(Setting); ok {
+	if _, ok, _ := model.EncodeMember(&system.SystemConfig, Setting); ok {
 		t.Fatal("stored")
 	}
 
@@ -337,7 +337,7 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 		t.Fatalf("%s", res.Body)
 	}
 	system, _ = srv.Repo.System(ctx)
-	if raw, ok, _ := system.SystemConfig.MemberJSON(Setting); !ok || !testjson.Equal(300, raw) {
+	if raw, ok, _ := model.EncodeMember(&system.SystemConfig, Setting); !ok || !testjson.Equal(300, raw) {
 		t.Fatalf("%s", raw)
 	}
 	if ran, err := RunDue(ctx, started.Add(10*time.Minute)); !ran || err != nil {

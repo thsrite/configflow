@@ -61,7 +61,7 @@ func refList(value *[]model.ResourceRef) []model.ResourceRef {
 	return *value
 }
 func stableRef(ref *model.ResourceRef) bool {
-	return ref != nil && (ref.Type == "node" || ref.Type == "group") && strings.TrimSpace(ref.ID) != "" && ref.Fields.Len() == 0
+	return ref != nil && (ref.Type == "node" || ref.Type == "group") && strings.TrimSpace(ref.ID) != ""
 }
 func resourceRef(ref model.ResourceRef) Ref { return Ref{ref.Type, ref.ID} }
 
@@ -91,21 +91,21 @@ func newDialerScope(config *model.Config) *dialerScope {
 	}
 	for i := range config.Nodes {
 		node := &config.Nodes[i]
-		add(dialerResource{ref: Ref{"node", node.ID}, name: node.Name, enabled: enabled(node, node.Enabled), node: node})
+		add(dialerResource{ref: Ref{"node", node.ID}, name: node.Name, enabled: enabled(node.Enabled), node: node})
 	}
 	if config.Profile != nil {
 		for i := range config.Profile.ProxyGroups {
 			group := &config.Profile.ProxyGroups[i]
-			add(dialerResource{ref: Ref{"group", group.ID}, name: group.Name, enabled: enabled(group, group.Enabled), group: group})
+			add(dialerResource{ref: Ref{"group", group.ID}, name: group.Name, enabled: enabled(group.Enabled), group: group})
 		}
 	}
 	for i := range config.Subscriptions {
 		source := &config.Subscriptions[i]
-		add(dialerResource{ref: Ref{"subscription", source.ID}, name: source.Name, enabled: enabled(source, source.Enabled)})
+		add(dialerResource{ref: Ref{"subscription", source.ID}, name: source.Name, enabled: enabled(source.Enabled)})
 	}
 	for i := range config.Aggregations {
 		source := &config.Aggregations[i]
-		add(dialerResource{ref: Ref{"aggregation", source.ID}, name: source.Name, enabled: enabled(source, source.Enabled), aggregation: source})
+		add(dialerResource{ref: Ref{"aggregation", source.ID}, name: source.Name, enabled: enabled(source.Enabled), aggregation: source})
 	}
 	return s
 }
@@ -141,6 +141,12 @@ func recordMembers(member func(string) (json.RawMessage, bool, error), names ...
 	return members, nil
 }
 
+// memberOf reads single members of a plain record (model.EncodeMember),
+// never the whole record (O10 R9).
+func memberOf(rec any) func(string) (json.RawMessage, bool, error) {
+	return func(name string) (json.RawMessage, bool, error) { return model.EncodeMember(rec, name) }
+}
+
 // ConfigShapes validates metadata needed by node and topology generation.
 func ConfigShapes(config *model.Config, requireIDs bool) error {
 	if config == nil {
@@ -149,7 +155,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 	// Only the members checked here are encoded, never a whole record (O10 R9).
 	for i := range config.Nodes {
 		node := &config.Nodes[i]
-		members, err := recordMembers(node.MemberJSON, "id", "proxy_string")
+		members, err := recordMembers(memberOf(node), "id", "proxy_string")
 		if err != nil {
 			return err
 		}
@@ -179,7 +185,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		}
 	}
 	for _, group := range configGroups(config) {
-		members, err := recordMembers(group.MemberJSON, "id", "type", "manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use", "proxies_order")
+		members, err := recordMembers(memberOf(&group), "id", "type", "manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use", "proxies_order")
 		if err != nil {
 			return err
 		}
@@ -190,6 +196,18 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		if strings.TrimSpace(group.Name) == "" {
 			return fmt.Errorf(msgResourceField, "name")
 		}
+		if err := GroupMemberShapes(members); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GroupMemberShapes checks the JSON shapes of a proxy group's typed members
+// (dialer_references.validate_shapes): the type text, the id lists and
+// proxies_order. members are the group's members as JSON.
+func GroupMemberShapes(members map[string]json.RawMessage) error {
+	{
 		if raw, present := members["type"]; present {
 			if err := identityString(raw, "type"); err != nil {
 				return err
@@ -331,30 +349,8 @@ func (s *dialerScope) groupSources(group model.ProxyGroup) ([]Ref, error) {
 	return result, nil
 }
 
-func validateStoredNodeReference(node model.Node) error {
-	if !model.IssueUnder(model.Issues(node), "dialer_ref") {
-		return nil
-	}
-	data, err := model.Marshal(node)
-	if err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	raw, err := json.Marshal(fields["dialer_ref"])
-	if err != nil {
-		return err
-	}
-	return fmt.Errorf(msgStoredDialerRef, raw)
-}
-
 // NodeDialer reads a node's own dialer-proxy without contacting a converter.
 func NodeDialer(node model.Node) (*yamlx.Node, error) {
-	if err := validateStoredNodeReference(node); err != nil {
-		return nil, err
-	}
 	if node.ProxyString != nil && *node.ProxyString != "" {
 		proxy, err := StructuredProxy(*node.ProxyString)
 		if err != nil {
@@ -388,9 +384,6 @@ func NodeDialerTarget(config *model.Config, node model.Node) (*Ref, error) {
 	return newDialerScope(config).nodeTarget(node)
 }
 func (s *dialerScope) nodeTarget(node model.Node) (*Ref, error) {
-	if err := validateStoredNodeReference(node); err != nil {
-		return nil, err
-	}
 	if node.DialerRef != nil {
 		if !stableRef(node.DialerRef) {
 			return nil, errors.New(msgDialerRef)
@@ -465,7 +458,7 @@ func (s *dialerScope) validateChains() error {
 			continue
 		}
 		chain := group.Chain
-		if chain == nil || chain.Fields.Len() != 0 {
+		if chain == nil {
 			return errors.New(msgChainShape)
 		}
 		data, err := chain.MarshalJSON()
@@ -675,13 +668,6 @@ func ConfigDialers(config *model.Config) error {
 	if err := ConfigShapes(config, true); err != nil {
 		return err
 	}
-	if config != nil {
-		for _, node := range config.Nodes {
-			if err := validateStoredNodeReference(node); err != nil {
-				return err
-			}
-		}
-	}
 	s := newDialerScope(config)
 	if err := s.validateChains(); err != nil {
 		return err
@@ -717,11 +703,11 @@ func ConfigDialers(config *model.Config) error {
 			if kind == "node" {
 				for i := range config.Nodes {
 					node := &config.Nodes[i]
-					resources = append(resources, dialerResource{ref: Ref{kind, node.ID}, name: node.Name, enabled: enabled(node, node.Enabled)})
+					resources = append(resources, dialerResource{ref: Ref{kind, node.ID}, name: node.Name, enabled: enabled(node.Enabled)})
 				}
 			} else {
 				for _, group := range configGroups(config) {
-					resources = append(resources, dialerResource{ref: Ref{kind, group.ID}, name: group.Name, enabled: enabled(&group, group.Enabled)})
+					resources = append(resources, dialerResource{ref: Ref{kind, group.ID}, name: group.Name, enabled: enabled(group.Enabled)})
 				}
 			}
 			for _, resource := range resources {

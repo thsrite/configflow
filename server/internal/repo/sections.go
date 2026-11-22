@@ -171,8 +171,8 @@ type sharedItem struct {
 
 func sharedItems(shared *model.Shared, kind string) ([]sharedItem, error) {
 	var items []sharedItem
-	add := func(record model.SwitchMember, id, name string, enabled *bool) {
-		items = append(items, sharedItem{id, name, storedEnabled(record, enabled)})
+	add := func(record any, id, name string, enabled *bool) {
+		items = append(items, sharedItem{id, name, storedEnabled(enabled)})
 	}
 	switch kind {
 	case kindSubscriptions:

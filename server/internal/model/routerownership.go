@@ -1,105 +1,62 @@
 package model
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
+// Router ownership manifests prove what a publication wrote to a device; the
+// router guards refuse connection changes and deletions while one is stored.
+// Their members (and those of their specs) are omitzero, so a stored {}
+// (Python: falsy, no manifest) stays {}. A manifest stored with another JSON type still proves a
+// publication to Python's truthiness guards, so it is not read as absent: the
+// stored value is kept (Stored), reported as an issue and written back
+// unchanged until the manifest is replaced (damagedKeeper).
+
 // RouterResource pins a device ID and its full stable configuration; decoding is not proof validation.
 type RouterResource struct {
 	Path   string  `json:"path"`
 	ID     string  `json:"id"`
 	Config Dynamic `json:"config"`
-	Fields Fields
-	raw    Raw
 }
-
-// UnmarshalJSON decodes RouterResource with stored-member preservation and R5 fallback.
-func (r *RouterResource) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when RouterResource is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *RouterResource) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged RouterResource members.
-func (r RouterResource) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // ROSPolicyState holds policy ownership; Python has no top-level version for this record.
 type ROSPolicyState struct {
-	Spec      ROSPolicySpec    `json:"spec"`
-	Resources []RouterResource `json:"resources"`
-	Fields    Fields
-	raw       Raw
+	Spec      ROSPolicySpec    `json:"spec,omitzero"`
+	Resources []RouterResource `json:"resources,omitzero"`
+	// Stored keeps a manifest stored with another JSON type; see damagedKeeper.
+	Stored json.RawMessage `json:"-"`
 }
-
-// UnmarshalJSON decodes ROSPolicyState with stored-member preservation and R5 fallback.
-func (r *ROSPolicyState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when ROSPolicyState is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *ROSPolicyState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged ROSPolicyState members.
-func (r ROSPolicyState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // ROSPolicySpec pins the source, destination, gateway and naming/policy versions of a policy bundle.
 type ROSPolicySpec struct {
-	Sources       []string `json:"sources"`
-	Destinations  []string `json:"destinations"`
-	Gateway       string   `json:"gateway"`
-	NamingVersion Int      `json:"naming_version"`
-	PolicyVersion Int      `json:"policy_version"`
-	Fields        Fields
-	raw           Raw
+	Sources       []string `json:"sources,omitzero"`
+	Destinations  []string `json:"destinations,omitzero"`
+	Gateway       string   `json:"gateway,omitzero"`
+	NamingVersion Int      `json:"naming_version,omitzero"`
+	PolicyVersion Int      `json:"policy_version,omitzero"`
 }
-
-// UnmarshalJSON decodes ROSPolicySpec with stored-member preservation and R5 fallback.
-func (r *ROSPolicySpec) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when ROSPolicySpec is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *ROSPolicySpec) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged ROSPolicySpec members.
-func (r ROSPolicySpec) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DNSGuardState holds DNS guard ownership and its exact published specification.
 type DNSGuardState struct {
-	Version   Int                `json:"version"`
-	Spec      DNSGuardSpec       `json:"spec"`
-	Resources []DNSGuardResource `json:"resources"`
-	Fields    Fields
-	raw       Raw
+	Version   Int                `json:"version,omitzero"`
+	Spec      DNSGuardSpec       `json:"spec,omitzero"`
+	Resources []DNSGuardResource `json:"resources,omitzero"`
+	// Stored keeps a manifest stored with another JSON type; see damagedKeeper.
+	Stored json.RawMessage `json:"-"`
 }
-
-// UnmarshalJSON decodes DNSGuardState with stored-member preservation and R5 fallback.
-func (r *DNSGuardState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DNSGuardState is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DNSGuardState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DNSGuardState members.
-func (r DNSGuardState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DNSGuardSpec is the published LAN DNS interception specification. Exempt is a
 // pointer because older specs lack it and readers then derive it from Bypass.
 type DNSGuardSpec struct {
-	Agent     string    `json:"agent"`
-	Interface string    `json:"interface"`
-	Network   string    `json:"network"`
-	Bypass    []string  `json:"bypass"`
-	BlockDoT  *bool     `json:"block_dot"`
-	Failover  *bool     `json:"failover"`
-	Exempt    *[]string `json:"exempt"`
-	Fields    Fields
-	raw       Raw
+	Agent     string    `json:"agent,omitzero"`
+	Interface string    `json:"interface,omitzero"`
+	Network   string    `json:"network,omitzero"`
+	Bypass    []string  `json:"bypass,omitzero"`
+	BlockDoT  *bool     `json:"block_dot,omitzero"`
+	Failover  *bool     `json:"failover,omitzero"`
+	Exempt    *[]string `json:"exempt,omitzero"`
 }
-
-// UnmarshalJSON decodes DNSGuardSpec with stored-member preservation and R5 fallback.
-func (r *DNSGuardSpec) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DNSGuardSpec is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DNSGuardSpec) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DNSGuardSpec members.
-func (r DNSGuardSpec) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // DNSGuardResource adds a guard role to a device ID and full stable configuration.
 type DNSGuardResource struct {
@@ -107,131 +64,103 @@ type DNSGuardResource struct {
 	Path   string  `json:"path"`
 	ID     string  `json:"id"`
 	Config Dynamic `json:"config"`
-	Fields Fields
-	raw    Raw
 }
-
-// UnmarshalJSON decodes DNSGuardResource with stored-member preservation and R5 fallback.
-func (r *DNSGuardResource) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when DNSGuardResource is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *DNSGuardResource) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged DNSGuardResource members.
-func (r DNSGuardResource) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6FakeIPState retains the owned IPv6 fake-IP route and its specification.
 type IPv6FakeIPState struct {
-	Version   Int              `json:"version"`
-	Spec      IPv6FakeIPSpec   `json:"spec"`
-	Resources []RouterResource `json:"resources"`
-	Fields    Fields
-	raw       Raw
+	Version   Int              `json:"version,omitzero"`
+	Spec      IPv6FakeIPSpec   `json:"spec,omitzero"`
+	Resources []RouterResource `json:"resources,omitzero"`
+	// Stored keeps a manifest stored with another JSON type; see damagedKeeper.
+	Stored json.RawMessage `json:"-"`
 }
-
-// UnmarshalJSON decodes IPv6FakeIPState with stored-member preservation and R5 fallback.
-func (r *IPv6FakeIPState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when IPv6FakeIPState is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6FakeIPState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6FakeIPState members.
-func (r IPv6FakeIPState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6FakeIPSpec pins the fake-IP network and gateway.
 type IPv6FakeIPSpec struct {
-	CIDR    string `json:"cidr"`
-	Gateway string `json:"gateway"`
-	Fields  Fields
-	raw     Raw
+	CIDR    string `json:"cidr,omitzero"`
+	Gateway string `json:"gateway,omitzero"`
 }
-
-// UnmarshalJSON decodes IPv6FakeIPSpec with stored-member preservation and R5 fallback.
-func (r *IPv6FakeIPSpec) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when IPv6FakeIPSpec is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6FakeIPSpec) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6FakeIPSpec members.
-func (r IPv6FakeIPSpec) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6RoutesState retains the gateway and full proofs of the owned IPv6 routes.
 type IPv6RoutesState struct {
-	Version   Int              `json:"version"`
-	Gateway   string           `json:"gateway"`
-	Resources []RouterResource `json:"resources"`
-	Fields    Fields
-	raw       Raw
+	Version   Int              `json:"version,omitzero"`
+	Gateway   string           `json:"gateway,omitzero"`
+	Resources []RouterResource `json:"resources,omitzero"`
+	// Stored keeps a manifest stored with another JSON type; see damagedKeeper.
+	Stored json.RawMessage `json:"-"`
 }
-
-// UnmarshalJSON decodes IPv6RoutesState with stored-member preservation and R5 fallback.
-func (r *IPv6RoutesState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when IPv6RoutesState is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6RoutesState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6RoutesState members.
-func (r IPv6RoutesState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6PDGuardState holds prefix-delegation ownership using its deliberately ID-only resources.
 type IPv6PDGuardState struct {
-	Version   Int               `json:"version"`
-	Spec      IPv6PDGuardSpec   `json:"spec"`
-	Resources []PDGuardResource `json:"resources"`
-	Fields    Fields
-	raw       Raw
+	Version   Int               `json:"version,omitzero"`
+	Spec      IPv6PDGuardSpec   `json:"spec,omitzero"`
+	Resources []PDGuardResource `json:"resources,omitzero"`
+	// Stored keeps a manifest stored with another JSON type; see damagedKeeper.
+	Stored json.RawMessage `json:"-"`
 }
-
-// UnmarshalJSON decodes IPv6PDGuardState with stored-member preservation and R5 fallback.
-func (r *IPv6PDGuardState) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when IPv6PDGuardState is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6PDGuardState) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6PDGuardState members.
-func (r IPv6PDGuardState) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // IPv6PDGuardSpec pins the resolved prefix-delegation installation parameters.
 type IPv6PDGuardSpec struct {
-	LAN             string `json:"lan"`
-	Pool            string `json:"pool"`
-	Client          string `json:"client"`
-	ClientInterface string `json:"client_interface"`
-	Hold            Int    `json:"hold"`
-	Fields          Fields
-	raw             Raw
+	LAN             string `json:"lan,omitzero"`
+	Pool            string `json:"pool,omitzero"`
+	Client          string `json:"client,omitzero"`
+	ClientInterface string `json:"client_interface,omitzero"`
+	Hold            Int    `json:"hold,omitzero"`
 }
-
-// UnmarshalJSON decodes IPv6PDGuardSpec with stored-member preservation and R5 fallback.
-func (r *IPv6PDGuardSpec) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-
-// Clear drops a declared member (by JSON name) when IPv6PDGuardSpec is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *IPv6PDGuardSpec) Clear(member string) error { return ClearMember(r, &r.raw, member) }
-
-// MarshalJSON preserves unknown and unchanged IPv6PDGuardSpec members.
-func (r IPv6PDGuardSpec) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
 
 // PDGuardResource is an ID-only ownership proof; it has no configuration member.
 type PDGuardResource struct {
-	Role   string `json:"role"`
-	Path   string `json:"path"`
-	ID     string `json:"id"`
-	Fields Fields
-	raw    Raw
+	Role string `json:"role"`
+	Path string `json:"path"`
+	ID   string `json:"id"`
 }
 
-// UnmarshalJSON decodes PDGuardResource with stored-member preservation and R5 fallback.
-func (r *PDGuardResource) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
+func (r *ROSPolicyState) keepDamaged(raw []byte) { *r = ROSPolicyState{Stored: bytes.Clone(raw)} }
 
-// Clear drops a declared member (by JSON name) when PDGuardResource is written, even if
-// it is stored as null or with a wrong type; see ClearMember.
-func (r *PDGuardResource) Clear(member string) error { return ClearMember(r, &r.raw, member) }
+// MarshalJSON writes the manifest members, or a damaged stored value as stored.
+func (r ROSPolicyState) MarshalJSON() ([]byte, error) {
+	if r.Stored != nil {
+		return bytes.Clone(r.Stored), nil
+	}
+	return marshalPlain(&r)
+}
 
-// MarshalJSON preserves unknown and unchanged PDGuardResource members.
-func (r PDGuardResource) MarshalJSON() ([]byte, error) { return EncodeRecord(&r, &r.raw) }
+func (r *DNSGuardState) keepDamaged(raw []byte) { *r = DNSGuardState{Stored: bytes.Clone(raw)} }
+
+// MarshalJSON writes the manifest members, or a damaged stored value as stored.
+func (r DNSGuardState) MarshalJSON() ([]byte, error) {
+	if r.Stored != nil {
+		return bytes.Clone(r.Stored), nil
+	}
+	return marshalPlain(&r)
+}
+
+func (r *IPv6FakeIPState) keepDamaged(raw []byte) { *r = IPv6FakeIPState{Stored: bytes.Clone(raw)} }
+
+// MarshalJSON writes the manifest members, or a damaged stored value as stored.
+func (r IPv6FakeIPState) MarshalJSON() ([]byte, error) {
+	if r.Stored != nil {
+		return bytes.Clone(r.Stored), nil
+	}
+	return marshalPlain(&r)
+}
+
+func (r *IPv6RoutesState) keepDamaged(raw []byte) { *r = IPv6RoutesState{Stored: bytes.Clone(raw)} }
+
+// MarshalJSON writes the manifest members, or a damaged stored value as stored.
+func (r IPv6RoutesState) MarshalJSON() ([]byte, error) {
+	if r.Stored != nil {
+		return bytes.Clone(r.Stored), nil
+	}
+	return marshalPlain(&r)
+}
+
+func (r *IPv6PDGuardState) keepDamaged(raw []byte) { *r = IPv6PDGuardState{Stored: bytes.Clone(raw)} }
+
+// MarshalJSON writes the manifest members, or a damaged stored value as stored.
+func (r IPv6PDGuardState) MarshalJSON() ([]byte, error) {
+	if r.Stored != nil {
+		return bytes.Clone(r.Stored), nil
+	}
+	return marshalPlain(&r)
+}

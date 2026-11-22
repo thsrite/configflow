@@ -61,7 +61,8 @@ func TestCatalogAndReorder(t *testing.T) {
 		w.call("POST", "/api/aggregations", b, true)
 		w.call("PUT", "/api/aggregations/a", b, true)
 	}
-	for _, body := range []string{`{}`, `{"name":""}`, `{"name":42}`, `{"name":"Bad","subscriptions":null}`, `{"name":"Bad","nodes":["missing"]}`} {
+	// {"name":42} is TestAggregationNameMustBeText (Go refuses, Python stores it).
+	for _, body := range []string{`{}`, `{"name":""}`, `{"name":"Bad","subscriptions":null}`, `{"name":"Bad","nodes":["missing"]}`} {
 		w.call("POST", "/api/aggregations", body, true)
 		w.call("PUT", "/api/aggregations/a", body, true)
 	}
@@ -84,6 +85,28 @@ func TestCatalogAndReorder(t *testing.T) {
 	w.call("POST", "/api/aggregations", `{}`, false)
 	w.call("PUT", "/api/aggregations/b", `{}`, false)
 }
+
+// TestAggregationNameMustBeText: Flask stored a non-text aggregation name as
+// sent; the plain record takes text only (O18 T1c, strict input), so Go
+// refuses it with the resource name message and stores nothing.
+func TestAggregationNameMustBeText(t *testing.T) {
+	for _, call := range []struct{ method, path string }{{"POST", "/api/aggregations"}, {"PUT", "/api/aggregations/a"}} {
+		w := newWorld(t, seed(t, false, ""), map[string]string{"s": feed})
+		_, before, _ := w.exchange("GET", "/api/aggregations", "", true)
+		py, got, body := w.exchange(call.method, call.path, `{"name":42}`, true)
+		if py.Status != 200 {
+			t.Fatalf("%s %s: Flask now refuses a numeric name (%d); compare it again", call.method, call.path, py.Status)
+		}
+		want := map[string]any{"success": false, "message": "资源 name 必须是非空字符串"}
+		if got.Status != 400 || !reflect.DeepEqual(body, want) {
+			t.Fatalf("%s %s: Go %d %v, want 400 %v", call.method, call.path, got.Status, body, want)
+		}
+		if _, after, _ := w.exchange("GET", "/api/aggregations", "", true); string(after.Body) != string(before.Body) {
+			t.Fatalf("%s %s: refused request changed the catalog", call.method, call.path)
+		}
+	}
+}
+
 func TestProviderAndPreview(t *testing.T) {
 	w := newWorld(t, seed(t, true, ""), map[string]string{"s": feed})
 	w.call("GET", "/api/aggregations/a/preview", "", true)

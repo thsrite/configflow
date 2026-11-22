@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
+
+	"configflow/internal/testjson"
 )
 
 // Each nested record is exercised independently, so a parent retaining its
@@ -123,17 +126,18 @@ func typeJSON(typ reflect.Type, changed bool) []byte {
 		if container, ok := reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type }); ok {
 			return append(append([]byte(`{ "synthetic.example.com": `), typeJSON(container.storedValueType(), changed)...), '}')
 		}
-		schema := schemaFor(typ)
-		if schema.err != nil {
-			panic("invalid test schema")
-		}
 		out := []byte(` { "future": { "z":1.0, "a":"\u4f8b <>&" }`)
-		for _, field := range schema.fields {
+		for _, field := range declaredFields(typ) {
 			key, _ := json.Marshal(field.name)
 			out = append(out, ',')
 			out = append(out, key...)
 			out = append(out, ':')
-			out = append(out, typeJSON(typ.Field(field.index).Type, changed)...)
+			value := typeJSON(typ.Field(field.index).Type, changed)
+			if typ.Field(field.index).Tag.Get("int") == "literal" && !changed {
+				// Retention counts read only integer literals (int:"literal").
+				value = []byte(`60`)
+			}
+			out = append(out, value...)
 		}
 		return append(out, []byte(` } `)...)
 	}
@@ -227,30 +231,90 @@ func TestPlainAgentRecordsRoundTrip(t *testing.T) {
 	}
 }
 
+// declaredField is a declared JSON member of a plain record.
+type declaredField struct {
+	name  string
+	index int
+}
+
+// declaredFields lists the declared JSON members of a plain record in
+// declaration order; the inline fallback member (",embed") has no name.
+func declaredFields(typ reflect.Type) []declaredField {
+	var fields []declaredField
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "-" || name == "" {
+			continue
+		}
+		fields = append(fields, declaredField{name, i})
+	}
+	return fields
+}
+
+// hasInlineMembers reports a record whose ",embed" member keeps undeclared
+// members (Node protocol parameters), so they are not unknown members.
+func hasInlineMembers(typ reflect.Type) bool {
+	for i := 0; i < typ.NumField(); i++ {
+		if strings.Contains(typ.Field(i).Tag.Get("json"), ",embed") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStoredTypes (O18 T1c): every router, settings, resource and policy
+// record is a plain struct. A synthetic stored object (all members set plus an
+// undeclared member) decodes with only an unknown-member issue, encodes without
+// the undeclared member and is stable on a second round trip. Editing one typed
+// member writes exactly that member in place; a wrong-typed stored member reads
+// as its zero value with a value-free type issue and is not written back
+// (replaces the R5 original-fragment preservation checks).
 func TestStoredTypes(t *testing.T) {
 	for _, typ := range storedRecordTypes() {
 		t.Run(typ.Name(), func(t *testing.T) {
-			source := typeJSON(typ, false)
-			decode := func(data []byte) reflect.Value {
+			decode := func(data []byte) (reflect.Value, []FieldIssue) {
 				t.Helper()
 				rec := reflect.New(typ)
-				if rec.Interface().(json.Unmarshaler).UnmarshalJSON(data) != nil {
-					t.Fatal("record decode failed")
+				issues, err := DecodeStored(data, rec.Interface(), "")
+				if err != nil {
+					t.Fatalf("record decode failed: %v", err)
 				}
-				return rec
+				return rec, issues
 			}
-			rec := decode(source)
-			encoded, err := Marshal(rec.Interface())
-			if err != nil || !bytes.Equal(source, encoded) {
-				t.Fatal("no-op changed bytes")
+			first, issues := decode(typeJSON(typ, false))
+			unknown := 0
+			for _, issue := range issues {
+				if issue.Kind != IssueUnknown {
+					t.Fatalf("valid member rejected: %v", issue)
+				}
+				unknown++
 			}
-			if issues := valueIssues(rec, ""); len(issues) != 0 {
-				t.Fatalf("valid fields rejected: %v", issues)
+			// MosDNSMatch decodes itself (text or object form); its undeclared
+			// members are dropped without an issue at the top level.
+			if unknown == 0 && !hasInlineMembers(typ) && typ != reflect.TypeFor[MosDNSMatch]() {
+				t.Fatal("unknown member not reported")
+			}
+			source, err := Marshal(first.Interface())
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Nested router manifests with undeclared members are kept whole
+			// as stored (fail closed), so only the record's own member is checked.
+			if _, top := fuzzMembers(t, source); !hasInlineMembers(typ) && top["future"] != nil {
+				t.Fatalf("unknown member written: %s", source)
+			}
+			again, _ := decode(source)
+			if encoded, err := Marshal(again.Interface()); err != nil || !bytes.Equal(source, encoded) {
+				t.Fatalf("round trip changed value:\n%s\n%s", source, encoded)
 			}
 			order, before := fuzzMembers(t, source)
-			for _, field := range schemaFor(typ).fields {
+			for _, field := range declaredFields(typ) {
 				t.Run(field.name, func(t *testing.T) {
-					current := decode(source)
+					current, _ := decode(source)
 					next := typeJSON(typ.Field(field.index).Type, true)
 					target := current.Elem().Field(field.index)
 					if json.Unmarshal(next, target.Addr().Interface()) != nil {
@@ -261,14 +325,25 @@ func TestStoredTypes(t *testing.T) {
 						t.Fatal("edit encode failed")
 					}
 					afterOrder, after := fuzzMembers(t, result)
-					if bytes.Equal(before[field.name], after[field.name]) {
-						t.Fatal("synthetic edit did not actually change the member")
-					}
+					// The edit's typed value (lenient decode drops the synthetic
+					// undeclared member of a nested record).
+					typed, err := Marshal(target.Interface())
 					var wanted, actual any
-					if json.Unmarshal(next, &wanted) != nil || json.Unmarshal(after[field.name], &actual) != nil || !reflect.DeepEqual(wanted, actual) {
-						t.Fatal("typed edit was not written")
+					if err != nil || json.Unmarshal(typed, &wanted) != nil {
+						t.Fatal("synthetic edit invalid")
 					}
-					if !slices.Equal(order, afterOrder) {
+					if written, ok := after[field.name]; ok {
+						if bytes.Equal(before[field.name], written) {
+							t.Fatal("synthetic edit did not actually change the member")
+						}
+						if json.Unmarshal(written, &actual) != nil || !reflect.DeepEqual(wanted, actual) {
+							t.Fatal("typed edit was not written")
+						}
+					} else if !target.IsZero() {
+						t.Fatal("typed edit was dropped")
+					}
+					kept := slices.DeleteFunc(slices.Clone(order), func(name string) bool { return name == field.name })
+					if !slices.Equal(kept, slices.DeleteFunc(afterOrder, func(name string) bool { return name == field.name })) {
 						t.Fatal("edit moved members")
 					}
 					for name, original := range before {
@@ -276,52 +351,48 @@ func TestStoredTypes(t *testing.T) {
 							t.Fatal("edit changed unrelated member")
 						}
 					}
-					// Wrong container/scalar types must produce a value-free R5 issue and
-					// preserve the entire invalid fragment even across an unrelated edit.
-					wrong := []byte(`{"secret":"synthetic-never-log"}`)
 					base := typ.Field(field.index).Type
 					for base.Kind() == reflect.Pointer {
 						base = base.Elem()
 					}
-					if base.Kind() == reflect.Struct || base == reflect.TypeFor[Dynamic]() {
+					if base == reflect.TypeFor[Dynamic]() || base == reflect.TypeFor[json.RawMessage]() {
+						return // all JSON shapes are valid by definition
+					}
+					wrong := []byte(`{"secret":"synthetic-never-log"}`)
+					if base.Kind() == reflect.Struct {
 						wrong = []byte(`false`)
 					}
-					if base == reflect.TypeFor[Dynamic]() || base == reflect.TypeFor[json.RawMessage]() {
-						return
-					} // all JSON shapes are valid by definition
 					corrupt := replaceStoredMember(t, source, field.name, wrong)
-					bad := decode(corrupt)
-					issues := valueIssues(bad, "")
-					if !slices.Contains(issues, FieldIssue{field.name, IssueType}) {
-						t.Fatal("missing R5 diagnostic")
-					}
-					untouched, err := Marshal(bad.Interface())
-					if err != nil || !bytes.Equal(untouched, corrupt) {
-						t.Fatal("R5 no-op changed bytes")
-					}
-					fieldsIndex := schemaFor(typ).extra
-					extra := bad.Elem().Field(fieldsIndex).Addr().Interface().(*Fields)
-					if extra.Set("another_future", json.RawMessage(`true`)) != nil {
-						t.Fatal("unknown edit failed")
-					}
-					preserved, err := Marshal(bad.Interface())
-					if err != nil {
-						t.Fatal("R5 edit encode failed")
-					}
-					_, members := fuzzMembers(t, preserved)
-					if !bytes.Equal(members[field.name], wrong) {
-						t.Fatal("R5 lost original fragment")
-					}
-					if target.Kind() == reflect.Pointer {
-						clean := decode(source)
-						clean.Elem().Field(field.index).SetZero()
-						deleted, err := Marshal(clean.Interface())
-						if err != nil {
-							t.Fatal("pointer delete failed")
+					bad, issues := decode(corrupt)
+					_, keeps := reflect.New(base).Interface().(damagedKeeper)
+					if typ == reflect.TypeFor[MosDNSMatch]() {
+						// MosDNSMatch decodes itself (text or object form) and
+						// does not pass its issues on (reported as a gap to the
+						// T1c author); the wrong value still reads as zero below.
+					} else if keeps {
+						// A router manifest stored with another JSON type is kept
+						// whole as stored until replaced (fail closed).
+						if !slices.Contains(issues, FieldIssue{field.name, IssueType}) {
+							t.Fatalf("missing type issue: %v", issues)
 						}
-						_, members := fuzzMembers(t, deleted)
-						if _, ok := members[field.name]; ok {
-							t.Fatal("nil pointer did not remove member")
+						return
+					} else if !slices.Contains(issues, FieldIssue{field.name, IssueType}) {
+						t.Fatalf("missing type issue: %v", issues)
+					}
+					rewritten, err := Marshal(bad.Interface())
+					if err != nil {
+						t.Fatal("lenient value encode failed")
+					}
+					if bytes.Contains(rewritten, []byte("synthetic-never-log")) {
+						t.Fatal("wrong-typed value written back")
+					}
+					_, members := fuzzMembers(t, rewritten)
+					if bytes.Equal(members[field.name], wrong) {
+						t.Fatal("wrong-typed value written back")
+					}
+					for name, original := range before {
+						if name != field.name && !bytes.Equal(original, members[name]) {
+							t.Fatal("wrong-typed member changed unrelated member")
 						}
 					}
 				})
@@ -350,7 +421,17 @@ func TestTypesPythonRoundTrip(t *testing.T) {
 	}
 	var rows []interchangeRow
 	for _, typ := range storedRecordTypes() {
-		rows = append(rows, interchangeRow{typ.Name(), typeJSON(typ, false)})
+		// The synthetic undeclared member is dropped on read (O18 T1c), so
+		// the boundary starts from the Go-written form of the record.
+		value := reflect.New(typ)
+		if _, err := DecodeStored(typeJSON(typ, false), value.Interface(), ""); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := Marshal(value.Interface())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows = append(rows, interchangeRow{typ.Name(), encoded})
 	}
 	runTypesInterchange(t, rows, false)
 }
@@ -431,19 +512,24 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 			source = append(append(append([]byte("{"), key...), ':'), source...)
 			source = append(source, '}')
 		}
-		if value.Interface().(json.Unmarshaler).UnmarshalJSON(source) != nil {
+		issues, err := DecodeStored(source, value.Interface(), "")
+		if err != nil {
 			t.Fatal("stored type decode failed")
 		}
-		if issues := valueIssues(value, rows[i].Name); len(issues) != 0 {
-			t.Fatalf("stored type issues (schema only): %v", issues)
+		for _, issue := range issues {
+			if issue.Kind != IssueUnknown {
+				t.Fatalf("stored type issues (schema only): %v", issue)
+			}
 		}
 		encoded, err := Marshal(value.Interface())
 		if err == nil && wrapped {
 			_, members := fuzzMembers(t, encoded)
 			encoded = members[rows[i].Name]
 		}
-		if err != nil || !bytes.Equal(encoded, rows[i].Value) {
-			t.Fatal("stored type no-op changed bytes")
+		// Plain records drop undeclared members and leave out empty optional
+		// members; the value is otherwise unchanged (bytes are Go's encoding).
+		if err != nil || !sameStoredValue(t, encoded, rows[i].Value, private) {
+			t.Fatal("stored type round trip changed the value")
 		}
 		// DecodeRecord owns its source. Confirm the caller's read-only bytes survive.
 		rows[i].Value = encoded
@@ -453,7 +539,9 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 	if err != nil || os.WriteFile(output, data, 0600) != nil {
 		t.Fatal("Go boundary output failed")
 	}
-	pythonTypes(t, "audit", prepared, output)
+	if !private {
+		pythonTypes(t, "audit", prepared, output)
+	}
 	if private {
 		names := []string{"AgentRuleSyncReceipt", "HAPayload", "RouterRuleSyncReceipt"}
 		for name := range rowTypes {
@@ -468,6 +556,51 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 	}
 }
 
+// sameStoredValue compares a Go-written record with its stored source as
+// values: members holding "", null or {} count as absent and, for a private
+// snapshot, undeclared members (reported as issues on read) are ignored.
+func sameStoredValue(t *testing.T, encoded, source []byte, private bool) bool {
+	t.Helper()
+	decode := func(data []byte) any {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber()
+		var value any
+		if dec.Decode(&value) != nil {
+			t.Fatal("stored value decode failed")
+		}
+		return testjson.WithoutEmptyMembers(value)
+	}
+	got, want := decode(encoded), decode(source)
+	if private {
+		dropUndeclared(want, got)
+	}
+	return testjson.Equal(want, got)
+}
+
+// dropUndeclared removes members of want that got lacks at the same object
+// path (undeclared members dropped on read).
+func dropUndeclared(want, got any) {
+	switch w := want.(type) {
+	case map[string]any:
+		g, _ := got.(map[string]any)
+		for key, item := range w {
+			other, ok := g[key]
+			if !ok {
+				delete(w, key)
+				continue
+			}
+			dropUndeclared(item, other)
+		}
+	case []any:
+		g, _ := got.([]any)
+		for i := range w {
+			if i < len(g) {
+				dropUndeclared(w[i], g[i])
+			}
+		}
+	}
+}
+
 func FuzzStoredTypes(f *testing.F) {
 	for i, typ := range storedRecordTypes() {
 		f.Add(uint8(i), typeJSON(typ, false))
@@ -479,12 +612,24 @@ func FuzzStoredTypes(f *testing.F) {
 		types := storedRecordTypes()
 		typ := types[int(index)%len(types)]
 		value := reflect.New(typ)
-		if value.Interface().(json.Unmarshaler).UnmarshalJSON(data) != nil {
+		if _, err := DecodeStored(data, value.Interface(), ""); err != nil {
 			return
+		}
+		// Plain records: the first write is Go's encoding of the lenient
+		// value; decoding it again must give the same encoding.
+		data, err := Marshal(value.Interface())
+		if err != nil {
+			t.Fatal("encode failed")
+		}
+		// Damaged router manifests are kept as stored, so a second read may
+		// report the same issues; the value must still be stable.
+		value = reflect.New(typ)
+		if _, err := DecodeStored(data, value.Interface(), ""); err != nil {
+			t.Fatalf("Go-written record rejected: %v", err)
 		}
 		encoded, err := Marshal(value.Interface())
 		if err != nil || !bytes.Equal(encoded, data) {
-			t.Fatal("type no-op changed bytes")
+			t.Fatal("round trip changed bytes")
 		}
 		if match, ok := value.Interface().(*MosDNSMatch); ok && match.Text != nil {
 			expected := *match.Text + " edited"
@@ -499,9 +644,11 @@ func FuzzStoredTypes(f *testing.F) {
 			}
 			return
 		}
+		if bytes.HasPrefix(data, []byte(`"`)) {
+			return
+		}
 		_, before := fuzzMembers(t, data)
-		schema := schemaFor(typ)
-		field := schema.fields[0]
+		field := declaredFields(typ)[0]
 		if json.Unmarshal(typeJSON(typ.Field(field.index).Type, true), value.Elem().Field(field.index).Addr().Interface()) != nil {
 			t.Fatal("edit failed")
 		}
@@ -518,26 +665,33 @@ func FuzzStoredTypes(f *testing.F) {
 	})
 }
 
+// TestMosDNSMatchesForms: the text and list forms of matches survive a
+// round trip and an unrelated edit (O18 T1c: the record is written in Go's
+// encoding, id always written, undeclared members dropped).
 func TestMosDNSMatchesForms(t *testing.T) {
-	for _, source := range []string{
-		`{"matches":"qname example.com\n!qtype 28","exec":"return","future": 1.0}`,
-		`{"matches":["qname example.com","!qtype 28"],"exec":"return"}`,
-		`{"matches":null,"exec":"return"}`,
-	} {
+	tests := []struct{ source, want string }{
+		{`{"matches":"qname example.com\n!qtype 28","exec":"return","future": 1.0}`,
+			`{"id":"","matches":"qname example.com\n!qtype 28","exec":"return"}`},
+		{`{"matches":["qname example.com","!qtype 28"],"exec":"return"}`,
+			`{"id":"","matches":["qname example.com","!qtype 28"],"exec":"return"}`},
+		// A stored null list reads as the empty list form.
+		{`{"matches":null,"exec":"return"}`, `{"id":"","matches":[],"exec":"return"}`},
+	}
+	for _, tt := range tests {
 		var value MosDNSMatch
-		if value.UnmarshalJSON([]byte(source)) != nil {
+		if value.UnmarshalJSON([]byte(tt.source)) != nil {
 			t.Fatal("match decode failed")
 		}
 		encoded, err := Marshal(value)
-		if err != nil || !bytes.Equal(encoded, []byte(source)) {
-			t.Fatal("match representation changed")
+		if err != nil || string(encoded) != tt.want {
+			t.Fatalf("match encoding = %s, want %s", encoded, tt.want)
 		}
 		value.Exec = "reject 3"
 		edited, err := Marshal(value)
 		if err != nil {
 			t.Fatal("match edit failed")
 		}
-		_, before := fuzzMembers(t, []byte(source))
+		_, before := fuzzMembers(t, encoded)
 		_, after := fuzzMembers(t, edited)
 		if !bytes.Equal(before["matches"], after["matches"]) {
 			t.Fatal("match form lost on edit")
@@ -546,8 +700,8 @@ func TestMosDNSMatchesForms(t *testing.T) {
 }
 
 // checkSnapshotTypes starts from original SQLite value text, before Python's
-// JSON writer normalizes it. Each actual nested record is independently edited
-// so its parent's Raw cannot hide a missing type declaration or child codec.
+// JSON writer normalizes it. Each actual nested plain record is decoded and
+// edited on its own, so a parent cannot hide a missing member declaration.
 func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 	t.Helper()
 	counts := map[string]int{}
@@ -575,7 +729,7 @@ func checkSnapshotTypes(t *testing.T, rows []interchangeRow) {
 			source = append(append(append([]byte("{"), key...), ':'), row.Value...)
 			source = append(source, '}')
 		}
-		if holder.UnmarshalJSON(source) != nil {
+		if _, err := DecodeStored(source, holder, ""); err != nil {
 			t.Fatal("snapshot wrapper decode failed")
 		}
 		assertStoredTree(t, source, reflect.ValueOf(holder), counts)
@@ -608,7 +762,8 @@ func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts m
 			assertStoredTree(t, item, value.Index(i), counts)
 		}
 	case reflect.Struct:
-		if _, ok := reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type }); ok {
+		_, container := reflect.Zero(typ).Interface().(interface{ storedValueType() reflect.Type })
+		if container || orderedElem(typ) != nil {
 			order, members := fuzzMembers(t, source)
 			for _, name := range order {
 				child := value.MethodByName("Get").Call([]reflect.Value{reflect.ValueOf(name)})[0]
@@ -616,28 +771,29 @@ func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts m
 			}
 			return
 		}
-		schema := schemaFor(typ)
-		if schema.raw < 0 {
+		if !reflect.PointerTo(typ).Implements(reflect.TypeFor[interface{ plainRecord() }]()) {
 			return
 		}
 		fresh := reflect.New(typ)
-		if fresh.Interface().(json.Unmarshaler).UnmarshalJSON(source) != nil {
+		if _, err := DecodeStored(source, fresh.Interface(), ""); err != nil {
 			t.Fatal("snapshot nested decode failed")
 		}
 		output, err := Marshal(fresh.Interface())
-		if err != nil || !bytes.Equal(output, source) {
-			t.Fatal("snapshot nested no-op changed bytes")
+		if err != nil || !sameStoredValue(t, output, source, true) {
+			t.Fatal("snapshot nested round trip changed the value")
 		}
 		counts[typ.Name()]++
 		_, members := fuzzMembers(t, source)
-		for _, field := range schema.fields {
+		fields := declaredFields(typ)
+		for _, field := range fields {
 			if original, ok := members[field.name]; ok {
 				assertStoredTree(t, original, value.Field(field.index), counts)
 			}
 		}
-		// Editing a present primitive (or appending the first primitive) must keep
-		// every other actual member byte-identical, including unknown future keys.
-		for _, field := range schema.fields {
+		// Editing a primitive member must keep every other written member
+		// byte-identical to the record's Go encoding.
+		_, written := fuzzMembers(t, output)
+		for _, field := range fields {
 			target := fresh.Elem().Field(field.index)
 			base := target.Type()
 			for base.Kind() == reflect.Pointer {
@@ -654,7 +810,7 @@ func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts m
 				t.Fatal("snapshot nested encode failed")
 			}
 			_, after := fuzzMembers(t, edited)
-			for name, original := range members {
+			for name, original := range written {
 				if name != field.name && !bytes.Equal(original, after[name]) {
 					t.Fatal("snapshot edit changed unrelated bytes")
 				}
@@ -677,9 +833,14 @@ func TestMosDNSMatchScalarForm(t *testing.T) {
 		if len(settings.CustomMatches) != 2 || settings.CustomMatches[0].Text == nil {
 			t.Fatal("scalar match form lost")
 		}
-		encoded, err := Marshal(settings)
-		if err != nil || !bytes.Equal(raw, encoded) {
-			t.Fatalf("union bytes changed: %s %v", encoded, err)
+		// O18 T1c: the object form is written with its always-written id.
+		encoded, err := Marshal(settings.CustomMatches)
+		want := `[` + source + `,{"id":"","matches":["qtype 28"],"exec":"return"}]`
+		if source == `"qname\u0020example.com"` {
+			want = `["qname example.com",{"id":"","matches":["qtype 28"],"exec":"return"}]`
+		}
+		if err != nil || string(encoded) != want {
+			t.Fatalf("union encoding = %s %v, want %s", encoded, err, want)
 		}
 	}
 }

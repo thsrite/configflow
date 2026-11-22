@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -183,14 +184,8 @@ func (s *Service) ProxyDomains(ctx context.Context) (jsonValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, ok, err := settings.MemberJSON("github_proxy_domain")
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return jsonValue(`""`), nil
-	}
-	return raw, nil
+	raw, err := json.Marshal(settings.GitHubProxyDomain)
+	return jsonValue(raw), err
 }
 
 // SetProxyDomains preserves other system settings in the same transaction.

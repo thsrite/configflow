@@ -145,3 +145,35 @@ func summary(v any) string {
 	}
 	return string(b)
 }
+
+// WithoutEmptyMembers returns a decoded JSON value (from encoding/json into
+// any) without object members holding "", null, {} or [], at any depth. Stored
+// plain records leave such optional members out (O18 T1c) while Python wrote
+// them on some paths only, so stored-state comparisons treat them as absent.
+func WithoutEmptyMembers(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			item = WithoutEmptyMembers(item)
+			if item == nil || item == "" {
+				continue
+			}
+			if object, ok := item.(map[string]any); ok && len(object) == 0 {
+				continue
+			}
+			if list, ok := item.([]any); ok && len(list) == 0 {
+				continue
+			}
+			out[key] = item
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = WithoutEmptyMembers(item)
+		}
+		return out
+	}
+	return value
+}

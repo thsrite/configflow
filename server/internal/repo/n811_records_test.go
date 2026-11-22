@@ -37,8 +37,7 @@ func TestN811ImportExportOpaqueBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	opaque := json.RawMessage(`{ "large": 900719925474099312345678901234567890, "decimal": 1.230000e+04, "escape": "\u4e2d", "future": [null, { "x": true }] }`)
-	// An undeclared root member is dropped (O18 T1a); the settings record is
-	// not yet migrated and keeps its unknown members with their number text.
+	// Undeclared root and settings members are dropped (O18 T1a, T1c).
 	if err := fields.Set("future_extension", opaque); err != nil {
 		t.Fatal(err)
 	}
@@ -84,22 +83,10 @@ func TestN811ImportExportOpaqueBytes(t *testing.T) {
 	if err := settings.UnmarshalJSON(settingsRaw); err != nil {
 		t.Fatal(err)
 	}
-	actual, present := settings.Get("future_extension")
-	// Whitespace and string escapes follow Go's encoding; number text stays.
-	if !present || !bytes.Contains(actual, []byte(`900719925474099312345678901234567890`)) || !bytes.Contains(actual, []byte(`1.230000e+04`)) {
-		t.Fatalf("opaque member changed: %s", actual)
-	}
-	// Negative control: this fixture detects a generic float64 JSON round trip.
-	var normalized any
-	if err := json.Unmarshal(opaque, &normalized); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(normalized)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Equal(encoded, actual) {
-		t.Fatal("negative control failed to detect re-encoding")
+	// The settings record is a plain record since O18 T1c: its undeclared
+	// members are dropped like the root's.
+	if actual, present := settings.Get("future_extension"); present {
+		t.Fatalf("undeclared settings member kept: %s", actual)
 	}
 }
 
@@ -124,7 +111,7 @@ func hydrateFixture(t *testing.T, r *repo.Repository) {
 	}
 	_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
 		profile.RuleConfigs = []model.RuleConfig{{ID: "rule", ItemType: "ruleset", LibraryRuleID: "source"}}
-		return profile.Mihomo.Fields.Set("future", []byte(`{ "large": 90071992547409931234567890 }`))
+		return markerSet(&profile.Loon.CustomConfig, []byte(`{ "large": 90071992547409931234567890 }`))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +132,7 @@ func TestN811ResolvedConfigWrites(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opaque, _ := before.Mihomo.Fields.Get("future")
+			opaque, _ := markerGet(json.RawMessage(before.Loon.CustomConfig))
 			check := func(config *model.Config) {
 				t.Helper()
 				if len(config.RuleLibrary) != 1 || config.Profile.RuleConfigs[0].Name != "Source" || config.Profile.RuleConfigs[0].Content == nil || config.SystemConfig.RuleProxyToken == "" || !config.HasAgents || len(config.Agents) != 1 || config.Agents[0].ID != "fixture-agent" || config.Agents[0].ProfileID != "default" {
@@ -179,7 +166,7 @@ func TestN811ResolvedConfigWrites(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			retained, _ := after.Mihomo.Fields.Get("future")
+			retained, _ := markerGet(json.RawMessage(after.Loon.CustomConfig))
 			if !bytes.Equal(opaque, retained) {
 				t.Fatal("untouched opaque member changed")
 			}

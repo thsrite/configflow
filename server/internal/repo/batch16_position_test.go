@@ -67,7 +67,7 @@ func TestSharedMemberPositionsSurviveImportAndTypedUpdates(t *testing.T) {
 			check()
 			// Rewriting an existing member changes its value, not its position.
 			if err := r.UpdateShared(t.Context(), func(_ context.Context, shared *model.Shared) error {
-				shared.Nodes = append(shared.Nodes, model.Node{ID: "n-position", Name: "Position", Type: "http", Server: "192.0.2.9", Port: 80})
+				shared.Nodes = append(shared.Nodes, model.Node{ID: "n-position", Name: "Position", Type: "http", Server: "192.0.2.9", Port: model.IntPtr(80)})
 				return nil
 			}); err != nil {
 				t.Fatal(err)

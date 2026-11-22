@@ -82,7 +82,7 @@ func containsPolicy(available map[string]struct{}, name string) bool {
 // as its JSON literal in the Chinese diagnostic).
 func rulePolicy(rule *model.RuleConfig, fallback string) (policy string, validType bool) {
 	// Only the policy member is encoded, not the whole rule (O10 R9).
-	if value, present, err := rule.MemberJSON("policy"); err == nil {
+	if value, present, err := model.EncodeMember(rule, "policy"); err == nil {
 		if !present {
 			return fallback, true
 		}

@@ -120,23 +120,18 @@ func (r Router) MarshalJSON() ([]byte, error) {
 			if key == "id" || key == "password" || slices.Contains(EditableFields, key) {
 				continue
 			}
-			if _, kept := r.Extra[key]; kept {
+			if _, kept := r.Extra[key]; kept || !routerStateField(key) {
 				continue
 			}
-			if stored.Fields.Has(key) {
-				stored.Fields.Delete(key)
-			} else if err = stored.Clear(key); err != nil {
+			if err = stored.Clear(key); err != nil {
 				return nil, err
 			}
 		}
+		// Only the declared device-state members are kept; a stored member the
+		// router record does not declare is dropped (O18 T1c).
 		for key, value := range r.Extra {
-			if !jsonEqual(value, original[key]) {
-				if stored.Fields.Has(key) || !slices.Contains(append([]string{"last_probe", "last_release"}, repo.RouterManifestFields...), key) {
-					err = stored.Fields.Set(key, value)
-				} else {
-					err = stored.SetJSON(key, value)
-				}
-				if err != nil {
+			if routerStateField(key) && !jsonEqual(value, original[key]) {
+				if err = stored.SetJSON(key, value); err != nil {
 					return nil, err
 				}
 			}
@@ -150,6 +145,11 @@ func (r Router) MarshalJSON() ([]byte, error) {
 	}
 	extra, err := json.Marshal(r.Extra)
 	return append(append(known[:len(known)-1], ','), extra[1:]...), err
+}
+
+// routerStateField reports a declared router member kept in Extra.
+func routerStateField(key string) bool {
+	return key == "last_probe" || key == "last_release" || slices.Contains(repo.RouterManifestFields, key)
 }
 
 // State is a stored device-state field (Extra), nil when absent or falsy.

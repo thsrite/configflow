@@ -55,7 +55,7 @@ func loadBackup(ctx context.Context) (*backupEdit, error) {
 }
 
 func settingValue(config *systemConfigEdit, key string, fallback json.RawMessage) json.RawMessage {
-	raw, present, err := config.SystemConfig.MemberJSON(key)
+	raw, present, err := model.EncodeMember(config.SystemConfig, key)
 	if err != nil || !present {
 		return fallback
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"configflow/internal/devhttp"
@@ -39,8 +40,10 @@ func TestReviewStoredConnectionCredentials(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || string(encoded) != tc.raw {
-				t.Fatalf("stored record changed (%v)", err)
+			// Router records are plain too (O18 T1c): the case alias is
+			// dropped and the record is written in Go's encoding.
+			if err != nil || !strings.Contains(string(encoded), `"username":"old-user","password":"synthetic-password"`) || strings.Contains(string(encoded), "opaque-extension") {
+				t.Fatalf("stored record changed: %s (%v)", encoded, err)
 			}
 		})
 	}

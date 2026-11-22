@@ -141,14 +141,14 @@ func c03Increment(t *testing.T, r *Repository, count int) {
 	for range count {
 		err := r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
 			var n int64
-			if raw, ok := system.SystemConfig.Fields.Get("counter"); ok {
+			if raw, ok := markerGet(json.RawMessage(system.SystemConfig.GitHubProxyDomain)); ok {
 				_ = json.Unmarshal(raw, &n)
 			}
 			raw, err := json.Marshal(n + 1)
 			if err != nil {
 				return err
 			}
-			return system.SystemConfig.Fields.Set("counter", raw)
+			return markerSet(&system.SystemConfig.GitHubProxyDomain, raw)
 		})
 		if err != nil {
 			t.Error(err)
@@ -165,9 +165,9 @@ func TestTwoThreadsOnOneInstanceLoseNoUpdate(t *testing.T) {
 	}
 	<-done
 	<-done
-	raw, _ := must(r.System(bg))(t).SystemConfig.Fields.Get("counter")
+	raw, _ := markerGet(json.RawMessage(must(r.System(bg))(t).SystemConfig.GitHubProxyDomain))
 	wantJSONEqual(t, raw, 20)
-	reopenedRaw, _ := must(openRepo(t, r.DataDir()).System(bg))(t).SystemConfig.Fields.Get("counter")
+	reopenedRaw, _ := markerGet(json.RawMessage(must(openRepo(t, r.DataDir()).System(bg))(t).SystemConfig.GitHubProxyDomain))
 	wantJSONEqual(t, reopenedRaw, 20)
 }
 

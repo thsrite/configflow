@@ -27,45 +27,12 @@ func PeekTypedClassicalIPLines(ctx context.Context, rule model.RuleConfig, libra
 
 type cacheReader func(context.Context, model.RuleConfig, *rulefetch.SourceConfig, string) ([]byte, error)
 
-func jsonStringMember(record model.SwitchMember, name string) (present, validString, isNull bool) {
-	raw, ok, err := record.MemberJSON(name)
-	if err != nil || !ok {
-		return false, true, false
-	}
-	if string(raw) == "null" {
-		return true, false, true
-	}
-	return true, len(raw) > 0 && raw[0] == '"', false
-}
-
 func typedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem, read cacheReader) (*bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	present, validStr, isNull := jsonStringMember(&rule, "library_rule_id")
-	if present && !isNull {
-		if !validStr {
-			return nil, nil
-		}
+	if rule.LibraryRuleID != "" {
 		for i := range library {
-			itemPresent, itemValid, itemNull := jsonStringMember(&library[i], "id")
-			if itemPresent && (itemNull || !itemValid) {
-				continue
-			}
-			if !itemPresent && rule.LibraryRuleID == "" {
-				continue
-			}
-			if library[i].ID == rule.LibraryRuleID {
-				rule = rules.LibraryRule(library[i])
-				break
-			}
-		}
-	} else if !present && rule.LibraryRuleID != "" {
-		for i := range library {
-			itemPresent, itemValid, itemNull := jsonStringMember(&library[i], "id")
-			if itemPresent && (itemNull || !itemValid) {
-				continue
-			}
 			if library[i].ID == rule.LibraryRuleID {
 				rule = rules.LibraryRule(library[i])
 				break
@@ -78,9 +45,6 @@ func typedClassicalIPLines(ctx context.Context, rule model.RuleConfig, library [
 	}
 	if source == "content" {
 		if rule.Content == nil {
-			return nil, nil
-		}
-		if cPresent, cValid, _ := jsonStringMember(&rule, "content"); cPresent && !cValid {
 			return nil, nil
 		}
 		return inlineIPLines(*rule.Content)

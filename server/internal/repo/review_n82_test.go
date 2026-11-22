@@ -78,7 +78,7 @@ func TestN82ReviewPrivateRepositoryInterchange(t *testing.T) {
 	}
 	audit()
 	_, err = r.UpdateProfile(bg, id, func(_ context.Context, current *model.Profile) error {
-		return current.Mihomo.Fields.Set("n82_review_go", json.RawMessage(`{"marker":true,"opaque":{"z":1.0,"a":null}}`))
+		return markerSet(&current.Loon.CustomConfig, json.RawMessage(`{"marker":true,"opaque":{"z":1.0,"a":null}}`))
 	})
 	if err != nil {
 		t.Fatal("Go profile write failed")

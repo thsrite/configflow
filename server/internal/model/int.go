@@ -96,3 +96,17 @@ func (n *Int) UnmarshalJSON(data []byte) error {
 	*n = Int(value)
 	return nil
 }
+
+// IntValue is *p, or 0 for an absent value.
+func IntValue(p *Int) int64 {
+	if p == nil {
+		return 0
+	}
+	return int64(*p)
+}
+
+// IntPtr returns a pointer to n as an Int.
+func IntPtr(n int64) *Int {
+	v := Int(n)
+	return &v
+}

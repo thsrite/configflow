@@ -319,7 +319,7 @@ func stored(t *testing.T, dir string) map[string]any {
 		t.Fatal(err)
 	}
 	memberOrNull := func(name string) json.RawMessage {
-		raw, ok, err := system.SystemConfig.MemberJSON(name)
+		raw, ok, err := model.EncodeMember(&system.SystemConfig, name)
 		if err != nil {
 			t.Fatal(err)
 		}

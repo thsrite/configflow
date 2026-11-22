@@ -19,6 +19,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/model"
 	"configflow/internal/routersplit"
+	"configflow/internal/testjson/modeldirt"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -227,7 +228,23 @@ func TestPythonCorpus(t *testing.T) {
 	ctx := context.Background()
 	counts := map[string]int{}
 	failures, exemptMalformedNodes := 0, 0
+	accepted := map[string]int{}
+	var rowDirt []string
 	fail := func(i int, row corpusRow, format string, a ...any) {
+		generated := row.FN == "generate" || row.FN == "downloads"
+		if len(rowDirt) > 0 && (!generated || emptyRuleName(row)) {
+			// Accepted O18 T1c difference: the recorded configuration holds
+			// dirty stored data that plain records read differently from
+			// Python on purpose (a number in a text member such as a rule's
+			// content reads as its literal, null and "" read as missing,
+			// undeclared members are dropped). Generated configurations are
+			// accepted only for a rule or library entry named "": Python's
+			// get('name', item.get('name')) then rewrites the provider named
+			// "" to the gateway source, while a missing name leaves it; plain
+			// records cannot tell the two apart and take the missing form.
+			accepted[row.FN+" "+strings.Join(rowDirt, "+")]++
+			return
+		}
 		failures++
 		if failures <= 40 {
 			args := string(row.Args)
@@ -242,10 +259,12 @@ func TestPythonCorpus(t *testing.T) {
 		counts[row.FN]++
 		// NewFixtureConfig drops a configuration model.DecodeConfig refuses;
 		// only the reviewed malformed-nodes apply rows may rely on that.
+		rowDirt = nil
 		if fixtureUndecodable(t, row) {
 			fail(i, row, "fixture configuration is not representable by model.Config")
 			continue
 		}
+		rowDirt = configDirt(row)
 		switch row.FN {
 		case "normalize":
 			a := args[struct {
@@ -487,7 +506,7 @@ func TestPythonCorpus(t *testing.T) {
 			t.Fatalf("unknown corpus function %q", row.FN)
 		}
 	}
-	t.Logf("%d rows: %v", len(rows), counts)
+	t.Logf("%d rows: %v; accepted O18 T1c differences: %v", len(rows), counts, accepted)
 	// Exactly the two malformed-nodes rows recorded in behaviour-changes may
 	// differ; any other apply row taking the exemption is a new difference.
 	if exemptMalformedNodes != 2 {
@@ -509,6 +528,37 @@ func hasMalformedNodesShape(config map[string]any) bool {
 	}
 	for _, elem := range list {
 		if _, isObj := elem.(map[string]any); !isObj {
+			return true
+		}
+	}
+	return false
+}
+
+// configDirt returns the O18 T1c dirt kinds of the row's configuration.
+func configDirt(row corpusRow) []string {
+	var a struct {
+		Config json.RawMessage `json:"config"`
+	}
+	if json.Unmarshal(row.Args, &a) != nil || len(a.Config) == 0 {
+		return nil
+	}
+	return modeldirt.Config(a.Config)
+}
+
+// emptyRuleName reports whether a rule or rule library entry of the row's
+// configuration has the name "".
+func emptyRuleName(row corpusRow) bool {
+	var a struct {
+		Config struct {
+			Rules   []map[string]any `json:"rule_configs"`
+			Library []map[string]any `json:"rule_library"`
+		} `json:"config"`
+	}
+	if json.Unmarshal(row.Args, &a) != nil {
+		return false
+	}
+	for _, item := range append(a.Config.Rules, a.Config.Library...) {
+		if name, ok := item["name"].(string); ok && name == "" {
 			return true
 		}
 	}

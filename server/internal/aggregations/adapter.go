@@ -108,18 +108,9 @@ func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Co
 	if options.Persist {
 		return publish(ctx, agg, config, main, profileID, options)
 	}
-	if model.IssueUnder(model.Issues(&agg), "name") {
-		return nil, errors.New("aggregation name must be a string")
-	}
-	a := aggregation{resource: typedResource(&agg, agg.ID, agg.Name, agg.Enabled), Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
-	for _, issue := range model.Issues(&agg) {
-		if issue.Path == "subscriptions" {
-			return nil, errors.New("aggregation subscriptions must be an array")
-		}
-		if issue.Path == "nodes" {
-			return nil, errors.New("aggregation nodes must be an array")
-		}
-	}
+	// The aggregation is a plain record (O18 T1c): a stored name of another
+	// type reads as text, selectors of the wrong type as no selection.
+	a := aggregation{resource: typedResource(agg.ID, agg.Name, agg.Enabled), Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
 	if agg.RegexFilter != nil {
 		a.Regex, err = json.Marshal(*agg.RegexFilter)
 		if err != nil {
@@ -207,9 +198,11 @@ func SaveCatalog(ctx context.Context, raw json.RawMessage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// The edited catalog is input: a member of the wrong JSON type is refused
+	// with Python's validation message (O18 T1c).
 	var document model.Shared
-	if err := json.Unmarshal(raw, &document); err != nil {
-		return err
+	if err := model.DecodeInput("shared", raw, &document); err != nil {
+		return repo.InputError(err)
 	}
 	return repo.SaveSharedRecord(ctx, &document, nil)
 }
@@ -220,10 +213,15 @@ func AppendCatalog(ctx context.Context, raw json.RawMessage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	var item model.Aggregation
-	if err := json.Unmarshal(raw, &item); err != nil {
-		return err
+	var shared model.Shared
+	list := append(append([]byte("["), raw...), ']')
+	if err := shared.SetJSON("subscription_aggregations", list); err != nil {
+		return repo.InputError(err)
 	}
+	if len(shared.Aggregations) != 1 {
+		return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "subscription_aggregations", Value: list, Err: model.ErrType})
+	}
+	item := shared.Aggregations[0]
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err

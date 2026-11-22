@@ -26,14 +26,16 @@ func TestCapturedConfigOwnerRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Records not yet migrated keep their unknown members; the plain profile
-	// drops them (O18 T1a).
-	if bytes.Contains(result, []byte("future_profile")) {
-		t.Fatalf("unknown profile member kept: %s", result)
+	// Plain records drop undeclared members at every level (O18 T1a–T1c;
+	// system_config and rule_library items kept theirs before T1c).
+	for _, unknown := range []string{"future_profile", "future_system", "future_agent", "future_rule"} {
+		if bytes.Contains(result, []byte(unknown)) {
+			t.Fatalf("unknown member %s kept: %s", unknown, result)
+		}
 	}
-	for _, want := range []string{`"future_system":1e0`, `"future_rule":3.0`} {
+	for _, want := range []string{`"profile_id":"default"`, `"agents":[{"id":"device"}]`, `"rule_library":[{"id":"rules"}]`} {
 		if !bytes.Contains(result, []byte(want)) {
-			t.Fatalf("lost evidence %s: %s", want, result)
+			t.Fatalf("lost %s: %s", want, result)
 		}
 	}
 	var decoded map[string]json.RawMessage

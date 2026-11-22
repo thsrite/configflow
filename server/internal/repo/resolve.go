@@ -270,7 +270,7 @@ func selectDialerTargets(profile *model.Profile, c catalogs, selected selection,
 				return err
 			}
 		}
-		if !storedEnabled(node, node.Enabled) {
+		if !storedEnabled(node.Enabled) {
 			continue
 		}
 		target, err := nodeRawDialer(node)
@@ -562,6 +562,6 @@ func recordMembers(record any) (model.Fields, error) {
 
 // storedEnabled evaluates an optional stored enabled flag using the shared JSON
 // truthiness rule with default true.
-func storedEnabled(record model.SwitchMember, enabled *bool) bool {
-	return model.SwitchEnabled(record, "enabled", enabled, true)
+func storedEnabled(enabled *bool) bool {
+	return model.Flag(enabled, true)
 }

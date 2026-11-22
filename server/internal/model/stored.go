@@ -113,8 +113,8 @@ func plainFields(typ reflect.Type) map[string]plainField {
 		if !field.IsExported() {
 			continue
 		}
-		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-		if name == "-" {
+		name, options, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if name == "-" || inlineOption(options) {
 			continue
 		}
 		if name == "" {
@@ -129,6 +129,9 @@ func plainFields(typ reflect.Type) map[string]plainField {
 // storedUnmarshalers are the lenient leaf rules for stored data.
 func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 	return jsonv2.JoinUnmarshalers(
+		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *DeviceNotes) error {
+			return decodeStoredNotes(dec, sink, v)
+		}),
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *string) error {
 			switch dec.PeekKind() {
 			case '"':
@@ -145,11 +148,11 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				if err != nil {
 					return err
 				}
-				switch storedTag(sink, dec.StackPointer()) {
-				case secretTag:
+				switch {
+				case storedTag(sink, dec.StackPointer()) == secretTag || sink.strictText(dec):
 					*v = ""
 					sink.add(dec, IssueType)
-				case restrictTag:
+				case storedTag(sink, dec.StackPointer()) == restrictTag:
 					*v = DamagedText
 					sink.add(dec, IssueType)
 				default:
@@ -185,6 +188,9 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				return err
 			}
 			*v = storedTag(sink, dec.StackPointer()) != gateTag && JSONSwitchEnabled(value, false)
+			if tagged, ok := sink.switchDefault(dec); ok {
+				*v = tagged
+			}
 			sink.add(dec, IssueType)
 			return nil
 		}),
@@ -198,8 +204,48 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 				return err
 			}
 			off := false
+			if on, ok := sink.switchDefault(dec); ok && on {
+				off = true
+			}
 			*v = &off
 			return nil
+		}),
+		// An optional number or text stored with a wrong type is absent, so
+		// readers apply their default (as R5 did); the issue is reported.
+		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v **Int) error {
+			switch dec.PeekKind() {
+			case 'n':
+				return errors.ErrUnsupported
+			case '0', '"':
+				value, err := dec.ReadValue()
+				if err != nil {
+					return err
+				}
+				var n Int
+				if n.UnmarshalJSON(value) != nil || !literalInt(sink, dec, value) {
+					*v = nil
+					sink.add(dec, IssueType)
+					return nil
+				}
+				*v = &n
+				return nil
+			}
+			return skipInvalid(dec, sink, func() { *v = nil })
+		}),
+		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v **string) error {
+			switch dec.PeekKind() {
+			case 'n':
+				return nullText(dec, sink, v)
+			case '"', '0':
+				return errors.ErrUnsupported
+			}
+			return skipInvalid(dec, sink, func() {
+				*v = nil
+				if field, ok := leafField(sink.root, dec.StackPointer()); ok && field.Tag.Get("null") == "empty" {
+					empty := ""
+					*v = &empty
+				}
+			})
 		}),
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *int64) error {
 			return storedInt(dec, sink, func(n int64) { *v = n })
@@ -229,11 +275,31 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v any) error {
 			typ := reflect.TypeOf(v).Elem()
 			kind := dec.PeekKind()
+			// A record stored as null is its zero value, reported: Python
+			// refused null where a record belongs (O18 T1c; damaged settings).
+			if kind == 'n' && typ.Kind() == reflect.Struct && isPlain(typ) && orderedElem(typ) == nil {
+				if err := dec.SkipValue(); err != nil {
+					return err
+				}
+				reflect.ValueOf(v).Elem().SetZero()
+				sink.add(dec, IssueType)
+				return nil
+			}
 			if kind == 'n' {
 				return errors.ErrUnsupported
 			}
 			if typ.Kind() == reflect.Slice && kind == '[' && selfDecoding(typ.Elem()) {
 				return decodeRecordList(dec, sink, reflect.ValueOf(v).Elem())
+			}
+			if typ.Kind() == reflect.Slice && kind == '[' && typ.Elem().Kind() == reflect.Struct && isPlain(typ.Elem()) && orderedElem(typ.Elem()) == nil {
+				return decodePlainList(dec, sink, reflect.ValueOf(v).Elem())
+			}
+			// A manifest stored with another kind, or with members its record
+			// does not declare, keeps its value (damagedKeeper).
+			if typ.Kind() == reflect.Pointer {
+				if keeper, ok := reflect.New(typ.Elem()).Interface().(damagedKeeper); ok {
+					return decodeManifest(dec, sink, reflect.ValueOf(v).Elem(), keeper)
+				}
 			}
 			// A record behind a pointer stored with another kind is nil, or an
 			// empty record when its presence must fail closed (failClosed).
@@ -524,6 +590,12 @@ func walkUnknown(dec *jsontext.Decoder, typ reflect.Type, path string, issues *[
 			}
 			name := token.String()
 			field, known := fields[name]
+			if !known && inlineIndex(typ) >= 0 {
+				if err := dec.SkipValue(); err != nil {
+					return err
+				}
+				continue
+			}
 			if !known {
 				*issues = append(*issues, FieldIssue{Path: joinPath(path, name), Kind: IssueUnknown})
 				if err := dec.SkipValue(); err != nil {
@@ -684,7 +756,7 @@ func memberFields(typ reflect.Type) []memberField {
 			continue
 		}
 		name, options, _ := strings.Cut(field.Tag.Get("json"), ",")
-		if name == "-" {
+		if name == "-" || inlineOption(options) {
 			continue
 		}
 		if name == "" {
@@ -719,7 +791,7 @@ func EncodeMembers(rec any) ([]StoredMember, error) {
 		}
 		members = append(members, StoredMember{Name: field.name, Value: data})
 	}
-	return members, nil
+	return appendInlineMembers(value, members)
 }
 
 // EncodeMember is EncodeMembers for one member; present is false for an
@@ -740,6 +812,15 @@ func EncodeMember(rec any, name string) (data json.RawMessage, present bool, err
 		}
 		data, err := encodeUnit(current.Interface())
 		return data, err == nil, err
+	}
+	inline, err := appendInlineMembers(value, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, member := range inline {
+		if member.Name == name {
+			return member.Value, true, nil
+		}
 	}
 	return nil, false, nil
 }
@@ -823,7 +904,7 @@ func decodeStrict(data []byte, target any) error {
 			return fmt.Errorf("%w: null for %s", ErrType, typ)
 		}
 	}
-	return jsonv2.Unmarshal(data, target, strictOptions)
+	return jsonv2.Unmarshal(data, target, strictOptions, jsonv2.WithUnmarshalers(strictUnmarshalers))
 }
 
 // selfDecoding reports a type that is not yet migrated and decodes itself.
@@ -928,4 +1009,16 @@ func ZeroMember(rec any, member string) error {
 		return fmt.Errorf("%w: zero member target must be a plain record", ErrType)
 	}
 	return clearMember(target.Interface(), member)
+}
+
+// literalInt reports whether value may be read as the member's integer: a
+// member tagged int:"literal" (backup retention, which Python accepted only
+// as an int and otherwise replaced with its default) takes only an integer
+// literal, not text or decimal/exponent notation.
+func literalInt(sink *issueSink, dec *jsontext.Decoder, value jsontext.Value) bool {
+	field, ok := leafField(sink.root, dec.StackPointer())
+	if !ok || field.Tag.Get("int") != "literal" {
+		return true
+	}
+	return value.Kind() == '0' && !bytes.ContainsAny(value, ".eE")
 }

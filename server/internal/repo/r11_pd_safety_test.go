@@ -8,7 +8,7 @@ import (
 	"configflow/internal/model"
 )
 
-const r11PDManifest = `{"version":1,"future":{"a":[false,1.0,null]},"spec":{"lan":"bridge","pool":"pool-example","client":"*C0","client_interface":"wan","hold":3600},"resources":[{"role":"script","path":"/system/script","id":"*65","config":{"name":"cf-pd-watch","source":"synthetic script","policy":"read,write,test"},"future-resource":true}]}`
+const r11PDManifest = `{"version":1,"spec":{"lan":"bridge","pool":"pool-example","client":"*C0","client_interface":"wan","hold":3600},"resources":[{"role":"script","path":"/system/script","id":"*65"}]}`
 
 func TestR11PDPublicationStorage(t *testing.T) {
 	r, l := r10Repository(t)

@@ -254,7 +254,7 @@ func (b *Bridge) PersistForwarding(ctx context.Context, id string, refs []Router
 }
 
 func routerText(router *model.Router, key string) string {
-	raw, _, err := router.MemberJSON(key)
+	raw, _, err := model.EncodeMember(router, key)
 	if err != nil {
 		return ""
 	}

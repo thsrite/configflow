@@ -431,7 +431,7 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 	for _, sub := range shared.Subscriptions {
 		// A placeholder address (the new data directory's template) is not
 		// scheduled at all: no failure every few minutes, no Sub-Store wake-up.
-		if !enabledResource(&sub, sub.Enabled) || !substore.SourceURLConfigured(sub.URL) {
+		if !enabledResource(sub.Enabled) || !substore.SourceURLConfigured(sub.URL) {
 			continue
 		}
 		baseline, err := SourceCacheAt(ctx, sub)
@@ -448,7 +448,7 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 		}
 	}
 	for _, rule := range shared.RuleLibrary {
-		if !urlRule(rule) || textOr(rule.URL, "") == "" || !enabledResource(&rule, rule.Enabled) {
+		if !urlRule(rule) || textOr(rule.URL, "") == "" || !enabledResource(rule.Enabled) {
 			continue
 		}
 		baseline, err := RuleCacheAt(ctx, rule)
@@ -617,6 +617,6 @@ func RunResourceNow(ctx context.Context, kind, id string) (string, error) {
 	}
 	return key, nil
 }
-func enabledResource(record model.SwitchMember, value *bool) bool {
-	return model.SwitchEnabled(record, "enabled", value, true)
+func enabledResource(value *bool) bool {
+	return model.Flag(value, true)
 }

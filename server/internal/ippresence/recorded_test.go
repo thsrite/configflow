@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulesetfmt"
 	"configflow/internal/testjson"
+	"configflow/internal/testjson/modeldirt"
 )
 
 // Replay of every rule_ip_presence.classical_ip_lines call the Python suite
@@ -187,6 +189,7 @@ func replay(t *testing.T, path string) {
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 1<<20), 64<<20)
 	identical, differ, notExpressible, untypedExcluded := 0, 0, 0, 0
+	accepted := map[string]int{}
 	native, applied := nativePresenceExpectations(t, filepath.Base(path)), 0
 	cacheReferences := presenceCacheReferences(t, path)
 	usedCaches := 0
@@ -215,10 +218,7 @@ func replay(t *testing.T, path string) {
 		}
 		ClearMemo()
 		rule, library, typedOK, unknown := decodeTypedArgs(row.Args.Item, row.Args.Config)
-		untypedID := false
-		if present, valid, isNull := jsonStringMember(&rule, "library_rule_id"); present && !isNull && !valid {
-			untypedID = true
-		}
+		dirt := presenceRowDirt(row.Args.Item, row.Args.Config)
 		if !typedOK {
 			if row.Err == nil && (len(bytes.TrimSpace(row.Out)) == 0 || bytes.Equal(bytes.TrimSpace(row.Out), []byte("null"))) {
 				untypedExcluded++
@@ -250,21 +250,6 @@ func replay(t *testing.T, path string) {
 				identical++
 			}
 			usedCaches++
-			continue
-		}
-		if untypedID {
-			// Non-string library_rule_id violates the typed string ID model;
-			// TypedClassicalIPLines fails closed to unknown (nil) rather than
-			// emulating Python True==1 / False==0 / 1.0==1 equality.
-			if callErr != nil {
-				t.Errorf("%s: untyped ID returned error: %v", row.Test, callErr)
-				differ++
-			} else if out == nil {
-				untypedExcluded++
-			} else {
-				t.Errorf("%s: untyped ID returned %v (want nil fail-closed)", row.Test, *out)
-				differ++
-			}
 			continue
 		}
 		if nf := native[row.Test]; nf != nil {
@@ -314,6 +299,15 @@ func replay(t *testing.T, path string) {
 				outcomes[gotEnc]++
 			}
 		}
+		if len(problems) > 0 && len(dirt) > 0 {
+			// Accepted O18 T1c difference: the item or a library entry holds
+			// dirty stored data that plain records read differently from
+			// Python on purpose (a number in a text member such as
+			// library_rule_id or content reads as its literal, null and ""
+			// read as missing, undeclared members are dropped).
+			accepted[strings.Join(dirt, "+")]++
+			continue
+		}
 		if len(problems) > 0 {
 			differ++
 			if differ <= 20 {
@@ -332,8 +326,31 @@ func replay(t *testing.T, path string) {
 	if applied != len(native) {
 		t.Fatalf("applied %d of %d native presence rows", applied, len(native))
 	}
-	t.Logf("%s classical_ip_lines: %d identical, %d differ, %d untyped-excluded, %d not expressible; from %d tests in %d files; outcomes %v",
-		path, identical, differ, untypedExcluded, notExpressible, len(tests), len(files), outcomes)
+	t.Logf("%s classical_ip_lines: %d identical, %d differ, %d untyped-excluded, %d not expressible, accepted O18 T1c %v; from %d tests in %d files; outcomes %v",
+		path, identical, differ, untypedExcluded, notExpressible, accepted, len(tests), len(files), outcomes)
+}
+
+// presenceRowDirt returns the O18 T1c dirt kinds of a recorded call: those of
+// the rule item and of the configuration's rule library entries.
+func presenceRowDirt(item, config json.RawMessage) []string {
+	kinds := map[string]bool{}
+	for _, k := range modeldirt.Of(item, model.RuleConfig{}) {
+		kinds[k] = true
+	}
+	var cfg struct {
+		Library json.RawMessage `json:"rule_library"`
+	}
+	if json.Unmarshal(config, &cfg) == nil && len(cfg.Library) > 0 {
+		for _, k := range modeldirt.Of(cfg.Library, []model.RuleLibraryItem{}) {
+			kinds[k] = true
+		}
+	}
+	out := make([]string, 0, len(kinds))
+	for k := range kinds {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func nativePresenceExpectations(t *testing.T, file string) map[string]*nativePresenceRow {

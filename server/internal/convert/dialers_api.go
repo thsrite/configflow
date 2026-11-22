@@ -2,7 +2,6 @@ package convert
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -65,9 +64,6 @@ func IncomingRefs(config *model.Config, kind, id string) ([]Ref, error) {
 
 // ResolveNodeDialer returns the stored target name for a managed reference.
 func ResolveNodeDialer(config *model.Config, node model.Node) (*string, error) {
-	if err := validateStoredNodeReference(node); err != nil {
-		return nil, err
-	}
 	if node.DialerRef == nil {
 		return nil, nil
 	}
@@ -107,9 +103,7 @@ func ApplyNodeDialer(config *model.Config, node model.Node, proxy *yamlx.Node) (
 		return proxy, nil
 	}
 	if node.DialerRef != nil {
-		raw, _ := node.Fields.Get("_proxy_chain_id")
-		var chainID string
-		if json.Unmarshal(raw, &chainID) == nil && chainID != "" {
+		if node.ProxyChainID != "" {
 			yamlx.Set(proxy, "name", yamlx.Str(node.Name))
 		}
 		name, err := ResolveNodeDialer(config, node)
@@ -709,7 +703,7 @@ func ValidateTopology(document *yamlx.Node, opts TopologyOptions) error {
 // RejectUnsupportedDialers refuses topology the target client cannot represent.
 func RejectUnsupportedDialers(ctx context.Context, config *model.Config, client string, converter NodeConverter) error {
 	for _, group := range configGroups(config) {
-		if group.Type == "chain" && enabled(&group, group.Enabled) {
+		if group.Type == "chain" && enabled(group.Enabled) {
 			return fmt.Errorf(msgClientChain, client)
 		}
 	}
@@ -717,7 +711,7 @@ func RejectUnsupportedDialers(ctx context.Context, config *model.Config, client 
 		return nil
 	}
 	for _, node := range config.Nodes {
-		if !enabled(&node, node.Enabled) {
+		if !enabled(node.Enabled) {
 			continue
 		}
 		var raw *yamlx.Node

@@ -30,7 +30,7 @@ func selectableSubscriptions(items []model.Subscription) []model.Subscription {
 	out := []model.Subscription{}
 	for i := range items {
 		item := &items[i]
-		if !resourceEnabled(item, item.Enabled) {
+		if !resourceEnabled(item.Enabled) {
 			continue
 		}
 		lines, valid := 0, true
@@ -125,11 +125,11 @@ func (s *Service) source(ctx context.Context, record *Record, fields map[string]
 	availableSubs, availableNodes, linked := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for i := range shared.Subscriptions {
 		item := &shared.Subscriptions[i]
-		availableSubs[item.ID] = resourceEnabled(item, item.Enabled)
+		availableSubs[item.ID] = resourceEnabled(item.Enabled)
 	}
 	for i := range shared.Nodes {
 		item := &shared.Nodes[i]
-		availableNodes[item.ID] = resourceEnabled(item, item.Enabled)
+		availableNodes[item.ID] = resourceEnabled(item.Enabled)
 	}
 	for _, item := range selectableSubscriptions(shared.Subscriptions) {
 		linked[item.ID] = true

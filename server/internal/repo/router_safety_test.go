@@ -23,8 +23,8 @@ import (
 const (
 	rsConnection = `{"id": "ros", "name": "ROS", "type": "routeros", "endpoint": "http://192.168.0.1",
 		"username": "admin", "password": "secret", "verify_tls": true}`
-	rsManifest = `{"owner": "configflow:test", "resources": [
-		{"path": "/ip/firewall/mangle", "id": "*1", "fields": {"comment": "configflow:test"}}]}`
+	rsManifest = `{"spec": {"gateway": "192.0.2.1", "policy_version": 1}, "resources": [
+		{"path": "/ip/firewall/mangle", "id": "*1", "config": {"comment": "configflow:test"}}]}`
 )
 
 type rsJobLocks struct {
@@ -249,7 +249,7 @@ func TestVerifiedPublicationAndWithdrawalPreserveConcurrentMetadata(t *testing.T
 	noError(t, err)
 	noError(t, r.SaveRouterPublicationJSON(bg, "live", originalRaw, RouterPublicationJSON{
 		Manifest:    JSONUpdate{Set: true, Value: json.RawMessage(rsManifest)},
-		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"ok":true}`)},
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-01-01T00:00:00","ok":true,"fingerprint":"f","message":""}`)},
 	}))
 	// Restored RouterOS rows may receive new IDs; the rollback readback is
 	// authoritative even when the caller still has the original snapshot.
@@ -261,7 +261,7 @@ func TestVerifiedPublicationAndWithdrawalPreserveConcurrentMetadata(t *testing.T
 	saved := rsRouterObj(t, r)
 	wantJSONEqual(t, saved.Value("ros_policy_state"), restored)
 	wantJSONEqual(t, saved.Value("name"), "Concurrent edit")
-	wantJSONEqual(t, saved.Value("last_release"), json.RawMessage(`{"ok":true}`))
+	wantJSONEqual(t, saved.Value("last_release"), json.RawMessage(`{"at":"2026-01-01T00:00:00","ok":true,"fingerprint":"f","message":""}`))
 	noError(t, r.SaveRouterPublicationJSON(bg, "live", originalRaw, RouterPublicationJSON{
 		Manifest: JSONUpdate{Set: true, Value: json.RawMessage("null")},
 	}))

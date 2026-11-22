@@ -124,8 +124,8 @@ func TestPruningDeletesNothingWhenSubscriptionsCannotBeRead(t *testing.T) {
 	ctx, r := sharedRepo(t)
 	logs := captureLogs(t)
 	previous := getShared
-	getShared = func(context.Context, *repo.Repository) (*model.Shared, error) {
-		return nil, repo.NewValidationError("unreadable")
+	getShared = func(context.Context, *repo.Repository) (*model.Shared, []model.FieldIssue, error) {
+		return nil, nil, repo.NewValidationError("unreadable")
 	}
 	defer func() { getShared = previous }()
 	if removed := must[[]string](t)(PruneOrphanCaches(ctx)); len(removed) != 0 {
@@ -147,10 +147,22 @@ func TestPruneInvalidStoredIdentityKeepsFiles(t *testing.T) {
 			ctx, r := sharedRepo(t)
 			before := strings.Join(cacheFiles(t, r), ",")
 			previous := getShared
-			getShared = func(context.Context, *repo.Repository) (*model.Shared, error) {
+			// The stored row's load issues, as the repository reports them.
+			getShared = func(context.Context, *repo.Repository) (*model.Shared, []model.FieldIssue, error) {
 				var shared model.Shared
-				err := json.Unmarshal([]byte(raw), &shared)
-				return &shared, err
+				var rows map[string]json.RawMessage
+				if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+					return nil, nil, err
+				}
+				var issues []model.FieldIssue
+				for field, value := range rows {
+					_, found, err := model.DecodeStoredMember(&shared, field, value, "shared."+field)
+					if err != nil {
+						return nil, nil, err
+					}
+					issues = append(issues, found...)
+				}
+				return &shared, issues, nil
 			}
 			defer func() { getShared = previous }()
 			logs := captureLogs(t)

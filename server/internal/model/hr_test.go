@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -139,25 +140,41 @@ func TestHRPythonWriters(t *testing.T) {
 	runTypesInterchange(t, rows, false)
 }
 
+// TestRouterOwnershipPreservation (O18 T1c): Router is a plain record. A
+// manifest with an undeclared member is kept whole as stored (fail closed);
+// explicit false switches stay explicit; a credential edit changes only that
+// member of Go's encoding; built manifests invent no members; a loaded nil
+// manifest is not written. (The stored source bytes are no longer kept.)
 func TestRouterOwnershipPreservation(t *testing.T) {
-	source := []byte(` { "id":"router-example", "password":"synthetic-old", "verify_tls":false, "dns_guard":{"enabled":false,"failover":false}, "ros_policy_state":{"spec":{"naming_version":1,"policy_version":2},"resources":[{"path":"/ip/route","id":"*synthetic","config":{"future":{"ordered":[false,1.0,null]},"disabled":"false"},"future-proof":true}]}, "ipv6_pd_guard_state":{"version":1,"spec":{"hold":3600},"resources":[{"role":"hook","path":"/ipv6/dhcp-client","id":"*client-example"}]}, "last_release":{"fingerprint":"opaque-stored","ok":false}, "future":null } `)
+	const manifest = `{"spec":{"naming_version":1,"policy_version":2},"resources":[{"path":"/ip/route","id":"*synthetic","config":{"future":{"ordered":[false,1.0,null]},"disabled":"false"},"future-proof":true}]}`
+	source := []byte(` { "id":"router-example", "password":"synthetic-old", "verify_tls":false, "dns_guard":{"enabled":false,"failover":false}, "ros_policy_state":` + manifest + `, "ipv6_pd_guard_state":{"version":1,"spec":{"hold":3600},"resources":[{"role":"hook","path":"/ipv6/dhcp-client","id":"*client-example"}]}, "last_release":{"fingerprint":"opaque-stored","ok":false}, "future":null } `)
 	var router Router
-	if router.UnmarshalJSON(source) != nil {
+	issues, err := DecodeStored(source, &router, "")
+	if err != nil {
 		t.Fatal("router decode failed")
 	}
 	if router.VerifyTLS == nil || *router.VerifyTLS || router.DNSGuard.Failover == nil || *router.DNSGuard.Failover {
 		t.Fatal("explicit false lost")
 	}
+	if !slices.Contains(issues, FieldIssue{"future", IssueUnknown}) || !slices.Contains(issues, FieldIssue{"ros_policy_state", IssueUnknown}) {
+		t.Fatalf("issues = %v", issues)
+	}
 	encoded, err := Marshal(router)
-	if err != nil || !bytes.Equal(encoded, source) {
-		t.Fatal("router proof no-op changed bytes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, before := fuzzMembers(t, encoded)
+	if string(before["ros_policy_state"]) != manifest {
+		t.Fatalf("manifest with an undeclared member not kept: %s", before["ros_policy_state"])
+	}
+	if _, ok := before["future"]; ok {
+		t.Fatal("undeclared router member written")
 	}
 	router.Password = "synthetic-new"
 	edited, err := Marshal(router)
 	if err != nil {
 		t.Fatal("router edit failed")
 	}
-	_, before := fuzzMembers(t, source)
 	_, after := fuzzMembers(t, edited)
 	for key, value := range before {
 		if key != "password" && !bytes.Equal(value, after[key]) {
@@ -180,28 +197,31 @@ func TestRouterOwnershipPreservation(t *testing.T) {
 	}
 	for _, fragment := range []string{`{}`, `{"ros_policy_state":null}`, `{"dns_guard_state":null}`} {
 		var value Router
-		if value.UnmarshalJSON([]byte(fragment)) != nil {
+		if _, err := DecodeStored([]byte(fragment), &value, ""); err != nil {
 			t.Fatal("null decode failed")
 		}
-		value.ROSPolicyState = nil
-		value.DNSGuardState = nil
 		out, err := Marshal(value)
-		if err != nil || string(out) != fragment {
-			t.Fatal("loaded nil became a clear command")
+		if err != nil || bytes.Contains(out, []byte("_state")) {
+			t.Fatalf("loaded nil became a manifest: %s", out)
 		}
 	}
 }
 
+// TestOwnershipFallbackIsDiagnosed: wrong-typed members inside a stored
+// manifest read leniently and are reported; a numeric role uses the text codec.
 func TestOwnershipFallbackIsDiagnosed(t *testing.T) {
 	source := []byte(`{"ros_policy_state":{"spec":false,"resources":"synthetic-private"},"dns_guard_state":{"resources":[{"id":false,"config":{"future":[1,true]}}]},"ipv6_pd_guard_state":{"resources":[{"role":7}]}}`)
 	var router Router
-	if router.UnmarshalJSON(source) != nil {
+	issues, err := DecodeStored(source, &router, "routers.items[0]")
+	if err != nil {
 		t.Fatal("malformed proof decode failed")
 	}
-	issues := valueIssues(reflect.ValueOf(&router), "routers.items[0]")
-	for _, path := range []string{"ros_policy_state.spec", "ros_policy_state.resources", "dns_guard_state.resources[0].id"} {
-		if !slices.Contains(issues, FieldIssue{"routers.items[0]." + path, IssueType}) {
-			t.Fatalf("missing ownership schema issue: %v", issues)
+	if len(issues) != 3 {
+		t.Fatalf("missing ownership schema issue: %v", issues)
+	}
+	for _, issue := range issues {
+		if issue.Kind != IssueType || strings.Contains(issue.Path, "synthetic") {
+			t.Fatalf("issue %v", issue)
 		}
 	}
 	// The model is intentionally tolerant; empty fallback resources are not
@@ -212,8 +232,13 @@ func TestOwnershipFallbackIsDiagnosed(t *testing.T) {
 	if len(router.ROSPolicyState.Resources) != 0 {
 		t.Fatal("invalid resources did not fall back")
 	}
-	out, err := Marshal(router)
-	if err != nil || !bytes.Equal(out, source) {
-		t.Fatal("malformed proof was silently repaired")
-	}
+	t.Run("paths and stored proof", func(t *testing.T) {
+		// Issues inside a manifest keep the manifest path (decodeManifest
+		// decodes with a sink rooted at the manifest).
+		for _, path := range []string{"ros_policy_state.spec", "ros_policy_state.resources", "dns_guard_state.resources[0].id"} {
+			if !slices.Contains(issues, FieldIssue{"routers.items[0]." + path, IssueType}) {
+				t.Fatalf("missing ownership schema issue: %v", issues)
+			}
+		}
+	})
 }

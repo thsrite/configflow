@@ -17,6 +17,11 @@ import (
 	"configflow/internal/repo"
 )
 
+// TestNativeStoredIdentifierTypes (O18 T1c): rule library items, rules and
+// proxy groups are plain records, so a stored identifier of another JSON type
+// reads leniently (a number as its text, anything else as empty, with a load
+// warning) and no longer fails the read with the Go-only "必须是字符串" message
+// (the R5 original-value evidence is gone; the stored-string guard was removed).
 func TestNativeStoredIdentifierTypes(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ resource, field, source string }{
@@ -44,14 +49,21 @@ func TestNativeStoredIdentifierTypes(t *testing.T) {
 			if err := json.Unmarshal([]byte(tc.source), &shared); err != nil {
 				t.Fatal(err)
 			}
-			_, err := configFromModel(&model.Config{Profile: &profile, RuleLibrary: shared.RuleLibrary})
-			if !errors.Is(err, repo.ErrValidation) || !strings.Contains(err.Error(), "的 "+tc.field+" 必须是字符串，当前值：") || !strings.HasPrefix(err.Error(), tc.resource+" ") {
-				t.Fatalf("missing typed diagnostic: %v", err)
+			if _, err := configFromModel(&model.Config{Profile: &profile, RuleLibrary: shared.RuleLibrary}); err != nil {
+				t.Fatalf("lenient stored identifier rejected: %v", err)
 			}
 		})
 	}
-	// A genuinely empty, absent or null field has no type issue and is not
-	// rejected merely because its typed value is the zero value.
+	// A number stored as a name reads as its text.
+	var profile model.Profile
+	if err := json.Unmarshal([]byte(`{"proxy_groups":[{"id":"g","name":7}]}`), &profile); err != nil {
+		t.Fatal(err)
+	}
+	view, err := configFromModel(&model.Config{Profile: &profile})
+	if err != nil || len(view.Groups) != 1 || view.Groups[0].Name != "7" {
+		t.Fatalf("numeric identifier: %+v %v", view, err)
+	}
+	// A genuinely empty, absent or null field is not rejected either.
 	for _, source := range []string{`{}`, `{"proxy_groups":[{"name":""}]}`, `{"rule_library":[{"name":null}]}`} {
 		var profile model.Profile
 		var shared model.Shared
@@ -69,8 +81,11 @@ func TestNativeStoredR5AndSharedNumbers(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"auto_probe":1,"auto_apply":"false","region_check_enabled":[],"auto_apply_min_confidence":80.0}`), &settings); err != nil {
 		t.Fatal(err)
 	}
-	if settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || settings.Confidence != 80 {
-		t.Fatalf("R5 settings: %+v", settings)
+	// O18 T1c: a stored switch of another type keeps its truth value like
+	// Python (auto_probe 1 is on), except auto_apply, which is switch:"off"
+	// (a wrong type reads as off, fail closed); [] is off.
+	if !settings.AutoProbe || settings.AutoApply || settings.RegionEnabled || settings.Confidence != 80 {
+		t.Fatalf("lenient settings: %+v", settings)
 	}
 	var record model.Profile
 	if err := json.Unmarshal([]byte(`{"proxy_groups":[{"id":"g","name":123.50}],"domain_discovery":{"region_probe_port":"18003"}}`), &record); err != nil {
@@ -85,7 +100,12 @@ func TestNativeStoredR5AndSharedNumbers(t *testing.T) {
 	}
 }
 
-func TestNativeRepositoryUpdatesPreserveUnownedStoredMembers(t *testing.T) {
+// TestNativeRepositoryUpdatesDropUndeclaredMembers (O18 T1c; was
+// TestNativeRepositoryUpdatesPreserveUnownedStoredMembers, which kept
+// undeclared members byte for byte): DomainDiscovery is a plain record, so its
+// undeclared members are dropped; a settings edit changes only that setting
+// and keeps the history; a failed edit changes nothing.
+func TestNativeRepositoryUpdatesDropUndeclaredMembers(t *testing.T) {
 	ctx := jobFixture(t)
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -110,8 +130,8 @@ func TestNativeRepositoryUpdatesPreserveUnownedStoredMembers(t *testing.T) {
 	}
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(data, &fields)
-	if string(fields["future"]) != `{"flag":false}` || !strings.Contains(string(fields["history"]), `"future":{"n":123.50}`) {
-		t.Fatalf("unowned fields changed: %s", data)
+	if strings.Contains(string(data), "future") || !strings.Contains(string(fields["history"]), `"value":"example.com"`) || string(fields["auto_probe"]) != "true" {
+		t.Fatalf("settings edit: %s", data)
 	}
 	sentinel := errors.New("discard")
 	before, _ := json.Marshal(p)

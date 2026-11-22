@@ -327,7 +327,7 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 		t.Fatalf("router check should not be stale before edit: %+v", item)
 	}
 	if _, err := largeSrv.Repo.UpdateProfile(largeSrv.Context(), "default", func(_ context.Context, p *model.Profile) error {
-		return p.Loon.Fields.Set("o10_t3_marker", json.RawMessage(`"changed"`))
+		return markerSet(&p.Loon.CustomConfig, json.RawMessage(`"changed"`))
 	}); err != nil {
 		t.Fatal(err)
 	}
