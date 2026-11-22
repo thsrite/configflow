@@ -43,16 +43,25 @@ func FuzzDeploymentRouteBinding(f *testing.F) {
 		if got := deploymentTaskIDMatches(&task, "device"); got != (idOK && id == "device") {
 			t.Fatalf("task id=%s accepted=%v", input.Task, got)
 		}
-		service, serviceOK := text(agentMembers["service_type"])
-		if _, present := agentMembers["service_type"]; !present {
-			service, serviceOK = "mihomo", true
-		}
-		stateService, stateServiceOK := text(taskMembers["service_type"])
-		for _, optional := range []bool{false, true} {
-			expected := serviceOK && stateServiceOK && service == stateService
-			if _, present := taskMembers["service_type"]; !present && optional {
-				expected = serviceOK
+		// Stored text reads leniently (O18 T1b): a number is its literal, any
+		// other type or "" is a missing member. A missing Agent service is
+		// mihomo; a missing task service matches only when it is optional.
+		stored := func(raw json.RawMessage) string {
+			if value, ok := text(raw); ok {
+				return value
 			}
+			if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && (trimmed[0] == '-' || trimmed[0] >= '0' && trimmed[0] <= '9') {
+				return string(trimmed)
+			}
+			return ""
+		}
+		service := stored(agentMembers["service_type"])
+		if service == "" {
+			service = "mihomo"
+		}
+		stateService := stored(taskMembers["service_type"])
+		for _, optional := range []bool{false, true} {
+			expected := service == stateService || optional && stateService == ""
 			if got := deploymentServiceMatches(&a, &task, optional); got != expected {
 				t.Fatalf("agent=%s task=%s optional=%v accepted=%v", input.Agent, input.Task, optional, got)
 			}
