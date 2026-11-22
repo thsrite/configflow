@@ -49,12 +49,14 @@ func Register() {
 
 // PublishPair reserves a pair, leaving single-device publications to deploy.
 func (s *Service) PublishPair(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions) (out *model.Deployment, handled bool, err error) {
-	return s.publishPair(ctx, id, b, o, false)
+	return s.publishPair(ctx, id, b, o, "")
 }
 
-// publishPair is PublishPair; auto marks the publication that automatically
-// completes a pair stopped by a lost member (lab O-1 follow-up).
-func (s *Service) publishPair(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions, auto bool) (out *model.Deployment, handled bool, err error) {
+// publishPair is PublishPair; a non-empty complete names the stopped journal
+// this publication automatically completes (lab O-1 follow-up). It must still
+// be the pair's journal, waiting with the completion running, under the lease
+// that reserves the new publication.
+func (s *Service) publishPair(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions, complete string) (out *model.Deployment, handled bool, err error) {
 	err = deploy.RunDetached(ctx, "oxidns-ha-publish", func(ctx context.Context) error {
 		members, e := s.pair(ctx, id)
 		if e != nil {
@@ -117,11 +119,24 @@ func (s *Service) publishPair(ctx context.Context, id string, b *deploy.Bundle, 
 					return refuse(msgDifferentBaseline)
 				}
 			}
+			if complete != "" {
+				// The completion released the evaluation lease before this
+				// one: a manual publication or disable in between replaced
+				// the intent.
+				cur, e := s.get(held, id)
+				if e != nil {
+					return e
+				}
+				if cur == nil || cur.OxiDNSHAPublication == nil || cur.OxiDNSHAPublication.ID != complete ||
+					!awaitingCompletion(cur.OxiDNSHAPublication) || cur.OxiDNSHAPublication.AutoComplete.Status != autoRunning {
+					return refuse(msgJournalChanged)
+				}
+			}
 			j, e := s.reserve(held, members, id, did, o.Activate, nil)
 			if e != nil {
 				return e
 			}
-			if auto {
+			if complete != "" {
 				j.AutoComplete = &model.HAAutoComplete{Attempt: true, Message: msgAutoAttempt}
 			}
 			var source, resource json.RawMessage

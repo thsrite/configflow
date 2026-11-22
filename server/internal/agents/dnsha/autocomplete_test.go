@@ -384,3 +384,35 @@ func TestAutoCompletePublishesInterruptedContent(t *testing.T) {
 		t.Fatal("auto completion published the newer configuration")
 	}
 }
+
+// The completion evaluates under one lease and reserves under another; a
+// manual publication that lands in between replaces the interrupted intent
+// and the completion must not publish the old content over it (HR batch-31).
+func TestAutoCompleteYieldsToPublicationBetweenLeases(t *testing.T) {
+	c := newLostPair(t)
+	c.offline()
+	c.beat(t, c.f.s, "secondary")
+	if _, e := c.f.m.ObserveHeartbeat(c.f.ctx, "secondary", agentModelForTest(t, map[string]any{"service_status": "running"})); e != nil {
+		t.Fatal(e)
+	}
+	next, e := c.f.s.evaluate(c.f.ctx, "primary")
+	if e != nil || next == nil {
+		t.Fatalf("evaluate: %v %v", next, e)
+	}
+	if j := c.journal(t); j.AutoComplete.Status != autoRunning {
+		t.Fatalf("running state: %+v", j.AutoComplete)
+	}
+	c.f.publish(t, "primary", "manual-between-leases", true)
+	if last := c.f.drain(t, 16); last.Status != "succeeded" {
+		t.Fatalf("manual publication: %s %s", last.Status, last.Message)
+	}
+	manual := c.journal(t).ID
+	uploads := c.uploads()
+	_, e = next.run(c.f.ctx)
+	if !IsUserError(e) || !strings.Contains(e.Error(), msgJournalChanged) {
+		t.Fatalf("stale completion: %v", e)
+	}
+	if j := c.journal(t); j.ID != manual || c.uploads() != uploads || j.AutoComplete != nil {
+		t.Fatalf("stale completion published: journal %s uploads %d->%d %+v", j.ID, uploads, c.uploads(), j.AutoComplete)
+	}
+}

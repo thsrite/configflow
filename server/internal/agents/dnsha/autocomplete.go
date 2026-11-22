@@ -252,9 +252,9 @@ func (s *Service) evaluate(ctx context.Context, id string) (*publishInput, error
 	if e = s.save(ctx, j); e != nil {
 		return nil, e
 	}
-	owner := j.OwnerAgentID
-	return &publishInput{owner: owner, journal: j.ID, run: func(ctx context.Context) (*model.Deployment, error) {
-		out, _, e := s.publishPair(ctx, owner, next, o, true)
+	owner, stopped := j.OwnerAgentID, j.ID
+	return &publishInput{owner: owner, journal: stopped, run: func(ctx context.Context) (*model.Deployment, error) {
+		out, _, e := s.publishPair(ctx, owner, next, o, stopped)
 		return out, e
 	}}, nil
 }
