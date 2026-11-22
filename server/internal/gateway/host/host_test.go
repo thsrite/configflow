@@ -344,7 +344,9 @@ func TestRouterLinkStoredIdentity(t *testing.T) {
 		want   int
 	}{
 		{"text", `"1"`, 1},
-		{"number reads as its text", `1`, 1},
+		// HR O18 T1c (M3 ruling): a link stored as a number is damaged, not
+		// the Agent "1" (Python compared 1 == "1": not linked either).
+		{"number is not text", `1`, 0},
 		{"boolean", `true`, 0},
 		{"object", `{"id":"1"}`, 0},
 		{"null", `null`, 0},
