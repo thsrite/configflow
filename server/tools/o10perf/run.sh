@@ -18,9 +18,14 @@ if [[ -n ${O10_GO_BIN:-} ]]; then
   # Prebuilt overlay binary (pve.sh builds it on the test server; the CT has no Go toolchain).
   cp "$O10_GO_BIN" "$build/configflow"
 else
+  # O10_TAGS=memory.counters fills libc/mmap_bytes in /debug/o10/metrics.
+  # O10_LEAN=1: metrics endpoints only, no net/http/pprof (product-identical heap profiling = off).
+  overlay=pprof_overlay.go.txt
+  [[ ${O10_LEAN:-} == 1 ]] && overlay=lean_overlay.go.txt
   printf '{"Replace":{"%s":"%s"}}' "$root/server/cmd/configflow/o10_pprof_overlay.go" \
-    "$root/server/tools/o10perf/pprof_overlay.go.txt" >"$build/overlay.json"
-  (cd "$root/server" && go build -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow)
+    "$root/server/tools/o10perf/$overlay" >"$build/overlay.json"
+  # Same flags as docker/Dockerfile (static, no cgo, stripped) so RSS matches the product binary.
+  (cd "$root/server" && CGO_ENABLED=0 go build -trimpath -tags="${O10_TAGS:-}" -ldflags='-s -w' -overlay "$build/overlay.json" -o "$build/configflow" ./cmd/configflow)
 fi
 echo "o10: private output $out"
 unshare --user --map-root-user --net --mount --pid --fork --kill-child --mount-proc bash -c '

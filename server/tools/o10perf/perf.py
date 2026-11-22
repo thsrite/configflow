@@ -88,13 +88,15 @@ def tree(pid):
 
 
 def proc_sample(pid):
-    out = {'rss': 0, 'hwm': 0, 'threads': 0, 'fds': 0, 'ticks': 0, 'procs': 0, 'anon_huge': 0}
+    out = {'rss': 0, 'hwm': 0, 'threads': 0, 'fds': 0, 'ticks': 0, 'procs': 0, 'anon_huge': 0, 'rss_anon': 0, 'rss_file': 0}
     for each in tree(pid):
         try:
             status = dict(line.split(':', 1) for line in Path(f'/proc/{each}/status').read_text().splitlines() if ':' in line)
             stat = Path(f'/proc/{each}/stat').read_text().rsplit(')', 1)[1].split()
             out['rss'] += int(status['VmRSS'].split()[0]) * 1024
             out['hwm'] += int(status['VmHWM'].split()[0]) * 1024
+            out['rss_anon'] += int(status['RssAnon'].split()[0]) * 1024
+            out['rss_file'] += int(status['RssFile'].split()[0]) * 1024
             out['threads'] += int(status['Threads'])
             out['fds'] += len(os.listdir(f'/proc/{each}/fd'))
             out['ticks'] += int(stat[11]) + int(stat[12])
@@ -105,6 +107,52 @@ def proc_sample(pid):
         except (OSError, KeyError, ValueError):
             pass
     return out
+
+
+ARENA = (0xc000000000, 0xc100000000)  # Go heap arena hint range on 64-bit Linux
+
+
+def smaps_summary(pid, binary, raw_target=None):
+    """Per-category Rss/Pss/anon of /proc/<pid>/smaps (Go server only), in bytes."""
+    text = Path(f'/proc/{pid}/smaps').read_text()
+    if raw_target:
+        raw_target.write_text(text)
+    maps, current = [], None
+    for line in text.splitlines():
+        head = line.split(None, 5)
+        if '-' in head[0] and not head[0].endswith(':'):
+            start, end = (int(x, 16) for x in head[0].split('-'))
+            current = {'start': start, 'end': end, 'perms': head[1], 'path': head[5].strip() if len(head) > 5 else ''}
+            maps.append(current)
+        elif head[0].endswith(':') and len(head) >= 2 and head[1].isdigit():
+            current[head[0][:-1]] = int(head[1]) * 1024
+    binary = os.path.realpath(binary)
+    bin_end = max((m['end'] for m in maps if m['path'] == binary), default=0)
+    out = collections.defaultdict(lambda: collections.Counter())
+    for m in maps:
+        if m['path'] == binary:
+            key = {'r-xp': 'bin_text', 'r--p': 'bin_rodata', 'rw-p': 'bin_data'}.get(m['perms'], 'bin_other')
+        elif m['path'] == '' and m['start'] == bin_end:
+            key = 'bin_bss'
+        elif m['path'] == '' and ARENA[0] <= m['start'] < ARENA[1]:
+            key = 'heap_arena'
+        elif m['path'] == '':
+            key = 'anon_other'
+        elif m['path'].startswith('['):
+            key = m['path']  # includes Go's named regions, e.g. "[anon: Go: heap]"
+        else:
+            key = 'file_other'
+        bucket = out[key]
+        bucket['maps'] += 1
+        bucket['size'] += m['end'] - m['start']
+        for field in ('Rss', 'Pss', 'Anonymous', 'Private_Dirty', 'Private_Clean', 'Shared_Clean', 'AnonHugePages', 'Swap'):
+            bucket[field] += m.get(field, 0)
+    others = [(m.get('Rss', 0), m['path'] or hex(m['start']), m['perms'], m['end'] - m['start']) for m in maps
+              if m['path'] not in (binary,) and m.get('Rss', 0) >= 256 * 1024 and not (ARENA[0] <= m['start'] < ARENA[1])]
+    result = {key: dict(value) for key, value in out.items()}
+    result['total_rss'] = sum(m.get('Rss', 0) for m in maps)
+    result['large_other'] = sorted(others, reverse=True)[:20]
+    return result
 
 
 class Server:
@@ -146,6 +194,17 @@ class Server:
         if self.kind == 'go':
             result['go'] = self.memstats()
         return result
+
+    def metrics(self, gc=False):
+        code, body = send(self.pprof, 'GET', '/debug/o10/metrics' + ('?gc=1' if gc else ''), timeout=30)
+        return json.loads(body) if code == 200 else {}
+
+    def mem_detail(self, binary, out, label, gc=False):
+        """smaps categories + runtime/metrics memory classes at one point in time (Go only)."""
+        metrics = self.metrics(gc=gc)
+        summary = smaps_summary(self.process.pid, binary, out / f'go-smaps-{label}.txt')
+        keep = {k: v for k, v in metrics.items() if k.startswith(('/memory/', '/gc/', '/sched/goroutines', 'sqlite/', 'libc/', 'runtime/'))}
+        return {'smaps': summary, 'metrics': keep}
 
     def memstats(self, gc=False):
         code, body = send(self.pprof, 'GET', '/debug/o10/memstats' + ('?gc=1' if gc else ''), timeout=30)
@@ -312,6 +371,8 @@ def main():
     parser.add_argument('--idle-only', action='store_true')
     parser.add_argument('--idle-profile-start', type=int, default=120,
                         help='Go only: seconds into the idle window at which the idle CPU profile starts')
+    parser.add_argument('--mem-detail', action='store_true', help='smaps + runtime/metrics breakdown (Go)')
+    parser.add_argument('--settle-seconds', type=int, default=120, help='quiet sampling after the load phase')
     parser.add_argument('--only', default='', help='comma list of label substrings to keep (load phase)')
     parser.add_argument('--route-profile-seconds', type=int, default=0,
                         help='Go only: per route label, loop requests for N s under a CPU profile + allocs diff')
@@ -368,7 +429,8 @@ def main():
                 report['idle'][kind] = {
                     'minutes': round(span / 60, 1), 'cpu_pct_avg': round((last['ticks'] - first['ticks']) / TICK / span * 100, 3),
                     'cpu_pct_peak_window': round(max(per_window), 2), 'rss_start': first['rss'], 'rss_end': last['rss'],
-                    'rss_max': max(r['rss'] for r in rows), 'anon_huge_end': last.get('anon_huge'), 'threads_end': last['threads'], 'fds_start': first['fds'],
+                    'rss_max': max(r['rss'] for r in rows), 'rss_anon_end': last['rss_anon'],
+                    'rss_anon_max': max(r['rss_anon'] for r in rows), 'rss_file_end': last['rss_file'], 'anon_huge_end': last.get('anon_huge'), 'threads_end': last['threads'], 'fds_start': first['fds'],
                     'fds_end': last['fds'], 'fds_max': max(r['fds'] for r in rows), 'procs': last['procs']}
                 if kind == 'go':
                     report['idle'][kind]['goroutines'] = [rows[0]['go'].get('goroutines'), last['go'].get('goroutines'),
@@ -376,6 +438,9 @@ def main():
                     report['idle'][kind]['heap_alloc_end'] = last['go'].get('heap_alloc')
                     report['idle'][kind]['alloc_rate_per_min'] = (last['go']['total_alloc'] - first['go']['total_alloc']) / (span / 60)
                     report['idle'][kind]['gc_count'] = last['go']['num_gc'] - first['go']['num_gc']
+            if 'go' in servers and args.mem_detail:
+                report['mem'] = {'idle_end': servers['go'].mem_detail(args.go, out, 'idle-end')}
+                report['mem']['idle_end_gc'] = servers['go'].mem_detail(args.go, out, 'idle-end-gc', gc=True)
             if 'go' in servers:
                 go = servers['go']
                 report['idle']['go']['memstats_after_gc'] = go.memstats(gc=True)
@@ -402,11 +467,25 @@ def main():
                     server.fetch('/debug/pprof/allocs', out / 'go-after-load-allocs.pprof')
                     server.fetch('/debug/pprof/goroutine?debug=1', out / 'go-load-goroutines.txt')
                 report['after_load'][kind] = server.sample()
+                if kind == 'go' and args.mem_detail:
+                    report['mem']['after_load'] = server.mem_detail(args.go, out, 'after-load')
             if 'go' in servers and args.route_profile_seconds > 0:
                 report['route_profiles'] = route_profiles(servers['go'], items, args.route_profile_seconds, out)
-            time.sleep(120)
+            settle = {kind: [] for kind in servers}
+            settle_start = time.monotonic()
+            while time.monotonic() - settle_start < args.settle_seconds:
+                time.sleep(args.sample_seconds)
+                for kind, server in servers.items():
+                    sample = server.sample()
+                    sample['t'] = round(time.monotonic() - settle_start, 1)
+                    settle[kind].append(sample)
+            (out / 'settle-series.json').write_text(json.dumps(settle))
             for kind, server in servers.items():
                 report['after_load'][kind + '_settled_120s'] = server.sample()
+                report['after_load'][kind + '_settle_rss'] = [[r['t'], r['rss']] for r in settle[kind]]
+            if 'go' in servers and args.mem_detail:
+                report['mem']['settled'] = servers['go'].mem_detail(args.go, out, 'settled')
+                report['mem']['settled_gc'] = servers['go'].mem_detail(args.go, out, 'settled-gc', gc=True)
             if 'go' in servers:
                 report['after_load']['go_memstats_after_gc'] = servers['go'].memstats(gc=True)
                 servers['go'].fetch('/debug/pprof/heap?gc=1', out / 'go-after-load-heap.pprof')

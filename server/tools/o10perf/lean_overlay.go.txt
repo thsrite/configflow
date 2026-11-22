@@ -1,0 +1,70 @@
+// O10 measurement only (O10_LEAN=1): like pprof_overlay.go.txt but without
+// net/http/pprof, so runtime.MemProfile stays unreachable and the linker keeps
+// heap profiling disabled exactly as in the product binary (no profiling buckets).
+
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"runtime"
+	"runtime/metrics"
+
+	"modernc.org/libc"
+	sqlite3 "modernc.org/sqlite/lib"
+)
+
+func init() {
+	address := os.Getenv("O10_PPROF_ADDR")
+	if address == "" {
+		return
+	}
+	http.HandleFunc("/debug/o10/memstats", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("gc") == "1" {
+			runtime.GC()
+		}
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_alloc": m.TotalAlloc, "mallocs": m.Mallocs, "heap_alloc": m.HeapAlloc,
+			"heap_inuse": m.HeapInuse, "heap_idle": m.HeapIdle, "heap_released": m.HeapReleased,
+			"heap_sys": m.HeapSys, "stack_inuse": m.StackInuse, "sys": m.Sys, "num_gc": m.NumGC,
+			"goroutines": runtime.NumGoroutine(), "pause_total_ns": m.PauseTotalNs,
+		})
+	})
+	// All scalar runtime/metrics (memory classes, GC, scavenger) for the R13 RSS breakdown.
+	http.HandleFunc("/debug/o10/metrics", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("gc") == "1" {
+			runtime.GC()
+		}
+		descs := metrics.All()
+		samples := make([]metrics.Sample, len(descs))
+		for i := range descs {
+			samples[i].Name = descs[i].Name
+		}
+		metrics.Read(samples)
+		out := make(map[string]any, len(samples))
+		for _, s := range samples {
+			switch s.Value.Kind() {
+			case metrics.KindUint64:
+				out[s.Name] = s.Value.Uint64()
+			case metrics.KindFloat64:
+				out[s.Name] = s.Value.Float64()
+			}
+		}
+		// SQLite heap (modernc libc allocator, outside the Go heap): bytes SQLite has
+		// malloc'ed now / at its high-water mark, and what the allocator mapped from
+		// the OS (only with -tags memory.counters, else 0).
+		tls := libc.NewTLS()
+		out["sqlite/memory_used:bytes"] = sqlite3.Xsqlite3_memory_used(tls)
+		out["sqlite/memory_highwater:bytes"] = sqlite3.Xsqlite3_memory_highwater(tls, 0)
+		tls.Close()
+		out["runtime/MemProfileRate"] = runtime.MemProfileRate
+		stat := libc.MemStat()
+		out["libc/mmap_bytes:bytes"] = stat.Bytes
+		out["libc/mmaps"] = stat.Mmaps
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	go func() { _ = http.ListenAndServe(address, nil) }()
+}
