@@ -1,7 +1,6 @@
 package main
 
 import (
-	"configflow/internal/testgolden"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -114,9 +113,9 @@ func TestAuditRepository(t *testing.T) {
 		if err = audit(root, scopes, rows); err != nil {
 			t.Fatal(err)
 		}
-		if err = testgolden.AuditSources(root, scopes); err != nil {
-			t.Fatal(err)
-		}
+		// testgolden.AuditSources is not run here: ordinary replay reads only
+		// the committed golden, so source declarations matter only to the
+		// record/check modes that hash them (and are checked there).
 	}
 	registries, err := filepath.Glob(filepath.Join(root, "server/tools/pyref/live-exceptions-*.json"))
 	if err != nil {

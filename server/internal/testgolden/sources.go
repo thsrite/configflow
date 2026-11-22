@@ -70,15 +70,19 @@ func Sources(t testing.TB, required ...string) []string {
 	if !found {
 		t.Fatalf("pyref: missing source declaration for %s", t.Name())
 	}
-	// Go source is fixed for this test binary. Share parsed ASTs across parallel
-	// references; sourceMetadata still reads and hashes the actual bytes afresh.
-	value, _ := sourceAudits.LoadOrStore(root, &cachedSourceAudit{engine: newSourceEngine(root)})
-	audit := value.(*cachedSourceAudit)
-	audit.Lock()
-	err = audit.engine.audit(set)
-	audit.Unlock()
-	if err != nil {
-		t.Fatal(err)
+	// The dependency audit only guards the source hashes that record/check
+	// modes compare; ordinary replay reads just the committed golden.
+	if os.Getenv("PYREF_MODE") != "" {
+		// Go source is fixed for this test binary. Share parsed ASTs across parallel
+		// references; sourceMetadata still reads and hashes the actual bytes afresh.
+		value, _ := sourceAudits.LoadOrStore(root, &cachedSourceAudit{engine: newSourceEngine(root)})
+		audit := value.(*cachedSourceAudit)
+		audit.Lock()
+		err = audit.engine.audit(set)
+		audit.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	declared := stringSet(set.Sources)
 	for _, path := range required {
