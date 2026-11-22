@@ -115,7 +115,14 @@ var o10Encoders = map[string]bool{
 	"encoding/json.MarshalIndent":                    true,
 	"(*encoding/json.Encoder).Encode":                true,
 	"encoding/json/v2.Marshal":                       true,
-	// Not gated: model.EncodeMember (one member), yamlx.Marshal (YAML nodes).
+	// YAML encoders encode a typed record just as whole (their usual YAML
+	// node arguments are not records and are not reported).
+	"configflow/internal/yamlx.Marshal":  true,
+	"configflow/internal/yamlx.Encode":   true,
+	"gopkg.in/yaml.v3.Marshal":           true,
+	"(*gopkg.in/yaml.v3.Encoder).Encode": true,
+	"(*gopkg.in/yaml.v3.Node).Encode":    true,
+	// Not gated: model.EncodeMember (one member).
 }
 
 // o10InterfaceReaders take a record as an interface value without encoding
@@ -149,29 +156,108 @@ var o10WholeRecords = map[string]bool{
 	"configflow/internal/model.Config": true, "configflow/internal/model.Agent": true,
 }
 
-// o10WholeRecord reports whether t is a whole record, a pointer to one or a
-// slice/array of either.
+// o10WholeRecord reports whether t is a whole record, or a value an encoder
+// writes one from: a pointer, slice, array or map of one, or a struct whose
+// encoded fields (exported or embedded) hold one, so that wrapping a record
+// in a response struct or map does not hide its encode.
 func o10WholeRecord(t types.Type) bool {
-	for {
-		switch u := t.(type) {
-		case *types.Pointer:
-			t = u.Elem()
-			continue
-		case *types.Slice:
-			t = u.Elem()
-			continue
-		case *types.Array:
-			t = u.Elem()
-			continue
-		case *types.Alias:
-			t = types.Unalias(u)
-			continue
-		case *types.Named:
-			obj := u.Obj()
-			return obj.Pkg() != nil && o10WholeRecords[obj.Pkg().Path()+"."+obj.Name()]
-		}
+	return o10HoldsRecord(t, map[types.Type]bool{})
+}
+
+func o10HoldsRecord(t types.Type, seen map[types.Type]bool) bool {
+	if t == nil || seen[t] {
 		return false
 	}
+	seen[t] = true
+	switch u := t.(type) {
+	case *types.Alias:
+		return o10HoldsRecord(types.Unalias(u), seen)
+	case *types.Pointer:
+		return o10HoldsRecord(u.Elem(), seen)
+	case *types.Slice:
+		return o10HoldsRecord(u.Elem(), seen)
+	case *types.Array:
+		return o10HoldsRecord(u.Elem(), seen)
+	case *types.Map:
+		return o10HoldsRecord(u.Key(), seen) || o10HoldsRecord(u.Elem(), seen)
+	case *types.Named:
+		obj := u.Obj()
+		if obj.Pkg() != nil && o10WholeRecords[obj.Pkg().Path()+"."+obj.Name()] {
+			return true
+		}
+		// A type with its own encoder decides what it writes.
+		if o10OwnMarshalJSON(u) {
+			return false
+		}
+		return o10HoldsRecord(u.Underlying(), seen)
+	case *types.Struct:
+		for i := range u.NumFields() {
+			if f := u.Field(i); o10EncodedField(f) && o10HoldsRecord(f.Type(), seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// o10EncodedField reports whether encoding/json writes the field.
+func o10EncodedField(f *types.Var) bool { return f.Exported() || f.Embedded() }
+
+// o10OwnMarshalJSON reports whether a named type declares MarshalJSON itself
+// (a method promoted from an embedded field is that field's encoder, and the
+// field is checked as a field).
+func o10OwnMarshalJSON(t *types.Named) bool {
+	for i := range t.NumMethods() {
+		if t.Method(i).Name() == "MarshalJSON" {
+			return true
+		}
+	}
+	return false
+}
+
+// o10ArgRecord returns the type of a whole record an argument carries: the
+// argument itself, or a record placed in an encoded slot of a composite
+// literal (map, slice, or an exported or embedded struct field) or converted
+// to an interface (any(c)).
+func o10ArgRecord(info *types.Info, arg ast.Expr) types.Type {
+	arg = ast.Unparen(arg)
+	if t := info.TypeOf(arg); t != nil && !types.IsInterface(t) && o10WholeRecord(t) {
+		return t
+	}
+	switch e := arg.(type) {
+	case *ast.CompositeLit:
+		litType := info.TypeOf(e)
+		if named, ok := types.Unalias(litType).(*types.Named); ok && o10OwnMarshalJSON(named) {
+			return nil
+		}
+		fields, _ := litType.Underlying().(*types.Struct)
+		for i, elt := range e.Elts {
+			if kv, ok := elt.(*ast.KeyValueExpr); ok {
+				if fields != nil {
+					if key, ok := kv.Key.(*ast.Ident); ok {
+						if f, ok := info.Uses[key].(*types.Var); ok && !o10EncodedField(f) {
+							continue
+						}
+					}
+				} else if t := o10ArgRecord(info, kv.Key); t != nil {
+					return t
+				}
+				elt = kv.Value
+			} else if fields != nil && i < fields.NumFields() && !o10EncodedField(fields.Field(i)) {
+				continue
+			}
+			if t := o10ArgRecord(info, elt); t != nil {
+				return t
+			}
+		}
+	case *ast.UnaryExpr:
+		return o10ArgRecord(info, e.X)
+	case *ast.CallExpr:
+		if tv, ok := info.Types[e.Fun]; ok && tv.IsType() && len(e.Args) == 1 {
+			return o10ArgRecord(info, e.Args[0])
+		}
+	}
+	return nil
 }
 
 type o10EncodeSite struct{ key, pos, what string }
@@ -225,7 +311,7 @@ func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *type
 			if !o10Encoders[full] || len(call.Args) == 0 {
 				return true
 			}
-			if t := info.TypeOf(call.Args[0]); t != nil && o10WholeRecord(t) {
+			if t := o10ArgRecord(info, call.Args[0]); t != nil {
 				encoded[call] = true
 				sites = append(sites, o10EncodeSite{name + ":" + owner, fset.Position(call.Pos()).String(), full + " of " + t.String()})
 			}
@@ -262,14 +348,21 @@ func o10EncodeSites(fset *token.FileSet, name string, file *ast.File, info *type
 				if param == nil || !types.IsInterface(param) {
 					continue
 				}
-				if t := info.TypeOf(arg); t != nil && !types.IsInterface(t) && o10WholeRecord(t) {
+				if t := o10ArgRecord(info, arg); t != nil {
 					sites = append(sites, o10EncodeSite{name + ":" + owner, fset.Position(arg.Pos()).String(), t.String() + " passed as an interface value to " + types.ExprString(call.Fun)})
 				}
 			}
 			return true
 		})
-		// An encoder used as a value may be called with anything later.
+		// An encoder used as a value may be called with anything later; a
+		// record's MarshalJSON taken as a method value encodes that record.
 		ast.Inspect(root, func(node ast.Node) bool {
+			if sel, ok := node.(*ast.SelectorExpr); ok && !called[sel.Sel] && sel.Sel.Name == "MarshalJSON" {
+				if t := info.TypeOf(sel.X); t != nil && o10WholeRecord(t) {
+					sites = append(sites, o10EncodeSite{name + ":" + owner, fset.Position(sel.Pos()).String(), "method value MarshalJSON of " + t.String()})
+				}
+				return true
+			}
 			ident, ok := node.(*ast.Ident)
 			if !ok || called[ident] {
 				return true
@@ -422,7 +515,17 @@ func Marshal(v any) ([]byte, error) { return nil, nil }
 		{"named slice", "type agents []model.Agent\nfunc Get(a agents) { model.Marshal([]model.Agent(a)) }", []string{"Get"}},
 		{"generic helper", "func helper(v any) { _ = v }\nfunc Get(c *model.Config) { helper(c) }", []string{"Get"}},
 		{"variadic helper", "func helper(vs ...any) { _ = vs }\nfunc Get(a model.Agent) { helper(1, a) }", []string{"Get"}},
+		{"map wrapper", "func Get(c *model.Config) { json.Marshal(map[string]any{\"config\": c}) }", []string{"Get"}},
+		{"struct wrapper", "type reply struct{ Agents []model.Agent }\nfunc Get(a []model.Agent) { json.Marshal(reply{Agents: a}) }", []string{"Get"}},
+		{"anonymous struct literal", "func Get(c *model.Config) { json.Marshal(struct{ C any }{c}) }", []string{"Get"}},
+		{"embedded record", "type view struct{ *model.Config; Extra int }\nfunc Get(v view) { model.Marshal(v) }", []string{"Get"}},
+		{"interface conversion", "func Get(c *model.Config) { model.Marshal(any(c)) }", []string{"Get"}},
+		{"wrapper to helper", "func helper(v any) { _ = v }\nfunc Get(a model.Agent) { helper([]any{a}) }", []string{"Get"}},
+		{"method value", "func Get(c model.Config) { f := c.MarshalJSON; f() }", []string{"Get"}},
 		{"decode target", "func Get(c *model.Config) { json.Unmarshal(nil, c) }", nil},
+		{"members in a map", "func Get(c *model.Config) { json.Marshal(map[string]any{\"name\": c.Name}) }", nil},
+		{"unexported field", "type holder struct{ c *model.Config; N int }\nfunc Get(c *model.Config) { json.Marshal(holder{c: c}) }", nil},
+		{"self-encoding wrapper", "type view struct{ c *model.Config }\nfunc (view) MarshalJSON() ([]byte, error) { return nil, nil }\nfunc Get(c *model.Config) { json.Marshal(view{c}) }", nil},
 		{"member", "func Get(c *model.Config) { model.Marshal(c.Name) }", nil},
 		{"small record", "func Get(n model.Node) { model.Marshal(n) }", nil},
 	}
