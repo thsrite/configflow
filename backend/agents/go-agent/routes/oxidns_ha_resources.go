@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"agent/svc"
 )
 
 const haServiceUnit = "keepalived"
@@ -468,7 +471,7 @@ func haVerifyReleased(state *haState) error {
 func haServiceRunning(manager string) bool {
 	switch manager {
 	case "supervisor":
-		return haSupervisorState() == "RUNNING"
+		return haContainerState() == string(svc.StateRunning)
 	case "systemd":
 		_, err := haRun("systemctl", "is-active", "--quiet", haServiceUnit)
 		return err == nil
@@ -482,8 +485,8 @@ func haServiceRunning(manager string) bool {
 func haServiceEnabled(manager string) bool {
 	switch manager {
 	case "supervisor":
-		// The managed journal, rather than Supervisor autostart, drives recovery.
-		return haSupervisorState() != ""
+		// The managed journal, rather than boot autostart, drives recovery.
+		return haContainerState() != ""
 	case "systemd":
 		_, err := haRun("systemctl", "is-enabled", "--quiet", haServiceUnit)
 		return err == nil
@@ -512,7 +515,9 @@ func haServiceAction(manager, action string) error {
 		if action != "start" && action != "stop" && action != "restart" {
 			return fmt.Errorf("不支持的 HA 服务操作")
 		}
-		_, err = haRun("supervisorctl", haSupervisorArgs(action)...)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		err = svc.Do(ctx, haContainerManager(), action, svc.Keepalived)
+		cancel()
 	case "systemd":
 		_, err = haRun("systemctl", action, haServiceUnit)
 	case "openrc":

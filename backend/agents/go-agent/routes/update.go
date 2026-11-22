@@ -239,8 +239,6 @@ func checkAgentRunning() error {
 		cmd = exec.Command("systemctl", "is-active", "configflow-agent")
 	} else if _, err := exec.LookPath("rc-service"); err == nil {
 		cmd = exec.Command("rc-service", "configflow-agent", "status")
-	} else if _, err := exec.LookPath("supervisorctl"); err == nil {
-		cmd = exec.Command("supervisorctl", "status", "configflow-agent")
 	} else {
 		// 如果没有服务管理器，假设进程正在运行
 		log.Println("无法检测进程状态，假设运行正常")
@@ -268,10 +266,6 @@ func restartAgent() error {
 		// OpenRC (Alpine Linux)
 		log.Println("使用 rc-service 重启 Agent...")
 		cmd = exec.Command("rc-service", "configflow-agent", "restart")
-	} else if _, err := exec.LookPath("supervisorctl"); err == nil {
-		// Supervisor
-		log.Println("使用 supervisorctl 重启 Agent...")
-		cmd = exec.Command("supervisorctl", "restart", "configflow-agent")
 	} else {
 		// 如果以上都不可用，直接退出进程让系统重启（假设有自动重启机制）
 		log.Println("未找到服务管理器，直接退出进程...")

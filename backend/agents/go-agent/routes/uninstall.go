@@ -1,12 +1,14 @@
 package routes
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"time"
+
+	"agent/svc"
 )
 
 // UninstallHandler 卸载功能处理程序
@@ -97,17 +99,15 @@ func UninstallHandler(cfg *Config) http.HandlerFunc {
 
 			// 4. 删除服务文件和停止服务
 			if initSystem == "supervisor" {
-				// Supervisor: 先删除配置再停止
-				agentConfPath := fmt.Sprintf("/etc/supervisor/conf.d/agent-%s.conf", cfg.ServiceName)
-				serviceConfPath := fmt.Sprintf("/etc/supervisor/conf.d/%s.conf", cfg.ServiceName)
-
-				log.Printf("Removing supervisor configs...")
-				os.Remove(agentConfPath)
-				os.Remove(serviceConfPath)
-
-				// 重新加载 supervisor
-				executeCommand("supervisorctl -c /etc/supervisor/supervisord.conf reread")
-				executeCommand("supervisorctl -c /etc/supervisor/supervisord.conf update")
+				// Docker 镜像：停止核心，最后停止 Agent 自己（s6 不再拉起）
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				for _, program := range []string{cfg.ServiceName, "agent-" + cfg.ServiceName} {
+					log.Printf("Stopping container program %s", program)
+					if err := containerServices.Stop(ctx, program); err != nil {
+						log.Printf("Warning: failed to stop %s: %v", program, err)
+					}
+				}
+				cancel()
 			} else if initSystem == "systemd" {
 				// systemd: 先删除服务文件
 				log.Printf("Removing systemd service file...")
@@ -140,13 +140,9 @@ func UninstallHandler(cfg *Config) http.HandlerFunc {
 
 // detectInitSystem 检测系统使用的 init 系统
 func detectInitSystem() string {
-	// 检查 supervisorctl 是否存在
-	if _, err := exec.LookPath("supervisorctl"); err == nil {
-		// 检查 supervisor 是否在运行
-		cmd := exec.Command("supervisorctl", "-c", "/etc/supervisor/supervisord.conf", "status")
-		if err := cmd.Run(); err == nil {
-			return "supervisor"
-		}
+	// Docker 镜像（s6 管理 Agent 与核心）
+	if svc.InImage() {
+		return "supervisor"
 	}
 
 	// 检查 systemctl 是否存在

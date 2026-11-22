@@ -1,6 +1,7 @@
 package svc
 
 import (
+	"os"
 	"path/filepath"
 	"time"
 )
@@ -114,4 +115,15 @@ func LogFile(name string) string {
 		return filepath.Join(dir, "current")
 	}
 	return ""
+}
+
+// InImage reports whether this process runs in the Agent image's s6 tree
+// (an Agent program is supervised).
+func InImage() bool {
+	for _, core := range []string{"mihomo", "mosdns", "oxidns"} {
+		if _, err := os.Stat(filepath.Join(Scandir, "agent-"+core)); err == nil {
+			return true
+		}
+	}
+	return false
 }

@@ -10,35 +10,16 @@ import (
 )
 
 // RestartService 执行服务重启命令，返回成功命令的输出。
-// supervisorctl 场景下补全配置文件路径；restart 失败时回退为 start。
+// Docker 镜像的重启命令（configflow-agent svc restart）对未运行的程序直接启动。
 func RestartService(cfg *Config) ([]byte, error) {
-	restartCommand := cfg.RestartCommand
-	if strings.Contains(restartCommand, "supervisorctl") && !strings.Contains(restartCommand, "-c") {
-		restartCommand = strings.Replace(restartCommand, "supervisorctl", "supervisorctl -c /etc/supervisor/supervisord.conf", 1)
-		log.Print("Prepared supervisorctl restart command")
-	}
-
 	log.Print("Executing restart command")
-	output, err := executeURLCommand(restartCommand, cfg.Token)
-	if err == nil {
-		ReconcileLinuxGateway(cfg)
-		return output, nil
+	output, err := executeURLCommand(cfg.RestartCommand, cfg.Token)
+	if err != nil {
+		log.Print("Restart command failed")
+		return nil, err
 	}
-
-	log.Print("Restart command failed")
-
-	if strings.Contains(restartCommand, "supervisorctl") && strings.Contains(restartCommand, "restart") {
-		startCommand := strings.Replace(restartCommand, "restart", "start", 1)
-		log.Print("Attempting to start service instead")
-		output, startErr := executeURLCommand(startCommand, cfg.Token)
-		if startErr != nil {
-			return nil, withPreviousDiagnostic("Restart and start both failed", err, startErr)
-		}
-		ReconcileLinuxGateway(cfg)
-		return output, nil
-	}
-
-	return nil, err
+	ReconcileLinuxGateway(cfg)
+	return output, nil
 }
 
 // RestartHandler 处理服务重启请求
@@ -57,34 +38,9 @@ func RestartHandler(cfg *Config) http.HandlerFunc {
 		log.Println("Received restart request.")
 		log.Print("Executing restart command")
 
-		restartCommand := cfg.RestartCommand
-		if strings.Contains(restartCommand, "supervisorctl") && !strings.Contains(restartCommand, "-c") {
-			restartCommand = strings.Replace(restartCommand, "supervisorctl", "supervisorctl -c /etc/supervisor/supervisord.conf", 1)
-			log.Print("Prepared supervisorctl restart command")
-		}
-
-		_, err = executeURLCommand(restartCommand, cfg.Token)
+		_, err = executeURLCommand(cfg.RestartCommand, cfg.Token)
 		if err != nil {
 			log.Print("Restart command failed")
-
-			if strings.Contains(restartCommand, "supervisorctl") && strings.Contains(restartCommand, "restart") {
-				log.Print("Attempting to start service instead of restart")
-				startCommand := strings.Replace(restartCommand, "restart", "start", 1)
-				log.Print("Executing start command")
-
-				_, startErr := executeURLCommand(startCommand, cfg.Token)
-				if startErr != nil {
-					log.Print("Start command also failed")
-					deploymentFailure(w, http.StatusInternalServerError, withPreviousDiagnostic("Restart and start both failed", err, startErr))
-					return
-				}
-
-				log.Println("Service started successfully.")
-				ReconcileLinuxGateway(cfg)
-				JsonResponse(w, http.StatusOK, map[string]string{"success": "true", "message": "Service started (was not running)"})
-				return
-			}
-
 			deploymentFailure(w, http.StatusInternalServerError, diagnosticFailure("Restart failed", err, nil))
 			return
 		}
@@ -125,10 +81,6 @@ func executeURLCommand(command string, secrets ...string) ([]byte, error) {
 	}
 
 	log.Print("Executing shell command")
-	if strings.Contains(command, "supervisorctl") && !strings.Contains(command, "-c") {
-		command = strings.Replace(command, "supervisorctl", "supervisorctl -c /etc/supervisor/supervisord.conf", 1)
-		log.Print("Prepared supervisorctl shell command")
-	}
 
 	cmd := exec.Command("sh", "-c", command)
 	output, err := runDiagnosticCommand(nil, cmd, "shell command", secrets...)

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"agent/svc"
 )
 
 type fakeUnit struct{ stdout, stderr string }
@@ -16,11 +18,11 @@ type fakeUnit struct{ stdout, stderr string }
 func stubLogEnvironment(t *testing.T, init string, units map[string]fakeUnit) string {
 	t.Helper()
 	dir := t.TempDir()
-	prevInit, prevSystemd, prevOpenRC, prevConf, prevMain, prevLegacy, prevJournal :=
-		logDetectInitSystem, logSystemdOutputs, logOpenRCInitDir, logSupervisorConfDir, logSupervisorMainConf, logLegacyFallbacks, logReadJournal
+	prevInit, prevSystemd, prevOpenRC, prevContainer, prevLegacy, prevJournal :=
+		logDetectInitSystem, logSystemdOutputs, logOpenRCInitDir, logContainerFile, logLegacyFallbacks, logReadJournal
 	t.Cleanup(func() {
-		logDetectInitSystem, logSystemdOutputs, logOpenRCInitDir, logSupervisorConfDir, logSupervisorMainConf, logLegacyFallbacks, logReadJournal =
-			prevInit, prevSystemd, prevOpenRC, prevConf, prevMain, prevLegacy, prevJournal
+		logDetectInitSystem, logSystemdOutputs, logOpenRCInitDir, logContainerFile, logLegacyFallbacks, logReadJournal =
+			prevInit, prevSystemd, prevOpenRC, prevContainer, prevLegacy, prevJournal
 	})
 	logDetectInitSystem = func() string { return init }
 	logSystemdOutputs = func(unit string) (string, string, bool) {
@@ -28,12 +30,15 @@ func stubLogEnvironment(t *testing.T, init string, units map[string]fakeUnit) st
 		return u.stdout, u.stderr, ok
 	}
 	logOpenRCInitDir = filepath.Join(dir, "init.d")
-	logSupervisorConfDir = filepath.Join(dir, "conf.d")
-	logSupervisorMainConf = filepath.Join(dir, "supervisord.conf")
+	logContainerFile = func(name string) string {
+		if svc.LogDir(name) == "" {
+			return ""
+		}
+		return filepath.Join(dir, "container", name, "current")
+	}
 	logLegacyFallbacks = func(*Config) []string { return nil }
 	logReadJournal = func(unit string, lines int) (string, error) { return "journal of " + unit + "\n", nil }
 	os.MkdirAll(logOpenRCInitDir, 0o755)
-	os.MkdirAll(logSupervisorConfDir, 0o755)
 	return dir
 }
 
@@ -111,23 +116,28 @@ func TestLogSourcesOpenRCOutputLog(t *testing.T) {
 	}
 }
 
-func TestLogSourcesSupervisorDocker(t *testing.T) {
+func TestLogSourcesDockerImage(t *testing.T) {
 	dir := stubLogEnvironment(t, "supervisor", nil)
-	out, errOut := filepath.Join(dir, "mihomo.log"), filepath.Join(dir, "mihomo.err.log")
-	os.WriteFile(out, []byte("out\n"), 0o644)
-	os.WriteFile(errOut, []byte("err\n"), 0o644)
-	os.WriteFile(filepath.Join(logSupervisorConfDir, "mihomo.conf"), []byte("[program:mihomo]\n; stdout_logfile=/ignored\nstdout_logfile="+out+"\nstderr_logfile="+errOut+"\n"), 0o644)
-	os.WriteFile(filepath.Join(logSupervisorConfDir, "agent-mihomo.conf"), []byte("[program:agent-mihomo]\nstdout_logfile=/dev/stdout\nstderr_logfile=/dev/stderr\n"), 0o644)
+	current := filepath.Join(dir, "container", "mihomo", "current")
+	os.MkdirAll(filepath.Dir(current), 0o755)
+	os.WriteFile(current, []byte("out and err\n"), 0o644)
 	cfg := &Config{ServiceType: "mihomo", ServiceManager: "supervisor", ServiceUnit: "mihomo", ConfigPath: filepath.Join(dir, "config.yaml")}
 	sources := ResolveLogSources(cfg)
-	if core := sourceByID(t, sources, "core"); core.Path != out || core.Kind != "file" {
+	if core := sourceByID(t, sources, "core"); core.Path != current || core.Kind != "file" || !core.Clearable {
 		t.Fatalf("core = %+v", core)
 	}
-	if coreErr := sourceByID(t, sources, "core-err"); coreErr.Path != errOut {
-		t.Fatalf("core-err = %+v", coreErr)
+	for _, source := range sources {
+		if source.ID == "core-err" || source.ID == "supervisord" {
+			t.Fatalf("Docker cores have one combined log: %+v", source)
+		}
 	}
 	if agent := sourceByID(t, sources, "agent"); agent.Kind != "unavailable" || !strings.Contains(agent.Note, "docker logs") {
 		t.Fatalf("docker agent = %+v", agent)
+	}
+	// Before the core first writes, the source names where it will appear.
+	cfg = &Config{ServiceType: "oxidns", ServiceManager: "supervisor", ServiceUnit: "oxidns", ConfigPath: filepath.Join(dir, "config.yaml")}
+	if core := sourceByID(t, ResolveLogSources(cfg), "core"); core.Kind != "unavailable" || core.Path != filepath.Join(dir, "container", "oxidns", "current") {
+		t.Fatalf("missing oxidns log = %+v", core)
 	}
 }
 

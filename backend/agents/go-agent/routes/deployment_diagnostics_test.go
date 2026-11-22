@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"agent/svc"
 )
 
 func TestDiagnosticCommandCapturesReasonAndUnwrapsExitStatus(t *testing.T) {
@@ -288,20 +290,16 @@ func TestRollbackDiagnosticsSurviveJournalAndClearAfterRecovery(t *testing.T) {
 }
 
 func TestServiceManagerExitCodesStillRecognizedWithDiagnostics(t *testing.T) {
-	for _, manager := range []string{"systemd", "openrc", "supervisor", "command"} {
+	for _, manager := range []string{"systemd", "openrc", "command"} {
 		t.Run(manager, func(t *testing.T) {
 			cfg := testDeploymentConfig(t)
 			cfg.ServiceManager, cfg.ServiceUnit = manager, "test-core"
 			bin := t.TempDir()
-			name := map[string]string{"systemd": "systemctl", "openrc": "rc-service", "supervisor": "supervisorctl"}[manager]
+			name := map[string]string{"systemd": "systemctl", "openrc": "rc-service"}[manager]
 			if manager == "command" {
 				cfg.StatusCommand = "printf 'inactive\\n'; exit 3"
 			} else {
-				message := "inactive"
-				if manager == "supervisor" {
-					message = "test-core STOPPED"
-				}
-				writeActivationFixture(t, filepath.Join(bin, name), []byte("#!/bin/sh\nprintf '"+message+"\\n'\nexit 3\n"), 0700)
+				writeActivationFixture(t, filepath.Join(bin, name), []byte("#!/bin/sh\nprintf 'inactive\\n'\nexit 3\n"), 0700)
 				t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			}
 			if running, err := serviceRunning(cfg); err != nil || running {
@@ -318,6 +316,91 @@ func TestServiceManagerExitCodesStillRecognizedWithDiagnostics(t *testing.T) {
 				t.Fatalf("manager diagnostics lost: %v %q", err, details)
 			}
 		})
+	}
+}
+
+// fakeContainer is a scripted container service manager.
+type fakeContainer struct {
+	states map[string]svc.State
+	err    error
+	calls  []string
+}
+
+func (c *fakeContainer) act(name, action string, state svc.State) error {
+	c.calls = append(c.calls, action+" "+name)
+	if c.err != nil {
+		return c.err
+	}
+	c.states[name] = state
+	return nil
+}
+func (c *fakeContainer) Start(_ context.Context, name string) error {
+	return c.act(name, "start", svc.StateRunning)
+}
+func (c *fakeContainer) Stop(_ context.Context, name string) error {
+	return c.act(name, "stop", svc.StateStopped)
+}
+func (c *fakeContainer) Restart(_ context.Context, name string) error {
+	return c.act(name, "restart", svc.StateRunning)
+}
+func (c *fakeContainer) Status(_ context.Context, name string) (svc.Status, error) {
+	if c.err != nil {
+		return svc.Status{}, c.err
+	}
+	state, ok := c.states[name]
+	if !ok {
+		return svc.Status{}, svc.ErrUnknown
+	}
+	return svc.Status{Name: name, State: state}, nil
+}
+
+func useFakeContainer(t *testing.T, states map[string]svc.State) *fakeContainer {
+	t.Helper()
+	fake := &fakeContainer{states: states}
+	previous := containerServices
+	t.Cleanup(func() { containerServices = previous })
+	containerServices = fake
+	return fake
+}
+
+func TestContainerServiceStates(t *testing.T) {
+	tests := []struct {
+		state   svc.State
+		running bool
+		err     error
+	}{
+		{svc.StateRunning, true, nil},
+		{svc.StateStarting, false, errServiceTransition},
+		{svc.StateBackoff, false, errServiceTransition},
+		{svc.StateStopping, false, errServiceTransition},
+		{svc.StateStopped, false, nil},
+		{svc.StateFatal, false, nil},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.state), func(t *testing.T) {
+			cfg := testDeploymentConfig(t)
+			cfg.ServiceManager, cfg.ServiceUnit = "supervisor", "test-core"
+			useFakeContainer(t, map[string]svc.State{"test-core": tt.state})
+			running, err := serviceRunning(cfg)
+			if running != tt.running || !errors.Is(err, tt.err) {
+				t.Fatalf("%t %v", running, err)
+			}
+		})
+	}
+	cfg := testDeploymentConfig(t)
+	cfg.ServiceManager, cfg.ServiceUnit = "supervisor", "test-core"
+	fake := useFakeContainer(t, map[string]svc.State{"test-core": svc.StateRunning})
+	if err := stopService(cfg); err != nil || fake.states["test-core"] != svc.StateStopped {
+		t.Fatalf("stop: %v %v", err, fake.states)
+	}
+	// Stopping a stopped program is not an error.
+	if err := stopService(cfg); err != nil {
+		t.Fatalf("second stop: %v", err)
+	}
+	fake.err = fmt.Errorf("manager permission denied")
+	_, err := serviceRunning(cfg)
+	if _, details := deploymentErrorFields(err); !strings.Contains(details, "manager permission denied") {
+		t.Fatalf("manager diagnostics lost: %v %q", err, details)
 	}
 }
 

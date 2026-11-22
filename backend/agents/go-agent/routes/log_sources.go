@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"agent/svc"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,13 +32,12 @@ type LogSource struct {
 const maxLogLines = 10000
 
 var (
-	logOpenRCInitDir      = "/etc/init.d"
-	logSupervisorConfDir  = "/etc/supervisor/conf.d"
-	logSupervisorMainConf = "/etc/supervisor/supervisord.conf"
-	logLegacyFallbacks    = legacyCoreLogPaths
-	logDetectInitSystem   = detectInitSystem
-	logSystemdOutputs     = systemdUnitOutputs
-	logReadJournal        = readJournal
+	logOpenRCInitDir    = "/etc/init.d"
+	logContainerFile    = svc.LogFile
+	logLegacyFallbacks  = legacyCoreLogPaths
+	logDetectInitSystem = detectInitSystem
+	logSystemdOutputs   = systemdUnitOutputs
+	logReadJournal      = readJournal
 )
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
@@ -124,7 +125,7 @@ func openrcOutputs(unit string) (stdout, stderr string) {
 }
 
 // OpenRCCoreLogPaths lists the files an OpenRC-managed core appends its output
-// to. OpenRC never rotates them, unlike the systemd journal and Supervisor.
+// to. OpenRC never rotates them, unlike the systemd journal and s6-log.
 func OpenRCCoreLogPaths(cfg *Config) []string {
 	if coreServiceManager(cfg) != "openrc" {
 		return nil
@@ -141,45 +142,6 @@ func OpenRCCoreLogPaths(cfg *Config) []string {
 		}
 	}
 	return paths
-}
-
-// supervisorOutputs reads stdout_logfile/stderr_logfile of [program:name].
-func supervisorOutputs(program string) (stdout, stderr string) {
-	files, _ := filepath.Glob(filepath.Join(logSupervisorConfDir, "*.conf"))
-	files = append(files, logSupervisorMainConf)
-	header := "[program:" + program + "]"
-	for _, path := range files {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		inProgram := false
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "[") {
-				inProgram = line == header
-				continue
-			}
-			if !inProgram || strings.HasPrefix(line, ";") {
-				continue
-			}
-			key, value, found := strings.Cut(line, "=")
-			if !found {
-				continue
-			}
-			value = strings.TrimSpace(value)
-			switch strings.TrimSpace(key) {
-			case "stdout_logfile":
-				stdout = value
-			case "stderr_logfile":
-				stderr = value
-			}
-		}
-		if stdout != "" || stderr != "" {
-			return stdout, stderr
-		}
-	}
-	return "", ""
 }
 
 // configuredCoreLogFile reads log.file from OxiDNS/MosDNS configuration.
@@ -210,7 +172,6 @@ func legacyCoreLogPaths(cfg *Config) []string {
 	t := cfg.ServiceType
 	configDir := filepath.Dir(cfg.ConfigPath)
 	paths := []string{
-		"/var/log/supervisor/" + t + ".log",
 		"/var/log/" + t + ".log",
 		filepath.Join(configDir, t+".log"),
 		"/etc/" + t + "/" + t + ".log",
@@ -243,8 +204,10 @@ func serviceLogSources(manager, unit, idPrefix, label string) []LogSource {
 	case "openrc":
 		stdout, stderr = openrcOutputs(unit)
 	case "supervisor":
-		stdout, stderr = supervisorOutputs(unit)
-		if strings.HasPrefix(stdout, "/dev/") && (stderr == "" || strings.HasPrefix(stderr, "/dev/")) {
+		// Docker image: cores log through s6-log (stdout and stderr in one
+		// file); the Agent and keepalived write to the container output.
+		stdout = logContainerFile(unit)
+		if stdout == "" {
 			return []LogSource{{ID: idPrefix, Label: label, Kind: "unavailable", Note: "输出直接写入容器标准输出，请在宿主机用 docker logs 查看"}}
 		}
 	default:
@@ -348,13 +311,9 @@ func coreLogSources(cfg *Config) []LogSource {
 	return []LogSource{{ID: "core", Label: name + " 运行日志", Kind: "unavailable", Note: "未找到 " + name + " 的日志输出位置，可用自定义路径查看"}}
 }
 
-// ResolveLogSources lists the Agent, core and supervisor logs of this host.
+// ResolveLogSources lists the Agent and core logs of this host.
 func ResolveLogSources(cfg *Config) []LogSource {
-	sources := append(agentLogSources(cfg), coreLogSources(cfg)...)
-	if coreServiceManager(cfg) == "supervisor" && regularFileExists("/var/log/supervisor/supervisord.log") {
-		sources = append(sources, LogSource{ID: "supervisord", Label: "Supervisor 日志", Kind: "file", Path: "/var/log/supervisor/supervisord.log", Clearable: true})
-	}
-	return sources
+	return append(agentLogSources(cfg), coreLogSources(cfg)...)
 }
 
 func findLogSource(cfg *Config, id string) (LogSource, bool) {

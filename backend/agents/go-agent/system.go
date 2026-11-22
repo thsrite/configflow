@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"agent/internal/localip"
+	"agent/svc"
 )
 
 var detectLocalIPv4 = localip.Detect
@@ -73,49 +77,25 @@ func checkServiceWithOpenRC(serviceName string) (string, bool) {
 	return "", false
 }
 
-// checkServiceWithSupervisorctl 使用 supervisorctl 检查服务状态
-func checkServiceWithSupervisorctl(serviceName string) (string, bool) {
-	// 先检查 supervisorctl 是否存在
-	if _, err := exec.LookPath("supervisorctl"); err != nil {
-		// supervisorctl 不存在，直接返回 false，不输出错误日志
-		return "", false
-	}
-
-	cmd := exec.Command("supervisorctl", "-c", "/etc/supervisor/supervisord.conf", "status", serviceName)
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
-
-	// 无论命令是否成功，都检查输出内容
-	log.Printf("Supervisorctl output for %s: %s", serviceName, outputStr)
-
-	// 检查输出中是否包含服务状态信息
-	if strings.Contains(outputStr, serviceName) {
-		// 检查输出中是否包含 RUNNING
-		if strings.Contains(outputStr, "RUNNING") {
-			logDebugf("Service %s is active (supervisorctl)", serviceName)
-			return "active", true
-		} else if strings.Contains(outputStr, "FATAL") {
-			log.Printf("Service %s is in FATAL state (supervisorctl) - reporting as inactive", serviceName)
-			// FATAL 状态表示服务启动失败，应该返回 inactive
-			return "inactive", true
-		} else if strings.Contains(outputStr, "STOPPED") {
-			log.Printf("Service %s is STOPPED (supervisorctl)", serviceName)
-			return "inactive", true
-		} else if strings.Contains(outputStr, "STARTING") {
-			log.Printf("Service %s is STARTING (supervisorctl)", serviceName)
-			// 将 STARTING 状态统一为 active，以保持与服务器一致
-			return "active", true
-		} else {
-			log.Printf("Service %s is in unknown state (supervisorctl): %s", serviceName, outputStr)
-			// 将 unknown 状态统一为 inactive，以保持与服务器一致
-			return "inactive", true
+// checkServiceWithContainer reads the state of a program supervised by the
+// Docker image (s6). Outside the image the program is unknown.
+func checkServiceWithContainer(serviceName string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	status, err := svc.NewS6().Status(ctx, serviceName)
+	if err != nil {
+		if !errors.Is(err, svc.ErrUnknown) {
+			log.Printf("Container service status of %s unavailable: %v", serviceName, err)
 		}
-	} else {
-		// 如果输出中不包含服务名称，说明命令执行失败
-		log.Printf("Supervisorctl command failed for %s: %v, output: %s", serviceName, err, outputStr)
-		// 命令执行失败时，不进行进程检查，直接返回 false 让其他方法处理
 		return "", false
 	}
+	// STARTING counts as active, as the panel expects.
+	if status.State == svc.StateRunning || status.State == svc.StateStarting {
+		logDebugf("Service %s is active (container)", serviceName)
+		return "active", true
+	}
+	log.Printf("Service %s is %s (container)", serviceName, status.State)
+	return "inactive", true
 }
 
 // checkServiceWithProcess 检查服务进程是否存在
@@ -143,8 +123,8 @@ func getServiceStatus(serviceName string) string {
 		return status
 	}
 
-	// 尝试使用 supervisorctl (Supervisor)
-	if status, found := checkServiceWithSupervisorctl(serviceName); found {
+	// Docker 镜像内由 s6 管理的程序
+	if status, found := checkServiceWithContainer(serviceName); found {
 		return status
 	}
 
@@ -161,13 +141,6 @@ func getServiceStatus(serviceName string) string {
 // executeCommand 执行一个shell命令
 func executeCommand(command string) ([]byte, error) {
 	log.Printf("Executing shell command: %s", command)
-
-	// 特殊处理 supervisorctl 命令，确保使用正确的配置文件路径
-	if strings.Contains(command, "supervisorctl") && !strings.Contains(command, "-c") {
-		// 在命令中添加配置文件路径
-		command = strings.Replace(command, "supervisorctl", "supervisorctl -c /etc/supervisor/supervisord.conf", 1)
-		log.Printf("Modified supervisorctl command: %s", command)
-	}
 
 	cmd := exec.Command("sh", "-c", command)
 	output, err := cmd.CombinedOutput()

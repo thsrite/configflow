@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"agent/svc"
 )
 
 type haNamespaceInfo struct {
@@ -65,35 +68,19 @@ func newHAContainerFixture(t *testing.T, mode string) *haContainerFixture {
 	haCompanionPeerCheck = func(string) error { return f.peerError }
 	f.setEvidence(t, haCompanionEvidence{Protocol: 1, Mode: "host", HostID: haHostIdentity(haHostIDPath),
 		CapEff: "3000", Network: haNamespace{1, 10}, PID: haNamespace{1, 21}})
+	previousManager := haContainerManager
+	t.Cleanup(func() { haContainerManager = previousManager })
+	haContainerManager = func() svc.Manager {
+		target := "local"
+		if haDockerNetwork() == "host" {
+			target = "companion"
+		}
+		return &haFakeKeepalived{f: f, t: t, target: target}
+	}
 	baseRun := haRun
 	haRun = func(name string, args ...string) (string, error) {
 		if name == "ip" && strings.Join(args, " ") == "-j -d link show" {
 			return f.links, nil
-		}
-		if name == "supervisorctl" {
-			if strings.Join(args[:len(args)-2], " ") != strings.Join(haSupervisorArgs("status")[:2], " ") || args[len(args)-1] != haSupervisorProgram {
-				t.Fatalf("unexpected Supervisor target: %v", args)
-			}
-			action := args[len(args)-2]
-			if !f.helperAvailable {
-				return "", fmt.Errorf("companion unavailable")
-			}
-			if action == "status" {
-				if f.running {
-					return haSupervisorProgram + " RUNNING pid 10", nil
-				}
-				return haSupervisorProgram + " STOPPED", fmt.Errorf("stopped")
-			}
-			f.commands = append(f.commands, name+" "+strings.Join(args, " "))
-			switch action {
-			case "start", "restart":
-				f.running = true
-			case "stop":
-				f.running = false
-			default:
-				t.Fatalf("unexpected action %s", action)
-			}
-			return "ok", nil
 		}
 		return baseRun(name, args...)
 	}
@@ -212,7 +199,7 @@ func TestHACompanionSocketRejectsSamePIDNamespace(t *testing.T) {
 	}
 	defer listener.Close()
 	if err := checkHACompanionPeer(path); err == nil {
-		t.Fatal("local Supervisor impersonated an independent companion")
+		t.Fatal("a local process supervisor impersonated an independent companion")
 	}
 }
 
@@ -307,5 +294,80 @@ func TestHAContainerStatusAndRecoveryRejectChangedEnvironment(t *testing.T) {
 				t.Fatalf("unsafe recovery: %v %v", err, f.commands)
 			}
 		})
+	}
+}
+
+// haFakeKeepalived stands in for the managed keepalived program (local s6 or
+// the companion's control socket).
+type haFakeKeepalived struct {
+	f      *haContainerFixture
+	t      *testing.T
+	target string
+}
+
+func (k *haFakeKeepalived) check(name string) error {
+	if name != svc.Keepalived {
+		k.t.Fatalf("unexpected program %s", name)
+	}
+	if !k.f.helperAvailable {
+		return fmt.Errorf("companion unavailable")
+	}
+	return nil
+}
+
+func (k *haFakeKeepalived) act(name, action string, running bool) error {
+	if err := k.check(name); err != nil {
+		return err
+	}
+	k.f.commands = append(k.f.commands, k.target+" "+action+" "+name)
+	k.f.running = running
+	return nil
+}
+
+func (k *haFakeKeepalived) Start(_ context.Context, name string) error {
+	return k.act(name, "start", true)
+}
+func (k *haFakeKeepalived) Restart(_ context.Context, name string) error {
+	return k.act(name, "restart", true)
+}
+func (k *haFakeKeepalived) Stop(_ context.Context, name string) error {
+	return k.act(name, "stop", false)
+}
+func (k *haFakeKeepalived) Status(_ context.Context, name string) (svc.Status, error) {
+	if err := k.check(name); err != nil {
+		return svc.Status{}, err
+	}
+	if k.f.running {
+		return svc.Status{Name: name, State: svc.StateRunning, PID: 10}, nil
+	}
+	return svc.Status{Name: name, State: svc.StateStopped}, nil
+}
+
+func TestHAContainerControlsTheRightKeepalived(t *testing.T) {
+	for _, mode := range []string{"host", "macvlan"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newHAContainerFixture(t, mode)
+			if err := applyOxiDNSHA(f.cfg, f.spec); err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{"host": "companion", "macvlan": "local"}[mode]
+			if len(f.commands) == 0 {
+				t.Fatal("keepalived was not started")
+			}
+			for _, command := range f.commands {
+				if !strings.HasPrefix(command, want+" ") {
+					t.Fatalf("%s mode controlled %q", mode, command)
+				}
+			}
+		})
+	}
+	// The real selection: the companion socket in host mode.
+	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", "host")
+	if remote, ok := haContainerManager().(svc.Remote); !ok || remote.Socket != haCompanionSocket() || filepath.Base(remote.Socket) != "control.sock" {
+		t.Fatalf("host mode manager %#v", haContainerManager())
+	}
+	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", "macvlan")
+	if haContainerManager() != containerServices {
+		t.Fatal("macvlan mode must control this container's keepalived")
 	}
 }

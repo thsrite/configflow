@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"agent/svc"
 )
 
 // GetLogsHandler 获取指定服务的日志
@@ -225,26 +227,6 @@ func PortBasedLogsHandler(cfg *Config) http.HandlerFunc {
 	}
 }
 
-// checkMosdnsStatus 检查 mosdns 服务状态
-func checkMosdnsStatus() (bool, string) {
-	cmd := exec.Command("supervisorctl", "-c", "/etc/supervisor/supervisord.conf", "status", "mosdns")
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
-
-	// 即使命令返回错误，我们也检查输出内容
-	// 因为 supervisorctl 在服务处于 FATAL 状态时也会返回非零退出码
-	if strings.Contains(outputStr, "RUNNING") {
-		return true, ""
-	}
-
-	// 如果服务不是 RUNNING 状态，返回错误信息
-	if err != nil {
-		return false, fmt.Sprintf("mosdns 服务未运行: %s", outputStr)
-	}
-
-	return false, fmt.Sprintf("mosdns 服务未运行: %s", outputStr)
-}
-
 // getConfigDir 从配置文件路径中提取目录路径
 func getConfigDir(configPath string) string {
 	// 查找最后一个斜杠的位置
@@ -271,9 +253,8 @@ func getLogDataWithAgentLog(serviceType string, configPath string, lines int, ag
 
 	// 统一的日志查找逻辑（适用于 mihomo 和 mosdns）
 	// 按优先级查找日志文件
-	// 1. Supervisor 路径 (Docker 环境)
-	supervisorLogPath := fmt.Sprintf("/var/log/supervisor/%s.log", serviceType)
-	supervisorErrPath := fmt.Sprintf("/var/log/supervisor/%s.err.log", serviceType)
+	// 1. Docker 镜像（s6-log，标准输出与错误输出合并在一个文件）
+	containerLogPath := svc.LogFile(serviceType)
 
 	// 2. ConfigFlow Agent 特殊路径 (Shell 安装)
 	// 3. 系统服务路径 (OpenRC/systemd)
@@ -288,10 +269,10 @@ func getLogDataWithAgentLog(serviceType string, configPath string, lines int, ag
 	}
 
 	// 按优先级检查哪个日志文件存在
-	if _, err := os.Stat(supervisorLogPath); err == nil {
-		// Supervisor 日志存在（Docker 环境）
-		logFilePath = supervisorLogPath
-		errFilePath = supervisorErrPath
+	if _, err := os.Stat(containerLogPath); containerLogPath != "" && err == nil {
+		// Docker 镜像日志存在
+		logFilePath = containerLogPath
+		errFilePath = ""
 	} else if _, err := os.Stat(agentLogPath); err == nil {
 		// ConfigFlow Agent 日志存在 (Shell 安装)
 		logFilePath = agentLogPath
@@ -306,14 +287,12 @@ func getLogDataWithAgentLog(serviceType string, configPath string, lines int, ag
 			logFilePath = configDirLogPath
 			errFilePath = configDirErrPath
 		} else {
-			// 默认使用 supervisor 路径（即使文件不存在）
-			logFilePath = supervisorLogPath
-			errFilePath = supervisorErrPath
+			// 默认使用 Docker 镜像路径（即使文件不存在）
+			logFilePath = containerLogPath
 		}
 	} else {
-		// 默认使用 supervisor 路径（即使文件不存在）
-		logFilePath = supervisorLogPath
-		errFilePath = supervisorErrPath
+		// 默认使用 Docker 镜像路径（即使文件不存在）
+		logFilePath = containerLogPath
 	}
 
 	logs := readLogFile(logFilePath, lines)
@@ -343,7 +322,7 @@ func getOxiDNSLogs(configPath string, lines int, serviceUnits ...string) (string
 			}
 		}
 	}
-	for _, path := range []string{"/var/log/supervisor/oxidns.log", filepath.Join(filepath.Dir(configPath), "oxidns.log"), "/var/log/oxidns.log"} {
+	for _, path := range []string{svc.LogFile("oxidns"), filepath.Join(filepath.Dir(configPath), "oxidns.log"), "/var/log/oxidns.log"} {
 		if _, err := os.Stat(path); err == nil {
 			return readLogFile(path, lines), ""
 		}

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"agent/svc"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,7 +57,7 @@ func serviceCommand(cfg *Config, action string) ([]byte, error) {
 	case "openrc":
 		cmd = exec.CommandContext(ctx, "rc-service", cfg.ServiceUnit, action)
 	case "supervisor":
-		cmd = exec.CommandContext(ctx, "supervisorctl", "-c", "/etc/supervisor/supervisord.conf", action, cfg.ServiceUnit)
+		return containerCommand(ctx, cfg.ServiceUnit, action)
 	case "command":
 		value := cfg.StatusCommand
 		if action == "stop" {
@@ -71,26 +73,46 @@ func serviceCommand(cfg *Config, action string) ([]byte, error) {
 	cmd.Dir = filepath.Dir(cfg.ConfigPath)
 	return runDiagnosticCommand(ctx, cmd, "service "+action, cfg.Token)
 }
+
+// containerServices controls the programs of the Docker image (service
+// manager "supervisor", which names the image's process supervisor, now s6).
+var containerServices svc.Manager = svc.NewS6()
+
+// containerCommand runs a service action through containerServices and
+// returns a supervisorctl-style line as the command output.
+func containerCommand(ctx context.Context, unit, action string) ([]byte, error) {
+	if action == "status" {
+		status, err := containerServices.Status(ctx, unit)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(status.String() + "\n"), nil
+	}
+	if err := svc.Do(ctx, containerServices, action, unit); err != nil {
+		return []byte(err.Error() + "\n"), fmt.Errorf("%s %s: %w", action, unit, err)
+	}
+	return []byte(unit + ": " + action + "\n"), nil
+}
+
 func serviceRunning(cfg *Config) (bool, error) {
 	if e := validateServiceLifecycle(cfg); e != nil {
 		return false, e
 	}
-	out, e := serviceCommand(cfg, "status")
 	if cfg.ServiceManager == "supervisor" {
-		v := string(out)
-		if e == nil && strings.Contains(v, "RUNNING") {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		status, e := containerServices.Status(ctx, cfg.ServiceUnit)
+		switch {
+		case e != nil:
+			return false, diagnosticFailure("cannot determine service status", e, nil, cfg.Token)
+		case status.State == svc.StateRunning:
 			return true, nil
-		}
-		if strings.Contains(v, "STARTING") || strings.Contains(v, "BACKOFF") || strings.Contains(v, "STOPPING") {
+		case status.State.Transitional():
 			return false, errServiceTransition
 		}
-		for _, state := range []string{"STOPPED", "EXITED", "FATAL"} {
-			if strings.Contains(v, state) {
-				return false, nil
-			}
-		}
-		return false, diagnosticFailure("cannot determine service status", e, out, cfg.Token)
+		return false, nil
 	}
+	out, e := serviceCommand(cfg, "status")
 	if cfg.ServiceManager == "systemd" {
 		v := strings.TrimSpace(string(out))
 		if v == "activating" || v == "deactivating" || v == "reloading" {
@@ -181,9 +203,6 @@ func stopService(cfg *Config) error {
 		return diagnosticFailure("service remains running after stop", commandErr, out, cfg.Token)
 	}
 	if commandErr != nil {
-		if cfg.ServiceManager == "supervisor" && (strings.Contains(string(out), "NOT_RUNNING") || strings.Contains(string(out), "not running")) {
-			return nil
-		}
 		return commandErr
 	}
 	return nil
