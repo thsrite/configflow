@@ -412,3 +412,49 @@ describe('service-specific high availability installation entry', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 })
+
+describe('automatic completion of a pair stopped by a lost member', () => {
+  const stopped = (state: 'waiting' | 'running' | 'blocked', message: string) => ({ ...publication('failed'),
+    message: '主备设备连接中断超过 10 分钟，本次主备发布已停止；设备恢复后会自动完成本次主备发布。设备无法恢复时可以强制停用高可用',
+    auto_complete: { status: state, message } })
+
+  it('waits for the member without polling and shows the plain failure otherwise', async () => {
+    vi.useFakeTimers()
+    const waiting = stopped('waiting', '等待设备恢复后自动完成发布')
+    vi.mocked(agentApi.getDNSHA).mockResolvedValue({ data: { ...status('ok', []), publication: waiting } } as any)
+    const wrapper = render({ oxidns_ha: ha, oxidns_ha_publication: waiting })
+    await flushPromises()
+    expect(wrapper.findComponent(AgentStatusRow).props()).toMatchObject({ status: '等待设备恢复后自动完成发布', tone: 'warning' })
+    expect(wrapper.text().match(/等待设备恢复后自动完成发布/g)).toHaveLength(1)
+    expect(wrapper.find('[data-ha-auto-complete]').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(agentApi.getDNSHA).toHaveBeenCalledTimes(1)
+    const blocked = stopped('blocked', '无法自动完成本次主备发布：主备关系已变化；请手动完整发布一次主备配置')
+    vi.mocked(agentApi.getDNSHA).mockResolvedValue({ data: { ...status('ok', []), publication: blocked } } as any)
+    await wrapper.setProps({ agent: agent('oxi-1', { oxidns_ha: ha, oxidns_ha_publication: blocked }) })
+    await flushPromises()
+    expect(wrapper.findComponent(AgentStatusRow).props()).toMatchObject({ status: '主备同步失败', tone: 'danger' })
+    expect(wrapper.get('[data-ha-auto-complete]').text()).toContain('请手动完整发布')
+  })
+
+  it('follows a starting completion until the new publication finishes and keeps its mark', async () => {
+    vi.useFakeTimers()
+    const running = stopped('running', '设备已恢复，正在自动完成本次主备发布')
+    const attempt = { ...publication(), id: 'publication-2', auto_complete: { status: '', message: '自动补完', attempt: true } }
+    vi.mocked(agentApi.getDNSHA)
+      .mockResolvedValueOnce({ data: { ...status('ok', []), publication: running } } as any)
+      .mockResolvedValueOnce({ data: { ...status('ok', []), publication: attempt } } as any)
+      .mockResolvedValue({ data: { ...status('ok', []), publication: { ...publication('succeeded'), id: 'publication-2', auto_complete: attempt.auto_complete } } } as any)
+    const wrapper = render({ oxidns_ha: ha, oxidns_ha_publication: running })
+    await flushPromises()
+    expect(wrapper.findComponent(AgentStatusRow).props()).toMatchObject({ status: '正在自动完成主备发布', tone: 'progress' })
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper.findComponent(AgentStatusRow).props('status')).toBe('正在同步主备')
+    expect(wrapper.get('[data-ha-auto-attempt]').text()).toBe('自动补完')
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper.get('[data-ha-auto-attempt]').text()).toBe('自动补完')
+    expect(wrapper.get('[data-ha-publication]').text()).toContain('主备配置与规则均已发布成功')
+  })
+})
