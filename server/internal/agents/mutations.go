@@ -203,7 +203,7 @@ func unfinishedDeploymentModel(a *model.Agent) bool {
 func dnsFollowBusyModel(records []model.Agent, id string) bool {
 	for i := range records {
 		a := &records[i]
-		if a.DNSFollowState == nil || a.DNSFollowState.Status != "preparing" && a.DNSFollowState.Status != "publishing" {
+		if !a.DNSFollowState.Busy() {
 			continue
 		}
 		if a.ID == id && agentIDProven(a) {

@@ -44,10 +44,7 @@ func haDeploymentConflict(a *model.Agent, id string) (*model.Deployment, error) 
 }
 
 func followOwnsDeployment(a *model.Agent, id string) bool {
-	if a.DNSFollowState == nil {
-		return true
-	}
-	if a.DNSFollowState.Status != "preparing" && a.DNSFollowState.Status != "publishing" {
+	if !a.DNSFollowState.Busy() {
 		return true
 	}
 	child := a.DNSFollowState.TargetDeploymentID
@@ -55,7 +52,7 @@ func followOwnsDeployment(a *model.Agent, id string) bool {
 }
 
 func followUsesSource(a *model.Agent, id string) bool {
-	if a.DNSFollowState == nil || a.DNSFollowState.Status != "preparing" && a.DNSFollowState.Status != "publishing" {
+	if !a.DNSFollowState.Busy() {
 		return false
 	}
 	if a.DNSFollow == nil {

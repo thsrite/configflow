@@ -231,3 +231,29 @@ func TestReviewO18T1bDamagedSessionHost(t *testing.T) {
 		t.Errorf("Agent host {} = %q, want empty", a.Host)
 	}
 }
+
+// HR O18 T1b L4: a stored dns_follow_state of another JSON kind is an empty
+// state that counts as busy; null is no state.
+func TestReviewO18T1bDamagedDNSFollowStateBusy(t *testing.T) {
+	for _, value := range []string{`"publishing"`, `1`, `[]`, `{}`} {
+		var a Agent
+		if _, err := DecodeStored([]byte(`{"dns_follow_state":`+value+`}`), &a, ""); err != nil {
+			t.Fatal(err)
+		}
+		if !a.DNSFollowState.Busy() {
+			t.Errorf("state %s = %+v, want busy", value, a.DNSFollowState)
+		}
+	}
+	for _, tt := range []struct {
+		value string
+		busy  bool
+	}{{`null`, false}, {`{"status":"waiting"}`, false}, {`{"status":"failed"}`, false}, {`{"status":"preparing"}`, true}, {`{"status":"publishing"}`, true}} {
+		var a Agent
+		if _, err := DecodeStored([]byte(`{"dns_follow_state":`+tt.value+`}`), &a, ""); err != nil {
+			t.Fatal(err)
+		}
+		if a.DNSFollowState.Busy() != tt.busy {
+			t.Errorf("state %s busy = %v, want %v", tt.value, !tt.busy, tt.busy)
+		}
+	}
+}

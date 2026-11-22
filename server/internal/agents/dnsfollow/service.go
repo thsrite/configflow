@@ -192,8 +192,13 @@ func (s *Service) Disable(ctx context.Context, id string) (out DisabledView, err
 				if a == nil {
 					return refusal("oxidns" + msgMissingAgent)
 				}
-				if err := mutable(a); err != nil {
-					return err
+				// Disabling is the explicit repair of a damaged state: only a
+				// real run (and an active HA pair) refuses it.
+				if activeHA(a) {
+					return refusal(msgHAActive)
+				}
+				if running(state(a).Status) {
+					return refusal(msgRunning)
 				}
 				a.DNSFollow = nil
 				a.DNSFollowState = nil

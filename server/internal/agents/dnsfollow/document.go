@@ -227,7 +227,9 @@ func mutable(a *agent) error {
 	if activeHA(a) {
 		return refusal(msgHAActive)
 	}
-	if running(state(a).Status) {
+	// A damaged stored state (no status) locks the binding like a run does
+	// (O18 T1b review); the round itself reconciles it.
+	if a.DNSFollowState.Busy() {
 		return refusal(msgRunning)
 	}
 	return nil

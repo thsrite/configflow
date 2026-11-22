@@ -2815,6 +2815,12 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   （恢复发布时 keepalived 意图会按对端与 VIP 重新校验，残缺意图不会写设备）；库里存在的 `oxidns_ha_publication`
   只要状态不是终态（含 `{}`、`status` 类型不对或为 `null`）都视为进行中、锁定配对；存成非对象（文本、数字、列表）时读作空日志，
   同样锁定（fail closed，Python 把空日志当作没有、非对象直接报错）。
+  **HR 复核补充（fail closed）**：(1) 鉴权字符串（Agent `token`、注册会话 `hash`、`system_config` 的 `config_token`/
+  `rule_proxy_token`/`retired_rule_proxy_tokens`）存成非字符串（含数字）时读作空并告警，不再读成数字原文——空 Agent 令牌不鉴权通过、
+  不发请求，`config_token` 仍按原值判为损坏凭据拒绝，规则代理令牌读空后不接受任何令牌（下次写入时照常生成新令牌）；退役列表只保留文本元素。
+  (2) 注册会话的 `host` 存成非字符串时读作损坏（`model.DamagedText`，原样写回），该会话不能用于注册；缺失或 `null` 仍表示不限主机。
+  (3) `dns_follow_state` 存成非对象时读作空状态；没有 `status` 的状态（含 `{}`）视为运行中，保持 DNS 联动对目标/源 Agent 的编辑、
+  部署和绑定修改锁；`null` 仍算没有。显式「停用 DNS 联动」可以清除损坏状态（只拒绝真正运行中的状态）；联动轮询本身照常对已绑定的目标重新计算状态。
 - **输入**：Agent 编辑（`PUT /api/agents/<id>`）严格解码，类型不符返回「`<成员> 类型不正确`」（以前照存原值）；注册请求、部署回执、
   心跳宽松解码（上报值类型不符读作零值）；三者都拒绝重复成员名。心跳上报 `version`/`config_version` 为空串视为未上报；
   上报 `service_status`/`system_metrics` 为 `null` 视为未上报（不覆盖上一次的值）。

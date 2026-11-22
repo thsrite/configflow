@@ -43,3 +43,19 @@ func TestReviewO18T1bDamagedSessionHostRefused(t *testing.T) {
 		t.Fatalf("host-less session refused: %v", err)
 	}
 }
+
+// HR O18 T1b L4: a damaged (status-less) DNS follow state keeps the Agent
+// and its source locked like a run; a missing state does not.
+func TestReviewO18T1bDamagedDNSFollowStateLocks(t *testing.T) {
+	damaged := model.Agent{ID: "target", DNSFollowState: &model.DNSFollowState{}, DNSFollow: &model.DNSFollowBinding{SourceAgentID: "source"}}
+	if !dnsFollowBusyModel([]model.Agent{damaged}, "target") || !dnsFollowBusyModel([]model.Agent{damaged}, "source") {
+		t.Error("damaged state does not lock target and source")
+	}
+	if followOwnsDeployment(&damaged, "any") || !followUsesSource(&damaged, "source") {
+		t.Error("damaged state does not hold deployments and source")
+	}
+	idle := model.Agent{ID: "target", DNSFollow: &model.DNSFollowBinding{SourceAgentID: "source"}}
+	if dnsFollowBusyModel([]model.Agent{idle}, "target") || !followOwnsDeployment(&idle, "any") || followUsesSource(&idle, "source") {
+		t.Error("missing state locks")
+	}
+}

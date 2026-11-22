@@ -66,6 +66,19 @@ func (r *DNSFollowState) UnmarshalJSON(data []byte) error {
 
 func (r *DNSFollowState) plainWire() any { return (*dNSFollowStateWire)(r) }
 
+// failClosed: a stored state of another JSON kind is an empty state, which
+// Busy counts as running (O18 T1b review).
+func (*DNSFollowState) failClosed() {}
+
+// Busy reports a follow run that locks its source and target Agents:
+// preparing or publishing. A state without status is damaged data (every
+// state the panel writes has one) and counts as busy too, so it keeps the
+// lock (fail closed, like the HA publication journal); a missing state is
+// not busy.
+func (r *DNSFollowState) Busy() bool {
+	return r != nil && (r.Status == "preparing" || r.Status == "publishing" || r.Status == "")
+}
+
 // MarshalJSON writes the DNSFollowState members in declaration order.
 func (r DNSFollowState) MarshalJSON() ([]byte, error) { return marshalPlain(&r) }
 
