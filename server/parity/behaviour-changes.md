@@ -3035,6 +3035,6 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 
 - `CONFIGFLOW_LOCK_TIMEOUT_SECONDS` 用 `strconv.ParseFloat` 读（去首尾空白，接受数字下划线），全角/阿拉伯-印度等非 ASCII 数字和十六进制浮点
   不再当作数字，按未设置用默认 300 s（Python `float()` 接受 Unicode 数字）。
-- 数据目录和文件路径的解析改用 `filepath.Abs` + `filepath.EvalSymlinks`：不存在的尾部原样保留、悬空链接跟随到目标（与以前相同）；
-  符号链接环的错误文本改为 Go 的 `resolve …: too many links` 类（以前照搬 Python「Symlink loop from '…'」），仍按内部错误处理。
+- 数据目录和文件路径的解析改为普通的逐段解析（Lstat/Readlink，链接先于其后的 `..` 展开，不存在的部分原样保留、悬空链接跟随到目标，
+  与以前结果相同）；符号链接环超过 40 层报 `resolve …: too many links`（以前照搬 CPython 的环检测和「Symlink loop from '…'」文本），仍按内部错误处理。
 - `~`/`~name` 用 `os.UserHomeDir` / `user.Lookup` 展开；无法确定主目录时的错误文本改为 Go 的错误（以前照搬「Could not determine home directory.」）。

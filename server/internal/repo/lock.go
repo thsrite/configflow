@@ -228,57 +228,66 @@ func resolvePath(path string) string {
 	return resolved
 }
 
-// resolve returns path absolute with its symbolic links followed
-// (filepath.EvalSymlinks). A path that does not exist yet resolves its
-// longest existing prefix and keeps the rest as given (cleaned), so a file
-// about to be created resolves like its directory; a dangling link resolves
-// to its target. A symlink loop or another read error is returned.
+// resolve returns path absolute with its symbolic links followed, one
+// component at a time from the left: a link is replaced by its target before
+// a following ".." applies, as the kernel does. A component that does not
+// exist is kept as given (a dangling link is followed to its target), so a
+// file about to be created resolves like its directory. More than
+// maxLinks links (a symlink loop) is an error.
 func resolve(path string) (string, error) {
-	return resolveLinks(path, path, 0)
+	if !filepath.IsAbs(path) {
+		directory, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("resolve %s: %w", path, err)
+		}
+		path = directory + "/" + path
+	}
+	links := 0
+	resolved, err := resolveFrom("/", path, &links)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", path, err)
+	}
+	return resolved, nil
 }
 
-// maxDanglingLinks bounds dangling links followed by resolve (a loop of
-// dangling links never ends otherwise).
-const maxDanglingLinks = 40
+// maxLinks bounds the links resolve follows for one path.
+const maxLinks = 40
 
-func resolveLinks(original, path string, depth int) (string, error) {
-	if depth > maxDanglingLinks {
-		return "", fmt.Errorf("resolve %s: too many links", original)
+var errTooManyLinks = errors.New("too many links")
+
+func resolveFrom(base, rest string, links *int) (string, error) {
+	if strings.HasPrefix(rest, "/") {
+		base = "/"
 	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", original, err)
-	}
-	existing, rest := absolute, ""
-	for {
-		info, err := os.Lstat(existing)
-		if err == nil {
-			resolved, err := filepath.EvalSymlinks(existing)
-			if err == nil {
-				return filepath.Join(resolved, rest), nil
+	for _, name := range strings.Split(rest, "/") {
+		switch name {
+		case "", ".":
+			continue
+		case "..":
+			base = filepath.Dir(base)
+			continue
+		}
+		next := filepath.Join(base, name)
+		info, err := os.Lstat(next)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return "", err
 			}
-			if info.Mode()&os.ModeSymlink != 0 && errors.Is(err, fs.ErrNotExist) {
-				target, err := os.Readlink(existing)
-				if err != nil {
-					return "", fmt.Errorf("resolve %s: %w", original, err)
-				}
-				if !filepath.IsAbs(target) {
-					target = filepath.Join(filepath.Dir(existing), target)
-				}
-				return resolveLinks(original, filepath.Join(target, rest), depth+1)
-			}
-			return "", fmt.Errorf("resolve %s: %w", original, err)
+			base = next
+			continue
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("resolve %s: %w", original, err)
+		if *links++; *links > maxLinks {
+			return "", errTooManyLinks
 		}
-		parent := filepath.Dir(existing)
-		if parent == existing {
-			return absolute, nil
+		target, err := os.Readlink(next)
+		if err != nil {
+			return "", err
 		}
-		rest = filepath.Join(filepath.Base(existing), rest)
-		existing = parent
+		if base, err = resolveFrom(base, target, links); err != nil {
+			return "", err
+		}
 	}
+	return base, nil
 }
 
 // isRelativeTo is Path.relative_to() succeeding: child is root or below it.

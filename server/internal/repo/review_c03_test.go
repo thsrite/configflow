@@ -101,7 +101,7 @@ func TestNonObjectMosdnsIsRefusedBeforeRuleReferences(t *testing.T) {
 }
 
 // resolve follows links (also before ".."), keeps a missing tail and
-// reports a symlink loop (O18 C10: filepath.EvalSymlinks).
+// reports a symlink loop (O18 C10).
 func TestResolveFollowsLinksAndKeepsMissingTail(t *testing.T) {
 	directory := resolvePath(t.TempDir())
 	noError(t, os.Symlink("b", filepath.Join(directory, "a")))
