@@ -141,10 +141,14 @@ func recordMembers(member func(string) (json.RawMessage, bool, error), names ...
 	return members, nil
 }
 
-// memberOf reads single members of a plain record (model.EncodeMember),
-// never the whole record (O10 R9).
-func memberOf(rec any) func(string) (json.RawMessage, bool, error) {
-	return func(name string) (json.RawMessage, bool, error) { return model.EncodeMember(rec, name) }
+// nodeMember and groupMember read single members of a plain record
+// (model.EncodeMember), never the whole record (O10 R9).
+func nodeMember(node *model.Node) func(string) (json.RawMessage, bool, error) {
+	return func(name string) (json.RawMessage, bool, error) { return model.EncodeMember(node, name) }
+}
+
+func groupRecordMember(group *model.ProxyGroup) func(string) (json.RawMessage, bool, error) {
+	return func(name string) (json.RawMessage, bool, error) { return model.EncodeMember(group, name) }
 }
 
 // ConfigShapes validates metadata needed by node and topology generation.
@@ -155,7 +159,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 	// Only the members checked here are encoded, never a whole record (O10 R9).
 	for i := range config.Nodes {
 		node := &config.Nodes[i]
-		members, err := recordMembers(memberOf(node), "id", "proxy_string")
+		members, err := recordMembers(nodeMember(node), "id", "proxy_string")
 		if err != nil {
 			return err
 		}
@@ -185,7 +189,7 @@ func ConfigShapes(config *model.Config, requireIDs bool) error {
 		}
 	}
 	for _, group := range configGroups(config) {
-		members, err := recordMembers(memberOf(&group), "id", "type", "manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use", "proxies_order")
+		members, err := recordMembers(groupRecordMember(&group), "id", "type", "manual_nodes", "include_groups", "proxies", "subscriptions", "aggregations", "use", "proxies_order")
 		if err != nil {
 			return err
 		}

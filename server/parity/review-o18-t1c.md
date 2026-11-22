@@ -117,3 +117,25 @@ c40b21303 把 Agent 记录登记进交叉核对后，Python HR 写入的 Agent �
 - difftest（.64，真 Python）：routers 302.0 s、routersplit、model、api/config/difftest 60.6 s ok。
 - `PYREF_MODE=check`（.64）：installer 129.5 s、mosdns 55.5 s、oxidns 69.8 s、routersplit 3.2 s ok。
 - `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-38 x 6`（.64）：`PREFLIGHT PASS`。
+
+## 第三轮：rebase 到 go（batch-34 合入后）
+
+- 冲突处理：pyref 二进制的基准用 T1c 的录制（go 上 batch-34/37 对这些 golden 只改了 metadata，T1c 有已认可的输入变化），重录后逐个比对只有 `metadata` 变化（16 + 1 个文件）。
+  `convert/client_nodes.go`、`common.go`：T1c 删除的死代码（`clientProtocolType`、`validateRuleIdentities`）照删；`mihomo_generate.go` 的 `groupEngineOptions`
+  与 `rules/ruleutils.go` 的 `CacheFilename` 保留 R9 的逐成员读取、去掉 T1c 已删的 `model.Issues` 过滤。
+- R9 新增的 `MemberJSON` 调用（普通记录上已没有）改为 `model.EncodeMember`（单成员编码，R11 门禁认可）：rules `originalMemberEqual`/`rulePolicy`、
+  convert 节点 port/type 与 `ConfigShapes`（类型化闭包 `nodeMember`/`groupRecordMember`，convert 核心不能引用 `any`）、api/aggregations `aggregationEnabled`。
+- R11：`TestO10RouteAllocationCeilings` 19 条路由全部在上限内（mihomo 8.06/13.90、provider 28.95/46.00、rule-sync 0.14/0.30 MB/次）；
+  `TestO10WholeRecordEncodeBoundary`：MosDNS 设置输入严格解码（解码到空 Profile 的 mosdns 成员，不编码存储记录）加豁免说明；
+  删除过期豁免 `routers/workspace.go:encodedRuleSets`（T1c 已删该函数）。A10 golden 声明 batch-34 新增的 `yamlx/native_probe.go`。
+- 注意：rebase 中间的几个提交（T1c 主提交到本轮修复之间）单独不能编译（R9 的 `MemberJSON` 调用），批次合入时整体以末端为准。
+
+### 第三轮验证
+- VET-OK（两套 tag，.32）；`gofmt` 无输出。
+- `-race`（.32）：convert 656.2 s（修 `any` 后重跑）、rules 39.9 s、routers 635.7 s、repo 319.6 s、model、api/aggregations、api/mosdns、server 96.5 s、aggregations、
+  rulesetfmt、substore 99.9 s、subs 142.8 s 全部 ok，无 DATA RACE。
+- difftest（.64，真 Python）：repo 153.3 s、routers 295.7 s、model、convert 46.1 s、rules、api/config/difftest 82.3 s、api/rules/difftest、api/aggregations/difftest、
+  api/subscriptions/difftest 98.5 s、httpx/difftest、mosdns/difftest 全部 ok。
+- `PYREF_MODE=check`：installer 138.5 s、mosdns 67.8 s、oxidns 95.7 s、routersplit 4.0 s ok。
+- server R11：`ok configflow/internal/server 2.787s`。
+- `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-38 x 6`（.64）：`PREFLIGHT PASS`。
