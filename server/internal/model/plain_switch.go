@@ -46,14 +46,23 @@ type innerKeeper interface {
 	keepOnIssues(issues []FieldIssue) bool
 }
 
+func hasTypeIssue(issues []FieldIssue) bool {
+	for _, issue := range issues {
+		if issue.Kind == IssueType {
+			return true
+		}
+	}
+	return false
+}
+
 func isInnerKeeper(v any) bool {
 	_, ok := v.(innerKeeper)
 	return ok
 }
 
 // decodeManifest decodes a stored manifest into target (a nil pointer to a
-// damagedKeeper record). An object of declared members decodes normally; any
-// other value is kept whole as damaged, with an issue. The object is decoded
+// damagedKeeper record). An object of declared members of the right types
+// decodes normally; any other value is kept whole as damaged, with issues. The object is decoded
 // with a sink rooted at the record's own type, so member tags (switch rules)
 // apply and issue paths keep the enclosing path. For guard settings
 // (innerKeeper) undeclared members are dropped like in any plain record, and
@@ -80,7 +89,15 @@ func decodeManifest(dec *jsontext.Decoder, sink *issueSink, target reflect.Value
 				return err
 			}
 			sink.issues = append(sink.issues, child.issues...)
-			if isInner && len(child.issues) > 0 && inner.keepOnIssues(child.issues) {
+			switch {
+			case isInner:
+				if len(child.issues) > 0 && inner.keepOnIssues(child.issues) {
+					keeper.keepDamaged(raw)
+				}
+			case hasTypeIssue(child.issues):
+				// A manifest member of the wrong type (resources "x") is lost
+				// ownership evidence: the stored manifest is kept whole and
+				// guards judge it as Python would (fail closed).
 				keeper.keepDamaged(raw)
 			}
 			target.Set(reflect.ValueOf(keeper))

@@ -179,14 +179,17 @@ func TestReviewO18T1bCredentialsOfAnotherTypeAreEmpty(t *testing.T) {
 	}
 
 	var settings SystemConfig
-	if err := settings.UnmarshalJSON([]byte(`{"config_token":7,"rule_proxy_token":8,"retired_rule_proxy_tokens":[9,"old",{}],"server_domain":"https://example.com"}`)); err != nil {
+	// SystemConfig is a plain record (O18 T1c): the issues come from the
+	// decode, one per token and one per dropped list element.
+	issues, err := DecodeStored([]byte(`{"config_token":7,"rule_proxy_token":8,"retired_rule_proxy_tokens":[9,"old",{}],"server_domain":"https://example.com"}`), &settings, "")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if settings.ConfigToken != "" || settings.RuleProxyToken != "" || !slices.Equal(settings.RetiredRuleProxyTokens, []string{"old"}) || settings.ServerDomain != "https://example.com" {
 		t.Errorf("system tokens %q %q %q", settings.ConfigToken, settings.RuleProxyToken, settings.RetiredRuleProxyTokens)
 	}
-	if issues := Issues(&settings); len(issues) != 3 {
-		t.Errorf("system token issues %v, want 3", issues)
+	if len(issues) != 4 {
+		t.Errorf("system token issues %v, want 4", issues)
 	}
 	var plain SystemConfig
 	if err := plain.UnmarshalJSON([]byte(`{"config_token":"c","rule_proxy_token":"r","retired_rule_proxy_tokens":["o"]}`)); err != nil ||

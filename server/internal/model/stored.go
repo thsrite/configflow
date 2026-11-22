@@ -132,6 +132,35 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *DeviceNotes) error {
 			return decodeStoredNotes(dec, sink, v)
 		}),
+		// A credential list (stored:"secret") keeps its text elements only:
+		// another element never becomes a credential, not even as "".
+		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *[]string) error {
+			if dec.PeekKind() != '[' || storedTag(sink, dec.StackPointer()) != secretTag {
+				return errors.ErrUnsupported
+			}
+			if _, err := dec.ReadToken(); err != nil {
+				return err
+			}
+			list := []string{}
+			for dec.PeekKind() != ']' {
+				if dec.PeekKind() == '"' {
+					token, err := dec.ReadToken()
+					if err != nil {
+						return err
+					}
+					list = append(list, token.String())
+					continue
+				}
+				if err := skipInvalid(dec, sink, func() {}); err != nil {
+					return err
+				}
+			}
+			if _, err := dec.ReadToken(); err != nil {
+				return err
+			}
+			*v = list
+			return nil
+		}),
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *string) error {
 			switch dec.PeekKind() {
 			case '"':
