@@ -11,8 +11,9 @@
   `startretries=3` 那样进入 FATAL 后不再拉起；退避期间状态词为 `BACKOFF`，「启动」不会跳过退避。停止：SIGTERM 发给整个
   进程组，5 s 后 SIGKILL（与原 `stopwaitsecs=5`、`killasgroup` 相同）。
 - **关停顺序**：`docker stop` 时 Sub-Store 在面板请求收尾（drain）之后才停止（旧镜像 supervisord 先停 Go 服务再停 Sub-Store，结果相同）。
-- **Sub-Store 输出**：写进服务日志（`app.log`，日志页可见，来源 `sub-store`，stdout 为 INFO、stderr 为 WARNING），URL 经
-  `weburl.SafeForLog` 脱敏；旧镜像只进容器标准输出。容器标准输出里仍能看到（logx 同时写控制台），但行格式带时间与来源前缀。
+- **Sub-Store 输出**：写进服务日志（`app.log`，日志页可见，来源 `sub-store`，stdout 为 INFO、stderr 为 WARNING），脱敏后写入：
+  http(s) 地址只保留协议和主机（路径、查询、账号、片段一律去掉，机场常把令牌放在路径里），其他协议的链接（`ss://`、`vmess://` 等节点）
+  只保留协议名，`password=`/`uuid`/`token` 等键值去掉值（batch-36 复核加强）；旧镜像只进容器标准输出。容器标准输出里仍能看到（logx 同时写控制台），但行格式带时间与来源前缀。
 - **进程控制失败的文案**：`无法管理内置 Sub-Store，请检查容器服务状态` 只在没有进程控制器或面板正在关停时出现；启动/停止失败
   （例如找不到 `node`）一律为 `Sub-Store 服务操作失败，请检查容器日志`，详细原因写日志。在线更新后重启失败的回滚文案里，
   `exception_type` 为 Go 错误类型（以前是 supervisorctl 输出包装的 `errors.errorString`）。
@@ -21,6 +22,16 @@
   无文件名、mtime 0，字节与 Python zlib 输出不同，内容相同）；源码包解压按 tarfile `data` 过滤规则实现（拒绝越界路径/链接与设备文件，
   去掉 setuid/setgid/sticky 与组/其他写权限）；在「源不可达 / 已是最新」分支里安装记录的构建失败时，回退到镜像自带版本（Python 会抛异常，
   由启动脚本吞掉后继续用当前文件）。
+
+## batch-36 复核 — 订阅地址是占位文字时不刷新、不唤醒 Sub-Store（Python 遗留问题修正）
+
+新数据目录自带的模板订阅「subscribe」地址是占位文字 `订阅链接`。Python 照样按计划刷新：每次失败后约 5 分钟重试，每次都经过
+Sub-Store，使按需模式的 Sub-Store 永不休眠，并每 5 分钟写一条警告。Go 改为：订阅地址里没有一行是带主机的完整 URL 时视为未配置——
+
+- 定时刷新不调度它（和空地址一样），因此不重试、不唤醒 Sub-Store；
+- 任务页这一行 `can_run`/`editable`/`enabled`/`notifications_enabled` 为 false、没有下次运行时间，`run_hint` 为
+  「地址无效，请检查是否为完整的 http(s) 地址」（空地址仍是「没有订阅地址」）；`POST /api/tasks/run` 返回同一句 400；
+- 其他拉取入口（订阅页手动更新、配置生成/聚合拉取）在发给 Sub-Store 之前直接失败，失败原因同上。
 
 ## O13 #2 — 不存在的 Agent 在日志、日志配置与服务操作路由返回 404（Python bug 修正）
 

@@ -9,6 +9,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
+	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
 	"context"
 	"math"
@@ -428,7 +429,9 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 	}
 	var jobs []Resource
 	for _, sub := range shared.Subscriptions {
-		if !enabledResource(&sub, sub.Enabled) || sub.URL == "" {
+		// A placeholder address (the new data directory's template) is not
+		// scheduled at all: no failure every few minutes, no Sub-Store wake-up.
+		if !enabledResource(&sub, sub.Enabled) || !substore.SourceURLConfigured(sub.URL) {
 			continue
 		}
 		baseline, err := SourceCacheAt(ctx, sub)
@@ -570,6 +573,9 @@ func LookupResource(ctx context.Context, kind, id string) (Resource, error) {
 			if item.ID == id {
 				if item.URL == "" {
 					return Resource{}, repo.NewValidationError(msgNoSourceAddress)
+				}
+				if !substore.SourceURLConfigured(item.URL) {
+					return Resource{}, repo.NewValidationError(msgInvalidSourceURL)
 				}
 				return Resource{Kind: kind, Subscription: &item}, nil
 			}

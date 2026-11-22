@@ -420,6 +420,9 @@ func blocked(err error) bool {
 // the downloaded body. URLs with a fragment (Sub-Store options) go to
 // Sub-Store first and are downloaded directly only when it fails.
 func (c *Client) fetchSubscription(ctx context.Context, subID, url, target string) (*FetchResult, error) {
+	if !SourceURLConfigured(url) {
+		return nil, errSourceURLUnconfigured()
+	}
 	var rawText *string
 	var traffic *Traffic
 	var directErr error

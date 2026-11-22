@@ -91,3 +91,5 @@ const (
 	msgProcessActionFailed = "Sub-Store %s 失败：%v"
 	msgStartNotReady       = "Sub-Store 启动后未就绪，请稍后重试或检查容器日志"
 )
+
+const msgSourceURLUnconfigured = "订阅地址未配置或不是完整的 http(s) 地址"

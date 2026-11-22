@@ -349,6 +349,44 @@ var timeKeys = map[string]bool{"last_run_at": true, "last_finished_at": true, "l
 	"next_run_at": true, "cache_updated_at": true, "last_duration_ms": true, "at": true, "traffic_at": true,
 	"updated_at": true, "fetched_at": true}
 
+// templateSubscriptionKey is the task of the template subscription a new
+// data directory starts with; its address is the placeholder "订阅链接".
+const templateSubscriptionKey = "subscription:sub_1760688109177"
+
+// placeholderTemplateRow applies the deliberate batch-36 change to Python's
+// task list (behaviour-changes.md): a placeholder subscription address is
+// not configured, so its row is neither scheduled nor runnable and carries
+// the invalid-address hint (taken from Go's row after checking it names
+// http(s)).
+func placeholderTemplateRow(t *testing.T, python, native any) any {
+	t.Helper()
+	rowOf := func(list any) map[string]any {
+		if root, ok := list.(map[string]any); ok {
+			if rows, ok := root["tasks"].([]any); ok {
+				for _, row := range rows {
+					if m, ok := row.(map[string]any); ok && m["key"] == templateSubscriptionKey {
+						return m
+					}
+				}
+			}
+		}
+		return nil
+	}
+	py, gor := rowOf(python), rowOf(native)
+	if py == nil || gor == nil {
+		return python
+	}
+	hint, _ := gor["run_hint"].(string)
+	if !strings.Contains(hint, "http(s)") {
+		t.Errorf("template subscription run_hint %q", hint)
+	}
+	for key, value := range map[string]any{"can_run": false, "editable": false, "enabled": false,
+		"notifications_enabled": false, "next_run_at": nil, "run_hint": hint} {
+		py[key] = value
+	}
+	return python
+}
+
 func mask(value any, parent string) any {
 	switch v := value.(type) {
 	case map[string]any:
@@ -502,6 +540,7 @@ func TestDifferentialTaskRoutes(t *testing.T) {
 		if r.wait != "" && gs == 202 {
 			wait(t, goBase, goToken, r.wait)
 		}
+		pv = placeholderTemplateRow(t, pv, gv)
 		same := ps == gs && ((pv != nil && gv != nil && testjson.Equal(mask(pv, ""), mask(gv, ""))) || bytes.Equal(pb, gb))
 		if !same {
 			failed++

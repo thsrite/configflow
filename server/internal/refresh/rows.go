@@ -5,6 +5,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/weburl"
@@ -59,7 +60,7 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 		key := SourceTaskKey(sub.id)
 		entry := statuses.Entry(key)
 		interval := sub.interval
-		hasURL := sub.url != ""
+		hasURL := substore.SourceURLConfigured(sub.url)
 		enabled := sub.enabled && hasURL
 		var due *time.Time
 		if enabled {
@@ -81,8 +82,10 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 			name = sub.id
 		}
 		hint, message := "", ""
-		if !hasURL {
+		if sub.url == "" {
 			hint = msgNoURL
+		} else if !hasURL {
+			hint = msgInvalidSourceURL
 		}
 		if !sub.enabled {
 			message = msgSubscriptionDisabled
