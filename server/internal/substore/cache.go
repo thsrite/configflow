@@ -95,6 +95,9 @@ func DeleteSubscriptionCache(ctx context.Context, id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if path, err := r.SharedPath(filepath.Join("subscribes", cacheName(id))); err == nil {
+		defer memoForget(path)
+	}
 	removed, err := r.RemoveSharedFile(ctx, filepath.Join("subscribes", cacheName(id)))
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false, err
@@ -161,6 +164,7 @@ func PruneOrphanCaches(ctx context.Context) ([]string, error) {
 			continue
 		}
 		if ok {
+			memoForget(filepath.Join(dir, entry.Name()))
 			removed = append(removed, entry.Name())
 		}
 	}
@@ -302,15 +306,85 @@ func noteHostsChange(ctx context.Context, id string, previous, current *Cache) {
 	}
 }
 
-// LoadCache reads one owned typed record. Malformed files are ignored without discarding valid files elsewhere.
+// LoadCache reads one owned typed record. Malformed files are ignored without
+// discarding valid files elsewhere. The decode is reused while the file is
+// unchanged (cache_memo.go); the caller still gets its own copy.
 func LoadCache(ctx context.Context, id string) (*Cache, error) {
 	path, err := CachePath(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(path); err != nil {
+	key, ok := statCacheFile(path)
+	if !ok {
+		memoForget(path)
 		return nil, nil
 	}
+	if entry := memoLookup(path, key); entry.cache != nil {
+		return cloneCache(entry.cache), nil
+	}
+	cache, err := decodeCacheFile(ctx, id, path)
+	if err != nil || cache == nil {
+		return nil, err
+	}
+	memoStore(path, key, func(entry *cacheMemoEntry) { entry.cache = cache })
+	return cloneCache(cache), nil
+}
+
+// LoadCacheShared is LoadCache without the caller's copy: the record is
+// shared by every reader of the unchanged file and must not be modified. The
+// same pointer is returned while the file is unchanged, so derived values may
+// be keyed by it.
+func LoadCacheShared(ctx context.Context, id string) (*Cache, error) {
+	path, err := CachePath(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	key, ok := statCacheFile(path)
+	if !ok {
+		memoForget(path)
+		return nil, nil
+	}
+	if entry := memoLookup(path, key); entry.cache != nil {
+		return entry.cache, nil
+	}
+	cache, err := decodeCacheFile(ctx, id, path)
+	if err != nil || cache == nil {
+		return nil, err
+	}
+	memoStore(path, key, func(entry *cacheMemoEntry) { entry.cache = cache })
+	return cache, nil
+}
+
+// LoadCacheJSON is the model encoding of LoadCache's record (nil when there
+// is none), reused while the file is unchanged; the caller owns the bytes.
+func LoadCacheJSON(ctx context.Context, id string) (json.RawMessage, error) {
+	path, err := CachePath(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	key, ok := statCacheFile(path)
+	if ok {
+		if entry := memoLookup(path, key); entry.cache != nil && entry.encoded != nil {
+			return bytes.Clone(entry.encoded), nil
+		}
+	}
+	cache, err := LoadCacheShared(ctx, id)
+	if err != nil || cache == nil {
+		return nil, err
+	}
+	data, err := model.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	memoStore(path, key, func(entry *cacheMemoEntry) {
+		if entry.cache == cache {
+			entry.encoded = data
+		}
+	})
+	return bytes.Clone(data), nil
+}
+
+func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -358,15 +432,30 @@ type CacheSummary struct {
 }
 
 // LoadCacheSummary reads only the cache envelope (whether valid node objects
-// are present, metadata.url, and updated_at) without decoding each node.
+// are present, metadata.url, and updated_at) without decoding each node. It
+// is reused while the file is unchanged, like LoadCache.
 func LoadCacheSummary(ctx context.Context, id string) (*CacheSummary, error) {
 	path, err := CachePath(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(path); err != nil {
+	key, ok := statCacheFile(path)
+	if !ok {
+		memoForget(path)
 		return nil, nil
 	}
+	if entry := memoLookup(path, key); entry.summary != nil {
+		return cloneSummary(entry.summary), nil
+	}
+	summary, err := readCacheSummary(ctx, id, path)
+	if err != nil || summary == nil {
+		return nil, err
+	}
+	memoStore(path, key, func(entry *cacheMemoEntry) { entry.summary = summary })
+	return cloneSummary(summary), nil
+}
+
+func readCacheSummary(ctx context.Context, id, path string) (*CacheSummary, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err

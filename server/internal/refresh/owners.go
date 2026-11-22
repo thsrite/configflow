@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"sync"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -124,14 +125,52 @@ func DefaultRefreshEnv() *RefreshEnv {
 			cache, err := substore.SaveCache(ctx, id, nodes, receipt)
 			return sourceCache(cache, err)
 		},
-		LoadNodes: func(ctx context.Context, id string) (*NodeCache, error) {
-			return sourceCache(substore.LoadCache(ctx, id))
-		},
+		LoadNodes:        loadNodeCache,
 		LoadCacheSummary: substore.LoadCacheSummary,
 		FilterNodes:      subs.FilterNodes,
 		Converter:        substore.NativeConverter(),
 	}}
 }
+
+// nodeCacheViews keeps, per subscription, the NodeCache view of the shared
+// decoded cache file it was made from (O10 R8): the view is rebuilt only when
+// substore hands out a different record, i.e. when the file changed.
+var nodeCacheViews = struct {
+	sync.Mutex
+	views map[string]nodeCacheView
+}{views: map[string]nodeCacheView{}}
+
+type nodeCacheView struct {
+	source *substore.Cache
+	view   *NodeCache
+}
+
+// loadNodeCache returns the subscription's stored nodes, shared by every
+// reader of the unchanged file: callers must not modify the result.
+func loadNodeCache(ctx context.Context, id string) (*NodeCache, error) {
+	source, err := substore.LoadCacheShared(ctx, id)
+	if err != nil || source == nil {
+		nodeCacheViews.Lock()
+		delete(nodeCacheViews.views, id)
+		nodeCacheViews.Unlock()
+		return nil, err
+	}
+	nodeCacheViews.Lock()
+	cached := nodeCacheViews.views[id]
+	nodeCacheViews.Unlock()
+	if cached.source == source {
+		return cached.view, nil
+	}
+	view, err := sourceCache(source, nil)
+	if err != nil || view == nil {
+		return view, err
+	}
+	nodeCacheViews.Lock()
+	nodeCacheViews.views[id] = nodeCacheView{source: source, view: view}
+	nodeCacheViews.Unlock()
+	return view, nil
+}
+
 func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {
 	if err != nil || cache == nil {
 		return nil, err

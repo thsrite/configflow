@@ -64,12 +64,6 @@ func NativeEnv() convert.MihomoEnvironment {
 		_, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
 		return err
 	}
-	env.LoadSubscriptionCache = func(ctx context.Context, id string) (json.RawMessage, error) {
-		cache, err := substore.LoadCache(ctx, id)
-		if err != nil || cache == nil {
-			return nil, err
-		}
-		return model.Marshal(cache)
-	}
+	env.LoadSubscriptionCache = substore.LoadCacheJSON
 	return env
 }
