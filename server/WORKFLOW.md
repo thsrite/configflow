@@ -466,6 +466,11 @@ Approved by the maintainer to cut gate time without reducing what is verified.
 - **Agent module in the gate (since 2026-11-22).** `gate.sh` core also covers `backend/agents/go-agent`
   (separate Go module, previously never gated): gofmt, vet (plus vet-only `halab nftlab` container tags) and
   `-race` after the server race run; `GATE_ONLY=agent` runs just that stage. See `scripts/gate.md`.
+- **Frontend in the gate (since 2026-11-22).** `gate.sh` compare (and therefore the default full gate) also
+  runs the frontend: `vue-tsc` typecheck and the full vitest suite, the same commands as `cf-test typecheck`
+  / `cf-test frontend`, with `node_modules` reused from the cf-test lockfile cache. `GATE_ONLY=frontend` runs
+  just that stage; failures print `GATE FAIL: frontend`. Branches that touch `frontend/` still run the
+  targeted `cf-test` checks before hand-back. See `scripts/gate.md`.
 
 ## Leaner verification (maintainer, 2026-11-18)
 

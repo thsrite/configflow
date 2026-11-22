@@ -53,6 +53,21 @@ elif any(a.startswith("-fuzz=") for a in args):
 '''
 
 
+FAKE_NPM = """#!/bin/sh
+echo "npm $*" >> "$HOME/frontend-calls.log"
+case "$1" in
+  ci) mkdir -p node_modules ;;
+  run) [ -n "$FAIL_TYPECHECK" ] && { echo "synthetic type error"; exit 1; } ;;
+esac
+exit 0
+"""
+FAKE_NPX = """#!/bin/sh
+echo "npx $*" >> "$HOME/frontend-calls.log"
+if [ -n "$FAIL_FRONTEND" ]; then echo " FAIL  tests/synthetic.test.ts > fails"; echo "      Tests  1 failed | 2 passed (3)"; exit 1; fi
+echo "      Tests  3 passed (3)"
+"""
+
+
 class RoutingTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -73,10 +88,20 @@ class RoutingTests(unittest.TestCase):
         (binary / "go").chmod(0o755)
         (binary / "gofmt").write_text('#!/bin/sh\nexit 0\n')
         (binary / "gofmt").chmod(0o755)
+        for name, text in (("npm", FAKE_NPM), ("npx", FAKE_NPX)):
+            (binary / name).write_text(text)
+            (binary / name).chmod(0o755)
+        # The core stage also gates the Agent module (ac12f4423); the fake go answers it.
+        (self.root / "backend/agents/go-agent").mkdir(parents=True)
+        frontend = self.root / "frontend"
+        frontend.mkdir()
+        (frontend / "package.json").write_text('{"name": "synthetic"}\n')
+        (frontend / "package-lock.json").write_text('{"lockfileVersion": 3}\n')
         self.env = dict(os.environ, HOME=str(self.root), PATH=str(binary) + ":" + os.environ["PATH"],
                         GATE_LOGS=str(self.root / "logs"), CONFIGFLOW_DIFF_PYTHON=shutil.which("python3"))
         for key in ("GATE_ONLY", "GATE_FULL", "GATE_SLOTS", "FAIL_RACE", "EMPTY_FINGERPRINT",
-                    "GATE_FUZZ_JOBS", "GATE_FUZZ_PARALLEL", "GATE_FUZZTIME", "FAIL_FUZZ", "FAIL_DIFF"):
+                    "GATE_FUZZ_JOBS", "GATE_FUZZ_PARALLEL", "GATE_FUZZTIME", "FAIL_FUZZ", "FAIL_DIFF",
+                    "FAIL_FRONTEND", "FAIL_TYPECHECK"):
             self.env.pop(key, None)
 
     def run_gate(self, targets=(), **env):
@@ -99,7 +124,8 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
         self.assertIn("FULL mode (GATE_FULL)", third.stdout)
         race = [(args, fp) for args, fp in self.calls() if "-race" in args]
-        self.assertEqual(len(race), 3)
+        # Each core run races the server and then the Agent module.
+        self.assertEqual(len(race), 6)
         self.assertTrue(all("-count=1" not in args and fp == "synthetic-fingerprint" for args, fp in race))
         self.assertEqual(sum(args == ["clean", "-testcache"] for args, _ in self.calls()), 2)
 
@@ -169,6 +195,48 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("== race", result.stdout)
         self.assertIn("== difftest", result.stdout)
         self.assertIn("synthetic live fake", result.stdout)
+
+    def frontend_calls(self):
+        log = self.root / "frontend-calls.log"
+        return log.read_text().splitlines() if log.exists() else []
+
+    def test_frontend_only_installs_once_per_lockfile(self):
+        for _ in range(2):
+            result = self.run_gate(GATE_ONLY="frontend")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("gate: frontend PASS (typecheck; vitest Tests 3 passed (3))", result.stdout)
+            self.assertIn("GATE STAGE PASS: frontend", result.stdout)
+            self.assertNotIn("== race", result.stdout)
+            self.assertNotIn("== difftest", result.stdout)
+        calls = self.frontend_calls()
+        self.assertEqual(sum(c.startswith("npm ci") for c in calls), 1, calls)
+        self.assertEqual(calls.count("npm run -s typecheck"), 2)
+        self.assertEqual(calls.count("npx vitest run"), 2)
+        link = self.root / "frontend/node_modules"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.resolve().parent.parent, (self.root / "cf-test/node_modules").resolve())
+        self.assertFalse((self.root / "rt/.gate-last-full").exists())
+
+    def test_frontend_failures_fail_the_stage(self):
+        for env, step in (({"FAIL_TYPECHECK": "1"}, "typecheck"), ({"FAIL_FRONTEND": "1"}, "vitest")):
+            result = self.run_gate(GATE_ONLY="frontend", **env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"GATE FAIL: frontend ({step}", result.stderr)
+            self.assertNotIn("GATE STAGE PASS", result.stdout)
+        self.assertIn("FAIL  tests/synthetic.test.ts", result.stdout)
+
+    def test_compare_runs_frontend_and_keeps_other_groups(self):
+        result = self.run_gate(GATE_ONLY="compare", FAIL_FRONTEND="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("== synthetic live", result.stdout)
+        self.assertIn("== frontend", result.stdout)
+        self.assertIn("GATE FAIL: frontend (vitest", result.stderr)
+        self.assertIn("GATE FAIL: compare", result.stderr)
+        default = self.run_gate()
+        self.assertEqual(default.returncode, 0, default.stdout + default.stderr)
+        self.assertIn("gate: frontend PASS", default.stdout)
+        core = self.run_gate(GATE_ONLY="core")
+        self.assertNotIn("== frontend", core.stdout)
 
     def test_invalid_stage_fails_before_work(self):
         result = self.run_gate(GATE_ONLY="typo")

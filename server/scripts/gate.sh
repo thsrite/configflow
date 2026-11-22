@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 pflag=()
 if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
 stage=${GATE_ONLY:-all}
-case "$stage" in all|core|agent|compare|proddiff|difftest) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
+case "$stage" in all|core|agent|compare|proddiff|difftest|frontend) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
 logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
 chmod 700 "$logs"
@@ -164,12 +164,47 @@ run_live() {
   echo '== synthetic live (uncached, required JSON execution manifest)'
   "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py "$logs" "${pflag[@]}" || fail 'synthetic live'
 }
+# Frontend (../frontend): the same commands as cf-test typecheck / cf-test
+# frontend. node_modules is installed once per package-lock.json hash into the
+# cf-test cache (~/cf-test/node_modules/<hash>) and linked, never per run.
+frontend_deps() {
+  local base=$HOME/cf-test hash cache
+  hash=$(sha256sum ../frontend/package-lock.json | cut -c1-16) || return 1
+  cache=$base/node_modules/$hash
+  if [[ ! -d $cache/node_modules ]]; then
+    mkdir -p "$base/node_modules" || return 1
+    (
+      exec 9>"$base/node_modules/.lock-$hash"
+      flock 9
+      if [[ ! -d $cache/node_modules ]]; then
+        echo "gate: installing frontend dependencies ($hash)"
+        rm -rf "$cache.tmp" && mkdir -p "$cache.tmp" || exit 1
+        cp ../frontend/package.json ../frontend/package-lock.json "$cache.tmp/" || exit 1
+        (cd "$cache.tmp" && npm ci --no-audit --no-fund --loglevel=error) || { rm -rf "$cache.tmp"; exit 1; }
+        mv "$cache.tmp" "$cache"
+      fi
+    ) || return 1
+  fi
+  rm -rf ../frontend/node_modules && ln -sfn "$cache/node_modules" ../frontend/node_modules
+}
+run_frontend() {
+  echo '== frontend (npm ci cached by lockfile, vue-tsc typecheck, vitest)'
+  frontend_deps >"$logs/frontend-deps.log" 2>&1 \
+    || { cat "$logs/frontend-deps.log"; fail frontend; }
+  (cd ../frontend && npm run -s typecheck) >"$logs/frontend-typecheck.log" 2>&1 \
+    || { tail -60 "$logs/frontend-typecheck.log"; fail "frontend (typecheck, see $logs/frontend-typecheck.log)"; }
+  (cd ../frontend && npx vitest run) >"$logs/frontend-vitest.log" 2>&1 \
+    || { grep -E '(FAIL|×) ' "$logs/frontend-vitest.log" | head -40; tail -20 "$logs/frontend-vitest.log"; fail "frontend (vitest, see $logs/frontend-vitest.log)"; }
+  echo "gate: frontend PASS (typecheck; vitest $(grep -E '^ +Tests ' "$logs/frontend-vitest.log" | tr -s ' ' | sed 's/^ //'))"
+}
 # Run every comparison even when an earlier group fails, retaining all evidence.
+# The frontend runs here, not in core: it uses no Go caches or race workers.
 run_compare() {
   local bad=0
   (run_proddiff) || bad=1
   (run_difftest) || bad=1
   (run_live) || bad=1
+  (run_frontend) || bad=1
   ((bad == 0)) || fail compare
 }
 case "$stage" in
@@ -182,6 +217,7 @@ case "$stage" in
   compare) run_compare ;;
   proddiff) run_proddiff ;;
   difftest) run_difftest ;;
+  frontend) run_frontend ;;
 esac
 uptime
 echo "GATE STAGE PASS: $stage"

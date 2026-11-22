@@ -10,6 +10,7 @@ stages ran.
 GATE_ONLY=core server/scripts/gate.sh -p 6 FuzzNativeRoundTrip:./internal/yamlx
 GATE_ONLY=compare server/scripts/gate.sh -p 6
 GATE_ONLY=agent server/scripts/gate.sh -p 6   # Agent module only
+GATE_ONLY=frontend server/scripts/gate.sh      # frontend only
 # No GATE_ONLY: core followed by compare, under one slot.
 ```
 
@@ -20,9 +21,21 @@ container-only `halab nftlab` tags, race with the same `-p` and test cache;
 "GATE FAIL: agent-module" / "gate: agent module PASS ..."), supplied fuzz targets
 (60s by default). `GATE_ONLY=agent` runs only the Agent module and, like compare,
 never refreshes the full-core stamp.
-Compare: observer self-checks + proddiff, every `/difftest` package, discovered synthetic live.
-All three comparison groups run even if an earlier one fails; the final status
+Compare: observer self-checks + proddiff, every `/difftest` package, discovered synthetic live,
+then the frontend. All four groups run even if an earlier one fails; the final status
 remains failed and logs retain results for the other groups.
+
+Frontend (since 2026-11-22, in compare because it uses no Go caches or race
+workers; `GATE_ONLY=frontend` runs it alone): the same commands as `cf-test
+typecheck` and `cf-test frontend` — `npm run -s typecheck` (vue-tsc) and `npx
+vitest run` in `frontend/`. Dependencies come from the cf-test cache:
+`npm ci` runs once per `package-lock.json` hash into
+`~/cf-test/node_modules/<hash>` (flock-guarded) and `frontend/node_modules`
+is linked to it. Logs: `frontend-deps.log`, `frontend-typecheck.log`,
+`frontend-vitest.log`. Prints `gate: frontend PASS (typecheck; vitest Tests …)`
+or `GATE FAIL: frontend (typecheck|vitest, see <log>)` with the failing test
+lines. Before this stage no gate ran the frontend (a stale vitest test stayed
+red on `go` from 2026-11-19 to 2026-11-22).
 Legacy `GATE_ONLY=proddiff` and `difftest` keep their narrow meaning.
 
 ## Fuzz temporary space and concurrency
@@ -136,7 +149,10 @@ This confirms the intended concurrency effect: extra misses/re-execution, not a
 corrupted result or cancellation of another gate. The shared-cache consequence
 is deliberate and approved; slots still bound expensive gate execution.
 
-Routing regression controls additionally cover missing/stale/future timestamps,
+Routing regression controls (fake go/npm/npx; the fixture includes an empty
+Agent module and frontend) additionally cover the frontend stage (one `npm ci`
+per lockfile, typecheck/vitest failures, compare and default include it, core
+does not), missing/stale/future timestamps,
 forced full, real shell stage selection, no timestamp on failure, fingerprint
 propagation/failure/fallback, compare's live proddiff invocation, and invalid stages:
 
