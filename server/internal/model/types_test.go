@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -476,7 +477,9 @@ func runTypesInterchange(t *testing.T, rows []interchangeRow, private bool) {
 		t.Fatal("Python-written input failed")
 	}
 	registry := map[string]reflect.Type{}
-	for _, typ := range storedRecordTypes() {
+	// T1c records and the T1b Agent records (receipts and HA payloads are
+	// stored as files of their own).
+	for _, typ := range append(storedRecordTypes(), plainAgentRecordTypes()...) {
 		registry[typ.Name()] = typ
 	}
 	rowTypes := map[string]reflect.Type{
@@ -779,8 +782,29 @@ func assertStoredTree(t *testing.T, source []byte, value reflect.Value, counts m
 			t.Fatal("snapshot nested decode failed")
 		}
 		output, err := Marshal(fresh.Interface())
-		if err != nil || !sameStoredValue(t, output, source, true) {
-			t.Fatal("snapshot nested round trip changed the value")
+		// The section records are only the wrapper of one row here
+		// ({"<row>": value}); written whole they add their always-written
+		// members. The row value itself is compared one level down.
+		section := typ == reflect.TypeFor[Profile]() || typ == reflect.TypeFor[System]() || typ == reflect.TypeFor[Shared]()
+		if err != nil || !section && !sameStoredValue(t, output, source, true) {
+			// Schema only: the record type and the names of the members
+			// whose values differ, never the values.
+			var before, after map[string]any
+			_ = json.Unmarshal(source, &before)
+			_ = json.Unmarshal(output, &after)
+			var names []string
+			for name, value := range before {
+				if !reflect.DeepEqual(value, after[name]) {
+					names = append(names, name)
+				}
+			}
+			for name := range after {
+				if _, present := before[name]; !present {
+					names = append(names, "+"+name)
+				}
+			}
+			sort.Strings(names)
+			t.Fatalf("snapshot nested round trip changed the value: %s members %v", typ.Name(), names)
 		}
 		counts[typ.Name()]++
 		_, members := fuzzMembers(t, source)

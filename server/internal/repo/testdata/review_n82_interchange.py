@@ -49,6 +49,14 @@ def main():
         return
     repository = ProfileRepository(Path(directory))
     store = ConfigStore(path, lambda: 10)
+    if mode == 'dump':
+        # Python's view of the database for a value comparison in Go (plain
+        # records, O18 T1c): written to the private run directory only.
+        target = Path(other)
+        target.write_text(json.dumps({'document': store.load().document,
+                                      'export': repository.export_all()}, ensure_ascii=False))
+        os.chmod(target, 0o600)
+        return
     if mode == 'audit':
         expected = json.loads(Path(other).read_text())
         same(store.load().document, expected)

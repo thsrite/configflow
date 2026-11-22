@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"configflow/internal/model/modeltest"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -68,13 +69,32 @@ func TestN82ReviewPrivateRepositoryInterchange(t *testing.T) {
 	}
 	id := parseJSONObj(t, docRaw).GetObject("profiles").Keys()[0]
 	expectedPath := filepath.Join(directory, "expected.json")
+	// Go and Python read the same database as the same values (O18 T1c:
+	// plain records compare as values, without undeclared or empty optional
+	// members). Only the name of a differing view is reported.
+	dumpPath := filepath.Join(directory, "python.json")
 	audit := func() {
 		t.Helper()
 		data, err := r.ExportAllJSON(bg, false)
 		if err != nil || os.WriteFile(expectedPath, data, 0o600) != nil {
 			t.Fatal("private expectation failed")
 		}
-		run("audit", expectedPath)
+		run("dump", dumpPath)
+		raw, err := os.ReadFile(dumpPath)
+		if err != nil {
+			t.Fatal("private Python view missing")
+		}
+		var views map[string]any
+		if json.Unmarshal(raw, &views) != nil {
+			t.Fatal("private Python view unreadable")
+		}
+		goView := n82ThroughModel(t, data)
+		for _, name := range []string{"document", "export"} {
+			pyView := n82ThroughModel(t, must(json.Marshal(views[name]))(t))
+			if !testjson.Equal(goView, pyView) {
+				t.Fatalf("Python %s differs from Go's values; contents suppressed", name)
+			}
+		}
 	}
 	audit()
 	_, err = r.UpdateProfile(bg, id, func(_ context.Context, current *model.Profile) error {
@@ -98,9 +118,7 @@ func TestN82ReviewPrivateRepositoryInterchange(t *testing.T) {
 	if err != nil {
 		t.Fatal("Python→Go profile values differ; contents suppressed")
 	}
-	actualVal, aErr := testjson.Parse(actual)
-	wantVal, wErr := testjson.Parse(expected)
-	if aErr != nil || wErr != nil || !testjson.Equal(wantVal, actualVal) {
+	if !testjson.Equal(n82ThroughModel(t, expected), n82ThroughModel(t, actual)) {
 		t.Fatal("Python→Go profile values differ; contents suppressed")
 	}
 	audit()
@@ -137,4 +155,17 @@ func TestN82ReviewCorruptOpenHasSafeRecovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+// n82ThroughModel reads a whole configuration document as the plain records
+// hold it (modeltest.ThroughModel, empty optional members left out).
+func n82ThroughModel(t *testing.T, data []byte) any {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if decoder.Decode(&value) != nil {
+		t.Fatal("private document unreadable")
+	}
+	return testjson.WithoutEmptyMembers(modeltest.ThroughModel(value))
 }
