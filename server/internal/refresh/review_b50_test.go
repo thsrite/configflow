@@ -66,3 +66,24 @@ func TestReviewB50RefreshPacesByNextDueAndWakesOnCommits(t *testing.T) {
 		t.Fatal("a configuration commit did not wake scheduled-refresh")
 	}
 }
+
+func TestO17FollowupImmediateDueResourceRetriesWithin30Seconds(t *testing.T) {
+	f := setup(t, 3600)
+	f.updateShared(func(shared *model.Shared) {
+		disabled := false
+		shared.RuleLibrary[0].Enabled = &disabled
+	})
+	// Hold the subscription's running lock during the round so it stays
+	// immediately due (no receipt, no cache baseline) when pace computes
+	// the next sleep.
+	_, release, ok := running.TryLock(f.ctx, SourceTaskKey("s"))
+	if !ok {
+		t.Fatal("failed to claim running lock")
+	}
+	defer release()
+
+	round(f.ctx)
+	if pause := refreshPause(f.ctx); pause > TickSeconds*time.Second || pause < time.Second {
+		t.Fatalf("pause %v with an immediately due resource, want <= %v", pause, TickSeconds*time.Second)
+	}
+}

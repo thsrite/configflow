@@ -239,13 +239,16 @@ func (p *refreshPacer) pace(ctx context.Context) {
 	}
 	p.commits.Follow(r, repo.ChangeConfig, p.wake.Notify)
 	now := nowUTC()
-	_, next, err := dueAndNext(ctx, &now)
+	jobs, next, err := dueAndNext(ctx, &now)
 	if err != nil {
 		return
 	}
 	pause := MaxPause
+	if len(jobs) > 0 {
+		pause = TickSeconds * time.Second
+	}
 	if next != nil {
-		pause = min(max(next.Sub(now), time.Second), MaxPause)
+		pause = min(pause, max(next.Sub(now), time.Second))
 	}
 	p.pause.Store(int64(pause))
 }
