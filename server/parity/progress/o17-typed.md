@@ -28,7 +28,8 @@
 - [x] 1.6 api/aggregations（共享目录类型化读写：`generation.LoadCatalog/SaveCatalog` 改为 `*model.Shared`；计数、预览、排序类型化；
   预览改用 `GenerateConfig`（与下载同一路径）。聚合新增/修改请求同 proxygroups 保留为 `aggregationFields` 边界；
   删除 `enabled(record)` 回归测试——节点的 `enabled` 已是 `*bool`）
-- [ ] 1.6 api/subscriptions
+- [x] 1.6 api/subscriptions（订阅列表/健康/节点/排序类型化，列表视图为 `subscriptionView`；新增/替换请求为
+  `subscriptionFields` 边界；代理定义改名 `proxy`（协议成员开放，保留 JSON 对象）；删除对象 `enabled` 真假回归测试）
 - [ ] 1.6 api/rulelibrary
 - [ ] 1.6 mcp/invoker
 - [ ] 1.8 RouterOS Row → map[string]string；只读分析结构体

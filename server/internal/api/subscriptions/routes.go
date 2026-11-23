@@ -9,6 +9,8 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
@@ -29,6 +31,22 @@ func Register(r *httpx.Router) {
 func healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
 	return usage(c.Context(), c.Param("resource_id"))
 }
+
+// subscriptionWire is a subscription without the stored record's codec, so a
+// view can add members next to it.
+type subscriptionWire model.Subscription
+
+// subscriptionView is a stored subscription with its derived statistics.
+type subscriptionView struct {
+	subscriptionWire
+	Traffic          json.RawMessage `json:"traffic"`
+	TrafficAt        json.RawMessage `json:"traffic_at"`
+	LastFetch        json.RawMessage `json:"last_fetch"`
+	CachedNodeCount  json.RawMessage `json:"cached_node_count"`
+	CachedTotalCount json.RawMessage `json:"cached_total_count"`
+	CachedUpdatedAt  json.RawMessage `json:"cached_updated_at"`
+}
+
 func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	list, _, err := listShared(ctx)
@@ -40,34 +58,33 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
+		views := make([]subscriptionView, 0, len(list))
 		for _, sub := range list {
-			sub.stripDerived()
-			entry := health[sub.text("id")]
-			sub["traffic"], sub["traffic_at"] = entry.Traffic, entry.TrafficAt
-			sub["last_fetch"] = nil
+			entry := health[sub.ID]
+			view := subscriptionView{subscriptionWire: subscriptionWire(sub), Traffic: entry.Traffic, TrafficAt: entry.TrafficAt}
 			if len(entry.History) > 0 {
-				sub["last_fetch"] = entry.History[len(entry.History)-1]
+				view.LastFetch = entry.History[len(entry.History)-1]
 			}
-			cached, err := loadCacheSummary(ctx, sub.text("id"))
+			cached, err := loadCacheSummary(ctx, sub.ID)
 			if err != nil {
 				return nil, err
 			}
-			sub["cached_node_count"], sub["cached_total_count"], sub["cached_updated_at"] = nil, nil, nil
 			if cached != nil {
-				sub["cached_updated_at"] = cached.UpdatedAt
+				view.CachedUpdatedAt = cached.UpdatedAt
 				if cached.Nodes != nil {
 					filtered, err := filter(sub, cached.Nodes)
 					if err != nil {
 						return nil, err
 					}
-					sub.set("cached_node_count", len(filtered))
-					sub.set("cached_total_count", len(cached.Nodes))
+					view.CachedNodeCount, _ = json.Marshal(len(filtered))
+					view.CachedTotalCount, _ = json.Marshal(len(cached.Nodes))
 				} else {
-					sub["cached_node_count"], sub["cached_total_count"] = cached.Count, cached.Count
+					view.CachedNodeCount, view.CachedTotalCount = cached.Count, cached.Count
 				}
 			}
+			views = append(views, view)
 		}
-		return response(200, list), nil
+		return response(200, views), nil
 	}
 	if c.Request.Method != "POST" {
 		return nil, errors.New("unsupported method")
@@ -86,10 +103,14 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := validateFields(sub); err != nil {
 		return httpx.Message(400, false, err.Error()), nil
 	}
-	err = editSubscriptions(ctx, func(list []object) ([]object, error) { return append(list, sub), nil })
+	record, err := sub.record()
+	if err != nil {
+		return nil, err
+	}
+	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) { return append(list, record), nil })
 	return response(200, struct {
-		Success bool   `json:"success"`
-		Data    object `json:"data"`
+		Success bool                `json:"success"`
+		Data    *subscriptionFields `json:"data"`
 	}{true, sub}), err
 }
 func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
@@ -101,17 +122,11 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	found := false
-	for _, sub := range list {
-		if sub.text("id") == id {
-			found = true
-			break
-		}
-	}
-	if !deleting && !found {
+	if !deleting && findSubscription(list, id) < 0 {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
-	var body object
+	var body *subscriptionFields
+	var record model.Subscription
 	if !deleting {
 		body, err = readBody(c)
 		if err != nil {
@@ -125,13 +140,16 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(400, false, err.Error()), nil
 		}
 		body.set("id", id)
+		if record, err = body.record(); err != nil {
+			return nil, err
+		}
 	}
 	changedURL := false
-	err = editSubscriptions(ctx, func(list []object) ([]object, error) {
-		result := make([]object, 0, len(list))
+	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) {
+		result := make([]model.Subscription, 0, len(list))
 		replaced := false
 		for _, sub := range list {
-			if sub.text("id") != id {
+			if sub.ID != id {
 				result = append(result, sub)
 				continue
 			}
@@ -139,8 +157,8 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 				continue
 			}
 			if !replaced {
-				changedURL = sub.text("url") != body.text("url")
-				result = append(result, body)
+				changedURL = sub.URL != body.text("url")
+				result = append(result, record)
 				replaced = true
 			} else {
 				result = append(result, sub)
@@ -168,8 +186,8 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	return response(200, struct {
-		Success bool   `json:"success"`
-		Data    object `json:"data"`
+		Success bool                `json:"success"`
+		Data    *subscriptionFields `json:"data"`
 	}{true, body}), nil
 }
 
@@ -192,11 +210,8 @@ func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	if body == nil {
-		body = object{}
-	}
 	order := []string{}
-	err = editSubscriptions(ctx, func(list []object) ([]object, error) {
+	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) {
 		out, missing, err := reorder(list, body)
 		if err != nil {
 			return nil, err
@@ -205,7 +220,7 @@ func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, &reorderError{missing}
 		}
 		for _, sub := range out {
-			order = append(order, sub.text("id"))
+			order = append(order, sub.ID)
 		}
 		return out, nil
 	})
@@ -228,6 +243,17 @@ func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 		Order   []string `json:"order"`
 	}{true, order}), nil
 }
+
+// healthItem is one subscription's fetch history and traffic.
+type healthItem struct {
+	ID        *string           `json:"id"`
+	Name      *string           `json:"name"`
+	Traffic   json.RawMessage   `json:"traffic"`
+	TrafficAt json.RawMessage   `json:"traffic_at"`
+	Enabled   bool              `json:"enabled"`
+	History   []json.RawMessage `json:"history"`
+}
+
 func subscriptionsHealth(c *httpx.Ctx) (*httpx.Response, error) {
 	list, _, err := listShared(c.Context())
 	if err != nil {
@@ -237,33 +263,35 @@ func subscriptionsHealth(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	items := []object{}
+	items := []healthItem{}
 	for _, sub := range list {
-		entry := health[sub.text("id")]
-		item := object{"id": sub["id"], "name": sub["name"], "traffic": entry.Traffic, "traffic_at": entry.TrafficAt}
-		item["enabled"] = sub["enabled"]
-		if _, ok := sub["enabled"]; !ok {
-			item.set("enabled", true)
-		}
+		entry := health[sub.ID]
 		if entry.History == nil {
 			entry.History = []json.RawMessage{}
 		}
-		item.set("history", entry.History)
-		items = append(items, item)
+		items = append(items, healthItem{optional(sub.ID), optional(sub.Name), entry.Traffic, entry.TrafficAt, model.Flag(sub.Enabled, true), entry.History})
 	}
 	return response(200, struct {
-		Success bool     `json:"success"`
-		Items   []object `json:"items"`
-		Size    int      `json:"size"`
+		Success bool         `json:"success"`
+		Items   []healthItem `json:"items"`
+		Size    int          `json:"size"`
 	}{true, items, healthSize()}), nil
 }
-func findSubscription(list []object, id string) object {
-	for _, sub := range list {
-		if sub.text("id") == id {
-			return sub
+
+// optional is a member the record omits when empty: null in a view.
+func optional(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+func findSubscription(list []model.Subscription, id string) int {
+	for i := range list {
+		if list[i].ID == id {
+			return i
 		}
 	}
-	return nil
+	return -1
 }
 func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	list, nodes, err := listShared(c.Context())
@@ -271,20 +299,21 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	id := c.Param("sub_id")
-	sub := findSubscription(list, id)
-	if sub == nil {
+	index := findSubscription(list, id)
+	if index < 0 {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
+	sub := list[index]
 	if source, _ := c.Arg("source"); source == "cache" {
 		cached, err := loadCacheSummary(c.Context(), id)
 		if err != nil {
 			return nil, err
 		}
 		available := cached != nil && cached.Nodes != nil
-		if cached != nil && !cacheURLMatches(cached.Metadata, sub.text("url")) {
+		if cached != nil && !cacheURLMatches(cached.Metadata, sub.URL) {
 			available = false
 		}
-		list := []object{}
+		list := []proxy{}
 		var updated json.RawMessage
 		if available {
 			list, err = filter(sub, cached.Nodes)
@@ -295,15 +324,15 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return response(200, struct {
 			Success   bool            `json:"success"`
-			Nodes     []object        `json:"nodes"`
+			Nodes     []proxy         `json:"nodes"`
 			Count     int             `json:"count"`
 			Available bool            `json:"cache_available"`
 			Updated   json.RawMessage `json:"cached_updated_at"`
 		}{true, list, len(list), available, updated}), nil
 	}
-	selected := []object{}
+	selected := []model.Node{}
 	for _, node := range nodes {
-		if node.text("subscription_id") == id {
+		if node.SubscriptionID == id {
 			selected = append(selected, node)
 		}
 	}
@@ -335,17 +364,18 @@ func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	sub := findSubscription(list, c.Param("sub_id"))
-	if sub == nil {
+	index := findSubscription(list, c.Param("sub_id"))
+	if index < 0 {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
+	sub := list[index]
 	nodes, cached, err := refreshSubscription(ctx, sub)
 	fromCache := false
 	var fetchError *string
 	if err != nil {
 		detail := failureDetail(err)
 		fetchError = &detail
-		cached, err = loadCache(ctx, sub.text("id"))
+		cached, err = loadCache(ctx, sub.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -364,7 +394,13 @@ func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 		reply.TotalCount = cached.Count
 		reply.CachedUpdatedAt = cached.UpdatedAt
 	}
-	if nonempty(body["preview"]) {
+	var request struct {
+		Preview jsondecode.Member[json.RawMessage] `json:"preview"`
+	}
+	if err := jsondecode.Unmarshal(body, &request); err != nil {
+		return nil, err
+	}
+	if nonempty(request.Preview.Raw) {
 		reply.Preview = true
 	} else {
 		added, err := appendImported(ctx, nodes)
@@ -386,14 +422,9 @@ func testRoute(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, "Subscription route is working!", time.Now().Format("2006-01-02T15:04:05.000000")}), nil
 }
 
-func cacheURLMatches(metadata object, url string) bool {
-	raw, exists := metadata["url"]
-	if !exists || string(raw) == "null" {
+func cacheURLMatches(metadata cacheMetadata, url string) bool {
+	if metadata.URL.Null() {
 		return true
 	}
-	var stored string
-	if json.Unmarshal(raw, &stored) != nil {
-		return false
-	}
-	return stored == url
+	return metadata.URL.OK && metadata.URL.Value == url
 }

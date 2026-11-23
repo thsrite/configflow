@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
-func yamlContent(proxies []object) (string, error) {
+func yamlContent(proxies []proxy) (string, error) {
 	data, err := json.Marshal(struct {
-		Proxies []object `json:"proxies"`
+		Proxies []proxy `json:"proxies"`
 	}{proxies})
 	if err != nil {
 		return "", err
@@ -27,7 +28,7 @@ func yamlContent(proxies []object) (string, error) {
 	data, err = yamlx.Marshal(root)
 	return string(data), err
 }
-func providerResponse(proxies []object, id, header string) (*httpx.Response, error) {
+func providerResponse(proxies []proxy, id, header string) (*httpx.Response, error) {
 	text, err := yamlContent(proxies)
 	if err != nil {
 		return nil, err
@@ -74,7 +75,7 @@ func providerFailure(ctx context.Context, err error) (*httpx.Response, error) {
 	logProviderFailure(ctx, err)
 	return httpx.Message(500, false, msgProviderFailed), nil
 }
-func hasDialer(proxies []object) bool {
+func hasDialer(proxies []proxy) bool {
 	for _, proxy := range proxies {
 		if raw, ok := proxy["dialer-proxy"]; ok && string(raw) != "null" {
 			return true
@@ -94,16 +95,16 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := delivery.capture(ctx); err != nil {
 		return providerFailure(ctx, err)
 	}
-	all := []object{}
-	prepared := map[string][]object{}
+	all := []proxy{}
+	prepared := map[string][]proxy{}
 	updates := []staged{}
 	details := []subscriptionDetail{}
 	for _, sub := range list {
-		if !sub.enabled() {
+		if !model.Flag(sub.Enabled, true) {
 			continue
 		}
 		raw, result, fetchErr := fetchRaw(ctx, sub)
-		proxies := []object{}
+		proxies := []proxy{}
 		if fetchErr == nil {
 			proxies, err = filter(sub, raw)
 			if err != nil {
@@ -118,7 +119,7 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 			if referenceError(fetchErr) {
 				return providerFailure(ctx, fetchErr)
 			}
-			cached, err := loadCache(ctx, sub.text("id"))
+			cached, err := loadCache(ctx, sub.ID)
 			if err != nil {
 				return providerFailure(ctx, err)
 			}
@@ -136,9 +137,9 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 		if len(proxies) == 0 {
 			continue
 		}
-		prepared[sub.text("name")] = proxies
+		prepared[sub.Name] = proxies
 		all = append(all, proxies...)
-		details = append(details, subscriptionDetail{sub.text("name"), len(proxies), generatedStamp()})
+		details = append(details, subscriptionDetail{sub.Name, len(proxies), generatedStamp()})
 	}
 	if err := delivery.validate(all, nil); err != nil {
 		return providerFailure(ctx, err)
@@ -167,8 +168,8 @@ func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 		logProviderFailure(c.Context(), err)
 		return httpx.Message(500, false, msgProviderFailed), nil
 	}
-	sub := findSubscription(list, id)
-	if sub == nil {
+	index := findSubscription(list, id)
+	if index < 0 {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
 	filters, err := requestedFilters(c)
@@ -186,31 +187,31 @@ func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 			return providerFailure(ctx, err)
 		}
 		if chains {
-			content, err := delivery.chainedContent(ctx, sub, format)
+			content, err := delivery.chainedContent(ctx, list[index], format)
 			if err != nil {
 				return providerFailure(ctx, err)
 			}
 			return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(content)), nil
 		}
-		return delivery.renderSingle(ctx, sub, format, filters)
+		return delivery.renderSingle(ctx, list[index], format, filters)
 	})
 }
-func (d *delivery) validateSingle(ctx context.Context, sub object, proxies []object) error {
-	name := sub.text("name")
+func (d *delivery) validateSingle(ctx context.Context, sub model.Subscription, proxies []proxy) error {
+	name := sub.Name
 	if err := d.validate(proxies, &name); err != nil {
 		return err
 	}
 	if hasDialer(proxies) {
-		return d.validateBundle(ctx, sub, map[string][]object{name: proxies}, nil)
+		return d.validateBundle(ctx, &sub, map[string][]proxy{name: proxies}, nil)
 	}
 	return nil
 }
-func (d *delivery) renderSingle(ctx context.Context, sub object, format string, filters *[2]string) (*httpx.Response, error) {
+func (d *delivery) renderSingle(ctx context.Context, sub model.Subscription, format string, filters *[2]string) (*httpx.Response, error) {
 	alternate := format == "surge" || format == "loon"
-	proxies := []object(nil)
+	proxies := []proxy(nil)
 	cacheUpdated := false
 	fetchError := ""
-	if sub.text("url") != "" {
+	if sub.URL != "" {
 		raw, result, fetchErr := fetchRaw(ctx, sub)
 		if fetchErr == nil {
 			proxies, fetchErr = filter(sub, raw)
@@ -229,7 +230,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 					err = commitStaged(ctx, []staged{update})
 				}
 				if err == nil {
-					err = recordFetch(ctx, sub.text("id"), true, false, len(proxies))
+					err = recordFetch(ctx, sub.ID, true, false, len(proxies))
 				}
 				fetchErr = err
 				cacheUpdated = err == nil
@@ -244,16 +245,16 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 		}
 	}
 	if proxies == nil {
-		cached, err := loadCache(ctx, sub.text("id"))
+		cached, err := loadCache(ctx, sub.ID)
 		if err != nil {
 			return providerFailure(ctx, err)
 		}
-		if sub.text("url") != "" {
+		if sub.URL != "" {
 			count := 0
 			if cached != nil {
 				_ = json.Unmarshal(cached.Count, &count)
 			}
-			if err := recordFetch(ctx, sub.text("id"), false, cached != nil, count); err != nil {
+			if err := recordFetch(ctx, sub.ID, false, cached != nil, count); err != nil {
 				return providerFailure(ctx, err)
 			}
 		}
@@ -261,10 +262,10 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 			if fetchError == "" {
 				fetchError = msgUnknownError
 			}
-			return httpx.Message(404, false, fmt.Sprintf(msgProviderNoCache, sub.text("name"), fetchError)), nil
+			return httpx.Message(404, false, fmt.Sprintf(msgProviderNoCache, sub.Name, fetchError)), nil
 		}
 		if len(cached.Nodes) == 0 {
-			return httpx.Message(404, false, fmt.Sprintf(msgEmptyCache, sub.text("name"))), nil
+			return httpx.Message(404, false, fmt.Sprintf(msgEmptyCache, sub.Name)), nil
 		}
 		// Validate all filtered node shapes before forgiving individual conversion failures.
 		filtered, err := filter(sub, cached.Nodes)
@@ -306,5 +307,5 @@ func (d *delivery) renderSingle(ctx context.Context, sub object, format string, 
 		}
 		return httpx.Text(200, alternativeText), nil
 	}
-	return providerResponse(proxies, sub.text("id"), singleHeader(sub.text("name"), sub.text("id"), len(proxies), cacheUpdated, fetchError))
+	return providerResponse(proxies, sub.ID, singleHeader(sub.Name, sub.ID, len(proxies), cacheUpdated, fetchError))
 }

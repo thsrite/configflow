@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"configflow/internal/auth"
 	"configflow/internal/convert"
@@ -34,19 +35,14 @@ func native(value any, target any) error {
 	}
 	return jsondecode.Unmarshal(data, target)
 }
-func objects(value any) ([]object, error) {
-	out := []object{}
+func objects(value any) ([]proxy, error) {
+	out := []proxy{}
 	err := native(value, &out)
 	return out, err
 }
-func subscription(value object) (model.Subscription, error) {
-	var out model.Subscription
-	err := native(value, &out)
-	return out, err
-}
-func proxyNodes(value []object) ([]*yamlx.Node, error) {
+func proxyNodes(value []proxy) ([]*yamlx.Node, error) {
 	if value == nil {
-		value = []object{}
+		value = []proxy{}
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -58,14 +54,14 @@ func proxyNodes(value []object) ([]*yamlx.Node, error) {
 	}
 	return graph.Content, nil
 }
-func proxyObjects(value []*yamlx.Node) ([]object, error) {
-	out := make([]object, 0, len(value))
+func proxyObjects(value []*yamlx.Node) ([]proxy, error) {
+	out := make([]proxy, 0, len(value))
 	for _, node := range value {
 		data, err := yamlx.ToJSON(node)
 		if err != nil {
 			return nil, err
 		}
-		var item object
+		var item proxy
 		if err := json.Unmarshal(data, &item); err != nil {
 			return nil, err
 		}
@@ -73,7 +69,7 @@ func proxyObjects(value []*yamlx.Node) ([]object, error) {
 	}
 	return out, nil
 }
-func listShared(ctx context.Context) ([]object, []object, error) {
+func listShared(ctx context.Context) ([]model.Subscription, []model.Node, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -86,14 +82,9 @@ func listShared(ctx context.Context) ([]object, []object, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	subscriptions, err := objects(shared.Subscriptions)
-	if err != nil {
-		return nil, nil, err
-	}
-	nodes, err := objects(shared.Nodes)
-	return subscriptions, nodes, err
+	return shared.Subscriptions, shared.Nodes, nil
 }
-func editSubscriptions(ctx context.Context, mutate func([]object) ([]object, error)) error {
+func editSubscriptions(ctx context.Context, mutate func([]model.Subscription) ([]model.Subscription, error)) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -103,33 +94,18 @@ func editSubscriptions(ctx context.Context, mutate func([]object) ([]object, err
 		return err
 	}
 	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
-		list, err := objects(shared.Subscriptions)
-		if err != nil {
-			return err
-		}
-		list, err = mutate(list)
+		list, err := mutate(slices.Clone(shared.Subscriptions))
 		if err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		before, err := json.Marshal(shared.Subscriptions)
-		if err != nil {
-			return err
-		}
-		after, err := json.Marshal(list)
-		if err != nil {
-			return err
-		}
-		merged, changed, err := repo.MergeJSON(before, before, after)
-		if err != nil || !changed {
-			return err
-		}
-		return json.Unmarshal(merged, &shared.Subscriptions)
+		shared.Subscriptions = list
+		return nil
 	})
 }
-func appendImported(ctx context.Context, nodes []object) (int, error) {
+func appendImported(ctx context.Context, nodes []proxy) (int, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -160,37 +136,39 @@ func appendImported(ctx context.Context, nodes []object) (int, error) {
 	})
 	return added, err
 }
-func validateOptions(sub object) error {
-	if raw := sub["regex_filter"]; len(raw) > 0 && string(raw) != "null" {
-		var text string
-		if json.Unmarshal(raw, &text) != nil {
+
+// subscriptionChecks are the members validated as sent.
+type subscriptionChecks struct {
+	RegexFilter jsondecode.Member[string]          `json:"regex_filter"`
+	Interval    jsondecode.Member[json.RawMessage] `json:"interval"`
+}
+
+func validateOptions(sub *subscriptionFields) error {
+	data, err := sub.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	var sent subscriptionChecks
+	if err := jsondecode.Unmarshal(data, &sent); err != nil {
+		return err
+	}
+	if !sent.RegexFilter.Null() {
+		if !sent.RegexFilter.OK {
 			return errors.New(msgFilterType)
 		}
-		if message := subs.ValidateFilter(text); message != "" {
+		if message := subs.ValidateFilter(sent.RegexFilter.Value); message != "" {
 			return errors.New(message)
 		}
 	}
-	if raw, ok := sub["interval"]; ok {
-		_, err := refresh.ParseInterval(raw, "")
+	if sent.Interval.Present() {
+		_, err := refresh.ParseInterval(sent.Interval.Raw, "")
 		return err
 	}
 	return nil
 }
-func initialize(sub object) error {
-	var fields model.Fields
-	if err := native(sub, &fields); err != nil {
-		return err
-	}
-	if err := check.InitProviderHealth(&fields); err != nil {
-		return err
-	}
-	return native(fields, &sub)
-}
-func filter(sub object, nodes []object) ([]object, error) {
-	source, err := subscription(sub)
-	if err != nil {
-		return nil, err
-	}
+func initialize(sub *subscriptionFields) error { return check.InitProviderHealth(&sub.Fields) }
+func filter(sub model.Subscription, nodes []proxy) ([]proxy, error) {
+	source := sub
 	graphs, err := proxyNodes(nodes)
 	if err != nil {
 		return nil, err
@@ -221,7 +199,7 @@ func readCache(ctx context.Context, id string, summary bool) (*cache, error) {
 		return nil, errors.New("cached nodes must be an array of node objects")
 	}
 	if summary && v.NodesDamaged() {
-		var fields object
+		var fields proxy
 		if err := json.Unmarshal(data, &fields); err != nil {
 			return nil, err
 		}
@@ -272,11 +250,8 @@ func forgetSubscription(ctx context.Context, id string) error {
 	_, err := substore.DeleteSubscriptionCache(ctx, id)
 	return err
 }
-func refreshSubscription(ctx context.Context, sub object) ([]object, *cache, error) {
-	source, err := subscription(sub)
-	if err != nil {
-		return nil, nil, err
-	}
+func refreshSubscription(ctx context.Context, sub model.Subscription) ([]proxy, *cache, error) {
+	source := sub
 	nodes, _, payload, err := refresh.RefreshSource(ctx, source, "manual")
 	if err != nil {
 		return nil, nil, err
@@ -289,12 +264,12 @@ func refreshSubscription(ctx context.Context, sub object) ([]object, *cache, err
 	err = native(payload, &c)
 	return list, &c, err
 }
-func reorder(current []object, body object) ([]object, []string, error) {
-	ids, err := rules.OrderIDs(body, "subscriptions")
+func reorder(current []model.Subscription, body json.RawMessage) ([]model.Subscription, []string, error) {
+	request, err := rules.DecodeOrder(body, "subscriptions")
 	if err != nil {
 		return nil, nil, httpx.BadRequest(err.Error())
 	}
-	out, missing := rules.Reorder(current, ids, position(body), func(item object) string { return item.text("id") })
+	out, missing := rules.Reorder(current, request.IDs, request.Position, func(item model.Subscription) string { return item.ID })
 	return out, missing, nil
 }
 func authorize(c *httpx.Ctx) (*httpx.Response, error) {
@@ -319,7 +294,7 @@ type delivery struct {
 }
 type staged struct{ updates []provider.CacheWrite }
 
-func resource(ctx context.Context, id *string) (*delivery, []object, error) {
+func resource(ctx context.Context, id *string) (*delivery, []model.Subscription, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -340,8 +315,7 @@ func resource(ctx context.Context, id *string) (*delivery, []object, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	list, err := objects(config.Subscriptions)
-	return &delivery{config: config, head: head, profileID: profileID}, list, err
+	return &delivery{config: config, head: head, profileID: profileID}, config.Subscriptions, nil
 }
 func (d *delivery) capture(ctx context.Context) error {
 	main, err := convert.MihomoDocument(ctx, d.config, convert.MihomoOptions{SkipProviderPreflight: true})
@@ -353,18 +327,15 @@ func (d *delivery) capture(ctx context.Context) error {
 	return err
 }
 func (d *delivery) hasChains() (bool, error) { return d.snapshot.HasChains() }
-func (d *delivery) validate(proxies []object, name *string) error {
+func (d *delivery) validate(proxies []proxy, name *string) error {
 	nodes, err := proxyNodes(proxies)
 	if err != nil {
 		return err
 	}
 	return d.snapshot.Validate(nodes, false, name)
 }
-func (d *delivery) adapt(ctx context.Context, sub object, proxies []object, chains bool) ([]object, error) {
-	source, err := subscription(sub)
-	if err != nil {
-		return nil, err
-	}
+func (d *delivery) adapt(ctx context.Context, sub model.Subscription, proxies []proxy, chains bool) ([]proxy, error) {
+	source := sub
 	nodes, err := proxyNodes(proxies)
 	if err != nil {
 		return nil, err
@@ -375,30 +346,24 @@ func (d *delivery) adapt(ctx context.Context, sub object, proxies []object, chai
 	}
 	return proxyObjects(out)
 }
-func fetchRaw(ctx context.Context, sub object) ([]object, *refresh.SourceResult, error) {
-	source, err := subscription(sub)
-	if err != nil {
-		return nil, nil, err
-	}
+func fetchRaw(ctx context.Context, sub model.Subscription) ([]proxy, *refresh.SourceResult, error) {
+	source := sub
 	result, err := refresh.FetchSource(ctx, source, provider.DefaultDeliveryEnv().Fetch)
 	if err != nil {
 		return nil, nil, err
 	}
-	proxies, err := provider.ParseNodes(result.Text, sub.text("name"), "")
+	proxies, err := provider.ParseNodes(result.Text, sub.Name, "")
 	if err != nil {
 		return nil, nil, err
 	}
 	list, err := proxyObjects(proxies)
 	return list, result, err
 }
-func stageNodes(sub object, proxies []object, result *refresh.SourceResult, withIdentity bool) (staged, error) {
+func stageNodes(sub model.Subscription, proxies []proxy, result *refresh.SourceResult, withIdentity bool) (staged, error) {
 	if len(proxies) == 0 || result.Source == "cache" {
 		return staged{}, nil
 	}
-	source, err := subscription(sub)
-	if err != nil {
-		return staged{}, err
-	}
+	source := sub
 	graphs, err := proxyNodes(proxies)
 	if err != nil {
 		return staged{}, err
@@ -433,7 +398,7 @@ func commitStaged(ctx context.Context, updates []staged) error {
 	}
 	return provider.CommitWrites(ctx, all)
 }
-func cachedProxies(ctx context.Context, sub object, nodes []object, strict bool) ([]object, error) {
+func cachedProxies(ctx context.Context, sub model.Subscription, nodes []proxy, strict bool) ([]proxy, error) {
 	var typed []model.Node
 	if err := native(nodes, &typed); err != nil {
 		return nil, err
@@ -441,10 +406,7 @@ func cachedProxies(ctx context.Context, sub object, nodes []object, strict bool)
 	if err := convert.ConfigShapes(&model.Config{Nodes: typed}, false); err != nil {
 		return nil, convert.DialerFailure(err)
 	}
-	source, err := subscription(sub)
-	if err != nil {
-		return nil, err
-	}
+	source := sub
 	out := []*yamlx.Node{}
 	skipped := 0
 	for index, item := range subs.FilterNodes(source, typed) {
@@ -478,7 +440,7 @@ func cachedProxies(ctx context.Context, sub object, nodes []object, strict bool)
 	}
 	return proxyObjects(out)
 }
-func alternative(format string, proxies []object) (string, error) {
+func alternative(format string, proxies []proxy) (string, error) {
 	nodes, err := proxyNodes(proxies)
 	if err != nil {
 		return "", err
@@ -486,20 +448,16 @@ func alternative(format string, proxies []object) (string, error) {
 	return convert.ClientProxyText(nodes, substore.ProxyNodes, format)
 }
 func requestedFilters(c *httpx.Ctx) (*[2]string, error) { return provider.RequestedFilters(c) }
-func filterResponse(proxies []object, filters *[2]string) ([]object, error) {
+func filterResponse(proxies []proxy, filters *[2]string) ([]proxy, error) {
 	if filters == nil {
 		return proxies, nil
 	}
-	return rules.Filter(proxies, &filters[0], &filters[1], func(item object) string { return item.text("name") })
+	return rules.Filter(proxies, &filters[0], &filters[1], func(item proxy) string { return item.text("name") })
 }
-func (d *delivery) validateBundle(ctx context.Context, sub object, prepared map[string][]object, combined []object) error {
+func (d *delivery) validateBundle(ctx context.Context, sub *model.Subscription, prepared map[string][]proxy, combined []proxy) error {
 	opts := provider.DeliveryOptions{Prepared: map[string]*provider.Artifact{}}
 	if sub != nil {
-		o, err := subscription(sub)
-		if err != nil {
-			return err
-		}
-		opts.Requested = &provider.BundleRequest{Kind: "subscription", Subscription: &o}
+		opts.Requested = &provider.BundleRequest{Kind: "subscription", Subscription: sub}
 	}
 	for name, proxies := range prepared {
 		content, err := yamlContent(proxies)
@@ -538,12 +496,8 @@ func (d *delivery) validateBundle(ctx context.Context, sub object, prepared map[
 	_, err := provider.PrepareBundle(ctx, d.config, main, opts)
 	return err
 }
-func (d *delivery) chainedContent(ctx context.Context, sub object, format string) (string, error) {
-	o, err := subscription(sub)
-	if err != nil {
-		return "", err
-	}
-	bundle, err := provider.PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &o}})
+func (d *delivery) chainedContent(ctx context.Context, sub model.Subscription, format string) (string, error) {
+	bundle, err := provider.PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &sub}})
 	if err != nil {
 		return "", err
 	}
@@ -557,7 +511,7 @@ func (d *delivery) chainedContent(ctx context.Context, sub object, format string
 	content := ""
 	found := false
 	for _, item := range bundle {
-		if item.Name == sub.text("name") {
+		if item.Name == sub.Name {
 			content = item.Content
 			found = true
 			break
@@ -589,11 +543,4 @@ func logProviderFailure(ctx context.Context, err error) {
 		return
 	}
 	logx.Get("backend.routes.subscriptions").Error(msgProviderFailed + ": " + weburl.SafeErrorDetails(err))
-}
-
-func position(body object) string {
-	if _, present := body["position"]; !present {
-		return "top"
-	}
-	return body.text("position")
 }

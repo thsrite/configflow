@@ -2,6 +2,7 @@ package subscriptions
 
 import (
 	"bytes"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,8 +26,8 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	node := func(name, source string) object {
-		o := object{}
+	node := func(name, source string) proxy {
+		o := proxy{}
 		o.set("name", name)
 		if source != "" {
 			o.set("proxy_string", source)
@@ -37,13 +38,13 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 		}
 		return o
 	}
-	nodes := []object{
+	nodes := []proxy{
 		node("good", ""),
 		node("private-node-a", "type: ss\npassword: fixture-secret-value\nx: &x [*x]"),
 		node("private-node-b", "type: ss\npassword: fixture-secret-value\nx: !!bool fixture-secret-value"),
 		node("other", ""),
 	}
-	got, err := cachedProxies(context.Background(), object{}, nodes, false)
+	got, err := cachedProxies(context.Background(), model.Subscription{}, nodes, false)
 	if err != nil || len(got) != 2 || got[0].text("name") != "good" || got[1].text("name") != "other" {
 		t.Fatalf("lenient: %v %v", got, err)
 	}
@@ -58,7 +59,7 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 		}
 	}
 	logs.Reset()
-	got, err = cachedProxies(context.Background(), object{}, nodes, true)
+	got, err = cachedProxies(context.Background(), model.Subscription{}, nodes, true)
 	var yamlError *convert.ProxyYAMLError
 	if got != nil || !errors.As(err, &yamlError) || !referenceError(err) {
 		t.Fatalf("strict validation: %v %v", got, err)
@@ -69,14 +70,12 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 }
 
 func TestStagedIdentityComesFromNodeOwnerNotProtocolParameters(t *testing.T) {
-	source := object{}
-	source.set("id", "s")
-	source.set("name", "Synthetic")
-	proxy := object{}
+	source := model.Subscription{ID: "s", Name: "Synthetic"}
+	item := proxy{}
 	for key, value := range map[string]any{"id": "upstream-protocol-id", "name": "Remote", "type": "http", "server": "example.com", "port": 80} {
-		proxy.set(key, value)
+		item.set(key, value)
 	}
-	update, err := stageNodes(source, []object{proxy}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
+	update, err := stageNodes(source, []proxy{item}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,3 +98,5 @@ func TestStagedIdentityComesFromNodeOwnerNotProtocolParameters(t *testing.T) {
 		t.Fatalf("protocol parameter was lost: %s", raw)
 	}
 }
+
+func (o proxy) set(key string, value any) { o[key], _ = json.Marshal(value) }
