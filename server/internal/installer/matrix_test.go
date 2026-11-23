@@ -288,7 +288,7 @@ func renderCase(fn string, k kwargs) (string, error) {
 }
 
 func errorText(err error) string {
-	var v *ValueError
+	var v *ValidationError
 	if errors.As(err, &v) {
 		return "ValueError: " + v.Message
 	}

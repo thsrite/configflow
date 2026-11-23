@@ -280,8 +280,9 @@ interchange). Read `repository.go`, `scope.go`, `hooks.go` doc comments before u
   `GetDefaultOxidnsSettings`, `ValidateDocument`, `ValidateProfileID`, field lists (`ProfileFields`,
   `SharedFields`, …).
 - Errors: `*repo.Error{Kind, Message, Usages}`; `errors.Is` with `ErrRepository`, `ErrValidation`,
-  `ErrNotFound`, `ErrExists`, `ErrInUse`, `ErrNodeDeletionChanged`, `ErrRuleLibraryCreationUncertain`;
-  `NewInUse`, `NewValidationError`, `UsagesOf`, `IsValueError`. Store failures stay `*store.Error`.
+  `ErrNotFound`, `ErrExists`, `ErrInUse`, `ErrNodeDeletionChanged`, `ErrRuleLibraryCreationUncertain`,
+  `ErrRejected` (validation, exists, in use: answered as a client error); `*MissingError`;
+  `NewInUse`, `NewValidationError`, `UsagesOf`. Store failures stay `*store.Error`.
 - **Hooks** (`repo.RegisterHooks(repo.Hooks{…})` at wiring time; no-op or fail-closed defaults):
   `JobLock` (router job lock inside the commit, #37), `ConfigurationCommitted` (WebDAV auto-backup, #17),
   `PlanNodeDeletion` (#15), `SanitizeExternalPayload` / `RedactOxidnsSettings` / `RedactRouters` /

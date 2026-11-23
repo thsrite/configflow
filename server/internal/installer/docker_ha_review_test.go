@@ -53,8 +53,8 @@ func TestReviewIssueWithoutAgentIPIsAKeyError(t *testing.T) {
 	body := reviewBody()
 	delete(body, "agent_ip")
 	_, err := IssueEnrollment(context.Background(), t.TempDir(), body, "default")
-	var te *TypeError
+	var te *RenderError
 	if !errors.As(err, &te) {
-		t.Fatalf("want a non-ValueError, got %v", err)
+		t.Fatalf("want a non-ValidationError, got %v", err)
 	}
 }

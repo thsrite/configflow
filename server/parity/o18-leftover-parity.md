@@ -53,7 +53,7 @@
   请求变成 400。唯一差异：畸形 struct 标签不再按 v1 的「前缀 + 大小写不敏感」读取（代码库里没有）。
 - T4：`HelperError` 和类名字符串删除；仍在产生的两处 KeyError 换成 `*MissingError{Kind: ErrUnknownRootKind/ErrMissingLibraryRule}`（文本不变）。
   `repo.IsValueError` 换成哨兵 `repo.ErrRejected` + `errors.Is`（16 处），`upgrades.IsValueError` → `IsRefused`，
-  `isPythonValueError` → `isRefusal`。状态码与中文文案不变。（`installer.ValueError`/`agents.ValueError` 类型名未动。）
+  `isPythonValueError` → `isRefusal`。状态码与中文文案不变。`installer.ValueError`/`TypeError` 别名删除（用 `ValidationError`/`RenderError`），`agents.ValueError` 改名 `agents.ValidationError`（batch-41 复核）。
 
 ---
 

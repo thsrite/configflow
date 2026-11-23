@@ -49,7 +49,7 @@ func dockerHABody(c *httpx.Ctx, allowCheck bool) (json.RawMessage, error) {
 		if len(raw) > 16384 {
 			return nil, &installer.EnrollmentError{Message: dockerHABodyTooLarge, Status: 413}
 		}
-		return nil, &installer.ValueError{Message: dockerHANeedsObject}
+		return nil, &installer.ValidationError{Message: dockerHANeedsObject}
 	}
 	isObject := object != nil
 	var action string
@@ -58,14 +58,14 @@ func dockerHABody(c *httpx.Ctx, allowCheck bool) (json.RawMessage, error) {
 		return nil, &installer.EnrollmentError{Message: dockerHABodyTooLarge, Status: 413}
 	}
 	if !isObject {
-		return nil, &installer.ValueError{Message: dockerHANeedsObject}
+		return nil, &installer.ValidationError{Message: dockerHANeedsObject}
 	}
 	return json.Marshal(object)
 }
 
 // isRefusal reports whether err refuses the request (answered with 400).
 func isRefusal(err error) bool {
-	var ve *installer.ValueError
+	var ve *installer.ValidationError
 	var conflict *agents.DeploymentConflict
 	return errors.As(err, &ve) || errors.As(err, &conflict) || errors.Is(err, repo.ErrRejected)
 }
@@ -154,7 +154,7 @@ func dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		if len(all) != 0 {
-			return nil, &installer.ValueError{Message: dockerHAEnrollmentNoBody}
+			return nil, &installer.ValidationError{Message: dockerHAEnrollmentNoBody}
 		}
 		ctx := c.Context()
 		repository, err := repo.GetRepository(ctx)

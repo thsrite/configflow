@@ -67,7 +67,7 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 		output, err := func() (out string, err error) {
 			defer func() {
 				if r := recover(); r != nil {
-					err = &ValueError{Message: fmt.Sprintf("panic: %v", r)}
+					err = &ValidationError{Message: fmt.Sprintf("panic: %v", r)}
 				}
 			}()
 			return renderCase(fn, k)

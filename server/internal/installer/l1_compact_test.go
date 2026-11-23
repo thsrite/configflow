@@ -18,13 +18,13 @@ func l1CompactGeneration(request map[string]any) bool {
 // L1 D1 is an explicit Python bug fix. Accept only the new exact refusal for
 // compact generation with a colon in its data path; never waive other errors.
 func l1CompactColonRefusal(request map[string]any, err error) bool {
-	var ve *ValueError
+	var ve *ValidationError
 	return l1CompactGeneration(request) &&
 		strings.Contains(mapStr(request, "data_dir"), ":") && errors.As(err, &ve) && ve.Message == l1CompactPathMessage
 }
 
 func l1CompactPathWording(request map[string]any, prior []any, err error) bool {
-	var ve *ValueError
+	var ve *ValidationError
 	return l1CompactGeneration(request) && len(prior) >= 2 && prior[0] == "ValueError" &&
 		prior[1] == l1OldCompactPathMessage && errors.As(err, &ve) && ve.Message == l1CompactPathMessage
 }

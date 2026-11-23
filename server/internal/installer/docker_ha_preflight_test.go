@@ -140,7 +140,7 @@ func TestParserRejectsWrongTypeEncodingOrOversizedInput(t *testing.T) {
 	for _, output := range []any{nil, []any{}, "\xed\xa0\x80", strings.Repeat("x", PreflightMaxOutputBytes+1)} {
 		if _, err := ParsePreflightReport(output, "host"); err == nil {
 			t.Errorf("%.40v accepted", output)
-		} else if _, ok := err.(*ValueError); !ok {
+		} else if _, ok := err.(*ValidationError); !ok {
 			t.Errorf("%T", err)
 		}
 	}

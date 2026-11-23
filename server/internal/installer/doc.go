@@ -21,9 +21,3 @@ type RenderError struct{ Message string }
 
 func (e *RenderError) Error() string { return e.Message }
 func typeError(message string) error { return &RenderError{Message: message} }
-
-// ValueError is the compatibility name for ValidationError used by API binders.
-type ValueError = ValidationError
-
-// TypeError is the compatibility name for RenderError used by API binders.
-type TypeError = RenderError

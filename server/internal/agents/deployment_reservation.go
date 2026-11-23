@@ -70,7 +70,7 @@ func (m *Manager) ReserveDeployment(ctx context.Context, agentID, id string) (*D
 		return nil, err
 	}
 	if !deploymentIDPattern.MatchString(id) {
-		return nil, &ValueError{Message: msgInvalidDeploymentID}
+		return nil, &ValidationError{Message: msgInvalidDeploymentID}
 	}
 	key := [2]string{agentID, id}
 	var lease *preparationLease

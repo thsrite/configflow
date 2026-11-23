@@ -154,7 +154,7 @@ func compareOutcome(entry map[string]any, got any, err error) (string, string) {
 			return "error", fmt.Sprintf("python raised %s %q, go answered %s", class, message, canonical(got))
 		}
 		var ee *EnrollmentError
-		var ve *ValueError
+		var ve *ValidationError
 		switch {
 		case errors.As(err, &ee):
 			status := -1
@@ -167,7 +167,7 @@ func compareOutcome(entry map[string]any, got any, err error) (string, string) {
 			}
 		case errors.As(err, &ve) || errors.Is(err, repo.ErrRejected):
 			if !isValue || class == "EnrollmentError" || message != err.Error() {
-				return "error", fmt.Sprintf("python %s %q, go ValueError %q", class, message, err.Error())
+				return "error", fmt.Sprintf("python %s %q, go ValidationError %q", class, message, err.Error())
 			}
 		default:
 			if isValue {
@@ -201,7 +201,7 @@ func replayRecorded(t *testing.T, entry map[string]any) (string, string) {
 			// trailing "\n" passes Python's re.match(r'^https?://[^\s]+$').
 			if server, isString := mapGetOr(request, "server_url", nil).(string); isString && strings.HasSuffix(server, "\n") && isServerURL(strings.TrimSuffix(server, "\n")) {
 				_, err := GenerateGuide(args[0], nil)
-				var ve *ValueError
+				var ve *ValidationError
 				if errors.As(err, &ve) && ve.Message == "请填写完整的 ConfigFlow HTTP(S) 地址" {
 					return "deliberate (server_url + \"\\n\")", ""
 				}
@@ -451,7 +451,7 @@ func (m *recordedManager) EditAgents(ctx context.Context, profileID string, edit
 		pyErr := mapList(m.record, "err")
 		message, _ := pyErr[1].(string)
 		if isValue, _ := pyErr[2].(bool); isValue {
-			return &ValueError{Message: message}
+			return &ValidationError{Message: message}
 		}
 		return errors.New(message)
 	}
@@ -543,7 +543,7 @@ func replayIO(t *testing.T, entry map[string]any) (string, string) {
 		// not a string is echoed by Python; Go refuses it (500).
 		if out, isObject := entry["out"].(map[string]any); isObject {
 			if _, isString := mapGetOr(out, "token", nil).(string); !isString {
-				var te *TypeError
+				var te *RenderError
 				if errors.As(err, &te) {
 					return "accepted (non-str session token)", clock.problem
 				}

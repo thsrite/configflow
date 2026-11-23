@@ -258,7 +258,7 @@ func clientDiscoveryToggle(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	record, err := (clientTools{}).SetDiscovery(c.Context(), c.Param("agent_id"), string(enabled) == "true")
 	if err != nil {
-		var value *registry.ValueError
+		var value *registry.ValidationError
 		var conflict *registry.DeploymentConflict
 		if errors.As(err, &value) {
 			return httpx.Message(400, false, err.Error()), nil

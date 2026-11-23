@@ -60,7 +60,7 @@ func replayGenerator(row map[string]any, digestBundle bool) (string, string) {
 	case "generate_compact":
 		text, info, err = GenerateCompact(params, request, enrollment)
 		if strings.Contains(mapStr(params, "data_dir"), ":") && err != nil && text == "" && info == nil {
-			var ve *ValueError
+			var ve *ValidationError
 			if errors.As(err, &ve) && ve.Message == l1CompactPathMessage {
 				return "deliberate (L1 D1 compact colon)", ""
 			}

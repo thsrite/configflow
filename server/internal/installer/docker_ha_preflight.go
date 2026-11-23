@@ -320,7 +320,7 @@ type preflightValue struct {
 }
 
 // preflightDecode is _decode(output): the fields, or the reason the output
-// cannot be judged; a *ValueError for a wrong type, encoding or size.
+// cannot be judged; a *ValidationError for a wrong type, encoding or size.
 func preflightDecode(output any) (map[string]preflightValue, string, error) {
 	text, isString := output.(string)
 	if !isString {

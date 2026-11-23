@@ -201,7 +201,7 @@ func publicOwnerError(err error) error {
 	if errors.As(err, &m) {
 		return &Error{Message: m.Message, Status: m.Status, Cause: err}
 	}
-	var iv *installer.ValueError
+	var iv *installer.ValidationError
 	if errors.As(err, &iv) {
 		return &Error{Message: iv.Error(), Status: 400, Cause: err}
 	}

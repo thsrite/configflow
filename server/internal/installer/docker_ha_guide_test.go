@@ -92,8 +92,8 @@ func wantGuideValueError(t *testing.T, request any) {
 	t.Helper()
 	if _, err := GenerateGuide(request, nil); err == nil {
 		t.Errorf("no error for %v", request)
-	} else if _, ok := err.(*ValueError); !ok {
-		t.Errorf("%v: %T %v, want ValueError", request, err, err)
+	} else if _, ok := err.(*ValidationError); !ok {
+		t.Errorf("%v: %T %v, want ValidationError", request, err, err)
 	}
 }
 
@@ -160,7 +160,7 @@ func TestIdentityRejectsNonpersistentAmbiguousPaths(t *testing.T) {
 	for _, path := range []string{"relative", "/", "/a/../b", "/a//b", "/a,id", "/a:id", "/a\nid"} {
 		if _, err := IdentityCommand(path); err == nil {
 			t.Errorf("%q accepted", path)
-		} else if _, ok := err.(*ValueError); !ok {
+		} else if _, ok := err.(*ValidationError); !ok {
 			t.Errorf("%q: %T", path, err)
 		}
 	}

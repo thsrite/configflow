@@ -85,10 +85,10 @@ const LegacyShellAgentRemoved = "旧版 Shell Agent（agent_type=shell）已停�
 
 func requireGoAgent(agentType string) error {
 	if agentType == "shell" {
-		return &installer.ValueError{Message: LegacyShellAgentRemoved}
+		return &installer.ValidationError{Message: LegacyShellAgentRemoved}
 	}
 	if agentType != "go" {
-		return &installer.ValueError{Message: "agent_type 只支持 go"}
+		return &installer.ValidationError{Message: "agent_type 只支持 go"}
 	}
 	return nil
 }
@@ -149,7 +149,7 @@ func paramInt(p installParams, name string, def int64) *big.Int {
 
 // installCommandParams is _install_command_params(payload).
 func installCommandParams(payload json.RawMessage) (mapParams, error) {
-	invalid := &installer.ValueError{Message: "安装参数无效，请重新生成命令。"}
+	invalid := &installer.ValidationError{Message: "安装参数无效，请重新生成命令。"}
 	var object model.Fields
 	if err := jsondecode.Unmarshal(payload, &object); err != nil {
 		return nil, invalid
@@ -165,7 +165,7 @@ func installCommandParams(payload json.RawMessage) (mapParams, error) {
 		case installCommandBooleans[key]:
 			var b bool
 			if string(raw) == "null" || jsondecode.Unmarshal(raw, &b) != nil {
-				return nil, &installer.ValueError{Message: key + " 必须为 true 或 false"}
+				return nil, &installer.ValidationError{Message: key + " 必须为 true 或 false"}
 			}
 			params[key] = "false"
 			if b {
@@ -174,17 +174,17 @@ func installCommandParams(payload json.RawMessage) (mapParams, error) {
 		case installCommandNumbers[key]:
 			var n json.Number
 			if len(raw) == 0 || raw[0] == '"' || jsondecode.Unmarshal(raw, &n) != nil || strings.ContainsAny(string(n), ".eE") {
-				return nil, &installer.ValueError{Message: key + " 必须是 1 到 65535 之间的整数"}
+				return nil, &installer.ValidationError{Message: key + " 必须是 1 到 65535 之间的整数"}
 			}
 			v, ok := new(big.Int).SetString(string(n), 10)
 			if !ok || v.Cmp(big.NewInt(1)) < 0 || v.Cmp(big.NewInt(65535)) > 0 {
-				return nil, &installer.ValueError{Message: key + " 必须是 1 到 65535 之间的整数"}
+				return nil, &installer.ValidationError{Message: key + " 必须是 1 到 65535 之间的整数"}
 			}
 			params[key] = v.String()
 		default:
 			var text string
 			if len(raw) == 0 || raw[0] != '"' || jsondecode.Unmarshal(raw, &text) != nil || utf8.RuneCountInString(text) > 4096 || strings.ContainsRune(text, 0) {
-				return nil, &installer.ValueError{Message: key + " 参数无效"}
+				return nil, &installer.ValidationError{Message: key + " 参数无效"}
 			}
 			params[key] = text
 		}
@@ -208,7 +208,7 @@ func valueErrorResponse(err error) *httpx.Response {
 func installScriptResponse(c *httpx.Ctx, params installParams) (string, *httpx.Response) {
 	script, err := renderInstallScript(c, params)
 	if err != nil {
-		var valueErr *installer.ValueError
+		var valueErr *installer.ValidationError
 		if errors.As(err, &valueErr) {
 			return "", valueErrorResponse(err)
 		}
@@ -247,20 +247,20 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	}
 	installCoreValue := paramDefault(params, "install_core", "false")
 	if installCoreValue != "true" && installCoreValue != "false" {
-		return "", &installer.ValueError{Message: "install_core 必须为 true 或 false"}
+		return "", &installer.ValidationError{Message: "install_core 必须为 true 或 false"}
 	}
 	installCore := installCoreValue == "true"
 	prepareHAValue, prepareHASet := params.get("prepare_dns_ha")
 	if prepareHASet && prepareHAValue != "true" && prepareHAValue != "false" {
-		return "", &installer.ValueError{Message: "prepare_dns_ha 必须为 true 或 false"}
+		return "", &installer.ValidationError{Message: "prepare_dns_ha 必须为 true 或 false"}
 	}
 	if prepareHASet && (serviceType != "oxidns" || agentType != "go") {
-		return "", &installer.ValueError{Message: "仅 OxiDNS 单服务 Go Agent 支持准备 DNS 高可用环境"}
+		return "", &installer.ValidationError{Message: "仅 OxiDNS 单服务 Go Agent 支持准备 DNS 高可用环境"}
 	}
 	prepareDNSHA := prepareHAValue == "true"
 	if installCore {
 		if (serviceType != "mihomo" && serviceType != "oxidns" && serviceType != "aio") || agentType != "go" {
-			return "", &installer.ValueError{Message: "仅 Mihomo、OxiDNS 或同机双服务 Go Agent 支持同时安装核心"}
+			return "", &installer.ValidationError{Message: "仅 Mihomo、OxiDNS 或同机双服务 Go Agent 支持同时安装核心"}
 		}
 		// Strict validation instead of Flask's integer converter silently
 		// replacing an invalid explicit value with the default.
@@ -277,10 +277,10 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	}
 	forwardingValue, forwardingSet := params.get("ipv4_forwarding")
 	if forwardingSet && forwardingValue != "true" && forwardingValue != "false" {
-		return "", &installer.ValueError{Message: "ipv4_forwarding 必须为 true 或 false"}
+		return "", &installer.ValidationError{Message: "ipv4_forwarding 必须为 true 或 false"}
 	}
 	if forwardingSet && (serviceType != "mihomo" || agentType != "go") {
-		return "", &installer.ValueError{Message: "仅 Mihomo 单独安装（Go Agent）可设置 IPv4 转发"}
+		return "", &installer.ValidationError{Message: "仅 Mihomo 单独安装（Go Agent）可设置 IPv4 转发"}
 	}
 	manageForwarding := installer.ForwardingAuto
 	if forwardingSet {
@@ -503,7 +503,7 @@ func dockerOptions(c *httpx.Ctx) installer.DockerInstallOptions {
 
 func dockerResponse(text string, err error, contentType string) *httpx.Response {
 	if err != nil {
-		var valueErr *installer.ValueError
+		var valueErr *installer.ValidationError
 		if errors.As(err, &valueErr) {
 			return failure(400, err.Error())
 		}

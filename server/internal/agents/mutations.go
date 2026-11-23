@@ -237,9 +237,9 @@ func (m *Manager) setAgentSwitch(ctx context.Context, id string, enabled, traffi
 		}
 		if enabled && a.ServiceType != "mihomo" {
 			if traffic {
-				return &ValueError{Message: msgTrafficHistoryMihomo}
+				return &ValidationError{Message: msgTrafficHistoryMihomo}
 			}
-			return &ValueError{Message: msgDomainDiscoveryMihomo}
+			return &ValidationError{Message: msgDomainDiscoveryMihomo}
 		}
 		if traffic {
 			if enabled && (a.TrafficHistoryEnabled == nil || !*a.TrafficHistoryEnabled) {

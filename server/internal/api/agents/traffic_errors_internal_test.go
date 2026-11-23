@@ -19,7 +19,7 @@ func TestSetTrafficHistoryErrorsFollowPythonExceptOrder(t *testing.T) {
 		err  error
 		want map[string]any
 	}{
-		{"value error", &agents.ValueError{Message: "流量记录只支持 mihomo Agent"}, map[string]any{"success": false, "message": "流量记录只支持 mihomo Agent"}},
+		{"value error", &agents.ValidationError{Message: "流量记录只支持 mihomo Agent"}, map[string]any{"success": false, "message": "流量记录只支持 mihomo Agent"}},
 		{"deployment conflict", &agents.DeploymentConflict{Message: "不能在配置事务中再次开启写事务"}, map[string]any{"success": false, "message": "不能在配置事务中再次开启写事务"}},
 		{"repository in use", repo.NewInUse("路由器正在发布或同步，不能替换连接或删除记录，请稍后重试", nil), map[string]any{"success": false, "message": "路由器正在发布或同步，不能替换连接或删除记录，请稍后重试"}},
 		{"repository validation", repo.NewValidationError("系统设置和备份设置必须是对象"), map[string]any{"success": false, "message": "系统设置和备份设置必须是对象"}},

@@ -23,7 +23,7 @@ func singleTrailingNewline(value any) bool {
 // deliberateAgentNameFix reports whether err is Go's refusal of an Agent
 // name with one trailing "\n" found under one of keys in object.
 func deliberateAgentNameFix(object map[string]any, err error, keys ...string) bool {
-	ve, isValue := err.(*ValueError)
+	ve, isValue := err.(*ValidationError)
 	if !isValue || ve.Message != invalidAgentNameMessage {
 		return false
 	}

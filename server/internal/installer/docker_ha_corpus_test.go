@@ -54,7 +54,7 @@ func digestOf(t *testing.T, v any) string {
 // pythonClassOf tells how the routes treat err: "value" (ValueError, 400)
 // or "other" (500).
 func pythonClassOf(err error) (string, string) {
-	var ve *ValueError
+	var ve *ValidationError
 	var ee *EnrollmentError
 	switch {
 	case errors.As(err, &ve):
@@ -242,7 +242,7 @@ const invalidServerMessage = "请填写完整的 ConfigFlow HTTP(S) 地址"
 func deliberateServerURLFix(input map[string]any, err error) bool {
 	request, _ := input["request"].(map[string]any)
 	server, _ := mapGetOr(request, "server_url", nil).(string)
-	ve, isValue := err.(*ValueError)
+	ve, isValue := err.(*ValidationError)
 	return strings.HasSuffix(server, "\n") && !strings.HasSuffix(server, "\n\n") && isValue && ve.Message == invalidServerMessage
 }
 
@@ -267,7 +267,7 @@ func TestServerURLTrailingNewlineIsRefused(t *testing.T) {
 		for _, mode := range []string{"new", "migrate"} {
 			request["mode"] = mode
 			_, err := GenerateGuide(request, nil)
-			ve, ok := err.(*ValueError)
+			ve, ok := err.(*ValidationError)
 			if !ok || ve.Message != invalidServerMessage {
 				t.Errorf("%q %s: %v", server, mode, err)
 			}

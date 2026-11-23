@@ -125,7 +125,7 @@ func TestPreparationFailureClasses(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{setupflow.ErrInvalidSession, true}, {&PreparationError{}, true}, {&RuleDownloadError{&PreparationError{cause: errors.New("transport")}}, true}, {&Refusal{}, true}, {&rules.StrategyReferenceError{}, true}, {&convert.DialerReferenceError{}, true}, {&convert.BaseSettingsError{}, true}, {&convert.EasyTierSettingsError{}, true}, {&gateway.Error{}, true}, {&oxidns.SettingsError{}, true}, {&oxidns.ValidationError{}, true}, {&oxidns.ReferenceError{}, true}, {&agents.ValueError{}, true}, {&repo.Error{Kind: repo.ErrValidation}, true}, {&repo.Error{Kind: repo.ErrNotFound}, false}, {&convert.CustomConfigYAMLError{}, false}, {&substore.SubscriptionFetchError{}, false}, {context.Canceled, false}, {errors.New("transport"), false},
+		{setupflow.ErrInvalidSession, true}, {&PreparationError{}, true}, {&RuleDownloadError{&PreparationError{cause: errors.New("transport")}}, true}, {&Refusal{}, true}, {&rules.StrategyReferenceError{}, true}, {&convert.DialerReferenceError{}, true}, {&convert.BaseSettingsError{}, true}, {&convert.EasyTierSettingsError{}, true}, {&gateway.Error{}, true}, {&oxidns.SettingsError{}, true}, {&oxidns.ValidationError{}, true}, {&oxidns.ReferenceError{}, true}, {&agents.ValidationError{}, true}, {&repo.Error{Kind: repo.ErrValidation}, true}, {&repo.Error{Kind: repo.ErrNotFound}, false}, {&convert.CustomConfigYAMLError{}, false}, {&substore.SubscriptionFetchError{}, false}, {context.Canceled, false}, {errors.New("transport"), false},
 	}
 	for i, tt := range tests {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {

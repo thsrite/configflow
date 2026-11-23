@@ -60,7 +60,7 @@ func TestNativeAIORejectsConflictingOrInvalidOptions(t *testing.T) {
 	} {
 		if _, err := aioGenerated(t, mutate); err == nil {
 			t.Errorf("case %d accepted", i)
-		} else if _, ok := err.(*ValueError); !ok {
+		} else if _, ok := err.(*ValidationError); !ok {
 			t.Errorf("case %d: %T", i, err)
 		}
 	}

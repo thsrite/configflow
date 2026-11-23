@@ -42,7 +42,7 @@ func TestGatewayInvalidInputRejected(t *testing.T) {
 	} {
 		if _, err := gatewayGenerate(mutate); err == nil {
 			t.Errorf("case %d accepted", i)
-		} else if _, isValue := err.(*ValueError); !isValue {
+		} else if _, isValue := err.(*ValidationError); !isValue {
 			t.Errorf("case %d: %T %v", i, err, err)
 		}
 	}
@@ -893,7 +893,7 @@ func TestAssumedTunPreparationIsOnlyForTheGatewayInstaller(t *testing.T) {
 		mutate(&o)
 		if _, err := RenderAIOInstall(o); err == nil {
 			t.Errorf("case %d accepted", i)
-		} else if _, isValue := err.(*ValueError); !isValue {
+		} else if _, isValue := err.(*ValidationError); !isValue {
 			t.Errorf("case %d: %T", i, err)
 		}
 	}

@@ -27,7 +27,7 @@ const HeartbeatFreshSeconds = 120
 // OxidnsHALocked is OXIDNS_HA_LOCKED.
 const OxidnsHALocked = "DNS 高可用已开启，请先停用 DNS 高可用"
 
-// DeploymentConflict is AgentDeploymentConflict (a ValueError): a binding or
+// DeploymentConflict is AgentDeploymentConflict (refused like a ValidationError): a binding or
 // registration cannot change during an unfinished operation (409).
 type DeploymentConflict struct{ Message string }
 
@@ -39,10 +39,11 @@ type PermissionError struct{}
 
 func (e *PermissionError) Error() string { return "Unauthorized" }
 
-// ValueError retains the validation error name for registry validation errors.
-type ValueError struct{ Message string }
+// ValidationError refuses a registry change or Agent request whose value is
+// invalid (answered as a client error with Message).
+type ValidationError struct{ Message string }
 
-func (e *ValueError) Error() string { return e.Message }
+func (e *ValidationError) Error() string { return e.Message }
 
 var errNothingToSave = errors.New("nothing to save")
 

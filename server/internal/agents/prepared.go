@@ -21,7 +21,7 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 		return err
 	}
 	if proof.ProfileID == "" || proof.ServiceType == "" || hasTypeIssue(issues) {
-		return &ValueError{Message: msgPreparationOwnershipChanged}
+		return &ValidationError{Message: msgPreparationOwnershipChanged}
 	}
 	var validation *model.OxiDNSValidationReceipt
 	if len(receipt) > 0 {
@@ -31,17 +31,17 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 			return err
 		}
 		if hasTypeIssue(issues) {
-			return &ValueError{Message: msgInvalidValidationReceipt}
+			return &ValidationError{Message: msgInvalidValidationReceipt}
 		}
 	}
 	return m.EditAgents(ctx, "", func(tx context.Context, list *[]model.Agent) error {
 		a := registryAgent(*list, agentID)
 		if a == nil {
-			return &ValueError{Message: msgPreparationOwnershipChanged}
+			return &ValidationError{Message: msgPreparationOwnershipChanged}
 		}
 		state, ok := a.Deployments.Get(deploymentID)
 		if !ok {
-			return &ValueError{Message: msgPreparationOwnershipChanged}
+			return &ValidationError{Message: msgPreparationOwnershipChanged}
 		}
 		profile := a.ProfileID
 		if profile == "" {
@@ -52,7 +52,7 @@ func (m *Manager) RememberPreparedContent(ctx context.Context, agentID, deployme
 			}
 		}
 		if state.ProfileID != proof.ProfileID || profile != proof.ProfileID || a.ServiceType != proof.ServiceType || !preparationUnsubmitted(&state) || state.Status != "preparing" {
-			return &ValueError{Message: msgPreparationOwnershipChanged}
+			return &ValidationError{Message: msgPreparationOwnershipChanged}
 		}
 		if err := tx.Err(); err != nil {
 			return err

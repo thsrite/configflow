@@ -258,7 +258,7 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 // branch after it is never reached. Repository validation errors are
 // ValueErrors too; nil leaves the error to the 500 page.
 func setTrafficHistoryError(err error) *httpx.Response {
-	var valueError *agents.ValueError
+	var valueError *agents.ValidationError
 	var conflict *agents.DeploymentConflict
 	switch {
 	case errors.As(err, &valueError):

@@ -813,7 +813,7 @@ func preparationFailure(err error) bool {
 	var validation *oxidns.ValidationError
 	var reference *oxidns.ReferenceError
 	var remote *rulefetch.RemoteRuleValidationError
-	var agent *agents.ValueError
+	var agent *agents.ValidationError
 	var archive *mosdns.ArchiveError
 	var rs *routersplit.ValidationError
 	return errors.Is(err, setupflow.ErrInvalidSession) || errors.As(err, &strategy) || errors.As(err, &base) || errors.As(err, &easy) || errors.As(err, &gatewayErr) || errors.As(err, &split) || errors.As(err, &settings) || errors.As(err, &validation) || errors.As(err, &reference) || errors.As(err, &remote) || errors.As(err, &agent) || errors.As(err, &archive) || errors.Is(err, repo.ErrRejected) || errors.As(err, &rs)

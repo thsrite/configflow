@@ -28,6 +28,6 @@ var ErrInvalidReport = errors.New("Invalid legacy upgrade report")
 func IsRefused(err error) bool {
 	var refusal *ValidationError
 	var conflict *agents.DeploymentConflict
-	var agentValue *agents.ValueError
+	var agentValue *agents.ValidationError
 	return errors.As(err, &refusal) || errors.As(err, &conflict) || errors.As(err, &agentValue) || errors.Is(err, agents.ErrHeaderEncoding) || errors.Is(err, repo.ErrRejected)
 }

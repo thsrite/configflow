@@ -39,7 +39,7 @@ func TestInvalidScopedLinkLifetimesDoNotWriteSnapshots(t *testing.T) {
 		deadline := 100 + delta
 		if _, _, err := s.SaveInstallScript(context.Background(), "#!/bin/sh\nexit 0\n", &deadline); err == nil {
 			t.Errorf("delta %d accepted", delta)
-		} else if _, isValue := err.(*ValueError); !isValue {
+		} else if _, isValue := err.(*ValidationError); !isValue {
 			t.Errorf("delta %d: %T %v", delta, err, err)
 		}
 		if count := snapshotCount(t, s); count != 0 {
