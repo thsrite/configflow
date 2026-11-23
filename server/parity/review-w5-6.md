@@ -89,13 +89,14 @@
   Start 里跑启动步骤又把真调度器注册回来；② 夹具复用前一个测试已 Stop 的进程级 runtime，先跑的 `RunStartup` 看到已关闭的那一代全部跳过。
   结果 Go 在 stage 之后跑了一轮真实 IPv6 验证：经 `GetDeploymentModel` 读设备回复，把部署记录的 `config_version` 写成完整 sha
   （Python 仍是 8 位），并记录任务状态 → 通知异步刷新，快照恰好拍到写事务中的 journal（等写完再比就暴露出 `config_version` 的真实差异）。
-  修复 5f9b21b60：`startGoWith` 按 cmd/configflow 的顺序先 `RunStartup` 再 `beforeStart`、`Start`；该用例像 rulesync 用例一样先换全新进程级 runtime。
-  生产启动步骤不变。连续 5 次通过。
+  最终修法（协调者裁定二选一）：采用 review-w0-8 的 97bc72176（本分支 d7052830b，按合并后的 `registerStartup(rt, sub, m, mt, process)` 结构改写）：
+  `NewApp()` 测试辅助恢复 W1 之前的注册（不含 load-config、agent-manager-init），`server.New` 生产路径不变。我的 5f9b21b60（夹具改顺序 + 换新 runtime）
+  已 revert（e8e4b712a）：它只修了这一个用例，而 NewApp 多注册进程级启动步骤会改变所有 NewApp + `lifecycle.Start` 的夹具语义。
 - **X2** `api/agents.TestHeartbeatReportedHostUsesAddressFollow`（W0 11a1435f5 起失败）：根因是**测试**。W0 把钩子换成真实的
   `upgrades.FollowModel`/`ConfirmedModel`，但共用夹具存的 host 是 `127.0.0.1`、上报的是 `192.0.2.10`——两者不同，FollowModel 会启动
   地址检查后台任务（默认 runtime 被前面测试停掉时 500「runtime is stopping」），ConfirmedModel 也不会回 `confirmed_host`。
   生产行为与 go 相同（go 生产里 `upgrades.Wire` 装的正是这两个函数；关停中的 runtime 上拒绝启动后台任务也是 go 的既有语义）。
-  修复 2f16f9161：测试注册一个存储 host 与上报 host 相同的 Agent；host 不同时的地址检查由 `address_test.go` 覆盖。
+  最终采用 review-w0-8 的 871edc8d8（本分支 be497d687，另含回环地址负对照），我的 2f16f9161 已 revert（d1227c093）。
 
 ## 3. 逐项结论
 
@@ -181,4 +182,4 @@ loop 的 `Done(busy)` 节奏：dnsfollow/dnsha 在 go 上已经是 `s.waker.Done
 
 fce8a0f74、c6dc7ac0c、bba0dfd85、434a0348b、861bf6907（W7/W8 cherry-pick，c6dc7ac0c 含 M1/M3 与组装合并）、
 95fa0754c（注册恰好一次测试）、77366a068（M2）、fccd8b75b（唤醒矩阵测试、L4）、87e44facd（oxidns pyref 重录）、
-ab5f6f4e0（L6），2f16f9161（X2），5f9b21b60（X1），本文件提交见 `git log`。
+ab5f6f4e0（L6）；X1/X2 最终为 d7052830b、be497d687（review-w0-8 的修法），本文件提交见 `git log`。
