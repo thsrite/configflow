@@ -238,11 +238,13 @@ func makeVerdict(status string, region NullableText, reason string, evidence []s
 	}
 }
 
-func formatStatus(code *model.Int) string {
+// httpStatus is "HTTP <code>" for evidence text, or a plain note when the
+// probe got no HTTP response.
+func httpStatus(code *model.Int) string {
 	if code == nil {
-		return "None"
+		return msgNoHTTPResponse
 	}
-	return strconv.FormatInt(int64(*code), 10)
+	return "HTTP " + strconv.FormatInt(int64(*code), 10)
 }
 
 func formatEvidence(entry *RegionResult) string {
@@ -252,7 +254,7 @@ func formatEvidence(entry *RegionResult) string {
 	if entry.Error != "" {
 		return entry.ID + "：" + entry.Error
 	}
-	text := entry.ID + "：HTTP " + formatStatus(entry.Status)
+	text := entry.ID + "：" + httpStatus(entry.Status)
 	if entry.FinalURL != "" && len(entry.Redirects) > 0 {
 		text += " → " + entry.FinalURL
 	}
@@ -673,7 +675,7 @@ func ClassifyDomain(result *RegionResult, originalURL string) (DomainClassificat
 			Detail: detail,
 		}, nil
 	}
-	detail := "HTTP " + formatStatus(result.Status)
+	detail := httpStatus(result.Status)
 	moved := false
 	if result.FinalURL != "" {
 		finalPath, err := splitPath(result.FinalURL)
@@ -697,7 +699,7 @@ func ClassifyDomain(result *RegionResult, originalURL string) (DomainClassificat
 	case hasCode(451):
 		state, detail = "restricted", msgDomain451
 	case block.Valid && block.Value != "" && (hasCode(200) || hasCode(403)):
-		state, detail = "restricted", fmt.Sprintf(msgDomainBlockMarker, formatStatus(result.Status), block.Value)
+		state, detail = "restricted", fmt.Sprintf(msgDomainBlockMarker, httpStatus(result.Status), block.Value)
 	case moved:
 		state, detail = "restricted", fmt.Sprintf(msgDomainMoved, result.FinalURL)
 	case hasCode(403):

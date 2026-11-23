@@ -444,6 +444,7 @@ func TestReferenceCorpus(t *testing.T) {
 			t.Fatalf("row %d: unknown fn %s", i, fn)
 		}
 
+		out = o17PythonNoneStatus(t, out)
 		label := fn + " " + encode(args) + " " + encode(row["kwargs"])
 		if fn == "region_of_name" && strings.ContainsAny(encode(args), "İıſ") {
 			continue

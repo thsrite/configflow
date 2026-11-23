@@ -217,17 +217,17 @@ func installScriptResponse(c *httpx.Ctx, params installParams) (string, *httpx.R
 		serviceType, _ := params.get("type")
 		port, _ := params.get("port")
 		agentType, _ := params.get("agent_type")
-		logger.Errorf("请求参数: name=%s, type=%s, port=%s, agent_type=%s", pyOptional(params, "name", name),
-			pyOptional(params, "type", serviceType), pyOptional(params, "port", port), pyOptional(params, "agent_type", agentType))
+		logger.Errorf("请求参数: name=%s, type=%s, port=%s, agent_type=%s", optionalParam(params, "name", name),
+			optionalParam(params, "type", serviceType), optionalParam(params, "port", port), optionalParam(params, "agent_type", agentType))
 		return "", failure(500, err.Error())
 	}
 	return script, nil
 }
 
-// pyOptional is f'{params.get(name)}': None when absent.
-func pyOptional(params installParams, name, value string) string {
+// optionalParam is value for the log, or "-" when the parameter is absent.
+func optionalParam(params installParams, name, value string) string {
 	if _, ok := params.get(name); !ok {
-		return "None"
+		return "-"
 	}
 	return value
 }

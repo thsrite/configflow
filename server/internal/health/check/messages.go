@@ -35,6 +35,7 @@ const (
 
 	labelUnknownRegion = "未知"
 	msgNoResult        = "没有结果"
+	msgNoHTTPResponse  = "无 HTTP 响应"
 
 	msgOpenAIUnsupported  = "所在地区不受支持"
 	msgOpenAIVPN          = "被识别为代理 / VPN"
@@ -51,7 +52,7 @@ const (
 	msgYouTubeCN          = "识别为中国大陆"
 	msgYouTubeNoRegion    = "页面里没有地区信息"
 	msgDomain451          = "HTTP 451（因法律原因不可用）"
-	msgDomainBlockMarker  = "HTTP %s，页面提示：%s"
+	msgDomainBlockMarker  = "%s，页面提示：%s"
 	msgDomainMoved        = "跳转到 %s"
 	msgInvalidRegionStore = "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"
 

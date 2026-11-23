@@ -483,6 +483,7 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 				t.Fatalf("row %d: unknown function %s", i, fn)
 			}
 		}()
+		value = o17PythonNoneStatus(t, value)
 
 		if expected, ok := native[i]; ok {
 			classified[expected.Contract]++
