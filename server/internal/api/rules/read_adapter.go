@@ -15,7 +15,6 @@ import (
 
 	"configflow/internal/gateway"
 	"configflow/internal/jsondecode"
-	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/redact"
@@ -25,108 +24,25 @@ import (
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
 	"configflow/internal/rulesetfmt"
+	"configflow/internal/rulesource"
 	"configflow/internal/weburl"
 )
 
-type sourceOptions struct {
-	host           string
-	offline        bool
-	connectTimeout time.Duration
-	readTimeout    time.Duration
-	boundDeadline  bool
+type sourceOptions = rulesource.ReadOptions
+
+func (s *Service) reader() *rulesource.Service {
+	if s != nil && s.client != nil {
+		return rulesource.New(rulesource.Options{Client: s.client})
+	}
+	return rulesource.Default()
 }
 
 func (s *Service) sourceContent(ctx context.Context, config *rulefetch.SourceConfig, item model.RuleConfig, library *model.RuleLibraryItem, options sourceOptions) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	source := item
-	if library != nil {
-		source = shared.LibraryRule(*library)
-	}
-	cached, err := rulefetch.ReadCache(ctx, source, config)
-	if err != nil {
-		return "", err
-	}
-	if cached != nil {
-		return sourceText(cached), nil
-	}
-	if sourceField(source.SourceType, "") == "content" {
-		return sourceField(source.Content, ""), nil
-	}
-	if options.offline {
-		return "", nil
-	}
-	address := sourceField(source.URL, "")
-	if address == "" {
-		return "", nil
-	}
-	if strings.HasPrefix(address, "/") {
-		address = strings.TrimRight(config.Settings.ServerDomain, "/") + address
-	}
-	connect, read := options.connectTimeout, options.readTimeout
-	if connect == 0 {
-		connect = 30 * time.Second
-	}
-	if read == 0 {
-		read = 30 * time.Second
-	}
-	fetch := s.fetchWithTimeouts(ctx, config, options.host, connect, read, options.boundDeadline)
-	content, _, err := rulefetch.RefreshRule(ctx, source, config, rulefetch.CacheOptions{Client: s.client, Timeout: 30 * time.Second, Fetch: func(ctx context.Context, _ string) (rulefetch.Content, error) { return fetch(address) }})
-	if err == nil {
-		return sourceText(content), nil
-	}
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	var validation *rulefetch.RemoteRuleValidationError
-	if errors.As(err, &validation) {
-		return "", err
-	}
-	// Download diagnostics are already logged by the fetch owner with redaction.
-	if alternate := sourceField(item.URL, ""); library != nil && alternate != "" && alternate != sourceField(library.URL, "") {
-		mirror := shared.LibraryRule(*library)
-		mirror.URL = &alternate
-		format, err := rulesetfmt.RuleFormat(shared.LibraryRule(*library), config.Library, "")
-		if err != nil {
-			return "", err
-		}
-		mirror.Format = &format
-		return s.sourceContent(ctx, config, mirror, nil, options)
-	}
-	return "", nil
-}
-func (s *Service) fetch(ctx context.Context, config *rulefetch.SourceConfig, host string, timeout time.Duration) func(string) (rulefetch.Content, error) {
-	return s.fetchWithTimeouts(ctx, config, host, timeout, timeout, false)
+	return s.reader().Read(ctx, config, item, library, options)
 }
 
-func (s *Service) fetchWithTimeouts(ctx context.Context, config *rulefetch.SourceConfig, host string, connect, read time.Duration, boundDeadline bool) func(string) (rulefetch.Content, error) {
-	return func(address string) (rulefetch.Content, error) {
-		if err := ctx.Err(); err != nil {
-			return rulefetch.Content{}, err
-		}
-		connectTimeout, readTimeout := connect, read
-		if deadline, ok := ctx.Deadline(); boundDeadline && ok {
-			remaining := time.Until(deadline)
-			if remaining <= 0 {
-				return rulefetch.Content{}, context.DeadlineExceeded
-			}
-			connectTimeout, readTimeout = min(connect, remaining), min(read, remaining)
-		}
-		response, err := s.client.Download(ctx, address, rulefetch.DownloadRequest{Config: config, HostURL: host, ConnectTimeout: connectTimeout, ReadTimeout: readTimeout})
-		if err != nil {
-			return rulefetch.Content{}, err
-		}
-		defer response.Close()
-		if err = response.RaiseForStatus(); err != nil {
-			return rulefetch.Content{}, err
-		}
-		content, err := response.Content()
-		if err == nil {
-			err = ctx.Err()
-		}
-		return rulefetch.Content{Data: content}, err
-	}
+func (s *Service) fetch(ctx context.Context, config *rulefetch.SourceConfig, host string, timeout time.Duration) func(string) (rulefetch.Content, error) {
+	return s.reader().FetchWithTimeouts(ctx, config, host, timeout, timeout, false)
 }
 func (s *Service) local(ctx context.Context, id, name, target, host string) (delivery, error) {
 	config, err := scopedLocalConfig(ctx, id)
@@ -262,7 +178,7 @@ func (s *Service) match(ctx context.Context, id, query, host string) (*shared.Hi
 	}
 	var invalidSource error
 	matcher := shared.NewMatcher(config.Profile.RuleConfigs, config.RuleLibrary, func(item *model.RuleConfig, library *model.RuleLibraryItem) (string, error) {
-		content, err := s.sourceContent(ctx, fetchConfig(config), *item, library, sourceOptions{host: host})
+		content, err := s.sourceContent(ctx, fetchConfig(config), *item, library, sourceOptions{Host: host})
 		// C14 accepts these source line boundaries and normalizes them for client
 		// delivery. Feed the same records to C09's CR/LF text index, keeping the
 		// common ASCII path allocation-free and leaving the raw cache untouched.
@@ -326,53 +242,21 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 	}
 	return rows, func(index int) (string, error) {
 		item := items[index]
-		return s.sourceContent(ctx, fetchConfig(config), item, library[item.LibraryRuleID], sourceOptions{host: host})
+		return s.sourceContent(ctx, fetchConfig(config), item, library[item.LibraryRuleID], sourceOptions{Host: host})
 	}, nil
 }
 
-func sourceText(content []byte) string {
-	if !utf8.Valid(content) {
-		return ""
-	}
-	return strings.TrimPrefix(string(content), "\ufeff")
-}
-
-// Wire installs C32's shared source readers for routers and gateway providers. The
-// gateway passes its immutable publish snapshot; resolving it again could mix
-// revisions. The source/cache owner retains shutdown cancellation.
+// Wire installs the shared rulesource readers for routers and gateway providers.
 func Wire() {
-	s := &Service{client: rulefetch.DefaultClient}
+	rs := rulesource.Default()
 	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
-		config, err := model.DecodeConfig(profile)
-		if err != nil {
-			return "", err
-		}
-		var row model.RuleConfig
-		if err := json.Unmarshal(item.Raw, &row); err != nil {
-			return "", err
-		}
-		var lib *model.RuleLibraryItem
+		var libRaw json.RawMessage
 		if library != nil {
-			lib = &model.RuleLibraryItem{}
-			if err := json.Unmarshal(library.Raw, lib); err != nil {
-				return "", err
-			}
+			libRaw = library.Raw
 		}
-		return s.sourceContent(lifecycle.Detach(ctx), fetchConfig(config), row, lib, sourceOptions{offline: true})
+		return rs.ReadOfflineJSON(ctx, profile, item.Raw, libRaw)
 	}
-	gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
-		ctx = lifecycle.Detach(ctx)
-		if config == nil {
-			var err error
-			profile, getErr := resolvedConfig(ctx, "")
-			err = getErr
-			if err != nil {
-				return "", err
-			}
-			config = fetchConfig(profile)
-		}
-		return s.sourceContent(ctx, config, item, library, sourceOptions{})
-	})
+	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 
 func resolvedConfig(ctx context.Context, id string) (*model.Config, error) {

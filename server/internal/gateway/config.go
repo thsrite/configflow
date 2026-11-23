@@ -93,19 +93,21 @@ func isMRS(r *Rule) bool {
 // profile plus shared rule library and system settings) that the gateway
 // reads. Build it with NewConfig; it is not modified afterwards.
 type Config struct {
-	profileID    member
-	serverDomain string
-	configToken  string
-	customConfig string
-	rules        []*Rule
-	library      []*Rule
-	settings     Settings
-	settingsErr  error
-	profile      *model.Profile
-	system       model.SystemConfig
-	nodesSlice   []model.Node
-	rawLibrary   []model.RuleLibraryItem
-	hasLibrary   bool
+	profileID        member
+	serverDomain     string
+	configToken      string
+	customConfig     string
+	rules            []*Rule
+	library          []*Rule
+	settings         Settings
+	settingsErr      error
+	profile          *model.Profile
+	system           model.SystemConfig
+	nodesSlice       []model.Node
+	rawLibrary       []model.RuleLibraryItem
+	hasLibrary       bool
+	ruleSourceReader RuleSourceReader
+	hasCustomReader  bool
 }
 
 // Settings is the profile's gateway setting (gateway_settings): an *Error

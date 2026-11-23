@@ -285,14 +285,29 @@ var (
 	ruleSourceReader RuleSourceReader
 )
 
-// storedContent reads a rule set through the installed RuleSourceReader. With
+// NewConfigWithReader constructs a Config bound to an explicit RuleSourceReader.
+// Passing a nil reader fails closed with ErrRulesetContentUnavailable without
+// falling back to the package-level hook.
+func NewConfigWithReader(config *model.Config, reader RuleSourceReader) *Config {
+	c := NewConfig(config)
+	c.ruleSourceReader = reader
+	c.hasCustomReader = true
+	return c
+}
+
+// storedContent reads a rule set through the configured RuleSourceReader. With
 // requireCache an empty result is only accepted when a cache file exists
 // (an explicitly empty source); a failed download is an *Error, so Mihomo
 // keeps its previous provider.
 func (c *Config) storedContent(ctx context.Context, item, library *Rule, requireCache bool) (string, error) {
-	contentMu.RLock()
-	sourceReader := ruleSourceReader
-	contentMu.RUnlock()
+	var sourceReader RuleSourceReader
+	if c.hasCustomReader {
+		sourceReader = c.ruleSourceReader
+	} else {
+		contentMu.RLock()
+		sourceReader = ruleSourceReader
+		contentMu.RUnlock()
+	}
 	if sourceReader == nil {
 		return "", ErrRulesetContentUnavailable
 	}
