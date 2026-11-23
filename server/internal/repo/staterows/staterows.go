@@ -152,11 +152,13 @@ func topStateMember(name string) bool {
 }
 
 func nestedStateMember(container, name string) bool {
-	return slices.ContainsFunc(stateMembers, func(m stateMember) bool { return m.container == container && m.name == name })
+	return container != "" && slices.ContainsFunc(stateMembers, func(m stateMember) bool { return m.container == container && m.name == name })
 }
 
+// isStateContainer reports a configuration member holding a nested state
+// member; top-level state members have no container, so "" never is one.
 func isStateContainer(name string) bool {
-	return slices.ContainsFunc(stateMembers, func(m stateMember) bool { return m.container == name })
+	return name != "" && slices.ContainsFunc(stateMembers, func(m stateMember) bool { return m.container == name })
 }
 
 // Split moves the state members of the encoded agents row into rows.

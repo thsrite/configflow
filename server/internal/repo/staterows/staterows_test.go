@@ -119,7 +119,8 @@ func TestSplitMerge(t *testing.T) {
 		{"damaged HA journal (fails closed) moves byte for byte", `[{"id":"o","oxidns_ha_publication":"applying"}]`, `[{"id":"o"}]`, 1},
 		{"damaged follow state", `[{"id":"o","dns_follow_state":[1]}]`, `[{"id":"o"}]`, 1},
 		{"members of the wrong type move unchanged", `[{"id":"a","deployments":[],"ipv6_verifications":"x","latest_upgrade":7}]`, `[{"id":"a"}]`, 3},
-		{"escaped key and nested strings", `[{"id":"a","name":"say \"version\": 1","version":"9"}]`, `[{"id":"a","name":"say \"version\": 1"}]`, 1},
+		{"empty member name is no container (fuzz)", `[{"id":"0","version":"0","":{"version":1}}]`, `[{"id":"0","":{"version":1}}]`, 1},
+				{"escaped key and nested strings", `[{"id":"a","name":"say \"version\": 1","version":"9"}]`, `[{"id":"a","name":"say \"version\": 1"}]`, 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
