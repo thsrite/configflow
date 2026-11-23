@@ -532,3 +532,115 @@ func TestO17FollowupSameConfigCaches(t *testing.T) {
 		t.Fatalf("configCredentialsCache not invalidated by config commit (collectCalls=%d)", collectCalls)
 	}
 }
+
+func TestO17FollowupRouterLastReleaseStateAndUpgrade(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+	_, err := r.UpdateProfile(bg, DefaultProfileID, func(_ context.Context, profile *model.Profile) error {
+		profile.Routers.Items = []model.Router{{
+			ID:       "r1",
+			Name:     "Main",
+			Type:     "routeros",
+			Endpoint: "http://192.0.2.1",
+			Username: "synthetic-user",
+			Password: "synthetic-password",
+			LastRelease: &model.RouterRelease{
+				At:          "2026-11-23T00:00:00Z",
+				OK:          true,
+				Fingerprint: "fp-1",
+				Message:     "",
+			},
+		}}
+		return nil
+	})
+	noError(t, err)
+
+	// 1. Downgrade to v1 and upgrade back to v2 in one transaction: both Agent
+	// state and router last_release move into agent_state (StorageVersion stays 2).
+	repotest.DowngradeToV1(t, r.DatabasePath())
+	if v := o17Version(t, r.DatabasePath()); v != 1 {
+		t.Fatalf("downgraded version = %d, want 1", v)
+	}
+	// Fault injection during upgrade: failure leaves v1 untouched with backup.
+	upgradeRowHook = func(i int) error {
+		if i == 0 {
+			return errors.New("synthetic upgrade row failure")
+		}
+		return nil
+	}
+	_, failErr := Open(r.DataDir(), Options{DefaultSettings: DefaultConfig})
+	upgradeRowHook = nil
+	if failErr == nil {
+		t.Fatal("expected upgrade fault injection to fail")
+	}
+	if v := o17Version(t, r.DatabasePath()); v != 1 {
+		t.Fatalf("version after failed upgrade = %d, want 1", v)
+	}
+
+	reopened := openRepo(t, r.DataDir())
+	if v := o17Version(t, reopened.DatabasePath()); v != store.StorageVersion {
+		t.Fatalf("upgraded version = %d, want %d", v, store.StorageVersion)
+	}
+	if n := o17Count(t, reopened.DatabasePath(), "SELECT count(*) FROM agent_state WHERE member='router.last_release'"); n != 1 {
+		t.Fatalf("router.last_release rows = %d, want 1", n)
+	}
+	prof := must(reopened.Profile(bg, DefaultProfileID))(t)
+	if len(prof.Routers.Items) != 1 || prof.Routers.Items[0].LastRelease == nil || prof.Routers.Items[0].LastRelease.Fingerprint != "fp-1" {
+		t.Fatalf("router last_release lost across v1->v2 upgrade: %+v", prof.Routers.Items)
+	}
+
+	// 2. Writing only last_release via SaveRouterPublicationJSON must not
+	// advance Head.Generation or profile.Revision, only Head.State.
+	headBefore := must(reopened.Head(bg))(t)
+	revBefore := prof.Revision
+	expectedRouter, err := model.Marshal(prof.Routers.Items[0])
+	noError(t, err)
+	noError(t, reopened.SaveRouterPublicationJSON(bg, DefaultProfileID, expectedRouter, RouterPublicationJSON{
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T01:00:00Z","ok":true,"fingerprint":"fp-2","message":""}`)},
+	}))
+	headAfter := must(reopened.Head(bg))(t)
+	profAfter := must(reopened.Profile(bg, DefaultProfileID))(t)
+	if !headAfter.SameConfig(headBefore) || headAfter.State != headBefore.State+1 {
+		t.Fatalf("last_release-only commit changed head %+v -> %+v", headBefore, headAfter)
+	}
+	if profAfter.Revision != revBefore {
+		t.Fatalf("last_release-only commit advanced profile revision %d -> %d", revBefore, profAfter.Revision)
+	}
+
+	// 3. ExportAllJSON omits router last_release; importing it marks the router
+	// with state_restored_at; an older backup carrying last_release stays unmarked.
+	exported := must(reopened.ExportAllJSON(bg, false))(t)
+	if strings.Contains(string(exported), `"last_release"`) {
+		t.Fatalf("export leaked router last_release: %s", exported)
+	}
+	restored := newRepo(t)
+	must(restored.ImportAllJSON(bg, exported))(t)
+	restoredProf := must(restored.Profile(bg, DefaultProfileID))(t)
+	if len(restoredProf.Routers.Items) != 1 || restoredProf.Routers.Items[0].StateRestoredAt == nil || restoredProf.Routers.Items[0].LastRelease != nil {
+		t.Fatalf("restored router unexpected state: %+v", restoredProf.Routers.Items)
+	}
+
+	// 4. Failed republication keeps state_restored_at; successful republication clears it.
+	expectedRestored, err := model.Marshal(restoredProf.Routers.Items[0])
+	noError(t, err)
+	noError(t, restored.SaveRouterPublicationJSON(bg, DefaultProfileID, expectedRestored, RouterPublicationJSON{
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T02:00:00Z","ok":false,"fingerprint":"fp-3","message":"failed"}`)},
+	}))
+	if got := must(restored.Profile(bg, DefaultProfileID))(t).Routers.Items[0]; got.StateRestoredAt == nil {
+		t.Fatalf("failed publication cleared router state_restored_at: %+v", got)
+	}
+	noError(t, restored.SaveRouterPublicationJSON(bg, DefaultProfileID, expectedRestored, RouterPublicationJSON{
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T03:00:00Z","ok":true,"fingerprint":"fp-4","message":""}`)},
+	}))
+	if got := must(restored.Profile(bg, DefaultProfileID))(t).Routers.Items[0]; got.StateRestoredAt != nil || got.LastRelease == nil || !got.LastRelease.OK {
+		t.Fatalf("successful publication did not clear router state_restored_at: %+v", got)
+	}
+
+	// 5. Legacy backup with last_release imports unmarked.
+	diag := must(reopened.DiagnosticExportJSON(bg))(t)
+	legacy := newRepo(t)
+	must(legacy.ImportAllJSON(bg, diag))(t)
+	if got := must(legacy.Profile(bg, DefaultProfileID))(t).Routers.Items[0]; got.StateRestoredAt != nil || got.LastRelease == nil {
+		t.Fatalf("legacy backup with last_release should not set restore marker: %+v", got)
+	}
+}

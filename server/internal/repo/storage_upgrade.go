@@ -42,19 +42,40 @@ func (r *Repository) upgradeLocked(ctx context.Context) error {
 	r.store.BeforeUpgradeRow = upgradeRowHook
 	defer func() { r.store.BeforeUpgradeRow = nil }()
 	upgraded, err := r.store.Upgrade(ctx, func(tx *store.UpgradeTx) error {
-		raw, present, err := tx.Field("system", "", agentsField)
-		if err != nil || !present {
+		if raw, present, err := tx.Field("system", "", agentsField); err != nil {
+			return err
+		} else if present {
+			config, rows := splitAgents(raw)
+			if len(rows) > 0 {
+				if err := tx.ReplaceField("system", "", agentsField, config); err != nil {
+					return err
+				}
+				tx.AddState(rows)
+				moved += len(rows)
+			}
+		}
+		profileIDs, err := tx.ProfileIDs()
+		if err != nil {
 			return err
 		}
-		config, rows := splitAgents(raw)
-		if len(rows) == 0 {
-			return nil
+		for _, profileID := range profileIDs {
+			raw, present, err := tx.Field("profile", profileID, routersField)
+			if err != nil {
+				return err
+			}
+			if !present {
+				continue
+			}
+			config, rows := splitRouters(profileID, raw)
+			if len(rows) == 0 {
+				continue
+			}
+			if err := tx.ReplaceField("profile", profileID, routersField, config); err != nil {
+				return err
+			}
+			tx.AddState(rows)
+			moved += len(rows)
 		}
-		if err := tx.ReplaceField("system", "", agentsField, config); err != nil {
-			return err
-		}
-		tx.AddState(rows)
-		moved = len(rows)
 		return nil
 	})
 	if err != nil {

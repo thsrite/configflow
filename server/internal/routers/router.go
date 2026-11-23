@@ -149,7 +149,7 @@ func (r Router) MarshalJSON() ([]byte, error) {
 
 // routerStateField reports a declared router member kept in Extra.
 func routerStateField(key string) bool {
-	return key == "last_probe" || key == "last_release" || slices.Contains(repo.RouterManifestFields, key)
+	return key == "last_probe" || key == "last_release" || key == "state_restored_at" || slices.Contains(repo.RouterManifestFields, key)
 }
 
 // State is a stored device-state field (Extra), nil when absent or falsy.
@@ -158,6 +158,16 @@ func (r *Router) State(key string) json.RawMessage {
 		return v
 	}
 	return nil
+}
+
+// StateRestoredAt returns the restore marker timestamp when the router was
+// imported from a configuration-only backup and has not yet been republished.
+func (r *Router) StateRestoredAt() string {
+	var text string
+	if raw := r.Extra["state_restored_at"]; len(raw) > 0 && json.Unmarshal(raw, &text) == nil {
+		return text
+	}
+	return ""
 }
 
 // StaticRuleSets is ip_rule_sets without the RouterOS policy selections
@@ -175,15 +185,16 @@ func (r *Router) StaticRuleSets() []string {
 // RouterView is a router as the UI sees it (never the password).
 type RouterView struct {
 	RouterSettings
-	LastProbe   json.RawMessage `json:"last_probe"`
-	LastRelease json.RawMessage `json:"last_release"`
-	HasPassword bool            `json:"has_password"`
+	LastProbe       json.RawMessage `json:"last_probe"`
+	LastRelease     json.RawMessage `json:"last_release"`
+	StateRestoredAt json.RawMessage `json:"state_restored_at,omitzero"`
+	HasPassword     bool            `json:"has_password"`
 }
 
 // View is the router as returned to the UI; absent guards show their defaults.
 func (r *Router) View() RouterView {
 	v := RouterView{RouterSettings: r.RouterSettings, LastProbe: r.Extra["last_probe"],
-		LastRelease: r.Extra["last_release"], HasPassword: r.Password != ""}
+		LastRelease: r.Extra["last_release"], StateRestoredAt: r.Extra["state_restored_at"], HasPassword: r.Password != ""}
 	v.IPRuleSets, v.RosPolicyRuleSets = r.StaticRuleSets(), append([]string{}, r.RosPolicyRuleSets...)
 	if v.DNSGuard == nil {
 		guard := DefaultDNSGuard()

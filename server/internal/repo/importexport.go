@@ -140,7 +140,11 @@ func (r *Repository) applyImport(tx *transaction, document *model.Document, reas
 	if settings.RetiredRuleProxyTokens == nil {
 		settings.RetiredRuleProxyTokens = []string{}
 	}
-	if err := markRestoredAgents(&document.System, nowISO()); err != nil {
+	restoredAt := nowISO()
+	if err := markRestoredAgents(&document.System, restoredAt); err != nil {
+		return "", err
+	}
+	if err := markRestoredRouters(document, restoredAt); err != nil {
 		return "", err
 	}
 	document.System.Revision = previous.System.Revision + 1
@@ -222,6 +226,18 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		}
 		if err := document.System.SetJSON(agentsField, config); err != nil {
 			return nil, err
+		}
+	}
+	if !withState {
+		for _, profile := range document.Profiles {
+			if raw, present, err := model.EncodeMember(profile, routersField); err != nil {
+				return nil, err
+			} else if present {
+				config, _ := splitRouters(profile.Key(), raw)
+				if err := profile.SetJSON(routersField, config); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	if !desensitize {

@@ -91,8 +91,9 @@ func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.
 			if status == "failed" || status == "paused" {
 				history.LastError = new(receipt.Message)
 			}
+			restored := r.StateRestoredAt() != ""
 			var due *time.Time
-			if r.AutoRuleSync && ready && status != "paused" && receipt.CheckedAt != nil {
+			if r.AutoRuleSync && ready && !restored && status != "paused" && receipt.CheckedAt != nil {
 				if checked, ok := taskstatus.ParseTimestamp(*receipt.CheckedAt); ok {
 					next := checked.Add(time.Duration(interval) * time.Second)
 					due = &next
@@ -102,12 +103,16 @@ func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.
 			switch {
 			case !r.AutoRuleSync:
 				hint = messageSyncDisabledHint
+			case restored:
+				hint = messageSyncRestored
 			case !ready:
 				hint = messageSyncFirstHint
 			case status == "running" || status == "queued" || status == "paused":
 				hint = messageSyncPendingHint
 			}
-			if !ready {
+			if restored {
+				message = messageSyncRestored
+			} else if !ready {
 				message = messageSyncWaitingState
 			} else if status == "paused" {
 				message = messageSyncPausedState

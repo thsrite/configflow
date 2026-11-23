@@ -48,6 +48,16 @@ type Router struct {
 	IPv6FakeIPState     *IPv6FakeIPState  `json:"ipv6_fakeip_state,omitzero"`
 	IPv6RoutesState     *IPv6RoutesState  `json:"ipv6_routes_state,omitzero"`
 	IPv6PDGuardState    *IPv6PDGuardState `json:"ipv6_pd_guard_state,omitzero"`
+	StateRestoredAt     *string           `json:"state_restored_at,omitzero"`
+}
+
+// RouterStateMembers are the members of a Router record that hold run-time
+// publication state outside the configuration rows (agent_state table under
+// the router member prefix). Every other Router member stays in the
+// configuration row.
+var RouterStateMembers = []string{
+	"last_release",
+	"state_restored_at",
 }
 
 // RouterDNSGuard holds the explicit DNS guard settings; an absent member keeps

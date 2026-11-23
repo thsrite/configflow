@@ -18,45 +18,80 @@ import (
 )
 
 const (
-	agentsField       = "agents"
-	oxidnsHAStateKey  = "oxidns_ha_state"
+	agentsField      = "agents"
+	routersField     = "routers"
+	oxidnsHAStateKey = "oxidns_ha_state"
 )
 
 func splitAgents(row []byte) ([]byte, []store.StateRow) { return staterows.Split(row) }
 
 func mergeAgents(row []byte, rows []store.StateRow) []byte { return staterows.Merge(row, rows) }
 
+func splitRouters(profileID string, row []byte) ([]byte, []store.StateRow) {
+	return staterows.SplitRouters(profileID, row)
+}
+
+func mergeRouters(profileID string, row []byte, rows []store.StateRow) []byte {
+	return staterows.MergeRouters(profileID, row, rows)
+}
+
 // mergeRows returns doc with its agent_state rows merged into system.agents
-// (the repository's view); doc itself is not modified.
+// and each profile's routers field (the repository's view); doc itself is not
+// modified.
 func mergeRows(doc *store.Document) *store.Document {
 	if doc == nil || len(doc.State) == 0 {
 		return doc
 	}
 	result := *doc
 	result.State = nil
-	if doc.System == nil {
-		return &result
-	}
-	fields := slices.Clone(doc.System.Fields)
-	for i := range fields {
-		if fields[i].Name == agentsField {
-			fields[i].Value = mergeAgents(fields[i].Value, doc.State)
+	if doc.System != nil {
+		fields := slices.Clone(doc.System.Fields)
+		for i := range fields {
+			if fields[i].Name == agentsField {
+				fields[i].Value = mergeAgents(fields[i].Value, doc.State)
+			}
 		}
+		result.System = &store.Section{Fields: fields}
 	}
-	result.System = &store.Section{Fields: fields}
+	if len(doc.Profiles) > 0 {
+		profiles := make([]store.ProfileRows, len(doc.Profiles))
+		for i, profile := range doc.Profiles {
+			fields := slices.Clone(profile.Fields)
+			for j := range fields {
+				if fields[j].Name == routersField {
+					fields[j].Value = mergeRouters(profile.ID, fields[j].Value, doc.State)
+				}
+			}
+			profiles[i] = store.ProfileRows{ID: profile.ID, Fields: fields}
+		}
+		result.Profiles = profiles
+	}
 	return &result
 }
 
-// splitRows moves the state members of system.agents into doc.State (in
-// place; doc is the commit's own encoding).
+// splitRows moves the state members of system.agents and each profile's
+// routers into doc.State (in place; doc is the commit's own encoding).
 func splitRows(doc *store.Document) {
-	if doc == nil || doc.System == nil {
+	if doc == nil {
 		return
 	}
 	doc.State = nil
-	for i := range doc.System.Fields {
-		if doc.System.Fields[i].Name == agentsField {
-			doc.System.Fields[i].Value, doc.State = splitAgents(doc.System.Fields[i].Value)
+	if doc.System != nil {
+		for i := range doc.System.Fields {
+			if doc.System.Fields[i].Name == agentsField {
+				var rows []store.StateRow
+				doc.System.Fields[i].Value, rows = splitAgents(doc.System.Fields[i].Value)
+				doc.State = append(doc.State, rows...)
+			}
+		}
+	}
+	for i := range doc.Profiles {
+		for j := range doc.Profiles[i].Fields {
+			if doc.Profiles[i].Fields[j].Name == routersField {
+				var rows []store.StateRow
+				doc.Profiles[i].Fields[j].Value, rows = splitRouters(doc.Profiles[i].ID, doc.Profiles[i].Fields[j].Value)
+				doc.State = append(doc.State, rows...)
+			}
 		}
 	}
 }
@@ -178,6 +213,90 @@ func markRestoredAgents(system *model.System, at string) error {
 		ownerRows := byOwner[agent.ID]
 		if len(ownerRows) == 0 || isExportedHALeftover(ownerRows) {
 			agent.StateRestoredAt = new(at)
+		}
+	}
+	return nil
+}
+
+// routerStateOnly reports whether after differs from before in router state
+// members (model.RouterStateMembers) only (at least one, and nothing else of
+// the profile section).
+func routerStateOnly(profileID string, before, after *model.Profile) (bool, error) {
+	encode := func(profile *model.Profile) (map[string][]byte, []store.StateRow, error) {
+		members, err := model.EncodeMembers(profile)
+		if err != nil {
+			return nil, nil, err
+		}
+		values := make(map[string][]byte, len(members))
+		var state []store.StateRow
+		for _, member := range members {
+			value := []byte(member.Value)
+			if member.Name == routersField {
+				value, state = splitRouters(profileID, value)
+			}
+			values[member.Name] = value
+		}
+		delete(values, "_revision")
+		delete(values, "updated_at")
+		return values, state, nil
+	}
+	old, oldState, err := encode(before)
+	if err != nil {
+		return false, err
+	}
+	next, nextState, err := encode(after)
+	if err != nil {
+		return false, err
+	}
+	if len(old) != len(next) {
+		return false, nil
+	}
+	for name, value := range old {
+		if other, ok := next[name]; !ok || !bytes.Equal(value, other) {
+			return false, nil
+		}
+	}
+	if len(oldState) != len(nextState) {
+		return true, nil
+	}
+	for i := range oldState {
+		if oldState[i].Owner != nextState[i].Owner || oldState[i].Member != nextState[i].Member || !bytes.Equal(oldState[i].Value, nextState[i].Value) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// markRestoredRouters marks every imported router whose record carries no
+// state member (last_release): a configuration-only backup holds no
+// publication record, so rule sync stays fail closed until the router is
+// published again. Records from an older backup carrying last_release stay
+// unmarked.
+func markRestoredRouters(document *model.Document, at string) error {
+	for _, profile := range document.Profiles {
+		profileID := profile.Key()
+		raw, present, err := model.EncodeMember(profile, routersField)
+		if err != nil {
+			return err
+		}
+		if !present {
+			continue
+		}
+		_, rows := splitRouters(profileID, raw)
+		owners := map[string]bool{}
+		for _, row := range rows {
+			owners[row.Owner] = true
+		}
+		seen := map[string]bool{}
+		for i := range profile.Routers.Items {
+			router := &profile.Routers.Items[i]
+			if router.ID == "" || seen[router.ID] {
+				continue
+			}
+			seen[router.ID] = true
+			if !owners[staterows.RouterStateOwner(profileID, router.ID)] {
+				router.StateRestoredAt = new(at)
+			}
 		}
 	}
 	return nil

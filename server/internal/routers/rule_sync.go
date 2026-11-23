@@ -229,6 +229,9 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	if r == nil || r.Type != "routeros" || !r.AutoRuleSync {
 		return RuleSyncStatus{}, routerError(messageSyncEnable)
 	}
+	if r.StateRestoredAt() != "" {
+		return RuleSyncStatus{}, routerError(messageSyncRestored)
+	}
 	receipt, err := store.Read(ctx, profile, id)
 	if err != nil {
 		return RuleSyncStatus{}, err
@@ -535,7 +538,7 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 	}
 	for _, profile := range profiles {
 		for _, r := range profile.Routers {
-			if r.Type != "routeros" || !r.AutoRuleSync {
+			if r.Type != "routeros" || !r.AutoRuleSync || r.StateRestoredAt() != "" {
 				continue
 			}
 			receipt, err := s.store().Read(held, profile.ID, r.ID)
@@ -600,6 +603,10 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	if r == nil || !r.AutoRuleSync || receipt.Baseline == nil {
 		unlock()
 		return routerError(messageSyncStart)
+	}
+	if r.StateRestoredAt() != "" {
+		unlock()
+		return routerError(messageSyncRestored)
 	}
 	if receipt.Status == "paused" {
 		unlock()

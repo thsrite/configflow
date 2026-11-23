@@ -119,6 +119,10 @@ func updateProfileIn(document *model.Document, profileID string, fn func(p *mode
 		return nil, err
 	}
 	previousNames := groupNames(current)
+	before, err := copyRecord(current)
+	if err != nil {
+		return nil, err
+	}
 	working, err := copyRecord(current)
 	if err != nil {
 		return nil, err
@@ -150,8 +154,14 @@ func updateProfileIn(document *model.Document, profileID string, fn func(p *mode
 			}
 		}
 	}
-	current.Revision++
-	current.UpdatedAt = nowISO()
+	stateOnly, err := routerStateOnly(profileID, before, current)
+	if err != nil {
+		return nil, err
+	}
+	if !stateOnly {
+		current.Revision++
+		current.UpdatedAt = nowISO()
+	}
 	return current, nil
 }
 

@@ -170,5 +170,48 @@ func FuzzSplitMerge(f *testing.F) {
 			return
 		}
 		checkRoundTrip(t, row)
+		checkRouterRoundTrip(t, "default", row)
 	})
+}
+
+func checkRouterRoundTrip(t testing.TB, profileID string, row []byte) ([]byte, []store.StateRow) {
+	t.Helper()
+	config, rows := SplitRouters(profileID, row)
+	merged := MergeRouters(profileID, config, rows)
+	if !bytes.Equal(config, row) {
+		if again, more := SplitRouters(profileID, config); !bytes.Equal(again, config) || len(more) != 0 {
+			t.Fatalf("SplitRouters not idempotent: %s -> %s (%d rows)", config, again, len(more))
+		}
+	}
+	resplit, rerows := SplitRouters(profileID, merged)
+	if !bytes.Equal(resplit, config) || len(rerows) != len(rows) {
+		t.Fatalf("router round-trip config/row count mismatch: %s vs %s (%d vs %d)", resplit, config, len(rerows), len(rows))
+	}
+	return config, rows
+}
+
+func TestSplitMergeRouters(t *testing.T) {
+	tests := []struct {
+		name       string
+		row        string
+		config     string
+		stateCount int
+	}{
+		{"empty items", `{"items":[]}`, `{"items":[]}`, 0},
+		{"extracts last_release and state_restored_at", `{"items":[{"id":"r1","name":"Main","last_release":{"at":"2026-11-23T00:00:00Z","ok":true,"fingerprint":"f","message":""},"state_restored_at":"2026-11-23T01:00:00Z"}]}`, `{"items":[{"id":"r1","name":"Main"}]}`, 2},
+		{"keeps duplicate id and missing id in config", `{"items":[{"id":"r1","last_release":{"ok":true}},{"id":"r1","last_release":{"ok":false}},{"name":"no-id","last_release":{"ok":true}},7]}`, `{"items":[{"id":"r1"},{"id":"r1","last_release":{"ok":false}},{"name":"no-id","last_release":{"ok":true}},7]}`, 1},
+		{"non-array items untouched", `{"items":"bad"}`, `{"items":"bad"}`, 0},
+		{"non-object untouched", `null`, `null`, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			config, rows := checkRouterRoundTrip(t, "default", []byte(tc.row))
+			if string(config) != tc.config {
+				t.Fatalf("config = %s, want %s", config, tc.config)
+			}
+			if len(rows) != tc.stateCount {
+				t.Fatalf("state rows = %d, want %d: %v", len(rows), tc.stateCount, rows)
+			}
+		})
+	}
 }

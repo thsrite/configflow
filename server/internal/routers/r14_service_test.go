@@ -370,3 +370,51 @@ func TestO17FollowupBusySyncRetriesWithin30Seconds(t *testing.T) {
 		t.Fatalf("pause after busy sync = %v, want <= %v", got, RuleSyncPause)
 	}
 }
+
+func TestO17FollowupRestoredRouterRuleSyncFailClosed(t *testing.T) {
+	service, fake, r := r14Fixture(t)
+	ctx := repo.WithRepository(t.Context(), service.Repo)
+	// Simulate importing a configuration-only backup: export and re-import so
+	// the router gets state_restored_at while a stale local receipt exists.
+	backup, err := service.Repo.ExportAllJSON(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Repo.ImportAllJSON(ctx, backup); err != nil {
+		t.Fatal(err)
+	}
+	callsBefore := len(fake.Calls())
+	if _, err := service.Sync(ctx, "default", r.ID, "manual"); err == nil || !strings.Contains(err.Error(), messageSyncRestored) {
+		t.Fatalf("Sync on restored router = %v, want %q", err, messageSyncRestored)
+	}
+	if err := service.StartJob(ctx, "default", r.ID); err == nil || !strings.Contains(err.Error(), messageSyncRestored) {
+		t.Fatalf("StartJob on restored router = %v, want %q", err, messageSyncRestored)
+	}
+	if err := service.RunRound(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.Calls()) != callsBefore {
+		t.Fatalf("restored router rule sync touched device: %d -> %d calls", callsBefore, len(fake.Calls()))
+	}
+	// Successful republication clears state_restored_at and unblocks Sync.
+	prof, err := service.Repo.Profile(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := model.Marshal(prof.Routers.Items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Repo.SaveRouterPublicationJSON(ctx, "default", expected, repo.RouterPublicationJSON{
+		LastRelease: repo.JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T03:00:00Z","ok":true,"fingerprint":"fp","message":""}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	profAfter, err := service.Repo.Profile(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profAfter.Routers.Items[0].StateRestoredAt != nil {
+		t.Fatal("state_restored_at not cleared after successful publication")
+	}
+}

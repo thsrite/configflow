@@ -3170,5 +3170,9 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   有进行中的工作时保持原间隔（5/2/5/5 s），空闲时不再每隔几秒读库，兜底 10 分钟（规则同步 1 分钟，另由规则源刷新完成唤醒）。
   `scheduled-refresh`、`router-rule-sync` 按最近到期时间休眠（至少 1 s、至多 10 分钟），配置提交和手动执行后重新计算；到期任务的启动误差从最多 30 s 变为秒级。
   删除 Python `idle_rounds.py` 的移植 `IdleRounds`。
+- **路由器 `last_release` 迁入状态表（同存储版本 2）**：每个 profile 路由器记录的 `last_release`（上次发布记录）与 `state_restored_at`（恢复标记）
+  随 Agent 状态同在 v1→v2 单事务升级中迁入 `agent_state`（成员前缀 `router.`，owner 为 `router/<profile_id>/<router_id>`，不增加库版本）。
+  只改 `last_release` 或恢复标记的提交不推进配置代号（`Head.Generation`）和 profile `_revision`；完整导出/WebDAV 备份不含路由器 `last_release`；
+  导入不含 `last_release` 的新格式备份时为路由器写 `state_restored_at`（路由器视图多出该只读字段），标记存在时 `router-rule-sync`（自动/手动同步与定时任务）按 fail closed 拒绝并提示「运行记录未包含在备份里，请先重新发布此路由器」，一次成功的重新发布（`last_release.ok = true`）在同一事务里清除标记。带 `last_release` 的旧格式备份照旧恢复、不加标记。
 - **测试**：与 Python 的对照把 Go 数据库降级成 v1 后交给 Python（`repotest.PythonLayout`），比较整份存储时用合并视图（`repotest.MergedLoad`），
   并屏蔽系统 `_revision`；Python 侧对照将随切换提交删除。

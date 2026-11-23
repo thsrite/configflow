@@ -539,6 +539,7 @@ type collectedObservations struct {
 
 type routerSignatureEntry struct {
 	head       store.Head
+	releases   [sha256.Size]byte
 	signatures map[string]string
 }
 
@@ -559,9 +560,28 @@ type routerReleaseView struct {
 	failedStage string
 	message     string
 	at          string
+	rawRelease  json.RawMessage
+	restoredAt  string
 }
 
-func routerSignatures(ctx context.Context, repository *repo.Repository, profileIDs []string) (map[string]string, error) {
+func routerReleasesKey(releases []routerReleaseView) [sha256.Size]byte {
+	h := sha256.New()
+	for _, r := range releases {
+		h.Write([]byte(r.profileID))
+		h.Write([]byte{0})
+		h.Write([]byte(r.id))
+		h.Write([]byte{0})
+		h.Write(r.rawRelease)
+		h.Write([]byte{0})
+		h.Write([]byte(r.restoredAt))
+		h.Write([]byte{'\n'})
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
+
+func routerSignatures(ctx context.Context, repository *repo.Repository, profileIDs []string, releaseKey [sha256.Size]byte) (map[string]string, error) {
 	if len(profileIDs) == 0 {
 		return map[string]string{}, nil
 	}
@@ -575,7 +595,7 @@ func routerSignatures(ctx context.Context, repository *repo.Repository, profileI
 			return nil, err
 		}
 		routerSigMu.Lock()
-		if cached, ok := routerSigCache[cacheKey]; ok && cached.head.SameConfig(head) {
+		if cached, ok := routerSigCache[cacheKey]; ok && cached.head.SameConfig(head) && cached.releases == releaseKey {
 			sigs := cached.signatures
 			routerSigMu.Unlock()
 			return sigs, nil
@@ -612,7 +632,7 @@ func routerSignatures(ctx context.Context, repository *repo.Repository, profileI
 		if len(routerSigCache) >= routerSigCacheLimit {
 			clear(routerSigCache)
 		}
-		routerSigCache[cacheKey] = routerSignatureEntry{head: head, signatures: routers}
+		routerSigCache[cacheKey] = routerSignatureEntry{head: head, releases: releaseKey, signatures: routers}
 		routerSigMu.Unlock()
 	}
 	return routers, nil
@@ -643,6 +663,10 @@ func collect(ctx context.Context, repository *repo.Repository, completedTask str
 					view.failedStage = stringValue(router.LastRelease.FailedStage)
 					view.message = router.LastRelease.Message
 					view.at = router.LastRelease.At
+					view.rawRelease, _ = json.Marshal(router.LastRelease)
+				}
+				if router.StateRestoredAt != nil {
+					view.restoredAt = *router.StateRestoredAt
 				}
 				routerReleases = append(routerReleases, view)
 			}
@@ -693,7 +717,7 @@ func collect(ctx context.Context, repository *repo.Repository, completedTask str
 		}
 		observations = append(observations, observation{key, item})
 	}
-	routers, err := routerSignatures(ctx, repository, routerProfiles)
+	routers, err := routerSignatures(ctx, repository, routerProfiles, routerReleasesKey(routerReleases))
 	if err != nil {
 		return nil, err
 	}

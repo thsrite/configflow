@@ -113,7 +113,7 @@ func TestR12ReviewShutdownDuringFirstWriteRecords(t *testing.T) {
 	}
 	_, stored, after := r12Config(t, db)
 	var last LastRelease
-	if e := json.Unmarshal(stored.Extra["last_release"], &last); e != nil || last.OK || !strings.Contains(last.Message, messageReleaseAborted) || after.Revision != before.Revision+1 {
+	if e := json.Unmarshal(stored.Extra["last_release"], &last); e != nil || last.OK || !strings.Contains(last.Message, messageReleaseAborted) || after.Revision != before.Revision {
 		t.Fatalf("failure record %+v revision %d -> %d", last, before.Revision, after.Revision)
 	}
 	if len(f.Calls()) != callsAtShutdown {

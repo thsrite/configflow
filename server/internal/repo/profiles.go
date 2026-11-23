@@ -341,11 +341,16 @@ func (r *Repository) SaveRouterPublicationJSON(ctx context.Context, profileID st
 		if router == nil {
 			return inUse(msgRouterConnectionChanged)
 		}
+		manifestChanged := false
 		fields := []JSONUpdate{publication.Manifest, publication.DNSGuard, publication.IPv6FakeIP, publication.IPv6Routes, publication.IPv6PDGuard}
 		for i, field := range RouterManifestFields {
 			update := fields[i]
 			if !update.Set {
 				continue
+			}
+			beforeRaw, beforePresent, err := recordMemberJSON(router, field)
+			if err != nil {
+				return err
 			}
 			if !jsonTruthy(update.Value) {
 				if err := router.Clear(field); err != nil {
@@ -353,6 +358,13 @@ func (r *Repository) SaveRouterPublicationJSON(ctx context.Context, profileID st
 				}
 			} else if err := router.SetJSON(field, update.Value); err != nil {
 				return err
+			}
+			afterRaw, afterPresent, err := recordMemberJSON(router, field)
+			if err != nil {
+				return err
+			}
+			if beforePresent != afterPresent || !sameStored(beforeRaw, afterRaw) {
+				manifestChanged = true
 			}
 		}
 		if publication.LastRelease.Set {
@@ -363,9 +375,14 @@ func (r *Repository) SaveRouterPublicationJSON(ctx context.Context, profileID st
 			if err := router.SetJSON("last_release", raw); err != nil {
 				return err
 			}
+			if router.LastRelease != nil && router.LastRelease.OK {
+				router.StateRestoredAt = nil
+			}
 		}
-		profile.Revision++
-		profile.UpdatedAt = nowISO()
+		if manifestChanged {
+			profile.Revision++
+			profile.UpdatedAt = nowISO()
+		}
 		return nil
 	})
 }

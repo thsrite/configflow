@@ -57,8 +57,8 @@ func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 		t.Fatal(e)
 	}
 	_, stored, two := r12Config(t, db)
-	if !jsonEqual(stored.Extra["ipv6_fakeip_state"], proof) || two.Revision != one.Revision+1 {
-		t.Fatal("unset manifest inferred clear")
+	if !jsonEqual(stored.Extra["ipv6_fakeip_state"], proof) || two.Revision != one.Revision || len(stored.Extra["last_release"]) == 0 {
+		t.Fatal("unset manifest inferred clear or state-only last_release advanced revision")
 	}
 	if e := db.SaveRouterPublicationJSON(t.Context(), "default", expected, repo.RouterPublicationJSON{IPv6FakeIP: repo.JSONUpdate{Set: true}}); e != nil {
 		t.Fatal(e)
@@ -104,9 +104,9 @@ func TestR12LegacyRouterPublicationPreservesAbsentDefaults(t *testing.T) {
 	if e = db.SaveRouterPublicationJSON(request, "default", expected, repo.RouterPublicationJSON{LastRelease: repo.JSONUpdate{Set: true, Value: json.RawMessage(`{"ok":true}`)}}); e != nil {
 		t.Fatal("request disconnect or absent defaults rejected publication", e)
 	}
-	_, _, after := r12Config(t, db)
-	if after.Revision != before.Revision+1 {
-		t.Fatal("publication did not commit once")
+	_, afterStored, after := r12Config(t, db)
+	if after.Revision != before.Revision || len(afterStored.Extra["last_release"]) == 0 {
+		t.Fatal("last_release-only publication did not commit state or advanced config revision")
 	}
 	withDefault := *r
 	withDefault.source = nil

@@ -97,6 +97,13 @@ func writeGlobal(ctx context.Context, data json.RawMessage, reset bool) (restore
 				StateRestoredAt *string `json:"state_restored_at"`
 			} `json:"agents"`
 		} `json:"system"`
+		Profiles map[string]struct {
+			Routers struct {
+				Items []struct {
+					StateRestoredAt *string `json:"state_restored_at"`
+				} `json:"items"`
+			} `json:"routers"`
+		} `json:"profiles"`
 	}
 	if json.Unmarshal(exported, &imported) != nil {
 		return false, nil // the import committed; only the extra hint is lost
@@ -104,6 +111,13 @@ func writeGlobal(ctx context.Context, data json.RawMessage, reset bool) (restore
 	for _, agent := range imported.System.Agents {
 		if agent.StateRestoredAt != nil {
 			return true, nil
+		}
+	}
+	for _, profile := range imported.Profiles {
+		for _, router := range profile.Routers.Items {
+			if router.StateRestoredAt != nil {
+				return true, nil
+			}
 		}
 	}
 	return false, nil

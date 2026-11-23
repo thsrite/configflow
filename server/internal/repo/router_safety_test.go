@@ -173,6 +173,12 @@ func TestCredentialRepairPreservesOwnershipInEveryWriter(t *testing.T) {
 				routers.GetList("items")[0].(*testObj).Set(field, value)
 				noError(t, rsReplaceRouters(t, r, writer, mustMarshalJSON(t, routers)))
 				saved := rsRouterObj(t, r)
+				if writer == "whole-import" {
+					if !saved.Has("state_restored_at") {
+						t.Fatal("whole-import without last_release did not set state_restored_at")
+					}
+					saved.Delete("state_restored_at")
+				}
 				wantJSONEqual(t, saved, routers.GetList("items")[0])
 				wantJSONEqual(t, saved.Value("ros_policy_state"), json.RawMessage(rsManifest))
 			})

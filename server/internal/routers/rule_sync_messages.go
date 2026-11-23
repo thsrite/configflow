@@ -31,6 +31,7 @@ const (
 	messageSyncPaused               = "同步已暂停"
 	messageSyncBusy                 = "此路由器正在发布或同步，请稍后再试"
 	messageSyncEnable               = "请先开启此路由器的远程规则自动同步"
+	messageSyncRestored             = "运行记录未包含在备份里，请先重新发布此路由器"
 	messageSyncInterrupted          = "上次同步未正常结束，请手动预览发布，核对设备现场"
 	messageSyncConfirm              = "上次同步待人工确认，请先手动预览发布以重新建立基准"
 	messageSyncChecking             = "正在检查远程规则"

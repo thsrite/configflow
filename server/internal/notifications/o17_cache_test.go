@@ -33,7 +33,8 @@ func TestO17FollowupRouterSignaturesCacheUsesSameConfig(t *testing.T) {
 	delete(routerSigCache, r.DataDir())
 	routerSigMu.Unlock()
 
-	sigs1, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID})
+	var zeroKey [32]byte
+	sigs1, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, zeroKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestO17FollowupRouterSignaturesCacheUsesSameConfig(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	sigs2, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID})
+	sigs2, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, zeroKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +60,18 @@ func TestO17FollowupRouterSignaturesCacheUsesSameConfig(t *testing.T) {
 		t.Fatalf("routerSigCache invalidated by state-only commit: head %+v -> %+v", head1, head2)
 	}
 
+	// Router last_release change must invalidate routerSigCache.
+	changedKey := [32]byte{1}
+	if _, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, changedKey); err != nil {
+		t.Fatal(err)
+	}
+	routerSigMu.Lock()
+	headRel := routerSigCache[r.DataDir()].head
+	routerSigMu.Unlock()
+	if headRel == head1 {
+		t.Fatalf("routerSigCache not invalidated by router release state change: head stayed %+v", headRel)
+	}
+
 	// Configuration commit must invalidate routerSigCache.
 	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		system.Agents[0].Name = "Agent 1 Renamed"
@@ -66,7 +79,7 @@ func TestO17FollowupRouterSignaturesCacheUsesSameConfig(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}); err != nil {
+	if _, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, changedKey); err != nil {
 		t.Fatal(err)
 	}
 	routerSigMu.Lock()

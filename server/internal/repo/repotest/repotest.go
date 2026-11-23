@@ -178,6 +178,30 @@ func DowngradeToV1(t testing.TB, path string) {
 		default:
 			t.Fatal(err)
 		}
+		routerRows, err := tx.Query("SELECT owner, value FROM fields WHERE scope='profile' AND field='routers'")
+		if err != nil {
+			t.Fatal(err)
+		}
+		type profileRouters struct{ id, value string }
+		var profiles []profileRouters
+		for routerRows.Next() {
+			var item profileRouters
+			if err := routerRows.Scan(&item.id, &item.value); err != nil {
+				routerRows.Close()
+				t.Fatal(err)
+			}
+			profiles = append(profiles, item)
+		}
+		if err := routerRows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range profiles {
+			if merged := staterows.MergeRouters(item.id, []byte(item.value), rows); string(merged) != item.value {
+				if _, err := tx.Exec("UPDATE fields SET value=? WHERE scope='profile' AND owner=? AND field='routers'", string(merged), item.id); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
 		if _, err := tx.Exec("DROP TABLE agent_state"); err != nil {
 			t.Fatal(err)
 		}
@@ -243,6 +267,19 @@ func MergedLoad(path string) (store.Entry, error) {
 			}
 		}
 		document.System = &store.Section{Fields: fields}
+	}
+	if len(document.Profiles) > 0 {
+		profiles := make([]store.ProfileRows, len(document.Profiles))
+		for i, profile := range document.Profiles {
+			fields := append([]store.Field(nil), profile.Fields...)
+			for j := range fields {
+				if fields[j].Name == "routers" {
+					fields[j].Value = staterows.MergeRouters(profile.ID, fields[j].Value, document.State)
+				}
+			}
+			profiles[i] = store.ProfileRows{ID: profile.ID, Fields: fields}
+		}
+		document.Profiles = profiles
 	}
 	document.State = nil
 	entry.Document = &document

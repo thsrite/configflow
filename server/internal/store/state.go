@@ -203,6 +203,11 @@ func (t *UpgradeTx) Field(scope, owner, name string) (json.RawMessage, bool, err
 	return t.c.Field(scope, owner, name)
 }
 
+// ProfileIDs returns the profile owners stored in sections, in position order.
+func (t *UpgradeTx) ProfileIDs() ([]string, error) {
+	return t.c.strings1("SELECT owner FROM sections WHERE scope = 'profile' ORDER BY position, owner")
+}
+
 // ReplaceField replaces the value of an existing field, keeping its position.
 func (t *UpgradeTx) ReplaceField(scope, owner, name string, value json.RawMessage) error {
 	if !utf8.Valid(value) || !json.Valid(value) {

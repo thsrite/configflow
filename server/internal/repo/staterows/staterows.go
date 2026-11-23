@@ -312,3 +312,187 @@ func Merge(row []byte, rows []store.StateRow) []byte {
 	}
 	return joinJSON('[', ']', elements)
 }
+
+// RouterStateMemberPrefix namespaces router state members in agent_state so
+// they can never collide with an Agent's state rows even if an Agent shares
+// the same owner text.
+const RouterStateMemberPrefix = "router."
+
+// RouterStateOwner returns the agent_state owner key for routerID in profileID.
+// Profile IDs cannot contain "/", so the triple is unambiguous.
+func RouterStateOwner(profileID, routerID string) string {
+	return "router/" + profileID + "/" + routerID
+}
+
+// routerID returns the id the model reads from a stored router entry, or ""
+// when the entry has none or is damaged.
+func routerID(members []jsonMember) string {
+	for _, member := range members {
+		if member.name != "id" {
+			continue
+		}
+		var record model.Router
+		if _, issues, err := model.DecodeStoredMember(&record, "id", member.value, "routers.id"); err != nil || len(issues) > 0 {
+			return ""
+		}
+		return record.ID
+	}
+	return ""
+}
+
+func isRouterStateMember(name string) bool {
+	return slices.Contains(model.RouterStateMembers, name)
+}
+
+// SplitRouters moves the router state members (model.RouterStateMembers) of
+// an encoded profile routers row (`{"items":[...]}`) into state rows. Entries
+// without a valid id, repeated ids, non-object entries, or non-object/non-array
+// containers stay untouched in the configuration row.
+func SplitRouters(profileID string, row []byte) ([]byte, []store.StateRow) {
+	top, ok := objectMembers(row)
+	if !ok {
+		return row, nil
+	}
+	var rows []store.StateRow
+	seen := map[string]bool{}
+	changed := false
+	outTop := make([][]byte, 0, len(top))
+	for _, field := range top {
+		if field.name != "items" {
+			outTop = append(outTop, field.text)
+			continue
+		}
+		elements, ok := arrayElements(field.value)
+		if !ok {
+			outTop = append(outTop, field.text)
+			continue
+		}
+		itemsChanged := false
+		for i, element := range elements {
+			members, ok := objectMembers(element)
+			if !ok {
+				continue
+			}
+			id := routerID(members)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			owner := RouterStateOwner(profileID, id)
+			kept := make([][]byte, 0, len(members))
+			moved := false
+			for _, member := range members {
+				if isRouterStateMember(member.name) {
+					rows = append(rows, store.StateRow{
+						Owner:  owner,
+						Member: RouterStateMemberPrefix + member.name,
+						Value:  slices.Clone(member.value),
+					})
+					moved = true
+					continue
+				}
+				kept = append(kept, member.text)
+			}
+			if moved {
+				elements[i] = joinJSON('{', '}', kept)
+				itemsChanged = true
+			}
+		}
+		if itemsChanged {
+			changed = true
+			outTop = append(outTop, append(slices.Clone(field.keyText()), joinJSON('[', ']', elements)...))
+		} else {
+			outTop = append(outTop, field.text)
+		}
+	}
+	if !changed {
+		return row, nil
+	}
+	return joinJSON('{', '}', outTop), rows
+}
+
+// MergeRouters puts router state rows for profileID back into the profile's
+// configuration routers row (`{"items":[...]}`). Rows of other profiles,
+// Agents, or deleted routers are ignored.
+func MergeRouters(profileID string, row []byte, rows []store.StateRow) []byte {
+	if len(rows) == 0 {
+		return row
+	}
+	prefix := "router/" + profileID + "/"
+	byRouter := map[string]map[string][]byte{}
+	for _, state := range rows {
+		id, ok := strings.CutPrefix(state.Owner, prefix)
+		if !ok || id == "" {
+			continue
+		}
+		member, ok := strings.CutPrefix(state.Member, RouterStateMemberPrefix)
+		if !ok || !isRouterStateMember(member) {
+			continue
+		}
+		if byRouter[id] == nil {
+			byRouter[id] = map[string][]byte{}
+		}
+		byRouter[id][member] = state.Value
+	}
+	if len(byRouter) == 0 {
+		return row
+	}
+	top, ok := objectMembers(row)
+	if !ok {
+		return row
+	}
+	seen := map[string]bool{}
+	changed := false
+	outTop := make([][]byte, 0, len(top))
+	for _, field := range top {
+		if field.name != "items" {
+			outTop = append(outTop, field.text)
+			continue
+		}
+		elements, ok := arrayElements(field.value)
+		if !ok {
+			outTop = append(outTop, field.text)
+			continue
+		}
+		itemsChanged := false
+		for i, element := range elements {
+			members, ok := objectMembers(element)
+			if !ok {
+				continue
+			}
+			id := routerID(members)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			values := byRouter[id]
+			if len(values) == 0 {
+				continue
+			}
+			merged := make([][]byte, 0, len(members)+len(values))
+			for _, member := range members {
+				if _, replaced := values[member.name]; replaced && isRouterStateMember(member.name) {
+					continue
+				}
+				merged = append(merged, member.text)
+			}
+			for _, name := range model.RouterStateMembers {
+				if value, ok := values[name]; ok {
+					merged = append(merged, memberText(name, value))
+				}
+			}
+			elements[i] = joinJSON('{', '}', merged)
+			itemsChanged = true
+		}
+		if itemsChanged {
+			changed = true
+			outTop = append(outTop, append(slices.Clone(field.keyText()), joinJSON('[', ']', elements)...))
+		} else {
+			outTop = append(outTop, field.text)
+		}
+	}
+	if !changed {
+		return row
+	}
+	return joinJSON('{', '}', outTop)
+}
