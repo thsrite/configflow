@@ -113,11 +113,24 @@ run_agent() (
   [[ -z $out ]] || { echo "$out"; fail agent-module; }
   go vet ./... || fail agent-module
   go vet -tags 'halab nftlab' ./... || fail agent-module
+  # Release images cross-build the Agent (and the panel) for these targets;
+  # syscall differences (e.g. Dup2 missing on arm64) only show up here.
+  local target
+  for target in linux/amd64 linux/arm64 linux/arm/7 linux/386; do
+    IFS=/ read -r os arch armv <<<"$target"
+    GOOS=$os GOARCH=$arch GOARM=$armv CGO_ENABLED=0 go build -o /dev/null ./... \
+      || fail "agent-module cross-build $target"
+  done
+  (cd "$OLDPWD" && for target in linux/amd64 linux/arm64 linux/arm/7; do
+    IFS=/ read -r os arch armv <<<"$target"
+    GOOS=$os GOARCH=$arch GOARM=$armv CGO_ENABLED=0 go build -o /dev/null ./cmd/... \
+      || fail "server cross-build $target"
+  done) || fail cross-build
   go test -race "${pflag[@]}" -timeout=60m ./... >"$logs/agent-race.log" 2>&1 \
     || { cat "$logs/agent-race.log"; fail "agent-module (see $logs/agent-race.log)"; }
   cat "$logs/agent-race.log"
   echo "gate: agent race cache hits=$(awk '/^ok[[:space:]]/ && /\(cached\)/' "$logs/agent-race.log" | wc -l)"
-  echo 'gate: agent module PASS (gofmt, vet, vet -tags halab nftlab, race)'
+  echo 'gate: agent module PASS (gofmt, vet, vet -tags halab nftlab, cross-build, race)'
 )
 
 run_core() {
