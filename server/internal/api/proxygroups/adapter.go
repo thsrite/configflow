@@ -137,12 +137,12 @@ func validateDialers(config *model.Config) error {
 // syncFollow re-routes follow-DNS rules whose policy route changed; before
 // is a copy of the profile taken before the edit.
 func syncFollow(ctx context.Context, before, after *model.Config, base string) ([]string, error) {
-	settings, err := after.Profile.OxiDNS.Node()
+	head, err := oxidns.ReadSettingsHead(after.Profile.OxiDNS)
 	if err != nil {
 		return nil, err
 	}
-	following, ok := oxidns.SettingsStrings(settings, "rule_dns_follow")
-	if !ok || len(following) == 0 {
+	following := head.Follow
+	if !head.FollowOK || len(following) == 0 {
 		return nil, nil
 	}
 	catalog, err := sharedCatalog(ctx)
@@ -162,7 +162,7 @@ func syncFollow(ctx context.Context, before, after *model.Config, base string) (
 	if err != nil {
 		return nil, err
 	}
-	native := oxidns.SettingsText(settings, "config_mode") == "native"
+	native := head.Mode == "native"
 	changed := false
 	for _, row := range after.Profile.RuleConfigs {
 		if !slices.Contains(following, row.ID) {

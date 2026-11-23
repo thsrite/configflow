@@ -217,9 +217,9 @@ func ensureDNSKind(before *oxidns.Profile, config *model.Config, item model.Rule
 
 // nativeWithout returns native OxiDNS settings without the rule's routing,
 // or nil when the settings are not a loadable native configuration.
-func nativeWithout(view *oxidns.Profile, settings *oxidns.Node, id, base string) (*oxidns.Node, error) {
-	mode, native := oxidns.SettingsText(settings, "config_mode"), oxidns.SettingsText(settings, "native_config")
-	if mode != "native" || native == "" {
+func nativeWithout(view *oxidns.Profile, head oxidns.SettingsHead, settings *oxidns.Node, id, base string) (*oxidns.Node, error) {
+	native := head.NativeConfig
+	if head.Mode != "native" || native == "" {
 		return nil, nil
 	}
 	if _, err := yamlx.Parse([]byte(native)); err != nil && !errors.Is(err, yamlx.ErrSyntax) {

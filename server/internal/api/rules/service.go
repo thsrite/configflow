@@ -258,7 +258,11 @@ func removeRule(config *model.Config, items []model.RuleConfig, index int, base 
 	if err != nil {
 		return err
 	}
-	native, err := nativeWithout(view, settings, id, base)
+	head, err := oxidns.ReadSettingsHead(config.Profile.OxiDNS)
+	if err != nil {
+		return err
+	}
+	native, err := nativeWithout(view, head, settings, id, base)
 	if err != nil {
 		return err
 	}

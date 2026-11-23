@@ -323,11 +323,11 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		}
 		ids := []string{}
 		for _, profile := range profiles {
-			settings, err := profile.OxiDNS.Node()
+			head, err := oxidns.ReadSettingsHead(profile.OxiDNS)
 			if err != nil {
 				return nil, err
 			}
-			if oxidns.SettingsText(settings, "config_mode") != "native" {
+			if head.Mode != "native" {
 				continue
 			}
 			routing, downloads, err := affects(profile, applicable)
@@ -403,11 +403,11 @@ func rebuild(before, after *model.Config, routing, downloads bool, base string) 
 		}
 	}
 	if downloads {
-		settings, err := after.Profile.OxiDNS.Node()
+		head, err := oxidns.ReadSettingsHead(after.Profile.OxiDNS)
 		if err != nil {
 			return nil, err
 		}
-		if content := oxidns.SettingsText(settings, "native_config"); content != "" {
+		if content := head.NativeConfig; content != "" {
 			if _, err := yamlx.Parse([]byte(content)); err != nil && !errors.Is(err, yamlx.ErrSyntax) {
 				return nil, repo.NewValidationError(err.Error())
 			}

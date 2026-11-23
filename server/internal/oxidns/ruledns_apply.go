@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 )
 
@@ -24,21 +25,34 @@ func Convertible(item model.RuleConfig) bool { return convertible(item) }
 // HasIPPart reports known or possible IP content, for legacy routing recognition.
 func HasIPPart(item model.RuleConfig, p *Profile) bool { return hasIPPart(item, p) }
 
-// SettingsStrings returns a member of settings that is a list of text values.
-func SettingsStrings(settings *Node, key string) ([]string, bool) {
-	value := get(settings, key)
-	if !allStrings(value) {
-		return nil, false
-	}
-	out := make([]string, len(value.Content))
-	for i, item := range value.Content {
-		out[i] = item.Value
-	}
-	return out, true
+// SettingsHead is the editor mode, native draft and follow marks of a stored
+// settings object. Members of the wrong type read as empty; FollowOK reports
+// that rule_dns_follow is a list of text values.
+type SettingsHead struct {
+	Mode         string
+	NativeConfig string
+	Follow       []string
+	FollowOK     bool
 }
 
-// SettingsText returns a text member of settings, "" for anything else.
-func SettingsText(settings *Node, key string) string { return str(get(settings, key)) }
+// ReadSettingsHead decodes the head of a stored settings member.
+func ReadSettingsHead(stored model.Dynamic) (SettingsHead, error) {
+	var w struct {
+		Mode         member[string] `json:"config_mode"`
+		NativeConfig member[string] `json:"native_config"`
+		Follow       texts          `json:"rule_dns_follow"`
+	}
+	if data := stored.JSON(); data != nil {
+		var object map[string]json.RawMessage
+		if jsondecode.Unmarshal(data, &object) == nil {
+			if err := jsondecode.Unmarshal(data, &w); err != nil {
+				return SettingsHead{}, fmt.Errorf("decode OxiDNS settings: %w", err)
+			}
+		}
+	}
+	follow, ok := textList(w.Follow)
+	return SettingsHead{Mode: w.Mode.Value, NativeConfig: w.NativeConfig.Value, Follow: follow, FollowOK: ok}, nil
+}
 
 // WithoutRuleReferences returns settings (an object; anything else counts as
 // empty) without rule id in the route selectors and per-rule DNS metadata.
