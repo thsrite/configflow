@@ -253,7 +253,7 @@ func intValue(v any) (int64, bool) {
 }
 
 // GroupFromRow reads a decoded route_object row.
-func GroupFromRow(row Row) *IkuaiGroup {
+func GroupFromRow(row ikuaiRow) *IkuaiGroup {
 	g := &IkuaiGroup{Name: row.text("group_name"), GID: row.text("group_id"), Values: []string{},
 		Entries: []GroupEntry{}, Users: []GroupUser{}}
 	if id, ok := intValue(row["id"]); ok {
@@ -263,7 +263,7 @@ func GroupFromRow(row Row) *IkuaiGroup {
 		g.Refs = int(refs)
 	}
 	items, _ := row["group_value"].([]any)
-	var entries []Row
+	var entries []ikuaiRow
 	for _, item := range items {
 		if m, ok := item.(map[string]any); ok {
 			entries = append(entries, m)
@@ -285,7 +285,7 @@ func GroupFromRow(row Row) *IkuaiGroup {
 }
 
 // GroupsFromRows reads route_object rows; a name used twice identifies neither group.
-func GroupsFromRows(rows []Row) []*IkuaiGroup {
+func GroupsFromRows(rows []ikuaiRow) []*IkuaiGroup {
 	groups := make([]*IkuaiGroup, len(rows))
 	counts := map[string]int{}
 	for i, row := range rows {
@@ -339,9 +339,9 @@ type GroupRule struct {
 	Comment    string
 	Enabled    bool
 	Action     string
-	Custom     []string // literal destinations
-	Objects    []Row    // destination group references
-	SrcObjects []Row
+	Custom     []string   // literal destinations
+	Objects    []ikuaiRow // destination group references
+	SrcObjects []ikuaiRow
 }
 
 // GroupState is the iKuai group readback: groups with ownership and the
@@ -357,7 +357,7 @@ func (s *GroupState) Rule(key string) *GroupRule { return s.byKey[key] }
 
 // ResolveGroup is the group a rule reference points at: by gid; by name only
 // when the reference has none.
-func ResolveGroup(groups []*IkuaiGroup, ref Row) *IkuaiGroup {
+func ResolveGroup(groups []*IkuaiGroup, ref ikuaiRow) *IkuaiGroup {
 	if gid := ref.text("gid"); gid != "" {
 		if i := slices.IndexFunc(groups, func(g *IkuaiGroup) bool { return g.GID == gid }); i >= 0 {
 			return groups[i]
@@ -385,7 +385,7 @@ const (
 )
 
 // ClassifyRef tells what a rule reference points at.
-func ClassifyRef(groups []*IkuaiGroup, ref Row) (string, *IkuaiGroup) {
+func ClassifyRef(groups []*IkuaiGroup, ref ikuaiRow) (string, *IkuaiGroup) {
 	if g := ResolveGroup(groups, ref); g != nil {
 		if g.Role != "" {
 			return RefOwned, g
@@ -399,8 +399,8 @@ func ClassifyRef(groups []*IkuaiGroup, ref Row) (string, *IkuaiGroup) {
 }
 
 // ForeignRefs are the references to the user's groups among objects.
-func ForeignRefs(groups []*IkuaiGroup, objects []Row) []Row {
-	out := []Row{}
+func ForeignRefs(groups []*IkuaiGroup, objects []ikuaiRow) []ikuaiRow {
+	out := []ikuaiRow{}
 	for _, ref := range objects {
 		if kind, _ := ClassifyRef(groups, ref); ref != nil && kind == RefForeign {
 			out = append(out, ref)
@@ -409,7 +409,7 @@ func ForeignRefs(groups []*IkuaiGroup, objects []Row) []Row {
 	return out
 }
 
-func addressField(row Row, field string) (custom []string, objects []Row) {
+func addressField(row ikuaiRow, field string) (custom []string, objects []ikuaiRow) {
 	value, _ := row[field].(map[string]any)
 	list, _ := value["custom"].([]any)
 	custom = []string{}
@@ -419,7 +419,7 @@ func addressField(row Row, field string) (custom []string, objects []Row) {
 		}
 	}
 	list, _ = value["object"].([]any)
-	objects = []Row{}
+	objects = []ikuaiRow{}
 	for _, item := range list {
 		if m, ok := item.(map[string]any); ok {
 			objects = append(objects, m)
@@ -430,11 +430,11 @@ func addressField(row Row, field string) (custom []string, objects []Row) {
 
 // ReadGroupRules records each rule's destinations and group references and
 // who uses each group, then adopts our groups whose marker was removed.
-func ReadGroupRules(groups []*IkuaiGroup, natRows, policyRows []Row) *GroupState {
+func ReadGroupRules(groups []*IkuaiGroup, natRows, policyRows []ikuaiRow) *GroupState {
 	s := &GroupState{Groups: groups, byKey: map[string]*GroupRule{}}
 	for _, part := range []struct {
 		fn, prefix, label string
-		rows              []Row
+		rows              []ikuaiRow
 	}{{"nat_rule", "nat", "NAT 规则", natRows}, {"stream_ipport", "policy", "端口分流", policyRows}} {
 		for _, row := range part.rows {
 			key := part.prefix + ":" + row.text("id")
@@ -1145,7 +1145,7 @@ func (p *GroupPlanner) MigrationWarning() string {
 // listing the most CIDRs (the first on ties). Other managed rules keep theirs.
 func NATTarget(s *GroupState, managed []*NatBypassEntry) *NatBypassEntry {
 	for _, rule := range managed {
-		if r := s.Rule("nat:" + rule.ID); r != nil && slices.ContainsFunc(r.Objects, func(ref Row) bool {
+		if r := s.Rule("nat:" + rule.ID); r != nil && slices.ContainsFunc(r.Objects, func(ref ikuaiRow) bool {
 			kind, g := ClassifyRef(s.Groups, ref)
 			return kind == RefOwned && g.Role == "nat"
 		}) {

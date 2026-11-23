@@ -132,7 +132,7 @@ func ikuaiSeconds(seconds float64) string { return strconv.FormatFloat(seconds, 
 
 // post sends one request and returns the reply object. timeout is in seconds
 // (0: the default 10).
-func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64) (Row, error) {
+func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64) (ikuaiRow, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -246,9 +246,9 @@ func jsonInt(v any) (int64, bool) {
 }
 
 // replyCode is the integer "code" of a reply.
-func replyCode(data Row) (int64, bool) { return jsonInt(data["code"]) }
+func replyCode(data ikuaiRow) (int64, bool) { return jsonInt(data["code"]) }
 
-func codeIs(data Row, code int64) bool { n, ok := replyCode(data); return ok && n == code }
+func codeIs(data ikuaiRow, code int64) bool { n, ok := replyCode(data); return ok && n == code }
 
 // replyText shows a value iKuai sent (strings and numbers as they are).
 func replyText(v any) string {
@@ -277,7 +277,7 @@ func nonEmptyText(v any) string {
 // read and 1002 no write permission for the account's user group (Label
 // names the feature), 1003 a func_name this firmware lacks, 1008 session
 // expired, 3001 invalid action or parameter.
-func ikuaiCallError(funcName string, data Row) string {
+func ikuaiCallError(funcName string, data ikuaiRow) string {
 	message, _ := data["message"].(string)
 	label, _ := data["Label"].(string)
 	feature := " " + funcName + " "
@@ -344,7 +344,7 @@ func (d *Ikuai) login(ctx context.Context) error {
 // send posts one /Action/call, logging in first and once more when the
 // session expired (code 1008: the router restarted or another login replaced
 // it; an expired session ran nothing, so the one retry is safe).
-func (d *Ikuai) send(ctx context.Context, payload map[string]any, timeout float64) (Row, error) {
+func (d *Ikuai) send(ctx context.Context, payload map[string]any, timeout float64) (ikuaiRow, error) {
 	if err := d.login(ctx); err != nil {
 		return nil, err
 	}
@@ -360,7 +360,7 @@ func (d *Ikuai) send(ctx context.Context, payload map[string]any, timeout float6
 }
 
 // Call runs a show call and returns its results.
-func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any) (Row, error) {
+func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any) (ikuaiRow, error) {
 	data, err := d.send(ctx, map[string]any{"func_name": funcName, "action": "show", "param": param}, 0)
 	if err != nil {
 		return nil, err
@@ -380,13 +380,13 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 // in seconds (0: the default 10). A started write is not abandoned when ctx
 // disconnects (o3-concurrency 2.5); Runtime shutdown still cancels it. The
 // device request keeps its own timeout.
-func (d *Ikuai) Write(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
+func (d *Ikuai) Write(ctx context.Context, funcName, action string, param any, timeout float64) (ikuaiRow, error) {
 	return d.writeForm(lifecycle.Detach(ctx), funcName, action, param, timeout)
 }
 
 // writeForm shares wire encoding and refusal classification. Write and R17
 // supply detached Runtime contexts so shutdown can cancel an in-flight write.
-func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
+func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param any, timeout float64) (ikuaiRow, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -423,7 +423,7 @@ func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param an
 	}
 	results, _ := data["results"].(map[string]any)
 	if results == nil {
-		results = Row{}
+		results = ikuaiRow{}
 	}
 	return results, nil
 }
@@ -434,12 +434,12 @@ func isRejected(err error) bool { return routerErrorKind(err) == KindRejected }
 // dhcp_static). It fails closed when a page is short, the total changes
 // between pages, or (with ids) a row lacks a unique positive integer id.
 // incomplete replaces the default incomplete-read message.
-func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, incomplete string) ([]Row, error) {
+func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, incomplete string) ([]ikuaiRow, error) {
 	label := cmp.Or(ikuaiListLabels[funcName], funcName)
 	if incomplete == "" {
 		incomplete = fmt.Sprintf(messageIkuaiListIncomplete, label)
 	}
-	rows := []Row{}
+	rows := []ikuaiRow{}
 	seen := map[int64]bool{}
 	total, offset := int64(-1), int64(0)
 	for total < 0 || offset < total {
@@ -464,7 +464,7 @@ func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, 
 					return nil, routerError(incomplete)
 				}
 			} else {
-				id, ok := jsonInt(Row(row)["id"])
+				id, ok := jsonInt(ikuaiRow(row)["id"])
 				if !isRow || !ok || id < 1 || seen[id] {
 					return nil, routerError(fmt.Sprintf(messageIkuaiListIDs, label))
 				}
@@ -492,7 +492,7 @@ func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
 	if !ok && results["verinfo"] != nil {
 		return nil, &RouterError{Kind: KindInvalidResponse, Message: messageIkuaiVersionFormat}
 	}
-	version := nonEmptyText(Row(verinfo)["version"])
+	version := nonEmptyText(ikuaiRow(verinfo)["version"])
 	if !strings.HasPrefix(version, "4.") {
 		return nil, routerError(fmt.Sprintf(messageIkuaiVersion, cmp.Or(version, messageUnknown)))
 	}
@@ -505,7 +505,7 @@ func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
 			return nil, err
 		}
 	}
-	return &RouterInfo{Vendor: "ikuai", Version: version, Model: nonEmptyText(Row(verinfo)["verstring"]),
+	return &RouterInfo{Vendor: "ikuai", Version: version, Model: nonEmptyText(ikuaiRow(verinfo)["verstring"]),
 		Capabilities: capabilities}, nil
 }
 
@@ -518,7 +518,7 @@ func ikuaiRouteMask(mask string) string {
 }
 
 // ikuaiNetwork is a row's dst_addr/netmask as a network (host bits cleared).
-func ikuaiNetwork(row Row) (string, bool) {
+func ikuaiNetwork(row ikuaiRow) (string, bool) {
 	network, ok := netipx.ParseNetwork(row.text("dst_addr")+"/"+ikuaiRouteMask(row.text("netmask")), false)
 	if !ok {
 		return "", false
@@ -631,7 +631,7 @@ func numberEquals(v any, n int64) bool {
 // returns empty lists as {}, the forms send [].
 func ikuaiAddressField(value any) map[string]any {
 	field, _ := value.(map[string]any)
-	if row, ok := value.(Row); ok {
+	if row, ok := value.(ikuaiRow); ok {
 		field = row
 	}
 	out := map[string]any{}
@@ -667,10 +667,10 @@ func ikuaiAddresses(value any, sets, byGID map[string][]string) []string {
 		if !ok {
 			continue
 		}
-		if gid := Row(ref).text("gid"); gid != "" {
+		if gid := ikuaiRow(ref).text("gid"); gid != "" {
 			result = append(result, byGID[gid]...)
 		} else {
-			result = append(result, sets[Row(ref).text("gp_name")]...)
+			result = append(result, sets[ikuaiRow(ref).text("gp_name")]...)
 		}
 	}
 	return result
@@ -711,8 +711,8 @@ func DecodeIkuaiValue(value any, key string) any {
 			out[k] = DecodeIkuaiValue(item, k)
 		}
 		return out
-	case Row:
-		return Row(DecodeIkuaiValue(map[string]any(v), key).(map[string]any))
+	case ikuaiRow:
+		return ikuaiRow(DecodeIkuaiValue(map[string]any(v), key).(map[string]any))
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
@@ -735,10 +735,10 @@ func DecodeIkuaiValue(value any, key string) any {
 }
 
 // decodeRow is a decoded device row.
-func decodeIkuaiRow(row Row) Row { return DecodeIkuaiValue(row, "").(Row) }
+func decodeIkuaiRow(row ikuaiRow) ikuaiRow { return DecodeIkuaiValue(row, "").(ikuaiRow) }
 
-func decodeRows(rows []Row) []Row {
-	out := make([]Row, len(rows))
+func decodeRows(rows []ikuaiRow) []ikuaiRow {
+	out := make([]ikuaiRow, len(rows))
 	for i, row := range rows {
 		out[i] = decodeIkuaiRow(row)
 	}
@@ -817,7 +817,7 @@ func IkuaiTagname(kind, key string) string {
 
 // ikuaiRestoreTimeout gives a rule listing many entries literally more time
 // to be written back (a rollback of a migration to IP groups); 0 = default.
-func ikuaiRestoreTimeout(payload Row) float64 {
+func ikuaiRestoreTimeout(payload ikuaiRow) float64 {
 	count := 0
 	for _, field := range []string{"src_addr", "dst_addr"} {
 		count += len(ikuaiAddressField(payload[field])["custom"].([]any))

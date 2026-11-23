@@ -88,9 +88,9 @@ type r03State struct {
 }
 
 type r03Ikuai struct {
-	Groups []Row `json:"groups"`
-	NAT    []Row `json:"nat"`
-	Policy []Row `json:"policy"`
+	Groups []ikuaiRow `json:"groups"`
+	NAT    []ikuaiRow `json:"nat"`
+	Policy []ikuaiRow `json:"policy"`
 }
 
 func (k r03Ikuai) state() *GroupState {

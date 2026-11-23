@@ -9,7 +9,7 @@ import (
 
 // ikuaiGroupRow is a decoded route_object row of a ConfigFlow group of role
 // holding values (the first entry carries the marker).
-func ikuaiGroupRow(role string, index int, values []string) Row {
+func ikuaiGroupRow(role string, index int, values []string) ikuaiRow {
 	entries := []any{}
 	for i, v := range values {
 		comment := ""
@@ -18,7 +18,7 @@ func ikuaiGroupRow(role string, index int, values []string) Row {
 		}
 		entries = append(entries, map[string]any{"ip": v, "comment": comment})
 	}
-	return Row{"id": float64(index), "group_id": fmt.Sprintf("IPGP%d", index), "group_name": GroupName(role, index),
+	return ikuaiRow{"id": float64(index), "group_id": fmt.Sprintf("IPGP%d", index), "group_name": GroupName(role, index),
 		"type": 0.0, "group_value": entries}
 }
 
@@ -26,7 +26,7 @@ func ikuaiGroupRow(role string, index int, values []string) Row {
 // queue the new CIDRs the first pass already placed a second time. Python
 // wrote cf_pa_1 with 52 entries here (the new CIDR twice).
 func TestLayoutRepackQueuesNewEntriesOnce(t *testing.T) {
-	var rows []Row
+	var rows []ikuaiRow
 	var want []string
 	for index := 1; index <= 5; index++ {
 		var values []string

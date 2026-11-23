@@ -69,12 +69,16 @@ func (o FixedIPOperation) MarshalJSON() ([]byte, error) {
 // FixedIPSnapshot is a complete reservation snapshot. A malformed write table
 // is rejected; read-only discovery's row-isolation rules do not grant ownership.
 type FixedIPSnapshot struct {
-	Vendor    string `json:"-"`
-	Servers   []Row  `json:"servers"`
-	Networks  []Row  `json:"networks,omitempty"`
-	Addresses []Row  `json:"addresses,omitempty"`
-	Leases    []Row  `json:"leases"`
-	Static    []Row  `json:"static,omitempty"`
+	Vendor string `json:"-"`
+	// RouterOS tables.
+	Servers   []Row `json:"servers"`
+	Networks  []Row `json:"networks,omitempty"`
+	Addresses []Row `json:"addresses,omitempty"`
+	Leases    []Row `json:"leases"`
+	// iKuai tables.
+	ikuaiServers []ikuaiRow
+	ikuaiStatic  []ikuaiRow
+	ikuaiLeases  []ikuaiRow
 }
 
 // FixedIPState separates control eligibility from evidence about existing leases.

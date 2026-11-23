@@ -41,7 +41,7 @@ func prefixed(prefix string, numbers []int) []string {
 	return out
 }
 
-func (d *Ikuai) dhcpList(ctx context.Context, funcName, prefix string) ([]Row, error) {
+func (d *Ikuai) dhcpList(ctx context.Context, funcName, prefix string) ([]ikuaiRow, error) {
 	// The vendor's include/sqlite.sh prints a literal [] for an empty query.
 	rows, err := d.ListAll(ctx, funcName, prefix, false, fmt.Sprintf(messageIkuaiDHCPIncomplete, funcName))
 	if err != nil {
@@ -50,7 +50,7 @@ func (d *Ikuai) dhcpList(ctx context.Context, funcName, prefix string) ([]Row, e
 	return decodeRows(rows), nil
 }
 
-func withoutKeys(row Row, keys ...string) Row {
+func withoutKeys(row ikuaiRow, keys ...string) ikuaiRow {
 	out := maps.Clone(row)
 	for _, key := range keys {
 		delete(out, key)
@@ -73,7 +73,7 @@ func (d *Ikuai) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	if err != nil {
 		return nil, err
 	}
-	servers, static := make([]Row, len(rows)), make([]Row, len(bindings))
+	servers, static := make([]ikuaiRow, len(rows)), make([]ikuaiRow, len(bindings))
 	for i, row := range rows {
 		servers[i] = withoutKeys(row, "available")
 	}
@@ -95,7 +95,7 @@ func (d *Ikuai) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	return state, nil
 }
 
-func ikuaiDHCPEntry(row Row, bindings []Row) (*DhcpDnsEntry, error) {
+func ikuaiDHCPEntry(row ikuaiRow, bindings []ikuaiRow) (*DhcpDnsEntry, error) {
 	var blockers []string
 	var missing, unknown []string
 	for _, key := range ikuaiDHCPFields {
@@ -115,7 +115,7 @@ func ikuaiDHCPEntry(row Row, bindings []Row) (*DhcpDnsEntry, error) {
 		}
 		blockers = append(blockers, fmt.Sprintf(messageIkuaiDHCPFields, list(missing), list(unknown)))
 	}
-	attributes := Row{}
+	attributes := ikuaiRow{}
 	for _, key := range ikuaiDHCPFields {
 		value, ok := row[key]
 		if !ok {
@@ -189,7 +189,7 @@ func truthyValue(v any) bool { return nonEmptyText(v) != "" || v == true }
 
 // ikuaiDHCPSubnet is the one network the address pool, netmask and gateway
 // agree on.
-func ikuaiDHCPSubnet(row Row) (netip.Prefix, bool) {
+func ikuaiDHCPSubnet(row ikuaiRow) (netip.Prefix, bool) {
 	first, last, ok := strings.Cut(row.text("addr_pool"), "-")
 	if !ok || strings.Contains(last, "-") {
 		return netip.Prefix{}, false
@@ -209,7 +209,7 @@ func ikuaiDHCPSubnet(row Row) (netip.Prefix, bool) {
 
 // ikuaiBindingBlockers are the reasons a static binding inside the network
 // (or anywhere, when the network is unknown) could defeat the DHCP DNS.
-func ikuaiBindingBlockers(binding Row, subnet netip.Prefix, network bool) []string {
+func ikuaiBindingBlockers(binding ikuaiRow, subnet netip.Prefix, network bool) []string {
 	if binding.is("enabled", "no") {
 		return nil
 	}
@@ -275,7 +275,7 @@ func ikuaiDHCPTarget(state *DhcpDnsState, id string) (*DhcpDnsEntry, error) {
 
 // dhcpEditVerified writes a complete dhcp_server form and proves the
 // read-back holds exactly it, without blockers.
-func (d *Ikuai) dhcpEditVerified(ctx context.Context, payload Row) error {
+func (d *Ikuai) dhcpEditVerified(ctx context.Context, payload ikuaiRow) error {
 	if _, err := d.Write(ctx, "dhcp_server", "edit", payload, 0); err != nil {
 		return err
 	}
@@ -347,7 +347,7 @@ func (d *Ikuai) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
 		address == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
 		return nil, routerError(messageIkuaiDHCPAddress)
 	}
-	before := entry.AttributesRow()
+	before := ikuaiRow(entry.AttributesRow())
 	// The UI requires both fields. Both are set to the same DNS so no blank
 	// value can inherit a firmware-specific fallback resolver; the read-back
 	// lists the server once.

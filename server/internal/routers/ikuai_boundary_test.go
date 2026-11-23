@@ -265,7 +265,7 @@ func runGoIkuai(t *testing.T, tc ikuaiCase, endpoint string) ikuaiOutcome {
 	case "write":
 		result, err = driver.Write(ctx, stringOf(tc.input["func"]), stringOf(tc.input["write_action"]), tc.input["param"], 0)
 	case "write_twice":
-		var first, second routers.Row
+		var first, second any
 		if first, err = driver.Write(ctx, stringOf(tc.input["func"]), stringOf(tc.input["write_action"]), tc.input["param"], 0); err == nil {
 			second, err = driver.Write(ctx, stringOf(tc.input["func"]), stringOf(tc.input["write_action"]), tc.input["param2"], 0)
 			result = []any{first, second}

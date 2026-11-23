@@ -11,7 +11,7 @@ import (
 	"configflow/internal/routerdoc"
 )
 
-func clientText(row Row, key string) string {
+func clientText(row ikuaiRow, key string) string {
 	switch v := row[key].(type) {
 	case string:
 		return strings.TrimSpace(replyText(DecodeIkuaiValue(v, key)))
@@ -22,7 +22,7 @@ func clientText(row Row, key string) string {
 	}
 	return ""
 }
-func clientName(row Row) string {
+func clientName(row ikuaiRow) string {
 	for _, key := range []string{"comment", "termname", "hostname"} {
 		if name := clientText(row, key); name != "" {
 			return name
@@ -30,8 +30,8 @@ func clientName(row Row) string {
 	}
 	return ""
 }
-func (d *Ikuai) clientRows(ctx context.Context, name string) ([]Row, error) {
-	result := []Row{}
+func (d *Ikuai) clientRows(ctx context.Context, name string) ([]ikuaiRow, error) {
+	result := []ikuaiRow{}
 	for page := 0; page < 10; page++ {
 		reply, err := d.Call(ctx, name, map[string]any{"TYPE": "data,total", "limit": fmt.Sprintf("%d,1000", page*1000)})
 		if err != nil {
@@ -41,7 +41,7 @@ func (d *Ikuai) clientRows(ctx context.Context, name string) ([]Row, error) {
 		count := 0
 		for _, v := range data {
 			if row, ok := v.(map[string]any); ok {
-				result = append(result, Row(row))
+				result = append(result, ikuaiRow(row))
 				count++
 			}
 		}
@@ -52,7 +52,7 @@ func (d *Ikuai) clientRows(ctx context.Context, name string) ([]Row, error) {
 	}
 	return result, nil
 }
-func ikuaiClient(row Row, online bool) *routerdoc.Sighting {
+func ikuaiClient(row ikuaiRow, online bool) *routerdoc.Sighting {
 	ip := routerdoc.IPv4(rosText(row["ip_addr"]))
 	if ip == "" {
 		return nil

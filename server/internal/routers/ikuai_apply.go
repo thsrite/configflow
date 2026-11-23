@@ -46,9 +46,9 @@ type ikuaiOp struct {
 	AddDst      []string          `json:"add_dst"`
 	Groups      *[]string         `json:"groups"` // present: destinations are these IP groups
 	KeepForeign bool              `json:"keep_foreign"`
-	Record      Row               `json:"record"`
+	Record      ikuaiRow          `json:"record"`
 	Func        string            `json:"func"`
-	Match       Row               `json:"match"`
+	Match       ikuaiRow          `json:"match"`
 	Confirmed   bool              `json:"confirmed"`
 	Name        string            `json:"name"`
 	Role        string            `json:"role"`
@@ -71,8 +71,8 @@ func (op ikuaiOp) digest() string {
 // Undo records Apply returns (JSON keys as the release stores them).
 type (
 	ikuaiRecord struct {
-		Kind   string `json:"kind"`
-		Record Row    `json:"record"`
+		Kind   string   `json:"kind"`
+		Record ikuaiRow `json:"record"`
 	}
 	ikuaiIDRecord struct {
 		Kind string `json:"kind"`
@@ -86,11 +86,11 @@ type (
 	}
 	// ikuaiAddUndo finds an added object again by its unique tagname.
 	ikuaiAddUndo struct {
-		Kind      string `json:"kind"`
-		Func      string `json:"func"`
-		Match     Row    `json:"match"`
-		Confirmed bool   `json:"confirmed"` // false: the add may never have happened
-		CIDR      string `json:"cidr,omitempty"`
+		Kind      string   `json:"kind"`
+		Func      string   `json:"func"`
+		Match     ikuaiRow `json:"match"`
+		Confirmed bool     `json:"confirmed"` // false: the add may never have happened
+		CIDR      string   `json:"cidr,omitempty"`
 	}
 	ikuaiGroupUndo struct {
 		Kind      string `json:"kind"`
@@ -141,7 +141,7 @@ func absentKey(funcName, name string) string { return funcName + "\x00" + name }
 
 // ikuaiBatch is the state shared by the writes of one release stage or rollback.
 type ikuaiBatch struct {
-	rows           map[string]Row // static_rt by id; nil: read again before use
+	rows           map[string]ikuaiRow // static_rt by id; nil: read again before use
 	stale          map[string]bool
 	added          []*ikuaiAddUndo // new routes not read back yet
 	addedSinceRead bool
@@ -185,8 +185,8 @@ func (d *Ikuai) Batch(ctx context.Context, rollback bool, fn func(context.Contex
 	return d.confirmAdded(ctx, d.batch.added)
 }
 
-func rowsByID(rows []Row) map[string]Row {
-	out := make(map[string]Row, len(rows))
+func rowsByID(rows []ikuaiRow) map[string]ikuaiRow {
+	out := make(map[string]ikuaiRow, len(rows))
 	for _, row := range rows {
 		out[row.text("id")] = row
 	}
@@ -195,7 +195,7 @@ func rowsByID(rows []Row) map[string]Row {
 
 // snapshot is the batch's static_rt rows (read again when fresh tags are
 // needed after adds).
-func (d *Ikuai) snapshot(ctx context.Context, freshTags bool) (map[string]Row, error) {
+func (d *Ikuai) snapshot(ctx context.Context, freshTags bool) (map[string]ikuaiRow, error) {
 	b := d.batch
 	if b.rows == nil || (freshTags && b.addedSinceRead) {
 		rows, err := d.ListAll(ctx, "static_rt", "", true, "")
@@ -209,7 +209,7 @@ func (d *Ikuai) snapshot(ctx context.Context, freshTags bool) (map[string]Row, e
 
 // matchesRow compares every ownership field, ignoring only static_rt's
 // netmask display suffix. Other tables and all other fields remain exact.
-func matchesRow(funcName string, row, match Row) bool {
+func matchesRow(funcName string, row, match ikuaiRow) bool {
 	for key, value := range match {
 		actual := row[key]
 		if funcName == "static_rt" && key == "netmask" {
@@ -227,8 +227,8 @@ func matchesRow(funcName string, row, match Row) bool {
 	return true
 }
 
-func taggedRows(rows []Row, tag any) []Row {
-	var out []Row
+func taggedRows(rows []ikuaiRow, tag any) []ikuaiRow {
+	var out []ikuaiRow
 	for _, row := range rows {
 		if jsonEqual(row["tagname"], tag) {
 			out = append(out, row)
@@ -250,7 +250,7 @@ func (d *Ikuai) confirmAdded(ctx context.Context, added []*ikuaiAddUndo) error {
 	if d.batch != nil {
 		d.batch.rows, d.batch.stale, d.batch.addedSinceRead = rowsByID(listed), map[string]bool{}, false
 	}
-	byName := map[string][]Row{}
+	byName := map[string][]ikuaiRow{}
 	for _, row := range decodeRows(listed) {
 		if tag, ok := row["tagname"].(string); ok {
 			byName[tag] = append(byName[tag], row)
@@ -277,7 +277,7 @@ func (d *Ikuai) confirmAdded(ctx context.Context, added []*ikuaiAddUndo) error {
 // --- writes ------------------------------------------------------------------------
 
 // staticWrite writes static_rt and keeps the batch snapshot true to it.
-func (d *Ikuai) staticWrite(ctx context.Context, action string, param Row, undo *ikuaiAddUndo) error {
+func (d *Ikuai) staticWrite(ctx context.Context, action string, param ikuaiRow, undo *ikuaiAddUndo) error {
 	if _, err := d.Write(ctx, "static_rt", action, param, 0); err != nil {
 		if isRejected(err) {
 			return err
@@ -309,8 +309,8 @@ func (d *Ikuai) staticWrite(ctx context.Context, action string, param Row, undo 
 
 // row is the current (decoded) row with id; static routes come from the
 // batch snapshot unless fresh or edited since.
-func (d *Ikuai) row(ctx context.Context, funcName, id string, fresh bool) (Row, error) {
-	var row Row
+func (d *Ikuai) row(ctx context.Context, funcName, id string, fresh bool) (ikuaiRow, error) {
+	var row ikuaiRow
 	if funcName == "static_rt" && d.batch != nil {
 		if fresh || d.batch.stale[id] {
 			d.batch.rows = nil
@@ -325,7 +325,7 @@ func (d *Ikuai) row(ctx context.Context, funcName, id string, fresh bool) (Row, 
 		if err != nil {
 			return nil, err
 		}
-		if i := slices.IndexFunc(rows, func(r Row) bool { return r.text("id") == id }); i >= 0 {
+		if i := slices.IndexFunc(rows, func(r ikuaiRow) bool { return r.text("id") == id }); i >= 0 {
 			row = rows[i]
 		}
 	}
@@ -338,13 +338,13 @@ func (d *Ikuai) row(ctx context.Context, funcName, id string, fresh bool) (Row, 
 // add writes a named object and returns the undo that finds it again by its
 // unique name: iKuai refuses a duplicate name (code 3001, 4.0.314), so the
 // name identifies the new object even when its ID is never read back.
-func (d *Ikuai) add(ctx context.Context, funcName string, payload, match Row, timeout float64) (*ikuaiAddUndo, error) {
+func (d *Ikuai) add(ctx context.Context, funcName string, payload, match ikuaiRow, timeout float64) (*ikuaiAddUndo, error) {
 	if tag, ok := payload["tagname"].(string); !ok || tag == "" {
 		// Without a name the undo could not find the object again (or would
 		// take a row without a name for it). Python failed here (KeyError).
 		return nil, routerError(messageIkuaiOperationFormat)
 	}
-	undo := &ikuaiAddUndo{Kind: "add_undo", Func: funcName, Match: Row{"tagname": payload["tagname"]}, Confirmed: true}
+	undo := &ikuaiAddUndo{Kind: "add_undo", Func: funcName, Match: ikuaiRow{"tagname": payload["tagname"]}, Confirmed: true}
 	maps.Copy(undo.Match, match)
 	delete(d.absent, absentKey(funcName, undo.Match.text("tagname")))
 	if funcName == "static_rt" {
@@ -383,7 +383,7 @@ func (d *Ikuai) revertAdd(ctx context.Context, op ikuaiOp) (any, error) {
 		// Only the unique name proves ownership; never match rows without one.
 		return nil, routerError(messageIkuaiOperationFormat)
 	}
-	var rows []Row
+	var rows []ikuaiRow
 	if op.Func == "static_rt" && d.batch != nil {
 		snapshot, err := d.snapshot(ctx, true)
 		if err != nil {
@@ -407,7 +407,7 @@ func (d *Ikuai) revertAdd(ctx context.Context, op ikuaiOp) (any, error) {
 	if len(tagged) != 1 || !matchesRow(op.Func, tagged[0], op.Match) {
 		return nil, routerError(fmt.Sprintf(messageIkuaiAddChanged, op.Func, tag))
 	}
-	param := Row{"id": tagged[0]["id"]}
+	param := ikuaiRow{"id": tagged[0]["id"]}
 	if op.Func == "static_rt" {
 		return noUndo, d.staticWrite(ctx, "del", param, nil)
 	}
@@ -419,7 +419,7 @@ func (d *Ikuai) revertAdd(ctx context.Context, op ikuaiOp) (any, error) {
 // not the object the record was read from: its name changed, or iKuai gave
 // the id of a deleted object to a new one. The before-image is then not
 // written over it (Python wrote it to whatever row had the id).
-func sameObject(funcName string, current, record Row) error {
+func sameObject(funcName string, current, record ikuaiRow) error {
 	if !jsonEqual(current["tagname"], record["tagname"]) {
 		return routerError(fmt.Sprintf(messageIkuaiRestoreReplaced, funcName, current.text("id")))
 	}
@@ -427,7 +427,7 @@ func sameObject(funcName string, current, record Row) error {
 }
 
 // edit writes a whole rule; a lost reply carries the idempotent undo (the full old row).
-func (d *Ikuai) edit(ctx context.Context, funcName string, payload Row, undo any, timeout float64) error {
+func (d *Ikuai) edit(ctx context.Context, funcName string, payload ikuaiRow, undo any, timeout float64) error {
 	_, err := d.Write(ctx, funcName, "edit", payload, timeout)
 	if err != nil && !isRejected(err) {
 		return withUndo(err, undo)
@@ -437,8 +437,8 @@ func (d *Ikuai) edit(ctx context.Context, funcName string, payload Row, undo any
 
 // --- forms ---------------------------------------------------------------------------
 
-func pick(row Row, fields []string) Row {
-	out := Row{}
+func pick(row ikuaiRow, fields []string) ikuaiRow {
+	out := ikuaiRow{}
 	for _, key := range fields {
 		if value, ok := row[key]; ok {
 			out[key] = value
@@ -457,14 +457,14 @@ func anyList(values []string) []any {
 
 // IkuaiRoutePayload is the complete static_rt edit form of a decoded row with
 // changes applied; the netmask loses the display suffix iKuai adds.
-func IkuaiRoutePayload(row, changes Row) Row {
+func IkuaiRoutePayload(row, changes ikuaiRow) ikuaiRow {
 	payload := pick(row, IkuaiRouteFields)
 	maps.Copy(payload, changes)
 	payload["netmask"] = ikuaiRouteMask(nonEmptyText(payload["netmask"]))
 	return payload
 }
 
-func ikuaiNATPayload(row, changes Row) Row {
+func ikuaiNATPayload(row, changes ikuaiRow) ikuaiRow {
 	payload := pick(row, ikuaiNATFields)
 	for _, key := range []string{"src_addr", "dst_addr", "src_port", "dst_port"} {
 		payload[key] = ikuaiAddressField(payload[key])
@@ -482,8 +482,8 @@ func ikuaiTarget(dst []string, refs []any, useRefs bool) map[string]any {
 
 // ikuaiNewNAT is a NAT bypass rule; with refs its destination is those IP
 // groups and dst only names it.
-func ikuaiNewNAT(src, dst []string, comment string, refs []any, useRefs bool) Row {
-	return ikuaiNATPayload(Row{}, Row{"enabled": "yes", "tagname": IkuaiTagname("nat", strings.Join(dst, ",")),
+func ikuaiNewNAT(src, dst []string, comment string, refs []any, useRefs bool) ikuaiRow {
+	return ikuaiNATPayload(ikuaiRow{}, ikuaiRow{"enabled": "yes", "tagname": IkuaiTagname("nat", strings.Join(dst, ",")),
 		"action": "filter", "protocol": "any", "iinterface": "any", "ointerface": "any",
 		"src_addr": map[string]any{"custom": anyList(src), "object": []any{}}, "dst_addr": ikuaiTarget(dst, refs, useRefs),
 		"nat_addr": "", "nat_port": "", "src_addr_inv": 0, "dst_addr_inv": 0, "comment": comment})
@@ -491,7 +491,7 @@ func ikuaiNewNAT(src, dst []string, comment string, refs []any, useRefs bool) Ro
 
 // ikuaiPolicyPayload is a complete 端口分流 form: a field left out would reset
 // the rule's other settings.
-func ikuaiPolicyPayload(row, changes Row) Row {
+func ikuaiPolicyPayload(row, changes ikuaiRow) ikuaiRow {
 	payload := pick(row, ikuaiPolicyFields)
 	for _, key := range []string{"src_addr", "dst_addr", "src_port", "dst_port", "time"} {
 		payload[key] = ikuaiAddressField(payload[key])
@@ -502,17 +502,17 @@ func ikuaiPolicyPayload(row, changes Row) Row {
 
 // ikuaiPolicyTarget makes a rule route dst to the gateway for every source
 // but the gateway itself (with refs: those IP groups, nothing listed literally).
-func ikuaiPolicyTarget(gateway string, dst []string, comment string, refs []any, useRefs bool) Row {
-	return Row{"enabled": "yes", "type": ikuaiPolicyNexthop, "nexthop": gateway, "protocol": "any",
+func ikuaiPolicyTarget(gateway string, dst []string, comment string, refs []any, useRefs bool) ikuaiRow {
+	return ikuaiRow{"enabled": "yes", "type": ikuaiPolicyNexthop, "nexthop": gateway, "protocol": "any",
 		"prio": PolicyPriority, "src_addr": map[string]any{"custom": []any{gateway}, "object": []any{}},
 		"src_addr_inv": 1, "dst_addr": ikuaiTarget(dst, refs, useRefs), "dst_addr_inv": 0, "comment": comment}
 }
 
-func ikuaiNewPolicy(gateway string, dst []string, comment string, refs []any, useRefs bool) Row {
+func ikuaiNewPolicy(gateway string, dst []string, comment string, refs []any, useRefs bool) ikuaiRow {
 	changes := ikuaiPolicyTarget(gateway, dst, comment, refs, useRefs)
-	maps.Copy(changes, Row{"tagname": IkuaiTagname("pr", comment), "interface": "", "iface_band": 0,
+	maps.Copy(changes, ikuaiRow{"tagname": IkuaiTagname("pr", comment), "interface": "", "iface_band": 0,
 		"time": ikuaiPolicyAlways(), "mode": 0, "area_code": "", "dst_type": 0})
-	return ikuaiPolicyPayload(Row{}, changes)
+	return ikuaiPolicyPayload(ikuaiRow{}, changes)
 }
 
 // ipv4Mask is the dotted netmask of an IPv4 prefix length.
@@ -579,7 +579,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 		if !ok {
 			return nil, routerError(fmt.Sprintf(messageIkuaiRouteNetwork, op.ID))
 		}
-		if err := d.staticWrite(ctx, "del", Row{"id": row["id"]}, nil); err != nil {
+		if err := d.staticWrite(ctx, "del", ikuaiRow{"id": row["id"]}, nil); err != nil {
 			return nil, err
 		}
 		return ikuaiRouteAdd{Kind: "route_add", CIDR: network, Gateway: row.text("gateway"), Comment: row.text("comment")}, nil
@@ -595,7 +595,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 		}
 		payload := IkuaiRoutePayload(op.Record, nil)
 		if op.Kind == "route_comment" {
-			payload = IkuaiRoutePayload(row, Row{"comment": op.Comment})
+			payload = IkuaiRoutePayload(row, ikuaiRow{"comment": op.Comment})
 		} else if err := sameObject("static_rt", row, op.Record); err != nil {
 			return nil, err
 		}
@@ -635,7 +635,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 			dst["custom"] = custom
 		}
 		undo := ikuaiRecord{Kind: "nat_restore", Record: row}
-		if err := d.edit(ctx, "nat_rule", ikuaiNATPayload(row, Row{"dst_addr": dst, "comment": op.Comment}), undo, 0); err != nil {
+		if err := d.edit(ctx, "nat_rule", ikuaiNATPayload(row, ikuaiRow{"dst_addr": dst, "comment": op.Comment}), undo, 0); err != nil {
 			return nil, err
 		}
 		return undo, nil
@@ -663,7 +663,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 			return nil, err
 		}
 		payload := ikuaiNewNAT(op.Src, op.Dst, op.Comment, refs, useRefs)
-		return d.addAndFind(ctx, "nat_rule", "nat_delete", payload, Row{"action": "filter", "comment": op.Comment}, 0)
+		return d.addAndFind(ctx, "nat_rule", "nat_delete", payload, ikuaiRow{"action": "filter", "comment": op.Comment}, 0)
 	case "nat_readd":
 		record, err := d.rebind(ctx, op.Record)
 		if err != nil {
@@ -671,7 +671,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 		}
 		payload := ikuaiNATPayload(record, nil)
 		delete(payload, "id")
-		return d.addAndFind(ctx, "nat_rule", "nat_delete", payload, Row{"action": "filter", "comment": payload["comment"]},
+		return d.addAndFind(ctx, "nat_rule", "nat_delete", payload, ikuaiRow{"action": "filter", "comment": payload["comment"]},
 			ikuaiRestoreTimeout(payload))
 	case "nat_delete":
 		return d.deleteRule(ctx, "nat_rule", "nat_readd", op.ID.String())
@@ -680,7 +680,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 }
 
 // addAndFind adds a rule and returns the record deleting it by its new ID.
-func (d *Ikuai) addAndFind(ctx context.Context, funcName, undoKind string, payload, match Row, timeout float64) (any, error) {
+func (d *Ikuai) addAndFind(ctx context.Context, funcName, undoKind string, payload, match ikuaiRow, timeout float64) (any, error) {
 	undo, err := d.add(ctx, funcName, payload, match, timeout)
 	if err != nil {
 		return nil, err
@@ -699,7 +699,7 @@ func (d *Ikuai) deleteRule(ctx context.Context, funcName, undoKind, id string) (
 	if err != nil {
 		return nil, err
 	}
-	if _, err := d.Write(ctx, funcName, "del", Row{"id": row["id"]}, 0); err != nil {
+	if _, err := d.Write(ctx, funcName, "del", ikuaiRow{"id": row["id"]}, 0); err != nil {
 		return nil, err
 	}
 	return ikuaiRecord{Kind: undoKind, Record: row}, nil
@@ -711,9 +711,9 @@ func (d *Ikuai) addRoute(ctx context.Context, cidr, gateway, comment string) (an
 		return nil, routerError(messageIkuaiOperationFormat)
 	}
 	address, mask := network.Addr().String(), ipv4Mask(network.Bits())
-	undo, err := d.add(ctx, "static_rt", Row{"enabled": "yes", "tagname": IkuaiTagname("rt", cidr), "ip_type": "4",
+	undo, err := d.add(ctx, "static_rt", ikuaiRow{"enabled": "yes", "tagname": IkuaiTagname("rt", cidr), "ip_type": "4",
 		"interface": "auto", "dst_addr": address, "gateway": gateway, "netmask": mask, "prio": 1, "comment": comment},
-		Row{"dst_addr": address, "netmask": mask, "gateway": gateway, "comment": comment}, 0)
+		ikuaiRow{"dst_addr": address, "netmask": mask, "gateway": gateway, "comment": comment}, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +737,7 @@ func (d *Ikuai) applyPolicy(ctx context.Context, op ikuaiOp) (any, error) {
 			return nil, err
 		}
 		payload := ikuaiNewPolicy(op.Gateway, op.Dst, op.Comment, refs, useRefs)
-		return d.addAndFind(ctx, "stream_ipport", "policy_route_delete", payload, Row{"comment": payload["comment"]}, 0)
+		return d.addAndFind(ctx, "stream_ipport", "policy_route_delete", payload, ikuaiRow{"comment": payload["comment"]}, 0)
 	case "policy_route_readd":
 		record, err := d.rebind(ctx, op.Record)
 		if err != nil {
@@ -745,7 +745,7 @@ func (d *Ikuai) applyPolicy(ctx context.Context, op ikuaiOp) (any, error) {
 		}
 		payload := ikuaiPolicyPayload(record, nil)
 		delete(payload, "id")
-		return d.addAndFind(ctx, "stream_ipport", "policy_route_delete", payload, Row{"comment": payload["comment"]},
+		return d.addAndFind(ctx, "stream_ipport", "policy_route_delete", payload, ikuaiRow{"comment": payload["comment"]},
 			ikuaiRestoreTimeout(payload))
 	case "policy_route_delete":
 		return d.deleteRule(ctx, "stream_ipport", "policy_route_readd", op.ID.String())
@@ -758,7 +758,7 @@ func (d *Ikuai) applyPolicy(ctx context.Context, op ikuaiOp) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		var payload Row
+		var payload ikuaiRow
 		var timeout float64
 		if op.Kind == "policy_route_update" {
 			refs, useRefs, err := d.targetRefs(ctx, op, row["dst_addr"])
@@ -842,8 +842,8 @@ func (d *Ikuai) ownedGroup(ctx context.Context, op ikuaiOp, fresh, unmarked bool
 	return found[0], nil
 }
 
-func objectsOf(field any) []Row {
-	var out []Row
+func objectsOf(field any) []ikuaiRow {
+	var out []ikuaiRow
 	for _, item := range ikuaiAddressField(field)["object"].([]any) {
 		if ref, ok := item.(map[string]any); ok {
 			out = append(out, ref)
@@ -951,12 +951,12 @@ func (d *Ikuai) cfRefs(ctx context.Context, names []string) ([]any, error) {
 // rebind is a saved rule whose references to our groups point at their
 // current gid: a rollback may delete a group and create it again under a new
 // gid. The user's own references are written back exactly as they were.
-func (d *Ikuai) rebind(ctx context.Context, record Row) (Row, error) {
+func (d *Ikuai) rebind(ctx context.Context, record ikuaiRow) (ikuaiRow, error) {
 	data, err := json.Marshal(record)
 	if err != nil {
 		return nil, fmt.Errorf("routers: iKuai record: %w", err)
 	}
-	var copied Row
+	var copied ikuaiRow
 	if err := devhttp.DecodeJSON(data, &copied); err != nil || copied == nil {
 		return nil, routerError(messageIkuaiOperationFormat)
 	}
@@ -1081,7 +1081,7 @@ func (d *Ikuai) applyGroup(ctx context.Context, op ikuaiOp) (any, error) {
 			return nil, routerError(fmt.Sprintf(messageIkuaiGroupInUse, name, strings.Join(users, "、")))
 		}
 		undo := ikuaiGroupReadd{Kind: "ikuai_group_readd", Name: name, Role: group.Role, Values: group.Values, Entries: group.Entries}
-		if err := d.groupWrite(ctx, "del", name, Row{"id": *group.ID}, undo); err != nil {
+		if err := d.groupWrite(ctx, "del", name, ikuaiRow{"id": *group.ID}, undo); err != nil {
 			return nil, err
 		}
 		return undo, nil
@@ -1114,7 +1114,7 @@ func (d *Ikuai) applyGroup(ctx context.Context, op ikuaiOp) (any, error) {
 		if len(users) > 0 {
 			return nil, routerError(fmt.Sprintf(messageIkuaiGroupUndoInUse, name, strings.Join(users, "、")))
 		}
-		return noUndo, d.groupWrite(ctx, "del", name, Row{"id": *group.ID}, nil)
+		return noUndo, d.groupWrite(ctx, "del", name, ikuaiRow{"id": *group.ID}, nil)
 	case op.Kind == "ikuai_group_restore":
 		group, err := d.ownedGroup(ctx, op, true, false)
 		if err != nil {

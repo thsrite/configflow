@@ -119,9 +119,9 @@ func TestReportPartsJoinSummaryAndSync(t *testing.T) {
 }
 
 func TestNATTargetPrefersGroupedThenMostCustom(t *testing.T) {
-	s := ReadGroupRules(GroupsFromRows([]Row{{"id": 1.0, "group_id": "G1", "group_name": "cf_nat_1",
+	s := ReadGroupRules(GroupsFromRows([]ikuaiRow{{"id": 1.0, "group_id": "G1", "group_name": "cf_nat_1",
 		"group_value": []any{map[string]any{"ip": "1.1.1.1", "comment": "cf-mihomo-nat"}}}}),
-		[]Row{
+		[]ikuaiRow{
 			{"id": 1.0, "action": "filter", "enabled": "yes", "comment": "cf-a", "dst_addr": map[string]any{"custom": []any{"1.1.1.1", "2.2.2.2"}}},
 			{"id": 2.0, "action": "filter", "enabled": "yes", "comment": "cf-b", "dst_addr": map[string]any{"custom": []any{"3.3.3.3", "4.4.4.4"}}},
 			{"id": 3.0, "action": "filter", "enabled": "yes", "comment": "cf-c", "dst_addr": map[string]any{"object": []any{map[string]any{"gid": "G1"}}}},
