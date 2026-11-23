@@ -232,7 +232,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 			result.Blockers = append(result.Blockers, messagePolicyLANUnknown+reason)
 		}
 		for _, cidr := range spec.Destinations {
-			assessment := AssessNAT(cidr, spec.Gateway, &proxyState, true, index)
+			assessment := AssessNAT(cidr, spec.Gateway, proxyState.NatContext, true, index)
 			if assessment.Status == "unknown" {
 				result.Blockers = append(result.Blockers, cidr+"："+assessment.Detail)
 				break

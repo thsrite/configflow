@@ -15,7 +15,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"configflow/internal/devhttp"
@@ -845,33 +844,6 @@ func (d *RouterOS) filterPolicyMangle(state *NatContext) error {
 	return nil
 }
 
-// RegisterRouterOSHandler installs an operation implemented by a later router
-// module (policy, NAT lists, DNS guard, or IPv6). The operation body remains
-// JSON at the driver boundary and is typed by the owning module.
-type RouterOSHandler func(context.Context, *RouterOS, json.RawMessage) (json.RawMessage, error)
-
-var rosHandlerState = struct {
-	sync.RWMutex
-	byKind map[string]RouterOSHandler
-}{byKind: map[string]RouterOSHandler{}}
-
-// RegisterRouterOSHandler registers one later-module operation kind.
-func RegisterRouterOSHandler(kind string, handler RouterOSHandler) {
-	rosHandlerState.Lock()
-	defer rosHandlerState.Unlock()
-	if handler == nil {
-		delete(rosHandlerState.byKind, kind)
-		return
-	}
-	rosHandlerState.byKind[kind] = handler
-}
-
-func routerOSHandler(kind string) RouterOSHandler {
-	rosHandlerState.RLock()
-	defer rosHandlerState.RUnlock()
-	return rosHandlerState.byKind[kind]
-}
-
 // ROSChange is one REST write or compensation record.
 type ROSChange struct {
 	Method    string          `json:"method"`
@@ -920,32 +892,12 @@ type rosOperation struct {
 	Changes        []ROSChange     `json:"changes"`
 }
 
-// Apply applies one RouterOS release operation and returns its compensation.
-// Once started it runs to the end even if the request is cancelled (PORTING
-// rule 4b): a write abandoned between the request and its read-back would leave
-// a change on the router that no undo record covers. lifecycle.Detach keeps
-// only the shutdown cancellation at the drain deadline (O3 2.5; R12 D-R12-3
-// then records instead of rolling back). Every device request still has its
-// own timeout.
-func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+// applyBase applies one base RouterOS release operation (routes, NAT, DHCP,
+// ros_restore) and returns its compensation.
+func (d *RouterOS) applyBase(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	var head struct {
-		Kind string `json:"kind"`
-	}
-	if err := jsondecode.Unmarshal(raw, &head); err != nil {
-		return nil, device.Error(device.MessageOperationFormat)
-	}
-	switch head.Kind {
-	case "ros_policy_replace", "ros_policy_restore", "nat_list_sync", "nat_list_restore",
-		"ipv6_fakeip_replace", "ipv6_fakeip_restore", "ipv6_routes_replace", "ipv6_routes_restore",
-		"ipv6_dns_update", "ipv6_pd_guard_sync", "ipv6_pd_guard_restore", "dns_guard_replace", "dns_guard_restore":
-		if handler := routerOSHandler(head.Kind); handler != nil {
-			return handler(ctx, d, raw)
-		}
-		return nil, device.ErrNotPorted
 	}
 	var op rosOperation
 	if err := jsondecode.Unmarshal(raw, &op); err != nil {
@@ -1667,187 +1619,4 @@ func (d *RouterOS) compensate(ctx context.Context, cause error, undo []ROSChange
 		return device.RollbackError(cause.Error() + "；" + rollback.Error())
 	}
 	return cause
-}
-
-// ReadState returns routes, NAT exemptions, and only the forwarding evidence
-// needed to assess the active source-NAT selectors.
-func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
-	d.forwardFilterRows = nil
-	state := &RouterState{Routes: []*RouteEntry{}, NatBypass: []*NatBypassEntry{}, AddressSets: map[string][]string{}}
-	routes, err := d.list(ctx, rosRoutes)
-	if err != nil {
-		return nil, err
-	}
-	nats, err := d.list(ctx, rosNAT)
-	if err != nil {
-		return nil, err
-	}
-	mangle, err := d.list(ctx, rosMangle)
-	if err != nil && !device.IsRouterError(err) {
-		return nil, err
-	}
-	var mangleRows []Row
-	if err == nil {
-		mangleRows = mangle
-	}
-	referencedNames := referencedAddressLists(append(slices.Clone(nats), mangleRows...))
-	listNames := slices.Clone(referencedNames)
-	if (d.natListTouched || slices.Contains(referencedNames, NATSrcList) || slices.Contains(referencedNames, NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-src") {
-		listNames = append(listNames, "cf-mihomo-nat-src")
-	}
-	if (d.natListTouched || slices.Contains(referencedNames, NATSrcList) || slices.Contains(referencedNames, NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-dst") {
-		listNames = append(listNames, "cf-mihomo-nat-dst")
-	}
-	slices.Sort(listNames)
-	listRows, err := d.ReadAddresses(ctx, listNames)
-	if err != nil {
-		return nil, err
-	}
-	for _, name := range listNames {
-		for _, row := range listRows[name] {
-			if slices.Contains(referencedNames, name) && !rosFlag(row["disabled"]) {
-				state.AddressSets[name] = append(state.AddressSets[name], row.text("address"))
-			}
-		}
-	}
-	if slices.Contains(listNames, NATSrcList) || slices.Contains(listNames, NATDstList) || d.natListTouched {
-		state.NATLists, _ = d.stateNATLists(ctx, nats, listRows, mangleRows)
-	} else {
-		state.NATListsReader = func(ctx context.Context) (*NATLists, error) {
-			rows, err := d.ReadAddresses(ctx, []string{NATSrcList, NATDstList})
-			if err != nil {
-				return nil, err
-			}
-			return d.stateNATLists(ctx, nats, rows, mangleRows)
-		}
-	}
-
-	assessed := nats
-	if len(d.dnsGuardManifest) != 0 && string(d.dnsGuardManifest) != "null" {
-		ids := ownedHairpinIDs(d.dnsGuardManifest, nats)
-		assessed = make([]Row, 0, len(nats))
-		for _, row := range nats {
-			if !ids[row.id()] {
-				assessed = append(assessed, row)
-			}
-		}
-	}
-	contextRows := &NatContext{
-		Routes: selectFields(routes, rosRouteEvidence), Rules: withoutCounters(assessed),
-	}
-	contextRows.RoutingRules, contextRows.Mangle, contextRows.VRFs = nil, nil, nil
-	contextRows.InterfaceLists, contextRows.InterfaceMembers = nil, nil
-
-	scoped := []Row{}
-	for _, row := range assessed {
-		if row.is("chain", "srcnat") && !rosFlag(row["disabled"]) &&
-			(row.set("out-interface") || row.set("out-interface-list")) {
-			scoped = append(scoped, row)
-		}
-	}
-	if len(scoped) > 0 {
-		for _, item := range []struct{ field, path string }{
-			{"routing_rules", "/routing/rule"}, {"mangle", rosMangle}, {"vrfs", "/ip/vrf"},
-		} {
-			if item.field == "mangle" && mangleRows != nil {
-				contextRows.Mangle = withoutCounters(mangleRows)
-				continue
-			}
-			rows, readErr := d.list(ctx, item.path)
-			if readErr != nil {
-				if !device.IsRouterError(readErr) {
-					return nil, readErr
-				}
-				continue
-			}
-			switch item.field {
-			case "routing_rules":
-				contextRows.RoutingRules = rows
-			case "mangle":
-				contextRows.Mangle = withoutCounters(rows)
-			case "vrfs":
-				contextRows.VRFs = rows
-			}
-		}
-		if slices.ContainsFunc(scoped, func(row Row) bool { return row.set("out-interface-list") }) {
-			for _, item := range []struct{ field, path string }{
-				{"interface_lists", "/interface/list"}, {"interface_members", "/interface/list/member"},
-			} {
-				rows, readErr := d.list(ctx, item.path)
-				if readErr != nil {
-					if !device.IsRouterError(readErr) {
-						return nil, readErr
-					}
-					continue
-				}
-				if item.field == "interface_lists" {
-					contextRows.InterfaceLists = rows
-				} else {
-					contextRows.InterfaceMembers = rows
-				}
-			}
-		}
-	}
-	state.NatContext = contextRows
-
-	for _, row := range routes {
-		dst, ok := netipx.ParseNetwork(row.text("dst-address"), false)
-		if !ok {
-			continue
-		}
-		var active *bool
-		if row.has("active") {
-			active = new(rosFlag(row["active"]))
-		} else if row.has("inactive") {
-			active = new(!rosFlag(row["inactive"]))
-		}
-		if rosFlag(row["inactive"]) || rosFlag(row["invalid"]) {
-			active = new(false)
-		}
-		var distance *int64
-		if n, parseErr := strconv.ParseInt(row.text("distance"), 10, 64); parseErr == nil {
-			distance = &n
-		}
-		table := device.FirstNonEmpty(row.text("routing-table"), "main")
-		state.Routes = append(state.Routes, &RouteEntry{ID: row.id(), Dst: dst.String(), Gateway: row.text("gateway"),
-			Enabled: !rosFlag(row["disabled"]), Comment: row.text("comment"), Table: table, Active: active, Distance: distance})
-	}
-	for _, row := range nats {
-		comment := row.text("comment")
-		if strings.HasPrefix(comment, "cf-ros-policy-") || strings.HasPrefix(comment, "cf-dnsguard:") ||
-			!row.is("chain", "srcnat") || !row.is("action", "accept") {
-			continue
-		}
-		dst, src := []string{}, []string{}
-		if row.set("dst-address") {
-			dst = append(dst, row.text("dst-address"))
-		}
-		if row.set("dst-address-list") {
-			dst = append(dst, state.AddressSets[row.text("dst-address-list")]...)
-		}
-		if row.set("src-address") {
-			src = append(src, row.text("src-address"))
-		}
-		if row.set("src-address-list") {
-			src = append(src, state.AddressSets[row.text("src-address-list")]...)
-		}
-		attrs := make(Row)
-		for key, value := range row {
-			if !rosReadOnly[key] && !strings.HasPrefix(key, ".") {
-				attrs[key] = value
-			}
-		}
-		encoded, marshalErr := json.Marshal(attrs)
-		if marshalErr != nil {
-			return nil, marshalErr
-		}
-		state.NatBypass = append(state.NatBypass, &NatBypassEntry{ID: row.id(), Dst: dst, Src: src,
-			Enabled: !rosFlag(row["disabled"]), Comment: comment, Attributes: encoded})
-	}
-	if len(d.policyManifest) != 0 {
-		if err := d.filterPolicyMangle(contextRows); err != nil && !errors.Is(err, device.ErrNotPorted) {
-			return nil, err
-		}
-	}
-	return state, nil
 }

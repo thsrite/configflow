@@ -1,7 +1,6 @@
 package routers
 
 import (
-	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
@@ -406,29 +405,4 @@ func VerifyDNSGuard(ctx context.Context, d *RouterOS, check *DNSGuardCheck) erro
 		}
 	}
 	return nil
-}
-
-func init() {
-	RegisterRouterOSHandler("dns_guard_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op DNSGuardReplace
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, err := d.ApplyDNSGuard(ctx, op)
-		if err != nil {
-			return nil, err
-		}
-		out, _ := json.Marshal(undo)
-		return out, nil
-	})
-	RegisterRouterOSHandler("dns_guard_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op DNSGuardUndo
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		if err := d.RestoreDNSGuard(ctx, op); err != nil {
-			return nil, err
-		}
-		return json.RawMessage("{}"), nil
-	})
 }

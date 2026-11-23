@@ -477,8 +477,7 @@ func selectorMatches(value, iface string, ctx *NatContext, isList bool) match {
 // AssessNAT is not_required, missing or unknown for one proxy CIDR. missing
 // means a source-NAT rule may match (matchers other than the egress are not
 // simulated); not_required needs no possible translation or a proven egress mismatch.
-func AssessNAT(cidr, gateway string, state *RouterState, policyRouting bool, ix *RouteEgressIndex) NatAssessment {
-	ctx := state.NatContext
+func AssessNAT(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *RouteEgressIndex) NatAssessment {
 	if ctx == nil {
 		return NatAssessment{Status: "unknown", Detail: "缺少 RouterOS NAT 判断依据，无法确认是否需要免 NAT"}
 	}
@@ -742,10 +741,9 @@ func ClientSourceNetworks(gateway netip.Addr) []netip.Prefix {
 // AssessBypass reads the ordered NAT chain before claiming an exemption is
 // effective. An accept with matchers it cannot evaluate is kept intact and
 // reported unknown instead of silently broadened.
-func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex) NatAssessment {
-	assessment := AssessNAT(cidr, gateway, state, false, ix)
+func AssessBypass(cidr, gateway string, addressSets map[string][]string, ctx *NatContext, policyNATRetiring []string, ix *RouteEgressIndex) NatAssessment {
+	assessment := AssessNAT(cidr, gateway, ctx, false, ix)
 	assessment.RuleIDs = []string{}
-	ctx := state.NatContext
 	if assessment.Status == "not_required" || ctx == nil || !rowsOK(ctx.Rules) {
 		return assessment
 	}
@@ -764,7 +762,7 @@ func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex
 		cache = ix.selectors
 	}
 	accepted := []string{}
-	if PreservesSources(rows, ClientSourceNetworks(gw), []netip.Prefix{destination}, iface, ctx, state.AddressSets, &accepted, cache) {
+	if PreservesSources(rows, ClientSourceNetworks(gw), []netip.Prefix{destination}, iface, ctx, addressSets, &accepted, cache) {
 		managed, found := true, false
 		for _, r := range rows {
 			if slices.Contains(accepted, r.id()) {
@@ -781,7 +779,7 @@ func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex
 		}
 		return NatAssessment{Status: "adoptable", RuleIDs: accepted, Detail: "现有免转换规则可保护客户端流量，将直接接管"}
 	}
-	retiring := slices.Clone(state.PolicyNATRetiring)
+	retiring := slices.Clone(policyNATRetiring)
 	// ConfigFlow's list rule, intact and first, is maintained rather than
 	// preserved: a stale source list or a narrower member makes it missing,
 	// and the plan rewrites the members.
@@ -804,7 +802,7 @@ func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex
 				}
 			}
 		}
-		if hits, ok := addressHits(selectors, "dst-address", destination, state.AddressSets, cache); !ok || len(hits) > 0 {
+		if hits, ok := addressHits(selectors, "dst-address", destination, addressSets, cache); !ok || len(hits) > 0 {
 			return NatAssessment{Status: "unknown", RuleIDs: []string{},
 				Detail: "已有免转换规则的顺序或来源、地址列表、接口、协议等条件不能保证客户端流量均免转换；请先检查现有规则"}
 		}
@@ -836,11 +834,11 @@ type BypassExpansion struct {
 
 // PlannedBypassConflicts checks the expanded copies without changing or
 // broadening their matchers; one message per CIDR that stays unproven.
-func PlannedBypassConflicts(expansions []BypassExpansion, state *RouterState, gateway string) []string {
-	if len(expansions) == 0 || state.NatContext == nil {
+func PlannedBypassConflicts(expansions []BypassExpansion, addressSets map[string][]string, nat *NatContext, gateway string) []string {
+	if len(expansions) == 0 || nat == nil {
 		return []string{}
 	}
-	ctx := *state.NatContext
+	ctx := *nat
 	ctx.Rules = slices.Clone(ctx.Rules)
 	targets := map[string]bool{}
 	for _, op := range expansions {
@@ -860,11 +858,10 @@ func PlannedBypassConflicts(expansions []BypassExpansion, state *RouterState, ga
 			targets[cidr] = true
 		}
 	}
-	virtual := &RouterState{NatContext: &ctx, AddressSets: state.AddressSets}
 	ix := NewRouteEgressIndex(&ctx)
 	out := []string{}
 	for _, cidr := range slices.Sorted(maps.Keys(targets)) {
-		switch AssessBypass(cidr, gateway, virtual, ix).Status {
+		switch AssessBypass(cidr, gateway, addressSets, &ctx, nil, ix).Status {
 		case "synced", "adoptable", "not_required":
 		default:
 			out = append(out, cidr+"：扩充后仍无法确认 NAT 免转换覆盖，已保留原规则的限制，请先检查现有规则")

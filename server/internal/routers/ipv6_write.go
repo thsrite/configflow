@@ -632,51 +632,6 @@ func VerifyIPv6Routes(ctx context.Context, d *RouterOS, check *IPv6RoutesCheck) 
 	return nil
 }
 
-func init() {
-	RegisterRouterOSHandler("ipv6_fakeip_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6FakeIPReplace
-		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, err := d.ApplyIPv6FakeIP(ctx, op)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(undo)
-	})
-	RegisterRouterOSHandler("ipv6_fakeip_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6FakeIPUndo
-		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		if err := d.RestoreIPv6FakeIP(ctx, op); err != nil {
-			return nil, err
-		}
-		return json.RawMessage("{}"), nil
-	})
-	RegisterRouterOSHandler("ipv6_routes_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6RoutesReplace
-		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, err := d.ApplyIPv6Routes(ctx, op)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(undo)
-	})
-	RegisterRouterOSHandler("ipv6_routes_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6RoutesUndo
-		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		if err := d.RestoreIPv6Routes(ctx, op); err != nil {
-			return nil, err
-		}
-		return json.RawMessage("{}"), nil
-	})
-}
-
 func ipv6AddGuard(proofs map[string]Row) func([]Row) error {
 	return func(rows []Row) error {
 		seen := map[string]bool{}

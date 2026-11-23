@@ -23,30 +23,6 @@ type NATListUndo struct {
 	Remapped [][3]string `json:"remapped,omitempty"`
 }
 
-func init() {
-	RegisterRouterOSHandler("nat_list_sync", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op NATListSync
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, err := d.ApplyNATLists(ctx, op)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(undo)
-	})
-	RegisterRouterOSHandler("nat_list_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op NATListUndo
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		if err := d.RestoreNATLists(ctx, op); err != nil {
-			return nil, err
-		}
-		return json.RawMessage(`{}`), nil
-	})
-}
-
 func (d *RouterOS) confirmResource(ctx context.Context, path string, values Row, id string, undo *NATStep, actual Row) (ROSResource, error) {
 	if actual == nil || !valuesMatch(path, actual, values) {
 		detail := messagePolicyMissingDetail

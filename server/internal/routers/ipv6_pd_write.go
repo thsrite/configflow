@@ -416,37 +416,3 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 	}
 	return nil
 }
-func init() {
-	RegisterRouterOSHandler("ipv6_dns_update", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6DNSUpdate
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, e := d.ApplyIPv6DNS(ctx, op)
-		if e != nil {
-			return nil, e
-		}
-		return json.Marshal(undo)
-	})
-	RegisterRouterOSHandler("ipv6_pd_guard_sync", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6PDGuardSync
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, e := d.ApplyIPv6PDGuard(ctx, op)
-		if e != nil {
-			return nil, e
-		}
-		return json.Marshal(undo)
-	})
-	RegisterRouterOSHandler("ipv6_pd_guard_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op IPv6PDGuardUndo
-		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		if e := d.RestoreIPv6PDGuard(ctx, op); e != nil {
-			return nil, e
-		}
-		return json.RawMessage(`{}`), nil
-	})
-}

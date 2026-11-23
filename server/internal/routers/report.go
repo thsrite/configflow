@@ -286,7 +286,7 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 	for _, entry := range desired.ProxyCIDRs {
 		item := NatItem{CIDR: entry.CIDR, RuleIDs: []string{}}
 		if state.NatContext != nil {
-			a := AssessBypass(entry.CIDR, desired.ProxyGateway, state, routeIndex)
+			a := AssessBypass(entry.CIDR, desired.ProxyGateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, routeIndex)
 			item.Status, item.Detail, item.RuleIDs = a.Status, a.Detail, a.RuleIDs
 			out.Items = append(out.Items, item)
 			continue

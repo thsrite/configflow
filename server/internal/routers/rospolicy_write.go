@@ -40,30 +40,6 @@ type policyWrite struct {
 	StaticNATChecks *NATChecks        `json:"static_nat_checks"`
 }
 
-func init() {
-	RegisterRouterOSHandler("ros_policy_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var op policyWrite
-		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		undo, err := d.applyPolicy(ctx, op)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(undo)
-	})
-	RegisterRouterOSHandler("ros_policy_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
-		var undo ROSPolicyUndo
-		if devhttp.DecodeJSON(raw, &undo) != nil {
-			return nil, device.Error(device.MessageOperationFormat)
-		}
-		if err := d.RestoreROSPolicy(ctx, undo); err != nil {
-			return nil, err
-		}
-		return json.RawMessage(`{}`), nil
-	})
-}
-
 // ApplyROSPolicy applies a server-built typed plan and compensates any failure.
 func (d *RouterOS) ApplyROSPolicy(ctx context.Context, op *ROSPolicyReplace) (*ROSPolicyUndo, error) {
 	ctx = lifecycle.Detach(ctx)
@@ -568,7 +544,7 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 	for _, cidr := range checks.NATBypass {
 		ok := false
 		if state.NatContext != nil {
-			status := AssessBypass(cidr, checks.Gateway, state, index).Status
+			status := AssessBypass(cidr, checks.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, index).Status
 			ok = status == "synced" || status == "not_required"
 		} else if prefix, valid := netipx.ParseNetwork4(cidr, true); valid {
 			ok = coverage.Covers(prefix)
@@ -581,7 +557,7 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 		return device.Error(fmt.Sprintf(messageNATVerifyUncovered, strings.Join(uncovered, ", ")))
 	}
 	for _, check := range checks.NATNotRequired {
-		assessment := AssessBypass(check.CIDR, check.Gateway, state, index)
+		assessment := AssessBypass(check.CIDR, check.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, index)
 		if assessment.Status != "not_required" {
 			return device.Error(fmt.Sprintf(messageNATVerifyRequired, check.CIDR, assessment.Detail))
 		}
@@ -698,7 +674,7 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 	}
 	if check.Spec.NATInterface == "" {
 		for _, cidr := range check.Spec.Destinations {
-			assessment := AssessNAT(cidr, check.Spec.Gateway, state, true, index)
+			assessment := AssessNAT(cidr, check.Spec.Gateway, state.NatContext, true, index)
 			if assessment.Status != "not_required" {
 				return device.Error(messagePolicyNATNowRequired + assessment.Detail)
 			}

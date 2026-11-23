@@ -171,11 +171,11 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 	state := &RouterState{NatContext: v.State.NatContext, AddressSets: v.State.AddressSets}
 	switch fn {
 	case "assess_nat":
-		a := AssessNAT(v.CIDR, v.Gateway, state, v.PolicyRouting, nil)
+		a := AssessNAT(v.CIDR, v.Gateway, state.NatContext, v.PolicyRouting, nil)
 		return map[string]string{"status": a.Status, "detail": a.Detail}
 	case "assess_bypass":
 		state.PolicyNATRetiring = v.Retiring
-		return AssessBypass(v.CIDR, v.Gateway, state, nil)
+		return AssessBypass(v.CIDR, v.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, nil)
 	case "planned":
 		var expansions []BypassExpansion
 		for _, op := range v.Ops {
@@ -185,7 +185,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 			}
 			expansions = append(expansions, e)
 		}
-		return PlannedBypassConflicts(expansions, state, v.Gateway)
+		return PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, v.Gateway)
 	case "preserves":
 		accepted := []string{}
 		iface := ""
