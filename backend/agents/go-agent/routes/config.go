@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -107,7 +106,7 @@ func handleMosdnsFeatures(cfg *Config, req UpdateRequest) error {
 	// 1. 仅在配置启用缓存持久化时预创建 dump 文件
 	cacheDumpFile, err := mosdnsCacheDumpFile(req.Config)
 	if err != nil {
-		log.Printf("Warning: failed to inspect MosDNS cache settings: %v", err)
+		logger.Warnf("Warning: failed to inspect MosDNS cache settings: %v", err)
 	} else if cacheDumpFile != "" {
 		cacheDumpPath := cacheDumpFile
 		if !filepath.IsAbs(cacheDumpPath) {
@@ -115,38 +114,38 @@ func handleMosdnsFeatures(cfg *Config, req UpdateRequest) error {
 		}
 
 		if err := os.MkdirAll(filepath.Dir(cacheDumpPath), 0755); err != nil {
-			log.Printf("Warning: failed to create cache dump directory: %v", err)
+			logger.Warnf("Warning: failed to create cache dump directory: %v", err)
 		} else if file, err := os.OpenFile(cacheDumpPath, os.O_CREATE|os.O_WRONLY, 0644); err != nil {
-			log.Printf("Warning: failed to create cache dump file: %v", err)
+			logger.Warnf("Warning: failed to create cache dump file: %v", err)
 		} else {
 			file.Close()
-			log.Printf("Cache dump file ready: %s", cacheDumpPath)
+			logger.Infof("Cache dump file ready: %s", cacheDumpPath)
 		}
 	}
 
 	// 2. 处理 MosDNS 目录创建
 	if len(req.Directories) > 0 {
-		log.Printf("Creating directories for MosDNS...")
+		logger.Infof("Creating directories for MosDNS...")
 		if err := createDirectories(configDir, req.Directories); err != nil {
-			log.Printf("Error creating directories: %v", err)
+			logger.Errorf("Error creating directories: %v", err)
 			return fmt.Errorf("failed to create directories: %w", err)
 		}
 	}
 
 	// 3. 处理自定义文件写入（hosts 和单个规则）
 	if len(req.CustomFiles) > 0 {
-		log.Printf("Writing custom files for MosDNS...")
+		logger.Infof("Writing custom files for MosDNS...")
 		if err := writeCustomFiles(configDir, req.CustomFiles); err != nil {
-			log.Printf("Error writing custom files: %v", err)
+			logger.Errorf("Error writing custom files: %v", err)
 			return fmt.Errorf("failed to write custom files: %w", err)
 		}
 	}
 
 	// 4. 处理规则集下载
 	if len(req.RulesetDownloads) > 0 {
-		log.Printf("Downloading rulesets for MosDNS...")
+		logger.Infof("Downloading rulesets for MosDNS...")
 		if err := downloadRulesets(configDir, req.RulesetDownloads); err != nil {
-			log.Printf("Error downloading rulesets: %v", err)
+			logger.Errorf("Error downloading rulesets: %v", err)
 			return fmt.Errorf("failed to download rulesets: %w", err)
 		}
 	}
@@ -184,27 +183,27 @@ func handleMihomoFeatures(cfg *Config, req UpdateRequest) error {
 
 	// 1. 处理 Mihomo 目录创建（providers 和 ruleset）
 	if len(req.Directories) > 0 {
-		log.Printf("Creating directories for Mihomo...")
+		logger.Infof("Creating directories for Mihomo...")
 		if err := createDirectories(configDir, req.Directories); err != nil {
-			log.Printf("Error creating directories: %v", err)
+			logger.Errorf("Error creating directories: %v", err)
 			return fmt.Errorf("failed to create directories: %w", err)
 		}
 	}
 
 	// 2. 处理 provider 下载
 	if len(req.ProviderDownloads) > 0 {
-		log.Printf("Downloading providers for Mihomo...")
+		logger.Infof("Downloading providers for Mihomo...")
 		if err := downloadProviders(configDir, req.ProviderDownloads); err != nil {
-			log.Printf("Error downloading providers: %v", err)
+			logger.Errorf("Error downloading providers: %v", err)
 			return fmt.Errorf("failed to download providers: %w", err)
 		}
 	}
 
 	// 3. 处理规则集下载
 	if len(req.RulesetDownloads) > 0 {
-		log.Printf("Downloading rulesets for Mihomo...")
+		logger.Infof("Downloading rulesets for Mihomo...")
 		if err := downloadRulesets(configDir, req.RulesetDownloads); err != nil {
-			log.Printf("Error downloading rulesets: %v", err)
+			logger.Errorf("Error downloading rulesets: %v", err)
 			return fmt.Errorf("failed to download rulesets: %w", err)
 		}
 	}
@@ -224,12 +223,12 @@ func createDirectories(configDir string, directories []string) error {
 			fullPath = filepath.Join(configDir, dir)
 		}
 
-		log.Printf("Creating directory: %s (from %s, base: %s)", fullPath, dir, configDir)
+		logger.Infof("Creating directory: %s (from %s, base: %s)", fullPath, dir, configDir)
 		if err := os.MkdirAll(fullPath, 0755); err != nil {
-			log.Printf("Failed to create directory %s: %v", fullPath, err)
+			logger.Errorf("Failed to create directory %s: %v", fullPath, err)
 			return fmt.Errorf("failed to create directory %s: %w", fullPath, err)
 		}
-		log.Printf("Successfully created directory: %s", fullPath)
+		logger.Infof("Successfully created directory: %s", fullPath)
 	}
 	return nil
 }
@@ -237,7 +236,7 @@ func createDirectories(configDir string, directories []string) error {
 // downloadRulesets 下载所有规则集文件
 func downloadRulesets(configDir string, rulesets []RulesetDownloadItem) error {
 	const maxConcurrentDownloads = 3 // 限制最大并发下载数
-	log.Printf("Downloading %d rulesets with a maximum concurrency of %d", len(rulesets), maxConcurrentDownloads)
+	logger.Infof("Downloading %d rulesets with a maximum concurrency of %d", len(rulesets), maxConcurrentDownloads)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -256,12 +255,12 @@ func downloadRulesets(configDir string, rulesets []RulesetDownloadItem) error {
 			defer func() { <-semaphore }() // 释放信号量
 
 			if err := downloadRuleset(configDir, ruleset); err != nil {
-				log.Printf("Failed to download ruleset %s: %v", ruleset.Name, err)
+				logger.Errorf("Failed to download ruleset %s: %v", ruleset.Name, err)
 				mu.Lock()
 				failedDownloads = append(failedDownloads, ruleset.Name)
 				mu.Unlock()
 			} else {
-				log.Printf("Successfully downloaded ruleset %s", ruleset.Name)
+				logger.Infof("Successfully downloaded ruleset %s", ruleset.Name)
 			}
 		}(item)
 	}
@@ -269,9 +268,9 @@ func downloadRulesets(configDir string, rulesets []RulesetDownloadItem) error {
 	wg.Wait()
 
 	if len(failedDownloads) > 0 {
-		log.Printf("Warning: %d rulesets failed to download: %v. Continuing with config update.", len(failedDownloads), failedDownloads)
+		logger.Warnf("Warning: %d rulesets failed to download: %v. Continuing with config update.", len(failedDownloads), failedDownloads)
 	} else {
-		log.Printf("Successfully downloaded all rulesets")
+		logger.Infof("Successfully downloaded all rulesets")
 	}
 
 	return nil
@@ -288,7 +287,7 @@ func downloadRuleset(configDir string, item RulesetDownloadItem) error {
 
 	// 如果已提供内容，直接写入文件
 	if item.Content != "" {
-		log.Printf("Writing ruleset content directly: %s -> %s", item.Name, localPath)
+		logger.Infof("Writing ruleset content directly: %s -> %s", item.Name, localPath)
 		dir := filepath.Dir(localPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -298,13 +297,13 @@ func downloadRuleset(configDir string, item RulesetDownloadItem) error {
 
 	// 否则从 URL 下载（向后兼容）
 	safeURL := redactURLForLog(item.URL)
-	log.Printf("Downloading ruleset: %s from %s to %s (base: %s)", item.Name, safeURL, localPath, configDir)
+	logger.Infof("Downloading ruleset: %s from %s to %s (base: %s)", item.Name, safeURL, localPath, configDir)
 
 	// 创建目标目录
 	dir := filepath.Dir(localPath)
-	log.Printf("Creating directory for ruleset: %s", dir)
+	logger.Infof("Creating directory for ruleset: %s", dir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("Failed to create directory %s: %v", dir, err)
+		logger.Errorf("Failed to create directory %s: %v", dir, err)
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -343,7 +342,7 @@ func downloadRuleset(configDir string, item RulesetDownloadItem) error {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", item.URL, nil)
 	if err != nil {
-		log.Printf("Failed to create request for %s", safeURL)
+		logger.Errorf("Failed to create request for %s", safeURL)
 		return fmt.Errorf("failed to create request for %s", safeURL)
 	}
 
@@ -351,42 +350,42 @@ func downloadRuleset(configDir string, item RulesetDownloadItem) error {
 	req.Header.Set("User-Agent", "configflow-agent/1.0")
 
 	// 下载文件
-	log.Printf("Starting download from: %s", safeURL)
+	logger.Infof("Starting download from: %s", safeURL)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Failed to download %s", safeURL)
+		logger.Errorf("Failed to download %s", safeURL)
 		return fmt.Errorf("failed to download %s", safeURL)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to download %s: status code %d", safeURL, resp.StatusCode)
+		logger.Errorf("Failed to download %s: status code %d", safeURL, resp.StatusCode)
 		return fmt.Errorf("failed to download %s: status code %d", safeURL, resp.StatusCode)
 	}
 
 	// 保存文件
-	log.Printf("Saving downloaded content to: %s", localPath)
+	logger.Infof("Saving downloaded content to: %s", localPath)
 	file, err := os.Create(localPath)
 	if err != nil {
-		log.Printf("Failed to create file %s: %v", localPath, err)
+		logger.Errorf("Failed to create file %s: %v", localPath, err)
 		return fmt.Errorf("failed to create file %s: %w", localPath, err)
 	}
 	defer file.Close()
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
-		log.Printf("Failed to save file %s: %v", localPath, err)
+		logger.Errorf("Failed to save file %s: %v", localPath, err)
 		return fmt.Errorf("failed to save file %s: %w", localPath, err)
 	}
 
-	log.Printf("Successfully downloaded ruleset: %s -> %s", safeURL, localPath)
+	logger.Infof("Successfully downloaded ruleset: %s -> %s", safeURL, localPath)
 	return nil
 }
 
 // downloadProviders 下载所有 provider 文件
 func downloadProviders(configDir string, providers []ProviderDownloadItem) error {
 	const maxConcurrentDownloads = 3 // 限制最大并发下载数
-	log.Printf("Downloading %d providers with a maximum concurrency of %d", len(providers), maxConcurrentDownloads)
+	logger.Infof("Downloading %d providers with a maximum concurrency of %d", len(providers), maxConcurrentDownloads)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -405,12 +404,12 @@ func downloadProviders(configDir string, providers []ProviderDownloadItem) error
 			defer func() { <-semaphore }() // 释放信号量
 
 			if err := downloadProvider(configDir, provider); err != nil {
-				log.Printf("Failed to download provider %s: %v", provider.Name, err)
+				logger.Errorf("Failed to download provider %s: %v", provider.Name, err)
 				mu.Lock()
 				failedDownloads = append(failedDownloads, provider.Name)
 				mu.Unlock()
 			} else {
-				log.Printf("Successfully downloaded provider %s", provider.Name)
+				logger.Infof("Successfully downloaded provider %s", provider.Name)
 			}
 		}(item)
 	}
@@ -418,9 +417,9 @@ func downloadProviders(configDir string, providers []ProviderDownloadItem) error
 	wg.Wait()
 
 	if len(failedDownloads) > 0 {
-		log.Printf("Warning: %d providers failed to download: %v. Continuing with config update.", len(failedDownloads), failedDownloads)
+		logger.Warnf("Warning: %d providers failed to download: %v. Continuing with config update.", len(failedDownloads), failedDownloads)
 	} else {
-		log.Printf("Successfully downloaded all providers")
+		logger.Infof("Successfully downloaded all providers")
 	}
 
 	return nil
@@ -437,7 +436,7 @@ func downloadProvider(configDir string, item ProviderDownloadItem) error {
 
 	// 如果已提供内容，直接写入文件
 	if item.Content != "" {
-		log.Printf("Writing provider content directly: %s -> %s", item.Name, localPath)
+		logger.Infof("Writing provider content directly: %s -> %s", item.Name, localPath)
 		dir := filepath.Dir(localPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -447,13 +446,13 @@ func downloadProvider(configDir string, item ProviderDownloadItem) error {
 
 	// 否则从 URL 下载（向后兼容）
 	safeURL := redactURLForLog(item.URL)
-	log.Printf("Downloading provider: %s from %s to %s (base: %s)", item.Name, safeURL, localPath, configDir)
+	logger.Infof("Downloading provider: %s from %s to %s (base: %s)", item.Name, safeURL, localPath, configDir)
 
 	// 创建目标目录
 	dir := filepath.Dir(localPath)
-	log.Printf("Creating directory for provider: %s", dir)
+	logger.Infof("Creating directory for provider: %s", dir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("Failed to create directory %s: %v", dir, err)
+		logger.Errorf("Failed to create directory %s: %v", dir, err)
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -493,48 +492,48 @@ func downloadProvider(configDir string, item ProviderDownloadItem) error {
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "GET", item.URL, nil)
 	if err != nil {
-		log.Printf("Failed to create request for %s", safeURL)
+		logger.Errorf("Failed to create request for %s", safeURL)
 		return fmt.Errorf("failed to create request for %s", safeURL)
 	}
 
 	// 下载文件
-	log.Printf("Sending HTTP request to: %s", safeURL)
+	logger.Infof("Sending HTTP request to: %s", safeURL)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Failed to download %s", safeURL)
+		logger.Errorf("Failed to download %s", safeURL)
 		return fmt.Errorf("failed to download %s", safeURL)
 	}
 	defer resp.Body.Close()
 
 	// 检查状态码
-	log.Printf("HTTP response status for %s: %d", safeURL, resp.StatusCode)
+	logger.Infof("HTTP response status for %s: %d", safeURL, resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to download %s: status code %d", safeURL, resp.StatusCode)
+		logger.Errorf("Failed to download %s: status code %d", safeURL, resp.StatusCode)
 		return fmt.Errorf("failed to download %s: status code %d", safeURL, resp.StatusCode)
 	}
 
 	// 保存文件
-	log.Printf("Saving downloaded content to: %s", localPath)
+	logger.Infof("Saving downloaded content to: %s", localPath)
 	file, err := os.Create(localPath)
 	if err != nil {
-		log.Printf("Failed to create file %s: %v", localPath, err)
+		logger.Errorf("Failed to create file %s: %v", localPath, err)
 		return fmt.Errorf("failed to create file %s: %w", localPath, err)
 	}
 	defer file.Close()
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
-		log.Printf("Failed to save file %s: %v", localPath, err)
+		logger.Errorf("Failed to save file %s: %v", localPath, err)
 		return fmt.Errorf("failed to save file %s: %w", localPath, err)
 	}
 
-	log.Printf("Successfully downloaded provider: %s -> %s", safeURL, localPath)
+	logger.Infof("Successfully downloaded provider: %s -> %s", safeURL, localPath)
 	return nil
 }
 
 // writeCustomFiles 写入自定义文件（hosts 和单个规则）
 func writeCustomFiles(configDir string, customFiles []CustomFileItem) error {
-	log.Printf("Writing %d custom files...", len(customFiles))
+	logger.Infof("Writing %d custom files...", len(customFiles))
 
 	for _, item := range customFiles {
 		// 确保 Path 是相对路径或绝对路径
@@ -550,25 +549,25 @@ func writeCustomFiles(configDir string, customFiles []CustomFileItem) error {
 			filePath = filepath.Join(configDir, filePath)
 		}
 
-		log.Printf("Writing custom file: %s (original path: %s)", filePath, item.Path)
+		logger.Infof("Writing custom file: %s (original path: %s)", filePath, item.Path)
 
 		// 创建文件所在目录
 		dir := filepath.Dir(filePath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Printf("Failed to create directory %s: %v", dir, err)
+			logger.Errorf("Failed to create directory %s: %v", dir, err)
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 
 		// 写入文件内容
 		if err := os.WriteFile(filePath, []byte(item.Content), 0644); err != nil {
-			log.Printf("Failed to write custom file %s: %v", filePath, err)
+			logger.Errorf("Failed to write custom file %s: %v", filePath, err)
 			return fmt.Errorf("failed to write custom file %s: %w", filePath, err)
 		}
 
-		log.Printf("Successfully wrote custom file: %s (size: %d bytes)", filePath, len(item.Content))
+		logger.Infof("Successfully wrote custom file: %s (size: %d bytes)", filePath, len(item.Content))
 	}
 
-	log.Printf("Successfully wrote all %d custom files", len(customFiles))
+	logger.Infof("Successfully wrote all %d custom files", len(customFiles))
 	return nil
 }
 
@@ -585,13 +584,13 @@ func backupConfig(configPath string, serviceType string) string {
 	switch serviceType {
 	case "mihomo":
 		targetsToBackup = []string{"providers", "ruleset", configFileName}
-		log.Printf("Service type: Mihomo - will backup and clean: providers/, ruleset/, %s", configFileName)
+		logger.Infof("Service type: Mihomo - will backup and clean: providers/, ruleset/, %s", configFileName)
 	case "mosdns":
 		targetsToBackup = []string{"rules", configFileName}
-		log.Printf("Service type: MosDNS - will backup and clean: rules/, %s", configFileName)
+		logger.Infof("Service type: MosDNS - will backup and clean: rules/, %s", configFileName)
 	default:
 		// 默认备份所有内容（兼容其他服务类型）
-		log.Printf("Service type: %s - will backup and clean all files", serviceType)
+		logger.Infof("Service type: %s - will backup and clean all files", serviceType)
 		targetsToBackup = nil // nil 表示备份所有
 	}
 
@@ -600,20 +599,20 @@ func backupConfig(configPath string, serviceType string) string {
 	backupRootDir := filepath.Join(configDir, "backup")
 	backupDir := filepath.Join(backupRootDir, timestamp)
 
-	log.Printf("Starting selective backup of directory %s to %s", configDir, backupDir)
+	logger.Infof("Starting selective backup of directory %s to %s", configDir, backupDir)
 
 	// 创建备份目录
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
-		log.Printf("Error: failed to create backup directory %s: %v", backupDir, err)
-		log.Printf("Warning: backup failed, continuing without backup")
+		logger.Errorf("Error: failed to create backup directory %s: %v", backupDir, err)
+		logger.Warnf("Warning: backup failed, continuing without backup")
 		return backupDir
 	}
 
 	// 读取配置目录下的所有文件和文件夹
 	entries, err := os.ReadDir(configDir)
 	if err != nil {
-		log.Printf("Error: failed to read config directory: %v", err)
-		log.Printf("Warning: backup failed, continuing without backup")
+		logger.Errorf("Error: failed to read config directory: %v", err)
+		logger.Warnf("Warning: backup failed, continuing without backup")
 		return backupDir
 	}
 
@@ -637,7 +636,7 @@ func backupConfig(configPath string, serviceType string) string {
 	backupCount := 0
 	for _, entry := range entries {
 		if !shouldBackup(entry.Name()) {
-			log.Printf("Skipping (not in backup list): %s", entry.Name())
+			logger.Infof("Skipping (not in backup list): %s", entry.Name())
 			continue
 		}
 
@@ -646,59 +645,59 @@ func backupConfig(configPath string, serviceType string) string {
 
 		if entry.IsDir() {
 			// 备份目录
-			log.Printf("Backing up directory: %s", entry.Name())
+			logger.Infof("Backing up directory: %s", entry.Name())
 			if err := copyDir(sourcePath, destPath); err != nil {
-				log.Printf("Warning: failed to backup directory %s: %v", entry.Name(), err)
+				logger.Warnf("Warning: failed to backup directory %s: %v", entry.Name(), err)
 			} else {
-				log.Printf("Successfully backed up directory: %s", entry.Name())
+				logger.Infof("Successfully backed up directory: %s", entry.Name())
 				backupCount++
 			}
 		} else {
 			// 备份文件
-			log.Printf("Backing up file: %s", entry.Name())
+			logger.Infof("Backing up file: %s", entry.Name())
 			if err := copyFile(sourcePath, destPath); err != nil {
-				log.Printf("Warning: failed to backup file %s: %v", entry.Name(), err)
+				logger.Warnf("Warning: failed to backup file %s: %v", entry.Name(), err)
 			} else {
-				log.Printf("Successfully backed up file: %s", entry.Name())
+				logger.Infof("Successfully backed up file: %s", entry.Name())
 				backupCount++
 			}
 		}
 	}
 
-	log.Printf("Backup completed successfully to %s (%d items backed up)", backupDir, backupCount)
+	logger.Infof("Backup completed successfully to %s (%d items backed up)", backupDir, backupCount)
 
 	// 清理旧备份，只保留最新的3个
 	cleanOldBackups(backupRootDir, 3)
 
 	// 备份完成后，清理配置目录中已备份的内容
-	log.Printf("Cleaning backed up items from config directory...")
+	logger.Infof("Cleaning backed up items from config directory...")
 	cleanCount := 0
 	for _, entry := range entries {
 		if !shouldBackup(entry.Name()) {
-			log.Printf("Skipping cleanup (not in backup list): %s", entry.Name())
+			logger.Infof("Skipping cleanup (not in backup list): %s", entry.Name())
 			continue
 		}
 
 		targetPath := filepath.Join(configDir, entry.Name())
-		log.Printf("Removing: %s", targetPath)
+		logger.Infof("Removing: %s", targetPath)
 		if err := os.RemoveAll(targetPath); err != nil {
-			log.Printf("Warning: failed to remove %s: %v", targetPath, err)
+			logger.Warnf("Warning: failed to remove %s: %v", targetPath, err)
 		} else {
-			log.Printf("Successfully removed: %s", targetPath)
+			logger.Infof("Successfully removed: %s", targetPath)
 			cleanCount++
 		}
 	}
-	log.Printf("Config directory cleaned successfully (%d items removed)", cleanCount)
+	logger.Infof("Config directory cleaned successfully (%d items removed)", cleanCount)
 
 	return backupDir
 }
 
 // writeConfig 写入新配置
 func writeConfig(cfg *Config, configContent string, backupPath string) error {
-	log.Printf("Writing new config to %s", cfg.ConfigPath)
+	logger.Infof("Writing new config to %s", cfg.ConfigPath)
 	configDir := filepath.Dir(cfg.ConfigPath)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		log.Printf("Error: failed to create config directory %s: %v", configDir, err)
+		logger.Errorf("Error: failed to create config directory %s: %v", configDir, err)
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -708,9 +707,9 @@ func writeConfig(cfg *Config, configContent string, backupPath string) error {
 		uid := os.Getuid()
 		gid := os.Getgid()
 
-		log.Printf("Setting ownership for %s to uid=%d, gid=%d", configDir, uid, gid)
+		logger.Infof("Setting ownership for %s to uid=%d, gid=%d", configDir, uid, gid)
 		if err := os.Chown(configDir, uid, gid); err != nil {
-			log.Printf("Warning: failed to set ownership for %s: %v", configDir, err)
+			logger.Warnf("Warning: failed to set ownership for %s: %v", configDir, err)
 		}
 
 		// 递归设置目录中所有文件的权限
@@ -721,16 +720,16 @@ func writeConfig(cfg *Config, configContent string, backupPath string) error {
 			return os.Chown(path, uid, gid)
 		})
 		if err != nil {
-			log.Printf("Warning: failed to set ownership recursively for %s: %v", configDir, err)
+			logger.Warnf("Warning: failed to set ownership recursively for %s: %v", configDir, err)
 		}
 	}
 
 	err := os.WriteFile(cfg.ConfigPath, []byte(configContent), 0644)
 	if err != nil {
-		log.Printf("Error: failed to write new config file: %v", err)
+		logger.Errorf("Error: failed to write new config file: %v", err)
 		// 尝试恢复备份
 		if _, backupErr := os.Stat(backupPath); backupErr == nil {
-			log.Printf("Attempting to restore backup...")
+			logger.Infof("Attempting to restore backup...")
 			os.Rename(backupPath, cfg.ConfigPath)
 		}
 		return fmt.Errorf("failed to write new config: %w", err)
@@ -741,7 +740,7 @@ func writeConfig(cfg *Config, configContent string, backupPath string) error {
 
 // handleConfigUpdateAsync 异步处理配置更新请求
 func handleConfigUpdateAsync(cfg *Config, req UpdateRequest) {
-	log.Print("Legacy configuration update refused; use deployment protocol 1")
+	logger.Warn("Legacy configuration update refused; use deployment protocol 1")
 }
 
 func handleConfigUpdate(cfg *Config, req UpdateRequest) error {
@@ -825,7 +824,7 @@ func cleanOldBackups(backupRootDir string, maxBackups int) {
 	// 读取备份目录
 	entries, err := os.ReadDir(backupRootDir)
 	if err != nil {
-		log.Printf("Warning: failed to read backup directory: %v", err)
+		logger.Warnf("Warning: failed to read backup directory: %v", err)
 		return
 	}
 
@@ -855,7 +854,7 @@ func cleanOldBackups(backupRootDir string, maxBackups int) {
 
 	// 如果备份数量不超过最大值，不需要清理
 	if len(backups) <= maxBackups {
-		log.Printf("Current backups: %d, max: %d, no cleanup needed", len(backups), maxBackups)
+		logger.Infof("Current backups: %d, max: %d, no cleanup needed", len(backups), maxBackups)
 		return
 	}
 
@@ -866,16 +865,16 @@ func cleanOldBackups(backupRootDir string, maxBackups int) {
 
 	// 计算需要删除的备份数量
 	toDelete := len(backups) - maxBackups
-	log.Printf("Found %d backups, keeping %d, deleting %d oldest backups", len(backups), maxBackups, toDelete)
+	logger.Infof("Found %d backups, keeping %d, deleting %d oldest backups", len(backups), maxBackups, toDelete)
 
 	// 删除最旧的备份
 	for i := 0; i < toDelete; i++ {
 		backup := backups[i]
-		log.Printf("Deleting old backup: %s (timestamp: %d)", backup.name, backup.timestamp)
+		logger.Infof("Deleting old backup: %s (timestamp: %d)", backup.name, backup.timestamp)
 		if err := os.RemoveAll(backup.path); err != nil {
-			log.Printf("Warning: failed to delete backup %s: %v", backup.name, err)
+			logger.Warnf("Warning: failed to delete backup %s: %v", backup.name, err)
 		} else {
-			log.Printf("Successfully deleted old backup: %s", backup.name)
+			logger.Infof("Successfully deleted old backup: %s", backup.name)
 		}
 	}
 }

@@ -1,111 +1,12 @@
 package main
 
-import (
-	"fmt"
-	"net/url"
-	"regexp"
-	"strings"
-)
-
-var urlLogNonAlphaNumeric = regexp.MustCompile(`[^a-z0-9]`)
-
-func sensitiveURLQueryKey(key string) bool {
-	normalized := urlLogNonAlphaNumeric.ReplaceAllString(strings.ToLower(key), "")
-	for _, part := range []string{"token", "authorization", "auth", "key", "secret", "password", "passwd", "credential"} {
-		if strings.Contains(normalized, part) {
-			return true
-		}
-	}
-	return false
-}
-
-func urlLogHasControl(value string) bool {
-	for _, char := range value {
-		if char < 32 || char == 127 {
-			return true
-		}
-	}
-	return false
-}
-
-func decodeURLLogLayers(value string) (string, error) {
-	for i := 0; i < 8; i++ {
-		if urlLogHasControl(value) {
-			return "", fmt.Errorf("control character")
-		}
-		next, err := url.QueryUnescape(value)
-		if err != nil {
-			return "", err
-		}
-		if next == value {
-			return value, nil
-		}
-		value = next
-	}
-	next, err := url.QueryUnescape(value)
-	if err != nil || next != value || urlLogHasControl(value) {
-		return "", fmt.Errorf("unsafe encoded value")
-	}
-	return value, nil
-}
-
-func urlLogValueHasSensitiveExpression(value string) bool {
-	for _, component := range strings.FieldsFunc(value, func(char rune) bool {
-		return char == '?' || char == '&' || char == ';'
-	}) {
-		parts := strings.SplitN(component, "=", 2)
-		if len(parts) == 2 && sensitiveURLQueryKey(strings.TrimSpace(parts[0])) {
-			return true
-		}
-	}
-	return false
-}
+import "agent/internal/logx"
 
 // redactURLForLog returns a URL suitable for logs without userinfo or query credentials.
 func redactURLForLog(raw string) string {
-	decoded, err := decodeURLLogLayers(raw)
-	if err != nil {
-		return "[INVALID URL REDACTED]"
-	}
-	parsed, err := url.Parse(decoded)
-	if err != nil || (parsed.Scheme != "" && parsed.Host == "") {
-		return "[INVALID URL REDACTED]"
-	}
-	parsed.User = nil
-	parsed.Fragment = ""
-	parsed.RawFragment = ""
-	query := parsed.Query()
-	for key, values := range query {
-		if sensitiveURLQueryKey(key) {
-			query.Set(key, "[REDACTED]")
-			continue
-		}
-		for _, value := range values {
-			decodedValue, decodeErr := decodeURLLogLayers(value)
-			if decodeErr != nil {
-				return "[INVALID URL REDACTED]"
-			}
-			if urlLogValueHasSensitiveExpression(decodedValue) {
-				query.Set(key, "[REDACTED]")
-				break
-			}
-		}
-	}
-	parsed.RawQuery = query.Encode()
-	return strings.ReplaceAll(parsed.String(), "%5BREDACTED%5D", "[REDACTED]")
+	return logx.RedactURL(raw)
 }
-
-type safeWrappedError struct {
-	message string
-	cause   error
-}
-
-func (e *safeWrappedError) Error() string { return e.message }
-func (e *safeWrappedError) Unwrap() error { return e.cause }
 
 func safeURLFailure(action, rawURL string, cause error) error {
-	return &safeWrappedError{
-		message: fmt.Sprintf("%s %s", action, redactURLForLog(rawURL)),
-		cause:   cause,
-	}
+	return logx.SafeURLFailure(action, rawURL, cause)
 }

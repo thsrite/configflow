@@ -1,9 +1,9 @@
 package routes
 
 import (
+	"agent/internal/logx"
 	"bytes"
 	"errors"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -22,9 +22,8 @@ func TestFailedSecretCommandDoesNotLeakLogsOutputOrError(t *testing.T) {
 	const commandSecret = "command-text-secret"
 	const outputSecret = "output-stream-secret"
 	var logs bytes.Buffer
-	previousWriter := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(previousWriter) })
+	previousWriter := logx.SetOutput(&logs)
+	t.Cleanup(func() { logx.SetOutput(previousWriter) })
 
 	output, err := executeURLCommand("printf 'invalid listen address; password=" + outputSecret + "'; false # " + commandSecret)
 	if err == nil {

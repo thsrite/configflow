@@ -1,8 +1,8 @@
 package routes
 
 import (
+	"agent/internal/logx"
 	"bytes"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -74,9 +74,8 @@ func TestProviderAndRulesetDownloadLogsRedactURLCredentials(t *testing.T) {
 		"/download?config_token=" + rawToken + "&authorization=" + encodedToken
 
 	var logs bytes.Buffer
-	previousWriter := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(previousWriter) })
+	previousWriter := logx.SetOutput(&logs)
+	t.Cleanup(func() { logx.SetOutput(previousWriter) })
 
 	dir := t.TempDir()
 	if err := downloadProvider(dir, ProviderDownloadItem{

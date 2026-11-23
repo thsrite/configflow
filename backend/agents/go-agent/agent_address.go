@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -69,7 +68,7 @@ func (c *Config) effectiveAgentIP() string {
 	staleAgentIP.Lock()
 	if staleAgentIP.logged != value {
 		staleAgentIP.logged = value
-		log.Printf("Configured agent_ip %s is no longer on any interface of this host; detecting the address automatically instead. Update agent_ip in the Agent config to silence this.", value)
+		logger.Warnf("Configured agent_ip %s is no longer on any interface of this host; detecting the address automatically instead. Update agent_ip in the Agent config to silence this.", value)
 	}
 	staleAgentIP.Unlock()
 	return ""
@@ -136,10 +135,10 @@ func (c *Config) adoptConfirmedHost(confirmed string) {
 		return
 	}
 	if err := c.setAgentIP(confirmed); err != nil {
-		log.Printf("Could not write the confirmed address %s to the Agent config: %v", confirmed, err)
+		logger.Warnf("Could not write the confirmed address %s to the Agent config: %v", confirmed, err)
 		return
 	}
-	log.Printf("agent_ip in the Agent config changed from %s to %s: the server confirmed it reaches this Agent at the new address.", configured, confirmed)
+	logger.Infof("agent_ip in the Agent config changed from %s to %s: the server confirmed it reaches this Agent at the new address.", configured, confirmed)
 }
 
 // localAgentAddresses lists the LAN IPv4 addresses this Agent may be reached
@@ -216,7 +215,7 @@ func agentAddressHandler(cfg *Config) http.HandlerFunc {
 					routes.JsonResponse(w, http.StatusInternalServerError, map[string]any{"success": false, "message": "写入 Agent 配置失败：" + err.Error()})
 					return
 				}
-				log.Printf("agent_ip in the Agent config changed from %q to %s at the server's request.", previous, host)
+				logger.Infof("agent_ip in the Agent config changed from %q to %s at the server's request.", previous, host)
 			}
 			routes.JsonResponse(w, http.StatusOK, map[string]any{"success": true, "host": host})
 		default:

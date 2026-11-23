@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,7 @@ func disableSendRedirects(state *returnRoutingState, iface string) bool {
 		path := sendRedirectsPath(name)
 		current, err := os.ReadFile(path)
 		if err != nil {
-			log.Printf("return routing: cannot read %s: %v", path, err)
+			logger.Warnf("return routing: cannot read %s: %v", path, err)
 			continue
 		}
 		value := strings.TrimSpace(string(current))
@@ -44,7 +43,7 @@ func disableSendRedirects(state *returnRoutingState, iface string) bool {
 		}
 		if value != "0" {
 			if err = os.WriteFile(path, []byte("0"), 0644); err != nil {
-				log.Printf("return routing: cannot disable %s: %v", path, err)
+				logger.Warnf("return routing: cannot disable %s: %v", path, err)
 			}
 		}
 	}
@@ -58,7 +57,7 @@ func restoreSendRedirects(state *returnRoutingState) {
 			continue
 		}
 		if err := os.WriteFile(sendRedirectsPath(name), []byte(value), 0644); err != nil {
-			log.Printf("return routing: cannot restore send_redirects for %s: %v", name, err)
+			logger.Warnf("return routing: cannot restore send_redirects for %s: %v", name, err)
 		}
 	}
 	state.SendRedirects = nil
@@ -78,7 +77,7 @@ func ensureSendRedirects(cfg *Config, iface string) {
 	}
 	if disableSendRedirects(state, iface) {
 		if err = saveReturnState(cfg, state); err != nil {
-			log.Printf("return routing: cannot record send_redirects: %v", err)
+			logger.Warnf("return routing: cannot record send_redirects: %v", err)
 		}
 	}
 }

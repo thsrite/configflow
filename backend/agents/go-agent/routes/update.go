@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -178,36 +177,36 @@ func verifyBinaryFile(filepath string) error {
 		return fmt.Errorf("不是有效的 ELF 二进制文件 (可能是 HTML 错误页面)")
 	}
 
-	log.Println("文件验证通过，确认为有效的二进制文件")
+	logger.Info("文件验证通过，确认为有效的二进制文件")
 	return nil
 }
 
 // restartAgentWithCheck 重启 Agent 并检查是否成功，失败则回滚
 func restartAgentWithCheck(currentBinary, backupPath string) error {
 	// 尝试重启
-	log.Println("尝试重启 Agent...")
+	logger.Info("尝试重启 Agent...")
 	if err := restartAgent(); err != nil {
-		log.Printf("重启失败: %v，开始回滚...", err)
+		logger.Errorf("重启失败: %v，开始回滚...", err)
 		return rollbackAndRestart(currentBinary, backupPath)
 	}
 
 	// 等待一段时间，验证新版本是否正常运行
-	log.Println("等待 5 秒验证新版本是否正常运行...")
+	logger.Info("等待 5 秒验证新版本是否正常运行...")
 	time.Sleep(5 * time.Second)
 
 	// 检查进程是否还在运行
 	if err := checkAgentRunning(); err != nil {
-		log.Printf("新版本启动失败: %v，开始回滚...", err)
+		logger.Errorf("新版本启动失败: %v，开始回滚...", err)
 		return rollbackAndRestart(currentBinary, backupPath)
 	}
 
-	log.Println("新版本启动成功")
+	logger.Info("新版本启动成功")
 	return nil
 }
 
 // rollbackAndRestart 回滚到备份版本并重启
 func rollbackAndRestart(currentBinary, backupPath string) error {
-	log.Println("开始回滚到备份版本...")
+	logger.Info("开始回滚到备份版本...")
 
 	// 检查备份文件是否存在
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
@@ -219,14 +218,14 @@ func rollbackAndRestart(currentBinary, backupPath string) error {
 		return fmt.Errorf("恢复备份失败: %w", err)
 	}
 
-	log.Println("备份已恢复，尝试重启...")
+	logger.Info("备份已恢复，尝试重启...")
 
 	// 重启 Agent
 	if err := restartAgent(); err != nil {
 		return fmt.Errorf("回滚后重启失败: %w", err)
 	}
 
-	log.Println("已成功回滚并重启 Agent")
+	logger.Info("已成功回滚并重启 Agent")
 	return nil
 }
 
@@ -241,7 +240,7 @@ func checkAgentRunning() error {
 		cmd = exec.Command("rc-service", "configflow-agent", "status")
 	} else {
 		// 如果没有服务管理器，假设进程正在运行
-		log.Println("无法检测进程状态，假设运行正常")
+		logger.Warn("无法检测进程状态，假设运行正常")
 		return nil
 	}
 
@@ -260,15 +259,15 @@ func restartAgent() error {
 
 	// 尝试检测是否使用 systemd
 	if _, err := exec.LookPath("systemctl"); err == nil {
-		log.Println("使用 systemctl 重启 Agent...")
+		logger.Info("使用 systemctl 重启 Agent...")
 		cmd = exec.Command("systemctl", "restart", "configflow-agent")
 	} else if _, err := exec.LookPath("rc-service"); err == nil {
 		// OpenRC (Alpine Linux)
-		log.Println("使用 rc-service 重启 Agent...")
+		logger.Info("使用 rc-service 重启 Agent...")
 		cmd = exec.Command("rc-service", "configflow-agent", "restart")
 	} else {
 		// 如果以上都不可用，直接退出进程让系统重启（假设有自动重启机制）
-		log.Println("未找到服务管理器，直接退出进程...")
+		logger.Info("未找到服务管理器，直接退出进程...")
 		time.Sleep(1 * time.Second)
 		os.Exit(0)
 	}
@@ -297,7 +296,7 @@ func detectArchitecture() string {
 		return "linux-armv7"
 	default:
 		// 默认返回 amd64
-		log.Printf("未知架构: %s/%s，默认使用 linux-amd64", goos, goarch)
+		logger.Warnf("未知架构: %s/%s，默认使用 linux-amd64", goos, goarch)
 		return "linux-amd64"
 	}
 }

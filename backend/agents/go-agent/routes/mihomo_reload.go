@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -110,7 +109,7 @@ func prepareMihomoReload(cfg *Config, s *DeploymentState, running bool) *mihomoR
 		return nil
 	}
 	skip := func(reason string) *mihomoReloader {
-		log.Printf("Mihomo release %s: native reload unavailable (%s)", s.DeploymentID, reason)
+		logger.Infof("Mihomo release %s: native reload unavailable (%s)", s.DeploymentID, reason)
 		return nil
 	}
 	live, _, err := readYAMLDocument(cfg.ConfigPath)

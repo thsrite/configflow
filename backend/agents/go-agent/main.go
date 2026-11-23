@@ -11,7 +11,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -75,7 +74,7 @@ func runAgent() int {
 	}
 	if *upgradeWorker != "" {
 		if err := upgrade.Run(*upgradeWorker); err != nil {
-			log.Printf("Agent update: %v", err)
+			logger.Infof("Agent update: %v", err)
 			return 1
 		}
 		return 0
@@ -100,7 +99,7 @@ func runAgent() int {
 		defer output.Close()
 	}
 	fail := func(title string, err error, fix string) int {
-		log.Printf("%s: %v", title, err)
+		logger.Infof("%s: %v", title, err)
 		if output != nil {
 			output.Result("error", title, err.Error(), fix)
 		}
@@ -132,7 +131,7 @@ func runAgent() int {
 		}
 	}
 
-	log.Printf("Using config file: %s", *configPath)
+	logger.Infof("Using config file: %s", *configPath)
 	if *prepareTUN {
 		candidate, err := preflight.LoadConfig(*configPath)
 		var report preflight.Report
@@ -185,7 +184,7 @@ func runAgent() int {
 	if err != nil {
 		return fail("Agent 配置加载失败", err, "检查 -config 指定的配置路径与读取权限。")
 	}
-	log.Println("Configuration loaded successfully.")
+	logger.Info("Configuration loaded successfully.")
 	if *validateService {
 		output.Title("核心服务配置检查")
 		if err := routes.ValidateOxiDNSServiceDirectory(toRoutesConfig(cfg)); err != nil {
@@ -199,7 +198,7 @@ func runAgent() int {
 		if err := cleanupDisk(cfg); err != nil {
 			return fail("Agent 清理未完成", err, "检查目录权限、磁盘空间与详细日志。")
 		}
-		log.Println("Disk cleanup completed.")
+		logger.Info("Disk cleanup completed.")
 		output.Result("pass", "Agent 历史文件清理完成", "已回收符合条件的已完成发布载荷与超限 Agent 日志。", "")
 		return 0
 	}
@@ -212,7 +211,7 @@ func runAgent() int {
 		if err := routes.RecoverDeployments(toRoutesConfig(cfg), true); err != nil {
 			return fail("发布恢复未完成", err, "检查发布日志中的失败步骤，处理后显式重试 -recover-and-exit。")
 		}
-		log.Println("Deployment recovery completed.")
+		logger.Info("Deployment recovery completed.")
 		output.Result("pass", "发布恢复完成", "已完成显式请求的发布恢复及相应服务操作。", "")
 		return 0
 	}
@@ -220,12 +219,12 @@ func runAgent() int {
 		output.Title("发布记录检查（只读）")
 	}
 	if *requireCleanDeployments && cfg.NativeAIO && upgrade.Pending(filepath.Join(filepath.Dir(cfg.filePath), "configflow-agent")) {
-		log.Print("Native AIO Agent update requires completion or recovery; installation preflight left files and services unchanged.")
+		logger.Info("Native AIO Agent update requires completion or recovery; installation preflight left files and services unchanged.")
 		output.Result("error", "Agent 更新记录需要处理", "检测到未完成或不可读取的 Agent 更新记录。", "先完成或恢复上次 Agent 更新，再重新安装。文件与服务未更改。")
 		return 1
 	}
 	if err := routes.CheckDeployments(toRoutesConfig(cfg)); err != nil {
-		log.Printf("Deployment check requires attention: %v. Files and services were left unchanged; inspect the journal and use -recover-and-exit to recover explicitly.", err)
+		logger.Infof("Deployment check requires attention: %v. Files and services were left unchanged; inspect the journal and use -recover-and-exit to recover explicitly.", err)
 		if output != nil {
 			level := "warn"
 			if *requireCleanDeployments {
@@ -237,7 +236,7 @@ func runAgent() int {
 			return 1
 		}
 	} else {
-		log.Println("Deployment check completed; no recovery required.")
+		logger.Info("Deployment check completed; no recovery required.")
 		if output != nil {
 			output.Result("pass", "发布记录检查通过", "没有需要恢复的发布记录；未更改文件或服务。", "")
 		}
@@ -253,7 +252,7 @@ func runAgent() int {
 		}
 		// 注册成功后，配置已更新并保存
 	} else {
-		log.Printf("Agent already registered with ID: %s", cfg.AgentID)
+		logger.Infof("Agent already registered with ID: %s", cfg.AgentID)
 	}
 
 	// 3. 在后台启动心跳循环

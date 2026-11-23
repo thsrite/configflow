@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -182,7 +181,7 @@ func (f *Finisher) endGroup(name string) {
 			return
 		}
 		if first {
-			log.Printf("%s exited and left %d process(es) %v in its process group; ending them", name, len(members), members)
+			logger.Warnf("%s exited and left %d process(es) %v in its process group; ending them", name, len(members), members)
 		}
 		if f.Now().After(deadline) {
 			signal = syscall.SIGKILL

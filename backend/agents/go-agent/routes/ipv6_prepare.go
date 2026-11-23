@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -401,13 +400,13 @@ func ReapplyIPv6Readiness(cfg *Config) {
 			waiting, err := replayIPv6Readiness(cfg)
 			if !waiting {
 				if err != nil {
-					log.Printf("IPv6 preparation replay needs attention: %v", err)
+					logger.Warnf("IPv6 preparation replay needs attention: %v", err)
 				}
 				return
 			}
 			time.Sleep(time.Second)
 		}
-		log.Print("IPv6 preparation replay could not confirm IPv6/TUN readiness within 60 checks; existing IPv4 service was kept, inspect IPv6 readiness and republish Mihomo when the network is ready")
+		logger.Warn("IPv6 preparation replay could not confirm IPv6/TUN readiness within 60 checks; existing IPv4 service was kept, inspect IPv6 readiness and republish Mihomo when the network is ready")
 	}()
 }
 

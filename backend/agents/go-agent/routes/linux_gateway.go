@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -574,7 +573,7 @@ func ReapplyLinuxGateway(cfg *Config) {
 	}
 	go func() {
 		if err := reapplyLinuxGateway(cfg, 60, func() { time.Sleep(2 * time.Second) }); err != nil {
-			log.Printf("linux gateway: boot replay refused: %v", err)
+			logger.Warnf("linux gateway: boot replay refused: %v", err)
 		}
 	}()
 }
@@ -610,7 +609,7 @@ func ReconcileLinuxGateway(cfg *Config) {
 	}
 	go func() {
 		if err := reconcileLinuxGateway(cfg); err != nil {
-			log.Printf("linux gateway: safe reconciliation refused: %v", err)
+			logger.Warnf("linux gateway: safe reconciliation refused: %v", err)
 		}
 	}()
 }

@@ -1,10 +1,10 @@
 package routes
 
 import (
+	"agent/internal/logx"
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -296,9 +296,8 @@ func TestWatchdogPausesUnsafeConfigurationsWithoutProbingAndResumes(t *testing.T
 	w.tick()
 	writeWatchdogConfig(t, w.cfg, strings.Replace(guardedWatchdogConfig("127.0.0.1:53"), "reject 3", "reject 2", 1))
 	var logs bytes.Buffer
-	previousOutput := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(previousOutput) })
+	previousOutput := logx.SetOutput(&logs)
+	t.Cleanup(func() { logx.SetOutput(previousOutput) })
 	probe := w.probe
 	w.probe = func(watchdogTarget) error {
 		t.Fatal("an unsafe configuration must not send even one DNS probe")

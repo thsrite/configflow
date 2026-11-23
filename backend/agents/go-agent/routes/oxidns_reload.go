@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -68,7 +67,7 @@ func prepareOxiDNSReload(cfg *Config, s *DeploymentState, running bool) *oxidnsR
 		return nil
 	}
 	skip := func(reason string) *oxidnsReloader {
-		log.Printf("OxiDNS release %s: native reload unavailable (%s)", s.DeploymentID, reason)
+		logger.Infof("OxiDNS release %s: native reload unavailable (%s)", s.DeploymentID, reason)
 		return nil
 	}
 	api, apiErr := loadOxiDNSMonitorConfig(cfg)

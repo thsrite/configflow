@@ -2,7 +2,6 @@ package routes
 
 import (
 	"agent/preflight"
-	"log"
 	"net/netip"
 	"os"
 
@@ -60,7 +59,7 @@ func refreshAIOPeerUpstreams(cfg *Config, previous []byte) {
 		return
 	}
 	skip := func(reason string) {
-		log.Printf("Mihomo now excludes OxiDNS upstreams %v; OxiDNS was not reloaded (%s), publish OxiDNS once so it stops getting fake-ip", upstreams, reason)
+		logger.Infof("Mihomo now excludes OxiDNS upstreams %v; OxiDNS was not reloaded (%s), publish OxiDNS once so it stops getting fake-ip", upstreams, reason)
 	}
 	peerCfg := &Config{ServiceType: "oxidns", ConfigPath: peer.Config.ConfigPath}
 	api, apiErr := loadOxiDNSMonitorConfig(peerCfg)
@@ -92,5 +91,5 @@ func refreshAIOPeerUpstreams(cfg *Config, previous []byte) {
 		skip(err.Error())
 		return
 	}
-	log.Printf("Mihomo now excludes OxiDNS upstreams %v; reloaded OxiDNS so its upstream sockets bypass the TUN", upstreams)
+	logger.Infof("Mihomo now excludes OxiDNS upstreams %v; reloaded OxiDNS so its upstream sockets bypass the TUN", upstreams)
 }

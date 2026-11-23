@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -617,7 +616,7 @@ func ReapplyOxiDNSHA(cfg *Config) {
 			for {
 				if err := reconcileOxiDNSHA(cfg); err != nil {
 					if message := err.Error(); message != lastMessage {
-						log.Printf("oxidns ha: container recovery pending: %s", message)
+						logger.Infof("oxidns ha: container recovery pending: %s", message)
 						lastMessage = message
 					}
 				} else {
@@ -633,7 +632,7 @@ func ReapplyOxiDNSHA(cfg *Config) {
 	}
 	go func() {
 		if err := reapplyOxiDNSHA(cfg, 10, func() { haSleep(3 * time.Second) }); err != nil {
-			log.Printf("oxidns ha: boot replay refused: %v", err)
+			logger.Warnf("oxidns ha: boot replay refused: %v", err)
 		}
 	}()
 }

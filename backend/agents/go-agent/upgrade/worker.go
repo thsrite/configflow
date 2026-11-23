@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -163,7 +162,7 @@ func (j *Job) save(path, stage string) error {
 		}
 	}
 	if err == nil {
-		log.Printf("Agent update %s: %s — %s", j.ID, stage, j.Message)
+		logger.Infof("Agent update %s: %s — %s", j.ID, stage, j.Message)
 	}
 	return err
 }

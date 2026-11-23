@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -1116,11 +1115,11 @@ func activateDeployment(cfg *Config, s *DeploymentState) {
 			reloadErr = e
 			// A manual deployment may resolve a failed or uncertain reload by
 			// applying the candidate through the usual stop/start health checks.
-			log.Printf("%s release %s: reload failed (%v), restarting", cfg.ServiceType, s.DeploymentID, e)
+			logger.Infof("%s release %s: reload failed (%v), restarting", cfg.ServiceType, s.DeploymentID, e)
 			// A reload that outlived the wait is still running and the core
 			// ignores SIGTERM until it ends; let it finish before stopping.
 			if ox, ok := reloader.(*oxidnsReloader); ok && !ox.settle(oxidnsReloadSettleTimeout) {
-				log.Printf("%s release %s: core still reloading after %s; stopping anyway", cfg.ServiceType, s.DeploymentID, oxidnsReloadSettleTimeout)
+				logger.Warnf("%s release %s: core still reloading after %s; stopping anyway", cfg.ServiceType, s.DeploymentID, oxidnsReloadSettleTimeout)
 			}
 			reloader = nil
 			if e = saveDeployment(cfg, s, "stopping"); e != nil {
@@ -1327,10 +1326,10 @@ func recoverHandler(cfg *Config, id string, w http.ResponseWriter) {
 	go func() {
 		defer release()
 		if err := recoverDeploymentsLocked(cfg, true); err != nil {
-			log.Printf("Deployment recovery requested from ConfigFlow did not complete: %v", err)
+			logger.Warnf("Deployment recovery requested from ConfigFlow did not complete: %v", err)
 			return
 		}
-		log.Println("Deployment recovery requested from ConfigFlow completed.")
+		logger.Info("Deployment recovery requested from ConfigFlow completed.")
 	}()
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -145,7 +144,7 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 
 		// 清空文件内容
 		if err := os.WriteFile(req.LogPath, []byte(""), 0644); err != nil {
-			log.Printf("清空日志文件失败: %s, error: %v", req.LogPath, err)
+			logger.Errorf("清空日志文件失败: %s, error: %v", req.LogPath, err)
 			JsonResponse(w, http.StatusInternalServerError, map[string]any{
 				"success": false,
 				"message": fmt.Sprintf("清空日志失败: %v", err),
@@ -153,7 +152,7 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("日志文件已清空: %s", req.LogPath)
+		logger.Infof("日志文件已清空: %s", req.LogPath)
 		JsonResponse(w, http.StatusOK, map[string]any{
 			"success": true,
 			"message": "日志已清空",

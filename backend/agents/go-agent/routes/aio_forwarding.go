@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -763,15 +762,15 @@ func ReapplyForwardingBoot(cfg *Config) {
 func reapplyForwardingBoot(cfg *Config) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			log.Printf("IPv4 forwarding boot check skipped after an internal error: %v", recovered)
+			logger.Errorf("IPv4 forwarding boot check skipped after an internal error: %v", recovered)
 		}
 	}()
 	repaired, err := aioRepairSysctlBoot(cfg)
 	switch {
 	case err != nil:
-		log.Printf("IPv4 forwarding boot check needs attention: %v", err)
+		logger.Warnf("IPv4 forwarding boot check needs attention: %v", err)
 	case repaired:
-		log.Printf("IPv4 forwarding persisted by ConfigFlow: added the OpenRC sysctl service to the boot runlevel so %s applies at boot", aioForwardingConfigPath())
+		logger.Infof("IPv4 forwarding persisted by ConfigFlow: added the OpenRC sysctl service to the boot runlevel so %s applies at boot", aioForwardingConfigPath())
 	}
 }
 

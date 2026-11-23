@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -77,7 +76,7 @@ func StartDNSWatchdog(cfg *Config) {
 		return
 	}
 	w := newDNSWatchdog(cfg)
-	log.Printf("Watchdog enabled for %s: probe every %s, restart after %d silent probes, at most %d restarts per %s",
+	logger.Infof("Watchdog enabled for %s: probe every %s, restart after %d silent probes, at most %d restarts per %s",
 		cfg.ServiceType, w.interval, w.failures, w.maxRestarts, w.window)
 	go func() {
 		ticker := time.NewTicker(w.interval)
@@ -114,7 +113,7 @@ func (w *serviceWatchdog) tick() string {
 		return w.pause(err)
 	}
 	if w.pausedReason != "" {
-		log.Printf("Watchdog: %s probe available again", w.cfg.ServiceType)
+		logger.Infof("Watchdog: %s probe available again", w.cfg.ServiceType)
 		w.pausedReason = ""
 	}
 	if target != w.lastTarget {
@@ -123,13 +122,13 @@ func (w *serviceWatchdog) tick() string {
 	}
 	if err = w.probe(target); err == nil {
 		if w.consecutive > 0 {
-			log.Printf("Watchdog: %s answering again", target)
+			logger.Infof("Watchdog: %s answering again", target)
 		}
 		w.consecutive, w.gaveUp = 0, false
 		return "ok"
 	}
 	w.consecutive++
-	log.Printf("Watchdog: probe %d/%d to %s failed: %v", w.consecutive, w.failures, target, err)
+	logger.Infof("Watchdog: probe %d/%d to %s failed: %v", w.consecutive, w.failures, target, err)
 	if w.consecutive < w.failures {
 		return "failing"
 	}
@@ -142,7 +141,7 @@ func (w *serviceWatchdog) tick() string {
 	w.restarts = recent
 	if len(w.restarts) >= w.maxRestarts {
 		if !w.gaveUp {
-			log.Printf("Watchdog: %d restarts within %s, not restarting again until the window passes", len(w.restarts), w.window)
+			logger.Infof("Watchdog: %d restarts within %s, not restarting again until the window passes", len(w.restarts), w.window)
 			w.gaveUp = true
 		}
 		return "budget-exhausted"
@@ -168,12 +167,12 @@ func (w *serviceWatchdog) tick() string {
 		w.consecutive = 0
 		return "not-running"
 	}
-	log.Printf("Watchdog: %s is running but not answering, restarting %s", target, w.cfg.ServiceType)
+	logger.Warnf("Watchdog: %s is running but not answering, restarting %s", target, w.cfg.ServiceType)
 	w.restarts = append(w.restarts, now)
 	w.consecutive = 0
 	w.pausedUntil = now.Add(w.grace)
 	if _, err = w.restart(w.cfg); err != nil {
-		log.Printf("Watchdog: restart failed: %v", err)
+		logger.Infof("Watchdog: restart failed: %v", err)
 		return "restart-failed"
 	}
 	return "restarted"
@@ -183,7 +182,7 @@ func (w *serviceWatchdog) pause(err error) string {
 	w.consecutive = 0
 	w.lastTarget = watchdogTarget{}
 	if reason := err.Error(); reason != w.pausedReason {
-		log.Printf("Watchdog: %s probe paused: %s", w.cfg.ServiceType, reason)
+		logger.Warnf("Watchdog: %s probe paused: %s", w.cfg.ServiceType, reason)
 		w.pausedReason = reason
 	}
 	return "probe-unavailable"

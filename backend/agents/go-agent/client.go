@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -57,17 +56,17 @@ type HeartbeatRequest struct {
 func (c *Config) sendRegisterRequest(reqBody RegisterRequest) (*RegisterResponse, error) {
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("Failed to marshal register request: %v", err)
+		logger.Errorf("Failed to marshal register request: %v", err)
 		return nil, fmt.Errorf("failed to marshal register request: %w", err)
 	}
 
-	log.Printf("Register request prepared (body length: %d)", len(jsonData))
+	logger.Infof("Register request prepared (body length: %d)", len(jsonData))
 
 	registerURL := fmt.Sprintf("%s/api/agents/register", c.ServerURL)
-	log.Printf("Sending register request to: %s", redactURLForLog(registerURL))
+	logger.Infof("Sending register request to: %s", redactURLForLog(registerURL))
 	req, err := http.NewRequest(http.MethodPost, registerURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Printf("Failed to create register request for %s", redactURLForLog(registerURL))
+		logger.Errorf("Failed to create register request for %s", redactURLForLog(registerURL))
 		return nil, safeURLFailure("failed to create register request for", registerURL, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -76,35 +75,35 @@ func (c *Config) sendRegisterRequest(reqBody RegisterRequest) (*RegisterResponse
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("Failed to send register request to %s", redactURLForLog(registerURL))
+		logger.Errorf("Failed to send register request to %s", redactURLForLog(registerURL))
 		return nil, safeURLFailure("failed to send register request to", registerURL, err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("Register request response status: %d", resp.StatusCode)
+	logger.Infof("Register request response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		// The server says why (for example another Agent's settings exclude this
 		// one); without it the service log only shows an endless retry.
 		reason := registerRejection(resp.Body)
-		log.Printf("Register request failed with status code: %d%s", resp.StatusCode, reason)
+		logger.Infof("Register request failed with status code: %d%s", resp.StatusCode, reason)
 		return nil, fmt.Errorf("register request failed with status code: %d%s", resp.StatusCode, reason)
 	}
 
 	var regResp RegisterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&regResp); err != nil {
-		log.Printf("Failed to decode register response: %v", err)
+		logger.Errorf("Failed to decode register response: %v", err)
 		return nil, fmt.Errorf("failed to decode register response: %w", err)
 	}
 
-	log.Printf("Register response: success=%t, id=%s", regResp.Success, regResp.ID)
+	logger.Infof("Register response: success=%t, id=%s", regResp.Success, regResp.ID)
 	return &regResp, nil
 }
 
 // handleRegisterResponse 处理注册响应
 func (c *Config) handleRegisterResponse(regResp *RegisterResponse) error {
 	if !regResp.Success {
-		log.Printf("Registration failed: server returned success=false")
+		logger.Infof("Registration failed: server returned success=false")
 		return fmt.Errorf("registration failed: server returned success=false")
 	}
 
@@ -115,7 +114,7 @@ func (c *Config) handleRegisterResponse(regResp *RegisterResponse) error {
 	previousRegistrationToken, previousRegistrationKey := c.RegistrationToken, c.RegistrationKey
 	previousInstallationID, previousInstallationToken := c.InstallationID, c.InstallationToken
 
-	log.Printf("Registration successful! Agent ID: %s", regResp.ID)
+	logger.Infof("Registration successful! Agent ID: %s", regResp.ID)
 	c.AgentID = regResp.ID
 	if regResp.Token != "" {
 		c.Token = regResp.Token
@@ -127,22 +126,22 @@ func (c *Config) handleRegisterResponse(regResp *RegisterResponse) error {
 	c.InstallationToken = ""
 	c.RegistrationToken, c.RegistrationKey = "", ""
 
-	log.Printf("Saving configuration...")
+	logger.Infof("Saving configuration...")
 	if err := c.Save(); err != nil {
 		c.AgentID, c.Token = previousID, previousToken
 		c.RegistrationToken, c.RegistrationKey = previousRegistrationToken, previousRegistrationKey
 		c.InstallationID, c.InstallationToken = previousInstallationID, previousInstallationToken
-		log.Printf("Failed to save configuration: %v", err)
+		logger.Errorf("Failed to save configuration: %v", err)
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}
 
-	log.Printf("Configuration saved successfully")
+	logger.Infof("Configuration saved successfully")
 	return nil
 }
 
 // RegisterAgent 向中央服务器注册 agent
 func (c *Config) RegisterAgent() error {
-	log.Println("Agent not registered. Attempting to register...")
+	logger.Info("Agent not registered. Attempting to register...")
 
 	// 优先使用配置中的 AgentIP（本机已没有这个地址时改为自动检测）
 	hostIP := c.effectiveAgentIP()
@@ -155,12 +154,12 @@ func (c *Config) RegisterAgent() error {
 			if fallback := net.ParseIP(strings.TrimSpace(c.AgentHost)); fallback != nil && fallback.IsGlobalUnicast() && !fallback.IsLoopback() {
 				localIP = fallback.String()
 			}
-			log.Printf("Warning: could not get local IP: %v. Using registration fallback %q (empty means request source IP).", err, localIP)
+			logger.Warnf("Warning: could not get local IP: %v. Using registration fallback %q (empty means request source IP).", err, localIP)
 		}
 		hostIP = localIP
 	}
 
-	log.Printf("Registering agent with name: %s, host: %s, port: %d, service_type: %s",
+	logger.Infof("Registering agent with name: %s, host: %s, port: %d, service_type: %s",
 		c.AgentName, hostIP, c.AgentPort, c.ServiceType)
 
 	reqBody := RegisterRequest{
@@ -208,13 +207,13 @@ func (c *Config) createHeartbeatRequest() ([]byte, error) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("Error: Metrics collection panic recovered: %v (continuing without metrics)", r)
+					logger.Errorf("Error: Metrics collection panic recovered: %v (continuing without metrics)", r)
 				}
 			}()
 
 			metrics, err := metricsCollector.CollectSystemMetrics()
 			if err != nil {
-				log.Printf("Warning: Failed to collect system metrics: %v (continuing without metrics)", err)
+				logger.Warnf("Warning: Failed to collect system metrics: %v (continuing without metrics)", err)
 				return
 			}
 
@@ -228,16 +227,16 @@ func (c *Config) createHeartbeatRequest() ([]byte, error) {
 					metrics.Network.SpeedSent,
 					metrics.Network.SpeedRecv)
 			} else {
-				log.Printf("Warning: Metrics collection returned nil (continuing without metrics)")
+				logger.Warnf("Warning: Metrics collection returned nil (continuing without metrics)")
 			}
 		}()
 	} else {
-		log.Printf("System metrics collection is disabled in config")
+		logger.Infof("System metrics collection is disabled in config")
 	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("Error: Failed to marshal heartbeat request: %v", err)
+		logger.Errorf("Error: Failed to marshal heartbeat request: %v", err)
 		return nil, err
 	}
 
@@ -264,7 +263,7 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 
 	req, err := http.NewRequest("POST", heartbeatURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Printf("Error: Failed to create heartbeat request for %s", redactURLForLog(heartbeatURL))
+		logger.Errorf("Error: Failed to create heartbeat request for %s", redactURLForLog(heartbeatURL))
 		return safeURLFailure("failed to create heartbeat request for", heartbeatURL, err)
 	}
 
@@ -274,7 +273,7 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 	client := heartbeatHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Error: Failed to send heartbeat to %s", redactURLForLog(heartbeatURL))
+		logger.Errorf("Error: Failed to send heartbeat to %s", redactURLForLog(heartbeatURL))
 		return safeURLFailure("failed to send heartbeat to", heartbeatURL, err)
 	}
 	defer resp.Body.Close()
@@ -310,13 +309,13 @@ func (c *Config) sendHeartbeatRequest(jsonData []byte) error {
 		status := c.managedServiceStatus()
 		// 心跳成功是常态，仅在服务状态发生变化时记录，避免日志无限累积
 		if status != lastReportedStatus {
-			log.Printf("Heartbeat sent successfully (service status: %s -> %s)", lastReportedStatus, status)
+			logger.Infof("Heartbeat sent successfully (service status: %s -> %s)", lastReportedStatus, status)
 			lastReportedStatus = status
 		} else {
 			logDebugf("Heartbeat sent successfully (service status: %s)", status)
 		}
 	} else {
-		log.Printf("Error: Heartbeat failed with status code: %d", resp.StatusCode)
+		logger.Errorf("Error: Heartbeat failed with status code: %d", resp.StatusCode)
 	}
 
 	return nil
@@ -327,7 +326,7 @@ func (c *Config) SendHeartbeat() {
 	logDebugf("Sending heartbeat...")
 
 	if c.AgentID == "" || c.Token == "" {
-		log.Println("Skipping heartbeat: agent_id or token is empty.")
+		logger.Info("Skipping heartbeat: agent_id or token is empty.")
 		return
 	}
 
@@ -339,7 +338,7 @@ func (c *Config) SendHeartbeat() {
 
 	// 发送心跳请求
 	if err := c.sendHeartbeatRequest(jsonData); err != nil {
-		log.Printf("Error sending heartbeat: %v", err)
+		logger.Errorf("Error sending heartbeat: %v", err)
 	}
 }
 

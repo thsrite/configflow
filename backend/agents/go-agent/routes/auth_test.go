@@ -1,8 +1,8 @@
 package routes
 
 import (
+	"agent/internal/logx"
 	"bytes"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,9 +91,8 @@ func TestAuthMiddlewareRejectsInvalidTokenWithoutLoggingOrEchoingSecrets(t *test
 	const providedToken = "provided-auth-token-a91e"
 
 	var logs bytes.Buffer
-	originalWriter := log.Writer()
-	log.SetOutput(&logs)
-	defer log.SetOutput(originalWriter)
+	originalWriter := logx.SetOutput(&logs)
+	defer logx.SetOutput(originalWriter)
 
 	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	request.Header.Set("Authorization", "Bearer "+providedToken)

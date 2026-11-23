@@ -1,11 +1,11 @@
 package upgrade
 
 import (
+	"agent/internal/logx"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 )
+
+var logger = logx.Get("agent/upgrade")
 
 type bootstrapJournal struct {
 	Complete  bool       `json:"complete"`
@@ -192,7 +194,7 @@ func deferMigration(configPath, binary, systemRoot string) {
 	for {
 		done, err := finishDeferredMigration(configPath, binary, systemRoot)
 		if err != nil {
-			log.Printf("Warning: could not remove legacy startup recovery dependencies after Agent update: %v", err)
+			logger.Warnf("Could not remove legacy startup recovery dependencies after Agent update: %v", err)
 			return
 		}
 		if done {

@@ -1,13 +1,13 @@
 package svc
 
 import (
+	"agent/internal/logx"
 	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -18,6 +18,8 @@ import (
 // Agent controls that one program through a Unix socket on the shared HA
 // volume; the companion answers with its local S6 manager. One request per
 // connection: a command line, then one JSON reply line.
+
+var logger = logx.Get("agent/svc")
 
 // reply is the companion's answer.
 type reply struct {
@@ -167,7 +169,7 @@ func handle(ctx context.Context, conn net.Conn, manager Manager) {
 		if err := Do(actionCtx, manager, command, Keepalived); err != nil {
 			answer.Error = err.Error()
 			answer.Fatal = errors.Is(err, ErrFatal)
-			log.Printf("ha companion: %s keepalived: %v", command, err)
+			logger.Warnf("ha companion: %s keepalived: %v", command, err)
 		}
 	default:
 		answer.Error = "unsupported command"

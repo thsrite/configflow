@@ -2,7 +2,6 @@ package routes
 
 import (
 	"crypto/subtle"
-	"log"
 	"net/http"
 )
 
@@ -33,7 +32,7 @@ func AuthMiddleware(cfg *Config, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, valid := parseBearerToken(r.Header.Get("Authorization"))
 		if !valid || subtle.ConstantTimeCompare(token, []byte(cfg.Token)) != 1 {
-			log.Printf("Authorization rejected")
+			logger.Warnf("Authorization rejected")
 			JsonResponse(w, http.StatusUnauthorized, map[string]string{"success": "false", "message": "Unauthorized"})
 			return
 		}

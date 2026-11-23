@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strconv"
@@ -737,7 +736,7 @@ func reapplyReturnRouting(cfg *Config) {
 	defer returnRoutingMu.Unlock()
 	state, err := loadReturnState(cfg)
 	if err != nil {
-		log.Printf("return routing: %v", err)
+		logger.Infof("return routing: %v", err)
 		return
 	}
 	if state == nil {
@@ -746,11 +745,11 @@ func reapplyReturnRouting(cfg *Config) {
 	if state.Ownership == nil {
 		// Familiar names, comments, and matching content cannot establish ownership.
 		// Keep legacy resources and the original journal untouched at boot.
-		log.Printf("return routing: preserved legacy resources; ownership is missing, automatic migration is disabled")
+		logger.Infof("return routing: preserved legacy resources; ownership is missing, automatic migration is disabled")
 		return
 	}
 	if !validReturnOwner(state) || state.Legacy != nil || state.Ownership.Pending {
-		log.Printf("return routing: preserved existing resources; ownership is missing or incomplete")
+		logger.Infof("return routing: preserved existing resources; ownership is missing or incomplete")
 		return
 	}
 	if !state.Active {
@@ -761,13 +760,13 @@ func reapplyReturnRouting(cfg *Config) {
 	// Only a reboot or drift needs the real replay below.
 	if returnResourcesComplete(state) {
 		if spec, specErr := prepareSpec(cfg, state.Spec); specErr == nil && ownedMatchesSpec(spec, state.Ownership) {
-			log.Printf("return routing: owned resources complete and current, replay skipped")
+			logger.Infof("return routing: owned resources complete and current, replay skipped")
 			ensureSendRedirects(cfg, spec.LanInterface)
 			return
 		}
 	}
 	if _, err = ApplyReturnRouting(cfg, state.Spec); err != nil {
-		log.Printf("return routing: safe replay refused: %v", err)
+		logger.Warnf("return routing: safe replay refused: %v", err)
 	}
 }
 
