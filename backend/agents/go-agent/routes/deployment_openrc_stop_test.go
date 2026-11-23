@@ -72,20 +72,12 @@ func TestOpenRCStopStillFailsWhenCoreNeverExits(t *testing.T) {
 // lock; its state starts as the old rollback_failed, so read it afterwards.
 func waitRecovery(t *testing.T, cfg *Config, id string) *DeploymentState {
 	t.Helper()
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		if release, err := AcquireServiceOperation(cfg); err == nil {
-			release()
-			s, err := loadDeployment(cfg, id)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return s
-		}
-		time.Sleep(10 * time.Millisecond)
+	waitOperationLockReleased(t, cfg, "recovery "+id)
+	s, err := loadDeployment(cfg, id)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("recovery did not release the operation lock")
-	return nil
+	return s
 }
 
 func requestRecover(cfg *Config, id string) *httptest.ResponseRecorder {

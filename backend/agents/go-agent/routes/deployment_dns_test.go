@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func useDNSCheck(t *testing.T, check func(preflight.DNSCandidate, preflight.DNSOptions) preflight.Report) {
@@ -88,14 +87,9 @@ func TestDeploymentDNSRechecksReadyCandidateBeforeActivation(t *testing.T) {
 	if w.Code != 202 {
 		t.Fatalf("activation: %d %s", w.Code, w.Body.String())
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		s, _ = loadDeployment(cfg, "dns-ready")
-		if s != nil && s.Status == "failed" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	s = waitDeploymentState(t, cfg, "dns-ready", true, func(st *DeploymentState) bool {
+		return st.Status == "failed" || st.Status == "succeeded"
+	}, "activation dns-ready")
 	if s == nil || s.Status != "failed" || len(s.DNSChecks) != 1 || s.DNSChecks[0].Level != "error" {
 		t.Fatalf("stale ready check reused: %+v", s)
 	}

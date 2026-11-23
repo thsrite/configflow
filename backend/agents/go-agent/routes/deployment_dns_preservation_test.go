@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -148,14 +147,9 @@ func TestAIODNSPreservesCandidateThroughReadyActivation(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("activation: %d %s", w.Code, w.Body.String())
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		s, _ = loadDeployment(cfg, "preserved-ready")
-		if s != nil && s.Status == "succeeded" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	s = waitDeploymentState(t, cfg, "preserved-ready", true, func(st *DeploymentState) bool {
+		return st.Status == "succeeded" || st.Status == "failed"
+	}, "activation preserved-ready")
 	if s == nil || s.Status != "succeeded" || calls != 2 {
 		t.Fatalf("activation did not recheck DNS: %+v (%d calls)", s, calls)
 	}

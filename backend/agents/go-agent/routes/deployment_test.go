@@ -5,6 +5,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -75,6 +76,63 @@ func testBundle(t *testing.T, cfg *Config, id string, files map[string][]byte, e
 	h := sha256.Sum256(buf.Bytes())
 	return buf.Bytes(), hex.EncodeToString(h[:])
 }
+
+const deploymentTestWaitTimeout = 60 * time.Second
+
+// waitDeploymentState polls until loadDeployment(cfg, id) satisfies match and,
+// when waitLock is true, the background worker has released the service
+// operation lock.
+func waitDeploymentState(t *testing.T, cfg *Config, id string, waitLock bool, match func(*DeploymentState) bool, label string) *DeploymentState {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), deploymentTestWaitTimeout)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	var last *DeploymentState
+	for {
+		if s, err := loadDeployment(cfg, id); err == nil {
+			last = s
+			if match(s) {
+				if !waitLock {
+					return s
+				}
+				if release, err := AcquireServiceOperation(cfg); err == nil {
+					release()
+					return s
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("%s timed out after %s (last state: %+v)", label, deploymentTestWaitTimeout, last)
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitOperationLockReleased(t *testing.T, cfg *Config, label string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), deploymentTestWaitTimeout)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if release, err := AcquireServiceOperation(cfg); err == nil {
+			release()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("%s timed out after %s waiting for operation lock", label, deploymentTestWaitTimeout)
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func submitBundle(t *testing.T, cfg *Config, id string, files map[string][]byte, activate bool, edits ...func(*DeploymentManifest)) *DeploymentState {
 	t.Helper()
 	var edit func(*DeploymentManifest)
@@ -93,32 +151,16 @@ func submitBundle(t *testing.T, cfg *Config, id string, files map[string][]byte,
 	if w.Code != 202 {
 		t.Fatalf("upload: %d %s", w.Code, w.Body)
 	}
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		s, e := loadDeployment(cfg, id)
-		if e == nil {
-			switch s.Status {
-			case "ready", "succeeded", "failed", "rolled_back", "rollback_failed":
-				if s.Status == "ready" && activate {
-					break
-				}
-				// The final state is durable before the worker drops its lock;
-				// wait for that handoff before the next sequential test publish.
-				for time.Now().Before(deadline) {
-					if release, e := AcquireServiceOperation(cfg); e == nil {
-						release()
-						return s
-					}
-					time.Sleep(5 * time.Millisecond)
-				}
-				t.Fatal("deployment worker did not release operation lock")
-				return s
-			}
+	return waitDeploymentState(t, cfg, id, true, func(s *DeploymentState) bool {
+		switch s.Status {
+		case "ready":
+			return !activate
+		case "succeeded", "failed", "rolled_back", "rollback_failed":
+			return true
+		default:
+			return false
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("deployment timed out")
-	return nil
+	}, "deployment "+id)
 }
 func TestDeploymentPreservesBinaryEmptyAndUnmanagedFiles(t *testing.T) {
 	cfg := testDeploymentConfig(t)
