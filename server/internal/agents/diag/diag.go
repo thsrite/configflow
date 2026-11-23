@@ -267,6 +267,10 @@ func safeDiagnosticURL(match string) string {
 	return "[REDACTED URL]"
 }
 
+// unicodeLineSeparators are the line breaks of Python's str.splitlines that
+// survive DiagnosticText's control-character filter.
+const unicodeLineSeparators = "\u0085\u2028\u2029"
+
 // hideBlockSecrets is _hide_block_secrets: hides a YAML block value without
 // swallowing the next diagnostic line.
 func hideBlockSecrets(text string) string {
@@ -274,13 +278,27 @@ func hideBlockSecrets(text string) string {
 	var out strings.Builder
 	for index := 0; index < len(lines); {
 		line := lines[index]
-		match := blockSecret.FindStringSubmatch(strings.TrimRight(line, "\r\n"))
+		body := strings.TrimRight(line, "\r\n")
+		// A key after a Unicode separator inside the line (U+2028 etc.,
+		// which Python's splitlines broke at) still starts a block: lines
+		// follow the editor's breaks, but redaction must not get narrower.
+		head, match := 0, blockSecret.FindStringSubmatch(body)
+		for rest := body; match == nil; {
+			i := strings.IndexAny(rest, unicodeLineSeparators)
+			if i < 0 {
+				break
+			}
+			_, width := utf8.DecodeRuneInString(rest[i:])
+			head += i + width
+			rest = rest[i+width:]
+			match = blockSecret.FindStringSubmatch(rest)
+		}
 		index++
 		if match == nil {
 			out.WriteString(line)
 			continue
 		}
-		out.WriteString(line[:strings.Index(line, ":")+1] + " [REDACTED]\n")
+		out.WriteString(line[:head+strings.Index(body[head:], ":")+1] + " [REDACTED]\n")
 		indent := utf8.RuneCountInString(match[1]) + utf8.RuneCountInString(match[2])
 		for index < len(lines) {
 			child := lines[index]
