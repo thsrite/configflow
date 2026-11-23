@@ -65,16 +65,6 @@ type BatchDriver interface {
 	RestoreMany(context.Context, []json.RawMessage, bool) []string
 }
 
-// PolicyRoute is the first policy route carrying comment.
-func PolicyRoute(state *RouterState, comment string) *PolicyRouteEntry {
-	for _, e := range state.PolicyRoutes {
-		if e.Comment == comment {
-			return e
-		}
-	}
-	return nil
-}
-
 // RetirePolicyRoutes routes proxy CIDRs by static routes and withdraws our
 // policy rules (they need managed return routing).
 func RetirePolicyRoutes(state *RouterState) {

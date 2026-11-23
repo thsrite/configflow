@@ -160,7 +160,7 @@ func routeIDs(routes []*RouteEntry) []string {
 func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 	gateway := desired.ProxyGateway
 	wanted := desiredCIDRs(desired)
-	auto := PolicyRoute(state, PolicyAutoComment)
+	auto := device.PolicyRoute(state.PolicyRoutes, PolicyAutoComment)
 	var covered []netip.Prefix
 	if auto != nil && device.PolicyRouteOK(auto, gateway) {
 		covered = device.Networks(auto.Dst)
@@ -174,7 +174,7 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 		}
 	}
 	out := RoutesReport{Items: []RouteItem{}, Extra: []ExtraRoute{}, UnmanagedOther: []UnmanagedRoute{}, Mode: "policy",
-		Policy: &PolicyRules{Auto: auto, Manual: PolicyRoute(state, PolicyManualComment)}}
+		Policy: &PolicyRules{Auto: auto, Manual: device.PolicyRoute(state.PolicyRoutes, PolicyManualComment)}}
 	for _, entry := range desired.ProxyCIDRs {
 		matches := enabledByDst[entry.CIDR]
 		item := RouteItem{CIDR: entry.CIDR, Sources: entry.Sources, Status: "missing", RouteIDs: routeIDs(matches)}
@@ -379,7 +379,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 		r.InSync = r.InSync && part.InSync
 	}
 	if state.IkuaiGroups != nil {
-		groups := GroupReportSection(state)
+		groups := GroupReportSection(state.IkuaiGroups, state.NatBypass, state.PolicyRoutes)
 		r.IkuaiGroups = &groups
 		// Rules still listing CIDRs themselves, groups nothing uses, or a
 		// marker to write back: a release is due.

@@ -1176,8 +1176,7 @@ type GroupReport struct {
 }
 
 // GroupReportSection lists pending migrations, unreferenced groups and markers to restore.
-func GroupReportSection(state *RouterState) GroupReport {
-	s := state.IkuaiGroups
+func GroupReportSection(s *GroupState, natBypass []*NatBypassEntry, policyRoutes []*PolicyRouteEntry) GroupReport {
 	report := GroupReport{Migrations: []GroupMigration{}, Orphans: []string{}, Marks: []string{}}
 	custom := func(key string) []string {
 		if r := s.Rule(key); r != nil {
@@ -1185,15 +1184,15 @@ func GroupReportSection(state *RouterState) GroupReport {
 		}
 		return nil
 	}
-	if state.PolicyRoutes != nil {
+	if policyRoutes != nil {
 		for _, comment := range []string{PolicyAutoComment, PolicyManualComment} {
-			if rule := PolicyRoute(state, comment); rule != nil && len(custom("policy:"+rule.ID)) > 0 {
+			if rule := device.PolicyRoute(policyRoutes, comment); rule != nil && len(custom("policy:"+rule.ID)) > 0 {
 				report.Migrations = append(report.Migrations, GroupMigration{Rule: comment, Kind: "端口分流", Count: len(custom("policy:" + rule.ID))})
 			}
 		}
 	}
 	var managed []*NatBypassEntry
-	for _, rule := range state.NatBypass {
+	for _, rule := range natBypass {
 		if rule.Enabled && device.IsManaged(rule.Comment) {
 			managed = append(managed, rule)
 		}
@@ -1214,8 +1213,7 @@ func GroupReportSection(state *RouterState) GroupReport {
 
 // VerifyGroups reads back the group structure one stage planned: contents,
 // references, removals.
-func VerifyGroups(check GroupStageCheck, state *RouterState) error {
-	s := state.IkuaiGroups
+func VerifyGroups(check GroupStageCheck, s *GroupState) error {
 	if s == nil {
 		return device.Error("回读校验失败：无法读取 iKuai IP 分组")
 	}

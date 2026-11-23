@@ -127,7 +127,7 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 		}
 		return false
 	}
-	auto := PolicyRoute(state, PolicyAutoComment)
+	auto := device.PolicyRoute(state.PolicyRoutes, PolicyAutoComment)
 	if len(target) > 0 {
 		if op := makePolicyOp(p, "pa", auto, gateway, target, target, PolicyAutoComment, false, &groups); op != nil {
 			ops = append(ops, op)
@@ -145,7 +145,7 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 			migrate = append(migrate, item.CIDR)
 		}
 	}
-	manual := PolicyRoute(state, PolicyManualComment)
+	manual := device.PolicyRoute(state.PolicyRoutes, PolicyManualComment)
 	if (p != nil && (len(migrate) > 0 || manual != nil)) || (p == nil && (len(migrate) > 0 || (manual != nil && !device.PolicyRouteOK(manual, gateway)))) {
 		current := []string{}
 		key := ""

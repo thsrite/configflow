@@ -26,7 +26,7 @@ func TestR01ReviewModelHelpers(t *testing.T) {
 		t.Error("PolicyRouteOK")
 	}
 	state := &RouterState{PolicyRoutes: []*PolicyRouteEntry{{Comment: "x"}, {Comment: PolicyAutoComment}, {Comment: PolicyManualComment}}}
-	if PolicyRoute(state, PolicyManualComment) != state.PolicyRoutes[2] {
+	if device.PolicyRoute(state.PolicyRoutes, PolicyManualComment) != state.PolicyRoutes[2] {
 		t.Error("PolicyRoute")
 	}
 	RetirePolicyRoutes(state)

@@ -236,7 +236,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		if !v.Missing {
 			state.IkuaiGroups = v.r03Ikuai.state()
 		}
-		if err := VerifyGroups(v.Check, state); err != nil {
+		if err := VerifyGroups(v.Check, state.IkuaiGroups); err != nil {
 			return err.Error()
 		}
 		return nil

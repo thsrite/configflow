@@ -203,3 +203,13 @@ func PolicyRouteOK(e *PolicyRouteEntry, gateway string) bool {
 	return e.Enabled && gateway != "" && e.Gateway == gateway && len(e.Src) == 1 && e.Src[0] == gateway &&
 		e.SrcInvert && !e.DstInvert && e.Protocol == "any" && e.Priority != nil && *e.Priority == PolicyPriority
 }
+
+// PolicyRoute is the first policy route carrying comment.
+func PolicyRoute(routes []*PolicyRouteEntry, comment string) *PolicyRouteEntry {
+	for _, e := range routes {
+		if e.Comment == comment {
+			return e
+		}
+	}
+	return nil
+}

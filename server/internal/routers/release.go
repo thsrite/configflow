@@ -157,7 +157,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		}
 		if checks.PolicyRoutes != nil {
 			for _, c := range *checks.PolicyRoutes {
-				r := PolicyRoute(state, c.Comment)
+				r := device.PolicyRoute(state.PolicyRoutes, c.Comment)
 				if r == nil || !device.PolicyRouteOK(r, c.Gateway) || !sameCanonical(r.Dst, c.Dst) {
 					return nil, device.Error(fmt.Sprintf(messagePolicyVerify, c.Comment, c.Gateway, c.Gateway))
 				}
@@ -193,7 +193,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		}
 	}
 	if c, ok := checks.IkuaiGroups[stage]; ok {
-		if err := VerifyGroups(c, state); err != nil {
+		if err := VerifyGroups(c, state.IkuaiGroups); err != nil {
 			return nil, err
 		}
 	}
