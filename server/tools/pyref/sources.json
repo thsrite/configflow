@@ -915,7 +915,8 @@
       "RoutingLockedError.Error",
       "SettingsError.Error",
       "ValidationError.Error",
-      "tokenizer.name"
+      "tokenizer.name",
+      "actionMap.len"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -1493,12 +1494,13 @@
       "server/internal/oxidns/settings_template.go",
       "server/internal/rules/group_members.go",
       "server/internal/digest/digest.go",
-      "server/internal/pathx/pathx.go"
+      "server/internal/pathx/pathx.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -1603,7 +1605,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -1796,7 +1801,9 @@
       "server/internal/oxidns/settings_template.go",
       "server/internal/rules/group_members.go",
       "server/internal/digest/digest.go",
-      "server/internal/pathx/pathx.go"
+      "server/internal/pathx/pathx.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2036,7 +2043,9 @@
       "server/internal/oxidns/settings_template.go",
       "server/internal/rules/group_members.go",
       "server/internal/digest/digest.go",
-      "server/internal/pathx/pathx.go"
+      "server/internal/pathx/pathx.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2269,7 +2278,9 @@
       "server/internal/oxidns/settings_template.go",
       "server/internal/rules/group_members.go",
       "server/internal/digest/digest.go",
-      "server/internal/pathx/pathx.go"
+      "server/internal/pathx/pathx.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go"
     ],
     "product_symbols": [
       "DefaultSettings",
@@ -2482,12 +2493,13 @@
       "server/internal/oxidns/settings_template.go",
       "server/internal/rules/group_members.go",
       "server/internal/digest/digest.go",
-      "server/internal/pathx/pathx.go"
+      "server/internal/pathx/pathx.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -2592,7 +2604,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -2782,12 +2797,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -2892,7 +2910,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -3082,12 +3103,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -3192,7 +3216,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -3382,12 +3409,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -3492,7 +3522,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -3682,12 +3715,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -3792,7 +3828,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -3982,12 +4021,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -4092,7 +4134,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -4284,12 +4329,13 @@
       "server/internal/oxidns/settings_template.go",
       "server/internal/rules/group_members.go",
       "server/internal/digest/digest.go",
-      "server/internal/pathx/pathx.go"
+      "server/internal/pathx/pathx.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -4394,7 +4440,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -4584,12 +4633,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -4694,7 +4746,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
@@ -4884,12 +4939,15 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/oxidns/ruledns_values.go",
+      "server/internal/oxidns/settings_view.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
       "ApplyPolicies",
-      "ApplyRouting",
       "B",
       "CommonView",
       "CustomFiles",
@@ -4994,7 +5052,10 @@
       "tokenizer.get",
       "tokenizer.str",
       "yamlReadError",
-      "zoneRecordsError"
+      "zoneRecordsError",
+      "applyRoutingNode",
+      "ownedChain.toNode",
+      "parsePolicies"
     ],
     "product_imports": [
       "configflow/internal/ippresence",
