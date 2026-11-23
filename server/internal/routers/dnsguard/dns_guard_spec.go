@@ -1,22 +1,23 @@
-package routers
+package dnsguard
 
 import (
-	"configflow/internal/routers/device"
-	"configflow/internal/routers/ros"
 	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
 
 	"configflow/internal/netipx"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 )
 
-func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error) {
+func guardConnected(ctx *ros.NatContext, address netip.Addr) (string, string, error) {
 	if ctx == nil || ctx.Routes == nil {
 		return "", "", device.Error(messageGuardRoutes)
 	}
 	best := -1
-	selected := []Row{}
+	selected := []ros.Row{}
 	var network netip.Prefix
 	for _, row := range ctx.Routes {
 		if device.FirstNonEmpty(row.Text("routing-table"), "main") != "main" || !row.Flag("connect") || !row.Flag("active") || row.Flag("disabled") {
@@ -53,7 +54,7 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 	return iface, network.String(), nil
 }
 
-func guardDesiredSpec(settings DNSGuard, desired *Desired, nat *NatContext) (*DNSGuardSpec, error) {
+func guardDesiredSpec(settings spec.DNSGuard, desired *spec.Desired, nat *ros.NatContext) (*Spec, error) {
 	dns := desired.DNSSettings
 	if dns == nil {
 		return nil, device.Error(messageGuardAddress)
@@ -108,7 +109,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, nat *NatContext) (*DN
 				if dns.HA != nil {
 					return nil, device.Error(fmt.Sprintf(messageGuardHAProxy, a))
 				}
-				return nil, device.Error(messageGuardProxy)
+				return nil, device.Error(MessageProxy)
 			}
 		}
 	}
@@ -134,7 +135,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, nat *NatContext) (*DN
 		}
 	}
 	collapsed, _ := netipx.Collapse(bypass)
-	spec := &DNSGuardSpec{Agent: address.String(), Interface: iface, Network: network, Bypass: []string{}, BlockDoT: settings.BlockDoT, Failover: settings.Failover}
+	spec := &Spec{Agent: address.String(), Interface: iface, Network: network, Bypass: []string{}, BlockDoT: settings.BlockDoT, Failover: settings.Failover}
 	for _, n := range collapsed {
 		spec.Bypass = append(spec.Bypass, n.String())
 	}
@@ -151,7 +152,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, nat *NatContext) (*DN
 	return spec, nil
 }
 
-func guardExempt(spec *DNSGuardSpec) []string {
+func guardExempt(spec *Spec) []string {
 	if spec.Exempt != nil {
 		return *spec.Exempt
 	}
@@ -167,7 +168,7 @@ func guardExempt(spec *DNSGuardSpec) []string {
 	return hosts[:min(len(hosts), 64)]
 }
 
-func guardWatchScript(spec *DNSGuardSpec, down bool) string {
+func guardWatchScript(spec *Spec, down bool) string {
 	if down {
 		return fmt.Sprintf(`:delay 15s; :if ([/tool netwatch get [find name="cf-dnsguard"] status] = "down") do={/ip firewall nat disable [find comment="cf-dnsguard:hijack"]; :foreach c in=[/ip firewall connection find where dst-port=53 and dstnat and reply-src-address=%s] do={:do {/ip firewall connection remove $c} on-error={}}}`, spec.Agent)
 	}
@@ -178,34 +179,34 @@ func guardWatchScript(spec *DNSGuardSpec, down bool) string {
 	return `/ip firewall nat enable [find comment="cf-dnsguard:hijack"]; :foreach c in=[/ip firewall connection find where ` + strings.Join(parts, " and ") + `] do={:do {/ip firewall connection remove $c} on-error={}}`
 }
 
-// DNSGuardResources returns objects in safe creation order: bypass and hairpin
+// Resources returns objects in safe creation order: bypass and hairpin
 // first, hijack next, encrypted-DNS blocking and health monitoring last.
-func DNSGuardResources(spec *DNSGuardSpec) []DNSGuardCreate {
-	items := []DNSGuardCreate{}
+func Resources(spec *Spec) []Create {
+	items := []Create{}
 	if spec == nil {
 		return items
 	}
 	for _, cidr := range spec.Bypass {
-		items = append(items, DNSGuardCreate{Role: "bypass:" + cidr, Path: ros.PathAddresses, Values: Row{"list": DNSGuardBypassList, "address": cidr, "comment": dnsGuardPrefix + "bypass", "disabled": "false"}})
+		items = append(items, Create{Role: "bypass:" + cidr, Path: ros.PathAddresses, Values: ros.Row{"list": BypassList, "address": cidr, "comment": Prefix + "bypass", "disabled": "false"}})
 	}
 	for _, protocol := range []string{"udp", "tcp"} {
-		items = append(items, DNSGuardCreate{Role: "hairpin-" + protocol, Path: ros.PathNAT, Values: Row{"chain": "srcnat", "action": "masquerade", "out-interface": spec.Interface, "src-address": spec.Network, "dst-address": spec.Agent, "protocol": protocol, "dst-port": "53", "comment": dnsGuardPrefix + "hairpin", "disabled": "false"}})
+		items = append(items, Create{Role: "hairpin-" + protocol, Path: ros.PathNAT, Values: ros.Row{"chain": "srcnat", "action": "masquerade", "out-interface": spec.Interface, "src-address": spec.Network, "dst-address": spec.Agent, "protocol": protocol, "dst-port": "53", "comment": Prefix + "hairpin", "disabled": "false"}})
 	}
 	for _, protocol := range []string{"udp", "tcp"} {
-		items = append(items, DNSGuardCreate{Role: "hijack-" + protocol, Path: ros.PathNAT, Top: true, Values: Row{"chain": "dstnat", "action": "dst-nat", "in-interface": spec.Interface, "src-address-list": "!" + DNSGuardBypassList, "dst-address": "!" + spec.Agent, "dst-address-type": "!local", "protocol": protocol, "dst-port": "53", "to-addresses": spec.Agent, "to-ports": "53", "comment": dnsGuardHijack, "disabled": "false"}})
+		items = append(items, Create{Role: "hijack-" + protocol, Path: ros.PathNAT, Top: true, Values: ros.Row{"chain": "dstnat", "action": "dst-nat", "in-interface": spec.Interface, "src-address-list": "!" + BypassList, "dst-address": "!" + spec.Agent, "dst-address-type": "!local", "protocol": protocol, "dst-port": "53", "to-addresses": spec.Agent, "to-ports": "53", "comment": HijackComment, "disabled": "false"}})
 	}
 	if spec.BlockDoT {
 		for _, protocol := range []string{"tcp", "udp"} {
-			values := Row{"chain": "forward", "in-interface": spec.Interface, "protocol": protocol, "dst-port": "853", "src-address-list": "!" + DNSGuardBypassList, "comment": dnsGuardPrefix + "dot", "disabled": "false", "action": "drop"}
+			values := ros.Row{"chain": "forward", "in-interface": spec.Interface, "protocol": protocol, "dst-port": "853", "src-address-list": "!" + BypassList, "comment": Prefix + "dot", "disabled": "false", "action": "drop"}
 			if protocol == "tcp" {
 				values["action"] = "reject"
 				values["reject-with"] = "tcp-reset"
 			}
-			items = append(items, DNSGuardCreate{Role: "dot-" + protocol, Path: ros.PathFilter, Top: true, Values: values})
+			items = append(items, Create{Role: "dot-" + protocol, Path: ros.PathFilter, Top: true, Values: values})
 		}
 	}
 	if spec.Failover {
-		items = append(items, DNSGuardCreate{Role: "netwatch", Path: ros.PathNetwatch, Values: Row{"name": dnsGuardWatch, "host": spec.Agent, "port": "53", "type": "tcp-conn", "interval": "10s", "timeout": "2s", "startup-delay": "30s", "up-script": guardWatchScript(spec, false), "down-script": guardWatchScript(spec, true), "comment": dnsGuardPrefix + "netwatch", "disabled": "false"}})
+		items = append(items, Create{Role: "netwatch", Path: ros.PathNetwatch, Values: ros.Row{"name": WatchName, "host": spec.Agent, "port": "53", "type": "tcp-conn", "interval": "10s", "timeout": "2s", "startup-delay": "30s", "up-script": guardWatchScript(spec, false), "down-script": guardWatchScript(spec, true), "comment": Prefix + "netwatch", "disabled": "false"}})
 	}
 	return items
 }
@@ -222,7 +223,7 @@ func guardObjectName(path string) string {
 		return "Netwatch"
 	}
 }
-func guardDescribe(role string, v Row) string {
+func guardDescribe(role string, v ros.Row) string {
 	switch {
 	case strings.HasPrefix(role, "bypass"):
 		return fmt.Sprintf(messageGuardBypassDetail, v.Text("address"))
@@ -240,7 +241,7 @@ func guardDescribe(role string, v Row) string {
 		return fmt.Sprintf(messageGuardWatchDetail, v.Text("host"))
 	}
 }
-func guardSummary(spec *DNSGuardSpec, previous *DNSGuardManifest) string {
+func guardSummary(spec *Spec, previous *Manifest) string {
 	if spec == nil {
 		return messageGuardRemoveSummary
 	}

@@ -13,6 +13,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/netipx"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routeedit"
 )
@@ -103,22 +104,22 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 		}
 		return json.RawMessage(`{}`), nil
 	case "dns_guard_replace":
-		var op DNSGuardReplace
+		var op dnsguard.Replace
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, err := d.ApplyDNSGuard(ctx, op)
+		undo, err := dnsguard.Apply(ctx, d.Client, op)
 		if err != nil {
 			return nil, err
 		}
 		out, _ := json.Marshal(undo)
 		return out, nil
 	case "dns_guard_restore":
-		var op DNSGuardUndo
+		var op dnsguard.Undo
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		if err := d.RestoreDNSGuard(ctx, op); err != nil {
+		if err := dnsguard.Restore(ctx, d.Client, op); err != nil {
 			return nil, err
 		}
 		return json.RawMessage("{}"), nil

@@ -9,6 +9,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"encoding/json"
@@ -257,9 +258,9 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	r := &Report{Desired: desired, Routes: routeItems(desired, state), Summary: map[string]int{}}
 	parts := []ReportPart{}
 	if desired.DNSGuard != nil {
-		p := BuildDNSGuard(desired, state.DNSGuard, state.NatContext)
+		p := dnsguard.Build(desired, state.DNSGuard, state.NatContext)
 		state.DNSGuardPlan = p
-		parts = append(parts, dnsGuardReportPart(p))
+		parts = append(parts, dnsguard.ReportPart(p))
 	}
 	if desired.ROSPolicy != nil {
 		plan := BuildROSPolicy(desired, state.NatContext, state.ROSPolicy)

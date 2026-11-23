@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routeedit"
@@ -101,6 +102,18 @@ type (
 	RouteMutation = routeedit.RouteMutation
 	RouteResult   = routeedit.RouteResult
 	RouteEditor   = routeedit.RouteEditor
+
+	DNSGuardSnapshot = dnsguard.Snapshot
+	DNSGuardSpec     = dnsguard.Spec
+	DNSGuardResource = dnsguard.Resource
+	DNSGuardManifest = dnsguard.Manifest
+	DNSGuardCreate   = dnsguard.Create
+	DNSGuardReplace  = dnsguard.Replace
+	DNSGuardUndo     = dnsguard.Undo
+	DNSGuardItem     = dnsguard.Item
+	DNSGuardReport   = dnsguard.Report
+	DNSGuardPlan     = dnsguard.Plan
+	DNSGuardCheck    = dnsguard.Check
 )
 
 const (
@@ -146,4 +159,6 @@ const (
 	RefForeign      = ikuai.RefForeign
 	RefOwned        = ikuai.RefOwned
 	RefStale        = ikuai.RefStale
+
+	DNSGuardBypassList = dnsguard.BypassList
 )

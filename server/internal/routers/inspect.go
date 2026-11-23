@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/spec"
 	"context"
@@ -95,7 +96,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	desired.DNSSettings = &settings
 	rosDriver, isROS := d.(*RouterOS)
 	policy := r.Type == "routeros" && (len(r.RosPolicyRuleSets) > 0 || device.HasStoredState(r.State("ros_policy_state")))
-	guard := DNSGuardRelevant(r)
+	guard := dnsguard.Relevant(r)
 	if policy || guard {
 		if !isROS {
 			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, StageRoutes))
@@ -116,7 +117,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	if guard {
 		desired.DNSGuard = &DesiredDNSGuard{Settings: dnsGuardSettings(r), Previous: r.State("dns_guard_state")}
-		state.DNSGuard, err = SnapshotDNSGuard(ctx, rosDriver)
+		state.DNSGuard, err = dnsguard.Read(ctx, rosDriver.Client)
 		if err != nil {
 			return nil, err
 		}

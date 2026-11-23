@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
 	"context"
 	"encoding/json"
@@ -77,7 +78,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			}
 			err = VerifyIPv6PDGuard(ctx, ros, &c)
 		case StageDNSGuard:
-			err = VerifyDNSGuard(ctx, ros, checks.DNSGuard)
+			err = dnsguard.Verify(ctx, ros.Client, checks.DNSGuard)
 		}
 		return nil, err
 	case StageDHCPDNS:

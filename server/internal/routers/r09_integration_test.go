@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/dnsguard"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -30,7 +31,7 @@ func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.DNSGuard, err = SnapshotDNSGuard(ctx, d)
+	state.DNSGuard, err = dnsguard.Read(ctx, d.Client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 	}
 	// The real combined desired model must also protect DNS from policy routing.
 	tc.Desired.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "192.0.2.2/32"}}
-	if plan := BuildDNSGuard(tc.Desired, state.DNSGuard, state.NatContext); len(plan.Blockers) != 1 || plan.Blockers[0] != messageGuardProxy || len(plan.Ops) != 0 {
+	if plan := dnsguard.Build(tc.Desired, state.DNSGuard, state.NatContext); len(plan.Blockers) != 1 || plan.Blockers[0] != dnsguard.MessageProxy || len(plan.Ops) != 0 {
 		t.Fatalf("policy destination did not protect DNS: %s", r09Raw(plan))
 	}
 }
@@ -80,7 +81,7 @@ func TestR09ManifestHolderKeepsPolicyPublication(t *testing.T) {
 	}
 	policy := json.RawMessage(`{"resources":[]}`)
 	d.SetPolicyManifest(policy)
-	if err := d.RestoreDNSGuard(ctx, *undo); err != nil {
+	if err := dnsguard.Restore(ctx, d.Client, *undo); err != nil {
 		t.Fatal(err)
 	}
 	holder = d.Manifests()

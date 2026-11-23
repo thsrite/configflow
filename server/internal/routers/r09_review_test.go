@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -26,7 +27,7 @@ func r09ReviewRow(rows []routerfake.Row, id string) routerfake.Row {
 // r09ReviewOwned returns the manifest resource for role, failing when absent.
 func r09ReviewOwned(t *testing.T, raw json.RawMessage, role string) DNSGuardResource {
 	t.Helper()
-	m, err := parseDNSGuardManifest(raw)
+	m, err := dnsguard.ParseManifest(raw)
 	if err != nil || m == nil {
 		t.Fatalf("manifest unreadable: %v %s", err, raw)
 	}
@@ -63,7 +64,7 @@ func TestR09ReviewPartialRollbackKeepsRestoredObjectsOwned(t *testing.T) {
 		{Method: "PUT", Path: ros.PathNetwatch, Count: 1, Status: 400, Body: refused},
 		{Method: "PUT", Path: ros.PathNetwatch, Count: 2, Status: 400, Body: refused},
 	}})
-	_, err := d.ApplyDNSGuard(context.Background(), *op)
+	_, err := dnsguard.Apply(context.Background(), d.Client, *op)
 	if err == nil || device.RouterErrorKind(err) != KindRollback {
 		t.Fatalf("incomplete rollback not reported: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestR09ReviewPostPublishCopyIsDetected(t *testing.T) {
 			f.ReplaceTables(snapshot.Tables)
 			count := len(f.Calls())
 			p := r09Plan(t, d, settings, previous)
-			if p.Status != "unknown" || !reflect.DeepEqual(p.Blockers, []string{messageGuardHijackCollision}) || len(p.Ops) != 0 {
+			if p.Status != "unknown" || !reflect.DeepEqual(p.Blockers, []string{dnsguard.MessageHijackCollision}) || len(p.Ops) != 0 {
 				t.Fatalf("post-publish copy not detected: %s", r09Raw(p))
 			}
 			for _, call := range f.Calls()[count:] {
@@ -141,7 +142,7 @@ func TestR09ReviewRestoredHijacksAreNotForeign(t *testing.T) {
 	p := r09Plan(t, d, off, previous)
 	first := r09ReviewOwned(t, previous, "bypass:192.0.2.2/32")
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathAddresses + "/" + first.ID, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}})
-	if _, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace)); err == nil || device.RouterErrorKind(err) == KindRollback {
+	if _, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace)); err == nil || device.RouterErrorKind(err) == KindRollback {
 		t.Fatalf("refused withdrawal should roll back completely: %v", err)
 	}
 	manifest := ros.GuardRaw(d.DNSGuardManifest())
@@ -151,7 +152,7 @@ func TestR09ReviewRestoredHijacksAreNotForeign(t *testing.T) {
 		}
 	}
 	next := r09Plan(t, d, settings, manifest)
-	if next.Status != "synced" || len(next.Blockers) != 0 || slices.ContainsFunc(next.Blockers, func(s string) bool { return strings.Contains(s, dnsGuardHijack) }) {
+	if next.Status != "synced" || len(next.Blockers) != 0 || slices.ContainsFunc(next.Blockers, func(s string) bool { return strings.Contains(s, dnsguard.HijackComment) }) {
 		t.Fatalf("restored objects not owned: %s", r09Raw(next))
 	}
 }

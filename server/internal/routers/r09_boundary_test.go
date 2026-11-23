@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -83,7 +84,7 @@ func r09Cases() []r09Case {
 	tc = r09Base("roundtrip")
 	tc.Steps = []r09Step{{Action: "roundtrip"}, {Action: "plan"}}
 	add(tc)
-	for _, path := range dnsGuardPaths {
+	for _, path := range dnsguard.Paths() {
 		tc = r09Base("first_reject" + path)
 		tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: path, Count: 1, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}
 		tc.Steps = []r09Step{{Action: "apply"}}
@@ -106,7 +107,7 @@ func r09Cases() []r09Case {
 		case "foreign_list":
 			tc.State.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.9"}}
 		case "foreign_watch":
-			tc.State.Tables[ros.PathNetwatch] = []routerfake.Row{{".id": "*F1", "name": dnsGuardWatch, "host": "192.0.2.9"}}
+			tc.State.Tables[ros.PathNetwatch] = []routerfake.Row{{".id": "*F1", "name": dnsguard.WatchName, "host": "192.0.2.9"}}
 		case "no_netwatch":
 			tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathNetwatch, Status: 404}}
 		case "dns_error":
@@ -251,7 +252,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 		if err != nil {
 			t.Fatal(err)
 		}
-		state.DNSGuard, err = SnapshotDNSGuard(context.Background(), d)
+		state.DNSGuard, err = dnsguard.Read(context.Background(), d.Client)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -260,7 +261,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 		if len(tc.PolicyCIDRs) > 0 {
 			request.ROSPolicy = &ROSPolicyDesired{CIDRs: tc.PolicyCIDRs}
 		}
-		plan := BuildDNSGuard(&request, state.DNSGuard, state.NatContext)
+		plan := dnsguard.Build(&request, state.DNSGuard, state.NatContext)
 		row := r09StepResult{Plan: plan, Manifest: ros.GuardRaw(previous), Undo: json.RawMessage("null")}
 		if step.AfterPreview != nil {
 			f.ApplyExternal(*step.AfterPreview)
@@ -272,7 +273,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 			if err == nil && step.Action == "roundtrip" && len(row.Undo) > 0 && string(row.Undo) != "null" {
 				_, err = d.Apply(context.Background(), row.Undo)
 			} else if err == nil {
-				err = VerifyDNSGuard(context.Background(), d, &DNSGuardCheck{Roles: plan.Roles})
+				err = dnsguard.Verify(context.Background(), d.Client, &DNSGuardCheck{Roles: plan.Roles})
 			}
 			if err != nil {
 				class := "RouterError"

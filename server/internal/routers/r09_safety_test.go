@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -46,19 +47,19 @@ func r09Plan(t *testing.T, d *RouterOS, settings DNSGuard, previous json.RawMess
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.DNSGuard, err = SnapshotDNSGuard(context.Background(), d)
+	state.DNSGuard, err = dnsguard.Read(context.Background(), d.Client)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tc.Desired.DNSGuard = &DesiredDNSGuard{Settings: settings, Previous: previous}
-	return BuildDNSGuard(tc.Desired, state.DNSGuard, state.NatContext)
+	return dnsguard.Build(tc.Desired, state.DNSGuard, state.NatContext)
 }
 func r09ApplyPlan(t *testing.T, d *RouterOS, p *DNSGuardPlan) *DNSGuardUndo {
 	t.Helper()
 	if len(p.Blockers) > 0 || len(p.Ops) != 1 {
 		t.Fatalf("bad plan %s", r09Raw(p))
 	}
-	undo, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
+	undo, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestR09ProductionTimeoutAndRawWire(t *testing.T) {
 	d := NewRouterOSWithHTTP(srv.URL, client)
 	defer d.Close()
 	undo := r09ApplyPlan(t, d, r09Plan(t, d, tc.Settings, nil))
-	if err := d.RestoreDNSGuard(context.Background(), *undo); err != nil {
+	if err := dnsguard.Restore(context.Background(), d.Client, *undo); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()
@@ -169,12 +170,12 @@ func TestR09WritesAndRollbackFinishAfterCancellation(t *testing.T) {
 			d := NewRouterOSWithHTTP(srv.URL, client)
 			defer d.Close()
 			p := r09Plan(t, d, tc.Settings, nil)
-			undo, err := d.ApplyDNSGuard(ctx, *p.Ops[0].(*DNSGuardReplace))
+			undo, err := dnsguard.Apply(ctx, d.Client, *p.Ops[0].(*DNSGuardReplace))
 			if !failing {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err = d.RestoreDNSGuard(ctx, *undo); err != nil {
+				if err = dnsguard.Restore(ctx, d.Client, *undo); err != nil {
 					t.Fatal(err)
 				}
 			} else if err == nil {
@@ -185,7 +186,7 @@ func TestR09WritesAndRollbackFinishAfterCancellation(t *testing.T) {
 			}
 			for _, rows := range f.Snapshot().Tables {
 				for _, row := range rows {
-					if strings.HasPrefix(fmt.Sprint(row["comment"]), dnsGuardPrefix) {
+					if strings.HasPrefix(fmt.Sprint(row["comment"]), dnsguard.Prefix) {
 						t.Fatal("left owned objects")
 					}
 				}
@@ -217,11 +218,11 @@ func TestR09IncrementalKeepsPausedIDs(t *testing.T) {
 		}
 	}
 	for _, row := range after.Tables[ros.PathNAT] {
-		if row["comment"] == dnsGuardHijack && row["disabled"] != "true" {
+		if row["comment"] == dnsguard.HijackComment && row["disabled"] != "true" {
 			t.Fatal("paused hijack resumed")
 		}
 	}
-	if err := VerifyDNSGuard(context.Background(), d, &DNSGuardCheck{Roles: p.Roles}); err != nil {
+	if err := dnsguard.Verify(context.Background(), d.Client, &DNSGuardCheck{Roles: p.Roles}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -234,7 +235,7 @@ func TestR09ForeignHijackCommentBlocksPublish(t *testing.T) {
 				tc.Settings.Failover = failover
 				tc.Steps = []r09Step{{Action: "plan"}}
 				foreign := tc.State.Tables[ros.PathNAT][0]
-				foreign["comment"] = dnsGuardHijack
+				foreign["comment"] = dnsguard.HijackComment
 				foreign["disabled"] = disabled
 				// The runtime selector has no chain, action or port predicate.
 				if disabled == "false" {
@@ -256,7 +257,7 @@ func TestR09ForeignHijackCommentBlocksPublish(t *testing.T) {
 				}
 				result := r09Go(t, tc, f, srv.URL)
 				plan := result.Steps[0].Plan
-				if plan.Status != "unknown" || !reflect.DeepEqual(plan.Blockers, []string{messageGuardHijackCollision}) || len(plan.Ops) != 0 || len(result.Writes) != 0 {
+				if plan.Status != "unknown" || !reflect.DeepEqual(plan.Blockers, []string{dnsguard.MessageHijackCollision}) || len(plan.Ops) != 0 || len(result.Writes) != 0 {
 					t.Fatalf("foreign comment did not block without writes: %s", r09Raw(result))
 				}
 				if !reflect.DeepEqual(result.Tables[ros.PathNAT], tc.State.Tables[ros.PathNAT]) {
@@ -287,7 +288,7 @@ func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
 			case "name_collision":
 				snapshot.Tables[ros.PathAddresses] = append(snapshot.Tables[ros.PathAddresses], routerfake.Row{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.99"})
 			case "hijack_comment_collision":
-				snapshot.Tables[ros.PathNAT] = append(snapshot.Tables[ros.PathNAT], routerfake.Row{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "disabled": "true", "comment": dnsGuardHijack})
+				snapshot.Tables[ros.PathNAT] = append(snapshot.Tables[ros.PathNAT], routerfake.Row{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "disabled": "true", "comment": dnsguard.HijackComment})
 			case "hijack_overtaken":
 				snapshot.Tables[ros.PathNAT] = append([]routerfake.Row{{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53"}}, snapshot.Tables[ros.PathNAT]...)
 			case "removed_owned":
@@ -304,11 +305,11 @@ func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
 			f.ReplaceTables(snapshot.Tables)
 			f.ApplyExternal(routerfake.ExternalWrite{Faults: snapshot.Faults})
 			count := len(f.Calls())
-			_, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
+			_, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace))
 			if err == nil {
 				t.Fatal("late drift accepted")
 			}
-			if variant == "hijack_comment_collision" && !strings.Contains(err.Error(), messageGuardHijackCollision) {
+			if variant == "hijack_comment_collision" && !strings.Contains(err.Error(), dnsguard.MessageHijackCollision) {
 				t.Fatalf("missing collision explanation: %v", err)
 			}
 			if variant != "delete_read_drift" && variant != "final_read_drift" {
@@ -365,13 +366,13 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 			d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			p := r09Plan(t, d, tc.Settings, nil)
-			undo, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
+			undo, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace))
 			if variant == "bad_undo" {
 				if err != nil {
 					t.Fatal(err)
 				}
 				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {"*65": {"address": "203.0.113.99"}}}}})
-				err = d.RestoreDNSGuard(context.Background(), *undo)
+				err = dnsguard.Restore(context.Background(), d.Client, *undo)
 				if err == nil || device.RouterErrorKind(err) != KindRollback {
 					t.Fatal("changed undo not refused", err)
 				}
@@ -386,7 +387,7 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				off.Enabled = false
 				p = r09Plan(t, d, off, previous)
 				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathNetwatch + "/*6E", Count: 1, AfterCommit: true, LoseReply: true}}})
-				_, err = d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
+				_, err = dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace))
 				if err == nil {
 					t.Fatal("lost reply accepted")
 				}
@@ -428,7 +429,7 @@ func TestR09RealDeviceTimeout(t *testing.T) {
 	defer d.Close()
 	p := r09Plan(t, d, tc.Settings, nil)
 	started := time.Now()
-	_, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
+	_, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace))
 	elapsed := time.Since(started)
 	if err == nil || elapsed < 9*time.Second || elapsed > 15*time.Second {
 		t.Fatalf("production timeout %s %v", elapsed, err)
@@ -464,7 +465,7 @@ func TestR09FinalReadCannotWidenOwnership(t *testing.T) {
 	d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
 	p := r09Plan(t, d, tc.Settings, nil)
-	_, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
+	_, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace))
 	if err == nil || device.RouterErrorKind(err) != KindRollback {
 		t.Fatal("late edit absorbed into manifest", err)
 	}
@@ -486,7 +487,7 @@ func TestR09RemapPreservesUnknownStoredFields(t *testing.T) {
 	entries[0]["future_resource"] = json.RawMessage(`"keep"`)
 	document["resources"] = r09Raw(entries)
 	original := r09Raw(document)
-	if err := d.remapDNSGuard(context.Background(), original, map[[2]string]string{}); err != nil {
+	if err := dnsguard.Remap(context.Background(), d.Client, original, map[[2]string]string{}); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(r09JSON(t, original), r09JSON(t, d.DNSGuardManifest())) {
@@ -501,15 +502,15 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	f, srv, _, previous := r09Seed(t)
 	tc := r09Base("table_local_ids")
 	tc.State.Tables = f.Snapshot().Tables
-	manifest, err := parseDNSGuardManifest(previous)
+	manifest, err := dnsguard.ParseManifest(previous)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ids := map[[2]string]string{}
-	for _, path := range dnsGuardPaths {
+	for _, path := range dnsguard.Paths() {
 		next := 1
 		for _, row := range tc.State.Tables[path] {
-			if !strings.HasPrefix(fmt.Sprint(row["comment"]), dnsGuardPrefix) {
+			if !strings.HasPrefix(fmt.Sprint(row["comment"]), dnsguard.Prefix) {
 				continue
 			}
 			old := fmt.Sprint(row[".id"])
@@ -545,7 +546,7 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
 	d.SetDNSGuardManifest(got.Steps[0].Manifest)
-	if err = VerifyDNSGuard(context.Background(), d, &DNSGuardCheck{Roles: roles}); err != nil {
+	if err = dnsguard.Verify(context.Background(), d.Client, &DNSGuardCheck{Roles: roles}); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"*20", "*21"} {
