@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/rulefetch"
 )
@@ -40,7 +42,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 				value, err := s.List(c.Context(), c.Param("profile_id"), path.sets)
 				return respond(value, err)
 			}
-			body, err := readBody(c, false)
+			body, err := requestBody(c, false)
 			if err != nil {
 				return nil, err
 			}
@@ -53,10 +55,10 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		sets              bool
 	}{{"/api/rules/<rule_id>", "rules.handle_rule", "rule_id", false}, {"/api/rule-sets/<rule_set_id>", "rule_sets.handle_rule_set", "rule_set_id", true}} {
 		r.Handle([]string{"PUT", "DELETE"}, path.path, path.name, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-			var body record
+			var body json.RawMessage
 			var err error
 			if c.Method() == "PUT" {
-				body, err = readBody(c, false)
+				body, err = requestBody(c, false)
 				if err != nil {
 					return nil, err
 				}
@@ -66,15 +68,15 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		}))
 	}
 	r.POST("/api/rules/compose", "rules.compose_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readBody(c, true)
+		body, err := decodeBody[composeRequest](c, true)
 		if err != nil {
 			return nil, err
 		}
-		out, err := s.Compose(c.Context(), c.Param("profile_id"), body, requestBase(c, body))
+		out, err := s.Compose(c.Context(), c.Param("profile_id"), body, requestBase(c, body, func(b *composeRequest) member[string] { return b.BaseURL }))
 		return respond(out, err)
 	}))
 	r.POST("/api/rules/group-name", "rules.rename_rule_group", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readBody(c, true)
+		body, err := decodeBody[renameRequest](c, true)
 		if err != nil {
 			return nil, err
 		}
@@ -84,31 +86,35 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		}{true}, err)
 	}))
 	r.PUT("/api/rules/policy", "rules.set_rule_policy", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readBody(c, true)
+		body, err := decodeBody[policyRequest](c, true)
 		if err != nil {
 			return nil, err
 		}
-		out, err := s.SetPolicy(c.Context(), "", body, requestBase(c, body))
+		out, err := s.SetPolicy(c.Context(), "", body, requestBase(c, body, func(b *policyRequest) member[string] { return b.BaseURL }))
 		return respond(out, err)
 	}))
 	r.POST("/api/rules/batch", "rules.batch_add_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readBody(c, false)
+		body, err := decodeBody[batchRequest](c, false)
 		if err != nil {
 			return nil, err
 		}
 		items, err := s.Batch(c.Context(), "", body)
 		return respond(struct {
-			Success bool     `json:"success"`
-			Count   int      `json:"count"`
-			Rules   []record `json:"rules"`
+			Success bool               `json:"success"`
+			Count   int                `json:"count"`
+			Rules   []model.RuleConfig `json:"rules"`
 		}{true, len(items), items}, err)
 	}))
 	r.POST("/api/rules/reorder", "rules.reorder_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readBody(c, false)
+		raw, err := requestBody(c, false)
 		if err != nil {
 			return nil, err
 		}
-		order, warnings, err := s.Reorder(c.Context(), "", body, requestBase(c, body))
+		body, err := decodeRequest[orderRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		order, warnings, err := s.Reorder(c.Context(), "", raw, requestBase(c, body, func(b *orderRequest) member[string] { return b.BaseURL }))
 		return respond(struct {
 			Success  bool     `json:"success"`
 			Order    []string `json:"order"`
@@ -118,14 +124,14 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 	r.Handle([]string{"GET", "PUT"}, "/api/rules/dns", "rules.handle_rule_dns", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() != "PUT" {
 			base, _ := c.Arg("base_url")
-			value, err := s.DNSState(c.Context(), "", requestBase(c, record{"base_url": stringJSON(base)}))
+			value, err := s.DNSState(c.Context(), "", baseURL(c, okMember(base)))
 			return respond(value, err)
 		}
-		body, err := readBody(c, true)
+		body, err := decodeBody[dnsWriteRequest](c, true)
 		if err != nil {
 			return nil, err
 		}
-		out, err := s.SetDNS(c.Context(), "", body, requestBase(c, body))
+		out, err := s.SetDNS(c.Context(), "", body, requestBase(c, body, func(b *dnsWriteRequest) member[string] { return b.BaseURL }))
 		return respond(out, err)
 	}))
 	for _, path := range []struct{ path, name string }{{"/api/rules/local/<name>", "rules.get_local_rule"}, {"/api/profiles/<profile_id>/rules/local/<name>", "profiles.profile_local_rule"}} {
@@ -143,7 +149,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		})
 	}
 	r.POST("/api/rules/match-test", "rules.match_test_rule", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readBody(c, false)
+		body, err := decodeBody[matchRequest](c, false)
 		if err != nil {
 			return respond(nil, &fault{500, msgMatchFailed})
 		}
@@ -159,9 +165,26 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 	}))
 
 }
-func requestBase(c *httpx.Ctx, body record) string {
-	if value, ok := textValue(body["base_url"]); ok && strings.TrimSpace(value) != "" {
-		return strings.TrimRight(value, "/")
+
+// decodeBody decodes an object body into a request DTO; nil for no object.
+func decodeBody[T any](c *httpx.Ctx, silent bool) (*T, error) {
+	raw, err := requestBody(c, silent)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRequest[T](raw)
+}
+
+// requestBase is the request's base_url member, or the panel URL.
+func requestBase[T any](c *httpx.Ctx, body *T, base func(*T) member[string]) string {
+	if body == nil {
+		return baseURL(c, member[string]{})
+	}
+	return baseURL(c, base(body))
+}
+func baseURL(c *httpx.Ctx, sent member[string]) string {
+	if sent.OK && strings.TrimSpace(sent.Value) != "" {
+		return strings.TrimRight(sent.Value, "/")
 	}
 	return strings.TrimRight(c.URLRoot(), "/")
 }

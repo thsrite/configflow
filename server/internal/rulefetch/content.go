@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -567,74 +568,83 @@ func domainEntries(content string, asYAML bool) ([]entry, error) {
 	return entries, nil
 }
 
+// Declaration is the source of a rule declaration as sent by an editor. The
+// plain rule record cannot hold a source, behavior, format or content of the
+// wrong JSON type (O18 T1c), so those members are checked as sent, with
+// Python's messages.
+type Declaration struct {
+	SourceType jsondecode.Member[string] `json:"source_type"`
+	Behavior   jsondecode.Member[string] `json:"behavior"`
+	Format     jsondecode.Member[string] `json:"format"`
+	Content    jsondecode.Member[string] `json:"content"`
+}
+
+// DeclarationOf is the declaration of a stored rule.
+func DeclarationOf(rule model.RuleConfig) Declaration {
+	member := func(value *string) jsondecode.Member[string] {
+		if value == nil {
+			return jsondecode.Member[string]{}
+		}
+		raw, _ := json.Marshal(*value)
+		return jsondecode.Member[string]{Raw: raw, Value: *value, OK: true}
+	}
+	return Declaration{SourceType: member(rule.SourceType), Behavior: member(rule.Behavior), Format: member(rule.Format), Content: member(rule.Content)}
+}
+
 // ValidateContent validates an edited declaration (validate_domain_content);
 // previous nil is a new one. Unchanged stored legacy values stay readable.
 func ValidateContent(rule model.RuleConfig, previous *model.RuleConfig) error {
-	raw, err := model.Marshal(rule)
-	if err != nil {
-		return err
-	}
-	var previousRaw json.RawMessage
+	var before *Declaration
 	if previous != nil {
-		if previousRaw, err = model.Marshal(previous); err != nil {
-			return err
-		}
+		before = new(DeclarationOf(*previous))
 	}
-	return ValidateContentJSON(raw, previousRaw)
+	return ValidateDeclaration(DeclarationOf(rule), before)
 }
 
-// ValidateContentJSON is ValidateContent on the declaration as JSON. Editors
-// pass their request: the plain rule record cannot hold a source, behavior,
-// format or content of the wrong JSON type (O18 T1c), so those members are
-// checked as sent, with Python's messages. previous is the stored declaration
-// (nil for a new one); its unchanged members are grandfathered.
+// ValidateContentJSON is ValidateDeclaration on declarations as JSON objects.
 func ValidateContentJSON(raw, previous json.RawMessage) error {
-	var rule model.RuleConfig
-	if err := json.Unmarshal(raw, &rule); err != nil {
+	var sent Declaration
+	if err := jsondecode.Unmarshal(raw, &sent); err != nil {
 		return err
 	}
-	var members map[string]json.RawMessage
-	_ = json.Unmarshal(raw, &members)
+	var before *Declaration
 	if previous != nil {
-		var before map[string]json.RawMessage
-		_ = json.Unmarshal(previous, &before)
-		if sameContentMembers(members, before) {
-			return nil
-		}
+		before = new(Declaration)
+		_ = jsondecode.Unmarshal(previous, before)
 	}
-	for _, field := range []string{"source_type", "behavior", "format"} {
-		raw, present := members[field]
-		if !present || (field == "format" && string(raw) == "null") {
+	return ValidateDeclaration(sent, before)
+}
+
+// ValidateDeclaration validates a sent declaration; previous is the stored
+// declaration (nil for a new one), whose unchanged members are grandfathered.
+func ValidateDeclaration(sent Declaration, previous *Declaration) error {
+	if previous != nil && sameDeclaration(sent, *previous) {
+		return nil
+	}
+	behavior, format, source := sent.behavior(), textOrMember(sent.Format, ""), textOrMember(sent.SourceType, "url")
+	for _, field := range []struct {
+		name   string
+		value  jsondecode.Member[string]
+		target *string
+	}{{"source_type", sent.SourceType, &source}, {"behavior", sent.Behavior, &behavior}, {"format", sent.Format, &format}} {
+		if !field.value.Present() || field.name == "format" && field.value.Null() {
 			continue
 		}
-		var value string
-		if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
-			behavior, format, source := textOr(rule.Behavior, "domain"), textOr(rule.Format, ""), textOr(rule.SourceType, "url")
-			switch field {
-			case "behavior":
-				behavior = "\x00"
-			case "format":
-				format = "\x00"
-			case "source_type":
-				source = "\x00"
-			}
+		if !field.value.OK {
+			*field.target = "\x00"
 			return validationError(metadataError(behavior, format, source))
 		}
 	}
-	behavior := textOr(rule.Behavior, "domain")
-	if message := metadataError(behavior, textOr(rule.Format, ""), textOr(rule.SourceType, "url")); message != "" {
+	if message := metadataError(behavior, format, source); message != "" {
 		return validationError(message)
 	}
-	if textOr(rule.SourceType, "") != "content" {
+	if source != "content" {
 		return nil
 	}
-	if raw, present := members["content"]; present {
-		var content string
-		if string(raw) == "null" || json.Unmarshal(raw, &content) != nil {
-			return validationError(msgContentText)
-		}
+	if sent.Content.Present() && !sent.Content.OK {
+		return validationError(msgContentText)
 	}
-	checked, err := Inspect(textOr(rule.Content, ""), behavior, textOr(rule.Format, ""))
+	checked, err := Inspect(sent.Content.Value, behavior, format)
 	if err != nil {
 		return err
 	}
@@ -648,22 +658,34 @@ func ValidateContentJSON(raw, previous json.RawMessage) error {
 	return nil
 }
 
-// sameContentMembers compares the content members as sent, so an unchanged
-// wrong-typed stored value is grandfathered but a different one never is.
-func sameContentMembers(x, y map[string]json.RawMessage) bool {
-	for _, field := range []string{"source_type", "behavior", "content", "format"} {
-		left, right := x[field], y[field]
-		if string(left) == "null" {
-			left = nil
-		}
-		if string(right) == "null" {
-			right = nil
-		}
-		if !bytes.Equal(left, right) {
-			return false
-		}
+// behavior is the declared behavior: "domain" when absent; the stored record
+// reads null or another type as the empty behavior.
+func (d Declaration) behavior() string {
+	if !d.Behavior.Present() {
+		return "domain"
 	}
-	return true
+	return d.Behavior.Value
+}
+
+// textOrMember is the sent text, fallback when absent, null or of another type.
+func textOrMember(value jsondecode.Member[string], fallback string) string {
+	if value.OK {
+		return value.Value
+	}
+	return fallback
+}
+
+// sameDeclaration compares the members as sent, so an unchanged wrong-typed
+// stored value is grandfathered but a different one never is. Null counts as
+// absent.
+func sameDeclaration(x, y Declaration) bool {
+	same := func(left, right jsondecode.Member[string]) bool {
+		if left.Null() || right.Null() {
+			return left.Null() && right.Null()
+		}
+		return bytes.Equal(left.Raw, right.Raw)
+	}
+	return same(x.SourceType, y.SourceType) && same(x.Behavior, y.Behavior) && same(x.Content, y.Content) && same(x.Format, y.Format)
 }
 
 // RemoteRuleValidationError is RemoteRuleValidationError: downloaded rules

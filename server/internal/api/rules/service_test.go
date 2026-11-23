@@ -116,7 +116,7 @@ func TestPinnedWithheldHookIsBestEffort(t *testing.T) {
 					return name == "true", nil
 				}})
 			}
-			out, err := (&Service{}).SetPolicy(repo.WithScope(repo.WithRepository(ctx, s.Repo)), "other", record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}, "http://localhost")
+			out, err := (&Service{}).SetPolicy(repo.WithScope(repo.WithRepository(ctx, s.Repo)), "other", request[policyRequest](record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}), "http://localhost")
 			if err != nil {
 				t.Fatal(err)
 			}

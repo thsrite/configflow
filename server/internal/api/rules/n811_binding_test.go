@@ -11,11 +11,11 @@ import (
 func TestN811RejectedFieldsUseJSONText(t *testing.T) {
 	for _, raw := range []string{"null", "true", "42", `{"id":1}`} {
 		t.Run(raw, func(t *testing.T) {
-			err := validateSyntax(record{"rule_type": json.RawMessage(raw)})
+			err := validateSyntax(sentMember[string](raw), member[string]{})
 			if err == nil || err.Error() != fmt.Sprintf(msgUnknownKind, raw) {
 				t.Fatalf("rule type: %v", err)
 			}
-			_, err = dnsChoice(json.RawMessage(raw))
+			_, err = dnsChoice(sentMember[string](raw))
 			if err == nil || err.Error() != fmt.Sprintf(msgDNSUnsupported, raw) {
 				t.Fatalf("DNS choice: %v", err)
 			}

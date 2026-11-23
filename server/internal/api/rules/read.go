@@ -40,21 +40,31 @@ func (s *Service) elapsed(start time.Time) float64 {
 	return math.Round(s.now().Sub(start).Seconds()*100000) / 100
 }
 
+// matchRequest is the body of a match test.
+type matchRequest struct {
+	Query member[string] `json:"query"`
+}
+
+// matchResult is the rule that decides a query, or the unmatched message.
+type matchResult struct {
+	Success bool `json:"success"`
+	Matched bool `json:"matched"`
+	*shared.Hit
+	Message string  `json:"message,omitempty"`
+	Elapsed float64 `json:"elapsed_time"`
+}
+
 // Match tests a domain or IP lazily, fetching only rule sources actually reached.
-func (s *Service) Match(ctx context.Context, id string, body record, host string) (record, error) {
+func (s *Service) Match(ctx context.Context, id string, body *matchRequest, host string) (*matchResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	start := s.now()
-	if body == nil {
+	if body == nil || body.Query.Present() && !body.Query.OK {
 		return nil, &fault{500, msgMatchFailed}
 	}
-	query, ok := textValue(body["query"])
-	if _, exists := body["query"]; exists && !ok {
-		return nil, &fault{500, msgMatchFailed}
-	}
-	query = strings.TrimSpace(query)
+	query := strings.TrimSpace(body.Query.Value)
 	if query == "" {
 		return nil, invalid(msgQuery)
 	}
@@ -62,17 +72,15 @@ func (s *Service) Match(ctx context.Context, id string, body record, host string
 	if !shared.IsValidDomain(query, true) && !shared.IsValidIP(query) {
 		return nil, invalid(msgQueryInvalid)
 	}
-	out, err := s.match(ctx, id, query, host)
+	hit, err := s.match(ctx, id, query, host)
 	if err != nil {
 		return nil, err
 	}
-	matched := out != nil
-	if out == nil {
-		out = record{"message": stringJSON(msgUnmatched)}
+	out := &matchResult{Success: true, Matched: hit != nil, Hit: hit}
+	if hit == nil {
+		out.Message = msgUnmatched
 	}
-	out["success"] = boolJSON(true)
-	out["matched"] = boolJSON(matched)
-	_ = out.set("elapsed_time", s.elapsed(start))
+	out.Elapsed = s.elapsed(start)
 	return out, nil
 }
 

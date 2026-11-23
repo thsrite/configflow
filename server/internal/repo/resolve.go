@@ -494,6 +494,12 @@ func copyValue[T any](value T) (T, error) {
 // rulesetSource are the members a ruleset takes from its rule library item.
 var rulesetSource = []string{"name", "url", "behavior", "content", "source_type", "format"}
 
+// HydratedRuleset returns a rule-set reference with its source taken from
+// the shared library item, as resolved configurations carry it.
+func HydratedRuleset(rule model.RuleConfig, item model.RuleLibraryItem, profileID string) (model.RuleConfig, error) {
+	return hydratedRuleset(&rule, &item, profileID)
+}
+
 // hydratedRuleset returns rule with its source taken from the library item:
 // the item's source members (stored values as they are), behavior "domain"
 // when the item has none, library_enabled from the item's enabled (default

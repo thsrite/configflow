@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"configflow/internal/model"
 )
 
 // ErrRoutingLocked means a native DNS routing graph cannot be safely rewritten.
@@ -17,6 +19,51 @@ func RuleDNSMetadataFields() []string { return append([]string{}, ruleDNSFields.
 
 // Convertible reports whether a rule can participate in domain DNS routing.
 func Convertible(item *Node) bool { return convertible(item) }
+
+// RuleConvertible is Convertible for a stored rule.
+func RuleConvertible(item model.RuleConfig) bool { return convertible(ruleNode(item)) }
+
+// SettingsText returns a text member of settings, "" for anything else.
+func SettingsText(settings *Node, key string) string { return str(get(settings, key)) }
+
+// WithoutRuleReferences returns settings (an object; anything else counts as
+// empty) without rule id in the route selectors and per-rule DNS metadata.
+// Selector lists keep their other values; a null selector becomes empty.
+func WithoutRuleReferences(settings *Node, id string) *Node {
+	out := M()
+	if isMap(settings) {
+		out = clone(settings)
+	}
+	for _, key := range []string{"direct_rulesets", "proxy_rulesets", "direct_rules", "proxy_rules"} {
+		value := get(out, key)
+		if !has(out, key) || !isSeq(value) && !isNone(value) {
+			continue
+		}
+		kept := L()
+		for _, item := range items(value) {
+			if !isStr(item) || item.Value != id {
+				kept.Content = append(kept.Content, item)
+			}
+		}
+		set(out, key, kept)
+	}
+	for _, key := range ruleDNSFields {
+		value := get(out, key)
+		switch {
+		case isMap(value):
+			del(value, id)
+		case isSeq(value) && allStrings(value):
+			kept := L()
+			for _, item := range value.Content {
+				if item.Value != id {
+					kept.Content = append(kept.Content, item)
+				}
+			}
+			set(out, key, kept)
+		}
+	}
+	return out
+}
 
 // IsIPRuleType identifies connection-only IP rules for rules-page validation.
 func IsIPRuleType(kind string) bool { return kind == "IP-CIDR" || kind == "IP-CIDR6" }

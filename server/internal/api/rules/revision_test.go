@@ -11,27 +11,6 @@ import (
 	"configflow/internal/model"
 )
 
-func TestFieldComparisonKeepsJSONTypesAndNumbers(t *testing.T) {
-	for _, tc := range []struct {
-		name, before, after string
-		same                bool
-	}{
-		{"member-order", `{"z": 1, "a": {"b":true,"a":false}}`, `{"a":{"a":false,"b":true},"z":1}`, true},
-		{"large-integer", `9007199254740992`, `9007199254740993`, false},
-		{"number-token", `1.0`, `1`, false},
-		{"boolean-number", `true`, `1`, false},
-		{"null-empty", `null`, `[]`, false},
-		{"array-order", `[1,2]`, `[2,1]`, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			same, err := sameJSONValue(json.RawMessage(tc.before), json.RawMessage(tc.after))
-			if err != nil || same != tc.same {
-				t.Fatalf("same=%v err=%v, want %v", same, err, tc.same)
-			}
-		})
-	}
-}
-
 type storedDNSField struct {
 	Owner, Field, Value string
 	Position, Revision  int64

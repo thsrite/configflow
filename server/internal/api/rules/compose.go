@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
@@ -113,13 +115,6 @@ func newID(prefix string, used map[string]bool) (string, error) {
 		}
 	}
 }
-func nodeOf(value record) (*oxidns.Node, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return oxidns.FromJSON(raw)
-}
 
 type skippedRule struct {
 	Line    int    `json:"line"`
@@ -129,8 +124,8 @@ type skippedRule struct {
 	Enabled bool   `json:"enabled"`
 }
 type composeData struct {
-	Rules   []record `json:"rules"`
-	Library record   `json:"library"`
+	Rules   []model.RuleConfig     `json:"rules"`
+	Library *model.RuleLibraryItem `json:"library"`
 }
 type composeResult struct {
 	Success        bool                          `json:"success"`
@@ -142,55 +137,85 @@ type composeResult struct {
 	PinnedWithheld *bool                         `json:"pinned_withheld,omitempty"`
 }
 
+// composeRequest is the one-page rule form: a source, the rule fields every
+// added rule shares, and the DNS choice for domain (and IP) rules.
+type composeRequest struct {
+	Source  member[composeSource] `json:"source"`
+	Rule    member[composeRule]   `json:"rule"`
+	DNS     member[string]        `json:"dns"`
+	DNSIP   member[string]        `json:"dns_ip"`
+	BaseURL member[string]        `json:"base_url"`
+}
+
+// composeSource is one of: pasted values, existing shared libraries or a new
+// shared library (decoded by prepareLibrary).
+type composeSource struct {
+	Kind           member[string]   `json:"kind"`
+	Text           member[string]   `json:"text"`
+	RuleType       member[string]   `json:"rule_type"`
+	LibraryRuleIDs member[[]string] `json:"library_rule_ids"`
+	Library        json.RawMessage  `json:"library"`
+}
+type composeRule struct {
+	Policy    member[string] `json:"policy"`
+	Position  member[string] `json:"position"`
+	Enabled   member[bool]   `json:"enabled"`
+	Remark    member[string] `json:"remark"`
+	GroupName member[string] `json:"group_name"`
+	NoResolve member[bool]   `json:"no_resolve"`
+}
+
+// isTrue and notFalse read a sent switch: only JSON true is on; only JSON false is off.
+func isTrue(sent member[bool]) bool   { return sent.OK && sent.Value }
+func notFalse(sent member[bool]) bool { return !sent.OK || sent.Value }
+
 // Compose atomically creates rules, shared sources and DNS choices. Remote
 // sources are validated before the transaction; cache failures after it do not
 // turn an accepted save into a failure.
-func (s *Service) Compose(ctx context.Context, id string, body record, base string) (composeResult, error) {
+func (s *Service) Compose(ctx context.Context, id string, body *composeRequest, base string) (composeResult, error) {
 	ctx = lifecycle.Detach(ctx)
-	out := composeResult{Success: true, Data: composeData{Rules: []record{}}, DNS: map[string]oxidns.RuleDNSRule{}, Skipped: []skippedRule{}, Warnings: []string{}, Draft: true}
+	out := composeResult{Success: true, Data: composeData{Rules: []model.RuleConfig{}}, DNS: map[string]oxidns.RuleDNSRule{}, Skipped: []skippedRule{}, Warnings: []string{}, Draft: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
 	if body == nil {
 		return out, invalid(msgComposeObject)
 	}
-	source := body.object("source")
-	rule := body.object("rule")
-	kind := source.text("kind")
-	rawDNS := body["dns"]
-	if len(rawDNS) == 0 {
-		rawDNS = stringJSON("default")
+	source, rule := body.Source.Value, body.Rule.Value
+	kind := source.Kind.Value
+	sentDNS := body.DNS
+	if !sentDNS.Present() {
+		sentDNS = okMember("default")
 	}
-	dns, err := dnsChoice(rawDNS)
+	dns, err := dnsChoice(sentDNS)
 	if err != nil {
 		return out, err
 	}
 	dnsIP := dns
-	if raw := body["dns_ip"]; len(raw) > 0 && string(raw) != "null" {
-		dnsIP, err = dnsChoice(raw)
+	if !body.DNSIP.Null() {
+		dnsIP, err = dnsChoice(body.DNSIP)
 		if err != nil {
 			return out, err
 		}
 	}
-	policy, ok := textValue(rule["policy"])
-	if !ok || strings.TrimSpace(policy) == "" {
+	policy := rule.Policy.Value
+	if !rule.Policy.OK || strings.TrimSpace(policy) == "" {
 		return out, invalid(msgPolicy)
 	}
-	position := defaultText(rule, "position", "top")
+	position := rule.Position.Or("top")
 	if position != "top" && position != "bottom" {
 		return out, invalid(msgPosition)
 	}
-	common := record{"policy": stringJSON(policy), "enabled": boolJSON(notFalse(rule["enabled"])), "remark": stringJSON(rule.text("remark")), "group_name": stringJSON(rule.text("group_name"))}
+	common := model.RuleConfig{Policy: new(policy), Enabled: new(notFalse(rule.Enabled)), Remark: new(rule.Remark.Value), GroupName: new(rule.GroupName.Value)}
 	rows := []pasteRow{}
 	libraryIDs := []string{}
-	var library record
+	var library *libraryInput
 	switch kind {
 	case "values":
-		text, ok := textValue(source["text"])
-		if !ok {
+		if !source.Text.OK {
 			return out, invalid(msgPaste)
 		}
-		rows, out.Warnings, err = pasteRows(text, strings.ToUpper(strings.TrimSpace(source.text("rule_type"))))
+		rows, out.Warnings, err = pasteRows(source.Text.Value, strings.ToUpper(strings.TrimSpace(source.RuleType.Value)))
 		if err != nil {
 			return out, err
 		}
@@ -202,13 +227,13 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 			if oxidns.IsIPRuleType(row.Kind) {
 				choice = dnsIP
 			}
-			n, _ := nodeOf(record{"itemType": stringJSON("rule"), "rule_type": stringJSON(row.Kind)})
-			if choice != "default" && !oxidns.Convertible(n) {
+			if choice != "default" && !oxidns.RuleConvertible(model.RuleConfig{ItemType: "rule", RuleType: row.Kind}) {
 				return out, invalid(fmt.Sprintf(msgUnsupportedLineDNS, row.Line, row.Kind))
 			}
 		}
 	case "library":
-		if json.Unmarshal(source["library_rule_ids"], &libraryIDs) != nil || len(libraryIDs) < 1 || len(libraryIDs) > 50 {
+		libraryIDs = source.LibraryRuleIDs.Value
+		if !source.LibraryRuleIDs.OK || len(libraryIDs) < 1 || len(libraryIDs) > 50 {
 			return out, invalid(msgSelectLibraries)
 		}
 		seen := map[string]bool{}
@@ -219,7 +244,7 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 			seen[id] = true
 		}
 	case "new_library":
-		library, err = prepareLibrary(source["library"])
+		library, err = prepareLibrary(source.Library)
 		if err != nil {
 			return out, err
 		}
@@ -227,8 +252,8 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 		return out, invalid(msgRuleSourceKind)
 	}
 	var prepared []byte
-	if library != nil && defaultText(library, "source_type", "url") == "url" {
-		prepared, err = s.prepareRemote(ctx, library)
+	if library != nil && library.remote() {
+		prepared, err = s.prepareRemote(ctx, library.item)
 		if err != nil {
 			return out, err
 		}
@@ -236,51 +261,48 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 			return out, invalid(msgInvalidSource)
 		}
 	}
-	edit := func(before, p record) error {
-		if !knownPolicy(p, policy) {
+	edit := func(before *oxidns.Profile, config *model.Config) error {
+		if !knownPolicy(config, policy) {
 			return invalid(fmt.Sprintf(msgPolicyUnknown, policy))
 		}
-		items, err := p.list("rule_configs")
-		if err != nil {
-			return err
-		}
+		items := config.Profile.RuleConfigs
 		used := map[string]bool{}
 		for _, item := range items {
-			used[item.text("id")] = true
+			used[item.ID] = true
 		}
-		added := []record{}
+		added := []model.RuleConfig{}
 		assignments := []oxidns.DNSAssignment{}
 		if kind == "values" {
 			type key struct{ kind, value string }
 			type found struct {
 				index int
-				item  record
+				item  model.RuleConfig
 			}
 			existing := map[key]found{}
 			for i, item := range items {
-				if item.text("itemType") == "ruleset" {
+				if item.ItemType == "ruleset" {
 					continue
 				}
-				k := key{item.text("rule_type"), item.text("value")}
+				k := key{item.RuleType, text(item.Value)}
 				if _, exists := existing[k]; !exists {
 					existing[k] = found{i + 1, item}
 				}
 			}
 			for _, row := range rows {
 				if match, ok := existing[key{row.Kind, row.Value}]; ok {
-					out.Skipped = append(out.Skipped, skippedRule{row.Line, row.Value, match.item.text("id"), match.index, notFalse(match.item["enabled"])})
+					out.Skipped = append(out.Skipped, skippedRule{row.Line, row.Value, match.item.ID, match.index, model.Flag(match.item.Enabled, true)})
 					continue
 				}
 				identity, err := newID("rule", used)
 				if err != nil {
 					return err
 				}
-				item := common.clone()
-				item["id"] = stringJSON(identity)
-				item["itemType"] = stringJSON("rule")
-				item["rule_type"] = stringJSON(row.Kind)
-				item["value"] = stringJSON(row.Value)
-				item["no_resolve"] = boolJSON(row.NoResolve || (oxidns.IsIPRuleType(row.Kind) && exactTrue(rule["no_resolve"])))
+				item := common
+				item.ID = identity
+				item.ItemType = "rule"
+				item.RuleType = row.Kind
+				item.Value = new(row.Value)
+				item.NoResolve = new(row.NoResolve || (oxidns.IsIPRuleType(row.Kind) && isTrue(rule.NoResolve)))
 				added = append(added, item)
 				choice := dns
 				if oxidns.IsIPRuleType(row.Kind) {
@@ -289,59 +311,49 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 				assignments = append(assignments, oxidns.DNSAssignment{RuleID: identity, Choice: choice})
 			}
 		} else {
-			libs, err := p.list("rule_library")
-			if err != nil {
-				return err
-			}
 			selected := libraryIDs
 			if library != nil {
-				selected = []string{library.text("id")}
+				selected = []string{library.item.ID}
 			}
 			for _, identity := range selected {
-				if find(libs, identity) < 0 {
+				if !slices.ContainsFunc(config.RuleLibrary, func(entry model.RuleLibraryItem) bool { return entry.ID == identity }) {
 					return missing(msgLibraryReference)
 				}
 				for i, item := range items {
-					if item.text("itemType") == "ruleset" && item.text("library_rule_id") == identity {
-						return libraryInUse(item.text("id"), i+1)
+					if item.ItemType == "ruleset" && item.LibraryRuleID == identity {
+						return libraryInUse(item.ID, i+1)
 					}
 				}
 				id, err := newID("ruleset", used)
 				if err != nil {
 					return err
 				}
-				item := common.clone()
-				item["id"] = stringJSON(id)
-				item["itemType"] = stringJSON("ruleset")
-				item["library_rule_id"] = stringJSON(identity)
-				item["no_resolve"] = boolJSON(exactTrue(rule["no_resolve"]))
+				item := common
+				item.ID = id
+				item.ItemType = "ruleset"
+				item.LibraryRuleID = identity
+				item.NoResolve = new(isTrue(rule.NoResolve))
 				added = append(added, item)
 				assignments = append(assignments, oxidns.DNSAssignment{RuleID: id, Choice: dns})
 			}
 		}
-		converted := []record{}
+		converted := []model.RuleConfig{}
 		capable := map[string]bool{}
 		for _, item := range added {
-			out.Data.Rules = append(out.Data.Rules, item.clone())
-			next, err := hydrated(p, item)
+			out.Data.Rules = append(out.Data.Rules, item)
+			next, err := hydrated(config, item)
 			if err != nil {
 				return err
 			}
 			converted = append(converted, next)
-			n, err := nodeOf(next)
-			if err != nil {
-				return err
-			}
-			capable[next.text("id")] = oxidns.Convertible(n)
+			capable[next.ID] = oxidns.RuleConvertible(next)
 		}
 		if position == "top" {
 			items = append(converted, items...)
 		} else {
-			items = append(items, converted...)
+			items = append(slices.Clone(items), converted...)
 		}
-		if err := p.set("rule_configs", items); err != nil {
-			return err
-		}
+		config.Profile.RuleConfigs = items
 		selected := []oxidns.DNSAssignment{}
 		for _, assignment := range assignments {
 			if assignment.Choice != "default" && capable[assignment.RuleID] {
@@ -349,7 +361,7 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 			}
 		}
 		if len(selected) > 0 {
-			warnings, err := syncDNS(before, p, selected, base, true)
+			warnings, err := syncDNS(before, config, selected, base, true)
 			if err != nil {
 				return err
 			}
@@ -358,49 +370,56 @@ func (s *Service) Compose(ctx context.Context, id string, body record, base stri
 		return nil
 	}
 	if library == nil {
-		err = editProfile(ctx, id, func(p record) error { return edit(p.clone(), p) })
-	} else {
-		err = editSharedProfile(ctx, id, func(shared record) error {
-			entries, err := shared.list("rule_library")
+		err = editProfile(ctx, id, func(config *model.Config) error {
+			before, err := profileView(config)
 			if err != nil {
 				return err
 			}
+			return edit(before, config)
+		})
+	} else {
+		err = editSharedProfile(ctx, id, func(shared *model.Shared) error {
 			used := map[string]bool{}
-			for _, item := range entries {
-				if item.text("name") == library.text("name") {
-					return invalid(fmt.Sprintf(msgLibraryExists, library.text("name")))
+			for _, item := range shared.RuleLibrary {
+				if item.Name == library.item.Name {
+					return invalid(fmt.Sprintf(msgLibraryExists, library.item.Name))
 				}
-				used[item.text("id")] = true
+				used[item.ID] = true
 			}
 			identity, err := newID("lib", used)
 			if err != nil {
 				return err
 			}
-			library["id"] = stringJSON(identity)
-			return shared.set("rule_library", append(entries, library.clone()))
+			library.item.ID = identity
+			entries := append(slices.Clone(shared.RuleLibrary), library.item)
+			if library.err != nil {
+				return libraryTypeError(entries, library.err)
+			}
+			shared.RuleLibrary = entries
+			return nil
 		}, edit)
 	}
 	if err != nil {
 		return out, err
 	}
-	out.Data.Library = library
 	if library != nil {
-		if err := s.cacheComposed(ctx, library, prepared); err != nil {
+		out.Data.Library = new(library.item)
+		if err := s.cacheComposed(ctx, library.item, prepared); err != nil {
 			logger.Warning(msgComposedCacheLog)
 			out.Warnings = append(out.Warnings, msgComposedCacheWarning)
 		}
 	}
-	profile, err := loadProfile(ctx, id)
+	config, err := loadProfile(ctx, id)
 	if err != nil {
 		return out, err
 	}
-	p, err := dnsProfile(profile)
+	p, err := dnsProfile(config)
 	if err != nil {
 		return out, err
 	}
 	ids := []string{}
 	for _, item := range out.Data.Rules {
-		ids = append(ids, item.text("id"))
+		ids = append(ids, item.ID)
 	}
 	out.DNS, err = oxidns.RuleDNSEntries(p, ids, oxidns.RuleDNSReadOptions{})
 	if err == nil {

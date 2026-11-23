@@ -11,6 +11,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -25,56 +26,79 @@ type Service struct {
 }
 
 func invalid(message string) error { return repo.NewValidationError(message) }
-func normalized(item, previous, profile record) error {
-	if item == nil {
-		return invalid(msgRuleObject)
-	}
-	if _, ok := item["itemType"]; !ok {
+
+// normalized validates a rule request (previous is the stored rule of an
+// update) and drops what the rule kind does not keep: the UDP fallback and NTP
+// switch belong to MATCH rules, the source members of a rule-set reference to
+// its shared library entry.
+func normalized(in *ruleInput, previous *model.RuleConfig, config *model.Config) error {
+	base := model.RuleConfig(in.ruleWire)
+	itemType := sentText(in.ItemType, base.ItemType)
+	ruleType := sentText(in.RuleType, base.RuleType)
+	if !itemType.Present() {
 		kind := "ruleset"
-		if _, ok := item["rule_type"]; ok {
+		if ruleType.Present() {
 			kind = "rule"
 		}
-		item["itemType"] = stringJSON(kind)
+		in.ItemType = okMember(kind)
+		itemType = in.ItemType
 	}
-	fallback, fallbackValid := udpChoice(item["udp_fallback"])
-	ntp, present := item["ntp_direct"]
-	delete(item, "udp_fallback")
-	delete(item, "ntp_direct")
-	if item.text("itemType") != "ruleset" && item.text("rule_type") == "MATCH" {
+	fallback, fallbackValid := udpChoice(sentOptional(in.UDPFallback, base.UDPFallback))
+	ntp := sentOptional(in.NTPDirect, base.NTPDirect)
+	in.UDPFallback, in.NTPDirect = member[string]{}, member[bool]{}
+	in.ruleWire.UDPFallback, in.ruleWire.NTPDirect = nil, nil
+	if itemType.Value != "ruleset" && ruleType.Value == "MATCH" {
 		if !fallbackValid || (fallback != "" && fallback != "DIRECT" && fallback != "REJECT") {
 			return invalid(msgUDPFallback)
 		}
-		if present && string(ntp) != "true" && string(ntp) != "false" {
+		if ntp.Present() && string(ntp.Raw) != "true" && string(ntp.Raw) != "false" {
 			return invalid(msgNTP)
 		}
 		if fallback != "" {
-			item["udp_fallback"] = stringJSON(fallback)
+			in.UDPFallback = okMember(fallback)
 		}
-		if exactTrue(ntp) {
-			item["ntp_direct"] = boolJSON(true)
+		if ntp.OK && ntp.Value {
+			in.NTPDirect = okMember(true)
 		}
 	}
-	if item.text("itemType") != "ruleset" {
+	if itemType.Value != "ruleset" {
+		value := sentOptional(in.Value, base.Value)
 		changed := previous == nil
-		for _, key := range []string{"itemType", "rule_type", "value"} {
-			changed = changed || string(item[key]) != string(previous[key])
+		if !changed {
+			changed = string(itemType.Raw) != string(sentText(member[string]{}, previous.ItemType).Raw) ||
+				string(ruleType.Raw) != string(sentText(member[string]{}, previous.RuleType).Raw) ||
+				string(value.Raw) != string(sentOptional(member[string]{}, previous.Value).Raw)
 		}
 		if changed {
-			return validateSyntax(item)
+			return validateSyntax(ruleType, value)
 		}
 		return nil
 	}
-	lib, err := profile.list("rule_library")
-	if err != nil {
-		return err
-	}
-	if item.text("library_rule_id") == "" || find(lib, item.text("library_rule_id")) < 0 {
+	library := sentText(in.LibraryRuleID, base.LibraryRuleID).Value
+	if library == "" || !slices.ContainsFunc(config.RuleLibrary, func(entry model.RuleLibraryItem) bool { return entry.ID == library }) {
 		return invalid(msgLibraryReference)
 	}
-	for _, key := range []string{"name", "url", "content", "source_type", "behavior", "format", "base_url", "library_enabled"} {
-		delete(item, key)
+	for _, sent := range []*member[string]{&in.Name, &in.URL, &in.Content, &in.SourceType, &in.Behavior, &in.Format} {
+		*sent = member[string]{}
 	}
+	in.LibraryEnabled = member[bool]{}
+	in.ruleWire.Name = ""
+	in.ruleWire.URL, in.ruleWire.Content, in.ruleWire.SourceType, in.ruleWire.Behavior, in.ruleWire.Format = nil, nil, nil, nil, nil
+	in.ruleWire.LibraryEnabled = nil
 	return nil
+}
+
+// profileView is the DNS view of a copy of config, unaffected by later edits.
+func profileView(config *model.Config) (*oxidns.Profile, error) {
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := model.DecodeConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	return dnsProfile(snapshot)
 }
 func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
 	resolved, err := repo.ResolveProfileID(ctx, id)
@@ -91,63 +115,65 @@ func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
 }
 
 // List reads composition, hydrating display URLs without rewriting stored values.
-func (s *Service) List(ctx context.Context, id string, sets bool) ([]record, error) {
-	p, err := loadProfile(ctx, id)
+func (s *Service) List(ctx context.Context, id string, sets bool) ([]model.RuleConfig, error) {
+	config, err := loadProfile(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	items, err := p.list("rule_configs")
-	if err != nil {
-		return nil, err
-	}
-	domain := strings.TrimSpace(p.object("system_config").text("server_domain"))
-	out := []record{}
-	for _, item := range items {
-		if sets && item.text("itemType") != "ruleset" {
+	domain := strings.TrimSpace(config.SystemConfig.ServerDomain)
+	out := []model.RuleConfig{}
+	for _, item := range config.Profile.RuleConfigs {
+		if sets && item.ItemType != "ruleset" {
 			continue
 		}
-		next := item.clone()
-		if next.text("itemType") == "ruleset" && domain != "" && strings.HasPrefix(next.text("url"), "/") {
-			next["url"] = stringJSON(domain + next.text("url"))
+		if item.ItemType == "ruleset" && domain != "" && strings.HasPrefix(text(item.URL), "/") {
+			item.URL = new(domain + text(item.URL))
 		}
-		out = append(out, next)
+		out = append(out, item)
 	}
 	return out, nil
 }
 
 // Create inserts a validated rule or shared-library reference at the top.
-func (s *Service) Create(ctx context.Context, id string, item record, sets bool) (mutationResult, error) {
+func (s *Service) Create(ctx context.Context, id string, body json.RawMessage, sets bool) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	result := mutationResult{Success: true}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if item == nil {
+	if body == nil {
 		if sets {
 			return result, errors.New("rule-set request must be an object")
 		}
 		return result, invalid(msgRuleObject)
 	}
-	next := item.clone()
-	if sets {
-		next["itemType"] = stringJSON("ruleset")
-	}
-	err := editProfile(ctx, id, func(p record) error {
-		if err := normalized(next, nil, p); err != nil {
+	err := editProfile(ctx, id, func(config *model.Config) error {
+		in := decodeRule(body, model.RuleConfig{})
+		if sets {
+			in.ItemType = okMember("ruleset")
+		}
+		if err := normalized(in, nil, config); err != nil {
 			return err
 		}
-		items, err := p.list("rule_configs")
-		if err != nil {
-			return err
+		rule, typeErr := in.rule()
+		result.Data = &rule
+		items := append([]model.RuleConfig{rule}, config.Profile.RuleConfigs...)
+		if typeErr != nil {
+			return ruleTypeError(items, typeErr)
 		}
-		return p.set("rule_configs", append([]record{next}, items...))
+		config.Profile.RuleConfigs = items
+		return nil
 	})
-	result.Data = next
 	return result, err
 }
 
+// dnsRequest is the DNS choice an update may carry next to the rule members.
+type dnsRequest struct {
+	DNS member[string] `json:"dns"`
+}
+
 // Mutate updates or deletes one rule and its DNS selections atomically.
-func (s *Service) Mutate(ctx context.Context, profileID, id string, payload record, remove, sets bool, base string) (mutationResult, error) {
+func (s *Service) Mutate(ctx context.Context, profileID, id string, body json.RawMessage, remove, sets bool, base string) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	result := mutationResult{Success: true}
 	if err := ctx.Err(); err != nil {
@@ -157,107 +183,55 @@ func (s *Service) Mutate(ctx context.Context, profileID, id string, payload reco
 	dnsPresent := false
 	var dnsErr error
 	if !remove {
-		if payload == nil {
+		request, err := decodeRequest[dnsRequest](body)
+		if err != nil {
+			return result, err
+		}
+		if request == nil {
 			return result, invalid(msgRuleObject)
 		}
-		payload = payload.clone()
-		raw, ok := payload["dns"]
-		dnsPresent = ok
-		if ok {
-			dns, dnsErr = dnsChoice(raw)
-			delete(payload, "dns")
+		if dnsPresent = request.DNS.Present(); dnsPresent {
+			dns, dnsErr = dnsChoice(request.DNS)
 		}
 	}
-	err := editProfile(ctx, profileID, func(p record) error {
-		before := p.clone()
-		items, err := p.list("rule_configs")
-		if err != nil {
-			return err
-		}
+	err := editProfile(ctx, profileID, func(config *model.Config) error {
+		items := slices.Clone(config.Profile.RuleConfigs)
 		index := find(items, id)
-		if index < 0 || (sets && items[index].text("itemType") != "ruleset") {
+		if index < 0 || (sets && items[index].ItemType != "ruleset") {
 			return missing("Rule not found")
 		}
 		original := items[index]
 		if remove {
-			native, err := nativeWithout(before, id, base)
-			if err != nil {
-				return err
-			}
-			if native != nil {
-				p["oxidns"] = native
-			}
-			items = slices.Delete(items, index, index+1)
-			if err := p.set("rule_configs", items); err != nil {
-				return err
-			}
-			for _, engine := range []string{"mosdns", "oxidns"} {
-				settings := p.object(engine)
-				for _, key := range []string{"direct_rulesets", "proxy_rulesets", "direct_rules", "proxy_rules"} {
-					var ids []json.RawMessage
-					if json.Unmarshal(settings[key], &ids) != nil {
-						continue
-					}
-					kept := []json.RawMessage{}
-					for _, v := range ids {
-						value, ok := textValue(v)
-						if !ok || value != id {
-							kept = append(kept, v)
-						}
-					}
-					if err := settings.set(key, kept); err != nil {
-						return err
-					}
-				}
-				if err := p.set(engine, settings); err != nil {
-					return err
-				}
-			}
-			settings := p.object("oxidns")
-			for _, key := range oxidns.RuleDNSMetadataFields() {
-				var values map[string]json.RawMessage
-				if json.Unmarshal(settings[key], &values) == nil && values != nil {
-					delete(values, id)
-					if err := settings.set(key, values); err != nil {
-						return err
-					}
-					continue
-				}
-				var ids []string
-				if json.Unmarshal(settings[key], &ids) == nil {
-					ids = slices.DeleteFunc(ids, func(value string) bool { return value == id })
-					if err := settings.set(key, ids); err != nil {
-						return err
-					}
-				}
-			}
-			return p.set("oxidns", settings)
+			return removeRule(config, items, index, base)
 		}
-		updated := original.clone()
-		for key, value := range payload {
-			updated[key] = value
-		}
-		updated["id"] = stringJSON(id)
-		if sets {
-			updated["itemType"] = stringJSON("ruleset")
-		}
-		if err := normalized(updated, original, p); err != nil {
-			return err
-		}
-		result.Data = updated.clone()
-		updated, err = hydrated(p, updated)
+		before, err := profileView(config)
 		if err != nil {
 			return err
 		}
-		if updated.text("itemType") == "rule" && updated.text("rule_type") != original.text("rule_type") {
-			if err := ensureDNSKind(before, updated, dns); err != nil {
+		in := decodeRule(body, original)
+		in.ID = okMember(id)
+		if sets {
+			in.ItemType = okMember("ruleset")
+		}
+		if err := normalized(in, &original, config); err != nil {
+			return err
+		}
+		updated, typeErr := in.rule()
+		result.Data = new(updated)
+		updated, err = hydrated(config, updated)
+		if err != nil {
+			return err
+		}
+		if updated.ItemType == "rule" && updated.RuleType != original.RuleType {
+			if err := ensureDNSKind(before, config, updated, dns); err != nil {
 				return err
 			}
 		}
 		items[index] = updated
-		if err := p.set("rule_configs", items); err != nil {
-			return err
+		if typeErr != nil {
+			return ruleTypeError(items, typeErr)
 		}
+		config.Profile.RuleConfigs = items
 		assignments := []oxidns.DNSAssignment{}
 		if dnsPresent {
 			assignments = append(assignments, oxidns.DNSAssignment{RuleID: id, Choice: dns})
@@ -265,7 +239,7 @@ func (s *Service) Mutate(ctx context.Context, profileID, id string, payload reco
 		if dnsErr != nil {
 			return dnsErr
 		}
-		result.Warnings, err = syncDNS(before, p, assignments, base, dnsPresent)
+		result.Warnings, err = syncDNS(before, config, assignments, base, dnsPresent)
 		return err
 	})
 	if err == nil && !remove {
@@ -273,9 +247,48 @@ func (s *Service) Mutate(ctx context.Context, profileID, id string, payload reco
 	}
 	return result, err
 }
-func parseIDs(raw json.RawMessage) ([]string, error) {
-	var ids []string
-	if json.Unmarshal(raw, &ids) != nil || len(ids) == 0 {
+
+// removeRule deletes items[index] and every DNS selection of it: native
+// routing first, then the MosDNS and OxiDNS selectors and per-rule metadata.
+func removeRule(config *model.Config, items []model.RuleConfig, index int, base string) error {
+	id := items[index].ID
+	view, err := dnsProfile(config)
+	if err != nil {
+		return err
+	}
+	settings, err := config.Profile.OxiDNS.Node()
+	if err != nil {
+		return err
+	}
+	native, err := nativeWithout(view, settings, id, base)
+	if err != nil {
+		return err
+	}
+	if native != nil {
+		settings = native
+	}
+	config.Profile.RuleConfigs = slices.Delete(items, index, index+1)
+	selectors := &config.Profile.MosDNS
+	for _, list := range []*[]string{&selectors.DirectRulesets, &selectors.ProxyRulesets, &selectors.DirectRules, &selectors.ProxyRules} {
+		kept := []string{}
+		for _, value := range *list {
+			if value != id {
+				kept = append(kept, value)
+			}
+		}
+		*list = kept
+	}
+	return config.Profile.OxiDNS.SetNode(oxidns.WithoutRuleReferences(settings, id))
+}
+
+// idsRequest selects rules by distinct, non-empty ids.
+type idsRequest struct {
+	IDs member[[]string] `json:"ids"`
+}
+
+func (r *idsRequest) ids() ([]string, error) {
+	ids := r.IDs.Value
+	if !r.IDs.OK || len(ids) == 0 {
 		return nil, invalid(msgIDs)
 	}
 	seen := map[string]bool{}
@@ -287,52 +300,57 @@ func parseIDs(raw json.RawMessage) ([]string, error) {
 	}
 	return ids, nil
 }
-func knownPolicy(p record, policy string) bool {
+func knownPolicy(config *model.Config, policy string) bool {
 	if slices.Contains([]string{"DIRECT", "REJECT", "REJECT-DROP", "PASS"}, policy) {
 		return true
 	}
-	groups, _ := p.list("proxy_groups")
-	for _, group := range groups {
-		if group.text("name") == policy {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(config.Profile.ProxyGroups, func(group model.ProxyGroup) bool { return group.Name == policy })
+}
+
+// renameRequest is the body of a group rename.
+type renameRequest struct {
+	idsRequest
+	GroupName member[string] `json:"group_name"`
 }
 
 // Rename updates only selected group labels, preserving concurrent rule fields.
-func (s *Service) Rename(ctx context.Context, id string, body record) error {
+func (s *Service) Rename(ctx context.Context, id string, body *renameRequest) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	name, ok := textValue(body["group_name"])
-	if body == nil || !ok {
+	if body == nil || !body.GroupName.OK {
 		return invalid(msgGroupBody)
 	}
-	ids, err := parseIDs(body["ids"])
+	ids, err := body.ids()
 	if err != nil {
 		return err
 	}
-	name = strings.TrimSpace(name)
-	return editProfile(ctx, id, func(p record) error {
-		items, err := p.list("rule_configs")
-		if err != nil {
-			return err
-		}
+	name := strings.TrimSpace(body.GroupName.Value)
+	return editProfile(ctx, id, func(config *model.Config) error {
+		items := slices.Clone(config.Profile.RuleConfigs)
 		for _, id := range ids {
 			index := find(items, id)
 			if index < 0 {
 				return missing(msgGroupMissing)
 			}
-			items[index]["group_name"] = stringJSON(name)
+			items[index].GroupName = new(name)
 		}
-		return p.set("rule_configs", items)
+		config.Profile.RuleConfigs = items
+		return nil
 	})
 }
 
+// policyRequest is the body of a policy change.
+type policyRequest struct {
+	idsRequest
+	Policy    member[string] `json:"policy"`
+	GroupName member[string] `json:"group_name"`
+	BaseURL   member[string] `json:"base_url"`
+}
+
 // SetPolicy moves selected rules and their follow-DNS routing in one transaction.
-func (s *Service) SetPolicy(ctx context.Context, id string, body record, base string) (mutationResult, error) {
+func (s *Service) SetPolicy(ctx context.Context, id string, body *policyRequest, base string) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := mutationResult{Success: true}
 	if err := ctx.Err(); err != nil {
@@ -341,45 +359,39 @@ func (s *Service) SetPolicy(ctx context.Context, id string, body record, base st
 	if body == nil {
 		return out, invalid(msgPolicyBody)
 	}
-	ids, err := parseIDs(body["ids"])
+	ids, err := body.ids()
 	if err != nil {
 		return out, err
 	}
-	policy, ok := textValue(body["policy"])
-	if !ok || policy == "" {
+	policy := body.Policy.Value
+	if !body.Policy.OK || policy == "" {
 		return out, invalid(msgPolicy)
 	}
-	group, present := body["group_name"]
-	name := ""
-	if present {
-		name, ok = textValue(group)
-		if !ok {
-			return out, invalid(msgGroupText)
-		}
+	present := body.GroupName.Present()
+	if present && !body.GroupName.OK {
+		return out, invalid(msgGroupText)
 	}
-	err = editProfile(ctx, id, func(p record) error {
-		if !knownPolicy(p, policy) {
+	err = editProfile(ctx, id, func(config *model.Config) error {
+		if !knownPolicy(config, policy) {
 			return invalid(fmt.Sprintf(msgPolicyUnknown, policy))
 		}
-		before := p.clone()
-		items, err := p.list("rule_configs")
+		before, err := profileView(config)
 		if err != nil {
 			return err
 		}
+		items := slices.Clone(config.Profile.RuleConfigs)
 		for _, id := range ids {
 			index := find(items, id)
 			if index < 0 {
 				return missing(msgPolicyMissing)
 			}
-			items[index]["policy"] = stringJSON(policy)
+			items[index].Policy = new(policy)
 			if present {
-				items[index]["group_name"] = stringJSON(strings.TrimSpace(name))
+				items[index].GroupName = new(strings.TrimSpace(body.GroupName.Value))
 			}
 		}
-		if err := p.set("rule_configs", items); err != nil {
-			return err
-		}
-		out.Warnings, err = syncDNS(before, p, nil, base, false)
+		config.Profile.RuleConfigs = items
+		out.Warnings, err = syncDNS(before, config, nil, base, false)
 		return err
 	})
 	if err == nil {
@@ -389,46 +401,54 @@ func (s *Service) SetPolicy(ctx context.Context, id string, body record, base st
 }
 
 // Reorder moves IDs using the current transaction snapshot, including legacy input.
-func (s *Service) Reorder(ctx context.Context, id string, body record, base string) ([]string, []string, error) {
+func (s *Service) Reorder(ctx context.Context, id string, raw json.RawMessage, base string) ([]string, []string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	if len(body) == 0 {
+	if emptyObject(raw) {
 		return nil, nil, invalid(msgNoBody)
 	}
-	ids, err := reorderRequest(body)
+	body, err := decodeRequest[orderRequest](raw)
 	if err != nil {
-		return nil, nil, invalid(err.Error())
+		return nil, nil, err
+	}
+	ids, err := body.selection()
+	if err != nil {
+		return nil, nil, err
 	}
 	order, warnings := []string{}, []string{}
-	err = editProfile(ctx, id, func(p record) error {
-		before := p.clone()
-		items, err := p.list("rule_configs")
+	err = editProfile(ctx, id, func(config *model.Config) error {
+		before, err := profileView(config)
 		if err != nil {
 			return err
 		}
-		items, missingIDs, err := reorderSelected(items, ids, defaultText(body, "position", "top"))
+		items, missingIDs, err := reorderSelected(config.Profile.RuleConfigs, ids, body.Position.Or("top"))
 		if err != nil {
 			return err
 		}
 		if len(missingIDs) > 0 {
 			return missing(missingSelected(missingIDs))
 		}
-		if err := p.set("rule_configs", items); err != nil {
-			return err
-		}
+		config.Profile.RuleConfigs = items
 		for _, item := range items {
-			order = append(order, item.text("id"))
+			order = append(order, item.ID)
 		}
-		warnings, err = syncDNS(before, p, nil, base, false)
+		warnings, err = syncDNS(before, config, nil, base, false)
 		return err
 	})
 	return order, warnings, err
 }
 
+// batchRequest adds one rule per value.
+type batchRequest struct {
+	Domains  member[[]*string] `json:"domains"`
+	RuleType member[string]    `json:"rule_type"`
+	Policy   member[string]    `json:"policy"`
+}
+
 // Batch validates the whole input before allocating collision-free IDs under lock.
-func (s *Service) Batch(ctx context.Context, id string, body record) ([]record, error) {
+func (s *Service) Batch(ctx context.Context, id string, body *batchRequest) ([]model.RuleConfig, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -436,33 +456,32 @@ func (s *Service) Batch(ctx context.Context, id string, body record) ([]record, 
 	if body == nil {
 		return nil, invalid(msgRuleObject)
 	}
-	var inputs []*string
-	if json.Unmarshal(body["domains"], &inputs) != nil || len(inputs) == 0 {
+	if !body.Domains.OK || len(body.Domains.Value) == 0 {
 		return nil, invalid(msgBatchValues)
 	}
-	values := make([]string, len(inputs))
-	for i, value := range inputs {
+	values := make([]string, len(body.Domains.Value))
+	for i, value := range body.Domains.Value {
 		if value == nil {
 			return nil, invalid(msgBatchValues)
 		}
-		values[i] = *value
+		values[i] = strings.TrimSpace(*value)
 	}
 	for i, value := range values {
-		item := record{"rule_type": body["rule_type"], "value": stringJSON(strings.TrimSpace(value))}
-		if err := validateSyntax(item); err != nil {
+		if err := validateSyntax(body.RuleType, okMember(value)); err != nil {
 			return nil, invalid(fmt.Sprintf(msgLineError, i+1, err.Error()))
 		}
 	}
-	added := []record{}
-	err := editProfile(ctx, id, func(p record) error {
-		items, err := p.list("rule_configs")
-		if err != nil {
-			return err
-		}
+	// An absent or null policy is stored as an empty reference.
+	policy := new(body.Policy.Value)
+	policyErr := !body.Policy.OK && !body.Policy.Null()
+	added := []model.RuleConfig{}
+	err := editProfile(ctx, id, func(config *model.Config) error {
+		items := config.Profile.RuleConfigs
 		used := map[string]bool{}
 		for _, item := range items {
-			used[item.text("id")] = true
+			used[item.ID] = true
 		}
+		added = added[:0]
 		next := 1
 		for _, value := range values {
 			for used[fmt.Sprintf("rule_%d", next)] {
@@ -470,13 +489,14 @@ func (s *Service) Batch(ctx context.Context, id string, body record) ([]record, 
 			}
 			identity := fmt.Sprintf("rule_%d", next)
 			used[identity] = true
-			policy := body["policy"]
-			if len(policy) == 0 {
-				policy = json.RawMessage("null")
-			}
-			added = append(added, record{"id": stringJSON(identity), "rule_type": body["rule_type"], "value": stringJSON(strings.TrimSpace(value)), "policy": policy, "enabled": boolJSON(true), "itemType": stringJSON("rule")})
+			added = append(added, model.RuleConfig{ID: identity, RuleType: body.RuleType.Value, Value: new(value), Policy: policy, Enabled: new(true), ItemType: "rule"})
 		}
-		return p.set("rule_configs", append(added, items...))
+		all := append(slices.Clone(added), items...)
+		if policyErr {
+			return ruleTypeError(all, errMemberType)
+		}
+		config.Profile.RuleConfigs = all
+		return nil
 	})
 	return added, err
 }

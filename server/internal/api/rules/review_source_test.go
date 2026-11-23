@@ -112,7 +112,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 				if marshalErr != nil {
 					t.Fatal(marshalErr)
 				}
-				_, err = service.Compose(ctx, "other", composeBody(record{"kind": stringJSON("new_library"), "library": raw}, "direct"), "")
+				_, err = service.Compose(ctx, "other", request[composeRequest](composeBody(record{"kind": stringJSON("new_library"), "library": raw}, "direct")), "")
 			} else {
 				config, getErr := srv.Repo.Config(srv.Context(), "other", repo.ResourceRoots{})
 				if getErr != nil {
@@ -142,7 +142,7 @@ func TestReviewStoppedReadOwners(t *testing.T) {
 	for name, call := range map[string]func() error{
 		"local": func() error { _, err := (&Service{}).Local(ctx, "other", "Ads", "", ""); return err },
 		"match": func() error {
-			_, err := (&Service{}).Match(ctx, "other", record{"query": stringJSON("example.com")}, "")
+			_, err := (&Service{}).Match(ctx, "other", request[matchRequest](record{"query": stringJSON("example.com")}), "")
 			return err
 		},
 		"duplicates": func() error { _, err := (&Service{}).FindDuplicates(ctx, "other", ""); return err },

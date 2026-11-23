@@ -1,16 +1,19 @@
 package rules
 
-// Request records delegate rule semantics and resolved transactions to their owners.
+// Rule edits work on the resolved profile record; rule semantics, DNS routing
+// and transactions stay with their owners.
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
+	"slices"
+	"strings"
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
@@ -19,24 +22,8 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func native(value any) (record, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var out record
-	err = json.Unmarshal(raw, &out)
-	return out, err
-}
-func ruleRecord(value record) (model.RuleConfig, error) {
-	raw, err := json.Marshal(value)
-	var out model.RuleConfig
-	if err == nil {
-		err = json.Unmarshal(raw, &out)
-	}
-	return out, err
-}
-func readBody(c *httpx.Ctx, silent bool) (record, error) {
+// requestBody returns the sent JSON object, or nil for any other body.
+func requestBody(c *httpx.Ctx, silent bool) (json.RawMessage, error) {
 	var raw json.RawMessage
 	if silent {
 		if !c.BindSilent(&raw) {
@@ -45,15 +32,31 @@ func readBody(c *httpx.Ctx, silent bool) (record, error) {
 	} else if err := c.Bind(&raw); err != nil {
 		return nil, err
 	}
-	var out record
 	if len(raw) == 0 || raw[0] != '{' {
 		return nil, nil
 	}
-	err := json.Unmarshal(raw, &out)
-	return out, err
+	return raw, nil
 }
 
-func loadProfile(ctx context.Context, id string) (record, error) {
+// decodeRequest decodes an object body into a request DTO; nil for no object.
+func decodeRequest[T any](raw json.RawMessage) (*T, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	out := new(T)
+	if err := jsondecode.Unmarshal(raw, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// emptyObject reports a body that is an object without members.
+func emptyObject(raw json.RawMessage) bool {
+	var compact bytes.Buffer
+	return raw == nil || json.Compact(&compact, raw) == nil && compact.String() == "{}"
+}
+
+func loadProfile(ctx context.Context, id string) (*model.Config, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -62,14 +65,12 @@ func loadProfile(ctx context.Context, id string) (record, error) {
 	if err != nil {
 		return nil, err
 	}
-	value, err := r.ConfigWithOxiDNSAgents(ctx, id, nil)
-	if err != nil {
-		return nil, err
-	}
-	return native(value)
+	return r.ConfigWithOxiDNSAgents(ctx, id, nil)
 }
 
-func editProfile(ctx context.Context, id string, edit func(record) error) error {
+// editProfile edits the resolved profile; the repository stores the members
+// that changed.
+func editProfile(ctx context.Context, id string, edit func(*model.Config) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -77,83 +78,46 @@ func editProfile(ctx context.Context, id string, edit func(record) error) error 
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		profile, err := native(config)
-		if err != nil {
-			return err
-		}
-		before, err := native(config)
-		if err != nil {
-			return err
-		}
-		if err = edit(profile); err != nil {
-			return err
-		}
-		if err := applyFields(before, profile, repo.ProfileFields, config.Profile.SetJSON); err != nil {
+		if err := edit(config); err != nil {
 			return err
 		}
 		return tx.Err()
 	})
 }
 
-func applyFields(before, after record, keys []string, set func(string, json.RawMessage) error) error {
-	for _, key := range keys {
-		value, present := after[key]
-		if !present {
-			continue
-		}
-		previous, existed := before[key]
-		if bytes.Equal(previous, value) {
-			continue
-		}
-		if existed {
-			same, err := sameJSONValue(previous, value)
-			if err != nil {
-				return fmt.Errorf("compare field %s: %w", key, err)
-			}
-			if same {
-				continue
-			}
-		}
-		if err := set(key, value); err != nil {
-			return err
-		}
+// ruleTypeError reports a sent rule member the rule record cannot hold, with
+// the message the repository gives for the resulting rule list.
+func ruleTypeError(items []model.RuleConfig, cause error) error {
+	raw, err := model.Marshal(items)
+	if err != nil {
+		return err
 	}
-	return nil
+	return repo.InputError(&model.MemberTypeError{Record: "profile", Member: "rule_configs", Value: raw, Err: cause})
 }
 
-// sameJSONValue distinguishes real edits from re-encoding a nested object.
-// Numbers retain their original tokens; only object member order and separator
-// whitespace are immaterial here. The store's raw-byte/revision rules stay intact.
-func sameJSONValue(before, after json.RawMessage) (bool, error) {
-	var values [2]any
-	for i, raw := range []json.RawMessage{before, after} {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		if err := decoder.Decode(&values[i]); err != nil {
-			return false, err
-		}
+func validateSyntax(kind member[string], value member[string]) error {
+	if !kind.OK {
+		return invalid(fmt.Sprintf(msgUnknownKind, shared.InvalidValueText(kind.Raw)))
 	}
-	return reflect.DeepEqual(values[0], values[1]), nil
-}
-func validateSyntax(item record) error {
-	kind, ok := textValue(item["rule_type"])
-	if !ok {
-		return invalid(fmt.Sprintf(msgUnknownKind, shared.InvalidValueText(item["rule_type"])))
+	if value.Present() && !value.OK {
+		return invalid(msgSingleLine)
 	}
-	value := ""
-	if raw, exists := item["value"]; exists {
-		var valid bool
-		value, valid = textValue(raw)
-		if !valid {
-			return invalid(msgSingleLine)
-		}
-	}
-	if message := shared.RuleValueError(kind, value); message != "" {
+	if message := shared.RuleValueError(kind.Value, value.Value); message != "" {
 		return invalid(message)
 	}
 	return nil
 }
-func reorderSelected(items []record, selection []json.RawMessage, position string) ([]record, []json.RawMessage, error) {
+
+// textMember is a stored text value as if it had been sent.
+func textMember(value *string) member[string] {
+	if value == nil {
+		return member[string]{Raw: json.RawMessage("null")}
+	}
+	raw, _ := json.Marshal(*value)
+	return member[string]{Raw: raw, Value: *value, OK: true}
+}
+
+func reorderSelected(items []model.RuleConfig, selection []json.RawMessage, position string) ([]model.RuleConfig, []json.RawMessage, error) {
 	ids := []string{}
 	for _, raw := range selection {
 		var text string
@@ -170,73 +134,51 @@ func reorderSelected(items []record, selection []json.RawMessage, position strin
 			return nil, nil, &fault{500, httpx.DescInternal}
 		}
 	}
-	ordered, unknown := shared.Reorder(items, ids, position, func(item record) string { return item.text("id") })
+	ordered, unknown := shared.Reorder(items, ids, position, func(item model.RuleConfig) string { return item.ID })
 	unknownSet := map[string]bool{}
 	for _, id := range unknown {
 		unknownSet[id] = true
 	}
 	missing := []json.RawMessage{}
 	for _, raw := range selection {
-		text, ok := textValue(raw)
-		if !ok || unknownSet[text] {
+		var text string
+		if json.Unmarshal(raw, &text) != nil || string(raw) == "null" || unknownSet[text] {
 			missing = append(missing, raw)
 		}
 	}
 	return ordered, missing, nil
 }
 
-func hydrated(profile, item record) (record, error) {
-	if item.text("itemType") != "ruleset" {
+// hydrated returns a rule-set reference with its shared source, as resolved
+// profiles carry it.
+func hydrated(config *model.Config, item model.RuleConfig) (model.RuleConfig, error) {
+	if item.ItemType != "ruleset" {
 		return item, nil
 	}
-	library, err := profile.list("rule_library")
-	if err != nil {
-		return nil, err
-	}
-	i := find(library, item.text("library_rule_id"))
+	i := slices.IndexFunc(config.RuleLibrary, func(entry model.RuleLibraryItem) bool { return entry.ID == item.LibraryRuleID })
 	if i < 0 {
-		return nil, invalid(msgLibraryReference)
+		return model.RuleConfig{}, invalid(msgLibraryReference)
 	}
-	raw, err := json.Marshal(item)
-	if err != nil {
-		return nil, err
-	}
-	n, err := oxidns.FromJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-	raw, err = json.Marshal(library[i])
-	if err != nil {
-		return nil, err
-	}
-	lib, err := oxidns.FromJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-	return native(json.RawMessage(oxidns.ToJSON(oxidns.HydrateRuleset(n, lib, profile.text("profile_id")))))
+	return repo.HydratedRuleset(item, config.RuleLibrary[i], config.ProfileID)
 }
-func dnsProfile(profile record) (*oxidns.Profile, error) {
-	raw, err := json.Marshal(profile)
-	if err != nil {
-		return nil, err
-	}
-	return oxidns.ProfileFromJSON(raw)
-}
-func syncDNS(before, after record, assignments []oxidns.DNSAssignment, base string, strict bool) ([]string, error) {
-	old, err := dnsProfile(before)
-	if err != nil {
-		return nil, err
-	}
+
+func dnsProfile(config *model.Config) (*oxidns.Profile, error) { return oxidns.NewTypedProfile(config) }
+
+// syncDNS applies DNS assignments for an edited profile; before is the
+// profile view taken before the edit.
+func syncDNS(before *oxidns.Profile, after *model.Config, assignments []oxidns.DNSAssignment, base string, strict bool) ([]string, error) {
 	next, err := dnsProfile(after)
 	if err != nil {
 		return nil, err
 	}
-	result, err := oxidns.ApplyRuleDNS(old, next, assignments, oxidns.RuleDNSApplyOptions{BaseURL: base, Lenient: !strict})
+	result, err := oxidns.ApplyRuleDNS(before, next, assignments, oxidns.RuleDNSApplyOptions{BaseURL: base, Lenient: !strict})
 	if err != nil {
 		return nil, dnsError(err)
 	}
 	if result.Changed {
-		after["oxidns"] = oxidns.ToJSON(result.Settings)
+		if err := after.Profile.OxiDNS.SetNode(result.Settings); err != nil {
+			return nil, err
+		}
 	}
 	return result.Warnings, nil
 }
@@ -246,41 +188,23 @@ func dnsError(err error) error {
 	}
 	return err
 }
-func ensureDNSKind(profile, item record, dns string) error {
-	raw, err := json.Marshal(item)
-	if err != nil {
-		return err
-	}
-	node, err := oxidns.FromJSON(raw)
-	if err != nil {
-		return err
-	}
-	if oxidns.Convertible(node) {
+func ensureDNSKind(before *oxidns.Profile, config *model.Config, item model.RuleConfig, dns string) error {
+	if oxidns.RuleConvertible(item) {
 		return nil
 	}
-	kind := item.text("rule_type")
-	supported := false
-	for _, value := range mosdns.DNSRuleTypes {
-		supported = supported || kind == value
-	}
-	if !supported {
-		settings := profile.object("mosdns")
-		for _, selector := range []struct{ key, label string }{{"direct_rules", "直连规则"}, {"proxy_rules", "代理规则"}} {
-			key, label := selector.key, selector.label
-			var ids []string
-			_ = json.Unmarshal(settings[key], &ids)
-			for _, id := range ids {
-				if id == item.text("id") {
-					return invalid(fmt.Sprintf(msgMosDNSGuard, label, kind))
-				}
+	kind := item.RuleType
+	if !slices.Contains(mosdns.DNSRuleTypes, kind) {
+		selectors := config.Profile.MosDNS
+		for _, selector := range []struct {
+			ids   []string
+			label string
+		}{{selectors.DirectRules, "直连规则"}, {selectors.ProxyRules, "代理规则"}} {
+			if slices.Contains(selector.ids, item.ID) {
+				return invalid(fmt.Sprintf(msgMosDNSGuard, selector.label, kind))
 			}
 		}
 	}
-	p, err := dnsProfile(profile)
-	if err != nil {
-		return err
-	}
-	route, err := oxidns.ExplicitRuleDNS(p, item.text("id"))
+	route, err := oxidns.ExplicitRuleDNS(before, item.ID)
 	if err != nil {
 		return dnsError(err)
 	}
@@ -290,26 +214,21 @@ func ensureDNSKind(profile, item record, dns string) error {
 	}
 	return nil
 }
-func nativeWithout(profile record, id, base string) (json.RawMessage, error) {
-	settings := profile.object("oxidns")
-	if settings.text("config_mode") != "native" || settings.text("native_config") == "" {
+
+// nativeWithout returns native OxiDNS settings without the rule's routing,
+// or nil when the settings are not a loadable native configuration.
+func nativeWithout(view *oxidns.Profile, settings *oxidns.Node, id, base string) (*oxidns.Node, error) {
+	mode, native := oxidns.SettingsText(settings, "config_mode"), oxidns.SettingsText(settings, "native_config")
+	if mode != "native" || native == "" {
 		return nil, nil
 	}
-	if _, err := yamlx.Parse([]byte(settings.text("native_config"))); err != nil && !errors.Is(err, yamlx.ErrSyntax) {
+	if _, err := yamlx.Parse([]byte(native)); err != nil && !errors.Is(err, yamlx.ErrSyntax) {
 		return nil, invalid(err.Error())
 	}
-	if _, err := oxidns.LoadNativeYAML(settings.text("native_config"), oxidns.NativeLabel); err != nil {
+	if _, err := oxidns.LoadNativeYAML(native, oxidns.NativeLabel); err != nil {
 		return nil, nil
 	}
-	p, err := dnsProfile(profile)
-	if err != nil {
-		return nil, err
-	}
-	n, err := oxidns.FromJSON(profile["oxidns"])
-	if err != nil {
-		return nil, err
-	}
-	next, err := oxidns.RemoveRule(n, p, id, base)
+	next, err := oxidns.RemoveRule(settings, view, id, base)
 	if err != nil {
 		return nil, dnsError(err)
 	}
@@ -320,33 +239,34 @@ func nativeWithout(profile record, id, base string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, dnsError(err)
 	}
-	return oxidns.ToJSON(next), nil
+	return next, nil
 }
 func withheld(ctx context.Context, profileID string, ids []string) (*bool, error) {
-	p, err := loadProfile(ctx, profileID)
+	config, err := loadProfile(ctx, profileID)
 	if err != nil {
 		return nil, err
 	}
-	view, err := dnsProfile(p)
-	if err != nil {
-		return nil, err
+	bound := config.ProfileID
+	if bound == "" {
+		bound = defaultProfileID(config)
 	}
 	eligible := false
-	for _, agent := range oxidns.ProfileAgents(view) {
-		var row record
-		if json.Unmarshal(oxidns.ToJSON(agent), &row) != nil {
+	for _, agent := range config.Agents {
+		id := agent.ProfileID
+		if id == "" {
+			id = defaultProfileID(config)
+		}
+		if !model.Flag(agent.Enabled, true) || id != bound || agent.ServiceType != "oxidns" || agent.RuleSync == nil {
 			continue
 		}
-		settings := row.object("rule_sync").object("settings")
-		if row.text("service_type") == "oxidns" && (exactTrue(settings["library"]) || exactTrue(settings["rules"])) {
+		settings := agent.RuleSync.Settings
+		if model.Flag(settings.Library, false) || model.Flag(settings.Rules, false) {
 			eligible = true
 			break
 		}
 	}
-
 	if len(ids) == 0 || !eligible {
-		v := false
-		return &v, nil
+		return new(false), nil
 	}
 	hook := agents.CurrentHooks().PinnedWithheld
 	if hook == nil {
@@ -358,51 +278,50 @@ func withheld(ctx context.Context, profileID string, ids []string) (*bool, error
 	}
 	return &v, nil
 }
-func routeKind(route string) string {
-	for i, c := range route {
-		if c == ':' {
-			return route[:i]
-		}
+func defaultProfileID(config *model.Config) string {
+	if id := text(config.SystemConfig.DefaultProfileID); id != "" {
+		return id
 	}
-	return route
+	return repo.DefaultProfileID
+}
+func routeKind(route string) string {
+	kind, _, _ := strings.Cut(route, ":")
+	return kind
 }
 
-func udpChoice(raw json.RawMessage) (string, bool) {
-	if !shared.EnabledField(raw, false) {
+// udpChoice reads udp_fallback: a falsy value is "follow the client".
+func udpChoice(sent member[string]) (string, bool) {
+	if !shared.EnabledField(sent.Raw, false) {
 		return "", true
 	}
-	return textValue(raw)
+	return sent.Value, sent.OK
 }
 func missingSelected(ids []json.RawMessage) string {
 	return fmt.Sprintf(msgOrderMissing, selectedText(ids))
 }
 
-func dnsChoice(raw json.RawMessage) (string, error) {
-	if len(raw) == 0 || !json.Valid(raw) {
+func dnsChoice(sent member[string]) (string, error) {
+	if len(sent.Raw) == 0 || !json.Valid(sent.Raw) {
 		return "", invalid(msgDNSRoutes)
 	}
-	choice, ok := textValue(raw)
-	if !ok {
-		return "", invalid(fmt.Sprintf(msgDNSUnsupported, shared.InvalidValueText(raw)))
+	if !sent.OK {
+		return "", invalid(fmt.Sprintf(msgDNSUnsupported, shared.InvalidValueText(sent.Raw)))
 	}
-	if err := oxidns.CheckDNSChoice(choice); err != nil {
-		return choice, dnsError(err)
+	if err := oxidns.CheckDNSChoice(sent.Value); err != nil {
+		return sent.Value, dnsError(err)
 	}
-	return choice, nil
+	return sent.Value, nil
 }
 
 func selectedText(ids []json.RawMessage) string {
 	stringsOnly := make([]string, len(ids))
 	for i, raw := range ids {
-		if text, ok := textValue(raw); ok {
-			stringsOnly[i] = text
-		} else {
+		var text string
+		if string(raw) == "null" || json.Unmarshal(raw, &text) != nil {
 			encoded, _ := json.Marshal(ids)
 			return string(encoded)
 		}
+		stringsOnly[i] = text
 	}
 	return shared.IdentifierList(stringsOnly)
-}
-func rawFlag(item record, key string, fallback bool) bool {
-	return shared.EnabledField(item[key], fallback)
 }

@@ -1,0 +1,37 @@
+# O17 结构项 ③：字典式写法改成类型化结构（分支 go-o17-typed）
+
+任务：1.6 CRUD 请求体 → 1.8 RouterOS/iKuai 行 → 1.7 OxiDNS（顺序按协调者裁定）。
+
+## 协调者裁定（2026-11-23）
+
+1. OxiDNS：用户原生文档保留 `yaml.Node`（注释、未知插件、插件参数），边界类型 `nativeDoc` 注释写明；
+   ConfigFlow 自己的 schema 全部类型化，逐字段类型检查沿用原中文文案；清掉 `!(!isNone(...))` 一类机械翻译。
+2. 不动 `model`：`model.Profile.OxiDNS`（`model.Dynamic`）在 oxidns 入口解码一次、写回时编码；
+   未知成员是否保存按 `storedProjection` 与往返测试核对后定，结论写在这里。
+3. RouterOS 行 `map[string]string`；只读分析处用结构体；iKuai 按接口定义结构体。
+
+## 设计
+
+- 请求成员：`jsondecode.Member[T]`（原始字节 + 类型化值 + 是否合法）。类型不对不让整体解码失败，
+  由处理函数按原来的检查顺序给原来的中文文案/状态码；成员名大小写精确匹配（`jsondecode`）。
+- 1.6 `api/rules`：不再把整份 profile 编成 JSON 字典再编辑，直接改 `*model.Config`；
+  repo 的 `changedMembers` 已经按成员比较，删掉本包的 `applyFields`/`sameJSONValue`。
+
+## 状态
+
+- [x] 1.6 api/rules（请求 DTO + 直接编辑 `*model.Config`；`rulefetch.Declaration` 校验类型化；`oxidns.RuleConvertible`/`WithoutRuleReferences`/`SettingsText`、`repo.HydratedRuleset` 为过渡接口）
+- [ ] 1.6 api/nodes
+- [ ] 1.6 api/proxygroups
+- [ ] 1.6 api/aggregations
+- [ ] 1.6 api/subscriptions
+- [ ] 1.6 api/rulelibrary
+- [ ] 1.6 mcp/invoker
+- [ ] 1.8 RouterOS Row → map[string]string；只读分析结构体
+- [ ] 1.8 iKuai 结构体
+- [ ] 1.7 OxiDNS Settings 等类型化
+
+## 功能差异（对外）
+
+- `api/rules` 创建/修改规则、批量添加的响应 `data`/`rules`：不再回显未声明的成员（它们本来就不会被保存）；
+  成员顺序由字典序变为声明顺序。批量添加未传 `policy` 时回显 `""`（存储里一直就是空引用），原来回显 `null`。
+- 同一请求里「成员类型错误」与其他错误同时出现时，报哪一条可能不同（单一错误的文案和状态码不变）。

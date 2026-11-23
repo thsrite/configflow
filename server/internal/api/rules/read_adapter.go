@@ -255,7 +255,7 @@ func remoteFault(err error) *sourceFailure {
 	}
 	return &sourceFailure{Message: validation.Error(), Errors: raw}
 }
-func (s *Service) match(ctx context.Context, id, query, host string) (record, error) {
+func (s *Service) match(ctx context.Context, id, query, host string) (*shared.Hit, error) {
 	config, err := resolvedConfig(ctx, id)
 	if err != nil {
 		return nil, err
@@ -290,10 +290,7 @@ func (s *Service) match(ctx context.Context, id, query, host string) (record, er
 		}
 		return nil, &fault{500, msgMatchFailed}
 	}
-	if matched == nil {
-		return nil, nil
-	}
-	return native(matched)
+	return matched, nil
 }
 func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, func(int) (string, error), error) {
 	config, err := resolvedConfig(ctx, id)
@@ -309,17 +306,21 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 			library[row.ID] = row
 		}
 	}
-	for i, item := range items {
-		raw, err := native(item)
+	for i := range items {
+		item := &items[i]
+		policy, present, err := model.EncodeMember(item, "policy")
 		if err != nil {
 			return nil, nil, err
 		}
-		policy, ok := raw["policy"]
-		if !ok {
-			policy = stringJSON("DIRECT")
+		if !present {
+			policy = json.RawMessage(`"DIRECT"`)
 		}
-		rows[i] = scanRow{ID: item.ID, Name: item.Name, Kind: defaultText(raw, "itemType", "rule"), Type: item.RuleType, Value: model.TextValue(item.Value), Policy: policy, Enabled: rawFlag(raw, "enabled", true) && rawFlag(raw, "library_enabled", true)}
-		if _, ok := raw["name"]; !ok {
+		kind := item.ItemType
+		if kind == "" {
+			kind = "rule"
+		}
+		rows[i] = scanRow{ID: item.ID, Name: item.Name, Kind: kind, Type: item.RuleType, Value: model.TextValue(item.Value), Policy: policy, Enabled: model.Flag(item.Enabled, true) && model.Flag(item.LibraryEnabled, true)}
+		if item.Name == "" {
 			rows[i].Name = msgRuleset
 		}
 	}

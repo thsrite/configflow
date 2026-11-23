@@ -47,11 +47,11 @@ func TestReviewWriteCancellation(t *testing.T) {
 		write func(*Service, context.Context) error
 	}{
 		{"create", func(s *Service, ctx context.Context) error {
-			_, err := s.Create(ctx, "other", record{"id": stringJSON("new"), "rule_type": stringJSON("DOMAIN"), "value": stringJSON("new.example.com")}, false)
+			_, err := s.Create(ctx, "other", rawJSON(record{"id": stringJSON("new"), "rule_type": stringJSON("DOMAIN"), "value": stringJSON("new.example.com")}), false)
 			return err
 		}},
 		{"mutate", func(s *Service, ctx context.Context) error {
-			_, err := s.Mutate(ctx, "other", "rule_1", record{"remark": stringJSON("changed")}, false, false, "")
+			_, err := s.Mutate(ctx, "other", "rule_1", rawJSON(record{"remark": stringJSON("changed")}), false, false, "")
 			return err
 		}},
 		{"delete", func(s *Service, ctx context.Context) error {
@@ -59,26 +59,26 @@ func TestReviewWriteCancellation(t *testing.T) {
 			return err
 		}},
 		{"rename", func(s *Service, ctx context.Context) error {
-			return s.Rename(ctx, "other", record{"ids": json.RawMessage(`["rule_1"]`), "group_name": stringJSON("changed")})
+			return s.Rename(ctx, "other", request[renameRequest](record{"ids": json.RawMessage(`["rule_1"]`), "group_name": stringJSON("changed")}))
 		}},
 		{"policy", func(s *Service, ctx context.Context) error {
-			_, err := s.SetPolicy(ctx, "other", record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}, "")
+			_, err := s.SetPolicy(ctx, "other", request[policyRequest](record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}), "")
 			return err
 		}},
 		{"reorder", func(s *Service, ctx context.Context) error {
-			_, _, err := s.Reorder(ctx, "other", record{"ids": json.RawMessage(`["rule_1"]`), "position": stringJSON("bottom")}, "")
+			_, _, err := s.Reorder(ctx, "other", rawJSON(record{"ids": json.RawMessage(`["rule_1"]`), "position": stringJSON("bottom")}), "")
 			return err
 		}},
 		{"batch", func(s *Service, ctx context.Context) error {
-			_, err := s.Batch(ctx, "other", record{"domains": json.RawMessage(`["new.example.com"]`), "rule_type": stringJSON("DOMAIN")})
+			_, err := s.Batch(ctx, "other", request[batchRequest](record{"domains": json.RawMessage(`["new.example.com"]`), "rule_type": stringJSON("DOMAIN")}))
 			return err
 		}},
 		{"dns", func(s *Service, ctx context.Context) error {
-			_, err := s.SetDNS(ctx, "other", record{"routes": json.RawMessage(`{"rule_1":"direct"}`)}, "")
+			_, err := s.SetDNS(ctx, "other", request[dnsWriteRequest](record{"routes": json.RawMessage(`{"rule_1":"direct"}`)}), "")
 			return err
 		}},
 		{"compose", func(s *Service, ctx context.Context) error {
-			_, err := s.Compose(ctx, "other", composeBody(record{"kind": stringJSON("values"), "rule_type": stringJSON("DOMAIN"), "text": stringJSON("new.example.com")}, "default"), "")
+			_, err := s.Compose(ctx, "other", request[composeRequest](composeBody(record{"kind": stringJSON("values"), "rule_type": stringJSON("DOMAIN"), "text": stringJSON("new.example.com")}, "default")), "")
 			return err
 		}},
 	} {
