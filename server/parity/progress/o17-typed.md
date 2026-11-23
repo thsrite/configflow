@@ -21,7 +21,10 @@
 
 - [x] 1.6 api/rules（请求 DTO + 直接编辑 `*model.Config`；`rulefetch.Declaration` 校验类型化；`oxidns.RuleConvertible`/`WithoutRuleReferences`/`SettingsText`、`repo.HydratedRuleset` 为过渡接口）
 - [x] 1.6 api/nodes（请求 DTO；节点 CRUD 直接改 `[]model.Node`；删除规划器在 `*model.Document` 副本上做，确认摘要协议不变；`rules.DecodeOrder` 取代 `OrderIDs`）
-- [ ] 1.6 api/proxygroups
+- [x] 1.6 api/proxygroups（配置直接改 `*model.Config`；批量探测 URL、排序、预览为请求 DTO；`rules.GroupMembers` 取代
+  `CheckCandidateMembers`/`CheckFilterMembers` 的 `map[string]json.RawMessage`。**例外**：策略组新增/修改的补丁保留为
+  `groupFields`（包了 `model.Fields`）——按类型清理时不论类型都要丢掉的成员太多，且 repo 的输入文案（与整份导入共用）
+  定义在结果列表的 JSON 上；只有这一个组以 JSON 进入 `SetJSON("proxy_groups")`，其余组都是类型化值）
 - [ ] 1.6 api/aggregations
 - [ ] 1.6 api/subscriptions
 - [ ] 1.6 api/rulelibrary

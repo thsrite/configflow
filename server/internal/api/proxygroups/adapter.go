@@ -1,17 +1,18 @@
 package proxygroups
 
-// Legacy collaborators are confined to this boundary. The service retains
-// native JSON members and delegates validation and rendering to their owners.
+// Groups are edited on the resolved profile record; membership, health,
+// listeners and DNS routing are delegated to their owners.
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -20,75 +21,56 @@ import (
 	"configflow/internal/substore"
 )
 
-func native(v any) (object, error) {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return object{}, err
-	}
-	var out object
-	err = json.Unmarshal(raw, &out)
-	return out, err
-}
-func configView(o object) (*model.Config, error) {
-	raw, err := json.Marshal(o)
-	if err != nil {
-		return nil, err
-	}
-	return model.DecodeConfig(raw)
-}
-func groupRecord(o object) (model.ProxyGroup, error) {
-	var group model.ProxyGroup
-	raw, err := json.Marshal(o)
-	if err == nil {
-		err = json.Unmarshal(raw, &group)
-	}
-	return group, err
-}
-func readBody(c *httpx.Ctx, silent bool) (object, bool, error) {
+// requestObject returns the sent JSON object, or nil (ok false) for any other body.
+func requestObject(c *httpx.Ctx, silent bool) (json.RawMessage, bool, error) {
 	var raw json.RawMessage
 	if silent {
 		if !c.BindSilent(&raw) {
-			return object{}, false, nil
+			return nil, false, nil
 		}
-	} else {
-		if err := c.Bind(&raw); err != nil {
-			return object{}, false, err
-		}
+	} else if err := c.Bind(&raw); err != nil {
+		return nil, false, err
 	}
 	if len(raw) == 0 || raw[0] != '{' {
-		return object{}, false, nil
+		return nil, false, nil
 	}
-	var out object
-	err := json.Unmarshal(raw, &out)
+	return raw, true, nil
+}
+
+// readGroup reads a group request as sent (see groupFields).
+func readGroup(c *httpx.Ctx) (groupFields, bool, error) {
+	raw, ok, err := requestObject(c, false)
+	if err != nil || !ok {
+		return groupFields{}, ok, err
+	}
+	var out groupFields
+	err = out.UnmarshalJSON(raw)
 	return out, true, err
 }
 
-func readReorderBody(c *httpx.Ctx) (object, error) {
-	body, ok, err := readBody(c, false)
-	if err != nil || ok {
-		return body, err
+// decodeObject decodes an object body into a request DTO.
+func decodeObject[T any](c *httpx.Ctx, silent bool) (*T, bool, error) {
+	raw, ok, err := requestObject(c, silent)
+	if err != nil || !ok {
+		return nil, ok, err
 	}
-	if boundNonempty(c) {
-		return object{}, &fault{500, "reorder request must be a JSON object"}
-	}
-	return object{}, nil
+	out := new(T)
+	err = jsondecode.Unmarshal(raw, out)
+	return out, true, err
 }
-func load(ctx context.Context, id string) (object, error) {
+
+func load(ctx context.Context, id string) (*model.Config, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return object{}, err
+		return nil, err
 	}
 	id, err = repo.ResolveProfileID(ctx, id)
 	if err != nil {
-		return object{}, err
+		return nil, err
 	}
-	value, err := r.Config(ctx, id, nil)
-	if err != nil {
-		return object{}, err
-	}
-	return native(value)
+	return r.Config(ctx, id, nil)
 }
-func edit(ctx context.Context, id string, fn func(context.Context, *object) error) error {
+func edit(ctx context.Context, id string, fn func(context.Context, *model.Config) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -97,52 +79,100 @@ func edit(ctx context.Context, id string, fn func(context.Context, *object) erro
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		p, err := native(config)
-		if err != nil {
+		if err := fn(tx, config); err != nil {
 			return err
-		}
-		before, err := native(config)
-		if err != nil {
-			return err
-		}
-		if err = fn(tx, &p); err != nil {
-			return err
-		}
-		for _, key := range repo.ProfileFields {
-			raw, present := p.Get(key)
-			previous, _ := before.Get(key)
-			if present && !bytes.Equal(raw, previous) {
-				if err := config.Profile.SetJSON(key, raw); err != nil {
-					return err
-				}
-			}
 		}
 		return tx.Err()
 	})
 }
 
-func healthKind(kind string) bool { return check.IsGroupHealthType(kind) }
-func healthFields() []string      { return shared.HealthFields }
-func initializeHealth(group object) (object, error) {
-	err := check.InitGroupHealth(&group)
+// snapshot is an independent copy of config, unaffected by later edits.
+func snapshot(config *model.Config) (*model.Config, error) {
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return model.DecodeConfig(raw)
+}
+
+// fieldsOf is a stored group as sent members.
+func fieldsOf(group model.ProxyGroup) (groupFields, error) {
+	var out groupFields
+	data, err := model.Marshal(group)
+	if err == nil {
+		err = out.UnmarshalJSON(data)
+	}
+	return out, err
+}
+
+// groupOf reads a group as the stored record does (a member of another
+// type is dropped; the write reports it).
+func groupOf(fields groupFields) (model.ProxyGroup, error) {
+	var group model.ProxyGroup
+	data, err := fields.MarshalJSON()
+	if err == nil {
+		err = json.Unmarshal(data, &group)
+	}
 	return group, err
 }
-func validate(ctx context.Context, group, profile object, original *object) error {
-	g, err := groupRecord(group)
+
+// storeGroups stores groups with groups[index] replaced by (or, at
+// len(groups), extended with) a group as sent. The profile record decodes
+// the sent members strictly, so a member of another type is refused with the
+// repository's message for the resulting list.
+func storeGroups(config *model.Config, groups []model.ProxyGroup, index int, edited groupFields) error {
+	list := make([]json.RawMessage, 0, len(groups)+1)
+	for i, group := range groups {
+		data, err := model.Marshal(group)
+		if i == index {
+			data, err = edited.MarshalJSON()
+		}
+		if err != nil {
+			return err
+		}
+		list = append(list, data)
+	}
+	if index == len(groups) {
+		data, err := edited.MarshalJSON()
+		if err != nil {
+			return err
+		}
+		list = append(list, data)
+	}
+	raw, err := json.Marshal(list)
 	if err != nil {
 		return err
 	}
-	p, err := configView(profile)
+	return config.Profile.SetJSON("proxy_groups", raw)
+}
+
+func healthKind(kind string) bool { return check.IsGroupHealthType(kind) }
+func healthFields() []string      { return shared.HealthFields }
+func initializeHealth(group groupFields) (groupFields, error) {
+	err := check.InitGroupHealth(&group.Fields)
+	return group, err
+}
+
+// validate checks a group as sent against the catalogs and the proposed
+// profile groups; original is the stored group of an update.
+func validate(ctx context.Context, group groupFields, groups []model.ProxyGroup, original *groupFields) error {
+	g, err := groupOf(group)
 	if err != nil {
 		return err
 	}
 	var old *model.ProxyGroup
+	var before *shared.GroupMembers
 	if original != nil {
-		v, err := groupRecord(*original)
+		v, err := groupOf(*original)
 		if err != nil {
 			return err
 		}
 		old = &v
+		members, err := original.members()
+		if err != nil {
+			return err
+		}
+		before = &members
 	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -154,172 +184,111 @@ func validate(ctx context.Context, group, profile object, original *object) erro
 	}
 	// The request's own members are checked: the group record cannot hold a
 	// member of the wrong type (O18 T1c).
-	members := map[string]json.RawMessage{}
-	for key, value := range group.All() {
-		members[key] = value
-	}
-	var before map[string]json.RawMessage
-	if original != nil {
-		before = map[string]json.RawMessage{}
-		for key, value := range original.All() {
-			before[key] = value
-		}
-	}
-	return shared.CheckCandidateMembers(g, members, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: p.Profile.ProxyGroups}, old, before)
-}
-func merge(original, patch object) (object, error) {
-	group, err := groupRecord(original)
+	sent, err := group.members()
 	if err != nil {
-		return object{}, err
+		return err
 	}
-	if _, err := shared.MergeGroup(group, patch); err != nil {
-		return object{}, err
+	return shared.CheckCandidateMembers(g, sent, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: groups}, old, before)
+}
+
+// merge applies a group patch to the stored group; the result keeps the
+// request's values as sent, so validation sees a member of the wrong type
+// before the group record decodes it.
+func merge(original, patch groupFields) (groupFields, error) {
+	group, err := groupOf(original)
+	if err != nil {
+		return groupFields{}, err
 	}
-	// The merged group keeps the request's values as sent, so validation sees
-	// a member of the wrong type before the group record decodes it.
+	if _, err := shared.MergeGroup(group, patch.Fields); err != nil {
+		return groupFields{}, err
+	}
+	var request struct {
+		DeleteFields member[[]string] `json:"delete_fields"`
+	}
+	data, err := patch.MarshalJSON()
+	if err != nil {
+		return groupFields{}, err
+	}
+	_ = jsondecode.Unmarshal(data, &request)
 	merged := original
-	var deletes []string
-	if raw, present := patch.Get("delete_fields"); present {
-		_ = json.Unmarshal(raw, &deletes)
-	}
 	for field, value := range patch.All() {
 		if field != "delete_fields" {
 			if err := merged.Set(field, value); err != nil {
-				return object{}, err
+				return groupFields{}, err
 			}
 		}
 	}
-	for _, field := range deletes {
+	for _, field := range request.DeleteFields.Value {
 		merged.Delete(field)
 	}
 	return merged, nil
 }
-func enabled(o object) bool { return flag(o, "enabled", true) }
-func incoming(profile object, id string) (bool, error) {
-	p, err := configView(profile)
-	if err != nil {
-		return false, err
-	}
-	refs, err := convert.IncomingRefs(p, "group", id)
+func incoming(config *model.Config, id string) (bool, error) {
+	refs, err := convert.IncomingRefs(config, "group", id)
 	return len(refs) > 0, err
 }
-func relink(profile *object, old string, next *string) ([]string, error) {
-	p, err := configView(*profile)
-	if err != nil {
-		return nil, err
-	}
-	changes, err := subs.RelinkListeners(p.Profile, old, next)
-	if err != nil {
-		return nil, err
-	}
-	*profile, err = native(p)
-	return changes, err
+func relink(config *model.Config, old string, next *string) ([]string, error) {
+	return subs.RelinkListeners(config.Profile, old, next)
 }
-func validateHealthURL(body object) error {
-	raw, _ := body.Get("url")
-	if len(raw) == 0 {
+
+// healthURLObject is the health-check object of a batch URL change.
+func healthURLObject(sent member[json.RawMessage]) (json.RawMessage, error) {
+	raw := sent.Raw
+	if raw == nil {
 		raw = json.RawMessage("null")
 	}
-	fields := object{}
-	if err := fields.Set("url", raw); err != nil {
-		return err
-	}
-	encoded, err := json.Marshal(fields)
-	if err != nil {
-		return err
-	}
-	return check.ValidateHealthJSON(encoded, false)
+	return json.Marshal(struct {
+		URL json.RawMessage `json:"url"`
+	}{raw})
 }
-func reorder(groups []object, body object) ([]object, []string, error) {
-	request := map[string]json.RawMessage{}
-	for key, raw := range body.All() {
-		request[key] = raw
-	}
-	ids, err := shared.OrderIDs(request, "groups")
-	if err != nil {
-		return groups, []string{err.Error()}, nil
-	}
-	returnOrder, missing := shared.Reorder(groups, ids, orderPosition(body), func(group object) string { return text(group, "id") })
-	return returnOrder, missing, nil
+func validateHealthURL(health json.RawMessage) error { return check.ValidateHealthJSON(health, false) }
+func missingText(ids []string) string                { return shared.IdentifierList(ids) }
+func validateDialers(config *model.Config) error {
+	return convert.DialerFailure(convert.ConfigDialers(config))
 }
-func missingText(ids []string) string { return shared.IdentifierList(ids) }
-func validateDialers(profile object) error {
-	p, err := configView(profile)
-	if err != nil {
-		return err
-	}
-	return convert.DialerFailure(convert.ConfigDialers(p))
-}
-func profileView(p object) (*oxidns.Profile, error) {
-	raw, err := json.Marshal(p)
+
+// syncFollow re-routes follow-DNS rules whose policy route changed; before
+// is a copy of the profile taken before the edit.
+func syncFollow(ctx context.Context, before, after *model.Config, base string) ([]string, error) {
+	settings, err := after.Profile.OxiDNS.Node()
 	if err != nil {
 		return nil, err
 	}
-	return oxidns.ProfileFromJSON(raw)
-}
-func ruleView(r object) (*oxidns.Node, error) {
-	raw, err := json.Marshal(r)
-	if err != nil {
-		return nil, err
-	}
-	return oxidns.FromJSON(raw)
-}
-func syncFollow(ctx context.Context, before object, after *object, base string) ([]string, error) {
-	settings := objectOf(*after, "oxidns")
-	following, err := value[[]string](settings, "rule_dns_follow")
-	if err != nil || len(following) == 0 {
+	following, ok := oxidns.SettingsStrings(settings, "rule_dns_follow")
+	if !ok || len(following) == 0 {
 		return nil, nil
 	}
-	previous, err := list(before, "rule_configs")
+	catalog, err := sharedCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	current, err := list(*after, "rule_configs")
+	view := func(config *model.Config) (*oxidns.Profile, error) {
+		copy := *config
+		copy.Nodes, copy.Subscriptions, copy.Aggregations, copy.RuleLibrary = catalog.Nodes, catalog.Subscriptions, catalog.Aggregations, catalog.RuleLibrary
+		return oxidns.NewTypedProfile(&copy)
+	}
+	a, err := view(before)
 	if err != nil {
 		return nil, err
 	}
-	shared, err := sharedConfig(ctx)
+	b, err := view(after)
 	if err != nil {
 		return nil, err
 	}
-	old, currentProfile := before, *after
-	for key, raw := range shared.All() {
-		if err = old.Set(key, raw); err != nil {
-			return nil, err
-		}
-		if err = currentProfile.Set(key, raw); err != nil {
-			return nil, err
-		}
-	}
-	a, err := profileView(old)
-	if err != nil {
-		return nil, err
-	}
-	b, err := profileView(currentProfile)
-	if err != nil {
-		return nil, err
-	}
+	native := oxidns.SettingsText(settings, "config_mode") == "native"
 	changed := false
-	for _, row := range current {
-		if !contains(following, text(row, "id")) {
+	for _, row := range after.Profile.RuleConfigs {
+		if !slices.Contains(following, row.ID) {
 			continue
 		}
-		if text(settings, "config_mode") == "native" && (!enabled(row) || !flag(row, "library_enabled", true)) {
+		if native && (!model.Flag(row.Enabled, true) || !model.Flag(row.LibraryEnabled, true)) {
 			continue
 		}
-		i := find(previous, text(row, "id"))
+		i := slices.IndexFunc(before.Profile.RuleConfigs, func(item model.RuleConfig) bool { return item.ID == row.ID })
 		if i < 0 {
 			continue
 		}
-		was, err := ruleView(previous[i])
-		if err != nil {
-			return nil, err
-		}
-		now, err := ruleView(row)
-		if err != nil {
-			return nil, err
-		}
-		if oxidns.FollowRoute(was, a) != oxidns.FollowRoute(now, b) {
+		if oxidns.RuleFollowRoute(before.Profile.RuleConfigs[i], a) != oxidns.RuleFollowRoute(row, b) {
 			changed = true
 			break
 		}
@@ -332,131 +301,43 @@ func syncFollow(ctx context.Context, before object, after *object, base string) 
 		return nil, err
 	}
 	if result.Changed {
-		if err = after.Set("oxidns", oxidns.ToJSON(result.Settings)); err != nil {
+		if err = after.Profile.OxiDNS.SetNode(result.Settings); err != nil {
 			return nil, fmt.Errorf("store followed DNS routes: %w", err)
 		}
 	}
 	return result.Warnings, nil
 }
-func flag(o object, key string, def bool) bool {
-	raw, ok := o.Get(key)
-	if !ok {
-		return def
-	}
-	return shared.EnabledField(raw, def)
+
+// healthDefaults are the probe defaults the editors start from.
+type healthDefaults struct {
+	Group    check.GroupHealth    `json:"group"`
+	Provider check.ProviderHealth `json:"provider"`
 }
 
-func defaults() (struct {
-	Group    object `json:"group"`
-	Provider object `json:"provider"`
-}, error) {
-	out := struct {
-		Group    object `json:"group"`
-		Provider object `json:"provider"`
-	}{}
+func defaults() (healthDefaults, error) {
 	g := check.DefaultGroupHealth()
 	tolerance := int64(50)
 	g.Tolerance = &tolerance
-	var err error
-	out.Group, err = native(g)
-	if err != nil {
-		return out, err
-	}
-	out.Provider, err = native(check.DefaultProviderHealth())
-	return out, err
+	return healthDefaults{Group: g, Provider: check.DefaultProviderHealth()}, nil
 }
 
-func sharedConfig(ctx context.Context) (object, error) {
+func sharedCatalog(ctx context.Context) (*model.Shared, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return object{}, err
-	}
-	value, err := r.Shared(ctx)
-	if err != nil {
-		return object{}, err
-	}
-	return native(value)
-}
-
-func names(o object, key string) ([]string, error) {
-	raw := raw(o, key)
-	if !shared.EnabledField(raw, false) {
-		return nil, nil
-	}
-	var entries []json.RawMessage
-	if json.Unmarshal(raw, &entries) != nil {
-		return nil, bad(msgPreviewSelection)
-	}
-	ids := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		var id *string
-		if json.Unmarshal(entry, &id) == nil && id != nil {
-			ids = append(ids, *id)
-		}
-	}
-	return ids, nil
-}
-func filterSubscription(sub object, nodes []object) ([]object, error) {
-	raw, err := json.Marshal(sub)
-	if err != nil {
 		return nil, err
 	}
-	var source model.Subscription
-	if err := json.Unmarshal(raw, &source); err != nil {
-		return nil, err
-	}
-	// Filtering is name-based; retain the original node records without copying parameters.
-	matcher := subs.CompileFilter(source)
-	out := make([]object, 0, len(nodes))
-	for _, node := range nodes {
-		if matcher == nil || matcher.Search(text(node, "name")) {
-			out = append(out, node)
-		}
-	}
-	return out, nil
-}
-func filterAggregation(nodes []object, pattern string) ([]object, error) {
-	empty := ""
-	return shared.Filter(nodes, &pattern, &empty, func(node object) string { return text(node, "name") })
+	return r.Shared(ctx)
 }
 
-func cachedNodes(ctx context.Context, id string) ([]object, error) {
+func cachedNodes(ctx context.Context, id string) ([]model.Node, error) {
 	cache, err := substore.LoadCache(ctx, id)
-	if err != nil {
+	if err != nil || cache == nil {
 		return nil, err
 	}
-	if cache == nil {
-		return []object{}, nil
-	}
-	out := make([]object, len(cache.Nodes))
-	for i, node := range cache.Nodes {
-		out[i], err = native(node)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
-func readPreviewBody(c *httpx.Ctx) (object, bool, error) {
-	body, ok, err := readBody(c, false)
-	if err != nil {
-		return object{}, false, &fault{500, "invalid JSON request"}
-	}
-	if !ok && !boundNonempty(c) {
-		return object{}, true, nil
-	}
-	return body, ok, nil
+	return cache.Nodes, nil
 }
 
 func boundNonempty(c *httpx.Ctx) bool {
 	var raw json.RawMessage
 	return c.BindSilent(&raw) && shared.EnabledField(raw, false)
-}
-
-func orderPosition(body object) string {
-	if !body.Has("position") {
-		return "top"
-	}
-	return text(body, "position")
 }

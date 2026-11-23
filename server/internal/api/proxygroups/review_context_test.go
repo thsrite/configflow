@@ -1,6 +1,7 @@
 package proxygroups
 
 import (
+	"configflow/internal/model"
 	"context"
 	"errors"
 	"testing"
@@ -15,12 +16,13 @@ func TestReviewTransactionCallbackKeepsOwnerShutdown(t *testing.T) {
 	t.Cleanup(func() { runtime.Shutdown(t.Context()) })
 	ctx := lifecycle.Detach(runtime.BindRequest(app.Context()))
 	before := state(t, app)
-	err := edit(ctx, "default", func(tx context.Context, candidate *object) error {
+	err := edit(ctx, "default", func(tx context.Context, candidate *model.Config) error {
 		runtime.Shutdown(t.Context())
 		if !errors.Is(tx.Err(), context.Canceled) {
 			t.Error("transaction lost owner shutdown", tx.Err())
 		}
-		return set(candidate, "review_should_not_commit", true)
+		candidate.Profile.Description = "review_should_not_commit"
+		return nil
 	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal("callback candidate survived shutdown", err)

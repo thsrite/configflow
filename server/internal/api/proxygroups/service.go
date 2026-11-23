@@ -8,21 +8,28 @@ import (
 	"strings"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	shared "configflow/internal/rules"
 )
 
 // Service owns group writes and their transaction boundary.
 type Service struct{}
 
 // List reads the active profile's stored groups.
-func (s *Service) List(ctx context.Context, id string) ([]object, error) {
-	profile, err := load(ctx, id)
+func (s *Service) List(ctx context.Context, id string) ([]model.ProxyGroup, error) {
+	config, err := load(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return list(profile, "proxy_groups")
+	if config.Profile.ProxyGroups == nil {
+		return []model.ProxyGroup{}, nil
+	}
+	return config.Profile.ProxyGroups, nil
 }
-func clean(group *object) {
-	kind := text(*group, "type")
+
+// clean drops the members the group kind does not keep.
+func clean(group *groupFields) {
+	kind := group.text("type")
 	if !healthKind(kind) {
 		for _, key := range healthFields() {
 			group.Delete(key)
@@ -44,7 +51,8 @@ func clean(group *object) {
 }
 
 // Create validates a complete new group before adding it in one transaction.
-func (s *Service) Create(ctx context.Context, id string, group object, base string) (result, error) {
+func (s *Service) Create(ctx context.Context, id string, sent model.Fields, base string) (result, error) {
+	group := groupFields{sent}
 	ctx = lifecycle.Detach(ctx)
 	out := result{Success: true}
 	if err := ctx.Err(); err != nil {
@@ -59,19 +67,19 @@ func (s *Service) Create(ctx context.Context, id string, group object, base stri
 	if err != nil {
 		return out, err
 	}
-	err = edit(ctx, id, func(ctx context.Context, profile *object) error {
-		before := *profile
-		if err := validate(ctx, group, *profile, nil); err != nil {
-			return err
-		}
-		groups, err := list(*profile, "proxy_groups")
+	err = edit(ctx, id, func(ctx context.Context, config *model.Config) error {
+		before, err := snapshot(config)
 		if err != nil {
 			return err
 		}
-		if err = set(profile, "proxy_groups", append(groups, group)); err != nil {
+		groups := config.Profile.ProxyGroups
+		if err := validate(ctx, group, groups, nil); err != nil {
 			return err
 		}
-		out.Warnings, err = syncFollow(ctx, before, profile, base)
+		if err := storeGroups(config, groups, len(groups), group); err != nil {
+			return err
+		}
+		out.Warnings, err = syncFollow(ctx, before, config, base)
 		return err
 	})
 	out.Data = &group
@@ -79,24 +87,30 @@ func (s *Service) Create(ctx context.Context, id string, group object, base stri
 }
 
 // Mutate edits or deletes a group, including listeners, references and DNS.
-func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, remove bool, base string) (result, error) {
+func (s *Service) Mutate(ctx context.Context, id, groupID string, sent model.Fields, remove bool, base string) (result, error) {
+	patch := groupFields{sent}
 	ctx = lifecycle.Detach(ctx)
 	out := result{Success: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	err := edit(ctx, id, func(ctx context.Context, profile *object) error {
-		before := *profile
-		groups, err := list(*profile, "proxy_groups")
+	err := edit(ctx, id, func(ctx context.Context, config *model.Config) error {
+		before, err := snapshot(config)
 		if err != nil {
 			return err
 		}
+		groups := slices.Clone(config.Profile.ProxyGroups)
 		index := find(groups, groupID)
 		if index < 0 {
 			return absent("Group not found")
 		}
-		original := groups[index]
-		var next object
+		stored := groups[index]
+		original, err := fieldsOf(stored)
+		if err != nil {
+			return err
+		}
+		var next groupFields
+		var group model.ProxyGroup
 		if !remove {
 			if raw, ok := patch.Get("id"); ok {
 				var ident string
@@ -105,12 +119,12 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, 
 				}
 			}
 			baseGroup := original
-			kind := text(patch, "type")
+			kind := patch.text("type")
 			if !patch.Has("type") {
-				kind = text(original, "type")
+				kind = stored.Type
 			}
-			if !healthKind(text(original, "type")) && healthKind(kind) {
-				if err = set(&baseGroup, "type", kind); err != nil {
+			if !healthKind(stored.Type) && healthKind(kind) {
+				if err = baseGroup.set("type", kind); err != nil {
 					return err
 				}
 				baseGroup, err = initializeHealth(baseGroup)
@@ -122,28 +136,27 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, 
 			if err != nil {
 				return err
 			}
-			if err = set(&next, "id", groupID); err != nil {
+			if err = next.set("id", groupID); err != nil {
 				return err
 			}
 			clean(&next)
-			final := *profile
+			if group, err = groupOf(next); err != nil {
+				return err
+			}
 			proposed := slices.Clone(groups)
-			proposed[index] = next
-			if err = set(&final, "proxy_groups", proposed); err != nil {
+			proposed[index] = group
+			if err = validate(ctx, next, proposed, &original); err != nil {
 				return err
 			}
-			if err = validate(ctx, next, final, &original); err != nil {
-				return err
-			}
-			for i, group := range groups {
-				if i != index && text(group, "name") == text(next, "name") {
+			for i, other := range groups {
+				if i != index && other.Name == next.text("name") {
 					return conflict(msgNameExists)
 				}
 			}
 		}
-		removing := remove || !enabled(next)
+		removing := remove || !next.enabled()
 		if removing {
-			used, err := referenced(*profile, groups, original, groupID)
+			used, err := referenced(config, groups, stored, groupID)
 			if err != nil {
 				return err
 			}
@@ -151,57 +164,47 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, 
 				return conflict(msgUsed)
 			}
 		}
-		if removing || text(original, "name") != text(next, "name") {
+		if removing || stored.Name != next.text("name") {
 			var name *string
 			if !removing {
-				value := text(next, "name")
-				name = &value
+				name = new(next.text("name"))
 			}
-			out.ListenerChanges, err = relink(profile, text(original, "name"), name)
+			out.ListenerChanges, err = relink(config, stored.Name, name)
 			if err != nil {
 				return err
 			}
 		}
 		if remove {
-			groups = append(groups[:index:index], groups[index+1:]...)
+			config.Profile.ProxyGroups = slices.Delete(groups, index, index+1)
 		} else {
-			final := *profile
 			proposed := slices.Clone(groups)
-			proposed[index] = next
-			if err = set(&final, "proxy_groups", proposed); err != nil {
-				return err
-			}
-			for _, group := range groups {
-				if text(group, "follow_group") == groupID {
-					copy := group
-					if err = validate(ctx, group, final, &copy); err != nil {
+			proposed[index] = group
+			for _, other := range groups {
+				if model.TextValue(other.FollowGroup) == groupID {
+					fields, err := fieldsOf(other)
+					if err != nil {
+						return err
+					}
+					if err = validate(ctx, fields, proposed, &fields); err != nil {
 						return err
 					}
 				}
 			}
-			if text(original, "name") != text(next, "name") {
-				rules, err := list(*profile, "rule_configs")
-				if err != nil {
-					return err
-				}
+			if stored.Name != next.text("name") {
+				rules := slices.Clone(config.Profile.RuleConfigs)
 				for i := range rules {
-					if text(rules[i], "policy") == text(original, "name") {
-						if err = set(&rules[i], "policy", text(next, "name")); err != nil {
-							return err
-						}
+					if model.TextValue(rules[i].Policy) == stored.Name {
+						rules[i].Policy = new(next.text("name"))
 					}
 				}
-				if err = set(profile, "rule_configs", rules); err != nil {
-					return err
-				}
+				config.Profile.RuleConfigs = rules
 			}
-			groups[index] = next
+			if err := storeGroups(config, groups, index, next); err != nil {
+				return err
+			}
 			out.Data = &next
 		}
-		if err = set(profile, "proxy_groups", groups); err != nil {
-			return err
-		}
-		out.Warnings, err = syncFollow(ctx, before, profile, base)
+		out.Warnings, err = syncFollow(ctx, before, config, base)
 		if err != nil {
 			return err
 		}
@@ -217,14 +220,21 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, patch object, 
 	return out, err
 }
 
+// HealthURLRequest is the body of a batch probe URL change: one URL for the
+// selected groups.
+type HealthURLRequest struct {
+	IDs member[[]string]        `json:"ids"`
+	URL member[json.RawMessage] `json:"url"`
+}
+
 // BatchHealthURL updates only the selected groups' probe URL, atomically.
-func (s *Service) BatchHealthURL(ctx context.Context, id string, body object) ([]object, error) {
+func (s *Service) BatchHealthURL(ctx context.Context, id string, body *HealthURLRequest) ([]model.ProxyGroup, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	ids, err := value[[]string](body, "ids")
-	if err != nil || len(ids) == 0 {
+	ids := body.IDs.Value
+	if !body.IDs.OK || len(ids) == 0 {
 		return nil, bad(msgBatchIDs)
 	}
 	seen := map[string]bool{}
@@ -234,15 +244,20 @@ func (s *Service) BatchHealthURL(ctx context.Context, id string, body object) ([
 		}
 		seen[id] = true
 	}
-	if err = validateHealthURL(body); err != nil {
+	health, err := healthURLObject(body.URL)
+	if err != nil {
 		return nil, err
 	}
-	out := []object{}
-	err = edit(ctx, id, func(_ context.Context, profile *object) error {
-		groups, err := list(*profile, "proxy_groups")
-		if err != nil {
-			return err
-		}
+	if err = validateHealthURL(health); err != nil {
+		return nil, err
+	}
+	var url *string
+	if err := json.Unmarshal(body.URL.Raw, &url); body.URL.Present() && err != nil {
+		return nil, err
+	}
+	out := []model.ProxyGroup{}
+	err = edit(ctx, id, func(_ context.Context, config *model.Config) error {
+		groups := slices.Clone(config.Profile.ProxyGroups)
 		positions := make([]int, len(ids))
 		for i, id := range ids {
 			n := find(groups, id)
@@ -250,81 +265,76 @@ func (s *Service) BatchHealthURL(ctx context.Context, id string, body object) ([
 				return absent(fmt.Sprintf(msgGroupMissing, id))
 			}
 			group := groups[n]
-			if text(group, "follow_group") != "" {
-				return bad(fmt.Sprintf(msgFollowHealth, fallbackName(group)))
+			if model.TextValue(group.FollowGroup) != "" {
+				return bad(fmt.Sprintf(msgFollowHealth, group.Name))
 			}
-			if !healthKind(text(group, "type")) {
-				return bad(fmt.Sprintf(msgNoHealth, fallbackName(group)))
+			if !healthKind(group.Type) {
+				return bad(fmt.Sprintf(msgNoHealth, group.Name))
 			}
 			positions[i] = n
 		}
+		out = out[:0]
 		for _, i := range positions {
-			raw, _ := body.Get("url")
-			if err = groups[i].Set("url", raw); err != nil {
-				return err
-			}
+			groups[i].URL = url
 			out = append(out, groups[i])
 		}
-		return set(profile, "proxy_groups", groups)
+		config.Profile.ProxyGroups = groups
+		return nil
 	})
 	return out, err
 }
 
 // Reorder moves stored groups by ID without accepting response display fields.
-func (s *Service) Reorder(ctx context.Context, id string, body object) ([]string, error) {
+func (s *Service) Reorder(ctx context.Context, id string, body json.RawMessage) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	order := []string{}
-	err := edit(ctx, id, func(_ context.Context, profile *object) error {
-		groups, err := list(*profile, "proxy_groups")
-		if err != nil {
-			return err
-		}
-		groups, missing, err := reorder(groups, body)
-		if err != nil {
-			return err
-		}
+	err := edit(ctx, id, func(_ context.Context, config *model.Config) error {
+		groups, missing := reorder(config.Profile.ProxyGroups, body)
 		if len(missing) > 0 {
 			return absent(fmt.Sprintf(msgOrder, missingText(missing)))
 		}
-		if err = set(profile, "proxy_groups", groups); err != nil {
+		config.Profile.ProxyGroups = groups
+		if err := validateDialers(config); err != nil {
 			return err
 		}
-		if err = validateDialers(*profile); err != nil {
-			return err
-		}
+		order = order[:0]
 		for _, group := range groups {
-			order = append(order, text(group, "id"))
+			order = append(order, group.ID)
 		}
 		return nil
 	})
 	return order, err
 }
 
-func contains(values []string, want string) bool { return slices.Contains(values, want) }
-func referenced(profile object, groups []object, original object, id string) (bool, error) {
-	rows, err := list(profile, "rule_configs")
-	if err != nil {
-		return false, err
+// reorder applies a reorder request; a malformed request is reported as
+// the only missing ID, as before.
+func reorder(groups []model.ProxyGroup, body json.RawMessage) ([]model.ProxyGroup, []string) {
+	if body == nil {
+		body = json.RawMessage("{}")
 	}
-	for _, row := range rows {
-		if enabled(row) && text(row, "policy") == text(original, "name") {
+	request, err := shared.DecodeOrder(body, "groups")
+	if err != nil {
+		return groups, []string{err.Error()}
+	}
+	return shared.Reorder(groups, request.IDs, request.Position, func(group model.ProxyGroup) string { return group.ID })
+}
+
+func referenced(config *model.Config, groups []model.ProxyGroup, original model.ProxyGroup, id string) (bool, error) {
+	for _, row := range config.Profile.RuleConfigs {
+		if model.Flag(row.Enabled, true) && model.TextValue(row.Policy) == original.Name {
 			return true, nil
 		}
 	}
 	for _, group := range groups {
-		if text(group, "id") == id {
+		if group.ID == id {
 			continue
 		}
-		ids, err := value[[]string](group, "include_groups")
-		if err != nil && group.Has("include_groups") {
-			return false, err
-		}
-		if contains(ids, id) || text(group, "follow_group") == id {
+		if group.IncludeGroups != nil && slices.Contains(*group.IncludeGroups, id) || model.TextValue(group.FollowGroup) == id {
 			return true, nil
 		}
 	}
-	return incoming(profile, id)
+	return incoming(config, id)
 }

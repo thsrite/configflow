@@ -1,6 +1,7 @@
 package rulelibrary
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
@@ -151,11 +152,11 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 			return err
 		}},
 		{name: "group-health", write: func(t *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.BatchHealthURL(ctx, "default", recordJSON(t, `{"ids":["group"],"url":"https://probe.example/new"}`))
+			_, err := s.BatchHealthURL(ctx, "default", healthURL(t, `{"ids":["group"],"url":"https://probe.example/new"}`))
 			return err
 		}},
 		{name: "group-reorder", write: func(t *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Reorder(ctx, "default", recordJSON(t, `{"ids":["group"]}`))
+			_, err := s.Reorder(ctx, "default", json.RawMessage(`{"ids":["group"]}`))
 			return err
 		}},
 	}
@@ -374,4 +375,13 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	if err != nil || len(temps) != 0 {
 		t.Fatal("next edit retained stopped stages", temps, err)
 	}
+}
+
+func healthURL(t *testing.T, raw string) *proxygroups.HealthURLRequest {
+	t.Helper()
+	var out proxygroups.HealthURLRequest
+	if err := jsondecode.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatal(err)
+	}
+	return &out
 }

@@ -8,6 +8,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	shared "configflow/internal/rules"
 	"configflow/internal/subs"
@@ -22,23 +23,23 @@ func Register(r *httpx.Router) {
 				out, err := s.List(c.Context(), c.Param("profile_id"))
 				return respond(out, err)
 			}
-			body, ok, err := readBody(c, false)
+			body, ok, err := readGroup(c)
 			if err != nil {
 				return nil, err
 			}
 			if !ok {
 				return respond(nil, bad(msgObject))
 			}
-			out, err := s.Create(c.Context(), c.Param("profile_id"), body, strings.TrimRight(c.URLRoot(), "/"))
+			out, err := s.Create(c.Context(), c.Param("profile_id"), body.Fields, strings.TrimRight(c.URLRoot(), "/"))
 			return respond(out, err)
 		}))
 	}
 	r.Handle([]string{"PUT", "DELETE"}, "/api/proxy-groups/<group_id>", "proxy_groups.handle_proxy_group", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		var body object
+		var body groupFields
 		if c.Method() == "PUT" {
 			var ok bool
 			var err error
-			body, ok, err = readBody(c, false)
+			body, ok, err = readGroup(c)
 			if err != nil {
 				return nil, err
 			}
@@ -46,11 +47,11 @@ func Register(r *httpx.Router) {
 				return respond(nil, bad(msgObject))
 			}
 		}
-		out, err := s.Mutate(c.Context(), "", c.Param("group_id"), body, c.Method() == "DELETE", strings.TrimRight(c.URLRoot(), "/"))
+		out, err := s.Mutate(c.Context(), "", c.Param("group_id"), body.Fields, c.Method() == "DELETE", strings.TrimRight(c.URLRoot(), "/"))
 		return respond(out, err)
 	}))
 	r.PUT("/api/proxy-groups/batch-health-url", "proxy_groups.update_batch_health_url", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readBody(c, true)
+		body, ok, err := decodeObject[HealthURLRequest](c, true)
 		if err != nil {
 			return nil, err
 		}
@@ -59,15 +60,18 @@ func Register(r *httpx.Router) {
 		}
 		out, err := s.BatchHealthURL(c.Context(), "", body)
 		return respond(struct {
-			Success bool     `json:"success"`
-			Data    []object `json:"data"`
+			Success bool               `json:"success"`
+			Data    []model.ProxyGroup `json:"data"`
 		}{true, out}, err)
 	}))
 	r.GET("/api/proxy-groups/health-defaults", "proxy_groups.health_defaults", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { out, err := defaults(); return respond(out, err) }))
 	r.POST("/api/proxy-groups/reorder", "proxy_groups.reorder_proxy_groups", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := readReorderBody(c)
+		body, ok, err := requestObject(c, false)
 		if err != nil {
 			return nil, err
+		}
+		if !ok && boundNonempty(c) {
+			return nil, &fault{500, "reorder request must be a JSON object"}
 		}
 		out, err := s.Reorder(c.Context(), "", body)
 		return respond(struct {
@@ -76,9 +80,12 @@ func Register(r *httpx.Router) {
 		}{true, out}, err)
 	}))
 	r.POST("/api/proxy-groups/preview-regex", "proxy_groups.preview_proxy_group_regex", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readPreviewBody(c)
+		body, ok, err := decodeObject[previewRequest](c, false)
 		if err != nil {
-			return nil, err
+			return nil, &fault{500, "invalid JSON request"}
+		}
+		if !ok && !boundNonempty(c) {
+			body, ok = &previewRequest{}, true
 		}
 		if !ok {
 			return respond(nil, bad(msgPreviewObject))

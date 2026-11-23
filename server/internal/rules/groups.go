@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
 	"encoding/json"
@@ -287,59 +288,42 @@ func RenderGroup(group model.ProxyGroup, catalog GroupCatalog) RenderedMembers {
 	}
 	return result
 }
-func recordMembers[T any](value T) map[string]json.RawMessage {
-	data, _ := model.Marshal(value)
-	var result map[string]json.RawMessage
-	_ = json.Unmarshal(data, &result)
-	return result
-}
-func equalMembers(a, b map[string]json.RawMessage, fields []string) bool {
-	for _, field := range fields {
-		left, right := a[field], b[field]
-		if string(left) == "null" {
-			left = nil
-		}
-		if string(right) == "null" {
-			right = nil
-		}
-		if !bytes.Equal(left, right) {
-			return false
-		}
-	}
-	return true
-}
 
 // CheckFilters validates edited filter types, grandfathering only unchanged
-// stored values. Raw evidence is inspected without converting to dynamic values.
+// stored values.
 func CheckFilters(group model.ProxyGroup, original *model.ProxyGroup) error {
-	var before map[string]json.RawMessage
+	var before *GroupMembers
 	if original != nil {
-		before = recordMembers(*original)
+		before = new(GroupMembersOf(*original))
 	}
-	return CheckFilterMembers(recordMembers(group), before)
+	return CheckFilterMembers(GroupMembersOf(group), before)
 }
 
-// CheckFilterMembers is CheckFilters on a group's members as JSON. Requests
-// pass their own members: a plain group record cannot hold a filter of the
-// wrong type (O18 T1c), so the request is checked before it is decoded.
-// before are the stored group's members (nil for a new group): an unchanged
-// stored value is grandfathered.
-func CheckFilterMembers(members, before map[string]json.RawMessage) error {
-	for _, field := range FilterFields {
-		raw := members[field]
-		if len(raw) == 0 || string(raw) == "null" {
+// CheckFilterMembers is CheckFilters on a group's members as sent. before are
+// the stored group's members (nil for a new group): an unchanged stored value
+// is grandfathered.
+func CheckFilterMembers(sent GroupMembers, before *GroupMembers) error {
+	var stored []struct {
+		name string
+		sent jsondecode.Member[string]
+	}
+	if before != nil {
+		stored = before.filters()
+	}
+	for i, field := range sent.filters() {
+		if field.sent.Null() {
 			continue
 		}
-		var value string
-		if json.Unmarshal(raw, &value) != nil {
-			if before == nil || len(before[field]) == 0 || !bytes.Equal(before[field], raw) {
-				return candidateError(msgFilterType, field)
+		if !field.sent.OK {
+			if stored == nil || !stored[i].sent.Present() || !bytes.Equal(stored[i].sent.Raw, field.sent.Raw) {
+				return candidateError(msgFilterType, field.name)
 			}
 			continue
 		}
-		if (field == "exclude_regex" || field == "aggregation_exclude_regex") && strings.TrimSpace(value) != "" {
+		value := field.sent.Value
+		if (field.name == "exclude_regex" || field.name == "aggregation_exclude_regex") && strings.TrimSpace(value) != "" {
 			if _, err := CompilePyRegex(strings.TrimSpace(value), false); IsPyRegexError(err) {
-				return candidateError(msgFilterExpression, field)
+				return candidateError(msgFilterExpression, field.name)
 			}
 		}
 	}
@@ -562,34 +546,31 @@ func nodeText(node *yamlx.Node) string {
 // CheckCandidates validates the final merged group under the write owner's
 // transaction. Malformed source arrays cannot gain validity through R5 fallback.
 func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *model.ProxyGroup) error {
-	var before map[string]json.RawMessage
+	var before *GroupMembers
 	if original != nil {
-		before = recordMembers(*original)
+		before = new(GroupMembersOf(*original))
 	}
-	return CheckCandidateMembers(group, recordMembers(group), catalog, original, before)
+	return CheckCandidateMembers(group, GroupMembersOf(group), catalog, original, before)
 }
 
-// CheckCandidateMembers is CheckCandidates with the group's members as JSON
-// (a request's own members; see CheckFilterMembers).
-func CheckCandidateMembers(group model.ProxyGroup, members map[string]json.RawMessage, catalog GroupCatalog, original *model.ProxyGroup, before map[string]json.RawMessage) error {
+// CheckCandidateMembers is CheckCandidates with the group's members as sent
+// (see CheckFilterMembers).
+func CheckCandidateMembers(group model.ProxyGroup, sent GroupMembers, catalog GroupCatalog, original *model.ProxyGroup, before *GroupMembers) error {
 	if group.Type == "chain" {
 		return nil
 	}
-	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies", "proxies_order"} {
-		if raw, present := members[field]; present {
-			var list []json.RawMessage
-			if string(raw) == "null" || json.Unmarshal(raw, &list) != nil {
-				return candidateError(msgSourceArray, field)
-			}
+	for _, field := range sent.candidateLists() {
+		if field.sent.Present() && !field.sent.OK {
+			return candidateError(msgSourceArray, field.name)
 		}
 	}
-	if raw := members["follow_group"]; len(raw) > 0 && string(raw) != "null" {
-		var text string
-		if json.Unmarshal(raw, &text) != nil {
-			return candidateError(msgFollowID)
-		}
+	if sent.ProxiesOrder.Present() && !sent.ProxiesOrder.OK {
+		return candidateError(msgSourceArray, "proxies_order")
 	}
-	if err := CheckFilterMembers(members, before); err != nil {
+	if !sent.FollowGroup.Null() && !sent.FollowGroup.OK {
+		return candidateError(msgFollowID)
+	}
+	if err := CheckFilterMembers(sent, before); err != nil {
 		return err
 	}
 	source := group
@@ -610,22 +591,21 @@ func CheckCandidateMembers(group model.ProxyGroup, members map[string]json.RawMe
 	selection := SelectMembers(source)
 	// The request's own members when the group is its own source: the plain
 	// record already dropped what Python's shape checks refuse (O18 T1c).
-	sourceMembers := members
+	sourceMembers := sent
 	if follow != "" {
-		sourceMembers = recordMembers(source)
+		sourceMembers = GroupMembersOf(source)
 	}
 	// Requests require string IDs even when a stored codec can read number text.
-	for _, field := range []string{"manual_nodes", "subscriptions", "aggregations", "include_groups", "proxies"} {
-		if raw, present := sourceMembers[field]; present {
-			var entries []json.RawMessage
-			if string(raw) == "null" || json.Unmarshal(raw, &entries) != nil {
-				return candidateError(msgCandidateIDs)
-			}
-			for _, entry := range entries {
-				var text string
-				if string(entry) == "null" || json.Unmarshal(entry, &text) != nil {
-					return candidateError(msgCandidateResource)
-				}
+	for _, field := range sourceMembers.candidateLists() {
+		if !field.sent.Present() {
+			continue
+		}
+		if !field.sent.OK {
+			return candidateError(msgCandidateIDs)
+		}
+		for _, entry := range field.sent.Value {
+			if !entry.OK {
+				return candidateError(msgCandidateResource)
 			}
 		}
 	}
@@ -657,18 +637,15 @@ func CheckCandidateMembers(group model.ProxyGroup, members map[string]json.RawMe
 			}
 		}
 	}
-	if raw, present := sourceMembers["proxies_order"]; present {
-		var entries []json.RawMessage
-		if string(raw) == "null" || json.Unmarshal(raw, &entries) != nil {
+	if order := sourceMembers.ProxiesOrder; order.Present() {
+		if !order.OK {
 			return candidateError(msgGroupOrderArray)
 		}
-		for _, entry := range entries {
-			var members map[string]json.RawMessage
-			if json.Unmarshal(entry, &members) != nil || len(members) != 2 || members["type"] == nil || members["id"] == nil {
+		for _, entry := range order.Value {
+			if !entry.Object || entry.Members != 2 || !entry.Type.Present() || !entry.ID.Present() {
 				return candidateError(msgOrderPair)
 			}
-			var kind, id string
-			if string(members["type"]) == "null" || string(members["id"]) == "null" || json.Unmarshal(members["type"], &kind) != nil || json.Unmarshal(members["id"], &id) != nil {
+			if !entry.Type.OK || !entry.ID.OK {
 				return candidateError(msgOrderSource)
 			}
 		}
@@ -700,7 +677,7 @@ func CheckCandidateMembers(group model.ProxyGroup, members map[string]json.RawMe
 	}
 	rendered := RenderGroup(source, catalog)
 	if len(rendered.Proxies)+len(rendered.Use) == 0 {
-		if original != nil && equalMembers(recordMembers(*original), members, SourceFields) && follow == "" {
+		if original != nil && sameSources(GroupMembersOf(*original), sent) && follow == "" {
 			old := RenderGroup(*original, catalog)
 			if len(old.Proxies)+len(old.Use) == 0 {
 				return nil
@@ -711,42 +688,31 @@ func CheckCandidateMembers(group model.ProxyGroup, members map[string]json.RawMe
 	return nil
 }
 
-// MergeGroup applies a raw request patch while preserving untouched field order
-// and explicit health-field deletion. Core membership remains typed.
+// MergeGroup applies a request patch (members as sent) to a stored group:
+// the patch's filters and delete_fields are checked, then its members replace
+// the stored ones and the deleted health fields are removed.
 func MergeGroup(original model.ProxyGroup, patch model.Fields) (model.ProxyGroup, error) {
 	var zero model.ProxyGroup
 	data, err := patch.MarshalJSON()
 	if err != nil {
 		return zero, err
 	}
-	var requested model.ProxyGroup
-	if err := json.Unmarshal(data, &requested); err != nil {
+	sent, err := DecodeGroupMembers(data)
+	if err != nil {
 		return zero, err
 	}
-	patchMembers := map[string]json.RawMessage{}
-	for field, value := range patch.All() {
-		patchMembers[field] = value
-	}
-	if err := CheckFilterMembers(patchMembers, nil); err != nil {
+	if err := CheckFilterMembers(sent, nil); err != nil {
 		return zero, err
 	}
-	var deletes []string
-	if raw, present := patch.Get("delete_fields"); present {
-		if string(raw) == "null" || json.Unmarshal(raw, &deletes) != nil {
-			return zero, candidateError(msgDeleteFields)
-		}
+	var request struct {
+		DeleteFields jsondecode.Member[[]string] `json:"delete_fields"`
 	}
-	seen := map[string]bool{}
-	for _, field := range deletes {
-		if !slices.Contains(HealthFields, field) || seen[field] {
-			return zero, candidateError(msgDeleteFields)
-		}
-		seen[field] = true
+	if err := jsondecode.Unmarshal(data, &request); err != nil {
+		return zero, err
 	}
-	for _, field := range deletes {
-		if _, present := patch.Get(field); present {
-			return zero, candidateError(msgAssignDelete)
-		}
+	deletes, err := DeleteFields(request.DeleteFields, patch.Has)
+	if err != nil {
+		return zero, err
 	}
 	data, err = model.Marshal(original)
 	if err != nil {

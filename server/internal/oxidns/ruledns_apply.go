@@ -23,6 +23,22 @@ func Convertible(item *Node) bool { return convertible(item) }
 // RuleConvertible is Convertible for a stored rule.
 func RuleConvertible(item model.RuleConfig) bool { return convertible(ruleNode(item)) }
 
+// RuleFollowRoute is FollowRoute for a stored rule.
+func RuleFollowRoute(item model.RuleConfig, p *Profile) string { return FollowRoute(ruleNode(item), p) }
+
+// SettingsStrings returns a member of settings that is a list of text values.
+func SettingsStrings(settings *Node, key string) ([]string, bool) {
+	value := get(settings, key)
+	if !allStrings(value) {
+		return nil, false
+	}
+	out := make([]string, len(value.Content))
+	for i, item := range value.Content {
+		out[i] = item.Value
+	}
+	return out, true
+}
+
 // SettingsText returns a text member of settings, "" for anything else.
 func SettingsText(settings *Node, key string) string { return str(get(settings, key)) }
 
