@@ -11,14 +11,14 @@ import (
 
 // newlyExcludedOxiDNSUpstreams lists the same-host OxiDNS upstreams that the
 // previous Mihomo TUN hijacked and the current one now routes around.
-func newlyExcludedOxiDNSUpstreams(current, previous, oxidns map[string]interface{}) []netip.Addr {
-	tun, _ := current["tun"].(map[string]interface{})
-	before, _ := previous["tun"].(map[string]interface{})
+func newlyExcludedOxiDNSUpstreams(current, previous, oxidns map[string]any) []netip.Addr {
+	tun, _ := current["tun"].(map[string]any)
+	before, _ := previous["tun"].(map[string]any)
 	if tun["enable"] != true || before["enable"] != true {
 		return nil
 	}
-	excluded, _ := tun["route-exclude-address"].([]interface{})
-	excludedBefore, _ := before["route-exclude-address"].([]interface{})
+	excluded, _ := tun["route-exclude-address"].([]any)
+	excludedBefore, _ := before["route-exclude-address"].([]any)
 	var result []netip.Addr
 	for _, address := range preflight.TUNHijackedOxiDNSUpstreams(oxidns, before) {
 		if preflight.PrefixesCover(excluded, address) && !preflight.PrefixesCover(excludedBefore, address) {
@@ -39,7 +39,7 @@ func refreshAIOPeerUpstreams(cfg *Config, previous []byte) {
 	if dnsPeerService(cfg) != "oxidns" {
 		return
 	}
-	var before, current map[string]interface{}
+	var before, current map[string]any
 	if yaml.Unmarshal(previous, &before) != nil {
 		return
 	}
@@ -51,7 +51,7 @@ func refreshAIOPeerUpstreams(cfg *Config, previous []byte) {
 	if peer == nil {
 		return
 	}
-	var oxidns map[string]interface{}
+	var oxidns map[string]any
 	if yaml.Unmarshal(peer.Content, &oxidns) != nil {
 		return
 	}

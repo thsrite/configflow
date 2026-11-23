@@ -43,7 +43,7 @@ func TestMosDNSPluginFailureLocations(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stage, manifest := diagnosticFixture(t, test.content)
-			var doc map[string]interface{}
+			var doc map[string]any
 			if err := yaml.Unmarshal([]byte(test.content), &doc); err != nil {
 				t.Fatal(err)
 			}
@@ -59,7 +59,7 @@ func TestOxiDNSPluginFailureLocations(t *testing.T) {
 		"plugins:\n  - tag: grok\n    type: domain_set\n    args:\n      persistent:\n        files:\n          - rules/grok.txt\n",
 	} {
 		stage, manifest := diagnosticFixture(t, content)
-		var doc map[string]interface{}
+		var doc map[string]any
 		if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 			t.Fatal(err)
 		}

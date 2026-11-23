@@ -38,16 +38,16 @@ type LinuxGatewaySpec struct {
 }
 
 type gatewayState struct {
-	Version   int                      `json:"version"`
-	Token     string                   `json:"token"`
-	Active    bool                     `json:"active"`
-	Pending   bool                     `json:"pending"`
-	Spec      LinuxGatewaySpec         `json:"spec"`
-	Original  map[string]string        `json:"original_sysctls"`
-	NFT       []map[string]interface{} `json:"nft"`
-	AppliedAt string                   `json:"applied_at"`
-	ProfileID string                   `json:"profile_id"`
-	TunDevice string                   `json:"tun_device"`
+	Version   int               `json:"version"`
+	Token     string            `json:"token"`
+	Active    bool              `json:"active"`
+	Pending   bool              `json:"pending"`
+	Spec      LinuxGatewaySpec  `json:"spec"`
+	Original  map[string]string `json:"original_sysctls"`
+	NFT       []map[string]any  `json:"nft"`
+	AppliedAt string            `json:"applied_at"`
+	ProfileID string            `json:"profile_id"`
+	TunDevice string            `json:"tun_device"`
 }
 
 type gatewayInterface struct {
@@ -257,16 +257,16 @@ func checkGatewayNetwork(spec LinuxGatewaySpec, detection gatewayDetection) erro
 	return gatewayNotReady{fmt.Errorf("address/lan_cidr 与所选网卡实际 IPv4 地址或掩码不一致或尚未就绪；本功能不会修改网卡 IP")}
 }
 
-func gatewayConfigEnabled(cfg *Config) (bool, map[string]interface{}, error) {
+func gatewayConfigEnabled(cfg *Config) (bool, map[string]any, error) {
 	data, err := os.ReadFile(cfg.ConfigPath)
 	if err != nil {
 		return false, nil, fmt.Errorf("无法读取已部署 Mihomo 配置：%w", err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return false, nil, err
 	}
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]any)
 	enabled, _ := marker["enabled"].(bool)
 	version, _ := yamlUint(marker["version"])
 	return enabled && version == 1, doc, nil
@@ -286,17 +286,17 @@ func checkGatewayConfig(cfg *Config, spec LinuxGatewaySpec, profileID string) er
 	if doc["mode"] != "rule" {
 		return fmt.Errorf("已部署 Mihomo 必须使用 mode: rule，避免全局或直连模式改变规则选择")
 	}
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]any)
 	if profileID == "" || marker["profile_id"] != profileID {
 		return fmt.Errorf("已部署网关配置不属于当前配置空间；请重新发布当前空间的 Mihomo 配置")
 	}
-	tun, _ := doc["tun"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]any)
 	for _, key := range []string{"include-interface", "exclude-interface", "include-uid", "include-uid-range", "exclude-uid", "exclude-uid-range", "include-mac-address", "exclude-mac-address", "include-android-user", "include-package", "exclude-package"} {
 		value := tun[key]
 		if value == nil {
 			continue
 		}
-		if entries, ok := value.([]interface{}); ok && len(entries) == 0 {
+		if entries, ok := value.([]any); ok && len(entries) == 0 {
 			continue
 		}
 		return fmt.Errorf("已部署 tun.%s 保留旧流量过滤，可能绕过网关接管；请移除后重新发布", key)
@@ -306,7 +306,7 @@ func checkGatewayConfig(cfg *Config, spec LinuxGatewaySpec, profileID string) er
 			return fmt.Errorf("已部署配置 tun.%s 必须为 true", key)
 		}
 	}
-	excluded, _ := tun["route-exclude-address"].([]interface{})
+	excluded, _ := tun["route-exclude-address"].([]any)
 	protectedDNS := false
 	for _, value := range excluded {
 		if value == spec.Address+"/32" {
@@ -316,7 +316,7 @@ func checkGatewayConfig(cfg *Config, spec LinuxGatewaySpec, profileID string) er
 	if !protectedDNS {
 		return fmt.Errorf("已部署配置尚未排除网关自身 DNS 地址，Mihomo 可能绕过 OxiDNS；请更新 Agent 并重新发布 Mihomo 配置")
 	}
-	dns, _ := doc["dns"].(map[string]interface{})
+	dns, _ := doc["dns"].(map[string]any)
 	if dns["enable"] != true || dns["enhanced-mode"] != "fake-ip" {
 		return fmt.Errorf("已部署 Mihomo DNS 必须启用 fake-ip")
 	}
@@ -334,17 +334,17 @@ func checkGatewayConfig(cfg *Config, spec LinuxGatewaySpec, profileID string) er
 	if fake.Contains(lan.IP) || lan.Contains(fake.IP) {
 		return fmt.Errorf("fake-IP 网段不能与 LAN 网段重叠")
 	}
-	providers, _ := doc["rule-providers"].(map[string]interface{})
-	refs, _ := tun["route-address-set"].([]interface{})
+	providers, _ := doc["rule-providers"].(map[string]any)
+	refs, _ := tun["route-address-set"].([]any)
 	foundFake := false
 	for _, value := range refs {
 		name, ok := value.(string)
-		provider, present := providers[name].(map[string]interface{})
+		provider, present := providers[name].(map[string]any)
 		if !ok || !strings.HasPrefix(name, "cf_gateway_") || !present || provider["behavior"] != "ipcidr" {
 			return fmt.Errorf("route-address-set 必须只引用已生成的 cf_gateway_ IP 规则集")
 		}
 		if name == "cf_gateway_fake_ip" {
-			payload, _ := provider["payload"].([]interface{})
+			payload, _ := provider["payload"].([]any)
 			if len(payload) != 1 || payload[0] != fake.String() {
 				return fmt.Errorf("自动 fake-IP 规则集与 DNS fake-ip-range 不一致")
 			}
@@ -361,8 +361,8 @@ func gatewayCommands(spec LinuxGatewaySpec) []string {
 	return []string{"检查已部署 Mihomo 网关配置、网卡和默认路由；保留主机现有 IP 和默认路由", "保存原值并设置 net.ipv4.ip_forward=1", "保存原值并设置 net.ipv4.conf.all.send_redirects=0、net.ipv4.conf.default.send_redirects=0、net.ipv4.conf." + spec.Interface + ".send_redirects=0", "在独立 nftables 表 ip " + gatewayTable + " 中允许 LAN 转发，并将经 " + spec.Interface + " 转发的 " + spec.LANCIDR + " 出网流量 SNAT 为 " + spec.Address, "保存归属 journal；Agent 重启后恢复，撤销时只清理未被外部修改的受管资源"}
 }
 
-func gatewayManaged(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"active": false, "healthy": false, "preserves_forwarding": aioForwardingConfigManaged()}
+func gatewayManaged(cfg *Config) map[string]any {
+	result := map[string]any{"active": false, "healthy": false, "preserves_forwarding": aioForwardingConfigManaged()}
 	state, err := loadGatewayState(cfg)
 	if err != nil {
 		result["error"] = err.Error()
@@ -387,7 +387,7 @@ func gatewayManaged(cfg *Config) map[string]interface{} {
 	return result
 }
 
-func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) map[string]interface{} {
+func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) map[string]any {
 	blockers := []string{}
 	add := func(err error) {
 		if err != nil {
@@ -430,11 +430,11 @@ func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) map[st
 	}
 	if len(blockers) == 0 && state == nil {
 		planned := &gatewayState{Token: strings.Repeat("0", 32), Spec: spec}
-		commands := []map[string]interface{}{}
+		commands := []map[string]any{}
 		for _, object := range gatewayDesiredNFT(planned) {
-			commands = append(commands, map[string]interface{}{"add": object})
+			commands = append(commands, map[string]any{"add": object})
 		}
-		data, err := json.Marshal(map[string]interface{}{"nftables": commands})
+		data, err := json.Marshal(map[string]any{"nftables": commands})
 		if err == nil {
 			_, err = gatewayRunInput(string(data), "nft", "-c", "-j", "-f", "-")
 		}
@@ -446,7 +446,7 @@ func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) map[st
 	if validErr == nil {
 		commands = gatewayCommands(spec)
 	}
-	return map[string]interface{}{"success": true, "ready": len(blockers) == 0, "spec": spec, "blockers": blockers, "warnings": []string{"仅处理 IPv4；客户端 IPv6、DoH 和未选中的真实 IP 不会自动代理。", "先发布 Mihomo 和 OxiDNS，再应用网关，最后只切换一台客户端的网关与 DNS 进行验证。", "只恢复独立受管网络资源；自定义防火墙或策略路由需要先核对。"}, "commands": commands, "detection": detection, "managed": gatewayManaged(cfg)}
+	return map[string]any{"success": true, "ready": len(blockers) == 0, "spec": spec, "blockers": blockers, "warnings": []string{"仅处理 IPv4；客户端 IPv6、DoH 和未选中的真实 IP 不会自动代理。", "先发布 Mihomo 和 OxiDNS，再应用网关，最后只切换一台客户端的网关与 DNS 进行验证。", "只恢复独立受管网络资源；自定义防火墙或策略路由需要先核对。"}, "commands": commands, "detection": detection, "managed": gatewayManaged(cfg)}
 }
 
 func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
@@ -473,7 +473,7 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 		if action == "status" {
 			detection, err := detectGatewayNetwork()
 			enabled, _, configErr := gatewayConfigEnabled(cfg)
-			result := map[string]interface{}{"success": true, "supported": gatewayPlatform(cfg) == nil, "enabled_in_config": enabled, "detection": detection, "managed": gatewayManaged(cfg)}
+			result := map[string]any{"success": true, "supported": gatewayPlatform(cfg) == nil, "enabled_in_config": enabled, "detection": detection, "managed": gatewayManaged(cfg)}
 			if err != nil {
 				result["detection_error"] = err.Error()
 			}
@@ -500,11 +500,11 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&request); err != nil {
-				JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "网关参数无效：" + err.Error()})
+				JsonResponse(w, 400, map[string]any{"success": false, "message": "网关参数无效：" + err.Error()})
 				return
 			}
-			if err := decoder.Decode(new(interface{})); err != io.EOF {
-				JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "请求只能包含一个 JSON 对象"})
+			if err := decoder.Decode(new(any)); err != io.EOF {
+				JsonResponse(w, 400, map[string]any{"success": false, "message": "请求只能包含一个 JSON 对象"})
 				return
 			}
 		}
@@ -514,7 +514,7 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 		}
 		release, err := AcquireServiceOperation(cfg)
 		if err != nil {
-			JsonResponse(w, 409, map[string]interface{}{"success": false, "message": err.Error()})
+			JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error()})
 			return
 		}
 		defer release()
@@ -524,10 +524,10 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 			err = removeLinuxGateway(cfg)
 		}
 		if err != nil {
-			JsonResponse(w, 409, map[string]interface{}{"success": false, "message": err.Error(), "managed": gatewayManaged(cfg)})
+			JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error(), "managed": gatewayManaged(cfg)})
 			return
 		}
-		JsonResponse(w, 200, map[string]interface{}{"success": true, "message": map[string]string{"apply": "网关转发已配置；请按引导验证一台客户端", "remove": "受管网关配置已撤销；请恢复客户端原来的网关和 DNS 设置"}[action], "managed": gatewayManaged(cfg)})
+		JsonResponse(w, 200, map[string]any{"success": true, "message": map[string]string{"apply": "网关转发已配置；请按引导验证一台客户端", "remove": "受管网关配置已撤销；请恢复客户端原来的网关和 DNS 设置"}[action], "managed": gatewayManaged(cfg)})
 	}
 }
 
@@ -541,26 +541,26 @@ func linuxGatewayForwarding(cfg *Config, w http.ResponseWriter, r *http.Request)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(&request)
 	if err == nil {
-		if err := decoder.Decode(new(interface{})); err != io.EOF {
-			JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "请求只能包含一个 JSON 对象"})
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			JsonResponse(w, 400, map[string]any{"success": false, "message": "请求只能包含一个 JSON 对象"})
 			return
 		}
 	} else if err != io.EOF {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "转发参数无效：" + err.Error()})
+		JsonResponse(w, 400, map[string]any{"success": false, "message": "转发参数无效：" + err.Error()})
 		return
 	}
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, 409, map[string]interface{}{"success": false, "message": err.Error(), "ipv4_forwarding": aioForwardingStatus(cfg)})
+		JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error(), "ipv4_forwarding": aioForwardingStatus(cfg)})
 		return
 	}
 	defer release()
 	result, err := persistAIOForwarding(cfg, request.PrepareTUN)
 	if err != nil {
-		JsonResponse(w, 409, map[string]interface{}{"success": false, "message": err.Error(), "ipv4_forwarding": aioForwardingStatus(cfg)})
+		JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error(), "ipv4_forwarding": aioForwardingStatus(cfg)})
 		return
 	}
-	JsonResponse(w, 200, map[string]interface{}{"success": true, "message": "IPv4 转发已开启并持久化", "ipv4_forwarding": aioForwardingStatus(cfg), "tun_prepare": result["tun_prepare"], "managed": gatewayManaged(cfg)})
+	JsonResponse(w, 200, map[string]any{"success": true, "message": "IPv4 转发已开启并持久化", "ipv4_forwarding": aioForwardingStatus(cfg), "tun_prepare": result["tun_prepare"], "managed": gatewayManaged(cfg)})
 }
 
 // gatewayNotReady marks only transient host readiness failures. Ownership,

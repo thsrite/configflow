@@ -15,7 +15,7 @@ import (
 // and rule-sync refreshes rewrite them without a new publication, so checks
 // for edits made outside ConfigFlow must not treat their new bytes as drift.
 func refreshableRuleFiles(config []byte, manifest *DeploymentManifest) map[string]bool {
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(config, &doc) != nil {
 		return nil
 	}
@@ -29,16 +29,16 @@ func refreshableRuleFiles(config []byte, manifest *DeploymentManifest) map[strin
 			targets[clean] = true
 		}
 	}
-	plugins, _ := doc["plugins"].([]interface{})
+	plugins, _ := doc["plugins"].([]any)
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		if plugin["type"] != "download" {
 			continue
 		}
-		args, _ := plugin["args"].(map[string]interface{})
-		downloads, _ := args["downloads"].([]interface{})
+		args, _ := plugin["args"].(map[string]any)
+		downloads, _ := args["downloads"].([]any)
 		for _, entry := range downloads {
-			download, _ := entry.(map[string]interface{})
+			download, _ := entry.(map[string]any)
 			dir, _ := download["dir"].(string)
 			name, _ := download["filename"].(string)
 			if name != "" {
@@ -46,9 +46,9 @@ func refreshableRuleFiles(config []byte, manifest *DeploymentManifest) map[strin
 			}
 		}
 	}
-	providers, _ := doc["rule-providers"].(map[string]interface{})
+	providers, _ := doc["rule-providers"].(map[string]any)
 	for _, item := range providers {
-		provider, _ := item.(map[string]interface{})
+		provider, _ := item.(map[string]any)
 		if provider["type"] == "http" {
 			value, _ := provider["path"].(string)
 			add(value)

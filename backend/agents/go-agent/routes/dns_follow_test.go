@@ -84,7 +84,7 @@ func TestDNSFollowListenerUsesConfirmedLiveDNSListen(t *testing.T) {
 	cfg.Token = "private-agent-token"
 	confirmedDNSFixture(t, cfg, "secret: PRIVATE_CONTROLLER_TOKEN\ndns: {enable: true, listen: '[::1]:7874'}\ntun: {dns-hijack: ['any:53', 'tcp://any:5353']}\n", nil)
 	w := callDNSRoute(t, cfg, "/api/dns/listener?deployment_id=dns-source", cfg.Token)
-	var summary map[string]interface{}
+	var summary map[string]any
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &summary) != nil || summary["success"] != true ||
 		summary["agent_id"] != cfg.AgentID || summary["deployment_id"] != "dns-source" ||
 		summary["enabled"] != true || summary["listen"] != "[::1]:7874" || summary["host"] != "::1" || summary["port"] != float64(7874) {

@@ -44,13 +44,13 @@ type DeploymentFile struct {
 	Role   string `json:"role"`
 }
 type DeploymentManifest struct {
-	ProtocolVersion int         `json:"protocol_version"`
-	DeploymentID    string      `json:"deployment_id"`
-	AgentID         string      `json:"agent_id"`
-	ProfileID       interface{} `json:"profile_id"`
-	ServiceType     string      `json:"service_type"`
-	ConfigPath      string      `json:"config_path"`
-	FinalConfig     bool        `json:"final_config,omitempty"`
+	ProtocolVersion int    `json:"protocol_version"`
+	DeploymentID    string `json:"deployment_id"`
+	AgentID         string `json:"agent_id"`
+	ProfileID       any    `json:"profile_id"`
+	ServiceType     string `json:"service_type"`
+	ConfigPath      string `json:"config_path"`
+	FinalConfig     bool   `json:"final_config,omitempty"`
 	// ReloadOnly refuses candidate activation when native hot reload is not
 	// available. Rollback may still restart the previous service for recovery.
 	ReloadOnly bool             `json:"reload_only,omitempty"`
@@ -266,7 +266,7 @@ func deploymentBlocked(cfg *Config) error {
 }
 func deploymentFailure(w http.ResponseWriter, code int, err error) {
 	message, details := deploymentErrorFields(err)
-	response := map[string]interface{}{"success": false, "message": message}
+	response := map[string]any{"success": false, "message": message}
 	if details != "" {
 		response["error_details"] = details
 	}
@@ -278,7 +278,7 @@ func CapabilitiesHandler(cfg *Config) http.HandlerFunc {
 			w.WriteHeader(405)
 			return
 		}
-		result := map[string]interface{}{"success": true, "deployment_protocols": []int{1}, "return_routing_safety_protocols": []int{1}, "service_type": cfg.ServiceType, "config_path": filepath.Base(cfg.ConfigPath)}
+		result := map[string]any{"success": true, "deployment_protocols": []int{1}, "return_routing_safety_protocols": []int{1}, "service_type": cfg.ServiceType, "config_path": filepath.Base(cfg.ConfigPath)}
 		result["reload_only_protocols"] = []int{1}
 		result["final_config_protocols"] = []int{1}
 		result["rule_sync_snapshot_protocols"] = []int{1}
@@ -412,7 +412,7 @@ func DeploymentUploadHandler(cfg *Config) http.HandlerFunc {
 		}
 		activate := r.Header.Get("X-Activate") != "false"
 		// Encode the accepted snapshot before the worker mutates state.
-		JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "verifying"})
+		JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "verifying"})
 		handedOff = true
 		go func() { defer release(); prepareDeployment(cfg, s, activate) }()
 	}
@@ -480,7 +480,7 @@ func DeploymentHandler(cfg *Config) http.HandlerFunc {
 			deploymentFailure(w, 500, e)
 			return
 		}
-		JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "verifying"})
+		JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "verifying"})
 		handedOff = true
 		go func() {
 			defer release()
@@ -1322,7 +1322,7 @@ func recoverHandler(cfg *Config, id string, w http.ResponseWriter) {
 		deploymentFailure(w, 409, err)
 		return
 	}
-	JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "rolling_back", "recovering": true})
+	JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "rolling_back", "recovering": true})
 	handedOff = true
 	go func() {
 		defer release()

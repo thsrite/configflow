@@ -67,8 +67,8 @@ func ipv6TUNStatus(cfg *Config, network ipv6Network) ipv6TUNReport {
 		result.Message = "无法读取 Mihomo 配置，尚未检查实际 TUN IPv6"
 		return result
 	}
-	dns, _ := doc["dns"].(map[string]interface{})
-	tun, _ := doc["tun"].(map[string]interface{})
+	dns, _ := doc["dns"].(map[string]any)
+	tun, _ := doc["tun"].(map[string]any)
 	fake, _ := dns["fake-ip-range6"].(string)
 	ipv6, explicit := doc["ipv6"]
 	if !explicit {

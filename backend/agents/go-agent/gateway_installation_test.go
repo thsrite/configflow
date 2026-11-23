@@ -15,11 +15,11 @@ const gatewayInstallationToken = "one-time-installation-secret"
 
 func gatewayTestConfig(t *testing.T, session bool) *Config {
 	t.Helper()
-	values := map[string]interface{}{
+	values := map[string]any{
 		"server_url": "http://unused.test", "agent_name": "gateway-mihomo", "agent_ip": "192.168.8.2",
 		"agent_host": "0.0.0.0", "agent_port": 8080, "service_type": "mihomo", "deployment_method": "shell",
 		"native_aio": true, "agent_service_unit": "configflow-agent-mihomo", "config_path": "/etc/mihomo/config.yaml",
-		"future_extension": map[string]interface{}{"enabled": true, "policy": "keep me"},
+		"future_extension": map[string]any{"enabled": true, "policy": "keep me"},
 	}
 	if session {
 		values["installation_id"] = gatewayInstallationID
@@ -40,13 +40,13 @@ func gatewayTestConfig(t *testing.T, session bool) *Config {
 	return cfg
 }
 
-func gatewaySavedConfig(t *testing.T, path string) map[string]interface{} {
+func gatewaySavedConfig(t *testing.T, path string) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestGatewayInstallationRegistrationScopeAndDurableEnrollment(t *testing.T) 
 		}
 		t.Run(name, func(t *testing.T) {
 			cfg := gatewayTestConfig(t, session)
-			var request map[string]interface{}
+			var request map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodPost || r.URL.Path != "/api/agents/register" {
 					t.Errorf("unexpected registration request: %s %s", r.Method, r.URL.Path)
@@ -106,7 +106,7 @@ func TestGatewayInstallationRegistrationScopeAndDurableEnrollment(t *testing.T) 
 			if saved["agent_id"] != "registered-mihomo" || saved["token"] != "durable-agent-token" {
 				t.Fatal("enrollment credentials were not persisted")
 			}
-			wantExtension := map[string]interface{}{"enabled": true, "policy": "keep me"}
+			wantExtension := map[string]any{"enabled": true, "policy": "keep me"}
 			if !reflect.DeepEqual(saved["future_extension"], wantExtension) {
 				t.Fatalf("unrelated extension changed: %#v", saved["future_extension"])
 			}
@@ -116,10 +116,10 @@ func TestGatewayInstallationRegistrationScopeAndDurableEnrollment(t *testing.T) 
 
 func TestGatewayInstallationReregistrationUsesOnlyDurableCredential(t *testing.T) {
 	cfg := gatewayTestConfig(t, true)
-	var requests []map[string]interface{}
+	var requests []map[string]any
 	var authorizations []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request map[string]interface{}
+		var request map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}

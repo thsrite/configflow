@@ -327,8 +327,8 @@ func aioStartupHookState(t aioForwardingTarget) (string, error) {
 	return "unknown", nil
 }
 
-func aioForwardingStatus(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"protocol": 1, "current": "", "supported": true}
+func aioForwardingStatus(cfg *Config) map[string]any {
+	result := map[string]any{"protocol": 1, "current": "", "supported": true}
 	errs := []string{}
 	target, supportErr := aioInstallation(cfg)
 	if supportErr != nil {
@@ -385,8 +385,8 @@ var aioDevicePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$`)
 
 // aioTUNStatus describes the deployed configuration; the device name is never
 // assumed because old gateway profiles used Mihomo and full TUN uses Meta.
-func aioTUNStatus(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"configured": false, "device": "Meta", "present": false, "gateway_marker": false}
+func aioTUNStatus(cfg *Config) map[string]any {
+	result := map[string]any{"configured": false, "device": "Meta", "present": false, "gateway_marker": false}
 	if cfg == nil || cfg.ServiceType != "mihomo" {
 		result["error"] = "仅 Mihomo Agent 使用 TUN"
 		return result
@@ -401,7 +401,7 @@ func aioTUNStatus(cfg *Config) map[string]interface{} {
 		result["error"] = err.Error()
 		return result
 	}
-	tun, _ := doc["tun"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]any)
 	result["device"], result["gateway_marker"] = routing.tunDevice, marker
 	result["configured"] = routing.tunEnabled && tun["auto-route"] == true && tun["auto-redirect"] == true
 	if aioDevicePattern.MatchString(routing.tunDevice) {
@@ -510,7 +510,7 @@ func aioForwardingFailure(message string, err error) error {
 	return fmt.Errorf("%s：%w。请检查当前 Linux/容器的 CAP_NET_ADMIN 和 /proc/sys 写权限；LXC 权限受限时需由宿主机管理员调整", message, err)
 }
 
-func summarizeTUNPrepare(report preflight.Report) map[string]interface{} {
+func summarizeTUNPrepare(report preflight.Report) map[string]any {
 	level, messages := "pass", []string{}
 	for _, check := range report {
 		switch check.Level {
@@ -527,14 +527,14 @@ func summarizeTUNPrepare(report preflight.Report) map[string]interface{} {
 		}
 		messages = append(messages, message)
 	}
-	return map[string]interface{}{"level": level, "message": strings.Join(messages, "\n")}
+	return map[string]any{"level": level, "message": strings.Join(messages, "\n")}
 }
 
 // persistAIOForwarding enables and persists IPv4 forwarding the way the
 // ordinary AIO and single-service Mihomo installers do. The caller holds gatewayMu, returnRoutingMu and
 // the service operation lock. Every step is checked first, so a retry after
 // any interruption converges. Forwarding is never written to 0.
-func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]interface{}, resultErr error) {
+func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]any, resultErr error) {
 	instance, err := aioInstallation(cfg)
 	if err != nil {
 		return nil, err
@@ -679,7 +679,7 @@ func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]inter
 	if err := aioEnsureSysctlBoot(); err != nil {
 		return nil, err
 	}
-	result = map[string]interface{}{"tun_prepare": nil}
+	result = map[string]any{"tun_prepare": nil}
 	if prepareTUN {
 		// TUN preparation is advisory here: forwarding is already persisted.
 		result["tun_prepare"] = summarizeTUNPrepare(aioPrepareTUN(deploymentDNSConfig(cfg)))

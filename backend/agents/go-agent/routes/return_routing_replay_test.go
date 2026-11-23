@@ -13,13 +13,13 @@ func TestReturnRoutingBootReplaySkipsCompleteCurrentResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	beforeState := jsonText(readStateJSON(t, cfg))
-	beforeHost := jsonText([]interface{}{host.routes, host.rules, host.nft})
+	beforeHost := jsonText([]any{host.routes, host.rules, host.nft})
 	host.mutations = nil
 
 	reapplyReturnRouting(cfg) // Agent restart with everything still in place
 
 	assertNoWrites(t, host)
-	if beforeState != jsonText(readStateJSON(t, cfg)) || beforeHost != jsonText([]interface{}{host.routes, host.rules, host.nft}) {
+	if beforeState != jsonText(readStateJSON(t, cfg)) || beforeHost != jsonText([]any{host.routes, host.rules, host.nft}) {
 		t.Fatal("skipped replay must leave resources and ownership untouched")
 	}
 	if status := managedReturnStatus(cfg); status["table_present"] != true {

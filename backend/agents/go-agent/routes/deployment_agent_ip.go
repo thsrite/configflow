@@ -22,12 +22,12 @@ func validateDeploymentAgentIPs(cfg *Config, state *DeploymentState) error {
 	if err != nil {
 		return fmt.Errorf("激活前无法读取本机 DNS 排除配置：%w", err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return fmt.Errorf("激活前无法解析本机 DNS 排除配置：%w", err)
 	}
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
-	tun, _ := doc["tun"].(map[string]interface{})
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]any)
+	tun, _ := doc["tun"].(map[string]any)
 	if marker["enabled"] != true && (!cfg.NativeAIO || tun["enable"] != true || tun["auto-redirect"] != true) {
 		return nil
 	}
@@ -35,7 +35,7 @@ func validateDeploymentAgentIPs(cfg *Config, state *DeploymentState) error {
 	if err != nil {
 		return fmt.Errorf("激活前检查本机 DNS 排除失败：%w；请修复地址后重新发布配置", err)
 	}
-	values, ok := tun["route-exclude-address"].([]interface{})
+	values, ok := tun["route-exclude-address"].([]any)
 	if !ok {
 		return fmt.Errorf("待激活配置缺少本机 DNS 排除地址，请重新发布配置")
 	}

@@ -17,7 +17,7 @@ const Version = "1.9.3-go"
 
 type Config struct {
 	Path   string
-	Values map[string]interface{}
+	Values map[string]any
 }
 
 func ReadConfig(path string) (*Config, error) {

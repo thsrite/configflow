@@ -193,7 +193,7 @@ func inspectGatewayForwarding(probe systemProbe) Check {
 // A configured TUN listener is active independently of the legacy top-level
 // tun.enable switch. Keep an unknown state for malformed settings, but one
 // definitely active TUN entry is enough to require its environment prerequisites.
-func configuredMihomoTUN(doc map[string]interface{}) (tunState, []Check) {
+func configuredMihomoTUN(doc map[string]any) (tunState, []Check) {
 	state := tunDisabled
 	var checks []Check
 	unknown := func(message, fix string) {
@@ -203,7 +203,7 @@ func configuredMihomoTUN(doc map[string]interface{}) (tunState, []Check) {
 		checks = append(checks, Check{Name: "Mihomo TUN 配置", Level: "warn", Message: message, Fix: fix})
 	}
 	if rawTun, present := doc["tun"]; present {
-		tun, ok := rawTun.(map[string]interface{})
+		tun, ok := rawTun.(map[string]any)
 		if !ok {
 			unknown("tun 不是有效的配置对象，无法判断是否需要 TUN。", "检查 Mihomo 配置中的 tun 结构，并将 tun.enable 设置为 true 或 false。")
 		} else if rawEnabled, present := tun["enable"]; present {
@@ -215,13 +215,13 @@ func configuredMihomoTUN(doc map[string]interface{}) (tunState, []Check) {
 		}
 	}
 	if rawListeners, present := doc["listeners"]; present && rawListeners != nil {
-		listeners, ok := rawListeners.([]interface{})
+		listeners, ok := rawListeners.([]any)
 		if !ok {
 			unknown("listeners 不是有效的列表，无法判断是否配置了 TUN 入口。", "检查 Mihomo 配置中的 listeners 列表及 type: tun 入口。")
 			return state, checks
 		}
 		for _, rawListener := range listeners {
-			listener, ok := rawListener.(map[string]interface{})
+			listener, ok := rawListener.(map[string]any)
 			if !ok {
 				unknown("listeners 中存在无效入口，无法完整判断 TUN 状态。", "检查 Mihomo listeners 中每个入口的配置对象。")
 				continue

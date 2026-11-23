@@ -46,18 +46,18 @@ type oxRankingConfig struct {
 
 // These labels describe configured upstreams, never the winner inferred from a
 // query trace. Match OxiDNS 1.6.1 forward::upstream_metric_names exactly.
-func oxMonitorRankingConfig(plugins []interface{}) oxRankingConfig {
+func oxMonitorRankingConfig(plugins []any) oxRankingConfig {
 	result := oxRankingConfig{upstreams: []oxUpstreamLabel{}, retention: map[string]*uint64{}, blocked: map[string][]string{}}
-	byTag := map[string]map[string]interface{}{}
+	byTag := map[string]map[string]any{}
 	duplicate := map[string]bool{}
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		tag, _ := plugin["tag"].(string)
 		if byTag[tag] != nil {
 			duplicate[tag] = true
 		}
 		byTag[tag] = plugin
-		args, _ := plugin["args"].(map[string]interface{})
+		args, _ := plugin["args"].(map[string]any)
 		if plugin["type"] == "query_recorder" {
 			if value, exists := args["retention_days"]; !exists {
 				days := uint64(7)
@@ -70,10 +70,10 @@ func oxMonitorRankingConfig(plugins []interface{}) oxRankingConfig {
 		if plugin["type"] != "forward" || !oxMonitorSafeTag(tag) {
 			continue
 		}
-		upstreams, _ := args["upstreams"].([]interface{})
+		upstreams, _ := args["upstreams"].([]any)
 		names := map[string]bool{}
 		for index, raw := range upstreams {
-			upstream, _ := raw.(map[string]interface{})
+			upstream, _ := raw.(map[string]any)
 			address, _ := upstream["addr"].(string)
 			name, named := upstream["tag"].(string)
 			if !named {
@@ -100,7 +100,7 @@ func oxMonitorRankingConfig(plugins []interface{}) oxRankingConfig {
 		delete(byTag, tag)
 	}
 	main := byTag["sequence_main"]
-	rules, _ := main["args"].([]interface{})
+	rules, _ := main["args"].([]any)
 	if main["type"] != "sequence" || !oxRankingDirectEntry(plugins) {
 		return result
 	}
@@ -108,7 +108,7 @@ func oxMonitorRankingConfig(plugins []interface{}) oxRankingConfig {
 	// branch. Arbitrary matcher matches, NXDOMAIN and IPv4 suppression do not.
 	recorders := []string{}
 	for index, raw := range rules {
-		rule, ok := raw.(map[string]interface{})
+		rule, ok := raw.(map[string]any)
 		if !ok {
 			break
 		}
@@ -154,16 +154,16 @@ func oxMonitorRankingConfig(plugins []interface{}) oxRankingConfig {
 	return result
 }
 
-func oxRankingAdguard(byTag map[string]map[string]interface{}) bool {
+func oxRankingAdguard(byTag map[string]map[string]any) bool {
 	reject := byTag["adguard_reject"]
-	wantReject := []interface{}{map[string]interface{}{"exec": "$adguard_block"}, map[string]interface{}{"exec": "accept"}}
+	wantReject := []any{map[string]any{"exec": "$adguard_block"}, map[string]any{"exec": "accept"}}
 	return byTag["adguard_rules"]["type"] == "adguard_rule" && reject["type"] == "sequence" && reflect.DeepEqual(reject["args"], wantReject) && oxRankingBlackHole(byTag["adguard_block"], false)
 }
 
 // A main-chain black hole must short-circuit, or later entries would replace
 // its answer. Mode null is the quoted string: a bare YAML null means nxdomain.
-func oxRankingBlackHole(plugin map[string]interface{}, shortCircuit bool) bool {
-	args, ok := plugin["args"].(map[string]interface{})
+func oxRankingBlackHole(plugin map[string]any, shortCircuit bool) bool {
+	args, ok := plugin["args"].(map[string]any)
 	mode, _ := args["mode"].(string)
 	want := 1
 	if shortCircuit {
@@ -176,18 +176,18 @@ func oxRankingBlackHole(plugin map[string]interface{}, shortCircuit bool) bool {
 }
 
 // reject, reject 3 and reject 0 all answer and stop as the builtin "reject".
-func oxRankingBlock(byTag map[string]map[string]interface{}, exec string) bool {
+func oxRankingBlock(byTag map[string]map[string]any, exec string) bool {
 	return exec == "reject" || strings.HasPrefix(exec, "reject ") && len(strings.Fields(exec)) == 2 ||
 		exec == "$cf_dns_blackhole" && oxRankingBlackHole(byTag["cf_dns_blackhole"], true)
 }
 
-func oxRankingTerminal(byTag map[string]map[string]interface{}, exec string) bool {
+func oxRankingTerminal(byTag map[string]map[string]any, exec string) bool {
 	return strings.HasPrefix(exec, "goto ") || exec == "accept" || oxRankingBlock(byTag, exec)
 }
 
 // Only generated rule groups count: qname for domain groups, resp_ip for IP
 // groups after the local probe. Pinned upstreams and lists are not blocks.
-func oxRankingRuleBlock(byTag map[string]map[string]interface{}, match, exec string) bool {
+func oxRankingRuleBlock(byTag map[string]map[string]any, match, exec string) bool {
 	fields := strings.Fields(match)
 	if len(fields) != 2 || !strings.HasPrefix(fields[1], "$") || !oxRankingBlock(byTag, exec) {
 		return false
@@ -199,14 +199,14 @@ func oxRankingRuleBlock(byTag map[string]map[string]interface{}, match, exec str
 // An outer sequence/executor can replace the response after the main chain
 // returns. Recognize only direct built-in server entries and conservatively
 // decline custom references rather than interpreting arbitrary plugin config.
-func oxRankingDirectEntry(plugins []interface{}) bool {
+func oxRankingDirectEntry(plugins []any) bool {
 	servers := 0
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		if plugin["tag"] == "sequence_main" {
 			continue
 		}
-		args, _ := plugin["args"].(map[string]interface{})
+		args, _ := plugin["args"].(map[string]any)
 		kind, _ := plugin["type"].(string)
 		server := kind == "udp_server" || kind == "tcp_server" || kind == "http_server" || kind == "quic_server"
 		if server && args["entry"] == "sequence_main" {
@@ -223,17 +223,17 @@ func oxRankingDirectEntry(plugins []interface{}) bool {
 	return servers > 0
 }
 
-func oxRankingMentionsMain(value interface{}) bool {
+func oxRankingMentionsMain(value any) bool {
 	switch value := value.(type) {
 	case string:
 		return strings.Contains(value, "sequence_main")
-	case []interface{}:
+	case []any:
 		for _, item := range value {
 			if oxRankingMentionsMain(item) {
 				return true
 			}
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		for _, item := range value {
 			if oxRankingMentionsMain(item) {
 				return true
@@ -243,11 +243,11 @@ func oxRankingMentionsMain(value interface{}) bool {
 	return false
 }
 
-func oxRankingMatches(raw interface{}) []string {
+func oxRankingMatches(raw any) []string {
 	if value, ok := raw.(string); ok {
 		return []string{value}
 	}
-	if values, ok := raw.([]interface{}); ok {
+	if values, ok := raw.([]any); ok {
 		result := []string{}
 		for _, value := range values {
 			text, ok := value.(string)
@@ -486,7 +486,7 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 		oxMonitorWriteError(w, err)
 		return
 	}
-	blocked := map[string]interface{}{"available": false, "reason": "当前配置未包含可确认的标准 AdGuard 拦截路径", "sample_size": 0, "rows": []oxRankingRow{}, "at_limit": false}
+	blocked := map[string]any{"available": false, "reason": "当前配置未包含可确认的标准 AdGuard 拦截路径", "sample_size": 0, "rows": []oxRankingRow{}, "at_limit": false}
 	matchers := config.rankings.blocked[tag]
 	if len(matchers) > oxRankingBlockLimit {
 		blocked["reason"] = "too_many_block_rules"
@@ -517,7 +517,7 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 			reason = "standard_adguard"
 		}
 		group := oxMergeRankings(groups, rows)
-		blocked = map[string]interface{}{"available": true, "reason": reason, "matcher_tags": matchers, "sample_size": group.SampleSize, "rows": group.Rows, "at_limit": group.AtLimit}
+		blocked = map[string]any{"available": true, "reason": reason, "matcher_tags": matchers, "sample_size": group.SampleSize, "rows": group.Rows, "at_limit": group.AtLimit}
 		if len(matchers) == 1 {
 			blocked["matcher_tag"] = matchers[0]
 		}
@@ -526,5 +526,5 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 		oxMonitorWriteError(w, err)
 		return
 	}
-	JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "recorder": tag, "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "instance_id": oxSourceInstance(health), "retention_days": config.rankings.retention[tag], "sample_limit": oxMonitorClientSampleLimit, "rows_limit": rows, "clients": clients, "domains": domains, "blocked": blocked})
+	JsonResponse(w, http.StatusOK, map[string]any{"success": true, "recorder": tag, "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "instance_id": oxSourceInstance(health), "retention_days": config.rankings.retention[tag], "sample_limit": oxMonitorClientSampleLimit, "rows_limit": rows, "clients": clients, "domains": domains, "blocked": blocked})
 }

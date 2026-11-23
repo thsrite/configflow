@@ -10,9 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func tunUpstreamDoc(t *testing.T, content string) map[string]interface{} {
+func tunUpstreamDoc(t *testing.T, content string) map[string]any {
 	t.Helper()
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		t.Fatal(err)
 	}

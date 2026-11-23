@@ -16,13 +16,13 @@ import (
 )
 
 type returnResources struct {
-	Routes []map[string]interface{}
-	Rules  []map[string]interface{}
-	NFT    []map[string]interface{}
-	VRFs   []map[string]interface{}
+	Routes []map[string]any
+	Rules  []map[string]any
+	NFT    []map[string]any
+	VRFs   []map[string]any
 }
 
-func resourceNumber(value interface{}) (uint64, bool) {
+func resourceNumber(value any) (uint64, bool) {
 	switch v := value.(type) {
 	case json.Number:
 		n, err := strconv.ParseUint(string(v), 10, 64)
@@ -67,28 +67,28 @@ func resourceNumber(value interface{}) (uint64, bool) {
 	return 0, false
 }
 
-func decodeResourceJSON(raw string) (interface{}, error) {
+func decodeResourceJSON(raw string) (any, error) {
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.UseNumber()
-	var value interface{}
+	var value any
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	var extra interface{}
+	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return nil, fmt.Errorf("unexpected trailing JSON")
 	}
 	return value, nil
 }
 
-func resourceObjects(value interface{}, name string) ([]map[string]interface{}, error) {
-	items, ok := value.([]interface{})
+func resourceObjects(value any, name string) ([]map[string]any, error) {
+	items, ok := value.([]any)
 	if !ok {
 		return nil, fmt.Errorf("%s 必须返回 JSON 数组", name)
 	}
-	result := make([]map[string]interface{}, 0, len(items))
+	result := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		object, ok := item.(map[string]interface{})
+		object, ok := item.(map[string]any)
 		if !ok || len(object) == 0 {
 			return nil, fmt.Errorf("%s 包含不完整记录", name)
 		}
@@ -97,7 +97,7 @@ func resourceObjects(value interface{}, name string) ([]map[string]interface{}, 
 	return result, nil
 }
 
-func resourceTable(row map[string]interface{}) (uint64, bool) {
+func resourceTable(row map[string]any) (uint64, bool) {
 	value, exists := row["table"]
 	if !exists {
 		return 254, true
@@ -113,7 +113,7 @@ func readReturnResources() (*returnResources, error) {
 	reads := []struct {
 		name string
 		args []string
-		dest *[]map[string]interface{}
+		dest *[]map[string]any
 	}{
 		{"ip", []string{"-j", "-N", "-4", "route", "show", "table", "all"}, &result.Routes},
 		{"ip", []string{"-j", "-N", "-4", "rule", "show"}, &result.Rules},
@@ -131,7 +131,7 @@ func readReturnResources() (*returnResources, error) {
 			return nil, fmt.Errorf("回流资源读取格式无效（%s）：%w", label, err)
 		}
 		if read.name == "nft" {
-			doc, ok := value.(map[string]interface{})
+			doc, ok := value.(map[string]any)
 			if !ok || len(doc) != 1 {
 				return nil, fmt.Errorf("nft ruleset 返回结构不完整")
 			}
@@ -182,13 +182,13 @@ func readReturnResources() (*returnResources, error) {
 			}
 		}
 	}
-	filtered := make([]map[string]interface{}, 0, len(result.NFT))
+	filtered := make([]map[string]any, 0, len(result.NFT))
 	for _, object := range result.NFT {
 		if len(object) != 1 {
 			return nil, fmt.Errorf("nft 对象结构不完整")
 		}
 		for kind, raw := range object {
-			body, ok := raw.(map[string]interface{})
+			body, ok := raw.(map[string]any)
 			if !ok || len(body) == 0 {
 				return nil, fmt.Errorf("nft %s 对象无效", kind)
 			}
@@ -210,7 +210,7 @@ func readReturnResources() (*returnResources, error) {
 				if chain, _ := body["chain"].(string); chain == "" {
 					return nil, fmt.Errorf("nft rule 缺少 chain")
 				}
-				expressions, ok := body["expr"].([]interface{})
+				expressions, ok := body["expr"].([]any)
 				if !ok {
 					return nil, fmt.Errorf("nft rule 缺少 expr")
 				}
@@ -228,7 +228,7 @@ func readReturnResources() (*returnResources, error) {
 	result.NFT = filtered
 	// Some iproute2 releases emit empty JSON objects for interfaces rejected
 	// by "type vrf". Read the full list and filter after validating identity.
-	vrfs := []map[string]interface{}{}
+	vrfs := []map[string]any{}
 	for _, link := range result.VRFs {
 		index, valid := resourceNumber(link["ifindex"])
 		name, _ := link["ifname"].(string)
@@ -239,7 +239,7 @@ func readReturnResources() (*returnResources, error) {
 		if !present {
 			continue
 		}
-		info, ok := raw.(map[string]interface{})
+		info, ok := raw.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("接口类型信息无效，无法确认 VRF 占用")
 		}
@@ -271,7 +271,7 @@ func readReturnResources() (*returnResources, error) {
 // iproute2's print_rule emits numeric "goto", not action:"goto", and
 // "unresolved":null when its target does not exist. Source: ip/iprule.c,
 // print_rule(), FR_ACT_GOTO / FR_ACT_NOP, in the upstream iproute2 tree.
-func ruleGoto(rule map[string]interface{}) (uint64, bool, error) {
+func ruleGoto(rule map[string]any) (uint64, bool, error) {
 	value, exists := rule["goto"]
 	if !exists {
 		return 0, false, nil
@@ -295,19 +295,19 @@ func ruleGoto(rule map[string]interface{}) (uint64, bool, error) {
 	return target, true, nil
 }
 
-func vrfTable(object map[string]interface{}) (uint64, bool) {
-	info, _ := object["linkinfo"].(map[string]interface{})
+func vrfTable(object map[string]any) (uint64, bool) {
+	info, _ := object["linkinfo"].(map[string]any)
 	if info["info_kind"] != "vrf" {
 		return 0, false
 	}
-	data, _ := info["info_data"].(map[string]interface{})
+	data, _ := info["info_data"].(map[string]any)
 	value, ok := resourceNumber(data["table"])
 	return value, ok && value > 0
 }
 
-func validateNFTExpressions(expressions []interface{}) error {
+func validateNFTExpressions(expressions []any) error {
 	for _, raw := range expressions {
-		expression, ok := raw.(map[string]interface{})
+		expression, ok := raw.(map[string]any)
 		if !ok || len(expression) != 1 {
 			return fmt.Errorf("nft rule 表达式不完整")
 		}
@@ -315,19 +315,19 @@ func validateNFTExpressions(expressions []interface{}) error {
 			if kind != "mangle" && kind != "match" {
 				continue
 			}
-			body, ok := rawBody.(map[string]interface{})
+			body, ok := rawBody.(map[string]any)
 			if !ok {
 				return fmt.Errorf("nft %s 表达式不完整", kind)
 			}
 			if kind == "mangle" {
-				key, valid := body["key"].(map[string]interface{})
+				key, valid := body["key"].(map[string]any)
 				_, hasValue := body["value"]
 				if len(body) != 2 || !valid || len(key) != 1 || !hasValue || body["value"] == nil {
 					return fmt.Errorf("nft mangle 缺少有效赋值目标或值")
 				}
 				for _, reference := range []string{"meta", "ct"} {
 					if value, exists := key[reference]; exists {
-						target, ok := value.(map[string]interface{})
+						target, ok := value.(map[string]any)
 						field, _ := target["key"].(string)
 						if !ok || field == "" {
 							return fmt.Errorf("nft mangle 赋值目标不完整")
@@ -345,9 +345,9 @@ func validateNFTExpressions(expressions []interface{}) error {
 	return nil
 }
 
-func nftObjectIsManaged(object map[string]interface{}) bool {
+func nftObjectIsManaged(object map[string]any) bool {
 	for kind, raw := range object {
-		body, _ := raw.(map[string]interface{})
+		body, _ := raw.(map[string]any)
 		if body["family"] != "inet" {
 			continue
 		}
@@ -361,8 +361,8 @@ func nftObjectIsManaged(object map[string]interface{}) bool {
 	return false
 }
 
-func ownedNftObjects(resources *returnResources) []map[string]interface{} {
-	result := []map[string]interface{}{}
+func ownedNftObjects(resources *returnResources) []map[string]any {
+	result := []map[string]any{}
 	if resources != nil {
 		for _, object := range resources.NFT {
 			if nftObjectIsManaged(object) {
@@ -373,10 +373,10 @@ func ownedNftObjects(resources *returnResources) []map[string]interface{} {
 	return result
 }
 
-func normalizeResource(value interface{}, parent string) interface{} {
+func normalizeResource(value any, parent string) any {
 	switch v := value.(type) {
-	case map[string]interface{}:
-		result := make(map[string]interface{}, len(v))
+	case map[string]any:
+		result := make(map[string]any, len(v))
 		for key, child := range v {
 			if key == "handle" || key == "index" || key == "position" {
 				continue
@@ -393,8 +393,8 @@ func normalizeResource(value interface{}, parent string) interface{} {
 			result[key] = normalizeResource(child, key)
 		}
 		return result
-	case []interface{}:
-		result := make([]interface{}, len(v))
+	case []any:
+		result := make([]any, len(v))
 		for i, child := range v {
 			result[i] = normalizeResource(child, parent)
 		}
@@ -425,9 +425,9 @@ func normalizeResource(value interface{}, parent string) interface{} {
 // ipv4SetIntervals compares an anonymous IPv4 set by the addresses it matches.
 // nft merges adjacent elements of interval sets, so 91.108.4.0/22,
 // 91.108.8.0/21 and 91.108.16.0/21 read back as one 91.108.4.0-91.108.23.255.
-func ipv4SetIntervals(items []interface{}) ([]interface{}, bool) {
+func ipv4SetIntervals(items []any) ([]any, bool) {
 	type interval struct{ start, end uint32 }
-	address := func(value interface{}) (uint32, bool) {
+	address := func(value any) (uint32, bool) {
 		text, ok := value.(string)
 		if !ok {
 			return 0, false
@@ -444,11 +444,11 @@ func ipv4SetIntervals(items []interface{}) ([]interface{}, bool) {
 			intervals = append(intervals, interval{start, start})
 			continue
 		}
-		element, ok := item.(map[string]interface{})
+		element, ok := item.(map[string]any)
 		if !ok || len(element) != 1 {
 			return nil, false
 		}
-		if prefix, ok := element["prefix"].(map[string]interface{}); ok {
+		if prefix, ok := element["prefix"].(map[string]any); ok {
 			start, okAddr := address(prefix["addr"])
 			length, okLen := resourceNumber(prefix["len"])
 			if !okAddr || !okLen || length > 32 {
@@ -464,7 +464,7 @@ func ipv4SetIntervals(items []interface{}) ([]interface{}, bool) {
 			intervals = append(intervals, interval{start, start | size})
 			continue
 		}
-		bounds, ok := element["range"].([]interface{})
+		bounds, ok := element["range"].([]any)
 		if !ok || len(bounds) != 2 {
 			return nil, false
 		}
@@ -487,19 +487,19 @@ func ipv4SetIntervals(items []interface{}) ([]interface{}, bool) {
 		}
 		merged = append(merged, next)
 	}
-	result := make([]interface{}, len(merged))
+	result := make([]any, len(merged))
 	text := func(value uint32) string {
 		ip := make(net.IP, 4)
 		binary.BigEndian.PutUint32(ip, value)
 		return ip.String()
 	}
 	for i, span := range merged {
-		result[i] = map[string]interface{}{"range": []interface{}{text(span.start), text(span.end)}}
+		result[i] = map[string]any{"range": []any{text(span.start), text(span.end)}}
 	}
 	return result, true
 }
 
-func normalizedResourceEqual(a, b map[string]interface{}) bool {
+func normalizedResourceEqual(a, b map[string]any) bool {
 	left, err := json.Marshal(normalizeResource(a, ""))
 	if err != nil {
 		return false
@@ -513,30 +513,30 @@ func normalizedResourceEqual(a, b map[string]interface{}) bool {
 // release (1.0.6 omits it), so it cannot prove or disprove return-routing
 // ownership; chain names and rule comments (listed by every release) do. The
 // Linux gateway pins the kernel representation instead and keeps comparing it.
-func withoutContainerComment(object map[string]interface{}) map[string]interface{} {
+func withoutContainerComment(object map[string]any) map[string]any {
 	if len(object) != 1 {
 		return object
 	}
 	for kind, raw := range object {
-		body, ok := raw.(map[string]interface{})
+		body, ok := raw.(map[string]any)
 		if (kind != "table" && kind != "chain") || !ok {
 			return object
 		}
 		if _, tagged := body["comment"]; !tagged {
 			return object
 		}
-		copy := make(map[string]interface{}, len(body))
+		copy := make(map[string]any, len(body))
 		for key, value := range body {
 			if key != "comment" {
 				copy[key] = value
 			}
 		}
-		return map[string]interface{}{kind: copy}
+		return map[string]any{kind: copy}
 	}
 	return object
 }
 
-func consumeOwned(row map[string]interface{}, expected []map[string]interface{}, used []bool) bool {
+func consumeOwned(row map[string]any, expected []map[string]any, used []bool) bool {
 	for i, candidate := range expected {
 		if !used[i] && ownedResourceEqual(withoutContainerComment(candidate), withoutContainerComment(row)) {
 			used[i] = true
@@ -548,15 +548,15 @@ func consumeOwned(row map[string]interface{}, expected []map[string]interface{},
 
 // Creation plans do not yet know kernel handles. Persisted ownership does:
 // replacing an object with identical content does not preserve its identity.
-func ownedResourceEqual(expected, actual map[string]interface{}) bool {
+func ownedResourceEqual(expected, actual map[string]any) bool {
 	if !normalizedResourceEqual(expected, actual) {
 		return false
 	}
-	var sameHandles func(interface{}, interface{}) bool
-	sameHandles = func(before, now interface{}) bool {
+	var sameHandles func(any, any) bool
+	sameHandles = func(before, now any) bool {
 		switch value := before.(type) {
-		case map[string]interface{}:
-			current, ok := now.(map[string]interface{})
+		case map[string]any:
+			current, ok := now.(map[string]any)
 			if !ok {
 				return false
 			}
@@ -572,8 +572,8 @@ func ownedResourceEqual(expected, actual map[string]interface{}) bool {
 					return false
 				}
 			}
-		case []interface{}:
-			current, ok := now.([]interface{})
+		case []any:
+			current, ok := now.([]any)
 			if !ok || len(value) != len(current) {
 				return false
 			}
@@ -588,9 +588,9 @@ func ownedResourceEqual(expected, actual map[string]interface{}) bool {
 	return sameHandles(expected, actual)
 }
 
-func ruleMark(rule map[string]interface{}) (uint32, uint32, error) {
+func ruleMark(rule map[string]any) (uint32, uint32, error) {
 	value := rule["fwmark"]
-	var inlineMask interface{}
+	var inlineMask any
 	if text, ok := value.(string); ok && strings.Contains(text, "/") {
 		parts := strings.Split(text, "/")
 		if len(parts) != 2 {
@@ -616,24 +616,24 @@ func ruleMark(rule map[string]interface{}) (uint32, uint32, error) {
 	return uint32(mark), uint32(mask), nil
 }
 
-func markReference(value interface{}) (string, bool) {
-	object, ok := value.(map[string]interface{})
+func markReference(value any) (string, bool) {
+	object, ok := value.(map[string]any)
 	if !ok || len(object) != 1 {
 		return "", false
 	}
 	for _, kind := range []string{"meta", "ct"} {
-		if body, ok := object[kind].(map[string]interface{}); ok && body["key"] == "mark" {
+		if body, ok := object[kind].(map[string]any); ok && body["key"] == "mark" {
 			return kind, true
 		}
 	}
 	return "", false
 }
 
-func containsMark(value interface{}) bool {
+func containsMark(value any) bool {
 	switch v := value.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for _, kind := range []string{"meta", "ct"} {
-			if body, ok := v[kind].(map[string]interface{}); ok && body["key"] == "mark" {
+			if body, ok := v[kind].(map[string]any); ok && body["key"] == "mark" {
 				return true
 			}
 		}
@@ -642,7 +642,7 @@ func containsMark(value interface{}) bool {
 				return true
 			}
 		}
-	case []interface{}:
+	case []any:
 		for _, child := range v {
 			if containsMark(child) {
 				return true
@@ -654,19 +654,19 @@ func containsMark(value interface{}) bool {
 
 // markReadBits only proves simple, explicit masks. Dynamic maps and all other
 // expressions remain unknown; guessing their bit use would grant unsafe access.
-func markReadBits(value interface{}) (uint32, bool) {
+func markReadBits(value any) (uint32, bool) {
 	if _, ok := markReference(value); ok {
 		return math.MaxUint32, true
 	}
 	if !containsMark(value) {
 		return 0, true
 	}
-	object, ok := value.(map[string]interface{})
+	object, ok := value.(map[string]any)
 	if !ok || len(object) != 1 {
 		return 0, false
 	}
 	for op, raw := range object {
-		parts, ok := raw.([]interface{})
+		parts, ok := raw.([]any)
 		if !ok || len(parts) != 2 {
 			return 0, false
 		}
@@ -683,26 +683,26 @@ func markReadBits(value interface{}) (uint32, bool) {
 	return 0, false
 }
 
-func nftMarkConflict(value interface{}, wanted uint32) bool {
+func nftMarkConflict(value any, wanted uint32) bool {
 	if !containsMark(value) {
 		return false
 	}
 	switch v := value.(type) {
-	case []interface{}:
+	case []any:
 		for _, child := range v {
 			if nftMarkConflict(child, wanted) {
 				return true
 			}
 		}
 		return false
-	case map[string]interface{}:
+	case map[string]any:
 		for _, kind := range []string{"meta", "ct"} {
-			if body, ok := v[kind].(map[string]interface{}); ok && body["key"] == "mark" {
+			if body, ok := v[kind].(map[string]any); ok && body["key"] == "mark" {
 				return true
 			}
 		}
 		if raw, ok := v["mangle"]; ok {
-			body, ok := raw.(map[string]interface{})
+			body, ok := raw.(map[string]any)
 			if !ok {
 				return true
 			}
@@ -714,12 +714,12 @@ func nftMarkConflict(value interface{}, wanted uint32) bool {
 			if other, ok := markReference(body["value"]); ok {
 				return other != kind
 			}
-			expression, ok := body["value"].(map[string]interface{})
+			expression, ok := body["value"].(map[string]any)
 			if !ok || len(expression) != 1 {
 				return true
 			}
 			for op, rawParts := range expression {
-				parts, ok := rawParts.([]interface{})
+				parts, ok := rawParts.([]any)
 				if !ok || len(parts) != 2 {
 					return true
 				}
@@ -740,7 +740,7 @@ func nftMarkConflict(value interface{}, wanted uint32) bool {
 			return true
 		}
 		if raw, ok := v["match"]; ok {
-			body, ok := raw.(map[string]interface{})
+			body, ok := raw.(map[string]any)
 			if !ok {
 				return true
 			}
@@ -786,7 +786,7 @@ func checkReturnResources(spec resolvedSpec, state *returnRoutingState, resource
 	}
 	tables := map[uint64]bool{uint64(spec.Table): true}
 	priorities := map[uint64]bool{uint64(spec.Priority): true}
-	var ownRoutes, ownRules, ownNFT []map[string]interface{}
+	var ownRoutes, ownRules, ownNFT []map[string]any
 	if ownership != nil {
 		ownRoutes, ownRules, ownNFT = ownership.Routes, ownership.Rules, ownership.NFT
 		if state.Spec.Table > 0 {

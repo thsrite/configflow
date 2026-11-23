@@ -92,7 +92,7 @@ func (c *Config) Save() error {
 
 	// 使用 MarshalIndent 美化输出格式
 	// Keep extension fields supplied by older/newer installers during registration.
-	values := map[string]interface{}{}
+	values := map[string]any{}
 	if old, readErr := os.ReadFile(c.filePath); readErr == nil {
 		if err := json.Unmarshal(old, &values); err != nil {
 			return err
@@ -104,7 +104,7 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	var current map[string]interface{}
+	var current map[string]any
 	if err = json.Unmarshal(known, &current); err != nil {
 		return err
 	}

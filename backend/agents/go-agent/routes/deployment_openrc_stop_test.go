@@ -111,7 +111,7 @@ func TestRecoverEndpointRecoversFailedRollback(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("recover must be accepted: %d %s", w.Code, w.Body)
 	}
-	var accepted map[string]interface{}
+	var accepted map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &accepted)
 	if accepted["recovering"] != true || accepted["status"] != "rolling_back" {
 		t.Fatalf("unexpected acceptance: %s", w.Body)

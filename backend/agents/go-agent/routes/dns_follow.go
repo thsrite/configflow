@@ -93,14 +93,14 @@ func readFollowConfig(name string, size int64) ([]byte, error) {
 func dnsFollowLock(cfg *Config, w http.ResponseWriter) (func(), bool) {
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, http.StatusConflict, map[string]interface{}{"success": false, "message": "设备正在执行其他操作，暂时无法确认 DNS 配置，请稍后重试"})
+		JsonResponse(w, http.StatusConflict, map[string]any{"success": false, "message": "设备正在执行其他操作，暂时无法确认 DNS 配置，请稍后重试"})
 		return nil, false
 	}
 	return release, true
 }
 
 func dnsFollowFailure(w http.ResponseWriter, status int, err error) {
-	JsonResponse(w, status, map[string]interface{}{"success": false, "message": err.Error()})
+	JsonResponse(w, status, map[string]any{"success": false, "message": err.Error()})
 }
 
 func dnsFollowRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -149,16 +149,16 @@ func DNSActiveHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "agent_id": cfg.AgentID, "deployment_id": id})
+		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "agent_id": cfg.AgentID, "deployment_id": id})
 	}
 }
 
 func parseFollowListener(content []byte) (string, string, int, error) {
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(content, &doc) != nil {
 		return "", "", 0, fmt.Errorf("无法解析 Mihomo 当前 DNS 配置")
 	}
-	dns, _ := doc["dns"].(map[string]interface{})
+	dns, _ := doc["dns"].(map[string]any)
 	if dns["enable"] != true {
 		return "", "", 0, fmt.Errorf("Mihomo DNS 未开启，请开启 dns.enable 并重新发布")
 	}
@@ -212,7 +212,7 @@ func DNSListenerHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{
+		JsonResponse(w, http.StatusOK, map[string]any{
 			"success": true, "agent_id": cfg.AgentID, "deployment_id": id,
 			"enabled": true, "listen": listen, "host": host, "port": port,
 		})
@@ -266,6 +266,6 @@ func DNSPeerHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "peer_agent_id": peerID, "service_type": "mihomo"})
+		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "peer_agent_id": peerID, "service_type": "mihomo"})
 	}
 }

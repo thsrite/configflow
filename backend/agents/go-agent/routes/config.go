@@ -95,7 +95,7 @@ type Config struct {
 // ConfigUpdateHandler 处理配置更新请求
 func ConfigUpdateHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		JsonResponse(w, http.StatusConflict, map[string]interface{}{"success": false, "message": "Legacy configuration updates are disabled; upgrade ConfigFlow and use deployment protocol 1"})
+		JsonResponse(w, http.StatusConflict, map[string]any{"success": false, "message": "Legacy configuration updates are disabled; upgrade ConfigFlow and use deployment protocol 1"})
 	}
 }
 

@@ -27,14 +27,14 @@ func renderFinalConfig(cfg *Config, content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err = yaml.Unmarshal([]byte(content), &doc); err != nil || len(doc) == 0 {
 		return "", fmt.Errorf("configuration must be a nonempty YAML mapping")
 	}
 	for _, section := range []string{"proxy-providers", "rule-providers"} {
-		providers, _ := doc[section].(map[string]interface{})
+		providers, _ := doc[section].(map[string]any)
 		for _, value := range providers {
-			provider, _ := value.(map[string]interface{})
+			provider, _ := value.(map[string]any)
 			if raw, ok := provider["path"].(string); ok && raw != "" {
 				rel := filepath.Clean(raw)
 				if filepath.IsAbs(raw) {
@@ -66,15 +66,15 @@ func FinalConfigPreviewHandler(cfg *Config) http.HandlerFunc {
 			Content string `json:"content"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Content == "" {
-			JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "Invalid configuration preview"})
+			JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "Invalid configuration preview"})
 			return
 		}
 		content, err := renderFinalConfig(cfg, input.Content)
 		if err != nil {
-			JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": err.Error()})
+			JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": err.Error()})
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "content": content})
+		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "content": content})
 	}
 }

@@ -20,12 +20,12 @@ const pendingReturnRefusal = "上次回流事务未完成，且 nft 表 %s 中�
 // cf_<token>_*, rules in those chains whose comment starts with the owner tag,
 // and the table itself when it holds such objects (or carries the tag). Any
 // other unrecorded object makes the state unrecoverable.
-func pendingNFTManifest(owner *returnOwnership, resources *returnResources) ([]map[string]interface{}, error) {
+func pendingNFTManifest(owner *returnOwnership, resources *returnResources) ([]map[string]any, error) {
 	refusal := fmt.Errorf(pendingReturnRefusal, managedReturnTable)
-	manifest := append([]map[string]interface{}{}, owner.NFT...)
+	manifest := append([]map[string]any{}, owner.NFT...)
 	used := make([]bool, len(owner.NFT))
 	prefix, tag := "cf_"+owner.Token+"_", ownerTag(owner)
-	var table map[string]interface{}
+	var table map[string]any
 	tableTagged, tokenObjects := false, 0
 	for _, object := range ownedNftObjects(resources) {
 		if consumeOwned(object, owner.NFT, used) {
@@ -35,7 +35,7 @@ func pendingNFTManifest(owner *returnOwnership, resources *returnResources) ([]m
 			return nil, refusal
 		}
 		for kind, raw := range object {
-			body, _ := raw.(map[string]interface{})
+			body, _ := raw.(map[string]any)
 			comment, hasComment := body["comment"].(string)
 			if _, present := body["comment"]; present && !hasComment {
 				return nil, refusal

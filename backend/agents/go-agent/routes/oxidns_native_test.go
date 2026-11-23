@@ -206,12 +206,12 @@ plugins:
 	if accepted.Code != http.StatusAccepted {
 		t.Fatalf("manual rollback not accepted: %d %s", accepted.Code, accepted.Body)
 	}
-	var acknowledgement map[string]interface{}
+	var acknowledgement map[string]any
 	if err := json.Unmarshal(accepted.Body.Bytes(), &acknowledgement); err != nil || acknowledgement["status"] != "rolling_back" {
 		t.Fatalf("manual rollback acknowledgement: %s", accepted.Body)
 	}
 	deadline := time.Now().Add(8 * time.Second)
-	var final map[string]interface{}
+	var final map[string]any
 	for time.Now().Before(deadline) {
 		response := httptest.NewRecorder()
 		DeploymentHandler(cfg)(response, httptest.NewRequest(http.MethodGet, "/api/deployments/native-manual", nil))

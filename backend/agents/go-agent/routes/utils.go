@@ -121,7 +121,7 @@ func commandForLog(command string) string {
 }
 
 // JsonResponse 是一个辅助函数，用于统一返回JSON响应
-func JsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+func JsonResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if data != nil {

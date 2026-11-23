@@ -102,8 +102,8 @@ func parseFwmarkRules(output string) []fwmarkRule {
 	return rules
 }
 
-func collectReturnRouting(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"success": true, "managed": managedReturnStatus(cfg)}
+func collectReturnRouting(cfg *Config) map[string]any {
+	result := map[string]any{"success": true, "managed": managedReturnStatus(cfg)}
 	result["safety"] = returnSafetyStatus(cfg)
 
 	tablesOut, nftErr := runCommand("nft", "list", "tables")

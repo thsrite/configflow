@@ -61,7 +61,7 @@ func loadHAHandoff(cfg *Config, state *haState) (*haHandoffState, error) {
 	if err := decoder.Decode(&handoff); err != nil {
 		return nil, fmt.Errorf("DNS 虚拟 IP 迁移记录无效")
 	}
-	if decoder.Decode(new(interface{})) != io.EOF || handoff.Version != oxidnsHAHandoffProtocol ||
+	if decoder.Decode(new(any)) != io.EOF || handoff.Version != oxidnsHAHandoffProtocol ||
 		!haHandoffIDPattern.MatchString(handoff.OperationID) || !haTokenPattern.MatchString(handoff.Token) ||
 		validateOxiDNSHASpec(handoff.Spec) != nil {
 		return nil, fmt.Errorf("DNS 虚拟 IP 迁移记录无效")
@@ -91,13 +91,13 @@ func haYieldToPeer(cfg *Config, state *haState) bool {
 	return err == nil && handoff != nil && haPeerHealthy(cfg, state)
 }
 
-func haHandoffPublic(cfg *Config, state *haState, localHealthy bool) (interface{}, error) {
+func haHandoffPublic(cfg *Config, state *haState, localHealthy bool) (any, error) {
 	handoff, err := loadHAHandoff(cfg, state)
 	if err != nil || handoff == nil {
 		return nil, err
 	}
 	peerHealthy := haPeerHealthy(cfg, state)
-	return map[string]interface{}{"operation_id": handoff.OperationID, "active": true,
+	return map[string]any{"operation_id": handoff.OperationID, "active": true,
 		"peer_healthy": peerHealthy, "yielding": localHealthy && peerHealthy,
 		"created_at": handoff.CreatedAt}, nil
 }
@@ -186,7 +186,7 @@ func OxiDNSHAHandoffHandler(cfg *Config) http.HandlerFunc {
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&request); err != nil || decoder.Decode(new(interface{})) != io.EOF ||
+		if err := decoder.Decode(&request); err != nil || decoder.Decode(new(any)) != io.EOF ||
 			!haHandoffIDPattern.MatchString(request.OperationID) || len(r.URL.Query()) != 0 {
 			haFailure(w, http.StatusBadRequest, fmt.Errorf("迁移请求必须只包含有效 operation_id"))
 			return

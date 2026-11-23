@@ -34,7 +34,7 @@ func oxSourceQuick(tag, kind string) bool {
 // The official API emits text DNS types/codes; tolerate their equivalent numeric
 // JSON forms without treating missing, null, boolean or object values as zero.
 func oxSourceToken(raw json.RawMessage, number float64, names ...string) bool {
-	var value interface{}
+	var value any
 	if json.Unmarshal(raw, &value) != nil {
 		return false
 	}

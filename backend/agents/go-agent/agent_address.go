@@ -179,7 +179,7 @@ func agentAddressHandler(cfg *Config) http.HandlerFunc {
 			if err != nil {
 				addresses = []string{}
 			}
-			routes.JsonResponse(w, http.StatusOK, map[string]interface{}{
+			routes.JsonResponse(w, http.StatusOK, map[string]any{
 				"success": true, "protocol": 1, "configured": cfg.configuredAgentIP(), "reported": cfg.heartbeatHost(),
 				"addresses": addresses, "writable": !supervised,
 			})
@@ -189,17 +189,17 @@ func agentAddressHandler(cfg *Config) http.HandlerFunc {
 			}
 			data, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 			if err != nil || json.Unmarshal(data, &body) != nil {
-				routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "请求内容无效"})
+				routes.JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求内容无效"})
 				return
 			}
 			if supervised {
-				routes.JsonResponse(w, http.StatusConflict, map[string]interface{}{"success": false, "message": "容器的地址由 AGENT_IP 环境变量决定，请修改后重建容器"})
+				routes.JsonResponse(w, http.StatusConflict, map[string]any{"success": false, "message": "容器的地址由 AGENT_IP 环境变量决定，请修改后重建容器"})
 				return
 			}
 			host := strings.TrimSpace(body.Host)
 			addresses, err := cfg.localAgentAddresses()
 			if err != nil {
-				routes.JsonResponse(w, http.StatusInternalServerError, map[string]interface{}{"success": false, "message": "读取本机网络地址失败：" + err.Error()})
+				routes.JsonResponse(w, http.StatusInternalServerError, map[string]any{"success": false, "message": "读取本机网络地址失败：" + err.Error()})
 				return
 			}
 			found := false
@@ -207,18 +207,18 @@ func agentAddressHandler(cfg *Config) http.HandlerFunc {
 				found = found || value == host
 			}
 			if !found {
-				routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "这台设备没有地址 " + host + "，只能选择它现有的局域网地址", "addresses": addresses})
+				routes.JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "这台设备没有地址 " + host + "，只能选择它现有的局域网地址", "addresses": addresses})
 				return
 			}
 			if cfg.configuredAgentIP() != host {
 				previous := cfg.configuredAgentIP()
 				if err := cfg.setAgentIP(host); err != nil {
-					routes.JsonResponse(w, http.StatusInternalServerError, map[string]interface{}{"success": false, "message": "写入 Agent 配置失败：" + err.Error()})
+					routes.JsonResponse(w, http.StatusInternalServerError, map[string]any{"success": false, "message": "写入 Agent 配置失败：" + err.Error()})
 					return
 				}
 				log.Printf("agent_ip in the Agent config changed from %q to %s at the server's request.", previous, host)
 			}
-			routes.JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "host": host})
+			routes.JsonResponse(w, http.StatusOK, map[string]any{"success": true, "host": host})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

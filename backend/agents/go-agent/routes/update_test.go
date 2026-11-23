@@ -47,13 +47,13 @@ func TestUpdateBusyNamesRunningRuleUpdate(t *testing.T) {
 	previousWait := updateLockWait
 	updateLockWait = 200 * time.Millisecond
 	defer func() { updateLockWait = previousWait }()
-	submit := func() map[string]interface{} {
+	submit := func() map[string]any {
 		recorder := httptest.NewRecorder()
 		HandleUpdate(cfg)(recorder, httptest.NewRequest(http.MethodPost, "/api/update", strings.NewReader(`{}`)))
 		if recorder.Code != http.StatusConflict {
 			t.Fatalf("status %d: %s", recorder.Code, recorder.Body.String())
 		}
-		var body map[string]interface{}
+		var body map[string]any
 		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}

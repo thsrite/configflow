@@ -203,10 +203,10 @@ func TestForwardFilterIsBoundedWhenInspectionHangs(t *testing.T) {
 
 func TestLinuxGatewayStatusAddsForwardFilterOnly(t *testing.T) {
 	g := newGatewayFixture(t)
-	call := func() map[string]interface{} {
+	call := func() map[string]any {
 		recorder := httptest.NewRecorder()
 		LinuxGatewayHandler(g.cfg, "status")(recorder, httptest.NewRequest(http.MethodGet, "/api/linux-gateway/status", nil))
-		var response map[string]interface{}
+		var response map[string]any
 		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != 200 {
 			t.Fatalf("status failed: %d %s", recorder.Code, recorder.Body.String())
 		}
@@ -223,7 +223,7 @@ func TestLinuxGatewayStatusAddsForwardFilterOnly(t *testing.T) {
 
 	// Selective gateway: not applicable, nothing inspected, other fields unchanged.
 	gateway := call()
-	filter, _ := gateway["forward_filter"].(map[string]interface{})
+	filter, _ := gateway["forward_filter"].(map[string]any)
 	if filter["state"] != "not_applicable" || filter["reason"] != "linux_gateway" || calls != 0 {
 		t.Fatalf("gateway host: %v calls=%d", gateway["forward_filter"], calls)
 	}
@@ -242,7 +242,7 @@ func TestLinuxGatewayStatusAddsForwardFilterOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	full := call()
-	filter, _ = full["forward_filter"].(map[string]interface{})
+	filter, _ = full["forward_filter"].(map[string]any)
 	if filter["state"] != "may_drop" || filter["device"] != "Meta" || calls != 1 || full["success"] != true {
 		t.Fatalf("full tun host: %v", full)
 	}

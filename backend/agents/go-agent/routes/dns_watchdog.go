@@ -196,7 +196,7 @@ func watchdogTargetFor(cfg *Config) (watchdogTarget, error) {
 	if err != nil {
 		return watchdogTarget{}, fmt.Errorf("cannot read active configuration")
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err = yaml.Unmarshal(data, &doc); err != nil || len(doc) == 0 {
 		return watchdogTarget{}, fmt.Errorf("cannot parse active configuration")
 	}
@@ -254,9 +254,9 @@ func watchdogDNSAddress(cfg *Config) (string, error) {
 	return target.address, err
 }
 
-func guardedWatchdogDNSAddress(cfg *Config, doc map[string]interface{}) (string, error) {
+func guardedWatchdogDNSAddress(cfg *Config, doc map[string]any) (string, error) {
 	if include := doc["include"]; include != nil {
-		values, ok := include.([]interface{})
+		values, ok := include.([]any)
 		if !ok || len(values) != 0 {
 			return "", fmt.Errorf("included DNS configuration cannot be checked for a local probe rule")
 		}
@@ -269,10 +269,10 @@ func guardedWatchdogDNSAddress(cfg *Config, doc map[string]interface{}) (string,
 			return "", fmt.Errorf("health_dns_address is not a supported local IP endpoint")
 		}
 	}
-	plugins, _ := doc["plugins"].([]interface{})
-	byTag := map[string]map[string]interface{}{}
+	plugins, _ := doc["plugins"].([]any)
+	byTag := map[string]map[string]any{}
 	for _, value := range plugins {
-		plugin, ok := value.(map[string]interface{})
+		plugin, ok := value.(map[string]any)
 		if !ok {
 			return "", fmt.Errorf("unsupported DNS plugin configuration")
 		}
@@ -283,14 +283,14 @@ func guardedWatchdogDNSAddress(cfg *Config, doc map[string]interface{}) (string,
 			byTag[tag] = plugin
 		}
 	}
-	var selected map[string]interface{}
+	var selected map[string]any
 	address := ""
 	for _, value := range plugins {
-		plugin := value.(map[string]interface{})
+		plugin := value.(map[string]any)
 		if plugin["type"] != "udp_server" {
 			continue
 		}
-		args, _ := plugin["args"].(map[string]interface{})
+		args, _ := plugin["args"].(map[string]any)
 		listen, _ := args["listen"].(string)
 		local, err := oxMonitorLocalAddress(loopbackAddress(listen))
 		if err != nil {
@@ -312,19 +312,19 @@ func guardedWatchdogDNSAddress(cfg *Config, doc map[string]interface{}) (string,
 	}
 	entry, _ := selected["entry"].(string)
 	sequence := byTag[entry]
-	steps, _ := sequence["args"].([]interface{})
+	steps, _ := sequence["args"].([]any)
 	if sequence["type"] != "sequence" || len(steps) == 0 || !isWatchdogLocalRule(steps[0]) {
 		return "", fmt.Errorf("UDP entry lacks the first local watchdog rule; publish the configuration to enable probing")
 	}
 	return address, nil
 }
 
-func isWatchdogLocalRule(value interface{}) bool {
-	rule, ok := value.(map[string]interface{})
+func isWatchdogLocalRule(value any) bool {
+	rule, ok := value.(map[string]any)
 	if !ok || len(rule) != 2 || rule["exec"] != "reject 3" {
 		return false
 	}
-	matches, _ := rule["matches"].([]interface{})
+	matches, _ := rule["matches"].([]any)
 	return len(matches) == 1 && matches[0] == "qname full:"+strings.TrimSuffix(watchdogProbeName, ".")
 }
 

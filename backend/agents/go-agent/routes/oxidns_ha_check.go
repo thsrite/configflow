@@ -38,13 +38,13 @@ func haCheckTarget(configPath string) (string, string) {
 		return address, name
 	}
 	address = net.JoinHostPort("127.0.0.1", chosen.Port)
-	plugins, _ := doc["plugins"].([]interface{})
+	plugins, _ := doc["plugins"].([]any)
 	for _, value := range plugins {
-		plugin, _ := value.(map[string]interface{})
+		plugin, _ := value.(map[string]any)
 		if tag, _ := plugin["tag"].(string); tag == "" || tag != chosen.Entry || plugin["type"] != "sequence" {
 			continue
 		}
-		steps, _ := plugin["args"].([]interface{})
+		steps, _ := plugin["args"].([]any)
 		if len(steps) > 0 && isWatchdogLocalRule(steps[0]) {
 			name = watchdogProbeName
 		}

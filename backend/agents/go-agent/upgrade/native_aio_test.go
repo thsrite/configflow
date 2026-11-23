@@ -20,7 +20,7 @@ func TestNativeAIOMigrationPreservesIndependentInstances(t *testing.T) {
 				}
 				binary := filepath.Join(dir, "configflow-agent")
 				paths[kind] = binary
-				c := &Config{Path: filepath.Join(dir, "config.json"), Values: map[string]interface{}{
+				c := &Config{Path: filepath.Join(dir, "config.json"), Values: map[string]any{
 					"native_aio": true, "deployment_method": "shell", "service_type": kind,
 					"config_path": "/etc/" + kind + "/config.yaml", "service_manager": manager, "service_unit": kind,
 					"agent_service_unit": "configflow-agent-" + kind, "agent_id": "id-" + kind, "token": "token-" + kind,

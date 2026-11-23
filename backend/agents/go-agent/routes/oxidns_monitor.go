@@ -42,7 +42,7 @@ func oxMonitorFail(status int, code, message string) *oxMonitorError {
 
 func oxMonitorWriteError(w http.ResponseWriter, err *oxMonitorError) {
 	w.Header().Set("Cache-Control", "no-store")
-	JsonResponse(w, err.status, map[string]interface{}{"success": false, "code": err.code, "message": err.message})
+	JsonResponse(w, err.status, map[string]any{"success": false, "code": err.code, "message": err.message})
 }
 
 // This wrapper preserves the monitoring error contract without changing legacy
@@ -92,16 +92,16 @@ func loadOxiDNSMonitorConfig(cfg *Config) (*oxMonitorConfig, *oxMonitorError) {
 	if err != nil || len(data) > oxMonitorJSONLimit {
 		return nil, oxMonitorFail(http.StatusConflict, "CONFIG_UNSUPPORTED", "Cannot read the active OxiDNS configuration")
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(data, &doc) != nil {
 		return nil, oxMonitorConfigError()
 	}
-	if includes, ok := doc["include"].([]interface{}); ok && len(includes) > 0 {
+	if includes, ok := doc["include"].([]any); ok && len(includes) > 0 {
 		// Managed deployments inline includes; do not guess the core loader's
 		// filesystem/environment expansion rules for other configurations.
 		return nil, oxMonitorConfigError()
 	}
-	api, _ := doc["api"].(map[string]interface{})
+	api, _ := doc["api"].(map[string]any)
 	if api == nil || api["http"] == nil {
 		return nil, oxMonitorFail(http.StatusConflict, "API_NOT_CONFIGURED", "Enable the OxiDNS HTTP API to use monitoring")
 	}
@@ -112,13 +112,13 @@ func loadOxiDNSMonitorConfig(cfg *Config) (*oxMonitorConfig, *oxMonitorError) {
 	switch httpConfig := api["http"].(type) {
 	case string:
 		listen = httpConfig
-	case map[string]interface{}:
+	case map[string]any:
 		listen, _ = httpConfig["listen"].(string)
 		if ssl := httpConfig["ssl"]; ssl != nil {
 			return nil, oxMonitorFail(http.StatusConflict, "TLS_UNSUPPORTED", "OxiDNS API TLS is not supported by this monitoring bridge")
 		}
 		if rawAuth := httpConfig["auth"]; rawAuth != nil {
-			auth, ok := rawAuth.(map[string]interface{})
+			auth, ok := rawAuth.(map[string]any)
 			if !ok || auth["type"] != "basic" {
 				return nil, oxMonitorConfigError()
 			}
@@ -143,10 +143,10 @@ func loadOxiDNSMonitorConfig(cfg *Config) (*oxMonitorConfig, *oxMonitorError) {
 		return nil, oxMonitorFail(http.StatusConflict, "CONFIG_UNSUPPORTED", "The OxiDNS API must listen on a local IP address")
 	}
 	config.endpoint = "http://" + address
-	plugins, _ := doc["plugins"].([]interface{})
+	plugins, _ := doc["plugins"].([]any)
 	seen := make(map[string]bool)
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		kind, _ := plugin["type"].(string)
 		if kind != "query_recorder" && kind != "cache" {
 			continue
@@ -594,7 +594,7 @@ func (config *oxMonitorConfig) exactIPRecords(ctx context.Context, client *http.
 		}
 		query.Set("cursor", *next)
 	}
-	data, err := json.Marshal(map[string]interface{}{"ok": true, "records": records, "next_cursor": next})
+	data, err := json.Marshal(map[string]any{"ok": true, "records": records, "next_cursor": next})
 	if err != nil || len(data) > oxMonitorJSONLimit {
 		return nil, oxMonitorFail(http.StatusBadGateway, "INVALID_RESPONSE", "OxiDNS API response exceeds the monitoring size limit")
 	}
@@ -693,7 +693,7 @@ func oxMonitorHandlerWithSources(cfg *Config, sources *oxSourceCache) http.Handl
 				oxMonitorWriteError(w, err)
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "capabilities": config.capabilities, "health": json.RawMessage(health), "metrics": string(metrics), "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "upstream_labels": config.rankings.upstreams})
+			JsonResponse(w, http.StatusOK, map[string]any{"success": true, "capabilities": config.capabilities, "health": json.RawMessage(health), "metrics": string(metrics), "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "upstream_labels": config.rankings.upstreams})
 			return
 		}
 		tag, err := config.recorder(recorder)

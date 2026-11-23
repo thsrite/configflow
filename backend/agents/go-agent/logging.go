@@ -19,7 +19,7 @@ var debugEnabled = func() bool {
 }()
 
 // logDebugf 输出例行调试日志，仅在 debugEnabled 为真时生效
-func logDebugf(format string, v ...interface{}) {
+func logDebugf(format string, v ...any) {
 	if debugEnabled {
 		log.Printf(format, v...)
 	}

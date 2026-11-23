@@ -277,12 +277,12 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-func loadCoreConfig(cfg Config) (map[string]interface{}, error) {
+func loadCoreConfig(cfg Config) (map[string]any, error) {
 	data, err := os.ReadFile(cfg.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取 %s 核心配置，请检查安装路径与读取权限", cfg.ServiceType)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc) == 0 {
 		// YAML errors can quote credentials or entire configuration lines.
 		return nil, fmt.Errorf("%s 核心配置需要是有效、非空的 YAML 对象", cfg.ServiceType)

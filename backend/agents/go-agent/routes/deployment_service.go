@@ -322,7 +322,7 @@ func validateStagedDeployment(cfg *Config, s *DeploymentState) (result error) {
 		}
 		data = []byte(modified)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if e = yaml.Unmarshal(data, &doc); e != nil || len(doc) == 0 {
 		return diagnosticFailure("configuration must be a nonempty YAML mapping", e, nil)
 	}
@@ -346,12 +346,12 @@ func validateStagedDeployment(cfg *Config, s *DeploymentState) (result error) {
 		listed[f.Path] = true
 	}
 	for _, kind := range []string{"proxy-providers", "rule-providers"} {
-		providers, ok := doc[kind].(map[string]interface{})
+		providers, ok := doc[kind].(map[string]any)
 		if !ok {
 			continue
 		}
 		for label, value := range providers {
-			provider, ok := value.(map[string]interface{})
+			provider, ok := value.(map[string]any)
 			if !ok {
 				return configurationLocation(fmt.Errorf("invalid %s entry %s", kind, label), s.Manifest.ConfigPath, data, kind, label)
 			}
@@ -474,8 +474,8 @@ func resolveStagedReference(cfg *Config, stage, raw string) (string, error) {
 	}
 	return rel, nil
 }
-func validateMosDNS(doc map[string]interface{}, stage string, m *DeploymentManifest) error {
-	plugins, ok := doc["plugins"].([]interface{})
+func validateMosDNS(doc map[string]any, stage string, m *DeploymentManifest) error {
+	plugins, ok := doc["plugins"].([]any)
 	if !ok || len(plugins) == 0 {
 		return fmt.Errorf("MosDNS plugins must be a nonempty sequence")
 	}
@@ -485,7 +485,7 @@ func validateMosDNS(doc map[string]interface{}, stage string, m *DeploymentManif
 		listed[f.Path] = true
 	}
 	for index, v := range plugins {
-		p, ok := v.(map[string]interface{})
+		p, ok := v.(map[string]any)
 		if !ok {
 			return pluginLocation(fmt.Errorf("invalid MosDNS plugin at index %d", index), stage, m, index)
 		}
@@ -500,11 +500,11 @@ func validateMosDNS(doc map[string]interface{}, stage string, m *DeploymentManif
 			}
 			tags[tag] = true
 		}
-		args, _ := p["args"].(map[string]interface{})
+		args, _ := p["args"].(map[string]any)
 		if args == nil {
 			continue
 		}
-		if values, ok := args["files"].([]interface{}); ok {
+		if values, ok := args["files"].([]any); ok {
 			for fileIndex, value := range values {
 				raw, ok := value.(string)
 				if !ok {
@@ -547,7 +547,7 @@ func deploymentProbe(cfg *Config) error {
 	if e != nil {
 		return e
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if e = yaml.Unmarshal(data, &doc); e != nil {
 		return diagnosticFailure("cannot parse active configuration", e, nil)
 	}
@@ -593,11 +593,11 @@ func deploymentProbe(cfg *Config) error {
 		}
 	}
 	if dnsAddress == "" && (cfg.ServiceType == "mosdns" || cfg.ServiceType == "oxidns") {
-		if plugins, ok := doc["plugins"].([]interface{}); ok {
+		if plugins, ok := doc["plugins"].([]any); ok {
 			for _, value := range plugins {
-				p, _ := value.(map[string]interface{})
+				p, _ := value.(map[string]any)
 				if p["type"] == "udp_server" {
-					a, _ := p["args"].(map[string]interface{})
+					a, _ := p["args"].(map[string]any)
 					dnsAddress, _ = a["listen"].(string)
 					if dnsAddress != "" {
 						break
@@ -643,7 +643,7 @@ func deploymentProbe(cfg *Config) error {
 	return nil
 }
 
-func mihomoRuntimeProbe(doc map[string]interface{}) error {
+func mihomoRuntimeProbe(doc map[string]any) error {
 	controller, _ := doc["external-controller"].(string)
 	unixController, _ := doc["external-controller-unix"].(string)
 	if controller == "" && unixController != "" {
@@ -654,7 +654,7 @@ func mihomoRuntimeProbe(doc map[string]interface{}) error {
 	if controller, ok := doc["external-controller"].(string); ok && controller != "" {
 		secret, _ := doc["secret"].(string)
 		for kind, endpoint := range map[string]string{"proxy-providers": "/providers/proxies", "rule-providers": "/providers/rules"} {
-			expected, _ := doc[kind].(map[string]interface{})
+			expected, _ := doc[kind].(map[string]any)
 			if len(expected) == 0 {
 				continue
 			}
@@ -702,7 +702,7 @@ func mihomoRuntimeProbe(doc map[string]interface{}) error {
 			}
 		}
 	}
-	if tun, ok := doc["tun"].(map[string]interface{}); ok && tun["enable"] == true {
+	if tun, ok := doc["tun"].(map[string]any); ok && tun["enable"] == true {
 		if device, ok := tun["device"].(string); ok && device != "" {
 			iface, e := net.InterfaceByName(device)
 			if e != nil || iface.Flags&net.FlagUp == 0 {

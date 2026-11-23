@@ -33,7 +33,7 @@ func readDiagnosticFile(name string) []byte {
 	return data
 }
 
-func yamlLocation(data []byte, path ...interface{}) (*yaml.Node, string) {
+func yamlLocation(data []byte, path ...any) (*yaml.Node, string) {
 	var document yaml.Node
 	if yaml.Unmarshal(data, &document) != nil || len(document.Content) == 0 {
 		return nil, ""
@@ -182,14 +182,14 @@ func diagnosticLocation(err error, file, source, field string, line int, data []
 		details = summary
 	}
 	result := &deploymentDiagnosticError{summary: summary, details: diagnosticLocationDetails(context, details), cause: err}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(data, &doc) == nil {
 		return diagnosticWithSecrets(result, configurationDiagnosticSecrets(doc)...)
 	}
 	return result
 }
 
-func configurationLocation(err error, file string, data []byte, path ...interface{}) error {
+func configurationLocation(err error, file string, data []byte, path ...any) error {
 	if err == nil {
 		return nil
 	}
@@ -201,9 +201,9 @@ func configurationLocation(err error, file string, data []byte, path ...interfac
 	return diagnosticLocation(err, file, "", field, line, data, true)
 }
 
-func pluginLocation(err error, stage string, manifest *DeploymentManifest, index int, field ...interface{}) error {
+func pluginLocation(err error, stage string, manifest *DeploymentManifest, index int, field ...any) error {
 	data := readDiagnosticFile(filepath.Join(stage, manifest.ConfigPath))
-	path := append([]interface{}{"plugins", index}, field...)
+	path := append([]any{"plugins", index}, field...)
 	node, position := yamlLocation(data, path...)
 	line := 0
 	if node != nil {

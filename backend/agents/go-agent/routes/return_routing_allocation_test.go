@@ -11,25 +11,25 @@ func allocationRouting() mihomoRouting {
 	return mihomoRouting{marks: map[string]uint32{}, tableIndex: 2022, ruleIndex: 9000}
 }
 
-func allocationRoute(table int) map[string]interface{} {
-	return map[string]interface{}{"dst": "default", "table": table, "dev": "other0"}
+func allocationRoute(table int) map[string]any {
+	return map[string]any{"dst": "default", "table": table, "dev": "other0"}
 }
 
-func allocationRule(priority int) map[string]interface{} {
-	return map[string]interface{}{"priority": priority, "table": 254, "src": "all"}
+func allocationRule(priority int) map[string]any {
+	return map[string]any{"priority": priority, "table": 254, "src": "all"}
 }
 
-func allocationMarkNFT(expression interface{}) map[string]interface{} {
-	return map[string]interface{}{"rule": map[string]interface{}{
+func allocationMarkNFT(expression any) map[string]any {
+	return map[string]any{"rule": map[string]any{
 		"family": "inet", "table": "other", "chain": "prerouting",
-		"expr": []interface{}{expression},
+		"expr": []any{expression},
 	}}
 }
 
-func allocationMarkOR(mark uint32) map[string]interface{} {
-	reference := map[string]interface{}{"meta": map[string]interface{}{"key": "mark"}}
-	return allocationMarkNFT(map[string]interface{}{"mangle": map[string]interface{}{
-		"key": reference, "value": map[string]interface{}{"|": []interface{}{reference, mark}},
+func allocationMarkOR(mark uint32) map[string]any {
+	reference := map[string]any{"meta": map[string]any{"key": "mark"}}
+	return allocationMarkNFT(map[string]any{"mangle": map[string]any{
+		"key": reference, "value": map[string]any{"|": []any{reference, mark}},
 	}})
 }
 
@@ -45,8 +45,8 @@ func TestReturnAllocationPrefersDefaultsAndDoesNotWrite(t *testing.T) {
 	}
 	t.Cleanup(func() { runCommand, runCommandInput = oldCommand, oldInput })
 	resources := &returnResources{
-		Routes: []map[string]interface{}{{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0"}},
-		Rules:  []map[string]interface{}{allocationRule(0), allocationRule(32766)},
+		Routes: []map[string]any{{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0"}},
+		Rules:  []map[string]any{allocationRule(0), allocationRule(32766)},
 	}
 	before, _ := json.Marshal(resources)
 	for i := 0; i < 2; i++ {
@@ -75,18 +75,18 @@ func TestReturnAllocationSelectsIndependentDimensions(t *testing.T) {
 		priority  int
 		mark      string
 	}{
-		{"route table occupied", &returnResources{Routes: []map[string]interface{}{allocationRoute(104)}}, nil, 105, 104, "0x400000"},
-		{"rule table referenced", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "table": "104"}}}, nil, 105, 104, "0x400000"},
-		{"priority occupied", &returnResources{Rules: []map[string]interface{}{allocationRule(104)}}, nil, 104, 105, "0x400000"},
-		{"goto target referenced", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "goto": 104}}}, nil, 104, 105, "0x400000"},
-		{"VRF table occupied", &returnResources{VRFs: []map[string]interface{}{{"ifindex": 7, "ifname": "vrf0", "linkinfo": map[string]interface{}{"info_kind": "vrf", "info_data": map[string]interface{}{"table": 104}}}}}, nil, 105, 104, "0x400000"},
+		{"route table occupied", &returnResources{Routes: []map[string]any{allocationRoute(104)}}, nil, 105, 104, "0x400000"},
+		{"rule table referenced", &returnResources{Rules: []map[string]any{{"priority": 5, "table": "104"}}}, nil, 105, 104, "0x400000"},
+		{"priority occupied", &returnResources{Rules: []map[string]any{allocationRule(104)}}, nil, 104, 105, "0x400000"},
+		{"goto target referenced", &returnResources{Rules: []map[string]any{{"priority": 5, "goto": 104}}}, nil, 104, 105, "0x400000"},
+		{"VRF table occupied", &returnResources{VRFs: []map[string]any{{"ifindex": 7, "ifname": "vrf0", "linkinfo": map[string]any{"info_kind": "vrf", "info_data": map[string]any{"table": 104}}}}}, nil, 105, 104, "0x400000"},
 		{"mihomo table", &returnResources{}, func(r *mihomoRouting) { r.tableIndex = 104 }, 105, 104, "0x400000"},
 		{"mihomo priority bound", &returnResources{}, func(r *mihomoRouting) { r.ruleIndex = 104 }, 104, 1, "0x400000"},
 		{"mihomo mark", &returnResources{}, func(r *mihomoRouting) { r.marks["routing-mark"] = 0x400000 }, 104, 104, "0x800000"},
-		{"zero mark still reserves mask", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "table": 254, "fwmark": "0x0/0x400000"}}}, nil, 104, 104, "0x800000"},
-		{"explicit mask reserves bit", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "table": 254, "fwmark": "0", "fwmask": "0x400000"}}}, nil, 104, 104, "0x800000"},
-		{"external NFT bit assignment", &returnResources{NFT: []map[string]interface{}{allocationMarkOR(0x400000)}}, nil, 104, 104, "0x800000"},
-		{"unrelated NFT bit assignment", &returnResources{NFT: []map[string]interface{}{allocationMarkOR(0x1)}}, nil, 104, 104, "0x400000"},
+		{"zero mark still reserves mask", &returnResources{Rules: []map[string]any{{"priority": 5, "table": 254, "fwmark": "0x0/0x400000"}}}, nil, 104, 104, "0x800000"},
+		{"explicit mask reserves bit", &returnResources{Rules: []map[string]any{{"priority": 5, "table": 254, "fwmark": "0", "fwmask": "0x400000"}}}, nil, 104, 104, "0x800000"},
+		{"external NFT bit assignment", &returnResources{NFT: []map[string]any{allocationMarkOR(0x400000)}}, nil, 104, 104, "0x800000"},
+		{"unrelated NFT bit assignment", &returnResources{NFT: []map[string]any{allocationMarkOR(0x1)}}, nil, 104, 104, "0x400000"},
 		{"high mark bits exhausted", &returnResources{}, func(r *mihomoRouting) { r.marks["routing-mark"] = 0xffc00000 }, 104, 104, "0x1"},
 		{"highest mark bit available", &returnResources{}, func(r *mihomoRouting) { r.marks["routing-mark"] = 0x7fffffff }, 104, 104, "0x80000000"},
 	}
@@ -116,7 +116,7 @@ func TestReturnAllocationFallsBackToLowNumbers(t *testing.T) {
 		resources.Rules = append(resources.Rules, allocationRule(priority))
 	}
 	resources.Routes = append(resources.Routes, allocationRoute(1))
-	resources.Rules = append(resources.Rules, map[string]interface{}{"priority": 1, "goto": 2})
+	resources.Rules = append(resources.Rules, map[string]any{"priority": 1, "goto": 2})
 	got, err := selectReturnAllocation(nil, resources, routing)
 	if err != nil || got.Table != 2 || got.Priority != 3 {
 		t.Fatalf("got %+v, %v; want table 2 and priority 3", got, err)
@@ -141,17 +141,17 @@ func TestReturnAllocationRejectsExhaustedOrUnknownResources(t *testing.T) {
 		{"all earlier priorities occupied", fullPriorities, func(r *mihomoRouting) { r.ruleIndex = 106 }},
 		{"no valid priority bound", &returnResources{}, func(r *mihomoRouting) { r.ruleIndex = 1 }},
 		{"all marks occupied", &returnResources{}, func(r *mihomoRouting) { r.marks["routing-mark"] = ^uint32(0) }},
-		{"implicit full rule mask", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "table": 254, "fwmark": "0x1"}}}, nil},
-		{"unexplained NFT mark operation", &returnResources{NFT: []map[string]interface{}{allocationMarkNFT(map[string]interface{}{"mangle": map[string]interface{}{"key": map[string]interface{}{"meta": map[string]interface{}{"key": "mark"}}, "value": map[string]interface{}{"map": "dynamic_marks"}}})}}, nil},
-		{"unknown fixed NFT table", &returnResources{NFT: []map[string]interface{}{{"table": map[string]interface{}{"family": "inet", "name": managedReturnTable}}}}, nil},
-		{"incomplete route", &returnResources{Routes: []map[string]interface{}{{}}}, nil},
-		{"unknown route table", &returnResources{Routes: []map[string]interface{}{{"dst": "default", "table": "custom_alias"}}}, nil},
-		{"unknown rule priority", &returnResources{Rules: []map[string]interface{}{{"priority": "bad", "table": 254}}}, nil},
-		{"unknown rule table", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "table": "custom_alias"}}}, nil},
-		{"unknown rule mask", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "table": 254, "fwmark": "1/bad"}}}, nil},
-		{"unknown goto target", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "goto": "104"}}}, nil},
-		{"unresolved goto target", &returnResources{Rules: []map[string]interface{}{{"priority": 5, "goto": 104, "unresolved": nil}}}, nil},
-		{"unknown VRF table", &returnResources{VRFs: []map[string]interface{}{{"linkinfo": map[string]interface{}{"info_kind": "vrf", "info_data": map[string]interface{}{}}}}}, nil},
+		{"implicit full rule mask", &returnResources{Rules: []map[string]any{{"priority": 5, "table": 254, "fwmark": "0x1"}}}, nil},
+		{"unexplained NFT mark operation", &returnResources{NFT: []map[string]any{allocationMarkNFT(map[string]any{"mangle": map[string]any{"key": map[string]any{"meta": map[string]any{"key": "mark"}}, "value": map[string]any{"map": "dynamic_marks"}}})}}, nil},
+		{"unknown fixed NFT table", &returnResources{NFT: []map[string]any{{"table": map[string]any{"family": "inet", "name": managedReturnTable}}}}, nil},
+		{"incomplete route", &returnResources{Routes: []map[string]any{{}}}, nil},
+		{"unknown route table", &returnResources{Routes: []map[string]any{{"dst": "default", "table": "custom_alias"}}}, nil},
+		{"unknown rule priority", &returnResources{Rules: []map[string]any{{"priority": "bad", "table": 254}}}, nil},
+		{"unknown rule table", &returnResources{Rules: []map[string]any{{"priority": 5, "table": "custom_alias"}}}, nil},
+		{"unknown rule mask", &returnResources{Rules: []map[string]any{{"priority": 5, "table": 254, "fwmark": "1/bad"}}}, nil},
+		{"unknown goto target", &returnResources{Rules: []map[string]any{{"priority": 5, "goto": "104"}}}, nil},
+		{"unresolved goto target", &returnResources{Rules: []map[string]any{{"priority": 5, "goto": 104, "unresolved": nil}}}, nil},
+		{"unknown VRF table", &returnResources{VRFs: []map[string]any{{"linkinfo": map[string]any{"info_kind": "vrf", "info_data": map[string]any{}}}}}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -168,9 +168,9 @@ func TestReturnAllocationRejectsExhaustedOrUnknownResources(t *testing.T) {
 
 func allocationOwnedState() (*returnRoutingState, *returnResources) {
 	owner := &returnOwnership{Version: 1, Token: "0123456789abcdef0123456789abcdef", Metric: 60104}
-	owner.Routes = []map[string]interface{}{{"dst": "default", "table": 105, "protocol": returnProtocol, "metric": owner.Metric, "gateway": "192.168.1.1", "dev": "eth0"}}
-	owner.Rules = []map[string]interface{}{{"priority": 205, "table": 105, "protocol": returnProtocol, "fwmark": "0x800000", "fwmask": "0x800000", "src": "all"}}
-	owner.NFT = []map[string]interface{}{{"table": map[string]interface{}{"family": "inet", "name": managedReturnTable, "comment": ownerTag(owner), "handle": 10}}}
+	owner.Routes = []map[string]any{{"dst": "default", "table": 105, "protocol": returnProtocol, "metric": owner.Metric, "gateway": "192.168.1.1", "dev": "eth0"}}
+	owner.Rules = []map[string]any{{"priority": 205, "table": 105, "protocol": returnProtocol, "fwmark": "0x800000", "fwmask": "0x800000", "src": "all"}}
+	owner.NFT = []map[string]any{{"table": map[string]any{"family": "inet", "name": managedReturnTable, "comment": ownerTag(owner), "handle": 10}}}
 	state := &returnRoutingState{Active: true, Ownership: owner, Spec: ReturnRoutingSpec{
 		SafetyVersion: 1, RouterIP: "192.168.1.1", ProxyDst: []string{"198.18.0.0/16"},
 		Mark: "0x800000", Table: 105, Priority: 205, LanInterface: "eth0",
@@ -220,7 +220,7 @@ func TestReturnAllocationRefusesToMoveChangedOrUnownedState(t *testing.T) {
 		{"legacy backup", func(s *returnRoutingState, _ *returnResources, _ *mihomoRouting) { s.Legacy = &legacyBackup{} }},
 		{"pending transaction with unprovable chain", func(s *returnRoutingState, r *returnResources, _ *mihomoRouting) {
 			s.Ownership.Pending = true
-			r.NFT = append(r.NFT, map[string]interface{}{"chain": map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": "cf_ffffffffffffffffffffffffffffffff_pre"}})
+			r.NFT = append(r.NFT, map[string]any{"chain": map[string]any{"family": "inet", "table": managedReturnTable, "name": "cf_ffffffffffffffffffffffffffffffff_pre"}})
 		}},
 		{"pending transaction with foreign route", func(s *returnRoutingState, r *returnResources, _ *mihomoRouting) {
 			s.Ownership.Pending = true
@@ -242,10 +242,10 @@ func TestReturnAllocationRefusesToMoveChangedOrUnownedState(t *testing.T) {
 			r.Rules = append(r.Rules, r.Rules[0])
 		}},
 		{"changed NFT handle", func(_ *returnRoutingState, r *returnResources, _ *mihomoRouting) {
-			r.NFT[0]["table"].(map[string]interface{})["handle"] = 11
+			r.NFT[0]["table"].(map[string]any)["handle"] = 11
 		}},
 		{"additional NFT object", func(_ *returnRoutingState, r *returnResources, _ *mihomoRouting) {
-			r.NFT = append(r.NFT, map[string]interface{}{"chain": map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": "foreign"}})
+			r.NFT = append(r.NFT, map[string]any{"chain": map[string]any{"family": "inet", "table": managedReturnTable, "name": "foreign"}})
 		}},
 		{"new mihomo mark overlap", func(_ *returnRoutingState, _ *returnResources, r *mihomoRouting) { r.marks["routing-mark"] = 0x800000 }},
 		{"new mihomo table overlap", func(_ *returnRoutingState, _ *returnResources, r *mihomoRouting) { r.tableIndex = 105 }},
@@ -264,9 +264,9 @@ func TestReturnAllocationRefusesToMoveChangedOrUnownedState(t *testing.T) {
 }
 
 func TestReturnAllocationFinalCombinationPassesBothSafetyChecks(t *testing.T) {
-	resources := &returnResources{Routes: []map[string]interface{}{allocationRoute(104)},
-		Rules: []map[string]interface{}{{"priority": 104, "goto": 105}, {"priority": 12, "table": 106, "fwmark": "0/0xc00000"}},
-		NFT:   []map[string]interface{}{allocationMarkOR(0x1000000)},
+	resources := &returnResources{Routes: []map[string]any{allocationRoute(104)},
+		Rules: []map[string]any{{"priority": 104, "goto": 105}, {"priority": 12, "table": 106, "fwmark": "0/0xc00000"}},
+		NFT:   []map[string]any{allocationMarkOR(0x1000000)},
 	}
 	routing := allocationRouting()
 	routing.tableIndex = 105

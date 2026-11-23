@@ -106,7 +106,7 @@ func (f *haFixture) writeOxiDNS(t *testing.T, listen string) {
 	}
 }
 
-func (f *haFixture) preview(t *testing.T, spec OxiDNSHASpec) map[string]interface{} {
+func (f *haFixture) preview(t *testing.T, spec OxiDNSHASpec) map[string]any {
 	t.Helper()
 	body, _ := json.Marshal(spec)
 	recorder := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func (f *haFixture) preview(t *testing.T, spec OxiDNSHASpec) map[string]interfac
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("preview status %d: %s", recorder.Code, recorder.Body.String())
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +612,7 @@ func TestOxiDNSHAStatus(t *testing.T) {
 	f := newHAFixture(t)
 	f.writeOxiDNS(t, "127.0.0.1:1") // the health probe gets a fast refusal
 	status := haStatus(f.cfg)
-	runtime := status["runtime"].(map[string]interface{})
+	runtime := status["runtime"].(map[string]any)
 	if status["managed"] != nil || status["protocol"] != 1 || runtime["role"] != "unknown" || runtime["keepalived_running"] != false || runtime["healthy"] != false {
 		t.Fatalf("unmanaged status: %#v", status)
 	}
@@ -622,13 +622,13 @@ func TestOxiDNSHAStatus(t *testing.T) {
 	}
 	f.writeOxiDNS(t, "0.0.0.0:1")
 	status = haStatus(f.cfg)
-	runtime = status["runtime"].(map[string]interface{})
-	managed := status["managed"].(map[string]interface{})
+	runtime = status["runtime"].(map[string]any)
+	managed := status["managed"].(map[string]any)
 	if managed["active"] != true || runtime["role"] != "backup" || runtime["vip_present"] != false || runtime["keepalived_running"] != true || status["error"] != "" {
 		t.Fatalf("backup status: %#v", status)
 	}
 	f.addresses = `[{"ifname":"eth0","addr_info":[{"local":"192.168.0.20","prefixlen":24},{"local":"192.168.0.2","prefixlen":24}]}]`
-	if runtime := haStatus(f.cfg)["runtime"].(map[string]interface{}); runtime["role"] != "master" || runtime["vip_present"] != true {
+	if runtime := haStatus(f.cfg)["runtime"].(map[string]any); runtime["role"] != "master" || runtime["vip_present"] != true {
 		t.Fatalf("master status: %#v", runtime)
 	}
 	os.Remove(haConfigPath())
@@ -733,7 +733,7 @@ func TestOxiDNSHARoutesAndCapabilities(t *testing.T) {
 			mux.ServeHTTP(recorder, request)
 			return recorder
 		}
-		var capabilities map[string]interface{}
+		var capabilities map[string]any
 		json.Unmarshal(get("/api/capabilities").Body.Bytes(), &capabilities)
 		_, advertised := capabilities["oxidns_ha_protocols"]
 		status := get("/api/oxidns-ha").Code

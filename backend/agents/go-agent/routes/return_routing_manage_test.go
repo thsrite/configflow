@@ -18,7 +18,7 @@ import (
 type fakeHost struct {
 	noNeigh                     bool
 	commands, inputs, mutations []string
-	routes, rules, nft, vrfs    []map[string]interface{}
+	routes, rules, nft, vrfs    []map[string]any
 	readErrors                  map[string]error
 	readReplies                 map[string]string
 	failNft                     bool
@@ -31,17 +31,17 @@ type fakeHost struct {
 	nextHandle              int
 }
 
-func jsonText(value interface{}) string { data, _ := json.Marshal(value); return string(data) }
-func jsonMaps(value []map[string]interface{}) []map[string]interface{} {
+func jsonText(value any) string { data, _ := json.Marshal(value); return string(data) }
+func jsonMaps(value []map[string]any) []map[string]any {
 	if value == nil {
-		return []map[string]interface{}{}
+		return []map[string]any{}
 	}
-	var copy []map[string]interface{}
+	var copy []map[string]any
 	_ = json.Unmarshal([]byte(jsonText(value)), &copy)
 	return copy
 }
-func sameJSON(a, b interface{}) bool  { return jsonText(a) == jsonText(b) }
-func number(value interface{}) string { return fmt.Sprint(value) }
+func sameJSON(a, b any) bool  { return jsonText(a) == jsonText(b) }
+func number(value any) string { return fmt.Sprint(value) }
 func argValue(args []string, key string) string {
 	for i := range args {
 		if args[i] == key && i+1 < len(args) {
@@ -94,17 +94,17 @@ func installFakeHost(t *testing.T, host *fakeHost) {
 			if host.nft106 {
 				for _, entry := range listed {
 					for _, kind := range []string{"table", "chain"} {
-						if body, ok := entry[kind].(map[string]interface{}); ok {
+						if body, ok := entry[kind].(map[string]any); ok {
 							delete(body, "comment")
 						}
 					}
 				}
 			}
-			return jsonText(map[string]interface{}{"nftables": listed}), nil
+			return jsonText(map[string]any{"nftables": listed}), nil
 		case "nft list tables":
 			var lines []string
 			for _, entry := range host.nft {
-				if table, ok := entry["table"].(map[string]interface{}); ok {
+				if table, ok := entry["table"].(map[string]any); ok {
 					lines = append(lines, "table "+number(table["family"])+" "+number(table["name"]))
 				}
 			}
@@ -115,10 +115,10 @@ func installFakeHost(t *testing.T, host *fakeHost) {
 		if name == "ip" && len(args) >= 4 && args[0] == "-4" && (args[1] == "route" || args[1] == "rule") && (args[2] == "add" || args[2] == "del") {
 			host.mutations = append(host.mutations, line)
 			kind, action := args[1], args[2]
-			var resource map[string]interface{}
-			var list *[]map[string]interface{}
+			var resource map[string]any
+			var list *[]map[string]any
 			if kind == "route" {
-				resource = map[string]interface{}{"dst": args[3], "gateway": argValue(args, "via"), "dev": argValue(args, "dev"), "table": argNumber(args, "table"), "protocol": argNumber(args, "proto"), "metric": argNumber(args, "metric"), "flags": []interface{}{}}
+				resource = map[string]any{"dst": args[3], "gateway": argValue(args, "via"), "dev": argValue(args, "dev"), "table": argNumber(args, "table"), "protocol": argNumber(args, "proto"), "metric": argNumber(args, "metric"), "flags": []any{}}
 				if resource["gateway"] == "" || resource["dev"] == "" || resource["protocol"] != 242 || resource["metric"] == 0 {
 					return "", fmt.Errorf("non-exact route mutation: %s", line)
 				}
@@ -128,7 +128,7 @@ func installFakeHost(t *testing.T, host *fakeHost) {
 				if len(mark) != 2 || argValue(args, "from") != "all" || argNumber(args, "protocol") != 242 {
 					return "", fmt.Errorf("non-exact rule mutation: %s", line)
 				}
-				resource = map[string]interface{}{"priority": argNumber(args, "priority"), "src": "all", "fwmark": mark[0], "fwmask": mark[1], "table": argNumber(args, "lookup"), "protocol": 242}
+				resource = map[string]any{"priority": argNumber(args, "priority"), "src": "all", "fwmark": mark[0], "fwmask": mark[1], "table": argNumber(args, "lookup"), "protocol": 242}
 				list = &host.rules
 			}
 			index := -1
@@ -181,7 +181,7 @@ func installFakeHost(t *testing.T, host *fakeHost) {
 // accidentally make a safety test pass.
 func (host *fakeHost) applyNFT(input string) error {
 	var document struct {
-		NFTables []map[string]interface{} `json:"nftables"`
+		NFTables []map[string]any `json:"nftables"`
 	}
 	if err := json.Unmarshal([]byte(input), &document); err != nil {
 		return err
@@ -199,12 +199,12 @@ func (host *fakeHost) applyNFT(input string) error {
 			continue
 		}
 		for action, raw := range operation {
-			objects, ok := raw.(map[string]interface{})
+			objects, ok := raw.(map[string]any)
 			if !ok {
 				return errors.New("bad nft operation")
 			}
 			for kind, rawObject := range objects {
-				object, ok := rawObject.(map[string]interface{})
+				object, ok := rawObject.(map[string]any)
 				if !ok {
 					return errors.New("bad nft object")
 				}
@@ -216,7 +216,7 @@ func (host *fakeHost) applyNFT(input string) error {
 				}
 				index := -1
 				for i, entry := range next {
-					existing, ok := entry[kind].(map[string]interface{})
+					existing, ok := entry[kind].(map[string]any)
 					if !ok || existing["family"] != object["family"] {
 						continue
 					}
@@ -234,10 +234,10 @@ func (host *fakeHost) applyNFT(input string) error {
 					if kind != "table" {
 						tablePresent, chainPresent := false, kind != "rule"
 						for _, entry := range next {
-							if table, ok := entry["table"].(map[string]interface{}); ok && table["family"] == object["family"] && table["name"] == object["table"] {
+							if table, ok := entry["table"].(map[string]any); ok && table["family"] == object["family"] && table["name"] == object["table"] {
 								tablePresent = true
 							}
-							if chain, ok := entry["chain"].(map[string]interface{}); ok && chain["family"] == object["family"] && chain["table"] == object["table"] && chain["name"] == object["chain"] {
+							if chain, ok := entry["chain"].(map[string]any); ok && chain["family"] == object["family"] && chain["table"] == object["table"] && chain["name"] == object["chain"] {
 								chainPresent = true
 							}
 						}
@@ -247,15 +247,15 @@ func (host *fakeHost) applyNFT(input string) error {
 					}
 					host.nextHandle++
 					object["handle"] = float64(host.nextHandle)
-					next = append(next, map[string]interface{}{kind: object})
+					next = append(next, map[string]any{kind: object})
 				case "delete":
 					if index < 0 {
 						return errors.New("No such file or directory")
 					}
 					if kind == "chain" {
-						chainName := next[index]["chain"].(map[string]interface{})["name"]
+						chainName := next[index]["chain"].(map[string]any)["name"]
 						for _, entry := range next {
-							if rule, ok := entry["rule"].(map[string]interface{}); ok && rule["family"] == object["family"] && rule["table"] == object["table"] && rule["chain"] == chainName {
+							if rule, ok := entry["rule"].(map[string]any); ok && rule["family"] == object["family"] && rule["table"] == object["table"] && rule["chain"] == chainName {
 								return errors.New("chain is not empty")
 							}
 						}
@@ -313,13 +313,13 @@ func assertNoWrites(t *testing.T, host *fakeHost) {
 		t.Fatalf("refusal must not write to host: %v", host.mutations)
 	}
 }
-func readStateJSON(t *testing.T, cfg *Config) map[string]interface{} {
+func readStateJSON(t *testing.T, cfg *Config) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(cfg.AgentConfigFile), "return-routing.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var state map[string]interface{}
+	var state map[string]any
 	if err = json.Unmarshal(data, &state); err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestReturnRoutingMovesBetweenDestinationAndRouterProtocols(t *testing.T) {
 	if _, err := ApplyReturnRouting(cfg, sampleSpec()); err != nil {
 		t.Fatal(err)
 	}
-	initial := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+	initial := readStateJSON(t, cfg)["ownership"].(map[string]any)
 	result, err := ApplyReturnRouting(cfg, routerSpec())
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +397,7 @@ func TestReturnRoutingMovesBetweenDestinationAndRouterProtocols(t *testing.T) {
 		t.Fatalf("switching protocols must not accumulate resources: %v %v %v", host.routes, host.rules, host.nft)
 	}
 	state := readStateJSON(t, cfg)
-	owner := state["ownership"].(map[string]interface{})
+	owner := state["ownership"].(map[string]any)
 	if owner["token"] != initial["token"] || state["active"] != true || owner["pending"] != false {
 		t.Fatalf("ownership was lost switching protocols: %v", state)
 	}
@@ -480,7 +480,7 @@ func TestReturnRoutingInvalidMihomoConfigRefusedWithoutWrites(t *testing.T) {
 				} else if err := os.WriteFile(cfg.ConfigPath, []byte(invalid), 0644); err != nil {
 					t.Fatal(err)
 				}
-				before := jsonText([]interface{}{host.routes, host.rules, host.nft})
+				before := jsonText([]any{host.routes, host.rules, host.nft})
 				host.mutations = nil
 				if _, err := ApplyReturnRouting(cfg, sampleSpec()); err == nil || !strings.Contains(err.Error(), "mihomo") {
 					t.Fatalf("invalid mihomo evidence must block application: %v", err)
@@ -490,7 +490,7 @@ func TestReturnRoutingInvalidMihomoConfigRefusedWithoutWrites(t *testing.T) {
 					t.Fatalf("invalid mihomo evidence must block status: %v", status)
 				}
 				assertNoWrites(t, host)
-				if before != jsonText([]interface{}{host.routes, host.rules, host.nft}) {
+				if before != jsonText([]any{host.routes, host.rules, host.nft}) {
 					t.Fatal("configuration uncertainty must preserve existing resources")
 				}
 			})
@@ -533,23 +533,23 @@ func TestLegacyReturnRoutingRefusedWithoutWrites(t *testing.T) {
 }
 func TestReturnRoutingOccupiedResourcesRefusedWithoutWrites(t *testing.T) {
 	cases := map[string]*fakeHost{
-		"route_table":   {routes: []map[string]interface{}{{"dst": "default", "gateway": "192.168.1.9", "dev": "eth0", "table": 104, "protocol": 4}}},
-		"rule_priority": {rules: []map[string]interface{}{{"priority": 104, "src": "all", "table": 105}}},
-		"rule_table":    {rules: []map[string]interface{}{{"priority": 200, "src": "all", "table": 104}}},
-		"mark_overlap":  {rules: []map[string]interface{}{{"priority": 200, "src": "all", "fwmark": "0x400000", "fwmask": "0x400000", "table": 105}}},
-		"nft_table":     {nft: []map[string]interface{}{{"table": map[string]interface{}{"family": "inet", "name": managedReturnTable, "handle": 1, "comment": "manual"}}}},
-		"vrf_table":     {vrfs: []map[string]interface{}{{"ifindex": 5, "ifname": "vrf-existing", "linkinfo": map[string]interface{}{"info_kind": "vrf", "info_data": map[string]interface{}{"table": 104}}}}},
+		"route_table":   {routes: []map[string]any{{"dst": "default", "gateway": "192.168.1.9", "dev": "eth0", "table": 104, "protocol": 4}}},
+		"rule_priority": {rules: []map[string]any{{"priority": 104, "src": "all", "table": 105}}},
+		"rule_table":    {rules: []map[string]any{{"priority": 200, "src": "all", "table": 104}}},
+		"mark_overlap":  {rules: []map[string]any{{"priority": 200, "src": "all", "fwmark": "0x400000", "fwmask": "0x400000", "table": 105}}},
+		"nft_table":     {nft: []map[string]any{{"table": map[string]any{"family": "inet", "name": managedReturnTable, "handle": 1, "comment": "manual"}}}},
+		"vrf_table":     {vrfs: []map[string]any{{"ifindex": 5, "ifname": "vrf-existing", "linkinfo": map[string]any{"info_kind": "vrf", "info_data": map[string]any{"table": 104}}}}},
 	}
 	for name, host := range cases {
 		t.Run(name, func(t *testing.T) {
 			installFakeHost(t, host)
 			cfg := testConfig(t, tunConfig)
-			before := jsonText([]interface{}{host.routes, host.rules, host.nft, host.vrfs})
+			before := jsonText([]any{host.routes, host.rules, host.nft, host.vrfs})
 			if _, err := ApplyReturnRouting(cfg, sampleSpec()); err == nil {
 				t.Fatal("occupied resource must be refused")
 			}
 			assertNoWrites(t, host)
-			if after := jsonText([]interface{}{host.routes, host.rules, host.nft, host.vrfs}); after != before {
+			if after := jsonText([]any{host.routes, host.rules, host.nft, host.vrfs}); after != before {
 				t.Fatal("foreign resources changed")
 			}
 		})
@@ -575,10 +575,10 @@ func TestReturnRoutingUnreadableResourcesRefusedWithoutWrites(t *testing.T) {
 	}
 }
 func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
-	foreignRoute := map[string]interface{}{"dst": "10.0.0.0/8", "gateway": "192.168.1.9", "dev": "eth0", "table": 105, "protocol": 4, "metric": 10}
-	foreignRule := map[string]interface{}{"priority": 200, "src": "all", "table": 105}
-	foreignTable := map[string]interface{}{"table": map[string]interface{}{"family": "inet", "name": "other_service", "handle": 100}}
-	host := &fakeHost{routes: []map[string]interface{}{foreignRoute}, rules: []map[string]interface{}{foreignRule}, nft: []map[string]interface{}{foreignTable}, nextHandle: 100}
+	foreignRoute := map[string]any{"dst": "10.0.0.0/8", "gateway": "192.168.1.9", "dev": "eth0", "table": 105, "protocol": 4, "metric": 10}
+	foreignRule := map[string]any{"priority": 200, "src": "all", "table": 105}
+	foreignTable := map[string]any{"table": map[string]any{"family": "inet", "name": "other_service", "handle": 100}}
+	host := &fakeHost{routes: []map[string]any{foreignRoute}, rules: []map[string]any{foreignRule}, nft: []map[string]any{foreignTable}, nextHandle: 100}
 	installFakeHost(t, host)
 	cfg := testConfig(t, tunConfig)
 	result, err := ApplyReturnRouting(cfg, sampleSpec())
@@ -592,7 +592,7 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 		t.Fatalf("expected two routes and one policy rule: routes=%v rules=%v", host.routes, host.rules)
 	}
 	state := readStateJSON(t, cfg)
-	owner, ok := state["ownership"].(map[string]interface{})
+	owner, ok := state["ownership"].(map[string]any)
 	if !ok || owner["version"] != float64(1) || owner["token"] == "" || owner["token"] == nil {
 		t.Fatalf("missing durable ownership: %v", state)
 	}
@@ -609,7 +609,7 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 	// fixed-name table carries none (nft 1.0.6 does not list its comment).
 	for _, entry := range host.nft {
 		for kind, raw := range entry {
-			object := raw.(map[string]interface{})
+			object := raw.(map[string]any)
 			if object["name"] == "other_service" || kind == "table" {
 				continue
 			}
@@ -632,7 +632,7 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 	if err != nil || result["success"] != true {
 		t.Fatalf("remove = %v, %v", result, err)
 	}
-	if !sameJSON(host.routes, []map[string]interface{}{foreignRoute}) || !sameJSON(host.rules, []map[string]interface{}{foreignRule}) {
+	if !sameJSON(host.routes, []map[string]any{foreignRoute}) || !sameJSON(host.rules, []map[string]any{foreignRule}) {
 		t.Fatalf("foreign routes/rules changed: %v %v", host.routes, host.rules)
 	}
 	if len(host.nft) != 2 {
@@ -641,7 +641,7 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 	if !sameJSON(host.nft[0], foreignTable) {
 		t.Fatal("foreign nft table changed")
 	}
-	ownedTable, ok := host.nft[1]["table"].(map[string]interface{})
+	ownedTable, ok := host.nft[1]["table"].(map[string]any)
 	if !ok || ownedTable["name"] != managedReturnTable {
 		t.Fatalf("owned table must be retained: %v", host.nft)
 	}
@@ -661,7 +661,7 @@ func TestReturnRoutingRepeatedApplyUpdatesScopeAndReusesEmptyTable(t *testing.T)
 	if _, err := ApplyReturnRouting(cfg, sampleSpec()); err != nil {
 		t.Fatal(err)
 	}
-	initial := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+	initial := readStateJSON(t, cfg)["ownership"].(map[string]any)
 	table := jsonText(host.nft[0])
 	updated := sampleSpec()
 	updated.ProxyDst = []string{"203.0.113.0/24"}
@@ -677,7 +677,7 @@ func TestReturnRoutingRepeatedApplyUpdatesScopeAndReusesEmptyTable(t *testing.T)
 			t.Fatalf("old destination scope remains: %s", rules)
 		}
 		state := readStateJSON(t, cfg)
-		owner := state["ownership"].(map[string]interface{})
+		owner := state["ownership"].(map[string]any)
 		if owner["token"] != initial["token"] || owner["metric"] != initial["metric"] || state["active"] != true || owner["pending"] != false {
 			t.Fatalf("ownership was lost on reapply: %v", state)
 		}
@@ -697,7 +697,7 @@ func TestReturnRoutingRepeatedApplyUpdatesScopeAndReusesEmptyTable(t *testing.T)
 		t.Fatalf("apply after removal: %v", err)
 	}
 	state := readStateJSON(t, cfg)
-	owner := state["ownership"].(map[string]interface{})
+	owner := state["ownership"].(map[string]any)
 	if len(host.routes) != 2 || len(host.rules) != 1 || len(host.nft) != 6 || table != jsonText(host.nft[0]) || owner["token"] != initial["token"] || state["active"] != true || owner["pending"] != false {
 		t.Fatalf("cannot safely reuse retained ownership: %v", state)
 	}
@@ -712,7 +712,7 @@ func TestReturnRoutingBootReplayRepairsMissingOwnedResources(t *testing.T) {
 			if _, err := ApplyReturnRouting(cfg, sampleSpec()); err != nil {
 				t.Fatal(err)
 			}
-			initial := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+			initial := readStateJSON(t, cfg)["ownership"].(map[string]any)
 			if status := managedReturnStatus(cfg); status["table_present"] != true {
 				t.Fatalf("complete initial resources must be healthy: %v", status)
 			}
@@ -741,7 +741,7 @@ func TestReturnRoutingBootReplayRepairsMissingOwnedResources(t *testing.T) {
 			assertNoWrites(t, host)
 			reapplyReturnRouting(cfg)
 			state := readStateJSON(t, cfg)
-			owner := state["ownership"].(map[string]interface{})
+			owner := state["ownership"].(map[string]any)
 			if len(host.routes) != 2 || len(host.rules) != 1 || len(host.nft) != 6 || state["active"] != true || owner["pending"] != false {
 				t.Fatalf("boot replay did not restore complete resources: %v", state)
 			}
@@ -788,17 +788,17 @@ func TestReturnRoutingBootReplayPreservesUnsafeOrInactiveState(t *testing.T) {
 			case "changed_route":
 				host.routes[0]["gateway"] = "192.168.1.9"
 			case "foreign_route":
-				host.routes = append(host.routes, map[string]interface{}{"dst": "203.0.113.0/24", "gateway": "192.168.1.9", "dev": "eth0", "table": 104, "protocol": 4})
+				host.routes = append(host.routes, map[string]any{"dst": "203.0.113.0/24", "gateway": "192.168.1.9", "dev": "eth0", "table": 104, "protocol": 4})
 			}
 			if err := saveReturnState(cfg, state); err != nil {
 				t.Fatal(err)
 			}
 			beforeState := jsonText(readStateJSON(t, cfg))
-			beforeHost := jsonText([]interface{}{host.routes, host.rules, host.nft})
+			beforeHost := jsonText([]any{host.routes, host.rules, host.nft})
 			host.mutations = nil
 			reapplyReturnRouting(cfg)
 			assertNoWrites(t, host)
-			if beforeState != jsonText(readStateJSON(t, cfg)) || beforeHost != jsonText([]interface{}{host.routes, host.rules, host.nft}) {
+			if beforeState != jsonText(readStateJSON(t, cfg)) || beforeHost != jsonText([]any{host.routes, host.rules, host.nft}) {
 				t.Fatal("refused boot replay changed resources or ownership")
 			}
 			if variant != "bad_config" {
@@ -813,10 +813,10 @@ func TestReturnRoutingBootReplayPreservesUnsafeOrInactiveState(t *testing.T) {
 func TestReturnRoutingFinalReadbackDetectsLostEarlierWrites(t *testing.T) {
 	for _, lost := range []string{"route", "rule"} {
 		t.Run(lost, func(t *testing.T) {
-			foreignRoute := map[string]interface{}{"dst": "10.0.0.0/8", "gateway": "192.168.1.9", "dev": "eth0", "table": 105, "protocol": 4, "metric": 10}
-			foreignRule := map[string]interface{}{"priority": 200, "src": "all", "table": 105}
-			foreignTable := map[string]interface{}{"table": map[string]interface{}{"family": "inet", "name": "other_service", "handle": 100}}
-			host := &fakeHost{routes: []map[string]interface{}{foreignRoute}, rules: []map[string]interface{}{foreignRule}, nft: []map[string]interface{}{foreignTable}, nextHandle: 100, dropResourceAfterNFTAdd: lost}
+			foreignRoute := map[string]any{"dst": "10.0.0.0/8", "gateway": "192.168.1.9", "dev": "eth0", "table": 105, "protocol": 4, "metric": 10}
+			foreignRule := map[string]any{"priority": 200, "src": "all", "table": 105}
+			foreignTable := map[string]any{"table": map[string]any{"family": "inet", "name": "other_service", "handle": 100}}
+			host := &fakeHost{routes: []map[string]any{foreignRoute}, rules: []map[string]any{foreignRule}, nft: []map[string]any{foreignTable}, nextHandle: 100, dropResourceAfterNFTAdd: lost}
 			installFakeHost(t, host)
 			cfg := testConfig(t, tunConfig)
 			result, err := ApplyReturnRouting(cfg, sampleSpec())
@@ -826,18 +826,18 @@ func TestReturnRoutingFinalReadbackDetectsLostEarlierWrites(t *testing.T) {
 			if host.dropResourceAfterNFTAdd != "" {
 				t.Fatal("test did not remove an earlier write during the successful nft transaction")
 			}
-			if !sameJSON(host.routes, []map[string]interface{}{foreignRoute}) || !sameJSON(host.rules, []map[string]interface{}{foreignRule}) {
+			if !sameJSON(host.routes, []map[string]any{foreignRoute}) || !sameJSON(host.rules, []map[string]any{foreignRule}) {
 				t.Fatalf("cleanup changed foreign resources or left owned routes/rules: %v %v", host.routes, host.rules)
 			}
 			if len(host.nft) != 2 || !sameJSON(host.nft[0], foreignTable) {
 				t.Fatalf("cleanup must preserve foreign nft config and the empty owned table: %v", host.nft)
 			}
-			if table, ok := host.nft[1]["table"].(map[string]interface{}); !ok || table["name"] != managedReturnTable {
+			if table, ok := host.nft[1]["table"].(map[string]any); !ok || table["name"] != managedReturnTable {
 				t.Fatalf("unexpected managed leftovers: %v", host.nft[1])
 			}
 			state := readStateJSON(t, cfg)
-			owner := state["ownership"].(map[string]interface{})
-			if state["active"] != false || owner["pending"] != false || len(owner["routes"].([]interface{})) != 0 || len(owner["rules"].([]interface{})) != 0 {
+			owner := state["ownership"].(map[string]any)
+			if state["active"] != false || owner["pending"] != false || len(owner["routes"].([]any)) != 0 || len(owner["rules"].([]any)) != 0 {
 				t.Fatalf("safe cleanup must finish with inactive ownership: %v", state)
 			}
 		})
@@ -845,13 +845,13 @@ func TestReturnRoutingFinalReadbackDetectsLostEarlierWrites(t *testing.T) {
 }
 
 func TestReturnRoutingFailedNFTDoesNotFlushForeignResources(t *testing.T) {
-	foreign := map[string]interface{}{"dst": "10.0.0.0/8", "table": 105, "protocol": 4}
-	host := &fakeHost{routes: []map[string]interface{}{foreign}, failNft: true}
+	foreign := map[string]any{"dst": "10.0.0.0/8", "table": 105, "protocol": 4}
+	host := &fakeHost{routes: []map[string]any{foreign}, failNft: true}
 	installFakeHost(t, host)
 	if _, err := ApplyReturnRouting(testConfig(t, tunConfig), sampleSpec()); err == nil {
 		t.Fatal("expected rejected nft transaction")
 	}
-	if !sameJSON(host.routes, []map[string]interface{}{foreign}) || len(host.rules) != 0 || len(host.nft) != 0 {
+	if !sameJSON(host.routes, []map[string]any{foreign}) || len(host.rules) != 0 || len(host.nft) != 0 {
 		t.Fatalf("partial apply did not clean up precisely: %+v", host)
 	}
 	for _, command := range host.commands {
@@ -877,29 +877,29 @@ func TestReturnRoutingChangedOwnershipRefusesRemovalWithoutWrites(t *testing.T) 
 				host.rules[0]["src"] = "192.168.1.100"
 			case "nft_rule", "nft_handle", "foreign_chain_rule":
 				for _, entry := range host.nft {
-					rule, ok := entry["rule"].(map[string]interface{})
+					rule, ok := entry["rule"].(map[string]any)
 					if !ok {
 						continue
 					}
 					if kind == "nft_rule" {
-						rule["expr"] = []interface{}{map[string]interface{}{"accept": nil}}
+						rule["expr"] = []any{map[string]any{"accept": nil}}
 					}
 					if kind == "nft_handle" {
 						rule["handle"] = rule["handle"].(float64) + 1000
 					}
 					if kind == "foreign_chain_rule" {
-						host.nft = append(host.nft, map[string]interface{}{"rule": map[string]interface{}{"family": "inet", "table": managedReturnTable, "chain": rule["chain"], "handle": 9999, "expr": []interface{}{map[string]interface{}{"accept": nil}}, "comment": "manual"}})
+						host.nft = append(host.nft, map[string]any{"rule": map[string]any{"family": "inet", "table": managedReturnTable, "chain": rule["chain"], "handle": 9999, "expr": []any{map[string]any{"accept": nil}}, "comment": "manual"}})
 					}
 					break
 				}
 			}
-			before := jsonText([]interface{}{host.routes, host.rules, host.nft})
+			before := jsonText([]any{host.routes, host.rules, host.nft})
 			host.mutations = nil
 			if _, err := RemoveReturnRouting(cfg, false); err == nil {
 				t.Fatal("changed ownership must prevent deletion")
 			}
 			assertNoWrites(t, host)
-			if before != jsonText([]interface{}{host.routes, host.rules, host.nft}) {
+			if before != jsonText([]any{host.routes, host.rules, host.nft}) {
 				t.Fatal("unconfirmed resources were changed")
 			}
 		})
@@ -907,8 +907,8 @@ func TestReturnRoutingChangedOwnershipRefusesRemovalWithoutWrites(t *testing.T) 
 }
 
 func TestReturnRoutingLostWriteReplyRetainsPendingEvidence(t *testing.T) {
-	foreign := map[string]interface{}{"dst": "10.0.0.0/8", "table": 105, "protocol": 4}
-	host := &fakeHost{routes: []map[string]interface{}{foreign}, loseRouteAddReply: true}
+	foreign := map[string]any{"dst": "10.0.0.0/8", "table": 105, "protocol": 4}
+	host := &fakeHost{routes: []map[string]any{foreign}, loseRouteAddReply: true}
 	installFakeHost(t, host)
 	cfg := testConfig(t, tunConfig)
 	if _, err := ApplyReturnRouting(cfg, sampleSpec()); err == nil {
@@ -918,7 +918,7 @@ func TestReturnRoutingLostWriteReplyRetainsPendingEvidence(t *testing.T) {
 		t.Fatalf("unconfirmed route and foreign resource must be preserved: %v", host.routes)
 	}
 	state := readStateJSON(t, cfg)
-	owner, ok := state["ownership"].(map[string]interface{})
+	owner, ok := state["ownership"].(map[string]any)
 	if !ok || owner["pending"] != true {
 		t.Fatalf("incomplete transaction must retain durable evidence: %v", state)
 	}
@@ -942,12 +942,12 @@ func TestReturnRoutingSuccessfulDeleteWithoutEffectPreservesJournal(t *testing.T
 			if _, err := ApplyReturnRouting(cfg, sampleSpec()); err != nil {
 				t.Fatal(err)
 			}
-			before := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+			before := readStateJSON(t, cfg)["ownership"].(map[string]any)
 			host.ignoreDelete = kind
 			if _, err := RemoveReturnRouting(cfg, false); err == nil {
 				t.Fatal("successful command without deletion must fail readback")
 			}
-			after := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+			after := readStateJSON(t, cfg)["ownership"].(map[string]any)
 			if after["pending"] != true {
 				t.Fatalf("unconfirmed removal must remain pending: %v", after)
 			}
@@ -963,7 +963,7 @@ func TestReturnRoutingSuccessfulDeleteWithoutEffectPreservesJournal(t *testing.T
 			if _, err := RemoveReturnRouting(cfg, false); err == nil {
 				t.Fatal("retry without effect must fail readback again")
 			}
-			again := readStateJSON(t, cfg)["ownership"].(map[string]interface{})
+			again := readStateJSON(t, cfg)["ownership"].(map[string]any)
 			if again["pending"] != true || !sameJSON(after[key], again[key]) {
 				t.Fatalf("failed retry discarded ownership: %v", again)
 			}

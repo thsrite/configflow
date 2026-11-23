@@ -19,18 +19,18 @@ func prepareOxiDNSRuntimeDirectories(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return err
 	}
-	plugins, _ := doc["plugins"].([]interface{})
+	plugins, _ := doc["plugins"].([]any)
 	uid, gid := -1, -1
 	if info, err := os.Stat(cfg.ConfigPath); err == nil {
 		uid, gid = fileOwnership(info)
 	}
 	for _, value := range plugins {
-		plugin, _ := value.(map[string]interface{})
-		args, _ := plugin["args"].(map[string]interface{})
+		plugin, _ := value.(map[string]any)
+		args, _ := plugin["args"].(map[string]any)
 		var key string
 		switch plugin["type"] {
 		case "dynamic_domain_set", "query_recorder":
@@ -140,13 +140,13 @@ func validateOxiDNSSystemdDirectory(properties, expectedConfig string) error {
 
 // OxiDNS state belongs to the running service, not a configuration revision.
 // Native checking uses an isolated state directory and never opens the live DB.
-func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config string, manifest *DeploymentManifest) error {
+func validateOxiDNS(cfg *Config, doc map[string]any, stage, config string, manifest *DeploymentManifest) error {
 	for _, f := range manifest.Files {
 		if f.Path == "state" || strings.HasPrefix(f.Path, "state/") {
 			return fmt.Errorf("OxiDNS runtime state cannot be replaced by a deployment")
 		}
 	}
-	if includes, ok := doc["include"].([]interface{}); ok && len(includes) > 0 {
+	if includes, ok := doc["include"].([]any); ok && len(includes) > 0 {
 		return fmt.Errorf("OxiDNS deployment must inline included plugin definitions")
 	}
 	// The shadow document is only for native validation. Absolute/environment
@@ -156,11 +156,11 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 	if err != nil {
 		return err
 	}
-	var shadow map[string]interface{}
+	var shadow map[string]any
 	if err := yaml.Unmarshal(shadowBytes, &shadow); err != nil {
 		return err
 	}
-	plugins, ok := shadow["plugins"].([]interface{})
+	plugins, ok := shadow["plugins"].([]any)
 	if !ok {
 		return fmt.Errorf("OxiDNS plugins must be a sequence")
 	}
@@ -170,7 +170,7 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 	for _, file := range manifest.Files {
 		listed[file.Path] = true
 	}
-	checkReference := func(value interface{}) error {
+	checkReference := func(value any) error {
 		raw, ok := value.(string)
 		if !ok || raw == "" {
 			return fmt.Errorf("invalid OxiDNS resource file reference")
@@ -189,11 +189,11 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 	}
 	tags := map[string]bool{}
 	for index, value := range plugins {
-		p, ok := value.(map[string]interface{})
+		p, ok := value.(map[string]any)
 		if !ok {
 			return pluginLocation(fmt.Errorf("invalid OxiDNS plugin"), stage, manifest, index)
 		}
-		args, _ := p["args"].(map[string]interface{})
+		args, _ := p["args"].(map[string]any)
 		kind, _ := p["type"].(string)
 		tag, _ := p["tag"].(string)
 		if kind == "" || tag == "" || tags[tag] {
@@ -208,34 +208,34 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 			return pluginLocation(err, stage, manifest, index, "args", "timezone")
 		}
 		type resourceReference struct {
-			value interface{}
-			path  []interface{}
+			value any
+			path  []any
 		}
 		references := []resourceReference{}
 		for _, key := range []string{"file", "cert", "key"} {
 			if file, ok := args[key]; ok && file != "" && file != nil {
-				references = append(references, resourceReference{file, []interface{}{"args", key}})
+				references = append(references, resourceReference{file, []any{"args", key}})
 			}
 		}
 		if values, exists := args["files"]; exists {
-			files, ok := values.([]interface{})
+			files, ok := values.([]any)
 			if !ok {
 				return pluginLocation(fmt.Errorf("OxiDNS files must be a sequence"), stage, manifest, index, "args", "files")
 			}
 			for fileIndex, file := range files {
-				references = append(references, resourceReference{file, []interface{}{"args", "files", fileIndex}})
+				references = append(references, resourceReference{file, []any{"args", "files", fileIndex}})
 			}
 		}
-		if persistent, ok := args["persistent"].(map[string]interface{}); ok {
-			if files, ok := persistent["files"].([]interface{}); ok {
+		if persistent, ok := args["persistent"].(map[string]any); ok {
+			if files, ok := persistent["files"].([]any); ok {
 				for fileIndex, file := range files {
-					references = append(references, resourceReference{file, []interface{}{"args", "persistent", "files", fileIndex}})
+					references = append(references, resourceReference{file, []any{"args", "persistent", "files", fileIndex}})
 				}
 			}
 		}
-		if tls, ok := args["tls"].(map[string]interface{}); ok {
+		if tls, ok := args["tls"].(map[string]any); ok {
 			if ca, exists := tls["ca"]; exists && ca != "" && ca != nil {
-				references = append(references, resourceReference{ca, []interface{}{"args", "tls", "ca"}})
+				references = append(references, resourceReference{ca, []any{"args", "tls", "ca"}})
 			}
 		}
 		for _, reference := range references {
@@ -283,9 +283,9 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 			}
 		}
 	}
-	if api, ok := shadow["api"].(map[string]interface{}); ok {
-		if http, ok := api["http"].(map[string]interface{}); ok {
-			if ssl, ok := http["ssl"].(map[string]interface{}); ok {
+	if api, ok := shadow["api"].(map[string]any); ok {
+		if http, ok := api["http"].(map[string]any); ok {
+			if ssl, ok := http["ssl"].(map[string]any); ok {
 				for _, key := range []string{"cert", "key", "client_ca"} {
 					if value, ok := ssl[key]; ok && value != "" && value != nil {
 						if err := checkReference(value); err != nil {
@@ -294,7 +294,7 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 					}
 				}
 			}
-			if webui, ok := http["webui"].(map[string]interface{}); ok {
+			if webui, ok := http["webui"].(map[string]any); ok {
 				if root, ok := webui["root"].(string); ok && root != "" {
 					index, _ := webui["index"].(string)
 					if index == "" {
@@ -357,10 +357,10 @@ func validateOxiDNS(cfg *Config, doc map[string]interface{}, stage, config strin
 
 // Derive credentials only for the configured local management endpoint. An
 // arbitrary health_url must never receive the core's management credentials.
-func oxidnsHealthEndpoint(doc map[string]interface{}, override string) (string, string, string, error) {
-	api, _ := doc["api"].(map[string]interface{})
+func oxidnsHealthEndpoint(doc map[string]any, override string) (string, string, string, error) {
+	api, _ := doc["api"].(map[string]any)
 	endpoint, _ := api["http"].(string)
-	httpConfig, _ := api["http"].(map[string]interface{})
+	httpConfig, _ := api["http"].(map[string]any)
 	if httpConfig != nil {
 		endpoint, _ = httpConfig["listen"].(string)
 	}
@@ -368,7 +368,7 @@ func oxidnsHealthEndpoint(doc map[string]interface{}, override string) (string, 
 		return override, "", "", nil
 	}
 	scheme := "http"
-	if ssl, ok := httpConfig["ssl"].(map[string]interface{}); ok && len(ssl) > 0 {
+	if ssl, ok := httpConfig["ssl"].(map[string]any); ok && len(ssl) > 0 {
 		// A loopback URL cannot authenticate a hostname certificate or client-cert
 		// endpoint. Keep actual DNS + service probes; never disable TLS validation.
 		if override == "" {
@@ -395,7 +395,7 @@ func oxidnsHealthEndpoint(doc map[string]interface{}, override string) (string, 
 	}
 	username, password := "", ""
 	if sameHost && parsed.Scheme == configured.Scheme {
-		auth, _ := httpConfig["auth"].(map[string]interface{})
+		auth, _ := httpConfig["auth"].(map[string]any)
 		if auth["type"] == "basic" {
 			username, _ = auth["username"].(string)
 			password, _ = auth["password"].(string)

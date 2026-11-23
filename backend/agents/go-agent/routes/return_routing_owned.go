@@ -46,7 +46,7 @@ func validReturnOwner(state *returnRoutingState) bool {
 			return false
 		}
 		for kind, raw := range object {
-			body, ok := raw.(map[string]interface{})
+			body, ok := raw.(map[string]any)
 			if !ok {
 				return false
 			}
@@ -98,7 +98,7 @@ func lockReturnJournal(cfg *Config) (func(), error) {
 	return func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN); _ = file.Close() }, nil
 }
 
-func returnSafetyStatus(cfg *Config) map[string]interface{} {
+func returnSafetyStatus(cfg *Config) map[string]any {
 	blockers := []string{}
 	state, err := loadReturnState(cfg)
 	var allocation returnAllocation
@@ -116,7 +116,7 @@ func returnSafetyStatus(cfg *Config) map[string]interface{} {
 	if err != nil {
 		blockers = append(blockers, err.Error())
 	}
-	status := map[string]interface{}{"version": 1, "protocols": returnProtocols, "ok": len(blockers) == 0, "blockers": blockers}
+	status := map[string]any{"version": 1, "protocols": returnProtocols, "ok": len(blockers) == 0, "blockers": blockers}
 	if err == nil {
 		status["allocation"] = allocation
 	}
@@ -132,20 +132,20 @@ func newReturnOwner() (*returnOwnership, error) {
 	}
 	return &returnOwnership{Version: 1, Token: hex.EncodeToString(token[:]),
 		Metric: int(binary.BigEndian.Uint32(token[:4])&0x3fffffff) + 100000,
-		Routes: []map[string]interface{}{}, Rules: []map[string]interface{}{},
-		NFT: []map[string]interface{}{}, Pending: true}, nil
+		Routes: []map[string]any{}, Rules: []map[string]any{},
+		NFT: []map[string]any{}, Pending: true}, nil
 }
 
-func nftObject(kind string, body map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{kind: body}
+func nftObject(kind string, body map[string]any) map[string]any {
+	return map[string]any{kind: body}
 }
 
-func markExpr(kind string) map[string]interface{} {
-	return map[string]interface{}{kind: map[string]interface{}{"key": "mark"}}
+func markExpr(kind string) map[string]any {
+	return map[string]any{kind: map[string]any{"key": "mark"}}
 }
 
-func nftMatch(left, right interface{}, op string) map[string]interface{} {
-	return map[string]interface{}{"match": map[string]interface{}{"left": left, "right": right, "op": op}}
+func nftMatch(left, right any, op string) map[string]any {
+	return map[string]any{"match": map[string]any{"left": left, "right": right, "op": op}}
 }
 
 // Anonymous address sets live inside the owned rule. No shared named set is
@@ -155,70 +155,70 @@ func nftMatch(left, right interface{}, op string) map[string]interface{} {
 // carry the journal token in their names and rules carry it in their comments.
 // Tables and chains get no comment, because nft 1.0.6 (Debian 12) omits
 // table/chain comments from "nft -j list" and the readback could never match.
-func desiredReturnNFT(spec resolvedSpec, owner *returnOwnership) []map[string]interface{} {
+func desiredReturnNFT(spec resolvedSpec, owner *returnOwnership) []map[string]any {
 	tag := ownerTag(owner)
 	pre, output := "cf_"+owner.Token+"_pre", "cf_"+owner.Token+"_out"
-	objects := []map[string]interface{}{
-		nftObject("table", map[string]interface{}{"family": "inet", "name": managedReturnTable}),
-		nftObject("chain", map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": pre,
+	objects := []map[string]any{
+		nftObject("table", map[string]any{"family": "inet", "name": managedReturnTable}),
+		nftObject("chain", map[string]any{"family": "inet", "table": managedReturnTable, "name": pre,
 			"type": "filter", "hook": "prerouting", "prio": -150, "policy": "accept"}),
-		nftObject("chain", map[string]interface{}{"family": "inet", "table": managedReturnTable, "name": output,
+		nftObject("chain", map[string]any{"family": "inet", "table": managedReturnTable, "name": output,
 			"type": "route", "hook": "output", "prio": -150, "policy": "accept"}),
 	}
-	addresses := []interface{}{}
+	addresses := []any{}
 	for _, cidr := range spec.ProxyDst {
 		ip, network, _ := net.ParseCIDR(cidr)
 		ones, _ := network.Mask.Size()
 		if ones == 32 {
 			addresses = append(addresses, ip.String())
 		} else {
-			addresses = append(addresses, map[string]interface{}{"prefix": map[string]interface{}{"addr": network.IP.String(), "len": ones}})
+			addresses = append(addresses, map[string]any{"prefix": map[string]any{"addr": network.IP.String(), "len": ones}})
 		}
 	}
-	meta := func(key string) interface{} {
-		return map[string]interface{}{"meta": map[string]interface{}{"key": key}}
+	meta := func(key string) any {
+		return map[string]any{"meta": map[string]any{"key": key}}
 	}
-	payload := func(protocol, field string) interface{} {
-		return map[string]interface{}{"payload": map[string]interface{}{"protocol": protocol, "field": field}}
+	payload := func(protocol, field string) any {
+		return map[string]any{"payload": map[string]any{"protocol": protocol, "field": field}}
 	}
-	setMark := func(kind string) interface{} {
-		return map[string]interface{}{"mangle": map[string]interface{}{"key": markExpr(kind),
-			"value": map[string]interface{}{"|": []interface{}{markExpr(kind), spec.mark}}}}
+	setMark := func(kind string) any {
+		return map[string]any{"mangle": map[string]any{"key": markExpr(kind),
+			"value": map[string]any{"|": []any{markExpr(kind), spec.mark}}}}
 	}
-	addRule := func(chain, suffix string, expr []interface{}) {
-		objects = append(objects, nftObject("rule", map[string]interface{}{"family": "inet", "table": managedReturnTable,
+	addRule := func(chain, suffix string, expr []any) {
+		objects = append(objects, nftObject("rule", map[string]any{"family": "inet", "table": managedReturnTable,
 			"chain": chain, "expr": expr, "comment": tag + ":" + suffix}))
 	}
-	incoming := []interface{}{
+	incoming := []any{
 		nftMatch(meta("iifname"), spec.LanInterface, "=="),
 		nftMatch(payload("ether", "saddr"), spec.routerMAC, "=="),
 	}
 	if spec.SafetyVersion == returnProtocolByDestination {
-		incoming = append(incoming, nftMatch(payload("ip", "daddr"), map[string]interface{}{"set": addresses}, "=="))
+		incoming = append(incoming, nftMatch(payload("ip", "daddr"), map[string]any{"set": addresses}, "=="))
 	} else {
 		// Every connection the router forwards here gets its replies back through
 		// the router, whatever the destination; IPv4 only, like the routes.
 		incoming = append(incoming, nftMatch(meta("nfproto"), "ipv4", "=="))
 	}
 	addRule(pre, "incoming", append(incoming,
-		nftMatch(map[string]interface{}{"ct": map[string]interface{}{"key": "state"}}, "new", "in"),
+		nftMatch(map[string]any{"ct": map[string]any{"key": "state"}}, "new", "in"),
 		setMark("ct"),
 	))
-	marked := func() interface{} {
-		return nftMatch(map[string]interface{}{"&": []interface{}{markExpr("ct"), spec.mark}}, spec.mark, "==")
+	marked := func() any {
+		return nftMatch(map[string]any{"&": []any{markExpr("ct"), spec.mark}}, spec.mark, "==")
 	}
 	if spec.TunDevice != "" {
-		addRule(pre, "tun", []interface{}{nftMatch(meta("iifname"), spec.TunDevice, "=="), marked(), setMark("meta")})
+		addRule(pre, "tun", []any{nftMatch(meta("iifname"), spec.TunDevice, "=="), marked(), setMark("meta")})
 	}
-	addRule(output, "local", []interface{}{marked(), setMark("meta")})
+	addRule(output, "local", []any{marked(), setMark("meta")})
 	return objects
 }
 
-func runNFT(commands []map[string]interface{}) error {
+func runNFT(commands []map[string]any) error {
 	if len(commands) == 0 {
 		return nil
 	}
-	data, err := json.Marshal(map[string]interface{}{"nftables": commands})
+	data, err := json.Marshal(map[string]any{"nftables": commands})
 	if err != nil {
 		return err
 	}
@@ -237,8 +237,8 @@ func checkedResources(spec resolvedSpec, state *returnRoutingState) (*returnReso
 	return resources, nil
 }
 
-func matchingResource(expected map[string]interface{}, rows []map[string]interface{}) (map[string]interface{}, error) {
-	var found map[string]interface{}
+func matchingResource(expected map[string]any, rows []map[string]any) (map[string]any, error) {
+	var found map[string]any
 	for _, row := range rows {
 		if normalizedResourceEqual(withoutContainerComment(expected), withoutContainerComment(row)) {
 			if found != nil {
@@ -250,11 +250,11 @@ func matchingResource(expected map[string]interface{}, rows []map[string]interfa
 	return found, nil
 }
 
-func confirmResources(expected, actual []map[string]interface{}) ([]map[string]interface{}, error) {
+func confirmResources(expected, actual []map[string]any) ([]map[string]any, error) {
 	if len(expected) != len(actual) {
 		return nil, fmt.Errorf("写入后的资源数量与计划不一致")
 	}
-	confirmed := []map[string]interface{}{}
+	confirmed := []map[string]any{}
 	for _, row := range expected {
 		match, err := matchingResource(row, actual)
 		if err != nil {
@@ -268,7 +268,7 @@ func confirmResources(expected, actual []map[string]interface{}) ([]map[string]i
 	return confirmed, nil
 }
 
-func routeArguments(action string, row map[string]interface{}) ([]string, error) {
+func routeArguments(action string, row map[string]any) ([]string, error) {
 	text := func(key string) string { value, _ := row[key].(string); return value }
 	table, tableOK := resourceNumber(row["table"])
 	proto, protoOK := resourceNumber(row["protocol"])
@@ -280,7 +280,7 @@ func routeArguments(action string, row map[string]interface{}) ([]string, error)
 		"table", strconv.FormatUint(table, 10), "proto", strconv.FormatUint(proto, 10), "metric", strconv.FormatUint(metric, 10)}, nil
 }
 
-func ruleArguments(action string, row map[string]interface{}) ([]string, error) {
+func ruleArguments(action string, row map[string]any) ([]string, error) {
 	priority, pOK := resourceNumber(row["priority"])
 	table, tOK := resourceNumber(row["table"])
 	mark, mOK := resourceNumber(row["fwmark"])
@@ -302,11 +302,11 @@ func removeOwnedReturn(cfg *Config, spec resolvedSpec, state *returnRoutingState
 		return err
 	}
 	owner := state.Ownership
-	commands := []map[string]interface{}{}
-	tables := []map[string]interface{}{}
+	commands := []map[string]any{}
+	tables := []map[string]any{}
 	for _, kind := range []string{"rule", "chain", "table"} {
 		for _, object := range owner.NFT {
-			body, ok := object[kind].(map[string]interface{})
+			body, ok := object[kind].(map[string]any)
 			if !ok {
 				continue
 			}
@@ -317,7 +317,7 @@ func removeOwnedReturn(cfg *Config, spec resolvedSpec, state *returnRoutingState
 			if current == nil {
 				continue
 			}
-			actual := current[kind].(map[string]interface{})
+			actual := current[kind].(map[string]any)
 			if kind == "table" {
 				tables = append(tables, current)
 				continue
@@ -327,14 +327,14 @@ func removeOwnedReturn(cfg *Config, spec resolvedSpec, state *returnRoutingState
 			if !a || !b || oldHandle != handle {
 				return fmt.Errorf("nft 资源标识已变化，拒绝删除")
 			}
-			selector := map[string]interface{}{"family": "inet", "table": managedReturnTable}
+			selector := map[string]any{"family": "inet", "table": managedReturnTable}
 			if kind == "rule" {
 				selector["chain"] = body["chain"]
 				selector["handle"] = handle
 			} else {
 				selector["handle"] = handle
 			}
-			commands = append(commands, map[string]interface{}{"delete": nftObject(kind, selector)})
+			commands = append(commands, map[string]any{"delete": nftObject(kind, selector)})
 		}
 	}
 	if err = runNFT(commands); err != nil {
@@ -436,13 +436,13 @@ func removeOwnedReturn(cfg *Config, spec resolvedSpec, state *returnRoutingState
 
 // ownedRouteExpectation and ownedRuleExpectation are the exact rows written
 // for spec; readback and replay comparisons use the same shapes.
-func ownedRouteExpectation(spec resolvedSpec, owner *returnOwnership, dst string) map[string]interface{} {
-	return map[string]interface{}{"dst": dst, "gateway": spec.RouterIP, "dev": spec.LanInterface,
-		"table": spec.Table, "protocol": returnProtocol, "metric": owner.Metric, "flags": []interface{}{}}
+func ownedRouteExpectation(spec resolvedSpec, owner *returnOwnership, dst string) map[string]any {
+	return map[string]any{"dst": dst, "gateway": spec.RouterIP, "dev": spec.LanInterface,
+		"table": spec.Table, "protocol": returnProtocol, "metric": owner.Metric, "flags": []any{}}
 }
 
-func ownedRuleExpectation(spec resolvedSpec) map[string]interface{} {
-	return map[string]interface{}{"priority": spec.Priority, "src": "all", "fwmark": fmt.Sprintf("0x%x", spec.mark),
+func ownedRuleExpectation(spec resolvedSpec) map[string]any {
+	return map[string]any{"priority": spec.Priority, "src": "all", "fwmark": fmt.Sprintf("0x%x", spec.mark),
 		"fwmask": fmt.Sprintf("0x%x", spec.mark), "table": spec.Table, "protocol": returnProtocol}
 }
 
@@ -451,12 +451,12 @@ func ownedRuleExpectation(spec resolvedSpec) map[string]interface{} {
 // replay time, so a change there must still trigger a real replay.
 func ownedMatchesSpec(spec resolvedSpec, owner *returnOwnership) bool {
 	expected := []struct {
-		rows []map[string]interface{}
-		want []map[string]interface{}
+		rows []map[string]any
+		want []map[string]any
 	}{
-		{owner.Routes, []map[string]interface{}{ownedRouteExpectation(spec, owner, "default"),
+		{owner.Routes, []map[string]any{ownedRouteExpectation(spec, owner, "default"),
 			ownedRouteExpectation(spec, owner, spec.lanCIDR)}},
-		{owner.Rules, []map[string]interface{}{ownedRuleExpectation(spec)}},
+		{owner.Rules, []map[string]any{ownedRuleExpectation(spec)}},
 		{owner.NFT, desiredReturnNFT(spec, owner)},
 	}
 	for _, group := range expected {
@@ -535,7 +535,7 @@ func addOwnedReturn(cfg *Config, spec resolvedSpec, state *returnRoutingState) e
 		return err
 	}
 	objects := desiredReturnNFT(spec, owner)
-	commands := []map[string]interface{}{}
+	commands := []map[string]any{}
 	for _, object := range objects {
 		if _, isTable := object["table"]; isTable && len(owner.NFT) > 0 {
 			continue
@@ -544,7 +544,7 @@ func addOwnedReturn(cfg *Config, spec resolvedSpec, state *returnRoutingState) e
 		if _, isRule := object["rule"]; isRule {
 			verb = "add"
 		}
-		commands = append(commands, map[string]interface{}{verb: object})
+		commands = append(commands, map[string]any{verb: object})
 	}
 	if _, err = checkedResources(spec, state); err != nil {
 		return err
@@ -584,7 +584,7 @@ func cloneReturnState(state *returnRoutingState) *returnRoutingState {
 }
 
 // ApplyReturnRouting is called under returnRoutingMu by HTTP and boot replay.
-func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]interface{}, error) {
+func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]any, error) {
 	unlock, err := lockReturnJournal(cfg)
 	if err != nil {
 		return nil, err
@@ -678,11 +678,11 @@ func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]interf
 	if err = saveReturnState(cfg, state); err != nil {
 		return nil, fmt.Errorf("回流状态保存失败，保留事务记录：%w", err)
 	}
-	return map[string]interface{}{"success": true, "safety_version": spec.SafetyVersion, "lan_interface": spec.LanInterface,
+	return map[string]any{"success": true, "safety_version": spec.SafetyVersion, "lan_interface": spec.LanInterface,
 		"lan_cidr": spec.lanCIDR, "router_mac": spec.routerMAC, "tun_device": spec.TunDevice}, nil
 }
 
-func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (map[string]interface{}, error) {
+func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (map[string]any, error) {
 	if restoreLegacy {
 		return nil, fmt.Errorf("禁止自动恢复或执行手工回流脚本")
 	}
@@ -696,7 +696,7 @@ func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (map[string]interface{
 		return nil, err
 	}
 	if state == nil {
-		return map[string]interface{}{"success": true, "removed": false}, nil
+		return map[string]any{"success": true, "removed": false}, nil
 	}
 	if !validReturnOwner(state) || state.Legacy != nil {
 		return nil, fmt.Errorf("无法证明旧回流资源的归属，已保留全部现有规则")
@@ -725,7 +725,7 @@ func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (map[string]interface{
 	if err = saveReturnState(cfg, state); err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"success": true, "removed": true, "retained_empty_table": true}, nil
+	return map[string]any{"success": true, "removed": true, "retained_empty_table": true}, nil
 }
 
 func ReapplyReturnRouting(cfg *Config) {
@@ -793,7 +793,7 @@ func returnResourcesComplete(state *returnRoutingState) bool {
 }
 
 func ownedManifestComplete(owner *returnOwnership, resources *returnResources) bool {
-	for _, group := range []struct{ expected, actual []map[string]interface{} }{
+	for _, group := range []struct{ expected, actual []map[string]any }{
 		{owner.Routes, resources.Routes}, {owner.Rules, resources.Rules}, {owner.NFT, ownedNftObjects(resources)},
 	} {
 		for _, row := range group.expected {

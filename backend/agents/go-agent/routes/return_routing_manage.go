@@ -85,13 +85,13 @@ type returnRoutingState struct {
 // A versioned journal is the only evidence that a resource belongs to us.
 // Names, marks and table numbers by themselves never confer ownership.
 type returnOwnership struct {
-	Version int                      `json:"version"`
-	Token   string                   `json:"token"`
-	Metric  int                      `json:"metric"`
-	Routes  []map[string]interface{} `json:"routes"`
-	Rules   []map[string]interface{} `json:"rules"`
-	NFT     []map[string]interface{} `json:"nft"`
-	Pending bool                     `json:"pending"`
+	Version int              `json:"version"`
+	Token   string           `json:"token"`
+	Metric  int              `json:"metric"`
+	Routes  []map[string]any `json:"routes"`
+	Rules   []map[string]any `json:"rules"`
+	NFT     []map[string]any `json:"nft"`
+	Pending bool             `json:"pending"`
 }
 
 type resolvedSpec struct {
@@ -177,7 +177,7 @@ func readMihomoRoutingStrict(configPath string) (mihomoRouting, error) {
 	if err != nil {
 		return result, fmt.Errorf("无法读取 mihomo 配置以检查冲突：%w", err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(data, &doc) != nil || doc == nil {
 		return result, fmt.Errorf("mihomo 配置格式无效，无法确认标记和路由表占用")
 	}
@@ -203,7 +203,7 @@ func readMihomoRoutingStrict(configPath string) (mihomoRouting, error) {
 			result.marks["routing-mark"] = uint32(mark)
 		}
 	}
-	tun, _ := doc["tun"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]any)
 	if tun == nil {
 		if value, exists := doc["tun"]; exists && value != nil {
 			return result, fmt.Errorf("mihomo tun 配置无效")
@@ -246,7 +246,7 @@ func readMihomoRoutingStrict(configPath string) (mihomoRouting, error) {
 	return result, nil
 }
 
-func yamlUint(value interface{}) (uint32, bool) {
+func yamlUint(value any) (uint32, bool) {
 	switch v := value.(type) {
 	case int:
 		return uint32(v), v > 0 && uint64(v) <= uint64(^uint32(0))
@@ -417,23 +417,23 @@ func prepareSpec(cfg *Config, spec ReturnRoutingSpec) (resolvedSpec, error) {
 	return resolved, nil
 }
 
-func managedReturnStatus(cfg *Config) map[string]interface{} {
+func managedReturnStatus(cfg *Config) map[string]any {
 	state, err := loadReturnState(cfg)
 	if err != nil {
-		return map[string]interface{}{"error": err.Error()}
+		return map[string]any{"error": err.Error()}
 	}
 	if state == nil {
 		return nil
 	}
 	complete := returnResourcesComplete(state)
-	return map[string]interface{}{"spec": state.Spec, "applied_at": state.AppliedAt,
+	return map[string]any{"spec": state.Spec, "applied_at": state.AppliedAt,
 		"table_present": complete, "legacy": state.Legacy,
 		"safety_version": state.Spec.SafetyVersion, "active": state.Active}
 }
 
 func returnRoutingWrite(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	var (
-		result map[string]interface{}
+		result map[string]any
 		err    error
 	)
 	if r.Method == http.MethodPut {
@@ -441,7 +441,7 @@ func returnRoutingWrite(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		decoder.DisallowUnknownFields()
 		if err = decoder.Decode(&spec); err != nil {
-			JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "请求格式错误：" + err.Error()})
+			JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求格式错误：" + err.Error()})
 			return
 		}
 		result, err = ApplyReturnRouting(cfg, spec)
@@ -449,7 +449,7 @@ func returnRoutingWrite(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		result, err = RemoveReturnRouting(cfg, r.URL.Query().Get("restore_legacy") == "1")
 	}
 	if err != nil {
-		JsonResponse(w, http.StatusUnprocessableEntity, map[string]interface{}{"success": false, "message": err.Error()})
+		JsonResponse(w, http.StatusUnprocessableEntity, map[string]any{"success": false, "message": err.Error()})
 		return
 	}
 	JsonResponse(w, http.StatusOK, result)

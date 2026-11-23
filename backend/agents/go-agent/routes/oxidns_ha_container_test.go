@@ -21,7 +21,7 @@ type haNamespaceInfo struct {
 	stat syscall.Stat_t
 }
 
-func (info haNamespaceInfo) Sys() interface{} { return &info.stat }
+func (info haNamespaceInfo) Sys() any { return &info.stat }
 
 type haContainerFixture struct {
 	*haFixture

@@ -135,17 +135,17 @@ func writePre191Residue(t *testing.T, cfg *Config, spec ReturnRoutingSpec) {
 		t.Fatal("rule readback")
 	}
 	owner.Rules = append(owner.Rules, match)
-	commands := []map[string]interface{}{}
+	commands := []map[string]any{}
 	for _, object := range desiredReturnNFT(resolved, owner) {
 		verb := "create"
 		for kind, body := range object {
 			if kind == "rule" {
 				verb = "add"
 			} else {
-				body.(map[string]interface{})["comment"] = ownerTag(owner)
+				body.(map[string]any)["comment"] = ownerTag(owner)
 			}
 		}
-		commands = append(commands, map[string]interface{}{verb: object})
+		commands = append(commands, map[string]any{verb: object})
 	}
 	if err = runNFT(commands); err != nil {
 		t.Fatal(err)

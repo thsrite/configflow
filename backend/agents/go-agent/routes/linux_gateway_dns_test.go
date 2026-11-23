@@ -23,13 +23,13 @@ func TestGatewayDNSPreservesOxiDNSAndOrdinaryMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(got), &doc); err != nil {
 		t.Fatal(err)
 	}
-	tun := doc["tun"].(map[string]interface{})
-	excluded := tun["route-exclude-address"].([]interface{})
-	if len(excluded) != 2 || excluded[0] != "127.0.0.0/8" || excluded[1] != "192.0.2.2/32" || len(tun["dns-hijack"].([]interface{})) != 0 || doc["dns"].(map[string]interface{})["listen"] != "127.0.0.1:1053" {
+	tun := doc["tun"].(map[string]any)
+	excluded := tun["route-exclude-address"].([]any)
+	if len(excluded) != 2 || excluded[0] != "127.0.0.0/8" || excluded[1] != "192.0.2.2/32" || len(tun["dns-hijack"].([]any)) != 0 || doc["dns"].(map[string]any)["listen"] != "127.0.0.1:1053" {
 		t.Fatalf("gateway DNS not protected: %s", got)
 	}
 	again, err := adaptGatewayDNS(cfg, got)

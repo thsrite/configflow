@@ -20,10 +20,10 @@ func testConfig(t *testing.T, manager string) (*Config, string) {
 	if err := os.WriteFile(binary, []byte("core"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	c := &Config{Path: filepath.Join(root, "config.json"), Values: map[string]interface{}{
+	c := &Config{Path: filepath.Join(root, "config.json"), Values: map[string]any{
 		"agent_id": "retained-id", "token": "retained-token", "server_url": "http://server.test", "agent_port": float64(8080),
 		"config_path": filepath.Join(root, "core/config.yaml"), "service_type": "mihomo", "service_binary": binary,
-		"restart_command": "systemctl restart custom-core.service", "unknown": map[string]interface{}{"keep": true}}}
+		"restart_command": "systemctl restart custom-core.service", "unknown": map[string]any{"keep": true}}}
 	if manager == "openrc" {
 		c.Values["restart_command"] = "rc-service custom-core restart"
 	}
@@ -62,7 +62,7 @@ func TestMigrationPreservesAndRestores(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if migrated.String("agent_id") != "retained-id" || migrated.String("token") != "retained-token" || migrated.Values["unknown"].(map[string]interface{})["keep"] != true {
+			if migrated.String("agent_id") != "retained-id" || migrated.String("token") != "retained-token" || migrated.Values["unknown"].(map[string]any)["keep"] != true {
 				t.Fatal("lost identity/unknown fields")
 			}
 			second, err := MigrationPlan(migrated, filepath.Join(root, "agent"), root)
@@ -127,7 +127,7 @@ func TestDownloadIntegrityAndFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.code); w.Write(tc.data) }))
 			defer server.Close()
-			c := &Config{Values: map[string]interface{}{"server_url": server.URL}}
+			c := &Config{Values: map[string]any{"server_url": server.URL}}
 			err := download(c, &Job{Digest: hex.EncodeToString(h[:]), Size: int64(len(body))}, filepath.Join(t.TempDir(), "candidate"))
 			if (err == nil) != tc.success {
 				t.Fatalf("unexpected integrity result: %v", err)

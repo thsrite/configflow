@@ -79,7 +79,7 @@ func matchMihomoPanelRoute(path, method string) (*mihomoPanelRoute, bool) {
 
 func mihomoPanelFail(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Cache-Control", "no-store")
-	routes.JsonResponse(w, status, map[string]interface{}{"success": false, "code": code, "message": message})
+	routes.JsonResponse(w, status, map[string]any{"success": false, "code": code, "message": message})
 }
 
 func mihomoPanelHandler(cfg *Config) http.HandlerFunc {

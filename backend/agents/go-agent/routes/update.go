@@ -97,7 +97,7 @@ func UpgradeInfoHandler(cfg *Config) http.HandlerFunc {
 		if config, err := upgrade.ReadConfig(cfg.AgentConfigFile); err == nil && config.Docker() {
 			method = "docker"
 		}
-		JsonResponse(w, 200, map[string]interface{}{
+		JsonResponse(w, 200, map[string]any{
 			"version": upgrade.Version, "agent_id": cfg.AgentID, "migration_ready": ready,
 			"architecture": detectArchitecture(), "deployment_method": method, "update_protocol": 2,
 		})

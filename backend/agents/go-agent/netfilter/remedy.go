@@ -353,7 +353,7 @@ func verify(target Target, blocked map[string]bool) string {
 // TUNTarget reads the TUN settings that decide which paths are inspected.
 // lan lists this host's LAN-side IPv4 addresses (LANAddresses): DNS to this
 // host stays out of the TUN only when route-exclude-address covers all of them.
-func TUNTarget(tun map[string]interface{}, lan []net.IP) Target {
+func TUNTarget(tun map[string]any, lan []net.IP) Target {
 	target := Target{Device: "Meta"}
 	if value, ok := tun["device"].(string); ok && value != "" {
 		target.Device = value
@@ -370,12 +370,12 @@ func TUNTarget(tun map[string]interface{}, lan []net.IP) Target {
 
 // tunPeer is the address after the first tun.inet4-address (a list, or a
 // string in older configs); zero for Mihomo's default or an unusable value.
-func tunPeer(tun map[string]interface{}) netip.Addr {
+func tunPeer(tun map[string]any) netip.Addr {
 	var value string
 	switch raw := tun["inet4-address"].(type) {
 	case string:
 		value = raw
-	case []interface{}:
+	case []any:
 		if len(raw) > 0 {
 			value, _ = raw[0].(string)
 		}
@@ -388,12 +388,12 @@ func tunPeer(tun map[string]interface{}) netip.Addr {
 }
 
 // hijacksPort53 follows Mihomo: without the key, dns-hijack is 0.0.0.0:53.
-func hijacksPort53(tun map[string]interface{}) bool {
+func hijacksPort53(tun map[string]any) bool {
 	raw, present := tun["dns-hijack"]
 	if !present || raw == nil {
 		return true
 	}
-	entries, _ := raw.([]interface{})
+	entries, _ := raw.([]any)
 	for _, item := range entries {
 		value, _ := item.(string)
 		value = strings.TrimSpace(value)
@@ -415,8 +415,8 @@ func hijacksPort53(tun map[string]interface{}) bool {
 // excludesLAN reports whether route-exclude-address covers every LAN IPv4
 // address; an address it does not cover still has its DNS hijacked. A Docker
 // or libvirt network in the list (172.16.0.0/12) does not count for the LAN.
-func excludesLAN(raw interface{}, lan []net.IP) bool {
-	entries, _ := raw.([]interface{})
+func excludesLAN(raw any, lan []net.IP) bool {
+	entries, _ := raw.([]any)
 	var networks []*net.IPNet
 	for _, item := range entries {
 		value, _ := item.(string)

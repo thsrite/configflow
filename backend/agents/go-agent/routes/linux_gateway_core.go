@@ -21,8 +21,8 @@ var gatewayCoreVersion = func(binary string) (string, error) {
 	return string(output), err
 }
 
-func checkLinuxGatewayCore(cfg *Config, doc map[string]interface{}) error {
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
+func checkLinuxGatewayCore(cfg *Config, doc map[string]any) error {
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]any)
 	if marker["enabled"] != true {
 		return nil
 	}

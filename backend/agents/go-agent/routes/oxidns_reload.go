@@ -43,12 +43,12 @@ type oxidnsReloader struct {
 	client   *http.Client
 }
 
-func readYAMLDocument(name string) (map[string]interface{}, []byte, error) {
+func readYAMLDocument(name string) (map[string]any, []byte, error) {
 	data, err := os.ReadFile(name)
 	if err != nil {
 		return nil, nil, err
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err = yaml.Unmarshal(data, &doc); err != nil {
 		return nil, nil, err
 	}

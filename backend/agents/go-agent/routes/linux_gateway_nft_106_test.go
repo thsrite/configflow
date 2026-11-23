@@ -105,7 +105,7 @@ func TestLinuxGatewayNFT106RecreatesMissingTableAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	// nft rules are volatile, unlike the durable active journal.
-	f.nft = []map[string]interface{}{}
+	f.nft = []map[string]any{}
 	if err := reapplyLinuxGateway(f.cfg, 1, func() { t.Fatal("unexpected retry") }); err != nil {
 		t.Fatalf("boot replay failed to recreate the vanished table: %v", err)
 	}
@@ -124,34 +124,34 @@ func TestLinuxGatewayNFT106RejectsUnprovenOrChangedResources(t *testing.T) {
 			name   string
 			change func(*gatewayState, *gatewayFixture)
 		}{
-			{"rule comment removed", func(_ *gatewayState, f *gatewayFixture) { delete(f.nft[3]["rule"].(map[string]interface{}), "comment") }},
+			{"rule comment removed", func(_ *gatewayState, f *gatewayFixture) { delete(f.nft[3]["rule"].(map[string]any), "comment") }},
 			{"rule comment changed", func(_ *gatewayState, f *gatewayFixture) {
-				f.nft[4]["rule"].(map[string]interface{})["comment"] = "foreign"
+				f.nft[4]["rule"].(map[string]any)["comment"] = "foreign"
 			}},
 			{"foreign table comment", func(_ *gatewayState, f *gatewayFixture) {
-				f.nft[0]["table"].(map[string]interface{})["comment"] = "foreign"
+				f.nft[0]["table"].(map[string]any)["comment"] = "foreign"
 			}},
 			{"partial metadata omission", func(s *gatewayState, f *gatewayFixture) {
-				f.nft[1]["chain"].(map[string]interface{})["comment"] = gatewayOwner(s)
+				f.nft[1]["chain"].(map[string]any)["comment"] = gatewayOwner(s)
 			}},
 			{"empty table comment", func(_ *gatewayState, f *gatewayFixture) {
-				f.nft[0]["table"].(map[string]interface{})["comment"] = ""
+				f.nft[0]["table"].(map[string]any)["comment"] = ""
 			}},
-			{"missing table handle", func(_ *gatewayState, f *gatewayFixture) { delete(f.nft[0]["table"].(map[string]interface{}), "handle") }},
-			{"zero chain handle", func(_ *gatewayState, f *gatewayFixture) { f.nft[1]["chain"].(map[string]interface{})["handle"] = 0 }},
-			{"invalid rule handle", func(_ *gatewayState, f *gatewayFixture) { f.nft[3]["rule"].(map[string]interface{})["handle"] = -1 }},
+			{"missing table handle", func(_ *gatewayState, f *gatewayFixture) { delete(f.nft[0]["table"].(map[string]any), "handle") }},
+			{"zero chain handle", func(_ *gatewayState, f *gatewayFixture) { f.nft[1]["chain"].(map[string]any)["handle"] = 0 }},
+			{"invalid rule handle", func(_ *gatewayState, f *gatewayFixture) { f.nft[3]["rule"].(map[string]any)["handle"] = -1 }},
 			{"extra rule", func(_ *gatewayState, f *gatewayFixture) {
-				f.nft = append(f.nft, nftObject("rule", map[string]interface{}{"family": "ip", "table": gatewayTable, "chain": "forward", "expr": []interface{}{map[string]interface{}{"drop": nil}}}))
+				f.nft = append(f.nft, nftObject("rule", map[string]any{"family": "ip", "table": gatewayTable, "chain": "forward", "expr": []any{map[string]any{"drop": nil}}}))
 			}},
 			{"missing rule", func(_ *gatewayState, f *gatewayFixture) { f.nft = f.nft[:5] }},
 			{"chain policy changed", func(_ *gatewayState, f *gatewayFixture) {
-				f.nft[1]["chain"].(map[string]interface{})["policy"] = "drop"
+				f.nft[1]["chain"].(map[string]any)["policy"] = "drop"
 			}},
 			{"rule expression changed", func(_ *gatewayState, f *gatewayFixture) {
-				f.nft[3]["rule"].(map[string]interface{})["expr"].([]interface{})[2] = map[string]interface{}{"drop": nil}
+				f.nft[3]["rule"].(map[string]any)["expr"].([]any)[2] = map[string]any{"drop": nil}
 			}},
 			{"expression order changed", func(_ *gatewayState, f *gatewayFixture) {
-				expr := f.nft[3]["rule"].(map[string]interface{})["expr"].([]interface{})
+				expr := f.nft[3]["rule"].(map[string]any)["expr"].([]any)
 				expr[0], expr[1] = expr[1], expr[0]
 			}},
 			{"chain rule order changed", func(_ *gatewayState, f *gatewayFixture) { f.nft[3], f.nft[4] = f.nft[4], f.nft[3] }},
@@ -198,7 +198,7 @@ func TestLinuxGatewayNFT106MissingCommentsNeverOverridePinnedIdentity(t *testing
 				t.Fatal(err)
 			}
 			index := map[string]int{"table": 0, "chain": 1, "rule": 3}[changed]
-			f.nft[index][changed].(map[string]interface{})["handle"] = 99999
+			f.nft[index][changed].(map[string]any)["handle"] = 99999
 			if err := removeLinuxGateway(f.cfg); err == nil || f.mutations != 1 {
 				t.Fatal("deleted replacement resource")
 			}
@@ -208,7 +208,7 @@ func TestLinuxGatewayNFT106MissingCommentsNeverOverridePinnedIdentity(t *testing
 		func(s *gatewayState) { s.Active = true },
 		func(s *gatewayState) { s.Pending = false },
 		func(s *gatewayState) { s.AppliedAt = "already-applied" },
-		func(s *gatewayState) { s.NFT[0]["table"].(map[string]interface{})["handle"] = 5 },
+		func(s *gatewayState) { s.NFT[0]["table"].(map[string]any)["handle"] = 5 },
 	} {
 		f := newGatewayFixture(t)
 		state := legacyPendingGateway106(t, f)
@@ -253,12 +253,12 @@ func TestLinuxGatewayNFT106RejectsModifiedJournalBeforeMutation(t *testing.T) {
 		{"unpinned missing metadata", func(s *gatewayState) {
 			for _, object := range s.NFT {
 				for _, value := range object {
-					delete(value.(map[string]interface{}), "handle")
+					delete(value.(map[string]any), "handle")
 				}
 			}
 		}},
-		{"rule owner removed", func(s *gatewayState) { delete(s.NFT[3]["rule"].(map[string]interface{}), "comment") }},
-		{"foreign metadata", func(s *gatewayState) { s.NFT[0]["table"].(map[string]interface{})["comment"] = "foreign" }},
+		{"rule owner removed", func(s *gatewayState) { delete(s.NFT[3]["rule"].(map[string]any), "comment") }},
+		{"foreign metadata", func(s *gatewayState) { s.NFT[0]["table"].(map[string]any)["comment"] = "foreign" }},
 		{"rule order", func(s *gatewayState) { s.NFT[3], s.NFT[4] = s.NFT[4], s.NFT[3] }},
 	} {
 		t.Run(change.name, func(t *testing.T) {

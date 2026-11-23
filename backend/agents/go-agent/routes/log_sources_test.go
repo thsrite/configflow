@@ -178,11 +178,11 @@ func TestClearLogRejectsJournalAndNonLogFiles(t *testing.T) {
 	cfg := &Config{ServiceType: "oxidns", ServiceManager: "systemd", ServiceUnit: "oxidns", ConfigPath: filepath.Join(dir, "config.yaml")}
 	config := filepath.Join(dir, "config.yaml")
 	os.WriteFile(config, []byte("keep"), 0o644)
-	clear := func(body map[string]string) map[string]interface{} {
+	clear := func(body map[string]string) map[string]any {
 		data, _ := json.Marshal(body)
 		rec := httptest.NewRecorder()
 		ClearLogHandler(cfg)(rec, httptest.NewRequest(http.MethodPost, "/api/logs/clear", bytes.NewReader(data)))
-		var result map[string]interface{}
+		var result map[string]any
 		json.Unmarshal(rec.Body.Bytes(), &result)
 		return result
 	}
@@ -203,7 +203,7 @@ func TestGetLogsBySourceReturnsReadableError(t *testing.T) {
 	cfg := &Config{ServiceType: "oxidns", ServiceManager: "openrc", ServiceUnit: "oxidns", ConfigPath: filepath.Join(dir, "config.yaml")}
 	rec := httptest.NewRecorder()
 	GetLogsHandler(cfg)(rec, httptest.NewRequest(http.MethodGet, "/api/logs?source=core", nil))
-	var result map[string]interface{}
+	var result map[string]any
 	json.Unmarshal(rec.Body.Bytes(), &result)
 	if result["success"] != false || !strings.Contains(result["message"].(string), "尚未生成") {
 		t.Fatalf("result = %v", result)

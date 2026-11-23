@@ -74,7 +74,7 @@ func (fileInfo) Size() int64        { return 0 }
 func (fileInfo) Mode() os.FileMode  { return os.ModeDir }
 func (fileInfo) ModTime() time.Time { return time.Time{} }
 func (fileInfo) IsDir() bool        { return true }
-func (fileInfo) Sys() interface{}   { return nil }
+func (fileInfo) Sys() any           { return nil }
 
 func (h *host) probe() Probe {
 	return Probe{
@@ -830,8 +830,8 @@ func TestDefaultProbeIsUntranslatedAndBounded(t *testing.T) {
 
 func TestTUNTargetReadsTheDeployedTUN(t *testing.T) {
 	local := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("10.97.0.20").To4()}
-	list := func(values ...string) []interface{} {
-		result := []interface{}{}
+	list := func(values ...string) []any {
+		result := []any{}
 		for _, value := range values {
 			result = append(result, value)
 		}
@@ -839,22 +839,22 @@ func TestTUNTargetReadsTheDeployedTUN(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name string
-		tun  map[string]interface{}
+		tun  map[string]any
 		want Target
 	}{
-		{"ConfigFlow standalone full TUN", map[string]interface{}{"enable": true, "stack": "Mixed", "auto-redirect": true, "dns-hijack": list("any:53", "tcp://any:53")},
+		{"ConfigFlow standalone full TUN", map[string]any{"enable": true, "stack": "Mixed", "auto-redirect": true, "dns-hijack": list("any:53", "tcp://any:53")},
 			Target{Device: "Meta", AutoRedirect: true, Stack: "mixed", DNSHijack: true}},
-		{"AIO excludes this host", map[string]interface{}{"device": "cf0", "stack": "mixed", "auto-redirect": true, "dns-hijack": list("any:53"), "route-exclude-address": list("127.0.0.0/8", "10.97.0.20/32")},
+		{"AIO excludes this host", map[string]any{"device": "cf0", "stack": "mixed", "auto-redirect": true, "dns-hijack": list("any:53"), "route-exclude-address": list("127.0.0.0/8", "10.97.0.20/32")},
 			Target{Device: "cf0", AutoRedirect: true, Stack: "mixed"}},
-		{"Mihomo's default hijack", map[string]interface{}{"auto-redirect": true}, Target{Device: "Meta", AutoRedirect: true, DNSHijack: true}},
-		{"no port 53", map[string]interface{}{"auto-redirect": true, "dns-hijack": list("any:1053")}, Target{Device: "Meta", AutoRedirect: true}},
-		{"empty hijack", map[string]interface{}{"auto-redirect": true, "dns-hijack": list()}, Target{Device: "Meta", AutoRedirect: true}},
-		{"bare excluded address", map[string]interface{}{"auto-redirect": true, "route-exclude-address": list("10.97.0.20")}, Target{Device: "Meta", AutoRedirect: true}},
-		{"other excluded network", map[string]interface{}{"auto-redirect": true, "route-exclude-address": list("192.168.0.0/16")}, Target{Device: "Meta", AutoRedirect: true, DNSHijack: true}},
-		{"without auto-redirect", map[string]interface{}{"stack": "system", "dns-hijack": list("0.0.0.0:53")}, Target{Device: "Meta", Stack: "system"}},
+		{"Mihomo's default hijack", map[string]any{"auto-redirect": true}, Target{Device: "Meta", AutoRedirect: true, DNSHijack: true}},
+		{"no port 53", map[string]any{"auto-redirect": true, "dns-hijack": list("any:1053")}, Target{Device: "Meta", AutoRedirect: true}},
+		{"empty hijack", map[string]any{"auto-redirect": true, "dns-hijack": list()}, Target{Device: "Meta", AutoRedirect: true}},
+		{"bare excluded address", map[string]any{"auto-redirect": true, "route-exclude-address": list("10.97.0.20")}, Target{Device: "Meta", AutoRedirect: true}},
+		{"other excluded network", map[string]any{"auto-redirect": true, "route-exclude-address": list("192.168.0.0/16")}, Target{Device: "Meta", AutoRedirect: true, DNSHijack: true}},
+		{"without auto-redirect", map[string]any{"stack": "system", "dns-hijack": list("0.0.0.0:53")}, Target{Device: "Meta", Stack: "system"}},
 		// Review: excluding the private ranges a Docker bridge uses does not keep
 		// DNS to the LAN address out of the TUN.
-		{"Docker network excluded", map[string]interface{}{"auto-redirect": true, "route-exclude-address": list("172.16.0.0/12")}, Target{Device: "Meta", AutoRedirect: true, DNSHijack: true}},
+		{"Docker network excluded", map[string]any{"auto-redirect": true, "route-exclude-address": list("172.16.0.0/12")}, Target{Device: "Meta", AutoRedirect: true, DNSHijack: true}},
 	} {
 		got := TUNTarget(tc.tun, local)
 		if !reflect.DeepEqual(got.LAN, local) {
@@ -866,7 +866,7 @@ func TestTUNTargetReadsTheDeployedTUN(t *testing.T) {
 		}
 	}
 	// Every LAN address must be excluded; none known means hijacked.
-	tun := map[string]interface{}{"auto-redirect": true, "route-exclude-address": list("10.97.0.20/32")}
+	tun := map[string]any{"auto-redirect": true, "route-exclude-address": list("10.97.0.20/32")}
 	if got := TUNTarget(tun, []net.IP{net.ParseIP("10.97.0.20"), net.ParseIP("192.168.50.2")}); !got.DNSHijack {
 		t.Fatalf("second LAN address: %+v", got)
 	}
@@ -1181,16 +1181,16 @@ func TestTUNTCPSourceIsTheTUNPeer(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		value interface{}
+		value any
 		want  string
 	}{
-		{[]interface{}{"172.19.0.1/30"}, "172.19.0.2"}, {"10.0.0.1/24", "10.0.0.2"}, {nil, "invalid IP"}, {[]interface{}{"fdfe::1/126"}, "invalid IP"}, {"bad", "invalid IP"},
+		{[]any{"172.19.0.1/30"}, "172.19.0.2"}, {"10.0.0.1/24", "10.0.0.2"}, {nil, "invalid IP"}, {[]any{"fdfe::1/126"}, "invalid IP"}, {"bad", "invalid IP"},
 	} {
-		if got := tunPeer(map[string]interface{}{"inet4-address": tc.value}).String(); got != tc.want {
+		if got := tunPeer(map[string]any{"inet4-address": tc.value}).String(); got != tc.want {
 			t.Fatalf("%v: %s", tc.value, got)
 		}
 	}
-	prefixes, ok := nftPrefixes(map[string]interface{}{"range": []interface{}{"10.0.0.1", "10.0.0.6"}}, nil)
+	prefixes, ok := nftPrefixes(map[string]any{"range": []any{"10.0.0.1", "10.0.0.6"}}, nil)
 	if !ok || fmt.Sprint(prefixes) != "[10.0.0.1/32 10.0.0.2/31 10.0.0.4/31 10.0.0.6/32]" {
 		t.Fatalf("range: %v %v", prefixes, ok)
 	}

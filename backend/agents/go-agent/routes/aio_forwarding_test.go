@@ -585,56 +585,56 @@ func TestAIOForwardingStatusMatrix(t *testing.T) {
 	for _, test := range []struct {
 		name, manager string
 		change        func(*testing.T, *aioFixture)
-		want          map[string]interface{}
+		want          map[string]any
 	}{
 		{"foreign config", "systemd", func(t *testing.T, f *aioFixture) {
 			os.WriteFile(aioForwardingConfigPath(), []byte("net.ipv4.ip_forward=1\n"), 0644)
-		}, map[string]interface{}{"config": "foreign", "persisted": false}},
+		}, map[string]any{"config": "foreign", "persisted": false}},
 		{"config symlink", "systemd", func(t *testing.T, f *aioFixture) {
 			os.Symlink("/dev/null", aioForwardingConfigPath())
-		}, map[string]interface{}{"config": "symlink"}},
+		}, map[string]any{"config": "symlink"}},
 		{"managed config only", "systemd", func(t *testing.T, f *aioFixture) {
 			os.WriteFile(aioForwardingConfigPath(), []byte(aioForwardingContent), 0644)
-		}, map[string]interface{}{"config": "managed", "hook_script": "absent", "persisted": false}},
+		}, map[string]any{"config": "managed", "hook_script": "absent", "persisted": false}},
 		{"modified hook", "systemd", func(t *testing.T, f *aioFixture) {
 			os.WriteFile(f.hookPath(), []byte("#!/bin/sh\n"), 0755)
-		}, map[string]interface{}{"hook_script": "modified"}},
+		}, map[string]any{"hook_script": "modified"}},
 		{"managed hook", "openrc", func(t *testing.T, f *aioFixture) {
 			os.WriteFile(f.hookPath(), []byte(f.hookContent()), 0755)
-		}, map[string]interface{}{"hook_script": "managed", "startup_hook": "absent"}},
+		}, map[string]any{"hook_script": "managed", "startup_hook": "absent"}},
 		{"foreign ExecStartPre", "systemd", func(t *testing.T, f *aioFixture) {
 			f.loaded += "\nExecStartPre=/bin/true\n"
-		}, map[string]interface{}{"startup_hook": "foreign"}},
+		}, map[string]any{"startup_hook": "foreign"}},
 		{"duplicate hook", "systemd", func(t *testing.T, f *aioFixture) {
 			f.loaded = f.fixtureUnit(t, "hook") + "\n" + "ExecStartPre=/bin/sh " + f.hookPath() + "\n"
-		}, map[string]interface{}{"startup_hook": "foreign"}},
+		}, map[string]any{"startup_hook": "foreign"}},
 		{"registered systemd", "systemd", func(t *testing.T, f *aioFixture) {
 			f.loaded = f.fixtureUnit(t, "hook")
-		}, map[string]interface{}{"startup_hook": "registered"}},
+		}, map[string]any{"startup_hook": "registered"}},
 		{"systemctl failure", "systemd", func(t *testing.T, f *aioFixture) {
 			f.showErr = fmt.Errorf("bus unavailable")
-		}, map[string]interface{}{"startup_hook": "unknown"}},
+		}, map[string]any{"startup_hook": "unknown"}},
 		{"registered OpenRC", "openrc", func(t *testing.T, f *aioFixture) {
 			f.writeUnit(t, f.fixtureUnit(t, "hook"))
-		}, map[string]interface{}{"startup_hook": "registered"}},
+		}, map[string]any{"startup_hook": "registered"}},
 		{"changed OpenRC", "openrc", func(t *testing.T, f *aioFixture) {
 			f.writeUnit(t, strings.Replace(f.fixtureUnit(t, "plain"), "start_pre() {\n", "start_pre() {\n    echo custom\n", 1))
-		}, map[string]interface{}{"startup_hook": "unknown"}},
+		}, map[string]any{"startup_hook": "unknown"}},
 		{"unreadable forwarding", "systemd", func(t *testing.T, f *aioFixture) {
 			f.setForwarding(t, "2")
-		}, map[string]interface{}{"current": ""}},
+		}, map[string]any{"current": ""}},
 		{"layout reversed", "systemd", func(t *testing.T, f *aioFixture) {
 			f.cfg.NativeAIO = !f.cfg.NativeAIO
-		}, map[string]interface{}{"supported": false, "startup_hook": "unknown"}},
+		}, map[string]any{"supported": false, "startup_hook": "unknown"}},
 		{"OxiDNS", "systemd", func(t *testing.T, f *aioFixture) {
 			f.cfg.ServiceType = "oxidns"
-		}, map[string]interface{}{"supported": false}},
+		}, map[string]any{"supported": false}},
 		{"not root", "openrc", func(t *testing.T, f *aioFixture) {
 			gatewayGeteuid = func() int { return 1000 }
-		}, map[string]interface{}{"supported": false}},
+		}, map[string]any{"supported": false}},
 		{"container", "systemd", func(t *testing.T, f *aioFixture) {
 			f.cfg.ServiceManager = "s6"
-		}, map[string]interface{}{"supported": false}},
+		}, map[string]any{"supported": false}},
 	} {
 		for _, layout := range aioLayouts {
 			t.Run(layout+"/"+test.name, func(t *testing.T) {
@@ -646,7 +646,7 @@ func TestAIOForwardingStatusMatrix(t *testing.T) {
 						t.Fatalf("%s=%v want %v: %+v", key, status[key], want, status)
 					}
 				}
-				wantLayout := map[string]interface{}{"aio": "native_aio", "standalone": "standalone"}[layout]
+				wantLayout := map[string]any{"aio": "native_aio", "standalone": "standalone"}[layout]
 				if status["supported"] == false {
 					wantLayout = nil
 				}
@@ -746,12 +746,12 @@ func testLinuxGatewayForwardingHTTP(t *testing.T, layout string) {
 		t.Fatal("invalid request changed host")
 	}
 	recorder := call(http.MethodPost, "")
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != 200 {
 		t.Fatalf("empty body failed: %d %s", recorder.Code, recorder.Body.String())
 	}
-	forwarding, _ := response["ipv4_forwarding"].(map[string]interface{})
-	managed, _ := response["managed"].(map[string]interface{})
+	forwarding, _ := response["ipv4_forwarding"].(map[string]any)
+	managed, _ := response["managed"].(map[string]any)
 	if response["success"] != true || response["message"] != "IPv4 转发已开启并持久化" || forwarding["persisted"] != true || response["tun_prepare"] != nil || managed["preserves_forwarding"] != true {
 		t.Fatalf("wrong response: %+v", response)
 	}
@@ -761,7 +761,7 @@ func testLinuxGatewayForwardingHTTP(t *testing.T, layout string) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != 200 {
 		t.Fatalf("TUN preparation failure failed the request: %d %s", recorder.Code, recorder.Body.String())
 	}
-	prepare, _ := response["tun_prepare"].(map[string]interface{})
+	prepare, _ := response["tun_prepare"].(map[string]any)
 	if f.tunCalls != 1 || prepare["level"] != "error" || !strings.Contains(fmt.Sprint(prepare["message"]), "检查内核模块") {
 		t.Fatalf("TUN preparation not summarized: %+v", response)
 	}
@@ -770,7 +770,7 @@ func testLinuxGatewayForwardingHTTP(t *testing.T, layout string) {
 	recorder = call(http.MethodPost, `{}`)
 	response = nil
 	json.Unmarshal(recorder.Body.Bytes(), &response)
-	forwarding, _ = response["ipv4_forwarding"].(map[string]interface{})
+	forwarding, _ = response["ipv4_forwarding"].(map[string]any)
 	if recorder.Code != 409 || response["success"] != false || forwarding["config"] != "foreign" {
 		t.Fatalf("foreign config not refused: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -787,9 +787,9 @@ func testLinuxGatewayStatusReportsForwardingAndTUN(t *testing.T, layout string) 
 	recorder := httptest.NewRecorder()
 	LinuxGatewayHandler(f.cfg, "status")(recorder, httptest.NewRequest(http.MethodGet, "/api/linux-gateway/status", nil))
 	var response struct {
-		Forwarding map[string]interface{} `json:"ipv4_forwarding"`
-		TUN        map[string]interface{} `json:"tun"`
-		Managed    map[string]interface{} `json:"managed"`
+		Forwarding map[string]any `json:"ipv4_forwarding"`
+		TUN        map[string]any `json:"tun"`
+		Managed    map[string]any `json:"managed"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != 200 {
 		t.Fatalf("status failed: %d %s", recorder.Code, recorder.Body.String())

@@ -349,15 +349,15 @@ type haListener struct {
 }
 
 // haListeners reads OxiDNS UDP servers from the active configuration.
-func haListeners(doc map[string]interface{}) []haListener {
-	plugins, _ := doc["plugins"].([]interface{})
+func haListeners(doc map[string]any) []haListener {
+	plugins, _ := doc["plugins"].([]any)
 	result := []haListener{}
 	for _, value := range plugins {
-		plugin, _ := value.(map[string]interface{})
+		plugin, _ := value.(map[string]any)
 		if plugin["type"] != "udp_server" {
 			continue
 		}
-		args, _ := plugin["args"].(map[string]interface{})
+		args, _ := plugin["args"].(map[string]any)
 		listen, _ := args["listen"].(string)
 		entry, _ := args["entry"].(string)
 		host, port, err := net.SplitHostPort(strings.TrimSpace(listen))
@@ -373,12 +373,12 @@ func haListeners(doc map[string]interface{}) []haListener {
 	return result
 }
 
-func readOxiDNSDocument(path string) (map[string]interface{}, error) {
+func readOxiDNSDocument(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
@@ -452,9 +452,9 @@ func haPreflight(cfg *Config, spec OxiDNSHASpec, state *haState) ([]string, stri
 	return blockers, iface, cidr
 }
 
-func haStatus(cfg *Config) map[string]interface{} {
+func haStatus(cfg *Config) map[string]any {
 	environment := haEnvironment(cfg)
-	result := map[string]interface{}{"success": true, "protocol": oxidnsHAProtocol, "managed": nil, "handoff": nil, "error": "", "environment": environment}
+	result := map[string]any{"success": true, "protocol": oxidnsHAProtocol, "managed": nil, "handoff": nil, "error": "", "environment": environment}
 	haMu.Lock()
 	state, err := loadHAState(cfg)
 	haMu.Unlock()
@@ -469,7 +469,7 @@ func haStatus(cfg *Config) map[string]interface{} {
 	}
 	vipPresent, role := false, "unknown"
 	if state != nil {
-		result["managed"] = map[string]interface{}{"spec": state.Spec, "active": state.Active, "pending": state.Pending, "applied_at": state.AppliedAt, "interface": state.Interface, "cidr": state.CIDR}
+		result["managed"] = map[string]any{"spec": state.Spec, "active": state.Active, "pending": state.Pending, "applied_at": state.AppliedAt, "interface": state.Interface, "cidr": state.CIDR}
 		if addresses, addrErr := readHAAddresses(); addrErr == nil {
 			vipPresent = haVIPPresent(state.Spec, addresses)
 		} else if err == nil {
@@ -499,13 +499,13 @@ func haStatus(cfg *Config) map[string]interface{} {
 	} else {
 		result["handoff"] = handoff
 	}
-	result["runtime"] = map[string]interface{}{"keepalived_running": running, "vip_present": vipPresent, "role": role,
+	result["runtime"] = map[string]any{"keepalived_running": running, "vip_present": vipPresent, "role": role,
 		"healthy": localHealthy, "vip_healthy": vipHealthy}
 	return result
 }
 
 func haFailure(w http.ResponseWriter, code int, err error) {
-	JsonResponse(w, code, map[string]interface{}{"success": false, "message": err.Error(), "error": err.Error()})
+	JsonResponse(w, code, map[string]any{"success": false, "message": err.Error(), "error": err.Error()})
 }
 
 func decodeHASpec(w http.ResponseWriter, r *http.Request) (OxiDNSHASpec, bool) {
@@ -516,7 +516,7 @@ func decodeHASpec(w http.ResponseWriter, r *http.Request) (OxiDNSHASpec, bool) {
 		haFailure(w, http.StatusBadRequest, fmt.Errorf("请求格式错误：%w", err))
 		return spec, false
 	}
-	if err := decoder.Decode(new(interface{})); err != io.EOF {
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		haFailure(w, http.StatusBadRequest, fmt.Errorf("请求只能包含一个 JSON 对象"))
 		return spec, false
 	}
@@ -563,7 +563,7 @@ func OxiDNSHAHandler(cfg *Config) http.HandlerFunc {
 				haFailure(w, code, err)
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "removed": removed})
+			JsonResponse(w, http.StatusOK, map[string]any{"success": true, "removed": removed})
 		default:
 			w.Header().Set("Allow", "GET, PUT, DELETE")
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -590,7 +590,7 @@ func OxiDNSHAPreviewHandler(cfg *Config) http.HandlerFunc {
 		if err != nil {
 			blockers = append(blockers, err.Error())
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "ok": len(blockers) == 0, "blockers": blockers, "interface": iface, "cidr": cidr, "environment": haEnvironment(cfg)})
+		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "ok": len(blockers) == 0, "blockers": blockers, "interface": iface, "cidr": cidr, "environment": haEnvironment(cfg)})
 	}
 }
 
