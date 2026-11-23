@@ -48,6 +48,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/pathx"
 	"configflow/internal/rules"
 	"encoding/json"
 
@@ -871,11 +872,6 @@ func migrateLegacy(ctx context.Context, c *trafficConn) error {
 	return nil
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // floorDiv is float floor division (float.__floordiv__).
 func floorDiv(value, divisor float64) float64 { return math.Floor(value / divisor) }
 
@@ -917,7 +913,7 @@ func (h *TrafficHistory) FlushContext(ctx context.Context, retention int64, at *
 		return TrafficFlushResult{}, err
 	}
 	usage, targets := h.usage, h.targets
-	if len(usage) == 0 && len(targets) == 0 && !fileExists(h.Path) {
+	if len(usage) == 0 && len(targets) == 0 && !pathx.Accessible(h.Path) {
 		return TrafficFlushResult{}, nil
 	}
 	h.usage, h.targets = map[usageKey]*triple{}, map[targetKey2]*triple{}
@@ -1227,7 +1223,7 @@ func (h *TrafficHistory) DeleteContext(ctx context.Context, agentID string) erro
 			delete(h.targets, key)
 		}
 	}
-	if !fileExists(h.Path) {
+	if !pathx.Accessible(h.Path) {
 		return nil
 	}
 	c, err := h.connectContext(ctx)
@@ -1270,7 +1266,7 @@ func (h *TrafficHistory) RetainAgentsContext(ctx context.Context, agentIDs []str
 			delete(h.targets, key)
 		}
 	}
-	if !fileExists(h.Path) {
+	if !pathx.Accessible(h.Path) {
 		return 0, nil
 	}
 	c, err := h.connectContext(ctx)
@@ -1333,7 +1329,7 @@ func (h *TrafficHistory) rowsInRange(ctx context.Context, agentID string, start 
 			}
 		}
 	}
-	if !fileExists(h.Path) {
+	if !pathx.Accessible(h.Path) {
 		return usage, targets, nil
 	}
 	c, err := h.connectContext(ctx)

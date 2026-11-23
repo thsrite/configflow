@@ -18,6 +18,7 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/pathx"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/rulesetfmt"
@@ -54,7 +55,7 @@ func cacheReadPath(ctx context.Context, rule model.RuleConfig, library func() []
 	}
 	current := filepath.Join(root, rules.CacheFilename(rule))
 	_, receiptErr := os.Lstat(current + ".invalid")
-	if fileExists(current) || !errors.Is(receiptErr, os.ErrNotExist) {
+	if pathx.Accessible(current) || !errors.Is(receiptErr, os.ErrNotExist) {
 		return rules.CacheReadPath(rule, nil, nil, root), nil
 	}
 	// View is read-only. Copying Shared here would marshal and decode every
@@ -65,11 +66,6 @@ func cacheReadPath(ctx context.Context, rule model.RuleConfig, library func() []
 		return nil
 	})
 	return result, err
-}
-
-func fileExists(name string) bool {
-	_, err := os.Stat(name)
-	return err == nil
 }
 
 // Content is explicitly text or binary. An MRS source must be binary.

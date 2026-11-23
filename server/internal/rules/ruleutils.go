@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/digest"
 	"configflow/internal/model"
+	"configflow/internal/pathx"
 )
 
 // Rule cache file names under DATA_DIR/shared/rules/{by-id,by-source,by-name}/
@@ -62,11 +63,6 @@ func CacheFilename(rule model.RuleConfig) string {
 		text = string(data)
 	}
 	return namespace + "/" + digest.SHA256HexString(text) + ".list"
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // CacheReadPath is the cache file to read: new caches first, retaining
@@ -165,7 +161,7 @@ func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 	if _, err := os.Lstat(path + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 		return ""
 	}
-	if fileExists(path) {
+	if pathx.Accessible(path) {
 		return path
 	}
 	if library == nil {
@@ -182,7 +178,7 @@ func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 			if _, err := os.Lstat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 				return ""
 			}
-			if fileExists(old) {
+			if pathx.Accessible(old) {
 				return old
 			}
 		}
@@ -194,7 +190,7 @@ func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 		if _, err := os.Lstat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 			return ""
 		}
-		if fileExists(old) {
+		if pathx.Accessible(old) {
 			return old
 		}
 	}
@@ -218,7 +214,7 @@ func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 	if _, err := os.Lstat(legacy + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 		return ""
 	}
-	if fileExists(legacy) {
+	if pathx.Accessible(legacy) {
 		return legacy
 	}
 	return path

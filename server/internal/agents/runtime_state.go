@@ -36,6 +36,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/pathx"
 	"configflow/internal/repo"
 )
 
@@ -449,12 +450,6 @@ func removeFiles(paths []string) {
 	}
 }
 
-// exists is Path.exists(): follows symlinks, so a dangling link is missing.
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // removeLegacyFile is the indirection tests use to refuse a removal.
 var removeLegacyFile = removeFiles
 
@@ -491,7 +486,7 @@ func importLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	statesMu.Unlock()
 	found := false
 	for _, item := range legacyFiles(path) {
-		if exists(item) {
+		if pathx.Accessible(item) {
 			found = true
 			break
 		}
@@ -507,7 +502,7 @@ func importLegacyDatabase(ctx context.Context, repository *repo.Repository, stat
 	if err := removeLegacyFiles(ctx, legacyFiles(path)); err != nil {
 		return err
 	}
-	if exists(path) {
+	if pathx.Accessible(path) {
 		runtimeLogger.Warningf("旧版 %s 无法删除，未导入其中的 Agent 心跳状态", LegacyDatabase)
 		return nil
 	}
