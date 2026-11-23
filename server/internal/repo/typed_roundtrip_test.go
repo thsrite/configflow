@@ -33,6 +33,7 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 		entry := must(r.store.Load())(t)
 		expectation := filepath.Join(t.TempDir(), "expected.json")
 		noError(t, os.WriteFile(expectation, must(json.Marshal(entry.Document))(t), 0o600))
+		xcPythonLayout(t, filepath.Dir(path))
 		command := exec.Command(interpreter, "../store/testdata/raw_crosscheck.py", mode+"-repository", path, expectation)
 		command.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
 		if output, err := command.CombinedOutput(); err != nil {

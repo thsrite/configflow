@@ -5,6 +5,8 @@ import (
 	"configflow/internal/jsondecode"
 	"encoding/json"
 	"reflect"
+
+	"configflow/internal/repo/staterows"
 )
 
 type commitDocument struct {
@@ -17,12 +19,10 @@ type commitDocument struct {
 	} `json:"system"`
 }
 
-var agentRuntimeFields = map[string]bool{
-	"last_heartbeat": true, "status": true, "version": true, "service_status": true, "config_version": true,
-	"system_metrics": true, "cpu": true, "memory": true, "disk": true, "network": true, "updated_at": true,
-	"deployments": true, "latest_deployment": true, "latest_upgrade": true, "config_revision": true,
-	"pushed_at": true, "applied_content": true,
-}
+// The Agent state members (model.AgentStateMembers, removed with
+// staterows.Split) and updated_at are not configuration a backup has to
+// follow.
+const agentUpdatedAt = "updated_at"
 
 func equalJSON(a, b json.RawMessage) bool {
 	var left, right any
@@ -38,6 +38,18 @@ func equalJSON(a, b json.RawMessage) bool {
 }
 func configuredAgents(agents []json.RawMessage) (map[string]map[string]json.RawMessage, error) {
 	result := map[string]map[string]json.RawMessage{}
+	if agents == nil {
+		return result, nil
+	}
+	row, err := json.Marshal(agents)
+	if err != nil {
+		return nil, err
+	}
+	config, _ := staterows.Split(row)
+	agents = nil
+	if err := json.Unmarshal(config, &agents); err != nil {
+		return nil, err
+	}
 	for _, raw := range agents {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err != nil {
@@ -47,9 +59,7 @@ func configuredAgents(agents []json.RawMessage) (map[string]map[string]json.RawM
 		if err := json.Unmarshal(fields["id"], &id); err != nil {
 			return nil, err
 		}
-		for key := range agentRuntimeFields {
-			delete(fields, key)
-		}
+		delete(fields, agentUpdatedAt)
 		result[id] = fields
 	}
 	return result, nil

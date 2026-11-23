@@ -14,6 +14,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -26,6 +27,16 @@ const HeartbeatFreshSeconds = 120
 
 // OxidnsHALocked is OXIDNS_HA_LOCKED.
 const OxidnsHALocked = "DNS 高可用已开启，请先停用 DNS 高可用"
+
+// StateRestoredMessage refuses changes to, and automatic pushes from or to, an
+// Agent restored from a backup without its run records until it is
+// published again (design/o17-runtime-state.md 2.5.1).
+const StateRestoredMessage = "运行记录未包含在备份里，请先重新发布此 Agent"
+
+// StateRestored reports an Agent restored from a backup without its run
+// records: what its device runs is unknown until the next successful
+// publication clears the mark.
+func StateRestored(a *model.Agent) bool { return a != nil && a.StateRestoredAt != nil }
 
 // DeploymentConflict is AgentDeploymentConflict (refused like a ValidationError): a binding or
 // registration cannot change during an unfinished operation (409).
@@ -118,6 +129,9 @@ type Manager struct {
 	runtime    *RuntimeState
 	client     Client
 
+	// presence are the OnPresence observers (wake.go).
+	presence presenceWatchers
+
 	deploymentMu sync.Mutex
 	preparations map[[2]string]*preparationLease
 
@@ -126,6 +140,9 @@ type Manager struct {
 	monotonic          func() float64
 	preparationRunning func(agentID, deploymentID string) (bool, error)
 }
+
+// processStart is the origin of the Manager's monotonic seconds.
+var processStart = time.Now()
 
 // New is AgentManager(repository): it shares the runtime state of the data
 // directory and imports a legacy runtime.sqlite3 once.

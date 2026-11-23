@@ -383,6 +383,7 @@ func (m *Manager) PushLegacyConfigModel(ctx context.Context, id, content string,
 		}
 		current.ConfigVersion = version[:8]
 		current.PushedAt = new(utcNowZ())
+		current.StateRestoredAt = nil // the device runs a known configuration again
 		if len(options.Revision) > 0 && string(options.Revision) != "null" {
 			if _, _, err := model.DecodeStoredMember(current, "config_revision", options.Revision, "config_revision"); err != nil {
 				return err

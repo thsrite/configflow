@@ -49,6 +49,11 @@ type Agent struct {
 	Memory                   *AgentMemory                  `json:"memory,omitzero"`
 	Disk                     *AgentDisk                    `json:"disk,omitzero"`
 	Network                  *AgentNetwork                 `json:"network,omitzero"`
+	// StateRestoredAt marks an Agent imported from a backup without its run
+	// records (deployments, applied content, HA journal, ...): its device
+	// state is unknown until the next successful publication clears it
+	// (design/o17-runtime-state.md 2.5.1).
+	StateRestoredAt *string `json:"state_restored_at,omitzero"`
 }
 
 // AgentMetrics preserves older embedded metrics without introducing persistent heartbeat writes.
@@ -231,7 +236,7 @@ func (r *Agent) DropHistory() {
 var AgentStateMembers = []string{
 	"deployments", "latest_deployment", "applied_content", "config_version", "config_revision", "pushed_at",
 	"version", "latest_upgrade", "rule_sync.state", "dns_follow_state", "dns_follow_job", "oxidns_ha_state",
-	"oxidns_ha_publication", "ipv6_verifications",
+	"oxidns_ha_publication", "ipv6_verifications", "state_restored_at",
 	// Values written by Python only; kept, never written again.
 	"status", "last_heartbeat", "service_status", "system_metrics", "cpu", "memory", "disk", "network",
 }

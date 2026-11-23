@@ -3,6 +3,7 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"os"
@@ -128,6 +129,7 @@ func pythonOutput(t *testing.T, w *world, commands []command) []byte {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), script)
 	cmd.Dir = root
+	repotest.PythonLayout(t, w.pyDir) // Python reads the version-1 layout (O17)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+w.pyDir, "LOG_FILE="+filepath.Join(w.pyDir, "app.log"), "ADMIN_USERNAME=diff-admin", "ADMIN_PASSWORD=diff-password", "JWT_SECRET_KEY="+secret, "PYTHONDONTWRITEBYTECODE=1")
 	data, _ := json.Marshal(commands)
 	cmd.Stdin = bytes.NewReader(data)
@@ -155,7 +157,7 @@ func python(t *testing.T, w *world, commands []command) []answer {
 
 func state(t *testing.T, w *world) json.RawMessage {
 	t.Helper()
-	doc, err := w.s.Repo.ExportAllJSON(w.s.Context(), false)
+	doc, err := w.s.Repo.DiagnosticExportJSON(w.s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

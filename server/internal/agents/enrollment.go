@@ -235,6 +235,9 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 	if changes && (HAEnabledModel(a) || HAActiveModel(a)) {
 		return &DeploymentConflict{Message: OxidnsHALocked}
 	}
+	if changes && StateRestored(a) {
+		return &DeploymentConflict{Message: StateRestoredMessage}
+	}
 	if input.profile != "" {
 		profile = input.profile
 	}
@@ -299,6 +302,7 @@ func setRegistrationMembers(a *model.Agent, input *RegistrationInput, id, token,
 	next.OxiDNSHAPublication = original.OxiDNSHAPublication
 	next.IPv6VerificationSettings = original.IPv6VerificationSettings
 	next.IPv6Verifications = original.IPv6Verifications
+	next.StateRestoredAt = original.StateRestoredAt
 	// Python keeps the trusted installation marker only when it is truthy.
 	if original.GatewayInstallationID != nil && *original.GatewayInstallationID != "" {
 		next.GatewayInstallationID = original.GatewayInstallationID

@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"configflow/internal/model/modeltest"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -101,6 +102,7 @@ func startOracle(t *testing.T, dir string) *oracle {
 	script, _ := filepath.Abs("testdata/reference.py")
 	o := &oracle{cmd: exec.Command(python, script)}
 	o.cmd.Dir = root
+	repotest.PythonLayout(t, dir) // Python reads the version-1 layout (O17)
 	o.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "ADMIN_USERNAME=diff-admin", "ADMIN_PASSWORD=diff-password", "JWT_SECRET_KEY="+secret, "PYTHONDONTWRITEBYTECODE=1", "SUB_STORE_BUILTIN_DIR=/nonexistent", "LOG_FILE="+filepath.Join(dir, "app.log"))
 	var err error
 	o.stdin, err = o.cmd.StdinPipe()
@@ -258,7 +260,7 @@ func native(v any) any {
 }
 func snapshot(t *testing.T, srv *httpxtest.Server) any {
 	t.Helper()
-	doc, err := srv.Repo.ExportAllJSON(srv.Context(), false)
+	doc, err := srv.Repo.DiagnosticExportJSON(srv.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

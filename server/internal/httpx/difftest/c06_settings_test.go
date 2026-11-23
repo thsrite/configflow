@@ -29,6 +29,23 @@ type settingsResult struct {
 	Before, After json.RawMessage
 }
 
+// versionOneMeta shows storage-version-2 meta rows as Python's version 1
+// (O17: the settings tests store no Agent state, so only the version and the
+// two state counters differ).
+func versionOneMeta(rows [][]any) [][]any {
+	kept := rows[:0]
+	for _, row := range rows {
+		switch row[0] {
+		case "state_generation", "state_commit_id":
+			continue
+		case "storage_version":
+			row[1] = float64(1) // decoded like the Python side (json.Unmarshal into any)
+		}
+		kept = append(kept, row)
+	}
+	return kept
+}
+
 func settingsSnapshot(t *testing.T, dir string) json.RawMessage {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(dir, "configflow.sqlite3"))
@@ -73,6 +90,9 @@ func settingsSnapshot(t *testing.T, dir string) json.RawMessage {
 			t.Fatal(err)
 		}
 		rows.Close()
+		if table.name == "meta" {
+			values = versionOneMeta(values)
+		}
 		tables[table.name] = values
 	}
 	files := map[string]any{}
@@ -253,12 +273,18 @@ func runSettingsBoundary(t *testing.T, cases []settingsCase) {
 	for i := range cases {
 		s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(settings.Register)})
 		worlds = append(worlds, s)
-		cases[i].Seed = s.DataDir
 		if len(cases[i].storedBackup) > 0 {
 			// The stored backup keeps values of the wrong type, as a hand
 			// edit could; the plain record refuses them as input.
 			repotest.WriteRow(t, s.Repo.DatabasePath(), "system", "", "backup", cases[i].storedBackup)
 		}
+		// Python copies its seed: give it the version-1 layout it reads (O17).
+		seed := filepath.Join(t.TempDir(), "seed")
+		if err := os.CopyFS(seed, os.DirFS(s.DataDir)); err != nil {
+			t.Fatal(err)
+		}
+		repotest.PythonLayout(t, seed)
+		cases[i].Seed = seed
 	}
 	output := c06Python(t, `
 import contextlib, io, json, pathlib, shutil, sqlite3, sys, tempfile

@@ -31,6 +31,8 @@ import (
 	"testing"
 
 	"configflow/internal/model"
+	"configflow/internal/repo/repotest"
+	"configflow/internal/repo/staterows"
 	"configflow/internal/store"
 )
 
@@ -41,6 +43,7 @@ func xcPython(t *testing.T, command, directory, mode string, extra ...string) an
 		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are not set")
 	}
 	script := must(filepath.Abs("testdata/repo_crosscheck.py"))(t)
+	xcPythonLayout(t, directory)
 	output := filepath.Join(t.TempDir(), command+".json")
 	run := exec.Command(interpreter, append([]string{script, command, directory, output, mode}, extra...)...)
 	run.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
@@ -48,6 +51,21 @@ func xcPython(t *testing.T, command, directory, mode string, extra ...string) an
 		t.Fatalf("repo_crosscheck.py %s: %v\n%s", command, err, text)
 	}
 	return parseJSONVal(t, must(os.ReadFile(output))(t))
+}
+
+// xcPythonLayout rewrites a Go data directory's database in the version-1
+// layout before Python opens it (O17: Python reads version 1 only); Go
+// reopens it later and upgrades again. A missing or version-1 database is
+// left alone.
+func xcPythonLayout(t testing.TB, directory string) {
+	t.Helper()
+	path := filepath.Join(directory, DatabaseFilename)
+	if !pathExists(path) {
+		return
+	}
+	if o17Version(t, path) >= 2 {
+		repotest.DowngradeToV1(t, path)
+	}
 }
 
 func xcOpen(t *testing.T, directory, mode string) *Repository {
@@ -90,10 +108,52 @@ func xcDump(t *testing.T, directory string) *testObj {
 		noError(t, rows.Err())
 		return result
 	}
-	return testObjKV(
+	return xcVersionOne(t, db, testObjKV(
 		"meta", table("SELECT key, value FROM meta ORDER BY key", 2),
 		"sections", table("SELECT scope, owner, position FROM sections ORDER BY scope, owner", 3),
-		"fields", table("SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope, owner, field", 6))
+		"fields", table("SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope, owner, field", 6)))
+}
+
+// xcVersionOne shows a storage-version-2 dump as the version-1 rows Python
+// keeps (O17, D5): the agent_state rows merged into system.agents, the state
+// counters left out and storage_version 1.
+func xcVersionOne(t *testing.T, db *sql.DB, dump *testObj) *testObj {
+	t.Helper()
+	var tables int
+	noError(t, db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='agent_state'").Scan(&tables))
+	if tables == 0 {
+		return dump
+	}
+	var state []store.StateRow
+	rows := must(db.Query("SELECT agent_id, member, value FROM agent_state ORDER BY agent_id, member"))(t)
+	for rows.Next() {
+		var row store.StateRow
+		var value string
+		noError(t, rows.Scan(&row.Owner, &row.Member, &value))
+		row.Value = json.RawMessage(value)
+		state = append(state, row)
+	}
+	noError(t, rows.Err())
+	rows.Close()
+	meta := []any{}
+	for _, row := range dump.Value("meta").([]any) {
+		values := row.([]any)
+		switch values[0] {
+		case "state_generation", "state_commit_id":
+			continue
+		case "storage_version":
+			row = []any{values[0], "1"}
+		}
+		meta = append(meta, row)
+	}
+	dump.Set("meta", meta)
+	for _, row := range dump.Value("fields").([]any) {
+		values := row.([]any)
+		if values[0] == "system" && values[1] == "" && values[2] == "agents" {
+			values[4] = string(staterows.Merge([]byte(values[4].(string)), state))
+		}
+	}
+	return dump
 }
 
 // xcLayout is layout() in repo_crosscheck.py (sorted like pathlib paths).
@@ -105,6 +165,10 @@ func xcLayout(t *testing.T, directory string) []any {
 			return err
 		}
 		relative := must(filepath.Rel(directory, path))(t)
+		if relative == BackupsDirName {
+			// Go's pre-upgrade backup of a Python-made database (O17).
+			return filepath.SkipDir
+		}
 		if entry.IsDir() {
 			relative += "/"
 		}
@@ -1127,7 +1191,9 @@ func xcFingerprint(t *testing.T, s *store.Store) []any {
 func TestCrossCheckInterchange(t *testing.T) {
 	goDir, pyDir := xcOperations(t)
 
-	// A database written by Go is opened by Python without changes.
+	// A database written by Go is opened by Python without changes (in the
+	// version-1 layout Python reads, O17).
+	xcPythonLayout(t, goDir)
 	goStore := store.New(filepath.Join(goDir, DatabaseFilename), LockTimeout)
 	written := xcFingerprint(t, goStore)
 	python := xcPython(t, "fingerprint", goDir, "plain").(*testObj)
@@ -1137,14 +1203,19 @@ func TestCrossCheckInterchange(t *testing.T) {
 	r := openRepo(t, goDir)
 	wantJSONEqual(t, must(r.ExportAllJSON(bg, false))(t), python.Value("export"))
 
-	// A database written by Python is opened by Go without changes.
+	// A database written by Python is opened by Go, which upgrades it to
+	// storage version 2 after a backup that equals the Python file (O17);
+	// Python reads the same document from it.
 	pyStore := store.New(filepath.Join(pyDir, DatabaseFilename), LockTimeout)
 	before := xcFingerprint(t, pyStore)
 	r = openRepo(t, pyDir)
 	exported := must(r.ExportAllJSON(bg, false))(t)
-	wantJSONEqual(t, xcFingerprint(t, pyStore), before)
+	backups := must(filepath.Glob(filepath.Join(pyDir, BackupsDirName, "configflow-v1-*.sqlite3")))(t)
+	if len(backups) != 1 {
+		t.Fatalf("backups %v", backups)
+	}
+	wantJSONEqual(t, xcFingerprint(t, store.New(backups[0], LockTimeout)), before)
 	python = xcPython(t, "fingerprint", pyDir, "plain").(*testObj)
-	wantJSONEqual(t, python.Value("before"), before)
 	wantJSONEqual(t, exported, python.Value("export"))
 
 	// One more write by each side on the other's database; the other reads it.
@@ -1154,6 +1225,7 @@ func TestCrossCheckInterchange(t *testing.T) {
 	if got := must(openRepo(t, goDir).ProfileMetadataRecord(bg, "frompy"))(t).Name; got != "Py" {
 		t.Fatalf("frompy name %q", got)
 	}
+	r = openRepo(t, pyDir) // upgrades again after Python opened it
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "fromgo", Name: "Go"}, ""))(t)
 	python = xcPython(t, "fingerprint", pyDir, "plain").(*testObj)
 	wantJSONEqual(t, python.Value("opened"), python.Value("before"))
@@ -1178,6 +1250,7 @@ func TestCrossCheckLockExcludesPythonAndGo(t *testing.T) {
 
 	// Python holds the lock: a Go write times out, then waits it out.
 	script := must(filepath.Abs("testdata/repo_crosscheck.py"))(t)
+	xcPythonLayout(t, r.DataDir())
 	holder := exec.Command(interpreter, script, "hold", r.DataDir(), filepath.Join(t.TempDir(), "hold.json"), "plain", "1.5")
 	holder.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
 	stdout := must(holder.StdoutPipe())(t)
@@ -1227,6 +1300,7 @@ func TestCrossCheckPythonWriterKilledBeforeCommit(t *testing.T) {
 	r := newRepo(t)
 	before := must(r.ExportAllJSON(bg, false))(t)
 	script := must(filepath.Abs("testdata/repo_crosscheck.py"))(t)
+	xcPythonLayout(t, r.DataDir())
 	crash := exec.Command(interpreter, script, "crash-write", r.DataDir(), filepath.Join(t.TempDir(), "x.json"), "plain")
 	crash.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
 	output, err := crash.CombinedOutput()

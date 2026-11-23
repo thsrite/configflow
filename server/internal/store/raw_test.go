@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -146,6 +147,9 @@ func TestStoredRoundTrip(t *testing.T) {
 	}
 	python := func(t *testing.T, args ...string) {
 		t.Helper()
+		if len(args) > 1 && strings.HasPrefix(args[0], "audit") {
+			pythonView(t, args[1]) // Python reads the version-1 layout (O17)
+		}
 		cmd := exec.Command(interpreter, append([]string{"testdata/raw_crosscheck.py"}, args...)...)
 		cmd.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
 		// Suppress interpreter diagnostics: they can include private row contents.
@@ -240,6 +244,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		if _, err := s.Create(rawFixture(t), nil); err != nil {
 			t.Fatal(err)
 		}
+		pythonView(t, path) // the round trip continues in the version-1 layout Python reads (O17)
 		run(t, path, false)
 	})
 	t.Run("committed-python-fixture", func(t *testing.T) {

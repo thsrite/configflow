@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"configflow/internal/model"
@@ -176,6 +177,9 @@ func TestStoredRoundTrip(t *testing.T) {
 			return
 		}
 		// Reuse the existing real-Python storage boundary driver rather than copy it.
+		if len(args) > 1 && strings.HasPrefix(args[0], "audit") && filepath.Base(args[1]) == DatabaseFilename {
+			xcPythonLayout(t, filepath.Dir(args[1]))
+		}
 		command := exec.Command(interpreter, append([]string{"../store/testdata/raw_crosscheck.py"}, args...)...)
 		command.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
 		if err := command.Run(); err != nil {
@@ -183,6 +187,9 @@ func TestStoredRoundTrip(t *testing.T) {
 		}
 	}
 	run := func(t *testing.T, path string, repositoryAudit bool) {
+		if pythonReady {
+			xcPythonLayout(t, filepath.Dir(path)) // the round trip runs in the version-1 layout Python reads (O17)
+		}
 		target := store.New(path, LockTimeout)
 		entry, err := target.Load()
 		if err != nil {

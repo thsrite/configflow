@@ -11,6 +11,7 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -200,6 +201,7 @@ func startPythonArgs(t *testing.T, dataDir string, args ...string) (string, func
 	port := freePort(t)
 	cmd := exec.Command(python, args...)
 	cmd.Dir = root
+	repotest.PythonLayout(t, dataDir) // Python reads the version-1 layout (O17)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dataDir, "LOG_FILE="+filepath.Join(dataDir, "app.log"),
 		"CONFIGFLOW_BACKEND_HOST=127.0.0.1", "CONFIGFLOW_BACKEND_PORT="+strconv.Itoa(port),
 		"ADMIN_USERNAME="+username, "ADMIN_PASSWORD="+password, "JWT_SECRET_KEY="+secret, "LOG_LEVEL=INFO",
@@ -705,6 +707,9 @@ func dataFiles(t *testing.T, dir string) []string {
 		rel, _ := filepath.Rel(dir, path)
 		if strings.HasPrefix(filepath.Base(rel), "app.log") || strings.HasSuffix(rel, ".lock") {
 			return nil
+		}
+		if strings.HasPrefix(filepath.ToSlash(rel), "backups/") {
+			return nil // Go's pre-upgrade backup, made when Go reads Python's data directory (O17)
 		}
 		files = append(files, rel)
 		return nil

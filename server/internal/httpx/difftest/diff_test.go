@@ -15,6 +15,7 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -108,6 +109,7 @@ func startPython(t *testing.T, dataDir string) string {
 	port := freePort(t)
 	cmd := exec.Command(python, "-m", "backend.app")
 	cmd.Dir = root
+	repotest.PythonLayout(t, dataDir) // Python reads the version-1 layout (O17)
 	cmd.Env = append(os.Environ(), "DATA_DIR="+dataDir, "LOG_FILE="+filepath.Join(dataDir, "app.log"),
 		"CONFIGFLOW_BACKEND_HOST=127.0.0.1", "CONFIGFLOW_BACKEND_PORT="+strconv.Itoa(port),
 		"ADMIN_USERNAME="+username, "ADMIN_PASSWORD="+password, "JWT_SECRET_KEY="+secret, "LOG_LEVEL=INFO",

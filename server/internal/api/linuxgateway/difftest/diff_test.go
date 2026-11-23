@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"configflow/internal/model/modeltest"
+	"configflow/internal/repo/repotest"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -55,7 +56,7 @@ func jsonValue(t *testing.T, v any) any {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
-	doc, err := s.Repo.ExportAllJSON(s.Context(), false)
+	doc, err := s.Repo.DiagnosticExportJSON(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +127,9 @@ func snapshot(t *testing.T, s *httpxtest.Server) any {
 		var position int
 		if err = rows.Scan(&scope, &owner, &field, &position, &value); err != nil {
 			t.Fatal(err)
+		}
+		if scope == "system" && field == "agents" {
+			value = repotest.MergedAgentsRow(t, filepath.Join(s.DataDir, "configflow.sqlite3"), value) // as Python stores it (O17)
 		}
 		var data any
 		if err = json.Unmarshal([]byte(value), &data); err != nil {
@@ -298,6 +302,7 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	}
 	w.cmd = exec.Command(py, script)
 	w.cmd.Dir = root
+	repotest.PythonLayout(t, pyDir) // Python reads the version-1 layout (O17)
 	w.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+pyDir, "ADMIN_USERNAME=diff-admin", "ADMIN_PASSWORD=diff-password", "JWT_SECRET_KEY=a20-secret", "LOG_FILE="+filepath.Join(pyDir, "app.log"), "PYTHONDONTWRITEBYTECODE=1")
 	w.cmd.Stderr = &w.stderr
 	w.stdin, err = w.cmd.StdinPipe()
@@ -660,6 +665,8 @@ func (w *world) callBodies(method, path, goBody, pyBody string, authHeader bool)
 		if pair.name == "state" {
 			// Stored documents compare as the plain records hold them (O18 T1c).
 			gn, pn = modeltest.StateThroughModel(gn), modeltest.StateThroughModel(pn)
+			maskSystemRevision(gn)
+			maskSystemRevision(pn)
 		} else {
 			pn = modeltest.AlignResponse(pn, gn)
 		}
@@ -969,4 +976,24 @@ func TestA20DraftPythonCredentialLeaksAreFixed(t *testing.T) {
 	rev, _ := w.srv.Repo.ConfigRevision(w.srv.Context(), "home")
 	w.privacyCorrection = true
 	w.call("POST", root+"/restore/preview", fmt.Sprintf(`{"expected_config_revision":%d}`, rev), true)
+}
+
+// maskSystemRevision hides the system _revision (document and row): since
+// O17 an edit of Agent state only (the AGENT steps change versions) leaves
+// it, where Python counted every registry write.
+func maskSystemRevision(state any) {
+	root, _ := state.(map[string]any)
+	if document, ok := root["document"].(map[string]any); ok {
+		if system, ok := document["system"].(map[string]any); ok {
+			if _, present := system["_revision"]; present {
+				system["_revision"] = "@system-revision"
+			}
+		}
+	}
+	fields, _ := root["fields"].([]any)
+	for _, field := range fields {
+		if row, ok := field.([]any); ok && len(row) >= 4 && row[0] == "system" && row[2] == "_revision" {
+			row[len(row)-1] = "@system-revision"
+		}
+	}
 }

@@ -33,6 +33,9 @@ func python(t *testing.T, command, target string) *testDoc {
 		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are not set")
 	}
 	script := must(filepath.Abs("testdata/crosscheck.py"))(t)
+	if command == "dump" || command == "commit" {
+		pythonView(t, target)
+	}
 	output := filepath.Join(t.TempDir(), command+".json")
 	run := exec.Command(interpreter, script, command, target, output)
 	run.Env = append(os.Environ(), "CONFIGFLOW_REPO="+repo, "PYTHONDONTWRITEBYTECODE=1")
@@ -71,13 +74,13 @@ func goDump(t *testing.T, path string) *testDoc {
 	for _, name := range []string{"application_id", "journal_mode", "user_version", "encoding", "auto_vacuum"} {
 		pragmas.Set(name, table("PRAGMA "+name, 1)[0].([]any)[0])
 	}
-	return testObj(
+	return versionOneDump(testObj(
 		"meta", table("SELECT key, value FROM meta ORDER BY key", 2),
 		"sections", table("SELECT scope, owner, position FROM sections ORDER BY scope, owner", 3),
 		"fields", table("SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope, owner, field", 6),
 		"schema", table("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name", 4),
 		"pragmas", pragmas,
-	)
+	))
 }
 
 // sameTables compares the row dumps; with masked set, the values that are
@@ -249,6 +252,19 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 		name := scenario.GetString("name")
 		count++
 		path := filepath.Join(directory, name+".sqlite3")
+		if name == "version-newer" {
+			// Python reads version 1 only; Go reads 2 since O17. The same
+			// refusal of a newer version, one version up.
+			copyTo(t, filepath.Join(pythonDirectory, "base.sqlite3"), path)
+			execSQL(t, path, "UPDATE meta SET value = '3' WHERE key = 'storage_version'")
+			if err := legacyNew(path, seconds(2)).Check(); !errors.Is(err, ErrUnsupported) || err.Error() != "数据库存储版本 3 高于当前支持的 2" {
+				t.Errorf("version-newer: %v", err)
+			}
+			if want := scenario.GetObject("check"); want.GetString("type") != "StoreUnsupported" {
+				t.Errorf("version-newer: Python %s", compact(t, want))
+			}
+			continue
+		}
 		var holder *Conn
 		switch setup := scenario.Value("setup"); setup {
 		case "garbage":

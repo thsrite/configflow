@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
@@ -109,6 +110,15 @@ var lateRoutePackages = []func(*httpx.Router){
 	apinotifications.Register,
 }
 
+var loopWakes sync.Once
+
+// wireLoopWakes connects change notifications across packages that must not
+// import each other: refreshed rule sources wake the Agent rule-sync loop
+// (design/o17-runtime-state.md 2.6). Hooks are process-wide, wired once.
+func wireLoopWakes() {
+	loopWakes.Do(func() { refresh.OnRulesRefreshed(rulesync.WakeLoop) })
+}
+
 // wirePackages run before the routes are registered (hooks, loops,
 // providers).
 var wirePackages = []func(){
@@ -129,6 +139,7 @@ var wirePackages = []func(){
 	upgrades.Wire,
 	substore.Wire,
 	refresh.Wire,
+	wireLoopWakes,
 	health.Wire,
 	discovery.Wire,
 	mihomoenv.Wire,

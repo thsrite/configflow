@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"configflow/internal/model/modeltest"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"errors"
@@ -143,6 +144,7 @@ func newClientWorldSetup(t *testing.T, setup func(*httpxtest.Server)) *clientWor
 	}
 	cmd := exec.Command(python, filepath.Join(root, "server/internal/api/agents/testdata/client_tools.py"))
 	cmd.Dir = root
+	repotest.PythonLayout(t, pyDir) // Python reads the version-1 layout (O17)
 	cmd.Env = append(os.Environ(), "DATA_DIR="+pyDir, "PYTHONPATH="+root, "PYTHONDONTWRITEBYTECODE=1", "ADMIN_USERNAME=a24-admin", "ADMIN_PASSWORD=a24-password", "JWT_SECRET_KEY=a24-synthetic-secret", "LOG_FILE="+filepath.Join(pyDir, "app.log"))
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -214,7 +216,7 @@ func a24NormalizeInPlace(v any) any {
 }
 func a24State(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
-	document, err := s.Repo.ExportAllJSON(s.Context(), false)
+	document, err := s.Repo.DiagnosticExportJSON(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -95,21 +95,26 @@ func (r *Repository) transact(ctx context.Context, options writeOptions, fn func
 	if r.InTransaction(ctx) {
 		return inUse(nestedWriteMessage)
 	}
-	var base storedEntry
-	var proposed *model.Document
+	var current *transaction
 	err := withLock(ctx, r.lockFile, func(ctx context.Context) error {
 		return r.transactLocked(ctx, options, func(ctx context.Context, tx *transaction) error {
-			if err := fn(ctx, tx); err != nil {
-				return err
-			}
-			base, proposed = tx.base, tx.document
-			return nil
+			current = tx
+			return fn(ctx, tx)
 		})
 	})
 	if err != nil {
 		return err
 	}
-	r.configurationCommitted(base, proposed)
+	if current == nil || !current.changed {
+		return nil
+	}
+	// After .config.lock is released (o3 3.2 rule 3): configuration
+	// observers see configuration commits only, never Agent state commits.
+	kinds := current.kinds()
+	if kinds&ChangeConfig != 0 {
+		r.configurationCommitted(current.base, current.document)
+	}
+	r.notifyCommit(kinds)
 	return nil
 }
 
@@ -179,6 +184,7 @@ func (r *Repository) transactLocked(ctx context.Context, options writeOptions, f
 	if changed {
 		r.setCache(committed)
 		r.commitCount.Add(1)
+		tx.changed, tx.committed = true, committed.Head
 	}
 	return nil
 }
@@ -189,6 +195,21 @@ type transaction struct {
 	base storedEntry
 	// document is the typed working copy, owned by the transaction.
 	document *model.Document
+	// changed and committed: the transaction wrote, and the head it wrote.
+	changed   bool
+	committed store.Head
+}
+
+// kinds reports what a written transaction changed.
+func (tx *transaction) kinds() ChangeKind {
+	var kinds ChangeKind
+	if !tx.committed.SameConfig(tx.base.Head) {
+		kinds |= ChangeConfig
+	}
+	if tx.committed.State != tx.base.Head.State || tx.committed.StateCommitID != tx.base.Head.StateCommitID {
+		kinds |= ChangeState
+	}
+	return kinds
 }
 
 // workingModel returns the typed working document of the write transaction

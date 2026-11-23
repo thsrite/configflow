@@ -3,10 +3,10 @@ package dnsfollow
 import (
 	"context"
 	"sync"
-	"time"
 
 	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
 	"configflow/internal/tasks"
 )
 
@@ -27,6 +27,7 @@ func ForManager(m *agents.Manager) *Service {
 		return s
 	}
 	services.byManager[m] = s
+	loop.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
 	return s
 }
 
@@ -50,7 +51,7 @@ func Register() {
 		}
 		return e
 	})
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "dns-follow", Start: lifecycle.AtBoot, Interval: func(context.Context) time.Duration { return PollInterval }, Round: func(ctx context.Context) error {
+	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "dns-follow", Start: lifecycle.AtBoot, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		m, e := agents.Get(ctx)
 		if e == nil {
 			e = ForManager(m).Tick(ctx)

@@ -1,6 +1,6 @@
 // Package agents is the Agent registry (package #20): the port of
 // backend/agents/manager.py (AgentManager), common/agent_manager.py,
-// runtime_state.py, diagnostics.py, operation_events.py, idle_rounds.py,
+// runtime_state.py, diagnostics.py, operation_events.py,
 // presence_log.py, version.py, deployment_messages.py and
 // upgrade_messages.py.
 //

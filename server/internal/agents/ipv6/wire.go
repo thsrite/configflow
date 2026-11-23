@@ -14,6 +14,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 var logger = logx.Get("backend.agents.ipv6_verification")
@@ -81,7 +82,7 @@ func (s *Service) unavailable(ctx context.Context, a Document, did string, bound
 }
 
 // Tick performs one scheduler round. Bad records do not stop healthy peers.
-// IdleRounds belongs to the caller, so a new Manager cannot inherit old state.
+// It reports whether the round found nothing running (idle).
 func (s *Service) Tick(ctx context.Context) (bool, error) {
 	if e := ctx.Err(); e != nil {
 		return false, e
@@ -184,10 +185,11 @@ func Wire(checker func(*agents.Manager) *contentsync.Checker) {
 	})
 
 	agents.OnManagerInit(func(ctx context.Context, m *agents.Manager) {
-		owner := &schedulerOwner{service: &Service{Manager: m, Checker: checker}, rounds: agents.NewIdleRounds(nil)}
+		owner := &schedulerOwner{service: &Service{Manager: m, Checker: checker}}
 		scheduler.Lock()
 		scheduler.owner = owner
 		scheduler.Unlock()
+		schedulerLoop.Watch(m, repo.ChangeConfig|repo.ChangeState, false)
 		m.OnClose(func() {
 			scheduler.Lock()
 			if scheduler.owner == owner {
@@ -195,13 +197,17 @@ func Wire(checker func(*agents.Manager) *contentsync.Checker) {
 			}
 			scheduler.Unlock()
 		})
-		lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: func(context.Context) time.Duration { return 5 * time.Second }, Round: schedulerRound})
+		lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: schedulerLoop.Interval, Wake: schedulerLoop.Signal(), Round: schedulerRound})
 	})
 }
 
+// schedulerLoop wakes the scheduler on configuration and Agent state
+// commits (a finished deployment requests a verification); while a
+// verification runs it checks every 5 seconds (design/o17-runtime-state.md 2.6).
+var schedulerLoop = agents.NewWaker(5*time.Second, agents.IdleFallback)
+
 type schedulerOwner struct {
 	service *Service
-	rounds  *agents.IdleRounds
 }
 
 var scheduler struct {
@@ -216,13 +222,7 @@ func schedulerRound(ctx context.Context) error {
 	if owner == nil {
 		return nil
 	}
-	head, due, e := owner.rounds.Due(ctx, owner.service.Manager.Repository())
-	if e != nil || !due {
-		return e
-	}
 	idle, e := owner.service.Tick(ctx)
-	if e == nil {
-		owner.rounds.Done(owner.service.Manager.Repository(), head, idle)
-	}
+	schedulerLoop.Done(e != nil || !idle)
 	return e
 }

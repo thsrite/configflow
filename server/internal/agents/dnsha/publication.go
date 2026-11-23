@@ -571,12 +571,11 @@ func (s *Service) Advance(ctx context.Context, id string) (out *model.HAPublicat
 	return
 }
 
-// Reconcile advances each distinct unfinished pair once; idle rounds do no writes.
-func (s *Service) Reconcile(ctx context.Context) error {
-	head, due, e := s.rounds.Due(ctx, s.m.Repository())
-	if e != nil || !due {
-		return e
-	}
+// Reconcile advances each distinct unfinished pair once; idle rounds do no
+// writes and let the loop rest until woken (Waker).
+func (s *Service) Reconcile(ctx context.Context) (e error) {
+	busy := false
+	defer func() { s.waker.Done(busy || e != nil) }()
 	list, e := s.all(ctx)
 	if e != nil {
 		return e
@@ -588,7 +587,7 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			// A stopped pair waiting for its lost member keeps the loop
 			// awake: heartbeats are not repository commits.
 			seen = append(seen, j.ID)
-			s.rounds.Done(s.m.Repository(), head, false)
+			busy = true
 			if e = s.AutoComplete(ctx, a.ID); e != nil {
 				return e
 			}
@@ -598,11 +597,10 @@ func (s *Service) Reconcile(ctx context.Context) error {
 			continue
 		}
 		seen = append(seen, j.ID)
-		s.rounds.Done(s.m.Repository(), head, false)
+		busy = true
 		if _, e = s.advance(ctx, a.ID); e != nil {
 			return e
 		}
 	}
-	s.rounds.Done(s.m.Repository(), head, len(seen) == 0)
 	return nil
 }

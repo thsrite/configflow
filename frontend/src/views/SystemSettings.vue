@@ -736,8 +736,10 @@ const onImportFileChange = async (event: Event) => {
       { title: '导入全部数据', confirmText: '确认覆盖并导入' }
     )
     if (!ok) return
-    await configApi.import(config)
-    notify.success('全部数据已导入，正在刷新页面')
+    const response = await configApi.import(config)
+    const message = typeof response?.data?.message === 'string' ? response.data.message : ''
+    if (message) notify.warning(`${message}，正在刷新页面`)
+    else notify.success('全部数据已导入，正在刷新页面')
     localStorage.removeItem('serverDomain')
     localStorage.removeItem('subscriptionAggregationEnabled')
     window.location.reload()

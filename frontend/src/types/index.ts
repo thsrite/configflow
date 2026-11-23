@@ -166,6 +166,8 @@ export interface AgentSystemMetrics {
 
 export interface Agent {
   id: string
+  /** Set when the Agent was restored from a backup without its run records; cleared by the next successful publication. */
+  state_restored_at?: string
   name: string
   host: string
   port: number

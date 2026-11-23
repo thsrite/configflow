@@ -4,6 +4,7 @@ package difftest
 
 import (
 	"bytes"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,7 @@ func runPython(t *testing.T, dir string, args ...string) {
 	root, _ := filepath.Abs("../../../..")
 	cmd := exec.Command(python(), append([]string{script}, args...)...)
 	cmd.Dir = root
+	repotest.PythonLayout(t, dir) // Python reads the version-1 layout (O17)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "ADMIN_USERNAME=", "ADMIN_PASSWORD=", "PYTHONDONTWRITEBYTECODE=1")
 	b, e := cmd.CombinedOutput()
 	if e != nil {
@@ -64,6 +66,7 @@ func startPython(t *testing.T, dir string) string {
 	root, _ := filepath.Abs("../../../..")
 	cmd := exec.Command(python(), script, "serve", strconv.Itoa(port))
 	cmd.Dir = root
+	repotest.PythonLayout(t, dir) // Python reads the version-1 layout (O17)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "ADMIN_USERNAME=", "ADMIN_PASSWORD=", "PYTHONDONTWRITEBYTECODE=1", "LOG_FILE="+filepath.Join(dir, "app.log"))
 	var output bytes.Buffer
 	cmd.Stdout = &output

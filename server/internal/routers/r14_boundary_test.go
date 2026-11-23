@@ -44,6 +44,7 @@ func r14Python(t *testing.T, endpoint string, input any, out any) {
 		t.Fatalf("Python output: %v %s", err, raw)
 	}
 }
+
 // pythonDataDir copies a Go data directory for the Python reference, with the
 // database rewritten in the version-1 layout Python reads.
 func pythonDataDir(t *testing.T, dir string) string {

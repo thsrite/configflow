@@ -2,17 +2,15 @@ package agents
 
 // Ports of test_operation_events.py, test_deployment_messages.py,
 // test_agent_upgrade_messages.py (pure parts), test_agent_version_sync.py,
-// test_idle_rounds.py and the pure cases of test_agent_failure_details.py.
+// the pure cases of test_agent_failure_details.py.
 
 import (
 	"configflow/internal/timefmt"
 	"configflow/internal/version"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -354,155 +352,4 @@ func TestMultilineAndEscapedCredentialsAreHidden(t *testing.T) {
 	if strings.Contains(detail, "private-first") || !strings.Contains(detail, "error: bad proxy name") {
 		t.Fatal(detail)
 	}
-}
-
-// test_idle_rounds.py
-
-func commitProfile(t *testing.T, e *env, value string) {
-	if _, err := e.repo.UpdateProfile(e.ctx, "default", func(_ context.Context, p *model.Profile) error {
-		p.Description = value
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func idleEnv(t *testing.T) *env {
-	dir := t.TempDir()
-	return &env{t: t, ctx: context.Background(), repo: openRepo(t, dir), dir: dir}
-}
-
-func due(t *testing.T, rounds *IdleRounds, e *env) (any, bool) {
-	head, run, err := rounds.Due(e.ctx, e.repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return head, run
-}
-
-func TestRoundRunsUntilOneReportsIdleAndAgainAfterEveryCommit(t *testing.T) {
-	e := idleEnv(t)
-	rounds := NewIdleRounds(nil)
-	headAny, run := due(t, rounds, e)
-	current, _ := e.repo.Head(e.ctx)
-	if !run || headAny != any(current) {
-		t.Fatal("first round")
-	}
-	head := current
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("unreported round skipped")
-	}
-	rounds.Done(e.repo, head, false)
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("busy round skipped")
-	}
-	rounds.Done(e.repo, head, true)
-	if _, run := due(t, rounds, e); run {
-		t.Fatal("idle round ran")
-	}
-	commitProfile(t, e, "x")
-	afterAny, run := due(t, rounds, e)
-	after, _ := e.repo.Head(e.ctx)
-	if !run || afterAny != any(after) || after == head {
-		t.Fatal("commit")
-	}
-	rounds.Done(e.repo, after, true)
-	if _, run := due(t, rounds, e); run {
-		t.Fatal("idle again")
-	}
-	rounds.Done(e.repo, after, false)
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("busy forgets idle")
-	}
-}
-
-func TestCommitDuringTheRoundMakesTheNextRoundRun(t *testing.T) {
-	e := idleEnv(t)
-	rounds := NewIdleRounds(nil)
-	head, _, _ := rounds.Due(e.ctx, e.repo)
-	commitProfile(t, e, "x")
-	rounds.Done(e.repo, head, true)
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("skipped")
-	}
-}
-
-func TestWriteByAnotherProcessIsNoticed(t *testing.T) {
-	e := idleEnv(t)
-	rounds := NewIdleRounds(nil)
-	head, _, _ := rounds.Due(e.ctx, e.repo)
-	rounds.Done(e.repo, head, true)
-	if _, run := due(t, rounds, e); run {
-		t.Fatal("idle")
-	}
-	other := &env{t: t, ctx: e.ctx, repo: openRepo(t, e.dir)}
-	commitProfile(t, other, "elsewhere")
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("external commit not noticed")
-	}
-}
-
-func TestIdleRoundIsRepeatedAfterTheRecheckIntervalAndAfterAClockStepBack(t *testing.T) {
-	e := idleEnv(t)
-	now := 1000.0
-	rounds := NewIdleRounds(func() float64 { return now })
-	head, _, _ := rounds.Due(e.ctx, e.repo)
-	rounds.Done(e.repo, head, true)
-	now += RecheckSeconds - 1
-	if _, run := due(t, rounds, e); run {
-		t.Fatal("early")
-	}
-	now++
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("recheck")
-	}
-	rounds.Done(e.repo, head, true)
-	if _, run := due(t, rounds, e); run {
-		t.Fatal("idle")
-	}
-	now -= 5000
-	if _, run := due(t, rounds, e); !run {
-		t.Fatal("clock step back")
-	}
-}
-
-func TestRepositoriesAndLoopsDoNotShareIdleState(t *testing.T) {
-	e := idleEnv(t)
-	first, second := NewIdleRounds(nil), NewIdleRounds(nil)
-	head, _, _ := first.Due(e.ctx, e.repo)
-	first.Done(e.repo, head, true)
-	if _, run := due(t, first, e); run {
-		t.Fatal("idle")
-	}
-	if _, run := due(t, second, e); !run {
-		t.Fatal("shared between loops")
-	}
-	idleRoundOfAnotherRepository(t, first)
-	// Nothing keeps a discarded repository (and its cached document) alive.
-	for i := 0; i < 100 && first.Len() != 1; i++ {
-		runtime.GC()
-		time.Sleep(10 * time.Millisecond)
-	}
-	if first.Len() != 1 {
-		t.Fatalf("discarded repository still tracked: len %d", first.Len())
-	}
-	// The fixture's repository is still in use (Python's fixture keeps it).
-	runtime.KeepAlive(e.repo)
-}
-
-// idleRoundOfAnotherRepository records an idle round of a repository that is
-// unreachable once it returns (not inlined, so no stack slot keeps it).
-//
-//go:noinline
-func idleRoundOfAnotherRepository(t *testing.T, rounds *IdleRounds) {
-	other := idleEnv(t)
-	head, run, err := rounds.Due(other.ctx, other.repo)
-	if err != nil || !run {
-		t.Fatal("shared between repositories")
-	}
-	rounds.Done(other.repo, head, true)
-	if rounds.Len() != 2 {
-		t.Fatal("len")
-	}
-	runtime.KeepAlive(other.repo)
 }

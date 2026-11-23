@@ -3,6 +3,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"io"
@@ -59,6 +60,7 @@ func newOracle(t *testing.T, s *httpxtest.Server, adoptionTrace ...string) *orac
 	o := &oracle{}
 	o.cmd = exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), script)
 	o.cmd.Dir = root
+	repotest.PythonLayout(t, directory) // Python reads the version-1 layout (O17)
 	o.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+directory, "ADMIN_USERNAME="+httpxtest.Username, "ADMIN_PASSWORD="+httpxtest.Password, "JWT_SECRET_KEY=a21-test-signing-key", "LOG_FILE="+filepath.Join(directory, "app.log"), "PYTHONDONTWRITEBYTECODE=1")
 	if len(adoptionTrace) > 0 {
 		o.cmd.Env = append(o.cmd.Env, "A21_ADOPT_TRACE="+adoptionTrace[0])

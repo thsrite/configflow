@@ -180,6 +180,13 @@ func TestImportIsWholeSystemAtomicAndInvalidatesOldSnapshots(t *testing.T) {
 	wantJSONEqual(t, parseJSONObj(t, must(r.ExportProfileJSON(bg, "second"))(t)).Value("mihomo"),
 		backupObj.GetObject("profiles").GetObject("second").Value("mihomo"))
 	gotSys := parseJSONObj(t, must(model.Marshal(must(r.System(bg))(t)))(t))
+	// The backup holds no run records: imported Agents are marked (O17).
+	for _, agent := range gotSys.GetList("agents") {
+		if !agent.(*testObj).Has("state_restored_at") {
+			t.Fatal("imported Agent not marked restored")
+		}
+		agent.(*testObj).Delete("state_restored_at")
+	}
 	wantJSONEqual(t, gotSys.Value("agents"), backupObj.GetObject("system").Value("agents"))
 	wantJSONEqual(t, gotSys.GetObject("backup").Value("webdav_password"), "restore-me")
 	_, _, err = r.SaveProfileFieldsJSON(bg, "default", staleRaw, nil)

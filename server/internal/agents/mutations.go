@@ -129,6 +129,9 @@ func (m *Manager) EditAgent(ctx context.Context, id string, edits AgentEdits) (b
 		if (HAEnabledModel(a) || HAActiveModel(a)) && changed {
 			return &DeploymentConflict{Message: OxidnsHALocked}
 		}
+		if StateRestored(a) && changed {
+			return &DeploymentConflict{Message: StateRestoredMessage}
+		}
 		if edits.has("profile_id") && unfinishedDeploymentModel(a) {
 			current, err := m.agentProfileID(tx, a)
 			if err != nil || current != edits.record.ProfileID {

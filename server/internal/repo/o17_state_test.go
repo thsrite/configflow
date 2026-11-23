@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -290,5 +291,81 @@ func TestO17StateCommitsKeepTheConfigurationGeneration(t *testing.T) {
 	noError(t, r.UpdateSystem(bg, func(context.Context, *model.System) error { return nil }))
 	if next := must(r.Head(bg))(t); next.SameConfig(same) || next.State != same.State {
 		t.Fatalf("empty edit: %+v → %+v", same, next)
+	}
+}
+
+func o17AgentWithState(t *testing.T, r *Repository) {
+	t.Helper()
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{ID: "a", Name: "A", Host: "192.0.2.1", Port: 8080, ServiceType: "mihomo", ProfileID: "default",
+			Version: "1.2.3", ConfigVersion: "abcd1234", LatestDeployment: &model.Deployment{DeploymentID: "d1", Status: "succeeded"}}}
+		system.Agents[0].Deployments.Set("d1", model.Deployment{DeploymentID: "d1", Status: "succeeded"})
+		return nil
+	}))
+}
+
+func TestO17ExportCarriesConfigurationOnly(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+	exported := string(must(r.ExportAllJSON(bg, false))(t))
+	for _, member := range []string{`"deployments"`, `"latest_deployment"`, `"version"`, `"config_version"`} {
+		if strings.Contains(exported, member) {
+			t.Fatalf("export holds %s: %s", member, exported)
+		}
+	}
+	if !strings.Contains(exported, `"host":"192.0.2.1"`) {
+		t.Fatalf("export lost the configuration: %s", exported)
+	}
+	// The repository itself still has the state.
+	if a := must(r.System(bg))(t).Agents[0]; a.Version != "1.2.3" || a.LatestDeployment == nil {
+		t.Fatalf("state lost: %+v", a)
+	}
+}
+
+func TestO17ImportMarksAgentsRestoredWithoutRunRecords(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+	backup := must(r.ExportAllJSON(bg, false))(t)
+	must(r.ImportAllJSON(bg, backup))(t)
+	a := must(r.System(bg))(t).Agents[0]
+	if a.StateRestoredAt == nil || a.LatestDeployment != nil || a.Version != "" {
+		t.Fatalf("new-format backup: %+v", a)
+	}
+	if n := o17Count(t, r.DatabasePath(), "SELECT count(*) FROM agent_state WHERE member='state_restored_at'"); n != 1 {
+		t.Fatalf("%d markers stored", n)
+	}
+	// An older backup that carries the run records restores them, unmarked.
+	old := strings.Replace(string(backup), `"host":"192.0.2.1"`, `"host":"192.0.2.1","version":"1.0.0","latest_deployment":{"deployment_id":"d0","status":"succeeded"}`, 1)
+	must(r.ImportAllJSON(bg, []byte(old)))(t)
+	a = must(r.System(bg))(t).Agents[0]
+	if a.StateRestoredAt != nil || a.Version != "1.0.0" || a.LatestDeployment == nil || a.LatestDeployment.DeploymentID != "d0" {
+		t.Fatalf("older backup: %+v", a)
+	}
+}
+
+func TestO17CommitObserversByKind(t *testing.T) {
+	r := newRepo(t)
+	var config, state int
+	cancelConfig := r.OnCommit(ChangeConfig, func() { config++ })
+	defer cancelConfig()
+	cancelState := r.OnCommit(ChangeState, func() { state++ })
+	o17AgentWithState(t, r) // configuration and state
+	if config != 1 || state != 1 {
+		t.Fatalf("mixed commit: config %d state %d", config, state)
+	}
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Version = "2.0.0"
+		return nil
+	}))
+	if config != 1 || state != 2 {
+		t.Fatalf("state commit: config %d state %d", config, state)
+	}
+	cancelState()
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Name = "B"
+		return nil
+	}))
+	if config != 2 || state != 2 {
+		t.Fatalf("configuration commit after cancel: config %d state %d", config, state)
 	}
 }

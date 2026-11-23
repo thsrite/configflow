@@ -103,3 +103,32 @@ func agentStateOnly(before, after *model.System) (bool, error) {
 	}
 	return false, nil
 }
+
+// markRestoredAgents marks every imported Agent whose record carries no state
+// member: a backup made since storage version 2 holds configuration only, so
+// what its device runs is unknown until the next publication
+// (design/o17-runtime-state.md 2.5.1). Records from an older backup that
+// carry their state are imported with it and stay unmarked.
+func markRestoredAgents(system *model.System, at string) error {
+	raw, present, err := model.EncodeMember(system, agentsField)
+	if err != nil || !present {
+		return err
+	}
+	_, rows := splitAgents(raw)
+	owners := map[string]bool{}
+	for _, row := range rows {
+		owners[row.Owner] = true
+	}
+	seen := map[string]bool{}
+	for i := range system.Agents {
+		agent := &system.Agents[i]
+		if agent.ID == "" || seen[agent.ID] {
+			continue
+		}
+		seen[agent.ID] = true
+		if !owners[agent.ID] {
+			agent.StateRestoredAt = new(at)
+		}
+	}
+	return nil
+}

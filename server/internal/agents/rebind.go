@@ -116,7 +116,7 @@ func (m *Manager) RebindProfiles(ctx context.Context, source, target string, exp
 		}
 		var blocked []string
 		for _, a := range bound {
-			if upgradeBusyModel(a) || HAActiveModel(a) || unfinishedDeploymentModel(a) {
+			if upgradeBusyModel(a) || HAActiveModel(a) || unfinishedDeploymentModel(a) || StateRestored(a) {
 				name := a.Name
 				if name == "" {
 					name = a.ID

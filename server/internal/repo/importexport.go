@@ -140,6 +140,9 @@ func (r *Repository) applyImport(tx *transaction, document *model.Document, reas
 	if settings.RetiredRuleProxyTokens == nil {
 		settings.RetiredRuleProxyTokens = []string{}
 	}
+	if err := markRestoredAgents(&document.System, nowISO()); err != nil {
+		return "", err
+	}
 	document.System.Revision = previous.System.Revision + 1
 	document.Shared.Revision = previous.Shared.Revision + 1
 	for _, profile := range document.Profiles {
@@ -171,14 +174,22 @@ func (r *Repository) ExportAllJSON(ctx context.Context, desensitize bool) (json.
 		var result json.RawMessage
 		err := r.WithReadSnapshot(WithRepository(ctx, r), func(held context.Context) error {
 			var err error
-			result, err = r.exportDocumentJSON(held, true)
+			result, err = r.exportDocumentJSON(held, true, false)
 			return err
 		})
 		return result, err
 	}
-	return r.exportDocumentJSON(ctx, false)
+	return r.exportDocumentJSON(ctx, false, false)
 }
-func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize bool) (json.RawMessage, error) {
+
+// DiagnosticExportJSON is the complete export with the Agent state members
+// (deployment histories, sync progress, ...) kept in the Agent records: the
+// whole stored document as one, for diagnostics and comparisons with the
+// Python reference. It is not a backup format; ExportAllJSON is.
+func (r *Repository) DiagnosticExportJSON(ctx context.Context) (json.RawMessage, error) {
+	return r.exportDocumentJSON(ctx, false, true)
+}
+func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withState bool) (json.RawMessage, error) {
 	var document *model.Document
 	err := r.View(ctx, func(source *model.Document) error {
 		raw, err := model.Marshal(source)
@@ -193,6 +204,16 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize bool) (
 	}
 	if err := document.System.Clear("agent_registration_sessions"); err != nil {
 		return nil, err
+	}
+	// Exports and backups carry configuration only: Agent state and
+	// histories stay out (design/o17-runtime-state.md D3).
+	if agents, present, err := model.EncodeMember(&document.System, agentsField); err != nil {
+		return nil, err
+	} else if present && !withState {
+		config, _ := splitAgents(agents)
+		if err := document.System.SetJSON(agentsField, config); err != nil {
+			return nil, err
+		}
 	}
 	if !desensitize {
 		return model.Marshal(document)

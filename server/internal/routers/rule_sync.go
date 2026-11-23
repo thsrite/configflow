@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"configflow/internal/agents"
@@ -482,6 +483,32 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 }
 func syncTaskKey(profile, id string) string { return "router_rule_sync:" + profile + ":" + id }
 
+// RuleSyncPause is the pause of router-rule-sync after a failed round, and
+// RuleSyncMaxPause its longest pause between due times.
+const (
+	RuleSyncPause    = 30 * time.Second
+	RuleSyncMaxPause = 10 * time.Minute
+)
+
+// ruleSyncPacer paces router-rule-sync by the next due router (design
+// o17-runtime-state.md 2.6): the loop sleeps until the earliest enrolled
+// router is due (at least a second, at most RuleSyncMaxPause) and is woken by
+// configuration commits (auto sync switched on, intervals, enrolment).
+type ruleSyncPacer struct {
+	wake    lifecycle.Signal
+	pause   atomic.Int64 // time.Duration
+	commits repo.CommitWake
+}
+
+var ruleSyncLoop ruleSyncPacer
+
+func ruleSyncPause(context.Context) time.Duration {
+	if pause := time.Duration(ruleSyncLoop.pause.Load()); pause > 0 {
+		return max(pause, time.Second)
+	}
+	return RuleSyncPause
+}
+
 // RunRound skips disabled and unenrolled routers without loading shared rules.
 func (s *RuleSyncService) RunRound(ctx context.Context) error {
 	work := s.context(ctx)
@@ -493,8 +520,12 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 		return nil
 	}
 	defer release()
+	ruleSyncLoop.commits.Follow(s.Repo, repo.ChangeConfig, ruleSyncLoop.wake.Notify)
+	next := RuleSyncMaxPause
+	defer func() { ruleSyncLoop.pause.Store(int64(next)) }()
 	profiles, err := routerProfiles(held, s.Repo)
 	if err != nil {
+		next = RuleSyncPause
 		return err
 	}
 	copyService := *s
@@ -517,12 +548,15 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 			if receipt.CheckedAt != nil {
 				checked, valid = taskstatus.ParseTimestamp(*receipt.CheckedAt)
 			}
-			if receipt.Status != "running" && receipt.Status != "queued" && valid && lifecycle.ClockFrom(held).Now().Sub(checked) < time.Duration(r.RuleSyncInterval)*time.Minute {
+			interval := time.Duration(r.RuleSyncInterval) * time.Minute
+			if elapsed := lifecycle.ClockFrom(held).Now().Sub(checked); receipt.Status != "running" && receipt.Status != "queued" && valid && elapsed < interval {
+				next = min(next, interval-elapsed)
 				continue
 			}
 			if _, err = copyService.Sync(held, profile.ID, r.ID, "schedule"); err != nil && held.Err() != nil {
 				return held.Err()
 			}
+			next = min(next, interval)
 		}
 	}
 	return nil

@@ -887,9 +887,11 @@ func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
 	runtime.Start(f.ctx)
 	defer runtime.Shutdown(context.Background())
-	for range 2 {
+	// The first round follows FirstDelay; the second waits for the next due
+	// time, here beyond MaxPause, so MaxPause (O17: paced by due times).
+	for _, pause := range []time.Duration{FirstDelaySeconds * time.Second, MaxPause} {
 		awaitRefresh(t, func() bool { return clock.Pending() == 1 })
-		clock.Advance(29 * time.Second)
+		clock.Advance(pause - time.Second)
 		select {
 		case <-rounds:
 			t.Fatal("early round")

@@ -1,6 +1,7 @@
 package dnsfollow
 
 import (
+	"configflow/internal/agents"
 	"context"
 	"errors"
 
@@ -8,20 +9,16 @@ import (
 	"configflow/internal/repo"
 )
 
-// Tick reconciles one bounded round; settled stored-only results rest until a
-// commit or the shared recheck interval. Accepted work survives browser closure.
+// Tick reconciles one bounded round. A round that settled with stored data
+// only lets the loop rest until a commit, an Agent coming online or the idle
+// fallback wakes it; work in flight keeps polling (Waker). Accepted work
+// survives browser closure.
 func (s *Service) Tick(ctx context.Context) error {
 	return deploy.RunDetached(ctx, "dns-follow-round", func(ctx context.Context) error {
 		ctx = repo.WithScope(repo.WithRepository(ctx, s.m.Repository()))
 		defer repo.ResetConfigContext(ctx)
-		head, due, err := s.rounds.Due(ctx, s.m.Repository())
-		if err != nil || !due {
-			return err
-		}
 		idle, err := s.round(ctx)
-		if err == nil {
-			s.rounds.Done(s.m.Repository(), head, idle)
-		}
+		s.waker.Done(err != nil || !idle)
 		return err
 	})
 }
@@ -67,6 +64,10 @@ func (s *Service) round(ctx context.Context) (bool, error) {
 				}
 				if b.ID == "" || b.SourceAgentID == "" || b.SourceProfileID == "" || b.TargetProfileID == "" || target.ProfileID != b.TargetProfileID || source.ProfileID != b.SourceProfileID {
 					return refusal(msgBindingChanged)
+				}
+				if agents.StateRestored(target.Agent) || agents.StateRestored(source.Agent) {
+					// Restored without run records: nothing is followed until both are published again.
+					return refusal(agents.StateRestoredMessage)
 				}
 				ls := latest(source)
 				if ls.DeploymentID != "" && !terminal(ls.Status) {

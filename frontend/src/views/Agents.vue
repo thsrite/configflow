@@ -22,6 +22,13 @@
       </template>
     </PageHeader>
 
+    <Alert v-if="restoredAgents.length" class="mb-3.5 border-warning-accent/35 bg-warning-soft/40" role="status" data-state-restored>
+      <TriangleAlert class="size-4 text-warning-accent" aria-hidden="true" />
+      <AlertDescription class="text-[12.5px]">
+        运行记录未包含在备份里，各 Agent 需要重新发布一次。尚未重新发布：{{ restoredAgents.map(agent => agent.name || agent.id).join('、') }}
+      </AlertDescription>
+    </Alert>
+
     <SectionCard v-if="agents.length === 0" :padded="false">
       <EmptyState
         :icon="Server"
@@ -59,6 +66,9 @@
             <Badge variant="outline" :class="cn('chip font-mono', ['mosdns', 'oxidns'].includes(agent.service_type) && 'chip-sky')">{{ serviceTypeLabels[agent.service_type] || agent.service_type }}</Badge>
             <span class="font-mono text-[11px] text-muted-foreground">{{ agent.version || '' }}</span>
           </header>
+          <p v-if="agent.state_restored_at" class="mt-1 mb-0 text-[12px] text-warning-accent" data-agent-state-restored>
+            待重新发布：运行记录未包含在备份里
+          </p>
           <p class="mt-1 mb-0 truncate font-mono text-[11.5px] text-muted-foreground">
             {{ agent.host }}:{{ agent.port }}
             · {{ agent.deployment_method === 'shell' ? 'shell' : agent.deployment_method === 'docker' ? 'docker' : agent.deployment_method || '—' }}
@@ -866,6 +876,7 @@
 <script setup lang="ts">
 import { useChartPalette, withAlpha } from '@/lib/chartPalette'
 import PageHeader from '@/components/common/PageHeader.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ref, shallowRef, computed, onMounted, onUnmounted, nextTick, watch, type ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { consumeAction } from '@/lib/actions'
@@ -979,6 +990,7 @@ use([LineChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent
 
 
 const agents = ref<Agent[]>([])
+const restoredAgents = computed(() => agents.value.filter(agent => agent.state_restored_at))
 const ruleUpdateRefs = ref<Record<string, InstanceType<typeof OxiDNSRuleUpdate> | null>>({})
 function setRuleUpdateRef(id: string, instance: Element | ComponentPublicInstance | null) {
   ruleUpdateRefs.value[id] = instance as InstanceType<typeof OxiDNSRuleUpdate> | null

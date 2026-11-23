@@ -201,6 +201,10 @@ func (w *worker) run(ctx context.Context, id string) error {
 	if !settings.Any() {
 		return nil
 	}
+	if agents.StateRestored(record) {
+		// No baseline after a restore without run records: no automatic push.
+		return w.state(ctx, id, "blocked", agents.StateRestoredMessage, model.RuleSyncState{})
+	}
 	old := stateOf(a)
 	now := nowSeconds(s.now())
 	if value(old.RetryAt) > now {

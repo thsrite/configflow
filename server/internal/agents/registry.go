@@ -300,6 +300,7 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 	if err != nil || source == nil {
 		return false, err
 	}
+	wasOnline := m.runtime.fresh(id)
 	var recorded bool
 	if testRecordHeartbeat != nil {
 		recorded, err = testRecordHeartbeat(ctx, m, *source, payload, mark)
@@ -311,6 +312,9 @@ func (m *Manager) observeHeartbeat(ctx context.Context, id string, payload heart
 	}
 	if !recorded {
 		return false, nil
+	}
+	if !wasOnline {
+		m.notifyPresence() // after the runtime mutex is released
 	}
 	changes := make(map[string]json.RawMessage, 2)
 	for _, item := range []struct {
@@ -514,6 +518,15 @@ type RuleSyncAgent struct {
 // histories cleared, the same members the previous owned listing copy encoded.
 // It encodes the record, so callers ask only when a presence line is written.
 // An error means the record could not be encoded and display must be withheld.
+// SyncState returns the stored rule-sync progress of the Agent (borrowed:
+// do not modify), or nil.
+func (a *RuleSyncAgent) SyncState() *model.RuleSyncState {
+	if a.record == nil || a.record.RuleSync == nil {
+		return nil
+	}
+	return a.record.RuleSync.State
+}
+
 func (a *RuleSyncAgent) Credentials() (redact.Secrets, error) {
 	if a.record != nil {
 		return storedCredentials(a.record)

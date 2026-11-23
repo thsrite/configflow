@@ -18,9 +18,8 @@ const PollInterval = 5 * time.Second
 
 // Options configures the clock and the normal A14 preparation boundary.
 type Options struct {
-	Now       func() time.Time
-	Monotonic func() float64
-	Prepare   func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
+	Now     func() time.Time
+	Prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
 }
 
 // Service owns follow reconciliation for one registry manager.
@@ -28,8 +27,14 @@ type Service struct {
 	m       *agents.Manager
 	now     func() time.Time
 	prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
-	rounds  *agents.IdleRounds
+	// waker paces the dns-follow loop (shared by every Service: one loop).
+	waker *agents.Waker
 }
+
+// loop wakes the dns-follow loop on configuration and Agent state commits
+// and when an Agent comes online (design/o17-runtime-state.md 2.6); while a
+// follow publication is in flight it polls every PollInterval.
+var loop = agents.NewWaker(PollInterval, agents.IdleFallback)
 
 var followLocks = lockx.NewKeyed[string](lockx.LevelJob, "dns-follow")
 
@@ -41,7 +46,7 @@ func New(m *agents.Manager, o Options) *Service {
 	if o.Prepare == nil {
 		o.Prepare = deploy.PrepareContent
 	}
-	return &Service{m: m, now: o.Now, prepare: o.Prepare, rounds: agents.NewIdleRounds(o.Monotonic)}
+	return &Service{m: m, now: o.Now, prepare: o.Prepare, waker: loop}
 }
 
 // Error is a safe user-facing follow refusal.

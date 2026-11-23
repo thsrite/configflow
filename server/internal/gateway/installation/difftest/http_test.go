@@ -5,6 +5,7 @@ package difftest
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -84,6 +85,7 @@ func newOracle(t *testing.T, s *httpxtest.Server, destinations map[string]string
 	o := &oracle{}
 	o.cmd = exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), filepath.Join(root, "server/internal/gateway/installation/testdata/flask_reference.py"))
 	o.cmd.Dir = root
+	repotest.PythonLayout(t, dir) // Python reads the version-1 layout (O17)
 	o.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "ADMIN_USERNAME="+httpxtest.Username, "ADMIN_PASSWORD="+httpxtest.Password, "JWT_SECRET_KEY=synthetic-a22-oracle-key", "LOG_FILE="+filepath.Join(dir, "app.log"), "PYTHONDONTWRITEBYTECODE=1", "A22_LOOPBACK_DESTINATIONS="+string(raw(destinations)))
 	o.cmd.Stderr = &o.stderr
 	o.stdin, e = o.cmd.StdinPipe()
@@ -266,7 +268,7 @@ func TestGatewayFlaskHTTPAndDurableState(t *testing.T) {
 				t.Fatal("header mismatch", header)
 			}
 		}
-		doc, e := s.Repo.ExportAllJSON(s.Context(), false)
+		doc, e := s.Repo.DiagnosticExportJSON(s.Context())
 		must(t, e)
 		if !published {
 			equal(t, "document", doc, expected.State.Document)

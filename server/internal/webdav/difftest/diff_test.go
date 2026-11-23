@@ -157,6 +157,7 @@ func startOracle(t *testing.T, dir, url string) *oracle {
 	script, _ := filepath.Abs("testdata/reference.py")
 	o := &oracle{cmd: exec.Command(python, script)}
 	o.cmd.Dir = root
+	repotest.PythonLayout(t, dir) // Python reads the version-1 layout (O17)
 	o.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "ADMIN_USERNAME=diff-admin", "ADMIN_PASSWORD=diff-password", "JWT_SECRET_KEY="+jwtSecret, "FAKE_DAV_URL="+url, "PYTHONDONTWRITEBYTECODE=1", "SUB_STORE_BUILTIN_DIR=/nonexistent", "LOG_FILE="+filepath.Join(dir, "app.log"), "NO_PROXY=127.0.0.1,localhost")
 	var err error
 	o.stdin, err = o.cmd.StdinPipe()

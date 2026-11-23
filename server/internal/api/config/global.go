@@ -47,42 +47,66 @@ func Register(r *httpx.Router) {
 		if len(raw) == 0 || raw[0] != '{' {
 			return httpx.Message(400, false, msgObject), nil
 		}
-		if err := writeGlobal(c.Context(), raw, false); err != nil {
+		restored, err := writeGlobal(c.Context(), raw, false)
+		if err != nil {
 			return globalFailure(err)
+		}
+		if restored {
+			// Backups hold configuration only (O17): say that the Agents need one publication.
+			return httpx.Message(200, true, msgImportRestored), nil
 		}
 		return httpx.JSON(struct {
 			Success bool `json:"success"`
 		}{true}), nil
 	}))
 	r.POST("/api/config/reset", "config.reset_config", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		if err := writeGlobal(c.Context(), nil, true); err != nil {
+		if _, err := writeGlobal(c.Context(), nil, true); err != nil {
 			return globalFailure(err)
 		}
 		return httpx.Message(200, true, msgReset), nil
 	}))
 }
 
-func writeGlobal(ctx context.Context, data json.RawMessage, reset bool) error {
+// writeGlobal imports or resets all data; restored reports Agents imported
+// without their run records (they need one publication, O17).
+func writeGlobal(ctx context.Context, data json.RawMessage, reset bool) (restored bool, err error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 	repository, err := repo.GetRepository(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
+	var exported json.RawMessage
 	if reset {
-		_, err = repository.ResetAllJSON(ctx)
+		exported, err = repository.ResetAllJSON(ctx)
 	} else {
-		_, err = repository.ImportAllJSON(ctx, data)
+		exported, err = repository.ImportAllJSON(ctx, data)
 	}
-	if err == nil {
-		repo.ResetConfigContext(ctx)
+	if err != nil {
+		return false, err
 	}
-	return err
+	repo.ResetConfigContext(ctx)
+	var imported struct {
+		System struct {
+			Agents []struct {
+				StateRestoredAt *string `json:"state_restored_at"`
+			} `json:"agents"`
+		} `json:"system"`
+	}
+	if json.Unmarshal(exported, &imported) != nil {
+		return false, nil // the import committed; only the extra hint is lost
+	}
+	for _, agent := range imported.System.Agents {
+		if agent.StateRestoredAt != nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func globalFailure(err error) (*httpx.Response, error) {

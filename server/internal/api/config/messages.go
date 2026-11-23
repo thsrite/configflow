@@ -8,3 +8,6 @@ const (
 	msgObject         = "请求数据必须是 JSON 对象"
 	msgReset          = "配置已重置为默认值"
 )
+
+// msgImportRestored follows an import of a backup without Agent run records (O17).
+const msgImportRestored = "全部数据已导入。运行记录未包含在备份里，各 Agent 需要重新发布一次"

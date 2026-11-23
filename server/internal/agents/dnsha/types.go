@@ -29,9 +29,8 @@ const (
 
 // Options supplies the clock and content materializer without changing device timeouts.
 type Options struct {
-	Now       func() time.Time
-	Monotonic func() float64
-	Prepare   func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
+	Now     func() time.Time
+	Prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
 }
 
 // Service is the owner for one manager. All owners of a DATA_DIR share locks.
@@ -39,8 +38,15 @@ type Service struct {
 	m       *agents.Manager
 	now     func() time.Time
 	prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
-	rounds  *agents.IdleRounds
+	// waker paces the oxidns-ha-publish loop (shared: one loop).
+	waker *agents.Waker
 }
+
+// loop wakes the pair publication loop on configuration and Agent state
+// commits and when an Agent comes online (design/o17-runtime-state.md 2.6);
+// while a pair publication is unfinished, or a stopped pair waits for its
+// lost member, it advances every PollInterval.
+var loop = agents.NewWaker(PollInterval, agents.IdleFallback)
 
 var haLocks = lockx.NewKeyed[string](lockx.LevelJob, "oxidns-ha")
 var pairLocks = lockx.NewKeyed[string](lockx.LevelJob, "oxidns-ha-pair")
@@ -53,7 +59,7 @@ func New(m *agents.Manager, o Options) *Service {
 	if o.Prepare == nil {
 		o.Prepare = deploy.PrepareContent
 	}
-	return &Service{m: m, now: o.Now, prepare: o.Prepare, rounds: agents.NewIdleRounds(o.Monotonic)}
+	return &Service{m: m, now: o.Now, prepare: o.Prepare, waker: loop}
 }
 
 // Error is a safe refusal optionally accompanied by preflight findings.

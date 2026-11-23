@@ -60,7 +60,7 @@ func requestBody(text string) httpxtest.Option {
 }
 func snapshot(t *testing.T, s *httpxtest.Server) json.RawMessage {
 	t.Helper()
-	raw, err := s.Repo.ExportAllJSON(s.Context(), false)
+	raw, err := s.Repo.DiagnosticExportJSON(s.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

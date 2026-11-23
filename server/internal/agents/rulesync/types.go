@@ -13,8 +13,10 @@ import (
 const (
 	MinAgentVersion = "1.8.30-go"
 	PollInterval    = 5 * time.Second
-	RetryAfter      = 60 * time.Second
-	RecheckAfter    = 600 * time.Second
+	// IdleFallback is the pause of the idle rule-sync loop (see loop).
+	IdleFallback = time.Minute
+	RetryAfter   = 60 * time.Second
+	RecheckAfter = 600 * time.Second
 )
 
 // Settings independently opts in shared library and device rule changes.

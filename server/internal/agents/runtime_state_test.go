@@ -19,6 +19,7 @@ import (
 
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/store"
 	"configflow/internal/redact"
 )
 
@@ -452,7 +453,7 @@ func TestUpgradeFromRuntimeSqliteKeepsVersionsAndLiveAgentsThenRemovesIt(t *test
 	e.editSystem(func(system *model.System) {
 		registryAgent(system.Agents, stale).LastHeartbeat = nowISO()
 	})
-	revision := e.revision()
+	before := must[store.Head](t)(e.repo.Head(e.ctx))
 	logs := captureLogs(t)
 	ResetRuntime()
 	manager := newManager(t, openRepo(t, e.dir))
@@ -460,7 +461,9 @@ func TestUpgradeFromRuntimeSqliteKeepsVersionsAndLiveAgentsThenRemovesIt(t *test
 	if got := logs(); strings.Join(got, ",") != "INFO" {
 		t.Fatalf("logs %v", got)
 	}
-	if e.revision() != revision+1 || e.stored(fresh).Version != "2.0.0" || e.stored(stale).Version != "1.0.0" {
+	// One write by the importing repository: the versions, Agent state only (O17).
+	after := must[store.Head](t)(e.repo.Head(e.ctx))
+	if after.State != before.State+1 || !after.SameConfig(before) || e.stored(fresh).Version != "2.0.0" || e.stored(stale).Version != "1.0.0" {
 		t.Fatal("versions")
 	}
 	byID := map[string]model.Agent{}

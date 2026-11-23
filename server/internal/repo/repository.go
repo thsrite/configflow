@@ -117,6 +117,9 @@ type Repository struct {
 	agentsIssueHead    store.Head
 	agentsIssueHeadSet bool
 	agentLoads         atomic.Int64
+
+	// watchers are the OnCommit observers.
+	watchers commitWatchers
 }
 
 // Open is ProfileRepository(data_dir, default_config_factory,

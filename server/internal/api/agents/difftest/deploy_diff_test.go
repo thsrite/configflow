@@ -10,7 +10,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/store"
+	"configflow/internal/repo/repotest"
 	"configflow/internal/yamlx"
 	"context"
 	"crypto/sha256"
@@ -445,7 +445,7 @@ func comparePublicationState(t *testing.T, a, b string, values []map[string]stri
 	t.Helper()
 	var documents [2]any
 	for i, dir := range []string{a, b} {
-		entry, err := store.New(filepath.Join(dir, "configflow.sqlite3"), func() time.Duration { return 10 * time.Second }).Load()
+		entry, err := repotest.MergedLoad(filepath.Join(dir, "configflow.sqlite3"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -457,6 +457,7 @@ func comparePublicationState(t *testing.T, a, b string, values []map[string]stri
 			t.Fatal(err)
 		}
 		normalizePublication(documents[i], values[i])
+		maskSystemRevision(documents[i])
 	}
 	if !reflect.DeepEqual(documents[0], documents[1]) {
 		t.Fatal("complete DB document: ", publishDifference("", documents[0], documents[1]))
@@ -763,4 +764,18 @@ func holdIPv6Scheduler() {
 		Interval: func(context.Context) time.Duration { return time.Hour },
 		Round:    func(context.Context) error { return nil },
 	})
+}
+
+// maskSystemRevision hides the system _revision row of a stored document:
+// since O17 an edit of Agent state only (deployment progress, versions)
+// leaves it, where Python counted every registry write.
+func maskSystemRevision(document any) {
+	root, _ := document.(map[string]any)
+	system, _ := root["System"].(map[string]any)
+	fields, _ := system["Fields"].([]any)
+	for _, field := range fields {
+		if row, ok := field.(map[string]any); ok && row["Name"] == "_revision" {
+			row["Value"] = "@system-revision"
+		}
+	}
 }

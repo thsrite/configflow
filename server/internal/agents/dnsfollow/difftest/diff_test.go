@@ -5,6 +5,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"io"
@@ -436,6 +437,7 @@ func TestPythonRoutesAndArtifacts(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), python, filepath.Join(root, "server/internal/agents/dnsfollow/difftest/testdata/reference.py"))
 			dir := t.TempDir()
 			cmd.Dir = root
+			repotest.PythonLayout(t, dir) // Python reads the version-1 layout (O17)
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+dir, "LOG_FILE="+filepath.Join(dir, "app.log"), "ADMIN_USERNAME=a17-admin", "ADMIN_PASSWORD=synthetic-password", "JWT_SECRET_KEY=synthetic-a17-key", "PYTHONDONTWRITEBYTECODE=1")
 			cmd.Stdin = bytes.NewReader(mustJSON(t, map[string]any{"agents": []any{ps.record(), pt.record()}, "draft": draft, "scenario": tc.name, "body": tc.body}))
 			var stderr bytes.Buffer

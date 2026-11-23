@@ -160,6 +160,9 @@ func n85Files(t *testing.T, directory string) map[string]string {
 	t.Helper()
 	files := map[string]string{}
 	noError(t, filepath.WalkDir(directory, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.IsDir() && path == filepath.Join(directory, BackupsDirName) {
+			return filepath.SkipDir // Go's pre-upgrade backup of the Python database (O17)
+		}
 		if err != nil || entry.IsDir() || entry.Name() == DatabaseFilename {
 			return err
 		}

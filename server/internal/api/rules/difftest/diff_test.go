@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"configflow/internal/model/modeltest"
+	"configflow/internal/repo/repotest"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -95,6 +96,7 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 	script, _ := filepath.Abs("testdata/reference.py")
 	w.cmd = exec.Command(python, script)
 	w.cmd.Dir = root
+	repotest.PythonLayout(t, pyDir) // Python reads the version-1 layout (O17)
 	w.cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "DATA_DIR="+pyDir, "ADMIN_USERNAME=diff-admin", "ADMIN_PASSWORD=diff-password", "JWT_SECRET_KEY="+secret, "LOG_FILE="+filepath.Join(pyDir, "app.log"), "PYTHONDONTWRITEBYTECODE=1")
 	var err error
 	w.stdin, err = w.cmd.StdinPipe()

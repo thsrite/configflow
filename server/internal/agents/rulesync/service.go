@@ -207,12 +207,15 @@ func (s *Service) Run(ctx context.Context, id string) error {
 	})
 }
 
-// Round observes presence and admits at most two tracked workers in round-robin order.
-func (s *Service) Round(ctx context.Context) error {
+// Round observes presence and admits at most two tracked workers in
+// round-robin order. It records whether work is in flight (loop pacing).
+func (s *Service) Round(ctx context.Context) (e error) {
 	records, e := s.m.RuleSyncAgents(ctx)
 	if e != nil {
+		loop.Done(true)
 		return e
 	}
+	defer func() { loop.Done(e != nil || s.inFlight(records)) }()
 	observeRuleSyncPresence(ctx, s.m, records)
 	s.mu.Lock()
 	for id, running := range s.pending {
@@ -277,6 +280,32 @@ func (s *Service) Round(ctx context.Context) error {
 	}
 	return nil
 }
+
+// inFlight reports a running worker or an Agent whose rule sync waits on the
+// clock (pending debounce, running, a retry not yet due).
+func (s *Service) inFlight(records []agents.RuleSyncAgent) bool {
+	s.mu.Lock()
+	running := false
+	for _, active := range s.pending {
+		running = running || active
+	}
+	s.mu.Unlock()
+	if running {
+		return true
+	}
+	now := nowSeconds(s.now())
+	for i := range records {
+		state := records[i].SyncState()
+		if state == nil {
+			continue
+		}
+		if state.Status == "pending" || state.Status == "running" || value(state.RetryAt) > now {
+			return true
+		}
+	}
+	return false
+}
+
 func stateOf(a *model.Agent) *model.RuleSyncState {
 	if a != nil && a.RuleSync != nil && a.RuleSync.State != nil {
 		return a.RuleSync.State

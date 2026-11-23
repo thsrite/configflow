@@ -338,7 +338,7 @@ const (
 
 // copyOxiDNSAgents projects only the members OxiDNS policy and rule-DNS
 // readers inspect (identity, service, profile, enabled, dns_follow,
-// rule_sync) into caller-owned records; deployment and IPv6 verification
+// rule_sync settings) into caller-owned records; deployment and IPv6 verification
 // histories and tokens are never copied.
 func copyOxiDNSAgents(records []model.Agent) ([]model.Agent, error) {
 	out := make([]model.Agent, 0, len(records))
@@ -354,6 +354,11 @@ func copyOxiDNSAgents(records []model.Agent) ([]model.Agent, error) {
 		}
 		if agent.RuleSync, err = model.Clone(source.RuleSync); err != nil {
 			return nil, fmt.Errorf("copy OxiDNS agent: %w", err)
+		}
+		if agent.RuleSync != nil {
+			// Settings only: the sync progress is Agent state, so a state
+			// commit never changes this configuration view.
+			agent.RuleSync.State = nil
 		}
 		out = append(out, agent)
 	}

@@ -96,6 +96,27 @@ describe('Agent page layout', () => {
   })
 })
 
+describe('Agents restored without run records', () => {
+  it('asks to publish each restored Agent once and marks its card', async () => {
+    const { wrapper } = await render([
+      agent({ state_restored_at: '2026-11-23T00:00:00Z', latest_deployment: undefined }),
+      agent({ id: 'published-agent', name: 'Published test' })
+    ] as any)
+    const banner = wrapper.get('[data-state-restored]')
+    expect(banner.attributes('role')).toBe('status')
+    expect(banner.text()).toContain('运行记录未包含在备份里，各 Agent 需要重新发布一次')
+    expect(banner.text()).toContain('Config display test')
+    expect(banner.text()).not.toContain('Published test')
+    expect(wrapper.findAll('[data-agent-state-restored]')).toHaveLength(1)
+  })
+
+  it('shows no banner when every Agent has its run records', async () => {
+    const { wrapper } = await render()
+    expect(wrapper.find('[data-state-restored]').exists()).toBe(false)
+    expect(wrapper.find('[data-agent-state-restored]').exists()).toBe(false)
+  })
+})
+
 describe('Agent configuration status wording', () => {
   it('polls real preparation steps before the push request returns', async () => {
     vi.useFakeTimers()

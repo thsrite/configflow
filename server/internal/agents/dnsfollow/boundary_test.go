@@ -157,7 +157,7 @@ func TestBusyOwnerAcrossManagersPrecedesValidation(t *testing.T) {
 	if err = f.s.Tick(f.ctx); err != nil {
 		t.Fatal(err)
 	}
-	if f.s.rounds.Len() != 0 {
+	if !f.s.waker.Busy() {
 		t.Fatal("busy round incorrectly rested")
 	}
 }
@@ -250,8 +250,7 @@ func TestOwnershipChangedDuringVerificationRejectsChild(t *testing.T) {
 }
 
 func TestSettledAndBrokenRoundsRestWithoutWrites(t *testing.T) {
-	clock := 0.0
-	f := newFixture(t, Options{Monotonic: func() float64 { return clock }}, agentfake.Options{})
+	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
 	if err := f.s.Tick(f.ctx); err != nil {
 		t.Fatal(err)
@@ -263,8 +262,8 @@ func TestSettledAndBrokenRoundsRestWithoutWrites(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if f.r.CommitCount() != before || len(f.source.paths)+len(f.target.paths) != paths || f.s.rounds.Len() != 1 {
-		t.Fatal("settled round performed work")
+	if f.r.CommitCount() != before || len(f.source.paths)+len(f.target.paths) != paths || f.s.waker.Busy() {
+		t.Fatal("settled round performed work or kept the loop polling")
 	}
 	f.editAgent(t, "source", func(a *model.Agent) { off := false; a.Enabled = &off })
 	for i := 0; i < 2; i++ {
@@ -281,10 +280,9 @@ func TestSettledAndBrokenRoundsRestWithoutWrites(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if f.r.CommitCount() != before || f.s.rounds.Len() != 1 {
+	if f.r.CommitCount() != before || f.s.waker.Busy() {
 		t.Fatal("unchanged failure rewrote state")
 	}
-	clock = agents.RecheckSeconds + 1
 	if err := f.s.Tick(f.ctx); err != nil {
 		t.Fatal(err)
 	}

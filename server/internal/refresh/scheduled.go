@@ -407,27 +407,35 @@ func (r Resource) key() string {
 	return RuleTaskKey(r.id())
 }
 func due(ctx context.Context, now *time.Time) ([]Resource, error) {
+	jobs, _, err := dueAndNext(ctx, now)
+	return jobs, err
+}
+
+// dueAndNext is due that also returns the earliest due time after now of the
+// resources not due yet (nil when there is none).
+func dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, error) {
 	if now == nil {
 		current := nowUTC()
 		now = &current
 	}
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	shared, err := r.Shared(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	store, err := taskStatusOf(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	statuses, err := store.Read()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var jobs []Resource
+	var next *time.Time
 	for _, sub := range shared.Subscriptions {
 		// A placeholder address (the new data directory's template) is not
 		// scheduled at all: no failure every few minutes, no Sub-Store wake-up.
@@ -436,15 +444,17 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 		}
 		baseline, err := SourceCacheAt(ctx, sub)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		at, err := NextDue(statuses.Entry(SourceTaskKey(sub.ID)), SourceInterval(sub), baseline, now)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if at != nil && !at.After(*now) {
 			item := sub
 			jobs = append(jobs, Resource{Kind: "subscription", Subscription: &item})
+		} else if at != nil && (next == nil || at.Before(*next)) {
+			next = at
 		}
 	}
 	for _, rule := range shared.RuleLibrary {
@@ -453,18 +463,20 @@ func due(ctx context.Context, now *time.Time) ([]Resource, error) {
 		}
 		baseline, err := RuleCacheAt(ctx, rule)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		at, err := NextDue(statuses.Entry(RuleTaskKey(rule.ID)), RemoteInterval(rule), baseline, now)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if at != nil && !at.After(*now) {
 			item := rule
 			jobs = append(jobs, Resource{Kind: "rule_source", Rule: &item})
+		} else if at != nil && (next == nil || at.Before(*next)) {
+			next = at
 		}
 	}
-	return jobs, nil
+	return jobs, next, nil
 }
 func runResource(ctx context.Context, resource Resource, trigger string) {
 	scope := repo.WithScope(ctx)
@@ -481,6 +493,12 @@ func runResource(ctx context.Context, resource Resource, trigger string) {
 		_, _, _, _ = RefreshSource(scope, *resource.Subscription, trigger)
 	} else if resource.Rule != nil {
 		_, _, _ = RefreshRemote(scope, *resource.Rule, trigger, RuleReadOptions{})
+		notifyRulesRefreshed()
+	}
+	if trigger != "schedule" {
+		// A run outside the loop moved a due time: the loop recomputes its
+		// pause (its own rounds recompute it when they end).
+		refreshLoop.wake.Notify()
 	}
 }
 

@@ -1,6 +1,7 @@
 package difftest
 
 import (
+	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"net"
@@ -11,12 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/store"
 )
 
 // TestPublishLegacyProxyAgainstFlask covers the first A14 trust-env route with
@@ -98,7 +97,7 @@ func TestPublishLegacyProxyAgainstFlask(t *testing.T) {
 	// Compare the complete durable document, not just the public Agent projection.
 	var documents [2]any
 	for i, dir := range []string{pyDir, goDir} {
-		entry, e := store.New(filepath.Join(dir, "configflow.sqlite3"), func() time.Duration { return 10 * time.Second }).Load()
+		entry, e := repotest.MergedLoad(filepath.Join(dir, "configflow.sqlite3"))
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -110,6 +109,7 @@ func TestPublishLegacyProxyAgainstFlask(t *testing.T) {
 			t.Fatal(e)
 		}
 		normalizePublication(documents[i], map[string]string{})
+		maskSystemRevision(documents[i])
 	}
 	if !reflect.DeepEqual(documents[0], documents[1]) {
 		t.Fatal("complete DB document: ", publishDifference("", documents[0], documents[1]))

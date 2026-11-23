@@ -279,6 +279,7 @@ func (m *Manager) applyDeploymentUpdate(ctx context.Context, a *model.Agent, id 
 			}
 			a.ConfigVersion = version
 			a.PushedAt = new(utcNowZ())
+			a.StateRestoredAt = nil // the device runs a known publication again
 			if state.ConfigRevision != nil {
 				a.ConfigRevision = new(*state.ConfigRevision)
 			}

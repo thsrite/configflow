@@ -22,6 +22,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/repo/repotest"
 	"configflow/internal/server"
 )
 
@@ -77,6 +78,7 @@ func TestN811GlobalFlaskBoundaries(t *testing.T) {
 			if output, err := exec.Command("cp", "-a", srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 				t.Fatalf("copy fixture: %v %s", err, output)
 			}
+			repotest.PythonLayout(t, pyDir) // Python reads the version-1 layout (O17)
 			root, err := filepath.Abs("../../..")
 			if err != nil {
 				t.Fatal(err)

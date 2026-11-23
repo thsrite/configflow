@@ -164,17 +164,10 @@ func (e *env) stored(id string) *model.Agent {
 	return nil
 }
 
-// revision counts registry writes: the system revision advances on
-// configuration edits, the store's state counter on Agent state edits
-// (design/o17-runtime-state.md).
-func (e *env) revision() int64 {
-	e.t.Helper()
-	head, err := e.repo.Head(e.ctx)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	return int64(e.system().Revision) + head.State
-}
+// revision counts registry writes: every committed transaction of this
+// process, configuration or Agent state (design/o17-runtime-state.md: the
+// system revision no longer advances for Agent state edits).
+func (e *env) revision() int64 { return e.repo.CommitCount() }
 
 // editSystem updates the system section atomically.
 func (e *env) editSystem(fn func(system *model.System)) {
