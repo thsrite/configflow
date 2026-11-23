@@ -89,10 +89,11 @@ func defaultServerDomain() string {
 	return "http://" + localIP(net.Dial) + ":" + strconv.Itoa(port)
 }
 
-// NewApp builds the full application via New with default Options (test helper
-// during the W1-W11 migration).
+// NewApp builds the full application with default Options and without the
+// process-only startup steps load-config and agent-manager-init (test helper
+// during the W1-W11 migration; its registrations are the pre-W1 NewApp's).
 func NewApp() *httpx.App {
-	app, err := New(context.Background(), Options{})
+	app, err := build(context.Background(), Options{}, false)
 	if err != nil {
 		panic("server.NewApp: " + err.Error())
 	}

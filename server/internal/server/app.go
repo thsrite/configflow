@@ -66,7 +66,13 @@ type App struct {
 // New wires the application, registers ordered startup steps and background
 // loops on the Runtime, mounts every route package, validates task and
 // notification slot completeness, and installs the authentication gate.
-func New(ctx context.Context, opts Options) (*App, error) {
+func New(ctx context.Context, opts Options) (*App, error) { return build(ctx, opts, true) }
+
+// build wires the application. process registers the two startup steps only
+// cmd/configflow registered before W1 (load-config, agent-manager-init); the
+// legacy NewApp test helper leaves them out, as before W1, so differential
+// harnesses keep initializing the Agent manager on first use.
+func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	rt := opts.Runtime
 	if rt == nil {
 		rt = lifecycle.Current()
@@ -87,7 +93,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	}
 	rs := rulesource.New(rulesource.Options{})
 	rulesource.UseService(rs)
-	registerStartup(rt, gen.substore, ag.manager, ag.metrics)
+	registerStartup(rt, gen.substore, ag.manager, ag.metrics, process)
 	if opts.Repo != nil {
 		webdav.WireTasksAndStartupOn(rt)
 		webdav.Subscribe(opts.Repo)
@@ -161,21 +167,27 @@ func wireOtherSubsystems(rt *lifecycle.Runtime, tk *tasks.Registry, gen *generat
 }
 
 // registerStartup installs the synchronous startup steps in their required
-// order before webdav-worker-init runs.
-func registerStartup(rt *lifecycle.Runtime, sub *substore.Service, m *agents.Manager, mt *metrics.Service) {
-	rt.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
-		_, err := repo.PrepareConfig(ctx)
-		return err
-	}})
+// order before webdav-worker-init runs; load-config and agent-manager-init
+// only for the process (New), as before W1 the legacy NewApp test helper left
+// them to cmd/configflow.
+func registerStartup(rt *lifecycle.Runtime, sub *substore.Service, m *agents.Manager, mt *metrics.Service, process bool) {
+	if process {
+		rt.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
+			_, err := repo.PrepareConfig(ctx)
+			return err
+		}})
+	}
 	sub.RegisterStartup(rt)
-	rt.RegisterStartup(lifecycle.Startup{Name: "agent-manager-init", Run: func(ctx context.Context) error {
-		if m != nil {
-			agents.RunInitHooks(ctx, m)
-			return nil
-		}
-		_, err := agents.Init(ctx)
-		return err
-	}})
+	if process {
+		rt.RegisterStartup(lifecycle.Startup{Name: "agent-manager-init", Run: func(ctx context.Context) error {
+			if m != nil {
+				agents.RunInitHooks(ctx, m)
+				return nil
+			}
+			_, err := agents.Init(ctx)
+			return err
+		}})
+	}
 	if mt != nil {
 		rt.RegisterStartup(mt.Startup(m))
 	} else {
