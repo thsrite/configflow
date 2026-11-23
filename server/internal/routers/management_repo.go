@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"configflow/internal/jsonresp"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -95,7 +96,7 @@ func saveWorkspacePolicies(config json.RawMessage, rows json.RawMessage, base st
 	if err = doc.Set("oxidns", json.RawMessage(replacement)); err != nil {
 		return nil, err
 	}
-	names, err := json.Marshal(notes)
+	names, err := jsonresp.Encode(notes)
 	if err != nil {
 		return nil, err
 	}
