@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"configflow/internal/fsx"
 	"configflow/internal/store"
 )
 
@@ -64,10 +65,25 @@ func (r *Repository) upgradeLocked(ctx context.Context) error {
 	return nil
 }
 
-// upgradeBackup writes and checks configflow-v<version>-<UTC>.sqlite3.
+// upgradeBackup writes and checks configflow-v<version>-<UTC>.sqlite3: the
+// copy must pass the store check and hold exactly the rows of the database
+// (same content fingerprint). A backup of the same content left by an
+// earlier start whose upgrade failed is reused, so a start that keeps
+// failing does not fill the disk with copies. The directory is synced so the
+// backup survives a power loss right after the upgrade commits.
 func (r *Repository) upgradeBackup(directory string, version int) (string, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", err
+	}
+	source, err := r.store.Fingerprint()
+	if err != nil {
+		return "", err
+	}
+	earlier, _ := filepath.Glob(filepath.Join(directory, fmt.Sprintf("configflow-v%d-*.sqlite3", version)))
+	for _, path := range earlier {
+		if backupMatches(path, version, source) == nil {
+			return path, nil
+		}
 	}
 	stamp := time.Now().UTC().Format("20060102T150405Z")
 	path := filepath.Join(directory, fmt.Sprintf("configflow-v%d-%s.sqlite3", version, stamp))
@@ -78,19 +94,36 @@ func (r *Repository) upgradeBackup(directory string, version int) (string, error
 		os.Remove(path)
 		return "", err
 	}
-	copied := store.New(path, LockTimeout)
-	defer copied.Close()
-	err := copied.Check()
-	if err == nil {
-		var got int
-		if got, err = copied.Version(); err == nil && got != version {
-			err = errors.New("storage_version mismatch")
-		}
-	}
-	if err != nil {
+	if err := backupMatches(path, version, source); err != nil {
 		os.Remove(path)
 		os.Remove(path + "-journal")
 		return "", fmt.Errorf(msgBackupCheck, err)
 	}
+	if err := fsx.SyncDir(directory); err != nil {
+		return "", err
+	}
 	return path, nil
+}
+
+// backupMatches checks the backup at path: a sound store of the given
+// version holding the rows fingerprinted as want.
+func backupMatches(path string, version int, want store.Fingerprint) error {
+	copied := store.New(path, LockTimeout)
+	defer copied.Close()
+	if err := copied.Check(); err != nil {
+		return err
+	}
+	if got, err := copied.Version(); err != nil {
+		return err
+	} else if got != version {
+		return errors.New("storage_version mismatch")
+	}
+	got, err := copied.Fingerprint()
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return errors.New("content differs from the database")
+	}
+	return nil
 }
