@@ -110,6 +110,8 @@ typed in proxygroups/aggregations/subscriptions/rulelibrary + one readBody), Neo
 (O14 checklist consolidation, docs only), Opus e99bba11 go-l6-prep (L6 lab guests/images/runbook on PVE .6
 cfgt; prod snapshot fetch left to the coordinator, no soak yet). batch-43 rebased on 595972901 (doc conflict
 in behaviour-changes.md, both sections kept) → 07112374a, gating. 16ef226d told to rebase on 595972901.
+batch-43 MERGED 2026-11-23 (a846f7eae, O17 small cleanup B: Python exception names, shared helpers, fsx atomic
+writes, 3 rulings incl. one SplitLines; core+compare PASS; review report server/parity/review-batch-43.md).
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
