@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 				t.Fatalf("initial IPv4 %+v", result)
 			}
 			if mode != "enrollment" {
-				v := InspectIPv6Routes(t.Context(), config, r, old, agent, host, d)
+				v := ipv6.InspectIPv6Routes(t.Context(), config, r, old, agent, host, d.Client)
 				if len(v.Ops) != 1 {
 					t.Fatalf("IPv6 enrollment %+v", v)
 				}
@@ -82,7 +83,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			d = NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			plan = r14Plan(t, t.Context(), d, r, next)
-			v := InspectIPv6Routes(t.Context(), config, r, next, agent, host, d)
+			v := ipv6.InspectIPv6Routes(t.Context(), config, r, next, agent, host, d.Client)
 			plan.Stages = append(plan.Stages, Stage{Key: StageIPv6Routes, Title: StageTitles[StageIPv6Routes], Ops: v.Ops})
 			plan.Checks.IPv6Routes = v.Check
 			note := syncIPv6Delta(&RouterState{IPv6RoutesPlan: v}, plan)

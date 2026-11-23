@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 const (
 	messagePDScriptParameters = "IPv6 前缀变化保护的脚本参数无效"

@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 import (
 	"configflow/internal/jsondecode"
@@ -42,10 +42,10 @@ type IPv6Host struct {
 }
 
 // IPv6Snapshot contains route and LAN evidence; absent tables are never empty proof.
-type IPv6Snapshot map[string][]Row
+type IPv6Snapshot map[string][]ros.Row
 
 // SnapshotIPv6 reads only the tables required by an IPv6 route transaction.
-func SnapshotIPv6(ctx context.Context, d *RouterOS, network bool) (IPv6Snapshot, error) {
+func SnapshotIPv6(ctx context.Context, d *ros.Client, network bool) (IPv6Snapshot, error) {
 	out := IPv6Snapshot{}
 	paths := []struct{ key, path string }{{"routes", ros.PathIPv6Routes}}
 	if network {
@@ -67,7 +67,7 @@ type IPv6EvidenceSet map[string][]IPv6EvidenceRow
 // IPv6EvidenceRow is one stable row; a route row also carries the device's
 // activity, encoded as the JSON boolean member "active".
 type IPv6EvidenceRow struct {
-	Fields Row
+	Fields ros.Row
 	Active *bool
 }
 
@@ -109,7 +109,7 @@ func IPv6Evidence(live IPv6Snapshot) IPv6EvidenceSet {
 	out := IPv6EvidenceSet{}
 	for key, rows := range live {
 		sorted := slices.Clone(rows)
-		slices.SortStableFunc(sorted, func(a, b Row) int { return strings.Compare(a.ID(), b.ID()) })
+		slices.SortStableFunc(sorted, func(a, b ros.Row) int { return strings.Compare(a.ID(), b.ID()) })
 		out[key] = []IPv6EvidenceRow{}
 		for _, row := range sorted {
 			value := IPv6EvidenceRow{Fields: ros.StableIPv6Row(row)}
@@ -123,18 +123,18 @@ func IPv6Evidence(live IPv6Snapshot) IPv6EvidenceSet {
 	return out
 }
 
-func ipv6Enabled(row Row) bool { return !ros.PolicyFlag(row["disabled"]) }
-func ipv6Network(value string) (netip.Prefix, bool) {
+func ipv6Enabled(row ros.Row) bool { return !ros.PolicyFlag(row["disabled"]) }
+func Network(value string) (netip.Prefix, bool) {
 	p, ok := netipx.ParseNetwork(value, false)
 	return p, ok && p.Addr().Is6()
 }
-func ipv6Key(row Row) string {
-	if p, ok := ipv6Network(row.Text("dst-address")); ok {
+func ipv6Key(row ros.Row) string {
+	if p, ok := Network(row.Text("dst-address")); ok {
 		return p.String()
 	}
 	return ""
 }
-func ipv6SameGateway(row Row, gateway string) bool {
+func ipv6SameGateway(row ros.Row, gateway string) bool {
 	if immediate := row.Text("immediate-gw"); strings.Contains(immediate, "%") {
 		return immediate == gateway
 	}
@@ -168,13 +168,13 @@ func IPv6LAN(live IPv6Snapshot, host string) string {
 
 // IPv6Gateway keeps a proven existing gateway, otherwise prefers a unique LLA
 // scoped to LAN, falling back to a unique usable ULA on that LAN.
-func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []Row) string {
+func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []ros.Row) string {
 	if lan == "" {
 		return ""
 	}
 	networks := []netip.Prefix{}
 	for _, row := range live["addresses"] {
-		if p, ok := ipv6Network(row.Text("address")); ok && ipv6Enabled(row) && row.Is("interface", lan) {
+		if p, ok := Network(row.Text("address")); ok && ipv6Enabled(row) && row.Is("interface", lan) {
 			networks = append(networks, p)
 		}
 	}
@@ -226,7 +226,7 @@ func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []Row) s
 	return ""
 }
 
-func ipv6Configured(row Row, gateway string) bool {
+func ipv6Configured(row ros.Row, gateway string) bool {
 	if row.TextOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !ipv6SameGateway(row, gateway) {
 		return false
 	}
@@ -237,14 +237,14 @@ func ipv6Configured(row Row, gateway string) bool {
 	}
 	return true
 }
-func ipv6Correct(row Row, spec IPv6RouteSpec) bool {
+func ipv6Correct(row ros.Row, spec IPv6RouteSpec) bool {
 	return ipv6Key(row) == spec.CIDR && ipv6Configured(row, spec.Gateway) && ros.PolicyFlag(row["active"])
 }
 
 // ipv6Routes reports whether row sends spec's destination to its gateway,
 // whatever its origin. Inspection uses it to recognise a correct dynamic or
 // connected route, which it then refuses to borrow with its own explanation.
-func ipv6Routes(row Row, spec IPv6RouteSpec) bool {
+func ipv6Routes(row ros.Row, spec IPv6RouteSpec) bool {
 	if ipv6Key(row) != spec.CIDR || row.TextOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !ros.PolicyFlag(row["active"]) || !ipv6SameGateway(row, spec.Gateway) {
 		return false
 	}
@@ -270,7 +270,7 @@ type IPv6Settings struct {
 	Error      string `json:"error"`
 }
 
-func ipv6Document(config *model.Profile) (*yamlx.Node, error) {
+func Document(config *model.Profile) (*yamlx.Node, error) {
 	raw := ""
 	if config != nil {
 		raw = config.Mihomo.CustomConfig
@@ -320,7 +320,7 @@ func ipv6TUN(n *yamlx.Node) bool {
 func IPv6FakeIPSettings(config *model.Profile) IPv6Settings {
 	out := IPv6Settings{}
 	fail := func(err error) IPv6Settings { out.Error = messageIPv6FakeSettings + err.Error(); return out }
-	n, err := ipv6Document(config)
+	n, err := Document(config)
 	if err != nil {
 		return fail(err)
 	}
@@ -343,7 +343,7 @@ func IPv6FakeIPSettings(config *model.Profile) IPv6Settings {
 	if !out.Enabled {
 		return out
 	}
-	p, ok := ipv6Network(ipv6YAMLString(rangeNode))
+	p, ok := Network(ipv6YAMLString(rangeNode))
 	if !ok {
 		return fail(device.Error(messageIPv6Range))
 	}
@@ -368,7 +368,7 @@ type IPv6RouteSettings struct {
 // IPv6RoutesSettings follows Mihomo defaults without altering its YAML text.
 func IPv6RoutesSettings(config *model.Profile) IPv6RouteSettings {
 	out := IPv6RouteSettings{}
-	n, err := ipv6Document(config)
+	n, err := Document(config)
 	if err == nil {
 		var ok bool
 		out.Enabled, ok = ipv6YAMLBool(yamlx.Get(n, "ipv6"), true)
@@ -385,12 +385,12 @@ func IPv6RoutesSettings(config *model.Profile) IPv6RouteSettings {
 }
 
 // IPv6FakeIPRelevant reports whether inspection has settings or ownership to check.
-func IPv6FakeIPRelevant(config *model.Profile, r *Router) bool {
+func IPv6FakeIPRelevant(config *model.Profile, r *spec.Router) bool {
 	return r != nil && r.Type == "routeros" && (IPv6FakeIPSettings(config).Enabled || device.HasStoredState(r.Extra["ipv6_fakeip_state"]))
 }
 
 // IPv6RoutesRelevant reports whether a rule-set destination or prior manifest exists.
-func IPv6RoutesRelevant(config *model.Profile, r *Router, desired *Desired) bool {
+func IPv6RoutesRelevant(config *model.Profile, r *spec.Router, desired *spec.Desired) bool {
 	if r == nil || r.Type != "routeros" {
 		return false
 	}
@@ -402,6 +402,6 @@ func IPv6RoutesRelevant(config *model.Profile, r *Router, desired *Desired) bool
 }
 
 // IPv6RoutesNeedsHost avoids calling an offline host during pure withdrawal.
-func IPv6RoutesNeedsHost(config *model.Profile, r *Router, desired *Desired) bool {
+func IPv6RoutesNeedsHost(config *model.Profile, r *spec.Router, desired *spec.Desired) bool {
 	return IPv6RoutesRelevant(config, r, desired) && IPv6RoutesSettings(config).Enabled && desired != nil && len(desired.IPv6CIDRs) > 0
 }

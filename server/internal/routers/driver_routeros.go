@@ -17,6 +17,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/fixedip"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
@@ -129,69 +130,69 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 		}
 		return json.RawMessage("{}"), nil
 	case "ipv6_fakeip_replace":
-		var op IPv6FakeIPReplace
+		var op ipv6.IPv6FakeIPReplace
 		if devhttp.DecodeJSON(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, err := d.ApplyIPv6FakeIP(ctx, op)
+		undo, err := ipv6.ApplyIPv6FakeIP(ctx, d.Client, op)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(undo)
 	case "ipv6_fakeip_restore":
-		var op IPv6FakeIPUndo
+		var op ipv6.IPv6FakeIPUndo
 		if devhttp.DecodeJSON(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		if err := d.RestoreIPv6FakeIP(ctx, op); err != nil {
+		if err := ipv6.RestoreIPv6FakeIP(ctx, d.Client, op); err != nil {
 			return nil, err
 		}
 		return json.RawMessage("{}"), nil
 	case "ipv6_routes_replace":
-		var op IPv6RoutesReplace
+		var op ipv6.IPv6RoutesReplace
 		if devhttp.DecodeJSON(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, err := d.ApplyIPv6Routes(ctx, op)
+		undo, err := ipv6.ApplyIPv6Routes(ctx, d.Client, op)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(undo)
 	case "ipv6_routes_restore":
-		var op IPv6RoutesUndo
+		var op ipv6.IPv6RoutesUndo
 		if devhttp.DecodeJSON(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		if err := d.RestoreIPv6Routes(ctx, op); err != nil {
+		if err := ipv6.RestoreIPv6Routes(ctx, d.Client, op); err != nil {
 			return nil, err
 		}
 		return json.RawMessage("{}"), nil
 	case "ipv6_dns_update":
-		var op IPv6DNSUpdate
+		var op ipv6.IPv6DNSUpdate
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, e := d.ApplyIPv6DNS(ctx, op)
+		undo, e := ipv6.ApplyIPv6DNS(ctx, d.Client, op)
 		if e != nil {
 			return nil, e
 		}
 		return json.Marshal(undo)
 	case "ipv6_pd_guard_sync":
-		var op IPv6PDGuardSync
+		var op ipv6.IPv6PDGuardSync
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, e := d.ApplyIPv6PDGuard(ctx, op)
+		undo, e := ipv6.ApplyIPv6PDGuard(ctx, d.Client, op)
 		if e != nil {
 			return nil, e
 		}
 		return json.Marshal(undo)
 	case "ipv6_pd_guard_restore":
-		var op IPv6PDGuardUndo
+		var op ipv6.IPv6PDGuardUndo
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		if e := d.RestoreIPv6PDGuard(ctx, op); e != nil {
+		if e := ipv6.RestoreIPv6PDGuard(ctx, d.Client, op); e != nil {
 			return nil, e
 		}
 		return json.RawMessage(`{}`), nil

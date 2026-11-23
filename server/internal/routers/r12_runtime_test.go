@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/spec"
@@ -192,7 +193,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 				// Restart inspection must recognize the response-proven owned route.
 				fresh := NewRouterOS(server.URL, r.Username, r.Password, false)
 				defer fresh.Close()
-				p := InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), stored, r10Agent(), r10Host(), fresh)
+				p := ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), stored, r10Agent(), r10Host(), fresh.Client)
 				if len(p.Blockers) > 0 || len(p.Ops) > 0 || p.Status != "synced" {
 					t.Fatalf("restart lost ownership %+v", p)
 				}

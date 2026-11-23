@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"encoding/hex"
 	"encoding/json"
@@ -29,7 +30,7 @@ func TestR10SettingsAndYAMLBytesPython(t *testing.T) {
 				Fake    IPv6Settings      `json:"fake"`
 				Routes  IPv6RouteSettings `json:"routes"`
 				YAMLHex string            `json:"yaml_hex"`
-			}{IPv6FakeIPSettings(c), IPv6RoutesSettings(c), hex.EncodeToString([]byte(c.Mihomo.CustomConfig))}
+			}{ipv6.IPv6FakeIPSettings(c), ipv6.IPv6RoutesSettings(c), hex.EncodeToString([]byte(c.Mihomo.CustomConfig))}
 			// Python's internal IPv6Network(None) text is deliberately replaced
 			// by a clear Chinese validation error (PORTING native-parser rule).
 			if strings.Contains(inputs[i], "enhanced-mode: fake-ip") && !strings.Contains(inputs[i], "fake-ip-range6:") {
@@ -69,15 +70,15 @@ func FuzzR10IPv6Input(f *testing.F) {
 		if len(data) > 1<<18 {
 			return
 		}
-		_, _ = ipv6Owned(data, IPv6Snapshot{"routes": {}}, true)
-		_, _ = ipv6Owned(data, IPv6Snapshot{"routes": {}}, false)
+		_, _ = ipv6.Owned(data, IPv6Snapshot{"routes": {}}, true)
+		_, _ = ipv6.Owned(data, IPv6Snapshot{"routes": {}}, false)
 		config := r10Config(string(data))
-		_ = IPv6FakeIPSettings(config)
-		_ = IPv6RoutesSettings(config)
+		_ = ipv6.IPv6FakeIPSettings(config)
+		_ = ipv6.IPv6RoutesSettings(config)
 		var p model.Profile
 		if json.Unmarshal(data, &p) == nil {
-			_ = IPv6FakeIPSettings(&p)
-			_ = IPv6RoutesSettings(&p)
+			_ = ipv6.IPv6FakeIPSettings(&p)
+			_ = ipv6.IPv6RoutesSettings(&p)
 		}
 		var row Row
 		if json.Unmarshal(data, &row) == nil {
@@ -102,17 +103,17 @@ func TestR10IPv6AddressMathPython(t *testing.T) {
 		}
 	}
 	for _, text := range []string{"fe80::4%eth0", "fe80::4%eth0/64", "fe80::4%eth0/128"} {
-		if _, ok := ipv6Network(text); ok {
+		if _, ok := ipv6.Network(text); ok {
 			t.Error("scoped route destination silently changed", text)
 		}
 	}
 	for _, text := range []string{"fd00:1::4/64", "fd00:1::4/064"} {
-		if p, ok := ipv6Network(text); !ok || p.String() != "fd00:1::/64" {
+		if p, ok := ipv6.Network(text); !ok || p.String() != "fd00:1::/64" {
 			t.Error("host bits were not masked", text, p)
 		}
 	}
 	live := IPv6Snapshot{"addresses": {{"address": "fd00:1::1/64", "interface": "bridge"}}}
-	if gateway := IPv6Gateway(IPv6Host{Addresses: []IPv6HostAddress{{Address: "fe80::4%eth0"}}}, live, "bridge", nil); gateway != "" {
+	if gateway := ipv6.IPv6Gateway(IPv6Host{Addresses: []IPv6HostAddress{{Address: "fe80::4%eth0"}}}, live, "bridge", nil); gateway != "" {
 		t.Error("double-scoped next hop produced", gateway)
 	}
 }

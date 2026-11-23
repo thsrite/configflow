@@ -1,8 +1,9 @@
-package routers
+package ipv6
 
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -46,7 +47,7 @@ type IPv6Readiness struct {
 	Status                   string               `json:"status"`
 	CanPrepare               bool                 `json:"can_prepare"`
 	RoutePublicationRequired bool                 `json:"route_publication_required"`
-	Plan                     Row                  `json:"plan"`
+	Plan                     ros.Row              `json:"plan"`
 	Fingerprint              string               `json:"fingerprint"`
 }
 type readinessTable struct{ key, path string }
@@ -62,7 +63,7 @@ func readinessTables() []readinessTable {
 
 // InspectIPv6Readiness exports the RouterOS reader used by Agent readiness.
 // It never resolves a hostname, writes the router or reads unreferenced lists.
-func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *model.Agent, host IPv6Host, configuration IPv6ReadinessConfiguration, dnsTarget string, policyContext PolicyContext) (*IPv6Readiness, error) {
+func InspectIPv6Readiness(ctx context.Context, d *ros.Client, r *spec.Router, agent *model.Agent, host IPv6Host, configuration IPv6ReadinessConfiguration, dnsTarget string, policyContext PolicyContext) (*IPv6Readiness, error) {
 	if err := r.ValidateForDevice(); err != nil {
 		return nil, err
 	}
@@ -84,7 +85,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	paths := PolicyTablePaths()
 	for _, prefix := range []string{"", "ipv4_"} {
 		key := prefix + "address_lists"
-		snapshot[key] = []Row{}
+		snapshot[key] = []ros.Row{}
 		names := []string{}
 		for _, table := range []string{"filter", "nat", "raw", "mangle"} {
 			for _, row := range snapshot[prefix+table] {
@@ -114,7 +115,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 			snapshot[key] = append(snapshot[key], rows...)
 		}
 	}
-	dns := Row{}
+	dns := ros.Row{}
 	value, e := d.Get(ctx, "/ip/dns", ros.Timeout)
 	if e == nil {
 		if m := ros.AsRow(value); m != nil {
@@ -143,7 +144,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	if route {
 		fake = configuration.FakeIPv6Range
 	}
-	existing := []Row{}
+	existing := []ros.Row{}
 	for _, row := range snapshot["routes"] {
 		if fake != "" && ipv6Key(row) == fake {
 			existing = append(existing, row)
@@ -153,7 +154,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	add := func(id, label, status, message string, details []string) {
 		checks = append(checks, IPv6ReadinessCheck{ID: id, Label: label, Status: status, Message: message, Details: details})
 	}
-	defaults := []Row{}
+	defaults := []ros.Row{}
 	for _, row := range snapshot["routes"] {
 		if row.Is("dst-address", "::/0") && row.TextOr("routing-table", "main") == "main" && ipv6Enabled(row) && ros.PolicyFlag(row["active"]) && !ros.PolicyFlag(row["blackhole"]) && !ros.PolicyFlag(row["unreachable"]) && !ros.PolicyFlag(row["prohibit"]) {
 			defaults = append(defaults, row)
@@ -164,7 +165,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		status, message = "ok", messageReadinessWANOK
 	}
 	add("wan", messageReadinessWANLabel, status, message, nil)
-	nd := []Row{}
+	nd := []ros.Row{}
 	for _, row := range snapshot["nd"] {
 		if ipv6Enabled(row) && (row.Is("interface", lan) || row.Is("interface", "all")) {
 			nd = append(nd, row)
@@ -215,15 +216,15 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 			add("forward_hairpin", messageReadinessForwardLabel, "unknown", messageForwardIPv6Unknown, nil)
 		}
 	}
-	var plan Row
+	var plan ros.Row
 	if fake != "" {
-		target, valid := ipv6Network(fake)
+		target, valid := Network(fake)
 		if !valid {
 			return nil, device.Error(messageIPv6Range)
 		}
-		rows, conflicts := []Row{}, []Row{}
+		rows, conflicts := []ros.Row{}, []ros.Row{}
 		for _, row := range snapshot["routes"] {
-			p, ok := ipv6Network(row.Text("dst-address"))
+			p, ok := Network(row.Text("dst-address"))
 			if row.TextOr("routing-table", "main") != "main" || !ok {
 				continue
 			}
@@ -235,7 +236,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		}
 		overlap := false
 		for _, row := range snapshot["addresses"] {
-			p, ok := ipv6Network(row.Text("address"))
+			p, ok := Network(row.Text("address"))
 			overlap = overlap || ok && p.Overlaps(target)
 		}
 		idle := ""
@@ -261,7 +262,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		}):
 			message = messageReadinessFakeUnknown + idle
 		default:
-			plan = Row{"dst-address": fake, "gateway": gateway, "routing-table": "main", "disabled": "false", "distance": "1"}
+			plan = ros.Row{"dst-address": fake, "gateway": gateway, "routing-table": "main", "disabled": "false", "distance": "1"}
 			message = fmt.Sprintf(messageReadinessFakeMissing, fake, gateway, idle)
 		}
 		add("fake_ipv6", label, status, message, nil)
@@ -288,15 +289,15 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		}
 	}
 	// Hash only stable, sorted route evidence; clocks and read ordering are not changes.
-	evidence := []Row{}
+	evidence := []ros.Row{}
 	for _, row := range snapshot["routes"] {
-		x := Row{}
+		x := ros.Row{}
 		for _, k := range []string{".id", "dst-address", "gateway", "immediate-gw", "routing-table", "disabled", "active", "blackhole", "unreachable", "prohibit", "comment"} {
 			x[k] = row[k]
 		}
 		evidence = append(evidence, x)
 	}
-	slices.SortFunc(evidence, func(a, b Row) int {
+	slices.SortFunc(evidence, func(a, b ros.Row) int {
 		x, _ := json.Marshal(a)
 		y, _ := json.Marshal(b)
 		return strings.Compare(string(x), string(y))
@@ -304,17 +305,17 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	slices.Sort(failed)
 	// The fingerprint reaches the browser; an unsalted hash over the device
 	// password would let anyone holding it test password guesses offline.
-	var router *Router
+	var router *spec.Router
 	if r != nil {
 		c := *r
 		c.Password = ""
 		router = &c
 	}
 	raw, _ := json.Marshal(struct {
-		Router       *Router
-		Routes       []Row
+		Router       *spec.Router
+		Routes       []ros.Row
 		LAN, Gateway string
-		Plan         Row
+		Plan         ros.Row
 		Errors       []string
 	}{router, evidence, lan, gateway, plan, failed})
 	hash := sha256.Sum256(raw)
@@ -324,12 +325,12 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 
 // IPv6ReadinessReceipt proves one additive legacy preparation route.
 type IPv6ReadinessReceipt struct {
-	ID     string `json:"id"`
-	Values Row    `json:"values"`
-	Config Row    `json:"config,omitempty"`
+	ID     string  `json:"id"`
+	Values ros.Row `json:"values"`
+	Config ros.Row `json:"config,omitempty"`
 }
 
-func readinessOwned(row, values Row) bool {
+func readinessOwned(row, values ros.Row) bool {
 	if !ipv6Enabled(row) || ros.PolicyFlag(row["dynamic"]) || ros.PolicyFlag(row["connect"]) {
 		return false
 	}
@@ -343,12 +344,12 @@ func readinessOwned(row, values Row) bool {
 
 // AddMissingIPv6Route preserves the legacy Agent preparation boundary. New
 // readiness reports direct users to normal publication and never call it.
-func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6ReadinessReceipt, error) {
+func (d rosDevice) AddMissingIPv6Route(ctx context.Context, plan ros.Row) (*IPv6ReadinessReceipt, error) {
 	ctx = ctxx.Detach(ctx)
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	p, ok := ipv6Network(plan.Text("dst-address"))
+	p, ok := Network(plan.Text("dst-address"))
 	g := plan.Text("gateway")
 	a, _, scoped := strings.Cut(g, "%")
 	addr, e := netip.ParseAddr(a)
@@ -375,7 +376,7 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 	}
 	_, writeErr := d.Request(ctx, "PUT", ros.PathIPv6Routes, values, ros.Timeout)
 	rows, readErr := d.List(ctx, ros.PathIPv6Routes)
-	matched := []Row{}
+	matched := []ros.Row{}
 	for _, r := range rows {
 		if r.Is("comment", values.Text("comment")) {
 			matched = append(matched, r)
@@ -404,7 +405,7 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 }
 
 // UndoIPv6ReadinessRoute removes only the receipt's original stable object.
-func (d *RouterOS) UndoIPv6ReadinessRoute(ctx context.Context, receipt IPv6ReadinessReceipt) error {
+func (d rosDevice) UndoIPv6ReadinessRoute(ctx context.Context, receipt IPv6ReadinessReceipt) error {
 	ctx = ctxx.Detach(ctx)
 	if e := ctx.Err(); e != nil {
 		return e

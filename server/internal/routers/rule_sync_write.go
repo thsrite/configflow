@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
@@ -290,7 +291,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		} // Shutdown stops device I/O; receipt remains running for restart recovery.
 		problems := []string{}
 		if undo6 != nil {
-			if e := d.RestoreIPv6Routes(ctx, *undo6); e != nil {
+			if e := ipv6.RestoreIPv6Routes(ctx, d.Client, *undo6); e != nil {
 				problems = append(problems, e.Error())
 			}
 		}
@@ -428,7 +429,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		if err = checkCurrent(false); err != nil {
 			return
 		}
-		undo6, err = d.ApplyIPv6Routes(ctx, *routes6)
+		undo6, err = ipv6.ApplyIPv6Routes(ctx, d.Client, *routes6)
 		if err != nil {
 			return
 		}

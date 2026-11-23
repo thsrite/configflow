@@ -7,14 +7,14 @@ import (
 	"configflow/internal/jsondecode"
 	"encoding/json"
 
-	"configflow/internal/routers"
+	rosipv6 "configflow/internal/routers/ipv6"
 )
 
 // Document is an immutable saved compatibility snapshot at the repository boundary.
 type Document map[string]json.RawMessage
 
 // Check is the existing RouterOS/Agent diagnostic representation.
-type Check = routers.IPv6ReadinessCheck
+type Check = rosipv6.IPv6ReadinessCheck
 
 // Configuration is the public projection of saved Mihomo IPv6 settings.
 // Raw booleans retain invalid stored input for an actionable diagnostic.
@@ -86,7 +86,7 @@ func check(id, label, status, message string, details ...string) Check {
 // RouterReport keeps the shared RouterOS result and the smaller manual-model
 // response shape. No router publication or plan logic is duplicated here.
 type RouterReport struct {
-	*routers.IPv6Readiness
+	*rosipv6.IPv6Readiness
 	manual bool
 }
 
@@ -107,7 +107,7 @@ func (r RouterReport) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON restores cached shared/manual results without adding fields to
 // the manual model's public shape.
 func (r *RouterReport) UnmarshalJSON(b []byte) error {
-	var result routers.IPv6Readiness
+	var result rosipv6.IPv6Readiness
 	if e := jsondecode.Unmarshal(b, &result); e != nil {
 		return e
 	}

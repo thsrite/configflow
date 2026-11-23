@@ -1,8 +1,11 @@
-package routers
+package ipv6
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"fmt"
 	"net/url"
@@ -15,18 +18,18 @@ import (
 
 // ForwardInputs carries the narrowed router state needed for ForwardHint.
 type ForwardInputs struct {
-	Guard      *DNSGuardSnapshot
-	NAT        *NatContext
-	Policy     *ROSPolicySnapshot
-	PolicyPlan *ROSPolicyPlan
+	Guard      *dnsguard.Snapshot
+	NAT        *ros.NatContext
+	Policy     *rospolicy.ROSPolicySnapshot
+	PolicyPlan *rospolicy.ROSPolicyPlan
 }
 
 // ForwardHintCheck reports a definite filter drop, or an unconfirmed read.
 // An unknown matcher is status ok: it must not become a daily drop warning.
 type ForwardHintCheck struct {
-	Status  string `json:"status"`
-	Command string `json:"command"`
-	Rule    Row    `json:"rule"`
+	Status  string  `json:"status"`
+	Command string  `json:"command"`
+	Rule    ros.Row `json:"rule"`
 }
 
 // ForwardDropWarning explains same-port drops for the supplied IPv4/IPv6 family.
@@ -47,14 +50,14 @@ func forwardQuote(value string) string {
 	return ros.ScriptString(value)
 }
 
-func samePortPacket(lan, target string) PolicyPacket {
+func SamePortPacket(lan, target string) PolicyPacket {
 	return PolicyPacket{InInterface: new(lan), OutInterface: new(lan), DstAddress: new(target), Protocol: new("tcp"), ConnectionState: new("invalid"), IPSecPolicy: map[string]string{"in": "none", "out": "none"}}
 }
-func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (*PolicySnapshot, error) {
-	s := &PolicySnapshot{Filter: rows, AddressLists: []Row{}}
+func forwardSnapshot(ctx context.Context, d *ros.Client, family int, rows []ros.Row) (*PolicySnapshot, error) {
+	s := &PolicySnapshot{Filter: rows, AddressLists: []ros.Row{}}
 	for _, item := range []struct {
 		path string
-		to   *[]Row
+		to   *[]ros.Row
 	}{{"/interface/list", &s.InterfaceLists}, {"/interface/list/member", &s.InterfaceMembers}, {"/interface", &s.Interfaces}} {
 		value, err := d.List(ctx, item.path)
 		if err != nil {
@@ -97,7 +100,7 @@ func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (
 
 // CheckForwardHint evaluates same-port forwarding using shared three-valued
 // filter semantics. It only reads; family is 4 or 6, rows nil means fetch it.
-func CheckForwardHint(ctx context.Context, d *RouterOS, family int, lan string, targets []string, rows []Row) ForwardHintCheck {
+func CheckForwardHint(ctx context.Context, d *ros.Client, family int, lan string, targets []string, rows []ros.Row) ForwardHintCheck {
 	unknown := ForwardHintCheck{Status: "unknown"}
 	targets = slices.DeleteFunc(slices.Clone(targets), func(s string) bool { return s == "" })
 	if d == nil || (family != 4 && family != 6) || lan == "" || len(targets) == 0 {
@@ -132,18 +135,18 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 	if family == 6 {
 		command = "/ipv6 firewall filter"
 	}
-	destinationSpecific := slices.ContainsFunc(rows, func(row Row) bool {
+	destinationSpecific := slices.ContainsFunc(rows, func(row ros.Row) bool {
 		return policyEnabled(row) && (row.Set("dst-address") || row.Set("dst-address-list"))
 	})
 	if !destinationSpecific {
 		targets = targets[:1]
 	}
 	for _, target := range targets {
-		packet := samePortPacket(lan, target)
+		packet := SamePortPacket(lan, target)
 		if EvaluatePolicyChain(snapshot, "filter", "forward", packet).Decision != "drop" {
 			continue
 		}
-		var taker Row
+		var taker ros.Row
 		for _, row := range rows {
 			if !row.Is("chain", "forward") || !policyEnabled(row) || row.Is("action", "log") || row.Is("action", "passthrough") || MatchPolicyRule(snapshot, row, packet) == PolicyNoMatch || ros.Flag(row["dynamic"]) || row.ID() == "" {
 				continue
@@ -162,7 +165,7 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 
 // ForwardHint provides the optional IPv4 report hint for this router. It never
 // changes the router, plan, checks, or fingerprint; unreadable evidence is advice.
-func ForwardHint(ctx context.Context, r *Router, desired *Desired, inputs ForwardInputs, routes RoutesReport, d *RouterOS) (*ForwardHintResult, error) {
+func ForwardHint(ctx context.Context, r *spec.Router, desired *spec.Desired, inputs ForwardInputs, routes device.RoutesReport, d *ros.Client) (*device.ForwardHintResult, error) {
 	if r == nil || r.Type != "routeros" || r.ManageReturnRouting || d == nil || desired == nil {
 		return nil, nil
 	}
@@ -199,9 +202,9 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, inputs Forwar
 	}
 	lan, _ := ros.NewRouteEgressIndex(inputs.NAT).GatewayEgress(gateway)
 	if lan == "" {
-		return &ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownLAN}, nil
+		return &device.ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownLAN}, nil
 	}
-	var rows []Row
+	var rows []ros.Row
 	if inputs.Policy != nil {
 		rows = (*inputs.Policy)[ros.PathFilter]
 	} else if inputs.Guard != nil {
@@ -210,9 +213,9 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, inputs Forwar
 	result := CheckForwardHint(ctx, d, 4, lan, targets, rows)
 	switch result.Status {
 	case "drop":
-		return &ForwardHintResult{Status: "drop", FixCommand: result.Command, Warning: messageForwardIPv4Drop}, nil
+		return &device.ForwardHintResult{Status: "drop", FixCommand: result.Command, Warning: messageForwardIPv4Drop}, nil
 	case "unknown":
-		return &ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownRead}, nil
+		return &device.ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownRead}, nil
 	default:
 		return nil, nil
 	}

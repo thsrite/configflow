@@ -2,7 +2,10 @@ package clients
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/fixedip"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,7 +23,6 @@ import (
 	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -127,8 +129,8 @@ func TestR17ApprovalKeepsPrivateEvidenceAndChecksItsDigest(t *testing.T) {
 			}
 			err = s.Apply(t.Context(), "default", preview.Token)
 			if changed {
-				var conflict *routers.RouterError
-				if !errors.As(err, &conflict) || conflict.Kind != routers.KindConflict || conflict.Message != messageFixedStale {
+				var conflict *device.RouterError
+				if !errors.As(err, &conflict) || conflict.Kind != device.KindConflict || conflict.Message != messageFixedStale {
 					t.Fatalf("changed private evidence was not rejected: %v", err)
 				}
 				if f.Snapshot().Tables["/ip/dhcp-server/lease"][0]["dynamic"] != "true" {
@@ -182,7 +184,7 @@ func TestR17RollbackAfterConcurrentDraftEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := s.Open
-	s.Open = func(r *routers.Router) fixedip.Device {
+	s.Open = func(r *spec.Router) fixedip.Device {
 		var d fixedip.Device
 		if original != nil {
 			d = original(r)
@@ -286,8 +288,8 @@ func TestR17RuntimeDuringDeviceIO(t *testing.T) {
 		f.ServeHTTP(w, r)
 	}))
 	defer blocking.Close()
-	s.Open = func(r *routers.Router) fixedip.Device {
-		return routers.NewRouterOS(blocking.URL, r.Username, r.Password, r.VerifyTLS)
+	s.Open = func(r *spec.Router) fixedip.Device {
+		return fixedip.NewROS(ros.NewClient(blocking.URL, r.Username, r.Password, r.VerifyTLS))
 	}
 	rt := testRuntime(t)
 	result := make(chan error, 1)
@@ -330,8 +332,8 @@ func TestR17RuntimeAfterDeviceWrite(t *testing.T) {
 			ctx := rt.BindRequest(request)
 			reached := false
 			callsAtStop := 0
-			s.Open = func(r *routers.Router) fixedip.Device {
-				return &fixedAfterWrite{Device: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
+			s.Open = func(r *spec.Router) fixedip.Device {
+				return &fixedAfterWrite{Device: fixedip.NewROS(ros.NewClient(r.Endpoint, r.Username, r.Password, r.VerifyTLS)), after: func() {
 					reached = true
 					if mode == "disconnect" {
 						cancel()
@@ -374,8 +376,8 @@ func TestR17DeleteRollbackRemapsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Open = func(r *routers.Router) fixedip.Device {
-		return &fixedAfterDelete{Device: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
+	s.Open = func(r *spec.Router) fixedip.Device {
+		return &fixedAfterDelete{Device: fixedip.NewROS(ros.NewClient(r.Endpoint, r.Username, r.Password, r.VerifyTLS)), after: func() {
 			_, err := s.Repo.UpdateProfile(t.Context(), "default", func(_ context.Context, current *model.Profile) error {
 				current.DeviceNotes.Set("192.0.2.21", "outside edit")
 				return nil

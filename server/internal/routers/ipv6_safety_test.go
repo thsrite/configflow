@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -38,7 +39,7 @@ func r10FakePlan(t *testing.T, d *RouterOS) *IPv6FakeIPPlan {
 	if d.IPv6FakeIPManifestSet() {
 		r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
 	}
-	return InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
+	return ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d.Client)
 }
 func r10RoutesPlan(t *testing.T, d *RouterOS, n int) *IPv6RoutesPlan {
 	t.Helper()
@@ -46,7 +47,7 @@ func r10RoutesPlan(t *testing.T, d *RouterOS, n int) *IPv6RoutesPlan {
 	if d.IPv6RoutesManifestSet() {
 		r.Extra["ipv6_routes_state"] = ros.GuardRaw(d.IPv6RoutesManifest())
 	}
-	return InspectIPv6Routes(t.Context(), r10Config(r10YAML), r, r10Wanted(n), r10Agent(), r10Host(), d)
+	return ipv6.InspectIPv6Routes(t.Context(), r10Config(r10YAML), r, r10Wanted(n), r10Agent(), r10Host(), d.Client)
 }
 
 func TestR10RawWireAndProductionTimeouts(t *testing.T) {
@@ -72,23 +73,23 @@ func TestR10RawWireAndProductionTimeouts(t *testing.T) {
 	d := NewRouterOSWithHTTP(srv.URL, recorder)
 	defer d.Close()
 	p := r10FakePlan(t, d)
-	undo, err := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace))
+	undo, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = d.RestoreIPv6FakeIP(t.Context(), *undo); err != nil {
+	if err = ipv6.RestoreIPv6FakeIP(t.Context(), d.Client, *undo); err != nil {
 		t.Fatal(err)
 	}
 	rp := r10RoutesPlan(t, d, 4)
-	ru, err := d.ApplyIPv6Routes(t.Context(), *rp.Ops[0].(*IPv6RoutesReplace))
+	ru, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *rp.Ops[0].(*IPv6RoutesReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = d.RestoreIPv6Routes(t.Context(), *ru); err != nil {
+	if err = ipv6.RestoreIPv6Routes(t.Context(), d.Client, *ru); err != nil {
 		t.Fatal(err)
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{"/ipv6/firewall/filter": {{".id": "*F", "chain": "forward", "action": "drop", "src-address-list": "Trusted LAN/中文"}}}}})
-	CheckForwardHint(t.Context(), d, 6, "bridge", []string{"fd00:face::/64"}, nil)
+	ipv6.CheckForwardHint(t.Context(), d.Client, 6, "bridge", []string{"fd00:face::/64"}, nil)
 	recorder.mu.Lock()
 	for _, timeout := range recorder.timeouts {
 		if timeout != 10*time.Second {
@@ -156,17 +157,17 @@ func TestR10RuntimeCancellationBoundaries(t *testing.T) {
 				var err error
 				apply := func() error {
 					if feature == "fake" {
-						fu, err = d.ApplyIPv6FakeIP(ctx, *fp.Ops[0].(*IPv6FakeIPReplace))
+						fu, err = ipv6.ApplyIPv6FakeIP(ctx, d.Client, *fp.Ops[0].(*IPv6FakeIPReplace))
 					} else {
-						ru, err = d.ApplyIPv6Routes(ctx, *rp.Ops[0].(*IPv6RoutesReplace))
+						ru, err = ipv6.ApplyIPv6Routes(ctx, d.Client, *rp.Ops[0].(*IPv6RoutesReplace))
 					}
 					return err
 				}
 				restore := func() error {
 					if feature == "fake" {
-						return d.RestoreIPv6FakeIP(ctx, *fu)
+						return ipv6.RestoreIPv6FakeIP(ctx, d.Client, *fu)
 					}
-					return d.RestoreIPv6Routes(ctx, *ru)
+					return ipv6.RestoreIPv6Routes(ctx, d.Client, *ru)
 				}
 				if action == "disconnect" {
 					cancel()
@@ -248,9 +249,9 @@ func TestR10OwnershipAndFreshnessGuards(t *testing.T) {
 			rp := r10RoutesPlan(t, d, 4)
 			var err error
 			if feature == "fake" {
-				_, err = d.ApplyIPv6FakeIP(t.Context(), *fp.Ops[0].(*IPv6FakeIPReplace))
+				_, err = ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *fp.Ops[0].(*IPv6FakeIPReplace))
 			} else {
-				_, err = d.ApplyIPv6Routes(t.Context(), *rp.Ops[0].(*IPv6RoutesReplace))
+				_, err = ipv6.ApplyIPv6Routes(t.Context(), d.Client, *rp.Ops[0].(*IPv6RoutesReplace))
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -275,15 +276,15 @@ func TestR10OwnershipAndFreshnessGuards(t *testing.T) {
 					patch = routerfake.Row{"dst-address": "2001:db8:ffff::/48"}
 				}
 				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {row[".id"].(string): patch}}}})
-				live, _ := SnapshotIPv6(t.Context(), d, false)
-				if _, err := ipv6Owned(raw, live, feature == "fake"); err == nil {
+				live, _ := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
+				if _, err := ipv6.Owned(raw, live, feature == "fake"); err == nil {
 					t.Fatalf("accepted external %s", change)
 				}
 				f.Reset(before)
 			}
 			for _, bad := range []string{`"invalid"`, `{"version":1,"resources":null}`, `{"version":1,"gateway":"x","resources":[{"path":"/ipv6/route","id":"","config":{}}]}`, `{"version":1,"spec":{},"resources":[{"path":"/ipv6/route","id":"*1","config":{}}]}`} {
-				live, _ := SnapshotIPv6(t.Context(), d, false)
-				if _, err := ipv6Owned(json.RawMessage(bad), live, feature == "fake"); err == nil {
+				live, _ := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
+				if _, err := ipv6.Owned(json.RawMessage(bad), live, feature == "fake"); err == nil {
 					t.Errorf("malformed proof accepted: %s", bad)
 				}
 			}
@@ -294,14 +295,20 @@ func TestR10OwnershipAndFreshnessGuards(t *testing.T) {
 				if feature == "fake" {
 					r := r10Router()
 					r.Extra["ipv6_fakeip_state"] = raw
-					p := InspectIPv6FakeIP(t.Context(), r10Config("ipv6: false"), r, nil, IPv6Host{}, d)
-					apply = func() error { _, e := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace)); return e }
+					p := ipv6.InspectIPv6FakeIP(t.Context(), r10Config("ipv6: false"), r, nil, IPv6Host{}, d.Client)
+					apply = func() error {
+						_, e := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace))
+						return e
+					}
 					if field != "valid" {
 						continue
 					}
 				} else {
 					p := r10RoutesPlan(t, d, 2)
-					apply = func() error { _, e := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace)); return e }
+					apply = func() error {
+						_, e := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace))
+						return e
+					}
 				}
 				value := "counting down"
 				path, id := rosIPv6Addresses, "*A1"
@@ -326,7 +333,7 @@ func TestR10OwnershipAndFreshnessGuards(t *testing.T) {
 	}
 	var config model.Profile
 	_ = json.Unmarshal([]byte(`{"mihomo":{"custom_config":7}}`), &config)
-	if IPv6FakeIPSettings(&config).Error == "" || IPv6RoutesSettings(&config).Error == "" {
+	if ipv6.IPv6FakeIPSettings(&config).Error == "" || ipv6.IPv6RoutesSettings(&config).Error == "" {
 		t.Fatal("model fallback treated as disabled ownership proof")
 	}
 }
@@ -334,24 +341,24 @@ func TestR10OwnershipAndFreshnessGuards(t *testing.T) {
 func TestR10PartialRollbackKeepsTrustedRestoredIDs(t *testing.T) {
 	d, f := r10Driver(t)
 	plan := r10RoutesPlan(t, d, 3)
-	if _, err := d.ApplyIPv6Routes(t.Context(), *plan.Ops[0].(*IPv6RoutesReplace)); err != nil {
+	if _, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *plan.Ops[0].(*IPv6RoutesReplace)); err != nil {
 		t.Fatal(err)
 	}
 	original := ros.GuardRaw(d.IPv6RoutesManifest())
 	withdraw := r10RoutesPlan(t, d, 0)
-	undo, err := d.ApplyIPv6Routes(t.Context(), *withdraw.Ops[0].(*IPv6RoutesReplace))
+	undo, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *withdraw.Ops[0].(*IPv6RoutesReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 2, Status: 403}}})
-	if err = d.RestoreIPv6Routes(t.Context(), *undo); err == nil {
+	if err = ipv6.RestoreIPv6Routes(t.Context(), d.Client, *undo); err == nil {
 		t.Fatal("expected partial compensation failure")
 	}
 	var before, after IPv6RoutesManifest
 	_ = json.Unmarshal(original, &before)
 	_ = json.Unmarshal(d.IPv6RoutesManifest(), &after)
-	live, _ := SnapshotIPv6(t.Context(), d, false)
-	owned, err := ipv6Owned(d.IPv6RoutesManifest(), live, false)
+	live, _ := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
+	owned, err := ipv6.Owned(d.IPv6RoutesManifest(), live, false)
 	if err != nil || len(owned) != 2 {
 		t.Fatalf("restored objects lost ownership: %s %v", d.IPv6RoutesManifest(), err)
 	}
@@ -371,12 +378,12 @@ func TestR10PartialRollbackKeepsTrustedRestoredIDs(t *testing.T) {
 func TestR10RollbackNeverAdoptsMatchingForeignRoute(t *testing.T) {
 	d, f := r10Driver(t)
 	p := r10RoutesPlan(t, d, 1)
-	if _, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
+	if _, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
 		t.Fatal(err)
 	}
 	previous := ros.GuardRaw(d.IPv6RoutesManifest())
 	p = r10RoutesPlan(t, d, 0)
-	undo, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace))
+	undo, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +393,7 @@ func TestR10RollbackNeverAdoptsMatchingForeignRoute(t *testing.T) {
 	row[".id"] = "*AA"
 	row["active"] = "true"
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathIPv6Routes: {row}}}})
-	if err = d.RestoreIPv6Routes(t.Context(), *undo); err == nil {
+	if err = ipv6.RestoreIPv6Routes(t.Context(), d.Client, *undo); err == nil {
 		t.Fatal("foreign same-destination route did not stop restore")
 	}
 	if bytes.Contains(d.IPv6RoutesManifest(), []byte("*AA")) {
@@ -397,7 +404,7 @@ func TestR10RollbackNeverAdoptsMatchingForeignRoute(t *testing.T) {
 func TestR10RollbackRemapDoesNotBlessExternalEdit(t *testing.T) {
 	d, f := r10Driver(t)
 	p := r10RoutesPlan(t, d, 1)
-	if _, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
+	if _, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
 		t.Fatal(err)
 	}
 	previous := ros.GuardRaw(d.IPv6RoutesManifest())
@@ -405,11 +412,11 @@ func TestR10RollbackRemapDoesNotBlessExternalEdit(t *testing.T) {
 	_ = json.Unmarshal(previous, &m)
 	id := m.Resources[0].ID
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {id: {"comment": "external edit"}}}}})
-	if err := d.remapIPv6(t.Context(), previous, map[string]string{id: id}, false); err != nil {
+	if err := ipv6.RemapIPv6(t.Context(), d.Client, previous, map[string]string{id: id}, false); err != nil {
 		t.Fatal(err)
 	}
-	live, _ := SnapshotIPv6(t.Context(), d, false)
-	if _, err := ipv6Owned(d.IPv6RoutesManifest(), live, false); err == nil {
+	live, _ := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
+	if _, err := ipv6.Owned(d.IPv6RoutesManifest(), live, false); err == nil {
 		t.Fatal("remap blessed external configuration")
 	}
 }
@@ -420,8 +427,8 @@ func TestR10HostDiagnosticsRedactCredentials(t *testing.T) {
 	agent.Token = "synthetic-agent-token"
 	host := r10Host()
 	host.Error = "rest-api username=api password=synthetic-password token=synthetic-agent-token"
-	p := InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r10Router(), agent, host, d)
-	rp := InspectIPv6Routes(t.Context(), r10Config(r10YAML), r10Router(), r10Wanted(1), agent, host, d)
+	p := ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r10Router(), agent, host, d.Client)
+	rp := ipv6.InspectIPv6Routes(t.Context(), r10Config(r10YAML), r10Router(), r10Wanted(1), agent, host, d.Client)
 	for _, value := range []any{p, rp} {
 		raw := device.JSON(value)
 		if bytes.Contains(raw, []byte("synthetic-password")) || bytes.Contains(raw, []byte(agent.Token)) {
@@ -436,7 +443,7 @@ func TestR10HostDiagnosticsRedactCredentials(t *testing.T) {
 func TestR10ManifestSpecAndUnknownFields(t *testing.T) {
 	d, _ := r10Driver(t)
 	p := r10FakePlan(t, d)
-	if _, err := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace)); err != nil {
+	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace)); err != nil {
 		t.Fatal(err)
 	}
 	var manifest map[string]json.RawMessage
@@ -449,7 +456,7 @@ func TestR10ManifestSpecAndUnknownFields(t *testing.T) {
 	raw := device.JSON(manifest)
 	r := r10Router()
 	r.Extra["ipv6_fakeip_state"] = raw
-	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
+	p = ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d.Client)
 	if p.Status != "synced" || len(p.Ops) > 0 || !ros.JSONValuesEqual(p.Check.Previous, raw) {
 		t.Fatal("noop lost previous manifest fingerprint", string(device.JSON(p)))
 	}
@@ -458,11 +465,11 @@ func TestR10ManifestSpecAndUnknownFields(t *testing.T) {
 	spec.Gateway = "fe80::99%bridge"
 	manifest["spec"] = device.JSON(spec)
 	r.Extra["ipv6_fakeip_state"] = device.JSON(manifest)
-	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
+	p = ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d.Client)
 	if len(p.Blockers) == 0 || len(p.Ops) > 0 {
 		t.Fatal("corrupted spec became successful noop")
 	}
-	if err := d.remapIPv6(t.Context(), raw, map[string]string{}, true); err != nil {
+	if err := ipv6.RemapIPv6(t.Context(), d.Client, raw, map[string]string{}, true); err != nil {
 		t.Fatal(err)
 	}
 	if !ros.JSONValuesEqual(d.IPv6FakeIPManifest(), raw) {
@@ -484,11 +491,11 @@ func TestR10RestoreFailureKeepsPublishedOwnership(t *testing.T) {
 				undo = raw
 			} else {
 				p := r10RoutesPlan(t, d, 1)
-				if _, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
+				if _, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace)); err != nil {
 					t.Fatal(err)
 				}
 				p = r10RoutesPlan(t, d, 2)
-				u, err := d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace))
+				u, err := ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -499,12 +506,12 @@ func TestR10RestoreFailureKeepsPublishedOwnership(t *testing.T) {
 			if _, err := d.Apply(t.Context(), undo); err == nil {
 				t.Fatal("expected refused rollback")
 			}
-			live, _ := SnapshotIPv6(t.Context(), d, false)
+			live, _ := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
 			raw := d.Manifests().IPv6FakeIP.Value
 			if feature == "routes" {
 				raw = d.Manifests().IPv6Routes.Value
 			}
-			owned, err := ipv6Owned(raw, live, feature == "fake")
+			owned, err := ipv6.Owned(raw, live, feature == "fake")
 			if err != nil || len(owned) != len(live["routes"]) {
 				t.Fatalf("failed restore abandoned published proof: %s %v", raw, err)
 			}
@@ -529,15 +536,15 @@ func TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused(t *testing.T) {
 			var err error
 			if feature == "fake" {
 				p := r10FakePlan(t, d)
-				_, err = d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace))
+				_, err = ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace))
 			} else {
 				p := r10RoutesPlan(t, d, 4)
-				_, err = d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace))
+				_, err = ipv6.ApplyIPv6Routes(t.Context(), d.Client, *p.Ops[0].(*IPv6RoutesReplace))
 			}
 			if err == nil || device.RouterErrorKind(err) != KindRollback {
 				t.Fatalf("expected incomplete rollback, got %v", err)
 			}
-			live, e := SnapshotIPv6(t.Context(), d, false)
+			live, e := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -545,7 +552,7 @@ func TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused(t *testing.T) {
 			if feature == "routes" {
 				raw = d.IPv6RoutesManifest()
 			}
-			owned, e := ipv6Owned(raw, live, feature == "fake")
+			owned, e := ipv6.Owned(raw, live, feature == "fake")
 			if e != nil || len(owned) == 0 {
 				t.Fatalf("trusted new object abandoned: manifest=%s err=%v", raw, e)
 			}
@@ -579,13 +586,13 @@ func TestR10BorrowedRouteMustRemainActive(t *testing.T) {
 				if p.Status != "borrowed" {
 					t.Fatal("not borrowed", p)
 				}
-				verify = func() error { return VerifyIPv6FakeIP(t.Context(), d, &p.Check) }
+				verify = func() error { return ipv6.VerifyIPv6FakeIP(t.Context(), d.Client, &p.Check) }
 			} else {
 				p := r10RoutesPlan(t, d, 1)
 				if len(p.Check.Borrowed) != 1 {
 					t.Fatal("not borrowed", p)
 				}
-				verify = func() error { return VerifyIPv6Routes(t.Context(), d, p.Check) }
+				verify = func() error { return ipv6.VerifyIPv6Routes(t.Context(), d.Client, p.Check) }
 			}
 			if err := verify(); err != nil {
 				t.Fatal("active borrowed route failed", err)

@@ -16,7 +16,9 @@ import (
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
-	"configflow/internal/routers"
+	rosipv6 "configflow/internal/routers/ipv6"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 )
 
 // Error is an actionable boundary failure with a stable API classification.
@@ -54,27 +56,27 @@ func selectFields(d Document, keys ...string) Document {
 func identity(a Document) Document { return selectFields(a, identityFields...) }
 func digest(v any) string          { return deploy.CanonicalDigest(jsonresp.Value(v)) }
 
-func linked(config Document, id string) []*routers.Router {
-	out := []*routers.Router{}
-	for _, r := range routers.FromConfig(jsonresp.Value(config)) {
+func linked(config Document, id string) []*spec.Router {
+	out := []*spec.Router{}
+	for _, r := range spec.RoutersOf(jsonresp.Value(config)) {
 		if id != "" && r.LinkID("proxy_gateway_agent_id") == id {
 			out = append(out, r)
 		}
 	}
 	return out
 }
-func (s *Service) policy(ctx context.Context, config, a Document) routers.PolicyContext {
+func (s *Service) policy(ctx context.Context, config, a Document) rosipv6.PolicyContext {
 	_, doc := ReadConfiguration(config)
-	p := routers.PolicyContext{NodeTargets: []routers.PolicyNodeTarget{}, Clients: []routers.PolicyClient{}}
+	p := rosipv6.PolicyContext{NodeTargets: []rosipv6.PolicyNodeTarget{}, Clients: []rosipv6.PolicyClient{}}
 	for _, v := range ProbeTargets(config, doc) {
 		if v.Literal {
-			p.NodeTargets = append(p.NodeTargets, routers.PolicyNodeTarget{Address: v.Host, Port: v.Port})
+			p.NodeTargets = append(p.NodeTargets, rosipv6.PolicyNodeTarget{Address: v.Host, Port: v.Port})
 		}
 	}
 	if devices, e := clients.ListDevices(jsonresp.Value(config)); e == nil {
 		for _, d := range devices.Devices {
 			if d.IP != "" && d.IP != text(a["host"]) && len(p.Clients) < 32 {
-				p.Clients = append(p.Clients, routers.PolicyClient{Address: d.IP})
+				p.Clients = append(p.Clients, rosipv6.PolicyClient{Address: d.IP})
 			}
 		}
 	}
@@ -90,7 +92,7 @@ func (s *Service) policy(ctx context.Context, config, a Document) routers.Policy
 		// address is the gateway itself, never a client source candidate.
 		source, sourceError := netip.ParseAddr(text(a["host"]))
 		if e == nil && (sourceError != nil || address != source) && !address.IsUnspecified() && !address.IsLoopback() && !address.IsMulticast() && !exists {
-			p.Clients = append([]routers.PolicyClient{{Address: address.String(), SourceCandidate: true, SourceNote: msgCandidate}}, p.Clients...)
+			p.Clients = append([]rosipv6.PolicyClient{{Address: address.String(), SourceCandidate: true, SourceNote: msgCandidate}}, p.Clients...)
 			if len(p.Clients) > 32 {
 				p.Clients = p.Clients[:32]
 			}
@@ -241,14 +243,14 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 			return nil, failure("ROUTER_SETTINGS_INVALID", 409, err.Error())
 		}
 		if r.Type != "routeros" {
-			report.Routers = append(report.Routers, &RouterReport{IPv6Readiness: &routers.IPv6Readiness{ID: r.ID, Name: routerName(r), Status: "warning", Checks: []Check{check("manual", msgRouterIPv6, "unknown", msgManualRouter)}}, manual: true})
+			report.Routers = append(report.Routers, &RouterReport{IPv6Readiness: &rosipv6.IPv6Readiness{ID: r.ID, Name: routerName(r), Status: "warning", Checks: []Check{check("manual", msgRouterIPv6, "unknown", msgManualRouter)}}, manual: true})
 			continue
 		}
-		d := routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
-		var h routers.IPv6Host
+		d := ros.NewClient(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
+		var h rosipv6.IPv6Host
 		_ = jsondecode.Unmarshal(jsonresp.Value(host), &h)
 		dns := s.lookup(ctx, r.DNSAgentID)
-		result, err := routers.InspectIPv6Readiness(ctx, d, r, &agent, h, routers.IPv6ReadinessConfiguration{PolicyConfiguration: routers.PolicyConfiguration{FakeIPv6Enabled: settings.FakeIPv6Enabled, FakeIPv6Range: text(settings.FakeIPv6Range)}, IPv6: yes(settings.IPv6), FakeIPv6Route: &settings.FakeIPv6Route, TUNEnabled: settings.TUNEnabled}, text(dns["host"]), policy)
+		result, err := rosipv6.InspectIPv6Readiness(ctx, d, r, &agent, h, rosipv6.IPv6ReadinessConfiguration{PolicyConfiguration: rosipv6.PolicyConfiguration{FakeIPv6Enabled: settings.FakeIPv6Enabled, FakeIPv6Range: text(settings.FakeIPv6Range)}, IPv6: yes(settings.IPv6), FakeIPv6Route: &settings.FakeIPv6Route, TUNEnabled: settings.TUNEnabled}, text(dns["host"]), policy)
 		d.Close()
 		if err != nil {
 			return nil, err
@@ -291,7 +293,7 @@ func onOff(b json.RawMessage) string {
 	return msgOff
 }
 
-func routerName(r *routers.Router) string {
+func routerName(r *spec.Router) string {
 	if r.Name != "" {
 		return r.Name
 	}
@@ -300,13 +302,13 @@ func routerName(r *routers.Router) string {
 
 // Host reads the captured gateway Agent for router inspection. The router owner
 // already holds its device lock, so this leaf read never takes the Agent lock.
-func (s *Service) Host(ctx context.Context, agent *model.Agent) (routers.IPv6Host, error) {
+func (s *Service) Host(ctx context.Context, agent *model.Agent) (rosipv6.IPv6Host, error) {
 	if agent == nil {
-		return routers.IPv6Host{}, failure("AGENT_NOT_FOUND", 404, msgMissing)
+		return rosipv6.IPv6Host{}, failure("AGENT_NOT_FOUND", 404, msgMissing)
 	}
 	config, _, e := s.snapshot(ctx, agent.ProfileID)
 	if e != nil {
-		return routers.IPv6Host{}, e
+		return rosipv6.IPv6Host{}, e
 	}
 	a := object(jsonresp.Value(agent))
 	data, e := s.request(ctx, a, "", nil)
@@ -315,19 +317,19 @@ func (s *Service) Host(ctx context.Context, agent *model.Agent) (routers.IPv6Hos
 		if errors.As(e, &boundary) {
 			b, err := s.capturedPublic(ctx, config, a, Document{"message": jsonresp.Value(boundary.Message)})
 			if err != nil {
-				return routers.IPv6Host{}, err
+				return rosipv6.IPv6Host{}, err
 			}
 			copy := *boundary
 			copy.Message = text(object(b)["message"])
 			e = &copy
 		}
-		return routers.IPv6Host{}, e
+		return rosipv6.IPv6Host{}, e
 	}
 	b, e := s.capturedPublic(ctx, config, a, data)
 	if e != nil {
-		return routers.IPv6Host{}, e
+		return rosipv6.IPv6Host{}, e
 	}
-	var host routers.IPv6Host
+	var host rosipv6.IPv6Host
 	if jsondecode.Unmarshal(b, &host) != nil {
 		return host, failure("INVALID_RESPONSE", 502, msgResponseShape)
 	}

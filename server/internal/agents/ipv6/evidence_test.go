@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/routers"
+	"configflow/internal/routers/ros"
 )
 
 func TestTupleEvidenceAgainstPython(t *testing.T) {
@@ -95,7 +95,7 @@ func comparePython(t *testing.T, script string, input []byte, want []json.RawMes
 	}
 }
 func TestConnectionTupleCountersAndLegacy(t *testing.T) {
-	rows := []routers.Row{{"protocol": "tcp", "src-address": "192.0.2.8", "src-port": "34567", "dst-address": "198.51.100.9", "dst-port": "443", "orig-packets": "1"}, {"protocol": "tcp", "src-address": "[2001:db8::8]:34567", "dst-address": "[2001:db8::9]:443", "orig-fasttrack-packets": "2"}}
+	rows := []ros.Row{{"protocol": "tcp", "src-address": "192.0.2.8", "src-port": "34567", "dst-address": "198.51.100.9", "dst-port": "443", "orig-packets": "1"}, {"protocol": "tcp", "src-address": "[2001:db8::8]:34567", "dst-address": "[2001:db8::9]:443", "orig-fasttrack-packets": "2"}}
 	for i, row := range rows {
 		source, destination := "192.0.2.8", "198.51.100.9"
 		if i == 1 {
@@ -163,11 +163,11 @@ func TestObserveIncompleteBaselineNeverCreatesFreshEvidence(t *testing.T) {
 func TestPacketCountersFailClosed(t *testing.T) {
 	// Device null and true arrive as "" and "true" (Row decoding).
 	for _, value := range []string{"", "bad", "-1", "18446744073709551616", "true"} {
-		if hasPackets(routers.Row{"orig-packets": value, "orig-fasttrack-packets": "1"}) {
+		if hasPackets(ros.Row{"orig-packets": value, "orig-fasttrack-packets": "1"}) {
 			t.Fatal("invalid counter proved packet", value)
 		}
 	}
-	if !hasPackets(routers.Row{"orig-packets": "18446744073709551615", "orig-fasttrack-packets": "18446744073709551615"}) {
+	if !hasPackets(ros.Row{"orig-packets": "18446744073709551615", "orig-fasttrack-packets": "18446744073709551615"}) {
 		t.Fatal("uint64 counters overflowed")
 	}
 }

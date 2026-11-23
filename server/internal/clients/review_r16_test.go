@@ -2,6 +2,8 @@ package clients
 
 import (
 	"configflow/internal/routers/clientlist"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,7 +21,6 @@ import (
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/routerdoc"
-	"configflow/internal/routers"
 )
 
 // A router may echo another router's credential, not merely its own. Sanitize
@@ -33,10 +34,10 @@ func TestReviewR16DiscoveryCredentialReferences(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			rt := testRuntime(t)
 			var failed atomic.Bool
-			s := &DiscoveryService{Spawner: rt, Open: func(r *routers.Router) clientlist.Reader {
+			s := &DiscoveryService{Spawner: rt, Open: func(r *spec.Router) clientlist.Reader {
 				return reader{read: func(context.Context, clientlist.ReadOptions) (*routerdoc.Reading, error) {
 					if failed.Load() {
-						return nil, &routers.RouterError{Message: "peer diagnostic " + secondSecret}
+						return nil, &device.RouterError{Message: "peer diagnostic " + secondSecret}
 					}
 					reading := snapshot(url.QueryEscape(secondSecret)).Readings[0].Reading
 					reading.Notes = []string{"agent diagnostic " + agentSecret}

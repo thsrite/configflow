@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 const (
 	messageIPv6DNSServerList     = "IPv6 DNS 下发的服务器列表无法识别，请检查路由器"

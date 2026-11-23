@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 const (
 	messagePolicyPosition   = "位置 %d"

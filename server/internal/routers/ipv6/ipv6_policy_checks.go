@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 import (
 	"configflow/internal/routers/device"
@@ -18,7 +18,7 @@ import (
 type PolicyEnvironment struct {
 	IPv6         PolicySnapshot
 	IPv4         PolicySnapshot
-	RoutingRules []Row
+	RoutingRules []ros.Row
 }
 
 // PolicyTablePaths returns fresh table metadata for the R11 readiness reader.
@@ -28,8 +28,8 @@ func PolicyTablePaths() map[string]string {
 
 // PolicyEnvironmentFromSnapshot converts R11's read results without treating a
 // failed or missing table as proof of absence.
-func PolicyEnvironmentFromSnapshot(snapshot map[string][]Row, errors []string) PolicyEnvironment {
-	read := func(key string) []Row {
+func PolicyEnvironmentFromSnapshot(snapshot map[string][]ros.Row, errors []string) PolicyEnvironment {
+	read := func(key string) []ros.Row {
 		if slices.Contains(errors, key) {
 			return nil
 		}
@@ -92,7 +92,7 @@ func policyRouteInterface(s *PolicySnapshot, destination string) (string, string
 		return "", messagePolicyRouteIncomplete
 	}
 	best := -1
-	matches := []Row{}
+	matches := []ros.Row{}
 	partial := []int{}
 	for _, row := range s.Routes {
 		network, ok := policyNetwork(row.Text("dst-address"))
@@ -214,7 +214,7 @@ func policyRouteUncertain(env PolicyEnvironment, s *PolicySnapshot, p PolicyPack
 		if row.Is("table", "main") && (action == "lookup" || action == "lookup-only-in-table") {
 			continue
 		}
-		conditions := Row{}
+		conditions := ros.Row{}
 		for _, key := range []string{"src-address", "dst-address", "interface"} {
 			if v, ok := row[key]; ok {
 				to := key
@@ -246,7 +246,7 @@ func policyFakeGateway(s *PolicySnapshot, target netip.Prefix, agent *model.Agen
 		}
 	}
 	best := -1
-	matches := []Row{}
+	matches := []ros.Row{}
 	for _, row := range s.Routes {
 		n, ok := policyNetwork(row.Text("dst-address"))
 		if !ok || n.Addr().BitLen() != target.Addr().BitLen() || target.Bits() < n.Bits() || !n.Contains(target.Addr()) || !policyEnabled(row) || !ros.PolicyFlag(row["active"]) || row.TextOr("routing-table", "main") != "main" {
@@ -541,6 +541,6 @@ func (e PolicyEnvironment) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		IPv6         PolicySnapshot `json:"ipv6"`
 		IPv4         PolicySnapshot `json:"ipv4"`
-		RoutingRules []Row          `json:"routing_rules"`
+		RoutingRules []ros.Row      `json:"routing_rules"`
 	}{e.IPv6, e.IPv4, e.RoutingRules})
 }

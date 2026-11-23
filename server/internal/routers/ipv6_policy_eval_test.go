@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"encoding/json"
 	"fmt"
@@ -18,7 +19,7 @@ type r09EvalCase struct {
 
 func r09EvalCases() []r09EvalCase {
 	base := PolicySnapshot{Filter: []Row{}, AddressLists: []Row{{"list": "proxied", "address": "198.51.100.0/24"}}, Interfaces: []Row{{"name": "bridge", "dynamic": "false"}}, InterfaceLists: []Row{{"name": "LAN"}, {"name": "WAN"}, {"name": "nested", "include": "LAN", "exclude": "WAN"}, {"name": "cycle", "include": "cycle"}}, InterfaceMembers: []Row{{"list": "LAN", "interface": "bridge"}}}
-	packet := samePortPacket("bridge", "198.51.100.0/25")
+	packet := ipv6.SamePortPacket("bridge", "198.51.100.0/25")
 	cases := []r09EvalCase{}
 	for key, values := range map[string][]string{
 		"dst-address":      {"198.51.100.0/24", "198.51.100.0/26", "203.0.113.0/24", "!198.51.100.0/24", "198.51.100.0-198.51.100.255", "198.51.100.0-198.51.100.2", "203.0.113.0-203.0.113.255", "2001:db8::/32", "example.com"},
@@ -123,12 +124,12 @@ func TestR09SharedEvaluatorPython(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			want := PolicyUnknown
 			if reference[i].Match != nil {
-				want = policyBool(*reference[i].Match)
+				want = ipv6.PolicyBool(*reference[i].Match)
 			}
-			if got := MatchPolicyRule(tc.Snapshot, tc.Row, tc.Packet); got != want {
+			if got := ipv6.MatchPolicyRule(tc.Snapshot, tc.Row, tc.Packet); got != want {
 				t.Fatalf("match %v want %v", got, want)
 			}
-			if got := EvaluatePolicyChain(tc.Snapshot, "filter", "forward", tc.Packet).Decision; got != reference[i].Decision {
+			if got := ipv6.EvaluatePolicyChain(tc.Snapshot, "filter", "forward", tc.Packet).Decision; got != reference[i].Decision {
 				t.Fatalf("decision %s want %s", got, reference[i].Decision)
 			}
 		})
@@ -147,8 +148,8 @@ func FuzzR09PolicyEvaluator(f *testing.F) {
 		if json.Unmarshal(data, &tc) != nil {
 			return
 		}
-		_ = MatchPolicyRule(tc.Snapshot, tc.Row, tc.Packet)
-		_ = EvaluatePolicyChain(tc.Snapshot, "filter", "forward", tc.Packet).Decision
+		_ = ipv6.MatchPolicyRule(tc.Snapshot, tc.Row, tc.Packet)
+		_ = ipv6.EvaluatePolicyChain(tc.Snapshot, "filter", "forward", tc.Packet).Decision
 	})
 }
 func FuzzR09DNSGuardManifest(f *testing.F) {

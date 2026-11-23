@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -13,7 +14,7 @@ func TestR10ReviewPolicyPythonProbes(t *testing.T) {
 	cases := []r10PolicyCase{}
 	for _, variant := range []string{"nat_exempt_first", "nat_jump", "ipv4_nat_unread", "routes_unread", "established_drop", "input_icmp_drop", "interface_list_unread", "interface_list_member", "fake6_disabled", "client_prefix", "node_port_zero", "dns_name_list", "dstnat_input", "mangle_postrouting_unknown", "address_list_unread"} {
 		s := r10PolicySnapshot()
-		tc := r10PolicyCase{Name: "review/" + variant, Action: "checks", Snapshot: s, Agent: r10Agent(), Host: r10Host(), Configuration: PolicyConfiguration{true, "fd00:face::/64"}, LAN: "bridge", Context: PolicyContext{NodeTargets: []PolicyNodeTarget{{"2001:db8:2::10", 443}}, Clients: []PolicyClient{{Address: "2001:db8:1::20"}, {Address: "192.0.2.20"}}, FakeIPv4Range: "198.18.0.0/16"}}
+		tc := r10PolicyCase{Name: "review/" + variant, Action: "checks", Snapshot: s, Agent: r10Agent(), Host: r10Host(), Configuration: PolicyConfiguration{FakeIPv6Enabled: true, FakeIPv6Range: "fd00:face::/64"}, LAN: "bridge", Context: PolicyContext{NodeTargets: []PolicyNodeTarget{{Address: "2001:db8:2::10", Port: 443}}, Clients: []PolicyClient{{Address: "2001:db8:1::20"}, {Address: "192.0.2.20"}}, FakeIPv4Range: "198.18.0.0/16"}}
 		tc.Host.Addresses = append(tc.Host.Addresses, IPv6HostAddress{Address: "2001:db8:1::4", Usable: true})
 		switch variant {
 		case "nat_exempt_first":
@@ -43,7 +44,7 @@ func TestR10ReviewPolicyPythonProbes(t *testing.T) {
 		case "client_prefix":
 			tc.Context.Clients = []PolicyClient{{Address: "2001:db8:1::/64"}, {Address: "192.0.2.0/24"}, {Address: "not-an-address"}}
 		case "node_port_zero":
-			tc.Context.NodeTargets = []PolicyNodeTarget{{"2001:db8:2::10", 0}, {"2001:db8:2::/64", 443}, {"192.0.2.9", 443}}
+			tc.Context.NodeTargets = []PolicyNodeTarget{{Address: "2001:db8:2::10", Port: 0}, {Address: "2001:db8:2::/64", Port: 443}, {Address: "192.0.2.9", Port: 443}}
 		case "dns_name_list":
 			s["address_lists"] = []Row{{"list": "nodes", "address": "node.example.com"}}
 			s["filter"] = []Row{{".id": "*1", "chain": "forward", "action": "drop", "dst-address-list": "nodes"}}
@@ -64,8 +65,8 @@ func TestR10ReviewPolicyPythonProbes(t *testing.T) {
 	}
 	for i, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			env := PolicyEnvironmentFromSnapshot(tc.Snapshot, tc.Errors)
-			got := PolicyChecks(env, r10Agent(), tc.Host, tc.Configuration, tc.LAN, tc.Context)
+			env := ipv6.PolicyEnvironmentFromSnapshot(tc.Snapshot, tc.Errors)
+			got := ipv6.PolicyChecks(env, r10Agent(), tc.Host, tc.Configuration, tc.LAN, tc.Context)
 			a, b := r08Comparable(t, expected[i]), r08Comparable(t, got)
 			if !reflect.DeepEqual(a, b) {
 				t.Fatal(r08Difference(a, b, "$"))

@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -12,7 +13,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/routerdoc"
-	"configflow/internal/routers"
 )
 
 // RouterReading carries one ordered router result; failures never hide peers.
@@ -122,7 +122,7 @@ func useful(s *Snapshot) bool {
 
 // Read reuses an existing snapshot until explicitly refreshed, even once stale.
 // Callers receive deep copies; credentials exist only in a digest in the cache.
-func (c *DiscoveryCache) Read(ctx context.Context, profileID string, rs []*routers.Router, load func(context.Context) (Snapshot, error), refresh bool) (Snapshot, CacheMetadata, error) {
+func (c *DiscoveryCache) Read(ctx context.Context, profileID string, rs []*spec.Router, load func(context.Context) (Snapshot, error), refresh bool) (Snapshot, CacheMetadata, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, CacheMetadata{}, err

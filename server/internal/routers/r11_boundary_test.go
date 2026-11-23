@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -76,7 +77,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 		}
 		if tc.Feature == "readiness" {
 			var result *IPv6Readiness
-			result, err = InspectIPv6Readiness(context.Background(), d, tc.Router, s.Agent, s.Host, s.Configuration, s.DNSTarget, s.PolicyContext)
+			result, err = ipv6.InspectIPv6Readiness(context.Background(), d.Client, tc.Router, s.Agent, s.Host, s.Configuration, s.DNSTarget, s.PolicyContext)
 			if err == nil {
 				add(result)
 			}
@@ -110,7 +111,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 				if d.IPv6PDGuardManifestSet() {
 					r.Extra["ipv6_pd_guard_state"] = d.IPv6PDGuardManifest()
 				}
-				plan, err = InspectIPv6PDGuard(t.Context(), &r, "192.0.2.4", d)
+				plan, err = ipv6.InspectIPv6PDGuard(t.Context(), &r, "192.0.2.4", d.Client)
 				if err == nil {
 					add(plan)
 					ops = plan.Ops
@@ -119,7 +120,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 					}
 				}
 			} else {
-				dns, err = InspectIPv6DNS(t.Context(), s.Desired, s.Scope, d)
+				dns, err = ipv6.InspectIPv6DNS(t.Context(), s.Desired, s.Scope, d.Client)
 				if err == nil {
 					add(dns)
 					ops = dns.Ops
@@ -158,9 +159,9 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 				}
 				if err == nil {
 					if tc.Feature == "pd" {
-						err = VerifyIPv6PDGuard(t.Context(), d, plan.Check)
+						err = ipv6.VerifyIPv6PDGuard(t.Context(), d.Client, plan.Check)
 					} else {
-						err = VerifyIPv6DNS(t.Context(), d, dns.Check)
+						err = ipv6.VerifyIPv6DNS(t.Context(), d.Client, dns.Check)
 					}
 				}
 				if err == nil && s.Action == "rollback" && len(ops) > 0 {
@@ -316,7 +317,7 @@ func r11Cases() []r11Case {
 		tc := base("pd", which, r11StepFor("publish"))
 		switch which {
 		case "manual_formatted", "hold_diff", "body_diff", "policy_diff", "poll_interval", "poll_disabled", "manual", "update", "shared_hook", "foreign_script", "foreign_poll", "rollback_helper":
-			source, _ := IPv6PDWatchSource("bridge", "pool-example")
+			source, _ := ipv6.IPv6PDWatchSource("bridge", "pool-example")
 			if which == "update" {
 				source = strings.ReplaceAll(source, `"bridge"`, `"old-lan"`)
 			}

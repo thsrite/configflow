@@ -11,6 +11,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"encoding/json"
@@ -270,7 +271,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 		state.PolicyNATRetiring = natRetiring
 		parts = append(parts, part)
 	}
-	parts = append(parts, ipv6ReportParts(state.IPv6FakeIPPlan, state.IPv6RoutesPlan, state.IPv6DNSPlan, state.IPv6PDGuardPlan)...)
+	parts = append(parts, ipv6.ReportParts(state.IPv6FakeIPPlan, state.IPv6RoutesPlan, state.IPv6DNSPlan, state.IPv6PDGuardPlan)...)
 	r.Parts = parts
 	for _, part := range parts {
 		r.Routes.Extra = slices.DeleteFunc(r.Routes.Extra, func(e ExtraRoute) bool { return slices.Contains(part.RetireExtra, e.RouteID) })

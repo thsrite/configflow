@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -26,7 +27,7 @@ type r10PolicyCase struct {
 
 func r10PolicySnapshot() map[string][]Row {
 	out := map[string][]Row{}
-	for key := range PolicyTablePaths() {
+	for key := range ipv6.PolicyTablePaths() {
 		out[key] = []Row{}
 	}
 	for _, key := range []string{"routes", "nat", "filter"} {
@@ -68,7 +69,7 @@ func r10PolicyCases() []r10PolicyCase {
 	}
 	for _, variant := range []string{"baseline", "raw_drop", "mangle_mark", "routing_rule", "routing_main", "raw_unread", "no_endpoints", "nat_src", "nat_dst", "candidate_drop", "wrong_gateway", "partial_route", "blackhole", "multiple_exits", "unresolved_exit", "scope_limit", "ipv4_only", "policy_rule_nomatch"} {
 		s := r10PolicySnapshot()
-		tc := r10PolicyCase{Name: "checks/" + variant, Action: "checks", Snapshot: s, Agent: r10Agent(), Host: r10Host(), Configuration: PolicyConfiguration{true, "fd00:face::/64"}, LAN: "bridge", Context: PolicyContext{NodeTargets: []PolicyNodeTarget{{"2001:db8:2::10", 443}}, Clients: []PolicyClient{{Address: "2001:db8:1::20"}, {Address: "192.0.2.20"}}, FakeIPv4Range: "198.18.0.0/16"}}
+		tc := r10PolicyCase{Name: "checks/" + variant, Action: "checks", Snapshot: s, Agent: r10Agent(), Host: r10Host(), Configuration: PolicyConfiguration{FakeIPv6Enabled: true, FakeIPv6Range: "fd00:face::/64"}, LAN: "bridge", Context: PolicyContext{NodeTargets: []PolicyNodeTarget{{Address: "2001:db8:2::10", Port: 443}}, Clients: []PolicyClient{{Address: "2001:db8:1::20"}, {Address: "192.0.2.20"}}, FakeIPv4Range: "198.18.0.0/16"}}
 		tc.Host.Addresses = append(tc.Host.Addresses, IPv6HostAddress{Address: "2001:db8:1::4", Usable: true})
 		switch variant {
 		case "raw_drop":
@@ -104,7 +105,7 @@ func r10PolicyCases() []r10PolicyCase {
 		case "scope_limit":
 			for i := 0; i < 4; i++ {
 				tc.Host.Addresses = append(tc.Host.Addresses, IPv6HostAddress{Address: fmt.Sprintf("2001:db8:1::%x", i+30), Usable: true})
-				tc.Context.NodeTargets = append(tc.Context.NodeTargets, PolicyNodeTarget{fmt.Sprintf("2001:db8:2::%x", i+30), 443})
+				tc.Context.NodeTargets = append(tc.Context.NodeTargets, PolicyNodeTarget{Address: fmt.Sprintf("2001:db8:2::%x", i+30), Port: 443})
 				tc.Context.Clients = append(tc.Context.Clients, PolicyClient{Address: fmt.Sprintf("192.0.2.%d", i+30)})
 			}
 		case "ipv4_only":
@@ -128,16 +129,16 @@ func TestR10PolicyPythonBoundary(t *testing.T) {
 	}
 	for i, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			env := PolicyEnvironmentFromSnapshot(tc.Snapshot, tc.Errors)
+			env := ipv6.PolicyEnvironmentFromSnapshot(tc.Snapshot, tc.Errors)
 			var got any
 			if tc.Action == "chain" {
 				s := &env.IPv6
 				if tc.Family == 4 {
 					s = &env.IPv4
 				}
-				got = EvaluatePolicyChain(s, tc.Table, tc.Chain, tc.Packet)
+				got = ipv6.EvaluatePolicyChain(s, tc.Table, tc.Chain, tc.Packet)
 			} else {
-				got = PolicyChecks(env, r10Agent(), tc.Host, tc.Configuration, tc.LAN, tc.Context)
+				got = ipv6.PolicyChecks(env, r10Agent(), tc.Host, tc.Configuration, tc.LAN, tc.Context)
 			}
 			a, b := r08Comparable(t, expected[i]), r08Comparable(t, got)
 			if !reflect.DeepEqual(a, b) {

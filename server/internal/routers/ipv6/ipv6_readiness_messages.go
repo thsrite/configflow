@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 const (
 	messageReadinessRead         = "读取失败，请检查 RouterOS IPv6 支持与账号权限"

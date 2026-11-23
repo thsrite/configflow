@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
 	"context"
 	"errors"
@@ -38,8 +39,8 @@ func TestReviewR17RepositoryHookSharesJobLock(t *testing.T) {
 	}
 	calls := len(f.Calls())
 	err = s.Apply(t.Context(), "default", preview.Token)
-	var busy *routers.RouterError
-	if !errors.As(err, &busy) || busy.Kind != routers.KindConflict || busy.Message != messageFixedBusy {
+	var busy *device.RouterError
+	if !errors.As(err, &busy) || busy.Kind != device.KindConflict || busy.Message != messageFixedBusy {
 		release()
 		t.Fatalf("Apply ignored the repository hook's job lock: %v", err)
 	}

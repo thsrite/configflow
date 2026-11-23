@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 // The shared evaluator is read-only and deliberately conservative: unknown
 // selectors never prove a packet path or a real connection.
@@ -30,16 +30,16 @@ const (
 // PolicySnapshot contains the tables needed by the shared rule evaluator.
 // Nil means unreadable; an empty non-nil table proves absence.
 type PolicySnapshot struct {
-	Family           int   `json:"-"`
-	Raw              []Row `json:"raw"`
-	Mangle           []Row `json:"mangle"`
-	NAT              []Row `json:"nat"`
-	Routes           []Row `json:"routes"`
-	Filter           []Row `json:"filter"`
-	AddressLists     []Row `json:"address_lists"`
-	InterfaceLists   []Row `json:"interface_lists"`
-	InterfaceMembers []Row `json:"interface_members"`
-	Interfaces       []Row `json:"interfaces"`
+	Family           int       `json:"-"`
+	Raw              []ros.Row `json:"raw"`
+	Mangle           []ros.Row `json:"mangle"`
+	NAT              []ros.Row `json:"nat"`
+	Routes           []ros.Row `json:"routes"`
+	Filter           []ros.Row `json:"filter"`
+	AddressLists     []ros.Row `json:"address_lists"`
+	InterfaceLists   []ros.Row `json:"interface_lists"`
+	InterfaceMembers []ros.Row `json:"interface_members"`
+	Interfaces       []ros.Row `json:"interfaces"`
 }
 
 // PolicyPacket describes only known packet fields. Nil fields stay unknown.
@@ -60,7 +60,7 @@ type PolicyPacket struct {
 	IPSecPolicy        map[string]string `json:"ipsec-policy,omitempty"`
 }
 
-func policyBool(v bool) PolicyMatch {
+func PolicyBool(v bool) PolicyMatch {
 	if v {
 		return PolicyMatches
 	}
@@ -99,7 +99,7 @@ func policyOr(values ...PolicyMatch) PolicyMatch {
 	}
 	return out
 }
-func policyEnabled(row Row) bool {
+func policyEnabled(row ros.Row) bool {
 	return !ros.PolicyFlag(row["disabled"]) && !ros.PolicyFlag(row["invalid"])
 }
 func policyNetwork(text string) (netip.Prefix, bool) {
@@ -182,7 +182,7 @@ func policyNumber(actual *int, expected string) PolicyMatch {
 	if negate {
 		found = !found
 	}
-	return policyBool(found)
+	return PolicyBool(found)
 }
 func policyProtocol(s string) string {
 	switch strings.ToLower(s) {
@@ -216,9 +216,9 @@ func policyString(actual *string, expected string, protocol bool) PolicyMatch {
 	if negate {
 		found = !found
 	}
-	return policyBool(found)
+	return PolicyBool(found)
 }
-func policyInterface(s *PolicySnapshot, iface *string, name string, visited map[string]bool) PolicyMatch {
+func PolicyInterface(s *PolicySnapshot, iface *string, name string, visited map[string]bool) PolicyMatch {
 	budget := 256
 	return policyInterfaceBounded(s, iface, name, visited, &budget)
 }
@@ -245,7 +245,7 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 		}
 		for _, row := range s.Interfaces {
 			if row.Is("name", *iface) {
-				return policyBool(ros.PolicyFlag(row["dynamic"]) == (name == "dynamic"))
+				return PolicyBool(ros.PolicyFlag(row["dynamic"]) == (name == "dynamic"))
 			}
 		}
 		return PolicyUnknown
@@ -253,7 +253,7 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 	if visited[name] || s.InterfaceLists == nil || s.InterfaceMembers == nil {
 		return PolicyUnknown
 	}
-	var definition Row
+	var definition ros.Row
 	count := 0
 	for _, row := range s.InterfaceLists {
 		if row.Is("name", name) {
@@ -308,7 +308,7 @@ var policyMeta = device.StringSet(".id", "chain", "action", "disabled", "invalid
 
 // MatchPolicyRule evaluates supported RouterOS selectors without inventing any
 // missing packet data. A false selector dominates an unknown one.
-func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
+func MatchPolicyRule(s *PolicySnapshot, row ros.Row, p PolicyPacket) PolicyMatch {
 	if s == nil {
 		return PolicyUnknown
 	}
@@ -338,7 +338,7 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 			if key == "out-interface-list" {
 				iface = p.OutInterface
 			}
-			match = policyInterface(s, iface, strings.TrimLeft(v, "!"), map[string]bool{})
+			match = PolicyInterface(s, iface, strings.TrimLeft(v, "!"), map[string]bool{})
 			if strings.HasPrefix(v, "!") {
 				match = policyNot(match)
 			}
@@ -372,13 +372,13 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 					if strings.HasPrefix(flag, "!") {
 						found = !found
 					}
-					match = policyAnd(match, policyBool(found))
+					match = policyAnd(match, PolicyBool(found))
 				}
 			}
 		case "ipsec-policy":
 			direction, policy, has := strings.Cut(v, ",")
 			if actual, ok := p.IPSecPolicy[direction]; has && ok && (policy == "ipsec" || policy == "none") {
-				match = policyBool(actual == policy)
+				match = PolicyBool(actual == policy)
 			}
 		case "hop-limit":
 			if p.HopLimit != nil {
@@ -387,11 +387,11 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 				if has && err == nil {
 					switch op {
 					case "equal":
-						match = policyBool(*p.HopLimit == n)
+						match = PolicyBool(*p.HopLimit == n)
 					case "less-than":
-						match = policyBool(*p.HopLimit < n)
+						match = PolicyBool(*p.HopLimit < n)
 					case "greater-than":
-						match = policyBool(*p.HopLimit > n)
+						match = PolicyBool(*p.HopLimit > n)
 					}
 				}
 			}
@@ -412,7 +412,7 @@ type PolicyDecision struct {
 	Translation string   `json:"translation,omitempty"`
 }
 
-func (s *PolicySnapshot) table(name string) []Row {
+func (s *PolicySnapshot) table(name string) []ros.Row {
 	if s == nil {
 		return nil
 	}
@@ -429,7 +429,7 @@ func (s *PolicySnapshot) table(name string) []Row {
 	return nil
 }
 
-func policyEvidence(row Row, index int, table, chain string) string {
+func policyEvidence(row ros.Row, index int, table, chain string) string {
 	identity := row.ID()
 	if identity == "" {
 		identity = fmt.Sprintf(messagePolicyPosition, index+1)

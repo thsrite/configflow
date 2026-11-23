@@ -6,6 +6,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
@@ -67,17 +68,17 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		var err error
 		switch stage {
 		case StageIPv6FakeIP:
-			err = VerifyIPv6FakeIP(ctx, ros, checks.IPv6FakeIP)
+			err = ipv6.VerifyIPv6FakeIP(ctx, ros.Client, checks.IPv6FakeIP)
 		case StageIPv6Routes:
-			err = VerifyIPv6Routes(ctx, ros, checks.IPv6Routes)
+			err = ipv6.VerifyIPv6Routes(ctx, ros.Client, checks.IPv6Routes)
 		case StageIPv6DNS:
-			err = VerifyIPv6DNS(ctx, ros, checks.IPv6DNS)
+			err = ipv6.VerifyIPv6DNS(ctx, ros.Client, checks.IPv6DNS)
 		case StageIPv6PDGuard:
 			var c IPv6PDGuardCheck
 			if jsondecode.Unmarshal(checks.IPv6PDGuard, &c) != nil {
 				return nil, device.Error(device.MessageOperationFormat)
 			}
-			err = VerifyIPv6PDGuard(ctx, ros, &c)
+			err = ipv6.VerifyIPv6PDGuard(ctx, ros.Client, &c)
 		case StageDNSGuard:
 			err = dnsguard.Verify(ctx, ros.Client, checks.DNSGuard)
 		}

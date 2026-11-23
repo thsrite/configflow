@@ -2,6 +2,7 @@ package clients
 
 import (
 	"configflow/internal/routers/clientlist"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routerdoc"
-	"configflow/internal/routers"
 )
 
 type reader struct {
@@ -42,7 +42,7 @@ func TestDiscoveryMergesAndRejoinsCurrentState(t *testing.T) {
 	rt := testRuntime(t)
 	var calls, closed atomic.Int32
 	service := &DiscoveryService{Spawner: rt, GatewayHost: func(context.Context, string) string { return "192.0.2.254" }}
-	service.Open = func(r *routers.Router) clientlist.Reader {
+	service.Open = func(r *spec.Router) clientlist.Reader {
 		return reader{closed: &closed, read: func(ctx context.Context, o clientlist.ReadOptions) (*routerdoc.Reading, error) {
 			calls.Add(1)
 			if !o.Priority["192.0.2.10"] {
@@ -109,7 +109,7 @@ func TestDiscoveryTimeoutAndPanicIsolation(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			rt := testRuntime(t)
 			var closed atomic.Int32
-			service := &DiscoveryService{Spawner: rt, Open: func(r *routers.Router) clientlist.Reader {
+			service := &DiscoveryService{Spawner: rt, Open: func(r *spec.Router) clientlist.Reader {
 				return reader{closed: &closed, read: func(ctx context.Context, _ clientlist.ReadOptions) (*routerdoc.Reading, error) {
 					if r.ID == "slow" {
 						switch mode {

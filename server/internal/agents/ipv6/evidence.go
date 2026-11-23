@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"configflow/internal/lifecycle"
-	"configflow/internal/routers"
+	"configflow/internal/routers/clientlist"
+	"configflow/internal/routers/ros"
 )
 
-type observed map[string][]routers.Row
+type observed map[string][]ros.Row
 
 func ip(value string) string {
 	a, e := netip.ParseAddr(value)
@@ -46,7 +47,7 @@ func port(v any) int {
 	}
 	return n
 }
-func endpoint(row routers.Row, dir string) (string, int) {
+func endpoint(row ros.Row, dir string) (string, int) {
 	address := row[dir+"-address"]
 	if host := ip(address); host != "" {
 		return host, port(row[dir+"-port"])
@@ -57,7 +58,7 @@ func endpoint(row routers.Row, dir string) (string, int) {
 	}
 	return "", 0
 }
-func rowMatches(row routers.Row, source string, sport int, destination string, dport int) bool {
+func rowMatches(row ros.Row, source string, sport int, destination string, dport int) bool {
 	if strings.ToLower(row["protocol"]) != "tcp" {
 		return false
 	}
@@ -68,7 +69,7 @@ func rowMatches(row routers.Row, source string, sport int, destination string, d
 
 // Packet counters are non-negative uint64 values. Invalid counters are
 // unknown, and overflow can never manufacture positive evidence.
-func hasPackets(row routers.Row) bool {
+func hasPackets(row ros.Row) bool {
 	positive := false
 	for _, key := range []string{"orig-packets", "orig-fasttrack-packets"} {
 		v, present := row[key]
@@ -122,9 +123,9 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 	deadline := lifecycle.ClockFrom(ctx).Now().Add(30 * time.Second)
 	type scan struct {
 		id       string
-		driver   *routers.RouterOS
+		driver   *ros.Client
 		baseline [2]map[string]bool
-		rows     map[string]routers.Row
+		rows     map[string]ros.Row
 	}
 	scans := []*scan{}
 	defer func() {
@@ -143,10 +144,10 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 		if r.Type != "routeros" || r.ValidateForDevice() != nil {
 			continue
 		}
-		s := &scan{id: r.ID, driver: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), rows: map[string]routers.Row{}}
+		s := &scan{id: r.ID, driver: ros.NewClient(r.Endpoint, r.Username, r.Password, r.VerifyTLS), rows: map[string]ros.Row{}}
 		scans = append(scans, s)
 		for family := range 2 {
-			rows, complete, e := s.driver.ReadConnections(ctx, routers.ConnectionQuery{IPv6: family == 1, DestinationPort: p}, 2*time.Second)
+			rows, complete, e := clientlist.ReadConnections(ctx, s.driver, clientlist.ConnectionQuery{IPv6: family == 1, DestinationPort: p}, 2*time.Second)
 			if e != nil || !complete {
 				continue
 			}
@@ -168,7 +169,7 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 				if baseline == nil {
 					continue
 				}
-				rows, _, e := s.driver.ReadConnections(ctx, routers.ConnectionQuery{IPv6: family == 1, DestinationPort: p}, 2*time.Second)
+				rows, _, e := clientlist.ReadConnections(ctx, s.driver, clientlist.ConnectionQuery{IPv6: family == 1, DestinationPort: p}, 2*time.Second)
 				if e != nil {
 					continue
 				}
@@ -202,7 +203,7 @@ func wait(ctx context.Context, d time.Duration) bool {
 		return true
 	}
 }
-func tracked(ctx context.Context, d *routers.RouterOS, request Document, p int, rows []routers.Row) bool {
+func tracked(ctx context.Context, d *ros.Client, request Document, p int, rows []ros.Row) bool {
 	source, destination, sport := ip(text(request["source_ip"])), ip(text(request["address"])), rawPort(request["source_port"])
 	if source == "" || destination == "" || sport == 0 {
 		return false
@@ -214,7 +215,7 @@ func tracked(ctx context.Context, d *routers.RouterOS, request Document, p int, 
 	}
 	a, _ := netip.ParseAddr(source)
 	for _, legacy := range []bool{false, true} {
-		rows, _, e := d.ReadConnections(ctx, routers.ConnectionQuery{IPv6: a.Is6(), SourceAddress: source, SourcePort: sport, LegacySource: legacy}, 0)
+		rows, _, e := clientlist.ReadConnections(ctx, d, clientlist.ConnectionQuery{IPv6: a.Is6(), SourceAddress: source, SourcePort: sport, LegacySource: legacy}, 0)
 		if e != nil {
 			continue
 		}
@@ -291,7 +292,7 @@ func evaluate(ctx context.Context, config, source, report, trace Document, testU
 		if r.Type != "routeros" || r.ValidateForDevice() != nil {
 			continue
 		}
-		d := routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
+		d := ros.NewClient(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
 		for i, request := range requests {
 			if tracked(ctx, d, request, p, seen[r.ID]) {
 				confirmed[i] = true

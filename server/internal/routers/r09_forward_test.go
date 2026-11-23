@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -142,7 +143,7 @@ func TestR09ForwardHintPython(t *testing.T) {
 			f.Reset(tc.State)
 			d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
-			check := CheckForwardHint(context.Background(), d, tc.Family, tc.LAN, tc.Targets, nil)
+			check := ipv6.CheckForwardHint(context.Background(), d.Client, tc.Family, tc.LAN, tc.Targets, nil)
 			var report Report
 			if err := json.Unmarshal(tc.Report, &report); err != nil {
 				t.Fatal(err)
@@ -152,12 +153,12 @@ func TestR09ForwardHintPython(t *testing.T) {
 				routes = append(routes, deviceRow(row))
 			}
 			state := &RouterState{NatContext: &NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}
-			hint, err := ForwardHint(context.Background(), tc.Router, tc.Desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, d)
+			hint, err := ipv6.ForwardHint(context.Background(), tc.Router, tc.Desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, d.Client)
 			if err != nil {
 				t.Fatal(err)
 			}
 			snapshot := f.Snapshot()
-			got := r09JSON(t, map[string]any{"warning4": ForwardDropWarning(4), "warning6": ForwardDropWarning(6), "check": check, "hint": hint, "calls": snapshot.Calls, "tables": snapshot.Tables})
+			got := r09JSON(t, map[string]any{"warning4": ipv6.ForwardDropWarning(4), "warning6": ipv6.ForwardDropWarning(6), "check": check, "hint": hint, "calls": snapshot.Calls, "tables": snapshot.Tables})
 			if !reflect.DeepEqual(want, got) {
 				t.Fatalf("hint boundary differs\nPython %s\nGo %s", r09Raw(want), r09Raw(got))
 			}

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -115,7 +116,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 				if d.IPv6FakeIPManifestSet() {
 					r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
 				}
-				fakePlan = InspectIPv6FakeIP(ctx, step.Config, &r, step.Agent, step.Host, d)
+				fakePlan = ipv6.InspectIPv6FakeIP(ctx, step.Config, &r, step.Agent, step.Host, d.Client)
 				add(fakePlan)
 				ops = fakePlan.Ops
 				blocked = len(fakePlan.Blockers) > 0
@@ -123,7 +124,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 				if d.IPv6RoutesManifestSet() {
 					r.Extra["ipv6_routes_state"] = ros.GuardRaw(d.IPv6RoutesManifest())
 				}
-				routesPlan = InspectIPv6Routes(ctx, step.Config, &r, step.Desired, step.Agent, step.Host, d)
+				routesPlan = ipv6.InspectIPv6Routes(ctx, step.Config, &r, step.Desired, step.Agent, step.Host, d.Client)
 				add(routesPlan)
 				ops = routesPlan.Ops
 				blocked = len(routesPlan.Skip) > 0
@@ -158,9 +159,9 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 			}
 			if err == nil {
 				if tc.Feature == "fake" {
-					err = VerifyIPv6FakeIP(ctx, d, &fakePlan.Check)
+					err = ipv6.VerifyIPv6FakeIP(ctx, d.Client, &fakePlan.Check)
 				} else {
-					err = VerifyIPv6Routes(ctx, d, routesPlan.Check)
+					err = ipv6.VerifyIPv6Routes(ctx, d.Client, routesPlan.Check)
 				}
 			}
 			if err == nil && step.Action == "rollback" && len(ops) > 0 {

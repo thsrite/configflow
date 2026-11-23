@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -86,11 +87,11 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 	if err = json.Unmarshal(config, &profile); err != nil {
 		return "", err
 	}
-	if r.Type == "routeros" && IPv6FakeIPRelevant(&profile, r) {
+	if r.Type == "routeros" && ipv6.IPv6FakeIPRelevant(&profile, r) {
 		value["ipv6_fakeip"] = device.JSON(struct {
 			Settings IPv6Settings    `json:"settings"`
 			State    json.RawMessage `json:"state"`
-		}{IPv6FakeIPSettings(&profile), syncNull(r.State("ipv6_fakeip_state"))})
+		}{ipv6.IPv6FakeIPSettings(&profile), syncNull(r.State("ipv6_fakeip_state"))})
 	}
 	if dns != nil {
 		var view struct {

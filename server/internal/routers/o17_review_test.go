@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
@@ -66,7 +67,7 @@ func TestO17NullFieldsStayRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &PolicySnapshot{InterfaceLists: lists, InterfaceMembers: []Row{}}
-	if got := policyInterface(s, new("ether1"), "LAN", map[string]bool{}); got != PolicyUnknown {
+	if got := ipv6.PolicyInterface(s, new("ether1"), "LAN", map[string]bool{}); got != PolicyUnknown {
 		t.Errorf("interface list with null include: %v, want unknown", got)
 	}
 }
@@ -83,11 +84,11 @@ func TestO17StructuredSelectorUnknown(t *testing.T) {
 		`{"chain":"forward","src-address":["198.51.100.0/24"]}`,
 		`{"chain":"forward","dst-port":[80]}`,
 	} {
-		if got := MatchPolicyRule(s, decodedRow(t, raw), packet); got != PolicyUnknown {
+		if got := ipv6.MatchPolicyRule(s, decodedRow(t, raw), packet); got != PolicyUnknown {
 			t.Errorf("%s: %v, want unknown", raw, got)
 		}
 	}
-	if got := MatchPolicyRule(s, decodedRow(t, `{"chain":"forward","protocol":"udp"}`), packet); got != PolicyNoMatch {
+	if got := ipv6.MatchPolicyRule(s, decodedRow(t, `{"chain":"forward","protocol":"udp"}`), packet); got != PolicyNoMatch {
 		t.Errorf("text selector: %v, want no match", got)
 	}
 }

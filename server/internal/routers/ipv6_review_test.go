@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"net/http/httptest"
 	"reflect"
@@ -108,7 +109,7 @@ func TestR10ReviewPythonProbes(t *testing.T) {
 func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 	d, f := r10Driver(t)
 	p := r10FakePlan(t, d)
-	if _, err := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace)); err != nil {
+	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace)); err != nil {
 		t.Fatal(err)
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{
@@ -119,21 +120,21 @@ func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 	host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
 	r := r10Router()
 	r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
-	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), host, d)
+	p = ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), host, d.Client)
 	if len(p.Ops) != 1 {
 		t.Fatalf("no replacement planned: %s", device.JSON(p))
 	}
-	if _, err := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace)); err == nil {
+	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace)); err == nil {
 		t.Fatal("inactive replacement accepted")
 	}
-	live, err := SnapshotIPv6(t.Context(), d, false)
+	live, err := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(live["routes"]) != 1 || live["routes"][0].Text("gateway") != "fe80::4%bridge" {
 		t.Fatalf("previous Fake-IP route not restored: %v", live["routes"])
 	}
-	owned, err := ipv6Owned(d.IPv6FakeIPManifest(), live, true)
+	owned, err := ipv6.Owned(d.IPv6FakeIPManifest(), live, true)
 	if err != nil || len(owned) != 1 || owned[0].ID != live["routes"][0].ID() {
 		t.Fatalf("restored route not owned: %s %v", d.IPv6FakeIPManifest(), err)
 	}

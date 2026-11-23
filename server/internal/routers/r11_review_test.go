@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"encoding/json"
 	"net/http/httptest"
 	"reflect"
@@ -90,7 +91,7 @@ func TestR11ReviewFingerprintExcludesPassword(t *testing.T) {
 	s := r11StepFor("plan")
 	fingerprint := func(r *Router) string {
 		t.Helper()
-		got, e := InspectIPv6Readiness(t.Context(), d, r, s.Agent, s.Host, s.Configuration, "", PolicyContext{})
+		got, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r, s.Agent, s.Host, s.Configuration, "", PolicyContext{})
 		if e != nil {
 			t.Fatal(e)
 		}

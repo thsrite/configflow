@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ipv6"
 	"encoding/json"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestIPv6AgentEnabledSwitchTruthiness(t *testing.T) {
 			if err := json.Unmarshal([]byte(raw), &agent); err != nil {
 				t.Fatal(err)
 			}
-			if got := ipv6AgentEnabled(&agent); got != tc.want {
+			if got := ipv6.AgentEnabled(&agent); got != tc.want {
 				t.Fatalf("ipv6AgentEnabled(%s) = %v, want %v", raw, got, tc.want)
 			}
 		})

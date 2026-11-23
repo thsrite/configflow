@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/routerdoc"
-	"configflow/internal/routers"
 )
 
 func snapshot(name string) Snapshot {
@@ -25,10 +25,10 @@ func snapshot(name string) Snapshot {
 	r.Sightings[s.IP] = s
 	return Snapshot{[]RouterReading{{Reading: r}}, name}
 }
-func cacheRouters(password string) []*routers.Router {
-	return []*routers.Router{{RouterSettings: routers.RouterSettings{ID: "r1", Type: "routeros", Endpoint: "http://192.0.2.1"}, Password: password}}
+func cacheRouters(password string) []*spec.Router {
+	return []*spec.Router{{RouterSettings: spec.RouterSettings{ID: "r1", Type: "routeros", Endpoint: "http://192.0.2.1"}, Password: password}}
 }
-func cacheRead(t *testing.T, c *DiscoveryCache, ctx context.Context, id string, rs []*routers.Router, load func(context.Context) (Snapshot, error), refresh bool) (Snapshot, CacheMetadata) {
+func cacheRead(t *testing.T, c *DiscoveryCache, ctx context.Context, id string, rs []*spec.Router, load func(context.Context) (Snapshot, error), refresh bool) (Snapshot, CacheMetadata) {
 	t.Helper()
 	s, m, err := c.Read(ctx, id, rs, load, refresh)
 	if err != nil {

@@ -3,6 +3,7 @@ package clients
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/clientlist"
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -18,7 +19,6 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/routerdoc"
-	"configflow/internal/routers"
 )
 
 // Source reports one main router's discovery capability and read outcome.
@@ -81,21 +81,21 @@ type DiscoveryOptions struct {
 // GatewayHost resolves a proxy Agent ID to its current host for policy sources.
 type DiscoveryService struct {
 	Spawner     lockx.Spawner
-	Open        func(*routers.Router) clientlist.Reader
+	Open        func(*spec.Router) clientlist.Reader
 	Enrich      func(context.Context, clientlist.Reader, *routerdoc.Reading, string)
 	GatewayHost func(context.Context, string) string
 }
 
 // NewDiscoveryService constructs a service using the standard device drivers.
 func NewDiscoveryService() *DiscoveryService {
-	return &DiscoveryService{Open: func(r *routers.Router) clientlist.Reader {
+	return &DiscoveryService{Open: func(r *spec.Router) clientlist.Reader {
 		return clientlist.Open(r)
 	}}
 }
 
 var discoveryLogger = logx.Get("backend.common.client_discovery")
 
-func (s *DiscoveryService) readOne(ctx context.Context, r *routers.Router, opts clientlist.ReadOptions) (out RouterReading) {
+func (s *DiscoveryService) readOne(ctx context.Context, r *spec.Router, opts clientlist.ReadOptions) (out RouterReading) {
 	defer func() {
 		if recover() != nil {
 			discoveryLogger.Error(messageReadFailed)
@@ -109,7 +109,7 @@ func (s *DiscoveryService) readOne(ctx context.Context, r *routers.Router, opts 
 	defer d.Close()
 	reading, err := d.ReadClients(ctx, opts)
 	if err != nil {
-		var deviceError *routers.RouterError
+		var deviceError *device.RouterError
 		if errors.As(err, &deviceError) {
 			return RouterReading{Error: deviceError.Error()}
 		}
@@ -121,7 +121,7 @@ func (s *DiscoveryService) readOne(ctx context.Context, r *routers.Router, opts 
 	}
 	return RouterReading{Reading: reading}
 }
-func (s *DiscoveryService) readAll(ctx context.Context, rs []*routers.Router, priority map[string]bool, timeout time.Duration) []RouterReading {
+func (s *DiscoveryService) readAll(ctx context.Context, rs []*spec.Router, priority map[string]bool, timeout time.Duration) []RouterReading {
 	deadline := time.Now().Add(timeout)
 	opts := clientlist.ReadOptions{Priority: priority, Deadline: deadline.Add(-2 * time.Second)}
 	ctx, cancel := context.WithDeadline(ctx, deadline)
@@ -157,7 +157,7 @@ func (s *DiscoveryService) readAll(ctx context.Context, rs []*routers.Router, pr
 	}
 	return out
 }
-func endpointIP(r *routers.Router) string {
+func endpointIP(r *spec.Router) string {
 	u, err := url.Parse(r.Endpoint)
 	if err != nil {
 		return ""
@@ -244,7 +244,7 @@ func (s *DiscoveryService) Discover(ctx context.Context, config json.RawMessage,
 	if err != nil {
 		return Discovery{}, err
 	}
-	rs := []*routers.Router{}
+	rs := []*spec.Router{}
 	for _, r := range spec.RoutersOf(config) {
 		if r.Type == "routeros" || r.Type == "ikuai" {
 			rs = append(rs, r)

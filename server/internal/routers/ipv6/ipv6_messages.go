@@ -1,4 +1,4 @@
-package routers
+package ipv6
 
 const (
 	messageIPv6YAMLObject              = "基础 YAML 必须是对象"

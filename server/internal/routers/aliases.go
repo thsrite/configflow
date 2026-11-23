@@ -8,6 +8,7 @@ import (
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
@@ -149,6 +150,53 @@ type (
 	ROSPolicySpec     = rospolicy.ROSPolicySpec
 	ROSPolicyUndo     = rospolicy.ROSPolicyUndo
 	ROSReplacement    = rospolicy.ROSReplacement
+
+	ForwardInputs              = ipv6.ForwardInputs
+	ForwardHintCheck           = ipv6.ForwardHintCheck
+	IPv6DNSCheck               = ipv6.IPv6DNSCheck
+	IPv6DNSEvidence            = ipv6.IPv6DNSEvidence
+	IPv6DNSItem                = ipv6.IPv6DNSItem
+	IPv6DNSPlan                = ipv6.IPv6DNSPlan
+	IPv6DNSReport              = ipv6.IPv6DNSReport
+	IPv6DNSUpdate              = ipv6.IPv6DNSUpdate
+	IPv6EvidenceSet            = ipv6.IPv6EvidenceSet
+	IPv6FakeIPCheck            = ipv6.IPv6FakeIPCheck
+	IPv6FakeIPManifest         = ipv6.IPv6FakeIPManifest
+	IPv6FakeIPPlan             = ipv6.IPv6FakeIPPlan
+	IPv6FakeIPReplace          = ipv6.IPv6FakeIPReplace
+	IPv6FakeIPReport           = ipv6.IPv6FakeIPReport
+	IPv6FakeIPUndo             = ipv6.IPv6FakeIPUndo
+	IPv6Host                   = ipv6.IPv6Host
+	IPv6HostAddress            = ipv6.IPv6HostAddress
+	IPv6PDEvidence             = ipv6.IPv6PDEvidence
+	IPv6PDGuardCheck           = ipv6.IPv6PDGuardCheck
+	IPv6PDGuardPlan            = ipv6.IPv6PDGuardPlan
+	IPv6PDGuardReport          = ipv6.IPv6PDGuardReport
+	IPv6PDGuardSync            = ipv6.IPv6PDGuardSync
+	IPv6PDGuardUndo            = ipv6.IPv6PDGuardUndo
+	IPv6PDItem                 = ipv6.IPv6PDItem
+	IPv6PDManifest             = ipv6.IPv6PDManifest
+	IPv6Readiness              = ipv6.IPv6Readiness
+	IPv6ReadinessCheck         = ipv6.IPv6ReadinessCheck
+	IPv6ReadinessConfiguration = ipv6.IPv6ReadinessConfiguration
+	IPv6ReadinessReceipt       = ipv6.IPv6ReadinessReceipt
+	IPv6RouteItem              = ipv6.IPv6RouteItem
+	IPv6RouteSettings          = ipv6.IPv6RouteSettings
+	IPv6RouteSpec              = ipv6.IPv6RouteSpec
+	IPv6RoutesCheck            = ipv6.IPv6RoutesCheck
+	IPv6RoutesManifest         = ipv6.IPv6RoutesManifest
+	IPv6RoutesPlan             = ipv6.IPv6RoutesPlan
+	IPv6RoutesReplace          = ipv6.IPv6RoutesReplace
+	IPv6RoutesReport           = ipv6.IPv6RoutesReport
+	IPv6RoutesUndo             = ipv6.IPv6RoutesUndo
+	IPv6Settings               = ipv6.IPv6Settings
+	IPv6Snapshot               = ipv6.IPv6Snapshot
+	PolicyClient               = ipv6.PolicyClient
+	PolicyConfiguration        = ipv6.PolicyConfiguration
+	PolicyContext              = ipv6.PolicyContext
+	PolicyNodeTarget           = ipv6.PolicyNodeTarget
+	PolicyPacket               = ipv6.PolicyPacket
+	PolicySnapshot             = ipv6.PolicySnapshot
 )
 
 // FromConfig returns owned router records; temporary alias removed in R10.

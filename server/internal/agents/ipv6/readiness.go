@@ -18,7 +18,8 @@ import (
 
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
-	"configflow/internal/routers"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 )
 
 type lastCheck struct {
@@ -192,7 +193,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 			}
 		}()
 		rs := linked(config, id)
-		slices.SortFunc(rs, func(a, b *routers.Router) int { return strings.Compare(a.ID, b.ID) })
+		slices.SortFunc(rs, func(a, b *spec.Router) int { return strings.Compare(a.ID, b.ID) })
 		// Try-only job locks retain L1 semantics even under the Agent operation.
 		var jobs []func()
 		defer func() {
@@ -209,8 +210,8 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 			seen[key] = true
 			_, unlock, lockErr := oplock.RouterJobLock(ctx, profile, r.ID, r)
 			if lockErr != nil {
-				var conflict *routers.RouterError
-				if errors.As(lockErr, &conflict) && conflict.Kind == routers.KindConflict {
+				var conflict *device.RouterError
+				if errors.As(lockErr, &conflict) && conflict.Kind == device.KindConflict {
 					return failure("BUSY", 409, msgRouterBusy)
 				}
 				return lockErr

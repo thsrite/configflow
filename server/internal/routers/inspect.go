@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/spec"
@@ -171,20 +172,20 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		if gateway != nil {
 			agent = gateway.Agent
 		}
-		if IPv6FakeIPRelevant(&profile, r) {
+		if ipv6.IPv6FakeIPRelevant(&profile, r) {
 			h := IPv6Host{}
-			if IPv6FakeIPSettings(&profile).Enabled {
+			if ipv6.IPv6FakeIPSettings(&profile).Enabled {
 				h = hostReport()
 			}
 			rosDriver.SetIPv6FakeIPManifest(r.State("ipv6_fakeip_state"))
-			state.IPv6FakeIPPlan = InspectIPv6FakeIP(ctx, &profile, r, agent, h, rosDriver)
+			state.IPv6FakeIPPlan = ipv6.InspectIPv6FakeIP(ctx, &profile, r, agent, h, rosDriver.Client)
 		}
-		if IPv6RoutesRelevant(&profile, r, desired) {
+		if ipv6.IPv6RoutesRelevant(&profile, r, desired) {
 			h := IPv6Host{}
-			if IPv6RoutesNeedsHost(&profile, r, desired) {
+			if ipv6.IPv6RoutesNeedsHost(&profile, r, desired) {
 				h = hostReport()
 			}
-			state.IPv6RoutesPlan = InspectIPv6Routes(ctx, &profile, r, desired, agent, h, rosDriver)
+			state.IPv6RoutesPlan = ipv6.InspectIPv6Routes(ctx, &profile, r, desired, agent, h, rosDriver.Client)
 		}
 	} else if len(desired.IPv6CIDRs) > 0 {
 		desired.Warnings = append(desired.Warnings, fmt.Sprintf(messageIkuaiIPv6Skipped, len(desired.IPv6CIDRs)))
@@ -203,17 +204,17 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		dns := device.BuildDNSReport(*desired.DNSSettings, desired.ProxyGateway, state.DhcpDNS)
 		if (dns.Status == "pending" || dns.Status == "synced") && len(dns.Items) == 1 {
 			item := dns.Items[0]
-			state.IPv6DNSPlan, err = InspectIPv6DNS(ctx, desired, DNSCheck{ID: item.ID, Network: item.Network, Gateway: desired.ProxyGateway, DNS: item.DesiredDNS}, rosDriver)
+			state.IPv6DNSPlan, err = ipv6.InspectIPv6DNS(ctx, desired, DNSCheck{ID: item.ID, Network: item.Network, Gateway: desired.ProxyGateway, DNS: item.DesiredDNS}, rosDriver.Client)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
-	if IPv6PDGuardRelevant(r) {
+	if ipv6.IPv6PDGuardRelevant(r) {
 		if !isROS {
 			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, StageIPv6PDGuard))
 		}
-		state.IPv6PDGuardPlan, err = InspectIPv6PDGuard(ctx, r, host, rosDriver)
+		state.IPv6PDGuardPlan, err = ipv6.InspectIPv6PDGuard(ctx, r, host, rosDriver.Client)
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +224,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		return nil, err
 	}
 	if isROS {
-		report.Routes.ForwardHint, err = ForwardHint(ctx, r, desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, rosDriver)
+		report.Routes.ForwardHint, err = ipv6.ForwardHint(ctx, r, desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, rosDriver.Client)
 		if err != nil {
 			return nil, err
 		}
