@@ -1,7 +1,8 @@
-package routers
+package rulesync
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/spec"
@@ -28,7 +29,7 @@ func syncProjection(raw json.RawMessage, keys ...string) map[string]json.RawMess
 
 // SyncControls returns a Go-native signature of settings requiring a manual release.
 // Credentials affect the signature, but only the SHA-256 digest is ever persisted.
-func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessage, r *Router) (string, error) {
+func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessage, r *spec.Router) (string, error) {
 	sources, err := selectedSyncSources(config, r)
 	if err != nil {
 		return "", err
@@ -45,9 +46,9 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 		router["ipv6_pd_guard"] = syncProjection(raw, "ipv6_pd_guard")["ipv6_pd_guard"]
 	}
 	agents := []map[string]json.RawMessage{}
-	var dns *GatewayAgent
+	var dns *routers.GatewayAgent
 	for _, id := range []string{r.ProxyGatewayAgentID, r.DNSAgentID} {
-		var a *GatewayAgent
+		var a *routers.GatewayAgent
 		if s.Agents != nil && id != "" {
 			a, err = s.Agents.Agent(ctx, id)
 			if err != nil {
@@ -89,8 +90,8 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 	}
 	if r.Type == "routeros" && ipv6.IPv6FakeIPRelevant(&profile, r) {
 		value["ipv6_fakeip"] = device.JSON(struct {
-			Settings IPv6Settings    `json:"settings"`
-			State    json.RawMessage `json:"state"`
+			Settings ipv6.IPv6Settings `json:"settings"`
+			State    json.RawMessage   `json:"state"`
 		}{ipv6.IPv6FakeIPSettings(&profile), syncNull(r.State("ipv6_fakeip_state"))})
 	}
 	if dns != nil {
@@ -104,7 +105,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 		}
 		_ = jsondecode.Unmarshal(device.JSON(dns), &view)
 		if view.HA.Enabled {
-			var peer *GatewayAgent
+			var peer *routers.GatewayAgent
 			if s.Agents != nil {
 				peer, err = s.Agents.Agent(ctx, view.HA.PeerID)
 				if err != nil {
@@ -118,7 +119,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 			}{syncNull(view.HA.GroupID), syncNull(view.HA.VIP), syncProjection(device.JSON(peer), "id", "host")})
 		}
 	}
-	encoded, err := canonicalReleaseJSON(value)
+	encoded, err := routers.CanonicalReleaseJSON(value)
 	if err != nil {
 		return "", fmt.Errorf("encode sync controls: %w", err)
 	}

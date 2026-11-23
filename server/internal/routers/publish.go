@@ -94,7 +94,7 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 			defer func() {
 				if recover() != nil {
 					// The payload may carry credentials; record only that it happened.
-					releaseLogger.Errorf(messagePublishPanic, req.RouterID)
+					releaseLogger.Errorf(MessagePublishPanic, req.RouterID)
 					result = PublishOutcome{Err: lifecycle.ErrPanic}
 				}
 			}()
@@ -112,7 +112,9 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 	}
 	return out, nil
 }
-func releaseLabel(r *Router) string {
+
+// ReleaseLabel returns the display name used in release summaries for r.
+func ReleaseLabel(r *Router) string {
 	return diag.EventMessage(device.OrText(r.Name, r.ID), []any{r.Password})
 }
 func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage, r *Router, d Driver, desired *Desired) {
@@ -120,7 +122,7 @@ func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage
 		return
 	}
 	if err := CaptureManual(ctx, req.ProfileID, cfg, captureRouter(r, d), d, desired); err != nil {
-		releaseLogger.Warningf(messageCaptureFailed, releaseLabel(r), diag.EventMessage(err.Error(), []any{r.Password}))
+		releaseLogger.Warningf(messageCaptureFailed, ReleaseLabel(r), diag.EventMessage(err.Error(), []any{r.Password}))
 	}
 }
 
@@ -159,7 +161,7 @@ func publishError(r *Router, err error) PublishOutcome {
 	var re *RouterError
 	if errors.As(err, &re) {
 		safe := routeedit.SafeError(err, r.Endpoint, r.Password)
-		releaseLogger.Warningf(messagePublishStopped, releaseLabel(r), safe)
+		releaseLogger.Warningf(messagePublishStopped, ReleaseLabel(r), safe)
 		return PublishOutcome{Status: PublishDeviceError, Message: safe.Error()}
 	}
 	return PublishOutcome{Err: err}
@@ -221,7 +223,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	if err != nil {
 		return publishError(current, err)
 	}
-	label := releaseLabel(current)
+	label := ReleaseLabel(current)
 	if len(plan.Blockers) > 0 {
 		releaseLogger.Warningf(messagePublishBlocked, label, diag.EventMessage(strings.Join(plan.Blockers, "；"), []any{current.Password}))
 		return PublishOutcome{Status: PublishBlocked, Message: strings.Join(plan.Blockers, "；"), Plan: plan}
@@ -359,7 +361,7 @@ func saveAbortedPublication(ctx context.Context, r *repo.Repository, profileID s
 	return r.SaveRouterPublicationJSON(ctxx.Uninterruptible(ctx), profileID, expected, p)
 }
 func logRelease(r *Router, count int, result *Result) {
-	label := releaseLabel(r)
+	label := ReleaseLabel(r)
 	safe := func(s string) string { return diag.EventMessage(s, []any{r.Password}) }
 	for _, e := range result.Log {
 		if e.Status == "warning" || e.Status == "manual" {

@@ -147,7 +147,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			if !ok {
 				return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, stage))
 			}
-			if err := rospolicy.VerifyROSPolicy(ctx, ros.Client, ros.readPolicyState, checks.ROSPolicy); err != nil {
+			if err := rospolicy.VerifyROSPolicy(ctx, ros.Client, ros.ReadPolicyState, checks.ROSPolicy); err != nil {
 				return nil, err
 			}
 		}

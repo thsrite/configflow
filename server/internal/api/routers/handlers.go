@@ -22,6 +22,7 @@ import (
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	core "configflow/internal/routers"
+	routerrulesync "configflow/internal/routers/rulesync"
 )
 
 type handler struct{ pending *core.PendingCache }
@@ -322,7 +323,7 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	recordNotice(c, raw, r, value.Report, plan)
 	if plan.Empty && len(plan.Blockers) == 0 {
-		baseline, err := core.NeedsBaseline(c.Context(), c.ProfileID, r)
+		baseline, err := routerrulesync.NeedsBaseline(c.Context(), c.ProfileID, r)
 		if err != nil {
 			return nil, err
 		}
@@ -539,7 +540,7 @@ func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 	}
-	store := core.RuleSyncStore{DataDir: s.Repo.DataDir()}
+	store := routerrulesync.RuleSyncStore{DataDir: s.Repo.DataDir()}
 	receipt, err := store.Read(c.Context(), c.ProfileID, r.ID)
 	if err != nil {
 		return nil, err
@@ -549,7 +550,7 @@ func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(409, false, messageSyncFirst), nil
 		}
 		if receipt.Status == "paused" {
-			return public(c, cfg, map[string]any{"success": false, "message": core.PausedMessage(receipt)}, 409, false)
+			return public(c, cfg, map[string]any{"success": false, "message": routerrulesync.PausedMessage(receipt)}, 409, false)
 		}
 		if receipt.Status == "running" || receipt.Status == "queued" {
 			message := receipt.Message
@@ -562,7 +563,7 @@ func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		runner := core.RuleSyncService{Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}}
+		runner := routerrulesync.RuleSyncService{Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}}
 		if err = runner.StartJob(c.Context(), c.ProfileID, r.ID); err != nil {
 			return failure(c, cfg, err, 409, false)
 		}

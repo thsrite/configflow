@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/testjson"
 	"encoding/json"
 	"fmt"
@@ -369,6 +370,7 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 	fake.Reset(seed)
 	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
 	core.Wire()
+	routerrulesync.Wire()
 	apirules.Wire()
 	var plan, route, workspace map[string]any
 	created := ""
@@ -496,11 +498,11 @@ func TestR15FlaskWorkspaceSourcesAndDNSPreview(t *testing.T) {
 	runHTTPBoundary(t, fake, seed, cfg, system, steps)
 }
 
-func waitSync(t *testing.T, s *httpxtest.Server) core.RuleSyncStatus {
+func waitSync(t *testing.T, s *httpxtest.Server) routerrulesync.RuleSyncStatus {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		receipt, err := (core.RuleSyncStore{DataDir: s.DataDir}).Read(s.Context(), "default", "router-one")
+		receipt, err := (routerrulesync.RuleSyncStore{DataDir: s.DataDir}).Read(s.Context(), "default", "router-one")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -521,7 +523,7 @@ func waitSync(t *testing.T, s *httpxtest.Server) core.RuleSyncStatus {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("sync completion timed out")
-	return core.RuleSyncStatus{}
+	return routerrulesync.RuleSyncStatus{}
 }
 func compareAsyncResponse(t *testing.T, left, right json.RawMessage) {
 	t.Helper()

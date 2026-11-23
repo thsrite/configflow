@@ -76,7 +76,7 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 		if devhttp.DecodeJSON(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, err := rospolicy.ApplyPolicyWrite(ctx, d.Client, d.readPolicyState, op)
+		undo, err := rospolicy.ApplyPolicyWrite(ctx, d.Client, d.ReadPolicyState, op)
 		if err != nil {
 			return nil, err
 		}
@@ -444,7 +444,7 @@ func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeo
 	return clientlist.ReadConnections(ctx, d.Client, q, timeout)
 }
 
-func (d *RouterOS) readPolicyState(ctx context.Context) (*device.State, *ros.NatContext, error) {
+func (d *RouterOS) ReadPolicyState(ctx context.Context) (*device.State, *ros.NatContext, error) {
 	state, err := d.ReadState(ctx)
 	if err != nil {
 		return nil, nil, err

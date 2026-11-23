@@ -211,13 +211,13 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 					t.Fatal(err)
 				}
 			}
-			undo, err = rospolicy.ApplyPolicyWrite(ctx, d.Client, d.readPolicyState, write)
+			undo, err = rospolicy.ApplyPolicyWrite(ctx, d.Client, d.ReadPolicyState, write)
 			if err != nil {
 				break
 			}
 			appendResult(undo)
 			if step.Action == "publish" {
-				err = rospolicy.VerifyROSPolicy(ctx, d.Client, d.readPolicyState, plan.Check)
+				err = rospolicy.VerifyROSPolicy(ctx, d.Client, d.ReadPolicyState, plan.Check)
 			}
 			if step.Action == "rollback" {
 				err = rospolicy.RestoreROSPolicy(ctx, d.Client, *undo)

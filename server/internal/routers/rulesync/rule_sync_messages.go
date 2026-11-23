@@ -1,4 +1,6 @@
-package routers
+// Package rulesync implements automatic remote rule-set delta synchronization
+// for managed RouterOS devices on top of the routers orchestration package.
+package rulesync
 
 const (
 	messageSyncLarge                = "规则内容过大或不是文本（最多 4 MiB）"

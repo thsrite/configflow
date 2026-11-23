@@ -1,8 +1,8 @@
-package routers
+package rulesync
 
 import (
-	"configflow/internal/routers/spec"
 	"bytes"
+	"configflow/internal/routers/spec"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 	"context"
@@ -36,7 +36,7 @@ func (c noSyncEnvironment) Value(key any) any {
 type syncAllocationFixture struct {
 	ctx      context.Context
 	config   json.RawMessage
-	router   *Router
+	router   *spec.Router
 	download RuleSyncDownload
 }
 
@@ -67,7 +67,7 @@ func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment b
 		sourceURL = server.URL
 	}
 	rules, library := []map[string]any{}, []map[string]any{}
-	r := &Router{RouterSettings: RouterSettings{Type: "routeros", IPRuleSets: []string{}}}
+	r := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", IPRuleSets: []string{}}}
 	for i := 0; i < n; i++ {
 		id, lib := fmt.Sprintf("r%d", i), fmt.Sprintf("lib%d", i)
 		r.IPRuleSets = append(r.IPRuleSets, id)
@@ -245,7 +245,7 @@ func TestN89SyncCachePeekDoesNotMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 	config, _ := json.Marshal(map[string]any{"rule_library": []model.RuleLibraryItem{source}, "rule_configs": []map[string]any{{"id": "r", "itemType": "ruleset", "library_rule_id": "lib", "policy": "PROXY"}}})
-	r := &Router{RouterSettings: RouterSettings{Type: "routeros", IPRuleSets: []string{"r"}}}
+	r := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", IPRuleSets: []string{"r"}}}
 	before, err := db.ConfigRevision(t.Context(), "default")
 	if err != nil {
 		t.Fatal(err)

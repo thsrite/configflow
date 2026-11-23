@@ -1,10 +1,13 @@
-package routers
+package rulesync
 
 import (
 	"bytes"
 	"configflow/internal/fsx"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,10 +26,10 @@ type RuleSyncBaseline struct {
 	Extra           map[string]json.RawMessage `json:"-"`
 	Control         string                     `json:"control"`
 	Rules           map[string]*RuleSyncRecord `json:"rules"`
-	Desired         *Desired                   `json:"desired"`
-	StaticResources []ROSResource              `json:"static_resources"`
+	Desired         *spec.Desired              `json:"desired"`
+	StaticResources []ros.Resource             `json:"static_resources"`
 	Policy          json.RawMessage            `json:"policy"`
-	NATList         *NATBaseline               `json:"nat_list"`
+	NATList         *rospolicy.NATBaseline     `json:"nat_list"`
 }
 
 // RuleSyncLog is one successful destination delta.
@@ -184,7 +187,7 @@ func (s RuleSyncStore) Write(ctx context.Context, profile, id string, value Rule
 }
 
 // NeedsBaseline reports whether enabled auto-sync needs a fresh manual publication.
-func (s RuleSyncStore) NeedsBaseline(ctx context.Context, profile string, r *Router) (bool, error) {
+func (s RuleSyncStore) NeedsBaseline(ctx context.Context, profile string, r *spec.Router) (bool, error) {
 	if r.Type != "routeros" || !r.AutoRuleSync {
 		return false, nil
 	}
@@ -196,7 +199,7 @@ func syncNow(ctx context.Context) string {
 }
 
 // NeedsBaseline is the R15 preview adapter for the current repository's receipts.
-func NeedsBaseline(ctx context.Context, profile string, r *Router) (bool, error) {
+func NeedsBaseline(ctx context.Context, profile string, r *spec.Router) (bool, error) {
 	db, err := repo.GetRepository(ctx)
 	if err != nil {
 		return false, err

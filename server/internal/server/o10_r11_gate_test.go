@@ -79,7 +79,7 @@ var o10WholeEncodeAllowed = map[string]string{
 	"internal/api/config/custom.go:readCustom":                         "debt: custom-config editor reads the generic profile",
 	"internal/routers/management.go:Encoded":                           "debt: manual router inspection reads the generic configuration",
 	"internal/routers/pending.go:pendingTargets":                       "debt: upstream-routers pending check (O10 route, under its ceiling)",
-	"internal/routers/rule_sync_adapter.go:syncConfig":                 "debt: router rule sync reads the generic configuration",
+	"internal/routers/rulesync/rule_sync_adapter.go:syncConfig":        "debt: router rule sync reads the generic configuration",
 }
 
 // o10LoopPackages are the packages that register background loops
@@ -87,7 +87,8 @@ var o10WholeEncodeAllowed = map[string]string{
 var o10LoopPackages = []string{
 	"internal/agents/dnsfollow", "internal/agents/dnsha", "internal/agents/ipv6", "internal/agents/metrics",
 	"internal/agents/monitor", "internal/agents/rulesync", "internal/discovery", "internal/refresh",
-	"internal/routers", "internal/substore",
+	"internal/routers",
+	"internal/routers/rulesync", "internal/substore",
 }
 
 // o10Encoders are the generic encoders and redaction walkers that encode

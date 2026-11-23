@@ -1,6 +1,7 @@
-package routers
+package rulesync
 
 import (
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/spec"
 	"context"
@@ -15,8 +16,8 @@ import (
 	"configflow/internal/taskstatus"
 )
 
-func wireRuleSync() {
-	CaptureManual = func(ctx context.Context, profile string, config json.RawMessage, r *Router, d Driver, desired *Desired) error {
+func Wire() {
+	routers.CaptureManual = func(ctx context.Context, profile string, config json.RawMessage, r *spec.Router, d routers.Driver, desired *spec.Desired) error {
 		service, err := newSyncService(ctx)
 		if err != nil {
 			return err
@@ -31,7 +32,7 @@ func wireRuleSync() {
 			return err
 		}
 		err = service.StartJob(ctx, profile, id)
-		var re *RouterError
+		var re *device.RouterError
 		if errors.As(err, &re) {
 			return &tasks.Conflict{Message: re.Error()}
 		}

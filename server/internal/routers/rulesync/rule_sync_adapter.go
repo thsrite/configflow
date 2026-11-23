@@ -1,10 +1,11 @@
-package routers
+package rulesync
 
 // Rule sync downloads and snapshot orchestration use the typed rule owner.
 // Device writes remain in the sync service and guarded stores.
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -113,7 +114,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	d.size += len(content)
 	return content, nil
 }
-func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, download RuleSyncDownload) (map[string]string, map[string]*RuleSyncRecord, error) {
+func loadSyncSources(ctx context.Context, config json.RawMessage, r *spec.Router, download RuleSyncDownload) (map[string]string, map[string]*RuleSyncRecord, error) {
 	var envErr error
 	ctx, envErr = withSyncEnvironment(ctx, config)
 	if envErr != nil {

@@ -1,6 +1,7 @@
-package routers
+package rulesync
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,7 @@ func BenchmarkBatch9SyncSources(b *testing.B) {
 					b.Fatal(err)
 				}
 				selected, library := []map[string]any{}, []map[string]any{}
-				router := &Router{RouterSettings: RouterSettings{Type: "routeros", IPRuleSets: []string{}}}
+				router := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", IPRuleSets: []string{}}}
 				for i := 0; i < count; i++ {
 					id, source := fmt.Sprintf("r%d", i), fmt.Sprintf("lib%d", i)
 					router.IPRuleSets = append(router.IPRuleSets, id)

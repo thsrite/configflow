@@ -20,7 +20,7 @@ import (
 // Fingerprint is the stable Go-native revision of the exact previewed stages
 // and evidence. Unknown fields remain evidence; presentation warnings are not.
 func Fingerprint(stages []Stage, natEvidence, dhcpEvidence, returnEvidence any) (string, error) {
-	b, err := canonicalReleaseJSON(struct {
+	b, err := CanonicalReleaseJSON(struct {
 		Stages []Stage `json:"stages"`
 		NAT    any     `json:"nat_evidence"`
 		DHCP   any     `json:"dhcp_evidence"`
@@ -32,7 +32,9 @@ func Fingerprint(stages []Stage, natEvidence, dhcpEvidence, returnEvidence any) 
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8]), nil
 }
-func canonicalReleaseJSON(v any) ([]byte, error) {
+
+// CanonicalReleaseJSON serializes v with deterministic key ordering for release digests.
+func CanonicalReleaseJSON(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)

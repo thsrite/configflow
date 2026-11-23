@@ -1,4 +1,4 @@
-package routers
+package rulesync
 
 // Rule-source I/O uses the shared typed owner APIs. A source environment is
 // decoded once per operation and reused by all selected rules.

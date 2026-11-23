@@ -43,11 +43,11 @@ func r08Publish(t *testing.T, d *RouterOS, desired *Desired) (*ROSPolicyPlan, *R
 	if len(plan.Blockers) > 0 || len(plan.Ops) != 1 {
 		t.Fatalf("plan: %s", device.JSON(plan))
 	}
-	undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+	undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = rospolicy.VerifyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Check); err != nil {
+	if err = rospolicy.VerifyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Check); err != nil {
 		t.Fatal(err)
 	}
 	return plan, undo
@@ -137,7 +137,7 @@ func TestR08DeviceTimeoutActuallyExpires(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
-	_, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.readPolicyState, &ROSPolicyReplace{Bundle: []ROSReplacement{}, Migrations: []ROSResource{}, Replacements: []ROSReplacement{}, Evidence: ROSPolicySnapshot{}})
+	_, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.ReadPolicyState, &ROSPolicyReplace{Bundle: []ROSReplacement{}, Migrations: []ROSResource{}, Replacements: []ROSReplacement{}, Evidence: ROSPolicySnapshot{}})
 	elapsed := time.Since(start)
 	if _, ok := errors.AsType[*RouterError](err); !ok {
 		t.Fatalf("expected bounded RouterError, got %v", err)
@@ -155,11 +155,11 @@ func TestR08CancellationAndManifestCopies(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	undo, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.readPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+	undo, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = rospolicy.VerifyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Check); err != nil {
+	if err = rospolicy.VerifyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Check); err != nil {
 		t.Fatal(err)
 	}
 	first := d.Manifests()
@@ -198,7 +198,7 @@ func TestR08PreviewAndOwnershipGuards(t *testing.T) {
 			}
 			f.ApplyExternal(tt.mutation)
 			before := f.Snapshot()
-			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
 			if err == nil {
 				t.Fatal("stale plan accepted")
 			}
@@ -330,12 +330,12 @@ func TestR08ActivationWaitsOnlyForRuntimeFlags(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+			undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
 			if err != nil {
 				t.Fatal(err)
 			}
 			start := time.Now()
-			err = rospolicy.VerifyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Check)
+			err = rospolicy.VerifyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Check)
 			if condition == "ready" {
 				if err != nil {
 					t.Fatal(err)
@@ -488,7 +488,7 @@ func TestR08ReadbackBeforeActivation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.readPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
 			if err == nil {
 				t.Fatal("bad readback activated")
 			}

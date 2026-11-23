@@ -1,4 +1,4 @@
-package routers
+package rulesync
 
 import (
 	"configflow/internal/jsondecode"
@@ -180,8 +180,8 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 }
 
 type syncSource struct {
-	Item    RuleSet
-	Library LibraryRule
+	Item    spec.RuleSet
+	Library spec.LibraryRule
 	Source  struct {
 		ID         string `json:"id"`
 		Name       string `json:"name"`
@@ -193,7 +193,7 @@ type syncSource struct {
 	Behavior string
 }
 
-func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error) {
+func selectedSyncSources(config json.RawMessage, r *spec.Router) ([]syncSource, error) {
 	var doc struct {
 		Rules   []json.RawMessage `json:"rule_configs"`
 		Library []json.RawMessage `json:"rule_library"`
@@ -212,16 +212,16 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 			}
 		}
 	}
-	rules, library := map[string]RuleSet{}, map[string]LibraryRule{}
+	rules, library := map[string]spec.RuleSet{}, map[string]spec.LibraryRule{}
 	for _, raw := range doc.Rules {
-		var v RuleSet
+		var v spec.RuleSet
 		if jsondecode.Unmarshal(raw, &v) == nil && v.ItemType == "ruleset" {
 			v.Raw = raw
 			rules[v.ID] = v
 		}
 	}
 	for _, raw := range doc.Library {
-		var v LibraryRule
+		var v spec.LibraryRule
 		if jsondecode.Unmarshal(raw, &v) == nil {
 			v.Raw = raw
 			library[v.ID] = v
@@ -243,8 +243,8 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 	for _, id := range selected {
 		item, exists := rules[id]
 		source, found := library[item.LibraryRuleID]
-		var ip *RuleSet
-		var sp *LibraryRule
+		var ip *spec.RuleSet
+		var sp *spec.LibraryRule
 		if exists {
 			ip = &item
 		}
@@ -274,8 +274,8 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 	return result, nil
 }
 
-func syncIPLoader(records map[string]*RuleSyncRecord) ContentLoader {
-	return func(item RuleSet, _ *LibraryRule) (string, error) {
+func syncIPLoader(records map[string]*RuleSyncRecord) spec.ContentLoader {
+	return func(item spec.RuleSet, _ *spec.LibraryRule) (string, error) {
 		record := records[item.ID]
 		if record == nil {
 			return "# no routable IP", nil
@@ -314,8 +314,8 @@ func sortedSyncKeys[T any](items map[string]T) []string {
 	return keys
 }
 
-func syncCIDRsEqual(a, b []ProxyCIDR) bool { return device.JSONEqual(a, b) }
-func syncCIDRSet(items []ProxyCIDR) map[string]bool {
+func syncCIDRsEqual(a, b []spec.ProxyCIDR) bool { return device.JSONEqual(a, b) }
+func syncCIDRSet(items []spec.ProxyCIDR) map[string]bool {
 	result := map[string]bool{}
 	for _, item := range items {
 		result[item.CIDR] = true

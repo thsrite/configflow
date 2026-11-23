@@ -1,9 +1,11 @@
-package routers
+package rulesync
 
 import (
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"net/http/httptest"
 	"slices"
@@ -24,7 +26,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			f.Reset(seed)
 			httpServer := httptest.NewServer(f)
 			defer httpServer.Close()
-			d := NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
+			d := routers.NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			r := r10Router()
 			r.ID = "r-sync"
@@ -32,12 +34,12 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			agent := r10Agent()
 			host := r10Host()
 			old := r08Desired(false)
-			old.IPv6CIDRs = []ProxyCIDR{{CIDR: "2001:db8:10::/48", Sources: []string{"Synthetic"}}, {CIDR: "2001:db8:20::/48", Sources: []string{"Synthetic"}}}
+			old.IPv6CIDRs = []spec.ProxyCIDR{{CIDR: "2001:db8:10::/48", Sources: []string{"Synthetic"}}, {CIDR: "2001:db8:20::/48", Sources: []string{"Synthetic"}}}
 			if mode == "enrollment" {
-				old.IPv6CIDRs = []ProxyCIDR{}
+				old.IPv6CIDRs = []spec.ProxyCIDR{}
 			}
 			plan := r14Plan(t, t.Context(), d, r, old)
-			if result := Execute(t.Context(), plan, d, nil); !result.OK {
+			if result := routers.Execute(t.Context(), plan, d, nil); !result.OK {
 				t.Fatalf("initial IPv4 %+v", result)
 			}
 			if mode != "enrollment" {
@@ -57,12 +59,12 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			base := &RuleSyncBaseline{Control: "synthetic", Desired: old, Rules: map[string]*RuleSyncRecord{}, StaticResources: static, Policy: json.RawMessage("null")}
 			next := r08Desired(false)
 			next.ProxyCIDRs[1].CIDR = "203.0.113.0/24"
-			next.IPv6CIDRs = []ProxyCIDR{{CIDR: "2001:db8:10::/48", Sources: []string{"Synthetic"}}, {CIDR: "2001:db8:30::/48", Sources: []string{"Synthetic"}}}
+			next.IPv6CIDRs = []spec.ProxyCIDR{{CIDR: "2001:db8:10::/48", Sources: []string{"Synthetic"}}, {CIDR: "2001:db8:30::/48", Sources: []string{"Synthetic"}}}
 			if mode == "next_hop" {
 				host.Addresses[1].Address = "fe80::9"
 			}
 			if mode == "unclear" {
-				host = IPv6Host{Error: "synthetic offline"}
+				host = ipv6.IPv6Host{Error: "synthetic offline"}
 			}
 			seed = f.Snapshot()
 			seed.Calls = nil
@@ -80,13 +82,13 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			python := f.Snapshot()
 			f.Reset(seed)
 			d.Close()
-			d = NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
+			d = routers.NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			plan = r14Plan(t, t.Context(), d, r, next)
 			v := ipv6.InspectIPv6Routes(t.Context(), config, r, next, agent, host, d.Client)
-			plan.Stages = append(plan.Stages, Stage{Key: StageIPv6Routes, Title: StageTitles[StageIPv6Routes], Ops: v.Ops})
+			plan.Stages = append(plan.Stages, device.Stage{Key: device.StageIPv6Routes, Title: routers.StageTitles[device.StageIPv6Routes], Ops: v.Ops})
 			plan.Checks.IPv6Routes = v.Check
-			note := syncIPv6Delta(&RouterState{IPv6RoutesPlan: v}, plan)
+			note := syncIPv6Delta(&routers.RouterState{IPv6RoutesPlan: v}, plan)
 			if note != expected.Note {
 				t.Fatalf("IPv6 eligibility %s expected %s", note, expected.Note)
 			}

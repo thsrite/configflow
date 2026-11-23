@@ -1,6 +1,7 @@
-package routers
+package rulesync
 
 import (
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/rospolicy"
@@ -30,8 +31,8 @@ import (
 // Drivers remain real production clients; tests inject a loopback-backed factory.
 type RuleSyncService struct {
 	Repo      *repo.Repository
-	Agents    AgentSource
-	NewDriver func(*Router) *RouterOS
+	Agents    routers.AgentSource
+	NewDriver func(*spec.Router) *routers.RouterOS
 	Download  RuleSyncDownload
 	// Spawner defaults to the production lifecycle; isolated runtimes may be injected.
 	Spawner lockx.Spawner
@@ -44,13 +45,13 @@ func (s *RuleSyncService) store() RuleSyncStore { return RuleSyncStore{DataDir: 
 func (s *RuleSyncService) context(ctx context.Context) context.Context {
 	return repo.WithRepository(lifecycle.Detach(ctx), s.Repo)
 }
-func (s *RuleSyncService) driver(r *Router) *RouterOS {
+func (s *RuleSyncService) driver(r *spec.Router) *routers.RouterOS {
 	if s.NewDriver != nil {
 		return s.NewDriver(r)
 	}
-	return NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
+	return routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
 }
-func (s *RuleSyncService) baseline(ctx context.Context, config json.RawMessage, r *Router, d *RouterOS, desired *Desired, records map[string]*RuleSyncRecord, control string) (*RuleSyncBaseline, error) {
+func (s *RuleSyncService) baseline(ctx context.Context, config json.RawMessage, r *spec.Router, d *routers.RouterOS, desired *spec.Desired, records map[string]*RuleSyncRecord, control string) (*RuleSyncBaseline, error) {
 	static, err := syncStaticResources(ctx, d, desired)
 	if err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func (s *RuleSyncService) baseline(ctx context.Context, config json.RawMessage, 
 
 // Capture records a verified explicit publication. It is called under the
 // publisher's L1/L2 and must never acquire either lock again.
-func (s *RuleSyncService) Capture(ctx context.Context, profile string, config json.RawMessage, r *Router, driver Driver, desired *Desired) error {
+func (s *RuleSyncService) Capture(ctx context.Context, profile string, config json.RawMessage, r *spec.Router, driver routers.Driver, desired *spec.Desired) error {
 	if r.Type != "routeros" {
 		return nil
 	}
@@ -72,7 +73,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 	if err := work.Err(); err != nil {
 		return err
 	}
-	d, ok := driver.(*RouterOS)
+	d, ok := driver.(*routers.RouterOS)
 	if !ok {
 		return device.ErrNotPorted
 	}
@@ -127,7 +128,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 			if manifest == nil || manifest.Spec == nil || !maps.Equal(destinations, device.StringSet(manifest.Spec.Destinations...)) {
 				return device.Error(messageSyncCapturePolicy)
 			}
-			if err = rospolicy.VerifyROSPolicy(work, d.Client, d.readPolicyState, &ROSPolicyCheck{Spec: manifest.Spec, Previous: d.PolicyManifest()}); err != nil {
+			if err = rospolicy.VerifyROSPolicy(work, d.Client, d.ReadPolicyState, &rospolicy.ROSPolicyCheck{Spec: manifest.Spec, Previous: d.PolicyManifest()}); err != nil {
 				return err
 			}
 		}
@@ -145,13 +146,13 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		return work.Err()
 	}
 	message := messageSyncCaptureIO
-	var device *RouterError
+	var device *device.RouterError
 	if errors.As(err, &device) {
 		message = routeedit.SafeError(err, r.Endpoint, r.Password).Error()
 	}
 	return s.store().Write(work, profile, r.ID, RuleSyncReceipt{Status: "waiting", Message: messageSyncCapturePrefix + message, CheckedAt: &timestamp})
 }
-func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *Router, d *RouterOS) error {
+func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *spec.Router, d *routers.RouterOS) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -179,7 +180,7 @@ func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *R
 	}
 	return s.Repo.SaveRouterPublicationJSON(ctx, profile, expected, publication)
 }
-func syncIPv6Delta(state *RouterState, plan *Plan) string {
+func syncIPv6Delta(state *routers.RouterState, plan *routers.Plan) string {
 	v := state.IPv6RoutesPlan
 	if v == nil {
 		return ""
@@ -190,8 +191,8 @@ func syncIPv6Delta(state *RouterState, plan *Plan) string {
 	}
 	if reason != "" {
 		for i := range plan.Stages {
-			if plan.Stages[i].Key == StageIPv6Routes {
-				plan.Stages[i].Ops = []Op{}
+			if plan.Stages[i].Key == device.StageIPv6Routes {
+				plan.Stages[i].Ops = []device.Op{}
 			}
 		}
 		if plan.Checks != nil {
@@ -215,8 +216,8 @@ func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string)
 	connection := spec.FindSyncRouter(config, id)
 	held, release, lockErr := oplock.RouterJobLock(work, profile, id, connection)
 	if lockErr != nil {
-		var conflict *RouterError
-		if errors.As(lockErr, &conflict) && conflict.Kind == KindConflict {
+		var conflict *device.RouterError
+		if errors.As(lockErr, &conflict) && conflict.Kind == device.KindConflict {
 			return RuleSyncStatus{}, device.Error(messageSyncBusy)
 		}
 		return RuleSyncStatus{}, lockErr
@@ -263,7 +264,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	if err = store.Write(ctx, profile, id, receipt); err != nil {
 		return RuleSyncStatus{}, err
 	}
-	var d *RouterOS
+	var d *routers.RouterOS
 	writesStarted := false
 	err = func() error {
 		signature, err := s.SyncControls(ctx, config, r)
@@ -361,11 +362,11 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			return err
 		}
 		d = s.driver(r)
-		inspection, err := Inspect(ctx, InspectRequest{ProfileID: profile, Config: config, Router: r, Driver: d, Loader: syncIPLoader(records), Agents: s.Agents, Repo: s.Repo})
+		inspection, err := routers.Inspect(ctx, routers.InspectRequest{ProfileID: profile, Config: config, Router: r, Driver: d, Loader: syncIPLoader(records), Agents: s.Agents, Repo: s.Repo})
 		if err != nil {
 			return err
 		}
-		plan, err := BuildPlan(ctx, r, inspection, d)
+		plan, err := routers.BuildPlan(ctx, r, inspection, d)
 		if err != nil {
 			return err
 		}
@@ -438,9 +439,9 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			return RuleSyncStatus{}, ctx.Err()
 		} // No local/device writes after Runtime cancellation.
 		rollbackFailed := false
-		var re *RouterError
+		var re *device.RouterError
 		if errors.As(err, &re) {
-			rollbackFailed = re.Kind == KindRollback
+			rollbackFailed = re.Kind == device.KindRollback
 		}
 		if d != nil && writesStarted {
 			if e := s.saveManifest(ctx, profile, r, d); e != nil {
@@ -477,7 +478,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	if err = ctx.Err(); err != nil {
 		return RuleSyncStatus{}, err
 	}
-	label := releaseLabel(r)
+	label := routers.ReleaseLabel(r)
 	message := diag.EventMessage(receipt.Message, []any{r.Password})
 	switch receipt.Status {
 	case "synced":
@@ -639,7 +640,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 		defer release()
 		defer func() {
 			if recover() != nil {
-				syncLogger.Errorf(messagePublishPanic, id)
+				syncLogger.Errorf(routers.MessagePublishPanic, id)
 			}
 		}()
 		_, err := s.Sync(run, profile, id, "manual")
@@ -673,10 +674,10 @@ func newSyncService(ctx context.Context) (*RuleSyncService, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &RuleSyncService{Repo: db, Agents: ManagerAgentSource{Manager: manager}}, nil
+	return &RuleSyncService{Repo: db, Agents: routers.ManagerAgentSource{Manager: manager}}, nil
 }
 
-func syncSelectedOrder(config json.RawMessage, r *Router) []string {
+func syncSelectedOrder(config json.RawMessage, r *spec.Router) []string {
 	sources, err := selectedSyncSources(config, r)
 	if err != nil {
 		return nil

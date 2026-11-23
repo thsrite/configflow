@@ -1,6 +1,7 @@
-package routers
+package rulesync
 
 import (
+	"configflow/internal/routers"
 	"context"
 	"errors"
 	"net/http"
@@ -46,7 +47,7 @@ func TestR14RuntimeDestinationWriteBoundaries(t *testing.T) {
 				_, _ = w.Write(capture.Body.Bytes())
 			}))
 			defer httpServer.Close()
-			d := NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
+			d := routers.NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			old := r08Desired(false)
 			old.ProxyCIDRs = old.ProxyCIDRs[:1]

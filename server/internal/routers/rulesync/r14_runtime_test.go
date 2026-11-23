@@ -1,9 +1,11 @@
-package routers
+package rulesync
 
 import (
 	"bytes"
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -107,7 +109,7 @@ func TestR14RawDeviceDelta(t *testing.T) {
 		f.ServeHTTP(w, r)
 	}))
 	defer httpServer.Close()
-	d := NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
+	d := routers.NewRouterOS(httpServer.URL, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
 	old := r08Desired(false)
 	old.ProxyCIDRs = old.ProxyCIDRs[:1]
@@ -136,7 +138,9 @@ func TestR14RuntimeCancelsDeviceIO(t *testing.T) {
 		f.ServeHTTP(w, r)
 	}))
 	defer server.Close()
-	service.NewDriver = func(r *Router) *RouterOS { return NewRouterOS(server.URL, r.Username, r.Password, r.VerifyTLS) }
+	service.NewDriver = func(r *spec.Router) *routers.RouterOS {
+		return routers.NewRouterOS(server.URL, r.Username, r.Password, r.VerifyTLS)
+	}
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 	runtime.Start(t.Context())
 	defer runtime.Shutdown(t.Context())

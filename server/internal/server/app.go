@@ -26,6 +26,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/rulesource"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
@@ -157,7 +158,8 @@ func wireOtherSubsystems(rt *lifecycle.Runtime, tk *tasks.Registry, gen *generat
 	if err := wireConvertOnce(gen); err != nil {
 		return err
 	}
-	routers.Wire() // routers R01: repo.Hooks.RedactRouters + router-rule-sync (W9)
+	routers.Wire()        // routers R01: repo.Hooks.RedactRouters
+	routerrulesync.Wire() // routers R14: automatic remote rule sync loop + CaptureManual (W9)
 	wireSetupContentWith(rs)
 	wireSetupOnboarding()
 	wireSetupInstallation()

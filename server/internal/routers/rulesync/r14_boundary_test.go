@@ -1,10 +1,12 @@
-package routers
+package rulesync
 
 import (
 	"bytes"
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -33,8 +35,8 @@ func r14Python(t *testing.T, endpoint string, input any, out any) {
 			fields["data_dir"] = pythonDataDir(t, dir)
 		}
 	}
-	cmd := exec.CommandContext(t.Context(), filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Join(wd, "testdata/r14_reference.py"))
-	cmd.Dir = filepath.Clean(filepath.Join(wd, "../../.."))
+	cmd := exec.CommandContext(t.Context(), filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Join(wd, "../testdata/r14_reference.py"))
+	cmd.Dir = filepath.Clean(filepath.Join(wd, "../../../.."))
 	cmd.Env = append(os.Environ(), "PYTHONPATH=.", "R14_ENDPOINT="+endpoint)
 	cmd.Stdin = bytes.NewReader(device.JSON(input))
 	var stderr bytes.Buffer
@@ -92,7 +94,7 @@ func TestR14ClassifyPython(t *testing.T) {
 		})
 	}
 }
-func r14Plan(t *testing.T, ctx context.Context, d *RouterOS, r *Router, desired *Desired) *Plan {
+func r14Plan(t *testing.T, ctx context.Context, d *routers.RouterOS, r *spec.Router, desired *spec.Desired) *routers.Plan {
 	t.Helper()
 	desired.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
 	state, err := r08InspectState(ctx, d)
@@ -109,7 +111,7 @@ func r14Plan(t *testing.T, ctx context.Context, d *RouterOS, r *Router, desired 
 			ids[v.ID] = true
 		}
 	}
-	state.NatContext.Mangle = []Row{}
+	state.NatContext.Mangle = []ros.Row{}
 	for _, row := range (*state.ROSPolicy)[ros.PathMangle] {
 		if !ids[row.ID()] {
 			copy := ros.CloneRow(row)
@@ -118,13 +120,13 @@ func r14Plan(t *testing.T, ctx context.Context, d *RouterOS, r *Router, desired 
 			state.NatContext.Mangle = append(state.NatContext.Mangle, copy)
 		}
 	}
-	RetirePolicyRoutes(state)
-	report, err := BuildReport(desired, state)
+	routers.RetirePolicyRoutes(state)
+	report, err := routers.BuildReport(desired, state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	report.ReturnRouting = &ReturnStatus{Status: "disabled"}
-	plan, err := BuildPlan(ctx, r, &Inspection{Desired: desired, State: state, Report: report}, d)
+	report.ReturnRouting = &routers.ReturnStatus{Status: "disabled"}
+	plan, err := routers.BuildPlan(ctx, r, &routers.Inspection{Desired: desired, State: state, Report: report}, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,20 +143,20 @@ func TestR14DeltaPython(t *testing.T) {
 			f.Reset(state)
 			http := httptest.NewServer(f)
 			defer http.Close()
-			d := NewRouterOS(http.URL, "synthetic-user", "synthetic-password", false)
+			d := routers.NewRouterOS(http.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			r := r10Router()
 			r.ID = "r-sync"
 			r.ManageReturnRouting = false
 			policy := mode == "policy" || mode == "policy_reference"
 			old := r08Desired(policy)
-			old.IPv6CIDRs = []ProxyCIDR{}
+			old.IPv6CIDRs = []spec.ProxyCIDR{}
 			old.BlockingWarnings = []string{}
 			plan := r14Plan(t, t.Context(), d, r, old)
 			if len(plan.Blockers) > 0 {
 				t.Fatal(plan.Blockers)
 			}
-			if result := Execute(t.Context(), plan, d, nil); !result.OK {
+			if result := routers.Execute(t.Context(), plan, d, nil); !result.OK {
 				t.Fatalf("enrollment %+v", result)
 			}
 			static, err := syncStaticResources(t.Context(), d, old)
@@ -167,10 +169,10 @@ func TestR14DeltaPython(t *testing.T) {
 			}
 			baseline := &RuleSyncBaseline{Control: "synthetic", Rules: map[string]*RuleSyncRecord{}, Desired: old, StaticResources: static, Policy: syncNull(slices.Clone(d.PolicyManifest())), NATList: nat}
 			next := r08Desired(policy)
-			next.IPv6CIDRs = []ProxyCIDR{}
+			next.IPv6CIDRs = []spec.ProxyCIDR{}
 			next.BlockingWarnings = []string{}
 			if policy {
-				next.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "203.0.113.0/24", Sources: []string{"Synthetic"}}}
+				next.ROSPolicy.CIDRs = []spec.ProxyCIDR{{CIDR: "203.0.113.0/24", Sources: []string{"Synthetic"}}}
 			} else if mode != "unchanged" {
 				next.ProxyCIDRs[1].CIDR = "203.0.113.0/24"
 			}
@@ -189,9 +191,9 @@ func TestR14DeltaPython(t *testing.T) {
 					}
 				}
 			case "nat_reference":
-				seed.Tables[ros.PathFilter] = append(seed.Tables[ros.PathFilter], routerfake.Row{".id": "*E0", "chain": "forward", "action": "drop", "dst-address-list": NATDstList, "disabled": "false"})
+				seed.Tables[ros.PathFilter] = append(seed.Tables[ros.PathFilter], routerfake.Row{".id": "*E0", "chain": "forward", "action": "drop", "dst-address-list": ros.NATDstList, "disabled": "false"})
 			case "policy_reference":
-				var manifest ROSPolicyManifest
+				var manifest rospolicy.ROSPolicyManifest
 				_ = json.Unmarshal(d.PolicyManifest(), &manifest)
 				for _, item := range manifest.Resources {
 					if item.Path == ros.PathAddresses {
@@ -215,7 +217,7 @@ func TestR14DeltaPython(t *testing.T) {
 			python := f.Snapshot()
 			f.Reset(seed)
 			d.Close()
-			d = NewRouterOS(http.URL, "synthetic-user", "synthetic-password", false)
+			d = routers.NewRouterOS(http.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			d.SetPolicyManifest(baseline.Policy)
 			plan = r14Plan(t, t.Context(), d, r, next)
@@ -303,4 +305,6 @@ func TestR14ServicePython(t *testing.T) {
 		})
 	}
 }
-func r12SourceAgent(source AgentSource) *GatewayAgent { return source.(r12Source).gateway }
+func r12SourceAgent(source routers.AgentSource) *routers.GatewayAgent {
+	return source.(r12Source).gateway
+}

@@ -1,6 +1,7 @@
-package routers
+package rulesync
 
 import (
+	"configflow/internal/routers"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/spec"
@@ -27,7 +28,7 @@ func r14Hook(t *testing.T) {
 	t.Helper()
 	old := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
 		JobLockRecord: func(ctx context.Context, profile, id string, raw model.Router) (func(), bool) {
-			var r Router
+			var r spec.Router
 			_ = json.Unmarshal(device.JSON(raw), &r)
 			_, release, lockErr := oplock.RouterJobLock(ctx, profile, id, &r)
 			return release, lockErr == nil
@@ -35,20 +36,20 @@ func r14Hook(t *testing.T) {
 	}})
 	t.Cleanup(func() { repo.SetHooks(old) })
 }
-func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
+func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *spec.Router) {
 	t.Helper()
 	r14Hook(t)
 	f := routerfake.New(nil)
 	f.Reset(r08State())
 	http := httptest.NewServer(f)
 	t.Cleanup(http.Close)
-	var r Router
+	var r spec.Router
 	if err := json.Unmarshal([]byte(`{"id":"r-sync","name":"Synthetic Router","type":"routeros","username":"synthetic-user","password":"synthetic-password","verify_tls":false,"auto_rule_sync":true,"proxy_gateway_agent_id":"gateway","ip_rule_sets":["remote"],"ros_policy_rule_sets":[],"dns_agent_id":"","manage_return_routing":false}`), &r); err != nil {
 		t.Fatal(err)
 	}
 	r.Endpoint = http.URL
 	r.SetSource(nil)
-	raw := device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
+	raw := device.JSON(map[string]any{"routers": map[string]any{"items": []*spec.Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
 	db, err := repo.Open(t.TempDir(), repo.Options{InitialSettings: func() *model.Config {
 		cfg, err := model.DecodeConfig(raw)
 		if err != nil {
@@ -59,7 +60,7 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := &RuleSyncService{Repo: db, Agents: r12Source{gateway: &GatewayAgent{Agent: &model.Agent{ID: "gateway", Host: r08Gateway, ServiceType: "mihomo", ProfileID: "default"}}}, Download: func(context.Context, json.RawMessage, json.RawMessage) (string, error) { return r14New, nil }}
+	service := &RuleSyncService{Repo: db, Agents: r12Source{gateway: &routers.GatewayAgent{Agent: &model.Agent{ID: "gateway", Host: r08Gateway, ServiceType: "mihomo", ProfileID: "default"}}}, Download: func(context.Context, json.RawMessage, json.RawMessage) (string, error) { return r14New, nil }}
 	cfg, err := syncConfig(repo.WithRepository(t.Context(), db), db, "default")
 	if err != nil {
 		t.Fatal(err)
@@ -79,15 +80,15 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
 	}
 	d := service.driver(router)
 	defer d.Close()
-	inspection, err := Inspect(ctx, InspectRequest{Loader: syncIPLoader(records), ProfileID: "default", Config: cfg, Router: router, Driver: d, Agents: service.Agents, Repo: db})
+	inspection, err := routers.Inspect(ctx, routers.InspectRequest{Loader: syncIPLoader(records), ProfileID: "default", Config: cfg, Router: router, Driver: d, Agents: service.Agents, Repo: db})
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildPlan(ctx, router, inspection, d)
+	plan, err := routers.BuildPlan(ctx, router, inspection, d)
 	if err != nil || len(plan.Blockers) > 0 {
 		t.Fatalf("plan %v %+v", err, plan)
 	}
-	if result := Execute(ctx, plan, d, nil); !result.OK {
+	if result := routers.Execute(ctx, plan, d, nil); !result.OK {
 		t.Fatalf("initial publication %+v", result)
 	}
 	if err = service.Capture(ctx, "default", cfg, router, d, inspection.Desired); err != nil {
@@ -338,7 +339,7 @@ func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 	}
 	d := service.driver(router)
 	defer d.Close()
-	inspection, err := Inspect(ctx, InspectRequest{Loader: syncIPLoader(records), ProfileID: "default", Config: cfg, Router: router, Driver: d, Agents: service.Agents, Repo: service.Repo})
+	inspection, err := routers.Inspect(ctx, routers.InspectRequest{Loader: syncIPLoader(records), ProfileID: "default", Config: cfg, Router: router, Driver: d, Agents: service.Agents, Repo: service.Repo})
 	if err != nil {
 		t.Fatal(err)
 	}

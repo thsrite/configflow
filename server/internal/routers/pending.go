@@ -135,7 +135,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 			return nil, "", "", err
 		}
 	}
-	bytes, err := canonicalReleaseJSON(signature)
+	bytes, err := CanonicalReleaseJSON(signature)
 	if err != nil {
 		return nil, "", "", err
 	}
