@@ -486,3 +486,9 @@ W0 ─ W1 ─ W2 ─ W3 ─ W4 ─┬─ W5 ─ W6(a‖b) ───────�
 见 `design/o17-wiring/inventory.md`（W01–W35、init 12 个、`repo.Hooks`/`agents.Hooks` 逐字段、68 个 `Set*/Reset*/Register*/On*`、
 127 个包级变量逐项分类、定位器调用量、api 包形状、现有依赖表、构造顺序 S0–S13、裁定点 J1–J12；本文 D1–D11 与 J1–J12 的对应：
 D1=J1、D2=J2、D6=J3、D4=J4、D5=J5、D7=J6、logx=J7（保留单例）、J8 并入 W0（`mosdns.downloadRule`）与 W7（HTTP 客户端注入）、D10=J9、D9=J10、D11=J11、J12=W0）。
+
+## 协调者裁定（2026-11-23）
+
+- 维护者：22 步（R1–R10、W0–W11，含 D14 api Handler 结构体）全部在切换前完成。W12（convert 生成环境显式传参）视时间，不做则改成「只能设一次」（D2）。
+- 其余 D1–D14 按本文建议执行；D9（setup.VerifyRouter 漏接）由单独任务 go-setup-verify-router 先排查修复，W8 以其结果为准。
+- 开工条件：go-o17-state-followup 合并后，先用附录 A 脚本在新 go 上重算依赖并更新 1.2/1.3，再按第 3 节分三条线并行；R2、R8、W5、W6 由 Opus 对抗复核，其余步骤 Opus 复核；按第 3 节建议分 6 批走门禁。
