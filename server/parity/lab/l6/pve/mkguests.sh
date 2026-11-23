@@ -58,13 +58,14 @@ create_ct() { # create_ct <id>
   if [ "$os" = alpine ]; then
     gexec "$id" sh -c "sed -i 's#https\\?://dl-cdn.alpinelinux.org#$MIRROR#' /etc/apk/repositories
       echo nameserver $INFRA_IP > /etc/resolv.conf
-      timeout 600 apk add -q bash curl ca-certificates nftables iproute2 bind-tools tzdata openssh
-      rc-update add sshd default >/dev/null 2>&1; rc-service sshd start >/dev/null 2>&1 || true"
+"
+    apk_add "$id" bash curl ca-certificates nftables iproute2 bind-tools tzdata openssh
+    gexec "$id" sh -c "rc-update add sshd default >/dev/null 2>&1; rc-service sshd start >/dev/null 2>&1 || true"
   else
     gexec "$id" bash -c "echo nameserver $INFRA_IP > /etc/resolv.conf
       sed -i 's#http://deb.debian.org#$MIRROR#' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
-      apt-get -o Acquire::ForceIPv4=true update -qq
-      DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true install -y -qq curl ca-certificates nftables dnsutils >/dev/null"
+      for i in 1 2 3; do timeout 600 apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=30 update -qq &&
+        DEBIAN_FRONTEND=noninteractive timeout 900 apt-get -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=30 install -y -qq curl ca-certificates nftables dnsutils >/dev/null && break; done"
   fi
 }
 

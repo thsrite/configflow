@@ -30,7 +30,7 @@ base() {
   require_registered $ID
   pct status $ID | grep -q running || pct start $ID
   pin_mirror $ID
-  gexec $ID sh -c "timeout 900 apk add -q bash curl ca-certificates bind-tools tzdata busybox-extras unzip rclone docker iproute2 nftables"
+  apk_add $ID bash curl ca-certificates bind-tools tzdata busybox-extras unzip rclone docker iproute2 nftables
   # resolver: mosdns with DoH-by-IP upstreams (plain DNS would be hijacked by the home router to production DNS)
   local zip=$X/assets/gh/IrineSistiana/mosdns/releases/download/v5.3.3/mosdns-linux-amd64.zip
   rm -rf "$X/mosdns" && mkdir -p "$X/mosdns" && (cd "$X/mosdns" && unzip -q -o "$zip")
@@ -114,7 +114,8 @@ docker_client() {
   local ct
   for ct in "$@"; do
     pin_mirror "$ct"
-    gexec "$ct" sh -c "timeout 900 apk add -q docker docker-cli-compose && mkdir -p /etc/docker &&
+    apk_add "$ct" docker docker-cli-compose
+    gexec "$ct" sh -c "mkdir -p /etc/docker &&
       echo '{\"insecure-registries\":[\"$REGISTRY\"]}' > /etc/docker/daemon.json &&
       rc-update add docker default >/dev/null && rc-service docker restart >/dev/null; sleep 5;
       docker info --format '{{.ServerVersion}}' && docker compose version --short"
