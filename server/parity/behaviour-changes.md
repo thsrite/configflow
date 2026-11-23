@@ -3146,3 +3146,29 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - **断行（裁定）**：规则内容的行号与诊断、OxiDNS 设置里的多行列表、安装脚本渲染、诊断文本脱敏、Agent 诊断文本只按 `\n`、`\r\n`、
   `\r` 断行（`textx.SplitLines`），与前端 CodeMirror 6 默认的 `/\r\n?|\n/` 一致；`\v`、`\f`、`\x1c–\x1e`、U+0085、U+2028/2029 留在行内
   （以前按 Python `str.splitlines`）。脱敏按行整体替换时，行只会变长，脱敏范围不会变窄。
+
+## O17 ② — Agent 运行记录移出配置文档（存储版本 2）＋ ① 后台循环改为变化通知
+
+设计与裁定：`design/o17-runtime-state.md`。API 字段和值、Agent 协议、写设备语义不变，除下列有意变化：
+
+- **存储布局 v2**：Agent 的运行状态和历史（`model.AgentStateMembers`：部署历史、`latest_deployment`、`applied_content`、`version`/`config_version`/
+  `config_revision`/`pushed_at`、`latest_upgrade`、`rule_sync.state`、`dns_follow_state`/`dns_follow_job`、`oxidns_ha_state`/`oxidns_ha_publication`、
+  `ipv6_verifications`，以及 Python 写过的 `status`/`last_heartbeat`/指标）存进同一个数据库的 `agent_state` 表，与配置同一事务提交。
+  只改状态的提交不推进配置代号（`Head.Generation`），只推进 `Head.State`。Python 和较早的 Go 版本不能打开 v2 数据库（`StoreUnsupported`）。
+- **升级**：第一次打开 v1 数据库（Python 写的或较早 Go 写的）先在线备份到 `DATA_DIR/backups/configflow-v1-<UTC>.sqlite3` 并检查，
+  再用一个事务搬出状态成员（原字节，损坏值原样，无 id/重复 id/非对象条目整条留在配置行）。备份失败拒绝启动并写明原因；升级失败数据库不变、拒绝启动。
+  升级改写了 `agents` 行时配置代号加一。
+- **系统 `_revision`** 只在配置编辑时推进；只改 Agent 状态的写入（部署进度、心跳上报版本、规则同步/联动/HA 进度）不再推进（Python 每次都推进）。
+- **导出与 WebDAV 备份只含配置**：完整导出不再带上述状态成员（脱敏导出本来就清空 Agent）。`DiagnosticExportJSON` 保留完整文档供诊断，不是备份格式。
+- **用不含运行记录的备份导入**：每台有 id 的 Agent 写恢复标记 `state_restored_at`（Agent 列表/详情多出这个只读成员）。标记存在时：受保护字段编辑、
+  换绑、注册时改服务/端口/配置空间返回 409「运行记录未包含在备份里，请先重新发布此 Agent」；规则同步显示 blocked 并不推送；DNS 联动不以它为源或目标推送。
+  已开启 DNS 高可用的配对仍由保留的 HA 设置锁定，发布照常成对进行。一次成功发布（含旧式推送）清除标记；删除 Agent 不受限。导入接口在写了标记时
+  回复 `{"success":true,"message":"全部数据已导入。运行记录未包含在备份里，各 Agent 需要重新发布一次"}`。带运行记录的旧备份（Python 时期）照旧连状态一起导入、不加标记。
+- **WebDAV 自动备份**只由配置提交触发：规则同步、DNS 联动、HA、IPv6 校验的状态变化不再触发（以前这几类不在 Python 的忽略清单里，HA 成对发布一次会排十几次备份）。
+- **路由器签名/OxiDNS 视图**：`ConfigWithOxiDNSAgents` 只带 `rule_sync.settings`，规则同步进度变化不再改变路由器签名、不再触发相关重算。
+- **后台循环**：`dns-follow`、`oxidns-ha-publish`、`ipv6-verification-scheduler`、`agent-rule-sync` 在配置/状态提交和 Agent 上线时立即运行一轮；
+  有进行中的工作时保持原间隔（5/2/5/5 s），空闲时不再每隔几秒读库，兜底 10 分钟（规则同步 1 分钟，另由规则源刷新完成唤醒）。
+  `scheduled-refresh`、`router-rule-sync` 按最近到期时间休眠（至少 1 s、至多 10 分钟），配置提交和手动执行后重新计算；到期任务的启动误差从最多 30 s 变为秒级。
+  删除 Python `idle_rounds.py` 的移植 `IdleRounds`。
+- **测试**：与 Python 的对照把 Go 数据库降级成 v1 后交给 Python（`repotest.PythonLayout`），比较整份存储时用合并视图（`repotest.MergedLoad`），
+  并屏蔽系统 `_revision`；Python 侧对照将随切换提交删除。

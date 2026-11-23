@@ -19,8 +19,8 @@ import (
 
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/store"
 	"configflow/internal/redact"
+	"configflow/internal/store"
 )
 
 func testMetricsMap() map[string]any {

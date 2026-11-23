@@ -54,7 +54,8 @@ Go 服务是单个二进制 `cmd/configflow`，取代 Flask + waitress + nginx �
 
 | 路径 | 所有者 | 说明 |
 |---|---|---|
-| `configflow.sqlite3` | `internal/store`（经 `internal/repo`） | 配置文档：系统设置、共享资源、各配置空间（profile） |
+| `configflow.sqlite3` | `internal/store`（经 `internal/repo`） | 配置文档：系统设置、共享资源、各配置空间（profile）；Agent 运行记录在同库的 `agent_state` 表 |
+| `backups/configflow-v<N>-<UTC>.sqlite3` | `internal/repo` | 存储版本升级前的在线备份，保留到下一次升级 |
 | `profiles/<id>/…`、生成物、缓存目录 | `internal/repo` 及各领域包 | 例如 `stats_history.json`、订阅/规则缓存、`.generated-previews/` |
 | `task-status.json` | `internal/taskstatus` | 定时任务的最近结果（不进备份、不进修订） |
 | `notifications.json` | `internal/notifications` | 通知回执 |
@@ -242,9 +243,9 @@ metrics-history-flush 循环（30 s 轮询，间隔可在定时任务页改）�
 
 ### 3.6 DNS 联动与主备（HA）
 
-- **DNS 联动**（`agents/dnsfollow`，循环 `dns-follow`，5 s + `agents.IdleRounds` 空闲退避）：Mihomo Agent 成功发布后，
+- **DNS 联动**（`agents/dnsfollow`，循环 `dns-follow`，提交/Agent 上线时唤醒，进行中 5 s，空闲兜底 10 分钟）：Mihomo Agent 成功发布后，
   按绑定为对应 OxiDNS 重新生成并发布配置。整轮持有 L1 锁；忙时编辑接口返回 409 `DNS 联动正在处理，请稍后重试`。
-- **OxiDNS 主备**（`agents/dnsha`，循环 `oxidns-ha-publish`，2 s）：成对发布的日志（journal）推进
+- **OxiDNS 主备**（`agents/dnsha`，循环 `oxidns-ha-publish`，同上唤醒，进行中 2 s）：成对发布的日志（journal）推进
   `preparing → standby → primary → handoff → keepalived → done`；VIP 由 Agent 侧 keepalived 承载。锁顺序：先 pair，再按排序的成员键（都是 L1 try）。
   HA 成员的发布改走成对发布，`agents` 通过 `Hooks.HADeployment` / `HAActivate` 等钩子转交给 `dnsha`。
 
@@ -254,16 +255,20 @@ metrics-history-flush 循环（30 s 轮询，间隔可在定时任务页改）�
 
 ### 4.1 SQLite 表（`internal/store`）
 
-`configflow.sqlite3`，`application_id = 0x43464C57`（"CFLW"），`storage_version = 1`：
+`configflow.sqlite3`，`application_id = 0x43464C57`（"CFLW"），`storage_version = 2`（O17）：
 
 | 表 | 主键 | 内容 |
 |---|---|---|
 | `meta` | `key` | `storage_version`、`store_id`、`generation`、`root_order` 等 |
 | `sections` | `(scope, owner)` | `scope ∈ {root, system, shared, profile}`；profile 的 owner 是配置空间 id；`position` 决定顺序 |
 | `fields` | `(scope, owner, field)` | 一个字段一行：`value`（JSON 文本）、`position`、`revision ≥ 1` |
+| `agent_state` | `(agent_id, member)` | Agent 运行状态与历史（`model.AgentStateMembers`：部署、已应用内容、版本、规则同步/联动/HA 进度、IPv6 校验、恢复标记），一个成员一行 |
 
-文档在内存中是一个 JSON 形状的整体；`store` 只验证 JSON 语法和行信封，不解释值。与 Python 写出的库可互换（同 schema、
-同 pragma、同行内容）。`Head` 用来判定缓存是否过期（派生缓存以 Head 作键，而不是靠失效钩子）。
+文档在内存中是一个 JSON 形状的整体；`store` 只验证 JSON 语法和行信封，不解释值。`repo` 读出后把 `agent_state` 合并进
+`system.agents`（`repo/staterows`，按原字节），提交前再拆出去，所以领域代码只看到一份完整的 `model.Agent`；配置行与状态行
+同一事务提交（`design/o17-runtime-state.md`）。`Head` 用来判定缓存是否过期：`Generation`/`CommitID` 只随配置行变化，
+`State`/`StateCommitID` 只随状态行变化；`==` 比较两者，只读配置的缓存才可以用 `Head.SameConfig`。提交后 `repo.OnCommit`
+按「配置 / 状态」通知订阅者（后台循环的唤醒），WebDAV 等配置观察者只看配置提交。Python 只能读 v1，不能读 v2。
 
 其他 SQLite 文件（流量历史、排行、安装器）各属一个 owner，单连接。
 
@@ -317,16 +322,16 @@ metrics-history-flush 循环（30 s 轮询，间隔可在定时任务页改）�
 
 | 名称 | 包 | 节奏 |
 |---|---|---|
-| `scheduled-refresh` | `refresh` | 启动，30 s |
-| `router-rule-sync` | `routers` | 30 s 后，30 s |
+| `scheduled-refresh` | `refresh` | 30 s 后，按最近到期时间（1 s–10 分钟），配置提交唤醒 |
+| `router-rule-sync` | `routers` | 30 s 后，按最近到期的路由器（1 s–10 分钟），配置提交唤醒 |
 | `domain-discovery-auto` | `discovery` | 120 s 后，600 s |
 | `oxidns-ranking-history` | `agents/monitor` | 60 s |
 | `metrics-history-flush` | `agents/metrics` | 30 s 轮询 + Wake |
 | `sub-store-idle` | `substore` | 5 s（仅内置 Sub-Store 存在时） |
-| `dns-follow` | `agents/dnsfollow` | 5 s + IdleRounds |
-| `oxidns-ha-publish` | `agents/dnsha` | 2 s + IdleRounds |
-| `ipv6-verification-scheduler` | `agents/ipv6` | 5 s，验证任务经 Spawn 限并发 |
-| `agent-rule-sync` | `agents/rulesync` | 首请求后，5 s |
+| `dns-follow` | `agents/dnsfollow` | `agents.Waker`：提交与 Agent 上线唤醒，进行中 5 s，空闲 10 分钟 |
+| `oxidns-ha-publish` | `agents/dnsha` | 同上，进行中 2 s |
+| `ipv6-verification-scheduler` | `agents/ipv6` | 提交唤醒，校验进行中 5 s，空闲 10 分钟；验证任务经 Spawn 限并发 |
+| `agent-rule-sync` | `agents/rulesync` | 首请求后；提交、Agent 上线、规则源刷新完成唤醒，进行中 5 s，空闲 1 分钟 |
 
 WebDAV 自动备份 worker 由 Startup 用 Spawn 启动（1 s 去抖）。
 
@@ -426,7 +431,8 @@ Go 不会添加 Python 没有的崩溃恢复动作；各种“进行中”状态
    被事件触发的一次性工作用 `lifecycle.SpawnerFrom(ctx).Spawn(ctx, name, fn)`。
 2. 定时任务页要显示的，在 `internal/tasks` 加行，结果写 `taskstatus`；“立即运行”和循环共享同一把 L1 键，忙则 409。
 3. 选锁级别（o3 2.4 表）；L3 下不做 I/O；不要新建 flock。
-4. 空闲时别空转：参考 `agents.IdleRounds` 的退避，或只在 Head 变化时重算（生产空闲 CPU 曾因 5 s 循环重算占 15%）。
+4. 空闲时别空转：依赖存储的循环用 `agents.Waker`（`repo.OnCommit` + Agent 上线唤醒，进行中才短间隔），按时间到期的循环让
+   `Interval` 返回离下次到期的时间并配 `Wake`（生产空闲 CPU 曾因 5 s 循环重算占 15%）。
 5. 关停：Round 必须响应 ctx；需要关停时保存的状态注册 `ShutdownHook`。
 6. 测试：`lifecycletest.Clock` 驱动轮次；忙锁跳过；panic 被记录不扩散；真实 `Runtime.Start/Shutdown` 下关停后不写；
    `lockx.Violations() == 0`；`TestConcurrencyFacadeBoundary` 通过（不要为绕过它加宽豁免）。

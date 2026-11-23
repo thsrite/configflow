@@ -550,16 +550,16 @@ Porters of the missing modules use these names, timings and levels; reviewers ch
 
 | Python | Go | Start / timing | Lock or key (level) | Busy → |
 |---|---|---|---|---|
-| P1 scheduled-refresh | `Periodic{"scheduled-refresh", AtBoot, 30s, 30s}`; workers fan out with a WaitGroup inside the round (≤3) | as Python | `refresh` Keyed per task key (L1), shared with run now | 409 `这个任务正在运行，请稍后查看结果` (after the 404/ValueError lookup, as Python) |
-| P2 router-rule-sync | `Periodic{"router-rule-sync", AtBoot, 30s, 30s}` | as Python | worker key `routers:rule-sync` (L1) shared with start_job; job lock (L1); op lock (L2) | 409 `已有规则同步任务正在运行，请稍后重试` before any lookup; round skipped |
+| P1 scheduled-refresh | `Periodic{"scheduled-refresh", AtBoot, 30s, next due (1 s–10 min), Wake}`; workers fan out with a WaitGroup inside the round (≤3). O17: woken by configuration commits and runs outside the loop | first round as Python | `refresh` Keyed per task key (L1), shared with run now | 409 `这个任务正在运行，请稍后查看结果` (after the 404/ValueError lookup, as Python) |
+| P2 router-rule-sync | `Periodic{"router-rule-sync", AtBoot, 30s, next due router (1 s–10 min), Wake}`; O17: woken by configuration commits | first round as Python | worker key `routers:rule-sync` (L1) shared with start_job; job lock (L1); op lock (L2) | 409 `已有规则同步任务正在运行，请稍后重试` before any lookup; round skipped |
 | P3 domain-discovery-auto | `Periodic{…, 120s, 600s}` | as Python | discovery single-job lock (L1) | `ProbeBusy` skipped in rounds |
 | P4 oxidns-ranking-history | `Periodic{…, 60s, 60s}` | as Python | – | – |
 | P5 metrics-history-flush | `Periodic{…, 30s, 30s, Wake}`; `Startup{"metrics-load-history"}`; shutdown hooks at PhaseStopSignal and PhaseAfterDrain | as Python | save operation Mutex (L2; spans history I/O and receipts) | run now uses the task key |
 | P6 sub-store-idle | `Periodic{…, 0, 5s}` (registered only when built-in Sub-Store exists) | as Python | `work` RWMutex (L2; idle stop = explicit TryLock; conversions shared with 45 s; maintenance exclusive with 90 s), `control` Mutex (L2) | `正忙` texts |
-| P7 dns-follow | `Periodic{…, 0, 5s}` + `agents.IdleRounds` | as Python | `dnsfollow` Mutex (L1, try) for rounds and edits | 409 `DNS 联动正在处理，请稍后重试` |
-| P8 oxidns-ha-publish | `Periodic{…, 0, 2s}` + IdleRounds | as Python | HA Mutex (L1, try); pair then sorted member keys (L1, try) | 409 `DNS 高可用正在处理，请稍后重试`; round skips |
-| P9 ipv6-verification | `Periodic{…, 0, 5s}`; verification jobs via `Spawn` limited by a semaphore of 2 (8 slots) | as Python | per-Agent Keyed (L2) | – |
-| P10 agent-rule-sync | `Periodic{…, AfterFirstRequest, 0, 5s}`; ≤2 Agent jobs via `Spawn`, round-robin cursor | parity: started by `RequestSeen` | per-Agent Keyed (L1, try) | skip |
+| P7 dns-follow | `Periodic{…, 0, agents.Waker 5s busy / 10 min idle, Wake}` (O17: woken by configuration/Agent state commits and Agents coming online; IdleRounds removed) | – | `dnsfollow` Mutex (L1, try) for rounds and edits | 409 `DNS 联动正在处理，请稍后重试` |
+| P8 oxidns-ha-publish | `Periodic{…, 0, agents.Waker 2s busy / 10 min idle, Wake}` (O17, as P7; busy while a journal is unfinished or waits for a lost member) | – | HA Mutex (L1, try); pair then sorted member keys (L1, try) | 409 `DNS 高可用正在处理，请稍后重试`; round skips |
+| P9 ipv6-verification | `Periodic{…, 0, agents.Waker 5s busy / 10 min idle, Wake}` (O17: woken by commits); verification jobs via `Spawn` limited by a semaphore of 2 (8 slots) | – | per-Agent Keyed (L2) | – |
+| P10 agent-rule-sync | `Periodic{…, AfterFirstRequest, 0, agents.Waker 5s busy / 1 min idle, Wake}`; ≤2 Agent jobs via `Spawn`, round-robin cursor. O17: woken by commits, Agents coming online and refreshed rule sources | parity: started by `RequestSeen` | per-Agent Keyed (L1, try) | skip |
 | P11 webdav-auto-backup | `webdav.Worker` goroutine started with `Spawn`; `WaitIdle` delegates to the Runtime | 1 s debounce | worker mutex (L5) | – |
 | P12 agent-address | `Spawn("agent-address", …)` | 120 s throttle (Clock) | `_attempts` (L5) | – |
 | P13 gateway-onboarding | `Spawn("gateway-onboarding-"+id[:8], …)` holding the publish key until it ends | – | publish lease Keyed (L1, try → return current state 200); session Keyed (L2); create Mutex (L2) | as Python |
@@ -683,9 +683,9 @@ Rule: **Go adds no recovery action Python did not have.** Every "running" state 
 |---|---|---|
 | refresh/task busy keys, discovery jobs, Sub-Store update, `_preparing_deployments`, publish leases, rule-sync workers | memory (Python: memory or a flock that dies with the process) | not running; discovery job GET → 404 (T19) |
 | router receipt `running` / `queued` | file | `running` → `paused` when the next round or sync touches it; POST 409 `上次同步尚未完成，请稍后重试` until then; orphan `queued` runs normally (X07, T25) |
-| Agent deployment `preparing`/`publishing`… | config | `Held(key)` false → the existing recovery (poll the Agent, mark failed) as in Python |
-| DNS follow `preparing`/`publishing`, HA pair jobs, gateway session `publishing` | config / files | the owning loop or the next publish request resumes with the recorded IDs |
-| Agent upgrade `latest_upgrade` | config | existing A15 logic |
+| Agent deployment `preparing`/`publishing`… | Agent state rows (O17; same database and transaction as the configuration) | `Held(key)` false → the existing recovery (poll the Agent, mark failed) as in Python |
+| DNS follow `preparing`/`publishing`, HA pair jobs, gateway session `publishing` | Agent state rows / files | the owning loop or the next publish request resumes with the recorded IDs |
+| Agent upgrade `latest_upgrade` | Agent state rows | existing A15 logic |
 | online status, metrics since last flush, pending WebDAV backup, caches | memory | lost (SIGTERM saves metrics; `kill -9` loses the last segment, as Python) |
 | store build temp files | files | removed at open (store, as Python) |
 
@@ -709,7 +709,10 @@ A port that wants an extra recovery action must record it in the O12 ledger and 
   transaction each. An older binary refuses a newer file with the existing `StoreUnsupported` message (Python does
   the same for version > 1, so the first bump also locks Python out — accepted, Python is retired).
 - Other SQLite files use `PRAGMA user_version`, JSON stores a top-level `version` member; the same rules apply,
-  owned by their package. No migration exists today; none is part of this design's steps.
+  owned by their package.
+- **First bump (O17, `design/o17-runtime-state.md`): storage version 2** adds the `agent_state` table. `repo.upgradeLocked` backs the file up
+  (`DATA_DIR/backups/configflow-v1-<UTC>.sqlite3`, checked; a failed backup refuses the start) and `store.Upgrade` moves the Agent state
+  members out of `system.agents` in one transaction. As written above, this locks Python out.
 
 ## 4. Buildable steps
 

@@ -35,7 +35,7 @@ func wireRuleSync() {
 		}
 		return err
 	})
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "router-rule-sync", Start: lifecycle.AtBoot, FirstDelay: 30 * time.Second, Interval: ruleSyncPause, Wake: &ruleSyncLoop.wake, Round: func(ctx context.Context) error {
+	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "router-rule-sync", Start: lifecycle.AtBoot, FirstDelay: 30 * time.Second, Interval: ruleSyncPause, Wake: &ruleSyncLoop.wake, OnStart: func(context.Context) { ruleSyncLoop.wake.Clear(); ruleSyncLoop.pause.Store(0) }, Round: func(ctx context.Context) error {
 		service, err := newSyncService(ctx)
 		if err != nil {
 			return err

@@ -360,3 +360,24 @@ WebDAV 自动备份：现在靠 `webdav/changes.go` 的 `agentRuntimeFields` 清
 
 把 `model.Agent` 拆成 `AgentConfig` + `AgentState` 两个类型、写入方分别调用 `EditAgents`/`EditAgentState`：更地道，但要改约 300 处读写方，
 且只在存储拆分稳定后才有意义。路由器 `last_release` 用同一机制搬出。
+
+---
+
+## 7. 实现记录（2026-11-23，分支 go-o17-runtime-state）
+
+与上文设计不同或细化的地方（都按裁定的方向，影响写在 `parity/behaviour-changes.md` 的 O17 节）：
+
+- **代码位置**：`store/state.go`（表、`Head.State`、`Upgrade`）；`repo/staterows`（拆分/合并，按原字节，`Split(Merge(x)) == x`）；
+  `repo/agent_state.go`（读写挂接、`agentStateOnly`、恢复标记）；`repo/storage_upgrade.go`（备份 + 升级）；`repo/commit_watch.go`
+  （`OnCommit`、`CommitWake`）；`agents/wake.go`（`Waker`、`OnPresence`）。`model.Agent` 增加唯一一个成员 `state_restored_at`。
+- **升级时配置代号加一**（设计写的是不变）：升级改写了 `agents` 行的字节，按「行变就推进代号」的一般规则处理；启动阶段没有缓存，没有副作用。
+- **系统 `_revision`**：`applySystemIn` 只在配置成员变化时推进（`agentStateOnly`），否则每次状态写入都会产生配置提交、方案失效。
+- **HA 恢复后的 fail closed（2.5.1 细化）**：没有改 `HAActiveModel`。原因：若让带标记的 HA 成员读作「发布进行中」，成对发布自己的检查
+  （`haDeploymentConflict` 等假定有日志）也会把唯一出口锁死。实际做法：已开启的 HA 设置随备份恢复，`HAEnabledModel` 继续锁住编辑/换绑/删除
+  并强制成对发布；恢复标记另外阻止规则同步和 DNS 联动的自动推送，以及所有 Agent 的受保护编辑/换绑/注册变更；成功发布（成对发布的子部署
+  也走同一记录路径）清除标记。删除 Agent 不受标记限制（HA 已开启的仍按原规则被 HA 锁住）。
+- **恢复标记的界面字段**：只有 `state_restored_at`（没有另加布尔 `state_restored`），前端按它显示横幅与卡片标记。
+- **诊断导出**：`repo.DiagnosticExportJSON` 已有（完整文档含状态），目前只给 Python 对照与诊断代码用，没有界面入口。
+- **测试侧 Python 对照（D5）**：`repotest.PythonLayout`（交给 Python 前降级为 v1）、`DowngradeToV1`、`MergedLoad`、`MergedAgentsRow`；
+  比较整份存储时屏蔽系统 `_revision`。门禁 difftest 阶段全绿（.64）。
+- **P1/P2**：`refresh` 与 `routers` 在每轮结束时算下次到期，`repo.CommitWake` 跟随当前仓库注册配置提交唤醒；手动执行后唤醒 P1 重新计算。

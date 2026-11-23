@@ -75,6 +75,8 @@ OxiDNS 类型化（1.7）→ RouterOS/iKuai 行类型化（1.8，要实验室）
 
 ### 1.1 后台循环用「轮询 + 比代号」代替「变化通知」
 
+> **已完成（分支 go-o17-runtime-state，设计 `design/o17-runtime-state.md` 2.6）**：`IdleRounds` 删除，P7–P10 改用 `agents.Waker`（`repo.OnCommit` + Agent 上线唤醒）。
+
 - **位置**：`internal/agents/idle_rounds.go`（`IdleRounds`）；使用方 `agents/dnsfollow/round.go:17`、`agents/dnsha/publication.go:576`、
   `agents/ipv6/wire.go:218`；`agents/rulesync/service.go:211`（P10，没用 IdleRounds）。
 - **现状**：这几个循环每 2–5 秒醒一次，先读配置库的 head 跟上次比，没变就返回；`IdleRounds` 的时钟是 `func() float64`
@@ -89,6 +91,8 @@ OxiDNS 类型化（1.7）→ RouterOS/iKuai 行类型化（1.8，要实验室）
 - **工作量**：M。**优先级**：中（切换后第一批）。
 
 ### 1.2 定时任务固定 30 秒扫描，而不是按到期时间睡
+
+> **已完成（同上）**：P1/P2 按最近到期时间休眠（1 s–10 分钟），配置提交唤醒。
 
 - **位置**：`internal/refresh/rows.go:212`、`internal/routers/rule_sync_tasks.go:38` / `rule_sync.go:486`。
 - **现状**：每 30 s 读全部任务（路由器同步还要读每台的回执文件），再判断有没有到期。
@@ -109,6 +113,8 @@ OxiDNS 类型化（1.7）→ RouterOS/iKuai 行类型化（1.8，要实验室）
 - **工作量**：S–M。**优先级**：低。
 
 ### 1.4 Agent 的任务状态和历史写在配置文档里
+
+> **已完成（同上，存储版本 2）**：状态成员存进同库 `agent_state` 表，与配置同事务；导出/备份只含配置，恢复后按恢复标记 fail closed。
 
 - **位置**：`model.Agent` 的 `Deployments`、`LatestDeployment`、`LatestUpgrade`、`DNSFollowState`、`OxiDNSHAState`、
   `IPv6Verifications`、规则同步状态（`agents/rulesync/service.go:295 saveState` 等写入方）。

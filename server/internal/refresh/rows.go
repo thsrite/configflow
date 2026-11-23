@@ -258,7 +258,10 @@ func refreshPause(context.Context) time.Duration {
 }
 
 func periodic() lifecycle.Periodic {
-	return lifecycle.Periodic{Name: "scheduled-refresh", Start: lifecycle.AtBoot, FirstDelay: FirstDelaySeconds * time.Second, Interval: refreshPause, Wake: &refreshLoop.wake, Round: func(ctx context.Context) error { round(ctx); return nil }}
+	return lifecycle.Periodic{Name: "scheduled-refresh", Start: lifecycle.AtBoot, FirstDelay: FirstDelaySeconds * time.Second, Interval: refreshPause, Wake: &refreshLoop.wake,
+		// A wake-up left from before this activation must not cut its first pauses short.
+		OnStart: func(context.Context) { refreshLoop.wake.Clear(); refreshLoop.pause.Store(0) },
+		Round:   func(ctx context.Context) error { round(ctx); return nil }}
 }
 
 // Wire registers native task builders/runners and the tracked refresh loop.
