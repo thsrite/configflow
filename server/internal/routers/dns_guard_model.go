@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"slices"
 )
@@ -120,7 +121,7 @@ func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 	}
 	var m *DNSGuardManifest
 	if jsondecode.Unmarshal(raw, &m) != nil {
-		return nil, routerError(messageGuardManifest)
+		return nil, device.Error(messageGuardManifest)
 	}
 	if m == nil {
 		return nil, nil
@@ -135,7 +136,7 @@ func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 	for _, e := range m.Resources {
 		key := [2]string{e.Path, e.ID}
 		if !guardPath(e.Path) || !rosIDPattern.MatchString(e.ID) || e.Role == "" || e.Config == nil || seen[key] || roles[e.Role] {
-			return nil, routerError(messageGuardManifest)
+			return nil, device.Error(messageGuardManifest)
 		}
 		seen[key] = true
 		roles[e.Role] = true
@@ -145,5 +146,5 @@ func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 
 // DNSGuardRelevant reports whether inspection must include the guard stage.
 func DNSGuardRelevant(r *Router) bool {
-	return r != nil && r.Type == "routeros" && (r.DNSGuard != nil && r.DNSGuard.Enabled || hasStoredState(r.Extra["dns_guard_state"]))
+	return r != nil && r.Type == "routeros" && (r.DNSGuard != nil && r.DNSGuard.Enabled || device.HasStoredState(r.Extra["dns_guard_state"]))
 }

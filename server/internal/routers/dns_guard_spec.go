@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -11,13 +12,13 @@ import (
 
 func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error) {
 	if ctx == nil || ctx.Routes == nil {
-		return "", "", routerError(messageGuardRoutes)
+		return "", "", device.Error(messageGuardRoutes)
 	}
 	best := -1
 	selected := []Row{}
 	var network netip.Prefix
 	for _, row := range ctx.Routes {
-		if firstNonEmpty(row.text("routing-table"), "main") != "main" || !row.flag("connect") || !row.flag("active") || row.flag("disabled") {
+		if device.FirstNonEmpty(row.text("routing-table"), "main") != "main" || !row.flag("connect") || !row.flag("active") || row.flag("disabled") {
 			continue
 		}
 		n, ok := netipx.ParseNetwork4(row.text("dst-address"), false)
@@ -34,10 +35,10 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 		}
 	}
 	if len(selected) == 0 {
-		return "", "", routerError(messageGuardDisconnected)
+		return "", "", device.Error(messageGuardDisconnected)
 	}
 	if len(selected) != 1 {
-		return "", "", routerError(messageGuardMultiple)
+		return "", "", device.Error(messageGuardMultiple)
 	}
 	row := selected[0]
 	iface := rosInterface(row.text("gateway"))
@@ -46,7 +47,7 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 		immediate = rosInterface(row.text("immediate-gw"))
 	}
 	if iface == "" || iface != immediate {
-		return "", "", routerError(messageGuardInterface)
+		return "", "", device.Error(messageGuardInterface)
 	}
 	return iface, network.String(), nil
 }
@@ -54,29 +55,29 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (*DNSGuardSpec, error) {
 	dns := desired.DNSSettings
 	if dns == nil {
-		return nil, routerError(messageGuardAddress)
+		return nil, device.Error(messageGuardAddress)
 	}
 	if dns.Error != "" {
-		return nil, routerError(fmt.Sprintf(messageGuardDNS, dns.Error))
+		return nil, device.Error(fmt.Sprintf(messageGuardDNS, dns.Error))
 	}
 	address, ok := netipx.ParseAddr4(dns.Server)
 	singles := []netip.Addr{}
 	if dns.HA != nil {
 		address, ok = netipx.ParseAddr4(dns.HA.VIP)
 		if !ok || dns.HA.Hosts == nil {
-			return nil, routerError(messageGuardHA)
+			return nil, device.Error(messageGuardHA)
 		}
 		singles = append(singles, address)
 		for _, host := range dns.HA.Hosts {
 			a, valid := netipx.ParseAddr4(host)
 			if !valid {
-				return nil, routerError(messageGuardHA)
+				return nil, device.Error(messageGuardHA)
 			}
 			singles = append(singles, a)
 		}
 	} else {
 		if !ok {
-			return nil, routerError(messageGuardAddress)
+			return nil, device.Error(messageGuardAddress)
 		}
 		singles = append(singles, address)
 	}
@@ -92,7 +93,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 		if a != address && dns.HA != nil {
 			i, n, e := guardConnected(state.NatContext, a)
 			if e != nil || i != iface || n != network {
-				return nil, routerError(fmt.Sprintf(messageGuardHAConnected, a, address, network))
+				return nil, device.Error(fmt.Sprintf(messageGuardHAConnected, a, address, network))
 			}
 		}
 	}
@@ -100,13 +101,13 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 		for _, target := range targets {
 			n, valid := netipx.ParseNetwork4(target.CIDR, false)
 			if !valid {
-				return nil, routerError(messageOperationFormat)
+				return nil, device.Error(device.MessageOperationFormat)
 			}
 			if n.Contains(a) {
 				if dns.HA != nil {
-					return nil, routerError(fmt.Sprintf(messageGuardHAProxy, a))
+					return nil, device.Error(fmt.Sprintf(messageGuardHAProxy, a))
 				}
-				return nil, routerError(messageGuardProxy)
+				return nil, device.Error(messageGuardProxy)
 			}
 		}
 	}
@@ -122,7 +123,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 	for _, text := range settings.Bypass {
 		n, valid := netipx.ParseNetwork4(text, false)
 		if !valid {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		bypass = append(bypass, n)
 		if n.Bits() >= 30 {

@@ -4,140 +4,12 @@
 package routers
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"slices"
 	"strconv"
 	"strings"
 )
-
-// ErrorKind tells RouterError's variants apart.
-type ErrorKind int
-
-const (
-	KindRouter           ErrorKind = iota // a router request failed
-	KindConflict                          // the device changed; a fresh preview is required
-	KindRollback                          // a partial write could not be fully undone
-	KindUncertainWrite                    // a write may have committed but its result is unknown
-	KindMissingResource                   // the requested RouterOS resource is unavailable
-	KindPingNotPermitted                  // RouterOS account lacks the test policy
-	KindRejected                          // the device answered and refused the write: nothing changed
-	KindInvalidResponse                   // the device response is malformed; retain failed probe evidence
-)
-
-// RouterError is a failure whose message is safe to show to users (use errors.As).
-type RouterError struct {
-	Kind    ErrorKind
-	Message string
-	// Undo, when set, reverts what the failed operation may still have
-	// changed (a write whose reply was lost). The release records it like the
-	// undo of a finished operation and runs it on rollback.
-	Undo json.RawMessage
-}
-
-func (e *RouterError) Error() string { return e.Message }
-
-// UndoOf is the undo a failed operation carries (nil when there is none).
-func UndoOf(err error) json.RawMessage {
-	if e, ok := errors.AsType[*RouterError](err); ok {
-		return e.Undo
-	}
-	return nil
-}
-
-func routerError(message string) error { return &RouterError{Message: message} }
-
-// ValidationError is an invalid router setting (HTTP 400 with the message).
-type ValidationError struct{ Message string }
-
-func (e *ValidationError) Error() string { return e.Message }
-
-func invalid(message string) error { return &ValidationError{Message: message} }
-
-// ErrNotPorted: a feature of a module not ported yet is needed (never a result).
-var ErrNotPorted = errors.New("routers: depends on a module that is not ported yet")
-
-// ManagedPrefix marks generated objects ("cf", "cf-…", "cf:…").
-const ManagedPrefix = "cf"
-
-// Policy route comments and priority.
-const (
-	PolicyAutoComment   = ManagedPrefix + "-mihomo"
-	PolicyManualComment = ManagedPrefix + "-mihomo-manual"
-	RestoredComment     = "mihomo-manual" // hand-made CIDRs restored from PolicyManualComment
-	PolicyPriority      = 0               // highest 端口分流 priority
-)
-
-// RouterInfo is what a probe reports.
-type RouterInfo struct {
-	Vendor       string   `json:"vendor"`
-	Version      string   `json:"version"`
-	Model        string   `json:"model"`
-	Capabilities []string `json:"capabilities"`
-}
-
-// RouteEntry is a static route; Active/Distance are nil without runtime evidence.
-type RouteEntry struct {
-	ID       string `json:"id"`
-	Dst      string `json:"dst"`
-	Gateway  string `json:"gateway"`
-	Enabled  bool   `json:"enabled"`
-	Comment  string `json:"comment"`
-	Table    string `json:"table"`
-	Active   *bool  `json:"active"`
-	Distance *int64 `json:"distance"`
-}
-
-// NewRoute is a main-table route without runtime evidence.
-func NewRoute(id, dst, gateway string, enabled bool, comment string) *RouteEntry {
-	return &RouteEntry{ID: id, Dst: dst, Gateway: gateway, Enabled: enabled, Comment: comment, Table: "main"}
-}
-
-// PolicyRouteEntry is a source-aware forwarding rule (iKuai 端口分流 with a
-// next hop); it can exclude the gateway itself as a source.
-type PolicyRouteEntry struct {
-	ID        string   `json:"id"`
-	Dst       []string `json:"dst"`
-	Gateway   string   `json:"gateway"` // empty when the rule targets a WAN line
-	Enabled   bool     `json:"enabled"`
-	Comment   string   `json:"comment"`
-	Src       []string `json:"src"`
-	SrcInvert bool     `json:"src_invert"`
-	DstInvert bool     `json:"dst_invert"`
-	Protocol  string   `json:"protocol"`
-	Priority  *int64   `json:"priority"`
-}
-
-// NatBypassEntry exempts traffic from source NAT.
-type NatBypassEntry struct {
-	ID         string          `json:"id"`
-	Dst        []string        `json:"dst"` // empty means any
-	Src        []string        `json:"src"`
-	Enabled    bool            `json:"enabled"`
-	Comment    string          `json:"comment"`
-	Attributes json.RawMessage `json:"attributes"` // vendor matchers
-}
-
-// DhcpDnsEntry is one DHCP network's DNS setting. Python defaulted Enabled
-// and DNSExplicit to true: drivers set both explicitly.
-type DhcpDnsEntry struct {
-	ID         string          `json:"id"`
-	Network    string          `json:"network"`
-	DNS        []string        `json:"dns"`
-	Enabled    bool            `json:"enabled"`
-	Attributes json.RawMessage `json:"attributes"`
-	Blockers   []string        `json:"blockers"`
-	// False when a vendor's empty DNS slot could inherit an unlisted server.
-	DNSExplicit bool `json:"dns_explicit"`
-}
-
-// DhcpDnsState is the DHCP DNS readback.
-type DhcpDnsState struct {
-	Entries  []*DhcpDnsEntry `json:"entries"`
-	Evidence json.RawMessage `json:"evidence"`
-}
 
 // RouterState is one readback of the device (later modules add their fields).
 type RouterState struct {
@@ -182,27 +54,6 @@ type Driver interface {
 	Apply(ctx context.Context, op json.RawMessage) (json.RawMessage, error)
 	RenderScript(ops []json.RawMessage) (string, error)
 	Close()
-}
-
-// IsManaged reports a ConfigFlow-owned comment.
-func IsManaged(comment string) bool {
-	text := strings.ToLower(strings.TrimSpace(comment))
-	return text == ManagedPrefix || strings.HasPrefix(text, ManagedPrefix+":") || strings.HasPrefix(text, ManagedPrefix+"-")
-}
-
-// ManagedComment tags a comment as managed, keeping the user's text: "tg" -> "cf-tg".
-func ManagedComment(comment string) string {
-	text := strings.TrimSpace(comment)
-	if text == "" || IsManaged(text) {
-		return cmp.Or(text, ManagedPrefix)
-	}
-	return ManagedPrefix + "-" + text
-}
-
-// PolicyRouteOK: enabled, any protocol, every source except the gateway, next hop the gateway, highest priority.
-func PolicyRouteOK(e *PolicyRouteEntry, gateway string) bool {
-	return e.Enabled && gateway != "" && e.Gateway == gateway && len(e.Src) == 1 && e.Src[0] == gateway &&
-		e.SrcInvert && !e.DstInvert && e.Protocol == "any" && e.Priority != nil && *e.Priority == PolicyPriority
 }
 
 // PolicyRoute is the first policy route carrying comment.

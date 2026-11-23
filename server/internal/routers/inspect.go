@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,7 +35,7 @@ type Inspection struct {
 
 // IPv6HostRequest is supplied by A23; missing wiring fails closed for this stage.
 var IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) {
-	return IPv6Host{}, routerError(messageIPv6HostUnavailable)
+	return IPv6Host{}, device.Error(messageIPv6HostUnavailable)
 }
 
 // Inspect reads device and Agent state, never writes to either.
@@ -49,7 +50,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		}
 	}
 	if r == nil || d == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	var profile model.Profile
 	if err := json.Unmarshal(req.Config, &profile); err != nil {
@@ -75,7 +76,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 			return nil, err
 		}
 	} else if r.ProxyGatewayAgentID != "" || r.DNSAgentID != "" {
-		return nil, ErrNotPorted
+		return nil, device.ErrNotPorted
 	}
 	host := ""
 	if gateway != nil && gateway.Agent != nil {
@@ -91,11 +92,11 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	desired.DNSSettings = &settings
 	ros, isROS := d.(*RouterOS)
-	policy := r.Type == "routeros" && (len(r.RosPolicyRuleSets) > 0 || hasStoredState(r.State("ros_policy_state")))
+	policy := r.Type == "routeros" && (len(r.RosPolicyRuleSets) > 0 || device.HasStoredState(r.State("ros_policy_state")))
 	guard := DNSGuardRelevant(r)
 	if policy || guard {
 		if !isROS {
-			return nil, routerError(fmt.Sprintf(messageStageNeedsRouterOS, StageRoutes))
+			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, StageRoutes))
 		}
 	}
 	if policy {
@@ -195,7 +196,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		}
 	}
 	if isROS && r.DNSAgentID != "" && desired.DNSSettings.Error == "" {
-		dns := BuildDNSReport(*desired.DNSSettings, desired.ProxyGateway, state.DhcpDNS)
+		dns := device.BuildDNSReport(*desired.DNSSettings, desired.ProxyGateway, state.DhcpDNS)
 		if (dns.Status == "pending" || dns.Status == "synced") && len(dns.Items) == 1 {
 			item := dns.Items[0]
 			state.IPv6DNSPlan, err = InspectIPv6DNS(ctx, desired, DNSCheck{ID: item.ID, Network: item.Network, Gateway: desired.ProxyGateway, DNS: item.DesiredDNS}, ros)
@@ -206,7 +207,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	if IPv6PDGuardRelevant(r) {
 		if !isROS {
-			return nil, routerError(fmt.Sprintf(messageStageNeedsRouterOS, StageIPv6PDGuard))
+			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, StageIPv6PDGuard))
 		}
 		state.IPv6PDGuardPlan, err = InspectIPv6PDGuard(ctx, r, host, ros)
 		if err != nil {
@@ -243,17 +244,17 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 }
 func inspectionDNS(ctx context.Context, source AgentSource, id string) (DNSSettings, error) {
 	if id == "" {
-		return DNSAgentSettings(id, nil), nil
+		return device.DNSAgentSettings(id, nil), nil
 	}
 	if source == nil {
-		return DNSSettings{}, ErrNotPorted
+		return DNSSettings{}, device.ErrNotPorted
 	}
 	a, err := source.Agent(ctx, id)
 	if err != nil {
 		return DNSSettings{}, err
 	}
 	if a == nil {
-		return DNSAgentSettings(id, nil), nil
+		return device.DNSAgentSettings(id, nil), nil
 	}
 	dns := a.DNS
 	if dns == nil {
@@ -274,9 +275,9 @@ func inspectionDNS(ctx context.Context, source AgentSource, id string) (DNSSetti
 		if peer != nil {
 			view = peer.DNS
 		}
-		return DNSHASettings(id, dns, view), nil
+		return device.DNSHASettings(id, dns, view), nil
 	}
-	return DNSAgentSettings(id, dns), nil
+	return device.DNSAgentSettings(id, dns), nil
 }
 func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessage, a *GatewayAgent) IPv6Host {
 	var cfg struct {
@@ -303,10 +304,10 @@ func returnStatus(ctx context.Context, source AgentSource, a *GatewayAgent) *Ret
 		return &ReturnStatus{Status: "unlinked", Message: messageReturnUnlinked}
 	}
 	if a.Status != "online" {
-		return &ReturnStatus{Status: "offline", Message: fmt.Sprintf(messageReturnOffline, orText(a.Name, a.ID))}
+		return &ReturnStatus{Status: "offline", Message: fmt.Sprintf(messageReturnOffline, device.OrText(a.Name, a.ID))}
 	}
 	if source == nil {
-		return &ReturnStatus{Status: "unavailable", Message: ErrNotPorted.Error()}
+		return &ReturnStatus{Status: "unavailable", Message: device.ErrNotPorted.Error()}
 	}
 	s, err := source.ReturnAgent(a).Status(ctx)
 	if err != nil {
@@ -335,7 +336,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 		return nil, nil
 	}
 	if req.Repo == nil {
-		return nil, ErrNotPorted
+		return nil, device.ErrNotPorted
 	}
 	profiles, err := routerProfiles(ctx, req.Repo)
 	if err != nil {
@@ -345,7 +346,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 	for _, p := range profiles {
 		for _, other := range p.Routers {
 			if (p.ID != req.ProfileID || other.ID != r.ID) && other.ManageReturnRouting && other.LinkID("proxy_gateway_agent_id") == a.ID {
-				shared = append(shared, orText(other.Name, other.ID))
+				shared = append(shared, device.OrText(other.Name, other.ID))
 			}
 		}
 	}

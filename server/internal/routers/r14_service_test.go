@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +26,7 @@ func r14Hook(t *testing.T) {
 	old := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
 		JobLockRecord: func(ctx context.Context, profile, id string, raw model.Router) (func(), bool) {
 			var r Router
-			_ = json.Unmarshal(mustPolicyJSON(raw), &r)
+			_ = json.Unmarshal(device.JSON(raw), &r)
 			_, release, lockErr := RouterJobLock(ctx, profile, id, &r)
 			return release, lockErr == nil
 		},
@@ -45,7 +46,7 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
 	}
 	r.Endpoint = http.URL
 	r.source = nil
-	raw := mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
+	raw := device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
 	db, err := repo.Open(t.TempDir(), repo.Options{InitialSettings: func() *model.Config {
 		cfg, err := model.DecodeConfig(raw)
 		if err != nil {
@@ -111,13 +112,13 @@ func TestR14CaptureAndSync(t *testing.T) {
 		t.Fatal("domain-only/test-net update wrote device")
 	}
 	after, _ := service.Repo.ConfigRevision(t.Context(), "default")
-	if !jsonEqual(before, after) {
+	if !device.JSONEqual(before, after) {
 		t.Fatal("no-op bumped config revision")
 	}
 	if len(result.Rules) != 1 || result.Rules[0].Version != result.Rules[0].SyncedVersion {
 		t.Fatalf("versions %+v", result.Rules)
 	}
-	public := string(mustPolicyJSON(result))
+	public := string(device.JSON(result))
 	if strings.Contains(public, r.Password) || strings.Contains(public, "baseline") || strings.Contains(public, "static_resources") {
 		t.Fatal("public receipt leaked private data")
 	}
@@ -141,7 +142,7 @@ func TestR14FailuresBeforeWrites(t *testing.T) {
 			switch mode {
 			case "download":
 				s.Download = func(context.Context, json.RawMessage, json.RawMessage) (string, error) {
-					return "", &syncDownloadError{routerError(messageSyncDownloadError + "ConnectionError")}
+					return "", &syncDownloadError{device.Error(messageSyncDownloadError + "ConnectionError")}
 				}
 			case "invalid":
 				s.Download = func(context.Context, json.RawMessage, json.RawMessage) (string, error) {
@@ -222,7 +223,7 @@ func TestR14RuntimeBoundaries(t *testing.T) {
 					t.Fatalf("shutdown %+v %v", result, err)
 				}
 				if mode == "shutdown_before_entry" {
-					if !jsonEqual(before, after) {
+					if !device.JSONEqual(before, after) {
 						t.Fatal("committed receipt after shutdown")
 					}
 				} else if after.Status != "running" {

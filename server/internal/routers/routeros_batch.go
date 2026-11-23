@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,7 +24,7 @@ const (
 )
 
 var (
-	consoleRouteFields   = stringSet("dst-address", "gateway", "routing-table", "distance", "scope", "target-scope", "comment", "disabled")
+	consoleRouteFields   = device.StringSet("dst-address", "gateway", "routing-table", "distance", "scope", "target-scope", "comment", "disabled")
 	consoleNATFieldOrder = []string{"chain", "action", "disabled", "src-address", "src-address-list", "dst-address",
 		"dst-address-list", "in-interface", "in-interface-list", "out-interface", "out-interface-list", "protocol",
 		"src-port", "dst-port", "connection-state", "connection-mark", "connection-nat-state", "routing-mark",
@@ -67,7 +68,7 @@ func (d *RouterOS) ApplyMany(ctx context.Context, ops []json.RawMessage, record 
 		}
 		var first rosOperation
 		if err := jsondecode.Unmarshal(ops[index], &first); err != nil {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 		batch := []int{index}
 		if first.Kind == "route_add" || first.Kind == "route_delete" {
@@ -225,7 +226,7 @@ func routeAddValues(op rosOperation) Row {
 }
 
 func (d *RouterOS) query(ctx context.Context, field string, values []string, path string) ([]Row, error) {
-	unique := uniqueStrings(values)
+	unique := device.Unique(values)
 	rows := []Row{}
 	for start := 0; start < len(unique); start += queryTerms {
 		end := min(start+queryTerms, len(unique))
@@ -243,7 +244,7 @@ func (d *RouterOS) query(ctx context.Context, field string, values []string, pat
 		}
 		batch, ok := asRows(value)
 		if !ok {
-			return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
+			return nil, device.Error(fmt.Sprintf(device.MessageROSListFormat, path))
 		}
 		rows = append(rows, batch...)
 	}
@@ -259,14 +260,14 @@ func (d *RouterOS) retryRead(ctx context.Context, read func() ([]Row, error)) ([
 		if err == nil {
 			return rows, nil
 		}
-		if !isRouterError(err) || attempt == 2 {
+		if !device.IsRouterError(err) || attempt == 2 {
 			return nil, err
 		}
 		if err := waitContext(ctx, time.Second); err != nil {
 			return nil, err
 		}
 	}
-	return nil, routerError(messageROSReadbackFailure)
+	return nil, device.Error(messageROSReadbackFailure)
 }
 
 func waitContext(ctx context.Context, delay time.Duration) error {
@@ -340,7 +341,7 @@ func consoleSafe(values Row) bool {
 }
 
 func refusedConsole(error error) bool {
-	return routerErrorKind(error) != KindUncertainWrite || permissionError.MatchString(error.Error())
+	return device.RouterErrorKind(error) != KindUncertainWrite || permissionError.MatchString(error.Error())
 }
 
 func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, hasCurrent bool, path string, beforeWrite ...func([]Row) error) (*consoleAddResult, error) {
@@ -371,7 +372,7 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 		if refusedConsole(err) {
 			return nil, nil
 		}
-		return nil, rollbackError(fmt.Sprintf(messageBatchUnknown, err.Error()))
+		return nil, device.RollbackError(fmt.Sprintf(messageBatchUnknown, err.Error()))
 	}
 	output := strings.ReplaceAll(asRow(result)["ret"], "\r", "")
 	outputLines := strings.Split(output, "\n")
@@ -398,12 +399,12 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 	// still be recorded (Python indexed past its values here).
 	var failure *batchFailure
 	if len(ids) > len(values) {
-		failure = &batchFailure{Index: len(values), Err: rollbackError(fmt.Sprintf(messageUncertainRouteWrite, path))}
+		failure = &batchFailure{Index: len(values), Err: device.RollbackError(fmt.Sprintf(device.MessageUncertainRouteWrite, path))}
 	}
 	reported := ids[:min(len(ids), len(values))]
 	after, err := d.retryRead(ctx, func() ([]Row, error) { return d.query(ctx, "dst-address", destinations, path) })
 	if err != nil {
-		return nil, rollbackError(fmt.Sprintf(messageBatchReadbackRoutes, err.Error()))
+		return nil, device.RollbackError(fmt.Sprintf(messageBatchReadbackRoutes, err.Error()))
 	}
 	byID := map[string]Row{}
 	for _, row := range after {
@@ -416,7 +417,7 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 			found, readErr := d.find(ctx, path, id)
 			if readErr != nil {
 				if failure == nil || index < failure.Index {
-					failure = &batchFailure{Index: index, Err: rollbackError(fmt.Sprintf(messageUncertainWrite, readErr.Error()))}
+					failure = &batchFailure{Index: index, Err: device.RollbackError(fmt.Sprintf(messageUncertainWrite, readErr.Error()))}
 				}
 				continue
 			}
@@ -425,7 +426,7 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 		validID := rosIDPattern.MatchString(id) && !before[id] && !duplicateID(ids, index, id)
 		if !validID || exists && (rosFlag(row["dynamic"]) || !inScope(path, row, values[index])) {
 			if failure == nil || index < failure.Index {
-				failure = &batchFailure{Index: index, Err: rollbackError(fmt.Sprintf(messageUncertainRouteWrite, path))}
+				failure = &batchFailure{Index: index, Err: device.RollbackError(fmt.Sprintf(device.MessageUncertainRouteWrite, path))}
 			}
 			continue
 		}
@@ -480,12 +481,12 @@ func duplicateID(ids []string, index int, id string) bool {
 func checkWritten(check rosCheck, row Row, rows []Row) error {
 	if check.Absent {
 		if row != nil {
-			return routerError(messageReadbackDeletePresent)
+			return device.Error(messageReadbackDeletePresent)
 		}
 		return nil
 	}
 	if row == nil {
-		return routerError(messageReadbackMissingWrite)
+		return device.Error(messageReadbackMissingWrite)
 	}
 	keys := make([]string, 0, len(check.Values))
 	for key := range check.Values {
@@ -497,10 +498,10 @@ func checkWritten(check rosCheck, row Row, rows []Row) error {
 		if key == "place-before" {
 			target := value
 			if indexOfRow(rows, row.id()) < 0 || indexOfRow(rows, target) < 0 || indexOfRow(rows, row.id()) >= indexOfRow(rows, target) {
-				return routerError(messageReadbackNATOrder)
+				return device.Error(messageReadbackNATOrder)
 			}
 		} else if comparable(key, row[key]) != comparable(key, value) {
-			return routerError(fmt.Sprintf(messageReadbackMismatch, check.ID, key))
+			return device.Error(fmt.Sprintf(messageReadbackMismatch, check.ID, key))
 		}
 	}
 	return nil
@@ -519,7 +520,7 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 	values := make([]Row, len(batch))
 	for i, index := range batch {
 		if err := jsondecode.Unmarshal(rawOps[index], &ops[i]); err != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		values[i] = routeAddValues(ops[i])
 	}
@@ -583,7 +584,7 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 	if failure != nil {
 		cause := failure.Err
 		if cause == nil {
-			cause = routerError(messageReadbackMissingWrite)
+			cause = device.Error(messageReadbackMissingWrite)
 		}
 		// Routes after the failed one never existed in a one-by-one release:
 		// remove them with the same batched rollback a release uses.
@@ -595,13 +596,13 @@ func (d *RouterOS) addRoutes(ctx context.Context, rawOps []json.RawMessage, batc
 		}
 		for _, problem := range d.RestoreMany(ctx, extra, false) {
 			if problem != "" {
-				return nil, rollbackError(cause.Error() + "；" + problem)
+				return nil, device.RollbackError(cause.Error() + "；" + problem)
 			}
 		}
 		return nil, cause
 	}
 	if added.Unexplained {
-		return nil, rollbackError(fmt.Sprintf(messageBatchIncomplete, path))
+		return nil, device.RollbackError(fmt.Sprintf(messageBatchIncomplete, path))
 	}
 	left := make([]int, 0, len(batch)-added.Count)
 	for _, index := range batch[added.Count:] {
@@ -631,7 +632,7 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 	cidrs := make([]string, len(batch))
 	for i, index := range batch {
 		if err := jsondecode.Unmarshal(rawOps[index], &ops[i]); err != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		cidrs[i] = ops[i].CIDR
 	}
@@ -652,7 +653,7 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 			row := byID[op.ID]
 			want, ok := proofs[0][op.ID]
 			if !ok || row == nil || counts[op.ID] != 1 || !sameRow(StableIPv6Row(row), want) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
-				return nil, routerError(messageIPv6RoutesOwnership)
+				return nil, device.Error(messageIPv6RoutesOwnership)
 			}
 		}
 	}
@@ -706,7 +707,7 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 			}
 			for _, id := range ids[start:end] {
 				if counts[id] != 1 || !sameRow(StableIPv6Row(byID[id]), proofs[0][id]) || policyFlag(byID[id]["dynamic"]) || policyFlag(byID[id]["connect"]) {
-					failure = routerError(messageIPv6RoutesOwnership)
+					failure = device.Error(messageIPv6RoutesOwnership)
 					break
 				}
 			}
@@ -922,7 +923,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 		for position, index := range adding[:min(added.Count, len(adding))] {
 			rowPtr, exists := added.Rows[position]
 			if !exists {
-				message := fmt.Sprintf(messageUncertainRouteWrite, path)
+				message := fmt.Sprintf(device.MessageUncertainRouteWrite, path)
 				if added.Failure != nil && added.Failure.Index == position && added.Failure.Err != nil {
 					message = added.Failure.Err.Error()
 				}
@@ -1050,7 +1051,7 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 		if refusedConsole(err) {
 			return natBatchResult{Used: false}, nil
 		}
-		return natBatchResult{}, rollbackError(fmt.Sprintf(messageBatchUnknownNAT, err.Error()))
+		return natBatchResult{}, device.RollbackError(fmt.Sprintf(messageBatchUnknownNAT, err.Error()))
 	}
 	output := strings.ReplaceAll(asRow(result)["ret"], "\r", "")
 	outputLines := strings.Split(output, "\n")
@@ -1067,7 +1068,7 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 	}
 	rows, err = d.retryRead(ctx, func() ([]Row, error) { return d.list(ctx, rosNAT) })
 	if err != nil {
-		return natBatchResult{}, rollbackError(fmt.Sprintf(messageBatchReadbackNAT, err.Error()))
+		return natBatchResult{}, device.RollbackError(fmt.Sprintf(messageBatchReadbackNAT, err.Error()))
 	}
 	for attempt := 0; attempt < natSettleReads; attempt++ {
 		pending := false
@@ -1081,11 +1082,11 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 			break
 		}
 		if waitErr := waitContext(ctx, 250*time.Millisecond); waitErr != nil {
-			return natBatchResult{}, rollbackError(fmt.Sprintf(messageBatchReadbackNAT, waitErr.Error()))
+			return natBatchResult{}, device.RollbackError(fmt.Sprintf(messageBatchReadbackNAT, waitErr.Error()))
 		}
 		rows, err = d.retryRead(ctx, func() ([]Row, error) { return d.list(ctx, rosNAT) })
 		if err != nil {
-			return natBatchResult{}, rollbackError(fmt.Sprintf(messageBatchReadbackNAT, err.Error()))
+			return natBatchResult{}, device.RollbackError(fmt.Sprintf(messageBatchReadbackNAT, err.Error()))
 		}
 	}
 	byID := map[string]Row{}
@@ -1150,10 +1151,10 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 	if unproven || len(failures) > 0 {
 		message := strings.Join(failures, "；")
 		if unproven {
-			message = strings.Join(nonEmpty([]string{message,
+			message = strings.Join(device.NonEmpty([]string{message,
 				messageBatchNATUnknown}), "；")
 		}
-		return natBatchResult{}, rollbackError(message)
+		return natBatchResult{}, device.RollbackError(message)
 	}
 	return natBatchResult{Used: false}, nil
 }

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/model"
+	"configflow/internal/routers/device"
 	"context"
 	"errors"
 	"os"
@@ -42,7 +43,7 @@ func TestO36bJobLockConnectionIdentity(t *testing.T) {
 			}
 			if tt.busy {
 				failure, ok := errors.AsType[*RouterError](err)
-				if !ok || failure.Kind != KindConflict || failure.Message != messageEditBusy || unlock != nil {
+				if !ok || failure.Kind != KindConflict || failure.Message != device.MessageEditBusy || unlock != nil {
 					t.Fatalf("busy identity: %v", err)
 				}
 			} else if err != nil {

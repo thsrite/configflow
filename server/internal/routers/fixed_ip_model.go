@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -60,7 +61,7 @@ func (o FixedIPOperation) MarshalJSON() ([]byte, error) {
 	if o.ID != nil && o.Kind != "delete" {
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &fields)
-		fields["expected"] = mustPolicyJSON(o.Expected)
+		fields["expected"] = device.JSON(o.Expected)
 		return json.Marshal(fields)
 	}
 	return raw, nil

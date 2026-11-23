@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -162,10 +163,10 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			_ = json.Unmarshal(fields["spec"], &spec)
 			delete(spec, "naming_version")
 			delete(spec, "policy_version")
-			fields["spec"] = mustPolicyJSON(spec)
-			fields["resources"] = mustPolicyJSON(manifest.Resources)
+			fields["spec"] = device.JSON(spec)
+			fields["resources"] = device.JSON(manifest.Resources)
 			fields["future"] = json.RawMessage(`{"keep":true}`)
-			d.SetPolicyManifest(mustPolicyJSON(fields))
+			d.SetPolicyManifest(device.JSON(fields))
 			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: patches}})
 		case "sources":
 			var value []string
@@ -421,7 +422,7 @@ func r08Cases() []r08Case {
 		sources = append(sources, network.String())
 	}
 	nested := NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, OutInterface: "bridge", Sources: sources, Destinations: []string{"198.18.0.0/16", r08Target}, SrcAdd: sources, DstAdd: []string{"198.18.0.0/16", r08Target}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
-	nestedPreparation := mustPolicyJSON(map[string]any{"prepare_static": []any{nested, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, []string{"198.18.0.0/16", r08Target}, []CIDRGateway{}}})
+	nestedPreparation := device.JSON(map[string]any{"prepare_static": []any{nested, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []CIDRGateway{{CIDR: r08Target, Gateway: r08Gateway}}, "static_nat_checks": NATChecks{Gateway: r08Gateway, NATBypass: []string{"198.18.0.0/16", r08Target}, NATNotRequired: []CIDRGateway{}}})
 	cases = append(cases, r08Case{"static_nat_list_nested_rollback", nestedState, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "rollback", Desired: r08Desired(false), Prepare: nestedPreparation}, {Action: "plan", Desired: r08Desired(true)}, {Action: "view"}}})
 	for _, action := range []string{"publish", "rollback"} {
 		cases = append(cases, r08Case{"legacy_" + action, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "legacy"}, {Action: "view"}, {Action: action, Desired: r08Desired(true)}}})
@@ -558,9 +559,9 @@ func r08Cases() []r08Case {
 			if nat {
 				bypass = append(bypass, r08Target)
 			} else {
-				notRequired = append(notRequired, CIDRGateway{r08Target, r08Gateway})
+				notRequired = append(notRequired, CIDRGateway{CIDR: r08Target, Gateway: r08Gateway})
 			}
-			prepare := mustPolicyJSON(map[string]any{"prepare_static": prepares, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, bypass, notRequired}})
+			prepare := device.JSON(map[string]any{"prepare_static": prepares, "static_checks": []CIDRGateway{{CIDR: r08Target, Gateway: r08Gateway}}, "static_nat_checks": NATChecks{Gateway: r08Gateway, NATBypass: bypass, NATNotRequired: notRequired}})
 			cases = append(cases, r08Case{fmt.Sprintf("static_replacement_nat_%t_%s", nat, condition), state, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "publish", Desired: r08Desired(false), Mutation: mutation, Prepare: prepare}}})
 		}
 	}
@@ -612,7 +613,7 @@ func r08Cases() []r08Case {
 				config["rule_configs"] = []Row{}
 			}
 			router := &Router{RouterSettings: RouterSettings{ID: "synthetic-router", RosPolicyRuleSets: []string{"selected"}}}
-			cases = append(cases, r08Case{fmt.Sprintf("inspect_%s_%s", policy, problem), r08State(), []r08Step{{Action: "inspect", Config: mustPolicyJSON(config), Router: router, Desired: r08Desired(true), Contents: contents}}})
+			cases = append(cases, r08Case{fmt.Sprintf("inspect_%s_%s", policy, problem), r08State(), []r08Step{{Action: "inspect", Config: device.JSON(config), Router: router, Desired: r08Desired(true), Contents: contents}}})
 		}
 	}
 	return cases

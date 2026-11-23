@@ -1,4 +1,4 @@
-package routers
+package device
 
 import (
 	"net/netip"
@@ -19,7 +19,8 @@ type StaticRouteSelection struct {
 	Conflict   bool
 }
 
-func isTrue(b *bool) bool { return b != nil && *b }
+// IsTrue reports whether a boolean pointer is non-nil and true.
+func IsTrue(b *bool) bool { return b != nil && *b }
 
 // preferredRoutes keeps the routes that may forward: active ones, those at the
 // best distance (of active, else live routes), live ones without evidence.
@@ -37,7 +38,7 @@ func preferredRoutes(routes []*RouteEntry) []*RouteEntry {
 	}
 	var out []*RouteEntry
 	for _, r := range routes {
-		if len(live) > 0 && (isTrue(r.Active) || r.Distance != nil && best != nil && *r.Distance <= *best ||
+		if len(live) > 0 && (IsTrue(r.Active) || r.Distance != nil && best != nil && *r.Distance <= *best ||
 			(r.Active == nil || *r.Active) && (r.Distance == nil || best == nil)) {
 			out = append(out, r)
 		}
@@ -155,7 +156,7 @@ func (ix *StaticRouteIndex) Select(cidr, gateway string) (sel StaticRouteSelecti
 		}
 	}
 	for _, group := range ownership {
-		live := slices.DeleteFunc(slices.Clone(group), func(r *RouteEntry) bool { return !isTrue(r.Active) })
+		live := slices.DeleteFunc(slices.Clone(group), func(r *RouteEntry) bool { return !IsTrue(r.Active) })
 		if len(live) == 0 {
 			live = slices.DeleteFunc(slices.Clone(group), func(r *RouteEntry) bool { return r.Active != nil })
 		}

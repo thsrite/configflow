@@ -6,6 +6,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"maps"
 	"net/netip"
@@ -223,7 +224,7 @@ func (ix *RouteEgressIndex) selectRoutes(cidr, gateway string) StaticRouteSelect
 		entries := make([]*RouteEntry, len(ix.main))
 		for i, m := range ix.main {
 			key := strconv.Itoa(i)
-			e := NewRoute(key, m.network.String(), m.row.text("gateway"), m.row.enabled(), "")
+			e := device.NewRoute(key, m.network.String(), m.row.text("gateway"), m.row.enabled(), "")
 			if m.row.has("active") {
 				e.Active = new(m.row.flag("active"))
 			} else if m.row.has("inactive") {
@@ -236,7 +237,7 @@ func (ix *RouteEgressIndex) selectRoutes(cidr, gateway string) StaticRouteSelect
 			entries[i] = e
 			ix.raw[key] = m.row
 		}
-		ix.static = NewStaticRouteIndex(entries)
+		ix.static = device.NewStaticRouteIndex(entries)
 	}
 	sel, _ := ix.static.Select(cidr, gateway)
 	return sel
@@ -357,7 +358,7 @@ func Egress(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Route
 	interfaces := map[string]bool{}
 	for _, e := range sel.Selected {
 		row := ix.raw[e.ID]
-		if !isTrue(e.Active) || row.flag("blackhole", "invalid", "ecmp") {
+		if !device.IsTrue(e.Active) || row.flag("blackhole", "invalid", "ecmp") {
 			return "", "代理路由未生效、无效、属于黑洞路由或包含多个等价出口"
 		}
 		parts := strings.Split(row.text("immediate-gw"), "%")
@@ -769,7 +770,7 @@ func AssessBypass(cidr, gateway string, state *RouterState, ix *RouteEgressIndex
 			if slices.Contains(accepted, r.id()) {
 				found = true
 				comment, _ := r.str("comment")
-				managed = managed && IsManaged(comment)
+				managed = managed && device.IsManaged(comment)
 			}
 		}
 		switch {

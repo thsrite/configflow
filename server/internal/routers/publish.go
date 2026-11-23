@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -62,7 +63,9 @@ type LastRelease struct {
 }
 
 // CaptureManual is wired by R14. Failure is logged, never a successful baseline.
-var CaptureManual = func(context.Context, string, json.RawMessage, *Router, Driver, *Desired) error { return ErrNotPorted }
+var CaptureManual = func(context.Context, string, json.RawMessage, *Router, Driver, *Desired) error {
+	return device.ErrNotPorted
+}
 var releaseLogger = logx.Get("backend.routes.routers")
 
 // NewDriver constructs one vendor driver per inspection or publication.
@@ -107,7 +110,7 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 	return out, nil
 }
 func releaseLabel(r *Router) string {
-	return diag.EventMessage(orText(r.Name, r.ID), []any{r.Password})
+	return diag.EventMessage(device.OrText(r.Name, r.ID), []any{r.Password})
 }
 func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage, r *Router, d Driver, desired *Desired) {
 	if err := ctx.Err(); err != nil {
@@ -166,14 +169,14 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		return PublishOutcome{Err: err}
 	}
 	if req.Router == nil || req.Repo == nil {
-		return PublishOutcome{Err: routerError(messageOperationFormat)}
+		return PublishOutcome{Err: device.Error(device.MessageOperationFormat)}
 	}
 	held, release, err := RouterOperationLock(work, *req.Router, true)
 	if err != nil {
 		if work.Err() != nil {
 			return PublishOutcome{Err: work.Err()}
 		}
-		return PublishOutcome{Status: PublishBusy, Message: messageEditBusy}
+		return PublishOutcome{Status: PublishBusy, Message: device.MessageEditBusy}
 	}
 	defer release()
 	work = held
@@ -204,7 +207,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	}
 	driver := factory(current)
 	if driver == nil {
-		return PublishOutcome{Err: ErrNotPorted}
+		return PublishOutcome{Err: device.ErrNotPorted}
 	}
 	defer driver.Close()
 	inspection, err := Inspect(work, InspectRequest{ProfileID: req.ProfileID, Config: config, Router: current, Driver: driver, Loader: req.Loader, Agents: req.Agents, Repo: req.Repo})
@@ -237,7 +240,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		}
 		if needsAgent {
 			if req.Agents == nil {
-				return PublishOutcome{Err: ErrNotPorted}
+				return PublishOutcome{Err: device.ErrNotPorted}
 			}
 			agent = req.Agents.ReturnAgent(inspection.Gateway)
 		}
@@ -409,7 +412,7 @@ func releaseRouterRecord(r *Router) (json.RawMessage, error) {
 		if err := json.Unmarshal(r.source, &original); err != nil {
 			return nil, err
 		}
-		if jsonEqual(r, &original) {
+		if device.JSONEqual(r, &original) {
 			return slices.Clone(r.source), nil
 		}
 	}
@@ -421,5 +424,5 @@ func sameReleaseRouter(a, b *Router) bool {
 		return false
 	}
 	right, e := releaseRouterRecord(b)
-	return e == nil && jsonEqual(left, right)
+	return e == nil && device.JSONEqual(left, right)
 }

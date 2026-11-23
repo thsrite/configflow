@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"testing"
@@ -54,7 +55,7 @@ func TestO10R6ReviewStoredRoutersMatchEncodedConfig(t *testing.T) {
 			}
 			for i, after := range view.Routers {
 				old := before[i]
-				if !jsonEqual(after, old) {
+				if !device.JSONEqual(after, old) {
 					t.Fatalf("%s: record differs", old.ID)
 				}
 				a, _ := json.Marshal(after.View())
@@ -70,7 +71,7 @@ func TestO10R6ReviewStoredRoutersMatchEncodedConfig(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !jsonEqual(ra, rb) || !sameReleaseRouter(after, old) {
+				if !device.JSONEqual(ra, rb) || !sameReleaseRouter(after, old) {
 					t.Fatalf("%s: release record %s, before %s", old.ID, ra, rb)
 				}
 				wa, err := WorkspaceRevision(encoded, after)
@@ -146,7 +147,7 @@ func TestO10R6ReviewWorkspaceRuleSetsMatchEncoded(t *testing.T) {
 			wantErr := jsondecode.Unmarshal(encoded, &doc)
 			for _, rule := range doc.Rules {
 				if rule.ItemType == "ruleset" {
-					rule.Name = orText(rule.Name, rule.ID)
+					rule.Name = device.OrText(rule.Name, rule.ID)
 					want = append(want, rule.WorkspaceRule)
 				}
 			}

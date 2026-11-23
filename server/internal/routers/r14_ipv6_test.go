@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"net/http/httptest"
 	"slices"
@@ -42,7 +43,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 				if len(v.Ops) != 1 {
 					t.Fatalf("IPv6 enrollment %+v", v)
 				}
-				if _, err := d.Apply(t.Context(), mustPolicyJSON(v.Ops[0])); err != nil {
+				if _, err := d.Apply(t.Context(), device.JSON(v.Ops[0])); err != nil {
 					t.Fatal(err)
 				}
 				r.Extra["ipv6_routes_state"] = slices.Clone(d.ipv6RoutesManifest)

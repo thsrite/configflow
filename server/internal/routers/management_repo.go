@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 
@@ -70,7 +71,7 @@ func saveWorkspacePolicies(config json.RawMessage, rows json.RawMessage, base st
 	if err != nil {
 		return nil, err
 	}
-	if jsonEqual(rows, current) {
+	if device.JSONEqual(rows, current) {
 		return config, nil
 	}
 	parsed, err := oxidns.ParsePolicies(rows)

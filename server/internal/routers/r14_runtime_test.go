@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,14 +45,14 @@ func TestR14DownloadsProductionParameters(t *testing.T) {
 	defer httpServer.Close()
 	spy := &r14Transport{}
 	downloads := RuleSyncDownloads{Client: &rulefetch.Client{Transport: spy, Sleep: func(time.Duration) { t.Error("unexpected retry") }}}
-	source := mustPolicyJSON(map[string]string{"id": "one", "url": httpServer.URL, "behavior": "classical", "format": "text", "name": "Synthetic"})
+	source := device.JSON(map[string]string{"id": "one", "url": httpServer.URL, "behavior": "classical", "format": "text", "name": "Synthetic"})
 	config := json.RawMessage(`{"system_config":{}}`)
 	for i := 0; i < 2; i++ {
 		if _, err := downloads.Download(t.Context(), source, config); err != nil {
 			t.Fatal(err)
 		}
 	}
-	other := mustPolicyJSON(map[string]string{"id": "two", "url": httpServer.URL, "behavior": "ipcidr", "format": "text", "name": "Different declaration"})
+	other := device.JSON(map[string]string{"id": "two", "url": httpServer.URL, "behavior": "ipcidr", "format": "text", "name": "Different declaration"})
 	if _, err := downloads.Download(t.Context(), other, config); err == nil {
 		t.Fatal("shared cached transport bypassed declaration validation")
 	}
@@ -324,7 +325,7 @@ func TestR14DownloadSafetyBounds(t *testing.T) {
 			}))
 			defer server.Close()
 			downloads := RuleSyncDownloads{}
-			source := mustPolicyJSON(map[string]string{"id": "synthetic", "url": server.URL, "behavior": "classical", "format": "text"})
+			source := device.JSON(map[string]string{"id": "synthetic", "url": server.URL, "behavior": "classical", "format": "text"})
 			_, err := downloads.Download(t.Context(), source, json.RawMessage(`{"system_config":{}}`))
 			if err == nil {
 				t.Fatal("unsafe downloaded body accepted")

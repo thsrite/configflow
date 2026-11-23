@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"errors"
 	"net/http/httptest"
@@ -221,7 +222,7 @@ func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 	changedRow := *row
 	changedRow.Snapshot = RouteSnapshot{ros: cloneRow(row.Snapshot.ros)}
 	changedRow.Snapshot.ros["distance"] = "99"
-	if _, err := BuildRoutePlan(tc.Router, []*EditableRoute{&changedRow}, payload); routerErrorKind(err) != KindConflict {
+	if _, err := BuildRoutePlan(tc.Router, []*EditableRoute{&changedRow}, payload); device.RouterErrorKind(err) != KindConflict {
 		t.Fatal("advanced drift not rejected")
 	}
 	for _, field := range []string{"active", "inactive", "immediate-gw"} {
@@ -276,7 +277,7 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 
 func TestR06SecretRedactionKeepsRecoveryStatus(t *testing.T) {
 	for _, kind := range []ErrorKind{KindRollback, KindUncertainWrite} {
-		err := routeSafeError(rosError(kind, "device echoes synthetic-secret"), "http://example.com", "synthetic-secret")
+		err := routeSafeError(device.KindError(kind, "device echoes synthetic-secret"), "http://example.com", "synthetic-secret")
 		e, ok := errors.AsType[*RouterError](err)
 		if !ok || e.Kind != kind || strings.Contains(e.Message, "synthetic-secret") {
 			t.Fatal("unsafe redaction", err)

@@ -27,6 +27,7 @@ package routers
 // refuses to delete a referenced group: such a group is never deleted or edited.
 
 import (
+	"configflow/internal/routers/device"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -478,7 +479,7 @@ func ReadGroupRules(groups []*IkuaiGroup, natRows, policyRows []ikuaiRow) *Group
 // roleRule: rule is the managed rule a role family belongs to.
 func roleRule(role string, rule *GroupRule) bool {
 	if role == "nat" {
-		return rule.Func == "nat_rule" && rule.Action == "filter" && IsManaged(rule.Comment)
+		return rule.Func == "nat_rule" && rule.Action == "filter" && device.IsManaged(rule.Comment)
 	}
 	return rule.Func == "stream_ipport" && rule.Comment == GroupMarkers[role]
 }
@@ -1068,7 +1069,7 @@ func (p *GroupPlanner) keptWarning(g *IkuaiGroup, users []GroupUser, hidden int)
 		if name := u.Label + "「" + who + "」"; !slices.Contains(names, name) {
 			names = append(names, name)
 		}
-		if !IsManaged(u.Comment) {
+		if !device.IsManaged(u.Comment) {
 			owner = "手工规则"
 		}
 	}
@@ -1193,7 +1194,7 @@ func GroupReportSection(state *RouterState) GroupReport {
 	}
 	var managed []*NatBypassEntry
 	for _, rule := range state.NatBypass {
-		if rule.Enabled && IsManaged(rule.Comment) {
+		if rule.Enabled && device.IsManaged(rule.Comment) {
 			managed = append(managed, rule)
 		}
 	}
@@ -1216,7 +1217,7 @@ func GroupReportSection(state *RouterState) GroupReport {
 func VerifyGroups(check GroupStageCheck, state *RouterState) error {
 	s := state.IkuaiGroups
 	if s == nil {
-		return routerError("回读校验失败：无法读取 iKuai IP 分组")
+		return device.Error("回读校验失败：无法读取 iKuai IP 分组")
 	}
 	byName := map[string][]*IkuaiGroup{}
 	for _, g := range s.Groups {
@@ -1236,7 +1237,7 @@ func VerifyGroups(check GroupStageCheck, state *RouterState) error {
 		found := byName[name]
 		// Marked, not just adopted: every group the stage planned carries the marker.
 		if len(found) != 1 || found[0].Role == "" || found[0].Adopted || GroupDigest(found[0].Values) != check.Groups[name] {
-			return routerError("回读校验失败：IP 分组「" + name + "」内容与计划不一致")
+			return device.Error("回读校验失败：IP 分组「" + name + "」内容与计划不一致")
 		}
 	}
 	for _, c := range check.Rules {
@@ -1255,12 +1256,12 @@ func VerifyGroups(check GroupStageCheck, state *RouterState) error {
 			if c.Func == "stream_ipport" {
 				label = "策略路由"
 			}
-			return routerError("回读校验失败：" + label + "「" + c.Comment + "」没有按计划只引用 ConfigFlow 的 IP 分组")
+			return device.Error("回读校验失败：" + label + "「" + c.Comment + "」没有按计划只引用 ConfigFlow 的 IP 分组")
 		}
 	}
 	for _, name := range check.Removed {
 		if slices.ContainsFunc(byName[name], func(g *IkuaiGroup) bool { return g.Role != "" }) {
-			return routerError("回读校验失败：应删除的 IP 分组「" + name + "」仍然存在")
+			return device.Error("回读校验失败：应删除的 IP 分组「" + name + "」仍然存在")
 		}
 	}
 	return nil

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,14 +50,14 @@ func syncVersion(content string) string {
 // ClassifySyncRules strictly classifies bounded UTF-8 rule text for unattended writes.
 func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 	if len(content) > syncMaxBytes {
-		return nil, routerError(messageSyncLarge)
+		return nil, device.Error(messageSyncLarge)
 	}
 	text := strings.TrimSpace(strings.TrimLeft(content, "\ufeff"))
 	if text == "" || strings.ContainsAny(text[:1], "<{[") {
-		return nil, routerError(messageSyncFormat)
+		return nil, device.Error(messageSyncFormat)
 	}
 	if !slices.Contains([]string{"classical", "ipcidr", "domain"}, behavior) {
-		return nil, routerError(messageSyncBehavior)
+		return nil, device.Error(messageSyncBehavior)
 	}
 	// CR, LF and CRLF all end a line, as in the Python classifier and YAML.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
@@ -65,11 +66,11 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 	if syncPayload.MatchString(text) {
 		root, err := yamlx.Parse([]byte(text))
 		if err != nil {
-			return nil, routerError(messageSyncYAML)
+			return nil, device.Error(messageSyncYAML)
 		}
 		payload := yamlx.Resolve(yamlx.Get(root, "payload"))
 		if payload == nil || payload.Kind != yaml.SequenceNode {
-			return nil, routerError(messageSyncPayload)
+			return nil, device.Error(messageSyncPayload)
 		}
 		entries = payload.Content
 	} else {
@@ -78,7 +79,7 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 		}
 	}
 	if len(entries) > 100000 {
-		return nil, routerError(messageSyncLines)
+		return nil, device.Error(messageSyncLines)
 	}
 	record := &RuleSyncRecord{Version: syncVersion(content), IPv4: []string{}, IPv6: []string{}}
 	v4, v6 := map[string]bool{}, map[string]bool{}
@@ -141,7 +142,7 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 				}
 				target[network.String()] = true
 				if len(target) > syncMaxIPs {
-					return nil, routerError(message)
+					return nil, device.Error(message)
 				}
 			} else {
 				record.IgnoredCount++
@@ -155,14 +156,14 @@ func ClassifySyncRules(content, behavior string) (*RuleSyncRecord, error) {
 		bad(i)
 	}
 	if total == 0 {
-		return nil, routerError(messageSyncEmpty)
+		return nil, device.Error(messageSyncEmpty)
 	}
 	if invalid > 0 {
 		detail := messageSyncInvalid
 		if behavior == "ipcidr" {
 			detail = messageSyncInvalidIP
 		}
-		return nil, routerError(fmt.Sprintf(messageSyncInvalidLines, detail, invalid, strings.Join(examples, "、")))
+		return nil, device.Error(fmt.Sprintf(messageSyncInvalidLines, detail, invalid, strings.Join(examples, "、")))
 	}
 	for n := range v4 {
 		record.IPv4 = append(record.IPv4, n)
@@ -235,7 +236,7 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 		}
 	}
 	if len(selected) > 128 {
-		return nil, routerError(messageSyncSelectionCap)
+		return nil, device.Error(messageSyncSelectionCap)
 	}
 	result := []syncSource{}
 	for _, id := range selected {
@@ -250,7 +251,7 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 			sp = &source
 		}
 		if issue := RuleSourceIssue(ip, sp, true); issue != "" {
-			return nil, routerError(fmt.Sprintf(messageSyncSourceIssue, issue))
+			return nil, device.Error(fmt.Sprintf(messageSyncSourceIssue, issue))
 		}
 		v := syncSource{Item: item, Library: source}
 		if err := jsondecode.Unmarshal(source.Raw, &v.Source); err != nil {
@@ -263,11 +264,11 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 			Behavior string `json:"behavior"`
 		}
 		_ = jsondecode.Unmarshal(item.Raw, &b)
-		v.Behavior = orText(v.Source.Behavior, orText(b.Behavior, "domain"))
+		v.Behavior = device.OrText(v.Source.Behavior, device.OrText(b.Behavior, "domain"))
 		result = append(result, v)
 	}
 	if len(result) == 0 {
-		return nil, routerError(messageSyncSelect)
+		return nil, device.Error(messageSyncSelect)
 	}
 	return result, nil
 }
@@ -290,14 +291,14 @@ func checkSyncUpdates(previous, current map[string]*RuleSyncRecord) error {
 		record := current[id]
 		old := previous[id]
 		if old == nil {
-			return routerError(messageSyncSelectionChanged)
+			return device.Error(messageSyncSelectionChanged)
 		}
 		if record.SourceType != "url" && record.Version != old.Version {
-			return routerError(fmt.Sprintf(messageSyncLocalChanged, record.Name))
+			return device.Error(fmt.Sprintf(messageSyncLocalChanged, record.Name))
 		}
 		for _, item := range []struct{ version, old, next int }{{4, old.IPCount, record.IPCount}, {6, old.IP6Count, record.IP6Count}} {
 			if item.old > 0 && item.next == 0 {
-				return routerError(fmt.Sprintf(messageSyncLostIPs, record.Name, item.version, item.old))
+				return device.Error(fmt.Sprintf(messageSyncLostIPs, record.Name, item.version, item.old))
 			}
 		}
 	}
@@ -312,7 +313,7 @@ func sortedSyncKeys[T any](items map[string]T) []string {
 	return keys
 }
 
-func syncCIDRsEqual(a, b []ProxyCIDR) bool { return jsonEqual(a, b) }
+func syncCIDRsEqual(a, b []ProxyCIDR) bool { return device.JSONEqual(a, b) }
 func syncCIDRSet(items []ProxyCIDR) map[string]bool {
 	result := map[string]bool{}
 	for _, item := range items {

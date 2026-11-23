@@ -3,6 +3,7 @@ package routers
 import (
 	"bufio"
 	"compress/gzip"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"net/netip"
 	"os"
@@ -157,7 +158,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		case "digest":
 			return GroupDigest(list)
 		}
-		return texts(Networks(list))
+		return texts(device.Networks(list))
 	case "canon", "client_sources":
 		var s string
 		decodeInto(t, in, &s)

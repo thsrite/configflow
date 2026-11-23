@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -94,9 +95,9 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 		} else if step.Action == "apply" {
 			var raw json.RawMessage
 			if tc.Feature == "fake" {
-				raw = mustPolicyJSON(fakePlan.Ops[0])
+				raw = device.JSON(fakePlan.Ops[0])
 			} else {
-				raw = mustPolicyJSON(routesPlan.Ops[0])
+				raw = device.JSON(routesPlan.Ops[0])
 			}
 			undo, err = d.Apply(ctx, raw)
 			if err == nil {
@@ -149,7 +150,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 				continue
 			}
 			if len(ops) > 0 {
-				undo, err = d.Apply(ctx, mustPolicyJSON(ops[0]))
+				undo, err = d.Apply(ctx, device.JSON(ops[0]))
 				if err == nil {
 					add(undo)
 				}

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -24,7 +25,7 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 				if e != nil || len(plan.Blockers) > 0 {
 					t.Fatal(e, plan)
 				}
-				if _, e = seed.Apply(t.Context(), mustPolicyJSON(plan.Ops[0])); e != nil {
+				if _, e = seed.Apply(t.Context(), device.JSON(plan.Ops[0])); e != nil {
 					t.Fatal(e)
 				}
 				r.Extra["ros_policy_state"] = slices.Clone(seed.policyManifest)

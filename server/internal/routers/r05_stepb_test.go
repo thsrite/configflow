@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -131,7 +132,7 @@ func TestR05StepBStaticMaskCompensation(t *testing.T) {
 				var err error
 				undo, err = d.Apply(ctx, mustJSON(t, routeAdd("198.51.100.0/24", "cf-stepb")))
 				if err != nil {
-					undo = routers.UndoOf(err)
+					undo = device.UndoOf(err)
 					return err
 				}
 				if failure == "later refusal" {

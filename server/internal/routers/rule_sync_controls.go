@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -54,7 +55,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 		if id == r.DNSAgentID {
 			dns = a
 		}
-		agents = append(agents, syncProjection(mustPolicyJSON(a), "id", "host", "service_type", "profile_id"))
+		agents = append(agents, syncProjection(device.JSON(a), "id", "host", "service_type", "profile_id"))
 	}
 	selected := map[string]map[string]map[string]json.RawMessage{}
 	for _, source := range sources {
@@ -74,7 +75,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 	if err != nil {
 		return "", err
 	}
-	value := map[string]json.RawMessage{"router": mustPolicyJSON(router), "agents": mustPolicyJSON(agents), "sources": mustPolicyJSON(selected), "fake_ip": mustPolicyJSON(fake.String()), "oxidns": doc.Oxidns, "proxy_groups": doc.Groups}
+	value := map[string]json.RawMessage{"router": device.JSON(router), "agents": device.JSON(agents), "sources": device.JSON(selected), "fake_ip": device.JSON(fake.String()), "oxidns": doc.Oxidns, "proxy_groups": doc.Groups}
 	for key, v := range value {
 		if len(v) == 0 {
 			value[key] = json.RawMessage("null")
@@ -85,7 +86,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 		return "", err
 	}
 	if r.Type == "routeros" && IPv6FakeIPRelevant(&profile, r) {
-		value["ipv6_fakeip"] = mustPolicyJSON(struct {
+		value["ipv6_fakeip"] = device.JSON(struct {
 			Settings IPv6Settings    `json:"settings"`
 			State    json.RawMessage `json:"state"`
 		}{IPv6FakeIPSettings(&profile), syncNull(r.State("ipv6_fakeip_state"))})
@@ -99,7 +100,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 				PeerID  string          `json:"peer_id"`
 			} `json:"oxidns_ha"`
 		}
-		_ = jsondecode.Unmarshal(mustPolicyJSON(dns), &view)
+		_ = jsondecode.Unmarshal(device.JSON(dns), &view)
 		if view.HA.Enabled {
 			var peer *GatewayAgent
 			if s.Agents != nil {
@@ -108,11 +109,11 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 					return "", err
 				}
 			}
-			value["dns_ha"] = mustPolicyJSON(struct {
+			value["dns_ha"] = device.JSON(struct {
 				GroupID json.RawMessage            `json:"group_id"`
 				VIP     json.RawMessage            `json:"vip"`
 				Peer    map[string]json.RawMessage `json:"peer"`
-			}{syncNull(view.HA.GroupID), syncNull(view.HA.VIP), syncProjection(mustPolicyJSON(peer), "id", "host")})
+			}{syncNull(view.HA.GroupID), syncNull(view.HA.VIP), syncProjection(device.JSON(peer), "id", "host")})
 		}
 	}
 	encoded, err := canonicalReleaseJSON(value)

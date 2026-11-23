@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"fmt"
 	"net/url"
@@ -71,7 +72,7 @@ func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (
 			}
 		}
 	}
-	names = uniqueStrings(names)
+	names = device.Unique(names)
 	slices.Sort(names)
 	if family == 4 {
 		lists, err := d.ReadAddresses(ctx, names)
@@ -175,7 +176,7 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, state *Router
 			targets = append(targets, item.CIDR)
 		}
 	}
-	targets = uniqueStrings(targets)
+	targets = device.Unique(targets)
 	slices.SortStableFunc(targets, func(a, b string) int {
 		if a == b {
 			return 0

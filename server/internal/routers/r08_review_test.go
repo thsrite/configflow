@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,7 @@ func TestR08ReviewNATListRollbackKeepsMovedMember(t *testing.T) {
 	if err == nil {
 		t.Fatal("rollback reported success while a fresh member survived in another list")
 	}
-	if want := fmt.Sprintf(messagePolicyChanged, rosAddresses, moved); !strings.Contains(err.Error(), want) {
+	if want := fmt.Sprintf(device.MessagePolicyChanged, rosAddresses, moved); !strings.Contains(err.Error(), want) {
 		t.Fatalf("error %q does not name the moved member (%q)", err, want)
 	}
 	if row := findRowFake(f.Snapshot().Tables[rosAddresses], moved); row == nil || row["list"] != "user-list" {
@@ -81,7 +82,7 @@ func TestR08ReviewSubtractNetworksFamilies(t *testing.T) {
 
 // F3: prepare_static is present exactly when the planner set it, even empty.
 func TestR08ReviewPrepareStaticPresence(t *testing.T) {
-	base := ROSPolicyReplace{OpHead: OpHead{"ros_policy_replace", "s"}, Bundle: []ROSReplacement{}, Owned: []ROSResource{}, Migrations: []ROSResource{}, Replacements: []ROSReplacement{}, StaticChecks: []CIDRGateway{}}
+	base := ROSPolicyReplace{OpHead: OpHead{Kind: "ros_policy_replace", Summary: "s"}, Bundle: []ROSReplacement{}, Owned: []ROSResource{}, Migrations: []ROSResource{}, Replacements: []ROSReplacement{}, StaticChecks: []CIDRGateway{}}
 	tests := []struct {
 		name    string
 		prepare []Op

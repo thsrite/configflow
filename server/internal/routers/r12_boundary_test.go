@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -80,20 +81,20 @@ func (a *r12Agent) Status(context.Context) (*ReturnStatus, error) {
 	return &s, e
 }
 func (a *r12Agent) Apply(_ context.Context, raw json.RawMessage) error {
-	a.calls = append(a.calls, mustPolicyJSON([]any{"apply", raw}))
+	a.calls = append(a.calls, device.JSON([]any{"apply", raw}))
 	var spec ReturnSpec
 	if e := json.Unmarshal(raw, &spec); e != nil {
 		return e
 	}
 	a.s.Managed = &ReturnManaged{Active: true, TablePresent: true, Spec: raw}
-	a.s.FWMarkRules = []json.RawMessage{mustPolicyJSON(map[string]string{"priority": "104", "table": "104", "mark": spec.Mark + "/" + spec.Mark})}
+	a.s.FWMarkRules = []json.RawMessage{device.JSON(map[string]string{"priority": "104", "table": "104", "mark": spec.Mark + "/" + spec.Mark})}
 	if a.errorAfterApply {
 		return &agentsTransportFailure{}
 	}
 	return nil
 }
 func (a *r12Agent) Remove(_ context.Context, restore bool) error {
-	a.calls = append(a.calls, mustPolicyJSON([]any{"remove", restore}))
+	a.calls = append(a.calls, device.JSON([]any{"remove", restore}))
 	a.s.Managed = nil
 	a.s.FWMarkRules = []json.RawMessage{}
 	if a.errorAfterRemove {

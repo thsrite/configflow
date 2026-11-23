@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"fmt"
 	"maps"
@@ -97,7 +98,7 @@ func (d *RouterOS) NATResources(ctx context.Context) (*NATBaseline, error) {
 	}
 	found := InspectNATListRule(d.assessedNAT(rows), nil)
 	if found.Problem != "" {
-		return nil, routerError(found.Problem)
+		return nil, device.Error(found.Problem)
 	}
 	if found.Rule == nil {
 		return nil, nil
@@ -173,13 +174,13 @@ func NATMigration(stages []Stage) (merged, stale int) {
 func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState) error {
 	lists := ListsOfNAT(ctx, state)
 	if lists == nil {
-		return routerError(messageNATVerifyLists)
+		return device.Error(messageNATVerifyLists)
 	}
 	if lists.MangleRefs == nil {
-		return routerError(messageNATVerifyPrefix + messageNATMangleUnreadable)
+		return device.Error(messageNATVerifyPrefix + messageNATMangleUnreadable)
 	}
 	if lists.FirewallRefs == nil {
-		return routerError(messageNATVerifyPrefix + messageNATFirewallUnreadable)
+		return device.Error(messageNATVerifyPrefix + messageNATFirewallUnreadable)
 	}
 	rows := []Row{}
 	if state.NatContext != nil {
@@ -188,23 +189,23 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 	found := InspectNATListRule(rows, lists.refs())
 	if check.Withdraw {
 		if found.Rule != nil || slices.ContainsFunc(rows, IsNATListCandidate) {
-			return routerError(messageNATVerifyRulePresent)
+			return device.Error(messageNATVerifyRulePresent)
 		}
 	} else {
 		if found.Problem != "" {
-			return routerError(messageNATVerifyPrefix + found.Problem)
+			return device.Error(messageNATVerifyPrefix + found.Problem)
 		}
 		if len(check.Destinations) > 0 && found.Rule == nil {
-			return routerError(messageNATVerifyNoRule)
+			return device.Error(messageNATVerifyNoRule)
 		}
 		if found.Rule != nil && found.OutInterface != check.OutInterface {
-			return routerError(messageNATVerifyEgress)
+			return device.Error(messageNATVerifyEgress)
 		}
 	}
-	removed := stringSet(check.Removed...)
+	removed := device.StringSet(check.Removed...)
 	for _, row := range rows {
 		if removed[row.id()] {
-			return routerError(messageNATVerifyLegacy)
+			return device.Error(messageNATVerifyLegacy)
 		}
 	}
 	for i, name := range []string{NATSrcList, NATDstList} {
@@ -225,13 +226,13 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 		if check.Withdraw {
 			expected = nil
 		}
-		if !maps.Equal(ours, stringSet(expected...)) {
-			return routerError(fmt.Sprintf(messageNATVerifyMembers, name))
+		if !maps.Equal(ours, device.StringSet(expected...)) {
+			return device.Error(fmt.Sprintf(messageNATVerifyMembers, name))
 		}
 		if !check.Withdraw {
 			for _, value := range wanted {
 				if !present[natKey(value)] {
-					return routerError(fmt.Sprintf(messageNATVerifyMissing, name))
+					return device.Error(fmt.Sprintf(messageNATVerifyMissing, name))
 				}
 			}
 		}

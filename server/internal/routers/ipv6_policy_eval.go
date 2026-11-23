@@ -4,6 +4,7 @@ package routers
 // selectors never prove a packet path or a real connection.
 
 import (
+	"configflow/internal/routers/device"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -301,7 +302,7 @@ func policyList(s *PolicySnapshot, actual *string, name string) PolicyMatch {
 	return out
 }
 
-var policyMeta = stringSet(".id", "chain", "action", "disabled", "invalid", "dynamic", "comment", "log", "log-prefix", "bytes", "packets", "jump-target", "reject-with", "to-addresses", "to-ports", "random", "fully-random", "persistent", "hw-offload")
+var policyMeta = device.StringSet(".id", "chain", "action", "disabled", "invalid", "dynamic", "comment", "log", "log-prefix", "bytes", "packets", "jump-target", "reject-with", "to-addresses", "to-ports", "random", "fully-random", "persistent", "hw-offload")
 
 // MatchPolicyRule evaluates supported RouterOS selectors without inventing any
 // missing packet data. A false selector dominates an unknown one.
@@ -539,7 +540,7 @@ func EvaluatePolicyChain(s *PolicySnapshot, table, chain string, p PolicyPacket)
 		}
 		skipped := walk(current, index+1, stack, trail)
 		if matched.Decision == skipped.Decision && (matched.Decision == "allow" || matched.Decision == "drop") {
-			return PolicyDecision{Decision: matched.Decision, Evidence: uniqueStrings(append(append(matched.Evidence, skipped.Evidence...), messagePolicyConverge))}
+			return PolicyDecision{Decision: matched.Decision, Evidence: device.Unique(append(append(matched.Evidence, skipped.Evidence...), messagePolicyConverge))}
 		}
 		return result("unknown", evidence, messagePolicyDiverge)
 	}

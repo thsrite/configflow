@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/devhttp"
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -260,11 +261,11 @@ func SmartROSPolicySources(rows json.RawMessage, gateway string) ([]string, erro
 	}
 	address, ok := netipx.ParseAddr4(gateway)
 	if !ok {
-		return nil, routerError(messagePolicyGatewayInvalid)
+		return nil, device.Error(messagePolicyGatewayInvalid)
 	}
 	networks = SubtractNetworks(networks, []netip.Prefix{netip.PrefixFrom(address, 32)})
 	if len(networks) > 4096 {
-		return nil, routerError(messagePolicyTooManySources)
+		return nil, device.Error(messagePolicyTooManySources)
 	}
 	result := []string{}
 	for _, network := range networks {
@@ -279,7 +280,7 @@ func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	owner, err := ROSPolicyDigest(mustPolicyJSON(router.ID))
+	owner, err := ROSPolicyDigest(device.JSON(router.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +317,7 @@ func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router
 	result.SourceRevision = oxidns.Revision(settings)
 	view, err := oxidns.ReadPolicies(settings, profile)
 	if err == nil && !view.Editable {
-		err = routerError(view.Reason)
+		err = device.Error(view.Reason)
 	}
 	if err == nil {
 		result.Sources, err = SmartROSPolicySources(oxidns.ToJSON(view.Policies), desired.ProxyGateway)
@@ -330,4 +331,3 @@ func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router
 }
 
 // mustPolicyJSON is used only for typed, JSON-encodable model values.
-func mustPolicyJSON[T any](v T) json.RawMessage { data, _ := json.Marshal(v); return data }

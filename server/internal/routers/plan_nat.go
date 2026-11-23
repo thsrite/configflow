@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -52,15 +53,15 @@ func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *Na
 			continue
 		}
 		r := rules[id]
-		comment := ManagedComment(r.Comment)
-		ops = append(ops, NATUpdateOp{OpHead: OpHead{"nat_update", fmt.Sprintf(messagePlanNATAdopt, orText(r.Comment, id), comment, "")}, ID: id, AddDst: []string{}, Comment: comment})
+		comment := device.ManagedComment(r.Comment)
+		ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messagePlanNATAdopt, device.OrText(r.Comment, id), comment, "")}, ID: id, AddDst: []string{}, Comment: comment})
 	}
 	checks := []GroupRuleCheck{}
 	if target != nil {
 		adopting := slices.Contains(adopt, target.ID)
 		comment := target.Comment
 		if adopting {
-			comment = ManagedComment(comment)
+			comment = device.ManagedComment(comment)
 		}
 		checks = append(checks, GroupRuleCheck{Func: "nat_rule", ID: target.ID, Comment: comment, Groups: final, KeepForeign: true})
 		if adopting || p.NeedsRewrite(key, "nat", true) {
@@ -71,16 +72,16 @@ func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *Na
 			}
 			summary := fmt.Sprintf(messageNATGroupUpdate, comment, GroupSpan(final), total, added)
 			if adopting {
-				summary = fmt.Sprintf(messageNATGroupAdopt, orText(target.Comment, target.ID), comment, GroupSpan(final), total, added)
+				summary = fmt.Sprintf(messageNATGroupAdopt, device.OrText(target.Comment, target.ID), comment, GroupSpan(final), total, added)
 			} else if p.Migration(key, messageNATLabel, comment) > 0 {
 				summary = fmt.Sprintf(messageNATGroupMigrate, comment, GroupSpan(final), total, added)
 			}
-			ops = append(ops, NATUpdateOp{OpHead: OpHead{"nat_update", summary}, ID: target.ID, AddDst: missing, Groups: &final, KeepForeign: true, Comment: comment})
+			ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: summary}, ID: target.ID, AddDst: missing, Groups: &final, KeepForeign: true, Comment: comment})
 		}
 	} else if len(missing) > 0 {
 		src := lanExcept(gateway)
 		checks = append(checks, GroupRuleCheck{Func: "nat_rule", Comment: PolicyAutoComment, Groups: final, KeepForeign: true})
-		ops = append(ops, NATAddOp{OpHead: OpHead{"nat_add", fmt.Sprintf(messageNATGroupAdd, strings.Join(src, ", "), GroupSpan(final), total)}, Src: src, Dst: missing, Groups: &final, Comment: PolicyAutoComment})
+		ops = append(ops, NATAddOp{OpHead: OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messageNATGroupAdd, strings.Join(src, ", "), GroupSpan(final), total)}, Src: src, Dst: missing, Groups: &final, Comment: PolicyAutoComment})
 	}
 	removed := p.Cleanup("nat")
 	p.StageChecks[StageNATBypass] = p.Check([]string{"nat"}, checks, deletedGroupNames(removed))
@@ -113,7 +114,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		if r.Enabled && !slices.Contains(retiring, r.ID) {
 			rules[r.ID] = r
 			ordered = append(ordered, r)
-			if IsManaged(r.Comment) {
+			if device.IsManaged(r.Comment) {
 				managed = append(managed, r)
 			}
 		}
@@ -125,7 +126,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		}
 		if item.Status == "adoptable" {
 			for _, id := range item.RuleIDs {
-				if r := rules[id]; r != nil && !IsManaged(r.Comment) && !slices.Contains(adopt, id) {
+				if r := rules[id]; r != nil && !device.IsManaged(r.Comment) && !slices.Contains(adopt, id) {
 					adopt = append(adopt, id)
 				}
 			}
@@ -178,7 +179,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		}
 		targets = nil
 		for _, r := range candidates {
-			if maps.EqualFunc(want, group(r.Attributes), func(a, b json.RawMessage) bool { return jsonEqual(a, b) }) {
+			if maps.EqualFunc(want, group(r.Attributes), func(a, b json.RawMessage) bool { return device.JSONEqual(a, b) }) {
 				targets = append(targets, r)
 			}
 		}
@@ -190,25 +191,25 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		if slices.ContainsFunc(targets, func(t *NatBypassEntry) bool { return t.ID == id }) {
 			add = missing
 		}
-		comment := ManagedComment(r.Comment)
+		comment := device.ManagedComment(r.Comment)
 		extra := ""
 		if len(add) > 0 {
 			extra = fmt.Sprintf(messagePlanNATAdoptAdd, strings.Join(add, ", "))
 		}
-		ops = append(ops, NATUpdateOp{OpHead: OpHead{"nat_update", fmt.Sprintf(messagePlanNATAdopt, orText(r.Comment, r.ID), comment, extra)}, ID: id, AddDst: add, Comment: comment})
+		ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messagePlanNATAdopt, device.OrText(r.Comment, r.ID), comment, extra)}, ID: id, AddDst: add, Comment: comment})
 	}
 	for _, r := range targets {
-		if IsManaged(r.Comment) && len(missing) > 0 {
+		if device.IsManaged(r.Comment) && len(missing) > 0 {
 			summary := fmt.Sprintf(messageNATExtend, r.Comment, strings.Join(missing, ", "))
 			if len(targets) > 1 {
 				summary += fmt.Sprintf(messageNATSource, strings.Join(r.Src, ", "))
 			}
-			ops = append(ops, NATUpdateOp{OpHead: OpHead{"nat_update", summary}, ID: r.ID, AddDst: missing, Comment: r.Comment})
+			ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: summary}, ID: r.ID, AddDst: missing, Comment: r.Comment})
 		}
 	}
 	if target == nil && len(missing) > 0 {
 		src := lanExcept(gateway)
-		ops = append(ops, NATAddOp{OpHead: OpHead{"nat_add", fmt.Sprintf(messagePlanNATAdd, strings.Join(src, ", "), strings.Join(missing, ", "))}, Src: src, Dst: missing, Comment: PolicyAutoComment})
+		ops = append(ops, NATAddOp{OpHead: OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messagePlanNATAdd, strings.Join(src, ", "), strings.Join(missing, ", "))}, Src: src, Dst: missing, Comment: PolicyAutoComment})
 	}
 	for i, op := range ops {
 		switch v := op.(type) {

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -79,7 +80,7 @@ func TestR12ReviewCaptureSeesPublishedIPv6Manifest(t *testing.T) {
 	if !effectful(stored.State("ipv6_fakeip_state")) {
 		t.Fatal("control: release did not publish an IPv6 Fake-IP manifest")
 	}
-	if captured == nil || !jsonEqual(captured.State("ipv6_fakeip_state"), stored.State("ipv6_fakeip_state")) {
+	if captured == nil || !device.JSONEqual(captured.State("ipv6_fakeip_state"), stored.State("ipv6_fakeip_state")) {
 		t.Fatalf("capture saw the pre-release manifest: %s", captured.State("ipv6_fakeip_state"))
 	}
 	if req.Router.State("ipv6_fakeip_state") != nil {
@@ -128,7 +129,7 @@ func TestR12ReviewReturnOpsRequirePreviewedAgentSpec(t *testing.T) {
 	reordered := json.RawMessage(`{"router_ip":"192.0.2.1","table":104,"priority":104,"mark":"0x400000","safety_version":1,"proxy_dst":["198.51.100.0/24","198.18.0.0/16"]}`)
 	other := json.RawMessage(`{"router_ip":"192.0.2.9","table":104,"priority":104,"mark":"0x400000","safety_version":1,"proxy_dst":["198.18.0.0/16","198.51.100.0/24"]}`)
 	spec := &ReturnSpec{RouterIP: "192.0.2.1", Table: 104, Priority: 104, Mark: "0x400000", SafetyVersion: 1, ProxyDst: &[]string{"198.18.0.0/16"}}
-	remove := mustPolicyJSON(ReturnRemoveOp{OpHead{"return_routing_remove", "synthetic"}, false, previewed})
+	remove := device.JSON(ReturnRemoveOp{OpHead{Kind: "return_routing_remove", Summary: "synthetic"}, false, previewed})
 	tests := []struct {
 		name     string
 		op       json.RawMessage
@@ -139,10 +140,10 @@ func TestR12ReviewReturnOpsRequirePreviewedAgentSpec(t *testing.T) {
 		{"remove_same_set_other_order", remove, reordered, true},
 		{"remove_other_router_spec", remove, other, false},
 		{"remove_already_gone", remove, nil, false},
-		{"apply_new_previewed_absent", mustPolicyJSON(ReturnApplyOp{OpHead{"return_routing_apply", "synthetic"}, spec, json.RawMessage("null")}), nil, true},
-		{"apply_new_but_other_applied", mustPolicyJSON(ReturnApplyOp{OpHead{"return_routing_apply", "synthetic"}, spec, json.RawMessage("null")}), other, false},
-		{"apply_replace_previewed", mustPolicyJSON(ReturnApplyOp{OpHead{"return_routing_apply", "synthetic"}, spec, previewed}), previewed, true},
-		{"apply_replace_changed", mustPolicyJSON(ReturnApplyOp{OpHead{"return_routing_apply", "synthetic"}, spec, previewed}), other, false},
+		{"apply_new_previewed_absent", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, json.RawMessage("null")}), nil, true},
+		{"apply_new_but_other_applied", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, json.RawMessage("null")}), other, false},
+		{"apply_replace_previewed", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, previewed}), previewed, true},
+		{"apply_replace_changed", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, previewed}), other, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

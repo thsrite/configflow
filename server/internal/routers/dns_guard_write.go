@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -82,12 +83,12 @@ func guardValidateOp(op DNSGuardReplace) bool {
 
 func guardCheckPreview(op DNSGuardReplace, owned []DNSGuardResource, live *DNSGuardSnapshot) error {
 	if len(owned) != len(op.Owned) {
-		return routerError(messageGuardChanged)
+		return device.Error(messageGuardChanged)
 	}
 	for i, e := range owned {
 		want := op.Owned[i]
 		if e.Path != want.Path || e.ID != want.ID || e.Role != want.Role || !sameRow(e.Config, want.Config) {
-			return routerError(messageGuardChanged)
+			return device.Error(messageGuardChanged)
 		}
 	}
 	byRole := map[string]DNSGuardResource{}
@@ -98,32 +99,32 @@ func guardCheckPreview(op DNSGuardReplace, owned []DNSGuardResource, live *DNSGu
 	}
 	if op.Spec != nil {
 		if guardForeignHijack((*live)[rosNAT], ownedIDs) {
-			return routerError(messageGuardHijackCollision)
+			return device.Error(messageGuardHijackCollision)
 		}
 		// A collision introduced after preview is still foreign, even if it uses
 		// our familiar comment/name. Never claim it by that marker.
 		for _, r := range []struct{ path, key, name string }{{rosAddresses, "list", DNSGuardBypassList}, {rosNetwatch, "name", dnsGuardWatch}} {
 			for _, row := range (*live)[r.path] {
 				if row.is(r.key, r.name) && !ownedIDs[[2]string{r.path, row.id()}] {
-					return routerError(messageGuardChanged)
+					return device.Error(messageGuardChanged)
 				}
 			}
 		}
 		if op.Spec.Failover && (*live)[rosNetwatch] == nil {
-			return routerError(messageGuardWatchUnsupported)
+			return device.Error(messageGuardWatchUnsupported)
 		}
 	}
 	if op.Keep != nil {
-		keep := stringSet((*op.Keep)...)
+		keep := device.StringSet((*op.Keep)...)
 		for _, item := range DNSGuardResources(op.Spec) {
 			if keep[item.Role] {
 				e, ok := byRole[item.Role]
 				row := findRow((*live)[item.Path], e.ID)
 				if !ok || e.Path != item.Path || row == nil || !guardMatches(item, row, op.Spec.Failover) {
-					return routerError(messageGuardChanged)
+					return device.Error(messageGuardChanged)
 				}
 				if strings.HasPrefix(item.Role, "hijack") && !guardOnTop(e.ID, (*live)[rosNAT], ownedIDs) {
-					return routerError(messageGuardChanged)
+					return device.Error(messageGuardChanged)
 				}
 			}
 		}
@@ -136,7 +137,7 @@ func (d *RouterOS) rollbackDNSGuard(ctx context.Context, changes []ROSChange) (m
 	failures := []string{}
 	for _, change := range changes {
 		if !guardPath(change.Path) || (change.Method != "RESTORE" && change.Method != "DELETE") || !rosIDPattern.MatchString(change.ID) || len(change.Expected) == 0 {
-			failures = append(failures, messageOperationFormat)
+			failures = append(failures, device.MessageOperationFormat)
 			continue
 		}
 		if change.Method == "RESTORE" && change.Values != nil {
@@ -161,7 +162,7 @@ func (d *RouterOS) rollbackDNSGuard(ctx context.Context, changes []ROSChange) (m
 		}
 	}
 	if len(failures) > 0 {
-		return remap, rollbackError(messageGuardRollback + strings.Join(failures, "；"))
+		return remap, device.RollbackError(messageGuardRollback + strings.Join(failures, "；"))
 	}
 	return remap, nil
 }
@@ -190,11 +191,11 @@ func (d *RouterOS) remapDNSGuard(ctx context.Context, raw json.RawMessage, remap
 	// Preserve unknown stored manifest members while refreshing only resources.
 	var document map[string]json.RawMessage
 	if json.Unmarshal(raw, &document) != nil {
-		return routerError(messageGuardManifest)
+		return device.Error(messageGuardManifest)
 	}
 	var resources []map[string]json.RawMessage
 	if json.Unmarshal(document["resources"], &resources) != nil || len(resources) != len(m.Resources) {
-		return routerError(messageGuardManifest)
+		return device.Error(messageGuardManifest)
 	}
 	for i, e := range m.Resources {
 		resources[i]["id"], _ = json.Marshal(e.ID)
@@ -217,7 +218,7 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 		return nil, err
 	}
 	if !guardValidateOp(op) {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	previous, err := parseDNSGuardManifest(op.Previous)
 	if err != nil {
@@ -237,7 +238,7 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 	}
 	keep := map[string]bool{}
 	if op.Keep != nil {
-		keep = stringSet((*op.Keep)...)
+		keep = device.StringSet((*op.Keep)...)
 	}
 	undo := []ROSChange{}
 	created := map[string]DNSGuardResource{}
@@ -255,7 +256,7 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 			}
 			failover := previous != nil && previous.Spec != nil && previous.Spec.Failover
 			if !sameRow(guardComparable(e.Role, stableROSRow(e.Path, row), failover), guardComparable(e.Role, e.Config, failover)) {
-				return routerError(fmt.Sprintf(messageGuardEdited, e.Path, e.ID))
+				return device.Error(fmt.Sprintf(messageGuardEdited, e.Path, e.ID))
 			}
 			if err := ctx.Err(); err != nil {
 				return err
@@ -304,7 +305,7 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 		for _, role := range roles {
 			e, ok := created[role]
 			if !ok {
-				return routerError(messageOperationFormat)
+				return device.Error(device.MessageOperationFormat)
 			}
 			row, err := d.row(ctx, e.Path, e.ID)
 			if err != nil {
@@ -312,10 +313,10 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 			}
 			if expected, ok := expectedCreated[role]; ok {
 				if !rowsEqual(d.ownershipSnapshot(e.Path, row), expected) {
-					return routerError(messageGuardChanged)
+					return device.Error(messageGuardChanged)
 				}
 			} else if !sameRow(guardComparable(role, stableROSRow(e.Path, row), op.Spec != nil && op.Spec.Failover), guardComparable(role, e.Config, op.Spec != nil && op.Spec.Failover)) {
-				return routerError(messageGuardChanged)
+				return device.Error(messageGuardChanged)
 			}
 			e.Config = stableROSRow(e.Path, row)
 			resources = append(resources, e)
@@ -346,11 +347,11 @@ func (d *RouterOS) ApplyDNSGuard(ctx context.Context, op DNSGuardReplace) (*DNSG
 			if remapErr := d.remapDNSGuard(ctx, op.Previous, remap); rollback == nil {
 				rollback = remapErr
 			} else if remapErr != nil {
-				rollback = rollbackError(rollback.Error() + "；" + remapErr.Error())
+				rollback = device.RollbackError(rollback.Error() + "；" + remapErr.Error())
 			}
 		}
 		if rollback != nil {
-			return nil, rollbackError(err.Error() + "；" + rollback.Error())
+			return nil, device.RollbackError(err.Error() + "；" + rollback.Error())
 		}
 		return nil, err
 	}
@@ -374,7 +375,7 @@ func (d *RouterOS) RestoreDNSGuard(ctx context.Context, op DNSGuardUndo) error {
 // VerifyDNSGuard proves all expected roles, their ownership, and hijack priority.
 func VerifyDNSGuard(ctx context.Context, d *RouterOS, check *DNSGuardCheck) error {
 	if check == nil {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	m, err := parseDNSGuardManifest(d.dnsGuardManifest)
 	if err != nil {
@@ -397,11 +398,11 @@ func VerifyDNSGuard(ctx context.Context, d *RouterOS, check *DNSGuardCheck) erro
 		}
 	}
 	if !slices.Equal(roles, check.Roles) || (len(check.Roles) == 0 && m != nil) {
-		return routerError(messageGuardVerify)
+		return device.Error(messageGuardVerify)
 	}
 	for _, e := range owned {
 		if strings.HasPrefix(e.Role, "hijack") && !guardOnTop(e.ID, (*live)[rosNAT], hijacks) {
-			return routerError(messageGuardVerifyOrder)
+			return device.Error(messageGuardVerifyOrder)
 		}
 	}
 	return nil
@@ -411,7 +412,7 @@ func init() {
 	RegisterRouterOSHandler("dns_guard_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op DNSGuardReplace
 		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		undo, err := d.ApplyDNSGuard(ctx, op)
 		if err != nil {
@@ -423,7 +424,7 @@ func init() {
 	RegisterRouterOSHandler("dns_guard_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op DNSGuardUndo
 		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		if err := d.RestoreDNSGuard(ctx, op); err != nil {
 			return nil, err

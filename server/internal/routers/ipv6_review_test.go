@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"net/http/httptest"
 	"reflect"
 	"testing"
@@ -119,7 +120,7 @@ func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 	r.Extra["ipv6_fakeip_state"] = guardRaw(d.ipv6FakeIPManifest)
 	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), host, d)
 	if len(p.Ops) != 1 {
-		t.Fatalf("no replacement planned: %s", mustPolicyJSON(p))
+		t.Fatalf("no replacement planned: %s", device.JSON(p))
 	}
 	if _, err := d.ApplyIPv6FakeIP(t.Context(), *p.Ops[0].(*IPv6FakeIPReplace)); err == nil {
 		t.Fatal("inactive replacement accepted")

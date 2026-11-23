@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,18 +31,18 @@ func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 				agent = "gateway"
 			}
 			bad := map[string]any{}
-			if e := json.Unmarshal(mustPolicyJSON(l.router), &bad); e != nil {
+			if e := json.Unmarshal(device.JSON(l.router), &bad); e != nil {
 				t.Fatal(e)
 			}
 			bad["id"], bad["name"], bad["rule_sync_interval"], bad["proxy_gateway_agent_id"] = "bad", "synthetic malformed", "sixty", agent
 			if _, e := l.db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "legacy", Name: "Synthetic legacy"}, ""); e != nil {
 				t.Fatal(e)
 			}
-			if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "legacy", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}}), nil); e != nil {
+			if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "legacy", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}}), nil); e != nil {
 				t.Fatal(e)
 			}
 			// Input is strict (O18 T1c): the malformed record is a stored row.
-			seedStoredRow(t, l.db, "profile", "legacy", "routers", string(mustPolicyJSON(map[string]any{"items": []any{bad}})))
+			seedStoredRow(t, l.db, "profile", "legacy", "routers", string(device.JSON(map[string]any{"items": []any{bad}})))
 			out, e := AgentRouters(t.Context(), l.request(t))
 			if e != nil {
 				t.Fatal("one malformed router record hid every reminder:", e)
@@ -58,7 +59,7 @@ func TestR13ReviewMalformedRouterIsolated(t *testing.T) {
 				if got.ID != "bad" || got.Name != "synthetic malformed" || got.ProfileID != "legacy" || got.State != "pending" {
 					t.Fatalf("malformed linked router not read like Python %+v", got)
 				}
-				if strings.Contains(string(mustPolicyJSON(out)), "synthetic-password") {
+				if strings.Contains(string(device.JSON(out)), "synthetic-password") {
 					t.Fatal("credential leaked")
 				}
 			}
@@ -98,7 +99,7 @@ func TestR13ReviewEmptyAgentMatchesNothing(t *testing.T) {
 	}
 	plain := *l.router
 	plain.ProxyGatewayAgentID = ""
-	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "plain", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&plain}}}), nil); e != nil {
+	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "plain", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&plain}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	req := l.request(t)

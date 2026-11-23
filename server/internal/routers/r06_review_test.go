@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"errors"
 	"io"
@@ -118,7 +119,7 @@ func TestR06RouterOSUnansweredWriteTimesOut(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		if routerErrorKind(err) != KindUncertainWrite {
+		if device.RouterErrorKind(err) != KindUncertainWrite {
 			t.Fatalf("unanswered write error = %v, want an uncertain write after reconciliation", err)
 		}
 	case <-time.After(3 * rosTimeout):

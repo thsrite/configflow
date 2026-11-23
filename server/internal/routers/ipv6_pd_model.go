@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -46,7 +47,7 @@ func pdName(name string) bool {
 // IPv6PDWatchSource returns the current cf-pd script for safe literal parameters.
 func IPv6PDWatchSource(lan, pool string) (string, error) {
 	if !pdName(lan) || !pdName(pool) {
-		return "", routerError(messagePDScriptParameters)
+		return "", device.Error(messagePDScriptParameters)
 	}
 	return strings.NewReplacer("@@LAN@@", lan, "@@POOL@@", pool).Replace(pdWatchTemplate), nil
 }
@@ -87,7 +88,7 @@ func pdPolicies(text string) []string {
 			out = append(out, p)
 		}
 	}
-	out = uniqueStrings(out)
+	out = device.Unique(out)
 	slices.Sort(out)
 	return out
 }
@@ -101,7 +102,7 @@ func pdSettings(r *Router) PDGuard {
 
 // IPv6PDGuardRelevant avoids device reads while disabled and unowned.
 func IPv6PDGuardRelevant(r *Router) bool {
-	return r != nil && r.Type == "routeros" && (pdSettings(r).Enabled || hasStoredState(r.Extra["ipv6_pd_guard_state"]))
+	return r != nil && r.Type == "routeros" && (pdSettings(r).Enabled || device.HasStoredState(r.Extra["ipv6_pd_guard_state"]))
 }
 
 // IPv6PDSpec identifies the single pool, LAN and DHCPv6 client to watch.
@@ -215,7 +216,7 @@ func pdRows(ctx context.Context, d *RouterOS, path string) ([]Row, error) {
 	seen := map[string]bool{}
 	for _, r := range rows {
 		if id, ok := r.str(".id"); !ok || !rosIDPattern.MatchString(id) || seen[id] {
-			return nil, routerError(fmt.Sprintf(messagePDRowID, path))
+			return nil, device.Error(fmt.Sprintf(messagePDRowID, path))
 		}
 		seen[r.id()] = true
 	}
@@ -243,7 +244,7 @@ func pdSnapshot(ctx context.Context, d *RouterOS, withdraw bool) (pdLive, error)
 	return live, nil
 }
 func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*IPv6PDSpec, Row, []string, error) {
-	fail := func(s string) (*IPv6PDSpec, Row, []string, error) { return nil, nil, nil, routerError(s) }
+	fail := func(s string) (*IPv6PDSpec, Row, []string, error) { return nil, nil, nil, device.Error(s) }
 	clients := []Row{}
 	for _, r := range live.clients {
 		if ipv6Enabled(r) && slices.Contains(pdPolicies(r.text("request")), "prefix") {
@@ -276,7 +277,7 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 			names = append(names, r.text("interface"))
 		}
 	}
-	names = uniqueStrings(names)
+	names = device.Unique(names)
 	slices.Sort(names)
 	if len(rows) == 0 {
 		return fail(fmt.Sprintf(messagePDNoLAN, pool, pool))
@@ -457,15 +458,15 @@ func pdRoleName(role string) string {
 }
 func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, error) {
 	out := map[string]Row{}
-	if !hasStoredState(raw) {
+	if !device.HasStoredState(raw) {
 		return out, nil
 	}
 	var m IPv6PDManifest
 	if jsondecode.Unmarshal(raw, &m) != nil || m.Version != 1 || m.Resources == nil {
-		return nil, routerError(messagePDManifest)
+		return nil, device.Error(messagePDManifest)
 	}
 	if m.Spec == nil || !pdName(m.Spec.LAN) || !pdName(m.Spec.Pool) || !rosIDPattern.MatchString(m.Spec.Client) || m.Spec.Hold != pdHold {
-		return nil, routerError(messagePDManifest)
+		return nil, device.Error(messagePDManifest)
 	}
 	// Presence matters: null/empty config is damaged proof, not a legacy ID-only
 	// receipt. Validate it even if the referenced ID is currently absent.
@@ -475,16 +476,16 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 		} `json:"resources"`
 	}
 	if jsondecode.Unmarshal(raw, &fields) != nil {
-		return nil, routerError(messagePDManifest)
+		return nil, device.Error(messagePDManifest)
 	}
 	seen := map[string]bool{}
 	for i, entry := range m.Resources {
 		if len(fields.Resources[i].Config) > 0 && len(entry.Config) == 0 {
-			return nil, routerError(messagePDManifestObject)
+			return nil, device.Error(messagePDManifestObject)
 		}
 		path := pdRolePath(entry.Role)
 		if path == "" || entry.Path != path || !rosIDPattern.MatchString(entry.ID) || seen[entry.Role] {
-			return nil, routerError(messagePDManifestObject)
+			return nil, device.Error(messagePDManifestObject)
 		}
 		seen[entry.Role] = true
 		rows := live.clients
@@ -520,14 +521,14 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 				valid = pdSchedulerState(row).state == "ok"
 			}
 			if !valid {
-				return nil, routerError(messagePDOwnership)
+				return nil, device.Error(messagePDOwnership)
 			}
 		}
 		if entry.Config != nil && !sameRow(d.ownershipSnapshot(path, row), entry.Config) {
-			return nil, routerError(messagePDOwnership)
+			return nil, device.Error(messagePDOwnership)
 		}
 		if entry.Role == "script" && !row.is("name", pdWatch) || entry.Role == "scheduler" && !row.is("name", pdPoll) {
-			return nil, routerError(messagePDOwnership)
+			return nil, device.Error(messagePDOwnership)
 		}
 		if payload(path, row) == nil {
 			return nil, payloadError(path, row)

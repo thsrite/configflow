@@ -6,6 +6,7 @@ package routers
 // replies Python crashed on, request cancellation, and Go-only panics.
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -62,10 +63,10 @@ func TestRouteBatchExtraReportedIDFailsClosed(t *testing.T) {
 		}()
 		return driver.ApplyMany(context.Background(), ops, func(_, undo json.RawMessage) { records = append(records, undo) })
 	}()
-	if routerErrorKind(err) != KindRollback || !isRouterError(err) {
+	if device.RouterErrorKind(err) != KindRollback || !device.IsRouterError(err) {
 		t.Fatalf("ApplyMany error = %v, want an uncertain-write rollback error", err)
 	}
-	if want := fmt.Sprintf(messageUncertainRouteWrite, rosRoutes); err.Error() != want {
+	if want := fmt.Sprintf(device.MessageUncertainRouteWrite, rosRoutes); err.Error() != want {
 		t.Fatalf("message = %q, want %q", err.Error(), want)
 	}
 	if len(records) != 5 {

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,7 +39,7 @@ func r08Publish(t *testing.T, d *RouterOS, desired *Desired) (*ROSPolicyPlan, *R
 		t.Fatal(err)
 	}
 	if len(plan.Blockers) > 0 || len(plan.Ops) != 1 {
-		t.Fatalf("plan: %s", mustPolicyJSON(plan))
+		t.Fatalf("plan: %s", device.JSON(plan))
 	}
 	undo, err := d.ApplyROSPolicy(context.Background(), plan.Ops[0].(*ROSPolicyReplace))
 	if err != nil {
@@ -255,7 +256,7 @@ func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
 			t.Fatalf("missing proof accepted: %s", manifest)
 		}
 	}
-	manifest := mustPolicyJSON(ROSPolicyManifest{Resources: []ROSResource{{rosTables, "*1", configROSRow(row)}}})
+	manifest := device.JSON(ROSPolicyManifest{Resources: []ROSResource{{rosTables, "*1", configROSRow(row)}}})
 	snap := ROSPolicySnapshot{rosTables: []Row{row, row}}
 	if _, err := OwnedROSPolicyRows(manifest, &snap); err == nil {
 		t.Fatal("duplicate ID accepted")

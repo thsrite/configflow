@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"fmt"
 	"net/netip"
@@ -94,8 +95,8 @@ func (d *Ikuai) ReadClients(ctx context.Context, opts ClientReadOptions) (*route
 	for _, row := range terminals {
 		if s := ikuaiClient(row, true); s != nil {
 			if old := r.Sightings[s.IP]; old != nil {
-				old.MAC = firstNonEmpty(old.MAC, s.MAC)
-				old.Hostname = firstNonEmpty(old.Hostname, s.Hostname)
+				old.MAC = device.FirstNonEmpty(old.MAC, s.MAC)
+				old.Hostname = device.FirstNonEmpty(old.Hostname, s.Hostname)
 			} else {
 				r.Sightings[s.IP] = s
 			}

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"strings"
 
@@ -38,7 +39,7 @@ func RouterJobLock(ctx context.Context, profileID, routerID string, router *Rout
 		if err := ctx.Err(); err != nil {
 			return ctx, nil, err
 		}
-		return ctx, nil, rosError(KindConflict, messageEditBusy)
+		return ctx, nil, device.KindError(KindConflict, device.MessageEditBusy)
 	}
 	if err := held.Err(); err != nil {
 		release()

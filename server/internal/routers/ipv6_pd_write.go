@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -21,7 +22,7 @@ func pdCreateGuard(path string, values Row) func([]Row) error {
 		if path == pdScripts || path == pdSchedulers {
 			for _, row := range rows {
 				if row.text("name") == values.text("name") {
-					return routerError(messagePDPreviewChanged)
+					return device.Error(messagePDPreviewChanged)
 				}
 			}
 		}
@@ -30,7 +31,7 @@ func pdCreateGuard(path string, values Row) func([]Row) error {
 }
 func (d *RouterOS) pdGone(ctx context.Context, path, id string) bool {
 	_, e := d.get(ctx, path+"/"+escapeROSPathID(id), rosTimeout)
-	return routerErrorKind(e) == KindMissingResource
+	return device.RouterErrorKind(e) == KindMissingResource
 }
 func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]string]string, map[[3]string]bool, error) {
 	remap := map[[2]string]string{}
@@ -42,11 +43,11 @@ func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]
 		}
 		allowed := slices.Contains([]string{pdScripts, pdSchedulers, pdClients, pdLists, pdPrefixes}, c.Path)
 		if !allowed || !rosIDPattern.MatchString(c.ID) || len(c.Expected) == 0 || !slices.Contains([]string{"PATCH", "RESTORE", "DELETE"}, c.Method) {
-			failures = append(failures, messageOperationFormat)
+			failures = append(failures, device.MessageOperationFormat)
 			continue
 		}
 		if c.Path == pdClients && (c.Method != "PATCH" || len(c.Values) != 1) {
-			failures = append(failures, messageOperationFormat)
+			failures = append(failures, device.MessageOperationFormat)
 			continue
 		}
 		check, e := d.perform(ctx, c, &[]ROSChange{}, true, pdCreateGuard(c.Path, c.Values))
@@ -72,7 +73,7 @@ func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]
 		}
 	}
 	if len(failures) > 0 {
-		return remap, completed, rollbackError(messagePDRollback + strings.Join(failures, "；"))
+		return remap, completed, device.RollbackError(messagePDRollback + strings.Join(failures, "；"))
 	}
 	return remap, completed, nil
 }
@@ -203,11 +204,11 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 		return nil, e
 	}
 	if len(fresh.Blockers) > 0 || len(fresh.Ops) != 1 {
-		return nil, routerError(messagePDPreviewChanged)
+		return nil, device.Error(messagePDPreviewChanged)
 	}
 	next, ok := fresh.Ops[0].(*IPv6PDGuardSync)
 	if !ok || !reflect.DeepEqual(next.Changes, op.Changes) || !reflect.DeepEqual(next.Spec, op.Spec) || !slices.Equal(next.Owned, op.Owned) {
-		return nil, routerError(messagePDPreviewChanged)
+		return nil, device.Error(messagePDPreviewChanged)
 	}
 	undo := []ROSChange{}
 	created := map[string]IPv6PDResource{}
@@ -280,7 +281,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 				}
 				entry, exists := expected[role]
 				if !exists || entry.ID == "" {
-					return routerError(messagePDNotFound)
+					return device.Error(messagePDNotFound)
 				}
 				rows := live.clients
 				if role == "script" {
@@ -290,7 +291,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 				}
 				row := findRow(rows, entry.ID)
 				if row == nil || !sameRow(d.ownershipSnapshot(entry.Path, row), entry.Config) {
-					return routerError(messagePDOwnership)
+					return device.Error(messagePDOwnership)
 				}
 				resources = append(resources, entry)
 			}
@@ -316,7 +317,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 			return nil, commitErr
 		}
 		if rollbackErr != nil {
-			return nil, rollbackError(e.Error() + "；" + rollbackErr.Error())
+			return nil, device.RollbackError(e.Error() + "；" + rollbackErr.Error())
 		}
 		return nil, e
 	}
@@ -367,10 +368,10 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 		if swept && (len(live.last) > 0 || slices.ContainsFunc(live.prefixes, func(row Row) bool {
 			return pdDeprecated.MatchString(row.text("comment")) && !policyFlag(row["dynamic"])
 		})) {
-			return routerError(messagePDVerifyWithdraw)
+			return device.Error(messagePDVerifyWithdraw)
 		}
-		if hasStoredState(d.ipv6PDGuardManifest) {
-			return routerError(messagePDVerifyWithdraw)
+		if device.HasStoredState(d.ipv6PDGuardManifest) {
+			return device.Error(messagePDVerifyWithdraw)
 		}
 		for _, v := range []struct {
 			path string
@@ -378,7 +379,7 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 		}{{pdScripts, live.scripts}, {pdSchedulers, live.schedulers}, {pdLists, live.last}, {pdPrefixes, live.prefixes}} {
 			for _, r := range v.rows {
 				if slices.Contains(check.Removed, [2]string{v.path, r.id()}) {
-					return routerError(messagePDVerifyWithdraw)
+					return device.Error(messagePDVerifyWithdraw)
 				}
 			}
 		}
@@ -389,11 +390,11 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 		return e
 	}
 	if !reflect.DeepEqual(spec, check.Spec) {
-		return routerError(messagePDVerifyLAN)
+		return device.Error(messagePDVerifyLAN)
 	}
 	script, scheduler := pdNamed(live.scripts, pdWatch), pdNamed(live.schedulers, pdPoll)
 	if pdScriptState(script, spec).state != "ok" || pdSchedulerState(scheduler).state != "ok" || !slices.Contains([]string{"ok", "shared"}, pdHookState(client).state) {
-		return routerError(messagePDVerifyTemplate)
+		return device.Error(messagePDVerifyTemplate)
 	}
 	owned, e := pdOwned(d, d.ipv6PDGuardManifest, live)
 	if e != nil {
@@ -404,14 +405,14 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 	for role, row := range owned {
 		roles = append(roles, role)
 		if current[role] == nil || current[role].id() != row.id() {
-			return routerError(messagePDVerifyManifest)
+			return device.Error(messagePDVerifyManifest)
 		}
 	}
 	slices.Sort(roles)
 	wanted := slices.Clone(check.Owned)
 	slices.Sort(wanted)
 	if !slices.Equal(roles, wanted) {
-		return routerError(messagePDVerifyManifest)
+		return device.Error(messagePDVerifyManifest)
 	}
 	return nil
 }
@@ -419,7 +420,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_dns_update", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6DNSUpdate
 		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		undo, e := d.ApplyIPv6DNS(ctx, op)
 		if e != nil {
@@ -430,7 +431,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_pd_guard_sync", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6PDGuardSync
 		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		undo, e := d.ApplyIPv6PDGuard(ctx, op)
 		if e != nil {
@@ -441,7 +442,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_pd_guard_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6PDGuardUndo
 		if jsondecode.Unmarshal(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		if e := d.RestoreIPv6PDGuard(ctx, op); e != nil {
 			return nil, e

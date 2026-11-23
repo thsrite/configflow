@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"fmt"
 	"slices"
@@ -55,7 +56,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 			for position, i := range chunk[:count] {
 				pointer, exists := added.Rows[position]
 				if !exists {
-					errors[i] = fmt.Sprintf(messageUncertainRouteWrite, rosRoutes)
+					errors[i] = fmt.Sprintf(device.MessageUncertainRouteWrite, rosRoutes)
 					if added.Failure != nil && added.Failure.Index == position && added.Failure.Err != nil {
 						errors[i] = added.Failure.Err.Error()
 					}
@@ -80,7 +81,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 			}
 			if added.Unexplained {
 				for _, i := range chunk[count:] {
-					errors[i] = fmt.Sprintf(messageUncertainRouteWrite, rosRoutes)
+					errors[i] = fmt.Sprintf(device.MessageUncertainRouteWrite, rosRoutes)
 				}
 				return
 			}

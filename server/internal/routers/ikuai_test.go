@@ -5,6 +5,7 @@ package routers_test
 // credentials never reaching an error message.
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -253,7 +254,7 @@ func TestIkuaiRequestBytesBoundsTheBody(t *testing.T) {
 			t.Fatalf("IkuaiRequestBytes = %d < %d sent", got, len(body))
 		}
 	}
-	if routers.UndoOf(errors.New("plain")) != nil || routers.UndoOf(nil) != nil {
+	if device.UndoOf(errors.New("plain")) != nil || device.UndoOf(nil) != nil {
 		t.Fatal("UndoOf of a non-router error")
 	}
 }

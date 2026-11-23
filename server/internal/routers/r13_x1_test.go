@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestX1PublishWithMalformedNeighbour(t *testing.T) {
 	}
 	neighbour["id"], neighbour["name"], neighbour["rule_sync_interval"], neighbour["proxy_gateway_agent_id"] = "neighbour", "synthetic neighbour", "sixty", ""
 	// Input is strict (O18 T1c), so the malformed neighbour is seeded as a stored row.
-	seedStoredRow(t, db, "profile", "default", "routers", string(mustPolicyJSON(map[string]any{"items": []any{json.RawMessage(good), neighbour}})))
+	seedStoredRow(t, db, "profile", "default", "routers", string(device.JSON(map[string]any{"items": []any{json.RawMessage(good), neighbour}})))
 	outcome := Publish(t.Context(), req)
 	if outcome.Err != nil || outcome.Result == nil || !outcome.Result.OK {
 		t.Fatalf("publish failed beside a malformed record: %+v", outcome)
@@ -94,14 +95,14 @@ func TestX1ReturnCleanupWithMalformedProfile(t *testing.T) {
 	other := r10Router()
 	other.Name = "synthetic other owner"
 	other.ProxyGatewayAgentID = "gateway"
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "legacy", Name: "Synthetic legacy"}, ""); e != nil {
 		t.Fatal(e)
 	}
 	bad := map[string]any{"id": "bad", "name": "synthetic legacy owner", "type": "routeros", "endpoint": "http://192.0.2.9", "manage_return_routing": true, "proxy_gateway_agent_id": "gateway", "rule_sync_interval": "sixty"}
-	seedStoredRow(t, db, "profile", "legacy", "routers", string(mustPolicyJSON(map[string]any{"items": []any{bad}})))
+	seedStoredRow(t, db, "profile", "legacy", "routers", string(device.JSON(map[string]any{"items": []any{bad}})))
 	a := r12Gateway()
 	a.Status = "online"
 	status := r12SafeStatus()

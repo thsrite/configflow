@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -93,7 +94,7 @@ func editIkuaiEntry(raw ikuaiRow) *EditableRoute {
 		reasons = append(reasons, messageEditIKGateway)
 	}
 	comment, _ := snapshot["comment"].(string)
-	return &EditableRoute{RouteFields: RouteFields{ID: snapshot.text("id"), CIDR: cidr, Gateway: gateway, Enabled: snapshot["enabled"] == "yes", Comment: comment, Table: "main", Editable: len(reasons) == 0, Reason: strings.Join(uniqueStrings(reasons), "；"), Managed: IsManaged(comment)}, Snapshot: RouteSnapshot{ikuai: snapshot}}
+	return &EditableRoute{RouteFields: RouteFields{ID: snapshot.text("id"), CIDR: cidr, Gateway: gateway, Enabled: snapshot["enabled"] == "yes", Comment: comment, Table: "main", Editable: len(reasons) == 0, Reason: strings.Join(device.Unique(reasons), "；"), Managed: device.IsManaged(comment)}, Snapshot: RouteSnapshot{ikuai: snapshot}}
 }
 
 // ReadRoutes reads every static_rt page, retaining unsupported forms as read-only.
@@ -112,7 +113,7 @@ func (d *Ikuai) ReadRoutes(ctx context.Context) (result []*EditableRoute, err er
 func editIKNoDuplicate(rows []*EditableRoute, cidr, id string) error {
 	for _, r := range rows {
 		if r.CIDR == cidr && r.ID != id {
-			return rosError(KindConflict, fmt.Sprintf(messageEditIKDuplicate, cidr))
+			return device.KindError(KindConflict, fmt.Sprintf(messageEditIKDuplicate, cidr))
 		}
 	}
 	return nil
@@ -136,7 +137,7 @@ func editIKNew(rows []*EditableRoute, old map[string]bool, desired ikuaiRow) *Ed
 	}
 	actual := maps.Clone(match.Snapshot.ikuai)
 	delete(actual, "id")
-	if !jsonEqual(actual, desired) {
+	if !device.JSONEqual(actual, desired) {
 		return nil
 	}
 	return match
@@ -149,7 +150,7 @@ func editIKIDs(rows []*EditableRoute) map[string]bool {
 	return out
 }
 func editIKSnapshot(entry *EditableRoute, snapshot ikuaiRow) bool {
-	return entry != nil && entry.Editable && jsonEqual(entry.Snapshot.ikuai, snapshot)
+	return entry != nil && entry.Editable && device.JSONEqual(entry.Snapshot.ikuai, snapshot)
 }
 func (d *Ikuai) editIKVerify(ctx context.Context, id string, snapshot ikuaiRow) error {
 	rows, err := d.ReadRoutes(ctx)
@@ -157,7 +158,7 @@ func (d *Ikuai) editIKVerify(ctx context.Context, id string, snapshot ikuaiRow) 
 		return err
 	}
 	if !editIKSnapshot(editableByID(rows, id), snapshot) {
-		return routerError(messageEditIKRead)
+		return device.Error(messageEditIKRead)
 	}
 	return nil
 }
@@ -175,7 +176,7 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		return nil, err
 	}
 	if action != "add" && action != "update" && action != "delete" {
-		return nil, routerError(messageEditVendorAction)
+		return nil, device.Error(messageEditVendorAction)
 	}
 	var p netip.Prefix
 	var gateway string
@@ -192,10 +193,10 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		values = &normalized
 	}
 	if action == "add" && expected != nil {
-		return nil, routerError(messageEditIKAddOld)
+		return nil, device.Error(messageEditIKAddOld)
 	}
 	if action != "add" && (expected == nil || expected.ID == "" || expected.Snapshot.ikuai == nil) {
-		return nil, routerError(messageEditIKSnapshot)
+		return nil, device.Error(messageEditIKSnapshot)
 	}
 	previous, err := d.ReadRoutes(ctx)
 	if err != nil {
@@ -205,10 +206,10 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 	if action != "add" {
 		before = editableByID(previous, expected.ID)
 		if !routeIdentityEqual(before, expected) {
-			return nil, rosError(KindConflict, messageEditIKDrift)
+			return nil, device.KindError(KindConflict, messageEditIKDrift)
 		}
 		if !before.Editable {
-			return nil, rosError(KindConflict, firstNonEmpty(before.Reason, messageEditIKReadonly))
+			return nil, device.KindError(KindConflict, device.FirstNonEmpty(before.Reason, messageEditIKReadonly))
 		}
 		if err := editIKUniqueName(previous, before); err != nil {
 			return nil, err
@@ -231,13 +232,13 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		if name == "" {
 			var random [16]byte
 			if _, err := rand.Read(random[:]); err != nil {
-				return nil, routerError(messageEditIKRandom)
+				return nil, device.Error(messageEditIKRandom)
 			}
 			name = "RT" + hex.EncodeToString(random[:])[:13]
 		}
 		for _, r := range previous {
 			if r.Snapshot.ikuai["tagname"] == name {
-				return nil, rosError(KindConflict, messageEditIKNameUsed)
+				return nil, device.KindError(KindConflict, messageEditIKNameUsed)
 			}
 		}
 		desired = ikuaiRow{"enabled": "yes", "tagname": name, "ip_type": "4", "interface": "auto", "dst_addr": "", "gateway": "", "netmask": "", "prio": 1, "comment": ""}
@@ -268,9 +269,9 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 		recovery = d.editIKRestoreDelete(ctx, before)
 	}
 	if recovery != nil {
-		return nil, rollbackError(fmt.Sprintf(messageEditIKRollback, err, recovery))
+		return nil, device.RollbackError(fmt.Sprintf(messageEditIKRollback, err, recovery))
 	}
-	return nil, routerError(fmt.Sprintf(messageEditIKRecovered, err))
+	return nil, device.Error(fmt.Sprintf(messageEditIKRecovered, err))
 }
 func (d *Ikuai) editIKWrite(ctx context.Context, action string, previous []*EditableRoute, before *EditableRoute, desired ikuaiRow, values *RouteValues) (*RouteMutation, error) {
 	apiAction := "edit"
@@ -291,7 +292,7 @@ func (d *Ikuai) editIKWrite(ctx context.Context, action string, previous []*Edit
 	}
 	if action == "delete" {
 		if editableByID(rows, before.ID) != nil {
-			return nil, routerError(messageEditIKDeleteRead)
+			return nil, device.Error(messageEditIKDeleteRead)
 		}
 		return &RouteMutation{Changed: true}, nil
 	}
@@ -302,7 +303,7 @@ func (d *Ikuai) editIKWrite(ctx context.Context, action string, previous []*Edit
 		entry = editableByID(rows, before.ID)
 	}
 	if entry == nil || (action == "update" && !editIKSnapshot(entry, desired)) {
-		return nil, routerError(messageEditIKRead)
+		return nil, device.Error(messageEditIKRead)
 	}
 	if err := editIKNoDuplicate(rows, values.CIDR, entry.ID); err != nil {
 		return nil, err
@@ -319,7 +320,7 @@ func (d *Ikuai) editIKRestoreUpdate(ctx context.Context, before *EditableRoute, 
 		return nil
 	}
 	if !editIKSnapshot(current, desired) {
-		return routerError(messageEditIKUpdateChanged)
+		return device.Error(messageEditIKUpdateChanged)
 	}
 	if err := editIKUniqueName(rows, current); err != nil {
 		return err
@@ -340,7 +341,7 @@ func (d *Ikuai) editIKRestoreDelete(ctx context.Context, before *EditableRoute) 
 		return nil
 	}
 	if current != nil {
-		return routerError(messageEditIKDeleteChanged)
+		return device.Error(messageEditIKDeleteChanged)
 	}
 	if err := editIKNoDuplicate(rows, before.CIDR, ""); err != nil {
 		return err
@@ -349,11 +350,11 @@ func (d *Ikuai) editIKRestoreDelete(ctx context.Context, before *EditableRoute) 
 	delete(desired, "id")
 	name, ok := desired["tagname"].(string)
 	if !ok || name == "" {
-		return routerError(messageEditIKName)
+		return device.Error(messageEditIKName)
 	}
 	for _, r := range rows {
 		if r.Snapshot.ikuai["tagname"] == name {
-			return routerError(messageEditIKRestoreName)
+			return device.Error(messageEditIKRestoreName)
 		}
 	}
 	old := editIKIDs(rows)
@@ -366,7 +367,7 @@ func (d *Ikuai) editIKRestoreDelete(ctx context.Context, before *EditableRoute) 
 		if writeErr != nil {
 			return writeErr
 		}
-		return routerError(messageEditIKRestoreRead)
+		return device.Error(messageEditIKRestoreRead)
 	}
 	return nil
 }
@@ -384,10 +385,10 @@ func (d *Ikuai) editIKRestoreAdd(ctx context.Context, previous []*EditableRoute,
 		for _, r := range rows {
 			now[r.ID] = r.Snapshot.ikuai
 		}
-		if jsonEqual(old, now) {
+		if device.JSONEqual(old, now) {
 			return nil
 		}
-		return routerError(messageEditIKUnowned)
+		return device.Error(messageEditIKUnowned)
 	}
 	_, writeErr := d.Write(ctx, "static_rt", "del", ikuaiRow{"id": entry.Snapshot.ikuai["id"]}, 0)
 	latest, err := d.ReadRoutes(ctx)
@@ -398,7 +399,7 @@ func (d *Ikuai) editIKRestoreAdd(ctx context.Context, previous []*EditableRoute,
 		if writeErr != nil {
 			return writeErr
 		}
-		return routerError(messageEditIKUndoRead)
+		return device.Error(messageEditIKUndoRead)
 	}
 	return nil
 }
@@ -406,7 +407,7 @@ func (d *Ikuai) editIKRestoreAdd(ctx context.Context, previous []*EditableRoute,
 func editIKUniqueName(rows []*EditableRoute, entry *EditableRoute) error {
 	name, ok := entry.Snapshot.ikuai["tagname"].(string)
 	if !ok || name == "" {
-		return rosError(KindConflict, messageEditIKName)
+		return device.KindError(KindConflict, messageEditIKName)
 	}
 	count := 0
 	for _, r := range rows {
@@ -415,7 +416,7 @@ func editIKUniqueName(rows []*EditableRoute, entry *EditableRoute) error {
 		}
 	}
 	if count != 1 {
-		return rosError(KindConflict, messageEditIKUniqueName)
+		return device.KindError(KindConflict, messageEditIKUniqueName)
 	}
 	return nil
 }

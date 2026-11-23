@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,7 +27,7 @@ func TestR14ReviewPreResponseTimeoutIsTransient(t *testing.T) {
 	// The production 30 s budget is unchanged; the caller's earlier deadline
 	// expires first and takes the same path as the budget would.
 	downloads := &RuleSyncDownloads{Client: &rulefetch.Client{Transport: rulefetch.HTTPTransport{}, Sleep: func(time.Duration) {}}}
-	source := mustPolicyJSON(map[string]string{"id": "lib", "url": hang.URL, "behavior": "classical", "format": "text", "name": "Synthetic"})
+	source := device.JSON(map[string]string{"id": "lib", "url": hang.URL, "behavior": "classical", "format": "text", "name": "Synthetic"})
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
 	_, err := downloads.Download(ctx, source, json.RawMessage(`{"system_config":{}}`))
@@ -95,7 +96,7 @@ func TestR14ReviewRepositoryHookSharesJobLock(t *testing.T) {
 	if _, err := s.Sync(t.Context(), "default", r.ID, "schedule"); err == nil || err.Error() != messageSyncBusy {
 		t.Fatalf("sync ignored the repository hook's job lock: %v", err)
 	}
-	if err := s.StartJob(t.Context(), "default", r.ID); err == nil || err.Error() != messageEditBusy {
+	if err := s.StartJob(t.Context(), "default", r.ID); err == nil || err.Error() != device.MessageEditBusy {
 		t.Fatalf("start job ignored the repository hook's job lock: %v", err)
 	}
 }

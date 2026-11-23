@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -64,7 +65,7 @@ func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.
 			if err != nil {
 				return nil, err
 			}
-			status := orText(receipt.Status, "waiting")
+			status := device.OrText(receipt.Status, "waiting")
 			ready := receipt.Baseline != nil
 			interval := r.RuleSyncInterval
 			if interval == 0 {
@@ -117,7 +118,7 @@ func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.
 			} else if status == "paused" {
 				message = messageSyncPausedState
 			}
-			row := &tasks.Task{Key: key, Category: tasks.SlotRouters, Name: orText(r.Name, r.ID), ResourceID: r.ID, ProfileID: new(profile.ID), ProfileName: new(orText(profile.Name, profile.ID)), Enabled: r.AutoRuleSync, IntervalSeconds: mustPolicyJSON(interval), Editable: true, CanRun: hint == "", RunHint: hint, Running: status == "running" || status == "queued", StateMessage: message, Link: new("/routers"), HistoryData: history}
+			row := &tasks.Task{Key: key, Category: tasks.SlotRouters, Name: device.OrText(r.Name, r.ID), ResourceID: r.ID, ProfileID: new(profile.ID), ProfileName: new(device.OrText(profile.Name, profile.ID)), Enabled: r.AutoRuleSync, IntervalSeconds: device.JSON(interval), Editable: true, CanRun: hint == "", RunHint: hint, Running: status == "running" || status == "queued", StateMessage: message, Link: new("/routers"), HistoryData: history}
 			row.NextRunAt = tasks.Timestamp(due)
 			rows = append(rows, row)
 		}

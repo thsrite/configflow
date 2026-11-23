@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"net/netip"
 	"strings"
@@ -102,7 +103,7 @@ func TestReportPartsJoinSummaryAndSync(t *testing.T) {
 	defer func(old func(*Desired, *RouterState) ([]ReportPart, error)) { ReportParts = old }(ReportParts)
 	desired := &Desired{ProxyGateway: "192.168.0.3", ProxyCIDRs: []ProxyCIDR{}, IPv6CIDRs: []ProxyCIDR{},
 		Warnings: []string{}, BlockingWarnings: []string{}}
-	state := &RouterState{Routes: []*RouteEntry{NewRoute("*9", "203.0.113.0/24", "192.168.0.3", true, "cf-old")}}
+	state := &RouterState{Routes: []*RouteEntry{device.NewRoute("*9", "203.0.113.0/24", "192.168.0.3", true, "cf-old")}}
 	ReportParts = func(*Desired, *RouterState) ([]ReportPart, error) {
 		return []ReportPart{{Key: "dns_guard", Section: map[string]string{"status": "pending"}, Statuses: []string{"pending"},
 			RetireExtra: []string{"*9"}}}, nil

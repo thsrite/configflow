@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,7 +18,7 @@ func (d *RouterOS) fixedLease(ctx context.Context, id string) (Row, error) {
 		return nil, err
 	}
 	value, err := d.get(ctx, fixedROSLeases+"/"+escapeROSPathID(id), rosTimeout)
-	if routerErrorKind(err) == KindMissingResource {
+	if device.RouterErrorKind(err) == KindMissingResource {
 		return nil, nil
 	}
 	if err != nil {
@@ -25,7 +26,7 @@ func (d *RouterOS) fixedLease(ctx context.Context, id string) (Row, error) {
 	}
 	row := asRow(value)
 	if row == nil || row.id() != id {
-		return nil, routerError(messageFixedROSReadID)
+		return nil, device.Error(messageFixedROSReadID)
 	}
 	return row, nil
 }
@@ -41,17 +42,17 @@ func (d *RouterOS) removeFixedLease(ctx context.Context, b *FixedIPBinding, expe
 		return nil
 	}
 	if !fixedROSMatches(row, b) || expected != nil && !sameRow(fixedROSFields(row), expected) {
-		return routerError(messageFixedROSExternal)
+		return device.Error(messageFixedROSExternal)
 	}
 	_, failure := d.request(ctx, "DELETE", fixedROSLeases+"/"+escapeROSPathID(b.ID), nil, rosTimeout)
-	if failure != nil && routerErrorKind(failure) != KindUncertainWrite {
+	if failure != nil && device.RouterErrorKind(failure) != KindUncertainWrite {
 		return failure
 	}
 	remaining, readError := d.fixedLease(ctx, b.ID)
 	if readError != nil {
 		remaining, err = d.fixedLease(ctx, b.ID)
 		if err != nil {
-			return rollbackError(fmt.Sprintf(messageFixedROSDeleteUnknown, err))
+			return device.RollbackError(fmt.Sprintf(messageFixedROSDeleteUnknown, err))
 		}
 	}
 	if remaining != nil {
@@ -61,7 +62,7 @@ func (d *RouterOS) removeFixedLease(ctx context.Context, b *FixedIPBinding, expe
 		if readError != nil {
 			return readError
 		}
-		return routerError(messageFixedROSStillPresent)
+		return device.Error(messageFixedROSStillPresent)
 	}
 	return nil
 }
@@ -74,14 +75,14 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 		return nil, err
 	}
 	if op == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	latest, err := d.PreviewFixedIP(ctx, op.IP, op.MAC, fixedText(op.Name))
 	if err != nil {
 		return nil, err
 	}
-	if !jsonEqual(latest, op) {
-		return nil, routerError(messageFixedROSPreviewChanged)
+	if !device.JSONEqual(latest, op) {
+		return nil, device.Error(messageFixedROSPreviewChanged)
 	}
 	expected := fixedOperationBinding(op, "routeros")
 	nonce, err := fixedNonce()
@@ -111,12 +112,12 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 				fields = maps.Clone(original)
 			}
 			if fields == nil {
-				e = routerError(messageFixedRollbackChanged)
+				e = device.Error(messageFixedRollbackChanged)
 			} else {
 				comment := fields.text("comment")
 				fields["comment"] = current.text("comment")
 				if current.text("address") != expected.IP || fixedMAC(current.text("mac-address")) != expected.MAC || current.text("server") != fixedText(expected.Server) || (current.text("comment") != comment && current.text("comment") != expected.Comment) || !sameRow(fixedROSFields(current), fields) {
-					e = routerError(messageFixedRollbackChanged)
+					e = device.Error(messageFixedRollbackChanged)
 				} else {
 					var b *FixedIPBinding
 					b, e = fixedROSBinding(current)
@@ -124,19 +125,19 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 						e = d.removeFixedLease(ctx, b, fields)
 					}
 					if e == nil && op.Kind == "make_static" {
-						err = routerError(err.Error() + "；" + messageFixedDynamicUndo)
+						err = device.Error(err.Error() + "；" + messageFixedDynamicUndo)
 					}
 				}
 			}
 		}
 		if e != nil {
-			err = rollbackError(fmt.Sprintf(messageFixedROSRollback, err, e))
+			err = device.RollbackError(fmt.Sprintf(messageFixedROSRollback, err, e))
 		}
 	}()
 	if op.Kind == "make_static" {
 		_, err = d.request(ctx, "POST", fixedROSLeases+"/make-static", Row{".id": fixedText(op.ID)}, rosTimeout)
 		if err != nil {
-			if routerErrorKind(err) == KindUncertainWrite {
+			if device.RouterErrorKind(err) == KindUncertainWrite {
 				conversionPending = true
 				row, e := d.fixedLease(ctx, fixedText(op.ID))
 				if e != nil {
@@ -158,7 +159,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 			return nil, e
 		}
 		if row == nil || row.flag("dynamic") {
-			return nil, routerError(messageFixedROSNotStatic)
+			return nil, device.Error(messageFixedROSNotStatic)
 		}
 		acquired, e = fixedROSBinding(row)
 		if e != nil {
@@ -166,11 +167,11 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 		}
 		acquiredFields = maps.Clone(original)
 		if !sameRow(fixedROSFields(row), original) {
-			return nil, rollbackError(messageFixedROSConversionChanged)
+			return nil, device.RollbackError(messageFixedROSConversionChanged)
 		}
 		if acquired.IP != expected.IP || acquired.MAC != expected.MAC || fixedText(acquired.Server) != fixedText(expected.Server) {
 			acquired = nil
-			return nil, rollbackError(messageFixedROSConversionTarget)
+			return nil, device.RollbackError(messageFixedROSConversionTarget)
 		}
 		if _, err = d.request(ctx, "PATCH", fixedROSLeases+"/"+escapeROSPathID(expected.ID), Row{"comment": expected.Comment}, rosTimeout); err != nil {
 			return nil, err
@@ -190,16 +191,16 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 			newID = row.id()
 		}
 		if err == nil && (!rosIDPattern.MatchString(newID) || known[newID]) {
-			err = rosError(KindUncertainWrite, messageFixedROSNewID)
+			err = device.KindError(KindUncertainWrite, messageFixedROSNewID)
 		}
 		if err != nil {
-			if routerErrorKind(err) != KindUncertainWrite {
+			if device.RouterErrorKind(err) != KindUncertainWrite {
 				return nil, err
 			}
 			cause := err
 			rows, e = d.list(ctx, fixedROSLeases)
 			if e != nil {
-				return nil, rollbackError(fmt.Sprintf(messageFixedKeepScene, cause, e))
+				return nil, device.RollbackError(fmt.Sprintf(messageFixedKeepScene, cause, e))
 			}
 			matches := []Row{}
 			for _, r := range rows {
@@ -210,14 +211,14 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 				}
 			}
 			if len(matches) != 1 {
-				return nil, rollbackError(fmt.Sprintf(messageFixedKeepScene, cause, messageFixedROSNotUnique))
+				return nil, device.RollbackError(fmt.Sprintf(messageFixedKeepScene, cause, messageFixedROSNotUnique))
 			}
 			recovered, e := d.fixedLease(ctx, matches[0].id())
 			if e != nil {
-				return nil, rollbackError(fmt.Sprintf(messageFixedKeepScene, cause, e))
+				return nil, device.RollbackError(fmt.Sprintf(messageFixedKeepScene, cause, e))
 			}
 			if recovered == nil || !sameRow(fixedROSFields(recovered), fixedROSFields(matches[0])) {
-				return nil, rollbackError(fmt.Sprintf(messageFixedKeepScene, cause, messageFixedROSRecoveryChanged))
+				return nil, device.RollbackError(fmt.Sprintf(messageFixedKeepScene, cause, messageFixedROSRecoveryChanged))
 			}
 			acquired, e = fixedROSBinding(recovered)
 			if e != nil {
@@ -249,7 +250,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
 	ctx = lifecycle.Detach(ctx)
 	if b == nil || !strings.HasPrefix(b.Comment, fixedIPPrefix) || b.Undo == nil || b.Undo.Expected == nil {
-		return routerError(messageFixedROSProof)
+		return device.Error(messageFixedROSProof)
 	}
 	return d.removeFixedLease(ctx, b, b.Undo.Expected)
 }
@@ -257,14 +258,14 @@ func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error
 // PreviewDeleteFixedIP captures the complete stable before-image for deletion.
 func (d *RouterOS) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
 	if b == nil || b.Vendor != "routeros" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
-		return nil, routerError(messageFixedROSDeleteOwn)
+		return nil, device.Error(messageFixedROSDeleteOwn)
 	}
 	row, err := d.fixedLease(ctx, b.ID)
 	if err != nil {
 		return nil, err
 	}
 	if !fixedROSMatches(row, b) {
-		return nil, routerError(messageFixedROSDeleteChanged)
+		return nil, device.Error(messageFixedROSDeleteChanged)
 	}
 	return fixedDeleteOperation(b, fixedROSFields(row), fmt.Sprintf(messageFixedROSDeleteSummary, b.IP, b.MAC)), nil
 }
@@ -276,15 +277,15 @@ func (d *RouterOS) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*Fi
 		return nil, err
 	}
 	if op == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	b := fixedOperationBinding(op, "routeros")
 	latest, err := d.PreviewDeleteFixedIP(ctx, b)
 	if err != nil {
 		return nil, err
 	}
-	if !jsonEqual(latest, op) {
-		return nil, routerError(messageFixedROSDeletePreview)
+	if !device.JSONEqual(latest, op) {
+		return nil, device.Error(messageFixedROSDeletePreview)
 	}
 	if err = d.removeFixedLease(ctx, b, op.Expected); err != nil {
 		return nil, err
@@ -300,7 +301,7 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 		return nil, err
 	}
 	if b == nil || b.Undo == nil || b.Undo.Expected == nil || b.Undo.Kind != "delete" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
-		return nil, routerError(messageFixedROSRestoreProof)
+		return nil, device.Error(messageFixedROSRestoreProof)
 	}
 	current, err := d.fixedLease(ctx, b.ID)
 	if err != nil {
@@ -310,7 +311,7 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 		if fixedROSMatches(current, b) && sameRow(fixedROSFields(current), b.Undo.Expected) {
 			return fixedROSBinding(current)
 		}
-		return nil, routerError(messageFixedROSRestoreID)
+		return nil, device.Error(messageFixedROSRestoreID)
 	}
 	rows, err := d.list(ctx, fixedROSLeases)
 	if err != nil {
@@ -318,7 +319,7 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 	}
 	for _, row := range rows {
 		if row.text("address") == b.IP || fixedMAC(row.text("mac-address")) == b.MAC {
-			return nil, routerError(messageFixedROSRestoreConflict)
+			return nil, device.Error(messageFixedROSRestoreConflict)
 		}
 	}
 	value, err := d.request(ctx, "PUT", fixedROSLeases, b.Undo.Expected, rosTimeout)
@@ -327,7 +328,7 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 	}
 	row := asRow(value)
 	if row == nil {
-		return nil, routerError(messageFixedROSID)
+		return nil, device.Error(messageFixedROSID)
 	}
 	if err = fixedROSID(row.id()); err != nil {
 		return nil, err
@@ -342,7 +343,7 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 		return nil, err
 	}
 	if !sameRow(fixedROSFields(actual), b.Undo.Expected) {
-		return nil, rollbackError(messageFixedROSRestoreCheck)
+		return nil, device.RollbackError(messageFixedROSRestoreCheck)
 	}
 	return fixedROSBinding(actual)
 }

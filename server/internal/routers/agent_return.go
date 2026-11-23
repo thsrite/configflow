@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 
@@ -89,7 +90,7 @@ type managerReturnAgent struct {
 
 func (a *managerReturnAgent) Status(ctx context.Context) (*ReturnStatus, error) {
 	if a.agent == nil || a.agent.Record == nil {
-		return nil, routerError(messageNoReturnAgent)
+		return nil, device.Error(messageNoReturnAgent)
 	}
 	result, err := a.manager.ReturnRoutingStatusModel(ctx, a.agent.Record)
 	if err != nil {
@@ -107,14 +108,14 @@ func (a *managerReturnAgent) Status(ctx context.Context) (*ReturnStatus, error) 
 }
 func (a *managerReturnAgent) Apply(ctx context.Context, spec json.RawMessage) error {
 	if a.agent == nil || a.agent.Record == nil {
-		return routerError(messageNoReturnAgent)
+		return device.Error(messageNoReturnAgent)
 	}
 	_, err := a.manager.ReturnRoutingApplyModel(ctx, a.agent.Record, spec)
 	return a.safeError(err)
 }
 func (a *managerReturnAgent) Remove(ctx context.Context, restore bool) error {
 	if a.agent == nil || a.agent.Record == nil {
-		return routerError(messageNoReturnAgent)
+		return device.Error(messageNoReturnAgent)
 	}
 	_, err := a.manager.ReturnRoutingRemoveModel(ctx, a.agent.Record, restore)
 	return a.safeError(err)

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -84,7 +85,7 @@ func makeReturnOps(status *ReturnStatus, spec *ReturnSpec) []Op {
 	if len(previous) == 0 {
 		previous = json.RawMessage("null")
 	}
-	return append(ops, ReturnApplyOp{OpHead{"return_routing_apply", strings.Join(parts, "；")}, spec, previous})
+	return append(ops, ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: strings.Join(parts, "；")}, spec, previous})
 }
 func cleanupReturnOps(status *ReturnStatus, warnings *[]string) []Op {
 	ops := []Op{}
@@ -109,7 +110,7 @@ func cleanupReturnOps(status *ReturnStatus, warnings *[]string) []Op {
 		*warnings = append(*warnings, fmt.Sprintf(messageReturnCleanupUnsafe, messageReturnIncomplete))
 		return ops
 	}
-	return append(ops, ReturnRemoveOp{OpHead{"return_routing_remove", fmt.Sprintf(messageReturnRemove, spec.Table, spec.RouterIP, returnScope(&spec))}, false, c.Spec})
+	return append(ops, ReturnRemoveOp{OpHead{Kind: "return_routing_remove", Summary: fmt.Sprintf(messageReturnRemove, spec.Table, spec.RouterIP, returnScope(&spec))}, false, c.Spec})
 }
 func proxyTargets(d *Desired, skipped []string) []string {
 	out := []string{}
@@ -124,7 +125,7 @@ func natChecks(items []NatItem, gateway string) NATChecks {
 	c := NATChecks{Gateway: gateway, NATBypass: []string{}, NATNotRequired: []CIDRGateway{}}
 	for _, v := range items {
 		if v.Status == "not_required" {
-			c.NATNotRequired = append(c.NATNotRequired, CIDRGateway{v.CIDR, gateway})
+			c.NATNotRequired = append(c.NATNotRequired, CIDRGateway{CIDR: v.CIDR, Gateway: gateway})
 		} else if v.Status != "unknown" {
 			c.NATBypass = append(c.NATBypass, v.CIDR)
 		}
@@ -139,7 +140,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		return nil, err
 	}
 	if r == nil || in == nil || in.Desired == nil || in.State == nil || in.Report == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	desired, state, report := in.Desired, in.State, in.Report
 	status := report.ReturnRouting
@@ -163,7 +164,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			*blockers = append(*blockers, problem)
 		}
 		if status.Status != "ok" {
-			*blockers = append(*blockers, fmt.Sprintf(messageReturnUnreadable, orText(status.Message, messagePlanUnknown)))
+			*blockers = append(*blockers, fmt.Sprintf(messageReturnUnreadable, device.OrText(status.Message, messagePlanUnknown)))
 		} else {
 			*blockers = append(*blockers, ReturnSafetyBlockers(status, true)...)
 		}
@@ -223,16 +224,16 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 				next = append(next, v.CIDR)
 			}
 		}
-		replacements := SubtractNetworks(Networks(old), Networks(next))
+		replacements := SubtractNetworks(device.Networks(old), device.Networks(next))
 		if rosPolicy.Check != nil {
 			for _, v := range rosPolicy.Check.Migrations {
 				if v.Path == rosRoutes {
-					replacements = append(replacements, Networks([]string{v.Config.text("dst-address")})...)
+					replacements = append(replacements, device.Networks([]string{v.Config.text("dst-address")})...)
 				}
 			}
 		}
 		overlaps := ROSPolicyNetworkOverlap(replacements)
-		for _, n := range Networks(skipped) {
+		for _, n := range device.Networks(skipped) {
 			if overlaps(n) {
 				*blockers = append(*blockers, messagePolicyWithdrawConflict)
 				break
@@ -241,14 +242,14 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		for _, raw := range rosPolicy.Ops {
 			op, ok := raw.(*ROSPolicyReplace)
 			if !ok {
-				return nil, routerError(messageOperationFormat)
+				return nil, device.Error(device.MessageOperationFormat)
 			}
 			copy := *op
 			copy.StaticChecks = []CIDRGateway{}
 			for _, cidr := range proxy {
-				for _, n := range Networks([]string{cidr}) {
+				for _, n := range device.Networks([]string{cidr}) {
 					if overlaps(n) {
-						copy.StaticChecks = append(copy.StaticChecks, CIDRGateway{cidr, gateway})
+						copy.StaticChecks = append(copy.StaticChecks, CIDRGateway{CIDR: cidr, Gateway: gateway})
 						break
 					}
 				}
@@ -265,7 +266,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		settings = *desired.DNSSettings
 	}
 	settings.AgentID = r.DNSAgentID
-	dns := BuildDNSReport(settings, gateway, state.DhcpDNS)
+	dns := device.BuildDNSReport(settings, gateway, state.DhcpDNS)
 	dnsOps := []Op{}
 	manageDNS := r.DNSAgentID != ""
 	if manageDNS {
@@ -283,8 +284,8 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 				if r.Type == "ikuai" {
 					replacement = messageDHCPBoth
 				}
-				summary := fmt.Sprintf(messageDHCPUpdate, entry.Network, orText(strings.Join(entry.DNS, ", "), messageDHCPAuto), dns.TargetDNS, replacement)
-				dnsOps = append(dnsOps, DHCPDNSUpdateOp{OpHead{"dhcp_dns_update", summary}, entry.ID, item.DesiredDNS, entry.Attributes, DNSScope{entry.ID, entry.Network, gateway}})
+				summary := fmt.Sprintf(messageDHCPUpdate, entry.Network, device.OrText(strings.Join(entry.DNS, ", "), messageDHCPAuto), dns.TargetDNS, replacement)
+				dnsOps = append(dnsOps, DHCPDNSUpdateOp{OpHead{Kind: "dhcp_dns_update", Summary: summary}, entry.ID, item.DesiredDNS, entry.Attributes, DNSScope{entry.ID, entry.Network, gateway}})
 				break
 			}
 		}
@@ -338,7 +339,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 					case *NATListSync:
 						copy := *v
 						if listed == nil || listed.Check == nil {
-							return nil, routerError(messageOperationFormat)
+							return nil, device.Error(device.MessageOperationFormat)
 						}
 						check := *listed.Check
 						listed.Check = &check
@@ -385,8 +386,8 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			if status.Managed != nil {
 				var old ReturnSpec
 				_ = jsondecode.Unmarshal(status.Managed.Spec, &old)
-				for _, n := range Networks(returnDest(&old)) {
-					for _, skip := range Networks(skipped) {
+				for _, n := range device.Networks(returnDest(&old)) {
+					for _, skip := range device.Networks(skipped) {
 						if n.Overlaps(skip) {
 							if n.Bits() > skip.Bits() {
 								values = append(values, n.String())
@@ -433,7 +434,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	checks := &Checks{NATChecks: natChecks(natItems, gateway), Routes: []CIDRGateway{}, RemovedRoutes: []string{}}
 	if !policy {
 		for _, v := range proxy {
-			checks.Routes = append(checks.Routes, CIDRGateway{v, gateway})
+			checks.Routes = append(checks.Routes, CIDRGateway{CIDR: v, Gateway: gateway})
 		}
 	} else {
 		checks.PolicyRoutes = &policyChecks

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -68,7 +69,7 @@ func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) s
 func FakeIPNetwork(customConfig string) (netip.Prefix, error) {
 	// A stored base that is not text has no fake-ip range (not the default).
 	if customConfig == model.DamagedText {
-		return netip.Prefix{}, routerError(messageIPv6YAMLType)
+		return netip.Prefix{}, device.Error(messageIPv6YAMLType)
 	}
 	doc, err := yamlx.Parse([]byte(customConfig))
 	if err != nil && !errors.Is(err, yamlx.ErrSyntax) {
@@ -101,11 +102,11 @@ func (e *desiredYAMLError) Error() string   { return e.validation.Error() }
 func (e *desiredYAMLError) Unwrap() []error { return []error{e.validation, e.cause} }
 
 func (d desiredProfile) label() string {
-	id, _ := requestString(d.ProfileID)
+	id, _ := device.RequestString(d.ProfileID)
 	if id == "" {
-		id, _ = requestString(d.ID)
+		id, _ = device.RequestString(d.ID)
 	}
-	name, _ := requestString(d.Name)
+	name, _ := device.RequestString(d.Name)
 	if name != "" && id != "" {
 		return name + "（" + id + "）"
 	}
@@ -155,13 +156,13 @@ type Desired struct {
 }
 
 // ContentLoader returns a rule set's text (library nil: not from the shared
-// library). An error counts as "no local cache", except ErrNotPorted.
+// library). An error counts as "no local cache", except device.ErrNotPorted.
 type ContentLoader func(item RuleSet, library *LibraryRule) (string, error)
 
 // RulesetContent is the default loader: local cache or inline content, never
 // the network (C32 get_ruleset_content; fails closed until C32 sets it).
 var RulesetContent = func(ctx context.Context, profile json.RawMessage, item RuleSet, library *LibraryRule) (string, error) {
-	return "", ErrNotPorted
+	return "", device.ErrNotPorted
 }
 
 type desiredProfile struct {
@@ -184,12 +185,12 @@ func directOnlyGroups(groups []json.RawMessage) map[string]bool {
 		var nodes []string
 		direct := json.Unmarshal(raw, &g) == nil && json.Unmarshal(g["manual_nodes"], &nodes) == nil && len(nodes) > 0
 		for _, key := range []string{"include_groups", "subscriptions", "aggregations", "regex", "follow_group"} {
-			direct = direct && !hasStoredState(g[key])
+			direct = direct && !device.HasStoredState(g[key])
 		}
 		for _, node := range nodes {
 			direct = direct && slices.Contains(BuiltinNonProxy, node)
 		}
-		if name, ok := requestString(g["name"]); direct && ok {
+		if name, ok := device.RequestString(g["name"]); direct && ok {
 			names[name] = true
 		}
 	}
@@ -254,7 +255,7 @@ func ComputeDesired(ctx context.Context, profile json.RawMessage, gateway string
 			d.Warnings = append(d.Warnings, "规则集「"+name+"」的策略是 "+item.Policy+"（不走代理），仍按勾选计入，请确认")
 		}
 		content, err := loader(*item, lib)
-		if errors.Is(err, ErrNotPorted) {
+		if errors.Is(err, device.ErrNotPorted) {
 			return nil, err
 		}
 		if err != nil || content == "" {

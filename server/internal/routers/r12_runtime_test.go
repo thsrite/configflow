@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,7 @@ func (s r12Source) Agent(_ context.Context, id string) (*GatewayAgent, error) {
 func (s r12Source) ReturnAgent(*GatewayAgent) ReturnAgent { return s.client }
 func r12Repository(t *testing.T, r *Router, yaml string) *repo.Repository {
 	t.Helper()
-	raw := mustPolicyJSON(map[string]any{"mihomo": map[string]any{"custom_config": yaml}, "routers": map[string]any{"items": []*Router{r}}})
+	raw := device.JSON(map[string]any{"mihomo": map[string]any{"custom_config": yaml}, "routers": map[string]any{"items": []*Router{r}}})
 	db, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +205,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 					if len(actual) == 0 && len(expected) == 0 {
 						continue
 					}
-					if !jsonEqual(actual, expected) {
+					if !device.JSONEqual(actual, expected) {
 						t.Fatalf("manifest %s: got %s want %s", name, actual, expected)
 					}
 				}

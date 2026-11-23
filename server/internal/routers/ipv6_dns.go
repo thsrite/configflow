@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -91,7 +92,7 @@ func ipv6DNSFlag(row Row, key string) (bool, error) {
 	case "true", "yes", "1":
 		return true, nil
 	default:
-		return false, routerError(fmt.Sprintf(messageIPv6DNSFlag, key))
+		return false, device.Error(fmt.Sprintf(messageIPv6DNSFlag, key))
 	}
 }
 func ipv6DNSServers(row Row) ([]string, error) {
@@ -99,35 +100,35 @@ func ipv6DNSServers(row Row) ([]string, error) {
 	for _, key := range []string{"dns", "dns-servers"} {
 		parts, ok := textList(row[key])
 		if !ok {
-			return nil, routerError(messageIPv6DNSServerList)
+			return nil, device.Error(messageIPv6DNSServerList)
 		}
-		values := nonEmpty(parts)
+		values := device.NonEmpty(parts)
 		for _, s := range values {
 			a, e := netip.ParseAddr(s)
 			if e != nil || !a.Is6() {
-				return nil, routerError(messageIPv6DNSServerAddress)
+				return nil, device.Error(messageIPv6DNSServerAddress)
 			}
 			out = append(out, a.String())
 		}
 	}
-	return uniqueStrings(out), nil
+	return device.Unique(out), nil
 }
 func ipv6DNSScope(desired *Desired, scope DNSCheck) (DNSCheck, error) {
 	scope.DNS = slices.Clone(scope.DNS)
 	if desired == nil || desired.DNSSettings == nil {
-		return scope, routerError(messageIPv6DNSSelection)
+		return scope, device.Error(messageIPv6DNSSelection)
 	}
-	target, gateway := clientIPv4(desired.Server), clientIPv4(desired.ProxyGateway)
+	target, gateway := device.ClientIPv4(desired.Server), device.ClientIPv4(desired.ProxyGateway)
 	if desired.Error != "" || target == "" || gateway == "" {
-		return scope, routerError(messageIPv6DNSSelection)
+		return scope, device.Error(messageIPv6DNSSelection)
 	}
 	if scope.ID == "" || scope.Network == "" || scope.Gateway != gateway || !slices.Equal(scope.DNS, []string{target}) {
-		return scope, routerError(messageIPv6DNSScope)
+		return scope, device.Error(messageIPv6DNSScope)
 	}
 	p, ok := netipx.ParseNetwork4(scope.Network, false)
 	a, _ := netip.ParseAddr(gateway)
 	if !ok || !p.Contains(a) {
-		return scope, routerError(messageIPv6DNSNetwork)
+		return scope, device.Error(messageIPv6DNSNetwork)
 	}
 	return scope, nil
 }
@@ -148,7 +149,7 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 		}
 		p, ok := netipx.ParseNetwork4(r.text("address"), false)
 		if !ok {
-			return "", nil, routerError(messageIPv6DNSLANAddress)
+			return "", nil, device.Error(messageIPv6DNSLANAddress)
 		}
 		if !p.Contains(a) {
 			continue
@@ -158,19 +159,19 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 			return "", nil, e
 		}
 		if invalid {
-			return "", nil, routerError(messageIPv6DNSLANInvalid)
+			return "", nil, device.Error(messageIPv6DNSLANInvalid)
 		}
 		iface, valid := r.str("interface")
 		if actual := r["actual-interface"]; actual != "" {
 			iface = actual
 		}
 		if !valid || iface == "" {
-			return "", nil, routerError(messageIPv6DNSLANInterface)
+			return "", nil, device.Error(messageIPv6DNSLANInterface)
 		}
 	}
 	iface := IPv6LAN(IPv6Snapshot{"ipv4_addresses": addresses}, gateway)
 	if iface == "" || iface == "all" {
-		return "", nil, routerError(messageIPv6DNSLANUnique)
+		return "", nil, device.Error(messageIPv6DNSLANUnique)
 	}
 	rows, err := d.strictList(ctx, rosIPv6ND, "disabled", "invalid", "dynamic", "dns", "dns-servers")
 	if err != nil {
@@ -180,13 +181,13 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 	seen := map[string]bool{}
 	for _, r := range rows {
 		if iface, ok := r.str("interface"); !ok || iface == "" {
-			return "", nil, routerError(messageIPv6DNSNDInterface)
+			return "", nil, device.Error(messageIPv6DNSNDInterface)
 		}
 		if r.text("interface") != iface && !r.is("interface", "all") {
 			continue
 		}
 		if id, ok := r.str(".id"); !ok || !rosIDPattern.MatchString(id) || seen[id] {
-			return "", nil, routerError(messageIPv6DNSNDID)
+			return "", nil, device.Error(messageIPv6DNSNDID)
 		}
 		seen[r.id()] = true
 		for _, key := range []string{"dynamic", "invalid", "disabled"} {
@@ -195,11 +196,11 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 				return "", nil, e
 			}
 			if flag && key != "disabled" {
-				return "", nil, routerError(messageIPv6DNSNDDynamic)
+				return "", nil, device.Error(messageIPv6DNSNDDynamic)
 			}
 		}
 		if !slices.Contains([]string{"yes", "self", "no"}, r.text("advertise-dns")) {
-			return "", nil, routerError(messageIPv6DNSNDMode)
+			return "", nil, device.Error(messageIPv6DNSNDMode)
 		}
 		if _, e := ipv6DNSServers(r); e != nil {
 			return "", nil, e
@@ -242,14 +243,14 @@ func ipv6DNSConstraints(rows []Row, iface string) error {
 		}
 		if n > 1 {
 			if scope == "all" {
-				return routerError(messageIPv6DNSDuplicateAll)
+				return device.Error(messageIPv6DNSDuplicateAll)
 			}
-			return routerError(messageIPv6DNSDuplicateLAN)
+			return device.Error(messageIPv6DNSDuplicateLAN)
 		}
 	}
 	for _, r := range ipv6DNSEffective(rows, iface) {
 		if r.is("interface", "all") && !r.is("advertise-dns", "no") {
-			return routerError(messageIPv6DNSShared)
+			return device.Error(messageIPv6DNSShared)
 		}
 	}
 	return nil
@@ -287,7 +288,7 @@ func ipv6DNSOverride(rows []Row, iface string) string {
 	if len(shared) != 1 || !ipv6Enabled(shared[0]) || shared[0].is("advertise-dns", "no") {
 		return ""
 	}
-	skip := stringSet("interface", "advertise-dns", "disabled", "comment", "dynamic", "invalid", "default", "running")
+	skip := device.StringSet("interface", "advertise-dns", "disabled", "comment", "dynamic", "invalid", "default", "running")
 	keys := []string{}
 	for k := range shared[0] {
 		keys = append(keys, k)
@@ -324,7 +325,7 @@ func InspectIPv6DNS(ctx context.Context, desired *Desired, scope DNSCheck, d *Ro
 		if e != nil {
 			return e
 		}
-		if _, e = CheckedDNSTarget(scope, state); e != nil {
+		if _, e = device.CheckedDNSTarget(scope, state); e != nil {
 			return e
 		}
 		iface, rows, e := readIPv6DNS(ctx, d, scope.Gateway)
@@ -394,7 +395,7 @@ func (d *RouterOS) ApplyIPv6DNS(ctx context.Context, op IPv6DNSUpdate) (ROSUndo,
 	if e != nil {
 		return ROSUndo{}, e
 	}
-	if e = VerifyDNS(scope, state); e != nil {
+	if e = device.VerifyDNS(scope, state); e != nil {
 		return ROSUndo{}, e
 	}
 	iface, rows, e := readIPv6DNS(ctx, d, scope.Gateway)
@@ -405,11 +406,11 @@ func (d *RouterOS) ApplyIPv6DNS(ctx context.Context, op IPv6DNSUpdate) (ROSUndo,
 		return ROSUndo{}, e
 	}
 	if iface != op.Interface || !reflect.DeepEqual(ipv6DNSEntries(d, rows), op.ExpectedRows) {
-		return ROSUndo{}, routerError(messageIPv6DNSPreviewChanged)
+		return ROSUndo{}, device.Error(messageIPv6DNSPreviewChanged)
 	}
 	r := findRow(rows, op.ID)
 	if r == nil || !r.is("interface", iface) || !ipv6Enabled(r) || !slices.Contains([]string{"yes", "self"}, r.text("advertise-dns")) || !reflect.DeepEqual(op.Values, Row{"advertise-dns": "no"}) || !reflect.DeepEqual(d.ownershipSnapshot(rosIPv6ND, r), op.Expected) {
-		return ROSUndo{}, routerError(messageIPv6DNSTargetChanged)
+		return ROSUndo{}, device.Error(messageIPv6DNSTargetChanged)
 	}
 	if e := ctx.Err(); e != nil {
 		return ROSUndo{}, e
@@ -430,7 +431,7 @@ func VerifyIPv6DNS(ctx context.Context, d *RouterOS, check *IPv6DNSCheck) error 
 	if e != nil {
 		return e
 	}
-	if e = VerifyDNS(check.Scope, state); e != nil {
+	if e = device.VerifyDNS(check.Scope, state); e != nil {
 		return e
 	}
 	iface, rows, e := readIPv6DNS(ctx, d, check.Gateway)
@@ -441,11 +442,11 @@ func VerifyIPv6DNS(ctx context.Context, d *RouterOS, check *IPv6DNSCheck) error 
 		return e
 	}
 	if iface != check.Interface || !reflect.DeepEqual(ipv6DNSEntries(d, rows), check.Entries) {
-		return routerError(messageIPv6DNSReadback)
+		return device.Error(messageIPv6DNSReadback)
 	}
 	for _, r := range ipv6DNSEffective(rows, iface) {
 		if !r.is("advertise-dns", "no") {
-			return routerError(messageIPv6DNSStillOn)
+			return device.Error(messageIPv6DNSStillOn)
 		}
 	}
 	return nil

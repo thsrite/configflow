@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,15 +18,15 @@ import (
 
 func fixedIKFields(row ikuaiRow) (Row, error) {
 	if row == nil {
-		return nil, routerError(messageFixedIKFields)
+		return nil, device.Error(messageFixedIKFields)
 	}
 	for key := range row {
 		if !slices.Contains(IkuaiDHCPStaticFields, key) && !slices.Contains([]string{"termname", "ip_addr_int", "hostname"}, key) {
-			return nil, routerError(messageFixedIKFields)
+			return nil, device.Error(messageFixedIKFields)
 		}
 	}
 	if id, ok := jsonInt(row["id"]); !ok || id < 1 {
-		return nil, routerError(messageFixedIKFields)
+		return nil, device.Error(messageFixedIKFields)
 	}
 	result := Row{}
 	for _, key := range IkuaiDHCPStaticFields {
@@ -34,12 +35,12 @@ func fixedIKFields(row ikuaiRow) (Row, error) {
 		}
 		text, ok := row.str(key)
 		if !ok {
-			return nil, routerError(messageFixedIKFields)
+			return nil, device.Error(messageFixedIKFields)
 		}
 		result[key] = text
 	}
 	if !slices.Contains([]string{"yes", "no"}, result.text("enabled")) || routerdoc.IPv4(result.text("ip_addr")) == "" || fixedMAC(result.text("mac")) == "" {
-		return nil, routerError(messageFixedIKFields)
+		return nil, device.Error(messageFixedIKFields)
 	}
 	result["mac"] = fixedMAC(result.text("mac"))
 	return result, nil
@@ -52,7 +53,7 @@ func (d *Ikuai) fixedStatic(ctx context.Context) ([]ikuaiRow, error) {
 	for i, row := range rows {
 		decoded := decodeIkuaiRow(row)
 		if decoded == nil {
-			return nil, routerError(messageFixedIKFields)
+			return nil, device.Error(messageFixedIKFields)
 		}
 		rows[i] = decoded
 		if _, err = fixedIKFields(rows[i]); err != nil {
@@ -111,7 +112,7 @@ func fixedIKScopes(s *FixedIPSnapshot, ip string) []fixedIKScope {
 		if e1 != nil || e2 != nil || e3 != nil || !valid || start.Compare(end) > 0 || !network.Contains(end) || !network.Contains(gateway) || !network.Contains(address) || address == network.Addr() || address == netipx.Broadcast(network) || address == gateway {
 			continue
 		}
-		out = append(out, fixedIKScope{mustPolicyJSON(row["id"]), row.text("interface"), gateway.String(), network.String(), row.text("addr_pool"), row.text("netmask")})
+		out = append(out, fixedIKScope{device.JSON(row["id"]), row.text("interface"), gateway.String(), network.String(), row.text("addr_pool"), row.text("netmask")})
 	}
 	return out
 }
@@ -119,7 +120,7 @@ func fixedIKBinding(row ikuaiRow) *FixedIPBinding {
 	return &FixedIPBinding{Vendor: "ikuai", ID: fixedIKIDText(row["id"]), IP: row.text("ip_addr"), MAC: fixedMAC(row.text("mac")), Comment: row.text("comment"), Interface: fixedPointer(row.text("interface")), Gateway: fixedPointer(row.text("gateway"))}
 }
 func fixedIKMatches(row ikuaiRow, b *FixedIPBinding) bool {
-	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && fixedText(b.Interface) != "" && fixedText(b.Gateway) != "" && jsonEqual(fixedIKBinding(row), &FixedIPBinding{Vendor: b.Vendor, ID: b.ID, IP: b.IP, MAC: b.MAC, Comment: b.Comment, Interface: b.Interface, Gateway: b.Gateway})
+	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && fixedText(b.Interface) != "" && fixedText(b.Gateway) != "" && device.JSONEqual(fixedIKBinding(row), &FixedIPBinding{Vendor: b.Vendor, ID: b.ID, IP: b.IP, MAC: b.MAC, Comment: b.Comment, Interface: b.Interface, Gateway: b.Gateway})
 }
 func inspectFixedIK(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 	out := FixedIPState{}
@@ -168,7 +169,7 @@ func inspectFixedIK(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 		}
 	}
 	out.Eligible = true
-	out.Scope = mustPolicyJSON(scopes[0])
+	out.Scope = device.JSON(scopes[0])
 	return out
 }
 
@@ -180,12 +181,12 @@ func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*Fixe
 	}
 	state := InspectFixedIP(snapshot, ip, mac)
 	if !state.Eligible {
-		return nil, rosError(KindConflict, state.Reason)
+		return nil, device.KindError(KindConflict, state.Reason)
 	}
 	ip, mac = routerdoc.IPv4(ip), fixedMAC(mac)
-	name = strings.TrimSpace(orText(name, ip))
+	name = strings.TrimSpace(device.OrText(name, ip))
 	if utf8.RuneCountInString(name) > 80 || strings.ContainsFunc(name, func(r rune) bool { return r < 32 }) {
-		return nil, routerError(messageFixedNameLong)
+		return nil, device.Error(messageFixedNameLong)
 	}
 	var scope fixedIKScope
 	_ = jsondecode.Unmarshal(state.Scope, &scope)

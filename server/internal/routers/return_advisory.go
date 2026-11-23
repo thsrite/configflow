@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"errors"
 	"fmt"
@@ -64,7 +65,7 @@ func advisoryOverlap(values []string, networks []netip.Prefix, neg bool) bool {
 	if len(networks) == 0 {
 		return true
 	}
-	parsed := Networks(values)
+	parsed := device.Networks(values)
 	if len(parsed) == 0 {
 		return len(values) == 0 || neg
 	}
@@ -99,7 +100,7 @@ func advisoryPossible(r Row, iface string, ctx *NatContext, src, dst []netip.Pre
 	}{{"src", src}, {"dst", dst}} {
 		value := strings.TrimSpace(r.text(direction.name + "-address"))
 		literal, neg := strings.CutPrefix(value, "!")
-		if value != "" && len(Networks([]string{literal})) > 0 && !advisoryOverlap([]string{literal}, direction.nets, neg) {
+		if value != "" && len(device.Networks([]string{literal})) > 0 && !advisoryOverlap([]string{literal}, direction.nets, neg) {
 			return false
 		}
 		value = strings.TrimSpace(r.text(direction.name + "-address-list"))
@@ -109,7 +110,7 @@ func advisoryPossible(r Row, iface string, ctx *NatContext, src, dst []netip.Pre
 				if !neg {
 					return false
 				}
-			} else if len(Networks(values)) > 0 && !advisoryOverlap(values, direction.nets, neg) {
+			} else if len(device.Networks(values)) > 0 && !advisoryOverlap(values, direction.nets, neg) {
 				return false
 			}
 		}
@@ -148,7 +149,7 @@ func advisoryCovers(r Row, iface string, ctx *NatContext, src, dst []netip.Prefi
 			if len(dir.nets) == 0 {
 				return false
 			}
-			parsed := Networks(values)
+			parsed := device.Networks(values)
 			if len(values) > 0 && len(parsed) == 0 {
 				return false
 			}
@@ -262,7 +263,7 @@ func ReturnAdvisoryWarnings(ctx context.Context, desired *Desired, state *Router
 	longest := -1
 	for _, r := range context.Routes {
 		if rosFlag(r["connect"]) && rosFlag(r["active"]) {
-			for _, n := range Networks([]string{r.text("dst-address")}) {
+			for _, n := range device.Networks([]string{r.text("dst-address")}) {
 				if n.Contains(gateway) && n.Bits() > longest {
 					network = n
 					longest = n.Bits()
@@ -296,7 +297,7 @@ func ReturnAdvisoryWarnings(ctx context.Context, desired *Desired, state *Router
 			values = append(values, v.CIDR)
 		}
 	}
-	destinations := Networks(values)
+	destinations := device.Networks(values)
 	var accepted Row
 	acceptedIndex := 0
 	for index, r := range rows {

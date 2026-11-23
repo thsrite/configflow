@@ -9,6 +9,7 @@ package routers_test
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -172,7 +173,7 @@ func goErrorOf(err error) *ikuaiError {
 		default:
 			e.Class = "RouterError"
 		}
-		if undo := routers.UndoOf(err); undo != nil {
+		if undo := device.UndoOf(err); undo != nil {
 			_ = json.Unmarshal(undo, &e.Undo)
 		}
 	}
@@ -323,7 +324,7 @@ func goRelease(ctx context.Context, driver *routers.Ikuai, input map[string]any)
 			raw, _ := json.Marshal(op)
 			undo, err := driver.Apply(ctx, raw)
 			if err != nil {
-				if lost := routers.UndoOf(err); lost != nil {
+				if lost := device.UndoOf(err); lost != nil {
 					live = append(live, lost)
 					outcome.Records = append(outcome.Records, map[string]any{"undo": decoded(lost), "ok": false})
 				}

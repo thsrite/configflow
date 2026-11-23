@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"fmt"
 	"maps"
@@ -13,7 +14,7 @@ import (
 	"configflow/internal/routerdoc"
 )
 
-var fixedROSRuntime = stringSet(".id", "dynamic", "status", "last-seen", "expires-after", "host-name", "age", "class-id", "active-address", "active-mac-address", "active-client-id", "active-server", "active-agent-circuit-id", "active-agent-remote-id", "agent-circuit-id", "agent-remote-id", "radius", "blocked")
+var fixedROSRuntime = device.StringSet(".id", "dynamic", "status", "last-seen", "expires-after", "host-name", "age", "class-id", "active-address", "active-mac-address", "active-client-id", "active-server", "active-agent-circuit-id", "active-agent-remote-id", "agent-circuit-id", "agent-remote-id", "radius", "blocked")
 
 func fixedROSFields(row Row) Row {
 	if row == nil {
@@ -38,7 +39,7 @@ func fixedROSFields(row Row) Row {
 }
 func fixedROSID(value string) error {
 	if !rosIDPattern.MatchString(value) {
-		return routerError(messageFixedROSID)
+		return device.Error(messageFixedROSID)
 	}
 	return nil
 }
@@ -53,7 +54,7 @@ func fixedROSMatches(row Row, b *FixedIPBinding) bool {
 }
 func fixedROSCheck(row Row, b *FixedIPBinding, disabled bool) error {
 	if !fixedROSMatches(row, b) || row.flag("disabled") != disabled {
-		return routerError(messageFixedROSCheck)
+		return device.Error(messageFixedROSCheck)
 	}
 	return nil
 }
@@ -77,7 +78,7 @@ func (d *RouterOS) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
 			return nil, err
 		}
 		if seen[row.id()] {
-			return nil, routerError(messageFixedROSDuplicate)
+			return nil, device.Error(messageFixedROSDuplicate)
 		}
 		seen[row.id()] = true
 	}
@@ -99,7 +100,7 @@ func fixedROSScopes(s *FixedIPSnapshot, ip string) []fixedROSScope {
 	candidates := []fixedROSScope{}
 	prefix := -1
 	for _, server := range s.Servers {
-		if server.text("name") == "" || server.text("interface") == "" || server.flag("disabled", "invalid") || orText(server.text("relay"), "0.0.0.0") != "0.0.0.0" {
+		if server.text("name") == "" || server.text("interface") == "" || server.flag("disabled", "invalid") || device.OrText(server.text("relay"), "0.0.0.0") != "0.0.0.0" {
 			continue
 		}
 		for _, own := range s.Addresses {
@@ -220,7 +221,7 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 		return deny(messageFixedROSManaged)
 	}
 	out.Eligible = true
-	out.Scope = mustPolicyJSON(scopes[0])
+	out.Scope = device.JSON(scopes[0])
 	return out
 }
 
@@ -232,12 +233,12 @@ func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*F
 	}
 	state := InspectFixedIP(snapshot, ip, mac)
 	if !state.Eligible {
-		return nil, routerError(state.Reason)
+		return nil, device.Error(state.Reason)
 	}
 	ip, mac = routerdoc.IPv4(ip), fixedMAC(mac)
-	name = strings.TrimSpace(orText(name, ip))
+	name = strings.TrimSpace(device.OrText(name, ip))
 	if strings.ContainsFunc(name, func(r rune) bool { return r < 32 }) {
-		return nil, routerError(messageFixedNameControl)
+		return nil, device.Error(messageFixedNameControl)
 	}
 	var scope fixedROSScope
 	_ = jsondecode.Unmarshal(state.Scope, &scope)
@@ -259,7 +260,7 @@ func (d *RouterOS) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error
 			return false, err
 		}
 		for _, row := range rows {
-			if routerdoc.IPv4(orText(row.text("active-address"), row.text("address"))) == ip && routerdoc.NormalizeMAC(orText(row.text("active-mac-address"), row.text("mac-address"))) == mac {
+			if routerdoc.IPv4(device.OrText(row.text("active-address"), row.text("address"))) == ip && routerdoc.NormalizeMAC(device.OrText(row.text("active-mac-address"), row.text("mac-address"))) == mac {
 				return true, nil
 			}
 		}

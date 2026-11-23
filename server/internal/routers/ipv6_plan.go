@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -103,7 +104,7 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil {
-		return nil, routerError(invalid)
+		return nil, device.Error(invalid)
 	}
 	if len(fields) == 0 {
 		return out, nil
@@ -111,17 +112,17 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 	var version int
 	var entries []IPv6Resource
 	if json.Unmarshal(fields["version"], &version) != nil || version != 1 || !strings.HasPrefix(strings.TrimSpace(string(fields["resources"])), "[") || devhttp.DecodeJSON(fields["resources"], &entries) != nil {
-		return nil, routerError(invalid)
+		return nil, device.Error(invalid)
 	}
 	var spec *IPv6RouteSpec
 	if fake {
 		if len(entries) > 1 || jsondecode.Unmarshal(fields["spec"], &spec) != nil || spec == nil || !ipv6ValidSpec(spec) {
-			return nil, routerError(invalid)
+			return nil, device.Error(invalid)
 		}
 	} else {
 		var gateway string
 		if json.Unmarshal(fields["gateway"], &gateway) != nil || string(fields["gateway"]) == "null" {
-			return nil, routerError(invalid)
+			return nil, device.Error(invalid)
 		}
 	}
 	rows := map[string][]Row{}
@@ -131,15 +132,15 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 	seen := map[string]bool{}
 	for _, entry := range entries {
 		if entry.Path != rosIPv6Routes || !rosIDPattern.MatchString(entry.ID) || entry.Config == nil || (!fake && ipv6Key(entry.Config) == "") {
-			return nil, routerError(entryError)
+			return nil, device.Error(entryError)
 		}
 		if seen[entry.ID] || len(rows[entry.ID]) > 1 {
-			return nil, routerError(duplicate)
+			return nil, device.Error(duplicate)
 		}
 		seen[entry.ID] = true
 		// Check manifest self-consistency even if the recorded object disappeared.
 		if fake && (ipv6Key(entry.Config) != spec.CIDR || entry.Config.text("gateway") != spec.Gateway) {
-			return nil, routerError(messageIPv6FakeSpec)
+			return nil, device.Error(messageIPv6FakeSpec)
 		}
 		if len(rows[entry.ID]) == 0 {
 			continue
@@ -147,12 +148,12 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 		row := rows[entry.ID][0]
 		if !sameRow(StableIPv6Row(row), entry.Config) {
 			if fake {
-				return nil, routerError(messageIPv6FakeExternal)
+				return nil, device.Error(messageIPv6FakeExternal)
 			}
-			return nil, routerError(fmt.Sprintf(messageIPv6RoutesExternal, entry.Config.text("dst-address")))
+			return nil, device.Error(fmt.Sprintf(messageIPv6RoutesExternal, entry.Config.text("dst-address")))
 		}
 		if policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
-			return nil, routerError(dynamic)
+			return nil, device.Error(dynamic)
 		}
 		out = append(out, entry)
 	}
@@ -308,7 +309,7 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 			removed = append(removed, e.ID)
 		}
 		plan.Check = IPv6FakeIPCheck{Removed: &removed}
-		if hasStoredState(previous) {
+		if device.HasStoredState(previous) {
 			plan.Status = "pending"
 			var manifest IPv6FakeIPManifest
 			_ = jsondecode.Unmarshal(previous, &manifest)
@@ -317,12 +318,12 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 			}
 		}
 	}
-	if len(plan.Blockers) == 0 && (hasStoredState(previous) || spec != nil) && !good && borrowed == nil {
+	if len(plan.Blockers) == 0 && (device.HasStoredState(previous) || spec != nil) && !good && borrowed == nil {
 		summary := messageIPv6FakeRemoveSummary
 		if spec != nil {
 			summary = fmt.Sprintf(messageIPv6FakeAddSummary, spec.CIDR, spec.Gateway)
 		}
-		plan.Ops = append(plan.Ops, &IPv6FakeIPReplace{OpHead: OpHead{"ipv6_fakeip_replace", summary}, Previous: previous, Owned: owned, Spec: spec, Values: ipv6FakeValues(r, spec), Expected: plan.Evidence})
+		plan.Ops = append(plan.Ops, &IPv6FakeIPReplace{OpHead: OpHead{Kind: "ipv6_fakeip_replace", Summary: summary}, Previous: previous, Owned: owned, Spec: spec, Values: ipv6FakeValues(r, spec), Expected: plan.Evidence})
 	}
 	return plan
 }
@@ -444,7 +445,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 	for _, v := range wanted {
 		p, ok := ipv6Network(v.CIDR)
 		if !ok || p.String() != v.CIDR || seenWanted[v.CIDR] {
-			return skip(messageOperationFormat)
+			return skip(device.MessageOperationFormat)
 		}
 		seenWanted[v.CIDR] = true
 	}
@@ -610,10 +611,10 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 		}
 	}
 	remains := len(retained) > 0 || len(adds) > 0
-	stale := hasStoredState(previous) && (len(owned) != len(prev.Resources) || !remains)
-	if len(adds) > 0 || len(deletes) > 0 || stale || (hasStoredState(previous) && remains && prev.Gateway != manifestGateway) {
+	stale := device.HasStoredState(previous) && (len(owned) != len(prev.Resources) || !remains)
+	if len(adds) > 0 || len(deletes) > 0 || stale || (device.HasStoredState(previous) && remains && prev.Gateway != manifestGateway) {
 		switch {
-		case !hasStoredState(previous):
+		case !device.HasStoredState(previous):
 			plan.Auto = messageIPv6RoutesAutoFirst
 		case !s.Enabled:
 			plan.Auto = messageIPv6RoutesAutoOff
@@ -647,7 +648,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 			scoped = append(scoped, cidr)
 		}
 		slices.Sort(scoped)
-		plan.Ops = append(plan.Ops, &IPv6RoutesReplace{OpHead: OpHead{"ipv6_routes_replace", text}, Previous: previous, Owned: owned, Adds: adds, Deletes: del, Retained: keep, Gateway: manifestGateway, Scope: scoped, Expected: plan.Evidence})
+		plan.Ops = append(plan.Ops, &IPv6RoutesReplace{OpHead: OpHead{Kind: "ipv6_routes_replace", Summary: text}, Previous: previous, Owned: owned, Adds: adds, Deletes: del, Retained: keep, Gateway: manifestGateway, Scope: scoped, Expected: plan.Evidence})
 	}
 	return plan
 }

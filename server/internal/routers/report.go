@@ -8,6 +8,7 @@ package routers
 // Managed objects no longer desired are "extra".
 
 import (
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"net/netip"
 	"slices"
@@ -15,77 +16,6 @@ import (
 
 	"configflow/internal/netipx"
 )
-
-// Networks parses CIDRs, single IPs and iKuai a-b ranges into IPv4
-// networks, skipping anything else.
-func Networks(values []string) []netip.Prefix {
-	var out []netip.Prefix
-	for _, value := range values {
-		text := strings.TrimSpace(value)
-		if first, last, isRange := strings.Cut(text, "-"); isRange {
-			a, ok1 := netipx.ParseAddr4(strings.TrimSpace(first))
-			b, ok2 := netipx.ParseAddr4(strings.TrimSpace(last))
-			if ok1 && ok2 && !b.Less(a) {
-				out = append(out, netipx.Summarize(a, b)...)
-			}
-		} else if n, ok := netipx.ParseNetwork4(text, false); ok {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-// SupernetIndex answers "is target inside one of these networks" by hashing
-// target's supernets (at most 33) instead of scanning every network. Each
-// network carries owner positions, e.g. the rule it came from.
-type SupernetIndex struct {
-	owners  map[netip.Prefix][]int
-	lengths []int // sorted prefix lengths present
-}
-
-func NewSupernetIndex(networks []netip.Prefix) *SupernetIndex {
-	ix := &SupernetIndex{owners: map[netip.Prefix][]int{}}
-	ix.Add(networks, 0)
-	return ix
-}
-
-func (ix *SupernetIndex) Add(networks []netip.Prefix, owner int) {
-	for _, n := range networks {
-		n = n.Masked()
-		if !slices.Contains(ix.owners[n], owner) {
-			ix.owners[n] = append(ix.owners[n], owner)
-		}
-		if !slices.Contains(ix.lengths, n.Bits()) {
-			ix.lengths = append(ix.lengths, n.Bits())
-			slices.Sort(ix.lengths)
-		}
-	}
-}
-
-func (ix *SupernetIndex) supernets(target netip.Prefix, yield func(netip.Prefix) bool) {
-	for _, bits := range ix.lengths {
-		if bits > target.Bits() {
-			return
-		}
-		if !yield(netip.PrefixFrom(target.Addr(), bits).Masked()) {
-			return
-		}
-	}
-}
-
-// Owners of every indexed network containing target, sorted.
-func (ix *SupernetIndex) Owners(target netip.Prefix) []int {
-	var found []int
-	ix.supernets(target, func(p netip.Prefix) bool { found = append(found, ix.owners[p]...); return true })
-	slices.Sort(found)
-	return slices.Compact(found)
-}
-
-func (ix *SupernetIndex) Covers(target netip.Prefix) bool {
-	covered := false
-	ix.supernets(target, func(p netip.Prefix) bool { covered = len(ix.owners[p]) > 0; return !covered })
-	return covered
-}
 
 // RouteItem is the route status of one proxy CIDR.
 type RouteItem struct {
@@ -157,17 +87,6 @@ type DisabledNat struct {
 type NatReport struct {
 	Items         []NatItem     `json:"items"`
 	DisabledRules []DisabledNat `json:"disabled_rules"`
-}
-
-// ReportPart is a later module's section (R08 policy routing, R09 DNS guard,
-// R10/R11 IPv6): Statuses are added to the summary, InSync joins in_sync and
-// RetireExtra are route ids that leave routes.extra (a migration owns them).
-type ReportPart struct {
-	Key         string
-	Section     any
-	Statuses    []string
-	InSync      bool
-	RetireExtra []string
 }
 
 // ReportParts builds the later modules' sections; R08–R11 set it (none until then).
@@ -242,10 +161,10 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 	wanted := desiredCIDRs(desired)
 	auto := PolicyRoute(state, PolicyAutoComment)
 	var covered []netip.Prefix
-	if auto != nil && PolicyRouteOK(auto, gateway) {
-		covered = Networks(auto.Dst)
+	if auto != nil && device.PolicyRouteOK(auto, gateway) {
+		covered = device.Networks(auto.Dst)
 	}
-	coverage := NewSupernetIndex(covered)
+	coverage := device.NewSupernetIndex(covered)
 	// A disabled static route forwards nothing: the policy rule decides.
 	enabledByDst := map[string][]*RouteEntry{}
 	for _, r := range state.Routes {
@@ -269,7 +188,7 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 		out.Items = append(out.Items, item)
 	}
 	for _, r := range state.Routes {
-		if IsManaged(r.Comment) && !wanted[r.Dst] {
+		if device.IsManaged(r.Comment) && !wanted[r.Dst] {
 			out.Extra = append(out.Extra, ExtraRoute{r.Dst, r.Gateway, r.ID, r.Comment})
 		}
 	}
@@ -286,7 +205,7 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 		}
 	}
 	for _, r := range state.Routes {
-		if gateway != "" && r.Gateway == gateway && !IsManaged(r.Comment) && !wanted[r.Dst] {
+		if gateway != "" && r.Gateway == gateway && !device.IsManaged(r.Comment) && !wanted[r.Dst] {
 			out.UnmanagedOther = append(out.UnmanagedOther, UnmanagedRoute{r.Dst, r.Gateway, r.Comment, r.Enabled, new(r.Enabled)})
 		}
 	}
@@ -301,7 +220,7 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 	wanted := desiredCIDRs(desired)
 	out := RoutesReport{Items: []RouteItem{}, Extra: []ExtraRoute{}, UnmanagedOther: []UnmanagedRoute{}}
 	required := map[string]bool{}
-	index := NewStaticRouteIndex(state.Routes)
+	index := device.NewStaticRouteIndex(state.Routes)
 	exact := map[string][]*RouteEntry{}
 	for _, r := range state.Routes {
 		if r.Table == "main" {
@@ -317,7 +236,7 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 		}
 		item := RouteItem{CIDR: entry.CIDR, Sources: entry.Sources, Status: "missing", RouteIDs: routeIDs(matches)}
 		switch {
-		case len(good) > 0 && !slices.ContainsFunc(good, func(r *RouteEntry) bool { return !IsManaged(r.Comment) }):
+		case len(good) > 0 && !slices.ContainsFunc(good, func(r *RouteEntry) bool { return !device.IsManaged(r.Comment) }):
 			item.Status = "synced"
 		case len(good) > 0:
 			item.Status, item.Detail = "adoptable", "已有手工路由提供完整有效覆盖，将直接接管"
@@ -337,7 +256,7 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 	}
 	for _, r := range state.Routes {
 		// Policy ownership is established by its manifest, not its name.
-		if r.Table == "main" && IsManaged(r.Comment) && !wanted[r.Dst] && !required[r.ID] &&
+		if r.Table == "main" && device.IsManaged(r.Comment) && !wanted[r.Dst] && !required[r.ID] &&
 			!strings.HasPrefix(r.Comment, "cf-ros-policy-") {
 			out.Extra = append(out.Extra, ExtraRoute{r.Dst, r.Gateway, r.ID, r.Comment})
 		}
@@ -345,7 +264,7 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 	// Hand-made routes to the gateway ConfigFlow does not derive (e.g. public
 	// DNS routed for TUN DNS hijack) are informational, never touched.
 	for _, r := range state.Routes {
-		if r.Table == "main" && gateway != "" && r.Gateway == gateway && !IsManaged(r.Comment) && !wanted[r.Dst] {
+		if r.Table == "main" && gateway != "" && r.Gateway == gateway && !device.IsManaged(r.Comment) && !wanted[r.Dst] {
 			out.UnmanagedOther = append(out.UnmanagedOther, UnmanagedRoute{CIDR: r.Dst, Gateway: r.Gateway, Comment: r.Comment, Enabled: r.Enabled})
 		}
 	}
@@ -374,9 +293,9 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 		}
 		if cover == nil {
 			// Each rule's destinations are parsed once, not once per CIDR.
-			cover = NewSupernetIndex(nil)
+			cover = device.NewSupernetIndex(nil)
 			for position, rule := range rules {
-				cover.Add(Networks(rule.Dst), position)
+				cover.Add(device.Networks(rule.Dst), position)
 			}
 		}
 		var covering []*NatBypassEntry
@@ -389,7 +308,7 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 			item.RuleIDs = append(item.RuleIDs, r.ID)
 		}
 		switch {
-		case slices.ContainsFunc(covering, func(r *NatBypassEntry) bool { return IsManaged(r.Comment) }):
+		case slices.ContainsFunc(covering, func(r *NatBypassEntry) bool { return device.IsManaged(r.Comment) }):
 			item.Status = "synced"
 		case len(covering) > 0:
 			name := covering[0].Comment
@@ -434,7 +353,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	if desired.DNSSettings != nil {
 		dns = *desired.DNSSettings
 	}
-	r.DhcpDNS = BuildDNSReport(dns, desired.ProxyGateway, state.DhcpDNS)
+	r.DhcpDNS = device.BuildDNSReport(dns, desired.ProxyGateway, state.DhcpDNS)
 	r.InSync = len(r.Routes.Extra) == 0 && len(r.Routes.RetiredPolicy) == 0 &&
 		(r.DhcpDNS.Status == "disabled" || r.DhcpDNS.Status == "synced")
 	for _, item := range r.Routes.Items {

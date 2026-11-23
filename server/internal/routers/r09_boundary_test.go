@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -274,7 +275,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 			}
 			if err != nil {
 				class := "RouterError"
-				if routerErrorKind(err) == KindRollback {
+				if device.RouterErrorKind(err) == KindRollback {
 					class = "RouterRollbackError"
 				}
 				row.Error = &r09Error{Class: class, Message: err.Error()}

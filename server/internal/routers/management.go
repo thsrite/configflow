@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -85,7 +86,7 @@ func (s *ManagementService) open(r *Router) (Driver, error) {
 	}
 	d := factory(r)
 	if d == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	return d, nil
 }
@@ -109,7 +110,7 @@ func (s *ManagementService) Create(ctx context.Context, profile string, body jso
 	if err != nil {
 		return nil, err
 	}
-	managementLogger.Infof(messageManagementCreated, s.safeLog(ctx, profile, r, orText(r.Name, r.ID)), r.Type)
+	managementLogger.Infof(messageManagementCreated, s.safeLog(ctx, profile, r, device.OrText(r.Name, r.ID)), r.Type)
 	return r, nil
 }
 func replaceManagementRouter(config json.RawMessage, id string, next *Router) (json.RawMessage, error) {
@@ -159,7 +160,7 @@ func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *
 		ctx = lifecycle.Detach(ctx)
 	}
 	if old == nil {
-		return ctx, nil, nil, rosError(KindConflict, messageManagementMissing)
+		return ctx, nil, nil, device.KindError(KindConflict, messageManagementMissing)
 	}
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, nil, err
@@ -175,7 +176,7 @@ func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *
 				return held, release, r, nil
 			}
 		}
-		err = rosError(KindConflict, messageManagementChanged)
+		err = device.KindError(KindConflict, messageManagementChanged)
 	}
 	release()
 	return ctx, nil, nil, err
@@ -192,7 +193,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 	if remove {
 		for _, check := range []struct{ field, message string }{{"ros_policy_state", messageDeletePolicy}, {"ipv6_fakeip_state", messageDeleteIPv6Fake}, {"ipv6_routes_state", messageDeleteIPv6Routes}, {"dns_guard_state", messageDeleteDNS}, {"ipv6_pd_guard_state", messageDeletePD}} {
 			if r.State(check.field) != nil {
-				return nil, rosError(KindConflict, check.message)
+				return nil, device.KindError(KindConflict, check.message)
 			}
 		}
 	} else {
@@ -210,7 +211,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 	}
 	repo.ResetConfigContext(work)
 	if remove {
-		managementLogger.Infof(messageManagementDeleted, s.safeLog(work, profile, r, orText(r.Name, r.ID)))
+		managementLogger.Infof(messageManagementDeleted, s.safeLog(work, profile, r, device.OrText(r.Name, r.ID)))
 	} else {
 		oldRaw, _ := json.Marshal(r)
 		newRaw, _ := json.Marshal(next)
@@ -226,7 +227,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 			keys[key] = true
 		}
 		for key := range keys {
-			if key != "password" && key != "last_probe" && !jsonEqual(before[key], after[key]) {
+			if key != "password" && key != "last_probe" && !device.JSONEqual(before[key], after[key]) {
 				changed = append(changed, key)
 			}
 		}
@@ -234,7 +235,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 		if r.Password != next.Password {
 			changed = append(changed, "password")
 		}
-		managementLogger.Infof(messageManagementUpdated, s.safeLog(work, profile, r, orText(next.Name, next.ID)), orText(strings.Join(changed, "、"), messageManagementNoChange))
+		managementLogger.Infof(messageManagementUpdated, s.safeLog(work, profile, r, device.OrText(next.Name, next.ID)), device.OrText(strings.Join(changed, "、"), messageManagementNoChange))
 	}
 	return next, nil
 }
@@ -286,7 +287,7 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 	err = managementTransaction(ctx, s.Repo, profile, func(work context.Context, current json.RawMessage) (json.RawMessage, error) {
 		live := findSyncRouter(current, r.ID)
 		if live == nil || !sameReleaseRouter(live, r) {
-			return nil, rosError(KindConflict, messageManagementChanged)
+			return nil, device.KindError(KindConflict, messageManagementChanged)
 		}
 		raw, e := releaseRouterRecord(live)
 		if e != nil {
@@ -323,7 +324,7 @@ func replaceManagementRawRouter(config json.RawMessage, id string, fields map[st
 			return nil, err
 		}
 		for key, value := range fields {
-			if !jsonEqual(value, old[key]) {
+			if !device.JSONEqual(value, old[key]) {
 				if err = r.SetJSON(key, value); err != nil {
 					return nil, err
 				}
@@ -361,18 +362,18 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 	}
 	_ = jsondecode.Unmarshal(body, &confirmation)
 	if confirmation.Fingerprint == "" || confirmation.Fingerprint != plan.Fingerprint {
-		return plan, nil, rosError(KindConflict, messageRoutePreviewStale)
+		return plan, nil, device.KindError(KindConflict, messageRoutePreviewStale)
 	}
 	result, err := ExecuteRoutePlan(work, d, rows, plan)
 	if err != nil {
-		managementLogger.Warningf(messageManagementRouteFailed, s.safeLog(work, profile, current, orText(current.Name, current.ID)), s.safeLog(work, profile, current, err.Error()))
+		managementLogger.Warningf(messageManagementRouteFailed, s.safeLog(work, profile, current, device.OrText(current.Name, current.ID)), s.safeLog(work, profile, current, err.Error()))
 		return plan, result, err
 	}
 	note := ""
 	if !result.Changed {
 		note = messageManagementUnchanged
 	}
-	managementLogger.Infof(messageManagementRoute, s.safeLog(work, profile, current, orText(current.Name, current.ID)), s.safeLog(work, profile, current, plan.Summary), note)
+	managementLogger.Infof(messageManagementRoute, s.safeLog(work, profile, current, device.OrText(current.Name, current.ID)), s.safeLog(work, profile, current, plan.Summary), note)
 	return plan, result, nil
 }
 
@@ -401,7 +402,7 @@ func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string
 	return managementTransaction(work, s.Repo, profile, func(held context.Context, current json.RawMessage) (json.RawMessage, error) {
 		live := findSyncRouter(current, r.ID)
 		if live == nil {
-			return nil, invalid(messageManagementMissing)
+			return nil, device.Invalid(messageManagementMissing)
 		}
 		normalized, err := Normalize(body, live)
 		if err != nil {
@@ -437,7 +438,7 @@ func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r
 	defer d.Close()
 	ros, ok := d.(*RouterOS)
 	if !ok {
-		return nil, invalid(messageManagementPolicyOnly)
+		return nil, device.Invalid(messageManagementPolicyOnly)
 	}
 	return ReadPolicyObjects(work, ros, current.Extra["ros_policy_state"])
 }

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/md5"
 	"encoding/json"
@@ -130,7 +131,7 @@ func (d *RouterOS) routerDigests(ctx context.Context, names []string) (map[strin
 		}
 	}
 	if len(result) != len(names) {
-		return nil, routerError(fmt.Sprintf(messageAddressDigest, d.safeDeviceText(shortConsoleOutput(output))))
+		return nil, device.Error(fmt.Sprintf(messageAddressDigest, d.safeDeviceText(shortConsoleOutput(output))))
 	}
 	return result, nil
 }
@@ -329,13 +330,13 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 
 // LocateAddresses finds managed IDs even when moved outside the lists read.
 func (d *RouterOS) LocateAddresses(ctx context.Context, ids []string) ([]Row, error) {
-	ids = uniqueStrings(ids)
+	ids = device.Unique(ids)
 	if len(ids) > 20 {
 		rows, err := d.list(ctx, rosAddresses)
 		if err != nil {
 			return nil, err
 		}
-		wanted := stringSet(ids...)
+		wanted := device.StringSet(ids...)
 		return slices.DeleteFunc(rows, func(row Row) bool { return !wanted[row.id()] }), nil
 	}
 	rows := []Row{}
@@ -367,7 +368,7 @@ func (d *RouterOS) OccupiedAddressNames(ctx context.Context, patterns, exclude [
 	output := executeOutput(value)
 	_, body, ok := strings.Cut(output, "cf-names:")
 	if !ok {
-		return nil, routerError(fmt.Sprintf(messageAddressNames, d.safeDeviceText(shortConsoleOutput(output))))
+		return nil, device.Error(fmt.Sprintf(messageAddressNames, d.safeDeviceText(shortConsoleOutput(output))))
 	}
 	names := []string{}
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r", ""), "\n") {
@@ -375,5 +376,5 @@ func (d *RouterOS) OccupiedAddressNames(ctx context.Context, patterns, exclude [
 			names = append(names, s)
 		}
 	}
-	return uniqueStrings(names), nil
+	return device.Unique(names), nil
 }

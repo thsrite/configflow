@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 )
@@ -119,15 +120,15 @@ func (r *Router) validateIdentity() error {
 			if (name == "proxy_gateway_agent_id" || name == "dns_agent_id") && string(raw) == "null" {
 				continue
 			}
-			if text, valid := requestString(raw); !valid || text == model.DamagedText {
-				return invalid(messageRouterFieldType)
+			if text, valid := device.RequestString(raw); !valid || text == model.DamagedText {
+				return device.Invalid(messageRouterFieldType)
 			}
 		}
 	}
 	for _, name := range []string{"ip_rule_sets", "ros_policy_rule_sets"} {
 		if raw, present := fields[name]; present {
 			if _, valid := idList(raw); !valid {
-				return invalid(messageRouterFieldType)
+				return device.Invalid(messageRouterFieldType)
 			}
 		}
 	}
@@ -138,7 +139,7 @@ func pendingProfiles(ctx context.Context, db *repo.Repository) ([]pendingProfile
 	out := []pendingProfile{}
 	err := db.View(ctx, func(d *model.Document) error {
 		for _, p := range d.Profiles {
-			out = append(out, pendingProfile{ID: p.Key(), Name: p.Name, Revision: mustPolicyJSON(int64(p.Revision) + int64(d.Shared.Revision))})
+			out = append(out, pendingProfile{ID: p.Key(), Name: p.Name, Revision: device.JSON(int64(p.Revision) + int64(d.Shared.Revision))})
 		}
 		return nil
 	})
@@ -150,7 +151,7 @@ func pendingProfiles(ctx context.Context, db *repo.Repository) ([]pendingProfile
 // repairable and removable through the UI under the normal job lock.
 func (r *Router) ValidateForDevice() error {
 	if r == nil {
-		return invalid(messageRouterFieldType)
+		return device.Invalid(messageRouterFieldType)
 	}
 	if err := r.validateIdentity(); err != nil {
 		return err
@@ -162,8 +163,8 @@ func (r *Router) ValidateForDevice() error {
 	// another JSON type, whole (Stored). A falsy value is no guard, as in
 	// Python (`or {}`); anything else is unknown settings: fail closed.
 	for _, stored := range []json.RawMessage{dnsGuardStored(r.stored.DNSGuard), pdGuardStored(r.stored.IPv6PDGuard)} {
-		if stored != nil && hasStoredState(stored) {
-			return invalid(messageStoredGuardInvalid)
+		if stored != nil && device.HasStoredState(stored) {
+			return device.Invalid(messageStoredGuardInvalid)
 		}
 	}
 	return nil
@@ -191,7 +192,7 @@ func (r *Router) LinkID(member string) string {
 	if json.Unmarshal(r.source, &fields) != nil {
 		return ""
 	}
-	text, _ := requestString(fields[member])
+	text, _ := device.RequestString(fields[member])
 	return text
 }
 

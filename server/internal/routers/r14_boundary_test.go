@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -33,7 +34,7 @@ func r14Python(t *testing.T, endpoint string, input any, out any) {
 	cmd := exec.CommandContext(t.Context(), filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Join(wd, "testdata/r14_reference.py"))
 	cmd.Dir = filepath.Clean(filepath.Join(wd, "../../.."))
 	cmd.Env = append(os.Environ(), "PYTHONPATH=.", "R14_ENDPOINT="+endpoint)
-	cmd.Stdin = bytes.NewReader(mustPolicyJSON(input))
+	cmd.Stdin = bytes.NewReader(device.JSON(input))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	raw, err := cmd.Output()
@@ -81,7 +82,7 @@ func TestR14ClassifyPython(t *testing.T) {
 				t.Fatal(err)
 			}
 			var fields map[string]json.RawMessage
-			_ = json.Unmarshal(mustPolicyJSON(got), &fields)
+			_ = json.Unmarshal(device.JSON(got), &fields)
 			for _, key := range []string{"name", "source_type", "library_id"} {
 				delete(fields, key)
 			}
@@ -269,7 +270,7 @@ func TestR14ServicePython(t *testing.T) {
 			if mode == "download" {
 				input["download_error"] = true
 				s.Download = func(context.Context, json.RawMessage, json.RawMessage) (string, error) {
-					return "", &syncDownloadError{routerError(messageSyncDownloadError + "ConnectionError")}
+					return "", &syncDownloadError{device.Error(messageSyncDownloadError + "ConnectionError")}
 				}
 			}
 			if mode == "controls" {

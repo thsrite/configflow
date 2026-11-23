@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -30,7 +31,7 @@ func r17Reference(t *testing.T, url string, input any) r17Output {
 	cmd := exec.CommandContext(t.Context(), filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Join(wd, "testdata/r17_fixed_reference.py"))
 	cmd.Dir = filepath.Clean(filepath.Join(wd, "../../.."))
 	cmd.Env = append(os.Environ(), "PYTHONPATH=.", "R17_ENDPOINT="+url)
-	cmd.Stdin = bytes.NewReader(mustPolicyJSON(input))
+	cmd.Stdin = bytes.NewReader(device.JSON(input))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	data, err := cmd.Output()
@@ -50,7 +51,7 @@ var r17Tag = regexp.MustCompile(`^cfip_[0-9a-f]{10}$`)
 func r17Comparable(t *testing.T, value any) any {
 	t.Helper()
 	var decoded any
-	if err := json.Unmarshal(mustPolicyJSON(value), &decoded); err != nil {
+	if err := json.Unmarshal(device.JSON(value), &decoded); err != nil {
 		t.Fatal(err)
 	}
 	var walk func(any) any
@@ -158,7 +159,7 @@ func TestR17RealPythonVendorBoundaries(t *testing.T) {
 				reset()
 				op, err := d.PreviewFixedIP(t.Context(), ip, mac, "Synthetic")
 				if !reflect.DeepEqual(r17Comparable(t, op), r17Comparable(t, expected.Preview)) {
-					t.Fatalf("preview differs Go=%s Python=%s", mustPolicyJSON(op), mustPolicyJSON(expected.Preview))
+					t.Fatalf("preview differs Go=%s Python=%s", device.JSON(op), device.JSON(expected.Preview))
 				}
 				var binding *FixedIPBinding
 				if err == nil && write {
@@ -198,7 +199,7 @@ func TestR17RealPythonVendorBoundaries(t *testing.T) {
 					t.Fatal("binding differs")
 				}
 				if !reflect.DeepEqual(r17Comparable(t, state()), r17Comparable(t, pythonState)) {
-					t.Fatalf("device tables differ Go=%s Python=%s", mustPolicyJSON(state()), mustPolicyJSON(pythonState))
+					t.Fatalf("device tables differ Go=%s Python=%s", device.JSON(state()), device.JSON(pythonState))
 				}
 			})
 		}

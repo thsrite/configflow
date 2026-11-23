@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,27 +21,27 @@ func syncStaticResources(ctx context.Context, d *RouterOS, desired *Desired) ([]
 	result := []ROSResource{}
 	found := map[string]bool{}
 	for _, row := range rows {
-		if row.textOr("routing-table", "main") != "main" || !wanted[row.text("dst-address")] || !row.is("gateway", desired.ProxyGateway) || !IsManaged(row.text("comment")) {
+		if row.textOr("routing-table", "main") != "main" || !wanted[row.text("dst-address")] || !row.is("gateway", desired.ProxyGateway) || !device.IsManaged(row.text("comment")) {
 			continue
 		}
 		entry := editROSEntry(row, map[string]bool{})
 		if !entry.Editable || !entry.Enabled {
-			return nil, routerError(messageSyncStaticSpecial)
+			return nil, device.Error(messageSyncStaticSpecial)
 		}
 		result = append(result, resource(rosRoutes, row))
 		found[row.text("dst-address")] = true
 	}
 	if !maps.Equal(found, wanted) {
-		return nil, routerError(messageSyncStaticMissing)
+		return nil, device.Error(messageSyncStaticMissing)
 	}
 	if len(result) != len(wanted) {
-		return nil, routerError(messageSyncStaticDuplicate)
+		return nil, device.Error(messageSyncStaticDuplicate)
 	}
 	return result, nil
 }
 func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 	if len(plan.Blockers) > 0 {
-		return nil, routerError(strings.Join(plan.Blockers, "；"))
+		return nil, device.Error(strings.Join(plan.Blockers, "；"))
 	}
 	merged, stale := NATMigration(plan.Stages)
 	if merged > 0 || stale > 0 {
@@ -51,7 +52,7 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 		if stale > 0 {
 			details = append(details, fmt.Sprintf(messageSyncStale, stale))
 		}
-		return nil, routerError(fmt.Sprintf(messageSyncMigrate, strings.Join(details, "，")))
+		return nil, device.Error(fmt.Sprintf(messageSyncMigrate, strings.Join(details, "，")))
 	}
 	nat := NATMemberUpdate(plan.Stages, baseline.NATList)
 	var routes *Stage
@@ -64,16 +65,16 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 			continue
 		}
 		if stage.Key != StageRoutes && len(stage.Ops) > 0 {
-			return nil, routerError(fmt.Sprintf(messageSyncStage, stage.Title))
+			return nil, device.Error(fmt.Sprintf(messageSyncStage, stage.Title))
 		}
 	}
 	if routes == nil {
-		return nil, routerError(messageSyncConflict)
+		return nil, device.Error(messageSyncConflict)
 	}
 	ids := map[string]bool{}
 	for _, item := range baseline.StaticResources {
 		if item.ID == "" {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		ids[item.ID] = true
 	}
@@ -82,24 +83,24 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 		switch v := syncValueOp(op).(type) {
 		case *NATListSync:
 			if nat == nil {
-				return nil, routerError(fmt.Sprintf(messageSyncStage, StageTitles[StageNATBypass]))
+				return nil, device.Error(fmt.Sprintf(messageSyncStage, StageTitles[StageNATBypass]))
 			}
 		case *ROSPolicyReplace:
 			if len(v.Migrations) > 0 {
-				return nil, routerError(messageSyncPolicyMigration)
+				return nil, device.Error(messageSyncPolicyMigration)
 			}
 			previous, err := policyManifest(v.Previous)
 			if err != nil {
 				return nil, err
 			}
 			if previous == nil || previous.Spec == nil || v.Spec == nil {
-				return nil, routerError(messageSyncPolicyMissing)
+				return nil, device.Error(messageSyncPolicyMissing)
 			}
 			a, b := *previous.Spec, *v.Spec
 			a.Destinations = nil
 			b.Destinations = nil
-			if !jsonEqual(a, b) {
-				return nil, routerError(messageSyncPolicyScope)
+			if !device.JSONEqual(a, b) {
+				return nil, device.Error(messageSyncPolicyScope)
 			}
 		case RouteDeleteOp:
 			if ids[v.ID] {
@@ -108,7 +109,7 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 		case RouteAddOp:
 			result = append(result, v)
 		default:
-			return nil, routerError(messageSyncAdopt)
+			return nil, device.Error(messageSyncAdopt)
 		}
 	}
 	return result, nil
@@ -129,7 +130,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		return
 	}
 	if baseline == nil || desired == nil || plan == nil || plan.Checks == nil {
-		return out, routerError(messageOperationFormat)
+		return out, device.Error(device.MessageOperationFormat)
 	}
 	operations, err := restrictSyncPlan(plan, baseline)
 	if err != nil {
@@ -162,7 +163,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 				for _, key := range []string{"src-address-list", "dst-address-list"} {
 					name := strings.TrimLeft(row.text(key), "!")
 					if name == NATSrcList || name == NATDstList {
-						return out, routerError(fmt.Sprintf(messageSyncForeignReference, path, row.id(), name))
+						return out, device.Error(fmt.Sprintf(messageSyncForeignReference, path, row.id(), name))
 					}
 				}
 			}
@@ -180,7 +181,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			expected[item.ID] = true
 		}
 		if !maps.Equal(sources, expected) {
-			return out, routerError(messageSyncNATSources)
+			return out, device.Error(messageSyncNATSources)
 		}
 		retainedNAT = append([]ROSResource{enrolled.Rule}, retainedNAT...)
 	}
@@ -191,7 +192,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	for _, row := range live[rosRoutes] {
 		_, ok := known[row.id()]
 		if row.textOr("routing-table", "main") == "main" && wanted[row.text("dst-address")] && !ok {
-			return out, routerError(messageSyncForeignRoute)
+			return out, device.Error(messageSyncForeignRoute)
 		}
 	}
 	manifest, err := policyManifest(previous)
@@ -204,7 +205,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			return out, e
 		}
 		if len(owned) != len(manifest.Resources) {
-			return out, routerError(messageSyncPolicyMissingObjects)
+			return out, device.Error(messageSyncPolicyMissingObjects)
 		}
 		if e = checkPolicyReferences(owned, live); e != nil {
 			return out, e
@@ -239,7 +240,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			}
 		}
 		if entry == nil || entry.Config.text("dst-address-list") == "" {
-			return out, routerError(messageSyncPolicyEntry)
+			return out, device.Error(messageSyncPolicyEntry)
 		}
 		name := entry.Config.text("dst-address-list")
 		old := map[string]ROSResource{}
@@ -248,7 +249,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 				old[syncNetworkKey(item.Config.text("address"))] = item
 			}
 		}
-		newSet := stringSet(check.Spec.Destinations...)
+		newSet := device.StringSet(check.Spec.Destinations...)
 		for _, cidr := range sortedSyncKeys(newSet) {
 			if _, ok := old[cidr]; !ok {
 				additions = append(additions, ROSResource{Path: rosAddresses, Config: Row{"list": name, "address": cidr, "comment": entry.Config.text("comment"), "disabled": "false"}})
@@ -300,7 +301,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			problems = append(problems, e.Error())
 		}
 		if len(problems) > 0 {
-			err = rollbackError(err.Error() + "；" + strings.Join(problems, "；"))
+			err = device.RollbackError(err.Error() + "；" + strings.Join(problems, "；"))
 		}
 	}()
 	if err = checkCurrent(true); err != nil {
@@ -320,7 +321,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		}
 		for _, row := range rows {
 			if row.textOr("routing-table", "main") == "main" && row.is("dst-address", item.Config.text("dst-address")) {
-				err = routerError(messageSyncBeforeWrite)
+				err = device.Error(messageSyncBeforeWrite)
 				return
 			}
 		}
@@ -437,10 +438,10 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		_ = json.Unmarshal(previous, &fields)
 		var spec map[string]json.RawMessage
 		_ = json.Unmarshal(fields["spec"], &spec)
-		spec["destinations"] = mustPolicyJSON(next.Spec.Destinations)
-		fields["spec"] = mustPolicyJSON(spec)
-		fields["resources"] = mustPolicyJSON(next.Resources)
-		d.SetPolicyManifest(mustPolicyJSON(fields))
+		spec["destinations"] = device.JSON(next.Spec.Destinations)
+		fields["spec"] = device.JSON(spec)
+		fields["resources"] = device.JSON(next.Resources)
+		d.SetPolicyManifest(device.JSON(fields))
 	}
 	checks := *plan.Checks
 	checks.RemovedRoutes = []string{}
@@ -515,7 +516,7 @@ func syncGuardResources(live ROSPolicySnapshot, items []ROSResource) error {
 	for _, item := range items {
 		key := [2]string{item.Path, item.ID}
 		if seen[key] {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 		seen[key] = true
 		if err := guardPolicyIn(ROSPolicySnapshot{item.Path: rows[key]}, item); err != nil {

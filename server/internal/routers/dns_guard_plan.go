@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -37,7 +38,7 @@ func SnapshotDNSGuard(ctx context.Context, d *RouterOS) (*DNSGuardSnapshot, erro
 			rows, err = d.list(ctx, path)
 		}
 		if err != nil {
-			if path != rosNetwatch || !isRouterError(err) {
+			if path != rosNetwatch || !device.IsRouterError(err) {
 				return nil, err
 			}
 			rows = nil
@@ -69,17 +70,17 @@ func guardOwned(previous *DNSGuardManifest, live *DNSGuardSnapshot) ([]DNSGuardR
 	}
 	for _, e := range previous.Resources {
 		if (*live)[e.Path] == nil {
-			return nil, routerError(messageGuardWatchOwned)
+			return nil, device.Error(messageGuardWatchOwned)
 		}
 		matches := indices[e.Path][e.ID]
 		if len(matches) > 1 {
-			return nil, routerError(messageGuardDuplicate)
+			return nil, device.Error(messageGuardDuplicate)
 		}
 		if len(matches) == 0 {
 			continue
 		}
 		if !sameRow(guardComparable(e.Role, stableROSRow(e.Path, matches[0]), failover), guardComparable(e.Role, e.Config, failover)) {
-			return nil, routerError(fmt.Sprintf(messageGuardEdited, e.Path, e.ID))
+			return nil, device.Error(fmt.Sprintf(messageGuardEdited, e.Path, e.ID))
 		}
 		owned = append(owned, e)
 	}
@@ -135,7 +136,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		return p
 	}
 	if state == nil || state.DNSGuard == nil {
-		return fail(routerError(messageGuardUnreadable))
+		return fail(device.Error(messageGuardUnreadable))
 	}
 	live := state.DNSGuard
 	previous, err := parseDNSGuardManifest(request.Previous)
@@ -169,7 +170,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 	}
 	if spec != nil {
 		if guardForeignHijack((*live)[rosNAT], ownedIDs) {
-			return fail(routerError(messageGuardHijackCollision))
+			return fail(device.Error(messageGuardHijackCollision))
 		}
 		if spec.Failover && (*live)[rosNetwatch] == nil {
 			p.Blockers = append(p.Blockers, messageGuardWatchUnsupported)
@@ -185,7 +186,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		others := []string{}
 		for _, row := range (*live)[rosNAT] {
 			if row.is("chain", "dstnat") && row.text("dst-port") == "53" && (row.is("action", "dst-nat") || row.is("action", "redirect")) && !row.flag("disabled") && !ownedIDs[[2]string{rosNAT, row.id()}] {
-				others = append(others, firstNonEmpty(row.text("comment"), row.id()))
+				others = append(others, device.FirstNonEmpty(row.text("comment"), row.id()))
 			}
 		}
 		if len(others) > 0 {
@@ -218,7 +219,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		}
 		p.Items = append(p.Items, DNSGuardItem{Role: item.Role, Object: guardObjectName(item.Path), Detail: guardDescribe(item.Role, item.Values), Status: status, Paused: strings.HasPrefix(item.Role, "hijack") && row != nil && row.flag("disabled")})
 	}
-	roleSet := stringSet(p.Roles...)
+	roleSet := device.StringSet(p.Roles...)
 	for _, e := range owned {
 		if !kept[e.Role] {
 			removed = append(removed, e)

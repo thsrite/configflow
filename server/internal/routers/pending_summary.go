@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -139,7 +140,7 @@ func summarizePending(r pendingReport, p pendingPlan) PendingSummary {
 		if s.Enabled != nil && !*s.Enabled {
 			continue
 		}
-		label := orText(s.Title, s.Key)
+		label := device.OrText(s.Title, s.Key)
 		if s.Skipped {
 			skipped = true
 			out.Items = append(out.Items, PendingItem{s.Key, label, messagePendingSkipped, 0})

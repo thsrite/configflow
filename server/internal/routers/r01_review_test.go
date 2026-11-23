@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"net/netip"
 	"slices"
@@ -13,15 +14,15 @@ import (
 // backend/routers/base.py and lan_clients.py line by line).
 func TestR01ReviewModelHelpers(t *testing.T) {
 	for in, want := range map[string]string{"": "cf", " tg ": "cf-tg", "CF-x": "CF-x", "cf:y": "cf:y", "cfx": "cf-cfx", "cf": "cf"} {
-		if got := ManagedComment(in); got != want {
-			t.Errorf("ManagedComment(%q) = %q, want %q", in, got, want)
+		if got := device.ManagedComment(in); got != want {
+			t.Errorf("device.ManagedComment(%q) = %q, want %q", in, got, want)
 		}
 	}
 	zero, one := int64(0), int64(1)
 	ok := &PolicyRouteEntry{Enabled: true, Gateway: "10.0.0.2", Src: []string{"10.0.0.2"}, SrcInvert: true, Protocol: "any", Priority: &zero}
 	bad := *ok
 	bad.Priority = &one
-	if !PolicyRouteOK(ok, "10.0.0.2") || PolicyRouteOK(&bad, "10.0.0.2") || PolicyRouteOK(ok, "") {
+	if !device.PolicyRouteOK(ok, "10.0.0.2") || device.PolicyRouteOK(&bad, "10.0.0.2") || device.PolicyRouteOK(ok, "") {
 		t.Error("PolicyRouteOK")
 	}
 	state := &RouterState{PolicyRoutes: []*PolicyRouteEntry{{Comment: "x"}, {Comment: PolicyAutoComment}, {Comment: PolicyManualComment}}}
@@ -38,9 +39,9 @@ func TestR01ReviewModelHelpers(t *testing.T) {
 	}
 	gw := "10.0.0.2"
 	state = &RouterState{
-		Routes: []*RouteEntry{NewRoute("1", "91.108.4.0/22", gw, true, ""), NewRoute("2", "1.1.1.0/24", gw, false, "")},
-		ActiveRoutes: []*RouteEntry{NewRoute("a", "91.108.4.0/22", gw, true, ""), NewRoute("b", "1.1.1.0/24", gw, true, ""),
-			NewRoute("c", "8.8.8.0/24", "10.0.0.9", true, "")},
+		Routes: []*RouteEntry{device.NewRoute("1", "91.108.4.0/22", gw, true, ""), device.NewRoute("2", "1.1.1.0/24", gw, false, "")},
+		ActiveRoutes: []*RouteEntry{device.NewRoute("a", "91.108.4.0/22", gw, true, ""), device.NewRoute("b", "1.1.1.0/24", gw, true, ""),
+			device.NewRoute("c", "8.8.8.0/24", "10.0.0.9", true, "")},
 	}
 	stale := StaleRoutes(state, gw)
 	if len(stale) != 1 || stale[0].ID != "b" || len(StaleRoutes(state, "")) != 0 {

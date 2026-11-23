@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -55,7 +56,7 @@ func r13Fixture(t *testing.T) *r13Lab {
 	second := *r
 	second.Name = "synthetic branch"
 	second.Endpoint = two.URL
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&second}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&second}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	gateway := r12Gateway()
@@ -107,7 +108,7 @@ func TestR13AgentRoutersScopeCacheAndNotifications(t *testing.T) {
 	if !strings.Contains(string(data), "router:default:synthetic:changes") || strings.Contains(string(data), l.router.Password) {
 		t.Fatalf("C07 receipt missing or unsafe %s", data)
 	}
-	if strings.Contains(string(mustPolicyJSON(result)), l.router.Password) {
+	if strings.Contains(string(device.JSON(result)), l.router.Password) {
 		t.Fatal("public reminder exposed credentials")
 	}
 	for _, f := range []*routerfake.Fake{l.first, l.second} {
@@ -141,7 +142,7 @@ func TestR13AgentRoutersScopeCacheAndNotifications(t *testing.T) {
 }
 func dbDraft(db *repo.Repository, t *testing.T) (json.RawMessage, int64, error) {
 	t.Helper()
-	v, n, e := db.SaveProfileFieldsJSON(t.Context(), "default", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "# synthetic draft\n{}"}}), nil)
+	v, n, e := db.SaveProfileFieldsJSON(t.Context(), "default", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "# synthetic draft\n{}"}}), nil)
 	if e != nil {
 		return nil, 0, e
 	}
@@ -168,7 +169,7 @@ func TestR13Fanout25SecondsAndEightWorkers(t *testing.T) {
 	if _, e := l.db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "many"}, ""); e != nil {
 		t.Fatal(e)
 	}
-	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "many", mustPolicyJSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": routers}}), nil); e != nil {
+	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "many", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": routers}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	rt := r13Runtime(t)
@@ -292,7 +293,7 @@ func TestR13OneReadErrorDoesNotHideOtherRouters(t *testing.T) {
 		return &r13ReadDriver{Driver: d, read: func(ctx context.Context) (*RouterState, error) {
 			switch mode.Load() {
 			case 0:
-				return nil, routerError("synthetic-password read rejected")
+				return nil, device.Error("synthetic-password read rejected")
 			case 1:
 				panic("synthetic-password private panic")
 			default:
@@ -311,7 +312,7 @@ func TestR13OneReadErrorDoesNotHideOtherRouters(t *testing.T) {
 		if mode.Load() < 2 && out.Routers[0].State != "unknown" {
 			t.Fatal("error became known state", out)
 		}
-		if strings.Contains(string(mustPolicyJSON(out)), "synthetic-password") {
+		if strings.Contains(string(device.JSON(out)), "synthetic-password") {
 			t.Fatal("private diagnostic leaked", out)
 		}
 		mode.Add(1)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/netipx"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -279,14 +280,14 @@ func sameStrings(a, b []string) bool {
 }
 func checkReturnAllocation(status *ReturnStatus, spec *ReturnSpec) error {
 	if blockers := ReturnSafetyBlockers(status, true); len(blockers) > 0 {
-		return routerError(strings.Join(blockers, "；"))
+		return device.Error(strings.Join(blockers, "；"))
 	}
 	a := ReturnAllocationOf(status)
 	if a.Table != spec.Table || a.Priority != spec.Priority || a.Mark != spec.Mark {
-		return routerError(messageReturnChanged)
+		return device.Error(messageReturnChanged)
 	}
 	if spec.SafetyVersion > ReturnProtocol(status) {
-		return routerError(messageReturnProtocolChanged)
+		return device.Error(messageReturnProtocolChanged)
 	}
 	return nil
 }

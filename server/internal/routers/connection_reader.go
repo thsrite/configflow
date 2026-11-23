@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"net/url"
 	"strconv"
@@ -22,7 +23,7 @@ type ConnectionQuery struct {
 // are bounded; caller-owned evidence never exposes unrelated connection rows.
 func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeout time.Duration) ([]Row, bool, error) {
 	if q.DestinationPort < 0 || q.DestinationPort > 65535 || q.SourcePort < 0 || q.SourcePort > 65535 {
-		return nil, false, invalid(messageEditFormat)
+		return nil, false, device.Invalid(device.MessageEditFormat)
 	}
 	path := "/ip/firewall/connection"
 	if q.IPv6 {

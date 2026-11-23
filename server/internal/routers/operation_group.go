@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"slices"
 	"strings"
@@ -56,7 +57,7 @@ func RouterOperationLocks(ctx context.Context, routers []*Router, write bool) (c
 		if err != nil {
 			release()
 			if write && parent.Err() == nil {
-				return parent, nil, rosError(KindConflict, messageEditBusy)
+				return parent, nil, device.KindError(KindConflict, device.MessageEditBusy)
 			}
 			return parent, nil, err
 		}

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/lifecycle"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,7 +73,7 @@ func valuesMatch(path string, row, values Row) bool {
 
 func (d *RouterOS) resourceRow(ctx context.Context, path, id string) (Row, error) {
 	value, err := d.get(ctx, path+"/"+escapeROSPathID(id), rosTimeout)
-	if routerErrorKind(err) == KindMissingResource {
+	if device.RouterErrorKind(err) == KindMissingResource {
 		return nil, nil
 	}
 	if err != nil {
@@ -80,7 +81,7 @@ func (d *RouterOS) resourceRow(ctx context.Context, path, id string) (Row, error
 	}
 	row := asRow(value)
 	if row == nil || row.id() != id {
-		return nil, routerError(fmt.Sprintf(messagePolicyReadFormat, path))
+		return nil, device.Error(fmt.Sprintf(messagePolicyReadFormat, path))
 	}
 	return row, nil
 }
@@ -90,13 +91,13 @@ func (d *RouterOS) guardResource(ctx context.Context, item ROSResource) (Row, er
 		return nil, err
 	}
 	if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
-		return nil, routerError(fmt.Sprintf(messagePolicyChanged, item.Path, item.ID))
+		return nil, device.Error(fmt.Sprintf(device.MessagePolicyChanged, item.Path, item.ID))
 	}
 	return row, nil
 }
 func writableResource(path string, row Row) (Row, error) {
 	if row.flag("dynamic") || path == rosAddresses && row.set("timeout") {
-		return nil, routerError(messagePolicyDynamic)
+		return nil, device.Error(device.MessagePolicyDynamic)
 	}
 	if path == rosAddresses || path == rosNAT {
 		values := configROSRow(row)
@@ -105,7 +106,7 @@ func writableResource(path string, row Row) (Row, error) {
 		return values, nil
 	}
 	if path == rosTables {
-		return selectFields([]Row{row}, stringSet("name", "fib", "disabled"))[0], nil
+		return selectFields([]Row{row}, device.StringSet("name", "fib", "disabled"))[0], nil
 	}
 	if path == rosMangle {
 		values := configROSRow(row)
@@ -114,7 +115,7 @@ func writableResource(path string, row Row) (Row, error) {
 	}
 	values := payload(path, row)
 	if values == nil {
-		return nil, routerError(messagePolicyDynamic)
+		return nil, device.Error(device.MessagePolicyDynamic)
 	}
 	return values, nil
 }
@@ -124,11 +125,11 @@ var consoleAddressField = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 func validateAddressEntry(values Row) error {
 	for key := range values {
 		if !consoleAddressField.MatchString(key) {
-			return routerError(messageAddressInvalidField)
+			return device.Error(messageAddressInvalidField)
 		}
 	}
 	if values.text("address") == "" {
-		return routerError(messageAddressInvalidField)
+		return device.Error(messageAddressInvalidField)
 	}
 	return nil
 }
@@ -169,7 +170,7 @@ func (d *RouterOS) runAddressBatches(ctx context.Context, shared Row, addresses 
 	for _, address := range addresses {
 		item := ScriptString(address)
 		if len(item) > budget {
-			return 0, "", routerError(messageAddressOversize)
+			return 0, "", device.Error(messageAddressOversize)
 		}
 		if len(current) > 0 && (size+len(item)+1 > budget || len(current) == AddressBatchMembers) {
 			batches = append(batches, current)
@@ -197,7 +198,7 @@ func (d *RouterOS) runAddressBatches(ctx context.Context, shared Row, addresses 
 		}
 		n, e := strconv.Atoi(strings.TrimSpace(count))
 		if e != nil || n < 0 {
-			return failed, first, routerError(fmt.Sprintf(messageAddressIncomplete, d.safeDeviceText(shortConsoleOutput(output))))
+			return failed, first, device.Error(fmt.Sprintf(messageAddressIncomplete, d.safeDeviceText(shortConsoleOutput(output))))
 		}
 		failed += n
 		if first == "" {
@@ -227,7 +228,7 @@ func (d *RouterOS) settledAddressRows(ctx context.Context, name string) ([]Row, 
 		}
 		rows = latest
 	}
-	return nil, rollbackError(fmt.Sprintf(messageAddressUncertain, name))
+	return nil, device.RollbackError(fmt.Sprintf(messageAddressUncertain, name))
 }
 
 // CreateAddresses creates members in bounded console batches and journals only
@@ -267,7 +268,7 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 	for _, g := range groups {
 		name := g.shared.text("list")
 		if name == "" {
-			return resources, routerError(messageAddressNoList)
+			return resources, device.Error(messageAddressNoList)
 		}
 		live, err := d.ReadAddresses(ctx, []string{name})
 		if err != nil {
@@ -282,7 +283,7 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 		*journal = append(*journal, NATStep{Action: "sweep", Path: rosAddresses, List: name, Shared: cloneRow(g.shared), Addresses: addresses, Before: slices.Sorted(maps.Keys(before))})
 		failed, reason, failure := d.runAddressBatches(ctx, g.shared, addresses)
 		var rows []Row
-		if routerErrorKind(failure) == KindUncertainWrite {
+		if device.RouterErrorKind(failure) == KindUncertainWrite {
 			rows, err = d.settledAddressRows(ctx, name)
 		} else {
 			rows, err = d.addressRows(ctx, name)
@@ -337,7 +338,7 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 			return resources, failure
 		}
 		if len(unknown) > 0 {
-			return resources, routerError(fmt.Sprintf(messageAddressUnknown, name))
+			return resources, device.Error(fmt.Sprintf(messageAddressUnknown, name))
 		}
 		missing := []string{}
 		for _, key := range keys {
@@ -353,7 +354,7 @@ func (d *RouterOS) createAddresses(ctx context.Context, entries []Row, journal *
 			if reason != "" {
 				detail = fmt.Sprintf(messageAddressFirstError, reason)
 			}
-			return resources, routerError(fmt.Sprintf(messageAddressFailed, name, max(failed, len(missing)), strings.Join(missing[:min(5, len(missing))], "、"), detail))
+			return resources, device.Error(fmt.Sprintf(messageAddressFailed, name, max(failed, len(missing)), strings.Join(missing[:min(5, len(missing))], "、"), detail))
 		}
 	}
 	return resources, nil
@@ -420,11 +421,11 @@ func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, jou
 	}
 	for _, item := range items {
 		if item.Path != rosAddresses || item.Config == nil || item.ID == "" {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 		row := live[item.ID]
 		if row == nil || !sameRow(configROSRow(row), configROSRow(item.Config)) {
-			return routerError(fmt.Sprintf(messagePolicyChanged, item.Path, item.ID))
+			return device.Error(fmt.Sprintf(device.MessagePolicyChanged, item.Path, item.ID))
 		}
 		if _, err := writableResource(rosAddresses, row); err != nil {
 			return err
@@ -441,14 +442,14 @@ func (d *RouterOS) DeleteAddresses(ctx context.Context, items []ROSResource, jou
 	if err := d.removeAddresses(ctx, removing); err != nil {
 		return err
 	}
-	d.forgetAddresses(items, stringSet(removing...))
+	d.forgetAddresses(items, device.StringSet(removing...))
 	live, err = d.liveAddresses(ctx, items)
 	if err != nil {
 		return err
 	}
 	for _, id := range removing {
 		if live[id] != nil {
-			return routerError(messagePolicyStillPresent)
+			return device.Error(device.MessagePolicyStillPresent)
 		}
 	}
 	return nil
@@ -506,11 +507,11 @@ func (d *RouterOS) restoreDeleteAddresses(ctx context.Context, steps []NATStep) 
 	}
 	for _, id := range removing {
 		if live[id] != nil {
-			return routerError(messageRollbackDeletePresent)
+			return device.Error(device.MessageRollbackDeletePresent)
 		}
 	}
 	if changed != "" {
-		return routerError(fmt.Sprintf(messagePolicyChanged, rosAddresses, changed))
+		return device.Error(fmt.Sprintf(device.MessagePolicyChanged, rosAddresses, changed))
 	}
 	return nil
 }
@@ -519,7 +520,7 @@ func (d *RouterOS) restoreAddressSweep(ctx context.Context, s NATStep) error {
 	if err != nil {
 		return err
 	}
-	before := stringSet(s.Before...)
+	before := device.StringSet(s.Before...)
 	wanted := map[string][]Row{}
 	for _, address := range s.Addresses {
 		values := cloneRow(s.Shared)
@@ -556,10 +557,10 @@ func (d *RouterOS) restoreAddressSweep(ctx context.Context, s NATStep) error {
 	if err != nil {
 		return err
 	}
-	gone := stringSet(removing...)
+	gone := device.StringSet(removing...)
 	for _, row := range latest {
 		if gone[row.id()] {
-			return routerError(messageRollbackDeletePresent)
+			return device.Error(device.MessageRollbackDeletePresent)
 		}
 	}
 	return nil
@@ -594,7 +595,7 @@ func (d *RouterOS) restoreAddresses(ctx context.Context, steps []NATStep, ids RO
 		return err
 	}
 	if changed != "" {
-		return routerError(fmt.Sprintf(messagePolicyChanged, rosAddresses, changed))
+		return device.Error(fmt.Sprintf(device.MessagePolicyChanged, rosAddresses, changed))
 	}
 	return nil
 }

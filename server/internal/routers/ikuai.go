@@ -26,6 +26,7 @@ package routers
 import (
 	"bytes"
 	"cmp"
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/md5"
 	"crypto/sha1"
@@ -153,7 +154,7 @@ func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64
 		default:
 			message = messageIkuaiTransport
 		}
-		return nil, routerError(message)
+		return nil, device.Error(message)
 	}
 	if response.Status != http.StatusOK {
 		return nil, ikuaiHTTPError(response, target)
@@ -162,13 +163,13 @@ func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64
 	if err := response.JSON(&data); err != nil {
 		if len(bytes.Trim(response.Body, " \t\n\r\v\f")) == 0 {
 			// The management page is never empty; iKuai drops oversized requests this way.
-			return nil, routerError(messageIkuaiEmptyReply)
+			return nil, device.Error(messageIkuaiEmptyReply)
 		}
-		return nil, routerError(messageIkuaiNotJSON)
+		return nil, device.Error(messageIkuaiNotJSON)
 	}
 	reply, ok := data.(map[string]any)
 	if !ok {
-		return nil, routerError(messageIkuaiReplyFormat)
+		return nil, device.Error(messageIkuaiReplyFormat)
 	}
 	return reply, nil
 }
@@ -201,7 +202,7 @@ func ikuaiHTTPError(response *devhttp.Response, target string) error {
 	case 301, 302, 303, 307, 308:
 		base, err := url.Parse(target)
 		if err != nil {
-			return routerError(fmt.Sprintf(messageIkuaiRedirect, code))
+			return device.Error(fmt.Sprintf(messageIkuaiRedirect, code))
 		}
 		redirect := ""
 		if location := response.Header.Get("Location"); location != "" {
@@ -214,9 +215,9 @@ func ikuaiHTTPError(response *devhttp.Response, target string) error {
 			redirect = ikuaiOrigin(base.ResolveReference(ref))
 		}
 		if redirect != "" && redirect != ikuaiOrigin(base) {
-			return routerError(fmt.Sprintf(messageIkuaiRedirectTarget, redirect, code))
+			return device.Error(fmt.Sprintf(messageIkuaiRedirectTarget, redirect, code))
 		}
-		return routerError(fmt.Sprintf(messageIkuaiRedirect, code))
+		return device.Error(fmt.Sprintf(messageIkuaiRedirect, code))
 	}
 	reason, ok := ikuaiHTTPReasons[response.Status]
 	if !ok {
@@ -225,7 +226,7 @@ func ikuaiHTTPError(response *devhttp.Response, target string) error {
 			reason = messageIkuaiHTTPServer
 		}
 	}
-	return routerError(fmt.Sprintf(messageIkuaiHTTP, reason, code))
+	return device.Error(fmt.Sprintf(messageIkuaiHTTP, reason, code))
 }
 
 // --- replies -------------------------------------------------------------------
@@ -329,7 +330,7 @@ func (d *Ikuai) login(ctx context.Context) error {
 		if _, hasCode := data["code"]; hasCode {
 			code = fmt.Sprintf(messageIkuaiErrorCode, replyText(data["code"]))
 		}
-		return routerError(fmt.Sprintf(messageIkuaiLoginFailed, detail, code))
+		return device.Error(fmt.Sprintf(messageIkuaiLoginFailed, detail, code))
 	}
 	d.loggedIn = true
 	return nil
@@ -363,9 +364,9 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 		return results, nil
 	}
 	if _, hasCode := data["code"]; !hasCode && (data.has("Data") || data.has("Result")) {
-		return nil, routerError(messageIkuai3x)
+		return nil, device.Error(messageIkuai3x)
 	}
-	return nil, routerError(ikuaiCallError(funcName, data))
+	return nil, device.Error(ikuaiCallError(funcName, data))
 }
 
 // Write submits an add/edit/del form (encoded like the web UI) and returns
@@ -396,7 +397,7 @@ func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param an
 	if !ok {
 		// Python called this a refusal ("… 失败：None"); a reply without a
 		// code proves nothing was refused, so it counts as a lost reply.
-		return nil, routerError(fmt.Sprintf(messageIkuaiCallFormat, funcName))
+		return nil, device.Error(fmt.Sprintf(messageIkuaiCallFormat, funcName))
 	}
 	if code != 0 {
 		if slices.Contains([]int64{1001, 1002, 1003, 1008}, code) {
@@ -422,7 +423,7 @@ func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param an
 	return results, nil
 }
 
-func isRejected(err error) bool { return routerErrorKind(err) == KindRejected }
+func isRejected(err error) bool { return device.RouterErrorKind(err) == KindRejected }
 
 // ListAll reads every row of a list page by page (prefix "static_" for
 // dhcp_static). It fails closed when a page is short, the total changes
@@ -448,19 +449,19 @@ func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, 
 		page, pageOK := result[prefix+"data"].([]any)
 		if !countOK || count < 0 || !pageOK || (total >= 0 && count != total) ||
 			int64(len(page)) != min(ikuaiPageSize, max(0, count-offset)) {
-			return nil, routerError(incomplete)
+			return nil, device.Error(incomplete)
 		}
 		total = count
 		for _, item := range page {
 			row, isRow := item.(map[string]any)
 			if !ids {
 				if !isRow {
-					return nil, routerError(incomplete)
+					return nil, device.Error(incomplete)
 				}
 			} else {
 				id, ok := jsonInt(ikuaiRow(row)["id"])
 				if !isRow || !ok || id < 1 || seen[id] {
-					return nil, routerError(fmt.Sprintf(messageIkuaiListIDs, label))
+					return nil, device.Error(fmt.Sprintf(messageIkuaiListIDs, label))
 				}
 				seen[id] = true
 			}
@@ -488,14 +489,14 @@ func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
 	}
 	version := nonEmptyText(ikuaiRow(verinfo)["version"])
 	if !strings.HasPrefix(version, "4.") {
-		return nil, routerError(fmt.Sprintf(messageIkuaiVersion, cmp.Or(version, messageUnknown)))
+		return nil, device.Error(fmt.Sprintf(messageIkuaiVersion, cmp.Or(version, device.MessageUnknown)))
 	}
 	capabilities := []string{}
 	for _, probe := range [][2]string{{"static_rt", "routes"}, {"nat_rule", "nat_bypass"},
 		{"route_object", "address_sets"}, {"stream_ipport", "policy_routes"}} {
 		if _, err := d.Call(ctx, probe[0], map[string]any{"TYPE": "total,data", "limit": "0,1"}); err == nil {
 			capabilities = append(capabilities, probe[1])
-		} else if !isRouterError(err) {
+		} else if !device.IsRouterError(err) {
 			return nil, err
 		}
 	}
@@ -533,7 +534,7 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 	}
 	for _, row := range routes {
 		if dst, ok := ikuaiNetwork(row); ok {
-			state.Routes = append(state.Routes, NewRoute(row.text("id"), dst, row.text("gateway"),
+			state.Routes = append(state.Routes, device.NewRoute(row.text("id"), dst, row.text("gateway"),
 				row.is("enabled", "yes"), percentDecode(row.text("comment"))))
 		}
 	}
@@ -595,7 +596,7 @@ func (d *Ikuai) activeRoutes(ctx context.Context) []*RouteEntry {
 	routes := []*RouteEntry{}
 	for _, row := range rows {
 		if dst, ok := ikuaiNetwork(row); ok {
-			routes = append(routes, NewRoute("active:"+row.text("id"), dst, row.text("gateway"), true,
+			routes = append(routes, device.NewRoute("active:"+row.text("id"), dst, row.text("gateway"), true,
 				row.text("interface")+" prio "+row.text("prio")))
 		}
 	}

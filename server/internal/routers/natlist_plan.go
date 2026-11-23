@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"fmt"
 	"net/netip"
@@ -132,7 +133,7 @@ func natMembers(name string, rows []Row) (ours, foreign []Row, problems []string
 			foreign = append(foreign, row)
 		}
 	}
-	return ours, foreign, uniqueStrings(problems)
+	return ours, foreign, device.Unique(problems)
 }
 func overlapsAny(network netip.Prefix, others []netip.Prefix) bool {
 	return slices.ContainsFunc(others, network.Overlaps)
@@ -193,10 +194,10 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 			}
 		}
 		if owned {
-			out = append(out, Networks(append(slices.Clone(policy.Destinations), policy.PreviousDestinations...))...)
+			out = append(out, device.Networks(append(slices.Clone(policy.Destinations), policy.PreviousDestinations...))...)
 			continue
 		}
-		networks := Networks([]string{row.text("dst-address")})
+		networks := device.Networks([]string{row.text("dst-address")})
 		if len(networks) == 0 && !strings.Contains(row.text("dst-address"), ":") {
 			networks = []netip.Prefix{everything}
 		}
@@ -207,7 +208,7 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 			if len(entry.Dst) == 0 {
 				out = append(out, everything)
 			} else {
-				out = append(out, Networks(entry.Dst)...)
+				out = append(out, device.Networks(entry.Dst)...)
 			}
 		}
 	}
@@ -221,7 +222,7 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 
 func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped []string, excluded map[string]bool, egress string, routed []netip.Prefix) (merged []ROSResource, destinations []string, stale, retained []ROSResource) {
 	merged, destinations, stale, retained = []ROSResource{}, []string{}, []ROSResource{}, []ROSResource{}
-	blocked, proxied := Networks(skipped), Networks(desired)
+	blocked, proxied := device.Networks(skipped), device.Networks(desired)
 	wanted := map[string]string{}
 	for _, item := range items {
 		if item.Status == "synced" || item.Status == "missing" {
@@ -234,7 +235,7 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 	}
 	groups := map[string][]Row{}
 	order := []string{}
-	fields := stringSet("chain", "action", "disabled", "comment", "log", "log-prefix", "dynamic", "src-address", "dst-address", "out-interface")
+	fields := device.StringSet("chain", "action", "disabled", "comment", "log", "log-prefix", "dynamic", "src-address", "dst-address", "out-interface")
 	for _, row := range rows {
 		if !row.is("comment", PolicyAutoComment) || excluded[row.id()] || !row.is("chain", "srcnat") || !row.is("action", "accept") || !row.enabled() || row.flag("dynamic", "invalid", "log") || row.set("log-prefix") || !row.set("src-address") || !row.set("dst-address") || row.text("out-interface") != "" && row.text("out-interface") != egress || !sourceKeys[natKey(row.text("src-address"))] {
 			continue
@@ -401,7 +402,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		for _, item := range retained {
 			values = append(values, item.Config.text("dst-address"))
 		}
-		result.Warnings = append(result.Warnings, fmt.Sprintf(messageNATLegacyKept, len(retained), natSample(uniqueStrings(values))))
+		result.Warnings = append(result.Warnings, fmt.Sprintf(messageNATLegacyKept, len(retained), natSample(device.Unique(values))))
 	}
 	ruleID := ""
 	var rule *ROSResource
@@ -425,10 +426,10 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 			targets = append(targets, cidr)
 		}
 	}
-	held := Networks(skipped)
+	held := device.Networks(skipped)
 	holds := false
 	for _, row := range dstOwn {
-		for _, network := range Networks([]string{row.text("address")}) {
+		for _, network := range device.Networks([]string{row.text("address")}) {
 			holds = holds || overlapsAny(network, held)
 		}
 	}
@@ -492,7 +493,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	for _, item := range items {
 		if item.Status == "adoptable" {
 			for _, id := range item.RuleIDs {
-				if entry := natRules[id]; entry != nil && !IsManaged(entry.Comment) && !slices.Contains(adoptIDs, id) {
+				if entry := natRules[id]; entry != nil && !device.IsManaged(entry.Comment) && !slices.Contains(adoptIDs, id) {
 					adoptIDs = append(adoptIDs, id)
 				}
 			}
@@ -500,8 +501,8 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	}
 	for _, id := range adoptIDs {
 		entry := natRules[id]
-		comment := ManagedComment(entry.Comment)
-		label := firstNonEmpty(entry.Comment, id)
+		comment := device.ManagedComment(entry.Comment)
+		label := device.FirstNonEmpty(entry.Comment, id)
 		result.Ops = append(result.Ops, &NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messageNATAdopt, label, comment)}, ID: id, AddDst: []string{}, Comment: comment, Expected: slices.Clone(entry.Attributes)})
 	}
 	create := rule == nil && len(targets) > 0
@@ -529,7 +530,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		checkID = &ruleID
 	}
 	result.Check = &NATListCheck{checkID, found.OutInterface, sources, targets, removed, NATListMembers{after(srcKept, srcAdd), after(dstKept, dstAdd)}, withdraw}
-	gone := stringSet(removed...)
+	gone := device.StringSet(removed...)
 	removedKeys := map[string]bool{}
 	for _, item := range dstRemove {
 		removedKeys[natKey(item.Config.text("address"))] = true
@@ -611,9 +612,9 @@ func NATListSummary(op NATListSync, gateway string, create bool, fresh []string)
 		for _, item := range op.Stale {
 			values = append(values, item.Config.text("dst-address"))
 		}
-		parts = append(parts, fmt.Sprintf(messageNATStale, len(op.Stale), natSample(uniqueStrings(values))))
+		parts = append(parts, fmt.Sprintf(messageNATStale, len(op.Stale), natSample(device.Unique(values))))
 	}
-	return strings.Join(nonEmpty(append([]string{head}, parts...)), "；")
+	return strings.Join(device.NonEmpty(append([]string{head}, parts...)), "；")
 }
 
 // NATRemovalsFirst moves pruning and stale exemptions before route deletions.
@@ -688,20 +689,20 @@ func RestrictNATEgress(op *NATListSync, check *NATListCheck, iface string) strin
 // NATPolicyMigrations selects only provably owned overlapping destination members.
 func NATPolicyMigrations(rule Row, addresses []Row, exclusions []string) ([]ROSResource, error) {
 	result := []ROSResource{}
-	overlaps := prefixOverlap(Networks(exclusions))
+	overlaps := prefixOverlap(device.Networks(exclusions))
 	for _, item := range addresses {
 		if item.text("list") != rule.text("dst-address-list") || !item.enabled() {
 			continue
 		}
-		networks := Networks([]string{item.text("address")})
+		networks := device.Networks([]string{item.text("address")})
 		if len(networks) == 0 {
-			return nil, routerError(fmt.Sprintf(messageNATSplitInvalid, item.id()))
+			return nil, device.Error(fmt.Sprintf(messageNATSplitInvalid, item.id()))
 		}
 		if !slices.ContainsFunc(networks, overlaps) {
 			continue
 		}
 		if !item.is("comment", NATListComment) || item.flag("dynamic") {
-			return nil, routerError(fmt.Sprintf(messageNATSplitForeign, item.id()))
+			return nil, device.Error(fmt.Sprintf(messageNATSplitForeign, item.id()))
 		}
 		result = append(result, resource(rosAddresses, item))
 	}

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -362,7 +363,7 @@ func TestR10PartialRollbackKeepsTrustedRestoredIDs(t *testing.T) {
 	}
 	again := r10RoutesPlan(t, d, 3)
 	if len(again.Skip) > 0 || len(again.Ops) != 1 {
-		t.Fatalf("partial rollback cannot be reconciled: %s", mustPolicyJSON(again))
+		t.Fatalf("partial rollback cannot be reconciled: %s", device.JSON(again))
 	}
 }
 
@@ -421,7 +422,7 @@ func TestR10HostDiagnosticsRedactCredentials(t *testing.T) {
 	p := InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r10Router(), agent, host, d)
 	rp := InspectIPv6Routes(t.Context(), r10Config(r10YAML), r10Router(), r10Wanted(1), agent, host, d)
 	for _, value := range []any{p, rp} {
-		raw := mustPolicyJSON(value)
+		raw := device.JSON(value)
 		if bytes.Contains(raw, []byte("synthetic-password")) || bytes.Contains(raw, []byte(agent.Token)) {
 			t.Fatal("credential escaped diagnostic", string(raw))
 		}
@@ -444,18 +445,18 @@ func TestR10ManifestSpecAndUnknownFields(t *testing.T) {
 	_ = json.Unmarshal(manifest["resources"], &entries)
 	entries[0]["future_resource"] = json.RawMessage(`{"keep":true}`)
 	manifest["resources"], _ = json.Marshal(entries)
-	raw := mustPolicyJSON(manifest)
+	raw := device.JSON(manifest)
 	r := r10Router()
 	r.Extra["ipv6_fakeip_state"] = raw
 	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
 	if p.Status != "synced" || len(p.Ops) > 0 || !jsonValuesEqual(p.Check.Previous, raw) {
-		t.Fatal("noop lost previous manifest fingerprint", string(mustPolicyJSON(p)))
+		t.Fatal("noop lost previous manifest fingerprint", string(device.JSON(p)))
 	}
 	var spec IPv6RouteSpec
 	_ = json.Unmarshal(manifest["spec"], &spec)
 	spec.Gateway = "fe80::99%bridge"
-	manifest["spec"] = mustPolicyJSON(spec)
-	r.Extra["ipv6_fakeip_state"] = mustPolicyJSON(manifest)
+	manifest["spec"] = device.JSON(spec)
+	r.Extra["ipv6_fakeip_state"] = device.JSON(manifest)
 	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), r10Host(), d)
 	if len(p.Blockers) == 0 || len(p.Ops) > 0 {
 		t.Fatal("corrupted spec became successful noop")
@@ -475,7 +476,7 @@ func TestR10RestoreFailureKeepsPublishedOwnership(t *testing.T) {
 			var undo json.RawMessage
 			if feature == "fake" {
 				p := r10FakePlan(t, d)
-				raw, err := d.Apply(t.Context(), mustPolicyJSON(p.Ops[0]))
+				raw, err := d.Apply(t.Context(), device.JSON(p.Ops[0]))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -490,7 +491,7 @@ func TestR10RestoreFailureKeepsPublishedOwnership(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				undo = mustPolicyJSON(u)
+				undo = device.JSON(u)
 			}
 			before := d.Manifests()
 			f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: rosIPv6Routes + "/*65", Status: 403}, {Method: "DELETE", Path: rosIPv6Routes + "/*66", Status: 403}}})
@@ -532,7 +533,7 @@ func TestR10FailedApplyRetainsProvenCreationWhenDeleteRefused(t *testing.T) {
 				p := r10RoutesPlan(t, d, 4)
 				_, err = d.ApplyIPv6Routes(t.Context(), *p.Ops[0].(*IPv6RoutesReplace))
 			}
-			if err == nil || routerErrorKind(err) != KindRollback {
+			if err == nil || device.RouterErrorKind(err) != KindRollback {
 				t.Fatalf("expected incomplete rollback, got %v", err)
 			}
 			live, e := SnapshotIPv6(t.Context(), d, false)

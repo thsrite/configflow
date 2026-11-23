@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,7 +22,7 @@ func TestR12ReturnCleanupUsesExplicitProfilePair(t *testing.T) {
 	other := r10Router()
 	other.Name = "synthetic other owner"
 	other.ProxyGatewayAgentID = "gateway"
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	a := r12Gateway()
@@ -43,21 +44,21 @@ func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 	r.Extra["dns_guard_state"] = json.RawMessage(`null`)
 	db := r12Repository(t, r, "{}")
 	_, r, before := r12Config(t, db)
-	expected := mustPolicyJSON(r)
+	expected := device.JSON(r)
 	proof := json.RawMessage(`{"version":1,"resources":[],"spec":null,"future":{"keep":true}}`)
 	if e := db.SaveRouterPublicationJSON(t.Context(), "default", expected, repo.RouterPublicationJSON{IPv6FakeIP: repo.JSONUpdate{Set: true, Value: proof}}); e != nil {
 		t.Fatal(e)
 	}
 	_, stored, one := r12Config(t, db)
 	// The proof has an undeclared member, so it is kept whole as stored.
-	if !jsonEqual(stored.Extra["ipv6_fakeip_state"], proof) || stored.Extra["dns_guard_state"] != nil || one.Revision != before.Revision+1 {
+	if !device.JSONEqual(stored.Extra["ipv6_fakeip_state"], proof) || stored.Extra["dns_guard_state"] != nil || one.Revision != before.Revision+1 {
 		t.Fatal("replace lost or null manifest stored")
 	}
 	if e := db.SaveRouterPublicationJSON(t.Context(), "default", expected, repo.RouterPublicationJSON{LastRelease: repo.JSONUpdate{Set: true, Value: json.RawMessage(`{"ok":false,"message":"synthetic"}`)}}); e != nil {
 		t.Fatal(e)
 	}
 	_, stored, two := r12Config(t, db)
-	if !jsonEqual(stored.Extra["ipv6_fakeip_state"], proof) || two.Revision != one.Revision || len(stored.Extra["last_release"]) == 0 {
+	if !device.JSONEqual(stored.Extra["ipv6_fakeip_state"], proof) || two.Revision != one.Revision || len(stored.Extra["last_release"]) == 0 {
 		t.Fatal("unset manifest inferred clear or state-only last_release advanced revision")
 	}
 	if e := db.SaveRouterPublicationJSON(t.Context(), "default", expected, repo.RouterPublicationJSON{IPv6FakeIP: repo.JSONUpdate{Set: true}}); e != nil {
@@ -69,7 +70,7 @@ func TestR12PublicationThreeStatesAndConnectionCAS(t *testing.T) {
 	}
 	stale := *r
 	stale.Endpoint = "http://192.0.2.9"
-	if e := db.SaveRouterPublicationJSON(t.Context(), "default", mustPolicyJSON(stale), repo.RouterPublicationJSON{IPv6Routes: repo.JSONUpdate{Set: true, Value: proof}}); !errors.Is(e, repo.ErrInUse) {
+	if e := db.SaveRouterPublicationJSON(t.Context(), "default", device.JSON(stale), repo.RouterPublicationJSON{IPv6Routes: repo.JSONUpdate{Set: true, Value: proof}}); !errors.Is(e, repo.ErrInUse) {
 		t.Fatal("stale connection accepted", e)
 	}
 	_, _, last := r12Config(t, db)

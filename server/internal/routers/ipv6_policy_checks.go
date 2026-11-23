@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -81,7 +82,7 @@ type PolicyCheck struct {
 
 func policyReport(key, label, decision, message string, details []string) PolicyCheck {
 	statuses := map[string]string{"allow": "ok", "drop": "error", "translate": "warning", "unknown": "unknown"}
-	details = uniqueStrings(details)
+	details = device.Unique(details)
 	return PolicyCheck{key, label, statuses[decision], decision, message, details[:min(40, len(details))]}
 }
 func policyRouteInterface(s *PolicySnapshot, destination string) (string, string) {

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -22,7 +23,7 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 		exclude = append(exclude, p.String())
 	}
 	for _, row := range live[rosNAT] {
-		if !row.enabled() || !row.is("chain", "srcnat") || !row.is("action", "accept") || !IsManaged(row.text("comment")) || strings.HasPrefix(row.text("comment"), ROSPolicyPrefix) || owned[[2]string{rosNAT, row.id()}] {
+		if !row.enabled() || !row.is("chain", "srcnat") || !row.is("action", "accept") || !device.IsManaged(row.text("comment")) || strings.HasPrefix(row.text("comment"), ROSPolicyPrefix) || owned[[2]string{rosNAT, row.id()}] {
 			continue
 		}
 		if row.is("comment", NATListComment) && row.is("src-address-list", NATSrcList) && row.is("dst-address-list", NATDstList) {
@@ -40,7 +41,7 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 				continue
 			}
 			if strings.HasPrefix(value, "!") {
-				return nil, nil, routerError(messagePolicyNATInverse + row.id())
+				return nil, nil, device.Error(messagePolicyNATInverse + row.id())
 			}
 			values := []string{value}
 			if key == "dst-address-list" {
@@ -53,9 +54,9 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 			}
 			networks := []netip.Prefix{}
 			for _, value := range values {
-				parsed := Networks([]string{value})
+				parsed := device.Networks([]string{value})
 				if len(parsed) == 0 {
-					return nil, nil, routerError(messagePolicyNATInvalid + row.id())
+					return nil, nil, device.Error(messagePolicyNATInvalid + row.id())
 				}
 				networks = append(networks, parsed...)
 			}
@@ -85,13 +86,13 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 			continue
 		}
 		if row.set("dst-address-list") {
-			return nil, nil, routerError(messagePolicyNATListSplit + row.id())
+			return nil, nil, device.Error(messagePolicyNATListSplit + row.id())
 		}
 		if row.flag("dynamic") {
-			return nil, nil, routerError(messagePolicyNATDynamic + row.id())
+			return nil, nil, device.Error(messagePolicyNATDynamic + row.id())
 		}
 		if row.id() == "" {
-			return nil, nil, routerError(messagePolicyDuplicateID)
+			return nil, nil, device.Error(messagePolicyDuplicateID)
 		}
 		migrations = append(migrations, resource(rosNAT, row))
 		values := configROSRow(row)
@@ -174,14 +175,14 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 	migrations := []ROSResource{}
 	preserved := 0
 	for _, row := range live[rosRoutes] {
-		if firstNonEmpty(row.text("routing-table"), "main") != "main" || !row.enabled() {
+		if device.FirstNonEmpty(row.text("routing-table"), "main") != "main" || !row.enabled() {
 			continue
 		}
 		prefix, ok := netipx.ParseNetwork4(row.text("dst-address"), true)
 		if !ok || !policyOverlap(prefix) {
 			continue
 		}
-		if IsManaged(row.text("comment")) && !strings.HasPrefix(row.text("comment"), ROSPolicyPrefix) && row.is("gateway", desired.ProxyGateway) && policyOnlyOverlap(prefix) && !row.flag("dynamic") {
+		if device.IsManaged(row.text("comment")) && !strings.HasPrefix(row.text("comment"), ROSPolicyPrefix) && row.is("gateway", desired.ProxyGateway) && policyOnlyOverlap(prefix) && !row.flag("dynamic") {
 			if editROSEntry(row, nil).Editable {
 				migrations = append(migrations, resource(rosRoutes, row))
 				continue
@@ -255,7 +256,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 			Spec json.RawMessage `json:"spec"`
 		}
 		_ = jsondecode.Unmarshal(request.Previous, &raw)
-		current = jsonValuesEqual(raw.Spec, mustPolicyJSON(spec)) && len(owned) == len(previous.Resources)
+		current = jsonValuesEqual(raw.Spec, device.JSON(spec)) && len(owned) == len(previous.Resources)
 	}
 	unchanged := previous == nil
 	if selected {
@@ -268,13 +269,13 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 		}
 		result.Items = append(result.Items, ROSPolicyItem{entry, status, messagePolicyItemDetail, []string{}, "policy"})
 	}
-	result.Evidence = mustPolicyJSON(stablePolicy(live))
+	result.Evidence = device.JSON(stablePolicy(live))
 	requestCopy := *request
 	requestCopy.Previous = nil
 	var req map[string]json.RawMessage
-	_ = json.Unmarshal(mustPolicyJSON(requestCopy), &req)
+	_ = json.Unmarshal(device.JSON(requestCopy), &req)
 	delete(req, "previous")
-	result.Request = mustPolicyJSON(req)
+	result.Request = device.JSON(req)
 	result.Check = &ROSPolicyCheck{nil, slices.Clone(request.Previous), migrations, replacements}
 	if selected {
 		result.Check.Spec = spec
@@ -355,7 +356,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 			summary += fmt.Sprintf(messagePolicyMemberSummary, counts[rosAddresses])
 		}
 	}
-	op := &ROSPolicyReplace{OpHead: OpHead{"ros_policy_replace", summary}, Bundle: bundle, Previous: slices.Clone(request.Previous), Owned: owned, Migrations: migrations, Replacements: replacements, Evidence: stablePolicy(live), StaticChecks: []CIDRGateway{}}
+	op := &ROSPolicyReplace{OpHead: OpHead{Kind: "ros_policy_replace", Summary: summary}, Bundle: bundle, Previous: slices.Clone(request.Previous), Owned: owned, Migrations: migrations, Replacements: replacements, Evidence: stablePolicy(live), StaticChecks: []CIDRGateway{}}
 	if len(bundle) > 0 {
 		op.Spec = spec
 	}

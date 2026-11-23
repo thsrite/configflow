@@ -5,6 +5,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/routers/device"
 	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
@@ -92,10 +93,10 @@ func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessag
 		return source.Source.Content, nil
 	}
 	if len(raw) > syncMaxBytes {
-		return "", routerError(fmt.Sprintf(messageSyncSourceLarge, orText(source.Source.Name, source.Item.ID)))
+		return "", device.Error(fmt.Sprintf(messageSyncSourceLarge, device.OrText(source.Source.Name, source.Item.ID)))
 	}
 	if !utf8.Valid(raw) {
-		return "", routerError(fmt.Sprintf(messageSyncUTF8, orText(source.Source.Name, source.Item.ID)))
+		return "", device.Error(fmt.Sprintf(messageSyncUTF8, device.OrText(source.Source.Name, source.Item.ID)))
 	}
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
 }

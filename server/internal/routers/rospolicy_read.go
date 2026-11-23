@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/devhttp"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,13 +23,13 @@ func policyManifest(raw json.RawMessage) (*ROSPolicyManifest, error) {
 	}
 	var manifest ROSPolicyManifest
 	if devhttp.DecodeJSON(raw, &manifest) != nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	seen := map[[2]string]bool{}
 	for _, item := range manifest.Resources {
 		key := [2]string{item.Path, item.ID}
 		if !slices.Contains(policyPaths, item.Path) || item.ID == "" || item.Config == nil || seen[key] {
-			return nil, routerError(messagePolicyDuplicateID)
+			return nil, device.Error(messagePolicyDuplicateID)
 		}
 		seen[key] = true
 	}
@@ -99,7 +100,7 @@ func (d *RouterOS) snapshotPolicy(ctx context.Context, reserve bool) (*ROSPolicy
 	}
 	settings := asRow(value)
 	if settings == nil {
-		return nil, routerError(messagePolicySettingsUnreadable)
+		return nil, device.Error(messagePolicySettingsUnreadable)
 	}
 	// A null lookup order is unknown, not missing.
 	markNulls(settings, value, []string{"policy-rules"})
@@ -144,7 +145,7 @@ func OwnedROSPolicyRows(raw json.RawMessage, snap *ROSPolicySnapshot) ([]ROSReso
 		return owned, nil
 	}
 	if snap == nil {
-		return nil, routerError(messagePolicyUnreadable)
+		return nil, device.Error(messagePolicyUnreadable)
 	}
 	indexed := map[string]map[string][]Row{}
 	for path, rows := range *snap {
@@ -156,11 +157,11 @@ func OwnedROSPolicyRows(raw json.RawMessage, snap *ROSPolicySnapshot) ([]ROSReso
 	for _, entry := range manifest.Resources {
 		matches := indexed[entry.Path][entry.ID]
 		if len(matches) > 1 {
-			return nil, routerError(messagePolicyDuplicateID)
+			return nil, device.Error(messagePolicyDuplicateID)
 		}
 		if len(matches) == 1 {
 			if !sameRow(configROSRow(matches[0]), configROSRow(entry.Config)) {
-				return nil, routerError(fmt.Sprintf(messagePolicyExternalEdit, entry.Path, entry.ID))
+				return nil, device.Error(fmt.Sprintf(messagePolicyExternalEdit, entry.Path, entry.ID))
 			}
 			owned = append(owned, ROSResource{entry.Path, entry.ID, cloneRow(entry.Config)})
 		}
@@ -194,7 +195,7 @@ func checkPolicyReferences(owned []ROSResource, live ROSPolicySnapshot) error {
 			names[name] = true
 		}
 	}
-	refs := stringSet("table", "routing-table", "new-routing-mark", "routing-mark", "src-address-list", "dst-address-list", "jump-target", "chain", "list", "name")
+	refs := device.StringSet("table", "routing-table", "new-routing-mark", "routing-mark", "src-address-list", "dst-address-list", "jump-target", "chain", "list", "name")
 	for _, path := range slices.Sorted(maps.Keys(live)) {
 		for _, row := range live[path] {
 			if keys[[2]string{path, row.id()}] {
@@ -203,12 +204,12 @@ func checkPolicyReferences(owned []ROSResource, live ROSPolicySnapshot) error {
 			for _, key := range slices.Sorted(maps.Keys(row)) {
 				value := row.text(key)
 				if refs[key] && names[strings.TrimLeft(value, "!")] {
-					return routerError(messagePolicyReference + value)
+					return device.Error(messagePolicyReference + value)
 				}
 				if key == "gateway" {
 					for name := range names {
 						if strings.Contains(value, "@"+name) {
-							return routerError(messagePolicyTableReference)
+							return device.Error(messagePolicyTableReference)
 						}
 					}
 				}
@@ -229,32 +230,32 @@ func checkPolicyOrder(live ROSPolicySnapshot) error {
 			minor, _ = strconv.Atoi(parts[2])
 		}
 		if major > 7 || major == 7 && minor >= 22 {
-			return routerError(fmt.Sprintf(messagePolicyOrderMissing, version))
+			return device.Error(fmt.Sprintf(messagePolicyOrderMissing, version))
 		}
-		return routerError(fmt.Sprintf(messagePolicyVersion, firstNonEmpty(version, messagePolicyUnknownVersion)))
+		return device.Error(fmt.Sprintf(messagePolicyVersion, device.FirstNonEmpty(version, messagePolicyUnknownVersion)))
 	}
 	if len(settings) != 1 {
-		return routerError(messagePolicyOrderUnknown)
+		return device.Error(messagePolicyOrderUnknown)
 	}
 	value, present := settings[0]["policy-rules"]
 	order, ok := textList(value)
 	if !present || !ok {
-		return routerError(messagePolicyOrderUnknown)
+		return device.Error(messagePolicyOrderUnknown)
 	}
-	allowed := stringSet("mangle", "main", "user", "vrf-lookup", "vrf-unreach", "local")
+	allowed := device.StringSet("mangle", "main", "user", "vrf-lookup", "vrf-unreach", "local")
 	seen := map[string]bool{}
 	for _, item := range order {
 		if seen[item] || !allowed[item] {
-			return routerError(messagePolicyOrderUnknown)
+			return device.Error(messagePolicyOrderUnknown)
 		}
 		seen[item] = true
 	}
 	if !seen["mangle"] || !seen["main"] {
-		return routerError(messagePolicyOrderUnknown)
+		return device.Error(messagePolicyOrderUnknown)
 	}
 	for _, name := range []string{"main", "user"} {
 		if at := slices.Index(order, name); at >= 0 && at < slices.Index(order, "mangle") {
-			return routerError(messagePolicyOrderLower)
+			return device.Error(messagePolicyOrderLower)
 		}
 	}
 	return nil
@@ -262,7 +263,7 @@ func checkPolicyOrder(live ROSPolicySnapshot) error {
 
 func checkPolicyEgress(row Row, gateway, iface string) error {
 	if row == nil || !row.enabled() || !rosFlag(row["active"]) || row.text("immediate-gw") != gateway+"%"+iface || row.flag("invalid", "blackhole", "ecmp") {
-		return routerError(messagePolicyEgressChanged)
+		return device.Error(messagePolicyEgressChanged)
 	}
 	return nil
 }
@@ -290,7 +291,7 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 			}
 		}
 		if len(present) == len(expected) && !slices.Equal(present, expected) {
-			return routerError(messagePolicyRuleOrder)
+			return device.Error(messagePolicyRuleOrder)
 		}
 	}
 	for _, item := range manifest.Resources {
@@ -299,11 +300,11 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 			continue
 		}
 		if row.flag("invalid") {
-			return routerError(fmt.Sprintf(messagePolicyNotActive, item.Path, item.ID))
+			return device.Error(fmt.Sprintf(messagePolicyNotActive, item.Path, item.ID))
 		}
 		if item.Path == rosRoutes {
 			if !rosFlag(row["active"]) {
-				return routerError(messagePolicyRouteInactive)
+				return device.Error(messagePolicyRouteInactive)
 			}
 			if manifest.Spec != nil && manifest.Spec.EgressInterface != "" {
 				if err := checkPolicyEgress(row, manifest.Spec.Gateway, manifest.Spec.EgressInterface); err != nil {
@@ -314,7 +315,7 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 		if item.Path == rosNAT {
 			for _, other := range live[rosNAT][:indexOfRow(live[rosNAT], item.ID)] {
 				if other.enabled() && other.is("chain", "srcnat") && !slices.Contains(nonTranslating, other.text("action")) {
-					return routerError(messagePolicyNATPreceded)
+					return device.Error(messagePolicyNATPreceded)
 				}
 			}
 		}
@@ -332,7 +333,7 @@ type ROSPolicyObject struct {
 	Fields            Row    `json:"fields"`
 }
 
-var policyPublicFields = stringSet("list", "address", "name", "fib", "chain", "action", "src-address", "dst-address", "src-address-list", "dst-address-list", "dst-address-type", "routing-mark", "new-routing-mark", "jump-target", "passthrough", "routing-table", "gateway", "immediate-gw", "distance", "scope", "target-scope", "in-interface", "out-interface", "disabled", "active", "invalid", "comment", "protocol", "src-port", "dst-port", "packets", "bytes")
+var policyPublicFields = device.StringSet("list", "address", "name", "fib", "chain", "action", "src-address", "dst-address", "src-address-list", "dst-address-list", "dst-address-type", "routing-mark", "new-routing-mark", "jump-target", "passthrough", "routing-table", "gateway", "immediate-gw", "distance", "scope", "target-scope", "in-interface", "out-interface", "disabled", "active", "invalid", "comment", "protocol", "src-port", "dst-port", "packets", "bytes")
 
 // ReadPolicyObjects resolves roles using saved references, never live names.
 // It exposes only public fields and never changes the ownership baseline.
@@ -387,7 +388,7 @@ func ReadPolicyObjects(ctx context.Context, d *RouterOS, raw json.RawMessage) ([
 		}
 		editor := "settings"
 		if entry.Path == rosAddresses {
-			editor = firstNonEmpty(roles[entry.Config.text("list")], editor)
+			editor = device.FirstNonEmpty(roles[entry.Config.text("list")], editor)
 		}
 		fields := selectFields([]Row{shown}, policyPublicFields)[0]
 		result = append(result, ROSPolicyObject{entry.ID, kind, status, editor, entry.Config.text("address"), fields})

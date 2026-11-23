@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,7 +54,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 		previous = guardRaw(r.Extra["ipv6_pd_guard_state"])
 	}
 	d.SetIPv6PDGuardManifest(previous)
-	p.Managed = hasStoredState(previous)
+	p.Managed = device.HasStoredState(previous)
 	err := func() error {
 		live, e := pdSnapshot(ctx, d, !p.Enabled)
 		if e != nil {
@@ -75,7 +76,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 				}
 			}
 			if count > 1 {
-				return routerError(messagePDDuplicate)
+				return device.Error(messagePDDuplicate)
 			}
 		}
 		p.RollbackScript = pdNamed(live.scripts, pdRollback) != nil
@@ -136,7 +137,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 			}
 		}
 		if len(conflicts) > 0 {
-			return routerError(strings.Join(conflicts, "；"))
+			return device.Error(strings.Join(conflicts, "；"))
 		}
 		changes := []IPv6PDChange{}
 		source, _ := IPv6PDWatchSource(spec.LAN, spec.Pool)
@@ -227,7 +228,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 	return p, nil
 }
 func pdWithdrawPlan(d *RouterOS, p *IPv6PDGuardPlan, live pdLive, owned map[string]Row, previous json.RawMessage) error {
-	if !hasStoredState(previous) {
+	if !device.HasStoredState(previous) {
 		return nil
 	}
 	changes := []IPv6PDChange{}
@@ -290,7 +291,7 @@ func pdWithdrawPlan(d *RouterOS, p *IPv6PDGuardPlan, live pdLive, owned map[stri
 		p.Items = append(p.Items, IPv6PDItem{"state", pdRoleName("state"), "remove", fmt.Sprintf(messagePDStateDelete, lists, prefixes)})
 	}
 	if len(blockers) > 0 {
-		return routerError(strings.Join(blockers, "；"))
+		return device.Error(strings.Join(blockers, "；"))
 	}
 	slices.SortFunc(removed, func(a, b [2]string) int {
 		if c := strings.Compare(a[0], b[0]); c != 0 {

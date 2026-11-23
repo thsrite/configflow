@@ -9,19 +9,18 @@ package routers
 // and every write is read back whole.
 
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"net/netip"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 
-	"configflow/internal/devhttp"
+	"configflow/internal/jsondecode"
 	"configflow/internal/netipx"
+	"configflow/internal/routers/device"
 )
 
 var (
@@ -170,7 +169,7 @@ func ikuaiDHCPEntry(row ikuaiRow, bindings []ikuaiRow) (*DhcpDnsEntry, error) {
 	}
 	entry := &DhcpDnsEntry{ID: row.text("id"), Network: "", DNS: dns, Enabled: !row.is("enabled", "no"),
 		DNSExplicit: row.filled("dns1") && row.filled("dns2"), Attributes: encoded,
-		Blockers: uniqueStrings(blockers)}
+		Blockers: device.Unique(blockers)}
 	if network {
 		entry.Network = subnet.String()
 	}
@@ -241,22 +240,6 @@ func ikuaiBindingBlockers(binding ikuaiRow, subnet netip.Prefix, network bool) [
 	return blockers
 }
 
-// jsonEqual compares two JSON-shaped values structurally (decoded numbers as
-// written; arrays and objects compare deeply, never panicking).
-func jsonEqual(a, b any) bool {
-	normalize := func(v any) (any, bool) {
-		data, err := json.Marshal(v)
-		if err != nil {
-			return nil, false
-		}
-		var out any
-		return out, devhttp.DecodeJSON(data, &out) == nil
-	}
-	left, ok1 := normalize(a)
-	right, ok2 := normalize(b)
-	return ok1 && ok2 && reflect.DeepEqual(left, right)
-}
-
 func ikuaiDHCPTarget(state *DhcpDnsState, id string) (*DhcpDnsEntry, error) {
 	var found []*DhcpDnsEntry
 	for _, e := range state.Entries {
@@ -265,7 +248,7 @@ func ikuaiDHCPTarget(state *DhcpDnsState, id string) (*DhcpDnsEntry, error) {
 		}
 	}
 	if len(found) != 1 {
-		return nil, routerError(messageIkuaiDHCPTarget)
+		return nil, device.Error(messageIkuaiDHCPTarget)
 	}
 	return found[0], nil
 }
@@ -284,8 +267,8 @@ func (d *Ikuai) dhcpEditVerified(ctx context.Context, payload ikuaiRow) error {
 	if err != nil {
 		return err
 	}
-	if !jsonEqual(json.RawMessage(actual.Attributes), payload) || len(actual.Blockers) > 0 {
-		return routerError(messageIkuaiDHCPReadback)
+	if !device.JSONEqual(json.RawMessage(actual.Attributes), payload) || len(actual.Blockers) > 0 {
+		return device.Error(messageIkuaiDHCPReadback)
 	}
 	return nil
 }
@@ -307,7 +290,7 @@ func (d *Ikuai) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
 		}
 		slices.Sort(keys)
 		if op.Record == nil || !slices.Equal(keys, slices.Sorted(slices.Values(ikuaiDHCPFields))) {
-			return nil, routerError(messageIkuaiDHCPUndoRecord)
+			return nil, device.Error(messageIkuaiDHCPUndoRecord)
 		}
 		// A rollback has a complete before-image and a known ID; it must work
 		// even when the failed release cannot read state.
@@ -324,25 +307,25 @@ func (d *Ikuai) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
 	scopeOK := len(op.Scope) > 0 && jsondecode.Unmarshal(op.Scope, &scope) == nil && strings.HasPrefix(strings.TrimSpace(string(op.Scope)), "{")
 	text := func(v any) string { s, _ := v.(string); return s }
 	if !scopeOK || text(scope.ID) == "" || text(scope.Network) == "" || text(scope.Gateway) == "" {
-		return nil, routerError(messageIkuaiDHCPScope)
+		return nil, device.Error(messageIkuaiDHCPScope)
 	}
-	entry, err := CheckedDNSTarget(DNSCheck{ID: text(scope.ID), Network: text(scope.Network), Gateway: text(scope.Gateway)}, state)
+	entry, err := device.CheckedDNSTarget(DNSCheck{ID: text(scope.ID), Network: text(scope.Network), Gateway: text(scope.Gateway)}, state)
 	if err != nil {
 		return nil, err
 	}
 	// A missing "expected" never matches: the write needs the previewed form.
-	if entry.ID != op.ID.String() || op.Expected == nil || !jsonEqual(json.RawMessage(entry.Attributes), op.Expected) {
-		return nil, routerError(messageIkuaiDHCPDrift)
+	if entry.ID != op.ID.String() || op.Expected == nil || !device.JSONEqual(json.RawMessage(entry.Attributes), op.Expected) {
+		return nil, device.Error(messageIkuaiDHCPDrift)
 	}
 	var target []any
 	if json.Unmarshal(op.DNS, &target) != nil || len(target) != 1 {
-		return nil, routerError(messageIkuaiDHCPAddress)
+		return nil, device.Error(messageIkuaiDHCPAddress)
 	}
 	server, _ := target[0].(string)
 	address, ok := netipx.ParseAddr4(server)
 	if !ok || address.IsUnspecified() || address.IsMulticast() || address.IsLoopback() ||
 		address == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
-		return nil, routerError(messageIkuaiDHCPAddress)
+		return nil, device.Error(messageIkuaiDHCPAddress)
 	}
 	// The stored iKuai record keeps its numbers (decoded as float64, as the
 	// before-image has always been).
@@ -361,7 +344,7 @@ func (d *Ikuai) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
 			// An unreachable read does not prove the edit failed; the known
 			// ID and complete before-image still permit the restore.
 			if actual, findErr := ikuaiDHCPTarget(state, payload.text("id")); findErr == nil {
-				changed = !jsonEqual(json.RawMessage(actual.Attributes), before)
+				changed = !device.JSONEqual(json.RawMessage(actual.Attributes), before)
 			}
 		}
 		if changed {

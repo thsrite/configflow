@@ -3,6 +3,7 @@ package routers
 import (
 	"bufio"
 	"compress/gzip"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -200,13 +201,13 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 			ID    string
 			Agent *DNSAgent
 		}](t, in)
-		return DNSAgentSettings(args.ID, args.Agent), nil
+		return device.DNSAgentSettings(args.ID, args.Agent), nil
 	case "dns_ha_settings":
 		args := decode[struct {
 			ID          string
 			Agent, Peer *DNSAgent
 		}](t, in)
-		return DNSHASettings(args.ID, args.Agent, args.Peer), nil
+		return device.DNSHASettings(args.ID, args.Agent, args.Peer), nil
 	case "build_dns_report":
 		args := decode[struct {
 			DNS     DNSSettings
@@ -217,19 +218,19 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 		if args.Entries != nil {
 			state = &DhcpDnsState{Entries: args.Entries}
 		}
-		return BuildDNSReport(args.DNS, args.Gateway, state), nil
+		return device.BuildDNSReport(args.DNS, args.Gateway, state), nil
 	case "verify_dns":
 		args := decode[struct {
 			Check   DNSCheck
 			Entries []*DhcpDnsEntry
 		}](t, in)
-		return nil, VerifyDNS(args.Check, &DhcpDnsState{Entries: args.Entries})
+		return nil, device.VerifyDNS(args.Check, &DhcpDnsState{Entries: args.Entries})
 	case "select":
 		args := decode[struct {
 			Routes        []*RouteEntry
 			CIDR, Gateway string
 		}](t, in)
-		sel, _ := NewStaticRouteIndex(args.Routes).Select(args.CIDR, args.Gateway)
+		sel, _ := device.NewStaticRouteIndex(args.Routes).Select(args.CIDR, args.Gateway)
 		ids := func(routes []*RouteEntry) []string {
 			out := []string{}
 			for _, r := range routes {

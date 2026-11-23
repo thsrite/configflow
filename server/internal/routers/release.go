@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,13 +53,13 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		return nil, err
 	}
 	if checks == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	switch stage {
 	case StageIPv6FakeIP, StageIPv6Routes, StageIPv6DNS, StageIPv6PDGuard, StageDNSGuard:
 		ros, ok := d.(*RouterOS)
 		if !ok {
-			return nil, routerError(fmt.Sprintf(messageStageNeedsRouterOS, stage))
+			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, stage))
 		}
 		var err error
 		switch stage {
@@ -71,7 +72,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		case StageIPv6PDGuard:
 			var c IPv6PDGuardCheck
 			if jsondecode.Unmarshal(checks.IPv6PDGuard, &c) != nil {
-				return nil, routerError(messageOperationFormat)
+				return nil, device.Error(device.MessageOperationFormat)
 			}
 			err = VerifyIPv6PDGuard(ctx, ros, &c)
 		case StageDNSGuard:
@@ -80,52 +81,52 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		return nil, err
 	case StageDHCPDNS:
 		if checks.DHCPDNS == nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		live, err := d.ReadDHCPDNS(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return nil, VerifyDNS(*checks.DHCPDNS, live)
+		return nil, device.VerifyDNS(*checks.DHCPDNS, live)
 	case StageReturnRouting, StageReturnCleanup:
 		if a == nil {
-			return nil, routerError(messageNoReturnAgent)
+			return nil, device.Error(messageNoReturnAgent)
 		}
 		live, err := a.Status(ctx)
 		if err != nil {
 			return nil, err
 		}
 		if live == nil {
-			return nil, routerError(messageReturnIncomplete)
+			return nil, device.Error(messageReturnIncomplete)
 		}
 		if stage == StageReturnCleanup {
 			if live.Managed != nil && (live.Managed.Active || live.Managed.TablePresent) {
-				return nil, routerError(messageReturnStillPresent)
+				return nil, device.Error(messageReturnStillPresent)
 			}
 			return nil, nil
 		}
 		want := checks.ReturnRouting
 		if want == nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		if err = checkReturnAllocation(live, want); err != nil {
 			return nil, err
 		}
 		if live.Managed == nil || !live.Managed.TablePresent {
-			return nil, routerError(messageReturnNoTable)
+			return nil, device.Error(messageReturnNoTable)
 		}
 		var actual ReturnSpec
 		if jsondecode.Unmarshal(live.Managed.Spec, &actual) != nil {
-			return nil, routerError(messageReturnSpecMismatch)
+			return nil, device.Error(messageReturnSpecMismatch)
 		}
 		if !sameStrings(returnDest(&actual), returnDest(want)) {
-			return nil, routerError(messageReturnDestMismatch)
+			return nil, device.Error(messageReturnDestMismatch)
 		}
 		if !sameReturnSpec(live.Managed.Spec, want) {
-			return nil, routerError(messageReturnSpecMismatch)
+			return nil, device.Error(messageReturnSpecMismatch)
 		}
 		if !slices.ContainsFunc(live.FWMarkRules, func(r json.RawMessage) bool { return returnRuleMatches(r, want) }) {
-			return nil, routerError(messageReturnRuleMissing)
+			return nil, device.Error(messageReturnRuleMissing)
 		}
 		return nil, nil
 	}
@@ -140,44 +141,44 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		if checks.ROSPolicy != nil {
 			ros, ok := d.(*RouterOS)
 			if !ok {
-				return nil, routerError(fmt.Sprintf(messageStageNeedsRouterOS, stage))
+				return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, stage))
 			}
 			if err := VerifyROSPolicy(ctx, ros, checks.ROSPolicy); err != nil {
 				return nil, err
 			}
 		}
-		ix := NewStaticRouteIndex(state.Routes)
+		ix := device.NewStaticRouteIndex(state.Routes)
 		for _, c := range checks.Routes {
 			sel, _ := ix.Select(c.CIDR, c.Gateway)
 			candidates := sel.Candidates
-			if len(candidates) == 0 || slices.ContainsFunc(candidates, func(r *RouteEntry) bool { return !IsManaged(r.Comment) }) {
-				return nil, routerError(fmt.Sprintf(messageRouteVerify, c.CIDR, c.Gateway))
+			if len(candidates) == 0 || slices.ContainsFunc(candidates, func(r *RouteEntry) bool { return !device.IsManaged(r.Comment) }) {
+				return nil, device.Error(fmt.Sprintf(messageRouteVerify, c.CIDR, c.Gateway))
 			}
 		}
 		if checks.PolicyRoutes != nil {
 			for _, c := range *checks.PolicyRoutes {
 				r := PolicyRoute(state, c.Comment)
-				if r == nil || !PolicyRouteOK(r, c.Gateway) || !sameCanonical(r.Dst, c.Dst) {
-					return nil, routerError(fmt.Sprintf(messagePolicyVerify, c.Comment, c.Gateway, c.Gateway))
+				if r == nil || !device.PolicyRouteOK(r, c.Gateway) || !sameCanonical(r.Dst, c.Dst) {
+					return nil, device.Error(fmt.Sprintf(messagePolicyVerify, c.Comment, c.Gateway, c.Gateway))
 				}
 			}
 		}
 		for _, r := range state.Routes {
 			if slices.Contains(checks.RemovedRoutes, r.ID) {
-				return nil, routerError(messageDeletedRoutePresent)
+				return nil, device.Error(messageDeletedRoutePresent)
 			}
 		}
 		if checks.RestoredRoutes != nil {
 			for _, c := range *checks.RestoredRoutes {
 				if !slices.ContainsFunc(state.Routes, func(r *RouteEntry) bool { return r.Dst == c.CIDR && r.Gateway == c.Gateway && r.Enabled }) {
-					return nil, routerError(fmt.Sprintf(messageRestoredRouteMissing, c.CIDR, c.Gateway))
+					return nil, device.Error(fmt.Sprintf(messageRestoredRouteMissing, c.CIDR, c.Gateway))
 				}
 			}
 		}
 		if checks.RemovedPolicyRoutes != nil {
 			for _, r := range state.PolicyRoutes {
 				if slices.Contains(*checks.RemovedPolicyRoutes, r.ID) {
-					return nil, routerError(messageDeletedPolicyPresent)
+					return nil, device.Error(messageDeletedPolicyPresent)
 				}
 			}
 		}
@@ -227,7 +228,7 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 		return d.Apply(ctx, raw)
 	}
 	if a == nil {
-		return nil, routerError(messageNoReturnAgent)
+		return nil, device.Error(messageNoReturnAgent)
 	}
 	status, err := a.Status(ctx)
 	if err != nil {
@@ -249,13 +250,13 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 			AdoptLegacy bool `json:"adopt_legacy"`
 		}
 		if jsondecode.Unmarshal(op.Spec, &s) != nil || jsondecode.Unmarshal(op.Spec, &extra) != nil || (s.SafetyVersion != 1 && s.SafetyVersion != 2) || extra.AdoptLegacy {
-			return nil, routerError(messageReturnHandshake)
+			return nil, device.Error(messageReturnHandshake)
 		}
 		if err = checkReturnAllocation(status, &s); err != nil {
 			return nil, err
 		}
 		if !compensating && !returnPreviousHolds(status, op.Previous) {
-			return nil, routerError(messageReturnChanged)
+			return nil, device.Error(messageReturnChanged)
 		}
 		if err = ctx.Err(); err != nil {
 			return nil, err
@@ -263,10 +264,10 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 		err = a.Apply(ctx, op.Spec)
 	} else {
 		if blockers := ReturnSafetyBlockers(status, false); len(blockers) > 0 {
-			return nil, routerError(strings.Join(blockers, "；"))
+			return nil, device.Error(strings.Join(blockers, "；"))
 		}
 		if !compensating && !returnPreviousHolds(status, op.Previous) {
-			return nil, routerError(messageReturnChanged)
+			return nil, device.Error(messageReturnChanged)
 		}
 		if err = ctx.Err(); err != nil {
 			return nil, err
@@ -332,10 +333,10 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 		return fail(err)
 	}
 	if plan == nil {
-		return fail(routerError(messageOperationFormat))
+		return fail(device.Error(device.MessageOperationFormat))
 	}
 	if len(plan.Blockers) > 0 {
-		return fail(routerError(fmt.Sprintf(messageReleaseBlockers, strings.Join(plan.Blockers, "；"))))
+		return fail(device.Error(fmt.Sprintf(messageReleaseBlockers, strings.Join(plan.Blockers, "；"))))
 	}
 	var unchanged *RouterState
 	for _, stage := range plan.Stages {
@@ -345,7 +346,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 		}
 		if stage.Enabled != nil && !*stage.Enabled {
 			if len(stage.Ops) > 0 {
-				return fail(routerError(messageDisabledWrites))
+				return fail(device.Error(messageDisabledWrites))
 			}
 			continue
 		}
@@ -377,7 +378,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 			continue
 		}
 		if plan.Checks == nil {
-			return fail(routerError(messageOperationFormat))
+			return fail(device.Error(device.MessageOperationFormat))
 		}
 		var checked *DhcpDnsState
 		if current == StageDHCPDNS || (current == StageDNSGuard && plan.Checks.DNSGuard != nil && len(plan.Checks.DNSGuard.Roles) > 0) {
@@ -395,20 +396,20 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 			}
 			if current == StageDHCPDNS {
 				if plan.Checks.DHCPDNS == nil {
-					return fail(routerError(messageOperationFormat))
+					return fail(device.Error(device.MessageOperationFormat))
 				}
 				checked, err = d.ReadDHCPDNS(work)
 				if err != nil {
 					return fail(err)
 				}
-				if _, err = CheckedDNSTarget(*plan.Checks.DHCPDNS, checked); err != nil {
+				if _, err = device.CheckedDNSTarget(*plan.Checks.DHCPDNS, checked); err != nil {
 					return fail(err)
 				}
 			}
 		}
 		if current == StageIPv6DNS {
 			if plan.Checks.DHCPDNS == nil {
-				return fail(routerError(messageIPv6DNSNeedsDHCP))
+				return fail(device.Error(messageIPv6DNSNeedsDHCP))
 			}
 			if _, err := Verify(work, StageDHCPDNS, plan.Checks, d, a, nil); err != nil {
 				return fail(err)
@@ -466,7 +467,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 					invalidateRelease(d)
 					err := batch.ApplyMany(held, ops[i:end], func(op, undo json.RawMessage) { finished(op, undo, true) })
 					if err != nil {
-						if u := UndoOf(err); effectful(u) {
+						if u := device.UndoOf(err); effectful(u) {
 							for n := i; n < end; n++ {
 								if !seen[n-i] {
 									finished(ops[n], u, false)
@@ -479,7 +480,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 				} else {
 					undo, err := applyRelease(held, ops[i], d, a, false)
 					if err != nil {
-						if u := UndoOf(err); effectful(u) {
+						if u := device.UndoOf(err); effectful(u) {
 							finished(ops[i], u, false)
 						}
 						return err
@@ -641,5 +642,5 @@ func returnSpecProof(live, expected json.RawMessage) bool {
 	}
 	delete(have, "proxy_dst")
 	delete(want, "proxy_dst")
-	return jsonEqual(have, want)
+	return device.JSONEqual(have, want)
 }

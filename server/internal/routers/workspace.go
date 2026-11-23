@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"encoding/json"
 
 	"configflow/internal/model"
@@ -123,9 +124,9 @@ func ReadWorkspace(config *model.Config, r *Router, profile, name, defaultProfil
 	}
 	out := Workspace{ProfileID: profile, ProfileName: name, Revision: revision, NamesRevision: names, Router: r.View(), Sources: WorkspaceSources{policies, oxidns.ToJSON(policies.Policies)}, SourceAgents: []WorkspacePeer{}, Gateways: []WorkspaceGateway{}, RuleSets: []WorkspaceRule{}, OxidnsRevision: settingsRevision}
 	for _, a := range agents {
-		n := orText(a.Name, a.ID)
-		if a.ServiceType == "oxidns" && orText(a.ProfileID, defaultProfile) == profile {
-			out.SourceAgents = append(out.SourceAgents, WorkspacePeer{a.ID, n, a.Host, orText(a.Status, "offline")})
+		n := device.OrText(a.Name, a.ID)
+		if a.ServiceType == "oxidns" && device.OrText(a.ProfileID, defaultProfile) == profile {
+			out.SourceAgents = append(out.SourceAgents, WorkspacePeer{a.ID, n, a.Host, device.OrText(a.Status, "offline")})
 		}
 		if a.ServiceType == "mihomo" {
 			out.Gateways = append(out.Gateways, WorkspaceGateway{a.ID, n, a.Host})
@@ -147,7 +148,7 @@ func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
 		if rule.ItemType != "ruleset" {
 			continue
 		}
-		row := WorkspaceRule{ID: rule.ID, Name: orText(rule.Name, rule.ID), LibraryRuleID: rule.LibraryRuleID}
+		row := WorkspaceRule{ID: rule.ID, Name: device.OrText(rule.Name, rule.ID), LibraryRuleID: rule.LibraryRuleID}
 		if rule.Policy != nil {
 			row.Policy = *rule.Policy
 		}
@@ -161,7 +162,7 @@ func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
 func SaveWorkspace(config json.RawMessage, id string, body WorkspaceRequest) (json.RawMessage, error) {
 	r := findSyncRouter(config, id)
 	if r == nil || r.Type != "routeros" {
-		return nil, rosError(KindConflict, messageWorkspaceStale)
+		return nil, device.KindError(KindConflict, messageWorkspaceStale)
 	}
 	rev, err := WorkspaceRevision(config, r)
 	if err != nil {
@@ -176,7 +177,7 @@ func SaveWorkspace(config json.RawMessage, id string, body WorkspaceRequest) (js
 		return nil, err
 	}
 	if rev != body.Revision || body.Policies != nil && names != body.NamesRevision {
-		return nil, rosError(KindConflict, messageWorkspaceStale)
+		return nil, device.KindError(KindConflict, messageWorkspaceStale)
 	}
 	updated, err := Normalize(body.Router, r)
 	if err != nil {

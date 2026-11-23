@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -13,7 +14,7 @@ import (
 func r13Stage(key string, kinds ...string) Stage {
 	s := stageOf(key, false, []Op{})
 	for _, kind := range kinds {
-		s.Ops = append(s.Ops, OpHead{kind, "synthetic"})
+		s.Ops = append(s.Ops, OpHead{Kind: kind, Summary: "synthetic"})
 	}
 	return s
 }
@@ -77,16 +78,16 @@ func TestR13SummariesPython(t *testing.T) {
 	}
 	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			before := mustPolicyJSON(c.report)
+			before := device.JSON(c.report)
 			actual := Summarize(c.report, c.plan)
 			if !reflect.DeepEqual(expected[i], actual) {
 				t.Fatalf("Python %+v Go %+v", expected[i], actual)
 			}
-			fromJSON, e := SummarizeJSON(mustPolicyJSON(c.report), mustPolicyJSON(c.plan))
+			fromJSON, e := SummarizeJSON(device.JSON(c.report), device.JSON(c.plan))
 			if e != nil || !reflect.DeepEqual(actual, fromJSON) {
 				t.Fatalf("C07 projection differs %+v %v", fromJSON, e)
 			}
-			if !bytes.Equal(before, mustPolicyJSON(c.report)) {
+			if !bytes.Equal(before, device.JSON(c.report)) {
 				t.Fatal("summary mutated report")
 			}
 		})

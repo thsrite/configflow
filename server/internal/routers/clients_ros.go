@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -108,7 +109,7 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 		}
 	}
 	for _, row := range leases {
-		ip := routerdoc.IPv4(firstNonEmpty(row["active-address"], row["address"]))
+		ip := routerdoc.IPv4(device.FirstNonEmpty(row["active-address"], row["address"]))
 		if ip == "" || rosFlag(row["disabled"]) {
 			continue
 		}
@@ -127,7 +128,7 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 				}
 			}
 		}
-		l := clientLease{strings.ToLower(row["status"]), routerdoc.NormalizeMAC(firstNonEmpty(row["active-mac-address"], row["mac-address"])), ifaces[name], firstNonEmpty(strings.TrimSpace(row["comment"]), strings.TrimSpace(row["host-name"])), ClientDuration(row["last-seen"]), period, rosFlag(row["dynamic"])}
+		l := clientLease{strings.ToLower(row["status"]), routerdoc.NormalizeMAC(device.FirstNonEmpty(row["active-mac-address"], row["mac-address"])), ifaces[name], device.FirstNonEmpty(strings.TrimSpace(row["comment"]), strings.TrimSpace(row["host-name"])), ClientDuration(row["last-seen"]), period, rosFlag(row["dynamic"])}
 		old, exists := byIP[ip]
 		if !exists || l.last != nil && (old.last == nil || *l.last < *old.last) {
 			byIP[ip] = l
@@ -146,8 +147,8 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 		e, hasARP := entries[ip]
 		l, hasLease := byIP[ip]
 		s := routerdoc.NewSighting(ip)
-		s.MAC = firstNonEmpty(e.mac, l.mac)
-		s.Hostname = firstNonEmpty(l.name, e.name)
+		s.MAC = device.FirstNonEmpty(e.mac, l.mac)
+		s.Hostname = device.FirstNonEmpty(l.name, e.name)
 		s.LastSeen = l.last
 		if hasARP {
 			s.AddSource("arp")
@@ -206,7 +207,7 @@ func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Dur
 	}
 	var items []json.RawMessage
 	if replyKind(v) != '[' || jsondecode.Decode(v, &items) != nil {
-		return nil, false, routerError(fmt.Sprintf(messageROSListFormat, path))
+		return nil, false, device.Error(fmt.Sprintf(device.MessageROSListFormat, path))
 	}
 	rows := make([]Row, 0, len(items))
 	complete := true
@@ -262,7 +263,7 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 						if err == nil {
 							a.answered = &v
 							a.kind = "arp"
-						} else if routerErrorKind(err) == KindPingNotPermitted {
+						} else if device.RouterErrorKind(err) == KindPingNotPermitted {
 							denied.Store(true)
 						}
 					}
@@ -271,7 +272,7 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 						if err == nil {
 							a.answered = &v
 							a.kind = "icmp"
-						} else if routerErrorKind(err) == KindPingNotPermitted {
+						} else if device.RouterErrorKind(err) == KindPingNotPermitted {
 							denied.Store(true)
 						}
 					}
@@ -344,7 +345,7 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 	listing := func(path string) ([]Row, error) {
 		left := time.Until(opts.Deadline)
 		if left < time.Second {
-			return nil, routerError(messageClientsSlow)
+			return nil, device.Error(messageClientsSlow)
 		}
 		rows, complete, err := d.clientList(ctx, path, min(rosTimeout, left))
 		if !complete {
@@ -388,7 +389,7 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 		}
 	}
 	if len(lan) == 0 {
-		return nil, routerError(messageClientsNoInterface)
+		return nil, device.Error(messageClientsNoInterface)
 	}
 	for _, row := range addresses {
 		value := row["address"]

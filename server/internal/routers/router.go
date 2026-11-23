@@ -3,13 +3,13 @@ package routers
 import (
 	"bytes"
 	"cmp"
+	"configflow/internal/routers/device"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	"configflow/internal/model"
@@ -108,7 +108,7 @@ func (r Router) MarshalJSON() ([]byte, error) {
 		}
 		_ = json.Unmarshal(encoded, &after)
 		for key, value := range after {
-			if r.explicit[key] || !jsonEqual(value, before[key]) {
+			if r.explicit[key] || !device.JSONEqual(value, before[key]) {
 				if err = stored.SetJSON(key, value); err != nil {
 					return nil, err
 				}
@@ -130,7 +130,7 @@ func (r Router) MarshalJSON() ([]byte, error) {
 		// Only the declared device-state members are kept; a stored member the
 		// router record does not declare is dropped (O18 T1c).
 		for key, value := range r.Extra {
-			if routerStateField(key) && !jsonEqual(value, original[key]) {
+			if routerStateField(key) && !device.JSONEqual(value, original[key]) {
 				if err = stored.SetJSON(key, value); err != nil {
 					return nil, err
 				}
@@ -154,7 +154,7 @@ func routerStateField(key string) bool {
 
 // State is a stored device-state field (Extra), nil when absent or falsy.
 func (r *Router) State(key string) json.RawMessage {
-	if v := r.Extra[key]; hasStoredState(v) {
+	if v := r.Extra[key]; device.HasStoredState(v) {
 		return v
 	}
 	return nil
@@ -206,36 +206,11 @@ func (r *Router) View() RouterView {
 	return v
 }
 
-// hasStoredState keeps opaque nonempty ownership evidence fail-closed, including
-// malformed records. Legacy empty/null/false/zero receipts carry no ownership.
-func hasStoredState(raw json.RawMessage) bool {
-	var compact bytes.Buffer
-	if json.Compact(&compact, raw) != nil {
-		return false
-	}
-	switch s := compact.String(); s {
-	case "", "null", "false", `""`, "[]", "{}":
-		return false
-	default:
-		f, err := strconv.ParseFloat(s, 64)
-		return err != nil || f != 0
-	}
-}
-
 // storedText uses the shared lossless text codec for display text.
 func storedText(raw json.RawMessage) string {
 	var text model.String
 	_ = json.Unmarshal(raw, &text)
 	return string(text)
-}
-
-// requestString is strict validation of a user identity, never a coercion.
-func requestString(raw json.RawMessage) (string, bool) {
-	var text *string
-	if json.Unmarshal(raw, &text) != nil || text == nil {
-		return "", false
-	}
-	return *text, true
 }
 
 // idList decodes a list of non-empty rule-set ids, de-duplicated (falsy means none).
@@ -272,27 +247,27 @@ func NormalizeDNSGuard(raw json.RawMessage, routerType, dnsAgentID string) (DNSG
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil {
-		return guard, invalid("强制 DNS 设置格式无效")
+		return guard, device.Invalid("强制 DNS 设置格式无效")
 	}
 	for key := range fields {
 		if !slices.Contains([]string{"enabled", "block_dot", "failover", "bypass"}, key) {
-			return guard, invalid("强制 DNS 设置格式无效")
+			return guard, device.Invalid("强制 DNS 设置格式无效")
 		}
 	}
 	for key, dst := range map[string]*bool{"enabled": &guard.Enabled, "block_dot": &guard.BlockDoT, "failover": &guard.Failover} {
 		var ok bool
 		if *dst, ok = boolField(fields, key, *dst); !ok {
-			return guard, invalid("强制 DNS 的开关必须为布尔值")
+			return guard, device.Invalid("强制 DNS 的开关必须为布尔值")
 		}
 	}
 	var items []*string
 	if v, ok := fields["bypass"]; ok && (json.Unmarshal(v, &items) != nil || items == nil || slices.Contains(items, nil)) {
-		return guard, invalid("放行设备必须是 IPv4 地址或网段列表")
+		return guard, device.Invalid("放行设备必须是 IPv4 地址或网段列表")
 	}
 	for _, item := range items {
 		network, ok := netipx.ParseNetwork4(strings.TrimSpace(*item), false)
 		if !ok {
-			return guard, invalid("放行设备「" + *item + "」不是有效的 IPv4 地址或网段")
+			return guard, device.Invalid("放行设备「" + *item + "」不是有效的 IPv4 地址或网段")
 		}
 		if text := network.String(); !slices.Contains(guard.Bypass, text) {
 			guard.Bypass = append(guard.Bypass, text)
@@ -300,11 +275,11 @@ func NormalizeDNSGuard(raw json.RawMessage, routerType, dnsAgentID string) (DNSG
 	}
 	switch {
 	case len(items) > 64:
-		return guard, invalid("放行设备最多 64 项")
+		return guard, device.Invalid("放行设备最多 64 项")
 	case guard.Enabled && routerType != "routeros":
-		return guard, invalid("强制局域网 DNS 走 OxiDNS 仅支持 RouterOS")
+		return guard, device.Invalid("强制局域网 DNS 走 OxiDNS 仅支持 RouterOS")
 	case guard.Enabled && dnsAgentID == "":
-		return guard, invalid("请先选择 DHCP DNS 服务器（OxiDNS Agent），强制 DNS 使用同一台设备")
+		return guard, device.Invalid("请先选择 DHCP DNS 服务器（OxiDNS Agent），强制 DNS 使用同一台设备")
 	}
 	return guard, nil
 }
@@ -321,10 +296,10 @@ func NormalizePDGuard(raw json.RawMessage, routerType string) (PDGuard, error) {
 		guard.Enabled, ok = boolField(fields, "enabled", false)
 	}
 	if !ok || len(fields) > 1 || len(fields) == 1 && fields["enabled"] == nil {
-		return guard, invalid("IPv6 前缀变化保护的开关必须为布尔值")
+		return guard, device.Invalid("IPv6 前缀变化保护的开关必须为布尔值")
 	}
 	if guard.Enabled && routerType != "routeros" {
-		return guard, invalid("IPv6 前缀变化保护仅支持 RouterOS")
+		return guard, device.Invalid("IPv6 前缀变化保护仅支持 RouterOS")
 	}
 	return guard, nil
 }
@@ -342,7 +317,7 @@ var NewRouterID = func() string {
 func Normalize(body []byte, existing *Router) (*Router, error) {
 	var payload map[string]json.RawMessage
 	if json.Unmarshal(body, &payload) != nil || payload == nil {
-		return nil, invalid("路由器参数必须是对象")
+		return nil, device.Invalid("路由器参数必须是对象")
 	}
 	// m is the merged record: the stored settings (ip_rule_sets without the
 	// policy selections), then the edited fields of the payload.
@@ -362,7 +337,7 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 			}
 			if raw, present := fields[selection.key]; present {
 				if _, valid := idList(raw); !valid {
-					return nil, invalid(selection.message)
+					return nil, device.Invalid(selection.message)
 				}
 			}
 		}
@@ -376,12 +351,12 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 	}
 	for _, key := range []string{"type", "endpoint", "username", "password", "proxy_gateway_agent_id", "dns_agent_id"} {
 		if raw, present := payload[key]; present {
-			if _, valid := requestString(raw); !valid {
-				return nil, invalid(messageRouterFieldType)
+			if _, valid := device.RequestString(raw); !valid {
+				return nil, device.Invalid(messageRouterFieldType)
 			}
 		}
 	}
-	if s, ok := requestString(payload["password"]); ok && s != "" {
+	if s, ok := device.RequestString(payload["password"]); ok && s != "" {
 		r.Password = s
 		r.explicit["password"] = true
 	}
@@ -392,7 +367,7 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 		var ok bool
 		r.VerifyTLS, ok = boolField(m, "verify_tls", true)
 		if !ok {
-			return nil, invalid(messageRouterFieldType)
+			return nil, device.Invalid(messageRouterFieldType)
 		}
 		_ = raw
 	}
@@ -444,7 +419,7 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 		{r.Password == "", "请填写密码"},
 	} {
 		if check.failed {
-			return nil, invalid(check.message)
+			return nil, device.Invalid(check.message)
 		}
 	}
 	r.DNSGuard, r.IPv6PDGuard = nil, nil
@@ -488,7 +463,7 @@ func RedactRouters(document []byte) ([]byte, error) {
 			delete(item, key)
 		}
 		for _, key := range []string{"username", "endpoint"} {
-			if hasStoredState(item[key]) {
+			if device.HasStoredState(item[key]) {
 				item[key] = json.RawMessage(`"[REDACTED]"`)
 			}
 		}

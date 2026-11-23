@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -249,10 +250,10 @@ func TestR11PDLostCompensationDelete(t *testing.T) {
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PATCH", Path: pdClients + "/*C0", Count: 1, Status: 403}, {Method: "DELETE", Path: pdSchedulers + "/*66", Count: 1, AfterCommit: true, LoseReply: true}}})
 	p := r11PDPlan(t, d, true)
 	_, e := d.ApplyIPv6PDGuard(t.Context(), *p.Ops[0].(*IPv6PDGuardSync))
-	if e == nil || routerErrorKind(e) == KindRollback {
+	if e == nil || device.RouterErrorKind(e) == KindRollback {
 		t.Fatalf("lost DELETE reply should be proven absent, retaining original failure only: %v", e)
 	}
-	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || hasStoredState(d.ipv6PDGuardManifest) {
+	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || device.HasStoredState(d.ipv6PDGuardManifest) {
 		t.Fatal("compensation did not finish")
 	}
 }
@@ -263,7 +264,7 @@ func TestR11PDPartialRestoreRemapsProvenIDs(t *testing.T) {
 	u := r11PDApply(t, d, r11PDPlan(t, d, false))
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: pdSchedulers, Count: 1, Status: 403}}})
 	e := d.RestoreIPv6PDGuard(t.Context(), *u)
-	if routerErrorKind(e) != KindRollback {
+	if device.RouterErrorKind(e) != KindRollback {
 		t.Fatal("expected partial rollback", e)
 	}
 	current := r11Manifest(t, d)
@@ -310,7 +311,7 @@ func TestR11PDRefusedCompensationKeepsBirthProof(t *testing.T) {
 				p := r11PDPlan(t, d, true)
 				_, e = d.ApplyIPv6PDGuard(t.Context(), *p.Ops[0].(*IPv6PDGuardSync))
 			}
-			if routerErrorKind(e) != KindRollback {
+			if device.RouterErrorKind(e) != KindRollback {
 				t.Fatal(e)
 			}
 			var m IPv6PDManifest
@@ -413,7 +414,7 @@ func TestR11DNSFinalReadAndRollbackProtectsRA(t *testing.T) {
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6ND: {"*E0": {"ra-lifetime": "1h"}}}}})
 	raw, _ := json.Marshal(u)
-	if _, e = d.Apply(t.Context(), raw); routerErrorKind(e) != KindRollback {
+	if _, e = d.Apply(t.Context(), raw); device.RouterErrorKind(e) != KindRollback {
 		t.Fatal("undo overwrote external RA", e)
 	}
 	if findFake(f.Snapshot().Tables[rosIPv6ND], "*E0")["advertise-dns"] != "no" {
@@ -849,7 +850,7 @@ func TestR11PDRestoredReplySurvivesFailedReadback(t *testing.T) {
 	previous := r11Manifest(t, d)
 	u := r11PDApply(t, d, r11PDPlan(t, d, false))
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "GET", Path: pdScripts, Count: 3, Status: 403}}})
-	if e := d.RestoreIPv6PDGuard(t.Context(), *u); routerErrorKind(e) != KindRollback {
+	if e := d.RestoreIPv6PDGuard(t.Context(), *u); device.RouterErrorKind(e) != KindRollback {
 		t.Fatal("unverified restore reported success", e)
 	}
 	m := r11Manifest(t, d)

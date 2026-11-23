@@ -1,4 +1,4 @@
-package routers
+package device
 
 import (
 	"net/netip"
@@ -46,8 +46,8 @@ type DNSSettings struct {
 	HA      *DNSHA `json:"dns_ha,omitempty"`
 }
 
-// clientIPv4 is the canonical text of an IPv4 address clients can reach, or "".
-func clientIPv4(host string) string {
+// ClientIPv4 is the canonical text of an IPv4 address clients can reach, or "".
+func ClientIPv4(host string) string {
 	a, ok := netipx.ParseAddr4(host)
 	if !ok || a.IsUnspecified() || a.IsLoopback() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
 		return ""
@@ -67,7 +67,7 @@ func DNSAgentSettings(agentID string, agent *DNSAgent) DNSSettings {
 	case agent.Status != "online":
 		s.Error = "所选 DNS Agent 离线，无法下发 DHCP DNS"
 	default:
-		if s.Server = clientIPv4(agent.Host); s.Server == "" {
+		if s.Server = ClientIPv4(agent.Host); s.Server == "" {
 			s.Error = "所选 DNS Agent 的主机地址必须是客户端可访问的 IPv4 地址"
 		}
 	}
@@ -98,7 +98,7 @@ func DNSHASettings(agentID string, agent, peer *DNSAgent) DNSSettings {
 	case agent.Status != "online" && peer.Status != "online":
 		s.Error = "所选 DNS 高可用的两台 Agent 均离线，无法下发 DHCP DNS"
 	default:
-		vip, hosts := clientIPv4(ha.VIP), []string{clientIPv4(agent.Host), clientIPv4(peer.Host)}
+		vip, hosts := ClientIPv4(ha.VIP), []string{ClientIPv4(agent.Host), ClientIPv4(peer.Host)}
 		if vip == "" || hosts[0] == "" || hosts[1] == "" {
 			s.Error = "所选 DNS 高可用的虚拟 IP 和两台主机地址必须是客户端可访问的 IPv4 地址"
 		} else {
@@ -113,7 +113,7 @@ func DNSHASettings(agentID string, agent, peer *DNSAgent) DNSSettings {
 func MatchingNetworks(state *DhcpDnsState, gateway string) ([]*DhcpDnsEntry, error) {
 	address, ok := netipx.ParseAddr4(gateway)
 	if !ok {
-		return nil, routerError("无法确定 DHCP DNS 下发范围：mihomo 网关不是有效 IPv4 地址")
+		return nil, Error("无法确定 DHCP DNS 下发范围：mihomo 网关不是有效 IPv4 地址")
 	}
 	matches := []*DhcpDnsEntry{}
 	seen := map[string]bool{}
@@ -122,7 +122,7 @@ func MatchingNetworks(state *DhcpDnsState, gateway string) ([]*DhcpDnsEntry, err
 			continue
 		}
 		if e.ID == "" || seen[e.ID] {
-			return nil, routerError("DHCP 配置缺少唯一标识，无法安全下发 DNS")
+			return nil, Error("DHCP 配置缺少唯一标识，无法安全下发 DNS")
 		}
 		seen[e.ID] = true
 		network, ok := netipx.ParseNetwork4(e.Network, false)
@@ -131,7 +131,7 @@ func MatchingNetworks(state *DhcpDnsState, gateway string) ([]*DhcpDnsEntry, err
 			if len(e.Blockers) > 0 {
 				message += "：" + strings.Join(e.Blockers, "；")
 			}
-			return nil, routerError(message)
+			return nil, Error(message)
 		}
 		if network.Contains(address) {
 			matches = append(matches, e)
@@ -221,10 +221,10 @@ func CheckedDNSTarget(check DNSCheck, state *DhcpDnsState) (*DhcpDnsEntry, error
 		return nil, err
 	}
 	if len(matches) != 1 || matches[0].ID != check.ID || matches[0].Network != check.Network {
-		return nil, routerError("回读校验失败：DHCP DNS 的目标网段发生变化")
+		return nil, Error("回读校验失败：DHCP DNS 的目标网段发生变化")
 	}
 	if e := matches[0]; len(e.Blockers) > 0 {
-		return nil, routerError("回读校验失败：" + strings.Join(e.Blockers, "；"))
+		return nil, Error("回读校验失败：" + strings.Join(e.Blockers, "；"))
 	}
 	return matches[0], nil
 }
@@ -236,7 +236,7 @@ func VerifyDNS(check DNSCheck, state *DhcpDnsState) error {
 		return err
 	}
 	if !slices.Equal(e.DNS, check.DNS) || !e.DNSExplicit {
-		return routerError("回读校验失败：DHCP DNS 与所选服务器不一致")
+		return Error("回读校验失败：DHCP DNS 与所选服务器不一致")
 	}
 	return nil
 }

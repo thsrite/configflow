@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"io"
@@ -41,7 +42,7 @@ func TestR12A01ReturnAgentRawWireAndRedaction(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	raw := mustPolicyJSON(map[string]any{"id": "gateway", "name": "synthetic-api", "host": host, "port": n, "token": "synthetic-token", "service_type": "mihomo", "profile_id": "default", "status": "online"})
+	raw := device.JSON(map[string]any{"id": "gateway", "name": "synthetic-api", "host": host, "port": n, "token": "synthetic-token", "service_type": "mihomo", "profile_id": "default", "status": "online"})
 	var record model.Agent
 	var view model.Agent
 	if e = json.Unmarshal(raw, &record); e != nil {
@@ -61,7 +62,7 @@ func TestR12A01ReturnAgentRawWireAndRedaction(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if !strings.Contains(string(mustPolicyJSON(status)), "9007199254740993") {
+	if !strings.Contains(string(device.JSON(status)), "9007199254740993") {
 		t.Fatal("unknown field/large integer lost")
 	}
 	spec := json.RawMessage(`{"router_ip":"192.0.2.1","table":104,"priority":104,"mark":"0x400000","safety_version":2}`)

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/fsx"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -79,13 +80,13 @@ type RuleSyncStatus struct {
 
 // Public projects a receipt without exposing its private baseline.
 func (r RuleSyncReceipt) Public(enabled bool) RuleSyncStatus {
-	out := RuleSyncStatus{Enabled: enabled, Status: orText(r.Status, "waiting"), Message: orText(r.Message, messageSyncBaseline), CheckedAt: r.CheckedAt, SyncedAt: r.SyncedAt, UpdatedAt: r.UpdatedAt, Added: r.Added, Removed: r.Removed, Ready: r.Baseline != nil, Log: append([]RuleSyncLog{}, r.Log[max(0, len(r.Log)-20):]...), Rules: []RuleSyncPublicRule{}}
+	out := RuleSyncStatus{Enabled: enabled, Status: device.OrText(r.Status, "waiting"), Message: device.OrText(r.Message, messageSyncBaseline), CheckedAt: r.CheckedAt, SyncedAt: r.SyncedAt, UpdatedAt: r.UpdatedAt, Added: r.Added, Removed: r.Removed, Ready: r.Baseline != nil, Log: append([]RuleSyncLog{}, r.Log[max(0, len(r.Log)-20):]...), Rules: []RuleSyncPublicRule{}}
 	rules := r.Rules
 	if len(rules) == 0 && r.Baseline != nil {
 		rules = r.Baseline.Rules
 	}
 	order := append([]string{}, r.RuleOrder...)
-	seen := stringSet(order...)
+	seen := device.StringSet(order...)
 	for _, id := range sortedSyncKeys(rules) {
 		if !seen[id] {
 			order = append(order, id)

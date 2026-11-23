@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,7 +70,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 	}
 	d, ok := driver.(*RouterOS)
 	if !ok {
-		return ErrNotPorted
+		return device.ErrNotPorted
 	}
 	defer d.ReuseAddressReads()()
 	timestamp := syncNow(work)
@@ -88,21 +89,21 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		}
 		current := findSyncRouter(latest, r.ID)
 		if current == nil {
-			return routerError(messageSyncCaptureChanged)
+			return device.Error(messageSyncCaptureChanged)
 		}
 		liveSignature, err := s.SyncControls(work, latest, current)
 		if err != nil {
 			return err
 		}
 		if liveSignature != signature {
-			return routerError(messageSyncCaptureChanged)
+			return device.Error(messageSyncCaptureChanged)
 		}
 		pinned, err := ComputeDesired(work, config, desired.ProxyGateway, r.StaticRuleSets(), syncIPLoader(records))
 		if err != nil {
 			return err
 		}
 		if !syncCIDRsEqual(pinned.ProxyCIDRs, desired.ProxyCIDRs) {
-			return routerError(messageSyncCaptureCache)
+			return device.Error(messageSyncCaptureCache)
 		}
 		if len(r.RosPolicyRuleSets) > 0 {
 			expected, err := ComputeDesired(work, config, desired.ProxyGateway, r.RosPolicyRuleSets, syncIPLoader(records))
@@ -119,8 +120,8 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 					destinations[item.CIDR] = true
 				}
 			}
-			if manifest == nil || manifest.Spec == nil || !maps.Equal(destinations, stringSet(manifest.Spec.Destinations...)) {
-				return routerError(messageSyncCapturePolicy)
+			if manifest == nil || manifest.Spec == nil || !maps.Equal(destinations, device.StringSet(manifest.Spec.Destinations...)) {
+				return device.Error(messageSyncCapturePolicy)
 			}
 			if err = VerifyROSPolicy(work, d, &ROSPolicyCheck{Spec: manifest.Spec, Previous: d.policyManifest}); err != nil {
 				return err
@@ -156,10 +157,10 @@ func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *R
 	}
 	current := findSyncRouter(latest, r.ID)
 	publication := repo.RouterPublicationJSON{}
-	if current == nil || !jsonEqual(syncNull(current.State("ros_policy_state")), syncNull(d.policyManifest)) {
+	if current == nil || !device.JSONEqual(syncNull(current.State("ros_policy_state")), syncNull(d.policyManifest)) {
 		publication.Manifest = repo.JSONUpdate{Set: true, Value: d.policyManifest}
 	}
-	if d.ipv6RoutesManifestSet && (current == nil || !jsonEqual(syncNull(current.State("ipv6_routes_state")), syncNull(d.ipv6RoutesManifest))) {
+	if d.ipv6RoutesManifestSet && (current == nil || !device.JSONEqual(syncNull(current.State("ipv6_routes_state")), syncNull(d.ipv6RoutesManifest))) {
 		publication.IPv6Routes = repo.JSONUpdate{Set: true, Value: d.ipv6RoutesManifest}
 	}
 	if !publication.Manifest.Set && !publication.IPv6Routes.Set {
@@ -212,7 +213,7 @@ func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string)
 	if lockErr != nil {
 		var conflict *RouterError
 		if errors.As(lockErr, &conflict) && conflict.Kind == KindConflict {
-			return RuleSyncStatus{}, routerError(messageSyncBusy)
+			return RuleSyncStatus{}, device.Error(messageSyncBusy)
 		}
 		return RuleSyncStatus{}, lockErr
 	}
@@ -227,10 +228,10 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	}
 	r := findSyncRouter(config, id)
 	if r == nil || r.Type != "routeros" || !r.AutoRuleSync {
-		return RuleSyncStatus{}, routerError(messageSyncEnable)
+		return RuleSyncStatus{}, device.Error(messageSyncEnable)
 	}
 	if r.StateRestoredAt() != "" {
-		return RuleSyncStatus{}, routerError(messageSyncRestored)
+		return RuleSyncStatus{}, device.Error(messageSyncRestored)
 	}
 	receipt, err := store.Read(ctx, profile, id)
 	if err != nil {
@@ -238,7 +239,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	}
 	base := receipt.Baseline
 	if base == nil {
-		return RuleSyncStatus{}, routerError(messageSyncBaseline)
+		return RuleSyncStatus{}, device.Error(messageSyncBaseline)
 	}
 	if receipt.Status == "running" {
 		receipt.Status = "paused"
@@ -248,7 +249,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		}
 	}
 	if receipt.Status == "paused" {
-		return RuleSyncStatus{}, routerError(messageSyncConfirm)
+		return RuleSyncStatus{}, device.Error(messageSyncConfirm)
 	}
 	timestamp := syncNow(ctx)
 	started := lifecycle.ClockFrom(ctx).Now()
@@ -266,10 +267,10 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			return err
 		}
 		if signature != base.Control {
-			return routerError(messageSyncControls)
+			return device.Error(messageSyncControls)
 		}
-		if !jsonEqual(syncNull(r.State("ros_policy_state")), syncNull(base.Policy)) {
-			return routerError(messageSyncPolicyChanged)
+		if !device.JSONEqual(syncNull(r.State("ros_policy_state")), syncNull(base.Policy)) {
+			return device.Error(messageSyncPolicyChanged)
 		}
 		ctx, err = withSyncEnvironment(ctx, config)
 		if err != nil {
@@ -317,9 +318,9 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			if err != nil {
 				return err
 			}
-			rawRevision := mustPolicyJSON(revision)
+			rawRevision := device.JSON(revision)
 			now := lifecycle.ClockFrom(ctx).Now()
-			if !force && jsonEqual(rawRevision, lastRevision) && now.Sub(lastCheck) < time.Second {
+			if !force && device.JSONEqual(rawRevision, lastRevision) && now.Sub(lastCheck) < time.Second {
 				return nil
 			}
 			latest, err := syncConfig(ctx, s.Repo, profile)
@@ -328,14 +329,14 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			}
 			item := findSyncRouter(latest, id)
 			if item == nil || !item.AutoRuleSync {
-				return routerError(messageSyncCurrent)
+				return device.Error(messageSyncCurrent)
 			}
 			current, err := s.SyncControls(ctx, latest, item)
 			if err != nil {
 				return err
 			}
-			if current != base.Control || !jsonEqual(syncNull(item.State("ros_policy_state")), syncNull(r.State("ros_policy_state"))) || !jsonEqual(syncNull(item.State("ipv6_routes_state")), syncNull(r.State("ipv6_routes_state"))) {
-				return routerError(messageSyncCurrent)
+			if current != base.Control || !device.JSONEqual(syncNull(item.State("ros_policy_state")), syncNull(r.State("ros_policy_state"))) || !device.JSONEqual(syncNull(item.State("ipv6_routes_state")), syncNull(r.State("ipv6_routes_state"))) {
+				return device.Error(messageSyncCurrent)
 			}
 			sources, err := selectedSyncSources(latest, item)
 			if err != nil {
@@ -343,7 +344,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			}
 			for _, source := range sources {
 				if source.Source.SourceType == "content" && (records[source.Item.ID] == nil || syncVersion(source.Source.Content) != records[source.Item.ID].Version) {
-					return routerError(messageSyncLocalDuring)
+					return device.Error(messageSyncLocalDuring)
 				}
 			}
 			lastRevision, lastCheck = rawRevision, now
@@ -365,23 +366,23 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			return err
 		}
 		if plan.Checks == nil {
-			return routerError(strings.Join(plan.Blockers, "；"))
+			return device.Error(strings.Join(plan.Blockers, "；"))
 		}
 		checked := map[string]bool{}
 		for _, item := range plan.Checks.Routes {
 			checked[item.CIDR] = true
 		}
 		if !maps.Equal(checked, syncCIDRSet(inspection.Desired.ProxyCIDRs)) {
-			return routerError(messageSyncConflict)
+			return device.Error(messageSyncConflict)
 		}
 		if v := inspection.State.IPv6FakeIPPlan; v != nil && (len(v.Blockers) > 0 || len(v.Ops) > 0) {
-			return routerError(messageSyncFakeIP)
+			return device.Error(messageSyncFakeIP)
 		}
 		if v := inspection.State.IPv6DNSPlan; v != nil && len(v.Ops) > 0 && len(v.Blockers) == 0 {
-			return routerError(messageSyncDNS)
+			return device.Error(messageSyncDNS)
 		}
 		if v := inspection.State.IPv6PDGuardPlan; v != nil && len(v.Ops) > 0 && len(v.Blockers) == 0 {
-			return routerError(messageSyncPD)
+			return device.Error(messageSyncPD)
 		}
 		note := syncIPv6Delta(inspection.State, plan)
 		writesStarted = true
@@ -578,7 +579,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	}
 	held, release, ok := syncWorkers.TryLock(work, s.Repo.DataDir())
 	if !ok {
-		return routerError(messageSyncWorkerBusy)
+		return device.Error(messageSyncWorkerBusy)
 	}
 	transferred := false
 	defer func() {
@@ -602,19 +603,19 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	}
 	if r == nil || !r.AutoRuleSync || receipt.Baseline == nil {
 		unlock()
-		return routerError(messageSyncStart)
+		return device.Error(messageSyncStart)
 	}
 	if r.StateRestoredAt() != "" {
 		unlock()
-		return routerError(messageSyncRestored)
+		return device.Error(messageSyncRestored)
 	}
 	if receipt.Status == "paused" {
 		unlock()
-		return routerError(PausedMessage(receipt))
+		return device.Error(PausedMessage(receipt))
 	}
 	if receipt.Status == "running" || receipt.Status == "queued" {
 		unlock()
-		return routerError(messageSyncUnfinished)
+		return device.Error(messageSyncUnfinished)
 	}
 	previous := receipt
 	timestamp := syncNow(job)

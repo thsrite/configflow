@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,7 @@ func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
 	if err != nil || len(plan.Ops) != 1 {
 		t.Fatal(err, plan)
 	}
-	if _, err = d.Apply(held, mustPolicyJSON(plan.Ops[0])); err != nil {
+	if _, err = d.Apply(held, device.JSON(plan.Ops[0])); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.saveManifest(held, "default", r, d); err != nil {
@@ -68,7 +69,7 @@ func TestR14ReceiptCompatibilityAndRuleOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded := string(mustPolicyJSON(receipt))
+	encoded := string(device.JSON(receipt))
 	for _, key := range []string{"future", "future_rule", "future_base"} {
 		if !strings.Contains(encoded, key) {
 			t.Fatalf("lost %s", key)
@@ -159,7 +160,7 @@ func TestR14SpawnRejectionReleasesAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := s.store().Read(t.Context(), "default", r.ID)
-	if !jsonEqual(before, after) {
+	if !device.JSONEqual(before, after) {
 		t.Fatal("rejected spawn left queued receipt")
 	}
 	_, unlock, ok := syncWorkers.TryLock(t.Context(), s.Repo.DataDir())
@@ -190,14 +191,14 @@ func TestR14TasksRows(t *testing.T) {
 			}
 			row := rows[0]
 			if row.Key != syncTaskKey("default", r.ID) || string(row.IntervalSeconds) != "3600" {
-				t.Fatalf("task identity %s", mustPolicyJSON(row))
+				t.Fatalf("task identity %s", device.JSON(row))
 			}
 			running := status == "running" || status == "queued"
 			if row.Running != running {
 				t.Fatal("running status")
 			}
 			if row.CanRun != (status == "synced" || status == "failed") {
-				t.Fatalf("run eligibility %s", mustPolicyJSON(row))
+				t.Fatalf("run eligibility %s", device.JSON(row))
 			}
 		})
 	}

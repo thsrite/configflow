@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,7 +37,7 @@ func (d *RouterOS) rollbackIPv6(ctx context.Context, changes []ROSChange, fake b
 	for index := 0; index < len(changes); {
 		change := changes[index]
 		if change.Path != rosIPv6Routes || !rosIDPattern.MatchString(change.ID) || len(change.Expected) == 0 || (change.Method != "RESTORE" && change.Method != "DELETE") {
-			failures = append(failures, messageOperationFormat)
+			failures = append(failures, device.MessageOperationFormat)
 			index++
 			continue
 		}
@@ -94,7 +95,7 @@ func (d *RouterOS) rollbackIPv6(ctx context.Context, changes []ROSChange, fake b
 		if fake {
 			prefix = messageIPv6FakeRollback
 		}
-		return remap, rollbackError(prefix + strings.Join(failures, "；"))
+		return remap, device.RollbackError(prefix + strings.Join(failures, "；"))
 	}
 	return remap, nil
 }
@@ -113,19 +114,19 @@ func (d *RouterOS) remapIPv6(ctx context.Context, previous json.RawMessage, rema
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !hasStoredState(previous) {
+	if !device.HasStoredState(previous) {
 		d.setIPv6Manifest(fake, nil)
 		return nil
 	}
 	var document map[string]json.RawMessage
 	var resources []map[string]json.RawMessage
 	if json.Unmarshal(previous, &document) != nil || document == nil || json.Unmarshal(document["resources"], &resources) != nil {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	for _, entry := range resources {
 		var id string
 		if json.Unmarshal(entry["id"], &id) != nil {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 		if restored, ok := remap[id]; ok {
 			// The restore response proved this new identity. Keep the old stable proof:
@@ -149,7 +150,7 @@ func ipv6Changes(undos []json.RawMessage) ([]ROSChange, error) {
 	for _, raw := range undos {
 		var undo ROSUndo
 		if devhttp.DecodeJSON(raw, &undo) != nil || undo.Kind != "ros_restore" {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		changes = append(changes, undo.Changes...)
 	}
@@ -159,10 +160,10 @@ func ipv6MergeRollback(cause, rollback, remap error) error {
 	if rollback == nil {
 		rollback = remap
 	} else if remap != nil {
-		rollback = rollbackError(rollback.Error() + "；" + remap.Error())
+		rollback = device.RollbackError(rollback.Error() + "；" + remap.Error())
 	}
 	if rollback != nil {
-		return rollbackError(cause.Error() + "；" + rollback.Error())
+		return device.RollbackError(cause.Error() + "；" + rollback.Error())
 	}
 	return cause
 }
@@ -175,29 +176,29 @@ func (d *RouterOS) ApplyIPv6FakeIP(ctx context.Context, op IPv6FakeIPReplace) (*
 		return nil, err
 	}
 	if !ipv6ValidSpec(op.Spec) || op.Expected == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	if op.Spec != nil {
 		p, _ := ipv6Network(op.Spec.CIDR)
 		if !p.Addr().IsPrivate() || p.Bits() < 7 || op.Values == nil || op.Values.text("dst-address") != op.Spec.CIDR || op.Values.text("gateway") != op.Spec.Gateway || op.Values.text("routing-table") != "main" || op.Values.text("distance") != "1" || op.Values.text("disabled") != "false" || !strings.HasPrefix(op.Values.text("comment"), "cf-fakeip6:") || len(op.Values) != 6 {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 	} else if op.Values != nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	live, err := SnapshotIPv6(ctx, d, op.Spec != nil)
 	if err != nil {
 		return nil, err
 	}
-	if !jsonValuesEqual(mustPolicyJSON(IPv6Evidence(live)), mustPolicyJSON(op.Expected)) {
-		return nil, routerError(messageIPv6PreviewChanged)
+	if !jsonValuesEqual(device.JSON(IPv6Evidence(live)), device.JSON(op.Expected)) {
+		return nil, device.Error(messageIPv6PreviewChanged)
 	}
 	owned, err := ipv6Owned(op.Previous, live, true)
 	if err != nil {
 		return nil, err
 	}
 	if !ipv6ResourcesEqual(owned, op.Owned) {
-		return nil, routerError(messageIPv6FakeOwnership)
+		return nil, device.Error(messageIPv6FakeOwnership)
 	}
 	undo := []ROSChange{}
 	created := map[string]Row{}
@@ -209,7 +210,7 @@ func (d *RouterOS) ApplyIPv6FakeIP(ctx context.Context, op IPv6FakeIPReplace) (*
 				return err
 			}
 			if !sameRow(StableIPv6Row(row), entry.Config) {
-				return routerError(messageIPv6FakeDuring)
+				return device.Error(messageIPv6FakeDuring)
 			}
 			if err := ctx.Err(); err != nil {
 				return err
@@ -228,14 +229,14 @@ func (d *RouterOS) ApplyIPv6FakeIP(ctx context.Context, op IPv6FakeIPReplace) (*
 				return err
 			}
 			if len(ipv6Targets(IPv6Snapshot{"routes": rows}, op.Spec.CIDR, nil)) > 0 {
-				return routerError(messageIPv6FakeAppeared)
+				return device.Error(messageIPv6FakeAppeared)
 			}
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			check, err := d.perform(ctx, ROSChange{Method: "PUT", Path: rosIPv6Routes, Values: op.Values}, &undo, false, func(rows []Row) error {
 				if len(ipv6Targets(IPv6Snapshot{"routes": rows}, op.Spec.CIDR, nil)) > 0 {
-					return routerError(messageIPv6FakeAppeared)
+					return device.Error(messageIPv6FakeAppeared)
 				}
 				return nil
 			})
@@ -251,11 +252,11 @@ func (d *RouterOS) ApplyIPv6FakeIP(ctx context.Context, op IPv6FakeIPReplace) (*
 				return err
 			}
 			if !ipv6Correct(row, *op.Spec) {
-				return routerError(messageIPv6FakeInactive)
+				return device.Error(messageIPv6FakeInactive)
 			}
 			// Confirm complete transaction proof before recording this stable config.
 			if !rowsEqual(d.ownershipSnapshot(rosIPv6Routes, row), undo[len(undo)-1].Expected) {
-				return routerError(messageIPv6FakeDuring)
+				return device.Error(messageIPv6FakeDuring)
 			}
 			resources = append(resources, IPv6Resource{rosIPv6Routes, check.ID, StableIPv6Row(row)})
 		}
@@ -299,7 +300,7 @@ func (d *RouterOS) RestoreIPv6FakeIP(ctx context.Context, op IPv6FakeIPUndo) err
 	mapped := d.remapIPv6(ctx, op.Previous, remap, true)
 	if err != nil {
 		if mapped != nil {
-			return rollbackError(err.Error() + "；" + mapped.Error())
+			return device.RollbackError(err.Error() + "；" + mapped.Error())
 		}
 		return err
 	}
@@ -314,7 +315,7 @@ func (d *RouterOS) writeIPv6Routes(ctx context.Context, raw []json.RawMessage, p
 		}
 		var first rosOperation
 		if jsondecode.Unmarshal(raw[index], &first) != nil {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 		batch := d.routeBatches(raw, index, first.Kind)
 		left := batch
@@ -339,7 +340,7 @@ func (d *RouterOS) writeIPv6Routes(ctx context.Context, raw []json.RawMessage, p
 					return err
 				}
 				if !sameRow(StableIPv6Row(row), proofs[op.ID]) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
-					return routerError(messageIPv6RoutesOwnership)
+					return device.Error(messageIPv6RoutesOwnership)
 				}
 				change = ROSChange{Method: "DELETE", Path: rosIPv6Routes, ID: op.ID, Expected: marshalRow(d.ownershipSnapshot(rosIPv6Routes, row))}
 			}
@@ -379,7 +380,7 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 		return nil, err
 	}
 	if op.Expected == nil || op.Owned == nil || op.Adds == nil || op.Deletes == nil || op.Retained == nil || op.Scope == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	live, err := SnapshotIPv6(ctx, d, true)
 	if err != nil {
@@ -391,21 +392,21 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 		ids[entry.ID] = true
 		proofs[entry.ID] = entry.Config
 	}
-	if !jsonValuesEqual(mustPolicyJSON(IPv6Evidence(ipv6Scoped(live, stringSet(op.Scope...), ids))), mustPolicyJSON(op.Expected)) {
-		return nil, routerError(messageIPv6PreviewChanged)
+	if !jsonValuesEqual(device.JSON(IPv6Evidence(ipv6Scoped(live, device.StringSet(op.Scope...), ids))), device.JSON(op.Expected)) {
+		return nil, device.Error(messageIPv6PreviewChanged)
 	}
 	owned, err := ipv6Owned(op.Previous, live, false)
 	if err != nil {
 		return nil, err
 	}
 	if !ipv6ResourcesEqual(owned, op.Owned) {
-		return nil, routerError(messageIPv6RoutesOwnership)
+		return nil, device.Error(messageIPv6RoutesOwnership)
 	}
 	seen := map[string]bool{}
 	adds, deletes := []json.RawMessage{}, []json.RawMessage{}
 	for _, add := range op.Adds {
 		if add.Kind != "route_add" || !ipv6ValidSpec(&IPv6RouteSpec{add.CIDR, add.Gateway}) || add.Gateway != op.Gateway || !slices.Contains(op.Scope, add.CIDR) || seen[add.CIDR] || !strings.HasPrefix(add.Comment, "cf-rule6:") {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		seen[add.CIDR] = true
 		raw, _ := json.Marshal(add)
@@ -414,7 +415,7 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 	partition := map[string]bool{}
 	for _, del := range op.Deletes {
 		if del.Kind != "route_delete" || !ids[del.ID] || partition[del.ID] || proofs[del.ID].text("dst-address") != del.CIDR {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		partition[del.ID] = true
 		raw, _ := json.Marshal(del)
@@ -422,12 +423,12 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 	}
 	for _, id := range op.Retained {
 		if !ids[id] || partition[id] {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		partition[id] = true
 	}
 	if len(partition) != len(owned) {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	undos := []json.RawMessage{}
 	created := map[string]Row{}
@@ -457,7 +458,7 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 			counts[row.id()]++
 		}
 		resources := []IPv6Resource{}
-		keep := stringSet(op.Retained...)
+		keep := device.StringSet(op.Retained...)
 		byID := map[string]Row{}
 		for _, row := range after {
 			byID[row.id()] = row
@@ -466,7 +467,7 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 			if keep[entry.ID] {
 				row := byID[entry.ID]
 				if counts[entry.ID] != 1 || !sameRow(StableIPv6Row(row), entry.Config) {
-					return routerError(messageIPv6RoutesOwnership)
+					return device.Error(messageIPv6RoutesOwnership)
 				}
 				resources = append(resources, entry)
 			}
@@ -474,16 +475,16 @@ func (d *RouterOS) ApplyIPv6Routes(ctx context.Context, op IPv6RoutesReplace) (*
 		for _, row := range after {
 			if change, ok := added[row.id()]; ok {
 				if counts[row.id()] != 1 || !rowsEqual(d.ownershipSnapshot(rosIPv6Routes, row), change.Expected) {
-					return routerError(messageIPv6RoutesOwnership)
+					return device.Error(messageIPv6RoutesOwnership)
 				}
 				if !ipv6Correct(row, IPv6RouteSpec{ipv6Key(row), op.Gateway}) {
-					return routerError(fmt.Sprintf(messageIPv6RoutesNewInactive, row.text("dst-address")))
+					return device.Error(fmt.Sprintf(messageIPv6RoutesNewInactive, row.text("dst-address")))
 				}
 				resources = append(resources, IPv6Resource{rosIPv6Routes, row.id(), StableIPv6Row(row)})
 			}
 		}
 		if len(resources) != len(op.Retained)+len(op.Adds) {
-			return routerError(messageIPv6RoutesCount)
+			return device.Error(messageIPv6RoutesCount)
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -533,7 +534,7 @@ func (d *RouterOS) RestoreIPv6Routes(ctx context.Context, op IPv6RoutesUndo) err
 	mapped := d.remapIPv6(ctx, previous, remap, false)
 	if rollback != nil {
 		if mapped != nil {
-			return rollbackError(rollback.Error() + "；" + mapped.Error())
+			return device.RollbackError(rollback.Error() + "；" + mapped.Error())
 		}
 		return rollback
 	}
@@ -543,7 +544,7 @@ func (d *RouterOS) RestoreIPv6Routes(ctx context.Context, op IPv6RoutesUndo) err
 // VerifyIPv6FakeIP proves removal, borrowed identity or the exact managed route.
 func VerifyIPv6FakeIP(ctx context.Context, d *RouterOS, check *IPv6FakeIPCheck) error {
 	if check == nil {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	live, err := SnapshotIPv6(ctx, d, false)
 	if err != nil {
@@ -554,13 +555,13 @@ func VerifyIPv6FakeIP(ctx context.Context, d *RouterOS, check *IPv6FakeIPCheck) 
 		return err
 	}
 	if check.Spec == nil {
-		if hasStoredState(d.ipv6FakeIPManifest) || len(owned) > 0 {
-			return routerError(messageIPv6FakeVerifyRemove)
+		if device.HasStoredState(d.ipv6FakeIPManifest) || len(owned) > 0 {
+			return device.Error(messageIPv6FakeVerifyRemove)
 		}
 		if check.Removed != nil {
 			for _, row := range live["routes"] {
 				if slices.Contains(*check.Removed, row.id()) {
-					return routerError(messageIPv6FakeVerifyRemove)
+					return device.Error(messageIPv6FakeVerifyRemove)
 				}
 			}
 		}
@@ -568,17 +569,17 @@ func VerifyIPv6FakeIP(ctx context.Context, d *RouterOS, check *IPv6FakeIPCheck) 
 	}
 	rows := ipv6Targets(live, check.Spec.CIDR, nil)
 	if len(rows) != 1 || !ipv6Correct(rows[0], *check.Spec) {
-		return routerError(messageIPv6FakeVerifyConflict)
+		return device.Error(messageIPv6FakeVerifyConflict)
 	}
 	if check.Borrowed != nil {
 		if rows[0].id() != check.Borrowed.ID || !sameRow(StableIPv6Row(rows[0]), check.Borrowed.Config) {
-			return routerError(messageIPv6FakeVerifyBorrowed)
+			return device.Error(messageIPv6FakeVerifyBorrowed)
 		}
 	} else {
 		var manifest IPv6FakeIPManifest
 		_ = jsondecode.Unmarshal(d.ipv6FakeIPManifest, &manifest)
 		if len(owned) != 1 || rows[0].id() != owned[0].ID || manifest.Spec == nil || *manifest.Spec != *check.Spec {
-			return routerError(messageIPv6FakeVerifyManifest)
+			return device.Error(messageIPv6FakeVerifyManifest)
 		}
 	}
 	return nil
@@ -587,7 +588,7 @@ func VerifyIPv6FakeIP(ctx context.Context, d *RouterOS, check *IPv6FakeIPCheck) 
 // VerifyIPv6Routes verifies exact destination sets, retained proofs and withdrawals.
 func VerifyIPv6Routes(ctx context.Context, d *RouterOS, check *IPv6RoutesCheck) error {
 	if check == nil {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	live, err := SnapshotIPv6(ctx, d, false)
 	if err != nil {
@@ -600,7 +601,7 @@ func VerifyIPv6Routes(ctx context.Context, d *RouterOS, check *IPv6RoutesCheck) 
 	var manifest IPv6RoutesManifest
 	_ = jsondecode.Unmarshal(d.ipv6RoutesManifest, &manifest)
 	if len(owned) != len(manifest.Resources) {
-		return routerError(messageIPv6RoutesVerifyMissing)
+		return device.Error(messageIPv6RoutesVerifyMissing)
 	}
 	byCIDR := map[string][]Row{}
 	rowsByID := map[string]Row{}
@@ -614,18 +615,18 @@ func VerifyIPv6Routes(ctx context.Context, d *RouterOS, check *IPv6RoutesCheck) 
 	for _, cidr := range check.Active {
 		rows := byCIDR[cidr]
 		if len(rows) != 1 || !ipv6Correct(rows[0], IPv6RouteSpec{cidr, check.Gateway}) {
-			return routerError(fmt.Sprintf(messageIPv6RoutesVerifyActive, cidr, check.Gateway))
+			return device.Error(fmt.Sprintf(messageIPv6RoutesVerifyActive, cidr, check.Gateway))
 		}
 	}
 	for _, entry := range check.Borrowed {
 		row := rowsByID[entry.ID]
 		if row == nil || !sameRow(StableIPv6Row(row), entry.Config) || !ipv6Correct(row, IPv6RouteSpec{ipv6Key(entry.Config), check.Gateway}) {
-			return routerError(messageIPv6RoutesVerifyBorrowed)
+			return device.Error(messageIPv6RoutesVerifyBorrowed)
 		}
 	}
 	for _, row := range live["routes"] {
 		if slices.Contains(check.Removed, row.id()) {
-			return routerError(messageIPv6RoutesVerifyRemove)
+			return device.Error(messageIPv6RoutesVerifyRemove)
 		}
 	}
 	return nil
@@ -635,7 +636,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_fakeip_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6FakeIPReplace
 		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		undo, err := d.ApplyIPv6FakeIP(ctx, op)
 		if err != nil {
@@ -646,7 +647,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_fakeip_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6FakeIPUndo
 		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		if err := d.RestoreIPv6FakeIP(ctx, op); err != nil {
 			return nil, err
@@ -656,7 +657,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_routes_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6RoutesReplace
 		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		undo, err := d.ApplyIPv6Routes(ctx, op)
 		if err != nil {
@@ -667,7 +668,7 @@ func init() {
 	RegisterRouterOSHandler("ipv6_routes_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op IPv6RoutesUndo
 		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		if err := d.RestoreIPv6Routes(ctx, op); err != nil {
 			return nil, err
@@ -685,7 +686,7 @@ func ipv6AddGuard(proofs map[string]Row) func([]Row) error {
 			}
 			expected, ok := proofs[row.id()]
 			if !ok || seen[row.id()] || !sameRow(StableIPv6Row(row), expected) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
-				return routerError(messageIPv6RoutesOwnership)
+				return device.Error(messageIPv6RoutesOwnership)
 			}
 			seen[row.id()] = true
 		}
@@ -697,10 +698,10 @@ func ipv6AddGuard(proofs map[string]Row) func([]Row) error {
 // whole-stage rollback. Missing IDs stay stale, never become clear commands or
 // configuration matches that could adopt an object created by another writer.
 func mergeIPv6Recovery(previous, current json.RawMessage) json.RawMessage {
-	if !hasStoredState(previous) {
+	if !device.HasStoredState(previous) {
 		return guardRaw(current)
 	}
-	if !hasStoredState(current) {
+	if !device.HasStoredState(current) {
 		return guardRaw(previous)
 	}
 	var oldDoc, newDoc map[string]json.RawMessage
@@ -746,7 +747,7 @@ func (d *RouterOS) recoverIPv6Created(ctx context.Context, created map[string]Ro
 	}
 	if fake {
 		if len(resources) != 1 || spec == nil {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 		// Preserve the previous record's unknown top-level members while changing
 		// its explicitly known publication fields to this proven new generation.

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -93,7 +94,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 				}
 			}
 		}
-		names = uniqueStrings(names)
+		names = device.Unique(names)
 		slices.Sort(names)
 		path := paths[key]
 		if prefix == "" {
@@ -118,7 +119,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		if m := asRow(value); m != nil {
 			dns = m
 		} else {
-			e = routerError(messageReadinessDNS)
+			e = device.Error(messageReadinessDNS)
 		}
 	}
 	if e != nil {
@@ -217,7 +218,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	if fake != "" {
 		target, valid := ipv6Network(fake)
 		if !valid {
-			return nil, routerError(messageIPv6Range)
+			return nil, device.Error(messageIPv6Range)
 		}
 		rows, conflicts := []Row{}, []Row{}
 		for _, row := range snapshot["routes"] {
@@ -351,7 +352,7 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 	a, _, scoped := strings.Cut(g, "%")
 	addr, e := netip.ParseAddr(a)
 	if !ok || p.String() != plan.text("dst-address") || e != nil || !addr.Is6() || !scoped || !ipv6ValidSpec(&IPv6RouteSpec{p.String(), g}) || len(plan) != 5 || !plan.is("routing-table", "main") || !plan.is("distance", "1") || !plan.is("disabled", "false") {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	rows, e := d.list(ctx, rosIPv6Routes)
 	if e != nil {
@@ -359,7 +360,7 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 	}
 	for _, r := range rows {
 		if ipv6Key(r) == p.String() && r.textOr("routing-table", "main") == "main" {
-			return nil, routerError(messageReadinessRouteChanged)
+			return nil, device.Error(messageReadinessRouteChanged)
 		}
 	}
 	token := make([]byte, 12)
@@ -386,19 +387,19 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 		return &IPv6ReadinessReceipt{matched[0].id(), values, d.ownershipSnapshot(rosIPv6Routes, matched[0])}, nil
 	}
 	if readErr != nil {
-		return nil, routerError(messageReadinessUncertain)
+		return nil, device.Error(messageReadinessUncertain)
 	}
 	if len(matched) == 1 && readinessOwned(matched[0], values) {
 		if e := d.UndoIPv6ReadinessRoute(ctx, IPv6ReadinessReceipt{matched[0].id(), values, d.ownershipSnapshot(rosIPv6Routes, matched[0])}); e != nil {
-			return nil, routerError(messageReadinessUncertain)
+			return nil, device.Error(messageReadinessUncertain)
 		}
 	} else if len(matched) > 0 {
-		return nil, routerError(messageReadinessUncertain)
+		return nil, device.Error(messageReadinessUncertain)
 	}
 	if writeErr != nil {
 		return nil, writeErr
 	}
-	return nil, routerError(messageReadinessNewRoute)
+	return nil, device.Error(messageReadinessNewRoute)
 }
 
 // UndoIPv6ReadinessRoute removes only the receipt's original stable object.
@@ -408,7 +409,7 @@ func (d *RouterOS) UndoIPv6ReadinessRoute(ctx context.Context, receipt IPv6Readi
 		return e
 	}
 	if !rosIDPattern.MatchString(receipt.ID) || !strings.HasPrefix(receipt.Values.text("comment"), "cf-ipv6-readiness:") || len(receipt.Values.text("comment")) != len("cf-ipv6-readiness:")+24 {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	row, e := d.find(ctx, rosIPv6Routes, receipt.ID)
 	if e != nil {
@@ -418,7 +419,7 @@ func (d *RouterOS) UndoIPv6ReadinessRoute(ctx context.Context, receipt IPv6Readi
 		return nil
 	}
 	if !readinessOwned(row, receipt.Values) || receipt.Config != nil && !sameRow(d.ownershipSnapshot(rosIPv6Routes, row), receipt.Config) {
-		return routerError(messageReadinessRouteEdited)
+		return device.Error(messageReadinessRouteEdited)
 	}
 	if e := ctx.Err(); e != nil {
 		return e

@@ -68,8 +68,6 @@ const (
 		"在 Groups 中为该账号的专用用户组启用 read、write、api、rest-api，重点检查 write。" +
 		"保存后重新生成发布预览；连接测试成功不代表已有写入权限。"
 
-	messageOperationFormat              = "RouterOS 操作格式无法识别"
-	messageROSListFormat                = "RouterOS %s 返回的列表格式无法识别"
 	messageROSObjectFormat              = "RouterOS %s 返回的对象格式无法识别"
 	messageROSNotFoundAfterManualDelete = "RouterOS %s 中找不到 id=%s，可能已被手动删除"
 	messageROSNotFound                  = "RouterOS %s 中找不到 id=%s"
@@ -88,7 +86,6 @@ const (
 	messageROSSystemInfoFormat   = "RouterOS 系统信息格式无法识别"
 	messageROSVersionRequired    = "需要 RouterOS 7.1+，当前版本 %s"
 	messageROSDHCPNoActiveServer = "未发现启用的 DHCP 服务，无法确认网段 DNS 会被下发"
-	messageUnknown               = "未知"
 	messageROSDHCPServiceLabel   = "DHCP 服务 %s"
 	messageROSDHCPIncomplete     = "%s 信息不完整或无效，无法确认 DNS 下发"
 	messageROSDHCPRadiusServer   = "%s 启用了 RADIUS 或其状态未知，可能覆盖 DHCP DNS"
@@ -113,7 +110,6 @@ const (
 	messageNATRuleDrift          = "RouterOS NAT 规则在预览后发生变化，请重新预览"
 	messageNATTargetInvalid      = "RouterOS 目标规则已不是 NAT 免转换规则，请重新预览"
 	messageNATSourceInvalid      = "RouterOS NAT 源地址范围无法识别"
-	messageUnsupportedOperation  = "不支持的操作 %s"
 	messageRollbackChanged       = "回滚对象已发生外部变化，保留现有配置"
 	messageChangedDuringWrite    = "对象在操作期间发生外部变化，保留现有配置"
 	messageRollbackRouteConflict = "回滚期间已有其他程序新增同网段路由，保留现有配置"
@@ -129,7 +125,6 @@ const (
 	messageReadbackNATOrder      = "RouterOS 回读校验失败：NAT 规则顺序不正确"
 	messageReadbackMismatch      = "RouterOS 回读校验失败：%s 的 %s 与提交值不一致"
 	messageRollbackIncomplete    = "RouterOS 回滚未完成：%s"
-	messageUncertainRouteWrite   = "RouterOS %s 已提交但没有返回可信的新对象 ID；无法确认新增对象归属，已保留现场，请检查路由器"
 	messageUncertainWrite        = "%s；无法确认新增对象归属，已保留现场，请检查路由器"
 	messageBatchUnknown          = "%s；批量新增路由的结果未知，无法确认新增对象归属，已保留现场，请检查路由器"
 	messageBatchReadbackRoutes   = "%s；批量新增的路由无法回读，未删除任何不明归属的对象，请检查路由器"
@@ -250,7 +245,6 @@ var ikuaiListLabels = map[string]string{"static_rt": "静态路由", "static_rt_
 const (
 	messageEditUnsupported  = "该路由器暂不支持手工路由管理"
 	messageEditListIdentity = "路由列表缺少完整、唯一的对象信息，停止操作"
-	messageEditFormat       = "路由操作参数格式错误"
 	messageEditAction       = "只支持添加、编辑或删除单条路由"
 	messageEditID           = "请选择有效的路由记录"
 	messageEditRevision     = "缺少路由原始版本，请刷新列表后重试"
@@ -271,7 +265,6 @@ const (
 	messageEditDelete       = "删除"
 	messageEditSummary      = "%s静态路由 %s → %s"
 	messageEditManaged      = "此路由带有 ConfigFlow 管理标记；后续自动发布可能接管、调整或删除它。手工维护的路由建议移除备注中的 cf 管理前缀。"
-	messageEditBusy         = "此路由器正在发布或同步，请稍后重试"
 )
 
 const (
@@ -400,18 +393,14 @@ const (
 )
 
 const (
-	messagePolicyReadFormat      = "策略路由对象回读格式不完整：%s"
-	messagePolicyChanged         = "策略路由对象在操作期间发生变化，保留现场：%s/%s"
-	messagePolicyDynamic         = "动态策略对象不能修改"
-	messageAddressOversize       = "地址列表单条写入超过脚本大小限制"
-	messageAddressIncomplete     = "批量写入地址列表未执行完成：%s"
-	messageAddressUncertain      = "地址列表批量写入结果不明确，未删除任何不明归属的对象，请检查路由器：%s"
-	messageAddressNoList         = "地址列表条目缺少列表名"
-	messageAddressUnknown        = "批量写入期间地址列表 %s 出现未提交的条目，保留这些对象，请检查路由器"
-	messageAddressFirstError     = "；首个错误：%s"
-	messageAddressFailed         = "地址列表 %s 有 %d 条写入失败（%s）%s"
-	messagePolicyStillPresent    = "策略路由回读校验失败：对象仍然存在"
-	messageRollbackDeletePresent = "回滚删除后对象仍存在"
+	messagePolicyReadFormat  = "策略路由对象回读格式不完整：%s"
+	messageAddressOversize   = "地址列表单条写入超过脚本大小限制"
+	messageAddressIncomplete = "批量写入地址列表未执行完成：%s"
+	messageAddressUncertain  = "地址列表批量写入结果不明确，未删除任何不明归属的对象，请检查路由器：%s"
+	messageAddressNoList     = "地址列表条目缺少列表名"
+	messageAddressUnknown    = "批量写入期间地址列表 %s 出现未提交的条目，保留这些对象，请检查路由器"
+	messageAddressFirstError = "；首个错误：%s"
+	messageAddressFailed     = "地址列表 %s 有 %d 条写入失败（%s）%s"
 )
 
 const (

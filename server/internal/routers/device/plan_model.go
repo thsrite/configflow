@@ -1,4 +1,4 @@
-package routers
+package device
 
 import "encoding/json"
 

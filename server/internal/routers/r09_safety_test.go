@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -370,7 +371,7 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				}
 				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosAddresses: {"*65": {"address": "203.0.113.99"}}}}})
 				err = d.RestoreDNSGuard(context.Background(), *undo)
-				if err == nil || routerErrorKind(err) != KindRollback {
+				if err == nil || device.RouterErrorKind(err) != KindRollback {
 					t.Fatal("changed undo not refused", err)
 				}
 				return
@@ -397,13 +398,13 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				t.Fatal("failure accepted")
 			}
 			if variant == "rejected" {
-				if routerErrorKind(err) == KindUncertainWrite || routerErrorKind(err) == KindRollback {
+				if device.RouterErrorKind(err) == KindUncertainWrite || device.RouterErrorKind(err) == KindRollback {
 					t.Fatalf("refusal marked uncertain %v", err)
 				}
 				if len(f.Snapshot().Tables[rosAddresses]) != 0 {
 					t.Fatal("refusal changed table")
 				}
-			} else if routerErrorKind(err) != KindRollback {
+			} else if device.RouterErrorKind(err) != KindRollback {
 				t.Fatalf("unproven create did not preserve scene %v", err)
 			}
 			if variant == "lost_put" || variant == "server_put" {
@@ -463,7 +464,7 @@ func TestR09FinalReadCannotWidenOwnership(t *testing.T) {
 	defer d.Close()
 	p := r09Plan(t, d, tc.Settings, nil)
 	_, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
-	if err == nil || routerErrorKind(err) != KindRollback {
+	if err == nil || device.RouterErrorKind(err) != KindRollback {
 		t.Fatal("late edit absorbed into manifest", err)
 	}
 	for _, row := range f.Snapshot().Tables[rosAddresses] {

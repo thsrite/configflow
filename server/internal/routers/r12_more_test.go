@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -102,7 +103,7 @@ func TestR12IPv6HostBindingAndFailure(t *testing.T) {
 	}
 }
 func FuzzR12ReturnHandshake(f *testing.F) {
-	for _, seed := range []string{`{}`, `null`, string(mustPolicyJSON(r12SafeStatus())), `{"safety":{"version":1,"ok":true,"blockers":[null],"allocation":{}}}`, `{"managed":{"spec":{"proxy_dst":null}},"fwmark_rules":[]}`} {
+	for _, seed := range []string{`{}`, `null`, string(device.JSON(r12SafeStatus())), `{"safety":{"version":1,"ok":true,"blockers":[null],"allocation":{}}}`, `{"managed":{"spec":{"proxy_dst":null}},"fwmark_rules":[]}`} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {

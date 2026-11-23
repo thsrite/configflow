@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -69,7 +70,7 @@ var pendingLogger = logx.Get("backend.routers.pending")
 
 func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, string, string, error) {
 	if req.Repo == nil || req.Agents == nil {
-		return nil, "", "", ErrNotPorted
+		return nil, "", "", device.ErrNotPorted
 	}
 	agent, err := req.Agents.Agent(ctx, req.AgentID)
 	if err != nil {
@@ -218,7 +219,7 @@ func readPendingRouter(ctx context.Context, req PendingRequest, target pendingTa
 		var re *RouterError
 		if errors.As(err, &re) {
 			message := diag.FailureText(re.Error(), []any{target.router.Password}, 0)
-			out.summary = unknownPending(orText(message, messagePendingReadError))
+			out.summary = unknownPending(device.OrText(message, messagePendingReadError))
 		} else {
 			pendingLogger.Warningf("Upstream router status failed: %s", diag.EventMessage(err.Error(), []any{target.router.Password}))
 		}
@@ -301,7 +302,7 @@ drained:
 		if ok && result.report != nil {
 			recordPendingNotice(ctx, req.Repo, target.profile.ID, target.config, target.router, result.report, result.plan)
 		}
-		entries = append(entries, PendingEntry{ID: target.router.ID, Name: orText(target.router.Name, target.router.ID), Type: target.router.Type, ProfileID: target.profile.ID, ProfileName: orText(target.profile.Name, target.profile.ID), PendingSummary: summary})
+		entries = append(entries, PendingEntry{ID: target.router.ID, Name: device.OrText(target.router.Name, target.router.ID), Type: target.router.Type, ProfileID: target.profile.ID, ProfileName: device.OrText(target.profile.Name, target.profile.ID), PendingSummary: summary})
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

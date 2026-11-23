@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"net/netip"
@@ -59,7 +60,7 @@ func SnapshotIPv6(ctx context.Context, d *RouterOS, network bool) (IPv6Snapshot,
 	return out, nil
 }
 
-var ipv6Runtime = stringSet("active", "inactive", "immediate-gw", "belongs-to", "hw-offloaded", "debug.fwp-ptr", "actual-interface", "bytes", "packets", "uptime", "last-updated", "expires-after", "expires", "valid-lifetime", "preferred-lifetime", "valid", "preferred")
+var ipv6Runtime = device.StringSet("active", "inactive", "immediate-gw", "belongs-to", "hw-offloaded", "debug.fwp-ptr", "actual-interface", "bytes", "packets", "uptime", "last-updated", "expires-after", "expires", "valid-lifetime", "preferred-lifetime", "valid", "preferred")
 
 // StableIPv6Row keeps complete configuration, host bits and resolved LAN identity.
 // Lease lifetimes are volatile; route activity is added separately by IPv6Evidence.
@@ -307,7 +308,7 @@ func ipv6Document(config *model.Profile) (*yamlx.Node, error) {
 	// A stored base that is not text is refused, not read as an empty base
 	// (which would withdraw the managed IPv6 settings).
 	if raw == model.DamagedText {
-		return nil, routerError(messageIPv6YAMLType)
+		return nil, device.Error(messageIPv6YAMLType)
 	}
 	if strings.TrimSpace(raw) == "" {
 		return yamlx.Map(), nil
@@ -318,7 +319,7 @@ func ipv6Document(config *model.Profile) (*yamlx.Node, error) {
 	}
 	n = yamlx.Resolve(n)
 	if n == nil || n.Kind != yaml.MappingNode {
-		return nil, routerError(messageIPv6YAMLObject)
+		return nil, device.Error(messageIPv6YAMLObject)
 	}
 	return n, nil
 }
@@ -355,15 +356,15 @@ func IPv6FakeIPSettings(config *model.Profile) IPv6Settings {
 	}
 	dns := yamlx.Resolve(yamlx.Get(n, "dns"))
 	if dns != nil && dns.Kind != yaml.MappingNode {
-		return fail(routerError(messageIPv6DNSObject))
+		return fail(device.Error(messageIPv6DNSObject))
 	}
 	ipv6, ok := ipv6YAMLBool(yamlx.Get(n, "ipv6"), true)
 	if !ok {
-		return fail(routerError(messageIPv6Bool))
+		return fail(device.Error(messageIPv6Bool))
 	}
 	clients, ok := ipv6YAMLBool(yamlx.Get(dns, "ipv6"), false)
 	if !ok {
-		return fail(routerError(messageIPv6DNSBool))
+		return fail(device.Error(messageIPv6DNSBool))
 	}
 	enable, _ := ipv6YAMLBool(yamlx.Get(dns, "enable"), false)
 	rangeNode := yamlx.Resolve(yamlx.Get(dns, "fake-ip-range6"))
@@ -374,15 +375,15 @@ func IPv6FakeIPSettings(config *model.Profile) IPv6Settings {
 	}
 	p, ok := ipv6Network(ipv6YAMLString(rangeNode))
 	if !ok {
-		return fail(routerError(messageIPv6Range))
+		return fail(device.Error(messageIPv6Range))
 	}
 	if !p.Addr().IsPrivate() || p.Bits() < 7 {
-		return fail(routerError(messageIPv6ULA))
+		return fail(device.Error(messageIPv6ULA))
 	}
 	out.CIDR = p.String()
 	out.TUNEnabled = ipv6TUN(n)
 	if clients && !out.TUNEnabled {
-		return fail(routerError(messageIPv6TUN))
+		return fail(device.Error(messageIPv6TUN))
 	}
 	return out
 }
@@ -402,7 +403,7 @@ func IPv6RoutesSettings(config *model.Profile) IPv6RouteSettings {
 		var ok bool
 		out.Enabled, ok = ipv6YAMLBool(yamlx.Get(n, "ipv6"), true)
 		if !ok {
-			err = routerError(messageIPv6Bool)
+			err = device.Error(messageIPv6Bool)
 		} else {
 			out.TUNEnabled = ipv6TUN(n)
 		}
@@ -415,7 +416,7 @@ func IPv6RoutesSettings(config *model.Profile) IPv6RouteSettings {
 
 // IPv6FakeIPRelevant reports whether inspection has settings or ownership to check.
 func IPv6FakeIPRelevant(config *model.Profile, r *Router) bool {
-	return r != nil && r.Type == "routeros" && (IPv6FakeIPSettings(config).Enabled || hasStoredState(r.Extra["ipv6_fakeip_state"]))
+	return r != nil && r.Type == "routeros" && (IPv6FakeIPSettings(config).Enabled || device.HasStoredState(r.Extra["ipv6_fakeip_state"]))
 }
 
 // IPv6RoutesRelevant reports whether a rule-set destination or prior manifest exists.
@@ -423,7 +424,7 @@ func IPv6RoutesRelevant(config *model.Profile, r *Router, desired *Desired) bool
 	if r == nil || r.Type != "routeros" {
 		return false
 	}
-	if hasStoredState(r.Extra["ipv6_routes_state"]) {
+	if device.HasStoredState(r.Extra["ipv6_routes_state"]) {
 		return true
 	}
 	s := IPv6RoutesSettings(config)

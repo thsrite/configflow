@@ -4,6 +4,7 @@ package routers
 // Device writes remain in the sync service and guarded stores.
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,7 +55,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 		var src syncSource
 		src.Library.Raw = raw
 		if err := syncValidate(ctx, value, src, config); err != nil {
-			return "", &syncDownloadError{routerError(err.Error())}
+			return "", &syncDownloadError{device.Error(err.Error())}
 		}
 		return value, nil
 	}
@@ -83,20 +84,20 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 		data, err = io.ReadAll(io.LimitReader(response, syncMaxBytes+1))
 	}
 	if len(data) > syncMaxBytes || responded && errors.Is(work.Err(), context.DeadlineExceeded) {
-		return "", routerError(messageSyncDownloadLimit)
+		return "", device.Error(messageSyncDownloadLimit)
 	}
 	if err != nil {
-		return "", &syncDownloadError{routerError(messageSyncDownloadError + weburl.SafeErrorDetails(err))}
+		return "", &syncDownloadError{device.Error(messageSyncDownloadError + weburl.SafeErrorDetails(err))}
 	}
 	if !utf8.Valid(data) {
-		return "", &syncDownloadError{routerError(messageSyncDownloadUTF8)}
+		return "", &syncDownloadError{device.Error(messageSyncDownloadUTF8)}
 	}
 	content := strings.TrimPrefix(string(data), "\ufeff")
 	// Validate before caching, and the engine validates again on every declaration.
 	var src syncSource
 	src.Library.Raw = raw
 	if err = syncValidate(ctx, content, src, config); err != nil {
-		return "", &syncDownloadError{routerError(err.Error())}
+		return "", &syncDownloadError{device.Error(err.Error())}
 	}
 	if d.items == nil {
 		d.items = map[string]string{}
@@ -142,20 +143,20 @@ func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, dow
 			fetched[key] = content
 			size += len(content)
 			if size > 16*1024*1024 {
-				return nil, nil, routerError(messageSyncTotalLarge)
+				return nil, nil, device.Error(messageSyncTotalLarge)
 			}
 		}
 		if source.Source.SourceType == "url" {
 			if err = syncValidate(ctx, content, source, config); err != nil {
 
-				return nil, nil, routerError(fmt.Sprintf(messageSyncSourceError, orText(source.Source.Name, source.Item.ID), err.Error()))
+				return nil, nil, device.Error(fmt.Sprintf(messageSyncSourceError, device.OrText(source.Source.Name, source.Item.ID), err.Error()))
 			}
 		}
 		record, err := ClassifySyncRules(content, source.Behavior)
 		if err != nil {
-			return nil, nil, routerError(fmt.Sprintf(messageSyncSourceError, orText(source.Source.Name, source.Item.ID), err.Error()))
+			return nil, nil, device.Error(fmt.Sprintf(messageSyncSourceError, device.OrText(source.Source.Name, source.Item.ID), err.Error()))
 		}
-		record.Name = orText(source.Source.Name, source.Item.ID)
+		record.Name = device.OrText(source.Source.Name, source.Item.ID)
 		record.SourceType = source.Source.SourceType
 		record.LibraryID = key
 		contents[source.Item.ID] = content
@@ -163,10 +164,10 @@ func loadSyncSources(ctx context.Context, config json.RawMessage, r *Router, dow
 		count += record.IPCount
 		count6 += record.IP6Count
 		if count > syncMaxIPs {
-			return nil, nil, routerError(messageSyncTotalIPs)
+			return nil, nil, device.Error(messageSyncTotalIPs)
 		}
 		if count6 > syncMaxIPs {
-			return nil, nil, routerError(messageSyncTotalIPs6)
+			return nil, nil, device.Error(messageSyncTotalIPs6)
 		}
 	}
 	return contents, records, nil

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"errors"
 	"testing"
@@ -55,7 +56,7 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	}
 	edited := *req.Router
 	edited.Password = "synthetic-replacement"
-	_, _, err = db.SaveProfileFieldsJSON(t.Context(), req.ProfileID, mustPolicyJSON(map[string]any{"routers": map[string]any{"items": []*Router{&edited}}}), nil)
+	_, _, err = db.SaveProfileFieldsJSON(t.Context(), req.ProfileID, device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{&edited}}}), nil)
 	if !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("repository bypassed active publication: %v", err)
 	}

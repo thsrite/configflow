@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -141,7 +142,7 @@ type RouteEditor interface {
 func ReadRoutes(ctx context.Context, driver Driver) ([]*EditableRoute, error) {
 	editor, ok := driver.(RouteEditor)
 	if !ok {
-		return nil, routerError(messageEditUnsupported)
+		return nil, device.Error(messageEditUnsupported)
 	}
 	rows, err := editor.ReadRoutes(ctx)
 	if err != nil {
@@ -150,7 +151,7 @@ func ReadRoutes(ctx context.Context, driver Driver) ([]*EditableRoute, error) {
 	seen := map[string]bool{}
 	for _, row := range rows {
 		if row == nil || row.ID == "" || row.Snapshot.empty() || seen[row.ID] {
-			return nil, routerError(messageEditListIdentity)
+			return nil, device.Error(messageEditListIdentity)
 		}
 		seen[row.ID] = true
 	}
@@ -167,67 +168,67 @@ func routeDigest(value any) string {
 func NormalizeRouteRequest(data json.RawMessage) (RouteIntent, error) {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil || raw == nil {
-		return RouteIntent{}, invalid(messageEditFormat)
+		return RouteIntent{}, device.Invalid(device.MessageEditFormat)
 	}
 	for key := range raw {
 		if key != "action" && key != "id" && key != "revision" && key != "values" && key != "fingerprint" {
-			return RouteIntent{}, invalid(messageEditFormat)
+			return RouteIntent{}, device.Invalid(device.MessageEditFormat)
 		}
 	}
 	var intent RouteIntent
 	if json.Unmarshal(raw["action"], &intent.Action) != nil || (intent.Action != "add" && intent.Action != "update" && intent.Action != "delete") {
-		return intent, invalid(messageEditAction)
+		return intent, device.Invalid(messageEditAction)
 	}
 	if intent.Action != "add" {
 		if json.Unmarshal(raw["id"], &intent.ID) != nil || intent.ID == "" || utf8.RuneCountInString(intent.ID) > 128 || strings.ContainsFunc(intent.ID, func(r rune) bool { return r < 32 }) {
-			return intent, invalid(messageEditID)
+			return intent, device.Invalid(messageEditID)
 		}
 		if json.Unmarshal(raw["revision"], &intent.Revision) != nil || len(intent.Revision) != 64 || strings.ContainsFunc(intent.Revision, func(r rune) bool { return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') }) {
-			return intent, invalid(messageEditRevision)
+			return intent, device.Invalid(messageEditRevision)
 		}
 	} else {
 		for _, key := range []string{"id", "revision"} {
 			if value, exists := raw[key]; exists && strings.TrimSpace(string(value)) != "null" {
-				text, valid := requestString(value)
+				text, valid := device.RequestString(value)
 				if !valid || text != "" {
-					return intent, invalid(messageEditAddIdentity)
+					return intent, device.Invalid(messageEditAddIdentity)
 				}
 			}
 		}
 	}
 	if intent.Action == "delete" {
 		if v, ok := raw["values"]; ok && strings.TrimSpace(string(v)) != "null" {
-			return intent, invalid(messageEditDeleteValues)
+			return intent, device.Invalid(messageEditDeleteValues)
 		}
 		return intent, nil
 	}
 	var values map[string]json.RawMessage
 	if json.Unmarshal(raw["values"], &values) != nil || len(values) != 4 {
-		return intent, invalid(messageEditValues)
+		return intent, device.Invalid(messageEditValues)
 	}
 	for _, key := range []string{"cidr", "gateway", "enabled", "comment"} {
 		if _, ok := values[key]; !ok {
-			return intent, invalid(messageEditValues)
+			return intent, device.Invalid(messageEditValues)
 		}
 	}
 	v := new(RouteValues)
 	if !routeJSONString(values["cidr"], &v.CIDR) || !routeJSONString(values["gateway"], &v.Gateway) {
-		return intent, invalid(messageEditAddressText)
+		return intent, device.Invalid(messageEditAddressText)
 	}
 	network, ok := netipx.ParseNetwork4(strings.TrimSpace(v.CIDR), false)
 	gateway, e := netip.ParseAddr(strings.TrimSpace(v.Gateway))
 	if !ok || e != nil || !network.Addr().Is4() || !gateway.Is4() {
-		return intent, invalid(messageEditAddress)
+		return intent, device.Invalid(messageEditAddress)
 	}
 	if gateway.IsUnspecified() || gateway.IsMulticast() || gateway.IsLoopback() || gateway.String() == "255.255.255.255" {
-		return intent, invalid(messageEditGateway)
+		return intent, device.Invalid(messageEditGateway)
 	}
 	if string(values["enabled"]) != "true" && string(values["enabled"]) != "false" {
-		return intent, invalid(messageEditEnabled)
+		return intent, device.Invalid(messageEditEnabled)
 	}
 	_ = json.Unmarshal(values["enabled"], &v.Enabled)
 	if !routeJSONString(values["comment"], &v.Comment) || utf8.RuneCountInString(v.Comment) > 512 || strings.ContainsRune(v.Comment, 0) {
-		return intent, invalid(messageEditComment)
+		return intent, device.Invalid(messageEditComment)
 	}
 	v.CIDR = network.Masked().String()
 	v.Gateway = gateway.String()
@@ -237,7 +238,7 @@ func NormalizeRouteRequest(data json.RawMessage) (RouteIntent, error) {
 }
 
 func routeJSONString(data []byte, target *string) bool {
-	value, ok := requestString(data)
+	value, ok := device.RequestString(data)
 	if ok {
 		*target = value
 	}
@@ -254,20 +255,20 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 	if intent.Action != "add" {
 		current = editableByID(rows, intent.ID)
 		if current == nil {
-			return nil, rosError(KindConflict, messageEditMissing)
+			return nil, device.KindError(KindConflict, messageEditMissing)
 		}
 		if current.Public().Revision != intent.Revision {
-			return nil, rosError(KindConflict, messageEditDrift)
+			return nil, device.KindError(KindConflict, messageEditDrift)
 		}
 		if !current.Editable {
-			return nil, rosError(KindConflict, firstNonEmpty(current.Reason, messageEditReadonly))
+			return nil, device.KindError(KindConflict, device.FirstNonEmpty(current.Reason, messageEditReadonly))
 		}
 	}
 	v := intent.Values
 	if v != nil {
 		for _, row := range rows {
 			if row.CIDR == v.CIDR && row.Table == "main" && (current == nil || row.ID != current.ID) {
-				return nil, rosError(KindConflict, fmt.Sprintf(messageEditDuplicate, v.CIDR))
+				return nil, device.KindError(KindConflict, fmt.Sprintf(messageEditDuplicate, v.CIDR))
 			}
 		}
 	}
@@ -282,7 +283,7 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 			after = &PlannedRoute{ID: b.ID, Table: b.Table, Editable: &editable, Reason: &reason, Revision: b.Revision}
 		}
 		after.CIDR, after.Gateway, after.Enabled, after.Comment = v.CIDR, v.Gateway, v.Enabled, v.Comment
-		after.Managed = IsManaged(v.Comment)
+		after.Managed = device.IsManaged(v.Comment)
 		plan.After = after
 		plan.Empty = current != nil && routeValuesEqual(current, v)
 	}
@@ -295,7 +296,7 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 	}
 	label := map[string]string{"add": messageEditAdd, "update": messageEditUpdate, "delete": messageEditDelete}[intent.Action]
 	plan.Summary = fmt.Sprintf(messageEditSummary, label, cidr, gateway)
-	if (current != nil && current.Managed) || (v != nil && IsManaged(v.Comment)) {
+	if (current != nil && current.Managed) || (v != nil && device.IsManaged(v.Comment)) {
 		plan.Warnings = append(plan.Warnings, messageEditManaged)
 	}
 	type routeConnection struct {
@@ -324,14 +325,14 @@ func ExecuteRoutePlan(ctx context.Context, driver Driver, rows []*EditableRoute,
 		return nil, err
 	}
 	if plan == nil {
-		return nil, routerError(messageEditFormat)
+		return nil, device.Error(device.MessageEditFormat)
 	}
 	if plan.Empty {
 		return &RouteResult{Entry: plan.Before}, nil
 	}
 	editor, ok := driver.(RouteEditor)
 	if !ok {
-		return nil, routerError(messageEditUnsupported)
+		return nil, device.Error(messageEditUnsupported)
 	}
 	var expected *EditableRoute
 	if plan.ID != nil {
@@ -378,7 +379,7 @@ func RouterOperationLock(ctx context.Context, router Router, write bool) (contex
 	key := [2]string{router.Type, strings.TrimRight(router.Endpoint, "/")}
 	held, release, err := routeLocks.Lock(ctx, key, limit)
 	if err != nil && write && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-		return ctx, nil, rosError(KindConflict, messageEditBusy)
+		return ctx, nil, device.KindError(KindConflict, device.MessageEditBusy)
 	}
 	return held, release, err
 }
@@ -414,5 +415,5 @@ func routeSafeError(err error, endpoint, password string) error {
 	if kind == KindUncertainWrite {
 		message = messageEditSecretUncertain
 	}
-	return rosError(kind, message)
+	return device.KindError(kind, message)
 }

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/devhttp"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,7 @@ func init() {
 	RegisterRouterOSHandler("ros_policy_replace", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var op policyWrite
 		if devhttp.DecodeJSON(raw, &op) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		undo, err := d.applyPolicy(ctx, op)
 		if err != nil {
@@ -54,7 +55,7 @@ func init() {
 	RegisterRouterOSHandler("ros_policy_restore", func(ctx context.Context, d *RouterOS, raw json.RawMessage) (json.RawMessage, error) {
 		var undo ROSPolicyUndo
 		if devhttp.DecodeJSON(raw, &undo) != nil {
-			return nil, routerError(messageOperationFormat)
+			return nil, device.Error(device.MessageOperationFormat)
 		}
 		if err := d.RestoreROSPolicy(ctx, undo); err != nil {
 			return nil, err
@@ -71,11 +72,11 @@ func (d *RouterOS) ApplyROSPolicy(ctx context.Context, op *ROSPolicyReplace) (*R
 	}
 	raw, err := json.Marshal(op)
 	if err != nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	var write policyWrite
 	if devhttp.DecodeJSON(raw, &write) != nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	return d.applyPolicy(ctx, write)
 }
@@ -83,10 +84,10 @@ func (d *RouterOS) ApplyROSPolicy(ctx context.Context, op *ROSPolicyReplace) (*R
 func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyUndo, error) {
 	ctx = lifecycle.Detach(ctx)
 	if op.Evidence == nil || op.Bundle == nil || op.Migrations == nil || op.Replacements == nil {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	if len(op.Bundle) > 0 && (op.Spec == nil || len(op.Spec.Destinations) == 0 || len(op.Spec.Sources) == 0 || op.Spec.Gateway == "") {
-		return nil, routerError(messageOperationFormat)
+		return nil, device.Error(device.MessageOperationFormat)
 	}
 	d.InvalidateAddressReads()
 	live, err := d.snapshotPolicy(ctx, true)
@@ -96,8 +97,8 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 	expected, actual := maps.Clone(op.Evidence), stablePolicy(*live)
 	delete(expected, rosRoutes)
 	delete(actual, rosRoutes)
-	if !jsonValuesEqual(mustPolicyJSON(expected), mustPolicyJSON(actual)) {
-		return nil, routerError(messagePolicyPreviewChanged)
+	if !jsonValuesEqual(device.JSON(expected), device.JSON(actual)) {
+		return nil, device.Error(messagePolicyPreviewChanged)
 	}
 	owned, err := OwnedROSPolicyRows(op.Previous, live)
 	if err != nil {
@@ -119,7 +120,7 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 			journal = append(journal, NATStep{Action: "operation", Undo: slices.Clone(undo)})
 		}
 		if err := d.ApplyMany(ctx, op.PrepareStatic, record); err != nil {
-			if undo := UndoOf(err); len(undo) > 0 {
+			if undo := device.UndoOf(err); len(undo) > 0 {
 				record(nil, undo)
 			}
 			return err
@@ -129,11 +130,11 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 			if err != nil {
 				return err
 			}
-			index := NewStaticRouteIndex(state.Routes)
+			index := device.NewStaticRouteIndex(state.Routes)
 			for _, check := range op.StaticChecks {
 				selected, _ := index.Select(check.CIDR, check.Gateway)
-				if len(selected.Candidates) == 0 || slices.ContainsFunc(selected.Candidates, func(row *RouteEntry) bool { return !IsManaged(row.Comment) }) {
-					return routerError(messagePolicyStaticInactive + check.CIDR)
+				if len(selected.Candidates) == 0 || slices.ContainsFunc(selected.Candidates, func(row *RouteEntry) bool { return !device.IsManaged(row.Comment) }) {
+					return device.Error(messagePolicyStaticInactive + check.CIDR)
 				}
 			}
 		}
@@ -228,7 +229,7 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 	undo := &ROSPolicyUndo{Kind: "ros_policy_restore", Steps: journal, Previous: slices.Clone(op.Previous)}
 	if err != nil {
 		if rollback := d.RestoreROSPolicy(ctx, *undo); rollback != nil {
-			return nil, rollbackError(err.Error() + "；" + rollback.Error())
+			return nil, device.RollbackError(err.Error() + "；" + rollback.Error())
 		}
 		return nil, err
 	}
@@ -238,26 +239,26 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 	if len(resources) == 0 {
 		d.SetPolicyManifest(json.RawMessage(`null`))
 	} else {
-		d.SetPolicyManifest(mustPolicyJSON(ROSPolicyManifest{op.Spec, resources}))
+		d.SetPolicyManifest(device.JSON(ROSPolicyManifest{op.Spec, resources}))
 	}
 	return undo, nil
 }
 
 func guardPolicyIn(live ROSPolicySnapshot, item ROSResource) error {
 	if item.ID == "" || item.Config == nil {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	count := 0
 	for _, row := range live[item.Path] {
 		if row.id() == item.ID {
 			count++
 			if !sameRow(configROSRow(row), configROSRow(item.Config)) {
-				return routerError(fmt.Sprintf(messagePolicyChanged, item.Path, item.ID))
+				return device.Error(fmt.Sprintf(device.MessagePolicyChanged, item.Path, item.ID))
 			}
 		}
 	}
 	if count != 1 {
-		return routerError(fmt.Sprintf(messagePolicyChanged, item.Path, item.ID))
+		return device.Error(fmt.Sprintf(device.MessagePolicyChanged, item.Path, item.ID))
 	}
 	return nil
 }
@@ -350,7 +351,7 @@ func (d *RouterOS) deletePolicyRoutes(ctx context.Context, items []ROSResource, 
 		return err
 	}
 	if len(rows) > 0 {
-		return routerError(messagePolicyStillPresent)
+		return device.Error(device.MessagePolicyStillPresent)
 	}
 	return nil
 }
@@ -366,12 +367,12 @@ func (d *RouterOS) RestoreROSPolicy(ctx context.Context, undo ROSPolicyUndo) err
 	for _, step := range undo.Steps {
 		if step.Action == "operation" {
 			if len(step.Undo) == 0 {
-				return routerError(messageOperationFormat)
+				return device.Error(device.MessageOperationFormat)
 			}
 			continue
 		}
 		if !slices.Contains(policyPaths, step.Path) || !slices.Contains([]string{"delete", "restore", "sweep"}, step.Action) || step.Action != "sweep" && (step.ID == "" || step.Config == nil) {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
 	}
 	live, err := d.snapshotPolicy(ctx, false)
@@ -400,11 +401,11 @@ func (d *RouterOS) RestoreROSPolicy(ctx context.Context, undo ROSPolicyUndo) err
 	} else {
 		(*live)[rosAddresses] = append((*live)[rosAddresses], located...)
 	}
-	if _, err := OwnedROSPolicyRows(mustPolicyJSON(ROSPolicyManifest{Resources: deleting}), live); err != nil {
+	if _, err := OwnedROSPolicyRows(device.JSON(ROSPolicyManifest{Resources: deleting}), live); err != nil {
 		failures = append(failures, err.Error())
 	}
 	if len(undo.Retained) > 0 {
-		present, e := OwnedROSPolicyRows(mustPolicyJSON(ROSPolicyManifest{Resources: undo.Retained}), live)
+		present, e := OwnedROSPolicyRows(device.JSON(ROSPolicyManifest{Resources: undo.Retained}), live)
 		if e != nil {
 			failures = append(failures, e.Error())
 		} else {
@@ -466,15 +467,15 @@ func (d *RouterOS) RestoreROSPolicy(ctx context.Context, undo ROSPolicyUndo) err
 		}
 		var fields map[string]json.RawMessage
 		_ = devhttp.DecodeJSON(previous, &fields)
-		fields["resources"] = mustPolicyJSON(manifest.Resources)
-		previous = mustPolicyJSON(fields)
+		fields["resources"] = device.JSON(manifest.Resources)
+		previous = device.JSON(fields)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	d.SetPolicyManifest(previous)
 	if len(failures) > 0 {
-		return rollbackError(messagePolicyRollbackPrefix + joinPolicyMessages(failures))
+		return device.RollbackError(messagePolicyRollbackPrefix + joinPolicyMessages(failures))
 	}
 	return nil
 }
@@ -517,14 +518,14 @@ func (d *RouterOS) verifyReplacementPolicyNAT(ctx context.Context, op policyWrit
 		}
 	}
 	index := NewRouteEgressIndex(context)
-	sources := Networks(previous.Spec.Sources)
+	sources := device.Networks(previous.Spec.Sources)
 	for _, check := range op.StaticChecks {
 		destinations := []netip.Prefix{}
 		target, ok := netipx.ParseNetwork4(check.CIDR, true)
 		if !ok {
-			return routerError(messageOperationFormat)
+			return device.Error(device.MessageOperationFormat)
 		}
-		for _, old := range Networks(previous.Spec.Destinations) {
+		for _, old := range device.Networks(previous.Spec.Destinations) {
 			if old.Overlaps(target) {
 				if subnetOf(old, target) {
 					destinations = append(destinations, old)
@@ -541,7 +542,7 @@ func (d *RouterOS) verifyReplacementPolicyNAT(ctx context.Context, op policyWrit
 			if reason != "" {
 				reason = "；" + reason
 			}
-			return routerError(messagePolicyStaticNATUnproven + check.CIDR + reason)
+			return device.Error(messagePolicyStaticNATUnproven + check.CIDR + reason)
 		}
 	}
 	return nil
@@ -558,12 +559,12 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 	managed := []netip.Prefix{}
 	if state.NatContext == nil {
 		for _, rule := range state.NatBypass {
-			if rule.Enabled && IsManaged(rule.Comment) {
-				managed = append(managed, Networks(rule.Dst)...)
+			if rule.Enabled && device.IsManaged(rule.Comment) {
+				managed = append(managed, device.Networks(rule.Dst)...)
 			}
 		}
 	}
-	coverage := NewSupernetIndex(managed)
+	coverage := device.NewSupernetIndex(managed)
 	for _, cidr := range checks.NATBypass {
 		ok := false
 		if state.NatContext != nil {
@@ -577,12 +578,12 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 		}
 	}
 	if len(uncovered) > 0 {
-		return routerError(fmt.Sprintf(messageNATVerifyUncovered, strings.Join(uncovered, ", ")))
+		return device.Error(fmt.Sprintf(messageNATVerifyUncovered, strings.Join(uncovered, ", ")))
 	}
 	for _, check := range checks.NATNotRequired {
 		assessment := AssessBypass(check.CIDR, check.Gateway, state, index)
 		if assessment.Status != "not_required" {
-			return routerError(fmt.Sprintf(messageNATVerifyRequired, check.CIDR, assessment.Detail))
+			return device.Error(fmt.Sprintf(messageNATVerifyRequired, check.CIDR, assessment.Detail))
 		}
 	}
 	return nil
@@ -592,7 +593,7 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 // next hop and NAT evidence. Only transient invalid flags are waited for.
 func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) error {
 	if check == nil {
-		return routerError(messageOperationFormat)
+		return device.Error(device.MessageOperationFormat)
 	}
 	raw := check.Previous
 	if d.policyManifestSet {
@@ -612,12 +613,12 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 			return e
 		}
 		if len(owned)+len(previous) > 0 {
-			return routerError(messagePolicyWithdrawalIncomplete)
+			return device.Error(messagePolicyWithdrawalIncomplete)
 		}
 		return nil
 	}
 	if len(check.Spec.Destinations) == 0 {
-		return routerError(messagePolicyIncomplete)
+		return device.Error(messagePolicyIncomplete)
 	}
 	keys := policyKeys(owned)
 	for range 8 {
@@ -648,8 +649,8 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 	if err != nil {
 		return err
 	}
-	if manifest == nil || !jsonValuesEqual(mustPolicyJSON(manifest.Spec), mustPolicyJSON(check.Spec)) || len(owned) != len(manifest.Resources) {
-		return routerError(messagePolicyIncomplete)
+	if manifest == nil || !jsonValuesEqual(device.JSON(manifest.Spec), device.JSON(check.Spec)) || len(owned) != len(manifest.Resources) {
+		return device.Error(messagePolicyIncomplete)
 	}
 	if err = checkPolicyReferences(owned, *live); err != nil {
 		return err
@@ -663,7 +664,7 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 	keys = policyKeys(owned)
 	for _, row := range (*live)[rosFilter] {
 		if row.enabled() && row.is("action", "fasttrack-connection") {
-			return routerError(messagePolicyNewFastTrack)
+			return device.Error(messagePolicyNewFastTrack)
 		}
 	}
 	state, err := d.ReadState(ctx)
@@ -671,7 +672,7 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 		return err
 	}
 	if state.NatContext == nil {
-		return routerError(messagePolicyUnreadable)
+		return device.Error(messagePolicyUnreadable)
 	}
 	context := *state.NatContext
 	state.NatContext = &context
@@ -685,21 +686,21 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 	context.VRFs = (*live)["/ip/vrf"]
 	context.Routes = (*live)[rosRoutes]
 	if slices.ContainsFunc(context.Mangle, conflictingPolicyMangle) {
-		return routerError(messagePolicyNewMangle)
+		return device.Error(messagePolicyNewMangle)
 	}
 	index := NewRouteEgressIndex(&context)
 	iface, reason := Egress(check.Spec.Destinations[0], check.Spec.Gateway, &context, true, index)
 	if iface == "" {
-		return routerError(messagePolicyReadEgress + reason)
+		return device.Error(messagePolicyReadEgress + reason)
 	}
 	if iface != check.Spec.EgressInterface || check.Spec.NATInterface != "" && iface != check.Spec.NATInterface {
-		return routerError(messagePolicyInterfaceChanged)
+		return device.Error(messagePolicyInterfaceChanged)
 	}
 	if check.Spec.NATInterface == "" {
 		for _, cidr := range check.Spec.Destinations {
 			assessment := AssessNAT(cidr, check.Spec.Gateway, state, true, index)
 			if assessment.Status != "not_required" {
-				return routerError(messagePolicyNATNowRequired + assessment.Detail)
+				return device.Error(messagePolicyNATNowRequired + assessment.Detail)
 			}
 		}
 	}
@@ -722,14 +723,14 @@ func VerifyROSPolicy(ctx context.Context, d *RouterOS, check *ROSPolicyCheck) er
 	}
 	for _, entry := range check.Migrations {
 		if present[[2]string{entry.Path, entry.ID}] {
-			return routerError(messagePolicyMigrationPresent)
+			return device.Error(messagePolicyMigrationPresent)
 		}
 	}
 	for _, entry := range check.Replacements {
 		values := cloneRow(entry.Values)
 		delete(values, "place-before")
 		if !slices.ContainsFunc((*live)[entry.Path], func(row Row) bool { return valuesMatch(entry.Path, row, values) }) {
-			return routerError(messagePolicyReplacementMissing)
+			return device.Error(messagePolicyReplacementMissing)
 		}
 	}
 	return nil

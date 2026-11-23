@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -71,7 +72,7 @@ func TestR12FullInspectionStagesPython(t *testing.T) {
 				r.DNSAgentID = ""
 				r.DNSGuard = nil
 			}
-			cfg := mustPolicyJSON(map[string]any{"profile_id": "default", "mihomo": map[string]string{"custom_config": yaml}, "rule_configs": []any{}})
+			cfg := device.JSON(map[string]any{"profile_id": "default", "mihomo": map[string]string{"custom_config": yaml}, "rule_configs": []any{}})
 			gateway := r12Gateway()
 			dns := &model.Agent{ID: "dns", Host: "192.0.2.2", ServiceType: "oxidns", Status: "online", ProfileID: "default"}
 			records := map[string]*model.Agent{"gateway": gateway.Agent, "dns": dns}

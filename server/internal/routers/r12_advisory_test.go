@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"net/http/httptest"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestR12AdvisoryWholePlansPython(t *testing.T) {
 			for k, v := range tc.sets {
 				state.AddressSets[k] = v
 			}
-			before := mustPolicyJSON(state.NatContext)
+			before := device.JSON(state.NatContext)
 			report, e := BuildReport(input.Desired, state)
 			if e != nil {
 				t.Fatal(e)
@@ -51,7 +52,7 @@ func TestR12AdvisoryWholePlansPython(t *testing.T) {
 				t.Fatal(e)
 			}
 			r12Compare(t, "advisory plan", r12PlanComparable(t, py.Plan), r12PlanComparable(t, plan))
-			if !jsonEqual(before, mustPolicyJSON(state.NatContext)) {
+			if !device.JSONEqual(before, device.JSON(state.NatContext)) {
 				t.Fatal("advisory mutated routing evidence")
 			}
 		})

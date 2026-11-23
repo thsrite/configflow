@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,18 +10,18 @@ import (
 func staticPlanRoutes(report *Report, state *RouterState, gateway string, warnings *[]string) ([]Op, []string) {
 	ops := []Op{}
 	skipped := []string{}
-	ix := NewStaticRouteIndex(state.Routes)
+	ix := device.NewStaticRouteIndex(state.Routes)
 	for _, item := range report.Routes.Items {
 		switch item.Status {
 		case "missing":
-			comment := ManagedComment(strings.Join(item.Sources, ","))
-			ops = append(ops, RouteAddOp{OpHead{"route_add", fmt.Sprintf(messagePlanRouteAdd, item.CIDR, gateway, comment)}, item.CIDR, gateway, comment})
+			comment := device.ManagedComment(strings.Join(item.Sources, ","))
+			ops = append(ops, RouteAddOp{OpHead{Kind: "route_add", Summary: fmt.Sprintf(messagePlanRouteAdd, item.CIDR, gateway, comment)}, item.CIDR, gateway, comment})
 		case "adoptable":
 			sel, _ := ix.Select(item.CIDR, gateway)
 			for _, r := range sel.Candidates {
-				if !IsManaged(r.Comment) {
-					comment := ManagedComment(r.Comment)
-					ops = append(ops, RouteCommentOp{OpHead{"route_comment", fmt.Sprintf(messagePlanRouteAdopt, r.Dst, orText(r.Comment, messageNone), comment)}, r.ID, r.Dst, comment})
+				if !device.IsManaged(r.Comment) {
+					comment := device.ManagedComment(r.Comment)
+					ops = append(ops, RouteCommentOp{OpHead{Kind: "route_comment", Summary: fmt.Sprintf(messagePlanRouteAdopt, r.Dst, device.OrText(r.Comment, messageNone), comment)}, r.ID, r.Dst, comment})
 				}
 			}
 		case "conflict":
@@ -29,15 +30,9 @@ func staticPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 		}
 	}
 	for _, e := range report.Routes.Extra {
-		ops = append(ops, RouteDeleteOp{OpHead{"route_delete", fmt.Sprintf(messagePlanRouteDelete, e.CIDR, e.Gateway)}, e.RouteID, e.CIDR})
+		ops = append(ops, RouteDeleteOp{OpHead{Kind: "route_delete", Summary: fmt.Sprintf(messagePlanRouteDelete, e.CIDR, e.Gateway)}, e.RouteID, e.CIDR})
 	}
 	return ops, skipped
-}
-func orText(s, fallback string) string {
-	if s != "" {
-		return s
-	}
-	return fallback
 }
 func prependWarning(warnings *[]string, s string) { *warnings = append([]string{s}, *warnings...) }
 func groupOpsInto(ops []GroupOp) []Op {
@@ -75,9 +70,9 @@ func makePolicyOp(p *GroupPlanner, role string, rule *PolicyRouteEntry, gateway 
 	if rule != nil {
 		summary = fmt.Sprintf(messagePolicyUpdate, comment, scope)
 	}
-	op := PolicyRouteOp{OpHead: OpHead{kind, summary}, ID: id, Gateway: gateway, Dst: dst, Comment: comment}
+	op := PolicyRouteOp{OpHead: OpHead{Kind: kind, Summary: summary}, ID: id, Gateway: gateway, Dst: dst, Comment: comment}
 	if p == nil {
-		if rule != nil && PolicyRouteOK(rule, gateway) && sameStrings(rule.Dst, dst) {
+		if rule != nil && device.PolicyRouteOK(rule, gateway) && sameStrings(rule.Dst, dst) {
 			return nil
 		}
 		return op
@@ -89,7 +84,7 @@ func makePolicyOp(p *GroupPlanner, role string, rule *PolicyRouteEntry, gateway 
 	final, changes := p.Family(role, want, key)
 	*groups = append(*groups, groupOpsInto(changes)...)
 	p.RouteRules = append(p.RouteRules, GroupRuleCheck{Func: "stream_ipport", Comment: comment, Groups: final, KeepForeign: keep})
-	if rule != nil && PolicyRouteOK(rule, gateway) && !p.NeedsRewrite(key, role, keep) {
+	if rule != nil && device.PolicyRouteOK(rule, gateway) && !p.NeedsRewrite(key, role, keep) {
 		return nil
 	}
 	op.Groups = &final
@@ -123,9 +118,9 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 			target = append(target, item.CIDR)
 		}
 	}
-	covered := NewSupernetIndex(Networks(target))
+	covered := device.NewSupernetIndex(device.Networks(target))
 	inside := func(cidr string) bool {
-		for _, net := range Networks([]string{cidr}) {
+		for _, net := range device.Networks([]string{cidr}) {
 			if covered.Covers(net) {
 				return true
 			}
@@ -139,7 +134,7 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 		}
 		checks = append(checks, PolicyRouteCheck{PolicyAutoComment, gateway, target})
 	} else if auto != nil {
-		ops = append(ops, PolicyRouteDeleteOp{OpHead{"policy_route_delete", fmt.Sprintf(messagePolicyDelete, PolicyAutoComment)}, auto.ID})
+		ops = append(ops, PolicyRouteDeleteOp{OpHead{Kind: "policy_route_delete", Summary: fmt.Sprintf(messagePolicyDelete, PolicyAutoComment)}, auto.ID})
 		if p != nil {
 			p.DeletedRules["policy:"+auto.ID] = true
 		}
@@ -151,7 +146,7 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 		}
 	}
 	manual := PolicyRoute(state, PolicyManualComment)
-	if (p != nil && (len(migrate) > 0 || manual != nil)) || (p == nil && (len(migrate) > 0 || (manual != nil && !PolicyRouteOK(manual, gateway)))) {
+	if (p != nil && (len(migrate) > 0 || manual != nil)) || (p == nil && (len(migrate) > 0 || (manual != nil && !device.PolicyRouteOK(manual, gateway)))) {
 		current := []string{}
 		key := ""
 		if manual != nil {
@@ -178,8 +173,8 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 	deleting := map[string]bool{}
 	for _, r := range state.Routes {
 		if r.Enabled && r.Gateway == gateway && (slices.Contains(migrate, r.Dst) || inside(r.Dst)) {
-			ops = append(ops, RouteDeleteOp{OpHead{"route_delete", fmt.Sprintf(messagePolicyStaticDelete, r.Dst, gateway, orText(r.Comment, messageNoComment))}, r.ID, r.Dst})
-			migrated = append(migrated, fmt.Sprintf("%s（%s）", r.Dst, orText(r.Comment, messageNoComment)))
+			ops = append(ops, RouteDeleteOp{OpHead{Kind: "route_delete", Summary: fmt.Sprintf(messagePolicyStaticDelete, r.Dst, gateway, device.OrText(r.Comment, messageNoComment))}, r.ID, r.Dst})
+			migrated = append(migrated, fmt.Sprintf("%s（%s）", r.Dst, device.OrText(r.Comment, messageNoComment)))
 			deleting[r.ID] = true
 		}
 	}
@@ -188,7 +183,7 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 	}
 	for _, e := range report.Routes.Extra {
 		if !strings.HasPrefix(e.RouteID, "policy:") && !deleting[e.RouteID] {
-			ops = append(ops, RouteDeleteOp{OpHead{"route_delete", fmt.Sprintf(messagePlanRouteDelete, e.CIDR, e.Gateway)}, e.RouteID, e.CIDR})
+			ops = append(ops, RouteDeleteOp{OpHead{Kind: "route_delete", Summary: fmt.Sprintf(messagePlanRouteDelete, e.CIDR, e.Gateway)}, e.RouteID, e.CIDR})
 		}
 	}
 	return append(groups, ops...), skipped, checks
@@ -196,7 +191,7 @@ func policyPlanRoutes(report *Report, state *RouterState, gateway string, warnin
 func retiredPlanRoutes(state *RouterState, proxy, skipped []string, warnings, blockers *[]string) ([]Op, []CIDRGateway) {
 	ops := []Op{}
 	restored := []CIDRGateway{}
-	covered := NewSupernetIndex(Networks(proxy))
+	covered := device.NewSupernetIndex(device.Networks(proxy))
 	existing := map[string]bool{}
 	for _, r := range state.Routes {
 		existing[r.Dst] = true
@@ -206,7 +201,7 @@ func retiredPlanRoutes(state *RouterState, proxy, skipped []string, warnings, bl
 		if r.Comment != PolicyManualComment {
 			continue
 		}
-		for _, net := range Networks(r.Dst) {
+		for _, net := range device.Networks(r.Dst) {
 			if covered.Covers(net) {
 				continue
 			}
@@ -216,16 +211,16 @@ func retiredPlanRoutes(state *RouterState, proxy, skipped []string, warnings, bl
 				continue
 			}
 			existing[cidr] = true
-			ops = append(ops, RouteAddOp{OpHead{"route_add", fmt.Sprintf(messageRestoreManual, cidr, r.Gateway, RestoredComment)}, cidr, r.Gateway, RestoredComment})
-			restored = append(restored, CIDRGateway{cidr, r.Gateway})
+			ops = append(ops, RouteAddOp{OpHead{Kind: "route_add", Summary: fmt.Sprintf(messageRestoreManual, cidr, r.Gateway, RestoredComment)}, cidr, r.Gateway, RestoredComment})
+			restored = append(restored, CIDRGateway{CIDR: cidr, Gateway: r.Gateway})
 		}
 	}
 	lost := []string{}
 	for _, cidr := range skipped {
 		hit := false
-		for _, net := range Networks([]string{cidr}) {
+		for _, net := range device.Networks([]string{cidr}) {
 			for _, r := range state.RetiredPolicyRoutes {
-				for _, old := range Networks(r.Dst) {
+				for _, old := range device.Networks(r.Dst) {
 					hit = hit || net.Overlaps(old)
 				}
 			}
@@ -239,7 +234,7 @@ func retiredPlanRoutes(state *RouterState, proxy, skipped []string, warnings, bl
 		*blockers = append(*blockers, fmt.Sprintf(messageRetireConflict, strings.Join(lost, "、")))
 	}
 	for _, r := range state.RetiredPolicyRoutes {
-		ops = append(ops, PolicyRouteDeleteOp{OpHead{"policy_route_delete", fmt.Sprintf(messageRetirePolicy, r.Comment)}, r.ID})
+		ops = append(ops, PolicyRouteDeleteOp{OpHead{Kind: "policy_route_delete", Summary: fmt.Sprintf(messageRetirePolicy, r.Comment)}, r.ID})
 	}
 	if len(state.RetiredPolicyRoutes) > 0 {
 		suffix := ""
