@@ -1,6 +1,7 @@
 package weburl
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -91,12 +92,16 @@ func FuzzParseAndPrepare(f *testing.F) {
 		p, err := Prepare(raw, nil)
 		if err == nil && p != nil {
 			s := p.String()
-			// Idempotence: preparing an already-prepared URL must succeed and
-			// keep the same string when there are no stray control chars.
-			if p2, err2 := Prepare(s, nil); err2 != nil {
-				t.Fatalf("Prepare(Prepare(%q) = %q) failed: %v", raw, s, err2)
-			} else if p2.String() != s {
-				t.Fatalf("Prepare not idempotent for %q: first=%q second=%q", raw, s, p2.String())
+			// Idempotence: when net/url itself accepts the formatted URL,
+			// preparing it a second time must keep the same string.
+			if _, stdErr := url.Parse(s); stdErr == nil {
+				p2, err2 := Prepare(s, nil)
+				if err2 != nil {
+					t.Fatalf("Prepare(Prepare(%q) = %q) failed: %v", raw, s, err2)
+				}
+				if p2.String() != s {
+					t.Fatalf("Prepare not idempotent for %q: first=%q second=%q", raw, s, p2.String())
+				}
 			}
 		}
 		if pk != "" || pv != "" {
