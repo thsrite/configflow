@@ -131,8 +131,9 @@ func TestReleaseMatchesLegacyOnRealVersions(t *testing.T) {
 }
 
 // Components that only Python's int() accepted (signs, underscores, inner
-// spaces, more than 64 bits) are no longer numbers: Agent versions compare
-// them as text and release versions are invalid.
+// spaces) are no longer numbers: Agent versions compare them as text and
+// release versions are invalid. Agent components of more than 64 bits still
+// compare as numbers; release components that overflow are invalid.
 func TestNonDecimalComponents(t *testing.T) {
 	tests := []struct {
 		name string
@@ -146,7 +147,10 @@ func TestNonDecimalComponents(t *testing.T) {
 		{"space is text", "1. 02 ", "1.2", -1},
 		{"underscore is text", "1.2_0", "1.20", 1},
 		{"sign is text", "1.+2", "1.2", -1},
-		{"overflow is text", strings.Repeat("1", 30), "2", -1},
+		{"long number beats short", strings.Repeat("1", 30), "2", 1},
+		{"long numbers compare as numbers", "9" + strings.Repeat("0", 25), "1" + strings.Repeat("0", 26), -1},
+		{"long number with leading zeros", "000" + strings.Repeat("7", 25), strings.Repeat("7", 25), 0},
+		{"update check on a huge current version", "1" + strings.Repeat("0", 25) + ".0", "2.0", 1},
 		{"suffix ignored", "1.8.61-go", "1.8.61", 0},
 	}
 	for _, tt := range tests {

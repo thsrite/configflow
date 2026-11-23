@@ -3123,8 +3123,8 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   `CredentialEncodingError`，CA 证书包 `OSError` → `CertificateBundleError`；mosdns 下载失败文案里的类名属于用户文案，未动。
   流量记录写入失败（500 页、只进日志）的错误文本改为 `invalid traffic data: …` / `missing traffic member "rule"`
   （以前照搬 Python 的 `unhashable type: 'list'`、`'rule'`、`sequence item 0: …`）。安装脚本接口失败日志里缺省参数写 `-`（以前 `None`）。
-- **Agent 版本比较**（`version.CompareAgent`，原 `agents.CompareVersions`）：每段只认 ASCII 数字且不超过 uint64；Python `int()`
-  才接受的写法（首尾空白、`+`、`_`、超过 64 位的数字）改按文本比较。**Sub-Store 版本**（`version.ParseRelease`）同理，这类段使版本无效。
+- **Agent 版本比较**（`version.CompareAgent`，原 `agents.CompareVersions`）：每段只认 ASCII 数字（任意长度，按数值比较）；Python `int()`
+  才接受的写法（首尾空白、`+`、`_`）改按文本比较。**Sub-Store 版本**（`version.ParseRelease`）同理，这类段以及超过 uint64 的段使版本无效。
   所有真实版本号（Agent 更新日志里的全部版本、各功能最低版本、Sub-Store/Mihomo 版本形式）逐对与旧实现一致，见
   `internal/version/compare_test.go`。
 - **MCP 安装工具**：布尔参数按 `true`/`false` 传给安装接口（以前是 Python 的 `True`/`False`）。`install_core`、`prepare_dns_ha`、

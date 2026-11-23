@@ -63,9 +63,9 @@ func TestNativeVersionBusinessRules(t *testing.T) {
 	}{
 		{"1.2-go", "1.2.0", 0}, {"1.2", "1.2.1", -1},
 		{"1.alpha", "1.beta", -1}, {"1.", "1.0", -1},
-		// Spaces, underscores and over-long numbers are text (O17).
+		// Spaces and underscores are text (O17); long numbers stay numbers.
 		{"1. 02 ", "1.2", -1}, {"1.2_0", "1.20", 1},
-		{"1.٣", "1.4", 1}, {strings.Repeat("1", 4301), "2", -1},
+		{"1.٣", "1.4", 1}, {strings.Repeat("1", 4301), "2", 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.a[:min(len(tt.a), 32)]+"/"+tt.b, func(t *testing.T) {

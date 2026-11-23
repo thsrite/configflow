@@ -1,6 +1,7 @@
 package version
 
 import (
+	"configflow/internal/textx"
 	"strconv"
 	"strings"
 )
@@ -15,10 +16,22 @@ func part(text string) (uint64, bool) {
 	return n, err == nil
 }
 
+// compareDigits compares two ASCII digit runs as numbers of any length.
+func compareDigits(a, b string) int {
+	a, b = strings.TrimLeft(a, "0"), strings.TrimLeft(b, "0")
+	if len(a) != len(b) {
+		if len(a) < len(b) {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
 // CompareAgent compares two Agent versions and returns -1, 0 or 1. A "-suffix"
 // (such as "-go") is ignored, the shorter list of dotted components is padded
 // with "0", and each pair of components is compared as numbers when both are
-// numeric, otherwise as text.
+// numeric (ASCII digits of any length), otherwise as text.
 func CompareAgent(a, b string) int {
 	left := strings.Split(strings.SplitN(a, "-", 2)[0], ".")
 	right := strings.Split(strings.SplitN(b, "-", 2)[0], ".")
@@ -29,14 +42,9 @@ func CompareAgent(a, b string) int {
 		right = append(right, "0")
 	}
 	for i := range left {
-		x, okX := part(left[i])
-		y, okY := part(right[i])
-		if okX && okY {
-			if x != y {
-				if x < y {
-					return -1
-				}
-				return 1
+		if textx.ASCIIDigits(left[i]) && textx.ASCIIDigits(right[i]) {
+			if c := compareDigits(left[i], right[i]); c != 0 {
+				return c
 			}
 			continue
 		}
