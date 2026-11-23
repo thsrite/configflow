@@ -3,6 +3,7 @@ package weburl
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -43,33 +44,31 @@ func HasControl(s string) bool {
 	return strings.ContainsFunc(s, func(r rune) bool { return r < 32 || r == 127 })
 }
 
-func badEscape(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '%' && !(i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2])) {
-			return true
-		}
-	}
-	return false
-}
-
 // decodeLayers decodes until nothing changes (at most maxLayers times),
 // refusing control characters and broken escapes at every step.
 func decodeLayers(value string, plus bool) (string, error) {
-	decode := Unquote
+	decode := url.PathUnescape
 	if plus {
-		decode = UnquotePlus
+		decode = url.QueryUnescape
 	}
 	for range maxLayers {
-		if HasControl(value) || badEscape(value) {
+		if HasControl(value) {
 			return "", errUnsafe
 		}
-		decoded := decode(value)
+		decoded, err := decode(value)
+		if err != nil {
+			return "", errUnsafe
+		}
+		decoded = strings.ToValidUTF8(decoded, "\uFFFD")
 		if decoded == value {
 			return value, nil
 		}
 		value = decoded
 	}
-	if decode(value) != value || HasControl(value) || badEscape(value) {
+	if HasControl(value) {
+		return "", errUnsafe
+	}
+	if decoded, err := decode(value); err != nil || strings.ToValidUTF8(decoded, "\uFFFD") != value {
 		return "", errUnsafe
 	}
 	return value, nil
@@ -124,7 +123,10 @@ func sanitizeValue(value string, depth int) (string, error) {
 }
 
 func safeURL(value string, depth int) (string, error) {
-	if value == "" || HasControl(value) || badEscape(value) {
+	if value == "" || HasControl(value) {
+		return "", errUnsafe
+	}
+	if _, err := url.PathUnescape(value); err != nil {
 		return "", errUnsafe
 	}
 	// The user information is cut before anything is decoded: an encoded

@@ -148,16 +148,11 @@ func Unquote(s string) string {
 	if !strings.Contains(s, "%") {
 		return s
 	}
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]) {
-			b.WriteByte(unhex(s[i+1])<<4 | unhex(s[i+2]))
-			i += 2
-			continue
-		}
-		b.WriteByte(s[i])
+	decoded, err := url.PathUnescape(s)
+	if err != nil {
+		decoded, _ = url.PathUnescape(escapeStrayPercent(s))
 	}
-	return strings.ToValidUTF8(b.String(), "\uFFFD")
+	return strings.ToValidUTF8(decoded, "\uFFFD")
 }
 
 // UnquotePlus is Unquote after "+" → " " (form encoding).
@@ -165,16 +160,6 @@ func UnquotePlus(s string) string { return Unquote(strings.ReplaceAll(s, "+", " 
 
 func isHex(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
-}
-
-func unhex(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	}
-	return c - 'A' + 10
 }
 
 // EncodeQuery is the form encoding of ordered key/value pairs.
@@ -203,7 +188,7 @@ func Prepare(raw string, params [][2]string) (*url.URL, error) {
 	if u.RawPath != "" {
 		// RawPath is set when the written path differs from Go's own
 		// encoding of the decoded path; keep it, made valid.
-		u.RawPath = escapeExcept(u.RawPath, uriChars)
+		u.RawPath = escapeExcept(u.RawPath, pathChars)
 	}
 	if (u.Scheme == "http" || u.Scheme == "https") && u.Opaque == "" {
 		u = u.ResolveReference(&url.URL{})
@@ -235,17 +220,16 @@ func escapeStrayPercent(s string) string {
 	return b.String()
 }
 
-// uriChars are the ASCII punctuation characters RFC 3986 allows in a path or
-// query (besides letters and digits), "%" for existing escapes.
-const uriChars = "-._~!$&'()*+,;=:@/?%[]"
+// pathChars are the ASCII punctuation characters accepted in a prepared path
+// (matching net/url's RawPath rules), plus "%" so existing escapes are kept.
+const pathChars = "-._~!$&'()*+,;=:@/?%[]"
 
-// queryChars follows requests' requote_uri treatment of square brackets in
-// an existing query; brackets are quoted even though they are valid in the
-// RFC 3986 query grammar.
+// queryChars are the RFC 3986 §3.4 query punctuation characters (excluding
+// square brackets), plus "%" so existing escapes are kept.
 const queryChars = "-._~!$&'()*+,;=:@/?%"
 
 // escapeExcept percent-encodes every byte of s that is not an ASCII letter,
-// digit or one of allowed.
+// digit or one of allowed, leaving already-escaped sequences untouched.
 func escapeExcept(s, allowed string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
