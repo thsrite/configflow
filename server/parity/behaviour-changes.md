@@ -3094,3 +3094,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - **HR 复核补充**（review-o18-t1d.md）：订阅缓存 metadata 没有 `url` 成员（旧缓存）时，配置向导不比较订阅链接（Python `get('url', 当前链接)`；
   `null` 仍按已存链接比较）；节点列表含 `null` 元素算损坏，发布照旧拒绝；JSON 真值把下溢到 0.0 的数（`1e-400`）当假（Python `bool`）；
   `dns.use-hosts/enable: null` 读作缺失；通知的 `profile_id/profile_name/checked_at/evidence` 与 Sub-Store 运行状态的 `error` 写入时不再做 HTML 转义（`&<>` 原样，与 Python 相同）。
+- **自定义基础配置不是文本（HR 复核 M3 裁定）**：Mihomo/Surge/Loon/MosDNS 的 `custom_config` 存成非文本时，Python 为假的值（`[]`、`{}`、`false`、`0`）
+  照旧当作没有自定义配置（并告警）；其它值（对象、列表、`true`、非零数字）读作损坏并告警、写回保持损坏，生成配置、IPv6 部署、期望 fake-ip 网段、
+  监听器引用改写、端口检查都拒绝（「<引擎>.custom_config 不是文本，请在配置页重新填写后保存」/「基础 YAML 必须是文本」），不再按空基础继续
+  （T1c 起读作空；Python 在这些值上出错）。数字以前读作其文本，现在同样算损坏。
