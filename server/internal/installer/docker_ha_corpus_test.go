@@ -119,6 +119,10 @@ func TestDockerHACorpusMatchesPython(t *testing.T) {
 				t.Errorf("case %s (%s %.300v): "+format, append([]any{id, mapStr(record, "kind"), input}, args...)...)
 			}
 		}
+		if request, ok := input["request"].(map[string]any); ok && mapStr(record, "kind") == "guide" && o17TextOnly(request, err) {
+			counts["deliberate (O17 text-only addresses)"]++
+			continue
+		}
 		if present, problem := n810PathRefusal(record, err); problem != nil {
 			t.Fatal(problem)
 		} else if present {

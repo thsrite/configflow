@@ -36,6 +36,8 @@ const (
 	msgGuideObject            = "请提交 JSON 对象"
 	msgPreflightOutputType    = "output 须为检查命令的文本输出"
 	msgVirtualIPv4            = "请填写有效的虚拟 IPv4 地址"
+	msgVirtualIPv4Text        = "虚拟 IPv4 地址必须是文本"
+	msgHAGatewayText          = "高可用网关地址必须是文本"
 	msgGuideAction            = "安装步骤或模式无效"
 	msgGuideMethod            = "install_method 须为 script、compose、compose_direct 或 compose_compact"
 	msgComposeNewOnly         = "Compose 安装包仅支持新安装；已有容器请使用迁移脚本"

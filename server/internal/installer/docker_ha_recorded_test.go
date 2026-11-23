@@ -220,6 +220,9 @@ func replayRecorded(t *testing.T, entry map[string]any) (string, string) {
 			return "unsupported enrollment", ""
 		}
 		got, err := GenerateGuide(args[0], enrollment)
+		if request, ok := args[0].(map[string]any); ok && got == nil && o17TextOnly(request, err) {
+			return "deliberate (O17 text-only addresses)", ""
+		}
 		if request, ok := args[0].(map[string]any); ok && got == nil && l1CompactColonRefusal(request, err) {
 			return "deliberate (L1 D1 compact colon)", ""
 		}

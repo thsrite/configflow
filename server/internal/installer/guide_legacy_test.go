@@ -794,3 +794,38 @@ func annotateCompose(text string, compose map[string]any) (string, error) {
 // ErrComposeVariantNotPorted is retained for source compatibility; all variants
 // are implemented by the typed renderer.
 var ErrComposeVariantNotPorted = errors.New("Docker HA Compose variant is unavailable")
+
+// decodeIPv4Value reads the textual and numeric address forms of the legacy
+// renderer cases (Python ipaddress.IPv4Address accepted booleans and
+// integers); the protocol decoder accepts text only.
+func decodeIPv4Value(raw json.RawMessage) (string, *yamlx.Node, string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return "", nil, "", false
+	}
+	if raw[0] == '"' {
+		var text string
+		if jsondecode.Unmarshal(raw, &text) != nil {
+			return "", nil, "", false
+		}
+		return text, yamlx.Str(text), text, true
+	}
+	if bytes.Equal(raw, []byte("true")) {
+		return "0.0.0.1", yamlx.Bool(true), "True", true
+	}
+	if bytes.Equal(raw, []byte("false")) {
+		return "0.0.0.0", yamlx.Bool(false), "False", true
+	}
+	value, err := strconv.ParseUint(string(raw), 10, 32)
+	if err != nil {
+		return "", nil, "", false
+	}
+	return ipv4Text(uint32(value)), yamlx.Int(int64(value)), strconv.FormatUint(value, 10), true
+}
+func emptyInspectionName(raw json.RawMessage) bool {
+	switch string(bytes.TrimSpace(raw)) {
+	case "", "null", "false", "0", "0.0", "[]", "{}":
+		return true
+	}
+	return false
+}

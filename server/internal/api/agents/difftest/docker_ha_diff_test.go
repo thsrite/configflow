@@ -391,6 +391,10 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 			same++
 			return p, g
 		}
+		if checkO17TextOnlyGuide(t, r, g) {
+			same++
+			return p, g
+		}
 		compareHA(t, r.name, p, g, &same, &failed, mask...)
 		return p, g
 	}
@@ -458,7 +462,9 @@ func TestDockerHADifferentialAgainstFlask(t *testing.T) {
 	issue("generate identity", haNewBody("create_host_identity", true, "agent_name", "id-dns"))
 	issue("generate odd url", haNewBody("server_url", "https://panel.example/it's/$(id)/", "agent_name", "odd-dns"))
 	issue("generate int agent ip", haNewBody("agent_ip", 3232248340, "agent_name", "int-dns"))
-	issue("generate extra fields", haNewBody("agent_name", "extra-dns", "extra", oObj("nested", []any{1, 2.5, nil, "例"}), "ha_gateway", 0))
+	// ha_gateway "" ("not filled"); a non-string gateway is refused since O17
+	// (o17_ha_test.go, installer o17_ruling_test.go).
+	issue("generate extra fields", haNewBody("agent_name", "extra-dns", "extra", oObj("nested", []any{1, 2.5, nil, "例"}), "ha_gateway", ""))
 	issue("generate other profile header", haNewBody("agent_name", "other-dns"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "other"} })
 	issue("generate other profile query", haNewBody("agent_name", "query-dns"), func(r *request) { r.path += "?profile=other" })
 	check(guideReq("generate bad profile header", haNewBody("agent_name", "bad-profile"), func(r *request) { r.headers = map[string]string{"X-ConfigFlow-Profile": "bad id!"} }))

@@ -3,7 +3,6 @@ package installer
 import (
 	"bytes"
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	"configflow/internal/jsondecode"
@@ -134,16 +133,16 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	case "inspect":
 		text, ok := textOr(fields, "container_name", "")
 		if !ok {
-			raw, _ := fields.Get("container_name")
-			if !emptyInspectionName(raw) {
-				return request, invalidInput(msgOriginalContainerName)
-			}
+			return request, invalidInput(msgOriginalContainerName)
 		}
 		request.ContainerName = text
 		return request, nil
 	case "verify":
-		raw, _ := fields.Get("vip")
-		ip, _, _, ok := decodeIPv4Value(raw)
+		raw, present := fields.Get("vip")
+		ip, ok := stringField(raw)
+		if !ok && present {
+			return request, invalidInput(msgVirtualIPv4Text)
+		}
 		if !ok {
 			return request, invalidInput(msgVirtualIPv4)
 		}
@@ -223,13 +222,12 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	if _, ok := fieldText(fields, "agent_ip"); !ok {
 		return request, invalidInput(msgFixedIPv4)
 	}
-	gatewayRaw, _ := p.identity.Get("ha_gateway")
-	if emptyInspectionName(gatewayRaw) {
-		p.HAGateway = ""
-	} else if gateway, _, _, ok := decodeIPv4Value(gatewayRaw); ok {
+	if gatewayRaw, present := p.identity.Get("ha_gateway"); present {
+		gateway, ok := stringField(gatewayRaw)
+		if !ok {
+			return request, invalidInput(msgHAGatewayText)
+		}
 		p.HAGateway = gateway
-	} else {
-		p.HAGateway = "invalid-gateway"
 	}
 	if request.InstallMethod != "compose_compact" {
 		raw, present := fields.Get("create_host_identity")
@@ -429,38 +427,14 @@ func renderGuide(request GuideRequest, enrollment *Capability) (*GuideResult, er
 	return result, nil
 }
 
-// decodeIPv4Value supports the existing public renderer's textual and numeric
-// address forms; each is validated as IPv4 before it reaches a command.
-func decodeIPv4Value(raw json.RawMessage) (string, *yamlx.Node, string, bool) {
+// stringField returns raw as text when it is a JSON string.
+func stringField(raw json.RawMessage) (string, bool) {
 	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 {
-		return "", nil, "", false
+	var text string
+	if len(raw) == 0 || raw[0] != '"' || jsondecode.Unmarshal(raw, &text) != nil {
+		return "", false
 	}
-	if raw[0] == '"' {
-		var text string
-		if jsondecode.Unmarshal(raw, &text) != nil {
-			return "", nil, "", false
-		}
-		return text, yamlx.Str(text), text, true
-	}
-	if bytes.Equal(raw, []byte("true")) {
-		return "0.0.0.1", yamlx.Bool(true), "True", true
-	}
-	if bytes.Equal(raw, []byte("false")) {
-		return "0.0.0.0", yamlx.Bool(false), "False", true
-	}
-	value, err := strconv.ParseUint(string(raw), 10, 32)
-	if err != nil {
-		return "", nil, "", false
-	}
-	return ipv4Text(uint32(value)), yamlx.Int(int64(value)), strconv.FormatUint(value, 10), true
-}
-func emptyInspectionName(raw json.RawMessage) bool {
-	switch string(bytes.TrimSpace(raw)) {
-	case "", "null", "false", "0", "0.0", "[]", "{}":
-		return true
-	}
-	return false
+	return text, true
 }
 
 func imageNode(request GuideRequest) *yamlx.Node {
