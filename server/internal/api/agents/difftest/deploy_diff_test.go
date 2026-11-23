@@ -102,18 +102,6 @@ func TestPublishHTTPAgainstFlask(t *testing.T) {
 	t.Setenv("CONFIGFLOW_DIFF_HOLD_IPV6_SCHEDULER", "1")
 	py, stopPy := startPythonArgs(t, pyDir, "server/internal/api/agents/difftest/testdata/publish_app.py")
 	defer stopPy()
-	// A fresh process Runtime, like the Python process: on the Runtime an
-	// earlier test stopped, startGoWith's RunStartup would skip the closed
-	// generation and Start would run agent-manager-init afterwards, which
-	// registers the real IPv6 scheduler again over the hold.
-	lifecycle.Stop(30 * time.Second)
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(func() {
-		lifecycle.Stop(30 * time.Second)
-		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	})
 	goBase, stopGo := startGoWith(t, goDir, nil, holdIPv6Scheduler)
 	defer stopGo()
 	pt, gt := login(t, py), login(t, goBase)
@@ -768,9 +756,8 @@ func TestPublishEasyTierCoreVersionsAgainstFlask(t *testing.T) {
 }
 
 // holdIPv6Scheduler replaces the IPv6 verification scheduler registered by the
-// Agent manager initialization (startup step agent-manager-init, already run
-// by startGoWith on a fresh Runtime) with a round that does nothing, before
-// the loops start.
+// Agent manager with a round that does nothing, before the loops start. The
+// next manager initialization registers the real scheduler again.
 func holdIPv6Scheduler() {
 	lifecycle.RegisterPeriodic(lifecycle.Periodic{
 		Name:     "ipv6-verification-scheduler",

@@ -261,9 +261,8 @@ func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lif
 	return startGoWith(t, dataDir, requestRuntime, nil)
 }
 
-// startGoWith runs beforeStart after the app is wired and the startup steps
-// (Agent manager initialization included) ran, right before the background
-// loops start.
+// startGoWith runs beforeStart after the app is wired and the Agent manager
+// registered its loops, right before the background loops start.
 func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime, beforeStart func()) (string, func()) {
 	pinPythonAgentVersion(t)
 	t.Setenv("DATA_DIR", dataDir)
@@ -293,13 +292,8 @@ func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime
 	}
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	// main runs the startup steps before listening, then starts the loops once
-	// listening and, on SIGTERM, stops the HTTP server before lifecycle.Stop
-	// runs the shutdown hooks. Since O17 W1 server.New registers the startup
-	// steps (agent-manager-init registers the IPv6 scheduler), so they run here
-	// first, as in cmd/configflow, and beforeStart can replace what they
-	// registered; Start does not run them again in the same generation.
-	lifecycle.RunStartup(context.Background())
+	// main starts the loops once listening and, on SIGTERM, stops the HTTP
+	// server before lifecycle.Stop runs the shutdown hooks.
 	if beforeStart != nil {
 		beforeStart()
 	}
