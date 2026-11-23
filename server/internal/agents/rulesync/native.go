@@ -132,9 +132,29 @@ func nativeProjection(base, current, result *yaml.Node, s Settings, published, w
 			}
 		}
 	}
-	changes := obj()
-	for _, key := range append(fields, "rule_actions", "rule_dns_follow") {
-		yamlx.Set(changes, key, get(values, key))
+	stringsOf := func(n *yaml.Node) *[]string {
+		out := make([]string, 0, len(list(n)))
+		for _, item := range list(n) {
+			out = append(out, text(item))
+		}
+		return &out
+	}
+	actions := oxidns.RuleActionsFromNode(get(values, "rule_actions"))
+	changes := oxidns.RoutingChanges{
+		RuleActions:   &actions,
+		RuleDNSFollow: stringsOf(get(values, "rule_dns_follow")),
+	}
+	for _, key := range fields {
+		switch key {
+		case "direct_rules":
+			changes.DirectRules = stringsOf(get(values, key))
+		case "proxy_rules":
+			changes.ProxyRules = stringsOf(get(values, key))
+		case "direct_rulesets":
+			changes.DirectRulesets = stringsOf(get(values, key))
+		case "proxy_rulesets":
+			changes.ProxyRulesets = stringsOf(get(values, key))
+		}
 	}
 	projectedSettings := get(result, "oxidns")
 	rp, err := profile(result)

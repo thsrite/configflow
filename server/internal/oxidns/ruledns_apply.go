@@ -481,8 +481,18 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 			placeDNSChoice(values, rules[id], nil)
 		}
 	}
-	changes := M()
-	installDNSFields(changes, values, append(append([]string{}, Selectors...), "rule_actions", "rule_dns_follow"))
+	actions := make([]RuleActionEntry, 0, values.Actions.len())
+	for _, id := range values.Actions.order {
+		actions = append(actions, RuleActionEntry{RuleID: id, Action: values.Actions.items[id]})
+	}
+	changes := RoutingChanges{
+		DirectRules:    &values.DirectRules,
+		ProxyRules:     &values.ProxyRules,
+		DirectRulesets: &values.DirectRulesets,
+		ProxyRulesets:  &values.ProxyRulesets,
+		RuleActions:    &actions,
+		RuleDNSFollow:  &values.Follow,
+	}
 	source := clone(settings)
 	installDNSFields(source, values, []string{"rule_dns_parked", "rule_dns_follow"})
 	document, resultSettings, err := ApplyRouting(view.Document, source, after, changes, options.BaseURL, RoutingOptions{BeforeConfig: before})

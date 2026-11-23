@@ -328,12 +328,9 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 		if edit.NotesRevision != notesRevision {
 			return repo.NewInUse(msgPolicyConflict, nil)
 		}
-		rows := oxidns.Null()
-		if len(edit.Policies) > 0 {
-			rows, err = oxidns.FromJSON(edit.Policies)
-			if err != nil {
-				return err
-			}
+		rows, err := oxidns.ParsePolicies(edit.Policies)
+		if err != nil {
+			return err
 		}
 		saved, err := oxidns.SavePolicyRows(p, settings, rows, edit.BaseURL)
 		if err != nil {

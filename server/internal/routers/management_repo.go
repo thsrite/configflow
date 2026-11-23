@@ -72,15 +72,15 @@ func saveWorkspacePolicies(config json.RawMessage, rows json.RawMessage, base st
 	if jsonEqual(rows, current) {
 		return config, nil
 	}
-	node, err := yamlx.FromJSON(rows)
+	parsed, err := oxidns.ParsePolicies(rows)
 	if err != nil {
 		return nil, err
 	}
-	_, notes, err := oxidns.PreparePolicyNotes(profile, node)
+	_, notes, err := oxidns.PreparePolicyNotes(profile, parsed)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := oxidns.SavePolicyRows(profile, profile.Settings(), node, base)
+	settings, err := oxidns.SavePolicyRows(profile, profile.Settings(), parsed, base)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func saveWorkspacePolicies(config json.RawMessage, rows json.RawMessage, base st
 	if err = doc.Set("oxidns", json.RawMessage(replacement)); err != nil {
 		return nil, err
 	}
-	names, err := yamlx.ToJSON(notes)
+	names, err := json.Marshal(notes)
 	if err != nil {
 		return nil, err
 	}

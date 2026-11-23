@@ -168,11 +168,7 @@ func (s *Service) upstreamFindings(ctx context.Context, a, b *agent) ([]string, 
 	if a.AppliedContent != nil {
 		base = a.AppliedContent.BaseURL
 	}
-	settings, e := oxidns.PrepareEditor(p.Settings(), p, base)
-	if e != nil {
-		return blockers, append(warnings, msgDraftUnknown)
-	}
-	doc, e := oxidns.LoadNativeYAML(text(yamlx.Get(settings, "native_config")), "")
+	_, doc, e := oxidns.PrepareProfileEditor(p, base)
 	if e != nil {
 		return blockers, append(warnings, msgDraftUnknown)
 	}

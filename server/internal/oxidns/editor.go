@@ -169,6 +169,23 @@ func renderTemplate(settings *Node, p *Profile, baseURL string) (*Node, string, 
 	return template, text, document, err
 }
 
+// PrepareProfileEditor prepares the profile's unified native draft and parses
+// its native YAML document.
+func PrepareProfileEditor(p *Profile, baseURL string) (*Node, *nativeDoc, error) {
+	if p == nil {
+		p = emptyProfile()
+	}
+	settings, err := PrepareEditor(p.Settings(), p, baseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	doc, err := readSettingsView(settings).loadNative(NativeLabel)
+	if err != nil {
+		return nil, nil, err
+	}
+	return settings, doc, nil
+}
+
 // PrepareEditor returns the unified native draft of settings without
 // writing it: template settings are rendered into a native draft.
 func PrepareEditor(settings *Node, p *Profile, baseURL string) (*Node, error) {

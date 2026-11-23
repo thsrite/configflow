@@ -620,12 +620,21 @@ func ReadPolicies(settings *Node, p *Profile) (PolicyView, error) {
 	return PolicyView{}, err
 }
 
-// ApplyPolicies stores new rows and patches the native draft.
-func ApplyPolicies(settings *Node, p *Profile, value *Node, baseURL string) (*Node, error) {
-	rows, err := parsePolicies(value)
-	if err != nil {
-		return nil, err
+// ParsePolicies decodes and validates device policy rows from JSON, returning
+// a SettingsError on invalid input.
+func ParsePolicies(raw []byte) ([]devicenotes.Policy, error) {
+	if len(raw) == 0 {
+		raw = []byte("null")
 	}
+	rows, err := devicenotes.ParsePolicies(raw)
+	if err != nil {
+		return nil, fail(err.Error())
+	}
+	return rows, nil
+}
+
+// ApplyPolicies stores new rows and patches the native draft.
+func ApplyPolicies(settings *Node, p *Profile, rows []devicenotes.Policy, baseURL string) (*Node, error) {
 	current, err := PrepareEditor(settings, p, baseURL)
 	if err != nil {
 		return nil, err

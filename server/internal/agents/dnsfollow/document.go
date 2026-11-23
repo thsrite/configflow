@@ -47,12 +47,7 @@ func document(src *deploy.Source, baseURL string) (*yamlx.Node, *yamlx.Node, err
 	if err != nil {
 		return nil, nil, err
 	}
-	settings, err := oxidns.PrepareEditor(p.Settings(), p, baseURL)
-	if err != nil {
-		return nil, nil, err
-	}
-	doc, err := oxidns.LoadNativeYAML(text(yamlx.Get(settings, "native_config")), "")
-	return settings, doc, err
+	return oxidns.PrepareProfileEditor(p, baseURL)
 }
 func entries(doc *yamlx.Node) []upstream {
 	plugins := elements(yamlx.Get(doc, "plugins"))

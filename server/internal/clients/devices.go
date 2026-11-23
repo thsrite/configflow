@@ -215,15 +215,7 @@ func UpdateDevice(ctx context.Context, config json.RawMessage, c Change, baseURL
 		if !found && c.Mode != "" {
 			updated = append(updated, devicenotes.Policy{IP: c.IP, Name: c.Name, Mode: c.Mode})
 		}
-		raw, err := json.Marshal(updated)
-		if err != nil {
-			return nil, err
-		}
-		node, err := oxidns.FromJSON(raw)
-		if err != nil {
-			return nil, err
-		}
-		settingsNode, err := oxidns.ApplyPolicies(p.Settings(), p, node, baseURL)
+		settingsNode, err := oxidns.ApplyPolicies(p.Settings(), p, updated, baseURL)
 		if err != nil {
 			return nil, err
 		}

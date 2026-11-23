@@ -28,7 +28,7 @@ func TestMalformedStoredNotesOnlyRejectNotesWrites(t *testing.T) {
 			if _, err = Generate(profile, ""); err != nil {
 				t.Fatalf("unrelated generation failed: %v", err)
 			}
-			rows := L(M("ip", "192.0.2.1", "name", "", "mode", "direct"))
+			rows := []devicenotes.Policy{{IP: "192.0.2.1", Name: "", Mode: "direct"}}
 			_, err = SavePolicyRows(profile, profile.Settings(), rows, "")
 			if tt.message == "" {
 				if err != nil {

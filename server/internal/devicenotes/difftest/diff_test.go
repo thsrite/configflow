@@ -168,9 +168,12 @@ func run(t *testing.T, op, config, name string, rows json.RawMessage) map[string
 		if s == nil {
 			s = oxidns.M()
 		}
-		rowNode, e := oxidns.FromJSON(rows)
-		must(t, e)
-		out, e := oxidns.SavePolicyRows(p, s, rowNode, "http://127.0.0.1:5001")
+		parsed, e := oxidns.ParsePolicies(rows)
+		if e != nil {
+			err = e
+			break
+		}
+		out, e := oxidns.SavePolicyRows(p, s, parsed, "http://127.0.0.1:5001")
 		err = e
 		if err == nil {
 			result = map[string]any{"same": out == s, "settings": json.RawMessage(oxidns.ToJSON(out)), "notes": p.DeviceNotesJSON()}

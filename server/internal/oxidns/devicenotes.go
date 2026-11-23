@@ -4,7 +4,6 @@ import (
 	"bytes"
 
 	"configflow/internal/devicenotes"
-	"configflow/internal/jsondecode"
 	"encoding/json"
 	"maps"
 	"slices"
@@ -108,43 +107,31 @@ func PolicyNamesRevision(p *Profile) (string, error) {
 }
 
 // PreparePolicyNotes separates policy edits from the display-name write plan.
-func PreparePolicyNotes(p *Profile, rows *Node) (*Node, *Node, error) {
-	parsed, err := devicenotes.ParsePolicies(ToJSON(rows))
-	if err != nil {
-		return nil, nil, fail(err.Error())
-	}
+func PreparePolicyNotes(p *Profile, rows []devicenotes.Policy) ([]devicenotes.Policy, devicenotes.Names, error) {
 	state, err := notesState(p)
 	if err != nil {
 		return nil, nil, err
 	}
-	prepared, notes, err := state.Prepare(parsed)
+	prepared, notes, err := state.Prepare(rows)
 	if err != nil {
 		return nil, nil, fail(err.Error())
 	}
-	return policyRowsNode(prepared), notesNode(notes), nil
+	return prepared, notes, nil
 }
 
 // SavePolicyRows writes names separately. Name-only edits retain the exact
 // settings object and never regenerate the native draft.
-func SavePolicyRows(p *Profile, settings, rows *Node, baseURL string) (*Node, error) {
+func SavePolicyRows(p *Profile, settings *Node, rows []devicenotes.Policy, baseURL string) (*Node, error) {
 	prepared, notes, err := PreparePolicyNotes(p, rows)
 	if err != nil {
 		return nil, err
 	}
-	p.setDeviceNotes(ToJSON(notes))
-	current := get(settings, "device_policies")
-	if !has(settings, "device_policies") {
-		current = L()
-	}
-	before, err := devicenotes.ParsePolicies(ToJSON(current))
+	p.setDeviceNotes(ToJSON(notesNode(notes)))
+	before, err := devicenotes.ParsePolicies(storedPolicies(settings))
 	if err != nil {
 		return nil, fail(err.Error())
 	}
-	var after []devicenotes.Policy
-	if err := jsondecode.Unmarshal(ToJSON(prepared), &after); err != nil {
-		return nil, err
-	}
-	if devicenotes.SameRoutes(before, after) {
+	if devicenotes.SameRoutes(before, prepared) {
 		return settings, nil
 	}
 	return ApplyPolicies(settings, p, prepared, baseURL)

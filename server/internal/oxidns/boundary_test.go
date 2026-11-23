@@ -565,7 +565,7 @@ func call(t *testing.T, r row, a []*Node) (*Node, error, bool) {
 			notices = strList(n)
 			opts.Notices = &notices
 		}
-		doc, settings, err := ApplyRouting(a[0], a[1], profileOf(a[2]), a[3], strArg(arg(4)), opts)
+		doc, settings, err := applyRoutingNode(a[0], a[1], profileOf(a[2]), a[3], strArg(arg(4)), opts)
 		if err != nil {
 			return nil, err, true
 		}
@@ -616,7 +616,11 @@ func call(t *testing.T, r row, a []*Node) (*Node, error, bool) {
 		v, err := ReadPolicies(a[0], profileOf(a[1]))
 		return M("policies", v.Policies, "editable", v.Editable, "reason", v.Reason, "side_entries", toNode(v.SideEntries)), err, true
 	case "apply_policies":
-		n, err := ApplyPolicies(a[0], profileOf(a[1]), a[2], strArg(arg(3)))
+		rows, err := parsePolicies(a[2])
+		if err != nil {
+			return nil, err, true
+		}
+		n, err := ApplyPolicies(a[0], profileOf(a[1]), rows, strArg(arg(3)))
 		return n, err, true
 	case "reconcile_native_withdrawals":
 		n, changed, err := ReconcileNativeWithdrawals(a[0], a[1], a[2], a[3], profileOf(a[4]))

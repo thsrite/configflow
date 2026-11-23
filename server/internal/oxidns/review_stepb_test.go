@@ -3,6 +3,8 @@ package oxidns
 import (
 	"strings"
 	"testing"
+
+	"configflow/internal/devicenotes"
 )
 
 func TestStepBC26ProtocolSchemeIsNotReference(t *testing.T) {
@@ -66,10 +68,10 @@ func TestStepBC26IndependentSidePolicyLifecycle(t *testing.T) {
 	if err != nil || !view.Editable || len(view.SideEntries) != 1 {
 		t.Fatalf("independent chain refused: view=%+v err=%v", view, err)
 	}
-	for _, rows := range []*Node{
-		L(M("ip", "192.0.2.10", "name", "synthetic", "mode", "direct")),
-		L(M("ip", "192.0.2.10", "name", "synthetic", "mode", "smart")),
-		L(),
+	for _, rows := range [][]devicenotes.Policy{
+		{{IP: "192.0.2.10", Name: "synthetic", Mode: "direct"}},
+		{{IP: "192.0.2.10", Name: "synthetic", Mode: "smart"}},
+		{},
 	} {
 		before := clone(draft)
 		next, err := ApplyPolicies(draft, p, rows, "")
@@ -101,7 +103,7 @@ func TestStepBC26IndependentSidePolicyLifecycle(t *testing.T) {
 			}
 		}
 		nextView, err := ReadPolicies(next, p)
-		if err != nil || !nextView.Editable || len(nextView.SideEntries) != 1 || !equal(nextView.Policies, rows) {
+		if err != nil || !nextView.Editable || len(nextView.SideEntries) != 1 || !equal(nextView.Policies, policyRowsNode(rows)) {
 			t.Fatalf("policy edit unreadable: %+v %v", nextView, err)
 		}
 		draft = next
@@ -115,7 +117,7 @@ func TestStepBC26IndependentSidePolicyLifecycle(t *testing.T) {
 	if err != nil || view.Editable || view.Reason == "" {
 		t.Fatalf("real main-chain reference accepted: %+v %v", view, err)
 	}
-	if _, err := ApplyPolicies(original, p, L(), ""); err == nil {
+	if _, err := ApplyPolicies(original, p, nil, ""); err == nil {
 		t.Fatal("unsafe edit accepted")
 	}
 }

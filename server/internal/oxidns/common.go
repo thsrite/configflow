@@ -2111,7 +2111,7 @@ func ApplyCommonSettings(settings, changes *Node, p *Profile, baseURL string) (A
 		return true
 	})
 	if len(routingChanges.Content) > 0 {
-		if document, current, err = ApplyRouting(document, current, p, routingChanges, baseURL, RoutingOptions{}); err != nil {
+		if document, current, err = applyRoutingNode(document, current, p, routingChanges, baseURL, RoutingOptions{}); err != nil {
 			return Applied{}, err
 		}
 	}

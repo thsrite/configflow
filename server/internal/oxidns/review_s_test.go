@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"configflow/internal/devicenotes"
 )
 
 func TestReviewSReferences(t *testing.T) {
@@ -238,7 +240,7 @@ func TestReviewPublicEditorsPreserveYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policies, err := ApplyPolicies(draft, p, L(M("ip", "192.0.2.10", "name", "设备", "mode", "direct")), "")
+	policies, err := ApplyPolicies(draft, p, []devicenotes.Policy{{IP: "192.0.2.10", Name: "设备", Mode: "direct"}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1017,7 +1017,7 @@ func MigrateDomainOnlyRouting(document *nativeDoc, settings *Node, p *Profile, b
 			return document, settings, nil
 		}
 	}
-	rendered, values, err := ApplyRouting(document, settings, p, M(), baseURL, RoutingOptions{BeforeConfig: p})
+	rendered, values, err := ApplyRouting(document, settings, p, RoutingChanges{}, baseURL, RoutingOptions{BeforeConfig: p})
 	if err == nil {
 		if err = setNativeConfig(values, rendered); err != nil {
 			return nil, nil, err
@@ -1957,9 +1957,89 @@ type RoutingOptions struct {
 	Notices      *[]string
 }
 
-// ApplyRouting applies one atomic routing edit to copies of document and
+// RuleActionEntry pairs a rule ID with its explicit RuleAction in slice order.
+type RuleActionEntry struct {
+	RuleID string
+	Action RuleAction
+}
+
+// RuleActionsFromNode decodes a rule_actions mapping node into ordered entries.
+func RuleActionsFromNode(n *Node) []RuleActionEntry {
+	out := []RuleActionEntry{}
+	pairs(n, func(id string, value *Node) bool {
+		if !isNone(value) {
+			a := actionOf(value)
+			if a.Upstream != nil {
+				a.Upstream = clone(a.Upstream)
+			}
+			out = append(out, RuleActionEntry{RuleID: id, Action: a})
+		}
+		return true
+	})
+	return out
+}
+
+// RoutingChanges is a typed patch to a native document's recognizable routing.
+// Nil fields mean unchanged; non-nil pointers to empty slices clear that field.
+type RoutingChanges struct {
+	DirectRules         *[]string
+	ProxyRules          *[]string
+	DirectRulesets      *[]string
+	ProxyRulesets       *[]string
+	RuleActions         *[]RuleActionEntry
+	RuleDNSFollow       *[]string
+	AggregateRules      *bool
+	DefaultForward      *string
+	CustomMatches       *[]*Node
+	CustomMatchPosition *string
+}
+
+func (c RoutingChanges) node() *Node {
+	out := M()
+	if c.DirectRules != nil {
+		set(out, "direct_rules", strs(*c.DirectRules))
+	}
+	if c.ProxyRules != nil {
+		set(out, "proxy_rules", strs(*c.ProxyRules))
+	}
+	if c.DirectRulesets != nil {
+		set(out, "direct_rulesets", strs(*c.DirectRulesets))
+	}
+	if c.ProxyRulesets != nil {
+		set(out, "proxy_rulesets", strs(*c.ProxyRulesets))
+	}
+	if c.RuleActions != nil {
+		actions := M()
+		for _, entry := range *c.RuleActions {
+			set(actions, entry.RuleID, entry.Action.node())
+		}
+		set(out, "rule_actions", actions)
+	}
+	if c.RuleDNSFollow != nil {
+		set(out, "rule_dns_follow", strs(*c.RuleDNSFollow))
+	}
+	if c.AggregateRules != nil {
+		set(out, "aggregate_rules", B(*c.AggregateRules))
+	}
+	if c.DefaultForward != nil {
+		set(out, "default_forward", S(*c.DefaultForward))
+	}
+	if c.CustomMatches != nil {
+		set(out, "custom_matches", seqOf(*c.CustomMatches))
+	}
+	if c.CustomMatchPosition != nil {
+		set(out, "custom_match_position", S(*c.CustomMatchPosition))
+	}
+	return out
+}
+
+// ApplyRouting applies one typed atomic routing edit to copies of document and
 // settings.
-func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
+func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes RoutingChanges, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
+	return applyRoutingNode(document, settings, p, changes.node(), baseURL, opts)
+}
+
+func applyRoutingNode(document *nativeDoc, settings *Node, p *Profile, changes *Node, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
 	filtered := M()
 	pairs(changes, func(key string, value *Node) bool {
 		if containsString(RoutingFields, key) {
