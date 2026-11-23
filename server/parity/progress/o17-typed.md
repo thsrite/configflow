@@ -10,6 +10,18 @@
    未知成员是否保存按 `storedProjection` 与往返测试核对后定，结论写在这里。
 3. RouterOS 行 `map[string]string`；只读分析处用结构体；iKuai 按接口定义结构体。
 
+## 状态（2026-11-23 交回）
+
+**1.6 完成；1.8、1.7 未开始**（理由与计划见「剩余」）。验证都在 .64 上（oxidns fuzz 在 .32 上）：
+- `-race`（`-timeout 60m`）：api/rules、nodes、proxygroups、aggregations、subscriptions、rulelibrary、mcp、rules、rulefetch、
+  jsondecode、oxidns、repo、aggregations、discovery、server，全部 ok
+- difftest（`CONFIGFLOW_DIFF=1`）：api/rules、aggregations、subscriptions、rulelibrary、config、oxidns、mcp、subs、health、httpx、
+  agents/dnsfollow，全部 ok
+- `/tmp/preflight.sh … -p 6`：PREFLIGHT PASS（vet 两组 tag + 全量非 race）
+- `GATE_ONLY=proddiff gate.sh -p 6`：baseline new=0 stale=0，GATE STAGE PASS
+- R11：`internal/server` 通过；删掉 12 条已过期的整记录编码豁免，新增 0 条
+- fuzz：FuzzZoneValidation、FuzzNativeYAMLRoundTrip 各 60 s PASS（routers 未改动，未跑）
+
 ## 设计
 
 - 请求成员：`jsondecode.Member[T]`（原始字节 + 类型化值 + 是否合法）。类型不对不让整体解码失败，
@@ -50,9 +62,31 @@
 - oxidns 过渡接口（1.7 时改为类型化）：`RuleConvertible`、`RuleFollowRoute`、`WithoutRuleReferences`、`SettingsText`、`SettingsStrings`。
 - `rules.OrderIDs` 是过渡包装，subscriptions/rulelibrary 改完后删除。
 
-## 剩余
+## 剩余：1.8、1.7（未开始，建议各开一位 agent）
 
-- 1.8、1.7：未开始。
+### 1.8 RouterOS / iKuai（实测范围比审计估计大）
+
+- `routers` 包 5.5 万行，`Row` 出现约 1600 次；**`Row` 同时用于 RouterOS 和 iKuai**。iKuai 写入里有整数
+  （`ikuai_apply.go` 的 `"iface_band": 0`、`ikuai_routes.go` 的 `"prio": 1` 等），所以不能把 `Row` 整体改成
+  `map[string]string`——那会把发给 iKuai 的数字变成字符串，改变写入内容。
+- 建议顺序：① 新类型 `rosRow map[string]string`（`UnmarshalJSON` 在读设备回复时把数字/布尔转文本、数组/对象转 JSON
+  文本，规则同现在的 `comparable`），只替换 RouterOS 路径（`routeros*.go`、`rosnat.go`、`addresslists.go`、
+  `addresswrite.go`、`natlist_*`、`dns_guard_*`、`ipv6_*`、`rospolicy_*`、`fixed_ip_ros_*`、`clients_ros.go`），
+  删 `rosText`/`rosTruthy`/`firstText`/`clientTrue`；`ROSChange.Values` 的 JSON 形状不变（RouterOS 写入本来全是字符串，
+  先用 grep 确认没有非字符串字面量）。② iKuai 按接口定义结构体（`json.Number` 保留数字），去掉 `truthyValue`。
+  ③ `NatContext` 等只读分析处改结构体。
+- 守住：routerdiff、`internal/routers` 的 difftest（`CONFIGFLOW_DIFF`）、`FuzzRouterOS*`/iKuai 现有 fuzz、proddiff；
+  审计建议跟 PVE 实验室回归一起做。
+
+### 1.7 OxiDNS
+
+- 裁定见上。本轮已把 `api/*` 调用方都改成从 `*model.Config` 进入（`NewTypedProfile`），并留了 5 个过渡接口
+  （`RuleConvertible`、`RuleFollowRoute`、`RuleHasIPPart`、`WithoutRuleReferences`、`SettingsText`/`SettingsStrings`），
+  1.7 时随 `Settings` 结构体一起改成类型化签名。
+- 起点：`settings.go`（`NormalizeSettings`/`checkTemplate` 逐字段类型检查 → 解码成 `Settings`）、`ruledns*.go`、
+  `devicepolicy.go`、`converter.go` 读设置部分、`adapter.go`（`Profile` 不再把规则/组/Agent 包成 Node 文档）。
+  原生文档相关文件（`common.go`、`routing.go`、`updates.go`、`native_*.go`、`constraints_*.go`、`editor.go`）
+  改为边界类型 `nativeDoc`。
 
 ## 功能差异（对外）
 
