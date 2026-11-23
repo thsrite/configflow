@@ -90,7 +90,7 @@ check() {
   after=$(pct exec 251 -- sh -c 'wc -l < /var/log/labdns-queries.log 2>/dev/null || echo 0')
   [ "$after" -gt "$before" ] && pass "plain DNS from CT $probe to a public resolver reached the lab resolver" \
     || bad "plain DNS from CT $probe did not reach the lab resolver (before $before after $after)"
-  gexec "$probe" sh -c 'timeout 4 nc -z -w 3 192.168.0.1 443 2>/dev/null || timeout 4 curl -s -m 3 -o /dev/null http://192.168.0.1/' \
+  gexec "$probe" sh -c 'timeout 4 nc -z -w 3 192.168.255.254 443 2>/dev/null || timeout 4 curl -s -m 3 -o /dev/null http://192.168.255.254/' \
     && bad "CT $probe reached the home LAN" || pass "home LAN unreachable from CT $probe"
   [ $fail = 0 ]
 }
