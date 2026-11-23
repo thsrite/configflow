@@ -32,7 +32,9 @@ json.dump(v,open(p,'w'))`
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if string(doc["other"]["run_count"]) != "1" || string(doc["other"]["note"]) != `"keep"` || string(doc["first"]["extra"]) != `{"kept":9}` {
+	// The recorded receipt is rewritten in its typed form (its undeclared
+	// note is dropped, O18 T1d); other receipts stay as stored.
+	if string(doc["other"]["run_count"]) != "1" || doc["other"]["note"] != nil || string(doc["first"]["extra"]) != `{"kept":9}` {
 		t.Fatalf("lost receipt members: %s", raw)
 	}
 	if out, err := exec.CommandContext(t.Context(), "python3", "-c", `import json,sys
