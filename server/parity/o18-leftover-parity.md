@@ -159,7 +159,7 @@
 | A3 | `devhttp.EncodeJSON`、`routers/ikuai.go` `IkuaiRequestBytes` | 发给 RouterOS/iKuai 的 JSON 把非 ASCII 转成 `\uXXXX`；按 `json.dumps` 的格式估算请求大小 | 写到路由器的语义：旧固件对原始 UTF-8 的处理没测过；分批上限是按这种长度在真机上测出来的 | 一次转义 |
 | A4 | `rules/regex.go`（967 行） | 把 Python 正则语法翻译给 RE2/regexp2 | 用户存的过滤/重命名正则就是 Python 语法 | 已是最小实现 |
 | A5 | `subs/psl.go` | 固定版本的公共后缀表（tldextract） | 决定域名归组结果 | — |
-| A6 | `netipx`（CPython 3.11 地址分类表）、`convert/ipaddr.go` | 私有/全局地址判断、EasyTier 地址严格解析 | 校验必须接受/拒绝同样的输入 | — |
+| A6 | `netipx`（CPython 3.11 地址分类表） | 私有/全局地址判断 | 校验必须接受/拒绝同样的输入 | — （原列的 `convert/ipaddr.go` 已无调用方，O17 前清理时删除，2026-11-23） |
 | A7 | `jsondecode`（语义部分） | 成员名大小写精确匹配 | 防 `Password` 之类大小写别名覆盖字段；和 Python `dict.get` 一致。实现可换 v2，见 C18 | — |
 | A8 | `logx` | Python 模块名做 logger 名、级别号和行格式 | 日志页按行格式高亮/筛选 | 无 |
 | A9 | `setup/presets.go`、`tasks`、`routersplit/messages.go` 等 | 列表按 Python 里的顺序输出 | 列表顺序本身是 API 返回值 | 无 |
