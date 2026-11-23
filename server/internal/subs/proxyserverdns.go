@@ -353,8 +353,10 @@ func readDNSSettings(dns *yamlx.Node) (dnsSettings, error) {
 	}
 	flag := func(name string) (*bool, error) {
 		data, err := member(name)
+		// encoding/json reads null into a bool as false without an error;
+		// null is absent here (Python: `is True` / `is False`).
 		var value bool
-		if err != nil || data == nil || json.Unmarshal(data, &value) != nil {
+		if err != nil || data == nil || string(data) == "null" || json.Unmarshal(data, &value) != nil {
 			return nil, err
 		}
 		return &value, nil
