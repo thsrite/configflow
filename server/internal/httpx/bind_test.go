@@ -251,3 +251,27 @@ func TestBindObject(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeObjectMemberNamesAreExact(t *testing.T) {
+	type dto struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	}
+	tests := []struct {
+		raw  string
+		want dto
+	}{
+		{`{"name":"a","url":"b"}`, dto{Name: "a", URL: "b"}},
+		{`{"Name":"a","URL":"b"}`, dto{}},
+		{`{"NAME":"a","name":"b"}`, dto{Name: "b"}},
+		{`{"name":"a","Name":"b"}`, dto{Name: "a"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.raw, func(t *testing.T) {
+			got, ok, err := httpx.DecodeObject[dto](json.RawMessage(tc.raw))
+			if err != nil || !ok || got != tc.want {
+				t.Fatalf("DecodeObject(%s) = %+v, %v, %v; want %+v", tc.raw, got, ok, err, tc.want)
+			}
+		})
+	}
+}

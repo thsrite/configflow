@@ -43,14 +43,15 @@ func (c *Ctx) BindSilent(dst any) bool {
 
 // DecodeObject decodes raw as a JSON object into T (for example
 // map[string]json.RawMessage or model.Fields). Empty input or non-object JSON
-// values (null, arrays, scalars) return (zero, false, nil).
+// values (null, arrays, scalars) return (zero, false, nil). Member names match
+// struct fields exactly (jsondecode), as Bind does.
 func DecodeObject[T any](raw json.RawMessage) (T, bool, error) {
 	var zero T
 	if len(raw) == 0 || raw[0] != '{' {
 		return zero, false, nil
 	}
 	var out T
-	if err := json.Unmarshal(raw, &out); err != nil {
+	if err := jsondecode.Unmarshal(raw, &out); err != nil {
 		return zero, false, err
 	}
 	return out, true, nil
