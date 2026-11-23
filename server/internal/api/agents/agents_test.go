@@ -348,17 +348,9 @@ func TestHeartbeatEndpointRecordsStateAndRejectsUnknownAgents(t *testing.T) {
 }
 
 func TestHeartbeatReportedHostUsesAddressFollow(t *testing.T) {
-	// The reported host equals the stored (usable) host, so upgrades.FollowModel
-	// has nothing to verify (no background address check) and
-	// upgrades.ConfirmedModel echoes it. A differing host starts the address
-	// check job; that path is covered in address_test.go.
-	s := newServer(t)
-	manager, err := agents.Get(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, token := registerAgentForTest(t, s.Context(), manager, map[string]any{"name": "follow", "host": "192.0.2.10"})
-	wantBodyJSON(t, s.Post("/api/agents/"+id+"/heartbeat", httpxtest.Bearer(token), httpxtest.JSON(map[string]any{"host": "192.0.2.10"})).WantStatus(200),
+	h := newHeartbeat(t)
+	// When reported host matches stored host, upgrades.ConfirmedModel returns it.
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.10"})).WantStatus(200),
 		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true, "confirmed_host": "192.0.2.10"})
 }
 
