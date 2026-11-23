@@ -98,6 +98,13 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+2026-11-23: maintainer — antigravity quota back; executor work goes to antigravity/gemini-4-neon thinking medium
+(mode full-access); HR reviews stay Opus. Started on Neon: cache budget (87db0284, go-perf-cache-budget), O17 small
+Agent-side atomic writes + remaining duplicate helpers (5482a67e, go-o17-agent-small). Running Opus: runtime state
+(9147b51a), O17 1.8 routers (bbc72553), O17 1.7 oxidns (16ef226d), batch-43 review (30344bdc); batch-44 (O17 1.6)
+gating. Queued: remaining model.Fields → typed in proxygroups/aggregations/subscriptions/rulelibrary (after batch-44),
+O17 前-1 dead code (after the structural branches land).
+
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
 review: legacy cache without metadata.url accepted, null node element = damaged, custom_config restrict with
