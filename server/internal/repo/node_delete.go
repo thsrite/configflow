@@ -109,7 +109,7 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 		preview.Nodes = append(preview.Nodes, DeletionNode{ID: node.ID, Name: node.Name})
 	}
 	if len(selected) != len(ids) {
-		return nil, notFound(msgNodesGone)
+		return nil, newError(ErrNodesGone, msgNodesGone)
 	}
 	originals := []json.RawMessage{}
 	for i := range shared.Aggregations {

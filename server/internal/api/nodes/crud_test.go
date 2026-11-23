@@ -3,6 +3,7 @@ package nodes_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"configflow/internal/api/nodes"
@@ -66,5 +67,21 @@ func TestNodeWritesAndValidation(t *testing.T) {
 	res := srv.Delete("/api/nodes/n").WantStatus(200)
 	if diff := testjson.Diff(map[string]any{"success": true}, json.RawMessage(res.Body)); diff != "" {
 		t.Fatal(diff)
+	}
+}
+
+// A deletion naming a node that no longer exists answers Python's plain 404
+// message, not the repository's "Profile not found" mapping (review W0–W8).
+func TestDeletionOfMissingNodesAnswersNodesGone(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
+	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
+		return s.SetJSON("nodes", json.RawMessage(`[{"id":"keep","name":"Keep"}]`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"success": false, "message": "部分节点已不存在，请刷新节点列表"}
+	for _, path := range []string{"/api/nodes/delete-preview", "/api/nodes/delete"} {
+		srv.Post(path, httpxtest.JSON(map[string]any{"ids": []string{"keep", "ghost"}, "confirmation": strings.Repeat("a", 64)})).WantStatus(404).WantJSON(want)
 	}
 }

@@ -23,6 +23,9 @@ var (
 	ErrInUse = errors.New("profile in use")
 	// ErrNodeDeletionChanged is NodeDeletionChanged, a ProfileInUse.
 	ErrNodeDeletionChanged = errors.New("node deletion changed")
+	// ErrNodesGone reports a node deletion request naming nodes that no longer
+	// exist. The HTTP layer answers it as a plain 404 message (Python's abort).
+	ErrNodesGone = errors.New("nodes gone")
 	// ErrRuleLibraryCreationUncertain is RuleLibraryCreationUncertain.
 	ErrRuleLibraryCreationUncertain = errors.New("rule library creation uncertain")
 	// ErrRejected matches every error that refuses the caller's value or

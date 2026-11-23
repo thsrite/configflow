@@ -294,6 +294,10 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 			Message string `json:"message"`
 		}{false, "node_deletion_changed", err.Error()}), nil
 	}
+	var gone *repo.Error
+	if errors.As(err, &gone) && errors.Is(gone, repo.ErrNodesGone) {
+		return httpx.Message(404, false, gone.Message), nil
+	}
 	var h *httpx.HTTPError
 	if errors.As(err, &h) {
 		return httpx.Message(h.Code, false, h.Description), nil
