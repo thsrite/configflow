@@ -112,6 +112,12 @@ cfgt; prod snapshot fetch left to the coordinator, no soak yet). batch-43 rebase
 in behaviour-changes.md, both sections kept) → 07112374a, gating. 16ef226d told to rebase on 595972901.
 batch-43 MERGED 2026-11-23 (a846f7eae, O17 small cleanup B: Python exception names, shared helpers, fsx atomic
 writes, 3 rulings incl. one SplitLines; core+compare PASS; review report server/parity/review-batch-43.md).
+O14 checklist merged (98bf6099c) + C-1..C-5 ruled (1e43a4766: v3.0.0-rc.1/v3.0.0, last Python v2.2.0; scripts/ Python
+deleted in the switch). batch-45 MERGED (c92d92266, Agent atomicfile + shared helpers; DecodeObject exact member names).
+In review: batch-46 routers 1.8 (5ccafbc4; step ③ evidence typing ruled out — unknown fields must keep blocking),
+batch-47 cache budget (1aee2413; perf numbers on PVE CT 240 only — maintainer), batch-48 typed-rest (82d5be78),
+batch-49 oxidns round 1 (7c6a7e21), batch-50 runtime state (502fd2a4). Running: oxidns round 2 Neon 0fca7fe8
+(stacked on round 1), L6 prep e99bba11. Queued: router last_release → agent_state after batch-50; O17 前-1 dead code.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
