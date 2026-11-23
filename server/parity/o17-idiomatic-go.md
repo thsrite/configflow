@@ -470,3 +470,17 @@ RT_HOST=sunbroke@192.168.0.32 rt --no-sync -- bash -lc 'cd backend/agents/go-age
 
 工具版本：staticcheck（honnef.co/go/tools v0.8.2）、deadcode（golang.org/x/tools v0.51.0），Go 1.27.3。
 deadcode 以 `cmd/configflow`、`cmd/configflow-autoupdate` 为入口；只被测试调用的函数也算「不可达」，删之前按 3.1 的做法处理。
+
+## 6. 进展
+
+### 切换前清理第一部分（分支 `go-o17-pre`，2026-11-23）
+
+已做：前-2（3.9、2.5，`ErrorClass` 标签改 Go 名，`rulefetch.errorClassOf` 移到测试）、前-3（`ptr`→`new(...)`，`pushdiff` 因参数名 `new`
+保留自己的 `ptr`；`raw(v)`×4→`jsonresp.Value`（失败记日志）；`asciiDigits`→`textx.ASCIIDigits`；`isoformat`×5→`timefmt`；
+版本比较→`version.CompareAgent`/`ParseRelease`，uint64，逐对对比旧实现的测试；`utilx` 删除；MCP 布尔）、前-5（`internal/fsx`，
+服务端 18 处换用；`jsonstore` 因签名校验保留自己的 rename，补 fsync）、前-4 三项裁定（IPv4 字段只收字符串、「无 HTTP 响应」、
+`textx.SplitLines`）、O18 A6 的 `convert/ipaddr.go` 删除、`docker_ha_compose.go` 漏判的 err。行为变化见 `behaviour-changes.md`。
+
+未做（留给后续）：前-1 死代码（等 T1d）；`hasControl`×4、`pathExists`×4、`contains`×5、sha256 `digest`×5、`readBody`×6（不在本次指派范围）；
+`metrics.naiveNow` 本地时间冒充 UTC（1.12 后半）；go-agent 的 11 份原子写；`store.Install`/`autoupdate.replaceFile`/Sub-Store 依赖目录
+的整目录换名（不是「写字节」型原子写）。
