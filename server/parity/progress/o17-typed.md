@@ -12,7 +12,7 @@
 
 ## 状态（2026-11-23 交回）
 
-**1.6 完成；1.8、1.7 未开始**（理由与计划见「剩余」）。验证都在 .64 上（oxidns fuzz 在 .32 上）：
+**1.6 完成；1.8、1.7 未开始**（理由与计划见「剩余」）。已 rebase 到 `go@4c99e4495`（batch-42 合入后），每个提交单独 build + vet 通过；以下验证在 rebase 后重跑，都在 .64 上（oxidns fuzz 在 .32 上，rebase 前）：
 - `-race`（`-timeout 60m`）：api/rules、nodes、proxygroups、aggregations、subscriptions、rulelibrary、mcp、rules、rulefetch、
   jsondecode、oxidns、repo、aggregations、discovery、server，全部 ok
 - difftest（`CONFIGFLOW_DIFF=1`）：api/rules、aggregations、subscriptions、rulelibrary、config、oxidns、mcp、subs、health、httpx、
