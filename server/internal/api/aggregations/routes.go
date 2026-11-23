@@ -32,23 +32,17 @@ type aggregationRequest struct {
 	Nodes          jsondecode.Member[json.RawMessage] `json:"nodes"`
 	RegexFilter    jsondecode.Member[json.RawMessage] `json:"regex_filter"`
 	HealthCheck    jsondecode.Member[json.RawMessage] `json:"health_check"`
-	HealthCheckURL jsondecode.Member[string]          `json:"health_check_url"`
+	HealthCheckURL jsondecode.Member[json.RawMessage] `json:"health_check_url"`
 	CreatedAt      jsondecode.Member[json.RawMessage] `json:"created_at"`
 }
 
-func defaultProviderHealth(legacyURL jsondecode.Member[string]) *model.ProviderHealthCheck {
-	d := check.DefaultProviderHealth()
-	if legacyURL.OK && legacyURL.Value != "" {
-		d.URL = legacyURL.Value
+// health is the health_check the request stores: as sent, or on creation
+// without one the provider defaults (check.ProviderHealthDefaults).
+func (r *aggregationRequest) health(creating bool) *model.ProviderHealthCheck {
+	if !creating || r.HealthCheck.Present() {
+		return nil
 	}
-	return &model.ProviderHealthCheck{
-		Enable:         new(d.Enable),
-		URL:            new(d.URL),
-		Interval:       new(model.Int(d.Interval)),
-		Timeout:        new(model.Int(d.Timeout)),
-		Lazy:           new(d.Lazy),
-		ExpectedStatus: new(d.ExpectedStatus),
-	}
+	return check.ProviderHealthDefaults(r.HealthCheckURL.Raw)
 }
 
 func decodeAggregation(req *aggregationRequest, id, now string, creating bool) (model.Aggregation, error) {
@@ -83,8 +77,8 @@ func decodeAggregation(req *aggregationRequest, id, now string, creating bool) (
 			return model.Aggregation{}, err
 		}
 	}
-	if creating && !req.HealthCheck.Present() {
-		agg.HealthCheck = defaultProviderHealth(req.HealthCheckURL)
+	if health := req.health(creating); health != nil {
+		agg.HealthCheck = health
 	}
 	return agg, nil
 }
@@ -137,7 +131,7 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	now := time.Now().Format("2006-01-02T15:04:05.000000")
 	agg, err := decodeAggregation(req, id, now, true)
 	if err != nil {
-		return nil, aggregationTypeError(nil, -1, req, id, err)
+		return nil, aggregationTypeError(nil, -1, req, id, true, err)
 	}
 	if err := appendAggregation(ctx, agg); err != nil {
 		return nil, err
@@ -199,7 +193,7 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 	now := time.Now().Format("2006-01-02T15:04:05.000000")
 	agg, err := decodeAggregation(req, id, now, false)
 	if err != nil {
-		return nil, aggregationTypeError(shared.Aggregations, index, req, id, err)
+		return nil, aggregationTypeError(shared.Aggregations, index, req, id, false, err)
 	}
 	if err := replaceAggregation(ctx, shared, index, agg); err != nil {
 		if errors.Is(err, repo.ErrRepository) {

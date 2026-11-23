@@ -73,7 +73,10 @@ func (r *libraryRequest) cleanForUpdate() {
 	}
 }
 
-func (r *libraryRequest) decodeItem(overrideID string, inheritInterval *model.Int) (model.RuleLibraryItem, error) {
+// decodeItem is the stored item a request becomes. A replace (strict) refuses
+// a member of another type with the repository's message; a creation reads it
+// with the stored-data rules (a number as text), as creation always did.
+func (r *libraryRequest) decodeItem(overrideID string, inheritInterval *model.Int, strict bool) (model.RuleLibraryItem, error) {
 	var item model.RuleLibraryItem
 	if overrideID != "" {
 		item.ID = overrideID
@@ -104,7 +107,13 @@ func (r *libraryRequest) decodeItem(overrideID string, inheritInterval *model.In
 		if field.raw == nil {
 			continue
 		}
-		if err := model.DecodeInputMember("rule_library_item", &item, field.name, field.raw); err != nil {
+		var err error
+		if strict {
+			err = model.DecodeInputMember("rule_library_item", &item, field.name, field.raw)
+		} else {
+			err = model.SetStoredMember(&item, field.name, field.raw)
+		}
+		if err != nil {
 			return model.RuleLibraryItem{}, err
 		}
 	}

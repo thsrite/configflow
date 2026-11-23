@@ -12,7 +12,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/httpx"
-	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
@@ -26,15 +25,11 @@ import (
 type jsonValue = json.RawMessage
 
 func decodeRequestObject[T any](c *httpx.Ctx) (*T, bool, error) {
-	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	out, ok, err := httpx.BindObject[T](c, false)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	out := new(T)
-	if err := jsondecode.Unmarshal(raw, out); err != nil {
-		return nil, true, err
-	}
-	return out, true, nil
+	return &out, true, nil
 }
 func sharedConfig(ctx context.Context) (*model.Shared, error) {
 	r, err := repo.GetRepository(ctx)
@@ -51,6 +46,8 @@ type libraryErrorItem struct {
 	Target json.RawMessage `json:"target,omitempty"`
 }
 
+// libraryTypeError reports a member of a replaced item (existing[index]) the
+// item record cannot hold, with the repository's message for the resulting list.
 func libraryTypeError(existing []model.RuleLibraryItem, index int, req *libraryRequest, id string, cause error) error {
 	failed, err := json.Marshal(libraryErrorItem{
 		ID:     id,
@@ -61,7 +58,7 @@ func libraryTypeError(existing []model.RuleLibraryItem, index int, req *libraryR
 	if err != nil {
 		return err
 	}
-	list := make([]json.RawMessage, 0, len(existing)+1)
+	list := make([]json.RawMessage, 0, len(existing))
 	for i, item := range existing {
 		if i == index {
 			list = append(list, failed)
@@ -72,9 +69,6 @@ func libraryTypeError(existing []model.RuleLibraryItem, index int, req *libraryR
 			return err
 		}
 		list = append(list, data)
-	}
-	if index < 0 {
-		list = append(list, failed)
 	}
 	raw, err := json.Marshal(list)
 	if err != nil {

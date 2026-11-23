@@ -33,36 +33,24 @@ type subscriptionRequest struct {
 	RegexFilter    jsondecode.Member[string]          `json:"regex_filter"`
 	Description    jsondecode.Member[json.RawMessage] `json:"description"`
 	HealthCheck    jsondecode.Member[json.RawMessage] `json:"health_check"`
-	HealthCheckURL jsondecode.Member[string]          `json:"health_check_url"`
+	HealthCheckURL jsondecode.Member[json.RawMessage] `json:"health_check_url"`
 }
 
-func defaultProviderHealth(legacyURL jsondecode.Member[string]) *model.ProviderHealthCheck {
-	d := check.DefaultProviderHealth()
-	if legacyURL.OK && legacyURL.Value != "" {
-		d.URL = legacyURL.Value
-	}
-	return &model.ProviderHealthCheck{
-		Enable:         new(d.Enable),
-		URL:            new(d.URL),
-		Interval:       new(model.Int(d.Interval)),
-		Timeout:        new(model.Int(d.Timeout)),
-		Lazy:           new(d.Lazy),
-		ExpectedStatus: new(d.ExpectedStatus),
-	}
-}
-
+// decodeSubscription is the stored subscription a create/replace request
+// becomes. The members decode with the stored-data rules, as before the typed
+// request: a member of another type is read leniently (a number as text, a
+// non-object health_check as absent) instead of refusing the request. overrideID
+// replaces the sent id (replace); a creation without health_check gets the
+// provider defaults.
 func decodeSubscription(req *subscriptionRequest, overrideID string, creating bool) (model.Subscription, error) {
-	sub := model.Subscription{
-		Name: req.Name.Value,
-		URL:  req.URL.Value,
-	}
-	if overrideID != "" {
-		sub.ID = overrideID
-	}
-	fields := []struct {
+	var sub model.Subscription
+	for _, field := range []struct {
 		name string
 		raw  json.RawMessage
 	}{
+		{"id", req.ID.Raw},
+		{"name", req.Name.Raw},
+		{"url", req.URL.Raw},
 		{"type", req.Type.Raw},
 		{"enabled", req.Enabled.Raw},
 		{"interval", req.Interval.Raw},
@@ -70,23 +58,19 @@ func decodeSubscription(req *subscriptionRequest, overrideID string, creating bo
 		{"description", req.Description.Raw},
 		{"health_check", req.HealthCheck.Raw},
 		{"health_check_url", req.HealthCheckURL.Raw},
-	}
-	if overrideID == "" {
-		fields = append([]struct {
-			name string
-			raw  json.RawMessage
-		}{{"id", req.ID.Raw}}, fields...)
-	}
-	for _, field := range fields {
+	} {
 		if field.raw == nil {
 			continue
 		}
-		if err := model.DecodeInputMember("subscription", &sub, field.name, field.raw); err != nil {
+		if err := model.SetStoredMember(&sub, field.name, field.raw); err != nil {
 			return model.Subscription{}, err
 		}
 	}
+	if overrideID != "" {
+		sub.ID = overrideID
+	}
 	if creating && !req.HealthCheck.Present() {
-		sub.HealthCheck = defaultProviderHealth(req.HealthCheckURL)
+		sub.HealthCheck = check.ProviderHealthDefaults(req.HealthCheckURL.Raw)
 	}
 	return sub, nil
 }
@@ -99,15 +83,11 @@ func response(status int, value any) *httpx.Response {
 	return httpx.RawJSON(status, data)
 }
 func decodeSubscriptionBody(c *httpx.Ctx) (*subscriptionRequest, bool, error) {
-	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	req, ok, err := httpx.BindObject[subscriptionRequest](c, false)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
-	req := new(subscriptionRequest)
-	if err := jsondecode.Unmarshal(raw, req); err != nil {
-		return nil, true, err
-	}
-	return req, true, nil
+	return &req, true, nil
 }
 
 // readRequestObject rejects every non-object, including null and empty arrays,

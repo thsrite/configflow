@@ -169,7 +169,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 		if err = validateDeclaration(cleaned.declaration(), &previous); err != nil {
 			return err
 		}
-		next, err := cleaned.decodeItem(id, previous.UpdateInterval)
+		next, err := cleaned.decodeItem(id, previous.UpdateInterval, true)
 		if err != nil {
 			return libraryTypeError(library, i, &cleaned, id, err)
 		}

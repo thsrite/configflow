@@ -60,9 +60,9 @@ func (s *Service) Create(ctx context.Context, req *libraryRequest) (itemResult, 
 	}
 	cleaned := *req
 	cleaned.cleanForCreate()
-	item, err := cleaned.decodeItem("", nil)
+	item, err := cleaned.decodeItem("", nil, false)
 	if err != nil {
-		return out, libraryTypeError(nil, -1, &cleaned, id, err)
+		return out, err
 	}
 	content, err := s.readSource(ctx, item)
 	if err != nil {

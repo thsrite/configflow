@@ -166,6 +166,27 @@ func InitProviderHealth(source *model.Fields) error {
 	return nil
 }
 
+// ProviderHealthDefaults is the health_check a new subscription or aggregation
+// gets when its request has none: the provider defaults, with a non-empty
+// legacy health_check_url (text, or a number read as text, as
+// InitProviderHealth reads it) as the probe URL. legacyURL is the sent member,
+// nil when absent.
+func ProviderHealthDefaults(legacyURL json.RawMessage) *model.ProviderHealthCheck {
+	d := DefaultProviderHealth()
+	var legacy Text
+	if legacyURL != nil && json.Unmarshal(legacyURL, &legacy) == nil && legacy != "" {
+		d.URL = string(legacy)
+	}
+	return &model.ProviderHealthCheck{
+		Enable:         new(d.Enable),
+		URL:            new(d.URL),
+		Interval:       new(model.Int(d.Interval)),
+		Timeout:        new(model.Int(d.Timeout)),
+		Lazy:           new(d.Lazy),
+		ExpectedStatus: new(d.ExpectedStatus),
+	}
+}
+
 var (
 	providerKeys = []string{"enable", "url", "interval", "timeout", "lazy", "expected-status"}
 	groupKeys    = []string{"url", "interval", "timeout", "lazy", "expected-status", "tolerance"}

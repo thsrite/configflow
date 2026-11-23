@@ -264,3 +264,30 @@ func TestValidateModelRecords(t *testing.T) {
 		t.Fatalf("expected tolerance range error, got %v", err)
 	}
 }
+
+func TestProviderHealthDefaults(t *testing.T) {
+	tests := []struct {
+		name   string
+		legacy json.RawMessage
+		url    string
+	}{
+		{"absent", nil, DefaultProbeURL},
+		{"null", json.RawMessage(`null`), DefaultProbeURL},
+		{"empty", json.RawMessage(`""`), DefaultProbeURL},
+		{"text", json.RawMessage(`"http://probe.example/"`), "http://probe.example/"},
+		{"number read as text", json.RawMessage(`5`), "5"},
+		{"object ignored", json.RawMessage(`{"url":"x"}`), DefaultProbeURL},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ProviderHealthDefaults(tc.legacy)
+			if got.URL == nil || *got.URL != tc.url {
+				t.Fatalf("url %v, want %q", got.URL, tc.url)
+			}
+			d := DefaultProviderHealth()
+			if *got.Enable != d.Enable || int64(*got.Interval) != d.Interval || int64(*got.Timeout) != d.Timeout || *got.Lazy != d.Lazy || *got.ExpectedStatus != d.ExpectedStatus {
+				t.Fatalf("defaults %+v", got)
+			}
+		})
+	}
+}

@@ -152,27 +152,6 @@ func validateOptions(sent *subscriptionRequest) error {
 	return nil
 }
 
-type subscriptionErrorItem struct {
-	ID          json.RawMessage `json:"id,omitempty"`
-	Interval    json.RawMessage `json:"interval,omitempty"`
-	HealthCheck json.RawMessage `json:"health_check,omitempty"`
-}
-
-func subscriptionTypeError(req *subscriptionRequest, overrideID string, cause error) error {
-	idRaw := req.ID.Raw
-	if overrideID != "" {
-		idRaw, _ = json.Marshal(overrideID)
-	}
-	list, err := json.Marshal([]subscriptionErrorItem{{
-		ID:          idRaw,
-		Interval:    req.Interval.Raw,
-		HealthCheck: req.HealthCheck.Raw,
-	}})
-	if err != nil {
-		return err
-	}
-	return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "subscriptions", Value: list, Err: cause})
-}
 func filter(sub model.Subscription, nodes []proxy) ([]proxy, error) {
 	source := sub
 	graphs, err := proxyNodes(nodes)

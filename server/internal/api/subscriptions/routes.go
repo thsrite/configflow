@@ -101,7 +101,7 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	record, err := decodeSubscription(req, "", true)
 	if err != nil {
-		return nil, subscriptionTypeError(req, "", err)
+		return nil, err
 	}
 	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) { return append(list, record), nil })
 	return response(200, struct {
@@ -134,7 +134,7 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(400, false, err.Error()), nil
 		}
 		if record, err = decodeSubscription(req, id, false); err != nil {
-			return nil, subscriptionTypeError(req, id, err)
+			return nil, err
 		}
 	}
 	changedURL := false

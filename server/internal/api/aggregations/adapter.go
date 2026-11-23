@@ -14,7 +14,6 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
-	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -53,11 +52,23 @@ type aggregationErrorItem struct {
 	Nodes         json.RawMessage `json:"nodes,omitempty"`
 }
 
-func aggregationTypeError(existing []model.Aggregation, index int, req *aggregationRequest, id string, cause error) error {
+// aggregationTypeError reports a sent member the aggregation record cannot
+// hold with the repository's message for the resulting list. The failed item
+// carries the members that message is chosen from, including the default
+// health_check a creation adds (its legacy health_check_url is validated as
+// the probe URL first, as before).
+func aggregationTypeError(existing []model.Aggregation, index int, req *aggregationRequest, id string, creating bool, cause error) error {
+	health := req.HealthCheck.Raw
+	if defaults := req.health(creating); defaults != nil {
+		var err error
+		if health, err = json.Marshal(defaults); err != nil {
+			return err
+		}
+	}
 	failed, err := json.Marshal(aggregationErrorItem{
 		ID:            id,
 		Name:          req.Name.Raw,
-		HealthCheck:   req.HealthCheck.Raw,
+		HealthCheck:   health,
 		Subscriptions: req.Subscriptions.Raw,
 		Nodes:         req.Nodes.Raw,
 	})
@@ -87,18 +98,14 @@ func aggregationTypeError(existing []model.Aggregation, index int, req *aggregat
 }
 
 func decodeAggregationBody(c *httpx.Ctx) (*aggregationRequest, bool, error) {
-	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	req, ok, err := httpx.BindObject[aggregationRequest](c, false)
 	if err != nil {
 		return nil, false, wrapNonFinite(c, err)
 	}
 	if !ok {
 		return nil, false, nil
 	}
-	req := new(aggregationRequest)
-	if err := jsondecode.Unmarshal(raw, req); err != nil {
-		return nil, true, err
-	}
-	return req, true, nil
+	return &req, true, nil
 }
 
 // readOrderBody returns a reorder object; a falsy scalar reads as {}.
