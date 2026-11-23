@@ -50,7 +50,7 @@
   原样转发给面板 API 校验，以及把 API 结果转给 Agent，这两处本来就是开放 JSON）
 - [ ] 1.8 RouterOS Row → map[string]string；只读分析结构体
 - [ ] 1.8 iKuai 结构体
-- [~] 1.7 OxiDNS 类型化：第一轮完成（见下「1.7 进度」），路由 values 与原生编辑器读设置部分留作第二轮
+- [x] 1.7 OxiDNS 类型化：第一轮 + 第二轮全部完成（见下「1.7 进度」）
 
 ## 做法要点（供续作）
 
@@ -172,16 +172,29 @@
 
 **保持不变**：生成配置语义（oxidns pyref check、boundary 参考测试 148 份最终配置比较）、原生编辑结果、API 字段/状态码/文案（difftest）。
 
-**第二轮（未做，建议单独一位 agent）**：
-- 路由 values（四个选择列表 + `rule_actions` + `rule_dns_follow` + `rule_dns_parked`）是 ConfigFlow 自己的 schema，
-  但在 `routing.go`（`routingState.values`、`assignStored`/`settle`/`takeOver`/`validateSelections`）、`ruledns_apply.go`、
-  `ruledns_state.go`（`storedRuleDNS`/`readRuleDNS`）、`editor.go`（`restoreParked`/`parkInactive`）里仍是 Node 映射；
-  应定义 `ruleDNSValues`（有序 `RuleAction` 映射 + `[]string`），`routingGroups`/`selected` 改收它。`get(` 约再降 150。
-- `common.go`（2300 行）常用参数编辑器、`updates.go`、`native_*.go`、`constraints_*.go` 主要在原生文档上工作（属 `nativeDoc` 边界），
-  其中读设置对象的部分（`config_mode`、`native_config`、`adguard`、`custom_hosts`、`_common_disabled`、`template_settings`）可用
-  一个宽松解码的设置视图（`Member` 语义 = 原 `str`/`isTrue`）替换。
-- `storedProjection`/`requestTypeError`（约 14 处 `get`）可改成 `Member` 解码；`WithoutRuleReferences` 仍收设置树（api/rules 删除规则时编辑存储对象）。
-- 外部仍收 Node 的入口：`ApplyPolicies`/`SavePolicyRows` 的行参数、`ApplyRouting`、`PrepareEditor`、`ReadCommonSettings` 等（调用方在 routers、clients、gateway、agents）。
+**第二轮（2026-11-23 完成，分支 `go-o17-typed-oxidns2`，基于 `go-o17-typed-oxidns@1a58914e8`）**：
+
+提交（每个单独可编译、测试通过）：
+
+| 提交 | 内容 |
+|---|---|
+| `c38d77dd2` | `storedProjection` / `requestTypeError` 改为 `jsondecode.Member` 解码（`stored_projection.go`），保留历史兼容投影、诊断路径与请求类型拒绝语义不变 |
+| `7cbb08ba2` | 新增 `ruledns_values.go`（`actionMap`、`ruleDNSValues`、`routingValues`）；`routing.go`（`routingState.values`、`recognize`、`observedLegacyGroups`、`assignStored`/`validateSelections`/`takeOver`/`settle`/`ApplyRouting`/`RemoveRule`）、`converter.go`（`selected`/`routingGroups`/`templateDocument`）、`ruledns.go`（`helperPlugins`/`pinnedRuleAction`）、`ruledns_state.go`（`storedRuleDNS`/`readRuleDNS`/`ReadRuleDNS`/`ExplicitRuleDNS`）、`ruledns_apply.go`（`pruneDNSFields`/`placeDNSChoice`/`resolveDNSChoice`/`ApplyRuleDNS`）、`editor.go`（`restoreParked`/`parkInactive`）改用类型化路由 values；`RuleAction` 对畸形暂存条目保留原样 `raw` 节点确保往返与校验一致 |
+| `1cb781c17` | 新增 `settings_view.go`（宽松解码视图 `settingsView`，`jsondecode.Member` 语义），替换 `common.go`、`updates.go`、`native.go`、`native_apply.go`、`matchtargets.go`、`converter.go`、`routing.go`、`ruledns_state.go`、`ruledns_apply.go`、`editor.go`、`devicepolicy.go`、`settings.go` 中读取设置对象字段（`config_mode`、`native_config`、`adguard`、`custom_hosts`、`_common_disabled.renamed_plugins`、`template_settings` 等）的 `get(`；原生 YAML 文档编辑与停用插件子树保留 `nativeDoc` 边界 |
+| `4d90cb151` | 外部入口类型化：`ApplyPolicies`、`SavePolicyRows`、`PreparePolicyNotes` 行参数改为 `[]devicenotes.Policy`（并导出 `ParsePolicies`）；`ApplyRouting` 补丁改为类型化 `RoutingChanges` + `RuleActionEntry`（包内 `applyRoutingNode` 保留给开放 JSON 常用设置补丁）；新增 `PrepareProfileEditor` 直接返回准备后的草稿与解析文档。同步更新调用方：`clients/devices.go`、`api/agents/client_tools_adapter.go`、`routers/management_repo.go`（仅 +4/−4 行）、`agents/dnsfollow/document.go`、`agents/dnsha/validation.go`、`agents/rulesync/native.go` 及对应测试 |
+| `560e1b665` | `server/tools/pyref/sources.json` 登记 `ruledns_values.go`、`settings_view.go` 及符号更新，内部 `.node()` 改名 `.toNode()` 避免与 `n73_legacy_test.go` 碰撞；8 个 oxidns 黄金文件只刷新元数据（逐个核对 `entries` 100% 相同） |
+| `9a4464de1` | 在 `commonContext` 缓存一次 `settingsView`，消除 `aliasCapability` 热路径重复序列化/解码整份设置（`oxidns` 单测耗时 338s → 89s）；同步刷新 7 个 oxidns pyref 元数据（`entries` 100% 相同） |
+
+验证（在 `9a4464de1` 上）：
+- `gofmt -l` 无输出，`go vet ./...` 通过
+- `PYREF_MODE=check go test -count=1 ./internal/oxidns ./internal/mosdns`（.32）：ok（92.9s / 59.4s）
+- fuzz 60s（.32）：`FuzzZoneValidation` PASS（127.1 万次）、`FuzzNativeYAMLRoundTrip` PASS（64.7 万次）
+- `GATE_ONLY=proddiff server/scripts/gate.sh -p 6`（.32）：baseline `new=0 stale=0`，`self_check: PASS`，`GATE STAGE PASS: proddiff`
+- `/tmp/preflight.sh .paseo__worktrees__302rx1dg__go-o17-typed-oxidns2 -p 6`（.32）：`PREFLIGHT PASS`（两组 tag vet + 全量非 race 测试）
+- `-race -p 6 -timeout 60m`（.64）：`oxidns` 及全部调用方（`agents/{dnsfollow,dnsha,rulesync}`、`api/{agents,clientdevices,config,generate,oxidns,proxygroups,routers,rulelibrary,rules}`、`clients`、`configgen`、`deploy`、`devicenotes`、`gateway/onboarding`、`ippresence`、`routers`、`setup`、`tools/proddiff/...`）全部 ok
+- difftest（`CONFIGFLOW_DIFF=1`，.64）：`oxidns`、`mosdns/...`、`api/{oxidns,rules,rulelibrary,proxygroups,config,clientdevices,agents,generate}/...`、`devicenotes/...`、`agents/{dnsfollow,dnsha,rulesync}/...`、`configgen/...`、`gateway/onboarding/...` 全部 ok
+
+`get(` 调用（`server/internal/oxidns/` 非测试文件）：1286 → 1004（第一轮）→ **864**（第二轮，净再降 140 处；剩余均位于 `nativeDoc` 原生文档/开放补丁边界）。第二轮改动 38 个文件，+1428/−605。
 
 ## 功能差异（对外）
 
