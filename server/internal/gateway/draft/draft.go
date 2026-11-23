@@ -5,7 +5,6 @@ package draft
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	digestx "configflow/internal/digest"
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/gwbase"
 	"configflow/internal/httpx"
@@ -36,7 +36,7 @@ type document map[string]json.RawMessage
 func fields(raw json.RawMessage) document { var o document; _ = json.Unmarshal(raw, &o); return o }
 func encode(v any) json.RawMessage        { b, _ := json.Marshal(v); return b }
 func str(raw json.RawMessage) string      { var s string; _ = json.Unmarshal(raw, &s); return s }
-func digest(v any) string                 { b := encode(v); h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+func digest(v any) string                 { return digestx.SHA256Hex(encode(v)) }
 func invalid(message string) error        { return &gateway.Error{Message: message} }
 
 // Request preserves exact case, extra keys and request-number forms for guards.

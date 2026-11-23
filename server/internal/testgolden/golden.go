@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	digestx "configflow/internal/digest"
 )
 
 // Spec identifies an oracle and all source/input material affecting its result.
@@ -79,7 +81,7 @@ func Root() (string, error) {
 		here = parent
 	}
 }
-func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+func digest(b []byte) string { return digestx.SHA256Hex(b) }
 
 var dependencyCache sync.Map
 

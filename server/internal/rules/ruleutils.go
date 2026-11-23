@@ -2,14 +2,13 @@ package rules
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"configflow/internal/digest"
 	"configflow/internal/model"
 )
 
@@ -40,11 +39,6 @@ func SanitizeRuleName(name string) string {
 	return safe
 }
 
-func sha256Hex(text string) string {
-	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:])
-}
-
 // CacheFilename binds remote bytes to both the resource and its declaration.
 // D2 uses native JSON for the declaration digest; old identity caches remain
 // readable only when the current stored declaration proves ownership.
@@ -67,7 +61,7 @@ func CacheFilename(rule model.RuleConfig) string {
 		data, _ := json.Marshal([4]string{text, *rule.URL, valueOr(rule.Behavior, "domain"), valueOr(rule.Format, "")})
 		text = string(data)
 	}
-	return namespace + "/" + sha256Hex(text) + ".list"
+	return namespace + "/" + digest.SHA256HexString(text) + ".list"
 }
 
 func fileExists(path string) bool {
@@ -196,7 +190,7 @@ func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 		if identity == "" {
 			identity = rule.ID
 		}
-		old := filepath.Join(rulesDir, "by-id", sha256Hex(identity)+".list")
+		old := filepath.Join(rulesDir, "by-id", digest.SHA256HexString(identity)+".list")
 		if _, err := os.Lstat(old + ".invalid"); !errors.Is(err, os.ErrNotExist) {
 			return ""
 		}
@@ -336,7 +330,7 @@ func LegacyCacheFilename(rule model.RuleConfig) (string, bool) {
 	// Native scalar encoders plus the historical four-field separators; this
 	// is not a general legacy JSON serializer and is never used for new writes.
 	text := "[" + quote(id) + ", " + quote(*rule.URL) + ", " + string(behavior) + ", " + quote(format) + "]"
-	return "by-source/" + sha256Hex(text) + ".list", true
+	return "by-source/" + digest.SHA256HexString(text) + ".list", true
 }
 
 // SameSourceDeclaration compares original declaration evidence for migration.

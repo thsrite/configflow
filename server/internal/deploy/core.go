@@ -2,14 +2,14 @@ package deploy
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
+
+	digestx "configflow/internal/digest"
 )
 
 // Bounds apply to each deployment, including supplemental resources.
@@ -25,7 +25,7 @@ const (
 var digestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 func preparation(message string) error { return &PreparationError{Message: message} }
-func digest(data []byte) string        { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+func digest(data []byte) string        { return digestx.SHA256Hex(data) }
 
 func encodeJSON(v any) ([]byte, error) {
 	var out bytes.Buffer
