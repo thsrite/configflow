@@ -3,6 +3,7 @@ package convert
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"sync"
 
 	"configflow/internal/model"
@@ -43,6 +44,10 @@ type MihomoEnvironment struct {
 	ProviderInterval           func(model.MihomoSettings) (int64, error)
 	LoadSubscriptionCache      CacheReader
 	LoadSubscriptionCacheTyped TypedCacheReader
+	// typedCacheFor records the LoadSubscriptionCache paired with
+	// LoadSubscriptionCacheTyped. If a caller replaces LoadSubscriptionCache
+	// (e.g. a test stub), the typed fast path is bypassed automatically.
+	typedCacheFor              CacheReader
 	DownloadedText             func(context.Context, string) (string, bool)
 	Preflight                  func(context.Context, *model.Config, *yamlx.Node) error
 	LowerChains                func(*model.Config) (*model.Config, error)
@@ -77,6 +82,29 @@ func CurrentMihomoEnvironment() MihomoEnvironment {
 	environmentState.RLock()
 	defer environmentState.RUnlock()
 	return environmentState.value
+}
+
+// BindTypedSubscriptionCache registers raw and typed readers for the same
+// subscription cache owner. Replacing LoadSubscriptionCache later disables
+// the typed fast path automatically.
+func (e *MihomoEnvironment) BindTypedSubscriptionCache(raw CacheReader, typed TypedCacheReader) {
+	e.LoadSubscriptionCache = raw
+	e.LoadSubscriptionCacheTyped = typed
+	e.typedCacheFor = raw
+}
+
+func (e MihomoEnvironment) activeTypedSubscriptionCache() TypedCacheReader {
+	if e.LoadSubscriptionCacheTyped == nil {
+		return nil
+	}
+	if e.LoadSubscriptionCache == nil {
+		return e.LoadSubscriptionCacheTyped
+	}
+	if e.typedCacheFor != nil &&
+		reflect.ValueOf(e.LoadSubscriptionCache).Pointer() == reflect.ValueOf(e.typedCacheFor).Pointer() {
+		return e.LoadSubscriptionCacheTyped
+	}
+	return nil
 }
 
 // CheckGeneration verifies the callbacks required by every generated document.

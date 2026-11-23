@@ -1,7 +1,11 @@
 package convert
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
+
+	"configflow/internal/subs"
 )
 
 // O10 R9: a remembered subscription cache decode is handed out as a copy.
@@ -24,5 +28,19 @@ func TestO10DecodedSubscriptionCacheCopies(t *testing.T) {
 	}
 	if _, err := decodedSubscriptionCache([]byte(`{"nodes":`)); err == nil {
 		t.Fatal("malformed cache accepted")
+	}
+}
+
+func TestBindTypedSubscriptionCacheRespectsOverride(t *testing.T) {
+	raw := func(context.Context, string) (json.RawMessage, error) { return nil, nil }
+	typed := func(context.Context, string) (*subs.SubscriptionCache, error) { return &subs.SubscriptionCache{}, nil }
+	var env MihomoEnvironment
+	env.BindTypedSubscriptionCache(raw, typed)
+	if env.activeTypedSubscriptionCache() == nil {
+		t.Fatal("bound typed reader was not active")
+	}
+	env.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) { return []byte(`{}`), nil }
+	if env.activeTypedSubscriptionCache() != nil {
+		t.Fatal("overriding LoadSubscriptionCache did not disable typed fast path")
 	}
 }
