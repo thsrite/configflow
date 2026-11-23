@@ -2,6 +2,7 @@ package provider
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"configflow/internal/yamlx"
@@ -81,5 +82,70 @@ func TestO10ParsedMemoBoundedByRetainedEstimate(t *testing.T) {
 	}
 	if _, ok := memo.get(texts[2]); !ok {
 		t.Fatal("newest entry missing")
+	}
+}
+
+// batch-47 review: ValidateArtifacts reads provider texts with own=false, so
+// the fresh parse is remembered without a copy and shared by later readers.
+// Validating (one after another and concurrently) never modifies it.
+func TestO10SharedProviderParseStaysReadOnly(t *testing.T) {
+	repoContext(t)
+	main := mustParseYAML(t, `proxies:
+  - {name: Exit, type: http, server: exit.example.com, port: 80}
+proxy-groups:
+  - {name: Group, type: select, use: [Feed]}
+proxy-providers:
+  Feed: {type: http, url: https://example.test/sub, path: ./providers/feed.yaml}
+`)
+	content := `x-opts: &opts {path: /ws, headers: {Host: cdn.example.com}}
+proxies:
+  - {name: Hop, type: vmess, server: hop.example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000001, alterId: 0, cipher: auto, network: ws, ws-opts: *opts}
+  - {name: Entry, type: http, server: entry.example.com, port: 80, dialer-proxy: Exit}
+`
+	artifacts := func() []*Artifact {
+		return []*Artifact{{Name: "Feed", HasName: true, LocalPath: "./providers/feed.yaml", Content: content}}
+	}
+	snapshot := emptySnapshot(t, main)
+	if _, err := ValidateArtifacts(snapshot, artifacts()); err != nil {
+		t.Fatal(err)
+	}
+	kept, ok := parsedProviders.get(content)
+	if !ok {
+		t.Fatal("validated provider parse was not remembered")
+	}
+	encode := func(nodes []*yamlx.Node) string {
+		t.Helper()
+		var out []string
+		for _, node := range nodes {
+			data, err := yamlx.ToJSON(node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, string(data))
+		}
+		return strings.Join(out, "\n")
+	}
+	before := encode(kept)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if _, err := ValidateArtifacts(emptySnapshot(t, main), artifacts()); err != nil {
+				t.Error(err)
+			}
+			own, err := readProviderNodes(content, "Feed", "", msgNodeSource, msgPreparedSource)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			yamlx.Set(own[0], "server", yamlx.Str("changed.example.com"))
+		})
+	}
+	wg.Wait()
+	again, ok := parsedProviders.get(content)
+	if !ok || len(again) != len(kept) || again[0] != kept[0] {
+		t.Fatal("remembered parse was replaced")
+	}
+	if after := encode(again); after != before {
+		t.Fatalf("shared provider parse changed:\n%s\nwant\n%s", after, before)
 	}
 }
