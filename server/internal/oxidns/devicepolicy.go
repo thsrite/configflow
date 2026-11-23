@@ -3,6 +3,7 @@ package oxidns
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -633,8 +634,27 @@ func ParsePolicies(raw []byte) ([]devicenotes.Policy, error) {
 	return rows, nil
 }
 
+// checkedPolicies validates typed rows through devicenotes.ParsePolicies; nil
+// means no rows.
+func checkedPolicies(rows []devicenotes.Policy) ([]devicenotes.Policy, error) {
+	if rows == nil {
+		rows = []devicenotes.Policy{}
+	}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		return nil, fmt.Errorf("encode device policies: %w", err)
+	}
+	return ParsePolicies(raw)
+}
+
 // ApplyPolicies stores new rows and patches the native draft.
+// Typed rows are validated again exactly as the JSON boundary does (address,
+// duplicates, name, mode, row limit): every caller writes to the DNS draft.
 func ApplyPolicies(settings *Node, p *Profile, rows []devicenotes.Policy, baseURL string) (*Node, error) {
+	rows, err := checkedPolicies(rows)
+	if err != nil {
+		return nil, err
+	}
 	current, err := PrepareEditor(settings, p, baseURL)
 	if err != nil {
 		return nil, err

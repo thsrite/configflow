@@ -276,8 +276,25 @@ func ruleDNSFromSettings(settings *Node) *ruleDNSValues {
 	return v
 }
 
-// validateRuleDNS checks the follow exclusivity invariants of ruleDNSValues.
+// validateRuleDNS is normalizeRuleDNS for typed values: every rule_actions
+// and rule_dns_parked entry must pass normalizeAction (and is replaced by its
+// canonical form), then the follow exclusivity invariants hold.
 func validateRuleDNS(v *ruleDNSValues) error {
+	for _, field := range []struct {
+		actions **actionMap
+		parked  bool
+	}{{&v.Actions, false}, {&v.Parked, true}} {
+		normalized := newActionMap()
+		for _, id := range (*field.actions).keys() {
+			action, _ := (*field.actions).get(id)
+			canonical, err := normalizeAction(action.toNode(), field.parked)
+			if err != nil {
+				return err
+			}
+			normalized.set(id, canonical)
+		}
+		*field.actions = normalized
+	}
 	v.Follow = uniqueStrings(v.Follow)
 	for _, identity := range v.Follow {
 		if action, ok := v.Actions.get(identity); ok {
