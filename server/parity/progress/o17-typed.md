@@ -34,7 +34,8 @@
   直接改 `*model.Shared`/`*model.System`/`*model.Config`；排序直接排 `[]model.RuleLibraryItem`。库条目本身保留为
   JSON 成员（`record`），因为草稿修订号、按原样校验和「未发送则继承 update_interval」都定义在条目成员上；
   写回用 `setLibrary`（`SetJSON("rule_library")`，文案与原来一致）。已删除 `rules.OrderIDs`）
-- [ ] 1.6 mcp/invoker
+- [x] 1.6 mcp/invoker（参数本来就是 `arguments` DTO；固定形状的出站请求改为 DTO。`object` 保留并写明：Agent 发来的资源/设置变更
+  原样转发给面板 API 校验，以及把 API 结果转给 Agent，这两处本来就是开放 JSON）
 - [ ] 1.8 RouterOS Row → map[string]string；只读分析结构体
 - [ ] 1.8 iKuai 结构体
 - [ ] 1.7 OxiDNS Settings 等类型化
@@ -51,8 +52,6 @@
 
 ## 剩余
 
-- 1.6：subscriptions（订阅列表类型化；请求体 `subscriptionFields`；代理 proxy 是开放协议成员，保留 JSON 对象并改名注明）、
-  rulelibrary、mcp/invoker；最后删 `rules.OrderIDs`。
 - 1.8、1.7：未开始。
 
 ## 功能差异（对外）

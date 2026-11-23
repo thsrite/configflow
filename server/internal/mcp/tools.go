@@ -128,7 +128,9 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 		if err := need("id"); err != nil {
 			return nil, err
 		}
-		return i.post(ctx, "/api/subscriptions/"+a.ID+"/fetch", object{"preview": flag(a.Preview)})
+		return i.post(ctx, "/api/subscriptions/"+a.ID+"/fetch", struct {
+			Preview bool `json:"preview"`
+		}{a.Preview})
 	case "get_subscription_nodes":
 		if a.ID != "" {
 			return i.get(ctx, "/api/subscriptions/"+a.ID+"/nodes")
@@ -179,14 +181,20 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 		if err := need("rule_type", "domains", "policy"); err != nil {
 			return nil, err
 		}
-		return i.post(ctx, "/api/rules/batch", object{"rule_type": text(a.RuleType), "domains": i.original["domains"], "policy": text(a.Policy)})
+		return i.post(ctx, "/api/rules/batch", struct {
+			RuleType string          `json:"rule_type"`
+			Domains  json.RawMessage `json:"domains"`
+			Policy   string          `json:"policy"`
+		}{a.RuleType, i.original["domains"], a.Policy})
 	case "test_rule_match":
 		if err := need("query"); err != nil {
 			return nil, err
 		}
-		return i.post(ctx, "/api/rules/match-test", object{"query": text(a.Query)})
+		return i.post(ctx, "/api/rules/match-test", struct {
+			Query string `json:"query"`
+		}{a.Query})
 	case "find_duplicate_rules":
-		return i.post(ctx, "/api/rules/find-duplicates", object{})
+		return i.post(ctx, "/api/rules/find-duplicates", empty{})
 	case "get_rule_library_content":
 		if err := need("id"); err != nil {
 			return nil, err
@@ -200,12 +208,16 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 		if err := need("ids"); err != nil {
 			return nil, err
 		}
-		return i.post(ctx, "/api/rule-library/cache", object{"rule_ids": i.original["ids"]})
+		return i.post(ctx, "/api/rule-library/cache", struct {
+			RuleIDs json.RawMessage `json:"rule_ids"`
+		}{i.original["ids"]})
 	case "test_rule_library":
 		if a.URL != "" {
-			return i.post(ctx, "/api/rule-library/test-single", object{"url": text(a.URL)})
+			return i.post(ctx, "/api/rule-library/test-single", struct {
+				URL string `json:"url"`
+			}{a.URL})
 		}
-		return i.post(ctx, "/api/rule-library/test", object{})
+		return i.post(ctx, "/api/rule-library/test", empty{})
 	case "preview_proxy_group_regex":
 		if err := need("regex", "source"); err != nil {
 			return nil, err
@@ -221,7 +233,12 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 		if aggs == nil {
 			aggs = json.RawMessage(`[]`)
 		}
-		return i.post(ctx, "/api/proxy-groups/preview-regex", object{"regex": text(a.Regex), "source": text(source), "subscriptions": subs, "aggregations": aggs})
+		return i.post(ctx, "/api/proxy-groups/preview-regex", struct {
+			Regex         string          `json:"regex"`
+			Source        string          `json:"source"`
+			Subscriptions json.RawMessage `json:"subscriptions"`
+			Aggregations  json.RawMessage `json:"aggregations"`
+		}{a.Regex, source, subs, aggs})
 	case "preview_config", "generate_config":
 		if err := need("target"); err != nil {
 			return nil, err
@@ -233,7 +250,7 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 		if name == "preview_config" {
 			path += "/preview"
 		}
-		v, err := i.post(ctx, path, object{"base_url": text(a.BaseURL)})
+		v, err := i.post(ctx, path, baseURLRequest{a.BaseURL})
 		if err != nil {
 			return nil, err
 		}
@@ -367,7 +384,7 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 			return i.get(ctx, "/api/logs/info")
 		}
 		if a.Action == "clear" {
-			return i.post(ctx, "/api/logs/clear", object{})
+			return i.post(ctx, "/api/logs/clear", empty{})
 		}
 		return nil, bad(msgAction, a.Action)
 	case "manage_custom_config":
@@ -385,7 +402,9 @@ func (i *invocation) runTool(ctx context.Context, name string) (json.RawMessage,
 			if a.Content == nil {
 				return nil, bad(msgContent)
 			}
-			return i.post(ctx, path, object{"config": text(*a.Content)})
+			return i.post(ctx, path, struct {
+				Config string `json:"config"`
+			}{*a.Content})
 		}
 		return nil, bad(msgAction, a.Action)
 	}
@@ -465,7 +484,7 @@ func (i *invocation) configBackup(ctx context.Context) (json.RawMessage, error) 
 		return i.post(ctx, prefix+"/import", a.Data)
 	case "reset":
 		if scope == "system" {
-			return i.post(ctx, prefix+"/reset", object{})
+			return i.post(ctx, prefix+"/reset", empty{})
 		}
 	}
 	if scope == "profile" {
@@ -499,11 +518,11 @@ func (i *invocation) manageAgent(ctx context.Context) (json.RawMessage, error) {
 	case "delete":
 		return i.delete(ctx, path)
 	case "restart", "uninstall":
-		return i.post(ctx, path+"/"+a.Action, object{})
+		return i.post(ctx, path+"/"+a.Action, empty{})
 	case "upgrade":
-		return i.post(ctx, path+"/update", object{})
+		return i.post(ctx, path+"/update", empty{})
 	case "push_config":
-		return i.post(ctx, path+"/push-config", object{"base_url": text(a.BaseURL)})
+		return i.post(ctx, path+"/push-config", baseURLRequest{a.BaseURL})
 	case "clear_log", "validate_log_path":
 		if err := i.require("log_path"); err != nil {
 			return nil, err
@@ -512,14 +531,16 @@ func (i *invocation) manageAgent(ctx context.Context) (json.RawMessage, error) {
 		if a.Action == "validate_log_path" {
 			key, suffix = "path", "/logs/validate"
 		}
-		return i.post(ctx, path+suffix, object{key: text(value(a.LogPath, ""))})
+		return i.post(ctx, path+suffix, map[string]string{key: value(a.LogPath, "")})
 	case "get_logging":
 		return i.get(ctx, path+"/config/logging")
 	case "set_logging":
 		if a.Enabled == nil {
 			return nil, bad(msgEnabled)
 		}
-		return i.post(ctx, path+"/config/logging", object{"enabled": flag(*a.Enabled)})
+		return i.post(ctx, path+"/config/logging", struct {
+			Enabled bool `json:"enabled"`
+		}{*a.Enabled})
 	}
 	return nil, bad(msgAction, a.Action)
 }
@@ -558,4 +579,9 @@ func (i *invocation) installInfo(ctx context.Context) (json.RawMessage, error) {
 		return v, nil
 	}
 	return packed(object{"method": text(a.Method), "content": v}), nil
+}
+
+// baseURLRequest carries the panel URL generated configurations refer to.
+type baseURLRequest struct {
+	BaseURL string `json:"base_url"`
 }

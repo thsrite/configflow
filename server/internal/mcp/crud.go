@@ -34,7 +34,10 @@ func (i *invocation) reorder(ctx context.Context, collection string, ids []strin
 	if err != nil {
 		return nil, err
 	}
-	res, err := i.post(ctx, path, object{"ids": rawIDs, "position": text(position)})
+	res, err := i.post(ctx, path, struct {
+		IDs      json.RawMessage `json:"ids"`
+		Position string          `json:"position"`
+	}{rawIDs, position})
 	if err != nil {
 		return nil, err
 	}

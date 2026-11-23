@@ -16,8 +16,9 @@ import (
 	"configflow/internal/repo"
 )
 
-// object is an open JSON document used for resource extensions, never decoded
-// into dynamic Python-shaped values. Values remain native JSON at API boundaries.
+// object is an open JSON document: a resource or settings change as the Agent
+// sent it, forwarded to the panel API that validates it, or an API result
+// relayed to the Agent. Requests of a fixed shape use DTOs instead.
 type object map[string]json.RawMessage
 
 func packed(o object) json.RawMessage {
@@ -227,12 +228,26 @@ func (i *invocation) call(ctx context.Context, method, path string, body json.Ra
 func (i *invocation) get(ctx context.Context, path string) (json.RawMessage, error) {
 	return i.call(ctx, http.MethodGet, path, nil, nil)
 }
-func (i *invocation) post(ctx context.Context, path string, body object) (json.RawMessage, error) {
-	return i.call(ctx, http.MethodPost, path, packed(body), nil)
+
+// post and put send a request DTO (or, for a forwarded resource, the
+// document as the Agent sent it) to the panel API, which validates it.
+func (i *invocation) post(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	return i.call(ctx, http.MethodPost, path, encode(body), nil)
 }
-func (i *invocation) put(ctx context.Context, path string, body object) (json.RawMessage, error) {
-	return i.call(ctx, http.MethodPut, path, packed(body), nil)
+func (i *invocation) put(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	return i.call(ctx, http.MethodPut, path, encode(body), nil)
 }
+func encode(body any) json.RawMessage {
+	if o, ok := body.(object); ok {
+		return packed(o)
+	}
+	b, _ := json.Marshal(body)
+	return b
+}
+
+// empty is a request without members.
+type empty struct{}
+
 func (i *invocation) delete(ctx context.Context, path string) (json.RawMessage, error) {
 	return i.call(ctx, http.MethodDelete, path, nil, nil)
 }
