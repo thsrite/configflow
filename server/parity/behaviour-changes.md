@@ -3091,3 +3091,6 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - **修复**：`Fields` 读取成员名时用到已失效的 token（新实现）；`OrderedMap` 自引用时无限递归，现在报 `ErrJSON`。
 - 测试：语料测试按名字接受 Python 合成夹具里的未声明成员（`keep`/`extra`/`name2`）被丢弃、健康历史里非对象 `traffic` 被丢弃；
   o10t2 参考语料删去旧编解码的行，唯一变化的行是 `marshal-struct`（没有编解码方法的结构体现在可以写出）。
+- **HR 复核补充**（review-o18-t1d.md）：订阅缓存 metadata 没有 `url` 成员（旧缓存）时，配置向导不比较订阅链接（Python `get('url', 当前链接)`；
+  `null` 仍按已存链接比较）；节点列表含 `null` 元素算损坏，发布照旧拒绝；JSON 真值把下溢到 0.0 的数（`1e-400`）当假（Python `bool`）；
+  `dns.use-hosts/enable: null` 读作缺失；通知的 `profile_id/profile_name/checked_at/evidence` 与 Sub-Store 运行状态的 `error` 写入时不再做 HTML 转义（`&<>` 原样，与 Python 相同）。
