@@ -284,7 +284,17 @@ func applySystemIn(document *model.Document, fn func(s *model.System) error) (*m
 	if err := fn(proposed); err != nil {
 		return nil, err
 	}
-	proposed.Revision = document.System.Revision + 1
+	stateOnly, err := agentStateOnly(&document.System, proposed)
+	if err != nil {
+		return nil, err
+	}
+	// The revision counts configuration edits: an edit of Agent state members
+	// only (deployments, sync progress, ...) leaves it, so it commits no
+	// configuration row.
+	proposed.Revision = document.System.Revision
+	if !stateOnly {
+		proposed.Revision++
+	}
 	if _, err := ensureSystemTokens(proposed); err != nil {
 		return nil, err
 	}

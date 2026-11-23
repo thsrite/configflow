@@ -98,6 +98,13 @@ func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, store.Hea
 		if err != nil {
 			return err
 		}
+		if present {
+			state, err := connection.State()
+			if err != nil {
+				return err
+			}
+			raw = mergeAgents(raw, state)
+		}
 		var system model.System
 		var issues []model.FieldIssue
 		if present {

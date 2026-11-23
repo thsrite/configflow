@@ -1027,18 +1027,26 @@ def migrate_baselines(go_copy, report):
     database = go_copy / 'configflow.sqlite3'
     def rows():
         with sqlite3.connect(database) as connection:
+            state = []
+            if connection.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='agent_state'").fetchone()[0]:
+                state = list(connection.execute('SELECT agent_id, member, value, revision FROM agent_state ORDER BY agent_id, member'))
             return (list(connection.execute('SELECT scope, owner, field, position, value, revision FROM fields ORDER BY scope,owner,field')),
-                    list(connection.execute('SELECT key,value FROM meta ORDER BY key')))
+                    list(connection.execute('SELECT key,value FROM meta ORDER BY key')), state)
     old = document(go_copy).get('system', {}).get('agents', [])
     (proof / 'agents-before.json').write_text(json.dumps(old, ensure_ascii=False))
     if not any(isinstance(agent, dict) and agent.get('applied_content') for agent in old):
         (proof / 'agents-after.json').write_text(json.dumps(old, ensure_ascii=False))
         (proof / 'summary.json').write_text(json.dumps({'converted': 0, 'proof': 'no historical baseline'}))
         return
-    before = rows()
     env = dict(os.environ, DATA_DIR=str(go_copy), PRODDIFF_BASELINE_MIGRATION='1',
                LOG_LEVEL='ERROR', LOG_FILE=str(proof / 'worker.log'), SUB_STORE_BUILTIN_DIR='/nonexistent')
     with (proof / 'worker.log').open('wb') as log:
+        # Go storage version 2 keeps Agent state (applied_content, ...) in agent_state:
+        # upgrade the copy first, then prove that the worker writes nothing.
+        subprocess.run([os.environ['PRODDIFF_BASELINE_TOOL'], str(go_copy), str(proof)],
+                       env=dict(env, PRODDIFF_BASELINE_UPGRADE='1'), stdout=log, stderr=log, timeout=600, check=True)
+    before = rows()
+    with (proof / 'worker.log').open('ab') as log:
         subprocess.run([os.environ['PRODDIFF_BASELINE_TOOL'], str(go_copy), str(proof)],
                        env=env, stdout=log, stderr=log, timeout=600, check=True)
     if rows() != before:
@@ -1052,15 +1060,16 @@ def migrate_baselines(go_copy, report):
                     record['applied_content'].pop(field, None)
     if old_projection != new_projection:
         raise RuntimeError('baseline migration changed a field outside its private format identity')
+    patches = {patch['agent_id']: patch['value'] for patch in json.loads((proof / 'applied-after.json').read_text())}
     with sqlite3.connect(database) as connection:
-        cursor = connection.execute("UPDATE fields SET value=? WHERE scope='system' AND owner='' AND field='agents'",
-                                    ((proof / 'agents-after.json').read_text(),))
-        if cursor.rowcount != 1:
-            raise RuntimeError('baseline migration did not patch exactly one existing row')
+        for agent_id, value in patches.items():
+            cursor = connection.execute("UPDATE agent_state SET value=? WHERE agent_id=? AND member='applied_content'", (value, agent_id))
+            if cursor.rowcount != 1:
+                raise RuntimeError('baseline migration did not patch exactly one existing state row')
     after = rows()
-    expected = [(scope, owner, field, position, (proof / 'agents-after.json').read_text() if (scope, owner, field) == ('system', '', 'agents') else value, revision)
-                for scope, owner, field, position, value, revision in before[0]]
-    if after != (expected, before[1]):
+    expected_state = [(agent_id, member, patches[agent_id] if member == 'applied_content' and agent_id in patches else value, revision)
+                      for agent_id, member, value, revision in before[2]]
+    if after != (before[0], before[1], expected_state):
         raise RuntimeError('baseline migration changed database revision metadata')
 
 

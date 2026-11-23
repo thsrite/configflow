@@ -17,6 +17,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/repo/staterows"
 	"configflow/internal/server"
 	"configflow/internal/yamlx"
 )
@@ -75,6 +76,12 @@ func run() (resultErr error) {
 	repository, err := repo.OpenDefault(data)
 	if err != nil {
 		return err
+	}
+	if os.Getenv("PRODDIFF_BASELINE_UPGRADE") == "1" {
+		// Opening upgraded the copy to the current storage version; the
+		// driver takes its "before" rows only after this step.
+		repository.Close()
+		return nil
 	}
 	repo.SetRepository(repository)
 	_ = server.NewApp() // normal generator/owner hooks; no periodic rounds are started.
@@ -241,7 +248,7 @@ func run() (resultErr error) {
 		migrated[i] = true
 	}
 	// Apply only after every independent proof succeeded. The driver patches the
-	// single raw agents row without changing revision/generation metadata.
+	// applied_content state rows without changing revision/generation metadata.
 	for _, p := range plans {
 		if err = privateWrite(filepath.Join(p.folder, "bundle-"+p.sha+".tar.gz"), p.archive); err != nil {
 			return err
@@ -262,11 +269,15 @@ func run() (resultErr error) {
 			}
 		}
 	}
-	after, err := patchedAgents(stored, records, migrated)
+	// The registry as one row (agent_state merged in, design/o17-runtime-state.md).
+	after, err := patchedAgents(staterows.Merge(stored, loaded.Document.State), records, migrated)
 	if err != nil {
 		return err
 	}
 	if err = privateWrite(filepath.Join(proofDir, "agents-after.json"), after); err != nil {
+		return err
+	}
+	if err = writeJSON(filepath.Join(proofDir, "applied-after.json"), appliedRows(after, records, migrated)); err != nil {
 		return err
 	}
 	return writeJSON(filepath.Join(proofDir, "summary.json"), struct {
@@ -330,6 +341,31 @@ func patchedAgents(raw []byte, records []model.Agent, migrated map[int]bool) ([]
 		}
 	}
 	return json.Marshal(rows)
+}
+
+// appliedPatch is one applied_content state row the driver rewrites.
+type appliedPatch struct {
+	AgentID string `json:"agent_id"`
+	Value   string `json:"value"`
+}
+
+// appliedRows returns the applied_content state rows of the converted Agents
+// in the patched registry row.
+func appliedRows(after []byte, records []model.Agent, migrated map[int]bool) []appliedPatch {
+	ids := map[string]bool{}
+	for i := range records {
+		if migrated[i] {
+			ids[records[i].ID] = true
+		}
+	}
+	_, rows := staterows.Split(after)
+	patches := []appliedPatch{}
+	for _, row := range rows {
+		if row.Member == "applied_content" && ids[row.Owner] {
+			patches = append(patches, appliedPatch{AgentID: row.Owner, Value: string(row.Value)})
+		}
+	}
+	return patches
 }
 
 func main() {

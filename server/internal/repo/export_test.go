@@ -14,3 +14,6 @@ var RemoveSharedUsingForTest = (*Repository).removeSharedFileUsing
 
 // WithFileForTest acquires the production file lease for commit-boundary tests.
 var WithFileForTest = withFile
+
+// SetUpgradeRowHookForTest sets the store hook of the next storage upgrades.
+func SetUpgradeRowHookForTest(hook func(i int) error) { upgradeRowHook = hook }

@@ -133,7 +133,7 @@ func TestLockedDatabaseFailsWithoutRenaming(t *testing.T) {
 
 func TestNewerStorageVersionFailsWithoutRenaming(t *testing.T) {
 	r := newRepo(t)
-	rcSQL(t, r.DatabasePath(), "UPDATE meta SET value = '2' WHERE key = 'storage_version'")
+	rcSQL(t, r.DatabasePath(), "UPDATE meta SET value = '3' WHERE key = 'storage_version'")
 	_, err := Open(r.DataDir(), Options{})
 	wantError(t, err, ErrRepository, "更新版本")
 	if left := opGlob(t, r.DatabasePath()+".corrupt-*"); len(left) > 0 {

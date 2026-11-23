@@ -10,7 +10,11 @@ import (
 
 // Native stored generations and row commits.
 
+// decodeEntry decodes a stored generation. The entry keeps the merged rows
+// (agent_state inside system.agents, see agent_state.go): every repository
+// reader of stored rows sees the configuration document as one.
 func decodeEntry(raw store.Entry) (storedEntry, error) {
+	raw.Document = mergeRows(raw.Document)
 	document, issues, err := decodeModelRows(raw.Document)
 	if err != nil {
 		return storedEntry{}, err
@@ -23,6 +27,7 @@ func (r *Repository) createStore(doc *model.Document, meta map[string]json.RawMe
 	if err != nil {
 		return storedEntry{}, err
 	}
+	splitRows(raw)
 	extra := meta
 	entry, err := r.store.Create(raw, extra)
 	if err != nil {
@@ -42,6 +47,7 @@ func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc *mod
 	if err := keepDamagedConfigToken(raw, base.Entry.Document, base.Issues, doc); err != nil {
 		return storedEntry{}, false, err
 	}
+	splitRows(raw)
 	extra := meta
 	entry, changed, err := r.store.CommitContext(ctx, base.Entry, raw, extra)
 	if err != nil || !changed {

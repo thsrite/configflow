@@ -11,6 +11,7 @@ import (
 	"slices"
 	"testing"
 
+	"configflow/internal/repo/repotest"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -23,6 +24,11 @@ func r14Python(t *testing.T, endpoint string, input any, out any) {
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if fields, ok := input.(map[string]any); ok {
+		if dir, ok := fields["data_dir"].(string); ok {
+			fields["data_dir"] = pythonDataDir(t, dir)
+		}
 	}
 	cmd := exec.CommandContext(t.Context(), filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Join(wd, "testdata/r14_reference.py"))
 	cmd.Dir = filepath.Clean(filepath.Join(wd, "../../.."))
@@ -38,6 +44,18 @@ func r14Python(t *testing.T, endpoint string, input any, out any) {
 		t.Fatalf("Python output: %v %s", err, raw)
 	}
 }
+// pythonDataDir copies a Go data directory for the Python reference, with the
+// database rewritten in the version-1 layout Python reads.
+func pythonDataDir(t *testing.T, dir string) string {
+	t.Helper()
+	copied := filepath.Join(t.TempDir(), "data")
+	if err := os.CopyFS(copied, os.DirFS(dir)); err != nil {
+		t.Fatal(err)
+	}
+	repotest.DowngradeToV1(t, filepath.Join(copied, "configflow.sqlite3"))
+	return copied
+}
+
 func TestR14ClassifyPython(t *testing.T) {
 	type sample struct {
 		Content  string `json:"content"`

@@ -355,6 +355,8 @@ func (r *Repository) openLocked(ctx context.Context) error {
 			return &store.Error{Kind: store.ErrStorage, Cause: err,
 				Message: "无法打开配置数据库 " + DatabaseFilename + "：" + err.Error() + "；数据库未改动"}
 		}
+	} else if err := r.upgradeLocked(ctx); err != nil {
+		return err
 	}
 	entry, err := r.readEntry(ctx, true)
 	if err != nil {

@@ -448,5 +448,15 @@
     "guard": "go build of backend/agents/go-agent into a per-binary temp directory removed by TestMain",
     "kind": "go-subprocess",
     "reason": "每个测试二进制构建一次真实Go Agent，供Docker HA测试运行configflow-agent ha-*子命令；不启动Python。"
+  },
+  {
+    "id": "B-036",
+    "file": "server/internal/repo/o17_state_test.go",
+    "function": "TestO17UpgradeKilled",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run=^TestO17UpgradeKilled$ and CONFIGFLOW_O17_UPGRADE_DIR child environment",
+    "kind": "go-subprocess",
+    "reason": "在存储升级事务中途用 SIGKILL 杀掉当前Go测试二进制的子进程（模拟断电），验证重启后数据库仍是完整的版本1；不启动Python。"
   }
 ]

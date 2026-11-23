@@ -130,3 +130,12 @@ const msgUnknownResourceType = "未知资源类型"
 const msgProfileFieldsObject = "Profile fields and baseline must be objects"
 
 const msgProfileComposition = "资源由策略组直接引用，拨号组合请使用代理链类型"
+
+// Storage upgrade (design/o17-runtime-state.md 2.5).
+const (
+	msgUpgradeBackupFailed = "升级配置数据库（存储版本 %d → %d）前的备份失败：%v。数据库未改动，服务没有启动。" +
+		"请检查数据目录下 backups 目录（%s）的磁盘空间和写入权限，处理后重新启动。"
+	msgUpgradeFailed = "升级配置数据库（存储版本 %d → %d）失败：%v。数据库未改动（升级前备份：%s），服务没有启动；请保留日志后重新启动重试。"
+	msgUpgraded      = "配置数据库已升级到存储版本 %d：%d 条 Agent 运行记录移到独立的状态表；升级前备份 %s"
+	msgBackupCheck   = "备份文件检查失败：%v"
+)

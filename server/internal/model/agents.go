@@ -221,3 +221,17 @@ func (r *Agent) DropHistory() {
 	r.Deployments = OrderedMap[Deployment]{}
 	r.IPv6Verifications = OrderedMap[IPv6Verification]{}
 }
+
+// AgentStateMembers are the members of an Agent record that hold run-time
+// state and histories written by devices and background jobs, not settings a
+// user chose (design/o17-runtime-state.md 2.1). Storage keeps them in the
+// agent_state table instead of the configuration rows; readers see one
+// merged record. A dotted path names a member nested in an object member
+// whose other members stay configuration ("rule_sync.state").
+var AgentStateMembers = []string{
+	"deployments", "latest_deployment", "applied_content", "config_version", "config_revision", "pushed_at",
+	"version", "latest_upgrade", "rule_sync.state", "dns_follow_state", "dns_follow_job", "oxidns_ha_state",
+	"oxidns_ha_publication", "ipv6_verifications",
+	// Values written by Python only; kept, never written again.
+	"status", "last_heartbeat", "service_status", "system_metrics", "cpu", "memory", "disk", "network",
+}

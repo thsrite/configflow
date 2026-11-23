@@ -231,11 +231,21 @@ class ComparatorTests(unittest.TestCase):
                     connection.execute('INSERT INTO fields VALUES(?,?,?,?,?,?)', ('system', '', '_revision', 1, '11', 2))
                     connection.execute('INSERT INTO meta VALUES(?,?)', ('generation', '19'))
                 def worker(command, **kwargs):
+                    if kwargs['env'].get('PRODDIFF_BASELINE_UPGRADE') == '1':
+                        # Synthetic stand-in for the Go storage upgrade: applied_content moves to agent_state.
+                        config = [{key: value for key, value in original[0].items() if key not in ('applied_content', 'config_version')}]
+                        with sqlite3.connect(database) as connection:
+                            connection.execute('CREATE TABLE agent_state(agent_id,member,value,revision)')
+                            connection.execute('INSERT INTO agent_state VALUES(?,?,?,?)', ('synthetic', 'applied_content', json.dumps(original[0]['applied_content']), 1))
+                            connection.execute('INSERT INTO agent_state VALUES(?,?,?,?)', ('synthetic', 'config_version', json.dumps(original[0]['config_version']), 1))
+                            connection.execute("UPDATE fields SET value=? WHERE field='agents'", (json.dumps(config),))
+                        return
                     updated = copy.deepcopy(original)
                     updated[0]['applied_content'].update(fingerprint='new', files={'config.yaml': 'new'})
                     if tamper:
                         updated[0]['host'] = '192.0.2.2'
                     (Path(command[2]) / 'agents-after.json').write_text(json.dumps(updated))
+                    (Path(command[2]) / 'applied-after.json').write_text(json.dumps([{'agent_id': 'synthetic', 'value': json.dumps(updated[0]['applied_content'])}]))
                 with mock.patch.dict(os.environ, {'PRODDIFF_BASELINE_TOOL': '/synthetic/baseline'}), mock.patch.object(pd.subprocess, 'run', side_effect=worker):
                     if tamper:
                         with self.assertRaises(RuntimeError):
@@ -246,9 +256,10 @@ class ComparatorTests(unittest.TestCase):
                     value, revision = connection.execute("SELECT value,revision FROM fields WHERE field='agents'").fetchone()
                     self.assertEqual(7, revision)
                     self.assertEqual([('generation', '19')], list(connection.execute('SELECT key,value FROM meta')))
-                    actual = json.loads(value)
-                    self.assertEqual('old' if tamper else 'new', actual[0]['applied_content']['fingerprint'])
-                    self.assertEqual('192.0.2.1', actual[0]['host'])
+                    self.assertEqual('192.0.2.1', json.loads(value)[0]['host'])
+                    applied, state_revision = connection.execute("SELECT value,revision FROM agent_state WHERE member='applied_content'").fetchone()
+                    self.assertEqual(1, state_revision)
+                    self.assertEqual('old' if tamper else 'new', json.loads(applied)['fingerprint'])
 
     def test_agent_comparison_identity_pairing_has_proofs(self):
         identities = pd.AgentComparisonIdentities()
