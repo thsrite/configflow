@@ -181,7 +181,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -392,7 +393,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -603,7 +605,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -814,7 +817,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "ArchiveError.Error",
@@ -900,7 +904,8 @@
       "server/internal/yamlx/native_probe.go",
       "server/internal/yamlx/native_validate.go",
       "server/internal/yamlx/native_writer_graph.go",
-      "server/internal/yamlx/source.go"
+      "server/internal/yamlx/source.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "BuildTypedZIP",
@@ -987,7 +992,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go",
+      "server/internal/logx/logx.go",
+      "server/internal/logx/rotate.go"
     ],
     "product_symbols": [
       "BaseFullTun",
@@ -1092,7 +1100,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go",
+      "server/internal/logx/logx.go",
+      "server/internal/logx/rotate.go"
     ],
     "product_symbols": [
       "BaseFullTun",
@@ -1197,7 +1208,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go",
+      "server/internal/logx/logx.go",
+      "server/internal/logx/rotate.go"
     ],
     "product_symbols": [
       "BaseFullTun",
@@ -1292,7 +1306,8 @@
       "server/internal/yamlx/native_probe.go",
       "server/internal/yamlx/native_validate.go",
       "server/internal/yamlx/native_writer_graph.go",
-      "server/internal/yamlx/source.go"
+      "server/internal/yamlx/source.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "composeArchive",
@@ -1476,7 +1491,9 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -1777,7 +1794,9 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2015,7 +2034,9 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2246,7 +2267,9 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "DefaultSettings",
@@ -2457,7 +2480,9 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4257,7 +4282,9 @@
       "server/internal/yamlx/yamlxtest/writer.go",
       "server/internal/jsondecode/member.go",
       "server/internal/oxidns/settings_template.go",
-      "server/internal/rules/group_members.go"
+      "server/internal/rules/group_members.go",
+      "server/internal/digest/digest.go",
+      "server/internal/pathx/pathx.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -5145,7 +5172,8 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/digest/digest.go"
     ],
     "product_symbols": [
       "ConvertRuleContentForMosDNS",
