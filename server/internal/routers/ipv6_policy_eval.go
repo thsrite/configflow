@@ -97,8 +97,8 @@ func policyOr(values ...PolicyMatch) PolicyMatch {
 	}
 	return out
 }
-func policyFlag(value any) bool  { return rosTruthy(value) || rosText(value) == "1" }
-func policyEnabled(row Row) bool { return !policyFlag(row["disabled"]) && !policyFlag(row["invalid"]) }
+func policyFlag(value string) bool { return rosFlag(value) || value == "1" }
+func policyEnabled(row Row) bool   { return !policyFlag(row["disabled"]) && !policyFlag(row["invalid"]) }
 func policyNetwork(text string) (netip.Prefix, bool) {
 	n, ok := netipx.ParseNetwork(strings.SplitN(text, "%", 2)[0], false)
 	return n, ok
@@ -269,11 +269,6 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 	visited[name] = true
 	defer delete(visited, name)
 	listMatch := func(key string) PolicyMatch {
-		if rowValue, present := definition[key]; present {
-			if _, ok := rowValue.(string); !ok {
-				return PolicyUnknown
-			}
-		}
 		out := PolicyNoMatch
 		for _, nested := range strings.Split(definition.text(key), ",") {
 			if nested != "" {
@@ -312,18 +307,11 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 	}
 	out := PolicyMatches
 	for key, value := range row {
-		if policyMeta[key] || value == nil {
+		if policyMeta[key] || value == "" {
 			continue
 		}
-		if text, ok := value.(string); ok && text == "" {
-			continue
-		}
-		v := rosText(value)
+		v := value
 		match := PolicyUnknown
-		if v == "" {
-			out = policyAnd(out, PolicyUnknown)
-			continue
-		}
 		switch key {
 		case "src-address":
 			match = policyAddress(p.SrcAddress, v)

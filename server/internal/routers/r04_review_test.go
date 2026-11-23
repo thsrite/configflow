@@ -168,7 +168,7 @@ func TestRestoreManyIgnoresCancellation(t *testing.T) {
 		rows[i] = routerfake.Row{".id": fmt.Sprintf("*%X", 0x70+i), "dst-address": fmt.Sprintf("45.42.%d.0/24", i),
 			"gateway": "192.0.2.1", "routing-table": "main", "comment": "cf-sync", "disabled": "false"}
 		change := ROSChange{Method: "DELETE", Path: rosRoutes, ID: rows[i][".id"].(string),
-			Expected: marshalRow(driver.ownershipSnapshot(rosRoutes, Row(rows[i])))}
+			Expected: marshalRow(driver.ownershipSnapshot(rosRoutes, deviceRow(rows[i])))}
 		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
 	}
 	fake.Reset(routerfake.State{Tables: map[string][]routerfake.Row{rosRoutes: rows}})
@@ -213,7 +213,7 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 	case method == http.MethodPost && strings.HasSuffix(path, "/print"):
 		result = present()
 	case method == http.MethodPost && strings.HasSuffix(path, "/remove"):
-		ids, _ := body.(Row)[".id"].(string)
+		ids := body.(Row)[".id"]
 		for _, id := range strings.Split(ids, ",") {
 			if id != d.stuck {
 				d.removed[id] = true
@@ -292,10 +292,11 @@ func TestNATUpdateWithArrayValuesDoesNotPanic(t *testing.T) {
 
 // F7: ownership snapshots must tell different composite values apart.
 func TestComparableDistinguishesCompositeValues(t *testing.T) {
-	if comparable("src-address-list", []any{"lan"}) == comparable("src-address-list", []any{"guest"}) {
+	value := func(raw string) string { return decodedRow(t, `{"v":`+raw+`}`)["v"] }
+	if comparable("src-address-list", value(`["lan"]`)) == comparable("src-address-list", value(`["guest"]`)) {
 		t.Fatal("different array values compare equal")
 	}
-	if comparable("comment", map[string]any{"a": "1"}) == comparable("comment", "") {
+	if comparable("comment", value(`{"a":"1"}`)) == comparable("comment", "") {
 		t.Fatal("an object value compares equal to an empty string")
 	}
 }

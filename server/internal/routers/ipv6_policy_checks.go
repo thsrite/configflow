@@ -94,7 +94,7 @@ func policyRouteInterface(s *PolicySnapshot, destination string) (string, string
 	partial := []int{}
 	for _, row := range s.Routes {
 		network, ok := policyNetwork(row.text("dst-address"))
-		if !policyEnabled(row) || !policyFlag(row["active"]) || rosTextDefault(row["routing-table"], "main") != "main" || !ok || network.Addr().BitLen() != target.Addr().BitLen() {
+		if !policyEnabled(row) || !policyFlag(row["active"]) || row.textOr("routing-table", "main") != "main" || !ok || network.Addr().BitLen() != target.Addr().BitLen() {
 			continue
 		}
 		if target.Bits() >= network.Bits() && network.Contains(target.Addr()) {
@@ -208,7 +208,7 @@ func policyRouteUncertain(env PolicyEnvironment, s *PolicySnapshot, p PolicyPack
 		if !policyEnabled(row) {
 			continue
 		}
-		action := rosTextDefault(row["action"], "lookup")
+		action := row.textOr("action", "lookup")
 		if row.is("table", "main") && (action == "lookup" || action == "lookup-only-in-table") {
 			continue
 		}
@@ -247,7 +247,7 @@ func policyFakeGateway(s *PolicySnapshot, target netip.Prefix, agent *model.Agen
 	matches := []Row{}
 	for _, row := range s.Routes {
 		n, ok := policyNetwork(row.text("dst-address"))
-		if !ok || n.Addr().BitLen() != target.Addr().BitLen() || target.Bits() < n.Bits() || !n.Contains(target.Addr()) || !policyEnabled(row) || !policyFlag(row["active"]) || rosTextDefault(row["routing-table"], "main") != "main" {
+		if !ok || n.Addr().BitLen() != target.Addr().BitLen() || target.Bits() < n.Bits() || !n.Contains(target.Addr()) || !policyEnabled(row) || !policyFlag(row["active"]) || row.textOr("routing-table", "main") != "main" {
 			continue
 		}
 		if n.Bits() > best {

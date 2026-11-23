@@ -24,8 +24,25 @@ import (
 // Snapshots are open device records, never client-supplied release operations.
 type EditableRoute struct {
 	RouteFields
-	Snapshot Row `json:"snapshot"`
+	Snapshot RouteSnapshot `json:"snapshot"`
 }
+
+// RouteSnapshot is the vendor's complete route record (a RouterOS or an
+// iKuai row); it encodes as that record.
+type RouteSnapshot struct {
+	ros   Row
+	ikuai ikuaiRow
+}
+
+// MarshalJSON encodes the vendor record.
+func (s RouteSnapshot) MarshalJSON() ([]byte, error) {
+	if s.ikuai != nil {
+		return json.Marshal(s.ikuai)
+	}
+	return json.Marshal(s.ros)
+}
+
+func (s RouteSnapshot) empty() bool { return s.ros == nil && s.ikuai == nil }
 
 // RouteFields is the public route editor view, without device configuration.
 type RouteFields struct {
@@ -52,8 +69,8 @@ func (r *EditableRoute) Public() *PublicRoute {
 		return nil
 	}
 	return &PublicRoute{r.RouteFields, routeDigest(struct {
-		Fields   RouteFields `json:"fields"`
-		Snapshot Row         `json:"snapshot"`
+		Fields   RouteFields   `json:"fields"`
+		Snapshot RouteSnapshot `json:"snapshot"`
 	}{r.RouteFields, r.Snapshot})}
 }
 
@@ -132,7 +149,7 @@ func ReadRoutes(ctx context.Context, driver Driver) ([]*EditableRoute, error) {
 	}
 	seen := map[string]bool{}
 	for _, row := range rows {
-		if row == nil || row.ID == "" || row.Snapshot == nil || seen[row.ID] {
+		if row == nil || row.ID == "" || row.Snapshot.empty() || seen[row.ID] {
 			return nil, routerError(messageEditListIdentity)
 		}
 		seen[row.ID] = true

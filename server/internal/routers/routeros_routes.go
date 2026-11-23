@@ -2,7 +2,6 @@ package routers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -31,17 +30,12 @@ var editROSDefaults = func() Row {
 	return v
 }()
 
-func editROSFlag(value any) (bool, bool) {
-	switch v := value.(type) {
-	case bool:
-		return v, true
-	case string:
-		switch strings.ToLower(v) {
-		case "true", "yes":
-			return true, true
-		case "false", "no":
-			return false, true
-		}
+func editROSFlag(value string) (bool, bool) {
+	switch strings.ToLower(value) {
+	case "true", "yes":
+		return true, true
+	case "false", "no":
+		return false, true
 	}
 	return false, false
 }
@@ -54,25 +48,25 @@ func editROSSnapshot(row Row) Row {
 }
 func editROSEntry(row Row, duplicates map[string]bool) *EditableRoute {
 	reasons := []string{}
-	id, _ := row[".id"].(string)
+	id := row[".id"]
 	if !rosIDPattern.MatchString(id) {
 		reasons = append(reasons, messageEditROSID)
 	} else if duplicates[id] {
 		reasons = append(reasons, messageEditROSDuplicateID)
 	}
-	cidr := rosText(row["dst-address"])
+	cidr := row["dst-address"]
 	if p, ok := netipx.ParseNetwork4(cidr, false); ok {
 		cidr = p.String()
 	} else {
 		reasons = append(reasons, messageEditROSCIDR)
 	}
-	gateway := rosText(row["gateway"])
+	gateway := row["gateway"]
 	if a, err := netip.ParseAddr(gateway); err == nil && a.Is4() {
 		gateway = a.String()
 	} else {
 		reasons = append(reasons, messageEditROSGateway)
 	}
-	table := rosTextDefault(row["routing-table"], "main")
+	table := row.textOr("routing-table", "main")
 	if table != "main" {
 		reasons = append(reasons, messageEditROSTable)
 	}
@@ -101,7 +95,7 @@ func editROSEntry(row Row, duplicates map[string]bool) *EditableRoute {
 			break
 		}
 	}
-	if rosText(row["vrf-interface"]) != "" {
+	if row["vrf-interface"] != "" {
 		reasons = append(reasons, messageEditROSVRF)
 	}
 	unknown := []string{}
@@ -110,16 +104,8 @@ func editROSEntry(row Row, duplicates map[string]bool) *EditableRoute {
 		if !rosRouteFields[k] && !editROSRuntime[k] && !editROSFlags[k] && k != ".id" {
 			unknown = append(unknown, k)
 		}
-		if !editROSRuntime[k] {
-			switch v.(type) {
-			case string, bool, int, int64:
-			case json.Number:
-				if _, ok := jsonInt(v); !ok {
-					badType = true
-				}
-			default:
-				badType = true
-			}
+		if !editROSRuntime[k] && structuredText(v) {
+			badType = true
 		}
 	}
 	if len(unknown) > 0 {
@@ -129,25 +115,21 @@ func editROSEntry(row Row, duplicates map[string]bool) *EditableRoute {
 	if badType {
 		reasons = append(reasons, messageEditROSFieldType)
 	}
-	comment := ""
-	if v, ok := row["comment"]; ok {
-		var valid bool
-		comment, valid = v.(string)
-		if !valid {
-			comment = rosText(v)
-			reasons = append(reasons, messageEditROSComment)
-		}
+	comment := row["comment"]
+	if structuredText(comment) {
+		comment = ""
+		reasons = append(reasons, messageEditROSComment)
 	}
 	disabled, valid := editROSFlag(row["disabled"])
 	if _, ok := row["disabled"]; !ok {
 		valid = true
 	}
-	return &EditableRoute{RouteFields: RouteFields{ID: id, CIDR: cidr, Gateway: gateway, Enabled: valid && !disabled, Comment: comment, Table: table, Editable: len(reasons) == 0, Reason: strings.Join(uniqueStrings(reasons), "；"), Managed: IsManaged(comment)}, Snapshot: editROSSnapshot(row)}
+	return &EditableRoute{RouteFields: RouteFields{ID: id, CIDR: cidr, Gateway: gateway, Enabled: valid && !disabled, Comment: comment, Table: table, Editable: len(reasons) == 0, Reason: strings.Join(uniqueStrings(reasons), "；"), Managed: IsManaged(comment)}, Snapshot: RouteSnapshot{ros: editROSSnapshot(row)}}
 }
 func editROSEntries(rows []Row) []*EditableRoute {
 	seen, duplicates := map[string]bool{}, map[string]bool{}
 	for _, r := range rows {
-		if id, ok := r[".id"].(string); ok {
+		if id, ok := r[".id"]; ok {
 			if seen[id] {
 				duplicates[id] = true
 			}
@@ -185,11 +167,11 @@ func editROSCanonical(row Row, ignoreID bool) Row {
 				}
 			}
 		} else if k == "dst-address" {
-			if p, ok := netipx.ParseNetwork4(rosText(v), false); ok {
+			if p, ok := netipx.ParseNetwork4(v, false); ok {
 				out[k] = p.String()
 			}
 		} else if k == "distance" || k == "scope" || k == "target-scope" {
-			out[k] = rosText(v)
+			out[k] = v
 		}
 	}
 	return out
@@ -267,12 +249,12 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 		if expected != nil {
 			return nil, routerError(messageEditROSAddOld)
 		}
-		if err := editROSNoDuplicate(previous, rosText(desired["dst-address"]), "", true); err != nil {
+		if err := editROSNoDuplicate(previous, desired["dst-address"], "", true); err != nil {
 			return nil, err
 		}
 		desired["routing-table"] = "main"
 	} else {
-		if expected == nil || expected.Snapshot == nil || expected.ID == "" {
+		if expected == nil || expected.Snapshot.ros == nil || expected.ID == "" {
 			return nil, rosError(KindConflict, messageEditROSSnapshot)
 		}
 		before = editableByID(editROSEntries(previous), expected.ID)
@@ -284,11 +266,11 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 		}
 		id = before.ID
 		if action == "update" {
-			if err := editROSNoDuplicate(previous, rosText(desired["dst-address"]), id, true); err != nil {
+			if err := editROSNoDuplicate(previous, desired["dst-address"], id, true); err != nil {
 				return nil, err
 			}
-			after = mergeRows(before.Snapshot, desired)
-			if editROSSame(before.Snapshot, after, false) {
+			after = mergeRows(before.Snapshot.ros, desired)
+			if editROSSame(before.Snapshot.ros, after, false) {
 				return &RouteMutation{Entry: before}, nil
 			}
 		}
@@ -308,9 +290,9 @@ func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row,
 		if err != nil {
 			return nil, err
 		}
-		row, ok := response.(map[string]any)
-		candidate, _ := row[".id"].(string)
-		if !ok || !rosIDPattern.MatchString(candidate) || findRow(previous, candidate) != nil {
+		row := asRow(response)
+		candidate := row[".id"]
+		if !rosIDPattern.MatchString(candidate) || findRow(previous, candidate) != nil {
 			return nil, rosError(KindUncertainWrite, messageEditROSCreateID)
 		}
 		*id = candidate
@@ -408,7 +390,7 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 	if err != nil {
 		return err
 	}
-	if current != nil && editROSSame(current, before.Snapshot, false) {
+	if current != nil && editROSSame(current, before.Snapshot.ros, false) {
 		return nil
 	}
 	if action == "update" {
@@ -420,18 +402,15 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 		}
 		original := Row{}
 		for _, k := range []string{"dst-address", "gateway", "disabled", "comment"} {
-			v, ok := before.Snapshot[k]
+			v, ok := before.Snapshot.ros[k]
 			if !ok {
 				v = editROSDefaults[k]
-				if v == nil {
-					v = ""
-				}
 			}
 			original[k] = v
 		}
 		return d.editROSRestore(ctx, "PATCH", editResource(before.ID), original, func(latest []Row, _ any) bool {
 			r, e := editROSFind(latest, before.ID)
-			return e == nil && r != nil && editROSSame(r, before.Snapshot, false)
+			return e == nil && r != nil && editROSSame(r, before.Snapshot.ros, false)
 		})
 	}
 	if current != nil {
@@ -441,10 +420,10 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 		return err
 	}
 	prior := rowIDs(rows)
-	return d.editROSRestore(ctx, "PUT", rosRoutes, payload(rosRoutes, before.Snapshot), func(latest []Row, response any) bool {
+	return d.editROSRestore(ctx, "PUT", rosRoutes, payload(rosRoutes, before.Snapshot.ros), func(latest []Row, response any) bool {
 		candidates := []Row{}
 		for _, r := range latest {
-			if rosIDPattern.MatchString(r.text(".id")) && !prior[r.text(".id")] && editROSSame(r, before.Snapshot, true) {
+			if rosIDPattern.MatchString(r.text(".id")) && !prior[r.text(".id")] && editROSSame(r, before.Snapshot.ros, true) {
 				candidates = append(candidates, r)
 			}
 		}

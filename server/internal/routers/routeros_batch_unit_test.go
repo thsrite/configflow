@@ -41,7 +41,7 @@ func TestConsoleScriptRoundTripsUntrustedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(adds) != 1 || adds[0].Index != 7 || adds[0].Collection != rosRoutes || rosText(adds[0].Values["comment"]) != comment {
+	if len(adds) != 1 || adds[0].Index != 7 || adds[0].Collection != rosRoutes || adds[0].Values["comment"] != comment {
 		t.Fatalf("script did not preserve command fields: %#v", adds)
 	}
 }

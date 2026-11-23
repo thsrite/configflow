@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -38,7 +39,7 @@ func TestClientLeaseEvidence(t *testing.T) {
 			if tc.arp != "" {
 				arp = append(arp, Row{"address": "192.0.2.10", "interface": "lan", "status": tc.arp, "mac-address": "a:b:c:d:e:f"})
 			}
-			leases := []Row{{"address": "192.0.2.10", "status": tc.status, "last-seen": tc.age, "lease-time": tc.period, "dynamic": tc.dynamic, "server": "dhcp", "host-name": "host"}}
+			leases := []Row{{"address": "192.0.2.10", "status": tc.status, "last-seen": tc.age, "lease-time": tc.period, "dynamic": strconv.FormatBool(tc.dynamic), "server": "dhcp", "host-name": "host"}}
 			s, c := classifyClients(arp, leases, []Row{{"name": "dhcp", "interface": "lan"}}, map[string]bool{"lan": true})
 			v := s["192.0.2.10"]
 			if v.Presence != tc.presence || v.Basis != tc.basis || (len(c) > 0) != tc.probe {

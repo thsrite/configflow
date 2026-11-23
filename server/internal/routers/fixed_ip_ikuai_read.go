@@ -15,7 +15,7 @@ import (
 	"configflow/internal/routerdoc"
 )
 
-func fixedIKFields(row ikuaiRow) (ikuaiRow, error) {
+func fixedIKFields(row ikuaiRow) (Row, error) {
 	if row == nil {
 		return nil, routerError(messageFixedIKFields)
 	}
@@ -27,7 +27,7 @@ func fixedIKFields(row ikuaiRow) (ikuaiRow, error) {
 	if id, ok := jsonInt(row["id"]); !ok || id < 1 {
 		return nil, routerError(messageFixedIKFields)
 	}
-	result := ikuaiRow{}
+	result := Row{}
 	for _, key := range IkuaiDHCPStaticFields {
 		if key == "id" {
 			continue

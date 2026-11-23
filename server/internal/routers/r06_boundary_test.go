@@ -299,6 +299,22 @@ func TestR06PythonBoundary(t *testing.T) {
 				}
 				pyRow["comment"] = goRow["comment"]
 			}
+			if strings.HasPrefix(tc.Name, "routeros/") {
+				// Row holds device values as text (O17 1.8): a JSON true or
+				// 30 in a snapshot reads back as "true" or "30".
+				pyItems, _ := a.(map[string]any)["result"].([]any)
+				goItems, _ := b.(map[string]any)["result"].([]any)
+				for i := range min(len(pyItems), len(goItems)) {
+					pyRow, _ := pyItems[i].(map[string]any)
+					goRow, _ := goItems[i].(map[string]any)
+					if pyRow == nil || goRow == nil || pyRow["snapshot"] == nil {
+						continue
+					}
+					if raw, err := json.Marshal(pyRow["snapshot"]); err == nil && sameTextRow(goRow["snapshot"], raw) {
+						pyRow["snapshot"] = goRow["snapshot"]
+					}
+				}
+			}
 			for _, pair := range []struct {
 				name string
 				a, b any

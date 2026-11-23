@@ -243,10 +243,10 @@ func findRowFake(rows []routerfake.Row, id string) routerfake.Row {
 }
 
 func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
-	row := Row{".id": "*1", "name": "x", "unknown": []any{map[string]any{"a": "original"}}}
+	row := Row{".id": "*1", "name": "x", "unknown": `[{"a":"original"}]`}
 	config := ROSPolicyConfigRow(row)
-	config["unknown"].([]any)[0].(map[string]any)["a"] = "changed"
-	if row["unknown"].([]any)[0].(map[string]any)["a"] != "original" {
+	config["unknown"] = `[{"a":"changed"}]`
+	if row["unknown"] != `[{"a":"original"}]` {
 		t.Fatal("stable baseline aliases caller")
 	}
 	for _, manifest := range []json.RawMessage{json.RawMessage(`{"resources":[{"path":"/routing/table","id":"","config":{}}]}`), json.RawMessage(`{"resources":[{"path":"/routing/table","id":"*1"}]}`), json.RawMessage(`[]`)} {
@@ -263,12 +263,13 @@ func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
 }
 
 func TestR08TableFlagsAndNetworkSubtraction(t *testing.T) {
-	for _, value := range []any{"", "true", "yes", true} {
+	// A JSON true arrives as "true"; null as "" (Row decoding).
+	for _, value := range []string{"", "true", "yes"} {
 		if !valuesMatch(rosTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
 			t.Fatalf("enabled fib=%v", value)
 		}
 	}
-	for _, value := range []any{nil, "false", "no", false, "unknown"} {
+	for _, value := range []string{"false", "no", "unknown"} {
 		if valuesMatch(rosTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
 			t.Fatalf("unset fib=%v", value)
 		}
@@ -293,7 +294,7 @@ func TestR08TableFlagsAndNetworkSubtraction(t *testing.T) {
 			t.Fatal("different gateway alias accepted")
 		}
 	}
-	for _, value := range []any{"", nil, "unknown", "true", "yes", true} {
+	for _, value := range []string{"", "unknown", "true", "yes"} {
 		if valuesMatch(rosMangle, Row{"passthrough": value}, Row{"passthrough": "false"}) {
 			t.Fatal("invalid passthrough accepted")
 		}

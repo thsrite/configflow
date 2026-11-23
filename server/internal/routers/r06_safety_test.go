@@ -193,7 +193,7 @@ func TestR06ConnectionLock(t *testing.T) {
 
 func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 	tc := r06Base("routeros", "read")
-	row := editROSEntry(Row(tc.ROS.Tables["/ip/route"][0]), nil)
+	row := editROSEntry(deviceRow(tc.ROS.Tables["/ip/route"][0]), nil)
 	payload := r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": tc.Values})
 	original, err := BuildRoutePlan(tc.Router, []*EditableRoute{row}, payload)
 	if err != nil {
@@ -219,13 +219,13 @@ func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 		t.Fatal("unrelated route changed fingerprint")
 	}
 	changedRow := *row
-	changedRow.Snapshot = cloneRow(row.Snapshot)
-	changedRow.Snapshot["distance"] = "99"
+	changedRow.Snapshot = RouteSnapshot{ros: cloneRow(row.Snapshot.ros)}
+	changedRow.Snapshot.ros["distance"] = "99"
 	if _, err := BuildRoutePlan(tc.Router, []*EditableRoute{&changedRow}, payload); routerErrorKind(err) != KindConflict {
 		t.Fatal("advanced drift not rejected")
 	}
 	for _, field := range []string{"active", "inactive", "immediate-gw"} {
-		runtime := cloneRow(Row(tc.ROS.Tables["/ip/route"][0]))
+		runtime := deviceRow(tc.ROS.Tables["/ip/route"][0])
 		runtime[field] = "different"
 		if editROSEntry(runtime, nil).Public().Revision != row.Public().Revision {
 			t.Fatalf("runtime %s altered revision", field)

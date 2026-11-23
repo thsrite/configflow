@@ -67,7 +67,7 @@ func (ids ROSIDs) table(path string) map[string]bool {
 	return ids[path]
 }
 func valuesMatch(path string, row, values Row) bool {
-	return matches(Row(ComparableValues(path, row)), Row(ComparableValues(path, values)))
+	return matches(ComparableValues(path, row), ComparableValues(path, values))
 }
 
 func (d *RouterOS) resourceRow(ctx context.Context, path, id string) (Row, error) {
@@ -122,13 +122,8 @@ func writableResource(path string, row Row) (Row, error) {
 var consoleAddressField = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 func validateAddressEntry(values Row) error {
-	for key, value := range values {
+	for key := range values {
 		if !consoleAddressField.MatchString(key) {
-			return routerError(messageAddressInvalidField)
-		}
-		switch value.(type) {
-		case string, bool, json.Number, int, int64:
-		default:
 			return routerError(messageAddressInvalidField)
 		}
 	}
@@ -152,7 +147,7 @@ func addressParams(shared Row) string {
 	}
 	parts := []string{}
 	for _, key := range keys {
-		value := ScriptString(rosText(shared[key]))
+		value := ScriptString(shared[key])
 		if key == "disabled" && (comparable(key, shared[key]) == "true" || comparable(key, shared[key]) == "false") {
 			if comparable(key, shared[key]) == "true" {
 				value = "yes"

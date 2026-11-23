@@ -143,7 +143,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		state.NatContext.Mangle = []Row{}
 		for _, v := range (*state.ROSPolicy)[rosMangle] {
 			if !slices.Contains(ids, v.id()) {
-				row := cloneAddressRow(v)
+				row := cloneRow(v)
 				delete(row, "bytes")
 				delete(row, "packets")
 				state.NatContext.Mangle = append(state.NatContext.Mangle, row)

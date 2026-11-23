@@ -5,6 +5,7 @@ package routers
 // excludes a potentially translating rule; other matchers stay possible.
 
 import (
+	"configflow/internal/jsondecode"
 	"encoding/json"
 	"maps"
 	"net/netip"
@@ -15,10 +16,49 @@ import (
 	"configflow/internal/netipx"
 )
 
-// Row is one RouterOS REST row (decoded JSON; values are strings on real devices).
-type Row map[string]any
+// Row is one RouterOS REST row. RouterOS sends every value as text ("" or
+// absent when unset, flags "true"/"false" or "yes"/"no"); UnmarshalJSON
+// decodes a reply once, so any other JSON value is held as text too.
+type Row map[string]string
 
-// NatContext is the RouterOS evidence for NAT assessment. A nil list could not be read.
+// UnmarshalJSON decodes a device or stored row: numbers keep their literal
+// text, booleans become "true"/"false", arrays and objects their compact
+// JSON (so they still compare by value). A null member is left out: every
+// reader treats a null field as an absent one (a NAT rule with a null chain
+// stays "chain unknown").
+func (r *Row) UnmarshalJSON(data []byte) error {
+	var values map[string]any
+	if err := jsondecode.Decode(data, &values); err != nil {
+		return err
+	}
+	if values == nil {
+		*r = nil
+		return nil
+	}
+	row := make(Row, len(values))
+	for key, value := range values {
+		if value != nil {
+			row[key] = rowText(value)
+		}
+	}
+	*r = row
+	return nil
+}
+
+// rowText is the text form of one decoded JSON value.
+func rowText(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool:
+		return strconv.FormatBool(v)
+	}
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
 type NatContext struct {
 	Routes           []Row `json:"routes"`
 	Rules            []Row `json:"rules"`
@@ -52,63 +92,67 @@ var (
 		"out-interface", "out-interface-list"}
 )
 
-// Row values are decoded device data: RouterOS REST sends every value as a
-// string ("" or absent when unset, flags "true"/"false" or "yes"/"no");
-// iKuai sends numbers for ids and counters.
+// text is the field's value ("" when absent).
+func (r Row) text(key string) string { return r[key] }
 
-// text reads an external device field, retaining numeric iKuai IDs and
-// RouterOS string replies. It deliberately tolerates vendor encoding variants;
-// stored user identities use strict validation instead. Other values are absent.
-func (r Row) text(key string) string {
-	switch v := r[key].(type) {
-	case string:
+// textOr is the field's value, or fallback when the field is absent.
+func (r Row) textOr(key, fallback string) string {
+	if v, ok := r[key]; ok {
 		return v
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case json.Number:
-		return v.String()
 	}
-	return ""
+	return fallback
 }
 
 // set: the field holds a value.
-func (r Row) set(key string) bool { return r.text(key) != "" }
+func (r Row) set(key string) bool { return r[key] != "" }
 
-func (r Row) is(key, value string) bool     { s, ok := r[key].(string); return ok && s == value }
+func (r Row) is(key, value string) bool     { s, ok := r[key]; return ok && s == value }
 func (r Row) has(key string) bool           { _, ok := r[key]; return ok }
-func (r Row) str(key string) (string, bool) { s, ok := r[key].(string); return s, ok }
+func (r Row) str(key string) (string, bool) { s, ok := r[key]; return s, ok }
 
-// flag: any of keys is a RouterOS true/yes flag (a JSON true counts too).
+// flag: any of keys is a RouterOS true/yes flag.
 func (r Row) flag(keys ...string) bool {
-	return slices.ContainsFunc(keys, func(key string) bool {
-		switch v := r[key].(type) {
-		case bool:
-			return v
-		case string:
-			return strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") || v == "1"
-		}
-		return false
-	})
+	return slices.ContainsFunc(keys, func(key string) bool { return rosFlag(r[key]) || r[key] == "1" })
 }
 
 func (r Row) enabled() bool { return !r.flag("disabled") }
 
-// number is an integer field (RouterOS: decimal text; nil when absent or not a number).
+// number is an integer field (decimal text; nil when absent or not a number).
 func (r Row) number(key string) *int64 {
-	if s, ok := r.str(key); ok {
-		if n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
-			return &n
-		}
-		return nil
-	}
-	if n, ok := intValue(r[key]); ok {
+	if n, err := strconv.ParseInt(strings.TrimSpace(r[key]), 10, 64); err == nil {
 		return &n
 	}
 	return nil
 }
 
-// id is the row's .id as text.
-func (r Row) id() string { return r.text(".id") }
+// id is the row's .id.
+func (r Row) id() string { return r[".id"] }
+
+// structuredText: the value was a JSON array or object in the reply (Row
+// decoding keeps those as their JSON text). Text of the same form is read
+// the same way; RouterOS sends neither for the fields that check this.
+func structuredText(value string) bool {
+	return (strings.HasPrefix(value, "[") || strings.HasPrefix(value, "{")) && json.Valid([]byte(value))
+}
+
+// textList splits a list field (comma-separated text, or a JSON array of
+// text) into trimmed items. ok is false for any other structured value.
+func textList(value string) (items []string, ok bool) {
+	if !structuredText(value) {
+		items = strings.Split(value, ",")
+	} else if json.Unmarshal([]byte(value), &items) != nil {
+		return nil, false
+	}
+	for i := range items {
+		items[i] = strings.TrimSpace(items[i])
+	}
+	return items, true
+}
+
+// rosFlag is a RouterOS true/yes flag value.
+func rosFlag(value string) bool {
+	return strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
+}
 
 func rowsOK(rows []Row) bool {
 	return rows != nil && !slices.ContainsFunc(rows, func(r Row) bool { return r == nil })
@@ -605,7 +649,7 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		if len(pending) == 0 {
 			return true
 		}
-		if chain, set := row["chain"]; !row.enabled() || set && chain != nil && chain != "srcnat" {
+		if chain, set := row["chain"]; !row.enabled() || set && chain != "srcnat" {
 			continue
 		}
 		egressMatch := selectorMatches(row.text("out-interface"), iface, ctx, false)

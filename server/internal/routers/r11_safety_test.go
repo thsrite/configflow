@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -775,7 +776,7 @@ func TestR11BuildReportSections(t *testing.T) {
 func TestR11DNSUnknownAndNoopEvidence(t *testing.T) {
 	for _, field := range []string{"disabled", "invalid", "dynamic"} {
 		for _, value := range []any{nil, "unknown", []any{}, map[string]any{}} {
-			t.Run(field+"/"+rosText(value), func(t *testing.T) {
+			t.Run(field+"/"+fmt.Sprint(value), func(t *testing.T) {
 				d, f := r11Driver(t)
 				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6ND: {"*E0": {field: value}}}}})
 				p := r11DNSPlan(t, d)

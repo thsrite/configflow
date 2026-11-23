@@ -13,7 +13,7 @@ import (
 func pdChange(d *RouterOS, role, method, path string, row, values Row) IPv6PDChange {
 	c := IPv6PDChange{Role: role, ROSChange: ROSChange{Method: method, Path: path, Values: values}}
 	if values != nil {
-		c.Values = cloneAddressRow(values)
+		c.Values = cloneRow(values)
 	}
 	if row != nil {
 		c.ID = row.id()

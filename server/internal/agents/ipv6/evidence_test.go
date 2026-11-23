@@ -161,7 +161,8 @@ func TestObserveIncompleteBaselineNeverCreatesFreshEvidence(t *testing.T) {
 }
 
 func TestPacketCountersFailClosed(t *testing.T) {
-	for _, value := range []any{nil, "bad", "-1", "18446744073709551616", true} {
+	// Device null and true arrive as "" and "true" (Row decoding).
+	for _, value := range []string{"", "bad", "-1", "18446744073709551616", "true"} {
 		if hasPackets(routers.Row{"orig-packets": value, "orig-fasttrack-packets": "1"}) {
 			t.Fatal("invalid counter proved packet", value)
 		}

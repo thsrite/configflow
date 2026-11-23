@@ -109,7 +109,7 @@ func r09ForwardCases() []r09ForwardCase {
 			}
 			tc.Report = r09Raw(map[string]any{"routes": map[string]any{"items": []any{}}, "policy_routing": map[string]any{"enabled": len(tc.Desired.ROSPolicy.Selected) > 0, "blockers": tc.PolicyPlan.Blockers, "items": tc.PolicyPlan.Items}})
 		case "dns_snapshot", "policy_snapshot", "policy_empty_snapshot", "policy_missing_filter":
-			tc.GuardLive = &DNSGuardSnapshot{rosFilter: {Row(same)}}
+			tc.GuardLive = &DNSGuardSnapshot{rosFilter: {deviceRow(same)}}
 			switch variant {
 			case "policy_snapshot":
 				tc.PolicyLive = &ROSPolicySnapshot{rosFilter: {{".id": "*D", "chain": "forward", "action": "drop"}}}
@@ -148,7 +148,7 @@ func TestR09ForwardHintPython(t *testing.T) {
 			}
 			routes := []Row{}
 			for _, row := range tc.State.Tables[rosRoutes] {
-				routes = append(routes, Row(row))
+				routes = append(routes, deviceRow(row))
 			}
 			state := &RouterState{NatContext: &NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}
 			hint, err := ForwardHint(context.Background(), tc.Router, tc.Desired, state, &report, d)

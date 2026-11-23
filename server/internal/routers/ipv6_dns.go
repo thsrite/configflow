@@ -2,6 +2,7 @@ package routers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"reflect"
@@ -82,7 +83,7 @@ type IPv6DNSPlan struct {
 func ipv6DNSFlag(row Row, key string) (bool, error) {
 	text := "false"
 	if v, ok := row[key]; ok {
-		text = rosText(v)
+		text = v
 	}
 	switch strings.ToLower(text) {
 	case "false", "no", "0":
@@ -96,29 +97,11 @@ func ipv6DNSFlag(row Row, key string) (bool, error) {
 func ipv6DNSServers(row Row) ([]string, error) {
 	out := []string{}
 	for _, key := range []string{"dns", "dns-servers"} {
-		var values []string
-		switch v := row[key].(type) {
-		case nil:
-			if _, exists := row[key]; exists {
-				return nil, routerError(messageIPv6DNSServerList)
-			}
-		case string:
-			for _, part := range strings.Split(v, ",") {
-				if part = strings.TrimSpace(part); part != "" {
-					values = append(values, part)
-				}
-			}
-		case []any:
-			for _, x := range v {
-				s, ok := x.(string)
-				if !ok {
-					return nil, routerError(messageIPv6DNSServerList)
-				}
-				values = append(values, s)
-			}
-		default:
+		parts, ok := textList(row[key])
+		if !ok {
 			return nil, routerError(messageIPv6DNSServerList)
 		}
+		values := nonEmpty(parts)
 		for _, s := range values {
 			a, e := netip.ParseAddr(s)
 			if e != nil || !a.Is6() {
@@ -149,7 +132,8 @@ func ipv6DNSScope(desired *Desired, scope DNSCheck) (DNSCheck, error) {
 	return scope, nil
 }
 func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Row, error) {
-	addresses, err := d.list(ctx, rosIPv4Addresses)
+	// A null flag or DNS list is unreadable, never "unset".
+	addresses, err := d.strictList(ctx, rosIPv4Addresses, "disabled", "invalid")
 	if err != nil {
 		return "", nil, err
 	}
@@ -177,8 +161,8 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 			return "", nil, routerError(messageIPv6DNSLANInvalid)
 		}
 		iface, valid := r.str("interface")
-		if actual, exists := r["actual-interface"]; exists && actual != nil && actual != "" {
-			iface, valid = actual.(string)
+		if actual := r["actual-interface"]; actual != "" {
+			iface = actual
 		}
 		if !valid || iface == "" {
 			return "", nil, routerError(messageIPv6DNSLANInterface)
@@ -188,7 +172,7 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 	if iface == "" || iface == "all" {
 		return "", nil, routerError(messageIPv6DNSLANUnique)
 	}
-	rows, err := d.list(ctx, rosIPv6ND)
+	rows, err := d.strictList(ctx, rosIPv6ND, "disabled", "invalid", "dynamic", "dns", "dns-servers")
 	if err != nil {
 		return "", nil, err
 	}
@@ -274,13 +258,9 @@ func ipv6DNSConstraints(rows []Row, iface string) error {
 var ipv6DNSBare = regexp.MustCompile(`^[A-Za-z0-9_.:/,%+\-]+$`)
 var ipv6DNSKey = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-func ipv6DNSCLI(value any) string {
-	text := rosText(value)
-	if v, ok := value.([]any); ok {
-		parts := []string{}
-		for _, x := range v {
-			parts = append(parts, rosText(x))
-		}
+func ipv6DNSCLI(text string) string {
+	var parts []string
+	if strings.HasPrefix(text, "[") && json.Unmarshal([]byte(text), &parts) == nil {
 		text = strings.Join(parts, ",")
 	}
 	if text == "true" {
@@ -316,7 +296,7 @@ func ipv6DNSOverride(rows []Row, iface string) string {
 	parts := []string{fmt.Sprintf(messageIPv6DNSOverride, ipv6DNSCLI(iface))}
 	for _, k := range keys {
 		v := shared[0][k]
-		if skip[k] || !ipv6DNSKey.MatchString(k) || v == nil || reflect.DeepEqual(v, "") || reflect.DeepEqual(v, []any{}) {
+		if skip[k] || !ipv6DNSKey.MatchString(k) || v == "" || v == "[]" {
 			continue
 		}
 		parts = append(parts, k+"="+ipv6DNSCLI(v))

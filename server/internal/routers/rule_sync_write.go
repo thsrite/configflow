@@ -20,7 +20,7 @@ func syncStaticResources(ctx context.Context, d *RouterOS, desired *Desired) ([]
 	result := []ROSResource{}
 	found := map[string]bool{}
 	for _, row := range rows {
-		if rosTextDefault(row["routing-table"], "main") != "main" || !wanted[row.text("dst-address")] || !row.is("gateway", desired.ProxyGateway) || !IsManaged(row.text("comment")) {
+		if row.textOr("routing-table", "main") != "main" || !wanted[row.text("dst-address")] || !row.is("gateway", desired.ProxyGateway) || !IsManaged(row.text("comment")) {
 			continue
 		}
 		entry := editROSEntry(row, map[string]bool{})
@@ -190,7 +190,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	}
 	for _, row := range live[rosRoutes] {
 		_, ok := known[row.id()]
-		if rosTextDefault(row["routing-table"], "main") == "main" && wanted[row.text("dst-address")] && !ok {
+		if row.textOr("routing-table", "main") == "main" && wanted[row.text("dst-address")] && !ok {
 			return out, routerError(messageSyncForeignRoute)
 		}
 	}
@@ -319,7 +319,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			return
 		}
 		for _, row := range rows {
-			if rosTextDefault(row["routing-table"], "main") == "main" && row.is("dst-address", item.Config.text("dst-address")) {
+			if row.textOr("routing-table", "main") == "main" && row.is("dst-address", item.Config.text("dst-address")) {
 				err = routerError(messageSyncBeforeWrite)
 				return
 			}

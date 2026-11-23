@@ -680,7 +680,7 @@ func ipv6AddGuard(proofs map[string]Row) func([]Row) error {
 	return func(rows []Row) error {
 		seen := map[string]bool{}
 		for _, row := range rows {
-			if rosTextDefault(row["routing-table"], "main") != "main" {
+			if row.textOr("routing-table", "main") != "main" {
 				continue
 			}
 			expected, ok := proofs[row.id()]

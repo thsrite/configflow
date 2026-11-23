@@ -25,13 +25,7 @@ func EncodeAddressRow(row Row) string {
 	parts := []string{}
 	for _, key := range keys {
 		if key != "creation-time" && key != "timeout" {
-			value := rosText(row[key])
-			switch row[key].(type) {
-			case []any, map[string]any, Row:
-				raw, _ := json.Marshal(row[key])
-				value = string(raw)
-			}
-			parts = append(parts, key+"="+value)
+			parts = append(parts, key+"="+row[key])
 		}
 	}
 	return strconv.Itoa(len(parts)) + ":" + strings.Join(parts, ";") + "\n"
@@ -60,8 +54,7 @@ func digestableAddresses(rows []Row) bool {
 			if key == "timeout" || key == "creation-time" {
 				continue
 			}
-			switch value.(type) {
-			case []any, map[string]any, Row:
+			if structuredText(value) {
 				return false
 			}
 		}
@@ -106,7 +99,7 @@ func AddressDigestScript(names []string) string {
 	return strings.Join(lines, "\n")
 }
 
-func executeOutput(value any) string { return asRow(value).text("ret") }
+func executeOutput(value json.RawMessage) string { return asRow(value).text("ret") }
 func shortConsoleOutput(output string) string {
 	s := strings.TrimSpace(output)
 	if s == "" {
@@ -201,28 +194,7 @@ type addressProof struct {
 func cloneRows(rows []Row) []Row {
 	out := make([]Row, len(rows))
 	for i, row := range rows {
-		out[i] = cloneAddressRow(row)
-	}
-	return out
-}
-
-func cloneAddressRow(row Row) Row {
-	out := make(Row, len(row))
-	for key, value := range row {
-		switch v := value.(type) {
-		case []any:
-			copy := make([]any, len(v))
-			for i, item := range v {
-				copy[i] = cloneAddressRow(Row{"value": item})["value"]
-			}
-			out[key] = copy
-		case map[string]any:
-			out[key] = map[string]any(cloneAddressRow(Row(v)))
-		case Row:
-			out[key] = cloneAddressRow(v)
-		default:
-			out[key] = value
-		}
+		out[i] = cloneRow(row)
 	}
 	return out
 }

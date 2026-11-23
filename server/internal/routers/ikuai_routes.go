@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"net/netip"
 	"slices"
 	"strings"
@@ -92,7 +93,7 @@ func editIkuaiEntry(raw ikuaiRow) *EditableRoute {
 		reasons = append(reasons, messageEditIKGateway)
 	}
 	comment, _ := snapshot["comment"].(string)
-	return &EditableRoute{RouteFields: RouteFields{ID: snapshot.text("id"), CIDR: cidr, Gateway: gateway, Enabled: snapshot["enabled"] == "yes", Comment: comment, Table: "main", Editable: len(reasons) == 0, Reason: strings.Join(uniqueStrings(reasons), "；"), Managed: IsManaged(comment)}, Snapshot: Row(snapshot)}
+	return &EditableRoute{RouteFields: RouteFields{ID: snapshot.text("id"), CIDR: cidr, Gateway: gateway, Enabled: snapshot["enabled"] == "yes", Comment: comment, Table: "main", Editable: len(reasons) == 0, Reason: strings.Join(uniqueStrings(reasons), "；"), Managed: IsManaged(comment)}, Snapshot: RouteSnapshot{ikuai: snapshot}}
 }
 
 // ReadRoutes reads every static_rt page, retaining unsupported forms as read-only.
@@ -123,7 +124,7 @@ func editIKNew(rows []*EditableRoute, old map[string]bool, desired ikuaiRow) *Ed
 	}
 	var match *EditableRoute
 	for _, r := range rows {
-		if r.Snapshot["tagname"] == tag {
+		if r.Snapshot.ikuai["tagname"] == tag {
 			if match != nil {
 				return nil
 			}
@@ -133,7 +134,7 @@ func editIKNew(rows []*EditableRoute, old map[string]bool, desired ikuaiRow) *Ed
 	if match == nil || old[match.ID] || !match.Editable {
 		return nil
 	}
-	actual := cloneRow(match.Snapshot)
+	actual := maps.Clone(match.Snapshot.ikuai)
 	delete(actual, "id")
 	if !jsonEqual(actual, desired) {
 		return nil
@@ -148,7 +149,7 @@ func editIKIDs(rows []*EditableRoute) map[string]bool {
 	return out
 }
 func editIKSnapshot(entry *EditableRoute, snapshot ikuaiRow) bool {
-	return entry != nil && entry.Editable && jsonEqual(entry.Snapshot, snapshot)
+	return entry != nil && entry.Editable && jsonEqual(entry.Snapshot.ikuai, snapshot)
 }
 func (d *Ikuai) editIKVerify(ctx context.Context, id string, snapshot ikuaiRow) error {
 	rows, err := d.ReadRoutes(ctx)
@@ -193,7 +194,7 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 	if action == "add" && expected != nil {
 		return nil, routerError(messageEditIKAddOld)
 	}
-	if action != "add" && (expected == nil || expected.ID == "" || expected.Snapshot == nil) {
+	if action != "add" && (expected == nil || expected.ID == "" || expected.Snapshot.ikuai == nil) {
 		return nil, routerError(messageEditIKSnapshot)
 	}
 	previous, err := d.ReadRoutes(ctx)
@@ -235,13 +236,13 @@ func (d *Ikuai) mutateRoute(ctx context.Context, action string, expected *Editab
 			name = "RT" + hex.EncodeToString(random[:])[:13]
 		}
 		for _, r := range previous {
-			if r.Snapshot["tagname"] == name {
+			if r.Snapshot.ikuai["tagname"] == name {
 				return nil, rosError(KindConflict, messageEditIKNameUsed)
 			}
 		}
 		desired = ikuaiRow{"enabled": "yes", "tagname": name, "ip_type": "4", "interface": "auto", "dst_addr": "", "gateway": "", "netmask": "", "prio": 1, "comment": ""}
 	} else {
-		desired = IkuaiRoutePayload(ikuaiRow(before.Snapshot), nil)
+		desired = IkuaiRoutePayload(before.Snapshot.ikuai, nil)
 	}
 	if action != "delete" {
 		desired["dst_addr"] = p.Addr().String()
@@ -279,7 +280,7 @@ func (d *Ikuai) editIKWrite(ctx context.Context, action string, previous []*Edit
 	}
 	if action == "delete" {
 		apiAction = "del"
-		param = ikuaiRow{"id": ikuaiRow(before.Snapshot)["id"]}
+		param = ikuaiRow{"id": before.Snapshot.ikuai["id"]}
 	}
 	if _, err := d.Write(ctx, "static_rt", apiAction, param, 0); err != nil {
 		return nil, err
@@ -314,7 +315,7 @@ func (d *Ikuai) editIKRestoreUpdate(ctx context.Context, before *EditableRoute, 
 		return err
 	}
 	current := editableByID(rows, before.ID)
-	if editIKSnapshot(current, ikuaiRow(before.Snapshot)) {
+	if editIKSnapshot(current, before.Snapshot.ikuai) {
 		return nil
 	}
 	if !editIKSnapshot(current, desired) {
@@ -326,8 +327,8 @@ func (d *Ikuai) editIKRestoreUpdate(ctx context.Context, before *EditableRoute, 
 	if err := editIKNoDuplicate(rows, before.CIDR, before.ID); err != nil {
 		return err
 	}
-	_, _ = d.Write(ctx, "static_rt", "edit", IkuaiRoutePayload(ikuaiRow(before.Snapshot), nil), 0)
-	return d.editIKVerify(ctx, before.ID, ikuaiRow(before.Snapshot))
+	_, _ = d.Write(ctx, "static_rt", "edit", IkuaiRoutePayload(before.Snapshot.ikuai, nil), 0)
+	return d.editIKVerify(ctx, before.ID, before.Snapshot.ikuai)
 }
 func (d *Ikuai) editIKRestoreDelete(ctx context.Context, before *EditableRoute) error {
 	rows, err := d.ReadRoutes(ctx)
@@ -335,7 +336,7 @@ func (d *Ikuai) editIKRestoreDelete(ctx context.Context, before *EditableRoute) 
 		return err
 	}
 	current := editableByID(rows, before.ID)
-	if editIKSnapshot(current, ikuaiRow(before.Snapshot)) {
+	if editIKSnapshot(current, before.Snapshot.ikuai) {
 		return nil
 	}
 	if current != nil {
@@ -344,14 +345,14 @@ func (d *Ikuai) editIKRestoreDelete(ctx context.Context, before *EditableRoute) 
 	if err := editIKNoDuplicate(rows, before.CIDR, ""); err != nil {
 		return err
 	}
-	desired := IkuaiRoutePayload(ikuaiRow(before.Snapshot), nil)
+	desired := IkuaiRoutePayload(before.Snapshot.ikuai, nil)
 	delete(desired, "id")
 	name, ok := desired["tagname"].(string)
 	if !ok || name == "" {
 		return routerError(messageEditIKName)
 	}
 	for _, r := range rows {
-		if r.Snapshot["tagname"] == name {
+		if r.Snapshot.ikuai["tagname"] == name {
 			return routerError(messageEditIKRestoreName)
 		}
 	}
@@ -378,17 +379,17 @@ func (d *Ikuai) editIKRestoreAdd(ctx context.Context, previous []*EditableRoute,
 	if entry == nil {
 		old, now := map[string]ikuaiRow{}, map[string]ikuaiRow{}
 		for _, r := range previous {
-			old[r.ID] = ikuaiRow(r.Snapshot)
+			old[r.ID] = r.Snapshot.ikuai
 		}
 		for _, r := range rows {
-			now[r.ID] = ikuaiRow(r.Snapshot)
+			now[r.ID] = r.Snapshot.ikuai
 		}
 		if jsonEqual(old, now) {
 			return nil
 		}
 		return routerError(messageEditIKUnowned)
 	}
-	_, writeErr := d.Write(ctx, "static_rt", "del", ikuaiRow{"id": entry.Snapshot["id"]}, 0)
+	_, writeErr := d.Write(ctx, "static_rt", "del", ikuaiRow{"id": entry.Snapshot.ikuai["id"]}, 0)
 	latest, err := d.ReadRoutes(ctx)
 	if err != nil {
 		return err
@@ -403,13 +404,13 @@ func (d *Ikuai) editIKRestoreAdd(ctx context.Context, previous []*EditableRoute,
 }
 
 func editIKUniqueName(rows []*EditableRoute, entry *EditableRoute) error {
-	name, ok := entry.Snapshot["tagname"].(string)
+	name, ok := entry.Snapshot.ikuai["tagname"].(string)
 	if !ok || name == "" {
 		return rosError(KindConflict, messageEditIKName)
 	}
 	count := 0
 	for _, r := range rows {
-		if r.Snapshot["tagname"] == name {
+		if r.Snapshot.ikuai["tagname"] == name {
 			count++
 		}
 	}

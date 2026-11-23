@@ -237,21 +237,15 @@ func (d *RouterOS) query(ctx context.Context, field string, values []string, pat
 		if len(chunk) > 1 {
 			terms = append(terms, "#"+strings.Repeat("|", len(chunk)-1))
 		}
-		value, err := d.request(ctx, "POST", path+"/print", Row{".query": terms}, rosTimeout)
+		value, err := d.send(ctx, "POST", path+"/print", rosPrint{Query: terms}, rosTimeout)
 		if err != nil {
 			return nil, err
 		}
-		batch, ok := value.([]any)
+		batch, ok := asRows(value)
 		if !ok {
 			return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
 		}
-		for _, item := range batch {
-			row, ok := item.(map[string]any)
-			if !ok {
-				return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
-			}
-			rows = append(rows, Row(row))
-		}
+		rows = append(rows, batch...)
 	}
 	return rows, nil
 }
@@ -315,7 +309,7 @@ func consoleAddLine(index int, values Row, path string, nat bool) string {
 	}
 	params := make([]string, 0, len(keys))
 	for _, key := range keys {
-		value := rosText(values[key])
+		value := values[key]
 		if nat && (key == "disabled" || key == "log") {
 			switch comparable(key, value) {
 			case "true":
@@ -340,16 +334,9 @@ func consoleSafe(values Row) bool {
 			return false
 		}
 	}
-	return rosText(values["dst-address"]) != "" &&
-		(comparable("disabled", valueOr(values, "disabled", "false")) == "true" ||
-			comparable("disabled", valueOr(values, "disabled", "false")) == "false")
-}
-
-func valueOr(row Row, key string, fallback any) any {
-	if value, ok := row[key]; ok {
-		return value
-	}
-	return fallback
+	return values["dst-address"] != "" &&
+		(comparable("disabled", values.textOr("disabled", "false")) == "true" ||
+			comparable("disabled", values.textOr("disabled", "false")) == "false")
 }
 
 func refusedConsole(error error) bool {
@@ -359,7 +346,7 @@ func refusedConsole(error error) bool {
 func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, hasCurrent bool, path string, beforeWrite ...func([]Row) error) (*consoleAddResult, error) {
 	destinations := make([]string, len(values))
 	for i, value := range values {
-		destinations[i] = rosText(value["dst-address"])
+		destinations[i] = value["dst-address"]
 	}
 	if !hasCurrent {
 		var err error
@@ -386,7 +373,7 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 		}
 		return nil, rollbackError(fmt.Sprintf(messageBatchUnknown, err.Error()))
 	}
-	output := strings.ReplaceAll(rosText(asRow(result)["ret"]), "\r", "")
+	output := strings.ReplaceAll(asRow(result)["ret"], "\r", "")
 	outputLines := strings.Split(output, "\n")
 	ids := []string{}
 	rejected := false
@@ -436,7 +423,7 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 			row, exists = found, found != nil
 		}
 		validID := rosIDPattern.MatchString(id) && !before[id] && !duplicateID(ids, index, id)
-		if !validID || exists && (rosTruthy(row["dynamic"]) || !inScope(path, row, values[index])) {
+		if !validID || exists && (rosFlag(row["dynamic"]) || !inScope(path, row, values[index])) {
 			if failure == nil || index < failure.Index {
 				failure = &batchFailure{Index: index, Err: rollbackError(fmt.Sprintf(messageUncertainRouteWrite, path))}
 			}
@@ -474,11 +461,9 @@ func (d *RouterOS) consoleAdd(ctx context.Context, values []Row, current []Row, 
 	return &consoleAddResult{Rows: rows, Count: len(reported), Failure: failure, Unexplained: unexplained}, nil
 }
 
-func asRow(value any) Row {
-	if row, ok := value.(map[string]any); ok {
-		return Row(row)
-	}
-	return nil
+// rosPrint is a /print request body.
+type rosPrint struct {
+	Query []string `json:".query"`
 }
 
 func duplicateID(ids []string, index int, id string) bool {
@@ -510,7 +495,7 @@ func checkWritten(check rosCheck, row Row, rows []Row) error {
 	for _, key := range keys {
 		value := check.Values[key]
 		if key == "place-before" {
-			target := rosText(value)
+			target := value
 			if indexOfRow(rows, row.id()) < 0 || indexOfRow(rows, target) < 0 || indexOfRow(rows, row.id()) >= indexOfRow(rows, target) {
 				return routerError(messageReadbackNATOrder)
 			}
@@ -680,7 +665,7 @@ func (d *RouterOS) deleteRoutes(ctx context.Context, rawOps []json.RawMessage, b
 	prepared := []preparedRoute{}
 	for i, op := range ops {
 		row := byID[op.ID]
-		if row == nil || rosTruthy(row["dynamic"]) || row.text("dst-address") != op.CIDR {
+		if row == nil || rosFlag(row["dynamic"]) || row.text("dst-address") != op.CIDR {
 			break
 		}
 		known := []string{}
@@ -765,7 +750,7 @@ func (d *RouterOS) restoreDeleted(ctx context.Context, changes []ROSChange, stop
 	for i, change := range changes {
 		var expected Row
 		decodeRowInto(change.Expected, &expected)
-		destinations[i] = rosText(expected["dst-address"])
+		destinations[i] = expected["dst-address"]
 	}
 	rows, readErr := d.query(ctx, "dst-address", destinations, path)
 	if readErr != nil {
@@ -820,7 +805,7 @@ func (d *RouterOS) restoreDeleted(ctx context.Context, changes []ROSChange, stop
 		}
 		row := byID[change.ID]
 		expected, expectedSet := decodeRow(change.Expected)
-		if rows != nil && row != nil && expectedSet && !rosTruthy(row["dynamic"]) &&
+		if rows != nil && row != nil && expectedSet && !rosFlag(row["dynamic"]) &&
 			maps.Equal(d.ownershipSnapshot(path, row), expected) {
 			pending = append(pending, index)
 			continue
@@ -828,7 +813,7 @@ func (d *RouterOS) restoreDeleted(ctx context.Context, changes []ROSChange, stop
 		flush()
 		if rows == nil || row == nil || !expectedSet {
 			errors[index] = d.restoreSingleChange(ctx, change)
-		} else if rosTruthy(row["dynamic"]) {
+		} else if rosFlag(row["dynamic"]) {
 			errors[index] = rollbackFailed(messageROSDynamicObject)
 		} else {
 			errors[index] = rollbackFailed(messageChangedDuringWrite)
@@ -892,7 +877,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 		if len(chunk) >= d.batchMin {
 			destinations := make([]string, len(chunk))
 			for i, index := range chunk {
-				destinations[i] = rosText(changes[index].Values["dst-address"])
+				destinations[i] = changes[index].Values["dst-address"]
 			}
 			rows, err = d.query(ctx, "dst-address", destinations, path)
 			if err != nil {
@@ -948,7 +933,7 @@ func (d *RouterOS) restoreRemoved(ctx context.Context, changes []ROSChange, path
 			if rowPtr != nil {
 				row = *rowPtr
 			}
-			if checkErr := checkWritten(rosCheck{ID: rosText(row[".id"]), Values: changes[index].Values}, row, nil); checkErr != nil {
+			if checkErr := checkWritten(rosCheck{ID: row[".id"], Values: changes[index].Values}, row, nil); checkErr != nil {
 				errors[index] = rollbackFailed(checkErr.Error())
 			} else if len(remaps) > 0 {
 				remaps[0][changes[index].ID] = row.id()
@@ -1067,7 +1052,7 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 		}
 		return natBatchResult{}, rollbackError(fmt.Sprintf(messageBatchUnknownNAT, err.Error()))
 	}
-	output := strings.ReplaceAll(rosText(asRow(result)["ret"]), "\r", "")
+	output := strings.ReplaceAll(asRow(result)["ret"], "\r", "")
 	outputLines := strings.Split(output, "\n")
 	ids := []string{}
 	for _, line := range outputLines {
@@ -1087,7 +1072,7 @@ func (d *RouterOS) natBatch(ctx context.Context, values []Row, rows []Row, undo 
 	for attempt := 0; attempt < natSettleReads; attempt++ {
 		pending := false
 		for _, row := range rows {
-			if rosTruthy(row["invalid"]) && slices.Contains(ids, row.id()) {
+			if rosFlag(row["invalid"]) && slices.Contains(ids, row.id()) {
 				pending = true
 				break
 			}

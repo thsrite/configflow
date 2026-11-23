@@ -91,7 +91,7 @@ func TestAddressBatchLimitsUseUTF8Bytes(t *testing.T) {
 		if call.Path != "/execute" {
 			continue
 		}
-		body := Row(call.Body.(routerfake.Row))
+		body := deviceRow(call.Body.(routerfake.Row))
 		script := body.text("script")
 		if strings.Contains(script, "address-list/add") {
 			scripts++
@@ -108,14 +108,14 @@ func TestAddressBatchLimitsUseUTF8Bytes(t *testing.T) {
 	}
 }
 
-func TestAddressProofCacheOwnsDeepCopies(t *testing.T) {
+func TestAddressProofCacheOwnsCopies(t *testing.T) {
 	d, _ := newFakeRouterOS(t, r07FakeState())
-	rows := []Row{{".id": "*1", "list": "L", "address": "198.51.100.1", "tags": []any{map[string]any{"name": "original"}}}}
+	rows := []Row{{".id": "*1", "list": "L", "address": "198.51.100.1", "tags": `[{"name":"original"}]`}}
 	d.RememberAddresses("L", rows)
-	rows[0]["tags"].([]any)[0].(map[string]any)["name"] = "external"
+	rows[0]["tags"] = `[{"name":"external"}]`
 	cached := d.knownAddresses()["L"]
 	if reflect.DeepEqual(cached, rows) {
-		t.Fatal("cache shares mutable nested rows with caller")
+		t.Fatal("cache shares mutable rows with caller")
 	}
 }
 
@@ -288,9 +288,10 @@ func TestAddressWritesInvalidateScopedProofBeforeBeforeIDs(t *testing.T) {
 }
 
 func TestAddressDigestNeverProvesCompositeFields(t *testing.T) {
-	rows := []Row{{".id": "*1", "list": "L", "tags": []any{"lan"}}}
+	// Array values arrive as their JSON text (Row decoding).
+	rows := []Row{{".id": "*1", "list": "L", "tags": `["lan"]`}}
 	first := DigestAddresses(rows)
-	rows[0]["tags"] = []any{"guest"}
+	rows[0]["tags"] = `["guest"]`
 	if DigestAddresses(rows) == first {
 		t.Fatal("different composite values collapsed into the same proof")
 	}

@@ -78,6 +78,10 @@ func TestR01Corpus(t *testing.T) {
 					ok = true
 					internal["normalize: list/dict text field (Python repr)"]++
 				}
+				if !ok && row.Fn == "comparable_values" && sameTextRow(got, row.Out) {
+					ok = true
+					internal["O17 1.8: comparable_values: device values held as text, null as absent"]++
+				}
 				if !ok {
 					if category := o18T1cAccepted(t, got, row.Out); category != "" {
 						ok = true
@@ -238,7 +242,7 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 	case "comparable_values":
 		args := decode[struct {
 			Path string
-			Row  map[string]any
+			Row  Row
 		}](t, in)
 		return ComparableValues(args.Path, args.Row), nil
 	case "normalize_mac":

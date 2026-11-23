@@ -2,6 +2,7 @@ package routers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"strings"
@@ -181,7 +182,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 		}
 		known := rowIDs(rows)
 		values := Row{"mac-address": op.MAC, "address": op.IP, "server": fixedText(op.Server), "comment": expected.Comment, "disabled": "false"}
-		var response any
+		var response json.RawMessage
 		response, err = d.request(ctx, "PUT", fixedROSLeases, values, rosTimeout)
 		row := asRow(response)
 		newID := ""

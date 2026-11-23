@@ -140,10 +140,8 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			for i, item := range manifest.Resources {
 				config := cloneRow(item.Config)
 				for key, value := range config {
-					if s, ok := value.(string); ok {
-						if name, ok := rename[s]; ok {
-							config[key] = name
-						}
+					if name, ok := rename[value]; ok {
+						config[key] = name
 					}
 				}
 				if item.Path == rosMangle {
@@ -158,7 +156,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 				if patches[item.Path] == nil {
 					patches[item.Path] = map[string]routerfake.Row{}
 				}
-				patches[item.Path][item.ID] = routerfake.Row(patch)
+				patches[item.Path][item.ID] = fakeRow(patch)
 			}
 			var spec map[string]json.RawMessage
 			_ = json.Unmarshal(fields["spec"], &spec)
@@ -321,6 +319,7 @@ func TestR08PythonBoundary(t *testing.T) {
 			got := r08Run(t, f, server.URL, tc)
 			gotState := f.Snapshot()
 			a, b := r08Comparable(t, py), r08Comparable(t, got)
+			r08TextEvidence(a)
 			if !reflect.DeepEqual(a, b) {
 				t.Errorf("result differs: %s", r08Difference(a, b, "$"))
 			}
@@ -331,6 +330,41 @@ func TestR08PythonBoundary(t *testing.T) {
 				t.Errorf("write sequence differs: %s", r08Difference(r08Writes(t, pyState.Calls), r08Writes(t, gotState.Calls), "$"))
 			}
 		})
+	}
+}
+
+// r08TextEvidence rewrites Python's device evidence rows (every "evidence"
+// member) the way Row holds them (O17 1.8): non-text values as their JSON
+// text, null members absent.
+func r08TextEvidence(v any) {
+	switch node := v.(type) {
+	case []any:
+		for _, item := range node {
+			r08TextEvidence(item)
+		}
+	case map[string]any:
+		for key, value := range node {
+			if evidence, ok := value.(map[string]any); ok && key == "evidence" {
+				for _, rows := range evidence {
+					list, _ := rows.([]any)
+					for _, row := range list {
+						fields, _ := row.(map[string]any)
+						for name, field := range fields {
+							switch field.(type) {
+							case nil:
+								delete(fields, name)
+							case string:
+							default:
+								data, _ := json.Marshal(field)
+								fields[name] = string(data)
+							}
+						}
+					}
+				}
+				continue
+			}
+			r08TextEvidence(value)
+		}
 	}
 }
 
@@ -387,7 +421,7 @@ func r08Cases() []r08Case {
 		sources = append(sources, network.String())
 	}
 	nested := NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, OutInterface: "bridge", Sources: sources, Destinations: []string{"198.18.0.0/16", r08Target}, SrcAdd: sources, DstAdd: []string{"198.18.0.0/16", r08Target}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
-	nestedPreparation := mustPolicyJSON(Row{"prepare_static": []any{nested, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, []string{"198.18.0.0/16", r08Target}, []CIDRGateway{}}})
+	nestedPreparation := mustPolicyJSON(map[string]any{"prepare_static": []any{nested, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, []string{"198.18.0.0/16", r08Target}, []CIDRGateway{}}})
 	cases = append(cases, r08Case{"static_nat_list_nested_rollback", nestedState, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "rollback", Desired: r08Desired(false), Prepare: nestedPreparation}, {Action: "plan", Desired: r08Desired(true)}, {Action: "view"}}})
 	for _, action := range []string{"publish", "rollback"} {
 		cases = append(cases, r08Case{"legacy_" + action, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "legacy"}, {Action: "view"}, {Action: action, Desired: r08Desired(true)}}})
@@ -497,7 +531,7 @@ func r08Cases() []r08Case {
 			if nat {
 				delete(state.Tables[rosNAT][0], "out-interface")
 			}
-			prepares := []Row{}
+			prepares := []map[string]any{}
 			mutation := &routerfake.ExternalWrite{}
 			if nat {
 				source := "192.0.2.0/24"
@@ -505,7 +539,7 @@ func r08Cases() []r08Case {
 					source = "192.0.2.102/32"
 				}
 				// As in R12, the NAT exemption is prepared before the static route.
-				prepares = append(prepares, Row{"kind": "nat_add", "src": []string{source}, "dst": []string{r08Target}, "comment": "cf-static", "out_interface": "bridge"})
+				prepares = append(prepares, map[string]any{"kind": "nat_add", "src": []string{source}, "dst": []string{r08Target}, "comment": "cf-static", "out_interface": "bridge"})
 				if condition == "protocol-nat" || condition == "late-nat" {
 					// A pre-existing narrow/late accept cannot replace full source protection.
 					prepares = nil
@@ -516,7 +550,7 @@ func r08Cases() []r08Case {
 					mutation.ExtraRows = map[string][]routerfake.Row{rosNAT: {row}}
 				}
 			}
-			prepares = append(prepares, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"})
+			prepares = append(prepares, map[string]any{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"})
 			if condition == "inactive" {
 				mutation.Faults = []routerfake.Fault{{Method: "PUT", Path: rosRoutes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosRoutes: {"*6D": {"active": "false"}, "*6F": {"active": "false"}}}}}
 			}
@@ -526,7 +560,7 @@ func r08Cases() []r08Case {
 			} else {
 				notRequired = append(notRequired, CIDRGateway{r08Target, r08Gateway})
 			}
-			prepare := mustPolicyJSON(Row{"prepare_static": prepares, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, bypass, notRequired}})
+			prepare := mustPolicyJSON(map[string]any{"prepare_static": prepares, "static_checks": []CIDRGateway{{r08Target, r08Gateway}}, "static_nat_checks": NATChecks{r08Gateway, bypass, notRequired}})
 			cases = append(cases, r08Case{fmt.Sprintf("static_replacement_nat_%t_%s", nat, condition), state, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "publish", Desired: r08Desired(false), Mutation: mutation, Prepare: prepare}}})
 		}
 	}
@@ -566,7 +600,7 @@ func r08Cases() []r08Case {
 	cases = append(cases, r08Case{"longest_prefix_sources", r08State(), []r08Step{{Action: "sources", Gateway: r08Gateway, Rows: json.RawMessage(`[{"ip":"192.0.2.0/24","mode":"smart"},{"ip":"192.0.2.0/25","mode":"direct"},{"ip":"192.0.2.101","mode":"smart"},{"ip":"192.0.2.151","mode":"direct"},{"ip":"2001:db8::/32","mode":"smart"}]`)}}})
 	for _, policy := range []string{"Proxy", "DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "Only direct"} {
 		for _, problem := range []string{"none", "missing", "disabled", "deleted"} {
-			config := map[string]any{"rule_configs": []map[string]any{{"id": "selected", "itemType": "ruleset", "name": "已停用，没有本地缓存，未计入", "policy": policy, "enabled": true}}, "oxidns": map[string]any{"device_policies": []Row{{"ip": "192.0.2.101", "mode": "smart"}}}, "proxy_groups": []Row{{"name": "Only direct", "manual_nodes": []string{"DIRECT", "REJECT"}}}}
+			config := map[string]any{"rule_configs": []map[string]any{{"id": "selected", "itemType": "ruleset", "name": "已停用，没有本地缓存，未计入", "policy": policy, "enabled": true}}, "oxidns": map[string]any{"device_policies": []Row{{"ip": "192.0.2.101", "mode": "smart"}}}, "proxy_groups": []map[string]any{{"name": "Only direct", "manual_nodes": []string{"DIRECT", "REJECT"}}}}
 			contents := map[string]string{"selected": "IP-CIDR,198.51.100.0/24,no-resolve\n"}
 			if problem == "missing" {
 				contents["selected"] = ""

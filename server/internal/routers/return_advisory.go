@@ -13,7 +13,7 @@ var advisoryMetadata = []string{".id", "chain", "action", "comment", "disabled",
 var advisoryScope = []string{"src-address", "dst-address", "src-address-list", "dst-address-list", "in-interface", "out-interface", "in-interface-list", "out-interface-list", "src-address-type", "dst-address-type"}
 
 func advisoryLive(r Row) bool {
-	return r.is("chain", "forward") && !rosTruthy(r["disabled"]) && !rosTruthy(r["invalid"])
+	return r.is("chain", "forward") && !rosFlag(r["disabled"]) && !rosFlag(r["invalid"])
 }
 func advisoryStates(r Row) ([]string, bool) {
 	s := strings.TrimSpace(r.text("connection-state"))
@@ -261,7 +261,7 @@ func ReturnAdvisoryWarnings(ctx context.Context, desired *Desired, state *Router
 	network := netip.PrefixFrom(gateway, 24).Masked()
 	longest := -1
 	for _, r := range context.Routes {
-		if rosTruthy(r["connect"]) && rosTruthy(r["active"]) {
+		if rosFlag(r["connect"]) && rosFlag(r["active"]) {
 			for _, n := range Networks([]string{r.text("dst-address")}) {
 				if n.Contains(gateway) && n.Bits() > longest {
 					network = n

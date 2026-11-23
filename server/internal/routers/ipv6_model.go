@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"net/netip"
@@ -70,7 +71,7 @@ func StableIPv6Row(row Row) Row {
 		}
 	}
 	if value, ok := row["address"]; ok {
-		address := rosText(value)
+		address := value
 		addrText, mask, hasMask := strings.Cut(address, "/")
 		if a, err := netip.ParseAddr(addrText); err == nil {
 			networkText := a.WithZone("").String()
@@ -89,18 +90,61 @@ func StableIPv6Row(row Row) Row {
 	return out
 }
 
+// IPv6EvidenceSet is sorted stable preview evidence per table.
+type IPv6EvidenceSet map[string][]IPv6EvidenceRow
+
+// IPv6EvidenceRow is one stable row; a route row also carries the device's
+// activity, encoded as the JSON boolean member "active".
+type IPv6EvidenceRow struct {
+	Fields Row
+	Active *bool
+}
+
+// MarshalJSON encodes the row as one JSON object.
+func (r IPv6EvidenceRow) MarshalJSON() ([]byte, error) {
+	if r.Active == nil {
+		return json.Marshal(r.Fields)
+	}
+	members := make(map[string]any, len(r.Fields)+1)
+	for key, value := range r.Fields {
+		members[key] = value
+	}
+	members["active"] = *r.Active
+	return json.Marshal(members)
+}
+
+// UnmarshalJSON decodes a stored row; only a JSON boolean "active" is the
+// route activity.
+func (r *IPv6EvidenceRow) UnmarshalJSON(data []byte) error {
+	var active struct {
+		Active json.RawMessage `json:"active"`
+	}
+	if err := jsondecode.Unmarshal(data, &active); err != nil {
+		return err
+	}
+	if err := jsondecode.Unmarshal(data, &r.Fields); err != nil {
+		return err
+	}
+	r.Active = nil
+	if text := string(active.Active); text == "true" || text == "false" {
+		r.Active = new(text == "true")
+		delete(r.Fields, "active")
+	}
+	return nil
+}
+
 // IPv6Evidence returns sorted stable preview evidence, retaining route activity.
-func IPv6Evidence(live IPv6Snapshot) IPv6Snapshot {
-	out := IPv6Snapshot{}
+func IPv6Evidence(live IPv6Snapshot) IPv6EvidenceSet {
+	out := IPv6EvidenceSet{}
 	for key, rows := range live {
 		sorted := slices.Clone(rows)
 		slices.SortStableFunc(sorted, func(a, b Row) int { return strings.Compare(a.id(), b.id()) })
-		out[key] = []Row{}
+		out[key] = []IPv6EvidenceRow{}
 		for _, row := range sorted {
-			value := StableIPv6Row(row)
-			value[".id"] = row.id()
+			value := IPv6EvidenceRow{Fields: StableIPv6Row(row)}
+			value.Fields[".id"] = row.id()
 			if key == "routes" {
-				value["active"] = policyFlag(row["active"])
+				value.Active = new(policyFlag(row["active"]))
 			}
 			out[key] = append(out[key], value)
 		}
@@ -212,7 +256,7 @@ func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []Row) s
 }
 
 func ipv6Configured(row Row, gateway string) bool {
-	if rosTextDefault(row["routing-table"], "main") != "main" || !ipv6Enabled(row) || !ipv6SameGateway(row, gateway) {
+	if row.textOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !ipv6SameGateway(row, gateway) {
 		return false
 	}
 	for _, key := range []string{"blackhole", "unreachable", "prohibit", "invalid", "dynamic", "connect"} {
@@ -230,7 +274,7 @@ func ipv6Correct(row Row, spec IPv6RouteSpec) bool {
 // whatever its origin. Inspection uses it to recognise a correct dynamic or
 // connected route, which it then refuses to borrow with its own explanation.
 func ipv6Routes(row Row, spec IPv6RouteSpec) bool {
-	if ipv6Key(row) != spec.CIDR || rosTextDefault(row["routing-table"], "main") != "main" || !ipv6Enabled(row) || !policyFlag(row["active"]) || !ipv6SameGateway(row, spec.Gateway) {
+	if ipv6Key(row) != spec.CIDR || row.textOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !policyFlag(row["active"]) || !ipv6SameGateway(row, spec.Gateway) {
 		return false
 	}
 	for _, key := range []string{"blackhole", "unreachable", "prohibit", "invalid"} {

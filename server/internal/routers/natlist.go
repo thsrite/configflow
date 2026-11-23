@@ -111,7 +111,7 @@ func InspectNATListRule(rows []Row, others []ListRef) NATListRule {
 		// Not even a return ahead of it: only rules that let packets through.
 		chain, set := other["chain"]
 		action, isStr := other.str("action")
-		if other.enabled() && (!set || chain == nil || chain == "srcnat" || chain == "") &&
+		if other.enabled() && (!set || chain == "srcnat" || chain == "") &&
 			!(isStr && slices.Contains([]string{"accept", "log", "passthrough"}, action)) {
 			return NATListRule{Problem: "ConfigFlow 的 NAT 免转换规则 " + id + " 位于源 NAT 转换规则 " + other.text(".id") + " 之后，请移到最前或删除后重新预览"}
 		}

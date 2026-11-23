@@ -288,7 +288,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 		for _, rows := range live {
 			for _, row := range rows {
 				for _, value := range row {
-					values[strings.TrimLeft(rosText(value), "!")] = true
+					values[strings.TrimLeft(value, "!")] = true
 				}
 			}
 		}

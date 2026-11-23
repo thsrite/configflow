@@ -71,7 +71,7 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 			state.NatContext.Mangle = []Row{}
 			for _, row := range (*state.ROSPolicy)[rosMangle] {
 				if !ids[row.id()] {
-					copy := cloneAddressRow(row)
+					copy := cloneRow(row)
 					delete(copy, "bytes")
 					delete(copy, "packets")
 					state.NatContext.Mangle = append(state.NatContext.Mangle, copy)

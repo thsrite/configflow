@@ -380,7 +380,7 @@ func TestR10RollbackNeverAdoptsMatchingForeignRoute(t *testing.T) {
 	}
 	var manifest IPv6RoutesManifest
 	_ = json.Unmarshal(previous, &manifest)
-	row := routerfake.Row(cloneRow(manifest.Resources[0].Config))
+	row := fakeRow(manifest.Resources[0].Config)
 	row[".id"] = "*AA"
 	row["active"] = "true"
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosIPv6Routes: {row}}}})

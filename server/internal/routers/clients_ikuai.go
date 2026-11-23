@@ -53,12 +53,12 @@ func (d *Ikuai) clientRows(ctx context.Context, name string) ([]ikuaiRow, error)
 	return result, nil
 }
 func ikuaiClient(row ikuaiRow, online bool) *routerdoc.Sighting {
-	ip := routerdoc.IPv4(rosText(row["ip_addr"]))
+	ip := routerdoc.IPv4(row.text("ip_addr"))
 	if ip == "" {
 		return nil
 	}
 	s := routerdoc.NewSighting(ip)
-	s.MAC = routerdoc.NormalizeMAC(rosText(row["mac"]))
+	s.MAC = routerdoc.NormalizeMAC(row.text("mac"))
 	s.Hostname = clientName(row)
 	if online {
 		s.AddSource("online")
@@ -122,7 +122,7 @@ func (d *Ikuai) ReadClients(ctx context.Context, opts ClientReadOptions) (*route
 		if !ok {
 			continue
 		}
-		for _, part := range strings.Fields(strings.ReplaceAll(rosText(row["ip_mask"]), ",", " ")) {
+		for _, part := range strings.Fields(strings.ReplaceAll(ikuaiRow(row).text("ip_mask"), ",", " ")) {
 			if p, ok := clientInterface(part); ok {
 				r.Own[p.Addr().String()] = true
 				r.LAN = append(r.LAN, p.Masked())

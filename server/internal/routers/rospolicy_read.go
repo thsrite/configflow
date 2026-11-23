@@ -101,6 +101,8 @@ func (d *RouterOS) snapshotPolicy(ctx context.Context, reserve bool) (*ROSPolicy
 	if settings == nil {
 		return nil, routerError(messagePolicySettingsUnreadable)
 	}
+	// A null lookup order is unknown, not missing.
+	markNulls(settings, value, []string{"policy-rules"})
 	settings[".id"] = "routing-settings"
 	result[rosSettings] = []Row{settings}
 	if !settings.has("policy-rules") {
@@ -160,7 +162,7 @@ func OwnedROSPolicyRows(raw json.RawMessage, snap *ROSPolicySnapshot) ([]ROSReso
 			if !sameRow(configROSRow(matches[0]), configROSRow(entry.Config)) {
 				return nil, routerError(fmt.Sprintf(messagePolicyExternalEdit, entry.Path, entry.ID))
 			}
-			owned = append(owned, ROSResource{entry.Path, entry.ID, cloneAddressRow(entry.Config)})
+			owned = append(owned, ROSResource{entry.Path, entry.ID, cloneRow(entry.Config)})
 		}
 	}
 	return owned, nil
@@ -231,26 +233,12 @@ func checkPolicyOrder(live ROSPolicySnapshot) error {
 		}
 		return routerError(fmt.Sprintf(messagePolicyVersion, firstNonEmpty(version, messagePolicyUnknownVersion)))
 	}
-	order := []string{}
 	if len(settings) != 1 {
 		return routerError(messagePolicyOrderUnknown)
 	}
-	switch value := settings[0]["policy-rules"].(type) {
-	case string:
-		for _, part := range strings.Split(value, ",") {
-			order = append(order, strings.TrimSpace(part))
-		}
-	case []any:
-		for _, part := range value {
-			s, ok := part.(string)
-			if !ok {
-				return routerError(messagePolicyOrderUnknown)
-			}
-			order = append(order, s)
-		}
-	case []string:
-		order = slices.Clone(value)
-	default:
+	value, present := settings[0]["policy-rules"]
+	order, ok := textList(value)
+	if !present || !ok {
 		return routerError(messagePolicyOrderUnknown)
 	}
 	allowed := stringSet("mangle", "main", "user", "vrf-lookup", "vrf-unreach", "local")
@@ -273,7 +261,7 @@ func checkPolicyOrder(live ROSPolicySnapshot) error {
 }
 
 func checkPolicyEgress(row Row, gateway, iface string) error {
-	if row == nil || !row.enabled() || !rosTruthy(row["active"]) || row.text("immediate-gw") != gateway+"%"+iface || row.flag("invalid", "blackhole", "ecmp") {
+	if row == nil || !row.enabled() || !rosFlag(row["active"]) || row.text("immediate-gw") != gateway+"%"+iface || row.flag("invalid", "blackhole", "ecmp") {
 		return routerError(messagePolicyEgressChanged)
 	}
 	return nil
@@ -314,7 +302,7 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 			return routerError(fmt.Sprintf(messagePolicyNotActive, item.Path, item.ID))
 		}
 		if item.Path == rosRoutes {
-			if !rosTruthy(row["active"]) {
+			if !rosFlag(row["active"]) {
 				return routerError(messagePolicyRouteInactive)
 			}
 			if manifest.Spec != nil && manifest.Spec.EgressInterface != "" {
@@ -395,7 +383,7 @@ func ReadPolicyObjects(ctx context.Context, d *RouterOS, raw json.RawMessage) ([
 			}
 		}
 		if entry.Path == rosTables {
-			shown = Row(ComparableValues(rosTables, shown))
+			shown = ComparableValues(rosTables, shown)
 		}
 		editor := "settings"
 		if entry.Path == rosAddresses {

@@ -31,11 +31,6 @@ func fixedROSFields(row Row) Row {
 	if !out.has("disabled") {
 		out["disabled"] = "false"
 	}
-	for _, key := range []string{"disabled", "always-broadcast", "block-access", "use-src-mac", "allow-dual-stack-queue", "insert-queue-before"} {
-		if v, ok := out[key].(bool); ok {
-			out[key] = fmt.Sprint(v)
-		}
-	}
 	if out.has("mac-address") {
 		out["mac-address"] = routerdoc.NormalizeMAC(out.text("mac-address"))
 	}

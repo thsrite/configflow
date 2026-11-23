@@ -14,12 +14,12 @@ type policyPlanEvidence struct {
 }
 type fakePlanEvidence struct {
 	NAT   any             `json:"nat"`
-	Fake  IPv6Snapshot    `json:"ipv6_fakeip"`
+	Fake  IPv6EvidenceSet `json:"ipv6_fakeip"`
 	Check IPv6FakeIPCheck `json:"ipv6_check"`
 }
 type routes6PlanEvidence struct {
 	IPv4   any              `json:"v4"`
-	Routes IPv6Snapshot     `json:"ipv6_routes"`
+	Routes IPv6EvidenceSet  `json:"ipv6_routes"`
 	Check  *IPv6RoutesCheck `json:"ipv6_routes_check"`
 	Skip   []string         `json:"ipv6_routes_skip"`
 }

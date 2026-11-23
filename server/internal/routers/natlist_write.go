@@ -64,7 +64,7 @@ func (d *RouterOS) confirmResource(ctx context.Context, path string, values Row,
 		return ROSResource{}, routerError(messagePolicyDynamic)
 	}
 	undo.Config = configROSRow(actual)
-	if path == rosRoutes && firstNonEmpty(values.text("routing-table"), "main") != "main" && !rosTruthy(actual["active"]) {
+	if path == rosRoutes && firstNonEmpty(values.text("routing-table"), "main") != "main" && !rosFlag(actual["active"]) {
 		return ROSResource{}, routerError(messagePolicyRouteNotReady)
 	}
 	if path == rosNAT && values.set("place-before") {

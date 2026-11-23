@@ -101,7 +101,7 @@ func TestReviewDeviceCorpusExactKeys(t *testing.T) {
 			if err := response.JSON(&got); err != nil {
 				t.Fatal(err)
 			}
-			if len(got) == 0 || got[0][required] == nil || !reflect.DeepEqual(got, native) {
+			if len(got) == 0 || !got[0].has(required) || !reflect.DeepEqual(got, native) {
 				t.Fatal("recorded device keys/values changed")
 			}
 		})

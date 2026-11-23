@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"context"
@@ -9,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
-	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -137,14 +137,19 @@ func (d *RouterOS) Close() {
 // RenderScript is empty because RouterOS supports direct writes.
 func (*RouterOS) RenderScript([]json.RawMessage) (string, error) { return "", nil }
 
-func (d *RouterOS) request(ctx context.Context, method, path string, values Row, timeout time.Duration) (any, error) {
+// request sends one REST call; nil values means no body. The reply is
+// valid JSON ("{}" for an empty success).
+func (d *RouterOS) request(ctx context.Context, method, path string, values Row, timeout time.Duration) (json.RawMessage, error) {
+	// A nil Row would be the body "null".
+	if values == nil {
+		return d.send(ctx, method, path, nil, timeout)
+	}
+	return d.send(ctx, method, path, values, timeout)
+}
+
+func (d *RouterOS) send(ctx context.Context, method, path string, body any, timeout time.Duration) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	// Like requests' json=None, no values means no body (a nil Row would be "null").
-	var body any
-	if values != nil {
-		body = values
 	}
 	response, err := d.client.Do(ctx, method, d.endpoint+"/rest"+path, body, timeout)
 	if err != nil {
@@ -164,12 +169,11 @@ func (d *RouterOS) request(ctx context.Context, method, path string, values Row,
 		return nil, rosError(KindMissingResource, messageROSRESTUnavailable)
 	}
 	if response.Status == 404 && method == "DELETE" {
-		return Row{}, nil
+		return emptyReply, nil
 	}
 	if response.Status < 200 || response.Status >= 300 {
-		var body Row
-		_ = devhttp.DecodeJSON(response.Body, &body)
-		detail := d.safeDeviceText(strings.Join(nonEmpty([]string{rosText(body["message"]), rosText(body["detail"])}), ": "))
+		body := asRow(response.Body)
+		detail := d.safeDeviceText(strings.Join(nonEmpty([]string{body["message"], body["detail"]}), ": "))
 		kind := KindRouter
 		if method != "GET" && response.Status >= 500 {
 			kind = KindUncertainWrite
@@ -184,22 +188,86 @@ func (d *RouterOS) request(ctx context.Context, method, path string, values Row,
 		return nil, rosError(kind, message)
 	}
 	if response.Status == 204 {
-		return Row{}, nil
+		return emptyReply, nil
 	}
-	var result any
-	if err := response.JSON(&result); err != nil {
+	if !json.Valid(response.Body) {
 		kind := KindRouter
 		if method != "GET" {
 			kind = KindUncertainWrite
 		}
 		return nil, rosError(kind, messageROSNotJSON)
 	}
-	return result, nil
+	return response.Body, nil
+}
+
+var emptyReply = json.RawMessage("{}")
+
+// asRow is an object reply as a row; nil when the reply is not an object.
+func asRow(raw json.RawMessage) Row {
+	var row Row
+	if replyKind(raw) != '{' || jsondecode.Decode(raw, &row) != nil {
+		return nil
+	}
+	return row
+}
+
+// asRows is a list reply of objects; ok is false for any other shape.
+func asRows(raw json.RawMessage) ([]Row, bool) {
+	var rows []Row
+	if replyKind(raw) != '[' || jsondecode.Decode(raw, &rows) != nil || !rowsOK(rows) {
+		return nil, false
+	}
+	return rows, true
+}
+
+// nullMarker holds a JSON null in a field whose reader must refuse it (Row
+// decoding otherwise treats null as absent). It is structured text, which
+// no flag, list or name reader accepts, so the reader's own message stays.
+const nullMarker = "{}"
+
+// markNulls sets nullMarker for each of fields that is null in raw, the
+// JSON object row was decoded from.
+func markNulls(row Row, raw json.RawMessage, fields []string) {
+	var members map[string]json.RawMessage
+	if row == nil || jsondecode.Unmarshal(raw, &members) != nil {
+		return
+	}
+	for _, field := range fields {
+		if value, ok := members[field]; ok && string(bytes.TrimSpace(value)) == "null" {
+			row[field] = nullMarker
+		}
+	}
+}
+
+// strictList is list for a table whose readers refuse a null in fields.
+func (d *RouterOS) strictList(ctx context.Context, path string, fields ...string) ([]Row, error) {
+	value, err := d.get(ctx, path, rosTimeout)
+	if err != nil {
+		return nil, err
+	}
+	rows, ok := asRows(value)
+	var items []json.RawMessage
+	if !ok || jsondecode.Unmarshal(value, &items) != nil || len(items) != len(rows) {
+		return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
+	}
+	for i, item := range items {
+		markNulls(rows[i], item, fields)
+	}
+	return rows, nil
+}
+
+// replyKind is the first byte of a JSON value.
+func replyKind(raw json.RawMessage) byte {
+	raw = bytes.TrimLeft(raw, " \t\r\n")
+	if len(raw) == 0 {
+		return 0
+	}
+	return raw[0]
 }
 
 var permissionError = regexp.MustCompile(`(?i)\bnot enough permissions\b`)
 
-func (d *RouterOS) get(ctx context.Context, path string, timeout time.Duration) (any, error) {
+func (d *RouterOS) get(ctx context.Context, path string, timeout time.Duration) (json.RawMessage, error) {
 	return d.request(ctx, "GET", path, nil, timeout)
 }
 
@@ -208,17 +276,9 @@ func (d *RouterOS) list(ctx context.Context, path string) ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	items, ok := value.([]any)
+	rows, ok := asRows(value)
 	if !ok {
 		return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
-	}
-	rows := make([]Row, 0, len(items))
-	for _, item := range items {
-		row, ok := item.(map[string]any)
-		if !ok {
-			return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
-		}
-		rows = append(rows, Row(row))
 	}
 	if path == rosFilter {
 		d.forwardFilterRows = rows
@@ -239,19 +299,11 @@ func (d *RouterOS) Ping(ctx context.Context, address, iface string, timeout time
 	if err != nil {
 		return false, routerError(fmt.Sprintf(messageROSPingIncomplete, devhttp.ClassOf(err)))
 	}
-	var body any
-	if err := response.JSON(&body); err != nil {
-		body = nil
-	}
-	if response.Status == 200 {
-		if rows, ok := body.([]any); ok {
-			for _, value := range rows {
-				row, ok := value.(map[string]any)
-				if !ok {
-					continue
-				}
-				received := rosText(row["received"])
-				if n, err := strconv.Atoi(received); err == nil && n > 0 {
+	if response.Status == 200 && replyKind(response.Body) == '[' {
+		var items []json.RawMessage
+		if jsondecode.Decode(response.Body, &items) == nil {
+			for _, item := range items {
+				if n, err := strconv.Atoi(asRow(item)["received"]); err == nil && n > 0 {
 					return true, nil
 				}
 			}
@@ -259,8 +311,8 @@ func (d *RouterOS) Ping(ctx context.Context, address, iface string, timeout time
 		}
 	}
 	var detail string
-	if row, ok := body.(map[string]any); ok {
-		detail = firstText(row["detail"], row["message"])
+	if row := asRow(response.Body); row != nil {
+		detail = firstNonEmpty(row["detail"], row["message"])
 	}
 	if permissionError.MatchString(detail) {
 		return false, rosError(KindPingNotPermitted, fmt.Sprintf(messageROSPingPermission, detail))
@@ -278,11 +330,11 @@ func (d *RouterOS) Probe(ctx context.Context) (*RouterInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	resource, ok := value.(map[string]any)
-	if !ok {
+	resource := asRow(value)
+	if resource == nil {
 		return nil, routerError(messageROSSystemInfoFormat)
 	}
-	version := rosText(resource["version"])
+	version := resource["version"]
 	match := versionPattern.FindStringSubmatch(version)
 	if len(match) != 3 {
 		return nil, routerError(fmt.Sprintf(messageROSVersionRequired, firstNonEmpty(version, messageUnknown)))
@@ -302,7 +354,7 @@ func (d *RouterOS) Probe(ctx context.Context) (*RouterInfo, error) {
 			return nil, err
 		}
 	}
-	return &RouterInfo{Vendor: "routeros", Version: version, Model: rosText(resource["board-name"]),
+	return &RouterInfo{Vendor: "routeros", Version: version, Model: resource["board-name"],
 		Capabilities: capabilities}, nil
 }
 
@@ -314,7 +366,8 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	paths := []string{rosDHCPNetworks, rosDHCPServers, rosDHCPLeases, rosDHCPOptions, rosDHCPOptionSets, rosDHCPMatchers}
 	read := make([][]Row, len(paths))
 	for i, path := range paths {
-		rows, err := d.list(ctx, path)
+		// Python refused a null option or DNS list.
+		rows, err := d.strictList(ctx, path, "dhcp-option", "dhcp-option-set", "options", "dns-server", "dns-none")
 		if err != nil {
 			return nil, err
 		}
@@ -325,7 +378,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	activeServers := []Row{}
 	globals := []string{}
 	for _, server := range servers {
-		if !rosTruthy(server["disabled"]) {
+		if !rosFlag(server["disabled"]) {
 			activeServers = append(activeServers, server)
 		}
 	}
@@ -333,11 +386,11 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 		globals = append(globals, messageROSDHCPNoActiveServer)
 	}
 	for _, server := range activeServers {
-		label := fmt.Sprintf(messageROSDHCPServiceLabel, firstNonEmpty(firstText(server["name"], server[".id"]), messageUnknown))
-		if !server.set("name") || rosTruthy(server["invalid"]) {
+		label := fmt.Sprintf(messageROSDHCPServiceLabel, firstNonEmpty(firstNonEmpty(server["name"], server[".id"]), messageUnknown))
+		if !server.set("name") || rosFlag(server["invalid"]) {
 			globals = append(globals, fmt.Sprintf(messageROSDHCPIncomplete, label))
 		}
-		radius := strings.ToLower(rosTextDefault(server["use-radius"], "no"))
+		radius := strings.ToLower(server.textOr("use-radius", "no"))
 		if radius != "no" && radius != "false" && radius != "accounting" {
 			globals = append(globals, fmt.Sprintf(messageROSDHCPRadiusServer, label))
 		}
@@ -349,15 +402,15 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	}
 	disabledServers := map[string]bool{}
 	for _, server := range servers {
-		if rosTruthy(server["disabled"]) {
+		if rosFlag(server["disabled"]) {
 			disabledServers[server.text("name")] = true
 		}
 	}
 	for _, matcher := range matchers {
-		if rosTruthy(matcher["disabled"]) || disabledServers[matcher.text("server")] {
+		if rosFlag(matcher["disabled"]) || disabledServers[matcher.text("server")] {
 			continue
 		}
-		label := fmt.Sprintf(messageROSDHCPMatcherLabel, firstNonEmpty(firstText(matcher["name"], matcher[".id"]), messageUnknown))
+		label := fmt.Sprintf(messageROSDHCPMatcherLabel, firstNonEmpty(firstNonEmpty(matcher["name"], matcher[".id"]), messageUnknown))
 		matcherOptions := Row{"dhcp-option-set": ""}
 		if value, ok := matcher["option-set"]; ok {
 			matcherOptions["dhcp-option-set"] = value
@@ -370,7 +423,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	}
 	overrideLeases := []Row{}
 	for _, lease := range leases {
-		if rosTruthy(lease["disabled"]) {
+		if rosFlag(lease["disabled"]) {
 			continue
 		}
 		optionNames, err := dhcpNamesField(lease, "dhcp-option")
@@ -381,7 +434,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(optionNames) > 0 || len(setNames) > 0 || rosTruthy(lease["radius"]) {
+		if len(optionNames) > 0 || len(setNames) > 0 || rosFlag(lease["radius"]) {
 			overrideLeases = append(overrideLeases, lease)
 		}
 	}
@@ -403,7 +456,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 			return nil, err
 		}
 		blockers := slices.Clone(globals)
-		if rosTruthy(row["dynamic"]) || rosTruthy(row["invalid"]) {
+		if rosFlag(row["dynamic"]) || rosFlag(row["invalid"]) {
 			blockers = append(blockers, messageROSDHCPNetworkBlocked)
 		}
 		networkLabel := fmt.Sprintf(messageROSDHCPNetworkLabel, network.String())
@@ -420,8 +473,8 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 			if valid && !address.IsUnspecified() && !network.Contains(address) {
 				continue
 			}
-			label := fmt.Sprintf(messageROSDHCPLeaseLabel, firstNonEmpty(firstText(lease["address"], lease[".id"]), messageUnknown))
-			if rosTruthy(lease["radius"]) {
+			label := fmt.Sprintf(messageROSDHCPLeaseLabel, firstNonEmpty(firstNonEmpty(lease["address"], lease[".id"]), messageUnknown))
+			if rosFlag(lease["radius"]) {
 				blockers = append(blockers, fmt.Sprintf(messageROSDHCPRadiusLease, label))
 			}
 			leaseBlockers, err := dhcpOverrides(lease, label, options, optionSets)
@@ -442,7 +495,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 			}
 			dns = append(dns, address.String())
 		}
-		if rosTruthy(attributes["dns-none"]) {
+		if rosFlag(attributes["dns-none"]) {
 			dns = []string{}
 		}
 		attrs, err := json.Marshal(attributes)
@@ -450,9 +503,9 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 			return nil, err
 		}
 		entries = append(entries, &DhcpDnsEntry{ID: id, Network: network.String(), DNS: dns,
-			Enabled: !rosTruthy(row["disabled"]), Attributes: attrs, Blockers: uniqueStrings(blockers), DNSExplicit: true})
+			Enabled: !rosFlag(row["disabled"]), Attributes: attrs, Blockers: uniqueStrings(blockers), DNSExplicit: true})
 	}
-	evidence := Row{
+	evidence := map[string][]Row{
 		"networks": dhcpEvidenceNetworks(networks),
 		"servers": dhcpEvidence(servers, []string{".id", "name", "disabled", "invalid", "dynamic", "interface",
 			"address-pool", "relay", "use-radius", "dhcp-option", "dhcp-option-set"}),
@@ -481,32 +534,15 @@ func dhcpNetworkAttributes(row Row) (Row, error) {
 	if _, ok := attrs["dns-none"]; !ok {
 		attrs["dns-none"] = "false"
 	}
-	switch value := attrs["dns-none"].(type) {
-	case bool:
-	case string:
-		if value != "true" && value != "false" && value != "yes" && value != "no" {
-			return nil, routerError(messageROSDHCPDNSNone)
-		}
-	default:
+	if !slices.Contains([]string{"true", "false", "yes", "no"}, attrs["dns-none"]) {
 		return nil, routerError(messageROSDHCPDNSNone)
 	}
 	return attrs, nil
 }
 
-func dhcpNames(value any) ([]string, error) {
-	var items []string
-	switch v := value.(type) {
-	case string:
-		items = strings.Split(v, ",")
-	case []any:
-		for _, item := range v {
-			text, ok := item.(string)
-			if !ok {
-				return nil, routerError(messageROSDHCPNameList)
-			}
-			items = append(items, text)
-		}
-	default:
+func dhcpNames(value string) ([]string, error) {
+	items, ok := textList(value)
+	if !ok {
 		return nil, routerError(messageROSDHCPNameList)
 	}
 	out := make([]string, 0, len(items))
@@ -580,28 +616,15 @@ func matchingRows(rows []Row, name string) []Row {
 	return matches
 }
 
-func optionCode(value any) (int64, bool) {
-	switch v := value.(type) {
-	case json.Number:
-		n, err := v.Int64()
-		return n, err == nil
-	case string:
-		if v == "vendor-specific" {
-			return 43, true
-		}
-		if v == "" {
-			return 0, false
-		}
-		for _, r := range v {
-			if r < '0' || r > '9' {
-				return 0, false
-			}
-		}
-		n, err := strconv.ParseInt(v, 10, 64)
-		return n, err == nil
-	default:
+func optionCode(value string) (int64, bool) {
+	if value == "vendor-specific" {
+		return 43, true
+	}
+	if value == "" || strings.ContainsFunc(value, func(r rune) bool { return r < '0' || r > '9' }) {
 		return 0, false
 	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	return n, err == nil
 }
 
 func dhcpEvidenceNetworks(rows []Row) []Row {
@@ -672,59 +695,10 @@ func nonEmpty(values []string) []string {
 	return out
 }
 
-func rosText(value any) string {
-	switch v := value.(type) {
-	case string:
-		return v
-	case json.Number:
-		return v.String()
-	case int:
-		return strconv.Itoa(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case bool:
-		return strconv.FormatBool(v)
-	default:
-		return ""
-	}
-}
-
-func rosTextDefault(value any, fallback string) string {
-	if value == nil {
-		return fallback
-	}
-	return rosText(value)
-}
-
-func firstText(values ...any) string {
-	for _, value := range values {
-		if text := rosText(value); text != "" {
-			return text
-		}
-	}
-	return ""
-}
-
-func rosTruthy(value any) bool {
-	switch v := value.(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
-	default:
-		return false
-	}
-}
-
-func comparable(key string, value any) string {
-	text := rosText(value)
-	switch value.(type) {
-	case []any, map[string]any:
-		// RouterOS sends strings; anything else must still compare by value,
-		// never collapse to "" (ownership snapshots rely on it).
-		data, _ := json.Marshal(value)
-		text = string(data)
-	}
+// comparable is the normalized form of one field value: flags as
+// "true"/"false", networks canonical. Row decoding already turned non-text
+// JSON into its compact form, so such values still compare by value.
+func comparable(key, text string) string {
 	if key == "dns-none" && text == "" {
 		return "false"
 	}
@@ -757,11 +731,7 @@ func referencedAddressLists(rows []Row) []string {
 	names := map[string]bool{}
 	for _, row := range rows {
 		for _, key := range []string{"src-address-list", "dst-address-list"} {
-			value, ok := row[key].(string)
-			if !ok {
-				continue
-			}
-			name := strings.TrimLeft(value, "!")
+			name := strings.TrimLeft(row[key], "!")
 			if name != "" {
 				names[name] = true
 			}
@@ -857,7 +827,7 @@ var rosPolicyRuntime = map[string]bool{
 
 func configROSRow(row Row) Row {
 	config := make(Row)
-	for key, value := range cloneAddressRow(row) {
+	for key, value := range cloneRow(row) {
 		if !rosPolicyRuntime[key] {
 			config[key] = value
 		}
@@ -1216,12 +1186,12 @@ func decodeRow(raw json.RawMessage) (Row, bool) {
 	return row, true
 }
 
+// cloneRow copies a row; the copy is never nil.
 func cloneRow(row Row) Row {
-	copy := make(Row, len(row))
-	for key, value := range row {
-		copy[key] = value
+	if row == nil {
+		return Row{}
 	}
-	return copy
+	return maps.Clone(row)
 }
 
 func isSingleRowPath(path string) bool { return slices.Contains(rosSingleRowPaths, path) }
@@ -1248,11 +1218,11 @@ func (d *RouterOS) find(ctx context.Context, path, id string) (Row, error) {
 		}
 		return nil, err
 	}
-	row, ok := value.(map[string]any)
-	if !ok || rosText(row[".id"]) != id {
+	row := asRow(value)
+	if !row.is(".id", id) {
 		return nil, routerError(fmt.Sprintf(messageROSObjectFormat, path))
 	}
-	return Row(row), nil
+	return row, nil
 }
 
 func escapeROSPathID(id string) string {
@@ -1271,7 +1241,7 @@ func (d *RouterOS) row(ctx context.Context, path, id string) (Row, error) {
 }
 
 func payload(path string, row Row) Row {
-	if rosTruthy(row["dynamic"]) {
+	if rosFlag(row["dynamic"]) {
 		return nil
 	}
 	if path == "/ipv6/nd" {
@@ -1280,7 +1250,7 @@ func payload(path string, row Row) Row {
 				return nil
 			}
 		}
-		if rosTruthy(row["invalid"]) {
+		if rosFlag(row["invalid"]) {
 			return nil
 		}
 		_ = row["disabled"] // retained in the returned payload below
@@ -1332,7 +1302,7 @@ func payloadError(path string, row Row) error {
 			}
 		}
 	}
-	if path == rosIPv6ND && !rosTruthy(row["dynamic"]) {
+	if path == rosIPv6ND && !rosFlag(row["dynamic"]) {
 		dynamic, _ := ipv6DNSFlag(row, "dynamic")
 		invalid, _ := ipv6DNSFlag(row, "invalid")
 		if dynamic || invalid {
@@ -1416,7 +1386,7 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 		if isRoutePath(path) && hasUnexpectedRoute(rows, values, change.KnownIDs) {
 			return rosCheck{}, routerError(messageRollbackRouteConflict)
 		}
-		if values["place-before"] != nil && findRow(rows, rosText(values["place-before"])) == nil {
+		if values.has("place-before") && findRow(rows, values["place-before"]) == nil {
 			return rosCheck{}, routerError(messageRollbackNATOrder)
 		}
 		return d.perform(ctx, ROSChange{Method: "PUT", Path: path, Values: values}, undo, restoring, beforeCreate...)
@@ -1446,12 +1416,8 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 			}
 			return rosCheck{}, err
 		}
-		rowMap, ok := result.(map[string]any)
-		rowID, idOK := "", false
-		if ok {
-			rowID, idOK = rowMap[".id"].(string)
-		}
-		newRow := Row(rowMap)
+		newRow := asRow(result)
+		rowID, idOK := newRow.str(".id")
 		if !idOK || !rosIDPattern.MatchString(rowID) || before[rowID] || isSingleRowPath(path) && !inScope(path, newRow, values) {
 			return rosCheck{}, rollbackError(fmt.Sprintf(messageUncertainRouteWrite, path))
 		}
@@ -1501,11 +1467,10 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 				}
 				return rosCheck{}, err
 			}
-			currentMap, ok := current.(map[string]any)
-			if !ok || rosText(currentMap[".id"]) != id {
+			row = asRow(current)
+			if !row.is(".id", id) {
 				return rosCheck{}, routerError(messageRollbackUnreadable)
 			}
-			row = Row(currentMap)
 		} else {
 			return rosCheck{}, routerError(fmt.Sprintf(messageROSNotFound, path, id))
 		}
@@ -1571,16 +1536,16 @@ func (d *RouterOS) scoped(ctx context.Context, path string, values Row) ([]Row, 
 	if path == rosAddresses || path == pdLists {
 		field = "list"
 	}
-	query := url.Values{field: []string{rosText(values[field])}}.Encode()
+	query := url.Values{field: []string{values[field]}}.Encode()
 	return d.list(ctx, path+"?"+query)
 }
 
 func inScope(path string, row, values Row) bool {
 	if path == rosAddresses || path == pdLists {
-		return row.text("list") == rosText(values["list"])
+		return row.text("list") == values["list"]
 	}
 	return comparable("dst-address", row["dst-address"]) == comparable("dst-address", values["dst-address"]) &&
-		firstNonEmpty(row.text("routing-table"), "main") == firstNonEmpty(rosText(values["routing-table"]), "main")
+		firstNonEmpty(row.text("routing-table"), "main") == firstNonEmpty(values["routing-table"], "main")
 }
 
 func hasUnexpectedRoute(rows []Row, values Row, known []string) bool {
@@ -1589,8 +1554,8 @@ func hasUnexpectedRoute(rows []Row, values Row, known []string) bool {
 		knownSet[id] = true
 	}
 	for _, row := range rows {
-		if !knownSet[row.id()] && row.text("dst-address") == rosText(values["dst-address"]) &&
-			firstNonEmpty(row.text("routing-table"), "main") == firstNonEmpty(rosText(values["routing-table"]), "main") {
+		if !knownSet[row.id()] && row.text("dst-address") == values["dst-address"] &&
+			firstNonEmpty(row.text("routing-table"), "main") == firstNonEmpty(values["routing-table"], "main") {
 			return true
 		}
 	}
@@ -1650,11 +1615,8 @@ func marshalRow(row Row) json.RawMessage {
 	return data
 }
 
-// sameRow compares two decoded device rows. Values may be JSON arrays or
-// objects, which maps.Equal cannot compare without panicking.
-func sameRow(left, right Row) bool {
-	return len(left) == len(right) && reflect.DeepEqual(map[string]any(left), map[string]any(right))
-}
+// sameRow compares two rows; a nil row equals only a nil row.
+func sameRow(left, right Row) bool { return (left == nil) == (right == nil) && maps.Equal(left, right) }
 
 func rowsEqual(left Row, raw json.RawMessage) bool {
 	right, present := decodeRow(raw)
@@ -1794,7 +1756,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 	}
 	for _, name := range listNames {
 		for _, row := range listRows[name] {
-			if slices.Contains(referencedNames, name) && !rosTruthy(row["disabled"]) {
+			if slices.Contains(referencedNames, name) && !rosFlag(row["disabled"]) {
 				state.AddressSets[name] = append(state.AddressSets[name], row.text("address"))
 			}
 		}
@@ -1829,7 +1791,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 
 	scoped := []Row{}
 	for _, row := range assessed {
-		if row.is("chain", "srcnat") && !rosTruthy(row["disabled"]) &&
+		if row.is("chain", "srcnat") && !rosFlag(row["disabled"]) &&
 			(row.set("out-interface") || row.set("out-interface-list")) {
 			scoped = append(scoped, row)
 		}
@@ -1886,11 +1848,11 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		}
 		var active *bool
 		if row.has("active") {
-			active = new(rosTruthy(row["active"]))
+			active = new(rosFlag(row["active"]))
 		} else if row.has("inactive") {
-			active = new(!rosTruthy(row["inactive"]))
+			active = new(!rosFlag(row["inactive"]))
 		}
-		if rosTruthy(row["inactive"]) || rosTruthy(row["invalid"]) {
+		if rosFlag(row["inactive"]) || rosFlag(row["invalid"]) {
 			active = new(false)
 		}
 		var distance *int64
@@ -1899,7 +1861,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		}
 		table := firstNonEmpty(row.text("routing-table"), "main")
 		state.Routes = append(state.Routes, &RouteEntry{ID: row.id(), Dst: dst.String(), Gateway: row.text("gateway"),
-			Enabled: !rosTruthy(row["disabled"]), Comment: row.text("comment"), Table: table, Active: active, Distance: distance})
+			Enabled: !rosFlag(row["disabled"]), Comment: row.text("comment"), Table: table, Active: active, Distance: distance})
 	}
 	for _, row := range nats {
 		comment := row.text("comment")
@@ -1931,7 +1893,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 			return nil, marshalErr
 		}
 		state.NatBypass = append(state.NatBypass, &NatBypassEntry{ID: row.id(), Dst: dst, Src: src,
-			Enabled: !rosTruthy(row["disabled"]), Comment: comment, Attributes: encoded})
+			Enabled: !rosFlag(row["disabled"]), Comment: comment, Attributes: encoded})
 	}
 	if len(d.policyManifest) != 0 {
 		if err := d.filterPolicyMangle(contextRows); err != nil && !errors.Is(err, ErrNotPorted) {

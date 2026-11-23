@@ -183,7 +183,7 @@ func TestR09WritesAndRollbackFinishAfterCancellation(t *testing.T) {
 			}
 			for _, rows := range f.Snapshot().Tables {
 				for _, row := range rows {
-					if strings.HasPrefix(Row(row).text("comment"), dnsGuardPrefix) {
+					if strings.HasPrefix(fmt.Sprint(row["comment"]), dnsGuardPrefix) {
 						t.Fatal("left owned objects")
 					}
 				}
@@ -507,10 +507,10 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	for _, path := range dnsGuardPaths {
 		next := 1
 		for _, row := range tc.State.Tables[path] {
-			if !strings.HasPrefix(Row(row).text("comment"), dnsGuardPrefix) {
+			if !strings.HasPrefix(fmt.Sprint(row["comment"]), dnsGuardPrefix) {
 				continue
 			}
-			old := Row(row).id()
+			old := fmt.Sprint(row[".id"])
 			id := fmt.Sprintf("*%X", next)
 			next++
 			ids[[2]string{path, old}] = id
@@ -549,7 +549,7 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	for _, id := range []string{"*20", "*21"} {
 		present := false
 		for _, row := range got.Tables[rosNAT] {
-			if Row(row).id() == id {
+			if row[".id"] == id {
 				present = true
 			}
 		}

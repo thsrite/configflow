@@ -347,7 +347,12 @@ func (d *Ikuai) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
 		address == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
 		return nil, routerError(messageIkuaiDHCPAddress)
 	}
-	before := ikuaiRow(entry.AttributesRow())
+	// The stored iKuai record keeps its numbers (decoded as float64, as the
+	// before-image has always been).
+	var before ikuaiRow
+	if entry != nil {
+		_ = json.Unmarshal(entry.Attributes, &before)
+	}
 	// The UI requires both fields. Both are set to the same DNS so no blank
 	// value can inherit a firmware-specific fallback resolver; the read-back
 	// lists the server once.

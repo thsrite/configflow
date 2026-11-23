@@ -38,7 +38,7 @@ func r09EvalCases() []r09EvalCase {
 			}
 		}
 	}
-	for _, variant := range []string{"all_unknown_accept_drop", "both_unknown_drop", "return", "jump_missing", "jump_loop", "disabled", "invalid", "passthrough", "log", "action_unknown", "action_empty", "action_null", "action_bool", "unreadable", "branch_budget"} {
+	for _, variant := range []string{"all_unknown_accept_drop", "both_unknown_drop", "return", "jump_missing", "jump_loop", "disabled", "invalid", "passthrough", "log", "action_unknown", "action_empty", "action_bool", "unreadable", "branch_budget"} {
 		s := r09Copy(base)
 		row := Row{"chain": "forward", "action": "drop"}
 		s.Filter = []Row{row}
@@ -67,10 +67,8 @@ func r09EvalCases() []r09EvalCase {
 			row["action"] = "fasttrack-connection"
 		case "action_empty":
 			row["action"] = ""
-		case "action_null":
-			row["action"] = nil
 		case "action_bool":
-			row["action"] = true
+			row["action"] = "true"
 		case "unreadable":
 			s.Filter = nil
 		case "branch_budget":
@@ -96,12 +94,13 @@ func r09EvalCases() []r09EvalCase {
 		s.Filter = []Row{mergeRows(row, Row{"chain": "forward", "action": "drop"})}
 		cases = append(cases, r09EvalCase{Name: fmt.Sprint(row), Snapshot: &s, Packet: p, Row: row, Family: 6})
 	}
-	for _, bad := range []any{nil, true, 7, []string{"LAN"}} {
+	// Non-text device values arrive as their text (Row decoding).
+	for _, bad := range []string{"", "true", "7", `["LAN"]`} {
 		s := r09Copy(base)
 		s.InterfaceLists = append(s.InterfaceLists, Row{"name": "malformed", "include": bad})
 		row := Row{"chain": "forward", "action": "accept", "in-interface-list": "malformed"}
 		s.Filter = []Row{row, {"chain": "forward", "action": "drop"}}
-		cases = append(cases, r09EvalCase{Name: fmt.Sprintf("malformed_include_%T", bad), Snapshot: &s, Packet: packet, Row: row, Family: 4})
+		cases = append(cases, r09EvalCase{Name: fmt.Sprintf("malformed_include_%q", bad), Snapshot: &s, Packet: packet, Row: row, Family: 4})
 	}
 	return cases
 }

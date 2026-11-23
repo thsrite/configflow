@@ -143,7 +143,7 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 		}
 		var taker Row
 		for _, row := range rows {
-			if !row.is("chain", "forward") || !policyEnabled(row) || row.is("action", "log") || row.is("action", "passthrough") || MatchPolicyRule(snapshot, row, packet) == PolicyNoMatch || rosTruthy(row["dynamic"]) || row.id() == "" {
+			if !row.is("chain", "forward") || !policyEnabled(row) || row.is("action", "log") || row.is("action", "passthrough") || MatchPolicyRule(snapshot, row, packet) == PolicyNoMatch || rosFlag(row["dynamic"]) || row.id() == "" {
 				continue
 			}
 			taker = row

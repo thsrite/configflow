@@ -256,7 +256,7 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 	if len(clients) > 1 {
 		names := []string{}
 		for _, r := range clients {
-			names = append(names, rosTextDefault(r["interface"], r.id()))
+			names = append(names, r.textOr("interface", r.id()))
 		}
 		return fail(fmt.Sprintf(messagePDManyClients, strings.Join(names, "、")))
 	}

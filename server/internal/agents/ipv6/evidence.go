@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net"
 	"net/netip"
 	"net/url"
@@ -47,9 +46,8 @@ func port(v any) int {
 	}
 	return n
 }
-func rowText(v any) string { s, _ := v.(string); return s }
 func endpoint(row routers.Row, dir string) (string, int) {
-	address := rowText(row[dir+"-address"])
+	address := row[dir+"-address"]
 	if host := ip(address); host != "" {
 		return host, port(row[dir+"-port"])
 	}
@@ -60,7 +58,7 @@ func endpoint(row routers.Row, dir string) (string, int) {
 	return "", 0
 }
 func rowMatches(row routers.Row, source string, sport int, destination string, dport int) bool {
-	if strings.ToLower(rowText(row["protocol"])) != "tcp" {
+	if strings.ToLower(row["protocol"]) != "tcp" {
 		return false
 	}
 	src, sp := endpoint(row, "src")
@@ -68,8 +66,8 @@ func rowMatches(row routers.Row, source string, sport int, destination string, d
 	return source != "" && destination != "" && sport > 0 && dport > 0 && src == source && sp == sport && dst == destination && dp == dport && hasPackets(row)
 }
 
-// Packet counters are non-negative uint64 values. Invalid/missing-type
-// counters are unknown, and overflow can never manufacture positive evidence.
+// Packet counters are non-negative uint64 values. Invalid counters are
+// unknown, and overflow can never manufacture positive evidence.
 func hasPackets(row routers.Row) bool {
 	positive := false
 	for _, key := range []string{"orig-packets", "orig-fasttrack-packets"} {
@@ -77,26 +75,7 @@ func hasPackets(row routers.Row) bool {
 		if !present {
 			continue
 		}
-		var n uint64
-		var err error
-		switch value := v.(type) {
-		case string:
-			n, err = strconv.ParseUint(strings.TrimSpace(value), 10, 64)
-		case json.Number:
-			n, err = strconv.ParseUint(value.String(), 10, 64)
-		case float64:
-			if value < 0 || value >= 18446744073709551616 || math.IsNaN(value) {
-				return false
-			}
-			n = uint64(value)
-		case int:
-			if value < 0 {
-				return false
-			}
-			n = uint64(value)
-		default:
-			return false
-		}
+		n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
 		if err != nil {
 			return false
 		}
@@ -173,7 +152,7 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 			}
 			s.baseline[family] = map[string]bool{}
 			for _, row := range rows {
-				s.baseline[family][rowText(row[".id"])] = true
+				s.baseline[family][row[".id"]] = true
 			}
 		}
 	}
@@ -194,7 +173,7 @@ func observe(ctx context.Context, config, source Document, testURL string, ready
 					continue
 				}
 				for _, row := range rows {
-					id := rowText(row[".id"])
+					id := row[".id"]
 					if id != "" && !baseline[id] && len(s.rows) < 256 {
 						s.rows[strconv.Itoa(family)+"\n"+id] = row
 					}

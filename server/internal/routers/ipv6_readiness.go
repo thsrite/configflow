@@ -115,9 +115,8 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	dns := Row{}
 	value, e := d.get(ctx, "/ip/dns", rosTimeout)
 	if e == nil {
-		m, ok := value.(map[string]any)
-		if ok {
-			dns = Row(m)
+		if m := asRow(value); m != nil {
+			dns = m
 		} else {
 			e = routerError(messageReadinessDNS)
 		}
@@ -154,7 +153,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	}
 	defaults := []Row{}
 	for _, row := range snapshot["routes"] {
-		if row.is("dst-address", "::/0") && rosTextDefault(row["routing-table"], "main") == "main" && ipv6Enabled(row) && policyFlag(row["active"]) && !policyFlag(row["blackhole"]) && !policyFlag(row["unreachable"]) && !policyFlag(row["prohibit"]) {
+		if row.is("dst-address", "::/0") && row.textOr("routing-table", "main") == "main" && ipv6Enabled(row) && policyFlag(row["active"]) && !policyFlag(row["blackhole"]) && !policyFlag(row["unreachable"]) && !policyFlag(row["prohibit"]) {
 			defaults = append(defaults, row)
 		}
 	}
@@ -223,7 +222,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		rows, conflicts := []Row{}, []Row{}
 		for _, row := range snapshot["routes"] {
 			p, ok := ipv6Network(row.text("dst-address"))
-			if rosTextDefault(row["routing-table"], "main") != "main" || !ok {
+			if row.textOr("routing-table", "main") != "main" || !ok {
 				continue
 			}
 			if p == target {
@@ -359,7 +358,7 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 		return nil, e
 	}
 	for _, r := range rows {
-		if ipv6Key(r) == p.String() && rosTextDefault(r["routing-table"], "main") == "main" {
+		if ipv6Key(r) == p.String() && r.textOr("routing-table", "main") == "main" {
 			return nil, routerError(messageReadinessRouteChanged)
 		}
 	}

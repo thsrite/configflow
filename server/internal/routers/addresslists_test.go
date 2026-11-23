@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -44,7 +45,11 @@ func TestAddressListBoundary(t *testing.T) {
 				case "digest":
 					converted := []routers.Row{}
 					for _, row := range rows {
-						converted = append(converted, routers.Row(row))
+						// As the driver decodes the device reply.
+						data, _ := json.Marshal(row)
+						var decoded routers.Row
+						_ = json.Unmarshal(data, &decoded)
+						converted = append(converted, decoded)
 					}
 					v := routers.DigestAddresses(converted)
 					result = []any{v.Count, v.MD5}

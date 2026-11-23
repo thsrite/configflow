@@ -1,7 +1,9 @@
 package routers
 
 import (
+	"configflow/internal/jsondecode"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/netip"
@@ -52,14 +54,11 @@ func ClientDuration(text string) *int64 {
 	}
 	return &n
 }
-func clientTrue(v any) bool {
-	return v == true || strings.EqualFold(rosText(v), "true") || strings.EqualFold(rosText(v), "yes")
-}
-func clientEnabled(row Row) bool { return !clientTrue(row["disabled"]) && !clientTrue(row["invalid"]) }
+func clientEnabled(row Row) bool { return !rosFlag(row["disabled"]) && !rosFlag(row["invalid"]) }
 func clientLAN(servers, addresses []Row, wan map[string]bool) map[string]bool {
 	lan := map[string]bool{}
 	for _, s := range servers {
-		if name := rosText(s["interface"]); name != "" && !clientTrue(s["disabled"]) {
+		if name := s["interface"]; name != "" && !rosFlag(s["disabled"]) {
 			lan[name] = true
 		}
 	}
@@ -67,9 +66,9 @@ func clientLAN(servers, addresses []Row, wan map[string]bool) map[string]bool {
 		return lan
 	}
 	for _, s := range addresses {
-		name := rosText(s["interface"])
-		a, err := netip.ParseAddr(strings.Split(rosText(s["address"]), "/")[0])
-		if name != "" && clientEnabled(s) && !clientTrue(s["dynamic"]) && !wan[name] && err == nil && a.Is4() && a.IsPrivate() {
+		name := s["interface"]
+		a, err := netip.ParseAddr(strings.Split(s["address"], "/")[0])
+		if name != "" && clientEnabled(s) && !rosFlag(s["dynamic"]) && !wan[name] && err == nil && a.Is4() && a.IsPrivate() {
 			lan[name] = true
 		}
 	}
@@ -90,31 +89,31 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 	periods := map[string]*int64{}
 	ifaces := map[string]string{}
 	for _, row := range servers {
-		name := rosText(row["name"])
-		ifaces[name] = rosText(row["interface"])
-		if n := ClientDuration(rosText(row["lease-time"])); n != nil && *n != 0 {
+		name := row["name"]
+		ifaces[name] = row["interface"]
+		if n := ClientDuration(row["lease-time"]); n != nil && *n != 0 {
 			periods[name] = n
 		}
 	}
 	for _, row := range arp {
-		ip := routerdoc.IPv4(rosText(row["address"]))
-		iface := rosText(row["interface"])
+		ip := routerdoc.IPv4(row["address"])
+		iface := row["interface"]
 		if ip == "" || !lan[iface] || !clientEnabled(row) {
 			continue
 		}
-		status := strings.ToLower(rosText(row["status"]))
+		status := strings.ToLower(row["status"])
 		old, exists := entries[ip]
 		if !exists || clientARPOnline(status) && !clientARPOnline(old.status) {
-			entries[ip] = clientARP{status, routerdoc.NormalizeMAC(rosText(row["mac-address"])), iface, strings.TrimSpace(rosText(row["comment"]))}
+			entries[ip] = clientARP{status, routerdoc.NormalizeMAC(row["mac-address"]), iface, strings.TrimSpace(row["comment"])}
 		}
 	}
 	for _, row := range leases {
-		ip := routerdoc.IPv4(firstText(row["active-address"], row["address"]))
-		if ip == "" || clientTrue(row["disabled"]) {
+		ip := routerdoc.IPv4(firstNonEmpty(row["active-address"], row["address"]))
+		if ip == "" || rosFlag(row["disabled"]) {
 			continue
 		}
-		name := rosText(row["server"])
-		period := ClientDuration(rosText(row["lease-time"]))
+		name := row["server"]
+		period := ClientDuration(row["lease-time"])
 		if period == nil || *period == 0 {
 			period = periods[name]
 			if period == nil {
@@ -128,7 +127,7 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 				}
 			}
 		}
-		l := clientLease{strings.ToLower(rosText(row["status"])), routerdoc.NormalizeMAC(firstText(row["active-mac-address"], row["mac-address"])), ifaces[name], firstNonEmpty(strings.TrimSpace(rosText(row["comment"])), strings.TrimSpace(rosText(row["host-name"]))), ClientDuration(rosText(row["last-seen"])), period, clientTrue(row["dynamic"])}
+		l := clientLease{strings.ToLower(row["status"]), routerdoc.NormalizeMAC(firstNonEmpty(row["active-mac-address"], row["mac-address"])), ifaces[name], firstNonEmpty(strings.TrimSpace(row["comment"]), strings.TrimSpace(row["host-name"])), ClientDuration(row["last-seen"]), period, rosFlag(row["dynamic"])}
 		old, exists := byIP[ip]
 		if !exists || l.last != nil && (old.last == nil || *l.last < *old.last) {
 			byIP[ip] = l
@@ -205,21 +204,21 @@ func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Dur
 	if err != nil {
 		return nil, false, err
 	}
-	items, ok := v.([]any)
-	if !ok {
+	var items []json.RawMessage
+	if replyKind(v) != '[' || jsondecode.Decode(v, &items) != nil {
 		return nil, false, routerError(fmt.Sprintf(messageROSListFormat, path))
 	}
 	rows := make([]Row, 0, len(items))
 	complete := true
-	for _, v := range items {
-		r, ok := v.(map[string]any)
-		if !ok {
+	for _, item := range items {
+		r := asRow(item)
+		if r == nil {
 			// A corrupt row has no trustworthy identity. Keep healthy peers but
 			// do not use this partial scan as evidence that a host is absent.
 			complete = false
 			continue
 		}
-		rows = append(rows, Row(r))
+		rows = append(rows, r)
 	}
 	return rows, complete, nil
 }
@@ -303,8 +302,8 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 			rows, _, err := d.clientList(ctx, "/ip/arp", budget)
 			if err == nil {
 				for _, row := range rows {
-					if lan[rosText(row["interface"])] {
-						now[routerdoc.IPv4(rosText(row["address"]))] = strings.ToLower(rosText(row["status"]))
+					if lan[row["interface"]] {
+						now[routerdoc.IPv4(row["address"])] = strings.ToLower(row["status"])
 					}
 				}
 			}
@@ -374,8 +373,8 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 		members, _ := listing("/interface/list/member")
 		wan := map[string]bool{}
 		for _, row := range members {
-			if strings.EqualFold(rosText(row["list"]), "WAN") {
-				wan[rosText(row["interface"])] = true
+			if strings.EqualFold(row["list"], "WAN") {
+				wan[row["interface"]] = true
 			}
 		}
 		lan = clientLAN(nil, addresses, wan)
@@ -392,11 +391,11 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 		return nil, routerError(messageClientsNoInterface)
 	}
 	for _, row := range addresses {
-		value := rosText(row["address"])
+		value := row["address"]
 		if ip := routerdoc.IPv4(strings.Split(value, "/")[0]); ip != "" {
 			r.Own[ip] = true
 		}
-		if lan[rosText(row["interface"])] && clientEnabled(row) {
+		if lan[row["interface"]] && clientEnabled(row) {
 			if p, ok := clientInterface(value); ok {
 				r.LAN = append(r.LAN, p.Masked())
 			}
