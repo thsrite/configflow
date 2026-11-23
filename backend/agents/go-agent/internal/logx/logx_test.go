@@ -116,6 +116,24 @@ func TestRedactSecrets(t *testing.T) {
 			wantSub: "private_key=[REDACTED]",
 		},
 		{
+			name:    "registration key kv json and env",
+			input:   `registration_key=rk-secret-1 {"registration_key":"rk-secret-2"} AGENT_REGISTRATION_KEY=rk-secret-3`,
+			secrets: []string{"rk-secret-1", "rk-secret-2", "rk-secret-3"},
+			wantSub: "registration_key=[REDACTED]",
+		},
+		{
+			name:    "hyphenated private-key and api-key",
+			input:   "wireguard private-key = WGpriv11= api-key: ak-secret-12",
+			secrets: []string{"WGpriv11", "ak-secret-12"},
+			wantSub: "private-key = [REDACTED]",
+		},
+		{
+			name:    "markers keep a single closing bracket",
+			input:   "Authorization: Bearer abcdefghij8 then https://sub.example.test/s?token=sub-tok-5",
+			secrets: []string{"abcdefghij8", "sub-tok-5", "]]"},
+			wantSub: "Authorization: [REDACTED] then https://sub.example.test/s?token=[REDACTED]",
+		},
+		{
 			name:    "control characters neutralized",
 			input:   "hello\r\n2026-01-01 00:00:00,000 - agent - INFO - forged",
 			secrets: []string{"\r", "\n"},

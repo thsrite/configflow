@@ -18,14 +18,17 @@ var (
 	embeddedHTTPURL = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 	// Authorization headers and Bearer/Basic schemes.
-	authHeaderSchemeRe = regexp.MustCompile(`(?i)\b(authorization\s*[:=]\s*)(?:bearer|basic)\s+[^\s,;'"}\]]+`)
-	authHeaderValueRe  = regexp.MustCompile(`(?i)\b(authorization\s*[:=]\s*)[^\s,;'"}\]]+`)
+	authHeaderSchemeRe = regexp.MustCompile(`(?i)\b(authorization\s*[:=]\s*)(?:bearer|basic)\s+[^\s,;'"}\[\]]+`)
+	authHeaderValueRe  = regexp.MustCompile(`(?i)\b(authorization\s*[:=]\s*)[^\s,;'"}\[\]]+`)
 	bearerBasicRe      = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}`)
 	sensitiveHeaderRe  = regexp.MustCompile(`(?i)\b(x-api-key|x-auth-token|cookie|set-cookie)\s*[:=]\s*[^\r\n,;]+`)
 
-	// Sensitive JSON and key=value / key: value fields.
-	sensitiveJSONFieldRe = regexp.MustCompile(`(?i)("(?:[a-z0-9_-]*(?:token|password|passwd|pwd|secret|api_?key|private_?key|privkey|credential|authorization)[a-z0-9_-]*)"\s*:\s*)"[^"]*"`)
-	sensitiveKVRe        = regexp.MustCompile(`(?i)\b([a-z0-9_-]*(?:token|password|passwd|pwd|secret|api_?key|private_?key|privkey|credential)[a-z0-9_-]*\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;'"}\]]+)`)
+	// Sensitive JSON and key=value / key: value fields. Any name ending in
+	// "_key"/"-key" (registration_key, AGENT_REGISTRATION_KEY, WireGuard
+	// private-key, api-key) counts as a credential. Values that already start
+	// with "[" (an earlier [REDACTED]) are left alone so markers stay intact.
+	sensitiveJSONFieldRe = regexp.MustCompile(`(?i)("(?:[a-z0-9_-]*(?:token|password|passwd|pwd|secret|apikey|privatekey|privkey|[_-]key|credential|authorization)[a-z0-9_-]*)"\s*:\s*)"[^"]*"`)
+	sensitiveKVRe        = regexp.MustCompile(`(?i)\b([a-z0-9_-]*(?:token|password|passwd|pwd|secret|apikey|privatekey|privkey|[_-]key|credential)[a-z0-9_-]*\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;'"}\[\]]+)`)
 )
 
 func isSensitiveKey(key string) bool {
