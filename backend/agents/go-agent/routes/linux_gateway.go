@@ -360,17 +360,26 @@ func gatewayCommands(spec LinuxGatewaySpec) []string {
 	return []string{"检查已部署 Mihomo 网关配置、网卡和默认路由；保留主机现有 IP 和默认路由", "保存原值并设置 net.ipv4.ip_forward=1", "保存原值并设置 net.ipv4.conf.all.send_redirects=0、net.ipv4.conf.default.send_redirects=0、net.ipv4.conf." + spec.Interface + ".send_redirects=0", "在独立 nftables 表 ip " + gatewayTable + " 中允许 LAN 转发，并将经 " + spec.Interface + " 转发的 " + spec.LANCIDR + " 出网流量 SNAT 为 " + spec.Address, "保存归属 journal；Agent 重启后恢复，撤销时只清理未被外部修改的受管资源"}
 }
 
-func gatewayManaged(cfg *Config) map[string]any {
-	result := map[string]any{"active": false, "healthy": false, "preserves_forwarding": aioForwardingConfigManaged()}
+func gatewayManaged(cfg *Config) LinuxGatewayManagedStatus {
+	result := LinuxGatewayManagedStatus{
+		Active:              false,
+		Healthy:             false,
+		PreservesForwarding: aioForwardingConfigManaged(),
+	}
 	state, err := loadGatewayState(cfg)
 	if err != nil {
-		result["error"] = err.Error()
+		result.Error = err.Error()
 		return result
 	}
 	if state == nil {
 		return result
 	}
-	result["active"], result["pending"], result["spec"], result["applied_at"] = state.Active, state.Pending, state.Spec, state.AppliedAt
+	pending := state.Pending
+	spec := state.Spec
+	result.Active = state.Active
+	result.Pending = &pending
+	result.Spec = &spec
+	result.AppliedAt = state.AppliedAt
 	objects, err := readGatewayNFT()
 	if err == nil {
 		err = checkGatewayOwnership(state, objects, true)
@@ -379,14 +388,14 @@ func gatewayManaged(cfg *Config) map[string]any {
 		err = checkGatewaySysctls(state)
 	}
 	if err != nil {
-		result["error"] = err.Error()
+		result.Error = err.Error()
 	} else {
-		result["healthy"] = state.Active && !state.Pending
+		result.Healthy = state.Active && !state.Pending
 	}
 	return result
 }
 
-func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) map[string]any {
+func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) LinuxGatewayPreviewResponse {
 	blockers := []string{}
 	add := func(err error) {
 		if err != nil {
@@ -445,7 +454,16 @@ func gatewayPreview(cfg *Config, spec LinuxGatewaySpec, profileID string) map[st
 	if validErr == nil {
 		commands = gatewayCommands(spec)
 	}
-	return map[string]any{"success": true, "ready": len(blockers) == 0, "spec": spec, "blockers": blockers, "warnings": []string{"仅处理 IPv4；客户端 IPv6、DoH 和未选中的真实 IP 不会自动代理。", "先发布 Mihomo 和 OxiDNS，再应用网关，最后只切换一台客户端的网关与 DNS 进行验证。", "只恢复独立受管网络资源；自定义防火墙或策略路由需要先核对。"}, "commands": commands, "detection": detection, "managed": gatewayManaged(cfg)}
+	return LinuxGatewayPreviewResponse{
+		Blockers:  blockers,
+		Commands:  commands,
+		Detection: detection,
+		Managed:   gatewayManaged(cfg),
+		Ready:     len(blockers) == 0,
+		Spec:      spec,
+		Success:   true,
+		Warnings:  []string{"仅处理 IPv4；客户端 IPv6、DoH 和未选中的真实 IP 不会自动代理。", "先发布 Mihomo 和 OxiDNS，再应用网关，最后只切换一台客户端的网关与 DNS 进行验证。", "只恢复独立受管网络资源；自定义防火墙或策略路由需要先核对。"},
+	}
 }
 
 func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
@@ -472,18 +490,25 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 		if action == "status" {
 			detection, err := detectGatewayNetwork()
 			enabled, _, configErr := gatewayConfigEnabled(cfg)
-			result := map[string]any{"success": true, "supported": gatewayPlatform(cfg) == nil, "enabled_in_config": enabled, "detection": detection, "managed": gatewayManaged(cfg)}
+			result := LinuxGatewayStatusResponse{
+				Detection:       detection,
+				EnabledInConfig: enabled,
+				ForwardFilter:   forwardFilter,
+				IPv4Forwarding:  aioForwardingStatus(cfg),
+				Managed:         gatewayManaged(cfg),
+				Success:         true,
+				Supported:       gatewayPlatform(cfg) == nil,
+				TUN:             aioTUNStatus(cfg),
+			}
 			if err != nil {
-				result["detection_error"] = err.Error()
+				result.DetectionError = err.Error()
 			}
 			if configErr != nil {
-				result["config_error"] = configErr.Error()
+				result.ConfigError = configErr.Error()
 			}
 			if err := gatewayPlatform(cfg); err != nil {
-				result["unsupported_reason"] = err.Error()
+				result.UnsupportedReason = err.Error()
 			}
-			result["ipv4_forwarding"], result["tun"] = aioForwardingStatus(cfg), aioTUNStatus(cfg)
-			result["forward_filter"] = forwardFilter
 			JsonResponse(w, 200, result)
 			return
 		}
@@ -499,11 +524,11 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&request); err != nil {
-				JsonResponse(w, 400, map[string]any{"success": false, "message": "网关参数无效：" + err.Error()})
+				JsonResponse(w, 400, MessageResponse{Success: false, Message: "网关参数无效：" + err.Error()})
 				return
 			}
 			if err := decoder.Decode(new(any)); err != io.EOF {
-				JsonResponse(w, 400, map[string]any{"success": false, "message": "请求只能包含一个 JSON 对象"})
+				JsonResponse(w, 400, MessageResponse{Success: false, Message: "请求只能包含一个 JSON 对象"})
 				return
 			}
 		}
@@ -513,7 +538,7 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 		}
 		release, err := AcquireServiceOperation(cfg)
 		if err != nil {
-			JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error()})
+			JsonResponse(w, 409, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		defer release()
@@ -523,10 +548,14 @@ func LinuxGatewayHandler(cfg *Config, action string) http.HandlerFunc {
 			err = removeLinuxGateway(cfg)
 		}
 		if err != nil {
-			JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error(), "managed": gatewayManaged(cfg)})
+			JsonResponse(w, 409, LinuxGatewayActionResponse{Managed: gatewayManaged(cfg), Message: err.Error(), Success: false})
 			return
 		}
-		JsonResponse(w, 200, map[string]any{"success": true, "message": map[string]string{"apply": "网关转发已配置；请按引导验证一台客户端", "remove": "受管网关配置已撤销；请恢复客户端原来的网关和 DNS 设置"}[action], "managed": gatewayManaged(cfg)})
+		JsonResponse(w, 200, LinuxGatewayActionResponse{
+			Managed: gatewayManaged(cfg),
+			Message: map[string]string{"apply": "网关转发已配置；请按引导验证一台客户端", "remove": "受管网关配置已撤销；请恢复客户端原来的网关和 DNS 设置"}[action],
+			Success: true,
+		})
 	}
 }
 
@@ -541,25 +570,31 @@ func linuxGatewayForwarding(cfg *Config, w http.ResponseWriter, r *http.Request)
 	err := decoder.Decode(&request)
 	if err == nil {
 		if err := decoder.Decode(new(any)); err != io.EOF {
-			JsonResponse(w, 400, map[string]any{"success": false, "message": "请求只能包含一个 JSON 对象"})
+			JsonResponse(w, 400, MessageResponse{Success: false, Message: "请求只能包含一个 JSON 对象"})
 			return
 		}
 	} else if err != io.EOF {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": "转发参数无效：" + err.Error()})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "转发参数无效：" + err.Error()})
 		return
 	}
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error(), "ipv4_forwarding": aioForwardingStatus(cfg)})
+		JsonResponse(w, 409, LinuxGatewayForwardingErrorResponse{IPv4Forwarding: aioForwardingStatus(cfg), Message: err.Error(), Success: false})
 		return
 	}
 	defer release()
 	result, err := persistAIOForwarding(cfg, request.PrepareTUN)
 	if err != nil {
-		JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error(), "ipv4_forwarding": aioForwardingStatus(cfg)})
+		JsonResponse(w, 409, LinuxGatewayForwardingErrorResponse{IPv4Forwarding: aioForwardingStatus(cfg), Message: err.Error(), Success: false})
 		return
 	}
-	JsonResponse(w, 200, map[string]any{"success": true, "message": "IPv4 转发已开启并持久化", "ipv4_forwarding": aioForwardingStatus(cfg), "tun_prepare": result["tun_prepare"], "managed": gatewayManaged(cfg)})
+	JsonResponse(w, 200, LinuxGatewayForwardingSuccessResponse{
+		IPv4Forwarding: aioForwardingStatus(cfg),
+		Managed:        gatewayManaged(cfg),
+		Message:        "IPv4 转发已开启并持久化",
+		Success:        true,
+		TUNPrepare:     result["tun_prepare"],
+	})
 }
 
 // gatewayNotReady marks only transient host readiness failures. Ownership,

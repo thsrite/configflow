@@ -46,7 +46,7 @@ func RestartHandler(cfg *Config) http.HandlerFunc {
 
 		logger.Info("Service restarted successfully.")
 		ReconcileLinuxGateway(cfg)
-		JsonResponse(w, http.StatusOK, map[string]string{"success": "true", "message": "Service restarted"})
+		JsonResponse(w, http.StatusOK, StringStatusMessageResponse{Message: "Service restarted", Success: "true"})
 	}
 }
 

@@ -70,18 +70,18 @@ func TestCollectReturnRouting(t *testing.T) {
 		return "", errors.New("unexpected command")
 	}
 	result := collectReturnRouting(&Config{})
-	if result["nft_available"] != true || result["iproute_available"] != true {
+	if !result.NFTAvailable || !result.IPRouteAvailable {
 		t.Fatalf("availability flags: %v", result)
 	}
-	tables := result["return_tables"].([]returnTable)
+	tables := result.ReturnTables
 	if len(tables) != 1 || tables[0].Name != "mihomo_return" {
 		t.Fatalf("return tables = %v", tables)
 	}
-	routes := result["table_routes"].(map[string][]string)
+	routes := result.TableRoutes
 	if len(routes["104"]) != 2 {
 		t.Fatalf("table routes = %v", routes)
 	}
-	if tun := result["tun_devices"].([]string); !reflect.DeepEqual(tun, []string{"Meta"}) {
+	if tun := result.TunDevices; !reflect.DeepEqual(tun, []string{"Meta"}) {
 		t.Fatalf("tun = %v", tun)
 	}
 }
@@ -92,7 +92,7 @@ func TestCollectReturnRoutingWithoutTools(t *testing.T) {
 	listInterfaces = func() []string { return nil }
 	runCommand = func(string, ...string) (string, error) { return "", errors.New("not found") }
 	result := collectReturnRouting(&Config{})
-	if result["nft_available"] != false || result["iproute_available"] != false || result["success"] != true {
+	if result.NFTAvailable || result.IPRouteAvailable || !result.Success {
 		t.Fatalf("missing tools must still report: %v", result)
 	}
 }

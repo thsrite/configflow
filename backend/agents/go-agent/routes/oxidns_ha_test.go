@@ -612,8 +612,8 @@ func TestOxiDNSHAStatus(t *testing.T) {
 	f := newHAFixture(t)
 	f.writeOxiDNS(t, "127.0.0.1:1") // the health probe gets a fast refusal
 	status := haStatus(f.cfg)
-	runtime := status["runtime"].(map[string]any)
-	if status["managed"] != nil || status["protocol"] != 1 || runtime["role"] != "unknown" || runtime["keepalived_running"] != false || runtime["healthy"] != false {
+	runtime := status.Runtime
+	if status.Managed != nil || status.Protocol != 1 || runtime.Role != "unknown" || runtime.KeepalivedRunning || runtime.Healthy {
 		t.Fatalf("unmanaged status: %#v", status)
 	}
 	f.writeOxiDNS(t, "0.0.0.0:53")
@@ -622,17 +622,17 @@ func TestOxiDNSHAStatus(t *testing.T) {
 	}
 	f.writeOxiDNS(t, "0.0.0.0:1")
 	status = haStatus(f.cfg)
-	runtime = status["runtime"].(map[string]any)
-	managed := status["managed"].(map[string]any)
-	if managed["active"] != true || runtime["role"] != "backup" || runtime["vip_present"] != false || runtime["keepalived_running"] != true || status["error"] != "" {
+	runtime = status.Runtime
+	managed := status.Managed
+	if managed == nil || !managed.Active || runtime.Role != "backup" || runtime.VIPPresent || !runtime.KeepalivedRunning || status.Error != "" {
 		t.Fatalf("backup status: %#v", status)
 	}
 	f.addresses = `[{"ifname":"eth0","addr_info":[{"local":"192.168.0.20","prefixlen":24},{"local":"192.168.0.2","prefixlen":24}]}]`
-	if runtime := haStatus(f.cfg)["runtime"].(map[string]any); runtime["role"] != "master" || runtime["vip_present"] != true {
+	if runtime := haStatus(f.cfg).Runtime; runtime.Role != "master" || !runtime.VIPPresent {
 		t.Fatalf("master status: %#v", runtime)
 	}
 	os.Remove(haConfigPath())
-	if status := haStatus(f.cfg); !strings.Contains(status["error"].(string), "缺失或与记录不一致") {
+	if status := haStatus(f.cfg); !strings.Contains(status.Error, "缺失或与记录不一致") {
 		t.Fatalf("drift not reported: %#v", status)
 	}
 }

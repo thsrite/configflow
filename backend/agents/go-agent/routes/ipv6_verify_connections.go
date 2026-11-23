@@ -71,7 +71,7 @@ func ipv6VerifyConnectionsHandler(cfg *Config, w http.ResponseWriter, r *http.Re
 		RequestID string `json:"request_id"`
 	}
 	if decodeIPv6Request(w, r, &request) != nil || (request.SourceIP != "" && net.ParseIP(request.SourceIP) == nil) || len(request.Host) > 253 || !ipv6VerifyDomain.MatchString(request.Host) || (request.RequestID != "" && !ipv6VerifyRequestID.MatchString(request.RequestID)) || !ipv6VerifySupported(cfg) || cfg.ServiceType != "mihomo" {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": "连接观察参数无效"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "连接观察参数无效"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)

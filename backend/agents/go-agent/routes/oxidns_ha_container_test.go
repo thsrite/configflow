@@ -288,7 +288,7 @@ func TestHAContainerStatusAndRecoveryRejectChangedEnvironment(t *testing.T) {
 			if err := saveHAState(f.cfg, state); err != nil {
 				t.Fatal(err)
 			}
-			if result := haStatus(f.cfg); result["error"] == "" {
+			if result := haStatus(f.cfg); result.Error == "" {
 				t.Fatalf("unsafe environment looked healthy: %+v", result)
 			}
 			f.commands = nil

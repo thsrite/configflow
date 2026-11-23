@@ -36,19 +36,19 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 		if sourceID := r.URL.Query().Get("source"); sourceID != "" {
 			source, ok := findLogSource(cfg, sourceID)
 			if !ok {
-				JsonResponse(w, http.StatusOK, map[string]any{"success": false, "message": "未知的日志来源: " + sourceID})
+				JsonResponse(w, http.StatusOK, MessageResponse{Success: false, Message: "未知的日志来源: " + sourceID})
 				return
 			}
 			logs, err := ReadLogSource(source, lines)
 			if err != nil {
-				JsonResponse(w, http.StatusOK, map[string]any{"success": false, "message": err.Error(), "source": source})
+				JsonResponse(w, http.StatusOK, LogSourceErrorResponse{Message: err.Error(), Source: source, Success: false})
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]any{
-				"success":      true,
-				"logs":         logs,
-				"source":       source,
-				"service_name": cfg.ServiceName,
+			JsonResponse(w, http.StatusOK, LogSourceContentResponse{
+				Logs:        logs,
+				ServiceName: cfg.ServiceName,
+				Source:      source,
+				Success:     true,
 			})
 			return
 		}
@@ -57,13 +57,13 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 		if logPath := r.URL.Query().Get("log_path"); logPath != "" {
 			logs, err := ReadLogSource(LogSource{Kind: "file", Path: logPath}, lines)
 			if err != nil {
-				JsonResponse(w, http.StatusOK, map[string]any{"success": false, "message": err.Error()})
+				JsonResponse(w, http.StatusOK, MessageResponse{Success: false, Message: err.Error()})
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]any{
-				"success":      true,
-				"logs":         logs,
-				"service_name": cfg.ServiceName,
+			JsonResponse(w, http.StatusOK, LogPathContentResponse{
+				Logs:        logs,
+				ServiceName: cfg.ServiceName,
+				Success:     true,
 			})
 			return
 		}
@@ -71,11 +71,11 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 		// 未指定路径，使用自动检测
 		logs, errLogs := getLogDataWithAgentLog(cfg.ServiceType, cfg.ConfigPath, lines, AgentLogPath(cfg), cfg.ServiceUnit)
 
-		JsonResponse(w, http.StatusOK, map[string]any{
-			"success":      true,
-			"logs":         logs,
-			"error_logs":   errLogs,
-			"service_name": cfg.ServiceName,
+		JsonResponse(w, http.StatusOK, DefaultLogsResponse{
+			ErrorLogs:   errLogs,
+			Logs:        logs,
+			ServiceName: cfg.ServiceName,
+			Success:     true,
 		})
 	}
 }
@@ -83,9 +83,9 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 // LogSourcesHandler 列出本机可读的日志来源
 func LogSourcesHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		JsonResponse(w, http.StatusOK, map[string]any{
-			"success": true,
-			"sources": ResolveLogSources(cfg),
+		JsonResponse(w, http.StatusOK, LogSourcesResponse{
+			Sources: ResolveLogSources(cfg),
+			Success: true,
 		})
 	}
 }
@@ -94,9 +94,9 @@ func LogSourcesHandler(cfg *Config) http.HandlerFunc {
 func ClearLogHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			JsonResponse(w, http.StatusMethodNotAllowed, map[string]any{
-				"success": false,
-				"message": "Method not allowed",
+			JsonResponse(w, http.StatusMethodNotAllowed, MessageResponse{
+				Message: "Method not allowed",
+				Success: false,
 			})
 			return
 		}
@@ -106,18 +106,18 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 			Source  string `json:"source"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.LogPath == "" && req.Source == "") {
-			JsonResponse(w, http.StatusBadRequest, map[string]any{
-				"success": false,
-				"message": "source or log_path is required",
+			JsonResponse(w, http.StatusBadRequest, MessageResponse{
+				Message: "source or log_path is required",
+				Success: false,
 			})
 			return
 		}
 		if req.Source != "" {
 			source, ok := findLogSource(cfg, req.Source)
 			if !ok || !source.Clearable {
-				JsonResponse(w, http.StatusOK, map[string]any{
-					"success": false,
-					"message": "该日志来源不支持清空",
+				JsonResponse(w, http.StatusOK, MessageResponse{
+					Message: "该日志来源不支持清空",
+					Success: false,
 				})
 				return
 			}
@@ -127,17 +127,17 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 		// 检查文件是否存在
 		info, err := os.Stat(req.LogPath)
 		if os.IsNotExist(err) {
-			JsonResponse(w, http.StatusOK, map[string]any{
-				"success": true,
-				"message": "日志文件不存在，无需清空",
+			JsonResponse(w, http.StatusOK, MessageResponse{
+				Message: "日志文件不存在，无需清空",
+				Success: true,
 			})
 			return
 		}
 		// 只清空普通的日志文件，避免误清配置或设备文件
 		if err != nil || !info.Mode().IsRegular() || !strings.Contains(filepath.Base(req.LogPath), ".log") {
-			JsonResponse(w, http.StatusOK, map[string]any{
-				"success": false,
-				"message": "只能清空文件名包含 .log 的普通文件",
+			JsonResponse(w, http.StatusOK, MessageResponse{
+				Message: "只能清空文件名包含 .log 的普通文件",
+				Success: false,
 			})
 			return
 		}
@@ -145,17 +145,17 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 		// 清空文件内容
 		if err := os.WriteFile(req.LogPath, []byte(""), 0644); err != nil {
 			logger.Errorf("清空日志文件失败: %s, error: %v", req.LogPath, err)
-			JsonResponse(w, http.StatusInternalServerError, map[string]any{
-				"success": false,
-				"message": fmt.Sprintf("清空日志失败: %v", err),
+			JsonResponse(w, http.StatusInternalServerError, MessageResponse{
+				Message: fmt.Sprintf("清空日志失败: %v", err),
+				Success: false,
 			})
 			return
 		}
 
 		logger.Infof("日志文件已清空: %s", req.LogPath)
-		JsonResponse(w, http.StatusOK, map[string]any{
-			"success": true,
-			"message": "日志已清空",
+		JsonResponse(w, http.StatusOK, MessageResponse{
+			Message: "日志已清空",
+			Success: true,
 		})
 	}
 }
@@ -206,10 +206,10 @@ func PortBasedLogsHandler(cfg *Config) http.HandlerFunc {
 		// 如果指定了 log_path，直接读取该文件
 		if logPath := r.URL.Query().Get("log_path"); logPath != "" {
 			logs := readLogFile(logPath, lines)
-			JsonResponse(w, http.StatusOK, map[string]any{
-				"success":      true,
-				"logs":         escapeLogsForJSON(logs),
-				"service_name": serviceName,
+			JsonResponse(w, http.StatusOK, LogPathContentResponse{
+				Logs:        escapeLogsForJSON(logs),
+				ServiceName: serviceName,
+				Success:     true,
 			})
 			return
 		}
@@ -217,11 +217,11 @@ func PortBasedLogsHandler(cfg *Config) http.HandlerFunc {
 		// 未指定路径，使用自动检测
 		logs, errLogs := getLogDataWithAgentLog(serviceType, configPath, lines, AgentLogPath(cfg), cfg.ServiceUnit)
 
-		JsonResponse(w, http.StatusOK, map[string]any{
-			"success":      true,
-			"logs":         logs,
-			"error_logs":   errLogs,
-			"service_name": serviceName,
+		JsonResponse(w, http.StatusOK, DefaultLogsResponse{
+			ErrorLogs:   errLogs,
+			Logs:        logs,
+			ServiceName: serviceName,
+			Success:     true,
 		})
 	}
 }

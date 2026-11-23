@@ -59,7 +59,7 @@ func TestLinuxGatewayRealNFTSerializationLifecycle(t *testing.T) {
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
 		t.Fatal(err)
 	}
-	if managed := gatewayManaged(f.cfg); managed["healthy"] != true {
+	if managed := gatewayManaged(f.cfg); !managed.Healthy {
 		t.Fatalf("real nft response not healthy: %+v", managed)
 	}
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {

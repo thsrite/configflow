@@ -385,7 +385,7 @@ func TestReturnRoutingMovesBetweenDestinationAndRouterProtocols(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["safety_version"] != returnProtocolByRouter {
+	if result.SafetyVersion != returnProtocolByRouter {
 		t.Fatalf("apply result = %v", result)
 	}
 	rules := jsonText(host.nft)
@@ -401,7 +401,7 @@ func TestReturnRoutingMovesBetweenDestinationAndRouterProtocols(t *testing.T) {
 	if owner["token"] != initial["token"] || state["active"] != true || owner["pending"] != false {
 		t.Fatalf("ownership was lost switching protocols: %v", state)
 	}
-	if status := managedReturnStatus(cfg); status["safety_version"] != returnProtocolByRouter || status["table_present"] != true {
+	if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || status.SafetyVersion != returnProtocolByRouter || !status.TablePresent {
 		t.Fatalf("status = %v", status)
 	}
 	// An Agent restart finds the protocol 2 resources current and leaves them alone.
@@ -422,7 +422,7 @@ func TestReturnRoutingMovesBetweenDestinationAndRouterProtocols(t *testing.T) {
 func TestReturnSafetyStatusListsProtocols(t *testing.T) {
 	installFakeHost(t, &fakeHost{})
 	status := returnSafetyStatus(testConfig(t, tunConfig))
-	if status["version"] != 1 || !sameJSON(status["protocols"], []int{1, 2}) {
+	if status.Version != 1 || !sameJSON(status.Protocols, []int{1, 2}) {
 		t.Fatalf("status = %v", status)
 	}
 }
@@ -486,7 +486,7 @@ func TestReturnRoutingInvalidMihomoConfigRefusedWithoutWrites(t *testing.T) {
 					t.Fatalf("invalid mihomo evidence must block application: %v", err)
 				}
 				status := returnSafetyStatus(cfg)
-				if status["ok"] != false || len(status["blockers"].([]string)) == 0 {
+				if status.OK || len(status.Blockers) == 0 {
 					t.Fatalf("invalid mihomo evidence must block status: %v", status)
 				}
 				assertNoWrites(t, host)
@@ -585,7 +585,7 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["success"] != true {
+	if !result.Success {
 		t.Fatalf("apply = %v", result)
 	}
 	if len(host.routes) != 3 || len(host.rules) != 2 {
@@ -628,9 +628,9 @@ func TestReturnRoutingAddsAndPreciselyRemovesOwnedResources(t *testing.T) {
 			t.Errorf("published nft rules missing %q", wanted)
 		}
 	}
-	result, err = RemoveReturnRouting(cfg, false)
-	if err != nil || result["success"] != true {
-		t.Fatalf("remove = %v, %v", result, err)
+	removed, err := RemoveReturnRouting(cfg, false)
+	if err != nil || !removed.Success {
+		t.Fatalf("remove = %v, %v", removed, err)
 	}
 	if !sameJSON(host.routes, []map[string]any{foreignRoute}) || !sameJSON(host.rules, []map[string]any{foreignRule}) {
 		t.Fatalf("foreign routes/rules changed: %v %v", host.routes, host.rules)
@@ -713,7 +713,7 @@ func TestReturnRoutingBootReplayRepairsMissingOwnedResources(t *testing.T) {
 				t.Fatal(err)
 			}
 			initial := readStateJSON(t, cfg)["ownership"].(map[string]any)
-			if status := managedReturnStatus(cfg); status["table_present"] != true {
+			if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 				t.Fatalf("complete initial resources must be healthy: %v", status)
 			}
 			switch missing {
@@ -732,10 +732,10 @@ func TestReturnRoutingBootReplayRepairsMissingOwnedResources(t *testing.T) {
 				}
 			}
 			host.mutations = nil
-			if status := managedReturnStatus(cfg); status["table_present"] != false {
+			if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || status.TablePresent {
 				t.Fatalf("missing %s must not appear synchronized: %v", missing, status)
 			}
-			if safety := returnSafetyStatus(cfg); safety["ok"] != true {
+			if safety := returnSafetyStatus(cfg); !safety.OK {
 				t.Fatalf("missing owned resources should permit safe repair: %v", safety)
 			}
 			assertNoWrites(t, host)
@@ -748,7 +748,7 @@ func TestReturnRoutingBootReplayRepairsMissingOwnedResources(t *testing.T) {
 			if owner["token"] != initial["token"] || owner["metric"] != initial["metric"] {
 				t.Fatal("boot replay replaced durable ownership identity")
 			}
-			if status := managedReturnStatus(cfg); status["table_present"] != true {
+			if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 				t.Fatalf("repaired resources must pass full readback: %v", status)
 			}
 		})
@@ -802,7 +802,7 @@ func TestReturnRoutingBootReplayPreservesUnsafeOrInactiveState(t *testing.T) {
 				t.Fatal("refused boot replay changed resources or ownership")
 			}
 			if variant != "bad_config" {
-				if status := managedReturnStatus(cfg); status["table_present"] != false {
+				if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || status.TablePresent {
 					t.Fatalf("inactive or unproven resources must not appear healthy: %v", status)
 				}
 			}
@@ -820,7 +820,7 @@ func TestReturnRoutingFinalReadbackDetectsLostEarlierWrites(t *testing.T) {
 			installFakeHost(t, host)
 			cfg := testConfig(t, tunConfig)
 			result, err := ApplyReturnRouting(cfg, sampleSpec())
-			if err == nil || !strings.Contains(err.Error(), "最终回读不完整") || result["success"] == true {
+			if err == nil || !strings.Contains(err.Error(), "最终回读不完整") || result.Success {
 				t.Fatalf("lost %s must fail final confirmation: result=%v error=%v", lost, result, err)
 			}
 			if host.dropResourceAfterNFTAdd != "" {

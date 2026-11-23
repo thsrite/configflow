@@ -97,7 +97,7 @@ func lockReturnJournal(cfg *Config) (func(), error) {
 	return func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN); _ = file.Close() }, nil
 }
 
-func returnSafetyStatus(cfg *Config) map[string]any {
+func returnSafetyStatus(cfg *Config) ReturnRoutingSafetyStatus {
 	blockers := []string{}
 	state, err := loadReturnState(cfg)
 	var allocation returnAllocation
@@ -115,9 +115,14 @@ func returnSafetyStatus(cfg *Config) map[string]any {
 	if err != nil {
 		blockers = append(blockers, err.Error())
 	}
-	status := map[string]any{"version": 1, "protocols": returnProtocols, "ok": len(blockers) == 0, "blockers": blockers}
+	status := ReturnRoutingSafetyStatus{
+		Blockers:  blockers,
+		OK:        len(blockers) == 0,
+		Protocols: returnProtocols,
+		Version:   1,
+	}
 	if err == nil {
-		status["allocation"] = allocation
+		status.Allocation = &allocation
 	}
 	return status
 }
@@ -583,65 +588,65 @@ func cloneReturnState(state *returnRoutingState) *returnRoutingState {
 }
 
 // ApplyReturnRouting is called under returnRoutingMu by HTTP and boot replay.
-func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]any, error) {
+func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (ReturnRoutingApplyResponse, error) {
 	unlock, err := lockReturnJournal(cfg)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	defer unlock()
 	if gateway, err := loadGatewayState(cfg); err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	} else if gateway != nil && (gateway.Active || gateway.Pending) {
-		return nil, fmt.Errorf("Linux 网关已启用或尚未完成，请先撤销网关转发再配置自动回流")
+		return ReturnRoutingApplyResponse{}, fmt.Errorf("Linux 网关已启用或尚未完成，请先撤销网关转发再配置自动回流")
 	}
 	spec, err := prepareSpec(cfg, input)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	state, err := loadReturnState(cfg)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	if state != nil && (!validReturnOwner(state) || state.Legacy != nil) {
-		return nil, fmt.Errorf("已有回流状态缺少有效归属或事务未完成，保留现有规则，请先人工核对")
+		return ReturnRoutingApplyResponse{}, fmt.Errorf("已有回流状态缺少有效归属或事务未完成，保留现有规则，请先人工核对")
 	}
 	if state != nil && state.Ownership.Pending {
 		if err = recoverPendingReturn(cfg, state); err != nil {
-			return nil, err
+			return ReturnRoutingApplyResponse{}, err
 		}
 	}
 	resources, err := checkedResources(spec, state)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	routing, err := readMihomoRoutingStrict(cfg.ConfigPath)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	allocation, err := selectReturnAllocation(state, resources, routing)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	if allocation.Table != spec.Table || allocation.Priority != spec.Priority || allocation.Mark != fmt.Sprintf("0x%x", spec.mark) {
-		return nil, fmt.Errorf("回流资源分配已变化，请重新预览后发布（表 %d，优先级 %d，标记 %s）", allocation.Table, allocation.Priority, allocation.Mark)
+		return ReturnRoutingApplyResponse{}, fmt.Errorf("回流资源分配已变化，请重新预览后发布（表 %d，优先级 %d，标记 %s）", allocation.Table, allocation.Priority, allocation.Mark)
 	}
 	previous := cloneReturnState(state)
 	if state == nil {
 		owner, ownerErr := newReturnOwner()
 		if ownerErr != nil {
-			return nil, ownerErr
+			return ReturnRoutingApplyResponse{}, ownerErr
 		}
 		state = &returnRoutingState{Spec: spec.ReturnRoutingSpec, Ownership: owner}
 	}
 	state.Ownership.Pending = true
 	if err = saveReturnState(cfg, state); err != nil {
-		return nil, err
+		return ReturnRoutingApplyResponse{}, err
 	}
 	oldSpec := spec
 	if previous != nil {
 		oldSpec, err = validateSpec(previous.Spec)
 		if err != nil {
-			return nil, err
+			return ReturnRoutingApplyResponse{}, err
 		}
 	}
 	if err = removeOwnedReturn(cfg, oldSpec, state); err == nil {
@@ -651,7 +656,7 @@ func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]any, e
 	if err != nil {
 		cause := err
 		if cleanupErr := removeOwnedReturn(cfg, spec, state); cleanupErr != nil {
-			return nil, fmt.Errorf("回流应用失败：%v；安全撤销未完成，未删除无法确认归属的资源：%v", cause, cleanupErr)
+			return ReturnRoutingApplyResponse{}, fmt.Errorf("回流应用失败：%v；安全撤销未完成，未删除无法确认归属的资源：%v", cause, cleanupErr)
 		}
 		if previous != nil && previous.Active {
 			restoreSpec, restoreErr := prepareSpec(cfg, previous.Spec)
@@ -660,71 +665,77 @@ func ApplyReturnRouting(cfg *Config, input ReturnRoutingSpec) (map[string]any, e
 				restoreErr = addOwnedReturn(cfg, restoreSpec, state)
 			}
 			if restoreErr != nil {
-				return nil, fmt.Errorf("回流应用失败：%v；恢复原受管配置失败：%v", cause, restoreErr)
+				return ReturnRoutingApplyResponse{}, fmt.Errorf("回流应用失败：%v；恢复原受管配置失败：%v", cause, restoreErr)
 			}
 		}
 		state.Active = previous != nil && previous.Active
 		state.Ownership.Pending = false
 		if saveErr := saveReturnState(cfg, state); saveErr != nil {
-			return nil, fmt.Errorf("%v；保存撤销状态失败：%v", cause, saveErr)
+			return ReturnRoutingApplyResponse{}, fmt.Errorf("%v；保存撤销状态失败：%v", cause, saveErr)
 		}
-		return nil, cause
+		return ReturnRoutingApplyResponse{}, cause
 	}
 	state.Active = true
 	state.Ownership.Pending = false
 	state.AppliedAt = time.Now().Format(time.RFC3339)
 	disableSendRedirects(state, spec.LanInterface)
 	if err = saveReturnState(cfg, state); err != nil {
-		return nil, fmt.Errorf("回流状态保存失败，保留事务记录：%w", err)
+		return ReturnRoutingApplyResponse{}, fmt.Errorf("回流状态保存失败，保留事务记录：%w", err)
 	}
-	return map[string]any{"success": true, "safety_version": spec.SafetyVersion, "lan_interface": spec.LanInterface,
-		"lan_cidr": spec.lanCIDR, "router_mac": spec.routerMAC, "tun_device": spec.TunDevice}, nil
+	return ReturnRoutingApplyResponse{
+		LanCIDR:       spec.lanCIDR,
+		LanInterface:  spec.LanInterface,
+		RouterMAC:     spec.routerMAC,
+		SafetyVersion: spec.SafetyVersion,
+		Success:       true,
+		TunDevice:     spec.TunDevice,
+	}, nil
 }
 
-func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (map[string]any, error) {
+func RemoveReturnRouting(cfg *Config, restoreLegacy bool) (ReturnRoutingRemoveResponse, error) {
 	if restoreLegacy {
-		return nil, fmt.Errorf("禁止自动恢复或执行手工回流脚本")
+		return ReturnRoutingRemoveResponse{}, fmt.Errorf("禁止自动恢复或执行手工回流脚本")
 	}
 	unlock, err := lockReturnJournal(cfg)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
 	defer unlock()
 	state, err := loadReturnState(cfg)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
 	if state == nil {
-		return map[string]any{"success": true, "removed": false}, nil
+		return ReturnRoutingRemoveResponse{Removed: false, Success: true}, nil
 	}
 	if !validReturnOwner(state) || state.Legacy != nil {
-		return nil, fmt.Errorf("无法证明旧回流资源的归属，已保留全部现有规则")
+		return ReturnRoutingRemoveResponse{}, fmt.Errorf("无法证明旧回流资源的归属，已保留全部现有规则")
 	}
 	if state.Ownership.Pending {
 		if err = recoverPendingReturn(cfg, state); err != nil {
-			return nil, err
+			return ReturnRoutingRemoveResponse{}, err
 		}
 	}
 	spec, err := validateSpec(state.Spec)
 	if err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
 	if _, err = checkedResources(spec, state); err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
 	state.Ownership.Pending = true
 	if err = saveReturnState(cfg, state); err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
 	if err = removeOwnedReturn(cfg, spec, state); err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
 	state.Active, state.Ownership.Pending = false, false
 	restoreSendRedirects(state)
 	if err = saveReturnState(cfg, state); err != nil {
-		return nil, err
+		return ReturnRoutingRemoveResponse{}, err
 	}
-	return map[string]any{"success": true, "removed": true, "retained_empty_table": true}, nil
+	return ReturnRoutingRemoveResponse{Removed: true, RetainedEmptyTable: true, Success: true}, nil
 }
 
 func ReapplyReturnRouting(cfg *Config) {

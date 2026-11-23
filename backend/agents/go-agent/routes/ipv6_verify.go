@@ -206,11 +206,11 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		ExpectedConfigSHA256 string `json:"expected_config_sha256"`
 	}
 	if err := decodeIPv6Request(w, r, &request); err != nil {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": "验收请求无效"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "验收请求无效"})
 		return
 	}
 	if !ipv6VerifySupported(cfg) || cfg.ServiceType != "mihomo" || len(request.NodeName) > 256 || strings.ContainsAny(request.NodeName, "\r\n\x00") || (request.ExpectedConfigSHA256 != "" && !ipv6VerifySHA.MatchString(request.ExpectedConfigSHA256)) {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": "需要 Linux Mihomo Agent 和有效验收参数"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "需要 Linux Mihomo Agent 和有效验收参数"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 28*time.Second)
@@ -219,7 +219,7 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	finish := func() { JsonResponse(w, 200, report) }
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, 409, map[string]any{"success": false, "message": "服务正在更新或执行其他操作，请稍后验收"})
+		JsonResponse(w, 409, MessageResponse{Success: false, Message: "服务正在更新或执行其他操作，请稍后验收"})
 		return
 	}
 	defer release()
@@ -243,7 +243,7 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	}
 	target, err := ipv6VerificationURL(request.TestURL)
 	if err != nil {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": err.Error()})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: err.Error()})
 		return
 	}
 	report.TargetHost = target.Hostname()

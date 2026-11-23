@@ -526,5 +526,18 @@ func (config *oxMonitorConfig) writeRankings(w http.ResponseWriter, ctx context.
 		oxMonitorWriteError(w, err)
 		return
 	}
-	JsonResponse(w, http.StatusOK, map[string]any{"success": true, "recorder": tag, "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "instance_id": oxSourceInstance(health), "retention_days": config.rankings.retention[tag], "sample_limit": oxMonitorClientSampleLimit, "rows_limit": rows, "clients": clients, "domains": domains, "blocked": blocked})
+	JsonResponse(w, http.StatusOK, OxiDNSRankingsResponse{
+		Blocked:         blocked,
+		Clients:         clients,
+		CollectedAtMS:   collectedAt,
+		Domains:         domains,
+		InstanceID:      oxSourceInstance(health),
+		Recorder:        tag,
+		RetentionDays:   config.rankings.retention[tag],
+		RowsLimit:       rows,
+		RuntimeRevision: running.revision(),
+		SampleLimit:     oxMonitorClientSampleLimit,
+		SourceRevision:  config.sourceRevision,
+		Success:         true,
+	})
 }

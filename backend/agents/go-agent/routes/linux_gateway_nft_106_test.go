@@ -60,7 +60,7 @@ func TestLinuxGatewayNFT106LifecycleAndRetry(t *testing.T) {
 		t.Fatalf("Debian 12 apply failed: %v", err)
 	}
 	assertGateway106Pinned(t, f.cfg)
-	if status := gatewayManaged(f.cfg); status["healthy"] != true {
+	if status := gatewayManaged(f.cfg); !status.Healthy {
 		t.Fatalf("nft 1.0.6 gateway unhealthy: %+v", status)
 	}
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil || f.mutations != 1 {
@@ -110,7 +110,7 @@ func TestLinuxGatewayNFT106RecreatesMissingTableAfterRestart(t *testing.T) {
 		t.Fatalf("boot replay failed to recreate the vanished table: %v", err)
 	}
 	assertGateway106Pinned(t, f.cfg)
-	if managed := gatewayManaged(f.cfg); managed["healthy"] != true || f.mutations != 2 {
+	if managed := gatewayManaged(f.cfg); !managed.Healthy || f.mutations != 2 {
 		t.Fatalf("recreated gateway is unhealthy: %+v, mutations %d", managed, f.mutations)
 	}
 	if err := removeLinuxGateway(f.cfg); err != nil {

@@ -36,7 +36,7 @@ func TestReturnRoutingWorksWhenNFTOmitsContainerComments(t *testing.T) {
 		if _, err := ApplyReturnRouting(cfg, sampleSpec()); err != nil {
 			t.Fatalf("round %d apply: %v", round, err)
 		}
-		if status := managedReturnStatus(cfg); status["table_present"] != true {
+		if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 			t.Fatalf("round %d readback not healthy: %v", round, status)
 		}
 		if _, err := RemoveReturnRouting(cfg, false); err != nil {
@@ -86,14 +86,14 @@ func TestReturnRoutingRecoversPre191PendingResidue(t *testing.T) {
 				installFakeHost(t, host)
 				cfg := testConfig(t, tunConfig)
 				pre191Residue(t, host, cfg, listsComments)
-				if status := returnSafetyStatus(cfg); status["ok"] != true {
+				if status := returnSafetyStatus(cfg); !status.OK {
 					t.Fatalf("plan must not be blocked by a recoverable residue: %v", status)
 				}
 				if first == "apply" {
 					if _, err := ApplyReturnRouting(cfg, sampleSpec()); err != nil {
 						t.Fatalf("apply must replay the recovered transaction: %v", err)
 					}
-					if status := managedReturnStatus(cfg); status["table_present"] != true {
+					if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 						t.Fatalf("replayed resources not healthy: %v", status)
 					}
 				}
@@ -136,7 +136,7 @@ func TestReturnRoutingPendingRecoveryRefusesUnprovableObjects(t *testing.T) {
 			state := pre191Residue(t, host, cfg, true)
 			change(host, state)
 			before := jsonText(readStateJSON(t, cfg))
-			if status := returnSafetyStatus(cfg); status["ok"] != false {
+			if status := returnSafetyStatus(cfg); status.OK {
 				t.Fatalf("plan must stay blocked: %v", status)
 			}
 			if _, err := ApplyReturnRouting(cfg, sampleSpec()); err == nil {

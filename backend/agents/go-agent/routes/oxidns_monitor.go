@@ -42,7 +42,7 @@ func oxMonitorFail(status int, code, message string) *oxMonitorError {
 
 func oxMonitorWriteError(w http.ResponseWriter, err *oxMonitorError) {
 	w.Header().Set("Cache-Control", "no-store")
-	JsonResponse(w, err.status, map[string]any{"success": false, "code": err.code, "message": err.message})
+	JsonResponse(w, err.status, CodedErrorResponse{Code: err.code, Message: err.message, Success: false})
 }
 
 // This wrapper preserves the monitoring error contract without changing legacy
@@ -693,7 +693,16 @@ func oxMonitorHandlerWithSources(cfg *Config, sources *oxSourceCache) http.Handl
 				oxMonitorWriteError(w, err)
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]any{"success": true, "capabilities": config.capabilities, "health": json.RawMessage(health), "metrics": string(metrics), "collected_at_ms": collectedAt, "source_revision": config.sourceRevision, "runtime_revision": running.revision(), "upstream_labels": config.rankings.upstreams})
+			JsonResponse(w, http.StatusOK, OxiDNSOverviewResponse{
+				Capabilities:    config.capabilities,
+				CollectedAtMS:   collectedAt,
+				Health:          json.RawMessage(health),
+				Metrics:         string(metrics),
+				RuntimeRevision: running.revision(),
+				SourceRevision:  config.sourceRevision,
+				Success:         true,
+				UpstreamLabels:  config.rankings.upstreams,
+			})
 			return
 		}
 		tag, err := config.recorder(recorder)

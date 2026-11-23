@@ -48,9 +48,9 @@ func UninstallHandler(cfg *Config) http.HandlerFunc {
 		logger.Info("Received uninstall request.")
 
 		// 立即返回成功响应，避免连接中断
-		JsonResponse(w, http.StatusOK, map[string]string{
-			"success": "true",
-			"message": "Uninstall process started. The agent will be removed in a few seconds.",
+		JsonResponse(w, http.StatusOK, StringStatusMessageResponse{
+			Message: "Uninstall process started. The agent will be removed in a few seconds.",
+			Success: "true",
 		})
 
 		// 在 goroutine 中异步执行卸载操作

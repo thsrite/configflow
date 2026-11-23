@@ -9,14 +9,13 @@ import (
 func statusAllocation(t *testing.T, cfg *Config) returnAllocation {
 	t.Helper()
 	status := returnSafetyStatus(cfg)
-	if status["ok"] != true {
+	if !status.OK {
 		t.Fatalf("expected safe allocation: %v", status)
 	}
-	allocation, ok := status["allocation"].(returnAllocation)
-	if !ok || allocation.Version != 1 {
+	if status.Allocation == nil || status.Allocation.Version != 1 {
 		t.Fatalf("allocation missing: %v", status)
 	}
-	return allocation
+	return *status.Allocation
 }
 
 func TestAllocatedReturnRoutingLifecyclePreservesForeignResources(t *testing.T) {

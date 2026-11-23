@@ -169,7 +169,7 @@ func TestLinuxGatewayPreviewIsReadOnlyAndShowsDeploymentBlocker(t *testing.T) {
 	f := newGatewayFixture(t)
 	f.writeConfig(t, false)
 	preview := gatewayPreview(f.cfg, f.spec, "test-profile")
-	if preview["ready"] != false || len(preview["commands"].([]string)) == 0 || len(preview["blockers"].([]string)) == 0 {
+	if preview.Ready || len(preview.Commands) == 0 || len(preview.Blockers) == 0 {
 		t.Fatalf("invalid preview: %+v", preview)
 	}
 	if f.mutations != 0 {
@@ -182,7 +182,7 @@ func TestLinuxGatewayPreviewIsReadOnlyAndShowsDeploymentBlocker(t *testing.T) {
 	if string(data) != "0" {
 		t.Fatal("preview enabled forwarding")
 	}
-	detection := preview["detection"].(gatewayDetection)
+	detection := preview.Detection
 	if detection.Suggested == nil || *detection.Suggested != f.spec {
 		t.Fatalf("bad detection: %+v", detection)
 	}
@@ -232,7 +232,7 @@ func TestLinuxGatewayApplyIsIdempotentAndRemovalRestores(t *testing.T) {
 	if err != nil || state == nil || !state.Active || state.Pending {
 		t.Fatalf("invalid state: %+v %v", state, err)
 	}
-	if result := gatewayManaged(f.cfg); result["healthy"] != true {
+	if result := gatewayManaged(f.cfg); !result.Healthy {
 		t.Fatalf("not healthy: %+v", result)
 	}
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
@@ -265,7 +265,7 @@ func TestLinuxGatewayRebootRecreatesOnlyOwnedTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.nft = []map[string]any{} // A host reboot clears the runtime nftables state.
-	if result := gatewayManaged(f.cfg); result["healthy"] != false {
+	if result := gatewayManaged(f.cfg); result.Healthy {
 		t.Fatal("missing nft falsely healthy")
 	}
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
@@ -598,7 +598,7 @@ func TestLinuxGatewayBootWaitsForLateTunWithoutPartialMutation(t *testing.T) {
 	if waits != 1 || f.mutations != 2 {
 		t.Fatalf("bad bounded replay waits=%d mutations=%d", waits, f.mutations)
 	}
-	if result := gatewayManaged(f.cfg); result["healthy"] != true {
+	if result := gatewayManaged(f.cfg); !result.Healthy {
 		t.Fatalf("late TUN replay unhealthy: %+v", result)
 	}
 }
@@ -643,7 +643,7 @@ func TestLinuxGatewayRemovalPreservesPersistedAIOForwarding(t *testing.T) {
 			if err := os.WriteFile(aioForwardingConfigPath(), []byte(test.content), 0644); err != nil {
 				t.Fatal(err)
 			}
-			if gatewayManaged(f.cfg)["preserves_forwarding"] != test.keep {
+			if gatewayManaged(f.cfg).PreservesForwarding != test.keep {
 				t.Fatal("managed status does not report forwarding preservation")
 			}
 			// Deploying a full TUN configuration drops the gateway marker.

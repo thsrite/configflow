@@ -265,11 +265,11 @@ func deploymentBlocked(cfg *Config) error {
 }
 func deploymentFailure(w http.ResponseWriter, code int, err error) {
 	message, details := deploymentErrorFields(err)
-	response := map[string]any{"success": false, "message": message}
-	if details != "" {
-		response["error_details"] = details
-	}
-	JsonResponse(w, code, response)
+	JsonResponse(w, code, DeploymentFailureResponse{
+		ErrorDetails: details,
+		Message:      message,
+		Success:      false,
+	})
 }
 func CapabilitiesHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -277,30 +277,38 @@ func CapabilitiesHandler(cfg *Config) http.HandlerFunc {
 			w.WriteHeader(405)
 			return
 		}
-		result := map[string]any{"success": true, "deployment_protocols": []int{1}, "return_routing_safety_protocols": []int{1}, "service_type": cfg.ServiceType, "config_path": filepath.Base(cfg.ConfigPath)}
-		result["reload_only_protocols"] = []int{1}
-		result["final_config_protocols"] = []int{1}
-		result["rule_sync_snapshot_protocols"] = []int{1}
-		result["platform"] = gatewayOS
+		result := CapabilitiesResponse{
+			ConfigPath:                   filepath.Base(cfg.ConfigPath),
+			DeploymentProtocols:          []int{1},
+			FinalConfigProtocols:         []int{1},
+			Platform:                     gatewayOS,
+			ReloadOnlyProtocols:          []int{1},
+			ReturnRoutingSafetyProtocols: []int{1},
+			RuleSyncSnapshotProtocols:    []int{1},
+			ServiceType:                  cfg.ServiceType,
+			Success:                      true,
+		}
 		if ipv6VerifySupported(cfg) {
-			result["ipv6_client_probe_protocols"] = []int{1}
+			result.IPv6ClientProbeProtocols = []int{1}
 			if cfg.ServiceType == "mihomo" {
-				result["ipv6_verification_protocols"] = []int{1}
+				result.IPv6VerificationProtocols = []int{1}
 			}
 		}
 		if cfg.ServiceType == "mihomo" {
-			result["mihomo_resources"] = mihomoGeoAssetNames(filepath.Dir(cfg.ConfigPath))
-			result["config_directory"] = filepath.Dir(cfg.ConfigPath)
-			result["aio_forwarding_protocols"] = []int{1}
-			result["ipv6_readiness_protocols"] = []int{1}
+			resources := mihomoGeoAssetNames(filepath.Dir(cfg.ConfigPath))
+			configDir := filepath.Dir(cfg.ConfigPath)
+			result.MihomoResources = &resources
+			result.ConfigDirectory = &configDir
+			result.AIOForwardingProtocols = []int{1}
+			result.IPv6ReadinessProtocols = []int{1}
 		}
 		if cfg.ServiceType == "oxidns" {
-			result["oxidns_ha_protocols"] = []int{oxidnsHAProtocol}
-			result["oxidns_ha_handoff_protocols"] = []int{oxidnsHAHandoffProtocol}
+			result.OxiDNSHAProtocols = []int{oxidnsHAProtocol}
+			result.OxiDNSHAHandoffProtocols = []int{oxidnsHAHandoffProtocol}
 			environment := haEnvironment(cfg)
-			result["oxidns_ha_environment"] = environment
+			result.OxiDNSHAEnvironment = &environment
 			if environment.Kind == "container" && environment.Ready {
-				result["oxidns_ha_container_protocols"] = []int{oxidnsHAContainerProtocol}
+				result.OxiDNSHAContainerProtocols = []int{oxidnsHAContainerProtocol}
 			}
 		}
 		JsonResponse(w, 200, result)
@@ -411,7 +419,7 @@ func DeploymentUploadHandler(cfg *Config) http.HandlerFunc {
 		}
 		activate := r.Header.Get("X-Activate") != "false"
 		// Encode the accepted snapshot before the worker mutates state.
-		JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "verifying"})
+		JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, Status: "verifying", Success: true})
 		handedOff = true
 		go func() { defer release(); prepareDeployment(cfg, s, activate) }()
 	}
@@ -479,7 +487,7 @@ func DeploymentHandler(cfg *Config) http.HandlerFunc {
 			deploymentFailure(w, 500, e)
 			return
 		}
-		JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "verifying"})
+		JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, Status: "verifying", Success: true})
 		handedOff = true
 		go func() {
 			defer release()
@@ -1321,7 +1329,7 @@ func recoverHandler(cfg *Config, id string, w http.ResponseWriter) {
 		deploymentFailure(w, 409, err)
 		return
 	}
-	JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "rolling_back", "recovering": true})
+	JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, Recovering: true, Status: "rolling_back", Success: true})
 	handedOff = true
 	go func() {
 		defer release()

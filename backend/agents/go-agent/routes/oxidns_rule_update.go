@@ -482,7 +482,7 @@ func (updater *oxRuleUpdater) handler(cfg *Config) http.HandlerFunc {
 			return
 		}
 		if r.Method == http.MethodGet {
-			JsonResponse(w, http.StatusOK, map[string]any{"success": true, "task": updater.snapshot()})
+			JsonResponse(w, http.StatusOK, OxiDNSRuleUpdateResponse{Success: true, Task: updater.snapshot()})
 			return
 		}
 		release, err := AcquireServiceOperation(cfg)
@@ -538,7 +538,7 @@ func (updater *oxRuleUpdater) handler(cfg *Config) http.HandlerFunc {
 		accepted = true
 		oxRuleUpdatesRunning.Add(1)
 		go updater.run(cfg, plan, selection, release)
-		JsonResponse(w, http.StatusAccepted, map[string]any{"success": true, "task": task})
+		JsonResponse(w, http.StatusAccepted, OxiDNSRuleUpdateResponse{Success: true, Task: task})
 	}
 }
 

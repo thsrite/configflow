@@ -190,14 +190,14 @@ func TestAIOForwardingStandalonePersistKeepsForwardingOnGatewayRemoval(t *testin
 			if _, err := os.Stat(filepath.Join(aioAgentRoot, "linux-gateway.json")); err != nil {
 				t.Fatalf("gateway journal not in the single-service Agent directory: %v", err)
 			}
-			if gatewayManaged(f.cfg)["preserves_forwarding"] != false {
+			if gatewayManaged(f.cfg).PreservesForwarding {
 				t.Fatal("forwarding preserved before it was persisted")
 			}
 			if _, err := persistAIOForwarding(f.cfg, false); err != nil {
 				t.Fatal(err)
 			}
 			f.assertPersisted(t)
-			if gatewayManaged(f.cfg)["preserves_forwarding"] != true {
+			if !gatewayManaged(f.cfg).PreservesForwarding {
 				t.Fatal("persisted single-service forwarding not recognised by the gateway")
 			}
 			f.writeConfig(t, false)

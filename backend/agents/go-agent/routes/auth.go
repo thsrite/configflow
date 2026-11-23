@@ -33,7 +33,7 @@ func AuthMiddleware(cfg *Config, next http.HandlerFunc) http.HandlerFunc {
 		token, valid := parseBearerToken(r.Header.Get("Authorization"))
 		if !valid || subtle.ConstantTimeCompare(token, []byte(cfg.Token)) != 1 {
 			logger.Warnf("Authorization rejected")
-			JsonResponse(w, http.StatusUnauthorized, map[string]string{"success": "false", "message": "Unauthorized"})
+			JsonResponse(w, http.StatusUnauthorized, StringStatusMessageResponse{Message: "Unauthorized", Success: "false"})
 			return
 		}
 		next(w, r)

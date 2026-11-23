@@ -48,7 +48,7 @@ func manualRollbackHandler(cfg *Config, id string, w http.ResponseWriter, r *htt
 		deploymentFailure(w, 500, err)
 		return
 	}
-	JsonResponse(w, 202, map[string]any{"success": true, "deployment_id": id, "status": "rolling_back", "manual_rollback": true})
+	JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, ManualRollback: true, Status: "rolling_back", Success: true})
 	handedOff = true
 	go func() { defer release(); rollbackDeployment(cfg, s, true) }()
 }

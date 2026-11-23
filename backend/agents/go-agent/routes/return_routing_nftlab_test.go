@@ -67,10 +67,10 @@ func assertLabClean(t *testing.T) {
 
 func assertLabHealthy(t *testing.T, cfg *Config) {
 	t.Helper()
-	if status := managedReturnStatus(cfg); status["table_present"] != true {
+	if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 		t.Fatalf("readback not healthy: %v", status)
 	}
-	if status := returnSafetyStatus(cfg); status["ok"] != true {
+	if status := returnSafetyStatus(cfg); !status.OK {
 		t.Fatalf("plan blocked after apply: %v", status)
 	}
 }
@@ -168,7 +168,7 @@ func TestNFTLabReturnRoutingRecoversPre191Residue(t *testing.T) {
 			cfg, router := nftLabSetup(t)
 			spec := labSpec(router, returnProtocolByRouter)
 			writePre191Residue(t, cfg, spec)
-			if status := returnSafetyStatus(cfg); status["ok"] != true {
+			if status := returnSafetyStatus(cfg); !status.OK {
 				t.Fatalf("plan blocked by recoverable residue: %v", status)
 			}
 			if first == "apply" {

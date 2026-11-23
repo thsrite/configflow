@@ -93,14 +93,14 @@ func readFollowConfig(name string, size int64) ([]byte, error) {
 func dnsFollowLock(cfg *Config, w http.ResponseWriter) (func(), bool) {
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, http.StatusConflict, map[string]any{"success": false, "message": "设备正在执行其他操作，暂时无法确认 DNS 配置，请稍后重试"})
+		JsonResponse(w, http.StatusConflict, MessageResponse{Success: false, Message: "设备正在执行其他操作，暂时无法确认 DNS 配置，请稍后重试"})
 		return nil, false
 	}
 	return release, true
 }
 
 func dnsFollowFailure(w http.ResponseWriter, status int, err error) {
-	JsonResponse(w, status, map[string]any{"success": false, "message": err.Error()})
+	JsonResponse(w, status, MessageResponse{Success: false, Message: err.Error()})
 }
 
 func dnsFollowRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -149,7 +149,7 @@ func DNSActiveHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "agent_id": cfg.AgentID, "deployment_id": id})
+		JsonResponse(w, http.StatusOK, DNSActiveResponse{AgentID: cfg.AgentID, DeploymentID: id, Success: true})
 	}
 }
 
@@ -212,9 +212,14 @@ func DNSListenerHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]any{
-			"success": true, "agent_id": cfg.AgentID, "deployment_id": id,
-			"enabled": true, "listen": listen, "host": host, "port": port,
+		JsonResponse(w, http.StatusOK, DNSListenerResponse{
+			AgentID:      cfg.AgentID,
+			DeploymentID: id,
+			Enabled:      true,
+			Host:         host,
+			Listen:       listen,
+			Port:         port,
+			Success:      true,
 		})
 	}
 }
@@ -266,6 +271,6 @@ func DNSPeerHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "peer_agent_id": peerID, "service_type": "mihomo"})
+		JsonResponse(w, http.StatusOK, DNSPeerResponse{PeerAgentID: peerID, ServiceType: "mihomo", Success: true})
 	}
 }

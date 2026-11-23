@@ -528,21 +528,21 @@ func IPv6ReadinessHandler(cfg *Config, action string) http.HandlerFunc {
 			InterfaceIndex int    `json:"interface_index"`
 		}
 		if err := decodeIPv6Request(w, r, &request); err != nil {
-			JsonResponse(w, 400, map[string]any{"success": false, "message": err.Error()})
+			JsonResponse(w, 400, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		if !ipv6InterfacePattern.MatchString(request.Interface) || request.Interface == "lo" || request.InterfaceIndex <= 0 {
-			JsonResponse(w, 400, map[string]any{"success": false, "message": "请先检查并选择有效上联网卡"})
+			JsonResponse(w, 400, MessageResponse{Success: false, Message: "请先检查并选择有效上联网卡"})
 			return
 		}
 		// Unsupported platforms must not even create a deployment lock file.
 		if err := gatewayPlatform(cfg); err != nil {
-			JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error()})
+			JsonResponse(w, 409, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		release, err := AcquireServiceOperation(cfg)
 		if err != nil {
-			JsonResponse(w, 409, map[string]any{"success": false, "message": err.Error()})
+			JsonResponse(w, 409, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		defer release()
@@ -590,22 +590,22 @@ func ipv6ProbeHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		Port int    `json:"port"`
 	}
 	if err := decodeIPv6Request(w, r, &request); err != nil {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": err.Error()})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: err.Error()})
 		return
 	}
 	if cfg == nil || cfg.ServiceType != "mihomo" || gatewayOS != "linux" {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": "仅支持 Linux Mihomo 主机连接检查"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "仅支持 Linux Mihomo 主机连接检查"})
 		return
 	}
 	host := strings.TrimSpace(request.Host)
 	ip := net.ParseIP(host)
 	domain := regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$`)
 	if request.Port < 1 || request.Port > 65535 || len(host) > 253 || (ip == nil && !domain.MatchString(host)) || (ip != nil && (ip.To4() != nil || !ip.IsGlobalUnicast())) {
-		JsonResponse(w, 400, map[string]any{"success": false, "message": "需要有效的 IPv6 节点地址或域名及端口（1–65535）"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "需要有效的 IPv6 节点地址或域名及端口（1–65535）"})
 		return
 	}
 	result := ipv6Connectivity{Status: "error", Message: "节点 IPv6 TCP 连接未成功，请核对真实节点地址、端口和上联网卡绑定权限", Protocol: "tcp", Scope: "node_transport", Port: request.Port}
-	finish := func() { JsonResponse(w, 200, map[string]any{"success": true, "connectivity": result}) }
+	finish := func() { JsonResponse(w, 200, IPv6ConnectivityResponse{Connectivity: result, Success: true}) }
 	network, err := detectIPv6Network()
 	if err != nil || network.Upstream == "" {
 		result.Message = "无法确认实际 IPv6 上联网卡，未进行可能被 TUN 接管的连接测试"

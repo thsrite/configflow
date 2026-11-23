@@ -451,16 +451,20 @@ func haPreflight(cfg *Config, spec OxiDNSHASpec, state *haState) ([]string, stri
 	return blockers, iface, cidr
 }
 
-func haStatus(cfg *Config) map[string]any {
+func haStatus(cfg *Config) OxiDNSHAStatusResponse {
 	environment := haEnvironment(cfg)
-	result := map[string]any{"success": true, "protocol": oxidnsHAProtocol, "managed": nil, "handoff": nil, "error": "", "environment": environment}
+	result := OxiDNSHAStatusResponse{
+		Environment: environment,
+		Protocol:    oxidnsHAProtocol,
+		Success:     true,
+	}
 	haMu.Lock()
 	state, err := loadHAState(cfg)
 	haMu.Unlock()
 	if err != nil {
-		result["error"] = err.Error()
+		result.Error = err.Error()
 	} else if ownershipErr := haContainerOwnership(cfg, state, environment); ownershipErr != nil {
-		result["error"] = ownershipErr.Error()
+		result.Error = ownershipErr.Error()
 	}
 	running := false
 	if _, lookErr := haLookPath("keepalived"); lookErr == nil && cfg != nil {
@@ -468,20 +472,27 @@ func haStatus(cfg *Config) map[string]any {
 	}
 	vipPresent, role := false, "unknown"
 	if state != nil {
-		result["managed"] = map[string]any{"spec": state.Spec, "active": state.Active, "pending": state.Pending, "applied_at": state.AppliedAt, "interface": state.Interface, "cidr": state.CIDR}
+		result.Managed = &OxiDNSHAManagedStatus{
+			Active:    state.Active,
+			AppliedAt: state.AppliedAt,
+			CIDR:      state.CIDR,
+			Interface: state.Interface,
+			Pending:   state.Pending,
+			Spec:      state.Spec,
+		}
 		if addresses, addrErr := readHAAddresses(); addrErr == nil {
 			vipPresent = haVIPPresent(state.Spec, addresses)
 		} else if err == nil {
-			result["error"] = addrErr.Error()
+			result.Error = addrErr.Error()
 		}
 		if vipPresent {
 			role = "master"
 		} else if running {
 			role = "backup"
 		}
-		if err == nil && result["error"] == "" {
+		if err == nil && result.Error == "" {
 			if driftErr := haFilesDrift(cfg, state); driftErr != nil {
-				result["error"] = driftErr.Error()
+				result.Error = driftErr.Error()
 			}
 		}
 	}
@@ -492,19 +503,24 @@ func haStatus(cfg *Config) map[string]any {
 		vipHealthy = haHandoffProbe(net.JoinHostPort(state.Spec.VIP, "53"), name, haCheckTimeout) == nil
 	}
 	if handoff, handoffErr := haHandoffPublic(cfg, state, localHealthy); handoffErr != nil {
-		if result["error"] == "" {
-			result["error"] = handoffErr.Error()
+		if result.Error == "" {
+			result.Error = handoffErr.Error()
 		}
 	} else {
-		result["handoff"] = handoff
+		result.Handoff = handoff
 	}
-	result["runtime"] = map[string]any{"keepalived_running": running, "vip_present": vipPresent, "role": role,
-		"healthy": localHealthy, "vip_healthy": vipHealthy}
+	result.Runtime = OxiDNSHARuntimeStatus{
+		Healthy:           localHealthy,
+		KeepalivedRunning: running,
+		Role:              role,
+		VIPHealthy:        vipHealthy,
+		VIPPresent:        vipPresent,
+	}
 	return result
 }
 
 func haFailure(w http.ResponseWriter, code int, err error) {
-	JsonResponse(w, code, map[string]any{"success": false, "message": err.Error(), "error": err.Error()})
+	JsonResponse(w, code, OxiDNSHAErrorResponse{Error: err.Error(), Message: err.Error(), Success: false})
 }
 
 func decodeHASpec(w http.ResponseWriter, r *http.Request) (OxiDNSHASpec, bool) {
@@ -562,7 +578,7 @@ func OxiDNSHAHandler(cfg *Config) http.HandlerFunc {
 				haFailure(w, code, err)
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]any{"success": true, "removed": removed})
+			JsonResponse(w, http.StatusOK, OxiDNSHARemoveResponse{Removed: removed, Success: true})
 		default:
 			w.Header().Set("Allow", "GET, PUT, DELETE")
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -589,7 +605,14 @@ func OxiDNSHAPreviewHandler(cfg *Config) http.HandlerFunc {
 		if err != nil {
 			blockers = append(blockers, err.Error())
 		}
-		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "ok": len(blockers) == 0, "blockers": blockers, "interface": iface, "cidr": cidr, "environment": haEnvironment(cfg)})
+		JsonResponse(w, http.StatusOK, OxiDNSHAPreviewResponse{
+			Blockers:    blockers,
+			CIDR:        cidr,
+			Environment: haEnvironment(cfg),
+			Interface:   iface,
+			OK:          len(blockers) == 0,
+			Success:     true,
+		})
 	}
 }
 

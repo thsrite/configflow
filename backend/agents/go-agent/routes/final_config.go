@@ -66,15 +66,15 @@ func FinalConfigPreviewHandler(cfg *Config) http.HandlerFunc {
 			Content string `json:"content"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Content == "" {
-			JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "Invalid configuration preview"})
+			JsonResponse(w, http.StatusBadRequest, MessageResponse{Success: false, Message: "Invalid configuration preview"})
 			return
 		}
 		content, err := renderFinalConfig(cfg, input.Content)
 		if err != nil {
-			JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": err.Error()})
+			JsonResponse(w, http.StatusBadRequest, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		JsonResponse(w, http.StatusOK, map[string]any{"success": true, "content": content})
+		JsonResponse(w, http.StatusOK, FinalConfigPreviewResponse{Content: content, Success: true})
 	}
 }

@@ -417,23 +417,28 @@ func prepareSpec(cfg *Config, spec ReturnRoutingSpec) (resolvedSpec, error) {
 	return resolved, nil
 }
 
-func managedReturnStatus(cfg *Config) map[string]any {
+func managedReturnStatus(cfg *Config) any {
 	state, err := loadReturnState(cfg)
 	if err != nil {
-		return map[string]any{"error": err.Error()}
+		return &ReturnRoutingManagedError{Error: err.Error()}
 	}
 	if state == nil {
 		return nil
 	}
 	complete := returnResourcesComplete(state)
-	return map[string]any{"spec": state.Spec, "applied_at": state.AppliedAt,
-		"table_present": complete, "legacy": state.Legacy,
-		"safety_version": state.Spec.SafetyVersion, "active": state.Active}
+	return &ReturnRoutingManagedDetail{
+		Active:        state.Active,
+		AppliedAt:     state.AppliedAt,
+		Legacy:        state.Legacy,
+		SafetyVersion: state.Spec.SafetyVersion,
+		Spec:          state.Spec,
+		TablePresent:  complete,
+	}
 }
 
 func returnRoutingWrite(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	var (
-		result map[string]any
+		result any
 		err    error
 	)
 	if r.Method == http.MethodPut {
@@ -441,7 +446,7 @@ func returnRoutingWrite(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		decoder.DisallowUnknownFields()
 		if err = decoder.Decode(&spec); err != nil {
-			JsonResponse(w, http.StatusBadRequest, map[string]any{"success": false, "message": "请求格式错误：" + err.Error()})
+			JsonResponse(w, http.StatusBadRequest, MessageResponse{Success: false, Message: "请求格式错误：" + err.Error()})
 			return
 		}
 		result, err = ApplyReturnRouting(cfg, spec)
@@ -449,7 +454,7 @@ func returnRoutingWrite(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		result, err = RemoveReturnRouting(cfg, r.URL.Query().Get("restore_legacy") == "1")
 	}
 	if err != nil {
-		JsonResponse(w, http.StatusUnprocessableEntity, map[string]any{"success": false, "message": err.Error()})
+		JsonResponse(w, http.StatusUnprocessableEntity, MessageResponse{Success: false, Message: err.Error()})
 		return
 	}
 	JsonResponse(w, http.StatusOK, result)
