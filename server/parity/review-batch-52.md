@@ -72,20 +72,20 @@
 ## 发现
 
 - 高：无。
-- 中-1（已修，811c116ea）：`ApplyPolicies` 改成收 `[]devicenotes.Policy` 后不再校验行。旧代码在入口
+- 中-1（已修，547085c70）：`ApplyPolicies` 改成收 `[]devicenotes.Policy` 后不再校验行。旧代码在入口
   `devicenotes.ParsePolicies` 校验地址、重复、名称、模式和 512 行上限。`clients.UpdateDevice` 的行只经过
   `NormalizeChange`，已有 512 行时再加一行会被写进 OxiDNS 草稿（旧代码拒绝）；备注里不合规的名称同理。
   修法：`ApplyPolicies` 先用 `checkedPolicies`（编码后走 `ParsePolicies`）校验，与旧入口逐字节同一检查，nil 视为空。
-- 中-2（已修，811c116ea）：`ApplyRuleDNS` 模板分支把 `normalizeRuleDNS(values)` 换成只查跟随互斥的
+- 中-2（已修，547085c70）：`ApplyRuleDNS` 模板分支把 `normalizeRuleDNS(values)` 换成只查跟随互斥的
   `validateRuleDNS`，丢了对每条 `rule_actions`/`rule_dns_parked` 的 `NormalizeAction` 检查（例如候选上游 `addr`
   为空时旧代码报「指定上游需要非空的 addr 地址」，新代码直接写入设置，到生成时才失败）。
   修法：`validateRuleDNS` 对两组条目逐个 `normalizeAction` 并替换为规范形式，然后再查跟随。
-- 中-3（已修，811c116ea）：`restoreParked`（模板输入恢复暂存选择）改成双路径，类型化路径用 `actionMap` 判断
+- 中-3（已修，547085c70）：`restoreParked`（模板输入恢复暂存选择）改成双路径，类型化路径用 `actionMap` 判断
   「规则已有 DNS 处理」，而 `actionMapFromNode` 跳过 null 成员；旧代码和 Python 的 `identity in actions` 对
   `{"r1": null}` 都为真。`PreviewTemplate` 的 `proposedInputs` 是未规范化的请求体，`rule_actions` 里带 null 时，
   该规则会留在直连/代理列表里、改变预览与随后写入的路由。修法：`restoreParked` 恢复为 batch-48 的节点版本
   （这里处理的就是请求原样输入，节点版本更合适）。
-- 中-4（已修，32b986f1c）：rebase 后 `PYREF_MODE=check/record` 拒绝 oxidns 18 条、mosdns 5 条参考：batch-48 引入的
+- 中-4（已修，1a5671134）：rebase 后 `PYREF_MODE=check/record` 拒绝 oxidns 18 条、mosdns 5 条参考：batch-48 引入的
   `internal/digest`（6f827780f）和 `internal/pathx` 进入了依赖图但 `sources.json` 没登记（batch-48 本身同样会失败，
   普通 `go test` 不查）。修法：按 `-suggest-sources` 登记这两个文件，重录 13 个黄金文件，逐个比较只有 `metadata` 变化。
   `-suggest-sources` 还提示 routersplit 3 条（`digest`、`logx/*`）和 installer 1 条（`digest`）缺声明，不在本批范围，
@@ -93,7 +93,7 @@
 - 低-1：`readSettingsView`/`decodeProjection` 在整份设置 `ToJSON` 失败时返回空视图（`checkRequestTypes` 因此放行）。
   设置树都来自 JSON（请求体或 `model.Dynamic`），停用插件子树来自 `loadNative` 已校验的 YAML（键必须是字符串、
   浮点有限），目前不可达。不修。
-- 低-2（已修，9ad9610ed）：`saveWorkspacePolicies` 用 `json.Marshal(notes)`，设备名里的 `& < >` 会写成
+- 低-2（已修，9af19f9dd）：`saveWorkspacePolicies` 用 `json.Marshal(notes)`，设备名里的 `& < >` 会写成
   `&` 等；旧代码经 `yamlx.ToJSON` 不转义。语义相同但存储字节变化。改用 `jsonresp.Encode`。
 - 低-3：`dnsfollow` 读草稿文档的标签由 `""` 变成 `NativeLabel`。`PrepareEditor` 已用同一标签加载过同一文本，
   第二次加载不会失败，错误文案无可见变化。不修。
@@ -109,12 +109,12 @@
 ## 提交
 
 - 作者 7 个提交（rebase 后）：1abfd5b85 … fb5fe8f86。
-- 复核修复：811c116ea（oxidns 三处校验）、9ad9610ed（routers 备注编码）、32b986f1c（pyref 声明 + 重录）。
+- 复核修复：547085c70（oxidns 三处校验）、9af19f9dd（routers 备注编码）、1a5671134（pyref 声明 + 重录）。
 - 本报告单独一个提交。
 
 ## 验证
 
-全部在代码 HEAD=32b986f1c 上。
+全部在代码 HEAD=1a5671134 上。
 
 - `gofmt -l` 无输出；`go vet ./...` 通过（.32）。
 - `PYREF_MODE=check go test ./internal/oxidns ./internal/mosdns`（.32）：`ok oxidns 141.0s`、`ok mosdns 73.7s`
@@ -129,3 +129,11 @@
 - `GATE_ONLY=proddiff server/scripts/gate.sh -p 6`（.64）：baseline `new=0 stale=0`，`self_check: PASS`，
   oxidns 生成器 4 组全部 success，`GATE STAGE PASS: proddiff`。
 - `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-52 -p 6`（.64）：两组 tag vet 通过，全量非 race `PREFLIGHT PASS`。
+
+## 再次 rebase（batch-48@15ae7cb3c）
+
+- 原 pyref 提交与 batch-48 的 70f60f2ed 重复，变基时成为空提交并丢弃；sources.json 取 batch-48 版本，再补本分支的登记
+  （`ruledns_values.go`、`settings_view.go` 及符号变化），以及 70f60f2ed 漏掉的 7 条 oxidns boundary 参考的 digest/pathx。
+  `-suggest-sources` 与清单一致。重录后 8 个 oxidns 黄金文件与 batch-48 比只有 metadata 变化；installer、mosdns、routersplit 不变（1a5671134）。
+- `PYREF_MODE=check go test ./internal/installer ./internal/mosdns ./internal/oxidns ./internal/routersplit`（.32）全部 ok；
+  gofmt 无输出、两组 tag 的 `go vet` 通过；上文列出的 `-race` 包全部 ok。
