@@ -98,6 +98,10 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+proddiff Go comparator MERGED 2026-11-23 (tools/proddiff/comparator, PRODDIFF_COMPARATOR=go; parity with run.py on
+2831 cases + 11 695 crosscheck inputs; switch commit flips defaults to PRODDIFF_MODE=go + COMPARATOR=go and deletes the
+Python side). T8 under HR review 1b8fa4cd (batch-40). T1d running 76a14452.
+
 batch-38 MERGED 2026-11-23 (O18 T1c: router/settings/resource/policy records plain structs; reviews: H1 damaged
 config_token kept, H2 damaged rule-set selection fails closed, M1 truthy damaged guard keeps guard, M3 router identity
 non-text rejected, echoed text members (remark/group_name/value/description…) are pointers so API/export match Python
