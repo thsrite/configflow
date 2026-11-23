@@ -1,5 +1,6 @@
 #!/bin/bash
 # setup-infra.sh base              CT 251: lab resolver, static HTTP + GitHub mirror, WebDAV, Docker + registry
+# setup-infra.sh resolver          CT 251: (re)write and restart the lab resolver only
 # setup-infra.sh images <commit>   load the build's images into the lab registry (10.97.0.151:5000)
 # setup-infra.sh shim <ct id>...   install the GitHub release shim (curl/wget) in L6 CTs
 # setup-infra.sh docker-client <ct id>...   Alpine CTs: Docker + Compose, trust the lab registry
@@ -26,11 +27,8 @@ EOF
 chmod 755 /etc/init.d/$name; rc-update add $name default >/dev/null; rc-service $name restart >/dev/null"
 }
 
-base() {
+resolver() {
   require_registered $ID
-  pct status $ID | grep -q running || pct start $ID
-  pin_mirror $ID
-  apk_add $ID bash curl ca-certificates bind-tools tzdata busybox-extras unzip rclone docker iproute2 nftables
   # resolver: mosdns with DoH-by-IP upstreams (plain DNS would be hijacked by the home router to production DNS)
   local zip=$X/assets/gh/IrineSistiana/mosdns/releases/download/v5.3.3/mosdns-linux-amd64.zip
   rm -rf "$X/mosdns" && mkdir -p "$X/mosdns" && (cd "$X/mosdns" && unzip -q -o "$zip")
@@ -45,18 +43,25 @@ plugins:
       upstreams:
         - addr: https://223.5.5.5/dns-query
         - addr: https://120.53.53.53/dns-query
-  - tag: summary
-    type: query_summary
-    args: {msg: lab-query}
   - tag: main
     type: sequence
     args:
-      - exec: \$summary
+      - exec: debug_print lab-query
       - exec: \$fwd
   - {tag: udp, type: udp_server, args: {entry: main, listen: \"$INFRA_IP:53\"}}
   - {tag: tcp, type: tcp_server, args: {entry: main, listen: \"$INFRA_IP:53\"}}
 Y"
   openrc_service $ID labdns /usr/local/bin/mosdns "start -d /etc/labdns -c /etc/labdns/config.yaml"
+  sleep 2
+  gexec $ID sh -c "dig +time=3 +tries=1 +short @$INFRA_IP example.com A | head -1"
+}
+
+base() {
+  require_registered $ID
+  pct status $ID | grep -q running || pct start $ID
+  pin_mirror $ID
+  apk_add $ID bash curl ca-certificates bind-tools tzdata busybox-extras unzip rclone docker iproute2 nftables
+  resolver
   # static HTTP: GitHub release mirror (gh/), synthetic subscription, probe target
   gexec $ID sh -c "mkdir -p /srv/www/gh /srv/www/sub /srv/webdav /srv/registry"
   tar -C "$X/assets" -cf - gh | pct exec $ID -- tar -C /srv/www -xf -
@@ -124,6 +129,7 @@ docker_client() {
 
 case ${1:-} in
   base) base;;
+  resolver) resolver;;
   images) shift; images "$@";;
   shim) shift; shim "$@";;
   docker-client) shift; docker_client "$@";;

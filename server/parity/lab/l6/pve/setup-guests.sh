@@ -1,5 +1,6 @@
 #!/bin/bash
-# setup-guests.sh chr                 VM 256: first login, address, REST over TLS (self-signed), user cf
+# setup-guests.sh chr [resume]        VM 256: first login, address, REST over TLS (self-signed), user cf
+#                                     (resume: the console already sits at the password-change prompt)
 # setup-guests.sh dockervm <id>...    VM 258/259: Docker CE (mirror), trust the lab registry, pre-pull Agent images
 # setup-guests.sh cts                 CTs 252-255, 257: GitHub shim (core downloads from the lab mirror)
 # setup-guests.sh client              CT 257: dig / curl probe tools
@@ -20,17 +21,21 @@ chr() {
   local id=256 ip
   require_registered $id
   ip=$(guest_ip $id)
+  # First boot: login admin with an empty password, answer "n" to the license
+  # question, leave the pager with q if it shows, skip the forced password
+  # change with Ctrl-C and set the password with a command instead (the prompt
+  # echoes stars and is hard to drive reliably).
   cat > "$WORK/chr-init.txt" <<EOF
 admin
 
+#wait 3
+n
 #wait 2
 q!
-#wait 1
-n
-#wait 1
-$CHR_ADMIN_PASS
-$CHR_ADMIN_PASS
-#wait 3
+#wait 2
+^C
+#wait 2
+/user set admin password=$CHR_ADMIN_PASS
 /system identity set name=cf-l6-chr
 /ip address add address=$ip/24 interface=ether1
 /ip route add gateway=$GW
@@ -48,7 +53,9 @@ $CHR_ADMIN_PASS
 /ip address print
 /ip service print where name~"www"
 EOF
-  python3 chrcon.py $id "$WORK/chr-init.txt" | tail -25
+  # "resume" skips the login lines when the console is already past them
+  if [ "${1:-}" = resume ]; then sed -n '/^\^C$/,$p' "$WORK/chr-init.txt" > "$WORK/chr-run.txt"; else cp "$WORK/chr-init.txt" "$WORK/chr-run.txt"; fi
+  python3 chrcon.py $id "$WORK/chr-run.txt" | tail -25
   curl -sk -m 10 -u "cf:$CHR_CF_PASS" "https://$ip/rest/system/resource" | head -c 300; echo
 }
 
@@ -113,7 +120,7 @@ check() {
 }
 
 case ${1:-} in
-  chr) chr;;
+  chr) shift; chr "$@";;
   dockervm) shift; dockervm "$@";;
   cts) cts;;
   client) client;;
