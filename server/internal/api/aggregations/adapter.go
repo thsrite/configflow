@@ -14,6 +14,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -30,56 +31,81 @@ import (
 
 type proxy = generation.Proxy
 
-func appendAggregation(ctx context.Context, body *aggregationFields) error {
-	raw, err := body.MarshalJSON()
+func appendAggregation(ctx context.Context, agg model.Aggregation) error {
+	raw, err := model.Marshal(agg)
 	if err != nil {
 		return err
 	}
 	return generation.AppendCatalog(ctx, raw)
 }
 
-// replaceAggregation stores the catalog with items[index] replaced by an
-// aggregation as sent.
-func replaceAggregation(ctx context.Context, shared *model.Shared, index int, body *aggregationFields) error {
-	list := make([]json.RawMessage, len(shared.Aggregations))
-	for i, item := range shared.Aggregations {
-		data, err := model.Marshal(item)
+// replaceAggregation stores the catalog with items[index] replaced by agg.
+func replaceAggregation(ctx context.Context, shared *model.Shared, index int, agg model.Aggregation) error {
+	shared.Aggregations[index] = agg
+	return generation.SaveCatalog(ctx, shared)
+}
+
+type aggregationErrorItem struct {
+	ID            string          `json:"id"`
+	Name          json.RawMessage `json:"name,omitempty"`
+	HealthCheck   json.RawMessage `json:"health_check,omitempty"`
+	Subscriptions json.RawMessage `json:"subscriptions,omitempty"`
+	Nodes         json.RawMessage `json:"nodes,omitempty"`
+}
+
+func aggregationTypeError(existing []model.Aggregation, index int, req *aggregationRequest, id string, cause error) error {
+	failed, err := json.Marshal(aggregationErrorItem{
+		ID:            id,
+		Name:          req.Name.Raw,
+		HealthCheck:   req.HealthCheck.Raw,
+		Subscriptions: req.Subscriptions.Raw,
+		Nodes:         req.Nodes.Raw,
+	})
+	if err != nil {
+		return err
+	}
+	list := make([]json.RawMessage, 0, len(existing)+1)
+	for i, item := range existing {
 		if i == index {
-			data, err = body.MarshalJSON()
+			list = append(list, failed)
+			continue
 		}
+		data, err := model.Marshal(item)
 		if err != nil {
 			return err
 		}
-		list[i] = data
+		list = append(list, data)
+	}
+	if index < 0 {
+		list = append(list, failed)
 	}
 	raw, err := json.Marshal(list)
 	if err != nil {
 		return err
 	}
-	var decoded model.Shared
-	if err := decoded.SetJSON("subscription_aggregations", raw); err != nil {
-		return repo.InputError(err)
-	}
-	shared.Aggregations = decoded.Aggregations
-	return generation.SaveCatalog(ctx, shared)
+	return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "subscription_aggregations", Value: raw, Err: cause})
 }
-func readBody(c *httpx.Ctx) (*aggregationFields, error) {
-	var raw json.RawMessage
-	if err := bindBody(c, &raw); err != nil {
-		return nil, err
+
+func decodeAggregationBody(c *httpx.Ctx) (*aggregationRequest, bool, error) {
+	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	if err != nil {
+		return nil, false, wrapNonFinite(c, err)
 	}
-	out, ok, err := httpx.DecodeObject[aggregationFields](raw)
-	if err != nil || !ok {
-		return nil, nil
+	if !ok {
+		return nil, false, nil
 	}
-	return &out, nil
+	req := new(aggregationRequest)
+	if err := jsondecode.Unmarshal(raw, req); err != nil {
+		return nil, true, err
+	}
+	return req, true, nil
 }
 
 // readOrderBody returns a reorder object; a falsy scalar reads as {}.
 func readOrderBody(c *httpx.Ctx) (json.RawMessage, error) {
 	var raw json.RawMessage
-	if err := bindBody(c, &raw); err != nil {
-		return nil, err
+	if err := c.Bind(&raw); err != nil {
+		return nil, wrapNonFinite(c, err)
 	}
 	switch string(raw) {
 	case "null", "false", "0", `""`, "[]":
@@ -326,11 +352,7 @@ func cachedCount(ctx context.Context, shared *model.Shared, aggregation model.Ag
 type nonfiniteBodyError struct{ error }
 
 func (e *nonfiniteBodyError) Unwrap() error { return e.error }
-func bindBody(c *httpx.Ctx, target *json.RawMessage) error {
-	err := c.Bind(target)
-	if err == nil {
-		return nil
-	}
+func wrapNonFinite(c *httpx.Ctx, err error) error {
 	if !c.IsJSON() {
 		return err
 	}

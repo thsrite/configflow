@@ -15,29 +15,78 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
 
-// aggregationFields is an aggregation as sent: its members in order, as
-// JSON. The catalog decodes it strictly, so a member of another type is
-// refused with the repository's message for the resulting list.
-type aggregationFields struct{ model.Fields }
-
-func (f *aggregationFields) set(key string, v any) error {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	return f.Set(key, raw)
+// aggregationRequest is an aggregation create/replace request body decoded with
+// exact member matching. Display statistics (node_count, total_node_count,
+// subscription_node_counts, loading_count) and undeclared members are ignored.
+type aggregationRequest struct {
+	Name           jsondecode.Member[json.RawMessage] `json:"name"`
+	Description    jsondecode.Member[json.RawMessage] `json:"description"`
+	Enabled        jsondecode.Member[json.RawMessage] `json:"enabled"`
+	Subscriptions  jsondecode.Member[json.RawMessage] `json:"subscriptions"`
+	Nodes          jsondecode.Member[json.RawMessage] `json:"nodes"`
+	RegexFilter    jsondecode.Member[json.RawMessage] `json:"regex_filter"`
+	HealthCheck    jsondecode.Member[json.RawMessage] `json:"health_check"`
+	HealthCheckURL jsondecode.Member[string]          `json:"health_check_url"`
+	CreatedAt      jsondecode.Member[json.RawMessage] `json:"created_at"`
 }
 
-// stripStats drops the display statistics list responses add.
-func stripStats(item *aggregationFields) {
-	for _, key := range []string{"node_count", "total_node_count", "subscription_node_counts", "loading_count"} {
-		item.Delete(key)
+func defaultProviderHealth(legacyURL jsondecode.Member[string]) *model.ProviderHealthCheck {
+	d := check.DefaultProviderHealth()
+	if legacyURL.OK && legacyURL.Value != "" {
+		d.URL = legacyURL.Value
 	}
+	return &model.ProviderHealthCheck{
+		Enable:         new(d.Enable),
+		URL:            new(d.URL),
+		Interval:       new(model.Int(d.Interval)),
+		Timeout:        new(model.Int(d.Timeout)),
+		Lazy:           new(d.Lazy),
+		ExpectedStatus: new(d.ExpectedStatus),
+	}
+}
+
+func decodeAggregation(req *aggregationRequest, id, now string, creating bool) (model.Aggregation, error) {
+	agg := model.Aggregation{ID: id, UpdatedAt: now}
+	if creating {
+		agg.CreatedAt = now
+	}
+	fields := []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{"name", req.Name.Raw},
+		{"description", req.Description.Raw},
+		{"enabled", req.Enabled.Raw},
+		{"subscriptions", req.Subscriptions.Raw},
+		{"nodes", req.Nodes.Raw},
+		{"regex_filter", req.RegexFilter.Raw},
+		{"health_check", req.HealthCheck.Raw},
+		{"health_check_url", req.HealthCheckURL.Raw},
+	}
+	if !creating {
+		fields = append(fields, struct {
+			name string
+			raw  json.RawMessage
+		}{"created_at", req.CreatedAt.Raw})
+	}
+	for _, field := range fields {
+		if field.raw == nil {
+			continue
+		}
+		if err := model.DecodeInputMember("aggregation", &agg, field.name, field.raw); err != nil {
+			return model.Aggregation{}, err
+		}
+	}
+	if creating && !req.HealthCheck.Present() {
+		agg.HealthCheck = defaultProviderHealth(req.HealthCheckURL)
+	}
+	return agg, nil
 }
 
 func find(items []model.Aggregation, id string) int {
@@ -73,37 +122,30 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() != http.MethodPost {
 		return nil, errors.New("unsupported aggregation collection method")
 	}
-	body, err := readBody(c)
+	req, ok, err := decodeAggregationBody(c)
 	if err != nil {
 		return nil, err
 	}
-	if body == nil {
+	if !ok {
 		return httpx.Message(400, false, msgObject), nil
-	}
-	if err := check.InitProviderHealth(&body.Fields); err != nil {
-		return nil, err
 	}
 	var entropy [4]byte
 	if _, err := rand.Read(entropy[:]); err != nil {
 		return nil, err
 	}
-	if err := body.set("id", "agg_"+hex.EncodeToString(entropy[:])); err != nil {
-		return nil, err
+	id := "agg_" + hex.EncodeToString(entropy[:])
+	now := time.Now().Format("2006-01-02T15:04:05.000000")
+	agg, err := decodeAggregation(req, id, now, true)
+	if err != nil {
+		return nil, aggregationTypeError(nil, -1, req, id, err)
 	}
-	if err := body.set("created_at", time.Now().Format("2006-01-02T15:04:05.000000")); err != nil {
-		return nil, err
-	}
-	if err := body.set("updated_at", time.Now().Format("2006-01-02T15:04:05.000000")); err != nil {
-		return nil, err
-	}
-	stripStats(body)
-	if err := appendAggregation(ctx, body); err != nil {
+	if err := appendAggregation(ctx, agg); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(struct {
-		Success bool               `json:"success"`
-		Data    *aggregationFields `json:"data"`
-	}{true, body}), nil
+		Success bool              `json:"success"`
+		Data    model.Aggregation `json:"data"`
+	}{true, agg}), nil
 }
 
 func aggregationsOf(shared *model.Shared) []model.Aggregation {
@@ -147,30 +189,28 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 	if index < 0 {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
-	body, err := readBody(c)
+	req, ok, err := decodeAggregationBody(c)
 	if err != nil {
 		return failure(err, msgOperationFailed), nil
 	}
-	if body == nil {
+	if !ok {
 		return httpx.Message(400, false, msgObject), nil
 	}
-	if err := body.set("id", id); err != nil {
-		return nil, err
+	now := time.Now().Format("2006-01-02T15:04:05.000000")
+	agg, err := decodeAggregation(req, id, now, false)
+	if err != nil {
+		return nil, aggregationTypeError(shared.Aggregations, index, req, id, err)
 	}
-	if err := body.set("updated_at", time.Now().Format("2006-01-02T15:04:05.000000")); err != nil {
-		return nil, err
-	}
-	stripStats(body)
-	if err := replaceAggregation(ctx, shared, index, body); err != nil {
+	if err := replaceAggregation(ctx, shared, index, agg); err != nil {
 		if errors.Is(err, repo.ErrRepository) {
 			return nil, err
 		}
 		return failure(err, msgOperationFailed), nil
 	}
 	return httpx.JSON(struct {
-		Success bool               `json:"success"`
-		Data    *aggregationFields `json:"data"`
-	}{true, body}), nil
+		Success bool              `json:"success"`
+		Data    model.Aggregation `json:"data"`
+	}{true, agg}), nil
 }
 
 func healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
