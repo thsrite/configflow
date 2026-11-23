@@ -179,8 +179,9 @@ func PrepareEditor(settings *Node, p *Profile, baseURL string) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	if str(get(current, "config_mode")) == "native" {
-		if !isMap(get(current, "template_settings")) {
+	view := readSettingsView(current)
+	if view.isNative() {
+		if !view.TemplateSettings.OK {
 			set(current, "template_settings", TemplateInputs(current, p))
 		}
 		return current, nil
@@ -189,10 +190,10 @@ func PrepareEditor(settings *Node, p *Profile, baseURL string) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	if old := get(current, "native_config"); strings.TrimSpace(old.Value) != "" && !has(current, "legacy_native_config") {
-		previous, err := loadNative(old, NativeLabel)
+	if view.NativeConfig.OK && strings.TrimSpace(view.NativeConfig.Value) != "" && !view.LegacyNativeConfig.Present() {
+		previous, err := LoadNativeYAML(view.NativeConfig.Value, NativeLabel)
 		if err != nil || !same(previous, document) {
-			set(current, "legacy_native_config", old)
+			set(current, "legacy_native_config", S(view.NativeConfig.Value))
 		}
 	}
 	set(current, "config_mode", S("native"))
@@ -540,7 +541,7 @@ func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string,
 	if err != nil {
 		return Preview{}, err
 	}
-	document, err := loadNative(get(current, "native_config"), NativeLabel)
+	document, err := readSettingsView(current).loadNative(NativeLabel)
 	if err != nil {
 		return Preview{}, err
 	}

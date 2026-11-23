@@ -209,10 +209,11 @@ func NormalizeSettings(value *Node, validateNative bool) (*Node, error) {
 		return nil, err
 	}
 	set(s, "device_policies", policies)
-	if !isOneOf(get(s, "config_mode"), "template", "native") {
+	view := readSettingsView(s)
+	if !view.ConfigMode.OK || (view.ConfigMode.Value != "template" && view.ConfigMode.Value != "native") {
 		return nil, fail("OxiDNS 配置模式必须为 template 或 native")
 	}
-	if !isStr(get(s, "native_config")) {
+	if !view.NativeConfig.OK {
 		return nil, fail("OxiDNS 完整配置必须为 YAML 文本")
 	}
 	if _, err := ManagedFiles(get(s, "additional_files")); err != nil {
@@ -221,11 +222,11 @@ func NormalizeSettings(value *Node, validateNative bool) (*Node, error) {
 	if err := normalizeRuleDNS(s); err != nil {
 		return nil, err
 	}
-	if str(get(s, "config_mode")) == "native" {
+	if view.isNative() {
 		if validateNative {
 			_, err = NativeDocument(s, true, nil)
 		} else {
-			_, err = loadNative(get(s, "native_config"), NativeLabel)
+			_, err = view.loadNative(NativeLabel)
 		}
 		if err != nil {
 			return nil, err

@@ -195,12 +195,13 @@ func ruleDNSIDs(list *Node) []string {
 // UpstreamCatalog returns current local/remote/fallback upstreams in source order.
 // A nil document reads template lists or loads the saved native document.
 func UpstreamCatalog(settings, document *nativeDoc, bindings []DNSBinding) ([]UpstreamCandidate, error) {
+	view := readSettingsView(settings)
 	lists := map[string]*Node{}
-	if document == nil && !isOneOf(get(settings, "config_mode"), "native") {
+	if document == nil && !view.isNative() {
 		for _, source := range UpstreamSources {
 			var list *Node
 			var err error
-			text := str(get(settings, source+"_dns"))
+			text := view.sourceDNS(source)
 			switch source {
 			case "local":
 				list, err = forwardUpstreams(text, LocalDNSDefaults)
@@ -216,7 +217,7 @@ func UpstreamCatalog(settings, document *nativeDoc, bindings []DNSBinding) ([]Up
 	} else {
 		if document == nil {
 			var err error
-			document, err = loadNative(get(settings, "native_config"), NativeLabel)
+			document, err = view.loadNative(NativeLabel)
 			if err != nil {
 				return nil, err
 			}
@@ -298,10 +299,11 @@ type ruleDNSView struct {
 
 func readRuleDNS(p *Profile, settings *Node) (ruleDNSView, error) {
 	view := ruleDNSView{Values: storedRuleDNS(settings), Editable: true}
-	if !isOneOf(get(settings, "config_mode"), "native") {
+	sv := readSettingsView(settings)
+	if !sv.isNative() {
 		return view, nil
 	}
-	document, err := loadNative(get(settings, "native_config"), NativeLabel)
+	document, err := sv.loadNative(NativeLabel)
 	if err != nil {
 		view.Editable = false
 		view.Reason = err.Error()
@@ -345,7 +347,7 @@ func dnsBindings(agents []model.Agent) []DNSBinding {
 }
 
 func viewUpstreams(settings *Node, view ruleDNSView, agents []model.Agent) ([]UpstreamCandidate, error) {
-	if isOneOf(get(settings, "config_mode"), "native") && view.Document == nil {
+	if readSettingsView(settings).isNative() && view.Document == nil {
 		return []UpstreamCandidate{}, nil
 	}
 	return UpstreamCatalog(settings, view.Document, dnsBindings(agents))
@@ -371,7 +373,8 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	for _, item := range p.activeItems() {
 		active[item.ID] = true
 	}
-	native := isOneOf(get(settings, "config_mode"), "native")
+	sv := readSettingsView(settings)
+	native := sv.isNative()
 	state := RuleDNSState{Rules: map[string]RuleDNSRule{}, Upstreams: []UpstreamChoice{}, MosDNS: map[string]string{}}
 	for _, item := range p.ruleConfigs() {
 		id := item.ID
@@ -425,8 +428,8 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 		}
 		state.Rules[id] = entry
 	}
-	engine := RuleDNSEngine{Mode: str(orDefault(settings, "config_mode", S("template"))), Editable: view.Editable, Reason: view.Reason,
-		DefaultForward: str(orDefault(settings, "default_forward", S("forward_remote"))), PolicyRoutes: map[string]*string{}, PreferIPv4: !same(get(settings, "prefer_ipv4"), B(false)),
+	engine := RuleDNSEngine{Mode: sv.ConfigMode.Or("template"), Editable: view.Editable, Reason: view.Reason,
+		DefaultForward: sv.DefaultForward.Or("forward_remote"), PolicyRoutes: map[string]*string{}, PreferIPv4: sv.preferIPv4(),
 		InUse: native || stored.hasAny(), Warnings: []string{}, Agents: []RuleDNSAgent{}}
 	for name, route := range routes {
 		engine.PolicyRoutes[name] = nullableRoute(route)

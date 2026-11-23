@@ -999,9 +999,9 @@ func ReadRouting(document *nativeDoc, settings *Node, p *Profile) (RoutingView, 
 // (only a fully recognizable owned suffix; anything else is returned as is).
 func MigrateDomainOnlyRouting(document *nativeDoc, settings *Node, p *Profile, baseURL string) (*Node, *Node, error) {
 	source := M()
-	if text := get(settings, "native_config"); strings.TrimSpace(str(text)) != "" {
+	if view := readSettingsView(settings); view.NativeConfig.OK && strings.TrimSpace(view.NativeConfig.Value) != "" {
 		var err error
-		if source, err = loadNative(text, NativeLabel); err != nil {
+		if source, err = LoadNativeYAML(view.NativeConfig.Value, NativeLabel); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -1063,7 +1063,7 @@ func (p *Profile) usesRule(document *nativeDoc, identity string) bool {
 // RemoveRule returns native settings without a rule that is about to be
 // deleted, or nil when the draft does not use it.
 func RemoveRule(settings *Node, p *Profile, identity, baseURL string) (*Node, error) {
-	document, err := loadNative(get(settings, "native_config"), NativeLabel)
+	document, err := readSettingsView(settings).loadNative(NativeLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -1249,13 +1249,10 @@ func (p *Profile) resourceDownloads(document *nativeDoc, settings *Node, baseURL
 			desired = append(desired, entry(proxied, local))
 		}
 	}
-	for _, url := range items(get(get(settings, "adguard"), "urls")) {
-		if !isStr(url) {
-			continue
-		}
-		local := "./rules/" + TagFor("adguard", url) + ".txt"
+	for _, url := range readSettingsView(settings).adguardURLs() {
+		local := "./rules/" + tagForString("adguard", url) + ".txt"
 		if rel, _, err := relativeResource(local); err == nil && referenced[rel] {
-			desired = append(desired, entry(url.Value, local))
+			desired = append(desired, entry(url, local))
 		}
 	}
 	return desired, nil

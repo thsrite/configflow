@@ -323,11 +323,7 @@ func NativeDocument(settings *Node, validate bool, sources *Sources) (*Node, err
 		set(document, "plugins", seqOf(append(result, plugins.Content...)))
 		return nil
 	}
-	text := get(settings, "native_config")
-	if !has(settings, "native_config") {
-		text = S("")
-	}
-	document, err := loadNative(text, NativeLabel)
+	document, err := readSettingsView(settings).loadNativeOrEmpty(NativeLabel)
 	if err != nil {
 		return nil, err
 	}

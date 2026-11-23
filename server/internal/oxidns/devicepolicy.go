@@ -605,7 +605,7 @@ func ReadPolicies(settings *Node, p *Profile) (PolicyView, error) {
 	current, err := PrepareEditor(settings, p, "")
 	if err == nil {
 		var doc *Node
-		if doc, err = loadNative(get(current, "native_config"), NativeLabel); err == nil {
+		if doc, err = readSettingsView(current).loadNative(NativeLabel); err == nil {
 			var report EntryReport
 			if _, report, err = patchPolicies(doc, rows, rows, p); err == nil {
 				view.Editable, view.SideEntries = true, report.Side
@@ -634,7 +634,7 @@ func ApplyPolicies(settings *Node, p *Profile, value *Node, baseURL string) (*No
 	if err != nil {
 		return nil, err
 	}
-	document, err := loadNative(get(current, "native_config"), NativeLabel)
+	document, err := readSettingsView(current).loadNative(NativeLabel)
 	if err != nil {
 		return nil, err
 	}

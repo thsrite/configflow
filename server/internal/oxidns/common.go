@@ -296,9 +296,8 @@ func newContext(document *nativeDoc, settings *Node) (*commonContext, error) {
 func (c *commonContext) plugin(tag string) *Node { return c.byTag[tag] }
 
 func (c *commonContext) aliasCapability(tag string) *Capability {
-	alias := get(get(c.parked, "renamed_plugins"), tag)
-	if isStr(alias) && alias.Value != tag && c.plugin(alias.Value) != nil {
-		cap := capability(false, "受管插件已重命名为「"+alias.Value+"」，请在完整参数中编辑自定义配置", alias.Value)
+	if alias, ok := readSettingsView(c.settings).renamedPlugin(tag); ok && alias != tag && c.plugin(alias) != nil {
+		cap := capability(false, "受管插件已重命名为「"+alias+"」，请在完整参数中编辑自定义配置", alias)
 		return &cap
 	}
 	return nil
@@ -989,17 +988,14 @@ func (c *commonContext) cronJob() (*Node, Capability) {
 // resources maps adguard_rules' files back to subscription URLs: urls,
 // whether the custom content file is attached, capability.
 func (c *commonContext) resources() ([]*Node, bool, Capability) {
-	source := mapOr(get(c.settings, "adguard"))
 	args := c.storedArgs("adguard_rules")
 	files := get(args, "files")
 	if !has(args, "files") {
 		files = L()
 	}
 	known := map[string]*Node{}
-	for _, url := range items(get(source, "urls")) {
-		if isStr(url) {
-			known["rules/"+TagFor("adguard", url)+".txt"] = url
-		}
+	for _, url := range readSettingsView(c.settings).adguardURLs() {
+		known["rules/"+tagForString("adguard", url)+".txt"] = S(url)
 	}
 	if !isMap(args) || !allStrings(files) {
 		return nil, false, capability(false, "规则文件使用了自定义格式，请在完整参数中编辑", "adguard_rules")
@@ -1237,12 +1233,12 @@ func readCommon(document *nativeDoc, settings *Node, p *Profile) (CommonView, er
 	set(get(update, "args"), "timezone", timezone)
 	caps["rule_update.args.schedule"], caps["rule_update.args.timezone"] = jobCap, jobCap
 	urls, hasContent, resourceCap := c.resources()
-	source := mapOr(get(settings, "adguard"))
+	view := readSettingsView(settings)
 	adguard := get(values, "adguard")
 	set(adguard, "urls", seqOf(urls))
 	content := S("")
 	if hasContent {
-		content = orDefault(source, "content", S(""))
+		content = memberTextNodeOr(view.AdGuard.Value.Content, "")
 	}
 	set(adguard, "content", content)
 	mode, ok := lookup(c.storedArgs("adguard_block"), []string{"mode"})
@@ -1263,7 +1259,7 @@ func readCommon(document *nativeDoc, settings *Node, p *Profile) (CommonView, er
 	hostPaths := items(files)
 	hostsText := S("")
 	if containsStr(seqOf(hostPaths), "./rules/custom_hosts.txt") || containsStr(seqOf(hostPaths), "rules/custom_hosts.txt") {
-		hostsText = orDefault(settings, "custom_hosts", S(""))
+		hostsText = memberTextNodeOr(view.CustomHosts, "")
 	}
 	set(values, "custom_hosts", hostsText)
 	_, caps["custom_hosts"] = c.callState("custom_hosts", []string{"sequence_main"})
@@ -2083,7 +2079,7 @@ func ApplyCommonSettings(settings, changes *Node, p *Profile, baseURL string) (A
 	if err != nil {
 		return Applied{}, err
 	}
-	document, err := loadNative(get(current, "native_config"), NativeLabel)
+	document, err := readSettingsView(current).loadNative(NativeLabel)
 	if err != nil {
 		return Applied{}, err
 	}

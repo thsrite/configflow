@@ -402,7 +402,7 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 		installDNSFields(out, pruned, ruleDNSFields)
 		return finish([]string{fmt.Sprintf(messageDNSUnchanged, reason)}), nil
 	}
-	native := isOneOf(get(settings, "config_mode"), "native")
+	native := readSettingsView(settings).isNative()
 	if native && view.Document == nil {
 		return locked(view.Reason)
 	}

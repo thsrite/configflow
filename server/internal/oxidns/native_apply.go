@@ -138,7 +138,7 @@ func prepareNativeEdit(settings *Node, text string, p *Profile, baseURL string) 
 	if err != nil {
 		return nil, err
 	}
-	before, err := loadNative(get(current, "native_config"), NativeLabel)
+	before, err := readSettingsView(current).loadNative(NativeLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func (e *nativeEdit) common(document *nativeDoc, changes *Node) (*Node, error) {
 		return nil, err
 	}
 	e.current = applied.Settings
-	return loadNative(get(e.current, "native_config"), NativeLabel)
+	return readSettingsView(e.current).loadNative(NativeLabel)
 }
 func (e *nativeEdit) apply(settings *Node, options NativeApplyOptions) (NativeApplied, error) {
 	renames := append([]NativeRename{}, options.Renames...)
@@ -584,8 +584,8 @@ func (e *nativeEdit) apply(settings *Node, options NativeApplyOptions) (NativeAp
 		if e.removed["custom_hosts"] {
 			parked := setDefault(e.current, "_common_disabled", M())
 			set(parked, "custom_hosts", clone(e.old["custom_hosts"]))
-			if source := get(settings, "custom_hosts"); isStr(source) && strings.TrimSpace(source.Value) != "" {
-				set(parked, "native_hosts_source", clone(source))
+			if hosts := readSettingsView(settings).CustomHosts; hosts.OK && strings.TrimSpace(hosts.Value) != "" {
+				set(parked, "native_hosts_source", S(hosts.Value))
 			}
 		}
 		e.notices = append(e.notices, messageNativeRemoved)

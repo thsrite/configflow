@@ -214,8 +214,9 @@ func RulesetDownloads(p *Profile, baseURL string) ([]RulesetDownload, error) {
 }
 
 func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDownload, error) {
+	view := readSettingsView(settings)
 	var native map[string]bool
-	if str(get(settings, "config_mode")) == "native" {
+	if view.isNative() {
 		document, err := NativeDocument(settings, true, nil)
 		if err != nil {
 			return nil, err
@@ -223,6 +224,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 		if document, settings, err = MigrateDomainOnlyRouting(document, settings, p, baseURL); err != nil {
 			return nil, err
 		}
+		view = readSettingsView(settings)
 		if native, err = referencedPaths(document); err != nil {
 			return nil, err
 		}
@@ -277,16 +279,15 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 			downloads = append(downloads, RulesetDownload{name, proxied, rulePath(item.ID, part), behaviorOf(item)})
 		}
 	}
-	adguard := get(settings, "adguard")
-	if isMap(adguard) && isTrue(get(adguard, "enabled")) {
-		for _, url := range items(get(adguard, "urls")) {
-			path := "./rules/" + TagFor("adguard", url) + ".txt"
+	if view.adguardEnabled() {
+		for _, url := range view.adguardURLs() {
+			path := "./rules/" + tagForString("adguard", url) + ".txt"
 			if native != nil {
 				if rel, _, err := relativeResource(path); err != nil || !native[rel] {
 					continue
 				}
 			}
-			downloads = append(downloads, RulesetDownload{"AdGuard DNS 规则", displayValue(url), path, ""})
+			downloads = append(downloads, RulesetDownload{"AdGuard DNS 规则", url, path, ""})
 		}
 	}
 	return downloads, nil
@@ -299,8 +300,9 @@ func CustomFiles(p *Profile) ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
+	view := readSettingsView(settings)
 	var native map[string]bool
-	if str(get(settings, "config_mode")) == "native" {
+	if view.isNative() {
 		document, err := NativeDocument(settings, true, nil)
 		if err != nil {
 			return nil, err
@@ -310,15 +312,14 @@ func CustomFiles(p *Profile) ([]File, error) {
 		}
 	}
 	files := []File{}
-	if hosts := get(settings, "custom_hosts"); (native == nil || native["rules/custom_hosts.txt"]) && isStr(hosts) && strings.TrimSpace(hosts.Value) != "" {
+	if hosts := view.CustomHosts; (native == nil || native["rules/custom_hosts.txt"]) && hosts.OK && strings.TrimSpace(hosts.Value) != "" {
 		content, err := HostsFileContent(hosts.Value)
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, File{Path: "./rules/custom_hosts.txt", Content: []byte(content)})
 	}
-	adguard := mapOr(get(settings, "adguard"))
-	if content := get(adguard, "content"); (native == nil || native["rules/adguard-custom.txt"]) && isTrue(get(adguard, "enabled")) && isStr(content) && strings.TrimSpace(content.Value) != "" {
+	if content := view.AdGuard.Value.Content; (native == nil || native["rules/adguard-custom.txt"]) && view.adguardEnabled() && content.OK && strings.TrimSpace(content.Value) != "" {
 		files = append(files, File{Path: "./rules/adguard-custom.txt", Content: []byte(content.Value)})
 	}
 	managed, err := ManagedFiles(get(settings, "additional_files"))
@@ -559,7 +560,7 @@ func Generate(p *Profile, baseURL string) (string, error) {
 }
 
 func generate(s *Node, p *Profile, baseURL string) (string, error) {
-	if str(get(s, "config_mode")) == "native" {
+	if readSettingsView(s).isNative() {
 		document, err := NativeDocument(s, true, nil)
 		if err != nil {
 			return "", err

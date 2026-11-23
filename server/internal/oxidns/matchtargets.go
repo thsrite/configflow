@@ -76,8 +76,8 @@ func ReadMatchTargets(document *nativeDoc, settings *Node) (MatchTargets, error)
 			unsafe[tag] = true
 		}
 	}
-	if alias := get(get(get(settings, "_common_disabled"), "renamed_plugins"), "sequence_main"); isStr(alias) {
-		unsafe[alias.Value] = true
+	if alias, ok := readSettingsView(settings).renamedPlugin("sequence_main"); ok {
+		unsafe[alias] = true
 	}
 	// An executor reaching the main sequence would recurse from a custom match.
 	var queue []string

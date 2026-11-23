@@ -81,10 +81,8 @@ func ReconcileNativeWithdrawals(before, candidate, originalSettings, settings *N
 			}
 		}
 	}
-	for _, u := range items(get(get(originalSettings, "adguard"), "urls")) {
-		if isStr(u) {
-			managed["rules/"+TagFor("adguard", u)+".txt"] = true
-		}
+	for _, u := range readSettingsView(originalSettings).adguardURLs() {
+		managed["rules/"+tagForString("adguard", u)+".txt"] = true
 	}
 	readers := append(append([]string{}, references...), ResourceReaders(current)...)
 	withdrawn := map[string]bool{}
@@ -383,7 +381,7 @@ func stopPipeline(c *commonContext, refreshOnly bool) error {
 	}
 	if targets["rules_download"] {
 		// Keep the options of withdrawn entries apart from the empty plugin.
-		original, err := loadNative(get(c.settings, "native_config"), NativeLabel)
+		original, err := readSettingsView(c.settings).loadNative(NativeLabel)
 		if err != nil {
 			return err
 		}
@@ -647,10 +645,11 @@ func (p *Profile) refreshManagedRuleURLs(document *nativeDoc, baseURL string) (*
 // native draft (in place): only URLs generated from the previous source move.
 func RebaseNativeRuleSources(before, after *Profile) (bool, error) {
 	settings := after.Settings()
-	if !isMap(settings) || !equal(get(settings, "config_mode"), S("native")) {
+	view := readSettingsView(settings)
+	if !view.isNative() {
 		return false, nil
 	}
-	document, err := loadNative(orDefault(settings, "native_config", S("")), NativeLabel)
+	document, err := view.loadNativeOrEmpty(NativeLabel)
 	if err != nil {
 		return false, nil
 	}
