@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/json/jsontext"
+	"strconv"
 )
 
 // Truthy reports the truth value of one JSON value as Python's bool() of the
-// decoded value: null, false, numeric zero (0, -0, 0.0, 0e5, ...), "", []
-// and {} are false, every other value is true. Empty input is false; input
-// that is not one valid JSON value is ErrJSON. It is for protocol and request
-// members that Python tested for truth (an Agent reply's flags, an optional
-// display member), never for identity or authorization.
+// decoded value: null, false, numeric zero (0, -0, 0.0, 0e5, and a number
+// that rounds to 0.0 such as 1e-400), "", [] and {} are false, every other
+// value is true. Empty input is false; input that is not one valid JSON
+// value is ErrJSON. It is for protocol and request members that Python
+// tested for truth (an Agent reply's flags, an optional display member),
+// never for identity or authorization.
 func Truthy(data json.RawMessage) (bool, error) {
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 {
@@ -53,25 +55,11 @@ func truthy(data []byte) bool {
 		kind := dec.PeekKind()
 		return kind != ']' && kind != '}'
 	default:
-		return !jsonNumberIsZero(data)
+		// A float that underflows to 0.0 is false in Python; an overflow
+		// (±Inf) is true. An integer literal is never rounded to zero.
+		value, _ := strconv.ParseFloat(string(data), 64)
+		return value != 0
 	}
-}
-
-// jsonNumberIsZero reports a JSON number literal whose digits are all zero.
-func jsonNumberIsZero(raw []byte) bool {
-	digits := 0
-	for i := 0; i < len(raw); i++ {
-		switch c := raw[i]; {
-		case c == '-' && i == 0, c == '.':
-		case c == 'e' || c == 'E':
-			return digits > 0
-		case c == '0':
-			digits++
-		default:
-			return false
-		}
-	}
-	return digits > 0
 }
 
 // Flag reads an optional stored switch: nil (absent) is fallback. A stored
