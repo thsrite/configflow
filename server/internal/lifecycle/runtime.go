@@ -489,6 +489,9 @@ func (r *Runtime) wait(ctx context.Context, g *generation, runners bool, drained
 // Names lists registered loops and startup work (not shutdown hooks).
 func (r *Runtime) Names() []string { return r.registry.names() }
 
+// Registration reports r's registrations in order and any in-place replacements.
+func (r *Runtime) Registration() Registration { return r.registry.registration() }
+
 // RegisterPeriodic adds a periodic loop specification to r and starts it
 // immediately if the current generation is already eligible.
 func (r *Runtime) RegisterPeriodic(p Periodic) {

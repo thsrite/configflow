@@ -110,6 +110,7 @@ type Registry struct {
 	periodics []Periodic
 	startups  []Startup
 	hooks     []ShutdownHook
+	replaced  []string
 }
 
 // NewRegistry creates an independent registry for a Runtime.
@@ -122,6 +123,7 @@ func (r *Registry) RegisterPeriodic(p Periodic) {
 	for i := range r.periodics {
 		if r.periodics[i].Name == p.Name {
 			r.periodics[i] = p
+			r.replaced = append(r.replaced, "periodic "+p.Name)
 			return
 		}
 	}
@@ -135,6 +137,7 @@ func (r *Registry) RegisterStartup(s Startup) {
 	for i := range r.startups {
 		if r.startups[i].Name == s.Name {
 			r.startups[i] = s
+			r.replaced = append(r.replaced, "startup "+s.Name)
 			return
 		}
 	}
@@ -148,6 +151,7 @@ func (r *Registry) RegisterShutdown(h ShutdownHook) {
 	for i := range r.hooks {
 		if r.hooks[i].Name == h.Name && r.hooks[i].Phase == h.Phase {
 			r.hooks[i] = h
+			r.replaced = append(r.replaced, "shutdown "+h.Name)
 			return
 		}
 	}
@@ -164,6 +168,34 @@ func (r *Registry) snapshot() registrySnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return registrySnapshot{append([]Periodic(nil), r.periodics...), append([]Startup(nil), r.startups...), append([]ShutdownHook(nil), r.hooks...)}
+}
+
+// Registration lists, in registration order, the startup steps, periodic
+// loops and shutdown hooks of one registry, plus every registration that
+// replaced an earlier one with the same name ("kind name"). Server assembly
+// asserts Replaced is empty: each subsystem registers its work exactly once.
+type Registration struct {
+	Startups  []string
+	Periodics []string
+	Shutdowns []string
+	Replaced  []string
+}
+
+func (r *Registry) registration() Registration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out Registration
+	for _, s := range r.startups {
+		out.Startups = append(out.Startups, s.Name)
+	}
+	for _, p := range r.periodics {
+		out.Periodics = append(out.Periodics, p.Name)
+	}
+	for _, h := range r.hooks {
+		out.Shutdowns = append(out.Shutdowns, h.Name)
+	}
+	out.Replaced = append([]string(nil), r.replaced...)
+	return out
 }
 
 func (r *Registry) names() []string {
