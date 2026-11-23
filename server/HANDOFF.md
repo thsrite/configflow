@@ -98,6 +98,11 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
+(record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
+review: legacy cache without metadata.url accepted, null node element = damaged, custom_config restrict with
+falsy→empty (Python parity), truthy 1e-400 false, dns null switches absent). O18 COMPLETE.
+
 Maintainer 2026-11-23: O17 structural items ALL before the switch ("以后改起来费劲还不如现在就一次弄好"):
 ② runtime state/history out of the config document + ① polling loops → change notifications (Opus 9147b51a,
 go-o17-runtime-state; DESIGN FIRST server/design/o17-runtime-state.md, coordinator rules before code); ③ typed
