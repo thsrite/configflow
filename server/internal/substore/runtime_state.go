@@ -125,7 +125,7 @@ func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, befor
 		state.State = new(*patch.State)
 	}
 	if patch.Error != nil {
-		data, err := json.Marshal(*patch.Error)
+		data, err := model.Marshal(*patch.Error)
 		if err != nil {
 			return err
 		}

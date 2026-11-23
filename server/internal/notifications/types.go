@@ -144,8 +144,11 @@ func stringValue(value *string) string {
 	}
 	return *value
 }
-func jsonString(value string) json.RawMessage      { data, _ := json.Marshal(value); return data }
-func nullableString(value *string) json.RawMessage { data, _ := json.Marshal(value); return data }
+
+// jsonString and nullableString encode stored text members without HTML
+// escapes (Python's json.dump writes <, > and & as they are).
+func jsonString(value string) json.RawMessage      { data, _ := jsonresp.Encode(value); return data }
+func nullableString(value *string) json.RawMessage { data, _ := jsonresp.Encode(value); return data }
 
 func (i *Item) profile(id, name *string) {
 	i.ProfileID = nullableString(id)
