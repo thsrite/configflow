@@ -130,6 +130,9 @@ func xcVersionOne(t *testing.T, db *sql.DB, dump *testObj) *testObj {
 		var row store.StateRow
 		var value string
 		noError(t, rows.Scan(&row.Owner, &row.Member, &value))
+		if row.Member == "state_restored_at" {
+			continue // Go's restore marker after importing a backup without run records (O17); Python has none
+		}
 		row.Value = json.RawMessage(value)
 		state = append(state, row)
 	}
@@ -924,9 +927,35 @@ func xcRun(t *testing.T, directory, mode string, operations []any) []any {
 			record.Set("result", result)
 		}
 		record.Set("dump", xcDump(t, directory))
+		xcDropRestoreMarker(record)
 		records = append(records, record)
 	}
 	return append(records, testObjKV("op", "layout", "result", xcLayout(t, directory)))
+}
+
+// xcDropRestoreMarker removes Go's restore marker (state_restored_at, set
+// when a backup without run records is imported, O17) from a record: Python
+// has no such member.
+func xcDropRestoreMarker(value any) {
+	switch v := value.(type) {
+	case *testObj:
+		if v == nil {
+			return
+		}
+		v.Delete("state_restored_at")
+		for _, item := range v.All() {
+			xcDropRestoreMarker(item)
+		}
+	case []any:
+		for _, item := range v {
+			xcDropRestoreMarker(item)
+		}
+	case map[string]any:
+		delete(v, "state_restored_at")
+		for _, item := range v {
+			xcDropRestoreMarker(item)
+		}
+	}
 }
 
 // xcPythonCrash are Python's internal exception classes (a 500 there).
