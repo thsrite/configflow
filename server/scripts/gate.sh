@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 pflag=()
 if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
 stage=${GATE_ONLY:-all}
-case "$stage" in all|core|agent|compare|proddiff|difftest|frontend) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
+case "$stage" in all|core|agent|compare|proddiff|difftest|pyref|frontend) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
 # proddiff reference: python (default until WP11) or go (Go baseline tree vs this tree).
 proddiff_mode=${PRODDIFF_MODE:-python}
 case "$proddiff_mode" in
@@ -191,6 +191,17 @@ run_live() {
   echo '== synthetic live (uncached, required JSON execution manifest)'
   "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py "$logs" "${pflag[@]}" || fail 'synthetic live'
 }
+# Recorded Python references (tools/pyref/sources.json): check mode verifies every
+# recording still matches its declared sources; a moved helper otherwise goes
+# unnoticed because plain "go test" only replays the recordings.
+run_pyref() {
+  echo '== pyref check (recorded Python references)'
+  local pkgs
+  pkgs=$(python3 -c 'import json; print(" ".join(sorted({"./"+e["package"].removeprefix("server/") for e in json.load(open("tools/pyref/sources.json"))})))') || fail pyref
+  PYREF_MODE=check go test -count=1 "${pflag[@]}" $pkgs >"$logs/pyref.log" 2>&1 \
+    || { grep -vE '^20[0-9]{2}-' "$logs/pyref.log" | grep -A6 -E '^\s*--- FAIL|pyref:' | head -60; fail "pyref (see $logs/pyref.log)"; }
+  echo 'gate: pyref check PASS'
+}
 # Frontend (../frontend): the same commands as cf-test typecheck / cf-test
 # frontend. node_modules is installed once per package-lock.json hash into the
 # cf-test cache (~/cf-test/node_modules/<hash>) and linked, never per run.
@@ -231,6 +242,7 @@ run_compare() {
   (run_proddiff) || bad=1
   (run_difftest) || bad=1
   (run_live) || bad=1
+  (run_pyref) || bad=1
   (run_frontend) || bad=1
   ((bad == 0)) || fail compare
 }
@@ -244,6 +256,7 @@ case "$stage" in
   compare) run_compare ;;
   proddiff) run_proddiff ;;
   difftest) run_difftest ;;
+  pyref) run_pyref ;;
   frontend) run_frontend ;;
 esac
 uptime
